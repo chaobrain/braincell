@@ -16,7 +16,7 @@
 import brainunit as u
 import matplotlib.pyplot as plt
 
-import brainstate as bst
+import brainstate
 import braincell
 
 
@@ -33,14 +33,14 @@ class HH(braincell.neuron.SingleCompartment):
         self.IL = braincell.channel.IL(size, E=-54.387 * u.mV, g_max=0.03 * (u.mS / u.cm ** 2))
 
     def update(self, I_ext=0. * u.nA / u.cm ** 2):
-        bst.augment.vmap(
-            lambda: braincell.exp_euler_step(self, bst.environ.get('t'), I_ext),
+        brainstate.augment.vmap(
+            lambda: braincell.exp_euler_step(self, brainstate.environ.get('t'), I_ext),
             in_states=self.states()
         )()
         return self.post_integral(I_ext)
 
     def step_fun(self, t):
-        with bst.environ.context(t=t):
+        with brainstate.environ.context(t=t):
             spike = self.update(10 * u.nA / u.cm ** 2)
         return self.V.value
 
@@ -48,9 +48,9 @@ class HH(braincell.neuron.SingleCompartment):
 hh = HH([1, 1])
 hh.init_state()
 
-with bst.environ.context(dt=0.1 * u.ms):
-    times = u.math.arange(0. * u.ms, 100 * u.ms, bst.environ.get_dt())
-    vs = bst.compile.for_loop(hh.step_fun, times)
+with brainstate.environ.context(dt=0.1 * u.ms):
+    times = u.math.arange(0. * u.ms, 100 * u.ms, brainstate.environ.get_dt())
+    vs = brainstate.compile.for_loop(hh.step_fun, times)
 
 plt.plot(times, u.math.squeeze(vs))
 plt.show()

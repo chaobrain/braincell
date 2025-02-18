@@ -36,27 +36,96 @@ __all__ = [
 
 
 class PotassiumChannel(Channel):
-    """Base class for sodium channel dynamics."""
+    """Base class for potassium channel dynamics.
+
+    This class provides a template for implementing various potassium channel models.
+    It defines methods that should be overridden by subclasses to implement
+    specific potassium channel behaviors.
+    """
+
     __module__ = 'braincell.channel'
 
     root_type = Potassium
 
     def pre_integral(self, V, K: IonInfo):
+        """Perform any necessary operations before integration.
+
+        Parameters
+        ----------
+        V : ArrayLike
+            Membrane potential.
+        K : IonInfo
+            Information about potassium ions.
+        """
         pass
 
     def post_integral(self, V, K: IonInfo):
+        """Perform any necessary operations after integration.
+
+        Parameters
+        ----------
+        V : ArrayLike
+            Membrane potential.
+        K : IonInfo
+            Information about potassium ions.
+        """
         pass
 
     def compute_derivative(self, V, K: IonInfo):
+        """Compute the derivative of the channel state variables.
+
+        Parameters
+        ----------
+        V : ArrayLike
+            Membrane potential.
+        K : IonInfo
+            Information about potassium ions.
+        """
         pass
 
     def current(self, V, K: IonInfo):
+        """Calculate the potassium current through the channel.
+
+        Parameters
+        ----------
+        V : ArrayLike
+            Membrane potential.
+        K : IonInfo
+            Information about potassium ions.
+
+        Raises
+        ------
+        NotImplementedError
+            This method must be implemented by subclasses.
+        """
         raise NotImplementedError
 
     def init_state(self, V, K: IonInfo, batch_size: int = None):
+        """Initialize the state variables of the channel.
+
+        Parameters
+        ----------
+        V : ArrayLike
+            Membrane potential.
+        K : IonInfo
+            Information about potassium ions.
+        batch_size : int, optional
+            The batch size for initialization.
+        """
         pass
 
     def reset_state(self, V, K: IonInfo, batch_size: int = None):
+        """Reset the state variables of the channel.
+
+        Parameters
+        ----------
+        V : ArrayLike
+            Membrane potential.
+        K : IonInfo
+            Information about potassium ions.
+        batch_size : int, optional
+            The batch size for resetting.
+        """
         pass
 
 

@@ -29,21 +29,78 @@ class LeakageChannel(Channel):
     root_type = HHTypedNeuron
 
     def pre_integral(self, V):
+        """
+        Perform any necessary operations before the integration step.
+
+        Parameters:
+        -----------
+        V : array-like
+            The membrane potential.
+        """
         pass
 
     def post_integral(self, V):
+        """
+        Perform any necessary operations after the integration step.
+
+        Parameters:
+        -----------
+        V : array-like
+            The membrane potential.
+        """
         pass
 
     def compute_derivative(self, V):
+        """
+        Compute the derivative of the channel state variables.
+
+        Parameters:
+        -----------
+        V : array-like
+            The membrane potential.
+        """
         pass
 
     def current(self, V):
+        """
+        Calculate the current through the leakage channel.
+
+        Parameters:
+        -----------
+        V : array-like
+            The membrane potential.
+
+        Raises:
+        -------
+        NotImplementedError
+            This method should be implemented by subclasses.
+        """
         raise NotImplementedError
 
     def init_state(self, V, batch_size: int = None):
+        """
+        Initialize the state of the leakage channel.
+
+        Parameters:
+        -----------
+        V : array-like
+            The membrane potential.
+        batch_size : int, optional
+            The batch size for initialization.
+        """
         pass
 
     def reset_state(self, V, batch_size: int = None):
+        """
+        Reset the state of the leakage channel.
+
+        Parameters:
+        -----------
+        V : array-like
+            The membrane potential.
+        batch_size : int, optional
+            The batch size for resetting.
+        """
         pass
 
 

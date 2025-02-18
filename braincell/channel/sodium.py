@@ -26,27 +26,95 @@ __all__ = [
 
 
 class SodiumChannel(Channel):
-    """Base class for sodium channel dynamics."""
+    """
+    Base class for sodium channel dynamics.
+
+    This class provides a template for implementing sodium channel models.
+    It defines methods that should be overridden by subclasses to implement
+    specific sodium channel behaviors.
+    """
+
     __module__ = 'braincell.channel'
 
     root_type = Sodium
 
     def pre_integral(self, V, Na: IonInfo):
+        """
+        Perform any necessary operations before the integration step.
+
+        Parameters:
+        V : ArrayLike
+            Membrane potential.
+        Na : IonInfo
+            Information about sodium ions.
+        """
         pass
 
     def post_integral(self, V, Na: IonInfo):
+        """
+        Perform any necessary operations after the integration step.
+
+        Parameters:
+        V : ArrayLike
+            Membrane potential.
+        Na : IonInfo
+            Information about sodium ions.
+        """
         pass
 
     def compute_derivative(self, V, Na: IonInfo):
+        """
+        Compute the derivative of the channel state variables.
+
+        Parameters:
+        V : ArrayLike
+            Membrane potential.
+        Na : IonInfo
+            Information about sodium ions.
+        """
         pass
 
     def current(self, V, Na: IonInfo):
+        """
+        Calculate the sodium current through the channel.
+
+        Parameters:
+        V : ArrayLike
+            Membrane potential.
+        Na : IonInfo
+            Information about sodium ions.
+
+        Raises:
+        NotImplementedError: This method must be implemented by subclasses.
+        """
         raise NotImplementedError
 
     def init_state(self, V, Na: IonInfo, batch_size: int = None):
+        """
+        Initialize the state variables of the channel.
+
+        Parameters:
+        V : ArrayLike
+            Membrane potential.
+        Na : IonInfo
+            Information about sodium ions.
+        batch_size : int, optional
+            Size of the batch for vectorized operations.
+        """
         pass
 
     def reset_state(self, V, Na: IonInfo, batch_size: int = None):
+        """
+        Reset the state variables of the channel.
+
+        Parameters:
+        V : ArrayLike
+            Membrane potential.
+        Na : IonInfo
+            Information about sodium ions.
+        batch_size : int, optional
+            Size of the batch for vectorized operations.
+        """
         pass
 
 

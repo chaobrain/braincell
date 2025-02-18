@@ -651,7 +651,7 @@ class IonChannel(brainstate.graph.Node, TreeNode, DiffEqModule):
         NotImplementedError
             This method must be implemented by subclasses.
         """
-        raise NotImplementedError('Must be implemented by the subclass.')
+        pass
 
     def reset_state(self, *args, **kwargs):
         """

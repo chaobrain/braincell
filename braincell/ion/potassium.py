@@ -30,7 +30,17 @@ __all__ = [
 
 
 class Potassium(Ion):
-    """Base class for modeling Potassium ion."""
+    """
+    Base class for modeling Potassium ion.
+
+    This class serves as a foundation for implementing various Potassium ion models
+    in neuronal simulations. It inherits from the Ion base class and provides a
+    structure for defining Potassium-specific properties and behaviors.
+
+    Note:
+        This is an abstract base class and should be subclassed to create specific
+        Potassium ion models with defined dynamics and properties.
+    """
     __module__ = 'braincell.ion'
 
 

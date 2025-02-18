@@ -34,7 +34,16 @@ __all__ = [
 
 
 class Calcium(Ion):
-    """Base class for modeling Calcium ion."""
+    """
+    Base class for modeling Calcium ion.
+
+    This class serves as the foundation for all calcium ion models in the braincell library.
+    It inherits from the Ion class and sets the root_type to HHTypedNeuron.
+
+    Note:
+        This is an abstract base class and should be subclassed to implement specific
+        calcium ion models with their own dynamics and properties.
+    """
     __module__ = 'braincell.ion'
 
     root_type = HHTypedNeuron

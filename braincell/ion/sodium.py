@@ -29,9 +29,18 @@ __all__ = [
 
 
 class Sodium(Ion):
-    """Base class for modeling Sodium ion."""
-    __module__ = 'braincell.ion'
+    """
+    Base class for modeling Sodium ion.
 
+    This class serves as a foundation for creating specific sodium ion models
+    in neuronal simulations. It inherits from the Ion base class and provides
+    a starting point for implementing various sodium dynamics.
+
+    Note:
+        This is an abstract base class and should be subclassed to implement
+        specific sodium ion models with defined dynamics and properties.
+    """
+    __module__ = 'braincell.ion'
 
 class SodiumFixed(Sodium):
     """

@@ -28,26 +28,112 @@ __all__ = [
 
 
 class KCaChannel(Channel):
+    """
+    A base class for calcium-dependent potassium channels.
+
+    This class defines the interface for calcium-dependent potassium channels,
+    inheriting from the base Channel class. It provides a structure for
+    implementing specific types of KCa channels.
+    """
+
     __module__ = 'braincell.channel'
 
     root_type = brainstate.mixin.JointTypes[Potassium, Calcium]
 
     def pre_integral(self, V, K: IonInfo, Ca: IonInfo):
+        """
+        Perform any necessary computations before the integration step.
+
+        Parameters:
+        V : array_like
+            Membrane potential.
+        K : IonInfo
+            Information about potassium ions.
+        Ca : IonInfo
+            Information about calcium ions.
+        """
         pass
 
     def post_integral(self, V, K: IonInfo, Ca: IonInfo):
+        """
+        Perform any necessary computations after the integration step.
+
+        Parameters:
+        V : array_like
+            Membrane potential.
+        K : IonInfo
+            Information about potassium ions.
+        Ca : IonInfo
+            Information about calcium ions.
+        """
         pass
 
     def compute_derivative(self, V, K: IonInfo, Ca: IonInfo):
+        """
+        Compute the derivative of the channel's state variables.
+
+        Parameters:
+        V : array_like
+            Membrane potential.
+        K : IonInfo
+            Information about potassium ions.
+        Ca : IonInfo
+            Information about calcium ions.
+        """
         pass
 
     def current(self, V, K: IonInfo, Ca: IonInfo):
+        """
+        Calculate the current through the channel.
+
+        Parameters:
+        V : array_like
+            Membrane potential.
+        K : IonInfo
+            Information about potassium ions.
+        Ca : IonInfo
+            Information about calcium ions.
+
+        Returns:
+        array_like
+            The calculated current through the channel.
+
+        Raises:
+        NotImplementedError
+            This method must be implemented by subclasses.
+        """
         raise NotImplementedError
 
     def init_state(self, V, K: IonInfo, Ca: IonInfo, batch_size: int = None):
+        """
+        Initialize the state variables of the channel.
+
+        Parameters:
+        V : array_like
+            Membrane potential.
+        K : IonInfo
+            Information about potassium ions.
+        Ca : IonInfo
+            Information about calcium ions.
+        batch_size : int, optional
+            The batch size for initialization.
+        """
         pass
 
     def reset_state(self, V, K: IonInfo, Ca: IonInfo, batch_size: int = None):
+        """
+        Reset the state variables of the channel.
+
+        Parameters:
+        V : array_like
+            Membrane potential.
+        K : IonInfo
+            Information about potassium ions.
+        Ca : IonInfo
+            Information about calcium ions.
+        batch_size : int, optional
+            The batch size for resetting.
+        """
         pass
 
 

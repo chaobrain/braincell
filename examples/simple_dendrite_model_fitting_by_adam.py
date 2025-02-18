@@ -14,8 +14,8 @@
 # ==============================================================================
 import functools
 
-import brainstate as bst
-import braintools as bts
+import brainstate
+import braintools
 import brainunit as u
 import jax
 import matplotlib.pyplot as plt
@@ -23,14 +23,14 @@ import numpy as np
 
 from simple_dendrite_model_simulation import solve_explicit_solver
 
-bst.environ.set(precision=64)
+brainstate.environ.set(precision=64)
 
 
 def visualize_a_simulate(params, f_current, show=True, title=''):
     saveat = u.math.arange(0., 100., 0.1) * u.ms
     ts, vs, _ = solve_explicit_solver(params, f_current, saveat)
 
-    fig, gs = bts.visualize.get_figure(1, 1, 3.0, 4.0)
+    fig, gs = braintools.visualize.get_figure(1, 1, 3.0, 4.0)
     ax = fig.add_subplot(gs[0, 0])
     plt.plot(ts.to_decimal(u.ms), u.math.squeeze(vs.to_decimal(u.mV)))
     plt.xlabel('Time [ms]')
@@ -87,7 +87,7 @@ def fitting_example():
         np.asarray([0.2, 0.1])
     ]
     n_batch = 8
-    param_to_optimize = bst.ParamState(bst.random.uniform(bounds[0], bounds[1], (n_batch, bounds[0].size)))
+    param_to_optimize = brainstate.ParamState(brainstate.random.uniform(bounds[0], bounds[1], (n_batch, bounds[0].size)))
 
     # Step 5: define the loss function and optimizers
 
@@ -95,28 +95,28 @@ def fitting_example():
     # the mismatch between the 4 simulated and target potentials
     def loss_per_param(param, step=10):
         simulated_vs = simulate_per_param(param)  # [n_input, T, n_compartment]
-        losses = bts.metric.squared_error(simulated_vs.mantissa[..., ::step, 0], target_vs.mantissa[..., ::step, 0])
+        losses = braintools.metric.squared_error(simulated_vs.mantissa[..., ::step, 0], target_vs.mantissa[..., ::step, 0])
         return losses.mean()
 
     # calculate the gradients and loss for each parameter
     @jax.vmap
     @jax.jit
     def compute_grad(param):
-        grads, loss = bst.augment.grad(loss_per_param, argnums=0, return_value=True)(param)
+        grads, loss = brainstate.augment.grad(loss_per_param, argnums=0, return_value=True)(param)
         return grads, loss
 
     # find the best loss and parameter in the batch
-    @bst.compile.jit
+    @brainstate.compile.jit
     def best_loss_and_param(params, losses):
         i_best = u.math.argmin(losses)
         return losses[i_best], params[i_best]
 
     # define the optimizer
-    optimizer = bst.optim.Adam(lr=1e-3)
+    optimizer = brainstate.optim.Adam(lr=1e-3)
     optimizer.register_trainable_weights({'param': param_to_optimize})
 
     # Step 6: training
-    @bst.compile.jit
+    @brainstate.compile.jit
     def train_step_per_epoch():
         grads, losses = compute_grad(param_to_optimize.value)
         optimizer.update({'param': grads})

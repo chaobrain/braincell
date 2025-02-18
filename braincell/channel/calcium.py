@@ -34,28 +34,80 @@ __all__ = [
 
 
 class CalciumChannel(Channel):
-    """Base class for Calcium ion channel."""
+    """
+    Base class for Calcium ion channel.
+
+    This class provides a template for implementing various types of calcium ion channels.
+    It inherits from the Channel class and specifies Calcium as the root_type.
+    """
 
     __module__ = 'braincell.channel'
 
     root_type = Calcium
 
     def pre_integral(self, V, Ca: IonInfo):
+        """
+        Perform pre-integration operations.
+
+        Parameters:
+            V: The membrane potential.
+            Ca (IonInfo): Information about the Calcium ion.
+        """
         pass
 
     def post_integral(self, V, Ca: IonInfo):
+        """
+        Perform post-integration operations.
+
+        Parameters:
+            V: The membrane potential.
+            Ca (IonInfo): Information about the Calcium ion.
+        """
         pass
 
     def compute_derivative(self, V, Ca: IonInfo):
+        """
+        Compute the derivative of the channel state.
+
+        Parameters:
+            V: The membrane potential.
+            Ca (IonInfo): Information about the Calcium ion.
+        """
         pass
 
     def current(self, V, Ca: IonInfo):
+        """
+        Calculate the current through the channel.
+
+        Parameters:
+            V: The membrane potential.
+            Ca (IonInfo): Information about the Calcium ion.
+
+        Raises:
+            NotImplementedError: This method must be implemented by subclasses.
+        """
         raise NotImplementedError
 
     def init_state(self, V, Ca: IonInfo, batch_size: int = None):
+        """
+        Initialize the state of the channel.
+
+        Parameters:
+            V: The membrane potential.
+            Ca (IonInfo): Information about the Calcium ion.
+            batch_size (int, optional): The batch size for initialization.
+        """
         pass
 
     def reset_state(self, V, Ca: IonInfo, batch_size: int = None):
+        """
+        Reset the state of the channel.
+
+        Parameters:
+            V: The membrane potential.
+            Ca (IonInfo): Information about the Calcium ion.
+            batch_size (int, optional): The batch size for resetting.
+        """
         pass
 
 

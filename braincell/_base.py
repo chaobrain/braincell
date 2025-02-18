@@ -400,7 +400,7 @@ class HHTypedNeuron(brainstate.nn.Dynamics, Container, DiffEqModule):
         for channel in nodes:
             channel.reset_state(self.V.value, batch_size=batch_size)
 
-    def add_elem(self, **elements):
+    def add(self, **elements):
         """
         Add new elements to the neuron group.
     
@@ -936,7 +936,7 @@ class Ion(IonChannel, Container):
         C = self.C.value if isinstance(self.C, brainstate.State) else self.C
         return IonInfo(E=E, C=C)
 
-    def add_elem(self, **elements):
+    def add(self, **elements):
         """
         Add new channel elements to the Ion instance.
     
@@ -1258,7 +1258,7 @@ class MixIons(IonChannel, Container):
                     f'of {leaf.root_type}, but the master type now is {ions}.'
                 )
 
-    def add_elem(self, **elements):
+    def add(self, **elements):
         """
         Add new channel elements to the MixIons instance.
     

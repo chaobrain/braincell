@@ -145,7 +145,7 @@ class Golgi(braincell.neuron.MultiCompartment):
 
         self.IL = braincell.channel.IL(self.size, E=-55. * u.mV, g_max=gl * u.mS / (u.cm ** 2))
         self.k = braincell.ion.PotassiumFixed(self.size, E=-80. * u.mV)
-        self.k.add_elem(k=braincell.channel.IKv11_Ak2007(self.size, g_max=gkv11 * u.mS / (u.cm ** 2)))
+        self.k.add(k=braincell.channel.IKv11_Ak2007(self.size, g_max=gkv11 * u.mS / (u.cm ** 2)))
 
 
 @bst.compile.jit(static_argnums=6)

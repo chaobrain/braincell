@@ -100,7 +100,7 @@ class Container(brainstate.mixin.Mixin):
                 return children
             return children[item] if item in children else super().__getattribute__(item)
 
-    def add_elem(self, *elems, **elements):
+    def add(self, *elems, **elements):
         """
         Add new elements.
 
@@ -108,6 +108,9 @@ class Container(brainstate.mixin.Mixin):
           elements: children objects.
         """
         raise NotImplementedError('Must be implemented by the subclass.')
+
+    def add_elem(self, **elements):
+        self.add(**elements)
 
 
 class TreeNode(brainstate.mixin.Mixin):

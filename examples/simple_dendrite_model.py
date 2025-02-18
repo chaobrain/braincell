@@ -85,10 +85,10 @@ class ThreeCompartmentHH(braincell.neuron.MultiCompartment):
         self.IL = braincell.channel.IL(self.size, E=(-54.3, -65., -65.) * u.mV, g_max=[0.0003, 0.001, 0.001] * s)
 
         self.na = braincell.ion.SodiumFixed(self.size, E=50. * u.mV)
-        self.na.add_elem(INa=INa(self.size, g_max=(g_na, 0., 0.) * s))
+        self.na.add(INa=INa(self.size, g_max=(g_na, 0., 0.) * s))
 
         self.k = braincell.ion.PotassiumFixed(self.size, E=-77. * u.mV)
-        self.k.add_elem(IK=IK(self.size, g_max=(g_k, 0., 0.) * s))
+        self.k.add(IK=IK(self.size, g_max=(g_k, 0., 0.) * s))
 
     def step_run(self, t, inp):
         braincell.rk4_step(self, t, inp)

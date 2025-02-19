@@ -18,7 +18,7 @@ from __future__ import annotations
 
 from typing import Union, Callable, Optional
 
-import brainstate as bst
+import brainstate
 import brainunit as u
 
 from braincell._base import Ion, Channel
@@ -30,7 +30,17 @@ __all__ = [
 
 
 class Potassium(Ion):
-    """Base class for modeling Potassium ion."""
+    """
+    Base class for modeling Potassium ion.
+
+    This class serves as a foundation for implementing various Potassium ion models
+    in neuronal simulations. It inherits from the Ion base class and provides a
+    structure for defining Potassium-specific properties and behaviors.
+
+    Note:
+        This is an abstract base class and should be subclassed to create specific
+        Potassium ion models with defined dynamics and properties.
+    """
     __module__ = 'braincell.ion'
 
 
@@ -44,18 +54,18 @@ class PotassiumFixed(Potassium):
 
     def __init__(
         self,
-        size: bst.typing.Size,
-        E: Union[bst.typing.ArrayLike, Callable] = -95. * u.mV,
-        C: Union[bst.typing.ArrayLike, Callable] = 0.0400811 * u.mM,
+        size: brainstate.typing.Size,
+        E: Union[brainstate.typing.ArrayLike, Callable] = -95. * u.mV,
+        C: Union[brainstate.typing.ArrayLike, Callable] = 0.0400811 * u.mM,
         name: Optional[str] = None,
         **channels
     ):
         super().__init__(size, name=name, **channels)
-        self.E = bst.init.param(E, self.varshape)
-        self.C = bst.init.param(C, self.varshape)
+        self.E = brainstate.init.param(E, self.varshape)
+        self.C = brainstate.init.param(C, self.varshape)
 
     def reset_state(self, V, batch_size=None):
-        nodes = bst.graph.nodes(self, Channel, allowed_hierarchy=(1, 1)).values()
+        nodes = brainstate.graph.nodes(self, Channel, allowed_hierarchy=(1, 1)).values()
         self.check_hierarchies(type(self), *tuple(nodes))
         ion_info = self.pack_info()
         for node in nodes:

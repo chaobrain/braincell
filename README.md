@@ -19,9 +19,6 @@
 </p>
 
 
-[//]: # ([``braincell``]&#40;https://github.com/chaobrain/braincell&#41; provides physical units and unit-aware mathematical system in JAX for brain dynamics and AI4Science)
-    
-
 ## Installation
 
 You can install ``braincell`` via pip:

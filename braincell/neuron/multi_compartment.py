@@ -15,12 +15,13 @@
 
 from __future__ import annotations
 
-import brainunit as u
-import jax
-import numpy as np
 from typing import Union, Optional, Callable, Sequence, Tuple
 
 import brainstate as bst
+import brainunit as u
+import jax
+import numpy as np
+
 from braincell._base import HHTypedNeuron, IonChannel
 from braincell._integrators import DiffEqState
 
@@ -170,18 +171,23 @@ class MultiCompartment(HHTypedNeuron):
         self.V_initializer = V_initializer
         self.spk_fun = spk_fun
 
+    @property
+    def pop_size(self) -> Tuple[int, ...]:
+        return self.varshape[:-1]
+
+    @property
+    def n_compartment(self) -> int:
+        return self.varshape[-1]
+
     def init_state(self, batch_size=None):
         self.V = DiffEqState(bst.init.param(self.V_initializer, self.varshape, batch_size))
-        self._v_last_time = None
         super().init_state(batch_size)
 
     def reset_state(self, batch_size=None):
         self.V.value = bst.init.param(self.V_initializer, self.varshape, batch_size)
-        self._v_last_time = None
         super().reset_state(batch_size)
 
     def pre_integral(self, *args):
-        self._v_last_time = self.V.value
         for key, node in self.nodes(IonChannel, allowed_hierarchy=(1, 1)).items():
             node.pre_integral(self.V.value)
 
@@ -209,16 +215,17 @@ class MultiCompartment(HHTypedNeuron):
         self.V.value = self.sum_delta_inputs(init=self.V.value)
         for key, node in self.nodes(IonChannel, allowed_hierarchy=(1, 1)).items():
             node.post_integral(self.V.value)
-        return self.get_spike()
 
     def update(self, I_ext=0. * u.nA):
+        last_V = self.V.value
         t = bst.environ.get('t')
         self.solver(self, t, I_ext)
-        return self.post_integral(I_ext)
+        self.post_integral(I_ext)
+        return self.get_spike(last_V, self.V.value)
 
-    def get_spike(self):
-        if not hasattr(self, '_v_last_time'):
-            raise ValueError("The membrane potential is not initialized.")
-        if self._v_last_time is None:
-            raise ValueError("The membrane potential is not initialized.")
-        return self.spk_fun(self.V.value - self.V_th) * self.spk_fun(self.V_th - self._v_last_time)
+    def get_spike(self, last_V, next_V):
+        denom = 20.0 * u.mV
+        return (
+            self.spk_fun((next_V - self.V_th) / denom) *
+            self.spk_fun((self.V_th - last_V) / denom)
+        )

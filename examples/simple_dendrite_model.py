@@ -13,7 +13,7 @@
 # limitations under the License.
 # ==============================================================================
 
-import brainstate as bst
+import brainstate
 import brainunit as u
 
 import braincell
@@ -25,7 +25,7 @@ class INa(braincell.channel.SodiumChannel):
     def __init__(self, size, g_max):
         super().__init__(size)
 
-        self.g_max = bst.init.param(g_max, self.varshape)
+        self.g_max = brainstate.init.param(g_max, self.varshape)
 
     def init_state(self, V, Na: braincell.IonInfo, batch_size: int = None):
         self.m = braincell.DiffEqState(self.m_inf(V))
@@ -52,7 +52,7 @@ class INa(braincell.channel.SodiumChannel):
 class IK(braincell.channel.PotassiumChannel):
     def __init__(self, size, g_max):
         super().__init__(size)
-        self.g_max = bst.init.param(g_max, self.varshape)
+        self.g_max = brainstate.init.param(g_max, self.varshape)
 
     def init_state(self, V, K: braincell.IonInfo, batch_size: int = None):
         self.n = braincell.DiffEqState(self.n_inf(V))
@@ -78,17 +78,17 @@ class ThreeCompartmentHH(braincell.neuron.MultiCompartment):
             diam=(12.6157, 1., 1.) * u.um,
             L=(12.6157, 200., 400.) * u.um,
             V_th=20. * u.mV,
-            V_initializer=bst.init.Constant(-65 * u.mV),
-            spk_fun=bst.surrogate.ReluGrad(),
+            V_initializer=brainstate.init.Constant(-65 * u.mV),
+            spk_fun=brainstate.surrogate.ReluGrad(),
         )
 
         self.IL = braincell.channel.IL(self.size, E=(-54.3, -65., -65.) * u.mV, g_max=[0.0003, 0.001, 0.001] * s)
 
         self.na = braincell.ion.SodiumFixed(self.size, E=50. * u.mV)
-        self.na.add_elem(INa=INa(self.size, g_max=(g_na, 0., 0.) * s))
+        self.na.add(INa=INa(self.size, g_max=(g_na, 0., 0.) * s))
 
         self.k = braincell.ion.PotassiumFixed(self.size, E=-77. * u.mV)
-        self.k.add_elem(IK=IK(self.size, g_max=(g_k, 0., 0.) * s))
+        self.k.add(IK=IK(self.size, g_max=(g_k, 0., 0.) * s))
 
     def step_run(self, t, inp):
         braincell.rk4_step(self, t, inp)

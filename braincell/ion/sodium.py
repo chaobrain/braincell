@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from typing import Union, Callable, Optional
 
-import brainstate as bst
+import brainstate
 import brainunit as u
 
 from braincell._base import Ion
@@ -29,9 +29,18 @@ __all__ = [
 
 
 class Sodium(Ion):
-    """Base class for modeling Sodium ion."""
-    __module__ = 'braincell.ion'
+    """
+    Base class for modeling Sodium ion.
 
+    This class serves as a foundation for creating specific sodium ion models
+    in neuronal simulations. It inherits from the Ion base class and provides
+    a starting point for implementing various sodium dynamics.
+
+    Note:
+        This is an abstract base class and should be subclassed to implement
+        specific sodium ion models with defined dynamics and properties.
+    """
+    __module__ = 'braincell.ion'
 
 class SodiumFixed(Sodium):
     """
@@ -44,12 +53,12 @@ class SodiumFixed(Sodium):
 
     def __init__(
         self,
-        size: bst.typing.Size,
-        E: Union[bst.typing.ArrayLike, Callable] = 50. * u.mV,
-        C: Union[bst.typing.ArrayLike, Callable] = 0.0400811 * u.mM,
+        size: brainstate.typing.Size,
+        E: Union[brainstate.typing.ArrayLike, Callable] = 50. * u.mV,
+        C: Union[brainstate.typing.ArrayLike, Callable] = 0.0400811 * u.mM,
         name: Optional[str] = None,
         **channels
     ):
         super().__init__(size, name=name, **channels)
-        self.E = bst.init.param(E, self.varshape, allow_none=False)
-        self.C = bst.init.param(C, self.varshape, allow_none=False)
+        self.E = brainstate.init.param(E, self.varshape, allow_none=False)
+        self.C = brainstate.init.param(C, self.varshape, allow_none=False)

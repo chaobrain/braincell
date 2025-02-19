@@ -9,8 +9,8 @@ from __future__ import annotations
 
 from typing import Union, Callable, Sequence, Optional
 
-import brainstate as bst
-import brainunit as bu
+import brainstate
+import brainunit as u
 
 from braincell._base import HHTypedNeuron, Channel
 
@@ -29,21 +29,78 @@ class LeakageChannel(Channel):
     root_type = HHTypedNeuron
 
     def pre_integral(self, V):
+        """
+        Perform any necessary operations before the integration step.
+
+        Parameters:
+        -----------
+        V : array-like
+            The membrane potential.
+        """
         pass
 
     def post_integral(self, V):
+        """
+        Perform any necessary operations after the integration step.
+
+        Parameters:
+        -----------
+        V : array-like
+            The membrane potential.
+        """
         pass
 
     def compute_derivative(self, V):
+        """
+        Compute the derivative of the channel state variables.
+
+        Parameters:
+        -----------
+        V : array-like
+            The membrane potential.
+        """
         pass
 
     def current(self, V):
+        """
+        Calculate the current through the leakage channel.
+
+        Parameters:
+        -----------
+        V : array-like
+            The membrane potential.
+
+        Raises:
+        -------
+        NotImplementedError
+            This method should be implemented by subclasses.
+        """
         raise NotImplementedError
 
     def init_state(self, V, batch_size: int = None):
+        """
+        Initialize the state of the leakage channel.
+
+        Parameters:
+        -----------
+        V : array-like
+            The membrane potential.
+        batch_size : int, optional
+            The batch size for initialization.
+        """
         pass
 
     def reset_state(self, V, batch_size: int = None):
+        """
+        Reset the state of the leakage channel.
+
+        Parameters:
+        -----------
+        V : array-like
+            The membrane potential.
+        batch_size : int, optional
+            The batch size for resetting.
+        """
         pass
 
 
@@ -63,14 +120,14 @@ class IL(LeakageChannel):
     def __init__(
         self,
         size: Union[int, Sequence[int]],
-        g_max: Union[bst.typing.ArrayLike, Callable] = 0.1 * (bu.mS / bu.cm ** 2),
-        E: Union[bst.typing.ArrayLike, Callable] = -70. * bu.mV,
+        g_max: Union[brainstate.typing.ArrayLike, Callable] = 0.1 * (u.mS / u.cm ** 2),
+        E: Union[brainstate.typing.ArrayLike, Callable] = -70. * u.mV,
         name: Optional[str] = None,
     ):
         super().__init__(size=size, name=name, )
 
-        self.E = bst.init.param(E, self.varshape, allow_none=False)
-        self.g_max = bst.init.param(g_max, self.varshape, allow_none=False)
+        self.E = brainstate.init.param(E, self.varshape, allow_none=False)
+        self.g_max = brainstate.init.param(g_max, self.varshape, allow_none=False)
 
     def current(self, V):
         return self.g_max * (self.E - V)

@@ -16,8 +16,8 @@
 
 from typing import Union, Callable
 
-import brainstate as bst
-import braintools as bts
+import brainstate
+import braintools
 import brainunit as u
 import jax
 import matplotlib.pyplot as plt
@@ -26,7 +26,7 @@ import pandas as pd
 
 import braincell
 
-bst.environ.set(dt=0.01 * u.ms)
+brainstate.environ.set(dt=0.01 * u.ms)
 
 # Load Input and Output Data
 df_inp_traces = pd.read_csv('neuron_data/input_traces_hh.csv')
@@ -42,19 +42,19 @@ class INa(braincell.Channel):
 
     def __init__(
         self,
-        size: bst.typing.Size,
-        ENa: Union[bst.typing.ArrayLike, Callable] = 50. * u.mV,
-        gNa: Union[bst.typing.ArrayLike, Callable] = 120. * u.mS,
-        vth: Union[bst.typing.ArrayLike, Callable] = -63 * u.mV,
+        size: brainstate.typing.Size,
+        ENa: Union[brainstate.typing.ArrayLike, Callable] = 50. * u.mV,
+        gNa: Union[brainstate.typing.ArrayLike, Callable] = 120. * u.mS,
+        vth: Union[brainstate.typing.ArrayLike, Callable] = -63 * u.mV,
     ):
         super().__init__(size)
-        self.ENa = bst.init.param(ENa, self.varshape)
-        self.gNa = bst.init.param(gNa, self.varshape)
-        self.V_th = bst.init.param(vth, self.varshape)
+        self.ENa = brainstate.init.param(ENa, self.varshape)
+        self.gNa = brainstate.init.param(gNa, self.varshape)
+        self.V_th = brainstate.init.param(vth, self.varshape)
 
     def init_state(self, V, batch_size=None):
-        self.m = braincell.DiffEqState(bst.init.param(u.math.zeros, self.varshape))
-        self.h = braincell.DiffEqState(bst.init.param(u.math.zeros, self.varshape))
+        self.m = braincell.DiffEqState(brainstate.init.param(u.math.zeros, self.varshape))
+        self.h = braincell.DiffEqState(brainstate.init.param(u.math.zeros, self.varshape))
 
     #  m channel
     m_alpha = lambda self, V: 0.32 * 4 / u.math.exprel((13. * u.mV - V + self.V_th).to_decimal(u.mV) / 4.)
@@ -83,18 +83,18 @@ class IK(braincell.Channel):
 
     def __init__(
         self,
-        size: bst.typing.Size,
-        EK: Union[bst.typing.ArrayLike, Callable] = -90. * u.mV,
-        gK: Union[bst.typing.ArrayLike, Callable] = 36. * u.mS,
-        vth: Union[bst.typing.ArrayLike, Callable] = -63 * u.mV,
+        size: brainstate.typing.Size,
+        EK: Union[brainstate.typing.ArrayLike, Callable] = -90. * u.mV,
+        gK: Union[brainstate.typing.ArrayLike, Callable] = 36. * u.mS,
+        vth: Union[brainstate.typing.ArrayLike, Callable] = -63 * u.mV,
     ):
         super().__init__(size)
-        self.EK = bst.init.param(EK, self.varshape)
-        self.gK = bst.init.param(gK, self.varshape)
-        self.V_th = bst.init.param(vth, self.varshape)
+        self.EK = brainstate.init.param(EK, self.varshape)
+        self.gK = brainstate.init.param(gK, self.varshape)
+        self.V_th = brainstate.init.param(vth, self.varshape)
 
     def init_state(self, V, batch_size=None):
-        self.n = braincell.DiffEqState(bst.init.param(u.math.zeros, self.varshape))
+        self.n = braincell.DiffEqState(brainstate.init.param(u.math.zeros, self.varshape))
 
     # n channel
     n_alpha = lambda self, V: 0.032 * 5 / u.math.exprel((15. * u.mV - V + self.V_th).to_decimal(u.mV) / 5.)
@@ -114,11 +114,11 @@ class HH(braincell.neuron.SingleCompartment):
     def __init__(
         self,
         size,
-        v_initializer: Callable = bst.init.Uniform(-70 * u.mV, -60. * u.mV),
-        gL: Union[bst.typing.ArrayLike, Callable] = 0.003 * u.mS,
-        gNa: Union[bst.typing.ArrayLike, Callable] = 120. * u.mS,
-        gK: Union[bst.typing.ArrayLike, Callable] = 36. * u.mS,
-        C: Union[bst.typing.ArrayLike, Callable] = 1. * (u.uF / u.cm ** 2)
+        v_initializer: Callable = brainstate.init.Uniform(-70 * u.mV, -60. * u.mV),
+        gL: Union[brainstate.typing.ArrayLike, Callable] = 0.003 * u.mS,
+        gNa: Union[brainstate.typing.ArrayLike, Callable] = 120. * u.mS,
+        gK: Union[brainstate.typing.ArrayLike, Callable] = 36. * u.mS,
+        C: Union[brainstate.typing.ArrayLike, Callable] = 1. * (u.uF / u.cm ** 2)
     ):
         super().__init__(size, V_initializer=v_initializer, C=C)
         self.ina = INa(size, gNa=gNa)
@@ -127,7 +127,7 @@ class HH(braincell.neuron.SingleCompartment):
 
 
 def visualize_target(voltages):
-    fig, gs = bts.visualize.get_figure(2, voltages.shape[1], 3, 4.5)
+    fig, gs = braintools.visualize.get_figure(2, voltages.shape[1], 3, 4.5)
     times = np.arange(voltages.shape[0]) * 0.01
     for i in range(voltages.shape[1]):
         ax = fig.add_subplot(gs[0, i])
@@ -146,7 +146,7 @@ def visualize(voltages, gl, g_na, g_kd, C):
     simulated_vs = simulate_model(gl, g_na, g_kd, C)
     voltages = voltages.mantissa
 
-    fig, gs = bts.visualize.get_figure(2, simulated_vs.shape[1], 3, 4.5)
+    fig, gs = braintools.visualize.get_figure(2, simulated_vs.shape[1], 3, 4.5)
     for i in range(simulated_vs.shape[1]):
         ax = fig.add_subplot(gs[0, i])
         ax.plot(voltages[:, i], label='target')
@@ -161,23 +161,23 @@ def simulate_model(gl, g_na, g_kd, C):
     current = inp_traces.T
     assert current.ndim == 2  # [T, B]
     n_input = current.shape[1]
-    hh = HH((n_input, 1), gL=gl, gNa=g_na, gK=g_kd, C=C, v_initializer=bst.init.Constant(-65. * u.mV), )
+    hh = HH((n_input, 1), gL=gl, gNa=g_na, gK=g_kd, C=C, v_initializer=brainstate.init.Constant(-65. * u.mV), )
     hh.init_state()
 
     def step_fun(i, inp):
-        with bst.environ.context(i=i, t=bst.environ.get_dt() * i):
-            braincell.rk4_step(hh, bst.environ.get('t'), inp)
+        with brainstate.environ.context(i=i, t=brainstate.environ.get_dt() * i):
+            braincell.rk4_step(hh, brainstate.environ.get('t'), inp)
         return hh.V.value
 
     indices = np.arange(current.shape[0])
     current = u.math.expand_dims(current, axis=-1)  # [T, B, 1]
-    return bst.compile.for_loop(step_fun, indices, current)  # (T, B)
+    return brainstate.compile.for_loop(step_fun, indices, current)  # (T, B)
 
 
-@bst.compile.jit
+@brainstate.compile.jit
 def compare_potentials(param):
     vs = simulate_model(param['gl'], param['g_na'], param['g_kd'], param['C'])  # (T, B)
-    losses = bts.metric.squared_error(vs.mantissa, target_vs.mantissa)
+    losses = braintools.metric.squared_error(vs.mantissa, target_vs.mantissa)
     return losses.mean()
 
 
@@ -203,7 +203,7 @@ def visualize_hh_input_and_output():
 
     indices = np.arange(inp_traces.shape[1]) * 0.01
 
-    fig, gs = bts.visualize.get_figure(3, 1, 1.2, 6.0)
+    fig, gs = braintools.visualize.get_figure(3, 1, 1.2, 6.0)
     ax = fig.add_subplot(gs[0, 0])
     ax.plot(indices, inp_traces.T)
     plt.xticks([])
@@ -234,7 +234,7 @@ def fitting_by_others(method='DE', n_sample=200, n_iter=20):
     def loss_with_multiple_run(**params):
         return compare_potentials(params)
 
-    opt = bts.optim.NevergradOptimizer(
+    opt = braintools.optim.NevergradOptimizer(
         loss_with_multiple_run,
         n_sample=n_sample,
         bounds=bounds,

@@ -19,7 +19,7 @@ from __future__ import annotations
 
 from typing import Union, Callable, Optional
 
-import brainstate as bst
+import brainstate
 import brainunit as u
 
 from braincell._base import Ion, Channel, HHTypedNeuron
@@ -34,7 +34,16 @@ __all__ = [
 
 
 class Calcium(Ion):
-    """Base class for modeling Calcium ion."""
+    """
+    Base class for modeling Calcium ion.
+
+    This class serves as the foundation for all calcium ion models in the braincell library.
+    It inherits from the Ion class and sets the root_type to HHTypedNeuron.
+
+    Note:
+        This is an abstract base class and should be subclassed to implement specific
+        calcium ion models with their own dynamics and properties.
+    """
     __module__ = 'braincell.ion'
 
     root_type = HHTypedNeuron
@@ -50,19 +59,19 @@ class CalciumFixed(Calcium):
 
     def __init__(
         self,
-        size: bst.typing.Size,
-        E: Union[bst.typing.ArrayLike, Callable] = 120. * u.mV,
-        C: Union[bst.typing.ArrayLike, Callable] = 2.4e-4 * u.mM,
+        size: brainstate.typing.Size,
+        E: Union[brainstate.typing.ArrayLike, Callable] = 120. * u.mV,
+        C: Union[brainstate.typing.ArrayLike, Callable] = 2.4e-4 * u.mM,
         name: Optional[str] = None,
         **channels
     ):
         super().__init__(size, name=name, **channels)
-        self.E = bst.init.param(E, self.varshape, allow_none=False)
-        self.C = bst.init.param(C, self.varshape, allow_none=False)
+        self.E = brainstate.init.param(E, self.varshape, allow_none=False)
+        self.C = brainstate.init.param(C, self.varshape, allow_none=False)
 
     def reset_state(self, V, batch_size=None):
         ca_info = self.pack_info()
-        nodes = bst.graph.nodes(self, Channel, allowed_hierarchy=(1, 1)).values()
+        nodes = brainstate.graph.nodes(self, Channel, allowed_hierarchy=(1, 1)).values()
         self.check_hierarchies(type(self), *tuple(nodes))
         for node in nodes:
             node.reset_state(V, ca_info, batch_size=batch_size)
@@ -75,11 +84,11 @@ class _CalciumDynamics(Calcium):
     ----------
     size: int, tuple of int
       The ion size.
-    C0: bst.typing.ArrayLike, Callable
+    C0: brainstate.typing.ArrayLike, Callable
       The Calcium concentration outside of membrane.
-    T: bst.typing.ArrayLike, Callable
+    T: brainstate.typing.ArrayLike, Callable
       The temperature.
-    C_initializer: bst.typing.ArrayLike, Callable
+    C_initializer: brainstate.typing.ArrayLike, Callable
       The initializer for Calcium concentration.
     name: str
       The ion name.
@@ -87,28 +96,28 @@ class _CalciumDynamics(Calcium):
 
     def __init__(
         self,
-        size: bst.typing.Size,
-        C0: Union[bst.typing.ArrayLike, Callable] = 2. * u.mM,
-        T: Union[bst.typing.ArrayLike, Callable] = u.celsius2kelvin(36.),
-        C_initializer: Union[bst.typing.ArrayLike, Callable] = bst.init.Constant(2.4e-4 * u.mM),
+        size: brainstate.typing.Size,
+        C0: Union[brainstate.typing.ArrayLike, Callable] = 2. * u.mM,
+        T: Union[brainstate.typing.ArrayLike, Callable] = u.celsius2kelvin(36.),
+        C_initializer: Union[brainstate.typing.ArrayLike, Callable] = brainstate.init.Constant(2.4e-4 * u.mM),
         name: Optional[str] = None,
         **channels
     ):
         super().__init__(size, name=name, **channels)
 
         # parameters
-        self.C0 = bst.init.param(C0, self.varshape, allow_none=False)
-        self.T = bst.init.param(T, self.varshape, allow_none=False)  # temperature
+        self.C0 = brainstate.init.param(C0, self.varshape, allow_none=False)
+        self.T = brainstate.init.param(T, self.varshape, allow_none=False)  # temperature
         self._constant = u.gas_constant * self.T / (2 * u.faraday_constant)
         self._C_initializer = C_initializer
 
     def init_state(self, V, batch_size=None):
         # Calcium concentration
-        self.C = DiffEqState(bst.init.param(self._C_initializer, self.varshape, batch_size))
+        self.C = DiffEqState(brainstate.init.param(self._C_initializer, self.varshape, batch_size))
         super().init_state(V, batch_size)
 
     def reset_state(self, V, batch_size=None):
-        self.C.value = bst.init.param(self._C_initializer, self.varshape, batch_size)
+        self.C.value = brainstate.init.param(self._C_initializer, self.varshape, batch_size)
         super().reset_state(V, batch_size)
 
     def derivative(self, C, V):
@@ -116,7 +125,7 @@ class _CalciumDynamics(Calcium):
 
     def compute_derivative(self, V):
         ca_info = self.pack_info()
-        nodes = bst.graph.nodes(self, Channel, allowed_hierarchy=(1, 1)).values()
+        nodes = brainstate.graph.nodes(self, Channel, allowed_hierarchy=(1, 1)).values()
         self.check_hierarchies(type(self), *tuple(nodes))
         for node in nodes:
             node.compute_derivative(V, ca_info)
@@ -246,22 +255,22 @@ class CalciumDetailed(_CalciumDynamics):
 
     def __init__(
         self,
-        size: bst.typing.Size,
-        T: Union[bst.typing.ArrayLike, Callable] = u.celsius2kelvin(36.),
-        d: Union[bst.typing.ArrayLike, Callable] = 1. * u.um,
-        tau: Union[bst.typing.ArrayLike, Callable] = 5. * u.ms,
-        C_rest: Union[bst.typing.ArrayLike, Callable] = 2.4e-4 * u.mM,
-        C0: Union[bst.typing.ArrayLike, Callable] = 2. * u.mM,
-        C_initializer: Union[bst.typing.ArrayLike, Callable] = bst.init.Constant(2.4e-4 * u.mM),
+        size: brainstate.typing.Size,
+        T: Union[brainstate.typing.ArrayLike, Callable] = u.celsius2kelvin(36.),
+        d: Union[brainstate.typing.ArrayLike, Callable] = 1. * u.um,
+        tau: Union[brainstate.typing.ArrayLike, Callable] = 5. * u.ms,
+        C_rest: Union[brainstate.typing.ArrayLike, Callable] = 2.4e-4 * u.mM,
+        C0: Union[brainstate.typing.ArrayLike, Callable] = 2. * u.mM,
+        C_initializer: Union[brainstate.typing.ArrayLike, Callable] = brainstate.init.Constant(2.4e-4 * u.mM),
         name: Optional[str] = None,
         **channels
     ):
         super().__init__(size, name=name, T=T, C0=C0, C_initializer=C_initializer, **channels)
 
         # parameters
-        self.d = bst.init.param(d, self.varshape, allow_none=False)
-        self.tau = bst.init.param(tau, self.varshape, allow_none=False)
-        self.C_rest = bst.init.param(C_rest, self.varshape, allow_none=False)
+        self.d = brainstate.init.param(d, self.varshape, allow_none=False)
+        self.tau = brainstate.init.param(tau, self.varshape, allow_none=False)
+        self.C_rest = brainstate.init.param(C_rest, self.varshape, allow_none=False)
 
     def derivative(self, C, V):
         ICa = self.current(V, include_external=True)
@@ -283,12 +292,12 @@ class CalciumFirstOrder(_CalciumDynamics):
 
     def __init__(
         self,
-        size: bst.typing.Size,
-        T: Union[bst.typing.ArrayLike, Callable] = u.celsius2kelvin(36.),
-        alpha: Union[bst.typing.ArrayLike, Callable] = 0.13,
-        beta: Union[bst.typing.ArrayLike, Callable] = 0.075,
-        C0: Union[bst.typing.ArrayLike, Callable] = 2. * u.mM,
-        C_initializer: Union[bst.typing.ArrayLike, Callable] = bst.init.Constant(2.4e-4 * u.mM),
+        size: brainstate.typing.Size,
+        T: Union[brainstate.typing.ArrayLike, Callable] = u.celsius2kelvin(36.),
+        alpha: Union[brainstate.typing.ArrayLike, Callable] = 0.13,
+        beta: Union[brainstate.typing.ArrayLike, Callable] = 0.075,
+        C0: Union[brainstate.typing.ArrayLike, Callable] = 2. * u.mM,
+        C_initializer: Union[brainstate.typing.ArrayLike, Callable] = brainstate.init.Constant(2.4e-4 * u.mM),
         name: Optional[str] = None,
         **channels
     ):
@@ -302,8 +311,8 @@ class CalciumFirstOrder(_CalciumDynamics):
         )
 
         # parameters
-        self.alpha = bst.init.param(alpha, self.varshape, allow_none=False)
-        self.beta = bst.init.param(beta, self.varshape, allow_none=False)
+        self.alpha = brainstate.init.param(alpha, self.varshape, allow_none=False)
+        self.beta = brainstate.init.param(beta, self.varshape, allow_none=False)
 
     def derivative(self, C, V):
         ICa = self.current(V, include_external=True)

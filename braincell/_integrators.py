@@ -15,15 +15,16 @@
 
 from __future__ import annotations
 
-import brainunit as u
 import importlib.util
-import jax
-import jax.numpy as jnp
 from dataclasses import dataclass
-from jax.scipy.linalg import expm
 from typing import Optional, Tuple, Callable, Dict, Any, Sequence
 
-import brainstate as bst
+import brainstate
+import brainunit as u
+import jax
+import jax.numpy as jnp
+from jax.scipy.linalg import expm
+
 from ._misc import set_module_as
 from ._protocol import DiffEqState, DiffEqModule
 
@@ -95,7 +96,7 @@ def _diffrax_solve(
     adjoint: str,
     saveat: Optional[u.Quantity] = None,
     savefn: Optional[Callable] = None,
-    args: Tuple[bst.typing.PyTree] = (),
+    args: Tuple[brainstate.typing.PyTree] = (),
     rtol: Optional[float] = None,
     atol: Optional[float] = None,
     max_steps: int = None,
@@ -140,8 +141,8 @@ def _diffrax_solve(
     solver = diffrax_solvers[solver]()
 
     def model_to_derivative(t, *args):
-        with bst.environ.context(t=t * u.ms):
-            with bst.StateTraceStack() as trace:
+        with brainstate.environ.context(t=t * u.ms):
+            with brainstate.StateTraceStack() as trace:
                 model(t * u.ms, *args)
                 derivatives = []
                 for st in trace.states:
@@ -153,7 +154,7 @@ def _diffrax_solve(
                 return derivatives
 
     # stateful function and make jaxpr
-    stateful_fn = bst.compile.StatefulFunction(model_to_derivative).make_jaxpr(0., *args)
+    stateful_fn = brainstate.compile.StatefulFunction(model_to_derivative).make_jaxpr(0., *args)
 
     # states
     states = stateful_fn.get_states()
@@ -244,7 +245,7 @@ def diffrax_solve_adjoint(
     dt0: u.Quantity,
     saveat: Optional[u.Quantity],
     savefn: Optional[Callable] = None,
-    args: Tuple[bst.typing.PyTree] = (),
+    args: Tuple[brainstate.typing.PyTree] = (),
     rtol: Optional[float] = None,
     atol: Optional[float] = None,
     max_steps: Optional[int] = None,
@@ -309,12 +310,12 @@ def diffrax_solve(
     dt0: u.Quantity,
     saveat: Optional[u.Quantity] = None,
     savefn: Optional[Callable] = None,
-    args: Tuple[bst.typing.PyTree] = (),
+    args: Tuple[brainstate.typing.PyTree] = (),
     rtol: Optional[float] = None,
     atol: Optional[float] = None,
     max_steps: Optional[int] = None,
     adjoint: Any = 'checkpoint',
-) -> Tuple[u.Quantity, bst.typing.PyTree[u.Quantity], Dict]:
+) -> Tuple[u.Quantity, brainstate.typing.PyTree[u.Quantity], Dict]:
     """
     Solve the differential equations using `diffrax <https://docs.kidger.site/diffrax>`_.
 
@@ -381,8 +382,8 @@ class ButcherTableau:
 
 def _rk_update(
     coeff: Sequence,
-    st: bst.State,
-    y0: bst.typing.PyTree,
+    st: brainstate.State,
+    y0: brainstate.typing.PyTree,
     *ks
 ):
     assert len(coeff) == len(ks), 'The number of coefficients must be equal to the number of ks.'
@@ -392,7 +393,7 @@ def _rk_update(
         update = kds[0]
         for kd in kds[1:]:
             update += kd
-        return y0_ + update * bst.environ.get_dt()
+        return y0_ + update * brainstate.environ.get_dt()
 
     st.value = jax.tree.map(_step, y0, *ks, is_leaf=u.math.is_quantity)
 
@@ -404,7 +405,7 @@ def _general_rk_step(
     t: u.Quantity[u.second],
     *args
 ):
-    dt = bst.environ.get_dt()
+    dt = brainstate.environ.get_dt()
 
     # before one-step integration
     target.pre_integral(*args)
@@ -414,7 +415,7 @@ def _general_rk_step(
 
     # k1: first derivative step
     assert len(tableau.A[0]) == 0, f'The first row of A must be empty. Got {tableau.A[0]}'
-    with bst.environ.context(t=t + tableau.C[0] * dt), bst.StateTraceStack() as trace:
+    with brainstate.environ.context(t=t + tableau.C[0] * dt), brainstate.StateTraceStack() as trace:
         # compute derivative
         target.compute_derivative(*args)
 
@@ -435,14 +436,14 @@ def _general_rk_step(
 
     # intermediate steps
     for i in range(1, len(tableau.C)):
-        with bst.environ.context(t=t + tableau.C[i] * dt), bst.check_state_value_tree():
+        with brainstate.environ.context(t=t + tableau.C[i] * dt), brainstate.check_state_value_tree():
             for st, y0_, *ks_ in zip(states, y0, *ks):
                 _rk_update(tableau.A[i], st, y0_, *ks_)
             target.compute_derivative(*args)
             ks.append([st.derivative for st in states])
 
     # final step
-    with bst.check_state_value_tree():
+    with brainstate.check_state_value_tree():
         # update states with derivatives
         for st, y0_, *ks_ in zip(states, y0, *ks):
             _rk_update(tableau.B, st, y0_, *ks_)
@@ -646,7 +647,7 @@ def exponential_euler(f, y0, t, dt, args=()):
             Solution array, shape (m, n).
     """
     dt = u.get_magnitude(dt)
-    A, df, aux = bst.augment.jacfwd(lambda y: f(t, y, *args), return_value=True, has_aux=True)(y0)
+    A, df, aux = brainstate.augment.jacfwd(lambda y: f(t, y, *args), return_value=True, has_aux=True)(y0)
 
     # Compute exp(hA) and phi(hA)
     n = y0.shape[-1]
@@ -665,29 +666,36 @@ def exponential_euler(f, y0, t, dt, args=()):
 def _dict_derivative_to_arr(a_dict: Dict[Any, DiffEqState]):
     a_dict = {key: val.derivative for key, val in a_dict.items()}
     leaves = jax.tree.leaves(a_dict)
+    leaves = [jnp.expand_dims(leaf, axis=0) if leaf.ndim == 0 else leaf
+              for leaf in leaves]
     return jnp.concatenate(leaves, axis=-1)
 
 
-def _dict_state_to_arr(a_dict: Dict[Any, bst.State]):
+def _dict_state_to_arr(a_dict: Dict[Any, brainstate.State]):
     a_dict = {key: val.value for key, val in a_dict.items()}
     leaves = jax.tree.leaves(a_dict)
+    leaves = [jnp.expand_dims(leaf, axis=0) if leaf.ndim == 0 else leaf for leaf in leaves]
     return jnp.concatenate(leaves, axis=-1)
 
 
-def _assign_arr_to_states(vals: jax.Array, states: Dict[Any, bst.State]):
+def _assign_arr_to_states(vals: jax.Array, states: Dict[Any, brainstate.State]):
     leaves, tree_def = jax.tree.flatten({key: state.value for key, state in states.items()})
     index = 0
     vals_like_leaves = []
     for leaf in leaves:
-        vals_like_leaves.append(vals[..., index: index + leaf.shape[-1]])
-        index += leaf.shape[-1]
+        if leaf.ndim == 0:
+            vals_like_leaves.append(vals[..., index])
+            index += 1
+        else:
+            vals_like_leaves.append(vals[..., index: index + leaf.shape[-1]])
+            index += leaf.shape[-1]
     vals_like_states = jax.tree.unflatten(tree_def, vals_like_leaves)
     for key, state_val in vals_like_states.items():
         states[key].value = state_val
 
 
 def _transform_diffeq_module_into_dimensionless_fn(target: DiffEqModule):
-    diffeq_states, other_states = bst.graph.states(target).split(DiffEqState, ...)
+    diffeq_states, other_states = brainstate.graph.states(target).split(DiffEqState, ...)
 
     def vector_field(t, y, *args):
         # y: dimensionless states
@@ -695,7 +703,7 @@ def _transform_diffeq_module_into_dimensionless_fn(target: DiffEqModule):
         target.compute_derivative(*args)
         # derivative_arr: dimensionless derivatives
         for st in diffeq_states.values():
-            _check_diffeq_state_derivative(st, bst.environ.get_dt())
+            _check_diffeq_state_derivative(st, brainstate.environ.get_dt())
         derivative_arr = _dict_derivative_to_arr(diffeq_states)
         other_state_vals = {key: st.value for key, st in other_states.items()}
         return derivative_arr, other_state_vals
@@ -709,7 +717,7 @@ def exp_euler_step(target: DiffEqModule, t: u.Quantity[u.second], *args):
     The explicit Euler step for the differential equations.
     """
     # pre integral
-    dt = bst.environ.get_dt()
+    dt = brainstate.environ.get_dt()
     target.pre_integral(*args)
     dimensionless_fn, diffeq_states, other_states = _transform_diffeq_module_into_dimensionless_fn(target)
 

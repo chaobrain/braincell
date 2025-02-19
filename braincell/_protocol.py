@@ -16,7 +16,7 @@
 
 from __future__ import annotations
 
-import brainstate as bst
+import brainstate
 from brainstate._state import record_state_value_write
 
 __all__ = [
@@ -25,7 +25,7 @@ __all__ = [
 ]
 
 
-class DiffEqState(bst.ShortTermState):
+class DiffEqState(brainstate.ShortTermState):
     """
     A state that integrates the state of the system to the integral of the state.
 
@@ -39,8 +39,8 @@ class DiffEqState(bst.ShortTermState):
     __module__ = 'braincell'
 
     # derivative of this state
-    derivative: bst.typing.PyTree
-    diffusion: bst.typing.PyTree
+    derivative: brainstate.typing.PyTree
+    diffusion: brainstate.typing.PyTree
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -78,7 +78,7 @@ class DiffEqState(bst.ShortTermState):
         self._diffusion = value
 
 
-class DiffEqModule(bst.mixin.Mixin):
+class DiffEqModule(brainstate.mixin.Mixin):
     """
     The module for defining the differential equations.
     """

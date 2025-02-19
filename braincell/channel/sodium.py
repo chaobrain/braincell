@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Union, Callable, Optional
 
-import brainstate as bst
+import brainstate
 import brainunit as u
 
 from braincell._base import Channel, IonInfo
@@ -26,27 +26,95 @@ __all__ = [
 
 
 class SodiumChannel(Channel):
-    """Base class for sodium channel dynamics."""
+    """
+    Base class for sodium channel dynamics.
+
+    This class provides a template for implementing sodium channel models.
+    It defines methods that should be overridden by subclasses to implement
+    specific sodium channel behaviors.
+    """
+
     __module__ = 'braincell.channel'
 
     root_type = Sodium
 
     def pre_integral(self, V, Na: IonInfo):
+        """
+        Perform any necessary operations before the integration step.
+
+        Parameters:
+        V : ArrayLike
+            Membrane potential.
+        Na : IonInfo
+            Information about sodium ions.
+        """
         pass
 
     def post_integral(self, V, Na: IonInfo):
+        """
+        Perform any necessary operations after the integration step.
+
+        Parameters:
+        V : ArrayLike
+            Membrane potential.
+        Na : IonInfo
+            Information about sodium ions.
+        """
         pass
 
     def compute_derivative(self, V, Na: IonInfo):
+        """
+        Compute the derivative of the channel state variables.
+
+        Parameters:
+        V : ArrayLike
+            Membrane potential.
+        Na : IonInfo
+            Information about sodium ions.
+        """
         pass
 
     def current(self, V, Na: IonInfo):
+        """
+        Calculate the sodium current through the channel.
+
+        Parameters:
+        V : ArrayLike
+            Membrane potential.
+        Na : IonInfo
+            Information about sodium ions.
+
+        Raises:
+        NotImplementedError: This method must be implemented by subclasses.
+        """
         raise NotImplementedError
 
     def init_state(self, V, Na: IonInfo, batch_size: int = None):
+        """
+        Initialize the state variables of the channel.
+
+        Parameters:
+        V : ArrayLike
+            Membrane potential.
+        Na : IonInfo
+            Information about sodium ions.
+        batch_size : int, optional
+            Size of the batch for vectorized operations.
+        """
         pass
 
     def reset_state(self, V, Na: IonInfo, batch_size: int = None):
+        """
+        Reset the state variables of the channel.
+
+        Parameters:
+        V : ArrayLike
+            Membrane potential.
+        Na : IonInfo
+            Information about sodium ions.
+        batch_size : int, optional
+            Size of the batch for vectorized operations.
+        """
         pass
 
 
@@ -79,20 +147,20 @@ class INa_p3q_markov(SodiumChannel):
 
     def __init__(
         self,
-        size: bst.typing.Size,
-        g_max: Union[bst.typing.ArrayLike, Callable] = 90. * (u.mS / u.cm ** 2),
-        phi: Union[bst.typing.ArrayLike, Callable] = 1.,
+        size: brainstate.typing.Size,
+        g_max: Union[brainstate.typing.ArrayLike, Callable] = 90. * (u.mS / u.cm ** 2),
+        phi: Union[brainstate.typing.ArrayLike, Callable] = 1.,
         name: Optional[str] = None,
     ):
         super().__init__(size=size, name=name, )
 
         # parameters
-        self.phi = bst.init.param(phi, self.varshape, allow_none=False)
-        self.g_max = bst.init.param(g_max, self.varshape, allow_none=False)
+        self.phi = brainstate.init.param(phi, self.varshape, allow_none=False)
+        self.g_max = brainstate.init.param(g_max, self.varshape, allow_none=False)
 
     def init_state(self, V, Na: IonInfo, batch_size=None):
-        self.p = DiffEqState(bst.init.param(u.math.zeros, self.varshape, batch_size))
-        self.q = DiffEqState(bst.init.param(u.math.zeros, self.varshape, batch_size))
+        self.p = DiffEqState(brainstate.init.param(u.math.zeros, self.varshape, batch_size))
+        self.q = DiffEqState(brainstate.init.param(u.math.zeros, self.varshape, batch_size))
 
     def reset_state(self, V, Na: IonInfo, batch_size=None):
         alpha = self.f_p_alpha(V)
@@ -169,10 +237,10 @@ class INa_Ba2002(INa_p3q_markov):
 
     def __init__(
         self,
-        size: bst.typing.Size,
-        T: bst.typing.ArrayLike = 36.,
-        g_max: Union[bst.typing.ArrayLike, Callable] = 90. * (u.mS / u.cm ** 2),
-        V_sh: Union[bst.typing.ArrayLike, Callable] = -50. * u.mV,
+        size: brainstate.typing.Size,
+        T: brainstate.typing.ArrayLike = 36.,
+        g_max: Union[brainstate.typing.ArrayLike, Callable] = 90. * (u.mS / u.cm ** 2),
+        V_sh: Union[brainstate.typing.ArrayLike, Callable] = -50. * u.mV,
         name: Optional[str] = None,
     ):
         super().__init__(
@@ -181,8 +249,8 @@ class INa_Ba2002(INa_p3q_markov):
             phi=3 ** ((T - 36) / 10),
             g_max=g_max,
         )
-        self.T = bst.init.param(T, self.varshape, allow_none=False)
-        self.V_sh = bst.init.param(V_sh, self.varshape, allow_none=False)
+        self.T = brainstate.init.param(T, self.varshape, allow_none=False)
+        self.V_sh = brainstate.init.param(V_sh, self.varshape, allow_none=False)
 
     def f_p_alpha(self, V):
         V = (V - self.V_sh).to_decimal(u.mV)
@@ -250,10 +318,10 @@ class INa_TM1991(INa_p3q_markov):
 
     def __init__(
         self,
-        size: bst.typing.Size,
-        g_max: Union[bst.typing.ArrayLike, Callable] = 120. * (u.mS / u.cm ** 2),
-        phi: Union[bst.typing.ArrayLike, Callable] = 1.,
-        V_sh: Union[bst.typing.ArrayLike, Callable] = -63. * u.mV,
+        size: brainstate.typing.Size,
+        g_max: Union[brainstate.typing.ArrayLike, Callable] = 120. * (u.mS / u.cm ** 2),
+        phi: Union[brainstate.typing.ArrayLike, Callable] = 1.,
+        V_sh: Union[brainstate.typing.ArrayLike, Callable] = -63. * u.mV,
         name: Optional[str] = None,
     ):
         super().__init__(
@@ -262,7 +330,7 @@ class INa_TM1991(INa_p3q_markov):
             phi=phi,
             g_max=g_max,
         )
-        self.V_sh = bst.init.param(V_sh, self.varshape, allow_none=False)
+        self.V_sh = brainstate.init.param(V_sh, self.varshape, allow_none=False)
 
     def f_p_alpha(self, V):
         V = (self.V_sh - V).to_decimal(u.mV)
@@ -331,10 +399,10 @@ class INa_HH1952(INa_p3q_markov):
 
     def __init__(
         self,
-        size: bst.typing.Size,
-        g_max: Union[bst.typing.ArrayLike, Callable] = 120. * (u.mS / u.cm ** 2),
-        phi: Union[bst.typing.ArrayLike, Callable] = 1.,
-        V_sh: Union[bst.typing.ArrayLike, Callable] = -45. * u.mV,
+        size: brainstate.typing.Size,
+        g_max: Union[brainstate.typing.ArrayLike, Callable] = 120. * (u.mS / u.cm ** 2),
+        phi: Union[brainstate.typing.ArrayLike, Callable] = 1.,
+        V_sh: Union[brainstate.typing.ArrayLike, Callable] = -45. * u.mV,
         name: Optional[str] = None,
     ):
         super().__init__(
@@ -343,7 +411,7 @@ class INa_HH1952(INa_p3q_markov):
             phi=phi,
             g_max=g_max,
         )
-        self.V_sh = bst.init.param(V_sh, self.varshape, allow_none=False)
+        self.V_sh = brainstate.init.param(V_sh, self.varshape, allow_none=False)
 
     def f_p_alpha(self, V):
         temp = (V - self.V_sh).to_decimal(u.mV) - 5
@@ -367,15 +435,15 @@ class INa_Rsg(SodiumChannel):
 
     def __init__(
         self,
-        size: bst.typing.Size,
-        T: bst.typing.ArrayLike = 22.,
-        g_max: Union[bst.typing.ArrayLike, Callable] = 15. * (u.mS / u.cm ** 2),
+        size: brainstate.typing.Size,
+        T: brainstate.typing.ArrayLike = 22.,
+        g_max: Union[brainstate.typing.ArrayLike, Callable] = 15. * (u.mS / u.cm ** 2),
         name: Optional[str] = None,
     ):
         super().__init__(size=size, name=name, )
 
-        self.phi = bst.init.param(2.7 ** ((T - 22) / 10), self.varshape, allow_none=False)
-        self.g_max = bst.init.param(g_max, self.varshape, allow_none=False)
+        self.phi = brainstate.init.param(2.7 ** ((T - 22) / 10), self.varshape, allow_none=False)
+        self.g_max = brainstate.init.param(g_max, self.varshape, allow_none=False)
 
         self.Con = 0.005
         self.Coff = 0.5
@@ -403,19 +471,19 @@ class INa_Rsg(SodiumChannel):
 
     def init_state(self, V, Na: IonInfo, batch_size=None):
 
-        self.C1 = DiffEqState(bst.init.param(u.math.ones, self.varshape, batch_size))
-        self.C2 = DiffEqState(bst.init.param(u.math.ones, self.varshape, batch_size))
-        self.C3 = DiffEqState(bst.init.param(u.math.ones, self.varshape, batch_size))
-        self.C4 = DiffEqState(bst.init.param(u.math.ones, self.varshape, batch_size))
-        self.C5 = DiffEqState(bst.init.param(u.math.ones, self.varshape, batch_size))
-        self.I1 = DiffEqState(bst.init.param(u.math.ones, self.varshape, batch_size))
-        self.I2 = DiffEqState(bst.init.param(u.math.ones, self.varshape, batch_size))
-        self.I3 = DiffEqState(bst.init.param(u.math.ones, self.varshape, batch_size))
-        self.I4 = DiffEqState(bst.init.param(u.math.ones, self.varshape, batch_size))
-        self.I5 = DiffEqState(bst.init.param(u.math.ones, self.varshape, batch_size))
-        self.O = DiffEqState(bst.init.param(u.math.zeros, self.varshape, batch_size))
-        self.B = DiffEqState(bst.init.param(u.math.zeros, self.varshape, batch_size))
-        self.I6 = DiffEqState(bst.init.param(u.math.ones, self.varshape, batch_size))
+        self.C1 = DiffEqState(brainstate.init.param(u.math.ones, self.varshape, batch_size))
+        self.C2 = DiffEqState(brainstate.init.param(u.math.ones, self.varshape, batch_size))
+        self.C3 = DiffEqState(brainstate.init.param(u.math.ones, self.varshape, batch_size))
+        self.C4 = DiffEqState(brainstate.init.param(u.math.ones, self.varshape, batch_size))
+        self.C5 = DiffEqState(brainstate.init.param(u.math.ones, self.varshape, batch_size))
+        self.I1 = DiffEqState(brainstate.init.param(u.math.ones, self.varshape, batch_size))
+        self.I2 = DiffEqState(brainstate.init.param(u.math.ones, self.varshape, batch_size))
+        self.I3 = DiffEqState(brainstate.init.param(u.math.ones, self.varshape, batch_size))
+        self.I4 = DiffEqState(brainstate.init.param(u.math.ones, self.varshape, batch_size))
+        self.I5 = DiffEqState(brainstate.init.param(u.math.ones, self.varshape, batch_size))
+        self.O = DiffEqState(brainstate.init.param(u.math.zeros, self.varshape, batch_size))
+        self.B = DiffEqState(brainstate.init.param(u.math.zeros, self.varshape, batch_size))
+        self.I6 = DiffEqState(brainstate.init.param(u.math.ones, self.varshape, batch_size))
         self.normalize_states(
             [self.C1, self.C2, self.C3, self.C4, self.C5, self.I1, self.I2, self.I3, self.I4, self.I5, self.O, self.B,
              self.I6])
@@ -431,35 +499,83 @@ class INa_Rsg(SodiumChannel):
     def pre_integral(self, V, Na: IonInfo):
         self.normalize_states(
             [self.C1, self.C2, self.C3, self.C4, self.C5, self.I1, self.I2, self.I3, self.I4, self.I5, self.O, self.B,
-             self.I6])
+             self.I6]
+        )
 
     def compute_derivative(self, V, Na: IonInfo):
-
-        self.C1.derivative = (self.I1.value * self.bi1(V) + self.C2.value * self.b01(V) - self.C1.value * (
-            self.fi1(V) + self.f01(V))) / u.ms
-        self.C2.derivative = (self.C1.value * self.f01(V) + self.I2.value * self.bi2(V) + self.C3.value * self.b02(
-            V) - self.C2.value * (self.b01(V) + self.fi2(V) + self.f02(V))) / u.ms
-        self.C3.derivative = (self.C2.value * self.f02(V) + self.I3.value * self.bi3(V) + self.C4.value * self.b03(
-            V) - self.C3.value * (self.b02(V) + self.fi3(V) + self.f03(V))) / u.ms
-        self.C4.derivative = (self.C3.value * self.f03(V) + self.I4.value * self.bi4(V) + self.C5.value * self.b04(
-            V) - self.C4.value * (self.b03(V) + self.fi4(V) + self.f04(V))) / u.ms
-        self.C5.derivative = (self.C4.value * self.f04(V) + self.I5.value * self.bi5(V) + self.O.value * self.b0O(
-            V) - self.C5.value * (self.b04(V) + self.fi5(V) + self.f0O(V))) / u.ms
-        self.O.derivative = (self.C5.value * self.f0O(V) + self.B.value * self.bip(V) + self.I6.value * self.bin(
-            V) - self.O.value * (self.b0O(V) + self.fip(V) + self.fin(V))) / u.ms
-        self.B.derivative = (self.O.value * self.fip(V) - self.B.value * self.bip(V)) / u.ms
-        self.I1.derivative = (self.C1.value * self.fi1(V) + self.I2.value * self.b11(V) - self.I1.value * (
-            self.bi1(V) + self.f11(V))) / u.ms
-        self.I2.derivative = (self.I1.value * self.f11(V) + self.C2.value * self.fi2(V) + self.I3.value * self.b12(
-            V) - self.I2.value * (self.b11(V) + self.bi2(V) + self.f12(V))) / u.ms
-        self.I3.derivative = (self.I2.value * self.f12(V) + self.C3.value * self.fi3(V) + self.I4.value * self.b13(
-            V) - self.I3.value * (self.b12(V) + self.bi3(V) + self.f13(V))) / u.ms
-        self.I4.derivative = (self.I3.value * self.f13(V) + self.C4.value * self.fi4(V) + self.I5.value * self.b14(
-            V) - self.I4.value * (self.b13(V) + self.bi4(V) + self.f14(V))) / u.ms
-        self.I5.derivative = (self.I4.value * self.f14(V) + self.C5.value * self.fi5(V) + self.I6.value * self.b1n(
-            V) - self.I5.value * (self.b14(V) + self.bi5(V) + self.f1n(V))) / u.ms
-        self.I6.derivative = (self.I5.value * self.f1n(V) + self.O.value * self.fin(V) - self.I6.value * (
-            self.b1n(V) + self.bin(V))) / u.ms
+        self.C1.derivative = (
+                                 self.I1.value * self.bi1(V) +
+                                 self.C2.value * self.b01(V) -
+                                 self.C1.value * (self.fi1(V) + self.f01(V))
+                             ) / u.ms
+        self.C2.derivative = (
+                                 self.C1.value * self.f01(V) +
+                                 self.I2.value * self.bi2(V) +
+                                 self.C3.value * self.b02(V) -
+                                 self.C2.value * (self.b01(V) + self.fi2(V) + self.f02(V))
+                             ) / u.ms
+        self.C3.derivative = (
+                                 self.C2.value * self.f02(V) +
+                                 self.I3.value * self.bi3(V) +
+                                 self.C4.value * self.b03(V) -
+                                 self.C3.value * (self.b02(V) + self.fi3(V) + self.f03(V))
+                             ) / u.ms
+        self.C4.derivative = (
+                                 self.C3.value * self.f03(V) +
+                                 self.I4.value * self.bi4(V) +
+                                 self.C5.value * self.b04(V) -
+                                 self.C4.value * (self.b03(V) + self.fi4(V) + self.f04(V))
+                             ) / u.ms
+        self.C5.derivative = (
+                                 self.C4.value * self.f04(V) +
+                                 self.I5.value * self.bi5(V) +
+                                 self.O.value * self.b0O(V) -
+                                 self.C5.value * (self.b04(V) + self.fi5(V) + self.f0O(V))
+                             ) / u.ms
+        self.O.derivative = (
+                                self.C5.value * self.f0O(V) +
+                                self.B.value * self.bip(V) +
+                                self.I6.value * self.bin(V) -
+                                self.O.value * (self.b0O(V) + self.fip(V) + self.fin(V))
+                            ) / u.ms
+        self.B.derivative = (
+                                self.O.value * self.fip(V) -
+                                self.B.value * self.bip(V)
+                            ) / u.ms
+        self.I1.derivative = (
+                                 self.C1.value * self.fi1(V) +
+                                 self.I2.value * self.b11(V) -
+                                 self.I1.value * (self.bi1(V) + self.f11(V))
+                             ) / u.ms
+        self.I2.derivative = (
+                                 self.I1.value * self.f11(V) +
+                                 self.C2.value * self.fi2(V) +
+                                 self.I3.value * self.b12(V) -
+                                 self.I2.value * (self.b11(V) + self.bi2(V) + self.f12(V))
+                             ) / u.ms
+        self.I3.derivative = (
+                                 self.I2.value * self.f12(V) +
+                                 self.C3.value * self.fi3(V) +
+                                 self.I4.value * self.b13(V) -
+                                 self.I3.value * (self.b12(V) + self.bi3(V) + self.f13(V))
+                             ) / u.ms
+        self.I4.derivative = (
+                                 self.I3.value * self.f13(V) +
+                                 self.C4.value * self.fi4(V) +
+                                 self.I5.value * self.b14(V) -
+                                 self.I4.value * (self.b13(V) + self.bi4(V) + self.f14(V))
+                             ) / u.ms
+        self.I5.derivative = (
+                                 self.I4.value * self.f14(V) +
+                                 self.C5.value * self.fi5(V) +
+                                 self.I6.value * self.b1n(V) -
+                                 self.I5.value * (self.b14(V) + self.bi5(V) + self.f1n(V))
+                             ) / u.ms
+        self.I6.derivative = (
+                                 self.I5.value * self.f1n(V) +
+                                 self.O.value * self.fin(V) -
+                                 self.I6.value * (self.b1n(V) + self.bin(V))
+                             ) / u.ms
 
     def reset_state(self, V, Na: IonInfo, batch_size=None):
         self.normalize_states(

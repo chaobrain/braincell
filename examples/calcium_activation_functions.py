@@ -14,25 +14,25 @@
 # ==============================================================================
 
 
-import brainunit as bu
+import braintools
+import brainunit as u
 import matplotlib.pyplot as plt
-import braintools as bts
 
 import braincell
 
 cat = braincell.channel.ICaT_HP1992(1)
 caht = braincell.channel.ICaHT_HM1992(1)
 
-vs = bu.math.arange(-100 * bu.mV, 0 * bu.mV, 0.1 * bu.mV)
+vs = u.math.arange(-100 * u.mV, 0 * u.mV, 0.1 * u.mV)
 
-fig, gs = bts.visualize.get_figure(1, 2, 3., 4.5)
+fig, gs = braintools.visualize.get_figure(1, 2, 3., 4.5)
 
 q_inf = cat.f_q_inf(vs)
 p_inf = cat.f_p_inf(vs)
 
 fig.add_subplot(gs[0, 0])
-plt.plot(vs / bu.mV, q_inf, label='q_inf')
-plt.plot(vs / bu.mV, p_inf, label='p_inf')
+plt.plot(vs / u.mV, q_inf, label='q_inf')
+plt.plot(vs / u.mV, p_inf, label='p_inf')
 plt.legend()
 plt.fill_between([-80, -60], 1., alpha=0.2)
 plt.title('Low-threshold Calcium Channel')
@@ -42,8 +42,8 @@ plt.xlabel('mV')
 q_inf = caht.f_q_inf(vs)
 p_inf = caht.f_p_inf(vs)
 fig.add_subplot(gs[0, 1])
-plt.plot(vs / bu.mV, q_inf, label='q_inf')
-plt.plot(vs / bu.mV, p_inf, label='p_inf')
+plt.plot(vs / u.mV, q_inf, label='q_inf')
+plt.plot(vs / u.mV, p_inf, label='p_inf')
 plt.fill_between([-60, -40], 1., alpha=0.2)
 plt.legend()
 plt.xlabel('mV')

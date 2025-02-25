@@ -98,7 +98,27 @@ def apply_standard_solver_step(
     *args
 ):
     """
-    The explicit Euler step for the differential equations.
+    Apply a standard solver step to the given differential equation module.
+
+    This function performs a single step of numerical integration for a differential equation
+    system. It handles pre-integration preparation, the actual integration step, and
+    post-integration updates.
+
+    Parameters:
+    -----------
+    solver_step : Callable[[Callable, jax.Array, u.Quantity[u.second], u.Quantity[u.second], Any], Any]
+        The solver step function that performs the actual numerical integration.
+    target : DiffEqModule
+        The differential equation module to be integrated.
+    t : u.Quantity[u.second]
+        The current time of the integration.
+    *args : Any
+        Additional arguments to be passed to the pre_integral, post_integral, and compute_derivative methods.
+
+    Returns:
+    --------
+    None
+        This function updates the states of the target module in-place and does not return a value.
     """
     # pre integral
     dt = u.get_magnitude(brainstate.environ.get_dt())

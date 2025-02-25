@@ -16,18 +16,14 @@
 from __future__ import annotations
 
 import importlib.util
-from dataclasses import dataclass
-from typing import Optional, Tuple, Callable, Dict, Any, Sequence
+from typing import Optional, Tuple, Callable, Dict, Any
 
 import brainstate
 import brainunit as u
 import jax
-import jax.numpy as jnp
-from jax.scipy.linalg import expm
 
-from ._misc import set_module_as
-from ._protocol import DiffEqState, DiffEqModule
 from ._integrators_util import _check_diffeq_state_derivative
+from ._protocol import DiffEqState
 
 diffrax_installed = importlib.util.find_spec('diffrax') is not None
 if diffrax_installed:
@@ -56,7 +52,6 @@ __all__ = [
     'diffrax_solve_adjoint',
     'diffrax_solve',
 ]
-
 
 
 def _is_quantity(x):

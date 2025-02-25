@@ -18,6 +18,7 @@ from __future__ import annotations
 from typing import Callable
 
 from ._integrators_exp_euler import *
+from ._integrators_implicit import *
 from ._integrators_runge_kutta import *
 
 __all__ = [
@@ -25,7 +26,10 @@ __all__ = [
 ]
 
 all_integrators = {
+    # exponential Euler
     'exp_euler': exp_euler_step,
+
+    # explicit Runge-Kutta methods
     'euler': euler_step,
     'midpoint': midpoint_step,
     'rk2': rk2_step,
@@ -37,6 +41,9 @@ all_integrators = {
     'ralston3': ralston3_step,
     'rk4': rk4_step,
     'ralston4': ralston4_step,
+
+    # implicit methods
+    'implicit_euler': implicit_euler_step,
 }
 
 

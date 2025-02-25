@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from typing import Union, Optional, Callable, Sequence, Tuple
 
-import brainstate as bst
+import brainstate
 import brainunit as u
 import jax
 import numpy as np
@@ -122,21 +122,21 @@ class MultiCompartment(HHTypedNeuron):
 
     def __init__(
         self,
-        size: bst.typing.Size,
+        size: brainstate.typing.Size,
 
         # morphology parameters
         connection: Sequence[Tuple[int, int]] | np.ndarray,
 
         # neuron parameters
-        Ra: bst.typing.ArrayLike = 100. * (u.ohm * u.cm),
-        cm: bst.typing.ArrayLike = 1.0 * (u.uF / u.cm ** 2),
-        diam: bst.typing.ArrayLike = 1. * u.um,
-        L: bst.typing.ArrayLike = 10. * u.um,
+        Ra: brainstate.typing.ArrayLike = 100. * (u.ohm * u.cm),
+        cm: brainstate.typing.ArrayLike = 1.0 * (u.uF / u.cm ** 2),
+        diam: brainstate.typing.ArrayLike = 1. * u.um,
+        L: brainstate.typing.ArrayLike = 10. * u.um,
 
         # membrane potentials
-        V_th: Union[bst.typing.ArrayLike, Callable] = 0. * u.mV,
-        V_initializer: Union[bst.typing.ArrayLike, Callable] = bst.init.Uniform(-70 * u.mV, -60. * u.mV),
-        spk_fun: Callable = bst.surrogate.ReluGrad(),
+        V_th: Union[brainstate.typing.ArrayLike, Callable] = 0. * u.mV,
+        V_initializer: Union[brainstate.typing.ArrayLike, Callable] = brainstate.init.Uniform(-70 * u.mV, -60. * u.mV),
+        spk_fun: Callable = brainstate.surrogate.ReluGrad(),
 
         # others
         name: Optional[str] = None,
@@ -145,10 +145,10 @@ class MultiCompartment(HHTypedNeuron):
         super().__init__(size, name=name, **ion_channels)
 
         # neuronal parameters
-        self.Ra = bst.init.param(Ra, self.varshape)
-        self.cm = bst.init.param(cm, self.varshape)
-        self.diam = bst.init.param(diam, self.varshape)
-        self.L = bst.init.param(L, self.varshape)
+        self.Ra = brainstate.init.param(Ra, self.varshape)
+        self.cm = brainstate.init.param(cm, self.varshape)
+        self.diam = brainstate.init.param(diam, self.varshape)
+        self.L = brainstate.init.param(L, self.varshape)
         self.A = np.pi * self.diam * self.L  # surface area
 
         # parameters for morphology
@@ -180,30 +180,86 @@ class MultiCompartment(HHTypedNeuron):
         return self.varshape[-1]
 
     def init_state(self, batch_size=None):
-        self.V = DiffEqState(bst.init.param(self.V_initializer, self.varshape, batch_size))
+        self.V = DiffEqState(brainstate.init.param(self.V_initializer, self.varshape, batch_size))
         super().init_state(batch_size)
 
     def reset_state(self, batch_size=None):
-        self.V.value = bst.init.param(self.V_initializer, self.varshape, batch_size)
+        self.V.value = brainstate.init.param(self.V_initializer, self.varshape, batch_size)
         super().reset_state(batch_size)
 
     def pre_integral(self, *args):
+        """
+        Perform pre-integration operations on the neuron's ion channels.
+
+        This method is called before the integration step to prepare the ion channels
+        for the upcoming computation. It iterates through all ion channels associated
+        with this neuron and calls their respective pre_integral methods.
+
+        Parameters:
+        -----------
+        *args : tuple
+            Variable length argument list. Not used in the current implementation
+            but allows for future extensibility.
+
+        Returns:
+        --------
+        None
+            This method doesn't return any value but updates the internal state
+            of the ion channels.
+        """
         for key, node in self.nodes(IonChannel, allowed_hierarchy=(1, 1)).items():
             node.pre_integral(self.V.value)
 
     def compute_derivative(self, I_ext=0. * u.nA):
+        """
+        Compute the derivative of the membrane potential for the multi-compartment neuron model.
+
+        This method calculates the derivative of the membrane potential by considering
+        external currents, axial currents between compartments, synaptic currents,
+        and ion channel currents. It also computes the derivatives for all ion channels.
+
+        Parameters:
+        -----------
+        I_ext : Quantity, optional
+            External current input to the neuron. Default is 0 nanoamperes.
+
+        Returns:
+        --------
+        None
+            This method doesn't return a value but updates the internal state of the neuron,
+            specifically the derivative of the membrane potential (self.V.derivative).
+
+        Notes:
+        ------
+        The method performs the following steps:
+        1. Normalizes external currents by the compartment surface area.
+        2. Calculates axial currents between compartments.
+        3. Computes synaptic currents.
+        4. Sums up all ion channel currents.
+        5. Calculates the final derivative of the membrane potential.
+        6. Computes derivatives for all associated ion channels.
+        """
+
         # [ Compute the derivative of membrane potential ]
         # 1. external currents
         I_ext = I_ext / self.A
-        # 1.axial currents
-        I_axial = diffusive_coupling(self.V.value, self.connection, self.resistances) / self.A
-        # 2. synapse currents
+
+        # 2.axial currents
+        _compute_axial_current = brainstate.environ.get('compute_axial_current', True)
+        if _compute_axial_current:
+            I_axial = diffusive_coupling(self.V.value, self.connection, self.resistances) / self.A
+        else:
+            I_axial = u.Quantity(0., unit=u.get_unit(I_ext))
+
+        # 3. synapse currents
         I_syn = self.sum_current_inputs(0. * u.nA / u.cm ** 2, self.V.value)
-        # 3. channel currents
+
+        # 4. channel currents
         I_channel = None
         for key, ch in self.nodes(IonChannel, allowed_hierarchy=(1, 1)).items():
             I_channel = ch.current(self.V.value) if I_channel is None else (I_channel + ch.current(self.V.value))
-        # 4. derivatives
+
+        # 5. derivatives
         self.V.derivative = (I_ext + I_axial + I_syn + I_channel) / self.cm
 
         # [ integrate dynamics of ion and ion channel ]
@@ -212,32 +268,50 @@ class MultiCompartment(HHTypedNeuron):
             node.compute_derivative(self.V.value)
 
     def post_integral(self, I_ext=0. * u.nA):
+        """
+        Perform post-integration operations on the neuron's state.
+
+        This method is called after the integration step to update the membrane potential
+        and perform any necessary post-integration operations on ion channels.
+
+        Parameters:
+        -----------
+        I_ext : Quantity, optional
+            External current input to the neuron. Default is 0 nanoamperes.
+            Note: This parameter is not used in the current implementation but is
+            included for consistency with other methods.
+
+        Returns:
+        --------
+        None
+            This method doesn't return any value but updates the neuron's internal state.
+        """
         self.V.value = self.sum_delta_inputs(init=self.V.value)
         for key, node in self.nodes(IonChannel, allowed_hierarchy=(1, 1)).items():
             node.post_integral(self.V.value)
 
-        def update(self, I_ext=0. * u.nA):
-            """
-            Update the neuron's state and compute spike occurrences.
-    
-            This function performs a single update step for the neuron, solving its
-            differential equations and determining if a spike has occurred.
-    
-            Parameters:
-            -----------
-            I_ext : Quantity, optional
-                External current input to the neuron. Default is 0 nanoamperes.
-    
-            Returns:
-            --------
-            Quantity
-                A binary value indicating whether a spike has occurred (1) or not (0)
-                for each compartment of the neuron.
-            """
-            last_V = self.V.value
-            t = bst.environ.get('t')
-            self.solver(self, t, I_ext)
-            return self.get_spike(last_V, self.V.value)
+    def update(self, I_ext=0. * u.nA):
+        """
+        Update the neuron's state and compute spike occurrences.
+
+        This function performs a single update step for the neuron, solving its
+        differential equations and determining if a spike has occurred.
+
+        Parameters:
+        -----------
+        I_ext : Quantity, optional
+            External current input to the neuron. Default is 0 nanoamperes.
+
+        Returns:
+        --------
+        Quantity
+            A binary value indicating whether a spike has occurred (1) or not (0)
+            for each compartment of the neuron.
+        """
+        last_V = self.V.value
+        t = brainstate.environ.get('t')
+        self.solver(self, t, I_ext)
+        return self.get_spike(last_V, self.V.value)
 
     def get_spike(self, last_V, next_V):
         """

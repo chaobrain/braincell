@@ -17,11 +17,15 @@ from __future__ import annotations
 
 import brainstate
 import brainunit as u
+import jax.numpy as jnp
 
+from ._integrators_util import apply_standard_solver_step
 from ._misc import set_module_as
 from ._protocol import DiffEqModule
+from .neuron.multi_compartment import MultiCompartment
 
 __all__ = [
+    'implicit_euler_step',
 ]
 
 
@@ -67,10 +71,7 @@ def newton_method(f, y0, t, dt, tol=1e-5, max_iter=100, args=()):
     return y1
 
 
-import jax.numpy as jnp
-
-
-def implicit_euler(A, y0, t, dt, args=()):
+def _implicit_euler_for_axial_current(A, y0, dt):
     r"""
     Implicit Euler Integrator for linear ODEs of the form:
 
@@ -88,12 +89,8 @@ def implicit_euler(A, y0, t, dt, args=()):
             The coefficient matrix (linear matrix), shape (n, n).
         y0 : array_like
             Initial condition, shape (n,).
-        t : float
-            Current time (not used directly in the linear case but kept for consistency with ODE format).
         dt : float
             Time step.
-        args : tuple, optional
-            Additional arguments for the function f (not used in this linear case).
 
     Returns:
         y1 : ndarray
@@ -107,7 +104,7 @@ def implicit_euler(A, y0, t, dt, args=()):
     return y1
 
 
-def crank_nicolson(A, y0, t, dt, args=()):
+def _crank_nicolson_for_axial_current(A, y0, dt):
     r"""
     Crank-Nicolson Integrator for linear ODEs of the form:
 
@@ -149,30 +146,72 @@ def crank_nicolson(A, y0, t, dt, args=()):
     rhs = (I + 0.5 * dt * A) @ y0
 
     y1 = jnp.linalg.solve(lhs, rhs)
-
     return y1
 
 
 @set_module_as('braincell')
-def newton_step(target: DiffEqModule, t: u.Quantity[u.second], *args):
+def implicit_euler_step(
+    target: DiffEqModule,
+    t: u.Quantity[u.second],
+    *args
+):
     """
-    The newton method for the differential equations.
-    """
-    # pre integral
-    dt = brainstate.environ.get_dt()
-    target.pre_integral(*args)
-    dimensionless_fn, diffeq_states, other_states = _transform_diffeq_module_into_dimensionless_fn(target)
+    Applies the implicit Euler method to solve a differential equation.
 
-    # one-step integration
-    diffeq_vals, other_vals = newton_method(
-        dimensionless_fn,
-        _dict_state_to_arr(diffeq_states),
-        t,
-        dt,
-        args
+    This function uses the Newton method to solve the implicit equation
+    arising from the implicit Euler discretization of the ODE.
+
+    Parameters:
+    -----------
+    target : DiffEqModule
+        The differential equation module to be solved.
+    t : u.Quantity[u.second]
+        The current time in the simulation.
+    *args : 
+        Additional arguments to be passed to the differential equation.
+    """
+    apply_standard_solver_step(
+        newton_method, target, t, *args
     )
 
-    # post integral
-    _assign_arr_to_states(diffeq_vals, diffeq_states)
-    for key, val in other_vals.items():
-        other_states[key].value = val
+
+def splitting_step(
+    target: DiffEqModule,
+    t: u.Quantity[u.second],
+    *args
+):
+    """
+    Applies the splitting solver method to solve a differential equation.
+
+    This function uses the Newton method to solve the implicit equation
+    arising from the implicit Euler discretization of the ODE.
+
+    Parameters:
+    -----------
+    target : DiffEqModule
+        The differential equation module to be solved.
+    t : u.Quantity[u.second]
+        The current time in the simulation.
+    *args :
+        Additional arguments to be passed to the differential equation.
+    """
+    if isinstance(target, MultiCompartment):
+        pass
+        # first step, extracting the axial current matrix
+
+        # second step
+        with brainstate.environ.context(compute_axial_current=False):
+            integral = lambda: apply_standard_solver_step(
+                newton_method,
+                target,
+                t,
+                *args
+            )
+            for _ in range(len(target.pop_size)):
+                integral = brainstate.augment.vmap(integral, in_states=target.states())
+            integral()
+
+    else:
+        apply_standard_solver_step(
+            newton_method, target, t, *args
+        )

@@ -20,6 +20,7 @@ import brainunit as u
 import jax.numpy as jnp
 from jax.scipy.linalg import expm
 
+from ._base import HHTypedNeuron
 from ._integrators_util import apply_standard_solver_step
 from ._misc import set_module_as
 from ._protocol import DiffEqModule
@@ -29,37 +30,7 @@ __all__ = [
 ]
 
 
-def exponential_euler(f, y0, t, dt, args=()):
-    r"""
-    Exponential Euler Integrator for multidimensional ODEs.
-
-    $$
-    {\hat {u}}_{n+1}=u_{n}+h_{n}\ \varphi _{1}(h_{n}L_{n})f(u_{n}),
-    $$
-
-    where
-
-    $$
-    \varphi _{1}(z)={\frac {e^{z}-1}{z}},
-    $$
-
-    Parameters:
-        f : callable
-            Nonlinear/time-dependent part of the ODE, g(t, y, *args).
-            Note here `y` should be dimensionless, `args` can be arrays with physical units.
-        y0 : array_like
-            Initial condition, shape (n,).
-        t : float
-            Current time.
-        dt : float
-            Time step.
-        args : tuple, optional
-            Additional arguments for the function f.
-
-    Returns:
-        y : ndarray
-            Solution array, shape (m, n).
-    """
+def _exponential_euler(f, y0, t, dt, args=()):
     dt = u.get_magnitude(dt)
     A, df, aux = brainstate.augment.jacfwd(lambda y: f(t, y, *args), return_value=True, has_aux=True)(y0)
 
@@ -78,13 +49,59 @@ def exponential_euler(f, y0, t, dt, args=()):
 
 
 @set_module_as('braincell')
-def exp_euler_step(target: DiffEqModule, t: u.Quantity[u.second], *args):
-    """
-    The explicit Euler step for the differential equations.
+def _exp_euler_step_impl(target: DiffEqModule, t: u.Quantity[u.second], *args):
+    r"""
+    Exponential Euler Integrator for multidimensional ODEs.
+
+    $$
+    {\hat {u}}_{n+1}=u_{n}+h_{n}\ \varphi _{1}(h_{n}L_{n})f(u_{n}),
+    $$
+
+    where
+
+    $$
+    \varphi _{1}(z)={\frac {e^{z}-1}{z}},
+    $$
+
+    Parameters
+    ----------
+    f : callable
+        Nonlinear/time-dependent part of the ODE, g(t, y, *args).
+        Note here `y` should be dimensionless, `args` can be arrays with physical units.
+    y0 : array_like
+        Initial condition, shape (n,).
+    t : float
+        Current time.
+    dt : float
+        Time step.
+    args : tuple, optional
+        Additional arguments for the function f.
+
+    Returns
+    -------
+    y : ndarray
+        Solution array, shape (m, n).
     """
     return apply_standard_solver_step(
-        exponential_euler,
+        _exponential_euler,
         target,
         t,
         *args
     )
+
+
+@set_module_as('braincell')
+def exp_euler_step(
+    target: DiffEqModule,
+    t: u.Quantity[u.second],
+    *args
+):
+    """
+    The explicit Euler step for the differential equations.
+    """
+    assert isinstance(target, HHTypedNeuron), ("The target should be a HHTypedNeuron. "
+                                               f"But got {type(target)} instead.")
+    integral = lambda: _exp_euler_step_impl(target, t, *args)
+    for _ in range(len(target.pop_size)):
+        integral = brainstate.augment.vmap(integral, in_states=target.states())
+    return integral()

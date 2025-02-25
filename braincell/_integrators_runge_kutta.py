@@ -197,7 +197,11 @@ ralston4_tableau = ButcherTableau(
 
 
 @set_module_as('braincell')
-def euler_step(target: DiffEqModule, t: u.Quantity[u.second], *args):
+def euler_step(
+    target: DiffEqModule,
+    t: u.Quantity[u.second],
+    *args,
+):
     """
     The Euler step for the differential equations.
     """
@@ -205,7 +209,11 @@ def euler_step(target: DiffEqModule, t: u.Quantity[u.second], *args):
 
 
 @set_module_as('braincell')
-def midpoint_step(target: DiffEqModule, t: u.Quantity[u.second], *args):
+def midpoint_step(
+    target: DiffEqModule,
+    t: u.Quantity[u.second],
+    *args,
+):
     """
     The midpoint step for the differential equations.
     """
@@ -213,7 +221,11 @@ def midpoint_step(target: DiffEqModule, t: u.Quantity[u.second], *args):
 
 
 @set_module_as('braincell')
-def rk2_step(target: DiffEqModule, t: u.Quantity[u.second], *args):
+def rk2_step(
+    target: DiffEqModule,
+    t: u.Quantity[u.second],
+    *args,
+):
     """
     The second-order Runge-Kutta step for the differential equations.
     """
@@ -221,7 +233,11 @@ def rk2_step(target: DiffEqModule, t: u.Quantity[u.second], *args):
 
 
 @set_module_as('braincell')
-def heun2_step(target: DiffEqModule, t: u.Quantity[u.second], *args):
+def heun2_step(
+    target: DiffEqModule,
+    t: u.Quantity[u.second],
+    *args,
+):
     """
     The Heun's second-order Runge-Kutta step for the differential equations.
     """
@@ -229,7 +245,11 @@ def heun2_step(target: DiffEqModule, t: u.Quantity[u.second], *args):
 
 
 @set_module_as('braincell')
-def ralston2_step(target: DiffEqModule, t: u.Quantity[u.second], *args):
+def ralston2_step(
+    target: DiffEqModule,
+    t: u.Quantity[u.second],
+    *args,
+):
     """
     The Ralston's second-order Runge-Kutta step for the differential equations.
     """
@@ -237,7 +257,11 @@ def ralston2_step(target: DiffEqModule, t: u.Quantity[u.second], *args):
 
 
 @set_module_as('braincell')
-def rk3_step(target: DiffEqModule, t: u.Quantity[u.second], *args):
+def rk3_step(
+    target: DiffEqModule,
+    t: u.Quantity[u.second],
+    *args,
+):
     """
     The third-order Runge-Kutta step for the differential equations.
     """
@@ -245,7 +269,11 @@ def rk3_step(target: DiffEqModule, t: u.Quantity[u.second], *args):
 
 
 @set_module_as('braincell')
-def heun3_step(target: DiffEqModule, t: u.Quantity[u.second], *args):
+def heun3_step(
+    target: DiffEqModule,
+    t: u.Quantity[u.second],
+    *args,
+):
     """
     The Heun's third-order Runge-Kutta step for the differential equations.
     """
@@ -253,7 +281,11 @@ def heun3_step(target: DiffEqModule, t: u.Quantity[u.second], *args):
 
 
 @set_module_as('braincell')
-def ssprk3_step(target: DiffEqModule, t: u.Quantity[u.second], *args):
+def ssprk3_step(
+    target: DiffEqModule,
+    t: u.Quantity[u.second],
+    *args,
+):
     """
     The Strong Stability Preserving Runge-Kutta 3rd order step for the differential equations.
     """
@@ -261,7 +293,11 @@ def ssprk3_step(target: DiffEqModule, t: u.Quantity[u.second], *args):
 
 
 @set_module_as('braincell')
-def ralston3_step(target: DiffEqModule, t: u.Quantity[u.second], *args):
+def ralston3_step(
+    target: DiffEqModule,
+    t: u.Quantity[u.second],
+    *args,
+):
     """
     The Ralston's third-order Runge-Kutta step for the differential equations.
     """
@@ -269,7 +305,11 @@ def ralston3_step(target: DiffEqModule, t: u.Quantity[u.second], *args):
 
 
 @set_module_as('braincell')
-def rk4_step(target: DiffEqModule, t: u.Quantity[u.second], *args):
+def rk4_step(
+    target: DiffEqModule,
+    t: u.Quantity[u.second],
+    *args,
+):
     """
     The fourth-order Runge-Kutta step for the differential equations.
     """
@@ -277,7 +317,11 @@ def rk4_step(target: DiffEqModule, t: u.Quantity[u.second], *args):
 
 
 @set_module_as('braincell')
-def ralston4_step(target: DiffEqModule, t: u.Quantity[u.second], *args):
+def ralston4_step(
+    target: DiffEqModule,
+    t: u.Quantity[u.second],
+    *args,
+):
     """
     The Ralston's fourth-order Runge-Kutta step for the differential equations.
     """

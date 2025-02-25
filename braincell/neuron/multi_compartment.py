@@ -23,7 +23,7 @@ import jax
 import numpy as np
 
 from braincell._base import HHTypedNeuron, IonChannel
-from braincell._integrators import DiffEqState
+from braincell._protocol import DiffEqState
 
 __all__ = [
     'MultiCompartment',
@@ -216,14 +216,54 @@ class MultiCompartment(HHTypedNeuron):
         for key, node in self.nodes(IonChannel, allowed_hierarchy=(1, 1)).items():
             node.post_integral(self.V.value)
 
-    def update(self, I_ext=0. * u.nA):
-        last_V = self.V.value
-        t = bst.environ.get('t')
-        self.solver(self, t, I_ext)
-        self.post_integral(I_ext)
-        return self.get_spike(last_V, self.V.value)
+        def update(self, I_ext=0. * u.nA):
+            """
+            Update the neuron's state and compute spike occurrences.
+    
+            This function performs a single update step for the neuron, solving its
+            differential equations and determining if a spike has occurred.
+    
+            Parameters:
+            -----------
+            I_ext : Quantity, optional
+                External current input to the neuron. Default is 0 nanoamperes.
+    
+            Returns:
+            --------
+            Quantity
+                A binary value indicating whether a spike has occurred (1) or not (0)
+                for each compartment of the neuron.
+            """
+            last_V = self.V.value
+            t = bst.environ.get('t')
+            self.solver(self, t, I_ext)
+            return self.get_spike(last_V, self.V.value)
 
     def get_spike(self, last_V, next_V):
+        """
+        Determine if a spike has occurred based on the membrane potential change.
+
+        This function calculates whether a spike has occurred by comparing the previous
+        and current membrane potentials to the threshold potential.
+
+        Parameters:
+        -----------
+        last_V : Quantity
+            The membrane potential at the previous time step.
+        next_V : Quantity
+            The membrane potential at the current time step.
+
+        Returns:
+        --------
+        Quantity
+            A value between 0 and 1 indicating the likelihood of a spike occurrence.
+            A value closer to 1 suggests a higher probability of a spike.
+
+        Notes:
+        ------
+        The function uses a surrogate gradient function (self.spk_fun) to approximate
+        the non-differentiable spike event, allowing for backpropagation in learning algorithms.
+        """
         denom = 20.0 * u.mV
         return (
             self.spk_fun((next_V - self.V_th) / denom) *

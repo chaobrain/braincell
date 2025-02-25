@@ -13,7 +13,7 @@ import brainstate
 import brainunit as u
 
 from braincell._base import Channel, IonInfo
-from braincell._integrators import DiffEqState
+from braincell._protocol import DiffEqState
 from braincell.ion import Sodium
 
 __all__ = [

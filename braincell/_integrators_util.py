@@ -67,7 +67,7 @@ def _assign_arr_to_states(vals: jax.Array, states: Dict[Any, brainstate.State]):
 def _transform_diffeq_module_into_dimensionless_fn(target: DiffEqModule):
     all_states = brainstate.graph.states(target)
     diffeq_states, other_states = all_states.split(DiffEqState, ...)
-    all_state_ids = {id(st) for st in all_states}
+    all_state_ids = {id(st) for st in all_states.values()}
 
     def vector_field(t, y_dimensionless, *args):
         with brainstate.StateTraceStack() as trace:

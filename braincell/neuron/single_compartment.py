@@ -21,7 +21,7 @@ import brainstate as bst
 import brainunit as u
 
 from braincell._base import HHTypedNeuron, IonChannel
-from braincell._integrators import DiffEqState
+from braincell._protocol import DiffEqState
 from braincell._integrators import get_integrator
 
 __all__ = [
@@ -137,8 +137,6 @@ class SingleCompartment(HHTypedNeuron):
         # integration
         t = bst.environ.get('t')
         self.solver(self, t, I_ext)
-        # post integral
-        self.post_integral(I_ext)
         # return spike
         return self.get_spike(last_V, self.V.value)
 

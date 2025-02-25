@@ -13,16 +13,18 @@
 # limitations under the License.
 # ==============================================================================
 
+import brainstate
 import brainunit as u
 import matplotlib.pyplot as plt
 
-import brainstate
 import braincell
 
 
 class HH(braincell.neuron.SingleCompartment):
-    def __init__(self, size):
+    def __init__(self, size, method='rk4'):
         super().__init__(size)
+
+        self.method = method
 
         self.na = braincell.ion.SodiumFixed(size, E=50. * u.mV)
         self.na.add(INa=braincell.channel.INa_HH1952(size))
@@ -33,11 +35,16 @@ class HH(braincell.neuron.SingleCompartment):
         self.IL = braincell.channel.IL(size, E=-54.387 * u.mV, g_max=0.03 * (u.mS / u.cm ** 2))
 
     def update(self, I_ext=0. * u.nA / u.cm ** 2):
-        brainstate.augment.vmap(
-            lambda: braincell.exp_euler_step(self, brainstate.environ.get('t'), I_ext),
-            in_states=self.states()
-        )()
-        return self.post_integral(I_ext)
+        last_V = self.V.value
+        if self.method == 'rk4':
+            braincell.rk4_step(self, brainstate.environ.get('t'), I_ext)
+        elif self.method == 'exp_euler':
+            brainstate.augment.vmap(lambda: braincell.exp_euler_step(self, brainstate.environ.get('t'), I_ext),
+                                    in_states=self.states())()
+        else:
+            raise ValueError('Invalid method specified')
+        self.post_integral(I_ext)
+        return self.get_spike(last_V, self.V.value)
 
     def step_fun(self, t):
         with brainstate.environ.context(t=t):
@@ -45,7 +52,7 @@ class HH(braincell.neuron.SingleCompartment):
         return self.V.value
 
 
-hh = HH([1, 1])
+hh = HH(1, method='exp_euler')
 hh.init_state()
 
 with brainstate.environ.context(dt=0.1 * u.ms):

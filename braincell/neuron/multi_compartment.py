@@ -200,13 +200,13 @@ class MultiCompartment(HHTypedNeuron):
         for the upcoming computation. It iterates through all ion channels associated
         with this neuron and calls their respective pre_integral methods.
 
-        Parameters:
+        Parameters
         -----------
         *args : tuple
             Variable length argument list. Not used in the current implementation
             but allows for future extensibility.
 
-        Returns:
+        Returns
         --------
         None
             This method doesn't return any value but updates the internal state
@@ -223,18 +223,18 @@ class MultiCompartment(HHTypedNeuron):
         external currents, axial currents between compartments, synaptic currents,
         and ion channel currents. It also computes the derivatives for all ion channels.
 
-        Parameters:
+        Parameters
         -----------
         I_ext : Quantity, optional
             External current input to the neuron. Default is 0 nanoamperes.
 
-        Returns:
+        Returns
         --------
         None
             This method doesn't return a value but updates the internal state of the neuron,
             specifically the derivative of the membrane potential (self.V.derivative).
 
-        Notes:
+        Notes
         ------
         The method performs the following steps:
         1. Normalizes external currents by the compartment surface area.
@@ -279,14 +279,14 @@ class MultiCompartment(HHTypedNeuron):
         This method is called after the integration step to update the membrane potential
         and perform any necessary post-integration operations on ion channels.
 
-        Parameters:
+        Parameters
         -----------
         I_ext : Quantity, optional
             External current input to the neuron. Default is 0 nanoamperes.
             Note: This parameter is not used in the current implementation but is
             included for consistency with other methods.
 
-        Returns:
+        Returns
         --------
         None
             This method doesn't return any value but updates the neuron's internal state.
@@ -302,12 +302,12 @@ class MultiCompartment(HHTypedNeuron):
         This function performs a single update step for the neuron, solving its
         differential equations and determining if a spike has occurred.
 
-        Parameters:
+        Parameters
         -----------
         I_ext : Quantity, optional
             External current input to the neuron. Default is 0 nanoamperes.
 
-        Returns:
+        Returns
         --------
         Quantity
             A binary value indicating whether a spike has occurred (1) or not (0)
@@ -325,20 +325,20 @@ class MultiCompartment(HHTypedNeuron):
         This function calculates whether a spike has occurred by comparing the previous
         and current membrane potentials to the threshold potential.
 
-        Parameters:
+        Parameters
         -----------
         last_V : Quantity
             The membrane potential at the previous time step.
         next_V : Quantity
             The membrane potential at the current time step.
 
-        Returns:
+        Returns
         --------
         Quantity
             A value between 0 and 1 indicating the likelihood of a spike occurrence.
             A value closer to 1 suggests a higher probability of a spike.
 
-        Notes:
+        Notes
         ------
         The function uses a surrogate gradient function (self.spk_fun) to approximate
         the non-differentiable spike event, allowing for backpropagation in learning algorithms.

@@ -44,7 +44,8 @@ class KCaChannel(Channel):
         """
         Perform any necessary computations before the integration step.
 
-        Parameters:
+        Parameters
+        ----------
         V : array_like
             Membrane potential.
         K : IonInfo
@@ -58,7 +59,8 @@ class KCaChannel(Channel):
         """
         Perform any necessary computations after the integration step.
 
-        Parameters:
+        Parameters
+        ----------
         V : array_like
             Membrane potential.
         K : IonInfo
@@ -72,7 +74,8 @@ class KCaChannel(Channel):
         """
         Compute the derivative of the channel's state variables.
 
-        Parameters:
+        Parameters
+        ----------
         V : array_like
             Membrane potential.
         K : IonInfo
@@ -86,7 +89,8 @@ class KCaChannel(Channel):
         """
         Calculate the current through the channel.
 
-        Parameters:
+        Parameters
+        ----------
         V : array_like
             Membrane potential.
         K : IonInfo
@@ -94,7 +98,8 @@ class KCaChannel(Channel):
         Ca : IonInfo
             Information about calcium ions.
 
-        Returns:
+        Returns
+        ----------
         array_like
             The calculated current through the channel.
 
@@ -108,7 +113,8 @@ class KCaChannel(Channel):
         """
         Initialize the state variables of the channel.
 
-        Parameters:
+        Parameters
+        ----------
         V : array_like
             Membrane potential.
         K : IonInfo
@@ -124,7 +130,8 @@ class KCaChannel(Channel):
         """
         Reset the state variables of the channel.
 
-        Parameters:
+        Parameters
+        ----------
         V : array_like
             Membrane potential.
         K : IonInfo
@@ -148,9 +155,9 @@ class IAHP_De1994(KCaChannel):
     modified version of a model of :math:`I_{KCa}` introduced previously (Yamada et al.
     1989) that requires the binding of :math:`nCa^{2+}` to open the channel
 
-    .. math::
-
-        (\text { closed })+n \mathrm{Ca}_{i}^{2+} \underset{\beta}{\stackrel{\alpha}{\rightleftharpoons}(\text { open })
+    $$
+    (\text { closed })+n \mathrm{Ca}_{i}^{2+} \underset{\beta}{\stackrel{\alpha}{\rightleftharpoons}(\text { open })
+    $$
 
     where :math:`Ca_i^{2+}` is the intracellular calcium and :math:`\alpha` and
     :math:`\beta` are rate constants. The ionic current is then given by

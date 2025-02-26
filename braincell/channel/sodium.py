@@ -42,7 +42,8 @@ class SodiumChannel(Channel):
         """
         Perform any necessary operations before the integration step.
 
-        Parameters:
+        Parameters
+        ----------
         V : ArrayLike
             Membrane potential.
         Na : IonInfo
@@ -54,7 +55,8 @@ class SodiumChannel(Channel):
         """
         Perform any necessary operations after the integration step.
 
-        Parameters:
+        Parameters
+        ----------
         V : ArrayLike
             Membrane potential.
         Na : IonInfo
@@ -66,7 +68,8 @@ class SodiumChannel(Channel):
         """
         Compute the derivative of the channel state variables.
 
-        Parameters:
+        Parameters
+        ----------
         V : ArrayLike
             Membrane potential.
         Na : IonInfo
@@ -78,7 +81,8 @@ class SodiumChannel(Channel):
         """
         Calculate the sodium current through the channel.
 
-        Parameters:
+        Parameters
+        ----------
         V : ArrayLike
             Membrane potential.
         Na : IonInfo
@@ -93,7 +97,8 @@ class SodiumChannel(Channel):
         """
         Initialize the state variables of the channel.
 
-        Parameters:
+        Parameters
+        ----------
         V : ArrayLike
             Membrane potential.
         Na : IonInfo
@@ -107,7 +112,8 @@ class SodiumChannel(Channel):
         """
         Reset the state variables of the channel.
 
-        Parameters:
+        Parameters
+        ----------
         V : ArrayLike
             Membrane potential.
         Na : IonInfo

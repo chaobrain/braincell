@@ -32,15 +32,6 @@ import braincell
 
 
 class ThalamusNeuron(braincell.neuron.SingleCompartment):
-    def update(self, I_ext=0. * u.nA / u.cm ** 2):
-        last_V = self.V.value
-        brainstate.augment.vmap(
-            lambda: braincell.exp_euler_step(self, brainstate.environ.get('t'), I_ext),
-            in_states=self.states()
-        )()
-        self.post_integral(I_ext)
-        return self.get_spike(last_V, self.V.value)
-
     def compute_derivative(self, x=0. * u.nA):
         return super().compute_derivative(x * self.area)
 
@@ -51,8 +42,14 @@ class ThalamusNeuron(braincell.neuron.SingleCompartment):
 
 
 class HTC(ThalamusNeuron):
-    def __init__(self, size, gKL=0.01 * (u.mS / u.cm ** 2), V_initializer=brainstate.init.Constant(-65. * u.mV)):
-        super().__init__(size, V_initializer=V_initializer, V_th=20. * u.mV)
+    def __init__(
+        self,
+        size,
+        gKL=0.01 * (u.mS / u.cm ** 2),
+        V_initializer=brainstate.init.Constant(-65. * u.mV),
+        solver: str = 'exp_euler'
+    ):
+        super().__init__(size, V_initializer=V_initializer, V_th=20. * u.mV, solver=solver)
 
         self.area = 1e-3 / (2.9e-4 * u.cm ** 2)
 
@@ -77,8 +74,14 @@ class HTC(ThalamusNeuron):
 
 
 class RTC(ThalamusNeuron):
-    def __init__(self, size, gKL=0.01 * (u.mS / u.cm ** 2), V_initializer=brainstate.init.Constant(-65. * u.mV)):
-        super().__init__(size, V_initializer=V_initializer, V_th=20 * u.mV)
+    def __init__(
+        self,
+        size,
+        gKL=0.01 * (u.mS / u.cm ** 2),
+        V_initializer=brainstate.init.Constant(-65. * u.mV),
+        solver: str = 'exp_euler'
+    ):
+        super().__init__(size, V_initializer=V_initializer, V_th=20 * u.mV, solver=solver)
 
         self.area = 1e-3 / (2.9e-4 * u.cm ** 2)
 
@@ -103,8 +106,13 @@ class RTC(ThalamusNeuron):
 
 
 class IN(ThalamusNeuron):
-    def __init__(self, size, V_initializer=brainstate.init.Constant(-70. * u.mV)):
-        super().__init__(size, V_initializer=V_initializer, V_th=20. * u.mV)
+    def __init__(
+        self,
+        size,
+        V_initializer=brainstate.init.Constant(-70. * u.mV),
+        solver: str = 'exp_euler'
+    ):
+        super().__init__(size, V_initializer=V_initializer, V_th=20. * u.mV, solver=solver)
 
         self.area = 1e-3 / (1.7e-4 * u.cm ** 2)
 
@@ -127,8 +135,13 @@ class IN(ThalamusNeuron):
 
 
 class TRN(ThalamusNeuron):
-    def __init__(self, size, V_initializer=brainstate.init.Constant(-70. * u.mV), gl=0.0075):
-        super().__init__(size, V_initializer=V_initializer, V_th=20. * u.mV)
+    def __init__(
+        self,
+        size,
+        V_initializer=brainstate.init.Constant(-70. * u.mV), gl=0.0075,
+        solver: str = 'exp_euler'
+    ):
+        super().__init__(size, V_initializer=V_initializer, V_th=20. * u.mV, solver=solver)
 
         self.area = 1e-3 / (1.43e-4 * u.cm ** 2)
 

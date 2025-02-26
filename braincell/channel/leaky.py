@@ -32,7 +32,7 @@ class LeakageChannel(Channel):
         """
         Perform any necessary operations before the integration step.
 
-        Parameters:
+        Parameters
         -----------
         V : array-like
             The membrane potential.
@@ -43,7 +43,7 @@ class LeakageChannel(Channel):
         """
         Perform any necessary operations after the integration step.
 
-        Parameters:
+        Parameters
         -----------
         V : array-like
             The membrane potential.
@@ -54,7 +54,7 @@ class LeakageChannel(Channel):
         """
         Compute the derivative of the channel state variables.
 
-        Parameters:
+        Parameters
         -----------
         V : array-like
             The membrane potential.
@@ -65,7 +65,7 @@ class LeakageChannel(Channel):
         """
         Calculate the current through the leakage channel.
 
-        Parameters:
+        Parameters
         -----------
         V : array-like
             The membrane potential.
@@ -81,7 +81,7 @@ class LeakageChannel(Channel):
         """
         Initialize the state of the leakage channel.
 
-        Parameters:
+        Parameters
         -----------
         V : array-like
             The membrane potential.
@@ -94,7 +94,7 @@ class LeakageChannel(Channel):
         """
         Reset the state of the leakage channel.
 
-        Parameters:
+        Parameters
         -----------
         V : array-like
             The membrane potential.

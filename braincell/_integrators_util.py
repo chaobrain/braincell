@@ -104,8 +104,8 @@ def apply_standard_solver_step(
     system. It handles pre-integration preparation, the actual integration step, and
     post-integration updates.
 
-    Parameters:
-    -----------
+    Parameters
+    ----------
     solver_step : Callable[[Callable, jax.Array, u.Quantity[u.second], u.Quantity[u.second], Any], Any]
         The solver step function that performs the actual numerical integration.
     target : DiffEqModule
@@ -115,8 +115,8 @@ def apply_standard_solver_step(
     *args : Any
         Additional arguments to be passed to the pre_integral, post_integral, and compute_derivative methods.
 
-    Returns:
-    --------
+    Returns
+    -------
     None
         This function updates the states of the target module in-place and does not return a value.
     """

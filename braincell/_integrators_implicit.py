@@ -185,8 +185,8 @@ def splitting_step(
     This function uses the Newton method to solve the implicit equation
     arising from the implicit Euler discretization of the ODE.
 
-    Parameters:
-    -----------
+    Parameters
+    ----------
     target : DiffEqModule
         The differential equation module to be solved.
     t : u.Quantity[u.second]

@@ -102,7 +102,7 @@ def exp_euler_step(
     This function applies the exponential Euler method to solve differential equations
     for a given target module. It can handle both single neurons and populations of neurons.
 
-    Mathematical Description:
+    Mathematical Description
     -------------------------
     The exponential Euler method is used to solve differential equations of the form:
 
@@ -127,8 +127,8 @@ def exp_euler_step(
     This method is particularly effective for stiff problems where $A$ represents
     the stiff linear part of the system.
 
-    Parameters:
-    -----------
+    Parameters
+    ----------
     target : DiffEqModule
         The target module containing the differential equations to be solved.
         Must be an instance of HHTypedNeuron.
@@ -137,13 +137,13 @@ def exp_euler_step(
     *args : 
         Additional arguments to be passed to the underlying implementation.
 
-    Raises:
-    -------
+    Raises
+    ------
     AssertionError
         If the target is not an instance of :class:`HHTypedNeuron`.
 
-    Notes:
-    ------
+    Notes
+    -----
     This function uses vectorization (vmap) to handle populations of neurons efficiently.
     The actual computation of the exponential Euler step is performed in the
     `_exp_euler_step_impl` function, which this function wraps and potentially

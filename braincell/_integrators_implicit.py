@@ -22,7 +22,6 @@ import jax.numpy as jnp
 from ._integrators_util import apply_standard_solver_step
 from ._misc import set_module_as
 from ._protocol import DiffEqModule
-from .neuron.multi_compartment import MultiCompartment
 
 __all__ = [
     'implicit_euler_step',
@@ -195,6 +194,8 @@ def splitting_step(
     *args :
         Additional arguments to be passed to the differential equation.
     """
+    from braincell.neuron.multi_compartment import MultiCompartment
+
     if isinstance(target, MultiCompartment):
         pass
         # first step, extracting the axial current matrix

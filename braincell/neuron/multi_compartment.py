@@ -24,6 +24,7 @@ import numpy as np
 
 from braincell._base import HHTypedNeuron, IonChannel
 from braincell._protocol import DiffEqState
+from braincell._integrators import get_integrator
 
 __all__ = [
     'MultiCompartment',
@@ -139,6 +140,7 @@ class MultiCompartment(HHTypedNeuron):
         spk_fun: Callable = brainstate.surrogate.ReluGrad(),
 
         # others
+        solver: str | Callable = 'exp_euler',
         name: Optional[str] = None,
         **ion_channels
     ):
@@ -170,6 +172,9 @@ class MultiCompartment(HHTypedNeuron):
         self.V_th = V_th
         self.V_initializer = V_initializer
         self.spk_fun = spk_fun
+
+        # numerical solver
+        self.solver = get_integrator(solver)
 
     @property
     def pop_size(self) -> Tuple[int, ...]:

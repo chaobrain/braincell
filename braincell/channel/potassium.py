@@ -261,7 +261,7 @@ class IKDR_Ba2002(_IK_p4_markov):
     def f_p_alpha(self, V):
         V = (V - self.V_sh).to_decimal(u.mV)
         tmp = V - 15.
-        return 0.032 * tmp / (1. - u.math.exp(-tmp / 5.))
+        return 0.032 * 5. / u.math.exprel(-tmp / 5.)
 
     def f_p_beta(self, V):
         V = (V - self.V_sh).to_decimal(u.mV)
@@ -323,7 +323,7 @@ class IK_TM1991(_IK_p4_markov):
 
     def f_p_alpha(self, V):
         c = 15 + (- V + self.V_sh).to_decimal(u.mV)
-        return 0.032 * c / (u.math.exp(c / 5) - 1.)
+        return 0.032 * 5 / u.math.exprel(c / 5)
 
     def f_p_beta(self, V):
         V = (self.V_sh - V).to_decimal(u.mV)
@@ -386,8 +386,8 @@ class IK_HH1952(_IK_p4_markov):
 
     def f_p_alpha(self, V):
         V = (V - self.V_sh).to_decimal(u.mV)
-        temp = V + 10
-        return 0.01 * temp / (1 - u.math.exp(-temp / 10))
+        temp = -(V + 10) / 10
+        return 0.1 / u.math.exprel(temp)
 
     def f_p_beta(self, V):
         V = (V - self.V_sh).to_decimal(u.mV)

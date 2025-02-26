@@ -415,7 +415,7 @@ class INa_HH1952(INa_p3q_markov):
 
     def f_p_alpha(self, V):
         temp = (V - self.V_sh).to_decimal(u.mV) - 5
-        return 0.1 * temp / (1 - u.math.exp(-temp / 10))
+        return 1. / u.math.exprel(-temp / 10)
 
     def f_p_beta(self, V):
         V = (V - self.V_sh).to_decimal(u.mV)

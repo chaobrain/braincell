@@ -409,7 +409,7 @@ class HHTypedNeuron(brainstate.nn.Dynamics, Container, DiffEqModule):
 
         Parameters
         ----------
-        **elements : dict
+        **elements: Any
             A dictionary of new elements to add. Each key-value pair represents an ion channel
             name and its corresponding instance.
 
@@ -945,7 +945,7 @@ class Ion(IonChannel, Container):
 
         Parameters
         ----------
-        **elements : dict
+        **elements : Any
             A dictionary of new elements to add. Each key-value pair represents a
             channel name and its corresponding Channel instance.
 
@@ -1268,7 +1268,7 @@ class MixIons(IonChannel, Container):
 
         Parameters
         ----------
-        **elements : dict
+        **elements : Any
             A dictionary of new elements to add. Each key-value pair represents a
             channel name and its corresponding Channel instance.
 

@@ -102,10 +102,22 @@ class Container(brainstate.mixin.Mixin):
 
     def add(self, *elems, **elements):
         """
-        Add new elements.
+        Add new elements to the container.
+
+        This method is intended to be implemented by subclasses to define
+        how new elements are added to the container. The base implementation
+        raises a NotImplementedError.
 
         Args:
-          elements: children objects.
+            *elems: Variable length argument list of elements to be added.
+            **elements: Arbitrary keyword arguments representing named elements to be added.
+
+        Raises:
+            NotImplementedError: This method must be implemented by the subclass.
+
+        Note:
+            Subclasses should override this method to provide specific implementation
+            for adding elements to the container.
         """
         raise NotImplementedError('Must be implemented by the subclass.')
 

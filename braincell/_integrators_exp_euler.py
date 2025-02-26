@@ -96,8 +96,58 @@ def exp_euler_step(
     t: u.Quantity[u.second],
     *args
 ):
-    """
-    The explicit Euler step for the differential equations.
+    r"""
+    Perform an exponential Euler step for solving differential equations.
+
+    This function applies the exponential Euler method to solve differential equations
+    for a given target module. It can handle both single neurons and populations of neurons.
+
+    Mathematical Description:
+    -------------------------
+    The exponential Euler method is used to solve differential equations of the form:
+
+    $$
+    \frac{dy}{dt} = Ay + f(y, t)
+    $$
+
+    where $A$ is a linear operator and $f(y, t)$ is a nonlinear function.
+
+    The exponential Euler scheme is given by:
+
+    $$
+    y_{n+1} = e^{A\Delta t}y_n + \Delta t\varphi_1(A\Delta t)f(y_n, t_n)
+    $$
+
+    where $\varphi_1(z)$ is the first order exponential integrator function defined as:
+
+    $$
+    \varphi_1(z) = \frac{e^z - 1}{z}
+    $$
+
+    This method is particularly effective for stiff problems where $A$ represents
+    the stiff linear part of the system.
+
+    Parameters:
+    -----------
+    target : DiffEqModule
+        The target module containing the differential equations to be solved.
+        Must be an instance of HHTypedNeuron.
+    t : u.Quantity[u.second]
+        The current time point in the simulation.
+    *args : 
+        Additional arguments to be passed to the underlying implementation.
+
+    Raises:
+    -------
+    AssertionError
+        If the target is not an instance of :class:`HHTypedNeuron`.
+
+    Notes:
+    ------
+    This function uses vectorization (vmap) to handle populations of neurons efficiently.
+    The actual computation of the exponential Euler step is performed in the
+    `_exp_euler_step_impl` function, which this function wraps and potentially
+    vectorizes for population-level computations.
     """
     assert isinstance(target, HHTypedNeuron), ("The target should be a HHTypedNeuron. "
                                                f"But got {type(target)} instead.")

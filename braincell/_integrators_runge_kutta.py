@@ -202,8 +202,57 @@ def euler_step(
     t: u.Quantity[u.second],
     *args,
 ):
-    """
-    The Euler step for the differential equations.
+    r"""
+    Perform a single step of the Euler method for solving differential equations.
+
+    This function applies the Euler method, which is the simplest explicit method
+    for numerical integration of ordinary differential equations.
+
+    Mathematical Description:
+    -------------------------
+    For a differential equation of the form $\frac{dy}{dt} = f(t, y)$, the Euler method
+    approximates the solution using the following equation:
+
+    $$
+    y_{n+1} = y_n + \Delta t \cdot f(t_n, y_n)
+    $$
+
+    Where:
+    - $y_n$ is the current state
+    - $t_n$ is the current time
+    - $\Delta t$ is the time step
+    - $f(t_n, y_n)$ is the right-hand side of the differential equation
+
+    The local truncation error of the Euler method is $O(\Delta t^2)$, and the global
+    truncation error is $O(\Delta t)$.
+
+    Parameters:
+    -----------
+    target : DiffEqModule
+        The differential equation module that defines the system to be integrated.
+    t : u.Quantity[u.second]
+        The current time of the integration step.
+    *args : 
+        Additional arguments to be passed to the target's methods.
+
+    Returns:
+    --------
+    None
+        This function updates the state of the target in-place and does not return a value.
+
+    Note:
+    -----
+    The Euler method uses the simplest Butcher tableau:
+
+    $$
+    \begin{array}{c|c}
+    0 & 0 \\
+    \hline
+    & 1
+    \end{array}
+    $$
+
+    This tableau is defined elsewhere in the module as `euler_tableau`.
     """
     _general_rk_step(euler_tableau, target, t, *args)
 
@@ -214,8 +263,61 @@ def midpoint_step(
     t: u.Quantity[u.second],
     *args,
 ):
-    """
-    The midpoint step for the differential equations.
+    r"""
+    Perform a single step of the midpoint method for solving differential equations.
+
+    This function applies the midpoint method, which is a second-order Runge-Kutta method
+    that provides improved accuracy over the Euler method.
+
+    Mathematical Description:
+    -------------------------
+    For a differential equation of the form $\frac{dy}{dt} = f(t, y)$, the midpoint method
+    approximates the solution using the following steps:
+
+    $$
+    \begin{align*}
+    k_1 &= f(t_n, y_n) \\
+    k_2 &= f(t_n + \frac{\Delta t}{2}, y_n + \frac{\Delta t}{2} k_1) \\
+    y_{n+1} &= y_n + \Delta t \cdot k_2
+    \end{align*}
+    $$
+
+    Where:
+    - $y_n$ is the current state
+    - $t_n$ is the current time
+    - $\Delta t$ is the time step
+
+    The local truncation error of the midpoint method is $O(\Delta t^3)$, and the global
+    truncation error is $O(\Delta t^2)$.
+
+    Parameters:
+    -----------
+    target : DiffEqModule
+        The differential equation module that defines the system to be integrated.
+    t : u.Quantity[u.second]
+        The current time of the integration step.
+    *args : 
+        Additional arguments to be passed to the target's methods.
+
+    Returns:
+    --------
+    None
+        This function updates the state of the target in-place and does not return a value.
+
+    Note:
+    -----
+    The midpoint method uses the following Butcher tableau:
+
+    $$
+    \begin{array}{c|cc}
+    0 & 0 & 0 \\
+    \frac{1}{2} & \frac{1}{2} & 0 \\
+    \hline
+    & 0 & 1
+    \end{array}
+    $$
+
+    This tableau is defined elsewhere in the module as `midpoint_tableau`.
     """
     _general_rk_step(midpoint_tableau, target, t, *args)
 
@@ -226,8 +328,61 @@ def rk2_step(
     t: u.Quantity[u.second],
     *args,
 ):
-    """
-    The second-order Runge-Kutta step for the differential equations.
+    r"""
+    Perform a single step of the second-order Runge-Kutta method for solving differential equations.
+
+    This function applies the second-order Runge-Kutta method, which is an explicit
+    integration scheme that provides improved accuracy over the Euler method.
+
+    Mathematical Description:
+    -------------------------
+    For a differential equation of the form $\frac{dy}{dt} = f(t, y)$, the second-order Runge-Kutta method
+    approximates the solution using the following steps:
+
+    $$
+    \begin{align*}
+    k_1 &= f(t_n, y_n) \\
+    k_2 &= f(t_n + \frac{2}{3}\Delta t, y_n + \frac{2}{3}\Delta t \cdot k_1) \\
+    y_{n+1} &= y_n + \Delta t \cdot (\frac{1}{4}k_1 + \frac{3}{4}k_2)
+    \end{align*}
+    $$
+
+    Where:
+    - $y_n$ is the current state
+    - $t_n$ is the current time
+    - $\Delta t$ is the time step
+
+    The local truncation error of this method is $O(\Delta t^3)$, and the global
+    truncation error is $O(\Delta t^2)$.
+
+    Parameters:
+    -----------
+    target : DiffEqModule
+        The differential equation module that defines the system to be integrated.
+    t : u.Quantity[u.second]
+        The current time of the integration step.
+    *args : 
+        Additional arguments to be passed to the target's methods.
+
+    Returns:
+    --------
+    None
+        This function updates the state of the target in-place and does not return a value.
+
+    Note:
+    -----
+    This second-order Runge-Kutta method uses the following Butcher tableau:
+
+    $$
+    \begin{array}{c|cc}
+    0 & 0 & 0 \\
+    \frac{2}{3} & \frac{2}{3} & 0 \\
+    \hline
+    & \frac{1}{4} & \frac{3}{4}
+    \end{array}
+    $$
+
+    This tableau is defined elsewhere in the module as `rk2_tableau`.
     """
     _general_rk_step(rk2_tableau, target, t, *args)
 
@@ -238,8 +393,61 @@ def heun2_step(
     t: u.Quantity[u.second],
     *args,
 ):
-    """
-    The Heun's second-order Runge-Kutta step for the differential equations.
+    r"""
+    Perform a single step of Heun's second-order Runge-Kutta method for solving differential equations.
+
+    This function applies Heun's second-order Runge-Kutta method, which is an explicit
+    integration scheme that provides improved accuracy over the Euler method.
+
+    Mathematical Description:
+    -------------------------
+    For a differential equation of the form $\frac{dy}{dt} = f(t, y)$, Heun's second-order method
+    approximates the solution using the following steps:
+
+    $$
+    \begin{align*}
+    k_1 &= f(t_n, y_n) \\
+    k_2 &= f(t_n + \Delta t, y_n + \Delta t \cdot k_1)
+    \end{align*}
+    $$
+
+    The final step is:
+
+    $$
+    y_{n+1} = y_n + \frac{\Delta t}{2}(k_1 + k_2)
+    $$
+
+    Where $\Delta t$ is the time step, and $t_n$ and $y_n$ are the time and state at the n-th step.
+
+    This method has a local truncation error of $O(\Delta t^3)$ and a global truncation error of $O(\Delta t^2)$.
+
+    Parameters:
+    -----------
+    target : DiffEqModule
+        The differential equation module that defines the system to be integrated.
+    t : u.Quantity[u.second]
+        The current time of the integration step.
+    *args : 
+        Additional arguments to be passed to the target's methods.
+
+    Returns:
+    --------
+    None
+        This function updates the state of the target in-place and does not return a value.
+
+    Note:
+    -----
+    This method uses the Butcher tableau specific to Heun's second-order method,
+    which is defined elsewhere in the module as `heun2_tableau`. The Butcher tableau for this method is:
+
+    $$
+    \begin{array}{c|cc}
+    0 & 0 & 0 \\
+    1 & 1 & 0 \\
+    \hline
+    & \frac{1}{2} & \frac{1}{2}
+    \end{array}
+    $$
     """
     _general_rk_step(heun2_tableau, target, t, *args)
 
@@ -250,8 +458,61 @@ def ralston2_step(
     t: u.Quantity[u.second],
     *args,
 ):
-    """
-    The Ralston's second-order Runge-Kutta step for the differential equations.
+    r"""
+    Perform a single step of Ralston's second-order Runge-Kutta method for solving differential equations.
+
+    This function applies Ralston's second-order Runge-Kutta method, which is an explicit
+    integration scheme designed to minimize the truncation error for a given step size.
+
+    Mathematical Description:
+    -------------------------
+    For a differential equation of the form $\frac{dy}{dt} = f(t, y)$, Ralston's second-order method
+    approximates the solution using the following steps:
+
+    $$
+    \begin{align*}
+    k_1 &= f(t_n, y_n) \\
+    k_2 &= f(t_n + \frac{2}{3}\Delta t, y_n + \frac{2}{3}\Delta t \cdot k_1)
+    \end{align*}
+    $$
+
+    The final step is:
+
+    $$
+    y_{n+1} = y_n + \frac{\Delta t}{4}(k_1 + 3k_2)
+    $$
+
+    Where $\Delta t$ is the time step, and $t_n$ and $y_n$ are the time and state at the n-th step.
+
+    This method has a local truncation error of $O(\Delta t^3)$ and a global truncation error of $O(\Delta t^2)$.
+
+    Parameters:
+    -----------
+    target : DiffEqModule
+        The differential equation module that defines the system to be integrated.
+    t : u.Quantity[u.second]
+        The current time of the integration step.
+    *args : 
+        Additional arguments to be passed to the target's methods.
+
+    Returns:
+    --------
+    None
+        This function updates the state of the target in-place and does not return a value.
+
+    Note:
+    -----
+    This method uses the Butcher tableau specific to Ralston's second-order method,
+    which is defined elsewhere in the module as `ralston2_tableau`. The Butcher tableau for this method is:
+
+    $$
+    \begin{array}{c|cc}
+    0 & 0 & 0 \\
+    \frac{2}{3} & \frac{2}{3} & 0 \\
+    \hline
+    & \frac{1}{4} & \frac{3}{4}
+    \end{array}
+    $$
     """
     _general_rk_step(ralston2_tableau, target, t, *args)
 
@@ -262,8 +523,51 @@ def rk3_step(
     t: u.Quantity[u.second],
     *args,
 ):
-    """
-    The third-order Runge-Kutta step for the differential equations.
+    r"""
+    Perform a single step of the third-order Runge-Kutta method for solving differential equations.
+
+    This function applies the third-order Runge-Kutta method, which is an explicit
+    integration scheme that provides improved accuracy over lower-order methods.
+
+    Mathematical Description:
+    -------------------------
+    For a differential equation of the form $\frac{dy}{dt} = f(t, y)$, the third-order Runge-Kutta method
+    approximates the solution using the following steps:
+
+    $$
+    \begin{align*}
+    k_1 &= f(t_n, y_n) \\
+    k_2 &= f(t_n + \frac{1}{2}\Delta t, y_n + \frac{1}{2}\Delta t \cdot k_1) \\
+    k_3 &= f(t_n + \Delta t, y_n - \Delta t \cdot k_1 + 2\Delta t \cdot k_2)
+    \end{align*}
+    $$
+
+    The final step is:
+
+    $$
+    y_{n+1} = y_n + \frac{\Delta t}{6}(k_1 + 4k_2 + k_3)
+    $$
+
+    Where $\Delta t$ is the time step, and $t_n$ and $y_n$ are the time and state at the n-th step.
+
+    Parameters:
+    -----------
+    target : DiffEqModule
+        The differential equation module that defines the system to be integrated.
+    t : u.Quantity[u.second]
+        The current time of the integration step.
+    *args : 
+        Additional arguments to be passed to the target's methods.
+
+    Returns:
+    --------
+    None
+        This function updates the state of the target in-place and does not return a value.
+
+    Note:
+    -----
+    This method uses the Butcher tableau specific to the third-order Runge-Kutta method,
+    which is defined elsewhere in the module as `rk3_tableau`.
     """
     _general_rk_step(rk3_tableau, target, t, *args)
 
@@ -274,8 +578,51 @@ def heun3_step(
     t: u.Quantity[u.second],
     *args,
 ):
-    """
-    The Heun's third-order Runge-Kutta step for the differential equations.
+    r"""
+    Perform a single step of Heun's third-order Runge-Kutta method for solving differential equations.
+
+    This function applies Heun's third-order Runge-Kutta method, which is an explicit
+    integration scheme that provides improved accuracy over lower-order methods.
+
+    Mathematical Description:
+    -------------------------
+    For a differential equation of the form $\frac{dy}{dt} = f(t, y)$, Heun's third-order method
+    approximates the solution using the following steps:
+
+    $$
+    \begin{align*}
+    k_1 &= f(t_n, y_n) \\
+    k_2 &= f(t_n + \frac{1}{3}\Delta t, y_n + \frac{1}{3}\Delta t \cdot k_1) \\
+    k_3 &= f(t_n + \frac{2}{3}\Delta t, y_n + \frac{2}{3}\Delta t \cdot k_2)
+    \end{align*}
+    $$
+
+    The final step is:
+
+    $$
+    y_{n+1} = y_n + \frac{\Delta t}{4}(k_1 + 3k_3)
+    $$
+
+    Where $\Delta t$ is the time step, and $t_n$ and $y_n$ are the time and state at the n-th step.
+
+    Parameters:
+    -----------
+    target : DiffEqModule
+        The differential equation module that defines the system to be integrated.
+    t : u.Quantity[u.second]
+        The current time of the integration step.
+    *args : 
+        Additional arguments to be passed to the target's methods.
+
+    Returns:
+    --------
+    None
+        This function updates the state of the target in-place and does not return a value.
+
+    Note:
+    -----
+    This method uses the Butcher tableau specific to Heun's third-order method,
+    which is defined elsewhere in the module as `heun3_tableau`.
     """
     _general_rk_step(heun3_tableau, target, t, *args)
 
@@ -286,8 +633,51 @@ def ssprk3_step(
     t: u.Quantity[u.second],
     *args,
 ):
-    """
-    The Strong Stability Preserving Runge-Kutta 3rd order step for the differential equations.
+    r"""
+    Perform a single step of the Strong Stability Preserving Runge-Kutta 3rd order (SSPRK3) method for solving differential equations.
+
+    This function applies the SSPRK3 method, which is designed to maintain strong stability properties
+    for certain classes of differential equations, particularly those with discontinuities or sharp gradients.
+
+    Mathematical Description:
+    -------------------------
+    For a differential equation of the form $\frac{dy}{dt} = f(t, y)$, the SSPRK3 method
+    approximates the solution using the following steps:
+
+    $$
+    \begin{align*}
+    k_1 &= f(t_n, y_n) \\
+    k_2 &= f(t_n + \Delta t, y_n + \Delta t \cdot k_1) \\
+    k_3 &= f(t_n + \frac{1}{2}\Delta t, y_n + \frac{1}{4}\Delta t \cdot k_1 + \frac{1}{4}\Delta t \cdot k_2)
+    \end{align*}
+    $$
+
+    The final step is:
+
+    $$
+    y_{n+1} = y_n + \frac{\Delta t}{6}(k_1 + k_2 + 4k_3)
+    $$
+
+    Where $\Delta t$ is the time step, and $t_n$ and $y_n$ are the time and state at the n-th step.
+
+    Parameters:
+    -----------
+    target : DiffEqModule
+        The differential equation module that defines the system to be integrated.
+    t : u.Quantity[u.second]
+        The current time of the integration step.
+    *args : 
+        Additional arguments to be passed to the target's methods.
+
+    Returns:
+    --------
+    None
+        This function updates the state of the target in-place and does not return a value.
+
+    Note:
+    -----
+    This method uses the Butcher tableau specific to the SSPRK3 method,
+    which is defined elsewhere in the module as `ssprk3_tableau`.
     """
     _general_rk_step(ssprk3_tableau, target, t, *args)
 
@@ -298,8 +688,51 @@ def ralston3_step(
     t: u.Quantity[u.second],
     *args,
 ):
-    """
-    The Ralston's third-order Runge-Kutta step for the differential equations.
+    r"""
+    Perform a single step of Ralston's third-order Runge-Kutta method for solving differential equations.
+
+    This function applies Ralston's third-order Runge-Kutta method, which is an explicit
+    integration scheme designed to minimize the truncation error for a given step size.
+
+    Mathematical Description:
+    -------------------------
+    For a differential equation of the form $\frac{dy}{dt} = f(t, y)$, Ralston's third-order method
+    approximates the solution using the following steps:
+
+    $$
+    \begin{align*}
+    k_1 &= f(t_n, y_n) \\
+    k_2 &= f(t_n + \frac{1}{2}\Delta t, y_n + \frac{1}{2}\Delta t \cdot k_1) \\
+    k_3 &= f(t_n + \frac{3}{4}\Delta t, y_n + \frac{3}{4}\Delta t \cdot k_2)
+    \end{align*}
+    $$
+
+    The final step is:
+
+    $$
+    y_{n+1} = y_n + \Delta t \cdot (\frac{2}{9}k_1 + \frac{1}{3}k_2 + \frac{4}{9}k_3)
+    $$
+
+    Where $\Delta t$ is the time step, and $t_n$ and $y_n$ are the time and state at the n-th step.
+
+    Parameters:
+    -----------
+    target : DiffEqModule
+        The differential equation module that defines the system to be integrated.
+    t : u.Quantity[u.second]
+        The current time of the integration step.
+    *args : 
+        Additional arguments to be passed to the target's methods.
+
+    Returns:
+    --------
+    None
+        This function updates the state of the target in-place and does not return a value.
+
+    Note:
+    -----
+    This method uses the Butcher tableau specific to Ralston's third-order method,
+    which is defined elsewhere in the module as `ralston3_tableau`.
     """
     _general_rk_step(ralston3_tableau, target, t, *args)
 
@@ -310,8 +743,53 @@ def rk4_step(
     t: u.Quantity[u.second],
     *args,
 ):
-    """
-    The fourth-order Runge-Kutta step for the differential equations.
+    r"""
+    Perform a single step of the fourth-order Runge-Kutta method (RK4) for solving differential equations.
+
+    This function applies the classical RK4 method to numerically integrate a system of 
+    differential equations. RK4 is a widely used method that provides a good balance 
+    between accuracy and computational cost.
+
+    Mathematical Description:
+    -------------------------
+    For a differential equation of the form $\frac{dy}{dt} = f(t, y)$, the RK4 method
+    approximates the solution using the following steps:
+
+    $$
+    \begin{align*}
+    k_1 &= f(t_n, y_n) \\
+    k_2 &= f(t_n + \frac{\Delta t}{2}, y_n + \frac{\Delta t}{2} k_1) \\
+    k_3 &= f(t_n + \frac{\Delta t}{2}, y_n + \frac{\Delta t}{2} k_2) \\
+    k_4 &= f(t_n + \Delta t, y_n + \Delta t k_3)
+    \end{align*}
+    $$
+
+    The final step is:
+
+    $$
+    y_{n+1} = y_n + \frac{\Delta t}{6}(k_1 + 2k_2 + 2k_3 + k_4)
+    $$
+
+    Where $\Delta t$ is the time step, and $t_n$ and $y_n$ are the time and state at the n-th step.
+
+    Parameters:
+    -----------
+    target : DiffEqModule
+        The differential equation module that defines the system to be integrated.
+    t : u.Quantity[u.second]
+        The current time of the integration step.
+    *args : 
+        Additional arguments to be passed to the target's methods.
+
+    Returns:
+    --------
+    None
+        This function updates the state of the target in-place and does not return a value.
+
+    Note:
+    -----
+    This method uses the Butcher tableau specific to the classical fourth-order Runge-Kutta method,
+    which is defined elsewhere in the module as `rk4_tableau`.
     """
     _general_rk_step(rk4_tableau, target, t, *args)
 
@@ -322,7 +800,51 @@ def ralston4_step(
     t: u.Quantity[u.second],
     *args,
 ):
-    """
-    The Ralston's fourth-order Runge-Kutta step for the differential equations.
+    r"""
+    Perform a single step of Ralston's fourth-order Runge-Kutta method for solving differential equations.
+
+    This function applies Ralston's fourth-order Runge-Kutta method, which is an explicit
+    integration scheme designed to minimize the truncation error for a given step size.
+
+    Mathematical Description:
+    -------------------------
+    For a differential equation of the form $\frac{dy}{dt} = f(t, y)$, the Ralston's fourth-order method
+    approximates the solution using the following steps:
+
+    $$
+    \begin{align*}
+    k_1 &= f(t_n, y_n) \\
+    k_2 &= f(t_n + 0.4\Delta t, y_n + 0.4\Delta t \cdot k_1) \\
+    k_3 &= f(t_n + 0.45573725\Delta t, y_n + 0.29697761\Delta t \cdot k_1 + 0.15875964\Delta t \cdot k_2) \\
+    k_4 &= f(t_n + \Delta t, y_n + 0.21810040\Delta t \cdot k_1 - 3.05096516\Delta t \cdot k_2 + 3.83286476\Delta t \cdot k_3)
+    \end{align*}
+    $$
+
+    The final step is:
+
+    $$
+    y_{n+1} = y_n + \Delta t \cdot (0.17476028 \cdot k_1 - 0.55148066 \cdot k_2 + 1.20553560 \cdot k_3 + 0.17118478 \cdot k_4)
+    $$
+
+    Where $\Delta t$ is the time step, and $t_n$ and $y_n$ are the time and state at the n-th step.
+
+    Parameters:
+    -----------
+    target : DiffEqModule
+        The differential equation module that defines the system to be integrated.
+    t : u.Quantity[u.second]
+        The current time of the integration step.
+    *args : 
+        Additional arguments to be passed to the target's methods.
+
+    Returns:
+    --------
+    None
+        This function updates the state of the target in-place and does not return a value.
+
+    Note:
+    -----
+    This method uses the Butcher tableau specific to Ralston's fourth-order method,
+    which is defined elsewhere in the module as `ralston4_tableau`.
     """
     _general_rk_step(ralston4_tableau, target, t, *args)

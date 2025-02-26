@@ -15,7 +15,6 @@ Base Classes
    :template: classtemplate.rst
 
     HHTypedNeuron
-    State4Integral
     IonChannel
     Ion
     IonInfo

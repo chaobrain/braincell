@@ -18,6 +18,7 @@ from __future__ import annotations
 import brainstate
 import brainunit as u
 import jax.numpy as jnp
+import jax
 
 from scipy.integrate import solve_ivp
 
@@ -28,10 +29,11 @@ from ._protocol import DiffEqModule
 
 __all__ = [
     'implicit_euler_step',
+    'splitting_step',
 ]
 
 
-def newton_method(f, y0, t, dt, tol=1e-5, max_iter=100, order = 1, args=()):
+def newton_method(f, y0, t, dt, modified =False, tol=1e-5, max_iter=100, order = 1, args=()):
     r"""
     Newton's method for solving the implicit equations arising from the Crank - Nicolson method for ordinary differential equations (ODEs).
 
@@ -71,19 +73,19 @@ def newton_method(f, y0, t, dt, tol=1e-5, max_iter=100, order = 1, args=()):
 
     def cond_fun(carry):
         i, _, A, df = carry
-        condition = jnp.logical_or(jnp.linalg.norm(A) < tol, jnp.linalg.norm(df) < tol)
-        return jnp.logical_and(i < max_iter, jnp.logical_not(condition))
+        condition = u.math.logical_or(u.math.linalg.norm(A) < tol, u.math.linalg.norm(df) < tol)
+        return u.math.logical_and(i < max_iter, u.math.logical_not(condition))
 
     def body_fun(carry):
         i, y1, _, _ = carry
         A, df = brainstate.augment.jacfwd(lambda y: g(t, y, *args), return_value=True, has_aux=False)(y1)
-        new_y1 = y1 - jnp.linalg.solve(A, df)
+        new_y1 = y1 - u.math.linalg.solve(A, df)
         return (i + 1, new_y1, A, df)
 
     def body_fun_modified(carry):
         i, y1, A, _ = carry
         df = g(t, y1, *args)
-        new_y1 = y1 - jnp.linalg.solve(A, df)
+        new_y1 = y1 - u.math.linalg.solve(A, df)
         return (i + 1, new_y1, A, df)
     
     dt = u.get_magnitude(dt)
@@ -91,7 +93,7 @@ def newton_method(f, y0, t, dt, tol=1e-5, max_iter=100, order = 1, args=()):
     A, df= brainstate.augment.jacfwd(lambda y: g(t, y, *args), return_value=True, has_aux=False)(init_guess)
     init_carry = (0, init_guess, A, df)
 
-    if modified ==True:
+    if modified:
         _, result, _, _ = jax.lax.while_loop(cond_fun, body_fun_modified, init_carry)
     else:
         _, result, _, _ = jax.lax.while_loop(cond_fun, body_fun, init_carry)
@@ -102,7 +104,7 @@ def solve_ivp_method(f, y0, t, dt, method, args=()):
     sol = solve_ivp(lambda t, y: f(t, y, *args), [t, t+dt], y0, t_eval=[t + dt], method=method)
     return sol.y.flatten()
 
-def _implicit_euler_for_axial_current(A, y0, dt, inv_A=None):
+def _implicit_euler_for_axial_current(A, y0, dt):
     r"""
     Implicit Euler Integrator for linear ODEs of the form:
 
@@ -131,20 +133,9 @@ def _implicit_euler_for_axial_current(A, y0, dt, inv_A=None):
     """
     dt = u.get_magnitude(dt)
     n = y0.shape[-1]
-    I = jnp.eye(n)
+    I = u.math.eye(n)
     M = I - dt * A
-
-    def solve_with_inv():
-        return jnp.dot(inv_A, y0)
-
-    def solve_with_solve():
-        return jnp.linalg.solve(M, y0)
-
-    is_tracer = isinstance(A, jax.core.Tracer)
-    has_inv_A = inv_A is not None
-    condition = jnp.logical_and(jnp.logical_not(is_tracer), has_inv_A)
-
-    y1 = jax.lax.cond(condition, solve_with_inv, solve_with_solve)
+    y1 = u.math.linalg.solve(M, y0)
 
     return y1
 
@@ -185,19 +176,19 @@ def _crank_nicolson_for_axial_current(A, y0, dt):
     """
     dt = u.get_magnitude(dt)
     n = y0.shape[-1]
-    I = jnp.eye(n)
+    I = u.math.eye(n)
 
     lhs = I - 0.5 * dt * A
     rhs = (I + 0.5 * dt * A) @ y0
 
-    y1 = jnp.linalg.solve(lhs, rhs)
+    y1 = u.math.linalg.solve(lhs, rhs)
     return y1
 
 
 @set_module_as('braincell')
 def implicit_euler_step(
     target: DiffEqModule,
-    t: u.Quantity[u.second],
+    t: u.Quantity[u.second], 
     *args
 ):
     """
@@ -234,22 +225,22 @@ def construct_A(target):
     Returns:
     A_matrix (array): The constructed matrix A for the axial current.
     """
-    n_compartment = target.n_compartment
-    connection = u.math.array(target.connection) 
-    cm = target.cm
-    A = target.A
-    R_axial = target.resistances
-
-    pre_ids, post_ids = connection[:, 0], connection[:, 1]
+    with jax.ensure_compile_time_eval:
+        n_compartment = target.n_compartment
+        connection = u.math.array(target.connection) 
+        cm = target.cm
+        A = target.A
+        R_axial = target.resistances
+        
+        pre_ids, post_ids = connection[:, 0], connection[:, 1] 
     
+        adj_matrix = u.math.zeros((n_compartment, n_compartment)).at[pre_ids, post_ids].set(1)
+        R_matrix = u.math.zeros((n_compartment, n_compartment)).at[pre_ids, post_ids].set(1/R_axial) 
+        adj_matrix = adj_matrix + adj_matrix.T
+        R_matrix = R_matrix + R_matrix.T
 
-    adj_matrix = u.math.zeros((n_compartment, n_compartment)).at[pre_ids, post_ids].set(1)
-    R_matrix = u.math.zeros((n_compartment, n_compartment)).at[pre_ids, post_ids].set(1/R_axial) 
-    adj_matrix = adj_matrix + adj_matrix.T
-    R_matrix = R_matrix + R_matrix.T
-
-    A_matrix =  R_matrix /(cm *A[:,u.math.newaxis] )
-    A_matrix = A_matrix.at[jnp.diag_indices(n_compartment)].set(-u.math.sum(A_matrix, axis=1))
+        A_matrix =  R_matrix /(cm *A[:,u.math.newaxis] )
+        A_matrix = A_matrix.at[jnp.diag_indices(n_compartment)].set(-u.math.sum(A_matrix, axis=1))
 
     '''
     R_matrix = coo_matrix((R_axial, (pre_ids, post_ids)), shape = (n_compartment, n_compartment))
@@ -258,6 +249,7 @@ def construct_A(target):
 
     return A_matrix
 
+@set_module_as('braincell')
 def splitting_step(
     target: DiffEqModule,
     t: u.Quantity[u.second],
@@ -283,10 +275,16 @@ def splitting_step(
     if isinstance(target, MultiCompartment):
         pass
         # first step, extracting the axial current matrix and solve AV_{n+1} = b(V_n) with Crank–Nicolson method
+        def solve_axial():
+            dt = brainstate.environ.get_dt()
+            V_n = target.V.value
+            A_matrix = construct_A(target)
+            return _crank_nicolson_for_axial_current(A_matrix, V_n, dt)
+        
+        for _ in range(len(target.pop_size)):
+            integral = brainstate.augment.vmap(solve_axial, in_states=target.states())
+        integral()
 
-        V_n = target.V.value
-        A_matrix = construct_A(target)
-        target.V.value = _crank_nicolson_for_axial_current(A_matrix, V_n, dt)
         # second step
         with brainstate.environ.context(compute_axial_current=False):
             integral = lambda: apply_standard_solver_step(
@@ -295,7 +293,7 @@ def splitting_step(
                 t,
                 *args
             )
-            for _ in range(len(target.pop_size+1)):
+            for _ in range(len(target.pop_size)+1):
                 integral = brainstate.augment.vmap(integral, in_states=target.states())
             integral()
 

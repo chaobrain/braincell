@@ -21,6 +21,7 @@ from ._integrators_exp_euler import *
 from ._integrators_implicit import *
 from ._integrators_runge_kutta import *
 
+
 __all__ = [
     'get_integrator',
 ]
@@ -44,6 +45,7 @@ all_integrators = {
 
     # implicit methods
     'implicit_euler': implicit_euler_step,
+    'splitting_step': splitting_step,
 }
 
 

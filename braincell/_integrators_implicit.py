@@ -244,15 +244,16 @@ def construct_A(target):
     
 
     adj_matrix = u.math.zeros((n_compartment, n_compartment)).at[pre_ids, post_ids].set(1)
-    R_matrix = u.math.zeros((n_compartment, n_compartment)).at[pre_ids, post_ids].set(R_axial) 
+    R_matrix = u.math.zeros((n_compartment, n_compartment)).at[pre_ids, post_ids].set(1/R_axial) 
     adj_matrix = adj_matrix + adj_matrix.T
     R_matrix = R_matrix + R_matrix.T
 
-    A_matrix = 1 / (cm * R_matrix * A[:,u.math.newaxis])
+    A_matrix =  R_matrix /(cm *A[:,u.math.newaxis] )
     A_matrix = A_matrix.at[jnp.diag_indices(n_compartment)].set(-u.math.sum(A_matrix, axis=1))
 
     '''
     R_matrix = coo_matrix((R_axial, (pre_ids, post_ids)), shape = (n_compartment, n_compartment))
+    A_matrix = coo_matrix(A_matrix)
     '''
 
     return A_matrix

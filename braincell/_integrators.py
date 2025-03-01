@@ -45,7 +45,7 @@ all_integrators = {
 
     # implicit methods
     'implicit_euler': implicit_euler_step,
-    'splitting_step': splitting_step,
+    'splitting': splitting_step,
 }
 
 

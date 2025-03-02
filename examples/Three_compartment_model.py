@@ -73,7 +73,7 @@ class IK(braincell.channel.PotassiumChannel):
 
 
 class ThreeCompartmentHH(braincell.neuron.MultiCompartment):
-    def __init__(self, n_neuron: int, g_na = 0.0, g_k = 0.0, solver = 'exp_euler'):
+    def __init__(self, n_neuron: int, g_na = 0.12, g_k = 0.036, solver = 'exp_euler'):
         super().__init__(
             size=(n_neuron, 3),
             connection=((0, 1), (1, 2)),
@@ -87,7 +87,7 @@ class ThreeCompartmentHH(braincell.neuron.MultiCompartment):
             solver = solver
         )
 
-        self.IL = braincell.channel.IL(self.varshape, E=(-54.3, -65., -65.) * u.mV, g_max=[0.000, 0.00, 0.00] * s)
+        self.IL = braincell.channel.IL(self.varshape, E=(-54.3, -65., -65.) * u.mV, g_max=[0.0003, 0.001, 0.001] * s)
 
         self.na = braincell.ion.SodiumFixed(self.varshape, E=50. * u.mV)
         self.na.add(INa=INa(self.varshape, g_max=(g_na, 0., 0.) * s))
@@ -103,7 +103,7 @@ class ThreeCompartmentHH(braincell.neuron.MultiCompartment):
 def try_trn_neuron():
     import jax
     #jax.config.update("jax_disable_jit", True)
-    brainstate.environ.set(dt=0.01 * u.ms)
+    brainstate.environ.set(dt=0.05 * u.ms)
 
     I = braintools.input.section_input(values=[0, 0.0001, 0], durations=[50 * u.ms, 200 * u.ms, 100 * u.ms]) * u.uA
     times = u.math.arange(I.shape[0]) * brainstate.environ.get_dt()

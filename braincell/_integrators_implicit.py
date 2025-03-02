@@ -26,6 +26,8 @@ from scipy.integrate import solve_ivp
 from ._integrators_util import apply_standard_solver_step
 from ._misc import set_module_as
 from ._protocol import DiffEqModule
+from ._integrators_exp_euler import _exponential_euler
+from ._integrators_runge_kutta import *
 
 __all__ = [
     'implicit_euler_step',
@@ -107,7 +109,7 @@ def newton_method(f, y0, t, dt, modified =False, tol=1e-5, max_iter=100, order =
 def solve_ivp_method(f, y0, t, dt, args=()):
     dt = u.get_magnitude(dt)
     t = u.get_magnitude(t)
-    sol = solve_ivp(lambda t, y: f(t, y, *args)[0], [t, t+dt], y0, t_eval= [t+dt], method='RK23')
+    sol = solve_ivp(lambda t, y: f(t, y, *args)[0], [t, t+dt], y0, t_eval= [t+dt], method='LSODA')
     aux = {}
     return sol.y.flatten() , aux
 
@@ -187,7 +189,6 @@ def _crank_nicolson_for_axial_current(A, y0, dt):
     lhs = I - 0.5 * dt * A
     rhs = (I + 0.5 * dt * A) @ y0
     y1 = u.math.linalg.solve(lhs, rhs)
-    jax.debug.print('y1 ={a}', a =y1)
     return y1
 
 
@@ -241,17 +242,17 @@ def construct_A(target):
         pre_ids, post_ids = connection[:, 0], connection[:, 1] 
 
         adj_matrix = u.math.zeros((n_compartment, n_compartment)).at[pre_ids, post_ids].set(1)
-        R_matrix = u.math.zeros((n_compartment, n_compartment)).at[pre_ids, post_ids].set(1/u.get_magnitude(R_axial)) * u.get_unit(R_axial)
+        R_matrix = u.math.zeros((n_compartment, n_compartment)).at[pre_ids, post_ids].set(1/u.get_magnitude(R_axial)) /u.get_unit(R_axial)
         adj_matrix = adj_matrix + adj_matrix.T
         R_matrix = R_matrix + R_matrix.T
 
-        A_matrix =  R_matrix /(cm *A[:,u.math.newaxis] )
+        A_matrix =  R_matrix /(cm * A[:,u.math.newaxis])
         A_matrix = A_matrix.at[jnp.diag_indices(n_compartment)].set(-u.math.sum(A_matrix, axis=1))
 
-    '''
-    R_matrix = coo_matrix((R_axial, (pre_ids, post_ids)), shape = (n_compartment, n_compartment))
-    A_matrix = coo_matrix(A_matrix)
-    '''
+        '''
+        R_matrix = coo_matrix((R_axial, (pre_ids, post_ids)), shape = (n_compartment, n_compartment))
+        A_matrix = coo_matrix(A_matrix)
+        '''
 
     return A_matrix
 
@@ -284,25 +285,33 @@ def splitting_step(
             dt = brainstate.environ.get_dt()
             V_n = target.V.value
             A_matrix = construct_A(target)
-            return _crank_nicolson_for_axial_current(A_matrix, V_n, dt)
-        
-        
+            target.V.value = _crank_nicolson_for_axial_current(A_matrix, V_n, dt)
+             
         for _ in range(len(target.pop_size)):
             integral = brainstate.augment.vmap(solve_axial, in_states=target.states())
         integral()
 
         
         # second step
+        
         with brainstate.environ.context(compute_axial_current=False):
+            '''
             integral = lambda: apply_standard_solver_step(
                 newton_method,
                 target,
                 t,
                 *args
             )
-            for _ in range(len(target.pop_size)+1):
+            for _ in range(len(target.pop_size)):
                 integral = brainstate.augment.vmap(integral, in_states=target.states())
             integral()
+            '''
+            
+            ralston4_step(
+                target,
+                t,
+                *args,)
+            
         
 
     else:

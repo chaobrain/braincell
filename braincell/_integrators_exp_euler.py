@@ -86,7 +86,8 @@ def _exp_euler_step_impl(target: DiffEqModule, t: u.Quantity[u.second], *args):
         _exponential_euler,
         target,
         t,
-        *args
+        *args,
+        merging_method='stack'
     )
 
 

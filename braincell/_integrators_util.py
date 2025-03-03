@@ -25,7 +25,10 @@ import jax.numpy as jnp
 from ._protocol import DiffEqState, DiffEqModule
 
 
-def _check_diffeq_state_derivative(st: DiffEqState, dt):
+def _check_diffeq_state_derivative(
+    st: DiffEqState,
+    dt: u.Quantity
+):
     a = u.get_unit(st.derivative) * u.get_unit(dt)
     b = u.get_unit(st.value)
     assert a.has_same_dim(b), f'Unit mismatch. Got {a} != {b}'
@@ -33,38 +36,59 @@ def _check_diffeq_state_derivative(st: DiffEqState, dt):
         st.derivative = st.derivative.in_unit(u.get_unit(st.value) / u.get_unit(dt))
 
 
-def _dict_derivative_to_arr(a_dict: Dict[Any, DiffEqState]):
+def _merging(leaves, method: str):
+    if method == 'concat':
+        return jnp.concatenate(leaves, axis=-1)
+    elif method == 'stack':
+        return jnp.stack(leaves, axis=-1)
+    else:
+        raise ValueError(f'Unknown method: {method}')
+
+
+def _dict_derivative_to_arr(
+    a_dict: Dict[Any, DiffEqState],
+    method: str = 'concat',
+):
     a_dict = {key: val.derivative for key, val in a_dict.items()}
     leaves = jax.tree.leaves(a_dict)
-    leaves = [jnp.expand_dims(leaf, axis=0) if leaf.ndim == 0 else leaf
-              for leaf in leaves]
-    return jnp.concatenate(leaves, axis=-1)
+    return _merging(leaves, method=method)
 
 
-def _dict_state_to_arr(a_dict: Dict[Any, brainstate.State]):
+def _dict_state_to_arr(
+    a_dict: Dict[Any, brainstate.State],
+    method: str = 'concat',
+):
     a_dict = {key: val.value for key, val in a_dict.items()}
     leaves = jax.tree.leaves(a_dict)
-    leaves = [jnp.expand_dims(leaf, axis=0) if leaf.ndim == 0 else leaf for leaf in leaves]
-    return jnp.concatenate(leaves, axis=-1)
+    return _merging(leaves, method=method)
 
 
-def _assign_arr_to_states(vals: jax.Array, states: Dict[Any, brainstate.State]):
+def _assign_arr_to_states(
+    vals: jax.Array,
+    states: Dict[Any, brainstate.State],
+    method: str = 'concat',
+):
     leaves, tree_def = jax.tree.flatten({key: state.value for key, state in states.items()})
     index = 0
     vals_like_leaves = []
     for leaf in leaves:
-        if leaf.ndim == 0:
+        if method == 'stack':
             vals_like_leaves.append(vals[..., index])
             index += 1
-        else:
+        elif method == 'concat':
             vals_like_leaves.append(vals[..., index: index + leaf.shape[-1]])
             index += leaf.shape[-1]
+        else:
+            raise ValueError(f'Unknown method: {method}')
     vals_like_states = jax.tree.unflatten(tree_def, vals_like_leaves)
     for key, state_val in vals_like_states.items():
         states[key].value = state_val
 
 
-def _transform_diffeq_module_into_dimensionless_fn(target: DiffEqModule):
+def _transform_diffeq_module_into_dimensionless_fn(
+    target: DiffEqModule,
+    method: str = 'concat'
+):
     all_states = brainstate.graph.states(target)
     diffeq_states, other_states = all_states.split(DiffEqState, ...)
     all_state_ids = {id(st) for st in all_states.values()}
@@ -73,13 +97,13 @@ def _transform_diffeq_module_into_dimensionless_fn(target: DiffEqModule):
         with brainstate.StateTraceStack() as trace:
 
             # y: dimensionless states
-            _assign_arr_to_states(y_dimensionless, diffeq_states)
+            _assign_arr_to_states(y_dimensionless, diffeq_states, method=method)
             target.compute_derivative(*args)
 
             # derivative_arr: dimensionless derivatives
             for st in diffeq_states.values():
                 _check_diffeq_state_derivative(st, brainstate.environ.get_dt())
-            derivative_dimensionless = _dict_derivative_to_arr(diffeq_states)
+            derivative_dimensionless = _dict_derivative_to_arr(diffeq_states, method=method)
             other_vals = {key: st.value for key, st in other_states.items()}
 
         # check if all states exist in the trace
@@ -95,7 +119,8 @@ def apply_standard_solver_step(
     solver_step: Callable[[Callable, jax.Array, u.Quantity[u.second], u.Quantity[u.second], Any], Any],
     target: DiffEqModule,
     t: u.Quantity[u.second],
-    *args
+    *args,
+    merging_method: str = 'concat',
 ):
     """
     Apply a standard solver step to the given differential equation module.
@@ -114,6 +139,8 @@ def apply_standard_solver_step(
         The current time of the integration.
     *args : Any
         Additional arguments to be passed to the pre_integral, post_integral, and compute_derivative methods.
+    merging_method: str
+        The merging method to be used when converting states to arrays.
 
     Returns
     -------
@@ -123,19 +150,24 @@ def apply_standard_solver_step(
     # pre integral
     dt = u.get_magnitude(brainstate.environ.get_dt())
     target.pre_integral(*args)
-    dimensionless_fn, diffeq_states, other_states = _transform_diffeq_module_into_dimensionless_fn(target)
+    dimensionless_fn, diffeq_states, other_states = (
+        _transform_diffeq_module_into_dimensionless_fn(
+            target,
+            method=merging_method,
+        )
+    )
 
     # one-step integration
     diffeq_vals, other_vals = solver_step(
         dimensionless_fn,
-        _dict_state_to_arr(diffeq_states),
+        _dict_state_to_arr(diffeq_states, method=merging_method),
         t,
         dt,
         args
     )
 
     # post integral
-    _assign_arr_to_states(diffeq_vals, diffeq_states)
+    _assign_arr_to_states(diffeq_vals, diffeq_states, method=merging_method)
     for key, val in other_vals.items():
         other_states[key].value = val
     target.post_integral(*args)

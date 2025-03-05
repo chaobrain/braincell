@@ -16,6 +16,7 @@
     </a>  	
     <a href="https://badge.fury.io/py/braincell"><img alt="PyPI version" src="https://badge.fury.io/py/braincell.svg"></a>
     <a href="https://github.com/chaobrain/braincell/actions/workflows/CI.yml"><img alt="Continuous Integration" src="https://github.com/chaobrain/braincell/actions/workflows/CI.yml/badge.svg"></a>
+    <a href="https://doi.org/10.5281/zenodo.14969987"><img src="https://zenodo.org/badge/825447742.svg" alt="DOI"></a>
 </p>
 
 

@@ -265,6 +265,8 @@ class MultiCompartment(HHTypedNeuron):
             I_channel = ch.current(self.V.value) if I_channel is None else (I_channel + ch.current(self.V.value))
 
         # 5. derivatives
+        #import jax
+        #jax.debug.print('I_ext={a}', a = I_ext)
         self.V.derivative = (I_ext + I_axial + I_syn + I_channel) / self.cm
 
         # [ integrate dynamics of ion and ion channel ]

@@ -171,3 +171,38 @@ def apply_standard_solver_step(
     for key, val in other_vals.items():
         other_states[key].value = val
     target.post_integral(*args)
+
+def _jacrev_last_dim(
+    fn: Callable[[...], jax.Array],
+    hid_vals: jax.Array,
+) -> Tuple[jax.Array, jax.Array]:
+    """
+    Compute the Jacobian of a function with respect to its last dimension.
+
+    This function calculates the Jacobian matrix of the given function 'fn'
+    with respect to the last dimension of the input 'hid_vals'. It uses
+    JAX's vector-Jacobian product (vjp) and vmap for efficient computation.
+
+    Args:
+        fn (Callable[[...], jax.Array]): The function for which to compute
+            the Jacobian. It should take a JAX array as input and return
+            a JAX array.
+        hid_vals (jax.Array): The input values for which to compute the
+            Jacobian. The last dimension is considered as the dimension
+            of interest.
+
+    Returns:
+        jax.Array: The Jacobian matrix. Its shape is (*varshape, num_state, num_state),
+        where varshape is the shape of the input excluding the last dimension,
+        and num_state is the size of the last dimension.
+
+    Raises:
+        AssertionError: If the number of input and output states are not the same.
+    """
+    new_hid_vals, f_vjp = jax.vjp(fn, hid_vals)
+    num_state = new_hid_vals.shape[-1]
+    varshape = new_hid_vals.shape[:-1]
+    assert num_state == hid_vals.shape[-1], 'Error: the number of input/output states should be the same.'
+    g_primals = u.math.broadcast_to(u.math.eye(num_state), (*varshape, num_state, num_state))
+    jac = jax.vmap(f_vjp, in_axes=-2, out_axes=-2)(g_primals)
+    return jac[0], new_hid_vals

@@ -14,14 +14,14 @@
 # ==============================================================================
 
 from __future__ import annotations
-
+import jax
 import brainstate
 import brainunit as u
 import jax.numpy as jnp
 from jax.scipy.linalg import expm
 
 from ._base import HHTypedNeuron
-from ._integrators_util import apply_standard_solver_step
+from ._integrators_util import apply_standard_solver_step, _jacrev_last_dim
 from ._misc import set_module_as
 from ._protocol import DiffEqModule
 
@@ -87,7 +87,7 @@ def _exp_euler_step_impl(target: DiffEqModule, t: u.Quantity[u.second], *args):
         target,
         t,
         *args,
-        merging_method='stack'
+        merging_method='concat'
     )
 
 

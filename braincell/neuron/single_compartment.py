@@ -21,7 +21,7 @@ import brainstate
 import brainunit as u
 
 from braincell._base import HHTypedNeuron, IonChannel
-from braincell._integrators import get_integrator
+from braincell._integrator import get_integrator
 from braincell._protocol import DiffEqState
 
 __all__ = [

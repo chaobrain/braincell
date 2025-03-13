@@ -15,23 +15,25 @@
 
 from __future__ import annotations
 
-from typing import Callable, Tuple
-
 import brainstate
 import brainunit as u
 import jax
 import jax.numpy as jnp
 from scipy.integrate import solve_ivp
 
-
-from ._integrators_util import apply_standard_solver_step, _jacrev_last_dim
+from ._integrator_exp_euler import _exponential_euler
+from ._integrator_runge_kutta import rk4_step
+from ._integrator_util import apply_standard_solver_step, jacrev_last_dim
 from ._misc import set_module_as
 from ._protocol import DiffEqModule
-from ._integrators_runge_kutta import ralston4_step, rk4_step
-from ._integrators_exp_euler import _exponential_euler, exp_euler_step
+
 __all__ = [
     'implicit_euler_step',
     'splitting_step',
+    'implicit_rk4_step',
+    'implicit_exp_euler_step',
+    'cn_rk4_step',
+    'cn_exp_euler_step',
 ]
 
 
@@ -67,7 +69,7 @@ def _newton_method(f, y0, t, dt, args=(), modified=False, tol=1e-5, max_iter=100
     """
 
     def g(t, y, *args):
-        #jax.debug.print("arg = {a}", a = args)
+        # jax.debug.print("arg = {a}", a = args)
         if order == 1:
             return y - y0 - dt * f(t + dt, y, *args)[0]
         elif order == 2:
@@ -78,10 +80,10 @@ def _newton_method(f, y0, t, dt, args=(), modified=False, tol=1e-5, max_iter=100
     def cond_fun(carry):
         i, _, cond = carry
         # condition = u.math.logical_or(u.math.linalg.norm(A) < tol, u.math.linalg.norm(df) < tol)
-        return u.math.logical_and(i < max_iter,cond)
+        return u.math.logical_and(i < max_iter, cond)
 
     def body_fun(carry):
-        i, y1, _= carry
+        i, y1, _ = carry
         A, df = brainstate.augment.jacfwd(lambda y: g(t, y, *args), return_value=True, has_aux=False)(y1)
         # df: [n_neuron, n_compartment, M]
         # A: [n_neuron, n_compartment, M, M]
@@ -125,7 +127,7 @@ def _newton_method_manual_parallel(
     tol=1e-5,
     max_iter=100,
     order=2,
-    
+
 ):
     r"""
     Newton's method for solving the implicit equations arising from the Crank - Nicolson method for ordinary differential equations (ODEs).
@@ -160,7 +162,7 @@ def _newton_method_manual_parallel(
     """
 
     def g(t, y, *args):
-        #jax.debug.print("arg ={a}", a = args)
+        # jax.debug.print("arg ={a}", a = args)
         if order == 1:
             return y - y0 - dt * f(t + dt, y, *args)[0]
         elif order == 2:
@@ -170,13 +172,13 @@ def _newton_method_manual_parallel(
 
     def cond_fun(carry):
         i, _, cond = carry
-        return u.math.logical_and(i < max_iter,cond)
+        return u.math.logical_and(i < max_iter, cond)
 
     def body_fun(carry):
-        i, y1, _= carry
+        i, y1, _ = carry
         # df: [*pop_size, n_compartment, M]
         # A: [*pop_size, n_compartment, M, M]
-        A, df = _jacrev_last_dim(lambda y: g(t, y, *args), y1)
+        A, df = jacrev_last_dim(lambda y: g(t, y, *args), y1)
 
         shape = df.shape
         # df: [n_neuron * n_compartment, M]
@@ -204,7 +206,7 @@ def _newton_method_manual_parallel(
 
     dt = u.get_magnitude(dt)
     t = u.get_magnitude(t)
-    init_guess = y0  + dt*f(t, y0, *args)[0]
+    init_guess = y0 + dt * f(t, y0, *args)[0]
     init_carry = (0, init_guess, True)
     n, result, _ = jax.lax.while_loop(
         cond_fun,
@@ -320,6 +322,7 @@ def _crank_nicolson_for_axial_current(A, y0, dt):
     '''
     return y1
 
+
 @set_module_as('braincell')
 def implicit_euler_step(
     target: DiffEqModule,
@@ -407,12 +410,14 @@ def splitting_step(
     from braincell.neuron.multi_compartment import MultiCompartment
 
     if isinstance(target, MultiCompartment):
-        
+
         def solve_axial():
             dt = brainstate.environ.get_dt()
             V_n = target.V.value
             A_matrix = construct_A(target)
-            target.V.value = _crank_nicolson_for_axial_current(A_matrix, V_n, dt)
+            target.V.value = _implicit_euler_for_axial_current(A_matrix, V_n, dt)
+            # target.V.value = _crank_nicolson_for_axial_current(A_matrix, V_n, dt)
+
         '''
         for _ in range(len(target.pop_size)):
             integral = brainstate.augment.vmap(solve_axial, in_states=target.states())
@@ -421,36 +426,195 @@ def splitting_step(
         # second step
 
         with brainstate.environ.context(compute_axial_current=False):
-            '''
+            # '''
+            # apply_standard_solver_step(
+            #     _newton_method_manual_parallel,
+            #     target,
+            #     t,
+            #     *args,
+            #     merging_method='stack'
+            # )
+            # '''
+            # rk4_step(
+            #     target,
+            #     t,
+            #     *args,
+            # )
+            # '''
+            # exp_euler_step(
+            #     target,
+            #     t,
+            #     *args,
+            # )
+            # '''
+
             apply_standard_solver_step(
-                _newton_method_manual_parallel,
+                _exponential_euler,
                 target,
                 t,
                 *args,
                 merging_method='stack'
             )
-            '''
-            rk4_step(
-                target,
-                t,
-                *args,
-            )
-            '''
-            exp_euler_step(
-                target,
-                t,
-                *args,
-            )
-            '''
 
-        
         for _ in range(len(target.pop_size)):
             integral = brainstate.augment.vmap(solve_axial, in_states=target.states())
         integral()
-        
+
     else:
         apply_standard_solver_step(
             _newton_method, target, t, *args
         )
 
 
+@set_module_as('braincell')
+def cn_rk4_step(
+    target: DiffEqModule,
+    t: u.Quantity[u.second],
+    *args
+):
+    from braincell.neuron.multi_compartment import MultiCompartment
+    assert isinstance(target, MultiCompartment)
+
+    with brainstate.environ.context(compute_axial_current=False):
+        rk4_step(
+            target,
+            t,
+            *args,
+        )
+
+    def solve_axial():
+        dt = brainstate.environ.get_dt()
+        V_n = target.V.value
+        A_matrix = construct_A(target)
+        target.V.value = _crank_nicolson_for_axial_current(A_matrix, V_n, dt)
+
+    for _ in range(len(target.pop_size)):
+        integral = brainstate.augment.vmap(solve_axial, in_states=target.states())
+    integral()
+
+
+@set_module_as('braincell')
+def cn_exp_euler_step(
+    target: DiffEqModule,
+    t: u.Quantity[u.second],
+    *args
+):
+    from braincell.neuron.multi_compartment import MultiCompartment
+    assert isinstance(target, MultiCompartment)
+
+    with brainstate.environ.context(compute_axial_current=False):
+        apply_standard_solver_step(
+            _exponential_euler,
+            target,
+            t,
+            *args,
+            merging_method='stack'
+        )
+
+    def solve_axial():
+        dt = brainstate.environ.get_dt()
+        V_n = target.V.value
+        A_matrix = construct_A(target)
+        target.V.value = _crank_nicolson_for_axial_current(A_matrix, V_n, dt)
+
+    for _ in range(len(target.pop_size)):
+        integral = brainstate.augment.vmap(solve_axial, in_states=target.states())
+    integral()
+
+
+@set_module_as('braincell')
+def implicit_rk4_step(
+    target: DiffEqModule,
+    t: u.Quantity[u.second],
+    *args
+):
+    """
+    Applies the splitting solver method to solve a differential equation.
+
+    This function uses the Newton method to solve the implicit equation
+    arising from the implicit Euler discretization of the ODE.
+
+    Parameters
+    ----------
+    target : DiffEqModule
+        The differential equation module to be solved.
+    t : u.Quantity[u.second]
+        The current time in the simulation.
+    *args :
+        Additional arguments to be passed to the differential equation.
+    """
+    from braincell.neuron.multi_compartment import MultiCompartment
+
+    if isinstance(target, MultiCompartment):
+        with brainstate.environ.context(compute_axial_current=False):
+            rk4_step(
+                target,
+                t,
+                *args,
+            )
+
+        def solve_axial():
+            dt = brainstate.environ.get_dt()
+            V_n = target.V.value
+            A_matrix = construct_A(target)
+            target.V.value = _implicit_euler_for_axial_current(A_matrix, V_n, dt)
+
+        for _ in range(len(target.pop_size)):
+            integral = brainstate.augment.vmap(solve_axial, in_states=target.states())
+        integral()
+
+    else:
+        apply_standard_solver_step(
+            _newton_method, target, t, *args
+        )
+
+
+@set_module_as('braincell')
+def implicit_exp_euler_step(
+    target: DiffEqModule,
+    t: u.Quantity[u.second],
+    *args
+):
+    """
+    Applies the splitting solver method to solve a differential equation.
+
+    This function uses the Newton method to solve the implicit equation
+    arising from the implicit Euler discretization of the ODE.
+
+    Parameters
+    ----------
+    target : DiffEqModule
+        The differential equation module to be solved.
+    t : u.Quantity[u.second]
+        The current time in the simulation.
+    *args :
+        Additional arguments to be passed to the differential equation.
+    """
+    from braincell.neuron.multi_compartment import MultiCompartment
+
+    if isinstance(target, MultiCompartment):
+
+        # second step
+        with brainstate.environ.context(compute_axial_current=False):
+            apply_standard_solver_step(
+                _exponential_euler,
+                target,
+                t,
+                *args,
+                merging_method='stack'
+            )
+
+        def solve_axial():
+            dt = brainstate.environ.get_dt()
+            V_n = target.V.value
+            A_matrix = construct_A(target)
+            target.V.value = _implicit_euler_for_axial_current(A_matrix, V_n, dt)
+
+        for _ in range(len(target.pop_size)):
+            integral = brainstate.augment.vmap(solve_axial, in_states=target.states())
+        integral()
+
+    else:
+        apply_standard_solver_step(
+            _newton_method, target, t, *args
+        )

@@ -17,9 +17,9 @@ from __future__ import annotations
 
 from typing import Callable
 
-from ._integrators_exp_euler import *
-from ._integrators_implicit import *
-from ._integrators_runge_kutta import *
+from ._integrator_exp_euler import *
+from ._integrator_implicit import *
+from ._integrator_runge_kutta import *
 
 
 __all__ = [
@@ -46,6 +46,10 @@ all_integrators = {
     # implicit methods
     'implicit_euler': implicit_euler_step,
     'splitting': splitting_step,
+    'cn_rk4': cn_rk4_step,
+    'cn_exp_euler': cn_exp_euler_step,
+    'implicit_rk4': implicit_rk4_step,
+    'implicit_exp_euler': implicit_exp_euler_step,
 }
 
 

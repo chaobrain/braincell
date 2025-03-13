@@ -22,7 +22,7 @@ import brainstate
 import brainunit as u
 import jax
 
-from ._integrators_util import _check_diffeq_state_derivative
+from ._integrator_util import _check_diffeq_state_derivative
 from ._protocol import DiffEqState
 
 diffrax_installed = importlib.util.find_spec('diffrax') is not None

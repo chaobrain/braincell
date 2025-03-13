@@ -15,7 +15,7 @@
 
 from __future__ import annotations
 
-from typing import Dict, Any, Callable
+from typing import Dict, Any, Callable, Tuple
 
 import brainstate
 import brainunit as u
@@ -89,6 +89,8 @@ def _transform_diffeq_module_into_dimensionless_fn(
     target: DiffEqModule,
     method: str = 'concat'
 ):
+    assert method in ['concat', 'stack'], f'Unknown method: {method}'
+
     all_states = brainstate.graph.states(target)
     diffeq_states, other_states = all_states.split(DiffEqState, ...)
     all_state_ids = {id(st) for st in all_states.values()}
@@ -142,11 +144,17 @@ def apply_standard_solver_step(
     merging_method: str
         The merging method to be used when converting states to arrays.
 
+        - 'concat': Concatenate the states along the last dimension.
+        - 'stack': Stack the states along the last dimension.
+
     Returns
     -------
     None
         This function updates the states of the target module in-place and does not return a value.
     """
+
+    assert merging_method in ['concat', 'stack'], f'Unknown merging method: {merging_method}'
+
     # pre integral
     dt = u.get_magnitude(brainstate.environ.get_dt())
     target.pre_integral(*args)
@@ -172,10 +180,12 @@ def apply_standard_solver_step(
         other_states[key].value = val
     target.post_integral(*args)
 
-def _jacrev_last_dim(
+
+def jacrev_last_dim(
     fn: Callable[[...], jax.Array],
     hid_vals: jax.Array,
-) -> Tuple[jax.Array, jax.Array]:
+    has_aux: bool = False,
+) -> Tuple[jax.Array, jax.Array] | Tuple[jax.Array, jax.Array, Any]:
     """
     Compute the Jacobian of a function with respect to its last dimension.
 
@@ -190,6 +200,8 @@ def _jacrev_last_dim(
         hid_vals (jax.Array): The input values for which to compute the
             Jacobian. The last dimension is considered as the dimension
             of interest.
+        has_aux (bool, optional): Whether the function 'fn' returns auxiliary
+            values. Defaults to False.
 
     Returns:
         jax.Array: The Jacobian matrix. Its shape is (*varshape, num_state, num_state),
@@ -199,10 +211,16 @@ def _jacrev_last_dim(
     Raises:
         AssertionError: If the number of input and output states are not the same.
     """
-    new_hid_vals, f_vjp = jax.vjp(fn, hid_vals)
+    if has_aux:
+        new_hid_vals, f_vjp, aux = jax.vjp(fn, hid_vals, has_aux=True)
+    else:
+        new_hid_vals, f_vjp = jax.vjp(fn, hid_vals)
     num_state = new_hid_vals.shape[-1]
     varshape = new_hid_vals.shape[:-1]
     assert num_state == hid_vals.shape[-1], 'Error: the number of input/output states should be the same.'
     g_primals = u.math.broadcast_to(u.math.eye(num_state), (*varshape, num_state, num_state))
     jac = jax.vmap(f_vjp, in_axes=-2, out_axes=-2)(g_primals)
-    return jac[0], new_hid_vals
+    if has_aux:
+        return jac[0], new_hid_vals, aux
+    else:
+        return jac[0], new_hid_vals

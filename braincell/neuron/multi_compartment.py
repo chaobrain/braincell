@@ -24,7 +24,7 @@ import numpy as np
 
 from braincell._base import HHTypedNeuron, IonChannel
 from braincell._protocol import DiffEqState
-from braincell._integrators import get_integrator
+from braincell._integrator import get_integrator
 
 __all__ = [
     'MultiCompartment',

@@ -174,7 +174,7 @@ def try_trn_neuron():
     # neu = HTC(1)  # [n_neuron, ]
     # neu = IN(1)  # [n_neuron, ]
     # neu = RTC(1)  # [n_neuron, ]
-    neu = HTC(1, solver='splitting')  # [n_neuron,]
+    neu = HTC(1, solver='exp_euler')  # [n_neuron,]
     neu.init_state()
 
     t0 = time.time()

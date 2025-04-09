@@ -30,7 +30,6 @@ __all__ = [
     'MultiCompartment',
 ]
 
-import numpy as np
 
 def calculate_total_resistance_and_area(points, resistivity=1.0):
     """

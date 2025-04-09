@@ -43,13 +43,14 @@ all_integrators = {
     'rk4': rk4_step,
     'ralston4': ralston4_step,
 
-    # implicit methods
+    # splitting methods
     'implicit_euler': implicit_euler_step,
     'splitting': splitting_step,
     'cn_rk4': cn_rk4_step,
     'cn_exp_euler': cn_exp_euler_step,
     'implicit_rk4': implicit_rk4_step,
     'implicit_exp_euler': implicit_exp_euler_step,
+    'exp_exp_euler': exp_exp_euler_step,
 }
 
 

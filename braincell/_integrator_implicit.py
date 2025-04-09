@@ -20,6 +20,7 @@ import brainunit as u
 import jax
 import jax.numpy as jnp
 from scipy.integrate import solve_ivp
+from jax.scipy.linalg import expm
 
 from ._integrator_exp_euler import _exponential_euler
 from ._integrator_runge_kutta import rk4_step
@@ -34,6 +35,7 @@ __all__ = [
     'implicit_exp_euler_step',
     'cn_rk4_step',
     'cn_exp_euler_step',
+    'exp_exp_euler_step',
 ]
 
 
@@ -253,10 +255,12 @@ def _implicit_euler_for_axial_current(A, y0, dt):
             Solution array at the next time step, shape (n,).
     """
     n = y0.shape[-1]
-    I = u.math.eye(n) * u.get_unit(dt * A)
+    I = u.math.eye(n)
     lhs = I - dt * A
     rhs = y0
     y1 = u.math.linalg.solve(lhs, rhs)
+
+    #jax.debug.print('A_cond = {a}', a = (jnp.linalg.cond(u.get_magnitude(lhs))))
 
     '''
     # residual
@@ -306,9 +310,10 @@ def _crank_nicolson_for_axial_current(A, y0, dt):
             Solution array at the next time step, shape (n,).
     """
     n = y0.shape[-1]
-    I = u.math.eye(n) * u.get_unit(0.5 * dt * A)
-    lhs = I - 0.5 * dt * A
-    rhs = u.math.dot(I + 0.5 * dt * A, y0)
+    I = u.math.eye(n) 
+    alpha = 1
+    lhs = (I - alpha * dt * A)
+    rhs = (I + (1-alpha) * dt * A)@y0
     y1 = u.math.linalg.solve(lhs, rhs)
 
     '''
@@ -320,6 +325,10 @@ def _crank_nicolson_for_axial_current(A, y0, dt):
     cond = jnp.linalg.cond(u.get_magnitude(lhs))
     jax.debug.print('cond = {a}', a = cond)
     '''
+    #jax.debug.print('I = {a}',a = I)
+    #jax.debug.print('lhs = {a}',a = lhs)
+    #cond = jnp.linalg.cond(u.get_magnitude(lhs))
+    #jax.debug.print('cond = {a}', a = cond)
     return y1
 
 
@@ -367,22 +376,25 @@ def construct_A(target):
     with jax.ensure_compile_time_eval():
         ## load the param
         n_compartment = target.n_compartment
-        connection = u.math.array(target.connection)
         cm = target.cm
         A = target.A
-        R_axial = target.resistances
-        pre_ids, post_ids = connection[:, 0], connection[:, 1]
+        R_matrix = target.resistances
+        Gl = target.Gl
 
+        print('cm=',cm)
         ## create the A_matrix
-        adj_matrix = u.math.zeros((n_compartment, n_compartment)).at[pre_ids, post_ids].set(1)
-        R_matrix = u.math.zeros((n_compartment, n_compartment)).at[pre_ids, post_ids].set(
-            1 / u.get_magnitude(R_axial)) / u.get_unit(R_axial)
-        adj_matrix = adj_matrix + adj_matrix.T
-        R_matrix = R_matrix + R_matrix.T
         cm_A = cm * A
+        print('-Gl/cm=',-Gl/cm)
+        print('-Gl/cm.shape=',(-Gl/cm).shape)
         A_matrix = R_matrix / (cm_A[:, u.math.newaxis])
         A_matrix = A_matrix.at[jnp.diag_indices(n_compartment)].set(-u.math.sum(A_matrix, axis=1))
+        A_matrix = A_matrix.at[jnp.diag_indices(n_compartment)].add(-Gl/cm)
 
+        # jax.debug.print('A = {a}', a = (A_matrix))
+        #jax.debug.print('A = {a}', a = (u.get_magnitude(A_matrix)))
+        # jax.debug.print('A_cond = {a}', a = (jnp.linalg.cond(u.get_magnitude(A_matrix))))
+        # jax.debug.print('eigvalue = {a}', a = 10**7*jnp.linalg.eigvals(u.get_magnitude(A_matrix)))
+        
     return A_matrix
 
 
@@ -423,6 +435,7 @@ def splitting_step(
             integral = brainstate.augment.vmap(solve_axial, in_states=target.states())
         integral()
         '''
+
         # second step
 
         with brainstate.environ.context(compute_axial_current=False):
@@ -449,16 +462,16 @@ def splitting_step(
             # '''
 
             apply_standard_solver_step(
-                _exponential_euler,
+                _newton_method_manual_parallel,
                 target,
                 t,
                 *args,
                 merging_method='stack'
             )
-
         for _ in range(len(target.pop_size)):
             integral = brainstate.augment.vmap(solve_axial, in_states=target.states())
         integral()
+
 
     else:
         apply_standard_solver_step(
@@ -475,22 +488,23 @@ def cn_rk4_step(
     from braincell.neuron.multi_compartment import MultiCompartment
     assert isinstance(target, MultiCompartment)
 
-    with brainstate.environ.context(compute_axial_current=False):
-        rk4_step(
-            target,
-            t,
-            *args,
-        )
-
     def solve_axial():
         dt = brainstate.environ.get_dt()
         V_n = target.V.value
         A_matrix = construct_A(target)
         target.V.value = _crank_nicolson_for_axial_current(A_matrix, V_n, dt)
 
+
+    with brainstate.environ.context(compute_axial_current=False):
+        rk4_step(
+            target,
+            t,
+            *args,
+        )
     for _ in range(len(target.pop_size)):
         integral = brainstate.augment.vmap(solve_axial, in_states=target.states())
     integral()
+
 
 
 @set_module_as('braincell')
@@ -609,6 +623,58 @@ def implicit_exp_euler_step(
             V_n = target.V.value
             A_matrix = construct_A(target)
             target.V.value = _implicit_euler_for_axial_current(A_matrix, V_n, dt)
+
+        for _ in range(len(target.pop_size)):
+            integral = brainstate.augment.vmap(solve_axial, in_states=target.states())
+        integral()
+
+    else:
+        apply_standard_solver_step(
+            _newton_method, target, t, *args
+        )
+
+@set_module_as('braincell')
+def exp_exp_euler_step(
+    target: DiffEqModule,
+    t: u.Quantity[u.second],
+    *args
+):
+    """
+    Applies the splitting solver method to solve a differential equation.
+
+    This function uses the Newton method to solve the implicit equation
+    arising from the implicit Euler discretization of the ODE.
+
+    Parameters
+    ----------
+    target : DiffEqModule
+        The differential equation module to be solved.
+    t : u.Quantity[u.second]
+        The current time in the simulation.
+    *args :
+        Additional arguments to be passed to the differential equation.
+    """
+    from braincell.neuron.multi_compartment import MultiCompartment
+
+    if isinstance(target, MultiCompartment):
+
+        # first step
+        with brainstate.environ.context(compute_axial_current=False):
+            apply_standard_solver_step(
+                _exponential_euler,
+                target,
+                t,
+                *args,
+                merging_method='stack'
+            )
+        # second step
+
+        def solve_axial():
+            dt = brainstate.environ.get_dt()
+            V_n = target.V.value
+            A_matrix = construct_A(target)
+            #jax.debug.print("A = {a}",a=A_matrix)
+            target.V.value = _implicit_euler_for_axial_current(A_matrix, V_n, dt)#expm(dt*A_matrix)@V_n
 
         for _ in range(len(target.pop_size)):
             integral = brainstate.augment.vmap(solve_axial, in_states=target.states())

@@ -302,6 +302,8 @@ class Ih1_Ma2020(Channel):
     def reset_state(self, V, batch_size=None):
         self.p.value = self.f_p_inf(V)
         self.q.value = self.f_q_inf(V)
+        #import jax
+        #jax.debug.print('q={a}',a = self.q.value)
 
     def pre_integral(self, V):
         pass

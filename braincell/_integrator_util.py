@@ -182,34 +182,36 @@ def apply_standard_solver_step(
 
 
 def jacrev_last_dim(
-    fn: Callable[[...], jax.Array],
+    fn: Callable[[...], jax.Array] | Callable[[...], Tuple[jax.Array, Any]],
     hid_vals: jax.Array,
     has_aux: bool = False,
 ) -> Tuple[jax.Array, jax.Array] | Tuple[jax.Array, jax.Array, Any]:
     """
-    Compute the Jacobian of a function with respect to its last dimension.
+    Compute the reverse-mode Jacobian of a function with respect to its last dimension.
 
-    This function calculates the Jacobian matrix of the given function 'fn'
-    with respect to the last dimension of the input 'hid_vals'. It uses
-    JAX's vector-Jacobian product (vjp) and vmap for efficient computation.
+    This function calculates the Jacobian matrix of the given function `fn`
+    with respect to the last dimension of the input `hid_vals`. It uses
+    JAX's reverse-mode automatic differentiation (jacrev) for efficient computation.
 
     Args:
-        fn (Callable[[...], jax.Array]): The function for which to compute
-            the Jacobian. It should take a JAX array as input and return
-            a JAX array.
-        hid_vals (jax.Array): The input values for which to compute the
-            Jacobian. The last dimension is considered as the dimension
-            of interest.
-        has_aux (bool, optional): Whether the function 'fn' returns auxiliary
-            values. Defaults to False.
+        fn (Callable[[...], jax.Array] | Callable[[...], Tuple[jax.Array, Any]]):
+            The function for which to compute the Jacobian. It can either return a single
+            JAX array or a tuple containing a JAX array and auxiliary values.
+        hid_vals (jax.Array):
+            The input values for which to compute the Jacobian. The last dimension is
+            considered as the dimension of interest.
+        has_aux (bool, optional):
+            Whether the function `fn` returns auxiliary values. Defaults to False.
 
     Returns:
-        jax.Array: The Jacobian matrix. Its shape is (*varshape, num_state, num_state),
-        where varshape is the shape of the input excluding the last dimension,
-        and num_state is the size of the last dimension.
+        Tuple[jax.Array, jax.Array] | Tuple[jax.Array, jax.Array, Any]:
+            If `has_aux` is False, returns a tuple containing the Jacobian matrix and the
+            output of the function `fn`. If `has_aux` is True, returns a tuple containing
+            the Jacobian matrix, the output of the function `fn`, and the auxiliary values.
 
     Raises:
-        AssertionError: If the number of input and output states are not the same.
+        AssertionError:
+            If the number of input and output states are not the same.
     """
     if has_aux:
         new_hid_vals, f_vjp, aux = jax.vjp(fn, hid_vals, has_aux=True)

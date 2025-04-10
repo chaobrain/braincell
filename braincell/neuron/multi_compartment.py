@@ -23,12 +23,14 @@ import jax
 import numpy as np
 
 from braincell._base import HHTypedNeuron, IonChannel
-from braincell._protocol import DiffEqState
 from braincell._integrator import get_integrator
+from braincell._protocol import DiffEqState
 
 __all__ = [
     'MultiCompartment',
 ]
+
+Initializer = Union[brainstate.typing.ArrayLike, Callable]
 
 
 def calculate_total_resistance_and_area(points, resistivity=1.0):
@@ -41,26 +43,27 @@ def calculate_total_resistance_and_area(points, resistivity=1.0):
     points = np.asarray(points)  # Ensure points is a NumPy array
     xyz = points[:, :3]  # Extract the first three columns (x, y, z)
     diameters = points[:, 3]  # Extract the diameter column
-    
+
     # Calculate the Euclidean distance between adjacent points
     heights = np.linalg.norm(np.diff(xyz, axis=0), axis=1)
-    
+
     # Calculate the radii of adjacent points
     r1 = diameters[:-1] / 2
     r2 = diameters[1:] / 2
-    
+
     # Calculate the slant heights (the oblique height)
-    slant_heights = np.sqrt(heights**2 + (r2 - r1)**2)
-    
+    slant_heights = np.sqrt(heights ** 2 + (r2 - r1) ** 2)
+
     # Calculate the surface areas of the frustums
     surface_areas = np.pi * (r1 + r2) * slant_heights
     total_surface_area = np.sum(surface_areas)
-    
+
     # Calculate the resistances
     resistances = resistivity * heights / (np.pi * r1 * r2)
     total_resistance = np.sum(resistances)
-    
+
     return total_resistance, total_surface_area
+
 
 def compute_line_ratios(points):
     """
@@ -85,6 +88,7 @@ def compute_line_ratios(points):
 
     return ratios
 
+
 def find_ratio_interval(ratios, target_ratio):
     """
     Find the two adjacent indices where the target_ratio falls between in the ratios list.
@@ -105,6 +109,7 @@ def find_ratio_interval(ratios, target_ratio):
         idx = np.searchsorted(ratios, target_ratio) - 1
         return idx, idx + 1
 
+
 def generate_interpolated_nodes(node_pre, nseg):
     """
     Generate 2*nseg + 1 interpolated nodes and calculate their coordinates and diameters.
@@ -121,7 +126,7 @@ def generate_interpolated_nodes(node_pre, nseg):
     ratios_pre = compute_line_ratios(xyz_pre)
 
     # 2. Generate 2*nseg+1 equally spaced ratios (including 0 and 1)
-    ratios_new = np.linspace(0, 1, 2*nseg + 1)
+    ratios_new = np.linspace(0, 1, 2 * nseg + 1)
 
     # 3. Interpolate for each new ratio
     xyz_new = []
@@ -151,6 +156,7 @@ def generate_interpolated_nodes(node_pre, nseg):
 
     return node_after
 
+
 def compute_resistance_and_conductance(node_pre, nseg, resistivity=100):
     """
     Calculate the left resistance (resistance_left) and right conductance (conductance_right) for each segment.
@@ -161,7 +167,7 @@ def compute_resistance_and_conductance(node_pre, nseg, resistivity=100):
     :return: A list of tuples (surface_area, resistance_left, resistance_right) for each segment.
     """
     node_pre = np.asarray(node_pre)
-    node_after = generate_interpolated_nodes(node_pre, nseg) 
+    node_after = generate_interpolated_nodes(node_pre, nseg)
     node_after = np.asarray(node_after)
 
     # Extract xyz and diameters
@@ -170,30 +176,29 @@ def compute_resistance_and_conductance(node_pre, nseg, resistivity=100):
 
     # Compute the ratio for node_pre and node_after
     ratios_pre = compute_line_ratios(xyz_pre)
-    ratios_after = np.linspace(0, 1, 2*nseg + 1)
+    ratios_after = np.linspace(0, 1, 2 * nseg + 1)
 
     results = []
 
     # Iterate over node_after in steps of 2 to ensure there are nseg groups
     for i in range(0, len(node_after) - 2, 2):
-        r1, r2, r3 = ratios_after[i], ratios_after[i+1], ratios_after[i+2]
+        r1, r2, r3 = ratios_after[i], ratios_after[i + 1], ratios_after[i + 2]
 
         # Compute the left resistance (i → i+1), ensuring endpoints are included
         mask_left = (ratios_pre > r1) & (ratios_pre < r2)
-        selected_left = np.vstack([node_after[i], node_pre[mask_left], node_after[i+1]])
+        selected_left = np.vstack([node_after[i], node_pre[mask_left], node_after[i + 1]])
 
         # Compute the right resistance (i+1 → i+2), ensuring endpoints are included
         mask_right = (ratios_pre > r2) & (ratios_pre < r3)
-        selected_right = np.vstack([node_after[i+1], node_pre[mask_right], node_after[i+2]])
+        selected_right = np.vstack([node_after[i + 1], node_pre[mask_right], node_after[i + 2]])
 
         # Compute resistance
         resistance_left, surface_area_left = calculate_total_resistance_and_area(selected_left, resistivity)
         resistance_right, surface_area_right = calculate_total_resistance_and_area(selected_right, resistivity)
-        
+
         results.append((surface_area_left + surface_area_right, resistance_left, resistance_right))
 
     return results
-
 
 
 def diffusive_coupling(potentials, coo_ids, resistances):
@@ -239,11 +244,9 @@ def diffusive_coupling(potentials, coo_ids, resistances):
 
 
 def init_coupling_weight(n_compartment, connection, diam, L, Ra):
-
     assert isinstance(connection, (np.ndarray, jax.Array)), 'The connection should be a numpy/jax array.'
 
-
-    g_values = np.pi * diam**2 / (2 * Ra * L)
+    g_values = np.pi * diam ** 2 / (2 * Ra * L)
 
     parent_child_dict = {}
     processed_connection = []
@@ -278,12 +281,12 @@ def init_coupling_weight(n_compartment, connection, diam, L, Ra):
             for child in children_at_0_5:
                 axial_conductance_matrix[parent, child] = g_values[child]
                 axial_conductance_matrix[child, parent] = g_values[child]
-                            
+
     return axial_conductance_matrix
 
-def init_coupling_weight_nodes(g_left, g_right, connection):
 
-    #assert isinstance(connection, (np.ndarray, jax.Array)), 'The connection should be a numpy/jax array.'
+def init_coupling_weight_nodes(g_left, g_right, connection):
+    # assert isinstance(connection, (np.ndarray, jax.Array)), 'The connection should be a numpy/jax array.'
 
     parent_child_dict = {}
     processed_connection = []
@@ -306,15 +309,16 @@ def init_coupling_weight_nodes(g_left, g_right, connection):
         if parent != -1:
             # deal with the situation where connetion site is 1
             children_at_1 = children_dict[1]
-            if len(children_at_1)>0:
+            if len(children_at_1) > 0:
                 all_nodes_at_1 = [parent] + children_at_1
-                denominator_at_1 = u.math.sum(u.math.array([g_left[i] for i in children_at_1])) + u.math.array(g_right[parent])
+                denominator_at_1 = (u.math.sum(u.math.array([g_left[i] for i in children_at_1])) +
+                                    u.math.array(g_right[parent]))
                 for i in all_nodes_at_1:
                     for j in all_nodes_at_1:
                         if i != j:
-                            if i ==parent:
+                            if i == parent:
                                 axial_conductance_matrix[i, j] = g_right[i] * g_left[j] / denominator_at_1
-                            elif j ==parent:
+                            elif j == parent:
                                 axial_conductance_matrix[i, j] = g_left[i] * g_right[j] / denominator_at_1
                             else:
                                 axial_conductance_matrix[i, j] = g_left[i] * g_left[j] / denominator_at_1
@@ -324,8 +328,9 @@ def init_coupling_weight_nodes(g_left, g_right, connection):
             for child in children_at_0_5:
                 axial_conductance_matrix[parent, child] = g_left[child]
                 axial_conductance_matrix[child, parent] = g_left[child]
-                            
+
     return axial_conductance_matrix
+
 
 def compute_connection_seg(nseg_list, connection_sec):
     """
@@ -365,14 +370,14 @@ def compute_connection_seg(nseg_list, connection_sec):
             parent_indices.append(parent_index)
             site_list.append(site)
 
-    connection_seg = [(i, parent_indices[i], site_list[i]) for  i in range(n_compartment)]
+    connection_seg = [(i, parent_indices[i], site_list[i]) for i in range(n_compartment)]
     return connection_seg
 
 
 def compute_mor_info(mor_info):
     """
     Compute morphological information such as areas, membrane capacitances, and conductances for each segment.
-    :param mor_info: A dictionary containing information about the points, number of segments, resistance (Ra), 
+    :param mor_info: A dictionary containing information about the points, number of segments, resistance (Ra),
                      membrane capacitance (cm), and connection for each section.
     :return: Lists of areas, membrane capacitances, left and right conductances, segment list, and connection info.
     """
@@ -383,12 +388,12 @@ def compute_mor_info(mor_info):
     g_right = []
     nseg_list = []
     connection_sec = []
+    Ra_list = []
 
     for values in mor_info.values():
-        
         points = values['points']
         nseg = values['nseg']
-        Ra = values['Ra']
+        Ra = values['Ra']  # resistivity, float
         cm = values['cm']
         nseg = values['nseg']
         connection = values['connection']
@@ -398,15 +403,91 @@ def compute_mor_info(mor_info):
         Area.extend(areas_i)
         g_left.extend(g_l_i)
         g_right.extend(g_r_i)
-        
+
+        Ra_list.append(Ra)
         nseg_list.append(nseg)
-        cm_list.extend([cm]*nseg)
+        cm_list.extend([cm] * nseg)
         connection_sec.append(connection)
 
-    return Area, cm_list, g_left, g_right, nseg_list, connection_sec
+    return Area, cm_list, g_left, g_right, nseg_list, Ra_list, connection_sec
 
 
 class MultiCompartment(HHTypedNeuron):
+    r"""
+    A multi-compartment neuronal model that simulates spatially extended neurons.
+
+    This class implements a detailed neuron model with multiple connected compartments
+    that can represent complex dendritic arbors and axons. Each compartment has its own
+    membrane potential dynamics and can contain different ion channel distributions.
+    The compartments are electrically coupled through axial resistances.
+
+    Parameters
+    ----------
+    size : brainstate.typing.Size
+        Shape of the neuron population.
+    connection : Sequence[Tuple[int, int, int]] or numpy.ndarray
+        Connectivity information between compartments. Each entry is a tuple of
+        (child_idx, parent_idx, connection_site) where connection_site is either
+        0.5 (middle) or 1 (end) of the parent compartment.
+    Ra : brainstate.typing.ArrayLike, optional
+        Axial resistivity in ohm·cm. Default is 100 ohm·cm.
+    cm : brainstate.typing.ArrayLike, optional
+        Specific membrane capacitance in μF/cm². Default is 1.0 μF/cm².
+    diam : brainstate.typing.ArrayLike, optional
+        Diameter of compartments in μm. Default is 1.0 μm.
+    L : brainstate.typing.ArrayLike, optional
+        Length of compartments in μm. Default is 10.0 μm.
+    V_th : Union[brainstate.typing.ArrayLike, Callable], optional
+        Threshold potential for spike detection in mV. Default is 0.0 mV.
+    V_initializer : Union[brainstate.typing.ArrayLike, Callable], optional
+        Initial membrane potential or initializer function. Default is uniform random between -70mV and -60mV.
+    spk_fun : Callable, optional
+        Surrogate gradient function for spike generation. Default is ReluGrad.
+    solver : str or Callable, optional
+        Numerical integration method. Default is 'exp_euler'.
+    name : str, optional
+        Name identifier for the neuron model.
+    Gl : brainstate.typing.ArrayLike, optional
+        Leak conductance in mS/cm². Default is 0 mS/cm².
+    El : brainstate.typing.ArrayLike, optional
+        Leak reversal potential in mV. Default is -65 mV.
+    **ion_channels
+        Additional keyword arguments for ion channels to be added to the neuron model.
+
+    Attributes
+    ----------
+    Ra : Quantity
+        Axial resistivity.
+    cm : Quantity
+        Specific membrane capacitance.
+    diam : Quantity
+        Compartment diameters.
+    L : Quantity
+        Compartment lengths.
+    A : Quantity
+        Surface areas of compartments.
+    connection : ndarray
+        Connectivity matrix between compartments.
+    resistances : Quantity
+        Axial resistances between connected compartments.
+    V_th : Quantity or Callable
+        Threshold potential for spike detection.
+    V_initializer : Quantity or Callable
+        Initial membrane potential values or initializer.
+    spk_fun : Callable
+        Surrogate gradient function used for spike generation.
+    solver : Callable
+        Numerical integration solver function.
+
+    Notes
+    -----
+    The multi-compartment model simulates the spatial properties of neurons by dividing
+    the neuron into electrically connected compartments. Currents can flow between compartments
+    based on the voltage differences and axial resistances, allowing for a more accurate
+    representation of dendritic integration, action potential propagation, and other
+    spatially-dependent phenomena.
+    """
+
     __module__ = 'braincell.neuron'
 
     def __init__(
@@ -414,66 +495,57 @@ class MultiCompartment(HHTypedNeuron):
         size: brainstate.typing.Size,
 
         # morphology parameters
-        connection: Sequence[Tuple[int, int, int]] | np.ndarray,
+        connection: Sequence[Tuple[int, int, float]] | np.ndarray,
 
         # neuron parameters
-        Ra: brainstate.typing.ArrayLike = 100. * (u.ohm * u.cm),
-        cm: brainstate.typing.ArrayLike = 1.0 * (u.uF / u.cm ** 2),
-        diam: brainstate.typing.ArrayLike = 1. * u.um,
-        L: brainstate.typing.ArrayLike = 10. * u.um,
+        Ra: Initializer = 100. * (u.ohm * u.cm),   # resistivity
+        cm: Initializer = 1.0 * (u.uF / u.cm ** 2),  # membrane capacitance
+        diam: Initializer = 1. * u.um,  # diameter
+        L: Initializer = 10. * u.um,  # length
 
         # membrane potentials
-        V_th: Union[brainstate.typing.ArrayLike, Callable] = 0. * u.mV,
-        V_initializer: Union[brainstate.typing.ArrayLike, Callable] = brainstate.init.Uniform(-70 * u.mV, -60. * u.mV),
+        V_th: Initializer = 0. * u.mV,
+        V_initializer: Initializer = brainstate.init.Uniform(-70 * u.mV, -60. * u.mV),
         spk_fun: Callable = brainstate.surrogate.ReluGrad(),
 
         # others
         solver: str | Callable = 'exp_euler',
         name: Optional[str] = None,
-        Gl: brainstate.typing.ArrayLike = 0 * (u.mS / u.cm ** 2),  # for splitting 
-        El: brainstate.typing.ArrayLike = -65 * u.mV,  # for splitting
 
-        mor_info: dict = None,  # 添加 mor_info 字典参数
+        Gl: Initializer = 0 * (u.mS / u.cm ** 2),  # for splitting
+        El: Initializer = -65 * u.mV,  # for splitting
+
         **ion_channels
     ):
         super().__init__(size, name=name, **ion_channels)
 
-        ## for splitting linear term 
+        # for splitting linear term
         self.Gl = brainstate.init.param(Gl, self.varshape)
         self.El = brainstate.init.param(El, self.varshape)
 
         # parameters for morphology
-        if mor_info is None:
-            self.Ra = brainstate.init.param(Ra, self.varshape)
-            self.cm = brainstate.init.param(cm, self.varshape)
-            self.diam = brainstate.init.param(diam, self.varshape)
-            self.L = brainstate.init.param(L, self.varshape)
-            self.A = np.pi * self.diam * self.L  # surface area
+        self.Ra = brainstate.init.param(Ra, self.varshape)
+        self.cm = brainstate.init.param(cm, self.varshape)
+        self.diam = brainstate.init.param(diam, self.varshape)
+        self.L = brainstate.init.param(L, self.varshape)
+        self.A = np.pi * self.diam * self.L  # surface area
 
-            connection = np.asarray(connection)
-            assert connection.shape[1] == 3, 'The connection should be a sequence of tuples with three elements. '
-            'The first elelement is the children node, the second element is the parent node, '
+        # connections between compartments
+        connection = np.asarray(connection)
+        assert connection.shape[1] == 3, (
+            'The connection should be a sequence of tuples with three elements. '
+            'The first element is the children node, '
+            'the second element is the parent node, '
             'the third element is the connection position in the parent node, only for 0.5(middle) and 1(end)'
-
-            self.connection = connection
-
-            if self.connection.max() >= self.n_compartment:
-                raise ValueError('The connection should be within the range of compartments. '
-                                f'But we got {self.connection.max()} >= {self.n_compartment}.')
-            
-            self.resistances = init_coupling_weight(self.n_compartment, connection, self.diam, self.L, self.Ra)
-            
-
-        else:
-            Area, cm, g_left, g_right, nseg_list, connection_sec = compute_mor_info(mor_info)
-            connection_seg = compute_connection_seg(nseg_list, connection_sec)
-
-            self.A = Area * u.um**2
-            self.cm = cm * u.uF/(u.cm**2)
-            self.resistances = init_coupling_weight_nodes(1/(g_left * u.ohm*u.cm/u.um), 1/(g_right * u.ohm*u.cm/u.um), connection_seg)
+        )
+        self.connection = connection
+        if self.connection.max() >= self.n_compartment:
+            raise ValueError('The connection should be within the range of compartments. '
+                             f'But we got {self.connection.max()} >= {self.n_compartment}.')
+        self.resistances = init_coupling_weight(self.n_compartment, connection, self.diam, self.L, self.Ra)
 
         # parameters for membrane potentials
-        self.V_th = V_th
+        self.V_th = brainstate.init.param(V_th, self.varshape)
         self.V_initializer = V_initializer
         self.spk_fun = spk_fun
 
@@ -558,7 +630,7 @@ class MultiCompartment(HHTypedNeuron):
         if _compute_axial_current:
             I_axial = diffusive_coupling(self.V.value, self.connection, self.resistances) / self.A
         else:
-            I_axial = self.Gl * self.El #u.Quantity(0., unit=u.get_unit(I_ext))
+            I_axial = self.Gl * self.El  # u.Quantity(0., unit=u.get_unit(I_ext))
 
         # 3. synapse currents
         I_syn = self.sum_current_inputs(0. * u.nA / u.cm ** 2, self.V.value)
@@ -567,7 +639,7 @@ class MultiCompartment(HHTypedNeuron):
         I_channel = None
         for key, ch in self.nodes(IonChannel, allowed_hierarchy=(1, 1)).items():
             I_channel = ch.current(self.V.value) if I_channel is None else (I_channel + ch.current(self.V.value))
-            
+
         # 5. derivatives
         self.V.derivative = (I_ext + I_axial + I_syn + I_channel) / self.cm
 
@@ -651,4 +723,70 @@ class MultiCompartment(HHTypedNeuron):
         return (
             self.spk_fun((next_V - self.V_th) / denom) *
             self.spk_fun((self.V_th - last_V) / denom)
+        )
+
+
+class MultiCompartmentMorphology(MultiCompartment):
+    """
+    A multi-compartment neuron model with detailed morphology.
+
+    This class extends the MultiCompartment class to include detailed morphological
+    information about the neuron's compartments, allowing for more accurate simulations
+    of neuronal behavior.
+
+    Parameters
+    ----------
+    morphology : dict
+        Morphological information dictionary containing details about the compartments.
+        The dictionary should specify points, nseg, Ra, cm, and connection for each section.
+
+    """
+
+    def __init__(
+        self,
+        size: brainstate.typing.Size,
+
+        # neuron parameters
+        morphology: dict,  # 添加 morphology 字典参数
+
+        # membrane potentials
+        V_th: Initializer = 0. * u.mV,
+        V_initializer: Initializer = brainstate.init.Uniform(-70 * u.mV, -60. * u.mV),
+        spk_fun: Callable = brainstate.surrogate.ReluGrad(),
+
+        # others
+        solver: str | Callable = 'exp_euler',
+        name: Optional[str] = None,
+
+        Gl: Initializer = 0 * (u.mS / u.cm ** 2),  # for splitting
+        El: Initializer = -65 * u.mV,  # for splitting
+
+        **ion_channels
+    ):
+        Area, cm, g_left, g_right, nseg_list, connection_sec = compute_mor_info(morphology)
+        connection_seg = compute_connection_seg(nseg_list, connection_sec)
+
+        self.A = Area * u.um ** 2  # [n]
+        cm = cm * u.uF / (u.cm ** 2)
+        self.resistances = init_coupling_weight_nodes(
+            1 / (g_left * u.ohm * u.cm / u.um),
+            1 / (g_right * u.ohm * u.cm / u.um),
+            connection_seg
+        )  # [n, n]
+
+        super().__init__(
+            size=size,
+            connection=connection_seg,
+            Ra=Ra,
+            cm=cm,
+            diam=diam,
+            L=L,
+            V_th=V_th,
+            V_initializer=V_initializer,
+            spk_fun=spk_fun,
+            solver=solver,
+            name=name,
+            Gl=Gl,
+            El=El,
+            **ion_channels
         )

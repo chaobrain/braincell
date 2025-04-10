@@ -85,16 +85,16 @@ class SingleCompartment(HHTypedNeuron):
 
         Parameters
         ----------
-        size : bst.typing.Size
+        size : brainstate.typing.Size
             The size of the neuron group.
-        C : Union[bst.typing.ArrayLike, Callable], optional
+        C : Union[brainstate.typing.ArrayLike, Callable], optional
             Membrane capacitance. Default is 1. * u.uF / u.cm ** 2.
-        V_th : Union[bst.typing.ArrayLike, Callable], optional
+        V_th : Union[brainstate.typing.ArrayLike, Callable], optional
             Threshold voltage. Default is 0. * u.mV.
-        V_initializer : Union[bst.typing.ArrayLike, Callable], optional
+        V_initializer : Union[brainstate.typing.ArrayLike, Callable], optional
             Initial membrane potential. Default is uniform distribution between -70 mV and -60 mV.
         spk_fun : Callable, optional
-            Spike function. Default is bst.surrogate.ReluGrad().
+            Spike function. Default is brainstate.surrogate.ReluGrad().
         solver : str | Callable, optional
             Numerical solver for integration. Default is 'rk2'.
         name : Optional[str], optional

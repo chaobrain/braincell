@@ -15,8 +15,8 @@
 
 import time
 
-import brainstate as bst
-import braintools as bts
+import brainstate
+import braintools
 import brainunit as u
 import jax
 import matplotlib.pyplot as plt
@@ -24,7 +24,7 @@ import numpy as np
 
 import braincell
 
-bst.environ.set(precision=64)
+brainstate.environ.set(precision=64)
 
 ## morphology params
 loaded_params = np.load('golgi_morphology.npz')
@@ -139,8 +139,8 @@ class Golgi(braincell.neuron.MultiCompartment):
             diam=diam * u.um,
             L=L * u.um,
             V_th=20. * u.mV,
-            V_initializer=bst.init.Constant(-55 * u.mV),
-            spk_fun=bst.surrogate.ReluGrad(),
+            V_initializer=brainstate.init.Constant(-55 * u.mV),
+            spk_fun=brainstate.surrogate.ReluGrad(),
         )
 
         self.IL = braincell.channel.IL(self.size, E=-55. * u.mV, g_max=gl * u.mS / (u.cm ** 2))
@@ -148,7 +148,7 @@ class Golgi(braincell.neuron.MultiCompartment):
         self.k.add(k=braincell.channel.IKv11_Ak2007(self.size, g_max=gkv11 * u.mS / (u.cm ** 2)))
 
 
-@bst.compile.jit(static_argnums=6)
+@brainstate.compile.jit(static_argnums=6)
 def simulate(Ra, cm, diam, L, gl, gkv11, method='ieuler'):
     cell = Golgi(size, connection, Ra, cm, diam, L, gl, gkv11)
     cell.init_state()
@@ -174,7 +174,7 @@ def simulate(Ra, cm, diam, L, gl, gkv11, method='ieuler'):
     return ts, ys, steps
 
 
-@bst.compile.jit
+@brainstate.compile.jit
 def simulate2(Ra, cm, diam, L, gl, gkv11):
     cell = Golgi(size, connection, Ra, cm, diam, L, gl, gkv11)
     cell.init_state()
@@ -191,8 +191,8 @@ def simulate2(Ra, cm, diam, L, gl, gkv11):
     with jax.ensure_compile_time_eval():
         dt = 0.001 * u.ms
         ts = u.math.arange(0. * u.ms, 200. * u.ms, dt)
-    with bst.environ.context(dt=dt):
-        ys = bst.compile.for_loop(step_run, ts)
+    with brainstate.environ.context(dt=dt):
+        ys = brainstate.compile.for_loop(step_run, ts)
     return ts, ys[::10], ts.size
 
 
@@ -228,7 +228,7 @@ def visualize_a_simulate(Ra, cm, diam, L, gl, gkv11):
         plt.ylabel('Potential [mV]')
         plt.title(title)
 
-    fig, gs = bts.visualize.get_figure(1, 5, 3.0, 4.0)
+    fig, gs = braintools.visualize.get_figure(1, 5, 3.0, 4.0)
     plot(ys_kvaerno5 - ys_ieuler, fig.add_subplot(gs[0, 0]), 'kvaerno5 - ieuler')
     plot(ys_ieuler - ys_tsit5, fig.add_subplot(gs[0, 1]), 'ieuler - tsit5')
     plot(ys_tsit5 - ys_dopri5, fig.add_subplot(gs[0, 2]), 'tsit5 - dopri5')

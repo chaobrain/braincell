@@ -125,7 +125,8 @@ def exp_euler_step(
         f"The target should be a {HHTypedNeuron.__name__}. "
         f"But got {type(target)} instead."
     )
-    from braincell.neuron import SingleCompartment, MultiCompartment
+    from braincell._single_compartment import SingleCompartment
+    from braincell._multi_compartment import MultiCompartment
 
     if isinstance(target, SingleCompartment):
         apply_standard_solver_step(

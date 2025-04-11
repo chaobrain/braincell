@@ -116,9 +116,26 @@ class DiffEqState(brainstate.ShortTermState):
 
 
 class DiffEqModule(brainstate.mixin.Mixin):
+    """A mixin class that provides differential equation functionality.
+
+    This class serves as a mixin to add differential equation capabilities to other classes.
+    It defines the core interface for implementing ordinary differential equations (ODEs)
+    and stochastic differential equations (SDEs).
+
+    The class includes methods for pre-integration preparation, derivative computation,
+    and post-integration processing. Subclasses must implement the compute_derivative
+    method to define the specific differential equation for the system.
+
+    Methods
+    -------
+    pre_integral(*args, **kwargs)
+        Perform operations before integration.
+    compute_derivative(*args, **kwargs)
+        Compute the derivative of the differential equation.
+    post_integral(*args, **kwargs)
+        Perform operations after integration.
     """
-    The module for defining the differential equations.
-    """
+
     __module__ = 'braincell'
 
     def pre_integral(self, *args, **kwargs):
@@ -133,10 +150,6 @@ class DiffEqModule(brainstate.mixin.Mixin):
             Variable length argument list.
         **kwargs : dict
             Arbitrary keyword arguments.
-
-        Returns:
-        --------
-        None
         """
         pass
 
@@ -178,9 +191,5 @@ class DiffEqModule(brainstate.mixin.Mixin):
             Variable length argument list.
         **kwargs : dict
             Arbitrary keyword arguments.
-
-        Returns:
-        --------
-        None
         """
         pass

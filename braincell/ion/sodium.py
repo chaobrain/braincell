@@ -42,6 +42,7 @@ class Sodium(Ion):
     """
     __module__ = 'braincell.ion'
 
+
 class SodiumFixed(Sodium):
     """
     Fixed Sodium dynamics.

@@ -106,7 +106,7 @@ class MultiCompartment(HHTypedNeuron):
     spatially-dependent phenomena.
     """
 
-    __module__ = 'braincell.neuron'
+    __module__ = 'braincell'
 
     def __init__(
         self,

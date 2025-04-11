@@ -15,7 +15,7 @@
 
 from __future__ import annotations
 
-from typing import Union, Optional, Callable, Tuple
+from typing import Optional, Callable, Tuple
 
 import brainstate
 import brainunit as u
@@ -31,10 +31,9 @@ __all__ = [
 
 
 class SingleCompartment(HHTypedNeuron):
-    r"""
-    Base class to model conductance-based neuron group.
+    r"""Base class to model conductance-based neuron group.
 
-    The standard formulation for a conductance-based model is given as
+    The standard formulation for a conductance-based point neuron model is given as
 
     .. math::
 
@@ -60,15 +59,26 @@ class SingleCompartment(HHTypedNeuron):
 
     where :math:`\alpha_{x}` and :math:`\beta_{x}` are rate constants.
 
-
     Parameters
     ----------
     size : int, sequence of int
-      The network size of this neuron group.
-    name : optional, str
-      The neuron group name.
+        The network size of this neuron group.
+    C : Initializer, optional
+        Membrane capacitance. Default is 1.0 uF/cm²
+    V_th : Initializer, optional
+        Threshold voltage for spike detection. Default is 0.0 mV
+    V_initializer : Initializer, optional
+        Initial membrane potential distribution. Default is uniform between -70 mV and -60 mV
+    spk_fun : Callable, optional
+        Spike function for threshold crossing detection. Default is ReLU gradient
+    solver : str or Callable, optional
+        Numerical integration method. Default is 'rk2' (second-order Runge-Kutta)
+    name : str, optional
+        The neuron group name.
+    **ion_channels : dict
+        Additional ion channels to include in the neuron model
     """
-    __module__ = 'braincell.neuron'
+    __module__ = 'braincell'
 
     def __init__(
         self,

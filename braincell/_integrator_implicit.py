@@ -21,12 +21,14 @@ import jax
 import jax.numpy as jnp
 from scipy.integrate import solve_ivp
 from jax.scipy.linalg import expm
+import time 
 
 from ._integrator_exp_euler import _exponential_euler
 from ._integrator_runge_kutta import rk4_step
 from ._integrator_util import apply_standard_solver_step, jacrev_last_dim
 from ._misc import set_module_as
 from ._protocol import DiffEqModule
+
 
 __all__ = [
     'implicit_euler_step',
@@ -436,7 +438,8 @@ def splitting_step(
         integral()
         '''
 
-        # second step
+        ## time
+        #s1t1 = time.time()
 
         with brainstate.environ.context(compute_axial_current=False):
             # '''
@@ -468,10 +471,14 @@ def splitting_step(
                 *args,
                 merging_method='stack'
             )
+
+        #jax.debug.print('step1 cost {a}',a = time.time() - s1t1)
+        #s2t1 = time.time()
+
         for _ in range(len(target.pop_size)):
             integral = brainstate.augment.vmap(solve_axial, in_states=target.states())
         integral()
-
+        #jax.debug.print('step2 cost {a}',a = time.time() - s2t1)
 
     else:
         apply_standard_solver_step(

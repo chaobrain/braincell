@@ -477,23 +477,23 @@ class INa_Rsg(SodiumChannel):
 
     def init_state(self, V, Na: IonInfo, batch_size=None):
 
-        self.C1 = DiffEqState(brainstate.init.param(u.math.zeros, self.varshape, batch_size))
-        self.C2 = DiffEqState(brainstate.init.param(u.math.zeros, self.varshape, batch_size))
-        self.C3 = DiffEqState(brainstate.init.param(u.math.zeros, self.varshape, batch_size))
-        self.C4 = DiffEqState(brainstate.init.param(u.math.zeros, self.varshape, batch_size))
-        self.C5 = DiffEqState(brainstate.init.param(u.math.zeros, self.varshape, batch_size))
-        self.I1 = DiffEqState(brainstate.init.param(u.math.zeros, self.varshape, batch_size))
-        self.I2 = DiffEqState(brainstate.init.param(u.math.zeros, self.varshape, batch_size))
-        self.I3 = DiffEqState(brainstate.init.param(u.math.zeros, self.varshape, batch_size))
-        self.I4 = DiffEqState(brainstate.init.param(u.math.zeros, self.varshape, batch_size))
-        self.I5 = DiffEqState(brainstate.init.param(u.math.zeros, self.varshape, batch_size))
+        self.C1 = DiffEqState(brainstate.init.param(u.math.ones, self.varshape, batch_size))
+        self.C2 = DiffEqState(brainstate.init.param(u.math.ones, self.varshape, batch_size))
+        self.C3 = DiffEqState(brainstate.init.param(u.math.ones, self.varshape, batch_size))
+        self.C4 = DiffEqState(brainstate.init.param(u.math.ones, self.varshape, batch_size))
+        self.C5 = DiffEqState(brainstate.init.param(u.math.ones, self.varshape, batch_size))
+        self.I1 = DiffEqState(brainstate.init.param(u.math.ones, self.varshape, batch_size))
+        self.I2 = DiffEqState(brainstate.init.param(u.math.ones, self.varshape, batch_size))
+        self.I3 = DiffEqState(brainstate.init.param(u.math.ones, self.varshape, batch_size))
+        self.I4 = DiffEqState(brainstate.init.param(u.math.ones, self.varshape, batch_size))
+        self.I5 = DiffEqState(brainstate.init.param(u.math.ones, self.varshape, batch_size))
         self.O = DiffEqState(brainstate.init.param(u.math.zeros, self.varshape, batch_size))
-        self.B = DiffEqState(brainstate.init.param(u.math.zeros, self.varshape, batch_size))
-        self.I6 = DiffEqState(brainstate.init.param(u.math.zeros, self.varshape, batch_size))
+        self.B = DiffEqState(brainstate.init.param(u.math.ones, self.varshape, batch_size))
+        self.I6 = DiffEqState(brainstate.init.param(u.math.ones, self.varshape, batch_size))
 
-        # self.normalize_states(
-        #     [self.C1, self.C2, self.C3, self.C4, self.C5, self.I1, self.I2, self.I3, self.I4, self.I5, self.O, self.B,
-        #      self.I6])
+        self.normalize_states(
+            [self.C1, self.C2, self.C3, self.C4, self.C5, self.I1, self.I2, self.I3, self.I4, self.I5, self.O, self.B,
+             self.I6])
 
     def normalize_states(self, states):
         total = 0.

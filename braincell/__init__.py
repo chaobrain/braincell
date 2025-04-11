@@ -28,6 +28,10 @@ from ._base import (
     mix_ions,
     IonInfo,
 )
+from ._morphology import (
+    Section,
+    Morphology,
+)
 from ._multi_compartment import (
     MultiCompartment,
 )

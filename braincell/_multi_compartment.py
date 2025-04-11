@@ -19,7 +19,7 @@ from typing import Optional, Callable, Sequence, Tuple
 
 import brainstate
 
-from _utils import *
+from ._utils import *
 from ._base import HHTypedNeuron, IonChannel
 from ._integrator import get_integrator
 from ._protocol import DiffEqState

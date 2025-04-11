@@ -13,7 +13,9 @@
 # limitations under the License.
 # ==============================================================================
 
-from typing import Union
+from typing import Union, Optional, Sequence, Dict
+
+import brainstate
 
 from ._utils import *
 
@@ -23,8 +25,8 @@ __all__ = [
 ]
 
 
-class Section:
-    r'''
+class Section(brainstate.util.PrettyObject):
+    r"""
     Neuron Section Object:
 
     This class defines a neuron section that can be either:
@@ -36,17 +38,16 @@ class Section:
         - surface area
         - left axial resistance (to previous segment)
         - right axial resistance (to next segment)
-    '''
+    """
 
     def __init__(
         self,
         name: str,
-        length=None,
-        diam=None,
-        points=None,
-        nseg=1,
-        Ra=100,
-        cm=1.0,
+        positions: np.ndarray,
+        diam: u.Quantity,
+        nseg: int = 1,
+        Ra: u.Quantity[u.ohm * u.cm] = 100,
+        cm: u.Quantity[u.uF / u.cm ** 2] = 1.0,
     ):
         """
         Initialize the Section.
@@ -64,35 +65,15 @@ class Section:
         self.nseg = nseg
         self.Ra = Ra
         self.cm = cm
+        self.positions = positions
+        self.diam = diam
         self.parent = None
-        self.children = []
         self.segments = []
+        self.children = set()
 
-        # Case 1: user provides custom 3D points
-        if points is not None:
-            points = np.array(points)
-            assert points.shape[1] == 4, "points must be shape (N, 4): [x, y, z, diameter]"
-            assert np.all(points[:, 3] > 0), "All diameters must be positive."
-            self.positions = points[:, :3]
-            self.diam = points[:, -1].reshape(-1, 1)
+        self._compute_area_and_resistance()
 
-        # Case 2: user provides a simple cylinder
-        elif length is not None and diam is not None:
-            assert length > 0, "Length must be positive."
-            assert diam > 0, "Diameter must be positive."
-            points = np.array([
-                [0.0, 0.0, 0.0, diam],
-                [length, 0.0, 0.0, diam]
-            ])
-            self.positions = points[:, :3]
-            self.diam = points[:, -1].reshape(-1, 1)
-
-        else:
-            raise ValueError("You must provide either `points` or both `length` and `diam`.")
-
-        self.compute_area_and_resistance()
-
-    def compute_area_and_resistance(self):
+    def _compute_area_and_resistance(self):
         """
         Divide the section into `nseg` segments and compute per segment:
             - Total surface area
@@ -139,8 +120,170 @@ class Section:
             }
             self.segments.append(segment)
 
+    def add_parent(self, name: str, loc: float):
+        """
+        Add a parent connection to this section.
 
-class Morphology:
+        This method establishes a parent-child relationship by setting the parent of this
+        section. It specifies which section is the parent and where along the parent's
+        length this section connects.
+
+        Parameters
+        ----------
+        name : str
+            The name of the parent section to connect to
+        loc : float
+            The location on the parent section to connect to, ranging from 0.0 (beginning)
+            to 1.0 (end)
+
+        Raises
+        ------
+        ValueError
+            If this section already has a different parent
+        AssertionError
+            If loc is not between 0.0 and 1.0
+
+        Notes
+        -----
+        This method is primarily called by the Morphology.connect() method rather than
+        being used directly.
+        """
+
+        if self.parent is not None:
+            if self.parent["name"] != name:
+                raise ValueError(f"Warning: Section '{self.name}' already has a parent: {self.parent['name']}.")
+
+        assert 0.0 <= loc <= 1.0, "parent_loc must be between 0.0 and 1.0"
+        self.parent = {"name": name, "loc": loc}
+
+    def add_child(self, name: str):
+        """
+        Add a child connection to this section.
+
+        This method registers another section as a child of this section
+        by adding the child section's name to this section's children set.
+
+        Parameters
+        ----------
+        name : str
+            The name of the child section to add
+
+        Notes
+        -----
+        This method is primarily called by the Morphology.connect() method rather than
+        being used directly.
+        """
+        self.children.add(name)
+
+
+class CylinderSection(Section):
+    def __init__(
+        self,
+        name: str,
+        length: u.Quantity,
+        diam,
+        nseg: int = 1,
+        Ra: u.Quantity[u.ohm * u.cm] = 100,
+        cm: u.Quantity[u.uF / u.cm ** 2] = 1.0,
+    ):
+        assert length > 0, "Length must be positive."
+        assert diam > 0, "Diameter must be positive."
+        points = np.array([
+            [0.0, 0.0, 0.0, diam],
+            [length, 0.0, 0.0, diam]
+        ])
+        positions = points[:, :3]
+        diam = points[:, -1].reshape(-1, 1)
+        super().__init__(
+            name=name,
+            positions=positions,
+            diam=diam,
+            nseg=nseg,
+            Ra=Ra,
+            cm=cm,
+        )
+
+
+class PointSection(Section):
+    r"""
+    Neuron Section Object:
+
+    This class defines a neuron section that can be either:
+    1. A simple cylinder (using length and diameter), which creates a frustum between two points:
+       (0, 0, 0, diam) and (L, 0, 0, diam)
+    2. A more complex morphology defined by N 4D points (x, y, z, diameter), forming a sequence of connected frustums.
+
+    Each section is divided into `nseg` segments, and each segment has computed properties:
+        - surface area
+        - left axial resistance (to previous segment)
+        - right axial resistance (to next segment)
+    """
+
+    def __init__(
+        self,
+        name: str,
+        points,
+        nseg: int = 1,
+        Ra: u.Quantity[u.ohm * u.cm] = 100,
+        cm: u.Quantity[u.uF / u.cm ** 2] = 1.0,
+    ):
+        """
+        Initialize the Section.
+
+        Parameters:
+            name (str): Section name identifier.
+            points (list or np.ndarray, optional): Array of shape (N, 4) with [x, y, z, diameter].
+            nseg (int): Number of segments to divide the section into.
+            Ra (float): Axial resistivity in ohm·cm.
+            cm (float): Membrane capacitance in µF/cm².
+        """
+        # Case 1: user provides custom 3D points
+        points = u.math.array(points)
+        assert points.shape[1] == 4, "points must be shape (N, 4): [x, y, z, diameter]"
+        assert u.math.all(points[:, 3] > 0), "All diameters must be positive."
+        positions = points[:, :3]
+        diam = points[:, -1].reshape(-1, 1)
+
+        super().__init__(
+            name=name,
+            positions=positions,
+            diam=diam,
+            nseg=nseg,
+            Ra=Ra,
+            cm=cm,
+        )
+
+
+class Morphology(brainstate.util.PrettyObject):
+    """
+    A class representing the morphological structure of a neuron.
+
+    This class provides tools for creating and managing multi-compartmental neuron models,
+    where each compartment represents a different part of the neuron (e.g., soma, axon,
+    dendrites). It supports both cylindrical sections and more complex 3D point-based sections.
+
+    The Morphology class allows for:
+    - Creating different types of neuronal sections
+    - Establishing parent-child relationships between sections
+    - Batch creation of sections and connections
+    - Computing electrical properties like conductance matrices
+
+    Attributes
+    ----------
+    sections : dict
+        Dictionary mapping section names to Section objects
+    segments : list
+        List of all segments across all sections
+
+    Examples
+    --------
+    >>> morph = Morphology()
+    >>> # Add a cylindrical soma section
+    >>> morph.add_cylinder_section('soma', length=20.0 * u.um, diam=20.0 * u.um)
+    >>> # Add an axon and connect it to the soma
+    >>> morph.add_cylinder_section('axon', length=800.0 * u.um, diam=1.0 * u.um)
+    >>> morph.connect('axon', 'soma', 0.0)
+    """
     def __init__(self):
         """
         Initializes the Morphology object.
@@ -154,29 +297,99 @@ class Morphology:
         self.sections = {}  # Dictionary to store section objects by name
         self.segments = []
 
-    def create_section(
+    def add_cylinder_section(
         self,
         name: str,
-        points=None,
-        length=None,
-        diam=None,
-        nseg=1,
+        length: u.Quantity[u.cm],
+        diam: u.Quantity[u.cm],
+        nseg: int = 1,
+        Ra: u.Quantity[u.ohm * u.cm] = 100,
+        cm: u.Quantity[u.uF / u.cm ** 2] = 1.0,
     ):
         """
-        Create a new section in the model.
+        Create a cylindrical section and add it to the morphology.
 
-        Parameters:
-            name (str): The name of the section.
-            points (list or np.ndarray, optional): A list of points defining the section in [x, y, z, diameter] format.
-            length (float, optional): Length of the section (used for simple cylinder).
-            diam (float, optional): Diameter of the section (used for simple cylinder).
-            nseg (int, optional): The number of segments to discretize the section into.
+        This method creates a simple cylindrical compartment with uniform diameter and adds it
+        to the morphology. The cylinder is represented by two points: one at the origin
+        and one at distance 'length' along the x-axis.
+
+        Parameters
+        ----------
+        name : str
+            Unique identifier for the section
+        length : u.Quantity[u.cm]
+            Length of the cylindrical section
+        diam : u.Quantity[u.cm]
+            Diameter of the cylindrical section
+        nseg : int, optional
+            Number of segments to divide the section into, default=1
+        Ra : u.Quantity[u.ohm * u.cm], optional
+            Axial resistivity of the section, default=100
+        cm : u.Quantity[u.uF / u.cm ** 2], optional
+            Specific membrane capacitance, default=1.0
+
+        Raises
+        ------
+        ValueError
+            If a section with the same name already exists
+
+        Notes
+        -----
+        After creation, this section can be connected to other sections using the
+        `connect` method.
         """
-        section = Section(name, points=points, length=length, diam=diam, nseg=nseg)
+        section = CylinderSection(name, length=length, diam=diam, nseg=nseg, Ra=Ra, cm=cm)
+        if name in self.sections:
+            raise ValueError(f"Section with name '{name}' already exists.")
         self.sections[name] = section
         self.segments.extend(section.segments)
 
-    def get_section(self, name: str):
+    def add_point_section(
+        self,
+        name: str,
+        points: u.Quantity[u.cm],
+        nseg: int = 1,
+        Ra: u.Quantity[u.ohm * u.cm] = 100,
+        cm: u.Quantity[u.uF / u.cm ** 2] = 1.0,
+    ):
+        """
+        Create a section defined by custom 3D points and add it to the morphology.
+
+        This method creates a section based on multiple points defining a 3D trajectory with
+        varying diameters. Each point is specified in the format [x, y, z, diameter],
+        forming a sequence of connected frustums.
+
+        Parameters
+        ----------
+        name : str
+            Unique identifier for the section
+        points : u.Quantity[u.cm]
+            Array of shape (N, 4) with each point as [x, y, z, diameter]
+        nseg : int, optional
+            Number of segments to divide the section into, default=1
+        Ra : u.Quantity[u.ohm * u.cm], optional
+            Axial resistivity of the section, default=100
+        cm : u.Quantity[u.uF / u.cm ** 2], optional
+            Specific membrane capacitance, default=1.0
+
+        Raises
+        ------
+        ValueError
+            If a section with the same name already exists
+
+        Notes
+        -----
+        The points array must contain at least two points, and all diameters must be positive.
+        After creation, this section can be connected to other sections using the
+        `connect` method.
+        """
+        section = PointSection(name, points=points, nseg=nseg, Ra=Ra, cm=cm)
+        if name in self.sections:
+            raise ValueError(f"Section with name '{name}' already exists.")
+        self.sections[name] = section
+        self.segments.extend(section.segments)
+
+    def get_section(self, name: str) -> Optional[Section]:
         """
         Retrieve a section by its name.
 
@@ -197,77 +410,145 @@ class Morphology:
         """
         Connect one section to another, establishing a parent-child relationship.
 
-        Parameters:
-            child_name (str): The name of the child section to be connected.
-            parent_name (str): The name of the parent section to which the child connects.
-            parent_loc (float, optional): The location on the parent section to connect to (0 to 1). Default is 1.0.
+        This method creates a connection between two sections in the morphology, where
+        one section (child) connects to another section (parent) at a specific location
+        along the parent's length.
+
+        Parameters
+        ----------
+        child_name : str
+            The name of the child section to be connected
+        parent_name : str
+            The name of the parent section to which the child connects
+        parent_loc : Union[float, int], optional
+            The location on the parent section to connect to, ranging from 0.0 (beginning)
+            to 1.0 (end), default=1.0
+
+        Raises
+        ------
+        ValueError
+            If either the child or parent section does not exist
+        AssertionError
+            If parent_loc is not between 0.0 and 1.0
+
+        Notes
+        -----
+        If the child section already has a parent, the old connection will be removed
+        and a warning message will be displayed.
         """
-        assert 0.0 <= parent_loc <= 1.0, "parent_loc must be between 0.0 and 1.0"
 
         child = self.get_section(child_name)
-        parent = self.get_section(parent_name)
+        if child is None:
+            raise ValueError('Child section does not exist.')
 
-        if child is None or parent is None:
-            raise ValueError("Both child and parent sections must exist.")
+        parent = self.get_section(parent_name)
+        if parent is None:
+            raise ValueError('Parent section does not exist.')
 
         # If the child already has a parent, remove the old connection and notify the user
         if child.parent is not None:
-            print(f"Warning: Section '{child_name}' already has a parent: {child.parent['parent_name']}.")
-            # Remove the child from the old parent's children list
-            old_parent_name = child.parent['parent_name']
-            old_parent = self.get_section(old_parent_name)
-            if old_parent is not None:
-                old_parent.children.remove(child_name)
+            raise ValueError(f"Warning: Section '{child_name}' already has a parent: {child.parent['parent_name']}.")
 
         # Set the new parent for the child
-        child.parent = {
-            "parent_name": parent_name,
-            "parent_loc": parent_loc
-        }
+        child.add_parent(parent.name, parent_loc)
 
         # Add the child to the new parent's children list
-        parent.children.append(child_name)
+        parent.add_child(child.name)
 
-    def create_sections_from_dict(self, section_dicts):
+    def add_multiple_sections(self, section_dicts: Dict):
         """
-        Create multiple sections from a list of dictionaries.
+        Add multiple sections to the morphology in one operation.
 
-        Parameters:
-            section_dicts (list of dicts): List of dictionaries containing section properties.
+        This method allows batch creation of multiple sections by providing a dictionary of
+        section specifications. Each section can be either a point-based or cylindrical section
+        depending on the parameters provided.
 
-        Example format:
-            section_dicts = [
-                {'name': 'soma', 'length': 20, 'diam': 10, 'nseg': 1},
-                {'name': 'axon', 'length': 100, 'diam': 1, 'nseg': 10},
-                {'name': 'dendrite', 'points': [[0, 0, 0, 2], [100, 0, 0, 2], [200, 0, 0, 2]], 'nseg': 5}
-            ]
+        Parameters
+        ----------
+        section_dicts : Dict
+            A dictionary mapping section names to their specifications. Each specification is a dictionary
+            containing either:
+            - 'points', 'nseg' (optional), 'Ra' (optional), 'cm' (optional) for point sections, or
+            - 'length', 'diam', 'nseg' (optional), 'Ra' (optional), 'cm' (optional) for cylinder sections
+
+        Raises
+        ------
+        AssertionError
+            If section_dicts is not a dictionary or if any section specification is not a dictionary
+        ValueError
+            If a section specification doesn't contain either 'points' or both 'length' and 'diam'
+
+        Examples
+        --------
+        >>> morph = Morphology()
+        >>> morph.add_multiple_sections({
+        ...     'soma': {'length': 20.0, 'diam': 20.0},
+        ...     'axon': {'length': 800.0, 'diam': 1.0, 'nseg': 5},
+        ...     'dendrite': {'points': [[0,0,0,2], [10,10,0,1.5], [20,20,0,1]]}
+        ... })
+
+        Notes
+        -----
+        This is a convenience method that calls either `add_point_section` or `add_cylinder_section`
+        for each section specification based on the parameters provided.
         """
-        for section_data in section_dicts:
-            name = section_data['name']
-            points = section_data.get('points', None)
-            length = section_data.get('length', None)
-            diam = section_data.get('diam', None)
-            nseg = section_data.get('nseg', 1)
-            self.create_section(name, points=points, length=length, diam=diam, nseg=nseg)
+        assert isinstance(section_dicts, dict), 'section_dicts must be a dictionary'
 
-    def connect_sections_from_list(self, connection_sec_list):
+        for section_name, section_data in section_dicts.items():
+            assert isinstance(section_data, dict), 'section_data must be a dictionary.'
+            if 'points' in section_data:
+                self.add_point_section(name=section_name, **section_data)
+            elif 'length' in section_data and 'diam' in section_data:
+                self.add_cylinder_section(name=section_name, **section_data)
+            else:
+                raise ValueError('section_data must contain either points or length and diam.')
+
+    def connect_sections(self, connections: Sequence[Sequence]):
         """
-        Connect multiple sections based on a list of tuples containing parent-child relationships.
+        Establish multiple parent-child connections between sections in one operation.
 
-        Parameters:
-            connection_sec_list (list of tuples): Each tuple is (child_idx, parent_idx, parent_loc), specifying the connections.
+        This method allows for batch connection of multiple sections by providing a sequence
+        of connection specifications. Each connection is specified as a tuple or list with
+        exactly three elements: (child_name, parent_name, parent_loc).
 
-        Example format:
-            connection_sec_list = [
-                (1, 0, 1.0)  # Connect axon (index 1) to soma (index 0) at location 1.0
-            ]
+        Parameters
+        ----------
+        connections : Sequence[Sequence]
+            A sequence of connection specifications, where each specification is a sequence
+            containing exactly three elements:
+            - child_name: The name of the child section to be connected
+            - parent_name: The name of the parent section to connect to
+            - parent_loc: The location on the parent section (0.0 to 1.0) where the connection occurs
+
+        Raises
+        ------
+        AssertionError
+            If the connections parameter is not a list or tuple
+        ValueError
+            If any connection specification does not contain exactly 3 elements
+
+        Examples
+        --------
+        >>> morph = Morphology()
+        >>> # Add some sections first...
+        >>> morph.connect_sections([
+        ...     ('dendrite1', 'soma', 0.5),
+        ...     ('dendrite2', 'soma', 0.7),
+        ...     ('axon', 'soma', 0.0)
+        ... ])
+
+        Notes
+        -----
+        This is a convenience method that calls the `connect` method for each specified connection.
         """
-        for child_idx, parent_idx, parent_loc in connection_sec_list:
-            child_name = list(self.sections.keys())[child_idx]
-            parent_name = list(self.sections.keys())[parent_idx]
+        assert isinstance(connections, (tuple, list)), 'connections must be a list or tuple.'
+        for sec in connections:
+            if len(sec) != 3:
+                raise ValueError('connections must contain exactly 3 elements.')
+            child_name, parent_name, parent_loc = sec
             self.connect(child_name, parent_name, parent_loc)
 
-    def connection_sec_list(self):
+    def _connection_sec_list(self):
         """
         Extract section connection information in the form of tuples.
 
@@ -280,8 +561,8 @@ class Morphology:
         connections = []
         for child_name, child_section in self.sections.items():
             if child_section.parent is not None:
-                parent_name = child_section.parent["parent_name"]
-                parent_loc = child_section.parent["parent_loc"]
+                parent_name = child_section.parent["name"]
+                parent_loc = child_section.parent["loc"]
 
                 child_idx = name_to_idx[child_name]
                 parent_idx = name_to_idx[parent_name]
@@ -299,6 +580,9 @@ class Morphology:
 
         The matrix is populated using the left and right conductances of each section segment.
         """
+
+        # TODO
+
         nseg_list = []
         g_left = []
         g_right = []
@@ -310,13 +594,14 @@ class Morphology:
         for sec in self.sections.values():
             nseg_list.append(sec.nseg)
 
-        connection_sec_list = self.connection_sec_list()
+        connection_sec_list = self._connection_sec_list()
         connection_seg_list = compute_connection_seg(nseg_list, connection_sec_list)
 
         self.conductance_matrix = init_coupling_weight_nodes(g_left, g_right, connection_seg_list)
 
     def list_sections(self):
         """List all sections in the model with their properties (e.g., number of segments)."""
+        # TODO
         for name, section in self.sections.items():
             print(f"Section: {name}, nseg: {section.nseg}, Points: {section.positions.shape[0]}")
 
@@ -326,4 +611,7 @@ class Morphology:
 
     @classmethod
     def from_asc(self, *args, **kwargs) -> 'Morphology':
+        raise NotImplementedError
+
+    def visualize(self):
         raise NotImplementedError

@@ -239,8 +239,8 @@ def compute_connection_seg(nseg_list, connection_sec_list):
 
     Example:
     >>> nseg_list = [2, 3]
-    >>> connection_sec_list = [(0, -1, -1), (1, 0, 0.75)]
-    >>> compute_connection_seg(nseg_list, connection_sec_list)
+    >>> connections = [(0, -1, -1), (1, 0, 0.75)]
+    >>> compute_connection_seg(nseg_list, connections)
     [(0, -1, -1),   # Segment 0: section 0's first segment, no parent (root)
      (1, 0, 1),     # Segment 1: section 0's second segment, connects to segment 0 (previous)
      (2, 1, 0.5),   # Segment 2: section 1's first segment, connects to segment 1 (which is section 0's second segment),

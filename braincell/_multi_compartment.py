@@ -15,23 +15,20 @@
 
 from __future__ import annotations
 
-from typing import Union, Optional, Callable, Sequence, Tuple
+from typing import Optional, Callable, Sequence, Tuple
 
 import brainstate
-import brainunit as u
-import jax
-import numpy as np
 
-from braincell._base import HHTypedNeuron, IonChannel
-from braincell._integrator import get_integrator
-from braincell._protocol import DiffEqState
-from utils import *
+from _utils import *
+from ._base import HHTypedNeuron, IonChannel
+from ._integrator import get_integrator
+from ._protocol import DiffEqState
+from ._typing import Initializer
 
 __all__ = [
     'MultiCompartment',
 ]
 
-Initializer = Union[brainstate.typing.ArrayLike, Callable]
 
 class MultiCompartment(HHTypedNeuron):
     r"""
@@ -119,7 +116,7 @@ class MultiCompartment(HHTypedNeuron):
         connection: Sequence[Tuple[int, int, float]] | np.ndarray,
 
         # neuron parameters
-        Ra: Initializer = 100. * (u.ohm * u.cm),   # resistivity
+        Ra: Initializer = 100. * (u.ohm * u.cm),  # resistivity
         cm: Initializer = 1.0 * (u.uF / u.cm ** 2),  # membrane capacitance
         diam: Initializer = 1. * u.um,  # diameter
         L: Initializer = 10. * u.um,  # length

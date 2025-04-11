@@ -20,7 +20,7 @@ import matplotlib.pyplot as plt
 import braincell
 
 
-class HH(braincell.neuron.SingleCompartment):
+class HH(braincell.SingleCompartment):
     def __init__(self, size, solver='rk4'):
         super().__init__(size, solver=solver)
 

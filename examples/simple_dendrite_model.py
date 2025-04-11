@@ -68,7 +68,7 @@ class IK(braincell.channel.PotassiumChannel):
     n_inf = lambda self, V: self.n_alpha(V) / (self.n_alpha(V) + self.n_beta(V))
 
 
-class ThreeCompartmentHH(braincell.neuron.MultiCompartment):
+class ThreeCompartmentHH(braincell.MultiCompartment):
     def __init__(self, n_neuron: int, g_na, g_k):
         super().__init__(
             size=(n_neuron, 3),

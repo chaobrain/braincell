@@ -20,9 +20,10 @@ from typing import Union, Optional, Callable, Tuple
 import brainstate
 import brainunit as u
 
-from braincell._base import HHTypedNeuron, IonChannel
-from braincell._integrator import get_integrator
-from braincell._protocol import DiffEqState
+from ._base import HHTypedNeuron, IonChannel
+from ._integrator import get_integrator
+from ._protocol import DiffEqState
+from ._typing import Initializer
 
 __all__ = [
     'SingleCompartment',
@@ -72,9 +73,9 @@ class SingleCompartment(HHTypedNeuron):
     def __init__(
         self,
         size: brainstate.typing.Size,
-        C: Union[brainstate.typing.ArrayLike, Callable] = 1. * u.uF / u.cm ** 2,
-        V_th: Union[brainstate.typing.ArrayLike, Callable] = 0. * u.mV,
-        V_initializer: Union[brainstate.typing.ArrayLike, Callable] = brainstate.init.Uniform(-70 * u.mV, -60. * u.mV),
+        C: Initializer = 1. * u.uF / u.cm ** 2,
+        V_th: Initializer = 0. * u.mV,
+        V_initializer: Initializer = brainstate.init.Uniform(-70 * u.mV, -60. * u.mV),
         spk_fun: Callable = brainstate.surrogate.ReluGrad(),
         solver: str | Callable = 'rk2',
         name: Optional[str] = None,

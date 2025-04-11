@@ -20,8 +20,6 @@ import brainunit as u
 import jax
 import jax.numpy as jnp
 from scipy.integrate import solve_ivp
-from jax.scipy.linalg import expm
-import time 
 
 from ._integrator_exp_euler import _exponential_euler
 from ._integrator_runge_kutta import rk4_step
@@ -421,7 +419,7 @@ def splitting_step(
     *args :
         Additional arguments to be passed to the differential equation.
     """
-    from braincell.neuron.multi_compartment import MultiCompartment
+    from braincell._multi_compartment import MultiCompartment
 
     if isinstance(target, MultiCompartment):
 
@@ -492,7 +490,7 @@ def cn_rk4_step(
     t: u.Quantity[u.second],
     *args
 ):
-    from braincell.neuron.multi_compartment import MultiCompartment
+    from braincell._multi_compartment import MultiCompartment
     assert isinstance(target, MultiCompartment)
 
     def solve_axial():
@@ -520,7 +518,7 @@ def cn_exp_euler_step(
     t: u.Quantity[u.second],
     *args
 ):
-    from braincell.neuron.multi_compartment import MultiCompartment
+    from braincell._multi_compartment import MultiCompartment
     assert isinstance(target, MultiCompartment)
 
     with brainstate.environ.context(compute_axial_current=False):
@@ -564,7 +562,7 @@ def implicit_rk4_step(
     *args :
         Additional arguments to be passed to the differential equation.
     """
-    from braincell.neuron.multi_compartment import MultiCompartment
+    from braincell._multi_compartment import MultiCompartment
 
     if isinstance(target, MultiCompartment):
         with brainstate.environ.context(compute_axial_current=False):
@@ -611,7 +609,7 @@ def implicit_exp_euler_step(
     *args :
         Additional arguments to be passed to the differential equation.
     """
-    from braincell.neuron.multi_compartment import MultiCompartment
+    from braincell._multi_compartment import MultiCompartment
 
     if isinstance(target, MultiCompartment):
 
@@ -661,7 +659,7 @@ def exp_exp_euler_step(
     *args :
         Additional arguments to be passed to the differential equation.
     """
-    from braincell.neuron.multi_compartment import MultiCompartment
+    from braincell._multi_compartment import MultiCompartment
 
     if isinstance(target, MultiCompartment):
 

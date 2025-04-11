@@ -31,7 +31,7 @@ import matplotlib.pyplot as plt
 import braincell
 
 
-class ThalamusNeuron(braincell.neuron.SingleCompartment):
+class ThalamusNeuron(braincell.SingleCompartment):
     def compute_derivative(self, x=0. * u.nA):
         return super().compute_derivative(x * self.area)
 

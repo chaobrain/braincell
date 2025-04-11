@@ -43,8 +43,8 @@ with io.open(os.path.join(here, 'README.md'), 'r', encoding='utf-8') as f:
 packages = find_packages(
     exclude=[
         "docs*",
-        "build*", ""
-                  "examples*",
+        "build*",
+        "examples*",
         "dist*",
         "braincell.egg-info*",
         "braincell/__pycache__*"

@@ -40,7 +40,7 @@ import braincell
 import brainstate
 import brainunit as u
 
-class HTC(braincell.neuron.SingleCompartment):
+class HTC(braincell.SingleCompartment):
     def __init__(self, size, solver: str = 'exp_euler'):
         super().__init__(size, V_initializer=brainstate.init.Constant(-65. * u.mV), V_th=20. * u.mV, solver=solver)
 
@@ -76,7 +76,7 @@ import brainunit as u
 
 # TODO
 
-class HTC(braincell.neuron.MultiCompartment):
+class HTC(braincell.MultiCompartment):
     def __init__(self, size, solver: str = 'exp_euler'):
         super().__init__(size, V_initializer=brainstate.init.Constant(-65. * u.mV), V_th=20. * u.mV, solver=solver)
 

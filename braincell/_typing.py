@@ -13,28 +13,8 @@
 # limitations under the License.
 # ==============================================================================
 
+from typing import Union , Callable
 
-__version__ = "0.0.1"
+import brainstate
 
-from . import channel
-from . import ion
-from . import neuron
-from ._base import (
-    HHTypedNeuron,
-    IonChannel,
-    Ion,
-    Channel,
-    MixIons,
-    mix_ions,
-    IonInfo,
-)
-from ._multi_compartment import (
-    MultiCompartment,
-)
-from ._protocol import (
-    DiffEqState,
-    DiffEqModule,
-)
-from ._single_compartment import (
-    SingleCompartment,
-)
+Initializer = Union[brainstate.typing.ArrayLike, Callable]

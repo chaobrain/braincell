@@ -21,33 +21,59 @@ from ._utils import *
 
 __all__ = [
     'Section',
+    'CylinderSection',
+    'PointSection',
     'Morphology',
 ]
 
 
 class Section(brainstate.util.PrettyObject):
-    r"""
-    Neuron Section Object:
+    """Base class for representing a neuron section in compartmental modeling.
 
-    This class defines a neuron section that can be either:
-    1. A simple cylinder (using length and diameter), which creates a frustum between two points:
-       (0, 0, 0, diam) and (L, 0, 0, diam)
-    2. A more complex morphology defined by N 4D points (x, y, z, diameter), forming a sequence of connected frustums.
+    A Section is a fundamental building block that represents a discrete part of a neuron's
+    morphology, such as a soma, axon, or dendrite section. It provides the foundation
+    for electrical and geometric properties of the neuronal compartment.
 
     Each section is divided into `nseg` segments, and each segment has computed properties:
         - surface area
         - left axial resistance (to previous segment)
         - right axial resistance (to next segment)
+
+    Attributes
+    ----------
+    name : str
+        The identifier for this section
+    nseg : int
+        Number of segments the section is divided into
+    Ra : u.Quantity[u.ohm * u.cm]
+        Axial resistivity of the section
+    cm : u.Quantity[u.uF / u.cm ** 2]
+        Specific membrane capacitance
+    positions : np.ndarray
+        3D coordinates of section points
+    diam : u.Quantity
+        Diameter at each position
+    parent : dict or None
+        Parent section connection information
+    segments : list
+        List of dictionaries containing segment properties
+    children : set
+        Set of child section names connected to this section
+
+    Notes
+    -----
+    This is an abstract base class that should be subclassed by specific section
+    implementations like :py:class:`CylinderSection` and :py:class:`PointSection`.
     """
 
     def __init__(
         self,
         name: str,
-        positions: np.ndarray,
+        positions: u.Quantity,
         diam: u.Quantity,
-        nseg: int = 1,
-        Ra: u.Quantity[u.ohm * u.cm] = 100,
-        cm: u.Quantity[u.uF / u.cm ** 2] = 1.0,
+        nseg: int,
+        Ra: u.Quantity,
+        cm: u.Quantity,
     ):
         """
         Initialize the Section.
@@ -177,14 +203,42 @@ class Section(brainstate.util.PrettyObject):
 
 
 class CylinderSection(Section):
+    """A section class representing a cylindrical compartment with uniform diameter.
+
+    This class provides a simplified way to create a cylindrical neuron section
+    with uniform diameter throughout its length. The cylinder is represented
+    by two points: one at the origin and one at distance 'length' along the x-axis.
+
+    Parameters
+    ----------
+    name : str
+        Unique identifier for the section
+    length : u.Quantity
+        Length of the cylindrical section
+    diam : u.Quantity
+        Diameter of the cylindrical section
+    nseg : int, optional
+        Number of segments to divide the section into, default=1
+    Ra : u.Quantity[u.ohm * u.cm], optional
+        Axial resistivity of the section, default=100
+    cm : u.Quantity[u.uF / u.cm ** 2], optional
+        Specific membrane capacitance, default=1.0
+
+    Notes
+    -----
+    This is a concrete implementation of the abstract Section class specifically
+    for cylindrical geometries. It simplifies section creation by requiring only
+    length and diameter rather than full 3D point specifications.
+    """
+
     def __init__(
         self,
         name: str,
-        length: u.Quantity,
-        diam,
+        length: u.Quantity[u.meter],
+        diam: u.Quantity[u.meter],
         nseg: int = 1,
-        Ra: u.Quantity[u.ohm * u.cm] = 100,
-        cm: u.Quantity[u.uF / u.cm ** 2] = 1.0,
+        Ra: u.Quantity = 100 * u.ohm * u.cm,
+        cm: u.Quantity = 1.0 * u.uF / u.cm ** 2,
     ):
         assert length > 0, "Length must be positive."
         assert diam > 0, "Diameter must be positive."
@@ -205,27 +259,39 @@ class CylinderSection(Section):
 
 
 class PointSection(Section):
-    r"""
-    Neuron Section Object:
+    """A section class representing a compartment defined by multiple 3D points with varying diameters.
 
-    This class defines a neuron section that can be either:
-    1. A simple cylinder (using length and diameter), which creates a frustum between two points:
-       (0, 0, 0, diam) and (L, 0, 0, diam)
-    2. A more complex morphology defined by N 4D points (x, y, z, diameter), forming a sequence of connected frustums.
+    This class creates a more complex neuronal section defined by a series of points in 3D space,
+    each with its own diameter. The points form a sequence of connected frustums that can
+    represent detailed morphological structures like dendrites with varying thickness.
 
-    Each section is divided into `nseg` segments, and each segment has computed properties:
-        - surface area
-        - left axial resistance (to previous segment)
-        - right axial resistance (to next segment)
+    Parameters
+    ----------
+    name : str
+        Unique identifier for the section
+    points : u.Quantity[u.meter]
+        Array of shape (N, 4) containing points as [x, y, z, diameter]
+    nseg : int, optional
+        Number of segments to divide the section into, default=1
+    Ra : u.Quantity[u.ohm * u.cm], optional
+        Axial resistivity of the section, default=100
+    cm : u.Quantity[u.uF / u.cm ** 2], optional
+        Specific membrane capacitance, default=1.0
+
+    Notes
+    -----
+    This class allows for more complex and realistic representations of neuronal
+    morphology compared to the simplified CylinderSection. The points must include
+    at least two points, and all diameters must be positive values.
     """
 
     def __init__(
         self,
         name: str,
-        points,
+        points: u.Quantity[u.meter],
         nseg: int = 1,
-        Ra: u.Quantity[u.ohm * u.cm] = 100,
-        cm: u.Quantity[u.uF / u.cm ** 2] = 1.0,
+        Ra: u.Quantity = 100 * u.ohm * u.cm,
+        cm: u.Quantity = 1.0 * u.uF / u.cm ** 2,
     ):
         """
         Initialize the Section.
@@ -284,6 +350,7 @@ class Morphology(brainstate.util.PrettyObject):
     >>> morph.add_cylinder_section('axon', length=800.0 * u.um, diam=1.0 * u.um)
     >>> morph.connect('axon', 'soma', 0.0)
     """
+
     def __init__(self):
         """
         Initializes the Morphology object.
@@ -300,11 +367,11 @@ class Morphology(brainstate.util.PrettyObject):
     def add_cylinder_section(
         self,
         name: str,
-        length: u.Quantity[u.cm],
-        diam: u.Quantity[u.cm],
+        length: u.Quantity[u.meter],
+        diam: u.Quantity[u.meter],
         nseg: int = 1,
-        Ra: u.Quantity[u.ohm * u.cm] = 100,
-        cm: u.Quantity[u.uF / u.cm ** 2] = 1.0,
+        Ra: u.Quantity = 100 * u.ohm * u.cm,
+        cm: u.Quantity = 1.0 * u.uF / u.cm ** 2,
     ):
         """
         Create a cylindrical section and add it to the morphology.
@@ -347,10 +414,10 @@ class Morphology(brainstate.util.PrettyObject):
     def add_point_section(
         self,
         name: str,
-        points: u.Quantity[u.cm],
+        points: u.Quantity[u.meter],
         nseg: int = 1,
-        Ra: u.Quantity[u.ohm * u.cm] = 100,
-        cm: u.Quantity[u.uF / u.cm ** 2] = 1.0,
+        Ra: u.Quantity = 100 * u.ohm * u.cm,
+        cm: u.Quantity = 1.0 * u.uF / u.cm ** 2,
     ):
         """
         Create a section defined by custom 3D points and add it to the morphology.

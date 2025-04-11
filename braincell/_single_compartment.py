@@ -15,7 +15,7 @@
 
 from __future__ import annotations
 
-from typing import Optional, Callable, Tuple
+from typing import Optional, Callable, Tuple, Union
 
 import brainstate
 import brainunit as u
@@ -87,7 +87,7 @@ class SingleCompartment(HHTypedNeuron):
         V_th: Initializer = 0. * u.mV,
         V_initializer: Initializer = brainstate.init.Uniform(-70 * u.mV, -60. * u.mV),
         spk_fun: Callable = brainstate.surrogate.ReluGrad(),
-        solver: str | Callable = 'rk2',
+        solver: Union[str, Callable] = 'rk2',
         name: Optional[str] = None,
         **ion_channels
     ):

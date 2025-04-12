@@ -377,16 +377,14 @@ def construct_A(target):
         ## load the param
         n_compartment = target.n_compartment
         cm = target.cm
-        A = target.A
-        R_matrix = target.resistances
+        A = target.area
+        G_matrix = target.conductance_matrix
         Gl = target.Gl
 
-        print('cm=',cm)
         ## create the A_matrix
         cm_A = cm * A
-        print('-Gl/cm=',-Gl/cm)
-        print('-Gl/cm.shape=',(-Gl/cm).shape)
-        A_matrix = R_matrix / (cm_A[:, u.math.newaxis])
+
+        A_matrix = G_matrix / (cm_A[:, u.math.newaxis])
         A_matrix = A_matrix.at[jnp.diag_indices(n_compartment)].set(-u.math.sum(A_matrix, axis=1))
         A_matrix = A_matrix.at[jnp.diag_indices(n_compartment)].add(-Gl/cm)
 

@@ -35,6 +35,11 @@ from ._morphology import (
 from ._multi_compartment import (
     MultiCompartment,
 )
+
+from ._multi_compartment_test import (
+    MultiCompartment_test,
+)
+
 from ._protocol import (
     DiffEqState,
     DiffEqModule,

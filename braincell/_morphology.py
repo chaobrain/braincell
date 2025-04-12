@@ -151,9 +151,9 @@ class Section(brainstate.util.PrettyObject):
             segment = {
                 "section_name": self.name,
                 "index": i,
-                "area": area_left + area_right,
-                "R_left": R_left,
-                "R_right": R_right
+                "area": (area_left + area_right) * u.um**2, 
+                "R_left": R_left /u.um,
+                "R_right": R_right/u.um
             }
             self.segments.append(segment)
 
@@ -374,6 +374,8 @@ class Morphology(brainstate.util.PrettyObject):
         """
         self.sections = {}  # Dictionary to store section objects by name
         self.segments = []
+        self._conductance_matrix = None
+        self._area = None
 
     def add_cylinder_section(
         self,
@@ -666,8 +668,8 @@ class Morphology(brainstate.util.PrettyObject):
         g_right = []
 
         for seg in self.segments:
-            g_left.append(1 / (seg['R_left'] * u.ohm * u.cm / u.um))
-            g_right.append(1 / (seg['R_right'] * u.ohm * u.cm / u.um))
+            g_left.append(1 / (seg['R_left']))
+            g_right.append(1 / (seg['R_right']))
 
         for sec in self.sections.values():
             nseg_list.append(sec.nseg)
@@ -675,7 +677,25 @@ class Morphology(brainstate.util.PrettyObject):
         connection_sec_list = self._connection_sec_list()
         connection_seg_list = compute_connection_seg(nseg_list, connection_sec_list)
 
-        self.conductance_matrix = init_coupling_weight_nodes(g_left, g_right, connection_seg_list)
+        self._conductance_matrix = init_coupling_weight_nodes(g_left, g_right, connection_seg_list)
+
+    def construct_area(self):
+        area_list = []
+        for seg in self.segments:
+            area_list.append(seg['area'])
+        self._area =  area_list
+    
+    @property
+    def conductance_matrix(self):
+        if self._conductance_matrix is None:
+            self.construct_conductance_matrix()  
+        return self._conductance_matrix
+    
+    @property
+    def area(self):
+        if self._area is None:
+            self.construct_area()
+        return self._area
 
     def list_sections(self):
         """List all sections in the model with their properties (e.g., number of segments)."""

@@ -14,7 +14,7 @@
 # ==============================================================================
 
 import braincell
-
+import brainunit as u
 
 class TestMorphologyConstruction:
     def test1(self):
@@ -34,18 +34,17 @@ class TestMorphologyConstruction:
         morphology.list_sections()
 
         for sec in morphology.sections.values():
-            print("name:", sec.name, 'nseg:', sec.nseg)
+            print("name:", sec.name, 'diam:', sec.diam)
 
         # List all segments
         print(morphology.segments)
 
         # Construct conductance matrix for the model
-        morphology.construct_conductance_matrix()
         print(morphology.conductance_matrix)
 
         morphology.list_sections()
 
-        print(morphology)
+        #print(morphology)
 
     def test2(self):
         # Instantiate the Morphology object
@@ -76,5 +75,6 @@ class TestMorphologyConstruction:
         print(morphology.segments)
 
         # Construct conductance matrix for the model
-        morphology.construct_conductance_matrix()
         print(morphology.conductance_matrix)
+        print(morphology.area)
+

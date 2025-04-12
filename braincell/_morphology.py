@@ -15,11 +15,20 @@
 
 from __future__ import annotations
 
-from typing import Union, Optional, Sequence, Dict
+from typing import Union, Optional, Sequence, Dict, Hashable
 
 import brainstate
+import brainunit as u
+import numpy as np
 
-from ._utils import *
+from ._typing import SectionName
+from ._utils import (
+    calculate_total_resistance_and_area,
+    generate_interpolated_nodes,
+    compute_connection_seg,
+    compute_line_ratios,
+    init_coupling_weight_nodes,
+)
 
 __all__ = [
     'Section',
@@ -43,7 +52,7 @@ class Section(brainstate.util.PrettyObject):
 
     Attributes
     ----------
-    name : str
+    name : Hashable
         The identifier for this section
     nseg : int
         Number of segments the section is divided into
@@ -70,7 +79,7 @@ class Section(brainstate.util.PrettyObject):
 
     def __init__(
         self,
-        name: str,
+        name: SectionName,
         positions: u.Quantity,
         diam: u.Quantity,
         nseg: int,
@@ -81,7 +90,7 @@ class Section(brainstate.util.PrettyObject):
         Initialize the Section.
 
         Parameters:
-            name (str): Section name identifier.
+            name (Hashable): Section name identifier.
             length (float, optional): Length of the cylinder (if using simple geometry).
             diam (float, optional): Diameter of the cylinder (if using simple geometry).
             points (list or np.ndarray, optional): Array of shape (N, 4) with [x, y, z, diameter].
@@ -95,9 +104,9 @@ class Section(brainstate.util.PrettyObject):
         self.cm = cm
         self.positions = positions
         self.diam = diam
-        self.parent = None
-        self.segments = []
+        self.parent: Dict = None
         self.children = set()
+        self.segments = []
 
         self._compute_area_and_resistance()
 
@@ -148,7 +157,7 @@ class Section(brainstate.util.PrettyObject):
             }
             self.segments.append(segment)
 
-    def add_parent(self, name: str, loc: float):
+    def add_parent(self, name: SectionName, loc: float):
         """
         Add a parent connection to this section.
 
@@ -158,11 +167,11 @@ class Section(brainstate.util.PrettyObject):
 
         Parameters
         ----------
-        name : str
-            The name of the parent section to connect to
+        name : Hashable
+            The name of the parent section to connect to.
         loc : float
             The location on the parent section to connect to, ranging from 0.0 (beginning)
-            to 1.0 (end)
+            to 1.0 (end).
 
         Raises
         ------
@@ -184,7 +193,7 @@ class Section(brainstate.util.PrettyObject):
         assert 0.0 <= loc <= 1.0, "parent_loc must be between 0.0 and 1.0"
         self.parent = {"name": name, "loc": loc}
 
-    def add_child(self, name: str):
+    def add_child(self, name: SectionName):
         """
         Add a child connection to this section.
 
@@ -193,7 +202,7 @@ class Section(brainstate.util.PrettyObject):
 
         Parameters
         ----------
-        name : str
+        name : Hashable
             The name of the child section to add
 
         Notes
@@ -213,7 +222,7 @@ class CylinderSection(Section):
 
     Parameters
     ----------
-    name : str
+    name : Hashable
         Unique identifier for the section
     length : u.Quantity
         Length of the cylindrical section
@@ -235,7 +244,7 @@ class CylinderSection(Section):
 
     def __init__(
         self,
-        name: str,
+        name: SectionName,
         length: u.Quantity[u.meter],
         diam: u.Quantity[u.meter],
         nseg: int = 1,
@@ -269,7 +278,7 @@ class PointSection(Section):
 
     Parameters
     ----------
-    name : str
+    name : Hashable
         Unique identifier for the section
     points : u.Quantity[u.meter]
         Array of shape (N, 4) containing points as [x, y, z, diameter]
@@ -289,7 +298,7 @@ class PointSection(Section):
 
     def __init__(
         self,
-        name: str,
+        name: SectionName,
         points: u.Quantity[u.meter],
         nseg: int = 1,
         Ra: u.Quantity = 100 * u.ohm * u.cm,
@@ -368,7 +377,7 @@ class Morphology(brainstate.util.PrettyObject):
 
     def add_cylinder_section(
         self,
-        name: str,
+        name: SectionName,
         length: u.Quantity[u.meter],
         diam: u.Quantity[u.meter],
         nseg: int = 1,
@@ -384,7 +393,7 @@ class Morphology(brainstate.util.PrettyObject):
 
         Parameters
         ----------
-        name : str
+        name : Hashable
             Unique identifier for the section
         length : u.Quantity[u.cm]
             Length of the cylindrical section
@@ -415,7 +424,7 @@ class Morphology(brainstate.util.PrettyObject):
 
     def add_point_section(
         self,
-        name: str,
+        name: SectionName,
         points: u.Quantity[u.meter],
         nseg: int = 1,
         Ra: u.Quantity = 100 * u.ohm * u.cm,
@@ -430,7 +439,7 @@ class Morphology(brainstate.util.PrettyObject):
 
         Parameters
         ----------
-        name : str
+        name : Hashable
             Unique identifier for the section
         points : u.Quantity[u.cm]
             Array of shape (N, 4) with each point as [x, y, z, diameter]
@@ -458,7 +467,7 @@ class Morphology(brainstate.util.PrettyObject):
         self.sections[name] = section
         self.segments.extend(section.segments)
 
-    def get_section(self, name: str) -> Optional[Section]:
+    def get_section(self, name: SectionName) -> Optional[Section]:
         """
         Retrieve a section by its name.
 
@@ -472,8 +481,8 @@ class Morphology(brainstate.util.PrettyObject):
 
     def connect(
         self,
-        child_name: str,
-        parent_name: str,
+        child_name: SectionName,
+        parent_name: SectionName,
         parent_loc: Union[float, int] = 1.0
     ):
         """
@@ -485,9 +494,9 @@ class Morphology(brainstate.util.PrettyObject):
 
         Parameters
         ----------
-        child_name : str
+        child_name : Hashable
             The name of the child section to be connected
-        parent_name : str
+        parent_name : Hashable
             The name of the parent section to which the child connects
         parent_loc : Union[float, int], optional
             The location on the parent section to connect to, ranging from 0.0 (beginning)

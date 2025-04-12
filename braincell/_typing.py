@@ -13,8 +13,10 @@
 # limitations under the License.
 # ==============================================================================
 
-from typing import Union , Callable
+from typing import Union, Callable, Hashable
 
 import brainstate
 
 Initializer = Union[brainstate.typing.ArrayLike, Callable]
+SectionName = Hashable
+

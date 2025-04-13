@@ -23,11 +23,12 @@ import numpy as np
 
 from ._base import HHTypedNeuron, IonChannel
 from ._integrator import get_integrator
-from ._protocol import DiffEqState
-from ._typing import Initializer
+from ._morphology import Morphology
 from ._morphology_utils import (
     diffusive_coupling,
 )
+from ._protocol import DiffEqState
+from ._typing import Initializer
 
 __all__ = [
     'MultiCompartment',
@@ -345,4 +346,31 @@ class MultiCompartment(HHTypedNeuron):
         return (
             self.spk_fun((next_V - self.V_th) / denom) *
             self.spk_fun((self.V_th - last_V) / denom)
+        )
+
+
+class MorphologicalCell(MultiCompartment):
+    def __init__(
+        self,
+        size: brainstate.typing.Size,
+        morphology: Morphology,
+        V_th: Initializer = 0. * u.mV,
+        V_initializer: Initializer = brainstate.init.Uniform(-70 * u.mV, -60. * u.mV),
+        spk_fun: Callable = brainstate.surrogate.ReluGrad(),
+        solver: str | Callable = 'exp_euler',
+        name: Optional[str] = None,
+
+        Gl: Initializer = 0 * (u.mS / u.cm ** 2),  # for splitting
+        El: Initializer = -65 * u.mV,  # for splitting
+
+        **ion_channels
+    ):
+        super().__init__(
+            size=size,
+            V_th=V_th,
+            V_initializer=V_initializer,
+            spk_fun=spk_fun,
+            solver=solver,
+            name=name,
+            **ion_channels
         )

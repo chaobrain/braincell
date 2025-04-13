@@ -42,18 +42,6 @@ class MultiCompartment_test(HHTypedNeuron, Morphology):
     ----------
     size : brainstate.typing.Size
         Shape of the neuron population.
-    connection : Sequence[Tuple[int, int, int]] or numpy.ndarray
-        Connectivity information between compartments. Each entry is a tuple of
-        (child_idx, parent_idx, connection_site) where connection_site is either
-        0.5 (middle) or 1 (end) of the parent compartment.
-    Ra : brainstate.typing.ArrayLike, optional
-        Axial resistivity in ohm·cm. Default is 100 ohm·cm.
-    cm : brainstate.typing.ArrayLike, optional
-        Specific membrane capacitance in μF/cm². Default is 1.0 μF/cm².
-    diam : brainstate.typing.ArrayLike, optional
-        Diameter of compartments in μm. Default is 1.0 μm.
-    L : brainstate.typing.ArrayLike, optional
-        Length of compartments in μm. Default is 10.0 μm.
     V_th : Union[brainstate.typing.ArrayLike, Callable], optional
         Threshold potential for spike detection in mV. Default is 0.0 mV.
     V_initializer : Union[brainstate.typing.ArrayLike, Callable], optional
@@ -73,20 +61,11 @@ class MultiCompartment_test(HHTypedNeuron, Morphology):
 
     Attributes
     ----------
-    Ra : Quantity
-        Axial resistivity.
-    cm : Quantity
-        Specific membrane capacitance.
-    diam : Quantity
-        Compartment diameters.
-    L : Quantity
-        Compartment lengths.
-    A : Quantity
+    area : Quantity
         Surface areas of compartments.
-    connection : ndarray
-        Connectivity matrix between compartments.
-    resistances : Quantity
-        Axial resistances between connected compartments.
+
+    conductance_matrix : Quantity
+        Axialconductance_matrix between connected segments.
     V_th : Quantity or Callable
         Threshold potential for spike detection.
     V_initializer : Quantity or Callable
@@ -216,9 +195,11 @@ class MultiCompartment_test(HHTypedNeuron, Morphology):
 
         # 2.axial currents
         _compute_axial_current = brainstate.environ.get('compute_axial_current', True)
+
         if _compute_axial_current:
             coo_ids, conductance = get_coo_ids_and_values(self.conductance_matrix)
-            I_axial = diffusive_coupling(self.V.value, coo_ids, conductance) / self.area  ##
+            I_axial = diffusive_coupling(self.V.value, coo_ids, conductance) / self.area  
+            pass 
         else:
             I_axial = self.Gl * self.El  # u.Quantity(0., unit=u.get_unit(I_ext))
 

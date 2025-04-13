@@ -383,7 +383,7 @@ def get_coo_ids_and_values(conductance_matrix):
         - coo_ids is a list of tuples (i, j) representing the non-zero indices.
         - values is a vector containing the non-zero values at those indices.
     """
-    row, col = np.nonzero(conductance_matrix)  # row and column indices of non-zero elements
+    row, col = u.math.nonzero(conductance_matrix)  # row and column indices of non-zero elements
     values = conductance_matrix[row, col]
     coo_ids = list(zip(row, col))  # List of (i, j) pairs
     return coo_ids, values

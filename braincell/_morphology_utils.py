@@ -219,7 +219,7 @@ def generate_interpolated_nodes(node_pre, nseg: int):
     ratios_pre = compute_line_ratios(xyz_pre)
 
     # 2. Generate 2*nseg+1 equally spaced ratios (including 0 and 1)
-    ratios_new = jnp.linspace(0, 1, 2 * nseg + 1)
+    ratios_new = np.linspace(0, 1, 2 * nseg + 1)
 
     # 3. Interpolate for each new ratio
     xyz_new = []
@@ -235,7 +235,7 @@ def generate_interpolated_nodes(node_pre, nseg: int):
         d1, d2 = diam_pre[i1], diam_pre[i2]
 
         # Interpolation
-        alpha = (r - r1) / (r2 - r1) if r2 != r1 else 0  # Avoid division by zero
+        alpha = u.math.where(r2 != r1, 0., (r - r1) / (r2 - r1))  # Avoid division by zero
         x_new = x1 + alpha * (x2 - x1)
         y_new = y1 + alpha * (y2 - y1)
         z_new = z1 + alpha * (z2 - z1)

@@ -13,16 +13,18 @@
 # limitations under the License.
 # ==============================================================================
 
+import unittest
+
 import brainunit as u
 import jax.numpy as jnp
 import numpy as np
 import pytest
-import unittest
 
 from braincell._morphology_utils import (
     compute_line_ratios,
     calculate_total_resistance_and_area,
     find_ratio_interval,
+    generate_interpolated_nodes,
 )
 
 
@@ -274,7 +276,6 @@ class Test_calculate_total_resistance_and_area:
         assert u.math.allclose(area_np, area_jax)
 
 
-
 class TestFindRatioInterval(unittest.TestCase):
 
     def setUp(self):
@@ -331,7 +332,92 @@ class TestFindRatioInterval(unittest.TestCase):
         self.assertEqual(upper_idx, 2)
 
 
-class Test_generate_interpolated_nodes:
-    pass
-    # TODO
+class TestGenerateInterpolatedNodes(unittest.TestCase):
 
+    def test_basic_interpolation_works(self):
+        node_pre = np.array([
+            [0, 0, 0, 1],  # x, y, z, diameter
+            [10, 0, 0, 2]
+        ])
+        nseg = 2
+        result = generate_interpolated_nodes(node_pre, nseg)
+        self.assertEqual(result.shape, (5, 4))  # 2*nseg+1 = 5 points
+        np.testing.assert_almost_equal(result[0], [0, 0, 0, 1])
+        np.testing.assert_almost_equal(result[2], [5, 0, 0, 1.5])
+        np.testing.assert_almost_equal(result[4], [10, 0, 0, 2])
+
+    def test_handles_3d_path_correctly(self):
+        node_pre = np.array([
+            [0, 0, 0, 1],
+            [5, 5, 5, 2],
+            [10, 0, 0, 3]
+        ])
+        nseg = 3
+        result = generate_interpolated_nodes(node_pre, nseg)
+        self.assertEqual(result.shape, (7, 4))
+        np.testing.assert_almost_equal(result[0], [0, 0, 0, 1])
+        np.testing.assert_almost_equal(result[-1], [10, 0, 0, 3])
+
+    def test_handles_large_nseg_value(self):
+        node_pre = np.array([
+            [0, 0, 0, 1],
+            [10, 0, 0, 2]
+        ])
+        nseg = 50
+        result = generate_interpolated_nodes(node_pre, nseg)
+        self.assertEqual(result.shape, (101, 4))  # 2*50+1 = 101 points
+
+    def test_handles_single_node_input(self):
+        node_pre = np.array([[5, 5, 5, 1.5]])
+        nseg = 3
+        result = generate_interpolated_nodes(node_pre, nseg)
+        self.assertEqual(result.shape, (7, 4))
+        for i in range(7):
+            np.testing.assert_almost_equal(result[i], [5, 5, 5, 1.5])
+
+    def test_works_with_jax_array_input(self):
+        node_pre = jnp.array([
+            [0, 0, 0, 1],
+            [10, 0, 0, 2]
+        ])
+        nseg = 2
+        result = generate_interpolated_nodes(node_pre, nseg)
+        self.assertEqual(result.shape, (5, 4))
+        np.testing.assert_almost_equal(result[0], [0, 0, 0, 1])
+        np.testing.assert_almost_equal(result[-1], [10, 0, 0, 2])
+
+    def test_handles_brainunit_quantity_input(self):
+        node_pre = u.Quantity(np.array([
+            [0, 0, 0, 1],
+            [10, 0, 0, 2]
+        ]), unit='um')
+        nseg = 2
+        result = generate_interpolated_nodes(node_pre, nseg)
+        self.assertEqual(result.shape, (5, 4))
+        self.assertTrue(isinstance(result, u.Quantity))
+        self.assertEqual(result.unit, u.um)
+
+    def test_nseg_zero_returns_start_and_end_points(self):
+        node_pre = np.array([
+            [0, 0, 0, 1],
+            [10, 0, 0, 2]
+        ])
+        nseg = 0
+        result = generate_interpolated_nodes(node_pre, nseg)
+        self.assertEqual(result.shape, (1, 4))
+        np.testing.assert_almost_equal(result[0], [0, 0, 0, 1])
+
+    def test_interpolation_preserves_values_at_original_points(self):
+        node_pre = np.array([
+            [0, 0, 0, 1],
+            [5, 5, 5, 2],
+            [10, 10, 10, 3],
+            [15, 15, 15, 4]
+        ])
+        nseg = 3
+        result = generate_interpolated_nodes(node_pre, nseg)
+        # Original points should be included or closely approximated
+        for i, point in enumerate(node_pre):
+            position = i * (2 * nseg) / (len(node_pre) - 1)
+            closest_idx = int(round(position))
+            np.testing.assert_allclose(result[closest_idx], point, rtol=1e-5)

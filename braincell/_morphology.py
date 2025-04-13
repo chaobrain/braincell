@@ -15,14 +15,14 @@
 
 from __future__ import annotations
 
-from typing import Union, Optional, Sequence, Dict, Hashable
+from typing import Union, Optional, Sequence, Dict, Hashable, NamedTuple
 
 import brainstate
 import brainunit as u
 import numpy as np
 
 from ._typing import SectionName
-from ._utils import (
+from ._morphology_utils import (
     calculate_total_resistance_and_area,
     generate_interpolated_nodes,
     compute_connection_seg,
@@ -36,6 +36,35 @@ __all__ = [
     'PointSection',
     'Morphology',
 ]
+
+
+class Segment(NamedTuple):
+    """
+    A named tuple representing a segment of a neuronal section.
+
+    Each segment is a discrete part of a section with specific electrical
+    and geometric properties used in compartmental modeling of neurons.
+
+    Attributes
+    ----------
+    section_name : SectionName
+        The identifier of the section this segment belongs to
+    index : int
+        The position index of this segment within its parent section
+    area : u.Quantity[u.um ** 2]
+        Surface area of the segment in square micrometers
+    R_left : u.Quantity[u.um]
+        Axial resistance from the segment to its left neighbor
+        (previous segment) in micrometers
+    R_right : u.Quantity[u.um]
+        Axial resistance from the segment to its right neighbor
+        (next segment) in micrometers
+    """
+    section_name: SectionName
+    index: int
+    area: u.Quantity[u.um ** 2]
+    R_left: u.Quantity[u.um]
+    R_right: u.Quantity[u.um]
 
 
 class Section(brainstate.util.PrettyObject):
@@ -148,13 +177,13 @@ class Section(brainstate.util.PrettyObject):
             R_left, area_left = calculate_total_resistance_and_area(selected_left, self.Ra)
             R_right, area_right = calculate_total_resistance_and_area(selected_right, self.Ra)
 
-            segment = {
-                "section_name": self.name,
-                "index": i,
-                "area": (area_left + area_right) * u.um**2, 
-                "R_left": R_left /u.um,
-                "R_right": R_right/u.um
-            }
+            segment = Segment(
+                section_name=self.name,
+                index=i,
+                area=(area_left + area_right) * u.um ** 2,
+                R_left=R_left / u.um,
+                R_right=R_right / u.um,
+            )
             self.segments.append(segment)
 
     def add_parent(self, name: SectionName, loc: float):
@@ -668,8 +697,8 @@ class Morphology(brainstate.util.PrettyObject):
         g_right = []
 
         for seg in self.segments:
-            g_left.append(1 / (seg['R_left']))
-            g_right.append(1 / (seg['R_right']))
+            g_left.append(1 / (seg.R_left))
+            g_right.append(1 / (seg.R_right))
 
         for sec in self.sections.values():
             nseg_list.append(sec.nseg)
@@ -683,14 +712,14 @@ class Morphology(brainstate.util.PrettyObject):
         area_list = []
         for seg in self.segments:
             area_list.append(seg['area'])
-        self._area =  area_list
-    
+        self._area = area_list
+
     @property
     def conductance_matrix(self):
         if self._conductance_matrix is None:
-            self.construct_conductance_matrix()  
+            self.construct_conductance_matrix()
         return self._conductance_matrix
-    
+
     @property
     def area(self):
         if self._area is None:

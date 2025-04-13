@@ -18,12 +18,16 @@ from __future__ import annotations
 from typing import Optional, Callable, Sequence, Tuple
 
 import brainstate
+import brainunit as u
+import numpy as np
 
-from ._utils import *
 from ._base import HHTypedNeuron, IonChannel
 from ._integrator import get_integrator
 from ._protocol import DiffEqState
 from ._typing import Initializer
+from ._morphology_utils import (
+    diffusive_coupling,
+)
 
 __all__ = [
     'MultiCompartment',

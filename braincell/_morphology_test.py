@@ -44,7 +44,7 @@ class TestMorphologyConstruction:
 
         morphology.list_sections()
 
-        #print(morphology)
+        print(morphology)
 
     def test2(self):
         # Instantiate the Morphology object

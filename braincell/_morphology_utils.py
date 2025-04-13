@@ -1,7 +1,33 @@
-import numpy as np
-import brainunit as u
+# Copyright 2024 BDP Ecosystem Limited. All Rights Reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ==============================================================================
 
-def calculate_total_resistance_and_area(points, resistivity=100.0):
+from functools import partial
+from typing import Union
+
+import brainstate
+import brainunit as u
+import jax
+import jax.numpy as jnp
+import numpy as np
+
+
+@jax.jit
+def calculate_total_resistance_and_area(
+    points: brainstate.typing.Array,
+    resistivity: u.Quantity = 100.0 * u.ohm * u.cm  # TODO
+):
     r"""
     Calculate the total axial resistance and surface area of a neurite represented as N-1 frustums 
     (truncated cones) formed by N 3D points.
@@ -54,44 +80,46 @@ def calculate_total_resistance_and_area(points, resistivity=100.0):
          points = np.array([[0, 0, 0, 2], [5, 0, 0, 1]])
          R, Area = calculate_total_resistance_and_area(points)
     """
-    points = np.asarray(points) 
+    points = u.math.asarray(points)
     xyz = points[:, :3]  # Extract the first three columns (x, y, z)
     diameters = points[:, 3]  # Extract the diameter column
 
     # Calculate the Euclidean distance between adjacent points
-    heights = np.linalg.norm(np.diff(xyz, axis=0), axis=1)
+    heights = u.linalg.norm(u.math.diff(xyz, axis=0), axis=1)
 
     # Calculate the radii of adjacent points
     r1 = diameters[:-1] / 2
     r2 = diameters[1:] / 2
 
     # Calculate the slant heights (the oblique height)
-    slant_heights = np.sqrt(heights ** 2 + (r2 - r1) ** 2)
+    slant_heights = u.math.sqrt(heights ** 2 + (r2 - r1) ** 2)
 
     # Calculate the surface areas of the frustums
-    surface_areas = np.pi * (r1 + r2) * slant_heights
-    total_surface_area = np.sum(surface_areas)
+    surface_areas = u.math.pi * (r1 + r2) * slant_heights
+    total_surface_area = u.math.sum(surface_areas)
 
     # Calculate the resistances
-    resistances = resistivity * heights / (np.pi * r1 * r2)
-    total_resistance = np.sum(resistances)
+    resistances = resistivity * heights / (u.math.pi * r1 * r2)
+    total_resistance = u.math.sum(resistances)
 
     return total_resistance, total_surface_area
 
-def compute_line_ratios(points):
+
+@jax.jit
+def compute_line_ratios(points: Union[np.ndarray, jax.Array]):
     r"""
     Compute the normalized cumulative distance (0 to 1) of each point along a polyline
     defined by 3D coordinates. The output ratio indicates how far along the path 
     each point is, relative to the total length of the line.
 
-    Parameters:
-    -----------
+    Parameters
+    ----------
     points : array-like of shape (N, 3)
         A NumPy array or list where each row is a 3D coordinate (x, y, z) representing 
         a point along a path (e.g., neurite or dendrite structure).
 
-    Returns:
-    --------
+    Returns
+    -------
     ratios : np.ndarray of shape (N,)
         An array where each element is the normalized distance from the first point 
         to the current point, i.e.,
@@ -100,12 +128,12 @@ def compute_line_ratios(points):
 
         The first point will always be 0.0, and the last point will be 1.0 (unless all points coincide).
 
-    Notes:
-    ------
+    Notes
+    -----
     - If all points are identical (zero length), returns an array of zeros.
 
-    Example:
-    --------
+    Example
+    -------
     >>> points = np.array([
     ...     [0, 0, 0],
     ...     [3, 0, 0],
@@ -121,25 +149,31 @@ def compute_line_ratios(points):
     - Cumulative distances: [0, 3, 8]
     - Normalized: [0/8, 3/8, 8/8] = [0.0, 0.375, 1.0]
     """
-    points = np.asarray(points)  
+    points = u.math.asarray(points)
 
     # Calculate the Euclidean distance between adjacent points
-    segment_lengths = np.linalg.norm(np.diff(points, axis=0), axis=1)
+    segment_lengths = u.math.linalg.norm(u.math.diff(points, axis=0), axis=1)
+    seg_cumsum, seg_unit = u.split_mantissa_unit(u.math.cumsum(segment_lengths))
 
     # Calculate the total length
-    total_length = np.sum(segment_lengths)
-
-    if total_length == 0:
-        return np.zeros(len(points))  # Handle the case where all points coincide
+    total_length = u.math.sum(segment_lengths)
 
     # Compute the cumulative length and normalize it
-    cumulative_lengths = np.insert(np.cumsum(segment_lengths), 0, 0)  # Insert 0 at the beginning
+    cumulative_lengths = jnp.insert(seg_cumsum, 0, 0) * seg_unit  # Insert 0 at the beginning
     ratios = cumulative_lengths / total_length  # Normalize
 
-    return ratios
+    return u.math.where(
+        total_length == 0 * seg_unit,
+        jnp.zeros(len(points)),  # Handle the case where all points coincide
+        ratios,
+    )
 
 
-def find_ratio_interval(ratios, target_ratio):
+@jax.jit
+def find_ratio_interval(
+    ratios: np.ndarray,
+    target_ratio: np.ndarray
+):
     r"""
     Find the two adjacent indices where the target_ratio falls between in the ratios list.
     If the target_ratio is on the boundary (0 or 1), return valid indices within the range.
@@ -159,27 +193,25 @@ def find_ratio_interval(ratios, target_ratio):
     >>> find_ratio_interval(ratios, 1.0)
     (2, 3)
     """
-    ratios = np.asarray(ratios)
+    ratios = u.math.asarray(ratios)
     N = len(ratios)
 
-    if target_ratio <= ratios[0]:
-        return 0, 1
-    elif target_ratio >= ratios[-1]:
-        return N - 2, N - 1
-    else:
-        idx = np.searchsorted(ratios, target_ratio) - 1
-        return idx, idx + 1
+    idx = u.math.searchsorted(ratios, target_ratio) - 1
+    idx = u.math.where(target_ratio <= ratios[0], 0, idx)
+    idx = u.math.where(target_ratio >= ratios[-1], N - 2, idx)
+    return idx, idx + 1
 
 
-def generate_interpolated_nodes(node_pre, nseg):
+@partial(jax.jit, static_argnums=1)
+def generate_interpolated_nodes(node_pre, nseg: int):
     """
     Generate 2*nseg + 1 interpolated nodes and calculate their coordinates and diameters.
-    
+
     :param node_pre: A NumPy array of shape (N, 4), where each row represents (x, y, z, diam).
     :param nseg: The number of segments for subdivision; 2*nseg+1 points will be generated.
     :return: A NumPy array of shape (2*nseg+1, 4) containing the interpolated node set.
     """
-    node_pre = np.asarray(node_pre)  # Ensure it is a NumPy array
+    node_pre = u.math.asarray(node_pre)  # Ensure it is a NumPy array
     xyz_pre = node_pre[:, :3]  # Extract the first three columns (x, y, z)
     diam_pre = node_pre[:, 3]  # Extract the diameter column
 
@@ -187,7 +219,7 @@ def generate_interpolated_nodes(node_pre, nseg):
     ratios_pre = compute_line_ratios(xyz_pre)
 
     # 2. Generate 2*nseg+1 equally spaced ratios (including 0 and 1)
-    ratios_new = np.linspace(0, 1, 2 * nseg + 1)
+    ratios_new = jnp.linspace(0, 1, 2 * nseg + 1)
 
     # 3. Interpolate for each new ratio
     xyz_new = []
@@ -213,9 +245,11 @@ def generate_interpolated_nodes(node_pre, nseg):
         diam_new.append(d_new)
 
     # 4. Combine to form the final node_after
-    node_after = np.column_stack([xyz_new, diam_new])
+    node_after = u.math.column_stack([u.math.asarray(xyz_new),
+                                      u.math.asarray(diam_new)])
 
     return node_after
+
 
 def compute_connection_seg(nseg_list, connection_sec_list):
     r"""
@@ -223,7 +257,7 @@ def compute_connection_seg(nseg_list, connection_sec_list):
 
     :param nseg_list: A list of integers where each element represents the number of segments in each section.
                       For example, [2, 3] means section 0 has 2 segments, section 1 has 3 segments.
-    :param connection_sec_list: A list of tuples (child_sec, parent_sec, parent_loc) representing the connection 
+    :param connection_sec_list: A list of tuples (child_sec, parent_sec, parent_loc) representing the connection
                                 between sections. child_sec is the index of the current section,
                                 parent_sec is the index of its parent section (or -1 if root),
                                 and parent_loc is the normalized location on the parent section (0 to 1).
@@ -280,6 +314,7 @@ def compute_connection_seg(nseg_list, connection_sec_list):
 
     connection_seg = [(i, parent_indices[i], site_list[i]) for i in range(n_compartment)]
     return connection_seg
+
 
 def init_coupling_weight_nodes(g_left, g_right, connection):
     r"""
@@ -360,7 +395,8 @@ def init_coupling_weight_nodes(g_left, g_right, connection):
                     for j in all_nodes_at_1:
                         if i != j:
                             if i == parent:
-                                axial_conductance_matrix[i, j] = g_right[i] * g_left[j] / denominator_at_1 # type: ignore
+                                axial_conductance_matrix[i, j] = g_right[i] * g_left[
+                                    j] / denominator_at_1  # type: ignore
                             elif j == parent:
                                 axial_conductance_matrix[i, j] = g_left[i] * g_right[j] / denominator_at_1
                             else:
@@ -373,6 +409,7 @@ def init_coupling_weight_nodes(g_left, g_right, connection):
                 axial_conductance_matrix[child, parent] = g_left[child]
 
     return axial_conductance_matrix
+
 
 def get_coo_ids_and_values(conductance_matrix):
     """
@@ -387,6 +424,7 @@ def get_coo_ids_and_values(conductance_matrix):
     values = conductance_matrix[row, col]
     coo_ids = list(zip(row, col))  # List of (i, j) pairs
     return coo_ids, values
+
 
 def diffusive_coupling(potentials, coo_ids, conductances):
     """
@@ -417,19 +455,19 @@ def diffusive_coupling(potentials, coo_ids, conductances):
     assert isinstance(conductances, u.Quantity), 'The conductances should be a Quantity.'
     # assert potentials.ndim == 1, f'The potentials should be a 1D array. Got {potentials.shape}.'
     assert conductances.shape[-1] == coo_ids.shape[0], ('The length of conductance should be equal '
-                                                       'to the number of connections.')
+                                                        'to the number of connections.')
     assert coo_ids.ndim == 2, f'The coo_ids should be a 2D array. Got {coo_ids.shape}.'
     assert conductances.ndim == 1, f'The conductances should be a 1D array. Got {conductances.shape}.'
 
     # Initialize the output array with zeros
     outs = u.Quantity(u.math.zeros(potentials.shape), unit=potentials.unit * conductances.unit)
-    
+
     pre_ids = coo_ids[:, 0]
     post_ids = coo_ids[:, 1]
-    
+
     # Calculate the diffusive coupling based on the conductance (potentials difference * conductance)
     diff = (potentials[..., pre_ids] - potentials[..., post_ids]) * conductances
     outs = outs.at[..., pre_ids].add(-diff)
     outs = outs.at[..., post_ids].add(diff)
-    
+
     return outs

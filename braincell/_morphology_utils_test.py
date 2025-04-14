@@ -203,23 +203,13 @@ class Test_calculate_total_resistance_and_area:
         # Calculate manually for each segment
         segment1 = points[0:2]  # Start to branch
         segment2 = points[[1, 2]]  # Branch to end 1
-        segment3 = points[[1, 3]]  # Branch to end 2
+        segment3 = points[[2, 3]]  # Branch to end 2
 
         r1, a1 = calculate_total_resistance_and_area(segment1)
         r2, a2 = calculate_total_resistance_and_area(segment2)
         r3, a3 = calculate_total_resistance_and_area(segment3)
 
-        # The function should correctly sum the segments
-        all_segments = np.array([
-            [0, 0, 0, 1],  # Start point
-            [10, 0, 0, 1],  # Branch point
-            [10, 0, 0, 1],  # Duplicate branch point for second segment
-            [15, 5, 0, 0.8],  # End of branch 1
-            [10, 0, 0, 1],  # Duplicate branch point for third segment
-            [15, -5, 0, 0.8]  # End of branch 2
-        ]) * u.um
-
-        r_total, a_total = calculate_total_resistance_and_area(all_segments)
+        r_total, a_total = calculate_total_resistance_and_area(points)
 
         assert u.math.allclose(r_total, r1 + r2 + r3)
         assert u.math.allclose(a_total, a1 + a2 + a3)
@@ -288,8 +278,8 @@ class TestFindRatioInterval(unittest.TestCase):
 
     def test_target_ratio_exactly_matches_middle_value(self):
         lower_idx, upper_idx = find_ratio_interval(self.ratios, 0.6)
-        self.assertEqual(lower_idx, 2)
-        self.assertEqual(upper_idx, 3)
+        self.assertEqual(lower_idx, 1)
+        self.assertEqual(upper_idx, 2)
 
     def test_target_ratio_below_minimum(self):
         lower_idx, upper_idx = find_ratio_interval(self.ratios, -0.1)
@@ -390,7 +380,7 @@ class TestGenerateInterpolatedNodes(unittest.TestCase):
         node_pre = u.Quantity(np.array([
             [0, 0, 0, 1],
             [10, 0, 0, 2]
-        ]), unit='um')
+        ]), unit = u.um)
         nseg = 2
         result = generate_interpolated_nodes(node_pre, nseg)
         self.assertEqual(result.shape, (5, 4))

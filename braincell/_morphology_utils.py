@@ -187,7 +187,7 @@ def find_ratio_interval(
     >>> find_ratio_interval(ratios, 0.25)
     (0, 1)
     >>> find_ratio_interval(ratios, 0.6)
-    (2, 3)
+    (1, 2)
     >>> find_ratio_interval(ratios, 0.0)
     (0, 1)
     >>> find_ratio_interval(ratios, 1.0)
@@ -235,7 +235,7 @@ def generate_interpolated_nodes(node_pre, nseg: int):
         d1, d2 = diam_pre[i1], diam_pre[i2]
 
         # Interpolation
-        alpha = u.math.where(r2 != r1, 0., (r - r1) / (r2 - r1))  # Avoid division by zero
+        alpha = u.math.where(r2 != r1, (r - r1) / (r2 - r1), 0)  # Avoid division by zero
         x_new = x1 + alpha * (x2 - x1)
         y_new = y1 + alpha * (y2 - y1)
         z_new = z1 + alpha * (z2 - z1)

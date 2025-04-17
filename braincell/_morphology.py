@@ -51,20 +51,20 @@ class Segment(NamedTuple):
         The identifier of the section this segment belongs to
     index : int
         The position index of this segment within its parent section
-    area : u.Quantity[u.um ** 2]
+    area : u.Quantity[u.meter2]
         Surface area of the segment in square micrometers
-    R_left : u.Quantity[u.um]
+    R_left : u.Quantity[u.meter]
         Axial resistance from the segment to its left neighbor
         (previous segment) in micrometers
-    R_right : u.Quantity[u.um]
+    R_right : u.Quantity[u.meter]
         Axial resistance from the segment to its right neighbor
         (next segment) in micrometers
     """
     section_name: SectionName
     index: int
-    area: u.Quantity[u.um ** 2]
-    R_left: u.Quantity[u.um]
-    R_right: u.Quantity[u.um]
+    area: u.Quantity[u.meter2]
+    R_left: u.Quantity[u.meter]
+    R_right: u.Quantity[u.meter]
 
 
 class Section(brainstate.util.PrettyObject):
@@ -707,6 +707,9 @@ class Morphology(brainstate.util.PrettyObject):
         connection_seg_list = compute_connection_seg(nseg_list, connection_sec_list)
 
         self._conductance_matrix = init_coupling_weight_nodes(g_left, g_right, connection_seg_list)
+
+        # COO, CSR  ==> Dense
+
 
     def construct_area(self):
         area_list = []

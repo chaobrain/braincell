@@ -22,9 +22,9 @@ class TestMorphologyConstruction:
         morphology = braincell.Morphology()
 
         # Create individual sections using `create_section`
-        morphology.add_cylinder_section('soma', length=20, diam=10, nseg=1)  # Soma section
-        morphology.add_cylinder_section('axon', length=100, diam=1, nseg=2)  # Axon section
-        morphology.add_point_section('dendrite', [[0, 0, 0, 2], [100, 0, 0, 3], [200, 0, 0, 2]], nseg=3)  # Dendrite
+        morphology.add_cylinder_section('soma', length=20 * u.um, diam=10 * u.um, nseg=1)  # Soma section
+        morphology.add_cylinder_section('axon', length=100 * u.um, diam=1 * u.um, nseg=2)  # Axon section
+        morphology.add_point_section('dendrite', [[0, 0, 0, 2], [100, 0, 0, 3], [200, 0, 0, 2]] * u.um, nseg=3)  # Dendrite
 
         # Connect the sections (e.g., dendrite and axon connected to soma)
         morphology.connect('axon', 'soma', parent_loc=1.0)  # Axon connected at the end of soma

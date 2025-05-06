@@ -57,7 +57,28 @@ def deprecation_getattr(module, deprecations):
 
 
 def set_module_as(name: str):
+    """
+    A decorator factory to set the `__name__` attribute of a module.
+
+    This function returns a decorator that, when applied to a module,
+    sets the module's `__name__` attribute to the specified name.
+
+    Args:
+        name (str): The new name to assign to the module's `__name__` attribute.
+
+    Returns:
+        Callable: A decorator that modifies the `__name__` attribute of the module.
+    """
     def decorator(module):
+        """
+        Decorator to set the `__name__` attribute of the given module.
+
+        Args:
+            module: The module whose `__name__` attribute will be modified.
+
+        Returns:
+            The modified module with its `__name__` attribute updated.
+        """
         module.__name__ = name
         return module
 

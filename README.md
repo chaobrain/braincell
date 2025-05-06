@@ -84,6 +84,13 @@ class HTC(braincell.MultiCompartment):
 ```
 
 
+Alternatively, you can install `BrainX`, which bundles `braincell` with other compatible packages for a comprehensive brain modeling ecosystem:
+
+```bash
+pip install BrainX -U
+```
+
+
 
 
 ## Installation

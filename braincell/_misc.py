@@ -15,9 +15,45 @@
 
 from __future__ import annotations
 
+import warnings
 from typing import Callable, TYPE_CHECKING
 
 import brainstate
+
+
+def deprecation_getattr(module, deprecations):
+    """
+    Create a custom getattr function to handle deprecated attributes.
+
+    This function generates a custom getattr function for a module, which
+    checks if an attribute is deprecated and handles it accordingly by
+    raising an AttributeError or issuing a warning.
+
+    Parameters
+    ----------
+    module : str
+        The name of the module for which the custom getattr function is created.
+    deprecations : dict
+        A dictionary where keys are attribute names and values are tuples
+        containing a deprecation message and an optional function. If the
+        function is None, accessing the attribute will raise an AttributeError.
+
+    Returns
+    -------
+    function
+        A custom getattr function that handles deprecated attributes.
+    """
+
+    def getattr(name):
+        if name in deprecations:
+            message, fn = deprecations[name]
+            if fn is None:  # Is the deprecation accelerated?
+                raise AttributeError(message)
+            warnings.warn(message, DeprecationWarning, stacklevel=2)
+            return fn
+        raise AttributeError(f"module {module!r} has no attribute {name!r}")
+
+    return getattr
 
 
 def set_module_as(name: str):

@@ -47,3 +47,25 @@ from ._protocol import (
 from ._single_compartment import (
     SingleCompartment,
 )
+
+
+from braincell._misc import deprecation_getattr
+
+
+_deprecations = {
+    'SingleCompartment': (
+        f"braincell.neuron.SingleCompartment has been moved "
+        f"into braincell.SingleCompartment",
+        SingleCompartment
+    ),
+    'MultiCompartment': (
+        f"braincell.neuron.MultiCompartment has been moved "
+        f"into braincell.MultiCompartment",
+        MultiCompartment
+    ),
+}
+neuron.__getattr__ = deprecation_getattr(__name__, _deprecations)
+del deprecation_getattr
+
+
+

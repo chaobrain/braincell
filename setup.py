@@ -61,18 +61,18 @@ setup(
     author='BrainCell Developers',
     author_email='chao.brain@qq.com',
     packages=packages,
-    python_requires='>=3.9',
-    install_requires=['numpy>=1.15', 'jax', 'brainunit>=0.0.8', 'brainstate>=0.1.0'],
+    python_requires='>=3.10',
+    install_requires=['numpy>=1.15', 'brainunit>=0.0.8', 'brainstate>=0.1.0'],
     url='https://github.com/chaobrain/braincell',
     project_urls={
         "Bug Tracker": "https://github.com/chaobrain/braincell/issues",
-        "Documentation": "https://dendrite.readthedocs.io/",
+        "Documentation": "https://braincell.readthedocs.io/",
         "Source Code": "https://github.com/chaobrain/braincell",
     },
     extras_require={
-        'cpu': ['jaxlib'],
-        'cuda12': ['jaxlib[cuda12]', ],
-        'tpu': ['jaxlib[tpu]'],
+        'cpu': ['jax'],
+        'cuda12': ['jax[cuda12]'],
+        'tpu': ['jax[tpu]'],
     },
     keywords=(
         'dendritic computation, '
@@ -85,7 +85,6 @@ setup(
         'Operating System :: OS Independent',
         'Programming Language :: Python',
         'Programming Language :: Python :: 3',
-        'Programming Language :: Python :: 3.9',
         'Programming Language :: Python :: 3.10',
         'Programming Language :: Python :: 3.11',
         'Programming Language :: Python :: 3.12',

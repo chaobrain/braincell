@@ -46,7 +46,6 @@ index_dend_apical = loaded_params['index_dend_apical']
 
 ## conductvalues 
 conductvalues = 1e3 * np.array([
-
     0.00499506303209, 0.01016375552607, 0.00247172479141, 0.00128859564935,
     3.690771983E-05, 0.0080938853146, 0.01226052748146, 0.01650689958385,
     0.00139885617712, 0.14927733727426, 0.00549507510519, 0.14910988921938,
@@ -129,7 +128,7 @@ gkmgrc = np.zeros(n_compartments)
 gkmgrc[index_axon[0]] = conductvalues[20]
 
 
-class Golgi(braincell.neuron.MultiCompartment):
+class Golgi(braincell.MultiCompartment):
     def __init__(self, size, connection, Ra, cm, diam, L, gl, gkv11):
         super().__init__(
             size=size,

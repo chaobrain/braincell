@@ -84,14 +84,6 @@ class HTC(braincell.MultiCompartment):
 ```
 
 
-Alternatively, you can install `BrainX`, which bundles `braincell` with other compatible packages for a comprehensive brain modeling ecosystem:
-
-```bash
-pip install BrainX -U
-```
-
-
-
 
 ## Installation
 
@@ -101,6 +93,14 @@ You can install ``braincell`` via pip:
 pip install braincell --upgrade
 ```
 
+
+Alternatively, you can install `BrainX`, which bundles `braincell` with other compatible packages for a comprehensive brain modeling ecosystem:
+
+```bash
+pip install BrainX -U
+```
+
+
 ## Documentation
 
 The official documentation is hosted on Read the Docs: [https://braincell.readthedocs.io](https://braincell.readthedocs.io)
@@ -109,5 +109,5 @@ The official documentation is hosted on Read the Docs: [https://braincell.readth
 
 ## See also the brain modeling ecosystem
 
-We are building the BDP ecosystem: https://brainmodeling.readthedocs.io/
+We are building the brain modeling ecosystem: https://brainmodeling.readthedocs.io/
 

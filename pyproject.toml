@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools", "numpy", 'jax', 'jaxlib']
+requires = ["setuptools"]
 build-backend = "setuptools.build_meta"
 
 
@@ -57,9 +57,6 @@ dependencies = [
 ]
 
 dynamic = ['version']
-
-[tool.flit.module]
-name = "braincell"
 
 [project.urls]
 homepage = 'http://github.com/chaobrain/braincell'

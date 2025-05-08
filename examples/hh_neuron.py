@@ -32,18 +32,20 @@ class HH(braincell.SingleCompartment):
 
         self.IL = braincell.channel.IL(size, E=-54.387 * u.mV, g_max=0.03 * (u.mS / u.cm ** 2))
 
-    def step_fun(self, t):
-        with brainstate.environ.context(t=t):
-            spike = self.update(10 * u.nA / u.cm ** 2)
-        return self.V.value
-
 
 hh = HH(1, solver='exp_euler')
 hh.init_state()
 
+
+def step_fun(t):
+    with brainstate.environ.context(t=t):
+        spike = hh.update(10 * u.nA / u.cm ** 2)
+    return hh.V.value
+
+
 with brainstate.environ.context(dt=0.1 * u.ms):
     times = u.math.arange(0. * u.ms, 100 * u.ms, brainstate.environ.get_dt())
-    vs = brainstate.compile.for_loop(hh.step_fun, times)
+    vs = brainstate.compile.for_loop(step_fun, times)
 
 plt.plot(times, u.math.squeeze(vs))
 plt.show()

@@ -455,23 +455,6 @@ class IonChannel(brainstate.graph.Node, TreeNode, DiffEqModule):
     name : str, optional
         A name identifier for the ion channel.
 
-    Methods
-    -------
-    varshape : property
-        Returns the shape of the channel's variables.
-    current(*args, **kwargs)
-        Calculate the current flow through the channel. Must be implemented by subclasses.
-    pre_integral(*args, **kwargs)
-        Perform operations before the integration step in simulations.
-    compute_derivative(*args, **kwargs)
-        Compute the derivatives of the channel's state variables. Must be implemented by subclasses.
-    post_integral(*args, **kwargs)
-        Perform operations after the integration step in simulations.
-    init_state(*args, **kwargs)
-        Initialize the state variables of the channel. Must be implemented by subclasses.
-    reset_state(*args, **kwargs)
-        Reset the state variables to their initial values. Must be implemented by subclasses.
-
     Notes
     -----
     - Subclasses should override the abstract methods (current, compute_derivative, init_state,
@@ -731,17 +714,6 @@ class Ion(IonChannel, Container):
             with this ion.
         external_currents (Dict[str, Callable]): A dictionary of external current
             functions that can be applied to this ion.
-
-    Methods:
-        pre_integral(V): Perform pre-integration operations for all channels.
-        compute_derivative(V): Compute derivatives for all channels.
-        post_integral(V): Perform post-integration operations for all channels.
-        current(V, include_external): Calculate the total current for this ion.
-        init_state(V, batch_size): Initialize the state of all channels.
-        reset_state(V, batch_size): Reset the state of all channels.
-        register_external_current(key, fun): Register an external current function.
-        pack_info(): Pack ion information into an IonInfo object.
-        add_elem(**elements): Add new channel elements to this ion.
 
     The Ion class serves as a crucial component in modeling the behavior of specific
     ion types within a neuron or neural network simulation. It manages the collective

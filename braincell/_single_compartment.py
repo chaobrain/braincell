@@ -92,7 +92,7 @@ class SingleCompartment(HHTypedNeuron):
         **ion_channels
     ):
         """
-        Initialize a SingleCompartment neuron.
+        Initialize a :class:`SingleCompartment` neuron.
 
         Parameters
         ----------
@@ -123,10 +123,34 @@ class SingleCompartment(HHTypedNeuron):
 
     @property
     def pop_size(self) -> Tuple[int, ...]:
+        """
+        Get the population size of the neuron group.
+
+        This property returns the shape of the neuron population, which determines
+        how many individual neurons are in this group. For example, a shape of (10,)
+        means 10 neurons, while (2, 5) would represent a 2D grid of neurons.
+
+        Returns
+        -------
+        Tuple[int, ...]
+            The shape of the neuron population as a tuple of integers.
+        """
         return self.varshape
 
     @property
     def n_compartment(self) -> int:
+        """
+        Get the number of compartments in this neuron model.
+
+        For the :class:`SingleCompartment` model, this always returns 1 since it's a point
+        neuron model with only one compartment. Multi-compartment models would
+        override this property to return their respective number of compartments.
+
+        Returns
+        -------
+        int
+            The number of compartments, which is 1 for :class:`SingleCompartment` neurons.
+        """
         return 1
 
     def init_state(self, batch_size=None):

@@ -23,7 +23,7 @@ import brainstate
 import brainunit as u
 
 from braincell._base import Ion, Channel, HHTypedNeuron
-from braincell._integrators import DiffEqState
+from braincell._protocol import DiffEqState
 
 __all__ = [
     'Calcium',

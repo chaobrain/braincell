@@ -13,16 +13,16 @@
 # limitations under the License.
 # ==============================================================================
 
+import brainstate
 import brainunit as u
 import matplotlib.pyplot as plt
 
-import brainstate
 import braincell
 
 
-class HH(braincell.neuron.SingleCompartment):
-    def __init__(self, size):
-        super().__init__(size)
+class HH(braincell.SingleCompartment):
+    def __init__(self, size, solver='rk4'):
+        super().__init__(size, solver=solver)
 
         self.na = braincell.ion.SodiumFixed(size, E=50. * u.mV)
         self.na.add(INa=braincell.channel.INa_HH1952(size))
@@ -32,20 +32,13 @@ class HH(braincell.neuron.SingleCompartment):
 
         self.IL = braincell.channel.IL(size, E=-54.387 * u.mV, g_max=0.03 * (u.mS / u.cm ** 2))
 
-    def update(self, I_ext=0. * u.nA / u.cm ** 2):
-        brainstate.augment.vmap(
-            lambda: braincell.exp_euler_step(self, brainstate.environ.get('t'), I_ext),
-            in_states=self.states()
-        )()
-        return self.post_integral(I_ext)
-
     def step_fun(self, t):
         with brainstate.environ.context(t=t):
             spike = self.update(10 * u.nA / u.cm ** 2)
         return self.V.value
 
 
-hh = HH([1, 1])
+hh = HH(1, solver='exp_euler')
 hh.init_state()
 
 with brainstate.environ.context(dt=0.1 * u.ms):

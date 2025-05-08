@@ -14,9 +14,4 @@
 # ==============================================================================
 
 
-from .multi_compartment import *
-from .multi_compartment import __all__ as _multi_comp_all
-from .single_compartment import *
-from .single_compartment import __all__ as _single_comp_all
-
-__all__ = _single_comp_all + _multi_comp_all
+__all__ = []

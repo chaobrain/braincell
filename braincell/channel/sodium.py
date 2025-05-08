@@ -13,7 +13,7 @@ import brainstate
 import brainunit as u
 
 from braincell._base import Channel, IonInfo
-from braincell._integrators import DiffEqState
+from braincell._protocol import DiffEqState
 from braincell.ion import Sodium
 
 __all__ = [
@@ -42,7 +42,8 @@ class SodiumChannel(Channel):
         """
         Perform any necessary operations before the integration step.
 
-        Parameters:
+        Parameters
+        ----------
         V : ArrayLike
             Membrane potential.
         Na : IonInfo
@@ -54,7 +55,8 @@ class SodiumChannel(Channel):
         """
         Perform any necessary operations after the integration step.
 
-        Parameters:
+        Parameters
+        ----------
         V : ArrayLike
             Membrane potential.
         Na : IonInfo
@@ -66,7 +68,8 @@ class SodiumChannel(Channel):
         """
         Compute the derivative of the channel state variables.
 
-        Parameters:
+        Parameters
+        ----------
         V : ArrayLike
             Membrane potential.
         Na : IonInfo
@@ -78,7 +81,8 @@ class SodiumChannel(Channel):
         """
         Calculate the sodium current through the channel.
 
-        Parameters:
+        Parameters
+        ----------
         V : ArrayLike
             Membrane potential.
         Na : IonInfo
@@ -93,7 +97,8 @@ class SodiumChannel(Channel):
         """
         Initialize the state variables of the channel.
 
-        Parameters:
+        Parameters
+        ----------
         V : ArrayLike
             Membrane potential.
         Na : IonInfo
@@ -107,7 +112,8 @@ class SodiumChannel(Channel):
         """
         Reset the state variables of the channel.
 
-        Parameters:
+        Parameters
+        ----------
         V : ArrayLike
             Membrane potential.
         Na : IonInfo
@@ -442,7 +448,7 @@ class INa_Rsg(SodiumChannel):
     ):
         super().__init__(size=size, name=name, )
 
-        self.phi = brainstate.init.param(2.7 ** ((T - 22) / 10), self.varshape, allow_none=False)
+        self.phi = brainstate.init.param(3 ** ((T - 22) / 10), self.varshape, allow_none=False)
         self.g_max = brainstate.init.param(g_max, self.varshape, allow_none=False)
 
         self.Con = 0.005
@@ -482,8 +488,9 @@ class INa_Rsg(SodiumChannel):
         self.I4 = DiffEqState(brainstate.init.param(u.math.ones, self.varshape, batch_size))
         self.I5 = DiffEqState(brainstate.init.param(u.math.ones, self.varshape, batch_size))
         self.O = DiffEqState(brainstate.init.param(u.math.zeros, self.varshape, batch_size))
-        self.B = DiffEqState(brainstate.init.param(u.math.zeros, self.varshape, batch_size))
+        self.B = DiffEqState(brainstate.init.param(u.math.ones, self.varshape, batch_size))
         self.I6 = DiffEqState(brainstate.init.param(u.math.ones, self.varshape, batch_size))
+
         self.normalize_states(
             [self.C1, self.C2, self.C3, self.C4, self.C5, self.I1, self.I2, self.I3, self.I4, self.I5, self.O, self.B,
              self.I6])
@@ -589,13 +596,13 @@ class INa_Rsg(SodiumChannel):
     f02 = lambda self, V: 3 * self.alpha * u.math.exp((V / u.mV) / self.x1) * self.phi
     f03 = lambda self, V: 2 * self.alpha * u.math.exp((V / u.mV) / self.x1) * self.phi
     f04 = lambda self, V: 1 * self.alpha * u.math.exp((V / u.mV) / self.x1) * self.phi
-    f0O = lambda self, V: self.gamma * self.phi
-    fip = lambda self, V: self.epsilon * self.phi
+    f0O = lambda self, V: self.gamma * u.math.exp((V / u.mV) / self.x3) *self.phi
+    fip = lambda self, V: self.epsilon * u.math.exp((V / u.mV) / self.x5) * self.phi
     f11 = lambda self, V: 4 * self.alpha * self.alfac * u.math.exp((V / u.mV + self.vshifti) / self.x1) * self.phi
     f12 = lambda self, V: 3 * self.alpha * self.alfac * u.math.exp((V / u.mV + self.vshifti) / self.x1) * self.phi
     f13 = lambda self, V: 2 * self.alpha * self.alfac * u.math.exp((V / u.mV + self.vshifti) / self.x1) * self.phi
     f14 = lambda self, V: 1 * self.alpha * self.alfac * u.math.exp((V / u.mV + self.vshifti) / self.x1) * self.phi
-    f1n = lambda self, V: self.gamma * self.phi
+    f1n = lambda self, V: self.gamma * u.math.exp((V / u.mV) / self.x3)* self.phi
     fi1 = lambda self, V: self.Con * self.phi
     fi2 = lambda self, V: self.Con * self.alfac * self.phi
     fi3 = lambda self, V: self.Con * self.alfac ** 2 * self.phi
@@ -607,13 +614,13 @@ class INa_Rsg(SodiumChannel):
     b02 = lambda self, V: 2 * self.beta * u.math.exp((V / u.mV + self.vshifta) / (self.x2 + self.vshiftk)) * self.phi
     b03 = lambda self, V: 3 * self.beta * u.math.exp((V / u.mV + self.vshifta) / (self.x2 + self.vshiftk)) * self.phi
     b04 = lambda self, V: 4 * self.beta * u.math.exp((V / u.mV + self.vshifta) / (self.x2 + self.vshiftk)) * self.phi
-    b0O = lambda self, V: self.delta * self.phi
+    b0O = lambda self, V: self.delta * u.math.exp(V / u.mV / self.x4) * self.phi
     bip = lambda self, V: self.zeta * u.math.exp(V / u.mV / self.x6) * self.phi
     b11 = lambda self, V: 1 * self.beta * self.btfac * u.math.exp((V / u.mV + self.vshifti) / self.x2) * self.phi
     b12 = lambda self, V: 2 * self.beta * self.btfac * u.math.exp((V / u.mV + self.vshifti) / self.x2) * self.phi
     b13 = lambda self, V: 3 * self.beta * self.btfac * u.math.exp((V / u.mV + self.vshifti) / self.x2) * self.phi
     b14 = lambda self, V: 4 * self.beta * self.btfac * u.math.exp((V / u.mV + self.vshifti) / self.x2) * self.phi
-    b1n = lambda self, V: self.delta * self.phi
+    b1n = lambda self, V: self.delta * u.math.exp(V / u.mV / self.x4) * self.phi
     bi1 = lambda self, V: self.Coff * self.phi
     bi2 = lambda self, V: self.Coff * self.btfac * self.phi
     bi3 = lambda self, V: self.Coff * self.btfac ** 2 * self.phi

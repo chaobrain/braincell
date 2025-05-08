@@ -19,22 +19,53 @@ __version__ = "0.0.1"
 from . import channel
 from . import ion
 from . import neuron
-from ._base import *
-from ._base import __all__ as _base_all
-from ._integrators import *
-from ._integrators import __all__ as _integrators_all
-from ._protocol import *
-from ._protocol import __all__ as _protocol_all
-
-__all__ = (
-    ['neuron', 'ion', 'channel']
-    + _base_all
-    + _integrators_all
-    + _protocol_all
+from ._base import (
+    HHTypedNeuron,
+    IonChannel,
+    Ion,
+    Channel,
+    MixIons,
+    mix_ions,
+    IonInfo,
+)
+from ._morphology import (
+    Section,
+    Morphology,
+)
+from ._multi_compartment import (
+    MultiCompartment,
 )
 
-del (
-    _base_all,
-    _integrators_all,
-    _protocol_all,
+from ._multi_compartment_test import (
+    MultiCompartment_test,
 )
+
+from ._protocol import (
+    DiffEqState,
+    DiffEqModule,
+)
+from ._single_compartment import (
+    SingleCompartment,
+)
+
+
+from braincell._misc import deprecation_getattr
+
+
+_deprecations = {
+    'SingleCompartment': (
+        f"braincell.neuron.SingleCompartment has been moved "
+        f"into braincell.SingleCompartment",
+        SingleCompartment
+    ),
+    'MultiCompartment': (
+        f"braincell.neuron.MultiCompartment has been moved "
+        f"into braincell.MultiCompartment",
+        MultiCompartment
+    ),
+}
+neuron.__getattr__ = deprecation_getattr(__name__, _deprecations)
+del deprecation_getattr
+
+
+

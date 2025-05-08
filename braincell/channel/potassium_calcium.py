@@ -10,11 +10,11 @@ from __future__ import annotations
 from typing import Union, Callable, Optional
 
 import brainstate
-import brainunit as bu
+import brainunit as u
 import jax
 
 from braincell._base import IonInfo, Channel
-from braincell._integrators import DiffEqState
+from braincell._protocol import DiffEqState
 from braincell.ion import Calcium, Potassium
 
 __all__ = [
@@ -44,7 +44,8 @@ class KCaChannel(Channel):
         """
         Perform any necessary computations before the integration step.
 
-        Parameters:
+        Parameters
+        ----------
         V : array_like
             Membrane potential.
         K : IonInfo
@@ -58,7 +59,8 @@ class KCaChannel(Channel):
         """
         Perform any necessary computations after the integration step.
 
-        Parameters:
+        Parameters
+        ----------
         V : array_like
             Membrane potential.
         K : IonInfo
@@ -72,7 +74,8 @@ class KCaChannel(Channel):
         """
         Compute the derivative of the channel's state variables.
 
-        Parameters:
+        Parameters
+        ----------
         V : array_like
             Membrane potential.
         K : IonInfo
@@ -86,7 +89,8 @@ class KCaChannel(Channel):
         """
         Calculate the current through the channel.
 
-        Parameters:
+        Parameters
+        ----------
         V : array_like
             Membrane potential.
         K : IonInfo
@@ -94,7 +98,8 @@ class KCaChannel(Channel):
         Ca : IonInfo
             Information about calcium ions.
 
-        Returns:
+        Returns
+        ----------
         array_like
             The calculated current through the channel.
 
@@ -108,7 +113,8 @@ class KCaChannel(Channel):
         """
         Initialize the state variables of the channel.
 
-        Parameters:
+        Parameters
+        ----------
         V : array_like
             Membrane potential.
         K : IonInfo
@@ -124,7 +130,8 @@ class KCaChannel(Channel):
         """
         Reset the state variables of the channel.
 
-        Parameters:
+        Parameters
+        ----------
         V : array_like
             Membrane potential.
         K : IonInfo
@@ -148,9 +155,9 @@ class IAHP_De1994(KCaChannel):
     modified version of a model of :math:`I_{KCa}` introduced previously (Yamada et al.
     1989) that requires the binding of :math:`nCa^{2+}` to open the channel
 
-    .. math::
-
-        (\text { closed })+n \mathrm{Ca}_{i}^{2+} \underset{\beta}{\stackrel{\alpha}{\rightleftharpoons}(\text { open })
+    $$
+    (\text { closed })+n \mathrm{Ca}_{i}^{2+} \underset{\beta}{\stackrel{\alpha}{\rightleftharpoons}(\text { open })
+    $$
 
     where :math:`Ca_i^{2+}` is the intracellular calcium and :math:`\alpha` and
     :math:`\beta` are rate constants. The ionic current is then given by
@@ -190,7 +197,7 @@ class IAHP_De1994(KCaChannel):
         self,
         size: brainstate.typing.Size,
         n: Union[brainstate.typing.ArrayLike, Callable] = 2,
-        g_max: Union[brainstate.typing.ArrayLike, Callable] = 10. * (bu.mS / bu.cm ** 2),
+        g_max: Union[brainstate.typing.ArrayLike, Callable] = 10. * (u.mS / u.cm ** 2),
         alpha: Union[brainstate.typing.ArrayLike, Callable] = 48.,
         beta: Union[brainstate.typing.ArrayLike, Callable] = 0.09,
         phi: Union[brainstate.typing.ArrayLike, Callable] = 1.,
@@ -206,23 +213,23 @@ class IAHP_De1994(KCaChannel):
         self.phi = brainstate.init.param(phi, self.varshape, allow_none=False)
 
     def compute_derivative(self, V, K: IonInfo, Ca: IonInfo):
-        C2 = self.alpha * bu.math.power(Ca.C / bu.mM, self.n)
+        C2 = self.alpha * u.math.power(Ca.C / u.mM, self.n)
         C3 = C2 + self.beta
-        self.p.derivative = self.phi * (C2 / C3 - self.p.value) * C3 / bu.ms
+        self.p.derivative = self.phi * (C2 / C3 - self.p.value) * C3 / u.ms
 
     def current(self, V, K: IonInfo, Ca: IonInfo):
         return self.g_max * self.p.value * self.p.value * (K.E - V)
 
     def init_state(self, V, K: IonInfo, Ca: IonInfo, batch_size=None):
-        self.p = DiffEqState(brainstate.init.param(bu.math.zeros, self.varshape, batch_size))
+        self.p = DiffEqState(brainstate.init.param(u.math.zeros, self.varshape, batch_size))
 
     def reset_state(self, V, K: IonInfo, Ca: IonInfo, batch_size=None):
-        C2 = self.alpha * bu.math.power(Ca.C / bu.mM, self.n)
+        C2 = self.alpha * u.math.power(Ca.C / u.mM, self.n)
         C3 = C2 + self.beta
         if batch_size is None:
-            self.p.value = bu.math.broadcast_to(C2 / C3, self.varshape)
+            self.p.value = u.math.broadcast_to(C2 / C3, self.varshape)
         else:
-            self.p.value = bu.math.broadcast_to(C2 / C3, (batch_size,) + self.varshape)
+            self.p.value = u.math.broadcast_to(C2 / C3, (batch_size,) + self.varshape)
             assert self.p.value.shape[0] == batch_size
 
 
@@ -241,7 +248,7 @@ class IKca3_1_Ma2020(KCaChannel):
     def __init__(
         self,
         size: brainstate.typing.Size,
-        g_max: Union[brainstate.typing.ArrayLike, Callable] = 120. * (bu.mS / bu.cm ** 2),
+        g_max: Union[brainstate.typing.ArrayLike, Callable] = 120. * (u.mS / u.cm ** 2),
         T_base: brainstate.typing.ArrayLike = 3.,
         T: brainstate.typing.ArrayLike = 22,
         name: Optional[str] = None,
@@ -266,28 +273,28 @@ class IKca3_1_Ma2020(KCaChannel):
         return self.p_alpha(V, Ca) / (self.p_alpha(V, Ca) + self.p_beta)
 
     def p_alpha(self, V, Ca):
-        V = V / bu.mV
+        V = V / u.mV
         return self.p_vdep(V) * self.p_concdep(Ca)
 
     def p_vdep(self, V):
-        return bu.math.exp((V + 70.) / 27.)
+        return u.math.exp((V + 70.) / 27.)
 
     def p_concdep(self, Ca):
         # concdep_1 = 500 * (0.015 - Ca.C / u.mM) / (u.math.exp((0.015 - Ca.C / u.mM) / 0.0013) - 1)
-        concdep_1 = 500 * 0.0013 / bu.math.exprel((0.015 - Ca.C / bu.mM) / 0.0013)
+        concdep_1 = 500 * 0.0013 / u.math.exprel((0.015 - Ca.C / u.mM) / 0.0013)
         with jax.ensure_compile_time_eval():
-            concdep_2 = 500 * 0.005 / (bu.math.exp(0.005 / 0.0013) - 1)
-        return bu.math.where(Ca.C / bu.mM < 0.01, concdep_1, concdep_2)
+            concdep_2 = 500 * 0.005 / (u.math.exp(0.005 / 0.0013) - 1)
+        return u.math.where(Ca.C / u.mM < 0.01, concdep_1, concdep_2)
 
     def init_state(self, V, K: IonInfo, Ca: IonInfo, batch_size=None):
-        self.p = DiffEqState(brainstate.init.param(bu.math.zeros, self.varshape, batch_size))
+        self.p = DiffEqState(brainstate.init.param(u.math.zeros, self.varshape, batch_size))
         self.reset_state(V, K, Ca)
 
     def reset_state(self, V, K: IonInfo, Ca: IonInfo, batch_size=None):
         self.p.value = self.p_inf(V, Ca)
 
     def compute_derivative(self, V, K: IonInfo, Ca: IonInfo):
-        self.p.derivative = self.phi * (self.p_inf(V, Ca) - self.p.value) / self.p_tau(V, Ca) / bu.ms
+        self.p.derivative = self.phi * (self.p_inf(V, Ca) - self.p.value) / self.p_tau(V, Ca) / u.ms
 
 
 class IKca2_2_Ma2020(KCaChannel):
@@ -314,7 +321,7 @@ class IKca2_2_Ma2020(KCaChannel):
     def __init__(
         self,
         size: brainstate.typing.Size,
-        g_max: Union[brainstate.typing.ArrayLike, Callable] = 38. * (bu.mS / bu.cm ** 2),
+        g_max: Union[brainstate.typing.ArrayLike, Callable] = 38. * (u.mS / u.cm ** 2),
         T_base: brainstate.typing.ArrayLike = 3.,
         diff: brainstate.typing.ArrayLike = 3.,
         T: brainstate.typing.ArrayLike = 22,
@@ -344,12 +351,12 @@ class IKca2_2_Ma2020(KCaChannel):
 
     def init_state(self, V, K: IonInfo, Ca: IonInfo, batch_size=None):
 
-        self.C1 = DiffEqState(brainstate.init.param(bu.math.ones, self.varshape, batch_size))
-        self.C2 = DiffEqState(brainstate.init.param(bu.math.ones, self.varshape, batch_size))
-        self.C3 = DiffEqState(brainstate.init.param(bu.math.ones, self.varshape, batch_size))
-        self.C4 = DiffEqState(brainstate.init.param(bu.math.ones, self.varshape, batch_size))
-        self.O1 = DiffEqState(brainstate.init.param(bu.math.ones, self.varshape, batch_size))
-        self.O2 = DiffEqState(brainstate.init.param(bu.math.ones, self.varshape, batch_size))
+        self.C1 = DiffEqState(brainstate.init.param(u.math.ones, self.varshape, batch_size))
+        self.C2 = DiffEqState(brainstate.init.param(u.math.ones, self.varshape, batch_size))
+        self.C3 = DiffEqState(brainstate.init.param(u.math.ones, self.varshape, batch_size))
+        self.C4 = DiffEqState(brainstate.init.param(u.math.ones, self.varshape, batch_size))
+        self.O1 = DiffEqState(brainstate.init.param(u.math.ones, self.varshape, batch_size))
+        self.O2 = DiffEqState(brainstate.init.param(u.math.ones, self.varshape, batch_size))
         self.normalize_states([self.C1, self.C2, self.C3, self.C4, self.O1, self.O2])
 
     def reset_state(self, V, K: IonInfo, Ca: IonInfo, batch_size=None):
@@ -364,26 +371,26 @@ class IKca2_2_Ma2020(KCaChannel):
     def normalize_states(self, states):
         total = 0.
         for state in states:
-            state.value = bu.math.maximum(state.value, 0)
+            state.value = u.math.maximum(state.value, 0)
             total = total + state.value
         for state in states:
             state.value = state.value / total
 
     def compute_derivative(self, V, K: IonInfo, Ca: IonInfo):
 
-        self.C1.derivative = (self.C2.value * self.invc1_t(Ca) - self.C1.value * self.dirc2_t_ca(Ca)) / bu.ms
+        self.C1.derivative = (self.C2.value * self.invc1_t(Ca) - self.C1.value * self.dirc2_t_ca(Ca)) / u.ms
         self.C2.derivative = (self.C3.value * self.invc2_t(Ca) + self.C1.value * self.dirc2_t_ca(Ca) - self.C2.value * (
-            self.invc1_t(Ca) + self.dirc3_t_ca(Ca))) / bu.ms
+            self.invc1_t(Ca) + self.dirc3_t_ca(Ca))) / u.ms
         self.C3.derivative = (self.C4.value * self.invc3_t(Ca) + self.O1.value * self.invo1_t(Ca) - self.C3.value * (
-            self.dirc4_t_ca(Ca) + self.diro1_t(Ca))) / bu.ms
+            self.dirc4_t_ca(Ca) + self.diro1_t(Ca))) / u.ms
         self.C4.derivative = (self.C3.value * self.dirc4_t_ca(Ca) + self.O2.value * self.invo2_t(Ca) - self.C4.value * (
-            self.invc3_t(Ca) + self.diro2_t(Ca))) / bu.ms
-        self.O1.derivative = (self.C3.value * self.diro1_t(Ca) - self.O1.value * self.invo1_t(Ca)) / bu.ms
-        self.O2.derivative = (self.C4.value * self.diro2_t(Ca) - self.O2.value * self.invo2_t(Ca)) / bu.ms
+            self.invc3_t(Ca) + self.diro2_t(Ca))) / u.ms
+        self.O1.derivative = (self.C3.value * self.diro1_t(Ca) - self.O1.value * self.invo1_t(Ca)) / u.ms
+        self.O2.derivative = (self.C4.value * self.diro2_t(Ca) - self.O2.value * self.invo2_t(Ca)) / u.ms
 
-    dirc2_t_ca = lambda self, Ca: self.dirc2_t * (Ca.C / bu.mM) / self.diff
-    dirc3_t_ca = lambda self, Ca: self.dirc3_t * (Ca.C / bu.mM) / self.diff
-    dirc4_t_ca = lambda self, Ca: self.dirc4_t * (Ca.C / bu.mM) / self.diff
+    dirc2_t_ca = lambda self, Ca: self.dirc2_t * (Ca.C / u.mM) / self.diff
+    dirc3_t_ca = lambda self, Ca: self.dirc3_t * (Ca.C / u.mM) / self.diff
+    dirc4_t_ca = lambda self, Ca: self.dirc4_t * (Ca.C / u.mM) / self.diff
 
     invc1_t = lambda self, Ca: self.invc1 * self.phi
     invc2_t = lambda self, Ca: self.invc2 * self.phi
@@ -422,7 +429,7 @@ class IKca1_1_Ma2020(KCaChannel):
     def __init__(
         self,
         size: brainstate.typing.Size,
-        g_max: Union[brainstate.typing.ArrayLike, Callable] = 10. * (bu.mS / bu.cm ** 2),
+        g_max: Union[brainstate.typing.ArrayLike, Callable] = 10. * (u.mS / u.cm ** 2),
         T_base: brainstate.typing.ArrayLike = 3.,
         T: brainstate.typing.ArrayLike = 22.,
         name: Optional[str] = None,
@@ -458,10 +465,10 @@ class IKca1_1_Ma2020(KCaChannel):
     def init_state(self, V, K: IonInfo, Ca: IonInfo, batch_size=None):
 
         for i in range(5):
-            setattr(self, f'C{i}', DiffEqState(brainstate.init.param(bu.math.ones, self.varshape, batch_size)))
+            setattr(self, f'C{i}', DiffEqState(brainstate.init.param(u.math.ones, self.varshape, batch_size)))
 
         for i in range(5):
-            setattr(self, f'O{i}', DiffEqState(brainstate.init.param(bu.math.ones, self.varshape, batch_size)))
+            setattr(self, f'O{i}', DiffEqState(brainstate.init.param(u.math.ones, self.varshape, batch_size)))
 
         self.normalize_states([getattr(self, f'C{i}') for i in range(5)] + [getattr(self, f'O{i}') for i in range(5)])
 
@@ -477,7 +484,7 @@ class IKca1_1_Ma2020(KCaChannel):
     def normalize_states(self, states):
         total = 0.
         for state in states:
-            state.value = bu.math.maximum(state.value, 0)
+            state.value = u.math.maximum(state.value, 0)
             total = total + state.value
         for state in states:
             state.value = state.value / total
@@ -486,39 +493,39 @@ class IKca1_1_Ma2020(KCaChannel):
         self.normalize_states([getattr(self, f'C{i}') for i in range(5)] + [getattr(self, f'O{i}') for i in range(5)])
 
         self.C0.derivative = (self.C1 * self.c10(Ca) + self.O0 * self.b0(V) - self.C0 * (
-            self.c01(Ca) + self.f0(V))) / bu.ms
+            self.c01(Ca) + self.f0(V))) / u.ms
         self.C1.derivative = (self.C0 * self.c01(Ca) + self.C2 * self.c21(Ca) + self.O1 * self.b1(V) - self.C1 * (
-            self.c10(Ca) + self.c12(Ca) + self.f1(V))) / bu.ms
+            self.c10(Ca) + self.c12(Ca) + self.f1(V))) / u.ms
         self.C2.derivative = (self.C1 * self.c12(Ca) + self.C3 * self.c32(Ca) + self.O2 * self.b2(V) - self.C2 * (
-            self.c21(Ca) + self.c23(Ca) + self.f2(V))) / bu.ms
+            self.c21(Ca) + self.c23(Ca) + self.f2(V))) / u.ms
         self.C3.derivative = (self.C2 * self.c23(Ca) + self.C4 * self.c43(Ca) + self.O3 * self.b3(V) - self.C3 * (
-            self.c32(Ca) + self.c34(Ca) + self.f3(V))) / bu.ms
+            self.c32(Ca) + self.c34(Ca) + self.f3(V))) / u.ms
         self.C4.derivative = (self.C3 * self.c34(Ca) + self.O4 * self.b4(V) - self.C4 * (
-            self.c43(Ca) + self.f4(V))) / bu.ms
+            self.c43(Ca) + self.f4(V))) / u.ms
 
         self.O0.derivative = (self.O1 * self.o10(Ca) + self.C0 * self.f0(V) - self.O0 * (
-            self.o01(Ca) + self.b0(V))) / bu.ms
+            self.o01(Ca) + self.b0(V))) / u.ms
         self.O1.derivative = (self.O0 * self.o01(Ca) + self.O2 * self.o21(Ca) + self.C1 * self.f1(V) - self.O1 * (
-            self.o10(Ca) + self.o12(Ca) + self.b1(V))) / bu.ms
+            self.o10(Ca) + self.o12(Ca) + self.b1(V))) / u.ms
         self.O2.derivative = (self.O1 * self.o12(Ca) + self.O3 * self.o32(Ca) + self.C2 * self.f2(V) - self.O2 * (
-            self.o21(Ca) + self.o23(Ca) + self.b2(V))) / bu.ms
+            self.o21(Ca) + self.o23(Ca) + self.b2(V))) / u.ms
         self.O3.derivative = (self.O2 * self.o23(Ca) + self.O4 * self.o43(Ca) + self.C3 * self.f3(V) - self.O3 * (
-            self.o32(Ca) + self.o34(Ca) + self.b3(V))) / bu.ms
+            self.o32(Ca) + self.o34(Ca) + self.b3(V))) / u.ms
         self.O4.derivative = (self.O3 * self.o34(Ca) + self.C4 * self.f4(V) - self.O4 * (
-            self.o43(Ca) + self.b4(V))) / bu.ms
+            self.o43(Ca) + self.b4(V))) / u.ms
 
     def current(self, V, K: IonInfo, Ca: IonInfo):
         return self.g_max * (self.O0.value + self.O1.value + self.O2.value + self.O3.value + self.O4.value) * (K.E - V)
 
-    c01 = lambda self, Ca: 4 * (Ca.C / bu.mM) * self.k1 * self.onoffrate * self.phi
-    c12 = lambda self, Ca: 3 * (Ca.C / bu.mM) * self.k1 * self.onoffrate * self.phi
-    c23 = lambda self, Ca: 2 * (Ca.C / bu.mM) * self.k1 * self.onoffrate * self.phi
-    c34 = lambda self, Ca: 1 * (Ca.C / bu.mM) * self.k1 * self.onoffrate * self.phi
+    c01 = lambda self, Ca: 4 * (Ca.C / u.mM) * self.k1 * self.onoffrate * self.phi
+    c12 = lambda self, Ca: 3 * (Ca.C / u.mM) * self.k1 * self.onoffrate * self.phi
+    c23 = lambda self, Ca: 2 * (Ca.C / u.mM) * self.k1 * self.onoffrate * self.phi
+    c34 = lambda self, Ca: 1 * (Ca.C / u.mM) * self.k1 * self.onoffrate * self.phi
 
-    o01 = lambda self, Ca: 4 * (Ca.C / bu.mM) * self.k1 * self.onoffrate * self.phi
-    o12 = lambda self, Ca: 3 * (Ca.C / bu.mM) * self.k1 * self.onoffrate * self.phi
-    o23 = lambda self, Ca: 2 * (Ca.C / bu.mM) * self.k1 * self.onoffrate * self.phi
-    o34 = lambda self, Ca: 1 * (Ca.C / bu.mM) * self.k1 * self.onoffrate * self.phi
+    o01 = lambda self, Ca: 4 * (Ca.C / u.mM) * self.k1 * self.onoffrate * self.phi
+    o12 = lambda self, Ca: 3 * (Ca.C / u.mM) * self.k1 * self.onoffrate * self.phi
+    o23 = lambda self, Ca: 2 * (Ca.C / u.mM) * self.k1 * self.onoffrate * self.phi
+    o34 = lambda self, Ca: 1 * (Ca.C / u.mM) * self.k1 * self.onoffrate * self.phi
 
     c10 = lambda self, Ca: 1 * self.Kc * self.k1 * self.onoffrate * self.phi
     c21 = lambda self, Ca: 2 * self.Kc * self.k1 * self.onoffrate * self.phi
@@ -530,10 +537,10 @@ class IKca1_1_Ma2020(KCaChannel):
     o32 = lambda self, Ca: 3 * self.Ko * self.k1 * self.onoffrate * self.phi
     o43 = lambda self, Ca: 4 * self.Ko * self.k1 * self.onoffrate * self.phi
 
-    alpha = lambda self, V: bu.math.exp(
-        (self.Qo * bu.faraday_constant * V) / (bu.gas_constant * (273.15 + self.T) * bu.kelvin))
-    beta = lambda self, V: bu.math.exp(
-        (self.Qc * bu.faraday_constant * V) / (bu.gas_constant * (273.15 + self.T) * bu.kelvin))
+    alpha = lambda self, V: u.math.exp(
+        (self.Qo * u.faraday_constant * V) / (u.gas_constant * (273.15 + self.T) * u.kelvin))
+    beta = lambda self, V: u.math.exp(
+        (self.Qc * u.faraday_constant * V) / (u.gas_constant * (273.15 + self.T) * u.kelvin))
 
     f0 = lambda self, V: self.pf0 * self.alpha(V) * self.phi
     f1 = lambda self, V: self.pf1 * self.alpha(V) * self.phi

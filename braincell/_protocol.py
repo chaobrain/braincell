@@ -29,20 +29,35 @@ class DiffEqState(brainstate.ShortTermState):
     """
     A state that integrates the state of the system to the integral of the state.
 
+    This class represents a differential equation state, which can be used for both
+    Ordinary Differential Equations (ODE) and Stochastic Differential Equations (SDE).
+    It provides properties for the derivative and diffusion of the state.
+
     Attributes
     ----------
-    derivative: The derivative of the differential equation state.
-    diffusion: The diffusion of the differential equation state.
+    derivative : brainstate.typing.PyTree
+        The derivative of the differential equation state.
+    diffusion : brainstate.typing.PyTree
+        The diffusion of the differential equation state.
 
     """
 
     __module__ = 'braincell'
 
-    # derivative of this state
     derivative: brainstate.typing.PyTree
     diffusion: brainstate.typing.PyTree
 
     def __init__(self, *args, **kwargs):
+        """
+        Initialize the DiffEqState.
+
+        Parameters
+        ----------
+        *args : tuple
+            Variable length argument list to be passed to the parent class constructor.
+        **kwargs : dict
+            Arbitrary keyword arguments to be passed to the parent class constructor.
+        """
         super().__init__(*args, **kwargs)
         self._derivative = None
         self._diffusion = None
@@ -50,45 +65,131 @@ class DiffEqState(brainstate.ShortTermState):
     @property
     def derivative(self):
         """
-        The derivative of the state.
+        Get the derivative of the state.
 
-        It is used to compute the derivative of the ODE system,
-        or the drift of the SDE system.
+        Returns
+        -------
+        brainstate.typing.PyTree
+            The derivative of the state, used to compute the derivative of the ODE system
+            or the drift of the SDE system.
         """
         return self._derivative
 
     @derivative.setter
     def derivative(self, value):
+        """
+        Set the derivative of the state.
+
+        Parameters
+        ----------
+        value : brainstate.typing.PyTree
+            The new value for the derivative of the state.
+        """
         record_state_value_write(self)
         self._derivative = value
 
     @property
     def diffusion(self):
         """
-        The diffusion of the state.
+        Get the diffusion of the state.
 
-        It is used to compute the diffusion of the SDE system.
-        If it is None, the system is considered as an ODE system.
+        Returns
+        -------
+        brainstate.typing.PyTree
+            The diffusion of the state, used to compute the diffusion of the SDE system.
+            If it is None, the system is considered as an ODE system.
         """
         return self._diffusion
 
     @diffusion.setter
     def diffusion(self, value):
+        """
+        Set the diffusion of the state.
+
+        Parameters
+        ----------
+        value : brainstate.typing.PyTree
+            The new value for the diffusion of the state.
+        """
         record_state_value_write(self)
         self._diffusion = value
 
 
 class DiffEqModule(brainstate.mixin.Mixin):
+    """A mixin class that provides differential equation functionality.
+
+    This class serves as a mixin to add differential equation capabilities to other classes.
+    It defines the core interface for implementing ordinary differential equations (ODEs)
+    and stochastic differential equations (SDEs).
+
+    The class includes methods for pre-integration preparation, derivative computation,
+    and post-integration processing. Subclasses must implement the compute_derivative
+    method to define the specific differential equation for the system.
+
+    Methods
+    -------
+    pre_integral(*args, **kwargs)
+        Perform operations before integration.
+    compute_derivative(*args, **kwargs)
+        Compute the derivative of the differential equation.
+    post_integral(*args, **kwargs)
+        Perform operations after integration.
     """
-    The module for defining the differential equations.
-    """
+
     __module__ = 'braincell'
 
     def pre_integral(self, *args, **kwargs):
+        """
+        Perform any necessary operations before the integration step.
+
+        This method can be overridden to implement custom pre-integration logic.
+
+        Parameters:
+        -----------
+        *args : tuple
+            Variable length argument list.
+        **kwargs : dict
+            Arbitrary keyword arguments.
+        """
         pass
 
     def compute_derivative(self, *args, **kwargs):
+        """
+        Compute the derivative of the differential equation.
+
+        This method must be implemented by subclasses to define the specific
+        differential equation for the system.
+
+        Parameters:
+        -----------
+        *args : tuple
+            Variable length argument list.
+        **kwargs : dict
+            Arbitrary keyword arguments.
+
+        Returns:
+        --------
+        NotImplemented
+            This method should be overridden in subclasses.
+
+        Raises:
+        -------
+        NotImplementedError
+            If this method is not overridden in a subclass.
+        """
         raise NotImplementedError
 
     def post_integral(self, *args, **kwargs):
+        """
+        Perform any necessary operations after the integration step.
+
+        This method can be overridden to implement custom post-integration logic.
+
+        Parameters:
+        -----------
+        *args : tuple
+            Variable length argument list.
+        **kwargs : dict
+            Arbitrary keyword arguments.
+        """
         pass

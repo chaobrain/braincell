@@ -12,7 +12,7 @@ import brainstate
 import brainunit as u
 
 from braincell._base import Channel, HHTypedNeuron
-from braincell._integrators import DiffEqState
+from braincell._protocol import DiffEqState
 
 __all__ = [
     'Ih_HM1992',
@@ -80,14 +80,8 @@ class Ih_HM1992(Channel):
     def reset_state(self, V, batch_size=None):
         self.p.value = self.f_p_inf(V)
 
-    def pre_integral(self, V):
-        pass
-
     def compute_derivative(self, V):
         self.p.derivative = self.phi * (self.f_p_inf(V) - self.p.value) / self.f_p_tau(V) / u.ms
-
-    def post_integral(self, V):
-        pass
 
     def current(self, V):
         return self.g_max * self.p.value * (self.E - V)
@@ -303,15 +297,9 @@ class Ih1_Ma2020(Channel):
         self.p.value = self.f_p_inf(V)
         self.q.value = self.f_q_inf(V)
 
-    def pre_integral(self, V):
-        pass
-
     def compute_derivative(self, V):
         self.p.derivative = self.phi_channel * (self.f_p_inf(V) - self.p.value) / self.f_p_tau(V) / u.ms
         self.q.derivative = self.phi_channel * (self.f_q_inf(V) - self.q.value) / self.f_q_tau(V) / u.ms
-
-    def post_integral(self, V):
-        pass
 
     def current(self, V):
         return self.phi_g * self.g_max * (self.p.value + self.q.value) * (self.E - V)
@@ -392,15 +380,9 @@ class Ih2_Ma2020(Channel):
         self.p.value = self.f_p_inf(V)
         self.q.value = self.f_q_inf(V)
 
-    def pre_integral(self, V):
-        pass
-
     def compute_derivative(self, V):
         self.p.derivative = self.phi_channel * (self.f_p_inf(V) - self.p.value) / self.f_p_tau(V) / u.ms
         self.q.derivative = self.phi_channel * (self.f_q_inf(V) - self.q.value) / self.f_q_tau(V) / u.ms
-
-    def post_integral(self, V):
-        pass
 
     def current(self, V):
         return self.phi_g * self.g_max * (self.p.value + self.q.value) * (self.E - V)

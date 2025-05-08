@@ -466,6 +466,9 @@ class IonChannel(brainstate.graph.Node, TreeNode, DiffEqModule):
 
     Example
     -------
+
+    .. code-block:: python
+
         class SodiumChannel(IonChannel):
             def __init__(self, size, g_max):
                 super().__init__(size)
@@ -1346,6 +1349,9 @@ class Channel(IonChannel):
         `compute_derivative`, etc., to define the behavior of the particular channel type.
 
     Example::
+
+    .. code-block:: python
+
         class SodiumChannel(Channel):
             def __init__(self, *args, **kwargs):
                 super().__init__(*args, **kwargs)

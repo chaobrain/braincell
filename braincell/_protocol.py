@@ -125,15 +125,6 @@ class DiffEqModule(brainstate.mixin.Mixin):
     The class includes methods for pre-integration preparation, derivative computation,
     and post-integration processing. Subclasses must implement the compute_derivative
     method to define the specific differential equation for the system.
-
-    Methods
-    -------
-    pre_integral(*args, **kwargs)
-        Perform operations before integration.
-    compute_derivative(*args, **kwargs)
-        Compute the derivative of the differential equation.
-    post_integral(*args, **kwargs)
-        Perform operations after integration.
     """
 
     __module__ = 'braincell'
@@ -144,8 +135,8 @@ class DiffEqModule(brainstate.mixin.Mixin):
 
         This method can be overridden to implement custom pre-integration logic.
 
-        Parameters:
-        -----------
+        Parameters
+        ----------
         *args : tuple
             Variable length argument list.
         **kwargs : dict
@@ -160,20 +151,20 @@ class DiffEqModule(brainstate.mixin.Mixin):
         This method must be implemented by subclasses to define the specific
         differential equation for the system.
 
-        Parameters:
-        -----------
+        Parameters
+        ----------
         *args : tuple
             Variable length argument list.
         **kwargs : dict
             Arbitrary keyword arguments.
 
-        Returns:
-        --------
+        Returns
+        -------
         NotImplemented
             This method should be overridden in subclasses.
 
-        Raises:
-        -------
+        Raises
+        ------
         NotImplementedError
             If this method is not overridden in a subclass.
         """
@@ -185,8 +176,8 @@ class DiffEqModule(brainstate.mixin.Mixin):
 
         This method can be overridden to implement custom post-integration logic.
 
-        Parameters:
-        -----------
+        Parameters
+        ----------
         *args : tuple
             Variable length argument list.
         **kwargs : dict

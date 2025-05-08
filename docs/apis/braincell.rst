@@ -6,8 +6,23 @@
 
 
 
-Base Classes
-------------
+Base Class for Ion Channels
+---------------------------
+
+.. autosummary::
+   :toctree: generated/
+   :nosignatures:
+   :template: classtemplate.rst
+
+    IonChannel
+    Ion
+    IonInfo
+    MixIons
+    Channel
+
+
+Base Class for Cell Modeling
+----------------------------
 
 .. autosummary::
    :toctree: generated/
@@ -15,9 +30,18 @@ Base Classes
    :template: classtemplate.rst
 
     HHTypedNeuron
-    IonChannel
-    Ion
-    IonInfo
-    MixIons
-    Channel
+    SingleCompartment
+    MultiCompartment
 
+
+
+Base Class for Numerical Integration
+------------------------------------
+
+.. autosummary::
+   :toctree: generated/
+   :nosignatures:
+   :template: classtemplate.rst
+
+    DiffEqState
+    DiffEqModule

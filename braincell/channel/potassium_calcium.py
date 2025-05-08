@@ -156,7 +156,9 @@ class IAHP_De1994(KCaChannel):
     1989) that requires the binding of :math:`nCa^{2+}` to open the channel
 
     $$
-    (\text { closed })+n \mathrm{Ca}_{i}^{2+} \underset{\beta}{\stackrel{\alpha}{\rightleftharpoons}(\text { open })
+    \begin{aligned}
+    (\text{closed}) + n \mathrm{Ca}_{i}^{2+} \underset{\beta}{\stackrel{\alpha}{\rightleftharpoons}} (\text{open})
+    \end{aligned}
     $$
 
     where :math:`Ca_i^{2+}` is the intracellular calcium and :math:`\alpha` and

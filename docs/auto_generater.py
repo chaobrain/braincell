@@ -268,24 +268,24 @@ def _import(mod, klass=None, is_jax=False):
 def main():
   os.makedirs('apis/', exist_ok=True)
 
-  _write_module(module_name='braincell._integrators',
-                automodule='braincell',
-                filename='apis/integration.rst',
-                header='Numerical Integration Methods',
-                template=True)
+  # _write_module(module_name='braincell._integrators',
+  #               automodule='braincell',
+  #               filename='apis/integration.rst',
+  #               header='Numerical Integration Methods',
+  #               template=True)
 
-  module_and_name = [
-    ('single_compartment', 'Single-Compartment Neuron Models'),
-    ('multi_compartment', 'Multi-Compartment Neuron Models'),
-  ]
-
-  _write_submodules(
-    module_name='braincell.neuron',
-    filename='apis/braincell.neuron.rst',
-    header='``braincell.neuron`` module',
-    submodule_names=[k[0] for k in module_and_name],
-    section_names=[k[1] for k in module_and_name]
-  )
+  # module_and_name = [
+  #   ('single_compartment', 'Single-Compartment Neuron Models'),
+  #   ('multi_compartment', 'Multi-Compartment Neuron Models'),
+  # ]
+  #
+  # _write_submodules(
+  #   module_name='braincell.neuron',
+  #   filename='apis/braincell.neuron.rst',
+  #   header='``braincell.neuron`` module',
+  #   submodule_names=[k[0] for k in module_and_name],
+  #   section_names=[k[1] for k in module_and_name]
+  # )
 
   module_and_name = [
     ('calcium', 'Calcium Ions'),

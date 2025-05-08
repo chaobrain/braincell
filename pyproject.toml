@@ -49,8 +49,6 @@ classifiers = [
 keywords = ['dendritic computation', 'dendritic modeling', 'brain modeling', 'neuron simulation']
 
 dependencies = [
-    'jax',
-    'jaxlib',
     'numpy',
     'brainstate>=0.1.0',
     'brainunit>=0.0.8',

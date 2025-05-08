@@ -110,7 +110,7 @@ class IK(braincell.Channel):
         return (self.gK * n2 * n2) * (self.EK - V)
 
 
-class HH(braincell.neuron.SingleCompartment):
+class HH(braincell.SingleCompartment):
     def __init__(
         self,
         size,
@@ -118,13 +118,13 @@ class HH(braincell.neuron.SingleCompartment):
         gL: Union[brainstate.typing.ArrayLike, Callable] = 0.003 * u.mS,
         gNa: Union[brainstate.typing.ArrayLike, Callable] = 120. * u.mS,
         gK: Union[brainstate.typing.ArrayLike, Callable] = 36. * u.mS,
-        C: Union[brainstate.typing.ArrayLike, Callable] = 1. * (u.uF / u.cm ** 2)
+        C: Union[brainstate.typing.ArrayLike, Callable] = 1. * (u.uF / u.cm ** 2),
+        solver: str = 'rk4'
     ):
-        super().__init__(size, V_initializer=v_initializer, C=C)
+        super().__init__(size, V_initializer=v_initializer, C=C, solver=solver)
         self.ina = INa(size, gNa=gNa)
         self.ik = IK(size, gK=gK)
         self.il = braincell.channel.IL(size, g_max=gL, E=-65. * u.mV)
-
 
 def visualize_target(voltages):
     fig, gs = braintools.visualize.get_figure(2, voltages.shape[1], 3, 4.5)
@@ -166,7 +166,7 @@ def simulate_model(gl, g_na, g_kd, C):
 
     def step_fun(i, inp):
         with brainstate.environ.context(i=i, t=brainstate.environ.get_dt() * i):
-            braincell.rk4_step(hh, brainstate.environ.get('t'), inp)
+            spike = hh(inp)
         return hh.V.value
 
     indices = np.arange(current.shape[0])

@@ -52,9 +52,9 @@ class TestMorphologyConstruction:
 
         # Create sections from a dictionary of properties
         section_dicts = {
-            'soma': {'length': 20, 'diam': 10, 'nseg': 1},
-            'axon': {'length': 100, 'diam': 1, 'nseg': 2},
-            'dendrite': {'points': [[0, 0, 0, 2], [100, 0, 0, 3], [200, 0, 0, 2]], 'nseg': 3}
+            'soma': {'length': 20 * u.um, 'diam': 10 * u.um, 'nseg': 1},
+            'axon': {'length': 100 * u.um, 'diam': 1 * u.um, 'nseg': 2},
+            'dendrite': {'points': [[0, 0, 0, 2], [100, 0, 0, 3], [200, 0, 0, 2]] * u.um, 'nseg': 3}
         }
         morphology.add_multiple_sections(section_dicts)
 

@@ -154,24 +154,24 @@ class Section(brainstate.util.PrettyObject):
             - R_right (float): Resistance from the segment’s right half
         """
 
-        node_pre = np.hstack((self.positions, self.diam))
+        node_pre = u.math.hstack((self.positions, self.diam))
         node_after = generate_interpolated_nodes(node_pre, self.nseg)
-        node_after = np.asarray(node_after)
+        node_after = u.math.asarray(node_after)
 
         xyz_pre = node_pre[:, :3]
         ratios_pre = compute_line_ratios(xyz_pre)
-        ratios_after = np.linspace(0, 1, 2 * self.nseg + 1)
+        ratios_after = u.math.linspace(0, 1, 2 * self.nseg + 1)
 
         for i in range(0, len(node_after) - 2, 2):
             r1, r2, r3 = ratios_after[i], ratios_after[i + 1], ratios_after[i + 2]
 
             # Segment left half: i → i+1
             mask_left = (ratios_pre > r1) & (ratios_pre < r2)
-            selected_left = np.vstack([node_after[i], node_pre[mask_left], node_after[i + 1]])
+            selected_left = u.math.vstack([node_after[i], node_pre[mask_left], node_after[i + 1]])
 
             # Segment right half: i+1 → i+2
             mask_right = (ratios_pre > r2) & (ratios_pre < r3)
-            selected_right = np.vstack([node_after[i + 1], node_pre[mask_right], node_after[i + 2]])
+            selected_right = u.math.vstack([node_after[i + 1], node_pre[mask_right], node_after[i + 2]])
 
             # Compute axial resistance and surface area
             R_left, area_left = calculate_total_resistance_and_area(selected_left, self.Ra)
@@ -180,9 +180,9 @@ class Section(brainstate.util.PrettyObject):
             segment = Segment(
                 section_name=self.name,
                 index=i,
-                area=(area_left + area_right) * u.um ** 2,
-                R_left=R_left / u.um,
-                R_right=R_right / u.um,
+                area=(area_left + area_right),
+                R_left=R_left,
+                R_right=R_right,
             )
             self.segments.append(segment)
 
@@ -280,14 +280,14 @@ class CylinderSection(Section):
         Ra: u.Quantity = 100 * u.ohm * u.cm,
         cm: u.Quantity = 1.0 * u.uF / u.cm ** 2,
     ):
-        assert length > 0, "Length must be positive."
-        assert diam > 0, "Diameter must be positive."
-        points = np.array([
-            [0.0, 0.0, 0.0, diam],
-            [length, 0.0, 0.0, diam]
+        assert length> 0 * u.um, "Length must be positive."
+        assert diam > 0 * u.um, "Diameter must be positive."
+        points = u.math.array([
+            [0.0 * u.um, 0.0 * u.um, 0.0 * u.um, diam],
+            [length, 0.0 * u.um, 0.0 * u.um, diam]
         ])
         positions = points[:, :3]
-        diam = points[:, -1].reshape(-1, 1)
+        diam = points[:, -1].reshape((-1, 1))
         super().__init__(
             name=name,
             positions=positions,
@@ -346,9 +346,9 @@ class PointSection(Section):
         # Case 1: user provides custom 3D points
         points = u.math.array(points)
         assert points.shape[1] == 4, "points must be shape (N, 4): [x, y, z, diameter]"
-        assert u.math.all(points[:, 3] > 0), "All diameters must be positive."
+        assert u.math.all(points[:, 3] > 0 * u.um), "All diameters must be positive."
         positions = points[:, :3]
-        diam = points[:, -1].reshape(-1, 1)
+        diam = points[:, -1].reshape((-1, 1))
 
         super().__init__(
             name=name,
@@ -714,7 +714,7 @@ class Morphology(brainstate.util.PrettyObject):
     def construct_area(self):
         area_list = []
         for seg in self.segments:
-            area_list.append(seg['area'])
+            area_list.append(seg.area)
         self._area = area_list
 
     @property

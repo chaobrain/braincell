@@ -14,8 +14,6 @@
 # ==============================================================================
 
 
-from __future__ import annotations
-
 import brainstate
 from brainstate._state import record_state_value_write
 

@@ -5,7 +5,6 @@
 This module implements calcium-dependent potassium channel.
 """
 
-from __future__ import annotations
 
 from typing import Union, Callable, Optional
 

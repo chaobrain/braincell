@@ -13,21 +13,20 @@
 # limitations under the License.
 # ==============================================================================
 
-from __future__ import annotations
 
-from typing import Optional, Callable, Sequence, Tuple
+from typing import Optional, Callable, Tuple
 
-import brainstate
-
-from ._morphology_utils import *
 from ._base import HHTypedNeuron, IonChannel
 from ._integrator import get_integrator
+from ._morphology import Morphology
+from ._morphology_utils import *
 from ._protocol import DiffEqState
 from ._typing import Initializer
-from ._morphology import Morphology
+
 __all__ = [
     'MultiCompartment_test',
 ]
+
 
 class MultiCompartment_test(HHTypedNeuron, Morphology):
     r"""
@@ -110,7 +109,6 @@ class MultiCompartment_test(HHTypedNeuron, Morphology):
         # for splitting linear term
         self.Gl = brainstate.init.param(Gl, self.varshape)
         self.El = brainstate.init.param(El, self.varshape)
-
 
         # parameters for membrane potentials
         self.V_th = brainstate.init.param(V_th, self.varshape)
@@ -198,8 +196,8 @@ class MultiCompartment_test(HHTypedNeuron, Morphology):
 
         if _compute_axial_current:
             coo_ids, conductance = get_coo_ids_and_values(self.conductance_matrix)
-            I_axial = diffusive_coupling(self.V.value, coo_ids, conductance) / self.area  
-            pass 
+            I_axial = diffusive_coupling(self.V.value, coo_ids, conductance) / self.area
+            pass
         else:
             I_axial = self.Gl * self.El  # u.Quantity(0., unit=u.get_unit(I_ext))
 

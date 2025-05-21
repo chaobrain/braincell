@@ -13,20 +13,16 @@
 # limitations under the License.
 # ==============================================================================
 
-from __future__ import annotations
-
 import brainstate
 import brainunit as u
 import jax
 import jax.numpy as jnp
-from scipy.integrate import solve_ivp
 
 from ._integrator_exp_euler import _exponential_euler
 from ._integrator_runge_kutta import rk4_step
 from ._integrator_util import apply_standard_solver_step, jacrev_last_dim
 from ._misc import set_module_as
 from ._protocol import DiffEqModule
-
 
 __all__ = [
     'implicit_euler_step',
@@ -219,14 +215,6 @@ def _newton_method_manual_parallel(
     return result, aux
 
 
-def solve_ivp_method(f, y0, t, dt, args=()):
-    dt = u.get_magnitude(dt)
-    t = u.get_magnitude(t)
-    sol = solve_ivp(lambda t, y: f(t, y, *args)[0], [t, t + dt], y0, t_eval=[t + dt], method='LSODA')
-    aux = {}
-    return sol.y.flatten(), aux
-
-
 def _implicit_euler_for_axial_current(A, y0, dt):
     r"""
     Implicit Euler Integrator for linear ODEs of the form:
@@ -260,7 +248,7 @@ def _implicit_euler_for_axial_current(A, y0, dt):
     rhs = y0
     y1 = u.math.linalg.solve(lhs, rhs)
 
-    #jax.debug.print('A_cond = {a}', a = (jnp.linalg.cond(u.get_magnitude(lhs))))
+    # jax.debug.print('A_cond = {a}', a = (jnp.linalg.cond(u.get_magnitude(lhs))))
 
     '''
     # residual
@@ -310,10 +298,10 @@ def _crank_nicolson_for_axial_current(A, y0, dt):
             Solution array at the next time step, shape (n,).
     """
     n = y0.shape[-1]
-    I = u.math.eye(n) 
+    I = u.math.eye(n)
     alpha = 1
     lhs = (I - alpha * dt * A)
-    rhs = (I + (1-alpha) * dt * A)@y0
+    rhs = (I + (1 - alpha) * dt * A) @ y0
     y1 = u.math.linalg.solve(lhs, rhs)
 
     '''
@@ -325,10 +313,10 @@ def _crank_nicolson_for_axial_current(A, y0, dt):
     cond = jnp.linalg.cond(u.get_magnitude(lhs))
     jax.debug.print('cond = {a}', a = cond)
     '''
-    #jax.debug.print('I = {a}',a = I)
-    #jax.debug.print('lhs = {a}',a = lhs)
-    #cond = jnp.linalg.cond(u.get_magnitude(lhs))
-    #jax.debug.print('cond = {a}', a = cond)
+    # jax.debug.print('I = {a}',a = I)
+    # jax.debug.print('lhs = {a}',a = lhs)
+    # cond = jnp.linalg.cond(u.get_magnitude(lhs))
+    # jax.debug.print('cond = {a}', a = cond)
     return y1
 
 
@@ -386,13 +374,13 @@ def construct_A(target):
 
         A_matrix = G_matrix / (cm_A[:, u.math.newaxis])
         A_matrix = A_matrix.at[jnp.diag_indices(n_compartment)].set(-u.math.sum(A_matrix, axis=1))
-        A_matrix = A_matrix.at[jnp.diag_indices(n_compartment)].add(-Gl/cm)
+        A_matrix = A_matrix.at[jnp.diag_indices(n_compartment)].add(-Gl / cm)
 
         # jax.debug.print('A = {a}', a = (A_matrix))
-        #jax.debug.print('A = {a}', a = (u.get_magnitude(A_matrix)))
+        # jax.debug.print('A = {a}', a = (u.get_magnitude(A_matrix)))
         # jax.debug.print('A_cond = {a}', a = (jnp.linalg.cond(u.get_magnitude(A_matrix))))
         # jax.debug.print('eigvalue = {a}', a = 10**7*jnp.linalg.eigvals(u.get_magnitude(A_matrix)))
-        
+
     return A_matrix
 
 
@@ -435,7 +423,7 @@ def splitting_step(
         '''
 
         ## time
-        #s1t1 = time.time()
+        # s1t1 = time.time()
 
         with brainstate.environ.context(compute_axial_current=False):
             # '''
@@ -468,13 +456,13 @@ def splitting_step(
                 merging_method='stack'
             )
 
-        #jax.debug.print('step1 cost {a}',a = time.time() - s1t1)
-        #s2t1 = time.time()
+        # jax.debug.print('step1 cost {a}',a = time.time() - s1t1)
+        # s2t1 = time.time()
 
         for _ in range(len(target.pop_size)):
             integral = brainstate.augment.vmap(solve_axial, in_states=target.states())
         integral()
-        #jax.debug.print('step2 cost {a}',a = time.time() - s2t1)
+        # jax.debug.print('step2 cost {a}',a = time.time() - s2t1)
 
     else:
         apply_standard_solver_step(
@@ -497,7 +485,6 @@ def cn_rk4_step(
         A_matrix = construct_A(target)
         target.V.value = _crank_nicolson_for_axial_current(A_matrix, V_n, dt)
 
-
     with brainstate.environ.context(compute_axial_current=False):
         rk4_step(
             target,
@@ -507,7 +494,6 @@ def cn_rk4_step(
     for _ in range(len(target.pop_size)):
         integral = brainstate.augment.vmap(solve_axial, in_states=target.states())
     integral()
-
 
 
 @set_module_as('braincell')
@@ -636,6 +622,7 @@ def implicit_exp_euler_step(
             _newton_method, target, t, *args
         )
 
+
 @set_module_as('braincell')
 def exp_exp_euler_step(
     target: DiffEqModule,
@@ -670,14 +657,15 @@ def exp_exp_euler_step(
                 *args,
                 merging_method='stack'
             )
+
         # second step
 
         def solve_axial():
             dt = brainstate.environ.get_dt()
             V_n = target.V.value
             A_matrix = construct_A(target)
-            #jax.debug.print("A = {a}",a=A_matrix)
-            target.V.value = _implicit_euler_for_axial_current(A_matrix, V_n, dt)#expm(dt*A_matrix)@V_n
+            # jax.debug.print("A = {a}",a=A_matrix)
+            target.V.value = _implicit_euler_for_axial_current(A_matrix, V_n, dt)  # expm(dt*A_matrix)@V_n
 
         for _ in range(len(target.pop_size)):
             integral = brainstate.augment.vmap(solve_axial, in_states=target.states())

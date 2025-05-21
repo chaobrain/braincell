@@ -5,8 +5,6 @@ This module implements leakage channel.
 
 """
 
-from __future__ import annotations
-
 from typing import Union, Callable, Sequence, Optional
 
 import brainstate

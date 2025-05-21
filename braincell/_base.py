@@ -81,8 +81,6 @@ The actual implementations of some classes (e.g., SingleCompartment, specific Io
 may be defined in other files within the BrainCell library.
 """
 
-from __future__ import annotations
-
 from typing import Optional, Dict, Sequence, Callable, NamedTuple, Tuple, Type
 
 import brainstate

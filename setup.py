@@ -18,22 +18,14 @@
 import io
 import os
 import re
-import sys
-import time
 
-from setuptools import find_packages
-from setuptools import setup
+from setuptools import find_packages, setup
 
 # version
 here = os.path.abspath(os.path.dirname(__file__))
 with open(os.path.join(here, 'braincell/', '__init__.py'), 'r') as f:
     init_py = f.read()
 version = re.search('__version__ = "(.*)"', init_py).groups()[0]
-print(version)
-if len(sys.argv) > 2 and sys.argv[2] == '--python-tag=py3':
-    version = version
-else:
-    version += '.post{}'.format(time.strftime("%Y%m%d", time.localtime()))
 
 # obtain long description from README
 with io.open(os.path.join(here, 'README.md'), 'r', encoding='utf-8') as f:
@@ -70,9 +62,9 @@ setup(
         "Source Code": "https://github.com/chaobrain/braincell",
     },
     extras_require={
-        'cpu': ['jax'],
-        'cuda12': ['jax[cuda12]'],
-        'tpu': ['jax[tpu]'],
+        'cpu': ['jax[cpu]', 'brainstate[cpu]', 'brainunit[cpu]'],
+        'cuda12': ['jax[cuda12]', 'brainstate[cuda12]', 'brainunit[cuda12]'],
+        'tpu': ['jax[tpu]', 'brainstate[tpu]', 'brainunit[tpu]'],
     },
     keywords=(
         'dendritic computation, '

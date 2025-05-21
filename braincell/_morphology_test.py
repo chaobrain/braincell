@@ -16,6 +16,7 @@
 import braincell
 import brainunit as u
 
+
 class TestMorphologyConstruction:
     def test1(self):
         # Instantiate the Morphology object

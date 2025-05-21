@@ -13,8 +13,6 @@
 # limitations under the License.
 # ==============================================================================
 
-from __future__ import annotations
-
 from typing import Dict, Any, Callable, Tuple
 
 import brainstate
@@ -118,7 +116,10 @@ def _transform_diffeq_module_into_dimensionless_fn(
 
 
 def apply_standard_solver_step(
-    solver_step: Callable[[Callable, jax.Array, u.Quantity[u.second], u.Quantity[u.second], Any], Any],
+    solver_step: Callable[
+        [Callable, jax.Array, u.Quantity[u.second], u.Quantity[u.second], Any],
+        Any
+    ],
     target: DiffEqModule,
     t: u.Quantity[u.second],
     *args,
@@ -130,6 +131,16 @@ def apply_standard_solver_step(
     This function performs a single step of numerical integration for a differential equation
     system. It handles pre-integration preparation, the actual integration step, and
     post-integration updates.
+
+    The ``solver_step`` should have the following signature::
+
+        solver_step(f, y0, t, dt, args) -> (y1, aux)
+
+    - ``f`` is the function representing the system of differential equations.
+    - ``y0`` is the current state of the system.
+    - ``t`` is the current time.
+    - ``dt`` is the time step for the integration.
+    - ``args`` are additional arguments to be passed to the function ``f``.
 
     Parameters
     ----------
@@ -146,17 +157,13 @@ def apply_standard_solver_step(
 
         - 'concat': Concatenate the states along the last dimension.
         - 'stack': Stack the states along the last dimension.
-
-    Returns
-    -------
-    None
-        This function updates the states of the target module in-place and does not return a value.
     """
 
     assert merging_method in ['concat', 'stack'], f'Unknown merging method: {merging_method}'
 
     # pre integral
     dt = u.get_magnitude(brainstate.environ.get_dt())
+    dt = brainstate.environ.get_dt()
     target.pre_integral(*args)
     dimensionless_fn, diffeq_states, other_states = (
         _transform_diffeq_module_into_dimensionless_fn(

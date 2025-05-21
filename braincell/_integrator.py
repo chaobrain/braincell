@@ -13,50 +13,46 @@
 # limitations under the License.
 # ==============================================================================
 
-from __future__ import annotations
-
 from typing import Callable
 
+from ._integrator_diffrax import *
 from ._integrator_exp_euler import *
-from ._integrator_implicit import *
 from ._integrator_runge_kutta import *
-
 
 __all__ = [
     'get_integrator',
+
+    # exponential Euler
+    'exp_euler_step',
+
+    # runge-kutta methods
+    'euler_step',
+    'midpoint_step',
+    'rk2_step',
+    'heun2_step',
+    'ralston2_step',
+    'rk3_step',
+    'heun3_step',
+    'ssprk3_step',
+    'ralston3_step',
+    'rk4_step',
+    'ralston4_step',
+
+    # diffrax methods
+    'diffrax_euler_step',
+    'diffrax_heun_step',
+    'diffrax_midpoint_step',
+    'diffrax_ralston_step',
+    'diffrax_bosh3_step',
+    'diffrax_tsit5_step',
+    'diffrax_dopri5_step',
+    'diffrax_dopri8_step',
 ]
 
-all_integrators = {
-    # exponential Euler
-    'exp_euler': exp_euler_step,
-
-    # explicit Runge-Kutta methods
-    'euler': euler_step,
-    'midpoint': midpoint_step,
-    'rk2': rk2_step,
-    'heun2': heun2_step,
-    'ralston2': ralston2_step,
-    'rk3': rk3_step,
-    'heun3': heun3_step,
-    'ssprk3': ssprk3_step,
-    'ralston3': ralston3_step,
-    'rk4': rk4_step,
-    'ralston4': ralston4_step,
-
-    # splitting methods
-    'implicit_euler': implicit_euler_step,
-    'splitting': splitting_step,
-    'cn_rk4': cn_rk4_step,
-    'cn_exp_euler': cn_exp_euler_step,
-    'implicit_rk4': implicit_rk4_step,
-    'implicit_exp_euler': implicit_exp_euler_step,
-    'exp_exp_euler': exp_exp_euler_step,
-}
+all_integrators = {k.replace('_step', ''): v for k, v in locals().items() if k.endswith('_step')}
 
 
-def get_integrator(
-    method: str | Callable
-) -> Callable:
+def get_integrator(method: str | Callable) -> Callable:
     """
     Get the integrator function by name or return the provided callable.
 

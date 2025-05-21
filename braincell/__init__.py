@@ -14,7 +14,7 @@
 # ==============================================================================
 
 
-__version__ = "0.0.1"
+__version__ = "0.0.2"
 
 from . import channel
 from . import ion
@@ -28,6 +28,7 @@ from ._base import (
     mix_ions,
     IonInfo,
 )
+from ._integrator import *
 from ._morphology import (
     Section,
     Morphology,
@@ -35,11 +36,6 @@ from ._morphology import (
 from ._multi_compartment import (
     MultiCompartment,
 )
-
-from ._multi_compartment_test import (
-    MultiCompartment_test,
-)
-
 from ._protocol import (
     DiffEqState,
     DiffEqModule,
@@ -48,10 +44,7 @@ from ._single_compartment import (
     SingleCompartment,
 )
 
-
 from braincell._misc import deprecation_getattr
-
-
 _deprecations = {
     'SingleCompartment': (
         f"braincell.neuron.SingleCompartment has been moved "
@@ -64,8 +57,6 @@ _deprecations = {
         MultiCompartment
     ),
 }
+
 neuron.__getattr__ = deprecation_getattr(__name__, _deprecations)
 del deprecation_getattr
-
-
-

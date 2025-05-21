@@ -19,9 +19,24 @@ from ._integrator_exp_euler import *
 from ._integrator_implicit import *
 from ._integrator_runge_kutta import *
 
-
 __all__ = [
     'get_integrator',
+
+    # exponential Euler
+    'exp_euler_step',
+
+    # runge-kutta methods
+    'euler_step',
+    'midpoint_step',
+    'rk2_step',
+    'heun2_step',
+    'ralston2_step',
+    'rk3_step',
+    'heun3_step',
+    'ssprk3_step',
+    'ralston3_step',
+    'rk4_step',
+    'ralston4_step',
 ]
 
 all_integrators = {
@@ -52,9 +67,7 @@ all_integrators = {
 }
 
 
-def get_integrator(
-    method: str | Callable
-) -> Callable:
+def get_integrator(method: str | Callable) -> Callable:
     """
     Get the integrator function by name or return the provided callable.
 

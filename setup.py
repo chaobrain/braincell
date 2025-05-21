@@ -70,9 +70,9 @@ setup(
         "Source Code": "https://github.com/chaobrain/braincell",
     },
     extras_require={
-        'cpu': ['jax'],
-        'cuda12': ['jax[cuda12]'],
-        'tpu': ['jax[tpu]'],
+        'cpu': ['jax[cpu]', 'brainstate[cpu]', 'brainunit[cpu]'],
+        'cuda12': ['jax[cuda12]', 'brainstate[cuda12]', 'brainunit[cuda12]'],
+        'tpu': ['jax[tpu]', 'brainstate[tpu]', 'brainunit[tpu]'],
     },
     keywords=(
         'dendritic computation, '

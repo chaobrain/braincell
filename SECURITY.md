@@ -1,8 +1,8 @@
 # Security Policy
 
-## Reporting a bug in ``dendritex``
+## Reporting a bug in ``BrainCell``
 
-Report security bugs in ``dendritex`` via [Github Issue](https://github.com/chaoming0625/dendritex/issues).
+Report security bugs in ``BrainCell`` via [Github Issue](https://github.com/chaobrain/braincell/issues).
 
 Normally your report will be acknowledged within 5 days, and you'll receive a more detailed response 
 to your report within 10 days indicating the next steps in handling your submission. These timelines 

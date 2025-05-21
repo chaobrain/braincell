@@ -13,49 +13,94 @@
 # limitations under the License.
 # ==============================================================================
 
+import functools
 import importlib.util
-from typing import Optional, Tuple, Callable, Dict, Any
+from typing import Callable
 
-import brainstate
 import brainunit as u
-import jax
 
-from ._integrator_util import _check_diffeq_state_derivative
-from ._protocol import DiffEqState, DiffEqModule
-
-diffrax_installed = importlib.util.find_spec('diffrax') is not None
-if diffrax_installed:
-    import diffrax as dfx
-
-    diffrax_solvers = {
-        # explicit RK
-        'euler': dfx.Euler,
-        'revheun': dfx.ReversibleHeun,
-        'heun': dfx.Heun,
-        'midpoint': dfx.Midpoint,
-        'ralston': dfx.Ralston,
-        'bosh3': dfx.Bosh3,
-        'tsit5': dfx.Tsit5,
-        'dopri5': dfx.Dopri5,
-        'dopri8': dfx.Dopri8,
-
-        # implicit RK
-        'ieuler': dfx.ImplicitEuler,
-        'kvaerno3': dfx.Kvaerno3,
-        'kvaerno4': dfx.Kvaerno4,
-        'kvaerno5': dfx.Kvaerno5,
-    }
+from ._integrator_util import apply_standard_solver_step
+from ._protocol import DiffEqModule
 
 __all__ = [
-    'diffrax_solver_step',
+    'diffrax_euler_step',
+    'diffrax_heun_step',
+    'diffrax_midpoint_step',
+    'diffrax_ralston_step',
+    'diffrax_bosh3_step',
+    'diffrax_tsit5_step',
+    'diffrax_dopri5_step',
+    'diffrax_dopri8_step',
 ]
 
+diffrax_installed = importlib.util.find_spec('diffrax') is not None
+if not diffrax_installed:
+    class Diffrax:
+        def __getattr__(self, item):
+            raise ModuleNotFoundError(
+                'diffrax is not installed. Please install diffrax to use this feature.'
+            )
 
 
-def diffrax_solver_step(
+    diffrax = Diffrax()
+
+else:
+    import diffrax
+
+
+def _explicit_solver(solver, fn: Callable, y0, t0, dt, args=()):
+    t0 = u.Quantity(t0)
+    dt = u.Quantity(dt).to_decimal(t0.unit)
+    t0 = t0.magnitude
+    y1, _, _, state, _ = solver.step(
+        diffrax.ODETerm(lambda t, y, args_: fn(t, y, *args_)[0]),
+        t0, t0 + dt, y0, args, (False, y0), made_jump=False
+    )
+    return y1, {}
+
+
+def _diffrax_explicit_solver(
+    solver,
     target: DiffEqModule,
     t: u.Quantity[u.second],
     *args
 ):
-    pass
+    apply_standard_solver_step(
+        functools.partial(_explicit_solver, solver),
+        target,
+        t,
+        *args,
+        merging_method='stack'
+    )
 
+
+def diffrax_euler_step(target: DiffEqModule, t: u.Quantity[u.second], *args):
+    _diffrax_explicit_solver(diffrax.Euler(), target, t, *args)
+
+
+def diffrax_heun_step(target: DiffEqModule, t: u.Quantity[u.second], *args):
+    _diffrax_explicit_solver(diffrax.Heun(), target, t, *args)
+
+
+def diffrax_midpoint_step(target: DiffEqModule, t: u.Quantity[u.second], *args):
+    _diffrax_explicit_solver(diffrax.Midpoint(), target, t, *args)
+
+
+def diffrax_ralston_step(target: DiffEqModule, t: u.Quantity[u.second], *args):
+    _diffrax_explicit_solver(diffrax.Ralston(), target, t, *args)
+
+
+def diffrax_bosh3_step(target: DiffEqModule, t: u.Quantity[u.second], *args):
+    _diffrax_explicit_solver(diffrax.Bosh3(), target, t, *args)
+
+
+def diffrax_tsit5_step(target: DiffEqModule, t: u.Quantity[u.second], *args):
+    _diffrax_explicit_solver(diffrax.Tsit5(), target, t, *args)
+
+
+def diffrax_dopri5_step(target: DiffEqModule, t: u.Quantity[u.second], *args):
+    _diffrax_explicit_solver(diffrax.Dopri5(), target, t, *args)
+
+
+def diffrax_dopri8_step(target: DiffEqModule, t: u.Quantity[u.second], *args):
+    _diffrax_explicit_solver(diffrax.Dopri8(), target, t, *args)

@@ -75,32 +75,223 @@ def _diffrax_explicit_solver(
 
 
 def diffrax_euler_step(target: DiffEqModule, t: u.Quantity[u.second], *args):
+    """
+    Advances the state of a differential equation module by one integration step using the Euler method
+    from the diffrax library: `diffrax.Euler <https://docs.kidger.site/diffrax/api/solvers/ode_solvers/#diffrax.Euler>`_.
+
+    This function serves as a wrapper that applies the explicit Euler solver to the given target module.
+    It is intended for use in time-stepping routines where the state of the system is updated in-place.
+
+    Args:
+        target (DiffEqModule): The differential equation module whose state will be advanced.
+        t (u.Quantity[u.second]): The current simulation time, represented as a quantity with units of seconds.
+        *args: Additional arguments to be passed to the solver, such as step size or solver-specific options.
+
+    Returns:
+        None: The function updates the state of the target module in place.
+
+    Raises:
+        ModuleNotFoundError: If the diffrax library is not installed.
+
+    Notes:
+        - This function relies on the diffrax.Euler solver for numerical integration.
+        - It is part of a suite of step functions that provide different integration methods.
+        - The function is designed to be compatible with the braincell integration framework.
+    """
     _diffrax_explicit_solver(diffrax.Euler(), target, t, *args)
 
 
 def diffrax_heun_step(target: DiffEqModule, t: u.Quantity[u.second], *args):
+    """
+    Advances the state of a differential equation module by one integration step using the Heun method
+    from the diffrax library: `diffrax.Heun <https://docs.kidger.site/diffrax/api/solvers/ode_solvers/#diffrax.Heun>`_.
+
+    This function serves as a wrapper that applies the explicit Heun solver (also known as the improved Euler method)
+    to the given target module. It is intended for use in time-stepping routines where the state of the system
+    is updated in-place.
+
+    Args:
+        target (DiffEqModule): The differential equation module whose state will be advanced.
+        t (u.Quantity[u.second]): The current simulation time, represented as a quantity with units of seconds.
+        *args: Additional arguments to be passed to the solver, such as step size or solver-specific options.
+
+    Returns:
+        None: The function updates the state of the target module in place.
+
+    Raises:
+        ModuleNotFoundError: If the diffrax library is not installed.
+
+    Notes:
+        - This function relies on the diffrax.Heun solver for numerical integration.
+        - It is part of a suite of step functions that provide different integration methods.
+        - The function is designed to be compatible with the braincell integration framework.
+    """
     _diffrax_explicit_solver(diffrax.Heun(), target, t, *args)
 
 
 def diffrax_midpoint_step(target: DiffEqModule, t: u.Quantity[u.second], *args):
+    """
+    Advances the state of a differential equation module by one integration step using the Midpoint method
+    from the diffrax library: `diffrax.Midpoint <https://docs.kidger.site/diffrax/api/solvers/ode_solvers/#diffrax.Midpoint>`_.
+
+    This function serves as a wrapper that applies the explicit Midpoint solver (a second-order Runge-Kutta method)
+    to the given target module. It is intended for use in time-stepping routines where the state of the system
+    is updated in-place.
+
+    Args:
+        target (DiffEqModule): The differential equation module whose state will be advanced.
+        t (u.Quantity[u.second]): The current simulation time, represented as a quantity with units of seconds.
+        *args: Additional arguments to be passed to the solver, such as step size or solver-specific options.
+
+    Returns:
+        None: The function updates the state of the target module in place.
+
+    Raises:
+        ModuleNotFoundError: If the diffrax library is not installed.
+
+    Notes:
+        - This function relies on the diffrax.Midpoint solver for numerical integration.
+        - It is part of a suite of step functions that provide different integration methods.
+        - The function is designed to be compatible with the braincell integration framework.
+    """
     _diffrax_explicit_solver(diffrax.Midpoint(), target, t, *args)
 
 
 def diffrax_ralston_step(target: DiffEqModule, t: u.Quantity[u.second], *args):
+    """
+    Advances the state of a differential equation module by one integration step using the Ralston method
+    from the diffrax library: `diffrax.Ralston <https://docs.kidger.site/diffrax/api/solvers/ode_solvers/#diffrax.Ralston>`_.
+
+    This function serves as a wrapper that applies the explicit Ralston solver (a second-order Runge-Kutta method)
+    to the given target module. It is intended for use in time-stepping routines where the state of the system
+    is updated in-place.
+
+    Args:
+        target (DiffEqModule): The differential equation module whose state will be advanced.
+        t (u.Quantity[u.second]): The current simulation time, represented as a quantity with units of seconds.
+        *args: Additional arguments to be passed to the solver, such as step size or solver-specific options.
+
+    Returns:
+        None: The function updates the state of the target module in place.
+
+    Raises:
+        ModuleNotFoundError: If the diffrax library is not installed.
+
+    Notes:
+        - This function relies on the diffrax.Ralston solver for numerical integration.
+        - It is part of a suite of step functions that provide different integration methods.
+        - The function is designed to be compatible with the braincell integration framework.
+    """
     _diffrax_explicit_solver(diffrax.Ralston(), target, t, *args)
 
 
 def diffrax_bosh3_step(target: DiffEqModule, t: u.Quantity[u.second], *args):
+    """
+    Advances the state of a differential equation module by one integration step using the Bosh3 method
+    from the diffrax library: `diffrax.Bosh3 <https://docs.kidger.site/diffrax/api/solvers/ode_solvers/#diffrax.Bosh3>`_.
+
+    This function serves as a wrapper that applies the explicit Bosh3 solver (a third-order Runge-Kutta method)
+    to the given target module. It is intended for use in time-stepping routines where the state of the system
+    is updated in-place.
+
+    Args:
+        target (DiffEqModule): The differential equation module whose state will be advanced.
+        t (u.Quantity[u.second]): The current simulation time, represented as a quantity with units of seconds.
+        *args: Additional arguments to be passed to the solver, such as step size or solver-specific options.
+
+    Returns:
+        None: The function updates the state of the target module in place.
+
+    Raises:
+        ModuleNotFoundError: If the diffrax library is not installed.
+
+    Notes:
+        - This function relies on the diffrax.Bosh3 solver for numerical integration.
+        - It is part of a suite of step functions that provide different integration methods.
+        - The function is designed to be compatible with the braincell integration framework.
+    """
     _diffrax_explicit_solver(diffrax.Bosh3(), target, t, *args)
 
 
 def diffrax_tsit5_step(target: DiffEqModule, t: u.Quantity[u.second], *args):
+    """
+    Advances the state of a differential equation module by one integration step using the Tsit5 method
+    from the diffrax library: `diffrax.Tsit5 <https://docs.kidger.site/diffrax/api/solvers/ode_solvers/#diffrax.Tsit5>`_.
+
+    This function serves as a wrapper that applies the explicit Tsit5 solver (a fifth-order Runge-Kutta method)
+    to the given target module. It is intended for use in time-stepping routines where the state of the system
+    is updated in-place.
+
+    Args:
+        target (DiffEqModule): The differential equation module whose state will be advanced.
+        t (u.Quantity[u.second]): The current simulation time, represented as a quantity with units of seconds.
+        *args: Additional arguments to be passed to the solver, such as step size or solver-specific options.
+
+    Returns:
+        None: The function updates the state of the target module in place.
+
+    Raises:
+        ModuleNotFoundError: If the diffrax library is not installed.
+
+    Notes:
+        - This function relies on the diffrax.Tsit5 solver for numerical integration.
+        - It is part of a suite of step functions that provide different integration methods.
+        - The function is designed to be compatible with the braincell integration framework.
+    """
     _diffrax_explicit_solver(diffrax.Tsit5(), target, t, *args)
 
 
 def diffrax_dopri5_step(target: DiffEqModule, t: u.Quantity[u.second], *args):
+    """
+    Advances the state of a differential equation module by one integration step using the Dopri5 method
+    from the diffrax library: `diffrax.Dopri5 <https://docs.kidger.site/diffrax/api/solvers/ode_solvers/#diffrax.Dopri5>`_.
+
+    This function serves as a wrapper that applies the explicit Dormand-Prince 5(4) solver (a fifth-order Runge-Kutta method)
+    to the given target module. It is intended for use in time-stepping routines where the state of the system
+    is updated in-place.
+
+    Args:
+        target (DiffEqModule): The differential equation module whose state will be advanced.
+        t (u.Quantity[u.second]): The current simulation time, represented as a quantity with units of seconds.
+        *args: Additional arguments to be passed to the solver, such as step size or solver-specific options.
+
+    Returns:
+        None: The function updates the state of the target module in place.
+
+    Raises:
+        ModuleNotFoundError: If the diffrax library is not installed.
+
+    Notes:
+        - This function relies on the diffrax.Dopri5 solver for numerical integration.
+        - It is part of a suite of step functions that provide different integration methods.
+        - The function is designed to be compatible with the braincell integration framework.
+    """
     _diffrax_explicit_solver(diffrax.Dopri5(), target, t, *args)
 
 
 def diffrax_dopri8_step(target: DiffEqModule, t: u.Quantity[u.second], *args):
+    """
+    Advances the state of a differential equation module by one integration step using the Dopri8 method
+    from the diffrax library: `diffrax.Dopri8 <https://docs.kidger.site/diffrax/api/solvers/ode_solvers/#diffrax.Dopri8>`_.
+
+    This function serves as a wrapper that applies the explicit Dormand-Prince 8(5,3) solver (an eighth-order Runge-Kutta method)
+    to the given target module. It is intended for use in time-stepping routines where the state of the system
+    is updated in-place.
+
+    Args:
+        target (DiffEqModule): The differential equation module whose state will be advanced.
+        t (u.Quantity[u.second]): The current simulation time, represented as a quantity with units of seconds.
+        *args: Additional arguments to be passed to the solver, such as step size or solver-specific options.
+
+    Returns:
+        None: The function updates the state of the target module in place.
+
+    Raises:
+        ModuleNotFoundError: If the diffrax library is not installed.
+
+    Notes:
+        - This function relies on the diffrax.Dopri8 solver for numerical integration.
+        - It is part of a suite of step functions that provide different integration methods.
+        - The function is designed to be compatible with the braincell integration framework.
+    """
     _diffrax_explicit_solver(diffrax.Dopri8(), target, t, *args)

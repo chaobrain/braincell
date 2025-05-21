@@ -26,7 +26,7 @@ import numpy as np
 @jax.jit
 def calculate_total_resistance_and_area(
     points: brainstate.typing.Array,
-    resistivity: u.Quantity = 100.0 * u.ohm * u.cm  # TODO
+    resistivity: u.Quantity = 100.0 * u.ohm * u.cm
 ):
     r"""
     Calculate the total axial resistance and surface area of a neurite represented as N-1 frustums 

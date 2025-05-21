@@ -175,10 +175,27 @@ class MultiCompartment(HHTypedNeuron):
 
     @property
     def pop_size(self) -> Tuple[int, ...]:
+        """
+        Returns the shape of the neuron population, excluding the compartment dimension.
+
+        Returns
+        -------
+        Tuple[int, ...]
+            The shape of the neuron population (all dimensions except the last, which
+            corresponds to the number of compartments).
+        """
         return self.varshape[:-1]
 
     @property
     def n_compartment(self) -> int:
+        """
+        Returns the number of compartments in the neuron model.
+
+        Returns
+        -------
+        int
+            The number of compartments, corresponding to the last dimension of the neuron's variable shape.
+        """
         return self.varshape[-1]
 
     def init_state(self, batch_size=None):

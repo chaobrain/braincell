@@ -13,8 +13,9 @@
 # limitations under the License.
 # ==============================================================================
 
-import braincell
 import brainunit as u
+
+import braincell
 
 
 class TestMorphologyConstruction:
@@ -25,7 +26,12 @@ class TestMorphologyConstruction:
         # Create individual sections using `create_section`
         morphology.add_cylinder_section('soma', length=20 * u.um, diam=10 * u.um, nseg=1)  # Soma section
         morphology.add_cylinder_section('axon', length=100 * u.um, diam=1 * u.um, nseg=2)  # Axon section
-        morphology.add_point_section('dendrite', [[0, 0, 0, 2], [100, 0, 0, 3], [200, 0, 0, 2]] * u.um, nseg=3)  # Dendrite
+        morphology.add_point_section(
+            'dendrite',
+            position=[[0, 0, 0], [100, 0, 0], [200, 0, 0]] * u.um,
+            diam=[2, 3, 2] * u.um,
+            nseg=3
+        )  # Dendrite
 
         # Connect the sections (e.g., dendrite and axon connected to soma)
         morphology.connect('axon', 'soma', parent_loc=1.0)  # Axon connected at the end of soma
@@ -55,7 +61,9 @@ class TestMorphologyConstruction:
         section_dicts = {
             'soma': {'length': 20 * u.um, 'diam': 10 * u.um, 'nseg': 1},
             'axon': {'length': 100 * u.um, 'diam': 1 * u.um, 'nseg': 2},
-            'dendrite': {'points': [[0, 0, 0, 2], [100, 0, 0, 3], [200, 0, 0, 2]] * u.um, 'nseg': 3}
+            'dendrite': {'position': [[0, 0, 0], [100, 0, 0], [200, 0, 0]] * u.um,
+                         'diam': [2, 3, 2] * u.um,
+                         'nseg': 3}
         }
         morphology.add_multiple_sections(section_dicts)
 
@@ -78,4 +86,3 @@ class TestMorphologyConstruction:
         # Construct conductance matrix for the model
         print(morphology.conductance_matrix)
         print(morphology.area)
-

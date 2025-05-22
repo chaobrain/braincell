@@ -33,7 +33,7 @@ __all__ = [
     'diffrax_dopri8_step',
 
     # implicit methods
-
+    'diffrax_bwd_euler_step',
 ]
 
 diffrax_installed = importlib.util.find_spec('diffrax') is not None
@@ -314,5 +314,62 @@ def diffrax_dopri8_step(target: DiffEqModule, t: T, dt: DT, *args):
     _diffrax_explicit_solver(diffrax.Dopri8(), target, t, dt, *args)
 
 
-def diffrax_bwd_euler_step(target: DiffEqModule, t: T, dt: DT, *args):
-    pass
+def _implicit_solver(solver, fn: VectorFiled, y0: Y0, t0: T, dt: DT, args=()):
+    dt = u.Quantity(dt)
+    t0 = u.Quantity(t0).to_decimal(dt.unit)
+    dt = u.get_magnitude(dt)
+    y1 = solver.step(
+        diffrax.ODETerm(lambda t, y, args_: fn(t, y, *args_)[0]),
+        t0,
+        t0 + dt,
+        y0,
+        args,
+        None,
+        made_jump=False
+    )[0]
+    return y1, {}
+
+
+def _diffrax_implicit_solver(solver, target: DiffEqModule, t: T, dt: DT, *args):
+    apply_standard_solver_step(
+        functools.partial(_implicit_solver, solver),
+        target, t, dt, *args, merging_method='stack'
+    )
+
+
+def diffrax_bwd_euler_step(target: DiffEqModule, t: T, dt: DT, *args, tol=1e-5):
+    """
+    Advances the state of a differential equation module by one integration step using the implicit
+    Backward Euler method from the diffrax library:
+    `diffrax.ImplicitEuler <https://docs.kidger.site/diffrax/api/solvers/ode_solvers/#diffrax.ImplicitEuler>`_.
+
+    This function serves as a wrapper that applies the implicit Backward Euler solver to the given
+    target module. It is intended for use in time-stepping routines where the state of the system
+    is updated in-place. The root-finding tolerance for the implicit step can be controlled via the
+    `tol` parameter.
+
+    Args:
+        target (DiffEqModule): The differential equation module whose state will be advanced.
+        t (T): The current simulation time.
+        dt (DT): The numerical time step of the integration step.
+        *args: Additional arguments to be passed to the solver.
+        tol (float, optional): Tolerance for the root-finding algorithm used in the implicit step.
+            Defaults to 1e-5.
+
+    Returns:
+        None: The function updates the state of the target module in place.
+
+    Raises:
+        ModuleNotFoundError: If the diffrax library is not installed.
+
+    Notes:
+        - This function relies on the diffrax.ImplicitEuler solver for numerical integration.
+        - The root-finding algorithm used is diffrax.VeryChord, with both relative and absolute
+          tolerances set to `tol`.
+        - It is part of a suite of step functions that provide different integration methods.
+        - The function is designed to be compatible with the braincell integration framework.
+    """
+    _diffrax_implicit_solver(
+        diffrax.ImplicitEuler(root_finder=diffrax.VeryChord(rtol=tol, atol=tol)),
+        target, t, dt, *args
+    )

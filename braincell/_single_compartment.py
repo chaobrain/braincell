@@ -261,7 +261,8 @@ class SingleCompartment(HHTypedNeuron):
         """
         last_V = self.V.value
         t = brainstate.environ.get('t')
-        self.solver(self, t, I_ext)
+        dt = brainstate.environ.get('dt')
+        self.solver(self, t, dt, I_ext)
         return self.get_spike(last_V, self.V.value)
 
     def get_spike(self, last_V, next_V):

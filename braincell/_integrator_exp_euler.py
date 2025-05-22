@@ -19,7 +19,7 @@ import jax.numpy as jnp
 from jax.scipy.linalg import expm
 
 from ._base import HHTypedNeuron
-from ._integrator_util import apply_standard_solver_step, jacrev_last_dim
+from ._integrator_util import apply_standard_solver_step, jacrev_last_dim, T, DT
 from ._misc import set_module_as
 from ._protocol import DiffEqModule
 
@@ -61,11 +61,7 @@ def _exponential_euler(f, y0, t, dt, args=()):
 
 
 @set_module_as('braincell')
-def exp_euler_step(
-    target: DiffEqModule,
-    t: u.Quantity[u.second],
-    *args
-):
+def exp_euler_step(target: DiffEqModule, t: T, dt: DT, *args):
     r"""
     Perform an exponential Euler step for solving differential equations.
 
@@ -104,6 +100,8 @@ def exp_euler_step(
         Must be an instance of HHTypedNeuron.
     t : u.Quantity[u.second]
         The current time point in the simulation.
+    dt : u.Quantity[u.second]
+        The numerical time step of the integration step.
     *args : 
         Additional arguments to be passed to the underlying implementation.
 
@@ -131,6 +129,7 @@ def exp_euler_step(
             _exponential_euler,
             target,
             t,
+            dt,
             *args,
             merging_method='stack'
         )
@@ -140,6 +139,7 @@ def exp_euler_step(
             _exponential_euler,
             target,
             t,
+            dt,
             *args,
             merging_method='concat'
         )

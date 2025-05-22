@@ -388,7 +388,7 @@ class ICaT_HM1992(_ICa_p2q_ss):
     def __init__(
         self,
         size: brainstate.typing.Size,
-        T: brainstate.typing.ArrayLike = 36.,
+        T: brainstate.typing.ArrayLike = u.celsius2kelvin(36.),
         T_base_p: brainstate.typing.ArrayLike = 3.55,
         T_base_q: brainstate.typing.ArrayLike = 3.,
         g_max: Union[brainstate.typing.ArrayLike, Callable] = 2. * (u.mS / u.cm ** 2),
@@ -397,6 +397,7 @@ class ICaT_HM1992(_ICa_p2q_ss):
         phi_q: Union[brainstate.typing.ArrayLike, Callable] = None,
         name: Optional[str] = None,
     ):
+        T = u.kelvin2celsius(T)
         phi_p = T_base_p ** ((T - 24) / 10) if phi_p is None else phi_p
         phi_q = T_base_q ** ((T - 24) / 10) if phi_q is None else phi_q
         super().__init__(
@@ -489,7 +490,7 @@ class ICaT_HP1992(_ICa_p2q_ss):
     def __init__(
         self,
         size: brainstate.typing.Size,
-        T: brainstate.typing.ArrayLike = 36.,
+        T: brainstate.typing.ArrayLike = u.celsius2kelvin(36.),
         T_base_p: brainstate.typing.ArrayLike = 5.,
         T_base_q: brainstate.typing.ArrayLike = 3.,
         g_max: Union[brainstate.typing.ArrayLike, Callable] = 1.75 * (u.mS / u.cm ** 2),
@@ -498,6 +499,7 @@ class ICaT_HP1992(_ICa_p2q_ss):
         phi_q: Union[brainstate.typing.ArrayLike, Callable] = None,
         name: Optional[str] = None,
     ):
+        T = u.kelvin2celsius(T)
         phi_p = T_base_p ** ((T - 24) / 10) if phi_p is None else phi_p
         phi_q = T_base_q ** ((T - 24) / 10) if phi_q is None else phi_q
         super().__init__(
@@ -587,13 +589,14 @@ class ICaHT_HM1992(_ICa_p2q_ss):
     def __init__(
         self,
         size: brainstate.typing.Size,
-        T: brainstate.typing.ArrayLike = 36.,
+        T: brainstate.typing.ArrayLike = u.celsius2kelvin(36.),
         T_base_p: brainstate.typing.ArrayLike = 3.55,
         T_base_q: brainstate.typing.ArrayLike = 3.,
         g_max: Union[brainstate.typing.ArrayLike, Callable] = 2. * (u.mS / u.cm ** 2),
         V_sh: Union[brainstate.typing.ArrayLike, Callable] = 25. * u.mV,
         name: Optional[str] = None,
     ):
+        T = u.kelvin2celsius(T)
         super().__init__(
             size,
             name=name,
@@ -684,7 +687,7 @@ class ICaHT_Re1993(_ICa_p2q_markov):
     def __init__(
         self,
         size: brainstate.typing.Size,
-        T: brainstate.typing.ArrayLike = 36.,
+        T: brainstate.typing.ArrayLike = u.celsius2kelvin(36.),
         T_base_p: brainstate.typing.ArrayLike = 2.3,
         T_base_q: brainstate.typing.ArrayLike = 2.3,
         phi_p: Union[brainstate.typing.ArrayLike, Callable] = None,
@@ -693,6 +696,7 @@ class ICaHT_Re1993(_ICa_p2q_markov):
         V_sh: Union[brainstate.typing.ArrayLike, Callable] = 0. * u.mV,
         name: Optional[str] = None,
     ):
+        T = u.kelvin2celsius(T)
         phi_p = T_base_p ** ((T - 23.) / 10.) if phi_p is None else phi_p
         phi_q = T_base_q ** ((T - 23.) / 10.) if phi_q is None else phi_q
         super().__init__(
@@ -776,13 +780,14 @@ class ICaL_IS2008(_ICa_p2q_ss):
     def __init__(
         self,
         size: brainstate.typing.Size,
-        T: Union[brainstate.typing.ArrayLike, Callable] = 36.,
+        T: Union[brainstate.typing.ArrayLike, Callable] = u.celsius2kelvin(36.),
         T_base_p: Union[brainstate.typing.ArrayLike, Callable] = 3.55,
         T_base_q: Union[brainstate.typing.ArrayLike, Callable] = 3.,
         g_max: Union[brainstate.typing.ArrayLike, Callable] = 1. * (u.mS / u.cm ** 2),
         V_sh: Union[brainstate.typing.ArrayLike, Callable] = 0. * u.mV,
         name: Optional[str] = None,
     ):
+        T = u.kelvin2celsius(T)
         super().__init__(
             size,
             name=name,
@@ -830,12 +835,13 @@ class ICav12_Ma2020(CalciumChannel):
         g_max: Union[brainstate.typing.ArrayLike, Callable] = 0 * (u.mS / u.cm ** 2),
         V_sh: Union[brainstate.typing.ArrayLike, Callable] = 0 * u.mV,
         T_base: brainstate.typing.ArrayLike = 3,
-        T: brainstate.typing.ArrayLike = 22.,
+        T: brainstate.typing.ArrayLike = u.celsius2kelvin(22.),
         name: Optional[str] = None,
     ):
         super().__init__(size=size, name=name, )
 
         # parameters
+        T = u.kelvin2celsius(T)
         self.g_max = brainstate.init.param(g_max, self.varshape, allow_none=False)
         self.T = brainstate.init.param(T, self.varshape, allow_none=False)
         self.T_base = brainstate.init.param(T_base, self.varshape, allow_none=False)
@@ -903,12 +909,13 @@ class ICav13_Ma2020(CalciumChannel):
         g_max: Union[brainstate.typing.ArrayLike, Callable] = 0 * (u.mS / u.cm ** 2),
         V_sh: Union[brainstate.typing.ArrayLike, Callable] = 0 * u.mV,
         T_base: brainstate.typing.ArrayLike = 3,
-        T: brainstate.typing.ArrayLike = 22.,
+        T: brainstate.typing.ArrayLike = u.celsius2kelvin(22.),
         name: Optional[str] = None,
     ):
         super().__init__(size=size, name=name, )
 
         # parameters
+        T = u.kelvin2celsius(T)
         self.g_max = brainstate.init.param(g_max, self.varshape, allow_none=False)
         self.T = brainstate.init.param(T, self.varshape, allow_none=False)
         self.T_base = brainstate.init.param(T_base, self.varshape, allow_none=False)
@@ -983,12 +990,13 @@ class ICav23_Ma2020(CalciumChannel):
         g_max: Union[brainstate.typing.ArrayLike, Callable] = 0 * (u.mS / u.cm ** 2),
         V_sh: Union[brainstate.typing.ArrayLike, Callable] = 0 * u.mV,
         T_base: brainstate.typing.ArrayLike = 3,
-        T: brainstate.typing.ArrayLike = 22.,
+        T: brainstate.typing.ArrayLike = u.celsius2kelvin(22.),
         name: Optional[str] = None,
     ):
         super().__init__(size=size, name=name, )
 
         # parameters
+        T = u.kelvin2celsius(T)
         self.g_max = brainstate.init.param(g_max, self.varshape, allow_none=False)
         self.T = brainstate.init.param(T, self.varshape, allow_none=False)
         self.T_base = brainstate.init.param(T_base, self.varshape, allow_none=False)
@@ -1052,12 +1060,13 @@ class ICav31_Ma2020(CalciumChannel):
         g_max: Union[brainstate.typing.ArrayLike, Callable] = 2.5e-4 * (u.cm / u.second),
         V_sh: Union[brainstate.typing.ArrayLike, Callable] = 0 * u.mV,
         T_base: brainstate.typing.ArrayLike = 3,
-        T: brainstate.typing.ArrayLike = 22.,
+        T: brainstate.typing.ArrayLike = u.celsius2kelvin(22.),
         name: Optional[str] = None,
     ):
         super().__init__(size=size, name=name, )
 
         # parameters
+        T = u.kelvin2celsius(T)
         self.g_max = brainstate.init.param(g_max, self.varshape, allow_none=False)
         self.T = brainstate.init.param(T, self.varshape, allow_none=False)
         self.T_base = brainstate.init.param(T_base, self.varshape, allow_none=False)
@@ -1143,12 +1152,13 @@ class ICaGrc_Ma2020(CalciumChannel):
         g_max: Union[brainstate.typing.ArrayLike, Callable] = 0.46 * (u.mS / u.cm ** 2),
         V_sh: Union[brainstate.typing.ArrayLike, Callable] = 0 * u.mV,
         T_base: brainstate.typing.ArrayLike = 3,
-        T: brainstate.typing.ArrayLike = 22.,
+        T: brainstate.typing.ArrayLike = u.celsius2kelvin(22.),
         name: Optional[str] = None,
     ):
         super().__init__(size=size, name=name, )
 
         # parameters
+        T = u.kelvin2celsius(T)
         self.g_max = brainstate.init.param(g_max, self.varshape, allow_none=False)
         self.T = brainstate.init.param(T, self.varshape, allow_none=False)
         self.T_base = brainstate.init.param(T_base, self.varshape, allow_none=False)

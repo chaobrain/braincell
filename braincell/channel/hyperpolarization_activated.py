@@ -261,11 +261,13 @@ class Ih1_Ma2020(Channel):
         V_sh: Union[brainstate.typing.ArrayLike, Callable] = 0. * u.mV,
         T_base_g: brainstate.typing.ArrayLike = 1.5,
         T_base_channel: brainstate.typing.ArrayLike = 3.,
-        T: brainstate.typing.ArrayLike = 22,
+        T: brainstate.typing.ArrayLike = u.celsius2kelvin(22),
         name: Optional[str] = None,
     ):
-        super().__init__(size=size, name=name, )
+        super().__init__(size=size, name=name)
+
         # parameters
+        T = u.kelvin2celsius(T)
         self.g_max = brainstate.init.param(g_max, self.varshape, allow_none=False)
         self.E = brainstate.init.param(E, self.varshape, allow_none=False)
         self.T = brainstate.init.param(T, self.varshape, allow_none=False)
@@ -344,11 +346,13 @@ class Ih2_Ma2020(Channel):
         V_sh: Union[brainstate.typing.ArrayLike, Callable] = 0. * u.mV,
         T_base_g: brainstate.typing.ArrayLike = 1.5,
         T_base_channel: brainstate.typing.ArrayLike = 3.,
-        T: brainstate.typing.ArrayLike = 22,
+        T: brainstate.typing.ArrayLike = u.celsius2kelvin(22),
         name: Optional[str] = None,
     ):
-        super().__init__(size=size, name=name, )
+        super().__init__(size=size, name=name)
+
         # parameters
+        T = u.kelvin2celsius(T)
         self.g_max = brainstate.init.param(g_max, self.varshape, allow_none=False)
         self.E = brainstate.init.param(E, self.varshape, allow_none=False)
         self.T = brainstate.init.param(T, self.varshape, allow_none=False)

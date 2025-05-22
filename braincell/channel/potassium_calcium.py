@@ -250,12 +250,13 @@ class IKca3_1_Ma2020(KCaChannel):
         size: brainstate.typing.Size,
         g_max: Union[brainstate.typing.ArrayLike, Callable] = 120. * (u.mS / u.cm ** 2),
         T_base: brainstate.typing.ArrayLike = 3.,
-        T: brainstate.typing.ArrayLike = 22,
+        T: brainstate.typing.ArrayLike = u.celsius2kelvin(22),
         name: Optional[str] = None,
     ):
         super().__init__(size=size, name=name, )
 
         # parameters
+        T = u.kelvin2celsius(T)
         self.T = brainstate.init.param(T, self.varshape, allow_none=False)
         self.T_base = brainstate.init.param(T_base, self.varshape, allow_none=False)
         self.phi = brainstate.init.param(T_base ** ((T - 37) / 10), self.varshape, allow_none=False)
@@ -324,12 +325,13 @@ class IKca2_2_Ma2020(KCaChannel):
         g_max: Union[brainstate.typing.ArrayLike, Callable] = 38. * (u.mS / u.cm ** 2),
         T_base: brainstate.typing.ArrayLike = 3.,
         diff: brainstate.typing.ArrayLike = 3.,
-        T: brainstate.typing.ArrayLike = 22,
+        T: brainstate.typing.ArrayLike = u.celsius2kelvin(22),
         name: Optional[str] = None,
     ):
         super().__init__(size=size, name=name, )
 
         # parameters
+        T = u.kelvin2celsius(T)
         self.T = brainstate.init.param(T, self.varshape, allow_none=False)
         self.T_base = brainstate.init.param(T_base, self.varshape, allow_none=False)
         self.phi = brainstate.init.param(T_base ** ((T - 23) / 10), self.varshape, allow_none=False)
@@ -431,12 +433,13 @@ class IKca1_1_Ma2020(KCaChannel):
         size: brainstate.typing.Size,
         g_max: Union[brainstate.typing.ArrayLike, Callable] = 10. * (u.mS / u.cm ** 2),
         T_base: brainstate.typing.ArrayLike = 3.,
-        T: brainstate.typing.ArrayLike = 22.,
+        T: brainstate.typing.ArrayLike = u.celsius2kelvin(22.),
         name: Optional[str] = None,
     ):
         super().__init__(size=size, name=name, )
 
         # parameters
+        T = u.kelvin2celsius(T)
         self.g_max = brainstate.init.param(g_max, self.varshape, allow_none=False)
         self.T = brainstate.init.param(T, self.varshape, allow_none=False)
         self.T_base = brainstate.init.param(T_base, self.varshape, allow_none=False)

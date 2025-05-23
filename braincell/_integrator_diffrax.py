@@ -16,6 +16,7 @@
 import functools
 import importlib.util
 
+import jax.numpy as jnp
 import brainunit as u
 
 from ._integrator_util import apply_standard_solver_step, VectorFiled, Y0, T, DT
@@ -34,6 +35,9 @@ __all__ = [
 
     # implicit methods
     'diffrax_bwd_euler_step',
+    'diffrax_kvaerno3_step',
+    'diffrax_kvaerno4_step',
+    'diffrax_kvaerno5_step',
 ]
 
 diffrax_installed = importlib.util.find_spec('diffrax') is not None
@@ -54,6 +58,9 @@ else:
 def _explicit_solver(solver, fn: VectorFiled, y0: Y0, t0: T, dt: DT, args=()):
     dt = u.Quantity(dt)
     t0 = u.get_magnitude(u.Quantity(t0).to_decimal(dt.unit))
+    dt = dt.mantissa
+    dt = jnp.asarray(dt)
+    t0 = jnp.asarray(t0)
     y1, _, _, state, _ = solver.step(
         diffrax.ODETerm(lambda t, y, args_: fn(t, y, *args_)[0]),
         t0,
@@ -369,7 +376,114 @@ def diffrax_bwd_euler_step(target: DiffEqModule, t: T, dt: DT, *args, tol=1e-5):
         - It is part of a suite of step functions that provide different integration methods.
         - The function is designed to be compatible with the braincell integration framework.
     """
-    _diffrax_implicit_solver(
+    _diffrax_explicit_solver(
         diffrax.ImplicitEuler(root_finder=diffrax.VeryChord(rtol=tol, atol=tol)),
         target, t, dt, *args
     )
+
+def diffrax_kvaerno3_step(target: DiffEqModule, t: T, dt: DT, *args, tol=1e-5):
+    """
+    Advances the state of a differential equation module by one integration step using the Kvaerno3 method
+    from the diffrax library: `diffrax.Kvaerno3 <https://docs.kidger.site/diffrax/api/solvers/ode_solvers/#diffrax.Kvaerno3>`_.
+
+    This function serves as a wrapper that applies the implicit Kvaerno3 solver (a third-order method)
+    to the given target module. It is intended for use in time-stepping routines where the state of the system
+    is updated in-place. The root-finding tolerance for the implicit step can be controlled via the `tol` parameter.
+
+    Args:
+        target (DiffEqModule): The differential equation module whose state will be advanced.
+        t (T): The current simulation time.
+        dt (DT): The numerical time step of the integration step.
+        *args: Additional arguments to be passed to the solver.
+        tol (float, optional): Tolerance for the root-finding algorithm used in the implicit step.
+            Defaults to 1e-5.
+
+    Returns:
+        None: The function updates the state of the target module in place.
+
+    Raises:
+        ModuleNotFoundError: If the diffrax library is not installed.
+
+    Notes:
+        - This function relies on the diffrax.Kvaerno3 solver for numerical integration.
+        - The root-finding algorithm used is diffrax.VeryChord, with both relative and absolute
+          tolerances set to `tol`.
+        - It is part of a suite of step functions that provide different integration methods.
+        - The function is designed to be compatible with the braincell integration framework.
+    """
+    _diffrax_explicit_solver(
+        diffrax.Kvaerno3(root_finder=diffrax.VeryChord(rtol=tol, atol=tol)),
+        target, t, dt, *args
+    )
+
+
+def diffrax_kvaerno4_step(target: DiffEqModule, t: T, dt: DT, *args, tol=1e-5):
+    """
+    Advances the state of a differential equation module by one integration step using the Kvaerno4 method
+    from the diffrax library: `diffrax.Kvaerno4 <https://docs.kidger.site/diffrax/api/solvers/ode_solvers/#diffrax.Kvaerno4>`_.
+
+    This function serves as a wrapper that applies the implicit Kvaerno4 solver (a fourth-order method)
+    to the given target module. It is intended for use in time-stepping routines where the state of the system
+    is updated in-place. The root-finding tolerance for the implicit step can be controlled via the `tol` parameter.
+
+    Args:
+        target (DiffEqModule): The differential equation module whose state will be advanced.
+        t (T): The current simulation time.
+        dt (DT): The numerical time step of the integration step.
+        *args: Additional arguments to be passed to the solver.
+        tol (float, optional): Tolerance for the root-finding algorithm used in the implicit step.
+            Defaults to 1e-5.
+
+    Returns:
+        None: The function updates the state of the target module in place.
+
+    Raises:
+        ModuleNotFoundError: If the diffrax library is not installed.
+
+    Notes:
+        - This function relies on the diffrax.Kvaerno4 solver for numerical integration.
+        - The root-finding algorithm used is diffrax.VeryChord, with both relative and absolute
+          tolerances set to `tol`.
+        - It is part of a suite of step functions that provide different integration methods.
+        - The function is designed to be compatible with the braincell integration framework.
+    """
+    _diffrax_explicit_solver(
+        diffrax.Kvaerno4(root_finder=diffrax.VeryChord(rtol=tol, atol=tol)),
+        target, t, dt, *args
+    )
+
+def diffrax_kvaerno5_step(target: DiffEqModule, t: T, dt: DT, *args, tol=1e-5):
+    """
+    Advances the state of a differential equation module by one integration step using the Kvaerno5 method
+    from the diffrax library: `diffrax.Kvaerno5 <https://docs.kidger.site/diffrax/api/solvers/ode_solvers/#diffrax.Kvaerno5>`_.
+
+    This function serves as a wrapper that applies the implicit Kvaerno5 solver (a fifth-order method)
+    to the given target module. It is intended for use in time-stepping routines where the state of the system
+    is updated in-place. The root-finding tolerance for the implicit step can be controlled via the `tol` parameter.
+
+    Args:
+        target (DiffEqModule): The differential equation module whose state will be advanced.
+        t (T): The current simulation time.
+        dt (DT): The numerical time step of the integration step.
+        *args: Additional arguments to be passed to the solver.
+        tol (float, optional): Tolerance for the root-finding algorithm used in the implicit step.
+            Defaults to 1e-5.
+
+    Returns:
+        None: The function updates the state of the target module in place.
+
+    Raises:
+        ModuleNotFoundError: If the diffrax library is not installed.
+
+    Notes:
+        - This function relies on the diffrax.Kvaerno5 solver for numerical integration.
+        - The root-finding algorithm used is diffrax.VeryChord, with both relative and absolute
+          tolerances set to `tol`.
+        - It is part of a suite of step functions that provide different integration methods.
+        - The function is designed to be compatible with the braincell integration framework.
+    """
+    _diffrax_explicit_solver(
+        diffrax.Kvaerno5(root_finder=diffrax.VeryChord(rtol=tol, atol=tol)),
+        target, t, dt, *args
+    )
+

@@ -20,6 +20,7 @@ import brainstate
 import brainunit as u
 import jax
 
+from ._integrator_util import T, DT
 from ._misc import set_module_as
 from ._protocol import DiffEqState, DiffEqModule
 
@@ -51,6 +52,7 @@ def _rk_update(
     coeff: Sequence,
     st: brainstate.State,
     y0: brainstate.typing.PyTree,
+    dt: DT,
     *ks
 ):
     assert len(coeff) == len(ks), 'The number of coefficients must be equal to the number of ks.'
@@ -60,7 +62,7 @@ def _rk_update(
         update = kds[0]
         for kd in kds[1:]:
             update += kd
-        return y0_ + update * brainstate.environ.get_dt()
+        return y0_ + update * dt
 
     st.value = jax.tree.map(_step, y0, *ks, is_leaf=u.math.is_quantity)
 
@@ -69,11 +71,10 @@ def _rk_update(
 def _general_rk_step(
     tableau: ButcherTableau,
     target: DiffEqModule,
-    t: u.Quantity[u.second],
+    t: T,
+    dt: DT,
     *args
 ):
-    dt = brainstate.environ.get_dt()
-
     # before one-step integration
     target.pre_integral(*args)
 
@@ -105,7 +106,7 @@ def _general_rk_step(
     for i in range(1, len(tableau.C)):
         with brainstate.environ.context(t=t + tableau.C[i] * dt), brainstate.check_state_value_tree():
             for st, y0_, *ks_ in zip(states, y0, *ks):
-                _rk_update(tableau.A[i], st, y0_, *ks_)
+                _rk_update(tableau.A[i], st, y0_, dt, *ks_)
             target.compute_derivative(*args)
             ks.append([st.derivative for st in states])
 
@@ -113,7 +114,7 @@ def _general_rk_step(
     with brainstate.check_state_value_tree():
         # update states with derivatives
         for st, y0_, *ks_ in zip(states, y0, *ks):
-            _rk_update(tableau.B, st, y0_, *ks_)
+            _rk_update(tableau.B, st, y0_, dt, *ks_)
 
     # after one-step integration
     target.post_integral(*args)
@@ -197,7 +198,8 @@ ralston4_tableau = ButcherTableau(
 @set_module_as('braincell')
 def euler_step(
     target: DiffEqModule,
-    t: u.Quantity[u.second],
+    t: T,
+    dt: DT,
     *args,
 ):
     r"""
@@ -230,6 +232,8 @@ def euler_step(
         The differential equation module that defines the system to be integrated.
     t : u.Quantity[u.second]
         The current time of the integration step.
+    dt : u.Quantity[u.second]
+        The numerical time step of the integration step.
     *args : 
         Additional arguments to be passed to the target's methods.
 
@@ -252,13 +256,14 @@ def euler_step(
 
     This tableau is defined elsewhere in the module as `euler_tableau`.
     """
-    _general_rk_step(euler_tableau, target, t, *args)
+    _general_rk_step(euler_tableau, target, t, dt, *args)
 
 
 @set_module_as('braincell')
 def midpoint_step(
     target: DiffEqModule,
-    t: u.Quantity[u.second],
+    t: T,
+    dt: DT,
     *args,
 ):
     r"""
@@ -294,6 +299,8 @@ def midpoint_step(
         The differential equation module that defines the system to be integrated.
     t : u.Quantity[u.second]
         The current time of the integration step.
+    dt : u.Quantity[u.second]
+        The numerical time step of the integration step.
     *args : 
         Additional arguments to be passed to the target's methods.
 
@@ -317,13 +324,14 @@ def midpoint_step(
 
     This tableau is defined elsewhere in the module as `midpoint_tableau`.
     """
-    _general_rk_step(midpoint_tableau, target, t, *args)
+    _general_rk_step(midpoint_tableau, target, t, dt, *args)
 
 
 @set_module_as('braincell')
 def rk2_step(
     target: DiffEqModule,
-    t: u.Quantity[u.second],
+    t: T,
+    dt: DT,
     *args,
 ):
     r"""
@@ -359,6 +367,8 @@ def rk2_step(
         The differential equation module that defines the system to be integrated.
     t : u.Quantity[u.second]
         The current time of the integration step.
+    dt : u.Quantity[u.second]
+        The numerical time step of the integration step.
     *args : 
         Additional arguments to be passed to the target's methods.
 
@@ -382,13 +392,14 @@ def rk2_step(
 
     This tableau is defined elsewhere in the module as `rk2_tableau`.
     """
-    _general_rk_step(rk2_tableau, target, t, *args)
+    _general_rk_step(rk2_tableau, target, t, dt, *args)
 
 
 @set_module_as('braincell')
 def heun2_step(
     target: DiffEqModule,
-    t: u.Quantity[u.second],
+    t: T,
+    dt: DT,
     *args,
 ):
     r"""
@@ -425,6 +436,8 @@ def heun2_step(
         The differential equation module that defines the system to be integrated.
     t : u.Quantity[u.second]
         The current time of the integration step.
+    dt : u.Quantity[u.second]
+        The numerical time step of the integration step.
     *args : 
         Additional arguments to be passed to the target's methods.
 
@@ -447,13 +460,14 @@ def heun2_step(
     \end{array}
     $$
     """
-    _general_rk_step(heun2_tableau, target, t, *args)
+    _general_rk_step(heun2_tableau, target, t, dt, *args)
 
 
 @set_module_as('braincell')
 def ralston2_step(
     target: DiffEqModule,
-    t: u.Quantity[u.second],
+    t: T,
+    dt: DT,
     *args,
 ):
     r"""
@@ -490,6 +504,8 @@ def ralston2_step(
         The differential equation module that defines the system to be integrated.
     t : u.Quantity[u.second]
         The current time of the integration step.
+    dt : u.Quantity[u.second]
+        The numerical time step of the integration step.
     *args : 
         Additional arguments to be passed to the target's methods.
 
@@ -512,13 +528,14 @@ def ralston2_step(
     \end{array}
     $$
     """
-    _general_rk_step(ralston2_tableau, target, t, *args)
+    _general_rk_step(ralston2_tableau, target, t, dt, *args)
 
 
 @set_module_as('braincell')
 def rk3_step(
     target: DiffEqModule,
-    t: u.Quantity[u.second],
+    t: T,
+    dt: DT,
     *args,
 ):
     r"""
@@ -554,6 +571,8 @@ def rk3_step(
         The differential equation module that defines the system to be integrated.
     t : u.Quantity[u.second]
         The current time of the integration step.
+    dt : u.Quantity[u.second]
+        The numerical time step of the integration step.
     *args : 
         Additional arguments to be passed to the target's methods.
 
@@ -567,13 +586,14 @@ def rk3_step(
     This method uses the Butcher tableau specific to the third-order Runge-Kutta method,
     which is defined elsewhere in the module as `rk3_tableau`.
     """
-    _general_rk_step(rk3_tableau, target, t, *args)
+    _general_rk_step(rk3_tableau, target, t, dt, *args)
 
 
 @set_module_as('braincell')
 def heun3_step(
     target: DiffEqModule,
-    t: u.Quantity[u.second],
+    t: T,
+    dt: DT,
     *args,
 ):
     r"""
@@ -609,6 +629,8 @@ def heun3_step(
         The differential equation module that defines the system to be integrated.
     t : u.Quantity[u.second]
         The current time of the integration step.
+    dt : u.Quantity[u.second]
+        The numerical time step of the integration step.
     *args : 
         Additional arguments to be passed to the target's methods.
 
@@ -622,13 +644,14 @@ def heun3_step(
     This method uses the Butcher tableau specific to Heun's third-order method,
     which is defined elsewhere in the module as `heun3_tableau`.
     """
-    _general_rk_step(heun3_tableau, target, t, *args)
+    _general_rk_step(heun3_tableau, target, t, dt, *args)
 
 
 @set_module_as('braincell')
 def ssprk3_step(
     target: DiffEqModule,
-    t: u.Quantity[u.second],
+    t: T,
+    dt: DT,
     *args,
 ):
     r"""
@@ -664,6 +687,8 @@ def ssprk3_step(
         The differential equation module that defines the system to be integrated.
     t : u.Quantity[u.second]
         The current time of the integration step.
+    dt : u.Quantity[u.second]
+        The numerical time step of the integration step.
     *args : 
         Additional arguments to be passed to the target's methods.
 
@@ -677,13 +702,14 @@ def ssprk3_step(
     This method uses the Butcher tableau specific to the SSPRK3 method,
     which is defined elsewhere in the module as `ssprk3_tableau`.
     """
-    _general_rk_step(ssprk3_tableau, target, t, *args)
+    _general_rk_step(ssprk3_tableau, target, t, dt, *args)
 
 
 @set_module_as('braincell')
 def ralston3_step(
     target: DiffEqModule,
-    t: u.Quantity[u.second],
+    t: T,
+    dt: DT,
     *args,
 ):
     r"""
@@ -719,6 +745,8 @@ def ralston3_step(
         The differential equation module that defines the system to be integrated.
     t : u.Quantity[u.second]
         The current time of the integration step.
+    dt : u.Quantity[u.second]
+        The numerical time step of the integration step.
     *args : 
         Additional arguments to be passed to the target's methods.
 
@@ -732,13 +760,14 @@ def ralston3_step(
     This method uses the Butcher tableau specific to Ralston's third-order method,
     which is defined elsewhere in the module as `ralston3_tableau`.
     """
-    _general_rk_step(ralston3_tableau, target, t, *args)
+    _general_rk_step(ralston3_tableau, target, t, dt, *args)
 
 
 @set_module_as('braincell')
 def rk4_step(
     target: DiffEqModule,
-    t: u.Quantity[u.second],
+    t: T,
+    dt: DT,
     *args,
 ):
     r"""
@@ -776,6 +805,8 @@ def rk4_step(
         The differential equation module that defines the system to be integrated.
     t : u.Quantity[u.second]
         The current time of the integration step.
+    dt : u.Quantity[u.second]
+        The numerical time step of the integration step.
     *args : 
         Additional arguments to be passed to the target's methods.
 
@@ -789,13 +820,14 @@ def rk4_step(
     This method uses the Butcher tableau specific to the classical fourth-order Runge-Kutta method,
     which is defined elsewhere in the module as `rk4_tableau`.
     """
-    _general_rk_step(rk4_tableau, target, t, *args)
+    _general_rk_step(rk4_tableau, target, t, dt, *args)
 
 
 @set_module_as('braincell')
 def ralston4_step(
     target: DiffEqModule,
-    t: u.Quantity[u.second],
+    t: T,
+    dt: DT,
     *args,
 ):
     r"""
@@ -832,6 +864,8 @@ def ralston4_step(
         The differential equation module that defines the system to be integrated.
     t : u.Quantity[u.second]
         The current time of the integration step.
+    dt : u.Quantity[u.second]
+        The numerical time step of the integration step.
     *args : 
         Additional arguments to be passed to the target's methods.
 
@@ -845,4 +879,4 @@ def ralston4_step(
     This method uses the Butcher tableau specific to Ralston's fourth-order method,
     which is defined elsewhere in the module as `ralston4_tableau`.
     """
-    _general_rk_step(ralston4_tableau, target, t, *args)
+    _general_rk_step(ralston4_tableau, target, t, dt, *args)

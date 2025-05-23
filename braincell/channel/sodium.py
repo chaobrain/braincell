@@ -242,11 +242,12 @@ class INa_Ba2002(INa_p3q_markov):
     def __init__(
         self,
         size: brainstate.typing.Size,
-        T: brainstate.typing.ArrayLike = 36.,
+        T: brainstate.typing.ArrayLike = u.celsius2kelvin(36.),
         g_max: Union[brainstate.typing.ArrayLike, Callable] = 90. * (u.mS / u.cm ** 2),
         V_sh: Union[brainstate.typing.ArrayLike, Callable] = -50. * u.mV,
         name: Optional[str] = None,
     ):
+        T = u.kelvin2celsius(T)
         super().__init__(
             size,
             name=name,
@@ -440,12 +441,13 @@ class INa_Rsg(SodiumChannel):
     def __init__(
         self,
         size: brainstate.typing.Size,
-        T: brainstate.typing.ArrayLike = 22.,
+        T: brainstate.typing.ArrayLike = u.celsius2kelvin(22.),
         g_max: Union[brainstate.typing.ArrayLike, Callable] = 15. * (u.mS / u.cm ** 2),
         name: Optional[str] = None,
     ):
         super().__init__(size=size, name=name, )
 
+        T = u.kelvin2celsius(T)
         self.phi = brainstate.init.param(3 ** ((T - 22) / 10), self.varshape, allow_none=False)
         self.g_max = brainstate.init.param(g_max, self.varshape, allow_none=False)
 

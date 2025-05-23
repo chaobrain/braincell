@@ -38,7 +38,7 @@ __all__ = [
     'rk4_step',
     'ralston4_step',
 
-    # diffrax methods
+    # diffrax explicit methods
     'diffrax_euler_step',
     'diffrax_heun_step',
     'diffrax_midpoint_step',
@@ -47,6 +47,12 @@ __all__ = [
     'diffrax_tsit5_step',
     'diffrax_dopri5_step',
     'diffrax_dopri8_step',
+
+    # diffrax implicit methods
+    'diffrax_bwd_euler_step',
+    'diffrax_kvaerno3_step',
+    'diffrax_kvaerno4_step',
+    'diffrax_kvaerno5_step',
 ]
 
 all_integrators = {k.replace('_step', ''): v for k, v in locals().items() if k.endswith('_step')}

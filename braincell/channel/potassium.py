@@ -239,10 +239,11 @@ class IKDR_Ba2002(_IK_p4_markov):
         g_max: Union[brainstate.typing.ArrayLike, Callable] = 10. * (u.mS / u.cm ** 2),
         V_sh: Union[brainstate.typing.ArrayLike, Callable] = -50. * u.mV,
         T_base: brainstate.typing.ArrayLike = 3.,
-        T: brainstate.typing.ArrayLike = 36.,
+        T: brainstate.typing.ArrayLike = u.celsius2kelvin(36.),
         phi: Optional[Union[brainstate.typing.ArrayLike, Callable]] = None,
         name: Optional[str] = None,
     ):
+        T = u.kelvin2celsius(T)
         phi = T_base ** ((T - 36) / 10) if phi is None else phi
         super().__init__(
             size,
@@ -1074,13 +1075,14 @@ class IKv11_Ak2007(PotassiumChannel):
         gunit: Union[brainstate.typing.ArrayLike, Callable] = 16. * 1e-9 * u.mS,
         V_sh: Union[brainstate.typing.ArrayLike, Callable] = 0. * u.mV,
         T_base: brainstate.typing.ArrayLike = 2.7,
-        T: brainstate.typing.ArrayLike = 22,
+        T: brainstate.typing.ArrayLike = u.celsius2kelvin(22),
         name: Optional[str] = None,
     ):
 
         super().__init__(size=size, name=name, )
 
         # parameters
+        T = u.kelvin2celsius(T)
         self.g_max = brainstate.init.param(g_max, self.varshape, allow_none=False)
         self.gateCurrent = brainstate.init.param(gateCurrent, self.varshape, allow_none=False)
         self.gunit = brainstate.init.param(gunit, self.varshape, allow_none=False)
@@ -1146,13 +1148,14 @@ class IKv34_Ma2020(PotassiumChannel):
         g_max: Union[brainstate.typing.ArrayLike, Callable] = 4. * (u.mS / u.cm ** 2),
         V_sh: Union[brainstate.typing.ArrayLike, Callable] = -11. * u.mV,
         T_base: brainstate.typing.ArrayLike = 3.,
-        T: brainstate.typing.ArrayLike = 22,
+        T: brainstate.typing.ArrayLike = u.celsius2kelvin(22),
         name: Optional[str] = None,
     ):
         super().__init__(size=size, name=name, )
-        # parameters
-        self.g_max = brainstate.init.param(g_max, self.varshape, allow_none=False)
 
+        # parameters
+        T = u.kelvin2celsius(T)
+        self.g_max = brainstate.init.param(g_max, self.varshape, allow_none=False)
         self.T = brainstate.init.param(T, self.varshape, allow_none=False)
         self.T_base = brainstate.init.param(T_base, self.varshape, allow_none=False)
         self.phi = brainstate.init.param(T_base ** ((T - 37) / 10), self.varshape, allow_none=False)
@@ -1235,14 +1238,14 @@ class IKv43_Ma2020(PotassiumChannel):
         g_max: Union[brainstate.typing.ArrayLike, Callable] = 3.2 * (u.mS / u.cm ** 2),
         V_sh: Union[brainstate.typing.ArrayLike, Callable] = 0. * u.mV,
         T_base: brainstate.typing.ArrayLike = 3.,
-        T: brainstate.typing.ArrayLike = 22,
+        T: brainstate.typing.ArrayLike = u.celsius2kelvin(22),
         name: Optional[str] = None,
     ):
         super().__init__(size=size, name=name, )
 
         # parameters
+        T = u.kelvin2celsius(T)
         self.g_max = brainstate.init.param(g_max, self.varshape, allow_none=False)
-
         self.T = brainstate.init.param(T, self.varshape, allow_none=False)
         self.T_base = brainstate.init.param(T_base, self.varshape, allow_none=False)
         self.phi = brainstate.init.param(T_base ** ((T - 25.5) / 10), self.varshape, allow_none=False)
@@ -1338,14 +1341,14 @@ class IKM_Grc_Ma2020(PotassiumChannel):
         g_max: Union[brainstate.typing.ArrayLike, Callable] = 0.25 * (u.mS / u.cm ** 2),
         V_sh: Union[brainstate.typing.ArrayLike, Callable] = 0. * u.mV,
         T_base: brainstate.typing.ArrayLike = 3.,
-        T: brainstate.typing.ArrayLike = 22,
+        T: brainstate.typing.ArrayLike = u.celsius2kelvin(22),
         name: Optional[str] = None,
     ):
         super().__init__(size=size, name=name, )
 
         # parameters
+        T = u.kelvin2celsius(T)
         self.g_max = brainstate.init.param(g_max, self.varshape, allow_none=False)
-
         self.T = brainstate.init.param(T, self.varshape, allow_none=False)
         self.T_base = brainstate.init.param(T_base, self.varshape, allow_none=False)
         self.phi = brainstate.init.param(T_base ** ((T - 22) / 10), self.varshape, allow_none=False)

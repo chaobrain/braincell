@@ -19,7 +19,6 @@ import brainstate
 import brainunit as u
 import numpy as np
 
-from ._typing import SectionName
 from ._morphology_utils import (
     calculate_total_resistance_and_area,
     generate_interpolated_nodes,
@@ -27,6 +26,7 @@ from ._morphology_utils import (
     compute_line_ratios,
     init_coupling_weight_nodes,
 )
+from ._typing import SectionName
 
 __all__ = [
     'Section',
@@ -107,11 +107,11 @@ class Section(brainstate.util.PrettyObject):
     def __init__(
         self,
         name: SectionName,
-        positions: u.Quantity,
-        diam: u.Quantity,
+        positions: u.Quantity[u.meter],
+        diam: u.Quantity[u.meter],
         nseg: int,
-        Ra: u.Quantity,
-        cm: u.Quantity,
+        Ra: u.Quantity[u.ohm * u.cm],
+        cm: u.Quantity[u.uF / u.cm ** 2],
     ):
         """
         Initialize the Section.
@@ -152,7 +152,7 @@ class Section(brainstate.util.PrettyObject):
             - R_right (float): Resistance from the segment’s right half
         """
 
-        node_pre = u.math.hstack((self.positions, self.diam))
+        node_pre = u.math.hstack((self.positions, u.math.expand_dims(self.diam, axis=1)))
         node_after = generate_interpolated_nodes(node_pre, self.nseg)
         node_after = u.math.asarray(node_after)
 
@@ -278,17 +278,20 @@ class CylinderSection(Section):
         Ra: u.Quantity = 100 * u.ohm * u.cm,
         cm: u.Quantity = 1.0 * u.uF / u.cm ** 2,
     ):
-        assert length> 0 * u.um, "Length must be positive."
+        assert u.math.ndim(length) == 0, "Length must be a scalar."
+        assert u.math.ndim(diam) == 0, "Diameter must be a scalar."
+        assert length > 0 * u.um, "Length must be positive."
         assert diam > 0 * u.um, "Diameter must be positive."
-        points = u.math.array([
-            [0.0 * u.um, 0.0 * u.um, 0.0 * u.um, diam],
-            [length, 0.0 * u.um, 0.0 * u.um, diam]
-        ])
-        positions = points[:, :3]
-        diam = points[:, -1].reshape((-1, 1))
+        position = u.math.asarray(
+            [
+                [0.0 * u.um, 0.0 * u.um, 0.0 * u.um],
+                [length, 0.0 * u.um, 0.0 * u.um]
+            ]
+        )
+        diam = u.math.asarray([diam, diam])
         super().__init__(
             name=name,
-            positions=positions,
+            positions=position,
             diam=diam,
             nseg=nseg,
             Ra=Ra,
@@ -307,8 +310,10 @@ class PointSection(Section):
     ----------
     name : Hashable
         Unique identifier for the section
-    points : u.Quantity[u.meter]
-        Array of shape (N, 4) containing points as [x, y, z, diameter]
+    position : u.Quantity[u.meter]
+        Array of shape (N, 3) containing points as [x, y, z]
+    diam: u.Quantity[u.meter]
+        Array of shape (N) containing diameters at each point.
     nseg : int, optional
         Number of segments to divide the section into, default=1
     Ra : u.Quantity[u.ohm * u.cm], optional
@@ -326,7 +331,8 @@ class PointSection(Section):
     def __init__(
         self,
         name: SectionName,
-        points: u.Quantity[u.meter],
+        position: u.Quantity[u.meter],
+        diam: u.Quantity[u.meter],
         nseg: int = 1,
         Ra: u.Quantity = 100 * u.ohm * u.cm,
         cm: u.Quantity = 1.0 * u.uF / u.cm ** 2,
@@ -336,21 +342,23 @@ class PointSection(Section):
 
         Parameters:
             name (str): Section name identifier.
-            points (list or np.ndarray, optional): Array of shape (N, 4) with [x, y, z, diameter].
+            position (u.Quantity[u.meter]): Array of shape (N, 3) containing points
+                as [x, y, z].
+            diam (u.Quantity[u.meter]): Array of shape (N) containing diameters
+                at each point.
             nseg (int): Number of segments to divide the section into.
             Ra (float): Axial resistivity in ohm·cm.
             cm (float): Membrane capacitance in µF/cm².
         """
-        # Case 1: user provides custom 3D points
-        points = u.math.array(points)
-        assert points.shape[1] == 4, "points must be shape (N, 4): [x, y, z, diameter]"
-        assert u.math.all(points[:, 3] > 0 * u.um), "All diameters must be positive."
-        positions = points[:, :3]
-        diam = points[:, -1].reshape((-1, 1))
+        position = u.math.array(position)
+        diam = u.math.array(diam)
+        assert position.shape[1] == 3, "points must be shape (N, 3): [x, y, z]"
+        assert u.math.all(diam > 0 * u.um), "All diameters must be positive."
+        assert len(position) == len(diam), "points and diam must have the same length."
 
         super().__init__(
             name=name,
-            positions=positions,
+            positions=position,
             diam=diam,
             nseg=nseg,
             Ra=Ra,
@@ -454,7 +462,8 @@ class Morphology(brainstate.util.PrettyObject):
     def add_point_section(
         self,
         name: SectionName,
-        points: u.Quantity[u.meter],
+        position: u.Quantity[u.meter],
+        diam: u.Quantity[u.meter],
         nseg: int = 1,
         Ra: u.Quantity = 100 * u.ohm * u.cm,
         cm: u.Quantity = 1.0 * u.uF / u.cm ** 2,
@@ -470,8 +479,10 @@ class Morphology(brainstate.util.PrettyObject):
         ----------
         name : Hashable
             Unique identifier for the section
-        points : u.Quantity[u.cm]
-            Array of shape (N, 4) with each point as [x, y, z, diameter]
+        position : u.Quantity[u.meter]
+            Array of shape (N, 3) containing points as [x, y, z]
+        diam: u.Quantity[u.meter]
+            Array of shape (N) containing diameters at each point.
         nseg : int, optional
             Number of segments to divide the section into, default=1
         Ra : u.Quantity[u.ohm * u.cm], optional
@@ -490,7 +501,7 @@ class Morphology(brainstate.util.PrettyObject):
         After creation, this section can be connected to other sections using the
         `connect` method.
         """
-        section = PointSection(name, points=points, nseg=nseg, Ra=Ra, cm=cm)
+        section = PointSection(name, position=position, diam=diam, nseg=nseg, Ra=Ra, cm=cm)
         if name in self.sections:
             raise ValueError(f"Section with name '{name}' already exists.")
         self.sections[name] = section
@@ -603,7 +614,7 @@ class Morphology(brainstate.util.PrettyObject):
 
         for section_name, section_data in section_dicts.items():
             assert isinstance(section_data, dict), 'section_data must be a dictionary.'
-            if 'points' in section_data:
+            if 'position' in section_data:
                 self.add_point_section(name=section_name, **section_data)
             elif 'length' in section_data and 'diam' in section_data:
                 self.add_cylinder_section(name=section_name, **section_data)
@@ -707,7 +718,6 @@ class Morphology(brainstate.util.PrettyObject):
         self._conductance_matrix = init_coupling_weight_nodes(g_left, g_right, connection_seg_list)
 
         # COO, CSR  ==> Dense
-
 
     def construct_area(self):
         area_list = []

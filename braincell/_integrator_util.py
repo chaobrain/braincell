@@ -22,16 +22,27 @@ import jax.numpy as jnp
 
 from ._protocol import DiffEqState, DiffEqModule
 
+T = u.Quantity[u.second]
+DT = u.Quantity[u.second]
+VectorFiled = Callable
+Y0 = jax.Array
+Y1 = jax.Array
+Jacobian = jax.Array
+Args = Tuple
+Aux = Dict
 
-def _check_diffeq_state_derivative(
-    st: DiffEqState,
-    dt: u.Quantity
-):
-    a = u.get_unit(st.derivative) * u.get_unit(dt)
-    b = u.get_unit(st.value)
-    assert a.has_same_dim(b), f'Unit mismatch. Got {a} != {b}'
-    if isinstance(st.derivative, u.Quantity):
-        st.derivative = st.derivative.in_unit(u.get_unit(st.value) / u.get_unit(dt))
+
+def _check_diffeq_state_derivative(state: DiffEqState, dt: u.Quantity):
+    def _fn_checking(state_val, state_derivative):
+        a = u.get_unit(state_derivative) * u.get_unit(dt)
+        b = u.get_unit(state_val)
+        assert a.has_same_dim(b), f'Unit mismatch. Got {a} != {b}'
+        if isinstance(state_derivative, u.Quantity):
+            return state_derivative.in_unit(u.get_unit(state_val) / u.get_unit(dt))
+        else:
+            return state_derivative
+
+    state.derivative = jax.tree.map(_fn_checking, state.value, state.derivative, is_leaf=u.math.is_quantity)
 
 
 def _merging(leaves, method: str):
@@ -85,6 +96,7 @@ def _assign_arr_to_states(
 
 def _transform_diffeq_module_into_dimensionless_fn(
     target: DiffEqModule,
+    dt: DT,
     method: str = 'concat'
 ):
     assert method in ['concat', 'stack'], f'Unknown method: {method}'
@@ -95,14 +107,13 @@ def _transform_diffeq_module_into_dimensionless_fn(
 
     def vector_field(t, y_dimensionless, *args):
         with brainstate.StateTraceStack() as trace:
-
             # y: dimensionless states
             _assign_arr_to_states(y_dimensionless, diffeq_states, method=method)
             target.compute_derivative(*args)
 
             # derivative_arr: dimensionless derivatives
             for st in diffeq_states.values():
-                _check_diffeq_state_derivative(st, brainstate.environ.get_dt())
+                _check_diffeq_state_derivative(st, dt)  # THIS is important.
             derivative_dimensionless = _dict_derivative_to_arr(diffeq_states, method=method)
             other_vals = {key: st.value for key, st in other_states.items()}
 
@@ -117,11 +128,12 @@ def _transform_diffeq_module_into_dimensionless_fn(
 
 def apply_standard_solver_step(
     solver_step: Callable[
-        [Callable, jax.Array, u.Quantity[u.second], u.Quantity[u.second], Any],
-        Any
+        [VectorFiled, Y0, T, DT, Args],
+        Tuple[Y1, Aux]
     ],
     target: DiffEqModule,
-    t: u.Quantity[u.second],
+    t: T,
+    dt: DT,
     *args,
     merging_method: str = 'concat',
 ):
@@ -150,6 +162,8 @@ def apply_standard_solver_step(
         The differential equation module to be integrated.
     t : u.Quantity[u.second]
         The current time of the integration.
+    dt: u.Quantity[u.second]
+        The time step of the integration.
     *args : Any
         Additional arguments to be passed to the pre_integral, post_integral, and compute_derivative methods.
     merging_method: str
@@ -162,14 +176,10 @@ def apply_standard_solver_step(
     assert merging_method in ['concat', 'stack'], f'Unknown merging method: {merging_method}'
 
     # pre integral
-    dt = u.get_magnitude(brainstate.environ.get_dt())
-    dt = brainstate.environ.get_dt()
+    # dt = brainstate.environ.get_dt()
     target.pre_integral(*args)
     dimensionless_fn, diffeq_states, other_states = (
-        _transform_diffeq_module_into_dimensionless_fn(
-            target,
-            method=merging_method,
-        )
+        _transform_diffeq_module_into_dimensionless_fn(target, dt=dt, method=merging_method)
     )
 
     # one-step integration
@@ -189,10 +199,10 @@ def apply_standard_solver_step(
 
 
 def jacrev_last_dim(
-    fn: Callable[[...], jax.Array] | Callable[[...], Tuple[jax.Array, Any]],
-    hid_vals: jax.Array,
+    fn: Callable[[Y0], Y1] | Callable[[Y0], Tuple[Y1, Aux]],
+    hid_vals: Y0,
     has_aux: bool = False,
-) -> Tuple[jax.Array, jax.Array] | Tuple[jax.Array, jax.Array, Any]:
+) -> Tuple[Jacobian, Y1] | Tuple[Jacobian, Y1, Aux]:
     """
     Compute the reverse-mode Jacobian of a function with respect to its last dimension.
 
@@ -201,17 +211,15 @@ def jacrev_last_dim(
     JAX's reverse-mode automatic differentiation (jacrev) for efficient computation.
 
     Args:
-        fn (Callable[[...], jax.Array] | Callable[[...], Tuple[jax.Array, Any]]):
-            The function for which to compute the Jacobian. It can either return a single
+        fn: The function for which to compute the Jacobian. It can either return a single
             JAX array or a tuple containing a JAX array and auxiliary values.
-        hid_vals (jax.Array):
+        hid_vals:
             The input values for which to compute the Jacobian. The last dimension is
             considered as the dimension of interest.
         has_aux (bool, optional):
             Whether the function `fn` returns auxiliary values. Defaults to False.
 
     Returns:
-        Tuple[jax.Array, jax.Array] | Tuple[jax.Array, jax.Array, Any]:
             If `has_aux` is False, returns a tuple containing the Jacobian matrix and the
             output of the function `fn`. If `has_aux` is True, returns a tuple containing
             the Jacobian matrix, the output of the function `fn`, and the auxiliary values.

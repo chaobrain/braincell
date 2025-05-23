@@ -22,9 +22,7 @@ import numpy as np
 from ._base import HHTypedNeuron, IonChannel
 from ._integrator import get_integrator
 from ._morphology import Morphology
-from ._morphology_utils import (
-    diffusive_coupling,
-)
+from ._morphology_utils import diffusive_coupling
 from ._protocol import DiffEqState
 from ._typing import Initializer
 
@@ -175,10 +173,27 @@ class MultiCompartment(HHTypedNeuron):
 
     @property
     def pop_size(self) -> Tuple[int, ...]:
+        """
+        Returns the shape of the neuron population, excluding the compartment dimension.
+
+        Returns
+        -------
+        Tuple[int, ...]
+            The shape of the neuron population (all dimensions except the last, which
+            corresponds to the number of compartments).
+        """
         return self.varshape[:-1]
 
     @property
     def n_compartment(self) -> int:
+        """
+        Returns the number of compartments in the neuron model.
+
+        Returns
+        -------
+        int
+            The number of compartments, corresponding to the last dimension of the neuron's variable shape.
+        """
         return self.varshape[-1]
 
     def init_state(self, batch_size=None):
@@ -312,7 +327,8 @@ class MultiCompartment(HHTypedNeuron):
         """
         last_V = self.V.value
         t = brainstate.environ.get('t')
-        self.solver(self, t, I_ext)
+        dt = brainstate.environ.get('dt')
+        self.solver(self, t, dt, I_ext)
         return self.get_spike(last_V, self.V.value)
 
     def get_spike(self, last_V, next_V):

@@ -58,3 +58,15 @@ Diffrax Explicit Integrators
    diffrax_tsit5_step
    diffrax_dopri5_step
    diffrax_dopri8_step
+
+
+Diffrax Implicit Integrators
+-----------------------------
+
+.. autosummary::
+   :toctree: generated
+
+    diffrax_bwd_euler_step
+    diffrax_kvaerno3_step
+    diffrax_kvaerno4_step
+    diffrax_kvaerno5_step

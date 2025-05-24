@@ -20,9 +20,9 @@ import brainstate
 import brainunit as u
 import jax
 
-from ._integrator_util import T, DT
 from ._misc import set_module_as
 from ._protocol import DiffEqState, DiffEqModule
+from ._typing import T, DT
 
 __all__ = [
     'euler_step',

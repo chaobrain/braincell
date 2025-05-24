@@ -21,15 +21,7 @@ import jax
 import jax.numpy as jnp
 
 from ._protocol import DiffEqState, DiffEqModule
-
-T = u.Quantity[u.second]
-DT = u.Quantity[u.second]
-VectorFiled = Callable
-Y0 = jax.Array
-Y1 = jax.Array
-Jacobian = jax.Array
-Args = Tuple
-Aux = Dict
+from ._typing import T, DT, Y0, Y1, Aux, Jacobian, VectorFiled, Args
 
 
 def _check_diffeq_state_derivative(state: DiffEqState, dt: u.Quantity):

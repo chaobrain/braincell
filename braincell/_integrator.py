@@ -24,6 +24,7 @@ __all__ = [
 
     # exponential Euler
     'exp_euler_step',
+    'ind_exp_euler_step',
 
     # runge-kutta methods
     'euler_step',

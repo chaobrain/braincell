@@ -22,6 +22,7 @@ Exponential Integrators
    :toctree: generated/
 
    exp_euler_step
+   ind_exp_euler_step
 
 
 Runge-Kutta Integrators

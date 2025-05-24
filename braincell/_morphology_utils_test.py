@@ -380,7 +380,7 @@ class TestGenerateInterpolatedNodes(unittest.TestCase):
         node_pre = u.Quantity(np.array([
             [0, 0, 0, 1],
             [10, 0, 0, 2]
-        ]), unit = u.um)
+        ]), unit=u.um)
         nseg = 2
         result = generate_interpolated_nodes(node_pre, nseg)
         self.assertEqual(result.shape, (5, 4))

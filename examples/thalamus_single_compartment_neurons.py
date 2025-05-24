@@ -47,7 +47,7 @@ class HTC(ThalamusNeuron):
         size,
         gKL=0.01 * (u.mS / u.cm ** 2),
         V_initializer=brainstate.init.Constant(-65. * u.mV),
-        solver: str = 'exp_euler'
+        solver: str = 'ind_exp_euler'
     ):
         super().__init__(size, V_initializer=V_initializer, V_th=20. * u.mV, solver=solver)
 
@@ -79,7 +79,7 @@ class RTC(ThalamusNeuron):
         size,
         gKL=0.01 * (u.mS / u.cm ** 2),
         V_initializer=brainstate.init.Constant(-65. * u.mV),
-        solver: str = 'exp_euler'
+        solver: str = 'ind_exp_euler'
     ):
         super().__init__(size, V_initializer=V_initializer, V_th=20 * u.mV, solver=solver)
 
@@ -110,7 +110,7 @@ class IN(ThalamusNeuron):
         self,
         size,
         V_initializer=brainstate.init.Constant(-70. * u.mV),
-        solver: str = 'exp_euler'
+        solver: str = 'ind_exp_euler'
     ):
         super().__init__(size, V_initializer=V_initializer, V_th=20. * u.mV, solver=solver)
 
@@ -139,7 +139,7 @@ class TRN(ThalamusNeuron):
         self,
         size,
         V_initializer=brainstate.init.Constant(-70. * u.mV), gl=0.0075,
-        solver: str = 'exp_euler'
+        solver: str = 'ind_exp_euler'
     ):
         super().__init__(size, V_initializer=V_initializer, V_th=20. * u.mV, solver=solver)
 
@@ -174,7 +174,7 @@ def try_trn_neuron():
     # neu = HTC(1)  # [n_neuron, ]
     # neu = IN(1)  # [n_neuron, ]
     # neu = RTC(1)  # [n_neuron, ]
-    neu = HTC(1, solver='exp_euler')  # [n_neuron,]
+    neu = HTC(1, solver='ind_exp_euler')  # [n_neuron,]
     neu.init_state()
 
     t0 = time.time()

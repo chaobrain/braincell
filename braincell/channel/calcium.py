@@ -166,17 +166,17 @@ class ICaN_IS2008(CalciumChannel):
     def init_state(self, V, Ca: IonInfo, batch_size: int = None):
         self.p = DiffEqState(brainstate.init.param(u.math.zeros, self.varshape, batch_size))
 
-    def reset_state(self, V, Ca, batch_size=None):
+    def reset_state(self, V, Ca: IonInfo, batch_size=None):
         V = V.to_decimal(u.mV)
         self.p.value = 1.0 / (1 + u.math.exp(-(V + 43.) / 5.2))
 
-    def compute_derivative(self, V, Ca):
+    def compute_derivative(self, V, Ca: IonInfo):
         V = V.to_decimal(u.mV)
         phi_p = 1.0 / (1 + u.math.exp(-(V + 43.) / 5.2))
         p_inf = 2.7 / (u.math.exp(-(V + 55.) / 15.) + u.math.exp((V + 55.) / 15.)) + 1.6
         self.p.derivative = self.phi * (phi_p - self.p.value) / p_inf / u.ms
 
-    def current(self, V, Ca):
+    def current(self, V, Ca: IonInfo):
         M = Ca.C / (Ca.C + 0.2 * u.mM)
         g = self.g_max * M * self.p.value
         return g * (self.E - V)
@@ -237,11 +237,11 @@ class _ICa_p2q_ss(CalciumChannel):
             assert self.p.value.shape[0] == batch_size
             assert self.q.value.shape[0] == batch_size
 
-    def compute_derivative(self, V, Ca):
+    def compute_derivative(self, V, Ca: IonInfo):
         self.p.derivative = self.phi_p * (self.f_p_inf(V) - self.p.value) / self.f_p_tau(V) / u.ms
         self.q.derivative = self.phi_q * (self.f_q_inf(V) - self.q.value) / self.f_q_tau(V) / u.ms
 
-    def current(self, V, Ca):
+    def current(self, V, Ca: IonInfo):
         return self.g_max * self.p.value * self.p.value * self.q.value * (Ca.E - V)
 
     def f_p_inf(self, V):
@@ -317,7 +317,7 @@ class _ICa_p2q_markov(CalciumChannel):
         self.p.derivative = self.phi_p * (self.f_p_alpha(V) * (1 - p) - self.f_p_beta(V) * p) / u.ms
         self.q.derivative = self.phi_q * (self.f_q_alpha(V) * (1 - q) - self.f_q_beta(V) * q) / u.ms
 
-    def current(self, V, Ca):
+    def current(self, V, Ca: IonInfo):
         return self.g_max * self.p.value * self.p.value * self.q.value * (Ca.E - V)
 
     def f_p_alpha(self, V):

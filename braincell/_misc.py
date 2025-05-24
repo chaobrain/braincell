@@ -67,6 +67,7 @@ def set_module_as(name: str):
     Returns:
         Callable: A decorator that modifies the `__name__` attribute of the module.
     """
+
     def decorator(module):
         """
         Decorator to set the `__name__` attribute of the given module.

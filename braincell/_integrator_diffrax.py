@@ -16,11 +16,12 @@
 import functools
 import importlib.util
 
-import jax.numpy as jnp
 import brainunit as u
+import jax.numpy as jnp
 
-from ._integrator_util import apply_standard_solver_step, VectorFiled, Y0, T, DT
+from ._integrator_util import apply_standard_solver_step
 from ._protocol import DiffEqModule
+from ._typing import VectorFiled, Y0, T, DT
 
 __all__ = [
     # runge-kutta methods
@@ -381,6 +382,7 @@ def diffrax_bwd_euler_step(target: DiffEqModule, t: T, dt: DT, *args, tol=1e-5):
         target, t, dt, *args
     )
 
+
 def diffrax_kvaerno3_step(target: DiffEqModule, t: T, dt: DT, *args, tol=1e-5):
     """
     Advances the state of a differential equation module by one integration step using the Kvaerno3 method
@@ -452,6 +454,7 @@ def diffrax_kvaerno4_step(target: DiffEqModule, t: T, dt: DT, *args, tol=1e-5):
         target, t, dt, *args
     )
 
+
 def diffrax_kvaerno5_step(target: DiffEqModule, t: T, dt: DT, *args, tol=1e-5):
     """
     Advances the state of a differential equation module by one integration step using the Kvaerno5 method
@@ -486,4 +489,3 @@ def diffrax_kvaerno5_step(target: DiffEqModule, t: T, dt: DT, *args, tol=1e-5):
         diffrax.Kvaerno5(root_finder=diffrax.VeryChord(rtol=tol, atol=tol)),
         target, t, dt, *args
     )
-

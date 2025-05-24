@@ -1,4 +1,4 @@
-# Copyright 2024 BDP Ecosystem Limited. All Rights Reserved.
+# Copyright 2025 BDP Ecosystem Limited. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,6 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ==============================================================================
+
+# -*- coding: utf-8 -*-
+
 
 import brainstate
 import brainunit as u
@@ -33,20 +36,35 @@ class HH(braincell.SingleCompartment):
         self.IL = braincell.channel.IL(size, E=-54.387 * u.mV, g_max=0.03 * (u.mS / u.cm ** 2))
 
 
-hh = HH(1, solver='exp_euler')
-hh = HH(1, solver='ind_exp_euler')
-hh.init_state()
+def integrate(method: str, dt=0.01 * u.ms):
+    brainstate.random.seed(1)
+    hh = HH(1, solver=method)
+    hh.init_state()
+
+    def step_fun(t):
+        with brainstate.environ.context(t=t):
+            spike = hh.update(10 * u.nA / u.cm ** 2)
+        return hh.V.value
+
+    with brainstate.environ.context(dt=dt):
+        times = u.math.arange(0. * u.ms, 10 * u.ms, brainstate.environ.get_dt())
+        vs = brainstate.compile.for_loop(step_fun, times)
+    return vs
 
 
-def step_fun(t):
-    with brainstate.environ.context(t=t):
-        spike = hh.update(10 * u.nA / u.cm ** 2)
-    return hh.V.value
+def compare(method):
+    norm = []
+    dts = [1e-3 * u.ms, 2e-3 * u.ms, 4e-3 * u.ms, 8e-3 * u.ms, 1e-2 * u.ms, 2e-2 * u.ms]
+    for dt in dts:
+        gold_vs = integrate('exp_euler', dt=dt)
+        vs = integrate(method, dt=dt)
+        norm.append(u.linalg.norm(gold_vs - vs))
+    return u.math.asarray(dts), u.math.asarray(norm)
 
 
-with brainstate.environ.context(dt=0.1 * u.ms):
-    times = u.math.arange(0. * u.ms, 100 * u.ms, brainstate.environ.get_dt())
-    vs = brainstate.compile.for_loop(step_fun, times)
-
-plt.plot(times, u.math.squeeze(vs))
-plt.show()
+class TestRungeKutta:
+    def test_euler_step(self):
+        dts, norms = compare('ind_exp_euler')
+        plt.loglog(dts, norms)
+        plt.show()
+        plt.close()

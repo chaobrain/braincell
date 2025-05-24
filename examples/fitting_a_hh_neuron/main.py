@@ -126,6 +126,7 @@ class HH(braincell.SingleCompartment):
         self.ik = IK(size, gK=gK)
         self.il = braincell.channel.IL(size, g_max=gL, E=-65. * u.mV)
 
+
 def visualize_target(voltages):
     fig, gs = braintools.visualize.get_figure(2, voltages.shape[1], 3, 4.5)
     times = np.arange(voltages.shape[0]) * 0.01
@@ -174,7 +175,6 @@ def simulate_model(gl, g_na, g_kd, C):
     return brainstate.compile.for_loop(step_fun, indices, current)  # (T, B)
 
 
-@brainstate.compile.jit
 def compare_potentials(param):
     vs = simulate_model(param['gl'], param['g_na'], param['g_kd'], param['C'])  # (T, B)
     losses = braintools.metric.squared_error(vs.mantissa, target_vs.mantissa)
@@ -229,7 +229,7 @@ bounds = {
 def fitting_by_others(method='DE', n_sample=200, n_iter=20):
     print(f"Method: {method}, n_sample: {n_sample}")
 
-    @jax.jit
+    @brainstate.transform.jit
     @jax.vmap
     def loss_with_multiple_run(**params):
         return compare_potentials(params)

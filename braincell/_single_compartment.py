@@ -293,3 +293,8 @@ class SingleCompartment(HHTypedNeuron):
             self.spk_fun((next_V - self.V_th) / denom) *
             self.spk_fun((self.V_th - last_V) / denom)
         )
+
+    def soma_spike(self):
+        denom = 20.0 * u.mV
+        return self.spk_fun((self.V.value - self.V_th) / denom)
+

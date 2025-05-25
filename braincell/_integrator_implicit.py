@@ -376,11 +376,6 @@ def construct_A(target):
         A_matrix = A_matrix.at[jnp.diag_indices(n_compartment)].set(-u.math.sum(A_matrix, axis=1))
         A_matrix = A_matrix.at[jnp.diag_indices(n_compartment)].add(-Gl / cm)
 
-        # jax.debug.print('A = {a}', a = (A_matrix))
-        # jax.debug.print('A = {a}', a = (u.get_magnitude(A_matrix)))
-        # jax.debug.print('A_cond = {a}', a = (jnp.linalg.cond(u.get_magnitude(A_matrix))))
-        # jax.debug.print('eigvalue = {a}', a = 10**7*jnp.linalg.eigvals(u.get_magnitude(A_matrix)))
-
     return A_matrix
 
 
@@ -618,9 +613,7 @@ def implicit_exp_euler_step(
         integral()
 
     else:
-        apply_standard_solver_step(
-            _newton_method, target, t, *args
-        )
+        apply_standard_solver_step(_newton_method, target, t, *args)
 
 
 @set_module_as('braincell')

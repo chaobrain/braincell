@@ -15,8 +15,41 @@
 
 # -*- coding: utf-8 -*-
 
+"""
+Implementation of the backward Euler integrator for voltage dynamics in multicompartment models.
+"""
 
-def multicompartment_solver_step(
 
-):
+def stone_step():
+    """
+    Implicit euler solver with the Stone's algorithm.
+    """
+    pass
+
+
+def thomas_step():
+    """
+    Implicit euler solver with the Thomas's algorithm.
+    """
+    pass
+
+
+def dhs_step():
+    """
+    Implicit euler solver with the `dendritic hierarchical scheduling` (DHS, Zhang et al., 2023).
+    """
+    pass
+
+
+def dense_step():
+    """
+    Implicit euler solver implementation by solving the dense matrix system.
+    """
+    pass
+
+
+def sparse_step():
+    """
+    Implicit euler solver implementation by solving the sparse matrix system.
+    """
     pass

@@ -23,6 +23,7 @@ from ._integrator_runge_kutta import rk4_step
 from ._integrator_util import apply_standard_solver_step, jacrev_last_dim
 from ._misc import set_module_as
 from ._protocol import DiffEqModule
+from ._typing import T, DT
 
 __all__ = [
     'implicit_euler_step',
@@ -228,37 +229,36 @@ def _implicit_euler_for_axial_current(A, y0, dt):
     (I - h_n \cdot A) \cdot u_{n+1} = u_n
     $$
 
-    Parameters:
-        A : ndarray
-            The coefficient matrix (linear matrix), shape (n, n).
-        y0 : array_like
-            Initial condition, shape (n,).
-        dt : float
-            Time step.
-        inv_A : ndarray, optional
-            The inverse of the matrix (I - dt * A), shape (n, n). If provided, it will be used for solving.
+    Parameters
+    ----------
+    A : ndarray
+        The coefficient matrix (linear matrix), shape (n, n).
+    y0 : array_like
+        Initial condition, shape (n,).
+    dt : float
+        Time step.
+    inv_A : ndarray, optional
+        The inverse of the matrix (I - dt * A), shape (n, n). If provided, it will be used for solving.
 
-    Returns:
-        y1 : ndarray
-            Solution array at the next time step, shape (n,).
+    Returns
+    -------
+    y1 : ndarray
+        Solution array at the next time step, shape (n,).
     """
-    n = y0.shape[-1]
-    I = u.math.eye(n)
-    lhs = I - dt * A
-    rhs = y0
-    y1 = u.math.linalg.solve(lhs, rhs)
+    with jax.ensure_compile_time_eval():
+        n = y0.shape[-1]
+        I = u.math.eye(n)
+        lhs = I - dt * A
+        rhs = y0
+        y1 = u.math.linalg.solve(lhs, rhs)
 
-    # jax.debug.print('A_cond = {a}', a = (jnp.linalg.cond(u.get_magnitude(lhs))))
-
-    '''
-    # residual
-    residual = rhs - lhs @ y1
-    residual_norm = jnp.linalg.norm(u.get_magnitude(residual))
-    jax.debug.print('Residual norm = {a}', a = residual_norm)
-    jax.debug.print('Relative error = {a}', a = relative_error)
-    cond = jnp.linalg.cond(u.get_magnitude(lhs))
-    jax.debug.print('cond = {a}', a = cond)
-    '''
+    # # residual
+    # residual = rhs - lhs @ y1
+    # residual_norm = jnp.linalg.norm(u.get_magnitude(residual))
+    # jax.debug.print('Residual norm = {a}', a = residual_norm)
+    # jax.debug.print('Relative error = {a}', a = relative_error)
+    # cond = jnp.linalg.cond(u.get_magnitude(lhs))
+    # jax.debug.print('cond = {a}', a = cond)
 
     return y1
 
@@ -281,38 +281,39 @@ def _crank_nicolson_for_axial_current(A, y0, dt):
     (I - \frac{dt}{2} \cdot A) \cdot y_{n+1} = (I + \frac{dt}{2} \cdot A) \cdot y_n
     $$
 
-    Parameters:
-        A : ndarray
-            The coefficient matrix (linear matrix), shape (n, n).
-        y0 : array_like
-            Initial condition, shape (n,).
-        t : float
-            Current time (not used directly in this linear case but kept for consistency with ODE format).
-        dt : float
-            Time step.
-        args : tuple, optional
-            Additional arguments for the function (not used in this linear case).
+    Parameters
+    ----------
+    A : ndarray
+        The coefficient matrix (linear matrix), shape (n, n).
+    y0 : array_like
+        Initial condition, shape (n,).
+    t : float
+        Current time (not used directly in this linear case but kept for consistency with ODE format).
+    dt : float
+        Time step.
+    args : tuple, optional
+        Additional arguments for the function (not used in this linear case).
 
-    Returns:
-        y1 : ndarray
-            Solution array at the next time step, shape (n,).
+    Returns
+    -------
+    y1 : ndarray
+        Solution array at the next time step, shape (n,).
     """
-    n = y0.shape[-1]
-    I = u.math.eye(n)
-    alpha = 1
-    lhs = (I - alpha * dt * A)
-    rhs = (I + (1 - alpha) * dt * A) @ y0
-    y1 = u.math.linalg.solve(lhs, rhs)
+    with jax.ensure_compile_time_eval():
+        n = y0.shape[-1]
+        I = u.math.eye(n)
+        alpha = 1
+        lhs = (I - alpha * dt * A)
+        rhs = (I + (1 - alpha) * dt * A) @ y0
+        y1 = u.math.linalg.solve(lhs, rhs)
 
-    '''
-    # residual
-    residual = rhs - lhs @ y1
-    residual_norm = jnp.linalg.norm(u.get_magnitude(residual))
-    jax.debug.print('Residual norm = {a}', a = residual_norm)
-    jax.debug.print('Relative error = {a}', a = relative_error)
-    cond = jnp.linalg.cond(u.get_magnitude(lhs))
-    jax.debug.print('cond = {a}', a = cond)
-    '''
+    # # residual
+    # residual = rhs - lhs @ y1
+    # residual_norm = jnp.linalg.norm(u.get_magnitude(residual))
+    # jax.debug.print('Residual norm = {a}', a = residual_norm)
+    # jax.debug.print('Relative error = {a}', a = relative_error)
+    # cond = jnp.linalg.cond(u.get_magnitude(lhs))
+    # jax.debug.print('cond = {a}', a = cond)
     # jax.debug.print('I = {a}',a = I)
     # jax.debug.print('lhs = {a}',a = lhs)
     # cond = jnp.linalg.cond(u.get_magnitude(lhs))
@@ -323,7 +324,8 @@ def _crank_nicolson_for_axial_current(A, y0, dt):
 @set_module_as('braincell')
 def implicit_euler_step(
     target: DiffEqModule,
-    t: u.Quantity[u.second],
+    t: T,
+    dt: DT,
     *args
 ):
     """
@@ -338,11 +340,13 @@ def implicit_euler_step(
         The differential equation module to be solved.
     t : u.Quantity[u.second]
         The current time in the simulation.
+    dt : u.Quantity[u.second]
+        The numerical time step for the integration.
     *args : 
         Additional arguments to be passed to the differential equation.
     """
     apply_standard_solver_step(
-        _newton_method, target, t, *args
+        _newton_method, target, t, dt, *args
     )
 
 
@@ -382,7 +386,8 @@ def construct_A(target):
 @set_module_as('braincell')
 def splitting_step(
     target: DiffEqModule,
-    t: u.Quantity[u.second],
+    t: T,
+    dt: DT,
     *args
 ):
     """
@@ -397,6 +402,8 @@ def splitting_step(
         The differential equation module to be solved.
     t : u.Quantity[u.second]
         The current time in the simulation.
+    dt : u.Quantity[u.second]
+        The numerical time step for the integration.
     *args :
         Additional arguments to be passed to the differential equation.
     """
@@ -405,7 +412,6 @@ def splitting_step(
     if isinstance(target, MultiCompartment):
 
         def solve_axial():
-            dt = brainstate.environ.get_dt()
             V_n = target.V.value
             A_matrix = construct_A(target)
             target.V.value = _implicit_euler_for_axial_current(A_matrix, V_n, dt)
@@ -421,71 +427,33 @@ def splitting_step(
         # s1t1 = time.time()
 
         with brainstate.environ.context(compute_axial_current=False):
-            # '''
-            # apply_standard_solver_step(
-            #     _newton_method_manual_parallel,
-            #     target,
-            #     t,
-            #     *args,
-            #     merging_method='stack'
-            # )
-            # '''
-            # rk4_step(
-            #     target,
-            #     t,
-            #     *args,
-            # )
-            # '''
-            # exp_euler_step(
-            #     target,
-            #     t,
-            #     *args,
-            # )
-            # '''
-
-            apply_standard_solver_step(
-                _newton_method_manual_parallel,
-                target,
-                t,
-                *args,
-                merging='stack'
-            )
-
-        # jax.debug.print('step1 cost {a}',a = time.time() - s1t1)
-        # s2t1 = time.time()
-
+            apply_standard_solver_step(_newton_method_manual_parallel, target, t, dt, *args, merging='stack')
         for _ in range(len(target.pop_size)):
             integral = brainstate.augment.vmap(solve_axial, in_states=target.states())
         integral()
         # jax.debug.print('step2 cost {a}',a = time.time() - s2t1)
 
     else:
-        apply_standard_solver_step(
-            _newton_method, target, t, *args
-        )
+        apply_standard_solver_step(_newton_method, target, t, dt, *args)
 
 
 @set_module_as('braincell')
 def cn_rk4_step(
     target: DiffEqModule,
-    t: u.Quantity[u.second],
+    t: T,
+    dt: DT,
     *args
 ):
     from braincell._multi_compartment import MultiCompartment
     assert isinstance(target, MultiCompartment)
 
     def solve_axial():
-        dt = brainstate.environ.get_dt()
         V_n = target.V.value
         A_matrix = construct_A(target)
         target.V.value = _crank_nicolson_for_axial_current(A_matrix, V_n, dt)
 
     with brainstate.environ.context(compute_axial_current=False):
-        rk4_step(
-            target,
-            t,
-            *args,
-        )
+        rk4_step(target, t, dt, *args, )
     for _ in range(len(target.pop_size)):
         integral = brainstate.augment.vmap(solve_axial, in_states=target.states())
     integral()
@@ -494,23 +462,17 @@ def cn_rk4_step(
 @set_module_as('braincell')
 def cn_exp_euler_step(
     target: DiffEqModule,
-    t: u.Quantity[u.second],
+    t: T,
+    dt: DT,
     *args
 ):
     from braincell._multi_compartment import MultiCompartment
     assert isinstance(target, MultiCompartment)
 
     with brainstate.environ.context(compute_axial_current=False):
-        apply_standard_solver_step(
-            _exponential_euler,
-            target,
-            t,
-            *args,
-            merging='stack'
-        )
+        apply_standard_solver_step(_exponential_euler, target, t, dt, *args, merging='stack')
 
     def solve_axial():
-        dt = brainstate.environ.get_dt()
         V_n = target.V.value
         A_matrix = construct_A(target)
         target.V.value = _crank_nicolson_for_axial_current(A_matrix, V_n, dt)
@@ -523,7 +485,8 @@ def cn_exp_euler_step(
 @set_module_as('braincell')
 def implicit_rk4_step(
     target: DiffEqModule,
-    t: u.Quantity[u.second],
+    t: T,
+    dt: DT,
     *args
 ):
     """
@@ -538,6 +501,8 @@ def implicit_rk4_step(
         The differential equation module to be solved.
     t : u.Quantity[u.second]
         The current time in the simulation.
+    dt : u.Quantity[u.second]
+        The numerical time step for the integration.
     *args :
         Additional arguments to be passed to the differential equation.
     """
@@ -545,14 +510,9 @@ def implicit_rk4_step(
 
     if isinstance(target, MultiCompartment):
         with brainstate.environ.context(compute_axial_current=False):
-            rk4_step(
-                target,
-                t,
-                *args,
-            )
+            rk4_step(target, t, dt, *args, )
 
         def solve_axial():
-            dt = brainstate.environ.get_dt()
             V_n = target.V.value
             A_matrix = construct_A(target)
             target.V.value = _implicit_euler_for_axial_current(A_matrix, V_n, dt)
@@ -562,15 +522,14 @@ def implicit_rk4_step(
         integral()
 
     else:
-        apply_standard_solver_step(
-            _newton_method, target, t, *args
-        )
+        apply_standard_solver_step(_newton_method, target, t, dt, *args)
 
 
 @set_module_as('braincell')
 def implicit_exp_euler_step(
     target: DiffEqModule,
-    t: u.Quantity[u.second],
+    t: T,
+    dt: DT,
     *args
 ):
     """
@@ -585,6 +544,8 @@ def implicit_exp_euler_step(
         The differential equation module to be solved.
     t : u.Quantity[u.second]
         The current time in the simulation.
+    dt : u.Quantity[u.second]
+        The numerical time step for the integration.
     *args :
         Additional arguments to be passed to the differential equation.
     """
@@ -592,18 +553,10 @@ def implicit_exp_euler_step(
 
     if isinstance(target, MultiCompartment):
 
-        # second step
         with brainstate.environ.context(compute_axial_current=False):
-            apply_standard_solver_step(
-                _exponential_euler,
-                target,
-                t,
-                *args,
-                merging='stack'
-            )
+            apply_standard_solver_step(_exponential_euler, target, t, dt, *args, merging='stack')
 
         def solve_axial():
-            dt = brainstate.environ.get_dt()
             V_n = target.V.value
             A_matrix = construct_A(target)
             target.V.value = _implicit_euler_for_axial_current(A_matrix, V_n, dt)
@@ -613,13 +566,14 @@ def implicit_exp_euler_step(
         integral()
 
     else:
-        apply_standard_solver_step(_newton_method, target, t, *args)
+        apply_standard_solver_step(_newton_method, target, t, dt, *args)
 
 
 @set_module_as('braincell')
 def exp_exp_euler_step(
     target: DiffEqModule,
-    t: u.Quantity[u.second],
+    t: T,
+    dt: DT,
     *args
 ):
     """
@@ -634,6 +588,8 @@ def exp_exp_euler_step(
         The differential equation module to be solved.
     t : u.Quantity[u.second]
         The current time in the simulation.
+    dt : u.Quantity[u.second]
+        The numerical time step for the integration.
     *args :
         Additional arguments to be passed to the differential equation.
     """
@@ -641,20 +597,10 @@ def exp_exp_euler_step(
 
     if isinstance(target, MultiCompartment):
 
-        # first step
         with brainstate.environ.context(compute_axial_current=False):
-            apply_standard_solver_step(
-                _exponential_euler,
-                target,
-                t,
-                *args,
-                merging='stack'
-            )
-
-        # second step
+            apply_standard_solver_step(_exponential_euler, target, t, dt, *args, merging='stack')
 
         def solve_axial():
-            dt = brainstate.environ.get_dt()
             V_n = target.V.value
             A_matrix = construct_A(target)
             # jax.debug.print("A = {a}",a=A_matrix)
@@ -665,6 +611,4 @@ def exp_exp_euler_step(
         integral()
 
     else:
-        apply_standard_solver_step(
-            _newton_method, target, t, *args
-        )
+        apply_standard_solver_step(_newton_method, target, t, dt, *args)

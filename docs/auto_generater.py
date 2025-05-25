@@ -320,6 +320,17 @@ def main():
         section_names=[k[1] for k in module_and_name]
     )
 
+    module_and_name = [
+        ('markov', 'Markov Models'),
+    ]
+    _write_submodules(
+        module_name='braincell.synapse',
+        filename='apis/braincell.synapse.rst',
+        header='``braincell.synapse`` module',
+        submodule_names=[k[0] for k in module_and_name],
+        section_names=[k[1] for k in module_and_name]
+    )
+
 
 if __name__ == '__main__':
     main()

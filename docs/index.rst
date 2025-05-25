@@ -53,6 +53,7 @@ We are building the `brain modeling ecosystem <https://brain-modeling.readthedoc
    apis/changelog.md
    apis/braincell.rst
    apis/braincell.neuron.rst
+   apis/braincell.synapse.rst
    apis/braincell.ion.rst
    apis/braincell.channel.rst
    apis/integration.rst

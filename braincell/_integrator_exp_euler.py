@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ==============================================================================
+
 import functools
 from typing import Dict
 
@@ -155,7 +156,7 @@ def exp_euler_step(target: DiffEqModule, t: T, dt: DT, *args):
             t,
             dt,
             *args,
-            merging_method='stack'
+            merging='stack'
         )
 
     elif isinstance(target, MultiCompartment):
@@ -165,7 +166,7 @@ def exp_euler_step(target: DiffEqModule, t: T, dt: DT, *args):
             t,
             dt,
             *args,
-            merging_method='concat'
+            merging='concat'
         )
 
     else:
@@ -215,15 +216,17 @@ def ind_exp_euler_step(target: DiffEqModule, t: T, dt: DT, *args):
         If the input data type is not a supported floating point type.
         If a state in the trace is not found in the state list.
     """
-    assert isinstance(target, HHTypedNeuron), (
-        f"The target should be a {HHTypedNeuron.__name__}. "
+    assert isinstance(target, DiffEqModule), (
+        f"The target should be a {DiffEqModule.__name__}. "
         f"But got {type(target)} instead."
     )
 
     # Retrieve all states from the target module
     all_states = brainstate.graph.states(target)
+
     # Split states into differential equation states and other states
     diffeq_states, other_states = all_states.split(DiffEqState, ...)
+
     # Collect all state object ids for trace validation
     all_state_ids = {id(st) for st in all_states.values()}
 

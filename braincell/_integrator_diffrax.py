@@ -87,7 +87,7 @@ def _diffrax_explicit_solver(
         t,
         dt,
         *args,
-        merging_method='stack'
+        merging='stack'
     )
 
 
@@ -341,7 +341,7 @@ def _implicit_solver(solver, fn: VectorFiled, y0: Y0, t0: T, dt: DT, args=()):
 def _diffrax_implicit_solver(solver, target: DiffEqModule, t: T, dt: DT, *args):
     apply_standard_solver_step(
         functools.partial(_implicit_solver, solver),
-        target, t, dt, *args, merging_method='stack'
+        target, t, dt, *args, merging='stack'
     )
 
 

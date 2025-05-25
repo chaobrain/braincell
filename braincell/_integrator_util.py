@@ -127,7 +127,7 @@ def apply_standard_solver_step(
     t: T,
     dt: DT,
     *args,
-    merging_method: str = 'concat',
+    merging: str = 'concat',
 ):
     """
     Apply a standard solver step to the given differential equation module.
@@ -158,33 +158,29 @@ def apply_standard_solver_step(
         The time step of the integration.
     *args : Any
         Additional arguments to be passed to the pre_integral, post_integral, and compute_derivative methods.
-    merging_method: str
+    merging: str
         The merging method to be used when converting states to arrays.
 
         - 'concat': Concatenate the states along the last dimension.
         - 'stack': Stack the states along the last dimension.
     """
-
-    assert merging_method in ['concat', 'stack'], f'Unknown merging method: {merging_method}'
+    assert isinstance(target, DiffEqModule), f'Target must be a DiffEqModule, but got {type(target)}'
+    assert callable(solver_step), f'Solver step must be callable, but got {type(solver_step)}'
+    assert merging in ['concat', 'stack'], f'Unknown merging method: {merging}'
 
     # pre integral
-    # dt = brainstate.environ.get_dt()
     target.pre_integral(*args)
     dimensionless_fn, diffeq_states, other_states = (
-        _transform_diffeq_module_into_dimensionless_fn(target, dt=dt, method=merging_method)
+        _transform_diffeq_module_into_dimensionless_fn(target, dt=dt, method=merging)
     )
 
     # one-step integration
     diffeq_vals, other_vals = solver_step(
-        dimensionless_fn,
-        _dict_state_to_arr(diffeq_states, method=merging_method),
-        t,
-        dt,
-        args
+        dimensionless_fn, _dict_state_to_arr(diffeq_states, method=merging), t, dt, args
     )
 
     # post integral
-    _assign_arr_to_states(diffeq_vals, diffeq_states, method=merging_method)
+    _assign_arr_to_states(diffeq_vals, diffeq_states, method=merging)
     for key, val in other_vals.items():
         other_states[key].value = val
     target.post_integral(*args)

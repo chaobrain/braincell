@@ -453,7 +453,7 @@ def splitting_step(
                 target,
                 t,
                 *args,
-                merging_method='stack'
+                merging='stack'
             )
 
         # jax.debug.print('step1 cost {a}',a = time.time() - s1t1)
@@ -511,7 +511,7 @@ def cn_exp_euler_step(
             target,
             t,
             *args,
-            merging_method='stack'
+            merging='stack'
         )
 
     def solve_axial():
@@ -604,7 +604,7 @@ def implicit_exp_euler_step(
                 target,
                 t,
                 *args,
-                merging_method='stack'
+                merging='stack'
             )
 
         def solve_axial():
@@ -655,7 +655,7 @@ def exp_exp_euler_step(
                 target,
                 t,
                 *args,
-                merging_method='stack'
+                merging='stack'
             )
 
         # second step

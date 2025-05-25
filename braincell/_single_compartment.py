@@ -29,7 +29,7 @@ __all__ = [
 
 
 class SingleCompartment(HHTypedNeuron):
-    r"""Base class to model conductance-based neuron group.
+    r"""Base class to model conductance-based neurons with single compartment.
 
     The standard formulation for a conductance-based point neuron model is given as
 
@@ -38,8 +38,8 @@ class SingleCompartment(HHTypedNeuron):
         C_m {dV \over dt} = \sum_jg_j(E - V) + I_{ext}
 
     where :math:`g_j=\bar{g}_{j} M^x N^y` is the channel conductance, :math:`E` is the
-    reversal potential, :math:`M` is the activation variable, and :math:`N` is the
-    inactivation variable.
+    reversal potential, :math:`M` is the activation variable, :math:`N` is the
+    inactivation variable, $\bar{g}_{j}$ is the maximum conductance.
 
     :math:`M` and :math:`N` have the dynamics of
 
@@ -56,6 +56,8 @@ class SingleCompartment(HHTypedNeuron):
         \frac{d x}{d t}=\phi_{x}\left(\alpha_{x}(1-x)-\beta_{x} x\right)
 
     where :math:`\alpha_{x}` and :math:`\beta_{x}` are rate constants.
+
+    The implementations of $x$ please see ``braincell.ion``, and ``braincell.channel`` modules.
 
     Parameters
     ----------
@@ -75,6 +77,10 @@ class SingleCompartment(HHTypedNeuron):
         The neuron group name.
     **ion_channels : dict
         Additional ion channels to include in the neuron model
+
+    Notes
+    -----
+    This class is subclassed from :class:`braincell.HHTypedNeuron`.
     """
     __module__ = 'braincell'
 

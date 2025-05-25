@@ -100,6 +100,7 @@ class MultiCompartment(HHTypedNeuron):
 
     Notes
     -----
+    This class is subclassed from :class:`braincell.HHTypedNeuron`.
     The multi-compartment model simulates the spatial properties of neurons by dividing
     the neuron into electrically connected compartments. Currents can flow between compartments
     based on the voltage differences and axial resistances, allowing for a more accurate
@@ -373,10 +374,6 @@ class MorphologicalCell(MultiCompartment):
         spk_fun: Callable = brainstate.surrogate.ReluGrad(),
         solver: str | Callable = 'exp_euler',
         name: Optional[str] = None,
-
-        Gl: Initializer = 0 * (u.mS / u.cm ** 2),  # for splitting
-        El: Initializer = -65 * u.mV,  # for splitting
-
         **ion_channels
     ):
         super().__init__(

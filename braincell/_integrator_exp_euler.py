@@ -173,6 +173,7 @@ def exp_euler_step(target: DiffEqModule, t: T, dt: DT, *args):
         raise ValueError(f"Unknown target type: {type(target)}")
 
 
+@set_module_as('braincell')
 def ind_exp_euler_step(target: DiffEqModule, t: T, dt: DT, *args):
     """
     Perform an independent exponential Euler integration step for each DiffEqState in the target module.

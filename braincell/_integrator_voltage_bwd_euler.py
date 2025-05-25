@@ -19,7 +19,10 @@
 Implementation of the backward Euler integrator for voltage dynamics in multicompartment models.
 """
 
+from ._misc import set_module_as
 
+
+@set_module_as('braincell')
 def stone_step():
     """
     Implicit euler solver with the Stone's algorithm.
@@ -27,6 +30,7 @@ def stone_step():
     pass
 
 
+@set_module_as('braincell')
 def thomas_step():
     """
     Implicit euler solver with the Thomas's algorithm.
@@ -34,6 +38,7 @@ def thomas_step():
     pass
 
 
+@set_module_as('braincell')
 def dhs_step():
     """
     Implicit euler solver with the `dendritic hierarchical scheduling` (DHS, Zhang et al., 2023).
@@ -41,6 +46,7 @@ def dhs_step():
     pass
 
 
+@set_module_as('braincell')
 def dense_step():
     """
     Implicit euler solver implementation by solving the dense matrix system.
@@ -48,6 +54,7 @@ def dense_step():
     pass
 
 
+@set_module_as('braincell')
 def sparse_step():
     """
     Implicit euler solver implementation by solving the sparse matrix system.

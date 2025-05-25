@@ -20,6 +20,7 @@ import brainunit as u
 import jax.numpy as jnp
 
 from ._integrator_util import apply_standard_solver_step
+from ._misc import set_module_as
 from ._protocol import DiffEqModule
 from ._typing import VectorFiled, Y0, T, DT
 
@@ -91,6 +92,7 @@ def _diffrax_explicit_solver(
     )
 
 
+@set_module_as('braincell')
 def diffrax_euler_step(target: DiffEqModule, t: T, dt: DT, *args):
     """
     Advances the state of a differential equation module by one integration step using the Euler method
@@ -119,6 +121,7 @@ def diffrax_euler_step(target: DiffEqModule, t: T, dt: DT, *args):
     _diffrax_explicit_solver(diffrax.Euler(), target, t, dt, *args)
 
 
+@set_module_as('braincell')
 def diffrax_heun_step(target: DiffEqModule, t: T, dt: DT, *args):
     """
     Advances the state of a differential equation module by one integration step using the Heun method
@@ -148,6 +151,7 @@ def diffrax_heun_step(target: DiffEqModule, t: T, dt: DT, *args):
     _diffrax_explicit_solver(diffrax.Heun(), target, t, dt, *args)
 
 
+@set_module_as('braincell')
 def diffrax_midpoint_step(target: DiffEqModule, t: T, dt: DT, *args):
     """
     Advances the state of a differential equation module by one integration step using the Midpoint method
@@ -177,6 +181,7 @@ def diffrax_midpoint_step(target: DiffEqModule, t: T, dt: DT, *args):
     _diffrax_explicit_solver(diffrax.Midpoint(), target, t, dt, *args)
 
 
+@set_module_as('braincell')
 def diffrax_ralston_step(target: DiffEqModule, t: T, dt: DT, *args):
     """
     Advances the state of a differential equation module by one integration step using the Ralston method
@@ -206,6 +211,7 @@ def diffrax_ralston_step(target: DiffEqModule, t: T, dt: DT, *args):
     _diffrax_explicit_solver(diffrax.Ralston(), target, t, dt, *args)
 
 
+@set_module_as('braincell')
 def diffrax_bosh3_step(target: DiffEqModule, t: T, dt: DT, *args):
     """
     Advances the state of a differential equation module by one integration step using the Bosh3 method
@@ -235,6 +241,7 @@ def diffrax_bosh3_step(target: DiffEqModule, t: T, dt: DT, *args):
     _diffrax_explicit_solver(diffrax.Bosh3(), target, t, dt, *args)
 
 
+@set_module_as('braincell')
 def diffrax_tsit5_step(target: DiffEqModule, t: T, dt: DT, *args):
     """
     Advances the state of a differential equation module by one integration step using the Tsit5 method
@@ -264,6 +271,7 @@ def diffrax_tsit5_step(target: DiffEqModule, t: T, dt: DT, *args):
     _diffrax_explicit_solver(diffrax.Tsit5(), target, t, dt, *args)
 
 
+@set_module_as('braincell')
 def diffrax_dopri5_step(target: DiffEqModule, t: T, dt: DT, *args):
     """
     Advances the state of a differential equation module by one integration step using the Dopri5 method
@@ -293,6 +301,7 @@ def diffrax_dopri5_step(target: DiffEqModule, t: T, dt: DT, *args):
     _diffrax_explicit_solver(diffrax.Dopri5(), target, t, dt, *args)
 
 
+@set_module_as('braincell')
 def diffrax_dopri8_step(target: DiffEqModule, t: T, dt: DT, *args):
     """
     Advances the state of a differential equation module by one integration step using the Dopri8 method
@@ -345,6 +354,7 @@ def _diffrax_implicit_solver(solver, target: DiffEqModule, t: T, dt: DT, *args):
     )
 
 
+@set_module_as('braincell')
 def diffrax_bwd_euler_step(target: DiffEqModule, t: T, dt: DT, *args, tol=1e-5):
     """
     Advances the state of a differential equation module by one integration step using the implicit
@@ -383,6 +393,7 @@ def diffrax_bwd_euler_step(target: DiffEqModule, t: T, dt: DT, *args, tol=1e-5):
     )
 
 
+@set_module_as('braincell')
 def diffrax_kvaerno3_step(target: DiffEqModule, t: T, dt: DT, *args, tol=1e-5):
     """
     Advances the state of a differential equation module by one integration step using the Kvaerno3 method
@@ -419,6 +430,7 @@ def diffrax_kvaerno3_step(target: DiffEqModule, t: T, dt: DT, *args, tol=1e-5):
     )
 
 
+@set_module_as('braincell')
 def diffrax_kvaerno4_step(target: DiffEqModule, t: T, dt: DT, *args, tol=1e-5):
     """
     Advances the state of a differential equation module by one integration step using the Kvaerno4 method
@@ -455,6 +467,7 @@ def diffrax_kvaerno4_step(target: DiffEqModule, t: T, dt: DT, *args, tol=1e-5):
     )
 
 
+@set_module_as('braincell')
 def diffrax_kvaerno5_step(target: DiffEqModule, t: T, dt: DT, *args, tol=1e-5):
     """
     Advances the state of a differential equation module by one integration step using the Kvaerno5 method

@@ -23,7 +23,7 @@ from ._misc import set_module_as
 
 
 @set_module_as('braincell')
-def stone_step():
+def stone_voltage_step():
     """
     Implicit euler solver with the Stone's algorithm.
     """
@@ -31,7 +31,7 @@ def stone_step():
 
 
 @set_module_as('braincell')
-def thomas_step():
+def thomas_voltage_step():
     """
     Implicit euler solver with the Thomas's algorithm.
     """
@@ -39,7 +39,7 @@ def thomas_step():
 
 
 @set_module_as('braincell')
-def dhs_step():
+def dhs_voltage_step():
     """
     Implicit euler solver with the `dendritic hierarchical scheduling` (DHS, Zhang et al., 2023).
     """
@@ -47,7 +47,7 @@ def dhs_step():
 
 
 @set_module_as('braincell')
-def dense_step():
+def dense_voltage_step():
     """
     Implicit euler solver implementation by solving the dense matrix system.
     """
@@ -55,7 +55,7 @@ def dense_step():
 
 
 @set_module_as('braincell')
-def sparse_step():
+def sparse_voltage_step():
     """
     Implicit euler solver implementation by solving the sparse matrix system.
     """

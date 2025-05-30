@@ -226,7 +226,7 @@ bounds = {
 }
 
 
-def fitting_by_others(method='DE', n_sample=200, n_iter=20):
+def fitting_by_nevergrad(method='DE', n_sample=200, n_iter=20):
     print(f"Method: {method}, n_sample: {n_sample}")
 
     @brainstate.transform.jit
@@ -250,4 +250,4 @@ def fitting_by_others(method='DE', n_sample=200, n_iter=20):
 
 
 if __name__ == '__main__':
-    fitting_by_others(n_sample=100)
+    fitting_by_nevergrad(n_sample=100)

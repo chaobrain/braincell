@@ -19,12 +19,12 @@ from typing import Optional, Callable, Sequence, Tuple
 
 import brainstate
 
-from ._morphology_utils import *
+from ._morphology_utils_nounit import *
 from ._base import HHTypedNeuron, IonChannel
 from ._integrator import get_integrator
 from ._protocol import DiffEqState
 from ._typing import Initializer
-from ._morphology import Morphology
+from ._morphology_nounit import Morphology
 __all__ = [
     'MultiCompartment_test',
 ]
@@ -197,9 +197,9 @@ class MultiCompartment_test(HHTypedNeuron, Morphology):
         _compute_axial_current = brainstate.environ.get('compute_axial_current', True)
 
         if _compute_axial_current:
-            coo_ids, conductance = get_coo_ids_and_values(self.conductance_matrix)
-            I_axial = diffusive_coupling(self.V.value, coo_ids, conductance) / self.area  
-            pass 
+            #coo_ids, conductance = get_coo_ids_and_values(self.conductance_matrix)
+            #I_axial = diffusive_coupling(self.V.value, coo_ids, conductance) / self.area  
+            I_axial = self.Gl * self.El
         else:
             I_axial = self.Gl * self.El  # u.Quantity(0., unit=u.get_unit(I_ext))
 

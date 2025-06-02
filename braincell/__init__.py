@@ -32,6 +32,14 @@ from ._morphology import (
     Section,
     Morphology,
 )
+
+
+from ._morphology_nounit import (
+    Section,
+    Morphology,
+)
+
+
 from ._multi_compartment import (
     MultiCompartment,
 )

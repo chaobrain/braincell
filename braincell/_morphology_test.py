@@ -15,6 +15,7 @@
 
 import braincell
 import brainunit as u
+from .from_swc import Import3dSWCRead, visualize_neuron, process_swc_pipeline
 
 class TestMorphologyConstruction:
     def test1(self):

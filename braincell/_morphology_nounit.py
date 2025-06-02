@@ -23,7 +23,7 @@ import numpy as np
 
 from ._read_swc import Import3dSWCRead, visualize_neuron, process_swc_pipeline
 from ._typing import SectionName
-from ._morphology_utils import (
+from ._morphology_utils_nounit import (
     calculate_total_resistance_and_area,
     generate_interpolated_nodes,
     compute_connection_seg,
@@ -64,6 +64,7 @@ class Segment(NamedTuple):
     """
     section_name: SectionName
     index: int
+    cm : u.Quantity[u.uF/(u.cm**2)]
     area: u.Quantity[u.meter2]
     R_left: u.Quantity[u.meter]
     R_right: u.Quantity[u.meter]
@@ -138,6 +139,7 @@ class Section:
         self.parent: Dict = None
         self.children = set()
         self.segments = []
+
         self._compute_area_and_resistance()
 
     def _compute_area_and_resistance(self):
@@ -154,18 +156,13 @@ class Section:
             - R_left (float): Resistance from the segment’s left half
             - R_right (float): Resistance from the segment’s right half
         """
-        import time
-        t0 = time.time()
-        node_pre = u.math.hstack((self.positions, self.diam))
-        print('nodepre cost',time.time() - t0)
-        t0 = time.time()
+        node_pre = np.hstack((self.positions, self.diam))
         node_after = generate_interpolated_nodes(node_pre, self.nseg)
-        print('generate cost',time.time() - t0)
 
-        node_after = u.math.asarray(node_after)
+        node_after = np.asarray(node_after)
         xyz_pre = node_pre[:, :3]
         ratios_pre = compute_line_ratios(xyz_pre)
-        ratios_after = u.math.linspace(0, 1, 2 * self.nseg + 1)
+        ratios_after = np.linspace(0, 1, 2 * self.nseg + 1)
 
 
         for i in range(0, len(node_after) - 2, 2):
@@ -173,25 +170,24 @@ class Section:
 
             # Segment left half: i → i+1
             mask_left = (ratios_pre > r1) & (ratios_pre < r2)
-            selected_left = u.math.vstack([node_after[i], node_pre[mask_left], node_after[i + 1]])
+            selected_left = np.vstack([node_after[i], node_pre[mask_left], node_after[i + 1]])
 
             # Segment right half: i+1 → i+2
             mask_right = (ratios_pre > r2) & (ratios_pre < r3)
-            selected_right = u.math.vstack([node_after[i + 1], node_pre[mask_right], node_after[i + 2]])
+            selected_right = np.vstack([node_after[i + 1], node_pre[mask_right], node_after[i + 2]])
 
             # Compute axial resistance and surface area
-            
-            #R_left, area_left = calculate_total_resistance_and_area_optimized(selected_left, u.get_magnitude(self.Ra))
             R_left, area_left = calculate_total_resistance_and_area(selected_left, self.Ra)
-            #R_right, area_right = calculate_total_resistance_and_area_optimized(selected_right, u.get_magnitude(self.Ra))
             R_right, area_right = calculate_total_resistance_and_area(selected_right, self.Ra)
-            
+    
+
             segment = Segment(
                 section_name=self.name,
                 index=i,
-                area=(area_left + area_right),
-                R_left=R_left,
-                R_right=R_right,
+                cm = self.cm * u.uF/(u.cm**2), 
+                area=(area_left + area_right)*u.um**2,
+                R_left=R_left*10,
+                R_right=R_right*10,
             )
             self.segments.append(segment)
 
@@ -292,7 +288,7 @@ class CylinderSection(Section):
     ):
         assert length> 0 * u.um, "Length must be positive."
         assert diam > 0 * u.um, "Diameter must be positive."
-        points = u.math.array([
+        points = np.array([
             [0.0 * u.um, 0.0 * u.um, 0.0 * u.um, diam],
             [length, 0.0 * u.um, 0.0 * u.um, diam]
         ])
@@ -340,8 +336,8 @@ class PointSection(Section):
         name: SectionName,
         points: u.Quantity[u.meter],
         nseg: int = 1,
-        Ra: u.Quantity = 100 * u.ohm * u.cm,
-        cm: u.Quantity = 1.0 * u.uF / u.cm ** 2,
+        Ra: u.Quantity = 100 ,
+        cm: u.Quantity = 1.0 ,
     ):
         """
         Initialize the Section.
@@ -353,10 +349,10 @@ class PointSection(Section):
             Ra (float): Axial resistivity in ohm·cm.
             cm (float): Membrane capacitance in µF/cm².
         """
-        #points = u.math.array(points)
+        points = np.array(points)
         assert points.shape[0] >= 2, "at least have 2 points"
         assert points.shape[1] == 4, "points must be shape (N, 4): [x, y, z, diameter]"
-        #assert u.math.all(points[:, 3] > 0 * u.um), "All diameters must be positive."
+        assert np.all(points[:, 3] > 0), "All diameters must be positive."
         positions = points[:, :3]
         diam = points[:, -1].reshape((-1, 1))
 
@@ -415,6 +411,7 @@ class Morphology(brainstate.util.PrettyObject):
         self.segments = []
         self._conductance_matrix = None
         self._area = None
+        self._cm = None
 
     def add_cylinder_section(
         self,
@@ -468,8 +465,8 @@ class Morphology(brainstate.util.PrettyObject):
         name: SectionName,
         points: u.Quantity[u.meter],
         nseg: int = 1,
-        Ra: u.Quantity = 100 * u.ohm * u.cm,
-        cm: u.Quantity = 1.0 * u.uF / u.cm ** 2,
+        Ra: u.Quantity = 100,
+        cm: u.Quantity = 1.0,
     ):
         """
         Create a section defined by custom 3D points and add it to the morphology.
@@ -618,10 +615,7 @@ class Morphology(brainstate.util.PrettyObject):
         for section_name, section_data in section_dicts.items():
             assert isinstance(section_data, dict), 'section_data must be a dictionary.'
             if 'points' in section_data:
-                import time
-                t0 = time.time()
                 self.add_point_section(name=section_name, **section_data)
-                print('add one section cost', time.time()-t0)
             elif 'length' in section_data and 'diam' in section_data:
                 self.add_cylinder_section(name=section_name, **section_data)
             else:
@@ -704,9 +698,8 @@ class Morphology(brainstate.util.PrettyObject):
 
         The matrix is populated using the left and right conductances of each section segment.
         """
-
-        # TODO
-
+        import time
+        
         nseg_list = []
         g_left = []
         g_right = []
@@ -720,10 +713,7 @@ class Morphology(brainstate.util.PrettyObject):
 
         connection_sec_list = self._connection_sec_list()
         connection_seg_list = compute_connection_seg(nseg_list, connection_sec_list)
-
         self._conductance_matrix = init_coupling_weight_nodes(g_left, g_right, connection_seg_list)
-
-        # COO, CSR  ==> Dense
 
 
     def construct_area(self):
@@ -731,6 +721,12 @@ class Morphology(brainstate.util.PrettyObject):
         for seg in self.segments:
             area_list.append(seg.area)
         self._area = area_list
+    
+    def construct_cm(self):
+        cm_list = []
+        for seg in self.segments:
+            cm_list.append(seg.cm)
+        self._cm = u.math.array(cm_list)
 
     @property
     def conductance_matrix(self):
@@ -743,6 +739,12 @@ class Morphology(brainstate.util.PrettyObject):
         if self._area is None:
             self.construct_area()
         return self._area
+    
+    @property
+    def cm(self):
+        if self._cm is None:
+            self.construct_cm()
+        return self._cm
 
     def list_sections(self):
         """List all sections in the model with their properties (e.g., number of segments)."""
@@ -765,7 +767,6 @@ class Morphology(brainstate.util.PrettyObject):
         self
             Returns self to support method chaining
         """
-        import time
         # Create SWC reader
         reader = Import3dSWCRead()
         if not reader.input(filename):
@@ -780,19 +781,15 @@ class Morphology(brainstate.util.PrettyObject):
             # Extract point data
             points = np.column_stack([
                 swc_section.x, swc_section.y, swc_section.z, swc_section.d
-            ])   # Convert to micrometers
+            ]) 
             
             section_dicts[section_name] = {
                 'points': points,
                 'nseg': 1  # Default to 1, might need adjustment based on points or length
             }
         # 2. Add all sections using add_multiple_sections method
-        
-        t0 = time.time()
         self.add_multiple_sections(section_dicts)
-        print('add cost time',time.time()-t0)
 
-        t0 = time.time()
         # 3. Prepare connection information and establish connections
         connections = []
         for swc_section in reader.sections:
@@ -803,7 +800,6 @@ class Morphology(brainstate.util.PrettyObject):
                 connections.append((child_name, parent_name, parent_loc))
 
         self.connect_sections(connections)
-        print('Prepare connection cost ',time.time()-t0)
         # 4. Add visualization method (optional)
         self._filename = filename  # Store filename for later visualization
         

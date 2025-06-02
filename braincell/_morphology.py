@@ -19,12 +19,15 @@ import brainstate
 import brainunit as u
 import numpy as np
 
+from ._read_swc import Import3dSWCRead, visualize_neuron, process_swc_pipeline
+from ._typing import SectionName
 from ._morphology_utils import (
     calculate_total_resistance_and_area,
     generate_interpolated_nodes,
     compute_connection_seg,
     compute_line_ratios,
     init_coupling_weight_nodes,
+    get_type_name,
 )
 from ._typing import SectionName
 
@@ -64,8 +67,8 @@ class Segment(NamedTuple):
     R_left: u.Quantity[u.meter]
     R_right: u.Quantity[u.meter]
 
-
-class Section(brainstate.util.PrettyObject):
+## (brainstate.util.PrettyObject)
+class Section:
     """Base class for representing a neuron section in compartmental modeling.
 
     A Section is a fundamental building block that represents a discrete part of a neuron's
@@ -134,7 +137,6 @@ class Section(brainstate.util.PrettyObject):
         self.parent: Dict = None
         self.children = set()
         self.segments = []
-
         self._compute_area_and_resistance()
 
     def _compute_area_and_resistance(self):
@@ -151,14 +153,19 @@ class Section(brainstate.util.PrettyObject):
             - R_left (float): Resistance from the segment’s left half
             - R_right (float): Resistance from the segment’s right half
         """
-
-        node_pre = u.math.hstack((self.positions, u.math.expand_dims(self.diam, axis=1)))
+        import time
+        t0 = time.time()
+        node_pre = u.math.hstack((self.positions, self.diam))
+        print('nodepre cost',time.time() - t0)
+        t0 = time.time()
         node_after = generate_interpolated_nodes(node_pre, self.nseg)
-        node_after = u.math.asarray(node_after)
+        print('generate cost',time.time() - t0)
 
+        node_after = u.math.asarray(node_after)
         xyz_pre = node_pre[:, :3]
         ratios_pre = compute_line_ratios(xyz_pre)
         ratios_after = u.math.linspace(0, 1, 2 * self.nseg + 1)
+
 
         for i in range(0, len(node_after) - 2, 2):
             r1, r2, r3 = ratios_after[i], ratios_after[i + 1], ratios_after[i + 2]
@@ -172,9 +179,12 @@ class Section(brainstate.util.PrettyObject):
             selected_right = u.math.vstack([node_after[i + 1], node_pre[mask_right], node_after[i + 2]])
 
             # Compute axial resistance and surface area
+            
+            #R_left, area_left = calculate_total_resistance_and_area_optimized(selected_left, u.get_magnitude(self.Ra))
             R_left, area_left = calculate_total_resistance_and_area(selected_left, self.Ra)
+            #R_right, area_right = calculate_total_resistance_and_area_optimized(selected_right, u.get_magnitude(self.Ra))
             R_right, area_right = calculate_total_resistance_and_area(selected_right, self.Ra)
-
+            
             segment = Segment(
                 section_name=self.name,
                 index=i,
@@ -238,6 +248,7 @@ class Section(brainstate.util.PrettyObject):
         being used directly.
         """
         self.children.add(name)
+
 
 
 class CylinderSection(Section):
@@ -350,11 +361,12 @@ class PointSection(Section):
             Ra (float): Axial resistivity in ohm·cm.
             cm (float): Membrane capacitance in µF/cm².
         """
-        position = u.math.array(position)
-        diam = u.math.array(diam)
-        assert position.shape[1] == 3, "points must be shape (N, 3): [x, y, z]"
-        assert u.math.all(diam > 0 * u.um), "All diameters must be positive."
-        assert len(position) == len(diam), "points and diam must have the same length."
+        #points = u.math.array(points)
+        assert points.shape[0] >= 2, "at least have 2 points"
+        assert points.shape[1] == 4, "points must be shape (N, 4): [x, y, z, diameter]"
+        #assert u.math.all(points[:, 3] > 0 * u.um), "All diameters must be positive."
+        positions = points[:, :3]
+        diam = points[:, -1].reshape((-1, 1))
 
         super().__init__(
             name=name,
@@ -505,6 +517,7 @@ class Morphology(brainstate.util.PrettyObject):
         if name in self.sections:
             raise ValueError(f"Section with name '{name}' already exists.")
         self.sections[name] = section
+        
         self.segments.extend(section.segments)
 
     def get_section(self, name: SectionName) -> Optional[Section]:
@@ -616,6 +629,7 @@ class Morphology(brainstate.util.PrettyObject):
             assert isinstance(section_data, dict), 'section_data must be a dictionary.'
             if 'position' in section_data:
                 self.add_point_section(name=section_name, **section_data)
+                print('add one section cost', time.time()-t0)
             elif 'length' in section_data and 'diam' in section_data:
                 self.add_cylinder_section(name=section_name, **section_data)
             else:
@@ -743,13 +757,148 @@ class Morphology(brainstate.util.PrettyObject):
         for name, section in self.sections.items():
             print(f"Section: {name}, nseg: {section.nseg}, Points: {section.positions.shape[0]}")
 
+
+    def from_swc(self, filename):
+        """
+        Import neuron morphology data from an SWC file and populate the current Morphology object.
+        
+        Parameters
+        ----------
+        filename : str
+            Path to the SWC file
+            
+        Returns
+        -------
+        self
+            Returns self to support method chaining
+        """
+        import time
+        # Create SWC reader
+        reader = Import3dSWCRead()
+        if not reader.input(filename):
+            raise ValueError(f"Failed to read SWC file: {filename}")
+        
+        # 1. Extract point data from SWC sections and prepare section_dicts
+        section_dicts = {}
+        for swc_section in reader.sections:
+            section_type = swc_section.type
+            section_name = f"{get_type_name(section_type)}_{swc_section.id}"
+            
+            # Extract point data
+            points = np.column_stack([
+                swc_section.x, swc_section.y, swc_section.z, swc_section.d
+            ])   # Convert to micrometers
+            
+            section_dicts[section_name] = {
+                'points': points,
+                'nseg': 1  # Default to 1, might need adjustment based on points or length
+            }
+        # 2. Add all sections using add_multiple_sections method
+        
+        t0 = time.time()
+        self.add_multiple_sections(section_dicts)
+        print('add cost time',time.time()-t0)
+
+        t0 = time.time()
+        # 3. Prepare connection information and establish connections
+        connections = []
+        for swc_section in reader.sections:
+            if swc_section.parentsec is not None:
+                child_name = f"{get_type_name(swc_section.type)}_{swc_section.id}"
+                parent_name = f"{get_type_name(swc_section.parentsec.type)}_{swc_section.parentsec.id}"
+                parent_loc = swc_section.parentx  # Connection position
+                connections.append((child_name, parent_name, parent_loc))
+
+        self.connect_sections(connections)
+        print('Prepare connection cost ',time.time()-t0)
+        # 4. Add visualization method (optional)
+        self._filename = filename  # Store filename for later visualization
+        
+        # Return self for method chaining
+        return 
+        
     @classmethod
-    def from_swc(self, *args, **kwargs) -> 'Morphology':
-        raise NotImplementedError
+    def from_swc_file(cls, filename):
+        """
+        Class method to create a Morphology object from an SWC file (factory method).
+        
+        Parameters
+        ----------
+        filename : str
+            Path to the SWC file
+            
+        Returns
+        -------
+        Morphology
+            A Morphology object created from the SWC file
+        """
+        morphology = cls()
+        return morphology.from_swc(filename)
 
     @classmethod
     def from_asc(self, *args, **kwargs) -> 'Morphology':
         raise NotImplementedError
 
     def visualize(self):
-        raise NotImplementedError
+            """
+            Visualize the morphology in 3D.
+            
+            If the morphology was loaded from an SWC file, uses the SWC visualization.
+            Otherwise, implements a basic visualization of sections.
+            
+            Returns
+            -------
+            plotly.graph_objects.Figure
+                3D visualization of the neuron morphology
+            """
+            if hasattr(self, '_filename'):
+                # Use the SWC-specific visualization if available
+                return visualize_neuron(process_swc_pipeline(self._filename))
+            else:
+                # Implement basic visualization using the morphology sections
+                import plotly.graph_objects as go
+                
+                fig = go.Figure()
+                
+                # Create traces for each section
+                for name, section in self.sections.items():
+                    # Get 3D points representing the section
+                    if hasattr(section, 'positions'):
+                        # For PointSection
+                        x = section.positions[:, 0].magnitude
+                        y = section.positions[:, 1].magnitude
+                        z = section.positions[:, 2].magnitude
+                        
+                        # Line representation
+                        fig.add_trace(go.Scatter3d(
+                            x=x, y=y, z=z,
+                            mode='lines',
+                            name=name,
+                            line=dict(width=2)
+                        ))
+                        
+                        # Points representation
+                        fig.add_trace(go.Scatter3d(
+                            x=x, y=y, z=z,
+                            mode='markers',
+                            name=f"{name}_points",
+                            marker=dict(size=section.diam.flatten().magnitude/2, 
+                                    opacity=0.5)
+                        ))
+                    else:
+                        # For CylinderSection - simplified representation
+                        # Create line from start to end
+                        pass  # Implement based on CylinderSection specifics
+                
+                # Update layout
+                fig.update_layout(
+                    title="Neuron Morphology",
+                    scene=dict(
+                        xaxis_title="X (μm)",
+                        yaxis_title="Y (μm)",
+                        zaxis_title="Z (μm)",
+                        aspectmode='data'
+                    )
+                )
+                
+                return fig

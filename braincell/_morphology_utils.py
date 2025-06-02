@@ -22,7 +22,6 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
-
 @jax.jit
 def calculate_total_resistance_and_area(
     points: brainstate.typing.Array,
@@ -211,20 +210,25 @@ def generate_interpolated_nodes(node_pre, nseg: int):
     :param nseg: The number of segments for subdivision; 2*nseg+1 points will be generated.
     :return: A NumPy array of shape (2*nseg+1, 4) containing the interpolated node set.
     """
+    import time 
+    t0 = time.time()
     node_pre = u.math.asarray(node_pre)  # Ensure it is a NumPy array
     xyz_pre = node_pre[:, :3]  # Extract the first three columns (x, y, z)
     diam_pre = node_pre[:, 3]  # Extract the diameter column
-
+    print('stet1 cost ', time.time()-t0)
     # 1. Compute the ratio for node_pre
+    t0 = time.time()
     ratios_pre = compute_line_ratios(xyz_pre)
-
+    print('stet2 cost ', time.time()-t0)
     # 2. Generate 2*nseg+1 equally spaced ratios (including 0 and 1)
-    ratios_new = np.linspace(0, 1, 2 * nseg + 1)
+    t0 = time.time()
+    ratios_new = u.math.linspace(0, 1, 2 * nseg + 1)
 
     # 3. Interpolate for each new ratio
     xyz_new = []
     diam_new = []
-
+    print('stet3 cost ', time.time()-t0)
+    t0 = time.time()
     for r in ratios_new:
         # Find the adjacent indices for r in the node_pre ratio
         i1, i2 = find_ratio_interval(ratios_pre, r)
@@ -243,11 +247,12 @@ def generate_interpolated_nodes(node_pre, nseg: int):
 
         xyz_new.append([x_new, y_new, z_new])
         diam_new.append(d_new)
-
+    print('stet4 cost ', time.time()-t0)
+    t0 = time.time()
     # 4. Combine to form the final node_after
     node_after = u.math.column_stack([u.math.asarray(xyz_new),
                                       u.math.asarray(diam_new)])
-
+    print('stet5 cost ', time.time()-t0)
     return node_after
 
 
@@ -471,3 +476,15 @@ def diffusive_coupling(potentials, coo_ids, conductances):
     outs = outs.at[..., post_ids].add(diff)
 
     return outs
+
+
+def get_type_name(type_code):
+    
+    type_map = {
+        1: "soma",
+        2: "axon",
+        3: "dend",
+        4: "apic",
+        5: "custom",
+    }
+    return type_map.get(type_code, f"type{type_code}")

@@ -33,8 +33,20 @@ from ._morphology import (
     Section,
     Morphology,
 )
+
+
+from ._morphology_nounit import (
+    Section,
+    Morphology,
+)
+
+
 from ._multi_compartment import (
     MultiCompartment,
+)
+
+from ._multi_compartment_test import (
+    MultiCompartment_test,
 )
 from ._protocol import (
     DiffEqState,

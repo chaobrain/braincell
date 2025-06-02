@@ -3,7 +3,6 @@ import os
 import numpy as np
 import plotly.graph_objects as go
 
-
 class Import3dSection:
     """
     Represents an unbranched section (segment) of a neuron morphology.
@@ -512,11 +511,9 @@ class Import3dSWCRead:
         if isec == 0:  # Root section
             if self.soma3geom:  # Treat as single point sphere
                 i = 1
-
             # Create section and add points
             sec = Import3dSection(first, i - first)
-            sec.append(0, first, i - first, self.x, self.y, self.z, self.d)
-
+            sec.append(1, first, i - first, self.x, self.y, self.z, self.d)
         else:  # Not root section
             # Create section with space for parent point
             sec = Import3dSection(first, i - first + 1)

@@ -16,11 +16,17 @@ from braincell.ion import Potassium
 
 __all__ = [
     'PotassiumChannel',
+
+    'IK_p4_markov',
     'IKDR_Ba2002',
     'IK_TM1991',
     'IK_HH1952',
+
+    'IKA_p4q_ss',
     'IKA1_HM1992',
     'IKA2_HM1992',
+
+    'IKK2_pq_ss',
     'IKK2A_HM1992',
     'IKK2B_HM1992',
     'IKNI_Ya1989',
@@ -127,7 +133,7 @@ class PotassiumChannel(Channel):
         pass
 
 
-class _IK_p4_markov(PotassiumChannel):
+class IK_p4_markov(PotassiumChannel):
     r"""The delayed rectifier potassium channel of :math:`p^4`
     current which described with first-order Markov chain.
 
@@ -192,7 +198,7 @@ class _IK_p4_markov(PotassiumChannel):
         raise NotImplementedError
 
 
-class IKDR_Ba2002(_IK_p4_markov):
+class IKDR_Ba2002(IK_p4_markov):
     r"""The delayed rectifier potassium channel current.
 
     The potassium current model is adopted from (Bazhenov, et, al. 2002) [1]_.
@@ -267,7 +273,7 @@ class IKDR_Ba2002(_IK_p4_markov):
         return 0.5 * u.math.exp(-(V - 10.) / 40.)
 
 
-class IK_TM1991(_IK_p4_markov):
+class IK_TM1991(IK_p4_markov):
     r"""The potassium channel described by (Traub and Miles, 1991) [1]_.
 
     The dynamics of this channel is given by:
@@ -329,7 +335,7 @@ class IK_TM1991(_IK_p4_markov):
         return 0.5 * u.math.exp((10 + V) / 40)
 
 
-class IK_HH1952(_IK_p4_markov):
+class IK_HH1952(IK_p4_markov):
     r"""The potassium channel described by Hodgkin–Huxley model [1]_.
 
     The dynamics of this channel is given by:
@@ -393,7 +399,7 @@ class IK_HH1952(_IK_p4_markov):
         return 0.125 * u.math.exp(-(V + 20) / 80)
 
 
-class _IKA_p4q_ss(PotassiumChannel):
+class IKA_p4q_ss(PotassiumChannel):
     r"""
     The rapidly inactivating Potassium channel of :math:`p^4q`
     current which described with steady-state format.
@@ -478,7 +484,7 @@ class _IKA_p4q_ss(PotassiumChannel):
         raise NotImplementedError
 
 
-class IKA1_HM1992(_IKA_p4q_ss):
+class IKA1_HM1992(IKA_p4q_ss):
     r"""The rapidly inactivating Potassium channel (IA1) model proposed by (Huguenard & McCormick, 1992) [2]_.
 
     This model is developed according to the average behavior of
@@ -570,7 +576,7 @@ class IKA1_HM1992(_IKA_p4q_ss):
         )
 
 
-class IKA2_HM1992(_IKA_p4q_ss):
+class IKA2_HM1992(IKA_p4q_ss):
     r"""The rapidly inactivating Potassium channel (IA2) model proposed by (Huguenard & McCormick, 1992) [2]_.
 
     This model is developed according to the average behavior of
@@ -662,7 +668,7 @@ class IKA2_HM1992(_IKA_p4q_ss):
         )
 
 
-class _IKK2_pq_ss(PotassiumChannel):
+class IKK2_pq_ss(PotassiumChannel):
     r"""The slowly inactivating Potassium channel of :math:`pq`
     current which described with steady-state format.
 
@@ -745,7 +751,7 @@ class _IKK2_pq_ss(PotassiumChannel):
         raise NotImplementedError
 
 
-class IKK2A_HM1992(_IKK2_pq_ss):
+class IKK2A_HM1992(IKK2_pq_ss):
     r"""The slowly inactivating Potassium channel (IK2a) model proposed by (Huguenard & McCormick, 1992) [2]_.
 
     The dynamics of the model is given as [2]_ [3]_.
@@ -829,7 +835,7 @@ class IKK2A_HM1992(_IKK2_pq_ss):
                      u.math.exp(-(V + 130.) / 7.1))
 
 
-class IKK2B_HM1992(_IKK2_pq_ss):
+class IKK2B_HM1992(IKK2_pq_ss):
     r"""The slowly inactivating Potassium channel (IK2b) model proposed by (Huguenard & McCormick, 1992) [2]_.
 
     The dynamics of the model is given as [2]_ [3]_.

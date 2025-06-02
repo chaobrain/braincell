@@ -174,7 +174,7 @@ def exp_euler_step(target: DiffEqModule, t: T, dt: DT, *args):
 
 
 @set_module_as('braincell')
-def ind_exp_euler_step(target: DiffEqModule, t: T, dt: DT, *args):
+def ind_exp_euler_step(target: DiffEqModule, t: T, dt: DT, *args, excluded_paths=()):
     """
     Perform an independent exponential Euler integration step for each DiffEqState in the target module.
 
@@ -303,7 +303,11 @@ def ind_exp_euler_step(target: DiffEqModule, t: T, dt: DT, *args):
     integrated_diffeq_state_vals = dict()
 
     # Iterate over each DiffEqState and apply the exponential Euler update independently
-    for i, key in enumerate(diffeq_states.keys()):
+    i = 0
+    for key in diffeq_states.keys():
+        if key in excluded_paths:
+            continue
+
         # Compute the linearization (Jacobian), derivative, and auxiliary outputs
         linear, derivative, aux = brainstate.transform.vector_grad(
             functools.partial(vector_field, key), argnums=0, return_value=True, has_aux=True, unit_aware=False,
@@ -323,6 +327,8 @@ def ind_exp_euler_step(target: DiffEqModule, t: T, dt: DT, *args):
             # Update other states with auxiliary outputs (only on first iteration)
             for k, st in other_states.items():
                 st.value = aux[k]
+
+        i += 1
 
     # Assign the integrated values back to the corresponding DiffEqStates
     for k, st in diffeq_states.items():

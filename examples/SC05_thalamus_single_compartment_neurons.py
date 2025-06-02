@@ -109,6 +109,7 @@ class IN(ThalamusNeuron):
     def __init__(
         self,
         size,
+        gKL=0.01 * (u.mS / u.cm ** 2),
         V_initializer=brainstate.init.Constant(-70. * u.mV),
         solver: str = 'ind_exp_euler'
     ):
@@ -121,7 +122,7 @@ class IN(ThalamusNeuron):
 
         self.k = braincell.ion.PotassiumFixed(size, E=-90. * u.mV)
         self.k.add(IDR=braincell.channel.IKDR_Ba2002(size, V_sh=-30 * u.mV, phi=0.25))
-        self.k.add(IKL=braincell.channel.IK_Leak(size, g_max=0.01 * (u.mS / u.cm ** 2)))
+        self.k.add(IKL=braincell.channel.IK_Leak(size, g_max=gKL))
 
         self.ca = braincell.ion.CalciumDetailed(size, C_rest=5e-5 * u.mM, tau=10. * u.ms, d=0.5 * u.um)
         self.ca.add(ICaN=braincell.channel.ICaN_IS2008(size, g_max=0.1 * (u.mS / u.cm ** 2)))
@@ -138,6 +139,7 @@ class TRN(ThalamusNeuron):
     def __init__(
         self,
         size,
+        gKL=0.01 * (u.mS / u.cm ** 2),
         V_initializer=brainstate.init.Constant(-70. * u.mV), gl=0.0075,
         solver: str = 'ind_exp_euler'
     ):
@@ -150,7 +152,7 @@ class TRN(ThalamusNeuron):
 
         self.k = braincell.ion.PotassiumFixed(size, E=-90. * u.mV)
         self.k.add(IDR=braincell.channel.IKDR_Ba2002(size, V_sh=-40 * u.mV))
-        self.k.add(IKL=braincell.channel.IK_Leak(size, g_max=0.01 * (u.mS / u.cm ** 2)))
+        self.k.add(IKL=braincell.channel.IK_Leak(size, g_max=gKL))
 
         self.ca = braincell.ion.CalciumDetailed(size, C_rest=5e-5 * u.mM, tau=100. * u.ms, d=0.5 * u.um)
         self.ca.add(ICaN=braincell.channel.ICaN_IS2008(size, g_max=0.2 * (u.mS / u.cm ** 2)))
@@ -164,8 +166,6 @@ class TRN(ThalamusNeuron):
 
 
 def try_trn_neuron():
-    import jax
-    #jax.config.update("jax_disable_jit", True)
     brainstate.environ.set(dt=0.02 * u.ms)
 
     I = braintools.input.section_input(values=[0, 0.05, 0], durations=[50 * u.ms, 200 * u.ms, 100 * u.ms]) * u.uA

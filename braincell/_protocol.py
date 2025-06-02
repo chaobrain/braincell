@@ -51,9 +51,9 @@ class DiffEqState(brainstate.ShortTermState):
 
         Parameters
         ----------
-        *args : tuple
+        *args : Any
             Variable length argument list to be passed to the parent class constructor.
-        **kwargs : dict
+        **kwargs : Any
             Arbitrary keyword arguments to be passed to the parent class constructor.
         """
         super().__init__(*args, **kwargs)

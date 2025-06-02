@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ==============================================================================
+
 import functools
 from typing import Dict
 
@@ -155,7 +156,7 @@ def exp_euler_step(target: DiffEqModule, t: T, dt: DT, *args):
             t,
             dt,
             *args,
-            merging_method='stack'
+            merging='stack'
         )
 
     elif isinstance(target, MultiCompartment):
@@ -165,21 +166,29 @@ def exp_euler_step(target: DiffEqModule, t: T, dt: DT, *args):
             t,
             dt,
             *args,
-            merging_method='concat'
+            merging='concat'
         )
 
     else:
         raise ValueError(f"Unknown target type: {type(target)}")
 
 
-def ind_exp_euler_step(target: DiffEqModule, t: T, dt: DT, *args):
+@set_module_as('braincell')
+def ind_exp_euler_step(target: DiffEqModule, t: T, dt: DT, *args, excluded_paths=()):
     """
     Perform an independent exponential Euler integration step for each DiffEqState in the target module.
 
     This function applies the exponential Euler method to each differential equation state (DiffEqState)
     in the target module independently, rather than as a coupled system. This is in contrast to
-    `exp_euler_step`, which typically handles the system as a whole (potentially vectorized for populations).
+    :func:`exp_euler_step`, which typically handles the system as a whole (potentially vectorized for populations).
     The independent approach is useful when the states are weakly coupled or can be updated separately.
+
+    Comparison with :func:`exp_euler_step`:
+
+    - :func:`exp_euler_step` applies the exponential Euler method to the entire system, handling all states together,
+      which is suitable for tightly coupled systems or when vectorization is desired.
+    - :func:`ind_exp_euler_step` updates each DiffEqState independently, which can be more efficient or appropriate
+      for loosely coupled or independent states, but may not capture interactions between states as accurately.
 
     Parameters
     ----------
@@ -190,15 +199,8 @@ def ind_exp_euler_step(target: DiffEqModule, t: T, dt: DT, *args):
         The current simulation time.
     dt : DT
         The integration time step.
-    *args :
+    args : Any
         Additional arguments passed to the module's integration hooks.
-
-    Comparison with exp_euler_step
-    ------------------------------
-    - `exp_euler_step` applies the exponential Euler method to the entire system, handling all states together,
-      which is suitable for tightly coupled systems or when vectorization is desired.
-    - `ind_exp_euler_step` updates each DiffEqState independently, which can be more efficient or appropriate
-      for loosely coupled or independent states, but may not capture interactions between states as accurately.
 
     Notes
     -----
@@ -210,20 +212,22 @@ def ind_exp_euler_step(target: DiffEqModule, t: T, dt: DT, *args):
     Raises
     ------
     AssertionError
-        If the target is not an instance of HHTypedNeuron.
+        If the target is not an instance of :class:`HHTypedNeuron`.
     ValueError
         If the input data type is not a supported floating point type.
         If a state in the trace is not found in the state list.
     """
-    assert isinstance(target, HHTypedNeuron), (
-        f"The target should be a {HHTypedNeuron.__name__}. "
+    assert isinstance(target, DiffEqModule), (
+        f"The target should be a {DiffEqModule.__name__}. "
         f"But got {type(target)} instead."
     )
 
     # Retrieve all states from the target module
     all_states = brainstate.graph.states(target)
+
     # Split states into differential equation states and other states
     diffeq_states, other_states = all_states.split(DiffEqState, ...)
+
     # Collect all state object ids for trace validation
     all_state_ids = {id(st) for st in all_states.values()}
 
@@ -299,7 +303,11 @@ def ind_exp_euler_step(target: DiffEqModule, t: T, dt: DT, *args):
     integrated_diffeq_state_vals = dict()
 
     # Iterate over each DiffEqState and apply the exponential Euler update independently
-    for i, key in enumerate(diffeq_states.keys()):
+    i = 0
+    for key in diffeq_states.keys():
+        if key in excluded_paths:
+            continue
+
         # Compute the linearization (Jacobian), derivative, and auxiliary outputs
         linear, derivative, aux = brainstate.transform.vector_grad(
             functools.partial(vector_field, key), argnums=0, return_value=True, has_aux=True, unit_aware=False,
@@ -319,6 +327,8 @@ def ind_exp_euler_step(target: DiffEqModule, t: T, dt: DT, *args):
             # Update other states with auxiliary outputs (only on first iteration)
             for k, st in other_states.items():
                 st.value = aux[k]
+
+        i += 1
 
     # Assign the integrated values back to the corresponding DiffEqStates
     for k, st in diffeq_states.items():

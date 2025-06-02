@@ -16,6 +16,7 @@ from braincell.ion import Sodium
 
 __all__ = [
     'SodiumChannel',
+    'INa_p3q_markov',
     'INa_Ba2002',
     'INa_TM1991',
     'INa_HH1952',
@@ -340,12 +341,12 @@ class INa_TM1991(INa_p3q_markov):
     def f_p_alpha(self, V):
         V = (self.V_sh - V).to_decimal(u.mV)
         temp = 13 + V
-        return 0.32 * temp / (u.math.exp(temp / 4) - 1.)
+        return 0.32 * 4 / u.math.exprel(temp / 4)
 
     def f_p_beta(self, V):
         V = (V - self.V_sh).to_decimal(u.mV)
         temp = V - 40
-        return 0.28 * temp / (u.math.exp(temp / 5) - 1)
+        return 0.28 * 5 / u.math.exprel(temp / 5)
 
     def f_q_alpha(self, V):
         V = (- V + self.V_sh).to_decimal(u.mV)

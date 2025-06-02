@@ -83,20 +83,24 @@ may be defined in other files within the BrainCell library.
 
 from typing import Optional, Dict, Sequence, Callable, NamedTuple, Tuple, Type
 
-import brainstate
 import numpy as np
-from brainstate.mixin import _JointGenericAlias
 
+import brainstate
+from brainstate.mixin import _JointGenericAlias
 from ._misc import set_module_as, Container, TreeNode
 from ._protocol import DiffEqModule
 
 __all__ = [
     'HHTypedNeuron',
+
     'IonChannel',
+
     'Ion',
     'MixIons',
-    'mix_ions',
     'Channel',
+    'Synapse',
+
+    'mix_ions',
     'IonInfo',
 ]
 
@@ -1361,4 +1365,8 @@ class Channel(IonChannel):
 
             # Implement other required methods
     """
+    __module__ = 'braincell'
+
+
+class Synapse(IonChannel):
     __module__ = 'braincell'

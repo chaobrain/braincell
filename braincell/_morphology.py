@@ -19,7 +19,7 @@ import brainstate
 import brainunit as u
 import numpy as np
 
-from ._read_swc import Import3dSWCRead, visualize_neuron, process_swc_pipeline
+from ._from_swc import Import3dSWCRead, visualize_neuron, process_swc_pipeline
 from ._typing import SectionName
 from ._morphology_utils import (
     calculate_total_resistance_and_area,

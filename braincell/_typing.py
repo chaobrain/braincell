@@ -13,10 +13,20 @@
 # limitations under the License.
 # ==============================================================================
 
-from typing import Union, Callable, Hashable
+from typing import Union, Callable, Hashable, Tuple, Dict
 
 import brainstate
+import brainunit as u
+import jax
 
 Initializer = Union[brainstate.typing.ArrayLike, Callable]
 SectionName = Hashable
-
+T = u.Quantity[u.second]
+DT = u.Quantity[u.second]
+VectorFiled = Callable
+Y0 = jax.Array
+Y1 = jax.Array
+Jacobian = jax.Array
+Args = Tuple
+Aux = Dict
+Path = Tuple[str, ...]

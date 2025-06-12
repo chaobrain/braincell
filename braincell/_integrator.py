@@ -20,6 +20,7 @@ from typing import Callable
 from ._integrator_exp_euler import *
 from ._integrator_implicit import *
 from ._integrator_runge_kutta import *
+from ._integrator_staggered import *
 
 
 __all__ = [
@@ -27,6 +28,9 @@ __all__ = [
 ]
 
 all_integrators = {
+    #  staggerd 
+    'staggered': staggered_step,
+
     # exponential Euler
     'exp_euler': exp_euler_step,
 

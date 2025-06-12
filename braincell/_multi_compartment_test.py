@@ -193,16 +193,6 @@ class MultiCompartment_test(HHTypedNeuron, Morphology):
         # 1. external currents
         I_ext = I_ext / self.area
 
-        # 2.axial currents
-        _compute_axial_current = brainstate.environ.get('compute_axial_current', True)
-
-        if _compute_axial_current:
-            #coo_ids, conductance = get_coo_ids_and_values(self.conductance_matrix)
-            #I_axial = diffusive_coupling(self.V.value, coo_ids, conductance) / self.area  
-            I_axial = self.Gl * self.El
-        else:
-            I_axial = self.Gl * self.El  # u.Quantity(0., unit=u.get_unit(I_ext))
-
         # 3. synapse currents
         I_syn = self.sum_current_inputs(0. * u.nA / u.cm ** 2, self.V.value)
 
@@ -212,7 +202,7 @@ class MultiCompartment_test(HHTypedNeuron, Morphology):
             I_channel = ch.current(self.V.value) if I_channel is None else (I_channel + ch.current(self.V.value))
 
         # 5. derivatives
-        self.V.derivative = (I_ext + I_axial + I_syn + I_channel) / self.cm
+        self.V.derivative = (I_ext + I_syn + I_channel) / self.cm
 
         # [ integrate dynamics of ion and ion channel ]
         # check whether the children channel have the correct parents.

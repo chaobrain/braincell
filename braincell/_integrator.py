@@ -18,7 +18,8 @@ from typing import Callable
 from ._integrator_diffrax import *
 from ._integrator_exp_euler import *
 from ._integrator_runge_kutta import *
-from ._integrator_staggered import * 
+from ._integrator_staggered import *
+
 
 __all__ = [
     'get_integrator',

@@ -33,6 +33,7 @@ all_integrators = {
 
     # exponential Euler
     'exp_euler': exp_euler_step,
+    'ind_exp_euler_step':ind_exp_euler_step,
 
     # explicit Runge-Kutta methods
     'euler': euler_step,

@@ -25,6 +25,7 @@ from ._base import HHTypedNeuron
 from ._integrator_util import apply_standard_solver_step, jacrev_last_dim, _check_diffeq_state_derivative
 from ._misc import set_module_as
 from ._integrator_runge_kutta import euler_step, rk4_step
+from ._integrator_exp_euler import ind_exp_euler_step
 from ._integrator_exp_euler import _exponential_euler
 from ._protocol import DiffEqState, DiffEqModule
 from ._typing import Path, T, DT
@@ -221,8 +222,9 @@ def staggered_step(
     t: u.Quantity[u.second],
     *args
 ):
+    dt = brainstate.environ.get_dt()
     def update_v():
-        dt = brainstate.environ.get_dt()
+        
         V_n = target.V.value
         L_matrix = Laplacian_matrix(target)
         linear, const = linear_and_const_term(target, t, dt, *args)
@@ -240,10 +242,18 @@ def staggered_step(
     # update nonv
     V_n = target.V.value
 
-    #euler
-    euler_step(
+    # #exp_euler
+    # euler_step(
+    # target,
+    # t,
+    # *args,
+    # )
+
+    #ind_exp_euler
+    ind_exp_euler_step(
     target,
     t,
+    dt,
     *args,
     )
 
@@ -254,7 +264,6 @@ def staggered_step(
     # *args,
     # )
 
-
     # apply_standard_solver_step(
     # _exponential_euler,
     # target,
@@ -262,7 +271,5 @@ def staggered_step(
     # *args,
     # merging_method='stack'
     # )
-
-
 
     target.V.value = V_n

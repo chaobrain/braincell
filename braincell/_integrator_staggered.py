@@ -240,7 +240,6 @@ def staggered_step(
     update_v_batched()
     
     # update nonv
-    V_n = target.V.value
 
     # #exp_euler
     # euler_step(
@@ -250,11 +249,25 @@ def staggered_step(
     # )
 
     #ind_exp_euler
+    #excluded_paths 
+    all_states = brainstate.graph.states(target)
+    diffeq_states, _ = all_states.split(DiffEqState, ...)
+    excluded_paths = [('V',)]
+    for key in diffeq_states.keys():
+        if 'INa_Rsg' in key:
+            excluded_paths.append(key)
+
+    for i in range(2):  
+        target.update_state(*args)
+        target.pre_integral(*args)
+
+
     ind_exp_euler_step(
     target,
     t,
     dt,
     *args,
+    excluded_paths = excluded_paths,
     )
 
     # #rk4
@@ -271,5 +284,3 @@ def staggered_step(
     # *args,
     # merging_method='stack'
     # )
-
-    target.V.value = V_n

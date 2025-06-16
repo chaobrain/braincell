@@ -463,7 +463,7 @@ def ind_exp_euler_step(target: DiffEqModule, t: T, dt: DT, *args, excluded_paths
 
     # data to capture the integrated values of DiffEqStates
     integrated_diffeq_state_vals = dict()
-
+    
     # Iterate over each DiffEqState and apply the exponential Euler update independently
     i = 0
     for key in diffeq_states.keys():
@@ -494,4 +494,8 @@ def ind_exp_euler_step(target: DiffEqModule, t: T, dt: DT, *args, excluded_paths
 
     # Assign the integrated values back to the corresponding DiffEqStates
     for k, st in diffeq_states.items():
+        if k in excluded_paths:
+            continue
         st.value = integrated_diffeq_state_vals[k]
+
+

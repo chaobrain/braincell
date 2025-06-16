@@ -599,6 +599,10 @@ class IonChannel(brainstate.graph.Node, TreeNode, DiffEqModule):
         """
         pass
 
+    def update_state(self, *args, **kwargs):
+
+        pass
+
     def compute_derivative(self, *args, **kwargs):
         """
         Compute the derivative of the channel's state variables.
@@ -786,6 +790,11 @@ class Ion(IonChannel, Container):
         nodes = brainstate.graph.nodes(self, Channel, allowed_hierarchy=(1, 1))
         for node in nodes.values():
             node.pre_integral(V, self.pack_info())
+    
+    def update_state(self, V):
+        nodes = brainstate.graph.nodes(self, Channel, allowed_hierarchy=(1, 1))
+        for node in nodes.values():
+            node.update_state(V, self.pack_info())
 
     def compute_derivative(self, V):
         """

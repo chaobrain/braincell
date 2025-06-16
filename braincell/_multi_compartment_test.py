@@ -158,6 +158,12 @@ class MultiCompartment_test(HHTypedNeuron, Morphology):
         """
         for key, node in self.nodes(IonChannel, allowed_hierarchy=(1, 1)).items():
             node.pre_integral(self.V.value)
+        
+    def update_state(self, *args):
+        
+        for key, node in self.nodes(IonChannel, allowed_hierarchy=(1, 1)).items():
+            node.update_state(self.V.value)
+            
 
     def compute_derivative(self, I_ext=0. * u.nA):
         """

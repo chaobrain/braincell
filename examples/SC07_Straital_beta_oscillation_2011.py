@@ -15,6 +15,13 @@
 
 # -*- coding: utf-8 -*-
 
+"""
+Implementation of the paper:
+
+- McCarthy, M. M., et al. "Striatal origin of the pathologic beta oscillations in Parkinson's disease."
+  Proceedings of the national academy of sciences 108.28 (2011): 11620-11625.
+"""
+
 
 import brainstate
 import braintools

@@ -2,3 +2,4 @@ numpy
 jax
 brainunit>=0.0.2.post20240903
 brainstate>=0.0.2
+brainevent>=0.0.2

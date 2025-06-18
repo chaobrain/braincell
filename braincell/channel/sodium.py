@@ -587,13 +587,22 @@ class INa_Rsg(SodiumChannel):
                 state =  state /(total+ 10**(-12))
 
     def pre_integral(self, V, Na: IonInfo):
+        # jax.debug.print('O_value={}',self.O.value.max())
+        
+        # [self.C1.value, self.C2.value, self.C3.value, self.C4.value, self.C5.value, 
+        # self.I1.value, self.I2.value, self.I3.value, self.I4.value, self.I5.value, self.O.value, self.B.value,]=jax.tree.map(self.clip, [self.C1.value, self.C2.value, self.C3.value, self.C4.value, self.C5.value, 
+        # self.I1.value, self.I2.value, self.I3.value, self.I4.value, self.I5.value, self.O.value, self.B.value,])
+
         self.I6 = 1 - (self.I1.value + self.I2.value + self.I3.value + self.I4.value + self.I5.value + self.O.value +self.B.value +
         self.C1.value + self.C2.value + self.C3.value  + self.C4.value  + self.C5.value)
+        # jax.debug.print('I6_value={}',self.I6.max())
         self.normalize_states(
             [self.C1, self.C2, self.C3, self.C4, self.C5, self.I1, self.I2, self.I3, self.I4, self.I5, self.O, self.B,
              self.I6])#self.I6
     
-
+    def clip(self, x):
+        return u.math.clip(x, 0, 1.0)
+    
     def compute_derivative(self, V, Na: IonInfo):
         
         # I6 = 1 - (self.I1.value + self.I2.value + self.I3.value + self.I4.value + self.I5.value + self.O.value +self.B.value +
@@ -677,7 +686,6 @@ class INa_Rsg(SodiumChannel):
     def update_state(self, V, Na: IonInfo):
 
         V = V.reshape(-1)
-
         dt =  u.get_magnitude(brainstate.environ.get_dt())/2
 
         State_value = u.math.stack([
@@ -687,8 +695,6 @@ class INa_Rsg(SodiumChannel):
         State_value = State_value.reshape(-1, len(self.C1.value.squeeze()))
 
         N, M = State_value.shape
-        print('V.shape',V.shape)
-        print("S_array.shape,", State_value.shape)
     
         def rhs(S):
 
@@ -713,7 +719,6 @@ class INa_Rsg(SodiumChannel):
             return rhs(S_point.reshape(N, 1))[:, 0]
 
         A_all = jax.vmap(jax.jacfwd(rhs_point))(State_value.T)  # shape: (M, N, N)
-        #print('A',A_all.shape)
 
         # 计算导数值 (N, M)
         dS_val = rhs(State_value)  
@@ -721,18 +726,14 @@ class INa_Rsg(SodiumChannel):
         # 计算 b 项：b = dS - A @ S
         # A_all: (M, N, N), State_value.T: (M, N)
         b_val = dS_val.T - jax.vmap(lambda A, S: A @ S)(A_all, State_value.T)  # shape: (M, N)
-        #jax.debug.print('b_val={}',b_val)
-        
+
         # 向后欧拉更新: (I - dt * A) S_{n+1} = S_n + b
         Id = u.math.eye(N)[None, :, :]  # (1, N, N) for broadcasting
         A_dt = dt * A_all              # (M, N, N)
         lhs = Id - A_dt                # (M, N, N)
-
         rhs_val = State_value.T + dt * b_val       # (M, N)  # 右侧为 S_n + b 
-
         # solve I - dt * A) S_{n+1} = S_n + b
         S_new = jax.vmap(u.math.linalg.solve)(lhs, rhs_val)  # (M, N)
-
         S_new_T = S_new.T             # (N, M) 返回与 State_value 同维度
 
         # # 残差
@@ -752,7 +753,7 @@ class INa_Rsg(SodiumChannel):
         self.I5.value = S_new_T[9].reshape(1,-1)
         self.O.value  = S_new_T[10].reshape(1,-1)
         self.B.value  = S_new_T[11].reshape(1,-1)
-
+        
     def reset_state(self, V, Na: IonInfo, batch_size=None):
         self.I6 = 1 - (self.I1.value + self.I2.value + self.I3.value + self.I4.value + self.I5.value + self.O.value +self.B.value +
         self.C1.value + self.C2.value + self.C3.value  + self.C4.value  + self.C5.value)

@@ -17,6 +17,7 @@ import functools
 from typing import Dict
 
 import brainstate
+import brainevent
 import brainunit as u
 import jax
 import jax.numpy as jnp
@@ -175,6 +176,8 @@ def Laplacian_matrix(target: DiffEqModule):
         # Set diagonal elements to enforce Kirchhoff's current law
         # This constructs the Laplacian matrix L
         L_matrix = L_matrix.at[jnp.diag_indices(n_compartment)].set(-u.math.sum(L_matrix, axis=1))
+        # convert to CSR format 
+        L_matrix = brainevent.CSR.fromdense(L_matrix)
         
     return L_matrix
 
@@ -206,14 +209,25 @@ def solve_v(Laplacian_matrix, D_linear, D_const, dt, V_n):
     # Compute the left-hand side matrix
     # lhs = I + dt*(Laplacian_matrix + D_linear)
     n_compartments = Laplacian_matrix.shape[0]
-    identity_matrix = jnp.eye(n_compartments)
-    lhs = identity_matrix + dt * (Laplacian_matrix + D_linear)
+
+    ## sparse method
+    I = jnp.ones(n_compartments)
+    L_and_linear = dt * Laplacian_matrix.diag_add(D_linear.reshape(-1))
+    lhs = L_and_linear.diag_add(I)
     
-    # Compute the right-hand side vector
-    # rhs = V_n + dt*D_const
+    # Compute the right-hand side vector: rhs = V_n + dt*D_const
     rhs = V_n + dt * D_const
-    
-    return u.math.linalg.solve(lhs, rhs)
+    result = lhs.solve(rhs.reshape(-1)).reshape((1,-1))
+
+    # ## dense method
+    # I_matrix = jnp.eye(n_compartments)
+    # lhs = I_matrix + dt * (Laplacian_matrix + u.math.diag(D_linear))
+    # rhs = V_n + dt * D_const
+    # print(lhs.shape, rhs.shape)
+    # result = u.math.linalg.solve(lhs, rhs)
+   
+
+    return result
 
 
 @set_module_as('braincell')
@@ -229,15 +243,15 @@ def staggered_step(
         L_matrix = Laplacian_matrix(target)
         linear, const = linear_and_const_term(target, t, dt, *args)
         
-        D_linear, D_const = u.math.diag(linear), const
-        ## -D_linear cause from left to right, the sign changed
-        target.V.value = solve_v(L_matrix, -D_linear, D_const, dt, V_n)
+        ## -linear cause from left to right, the sign changed
+        target.V.value = solve_v(L_matrix, -linear, const, dt, V_n)
     
 
-    # update v
-    for _ in range(len(target.pop_size)):
-        update_v_batched = brainstate.augment.vmap(update_v, in_states=target.states())
-    update_v_batched()
+    #update v
+    # for _ in range(len(target.pop_size)):
+    #     update_v_batched = brainstate.augment.vmap(update_v, in_states=target.states())
+    # update_v_batched()
+    update_v()
     
     # update nonv
 
@@ -248,7 +262,7 @@ def staggered_step(
     # *args,
     # )
 
-    #ind_exp_euler
+
     #excluded_paths 
     all_states = brainstate.graph.states(target)
     diffeq_states, _ = all_states.split(DiffEqState, ...)
@@ -257,11 +271,14 @@ def staggered_step(
         if 'INa_Rsg' in key:
             excluded_paths.append(key)
 
+    # update markov
     for i in range(2):  
+        
         target.update_state(*args)
         target.pre_integral(*args)
+        
 
-
+    #ind_exp_euler for non-v and non-markov
     ind_exp_euler_step(
     target,
     t,

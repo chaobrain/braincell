@@ -13,13 +13,12 @@
 # limitations under the License.
 # ==============================================================================
 
-import brainstate
 import brainunit as u
 
 from ._integrator_exp_euler import ind_exp_euler_step
+from ._integrator_voltage_solver import sparse_voltage_step
 from ._misc import set_module_as
 from ._protocol import DiffEqModule
-from ._integrator_voltage_solver import sparse_voltage_step
 
 __all__ = [
     'staggered_step',
@@ -49,10 +48,10 @@ def staggered_step(
     #     if 'INa_Rsg' in key:
     #         excluded_paths.append(key)
 
-    # update markov
-    for i in range(2):
-        target.update_state(*args)
-        target.pre_integral(*args)
+    # # update markov
+    # for i in range(2):
+    #     target.update_state(*args)
+    #     target.pre_integral(*args)
 
     # ind_exp_euler for non-v and non-markov
     ind_exp_euler_step(target, t, dt, *args, excluded_paths=[('V',)])

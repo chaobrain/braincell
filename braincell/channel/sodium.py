@@ -599,10 +599,7 @@ class INa_Rsg(SodiumChannel):
         self.normalize_states(
             [self.C1, self.C2, self.C3, self.C4, self.C5, self.I1, self.I2, self.I3, self.I4, self.I5, self.O, self.B,
              self.I6])#self.I6
-    
-    def clip(self, x):
-        return u.math.clip(x, 0, 1.0)
-    
+
     def compute_derivative(self, V, Na: IonInfo):
         
         # I6 = 1 - (self.I1.value + self.I2.value + self.I3.value + self.I4.value + self.I5.value + self.O.value +self.B.value +

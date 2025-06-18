@@ -112,16 +112,10 @@ class MultiCompartment(HHTypedNeuron):
 
     def __init__(
         self,
-        size: brainstate.typing.Size,
+        size: brainstate.typing.Size,  # neuron size
 
-        # morphology parameters
-        connection: Sequence[Tuple[int, int, float]] | np.ndarray,
-
-        # neuron parameters
-        Ra: Initializer = 100. * (u.ohm * u.cm),  # resistivity
-        cm: Initializer = 1.0 * (u.uF / u.cm ** 2),  # membrane capacitance
-        diam: Initializer = 1. * u.um,  # diameter
-        L: Initializer = 10. * u.um,  # length
+        # # morphology parameters
+        morphology: Morphology,  # Morphology object defining the cell structure
 
         # membrane potentials
         V_th: Initializer = 0. * u.mV,
@@ -136,6 +130,7 @@ class MultiCompartment(HHTypedNeuron):
     ):
         super().__init__(size, **ion_channels)
 
+
         # parameters for morphology
         self.Ra = brainstate.init.param(Ra, self.varshape)
         self.cm = brainstate.init.param(cm, self.varshape)
@@ -143,19 +138,19 @@ class MultiCompartment(HHTypedNeuron):
         self.L = brainstate.init.param(L, self.varshape)
         self.A = np.pi * self.diam * self.L  # surface area
 
-        # connections between compartments
-        connection = np.asarray(connection)
-        assert connection.shape[1] == 3, (
-            'The connection should be a sequence of tuples with three elements. '
-            'The first element is the children node, '
-            'the second element is the parent node, '
-            'the third element is the connection position in the parent node, only for 0.5(middle) and 1(end)'
-        )
-        self.connection = connection
-        if self.connection.max() >= self.n_compartment:
-            raise ValueError('The connection should be within the range of compartments. '
-                             f'But we got {self.connection.max()} >= {self.n_compartment}.')
-        self.resistances = init_coupling_weight(self.n_compartment, connection, self.diam, self.L, self.Ra)
+        # # connections between compartments
+        # connection = np.asarray(connection)
+        # assert connection.shape[1] == 3, (
+        #     'The connection should be a sequence of tuples with three elements. '
+        #     'The first element is the children node, '
+        #     'the second element is the parent node, '
+        #     'the third element is the connection position in the parent node, only for 0.5(middle) and 1(end)'
+        # )
+        # self.connection = connection
+        # if self.connection.max() >= self.n_compartment:
+        #     raise ValueError('The connection should be within the range of compartments. '
+        #                      f'But we got {self.connection.max()} >= {self.n_compartment}.')
+        # self.resistances = init_coupling_weight(self.n_compartment, connection, self.diam, self.L, self.Ra)
 
         # parameters for membrane potentials
         self.V_th = brainstate.init.param(V_th, self.varshape)
@@ -377,24 +372,3 @@ class MultiCompartment(HHTypedNeuron):
         )
 
 
-class MorphologicalCell(MultiCompartment):
-    def __init__(
-        self,
-        size: brainstate.typing.Size,
-        morphology: Morphology,
-        V_th: Initializer = 0. * u.mV,
-        V_initializer: Initializer = brainstate.init.Uniform(-70 * u.mV, -60. * u.mV),
-        spk_fun: Callable = brainstate.surrogate.ReluGrad(),
-        solver: str | Callable = 'exp_euler',
-        name: Optional[str] = None,
-        **ion_channels
-    ):
-        super().__init__(
-            size=size,
-            V_th=V_th,
-            V_initializer=V_initializer,
-            spk_fun=spk_fun,
-            solver=solver,
-            name=name,
-            **ion_channels
-        )

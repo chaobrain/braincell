@@ -147,12 +147,7 @@ def _sparse_solve_v(
 
     # Compute the left-hand side matrix
     # lhs = I + dt*(Laplacian_matrix + D_linear)
-    n_compartments = Laplacian_matrix.shape[0]
-
-    # sparse method
-    I = jnp.ones(n_compartments)
-    L_and_linear = dt * Laplacian_matrix.diag_add(D_linear.reshape(-1))
-    lhs = L_and_linear.diag_add(I)
+    lhs = (dt * Laplacian_matrix).diag_add(dt * D_linear.reshape(-1) + 1)
 
     # Compute the right-hand side vector: rhs = V_n + dt*D_const
     rhs = V_n + dt * D_const
@@ -162,7 +157,7 @@ def _sparse_solve_v(
 
 def _linear_and_const_term(target: DiffEqModule, V_n, *args):
     """
-    get the linear_and_constant_term of ion
+    get the linear and constant term of voltage.
     """
     from ._multi_compartment import MultiCompartment
     assert isinstance(target, MultiCompartment), (
@@ -208,7 +203,7 @@ def _laplacian_matrix(target: DiffEqModule) -> brainevent.CSR:
         # Extract model parameters
         cm = target.cm
         area = target.area
-        G_matrix = target.conductance_matrix
+        G_matrix = target.conductance_matrix  # TODO
         n_compartment = target.n_compartment
 
         # Compute negative normalized conductance matrix: element-wise division by (cm * area)

@@ -45,7 +45,7 @@ class SingleCompartment(HHTypedNeuron):
 
     .. math::
 
-        {dx \over dt} = \phi_x {x_\infty (V) - x \over \tau_x(V)}
+        {braincell \over dt} = \phi_x {x_\infty (V) - x \over \tau_x(V)}
 
     where :math:`x \in [M, N]`, :math:`\phi_x` is a temperature-dependent factor,
     :math:`x_\infty` is the steady state, and :math:`\tau_x` is the time constant.

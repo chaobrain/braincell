@@ -471,16 +471,23 @@ def ind_exp_euler_step(target: DiffEqModule, t: T, dt: DT, *args, excluded_paths
 
         # Compute the linearization (Jacobian), derivative, and auxiliary outputs
         linear, derivative, aux = brainstate.transform.vector_grad(
-            functools.partial(vector_field, key), argnums=0, return_value=True, has_aux=True, unit_aware=False,
+            functools.partial(vector_field, key),
+            argnums=0,
+            return_value=True,
+            has_aux=True,
+            unit_aware=False,
         )(
             diffeq_state_vals[key],  # Current DiffEqState value
             {k: v for k, v in diffeq_state_vals.items() if k != key},  # Other DiffEqState values
             other_state_vals,  # Other state values
         )
+
         # Convert linearization to a unit-aware quantity
         linear = u.Quantity(u.get_mantissa(linear), u.get_unit(derivative) / u.get_unit(linear))
+
         # Compute the exponential relative function phi(dt * linear)
         phi = u.math.exprel(dt * linear)
+
         # Apply the exponential Euler update formula
         integrated_diffeq_state_vals[key] = all_states[key].value + dt * phi * derivative
 
@@ -488,7 +495,6 @@ def ind_exp_euler_step(target: DiffEqModule, t: T, dt: DT, *args, excluded_paths
             # Update other states with auxiliary outputs (only on first iteration)
             for k, st in other_states.items():
                 st.value = aux[k]
-
         i += 1
 
     # Assign the integrated values back to the corresponding DiffEqStates

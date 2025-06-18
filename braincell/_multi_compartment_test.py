@@ -63,7 +63,7 @@ class MultiCompartment_test(HHTypedNeuron, Morphology):
         Surface areas of compartments.
 
     conductance_matrix : Quantity
-        Axialconductance_matrix between connected segments.
+        Axial conductance matrix between connected segments.
     V_th : Quantity or Callable
         Threshold potential for spike detection.
     V_initializer : Quantity or Callable

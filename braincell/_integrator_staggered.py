@@ -16,24 +16,22 @@
 import functools
 from typing import Dict
 
-import brainstate
 import brainevent
+import brainstate
 import brainunit as u
 import jax
 import jax.numpy as jnp
 
-from ._base import HHTypedNeuron
-from ._integrator_util import apply_standard_solver_step, jacrev_last_dim, _check_diffeq_state_derivative
-from ._misc import set_module_as
-from ._integrator_runge_kutta import euler_step, rk4_step
 from ._integrator_exp_euler import ind_exp_euler_step
-from ._integrator_exp_euler import _exponential_euler
+from ._integrator_util import _check_diffeq_state_derivative
+from ._misc import set_module_as
 from ._protocol import DiffEqState, DiffEqModule
 from ._typing import Path, T, DT
 
 __all__ = [
     'staggered_step',
 ]
+
 
 @set_module_as('braincell')
 def linear_and_const_term(target: DiffEqModule, t: T, dt: DT, *args):
@@ -130,10 +128,10 @@ def linear_and_const_term(target: DiffEqModule, t: T, dt: DT, *args):
     # Compute the linearization (Jacobian), derivative, and auxiliary outputs
     key = ('V',)
     linear, derivative, aux = brainstate.transform.vector_grad(
-            functools.partial(vector_field, key), argnums=0, return_value=True, has_aux=True, unit_aware=False,
-)(          v_diffeq_state_vals[key],  # V DiffEqState value
-            other_diffeq_state_vals,  # Other DiffEqState values
-            other_state_vals,)  # Other state values
+        functools.partial(vector_field, key), argnums=0, return_value=True, has_aux=True, unit_aware=False,
+    )(v_diffeq_state_vals[key],  # V DiffEqState value
+      other_diffeq_state_vals,  # Other DiffEqState values
+      other_state_vals, )  # Other state values
 
     # Convert linearization to a unit-aware quantity
     linear = u.Quantity(u.get_mantissa(linear), u.get_unit(derivative) / u.get_unit(linear))
@@ -145,6 +143,7 @@ def linear_and_const_term(target: DiffEqModule, t: T, dt: DT, *args):
         st.value = aux[k]
 
     return linear, const
+
 
 @set_module_as('braincell')
 def Laplacian_matrix(target: DiffEqModule):
@@ -169,17 +168,18 @@ def Laplacian_matrix(target: DiffEqModule):
     with jax.ensure_compile_time_eval():
         # Extract model parameters
         n_compartment, cm, area, G_matrix = target.n_compartment, target.cm, target.area, target.conductance_matrix
-        
+
         # Compute negative normalized conductance matrix: element-wise division by (cm * area)
         L_matrix = -G_matrix / (cm * area)[:, u.math.newaxis]
-        
+
         # Set diagonal elements to enforce Kirchhoff's current law
         # This constructs the Laplacian matrix L
         L_matrix = L_matrix.at[jnp.diag_indices(n_compartment)].set(-u.math.sum(L_matrix, axis=1))
         # convert to CSR format 
         L_matrix = brainevent.CSR.fromdense(L_matrix)
-        
+
     return L_matrix
+
 
 @set_module_as('braincell')
 def solve_v(Laplacian_matrix, D_linear, D_const, dt, V_n):
@@ -204,8 +204,8 @@ def solve_v(Laplacian_matrix, D_linear, D_const, dt, V_n):
     - The Laplacian matrix accounts for passive diffusion between compartments.
     - D_linear and D_const incorporate active membrane currents (ionic, synaptic, external).
     - The implicit formulation ensures numerical stability for stiff systems.
-    ''' 
-    
+    '''
+
     # Compute the left-hand side matrix
     # lhs = I + dt*(Laplacian_matrix + D_linear)
     n_compartments = Laplacian_matrix.shape[0]
@@ -214,10 +214,10 @@ def solve_v(Laplacian_matrix, D_linear, D_const, dt, V_n):
     I = jnp.ones(n_compartments)
     L_and_linear = dt * Laplacian_matrix.diag_add(D_linear.reshape(-1))
     lhs = L_and_linear.diag_add(I)
-    
+
     # Compute the right-hand side vector: rhs = V_n + dt*D_const
     rhs = V_n + dt * D_const
-    result = lhs.solve(rhs.reshape(-1)).reshape((1,-1))
+    result = lhs.solve(rhs.reshape(-1)).reshape((1, -1))
 
     # ## dense method
     # I_matrix = jnp.eye(n_compartments)
@@ -225,7 +225,6 @@ def solve_v(Laplacian_matrix, D_linear, D_const, dt, V_n):
     # rhs = V_n + dt * D_const
     # print(lhs.shape, rhs.shape)
     # result = u.math.linalg.solve(lhs, rhs)
-   
 
     return result
 
@@ -237,22 +236,22 @@ def staggered_step(
     *args
 ):
     dt = brainstate.environ.get_dt()
+
     def update_v():
-        
+
         V_n = target.V.value
         L_matrix = Laplacian_matrix(target)
         linear, const = linear_and_const_term(target, t, dt, *args)
-        
+
         ## -linear cause from left to right, the sign changed
         target.V.value = solve_v(L_matrix, -linear, const, dt, V_n)
-    
 
-    #update v
+    # update v
     # for _ in range(len(target.pop_size)):
     #     update_v_batched = brainstate.augment.vmap(update_v, in_states=target.states())
     # update_v_batched()
     update_v()
-    
+
     # update nonv
 
     # #exp_euler
@@ -262,8 +261,7 @@ def staggered_step(
     # *args,
     # )
 
-
-    #excluded_paths 
+    # excluded_paths
     all_states = brainstate.graph.states(target)
     diffeq_states, _ = all_states.split(DiffEqState, ...)
     excluded_paths = [('V',)]
@@ -272,19 +270,17 @@ def staggered_step(
             excluded_paths.append(key)
 
     # update markov
-    for i in range(2):  
-        
+    for i in range(2):
         target.update_state(*args)
         target.pre_integral(*args)
-        
 
-    #ind_exp_euler for non-v and non-markov
+    # ind_exp_euler for non-v and non-markov
     ind_exp_euler_step(
-    target,
-    t,
-    dt,
-    *args,
-    excluded_paths = excluded_paths,
+        target,
+        t,
+        dt,
+        *args,
+        excluded_paths=excluded_paths,
     )
 
     # #rk4

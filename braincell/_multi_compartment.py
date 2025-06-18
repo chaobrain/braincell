@@ -130,18 +130,11 @@ class MultiCompartment(HHTypedNeuron):
 
         # others
         solver: str | Callable = 'exp_euler',
-        name: Optional[str] = None,
 
-        Gl: Initializer = 0 * (u.mS / u.cm ** 2),  # for splitting
-        El: Initializer = -65 * u.mV,  # for splitting
-
+        # ion channels
         **ion_channels
     ):
         super().__init__(size, **ion_channels)
-
-        # for splitting linear term
-        self.Gl = brainstate.init.param(Gl, self.varshape)
-        self.El = brainstate.init.param(El, self.varshape)
 
         # parameters for morphology
         self.Ra = brainstate.init.param(Ra, self.varshape)
@@ -284,6 +277,26 @@ class MultiCompartment(HHTypedNeuron):
         # check whether the children channel have the correct parents.
         for key, node in self.nodes(IonChannel, allowed_hierarchy=(1, 1)).items():
             node.compute_derivative(self.V.value)
+
+    def compute_membrane_derivative(self, V, I_ext=0. * u.nA):
+        # [ Compute the derivative of membrane potential ]
+        # 1. external currents
+        I_ext = I_ext / self.A
+
+        # 2.axial currents
+        I_axial = diffusive_coupling(self.V.value, self.connection, self.resistances) / self.A
+
+        # 3. synapse currents
+        I_syn = self.sum_current_inputs(0. * u.nA / u.cm ** 2, self.V.value)
+
+        # 4. channel currents
+        I_channel = None
+        for key, ch in self.nodes(IonChannel, allowed_hierarchy=(1, 1)).items():
+            I_channel = ch.current(self.V.value) if I_channel is None else (I_channel + ch.current(self.V.value))
+
+        # 5. derivatives
+        v_derivative = (I_ext + I_axial + I_syn + I_channel) / self.cm
+        return v_derivative
 
     def post_integral(self, I_ext=0. * u.nA):
         """

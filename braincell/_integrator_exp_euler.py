@@ -363,6 +363,8 @@ def ind_exp_euler_step(target: DiffEqModule, t: T, dt: DT, *args, excluded_paths
         The integration time step.
     args : Any
         Additional arguments passed to the module's integration hooks.
+    excluded_paths: tuple
+        The path to exclude from the integration step. This is useful for skipping certain states.
 
     Notes
     -----

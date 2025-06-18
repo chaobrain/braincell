@@ -228,3 +228,4 @@ cython_debug/
 /docs/apis/deprecated/generated/
 /docs/_static/braincell.psd
 
+#/examples/MC13_golgi_model/x86_64/

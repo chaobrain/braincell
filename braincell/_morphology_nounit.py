@@ -21,7 +21,7 @@ import brainstate
 import brainunit as u
 import numpy as np
 
-from ._from_swc import Import3dSWCRead, visualize_neuron, process_swc_pipeline
+from ._morphology_from_swc import Import3dSWCRead, visualize_neuron, process_swc_pipeline
 from ._typing import SectionName
 from ._morphology_utils_nounit import (
     calculate_total_resistance_and_area,
@@ -798,8 +798,8 @@ class Morphology(brainstate.util.PrettyObject):
                 parent_name = f"{get_type_name(swc_section.parentsec.type)}_{swc_section.parentsec.id}"
                 parent_loc = swc_section.parentx  # Connection position
                 connections.append((child_name, parent_name, parent_loc))
-
         self.connect_sections(connections)
+
         # 4. Add visualization method (optional)
         self._filename = filename  # Store filename for later visualization
         

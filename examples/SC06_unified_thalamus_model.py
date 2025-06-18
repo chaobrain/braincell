@@ -15,16 +15,23 @@
 
 # -*- coding: utf-8 -*-
 
+"""
+Implementation of the paper:
+
+- Li, Guoshi, Craig S. Henriquez, and Flavio Fröhlich. “Unified thalamic model generates
+  multiple distinct oscillations with state-dependent entrainment by stimulation.”
+  PLoS computational biology 13.10 (2017): e1005797.
+"""
 
 from typing import Dict, Callable
 
+import brainstate
 import braintools
 import brainunit as u
 import matplotlib.pyplot as plt
 import numba
 import numpy as np
 
-import brainstate
 from SC05_thalamus_single_compartment_neurons import TRN, RTC, HTC, IN
 
 
@@ -95,7 +102,7 @@ class ProbDist:
         return np.asarray(connected_pres), np.asarray(connected_posts)
 
 
-class Thalamus(brainstate.nn.DynamicsGroup):
+class Thalamus(brainstate.nn.Module):
     def __init__(
         self,
         g_input: Dict[str, float],
@@ -149,28 +156,34 @@ class Thalamus(brainstate.nn.DynamicsGroup):
         )
 
         # HTC provides feedforward excitation to INs
-        self.HTC2IN_ampa = brainstate.nn.align_pre_projection(
-            pre=self.HTC.align_pre(brainstate.nn.STD.desc(self.HTC.varshape, tau=700 * u.ms, U=0.07)),
-            syn=brainstate.nn.AMPA(self.HTC.varshape, alpha=0.94 / u.ms, beta=0.18 / u.ms),
-            delay=None,
+        self.HTC2IN_ampa = brainstate.nn.CurrentProj(
+            self.HTC.align_pre(
+                brainstate.nn.STD.desc(tau=700 * u.ms, U=0.07)
+            ).align_pre(
+                brainstate.nn.AMPA(self.HTC.varshape, alpha=0.94 / u.ms, beta=0.18 / u.ms)
+            ).prefetch('g'),
             comm=brainstate.nn.FixedNumConn(self.HTC.varshape, self.IN.varshape, 0.3, 6e-3),
             out=brainstate.nn.COBA(E=0. * u.mV),
             post=self.IN,
         )
-        self.HTC2IN_nmda = brainstate.nn.align_pre_projection(
-            pre=self.HTC.align_pre(brainstate.nn.STD.desc(self.HTC.varshape, tau=700 * u.ms, U=0.07)),
-            syn=brainstate.nn.AMPA(self.HTC.varshape, alpha=1.0 / u.ms, beta=0.0067 / u.ms),
-            delay=None,
+        self.HTC2IN_nmda = brainstate.nn.CurrentProj(
+            self.HTC.align_pre(
+                brainstate.nn.STD.desc(tau=700 * u.ms, U=0.07),
+            ).align_pre(
+                brainstate.nn.AMPA(self.HTC.varshape, alpha=1.0 / u.ms, beta=0.0067 / u.ms)
+            ).prefetch('g'),
             comm=brainstate.nn.FixedNumConn(self.HTC.varshape, self.IN.varshape, 0.3, 3e-3),
             out=MgBlock(),
             post=self.IN,
         )
 
         # INs delivered feedforward inhibition to RTC cells
-        self.IN2RTC = brainstate.nn.align_pre_projection(
-            pre=self.IN.align_pre(brainstate.nn.STD.desc(self.IN.varshape, tau=700 * u.ms, U=0.07)),
-            syn=brainstate.nn.GABAa(self.IN.varshape, alpha=10.5 / u.ms, beta=0.166 / u.ms),
-            delay=2 * u.ms,
+        self.IN2RTC = brainstate.nn.CurrentProj(
+            self.IN.align_pre(
+                brainstate.nn.STD.desc(tau=700 * u.ms, U=0.07)
+            ).align_pre(
+                brainstate.nn.GABAa(self.IN.varshape, alpha=10.5 / u.ms, beta=0.166 / u.ms)
+            ).prefetch_delay('g', 2 * u.ms),
             comm=brainstate.nn.FixedNumConn(self.IN.varshape, self.RTC.varshape, 0.3, 3e-3),
             out=brainstate.nn.COBA(E=-80. * u.mV),
             post=self.RTC,
@@ -178,56 +191,67 @@ class Thalamus(brainstate.nn.DynamicsGroup):
 
         # 20% RTC cells electrically connected with HTC cells
         self.gj_RTC2HTC = brainstate.nn.SymmetryGapJunction(
-            (self.RTC, self.HTC), ('V', 'V'),
-            conn=ProbDist(dist=2., prob=0.3, pre_ratio=0.2), weight=1 / 300 * u.mS
+            (self.RTC, self.HTC), 'V', conn=ProbDist(dist=2., prob=0.3, pre_ratio=0.2), weight=1 / 300 * u.mS
         )
 
         # Both HTC and RTC cells sent glutamatergic synapses to RE neurons, while
         # receiving GABAergic feedback inhibition from the RE population
-        self.HTC2RE_ampa = brainstate.nn.align_pre_projection(
-            pre=self.HTC.align_pre(brainstate.nn.STD.desc(self.HTC.varshape, tau=700 * u.ms, U=0.07)),
-            syn=brainstate.nn.AMPA(self.HTC.varshape, alpha=0.94 / u.ms, beta=0.18 / u.ms),
-            delay=2. * u.ms,
+        self.HTC2RE_ampa = brainstate.nn.CurrentProj(
+            self.HTC.align_pre(
+                brainstate.nn.STD.desc(tau=700 * u.ms, U=0.07)
+            ).align_pre(
+                brainstate.nn.AMPA(self.HTC.varshape, alpha=0.94 / u.ms, beta=0.18 / u.ms)
+            ).prefetch_delay('g', 2 * u.ms),
             comm=brainstate.nn.FixedNumConn(self.HTC.varshape, self.RE.varshape, 0.2, 4e-3),
             out=brainstate.nn.COBA(E=0. * u.mV),
             post=self.RE,
         )
-        self.RTC2RE_ampa = brainstate.nn.align_pre_projection(
-            pre=self.RTC.align_pre(brainstate.nn.STD.desc(self.RTC.varshape, tau=700 * u.ms, U=0.07)),
-            syn=brainstate.nn.AMPA(self.RTC.varshape, alpha=0.94 / u.ms, beta=0.18 / u.ms),
-            delay=2. * u.ms,
+        self.RTC2RE_ampa = brainstate.nn.CurrentProj(
+            self.RTC.align_pre(
+                brainstate.nn.STD.desc(tau=700 * u.ms, U=0.07)
+            ).align_pre(
+                brainstate.nn.AMPA(self.RTC.varshape, alpha=0.94 / u.ms, beta=0.18 / u.ms)
+            ).prefetch_delay('g', 2 * u.ms),
             comm=brainstate.nn.FixedNumConn(self.RTC.varshape, self.RE.varshape, 0.2, 4e-3),
             out=brainstate.nn.COBA(E=0. * u.mV),
             post=self.RE,
         )
-        self.HTC2RE_nmda = brainstate.nn.align_pre_projection(
-            pre=self.HTC.align_pre(brainstate.nn.STD.desc(self.HTC.varshape, tau=700 * u.ms, U=0.07)),
-            syn=brainstate.nn.AMPA(self.HTC.varshape, alpha=1. / u.ms, beta=0.0067 / u.ms),
-            delay=2. * u.ms,
+        self.HTC2RE_nmda = brainstate.nn.CurrentProj(
+            self.HTC.align_pre(
+                brainstate.nn.STD.desc(tau=700 * u.ms, U=0.07)
+            ).align_pre(
+                brainstate.nn.AMPA(self.HTC.varshape, alpha=1. / u.ms, beta=0.0067 / u.ms)
+            ).prefetch_delay('g', 2 * u.ms),
             comm=brainstate.nn.FixedNumConn(self.HTC.varshape, self.RE.varshape, 0.2, 2e-3),
             out=MgBlock(),
             post=self.RE,
         )
-        self.RTC2RE_nmda = brainstate.nn.align_pre_projection(
-            pre=self.RTC.align_pre(brainstate.nn.STD.desc(self.RTC.varshape, tau=700 * u.ms, U=0.07)),
-            syn=brainstate.nn.AMPA(self.RTC.varshape, alpha=1. / u.ms, beta=0.0067 / u.ms),
-            delay=2. * u.ms,
+        self.RTC2RE_nmda = brainstate.nn.CurrentProj(
+            self.RTC.align_pre(
+                brainstate.nn.STD.desc(tau=700 * u.ms, U=0.07)
+            ).align_pre(
+                brainstate.nn.AMPA(self.RTC.varshape, alpha=1. / u.ms, beta=0.0067 / u.ms)
+            ).prefetch_delay('g', 2 * u.ms),
             comm=brainstate.nn.FixedNumConn(self.RTC.varshape, self.RE.varshape, 0.2, 2e-3),
             out=MgBlock(),
             post=self.RE,
         )
-        self.RE2HTC = brainstate.nn.align_pre_projection(
-            pre=self.RE.align_pre(brainstate.nn.STD.desc(self.RE.varshape, tau=700 * u.ms, U=0.07)),
-            syn=brainstate.nn.GABAa(self.RE.varshape, alpha=10.5 / u.ms, beta=0.166 / u.ms),
-            delay=2 * u.ms,
+        self.RE2HTC = brainstate.nn.CurrentProj(
+            self.RE.align_pre(
+                brainstate.nn.STD.desc(tau=700 * u.ms, U=0.07)
+            ).align_pre(
+                brainstate.nn.GABAa(self.RE.varshape, alpha=10.5 / u.ms, beta=0.166 / u.ms)
+            ).prefetch_delay('g', 2 * u.ms),
             comm=brainstate.nn.FixedNumConn(self.RE.varshape, self.HTC.varshape, 0.2, 3e-3),
             out=brainstate.nn.COBA(E=-80. * u.mV),
             post=self.HTC,
         )
-        self.RE2RTC = brainstate.nn.align_pre_projection(
-            pre=self.RE.align_pre(brainstate.nn.STD.desc(self.RE.varshape, tau=700 * u.ms, U=0.07)),
-            syn=brainstate.nn.GABAa(self.RE.varshape, alpha=10.5 / u.ms, beta=0.166 / u.ms),
-            delay=2 * u.ms,
+        self.RE2RTC = brainstate.nn.CurrentProj(
+            self.RE.align_pre(
+                brainstate.nn.STD.desc(tau=700 * u.ms, U=0.07)
+            ).align_pre(
+                brainstate.nn.GABAa(self.RE.varshape, alpha=10.5 / u.ms, beta=0.166 / u.ms)
+            ).prefetch_delay('g', 2 * u.ms),
             comm=brainstate.nn.FixedNumConn(self.RE.varshape, self.RTC.varshape, 0.2, 3e-3),
             out=brainstate.nn.COBA(E=-80. * u.mV),
             post=self.RTC,
@@ -237,10 +261,12 @@ class Thalamus(brainstate.nn.DynamicsGroup):
         self.gj_RE = brainstate.nn.SymmetryGapJunction(
             self.RE, 'V', conn=ProbDist(dist=2., prob=0.3, pre_ratio=0.2), weight=1 / 300 * u.mS
         )
-        self.RE2RE = brainstate.nn.align_pre_projection(
-            pre=self.RE.align_pre(brainstate.nn.STD.desc(self.RE.varshape, tau=700 * u.ms, U=0.07)),
-            syn=brainstate.nn.GABAa(self.RE.varshape, alpha=10.5 / u.ms, beta=0.166 / u.ms),
-            delay=2 * u.ms,
+        self.RE2RE = brainstate.nn.CurrentProj(
+            self.RE.align_pre(
+                brainstate.nn.STD.desc(tau=700 * u.ms, U=0.07)
+            ).align_pre(
+                brainstate.nn.GABAa(self.RE.varshape, alpha=10.5 / u.ms, beta=0.166 / u.ms)
+            ).prefetch_delay('g', 2 * u.ms),
             comm=brainstate.nn.FixedNumConn(self.RE.varshape, self.RE.varshape, 0.2, 1e-3),
             out=brainstate.nn.COBA(E=-70. * u.mV),
             post=self.RE,
@@ -248,12 +274,13 @@ class Thalamus(brainstate.nn.DynamicsGroup):
 
         # 10% RE neurons project GABAergic synapses to local interneurons
         # probability (0.05) was used for the RE->IN synapses according to experimental data
-        self.RE2IN = brainstate.nn.align_pre_projection(
-            pre=self.RE.align_pre(brainstate.nn.STD.desc(self.RE.varshape, tau=700 * u.ms, U=0.07)),
-            syn=brainstate.nn.GABAa(self.RE.varshape, alpha=10.5 / u.ms, beta=0.166 / u.ms),
-            delay=2 * u.ms,
-            comm=brainstate.nn.FixedNumConn(self.RE.varshape, self.IN.varshape, 0.05, 1e-3,
-                                            afferent_ratio=0.1),
+        self.RE2IN = brainstate.nn.CurrentProj(
+            self.RE.align_pre(
+                brainstate.nn.STD.desc(tau=700 * u.ms, U=0.07)
+            ).alig_pre(
+                brainstate.nn.GABAa(self.RE.varshape, alpha=10.5 / u.ms, beta=0.166 / u.ms)
+            ).prefetch_delay('g', 2 * u.ms),
+            comm=brainstate.nn.FixedNumConn(self.RE.varshape, self.IN.varshape, 0.05, 1e-3, afferent_ratio=0.1),
             out=brainstate.nn.COBA(E=-80. * u.mV),
             post=self.IN,
         )

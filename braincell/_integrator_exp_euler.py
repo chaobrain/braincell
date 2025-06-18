@@ -222,6 +222,9 @@ def ind_exp_euler_step(target: DiffEqModule, t: T, dt: DT, *args, excluded_paths
         f"But got {type(target)} instead."
     )
 
+    # Pre-integration hook (e.g., update gating variables)
+    target.pre_integral(*args)
+
     # Retrieve all states from the target module
     all_states = brainstate.graph.states(target)
 
@@ -272,14 +275,8 @@ def ind_exp_euler_step(target: DiffEqModule, t: T, dt: DT, *args, excluded_paths
             for key, val in other_state_vals.items():
                 all_states[key].value = val
 
-            # Pre-integration hook (e.g., update gating variables)
-            target.pre_integral(*args)
-
             # Compute derivatives for all states
             target.compute_derivative(*args)
-
-            # Post-integration hook (e.g., apply constraints)
-            target.post_integral(*args)
 
             # Validate and retrieve the derivative for the current state
             _check_diffeq_state_derivative(all_states[diffeq_state_key], dt)  # THIS is important.
@@ -333,6 +330,9 @@ def ind_exp_euler_step(target: DiffEqModule, t: T, dt: DT, *args, excluded_paths
     # Assign the integrated values back to the corresponding DiffEqStates
     for k, st in diffeq_states.items():
         st.value = integrated_diffeq_state_vals[k]
+
+    # Post-integration hook (e.g., apply constraints)
+    target.post_integral(*args)
 
 
 @set_module_as('braincell')
@@ -386,6 +386,9 @@ def ind_exp_euler_step(target: DiffEqModule, t: T, dt: DT, *args, excluded_paths
         f"But got {type(target)} instead."
     )
 
+    # Pre-integration hook (e.g., update gating variables)
+    target.pre_integral(*args)
+
     # Retrieve all states from the target module
     all_states = brainstate.graph.states(target)
 
@@ -436,14 +439,8 @@ def ind_exp_euler_step(target: DiffEqModule, t: T, dt: DT, *args, excluded_paths
             for key, val in other_state_vals.items():
                 all_states[key].value = val
 
-            # Pre-integration hook (e.g., update gating variables)
-            target.pre_integral(*args)
-
             # Compute derivatives for all states
             target.compute_derivative(*args)
-
-            # Post-integration hook (e.g., apply constraints)
-            target.post_integral(*args)
 
             # Validate and retrieve the derivative for the current state
             _check_diffeq_state_derivative(all_states[diffeq_state_key], dt)  # THIS is important.
@@ -465,7 +462,7 @@ def ind_exp_euler_step(target: DiffEqModule, t: T, dt: DT, *args, excluded_paths
 
     # data to capture the integrated values of DiffEqStates
     integrated_diffeq_state_vals = dict()
-    
+
     # Iterate over each DiffEqState and apply the exponential Euler update independently
     i = 0
     for key in diffeq_states.keys():
@@ -500,4 +497,5 @@ def ind_exp_euler_step(target: DiffEqModule, t: T, dt: DT, *args, excluded_paths
             continue
         st.value = integrated_diffeq_state_vals[k]
 
-
+    # Post-integration hook (e.g., apply constraints)
+    target.post_integral(*args)

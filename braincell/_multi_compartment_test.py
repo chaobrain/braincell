@@ -13,17 +13,14 @@
 # limitations under the License.
 # ==============================================================================
 
-from typing import Optional, Callable, Sequence, Tuple
+from typing import Callable, Tuple
 
-import brainstate
-
-from ._morphology_utils_nounit import *
 from ._base import HHTypedNeuron, IonChannel
 from ._integrator import get_integrator
+from ._morphology_nounit import Morphology
+from ._morphology_utils_nounit import *
 from ._protocol import DiffEqState
 from ._typing import Initializer
-from ._morphology_nounit import Morphology
-
 
 __all__ = [
     'MultiCompartment_test',

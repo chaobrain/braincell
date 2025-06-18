@@ -130,7 +130,7 @@ class HHTypedNeuron(brainstate.nn.Dynamics, Container, DiffEqModule):
             The size of the simulation target. Can be an integer or a tuple of integers.
             Must be at least 1-dimensional, representing (..., n_neuron, n_compartment).
 
-        name : Optional[str], default=None
+        name : Optional[str]
             The name of the HHTypedNeuron instance. If not provided, a default name will be used.
 
         **ion_channels : dict

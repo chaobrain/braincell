@@ -137,7 +137,7 @@ class MultiCompartment(HHTypedNeuron):
 
         **ion_channels
     ):
-        super().__init__(size, name=name, **ion_channels)
+        super().__init__(size, **ion_channels)
 
         # for splitting linear term
         self.Gl = brainstate.init.param(Gl, self.varshape)

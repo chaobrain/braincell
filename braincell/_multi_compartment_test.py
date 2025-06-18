@@ -13,8 +13,6 @@
 # limitations under the License.
 # ==============================================================================
 
-from __future__ import annotations
-
 from typing import Optional, Callable, Sequence, Tuple
 
 import brainstate
@@ -25,9 +23,12 @@ from ._integrator import get_integrator
 from ._protocol import DiffEqState
 from ._typing import Initializer
 from ._morphology_nounit import Morphology
+
+
 __all__ = [
     'MultiCompartment_test',
 ]
+
 
 class MultiCompartment_test(HHTypedNeuron, Morphology):
     r"""
@@ -97,20 +98,18 @@ class MultiCompartment_test(HHTypedNeuron, Morphology):
 
         # others
         solver: str | Callable = 'exp_euler',
-        name: Optional[str] = None,
 
         Gl: Initializer = 0 * (u.mS / u.cm ** 2),  # for splitting
         El: Initializer = -65 * u.mV,  # for splitting
 
         **ion_channels
     ):
-        HHTypedNeuron.__init__(self, size, name=name, **ion_channels)
+        HHTypedNeuron.__init__(self, size, **ion_channels)
         Morphology.__init__(self)
 
         # for splitting linear term
         self.Gl = brainstate.init.param(Gl, self.varshape)
         self.El = brainstate.init.param(El, self.varshape)
-
 
         # parameters for membrane potentials
         self.V_th = brainstate.init.param(V_th, self.varshape)

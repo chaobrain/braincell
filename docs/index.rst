@@ -1,13 +1,66 @@
 ``braincell`` documentation
 ===========================
 
-`braincell <https://github.com/chaobrain/braincell>`_ provides dendritic modeling capabilities in JAX for brain dynamics.
+`braincell <https://github.com/chaobrain/braincell>`_ implements a biophysics-based State Transformation System for precise neuronal dynamics modeling and simulation.
+
+``BrainCell`` is specifically designed to work with biologically detailed state-based models, including multi-compartment neurons with dendritic trees, ion channel dynamics (e.g., Hodgkin-Huxley type channels), and spatially resolved synaptic interactions
+
+``BrainCell`` serves as a core component in building a Biophysical Neural Dynamics (BND) ecosystem, bridging computational neuroscience and neuroengineering by enabling accurate simulations of neural dynamics at multiple scales: from subcellular processes (ion channel gating) to network-level activity (synaptic coupling and population oscillations).
+
+``BrainCell`` is a core component of our establishing `Brain Dynamics Programming (BDP) ecosystem <https://ecosystem-for-brain-dynamics.readthedocs.io/>`_.
+
 
 
 
 
 ----
+Features
+^^^^^^^^^
 
+.. grid::
+
+
+
+   .. grid-item::
+      :columns: 12 12 12 6
+
+      .. card:: Biophysical State Precision
+         :class-card: sd-border-0
+         :shadow: none
+         :class-title: sd-fs-6
+
+         .. div:: sd-font-normal
+
+            ``BrainCell`` enables biophysically accurate modeling of neural dynamics across scales, from ion channel gating to network-wide population activity, with state variables directly mapped to measurable biological quantities like membrane potential and ion concentrations.
+
+
+   .. grid-item::
+      :columns: 12 12 12 6
+
+      .. card:: Stiff Dynamics Optimization
+         :class-card: sd-border-0
+         :shadow: none
+         :class-title: sd-fs-6
+
+         .. div:: sd-font-normal
+
+            ``BrainCell`` features specialized solvers optimized for stiff neural systems, efficiently handling rapid biophysical transitions (e.g., action potential dynamics) while integrating multi-compartment neuron structures and synaptic mechanisms.
+
+
+   .. grid-item::
+      :columns: 12 12 12 6
+
+      .. card:: Scalable Biorealistic Simulation
+         :class-card: sd-border-0
+         :shadow: none
+         :class-title: sd-fs-6
+
+         .. div:: sd-font-normal
+
+            ``BrainCell`` seamlessly integrates with JAX-based ecosystems for large-scale simulation, enabling high-performance modeling of biologically detailed neural circuits and direct validation against experimental data.
+
+
+----
 
 Installation
 ^^^^^^^^^^^^

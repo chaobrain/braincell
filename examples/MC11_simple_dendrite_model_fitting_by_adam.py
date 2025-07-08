@@ -21,7 +21,7 @@ import jax
 import matplotlib.pyplot as plt
 import numpy as np
 
-from simple_dendrite_model_simulation import solve_explicit_solver
+from MC11_simple_dendrite_model_simulation import solve_explicit_solver
 
 brainstate.environ.set(precision=64)
 

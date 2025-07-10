@@ -7,7 +7,6 @@
 
 ``BrainCell`` serves as a core component in building a Biophysical Neural Dynamics (BND) ecosystem, bridging computational neuroscience and neuroengineering by enabling accurate simulations of neural dynamics at multiple scales: from subcellular processes (ion channel gating) to network-level activity (synaptic coupling and population oscillations).
 
-``BrainCell`` is a core component of our establishing `Brain Dynamics Programming (BDP) ecosystem <https://ecosystem-for-brain-dynamics.readthedocs.io/>`_.
 
 
 
@@ -46,18 +45,6 @@ Features
 
             ``BrainCell`` features specialized solvers optimized for stiff neural systems, efficiently handling rapid biophysical transitions (e.g., action potential dynamics) while integrating multi-compartment neuron structures and synaptic mechanisms.
 
-
-   .. grid-item::
-      :columns: 12 12 12 6
-
-      .. card:: Scalable Biorealistic Simulation
-         :class-card: sd-border-0
-         :shadow: none
-         :class-title: sd-fs-6
-
-         .. div:: sd-font-normal
-
-            ``BrainCell`` seamlessly integrates with JAX-based ecosystems for large-scale simulation, enabling high-performance modeling of biologically detailed neural circuits and direct validation against experimental data.
 
 
 ----
@@ -98,9 +85,72 @@ We are building the `brain modeling ecosystem <https://brain-modeling.readthedoc
 
 
 
+
+
 .. toctree::
    :hidden:
    :maxdepth: 1
+   :caption: Quickstart
+
+   quickstart/concepts-zh.ipynb
+   quickstart/quickstart modeling-zh.ipynb
+
+
+
+
+.. toctree::
+   :hidden:
+   :maxdepth: 2
+   :caption: Tutorials
+
+   tutorial/rationale-zh.ipynb
+   tutorial/basic unit-zh.ipynb
+   tutorial/structural unit-zh.ipynb
+   tutorial/dynamical unit-zh.ipynb
+
+
+
+
+
+.. toctree::
+   :hidden:
+   :maxdepth: 1
+   :caption: Examples
+
+   example/concepts-zh.ipynb
+   example/Calcium Activation Functions.ipynb
+   example/COBA HH 2007.ipynb
+   example/HH Neuron.ipynb
+   example/Thalamus Single Compartment.ipynb
+   example/Unified Thalamu Model.ipynb
+
+
+
+
+
+
+.. toctree::
+   :hidden:
+   :maxdepth: 1
+   :caption: Ecosystem
+
+   ecosystem/Ecosystem for Brain Modeling-zh.ipynb
+   ecosystem/brainpy-zh.ipynb
+   ecosystem/braintaichi-zh.ipynb
+   ecosystem/brainunit.ipynb
+   ecosystem/braincell-zh.ipynb
+   ecosystem/brainstate-zh.ipynb
+   ecosystem/brainevent-zh.ipynb
+   ecosystem/brainscale-zh.ipynb
+   ecosystem/braintools-zh.ipynb
+   ecosystem/Citations-zh.ipynb
+
+
+
+
+.. toctree::
+   :hidden:
+   :maxdepth: 2
    :caption: API Documentation
 
    apis/changelog.md
@@ -110,6 +160,4 @@ We are building the `brain modeling ecosystem <https://brain-modeling.readthedoc
    apis/braincell.ion.rst
    apis/braincell.channel.rst
    apis/integration.rst
-
-
 

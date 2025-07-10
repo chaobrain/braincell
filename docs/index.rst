@@ -122,7 +122,6 @@ We are building the `brain modeling ecosystem <https://brain-modeling.readthedoc
    example/COBA HH 2007.ipynb
    example/HH Neuron.ipynb
    example/Thalamus Single Compartment.ipynb
-   example/Unified Thalamu Model.ipynb
 
 
 

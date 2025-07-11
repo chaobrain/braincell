@@ -107,6 +107,7 @@ We are building the `brain modeling ecosystem <https://brain-modeling.readthedoc
    tutorial/basic unit-zh.ipynb
    tutorial/structural unit-zh.ipynb
    tutorial/dynamical unit-zh.ipynb
+   tutorial/more-zh.ipynb
 
 
 

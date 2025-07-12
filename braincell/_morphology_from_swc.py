@@ -18,7 +18,6 @@ import os
 
 import numpy as np
 
-
 class Import3dSection:
     """
     Represents an unbranched section (segment) of a neuron morphology.

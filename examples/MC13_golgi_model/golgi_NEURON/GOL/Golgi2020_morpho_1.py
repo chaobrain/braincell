@@ -18,6 +18,20 @@ class Golgi_morpho_1():
         cell.input(asc_path)
         i3d = h.Import3d_GUI(cell,0)
         i3d.instantiate(self)
+
+        sec_test = cell.sections.object(0) 
+        print('!!!!!!!',sec_test)
+        # 获取点数量
+        npt = int(sec_test.raw.ncol())
+
+        # 获取点的x,y,z
+        xs = [sec_test.raw.x[0][i] for i in range(npt)]
+        ys = [sec_test.raw.x[1][i] for i in range(npt)]
+        zs = [sec_test.raw.x[2][i] for i in range(npt)]
+
+        # 打印所有点
+        for i in range(npt):
+                print(f"{i}: ({xs[i]:.6f}, {ys[i]:.6f}, {zs[i]:.6f})")
         ## conductvalues
         conductvalues = np.genfromtxt(txt_path)
 

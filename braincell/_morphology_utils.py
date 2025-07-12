@@ -22,10 +22,9 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
-@jax.jit
 def calculate_total_resistance_and_area(
     points: brainstate.typing.Array,
-    resistivity: u.Quantity = 100.0 * u.ohm * u.cm
+    resistivity: u.Quantity = 100.0
 ):
     r"""
     Calculate the total axial resistance and surface area of a neurite represented as N-1 frustums 
@@ -79,33 +78,31 @@ def calculate_total_resistance_and_area(
          points = np.array([[0, 0, 0, 2], [5, 0, 0, 1]])
          R, Area = calculate_total_resistance_and_area(points)
     """
-    points = u.math.asarray(points)
+    points = np.asarray(points)
     xyz = points[:, :3]  # Extract the first three columns (x, y, z)
     diameters = points[:, 3]  # Extract the diameter column
 
     # Calculate the Euclidean distance between adjacent points
-    heights = u.linalg.norm(u.math.diff(xyz, axis=0), axis=1)
+    heights = np.linalg.norm(np.diff(xyz, axis=0), axis=1)
 
     # Calculate the radii of adjacent points
     r1 = diameters[:-1] / 2
     r2 = diameters[1:] / 2
 
     # Calculate the slant heights (the oblique height)
-    slant_heights = u.math.sqrt(heights ** 2 + (r2 - r1) ** 2)
+    slant_heights = np.sqrt(heights ** 2 + (r2 - r1) ** 2)
 
     # Calculate the surface areas of the frustums
-    surface_areas = u.math.pi * (r1 + r2) * slant_heights
-    total_surface_area = u.math.sum(surface_areas)
+    surface_areas = np.pi * (r1 + r2) * slant_heights
+    total_surface_area = np.sum(surface_areas)
 
     # Calculate the resistances
-    resistances = resistivity * heights / (u.math.pi * r1 * r2)
-    total_resistance = u.math.sum(resistances)
+    resistances = resistivity * heights / (np.pi * r1 * r2)
+    total_resistance = np.sum(resistances)
 
     return total_resistance, total_surface_area
 
-
-@jax.jit
-def compute_line_ratios(points: Union[np.ndarray, jax.Array]):
+def compute_line_ratios(points: np.ndarray):
     r"""
     Compute the normalized cumulative distance (0 to 1) of each point along a polyline
     defined by 3D coordinates. The output ratio indicates how far along the path 
@@ -148,27 +145,31 @@ def compute_line_ratios(points: Union[np.ndarray, jax.Array]):
     - Cumulative distances: [0, 3, 8]
     - Normalized: [0/8, 3/8, 8/8] = [0.0, 0.375, 1.0]
     """
-    points = u.math.asarray(points)
+    # Convert input to NumPy array if it's not already
+    points = np.asarray(points)
 
     # Calculate the Euclidean distance between adjacent points
-    segment_lengths = u.math.linalg.norm(u.math.diff(points, axis=0), axis=1)
-    seg_cumsum, seg_unit = u.split_mantissa_unit(u.math.cumsum(segment_lengths))
-
+    # np.diff computes the difference between adjacent points
+    # np.linalg.norm computes the Euclidean norm (distance) for each difference
+    segment_lengths = np.linalg.norm(np.diff(points, axis=0), axis=1)
+    
     # Calculate the total length
-    total_length = u.math.sum(segment_lengths)
+    total_length = np.sum(segment_lengths)
+    
+    # Compute the cumulative length
+    # np.insert adds a 0 at the beginning to represent the first point (distance = 0)
+    cumulative_lengths = np.insert(np.cumsum(segment_lengths), 0, 0.0)
+    
+    # Normalize by total length to get ratios
+    # Handle the case where all points coincide (total_length = 0)
+    if total_length > 0:
+        ratios = cumulative_lengths / total_length
+    else:
+        ratios = np.zeros(len(points))
+        
+    return ratios
 
-    # Compute the cumulative length and normalize it
-    cumulative_lengths = jnp.insert(seg_cumsum, 0, 0) * seg_unit  # Insert 0 at the beginning
-    ratios = cumulative_lengths / total_length  # Normalize
 
-    return u.math.where(
-        total_length == 0 * seg_unit,
-        jnp.zeros(len(points)),  # Handle the case where all points coincide
-        ratios,
-    )
-
-
-@jax.jit
 def find_ratio_interval(
     ratios: np.ndarray,
     target_ratio: np.ndarray
@@ -192,16 +193,14 @@ def find_ratio_interval(
     >>> find_ratio_interval(ratios, 1.0)
     (2, 3)
     """
-    ratios = u.math.asarray(ratios)
+    ratios = np.asarray(ratios)
     N = len(ratios)
 
-    idx = u.math.searchsorted(ratios, target_ratio) - 1
-    idx = u.math.where(target_ratio <= ratios[0], 0, idx)
-    idx = u.math.where(target_ratio >= ratios[-1], N - 2, idx)
+    idx = np.searchsorted(ratios, target_ratio) - 1
+    idx = np.where(target_ratio <= ratios[0], 0, idx)
+    idx = np.where(target_ratio >= ratios[-1], N - 2, idx)
     return idx, idx + 1
 
-
-@partial(jax.jit, static_argnums=1)
 def generate_interpolated_nodes(node_pre, nseg: int):
     """
     Generate 2*nseg + 1 interpolated nodes and calculate their coordinates and diameters.
@@ -210,25 +209,20 @@ def generate_interpolated_nodes(node_pre, nseg: int):
     :param nseg: The number of segments for subdivision; 2*nseg+1 points will be generated.
     :return: A NumPy array of shape (2*nseg+1, 4) containing the interpolated node set.
     """
-    import time 
-    t0 = time.time()
-    node_pre = u.math.asarray(node_pre)  # Ensure it is a NumPy array
+    node_pre = np.asarray(node_pre)  # Ensure it is a NumPy array
     xyz_pre = node_pre[:, :3]  # Extract the first three columns (x, y, z)
     diam_pre = node_pre[:, 3]  # Extract the diameter column
-    print('stet1 cost ', time.time()-t0)
+
     # 1. Compute the ratio for node_pre
-    t0 = time.time()
     ratios_pre = compute_line_ratios(xyz_pre)
-    print('stet2 cost ', time.time()-t0)
+
     # 2. Generate 2*nseg+1 equally spaced ratios (including 0 and 1)
-    t0 = time.time()
-    ratios_new = u.math.linspace(0, 1, 2 * nseg + 1)
+    ratios_new = np.linspace(0, 1, 2 * nseg + 1)
 
     # 3. Interpolate for each new ratio
     xyz_new = []
     diam_new = []
-    print('stet3 cost ', time.time()-t0)
-    t0 = time.time()
+
     for r in ratios_new:
         # Find the adjacent indices for r in the node_pre ratio
         i1, i2 = find_ratio_interval(ratios_pre, r)
@@ -239,7 +233,7 @@ def generate_interpolated_nodes(node_pre, nseg: int):
         d1, d2 = diam_pre[i1], diam_pre[i2]
 
         # Interpolation
-        alpha = u.math.where(r2 != r1, (r - r1) / (r2 - r1), 0)  # Avoid division by zero
+        alpha = np.where(r2 != r1, (r - r1) / (r2 - r1), 0)  # Avoid division by zero
         x_new = x1 + alpha * (x2 - x1)
         y_new = y1 + alpha * (y2 - y1)
         z_new = z1 + alpha * (z2 - z1)
@@ -247,12 +241,11 @@ def generate_interpolated_nodes(node_pre, nseg: int):
 
         xyz_new.append([x_new, y_new, z_new])
         diam_new.append(d_new)
-    print('stet4 cost ', time.time()-t0)
-    t0 = time.time()
+
     # 4. Combine to form the final node_after
-    node_after = u.math.column_stack([u.math.asarray(xyz_new),
-                                      u.math.asarray(diam_new)])
-    print('stet5 cost ', time.time()-t0)
+    node_after = np.column_stack([np.asarray(xyz_new),
+                                      np.asarray(diam_new)])
+
     return node_after
 
 
@@ -318,7 +311,9 @@ def compute_connection_seg(nseg_list, connection_sec_list):
             site_list.append(site)
 
     connection_seg = [(i, parent_indices[i], site_list[i]) for i in range(n_compartment)]
-    return connection_seg
+    parent_id = [parent_indices[i] for i in range(n_compartment)]
+    parent_x = [site_list[i] for i in range(n_compartment)]
+    return connection_seg, parent_id, parent_x
 
 
 def init_coupling_weight_nodes(g_left, g_right, connection):
@@ -386,7 +381,7 @@ def init_coupling_weight_nodes(g_left, g_right, connection):
 
     num_segments = len(connection)
 
-    axial_conductance_matrix = np.zeros((num_segments, num_segments)) * u.get_unit(g_left)
+    axial_conductance_matrix = np.zeros((num_segments, num_segments))
 
     for parent, children_dict in parent_child_dict.items():
         if parent != -1:
@@ -394,8 +389,8 @@ def init_coupling_weight_nodes(g_left, g_right, connection):
             children_at_1 = children_dict[1]
             if len(children_at_1) > 0:
                 all_nodes_at_1 = [parent] + children_at_1
-                denominator_at_1 = (u.math.sum(u.math.array([g_left[i] for i in children_at_1])) +
-                                    u.math.array(g_right[parent]))
+                denominator_at_1 = (np.sum(np.array([g_left[i] for i in children_at_1])) +
+                                    np.array(g_right[parent]))
                 for i in all_nodes_at_1:
                     for j in all_nodes_at_1:
                         if i != j:
@@ -413,7 +408,7 @@ def init_coupling_weight_nodes(g_left, g_right, connection):
                 axial_conductance_matrix[parent, child] = g_left[child]
                 axial_conductance_matrix[child, parent] = g_left[child]
 
-    return axial_conductance_matrix
+    return axial_conductance_matrix * u.siemens 
 
 
 def get_coo_ids_and_values(conductance_matrix):

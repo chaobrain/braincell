@@ -14,16 +14,15 @@
 # ==============================================================================
 
 import brainunit as u
-
+import brainstate
 from ._integrator_exp_euler import ind_exp_euler_step
-from ._integrator_voltage_solver import sparse_voltage_step
+from ._integrator_voltage_solver import sparse_voltage_step, dhs_voltage_step
 from ._misc import set_module_as
-from ._protocol import DiffEqModule
+from ._protocol import DiffEqState, DiffEqModule
 
 __all__ = [
     'staggered_step',
 ]
-
 
 @set_module_as('braincell')
 def staggered_step(
@@ -38,20 +37,20 @@ def staggered_step(
         f"But got {type(target)} instead."
     )
 
-    sparse_voltage_step(target, t, dt, *args)
+    #sparse_voltage_step(target, t, dt, *args)
+    dhs_voltage_step(target, t, dt, *args)
+    # excluded_paths
+    all_states = brainstate.graph.states(target)
+    diffeq_states, _ = all_states.split(DiffEqState, ...)
+    excluded_paths = [('V',)]
+    for key in diffeq_states.keys():
+        if 'INa_Rsg' in key:
+            excluded_paths.append(key)
 
-    # # excluded_paths
-    # all_states = brainstate.graph.states(target)
-    # diffeq_states, _ = all_states.split(DiffEqState, ...)
-    # excluded_paths = [('V',)]
-    # for key in diffeq_states.keys():
-    #     if 'INa_Rsg' in key:
-    #         excluded_paths.append(key)
-
-    # # update markov
-    # for i in range(2):
-    #     target.update_state(*args)
-    #     target.pre_integral(*args)
+    # update markov
+    for _ in range(2):
+        target.update_state(*args)
+        target.pre_integral(*args)
 
     # ind_exp_euler for non-v and non-markov
-    ind_exp_euler_step(target, t, dt, *args, excluded_paths=[('V',)])
+    ind_exp_euler_step(target, t, dt, *args, excluded_paths = excluded_paths)

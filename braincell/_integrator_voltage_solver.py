@@ -30,12 +30,110 @@ from ._protocol import DiffEqModule
 
 
 @set_module_as('braincell')
-def dhs_voltage_step():
+def dhs_voltage_step(target, t, dt, *args):
     """
     Implicit euler solver with the `dendritic hierarchical scheduling` (DHS, Zhang et al., 2023).
     """
-    pass
+    # membrane potential at time n
+    V_n = target.V.value
+    diags, uppers, lowers, comp_edges, parent_lookup, internal_node_inds  = target.diags, target.uppers, target.lowers, target.flipped_comp_edges, target.parent_lookup, target.internal_node_inds
+    n_nodes = len(diags)
+    flipped_comp_edges, padded_edges, edge_masks = comp_edges
 
+    # linear and constant term
+    linear, const = _linear_and_const_term(target, V_n, *args)
+    V_linear = u.math.zeros(n_nodes) * u.get_unit(linear)
+    V_linear = V_linear.at[internal_node_inds].set(-linear.ravel())
+    V_const = u.math.zeros(n_nodes) * u.get_unit(const)
+    V_const = V_const.at[internal_node_inds].set(const.ravel())
+    V = u.math.zeros(n_nodes) * u.get_unit(V_n)
+    V = V.at[internal_node_inds].set(V_n.ravel())
+    
+    ## diags = I + dt * (G_diags + linear_term) 
+    diags = dt*(diags + V_linear)
+    diags = diags.at[internal_node_inds].add(1.0)
+    solves = V + dt * V_const
+    uppers = dt * uppers
+    lowers = dt * lowers 
+
+    # Add a spurious compartment that is modified by the masking.
+    diags = u.math.concatenate([diags, u.math.asarray([1.0 * u.get_unit(diags)])])
+    solves = u.math.concatenate([solves, u.math.asarray([0.0 * u.get_unit(solves)])])
+    uppers = u.math.concatenate([uppers, u.math.asarray([0.0 * u.get_unit(uppers)])])
+    lowers = u.math.concatenate([lowers, u.math.asarray([0.0 * u.get_unit(lowers)])])
+
+    ## integrate step
+    steps = len(flipped_comp_edges)
+    # # 用 lax.scan
+    # init_carry = (diags, solves, lowers, uppers, padded_edges, edge_masks)
+    # final_carry, _ = jax.lax.scan(scan_body, init_carry, jnp.arange(steps))
+    # diags, solves, _, _, _, _= final_carry
+
+    # Triangulate by unrolling the loop of the levels.
+    for i in range(steps):
+        diags, solves = _comp_based_triang(
+            i, (diags, solves, lowers, uppers, flipped_comp_edges)
+        )
+    # Backsubstitute with recursive doubling.
+    diags, solves = _comp_based_backsub_recursive_doubling(
+        diags, solves, lowers, steps, n_nodes, parent_lookup
+    )
+    
+    # Remove the spurious compartment. This compartment got modified by masking of compartments in certain levels.
+    diags = diags[:-1]
+    solves = solves[:-1]
+
+    target.V.value  = solves[internal_node_inds].reshape((1,-1))
+    
+def scan_body(carry, i):
+    diags, solves, lowers, uppers, flipped_comp_edges, masks = carry
+    comp_edge = flipped_comp_edges[i]     # (max_len, 2)
+    mask = masks[i]                       # (max_len, )
+
+    child = comp_edge[:, 0]
+    parent = comp_edge[:, 1]
+    # 只处理 parent != -1 的行
+    valid = mask & (parent != -1)
+    # 避免非法索引
+    valid_child  = u.math.where(valid, child, 0)
+    valid_parent = u.math.where(valid, parent, 0)
+
+    lower_val = lowers[valid_child]
+    upper_val = uppers[valid_child]
+    child_diag = diags[valid_child]
+    child_solve = solves[valid_child]
+
+    multiplier = upper_val / child_diag
+    update_val = -lower_val * multiplier
+    update_solve = -child_solve * multiplier
+
+    diags = diags.at[valid_parent].add(update_val * mask)
+    solves = solves.at[valid_parent].add(update_solve * mask)
+    return (diags, solves, lowers, uppers, flipped_comp_edges, masks), None
+
+def _comp_based_triang(index, carry):
+    """Triangulate the quasi-tridiagonal system compartment by compartment."""
+    diags, solves, lowers, uppers, flipped_comp_edges = carry
+
+    # `flipped_comp_edges` has shape `(num_levels, num_comps_per_level, 2)`. We first
+    # get the relevant level with `[index]` and then we get all children and parents
+    # in the level.
+    comp_edge = flipped_comp_edges[index]
+    child = comp_edge[:, 0]
+    parent = comp_edge[:, 1]
+    lower_val = lowers[child]
+    upper_val = uppers[child]
+    child_diag = diags[child]
+    child_solve = solves[child]
+
+    # Factor that the child row has to be multiplied by.
+    multiplier = upper_val / child_diag
+    # Updates to diagonal and solve
+    diags = diags.at[parent].add(-lower_val * multiplier)
+    #jax.debug.print('diags_step= {}',diags)
+    solves = solves.at[parent].add(-child_solve * multiplier)
+
+    return (diags, solves)
 
 @set_module_as('braincell')
 def dense_voltage_step():
@@ -176,6 +274,38 @@ def _linear_and_const_term(target: DiffEqModule, V_n, *args):
     const = derivative - V_n * linear
     return linear, const
 
+def _dhs_matrix(target: DiffEqModule):
+
+    with jax.ensure_compile_time_eval():
+        Gmat_sorted, parent_rows, dhs_groups, segment2rowid, flipped_comp_edges = target.get_dhs_info(max_group_size = 16, show = False)
+
+        cm_segmid = target.cm
+        area_segmid = target.area
+
+        cm = jnp.ones(len(parent_rows)) * u.get_unit(cm_segmid)
+        area = jnp.ones(len(parent_rows)) * u.get_unit(area_segmid)
+        seg_mid_ids = jnp.array(list(segment2rowid.values()))
+        cm[seg_mid_ids] = cm_segmid
+        area[seg_mid_ids] = area_segmid
+
+        Gmat_sorted = -Gmat_sorted / (cm * area)[:, u.math.newaxis]
+        
+        n = len(parent_rows)
+        lowers = u.math.zeros(n) * u.get_unit(Gmat_sorted)
+        uppers = u.math.zeros(n) * u.get_unit(Gmat_sorted)
+
+        for i in range(n):
+            p = parent_rows[i]
+            if p == -1:
+                lowers = lowers.at[i].set(0 * u.get_unit(Gmat_sorted)) 
+                uppers = uppers.at[i].set(0 * u.get_unit(Gmat_sorted))
+            else:
+                lowers = lowers.at[i].set(Gmat_sorted[i, p])
+                uppers = uppers.at[i].set(Gmat_sorted[p, i])
+
+        diags = u.math.diag(Gmat_sorted)
+
+    return diags, uppers, lowers, parent_rows, dhs_groups, segment2rowid, flipped_comp_edges , Gmat_sorted
 
 def _laplacian_matrix(target: DiffEqModule) -> brainevent.CSR:
     """
@@ -217,3 +347,87 @@ def _laplacian_matrix(target: DiffEqModule) -> brainevent.CSR:
         L_matrix = brainevent.CSR.fromdense(L_matrix)
 
     return L_matrix
+
+
+def _comp_based_backsub_recursive_doubling(
+    diags,
+    solves,
+    lowers,
+    steps: int,
+    n_nodes: int,
+    parent_lookup: jnp.ndarray,
+):
+    """Backsubstitute with recursive doubling.
+
+    This function contains a lot of math, so I will describe what is going on here:
+
+    The matrix describes a system like:
+    diag[n] * x[n] + lower[n] * x[parent] = solve[n]
+
+    We rephrase this as:
+    x[n] = solve[n]/diag[n] - lower[n]/diag[n] * x[parent].
+
+    and we call variables as follows:
+    solve/diag => solve_effect
+    -lower/diag => lower_effect
+
+    This gives:
+    x[n] = solve_effect[n] + lower_effect[n] * x[parent].
+
+    Recursive doubling solves this equation for `x` in log_2(N) steps. How?
+
+    (1) Notice that lower_effect[n]=0, because x[0] has no parent.
+
+    (2) In the first step, recursive doubling substitutes x[parent] into
+    every equation. This leads to something like:
+    x[n] = solve_effect[n] + lower_effect[n] * (solve_effect[parent] + ...
+    ...lower_effect[parent] * x[parent[parent]])
+
+    Abbreviate this as:
+    new_solve_effect[n] = solve_effect[n] + lower_effect[n] * solve_effect[parent]
+    new_lower_effect[n] = lower_effect[n] + lower_effect[parent]
+    x[n] = new_solve_effect[n] + new_lower_effect[n] * x[parent[parent]]
+    Importantly, every node n is now a function of its two-step parent.
+
+    (3) In the next step, recursive doubling substitutes x[parent[parent]].
+    Since x[parent[parent]] already depends on its own _two-step_ parent,
+    every node then depends on its four step parent. This introduces the
+    log_2 scaling.
+
+    (4) The algorithm terminates when all `new_lower_effect=0`. This
+    naturally happens because `lower_effect[0]=0`, and the recursion
+    keeps multiplying new_lower_effect with the `lower_effect[parent]`.
+    """
+    # Why `lowers = lowers.at[0].set(0.0)`? During triangulation (and the
+    # cpu-optimized solver), we never access `lowers[0]`. Its value should
+    # be zero (because the zero-eth compartment does not have a `lower`), but
+    # it is not for coding convenience in the other solvers. For the recursive
+    # doubling solver below, we do use lowers[0], so we set it to the value
+    # it should have anyways: 0.
+    lowers = lowers.at[0].set(0.0 * u.get_unit(lowers))
+
+    # Rephrase the equations as a recursion.
+    # x[n] = solve[n]/diag[n] - lower[n]/diag[n] * x[parent].
+    # x[n] = solve_effect[n] + lower_effect[n] * x[parent].
+    lower_effect = -lowers / diags
+    solve_effect = solves / diags
+
+    step = 1
+    while step <= steps:
+        # For each node, get its k-step parent, where k=`step`.
+        k_step_parent = u.math.arange(n_nodes + 1)
+        for _ in range(step):
+            k_step_parent = parent_lookup[k_step_parent]
+
+        # Update.
+        solve_effect = lower_effect * solve_effect[k_step_parent] + solve_effect
+        lower_effect *= lower_effect[k_step_parent]
+        step *= 2
+
+    # We have to return a `diags` becaus the final solution is computed as
+    # `solves/diags` (see `step_voltage_implicit_with_dhs_solve`). For recursive
+    # doubling, the solution should just be `solve_effect`, so we define diags as
+    # 1.0 so the division has no effect.
+    diags = u.math.ones_like(solve_effect) * u.get_unit(solve_effect)
+    solves = solve_effect
+    return diags, solves

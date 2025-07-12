@@ -15,7 +15,6 @@
 
 
 import brainunit as u
-import networkx as nx
 import numpy as np
 
 
@@ -590,6 +589,7 @@ def get_root_and_depths(G):
     depths : dict
         node id -> depth (distance from root)
     """
+    import networkx as nx
     root = [n for n in G.nodes if G.in_degree(n) == 0][0]
     depths = nx.single_source_shortest_path_length(G, root)
     return root, depths
@@ -638,6 +638,7 @@ def build_parent_dict(G, root):
     Build a dict mapping each node to its parent, using BFS.
     Root will not be present as a key.
     """
+    import networkx as nx
     return dict(nx.bfs_predecessors(G, root))
 
 

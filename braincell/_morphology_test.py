@@ -14,6 +14,7 @@
 # ==============================================================================
 
 import brainunit as u
+from .from_swc import Import3dSWCRead, visualize_neuron, process_swc_pipeline
 
 import braincell
 

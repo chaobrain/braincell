@@ -15,21 +15,19 @@
 
 from typing import Callable, Tuple
 
-import brainstate
-import brainunit as u
-
 from ._base import HHTypedNeuron, IonChannel
 from ._integrator import get_integrator
 from ._morphology import Morphology
+from ._morphology_utils import *
 from ._protocol import DiffEqState
 from ._typing import Initializer
 
 __all__ = [
-    'MultiCompartment',
+    'MultiCompartment_test',
 ]
 
 
-class MultiCompartment(HHTypedNeuron):
+class MultiCompartment_test(HHTypedNeuron, Morphology):
     r"""
     A multi-compartment neuronal model that simulates spatially extended neurons.
 
@@ -52,11 +50,20 @@ class MultiCompartment(HHTypedNeuron):
         Numerical integration method. Default is 'exp_euler'.
     name : str, optional
         Name identifier for the neuron model.
+    Gl : brainstate.typing.ArrayLike, optional
+        Leak conductance in mS/cm². Default is 0 mS/cm².
+    El : brainstate.typing.ArrayLike, optional
+        Leak reversal potential in mV. Default is -65 mV.
     **ion_channels
         Additional keyword arguments for ion channels to be added to the neuron model.
 
     Attributes
     ----------
+    area : Quantity
+        Surface areas of compartments.
+
+    conductance_matrix : Quantity
+        Axial conductance matrix between connected segments.
     V_th : Quantity or Callable
         Threshold potential for spike detection.
     V_initializer : Quantity or Callable
@@ -68,7 +75,6 @@ class MultiCompartment(HHTypedNeuron):
 
     Notes
     -----
-    This class is subclassed from :class:`braincell.HHTypedNeuron`.
     The multi-compartment model simulates the spatial properties of neurons by dividing
     the neuron into electrically connected compartments. Currents can flow between compartments
     based on the voltage differences and axial resistances, allowing for a more accurate
@@ -80,9 +86,7 @@ class MultiCompartment(HHTypedNeuron):
 
     def __init__(
         self,
-
-        popsize: int,  # neuron pop size
-        morphology: Morphology,  # Morphology object defining the cell structure
+        size: brainstate.typing.Size,
 
         # membrane potentials
         V_th: Initializer = 0. * u.mV,
@@ -92,59 +96,32 @@ class MultiCompartment(HHTypedNeuron):
         # others
         solver: str | Callable = 'exp_euler',
 
-        # ion channels
+        Gl: Initializer = 0 * (u.mS / u.cm ** 2),  # for splitting
+        El: Initializer = -65 * u.mV,  # for splitting
+
         **ion_channels
     ):
-        nseg = len(morphology.segments)
-        # Type and value checking for popsize
-        if isinstance(popsize, int):
-            if popsize < 1:
-                raise ValueError("popsize must be >= 1")
-            size = (popsize, nseg)
-        elif isinstance(popsize, (tuple, list)):
-            if not all(isinstance(x, int) and x > 0 for x in popsize):
-                raise TypeError("Each element in popsize tuple/list must be a positive int")
-            size = tuple(popsize) + (nseg,)
-        else:
-            raise TypeError("popsize must be an int, or a tuple/list of int")
+        HHTypedNeuron.__init__(self, size, **ion_channels)
+        Morphology.__init__(self)
 
-        super().__init__(size, **ion_channels)
+        # for splitting linear term
+        self.Gl = brainstate.init.param(Gl, self.varshape)
+        self.El = brainstate.init.param(El, self.varshape)
 
         # parameters for membrane potentials
         self.V_th = brainstate.init.param(V_th, self.varshape)
         self.V_initializer = V_initializer
         self.spk_fun = spk_fun
-        self.morphology = morphology
 
         # numerical solver
         self.solver = get_integrator(solver)
 
-    def __getattr__(self, name):
-        return getattr(self.morphology, name)
-
     @property
     def pop_size(self) -> Tuple[int, ...]:
-        """
-        Returns the shape of the neuron population, excluding the compartment dimension.
-
-        Returns
-        -------
-        Tuple[int, ...]
-            The shape of the neuron population (all dimensions except the last, which
-            corresponds to the number of compartments).
-        """
         return self.varshape[:-1]
 
     @property
     def n_compartment(self) -> int:
-        """
-        Returns the number of compartments in the neuron model.
-
-        Returns
-        -------
-        int
-            The number of compartments, corresponding to the last dimension of the neuron's variable shape.
-        """
         return self.varshape[-1]
 
     def init_state(self, batch_size=None):
@@ -177,29 +154,12 @@ class MultiCompartment(HHTypedNeuron):
         """
         for key, node in self.nodes(IonChannel, allowed_hierarchy=(1, 1)).items():
             node.pre_integral(self.V.value)
-
+        
     def update_state(self, *args):
-        """
-        Perform pre-integration operations on the neuron's ion channels.
-
-        This method is called before the integration step to prepare the ion channels
-        for the upcoming computation. It iterates through all ion channels associated
-        with this neuron and calls their respective pre_integral methods.
-
-        Parameters
-        -----------
-        *args : tuple
-            Variable length argument list. Not used in the current implementation
-            but allows for future extensibility.
-
-        Returns
-        --------
-        None
-            This method doesn't return any value but updates the internal state
-            of the ion channels.
-        """
+        
         for key, node in self.nodes(IonChannel, allowed_hierarchy=(1, 1)).items():
             node.update_state(self.V.value)
+            
 
     def compute_derivative(self, I_ext=0. * u.nA):
         """
@@ -224,11 +184,13 @@ class MultiCompartment(HHTypedNeuron):
         ------
         The method performs the following steps:
         1. Normalizes external currents by the compartment surface area.
-        2. Computes synaptic currents.
-        3. Sums up all ion channel currents.
-        4. Calculates the final derivative of the membrane potential.
-        5. Computes derivatives for all associated ion channels.
+        2. Calculates axial currents between compartments.
+        3. Computes synaptic currents.
+        4. Sums up all ion channel currents.
+        5. Calculates the final derivative of the membrane potential.
+        6. Computes derivatives for all associated ion channels.
         """
+
         # [ Compute the derivative of membrane potential ]
         # 1. external currents
         I_ext = I_ext / self.area
@@ -248,26 +210,6 @@ class MultiCompartment(HHTypedNeuron):
         # check whether the children channel have the correct parents.
         for key, node in self.nodes(IonChannel, allowed_hierarchy=(1, 1)).items():
             node.compute_derivative(self.V.value)
-
-    def compute_membrane_derivative(self, V, I_ext=0. * u.nA):
-        # [ Compute the derivative of membrane potential ]
-        # 1. external currents
-        I_ext = I_ext / self.area
-
-        # 3. synapse currents
-        I_syn = self.sum_current_inputs(0. * u.nA / u.cm ** 2, self.V.value)
-
-        # 4. channel currents
-        I_channel = None
-        for key, ch in self.nodes(IonChannel, allowed_hierarchy=(1, 1)).items():
-            I_channel = ch.current(self.V.value) if I_channel is None else (I_channel + ch.current(self.V.value))
-
-        # 5. derivatives
-        v_derivative = (I_ext + I_syn + I_channel) / self.cm
-
-        for key, node in self.nodes(IonChannel, allowed_hierarchy=(1, 1)).items():
-            node.compute_derivative(self.V.value)
-        return v_derivative
 
     def post_integral(self, I_ext=0. * u.nA):
         """
@@ -312,8 +254,7 @@ class MultiCompartment(HHTypedNeuron):
         """
         last_V = self.V.value
         t = brainstate.environ.get('t')
-        dt = brainstate.environ.get('dt')
-        self.solver(self, t, dt, I_ext)
+        self.solver(self, t, I_ext)
         return self.get_spike(last_V, self.V.value)
 
     def get_spike(self, last_V, next_V):

@@ -209,7 +209,7 @@ class NMDA(brainstate.nn.Synapse):
 
         The updates follow the differential equations:
             dg/dt = alpha1 * x * (1 - g) - beta1 * g
-            dx/dt = alpha2 * pre_spike * T * (1 - x) - beta2 * x
+            braincell/dt = alpha2 * pre_spike * T * (1 - x) - beta2 * x
 
         Args:
             pre_spike: Presynaptic spike input.

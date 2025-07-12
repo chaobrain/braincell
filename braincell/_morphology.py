@@ -21,8 +21,16 @@ import brainstate
 import brainunit as u
 import numpy as np
 
-from ._morphology_from_swc import Import3dSWCRead, visualize_neuron, process_swc_pipeline
+from ._morphology_dhs_utils import (
+    preprocess_branching_tree,
+    build_flipped_comp_edges,
+)
 from ._morphology_from_asc import read_asc
+from ._morphology_from_swc import (
+    Import3dSWCRead,
+    visualize_neuron,
+    process_swc_pipeline,
+)
 from ._morphology_utils import (
     calculate_total_resistance_and_area,
     generate_interpolated_nodes,
@@ -31,8 +39,6 @@ from ._morphology_utils import (
     init_coupling_weight_nodes,
     get_type_name,
 )
-
-from ._integrator_dhs_utils import * 
 from ._typing import SectionName
 
 __all__ = [
@@ -41,6 +47,7 @@ __all__ = [
     'PointSection',
     'Morphology',
 ]
+
 
 class Segment(NamedTuple):
     """
@@ -77,10 +84,13 @@ def triggers_recompute(setter):
         setter(self, value)
         if not getattr(self, '_initializing', False):
             self._compute_area_and_resistance()
-            
+
     return wrapper
 
+
 (brainstate.util.PrettyObject)
+
+
 class Section:
     """Base class for representing a neuron section in compartmental modeling.
 
@@ -153,7 +163,7 @@ class Section:
 
         self.init_unit()
         self._compute_area_and_resistance()
-    
+
     @property
     def L(self):
         pos = u.get_magnitude(self.positions)
@@ -167,7 +177,6 @@ class Section:
     @triggers_recompute
     def nseg(self, value):
         self._nseg = value
-
 
     @property
     def Ra(self):
@@ -185,7 +194,7 @@ class Section:
     @cm.setter
     @triggers_recompute
     def cm(self, value):
-        self._cm = self._ensure_unit(value, u.uF / u.cm**2)
+        self._cm = self._ensure_unit(value, u.uF / u.cm ** 2)
 
     def _ensure_unit(self, value, unit):
         if u.is_unitless(value):
@@ -195,7 +204,7 @@ class Section:
 
     def init_unit(self):
         self.Ra = self._ensure_unit(self.Ra, u.ohm * u.cm)
-        self.cm = self._ensure_unit(self.cm, u.uF / u.cm**2)
+        self.cm = self._ensure_unit(self.cm, u.uF / u.cm ** 2)
         self.positions = self._ensure_unit(self.positions, u.um)
         self.diam = self._ensure_unit(self.diam, u.um)
 
@@ -252,11 +261,11 @@ class Section:
 
             segment = Segment(
                 section_name=self.name,
-                index = int(i/2),
-                cm = self.cm,
-                area = (area_left + area_right) * u.get_unit(self.positions)**2,
-                R_left = R_left * u.get_unit(self.Ra) *  u.get_unit(self.positions) /  u.get_unit(self.diam)**2, 
-                R_right = R_right * u.get_unit(self.Ra) *  u.get_unit(self.positions) /  u.get_unit(self.diam)**2,
+                index=int(i / 2),
+                cm=self.cm,
+                area=(area_left + area_right) * u.get_unit(self.positions) ** 2,
+                R_left=R_left * u.get_unit(self.Ra) * u.get_unit(self.positions) / u.get_unit(self.diam) ** 2,
+                R_right=R_right * u.get_unit(self.Ra) * u.get_unit(self.positions) / u.get_unit(self.diam) ** 2,
             )
             self.segments.append(segment)
 
@@ -358,9 +367,9 @@ class CylinderSection(Section):
         assert u.get_magnitude(diam) > 0, "Diameter must be positive."
         positions = np.array([
             [0.0, 0.0, 0.0],
-            [u.get_magnitude(length),0.0, 0.0]
+            [u.get_magnitude(length), 0.0, 0.0]
         ]) * u.get_unit(length)
-        diam =  np.array([
+        diam = np.array([
             [u.get_magnitude(diam)],
             [u.get_magnitude(diam)]
         ]) * u.get_unit(diam)
@@ -423,7 +432,7 @@ class PointSection(Section):
         points = np.array(u.get_magnitude(points))
         assert points.shape[0] >= 2, "at least have 2 points"
         assert points.shape[1] == 4, "points must be shape (N, 4): [x, y, z, diameter]"
-        assert np.all(points[:, 3] > 0 ), "All diameters must be positive."
+        assert np.all(points[:, 3] > 0), "All diameters must be positive."
         positions = points[:, :3] * u.get_unit(points)
         diam = points[:, -1].reshape((-1, 1)) * u.get_unit(points)
 
@@ -487,15 +496,15 @@ class Morphology(brainstate.util.PrettyObject):
         self._parent_x = None
         self._seg_ri = None
         self._dhs = None
-    
+
     @property
     def segments(self):
         return [seg for section in self.sections.values() for seg in section.segments]
-    
-    def dhs_init(self, plot = False):
 
-        Gmat_sorted, parent_rows, dhs_groups, segment2rowid  = preprocess_branching_tree(
-        self.parent_id, self.parent_x, self.seg_ri, max_group_size = 32, plot = plot)
+    def dhs_init(self, plot=False):
+        Gmat_sorted, parent_rows, dhs_groups, segment2rowid = preprocess_branching_tree(
+            self.parent_id, self.parent_x, self.seg_ri, max_group_size=32, plot=plot
+        )
 
         flipped_comp_edges = build_flipped_comp_edges(dhs_groups, parent_rows)
         cm_segmid = self.cm
@@ -508,7 +517,7 @@ class Morphology(brainstate.util.PrettyObject):
         area[seg_mid_ids] = area_segmid
 
         Gmat_sorted = -Gmat_sorted / (cm * area)[:, u.math.newaxis]
-        
+
         n = len(parent_rows)
         lowers = u.math.zeros(n) * u.get_unit(Gmat_sorted)
         uppers = u.math.zeros(n) * u.get_unit(Gmat_sorted)
@@ -516,7 +525,7 @@ class Morphology(brainstate.util.PrettyObject):
         for i in range(n):
             p = parent_rows[i]
             if p == -1:
-                lowers = lowers.at[i].set(0 * u.get_unit(Gmat_sorted)) 
+                lowers = lowers.at[i].set(0 * u.get_unit(Gmat_sorted))
                 uppers = uppers.at[i].set(0 * u.get_unit(Gmat_sorted))
             else:
                 lowers = lowers.at[i].set(Gmat_sorted[i, p])
@@ -524,12 +533,12 @@ class Morphology(brainstate.util.PrettyObject):
 
         diags = u.math.diag(Gmat_sorted)
 
-        parent_lookup = u.math.array(parent_rows+[-1])
+        parent_lookup = u.math.array(parent_rows + [-1])
         internal_node_inds = u.math.array(list(segment2rowid.values()))
-        
+
         self.diags = diags
-        self.uppers =uppers
-        self.lowers =lowers
+        self.uppers = uppers
+        self.lowers = lowers
         self.flipped_comp_edges = flipped_comp_edges
         self.parent_lookup = parent_lookup
         self.internal_node_inds = internal_node_inds
@@ -844,7 +853,6 @@ class Morphology(brainstate.util.PrettyObject):
             cm_list.append(seg.cm)
         self._cm = u.math.array(cm_list)
 
-
     def construct_nseg(self):
         nseg_list = []
         for sec in self.sections.values():
@@ -856,7 +864,7 @@ class Morphology(brainstate.util.PrettyObject):
         _, pid, px = compute_connection_seg(self.nseg, connection_sec_list)
         self._parent_id = pid
         self._parent_x = px
-    
+
     def construct_seg_ri(self):
         sec_ri = []
         for seg in self.segments:
@@ -867,22 +875,22 @@ class Morphology(brainstate.util.PrettyObject):
     def seg_ri(self):
         self.construct_seg_ri()
         return self._seg_ri
-    
+
     @property
     def nseg(self):
         self.construct_nseg()
         return self._nseg
-    
+
     @property
     def parent_id(self):
         self.construct_seg_pid_px()
         return self._parent_id
-    
+
     @property
     def parent_x(self):
         self.construct_seg_pid_px()
         return self._parent_x
-    
+
     @property
     def conductance_matrix(self):
         self.construct_conductance_matrix()
@@ -956,7 +964,6 @@ class Morphology(brainstate.util.PrettyObject):
 
         # Return self for method chaining
         return
-    
 
     def from_asc(self, filename):
         """
@@ -1036,7 +1043,7 @@ class Morphology(brainstate.util.PrettyObject):
         """
         morphology = cls()
         return morphology.from_swc(filename)
-    
+
     @classmethod
     def from_asc_file(cls, filename):
         """
@@ -1054,7 +1061,6 @@ class Morphology(brainstate.util.PrettyObject):
         """
         morphology = cls()
         return morphology.from_asc(filename)
-
 
     def visualize(self):
         """

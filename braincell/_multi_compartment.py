@@ -13,22 +13,21 @@
 # limitations under the License.
 # ==============================================================================
 
-from typing import Optional, Callable, Sequence, Tuple
+from typing import Callable, Tuple
 
 import brainstate
 import brainunit as u
-import numpy as np
 
 from ._base import HHTypedNeuron, IonChannel
 from ._integrator import get_integrator
 from ._morphology import Morphology
-from ._morphology_utils import diffusive_coupling
 from ._protocol import DiffEqState
 from ._typing import Initializer
 
 __all__ = [
     'MultiCompartment',
 ]
+
 
 class MultiCompartment(HHTypedNeuron):
     r"""
@@ -81,10 +80,10 @@ class MultiCompartment(HHTypedNeuron):
 
     def __init__(
         self,
-        # morphology parameters
+
+        popsize: int,  # neuron pop size
         morphology: Morphology,  # Morphology object defining the cell structure
-        ## neuron pop size
-        popsize = 1, 
+
         # membrane potentials
         V_th: Initializer = 0. * u.mV,
         V_initializer: Initializer = brainstate.init.Uniform(-70 * u.mV, -60. * u.mV),
@@ -108,7 +107,7 @@ class MultiCompartment(HHTypedNeuron):
             size = tuple(popsize) + (nseg,)
         else:
             raise TypeError("popsize must be an int, or a tuple/list of int")
-            
+
         super().__init__(size, **ion_channels)
 
         # parameters for membrane potentials
@@ -122,7 +121,7 @@ class MultiCompartment(HHTypedNeuron):
 
     def __getattr__(self, name):
         return getattr(self.morphology, name)
-    
+
     @property
     def pop_size(self) -> Tuple[int, ...]:
         """
@@ -201,7 +200,7 @@ class MultiCompartment(HHTypedNeuron):
         """
         for key, node in self.nodes(IonChannel, allowed_hierarchy=(1, 1)).items():
             node.update_state(self.V.value)
-        
+
     def compute_derivative(self, I_ext=0. * u.nA):
         """
         Compute the derivative of the membrane potential for the multi-compartment neuron model.
@@ -265,7 +264,7 @@ class MultiCompartment(HHTypedNeuron):
 
         # 5. derivatives
         v_derivative = (I_ext + I_syn + I_channel) / self.cm
-        
+
         for key, node in self.nodes(IonChannel, allowed_hierarchy=(1, 1)).items():
             node.compute_derivative(self.V.value)
         return v_derivative
@@ -347,5 +346,3 @@ class MultiCompartment(HHTypedNeuron):
             self.spk_fun((next_V - self.V_th) / denom) *
             self.spk_fun((self.V_th - last_V) / denom)
         )
-
-

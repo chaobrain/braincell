@@ -1,7 +1,23 @@
+# Copyright 2025 BDP Ecosystem Limited. All Rights Reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ==============================================================================
+
+
+import brainunit as u
 import networkx as nx
-import matplotlib.pyplot as plt
 import numpy as np
-import brainunit as u 
+
 
 class UnionFind:
     '''
@@ -62,6 +78,7 @@ class UnionFind:
         '''
         self.rep[self.find(y)] = self.find(x)
 
+
 def nodeid(seg, pos):
     '''
     Assign a unique integer ID to a position on a segment.
@@ -103,6 +120,7 @@ def nodeid(seg, pos):
     8
     '''
     return seg * 3 + {0: 0, 0.5: 1, 1: 2}[pos]
+
 
 def merge_equipotential_segment_nodes(num_segments, parent_id, parentx):
     '''
@@ -289,6 +307,7 @@ def build_half_segment_maps(num_segments, uf):
                 node2halves.setdefault(n, set()).add((seg, half))
     return nid_half_map, node2halves
 
+
 def dhs_group_by_depth(depths_sorted, max_group_size):
     """
     Group row indices by node depth, from deepest (bottom) to shallowest (root),
@@ -357,8 +376,10 @@ def tree_layout(G, root=None, dx=1.5, dy=1.7):
                 dfs(c, depth + 1)
                 xs.append(pos[c][0])
             pos[node] = (sum(xs) / len(xs), -depth * dy)
+
     dfs(root, 0)
     return pos
+
 
 def plot_tree(G, node_labels, center_ids, noncenter_nonleaf_ids, leaf_ids, root=None):
     """
@@ -392,7 +413,7 @@ def plot_tree(G, node_labels, center_ids, noncenter_nonleaf_ids, leaf_ids, root=
     node_colors = [color_map[nid] for nid in G.nodes]
     pos = tree_layout(G, root)
     plt.figure(figsize=(12, 10))
-    nx.draw(G, pos, with_labels=True, node_color=node_colors, #labels=node_labels, 
+    nx.draw(G, pos, with_labels=True, node_color=node_colors,  # labels=node_labels,
             node_size=100, font_size=4, font_color='black', edge_color='gray', arrowsize=18)
     legend_items = [
         mpatches.Patch(color='cornflowerblue', label='Segment Center Node'),
@@ -443,6 +464,7 @@ def make_branching_tree_parent_id(L=3, n_branches=2, n_levels=3):
         frontier = new_frontier
     return parent_id
 
+
 def dhs_lower_triangularize(A, b, parent_rows):
     """
     Perform in-place back-substitution elimination on matrix A and vector b from deepest node to root,
@@ -471,6 +493,7 @@ def dhs_lower_triangularize(A, b, parent_rows):
             A[parent_row, :] -= f * A[i, :]
             b[parent_row] -= f * b[i]
     return A, b
+
 
 def dhs_back_substitute_lower(A, b, parent_rows):
     """
@@ -504,6 +527,7 @@ def dhs_back_substitute_lower(A, b, parent_rows):
             s -= A[i, parent_row] * x[parent_row]
         x[i] = s / A[i, i]
     return x
+
 
 def build_conductance_matrix(G, nid_half_map, seg_resistances):
     """
@@ -551,6 +575,7 @@ def build_conductance_matrix(G, nid_half_map, seg_resistances):
     np.fill_diagonal(Gmat, -Gmat.sum(axis=1))
     return Gmat, nodes
 
+
 def get_root_and_depths(G):
     """
     Identify the root node and compute node depths (distance from root).
@@ -569,6 +594,7 @@ def get_root_and_depths(G):
     depths = nx.single_source_shortest_path_length(G, root)
     return root, depths
 
+
 def sort_nodes_by_depth(G, depths):
     """
     Sort all nodes in G by their depth (root to deepest).
@@ -582,6 +608,7 @@ def sort_nodes_by_depth(G, depths):
     all_nodes = sorted(G.nodes)
     sorted_nodes = sorted(all_nodes, key=lambda nid: depths.get(nid, np.inf))
     return sorted_nodes
+
 
 def reorder_matrix_by_depth(mat, nodes, sorted_nodes):
     """
@@ -598,11 +625,13 @@ def reorder_matrix_by_depth(mat, nodes, sorted_nodes):
     mat_sorted = mat[np.ix_(new_order, new_order)]
     return mat_sorted
 
+
 def get_depths_sorted(depths, sorted_nodes):
     """
     Generate a list of depths ordered by sorted_nodes.
     """
     return [depths[nid] for nid in sorted_nodes]
+
 
 def build_parent_dict(G, root):
     """
@@ -611,11 +640,13 @@ def build_parent_dict(G, root):
     """
     return dict(nx.bfs_predecessors(G, root))
 
+
 def get_depth_node_idx_map(sorted_nodes):
     """
     Map node id to its row index in sorted_nodes.
     """
     return {nid: idx for idx, nid in enumerate(sorted_nodes)}
+
 
 def get_parent_rows(sorted_nodes, parent_dict, node_id2rowid):
     """
@@ -646,6 +677,7 @@ def get_parent_rows(sorted_nodes, parent_dict, node_id2rowid):
         parent_rows.append(parent_row)
     return parent_rows
 
+
 def get_segment2rowid(num_segments, uf, sorted_nodes):
     """
     Map each segment index (midpoint, 0.5) to its corresponding row index in Rmat_sorted.
@@ -672,6 +704,7 @@ def get_segment2rowid(num_segments, uf, sorted_nodes):
     segment2rowid = {seg: nid_to_rowid[segid_to_center_nid[seg]] for seg in range(num_segments)}
     return segment2rowid
 
+
 def build_uppers_lowers(Gmat, parent_rows):
     n = len(parent_rows)
     lowers = u.math.zeros(n) * u.get_unit(Gmat)
@@ -679,12 +712,13 @@ def build_uppers_lowers(Gmat, parent_rows):
     for i in range(n):
         p = parent_rows[i]
         if p == -1:
-            lowers = lowers.at[i].set(0 * u.get_unit(Gmat)) 
+            lowers = lowers.at[i].set(0 * u.get_unit(Gmat))
             uppers = uppers.at[i].set(0 * u.get_unit(Gmat))
         else:
             lowers = lowers.at[i].set(Gmat[i, p])
             uppers = uppers.at[i].set(Gmat[p, i])
     return lowers, uppers
+
 
 def build_flipped_comp_edges(dhs_group, parent_rows):
     """
@@ -707,9 +741,9 @@ def build_flipped_comp_edges(dhs_group, parent_rows):
         pairs = []
         for child in group:
             parent = parent_rows[child]
-            if parent != -1:    # skip root
+            if parent != -1:  # skip root
                 pairs.append([child, parent])
-        if pairs:   # Only append if non-empty
+        if pairs:  # Only append if non-empty
             flipped_comp_edges.append(np.array(pairs, dtype=int))
 
     ## padding
@@ -730,10 +764,11 @@ def build_flipped_comp_edges(dhs_group, parent_rows):
             mask = np.zeros(max_len, dtype=bool)
         padded_edges.append(padded)
         edge_masks.append(mask)
-    padded_edges = np.stack(padded_edges)      # (n_steps, max_len, 2)
-    edge_masks  = np.stack(edge_masks)         # (n_steps, max_len)
+    padded_edges = np.stack(padded_edges)  # (n_steps, max_len, 2)
+    edge_masks = np.stack(edge_masks)  # (n_steps, max_len)
 
-    return flipped_comp_edges, padded_edges, edge_masks 
+    return flipped_comp_edges, padded_edges, edge_masks
+
 
 def preprocess_branching_tree(parent_id, parentx, seg_resistances, max_group_size=8, plot=False):
     """
@@ -785,18 +820,18 @@ def preprocess_branching_tree(parent_id, parentx, seg_resistances, max_group_siz
         plot_tree(G, node_labels, center_ids, noncenter_nonleaf_ids, leaf_ids)
 
     # Step 5: Construct conductance matrix and get list of all nodes
-    #import time
-    #t0 = time.time()
+    # import time
+    # t0 = time.time()
     unit = u.get_unit(seg_resistances)
     seg_resistances = u.get_magnitude(seg_resistances)
     Gmat, nodes = build_conductance_matrix(G, nid_half_map, seg_resistances)
-    #print('G cost',time.time()-t0)
+    # print('G cost',time.time()-t0)
     # Step 6: Sort nodes by depth, reorder matrix 
-    #t0 = time.time()
+    # t0 = time.time()
     root, depths = get_root_and_depths(G)
     sorted_nodes = sort_nodes_by_depth(G, depths)
-    Gmat_sorted = reorder_matrix_by_depth(Gmat, nodes, sorted_nodes) * (1/unit)
-    #print('G sort cost',time.time()-t0)
+    Gmat_sorted = reorder_matrix_by_depth(Gmat, nodes, sorted_nodes) * (1 / unit)
+    # print('G sort cost',time.time()-t0)
     # Step 7: Build parent row indices (rowid2parentrowid) for DHS elimination
     parent_dict = build_parent_dict(G, root)
     node_id2rowid = get_depth_node_idx_map(sorted_nodes)
@@ -810,6 +845,7 @@ def preprocess_branching_tree(parent_id, parentx, seg_resistances, max_group_siz
     segment2rowid = get_segment2rowid(num_segments, uf, sorted_nodes)
 
     return Gmat_sorted, parent_rows, dhs_groups, segment2rowid
+
 
 def comp_based_triang(index, carry):
     """Triangulate the quasi-tridiagonal system compartment by compartment."""

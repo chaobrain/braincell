@@ -12,22 +12,23 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ==============================================================================
-import numpy as np
+
 import re
+
+import numpy as np
 from scipy.interpolate import interp1d
-# from _morphology_from_asc_utils import(contourcenter, sort_sections, merge_soma_sections, reindex_sections, 
-#     remove_duplicate_points, ensure_section_continuity, validate_soma_stack_main, connect_to_soma, 
-#     replace_soma_with_axis_sampling
-# )
+
 
 class Token:
     def __init__(self, typ, value, line_no):
-        self.type = typ    
-        self.value = value 
+        self.type = typ
+        self.value = value
         self.line_no = line_no
+
     def __repr__(self):
         return f"Token({self.type}, {self.value})"
-    
+
+
 def tokenize_asc_line(line, line_no):
     """
     Tokenize a single line from a Neurolucida ASC file.
@@ -80,7 +81,7 @@ def tokenize_asc_line(line, line_no):
             while j < length and line[j] != '"':
                 j += 1
             if j < length:
-                tokens.append(Token('string', line[i+1:j], line_no))
+                tokens.append(Token('string', line[i + 1:j], line_no))
                 i = j + 1
                 continue
             else:
@@ -114,11 +115,13 @@ def tokenize_asc_line(line, line_no):
         i += 1
     return tokens
 
+
 class TokenStream:
     """
     A simple stream wrapper around a list of tokens, providing
     lookahead and cursor movement, used by the ASC parser.
     """
+
     def __init__(self, tokens):
         self.tokens = tokens
         self.idx = 0
@@ -131,12 +134,12 @@ class TokenStream:
     @property
     def look_ahead(self):
         """Return the next token, or EOF if at the end."""
-        return self.tokens[self.idx+1] if self.idx+1 < len(self.tokens) else Token("eof", None, -1)
+        return self.tokens[self.idx + 1] if self.idx + 1 < len(self.tokens) else Token("eof", None, -1)
 
     @property
     def look_ahead2(self):
         """Return the token after next, or EOF if at the end."""
-        return self.tokens[self.idx+2] if self.idx+2 < len(self.tokens) else Token("eof", None, -1)
+        return self.tokens[self.idx + 2] if self.idx + 2 < len(self.tokens) else Token("eof", None, -1)
 
     def advance(self):
         """Advance the token pointer by one."""
@@ -157,16 +160,18 @@ class TokenStream:
         """Check if the stream has reached the end."""
         return self.current.type == 'eof'
 
+
 class Point:
     """
     Represents a 3D point in a neuron morphology, possibly with additional misc info.
     """
+
     def __init__(self, x, y, z, d, misc, idx):
         self.x = x
         self.y = y
         self.z = z
         self.d = d
-        self.idx = idx    # Global index for the point
+        self.idx = idx  # Global index for the point
         self.misc = misc  # Additional labels or attributes
 
     def __eq__(self, other):
@@ -175,37 +180,38 @@ class Point:
     def __repr__(self):
         return f"Point({self.idx}: {self.x}, {self.y}, {self.z}, {self.d}, {self.misc})"
 
+
 class Section:
     """
     Represents a section (branch or soma) in the reconstructed morphology.
     Contains a list of Point objects, type info, parent id, and a contour stack.
     """
-    def __init__(self, sec_id, sec_type, parent_id=None, parent_x = -1):
-        self.sec_id = sec_id          # Unique identifier for the section
-        self.sec_type = sec_type      # soma = 1, dend = 2, axon = 3 ...
-        self.points = []              # List of Point objects
-        self.parent_id = parent_id    # The parent section, or None if root
-        self.contour_stack = []       # Used for complex objects (e.g. multi-contour soma)
+
+    def __init__(self, sec_id, sec_type, parent_id=None, parent_x=-1):
+        self.sec_id = sec_id  # Unique identifier for the section
+        self.sec_type = sec_type  # soma = 1, dend = 2, axon = 3 ...
+        self.points = []  # List of Point objects
+        self.parent_id = parent_id  # The parent section, or None if root
+        self.contour_stack = []  # Used for complex objects (e.g. multi-contour soma)
         self.parent_x = parent_x
-        
+
     @property
     def z_range(self):
         """Return (min_z, max_z) of all points in section, or (0,0) if empty."""
         zs = [p.z for p in self.points]
         return (min(zs), max(zs)) if zs else (0, 0)
-    
+
     @property
     def center(self):
-        mean,_,_,_ = contourcenter(self.points)
+        mean, _, _, _ = contourcenter(self.points)
         return (mean[0], mean[1])
-    
+
     @property
     def bbox_xy(self):
         """Return bounding box (min_x, max_x, min_y, max_y) in XY-plane."""
         xs = [p.x for p in self.points]
         ys = [p.y for p in self.points]
         return (min(xs), max(xs), min(ys), max(ys))
-    
 
     @property
     def stk_bbox_xy(self):
@@ -242,10 +248,10 @@ class Section:
         # 3. Cumulative principal axis length and interpolation
         lengths = [0.0]
         for i in range(1, len(centers)):
-            dx = centers[i][0] - centers[i-1][0]
-            dy = centers[i][1] - centers[i-1][1]
-            dz = centers[i][2] - centers[i-1][2]
-            l = (dx**2 + dy**2 + dz**2)**0.5
+            dx = centers[i][0] - centers[i - 1][0]
+            dy = centers[i][1] - centers[i - 1][1]
+            dz = centers[i][2] - centers[i - 1][2]
+            l = (dx ** 2 + dy ** 2 + dz ** 2) ** 0.5
             lengths.append(lengths[-1] + l)
         half_len = lengths[-1] / 2
         if half_len == 0:
@@ -253,19 +259,20 @@ class Section:
 
         for i in range(1, len(lengths)):
             if lengths[i] > half_len:
-                th = (half_len - lengths[i-1]) / (lengths[i] - lengths[i-1])
-                c0 = centers[i-1]
+                th = (half_len - lengths[i - 1]) / (lengths[i] - lengths[i - 1])
+                c0 = centers[i - 1]
                 c1 = centers[i]
                 center = (
-                    th * c1[0] + (1-th) * c0[0],
-                    th * c1[1] + (1-th) * c0[1],
-                    th * c1[2] + (1-th) * c0[2],
+                    th * c1[0] + (1 - th) * c0[0],
+                    th * c1[1] + (1 - th) * c0[1],
+                    th * c1[2] + (1 - th) * c0[2],
                 )
                 return center
         return centers[-1]
 
     def __repr__(self):
         return f"(Section(id={self.sec_id},type={self.sec_type},points={len(self.points)},pid={self.parent_id},px={self.parent_x})"
+
 
 class Parser:
     """
@@ -275,14 +282,14 @@ class Parser:
     """
 
     def __init__(self, tokens):
-        self.ts = TokenStream(tokens)     # Token stream
+        self.ts = TokenStream(tokens)  # Token stream
 
-        self.all_points = []              # Flat list of all parsed Point objects
-        self.sections = []                # List of parsed Section objects
-        self.cur_section_type = 0         # Type flag for new sections
+        self.all_points = []  # Flat list of all parsed Point objects
+        self.sections = []  # List of parsed Section objects
+        self.cur_section_type = 0  # Type flag for new sections
 
-        self.spines = []                  # List of spine dicts
-        self.blocks = []                  # Optional: stores parse block names for debugging
+        self.spines = []  # List of spine dicts
+        self.blocks = []  # Optional: stores parse block names for debugging
 
     def parse(self):
         """
@@ -305,7 +312,7 @@ class Parser:
         la = self.ts.look_ahead
         la2 = self.ts.look_ahead2
 
-        #print(f"parse_object @{self.ts.idx}: cur={cur} la={la} la2={la2}")
+        # print(f"parse_object @{self.ts.idx}: cur={cur} la={la} la2={la2}")
 
         # 1. Contour blocks: e.g. ("Cell Body" ...)
         if self.ts.look_ahead.type == 'string':
@@ -377,13 +384,13 @@ class Parser:
             # Property/attribute blocks: e.g. (Color Red)
             if self.ts.current.type == 'leftpar':
                 if self.ts.look_ahead.type == 'label_':
-                    #print('self.parse_property()')
+                    # print('self.parse_property()')
                     attributes.append(self.parse_property())
                 elif self.ts.look_ahead.type == 'set':
-                    #print('self.parse_set()')
+                    # print('self.parse_set()')
                     self.skip_unknown_block()
                 elif self.ts.look_ahead.type == 'number':
-                    #print('self.point()')
+                    # print('self.point()')
                     self.parse_point()
                 else:
                     print(f"Warning: Unexpected contour block {self.ts.current}, {self.ts.look_ahead}")
@@ -465,7 +472,7 @@ class Parser:
                 self.ts.advance()  # skip others
 
         self.ts.expect('rightpar')
-        #print(f"Parsed property: {label} {values}")
+        # print(f"Parsed property: {label} {values}")
 
     def skip_commas(self):
         """Advance past any comma tokens."""
@@ -513,11 +520,11 @@ class Parser:
         old_idx = self.ts.idx
         try:
             res = self.parse_text()
-            #print(f"text detected at token {old_idx}")
+            # print(f"text detected at token {old_idx}")
             return {'type': 'text', 'content': res}
         except Exception as e:
             self.ts.idx = old_idx
-            #print(f"text parse failed at token {old_idx}, fallback to tree: {e}")
+            # print(f"text parse failed at token {old_idx}, fallback to tree: {e}")
             return self.parse_tree(parent_id=parent_id)
 
     def parse_text(self):
@@ -572,7 +579,7 @@ class Parser:
         begin = len(self.all_points)
         self.parse_treepoints()
         end = len(self.all_points)
-        section = Section(sec_id=len(self.sections), sec_type=self.cur_section_type, parent_id=parent_id, parent_x = 1)
+        section = Section(sec_id=len(self.sections), sec_type=self.cur_section_type, parent_id=parent_id, parent_x=1)
         section.points = self.all_points[begin:end]
         self.sections.append(section)
         this_sec_id = section.sec_id
@@ -687,6 +694,7 @@ class Parser:
         """Skip over (set ...) blocks, which contain metadata or display info."""
         self.skip_unknown_block()
 
+
 ##########################################
 def contourcenter(points, num=101):
     """
@@ -703,7 +711,7 @@ def contourcenter(points, num=101):
     x = np.array([p.x for p in points])
     y = np.array([p.y for p in points])
     z = np.array([p.z for p in points])
-    seglens = np.sqrt(np.diff(x)**2 + np.diff(y)**2 + np.diff(z)**2)
+    seglens = np.sqrt(np.diff(x) ** 2 + np.diff(y) ** 2 + np.diff(z) ** 2)
     perim = np.zeros(len(x))
     perim[1:] = np.cumsum(seglens)
     d_uniform = np.linspace(0, perim[-1], num)
@@ -713,6 +721,7 @@ def contourcenter(points, num=101):
     mean = np.array([x_new.mean(), y_new.mean(), z_new.mean()])
     return mean, x_new, y_new, z_new
 
+
 def sort_sections(sections):
     """
     Reorder the list of Section objects so that all soma sections (sec_type == 1) come first,
@@ -721,6 +730,7 @@ def sort_sections(sections):
     soma_sec = [sec for sec in sections if sec.sec_type == 1]
     other_sec = [sec for sec in sections if sec.sec_type != 1]
     return soma_sec + other_sec
+
 
 def xy_intersect(bb1, bb2):
     """
@@ -733,6 +743,7 @@ def xy_intersect(bb1, bb2):
     xmin2, xmax2, ymin2, ymax2 = bb2
     return not (xmax1 < xmin2 or xmax2 < xmin1 or
                 ymax1 < ymin2 or ymax2 < ymin1)
+
 
 def merge_soma_sections(sections):
     """
@@ -750,7 +761,7 @@ def merge_soma_sections(sections):
             continue
         master = somas[i]
         bb1 = master.bbox_xy
-        for j in range(i+1, N):
+        for j in range(i + 1, N):
             if j in used:
                 continue
             cand = somas[j]
@@ -765,6 +776,7 @@ def merge_soma_sections(sections):
     new_sec[:0] = new_somas  # Insert somas at the beginning
     return new_sec
 
+
 def reindex_sections(sections):
     """
     After reordering or merging sections, update the sec_id and parent_id of all sections
@@ -778,6 +790,7 @@ def reindex_sections(sections):
         if sec.parent_id is not None:
             sec.parent_id = old2new.get(sec.parent_id, None)
     return sections
+
 
 def remove_duplicate_points(sections):
     """
@@ -794,8 +807,10 @@ def remove_duplicate_points(sections):
                 unique_pts.append(pt)
                 seen.add(key)
             else:
-                print(f"Warning: Section {section.sec_id} has duplicate point ({pt.x}, {pt.y}, {pt.z}, {pt.d}), removed.")
+                print(
+                    f"Warning: Section {section.sec_id} has duplicate point ({pt.x}, {pt.y}, {pt.z}, {pt.d}), removed.")
         section.points = unique_pts
+
 
 def ensure_section_continuity(sections):
     """
@@ -827,6 +842,7 @@ def ensure_section_continuity(sections):
             sec.points.insert(0, new_point)
             # print(f"Added continuity point from parent {parent.sec_id} to child {sec.sec_id}")
 
+
 def validate_soma_stack(main_soma_section, tol=1e-6):
     """
     Check that the main soma section and its contour_stack meet the following criteria:
@@ -847,12 +863,13 @@ def validate_soma_stack(main_soma_section, tol=1e-6):
 
     # Check monotonicity of the stack in z
     z_stack = [sec.points[0].z for sec in stack if sec.points]
-    dzs = [z_stack[i+1] - z_stack[i] for i in range(len(z_stack)-1)]
+    dzs = [z_stack[i + 1] - z_stack[i] for i in range(len(z_stack) - 1)]
     if all(d > tol for d in dzs):
         return True  # strictly increasing
     if all(d < -tol for d in dzs):
         return True  # strictly decreasing
     raise ValueError(f"[SOMA CHECK] Contour stack z-values not monotonic: {z_stack}")
+
 
 def validate_soma_stack_main(sections):
     """
@@ -861,6 +878,7 @@ def validate_soma_stack_main(sections):
     for sec in sections:
         if sec.sec_type == 1:
             validate_soma_stack(sec)
+
 
 def connect_to_soma(sections, buffer=0.5, verbose=True):
     """
@@ -884,10 +902,10 @@ def connect_to_soma(sections, buffer=0.5, verbose=True):
     soma_centers = []
     for soma_sec in soma_secs:
         if hasattr(soma_sec, "contour_stack") and soma_sec.contour_stack:
-            center = soma_sec.stk_center     # Use contour stack center
-            bbox_xy = soma_sec.stk_bbox_xy   # Use stack bbox
+            center = soma_sec.stk_center  # Use contour stack center
+            bbox_xy = soma_sec.stk_bbox_xy  # Use stack bbox
         else:
-            center = soma_sec.center         # Use point cloud mean
+            center = soma_sec.center  # Use point cloud mean
             bbox_xy = soma_sec.bbox_xy
         soma_centers.append(center)
         soma_sec._bbox_xy = bbox_xy  # Optionally cache on object
@@ -908,8 +926,8 @@ def connect_to_soma(sections, buffer=0.5, verbose=True):
                 xmin, xmax, ymin, ymax = soma_sec.stk_bbox_xy
             else:
                 xmin, xmax, ymin, ymax = soma_sec.bbox_xy
-            loose_xmin, loose_xmax = xmin-buffer, xmax+buffer
-            loose_ymin, loose_ymax = ymin-buffer, ymax+buffer
+            loose_xmin, loose_xmax = xmin - buffer, xmax + buffer
+            loose_ymin, loose_ymax = ymin - buffer, ymax + buffer
             # Check if root point falls inside the (loosened) bbox
             if loose_xmin <= x0 <= loose_xmax and loose_ymin <= y0 <= loose_ymax:
                 if verbose:
@@ -925,26 +943,29 @@ def connect_to_soma(sections, buffer=0.5, verbose=True):
             z0 = dangling_sec.points[0].z
             for i, center in enumerate(soma_centers):
                 cx, cy, cz = center
-                dist = ((x0-cx)**2 + (y0-cy)**2 + (z0-cz)**2)**0.5
+                dist = ((x0 - cx) ** 2 + (y0 - cy) ** 2 + (z0 - cz) ** 2) ** 0.5
                 if dist < min_dist:
                     min_dist = dist
                     min_idx = i
             nearest_soma = soma_secs[min_idx]
             if verbose:
-                print(f"!!! Section {dangling_sec.sec_id} root ({x0:.2f},{y0:.2f}) not inside any soma bbox; connected to nearest soma ({nearest_soma.sec_id})")
+                print(
+                    f"!!! Section {dangling_sec.sec_id} root ({x0:.2f},{y0:.2f}) not inside any soma bbox; connected to nearest soma ({nearest_soma.sec_id})")
             dangling_sec.parent_id = nearest_soma.sec_id
             dangling_sec.parent_x = 0.5
             unmatched.append(dangling_sec)  # Store for possible manual inspection
 
     if verbose and unmatched:
-        print(f"\n{len(unmatched)} dangling branches were not inside any soma bbox, but were auto-connected to the nearest soma.")
+        print(
+            f"\n{len(unmatched)} dangling branches were not inside any soma bbox, but were auto-connected to the nearest soma.")
     return unmatched  # List of "rescued" branches for optional post-processing
-    
+
+
 def soma_axis_sampling(
-    points, 
+    points,
     n_samples=21,
     arclength_resample=101,
-    ):
+):
     """
     Fit a closed soma contour, perform convex filtering and main axis interpolation,
     and return 21 spatial positions along the main axis and their diameter.
@@ -959,7 +980,7 @@ def soma_axis_sampling(
     """
     # Step 1: Arclength uniform resampling and centroid
     mean, x_new, y_new, _ = contourcenter(points, num=arclength_resample)
-    mean = mean[:-1] ## no z value 
+    mean = mean[:-1]  ## no z value
 
     # Step 2: PCA for principal/minor axes
     pts = np.stack([x_new, y_new], axis=1)
@@ -1031,6 +1052,7 @@ def soma_axis_sampling(
 
     return XY_interp, diam_interp
 
+
 def approximate_contour_by_circle(points, num=101):
     """
     points: list of Point(x, y, z)
@@ -1046,12 +1068,13 @@ def approximate_contour_by_circle(points, num=101):
     # Use arclength-resampled centroid (robust against uneven input points)
     mean, x_new, y_new, z_new = contourcenter(points, num=num)
     mean_radius = np.mean(
-        np.sqrt((x_new - mean[0])**2 + (y_new - mean[1])**2 + (z_new - mean[2])**2)
+        np.sqrt((x_new - mean[0]) ** 2 + (y_new - mean[1]) ** 2 + (z_new - mean[2]) ** 2)
     )
-    perim = np.sum(np.sqrt(np.diff(x_new)**2 + np.diff(y_new)**2 + np.diff(z_new)**2))
+    perim = np.sum(np.sqrt(np.diff(x_new) ** 2 + np.diff(y_new) ** 2 + np.diff(z_new) ** 2))
     perim_radius = perim / (2 * np.pi)
-    diam =  perim_radius + mean_radius
+    diam = perim_radius + mean_radius
     return mean, diam
+
 
 def contourstack2centroid(section, num=101):
     """
@@ -1071,13 +1094,19 @@ def contourstack2centroid(section, num=101):
 
     # 1. 主contour
     mean, diameter = approximate_contour_by_circle(section.points, num=num)
-    xs.append(mean[0]); ys.append(mean[1]); zs.append(mean[2]); diams.append(diameter)
+    xs.append(mean[0]);
+    ys.append(mean[1]);
+    zs.append(mean[2]);
+    diams.append(diameter)
 
     # 2. 每个contour_stack
     for contour in getattr(section, "contour_stack", []):
         if contour:
             mean, diameter = approximate_contour_by_circle(contour, num=num)
-            xs.append(mean[0]); ys.append(mean[1]); zs.append(mean[2]); diams.append(diameter)
+            xs.append(mean[0]);
+            ys.append(mean[1]);
+            zs.append(mean[2]);
+            diams.append(diameter)
 
     return xs, ys, zs, diams
 
@@ -1102,14 +1131,14 @@ def replace_soma_with_axis_sampling(sections, n_samples=21, **plot_kwargs):
             # Case 1: Single-layer soma (no contour_stack)
             if not getattr(sec, 'contour_stack', []):
                 XY, diam = soma_axis_sampling(
-                    sec.points, 
-                    n_samples=n_samples, 
+                    sec.points,
+                    n_samples=n_samples,
                     **plot_kwargs
                 )
                 sec.points = [
                     Point(
-                        x=XY[i,0], y=XY[i,1], 
-                        z=sec.points[0].z if sec.points else 0.0, 
+                        x=XY[i, 0], y=XY[i, 1],
+                        z=sec.points[0].z if sec.points else 0.0,
                         d=float(diam[i]), misc=[], idx=i
                     )
                     for i in range(len(diam))
@@ -1125,13 +1154,14 @@ def replace_soma_with_axis_sampling(sections, n_samples=21, **plot_kwargs):
                     for i in range(len(xs))
                 ]
 
+
 def read_asc(file):
     # Parse the tokens from the .asc file
     tokens = []
     with open(file) as f:
         for i, line in enumerate(f):
-            tokens.extend(tokenize_asc_line(line, i+1))
-    tokens.append(Token('eof', '', i+2))  # Add end-of-file token
+            tokens.extend(tokenize_asc_line(line, i + 1))
+    tokens.append(Token('eof', '', i + 2))  # Add end-of-file token
 
     # Initialize parser and parse the token list
     parser = Parser(tokens)
@@ -1155,6 +1185,3 @@ def read_asc(file):
 
     return parser.sections
 
-if __name__ == "__main__":
-    asc_file = '../dev/asc_file/golgi.asc'
-    sections = read_asc(asc_file)

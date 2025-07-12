@@ -66,5 +66,5 @@ class TestRungeKutta:
     def test_euler_step(self):
         dts, norms = compare('ind_exp_euler')
         plt.loglog(dts, norms)
-        plt.show()
+        # plt.show()
         plt.close()

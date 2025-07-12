@@ -13,14 +13,10 @@
 # limitations under the License.
 # ==============================================================================
 
-from functools import partial
-from typing import Union
-
 import brainstate
 import brainunit as u
-import jax
-import jax.numpy as jnp
 import numpy as np
+
 
 def calculate_total_resistance_and_area(
     points: brainstate.typing.Array,
@@ -102,6 +98,7 @@ def calculate_total_resistance_and_area(
 
     return total_resistance, total_surface_area
 
+
 def compute_line_ratios(points: np.ndarray):
     r"""
     Compute the normalized cumulative distance (0 to 1) of each point along a polyline
@@ -152,21 +149,21 @@ def compute_line_ratios(points: np.ndarray):
     # np.diff computes the difference between adjacent points
     # np.linalg.norm computes the Euclidean norm (distance) for each difference
     segment_lengths = np.linalg.norm(np.diff(points, axis=0), axis=1)
-    
+
     # Calculate the total length
     total_length = np.sum(segment_lengths)
-    
+
     # Compute the cumulative length
     # np.insert adds a 0 at the beginning to represent the first point (distance = 0)
     cumulative_lengths = np.insert(np.cumsum(segment_lengths), 0, 0.0)
-    
+
     # Normalize by total length to get ratios
     # Handle the case where all points coincide (total_length = 0)
     if total_length > 0:
         ratios = cumulative_lengths / total_length
     else:
         ratios = np.zeros(len(points))
-        
+
     return ratios
 
 
@@ -200,6 +197,7 @@ def find_ratio_interval(
     idx = np.where(target_ratio <= ratios[0], 0, idx)
     idx = np.where(target_ratio >= ratios[-1], N - 2, idx)
     return idx, idx + 1
+
 
 def generate_interpolated_nodes(node_pre, nseg: int):
     """
@@ -244,7 +242,7 @@ def generate_interpolated_nodes(node_pre, nseg: int):
 
     # 4. Combine to form the final node_after
     node_after = np.column_stack([np.asarray(xyz_new),
-                                      np.asarray(diam_new)])
+                                  np.asarray(diam_new)])
 
     return node_after
 
@@ -408,7 +406,7 @@ def init_coupling_weight_nodes(g_left, g_right, connection):
                 axial_conductance_matrix[parent, child] = g_left[child]
                 axial_conductance_matrix[child, parent] = g_left[child]
 
-    return axial_conductance_matrix * u.siemens 
+    return axial_conductance_matrix * u.siemens
 
 
 def get_coo_ids_and_values(conductance_matrix):
@@ -474,7 +472,6 @@ def diffusive_coupling(potentials, coo_ids, conductances):
 
 
 def get_type_name(type_code):
-    
     type_map = {
         1: "soma",
         2: "axon",

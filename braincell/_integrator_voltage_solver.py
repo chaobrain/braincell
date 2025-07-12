@@ -34,11 +34,17 @@ def dhs_voltage_step(target, t, dt, *args):
     """
     Implicit euler solver with the `dendritic hierarchical scheduling` (DHS, Zhang et al., 2023).
     """
+
     # membrane potential at time n
     V_n = target.V.value
-    diags, uppers, lowers, comp_edges, parent_lookup, internal_node_inds  = target.diags, target.uppers, target.lowers, target.flipped_comp_edges, target.parent_lookup, target.internal_node_inds
+    diags = target.diags
+    uppers = target.uppers
+    lowers = target.lowers
+    parent_lookup = target.parent_lookup
+    internal_node_inds = target.internal_node_inds
+    flipped_comp_edges, padded_edges, edge_masks = target.comp_edges
+
     n_nodes = len(diags)
-    flipped_comp_edges, padded_edges, edge_masks = comp_edges
 
     # linear and constant term
     linear, const = _linear_and_const_term(target, V_n, *args)
@@ -48,13 +54,13 @@ def dhs_voltage_step(target, t, dt, *args):
     V_const = V_const.at[internal_node_inds].set(const.ravel())
     V = u.math.zeros(n_nodes) * u.get_unit(V_n)
     V = V.at[internal_node_inds].set(V_n.ravel())
-    
-    ## diags = I + dt * (G_diags + linear_term) 
-    diags = dt*(diags + V_linear)
+
+    # diags = I + dt * (G_diags + linear_term)
+    diags = dt * (diags + V_linear)
     diags = diags.at[internal_node_inds].add(1.0)
     solves = V + dt * V_const
     uppers = dt * uppers
-    lowers = dt * lowers 
+    lowers = dt * lowers
 
     # Add a spurious compartment that is modified by the masking.
     diags = u.math.concatenate([diags, u.math.asarray([1.0 * u.get_unit(diags)])])
@@ -62,54 +68,18 @@ def dhs_voltage_step(target, t, dt, *args):
     uppers = u.math.concatenate([uppers, u.math.asarray([0.0 * u.get_unit(uppers)])])
     lowers = u.math.concatenate([lowers, u.math.asarray([0.0 * u.get_unit(lowers)])])
 
-    ## integrate step
-    steps = len(flipped_comp_edges)
-    # # 用 lax.scan
-    # init_carry = (diags, solves, lowers, uppers, padded_edges, edge_masks)
-    # final_carry, _ = jax.lax.scan(scan_body, init_carry, jnp.arange(steps))
-    # diags, solves, _, _, _, _= final_carry
-
     # Triangulate by unrolling the loop of the levels.
+    steps = len(flipped_comp_edges)
     for i in range(steps):
-        diags, solves = _comp_based_triang(
-            i, (diags, solves, lowers, uppers, flipped_comp_edges)
-        )
-    # Backsubstitute with recursive doubling.
+        diags, solves = _comp_based_triang(i, (diags, solves, lowers, uppers, flipped_comp_edges))
+
+    # Back substitute with recursive doubling.
     diags, solves = _comp_based_backsub_recursive_doubling(
         diags, solves, lowers, steps, n_nodes, parent_lookup
     )
-    
-    # Remove the spurious compartment. This compartment got modified by masking of compartments in certain levels.
-    diags = diags[:-1]
-    solves = solves[:-1]
 
-    target.V.value  = solves[internal_node_inds].reshape((1,-1))
-    
-def scan_body(carry, i):
-    diags, solves, lowers, uppers, flipped_comp_edges, masks = carry
-    comp_edge = flipped_comp_edges[i]     # (max_len, 2)
-    mask = masks[i]                       # (max_len, )
+    target.V.value = solves[internal_node_inds].reshape((1, -1))
 
-    child = comp_edge[:, 0]
-    parent = comp_edge[:, 1]
-    # 只处理 parent != -1 的行
-    valid = mask & (parent != -1)
-    # 避免非法索引
-    valid_child  = u.math.where(valid, child, 0)
-    valid_parent = u.math.where(valid, parent, 0)
-
-    lower_val = lowers[valid_child]
-    upper_val = uppers[valid_child]
-    child_diag = diags[valid_child]
-    child_solve = solves[valid_child]
-
-    multiplier = upper_val / child_diag
-    update_val = -lower_val * multiplier
-    update_solve = -child_solve * multiplier
-
-    diags = diags.at[valid_parent].add(update_val * mask)
-    solves = solves.at[valid_parent].add(update_solve * mask)
-    return (diags, solves, lowers, uppers, flipped_comp_edges, masks), None
 
 def _comp_based_triang(index, carry):
     """Triangulate the quasi-tridiagonal system compartment by compartment."""
@@ -130,10 +100,11 @@ def _comp_based_triang(index, carry):
     multiplier = upper_val / child_diag
     # Updates to diagonal and solve
     diags = diags.at[parent].add(-lower_val * multiplier)
-    #jax.debug.print('diags_step= {}',diags)
+    # jax.debug.print('diags_step= {}',diags)
     solves = solves.at[parent].add(-child_solve * multiplier)
 
     return (diags, solves)
+
 
 @set_module_as('braincell')
 def dense_voltage_step():
@@ -274,10 +245,11 @@ def _linear_and_const_term(target: DiffEqModule, V_n, *args):
     const = derivative - V_n * linear
     return linear, const
 
-def _dhs_matrix(target: DiffEqModule):
 
+def _dhs_matrix(target: DiffEqModule):
     with jax.ensure_compile_time_eval():
-        Gmat_sorted, parent_rows, dhs_groups, segment2rowid, flipped_comp_edges = target.get_dhs_info(max_group_size = 16, show = False)
+        Gmat_sorted, parent_rows, dhs_groups, segment2rowid, flipped_comp_edges = target.get_dhs_info(max_group_size=16,
+                                                                                                      show=False)
 
         cm_segmid = target.cm
         area_segmid = target.area
@@ -289,7 +261,7 @@ def _dhs_matrix(target: DiffEqModule):
         area[seg_mid_ids] = area_segmid
 
         Gmat_sorted = -Gmat_sorted / (cm * area)[:, u.math.newaxis]
-        
+
         n = len(parent_rows)
         lowers = u.math.zeros(n) * u.get_unit(Gmat_sorted)
         uppers = u.math.zeros(n) * u.get_unit(Gmat_sorted)
@@ -297,7 +269,7 @@ def _dhs_matrix(target: DiffEqModule):
         for i in range(n):
             p = parent_rows[i]
             if p == -1:
-                lowers = lowers.at[i].set(0 * u.get_unit(Gmat_sorted)) 
+                lowers = lowers.at[i].set(0 * u.get_unit(Gmat_sorted))
                 uppers = uppers.at[i].set(0 * u.get_unit(Gmat_sorted))
             else:
                 lowers = lowers.at[i].set(Gmat_sorted[i, p])
@@ -305,7 +277,8 @@ def _dhs_matrix(target: DiffEqModule):
 
         diags = u.math.diag(Gmat_sorted)
 
-    return diags, uppers, lowers, parent_rows, dhs_groups, segment2rowid, flipped_comp_edges , Gmat_sorted
+    return diags, uppers, lowers, parent_rows, dhs_groups, segment2rowid, flipped_comp_edges, Gmat_sorted
+
 
 def _laplacian_matrix(target: DiffEqModule) -> brainevent.CSR:
     """

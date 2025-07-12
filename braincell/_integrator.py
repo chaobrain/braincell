@@ -23,8 +23,7 @@ from ._integrator_staggered import *
 
 __all__ = [
     'get_integrator',
-    # staggered
-    'staggered_step',
+
     # exponential Euler
     'exp_euler_step',
     'ind_exp_euler_step',
@@ -57,6 +56,9 @@ __all__ = [
     'diffrax_kvaerno3_step',
     'diffrax_kvaerno4_step',
     'diffrax_kvaerno5_step',
+
+    # staggered
+    'staggered_step',
 ]
 
 all_integrators = {k.replace('_step', ''): v for k, v in locals().items() if k.endswith('_step')}

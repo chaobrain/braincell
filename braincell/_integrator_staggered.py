@@ -13,16 +13,18 @@
 # limitations under the License.
 # ==============================================================================
 
-import brainunit as u
 import brainstate
+import brainunit as u
+
 from ._integrator_exp_euler import ind_exp_euler_step
-from ._integrator_voltage_solver import sparse_voltage_step, dhs_voltage_step
+from ._integrator_voltage_solver import dhs_voltage_step
 from ._misc import set_module_as
 from ._protocol import DiffEqState, DiffEqModule
 
 __all__ = [
     'staggered_step',
 ]
+
 
 @set_module_as('braincell')
 def staggered_step(
@@ -37,7 +39,7 @@ def staggered_step(
         f"But got {type(target)} instead."
     )
 
-    #sparse_voltage_step(target, t, dt, *args)
+    # sparse_voltage_step(target, t, dt, *args)
     dhs_voltage_step(target, t, dt, *args)
     # excluded_paths
     all_states = brainstate.graph.states(target)
@@ -53,4 +55,4 @@ def staggered_step(
         target.pre_integral(*args)
 
     # ind_exp_euler for non-v and non-markov
-    ind_exp_euler_step(target, t, dt, *args, excluded_paths = excluded_paths)
+    ind_exp_euler_step(target, t, dt, *args, excluded_paths=excluded_paths)

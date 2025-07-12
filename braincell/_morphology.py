@@ -25,12 +25,8 @@ from ._morphology_dhs_utils import (
     preprocess_branching_tree,
     build_flipped_comp_edges,
 )
-from ._morphology_from_asc import read_asc
-from ._morphology_from_swc import (
-    Import3dSWCRead,
-    visualize_neuron,
-    process_swc_pipeline,
-)
+from ._morphology_from_asc import from_asc
+from ._morphology_from_swc import from_swc
 from ._morphology_utils import (
     calculate_total_resistance_and_area,
     generate_interpolated_nodes,
@@ -77,18 +73,6 @@ class Segment(NamedTuple):
     area: u.Quantity[u.um2]
     R_left: u.Quantity[u.ohm]
     R_right: u.Quantity[u.ohm]
-
-
-def triggers_recompute(setter):
-    def wrapper(self, value):
-        setter(self, value)
-        if not getattr(self, '_initializing', False):
-            self._compute_area_and_resistance()
-
-    return wrapper
-
-
-(brainstate.util.PrettyObject)
 
 
 class Section:
@@ -174,27 +158,27 @@ class Section:
         return self._nseg
 
     @nseg.setter
-    @triggers_recompute
     def nseg(self, value):
         self._nseg = value
+        self._compute_area_and_resistance()
 
     @property
     def Ra(self):
         return self._Ra
 
     @Ra.setter
-    @triggers_recompute
     def Ra(self, value):
         self._Ra = self._ensure_unit(value, u.ohm * u.cm)
+        self._compute_area_and_resistance()
 
     @property
     def cm(self):
         return self._cm
 
     @cm.setter
-    @triggers_recompute
     def cm(self, value):
         self._cm = self._ensure_unit(value, u.uF / u.cm ** 2)
+        self._compute_area_and_resistance()
 
     def _ensure_unit(self, value, unit):
         if u.is_unitless(value):
@@ -912,122 +896,8 @@ class Morphology(brainstate.util.PrettyObject):
         for name, section in self.sections.items():
             print(f"Section: {name}, nseg: {section.nseg}, Points: {section.positions.shape[0]}")
 
-    def from_swc(self, filename):
-        """
-        Import neuron morphology data from an SWC file and populate the current Morphology object.
-        
-        Parameters
-        ----------
-        filename : str
-            Path to the SWC file
-            
-        Returns
-        -------
-        self
-            Returns self to support method chaining
-        """
-        # Create SWC reader
-        reader = Import3dSWCRead()
-        if not reader.input(filename):
-            raise ValueError(f"Failed to read SWC file: {filename}")
-
-        # 1. Extract point data from SWC sections and prepare section_dicts
-        section_dicts = {}
-        for swc_section in reader.sections:
-            section_type = swc_section.type
-            section_name = f"{get_type_name(section_type)}_{swc_section.id}"
-
-            # Extract point data
-            points = np.column_stack([
-                swc_section.x, swc_section.y, swc_section.z, swc_section.d
-            ])
-
-            section_dicts[section_name] = {
-                'points': points,
-                'nseg': 1  # Default to 1, might need adjustment based on points or length
-            }
-        # 2. Add all sections using add_multiple_sections method
-        self.add_multiple_sections(section_dicts)
-
-        # 3. Prepare connection information and establish connections
-        connections = []
-        for swc_section in reader.sections:
-            if swc_section.parentsec is not None:
-                child_name = f"{get_type_name(swc_section.type)}_{swc_section.id}"
-                parent_name = f"{get_type_name(swc_section.parentsec.type)}_{swc_section.parentsec.id}"
-                parent_loc = swc_section.parentx  # Connection position
-                connections.append((child_name, parent_name, parent_loc))
-        self.connect_sections(connections)
-
-        # 4. Add visualization method (optional)
-        self._filename = filename  # Store filename for later visualization
-
-        # Return self for method chaining
-        return
-
-    def from_asc(self, filename):
-        """
-        Import neuron morphology data from an ASC file and populate the current Morphology object.
-
-        Parameters
-        ----------
-        filename : str
-            Path to the ASC file
-
-        Returns
-        -------
-        self
-            Returns self to support method chaining
-        """
-        # 1. Parse the ASC file into a list of Section objects
-        sections = read_asc(filename)  # main returns a list of Section objects
-
-        # 2. Build section_dicts using get_type_name for section names
-        section_dicts = {}
-        section_id_map = {}  # Map: sec_id -> section_name
-        type_counters = {}
-        for sec in sections:
-            section_type = sec.sec_type
-            type_name = get_type_name(section_type)
-            # init counter
-            if type_name not in type_counters:
-                type_counters[type_name] = 0
-            # index each type
-            type_inner_id = type_counters[type_name]
-            section_name = f"{type_name}_{type_inner_id}"
-            type_counters[type_name] += 1
-
-            section_id_map[sec.sec_id] = section_name
-
-            # Collect points as a (N, 4) numpy array: x, y, z, d
-            points = np.column_stack([
-                [p.x for p in sec.points],
-                [p.y for p in sec.points],
-                [p.z for p in sec.points],
-                [p.d for p in sec.points]
-            ])
-            section_dicts[section_name] = {
-                'points': points,
-                'nseg': 1,  # Default value
-            }
-
-        # 3. Add all sections
-        self.add_multiple_sections(section_dicts)
-
-        # 4. Prepare and add connection info
-        connections = []
-        for sec in sections:
-            if sec.parent_id is not None:
-                child_name = section_id_map[sec.sec_id]
-                parent_name = section_id_map[sec.parent_id]
-                parent_loc = getattr(sec, "parent_x", 0.0)  # Use 0.0 if attribute missing
-                connections.append((child_name, parent_name, parent_loc))
-        self.connect_sections(connections)
-
-        return self
-
     @classmethod
-    def from_swc_file(cls, filename):
+    def from_swc(cls, filename):
         """
         Class method to create a Morphology object from an SWC file (factory method).
         
@@ -1042,10 +912,25 @@ class Morphology(brainstate.util.PrettyObject):
             A Morphology object created from the SWC file
         """
         morphology = cls()
-        return morphology.from_swc(filename)
+
+        sections, section_dicts = from_swc(filename)
+
+        # Add all sections using add_multiple_sections method
+        morphology.add_multiple_sections(section_dicts)
+
+        # Prepare connection information and establish connections
+        connections = []
+        for swc_section in sections:
+            if swc_section.parentsec is not None:
+                child_name = f"{get_type_name(swc_section.type)}_{swc_section.id}"
+                parent_name = f"{get_type_name(swc_section.parentsec.type)}_{swc_section.parentsec.id}"
+                parent_loc = swc_section.parentx  # Connection position
+                connections.append((child_name, parent_name, parent_loc))
+        morphology.connect_sections(connections)
+        return morphology
 
     @classmethod
-    def from_asc_file(cls, filename):
+    def from_asc(cls, filename):
         """
         Class method to create a Morphology object from an ASC file (factory method).
 
@@ -1060,7 +945,22 @@ class Morphology(brainstate.util.PrettyObject):
             A Morphology object created from the ASC file
         """
         morphology = cls()
-        return morphology.from_asc(filename)
+
+        section_dicts, sections, section_id_map = from_asc(filename)
+
+        # Add all sections
+        morphology.add_multiple_sections(section_dicts)
+
+        # Prepare and add connection info
+        connections = []
+        for sec in sections:
+            if sec.parent_id is not None:
+                child_name = section_id_map[sec.sec_id]
+                parent_name = section_id_map[sec.parent_id]
+                parent_loc = getattr(sec, "parent_x", 0.0)  # Use 0.0 if attribute missing
+                connections.append((child_name, parent_name, parent_loc))
+        morphology.connect_sections(connections)
+        return morphology
 
     def visualize(self):
         """
@@ -1093,21 +993,27 @@ class Morphology(brainstate.util.PrettyObject):
                     z = section.positions[:, 2].magnitude
 
                     # Line representation
-                    fig.add_trace(go.Scatter3d(
-                        x=x, y=y, z=z,
-                        mode='lines',
-                        name=name,
-                        line=dict(width=2)
-                    ))
+                    fig.add_trace(
+                        go.Scatter3d(
+                            x=x, y=y, z=z,
+                            mode='lines',
+                            name=name,
+                            line=dict(width=2)
+                        )
+                    )
 
                     # Points representation
-                    fig.add_trace(go.Scatter3d(
-                        x=x, y=y, z=z,
-                        mode='markers',
-                        name=f"{name}_points",
-                        marker=dict(size=section.diam.flatten().magnitude / 2,
-                                    opacity=0.5)
-                    ))
+                    fig.add_trace(
+                        go.Scatter3d(
+                            x=x, y=y, z=z,
+                            mode='markers',
+                            name=f"{name}_points",
+                            marker=dict(
+                                size=section.diam.flatten().magnitude / 2,
+                                opacity=0.5
+                            )
+                        )
+                    )
                 else:
                     # For CylinderSection - simplified representation
                     # Create line from start to end

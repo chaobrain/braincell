@@ -18,6 +18,8 @@ import os
 
 import numpy as np
 
+from ._morphology_utils import get_type_name
+
 
 class Import3dSection:
     """
@@ -779,6 +781,30 @@ def visualize_neuron(viz_data):
     )
 
     return fig
+
+
+def from_swc(filename):
+    # Create SWC reader
+    reader = Import3dSWCRead()
+    if not reader.input(filename):
+        raise ValueError(f"Failed to read SWC file: {filename}")
+
+    # 1. Extract point data from SWC sections and prepare section_dicts
+    section_dicts = {}
+    for swc_section in reader.sections:
+        section_type = swc_section.type
+        section_name = f"{get_type_name(section_type)}_{swc_section.id}"
+
+        # Extract point data
+        points = np.column_stack([
+            swc_section.x, swc_section.y, swc_section.z, swc_section.d
+        ])
+
+        section_dicts[section_name] = {
+            'points': points,
+            'nseg': 1  # Default to 1, might need adjustment based on points or length
+        }
+    return reader.sections, section_dicts
 
 
 if __name__ == "__main__":

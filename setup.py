@@ -54,7 +54,7 @@ setup(
     author_email='chao.brain@qq.com',
     packages=packages,
     python_requires='>=3.10',
-    install_requires=['numpy>=1.15', 'brainunit>=0.0.8', 'brainstate>=0.1.0', 'brainevent>=0.0.2'],
+    install_requires=['numpy>=1.15', 'brainunit>=0.0.8', 'brainstate>=0.1.0', 'brainevent>=0.0.2', 'scipy'],
     url='https://github.com/chaobrain/braincell',
     project_urls={
         "Bug Tracker": "https://github.com/chaobrain/braincell/issues",

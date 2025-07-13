@@ -1002,10 +1002,6 @@ class BranchingTree:
         - This method is useful for verifying the correctness of the segment merging
           and tree construction steps
 
-        Examples
-        --------
-        >>> dhs = DHS(seg_ri, parent_id, parent_x, cm_segmid, area_segmid)
-        >>> dhs.plot()  # Display the dendritic tree visualization
         """
         # Build node labels, classify, prepare for visualization
         center_ids, leaf_ids, noncenter_nonleaf_ids = classify_segment_nodes(self.num_segments, self.uf, self.G)

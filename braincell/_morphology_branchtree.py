@@ -17,7 +17,6 @@
 from typing import Tuple
 
 import brainunit as u
-import matplotlib.pyplot as plt
 import numpy as np
 
 
@@ -734,11 +733,6 @@ def build_flipped_comp_edges(dhs_group, parent_rows):
         Each sublist contains the row indices of nodes in a depth group.
     parent_rows : array-like of int
         For each row, its parent's row index (-1 for root).
-
-    Returns
-    -------
-    flipped_comp_edges : list of ndarray (n_group, 2)
-        Each element: array of [child_row, parent_row] for all pairs in that group.
     """
     flipped_comp_edges = []
     for group in reversed(dhs_group):
@@ -775,9 +769,83 @@ def build_flipped_comp_edges(dhs_group, parent_rows):
 
 
 class BranchingTree:
+    """
+    A computational representation of a branching tree structure for efficient cable modeling.
+
+    This class implements the Douglas-Hines-Schwartz (DHS) algorithm for solving cable equations
+    on branching structures such as neuronal dendrites. It preprocesses a morphological
+    description into an efficient computational representation by:
+
+    1. Merging equipotential nodes at segment connections
+    2. Building a directed graph representation of the tree
+    3. Constructing conductance matrices with depth-based ordering
+    4. Organizing nodes into groups for parallel computation
+
+    The resulting structure enables efficient numerical integration of the cable equation
+    on branching morphologies.
+
+    Parameters
+    ----------
+    seg_ri : array-like or u.Quantity
+        Segment axial resistances, typically as [(R_0-0.5, R_0.5-1), ...] for each segment.
+    parent_id : list of int
+        For each segment, the parent segment index (-1 for root segment).
+    parent_x : list of float
+        For each segment, the position on the parent segment where connection is made
+        (typically 0, 0.5, or 1).
+    cm_segmid : array-like or u.Quantity
+        Membrane capacitance per unit area for each segment center.
+    area_segmid : array-like or u.Quantity
+        Surface area for each segment center.
+
+    Attributes
+    ----------
+    num_segments : int
+        Total number of segments in the tree.
+    diags : u.Quantity
+        Diagonal elements of the conductance matrix.
+    uppers : u.Quantity
+        Upper diagonal elements for parent connections.
+    lowers : u.Quantity
+        Lower diagonal elements for child connections.
+    flipped_comp_edges : tuple
+        Computational edges data for DHS algorithm implementation.
+    parent_lookup : ndarray
+        Array mapping each node to its parent's index (-1 for root).
+    internal_node_inds : ndarray
+        Indices of internal nodes in the tree.
+    uf : UnionFind
+        UnionFind data structure after merging equipotential nodes.
+    G : nx.DiGraph
+        Directed graph representation of the tree structure.
+
+    Methods
+    -------
+    plot()
+        Visualize the dendritic tree structure with node classifications.
+
+    Notes
+    -----
+    The class uses a depth-first ordering of nodes to enable efficient
+    numerical solution methods. The implementation is based on the
+    Douglas-Hines-Schwartz (DHS) algorithm, which is especially efficient
+    for branching structures.
+
+    Examples
+    --------
+    >>> # Create a simple branched tree with 5 segments
+    >>> seg_ri = [(100, 100)] * 5  # Ohm
+    >>> parent_id = [-1, 0, 0, 2, 2]  # Segment 0 is root, splits to 1,2, then 2 splits to 3,4
+    >>> parent_x = [0, 1, 1, 1, 1]    # All connections at end of parent segment
+    >>> cm = [1e-6] * 5  # F/cm²
+    >>> area = [100] * 5  # μm²
+    >>> tree = BranchingTree(seg_ri, parent_id, parent_x, cm, area)
+    >>> tree.plot()  # Visualize the tree structure
+    """
+
     num_segments: int
-    uf: UnionFind
-    G: object  # nx.DiGraph
+    # uf: UnionFind
+    # G: object  # nx.DiGraph
     diags: u.Quantity
     uppers: u.Quantity
     lowers: u.Quantity
@@ -943,4 +1011,3 @@ class BranchingTree:
         center_ids, leaf_ids, noncenter_nonleaf_ids = classify_segment_nodes(self.num_segments, self.uf, self.G)
         node_labels, _ = build_segment_node_labels(self.num_segments, self.uf)
         plot_tree(self.G, node_labels, center_ids, noncenter_nonleaf_ids, leaf_ids)
-        plt.show()

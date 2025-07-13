@@ -13,6 +13,7 @@
 # limitations under the License.
 # ==============================================================================
 
+from dataclasses import dataclass
 from typing import Union, Optional, Sequence, Dict, Hashable, NamedTuple
 
 import brainstate
@@ -72,6 +73,7 @@ class Segment(NamedTuple):
     R_right: u.Quantity[u.ohm]
 
 
+@dataclass
 class Section:
     """Base class for representing a neuron section in compartmental modeling.
 
@@ -120,18 +122,6 @@ class Section:
         Ra: u.Quantity[u.ohm * u.cm],
         cm: u.Quantity[u.uF / (u.cm ** 2)],
     ):
-        """
-        Initialize the Section.
-
-        Parameters:
-            name (Hashable): Section name identifier.
-            length (float, optional): Length of the cylinder (if using simple geometry).
-            diam (float, optional): Diameter of the cylinder (if using simple geometry).
-            points (list or np.ndarray, optional): Array of shape (N, 4) with [x, y, z, diameter].
-            nseg (int): Number of segments to divide the section into.
-            Ra (float): Axial resistivity in ohm·cm.
-            cm (float): Membrane capacitance in µF/cm².
-        """
         self.name = name
         assert u.fail_for_dimension_mismatch(positions, u.um, 'positions must be in meter')
         assert u.fail_for_dimension_mismatch(diams, u.um, 'diameters must be in meter')
@@ -178,9 +168,9 @@ class Section:
 
     @nseg.setter
     def nseg(self, value):
-        assert isinstance(value, (int, np.integer)), f'nseg must be an integer, but got {value}'
-        self._nseg = value
-        self._compute_area_and_resistance()
+        raise ValueError(
+            'nseg cannot be set directly. Use replace() method to change nseg value.'
+        )
 
     @property
     def Ra(self):
@@ -196,9 +186,9 @@ class Section:
 
     @Ra.setter
     def Ra(self, value):
-        u.fail_for_dimension_mismatch(value, u.ohm * u.cm, 'Ra must be in u.ohm * u.cm')
-        self._Ra = value
-        self._compute_area_and_resistance()
+        raise ValueError(
+            'Ra cannot be set directly. Use replace() method to change Ra value.'
+        )
 
     @property
     def cm(self):
@@ -214,9 +204,65 @@ class Section:
 
     @cm.setter
     def cm(self, value):
-        u.fail_for_dimension_mismatch(value, u.uF / u.cm ** 2, 'cm must be in u.uF / (u.cm ** 2)')
-        self._cm = value
-        self._compute_area_and_resistance()
+        raise ValueError(
+            'cm cannot be set directly. Use replace() method to change cm value.'
+        )
+
+    def replace(
+        self,
+        nseg: int = None,
+        Ra: u.Quantity = None,
+        cm: u.Quantity = None,
+    ) -> 'Section':
+        """
+        Create a new Section instance with updated properties.
+
+        This method returns a new Section object that is a copy of the current section,
+        but with optionally replaced values for the number of segments (`nseg`), axial resistivity (`Ra`),
+        and specific membrane capacitance (`cm`). All other properties (name, positions, diameters)
+        are preserved from the original section.
+
+        Parameters
+        ----------
+        nseg : int, optional
+            The number of segments for the new section. If not provided, uses the current value.
+        Ra : u.Quantity, optional
+            The axial resistivity for the new section (must have units of ohm·cm). If not provided, uses the current value.
+        cm : u.Quantity, optional
+            The specific membrane capacitance for the new section (must have units of uF/cm²). If not provided, uses the current value.
+
+        Returns
+        -------
+        Section
+            A new Section instance with the specified updated properties.
+
+        Raises
+        ------
+        AssertionError
+            If `nseg` is provided and is not an integer.
+        ValueError
+            If `Ra` or `cm` are provided and have incompatible units.
+
+        Notes
+        -----
+        This method does not modify the original section; it returns a new instance.
+        """
+        name = self.name
+        positions = self.positions
+        diams = self.diams
+        if nseg is not None:
+            assert isinstance(nseg, (int, np.integer)), f'nseg must be an integer, but got {nseg}'
+        else:
+            nseg = self.nseg
+        if Ra is not None:
+            u.fail_for_dimension_mismatch(Ra, u.ohm * u.cm, 'Ra must be in u.ohm * u.cm')
+        else:
+            Ra = self.Ra
+        if cm is not None:
+            u.fail_for_dimension_mismatch(cm, u.uF / (u.cm ** 2), 'cm must be in u.uF / (u.cm ** 2)')
+        else:
+            cm = self.cm
+        return Section(name=name, positions=positions, diams=diams, nseg=nseg, Ra=Ra, cm=cm)
 
     def __repr__(self):
         n_points = getattr(self.positions, "shape", [len(self.positions)])[0]
@@ -227,8 +273,8 @@ class Section:
             parent_str = None
             parent_loc = None
         return (
-            f"<section_name={self.name!r}, nseg={self.nseg}, points={n_points}, "
-            f"Ra={self.Ra}, cm={self.cm}, parent={parent_str}, parent_loc = {parent_loc}>"
+            f"Section<name={self.name!r}, nseg={self.nseg}, points={n_points}, "
+            f"Ra={self.Ra}, cm={self.cm}, parent={parent_str}, parent_loc={parent_loc}>"
         )
 
     def _compute_area_and_resistance(self):
@@ -251,8 +297,8 @@ class Section:
         )
         Ra = self.Ra / (u.ohm * u.cm)
         node_after = generate_interpolated_nodes(node_pre, self.nseg)
-
         node_after = np.asarray(node_after)
+
         xyz_pre = node_pre[:, :3]
         ratios_pre = compute_line_ratios(xyz_pre)
         ratios_after = np.linspace(0, 1, 2 * self.nseg + 1)
@@ -1038,17 +1084,14 @@ class Morphology(brainstate.util.PrettyObject):
         - This method is useful for initializing passive properties before simulation or analysis.
         - All units must be compatible with the expected quantities.
         """
-        for k, v in self.sections.items():
+        for k, v in tuple(self.sections.items()):
             # Update nseg based on section length
-            v.nseg = int(1 + 2 * np.floor(v.L / nseg_length))
+            nseg = int(1 + 2 * np.floor(v.L / nseg_length))
 
             # Set Ra and cm by section type
             if 'soma' in k:
-                v.Ra = Ra_soma
-                v.cm = cm_soma
+                self.sections[k] = v.replace(nseg=nseg, Ra=Ra_soma, cm=cm_soma)
             elif 'dend' in k:
-                v.Ra = Ra_dend
-                v.cm = cm_dend
+                self.sections[k] = v.replace(nseg=nseg, Ra=Ra_dend, cm=cm_dend)
             elif 'axon' in k:
-                v.Ra = Ra_axon
-                v.cm = cm_axon
+                self.sections[k] = v.replace(nseg=nseg, Ra=Ra_axon, cm=cm_axon)

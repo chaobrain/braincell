@@ -13,8 +13,7 @@
 # limitations under the License.
 # ==============================================================================
 
-from __future__ import annotations
-
+import os.path
 from typing import Union, Optional, Sequence, Dict, Hashable, NamedTuple
 
 import brainstate
@@ -36,7 +35,6 @@ from ._morphology_utils import (
     get_type_name,
 )
 from ._typing import SectionName
-
 
 __all__ = [
     'Section',
@@ -467,15 +465,6 @@ class Morphology(brainstate.util.PrettyObject):
     """
 
     def __init__(self):
-        """
-        Initializes the Morphology object.
-        This model allows for the creation of a multi-compartmental neuron, where each compartment
-        represents a different part of the neuron (e.g., soma, axon, dendrite).
-
-        Attributes:
-            sections (dict): Dictionary to store sections by their name.
-            segments (list): List of all segments across sections, combined.
-        """
         self.sections = {}  # Dictionary to store section objects by name
         self._conductance_matrix = None
         self._area = None
@@ -488,6 +477,14 @@ class Morphology(brainstate.util.PrettyObject):
 
     @property
     def segments(self):
+        """
+        Returns a flat list of all segments across all sections.
+
+        Returns
+        -------
+        list
+            A list of Segment objects representing all segments in the morphology.
+        """
         return [seg for section in self.sections.values() for seg in section.segments]
 
     def dhs_init(self, plot=False):
@@ -552,16 +549,16 @@ class Morphology(brainstate.util.PrettyObject):
         ----------
         name : Hashable
             Unique identifier for the section
-        length : u.Quantity[u.cm]
-            Length of the cylindrical section
-        diam : u.Quantity[u.cm]
-            Diameter of the cylindrical section
+        length : Quantity
+            Length of the cylindrical section, u.cm
+        diam : Quantity
+            Diameter of the cylindrical section, u.cm
         nseg : int, optional
             Number of segments to divide the section into, default=1
-        Ra : u.Quantity[u.ohm * u.cm], optional
-            Axial resistivity of the section, default=100
-        cm : u.Quantity[u.uF / u.cm ** 2], optional
-            Specific membrane capacitance, default=1.0
+        Ra : Quantity
+            Axial resistivity of the section, default=100 * u.ohm * u.cm
+        cm : Quantity
+            Specific membrane capacitance, default=1.0 * u.uF / u.cm ** 2
 
         Raises
         ------
@@ -575,7 +572,7 @@ class Morphology(brainstate.util.PrettyObject):
         """
         section = CylinderSection(name, length=length, diam=diam, nseg=nseg, Ra=Ra, cm=cm)
         if name in self.sections:
-            raise ValueError(f"Section with name '{name}' already exists.")
+            raise ValueError(f"Section with name '{name}' already exists, please choose a different name.")
         self.sections[name] = section
 
     def add_point_section(
@@ -584,8 +581,8 @@ class Morphology(brainstate.util.PrettyObject):
         positions,
         diams,
         nseg: int = 1,
-        Ra: u.Quantity = 100,
-        cm: u.Quantity = 1.0,
+        Ra: u.Quantity = 100 * u.ohm * u.cm,
+        cm: u.Quantity = 1.0 * u.uF / u.cm ** 2,
     ):
         """
         Create a section defined by custom 3D points and add it to the morphology.
@@ -598,8 +595,10 @@ class Morphology(brainstate.util.PrettyObject):
         ----------
         name : Hashable
             Unique identifier for the section
-        points : u.Quantity[u.cm]
+        positions : u.Quantity[u.cm]
             Array of shape (N, 4) with each point as [x, y, z, diameter]
+        diams: u.Quantity[u.cm]
+            Array of shape (N, 1) with diameters at each point.
         nseg : int, optional
             Number of segments to divide the section into, default=1
         Ra : u.Quantity[u.ohm * u.cm], optional
@@ -618,10 +617,9 @@ class Morphology(brainstate.util.PrettyObject):
         After creation, this section can be connected to other sections using the
         `connect` method.
         """
-
         section = PointSection(name, positions=positions, diams=diams, nseg=nseg, Ra=Ra, cm=cm)
         if name in self.sections:
-            raise ValueError(f"Section with name '{name}' already exists.")
+            raise ValueError(f"Section with name '{name}' already exists, please choose a different name.")
         self.sections[name] = section
 
     def get_section(self, name: SectionName) -> Optional[Section]:
@@ -831,24 +829,6 @@ class Morphology(brainstate.util.PrettyObject):
         connection_seg_list, _, _ = compute_connection_seg(nseg_list, connection_sec_list)
         self._conductance_matrix = init_coupling_weight_nodes(g_left, g_right, connection_seg_list)
 
-    def construct_area(self):
-        area_list = []
-        for seg in self.segments:
-            area_list.append(seg.area)
-        self._area = u.math.array(area_list)
-
-    def construct_cm(self):
-        cm_list = []
-        for seg in self.segments:
-            cm_list.append(seg.cm)
-        self._cm = u.math.array(cm_list)
-
-    def construct_nseg(self):
-        nseg_list = []
-        for sec in self.sections.values():
-            nseg_list.append(sec.nseg)
-        self._nseg = nseg_list
-
     def construct_seg_pid_px(self):
         connection_sec_list = self._connection_sec_list()
         _, pid, px = compute_connection_seg(self.nseg, connection_sec_list)
@@ -868,8 +848,10 @@ class Morphology(brainstate.util.PrettyObject):
 
     @property
     def nseg(self):
-        self.construct_nseg()
-        return self._nseg
+        nseg_list = []
+        for sec in self.sections.values():
+            nseg_list.append(sec.nseg)
+        return np.asarray(nseg_list)
 
     @property
     def parent_id(self):
@@ -888,19 +870,17 @@ class Morphology(brainstate.util.PrettyObject):
 
     @property
     def area(self):
-        self.construct_area()
-        return self._area
+        area_list = []
+        for seg in self.segments:
+            area_list.append(seg.area)
+        return u.math.array(area_list)
 
     @property
     def cm(self):
-        self.construct_cm()
-        return self._cm
-
-    def list_sections(self):
-        """List all sections in the model with their properties (e.g., number of segments)."""
-        # TODO
-        for name, section in self.sections.items():
-            print(f"Section: {name}, nseg: {section.nseg}, Points: {section.positions.shape[0]}")
+        cm_list = []
+        for seg in self.segments:
+            cm_list.append(seg.cm)
+        return u.math.array(cm_list)
 
     @classmethod
     def from_swc(cls, filename):
@@ -919,6 +899,12 @@ class Morphology(brainstate.util.PrettyObject):
         """
         morphology = cls()
 
+        # Check if the file has the correct extension
+        filename, postfix = os.path.splitext(filename)
+        if postfix != '.swc':
+            raise ValueError(f"File {filename} is not an SWC file.")
+
+        # Load sections and section dictionaries from the SWC file
         sections, section_dicts = from_swc(filename)
 
         # Add all sections using add_multiple_sections method
@@ -952,6 +938,12 @@ class Morphology(brainstate.util.PrettyObject):
         """
         morphology = cls()
 
+        # Check if the file has the correct extension
+        filename, postfix = os.path.splitext(filename)
+        if postfix != '.asc':
+            raise ValueError(f"File {filename} is not an ASC file.")
+
+        # Load sections and section dictionaries from the ASC file
         section_dicts, sections, section_id_map = from_asc(filename)
 
         # Add all sections
@@ -980,60 +972,54 @@ class Morphology(brainstate.util.PrettyObject):
         plotly.graph_objects.Figure
             3D visualization of the neuron morphology
         """
-        if hasattr(self, '_filename'):
-            # Use the SWC-specific visualization if available
-            return visualize_neuron(process_swc_pipeline(self._filename))
-        else:
-            # Implement basic visualization using the morphology sections
-            import plotly.graph_objects as go
+        # Implement basic visualization using the morphology sections
+        import plotly.graph_objects as go
 
-            fig = go.Figure()
+        fig = go.Figure()
 
-            # Create traces for each section
-            for name, section in self.sections.items():
-                # Get 3D points representing the section
-                if hasattr(section, 'positions'):
-                    # For PointSection
-                    x = section.positions[:, 0].magnitude
-                    y = section.positions[:, 1].magnitude
-                    z = section.positions[:, 2].magnitude
+        # Create traces for each section
+        for name, section in self.sections.items():
+            # Get 3D points representing the section
+            if isinstance(section, PointSection):
+                # For PointSection
+                x = section.positions[:, 0] / u.um
+                y = section.positions[:, 1] / u.um
+                z = section.positions[:, 2] / u.um
 
-                    # Line representation
-                    fig.add_trace(
-                        go.Scatter3d(
-                            x=x, y=y, z=z,
-                            mode='lines',
-                            name=name,
-                            line=dict(width=2)
-                        )
+                # Line representation
+                fig.add_trace(
+                    go.Scatter3d(
+                        x=x, y=y, z=z,
+                        mode='lines',
+                        name=name,
+                        line=dict(width=2)
                     )
-
-                    # Points representation
-                    fig.add_trace(
-                        go.Scatter3d(
-                            x=x, y=y, z=z,
-                            mode='markers',
-                            name=f"{name}_points",
-                            marker=dict(
-                                size=section.diam.flatten().magnitude / 2,
-                                opacity=0.5
-                            )
-                        )
-                    )
-                else:
-                    # For CylinderSection - simplified representation
-                    # Create line from start to end
-                    pass  # Implement based on CylinderSection specifics
-
-            # Update layout
-            fig.update_layout(
-                title="Neuron Morphology",
-                scene=dict(
-                    xaxis_title="X (μm)",
-                    yaxis_title="Y (μm)",
-                    zaxis_title="Z (μm)",
-                    aspectmode='data'
                 )
-            )
 
-            return fig
+                # Points representation
+                fig.add_trace(
+                    go.Scatter3d(
+                        x=x, y=y, z=z,
+                        mode='markers',
+                        name=f"{name}_points",
+                        marker=dict(size=section.diams.flatten() / u.um / 2, opacity=0.5)
+                    )
+                )
+            else:
+                # TODO:
+                # For CylinderSection - simplified representation
+                # Create line from start to end
+                raise NotImplementedError('CylinderSection visualization not implemented yet.')
+
+        # Update layout
+        fig.update_layout(
+            title="Neuron Morphology",
+            scene=dict(
+                xaxis_title="X (μm)",
+                yaxis_title="Y (μm)",
+                zaxis_title="Z (μm)",
+                aspectmode='data'
+            )
+        )
+
+        return fig

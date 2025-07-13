@@ -216,7 +216,7 @@ def _comp_based_backsub_recursive_doubling(
         lower_effect *= lower_effect[k_step_parent]
         step *= 2
 
-    # We have to return a `diags` becaus the final solution is computed as
+    # We have to return a `diags` because the final solution is computed as
     # `solves/diags` (see `step_voltage_implicit_with_dhs_solve`). For recursive
     # doubling, the solution should just be `solve_effect`, so we define diags as
     # 1.0 so the division has no effect.

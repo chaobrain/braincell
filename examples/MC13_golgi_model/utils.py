@@ -1,21 +1,22 @@
-from neuron import h, gui
+import brainstate
+import braintools
 import brainunit as u
-import braintools 
-import brainstate 
-import numpy as np
 import matplotlib.pyplot as plt
+import numpy as np
+from neuron import h, gui
 
-## NEURON run
+
+# NEURON run
 def NeuronRun(cell, stim, tstop, dt, v_init):
-    ## create record vector
+    # create record vector
     t_vec = h.Vector()
     t_vec.record(h._ref_t)
     v_vecs = []
 
-    spike_times = h.Vector() 
-    nc = h.NetCon(cell.soma[0](0.5)._ref_v, None, sec=cell.soma[0])  
-    nc.threshold = 0        
-    nc.record(spike_times) 
+    spike_times = h.Vector()
+    nc = h.NetCon(cell.soma[0](0.5)._ref_v, None, sec=cell.soma[0])
+    nc.threshold = 0
+    nc.record(spike_times)
 
     for sec in h.allsec():
         for seg in sec:
@@ -23,14 +24,15 @@ def NeuronRun(cell, stim, tstop, dt, v_init):
             v_vec.record(seg._ref_v)
             v_vecs.append(v_vec)
 
-    ## simulation
+    # simulation
     h.celsius = 22
     h.dt = dt
     h.v_init = v_init
     h.finitialize(v_init)
-    
+
     h.continuerun(tstop)
     return t_vec, v_vecs, spike_times
+
 
 def step_stim(cell, delay, dur, amp):
     stim = h.IClamp(cell.soma[0](0.5))
@@ -40,31 +42,32 @@ def step_stim(cell, delay, dur, amp):
     return stim
 
 
-## Braincell run 
+# Braincell run 
 def BraincellRun(cell, I, dt):
-    ## time
-    brainstate.environ.set(dt= dt * u.ms)
+    # time
+    brainstate.environ.set(dt=dt * u.ms)
     times = u.math.arange(I.shape[0]) * brainstate.environ.get_dt()
-    ## init and reset
+    # init and reset
     cell.init_state()
     cell.reset_state()
-    ## run
+    # run
     vs = brainstate.compile.for_loop(cell.step_run, times, I)
 
-    return times.to_decimal(u.ms), vs.to_decimal(u.mV) 
+    return times.to_decimal(u.ms), vs.to_decimal(u.mV)
 
-## different input func
+
+# different input func
 def step_input(num, dur, amp, dt):
-    brainstate.environ.set(dt= dt * u.ms)
-    value = u.math.zeros((len(dur),num))
+    brainstate.environ.set(dt=dt * u.ms)
+    value = u.math.zeros((len(dur), num))
     for i in range(len(value)):
         value = value.at[i, 0].set(amp[i])
 
-    I = braintools.input.section_input(values=value, durations= dur * u.ms) * u.nA
+    I = braintools.input.section_input(values=value, durations=dur * u.ms) * u.nA
     return I
 
 
-## Passive parameters
+# Passive parameters
 def sec_passive_params(
     morph,
     nseg_length=40 * u.um,
@@ -104,9 +107,9 @@ def sec_passive_params(
             v.cm = cm_axon
 
 
-## Biophysical param
+# Biophysical param
 
-## index for ion channel 
+# index for ion channel 
 def is_basal(idx):
     return (
         0 <= idx <= 3
@@ -116,6 +119,7 @@ def is_basal(idx):
         or 105 <= idx <= 150
     )
 
+
 def is_apical(idx):
     return (
         4 <= idx <= 15
@@ -123,6 +127,7 @@ def is_apical(idx):
         or 42 <= idx <= 83
         or 85 <= idx <= 104
     )
+
 
 def seg_ion_params(morphology):
     # segment index for each type
@@ -146,7 +151,7 @@ def seg_ion_params(morphology):
 
     n_compartments = len(morphology.segments)
 
-    ## conductvalues 
+    # conductvalues 
     conductvalues = 1e3 * np.array([
         0.00499506303209, 0.01016375552607, 0.00247172479141, 0.00128859564935,
         3.690771983E-05, 0.0080938853146, 0.01226052748146, 0.01650689958385,
@@ -156,7 +161,7 @@ def seg_ion_params(morphology):
         0.00024381226198, 0.10008178886943, 0.00595046001148, 0.0115, 0.0091
     ])
 
-    ## IL 
+    # IL 
     gl = np.ones(n_compartments)
     gl[index_soma] = 0.03
     gl[index_axon] = 0.001
@@ -164,35 +169,35 @@ def seg_ion_params(morphology):
     gl[index_dend_basal] = 0.03
     gl[index_dend_apical] = 0.03
 
-    ## IKv11_Ak2007
+    # IKv11_Ak2007
     gkv11 = np.zeros(n_compartments)
     gkv11[index_soma] = conductvalues[10]
 
-    ## IKv34_Ma2020  
+    # IKv34_Ma2020  
     gkv34 = np.zeros(n_compartments)
     gkv34[index_soma] = conductvalues[11]
     gkv34[index_axon[5:]] = 9.1
 
-    ## IKv43_Ma2020
+    # IKv43_Ma2020
     gkv43 = np.zeros(n_compartments)
     gkv43[index_soma] = conductvalues[12]
 
-    ## ICaGrc_Ma2020
+    # ICaGrc_Ma2020
     gcagrc = np.zeros(n_compartments)
     gcagrc[index_soma] = conductvalues[15]
     gcagrc[index_dend_basal] = conductvalues[8]
     gcagrc[index_axon[0:5]] = conductvalues[22]
 
-    ## ICav23_Ma2020
+    # ICav23_Ma2020
     gcav23 = np.zeros(n_compartments)
     gcav23[index_dend_apical] = conductvalues[3]
 
-    ## ICav31_Ma2020 
+    # ICav31_Ma2020 
     gcav31 = np.zeros(n_compartments)
     gcav31[index_soma] = conductvalues[16]
     gcav31[index_dend_apical] = conductvalues[4]
 
-    ## INa_Rsg
+    # INa_Rsg
     gnarsg = np.zeros(n_compartments)
     gnarsg[index_soma] = conductvalues[9]
     gnarsg[index_dend_apical] = conductvalues[0]
@@ -200,19 +205,20 @@ def seg_ion_params(morphology):
     gnarsg[index_axon[0:5]] = conductvalues[19]
     gnarsg[index_axon[5:]] = 11.5
 
-    ## Ih1_Ma2020 
+    # Ih1_Ma2020 
     gh1 = np.zeros(n_compartments)
     gh1[index_axon[0:5]] = conductvalues[17]
 
-    ## Ih2_Ma2020 
+    # Ih2_Ma2020 
     gh2 = np.zeros(n_compartments)
     gh2[index_axon[0:5]] = conductvalues[18]
 
-    ## IKca3_1_Ma2020 
+    # IKca3_1_Ma2020 
     gkca31 = np.zeros(n_compartments)
     gkca31[index_soma] = conductvalues[14]
 
     return gl, gh1, gh2, gkv11, gkv34, gkv43, gnarsg, gcagrc, gcav23, gcav31, gkca31
+
 
 def plot_voltage_traces(
     t_vec,
@@ -263,6 +269,7 @@ def plot_voltage_traces(
         plt.grid(alpha=0.4)
     plt.tight_layout()
     plt.show()
+
 
 def plot_voltage_comparison(
     t_vec, v_vecs,
@@ -330,7 +337,7 @@ def plot_voltage_comparison(
     plt.tight_layout()
     plt.show()
 
-## dt v.s error 
+# dt v.s error 
 
 # num_dt = 5
 # dt_list = [0.005 *2 ** i for i in range(num_dt)]
@@ -339,7 +346,7 @@ def plot_voltage_comparison(
 # error_inf_list = []
 # v_list = [] 
 
-# ## neuron
+# # neuron
 # cell = Golgi_morpho_1(el=-55, gl=1, ghcn1=1, ghcn2=1, ena=50, gna=0, ek=-80, gkv11=1, gkv34=1, gkv43=1)
 # stim = step_stim(cell, delay=0, dur=100, amp=0.0)
 
@@ -367,10 +374,10 @@ def plot_voltage_comparison(
 #     v1 = np.roll(v1, 1, axis=0)
 #     v1[0] = V_init
 
-#     ## interpolation for the same length
+#     # interpolation for the same length
 #     f = interp1d(t1, v1[:,:,0].reshape(-1), kind='linear')
 #     v_list.append(f(t_vec))
-#     ## error
+#     # error
 #     error_1_list.append(np.linalg.norm(v_vecs[0] -f(t_vec),1)/len(v_vecs[0]))
 #     error_2_list.append(np.linalg.norm(v_vecs[0] -f(t_vec),2)/len(v_vecs[0]))
 #     #error_inf_list.append(np.linalg.norm(v_vecs[0] -f(t_vec),np.inf))
@@ -402,7 +409,7 @@ def plot_voltage_comparison(
 # plt.gca().set_aspect('equal', adjustable='box')
 # plt.show()
 
-# ## dt compare
+# # dt compare
 # plt.figure(figsize=(8, 6))
 # for i in range(num_dt+1):
 #     if i == 0:
@@ -415,4 +422,3 @@ def plot_voltage_comparison(
 # #plt.title('Voltage')
 # plt.grid(True)
 # plt.show()
-

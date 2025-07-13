@@ -847,28 +847,3 @@ def preprocess_branching_tree(parent_id, parentx, seg_resistances, max_group_siz
 
     return Gmat_sorted, parent_rows, dhs_groups, segment2rowid
 
-
-def comp_based_triang(index, carry):
-    """Triangulate the quasi-tridiagonal system compartment by compartment."""
-    diags, solves, lowers, uppers, flipped_comp_edges = carry
-
-    # `flipped_comp_edges` has shape `(num_levels, num_comps_per_level, 2)`. We first
-    # get the relevant level with `[index]` and then we get all children and parents
-    # in the level.
-    comp_edge = flipped_comp_edges[index]
-    child = comp_edge[:, 0]
-    parent = comp_edge[:, 1]
-
-    lower_val = lowers[child]
-    upper_val = uppers[child]
-    child_diag = diags[child]
-    child_solve = solves[child]
-
-    # Factor that the child row has to be multiplied by.
-    multiplier = upper_val / child_diag
-
-    # Updates to diagonal and solve
-    diags = diags.at[parent].add(-lower_val * multiplier)
-    solves = solves.at[parent].add(-child_solve * multiplier)
-
-    return (diags, solves, lowers, uppers, flipped_comp_edges)

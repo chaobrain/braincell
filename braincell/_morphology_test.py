@@ -88,8 +88,8 @@ class TestMorphologyConstruction:
 
     def test_swc(self):
         # Load morphology from SWC file
-        swc_file = os.path.join(os.path.dirname(__file__), 'swc.json')
-        morphology = braincell.Morphology().from_swc(swc_file)
+        swc_file = os.path.join(os.path.dirname(__file__), "../dev/swc_file/io.swc")
+        morphology = braincell.Morphology.from_swc(swc_file)
         print(morphology)
         # Initialize DHS
         morphology.dhs_init()
@@ -97,7 +97,7 @@ class TestMorphologyConstruction:
     def test_asc(self):
         # Load morphology from ASC file
         asc_file = os.path.join(os.path.dirname(__file__), "../dev/asc_file/golgi.asc")
-        morphology = braincell.Morphology().from_asc(asc_file)
+        morphology = braincell.Morphology.from_asc(asc_file)
         print(morphology)
         # Initialize DHS
         morphology.dhs_init()

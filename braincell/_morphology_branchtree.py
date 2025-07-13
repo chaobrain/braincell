@@ -14,7 +14,10 @@
 # ==============================================================================
 
 
+from typing import Tuple
+
 import brainunit as u
+import matplotlib.pyplot as plt
 import numpy as np
 
 
@@ -771,78 +774,173 @@ def build_flipped_comp_edges(dhs_group, parent_rows):
     return flipped_comp_edges, padded_edges, edge_masks
 
 
-def preprocess_branching_tree(
-    parent_id,
-    parent_x,
-    seg_resistances,
-    max_group_size: int = 8,
-    plot: bool = False
-):
-    """
-    Preprocess a branching tree for DHS matrix algorithms.
+class BranchingTree:
+    num_segments: int
+    uf: UnionFind
+    G: object  # nx.DiGraph
+    diags: u.Quantity
+    uppers: u.Quantity
+    lowers: u.Quantity
+    flipped_comp_edges: Tuple
+    parent_lookup: np.ndarray
+    internal_node_inds: np.ndarray
 
-    Parameters
-    ----------
-    parent_id : list of int
-        For each segment, the parent segment index (-1 for root).
-    parent_x : list
-        For each segment, the connection location on parent (not used here, but required for node merging).
-    seg_resistances : list of tuple
-        For each segment, (R_0-0.5, R_0.5-1).
-    max_group_size : int, optional
-        Max group size for DHS grouping (default 8).
-    plot : bool, optional
-        If True, visualize the classified segment tree.
+    def __init__(
+        self,
+        seg_ri,
+        parent_id,
+        parent_x,
+        cm_segmid,
+        area_segmid,
+    ):
+        # branching tree
+        Gmat_sorted, parent_rows, dhs_groups, segment2rowid = self._preprocess_branching_tree(
+            parent_id, parent_x, seg_ri, max_group_size=32
+        )
+        Gmat_sorted_unit = 1 / u.ohm
 
-    Returns
-    -------
-    Rmat_sorted : ndarray
-        The resistance matrix after depth-based reordering (n_nodes x n_nodes).
-    parent_rows : list of int
-        For each node (row in Rmat_sorted), the parent's row index (-1 for root).
-    groups : list of list of int
-        Each sublist contains row indices (in Rmat_sorted) that form a group for parallel DHS.
-    segment2rowid : dict
-        Mapping: segment index (0-based) -> row index in Rmat_sorted (corresponds to segment center).
-    """
-    # Step 1: Merge equipotential nodes at segment connections
-    num_segments = len(parent_id)
-    uf = merge_equipotential_segment_nodes(num_segments, parent_id, parent_x)
+        # capacitance and area
+        self.num_segments = len(parent_rows)
+        self.internal_node_inds = np.array(list(segment2rowid.values()))
+        cm_segmid, cm_unit = u.split_mantissa_unit(cm_segmid)
+        area_segmid, area_unit = u.split_mantissa_unit(area_segmid)
+        cm = np.ones(self.num_segments)
+        area = np.ones(self.num_segments)
+        cm[self.internal_node_inds] = cm_segmid
+        area[self.internal_node_inds] = area_segmid
 
-    # Step 2: Build internal edges and merged edges
-    edges = build_segment_internal_edges(num_segments)
-    merged_edges = get_merged_edges(edges, uf)
+        # normalize Gmat by cm and area
+        Gmat_sorted = -Gmat_sorted / (cm * area)[:, u.math.newaxis]
+        Gmat_sorted_unit = Gmat_sorted_unit / (cm_unit * area_unit)
 
-    # Step 3: Build directed graph from merged node edges
-    G = build_segment_graph(merged_edges)
+        # build flipped compartment edges
+        self.flipped_comp_edges = build_flipped_comp_edges(dhs_groups, parent_rows)
 
-    # Step 4: (Optional) Build node labels, classify, prepare for visualization
-    center_ids, leaf_ids, noncenter_nonleaf_ids = classify_segment_nodes(num_segments, uf, G)
-    node_labels, _ = build_segment_node_labels(num_segments, uf)
-    nid_half_map, _ = build_half_segment_maps(num_segments, uf)
+        # build lowers and uppers
+        lowers = np.zeros(self.num_segments)
+        uppers = np.zeros(self.num_segments)
+        for i in range(self.num_segments):
+            p = parent_rows[i]
+            if p == -1:
+                lowers[i] = 0
+                uppers[i] = 0
+            else:
+                lowers[i] = Gmat_sorted[i, p]
+                uppers[i] = Gmat_sorted[p, i]
+        self.parent_lookup = np.array(parent_rows + [-1])
 
-    # plotting the tree structure if requested
-    if plot:
-        plot_tree(G, node_labels, center_ids, noncenter_nonleaf_ids, leaf_ids)
+        # finalize
+        self.diags = np.diag(Gmat_sorted) * Gmat_sorted_unit
+        self.uppers = uppers * Gmat_sorted_unit
+        self.lowers = lowers * Gmat_sorted_unit
 
-    # Step 5: Construct conductance matrix and get list of all nodes
-    Gmat, nodes = build_conductance_matrix(G, nid_half_map, seg_resistances)
+    def _preprocess_branching_tree(
+        self,
+        parent_id,
+        parent_x,
+        seg_resistances,
+        max_group_size: int = 8,
+        plot: bool = False
+    ):
+        """
+        Preprocess a branching tree for DHS matrix algorithms.
 
-    # Step 6: Sort nodes by depth, reorder matrix
-    root, depths = get_root_and_depths(G)
-    sorted_nodes = sort_nodes_by_depth(G, depths)
-    Gmat_sorted = reorder_matrix_by_depth(Gmat, nodes, sorted_nodes)
+        Parameters
+        ----------
+        parent_id : list of int
+            For each segment, the parent segment index (-1 for root).
+        parent_x : list
+            For each segment, the connection location on parent (not used here, but required for node merging).
+        seg_resistances : list of tuple
+            For each segment, (R_0-0.5, R_0.5-1).
+        max_group_size : int, optional
+            Max group size for DHS grouping (default 8).
+        plot : bool, optional
+            If True, visualize the classified segment tree.
 
-    # Step 7: Build parent row indices (rowid2parentrowid) for DHS elimination
-    parent_dict = build_parent_dict(G, root)
-    node_id2rowid = get_depth_node_idx_map(sorted_nodes)
-    parent_rows = get_parent_rows(sorted_nodes, parent_dict, node_id2rowid)
+        Returns
+        -------
+        Rmat_sorted : ndarray
+            The resistance matrix after depth-based reordering (n_nodes x n_nodes).
+        parent_rows : list of int
+            For each node (row in Rmat_sorted), the parent's row index (-1 for root).
+        groups : list of list of int
+            Each sublist contains row indices (in Rmat_sorted) that form a group for parallel DHS.
+        segment2rowid : dict
+            Mapping: segment index (0-based) -> row index in Rmat_sorted (corresponds to segment center).
+        """
+        # Step 1: Merge equipotential nodes at segment connections
+        num_segments = len(parent_id)
+        uf = merge_equipotential_segment_nodes(num_segments, parent_id, parent_x)
+        self.uf = uf
 
-    # Step 8: Group rows by depth (with max group size constraint)
-    depths_sorted = [depths[nid] for nid in sorted_nodes]
-    dhs_groups = dhs_group_by_depth(depths_sorted, max_group_size)
+        # Step 2: Build internal edges and merged edges
+        edges = build_segment_internal_edges(num_segments)
+        merged_edges = get_merged_edges(edges, uf)
 
-    # Step 9: Map each segment center (0.5) to the corresponding row index in Rmat_sorted
-    segment2rowid = get_segment2rowid(num_segments, uf, sorted_nodes)
+        # Step 3: Build directed graph from merged node edges
+        G = build_segment_graph(merged_edges)
+        self.G = G
 
-    return Gmat_sorted, parent_rows, dhs_groups, segment2rowid
+        nid_half_map, _ = build_half_segment_maps(num_segments, uf)
+
+        # plotting the tree structure if requested
+        if plot:
+            # Step 4: (Optional) Build node labels, classify, prepare for visualization
+            center_ids, leaf_ids, noncenter_nonleaf_ids = classify_segment_nodes(num_segments, uf, G)
+            node_labels, _ = build_segment_node_labels(num_segments, uf)
+            plot_tree(G, node_labels, center_ids, noncenter_nonleaf_ids, leaf_ids)
+
+        # Step 5: Construct conductance matrix and get list of all nodes
+        Gmat, nodes = build_conductance_matrix(G, nid_half_map, seg_resistances)
+
+        # Step 6: Sort nodes by depth, reorder matrix
+        root, depths = get_root_and_depths(G)
+        sorted_nodes = sort_nodes_by_depth(G, depths)
+        Gmat_sorted = reorder_matrix_by_depth(Gmat, nodes, sorted_nodes)
+
+        # Step 7: Build parent row indices (rowid2parentrowid) for DHS elimination
+        parent_dict = build_parent_dict(G, root)
+        node_id2rowid = get_depth_node_idx_map(sorted_nodes)
+        parent_rows = get_parent_rows(sorted_nodes, parent_dict, node_id2rowid)
+
+        # Step 8: Group rows by depth (with max group size constraint)
+        depths_sorted = [depths[nid] for nid in sorted_nodes]
+        dhs_groups = dhs_group_by_depth(depths_sorted, max_group_size)
+
+        # Step 9: Map each segment center (0.5) to the corresponding row index in Rmat_sorted
+        segment2rowid = get_segment2rowid(num_segments, uf, sorted_nodes)
+
+        return Gmat_sorted, parent_rows, dhs_groups, segment2rowid
+
+    def plot(self):
+        """
+        Visualize the dendritic tree structure processed by the DHS algorithm.
+
+        This method displays a layered tree visualization of the dendritic/cable structure,
+        with nodes colored according to their classification:
+        - Blue: Segment center nodes (0.5 position)
+        - Gold: Non-leaf non-center nodes (branch points)
+        - Green: Leaf nodes (terminal segments)
+
+        The visualization shows the hierarchical structure of the dendritic tree,
+        with merged equipotential points and connections between segments. Each node
+        is labeled with its segment ID and position.
+
+        Notes
+        -----
+        - Uses matplotlib to create the visualization
+        - The layout algorithm places the root at the top and arranges children below
+        - This method is useful for verifying the correctness of the segment merging
+          and tree construction steps
+
+        Examples
+        --------
+        >>> dhs = DHS(seg_ri, parent_id, parent_x, cm_segmid, area_segmid)
+        >>> dhs.plot()  # Display the dendritic tree visualization
+        """
+        # Build node labels, classify, prepare for visualization
+        center_ids, leaf_ids, noncenter_nonleaf_ids = classify_segment_nodes(self.num_segments, self.uf, self.G)
+        node_labels, _ = build_segment_node_labels(self.num_segments, self.uf)
+        plot_tree(self.G, node_labels, center_ids, noncenter_nonleaf_ids, leaf_ids)
+        plt.show()

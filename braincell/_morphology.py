@@ -21,10 +21,7 @@ import brainstate
 import brainunit as u
 import numpy as np
 
-from ._morphology_dhs_utils import (
-    preprocess_branching_tree,
-    build_flipped_comp_edges,
-)
+from ._morphology_branchtree import BranchingTree
 from ._morphology_from_asc import from_asc
 from ._morphology_from_swc import from_swc
 from ._morphology_utils import (
@@ -555,57 +552,58 @@ class Morphology(brainstate.util.PrettyObject):
         """
         return [seg for section in self.sections.values() for seg in section.segments]
 
-    def dhs_init(self, plot=False):
-        # section resistances
-        sec_ri = []
-        for seg in self.segments:
-            sec_ri.append((seg.R_left, seg.R_right))
-        seg_ri = u.math.array(sec_ri) / u.ohm
+    def to_branching_tree(self):
+        """
+        Convert the morphology to a BranchingTree representation for dendritic hierarchy analysis.
 
+        This method transforms the morphological structure into a BranchingTree object
+        that can be used for the Dendritic Hierarchy and Structure (DHS) algorithm.
+        The transformation involves computing the electrical properties of all segments
+        and their connectivity relationships.
+
+        The method calculates:
+        - Segment resistances (left and right) for all segments
+        - Number of segments per section
+        - Connection information between segments
+        - Parent-child relationships between segments
+        - Specific membrane capacitance for each segment
+        - Surface area for each segment
+
+        Returns
+        -------
+        BranchingTree
+            A BranchingTree object representing the morphological structure
+            with all necessary electrical properties for DHS algorithm processing.
+
+        Notes
+        -----
+        The BranchingTree representation is optimized for efficient computation
+        of electrical properties in compartmental modeling and enables analysis
+        of the dendritic hierarchy. This representation is particularly useful
+        for studying signal propagation and integration in neuronal structures.
+
+        See Also
+        --------
+        BranchingTree : The class that handles dendritic hierarchy processing
+        """
+
+        # section resistances
+        seg_ri = u.math.array([(seg.R_left, seg.R_right) for seg in self.segments]) / u.ohm
+
+        # number of segments per section
         nsegs = np.asarray([sec.nseg for sec in self.sections.values()])
+
+        # connection sections, parent section id and location
         connection_sec_list = self._connection_sec_list()
         _, parent_id, parent_x = compute_connection_seg(nsegs, connection_sec_list)
 
-        # branching tree
-        Gmat_sorted, parent_rows, dhs_groups, segment2rowid = preprocess_branching_tree(
-            parent_id, parent_x, seg_ri, max_group_size=32, plot=plot)
-        Gmat_sorted_unit = 1 / u.ohm
-        n = len(parent_rows)
+        # cm for each segment
+        cm_segmid = u.math.array([seg.cm for seg in self.segments])
 
-        # capacitance and area
-        internal_node_inds = np.array(list(segment2rowid.values()))
-        cm_segmid, cm_unit = u.split_mantissa_unit(u.math.array([seg.cm for seg in self.segments]))
-        area_segmid, area_unit = u.split_mantissa_unit(u.math.array([seg.area for seg in self.segments]))
-        cm = np.ones(n)
-        area = np.ones(n)
-        cm[internal_node_inds] = cm_segmid
-        area[internal_node_inds] = area_segmid
+        # area for each segment
+        area_segmid = u.math.array([seg.area for seg in self.segments])
 
-        # normalize Gmat by cm and area
-        Gmat_sorted = -Gmat_sorted / (cm * area)[:, u.math.newaxis]
-        Gmat_sorted_unit = Gmat_sorted_unit / (cm_unit * area_unit)
-
-        # build flipped compartment edges
-        flipped_comp_edges = build_flipped_comp_edges(dhs_groups, parent_rows)
-
-        # build lowers and uppers
-        lowers = np.zeros(n)
-        uppers = np.zeros(n)
-        for i in range(n):
-            p = parent_rows[i]
-            if p == -1:
-                lowers[i] = 0
-                uppers[i] = 0
-            else:
-                lowers[i] = Gmat_sorted[i, p]
-                uppers[i] = Gmat_sorted[p, i]
-        parent_lookup = np.array(parent_rows + [-1])
-
-        # finalize
-        diags = np.diag(Gmat_sorted) * Gmat_sorted_unit
-        uppers = uppers * Gmat_sorted_unit
-        lowers = lowers * Gmat_sorted_unit
-        return diags, uppers, lowers, flipped_comp_edges, parent_lookup, internal_node_inds
+        return BranchingTree(seg_ri, parent_id, parent_x, cm_segmid, area_segmid)
 
     def add_cylinder_section(
         self,

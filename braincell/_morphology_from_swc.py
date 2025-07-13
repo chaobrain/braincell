@@ -532,6 +532,7 @@ class Import3dSWCRead:
             # Create section and add points
             sec = Import3dSection(first, i - first)
             sec.append(1, first, i - first, self.x, self.y, self.z, self.d)
+
         else:  # Not root section
             # Create section with space for parent point
             sec = Import3dSection(first, i - first + 1)

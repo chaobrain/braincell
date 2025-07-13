@@ -349,14 +349,18 @@ class CylinderSection(Section):
     ):
         assert u.get_magnitude(length) > 0, "Length must be positive."
         assert u.get_magnitude(diam) > 0, "Diameter must be positive."
-        positions = np.array([
-            [0.0, 0.0, 0.0],
-            [u.get_magnitude(length), 0.0, 0.0]
-        ]) * u.get_unit(length)
-        diam = np.array([
-            [u.get_magnitude(diam)],
-            [u.get_magnitude(diam)]
-        ]) * u.get_unit(diam)
+        positions = np.array(
+            [
+                [0.0, 0.0, 0.0],
+                [u.get_magnitude(length), 0.0, 0.0]
+            ]
+        ) * u.get_unit(length)
+        diam = np.array(
+            [
+                [u.get_magnitude(diam)],
+                [u.get_magnitude(diam)]
+            ]
+        ) * u.get_unit(diam)
         super().__init__(
             name=name,
             positions=positions,

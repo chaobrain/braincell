@@ -17,6 +17,7 @@ import re
 
 import numpy as np
 from scipy.interpolate import interp1d
+
 from ._morphology_utils import get_type_name
 
 
@@ -1188,48 +1189,48 @@ def read_asc(file):
 
 
 def from_asc(filename):
-        """
-        Import neuron morphology data from an ASC file and populate the current Morphology object.
+    """
+    Import neuron morphology data from an ASC file and populate the current Morphology object.
 
-        Parameters
-        ----------
-        filename : str
-            Path to the ASC file
+    Parameters
+    ----------
+    filename : str
+        Path to the ASC file
 
-        Returns
-        -------
-        self
-            Returns self to support method chaining
-        """
-        # 1. Parse the ASC file into a list of Section objects
-        sections = read_asc(filename)  # main returns a list of Section objects
+    Returns
+    -------
+    self
+        Returns self to support method chaining
+    """
+    # 1. Parse the ASC file into a list of Section objects
+    sections = read_asc(filename)  # main returns a list of Section objects
 
-        # 2. Build section_dicts using get_type_name for section names
-        section_dicts = {}
-        section_id_map = {}  # Map: sec_id -> section_name
-        type_counters = {}
-        for sec in sections:
-            section_type = sec.sec_type
-            type_name = get_type_name(section_type)
-            # init counter
-            if type_name not in type_counters:
-                type_counters[type_name] = 0
-            # index each type
-            type_inner_id = type_counters[type_name]
-            section_name = f"{type_name}_{type_inner_id}"
-            type_counters[type_name] += 1
+    # 2. Build section_dicts using get_type_name for section names
+    section_dicts = {}
+    section_id_map = {}  # Map: sec_id -> section_name
+    type_counters = {}
+    for sec in sections:
+        section_type = sec.sec_type
+        type_name = get_type_name(section_type)
+        # init counter
+        if type_name not in type_counters:
+            type_counters[type_name] = 0
+        # index each type
+        type_inner_id = type_counters[type_name]
+        section_name = f"{type_name}_{type_inner_id}"
+        type_counters[type_name] += 1
 
-            section_id_map[sec.sec_id] = section_name
+        section_id_map[sec.sec_id] = section_name
 
-            # Collect points as a (N, 4) numpy array: x, y, z, d
-            points = np.column_stack([
-                [p.x for p in sec.points],
-                [p.y for p in sec.points],
-                [p.z for p in sec.points],
-                [p.d for p in sec.points]
-            ])
-            section_dicts[section_name] = {
-                'points': points,
-                'nseg': 1,  # Default value
-            }
-        return section_dicts
+        # Collect points as a (N, 4) numpy array: x, y, z, d
+        points = np.column_stack([
+            [p.x for p in sec.points],
+            [p.y for p in sec.points],
+            [p.z for p in sec.points],
+            [p.d for p in sec.points]
+        ])
+        section_dicts[section_name] = {
+            'points': points,
+            'nseg': 1,  # Default value
+        }
+    return section_dicts, sections, section_id_map

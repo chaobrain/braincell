@@ -83,8 +83,7 @@ class TestMorphologyConstruction:
             print("name:", sec.name, 'nseg:', sec.nseg)
 
         # Print conductance matrix and area for the whole model
-        print(morphology.conductance_matrix)
-        print(morphology.area)
+        print(morphology.conductance_matrix())
 
         # Initialize DHS
         morphology.dhs_init()

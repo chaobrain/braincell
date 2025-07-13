@@ -373,7 +373,7 @@ def construct_A(target):
         n_compartment = target.n_compartment
         cm = target.cm
         A = target.area
-        G_matrix = target.conductance_matrix
+        G_matrix = target.conductance_matrix()
         Gl = target.Gl
 
         # jax.debug.print('Area = {a}', a = A)
@@ -394,7 +394,7 @@ def construct_lhs(target):
         n_compartment = target.n_compartment
         cm = target.cm
         A = target.area
-        G_matrix = target.conductance_matrix
+        G_matrix = target.conductance_matrix()
         Gl = target.Gl
 
         # jax.debug.print('Area = {a}', a = A)
@@ -417,7 +417,7 @@ def construct_lhs_sparse(target):
         n_compartment = target.n_compartment
         cm = target.cm
         A = target.area
-        G_matrix = target.conductance_matrix
+        G_matrix = target.conductance_matrix()
         Gl = target.Gl
 
         # jax.debug.print('Area = {a}', a = A)
@@ -448,7 +448,7 @@ def construct_lu(target):
         n_compartment = target.n_compartment
         cm = target.cm
         A = target.area
-        G_matrix = target.conductance_matrix
+        G_matrix = target.conductance_matrix()
         Gl = target.Gl
 
         # jax.debug.print('Area = {a}', a = A)
@@ -472,7 +472,7 @@ def construct_lu_sparse(target):
         n_compartment = target.n_compartment
         cm = target.cm
         A = target.area
-        G_matrix = target.conductance_matrix
+        G_matrix = target.conductance_matrix()
         Gl = target.Gl
 
         cm_A = cm * A

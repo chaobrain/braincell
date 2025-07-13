@@ -14,6 +14,7 @@
 # ==============================================================================
 
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Union, Optional, Sequence, Dict, Hashable, NamedTuple
 
 import brainstate
@@ -561,46 +562,50 @@ class Morphology(brainstate.util.PrettyObject):
             sec_ri.append((seg.R_left, seg.R_right))
         seg_ri = u.math.array(sec_ri) / u.ohm
 
+        nsegs = np.asarray([sec.nseg for sec in self.sections.values()])
+        connection_sec_list = self._connection_sec_list()
+        _, parent_id, parent_x = compute_connection_seg(nsegs, connection_sec_list)
+
         # branching tree
         Gmat_sorted, parent_rows, dhs_groups, segment2rowid = preprocess_branching_tree(
-            self.parent_id, self.parent_x, seg_ri, max_group_size=32, plot=plot
-        )
-        Gmat_sorted = Gmat_sorted / u.ohm
-
-        flipped_comp_edges = build_flipped_comp_edges(dhs_groups, parent_rows)
-        cm_segmid = self.cm
-        area_segmid = self.area
-
-        cm = u.math.ones(len(parent_rows)) * u.get_unit(cm_segmid)
-        area = u.math.ones(len(parent_rows)) * u.get_unit(area_segmid)
-        seg_mid_ids = u.math.array(list(segment2rowid.values()))
-        cm[seg_mid_ids] = cm_segmid
-        area[seg_mid_ids] = area_segmid
-        Gmat_sorted = -Gmat_sorted / (cm * area)[:, u.math.newaxis]
-
+            parent_id, parent_x, seg_ri, max_group_size=32, plot=plot)
+        Gmat_sorted_unit = 1 / u.ohm
         n = len(parent_rows)
-        lowers = u.math.zeros(n) * u.get_unit(Gmat_sorted)
-        uppers = u.math.zeros(n) * u.get_unit(Gmat_sorted)
 
+        # capacitance and area
+        internal_node_inds = np.array(list(segment2rowid.values()))
+        cm_segmid, cm_unit = u.split_mantissa_unit(u.math.array([seg.cm for seg in self.segments]))
+        area_segmid, area_unit = u.split_mantissa_unit(u.math.array([seg.area for seg in self.segments]))
+        cm = np.ones(n)
+        area = np.ones(n)
+        cm[internal_node_inds] = cm_segmid
+        area[internal_node_inds] = area_segmid
+
+        # normalize Gmat by cm and area
+        Gmat_sorted = -Gmat_sorted / (cm * area)[:, u.math.newaxis]
+        Gmat_sorted_unit = Gmat_sorted_unit / (cm_unit * area_unit)
+
+        # build flipped compartment edges
+        flipped_comp_edges = build_flipped_comp_edges(dhs_groups, parent_rows)
+
+        # build lowers and uppers
+        lowers = np.zeros(n)
+        uppers = np.zeros(n)
         for i in range(n):
             p = parent_rows[i]
             if p == -1:
-                lowers = lowers.at[i].set(0 * u.get_unit(Gmat_sorted))
-                uppers = uppers.at[i].set(0 * u.get_unit(Gmat_sorted))
+                lowers[i] = 0
+                uppers[i] = 0
             else:
-                lowers = lowers.at[i].set(Gmat_sorted[i, p])
-                uppers = uppers.at[i].set(Gmat_sorted[p, i])
+                lowers[i] = Gmat_sorted[i, p]
+                uppers[i] = Gmat_sorted[p, i]
+        parent_lookup = np.array(parent_rows + [-1])
 
-        diags = u.math.diag(Gmat_sorted)
-        parent_lookup = u.math.array(parent_rows + [-1])
-        internal_node_inds = u.math.array(list(segment2rowid.values()))
-
-        self.diags = diags
-        self.uppers = uppers
-        self.lowers = lowers
-        self.flipped_comp_edges = flipped_comp_edges
-        self.parent_lookup = parent_lookup
-        self.internal_node_inds = internal_node_inds
+        # finalize
+        diags = np.diag(Gmat_sorted) * Gmat_sorted_unit
+        uppers = uppers * Gmat_sorted_unit
+        lowers = lowers * Gmat_sorted_unit
+        return diags, uppers, lowers, flipped_comp_edges, parent_lookup, internal_node_inds
 
     def add_cylinder_section(
         self,
@@ -880,7 +885,7 @@ class Morphology(brainstate.util.PrettyObject):
                 connections.append((child_idx, -1, -1))
         return connections
 
-    def construct_conductance_matrix(self):
+    def conductance_matrix(self):
         """
         Construct the conductance matrix for the model. This matrix represents the conductance
         between sections based on the resistance of each segment and their connectivity.
@@ -901,58 +906,16 @@ class Morphology(brainstate.util.PrettyObject):
 
         connection_sec_list = self._connection_sec_list()
         connection_seg_list, _, _ = compute_connection_seg(nseg_list, connection_sec_list)
-        self._conductance_matrix = init_coupling_weight_nodes(g_left, g_right, connection_seg_list)
-
-    def construct_seg_pid_px(self):
-        connection_sec_list = self._connection_sec_list()
-        _, pid, px = compute_connection_seg(self.nseg, connection_sec_list)
-        self._parent_id = pid
-        self._parent_x = px
-
-    @property
-    def nseg(self):
-        nseg_list = []
-        for sec in self.sections.values():
-            nseg_list.append(sec.nseg)
-        return np.asarray(nseg_list)
-
-    @property
-    def parent_id(self):
-        self.construct_seg_pid_px()
-        return self._parent_id
-
-    @property
-    def parent_x(self):
-        self.construct_seg_pid_px()
-        return self._parent_x
-
-    @property
-    def conductance_matrix(self):
-        self.construct_conductance_matrix()
-        return self._conductance_matrix
-
-    @property
-    def area(self):
-        area_list = []
-        for seg in self.segments:
-            area_list.append(seg.area)
-        return u.math.array(area_list)
-
-    @property
-    def cm(self):
-        cm_list = []
-        for seg in self.segments:
-            cm_list.append(seg.cm)
-        return u.math.array(cm_list)
+        return init_coupling_weight_nodes(g_left, g_right, connection_seg_list)
 
     @classmethod
-    def from_swc(cls, filename):
+    def from_swc(cls, filename: str | Path):
         """
         Class method to create a Morphology object from an SWC file (factory method).
         
         Parameters
         ----------
-        filename : str
+        filename : str, Path
             Path to the SWC file
             
         Returns
@@ -963,13 +926,13 @@ class Morphology(brainstate.util.PrettyObject):
         return from_swc(filename)
 
     @classmethod
-    def from_asc(cls, filename):
+    def from_asc(cls, filename: str | Path):
         """
         Class method to create a Morphology object from an ASC file (factory method).
 
         Parameters
         ----------
-        filename : str
+        filename : str, Path
             Path to the ASC file
 
         Returns

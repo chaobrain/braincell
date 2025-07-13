@@ -13,9 +13,11 @@
 # limitations under the License.
 # ==============================================================================
 
+import os
 import re
 from pathlib import Path
 
+import brainunit as u
 import numpy as np
 from scipy.interpolate import interp1d
 
@@ -1191,30 +1193,36 @@ def read_asc(file):
 
 def from_asc(filename: str | Path):
     """
-    Parse a Neurolucida ASC file and extract neuron morphology sections.
+    Parse a Neurolucida ASC file and construct a Morphology object.
 
-    This function reads an ASC file, processes its structure, and returns:
-      - a dictionary mapping section names to their geometric and structural data,
-      - a list of Section objects,
-      - a mapping from section IDs to section names.
+    This function reads a `.asc` file describing neuron morphology, parses its structure,
+    processes soma and branch sections, and returns a Morphology object suitable for
+    further analysis or simulation.
 
     Args:
-        filename (str or Path): Path to the ASC file to be parsed.
+        filename (str or Path): Path to the ASC file to be parsed. The file must have a `.asc` extension.
 
     Returns:
-        tuple:
-            - section_dicts (dict): Dictionary mapping section names to their data, where
-              each entry contains:
-                - 'positions' (np.ndarray): Nx3 array of XYZ coordinates for section points.
-                - 'diams' (np.ndarray): Array of diameters for each point in the section.
-                - 'nseg' (int): Number of segments (default 1).
-            - sections (list of Section): List of Section objects representing neuron segments.
-            - section_id_map (dict): Mapping from section IDs to section names.
+        Morphology: An instance of the Morphology class containing all sections and their connections.
+
+    Processing steps:
+        1. Validates the file extension.
+        2. Parses the ASC file into a list of Section objects.
+        3. Assigns unique names to each section based on type and order.
+        4. Extracts positions and diameters for each section and stores them in a dictionary.
+        5. Creates a Morphology object and adds all sections.
+        6. Establishes parent-child connections between sections.
+        7. Returns the fully constructed Morphology object.
 
     Raises:
-        RuntimeError: If there are unmatched sections after attempting to connect to soma.
-        ValueError: If the ASC file cannot be parsed correctly.
+        ValueError: If the file does not have a `.asc` extension.
+        RuntimeError: If there are unmatched sections after attempting to connect to the soma.
     """
+
+    # Check if the file has the correct extension
+    _, postfix = os.path.splitext(filename)
+    if postfix != '.asc':
+        raise ValueError(f"File {filename} is not an ASC file.")
 
     # 1. Parse the ASC file into a list of Section objects
     sections = read_asc(filename)  # main returns a list of Section objects
@@ -1245,8 +1253,25 @@ def from_asc(filename: str | Path):
         diams = np.array([p.d for p in sec.points])
 
         section_dicts[section_name] = {
-            'positions': positions,
-            'diams': diams,
+            'positions': positions * u.um,
+            'diams': diams * u.um,
             'nseg': 1,  # Default value
         }
-    return section_dicts, sections, section_id_map
+
+    # morphology object
+    from ._morphology import Morphology
+    morphology = Morphology()
+
+    # 3. Add all sections
+    morphology.add_multiple_sections(section_dicts)
+
+    # 4. Prepare and add connection info
+    connections = []
+    for sec in sections:
+        if sec.parent_id is not None:
+            child_name = section_id_map[sec.sec_id]
+            parent_name = section_id_map[sec.parent_id]
+            parent_loc = getattr(sec, "parent_x", 0.0)  # Use 0.0 if attribute missing
+            connections.append((child_name, parent_name, parent_loc))
+    morphology.connect_sections(connections)
+    return morphology

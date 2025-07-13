@@ -13,7 +13,6 @@
 # limitations under the License.
 # ==============================================================================
 
-import os.path
 from typing import Union, Optional, Sequence, Dict, Hashable, NamedTuple
 
 import brainstate
@@ -32,7 +31,6 @@ from ._morphology_utils import (
     compute_connection_seg,
     compute_line_ratios,
     init_coupling_weight_nodes,
-    get_type_name,
 )
 from ._typing import SectionName
 
@@ -135,6 +133,10 @@ class Section:
             cm (float): Membrane capacitance in µF/cm².
         """
         self.name = name
+        assert u.fail_for_dimension_mismatch(positions, u.um, 'positions must be in meter')
+        assert u.fail_for_dimension_mismatch(diams, u.um, 'diameters must be in meter')
+        assert u.fail_for_dimension_mismatch(Ra, u.ohm * u.cm, 'diameters must be in u.ohm * u.cm')
+        assert u.fail_for_dimension_mismatch(cm, u.uF / (u.cm ** 2), 'diameters must be in u.uF / (u.cm ** 2)')
         self._nseg = nseg
         self._Ra = Ra
         self._cm = cm
@@ -144,52 +146,77 @@ class Section:
         self.children = set()
         self.segments = []
 
-        self.init_unit()
         self._compute_area_and_resistance()
 
     @property
     def L(self):
+        """
+        Returns the total length of the section in micrometers.
+
+        The length is computed as the sum of Euclidean distances between consecutive
+        3D points in the `positions` array, which represent the coordinates of the section.
+
+        Returns
+        -------
+        u.Quantity
+            The total length of the section in micrometers (u.um).
+        """
         pos = self.positions / u.um
         return np.sum(np.linalg.norm(pos[1:] - pos[:-1], axis=1)) * u.um
 
     @property
-    def nseg(self):
+    def nseg(self) -> int:
+        """
+        Get the number of segments the section is divided into.
+
+        Returns
+        -------
+        int
+            The number of segments (`nseg`) for this section.
+        """
         return self._nseg
 
     @nseg.setter
     def nseg(self, value):
+        assert isinstance(value, (int, np.integer)), f'nseg must be an integer, but got {value}'
         self._nseg = value
         self._compute_area_and_resistance()
 
     @property
     def Ra(self):
+        """
+        Get the axial resistivity of the section.
+
+        Returns
+        -------
+        u.Quantity
+            The axial resistivity (`Ra`) of the section in ohm·cm.
+        """
         return self._Ra
 
     @Ra.setter
     def Ra(self, value):
-        self._Ra = self._ensure_unit(value, u.ohm * u.cm)
+        u.fail_for_dimension_mismatch(value, u.ohm * u.cm, 'Ra must be in u.ohm * u.cm')
+        self._Ra = value
         self._compute_area_and_resistance()
 
     @property
     def cm(self):
+        """
+        Get the specific membrane capacitance of the section.
+
+        Returns
+        -------
+        u.Quantity
+            The specific membrane capacitance (`cm`) in µF/cm².
+        """
         return self._cm
 
     @cm.setter
     def cm(self, value):
-        self._cm = self._ensure_unit(value, u.uF / u.cm ** 2)
+        u.fail_for_dimension_mismatch(value, u.uF / u.cm ** 2, 'cm must be in u.uF / (u.cm ** 2)')
+        self._cm = value
         self._compute_area_and_resistance()
-
-    def _ensure_unit(self, value, unit):
-        if u.is_unitless(value):
-            return value * unit
-        else:
-            return value.in_unit(unit)
-
-    def init_unit(self):
-        self.Ra = self._ensure_unit(self.Ra, u.ohm * u.cm)
-        self.cm = self._ensure_unit(self.cm, u.uF / u.cm ** 2)
-        self.positions = self._ensure_unit(self.positions, u.um)
-        self.diams = self._ensure_unit(self.diams, u.um)
 
     def __repr__(self):
         n_points = getattr(self.positions, "shape", [len(self.positions)])[0]
@@ -219,7 +246,10 @@ class Section:
             - R_right (float): Resistance from the segment’s right half
         """
         self.segments.clear()
-        node_pre = np.hstack((u.get_magnitude(self.positions), u.get_magnitude(self.diams.reshape((-1, 1)))))
+        node_pre = np.hstack(
+            [self.positions / u.um, (self.diams / u.um).reshape((-1, 1))]
+        )
+        Ra = self.Ra / (u.ohm * u.cm)
         node_after = generate_interpolated_nodes(node_pre, self.nseg)
 
         node_after = np.asarray(node_after)
@@ -239,16 +269,16 @@ class Section:
             selected_right = np.vstack([node_after[i + 1], node_pre[mask_right], node_after[i + 2]])
 
             # Compute axial resistance and surface area
-            R_left, area_left = calculate_total_resistance_and_area(selected_left, u.get_magnitude(self.Ra))
-            R_right, area_right = calculate_total_resistance_and_area(selected_right, u.get_magnitude(self.Ra))
+            R_left, area_left = calculate_total_resistance_and_area(selected_left, Ra)
+            R_right, area_right = calculate_total_resistance_and_area(selected_right, Ra)
 
             segment = Segment(
                 section_name=self.name,
                 index=int(i / 2),
                 cm=self.cm,
-                area=(area_left + area_right) * u.get_unit(self.positions) ** 2,
-                R_left=R_left * u.get_unit(self.Ra) * u.get_unit(self.positions) / u.get_unit(self.diams) ** 2,
-                R_right=R_right * u.get_unit(self.Ra) * u.get_unit(self.positions) / u.get_unit(self.diams) ** 2,
+                area=(area_left + area_right) * u.um ** 2,
+                R_left=R_left * (u.ohm * u.cm / u.um),
+                R_right=R_right * (u.ohm * u.cm / u.um),
             )
             self.segments.append(segment)
 
@@ -418,7 +448,6 @@ class PointSection(Section):
             cm (float): Membrane capacitance in µF/cm².
         """
 
-        positions = np.array(u.get_magnitude(positions))
         assert positions.shape[0] >= 2, "at least have 2 points"
         assert positions.shape[1] == 3, "points must be shape (N, 3): [x, y, z]"
         assert np.all(np.array(u.get_magnitude(diams)) > 0), "All diameters must be positive."
@@ -890,29 +919,7 @@ class Morphology(brainstate.util.PrettyObject):
         Morphology
             A Morphology object created from the SWC file
         """
-        morphology = cls()
-
-        # Check if the file has the correct extension
-        filename, postfix = os.path.splitext(filename)
-        if postfix != '.swc':
-            raise ValueError(f"File {filename} is not an SWC file.")
-
-        # Load sections and section dictionaries from the SWC file
-        sections, section_dicts = from_swc(filename)
-
-        # Add all sections using add_multiple_sections method
-        morphology.add_multiple_sections(section_dicts)
-
-        # Prepare connection information and establish connections
-        connections = []
-        for swc_section in sections:
-            if swc_section.parentsec is not None:
-                child_name = f"{get_type_name(swc_section.type)}_{swc_section.id}"
-                parent_name = f"{get_type_name(swc_section.parentsec.type)}_{swc_section.parentsec.id}"
-                parent_loc = swc_section.parentx  # Connection position
-                connections.append((child_name, parent_name, parent_loc))
-        morphology.connect_sections(connections)
-        return morphology
+        return from_swc(filename)
 
     @classmethod
     def from_asc(cls, filename):
@@ -929,29 +936,7 @@ class Morphology(brainstate.util.PrettyObject):
         Morphology
             A Morphology object created from the ASC file
         """
-        morphology = cls()
-
-        # Check if the file has the correct extension
-        filename, postfix = os.path.splitext(filename)
-        if postfix != '.asc':
-            raise ValueError(f"File {filename} is not an ASC file.")
-
-        # Load sections and section dictionaries from the ASC file
-        section_dicts, sections, section_id_map = from_asc(filename)
-
-        # Add all sections
-        morphology.add_multiple_sections(section_dicts)
-
-        # Prepare and add connection info
-        connections = []
-        for sec in sections:
-            if sec.parent_id is not None:
-                child_name = section_id_map[sec.sec_id]
-                parent_name = section_id_map[sec.parent_id]
-                parent_loc = getattr(sec, "parent_x", 0.0)  # Use 0.0 if attribute missing
-                connections.append((child_name, parent_name, parent_loc))
-        morphology.connect_sections(connections)
-        return morphology
+        return from_asc(filename)
 
     def visualize(self):
         """

@@ -1234,9 +1234,11 @@ def from_asc(filename: str | Path):
     for sec in sections:
         section_type = sec.sec_type
         type_name = get_type_name(section_type)
+
         # init counter
         if type_name not in type_counters:
             type_counters[type_name] = 0
+
         # index each type
         type_inner_id = type_counters[type_name]
         section_name = f"{type_name}_{type_inner_id}"

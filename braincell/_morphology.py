@@ -476,13 +476,6 @@ class Morphology(brainstate.util.PrettyObject):
     - Batch creation of sections and connections
     - Computing electrical properties like conductance matrices
 
-    Attributes
-    ----------
-    sections : dict
-        Dictionary mapping section names to Section objects
-    segments : list
-        List of all segments across all sections
-
     Examples
     --------
     >>> morph = Morphology()
@@ -516,9 +509,17 @@ class Morphology(brainstate.util.PrettyObject):
         return [seg for section in self.sections.values() for seg in section.segments]
 
     def dhs_init(self, plot=False):
+        # section resistances
+        sec_ri = []
+        for seg in self.segments:
+            sec_ri.append((seg.R_left, seg.R_right))
+        seg_ri = u.math.array(sec_ri) / u.ohm
+
+        # branching tree
         Gmat_sorted, parent_rows, dhs_groups, segment2rowid = preprocess_branching_tree(
-            self.parent_id, self.parent_x, self.seg_ri, max_group_size=32, plot=plot
+            self.parent_id, self.parent_x, seg_ri, max_group_size=32, plot=plot
         )
+        Gmat_sorted = Gmat_sorted / u.ohm
 
         flipped_comp_edges = build_flipped_comp_edges(dhs_groups, parent_rows)
         cm_segmid = self.cm
@@ -740,10 +741,11 @@ class Morphology(brainstate.util.PrettyObject):
         Examples
         --------
         >>> morph = Morphology()
+        >>> import brainunit as u
         >>> morph.add_multiple_sections({
-        ...     'soma': {'length': 20.0, 'diam': 20.0},
-        ...     'axon': {'length': 800.0, 'diam': 1.0, 'nseg': 5},
-        ...     'dendrite': {'points': [[0,0,0,2], [10,10,0,1.5], [20,20,0,1]]}
+        ...     'soma': {'length': 20.0 * u.um, 'diam': 20.0 * u.um},
+        ...     'axon': {'length': 800.0 * u.um, 'diam': 1.0 * u.um, 'nseg': 5},
+        ...     'dendrite': {'points': [[0,0,0,2], [10,10,0,1.5], [20,20,0,1]] * u.um}
         ... })
 
         Notes
@@ -860,13 +862,6 @@ class Morphology(brainstate.util.PrettyObject):
         _, pid, px = compute_connection_seg(self.nseg, connection_sec_list)
         self._parent_id = pid
         self._parent_x = px
-
-    @property
-    def seg_ri(self):
-        sec_ri = []
-        for seg in self.segments:
-            sec_ri.append((seg.R_left, seg.R_right))
-        return u.math.array(sec_ri)
 
     @property
     def nseg(self):
@@ -992,3 +987,68 @@ class Morphology(brainstate.util.PrettyObject):
         )
 
         return fig
+
+    def set_passive_params(
+        self,
+        nseg_length: u.Quantity = 40 * u.um,
+        Ra_soma: u.Quantity = 122. * u.ohm * u.cm,
+        cm_soma: u.Quantity = 1 * u.uF / u.cm ** 2,
+        Ra_dend: u.Quantity = 122. * u.ohm * u.cm,
+        cm_dend: u.Quantity = 2.5 * u.uF / u.cm ** 2,
+        Ra_axon: u.Quantity = 122. * u.ohm * u.cm,
+        cm_axon: u.Quantity = 1 * u.uF / u.cm ** 2,
+    ):
+        """
+        Configure passive electrical properties and segment counts for all sections in the morphology.
+
+        This method iterates over all sections in the morphology and sets the number of segments (`nseg`),
+        axial resistivity (`Ra`), and specific membrane capacitance (`cm`) for each section based on its type.
+        The section type is determined by the presence of the substrings 'soma', 'dend', or 'axon' in the section name.
+
+        Parameters
+        ----------
+        nseg_length : u.Quantity, optional
+            Target length for each segment (default: 40 µm). The number of segments for each section is computed as
+            `1 + 2 * floor(section_length / nseg_length)`.
+        Ra_soma : u.Quantity, optional
+            Axial resistivity for soma sections (default: 122 Ω·cm).
+        cm_soma : u.Quantity, optional
+            Specific membrane capacitance for soma sections (default: 1 µF/cm²).
+        Ra_dend : u.Quantity, optional
+            Axial resistivity for dendrite sections (default: 122 Ω·cm).
+        cm_dend : u.Quantity, optional
+            Specific membrane capacitance for dendrite sections (default: 2.5 µF/cm²).
+        Ra_axon : u.Quantity, optional
+            Axial resistivity for axon sections (default: 122 Ω·cm).
+        cm_axon : u.Quantity, optional
+            Specific membrane capacitance for axon sections (default: 1 µF/cm²).
+
+        Processing Steps
+        ----------------
+        1. For each section in the morphology:
+            a. Compute the number of segments (`nseg`) based on the section's length and `nseg_length`.
+            b. Set `Ra` and `cm` according to the section type:
+                - If 'soma' in section name: use `Ra_soma` and `cm_soma`.
+                - If 'dend' in section name: use `Ra_dend` and `cm_dend`.
+                - If 'axon' in section name: use `Ra_axon` and `cm_axon`.
+
+        Notes
+        -----
+        - Section type is determined by substring matching in the section name.
+        - This method is useful for initializing passive properties before simulation or analysis.
+        - All units must be compatible with the expected quantities.
+        """
+        for k, v in self.sections.items():
+            # Update nseg based on section length
+            v.nseg = int(1 + 2 * np.floor(v.L / nseg_length))
+
+            # Set Ra and cm by section type
+            if 'soma' in k:
+                v.Ra = Ra_soma
+                v.cm = cm_soma
+            elif 'dend' in k:
+                v.Ra = Ra_dend
+                v.cm = cm_dend
+            elif 'axon' in k:
+                v.Ra = Ra_axon
+                v.cm = cm_axon

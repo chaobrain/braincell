@@ -771,7 +771,13 @@ def build_flipped_comp_edges(dhs_group, parent_rows):
     return flipped_comp_edges, padded_edges, edge_masks
 
 
-def preprocess_branching_tree(parent_id, parent_x, seg_resistances, max_group_size=8, plot=False):
+def preprocess_branching_tree(
+    parent_id,
+    parent_x,
+    seg_resistances,
+    max_group_size: int = 8,
+    plot: bool = False
+):
     """
     Preprocess a branching tree for DHS matrix algorithms.
 
@@ -815,19 +821,17 @@ def preprocess_branching_tree(parent_id, parent_x, seg_resistances, max_group_si
     node_labels, _ = build_segment_node_labels(num_segments, uf)
     nid_half_map, _ = build_half_segment_maps(num_segments, uf)
 
+    # plotting the tree structure if requested
     if plot:
         plot_tree(G, node_labels, center_ids, noncenter_nonleaf_ids, leaf_ids)
 
     # Step 5: Construct conductance matrix and get list of all nodes
-    unit = u.get_unit(seg_resistances)
-    seg_resistances = u.get_magnitude(seg_resistances)
     Gmat, nodes = build_conductance_matrix(G, nid_half_map, seg_resistances)
 
     # Step 6: Sort nodes by depth, reorder matrix
     root, depths = get_root_and_depths(G)
     sorted_nodes = sort_nodes_by_depth(G, depths)
-    Gmat_sorted = reorder_matrix_by_depth(Gmat, nodes, sorted_nodes) * (1 / unit)
-
+    Gmat_sorted = reorder_matrix_by_depth(Gmat, nodes, sorted_nodes)
 
     # Step 7: Build parent row indices (rowid2parentrowid) for DHS elimination
     parent_dict = build_parent_dict(G, root)
@@ -842,4 +846,3 @@ def preprocess_branching_tree(parent_id, parent_x, seg_resistances, max_group_si
     segment2rowid = get_segment2rowid(num_segments, uf, sorted_nodes)
 
     return Gmat_sorted, parent_rows, dhs_groups, segment2rowid
-

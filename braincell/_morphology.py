@@ -21,7 +21,7 @@ import brainstate
 import brainunit as u
 import numpy as np
 
-from ._morphology_branchtree import BranchingTree
+from ._morphology_branch_tree import BranchingTree
 from ._morphology_from_asc import from_asc
 from ._morphology_from_swc import from_swc
 from ._morphology_utils import (

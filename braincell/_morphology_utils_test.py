@@ -159,37 +159,37 @@ class Test_compute_line_ratios:
 class Test_calculate_total_resistance_and_area:
 
     def test_simple_straight_cylinder_returns_correct_values(self):
-        # Simple cylinder: 10μm length, 1μm diameter
-        points = np.array([[0, 0, 0, 1], [10, 0, 0, 1]]) * u.um
+        # Simple cylinder: length 10, diameter 1
+        points = np.array([[0, 0, 0, 1], [10, 0, 0, 1]]) 
 
         resistance, area = calculate_total_resistance_and_area(points)
 
-        # For a cylinder of length 10μm, diameter 1μm, resistivity 100 Ω·cm:
-        # R = (100 Ω·cm) * (10 μm) / (π * (0.5 μm)²)
-        # A = π * 1μm * sqrt(10² + 0²) = π * 10μm
-        expected_resistance = 100 * u.ohm * u.cm * 10 * u.um / (np.pi * (0.5 * u.um) ** 2)
-        expected_area = np.pi * 1 * u.um * 10 * u.um
+        # For a cylinder of length 10, diameter 1, resistivity 100:
+        # R = 100 * 10 / (π * (0.5)²)
+        # A = π * 1 * sqrt(10² + 0²) = π * 10
+        expected_resistance = 100 * 10 / (np.pi * (0.5) ** 2)
+        expected_area = np.pi * 1 * 10
 
-        assert u.math.allclose(resistance, expected_resistance)
-        assert u.math.allclose(area, expected_area)
-        assert u.math.allclose(u.get_mantissa(area), u.get_mantissa(expected_area))
+        # You can add assertions if needed
+        assert np.isclose(resistance, expected_resistance)
+        assert np.isclose(area, expected_area)
 
     def test_truncated_cone_returns_correct_values(self):
-        # Truncated cone: 10μm length, 2μm diameter at start, 1μm at end
-        points = np.array([[0, 0, 0, 2], [10, 0, 0, 1]]) * u.um
+        # Truncated cone: length 10, diameter 2 at start, 1 at end
+        points = np.array([[0, 0, 0, 2], [10, 0, 0, 1]])
 
         resistance, area = calculate_total_resistance_and_area(points)
 
         # For a truncated cone:
-        # R = (100 Ω·cm) * (10 μm) / (π * 1μm * 0.5μm)
-        # Slant height = sqrt(10² + (1-0.5)²) = ~10.025μm
-        # A = π * (1μm + 0.5μm) * 10.025μm
-        expected_resistance = 100 * u.ohm * u.cm * 10 * u.um / (np.pi * 1 * u.um * 0.5 * u.um)
-        slant_height = np.sqrt(10 ** 2 + 0.5 ** 2) * u.um
-        expected_area = np.pi * (1 + 0.5) * u.um * slant_height
+        # R = 100 * 10 / (π * 1 * 0.5)
+        # Slant height = sqrt(10^2 + (1-0.5)^2) ≈ 10.012
+        # A = π * (1 + 0.5) * slant_height
+        expected_resistance = 100 * 10 / (np.pi * 1 * 0.5)
+        slant_height = np.sqrt(10 ** 2 + 0.5 ** 2)
+        expected_area = np.pi * (1 + 0.5) * slant_height
 
-        assert u.math.allclose(resistance, expected_resistance)
-        assert u.math.allclose(area, expected_area)
+        assert np.isclose(resistance, expected_resistance)
+        assert np.isclose(area, expected_area)
 
     def test_branched_structure_returns_summed_values(self):
         # Y-shaped structure with 3 segments
@@ -198,7 +198,7 @@ class Test_calculate_total_resistance_and_area:
             [10, 0, 0, 1],  # Branch point
             [15, 5, 0, 0.8],  # End of branch 1
             [15, -5, 0, 0.8]  # End of branch 2
-        ]) * u.um
+        ]) 
 
         # Calculate manually for each segment
         segment1 = points[0:2]  # Start to branch
@@ -216,54 +216,55 @@ class Test_calculate_total_resistance_and_area:
 
     def test_zero_length_segment_returns_zero_resistance_and_area(self):
         # Point with zero length
-        points = np.array([[0, 0, 0, 1], [0, 0, 0, 1]]) * u.um
+        points = np.array([[0, 0, 0, 1], [0, 0, 0, 1]])
 
         resistance, area = calculate_total_resistance_and_area(points)
 
-        assert resistance == 0 * u.ohm
-        assert area == 0 * u.um ** 2
+        assert resistance == 0
+        assert area == 0
 
     def test_single_point_returns_zero_values(self):
         # Single point cannot form a segment
-        points = np.array([[0, 0, 0, 1]]) * u.um
+        points = np.array([[0, 0, 0, 1]])
 
         resistance, area = calculate_total_resistance_and_area(points)
 
-        assert resistance == 0 * u.ohm
-        assert area == 0 * u.um ** 2
+        assert resistance == 0
+        assert area == 0
 
     def test_zero_diameter_handles_gracefully(self):
         # Zero diameter should handle division by zero gracefully
-        points = np.array([[0, 0, 0, 0], [10, 0, 0, 0]]) * u.um
+        points = np.array([[0, 0, 0, 0], [10, 0, 0, 0]])
 
         # Should return infinity for resistance due to zero cross-section
         resistance, area = calculate_total_resistance_and_area(points)
 
-        assert u.math.isinf(resistance)
-        assert u.math.allclose(area, 0 * u.um ** 2)
+        assert np.isinf(resistance)
+        assert np.isclose(area, 0)
 
     def test_custom_resistivity_scales_resistance_proportionally(self):
-        points = np.array([[0, 0, 0, 1], [10, 0, 0, 1]]) * u.um
+        points = np.array([[0, 0, 0, 1], [10, 0, 0, 1]])
 
         resistance1, area1 = calculate_total_resistance_and_area(
-            points, resistivity=100.0 * u.ohm * u.cm
+            points, resistivity=100.0
         )
         resistance2, area2 = calculate_total_resistance_and_area(
-            points, resistivity=200.0 * u.ohm * u.cm
+            points, resistivity=200.0
         )
 
-        assert u.math.allclose(resistance2, 2 * resistance1)
-        assert u.math.allclose(area1, area2)  # Area should be unchanged
+        assert np.isclose(resistance2, 2 * resistance1)
+        assert np.isclose(area1, area2)  # Area should be unchanged
+
 
     def test_works_with_jax_arrays(self):
-        points_np = np.array([[0, 0, 0, 1], [10, 0, 0, 1]]) * u.um
-        points_jax = jnp.array([[0, 0, 0, 1], [10, 0, 0, 1]]) * u.um
+        points_np = np.array([[0, 0, 0, 1], [10, 0, 0, 1]])
+        points_jax = jnp.array([[0, 0, 0, 1], [10, 0, 0, 1]])
 
         resistance_np, area_np = calculate_total_resistance_and_area(points_np)
         resistance_jax, area_jax = calculate_total_resistance_and_area(points_jax)
 
-        assert u.math.allclose(resistance_np, resistance_jax)
-        assert u.math.allclose(area_np, area_jax)
+        assert np.isclose(resistance_np, resistance_jax)
+        assert np.isclose(area_np, area_jax)
 
 
 class TestFindRatioInterval(unittest.TestCase):
@@ -306,13 +307,6 @@ class TestFindRatioInterval(unittest.TestCase):
         lower_idx, upper_idx = find_ratio_interval(ratios, 0.3)
         self.assertEqual(lower_idx, 0)
         self.assertEqual(upper_idx, 1)
-
-    def test_works_with_brainunit_quantities(self):
-        ratios = u.Quantity(np.array([0.0, 0.3, 0.6, 1.0]), u.cm)
-        target = u.Quantity(0.4, u.cm)
-        lower_idx, upper_idx = find_ratio_interval(ratios, target)
-        self.assertEqual(lower_idx, 1)
-        self.assertEqual(upper_idx, 2)
 
     def test_works_with_jax_arrays(self):
         ratios = jnp.array([0.0, 0.3, 0.6, 1.0])
@@ -375,17 +369,6 @@ class TestGenerateInterpolatedNodes(unittest.TestCase):
         self.assertEqual(result.shape, (5, 4))
         np.testing.assert_almost_equal(result[0], [0, 0, 0, 1])
         np.testing.assert_almost_equal(result[-1], [10, 0, 0, 2])
-
-    def test_handles_brainunit_quantity_input(self):
-        node_pre = u.Quantity(np.array([
-            [0, 0, 0, 1],
-            [10, 0, 0, 2]
-        ]), unit=u.um)
-        nseg = 2
-        result = generate_interpolated_nodes(node_pre, nseg)
-        self.assertEqual(result.shape, (5, 4))
-        self.assertTrue(isinstance(result, u.Quantity))
-        self.assertEqual(result.unit, u.um)
 
     def test_nseg_zero_returns_start_and_end_points(self):
         node_pre = np.array([

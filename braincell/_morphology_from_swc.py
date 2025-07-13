@@ -1,7 +1,24 @@
+# Copyright 2025 BDP Ecosystem Limited. All Rights Reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ==============================================================================
+
+
 import os
 
 import numpy as np
-import plotly.graph_objects as go
+
+from ._morphology_utils import get_type_name
 
 
 class Import3dSection:
@@ -512,10 +529,9 @@ class Import3dSWCRead:
         if isec == 0:  # Root section
             if self.soma3geom:  # Treat as single point sphere
                 i = 1
-
             # Create section and add points
             sec = Import3dSection(first, i - first)
-            sec.append(0, first, i - first, self.x, self.y, self.z, self.d)
+            sec.append(1, first, i - first, self.x, self.y, self.z, self.d)
 
         else:  # Not root section
             # Create section with space for parent point
@@ -674,6 +690,8 @@ def visualize_neuron(viz_data):
     Returns:
         plotly.graph_objects.Figure: Plotly figure object
     """
+    import plotly.graph_objects as go
+
     # Extract data from dictionary
     coords = viz_data['coords']
     types = viz_data['types']
@@ -708,7 +726,9 @@ def visualize_neuron(viz_data):
         edge_z += [z0, z1, None]
 
     edge_trace = go.Scatter3d(
-        x=edge_x, y=edge_y, z=edge_z,
+        x=edge_x,
+        y=edge_y,
+        z=edge_z,
         mode='lines',
         line=dict(color='black', width=2),
         hoverinfo='none',
@@ -764,7 +784,27 @@ def visualize_neuron(viz_data):
     return fig
 
 
-if __name__ == "__main__":
-    viz_data = process_swc_pipeline("swc_file/io.swc")
-    fig = visualize_neuron(viz_data)
-    fig.show()
+def from_swc(filename):
+    # Create SWC reader
+    reader = Import3dSWCRead()
+    if not reader.input(filename):
+        raise ValueError(f"Failed to read SWC file: {filename}")
+
+    # 1. Extract point data from SWC sections and prepare section_dicts
+    section_dicts = {}
+    for swc_section in reader.sections:
+        section_type = swc_section.type
+        section_name = f"{get_type_name(section_type)}_{swc_section.id}"
+
+        # Extract point data
+        positions = np.column_stack([
+            swc_section.x, swc_section.y, swc_section.z
+        ])
+        diams = swc_section.d
+
+        section_dicts[section_name] = {
+            'positions':  positions,
+            'diams': diams,
+            'nseg': 1  # Default to 1, might need adjustment based on points or length
+        }
+    return reader.sections, section_dicts

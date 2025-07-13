@@ -190,6 +190,7 @@ def _comp_based_backsub_recursive_doubling(
     naturally happens because `lower_effect[0]=0`, and the recursion
     keeps multiplying new_lower_effect with the `lower_effect[parent]`.
     """
+
     # Why `lowers = lowers.at[0].set(0.0)`? During triangulation (and the
     # cpu-optimized solver), we never access `lowers[0]`. Its value should
     # be zero (because the zero-eth compartment does not have a `lower`), but

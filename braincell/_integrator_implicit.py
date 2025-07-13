@@ -17,11 +17,9 @@ import brainstate
 import brainunit as u
 import jax
 import jax.numpy as jnp
-from jax.scipy.linalg import lu_factor, lu_solve
-from jax.experimental import sparse
 import scipy.sparse as sp
-from scipy.integrate import solve_ivp
-import time
+from jax.experimental import sparse
+from jax.scipy.linalg import lu_factor, lu_solve
 
 from ._integrator_exp_euler import _exponential_euler
 from ._integrator_runge_kutta import rk4_step
@@ -378,8 +376,8 @@ def construct_A(target):
         G_matrix = target.conductance_matrix
         Gl = target.Gl
 
-        #jax.debug.print('Area = {a}', a = A)
-        #jax.debug.print('cm = {a}', a = cm)
+        # jax.debug.print('Area = {a}', a = A)
+        # jax.debug.print('cm = {a}', a = cm)
         ## create the A_matrix
         cm_A = cm * A
 
@@ -388,6 +386,7 @@ def construct_A(target):
         A_matrix = A_matrix.at[jnp.diag_indices(n_compartment)].add(-Gl / cm)
 
     return A_matrix
+
 
 def construct_lhs(target):
     with jax.ensure_compile_time_eval():
@@ -398,19 +397,20 @@ def construct_lhs(target):
         G_matrix = target.conductance_matrix
         Gl = target.Gl
 
-        #jax.debug.print('Area = {a}', a = A)
-        #jax.debug.print('cm = {a}', a = cm)
+        # jax.debug.print('Area = {a}', a = A)
+        # jax.debug.print('cm = {a}', a = cm)
         ## create the A_matrix
         cm_A = cm * A
 
         A_matrix = G_matrix / (cm_A[:, u.math.newaxis])
         A_matrix = A_matrix.at[jnp.diag_indices(n_compartment)].set(-u.math.sum(A_matrix, axis=1))
-        A_matrix = A_matrix.at[jnp.diag_indices(n_compartment)].add(-Gl/cm)
+        A_matrix = A_matrix.at[jnp.diag_indices(n_compartment)].add(-Gl / cm)
 
         I = u.math.eye(n_compartment)
         lhs = I - dt * A_matrix
         return lhs
-    
+
+
 def construct_lhs_sparse(target):
     with jax.ensure_compile_time_eval():
         dt = brainstate.environ.get_dt()
@@ -420,14 +420,14 @@ def construct_lhs_sparse(target):
         G_matrix = target.conductance_matrix
         Gl = target.Gl
 
-        #jax.debug.print('Area = {a}', a = A)
-        #jax.debug.print('cm = {a}', a = cm)
+        # jax.debug.print('Area = {a}', a = A)
+        # jax.debug.print('cm = {a}', a = cm)
         ## create the A_matrix
         cm_A = cm * A
 
         A_matrix = G_matrix / (cm_A[:, u.math.newaxis])
         A_matrix = A_matrix.at[jnp.diag_indices(n_compartment)].set(-u.math.sum(A_matrix, axis=1))
-        A_matrix = A_matrix.at[jnp.diag_indices(n_compartment)].add(-Gl/cm)
+        A_matrix = A_matrix.at[jnp.diag_indices(n_compartment)].add(-Gl / cm)
 
         I = u.math.eye(n_compartment)
         lhs = I - dt * A_matrix
@@ -451,19 +451,20 @@ def construct_lu(target):
         G_matrix = target.conductance_matrix
         Gl = target.Gl
 
-        #jax.debug.print('Area = {a}', a = A)
-        #jax.debug.print('cm = {a}', a = cm)
+        # jax.debug.print('Area = {a}', a = A)
+        # jax.debug.print('cm = {a}', a = cm)
         ## create the A_matrix
         cm_A = cm * A
 
         A_matrix = G_matrix / (cm_A[:, u.math.newaxis])
         A_matrix = A_matrix.at[jnp.diag_indices(n_compartment)].set(-u.math.sum(A_matrix, axis=1))
-        A_matrix = A_matrix.at[jnp.diag_indices(n_compartment)].add(-Gl/cm)
+        A_matrix = A_matrix.at[jnp.diag_indices(n_compartment)].add(-Gl / cm)
         I = u.math.eye(n_compartment)
         lhs = I - dt * A_matrix
         lu, piv = lu_factor(lhs)
 
         return lu, piv
+
 
 def construct_lu_sparse(target):
     with jax.ensure_compile_time_eval():
@@ -478,13 +479,14 @@ def construct_lu_sparse(target):
 
         A_matrix = G_matrix / (cm_A[:, u.math.newaxis])
         A_matrix = A_matrix.at[jnp.diag_indices(n_compartment)].set(-u.math.sum(A_matrix, axis=1))
-        A_matrix = A_matrix.at[jnp.diag_indices(n_compartment)].add(-Gl/cm)
+        A_matrix = A_matrix.at[jnp.diag_indices(n_compartment)].add(-Gl / cm)
         I = u.math.eye(n_compartment)
         lhs = I - dt * A_matrix
         lhs_bcoo = sparse.BCOO.fromdense(lhs)
 
-        return 
-    
+        return
+
+
 @set_module_as('braincell')
 def splitting_step(
     target: DiffEqModule,
@@ -514,26 +516,24 @@ def splitting_step(
     if isinstance(target, MultiCompartment_test):
 
         def solve_axial():
-            #dt = brainstate.environ.get_dt()
+            # dt = brainstate.environ.get_dt()
             V_n = u.get_magnitude(target.V.value)
-            #V_n = target.V.value
-            
-            #A_matrix = construct_A(target)
-            #target.V.value = _implicit_euler_for_axial_current(A_matrix, V_n, dt)
+            # V_n = target.V.value
 
-            #lhs = construct_lhs(target)
-            #target.V.value = u.math.linalg.solve(lhs, V_n)
+            # A_matrix = construct_A(target)
+            # target.V.value = _implicit_euler_for_axial_current(A_matrix, V_n, dt)
 
-            #data, indices, indptr = construct_lhs_sparse(target)
-            #target.V.value = sparse.linalg.spsolve(data, indices, indptr, V_n.reshape(-1), tol=1e-6, reorder=1).reshape(1,-1) * u.mV
+            # lhs = construct_lhs(target)
+            # target.V.value = u.math.linalg.solve(lhs, V_n)
 
-            lu, piv = construct_lu(target) 
+            # data, indices, indptr = construct_lhs_sparse(target)
+            # target.V.value = sparse.linalg.spsolve(data, indices, indptr, V_n.reshape(-1), tol=1e-6, reorder=1).reshape(1,-1) * u.mV
+
+            lu, piv = construct_lu(target)
             target.V.value = lu_solve((lu, piv), V_n) * u.mV
 
-            #lu, piv = construct_lu_sparse(target) 
-            #target.V.value =sparse.lu_solve(lu, piv, V_n )* u.mV
-
-
+            # lu, piv = construct_lu_sparse(target)
+            # target.V.value =sparse.lu_solve(lu, piv, V_n )* u.mV
 
         '''
         for _ in range(len(target.pop_size)):
@@ -547,7 +547,7 @@ def splitting_step(
         with brainstate.environ.context(compute_axial_current=False):
             apply_standard_solver_step(_newton_method_manual_parallel, target, t, dt, *args, merging='stack')
         for _ in range(len(target.pop_size)):
-           integral = brainstate.augment.vmap(solve_axial, in_states=target.states())
+            integral = brainstate.augment.vmap(solve_axial, in_states=target.states())
         integral()
         # jax.debug.print('step2 cost {a}',a = time.time() - s2t1)
 

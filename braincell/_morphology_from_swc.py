@@ -797,14 +797,14 @@ def from_swc(filename):
         section_name = f"{get_type_name(section_type)}_{swc_section.id}"
 
         # Extract point data
-        points = np.column_stack(
-            [
-                swc_section.x, swc_section.y, swc_section.z, swc_section.d
-            ]
-        )
+        positions = np.column_stack([
+            swc_section.x, swc_section.y, swc_section.z
+        ])
+        diams = swc_section.d
 
         section_dicts[section_name] = {
-            'points': points,
+            'positions':  positions,
+            'diams': diams,
             'nseg': 1  # Default to 1, might need adjustment based on points or length
         }
     return reader.sections, section_dicts

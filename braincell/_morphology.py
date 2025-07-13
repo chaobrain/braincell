@@ -119,7 +119,7 @@ class Section:
         self,
         name: SectionName,
         positions: u.Quantity[u.um],
-        diam: u.Quantity[u.um],
+        diams: u.Quantity[u.um],
         nseg: int,
         Ra: u.Quantity[u.ohm * u.cm],
         cm: u.Quantity[u.uF / (u.cm ** 2)],
@@ -141,7 +141,7 @@ class Section:
         self._Ra = Ra
         self._cm = cm
         self.positions = positions
-        self.diam = diam
+        self.diams = diams
         self.parent: Dict = None
         self.children = set()
         self.segments = []
@@ -191,7 +191,7 @@ class Section:
         self.Ra = self._ensure_unit(self.Ra, u.ohm * u.cm)
         self.cm = self._ensure_unit(self.cm, u.uF / u.cm ** 2)
         self.positions = self._ensure_unit(self.positions, u.um)
-        self.diam = self._ensure_unit(self.diam, u.um)
+        self.diams = self._ensure_unit(self.diams, u.um)
 
     def __repr__(self):
         n_points = getattr(self.positions, "shape", [len(self.positions)])[0]
@@ -221,7 +221,7 @@ class Section:
             - R_right (float): Resistance from the segment’s right half
         """
         self.segments.clear()
-        node_pre = np.hstack((u.get_magnitude(self.positions), u.get_magnitude(self.diam)))
+        node_pre = np.hstack((u.get_magnitude(self.positions), u.get_magnitude(self.diams.reshape((-1, 1)))))
         node_after = generate_interpolated_nodes(node_pre, self.nseg)
 
         node_after = np.asarray(node_after)
@@ -249,8 +249,8 @@ class Section:
                 index=int(i / 2),
                 cm=self.cm,
                 area=(area_left + area_right) * u.get_unit(self.positions) ** 2,
-                R_left=R_left * u.get_unit(self.Ra) * u.get_unit(self.positions) / u.get_unit(self.diam) ** 2,
-                R_right=R_right * u.get_unit(self.Ra) * u.get_unit(self.positions) / u.get_unit(self.diam) ** 2,
+                R_left=R_left * u.get_unit(self.Ra) * u.get_unit(self.positions) / u.get_unit(self.diams) ** 2,
+                R_right=R_right * u.get_unit(self.Ra) * u.get_unit(self.positions) / u.get_unit(self.diams) ** 2,
             )
             self.segments.append(segment)
 
@@ -365,7 +365,7 @@ class CylinderSection(Section):
         super().__init__(
             name=name,
             positions=positions,
-            diam=diam,
+            diams=diam,
             nseg=nseg,
             Ra=Ra,
             cm=cm,
@@ -402,7 +402,8 @@ class PointSection(Section):
     def __init__(
         self,
         name: SectionName,
-        points: u.Quantity[u.um],
+        positions: u.Quantity[u.um],
+        diams: u.Quantity[u.um],
         nseg: int = 1,
         Ra: u.Quantity = 100 * u.ohm * u.cm,
         cm: u.Quantity = 1.0 * u.uF / u.cm ** 2,
@@ -412,23 +413,22 @@ class PointSection(Section):
 
         Parameters:
             name (str): Section name identifier.
-            points (list or np.ndarray, optional): Array of shape (N, 4) with [x, y, z, diameter].
+            points (list or np.ndarray, optional): Array of shape (N, 3) with [x, y, z].
+            diams (list or np.ndarray, optional): Array of shape (N, 1) 
             nseg (int): Number of segments to divide the section into.
             Ra (float): Axial resistivity in ohm·cm.
             cm (float): Membrane capacitance in µF/cm².
         """
 
-        points = np.array(u.get_magnitude(points))
-        assert points.shape[0] >= 2, "at least have 2 points"
-        assert points.shape[1] == 4, "points must be shape (N, 4): [x, y, z, diameter]"
-        assert np.all(points[:, 3] > 0), "All diameters must be positive."
-        positions = points[:, :3] * u.get_unit(points)
-        diam = points[:, -1].reshape((-1, 1)) * u.get_unit(points)
+        positions = np.array(u.get_magnitude(positions))
+        assert positions.shape[0] >= 2, "at least have 2 points"
+        assert positions.shape[1] == 3, "points must be shape (N, 3): [x, y, z"
+        assert np.all(np.array(u.get_magnitude(diams)) > 0), "All diameters must be positive."
 
         super().__init__(
             name=name,
             positions=positions,
-            diam=diam,
+            diams=diams,
             nseg=nseg,
             Ra=Ra,
             cm=cm,
@@ -581,7 +581,8 @@ class Morphology(brainstate.util.PrettyObject):
     def add_point_section(
         self,
         name: SectionName,
-        points: u.Quantity[u.meter],
+        positions,
+        diams,
         nseg: int = 1,
         Ra: u.Quantity = 100,
         cm: u.Quantity = 1.0,
@@ -618,7 +619,7 @@ class Morphology(brainstate.util.PrettyObject):
         `connect` method.
         """
 
-        section = PointSection(name, points=points, nseg=nseg, Ra=Ra, cm=cm)
+        section = PointSection(name, positions=positions, diams=diams, nseg=nseg, Ra=Ra, cm=cm)
         if name in self.sections:
             raise ValueError(f"Section with name '{name}' already exists.")
         self.sections[name] = section
@@ -730,12 +731,12 @@ class Morphology(brainstate.util.PrettyObject):
 
         for section_name, section_data in section_dicts.items():
             assert isinstance(section_data, dict), 'section_data must be a dictionary.'
-            if 'points' in section_data:
+            if 'positions' in section_data:
                 self.add_point_section(name=section_name, **section_data)
             elif 'length' in section_data and 'diam' in section_data:
                 self.add_cylinder_section(name=section_name, **section_data)
             else:
-                raise ValueError('section_data must contain either points or length and diam.')
+                raise ValueError('section_data must contain either positions or length and diam.')
 
     def connect_sections(self, connections: Sequence[Sequence]):
         """

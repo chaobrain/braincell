@@ -42,7 +42,7 @@ def dhs_voltage_step(target, t, dt, *args):
     lowers = target.lowers
     parent_lookup = target.parent_lookup
     internal_node_inds = target.internal_node_inds
-    flipped_comp_edges, padded_edges, edge_masks = target.comp_edges
+    flipped_comp_edges, padded_edges, edge_masks = target.flipped_comp_edges
 
     n_nodes = len(diags)
 

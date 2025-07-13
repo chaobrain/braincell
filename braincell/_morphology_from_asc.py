@@ -1222,17 +1222,17 @@ def from_asc(filename):
 
         section_id_map[sec.sec_id] = section_name
 
-        # Collect points as a (N, 4) numpy array: x, y, z, d
-        points = np.column_stack(
-            [
+            # Collect points as a (N, 4) numpy array: x, y, z, d
+            positions = np.column_stack([
                 [p.x for p in sec.points],
                 [p.y for p in sec.points],
                 [p.z for p in sec.points],
-                [p.d for p in sec.points]
-            ]
-        )
-        section_dicts[section_name] = {
-            'points': points,
-            'nseg': 1,  # Default value
-        }
-    return section_dicts, sections, section_id_map
+            ])
+            diams = np.array([p.d for p in sec.points])
+
+            section_dicts[section_name] = {
+                'positions': positions,
+                'diams': diams,
+                'nseg': 1,  # Default value
+            }
+        return section_dicts, sections, section_id_map

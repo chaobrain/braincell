@@ -19,7 +19,7 @@ import numpy as np
 
 
 class UnionFind:
-    '''
+    """
     Union-Find (Disjoint Set Union) data structure.
 
     This data structure efficiently manages disjoint sets and supports:
@@ -54,16 +54,16 @@ class UnionFind:
     In a dendritic tree,
     using union(segA_pos, segB_pos) will ensure that the two physically identical points
     are treated as a single equipotential node in subsequent calculations.
-    '''
+    """
 
     def __init__(self):
         self.rep = {}
 
     def find(self, x):
-        '''
+        """
         Finds the representative ("root") of the set containing x.
         Uses path compression: after calling find(x), self.rep[x] will point directly to the root.
-        '''
+        """
         if x not in self.rep:
             self.rep[x] = x
         if self.rep[x] != x:
@@ -71,15 +71,15 @@ class UnionFind:
         return self.rep[x]
 
     def union(self, x, y):
-        '''
+        """
         Merges the sets containing x and y.
         After union, x and y will have the same representative.
-        '''
+        """
         self.rep[self.find(y)] = self.find(x)
 
 
 def nodeid(seg, pos):
-    '''
+    """
     Assign a unique integer ID to a position on a segment.
 
     In this scheme, each segment is discretized into three key points:
@@ -117,12 +117,12 @@ def nodeid(seg, pos):
     4
     >>> nodeid(2, 1)
     8
-    '''
+    """
     return seg * 3 + {0: 0, 0.5: 1, 1: 2}[pos]
 
 
 def merge_equipotential_segment_nodes(num_segments, parent_id, parentx):
-    '''
+    """
     Use Union-Find to merge equipotential nodes at segment connections.
     
     Parameters
@@ -143,7 +143,7 @@ def merge_equipotential_segment_nodes(num_segments, parent_id, parentx):
     ----
     For each segment with a parent, this merges the parent's connection position with the 0-point of the child segment.
     The UnionFind structure is then used to map each node ID to its merged representative.
-    '''
+    """
     uf = UnionFind()
     for seg in range(num_segments):
         if parent_id[seg] != -1:
@@ -154,7 +154,7 @@ def merge_equipotential_segment_nodes(num_segments, parent_id, parentx):
 
 
 def build_segment_internal_edges(num_segments):
-    '''
+    """
     Create the edges representing internal connectivity within each segment.
     Each segment is discretized into three points, connected as: 0 -- 0.5 -- 1.
 
@@ -166,7 +166,7 @@ def build_segment_internal_edges(num_segments):
     -------
     edges : list of tuple of int
         Each tuple is (node_id_a, node_id_b), representing a directed edge from node_id_a to node_id_b.
-    '''
+    """
     edges = []
     for seg in range(num_segments):
         n0 = nodeid(seg, 0)
@@ -177,7 +177,7 @@ def build_segment_internal_edges(num_segments):
 
 
 def get_merged_edges(edges, uf):
-    '''
+    """
     Apply Union-Find merging to the internal segment edges,
     producing a list of merged (representative) node edges, eliminating self-loops.
 
@@ -192,7 +192,7 @@ def get_merged_edges(edges, uf):
     -------
     merged_edges : list of tuple of int
         List of merged node edges (no self-loops).
-    '''
+    """
     merged_edges = []
     for a, b in edges:
         ma, mb = uf.find(a), uf.find(b)
@@ -202,7 +202,7 @@ def get_merged_edges(edges, uf):
 
 
 def build_segment_graph(merged_edges):
-    '''
+    """
     Construct a directed graph from the merged segment edges using NetworkX.
 
     Parameters
@@ -213,7 +213,7 @@ def build_segment_graph(merged_edges):
     -------
     G : nx.DiGraph
         The directed graph of the merged segment structure.
-    '''
+    """
     import networkx as nx
     G = nx.DiGraph()
     G.add_edges_from(merged_edges)
@@ -221,7 +221,7 @@ def build_segment_graph(merged_edges):
 
 
 def classify_segment_nodes(num_segments, uf, G):
-    '''
+    """
     Classify merged nodes as segment centers, non-center non-leaf, or leaf nodes.
 
     Parameters
@@ -241,7 +241,7 @@ def classify_segment_nodes(num_segments, uf, G):
         List of merged node IDs that are leaf nodes (degree 1, not a center).
     noncenter_nonleaf_ids : list of int
         List of merged node IDs that are neither centers nor leaves.
-    '''
+    """
     segid_to_center = {seg: uf.find(nodeid(seg, 0.5)) for seg in range(num_segments)}
     center_ids = set(segid_to_center.values())
     leaf_ids = [n for n in G.nodes if G.degree[n] == 1 and n not in center_ids]
@@ -250,7 +250,7 @@ def classify_segment_nodes(num_segments, uf, G):
 
 
 def build_segment_node_labels(num_segments, uf):
-    '''
+    """
     Build string labels for each merged node for visualization.
     All equivalent points (after merging) are grouped.
 
@@ -265,7 +265,7 @@ def build_segment_node_labels(num_segments, uf):
         Key: merged node ID, Value: concatenated label string (one per merged node).
     label_groups : dict
         Key: merged node ID, Value: set of original labels.
-    '''
+    """
     label_groups = {}
     for seg in range(num_segments):
         for pos in [0, 0.5, 1]:
@@ -277,7 +277,7 @@ def build_segment_node_labels(num_segments, uf):
 
 
 def build_half_segment_maps(num_segments, uf):
-    '''
+    """
     Construct lookup tables for "half-segments" (connections between points within each segment).
     This is useful for assigning resistances or mapping between merged nodes and physical segment halves.
 
@@ -292,7 +292,7 @@ def build_half_segment_maps(num_segments, uf):
         Key: (minid, maxid) tuple of merged node IDs, Value: (segment index, '0-0.5' or '0.5-1')
     node2halves : dict
         Key: merged node ID, Value: set of (segment index, which_half) tuples
-    '''
+    """
     nid_half_map = dict()
     node2halves = dict()
     for seg in range(num_segments):

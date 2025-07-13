@@ -1187,7 +1187,6 @@ def read_asc(file):
 
     return parser.sections
 
-
 def from_asc(filename):
     """
     Import neuron morphology data from an ASC file and populate the current Morphology object.
@@ -1222,17 +1221,17 @@ def from_asc(filename):
 
         section_id_map[sec.sec_id] = section_name
 
-            # Collect points as a (N, 4) numpy array: x, y, z, d
-            positions = np.column_stack([
-                [p.x for p in sec.points],
-                [p.y for p in sec.points],
-                [p.z for p in sec.points],
-            ])
-            diams = np.array([p.d for p in sec.points])
+        # Collect positions as a (N, 3) numpy array: x, y, z  and diam as a  (N,)  numpy array: d 
+        positions = np.column_stack([
+            [p.x for p in sec.points],
+            [p.y for p in sec.points],
+            [p.z for p in sec.points],
+        ])
+        diams = np.array([p.d for p in sec.points])
 
-            section_dicts[section_name] = {
-                'positions': positions,
-                'diams': diams,
-                'nseg': 1,  # Default value
-            }
-        return section_dicts, sections, section_id_map
+        section_dicts[section_name] = {
+            'positions': positions,
+            'diams': diams,
+            'nseg': 1,  # Default value
+        }
+    return section_dicts, sections, section_id_map

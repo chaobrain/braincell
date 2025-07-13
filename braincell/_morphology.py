@@ -149,7 +149,7 @@ class Section:
 
     @property
     def L(self):
-        pos = u.get_magnitude(self.positions)
+        pos = self.positions / u.um
         return np.sum(np.linalg.norm(pos[1:] - pos[:-1], axis=1)) * u.um
 
     @property
@@ -420,7 +420,7 @@ class PointSection(Section):
 
         positions = np.array(u.get_magnitude(positions))
         assert positions.shape[0] >= 2, "at least have 2 points"
-        assert positions.shape[1] == 3, "points must be shape (N, 3): [x, y, z"
+        assert positions.shape[1] == 3, "points must be shape (N, 3): [x, y, z]"
         assert np.all(np.array(u.get_magnitude(diams)) > 0), "All diameters must be positive."
 
         super().__init__(
@@ -473,7 +473,6 @@ class Morphology(brainstate.util.PrettyObject):
         self._parent_id = None
         self._parent_x = None
         self._seg_ri = None
-        self._dhs = None
 
     @property
     def segments(self):
@@ -501,7 +500,6 @@ class Morphology(brainstate.util.PrettyObject):
         seg_mid_ids = u.math.array(list(segment2rowid.values()))
         cm[seg_mid_ids] = cm_segmid
         area[seg_mid_ids] = area_segmid
-
         Gmat_sorted = -Gmat_sorted / (cm * area)[:, u.math.newaxis]
 
         n = len(parent_rows)
@@ -518,7 +516,6 @@ class Morphology(brainstate.util.PrettyObject):
                 uppers = uppers.at[i].set(Gmat_sorted[p, i])
 
         diags = u.math.diag(Gmat_sorted)
-
         parent_lookup = u.math.array(parent_rows + [-1])
         internal_node_inds = u.math.array(list(segment2rowid.values()))
 
@@ -835,16 +832,12 @@ class Morphology(brainstate.util.PrettyObject):
         self._parent_id = pid
         self._parent_x = px
 
-    def construct_seg_ri(self):
+    @property
+    def seg_ri(self):
         sec_ri = []
         for seg in self.segments:
             sec_ri.append((seg.R_left, seg.R_right))
-        self._seg_ri = u.math.array(sec_ri)
-
-    @property
-    def seg_ri(self):
-        self.construct_seg_ri()
-        return self._seg_ri
+        return u.math.array(sec_ri)
 
     @property
     def nseg(self):
@@ -987,21 +980,12 @@ class Morphology(brainstate.util.PrettyObject):
                 z = section.positions[:, 2] / u.um
 
                 # Line representation
-                fig.add_trace(
-                    go.Scatter3d(
-                        x=x, y=y, z=z,
-                        mode='lines',
-                        name=name,
-                        line=dict(width=2)
-                    )
-                )
+                fig.add_trace(go.Scatter3d(x=x, y=y, z=z, mode='lines', name=name, line=dict(width=2)))
 
                 # Points representation
                 fig.add_trace(
                     go.Scatter3d(
-                        x=x, y=y, z=z,
-                        mode='markers',
-                        name=f"{name}_points",
+                        x=x, y=y, z=z, mode='markers', name=f"{name}_points",
                         marker=dict(size=section.diams.flatten() / u.um / 2, opacity=0.5)
                     )
                 )

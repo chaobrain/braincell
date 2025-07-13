@@ -18,6 +18,7 @@ import os
 
 import numpy as np
 
+from pathlib import Path
 from ._morphology_utils import get_type_name
 
 
@@ -708,14 +709,6 @@ def visualize_neuron(viz_data):
         else:
             return 'gray'  # Other
 
-    # Type name mapping
-    type_names = {
-        1: "Soma",
-        2: "Axon",
-        3: "Dendrite",
-        4: "Apical dendrite"
-    }
-
     # Create edge traces
     edge_x, edge_y, edge_z = [], [], []
     for i, j in edges:
@@ -741,7 +734,7 @@ def visualize_neuron(viz_data):
     for t in unique_types:
         mask = types == t
         color = get_color(t)
-        type_name = type_names.get(t, f"Type {t}")
+        type_name = get_type_name(t)
         trace = go.Scatter3d(
             x=coords[mask, 0],
             y=coords[mask, 1],
@@ -784,26 +777,50 @@ def visualize_neuron(viz_data):
     return fig
 
 
-def from_swc(filename):
+def from_swc(filename: str | Path):
+    """
+    Parse an SWC file and extract neuron morphology sections.
+
+    This function reads an SWC file, processes its structure, and returns both
+    the list of section objects and a dictionary mapping section names to their
+    geometric and structural data.
+
+    Args:
+        filename (str): Path to the SWC file to be parsed.
+
+    Returns:
+        tuple:
+            - sections (list of Import3dSection): List of section objects representing
+              unbranched neuron segments.
+            - section_dicts (dict): Dictionary mapping section names to their data, where
+              each entry contains:
+                - 'positions' (np.ndarray): Nx3 array of XYZ coordinates for section points.
+                - 'diams' (np.ndarray): Array of diameters for each point in the section.
+                - 'nseg' (int): Number of segments (default 1).
+    Raises:
+        ValueError: If the SWC file cannot be read or parsed.
+    """
     # Create SWC reader
     reader = Import3dSWCRead()
     if not reader.input(filename):
         raise ValueError(f"Failed to read SWC file: {filename}")
 
-    # 1. Extract point data from SWC sections and prepare section_dicts
+    # Extract point data from SWC sections and prepare section_dicts
     section_dicts = {}
     for swc_section in reader.sections:
         section_type = swc_section.type
         section_name = f"{get_type_name(section_type)}_{swc_section.id}"
 
         # Extract point data
-        positions = np.column_stack([
-            swc_section.x, swc_section.y, swc_section.z
-        ])
+        positions = np.column_stack(
+            [
+                swc_section.x, swc_section.y, swc_section.z
+            ]
+        )
         diams = swc_section.d
 
         section_dicts[section_name] = {
-            'positions':  positions,
+            'positions': positions,
             'diams': diams,
             'nseg': 1  # Default to 1, might need adjustment based on points or length
         }

@@ -14,6 +14,7 @@
 # ==============================================================================
 
 import re
+from pathlib import Path
 
 import numpy as np
 from scipy.interpolate import interp1d
@@ -1187,20 +1188,34 @@ def read_asc(file):
 
     return parser.sections
 
-def from_asc(filename):
-    """
-    Import neuron morphology data from an ASC file and populate the current Morphology object.
 
-    Parameters
-    ----------
-    filename : str
-        Path to the ASC file
-
-    Returns
-    -------
-    self
-        Returns self to support method chaining
+def from_asc(filename: str | Path):
     """
+    Parse a Neurolucida ASC file and extract neuron morphology sections.
+
+    This function reads an ASC file, processes its structure, and returns:
+      - a dictionary mapping section names to their geometric and structural data,
+      - a list of Section objects,
+      - a mapping from section IDs to section names.
+
+    Args:
+        filename (str or Path): Path to the ASC file to be parsed.
+
+    Returns:
+        tuple:
+            - section_dicts (dict): Dictionary mapping section names to their data, where
+              each entry contains:
+                - 'positions' (np.ndarray): Nx3 array of XYZ coordinates for section points.
+                - 'diams' (np.ndarray): Array of diameters for each point in the section.
+                - 'nseg' (int): Number of segments (default 1).
+            - sections (list of Section): List of Section objects representing neuron segments.
+            - section_id_map (dict): Mapping from section IDs to section names.
+
+    Raises:
+        RuntimeError: If there are unmatched sections after attempting to connect to soma.
+        ValueError: If the ASC file cannot be parsed correctly.
+    """
+
     # 1. Parse the ASC file into a list of Section objects
     sections = read_asc(filename)  # main returns a list of Section objects
 

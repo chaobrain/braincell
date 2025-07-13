@@ -771,7 +771,7 @@ def build_flipped_comp_edges(dhs_group, parent_rows):
     return flipped_comp_edges, padded_edges, edge_masks
 
 
-def preprocess_branching_tree(parent_id, parentx, seg_resistances, max_group_size=8, plot=False):
+def preprocess_branching_tree(parent_id, parent_x, seg_resistances, max_group_size=8, plot=False):
     """
     Preprocess a branching tree for DHS matrix algorithms.
 
@@ -779,7 +779,7 @@ def preprocess_branching_tree(parent_id, parentx, seg_resistances, max_group_siz
     ----------
     parent_id : list of int
         For each segment, the parent segment index (-1 for root).
-    parentx : list
+    parent_x : list
         For each segment, the connection location on parent (not used here, but required for node merging).
     seg_resistances : list of tuple
         For each segment, (R_0-0.5, R_0.5-1).
@@ -794,8 +794,6 @@ def preprocess_branching_tree(parent_id, parentx, seg_resistances, max_group_siz
         The resistance matrix after depth-based reordering (n_nodes x n_nodes).
     parent_rows : list of int
         For each node (row in Rmat_sorted), the parent's row index (-1 for root).
-    sorted_nodes : list
-        Node ids in depth order (corresponds to row indices).
     groups : list of list of int
         Each sublist contains row indices (in Rmat_sorted) that form a group for parallel DHS.
     segment2rowid : dict
@@ -803,7 +801,7 @@ def preprocess_branching_tree(parent_id, parentx, seg_resistances, max_group_siz
     """
     # Step 1: Merge equipotential nodes at segment connections
     num_segments = len(parent_id)
-    uf = merge_equipotential_segment_nodes(num_segments, parent_id, parentx)
+    uf = merge_equipotential_segment_nodes(num_segments, parent_id, parent_x)
 
     # Step 2: Build internal edges and merged edges
     edges = build_segment_internal_edges(num_segments)
@@ -821,18 +819,16 @@ def preprocess_branching_tree(parent_id, parentx, seg_resistances, max_group_siz
         plot_tree(G, node_labels, center_ids, noncenter_nonleaf_ids, leaf_ids)
 
     # Step 5: Construct conductance matrix and get list of all nodes
-    # import time
-    # t0 = time.time()
     unit = u.get_unit(seg_resistances)
     seg_resistances = u.get_magnitude(seg_resistances)
     Gmat, nodes = build_conductance_matrix(G, nid_half_map, seg_resistances)
-    # print('G cost',time.time()-t0)
-    # Step 6: Sort nodes by depth, reorder matrix 
-    # t0 = time.time()
+
+    # Step 6: Sort nodes by depth, reorder matrix
     root, depths = get_root_and_depths(G)
     sorted_nodes = sort_nodes_by_depth(G, depths)
     Gmat_sorted = reorder_matrix_by_depth(Gmat, nodes, sorted_nodes) * (1 / unit)
-    # print('G sort cost',time.time()-t0)
+
+
     # Step 7: Build parent row indices (rowid2parentrowid) for DHS elimination
     parent_dict = build_parent_dict(G, root)
     node_id2rowid = get_depth_node_idx_map(sorted_nodes)

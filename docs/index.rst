@@ -93,7 +93,7 @@ We are building the `brain modeling ecosystem <https://brain-modeling.readthedoc
    :caption: Quickstart
 
    quickstart/concepts-zh.ipynb
-   quickstart/quickstart modeling-zh.ipynb
+
 
 
 
@@ -104,9 +104,10 @@ We are building the `brain modeling ecosystem <https://brain-modeling.readthedoc
    :caption: Tutorials
 
    tutorial/rationale-zh.ipynb
-   tutorial/basic unit-zh.ipynb
-   tutorial/structural unit-zh.ipynb
-   tutorial/dynamical unit-zh.ipynb
+   tutorial/introduction-zh.ipynb
+   tutorial/cell-zh.ipynb
+   tutorial/channel-zh.ipynb
+   tutorial/ion-zh.ipynb
    tutorial/more-zh.ipynb
 
 
@@ -115,35 +116,12 @@ We are building the `brain modeling ecosystem <https://brain-modeling.readthedoc
 
 .. toctree::
    :hidden:
-   :maxdepth: 1
-   :caption: Examples
+   :maxdepth: 2
+   :caption: Advanced Tutorials
 
-   example/concepts-zh.ipynb
-   example/Calcium Activation Functions.ipynb
-   example/COBA HH 2007.ipynb
-   example/HH Neuron.ipynb
-   example/Thalamus Single Compartment.ipynb
-
-
-
-
-
-
-.. toctree::
-   :hidden:
-   :maxdepth: 1
-   :caption: Ecosystem
-
-   ecosystem/Ecosystem for Brain Modeling-zh.ipynb
-   ecosystem/brainpy-zh.ipynb
-   ecosystem/braintaichi-zh.ipynb
-   ecosystem/brainunit.ipynb
-   ecosystem/braincell-zh.ipynb
-   ecosystem/brainstate-zh.ipynb
-   ecosystem/brainevent-zh.ipynb
-   ecosystem/brainscale-zh.ipynb
-   ecosystem/braintools-zh.ipynb
-   ecosystem/Citations-zh.ipynb
+   advanced tutorial/differential equation-zh.ipynb
+   advanced tutorial/Ecosystem for Brain Modeling-zh.ipynb
+   advanced tutorial/examples-zh.ipynb
 
 
 

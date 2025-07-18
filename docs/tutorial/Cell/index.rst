@@ -6,5 +6,6 @@ Cell
 
    cell-zh.ipynb
    HHTypedNeuron-zh.ipynb
-   MultiCompartment-zh.ipynb
    SingleCompartment-zh.ipynb
+   MultiCompartment-zh.ipynb
+

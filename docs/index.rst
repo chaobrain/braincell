@@ -3,9 +3,9 @@
 
 `braincell <https://github.com/chaobrain/braincell>`_ implements a biophysics-based State Transformation System for precise neuronal dynamics modeling and simulation.
 
-``BrainCell`` is specifically designed to work with biologically detailed state-based models, including multi-compartment neurons with dendritic trees, ion channel dynamics (e.g., Hodgkin-Huxley type channels), and spatially resolved synaptic interactions
+``BrainCell`` is specifically designed to work with biologically detailed state-based models, including multi-compartment neurons with dendritic trees and ion channel dynamics.
 
-``BrainCell`` serves as a core component in building a Biophysical Neural Dynamics (BND) ecosystem, bridging computational neuroscience and neuroengineering by enabling accurate simulations of neural dynamics at multiple scales: from subcellular processes (ion channel gating) to network-level activity (synaptic coupling and population oscillations).
+``BrainCell`` serves as a core component in building a `Brain Dynamics Programming (BDP) ecosystem <https://ecosystem-for-brain-dynamics.readthedocs.io/>`_, bridging computational neuroscience and neuroengineering by enabling accurate simulations of neural dynamics at multiple scales.
 
 
 
@@ -43,7 +43,7 @@ Features
 
          .. div:: sd-font-normal
 
-            ``BrainCell`` features specialized solvers optimized for stiff neural systems, efficiently handling rapid biophysical transitions (e.g., action potential dynamics) while integrating multi-compartment neuron structures and synaptic mechanisms.
+            ``BrainCell`` features specialized solvers optimized for stiff neural systems, efficiently handling rapid biophysical transitions while integrating multi-compartment neuron structures.
 
 
 
@@ -99,25 +99,24 @@ We are building the `brain modeling ecosystem <https://brain-modeling.readthedoc
 
 
 .. toctree::
-   :maxdepth: 2
+   :maxdepth: 1
    :caption: Tutorials
    :hidden:
 
 
-   tutorial/Intro/index
-   tutorial/Cell/index
-   tutorial/Channel/index
-   tutorial/Ion/index
+   tutorial/cell-zh.ipynb
+   tutorial/channel-zh.ipynb
+   tutorial/ion-zh.ipynb
 
 
 .. toctree::
-   :maxdepth: 2
+   :maxdepth: 1
    :caption: Advanced Tutorials
    :hidden:
 
+   advanced tutorial/rationale-zh.ipynb
    advanced tutorial/differential equation-zh.ipynb
-   advanced tutorial/Ecosystem for Brain Modeling-zh.ipynb
-   advanced tutorial/Examples/examples.rst
+   advanced tutorial/Examples-zh.ipynb
    advanced tutorial/more-zh.ipynb
 
 

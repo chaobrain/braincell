@@ -88,9 +88,9 @@ We are building the `brain modeling ecosystem <https://brain-modeling.readthedoc
 
 
 .. toctree::
-   :hidden:
    :maxdepth: 1
    :caption: Quickstart
+   :hidden:
 
    quickstart/concepts-zh.ipynb
 
@@ -99,31 +99,26 @@ We are building the `brain modeling ecosystem <https://brain-modeling.readthedoc
 
 
 .. toctree::
-   :hidden:
    :maxdepth: 2
    :caption: Tutorials
-
-   tutorial/rationale-zh.ipynb
-   tutorial/introduction-zh.ipynb
-   tutorial/cell-zh.ipynb
-   tutorial/channel-zh.ipynb
-   tutorial/ion-zh.ipynb
-   tutorial/more-zh.ipynb
+   :hidden:
 
 
-
+   tutorial/Intro/index
+   tutorial/Cell/index
+   tutorial/Channel/index
+   tutorial/Ion/index
 
 
 .. toctree::
-   :hidden:
    :maxdepth: 2
    :caption: Advanced Tutorials
+   :hidden:
 
    advanced tutorial/differential equation-zh.ipynb
    advanced tutorial/Ecosystem for Brain Modeling-zh.ipynb
-   advanced tutorial/examples-zh.ipynb
-
-
+   advanced tutorial/Examples/examples.rst
+   advanced tutorial/more-zh.ipynb
 
 
 .. toctree::

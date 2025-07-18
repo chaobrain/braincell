@@ -66,65 +66,65 @@ class TestRungeKutta:
     def test_euler_step(self):
         dts, norms = compare('euler')
         plt.loglog(dts, norms)
-        plt.show()
+        # plt.show()
         plt.close()
 
     def test_midpoint_step(self):
         dts, norms = compare('midpoint')
         plt.loglog(dts, norms)
-        plt.show()
+        # plt.show()
         plt.close()
 
     def test_rk2_step(self):
         dts, norms = compare('rk2')
         plt.loglog(dts, norms)
-        plt.show()
+        # plt.show()
         plt.close()
 
     def test_heun2_step(self):
         dts, norms = compare('heun2')
         plt.loglog(dts, norms)
-        plt.show()
+        # plt.show()
         plt.close()
 
     def test_ralston2_step(self):
         dts, norms = compare('ralston2')
         plt.loglog(dts, norms)
-        plt.show()
+        # plt.show()
         plt.close()
 
     def test_rk3_step(self):
         dts, norms = compare('rk3')
         plt.loglog(dts, norms)
-        plt.show()
+        # plt.show()
         plt.close()
 
     def test_heun3_step(self):
         dts, norms = compare('heun3')
         plt.loglog(dts, norms)
-        plt.show()
+        # plt.show()
         plt.close()
 
     def test_ssprk3_step(self):
         dts, norms = compare('ssprk3')
         plt.loglog(dts, norms)
-        plt.show()
+        # plt.show()
         plt.close()
 
     def test_ralston3_step(self):
         dts, norms = compare('ralston3')
         plt.loglog(dts, norms)
-        plt.show()
+        # plt.show()
         plt.close()
 
     def test_rk4_step(self):
         dts, norms = compare('rk4')
         plt.loglog(dts, norms)
-        plt.show()
+        # plt.show()
         plt.close()
 
     def test_ralston4_step(self):
         dts, norms = compare('ralston4')
         plt.loglog(dts, norms)
-        plt.show()
+        # plt.show()
         plt.close()

@@ -52,6 +52,7 @@ dependencies = [
     'numpy',
     'brainstate>=0.1.0',
     'brainunit>=0.0.8',
+    'brainevent>=0.0.2',
 ]
 
 dynamic = ['version']

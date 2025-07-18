@@ -22,7 +22,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 import braincell
-from simple_dendrite_model import ThreeCompartmentHH
+from MC11_simple_dendrite_model import ThreeCompartmentHH
 
 
 def solve_explicit_solver(

@@ -18,6 +18,8 @@ from typing import Callable
 from ._integrator_diffrax import *
 from ._integrator_exp_euler import *
 from ._integrator_runge_kutta import *
+from ._integrator_staggered import *
+
 
 __all__ = [
     'get_integrator',
@@ -54,6 +56,9 @@ __all__ = [
     'diffrax_kvaerno3_step',
     'diffrax_kvaerno4_step',
     'diffrax_kvaerno5_step',
+
+    # staggered
+    'staggered_step',
 ]
 
 all_integrators = {k.replace('_step', ''): v for k, v in locals().items() if k.endswith('_step')}

@@ -140,7 +140,8 @@ class TRN(ThalamusNeuron):
         self,
         size,
         gKL=0.01 * (u.mS / u.cm ** 2),
-        V_initializer=brainstate.init.Constant(-70. * u.mV), gl=0.0075,
+        V_initializer=brainstate.init.Constant(-70. * u.mV),
+        gl=0.0075,
         solver: str = 'ind_exp_euler'
     ):
         super().__init__(size, V_initializer=V_initializer, V_th=20. * u.mV, solver=solver)
@@ -161,20 +162,20 @@ class TRN(ThalamusNeuron):
         self.kca = braincell.MixIons(self.k, self.ca)
         self.kca.add(IAHP=braincell.channel.IAHP_De1994(size, g_max=0.2 * (u.mS / u.cm ** 2)))
 
-        # self.IL = dx.channel.IL(size, g_max=0.01 * (u.mS / u.cm ** 2), E=-60 * u.mV)
+        # self.IL = braincell.channel.IL(size, g_max=0.01 * (u.mS / u.cm ** 2), E=-60 * u.mV)
         self.IL = braincell.channel.IL(size, g_max=gl * (u.mS / u.cm ** 2), E=-60 * u.mV)
 
 
-def try_trn_neuron():
-    brainstate.environ.set(dt=0.02 * u.ms)
+def try_neuron_simulation():
+    brainstate.environ.set(dt=0.1 * u.ms)
 
     I = braintools.input.section_input(values=[0, 0.05, 0], durations=[50 * u.ms, 200 * u.ms, 100 * u.ms]) * u.uA
     times = u.math.arange(I.shape[0]) * brainstate.environ.get_dt()
 
-    # neu = HTC(1)  # [n_neuron, ]
+    neu = TRN(1)  # [n_neuron, ]
     # neu = IN(1)  # [n_neuron, ]
     # neu = RTC(1)  # [n_neuron, ]
-    neu = HTC(1, solver='ind_exp_euler')  # [n_neuron,]
+    # neu = HTC(1, solver='ind_exp_euler')  # [n_neuron,]
     neu.init_state()
 
     t0 = time.time()
@@ -187,4 +188,4 @@ def try_trn_neuron():
 
 
 if __name__ == '__main__':
-    try_trn_neuron()
+    try_neuron_simulation()

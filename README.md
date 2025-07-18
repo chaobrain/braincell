@@ -33,7 +33,7 @@ of biophysically detailed brain cell models.
 ## Quick start
 
 
-Here is an example to model the **single-compartment** thalamus neuron model by using the interface of `braincell.neuron.SingleCompartment`:
+Here is an example to model the **single-compartment** thalamus neuron model by using the interface of `braincell.SingleCompartment`:
 
 ```python
 import braincell
@@ -41,7 +41,7 @@ import brainstate
 import brainunit as u
 
 class HTC(braincell.SingleCompartment):
-    def __init__(self, size, solver: str = 'exp_euler'):
+    def __init__(self, size, solver: str = 'ind_exp_euler'):
         super().__init__(size, V_initializer=brainstate.init.Constant(-65. * u.mV), V_th=20. * u.mV, solver=solver)
 
         self.na = braincell.ion.SodiumFixed(size, E=50. * u.mV)
@@ -66,7 +66,7 @@ class HTC(braincell.SingleCompartment):
 ```
 
 
-Here is an example to model the **multi-compartment** neuron model by using the interface of `braincell.neuron.MultiCompartment`:
+Here is an example to model the **multi-compartment** neuron model by using the interface of `braincell.MultiCompartment`:
 
 
 ```python
@@ -74,12 +74,21 @@ import braincell
 import brainstate
 import brainunit as u
 
-# TODO
 
 class HTC(braincell.MultiCompartment):
-    def __init__(self, size, solver: str = 'exp_euler'):
-        super().__init__(size, V_initializer=brainstate.init.Constant(-65. * u.mV), V_th=20. * u.mV, solver=solver)
+    def __init__(self, size, solver: str = 'staggered'):
+        morphology = braincell.Morphology.from_swc(...)
+        super().__init__(size, 
+                         morphology=morphology,   # the only difference from SingleCompartment
+                         V_initializer=brainstate.init.Constant(-65. * u.mV), 
+                         V_th=20. * u.mV, 
+                         solver=solver)
+        
+        self.na = braincell.ion.SodiumFixed(size, E=50. * u.mV)
+        self.na.add(INa=braincell.channel.INa_Ba2002(size, V_sh=-30 * u.mV))
 
+        self.k = braincell.ion.PotassiumFixed(size, E=-90. * u.mV)
+        self.k.add(IDR=braincell.channel.IKDR_Ba2002(size, V_sh=-30. * u.mV, phi=0.25))
 
 ```
 

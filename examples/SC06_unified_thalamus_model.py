@@ -277,7 +277,7 @@ class Thalamus(brainstate.nn.Module):
         self.RE2IN = brainstate.nn.CurrentProj(
             self.RE.align_pre(
                 brainstate.nn.STD.desc(tau=700 * u.ms, U=0.07)
-            ).alig_pre(
+            ).align_pre(
                 brainstate.nn.GABAa(self.RE.varshape, alpha=10.5 / u.ms, beta=0.166 / u.ms)
             ).prefetch_delay('g', 2 * u.ms),
             comm=brainstate.nn.FixedNumConn(self.RE.varshape, self.IN.varshape, 0.05, 1e-3, afferent_ratio=0.1),

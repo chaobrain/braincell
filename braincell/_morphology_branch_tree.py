@@ -860,12 +860,15 @@ class BranchingTree:
         parent_x,
         cm_segmid,
         area_segmid,
+        max_group_size: int = 32
     ):
         # branching tree
-        Gmat_sorted, parent_rows, dhs_groups, segment2rowid = self._preprocess_branching_tree(
-            parent_id, parent_x, seg_ri, max_group_size=32
+        gmat_sorted, parent_rows, dhs_groups, segment2rowid = (
+            self._preprocess_branching_tree(
+                parent_id, parent_x, seg_ri, max_group_size=max_group_size
+            )
         )
-        Gmat_sorted_unit = 1 / u.ohm
+        gmat_sorted_unit = 1 / u.ohm
 
         # capacitance and area
         self.num_segments = len(parent_rows)
@@ -878,8 +881,8 @@ class BranchingTree:
         area[self.internal_node_inds] = area_segmid
 
         # normalize Gmat by cm and area
-        Gmat_sorted = -Gmat_sorted / (cm * area)[:, u.math.newaxis]
-        Gmat_sorted_unit = Gmat_sorted_unit / (cm_unit * area_unit)
+        gmat_sorted = -gmat_sorted / (cm * area)[:, u.math.newaxis]
+        gmat_sorted_unit = gmat_sorted_unit / (cm_unit * area_unit)
 
         # build flipped compartment edges
         self.flipped_comp_edges = build_flipped_comp_edges(dhs_groups, parent_rows)
@@ -893,14 +896,14 @@ class BranchingTree:
                 lowers[i] = 0
                 uppers[i] = 0
             else:
-                lowers[i] = Gmat_sorted[i, p]
-                uppers[i] = Gmat_sorted[p, i]
+                lowers[i] = gmat_sorted[i, p]
+                uppers[i] = gmat_sorted[p, i]
         self.parent_lookup = np.array(parent_rows + [-1])
 
         # finalize
-        self.diags = np.diag(Gmat_sorted) * Gmat_sorted_unit
-        self.uppers = uppers * Gmat_sorted_unit
-        self.lowers = lowers * Gmat_sorted_unit
+        self.diags = np.diag(gmat_sorted) * gmat_sorted_unit
+        self.uppers = uppers * gmat_sorted_unit
+        self.lowers = lowers * gmat_sorted_unit
 
     def _preprocess_branching_tree(
         self,
@@ -908,7 +911,6 @@ class BranchingTree:
         parent_x,
         seg_resistances,
         max_group_size: int = 8,
-        plot: bool = False
     ):
         """
         Preprocess a branching tree for DHS matrix algorithms.
@@ -923,8 +925,6 @@ class BranchingTree:
             For each segment, (R_0-0.5, R_0.5-1).
         max_group_size : int, optional
             Max group size for DHS grouping (default 8).
-        plot : bool, optional
-            If True, visualize the classified segment tree.
 
         Returns
         -------
@@ -951,13 +951,6 @@ class BranchingTree:
         self.G = G
 
         nid_half_map, _ = build_half_segment_maps(num_segments, uf)
-
-        # plotting the tree structure if requested
-        if plot:
-            # Step 4: (Optional) Build node labels, classify, prepare for visualization
-            center_ids, leaf_ids, noncenter_nonleaf_ids = classify_segment_nodes(num_segments, uf, G)
-            node_labels, _ = build_segment_node_labels(num_segments, uf)
-            plot_tree(G, node_labels, center_ids, noncenter_nonleaf_ids, leaf_ids)
 
         # Step 5: Construct conductance matrix and get list of all nodes
         Gmat, nodes = build_conductance_matrix(G, nid_half_map, seg_resistances)

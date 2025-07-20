@@ -22,8 +22,6 @@ import brainunit as u
 import numpy as np
 
 from ._morphology_branch_tree import BranchingTree
-from ._morphology_from_asc import from_asc
-from ._morphology_from_swc import from_swc
 from ._morphology_utils import (
     calculate_total_resistance_and_area,
     generate_interpolated_nodes,
@@ -921,6 +919,7 @@ class Morphology(brainstate.util.PrettyObject):
         Morphology
             A Morphology object created from the SWC file
         """
+        from ._morphology_from_swc import from_swc
         return from_swc(filename)
 
     @classmethod
@@ -938,6 +937,7 @@ class Morphology(brainstate.util.PrettyObject):
         Morphology
             A Morphology object created from the ASC file
         """
+        from ._morphology_from_asc import from_asc
         return from_asc(filename)
 
     def visualize(self):

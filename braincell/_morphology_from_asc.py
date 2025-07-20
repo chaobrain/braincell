@@ -21,6 +21,7 @@ import brainunit as u
 import numpy as np
 from scipy.interpolate import interp1d
 
+from ._morphology import Morphology
 from ._morphology_utils import get_type_name
 
 
@@ -1191,7 +1192,7 @@ def read_asc(file):
     return parser.sections
 
 
-def from_asc(filename: str | Path):
+def from_asc(filename: str | Path) -> Morphology:
     """
     Parse a Neurolucida ASC file and construct a Morphology object.
 
@@ -1261,7 +1262,6 @@ def from_asc(filename: str | Path):
         }
 
     # morphology object
-    from ._morphology import Morphology
     morphology = Morphology()
 
     # 3. Add all sections

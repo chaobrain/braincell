@@ -20,6 +20,7 @@ from pathlib import Path
 import brainunit as u
 import numpy as np
 
+from ._morphology import Morphology
 from ._morphology_utils import get_type_name
 
 
@@ -778,7 +779,7 @@ def visualize_neuron(viz_data):
     return fig
 
 
-def from_swc(filename: str | Path):
+def from_swc(filename: str | Path) -> Morphology:
     """
     Parse a SWC file and construct a Morphology object.
 
@@ -835,7 +836,6 @@ def from_swc(filename: str | Path):
             'nseg': 1  # Default to 1, might need adjustment based on points or length
         }
 
-    from ._morphology import Morphology
     morphology = Morphology()
 
     # Add all sections using add_multiple_sections method

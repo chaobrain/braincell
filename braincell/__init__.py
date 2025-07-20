@@ -33,6 +33,8 @@ from ._morphology import (
     Section,
     Morphology,
 )
+from ._morphology_from_asc import from_asc
+from ._morphology_from_swc import from_swc
 from ._multi_compartment import (
     MultiCompartment,
 )
@@ -44,7 +46,6 @@ from ._single_compartment import (
     SingleCompartment,
 )
 
-from braincell._misc import deprecation_getattr
 _deprecations = {
     'SingleCompartment': (
         f"braincell.neuron.SingleCompartment has been moved "
@@ -58,5 +59,6 @@ _deprecations = {
     ),
 }
 
+from braincell._misc import deprecation_getattr
 neuron.__getattr__ = deprecation_getattr(__name__, _deprecations)
 del deprecation_getattr

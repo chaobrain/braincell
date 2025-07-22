@@ -308,7 +308,7 @@ def _sparse_solve_v(
     dt: brainstate.typing.ArrayLike,
     V_n: brainstate.typing.ArrayLike
 ):
-    """
+    r"""
     Set the left-hand side (lhs) and right-hand side (rhs) of the implicit equation:
 
     $$

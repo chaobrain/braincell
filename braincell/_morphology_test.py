@@ -52,7 +52,7 @@ class TestMorphologyConstruction:
             print("name:", sec.name, 'diam:', sec.diams)
 
         # Initialize DHS (Dendritic Hierarchical Scheduling)
-        morphology.to_branching_tree()
+        morphology.to_branch_tree()
 
     def test_multiple(self):
         # Instantiate a Morphology object
@@ -86,7 +86,7 @@ class TestMorphologyConstruction:
         print(morphology.conductance_matrix())
 
         # Initialize DHS
-        morphology.to_branching_tree()
+        morphology.to_branch_tree()
 
     def test_swc(self):
         # Load morphology from SWC file
@@ -94,7 +94,7 @@ class TestMorphologyConstruction:
         morphology = braincell.Morphology.from_swc(swc_file)
         print(morphology)
         # Initialize DHS
-        morphology.to_branching_tree()
+        morphology.to_branch_tree()
 
     def test_asc(self):
         # Load morphology from ASC file
@@ -102,4 +102,4 @@ class TestMorphologyConstruction:
         morphology = braincell.Morphology.from_asc(asc_file)
         print(morphology)
         # Initialize DHS
-        morphology.to_branching_tree()
+        morphology.to_branch_tree()

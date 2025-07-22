@@ -287,7 +287,6 @@ class Section:
             - R_left (float): Resistance from the segment’s left half
             - R_right (float): Resistance from the segment’s right half
         """
-        self.segments.clear()
         node_pre = np.hstack(
             [self.positions / u.um, (self.diams / u.um).reshape((-1, 1))]
         )
@@ -530,13 +529,6 @@ class Morphology(brainstate.util.PrettyObject):
 
     def __init__(self):
         self.sections = {}  # Dictionary to store section objects by name
-        self._conductance_matrix = None
-        self._area = None
-        self._cm = None
-        self._nseg = None
-        self._parent_id = None
-        self._parent_x = None
-        self._seg_ri = None
 
     @property
     def segments(self):
@@ -550,7 +542,7 @@ class Morphology(brainstate.util.PrettyObject):
         """
         return [seg for section in self.sections.values() for seg in section.segments]
 
-    def to_branching_tree(self):
+    def to_branch_tree(self):
         """
         Convert the morphology to a BranchingTree representation for dendritic hierarchy analysis.
 

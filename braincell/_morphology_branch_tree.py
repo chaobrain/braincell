@@ -875,8 +875,8 @@ class BranchingTree:
         self.internal_node_inds = np.array(list(segment2rowid.values()))
         cm_segmid, cm_unit = u.split_mantissa_unit(cm_segmid)
         area_segmid, area_unit = u.split_mantissa_unit(area_segmid)
-        cm = np.ones(self.num_segments)
-        area = np.ones(self.num_segments)
+        cm = jnp.ones(self.num_segments)
+        area = jnp.ones(self.num_segments)
         cm[self.internal_node_inds] = cm_segmid
         area[self.internal_node_inds] = area_segmid
 
@@ -886,6 +886,8 @@ class BranchingTree:
 
         # build flipped compartment edges
         self.flipped_comp_edges = build_flipped_comp_edges(dhs_groups, parent_rows)
+
+        # TODO: [shouwei]
 
         # build lowers and uppers
         lowers = np.zeros(self.num_segments)

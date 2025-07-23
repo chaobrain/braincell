@@ -117,6 +117,8 @@ class Section:
         nseg: int,
         Ra: u.Quantity[u.ohm * u.cm],
         cm: u.Quantity[u.uF / (u.cm ** 2)],
+        parent: Optional[Dict] = None,
+        children: Optional[set] = None,
     ):
         self.name = name
         assert u.fail_for_dimension_mismatch(positions, u.um, 'positions must be in meter')
@@ -128,10 +130,10 @@ class Section:
         self._cm = cm
         self.positions = positions
         self.diams = diams
-        self.parent: Dict = None
-        self.children = set()
-        self.segments = []
+        self.parent = parent
+        self.children = set() if children is None else set(children)
 
+        self.segments = []
         self._compute_area_and_resistance()
 
     @property
@@ -246,6 +248,8 @@ class Section:
         name = self.name
         positions = self.positions
         diams = self.diams
+        parent = self.parent
+        children = self.children
         if nseg is not None:
             assert isinstance(nseg, (int, np.integer)), f'nseg must be an integer, but got {nseg}'
         else:
@@ -258,7 +262,12 @@ class Section:
             u.fail_for_dimension_mismatch(cm, u.uF / (u.cm ** 2), 'cm must be in u.uF / (u.cm ** 2)')
         else:
             cm = self.cm
-        return Section(name=name, positions=positions, diams=diams, nseg=nseg, Ra=Ra, cm=cm)
+        return Section(
+            name=name, positions=positions,
+            diams=diams, nseg=nseg, Ra=Ra, cm=cm,
+            parent=parent,
+            children=children
+        )
 
     def __repr__(self):
         n_points = getattr(self.positions, "shape", [len(self.positions)])[0]

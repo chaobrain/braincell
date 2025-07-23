@@ -12,20 +12,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ==============================================================================
-
-
 import os.path
-
 import brainunit as u
-
 import braincell
-
 
 class TestMorphologyConstruction:
     def test_single(self):
         # Instantiate a Morphology object
         morphology = braincell.Morphology()
-
         # Create individual sections using the creation methods
         morphology.add_cylinder_section(
             'soma', length=20 * u.um, diam=10 * u.um, nseg=1

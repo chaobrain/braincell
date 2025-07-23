@@ -12,13 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ==============================================================================
-
-
 from typing import Tuple
-
 import brainunit as u
 import numpy as np
-
+import networkx as nx
+import matplotlib.pyplot as plt
+import matplotlib.patches as mpatches
 
 class UnionFind:
     """
@@ -216,11 +215,9 @@ def build_segment_graph(merged_edges):
     G : nx.DiGraph
         The directed graph of the merged segment structure.
     """
-    import networkx as nx
     G = nx.DiGraph()
     G.add_edges_from(merged_edges)
     return G
-
 
 def classify_segment_nodes(num_segments, uf, G):
     """
@@ -340,7 +337,6 @@ def dhs_group_by_depth(depths_sorted, max_group_size):
     groups.reverse()
     return groups
 
-
 def tree_layout(G, root=None, dx=1.5, dy=1.7):
     """
     Compute a simple layered (tree-like) layout for a directed graph.
@@ -397,9 +393,6 @@ def plot_tree(G, node_labels, center_ids, noncenter_nonleaf_ids, leaf_ids, root=
     root : int, optional
         Node id to use as the root for layout.
     """
-    import matplotlib.pyplot as plt
-    import networkx as nx
-    import matplotlib.patches as mpatches
 
     color_map = {}
     for nid in G.nodes:
@@ -466,70 +459,6 @@ def make_branching_tree_parent_id(L=3, n_branches=2, n_levels=3):
     return parent_id
 
 
-def dhs_lower_triangularize(A, b, parent_rows):
-    """
-    Perform in-place back-substitution elimination on matrix A and vector b from deepest node to root,
-    using the parent row index array (rowid2parentrowid, -1 means root).
-    This transforms A into lower-triangular form suitable for efficient forward substitution.
-
-    Parameters
-    ----------
-    A : ndarray, shape (n, n)
-        System matrix. Should be ordered such that parent rows precede their children (e.g. depth order).
-    b : ndarray, shape (n,)
-        Right-hand side vector.
-    parent_rows : list or ndarray of int
-        For each row (0 ~ n-1), the parent's row index in A (use -1 for root).
-
-    Returns
-    -------
-    A, b : tuple of ndarray
-        The modified matrix and vector after elimination (lower-triangular form).
-    """
-    n = len(parent_rows)
-    for i in reversed(range(n)):
-        parent_row = parent_rows[i]
-        if parent_row != -1 and A[parent_row, i] != 0:
-            f = A[parent_row, i] / A[i, i]
-            A[parent_row, :] -= f * A[i, :]
-            b[parent_row] -= f * b[i]
-    return A, b
-
-
-def dhs_back_substitute_lower(A, b, parent_rows):
-    """
-    Solve a lower-triangular system resulting from DHS elimination,
-    using the parent row index array (rowid2parentrowid).
-
-    This performs a forward substitution, assuming A has already been reduced
-    to lower-triangular form (i.e., each node depends only on itself and its parent).
-
-    Parameters
-    ----------
-    A : ndarray, shape (n, n)
-        Lower-triangular matrix after elimination.
-    b : ndarray, shape (n,)
-        Right-hand side vector.
-    parent_rows : list or ndarray of int
-        For each row (0 ~ n-1), the parent's row index in A (use -1 for root).
-
-    Returns
-    -------
-    x : ndarray, shape (n,)
-        Solution vector, with x[i] corresponding to row i (same order as input).
-    """
-    import numpy as np
-    n = len(parent_rows)
-    x = np.zeros(n)
-    for i in range(n):
-        s = b[i]
-        parent_row = parent_rows[i]
-        if parent_row != -1:
-            s -= A[i, parent_row] * x[parent_row]
-        x[i] = s / A[i, i]
-    return x
-
-
 def build_conductance_matrix(G, nid_half_map, seg_resistances):
     """
     Construct the conductance matrix Gmat for all nodes in the graph.
@@ -564,7 +493,7 @@ def build_conductance_matrix(G, nid_half_map, seg_resistances):
             if pair in nid_half_map:
                 sec, which_half = nid_half_map[pair]
                 if which_half == '0-0.5':
-                    resistance = float(seg_resistances[sec][0])  # 保证为标量
+                    resistance = float(seg_resistances[sec][0]) 
                 elif which_half == '0.5-1':
                     resistance = float(seg_resistances[sec][1])
                 else:
@@ -591,7 +520,6 @@ def get_root_and_depths(G):
     depths : dict
         node id -> depth (distance from root)
     """
-    import networkx as nx
     root = [n for n in G.nodes if G.in_degree(n) == 0][0]
     depths = nx.single_source_shortest_path_length(G, root)
     return root, depths
@@ -640,7 +568,6 @@ def build_parent_dict(G, root):
     Build a dict mapping each node to its parent, using BFS.
     Root will not be present as a key.
     """
-    import networkx as nx
     return dict(nx.bfs_predecessors(G, root))
 
 
@@ -875,8 +802,8 @@ class BranchingTree:
         self.internal_node_inds = np.array(list(segment2rowid.values()))
         cm_segmid, cm_unit = u.split_mantissa_unit(cm_segmid)
         area_segmid, area_unit = u.split_mantissa_unit(area_segmid)
-        cm = jnp.ones(self.num_segments)
-        area = jnp.ones(self.num_segments)
+        cm = np.ones(self.num_segments)
+        area = np.ones(self.num_segments)
         cm[self.internal_node_inds] = cm_segmid
         area[self.internal_node_inds] = area_segmid
 
@@ -887,19 +814,18 @@ class BranchingTree:
         # build flipped compartment edges
         self.flipped_comp_edges = build_flipped_comp_edges(dhs_groups, parent_rows)
 
-        # TODO: [shouwei]
-
         # build lowers and uppers
-        lowers = np.zeros(self.num_segments)
-        uppers = np.zeros(self.num_segments)
-        for i in range(self.num_segments):
-            p = parent_rows[i]
-            if p == -1:
-                lowers[i] = 0
-                uppers[i] = 0
-            else:
-                lowers[i] = gmat_sorted[i, p]
-                uppers[i] = gmat_sorted[p, i]
+        mask = parent_rows != -1
+        idx = u.math.arange(self.num_segments)
+        
+        # lowers: gmat_sorted[i, parent_rows[i]]，仅当 parent!=-1
+        lowers_all = gmat_sorted[idx, parent_rows]
+        lowers = u.math.where(mask, lowers_all, 0.0)
+
+        # uppers: gmat_sorted[parent_rows[i], i]，仅当 parent!=-1
+        uppers_all = gmat_sorted[parent_rows, idx]
+        uppers = u.math.where(mask, uppers_all, 0.0)
+
         self.parent_lookup = np.array(parent_rows + [-1])
 
         # finalize
@@ -943,7 +869,6 @@ class BranchingTree:
         num_segments = len(parent_id)
         uf = merge_equipotential_segment_nodes(num_segments, parent_id, parent_x)
         self.uf = uf
-
         # Step 2: Build internal edges and merged edges
         edges = build_segment_internal_edges(num_segments)
         merged_edges = get_merged_edges(edges, uf)

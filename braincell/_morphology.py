@@ -387,7 +387,6 @@ class Section:
         """
         self.children.add(name)
 
-
 class CylinderSection(Section):
     """A section class representing a cylindrical compartment with uniform diameter.
 
@@ -594,6 +593,7 @@ class Morphology(brainstate.util.PrettyObject):
 
         # connection sections, parent section id and location
         connection_sec_list = self._connection_sec_list()
+        print(connection_sec_list)
         _, parent_id, parent_x = compute_connection_seg(nsegs, connection_sec_list)
 
         # cm for each segment
@@ -759,7 +759,7 @@ class Morphology(brainstate.util.PrettyObject):
 
         # Set the new parent for the child
         child.add_parent(parent.name, parent_loc)
-
+        
         # Add the child to the new parent's children list
         parent.add_child(child.name)
 
@@ -856,6 +856,8 @@ class Morphology(brainstate.util.PrettyObject):
                 raise ValueError('connections must contain exactly 3 elements.')
             child_name, parent_name, parent_loc = sec
             self.connect(child_name, parent_name, parent_loc)
+            
+        
 
     def _connection_sec_list(self):
         """

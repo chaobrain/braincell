@@ -1273,7 +1273,7 @@ def from_asc(filename: str | Path) -> Morphology:
         if sec.parent_id is not None:
             child_name = section_id_map[sec.sec_id]
             parent_name = section_id_map[sec.parent_id]
-            parent_loc = getattr(sec, "parent_x", 0.0)  # Use 0.0 if attribute missing
+            parent_loc = sec.parent_x
             connections.append((child_name, parent_name, parent_loc))
     morphology.connect_sections(connections)
     return morphology

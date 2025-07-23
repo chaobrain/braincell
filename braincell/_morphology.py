@@ -542,7 +542,7 @@ class Morphology(brainstate.util.PrettyObject):
         """
         return [seg for section in self.sections.values() for seg in section.segments]
 
-    def to_branch_tree(self):
+    def to_branch_tree(self) -> BranchingTree:
         """
         Convert the morphology to a BranchingTree representation for dendritic hierarchy analysis.
 
@@ -952,27 +952,20 @@ class Morphology(brainstate.util.PrettyObject):
         # Create traces for each section
         for name, section in self.sections.items():
             # Get 3D points representing the section
-            if isinstance(section, PointSection):
-                # For PointSection
-                x = section.positions[:, 0] / u.um
-                y = section.positions[:, 1] / u.um
-                z = section.positions[:, 2] / u.um
+            x = section.positions[:, 0] / u.um
+            y = section.positions[:, 1] / u.um
+            z = section.positions[:, 2] / u.um
 
-                # Line representation
-                fig.add_trace(go.Scatter3d(x=x, y=y, z=z, mode='lines', name=name, line=dict(width=2)))
+            # Line representation
+            fig.add_trace(go.Scatter3d(x=x, y=y, z=z, mode='lines', name=name, line=dict(width=2)))
 
-                # Points representation
-                fig.add_trace(
-                    go.Scatter3d(
-                        x=x, y=y, z=z, mode='markers', name=f"{name}_points",
-                        marker=dict(size=section.diams.flatten() / u.um / 2, opacity=0.5)
-                    )
+            # Points representation
+            fig.add_trace(
+                go.Scatter3d(
+                    x=x, y=y, z=z, mode='markers', name=f"{name}_points",
+                    marker=dict(size=section.diams.flatten() / u.um / 2, opacity=0.5)
                 )
-            else:
-                # TODO:
-                # For CylinderSection - simplified representation
-                # Create line from start to end
-                raise NotImplementedError('CylinderSection visualization not implemented yet.')
+            )
 
         # Update layout
         fig.update_layout(

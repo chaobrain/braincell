@@ -451,9 +451,7 @@ def construct_lu(target):
         G_matrix = target.conductance_matrix()
         Gl = target.Gl
 
-        # jax.debug.print('Area = {a}', a = A)
-        # jax.debug.print('cm = {a}', a = cm)
-        ## create the A_matrix
+        # create the A_matrix
         cm_A = cm * A
 
         A_matrix = G_matrix / (cm_A[:, u.math.newaxis])

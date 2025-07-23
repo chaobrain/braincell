@@ -35,18 +35,20 @@ def dhs_voltage_step(target, t, dt, *args):
     Implicit euler solver with the `dendritic hierarchical scheduling` (DHS, Zhang et al., 2023).
     """
 
+    # branching tree information
+    branch_tree = target.to_branch_tree()
+    diags = branch_tree.diags
+    uppers = branch_tree.uppers
+    lowers = branch_tree.lowers
+    parent_lookup = branch_tree.parent_lookup
+    internal_node_inds = branch_tree.internal_node_inds
+    flipped_comp_edges, padded_edges, edge_masks = branch_tree.flipped_comp_edges
+
     # membrane potential at time n
     V_n = target.V.value
-    diags = target.diags
-    uppers = target.uppers
-    lowers = target.lowers
-    parent_lookup = target.parent_lookup
-    internal_node_inds = target.internal_node_inds
-    flipped_comp_edges, padded_edges, edge_masks = target.flipped_comp_edges
-
-    n_nodes = len(diags)
 
     # linear and constant term
+    n_nodes = len(diags)
     linear, const = _linear_and_const_term(target, V_n, *args)
     V_linear = u.math.zeros(n_nodes) * u.get_unit(linear)
     V_linear = V_linear.at[internal_node_inds].set(-linear.ravel())

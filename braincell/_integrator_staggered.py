@@ -35,8 +35,8 @@ def staggered_step(
 ):
     from ._multi_compartment import MultiCompartment
     assert isinstance(target, MultiCompartment), (
-        f"The target should be a {MultiCompartment.__name__} for the stagger integrator. "
-        f"But got {type(target)} instead."
+        f"The stagger integrator only support {MultiCompartment.__name__}, "
+        f"but we got {type(target)} instead."
     )
 
     # sparse_voltage_step(target, t, dt, *args)

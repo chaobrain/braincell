@@ -26,7 +26,7 @@ import jax
 import jax.numpy as jnp
 
 from ._misc import set_module_as
-from ._protocol import DiffEqModule
+from ._integrator_protocol import DiffEqModule
 
 
 @set_module_as('braincell')

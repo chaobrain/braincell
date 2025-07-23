@@ -12,7 +12,7 @@ import brainunit as u
 import jax
 
 from braincell._base import IonInfo, Channel
-from braincell._protocol import DiffEqState
+from braincell._integrator_protocol import DiffEqState
 from braincell.ion import Calcium, Potassium
 
 __all__ = [

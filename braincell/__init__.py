@@ -33,14 +33,14 @@ from ._morphology import (
     Section,
     Morphology,
 )
+from ._integrator_protocol import (
+    DiffEqState,
+    DiffEqModule,
+)
 from ._morphology_from_asc import from_asc
 from ._morphology_from_swc import from_swc
 from ._multi_compartment import (
     MultiCompartment,
-)
-from ._protocol import (
-    DiffEqState,
-    DiffEqModule,
 )
 from ._single_compartment import (
     SingleCompartment,

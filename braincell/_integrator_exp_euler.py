@@ -25,7 +25,7 @@ from jax.scipy.linalg import expm
 from ._base import HHTypedNeuron
 from ._integrator_util import apply_standard_solver_step, jacrev_last_dim, _check_diffeq_state_derivative
 from ._misc import set_module_as
-from ._protocol import DiffEqState, DiffEqModule
+from ._integrator_protocol import DiffEqState, DiffEqModule
 from ._typing import Path, T, DT
 
 __all__ = [

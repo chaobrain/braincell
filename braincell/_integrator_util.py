@@ -20,7 +20,7 @@ import brainunit as u
 import jax
 import jax.numpy as jnp
 
-from ._protocol import DiffEqState, DiffEqModule
+from ._integrator_protocol import DiffEqState, DiffEqModule
 from ._typing import T, DT, Y0, Y1, Aux, Jacobian, VectorFiled, Args
 
 

@@ -21,7 +21,7 @@ import jax.numpy as jnp
 
 from ._integrator_util import apply_standard_solver_step
 from ._misc import set_module_as
-from ._protocol import DiffEqModule
+from ._integrator_protocol import DiffEqModule
 from ._typing import VectorFiled, Y0, T, DT
 
 __all__ = [

@@ -88,7 +88,7 @@ import numpy as np
 import brainstate
 from brainstate.mixin import _JointGenericAlias
 from ._misc import set_module_as, Container, TreeNode
-from ._protocol import DiffEqModule
+from ._integrator_protocol import DiffEqModule
 
 __all__ = [
     'HHTypedNeuron',

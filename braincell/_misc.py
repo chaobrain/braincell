@@ -84,6 +84,47 @@ def set_module_as(name: str):
     return decorator
 
 
+class ModuleNotFound:
+    """
+    A placeholder class representing a missing module.
+
+    This class is used to provide a clear error message when an optional dependency
+    is not installed. Any attempt to access an attribute of this class will raise
+    a ModuleNotFoundError with instructions to install the missing module.
+
+    Attributes:
+        module_name (str): The name of the missing module.
+
+    Example:
+        >>> mod = ModuleNotFound('some_module')
+        >>> mod.some_attr
+        ModuleNotFoundError: some_module is not installed. Please install some_module to use this feature.
+    """
+
+    def __init__(self, module_name):
+        """
+        Initialize the ModuleNotFound placeholder.
+
+        Args:
+            module_name (str): The name of the missing module.
+        """
+        self.module_name = module_name
+
+    def __getattr__(self, item):
+        """
+        Raise a ModuleNotFoundError when any attribute is accessed.
+
+        Args:
+            item (str): The attribute name being accessed.
+
+        Raises:
+            ModuleNotFoundError: Always raised with a message indicating the missing module.
+        """
+        raise ModuleNotFoundError(
+            f'{self.module_name} is not installed. Please install {self.module_name} to use this feature.'
+        )
+
+
 class Container(brainstate.mixin.Mixin):
     """
     A container class that provides a flexible structure for storing and accessing child elements.

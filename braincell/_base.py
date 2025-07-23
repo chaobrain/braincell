@@ -83,12 +83,12 @@ may be defined in other files within the BrainCell library.
 
 from typing import Optional, Dict, Sequence, Callable, NamedTuple, Tuple, Type
 
-import numpy as np
-
 import brainstate
+import numpy as np
 from brainstate.mixin import _JointGenericAlias
-from ._misc import set_module_as, Container, TreeNode
+
 from ._integrator_protocol import DiffEqModule
+from ._misc import set_module_as, Container, TreeNode
 
 __all__ = [
     'HHTypedNeuron',
@@ -599,10 +599,6 @@ class IonChannel(brainstate.graph.Node, TreeNode, DiffEqModule):
         """
         pass
 
-    def update_state(self, *args, **kwargs):
-
-        pass
-
     def compute_derivative(self, *args, **kwargs):
         """
         Compute the derivative of the channel's state variables.
@@ -790,11 +786,6 @@ class Ion(IonChannel, Container):
         nodes = brainstate.graph.nodes(self, Channel, allowed_hierarchy=(1, 1))
         for node in nodes.values():
             node.pre_integral(V, self.pack_info())
-    
-    def update_state(self, V):
-        nodes = brainstate.graph.nodes(self, Channel, allowed_hierarchy=(1, 1))
-        for node in nodes.values():
-            node.update_state(V, self.pack_info())
 
     def compute_derivative(self, V):
         """
@@ -1163,7 +1154,11 @@ class MixIons(IonChannel, Container):
             current = None
             for node in nodes:
                 infos = tuple([self._get_ion(root).pack_info() for root in node.root_type.__args__])
-                current = node.current(V, *infos) if current is None else (current + node.current(V, *infos))
+                current = (
+                    node.current(V, *infos)
+                    if current is None else
+                    (current + node.current(V, *infos))
+                )
             return current
 
     def init_state(self, V, batch_size: int = None):
@@ -1284,10 +1279,10 @@ class MixIons(IonChannel, Container):
 
     def _get_ion_fun(self, ion: 'Ion', node: 'Channel'):
         def fun(V, ion_info):
-            infos = tuple(
-                [(ion_info if isinstance(ion, root) else self._get_ion(root).pack_info())
-                 for root in node.root_type.__args__]
-            )
+            infos = tuple([
+                (ion_info if isinstance(ion, root) else self._get_ion(root).pack_info())
+                for root in node.root_type.__args__
+            ])
             return node.current(V, *infos)
 
         return fun

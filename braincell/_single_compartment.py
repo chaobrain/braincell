@@ -194,7 +194,7 @@ class SingleCompartment(HHTypedNeuron):
         None
         """
         self.V.value = brainstate.init.param(self.V_initializer, self.varshape, batch_size)
-        self.spike = self.get_spike(self.V.value, self.V.value)
+        self.spike.value = self.get_spike(self.V.value, self.V.value)
         super().init_state(batch_size)
 
     def pre_integral(self, I_ext=0. * u.nA / u.cm ** 2):

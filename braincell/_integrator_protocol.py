@@ -142,10 +142,6 @@ class DiffEqModule(brainstate.mixin.Mixin):
         """
         pass
 
-    def update_state(self, *args, **kwargs):
-
-        pass
-
     def compute_derivative(self, *args, **kwargs):
         """
         Compute the derivative of the differential equation.

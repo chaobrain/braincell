@@ -52,10 +52,6 @@ class SodiumChannel(Channel):
         """
         pass
 
-    def update_state(self, V, Na: IonInfo):
-
-        pass
-
     def post_integral(self, V, Na: IonInfo):
         """
         Perform any necessary operations after the integration step.

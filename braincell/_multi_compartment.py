@@ -178,29 +178,6 @@ class MultiCompartment(HHTypedNeuron):
         for key, node in self.nodes(IonChannel, allowed_hierarchy=(1, 1)).items():
             node.pre_integral(self.V.value)
 
-    def update_state(self, *args):
-        """
-        Perform pre-integration operations on the neuron's ion channels.
-
-        This method is called before the integration step to prepare the ion channels
-        for the upcoming computation. It iterates through all ion channels associated
-        with this neuron and calls their respective pre_integral methods.
-
-        Parameters
-        -----------
-        *args : tuple
-            Variable length argument list. Not used in the current implementation
-            but allows for future extensibility.
-
-        Returns
-        --------
-        None
-            This method doesn't return any value but updates the internal state
-            of the ion channels.
-        """
-        for key, node in self.nodes(IonChannel, allowed_hierarchy=(1, 1)).items():
-            node.update_state(self.V.value)
-
     def compute_derivative(self, I_ext=0. * u.nA):
         """
         Compute the derivative of the membrane potential for the multi-compartment neuron model.

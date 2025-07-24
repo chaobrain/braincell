@@ -77,7 +77,7 @@ def dhs_voltage_step(target, t, dt, *args):
         diags, solves = _comp_based_triang(diags, solves, lowers, uppers, flipped_comp_edges[i])
 
     # Back substitute with recursive doubling.
-    _, solves = _comp_based_backsub_recursive_doubling(
+    solves = _comp_based_backsub_recursive_doubling(
         diags, solves, lowers, steps, n_nodes, parent_lookup
     )
 
@@ -189,9 +189,7 @@ def _comp_based_backsub_recursive_doubling(
     # `solves/diags` (see `step_voltage_implicit_with_dhs_solve`). For recursive
     # doubling, the solution should just be `solve_effect`, so we define diags as
     # 1.0 so the division has no effect.
-    diags = u.math.ones_like(solve_effect)
-    solves = solve_effect
-    return diags, solves
+    return solve_effect
 
 
 @set_module_as('braincell')

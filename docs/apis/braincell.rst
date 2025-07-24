@@ -34,6 +34,21 @@ Base Class for Cell Modeling
     MultiCompartment
 
 
+Base Class for Morphology Processing
+------------------------------------
+
+.. autosummary::
+   :toctree: generated/
+   :nosignatures:
+   :template: classtemplate.rst
+
+    Morphology
+    Section
+    Segment
+    CylinderSection
+    PointSection
+
+
 
 Base Class for Numerical Integration
 ------------------------------------

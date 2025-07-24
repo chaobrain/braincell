@@ -30,7 +30,10 @@ from ._base import (
 )
 from ._integrator import *
 from ._morphology import (
+    Segment,
     Section,
+    CylinderSection,
+    PointSection,
     Morphology,
 )
 from ._integrator_protocol import (

@@ -31,7 +31,9 @@ from ._morphology_utils import (
 )
 from ._typing import SectionName
 
+
 __all__ = [
+    'Segment',
     'Section',
     'CylinderSection',
     'PointSection',

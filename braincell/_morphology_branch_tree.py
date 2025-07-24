@@ -93,14 +93,14 @@ def nodeid(seg, pos):
     equipotential nodes at connections.
 
     Parameters
-    -------
+    ----------
     seg : int
         Segment index.
     pos : float
         Position on the segment (must be 0, 0.5, or 1).
 
     Returns
-
+    -------
     int
         Unique node ID for this (segment, position).
 

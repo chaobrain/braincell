@@ -161,7 +161,7 @@ def exp_euler_step(target: DiffEqModule, t: T, dt: DT, *args):
             t,
             dt,
             *args,
-            merging='stack'
+            merging='stack'  # [n_neuron, n_state]
         )
 
     elif isinstance(target, MultiCompartment):
@@ -171,7 +171,7 @@ def exp_euler_step(target: DiffEqModule, t: T, dt: DT, *args):
             t,
             dt,
             *args,
-            merging='concat'
+            merging='concat'  # [n_neuron, n_compartment * n_state]
         )
 
     else:

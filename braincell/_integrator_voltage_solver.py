@@ -42,7 +42,7 @@ def dhs_voltage_step(target, t, dt, *args):
     lowers = branch_tree.lowers
     parent_lookup = branch_tree.parent_lookup
     internal_node_inds = branch_tree.internal_node_inds
-    flipped_comp_edges, padded_edges, edge_masks = branch_tree.flipped_comp_edges
+    flipped_comp_edges = branch_tree.flipped_comp_edges
 
     # membrane potential at time n
     V_n = target.V.value
@@ -74,26 +74,25 @@ def dhs_voltage_step(target, t, dt, *args):
     # Triangulate by unrolling the loop of the levels.
     steps = len(flipped_comp_edges)
     for i in range(steps):
-        diags, solves = _comp_based_triang(i, (diags, solves, lowers, uppers, flipped_comp_edges))
+        diags, solves = _comp_based_triang(diags, solves, lowers, uppers, flipped_comp_edges[i])
 
     # Back substitute with recursive doubling.
-    diags, solves = _comp_based_backsub_recursive_doubling(
+    _, solves = _comp_based_backsub_recursive_doubling(
         diags, solves, lowers, steps, n_nodes, parent_lookup
     )
 
     target.V.value = solves[internal_node_inds].reshape((1, -1))
 
 
-def _comp_based_triang(index, carry):
-    """Triangulate the quasi-tridiagonal system compartment by compartment."""
-    diags, solves, lowers, uppers, flipped_comp_edges = carry
+def _comp_based_triang(diags, solves, lowers, uppers, comp_edge):
+    """
+    Triangulate the quasi-tridiagonal system compartment by compartment.
+    """
 
     # `flipped_comp_edges` has shape `(num_levels, num_comps_per_level, 2)`. We first
     # get the relevant level with `[index]` and then we get all children and parents
     # in the level.
-    comp_edge = flipped_comp_edges[index]
     child = comp_edge[:, 0]
-    parent = comp_edge[:, 1]
     lower_val = lowers[child]
     upper_val = uppers[child]
     child_diag = diags[child]
@@ -101,7 +100,9 @@ def _comp_based_triang(index, carry):
 
     # Factor that the child row has to be multiplied by.
     multiplier = upper_val / child_diag
+
     # Updates to diagonal and solve
+    parent = comp_edge[:, 1]
     diags = diags.at[parent].add(-lower_val * multiplier)
     solves = solves.at[parent].add(-child_solve * multiplier)
 
@@ -188,7 +189,7 @@ def _comp_based_backsub_recursive_doubling(
     # `solves/diags` (see `step_voltage_implicit_with_dhs_solve`). For recursive
     # doubling, the solution should just be `solve_effect`, so we define diags as
     # 1.0 so the division has no effect.
-    diags = u.math.ones_like(solve_effect) * u.get_unit(solve_effect)
+    diags = u.math.ones_like(solve_effect)
     solves = solve_effect
     return diags, solves
 

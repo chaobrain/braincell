@@ -812,7 +812,7 @@ class BranchingTree:
         gmat_sorted_unit = gmat_sorted_unit / (cm_unit * area_unit)
 
         # build flipped compartment edges
-        self.flipped_comp_edges = build_flipped_comp_edges(dhs_groups, parent_rows)
+        self.flipped_comp_edges = build_flipped_comp_edges(dhs_groups, parent_rows)[0]
 
         # build lowers and uppers
         mask = parent_rows != -1

@@ -20,7 +20,7 @@ from brainstate._state import record_state_value_write
 __all__ = [
     'DiffEqState',
     'DiffEqModule',
-    'IndependentIntegral',
+    'IndependentIntegration',
 ]
 
 
@@ -186,5 +186,5 @@ class DiffEqModule(brainstate.mixin.Mixin):
         pass
 
 
-class IndependentIntegral(brainstate.mixin.Mixin):
+class IndependentIntegration(brainstate.mixin.Mixin):
     pass

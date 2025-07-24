@@ -87,7 +87,7 @@ import brainstate
 import numpy as np
 from brainstate.mixin import _JointGenericAlias
 
-from ._integrator_protocol import DiffEqModule, IndependentIntegral
+from ._integrator_protocol import DiffEqModule, IndependentIntegration
 from ._misc import set_module_as, Container, TreeNode
 
 __all__ = [
@@ -786,7 +786,7 @@ class Ion(IonChannel, Container):
         """
         nodes = brainstate.graph.nodes(self, Channel, allowed_hierarchy=(1, 1))
         for node in nodes.values():
-            if not isinstance(node, IndependentIntegral):
+            if not isinstance(node, IndependentIntegration):
                 node.pre_integral(V, self.pack_info())
 
     def compute_derivative(self, V):
@@ -800,7 +800,7 @@ class Ion(IonChannel, Container):
         """
         nodes = brainstate.graph.nodes(self, Channel, allowed_hierarchy=(1, 1))
         for node in nodes.values():
-            if not isinstance(node, IndependentIntegral):
+            if not isinstance(node, IndependentIntegration):
                 node.compute_derivative(V, self.pack_info())
 
     def post_integral(self, V):
@@ -815,7 +815,7 @@ class Ion(IonChannel, Container):
         """
         nodes = brainstate.graph.nodes(self, Channel, allowed_hierarchy=(1, 1))
         for node in nodes.values():
-            if not isinstance(node, IndependentIntegral):
+            if not isinstance(node, IndependentIntegration):
                 node.post_integral(V, self.pack_info())
 
     def current(self, V, include_external: bool = False):
@@ -1063,7 +1063,7 @@ class MixIons(IonChannel, Container):
         """
         nodes = tuple(brainstate.graph.nodes(self, Channel, allowed_hierarchy=(1, 1)).values())
         for node in nodes:
-            if not isinstance(node, IndependentIntegral):
+            if not isinstance(node, IndependentIntegration):
                 ion_infos = tuple([self._get_ion(ion).pack_info() for ion in node.root_type.__args__])
                 node.pre_integral(V, *ion_infos)
 
@@ -1095,7 +1095,7 @@ class MixIons(IonChannel, Container):
         """
         nodes = tuple(brainstate.graph.nodes(self, Channel, allowed_hierarchy=(1, 1)).values())
         for node in nodes:
-            if not isinstance(node, IndependentIntegral):
+            if not isinstance(node, IndependentIntegration):
                 ion_infos = tuple([self._get_ion(ion).pack_info() for ion in node.root_type.__args__])
                 node.compute_derivative(V, *ion_infos)
 
@@ -1126,7 +1126,7 @@ class MixIons(IonChannel, Container):
         """
         nodes = tuple(brainstate.graph.nodes(self, Channel, allowed_hierarchy=(1, 1)).values())
         for node in nodes:
-            if not isinstance(node, IndependentIntegral):
+            if not isinstance(node, IndependentIntegration):
                 ion_infos = tuple([self._get_ion(ion).pack_info() for ion in node.root_type.__args__])
                 node.post_integral(V, *ion_infos)
 

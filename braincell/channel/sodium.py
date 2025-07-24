@@ -12,7 +12,7 @@ import brainunit as u
 import jax
 
 from braincell._base import Channel, IonInfo
-from braincell._integrator_protocol import DiffEqState, IndependentIntegral
+from braincell._integrator_protocol import DiffEqState, IndependentIntegration
 from braincell.ion import Sodium
 
 __all__ = [
@@ -439,7 +439,7 @@ class INa_HH1952(INa_p3q_markov):
         return 1 / (1 + u.math.exp(-(V - 10) / 10))
 
 
-class INa_Rsg(SodiumChannel, IndependentIntegral):
+class INa_Rsg(SodiumChannel, IndependentIntegration):
     __module__ = 'braincell.channel'
 
     def __init__(

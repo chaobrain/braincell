@@ -13,8 +13,8 @@
 # limitations under the License.
 # ==============================================================================
 
-from typing import Dict, Any, Callable, Tuple
 import functools
+from typing import Dict, Any, Callable, Tuple
 
 import brainstate
 import brainunit as u
@@ -33,13 +33,12 @@ def _filter_diffeq(independent_modules, path, value):
     return isinstance(value, DiffEqState)
 
 
-def split_states(module: DiffEqModule):
-    # exclude IndependentIntegral module
+def split_diffeq_states(module: DiffEqModule):
+    # exclude IndependentIntegration module
     independent_modules = brainstate.graph.nodes(module, IndependentIntegral)
     all_states = brainstate.graph.states(module)
     diffeq_states, other_states = all_states.split(functools.partial(_filter_diffeq, independent_modules), ...)
     return all_states, diffeq_states, other_states
-
 
 
 def _check_diffeq_state_derivative(state: DiffEqState, dt: u.Quantity):
@@ -110,7 +109,7 @@ def _transform_diffeq_module_into_dimensionless_fn(
     method: str = 'concat'
 ):
     assert method in ['concat', 'stack'], f'Unknown method: {method}'
-    all_states, diffeq_states, other_states = split_states(target)
+    all_states, diffeq_states, other_states = split_diffeq_states(target)
     all_state_ids = {id(st) for st in all_states.values()}
 
     def vector_field(t, y_dimensionless, *args):

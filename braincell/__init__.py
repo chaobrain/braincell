@@ -36,6 +36,7 @@ from ._morphology import (
 from ._integrator_protocol import (
     DiffEqState,
     DiffEqModule,
+    IndependentIntegration,
 )
 from ._morphology_from_asc import from_asc
 from ._morphology_from_swc import from_swc

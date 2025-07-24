@@ -23,17 +23,15 @@ import jax.numpy as jnp
 from jax.scipy.linalg import expm
 
 from ._base import HHTypedNeuron
+from ._integrator_protocol import DiffEqModule
 from ._integrator_util import (
     apply_standard_solver_step,
     jacrev_last_dim,
     _check_diffeq_state_derivative,
-    split_states,
+    split_diffeq_states,
 )
 from ._misc import set_module_as
-from ._integrator_protocol import DiffEqState, DiffEqModule
 from ._typing import Path, T, DT
-from ._integrator_independent import independent_integration_step
-
 
 __all__ = [
     'exp_euler_step',
@@ -235,7 +233,7 @@ def ind_exp_euler_step(target: DiffEqModule, t: T, dt: DT, *args, excluded_paths
     target.pre_integral(*args)
 
     # Retrieve all states from the target module
-    all_states, diffeq_states, other_states = split_states(target)
+    all_states, diffeq_states, other_states = split_diffeq_states(target)
 
     # Collect all state object ids for trace validation
     all_state_ids = {id(st) for st in all_states.values()}

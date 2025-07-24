@@ -5,8 +5,30 @@ Numerical Integration Methods
 .. automodule:: braincell 
 
 
-Overview
---------
+
+``braincell`` provides a mechanism to define coupled ordinary differential equations (ODEs)
+and solve them using various numerical integration methods.
+The integration methods are categorized into exponential integrators, Runge-Kutta methods,
+implicit methods, and Diffrax integrators.
+
+
+Defining Coupled ODEs
+---------------------
+
+.. autosummary::
+   :toctree: generated/
+   :nosignatures:
+   :template: classtemplate.rst
+
+    DiffEqState
+    DiffEqModule
+    IndependentIntegration
+
+
+
+
+Overall Integration Interface
+-----------------------------
 
 .. autosummary::
    :toctree: generated/

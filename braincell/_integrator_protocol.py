@@ -187,4 +187,30 @@ class DiffEqModule(brainstate.mixin.Mixin):
 
 
 class IndependentIntegration(brainstate.mixin.Mixin):
+    """
+    Mixin class to indicate independent integration of module states.
+
+    This class serves as a marker for modules whose states should be excluded from
+    the main integration process and instead be integrated independently. When a
+    module inherits from `IndependentIntegration`, its states are not included in
+    the set of states to be integrated by the primary numerical integrator.
+
+    This is useful in scenarios where certain subsystems require specialized or
+    decoupled integration strategies, such as different time steps or custom solvers.
+
+    Usage of this mixin allows the integration framework to identify and handle
+    such modules separately, ensuring modularity and flexibility in the integration
+    of complex systems.
+
+    Examples
+    --------
+    >>> class MySubsystem(IndependentIntegration, DiffEqModule):
+    ...     pass
+    >>> # States in MySubsystem will be integrated independently.
+
+    Notes
+    -----
+    - This class does not implement any additional methods or properties.
+    - It is intended to be used as a mixin alongside other module base classes.
+    """
     pass

@@ -509,9 +509,9 @@ def splitting_step(
     *args :
         Additional arguments to be passed to the differential equation.
     """
-    from braincell._multi_compartment_test import MultiCompartment_test
+    from braincell._multi_compartment import MultiCompartment
 
-    if isinstance(target, MultiCompartment_test):
+    if isinstance(target, MultiCompartment):
 
         def solve_axial():
             # dt = brainstate.environ.get_dt()

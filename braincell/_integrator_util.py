@@ -21,8 +21,7 @@ import brainunit as u
 import jax
 import jax.numpy as jnp
 
-from ._integrator_independent import independent_integration_step, IndependentIntegral
-from ._integrator_protocol import DiffEqState, DiffEqModule
+from ._integrator_protocol import DiffEqState, DiffEqModule, IndependentIntegration
 from ._typing import T, DT, Y0, Y1, Aux, Jacobian, VectorFiled, Args
 
 
@@ -34,8 +33,49 @@ def _filter_diffeq(independent_modules, path, value):
 
 
 def split_diffeq_states(module: DiffEqModule):
+    """
+    Splits the states of a differential equation module into three categories:
+    all states, states to be integrated (diffeq_states), and other states.
+
+    This function traverses the given `DiffEqModule` and identifies all its states.
+    It then separates these states into:
+      - `diffeq_states`: States that are instances of `DiffEqState` and are not part of
+        any submodule of type :class:`IndependentIntegration`.
+      - `other_states`: All remaining states.
+      - `all_states`: A dictionary of all states in the module.
+
+    The separation is useful for numerical integration routines, where only certain
+    states (those representing differential equations) should be integrated, while
+    others are treated differently.
+
+    Parameters
+    ----------
+    module : DiffEqModule
+        The differential equation module whose states are to be split.
+
+    Returns
+    -------
+    all_states : Dict[Any, brainstate.State]
+        A dictionary of all states in the module.
+    diffeq_states : Dict[Any, DiffEqState]
+        A dictionary of states that are subject to integration (excluding those in
+        :class:`IndependentIntegration` modules).
+    other_states : Dict[Any, brainstate.State]
+        A dictionary of all other states.
+
+    Notes
+    -----
+    - States belonging to submodules of type :class:`IndependentIntegration` are excluded
+      from `diffeq_states` to allow for independent integration strategies.
+    - The function relies on the module's state graph and a custom filter to
+      distinguish between state types.
+
+    Examples
+    --------
+    >>> all_states, diffeq_states, other_states = split_diffeq_states(my_module)
+    """
     # exclude IndependentIntegration module
-    independent_modules = brainstate.graph.nodes(module, IndependentIntegral)
+    independent_modules = brainstate.graph.nodes(module, IndependentIntegration)
     all_states = brainstate.graph.states(module)
     diffeq_states, other_states = all_states.split(functools.partial(_filter_diffeq, independent_modules), ...)
     return all_states, diffeq_states, other_states
@@ -182,8 +222,6 @@ def apply_standard_solver_step(
     assert isinstance(target, DiffEqModule), f'Target must be a DiffEqModule, but got {type(target)}'
     assert callable(solver_step), f'Solver step must be callable, but got {type(solver_step)}'
     assert merging in ['concat', 'stack'], f'Unknown merging method: {merging}'
-
-    independent_integration_step(target, t, dt, *args)
 
     # pre integral
     target.pre_integral(*args)

@@ -6,57 +6,12 @@
 
 
 
-Base Class for Ion Channels
----------------------------
 
-.. autosummary::
-   :toctree: generated/
-   :nosignatures:
-   :template: classtemplate.rst
+.. toctree::
+   :hidden:
+   :maxdepth: 2
 
-    IonChannel
-    Ion
-    IonInfo
-    MixIons
-    Channel
+    integration.rst
+    morphology.rst
+    structure.rst
 
-
-Base Class for Cell Modeling
-----------------------------
-
-.. autosummary::
-   :toctree: generated/
-   :nosignatures:
-   :template: classtemplate.rst
-
-    HHTypedNeuron
-    SingleCompartment
-    MultiCompartment
-
-
-Base Class for Morphology Processing
-------------------------------------
-
-.. autosummary::
-   :toctree: generated/
-   :nosignatures:
-   :template: classtemplate.rst
-
-    Morphology
-    Section
-    Segment
-    CylinderSection
-    PointSection
-
-
-
-Base Class for Numerical Integration
-------------------------------------
-
-.. autosummary::
-   :toctree: generated/
-   :nosignatures:
-   :template: classtemplate.rst
-
-    DiffEqState
-    DiffEqModule

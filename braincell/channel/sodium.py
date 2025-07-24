@@ -10,8 +10,9 @@ from typing import Union, Callable, Optional
 import brainstate
 import brainunit as u
 import jax
+
 from braincell._base import Channel, IonInfo
-from braincell._integrator_protocol import DiffEqState
+from braincell._integrator_protocol import DiffEqState, IndependentIntegral
 from braincell.ion import Sodium
 
 __all__ = [
@@ -22,7 +23,7 @@ __all__ = [
     'INa_HH1952',
     'INa_Rsg',
     'INa_Rsg_B',
-    
+
 ]
 
 
@@ -438,7 +439,7 @@ class INa_HH1952(INa_p3q_markov):
         return 1 / (1 + u.math.exp(-(V - 10) / 10))
 
 
-class INa_Rsg(SodiumChannel):
+class INa_Rsg(SodiumChannel, IndependentIntegral):
     __module__ = 'braincell.channel'
 
     def __init__(
@@ -562,7 +563,7 @@ class INa_Rsg(SodiumChannel):
         '''
         # jax.debug.print('O={}', self.O.value)
         # jax.debug.print('B={}', self.B.value)
-        
+
         # self.normalize_states(
         #     [self.C1, self.C2, self.C3, self.C4, self.C5, self.I1, self.I2, self.I3, self.I4, self.I5, self.O, self.B,
         #      ]) # self.I6
@@ -570,34 +571,35 @@ class INa_Rsg(SodiumChannel):
     def normalize_states(self, states):
         total = 0.
         for state in states:
-            if hasattr(state,'value'):
+            if hasattr(state, 'value'):
                 state.value = u.math.maximum(state.value, 0)
                 total = total + state.value
             else:
-                state =  u.math.maximum(state, 0)
+                state = u.math.maximum(state, 0)
                 total = total + state
         for state in states:
-            if hasattr(state,'value'):
-                state.value = state.value / (total+ 10**(-12))
+            if hasattr(state, 'value'):
+                state.value = state.value / (total + 10 ** (-12))
             else:
-                state =  state /(total+ 10**(-12))
+                state = state / (total + 10 ** (-12))
 
     def pre_integral(self, V, Na: IonInfo):
         # jax.debug.print('O_value={}',self.O.value.max())
-        
+
         # [self.C1.value, self.C2.value, self.C3.value, self.C4.value, self.C5.value, 
         # self.I1.value, self.I2.value, self.I3.value, self.I4.value, self.I5.value, self.O.value, self.B.value,]=jax.tree.map(self.clip, [self.C1.value, self.C2.value, self.C3.value, self.C4.value, self.C5.value, 
         # self.I1.value, self.I2.value, self.I3.value, self.I4.value, self.I5.value, self.O.value, self.B.value,])
 
-        self.I6 = 1 - (self.I1.value + self.I2.value + self.I3.value + self.I4.value + self.I5.value + self.O.value +self.B.value +
-        self.C1.value + self.C2.value + self.C3.value  + self.C4.value  + self.C5.value)
+        self.I6 = 1 - (
+            self.I1.value + self.I2.value + self.I3.value + self.I4.value + self.I5.value + self.O.value + self.B.value +
+            self.C1.value + self.C2.value + self.C3.value + self.C4.value + self.C5.value)
         # jax.debug.print('I6_value={}',self.I6.max())
         self.normalize_states(
             [self.C1, self.C2, self.C3, self.C4, self.C5, self.I1, self.I2, self.I3, self.I4, self.I5, self.O, self.B,
-             self.I6])#self.I6
+             self.I6])  # self.I6
 
     def compute_derivative(self, V, Na: IonInfo):
-        
+
         # I6 = 1 - (self.I1.value + self.I2.value + self.I3.value + self.I4.value + self.I5.value + self.O.value +self.B.value +
         # self.C1.value + self.C2.value + self.C3.value  + self.C4.value  + self.C5.value)
 
@@ -676,35 +678,42 @@ class INa_Rsg(SodiumChannel):
         #                          self.I6.value * (self.b1n(V) + self.bin(V))
         #                      ) / u.ms
 
-    def update_state(self, V, Na: IonInfo):
-
+    def update(self, V, Na: IonInfo):
         V = V.reshape(-1)
-        dt =  u.get_magnitude(brainstate.environ.get_dt())/2
+        dt = u.get_magnitude(brainstate.environ.get_dt()) / 2
 
         State_value = u.math.stack([
-                self.C1.value, self.C2.value, self.C3.value, self.C4.value, self.C5.value, 
-                self.I1.value, self.I2.value, self.I3.value, self.I4.value, self.I5.value, self.O.value, self.B.value,
-                ])
+            self.C1.value, self.C2.value, self.C3.value, self.C4.value, self.C5.value,
+            self.I1.value, self.I2.value, self.I3.value, self.I4.value, self.I5.value, self.O.value, self.B.value,
+        ])
         State_value = State_value.reshape(-1, len(self.C1.value.squeeze()))
 
         N, M = State_value.shape
-    
-        def rhs(S):
 
-            C1, C2, C3, C4, C5, I1, I2, I3, I4, I5, O, B, = S[0], S[1], S[2], S[3], S[4], S[5], S[6], S[7], S[8], S[9], S[10], S[11]
+        def rhs(S):
+            C1, C2, C3, C4, C5, I1, I2, I3, I4, I5, O, B, = S[0], S[1], S[2], S[3], S[4], S[5], S[6], S[7], S[8], S[9], \
+                S[10], S[11]
             I6 = 1 - (C1 + C2 + C3 + C4 + C5 + I1 + I2 + I3 + I4 + I5 + O + B)
-            dC1 = (I1 * self.bi1(V) + C2 * self.b01(V) - C1 * (self.fi1(V) + self.f01(V))) 
-            dC2 = (C1 * self.f01(V) + I2 * self.bi2(V) + C3 * self.b02(V) - C2 * (self.b01(V) + self.fi2(V) + self.f02(V))) 
-            dC3 = (C2 * self.f02(V) + I3 * self.bi3(V) + C4 * self.b03(V) - C3 * (self.b02(V) + self.fi3(V) + self.f03(V)))
-            dC4 = (C3 * self.f03(V) + I4 * self.bi4(V) + C5 * self.b04(V) - C4 * (self.b03(V) + self.fi4(V) + self.f04(V))) 
-            dC5 = (C4 * self.f04(V) + I5 * self.bi5(V) + O * self.b0O(V) - C5 * (self.b04(V) + self.fi5(V) + self.f0O(V)))
-            dI1 = (C1 * self.fi1(V) + I2 * self.b11(V) - I1 * (self.bi1(V) + self.f11(V))) 
-            dI2 = (I1 * self.f11(V) + C2 * self.fi2(V) + I3 * self.b12(V) - I2 * (self.b11(V) + self.bi2(V) + self.f12(V)))
-            dI3 = (I2 * self.f12(V) + C3 * self.fi3(V) + I4 * self.b13(V) - I3 * (self.b12(V) + self.bi3(V) + self.f13(V))) 
-            dI4 = (I3 * self.f13(V) + C4 * self.fi4(V) + I5 * self.b14(V) - I4 * (self.b13(V) + self.bi4(V) + self.f14(V)))
-            dI5 = (I4 * self.f14(V) + C5 * self.fi5(V) + I6 * self.b1n(V) - I5 * (self.b14(V) + self.bi5(V) + self.f1n(V)))
-            dO  = (C5 * self.f0O(V) + B * self.bip(V) + I6 * self.bin(V) - O * (self.b0O(V) + self.fip(V) + self.fin(V))) 
-            dB  = (O * self.fip(V) - B * self.bip(V)) 
+            dC1 = (I1 * self.bi1(V) + C2 * self.b01(V) - C1 * (self.fi1(V) + self.f01(V)))
+            dC2 = (C1 * self.f01(V) + I2 * self.bi2(V) + C3 * self.b02(V) - C2 * (
+                self.b01(V) + self.fi2(V) + self.f02(V)))
+            dC3 = (C2 * self.f02(V) + I3 * self.bi3(V) + C4 * self.b03(V) - C3 * (
+                self.b02(V) + self.fi3(V) + self.f03(V)))
+            dC4 = (C3 * self.f03(V) + I4 * self.bi4(V) + C5 * self.b04(V) - C4 * (
+                self.b03(V) + self.fi4(V) + self.f04(V)))
+            dC5 = (C4 * self.f04(V) + I5 * self.bi5(V) + O * self.b0O(V) - C5 * (
+                self.b04(V) + self.fi5(V) + self.f0O(V)))
+            dI1 = (C1 * self.fi1(V) + I2 * self.b11(V) - I1 * (self.bi1(V) + self.f11(V)))
+            dI2 = (I1 * self.f11(V) + C2 * self.fi2(V) + I3 * self.b12(V) - I2 * (
+                self.b11(V) + self.bi2(V) + self.f12(V)))
+            dI3 = (I2 * self.f12(V) + C3 * self.fi3(V) + I4 * self.b13(V) - I3 * (
+                self.b12(V) + self.bi3(V) + self.f13(V)))
+            dI4 = (I3 * self.f13(V) + C4 * self.fi4(V) + I5 * self.b14(V) - I4 * (
+                self.b13(V) + self.bi4(V) + self.f14(V)))
+            dI5 = (I4 * self.f14(V) + C5 * self.fi5(V) + I6 * self.b1n(V) - I5 * (
+                self.b14(V) + self.bi5(V) + self.f1n(V)))
+            dO = (C5 * self.f0O(V) + B * self.bip(V) + I6 * self.bin(V) - O * (self.b0O(V) + self.fip(V) + self.fin(V)))
+            dB = (O * self.fip(V) - B * self.bip(V))
 
             return u.math.stack([dC1, dC2, dC3, dC4, dC5, dI1, dI2, dI3, dI4, dI5, dO, dB])  # shape: (N, M)
 
@@ -714,7 +723,7 @@ class INa_Rsg(SodiumChannel):
         A_all = jax.vmap(jax.jacfwd(rhs_point))(State_value.T)  # shape: (M, N, N)
 
         # 计算导数值 (N, M)
-        dS_val = rhs(State_value)  
+        dS_val = rhs(State_value)
 
         # 计算 b 项：b = dS - A @ S
         # A_all: (M, N, N), State_value.T: (M, N)
@@ -722,37 +731,40 @@ class INa_Rsg(SodiumChannel):
 
         # 向后欧拉更新: (I - dt * A) S_{n+1} = S_n + b
         Id = u.math.eye(N)[None, :, :]  # (1, N, N) for broadcasting
-        A_dt = dt * A_all              # (M, N, N)
-        lhs = Id - A_dt                # (M, N, N)
-        rhs_val = State_value.T + dt * b_val       # (M, N)  # 右侧为 S_n + b 
+        A_dt = dt * A_all  # (M, N, N)
+        lhs = Id - A_dt  # (M, N, N)
+        rhs_val = State_value.T + dt * b_val  # (M, N)  # 右侧为 S_n + b
         # solve I - dt * A) S_{n+1} = S_n + b
         S_new = jax.vmap(u.math.linalg.solve)(lhs, rhs_val)  # (M, N)
-        S_new_T = S_new.T             # (N, M) 返回与 State_value 同维度
+        S_new_T = S_new.T  # (N, M) 返回与 State_value 同维度
 
         # # 残差
         # residual = jax.vmap(lambda A, x, b: A @ x - b)(lhs, S_new, rhs_val)
         # res_norm = u.math.linalg.norm(residual, axis=1)  #  L2 残差
         # jax.debug.print('res_norm={}',res_norm)
 
-        self.C1.value = S_new_T[0].reshape(1,-1)
-        self.C2.value = S_new_T[1].reshape(1,-1)
-        self.C3.value = S_new_T[2].reshape(1,-1)
-        self.C4.value = S_new_T[3].reshape(1,-1)
-        self.C5.value = S_new_T[4].reshape(1,-1)
-        self.I1.value = S_new_T[5].reshape(1,-1)
-        self.I2.value = S_new_T[6].reshape(1,-1)
-        self.I3.value = S_new_T[7].reshape(1,-1)
-        self.I4.value = S_new_T[8].reshape(1,-1)
-        self.I5.value = S_new_T[9].reshape(1,-1)
-        self.O.value  = S_new_T[10].reshape(1,-1)
-        self.B.value  = S_new_T[11].reshape(1,-1)
-        
+        self.C1.value = S_new_T[0].reshape(1, -1)
+        self.C2.value = S_new_T[1].reshape(1, -1)
+        self.C3.value = S_new_T[2].reshape(1, -1)
+        self.C4.value = S_new_T[3].reshape(1, -1)
+        self.C5.value = S_new_T[4].reshape(1, -1)
+        self.I1.value = S_new_T[5].reshape(1, -1)
+        self.I2.value = S_new_T[6].reshape(1, -1)
+        self.I3.value = S_new_T[7].reshape(1, -1)
+        self.I4.value = S_new_T[8].reshape(1, -1)
+        self.I5.value = S_new_T[9].reshape(1, -1)
+        self.O.value = S_new_T[10].reshape(1, -1)
+        self.B.value = S_new_T[11].reshape(1, -1)
+
     def reset_state(self, V, Na: IonInfo, batch_size=None):
-        self.I6 = 1 - (self.I1.value + self.I2.value + self.I3.value + self.I4.value + self.I5.value + self.O.value +self.B.value +
-        self.C1.value + self.C2.value + self.C3.value  + self.C4.value  + self.C5.value)
+        self.I6 = 1 - (
+            self.I1.value + self.I2.value + self.I3.value + self.I4.value + self.I5.value + self.O.value + self.B.value +
+            self.C1.value + self.C2.value + self.C3.value + self.C4.value + self.C5.value
+        )
         self.normalize_states(
             [self.C1, self.C2, self.C3, self.C4, self.C5, self.I1, self.I2, self.I3, self.I4, self.I5, self.O, self.B,
-             self.I6])
+             self.I6]
+        )
 
     def current(self, V, Na: IonInfo):
         return self.g_max * self.O.value * (Na.E - V)
@@ -761,13 +773,13 @@ class INa_Rsg(SodiumChannel):
     f02 = lambda self, V: 3 * self.alpha * u.math.exp((V / u.mV) / self.x1) * self.phi
     f03 = lambda self, V: 2 * self.alpha * u.math.exp((V / u.mV) / self.x1) * self.phi
     f04 = lambda self, V: 1 * self.alpha * u.math.exp((V / u.mV) / self.x1) * self.phi
-    f0O = lambda self, V: self.gamma * u.math.exp((V / u.mV) / self.x3) *self.phi
+    f0O = lambda self, V: self.gamma * u.math.exp((V / u.mV) / self.x3) * self.phi
     fip = lambda self, V: self.epsilon * u.math.exp((V / u.mV) / self.x5) * self.phi
     f11 = lambda self, V: 4 * self.alpha * self.alfac * u.math.exp((V / u.mV + self.vshifti) / self.x1) * self.phi
     f12 = lambda self, V: 3 * self.alpha * self.alfac * u.math.exp((V / u.mV + self.vshifti) / self.x1) * self.phi
     f13 = lambda self, V: 2 * self.alpha * self.alfac * u.math.exp((V / u.mV + self.vshifti) / self.x1) * self.phi
     f14 = lambda self, V: 1 * self.alpha * self.alfac * u.math.exp((V / u.mV + self.vshifti) / self.x1) * self.phi
-    f1n = lambda self, V: self.gamma * u.math.exp((V / u.mV) / self.x3)* self.phi
+    f1n = lambda self, V: self.gamma * u.math.exp((V / u.mV) / self.x3) * self.phi
     fi1 = lambda self, V: self.Con * self.phi
     fi2 = lambda self, V: self.Con * self.alfac * self.phi
     fi3 = lambda self, V: self.Con * self.alfac ** 2 * self.phi
@@ -846,37 +858,38 @@ class INa_Rsg_B(SodiumChannel):
         self.I4 = DiffEqState(brainstate.init.param(u.math.zeros, self.varshape, batch_size))
         self.I5 = DiffEqState(brainstate.init.param(u.math.zeros, self.varshape, batch_size))
         self.O = DiffEqState(brainstate.init.param(u.math.zeros, self.varshape, batch_size))
-        #self.B = DiffEqState(brainstate.init.param(u.math.zeros, self.varshape, batch_size))
+        # self.B = DiffEqState(brainstate.init.param(u.math.zeros, self.varshape, batch_size))
         self.B = 0
         self.I6 = DiffEqState(brainstate.init.param(u.math.zeros, self.varshape, batch_size))
 
         self.normalize_states(
             [self.C1, self.C2, self.C3, self.C4, self.C5, self.I1, self.I2, self.I3, self.I4, self.I5, self.O, self.I6,
-             ]) # self.I6
+             ])  # self.I6
 
     def normalize_states(self, states):
         total = 0.
         for state in states:
-            if hasattr(state,'value'):
+            if hasattr(state, 'value'):
                 state.value = u.math.maximum(state.value, 0)
                 total = total + state.value
             else:
-                state =  u.math.maximum(state, 0)
+                state = u.math.maximum(state, 0)
                 total = total + state
         for state in states:
-            if hasattr(state,'value'):
-                state.value = state.value / (total + 10**(-12))
+            if hasattr(state, 'value'):
+                state.value = state.value / (total + 10 ** (-12))
             else:
-                state =  state /(total + 10**(-12))
+                state = state / (total + 10 ** (-12))
 
     def pre_integral(self, V, Na: IonInfo):
         # self.I6 = 1 - (self.I1.value + self.I2.value + self.I3.value + self.I4.value + self.I5.value + self.O.value +self.B.value +
         # self.C1.value + self.C2.value + self.C3.value  + self.C4.value  + self.C5.value)
-        self.B = 1 - (self.I1.value + self.I2.value + self.I3.value + self.I4.value + self.I5.value + self.O.value +self.I6.value +
-        self.C1.value + self.C2.value + self.C3.value  + self.C4.value  + self.C5.value)
+        self.B = 1 - (
+            self.I1.value + self.I2.value + self.I3.value + self.I4.value + self.I5.value + self.O.value + self.I6.value +
+            self.C1.value + self.C2.value + self.C3.value + self.C4.value + self.C5.value)
         self.normalize_states(
             [self.C1, self.C2, self.C3, self.C4, self.C5, self.I1, self.I2, self.I3, self.I4, self.I5, self.O, self.B,
-             self.I6]) #self.I6
+             self.I6])  # self.I6
 
     # def after_integral(self, V, Na: IonInfo):
     #     self.I6.value = 1 - (self.I1.value + self.I2.value + self.I3.value + self.I4.value + self.I5.value + self.O.value +self.B.value +
@@ -917,7 +930,7 @@ class INa_Rsg_B(SodiumChannel):
                              ) / u.ms
         self.O.derivative = (
                                 self.C5.value * self.f0O(V) +
-                                self.B  * self.bip(V) +
+                                self.B * self.bip(V) +
                                 self.I6.value * self.bin(V) -
                                 self.O.value * (self.b0O(V) + self.fip(V) + self.fin(V))
                             ) / u.ms
@@ -954,7 +967,7 @@ class INa_Rsg_B(SodiumChannel):
                                  self.I6.value * self.b1n(V) -
                                  self.I5.value * (self.b14(V) + self.bi5(V) + self.f1n(V))
                              ) / u.ms
-        
+
         self.I6.derivative = (
                                  self.I5.value * self.f1n(V) +
                                  self.O.value * self.fin(V) -
@@ -963,8 +976,8 @@ class INa_Rsg_B(SodiumChannel):
 
     def reset_state(self, V, Na: IonInfo, batch_size=None):
         self.normalize_states(
-            [self.C1, self.C2, self.C3, self.C4, self.C5, self.I1, self.I2, self.I3, self.I4, self.I5, self.O, self.I6 
-             ])#self.B,
+            [self.C1, self.C2, self.C3, self.C4, self.C5, self.I1, self.I2, self.I3, self.I4, self.I5, self.O, self.I6
+             ])  # self.B,
 
     def current(self, V, Na: IonInfo):
         return self.g_max * self.O.value * (Na.E - V)
@@ -973,13 +986,13 @@ class INa_Rsg_B(SodiumChannel):
     f02 = lambda self, V: 3 * self.alpha * u.math.exp((V / u.mV) / self.x1) * self.phi
     f03 = lambda self, V: 2 * self.alpha * u.math.exp((V / u.mV) / self.x1) * self.phi
     f04 = lambda self, V: 1 * self.alpha * u.math.exp((V / u.mV) / self.x1) * self.phi
-    f0O = lambda self, V: self.gamma * u.math.exp((V / u.mV) / self.x3) *self.phi
+    f0O = lambda self, V: self.gamma * u.math.exp((V / u.mV) / self.x3) * self.phi
     fip = lambda self, V: self.epsilon * u.math.exp((V / u.mV) / self.x5) * self.phi
     f11 = lambda self, V: 4 * self.alpha * self.alfac * u.math.exp((V / u.mV + self.vshifti) / self.x1) * self.phi
     f12 = lambda self, V: 3 * self.alpha * self.alfac * u.math.exp((V / u.mV + self.vshifti) / self.x1) * self.phi
     f13 = lambda self, V: 2 * self.alpha * self.alfac * u.math.exp((V / u.mV + self.vshifti) / self.x1) * self.phi
     f14 = lambda self, V: 1 * self.alpha * self.alfac * u.math.exp((V / u.mV + self.vshifti) / self.x1) * self.phi
-    f1n = lambda self, V: self.gamma * u.math.exp((V / u.mV) / self.x3)* self.phi
+    f1n = lambda self, V: self.gamma * u.math.exp((V / u.mV) / self.x3) * self.phi
     fi1 = lambda self, V: self.Con * self.phi
     fi2 = lambda self, V: self.Con * self.alfac * self.phi
     fi3 = lambda self, V: self.Con * self.alfac ** 2 * self.phi

@@ -20,6 +20,7 @@ from brainstate._state import record_state_value_write
 __all__ = [
     'DiffEqState',
     'DiffEqModule',
+    'IndependentIntegral',
 ]
 
 
@@ -114,7 +115,8 @@ class DiffEqState(brainstate.ShortTermState):
 
 
 class DiffEqModule(brainstate.mixin.Mixin):
-    """A mixin class that provides differential equation functionality.
+    """
+    A mixin class that provides differential equation functionality.
 
     This class serves as a mixin to add differential equation capabilities to other classes.
     It defines the core interface for implementing ordinary differential equations (ODEs)
@@ -182,3 +184,7 @@ class DiffEqModule(brainstate.mixin.Mixin):
             Arbitrary keyword arguments.
         """
         pass
+
+
+class IndependentIntegral(brainstate.mixin.Mixin):
+    pass

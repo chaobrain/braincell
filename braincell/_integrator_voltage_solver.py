@@ -37,7 +37,7 @@ def dhs_voltage_step(target, t, dt, *args):
 
     # branching tree information
     branch_tree = target.to_branch_tree()
-    diags = branch_tree.diags
+    diags = branch_tree.diags  # [n_neuron, 2*n_seg+1]
     uppers = branch_tree.uppers
     lowers = branch_tree.lowers
     parent_lookup = branch_tree.parent_lookup
@@ -48,8 +48,9 @@ def dhs_voltage_step(target, t, dt, *args):
     V_n = target.V.value
 
     # linear and constant term
-    n_nodes = len(diags)
     linear, const = _linear_and_const_term(target, V_n, *args)
+
+    n_nodes = len(diags)
     V_linear = u.math.zeros(n_nodes) * u.get_unit(linear)
     V_linear = V_linear.at[internal_node_inds].set(-linear.ravel())
     V_const = u.math.zeros(n_nodes) * u.get_unit(const)
@@ -83,41 +84,6 @@ def dhs_voltage_step(target, t, dt, *args):
     target.V.value = solves[internal_node_inds].reshape((1, -1))
 
 
-def _dhs_matrix(target: DiffEqModule):
-    with (jax.ensure_compile_time_eval()):
-        Gmat_sorted, parent_rows, dhs_groups, segment2rowid, flipped_comp_edges = target.get_dhs_info(
-            max_group_size=16, show=False
-        )
-
-        cm_segmid = target.cm
-        area_segmid = target.area
-
-        cm = jnp.ones(len(parent_rows)) * u.get_unit(cm_segmid)
-        area = jnp.ones(len(parent_rows)) * u.get_unit(area_segmid)
-        seg_mid_ids = jnp.array(list(segment2rowid.values()))
-        cm[seg_mid_ids] = cm_segmid
-        area[seg_mid_ids] = area_segmid
-
-        Gmat_sorted = -Gmat_sorted / (cm * area)[:, u.math.newaxis]
-
-        n = len(parent_rows)
-        lowers = u.math.zeros(n) * u.get_unit(Gmat_sorted)
-        uppers = u.math.zeros(n) * u.get_unit(Gmat_sorted)
-
-        for i in range(n):
-            p = parent_rows[i]
-            if p == -1:
-                lowers = lowers.at[i].set(0 * u.get_unit(Gmat_sorted))
-                uppers = uppers.at[i].set(0 * u.get_unit(Gmat_sorted))
-            else:
-                lowers = lowers.at[i].set(Gmat_sorted[i, p])
-                uppers = uppers.at[i].set(Gmat_sorted[p, i])
-
-        diags = u.math.diag(Gmat_sorted)
-
-    return diags, uppers, lowers, parent_rows, dhs_groups, segment2rowid, flipped_comp_edges, Gmat_sorted
-
-
 def _comp_based_triang(index, carry):
     """Triangulate the quasi-tridiagonal system compartment by compartment."""
     diags, solves, lowers, uppers, flipped_comp_edges = carry
@@ -137,10 +103,9 @@ def _comp_based_triang(index, carry):
     multiplier = upper_val / child_diag
     # Updates to diagonal and solve
     diags = diags.at[parent].add(-lower_val * multiplier)
-    # jax.debug.print('diags_step= {}',diags)
     solves = solves.at[parent].add(-child_solve * multiplier)
 
-    return (diags, solves)
+    return diags, solves
 
 
 def _comp_based_backsub_recursive_doubling(
@@ -399,7 +364,10 @@ def _linear_and_const_term(target: DiffEqModule, V_n, *args):
 
     # compute the linear and derivative term
     linear, derivative = brainstate.transform.vector_grad(
-        target.compute_membrane_derivative, argnums=0, return_value=True, unit_aware=False,
+        target.compute_membrane_derivative,
+        argnums=0,
+        return_value=True,
+        unit_aware=False,
     )(V_n, *args)
 
     # Convert linearization to a unit-aware quantity
@@ -407,4 +375,4 @@ def _linear_and_const_term(target: DiffEqModule, V_n, *args):
 
     # Compute constant term
     const = derivative - V_n * linear
-    return linear, const
+    return linear, const  # [n_neuron, n_segments]

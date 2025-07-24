@@ -14,14 +14,32 @@
 # ==============================================================================
 
 from typing import Dict, Any, Callable, Tuple
+import functools
 
 import brainstate
 import brainunit as u
 import jax
 import jax.numpy as jnp
 
+from ._integrator_independent import independent_integration_step, IndependentIntegral
 from ._integrator_protocol import DiffEqState, DiffEqModule
 from ._typing import T, DT, Y0, Y1, Aux, Jacobian, VectorFiled, Args
+
+
+def _filter_diffeq(independent_modules, path, value):
+    for module_path in independent_modules.keys():
+        if path[:len(module_path)] == module_path:
+            return False
+    return isinstance(value, DiffEqState)
+
+
+def split_states(module: DiffEqModule):
+    # exclude IndependentIntegral module
+    independent_modules = brainstate.graph.nodes(module, IndependentIntegral)
+    all_states = brainstate.graph.states(module)
+    diffeq_states, other_states = all_states.split(functools.partial(_filter_diffeq, independent_modules), ...)
+    return all_states, diffeq_states, other_states
+
 
 
 def _check_diffeq_state_derivative(state: DiffEqState, dt: u.Quantity):
@@ -92,9 +110,7 @@ def _transform_diffeq_module_into_dimensionless_fn(
     method: str = 'concat'
 ):
     assert method in ['concat', 'stack'], f'Unknown method: {method}'
-
-    all_states = brainstate.graph.states(target)
-    diffeq_states, other_states = all_states.split(DiffEqState, ...)
+    all_states, diffeq_states, other_states = split_states(target)
     all_state_ids = {id(st) for st in all_states.values()}
 
     def vector_field(t, y_dimensionless, *args):
@@ -167,6 +183,8 @@ def apply_standard_solver_step(
     assert isinstance(target, DiffEqModule), f'Target must be a DiffEqModule, but got {type(target)}'
     assert callable(solver_step), f'Solver step must be callable, but got {type(solver_step)}'
     assert merging in ['concat', 'stack'], f'Unknown merging method: {merging}'
+
+    independent_integration_step(target, t, dt, *args)
 
     # pre integral
     target.pre_integral(*args)

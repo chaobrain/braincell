@@ -39,16 +39,15 @@ def staggered_step(
         f"but we got {type(target)} instead."
     )
 
-    # sparse_voltage_step(target, t, dt, *args)
     dhs_voltage_step(target, t, dt, *args)
 
-    # excluded_paths
-    all_states = brainstate.graph.states(target)
-    diffeq_states, _ = all_states.split(DiffEqState, ...)
-    excluded_paths = [('V',)]
-    for key in diffeq_states.keys():
-        if 'INa_Rsg' in key:
-            excluded_paths.append(key)
+    # # excluded_paths
+    # all_states = brainstate.graph.states(target)
+    # diffeq_states, _ = all_states.split(DiffEqState, ...)
+    # excluded_paths = [('V',)]
+    # for key in diffeq_states.keys():
+    #     if 'INa_Rsg' in key:
+    #         excluded_paths.append(key)
 
     # update markov
     for _ in range(2):
@@ -56,4 +55,4 @@ def staggered_step(
         target.pre_integral(*args)
 
     # ind_exp_euler for non-v and non-markov
-    ind_exp_euler_step(target, t, dt, *args, excluded_paths=excluded_paths)
+    ind_exp_euler_step(target, t, dt, *args, excluded_paths=[('V',)])

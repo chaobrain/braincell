@@ -225,7 +225,6 @@ class SingleCompartment(HHTypedNeuron):
             External current input. Default is 0 nA/cm^2.
         """
         I_ext = self.sum_current_inputs(I_ext, self.V.value)
-
         for key, ch in self.nodes(IonChannel, allowed_hierarchy=(1, 1)).items():
             I_ext = I_ext + ch.current(self.V.value)
 
@@ -267,9 +266,14 @@ class SingleCompartment(HHTypedNeuron):
         spike : array-like
             An array indicating whether a spike occurred (1) or not (0) for each neuron.
         """
-        last_V = self.V.value
+        # update nodes
+        for key, node in self.nodes(IonChannel, allowed_hierarchy=(1, 1)).items():
+            node.update(self.V.value)
+
+        # numerical integration
         t = brainstate.environ.get('t')
         dt = brainstate.environ.get('dt')
+        last_V = self.V.value
         self.solver(self, t, dt, I_ext)
         spk = self.get_spike(last_V, self.V.value)
         self.spike.value = spk

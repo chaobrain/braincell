@@ -119,8 +119,8 @@ class MultiCompartment(HHTypedNeuron):
         # numerical solver
         self.solver = get_integrator(solver)
 
-    def __getattr__(self, name):
-        return getattr(self.morphology, name)
+    # def __getattr__(self, name):
+    #     return getattr(self.morphology, name)
 
     @property
     def pop_size(self) -> Tuple[int, ...]:
@@ -287,6 +287,9 @@ class MultiCompartment(HHTypedNeuron):
             A binary value indicating whether a spike has occurred (1) or not (0)
             for each compartment of the neuron.
         """
+        for key, node in self.nodes(IonChannel, allowed_hierarchy=(1, 1)).items():
+            node.update(self.V.value)
+
         last_V = self.V.value
         t = brainstate.environ.get('t')
         dt = brainstate.environ.get('dt')

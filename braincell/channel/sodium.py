@@ -23,7 +23,6 @@ __all__ = [
     'INa_TM1991',
     'INa_HH1952',
     'INa_Rsg',
-
 ]
 
 
@@ -509,21 +508,6 @@ class INa_Rsg(SodiumChannel, IndependentIntegration):
         self.I3.value = brainstate.init.param(u.math.zeros, self.varshape, batch_size)
         self.I4.value = brainstate.init.param(u.math.zeros, self.varshape, batch_size)
         self.I5.value = brainstate.init.param(u.math.zeros, self.varshape, batch_size)
-
-    def normalize_states(self, states):
-        total = 0.
-        for state in states:
-            if hasattr(state, 'value'):
-                state.value = u.math.maximum(state.value, 0)
-                total = total + state.value
-            else:
-                state = u.math.maximum(state, 0)
-                total = total + state
-        for state in states:
-            if hasattr(state, 'value'):
-                state.value = state.value / (total + 10 ** (-12))
-            else:
-                state = state / (total + 10 ** (-12))
 
     def pre_integral(self, V, Na: IonInfo):
         state_value = u.math.clip(

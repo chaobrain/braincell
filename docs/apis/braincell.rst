@@ -5,13 +5,9 @@
 .. automodule:: braincell
 
 
-
-
 .. toctree::
-   :hidden:
    :maxdepth: 2
 
-    integration.rst
-    morphology.rst
-    structure.rst
-
+   structure.rst
+   integration.rst
+   morphology.rst

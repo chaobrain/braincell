@@ -1,5 +1,5 @@
- Morphology Processing
-======================
+Morphology Processing
+=====================
 
 
 .. currentmodule:: braincell

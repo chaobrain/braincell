@@ -36,3 +36,4 @@ Base Class for Ion Channels
     IonInfo
     MixIons
     Channel
+    Synapse

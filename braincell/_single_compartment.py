@@ -20,7 +20,7 @@ import brainunit as u
 
 from ._base import HHTypedNeuron, IonChannel
 from ._integrator import get_integrator
-from ._integrator_protocol import DiffEqState
+from ._integrator_protocol import DiffEqState, IndependentIntegration
 from ._typing import Initializer
 
 __all__ = [
@@ -210,7 +210,8 @@ class SingleCompartment(HHTypedNeuron):
             External current input. Default is 0 nA/cm^2.
         """
         for key, node in self.nodes(IonChannel, allowed_hierarchy=(1, 1)).items():
-            node.pre_integral(self.V.value)
+            if not isinstance(node, IndependentIntegration):
+                node.pre_integral(self.V.value)
 
     def compute_derivative(self, I_ext=0. * u.nA / u.cm ** 2):
         """
@@ -227,11 +228,11 @@ class SingleCompartment(HHTypedNeuron):
         I_ext = self.sum_current_inputs(I_ext, self.V.value)
         for key, ch in self.nodes(IonChannel, allowed_hierarchy=(1, 1)).items():
             I_ext = I_ext + ch.current(self.V.value)
-
         self.V.derivative = I_ext / self.C
 
         for key, node in self.nodes(IonChannel, allowed_hierarchy=(1, 1)).items():
-            node.compute_derivative(self.V.value)
+            if not isinstance(node, IndependentIntegration):
+                node.compute_derivative(self.V.value)
 
     def post_integral(self, I_ext=0. * u.nA / u.cm ** 2):
         """
@@ -247,7 +248,8 @@ class SingleCompartment(HHTypedNeuron):
         """
         self.V.value = self.sum_delta_inputs(init=self.V.value)
         for key, node in self.nodes(IonChannel, allowed_hierarchy=(1, 1)).items():
-            node.post_integral(self.V.value)
+            if not isinstance(node, IndependentIntegration):
+                node.post_integral(self.V.value)
 
     def update(self, I_ext=0. * u.nA / u.cm ** 2):
         """
@@ -307,4 +309,3 @@ class SingleCompartment(HHTypedNeuron):
     def soma_spike(self):
         denom = 20.0 * u.mV
         return self.spk_fun((self.V.value - self.V_th) / denom)
-

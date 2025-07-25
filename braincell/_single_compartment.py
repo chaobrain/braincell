@@ -225,12 +225,16 @@ class SingleCompartment(HHTypedNeuron):
             External current input. Default is 0 nA/cm^2.
         """
         I_ext = self.sum_current_inputs(I_ext, self.V.value)
-
         for key, ch in self.nodes(IonChannel, allowed_hierarchy=(1, 1)).items():
-            I_ext = I_ext + ch.current(self.V.value)
-
+            try:
+                I_ext = I_ext + ch.current(self.V.value)
+            except Exception as e:
+                raise ValueError(
+                    f"Error in computing current for ion channel '{key}': \n"
+                    f"{ch}\n"
+                    f"Error: {e}"
+                )
         self.V.derivative = I_ext / self.C
-
         for key, node in self.nodes(IonChannel, allowed_hierarchy=(1, 1)).items():
             node.compute_derivative(self.V.value)
 
@@ -303,4 +307,3 @@ class SingleCompartment(HHTypedNeuron):
     def soma_spike(self):
         denom = 20.0 * u.mV
         return self.spk_fun((self.V.value - self.V_th) / denom)
-

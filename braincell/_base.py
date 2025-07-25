@@ -81,7 +81,7 @@ The actual implementations of some classes (e.g., SingleCompartment, specific Io
 may be defined in other files within the BrainCell library.
 """
 
-from typing import Optional, Dict, Sequence, Callable, NamedTuple, Tuple, Type
+from typing import Optional, Dict, Sequence, Callable, NamedTuple, Tuple, Type, Hashable
 
 import numpy as np
 
@@ -884,18 +884,18 @@ class Ion(IonChannel, Container):
             node: Channel
             node.reset_state(V, ion_info, batch_size)
 
-    def register_external_current(self, key: str, fun: Callable):
+    def register_external_current(self, key: Hashable, fun: Callable):
         """
         Register an external current function.
 
         This method adds a new external current function to the ion channel.
 
         Parameters:
-            key (str): A unique identifier for the external current.
+            key (Hashable): A unique identifier for the external current.
             fun (Callable): The function that computes the external current.
 
         Raises:
-            ValueError: If the key already exists in the external currents dictionary.
+            ValueError: If the key already exists in the external currents' dictionary.
         """
         if key in self._external_currents:
             raise ValueError
@@ -1280,7 +1280,7 @@ class MixIons(IonChannel, Container):
             elem: Channel
             for ion_root in elem.root_type.__args__:
                 ion = self._get_ion(ion_root)
-                ion.register_external_current(elem.name, self._get_ion_fun(ion, elem))
+                ion.register_external_current(id(elem), self._get_ion_fun(ion, elem))
 
     def _get_ion_fun(self, ion: 'Ion', node: 'Channel'):
         def fun(V, ion_info):

@@ -25,14 +25,16 @@ Implementation of the paper:
 
 from typing import Dict, Callable
 
-import brainstate
 import braintools
 import brainunit as u
 import matplotlib.pyplot as plt
 import numba
 import numpy as np
 
+import brainstate
 from SC05_thalamus_single_compartment_neurons import TRN, RTC, HTC, IN
+
+brainstate.environ.set(dt=0.1 * u.ms)
 
 
 class MgBlock(brainstate.nn.SynOut):
@@ -41,7 +43,7 @@ class MgBlock(brainstate.nn.SynOut):
         self.E = E
 
     def update(self, conductance, potential):
-        return conductance * (self.E - potential) / (1 + u.math.exp(-(potential.u.mV + 25) / 12.5))
+        return conductance * (self.E - potential) / (1 + u.math.exp(-(potential / u.mV + 25) / 12.5))
 
 
 class ProbDist:
@@ -123,7 +125,7 @@ class Thalamus(brainstate.nn.Module):
         # noises
         self.noise2HTC = brainstate.nn.AlignPostProj(
             brainstate.nn.PoissonSpike(self.HTC.varshape, freqs=100 * u.Hz),
-            comm=brainstate.nn.OneToOne(self.HTC.varshape, g_input['TC']),
+            comm=brainstate.nn.OneToOne(self.HTC.varshape, g_input['TC'], ),
             syn=brainstate.nn.Expon.desc(self.HTC.varshape, tau=5. * u.ms),
             out=brainstate.nn.COBA.desc(E=0. * u.mV),
             post=self.HTC,
@@ -152,7 +154,7 @@ class Thalamus(brainstate.nn.Module):
 
         # HTC cells were connected with gap junctions
         self.gj_HTC = brainstate.nn.SymmetryGapJunction(
-            self.HTC, 'V', conn=ProbDist(dist=2., prob=0.3, ), weight=1e-2
+            self.HTC, 'V', conn=ProbDist(dist=2., prob=0.3), weight=1e-2 * u.siemens
         )
 
         # HTC provides feedforward excitation to INs
@@ -160,7 +162,7 @@ class Thalamus(brainstate.nn.Module):
             self.HTC.align_pre(
                 brainstate.nn.STD.desc(tau=700 * u.ms, U=0.07)
             ).align_pre(
-                brainstate.nn.AMPA(self.HTC.varshape, alpha=0.94 / u.ms, beta=0.18 / u.ms)
+                brainstate.nn.AMPA(self.HTC.varshape, alpha=0.94 / (u.ms * u.mM), beta=0.18 / u.ms)
             ).prefetch('g'),
             comm=brainstate.nn.FixedNumConn(self.HTC.varshape, self.IN.varshape, 0.3, 6e-3),
             out=brainstate.nn.COBA(E=0. * u.mV),
@@ -170,7 +172,7 @@ class Thalamus(brainstate.nn.Module):
             self.HTC.align_pre(
                 brainstate.nn.STD.desc(tau=700 * u.ms, U=0.07),
             ).align_pre(
-                brainstate.nn.AMPA(self.HTC.varshape, alpha=1.0 / u.ms, beta=0.0067 / u.ms)
+                brainstate.nn.AMPA(self.HTC.varshape, alpha=1.0 / (u.ms * u.mM), beta=0.0067 / u.ms)
             ).prefetch('g'),
             comm=brainstate.nn.FixedNumConn(self.HTC.varshape, self.IN.varshape, 0.3, 3e-3),
             out=MgBlock(),
@@ -182,7 +184,7 @@ class Thalamus(brainstate.nn.Module):
             self.IN.align_pre(
                 brainstate.nn.STD.desc(tau=700 * u.ms, U=0.07)
             ).align_pre(
-                brainstate.nn.GABAa(self.IN.varshape, alpha=10.5 / u.ms, beta=0.166 / u.ms)
+                brainstate.nn.GABAa(self.IN.varshape, alpha=10.5 / (u.ms * u.mM), beta=0.166 / u.ms)
             ).prefetch_delay('g', 2 * u.ms),
             comm=brainstate.nn.FixedNumConn(self.IN.varshape, self.RTC.varshape, 0.3, 3e-3),
             out=brainstate.nn.COBA(E=-80. * u.mV),
@@ -200,7 +202,7 @@ class Thalamus(brainstate.nn.Module):
             self.HTC.align_pre(
                 brainstate.nn.STD.desc(tau=700 * u.ms, U=0.07)
             ).align_pre(
-                brainstate.nn.AMPA(self.HTC.varshape, alpha=0.94 / u.ms, beta=0.18 / u.ms)
+                brainstate.nn.AMPA(self.HTC.varshape, alpha=0.94 / (u.ms * u.mM), beta=0.18 / u.ms)
             ).prefetch_delay('g', 2 * u.ms),
             comm=brainstate.nn.FixedNumConn(self.HTC.varshape, self.RE.varshape, 0.2, 4e-3),
             out=brainstate.nn.COBA(E=0. * u.mV),
@@ -210,7 +212,7 @@ class Thalamus(brainstate.nn.Module):
             self.RTC.align_pre(
                 brainstate.nn.STD.desc(tau=700 * u.ms, U=0.07)
             ).align_pre(
-                brainstate.nn.AMPA(self.RTC.varshape, alpha=0.94 / u.ms, beta=0.18 / u.ms)
+                brainstate.nn.AMPA(self.RTC.varshape, alpha=0.94 / (u.ms * u.mM), beta=0.18 / u.ms)
             ).prefetch_delay('g', 2 * u.ms),
             comm=brainstate.nn.FixedNumConn(self.RTC.varshape, self.RE.varshape, 0.2, 4e-3),
             out=brainstate.nn.COBA(E=0. * u.mV),
@@ -220,7 +222,7 @@ class Thalamus(brainstate.nn.Module):
             self.HTC.align_pre(
                 brainstate.nn.STD.desc(tau=700 * u.ms, U=0.07)
             ).align_pre(
-                brainstate.nn.AMPA(self.HTC.varshape, alpha=1. / u.ms, beta=0.0067 / u.ms)
+                brainstate.nn.AMPA(self.HTC.varshape, alpha=1. / (u.ms * u.mM), beta=0.0067 / u.ms)
             ).prefetch_delay('g', 2 * u.ms),
             comm=brainstate.nn.FixedNumConn(self.HTC.varshape, self.RE.varshape, 0.2, 2e-3),
             out=MgBlock(),
@@ -230,7 +232,7 @@ class Thalamus(brainstate.nn.Module):
             self.RTC.align_pre(
                 brainstate.nn.STD.desc(tau=700 * u.ms, U=0.07)
             ).align_pre(
-                brainstate.nn.AMPA(self.RTC.varshape, alpha=1. / u.ms, beta=0.0067 / u.ms)
+                brainstate.nn.AMPA(self.RTC.varshape, alpha=1. / (u.ms * u.mM), beta=0.0067 / u.ms)
             ).prefetch_delay('g', 2 * u.ms),
             comm=brainstate.nn.FixedNumConn(self.RTC.varshape, self.RE.varshape, 0.2, 2e-3),
             out=MgBlock(),
@@ -240,7 +242,7 @@ class Thalamus(brainstate.nn.Module):
             self.RE.align_pre(
                 brainstate.nn.STD.desc(tau=700 * u.ms, U=0.07)
             ).align_pre(
-                brainstate.nn.GABAa(self.RE.varshape, alpha=10.5 / u.ms, beta=0.166 / u.ms)
+                brainstate.nn.GABAa(self.RE.varshape, alpha=10.5 / (u.ms * u.mM), beta=0.166 / u.ms)
             ).prefetch_delay('g', 2 * u.ms),
             comm=brainstate.nn.FixedNumConn(self.RE.varshape, self.HTC.varshape, 0.2, 3e-3),
             out=brainstate.nn.COBA(E=-80. * u.mV),
@@ -250,7 +252,7 @@ class Thalamus(brainstate.nn.Module):
             self.RE.align_pre(
                 brainstate.nn.STD.desc(tau=700 * u.ms, U=0.07)
             ).align_pre(
-                brainstate.nn.GABAa(self.RE.varshape, alpha=10.5 / u.ms, beta=0.166 / u.ms)
+                brainstate.nn.GABAa(self.RE.varshape, alpha=10.5 / (u.ms * u.mM), beta=0.166 / u.ms)
             ).prefetch_delay('g', 2 * u.ms),
             comm=brainstate.nn.FixedNumConn(self.RE.varshape, self.RTC.varshape, 0.2, 3e-3),
             out=brainstate.nn.COBA(E=-80. * u.mV),
@@ -265,7 +267,7 @@ class Thalamus(brainstate.nn.Module):
             self.RE.align_pre(
                 brainstate.nn.STD.desc(tau=700 * u.ms, U=0.07)
             ).align_pre(
-                brainstate.nn.GABAa(self.RE.varshape, alpha=10.5 / u.ms, beta=0.166 / u.ms)
+                brainstate.nn.GABAa(self.RE.varshape, alpha=10.5 / (u.ms * u.mM), beta=0.166 / u.ms)
             ).prefetch_delay('g', 2 * u.ms),
             comm=brainstate.nn.FixedNumConn(self.RE.varshape, self.RE.varshape, 0.2, 1e-3),
             out=brainstate.nn.COBA(E=-70. * u.mV),
@@ -277,8 +279,8 @@ class Thalamus(brainstate.nn.Module):
         self.RE2IN = brainstate.nn.CurrentProj(
             self.RE.align_pre(
                 brainstate.nn.STD.desc(tau=700 * u.ms, U=0.07)
-            ).alig_pre(
-                brainstate.nn.GABAa(self.RE.varshape, alpha=10.5 / u.ms, beta=0.166 / u.ms)
+            ).align_pre(
+                brainstate.nn.GABAa(self.RE.varshape, alpha=10.5 / (u.ms * u.mM), beta=0.166 / u.ms)
             ).prefetch_delay('g', 2 * u.ms),
             comm=brainstate.nn.FixedNumConn(self.RE.varshape, self.IN.varshape, 0.05, 1e-3, afferent_ratio=0.1),
             out=brainstate.nn.COBA(E=-80. * u.mV),
@@ -330,20 +332,20 @@ class Thalamus(brainstate.nn.Module):
 
 states = {
     'delta': dict(
-        g_input={'IN': 1e-4 * u.mA, 'RE': 1e-4 * u.mA, 'TC': 1e-4 * u.mA},
-        g_KL={'TC': 0.035 * u.mS, 'RE': 0.03 * u.mS, 'IN': 0.01 * u.mS}
+        g_input={'IN': 1e-4 * u.mS, 'RE': 1e-4 * u.mS, 'TC': 1e-4 * u.mS},
+        g_KL={'TC': 0.035 * u.mS / u.cm ** 2, 'RE': 0.03 * u.mS / u.cm ** 2, 'IN': 0.01 * u.mS / u.cm ** 2}
     ),
     'spindle': dict(
-        g_input={'IN': 3e-4 * u.mA, 'RE': 3e-4 * u.mA, 'TC': 3e-4 * u.mA},
-        g_KL={'TC': 0.01 * u.mS, 'RE': 0.02 * u.mS, 'IN': 0.015 * u.mS}
+        g_input={'IN': 3e-4 * u.mS, 'RE': 3e-4 * u.mS, 'TC': 3e-4 * u.mS},
+        g_KL={'TC': 0.01 * u.mS / u.cm ** 2, 'RE': 0.02 * u.mS / u.cm ** 2, 'IN': 0.015 * u.mS / u.cm ** 2}
     ),
     'alpha': dict(
-        g_input={'IN': 1.5e-3 * u.mA, 'RE': 1.5e-3 * u.mA, 'TC': 1.5e-3 * u.mA},
-        g_KL={'TC': 0. * u.mS, 'RE': 0.01 * u.mS, 'IN': 0.02 * u.mS}
+        g_input={'IN': 1.5e-3 * u.mS, 'RE': 1.5e-3 * u.mS, 'TC': 1.5e-3 * u.mS},
+        g_KL={'TC': 0. * u.mS / u.cm ** 2, 'RE': 0.01 * u.mS / u.cm ** 2, 'IN': 0.02 * u.mS / u.cm ** 2}
     ),
     'gamma': dict(
-        g_input={'IN': 1.5e-3 * u.mA, 'RE': 1.5e-3 * u.mA, 'TC': 1.7e-2 * u.mA},
-        g_KL={'TC': 0. * u.mS, 'RE': 0.01 * u.mS, 'IN': 0.02 * u.mS}
+        g_input={'IN': 1.5e-3 * u.mS, 'RE': 1.5e-3 * u.mS, 'TC': 1.7e-2 * u.mS},
+        g_KL={'TC': 0. * u.mS / u.cm ** 2, 'RE': 0.01 * u.mS / u.cm ** 2, 'IN': 0.02 * u.mS / u.cm ** 2}
     ),
 }
 
@@ -380,23 +382,23 @@ def line_plot(ax, xs, ys, ylabel=None, xlim=None):
         ax.set_xlim(xlim)
 
 
-def raster_plot(ax, times, spikes, ylabel='Neuron Index', xlabel='Time [ms]',
-                xlim=None, marker='.', markersize=2, color='k'):
+def raster_plot(
+    ax, times, spikes, ylabel='Neuron Index', xlabel='Time [ms]',
+    xlim=None, marker='.', markersize=2, color='k'
+):
     elements = np.where(spikes > 0.)
     index = elements[1]
     time = times[elements[0]]
     ax.plot(time, index, marker + color, markersize=markersize)
     if xlabel:
-        ax.xlabel(xlabel)
+        ax.set_xlabel(xlabel)
     if ylabel:
-        ax.ylabel(ylabel)
+        ax.set_ylabel(ylabel)
     if xlim:
-        ax.xlim(xlim)
+        ax.set_xlim(xlim)
 
 
 def try_network(state='delta'):
-    brainstate.environ.set(dt=0.1 * u.ms)
-
     net = Thalamus(
         IN_V_init=brainstate.init.Constant(-70. * u.mV),
         RE_V_init=brainstate.init.Constant(-70. * u.mV),
@@ -407,15 +409,17 @@ def try_network(state='delta'):
     brainstate.nn.init_all_states(net)
 
     duration = 3e3 * u.ms  # 3 seconds
-    currents = rhythm_const_input(2e-4 * u.mA,
-                                  freq=4. * u.Hz,
-                                  length=10. * u.ms,
-                                  duration=duration,
-                                  t_end=2e3 * u.ms,
-                                  t_start=1e3 * u.ms)
+    currents = rhythm_const_input(
+        2e-4 * u.mA,
+        freq=4. * u.Hz,
+        length=10. * u.ms,
+        duration=duration,
+        t_end=2e3 * u.ms,
+        t_start=1e3 * u.ms
+    )
     indices = np.arange(currents.shape[0])
     times = indices * brainstate.environ.get_dt()
-    mon = brainstate.transform.for_loop(net.update, indices, times, currents)
+    mon = brainstate.transform.for_loop(net.update, indices, times, currents, pbar=200)
 
     fig, gs = braintools.visualize.get_figure(5, 2, 2, 5)
     line_plot(fig.add_subplot(gs[0, :]), times, currents, ylabel='Current', xlim=(0, duration / u.ms))
@@ -427,8 +431,12 @@ def try_network(state='delta'):
     raster_plot(fig.add_subplot(gs[2, 1]), times, mon.get('RTC.spike'), xlim=(0, duration / u.ms))
     raster_plot(fig.add_subplot(gs[3, 1]), times, mon.get('IN.spike'), xlim=(0, duration / u.ms))
     raster_plot(fig.add_subplot(gs[4, 1]), times, mon.get('RE.spike'), xlim=(0, duration / u.ms))
+    plt.suptitle(f'Thalamus Network State: {state}')
     plt.show()
 
 
 if __name__ == '__main__':
-    try_network()
+    # try_network('delta')
+    # try_network('spindle')
+    try_network('alpha')
+    try_network('gamma')

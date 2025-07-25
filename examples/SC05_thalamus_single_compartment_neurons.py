@@ -23,17 +23,21 @@ Implementation of the following models in the paper:
 
 import time
 
+import braincell
 import brainstate
 import braintools
 import brainunit as u
 import matplotlib.pyplot as plt
 
-import braincell
-
 
 class ThalamusNeuron(braincell.SingleCompartment):
-    def compute_derivative(self, x=0. * u.nA):
-        return super().compute_derivative(x * self.area)
+    def compute_derivative(self, I_ext=0. * u.nA):
+        I_ext = self.sum_current_inputs(I_ext, self.V.value) * self.area
+        for key, ch in self.nodes(braincell.IonChannel, allowed_hierarchy=(1, 1)).items():
+            I_ext = I_ext + ch.current(self.V.value)
+        self.V.derivative = I_ext / self.C
+        for key, node in self.nodes(braincell.IonChannel, allowed_hierarchy=(1, 1)).items():
+            node.compute_derivative(self.V.value)
 
     def step_run(self, t, inp):
         with brainstate.environ.context(t=t):

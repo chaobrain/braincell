@@ -20,8 +20,8 @@ import brainunit as u
 import jax.numpy as jnp
 
 from ._integrator_util import apply_standard_solver_step
-from ._misc import set_module_as
-from ._protocol import DiffEqModule
+from ._misc import set_module_as, ModuleNotFound
+from ._integrator_protocol import DiffEqModule
 from ._typing import VectorFiled, Y0, T, DT
 
 __all__ = [
@@ -44,14 +44,7 @@ __all__ = [
 
 diffrax_installed = importlib.util.find_spec('diffrax') is not None
 if not diffrax_installed:
-    class Diffrax:
-        def __getattr__(self, item):
-            raise ModuleNotFoundError(
-                'diffrax is not installed. Please install diffrax to use this feature.'
-            )
-
-
-    diffrax = Diffrax()
+    diffrax = ModuleNotFound('diffrax')
 
 else:
     import diffrax

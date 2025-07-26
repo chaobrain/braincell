@@ -26,7 +26,7 @@ import jax
 import jax.numpy as jnp
 
 from ._misc import set_module_as
-from ._protocol import DiffEqModule
+from ._integrator_protocol import DiffEqModule
 
 
 @set_module_as('braincell')
@@ -35,19 +35,22 @@ def dhs_voltage_step(target, t, dt, *args):
     Implicit euler solver with the `dendritic hierarchical scheduling` (DHS, Zhang et al., 2023).
     """
 
+    # branching tree information
+    branch_tree = target.to_branch_tree()
+    diags = branch_tree.diags  # [n_neuron, 2*n_seg+1]
+    uppers = branch_tree.uppers
+    lowers = branch_tree.lowers
+    parent_lookup = branch_tree.parent_lookup
+    internal_node_inds = branch_tree.internal_node_inds
+    flipped_comp_edges = branch_tree.flipped_comp_edges
+
     # membrane potential at time n
     V_n = target.V.value
-    diags = target.diags
-    uppers = target.uppers
-    lowers = target.lowers
-    parent_lookup = target.parent_lookup
-    internal_node_inds = target.internal_node_inds
-    flipped_comp_edges, padded_edges, edge_masks = target.flipped_comp_edges
-
-    n_nodes = len(diags)
 
     # linear and constant term
     linear, const = _linear_and_const_term(target, V_n, *args)
+
+    n_nodes = len(diags)
     V_linear = u.math.zeros(n_nodes) * u.get_unit(linear)
     V_linear = V_linear.at[internal_node_inds].set(-linear.ravel())
     V_const = u.math.zeros(n_nodes) * u.get_unit(const)
@@ -71,61 +74,25 @@ def dhs_voltage_step(target, t, dt, *args):
     # Triangulate by unrolling the loop of the levels.
     steps = len(flipped_comp_edges)
     for i in range(steps):
-        diags, solves = _comp_based_triang(i, (diags, solves, lowers, uppers, flipped_comp_edges))
+        diags, solves = _comp_based_triang(diags, solves, lowers, uppers, flipped_comp_edges[i])
 
     # Back substitute with recursive doubling.
-    diags, solves = _comp_based_backsub_recursive_doubling(
+    solves = _comp_based_backsub_recursive_doubling(
         diags, solves, lowers, steps, n_nodes, parent_lookup
     )
 
     target.V.value = solves[internal_node_inds].reshape((1, -1))
 
 
-def _dhs_matrix(target: DiffEqModule):
-    with (jax.ensure_compile_time_eval()):
-        Gmat_sorted, parent_rows, dhs_groups, segment2rowid, flipped_comp_edges = target.get_dhs_info(
-            max_group_size=16, show=False
-        )
-
-        cm_segmid = target.cm
-        area_segmid = target.area
-
-        cm = jnp.ones(len(parent_rows)) * u.get_unit(cm_segmid)
-        area = jnp.ones(len(parent_rows)) * u.get_unit(area_segmid)
-        seg_mid_ids = jnp.array(list(segment2rowid.values()))
-        cm[seg_mid_ids] = cm_segmid
-        area[seg_mid_ids] = area_segmid
-
-        Gmat_sorted = -Gmat_sorted / (cm * area)[:, u.math.newaxis]
-
-        n = len(parent_rows)
-        lowers = u.math.zeros(n) * u.get_unit(Gmat_sorted)
-        uppers = u.math.zeros(n) * u.get_unit(Gmat_sorted)
-
-        for i in range(n):
-            p = parent_rows[i]
-            if p == -1:
-                lowers = lowers.at[i].set(0 * u.get_unit(Gmat_sorted))
-                uppers = uppers.at[i].set(0 * u.get_unit(Gmat_sorted))
-            else:
-                lowers = lowers.at[i].set(Gmat_sorted[i, p])
-                uppers = uppers.at[i].set(Gmat_sorted[p, i])
-
-        diags = u.math.diag(Gmat_sorted)
-
-    return diags, uppers, lowers, parent_rows, dhs_groups, segment2rowid, flipped_comp_edges, Gmat_sorted
-
-
-def _comp_based_triang(index, carry):
-    """Triangulate the quasi-tridiagonal system compartment by compartment."""
-    diags, solves, lowers, uppers, flipped_comp_edges = carry
+def _comp_based_triang(diags, solves, lowers, uppers, comp_edge):
+    """
+    Triangulate the quasi-tridiagonal system compartment by compartment.
+    """
 
     # `flipped_comp_edges` has shape `(num_levels, num_comps_per_level, 2)`. We first
     # get the relevant level with `[index]` and then we get all children and parents
     # in the level.
-    comp_edge = flipped_comp_edges[index]
     child = comp_edge[:, 0]
-    parent = comp_edge[:, 1]
     lower_val = lowers[child]
     upper_val = uppers[child]
     child_diag = diags[child]
@@ -133,12 +100,13 @@ def _comp_based_triang(index, carry):
 
     # Factor that the child row has to be multiplied by.
     multiplier = upper_val / child_diag
+
     # Updates to diagonal and solve
+    parent = comp_edge[:, 1]
     diags = diags.at[parent].add(-lower_val * multiplier)
-    # jax.debug.print('diags_step= {}',diags)
     solves = solves.at[parent].add(-child_solve * multiplier)
 
-    return (diags, solves)
+    return diags, solves
 
 
 def _comp_based_backsub_recursive_doubling(
@@ -190,6 +158,7 @@ def _comp_based_backsub_recursive_doubling(
     naturally happens because `lower_effect[0]=0`, and the recursion
     keeps multiplying new_lower_effect with the `lower_effect[parent]`.
     """
+
     # Why `lowers = lowers.at[0].set(0.0)`? During triangulation (and the
     # cpu-optimized solver), we never access `lowers[0]`. Its value should
     # be zero (because the zero-eth compartment does not have a `lower`), but
@@ -220,9 +189,7 @@ def _comp_based_backsub_recursive_doubling(
     # `solves/diags` (see `step_voltage_implicit_with_dhs_solve`). For recursive
     # doubling, the solution should just be `solve_effect`, so we define diags as
     # 1.0 so the division has no effect.
-    diags = u.math.ones_like(solve_effect) * u.get_unit(solve_effect)
-    solves = solve_effect
-    return diags, solves
+    return solve_effect
 
 
 @set_module_as('braincell')
@@ -307,7 +274,7 @@ def _sparse_solve_v(
     dt: brainstate.typing.ArrayLike,
     V_n: brainstate.typing.ArrayLike
 ):
-    """
+    r"""
     Set the left-hand side (lhs) and right-hand side (rhs) of the implicit equation:
 
     $$
@@ -396,7 +363,10 @@ def _linear_and_const_term(target: DiffEqModule, V_n, *args):
 
     # compute the linear and derivative term
     linear, derivative = brainstate.transform.vector_grad(
-        target.compute_membrane_derivative, argnums=0, return_value=True, unit_aware=False,
+        target.compute_membrane_derivative,
+        argnums=0,
+        return_value=True,
+        unit_aware=False,
     )(V_n, *args)
 
     # Convert linearization to a unit-aware quantity
@@ -404,4 +374,4 @@ def _linear_and_const_term(target: DiffEqModule, V_n, *args):
 
     # Compute constant term
     const = derivative - V_n * linear
-    return linear, const
+    return linear, const  # [n_neuron, n_segments]

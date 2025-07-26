@@ -11,7 +11,7 @@ import brainstate
 import brainunit as u
 
 from braincell._base import Channel, IonInfo
-from braincell._protocol import DiffEqState
+from braincell._integrator_protocol import DiffEqState
 from braincell.ion import Potassium
 
 __all__ = [

@@ -1,0 +1,616 @@
+
+<!DOCTYPE html>
+
+
+<html lang="en" data-content_root="../../" >
+
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <title>braincell.diffrax_heun_step &#8212; braincell</title>
+  
+  
+  
+  <script data-cfasync="false">
+    document.documentElement.dataset.mode = localStorage.getItem("mode") || "";
+    document.documentElement.dataset.theme = localStorage.getItem("theme") || "";
+  </script>
+  
+  <!-- Loaded before other Sphinx assets -->
+  <link href="../../_static/styles/theme.css?digest=dfe6caa3a7d634c4db9b" rel="stylesheet" />
+<link href="../../_static/styles/bootstrap.css?digest=dfe6caa3a7d634c4db9b" rel="stylesheet" />
+<link href="../../_static/styles/pydata-sphinx-theme.css?digest=dfe6caa3a7d634c4db9b" rel="stylesheet" />
+
+  
+  <link href="../../_static/vendor/fontawesome/6.5.2/css/all.min.css?digest=dfe6caa3a7d634c4db9b" rel="stylesheet" />
+  <link rel="preload" as="font" type="font/woff2" crossorigin href="../../_static/vendor/fontawesome/6.5.2/webfonts/fa-solid-900.woff2" />
+<link rel="preload" as="font" type="font/woff2" crossorigin href="../../_static/vendor/fontawesome/6.5.2/webfonts/fa-brands-400.woff2" />
+<link rel="preload" as="font" type="font/woff2" crossorigin href="../../_static/vendor/fontawesome/6.5.2/webfonts/fa-regular-400.woff2" />
+
+    <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=8f2a1f02" />
+    <link rel="stylesheet" type="text/css" href="../../_static/styles/sphinx-book-theme.css?v=eba8b062" />
+    <link rel="stylesheet" type="text/css" href="../../_static/mystnb.4510f1fc1dee50b3e5859aac5469c37c29e427902b24a333a5f9fcb2f0b3ac41.css" />
+    <link rel="stylesheet" type="text/css" href="../../_static/plot_directive.css" />
+    <link rel="stylesheet" type="text/css" href="../../_static/sphinx-thebe.css?v=4fa983c6" />
+    <link rel="stylesheet" type="text/css" href="../../_static/sphinx-design.min.css?v=95c83b7e" />
+  
+  <!-- Pre-loaded scripts that we'll load fully later -->
+  <link rel="preload" as="script" href="../../_static/scripts/bootstrap.js?digest=dfe6caa3a7d634c4db9b" />
+<link rel="preload" as="script" href="../../_static/scripts/pydata-sphinx-theme.js?digest=dfe6caa3a7d634c4db9b" />
+  <script src="../../_static/vendor/fontawesome/6.5.2/js/all.min.js?digest=dfe6caa3a7d634c4db9b"></script>
+
+    <script src="../../_static/documentation_options.js?v=f131489c"></script>
+    <script src="../../_static/doctools.js?v=9bcbadda"></script>
+    <script src="../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../../_static/scripts/sphinx-book-theme.js?v=887ef09a"></script>
+    <script src="../../_static/design-tabs.js?v=f930bc37"></script>
+    <script>const THEBE_JS_URL = "https://unpkg.com/thebe@0.8.2/lib/index.js"; const thebe_selector = ".thebe,.cell"; const thebe_selector_input = "pre"; const thebe_selector_output = ".output, .cell_output"</script>
+    <script async="async" src="../../_static/sphinx-thebe.js?v=c100c467"></script>
+    <script>DOCUMENTATION_OPTIONS.pagename = 'apis/generated/braincell.diffrax_heun_step';</script>
+    <link rel="icon" href="../../_static/braincell.png"/>
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" />
+    <link rel="next" title="braincell.diffrax_midpoint_step" href="braincell.diffrax_midpoint_step.html" />
+    <link rel="prev" title="braincell.diffrax_euler_step" href="braincell.diffrax_euler_step.html" />
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <meta name="docsearch:language" content="en"/>
+    <meta name="docbuild:last-update" content="Jul 30, 2025"/>
+  </head>
+  
+  
+  <body data-bs-spy="scroll" data-bs-target=".bd-toc-nav" data-offset="180" data-bs-root-margin="0px 0px -60%" data-default-mode="">
+
+  
+  
+  <div id="pst-skip-link" class="skip-link d-print-none"><a href="#main-content">Skip to main content</a></div>
+  
+  <div id="pst-scroll-pixel-helper"></div>
+  
+  <button type="button" class="btn rounded-pill" id="pst-back-to-top">
+    <i class="fa-solid fa-arrow-up"></i>Back to top</button>
+
+  
+  <input type="checkbox"
+          class="sidebar-toggle"
+          id="pst-primary-sidebar-checkbox"/>
+  <label class="overlay overlay-primary" for="pst-primary-sidebar-checkbox"></label>
+  
+  <input type="checkbox"
+          class="sidebar-toggle"
+          id="pst-secondary-sidebar-checkbox"/>
+  <label class="overlay overlay-secondary" for="pst-secondary-sidebar-checkbox"></label>
+  
+  <div class="search-button__wrapper">
+    <div class="search-button__overlay"></div>
+    <div class="search-button__search-container">
+<form class="bd-search d-flex align-items-center"
+      action="../../search.html"
+      method="get">
+  <i class="fa-solid fa-magnifying-glass"></i>
+  <input type="search"
+         class="form-control"
+         name="q"
+         id="search-input"
+         placeholder="Search..."
+         aria-label="Search..."
+         autocomplete="off"
+         autocorrect="off"
+         autocapitalize="off"
+         spellcheck="false"/>
+  <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd>K</kbd></span>
+</form></div>
+  </div>
+
+  <div class="pst-async-banner-revealer d-none">
+  <aside id="bd-header-version-warning" class="d-none d-print-none" aria-label="Version warning"></aside>
+</div>
+
+  
+    <header class="bd-header navbar navbar-expand-lg bd-navbar d-print-none">
+    </header>
+  
+
+  <div class="bd-container">
+    <div class="bd-container__inner bd-page-width">
+      
+      
+      
+      <div class="bd-sidebar-primary bd-sidebar">
+        
+
+  
+  <div class="sidebar-header-items sidebar-primary__section">
+    
+    
+    
+    
+  </div>
+  
+    <div class="sidebar-primary-items__start sidebar-primary__section">
+        <div class="sidebar-primary-item">
+
+  
+    
+  
+
+<a class="navbar-brand logo" href="../../index.html">
+  
+  
+  
+  
+  
+    
+    
+      
+    
+    
+    <img src="../../_static/braincell.png" class="logo__image only-light" alt="braincell - Home"/>
+    <script>document.write(`<img src="../../_static/braincell.png" class="logo__image only-dark" alt="braincell - Home"/>`);</script>
+  
+  
+</a></div>
+        <div class="sidebar-primary-item">
+
+ <script>
+ document.write(`
+   <button class="btn search-button-field search-button__button" title="Search" aria-label="Search" data-bs-placement="bottom" data-bs-toggle="tooltip">
+    <i class="fa-solid fa-magnifying-glass"></i>
+    <span class="search-button__default-text">Search</span>
+    <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd class="kbd-shortcut__modifier">K</kbd></span>
+   </button>
+ `);
+ </script></div>
+        <div class="sidebar-primary-item"><nav class="bd-links bd-docs-nav" aria-label="Main">
+    <div class="bd-toc-item navbar-nav active">
+        <p aria-level="2" class="caption" role="heading"><span class="caption-text">Quickstart</span></p>
+<ul class="nav bd-sidenav">
+<li class="toctree-l1"><a class="reference internal" href="../../quickstart/concepts-zh.html">概要</a></li>
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">Tutorials</span></p>
+<ul class="nav bd-sidenav">
+<li class="toctree-l1"><a class="reference internal" href="../../tutorial/channel-zh.html">通道</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../tutorial/ion-zh.html">离子</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../tutorial/cell-zh.html">细胞</a></li>
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">Advanced Tutorials</span></p>
+<ul class="nav bd-sidenav">
+<li class="toctree-l1"><a class="reference internal" href="../../advanced_tutorial/rationale-zh.html">补充说明</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../advanced_tutorial/differential_equation-zh.html">微分方程</a></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../../advanced_tutorial/examples.html">例程</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../advanced_tutorial/examples/sc02.html">低阈值与高阈值钙通道的门控特性对比</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../advanced_tutorial/examples/sc03.html">兴奋性-抑制性神经元网络（E-I网络）的模拟与分析</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../advanced_tutorial/examples/sc04.html">不同积分方法对 HH 模型神经元动态的影响</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../advanced_tutorial/examples/sc05.html">丘脑神经元模型的构建与电活动模拟</a></li>
+</ul>
+</details></li>
+<li class="toctree-l1"><a class="reference internal" href="../../advanced_tutorial/more-zh.html">更多</a></li>
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">API Documentation</span></p>
+<ul class="current nav bd-sidenav">
+<li class="toctree-l1"><a class="reference internal" href="../changelog.html">Release Notes</a></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../braincell.html"><code class="docutils literal notranslate"><span class="pre">braincell</span></code> module</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="braincell.IonChannel.html">IonChannel</a></li>
+<li class="toctree-l2"><a class="reference internal" href="braincell.Ion.html">Ion</a></li>
+<li class="toctree-l2"><a class="reference internal" href="braincell.IonInfo.html">IonInfo</a></li>
+<li class="toctree-l2"><a class="reference internal" href="braincell.MixIons.html">MixIons</a></li>
+<li class="toctree-l2"><a class="reference internal" href="braincell.Channel.html">Channel</a></li>
+<li class="toctree-l2"><a class="reference internal" href="braincell.HHTypedNeuron.html">HHTypedNeuron</a></li>
+<li class="toctree-l2"><a class="reference internal" href="braincell.SingleCompartment.html">SingleCompartment</a></li>
+<li class="toctree-l2"><a class="reference internal" href="braincell.MultiCompartment.html">MultiCompartment</a></li>
+<li class="toctree-l2"><a class="reference internal" href="braincell.DiffEqState.html">DiffEqState</a></li>
+<li class="toctree-l2"><a class="reference internal" href="braincell.DiffEqModule.html">DiffEqModule</a></li>
+</ul>
+</details></li>
+<li class="toctree-l1"><a class="reference internal" href="../braincell.synapse.html"><code class="docutils literal notranslate"><span class="pre">braincell.synapse</span></code> module</a></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../braincell.ion.html"><code class="docutils literal notranslate"><span class="pre">braincell.ion</span></code> module</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="braincell.ion.Calcium.html">Calcium</a></li>
+<li class="toctree-l2"><a class="reference internal" href="braincell.ion.CalciumFixed.html">CalciumFixed</a></li>
+<li class="toctree-l2"><a class="reference internal" href="braincell.ion.CalciumDetailed.html">CalciumDetailed</a></li>
+<li class="toctree-l2"><a class="reference internal" href="braincell.ion.CalciumFirstOrder.html">CalciumFirstOrder</a></li>
+<li class="toctree-l2"><a class="reference internal" href="braincell.ion.Potassium.html">Potassium</a></li>
+<li class="toctree-l2"><a class="reference internal" href="braincell.ion.PotassiumFixed.html">PotassiumFixed</a></li>
+<li class="toctree-l2"><a class="reference internal" href="braincell.ion.Sodium.html">Sodium</a></li>
+<li class="toctree-l2"><a class="reference internal" href="braincell.ion.SodiumFixed.html">SodiumFixed</a></li>
+</ul>
+</details></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../braincell.channel.html"><code class="docutils literal notranslate"><span class="pre">braincell.channel</span></code> module</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="braincell.channel.CalciumChannel.html">CalciumChannel</a></li>
+<li class="toctree-l2"><a class="reference internal" href="braincell.channel.ICaN_IS2008.html">ICaN_IS2008</a></li>
+<li class="toctree-l2"><a class="reference internal" href="braincell.channel.ICaT_HM1992.html">ICaT_HM1992</a></li>
+<li class="toctree-l2"><a class="reference internal" href="braincell.channel.ICaT_HP1992.html">ICaT_HP1992</a></li>
+<li class="toctree-l2"><a class="reference internal" href="braincell.channel.ICaHT_HM1992.html">ICaHT_HM1992</a></li>
+<li class="toctree-l2"><a class="reference internal" href="braincell.channel.ICaHT_Re1993.html">ICaHT_Re1993</a></li>
+<li class="toctree-l2"><a class="reference internal" href="braincell.channel.ICaL_IS2008.html">ICaL_IS2008</a></li>
+<li class="toctree-l2"><a class="reference internal" href="braincell.channel.ICav12_Ma2020.html">ICav12_Ma2020</a></li>
+<li class="toctree-l2"><a class="reference internal" href="braincell.channel.ICav13_Ma2020.html">ICav13_Ma2020</a></li>
+<li class="toctree-l2"><a class="reference internal" href="braincell.channel.ICav23_Ma2020.html">ICav23_Ma2020</a></li>
+<li class="toctree-l2"><a class="reference internal" href="braincell.channel.ICav31_Ma2020.html">ICav31_Ma2020</a></li>
+<li class="toctree-l2"><a class="reference internal" href="braincell.channel.ICaGrc_Ma2020.html">ICaGrc_Ma2020</a></li>
+<li class="toctree-l2"><a class="reference internal" href="braincell.channel.Ih_HM1992.html">Ih_HM1992</a></li>
+<li class="toctree-l2"><a class="reference internal" href="braincell.channel.Ih1_Ma2020.html">Ih1_Ma2020</a></li>
+<li class="toctree-l2"><a class="reference internal" href="braincell.channel.Ih2_Ma2020.html">Ih2_Ma2020</a></li>
+<li class="toctree-l2"><a class="reference internal" href="braincell.channel.LeakageChannel.html">LeakageChannel</a></li>
+<li class="toctree-l2"><a class="reference internal" href="braincell.channel.IL.html">IL</a></li>
+<li class="toctree-l2"><a class="reference internal" href="braincell.channel.PotassiumChannel.html">PotassiumChannel</a></li>
+<li class="toctree-l2"><a class="reference internal" href="braincell.channel.IK_p4_markov.html">IK_p4_markov</a></li>
+<li class="toctree-l2"><a class="reference internal" href="braincell.channel.IKDR_Ba2002.html">IKDR_Ba2002</a></li>
+<li class="toctree-l2"><a class="reference internal" href="braincell.channel.IK_TM1991.html">IK_TM1991</a></li>
+<li class="toctree-l2"><a class="reference internal" href="braincell.channel.IK_HH1952.html">IK_HH1952</a></li>
+<li class="toctree-l2"><a class="reference internal" href="braincell.channel.IKA_p4q_ss.html">IKA_p4q_ss</a></li>
+<li class="toctree-l2"><a class="reference internal" href="braincell.channel.IKA1_HM1992.html">IKA1_HM1992</a></li>
+<li class="toctree-l2"><a class="reference internal" href="braincell.channel.IKA2_HM1992.html">IKA2_HM1992</a></li>
+<li class="toctree-l2"><a class="reference internal" href="braincell.channel.IKK2_pq_ss.html">IKK2_pq_ss</a></li>
+<li class="toctree-l2"><a class="reference internal" href="braincell.channel.IKK2A_HM1992.html">IKK2A_HM1992</a></li>
+<li class="toctree-l2"><a class="reference internal" href="braincell.channel.IKK2B_HM1992.html">IKK2B_HM1992</a></li>
+<li class="toctree-l2"><a class="reference internal" href="braincell.channel.IKNI_Ya1989.html">IKNI_Ya1989</a></li>
+<li class="toctree-l2"><a class="reference internal" href="braincell.channel.IK_Leak.html">IK_Leak</a></li>
+<li class="toctree-l2"><a class="reference internal" href="braincell.channel.IKv11_Ak2007.html">IKv11_Ak2007</a></li>
+<li class="toctree-l2"><a class="reference internal" href="braincell.channel.IKv34_Ma2020.html">IKv34_Ma2020</a></li>
+<li class="toctree-l2"><a class="reference internal" href="braincell.channel.IKv43_Ma2020.html">IKv43_Ma2020</a></li>
+<li class="toctree-l2"><a class="reference internal" href="braincell.channel.IKM_Grc_Ma2020.html">IKM_Grc_Ma2020</a></li>
+<li class="toctree-l2"><a class="reference internal" href="braincell.channel.KCaChannel.html">KCaChannel</a></li>
+<li class="toctree-l2"><a class="reference internal" href="braincell.channel.IAHP_De1994.html">IAHP_De1994</a></li>
+<li class="toctree-l2"><a class="reference internal" href="braincell.channel.IKca3_1_Ma2020.html">IKca3_1_Ma2020</a></li>
+<li class="toctree-l2"><a class="reference internal" href="braincell.channel.IKca2_2_Ma2020.html">IKca2_2_Ma2020</a></li>
+<li class="toctree-l2"><a class="reference internal" href="braincell.channel.IKca1_1_Ma2020.html">IKca1_1_Ma2020</a></li>
+<li class="toctree-l2"><a class="reference internal" href="braincell.channel.SodiumChannel.html">SodiumChannel</a></li>
+<li class="toctree-l2"><a class="reference internal" href="braincell.channel.INa_p3q_markov.html">INa_p3q_markov</a></li>
+<li class="toctree-l2"><a class="reference internal" href="braincell.channel.INa_Ba2002.html">INa_Ba2002</a></li>
+<li class="toctree-l2"><a class="reference internal" href="braincell.channel.INa_TM1991.html">INa_TM1991</a></li>
+<li class="toctree-l2"><a class="reference internal" href="braincell.channel.INa_HH1952.html">INa_HH1952</a></li>
+<li class="toctree-l2"><a class="reference internal" href="braincell.channel.INa_Rsg.html">INa_Rsg</a></li>
+<li class="toctree-l2"><a class="reference internal" href="braincell.channel.INa_Rsg_B.html">INa_Rsg_B</a></li>
+</ul>
+</details></li>
+<li class="toctree-l1 current active has-children"><a class="reference internal" href="../integration.html">Numerical Integration Methods</a><details open="open"><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul class="current">
+<li class="toctree-l2"><a class="reference internal" href="braincell.get_integrator.html">braincell.get_integrator</a></li>
+<li class="toctree-l2"><a class="reference internal" href="braincell.exp_euler_step.html">braincell.exp_euler_step</a></li>
+<li class="toctree-l2"><a class="reference internal" href="braincell.ind_exp_euler_step.html">braincell.ind_exp_euler_step</a></li>
+<li class="toctree-l2"><a class="reference internal" href="braincell.euler_step.html">braincell.euler_step</a></li>
+<li class="toctree-l2"><a class="reference internal" href="braincell.midpoint_step.html">braincell.midpoint_step</a></li>
+<li class="toctree-l2"><a class="reference internal" href="braincell.rk2_step.html">braincell.rk2_step</a></li>
+<li class="toctree-l2"><a class="reference internal" href="braincell.heun2_step.html">braincell.heun2_step</a></li>
+<li class="toctree-l2"><a class="reference internal" href="braincell.ralston2_step.html">braincell.ralston2_step</a></li>
+<li class="toctree-l2"><a class="reference internal" href="braincell.rk3_step.html">braincell.rk3_step</a></li>
+<li class="toctree-l2"><a class="reference internal" href="braincell.heun3_step.html">braincell.heun3_step</a></li>
+<li class="toctree-l2"><a class="reference internal" href="braincell.ssprk3_step.html">braincell.ssprk3_step</a></li>
+<li class="toctree-l2"><a class="reference internal" href="braincell.ralston3_step.html">braincell.ralston3_step</a></li>
+<li class="toctree-l2"><a class="reference internal" href="braincell.rk4_step.html">braincell.rk4_step</a></li>
+<li class="toctree-l2"><a class="reference internal" href="braincell.ralston4_step.html">braincell.ralston4_step</a></li>
+<li class="toctree-l2"><a class="reference internal" href="braincell.diffrax_euler_step.html">braincell.diffrax_euler_step</a></li>
+<li class="toctree-l2 current active"><a class="current reference internal" href="#">braincell.diffrax_heun_step</a></li>
+<li class="toctree-l2"><a class="reference internal" href="braincell.diffrax_midpoint_step.html">braincell.diffrax_midpoint_step</a></li>
+<li class="toctree-l2"><a class="reference internal" href="braincell.diffrax_ralston_step.html">braincell.diffrax_ralston_step</a></li>
+<li class="toctree-l2"><a class="reference internal" href="braincell.diffrax_bosh3_step.html">braincell.diffrax_bosh3_step</a></li>
+<li class="toctree-l2"><a class="reference internal" href="braincell.diffrax_tsit5_step.html">braincell.diffrax_tsit5_step</a></li>
+<li class="toctree-l2"><a class="reference internal" href="braincell.diffrax_dopri5_step.html">braincell.diffrax_dopri5_step</a></li>
+<li class="toctree-l2"><a class="reference internal" href="braincell.diffrax_dopri8_step.html">braincell.diffrax_dopri8_step</a></li>
+<li class="toctree-l2"><a class="reference internal" href="braincell.diffrax_bwd_euler_step.html">braincell.diffrax_bwd_euler_step</a></li>
+<li class="toctree-l2"><a class="reference internal" href="braincell.diffrax_kvaerno3_step.html">braincell.diffrax_kvaerno3_step</a></li>
+<li class="toctree-l2"><a class="reference internal" href="braincell.diffrax_kvaerno4_step.html">braincell.diffrax_kvaerno4_step</a></li>
+<li class="toctree-l2"><a class="reference internal" href="braincell.diffrax_kvaerno5_step.html">braincell.diffrax_kvaerno5_step</a></li>
+</ul>
+</details></li>
+</ul>
+
+    </div>
+</nav></div>
+    </div>
+  
+  
+  <div class="sidebar-primary-items__end sidebar-primary__section">
+  </div>
+  
+  <div id="rtd-footer-container"></div>
+
+
+      </div>
+      
+      <main id="main-content" class="bd-main" role="main">
+        
+        
+
+<div class="sbt-scroll-pixel-helper"></div>
+
+          <div class="bd-content">
+            <div class="bd-article-container">
+              
+              <div class="bd-header-article d-print-none">
+<div class="header-article-items header-article__inner">
+  
+    <div class="header-article-items__start">
+      
+        <div class="header-article-item"><button class="sidebar-toggle primary-toggle btn btn-sm" title="Toggle primary sidebar" data-bs-placement="bottom" data-bs-toggle="tooltip">
+  <span class="fa-solid fa-bars"></span>
+</button></div>
+      
+    </div>
+  
+  
+    <div class="header-article-items__end">
+      
+        <div class="header-article-item">
+
+<div class="article-header-buttons">
+
+
+
+
+
+<div class="dropdown dropdown-download-buttons">
+  <button class="btn dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false" aria-label="Download this page">
+    <i class="fas fa-download"></i>
+  </button>
+  <ul class="dropdown-menu">
+      
+      
+      
+      <li><a href="../../_sources/apis/generated/braincell.diffrax_heun_step.rst" target="_blank"
+   class="btn btn-sm btn-download-source-button dropdown-item"
+   title="Download source file"
+   data-bs-placement="left" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fas fa-file"></i>
+  </span>
+<span class="btn__text-container">.rst</span>
+</a>
+</li>
+      
+      
+      
+      
+      <li>
+<button onclick="window.print()"
+  class="btn btn-sm btn-download-pdf-button dropdown-item"
+  title="Print to PDF"
+  data-bs-placement="left" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fas fa-file-pdf"></i>
+  </span>
+<span class="btn__text-container">.pdf</span>
+</button>
+</li>
+      
+  </ul>
+</div>
+
+
+
+
+<button onclick="toggleFullScreen()"
+  class="btn btn-sm btn-fullscreen-button"
+  title="Fullscreen mode"
+  data-bs-placement="bottom" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fas fa-expand"></i>
+  </span>
+
+</button>
+
+
+
+<script>
+document.write(`
+  <button class="btn btn-sm nav-link pst-navbar-icon theme-switch-button" title="light/dark" aria-label="light/dark" data-bs-placement="bottom" data-bs-toggle="tooltip">
+    <i class="theme-switch fa-solid fa-sun fa-lg" data-mode="light"></i>
+    <i class="theme-switch fa-solid fa-moon fa-lg" data-mode="dark"></i>
+    <i class="theme-switch fa-solid fa-circle-half-stroke fa-lg" data-mode="auto"></i>
+  </button>
+`);
+</script>
+
+
+<script>
+document.write(`
+  <button class="btn btn-sm pst-navbar-icon search-button search-button__button" title="Search" aria-label="Search" data-bs-placement="bottom" data-bs-toggle="tooltip">
+    <i class="fa-solid fa-magnifying-glass fa-lg"></i>
+  </button>
+`);
+</script>
+<button class="sidebar-toggle secondary-toggle btn btn-sm" title="Toggle secondary sidebar" data-bs-placement="bottom" data-bs-toggle="tooltip">
+    <span class="fa-solid fa-list"></span>
+</button>
+</div></div>
+      
+    </div>
+  
+</div>
+</div>
+              
+              
+
+<div id="jb-print-docs-body" class="onlyprint">
+    <h1>braincell.diffrax_heun_step</h1>
+    <!-- Table of contents -->
+    <div id="print-main-content">
+        <div id="jb-print-toc">
+            
+            <div>
+                <h2> Contents </h2>
+            </div>
+            <nav aria-label="Page">
+                <ul class="visible nav section-nav flex-column">
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#braincell.diffrax_heun_step"><code class="docutils literal notranslate"><span class="pre">diffrax_heun_step()</span></code></a></li>
+</ul>
+            </nav>
+        </div>
+    </div>
+</div>
+
+              
+                
+<div id="searchbox"></div>
+                <article class="bd-article">
+                  
+  <section id="braincell-diffrax-heun-step">
+<h1>braincell.diffrax_heun_step<a class="headerlink" href="#braincell-diffrax-heun-step" title="Link to this heading">#</a></h1>
+<dl class="py function">
+<dt class="sig sig-object py" id="braincell.diffrax_heun_step">
+<span class="sig-prename descclassname"><span class="pre">braincell.</span></span><span class="sig-name descname"><span class="pre">diffrax_heun_step</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">target</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">t</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dt</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">*</span></span><span class="n"><span class="pre">args</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/braincell/_integrator_diffrax.html#diffrax_heun_step"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#braincell.diffrax_heun_step" title="Link to this definition">#</a></dt>
+<dd><p>Advances the state of a differential equation module by one integration step using the Heun method
+from the diffrax library: <a class="reference external" href="https://docs.kidger.site/diffrax/api/solvers/ode_solvers/#diffrax.Heun">diffrax.Heun</a>.</p>
+<p>This function serves as a wrapper that applies the explicit Heun solver (also known as the improved Euler method)
+to the given target module. It is intended for use in time-stepping routines where the state of the system
+is updated in-place.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>target</strong> (<a class="reference internal" href="braincell.DiffEqModule.html#braincell.DiffEqModule" title="braincell.DiffEqModule"><em>DiffEqModule</em></a>) – The differential equation module whose state will be advanced.</p></li>
+<li><p><strong>t</strong> (<em>u.Quantity</em><em>[</em><em>u.second</em><em>]</em>) – The current simulation time, represented as a quantity with units of seconds.</p></li>
+<li><p><strong>dt</strong> (<em>u.Quantity</em><em>[</em><em>u.second</em><em>]</em>) – The numerical time step of the integration step.</p></li>
+<li><p><strong>*args</strong> – Additional arguments to be passed to the solver, such as step size or solver-specific options.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>The function updates the state of the target module in place.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>None</p>
+</dd>
+<dt class="field-even">Raises<span class="colon">:</span></dt>
+<dd class="field-even"><p><a class="reference external" href="https://docs.python.org/3.13/library/exceptions.html#ModuleNotFoundError" title="(in Python v3.13)"><strong>ModuleNotFoundError</strong></a> – If the diffrax library is not installed.</p>
+</dd>
+</dl>
+<p class="rubric">Notes</p>
+<ul class="simple">
+<li><p>This function relies on the diffrax.Heun solver for numerical integration.</p></li>
+<li><p>It is part of a suite of step functions that provide different integration methods.</p></li>
+<li><p>The function is designed to be compatible with the braincell integration framework.</p></li>
+</ul>
+</dd></dl>
+
+</section>
+
+    <script type="text/x-thebe-config">
+    {
+        requestKernel: true,
+        binderOptions: {
+            repo: "binder-examples/jupyter-stacks-datascience",
+            ref: "master",
+        },
+        codeMirrorConfig: {
+            theme: "abcdef",
+            mode: "python"
+        },
+        kernelOptions: {
+            name: "python3",
+            path: "./apis\generated"
+        },
+        predefinedOutput: true
+    }
+    </script>
+    <script>kernelName = 'python3'</script>
+
+                </article>
+              
+
+              
+              
+              
+              
+                <footer class="prev-next-footer d-print-none">
+                  
+<div class="prev-next-area">
+    <a class="left-prev"
+       href="braincell.diffrax_euler_step.html"
+       title="previous page">
+      <i class="fa-solid fa-angle-left"></i>
+      <div class="prev-next-info">
+        <p class="prev-next-subtitle">previous</p>
+        <p class="prev-next-title">braincell.diffrax_euler_step</p>
+      </div>
+    </a>
+    <a class="right-next"
+       href="braincell.diffrax_midpoint_step.html"
+       title="next page">
+      <div class="prev-next-info">
+        <p class="prev-next-subtitle">next</p>
+        <p class="prev-next-title">braincell.diffrax_midpoint_step</p>
+      </div>
+      <i class="fa-solid fa-angle-right"></i>
+    </a>
+</div>
+                </footer>
+              
+            </div>
+            
+            
+              
+                <div class="bd-sidebar-secondary bd-toc"><div class="sidebar-secondary-items sidebar-secondary__inner">
+
+
+  <div class="sidebar-secondary-item">
+  <div class="page-toc tocsection onthispage">
+    <i class="fa-solid fa-list"></i> Contents
+  </div>
+  <nav class="bd-toc-nav page-toc">
+    <ul class="visible nav section-nav flex-column">
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#braincell.diffrax_heun_step"><code class="docutils literal notranslate"><span class="pre">diffrax_heun_step()</span></code></a></li>
+</ul>
+  </nav></div>
+
+</div></div>
+              
+            
+          </div>
+          <footer class="bd-footer-content">
+            
+<div class="bd-footer-content__inner container">
+  
+  <div class="footer-item">
+    
+<p class="component-author">
+By BDP Ecosystem
+</p>
+
+  </div>
+  
+  <div class="footer-item">
+    
+
+  <p class="copyright">
+    
+      © Copyright 2025, braincell.
+      <br/>
+    
+  </p>
+
+  </div>
+  
+  <div class="footer-item">
+    <p class="last-updated">
+  Last updated on Jul 30, 2025.
+  <br/>
+</p>
+  </div>
+  
+  <div class="footer-item">
+    
+  </div>
+  
+</div>
+          </footer>
+        
+
+      </main>
+    </div>
+  </div>
+  
+  <!-- Scripts loaded after <body> so the DOM is not blocked -->
+  <script src="../../_static/scripts/bootstrap.js?digest=dfe6caa3a7d634c4db9b"></script>
+<script src="../../_static/scripts/pydata-sphinx-theme.js?digest=dfe6caa3a7d634c4db9b"></script>
+
+  <footer class="bd-footer">
+  </footer>
+  </body>
+</html>

@@ -1,0 +1,789 @@
+
+<!DOCTYPE html>
+
+
+<html lang="en" data-content_root="../../../" >
+
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>braincell.ion.calcium &#8212; braincell</title>
+  
+  
+  
+  <script data-cfasync="false">
+    document.documentElement.dataset.mode = localStorage.getItem("mode") || "";
+    document.documentElement.dataset.theme = localStorage.getItem("theme") || "";
+  </script>
+  
+  <!-- Loaded before other Sphinx assets -->
+  <link href="../../../_static/styles/theme.css?digest=dfe6caa3a7d634c4db9b" rel="stylesheet" />
+<link href="../../../_static/styles/bootstrap.css?digest=dfe6caa3a7d634c4db9b" rel="stylesheet" />
+<link href="../../../_static/styles/pydata-sphinx-theme.css?digest=dfe6caa3a7d634c4db9b" rel="stylesheet" />
+
+  
+  <link href="../../../_static/vendor/fontawesome/6.5.2/css/all.min.css?digest=dfe6caa3a7d634c4db9b" rel="stylesheet" />
+  <link rel="preload" as="font" type="font/woff2" crossorigin href="../../../_static/vendor/fontawesome/6.5.2/webfonts/fa-solid-900.woff2" />
+<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../_static/vendor/fontawesome/6.5.2/webfonts/fa-brands-400.woff2" />
+<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../_static/vendor/fontawesome/6.5.2/webfonts/fa-regular-400.woff2" />
+
+    <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=8f2a1f02" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/styles/sphinx-book-theme.css?v=eba8b062" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/mystnb.4510f1fc1dee50b3e5859aac5469c37c29e427902b24a333a5f9fcb2f0b3ac41.css" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/plot_directive.css" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/sphinx-thebe.css?v=4fa983c6" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/sphinx-design.min.css?v=95c83b7e" />
+  
+  <!-- Pre-loaded scripts that we'll load fully later -->
+  <link rel="preload" as="script" href="../../../_static/scripts/bootstrap.js?digest=dfe6caa3a7d634c4db9b" />
+<link rel="preload" as="script" href="../../../_static/scripts/pydata-sphinx-theme.js?digest=dfe6caa3a7d634c4db9b" />
+  <script src="../../../_static/vendor/fontawesome/6.5.2/js/all.min.js?digest=dfe6caa3a7d634c4db9b"></script>
+
+    <script src="../../../_static/documentation_options.js?v=f131489c"></script>
+    <script src="../../../_static/doctools.js?v=9bcbadda"></script>
+    <script src="../../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../../../_static/scripts/sphinx-book-theme.js?v=887ef09a"></script>
+    <script src="../../../_static/design-tabs.js?v=f930bc37"></script>
+    <script>const THEBE_JS_URL = "https://unpkg.com/thebe@0.8.2/lib/index.js"; const thebe_selector = ".thebe,.cell"; const thebe_selector_input = "pre"; const thebe_selector_output = ".output, .cell_output"</script>
+    <script async="async" src="../../../_static/sphinx-thebe.js?v=c100c467"></script>
+    <script>DOCUMENTATION_OPTIONS.pagename = '_modules/braincell/ion/calcium';</script>
+    <link rel="icon" href="../../../_static/braincell.png"/>
+    <link rel="index" title="Index" href="../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../search.html" />
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <meta name="docsearch:language" content="en"/>
+    <meta name="docbuild:last-update" content="Jul 30, 2025"/>
+  </head>
+  
+  
+  <body data-bs-spy="scroll" data-bs-target=".bd-toc-nav" data-offset="180" data-bs-root-margin="0px 0px -60%" data-default-mode="">
+
+  
+  
+  <div id="pst-skip-link" class="skip-link d-print-none"><a href="#main-content">Skip to main content</a></div>
+  
+  <div id="pst-scroll-pixel-helper"></div>
+  
+  <button type="button" class="btn rounded-pill" id="pst-back-to-top">
+    <i class="fa-solid fa-arrow-up"></i>Back to top</button>
+
+  
+  <input type="checkbox"
+          class="sidebar-toggle"
+          id="pst-primary-sidebar-checkbox"/>
+  <label class="overlay overlay-primary" for="pst-primary-sidebar-checkbox"></label>
+  
+  <input type="checkbox"
+          class="sidebar-toggle"
+          id="pst-secondary-sidebar-checkbox"/>
+  <label class="overlay overlay-secondary" for="pst-secondary-sidebar-checkbox"></label>
+  
+  <div class="search-button__wrapper">
+    <div class="search-button__overlay"></div>
+    <div class="search-button__search-container">
+<form class="bd-search d-flex align-items-center"
+      action="../../../search.html"
+      method="get">
+  <i class="fa-solid fa-magnifying-glass"></i>
+  <input type="search"
+         class="form-control"
+         name="q"
+         id="search-input"
+         placeholder="Search..."
+         aria-label="Search..."
+         autocomplete="off"
+         autocorrect="off"
+         autocapitalize="off"
+         spellcheck="false"/>
+  <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd>K</kbd></span>
+</form></div>
+  </div>
+
+  <div class="pst-async-banner-revealer d-none">
+  <aside id="bd-header-version-warning" class="d-none d-print-none" aria-label="Version warning"></aside>
+</div>
+
+  
+    <header class="bd-header navbar navbar-expand-lg bd-navbar d-print-none">
+    </header>
+  
+
+  <div class="bd-container">
+    <div class="bd-container__inner bd-page-width">
+      
+      
+      
+        
+      
+      <div class="bd-sidebar-primary bd-sidebar">
+        
+
+  
+  <div class="sidebar-header-items sidebar-primary__section">
+    
+    
+    
+    
+  </div>
+  
+    <div class="sidebar-primary-items__start sidebar-primary__section">
+        <div class="sidebar-primary-item">
+
+  
+    
+  
+
+<a class="navbar-brand logo" href="../../../index.html">
+  
+  
+  
+  
+  
+    
+    
+      
+    
+    
+    <img src="../../../_static/braincell.png" class="logo__image only-light" alt="braincell - Home"/>
+    <script>document.write(`<img src="../../../_static/braincell.png" class="logo__image only-dark" alt="braincell - Home"/>`);</script>
+  
+  
+</a></div>
+        <div class="sidebar-primary-item">
+
+ <script>
+ document.write(`
+   <button class="btn search-button-field search-button__button" title="Search" aria-label="Search" data-bs-placement="bottom" data-bs-toggle="tooltip">
+    <i class="fa-solid fa-magnifying-glass"></i>
+    <span class="search-button__default-text">Search</span>
+    <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd class="kbd-shortcut__modifier">K</kbd></span>
+   </button>
+ `);
+ </script></div>
+        <div class="sidebar-primary-item"><nav class="bd-links bd-docs-nav" aria-label="Main">
+    <div class="bd-toc-item navbar-nav active">
+        <p aria-level="2" class="caption" role="heading"><span class="caption-text">Quickstart</span></p>
+<ul class="nav bd-sidenav">
+<li class="toctree-l1"><a class="reference internal" href="../../../quickstart/concepts-zh.html">概要</a></li>
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">Tutorials</span></p>
+<ul class="nav bd-sidenav">
+<li class="toctree-l1"><a class="reference internal" href="../../../tutorial/channel-zh.html">通道</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../tutorial/ion-zh.html">离子</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../tutorial/cell-zh.html">细胞</a></li>
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">Advanced Tutorials</span></p>
+<ul class="nav bd-sidenav">
+<li class="toctree-l1"><a class="reference internal" href="../../../advanced_tutorial/rationale-zh.html">补充说明</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../advanced_tutorial/differential_equation-zh.html">微分方程</a></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../../../advanced_tutorial/examples.html">例程</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../../advanced_tutorial/examples/sc02.html">低阈值与高阈值钙通道的门控特性对比</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../advanced_tutorial/examples/sc03.html">兴奋性-抑制性神经元网络（E-I网络）的模拟与分析</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../advanced_tutorial/examples/sc04.html">不同积分方法对 HH 模型神经元动态的影响</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../advanced_tutorial/examples/sc05.html">丘脑神经元模型的构建与电活动模拟</a></li>
+</ul>
+</details></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../advanced_tutorial/more-zh.html">更多</a></li>
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">API Documentation</span></p>
+<ul class="nav bd-sidenav">
+<li class="toctree-l1"><a class="reference internal" href="../../../apis/changelog.html">Release Notes</a></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../../../apis/braincell.html"><code class="docutils literal notranslate"><span class="pre">braincell</span></code> module</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../../apis/generated/braincell.IonChannel.html">IonChannel</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../apis/generated/braincell.Ion.html">Ion</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../apis/generated/braincell.IonInfo.html">IonInfo</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../apis/generated/braincell.MixIons.html">MixIons</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../apis/generated/braincell.Channel.html">Channel</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../apis/generated/braincell.HHTypedNeuron.html">HHTypedNeuron</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../apis/generated/braincell.SingleCompartment.html">SingleCompartment</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../apis/generated/braincell.MultiCompartment.html">MultiCompartment</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../apis/generated/braincell.DiffEqState.html">DiffEqState</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../apis/generated/braincell.DiffEqModule.html">DiffEqModule</a></li>
+</ul>
+</details></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../apis/braincell.synapse.html"><code class="docutils literal notranslate"><span class="pre">braincell.synapse</span></code> module</a></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../../../apis/braincell.ion.html"><code class="docutils literal notranslate"><span class="pre">braincell.ion</span></code> module</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../../apis/generated/braincell.ion.Calcium.html">Calcium</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../apis/generated/braincell.ion.CalciumFixed.html">CalciumFixed</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../apis/generated/braincell.ion.CalciumDetailed.html">CalciumDetailed</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../apis/generated/braincell.ion.CalciumFirstOrder.html">CalciumFirstOrder</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../apis/generated/braincell.ion.Potassium.html">Potassium</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../apis/generated/braincell.ion.PotassiumFixed.html">PotassiumFixed</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../apis/generated/braincell.ion.Sodium.html">Sodium</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../apis/generated/braincell.ion.SodiumFixed.html">SodiumFixed</a></li>
+</ul>
+</details></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../../../apis/braincell.channel.html"><code class="docutils literal notranslate"><span class="pre">braincell.channel</span></code> module</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../../apis/generated/braincell.channel.CalciumChannel.html">CalciumChannel</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../apis/generated/braincell.channel.ICaN_IS2008.html">ICaN_IS2008</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../apis/generated/braincell.channel.ICaT_HM1992.html">ICaT_HM1992</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../apis/generated/braincell.channel.ICaT_HP1992.html">ICaT_HP1992</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../apis/generated/braincell.channel.ICaHT_HM1992.html">ICaHT_HM1992</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../apis/generated/braincell.channel.ICaHT_Re1993.html">ICaHT_Re1993</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../apis/generated/braincell.channel.ICaL_IS2008.html">ICaL_IS2008</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../apis/generated/braincell.channel.ICav12_Ma2020.html">ICav12_Ma2020</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../apis/generated/braincell.channel.ICav13_Ma2020.html">ICav13_Ma2020</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../apis/generated/braincell.channel.ICav23_Ma2020.html">ICav23_Ma2020</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../apis/generated/braincell.channel.ICav31_Ma2020.html">ICav31_Ma2020</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../apis/generated/braincell.channel.ICaGrc_Ma2020.html">ICaGrc_Ma2020</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../apis/generated/braincell.channel.Ih_HM1992.html">Ih_HM1992</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../apis/generated/braincell.channel.Ih1_Ma2020.html">Ih1_Ma2020</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../apis/generated/braincell.channel.Ih2_Ma2020.html">Ih2_Ma2020</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../apis/generated/braincell.channel.LeakageChannel.html">LeakageChannel</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../apis/generated/braincell.channel.IL.html">IL</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../apis/generated/braincell.channel.PotassiumChannel.html">PotassiumChannel</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../apis/generated/braincell.channel.IK_p4_markov.html">IK_p4_markov</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../apis/generated/braincell.channel.IKDR_Ba2002.html">IKDR_Ba2002</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../apis/generated/braincell.channel.IK_TM1991.html">IK_TM1991</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../apis/generated/braincell.channel.IK_HH1952.html">IK_HH1952</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../apis/generated/braincell.channel.IKA_p4q_ss.html">IKA_p4q_ss</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../apis/generated/braincell.channel.IKA1_HM1992.html">IKA1_HM1992</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../apis/generated/braincell.channel.IKA2_HM1992.html">IKA2_HM1992</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../apis/generated/braincell.channel.IKK2_pq_ss.html">IKK2_pq_ss</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../apis/generated/braincell.channel.IKK2A_HM1992.html">IKK2A_HM1992</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../apis/generated/braincell.channel.IKK2B_HM1992.html">IKK2B_HM1992</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../apis/generated/braincell.channel.IKNI_Ya1989.html">IKNI_Ya1989</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../apis/generated/braincell.channel.IK_Leak.html">IK_Leak</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../apis/generated/braincell.channel.IKv11_Ak2007.html">IKv11_Ak2007</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../apis/generated/braincell.channel.IKv34_Ma2020.html">IKv34_Ma2020</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../apis/generated/braincell.channel.IKv43_Ma2020.html">IKv43_Ma2020</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../apis/generated/braincell.channel.IKM_Grc_Ma2020.html">IKM_Grc_Ma2020</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../apis/generated/braincell.channel.KCaChannel.html">KCaChannel</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../apis/generated/braincell.channel.IAHP_De1994.html">IAHP_De1994</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../apis/generated/braincell.channel.IKca3_1_Ma2020.html">IKca3_1_Ma2020</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../apis/generated/braincell.channel.IKca2_2_Ma2020.html">IKca2_2_Ma2020</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../apis/generated/braincell.channel.IKca1_1_Ma2020.html">IKca1_1_Ma2020</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../apis/generated/braincell.channel.SodiumChannel.html">SodiumChannel</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../apis/generated/braincell.channel.INa_p3q_markov.html">INa_p3q_markov</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../apis/generated/braincell.channel.INa_Ba2002.html">INa_Ba2002</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../apis/generated/braincell.channel.INa_TM1991.html">INa_TM1991</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../apis/generated/braincell.channel.INa_HH1952.html">INa_HH1952</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../apis/generated/braincell.channel.INa_Rsg.html">INa_Rsg</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../apis/generated/braincell.channel.INa_Rsg_B.html">INa_Rsg_B</a></li>
+</ul>
+</details></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../../../apis/integration.html">Numerical Integration Methods</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../../apis/generated/braincell.get_integrator.html">braincell.get_integrator</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../apis/generated/braincell.exp_euler_step.html">braincell.exp_euler_step</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../apis/generated/braincell.ind_exp_euler_step.html">braincell.ind_exp_euler_step</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../apis/generated/braincell.euler_step.html">braincell.euler_step</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../apis/generated/braincell.midpoint_step.html">braincell.midpoint_step</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../apis/generated/braincell.rk2_step.html">braincell.rk2_step</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../apis/generated/braincell.heun2_step.html">braincell.heun2_step</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../apis/generated/braincell.ralston2_step.html">braincell.ralston2_step</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../apis/generated/braincell.rk3_step.html">braincell.rk3_step</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../apis/generated/braincell.heun3_step.html">braincell.heun3_step</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../apis/generated/braincell.ssprk3_step.html">braincell.ssprk3_step</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../apis/generated/braincell.ralston3_step.html">braincell.ralston3_step</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../apis/generated/braincell.rk4_step.html">braincell.rk4_step</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../apis/generated/braincell.ralston4_step.html">braincell.ralston4_step</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../apis/generated/braincell.diffrax_euler_step.html">braincell.diffrax_euler_step</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../apis/generated/braincell.diffrax_heun_step.html">braincell.diffrax_heun_step</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../apis/generated/braincell.diffrax_midpoint_step.html">braincell.diffrax_midpoint_step</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../apis/generated/braincell.diffrax_ralston_step.html">braincell.diffrax_ralston_step</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../apis/generated/braincell.diffrax_bosh3_step.html">braincell.diffrax_bosh3_step</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../apis/generated/braincell.diffrax_tsit5_step.html">braincell.diffrax_tsit5_step</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../apis/generated/braincell.diffrax_dopri5_step.html">braincell.diffrax_dopri5_step</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../apis/generated/braincell.diffrax_dopri8_step.html">braincell.diffrax_dopri8_step</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../apis/generated/braincell.diffrax_bwd_euler_step.html">braincell.diffrax_bwd_euler_step</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../apis/generated/braincell.diffrax_kvaerno3_step.html">braincell.diffrax_kvaerno3_step</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../apis/generated/braincell.diffrax_kvaerno4_step.html">braincell.diffrax_kvaerno4_step</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../apis/generated/braincell.diffrax_kvaerno5_step.html">braincell.diffrax_kvaerno5_step</a></li>
+</ul>
+</details></li>
+</ul>
+
+    </div>
+</nav></div>
+    </div>
+  
+  
+  <div class="sidebar-primary-items__end sidebar-primary__section">
+  </div>
+  
+  <div id="rtd-footer-container"></div>
+
+
+      </div>
+      
+      <main id="main-content" class="bd-main" role="main">
+        
+        
+
+<div class="sbt-scroll-pixel-helper"></div>
+
+          <div class="bd-content">
+            <div class="bd-article-container">
+              
+              <div class="bd-header-article d-print-none">
+<div class="header-article-items header-article__inner">
+  
+    <div class="header-article-items__start">
+      
+        <div class="header-article-item"><button class="sidebar-toggle primary-toggle btn btn-sm" title="Toggle primary sidebar" data-bs-placement="bottom" data-bs-toggle="tooltip">
+  <span class="fa-solid fa-bars"></span>
+</button></div>
+      
+    </div>
+  
+  
+    <div class="header-article-items__end">
+      
+        <div class="header-article-item">
+
+<div class="article-header-buttons">
+
+
+
+<button onclick="toggleFullScreen()"
+  class="btn btn-sm btn-fullscreen-button"
+  title="Fullscreen mode"
+  data-bs-placement="bottom" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fas fa-expand"></i>
+  </span>
+
+</button>
+
+
+
+<script>
+document.write(`
+  <button class="btn btn-sm nav-link pst-navbar-icon theme-switch-button" title="light/dark" aria-label="light/dark" data-bs-placement="bottom" data-bs-toggle="tooltip">
+    <i class="theme-switch fa-solid fa-sun fa-lg" data-mode="light"></i>
+    <i class="theme-switch fa-solid fa-moon fa-lg" data-mode="dark"></i>
+    <i class="theme-switch fa-solid fa-circle-half-stroke fa-lg" data-mode="auto"></i>
+  </button>
+`);
+</script>
+
+
+<script>
+document.write(`
+  <button class="btn btn-sm pst-navbar-icon search-button search-button__button" title="Search" aria-label="Search" data-bs-placement="bottom" data-bs-toggle="tooltip">
+    <i class="fa-solid fa-magnifying-glass fa-lg"></i>
+  </button>
+`);
+</script>
+
+</div></div>
+      
+    </div>
+  
+</div>
+</div>
+              
+              
+
+<div id="jb-print-docs-body" class="onlyprint">
+    <h1></h1>
+    <!-- Table of contents -->
+    <div id="print-main-content">
+        <div id="jb-print-toc">
+            
+        </div>
+    </div>
+</div>
+
+              
+                
+<div id="searchbox"></div>
+                <article class="bd-article">
+                  
+  <h1>Source code for braincell.ion.calcium</h1><div class="highlight"><pre>
+<span></span><span class="c1"># Copyright 2024 BDP Ecosystem Limited. All Rights Reserved.</span>
+<span class="c1">#</span>
+<span class="c1"># Licensed under the Apache License, Version 2.0 (the &quot;License&quot;);</span>
+<span class="c1"># you may not use this file except in compliance with the License.</span>
+<span class="c1"># You may obtain a copy of the License at</span>
+<span class="c1">#</span>
+<span class="c1">#     http://www.apache.org/licenses/LICENSE-2.0</span>
+<span class="c1">#</span>
+<span class="c1"># Unless required by applicable law or agreed to in writing, software</span>
+<span class="c1"># distributed under the License is distributed on an &quot;AS IS&quot; BASIS,</span>
+<span class="c1"># WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.</span>
+<span class="c1"># See the License for the specific language governing permissions and</span>
+<span class="c1"># limitations under the License.</span>
+<span class="c1"># ==============================================================================</span>
+
+<span class="c1"># -*- coding: utf-8 -*-</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Union</span><span class="p">,</span> <span class="n">Callable</span><span class="p">,</span> <span class="n">Optional</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">brainstate</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">brainunit</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">u</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">braincell._base</span><span class="w"> </span><span class="kn">import</span> <span class="n">Ion</span><span class="p">,</span> <span class="n">Channel</span><span class="p">,</span> <span class="n">HHTypedNeuron</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">braincell._protocol</span><span class="w"> </span><span class="kn">import</span> <span class="n">DiffEqState</span>
+
+<span class="n">__all__</span> <span class="o">=</span> <span class="p">[</span>
+    <span class="s1">&#39;Calcium&#39;</span><span class="p">,</span>
+    <span class="s1">&#39;CalciumFixed&#39;</span><span class="p">,</span>
+    <span class="s1">&#39;CalciumDetailed&#39;</span><span class="p">,</span>
+    <span class="s1">&#39;CalciumFirstOrder&#39;</span><span class="p">,</span>
+<span class="p">]</span>
+
+
+<span class="k">class</span><span class="w"> </span><span class="nc">Calcium</span><span class="p">(</span><span class="n">Ion</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Base class for modeling Calcium ion.</span>
+
+<span class="sd">    This class serves as the foundation for all calcium ion models in the braincell library.</span>
+<span class="sd">    It inherits from the Ion class and sets the root_type to HHTypedNeuron.</span>
+
+<span class="sd">    Note:</span>
+<span class="sd">        This is an abstract base class and should be subclassed to implement specific</span>
+<span class="sd">        calcium ion models with their own dynamics and properties.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="vm">__module__</span> <span class="o">=</span> <span class="s1">&#39;braincell.ion&#39;</span>
+
+    <span class="n">root_type</span> <span class="o">=</span> <span class="n">HHTypedNeuron</span>
+
+
+<span class="k">class</span><span class="w"> </span><span class="nc">CalciumFixed</span><span class="p">(</span><span class="n">Calcium</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Fixed Calcium dynamics.</span>
+
+<span class="sd">    This calcium model has no dynamics. It holds fixed reversal</span>
+<span class="sd">    potential :math:`E` and concentration :math:`C`.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="vm">__module__</span> <span class="o">=</span> <span class="s1">&#39;braincell.ion&#39;</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">size</span><span class="p">:</span> <span class="n">brainstate</span><span class="o">.</span><span class="n">typing</span><span class="o">.</span><span class="n">Size</span><span class="p">,</span>
+        <span class="n">E</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="n">brainstate</span><span class="o">.</span><span class="n">typing</span><span class="o">.</span><span class="n">ArrayLike</span><span class="p">,</span> <span class="n">Callable</span><span class="p">]</span> <span class="o">=</span> <span class="mf">120.</span> <span class="o">*</span> <span class="n">u</span><span class="o">.</span><span class="n">mV</span><span class="p">,</span>
+        <span class="n">C</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="n">brainstate</span><span class="o">.</span><span class="n">typing</span><span class="o">.</span><span class="n">ArrayLike</span><span class="p">,</span> <span class="n">Callable</span><span class="p">]</span> <span class="o">=</span> <span class="mf">2.4e-4</span> <span class="o">*</span> <span class="n">u</span><span class="o">.</span><span class="n">mM</span><span class="p">,</span>
+        <span class="n">name</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="o">**</span><span class="n">channels</span>
+    <span class="p">):</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span><span class="n">size</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="n">name</span><span class="p">,</span> <span class="o">**</span><span class="n">channels</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">E</span> <span class="o">=</span> <span class="n">brainstate</span><span class="o">.</span><span class="n">init</span><span class="o">.</span><span class="n">param</span><span class="p">(</span><span class="n">E</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">varshape</span><span class="p">,</span> <span class="n">allow_none</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">C</span> <span class="o">=</span> <span class="n">brainstate</span><span class="o">.</span><span class="n">init</span><span class="o">.</span><span class="n">param</span><span class="p">(</span><span class="n">C</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">varshape</span><span class="p">,</span> <span class="n">allow_none</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+
+<div class="viewcode-block" id="CalciumFixed.reset_state">
+<a class="viewcode-back" href="../../../apis/generated/braincell.ion.CalciumFixed.html#braincell.ion.CalciumFixed.reset_state">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">reset_state</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">V</span><span class="p">,</span> <span class="n">batch_size</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+        <span class="n">ca_info</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">pack_info</span><span class="p">()</span>
+        <span class="n">nodes</span> <span class="o">=</span> <span class="n">brainstate</span><span class="o">.</span><span class="n">graph</span><span class="o">.</span><span class="n">nodes</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">Channel</span><span class="p">,</span> <span class="n">allowed_hierarchy</span><span class="o">=</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">))</span><span class="o">.</span><span class="n">values</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">check_hierarchies</span><span class="p">(</span><span class="nb">type</span><span class="p">(</span><span class="bp">self</span><span class="p">),</span> <span class="o">*</span><span class="nb">tuple</span><span class="p">(</span><span class="n">nodes</span><span class="p">))</span>
+        <span class="k">for</span> <span class="n">node</span> <span class="ow">in</span> <span class="n">nodes</span><span class="p">:</span>
+            <span class="n">node</span><span class="o">.</span><span class="n">reset_state</span><span class="p">(</span><span class="n">V</span><span class="p">,</span> <span class="n">ca_info</span><span class="p">,</span> <span class="n">batch_size</span><span class="o">=</span><span class="n">batch_size</span><span class="p">)</span></div>
+
+
+
+<span class="k">class</span><span class="w"> </span><span class="nc">_CalciumDynamics</span><span class="p">(</span><span class="n">Calcium</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Calcium ion flow with dynamics.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    size: int, tuple of int</span>
+<span class="sd">      The ion size.</span>
+<span class="sd">    C0: brainstate.typing.ArrayLike, Callable</span>
+<span class="sd">      The Calcium concentration outside of membrane.</span>
+<span class="sd">    T: brainstate.typing.ArrayLike, Callable</span>
+<span class="sd">      The temperature.</span>
+<span class="sd">    C_initializer: brainstate.typing.ArrayLike, Callable</span>
+<span class="sd">      The initializer for Calcium concentration.</span>
+<span class="sd">    name: str</span>
+<span class="sd">      The ion name.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">size</span><span class="p">:</span> <span class="n">brainstate</span><span class="o">.</span><span class="n">typing</span><span class="o">.</span><span class="n">Size</span><span class="p">,</span>
+        <span class="n">C0</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="n">brainstate</span><span class="o">.</span><span class="n">typing</span><span class="o">.</span><span class="n">ArrayLike</span><span class="p">,</span> <span class="n">Callable</span><span class="p">]</span> <span class="o">=</span> <span class="mf">2.</span> <span class="o">*</span> <span class="n">u</span><span class="o">.</span><span class="n">mM</span><span class="p">,</span>
+        <span class="n">T</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="n">brainstate</span><span class="o">.</span><span class="n">typing</span><span class="o">.</span><span class="n">ArrayLike</span><span class="p">,</span> <span class="n">Callable</span><span class="p">]</span> <span class="o">=</span> <span class="n">u</span><span class="o">.</span><span class="n">celsius2kelvin</span><span class="p">(</span><span class="mf">36.</span><span class="p">),</span>
+        <span class="n">C_initializer</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="n">brainstate</span><span class="o">.</span><span class="n">typing</span><span class="o">.</span><span class="n">ArrayLike</span><span class="p">,</span> <span class="n">Callable</span><span class="p">]</span> <span class="o">=</span> <span class="n">brainstate</span><span class="o">.</span><span class="n">init</span><span class="o">.</span><span class="n">Constant</span><span class="p">(</span><span class="mf">2.4e-4</span> <span class="o">*</span> <span class="n">u</span><span class="o">.</span><span class="n">mM</span><span class="p">),</span>
+        <span class="n">name</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="o">**</span><span class="n">channels</span>
+    <span class="p">):</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span><span class="n">size</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="n">name</span><span class="p">,</span> <span class="o">**</span><span class="n">channels</span><span class="p">)</span>
+
+        <span class="c1"># parameters</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">C0</span> <span class="o">=</span> <span class="n">brainstate</span><span class="o">.</span><span class="n">init</span><span class="o">.</span><span class="n">param</span><span class="p">(</span><span class="n">C0</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">varshape</span><span class="p">,</span> <span class="n">allow_none</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">T</span> <span class="o">=</span> <span class="n">brainstate</span><span class="o">.</span><span class="n">init</span><span class="o">.</span><span class="n">param</span><span class="p">(</span><span class="n">T</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">varshape</span><span class="p">,</span> <span class="n">allow_none</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>  <span class="c1"># temperature</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_constant</span> <span class="o">=</span> <span class="n">u</span><span class="o">.</span><span class="n">gas_constant</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">T</span> <span class="o">/</span> <span class="p">(</span><span class="mi">2</span> <span class="o">*</span> <span class="n">u</span><span class="o">.</span><span class="n">faraday_constant</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_C_initializer</span> <span class="o">=</span> <span class="n">C_initializer</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">init_state</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">V</span><span class="p">,</span> <span class="n">batch_size</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+        <span class="c1"># Calcium concentration</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">C</span> <span class="o">=</span> <span class="n">DiffEqState</span><span class="p">(</span><span class="n">brainstate</span><span class="o">.</span><span class="n">init</span><span class="o">.</span><span class="n">param</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_C_initializer</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">varshape</span><span class="p">,</span> <span class="n">batch_size</span><span class="p">))</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">init_state</span><span class="p">(</span><span class="n">V</span><span class="p">,</span> <span class="n">batch_size</span><span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">reset_state</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">V</span><span class="p">,</span> <span class="n">batch_size</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">C</span><span class="o">.</span><span class="n">value</span> <span class="o">=</span> <span class="n">brainstate</span><span class="o">.</span><span class="n">init</span><span class="o">.</span><span class="n">param</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_C_initializer</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">varshape</span><span class="p">,</span> <span class="n">batch_size</span><span class="p">)</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">reset_state</span><span class="p">(</span><span class="n">V</span><span class="p">,</span> <span class="n">batch_size</span><span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">derivative</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">C</span><span class="p">,</span> <span class="n">V</span><span class="p">):</span>
+        <span class="k">raise</span> <span class="ne">NotImplementedError</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">compute_derivative</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">V</span><span class="p">):</span>
+        <span class="n">ca_info</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">pack_info</span><span class="p">()</span>
+        <span class="n">nodes</span> <span class="o">=</span> <span class="n">brainstate</span><span class="o">.</span><span class="n">graph</span><span class="o">.</span><span class="n">nodes</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">Channel</span><span class="p">,</span> <span class="n">allowed_hierarchy</span><span class="o">=</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">))</span><span class="o">.</span><span class="n">values</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">check_hierarchies</span><span class="p">(</span><span class="nb">type</span><span class="p">(</span><span class="bp">self</span><span class="p">),</span> <span class="o">*</span><span class="nb">tuple</span><span class="p">(</span><span class="n">nodes</span><span class="p">))</span>
+        <span class="k">for</span> <span class="n">node</span> <span class="ow">in</span> <span class="n">nodes</span><span class="p">:</span>
+            <span class="n">node</span><span class="o">.</span><span class="n">compute_derivative</span><span class="p">(</span><span class="n">V</span><span class="p">,</span> <span class="n">ca_info</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">C</span><span class="o">.</span><span class="n">derivative</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">derivative</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">C</span><span class="o">.</span><span class="n">value</span><span class="p">,</span> <span class="n">V</span><span class="p">)</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">E</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_reversal_potential</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">C</span><span class="o">.</span><span class="n">value</span><span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_reversal_potential</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">C</span><span class="p">):</span>
+        <span class="c1"># The Nernst relation:</span>
+        <span class="c1">#</span>
+        <span class="c1"># E_{\mathrm{Ca}}=\frac{RT}{2F}\log\frac{[\mathrm{Ca}]_{\mathrm{o}}}{[\mathrm{Ca}]_{\mathrm{i}}}</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_constant</span> <span class="o">*</span> <span class="n">u</span><span class="o">.</span><span class="n">math</span><span class="o">.</span><span class="n">log</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">C0</span> <span class="o">/</span> <span class="n">C</span><span class="p">)</span>
+
+
+<span class="k">class</span><span class="w"> </span><span class="nc">CalciumDetailed</span><span class="p">(</span><span class="n">_CalciumDynamics</span><span class="p">):</span>
+<span class="w">    </span><span class="sa">r</span><span class="sd">&quot;&quot;&quot;Dynamical Calcium model proposed.</span>
+
+<span class="sd">    **1. The dynamics of intracellular** :math:`Ca^{2+}`</span>
+
+<span class="sd">    The dynamics of intracellular :math:`Ca^{2+}` were determined by two contributions [1]_ :</span>
+
+<span class="sd">    *(i) Influx of* :math:`Ca^{2+}` *due to Calcium currents*</span>
+
+<span class="sd">    :math:`Ca^{2+}` ion enter through :math:`Ca^{2+}` channel and diffuse into the</span>
+<span class="sd">    interior of the cell. Only the :math:`Ca^{2+}` concentration in a thin shell beneath</span>
+<span class="sd">    the membrane was modeled. The influx of :math:`Ca^{2+}` into such a thin shell followed:</span>
+
+<span class="sd">    .. math::</span>
+
+<span class="sd">        [Ca]_{i}=-\frac{I_{Ca}}{2 F d}</span>
+
+<span class="sd">    where :math:`F=96489\, \mathrm{C\, mol^{-1}}` is the Faraday constant,</span>
+<span class="sd">    :math:`d=1\, \mathrm{\mu m}` is the depth of the shell beneath the membrane,</span>
+<span class="sd">    :math:`I_T` in :math:`\mathrm{\mu A/cm^{2}}` and :math:`[Ca]_{i}` in millimolar,</span>
+<span class="sd">    and :math:`I_{Ca}` is the summation of all :math:`Ca^{2+}` currents.</span>
+
+<span class="sd">    *(ii) Efflux of* :math:`Ca^{2+}` *due to an active pump*</span>
+
+<span class="sd">    In a thin shell beneath the membrane, :math:`Ca^{2+}` retrieval usually consists of a</span>
+<span class="sd">    combination of several processes, such as binding to :math:`Ca^{2+}` buffers, calcium</span>
+<span class="sd">    efflux due to :math:`Ca^{2+}` ATPase pump activity and diffusion to neighboring shells.</span>
+<span class="sd">    Only the :math:`Ca^{2+}` pump was modeled here. We adopted the following kinetic scheme:</span>
+
+<span class="sd">    .. math::</span>
+
+<span class="sd">        Ca _{i}^{2+}+ P \overset{c_1}{\underset{c_2}{\rightleftharpoons}} CaP \xrightarrow{c_3} P+ Ca _{0}^{2+}</span>
+
+<span class="sd">    where P represents the :math:`Ca^{2+}` pump, CaP is an intermediate state,</span>
+<span class="sd">    :math:`Ca _{ o }^{2+}` is the extracellular :math:`Ca^{2+}` concentration,</span>
+<span class="sd">    and :math:`c_{1}, c_{2}` and :math:`c_{3}` are rate constants. :math:`Ca^{2+}`</span>
+<span class="sd">    ion have a high affinity for the pump :math:`P`, whereas extrusion of</span>
+<span class="sd">    :math:`Ca^{2+}` follows a slower process (Blaustein, 1988 ). Therefore,</span>
+<span class="sd">    :math:`c_{3}` is low compared to :math:`c_{1}` and :math:`c_{2}` and the</span>
+<span class="sd">    Michaelis-Menten approximation can be used for describing the kinetics of the pump.</span>
+<span class="sd">    According to such a scheme, the kinetic equation for the :math:`Ca^{2+}` pump is:</span>
+
+<span class="sd">    .. math::</span>
+
+<span class="sd">        \frac{[Ca^{2+}]_{i}}{dt}=-\frac{K_{T}[Ca]_{i}}{[Ca]_{i}+K_{d}}</span>
+
+<span class="sd">    where :math:`K_{T}=10^{-4}\, \mathrm{mM\, ms^{-1}}` is the product of :math:`c_{3}`</span>
+<span class="sd">    with the total concentration of :math:`P` and :math:`K_{d}=c_{2} / c_{1}=10^{-4}\, \mathrm{mM}`</span>
+<span class="sd">    is the dissociation constant, which can be interpreted here as the value of</span>
+<span class="sd">    :math:`[Ca]_{i}` at which the pump is half activated (if :math:`[Ca]_{i} \ll K_{d}`</span>
+<span class="sd">    then the efflux is negligible).</span>
+
+<span class="sd">    **2.A simple first-order model**</span>
+
+<span class="sd">    While, in (Bazhenov, et al., 1998) [2]_, the :math:`Ca^{2+}` dynamics is</span>
+<span class="sd">    described by a simple first-order model,</span>
+
+<span class="sd">    .. math::</span>
+
+<span class="sd">        \frac{d\left[Ca^{2+}\right]_{i}}{d t}=-\frac{I_{Ca}}{z F d}+\frac{\left[Ca^{2+}\right]_{rest}-\left[C a^{2+}\right]_{i}}{\tau_{Ca}}</span>
+
+<span class="sd">    where :math:`I_{Ca}` is the summation of all :math:`Ca ^{2+}` currents, :math:`d`</span>
+<span class="sd">    is the thickness of the perimembrane &quot;shell&quot; in which calcium is able to affect</span>
+<span class="sd">    membrane properties :math:`(1.\, \mathrm{\mu M})`, :math:`z=2` is the valence of the</span>
+<span class="sd">    :math:`Ca ^{2+}` ion, :math:`F` is the Faraday constant, and :math:`\tau_{C a}` is</span>
+<span class="sd">    the :math:`Ca ^{2+}` removal rate. The resting :math:`Ca ^{2+}` concentration was</span>
+<span class="sd">    set to be :math:`\left[ Ca ^{2+}\right]_{\text {rest}}=.05\, \mathrm{\mu M}` .</span>
+
+<span class="sd">    **3. The reversal potential**</span>
+
+<span class="sd">    The reversal potential of calcium :math:`Ca ^{2+}` is calculated according to the</span>
+<span class="sd">    Nernst equation:</span>
+
+<span class="sd">    .. math::</span>
+
+<span class="sd">        E = k&#39;{RT \over 2F} log{[Ca^{2+}]_0 \over [Ca^{2+}]_i}</span>
+
+<span class="sd">    where :math:`R=8.31441 \, \mathrm{J} /(\mathrm{mol}^{\circ} \mathrm{K})`,</span>
+<span class="sd">    :math:`T=309.15^{\circ} \mathrm{K}`,</span>
+<span class="sd">    :math:`F=96,489 \mathrm{C} / \mathrm{mol}`,</span>
+<span class="sd">    and :math:`\left[\mathrm{Ca}^{2+}\right]_{0}=2 \mathrm{mM}`.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    d : float</span>
+<span class="sd">      The thickness of the peri-membrane &quot;shell&quot;.</span>
+<span class="sd">    F : float</span>
+<span class="sd">      The Faraday constant. (:math:`C*mmol^{-1}`)</span>
+<span class="sd">    tau : float</span>
+<span class="sd">      The time constant of the :math:`Ca ^{2+}` removal rate. (ms)</span>
+<span class="sd">    C_rest : float</span>
+<span class="sd">      The resting :math:`Ca ^{2+}` concentration.</span>
+<span class="sd">    C0 : float</span>
+<span class="sd">      The :math:`Ca ^{2+}` concentration outside of the membrane.</span>
+<span class="sd">    R : float</span>
+<span class="sd">      The gas constant. (:math:` J*mol^{-1}*K^{-1}`)</span>
+
+<span class="sd">    References</span>
+<span class="sd">    ----------</span>
+
+<span class="sd">    .. [1] Destexhe, Alain, Agnessa Babloyantz, and Terrence J. Sejnowski.</span>
+<span class="sd">           &quot;Ionic mechanisms for intrinsic slow oscillations in thalamic</span>
+<span class="sd">           relay neuron.&quot; Biophysical journal 65, no. 4 (1993): 1538-1552.</span>
+<span class="sd">    .. [2] Bazhenov, Maxim, Igor Timofeev, Mircea Steriade, and Terrence J.</span>
+<span class="sd">           Sejnowski. &quot;Cellular and network models for intrathalamic augmenting</span>
+<span class="sd">           responses during 10-Hz stimulation.&quot; Journal of neurophysiology 79,</span>
+<span class="sd">           no. 5 (1998): 2730-2748.</span>
+
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="vm">__module__</span> <span class="o">=</span> <span class="s1">&#39;braincell.ion&#39;</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">size</span><span class="p">:</span> <span class="n">brainstate</span><span class="o">.</span><span class="n">typing</span><span class="o">.</span><span class="n">Size</span><span class="p">,</span>
+        <span class="n">T</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="n">brainstate</span><span class="o">.</span><span class="n">typing</span><span class="o">.</span><span class="n">ArrayLike</span><span class="p">,</span> <span class="n">Callable</span><span class="p">]</span> <span class="o">=</span> <span class="n">u</span><span class="o">.</span><span class="n">celsius2kelvin</span><span class="p">(</span><span class="mf">36.</span><span class="p">),</span>
+        <span class="n">d</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="n">brainstate</span><span class="o">.</span><span class="n">typing</span><span class="o">.</span><span class="n">ArrayLike</span><span class="p">,</span> <span class="n">Callable</span><span class="p">]</span> <span class="o">=</span> <span class="mf">1.</span> <span class="o">*</span> <span class="n">u</span><span class="o">.</span><span class="n">um</span><span class="p">,</span>
+        <span class="n">tau</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="n">brainstate</span><span class="o">.</span><span class="n">typing</span><span class="o">.</span><span class="n">ArrayLike</span><span class="p">,</span> <span class="n">Callable</span><span class="p">]</span> <span class="o">=</span> <span class="mf">5.</span> <span class="o">*</span> <span class="n">u</span><span class="o">.</span><span class="n">ms</span><span class="p">,</span>
+        <span class="n">C_rest</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="n">brainstate</span><span class="o">.</span><span class="n">typing</span><span class="o">.</span><span class="n">ArrayLike</span><span class="p">,</span> <span class="n">Callable</span><span class="p">]</span> <span class="o">=</span> <span class="mf">2.4e-4</span> <span class="o">*</span> <span class="n">u</span><span class="o">.</span><span class="n">mM</span><span class="p">,</span>
+        <span class="n">C0</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="n">brainstate</span><span class="o">.</span><span class="n">typing</span><span class="o">.</span><span class="n">ArrayLike</span><span class="p">,</span> <span class="n">Callable</span><span class="p">]</span> <span class="o">=</span> <span class="mf">2.</span> <span class="o">*</span> <span class="n">u</span><span class="o">.</span><span class="n">mM</span><span class="p">,</span>
+        <span class="n">C_initializer</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="n">brainstate</span><span class="o">.</span><span class="n">typing</span><span class="o">.</span><span class="n">ArrayLike</span><span class="p">,</span> <span class="n">Callable</span><span class="p">]</span> <span class="o">=</span> <span class="n">brainstate</span><span class="o">.</span><span class="n">init</span><span class="o">.</span><span class="n">Constant</span><span class="p">(</span><span class="mf">2.4e-4</span> <span class="o">*</span> <span class="n">u</span><span class="o">.</span><span class="n">mM</span><span class="p">),</span>
+        <span class="n">name</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="o">**</span><span class="n">channels</span>
+    <span class="p">):</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span><span class="n">size</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="n">name</span><span class="p">,</span> <span class="n">T</span><span class="o">=</span><span class="n">T</span><span class="p">,</span> <span class="n">C0</span><span class="o">=</span><span class="n">C0</span><span class="p">,</span> <span class="n">C_initializer</span><span class="o">=</span><span class="n">C_initializer</span><span class="p">,</span> <span class="o">**</span><span class="n">channels</span><span class="p">)</span>
+
+        <span class="c1"># parameters</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">d</span> <span class="o">=</span> <span class="n">brainstate</span><span class="o">.</span><span class="n">init</span><span class="o">.</span><span class="n">param</span><span class="p">(</span><span class="n">d</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">varshape</span><span class="p">,</span> <span class="n">allow_none</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">tau</span> <span class="o">=</span> <span class="n">brainstate</span><span class="o">.</span><span class="n">init</span><span class="o">.</span><span class="n">param</span><span class="p">(</span><span class="n">tau</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">varshape</span><span class="p">,</span> <span class="n">allow_none</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">C_rest</span> <span class="o">=</span> <span class="n">brainstate</span><span class="o">.</span><span class="n">init</span><span class="o">.</span><span class="n">param</span><span class="p">(</span><span class="n">C_rest</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">varshape</span><span class="p">,</span> <span class="n">allow_none</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">derivative</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">C</span><span class="p">,</span> <span class="n">V</span><span class="p">):</span>
+        <span class="n">ICa</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">current</span><span class="p">(</span><span class="n">V</span><span class="p">,</span> <span class="n">include_external</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="n">drive</span> <span class="o">=</span> <span class="n">ICa</span> <span class="o">/</span> <span class="p">(</span><span class="mi">2</span> <span class="o">*</span> <span class="n">u</span><span class="o">.</span><span class="n">faraday_constant</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">d</span><span class="p">)</span>
+        <span class="n">drive</span> <span class="o">=</span> <span class="n">u</span><span class="o">.</span><span class="n">math</span><span class="o">.</span><span class="n">maximum</span><span class="p">(</span><span class="n">drive</span><span class="p">,</span> <span class="n">u</span><span class="o">.</span><span class="n">math</span><span class="o">.</span><span class="n">zeros_like</span><span class="p">(</span><span class="n">drive</span><span class="p">))</span>
+        <span class="k">return</span> <span class="n">drive</span> <span class="o">+</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">C_rest</span> <span class="o">-</span> <span class="n">C</span><span class="p">)</span> <span class="o">/</span> <span class="bp">self</span><span class="o">.</span><span class="n">tau</span>
+
+
+<span class="k">class</span><span class="w"> </span><span class="nc">CalciumFirstOrder</span><span class="p">(</span><span class="n">_CalciumDynamics</span><span class="p">):</span>
+<span class="w">    </span><span class="sa">r</span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    The first-order calcium concentration model.</span>
+
+<span class="sd">    .. math::</span>
+
+<span class="sd">       Ca&#39; = -\alpha I_{Ca} + -\beta Ca</span>
+
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="vm">__module__</span> <span class="o">=</span> <span class="s1">&#39;braincell.ion&#39;</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">size</span><span class="p">:</span> <span class="n">brainstate</span><span class="o">.</span><span class="n">typing</span><span class="o">.</span><span class="n">Size</span><span class="p">,</span>
+        <span class="n">T</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="n">brainstate</span><span class="o">.</span><span class="n">typing</span><span class="o">.</span><span class="n">ArrayLike</span><span class="p">,</span> <span class="n">Callable</span><span class="p">]</span> <span class="o">=</span> <span class="n">u</span><span class="o">.</span><span class="n">celsius2kelvin</span><span class="p">(</span><span class="mf">36.</span><span class="p">),</span>
+        <span class="n">alpha</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="n">brainstate</span><span class="o">.</span><span class="n">typing</span><span class="o">.</span><span class="n">ArrayLike</span><span class="p">,</span> <span class="n">Callable</span><span class="p">]</span> <span class="o">=</span> <span class="mf">0.13</span><span class="p">,</span>
+        <span class="n">beta</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="n">brainstate</span><span class="o">.</span><span class="n">typing</span><span class="o">.</span><span class="n">ArrayLike</span><span class="p">,</span> <span class="n">Callable</span><span class="p">]</span> <span class="o">=</span> <span class="mf">0.075</span><span class="p">,</span>
+        <span class="n">C0</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="n">brainstate</span><span class="o">.</span><span class="n">typing</span><span class="o">.</span><span class="n">ArrayLike</span><span class="p">,</span> <span class="n">Callable</span><span class="p">]</span> <span class="o">=</span> <span class="mf">2.</span> <span class="o">*</span> <span class="n">u</span><span class="o">.</span><span class="n">mM</span><span class="p">,</span>
+        <span class="n">C_initializer</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="n">brainstate</span><span class="o">.</span><span class="n">typing</span><span class="o">.</span><span class="n">ArrayLike</span><span class="p">,</span> <span class="n">Callable</span><span class="p">]</span> <span class="o">=</span> <span class="n">brainstate</span><span class="o">.</span><span class="n">init</span><span class="o">.</span><span class="n">Constant</span><span class="p">(</span><span class="mf">2.4e-4</span> <span class="o">*</span> <span class="n">u</span><span class="o">.</span><span class="n">mM</span><span class="p">),</span>
+        <span class="n">name</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="o">**</span><span class="n">channels</span>
+    <span class="p">):</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span>
+            <span class="n">size</span><span class="p">,</span>
+            <span class="n">name</span><span class="o">=</span><span class="n">name</span><span class="p">,</span>
+            <span class="n">T</span><span class="o">=</span><span class="n">T</span><span class="p">,</span>
+            <span class="n">C0</span><span class="o">=</span><span class="n">C0</span><span class="p">,</span>
+            <span class="n">C_initializer</span><span class="o">=</span><span class="n">C_initializer</span><span class="p">,</span>
+            <span class="o">**</span><span class="n">channels</span>
+        <span class="p">)</span>
+
+        <span class="c1"># parameters</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">alpha</span> <span class="o">=</span> <span class="n">brainstate</span><span class="o">.</span><span class="n">init</span><span class="o">.</span><span class="n">param</span><span class="p">(</span><span class="n">alpha</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">varshape</span><span class="p">,</span> <span class="n">allow_none</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">beta</span> <span class="o">=</span> <span class="n">brainstate</span><span class="o">.</span><span class="n">init</span><span class="o">.</span><span class="n">param</span><span class="p">(</span><span class="n">beta</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">varshape</span><span class="p">,</span> <span class="n">allow_none</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">derivative</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">C</span><span class="p">,</span> <span class="n">V</span><span class="p">):</span>
+        <span class="n">ICa</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">current</span><span class="p">(</span><span class="n">V</span><span class="p">,</span> <span class="n">include_external</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="n">drive</span> <span class="o">=</span> <span class="n">u</span><span class="o">.</span><span class="n">math</span><span class="o">.</span><span class="n">maximum</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">alpha</span> <span class="o">*</span> <span class="n">ICa</span><span class="p">,</span> <span class="mf">0.</span> <span class="o">*</span> <span class="n">u</span><span class="o">.</span><span class="n">mM</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">drive</span> <span class="o">-</span> <span class="bp">self</span><span class="o">.</span><span class="n">beta</span> <span class="o">*</span> <span class="n">C</span>
+</pre></div>
+
+                </article>
+              
+
+              
+              
+              
+              
+                <footer class="prev-next-footer d-print-none">
+                  
+<div class="prev-next-area">
+</div>
+                </footer>
+              
+            </div>
+            
+            
+              
+            
+          </div>
+          <footer class="bd-footer-content">
+            
+<div class="bd-footer-content__inner container">
+  
+  <div class="footer-item">
+    
+<p class="component-author">
+By BDP Ecosystem
+</p>
+
+  </div>
+  
+  <div class="footer-item">
+    
+
+  <p class="copyright">
+    
+      © Copyright 2025, braincell.
+      <br/>
+    
+  </p>
+
+  </div>
+  
+  <div class="footer-item">
+    <p class="last-updated">
+  Last updated on Jul 30, 2025.
+  <br/>
+</p>
+  </div>
+  
+  <div class="footer-item">
+    
+  </div>
+  
+</div>
+          </footer>
+        
+
+      </main>
+    </div>
+  </div>
+  
+  <!-- Scripts loaded after <body> so the DOM is not blocked -->
+  <script src="../../../_static/scripts/bootstrap.js?digest=dfe6caa3a7d634c4db9b"></script>
+<script src="../../../_static/scripts/pydata-sphinx-theme.js?digest=dfe6caa3a7d634c4db9b"></script>
+
+  <footer class="bd-footer">
+  </footer>
+  </body>
+</html>

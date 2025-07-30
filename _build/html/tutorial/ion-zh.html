@@ -1,0 +1,931 @@
+
+<!DOCTYPE html>
+
+
+<html lang="en" data-content_root="../" >
+
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <title>离子 &#8212; braincell</title>
+  
+  
+  
+  <script data-cfasync="false">
+    document.documentElement.dataset.mode = localStorage.getItem("mode") || "";
+    document.documentElement.dataset.theme = localStorage.getItem("theme") || "";
+  </script>
+  
+  <!-- Loaded before other Sphinx assets -->
+  <link href="../_static/styles/theme.css?digest=dfe6caa3a7d634c4db9b" rel="stylesheet" />
+<link href="../_static/styles/bootstrap.css?digest=dfe6caa3a7d634c4db9b" rel="stylesheet" />
+<link href="../_static/styles/pydata-sphinx-theme.css?digest=dfe6caa3a7d634c4db9b" rel="stylesheet" />
+
+  
+  <link href="../_static/vendor/fontawesome/6.5.2/css/all.min.css?digest=dfe6caa3a7d634c4db9b" rel="stylesheet" />
+  <link rel="preload" as="font" type="font/woff2" crossorigin href="../_static/vendor/fontawesome/6.5.2/webfonts/fa-solid-900.woff2" />
+<link rel="preload" as="font" type="font/woff2" crossorigin href="../_static/vendor/fontawesome/6.5.2/webfonts/fa-brands-400.woff2" />
+<link rel="preload" as="font" type="font/woff2" crossorigin href="../_static/vendor/fontawesome/6.5.2/webfonts/fa-regular-400.woff2" />
+
+    <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=8f2a1f02" />
+    <link rel="stylesheet" type="text/css" href="../_static/styles/sphinx-book-theme.css?v=eba8b062" />
+    <link rel="stylesheet" type="text/css" href="../_static/mystnb.4510f1fc1dee50b3e5859aac5469c37c29e427902b24a333a5f9fcb2f0b3ac41.css" />
+    <link rel="stylesheet" type="text/css" href="../_static/plot_directive.css" />
+    <link rel="stylesheet" type="text/css" href="../_static/sphinx-thebe.css?v=4fa983c6" />
+    <link rel="stylesheet" type="text/css" href="../_static/sphinx-design.min.css?v=95c83b7e" />
+  
+  <!-- Pre-loaded scripts that we'll load fully later -->
+  <link rel="preload" as="script" href="../_static/scripts/bootstrap.js?digest=dfe6caa3a7d634c4db9b" />
+<link rel="preload" as="script" href="../_static/scripts/pydata-sphinx-theme.js?digest=dfe6caa3a7d634c4db9b" />
+  <script src="../_static/vendor/fontawesome/6.5.2/js/all.min.js?digest=dfe6caa3a7d634c4db9b"></script>
+
+    <script src="../_static/documentation_options.js?v=f131489c"></script>
+    <script src="../_static/doctools.js?v=9bcbadda"></script>
+    <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../_static/scripts/sphinx-book-theme.js?v=887ef09a"></script>
+    <script src="../_static/design-tabs.js?v=f930bc37"></script>
+    <script>const THEBE_JS_URL = "https://unpkg.com/thebe@0.8.2/lib/index.js"; const thebe_selector = ".thebe,.cell"; const thebe_selector_input = "pre"; const thebe_selector_output = ".output, .cell_output"</script>
+    <script async="async" src="../_static/sphinx-thebe.js?v=c100c467"></script>
+    <script>window.MathJax = {"options": {"processHtmlClass": "tex2jax_process|mathjax_process|math|output_area"}}</script>
+    <script defer="defer" src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+    <script>DOCUMENTATION_OPTIONS.pagename = 'tutorial/ion-zh';</script>
+    <link rel="icon" href="../_static/braincell.png"/>
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+    <link rel="next" title="细胞" href="cell-zh.html" />
+    <link rel="prev" title="通道" href="channel-zh.html" />
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <meta name="docsearch:language" content="en"/>
+    <meta name="docbuild:last-update" content="Jul 30, 2025"/>
+  </head>
+  
+  
+  <body data-bs-spy="scroll" data-bs-target=".bd-toc-nav" data-offset="180" data-bs-root-margin="0px 0px -60%" data-default-mode="">
+
+  
+  
+  <div id="pst-skip-link" class="skip-link d-print-none"><a href="#main-content">Skip to main content</a></div>
+  
+  <div id="pst-scroll-pixel-helper"></div>
+  
+  <button type="button" class="btn rounded-pill" id="pst-back-to-top">
+    <i class="fa-solid fa-arrow-up"></i>Back to top</button>
+
+  
+  <input type="checkbox"
+          class="sidebar-toggle"
+          id="pst-primary-sidebar-checkbox"/>
+  <label class="overlay overlay-primary" for="pst-primary-sidebar-checkbox"></label>
+  
+  <input type="checkbox"
+          class="sidebar-toggle"
+          id="pst-secondary-sidebar-checkbox"/>
+  <label class="overlay overlay-secondary" for="pst-secondary-sidebar-checkbox"></label>
+  
+  <div class="search-button__wrapper">
+    <div class="search-button__overlay"></div>
+    <div class="search-button__search-container">
+<form class="bd-search d-flex align-items-center"
+      action="../search.html"
+      method="get">
+  <i class="fa-solid fa-magnifying-glass"></i>
+  <input type="search"
+         class="form-control"
+         name="q"
+         id="search-input"
+         placeholder="Search..."
+         aria-label="Search..."
+         autocomplete="off"
+         autocorrect="off"
+         autocapitalize="off"
+         spellcheck="false"/>
+  <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd>K</kbd></span>
+</form></div>
+  </div>
+
+  <div class="pst-async-banner-revealer d-none">
+  <aside id="bd-header-version-warning" class="d-none d-print-none" aria-label="Version warning"></aside>
+</div>
+
+  
+    <header class="bd-header navbar navbar-expand-lg bd-navbar d-print-none">
+    </header>
+  
+
+  <div class="bd-container">
+    <div class="bd-container__inner bd-page-width">
+      
+      
+      
+      <div class="bd-sidebar-primary bd-sidebar">
+        
+
+  
+  <div class="sidebar-header-items sidebar-primary__section">
+    
+    
+    
+    
+  </div>
+  
+    <div class="sidebar-primary-items__start sidebar-primary__section">
+        <div class="sidebar-primary-item">
+
+  
+    
+  
+
+<a class="navbar-brand logo" href="../index.html">
+  
+  
+  
+  
+  
+    
+    
+      
+    
+    
+    <img src="../_static/braincell.png" class="logo__image only-light" alt="braincell - Home"/>
+    <script>document.write(`<img src="../_static/braincell.png" class="logo__image only-dark" alt="braincell - Home"/>`);</script>
+  
+  
+</a></div>
+        <div class="sidebar-primary-item">
+
+ <script>
+ document.write(`
+   <button class="btn search-button-field search-button__button" title="Search" aria-label="Search" data-bs-placement="bottom" data-bs-toggle="tooltip">
+    <i class="fa-solid fa-magnifying-glass"></i>
+    <span class="search-button__default-text">Search</span>
+    <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd class="kbd-shortcut__modifier">K</kbd></span>
+   </button>
+ `);
+ </script></div>
+        <div class="sidebar-primary-item"><nav class="bd-links bd-docs-nav" aria-label="Main">
+    <div class="bd-toc-item navbar-nav active">
+        <p aria-level="2" class="caption" role="heading"><span class="caption-text">Quickstart</span></p>
+<ul class="nav bd-sidenav">
+<li class="toctree-l1"><a class="reference internal" href="../quickstart/concepts-zh.html">概要</a></li>
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">Tutorials</span></p>
+<ul class="current nav bd-sidenav">
+<li class="toctree-l1"><a class="reference internal" href="channel-zh.html">通道</a></li>
+<li class="toctree-l1 current active"><a class="current reference internal" href="#">离子</a></li>
+<li class="toctree-l1"><a class="reference internal" href="cell-zh.html">细胞</a></li>
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">Advanced Tutorials</span></p>
+<ul class="nav bd-sidenav">
+<li class="toctree-l1"><a class="reference internal" href="../advanced_tutorial/rationale-zh.html">补充说明</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../advanced_tutorial/differential_equation-zh.html">微分方程</a></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../advanced_tutorial/examples.html">例程</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="../advanced_tutorial/examples/sc02.html">低阈值与高阈值钙通道的门控特性对比</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../advanced_tutorial/examples/sc03.html">兴奋性-抑制性神经元网络（E-I网络）的模拟与分析</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../advanced_tutorial/examples/sc04.html">不同积分方法对 HH 模型神经元动态的影响</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../advanced_tutorial/examples/sc05.html">丘脑神经元模型的构建与电活动模拟</a></li>
+</ul>
+</details></li>
+<li class="toctree-l1"><a class="reference internal" href="../advanced_tutorial/more-zh.html">更多</a></li>
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">API Documentation</span></p>
+<ul class="nav bd-sidenav">
+<li class="toctree-l1"><a class="reference internal" href="../apis/changelog.html">Release Notes</a></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../apis/braincell.html"><code class="docutils literal notranslate"><span class="pre">braincell</span></code> module</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="../apis/generated/braincell.IonChannel.html">IonChannel</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../apis/generated/braincell.Ion.html">Ion</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../apis/generated/braincell.IonInfo.html">IonInfo</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../apis/generated/braincell.MixIons.html">MixIons</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../apis/generated/braincell.Channel.html">Channel</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../apis/generated/braincell.HHTypedNeuron.html">HHTypedNeuron</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../apis/generated/braincell.SingleCompartment.html">SingleCompartment</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../apis/generated/braincell.MultiCompartment.html">MultiCompartment</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../apis/generated/braincell.DiffEqState.html">DiffEqState</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../apis/generated/braincell.DiffEqModule.html">DiffEqModule</a></li>
+</ul>
+</details></li>
+<li class="toctree-l1"><a class="reference internal" href="../apis/braincell.synapse.html"><code class="docutils literal notranslate"><span class="pre">braincell.synapse</span></code> module</a></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../apis/braincell.ion.html"><code class="docutils literal notranslate"><span class="pre">braincell.ion</span></code> module</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="../apis/generated/braincell.ion.Calcium.html">Calcium</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../apis/generated/braincell.ion.CalciumFixed.html">CalciumFixed</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../apis/generated/braincell.ion.CalciumDetailed.html">CalciumDetailed</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../apis/generated/braincell.ion.CalciumFirstOrder.html">CalciumFirstOrder</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../apis/generated/braincell.ion.Potassium.html">Potassium</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../apis/generated/braincell.ion.PotassiumFixed.html">PotassiumFixed</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../apis/generated/braincell.ion.Sodium.html">Sodium</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../apis/generated/braincell.ion.SodiumFixed.html">SodiumFixed</a></li>
+</ul>
+</details></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../apis/braincell.channel.html"><code class="docutils literal notranslate"><span class="pre">braincell.channel</span></code> module</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="../apis/generated/braincell.channel.CalciumChannel.html">CalciumChannel</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../apis/generated/braincell.channel.ICaN_IS2008.html">ICaN_IS2008</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../apis/generated/braincell.channel.ICaT_HM1992.html">ICaT_HM1992</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../apis/generated/braincell.channel.ICaT_HP1992.html">ICaT_HP1992</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../apis/generated/braincell.channel.ICaHT_HM1992.html">ICaHT_HM1992</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../apis/generated/braincell.channel.ICaHT_Re1993.html">ICaHT_Re1993</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../apis/generated/braincell.channel.ICaL_IS2008.html">ICaL_IS2008</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../apis/generated/braincell.channel.ICav12_Ma2020.html">ICav12_Ma2020</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../apis/generated/braincell.channel.ICav13_Ma2020.html">ICav13_Ma2020</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../apis/generated/braincell.channel.ICav23_Ma2020.html">ICav23_Ma2020</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../apis/generated/braincell.channel.ICav31_Ma2020.html">ICav31_Ma2020</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../apis/generated/braincell.channel.ICaGrc_Ma2020.html">ICaGrc_Ma2020</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../apis/generated/braincell.channel.Ih_HM1992.html">Ih_HM1992</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../apis/generated/braincell.channel.Ih1_Ma2020.html">Ih1_Ma2020</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../apis/generated/braincell.channel.Ih2_Ma2020.html">Ih2_Ma2020</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../apis/generated/braincell.channel.LeakageChannel.html">LeakageChannel</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../apis/generated/braincell.channel.IL.html">IL</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../apis/generated/braincell.channel.PotassiumChannel.html">PotassiumChannel</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../apis/generated/braincell.channel.IK_p4_markov.html">IK_p4_markov</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../apis/generated/braincell.channel.IKDR_Ba2002.html">IKDR_Ba2002</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../apis/generated/braincell.channel.IK_TM1991.html">IK_TM1991</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../apis/generated/braincell.channel.IK_HH1952.html">IK_HH1952</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../apis/generated/braincell.channel.IKA_p4q_ss.html">IKA_p4q_ss</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../apis/generated/braincell.channel.IKA1_HM1992.html">IKA1_HM1992</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../apis/generated/braincell.channel.IKA2_HM1992.html">IKA2_HM1992</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../apis/generated/braincell.channel.IKK2_pq_ss.html">IKK2_pq_ss</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../apis/generated/braincell.channel.IKK2A_HM1992.html">IKK2A_HM1992</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../apis/generated/braincell.channel.IKK2B_HM1992.html">IKK2B_HM1992</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../apis/generated/braincell.channel.IKNI_Ya1989.html">IKNI_Ya1989</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../apis/generated/braincell.channel.IK_Leak.html">IK_Leak</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../apis/generated/braincell.channel.IKv11_Ak2007.html">IKv11_Ak2007</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../apis/generated/braincell.channel.IKv34_Ma2020.html">IKv34_Ma2020</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../apis/generated/braincell.channel.IKv43_Ma2020.html">IKv43_Ma2020</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../apis/generated/braincell.channel.IKM_Grc_Ma2020.html">IKM_Grc_Ma2020</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../apis/generated/braincell.channel.KCaChannel.html">KCaChannel</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../apis/generated/braincell.channel.IAHP_De1994.html">IAHP_De1994</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../apis/generated/braincell.channel.IKca3_1_Ma2020.html">IKca3_1_Ma2020</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../apis/generated/braincell.channel.IKca2_2_Ma2020.html">IKca2_2_Ma2020</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../apis/generated/braincell.channel.IKca1_1_Ma2020.html">IKca1_1_Ma2020</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../apis/generated/braincell.channel.SodiumChannel.html">SodiumChannel</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../apis/generated/braincell.channel.INa_p3q_markov.html">INa_p3q_markov</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../apis/generated/braincell.channel.INa_Ba2002.html">INa_Ba2002</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../apis/generated/braincell.channel.INa_TM1991.html">INa_TM1991</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../apis/generated/braincell.channel.INa_HH1952.html">INa_HH1952</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../apis/generated/braincell.channel.INa_Rsg.html">INa_Rsg</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../apis/generated/braincell.channel.INa_Rsg_B.html">INa_Rsg_B</a></li>
+</ul>
+</details></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../apis/integration.html">Numerical Integration Methods</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="../apis/generated/braincell.get_integrator.html">braincell.get_integrator</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../apis/generated/braincell.exp_euler_step.html">braincell.exp_euler_step</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../apis/generated/braincell.ind_exp_euler_step.html">braincell.ind_exp_euler_step</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../apis/generated/braincell.euler_step.html">braincell.euler_step</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../apis/generated/braincell.midpoint_step.html">braincell.midpoint_step</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../apis/generated/braincell.rk2_step.html">braincell.rk2_step</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../apis/generated/braincell.heun2_step.html">braincell.heun2_step</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../apis/generated/braincell.ralston2_step.html">braincell.ralston2_step</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../apis/generated/braincell.rk3_step.html">braincell.rk3_step</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../apis/generated/braincell.heun3_step.html">braincell.heun3_step</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../apis/generated/braincell.ssprk3_step.html">braincell.ssprk3_step</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../apis/generated/braincell.ralston3_step.html">braincell.ralston3_step</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../apis/generated/braincell.rk4_step.html">braincell.rk4_step</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../apis/generated/braincell.ralston4_step.html">braincell.ralston4_step</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../apis/generated/braincell.diffrax_euler_step.html">braincell.diffrax_euler_step</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../apis/generated/braincell.diffrax_heun_step.html">braincell.diffrax_heun_step</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../apis/generated/braincell.diffrax_midpoint_step.html">braincell.diffrax_midpoint_step</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../apis/generated/braincell.diffrax_ralston_step.html">braincell.diffrax_ralston_step</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../apis/generated/braincell.diffrax_bosh3_step.html">braincell.diffrax_bosh3_step</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../apis/generated/braincell.diffrax_tsit5_step.html">braincell.diffrax_tsit5_step</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../apis/generated/braincell.diffrax_dopri5_step.html">braincell.diffrax_dopri5_step</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../apis/generated/braincell.diffrax_dopri8_step.html">braincell.diffrax_dopri8_step</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../apis/generated/braincell.diffrax_bwd_euler_step.html">braincell.diffrax_bwd_euler_step</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../apis/generated/braincell.diffrax_kvaerno3_step.html">braincell.diffrax_kvaerno3_step</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../apis/generated/braincell.diffrax_kvaerno4_step.html">braincell.diffrax_kvaerno4_step</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../apis/generated/braincell.diffrax_kvaerno5_step.html">braincell.diffrax_kvaerno5_step</a></li>
+</ul>
+</details></li>
+</ul>
+
+    </div>
+</nav></div>
+    </div>
+  
+  
+  <div class="sidebar-primary-items__end sidebar-primary__section">
+  </div>
+  
+  <div id="rtd-footer-container"></div>
+
+
+      </div>
+      
+      <main id="main-content" class="bd-main" role="main">
+        
+        
+
+<div class="sbt-scroll-pixel-helper"></div>
+
+          <div class="bd-content">
+            <div class="bd-article-container">
+              
+              <div class="bd-header-article d-print-none">
+<div class="header-article-items header-article__inner">
+  
+    <div class="header-article-items__start">
+      
+        <div class="header-article-item"><button class="sidebar-toggle primary-toggle btn btn-sm" title="Toggle primary sidebar" data-bs-placement="bottom" data-bs-toggle="tooltip">
+  <span class="fa-solid fa-bars"></span>
+</button></div>
+      
+    </div>
+  
+  
+    <div class="header-article-items__end">
+      
+        <div class="header-article-item">
+
+<div class="article-header-buttons">
+
+
+
+
+
+<div class="dropdown dropdown-download-buttons">
+  <button class="btn dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false" aria-label="Download this page">
+    <i class="fas fa-download"></i>
+  </button>
+  <ul class="dropdown-menu">
+      
+      
+      
+      <li><a href="../_sources/tutorial/ion-zh.ipynb" target="_blank"
+   class="btn btn-sm btn-download-source-button dropdown-item"
+   title="Download source file"
+   data-bs-placement="left" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fas fa-file"></i>
+  </span>
+<span class="btn__text-container">.ipynb</span>
+</a>
+</li>
+      
+      
+      
+      
+      <li>
+<button onclick="window.print()"
+  class="btn btn-sm btn-download-pdf-button dropdown-item"
+  title="Print to PDF"
+  data-bs-placement="left" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fas fa-file-pdf"></i>
+  </span>
+<span class="btn__text-container">.pdf</span>
+</button>
+</li>
+      
+  </ul>
+</div>
+
+
+
+
+<button onclick="toggleFullScreen()"
+  class="btn btn-sm btn-fullscreen-button"
+  title="Fullscreen mode"
+  data-bs-placement="bottom" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fas fa-expand"></i>
+  </span>
+
+</button>
+
+
+
+<script>
+document.write(`
+  <button class="btn btn-sm nav-link pst-navbar-icon theme-switch-button" title="light/dark" aria-label="light/dark" data-bs-placement="bottom" data-bs-toggle="tooltip">
+    <i class="theme-switch fa-solid fa-sun fa-lg" data-mode="light"></i>
+    <i class="theme-switch fa-solid fa-moon fa-lg" data-mode="dark"></i>
+    <i class="theme-switch fa-solid fa-circle-half-stroke fa-lg" data-mode="auto"></i>
+  </button>
+`);
+</script>
+
+
+<script>
+document.write(`
+  <button class="btn btn-sm pst-navbar-icon search-button search-button__button" title="Search" aria-label="Search" data-bs-placement="bottom" data-bs-toggle="tooltip">
+    <i class="fa-solid fa-magnifying-glass fa-lg"></i>
+  </button>
+`);
+</script>
+<button class="sidebar-toggle secondary-toggle btn btn-sm" title="Toggle secondary sidebar" data-bs-placement="bottom" data-bs-toggle="tooltip">
+    <span class="fa-solid fa-list"></span>
+</button>
+</div></div>
+      
+    </div>
+  
+</div>
+</div>
+              
+              
+
+<div id="jb-print-docs-body" class="onlyprint">
+    <h1>离子</h1>
+    <!-- Table of contents -->
+    <div id="print-main-content">
+        <div id="jb-print-toc">
+            
+            <div>
+                <h2> Contents </h2>
+            </div>
+            <nav aria-label="Page">
+                <ul class="visible nav section-nav flex-column">
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#id2">现有离子调用</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#id3">自定义离子建模</a><ul class="visible nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#ion">Ion 建模</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#mixions">MixIons 建模</a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#id4">现有离子实例</a><ul class="visible nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#calcium">Calcium</a><ul class="nav section-nav flex-column">
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#calciumfixed"><code class="docutils literal notranslate"><span class="pre">CalciumFixed</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#calciumdetailed"><code class="docutils literal notranslate"><span class="pre">CalciumDetailed</span></code></a><ul class="nav section-nav flex-column">
+<li class="toc-h5 nav-item toc-entry"><a class="reference internal nav-link" href="#id5">细胞内钙离子的动力学</a><ul class="nav section-nav flex-column">
+<li class="toc-h6 nav-item toc-entry"><a class="reference internal nav-link" href="#id6">由钙电流引起的内流</a></li>
+<li class="toc-h6 nav-item toc-entry"><a class="reference internal nav-link" href="#id7">由钙泵引起的外流</a></li>
+</ul>
+</li>
+<li class="toc-h5 nav-item toc-entry"><a class="reference internal nav-link" href="#id8">简化的一阶模型</a></li>
+<li class="toc-h5 nav-item toc-entry"><a class="reference internal nav-link" href="#id9">钙离子的反转电位</a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#calciumfirstorder"><code class="docutils literal notranslate"><span class="pre">CalciumFirstOrder</span></code></a><ul class="visible nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#potassium">Potassium</a><ul class="nav section-nav flex-column">
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#potassiumfixed"><code class="docutils literal notranslate"><span class="pre">PotassiumFixed</span></code></a></li>
+</ul>
+</li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#sodium">Sodium</a><ul class="nav section-nav flex-column">
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#sodiumfixed"><code class="docutils literal notranslate"><span class="pre">SodiumFixed</span></code></a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+            </nav>
+        </div>
+    </div>
+</div>
+
+              
+                
+<div id="searchbox"></div>
+                <article class="bd-article">
+                  
+  <section class="tex2jax_ignore mathjax_ignore" id="id1">
+<h1>离子<a class="headerlink" href="#id1" title="Link to this heading">#</a></h1>
+<p>在学习完 <code class="docutils literal notranslate"><span class="pre">Channel</span></code> 的部分后，我们会很自然的产生疑问：既然通道是通过离子的，那么在 <code class="docutils literal notranslate"><span class="pre">braincell</span></code> 中离子是怎么定义的呢？</p>
+<section id="id2">
+<h2>现有离子调用<a class="headerlink" href="#id2" title="Link to this heading">#</a></h2>
+<p>我们先来讲解如何使用现有离子。</p>
+<p>在 <code class="docutils literal notranslate"><span class="pre">braincell</span></code> 中，离子被分为以下三种基类，</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">Calcium</span></code> ：钙离子</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">Potassium</span></code> ：钾离子</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">Sodium</span></code> ：钠离子</p></li>
+</ul>
+<p>实际使用中，调用这些离子相关的模型非常简单。
+同样，我们来看对 HH 神经元建模的例子：</p>
+<div class="cell docutils container">
+<div class="cell_input docutils container">
+<div class="highlight-ipython2 notranslate"><div class="highlight"><pre><span></span>import braincell
+
+class HH(braincell.SingleCompartment):
+    def __init__(self, in_size):
+        super().__init__(in_size, C=Cm, solver=&#39;ind_exp_euler&#39;)
+        self.na = braincell.ion.SodiumFixed(in_size, E=50. * u.mV)
+        self.na.add_elem(
+            INa=braincell.channel.INa_TM1991(in_size, g_max=(100. * u.mS * u.cm ** -2) * area, V_sh=-63. * u.mV)
+        )
+
+        self.k = braincell.ion.PotassiumFixed(in_size, E=-90 * u.mV)
+        self.k.add_elem(
+            IK=braincell.channel.IK_TM1991(in_size, g_max=(30. * u.mS * u.cm ** -2) * area, V_sh=-63. * u.mV)
+        )
+
+        self.IL = braincell.channel.IL(in_size, E=-60. * u.mV, g_max=(5. * u.nS * u.cm ** -2) * area)
+</pre></div>
+</div>
+</div>
+</div>
+<p>首先，在导入相关模块之后，我们需要在 <code class="docutils literal notranslate"><span class="pre">__init__</span></code> 创建具体的模型对象。</p>
+<p>这里我们以钠离子 <code class="docutils literal notranslate"><span class="pre">na</span></code> 为例，使用 <code class="docutils literal notranslate"><span class="pre">SodiumDetailed</span></code> 创建钙离子模型。
+我们只需要根据文献中的定义或者实际情况对 <code class="docutils literal notranslate"><span class="pre">SodiumDetailed</span></code> 的参数进行设定即可。</p>
+<p>可以看到，使用已经完成建模的离子模型非常简单，只需简单调用即可。</p>
+</section>
+<section id="id3">
+<h2>自定义离子建模<a class="headerlink" href="#id3" title="Link to this heading">#</a></h2>
+<p>在实际建模中，可能目前内置的三种离子模型无法满足你的需要，你可能需要对其他种类的离子进行建模，比如 <code class="docutils literal notranslate"><span class="pre">Cl</span></code> 或更多离子，也有可能你会需要对多种离子比如 <code class="docutils literal notranslate"><span class="pre">KCa</span></code> 进行统一建模。
+鉴于此，我们来对如何自定义离子建模进行教学。</p>
+<section id="ion">
+<h3>Ion 建模<a class="headerlink" href="#ion" title="Link to this heading">#</a></h3>
+<p>首先，我们来讲解如何对单一离子 <code class="docutils literal notranslate"><span class="pre">Ion</span></code> 进行建模。</p>
+<p>从实际电生理结构来看，<code class="docutils literal notranslate"><span class="pre">Ion</span></code> 是依赖于 <code class="docutils literal notranslate"><span class="pre">Channel</span></code> 的选择性通过才能在膜内外转移的。
+而在实际编程中，我们也根据这种依赖关系设计了继承关系：<code class="docutils literal notranslate"><span class="pre">Ion</span></code> 继承自 <code class="docutils literal notranslate"><span class="pre">IonChannel</span></code> 和 <code class="docutils literal notranslate"><span class="pre">Container</span></code>，这意味着它既具备通道接口能力，又具有容纳多个子模块的容器功能。
+在模拟系统中，<code class="docutils literal notranslate"><span class="pre">Ion</span></code> 会被接入到 <code class="docutils literal notranslate"><span class="pre">HHTypedNeuron</span></code> 类型的细胞中，与膜电位共同驱动通道演化。</p>
+<p>在 <code class="docutils literal notranslate"><span class="pre">braincell</span></code> 中，<code class="docutils literal notranslate"><span class="pre">Ion</span></code> 是一个用于管理某一类离子的抽象实体。
+它本质上并不产生电流，而是通过组织和调度其所包含的多个 <code class="docutils literal notranslate"><span class="pre">Channel</span></code>对象来实现对离子电流的建模与仿真。
+每一种离子都会对应一个 <code class="docutils literal notranslate"><span class="pre">Ion</span></code> 实例，该实例作为多个相关通道的容器与控制中心，负责这些通道的统一管理。</p>
+<p>同样，<code class="docutils literal notranslate"><span class="pre">Ion</span></code> 提供了多个统一的仿真接口，以管理其状态演化过程。
+通过对 <code class="docutils literal notranslate"><span class="pre">Ion</span></code> 进行建模，可以使得代码结构更加模块化，集中管理每种离子的通道，避免混用。
+同时，通过 <code class="docutils literal notranslate"><span class="pre">Ion</span></code> 类，可以轻松实现组件的复用，提高了效率。</p>
+<p>在实际建模过程中，我们经常需要将离子的一些关键属性，如浓度和反转电位，传递给多个通道或者计算函数。为了简洁清晰的表达这些信息， <code class="docutils literal notranslate"><span class="pre">braincell</span></code> 引入了一个专用的数据结构 <code class="docutils literal notranslate"><span class="pre">IonInfo</span></code>。</p>
+<p>在 <code class="docutils literal notranslate"><span class="pre">IonInfo</span></code> 中，有两个关键属性：</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">C</span></code> ：离子浓度</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">E</span></code> ：反转电位</p></li>
+</ul>
+<p>在 <code class="docutils literal notranslate"><span class="pre">braincell</span></code> 中，可以将 <code class="docutils literal notranslate"><span class="pre">IonInfo</span></code> 理解为一个轻便的容器，用来统一管理和传递离子相关信息。
+它在 <code class="docutils literal notranslate"><span class="pre">Ion</span></code> 和 <code class="docutils literal notranslate"><span class="pre">Channel</span></code> 之间起到桥梁的作用，是一个简单但强大的信息传递结构。</p>
+<p>至此，我们已经了解了 <code class="docutils literal notranslate"><span class="pre">Ion</span></code> 的建模。接下来，我们来对具体的离子进行建模。</p>
+<p>我们以钙离子为例，讲解如何对 <code class="docutils literal notranslate"><span class="pre">PotassiumFixed</span></code> 进行建模。</p>
+<div class="cell docutils container">
+<div class="cell_input docutils container">
+<div class="highlight-ipython2 notranslate"><div class="highlight"><pre><span></span>from typing import Union, Callable, Optional
+from braincell import Ion, Channel
+import brainstate
+import brainunit as u
+
+
+class Potassium(Ion):
+
+    pass
+
+class PotassiumFixed(Potassium):
+
+    def __init__(
+        self,
+        size: brainstate.typing.Size,
+        E: Union[brainstate.typing.ArrayLike, Callable] = -95. * u.mV,
+        C: Union[brainstate.typing.ArrayLike, Callable] = 0.0400811 * u.mM,
+        name: Optional[str] = None,
+        **channels
+    ):
+        super().__init__(size, name=name, **channels)
+        self.E = brainstate.init.param(E, self.varshape)
+        self.C = brainstate.init.param(C, self.varshape)
+
+    def reset_state(self, V, batch_size=None):
+        nodes = brainstate.graph.nodes(self, Channel, allowed_hierarchy=(1, 1)).values()
+        self.check_hierarchies(type(self), *tuple(nodes))
+        ion_info = self.pack_info()
+        for node in nodes:
+            node.reset_state(V, ion_info, batch_size)
+</pre></div>
+</div>
+</div>
+</div>
+<p>实际对具体的离子进行建模即可参考以上的形式。
+对新的离子进行自定义建模时最重要的就是设定好关键属性 <code class="docutils literal notranslate"><span class="pre">E</span></code> 和 <code class="docutils literal notranslate"><span class="pre">C</span></code> 。</p>
+<p>基于此，你可以对在实际建模中自己需要的离子进行自定义建模。</p>
+</section>
+<section id="mixions">
+<h3>MixIons 建模<a class="headerlink" href="#mixions" title="Link to this heading">#</a></h3>
+<p>在某些复杂模型中，一个通道可能涉及多个离子的协同作用。例如，某些钙激活钾通道同时依赖钙离子浓度和膜电位调控钾离子流出。这种多离子依赖的机制在生物系统中非常常见。</p>
+<p>为此，<code class="docutils literal notranslate"><span class="pre">braincell</span></code> 提供了一个专门的模块 <code class="docutils literal notranslate"><span class="pre">MixIons</span></code>，用于建模多种离子共同驱动的复合通道系统。</p>
+<p><code class="docutils literal notranslate"><span class="pre">MixIons</span></code> 继承自 <code class="docutils literal notranslate"><span class="pre">IonChannel</span></code> 与 <code class="docutils literal notranslate"><span class="pre">Container</span></code> ，符合通道组件接口并且可以挂载多个子模块，在这里便于管理多个 <code class="docutils literal notranslate"><span class="pre">Channel</span></code>。同样， <code class="docutils literal notranslate"><span class="pre">MixIons</span></code> 也支持我们前面提及过的接口。</p>
+<p>总而言之， <code class="docutils literal notranslate"><span class="pre">MixIons</span></code> 提供了一种模块化方式来组合多个 <code class="docutils literal notranslate"><span class="pre">Ion</span></code> 与多个 <code class="docutils literal notranslate"><span class="pre">Channel</span></code>，非常适用于那些依赖多个离子状态的通道或者需要整合多种通道电流的建模。借助 <code class="docutils literal notranslate"><span class="pre">MixIons</span></code>，你可以构建更为灵活、精细的神经元动力学模型，并保持代码的清晰结构与良好可维护性。</p>
+<p>我们来看一个在实际建模中使用 <code class="docutils literal notranslate"><span class="pre">MixIons</span></code> 的例子：</p>
+<div class="cell docutils container">
+<div class="cell_input docutils container">
+<div class="highlight-ipython2 notranslate"><div class="highlight"><pre><span></span>import brainstate
+import brainunit as u
+import braincell
+
+class HTC(braincell.SingleCompartment):
+    def __init__(
+        self,
+        size,
+        gKL=0.01 * (u.mS / u.cm ** 2),
+        V_initializer=brainstate.init.Constant(-65. * u.mV),
+        solver: str = &#39;ind_exp_euler&#39;
+    ):
+        super().__init__(size, V_initializer=V_initializer, V_th=20. * u.mV, solver=solver)
+
+        self.area = 1e-3 / (2.9e-4 * u.cm ** 2)
+
+        self.k = braincell.ion.PotassiumFixed(size, E=-90. * u.mV)
+        self.k.add(IKL=braincell.channel.IK_Leak(size, g_max=gKL))
+        self.k.add(IDR=braincell.channel.IKDR_Ba2002(size, V_sh=-30. * u.mV, phi=0.25))
+
+        self.ca = braincell.ion.CalciumDetailed(size, C_rest=5e-5 * u.mM, tau=10. * u.ms, d=0.5 * u.um)
+        self.ca.add(ICaL=braincell.channel.ICaL_IS2008(size, g_max=0.5 * (u.mS / u.cm ** 2)))
+        self.ca.add(ICaN=braincell.channel.ICaN_IS2008(size, g_max=0.5 * (u.mS / u.cm ** 2)))
+        self.ca.add(ICaT=braincell.channel.ICaT_HM1992(size, g_max=2.1 * (u.mS / u.cm ** 2)))
+        self.ca.add(ICaHT=braincell.channel.ICaHT_HM1992(size, g_max=3.0 * (u.mS / u.cm ** 2)))
+
+        self.kca = braincell.MixIons(self.k, self.ca)
+        self.kca.add(IAHP=braincell.channel.IAHP_De1994(size, g_max=0.3 * (u.mS / u.cm ** 2)))
+</pre></div>
+</div>
+</div>
+</div>
+<p>这个例子隐去了其他离子与相关通道，我们现在聚焦到混合离子的建模。</p>
+<p>如果需要与其他离子整合，如例子中的 <code class="docutils literal notranslate"><span class="pre">kca</span></code> 混合离子，只需要使用 <code class="docutils literal notranslate"><span class="pre">MixIons(self.k,</span> <span class="pre">self.ca)</span></code> 混合离子池即可。</p>
+<p>也就是说，只要我们对需要整合的离子都拥有了相关的模型，如例子中的 <code class="docutils literal notranslate"><span class="pre">k</span></code> 和 <code class="docutils literal notranslate"><span class="pre">ca</span></code> ，我们就可以轻松的使用 <code class="docutils literal notranslate"><span class="pre">MixIons</span></code> 整合两者。</p>
+</section>
+</section>
+<section id="id4">
+<h2>现有离子实例<a class="headerlink" href="#id4" title="Link to this heading">#</a></h2>
+<p>我们现有的离子模型也较为丰富，以下是对相关离子的介绍。</p>
+<section id="calcium">
+<h3>Calcium<a class="headerlink" href="#calcium" title="Link to this heading">#</a></h3>
+<p>在 <code class="docutils literal notranslate"><span class="pre">braincell</span></code> 中，我们通过对 <code class="docutils literal notranslate"><span class="pre">Ion</span></code> 类的扩展，来建模各种具体类型的离子。我们现在聚焦于钙离子 <code class="docutils literal notranslate"><span class="pre">Calcium</span></code> 的建模方式。</p>
+<p>钙离子在神经元中起着至关重要的作用，参与动作电位的触发、神经递质的释放以及各种钙依赖的信号转导路径。因此，针对不同建模需求，我们提供了多个版本的钙离子模型：
+-<code class="docutils literal notranslate"><span class="pre">CalciumFixed</span></code>：固定浓度与反转电位的钙离子模型。
+-<code class="docutils literal notranslate"><span class="pre">CalciumDetailed</span></code>：基于生物物理机制的精细钙动力学模型。
+-<code class="docutils literal notranslate"><span class="pre">CalciumFirstOrder</span></code>：简化的一阶钙动力学模型。</p>
+<p>当然，在对这些不同模型进行了解之前，我们先要对基类 <code class="docutils literal notranslate"><span class="pre">Calcium</span></code> 进行说明。</p>
+<p><code class="docutils literal notranslate"><span class="pre">Calcim</span></code> 是所有钙离子模型的基类。它本身不包含任何具体动力学，仅作为语义上的标识使用，即 <code class="docutils literal notranslate"><span class="pre">Ion</span></code> 的钙离子特化版本，方便对钙离子进行统一管理与约束。</p>
+<section id="calciumfixed">
+<h4><code class="docutils literal notranslate"><span class="pre">CalciumFixed</span></code><a class="headerlink" href="#calciumfixed" title="Link to this heading">#</a></h4>
+<p><code class="docutils literal notranslate"><span class="pre">CalciumFixed</span></code> 提供最简单的钙建模形式，假设钙离子的反转电位 <code class="docutils literal notranslate"><span class="pre">E</span></code> 与浓度 <code class="docutils literal notranslate"><span class="pre">C</span></code> 是固定值，没有随时间变化的动力学。</p>
+</section>
+<section id="calciumdetailed">
+<h4><code class="docutils literal notranslate"><span class="pre">CalciumDetailed</span></code><a class="headerlink" href="#calciumdetailed" title="Link to this heading">#</a></h4>
+<section id="id5">
+<h5>细胞内钙离子的动力学<a class="headerlink" href="#id5" title="Link to this heading">#</a></h5>
+<p>细胞内钙离子的变化主要由两个机制决定：</p>
+<section id="id6">
+<h6>由钙电流引起的内流<a class="headerlink" href="#id6" title="Link to this heading">#</a></h6>
+<p>钙离子通过钙通道进入细胞，并扩散到细胞内部。模型中只考虑膜下薄壳区域的钙离子浓度。内流的公式为：</p>
+<div class="math notranslate nohighlight">
+\[
+[Ca]_i = -\frac{I_{Ca}}{2 F d}
+\]</div>
+<p>其中：</p>
+<ul class="simple">
+<li><p><span class="math notranslate nohighlight">\(F = 96489, \mathrm{C/mol}\)</span> 为法拉第常数</p></li>
+<li><p><span class="math notranslate nohighlight">\(d = 1, \mu\mathrm{m}\)</span> 为膜下薄壳区域的厚度</p></li>
+<li><p><span class="math notranslate nohighlight">\(I_{Ca}\)</span> 为所有钙通道产生的总电流</p></li>
+<li><p><span class="math notranslate nohighlight">\([Ca]_i\)</span> 为细胞内钙浓度</p></li>
+</ul>
+</section>
+<section id="id7">
+<h6>由钙泵引起的外流<a class="headerlink" href="#id7" title="Link to this heading">#</a></h6>
+<p>在膜下区域，钙的移除可通过结合缓冲物、钙泵活动、扩散等多种方式进行。此处模型只对泵进行建模，并采用如下动力学反应过程：</p>
+<div class="math notranslate nohighlight">
+\[
+\mathrm{Ca^{2+}_i} + P \underset{c_2}{\overset{c_1}{\rightleftharpoons}} \mathrm{CaP} \xrightarrow{c_3} P + \mathrm{Ca^{2+}_0}
+\]</div>
+<p>其中：</p>
+<ul class="simple">
+<li><p><span class="math notranslate nohighlight">\(P\)</span> 表示钙泵</p></li>
+<li><p><span class="math notranslate nohighlight">\(\mathrm{CaP}\)</span> 是钙泵中间复合态</p></li>
+<li><p><span class="math notranslate nohighlight">\(\mathrm{Ca^{2+}_0}\)</span> 是膜外钙浓度</p></li>
+<li><p><span class="math notranslate nohighlight">\(c_1\)</span>, <span class="math notranslate nohighlight">\(c_2\)</span>, <span class="math notranslate nohighlight">\(c_3\)</span> 为反应速率常数</p></li>
+</ul>
+<p>考虑 <span class="math notranslate nohighlight">\(c_3\)</span> 很小，可使用 Michaelis-Menten 近似公式表示钙泵的动力学行为：</p>
+<div class="math notranslate nohighlight">
+\[
+\frac{d[Ca^{2+}]_i}{dt} = -\frac{K_T [Ca]_i}{[Ca]_i + K_d}
+\]</div>
+<p>其中：</p>
+<ul class="simple">
+<li><p><span class="math notranslate nohighlight">\(K_T = 10^{-4}, \mathrm{mM/ms}\)</span></p></li>
+<li><p><span class="math notranslate nohighlight">\(K_d = \frac{c_2}{c_1} = 10^{-4}, \mathrm{mM}\)</span></p></li>
+<li><p><span class="math notranslate nohighlight">\(K_d\)</span> 表示钙泵激活一半所需的钙浓度</p></li>
+</ul>
+</section>
+</section>
+<section id="id8">
+<h5>简化的一阶模型<a class="headerlink" href="#id8" title="Link to this heading">#</a></h5>
+<p>在 Bazhenov 在 1998 提出的模型中，钙离子动力学可以简化为一阶线性微分方程：</p>
+<div class="math notranslate nohighlight">
+\[
+\frac{d[Ca^{2+}]_i}{dt} = -\frac{I_{Ca}}{z F d} + \frac{[Ca^{2+}]_{\text{rest}} - [Ca^{2+}]_i}{\tau_{Ca}}
+\]</div>
+<p>其中：</p>
+<ul class="simple">
+<li><p><span class="math notranslate nohighlight">\(I_{Ca}\)</span>：所有钙通道产生的总电流</p></li>
+<li><p><span class="math notranslate nohighlight">\(d\)</span>：膜下薄壳的厚度（<span class="math notranslate nohighlight">\(1, \mu\mathrm{m}\)</span>）</p></li>
+<li><p><span class="math notranslate nohighlight">\(z = 2\)</span>：<span class="math notranslate nohighlight">\(\mathrm{Ca^{2+}}\)</span> 的电荷价</p></li>
+<li><p><span class="math notranslate nohighlight">\(F\)</span>：法拉第常数</p></li>
+<li><p><span class="math notranslate nohighlight">\(\tau_{Ca}\)</span>：钙的清除时间常数</p></li>
+<li><p><span class="math notranslate nohighlight">\([Ca^{2+}]_{\text{rest}} = 0.05\mu\mathrm{M}\)</span></p></li>
+</ul>
+</section>
+<section id="id9">
+<h5>钙离子的反转电位<a class="headerlink" href="#id9" title="Link to this heading">#</a></h5>
+<p>钙离子的反转电位根据 Nernst 方程给出：</p>
+<div class="math notranslate nohighlight">
+\[
+E = \frac{RT}{2F} \log \left( \frac{[Ca^{2+}]_0}{[Ca^{2+}]_i} \right)
+\]</div>
+<p>其中：</p>
+<ul class="simple">
+<li><p><span class="math notranslate nohighlight">\(R = 8.31441, \mathrm{J/(mol\cdot K)}\)</span>：气体常数</p></li>
+<li><p><span class="math notranslate nohighlight">\(T = 309.15, \mathrm{K}\)</span>：绝对温度（约为 36℃）</p></li>
+<li><p><span class="math notranslate nohighlight">\(F = 96489, \mathrm{C/mol}\)</span>：法拉第常数</p></li>
+<li><p><span class="math notranslate nohighlight">\([Ca^{2+}]_0 = 2, \mathrm{mM}\)</span>：膜外钙浓度</p></li>
+</ul>
+</section>
+</section>
+</section>
+</section>
+<section id="calciumfirstorder">
+<h2><code class="docutils literal notranslate"><span class="pre">CalciumFirstOrder</span></code><a class="headerlink" href="#calciumfirstorder" title="Link to this heading">#</a></h2>
+<p>该模型采用一个简洁的一阶微分方程模拟钙浓度的变化：</p>
+<div class="math notranslate nohighlight">
+\[
+ Ca' = -\alpha I_{Ca} + -\beta Ca
+\]</div>
+<p>至此，我们完全了解了 <code class="docutils literal notranslate"><span class="pre">Calcium</span></code> 中内置的几种离子模型。</p>
+<section id="potassium">
+<h3>Potassium<a class="headerlink" href="#potassium" title="Link to this heading">#</a></h3>
+<p>对于 <code class="docutils literal notranslate"><span class="pre">Potassium</span></code> ，我们依然通过对 <code class="docutils literal notranslate"><span class="pre">Ion</span></code> 类的扩展来建模。</p>
+<p>钾离子在神经元中广泛存在，其跨膜流动对静息膜电位的维持、动作电位的复极以及神经元兴奋性控制等具有关键影响。</p>
+<p><code class="docutils literal notranslate"><span class="pre">Potassium</span></code> 是所有钾离子模型的基类，其继承自 <code class="docutils literal notranslate"><span class="pre">Ion</span></code>，用于钾离子的统一标识与组织。该类本身并不包含具体动力学，仅作为接口模板使用。</p>
+<p>如果需要实际建模，我们需要用到 <code class="docutils literal notranslate"><span class="pre">PotassiumFixed</span></code> 。</p>
+<section id="potassiumfixed">
+<h4><code class="docutils literal notranslate"><span class="pre">PotassiumFixed</span></code><a class="headerlink" href="#potassiumfixed" title="Link to this heading">#</a></h4>
+<p><code class="docutils literal notranslate"><span class="pre">PotassiumFixed</span></code> 提供了最基础的钾离子建模方式，假设其浓度和反转电位固定，不随时间动态变化。这类模型适用于不关注离子浓度变化的情境，仅需要使用钾电流与恒定的反转电位。</p>
+<p>在 <code class="docutils literal notranslate"><span class="pre">reset_state</span></code> 中，它会将 <code class="docutils literal notranslate"><span class="pre">E</span></code> 与 <code class="docutils literal notranslate"><span class="pre">C</span></code> 打包为 <code class="docutils literal notranslate"><span class="pre">IonInfo</span></code> 并传递给其下挂的所有 <code class="docutils literal notranslate"><span class="pre">Channel</span></code> 子模块，用于后续电流计算。</p>
+</section>
+</section>
+<section id="sodium">
+<h3>Sodium<a class="headerlink" href="#sodium" title="Link to this heading">#</a></h3>
+<p>和其他离子模型一样，<code class="docutils literal notranslate"><span class="pre">braincell</span></code> 中的钠离子也是通过扩展 <code class="docutils literal notranslate"><span class="pre">Ion</span></code> 类来建模。</p>
+<p>钠离子是动作电位产生的核心参与者。其跨膜内流导致去极化，是神经元兴奋与信号传导的关键机制。</p>
+<p><code class="docutils literal notranslate"><span class="pre">Sodium</span></code> 是所有钠离子模型的抽象基类。它继承自 <code class="docutils literal notranslate"><span class="pre">Ion</span></code>，用于统一管理钠离子实例，并提供一致的结构接口。该类本身并不实现任何动力学，同样仅作为接口模板使用。</p>
+<section id="sodiumfixed">
+<h4><code class="docutils literal notranslate"><span class="pre">SodiumFixed</span></code><a class="headerlink" href="#sodiumfixed" title="Link to this heading">#</a></h4>
+<p><code class="docutils literal notranslate"><span class="pre">SodiumFixed</span></code> 提供最简单的钠建模形式，假设其浓度 <code class="docutils literal notranslate"><span class="pre">C</span></code> 与反转电位 <code class="docutils literal notranslate"><span class="pre">E</span></code> 是固定的，不随时间变化。</p>
+<p>这类模型适用于仅考虑钠电流大小、无需关心钠离子浓度随时间变化的情境，常在传统的 Hodgkin-Huxley 型建模中使用。</p>
+<p>同样，在 <code class="docutils literal notranslate"><span class="pre">reset_state</span></code> 方法中，该模型会将自身的反转电位 <code class="docutils literal notranslate"><span class="pre">E</span></code> 与浓度 <code class="docutils literal notranslate"><span class="pre">C</span></code> 打包为 <code class="docutils literal notranslate"><span class="pre">IonInfo</span></code> 对象，并向所有绑定的 <code class="docutils literal notranslate"><span class="pre">Channel</span></code> 子模块传播，供后者在电流计算中使用。</p>
+</section>
+</section>
+</section>
+</section>
+
+    <script type="text/x-thebe-config">
+    {
+        requestKernel: true,
+        binderOptions: {
+            repo: "binder-examples/jupyter-stacks-datascience",
+            ref: "master",
+        },
+        codeMirrorConfig: {
+            theme: "abcdef",
+            mode: "python"
+        },
+        kernelOptions: {
+            name: "python3",
+            path: "./tutorial"
+        },
+        predefinedOutput: true
+    }
+    </script>
+    <script>kernelName = 'python3'</script>
+
+                </article>
+              
+
+              
+              
+              
+              
+                <footer class="prev-next-footer d-print-none">
+                  
+<div class="prev-next-area">
+    <a class="left-prev"
+       href="channel-zh.html"
+       title="previous page">
+      <i class="fa-solid fa-angle-left"></i>
+      <div class="prev-next-info">
+        <p class="prev-next-subtitle">previous</p>
+        <p class="prev-next-title">通道</p>
+      </div>
+    </a>
+    <a class="right-next"
+       href="cell-zh.html"
+       title="next page">
+      <div class="prev-next-info">
+        <p class="prev-next-subtitle">next</p>
+        <p class="prev-next-title">细胞</p>
+      </div>
+      <i class="fa-solid fa-angle-right"></i>
+    </a>
+</div>
+                </footer>
+              
+            </div>
+            
+            
+              
+                <div class="bd-sidebar-secondary bd-toc"><div class="sidebar-secondary-items sidebar-secondary__inner">
+
+
+  <div class="sidebar-secondary-item">
+  <div class="page-toc tocsection onthispage">
+    <i class="fa-solid fa-list"></i> Contents
+  </div>
+  <nav class="bd-toc-nav page-toc">
+    <ul class="visible nav section-nav flex-column">
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#id2">现有离子调用</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#id3">自定义离子建模</a><ul class="visible nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#ion">Ion 建模</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#mixions">MixIons 建模</a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#id4">现有离子实例</a><ul class="visible nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#calcium">Calcium</a><ul class="nav section-nav flex-column">
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#calciumfixed"><code class="docutils literal notranslate"><span class="pre">CalciumFixed</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#calciumdetailed"><code class="docutils literal notranslate"><span class="pre">CalciumDetailed</span></code></a><ul class="nav section-nav flex-column">
+<li class="toc-h5 nav-item toc-entry"><a class="reference internal nav-link" href="#id5">细胞内钙离子的动力学</a><ul class="nav section-nav flex-column">
+<li class="toc-h6 nav-item toc-entry"><a class="reference internal nav-link" href="#id6">由钙电流引起的内流</a></li>
+<li class="toc-h6 nav-item toc-entry"><a class="reference internal nav-link" href="#id7">由钙泵引起的外流</a></li>
+</ul>
+</li>
+<li class="toc-h5 nav-item toc-entry"><a class="reference internal nav-link" href="#id8">简化的一阶模型</a></li>
+<li class="toc-h5 nav-item toc-entry"><a class="reference internal nav-link" href="#id9">钙离子的反转电位</a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#calciumfirstorder"><code class="docutils literal notranslate"><span class="pre">CalciumFirstOrder</span></code></a><ul class="visible nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#potassium">Potassium</a><ul class="nav section-nav flex-column">
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#potassiumfixed"><code class="docutils literal notranslate"><span class="pre">PotassiumFixed</span></code></a></li>
+</ul>
+</li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#sodium">Sodium</a><ul class="nav section-nav flex-column">
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#sodiumfixed"><code class="docutils literal notranslate"><span class="pre">SodiumFixed</span></code></a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+  </nav></div>
+
+</div></div>
+              
+            
+          </div>
+          <footer class="bd-footer-content">
+            
+<div class="bd-footer-content__inner container">
+  
+  <div class="footer-item">
+    
+<p class="component-author">
+By BDP Ecosystem
+</p>
+
+  </div>
+  
+  <div class="footer-item">
+    
+
+  <p class="copyright">
+    
+      © Copyright 2025, braincell.
+      <br/>
+    
+  </p>
+
+  </div>
+  
+  <div class="footer-item">
+    <p class="last-updated">
+  Last updated on Jul 30, 2025.
+  <br/>
+</p>
+  </div>
+  
+  <div class="footer-item">
+    
+  </div>
+  
+</div>
+          </footer>
+        
+
+      </main>
+    </div>
+  </div>
+  
+  <!-- Scripts loaded after <body> so the DOM is not blocked -->
+  <script src="../_static/scripts/bootstrap.js?digest=dfe6caa3a7d634c4db9b"></script>
+<script src="../_static/scripts/pydata-sphinx-theme.js?digest=dfe6caa3a7d634c4db9b"></script>
+
+  <footer class="bd-footer">
+  </footer>
+  </body>
+</html>

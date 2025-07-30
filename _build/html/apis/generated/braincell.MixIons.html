@@ -1,0 +1,880 @@
+
+<!DOCTYPE html>
+
+
+<html lang="en" data-content_root="../../" >
+
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <title>MixIons &#8212; braincell</title>
+  
+  
+  
+  <script data-cfasync="false">
+    document.documentElement.dataset.mode = localStorage.getItem("mode") || "";
+    document.documentElement.dataset.theme = localStorage.getItem("theme") || "";
+  </script>
+  
+  <!-- Loaded before other Sphinx assets -->
+  <link href="../../_static/styles/theme.css?digest=dfe6caa3a7d634c4db9b" rel="stylesheet" />
+<link href="../../_static/styles/bootstrap.css?digest=dfe6caa3a7d634c4db9b" rel="stylesheet" />
+<link href="../../_static/styles/pydata-sphinx-theme.css?digest=dfe6caa3a7d634c4db9b" rel="stylesheet" />
+
+  
+  <link href="../../_static/vendor/fontawesome/6.5.2/css/all.min.css?digest=dfe6caa3a7d634c4db9b" rel="stylesheet" />
+  <link rel="preload" as="font" type="font/woff2" crossorigin href="../../_static/vendor/fontawesome/6.5.2/webfonts/fa-solid-900.woff2" />
+<link rel="preload" as="font" type="font/woff2" crossorigin href="../../_static/vendor/fontawesome/6.5.2/webfonts/fa-brands-400.woff2" />
+<link rel="preload" as="font" type="font/woff2" crossorigin href="../../_static/vendor/fontawesome/6.5.2/webfonts/fa-regular-400.woff2" />
+
+    <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=8f2a1f02" />
+    <link rel="stylesheet" type="text/css" href="../../_static/styles/sphinx-book-theme.css?v=eba8b062" />
+    <link rel="stylesheet" type="text/css" href="../../_static/mystnb.4510f1fc1dee50b3e5859aac5469c37c29e427902b24a333a5f9fcb2f0b3ac41.css" />
+    <link rel="stylesheet" type="text/css" href="../../_static/plot_directive.css" />
+    <link rel="stylesheet" type="text/css" href="../../_static/sphinx-thebe.css?v=4fa983c6" />
+    <link rel="stylesheet" type="text/css" href="../../_static/sphinx-design.min.css?v=95c83b7e" />
+  
+  <!-- Pre-loaded scripts that we'll load fully later -->
+  <link rel="preload" as="script" href="../../_static/scripts/bootstrap.js?digest=dfe6caa3a7d634c4db9b" />
+<link rel="preload" as="script" href="../../_static/scripts/pydata-sphinx-theme.js?digest=dfe6caa3a7d634c4db9b" />
+  <script src="../../_static/vendor/fontawesome/6.5.2/js/all.min.js?digest=dfe6caa3a7d634c4db9b"></script>
+
+    <script src="../../_static/documentation_options.js?v=f131489c"></script>
+    <script src="../../_static/doctools.js?v=9bcbadda"></script>
+    <script src="../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../../_static/scripts/sphinx-book-theme.js?v=887ef09a"></script>
+    <script src="../../_static/design-tabs.js?v=f930bc37"></script>
+    <script>const THEBE_JS_URL = "https://unpkg.com/thebe@0.8.2/lib/index.js"; const thebe_selector = ".thebe,.cell"; const thebe_selector_input = "pre"; const thebe_selector_output = ".output, .cell_output"</script>
+    <script async="async" src="../../_static/sphinx-thebe.js?v=c100c467"></script>
+    <script>DOCUMENTATION_OPTIONS.pagename = 'apis/generated/braincell.MixIons';</script>
+    <link rel="icon" href="../../_static/braincell.png"/>
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" />
+    <link rel="next" title="Channel" href="braincell.Channel.html" />
+    <link rel="prev" title="IonInfo" href="braincell.IonInfo.html" />
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <meta name="docsearch:language" content="en"/>
+    <meta name="docbuild:last-update" content="Jul 30, 2025"/>
+  </head>
+  
+  
+  <body data-bs-spy="scroll" data-bs-target=".bd-toc-nav" data-offset="180" data-bs-root-margin="0px 0px -60%" data-default-mode="">
+
+  
+  
+  <div id="pst-skip-link" class="skip-link d-print-none"><a href="#main-content">Skip to main content</a></div>
+  
+  <div id="pst-scroll-pixel-helper"></div>
+  
+  <button type="button" class="btn rounded-pill" id="pst-back-to-top">
+    <i class="fa-solid fa-arrow-up"></i>Back to top</button>
+
+  
+  <input type="checkbox"
+          class="sidebar-toggle"
+          id="pst-primary-sidebar-checkbox"/>
+  <label class="overlay overlay-primary" for="pst-primary-sidebar-checkbox"></label>
+  
+  <input type="checkbox"
+          class="sidebar-toggle"
+          id="pst-secondary-sidebar-checkbox"/>
+  <label class="overlay overlay-secondary" for="pst-secondary-sidebar-checkbox"></label>
+  
+  <div class="search-button__wrapper">
+    <div class="search-button__overlay"></div>
+    <div class="search-button__search-container">
+<form class="bd-search d-flex align-items-center"
+      action="../../search.html"
+      method="get">
+  <i class="fa-solid fa-magnifying-glass"></i>
+  <input type="search"
+         class="form-control"
+         name="q"
+         id="search-input"
+         placeholder="Search..."
+         aria-label="Search..."
+         autocomplete="off"
+         autocorrect="off"
+         autocapitalize="off"
+         spellcheck="false"/>
+  <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd>K</kbd></span>
+</form></div>
+  </div>
+
+  <div class="pst-async-banner-revealer d-none">
+  <aside id="bd-header-version-warning" class="d-none d-print-none" aria-label="Version warning"></aside>
+</div>
+
+  
+    <header class="bd-header navbar navbar-expand-lg bd-navbar d-print-none">
+    </header>
+  
+
+  <div class="bd-container">
+    <div class="bd-container__inner bd-page-width">
+      
+      
+      
+      <div class="bd-sidebar-primary bd-sidebar">
+        
+
+  
+  <div class="sidebar-header-items sidebar-primary__section">
+    
+    
+    
+    
+  </div>
+  
+    <div class="sidebar-primary-items__start sidebar-primary__section">
+        <div class="sidebar-primary-item">
+
+  
+    
+  
+
+<a class="navbar-brand logo" href="../../index.html">
+  
+  
+  
+  
+  
+    
+    
+      
+    
+    
+    <img src="../../_static/braincell.png" class="logo__image only-light" alt="braincell - Home"/>
+    <script>document.write(`<img src="../../_static/braincell.png" class="logo__image only-dark" alt="braincell - Home"/>`);</script>
+  
+  
+</a></div>
+        <div class="sidebar-primary-item">
+
+ <script>
+ document.write(`
+   <button class="btn search-button-field search-button__button" title="Search" aria-label="Search" data-bs-placement="bottom" data-bs-toggle="tooltip">
+    <i class="fa-solid fa-magnifying-glass"></i>
+    <span class="search-button__default-text">Search</span>
+    <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd class="kbd-shortcut__modifier">K</kbd></span>
+   </button>
+ `);
+ </script></div>
+        <div class="sidebar-primary-item"><nav class="bd-links bd-docs-nav" aria-label="Main">
+    <div class="bd-toc-item navbar-nav active">
+        <p aria-level="2" class="caption" role="heading"><span class="caption-text">Quickstart</span></p>
+<ul class="nav bd-sidenav">
+<li class="toctree-l1"><a class="reference internal" href="../../quickstart/concepts-zh.html">概要</a></li>
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">Tutorials</span></p>
+<ul class="nav bd-sidenav">
+<li class="toctree-l1"><a class="reference internal" href="../../tutorial/channel-zh.html">通道</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../tutorial/ion-zh.html">离子</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../tutorial/cell-zh.html">细胞</a></li>
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">Advanced Tutorials</span></p>
+<ul class="nav bd-sidenav">
+<li class="toctree-l1"><a class="reference internal" href="../../advanced_tutorial/rationale-zh.html">补充说明</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../advanced_tutorial/differential_equation-zh.html">微分方程</a></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../../advanced_tutorial/examples.html">例程</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../advanced_tutorial/examples/sc02.html">低阈值与高阈值钙通道的门控特性对比</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../advanced_tutorial/examples/sc03.html">兴奋性-抑制性神经元网络（E-I网络）的模拟与分析</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../advanced_tutorial/examples/sc04.html">不同积分方法对 HH 模型神经元动态的影响</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../advanced_tutorial/examples/sc05.html">丘脑神经元模型的构建与电活动模拟</a></li>
+</ul>
+</details></li>
+<li class="toctree-l1"><a class="reference internal" href="../../advanced_tutorial/more-zh.html">更多</a></li>
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">API Documentation</span></p>
+<ul class="current nav bd-sidenav">
+<li class="toctree-l1"><a class="reference internal" href="../changelog.html">Release Notes</a></li>
+<li class="toctree-l1 current active has-children"><a class="reference internal" href="../braincell.html"><code class="docutils literal notranslate"><span class="pre">braincell</span></code> module</a><details open="open"><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul class="current">
+<li class="toctree-l2"><a class="reference internal" href="braincell.IonChannel.html">IonChannel</a></li>
+<li class="toctree-l2"><a class="reference internal" href="braincell.Ion.html">Ion</a></li>
+<li class="toctree-l2"><a class="reference internal" href="braincell.IonInfo.html">IonInfo</a></li>
+<li class="toctree-l2 current active"><a class="current reference internal" href="#">MixIons</a></li>
+<li class="toctree-l2"><a class="reference internal" href="braincell.Channel.html">Channel</a></li>
+<li class="toctree-l2"><a class="reference internal" href="braincell.HHTypedNeuron.html">HHTypedNeuron</a></li>
+<li class="toctree-l2"><a class="reference internal" href="braincell.SingleCompartment.html">SingleCompartment</a></li>
+<li class="toctree-l2"><a class="reference internal" href="braincell.MultiCompartment.html">MultiCompartment</a></li>
+<li class="toctree-l2"><a class="reference internal" href="braincell.DiffEqState.html">DiffEqState</a></li>
+<li class="toctree-l2"><a class="reference internal" href="braincell.DiffEqModule.html">DiffEqModule</a></li>
+</ul>
+</details></li>
+<li class="toctree-l1"><a class="reference internal" href="../braincell.synapse.html"><code class="docutils literal notranslate"><span class="pre">braincell.synapse</span></code> module</a></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../braincell.ion.html"><code class="docutils literal notranslate"><span class="pre">braincell.ion</span></code> module</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="braincell.ion.Calcium.html">Calcium</a></li>
+<li class="toctree-l2"><a class="reference internal" href="braincell.ion.CalciumFixed.html">CalciumFixed</a></li>
+<li class="toctree-l2"><a class="reference internal" href="braincell.ion.CalciumDetailed.html">CalciumDetailed</a></li>
+<li class="toctree-l2"><a class="reference internal" href="braincell.ion.CalciumFirstOrder.html">CalciumFirstOrder</a></li>
+<li class="toctree-l2"><a class="reference internal" href="braincell.ion.Potassium.html">Potassium</a></li>
+<li class="toctree-l2"><a class="reference internal" href="braincell.ion.PotassiumFixed.html">PotassiumFixed</a></li>
+<li class="toctree-l2"><a class="reference internal" href="braincell.ion.Sodium.html">Sodium</a></li>
+<li class="toctree-l2"><a class="reference internal" href="braincell.ion.SodiumFixed.html">SodiumFixed</a></li>
+</ul>
+</details></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../braincell.channel.html"><code class="docutils literal notranslate"><span class="pre">braincell.channel</span></code> module</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="braincell.channel.CalciumChannel.html">CalciumChannel</a></li>
+<li class="toctree-l2"><a class="reference internal" href="braincell.channel.ICaN_IS2008.html">ICaN_IS2008</a></li>
+<li class="toctree-l2"><a class="reference internal" href="braincell.channel.ICaT_HM1992.html">ICaT_HM1992</a></li>
+<li class="toctree-l2"><a class="reference internal" href="braincell.channel.ICaT_HP1992.html">ICaT_HP1992</a></li>
+<li class="toctree-l2"><a class="reference internal" href="braincell.channel.ICaHT_HM1992.html">ICaHT_HM1992</a></li>
+<li class="toctree-l2"><a class="reference internal" href="braincell.channel.ICaHT_Re1993.html">ICaHT_Re1993</a></li>
+<li class="toctree-l2"><a class="reference internal" href="braincell.channel.ICaL_IS2008.html">ICaL_IS2008</a></li>
+<li class="toctree-l2"><a class="reference internal" href="braincell.channel.ICav12_Ma2020.html">ICav12_Ma2020</a></li>
+<li class="toctree-l2"><a class="reference internal" href="braincell.channel.ICav13_Ma2020.html">ICav13_Ma2020</a></li>
+<li class="toctree-l2"><a class="reference internal" href="braincell.channel.ICav23_Ma2020.html">ICav23_Ma2020</a></li>
+<li class="toctree-l2"><a class="reference internal" href="braincell.channel.ICav31_Ma2020.html">ICav31_Ma2020</a></li>
+<li class="toctree-l2"><a class="reference internal" href="braincell.channel.ICaGrc_Ma2020.html">ICaGrc_Ma2020</a></li>
+<li class="toctree-l2"><a class="reference internal" href="braincell.channel.Ih_HM1992.html">Ih_HM1992</a></li>
+<li class="toctree-l2"><a class="reference internal" href="braincell.channel.Ih1_Ma2020.html">Ih1_Ma2020</a></li>
+<li class="toctree-l2"><a class="reference internal" href="braincell.channel.Ih2_Ma2020.html">Ih2_Ma2020</a></li>
+<li class="toctree-l2"><a class="reference internal" href="braincell.channel.LeakageChannel.html">LeakageChannel</a></li>
+<li class="toctree-l2"><a class="reference internal" href="braincell.channel.IL.html">IL</a></li>
+<li class="toctree-l2"><a class="reference internal" href="braincell.channel.PotassiumChannel.html">PotassiumChannel</a></li>
+<li class="toctree-l2"><a class="reference internal" href="braincell.channel.IK_p4_markov.html">IK_p4_markov</a></li>
+<li class="toctree-l2"><a class="reference internal" href="braincell.channel.IKDR_Ba2002.html">IKDR_Ba2002</a></li>
+<li class="toctree-l2"><a class="reference internal" href="braincell.channel.IK_TM1991.html">IK_TM1991</a></li>
+<li class="toctree-l2"><a class="reference internal" href="braincell.channel.IK_HH1952.html">IK_HH1952</a></li>
+<li class="toctree-l2"><a class="reference internal" href="braincell.channel.IKA_p4q_ss.html">IKA_p4q_ss</a></li>
+<li class="toctree-l2"><a class="reference internal" href="braincell.channel.IKA1_HM1992.html">IKA1_HM1992</a></li>
+<li class="toctree-l2"><a class="reference internal" href="braincell.channel.IKA2_HM1992.html">IKA2_HM1992</a></li>
+<li class="toctree-l2"><a class="reference internal" href="braincell.channel.IKK2_pq_ss.html">IKK2_pq_ss</a></li>
+<li class="toctree-l2"><a class="reference internal" href="braincell.channel.IKK2A_HM1992.html">IKK2A_HM1992</a></li>
+<li class="toctree-l2"><a class="reference internal" href="braincell.channel.IKK2B_HM1992.html">IKK2B_HM1992</a></li>
+<li class="toctree-l2"><a class="reference internal" href="braincell.channel.IKNI_Ya1989.html">IKNI_Ya1989</a></li>
+<li class="toctree-l2"><a class="reference internal" href="braincell.channel.IK_Leak.html">IK_Leak</a></li>
+<li class="toctree-l2"><a class="reference internal" href="braincell.channel.IKv11_Ak2007.html">IKv11_Ak2007</a></li>
+<li class="toctree-l2"><a class="reference internal" href="braincell.channel.IKv34_Ma2020.html">IKv34_Ma2020</a></li>
+<li class="toctree-l2"><a class="reference internal" href="braincell.channel.IKv43_Ma2020.html">IKv43_Ma2020</a></li>
+<li class="toctree-l2"><a class="reference internal" href="braincell.channel.IKM_Grc_Ma2020.html">IKM_Grc_Ma2020</a></li>
+<li class="toctree-l2"><a class="reference internal" href="braincell.channel.KCaChannel.html">KCaChannel</a></li>
+<li class="toctree-l2"><a class="reference internal" href="braincell.channel.IAHP_De1994.html">IAHP_De1994</a></li>
+<li class="toctree-l2"><a class="reference internal" href="braincell.channel.IKca3_1_Ma2020.html">IKca3_1_Ma2020</a></li>
+<li class="toctree-l2"><a class="reference internal" href="braincell.channel.IKca2_2_Ma2020.html">IKca2_2_Ma2020</a></li>
+<li class="toctree-l2"><a class="reference internal" href="braincell.channel.IKca1_1_Ma2020.html">IKca1_1_Ma2020</a></li>
+<li class="toctree-l2"><a class="reference internal" href="braincell.channel.SodiumChannel.html">SodiumChannel</a></li>
+<li class="toctree-l2"><a class="reference internal" href="braincell.channel.INa_p3q_markov.html">INa_p3q_markov</a></li>
+<li class="toctree-l2"><a class="reference internal" href="braincell.channel.INa_Ba2002.html">INa_Ba2002</a></li>
+<li class="toctree-l2"><a class="reference internal" href="braincell.channel.INa_TM1991.html">INa_TM1991</a></li>
+<li class="toctree-l2"><a class="reference internal" href="braincell.channel.INa_HH1952.html">INa_HH1952</a></li>
+<li class="toctree-l2"><a class="reference internal" href="braincell.channel.INa_Rsg.html">INa_Rsg</a></li>
+<li class="toctree-l2"><a class="reference internal" href="braincell.channel.INa_Rsg_B.html">INa_Rsg_B</a></li>
+</ul>
+</details></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../integration.html">Numerical Integration Methods</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="braincell.get_integrator.html">braincell.get_integrator</a></li>
+<li class="toctree-l2"><a class="reference internal" href="braincell.exp_euler_step.html">braincell.exp_euler_step</a></li>
+<li class="toctree-l2"><a class="reference internal" href="braincell.ind_exp_euler_step.html">braincell.ind_exp_euler_step</a></li>
+<li class="toctree-l2"><a class="reference internal" href="braincell.euler_step.html">braincell.euler_step</a></li>
+<li class="toctree-l2"><a class="reference internal" href="braincell.midpoint_step.html">braincell.midpoint_step</a></li>
+<li class="toctree-l2"><a class="reference internal" href="braincell.rk2_step.html">braincell.rk2_step</a></li>
+<li class="toctree-l2"><a class="reference internal" href="braincell.heun2_step.html">braincell.heun2_step</a></li>
+<li class="toctree-l2"><a class="reference internal" href="braincell.ralston2_step.html">braincell.ralston2_step</a></li>
+<li class="toctree-l2"><a class="reference internal" href="braincell.rk3_step.html">braincell.rk3_step</a></li>
+<li class="toctree-l2"><a class="reference internal" href="braincell.heun3_step.html">braincell.heun3_step</a></li>
+<li class="toctree-l2"><a class="reference internal" href="braincell.ssprk3_step.html">braincell.ssprk3_step</a></li>
+<li class="toctree-l2"><a class="reference internal" href="braincell.ralston3_step.html">braincell.ralston3_step</a></li>
+<li class="toctree-l2"><a class="reference internal" href="braincell.rk4_step.html">braincell.rk4_step</a></li>
+<li class="toctree-l2"><a class="reference internal" href="braincell.ralston4_step.html">braincell.ralston4_step</a></li>
+<li class="toctree-l2"><a class="reference internal" href="braincell.diffrax_euler_step.html">braincell.diffrax_euler_step</a></li>
+<li class="toctree-l2"><a class="reference internal" href="braincell.diffrax_heun_step.html">braincell.diffrax_heun_step</a></li>
+<li class="toctree-l2"><a class="reference internal" href="braincell.diffrax_midpoint_step.html">braincell.diffrax_midpoint_step</a></li>
+<li class="toctree-l2"><a class="reference internal" href="braincell.diffrax_ralston_step.html">braincell.diffrax_ralston_step</a></li>
+<li class="toctree-l2"><a class="reference internal" href="braincell.diffrax_bosh3_step.html">braincell.diffrax_bosh3_step</a></li>
+<li class="toctree-l2"><a class="reference internal" href="braincell.diffrax_tsit5_step.html">braincell.diffrax_tsit5_step</a></li>
+<li class="toctree-l2"><a class="reference internal" href="braincell.diffrax_dopri5_step.html">braincell.diffrax_dopri5_step</a></li>
+<li class="toctree-l2"><a class="reference internal" href="braincell.diffrax_dopri8_step.html">braincell.diffrax_dopri8_step</a></li>
+<li class="toctree-l2"><a class="reference internal" href="braincell.diffrax_bwd_euler_step.html">braincell.diffrax_bwd_euler_step</a></li>
+<li class="toctree-l2"><a class="reference internal" href="braincell.diffrax_kvaerno3_step.html">braincell.diffrax_kvaerno3_step</a></li>
+<li class="toctree-l2"><a class="reference internal" href="braincell.diffrax_kvaerno4_step.html">braincell.diffrax_kvaerno4_step</a></li>
+<li class="toctree-l2"><a class="reference internal" href="braincell.diffrax_kvaerno5_step.html">braincell.diffrax_kvaerno5_step</a></li>
+</ul>
+</details></li>
+</ul>
+
+    </div>
+</nav></div>
+    </div>
+  
+  
+  <div class="sidebar-primary-items__end sidebar-primary__section">
+  </div>
+  
+  <div id="rtd-footer-container"></div>
+
+
+      </div>
+      
+      <main id="main-content" class="bd-main" role="main">
+        
+        
+
+<div class="sbt-scroll-pixel-helper"></div>
+
+          <div class="bd-content">
+            <div class="bd-article-container">
+              
+              <div class="bd-header-article d-print-none">
+<div class="header-article-items header-article__inner">
+  
+    <div class="header-article-items__start">
+      
+        <div class="header-article-item"><button class="sidebar-toggle primary-toggle btn btn-sm" title="Toggle primary sidebar" data-bs-placement="bottom" data-bs-toggle="tooltip">
+  <span class="fa-solid fa-bars"></span>
+</button></div>
+      
+    </div>
+  
+  
+    <div class="header-article-items__end">
+      
+        <div class="header-article-item">
+
+<div class="article-header-buttons">
+
+
+
+
+
+<div class="dropdown dropdown-download-buttons">
+  <button class="btn dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false" aria-label="Download this page">
+    <i class="fas fa-download"></i>
+  </button>
+  <ul class="dropdown-menu">
+      
+      
+      
+      <li><a href="../../_sources/apis/generated/braincell.MixIons.rst" target="_blank"
+   class="btn btn-sm btn-download-source-button dropdown-item"
+   title="Download source file"
+   data-bs-placement="left" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fas fa-file"></i>
+  </span>
+<span class="btn__text-container">.rst</span>
+</a>
+</li>
+      
+      
+      
+      
+      <li>
+<button onclick="window.print()"
+  class="btn btn-sm btn-download-pdf-button dropdown-item"
+  title="Print to PDF"
+  data-bs-placement="left" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fas fa-file-pdf"></i>
+  </span>
+<span class="btn__text-container">.pdf</span>
+</button>
+</li>
+      
+  </ul>
+</div>
+
+
+
+
+<button onclick="toggleFullScreen()"
+  class="btn btn-sm btn-fullscreen-button"
+  title="Fullscreen mode"
+  data-bs-placement="bottom" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fas fa-expand"></i>
+  </span>
+
+</button>
+
+
+
+<script>
+document.write(`
+  <button class="btn btn-sm nav-link pst-navbar-icon theme-switch-button" title="light/dark" aria-label="light/dark" data-bs-placement="bottom" data-bs-toggle="tooltip">
+    <i class="theme-switch fa-solid fa-sun fa-lg" data-mode="light"></i>
+    <i class="theme-switch fa-solid fa-moon fa-lg" data-mode="dark"></i>
+    <i class="theme-switch fa-solid fa-circle-half-stroke fa-lg" data-mode="auto"></i>
+  </button>
+`);
+</script>
+
+
+<script>
+document.write(`
+  <button class="btn btn-sm pst-navbar-icon search-button search-button__button" title="Search" aria-label="Search" data-bs-placement="bottom" data-bs-toggle="tooltip">
+    <i class="fa-solid fa-magnifying-glass fa-lg"></i>
+  </button>
+`);
+</script>
+<button class="sidebar-toggle secondary-toggle btn btn-sm" title="Toggle secondary sidebar" data-bs-placement="bottom" data-bs-toggle="tooltip">
+    <span class="fa-solid fa-list"></span>
+</button>
+</div></div>
+      
+    </div>
+  
+</div>
+</div>
+              
+              
+
+<div id="jb-print-docs-body" class="onlyprint">
+    <h1>MixIons</h1>
+    <!-- Table of contents -->
+    <div id="print-main-content">
+        <div id="jb-print-toc">
+            
+            <div>
+                <h2> Contents </h2>
+            </div>
+            <nav aria-label="Page">
+                <ul class="visible nav section-nav flex-column">
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#braincell.MixIons"><code class="docutils literal notranslate"><span class="pre">MixIons</span></code></a><ul class="visible nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#braincell.MixIons.ions"><code class="docutils literal notranslate"><span class="pre">MixIons.ions</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#braincell.MixIons.ion_types"><code class="docutils literal notranslate"><span class="pre">MixIons.ion_types</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#braincell.MixIons.channels"><code class="docutils literal notranslate"><span class="pre">MixIons.channels</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#braincell.MixIons.add"><code class="docutils literal notranslate"><span class="pre">MixIons.add()</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#braincell.MixIons.compute_derivative"><code class="docutils literal notranslate"><span class="pre">MixIons.compute_derivative()</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#braincell.MixIons.current"><code class="docutils literal notranslate"><span class="pre">MixIons.current()</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#braincell.MixIons.init_state"><code class="docutils literal notranslate"><span class="pre">MixIons.init_state()</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#id0"><code class="docutils literal notranslate"><span class="pre">MixIons.ion_types</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#braincell.MixIons.post_integral"><code class="docutils literal notranslate"><span class="pre">MixIons.post_integral()</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#braincell.MixIons.pre_integral"><code class="docutils literal notranslate"><span class="pre">MixIons.pre_integral()</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#braincell.MixIons.reset_state"><code class="docutils literal notranslate"><span class="pre">MixIons.reset_state()</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#braincell.MixIons.root_type"><code class="docutils literal notranslate"><span class="pre">MixIons.root_type</span></code></a></li>
+</ul>
+</li>
+</ul>
+            </nav>
+        </div>
+    </div>
+</div>
+
+              
+                
+<div id="searchbox"></div>
+                <article class="bd-article">
+                  
+  <section id="mixions">
+<h1>MixIons<a class="headerlink" href="#mixions" title="Link to this heading">#</a></h1>
+<dl class="py class">
+<dt class="sig sig-object py" id="braincell.MixIons">
+<em class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">braincell.</span></span><span class="sig-name descname"><span class="pre">MixIons</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="o"><span class="pre">*</span></span><span class="n"><span class="pre">ions</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">name</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">channels</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#braincell.MixIons" title="Link to this definition">#</a></dt>
+<dd><p>A class for mixing multiple ion channels in neuronal simulations.</p>
+<p>This class combines multiple Ion instances to create a composite ion channel
+that can handle the dynamics of multiple ion types simultaneously.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>*ions</strong> – Variable number of Ion instances. These define the types of ions
+that will be mixed in this channel.</p></li>
+<li><p><strong>name</strong> (<em>Optional</em><em>[</em><a class="reference external" href="https://docs.python.org/3.13/library/stdtypes.html#str" title="(in Python v3.13)"><em>str</em></a><em>]</em>) – The name of the MixIons instance. Defaults to None.</p></li>
+<li><p><strong>**channels</strong> – Additional keyword arguments for specifying Channel instances.</p></li>
+</ul>
+</dd>
+</dl>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="braincell.MixIons.ions">
+<span class="sig-name descname"><span class="pre">ions</span></span><a class="headerlink" href="#braincell.MixIons.ions" title="Link to this definition">#</a></dt>
+<dd><p>A tuple of Ion instances that are part of this mixed channel.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>Sequence[‘Ion’]</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="braincell.MixIons.ion_types">
+<span class="sig-name descname"><span class="pre">ion_types</span></span><a class="headerlink" href="#braincell.MixIons.ion_types" title="Link to this definition">#</a></dt>
+<dd><p>A tuple of the types of the Ion instances.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference external" href="https://docs.python.org/3.13/library/stdtypes.html#tuple" title="(in Python v3.13)">tuple</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="braincell.MixIons.channels">
+<span class="sig-name descname"><span class="pre">channels</span></span><a class="headerlink" href="#braincell.MixIons.channels" title="Link to this definition">#</a></dt>
+<dd><p>A dictionary of Channel instances associated with this mixed channel.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>Dict[<a class="reference external" href="https://docs.python.org/3.13/library/stdtypes.html#str" title="(in Python v3.13)">str</a>, <a class="reference internal" href="braincell.Channel.html#braincell.Channel" title="braincell.Channel">Channel</a>]</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="field-list simple">
+<dt class="field-odd">Raises<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference external" href="https://docs.python.org/3.13/library/exceptions.html#AssertionError" title="(in Python v3.13)"><strong>AssertionError</strong></a> – If fewer than two ions are provided, if any provided ion is not an Ion instance,
+    or if the sizes of all provided ions are not identical.</p>
+</dd>
+</dl>
+<dl class="py method">
+<dt class="sig sig-object py" id="braincell.MixIons.add">
+<span class="sig-name descname"><span class="pre">add</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">elements</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/braincell/_base.html#MixIons.add"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#braincell.MixIons.add" title="Link to this definition">#</a></dt>
+<dd><p>Add new channel elements to the MixIons instance.</p>
+<p>This method adds new Channel instances to the MixIons object. It checks the
+hierarchies of the new elements, updates the channels dictionary, and registers
+external currents for each new channel with its corresponding ion.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>**elements</strong> (<em>Any</em>) – A dictionary of new elements to add. Each key-value pair represents a
+channel name and its corresponding Channel instance.</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>This method doesn’t return a value. It updates the MixIons instance in-place.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>None</p>
+</dd>
+<dt class="field-even">Raises<span class="colon">:</span></dt>
+<dd class="field-even"><p><a class="reference external" href="https://docs.python.org/3.13/library/exceptions.html#TypeError" title="(in Python v3.13)"><strong>TypeError</strong></a> – If the hierarchies of the new elements are incompatible with the current structure.</p>
+</dd>
+</dl>
+<p class="rubric">Notes</p>
+<ul class="simple">
+<li><p>The method checks hierarchies using the _check_hierarchy method.</p></li>
+<li><p>It updates the channels dictionary with formatted Channel elements.</p></li>
+<li><p>For each new channel, it registers an external current with each associated ion.</p></li>
+</ul>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="braincell.MixIons.compute_derivative">
+<span class="sig-name descname"><span class="pre">compute_derivative</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">V</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/braincell/_base.html#MixIons.compute_derivative"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#braincell.MixIons.compute_derivative" title="Link to this definition">#</a></dt>
+<dd><p>Compute the derivative of state variables for all channels in the mixed ion group.</p>
+<p>This method iterates through all Channel nodes in the MixIons instance and calls
+their compute_derivative methods with the current membrane potential and relevant
+ion information. It’s typically used in the process of numerically solving the
+differential equations that describe the ion channel dynamics.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>V</strong> (<em>array-like</em>) – The current membrane potential for all neurons in the simulation.</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><ul class="simple">
+<li><p><em>None</em> – This method doesn’t return a value. It updates the state derivatives of each
+channel in place.</p></li>
+<li><p><em>Notes</em></p></li>
+<li><p><em>——</em></p></li>
+<li><p><em>The method retrieves all Channel nodes, packs the necessary ion information</em></p></li>
+<li><p><em>for each channel, and then calls the compute_derivative method of each channel</em></p></li>
+<li><p><em>with the current membrane potential and the packed ion information.</em></p></li>
+</ul>
+</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="braincell.MixIons.current">
+<span class="sig-name descname"><span class="pre">current</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">V</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/braincell/_base.html#MixIons.current"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#braincell.MixIons.current" title="Link to this definition">#</a></dt>
+<dd><p>Generate the total ion channel current for all channels in the mixed ion group.</p>
+<p>This method calculates the sum of currents from all Channel nodes within the
+MixIons instance. It iterates through each channel, computes its individual
+current, and aggregates them.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>V</strong> (<em>array-like</em>) – The membrane potential for all neurons in the simulation. This is typically
+a numpy array or similar structure containing voltage values.</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>The total current generated by all channels. If there are no channels,
+it returns 0. Otherwise, it returns an array-like object of the same
+shape as V, representing the summed current at each point.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>array-like or <a class="reference external" href="https://docs.python.org/3.13/library/functions.html#float" title="(in Python v3.13)">float</a></p>
+</dd>
+</dl>
+<p class="rubric">Notes</p>
+<ul class="simple">
+<li><p>The method retrieves all Channel nodes and their corresponding ion information.</p></li>
+<li><p>For each channel, it calls the channel’s current method with the membrane
+potential and relevant ion information.</p></li>
+<li><p>The currents from all channels are summed to produce the total current.</p></li>
+</ul>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="braincell.MixIons.init_state">
+<span class="sig-name descname"><span class="pre">init_state</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">V</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">batch_size</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/braincell/_base.html#MixIons.init_state"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#braincell.MixIons.init_state" title="Link to this definition">#</a></dt>
+<dd><p>Initialize the state of all channels in the mixed ion group.</p>
+<p>This method iterates through all Channel nodes in the MixIons instance and initializes
+their states. It checks the hierarchies of the nodes and packs the necessary ion
+information for each channel before calling their init_state methods.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>V</strong> (<em>array-like</em>) – The initial membrane potential for all neurons in the simulation.</p></li>
+<li><p><strong>batch_size</strong> (<a class="reference external" href="https://docs.python.org/3.13/library/functions.html#int" title="(in Python v3.13)"><em>int</em></a><em>, </em><em>optional</em>) – The batch size for the simulation. If provided, it will be used to initialize
+the states with the specified batch size.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>This method doesn’t return a value. It initializes the state of each channel in place.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>None</p>
+</dd>
+</dl>
+<p class="rubric">Notes</p>
+<p>The method retrieves all Channel nodes, checks their hierarchies, packs the necessary
+ion information for each channel, and then calls the init_state method of each channel
+with the initial membrane potential, ion information, and batch size.</p>
+</dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="id0">
+<em class="property"><span class="k"><span class="pre">property</span></span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">ion_types</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3.13/library/typing.html#typing.Tuple" title="(in Python v3.13)"><span class="pre">Tuple</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3.13/library/typing.html#typing.Type" title="(in Python v3.13)"><span class="pre">Type</span></a><span class="p"><span class="pre">[</span></span><a class="reference internal" href="braincell.Ion.html#braincell.Ion" title="braincell.Ion"><span class="pre">Ion</span></a><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="p"><span class="pre">...</span></span><span class="p"><span class="pre">]</span></span></em><a class="headerlink" href="#id0" title="Link to this definition">#</a></dt>
+<dd><p>Get the types of ions in this mixed channel.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>A tuple containing the types of all Ion instances in this mixed channel.</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>Tuple[Type[<a class="reference internal" href="braincell.Ion.html#braincell.Ion" title="braincell.Ion">Ion</a>], …]</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="braincell.MixIons.post_integral">
+<span class="sig-name descname"><span class="pre">post_integral</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">V</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/braincell/_base.html#MixIons.post_integral"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#braincell.MixIons.post_integral" title="Link to this definition">#</a></dt>
+<dd><p>Perform post-integration operations for all channels in the mixed ion group.</p>
+<p>This method is called after the integration step in the simulation. It iterates
+through all Channel nodes in the MixIons instance and calls their post_integral
+methods with the current membrane potential and relevant ion information.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>V</strong> (<em>array-like</em>) – The current membrane potential for all neurons in the simulation.</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>This method doesn’t return a value. It updates the state of each channel
+in place as necessary after integration.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>None</p>
+</dd>
+</dl>
+<p class="rubric">Notes</p>
+<p>The method retrieves all Channel nodes, packs the necessary ion information
+for each channel, and then calls the post_integral method of each channel
+with the current membrane potential and the packed ion information.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="braincell.MixIons.pre_integral">
+<span class="sig-name descname"><span class="pre">pre_integral</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">V</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/braincell/_base.html#MixIons.pre_integral"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#braincell.MixIons.pre_integral" title="Link to this definition">#</a></dt>
+<dd><p>Perform pre-integration operations for all channels in the mixed ion group.</p>
+<p>This method is called before the integration step in the simulation. It iterates
+through all Channel nodes in the MixIons instance and calls their pre_integral
+methods with the current membrane potential and relevant ion information.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>V</strong> (<em>array-like</em>) – The current membrane potential for all neurons in the simulation.</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>This method doesn’t return a value. It updates the state of each channel
+in place as necessary before integration.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>None</p>
+</dd>
+</dl>
+<p class="rubric">Notes</p>
+<p>The method retrieves all Channel nodes, packs the necessary ion information
+for each channel, and then calls the pre_integral method of each channel
+with the current membrane potential and the packed ion information.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="braincell.MixIons.reset_state">
+<span class="sig-name descname"><span class="pre">reset_state</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">V</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">batch_size</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/braincell/_base.html#MixIons.reset_state"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#braincell.MixIons.reset_state" title="Link to this definition">#</a></dt>
+<dd><p>Reset the state of all channels in the mixed ion group.</p>
+<p>This method iterates through all Channel nodes in the MixIons instance and resets
+their states to initial values. It’s typically used when restarting a simulation
+or when transitioning between different phases of a simulation.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>V</strong> (<em>array-like</em>) – The current membrane potential for all neurons in the simulation.
+This is used to reset the channel states based on the current voltage.</p></li>
+<li><p><strong>batch_size</strong> (<a class="reference external" href="https://docs.python.org/3.13/library/functions.html#int" title="(in Python v3.13)"><em>int</em></a><em>, </em><em>optional</em>) – The batch size for the simulation. If provided, it will be used to reset
+the states with the specified batch size, ensuring consistency in batched simulations.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>This method doesn’t return a value. It resets the state of each channel in place.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>None</p>
+</dd>
+</dl>
+<p class="rubric">Notes</p>
+<p>The method retrieves all Channel nodes, packs the necessary ion information
+for each channel, and then calls the reset_state method of each channel
+with the current membrane potential, ion information, and batch size.</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="braincell.MixIons.root_type">
+<span class="sig-name descname"><span class="pre">root_type</span></span><a class="headerlink" href="#braincell.MixIons.root_type" title="Link to this definition">#</a></dt>
+<dd><p>alias of <a class="reference internal" href="braincell.HHTypedNeuron.html#braincell.HHTypedNeuron" title="braincell.HHTypedNeuron"><code class="xref py py-class docutils literal notranslate"><span class="pre">HHTypedNeuron</span></code></a></p>
+</dd></dl>
+
+</dd></dl>
+
+</section>
+
+    <script type="text/x-thebe-config">
+    {
+        requestKernel: true,
+        binderOptions: {
+            repo: "binder-examples/jupyter-stacks-datascience",
+            ref: "master",
+        },
+        codeMirrorConfig: {
+            theme: "abcdef",
+            mode: "python"
+        },
+        kernelOptions: {
+            name: "python3",
+            path: "./apis\generated"
+        },
+        predefinedOutput: true
+    }
+    </script>
+    <script>kernelName = 'python3'</script>
+
+                </article>
+              
+
+              
+              
+              
+              
+                <footer class="prev-next-footer d-print-none">
+                  
+<div class="prev-next-area">
+    <a class="left-prev"
+       href="braincell.IonInfo.html"
+       title="previous page">
+      <i class="fa-solid fa-angle-left"></i>
+      <div class="prev-next-info">
+        <p class="prev-next-subtitle">previous</p>
+        <p class="prev-next-title">IonInfo</p>
+      </div>
+    </a>
+    <a class="right-next"
+       href="braincell.Channel.html"
+       title="next page">
+      <div class="prev-next-info">
+        <p class="prev-next-subtitle">next</p>
+        <p class="prev-next-title">Channel</p>
+      </div>
+      <i class="fa-solid fa-angle-right"></i>
+    </a>
+</div>
+                </footer>
+              
+            </div>
+            
+            
+              
+                <div class="bd-sidebar-secondary bd-toc"><div class="sidebar-secondary-items sidebar-secondary__inner">
+
+
+  <div class="sidebar-secondary-item">
+  <div class="page-toc tocsection onthispage">
+    <i class="fa-solid fa-list"></i> Contents
+  </div>
+  <nav class="bd-toc-nav page-toc">
+    <ul class="visible nav section-nav flex-column">
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#braincell.MixIons"><code class="docutils literal notranslate"><span class="pre">MixIons</span></code></a><ul class="visible nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#braincell.MixIons.ions"><code class="docutils literal notranslate"><span class="pre">MixIons.ions</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#braincell.MixIons.ion_types"><code class="docutils literal notranslate"><span class="pre">MixIons.ion_types</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#braincell.MixIons.channels"><code class="docutils literal notranslate"><span class="pre">MixIons.channels</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#braincell.MixIons.add"><code class="docutils literal notranslate"><span class="pre">MixIons.add()</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#braincell.MixIons.compute_derivative"><code class="docutils literal notranslate"><span class="pre">MixIons.compute_derivative()</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#braincell.MixIons.current"><code class="docutils literal notranslate"><span class="pre">MixIons.current()</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#braincell.MixIons.init_state"><code class="docutils literal notranslate"><span class="pre">MixIons.init_state()</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#id0"><code class="docutils literal notranslate"><span class="pre">MixIons.ion_types</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#braincell.MixIons.post_integral"><code class="docutils literal notranslate"><span class="pre">MixIons.post_integral()</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#braincell.MixIons.pre_integral"><code class="docutils literal notranslate"><span class="pre">MixIons.pre_integral()</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#braincell.MixIons.reset_state"><code class="docutils literal notranslate"><span class="pre">MixIons.reset_state()</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#braincell.MixIons.root_type"><code class="docutils literal notranslate"><span class="pre">MixIons.root_type</span></code></a></li>
+</ul>
+</li>
+</ul>
+  </nav></div>
+
+</div></div>
+              
+            
+          </div>
+          <footer class="bd-footer-content">
+            
+<div class="bd-footer-content__inner container">
+  
+  <div class="footer-item">
+    
+<p class="component-author">
+By BDP Ecosystem
+</p>
+
+  </div>
+  
+  <div class="footer-item">
+    
+
+  <p class="copyright">
+    
+      © Copyright 2025, braincell.
+      <br/>
+    
+  </p>
+
+  </div>
+  
+  <div class="footer-item">
+    <p class="last-updated">
+  Last updated on Jul 30, 2025.
+  <br/>
+</p>
+  </div>
+  
+  <div class="footer-item">
+    
+  </div>
+  
+</div>
+          </footer>
+        
+
+      </main>
+    </div>
+  </div>
+  
+  <!-- Scripts loaded after <body> so the DOM is not blocked -->
+  <script src="../../_static/scripts/bootstrap.js?digest=dfe6caa3a7d634c4db9b"></script>
+<script src="../../_static/scripts/pydata-sphinx-theme.js?digest=dfe6caa3a7d634c4db9b"></script>
+
+  <footer class="bd-footer">
+  </footer>
+  </body>
+</html>

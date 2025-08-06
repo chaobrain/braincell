@@ -131,5 +131,4 @@ We are building the `brain modeling ecosystem <https://brain-modeling.readthedoc
    apis/braincell.synapse.rst
    apis/braincell.ion.rst
    apis/braincell.channel.rst
-   apis/integration.rst
 

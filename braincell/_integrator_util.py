@@ -13,6 +13,7 @@
 # limitations under the License.
 # ==============================================================================
 
+import functools
 from typing import Dict, Any, Callable, Tuple
 
 import brainstate
@@ -20,8 +21,64 @@ import brainunit as u
 import jax
 import jax.numpy as jnp
 
-from ._protocol import DiffEqState, DiffEqModule
+from ._integrator_protocol import DiffEqState, DiffEqModule, IndependentIntegration
 from ._typing import T, DT, Y0, Y1, Aux, Jacobian, VectorFiled, Args
+
+
+def _filter_diffeq(independent_modules, path, value):
+    for module_path in independent_modules.keys():
+        if path[:len(module_path)] == module_path:
+            return False
+    return isinstance(value, DiffEqState)
+
+
+def split_diffeq_states(module: DiffEqModule):
+    """
+    Splits the states of a differential equation module into three categories:
+    all states, states to be integrated (diffeq_states), and other states.
+
+    This function traverses the given `DiffEqModule` and identifies all its states.
+    It then separates these states into:
+      - `diffeq_states`: States that are instances of `DiffEqState` and are not part of
+        any submodule of type :class:`IndependentIntegration`.
+      - `other_states`: All remaining states.
+      - `all_states`: A dictionary of all states in the module.
+
+    The separation is useful for numerical integration routines, where only certain
+    states (those representing differential equations) should be integrated, while
+    others are treated differently.
+
+    Parameters
+    ----------
+    module : DiffEqModule
+        The differential equation module whose states are to be split.
+
+    Returns
+    -------
+    all_states : Dict[Any, brainstate.State]
+        A dictionary of all states in the module.
+    diffeq_states : Dict[Any, DiffEqState]
+        A dictionary of states that are subject to integration (excluding those in
+        :class:`IndependentIntegration` modules).
+    other_states : Dict[Any, brainstate.State]
+        A dictionary of all other states.
+
+    Notes
+    -----
+    - States belonging to submodules of type :class:`IndependentIntegration` are excluded
+      from `diffeq_states` to allow for independent integration strategies.
+    - The function relies on the module's state graph and a custom filter to
+      distinguish between state types.
+
+    Examples
+    --------
+    >>> all_states, diffeq_states, other_states = split_diffeq_states(my_module)
+    """
+    # exclude IndependentIntegration module
+    independent_modules = brainstate.graph.nodes(module, IndependentIntegration)
+    all_states = brainstate.graph.states(module)
+    diffeq_states, other_states = all_states.split(functools.partial(_filter_diffeq, independent_modules), ...)
+    return all_states, diffeq_states, other_states
 
 
 def _check_diffeq_state_derivative(state: DiffEqState, dt: u.Quantity):
@@ -92,9 +149,7 @@ def _transform_diffeq_module_into_dimensionless_fn(
     method: str = 'concat'
 ):
     assert method in ['concat', 'stack'], f'Unknown method: {method}'
-
-    all_states = brainstate.graph.states(target)
-    diffeq_states, other_states = all_states.split(DiffEqState, ...)
+    all_states, diffeq_states, other_states = split_diffeq_states(target)
     all_state_ids = {id(st) for st in all_states.values()}
 
     def vector_field(t, y_dimensionless, *args):

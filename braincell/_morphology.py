@@ -13,32 +13,27 @@
 # limitations under the License.
 # ==============================================================================
 
-from __future__ import annotations
-
+from dataclasses import dataclass
+from pathlib import Path
 from typing import Union, Optional, Sequence, Dict, Hashable, NamedTuple
 
 import brainstate
 import brainunit as u
 import numpy as np
 
-from ._morphology_dhs_utils import (
-    preprocess_branching_tree,
-    build_flipped_comp_edges,
-)
-from ._morphology_from_asc import from_asc
-from ._morphology_from_swc import from_swc
+from ._morphology_branch_tree import BranchingTree
 from ._morphology_utils import (
     calculate_total_resistance_and_area,
     generate_interpolated_nodes,
     compute_connection_seg,
     compute_line_ratios,
     init_coupling_weight_nodes,
-    get_type_name,
 )
 from ._typing import SectionName
 
 
 __all__ = [
+    'Segment',
     'Section',
     'CylinderSection',
     'PointSection',
@@ -76,6 +71,7 @@ class Segment(NamedTuple):
     R_right: u.Quantity[u.ohm]
 
 
+@dataclass
 class Section:
     """Base class for representing a neuron section in compartmental modeling.
 
@@ -123,75 +119,157 @@ class Section:
         nseg: int,
         Ra: u.Quantity[u.ohm * u.cm],
         cm: u.Quantity[u.uF / (u.cm ** 2)],
+        parent: Optional[Dict] = None,
+        children: Optional[set] = None,
     ):
-        """
-        Initialize the Section.
-
-        Parameters:
-            name (Hashable): Section name identifier.
-            length (float, optional): Length of the cylinder (if using simple geometry).
-            diam (float, optional): Diameter of the cylinder (if using simple geometry).
-            points (list or np.ndarray, optional): Array of shape (N, 4) with [x, y, z, diameter].
-            nseg (int): Number of segments to divide the section into.
-            Ra (float): Axial resistivity in ohm·cm.
-            cm (float): Membrane capacitance in µF/cm².
-        """
         self.name = name
+        assert u.fail_for_dimension_mismatch(positions, u.um, 'positions must be in meter')
+        assert u.fail_for_dimension_mismatch(diams, u.um, 'diameters must be in meter')
+        assert u.fail_for_dimension_mismatch(Ra, u.ohm * u.cm, 'diameters must be in u.ohm * u.cm')
+        assert u.fail_for_dimension_mismatch(cm, u.uF / (u.cm ** 2), 'diameters must be in u.uF / (u.cm ** 2)')
         self._nseg = nseg
         self._Ra = Ra
         self._cm = cm
         self.positions = positions
         self.diams = diams
-        self.parent: Dict = None
-        self.children = set()
-        self.segments = []
+        self.parent = parent
+        self.children = set() if children is None else set(children)
 
-        self.init_unit()
+        self.segments = []
         self._compute_area_and_resistance()
 
     @property
     def L(self):
-        pos = u.get_magnitude(self.positions)
+        """
+        Returns the total length of the section in micrometers.
+
+        The length is computed as the sum of Euclidean distances between consecutive
+        3D points in the `positions` array, which represent the coordinates of the section.
+
+        Returns
+        -------
+        u.Quantity
+            The total length of the section in micrometers (u.um).
+        """
+        pos = self.positions / u.um
         return np.sum(np.linalg.norm(pos[1:] - pos[:-1], axis=1)) * u.um
 
     @property
-    def nseg(self):
+    def nseg(self) -> int:
+        """
+        Get the number of segments the section is divided into.
+
+        Returns
+        -------
+        int
+            The number of segments (`nseg`) for this section.
+        """
         return self._nseg
 
     @nseg.setter
     def nseg(self, value):
-        self._nseg = value
-        self._compute_area_and_resistance()
+        raise ValueError(
+            'nseg cannot be set directly. Use replace() method to change nseg value.'
+        )
 
     @property
     def Ra(self):
+        """
+        Get the axial resistivity of the section.
+
+        Returns
+        -------
+        u.Quantity
+            The axial resistivity (`Ra`) of the section in ohm·cm.
+        """
         return self._Ra
 
     @Ra.setter
     def Ra(self, value):
-        self._Ra = self._ensure_unit(value, u.ohm * u.cm)
-        self._compute_area_and_resistance()
+        raise ValueError(
+            'Ra cannot be set directly. Use replace() method to change Ra value.'
+        )
 
     @property
     def cm(self):
+        """
+        Get the specific membrane capacitance of the section.
+
+        Returns
+        -------
+        u.Quantity
+            The specific membrane capacitance (`cm`) in µF/cm².
+        """
         return self._cm
 
     @cm.setter
     def cm(self, value):
-        self._cm = self._ensure_unit(value, u.uF / u.cm ** 2)
-        self._compute_area_and_resistance()
+        raise ValueError(
+            'cm cannot be set directly. Use replace() method to change cm value.'
+        )
 
-    def _ensure_unit(self, value, unit):
-        if u.is_unitless(value):
-            return value * unit
+    def replace(
+        self,
+        nseg: int = None,
+        Ra: u.Quantity = None,
+        cm: u.Quantity = None,
+    ) -> 'Section':
+        """
+        Create a new Section instance with updated properties.
+
+        This method returns a new Section object that is a copy of the current section,
+        but with optionally replaced values for the number of segments (`nseg`), axial resistivity (`Ra`),
+        and specific membrane capacitance (`cm`). All other properties (name, positions, diameters)
+        are preserved from the original section.
+
+        Parameters
+        ----------
+        nseg : int, optional
+            The number of segments for the new section. If not provided, uses the current value.
+        Ra : u.Quantity, optional
+            The axial resistivity for the new section (must have units of ohm·cm). If not provided, uses the current value.
+        cm : u.Quantity, optional
+            The specific membrane capacitance for the new section (must have units of uF/cm²). If not provided, uses the current value.
+
+        Returns
+        -------
+        Section
+            A new Section instance with the specified updated properties.
+
+        Raises
+        ------
+        AssertionError
+            If `nseg` is provided and is not an integer.
+        ValueError
+            If `Ra` or `cm` are provided and have incompatible units.
+
+        Notes
+        -----
+        This method does not modify the original section; it returns a new instance.
+        """
+        name = self.name
+        positions = self.positions
+        diams = self.diams
+        parent = self.parent
+        children = self.children
+        if nseg is not None:
+            assert isinstance(nseg, (int, np.integer)), f'nseg must be an integer, but got {nseg}'
         else:
-            return value.in_unit(unit)
-
-    def init_unit(self):
-        self.Ra = self._ensure_unit(self.Ra, u.ohm * u.cm)
-        self.cm = self._ensure_unit(self.cm, u.uF / u.cm ** 2)
-        self.positions = self._ensure_unit(self.positions, u.um)
-        self.diams = self._ensure_unit(self.diams, u.um)
+            nseg = self.nseg
+        if Ra is not None:
+            u.fail_for_dimension_mismatch(Ra, u.ohm * u.cm, 'Ra must be in u.ohm * u.cm')
+        else:
+            Ra = self.Ra
+        if cm is not None:
+            u.fail_for_dimension_mismatch(cm, u.uF / (u.cm ** 2), 'cm must be in u.uF / (u.cm ** 2)')
+        else:
+            cm = self.cm
+        return Section(
+            name=name, positions=positions,
+            diams=diams, nseg=nseg, Ra=Ra, cm=cm,
+            parent=parent,
+            children=children
+        )
 
     def __repr__(self):
         n_points = getattr(self.positions, "shape", [len(self.positions)])[0]
@@ -202,8 +280,8 @@ class Section:
             parent_str = None
             parent_loc = None
         return (
-            f"<section_name={self.name!r}, nseg={self.nseg}, points={n_points}, "
-            f"Ra={self.Ra}, cm={self.cm}, parent={parent_str}, parent_loc = {parent_loc}>"
+            f"Section<name={self.name!r}, nseg={self.nseg}, points={n_points}, "
+            f"Ra={self.Ra}, cm={self.cm}, parent={parent_str}, parent_loc={parent_loc}>"
         )
 
     def _compute_area_and_resistance(self):
@@ -220,11 +298,13 @@ class Section:
             - R_left (float): Resistance from the segment’s left half
             - R_right (float): Resistance from the segment’s right half
         """
-        self.segments.clear()
-        node_pre = np.hstack((u.get_magnitude(self.positions), u.get_magnitude(self.diams.reshape((-1, 1)))))
+        node_pre = np.hstack(
+            [self.positions / u.um, (self.diams / u.um).reshape((-1, 1))]
+        )
+        Ra = self.Ra / (u.ohm * u.cm)
         node_after = generate_interpolated_nodes(node_pre, self.nseg)
-
         node_after = np.asarray(node_after)
+
         xyz_pre = node_pre[:, :3]
         ratios_pre = compute_line_ratios(xyz_pre)
         ratios_after = np.linspace(0, 1, 2 * self.nseg + 1)
@@ -241,16 +321,16 @@ class Section:
             selected_right = np.vstack([node_after[i + 1], node_pre[mask_right], node_after[i + 2]])
 
             # Compute axial resistance and surface area
-            R_left, area_left = calculate_total_resistance_and_area(selected_left, u.get_magnitude(self.Ra))
-            R_right, area_right = calculate_total_resistance_and_area(selected_right, u.get_magnitude(self.Ra))
+            R_left, area_left = calculate_total_resistance_and_area(selected_left, Ra)
+            R_right, area_right = calculate_total_resistance_and_area(selected_right, Ra)
 
             segment = Segment(
                 section_name=self.name,
                 index=int(i / 2),
                 cm=self.cm,
-                area=(area_left + area_right) * u.get_unit(self.positions) ** 2,
-                R_left=R_left * u.get_unit(self.Ra) * u.get_unit(self.positions) / u.get_unit(self.diams) ** 2,
-                R_right=R_right * u.get_unit(self.Ra) * u.get_unit(self.positions) / u.get_unit(self.diams) ** 2,
+                area=(area_left + area_right) * u.um ** 2,
+                R_left=R_left * (u.ohm * u.cm / u.um),
+                R_right=R_right * (u.ohm * u.cm / u.um),
             )
             self.segments.append(segment)
 
@@ -308,7 +388,6 @@ class Section:
         being used directly.
         """
         self.children.add(name)
-
 
 class CylinderSection(Section):
     """A section class representing a cylindrical compartment with uniform diameter.
@@ -420,9 +499,8 @@ class PointSection(Section):
             cm (float): Membrane capacitance in µF/cm².
         """
 
-        positions = np.array(u.get_magnitude(positions))
         assert positions.shape[0] >= 2, "at least have 2 points"
-        assert positions.shape[1] == 3, "points must be shape (N, 3): [x, y, z"
+        assert positions.shape[1] == 3, "points must be shape (N, 3): [x, y, z]"
         assert np.all(np.array(u.get_magnitude(diams)) > 0), "All diameters must be positive."
 
         super().__init__(
@@ -449,13 +527,6 @@ class Morphology(brainstate.util.PrettyObject):
     - Batch creation of sections and connections
     - Computing electrical properties like conductance matrices
 
-    Attributes
-    ----------
-    sections : dict
-        Dictionary mapping section names to Section objects
-    segments : list
-        List of all segments across all sections
-
     Examples
     --------
     >>> morph = Morphology()
@@ -467,70 +538,73 @@ class Morphology(brainstate.util.PrettyObject):
     """
 
     def __init__(self):
-        """
-        Initializes the Morphology object.
-        This model allows for the creation of a multi-compartmental neuron, where each compartment
-        represents a different part of the neuron (e.g., soma, axon, dendrite).
-
-        Attributes:
-            sections (dict): Dictionary to store sections by their name.
-            segments (list): List of all segments across sections, combined.
-        """
         self.sections = {}  # Dictionary to store section objects by name
-        self._conductance_matrix = None
-        self._area = None
-        self._cm = None
-        self._nseg = None
-        self._parent_id = None
-        self._parent_x = None
-        self._seg_ri = None
-        self._dhs = None
 
     @property
     def segments(self):
+        """
+        Returns a flat list of all segments across all sections.
+
+        Returns
+        -------
+        list
+            A list of Segment objects representing all segments in the morphology.
+        """
         return [seg for section in self.sections.values() for seg in section.segments]
 
-    def dhs_init(self, plot=False):
-        Gmat_sorted, parent_rows, dhs_groups, segment2rowid = preprocess_branching_tree(
-            self.parent_id, self.parent_x, self.seg_ri, max_group_size=32, plot=plot
-        )
+    def to_branch_tree(self) -> BranchingTree:
+        """
+        Convert the morphology to a BranchingTree representation for dendritic hierarchy analysis.
 
-        flipped_comp_edges = build_flipped_comp_edges(dhs_groups, parent_rows)
-        cm_segmid = self.cm
-        area_segmid = self.area
+        This method transforms the morphological structure into a BranchingTree object
+        that can be used for the Dendritic Hierarchy and Structure (DHS) algorithm.
+        The transformation involves computing the electrical properties of all segments
+        and their connectivity relationships.
 
-        cm = u.math.ones(len(parent_rows)) * u.get_unit(cm_segmid)
-        area = u.math.ones(len(parent_rows)) * u.get_unit(area_segmid)
-        seg_mid_ids = u.math.array(list(segment2rowid.values()))
-        cm[seg_mid_ids] = cm_segmid
-        area[seg_mid_ids] = area_segmid
+        The method calculates:
+        - Segment resistances (left and right) for all segments
+        - Number of segments per section
+        - Connection information between segments
+        - Parent-child relationships between segments
+        - Specific membrane capacitance for each segment
+        - Surface area for each segment
 
-        Gmat_sorted = -Gmat_sorted / (cm * area)[:, u.math.newaxis]
+        Returns
+        -------
+        BranchingTree
+            A BranchingTree object representing the morphological structure
+            with all necessary electrical properties for DHS algorithm processing.
 
-        n = len(parent_rows)
-        lowers = u.math.zeros(n) * u.get_unit(Gmat_sorted)
-        uppers = u.math.zeros(n) * u.get_unit(Gmat_sorted)
+        Notes
+        -----
+        The BranchingTree representation is optimized for efficient computation
+        of electrical properties in compartmental modeling and enables analysis
+        of the dendritic hierarchy. This representation is particularly useful
+        for studying signal propagation and integration in neuronal structures.
 
-        for i in range(n):
-            p = parent_rows[i]
-            if p == -1:
-                lowers = lowers.at[i].set(0 * u.get_unit(Gmat_sorted))
-                uppers = uppers.at[i].set(0 * u.get_unit(Gmat_sorted))
-            else:
-                lowers = lowers.at[i].set(Gmat_sorted[i, p])
-                uppers = uppers.at[i].set(Gmat_sorted[p, i])
+        See Also
+        --------
+        BranchingTree : The class that handles dendritic hierarchy processing
+        """
 
-        diags = u.math.diag(Gmat_sorted)
+        # section resistances
+        seg_ri = u.math.array([(seg.R_left, seg.R_right) for seg in self.segments]) / u.ohm
 
-        parent_lookup = u.math.array(parent_rows + [-1])
-        internal_node_inds = u.math.array(list(segment2rowid.values()))
+        # number of segments per section
+        nsegs = np.asarray([sec.nseg for sec in self.sections.values()])
 
-        self.diags = diags
-        self.uppers = uppers
-        self.lowers = lowers
-        self.flipped_comp_edges = flipped_comp_edges
-        self.parent_lookup = parent_lookup
-        self.internal_node_inds = internal_node_inds
+        # connection sections, parent section id and location
+        connection_sec_list = self._connection_sec_list()
+        print(connection_sec_list)
+        _, parent_id, parent_x = compute_connection_seg(nsegs, connection_sec_list)
+
+        # cm for each segment
+        cm_segmid = u.math.array([seg.cm for seg in self.segments])
+
+        # area for each segment
+        area_segmid = u.math.array([seg.area for seg in self.segments])
+
+        return BranchingTree(seg_ri, parent_id, parent_x, cm_segmid, area_segmid)
 
     def add_cylinder_section(
         self,
@@ -552,16 +626,16 @@ class Morphology(brainstate.util.PrettyObject):
         ----------
         name : Hashable
             Unique identifier for the section
-        length : u.Quantity[u.cm]
-            Length of the cylindrical section
-        diam : u.Quantity[u.cm]
-            Diameter of the cylindrical section
+        length : Quantity
+            Length of the cylindrical section, u.cm
+        diam : Quantity
+            Diameter of the cylindrical section, u.cm
         nseg : int, optional
             Number of segments to divide the section into, default=1
-        Ra : u.Quantity[u.ohm * u.cm], optional
-            Axial resistivity of the section, default=100
-        cm : u.Quantity[u.uF / u.cm ** 2], optional
-            Specific membrane capacitance, default=1.0
+        Ra : Quantity
+            Axial resistivity of the section, default=100 * u.ohm * u.cm
+        cm : Quantity
+            Specific membrane capacitance, default=1.0 * u.uF / u.cm ** 2
 
         Raises
         ------
@@ -575,7 +649,7 @@ class Morphology(brainstate.util.PrettyObject):
         """
         section = CylinderSection(name, length=length, diam=diam, nseg=nseg, Ra=Ra, cm=cm)
         if name in self.sections:
-            raise ValueError(f"Section with name '{name}' already exists.")
+            raise ValueError(f"Section with name '{name}' already exists, please choose a different name.")
         self.sections[name] = section
 
     def add_point_section(
@@ -584,8 +658,8 @@ class Morphology(brainstate.util.PrettyObject):
         positions,
         diams,
         nseg: int = 1,
-        Ra: u.Quantity = 100,
-        cm: u.Quantity = 1.0,
+        Ra: u.Quantity = 100 * u.ohm * u.cm,
+        cm: u.Quantity = 1.0 * u.uF / u.cm ** 2,
     ):
         """
         Create a section defined by custom 3D points and add it to the morphology.
@@ -598,8 +672,10 @@ class Morphology(brainstate.util.PrettyObject):
         ----------
         name : Hashable
             Unique identifier for the section
-        points : u.Quantity[u.cm]
+        positions : u.Quantity[u.cm]
             Array of shape (N, 4) with each point as [x, y, z, diameter]
+        diams: u.Quantity[u.cm]
+            Array of shape (N, 1) with diameters at each point.
         nseg : int, optional
             Number of segments to divide the section into, default=1
         Ra : u.Quantity[u.ohm * u.cm], optional
@@ -618,10 +694,9 @@ class Morphology(brainstate.util.PrettyObject):
         After creation, this section can be connected to other sections using the
         `connect` method.
         """
-
         section = PointSection(name, positions=positions, diams=diams, nseg=nseg, Ra=Ra, cm=cm)
         if name in self.sections:
-            raise ValueError(f"Section with name '{name}' already exists.")
+            raise ValueError(f"Section with name '{name}' already exists, please choose a different name.")
         self.sections[name] = section
 
     def get_section(self, name: SectionName) -> Optional[Section]:
@@ -686,7 +761,7 @@ class Morphology(brainstate.util.PrettyObject):
 
         # Set the new parent for the child
         child.add_parent(parent.name, parent_loc)
-
+        
         # Add the child to the new parent's children list
         parent.add_child(child.name)
 
@@ -716,10 +791,11 @@ class Morphology(brainstate.util.PrettyObject):
         Examples
         --------
         >>> morph = Morphology()
+        >>> import brainunit as u
         >>> morph.add_multiple_sections({
-        ...     'soma': {'length': 20.0, 'diam': 20.0},
-        ...     'axon': {'length': 800.0, 'diam': 1.0, 'nseg': 5},
-        ...     'dendrite': {'points': [[0,0,0,2], [10,10,0,1.5], [20,20,0,1]]}
+        ...     'soma': {'length': 20.0 * u.um, 'diam': 20.0 * u.um},
+        ...     'axon': {'length': 800.0 * u.um, 'diam': 1.0 * u.um, 'nseg': 5},
+        ...     'dendrite': {'points': [[0,0,0,2], [10,10,0,1.5], [20,20,0,1]] * u.um}
         ... })
 
         Notes
@@ -782,6 +858,8 @@ class Morphology(brainstate.util.PrettyObject):
                 raise ValueError('connections must contain exactly 3 elements.')
             child_name, parent_name, parent_loc = sec
             self.connect(child_name, parent_name, parent_loc)
+            
+        
 
     def _connection_sec_list(self):
         """
@@ -808,7 +886,7 @@ class Morphology(brainstate.util.PrettyObject):
                 connections.append((child_idx, -1, -1))
         return connections
 
-    def construct_conductance_matrix(self):
+    def conductance_matrix(self):
         """
         Construct the conductance matrix for the model. This matrix represents the conductance
         between sections based on the resistance of each segment and their connectivity.
@@ -829,87 +907,16 @@ class Morphology(brainstate.util.PrettyObject):
 
         connection_sec_list = self._connection_sec_list()
         connection_seg_list, _, _ = compute_connection_seg(nseg_list, connection_sec_list)
-        self._conductance_matrix = init_coupling_weight_nodes(g_left, g_right, connection_seg_list)
-
-    def construct_area(self):
-        area_list = []
-        for seg in self.segments:
-            area_list.append(seg.area)
-        self._area = u.math.array(area_list)
-
-    def construct_cm(self):
-        cm_list = []
-        for seg in self.segments:
-            cm_list.append(seg.cm)
-        self._cm = u.math.array(cm_list)
-
-    def construct_nseg(self):
-        nseg_list = []
-        for sec in self.sections.values():
-            nseg_list.append(sec.nseg)
-        self._nseg = nseg_list
-
-    def construct_seg_pid_px(self):
-        connection_sec_list = self._connection_sec_list()
-        _, pid, px = compute_connection_seg(self.nseg, connection_sec_list)
-        self._parent_id = pid
-        self._parent_x = px
-
-    def construct_seg_ri(self):
-        sec_ri = []
-        for seg in self.segments:
-            sec_ri.append((seg.R_left, seg.R_right))
-        self._seg_ri = u.math.array(sec_ri)
-
-    @property
-    def seg_ri(self):
-        self.construct_seg_ri()
-        return self._seg_ri
-
-    @property
-    def nseg(self):
-        self.construct_nseg()
-        return self._nseg
-
-    @property
-    def parent_id(self):
-        self.construct_seg_pid_px()
-        return self._parent_id
-
-    @property
-    def parent_x(self):
-        self.construct_seg_pid_px()
-        return self._parent_x
-
-    @property
-    def conductance_matrix(self):
-        self.construct_conductance_matrix()
-        return self._conductance_matrix
-
-    @property
-    def area(self):
-        self.construct_area()
-        return self._area
-
-    @property
-    def cm(self):
-        self.construct_cm()
-        return self._cm
-
-    def list_sections(self):
-        """List all sections in the model with their properties (e.g., number of segments)."""
-        # TODO
-        for name, section in self.sections.items():
-            print(f"Section: {name}, nseg: {section.nseg}, Points: {section.positions.shape[0]}")
+        return init_coupling_weight_nodes(g_left, g_right, connection_seg_list)
 
     @classmethod
-    def from_swc(cls, filename):
+    def from_swc(cls, filename: str | Path):
         """
         Class method to create a Morphology object from an SWC file (factory method).
         
         Parameters
         ----------
-        filename : str
+        filename : str, Path
             Path to the SWC file
             
         Returns
@@ -917,32 +924,17 @@ class Morphology(brainstate.util.PrettyObject):
         Morphology
             A Morphology object created from the SWC file
         """
-        morphology = cls()
-
-        sections, section_dicts = from_swc(filename)
-
-        # Add all sections using add_multiple_sections method
-        morphology.add_multiple_sections(section_dicts)
-
-        # Prepare connection information and establish connections
-        connections = []
-        for swc_section in sections:
-            if swc_section.parentsec is not None:
-                child_name = f"{get_type_name(swc_section.type)}_{swc_section.id}"
-                parent_name = f"{get_type_name(swc_section.parentsec.type)}_{swc_section.parentsec.id}"
-                parent_loc = swc_section.parentx  # Connection position
-                connections.append((child_name, parent_name, parent_loc))
-        morphology.connect_sections(connections)
-        return morphology
+        from ._morphology_from_swc import from_swc
+        return from_swc(filename)
 
     @classmethod
-    def from_asc(cls, filename):
+    def from_asc(cls, filename: str | Path):
         """
         Class method to create a Morphology object from an ASC file (factory method).
 
         Parameters
         ----------
-        filename : str
+        filename : str, Path
             Path to the ASC file
 
         Returns
@@ -950,23 +942,8 @@ class Morphology(brainstate.util.PrettyObject):
         Morphology
             A Morphology object created from the ASC file
         """
-        morphology = cls()
-
-        section_dicts, sections, section_id_map = from_asc(filename)
-
-        # Add all sections
-        morphology.add_multiple_sections(section_dicts)
-
-        # Prepare and add connection info
-        connections = []
-        for sec in sections:
-            if sec.parent_id is not None:
-                child_name = section_id_map[sec.sec_id]
-                parent_name = section_id_map[sec.parent_id]
-                parent_loc = getattr(sec, "parent_x", 0.0)  # Use 0.0 if attribute missing
-                connections.append((child_name, parent_name, parent_loc))
-        morphology.connect_sections(connections)
-        return morphology
+        from ._morphology_from_asc import from_asc
+        return from_asc(filename)
 
     def visualize(self):
         """
@@ -980,60 +957,100 @@ class Morphology(brainstate.util.PrettyObject):
         plotly.graph_objects.Figure
             3D visualization of the neuron morphology
         """
-        if hasattr(self, '_filename'):
-            # Use the SWC-specific visualization if available
-            return visualize_neuron(process_swc_pipeline(self._filename))
-        else:
-            # Implement basic visualization using the morphology sections
-            import plotly.graph_objects as go
+        # Implement basic visualization using the morphology sections
+        import plotly.graph_objects as go
 
-            fig = go.Figure()
+        fig = go.Figure()
 
-            # Create traces for each section
-            for name, section in self.sections.items():
-                # Get 3D points representing the section
-                if hasattr(section, 'positions'):
-                    # For PointSection
-                    x = section.positions[:, 0].magnitude
-                    y = section.positions[:, 1].magnitude
-                    z = section.positions[:, 2].magnitude
+        # Create traces for each section
+        for name, section in self.sections.items():
+            # Get 3D points representing the section
+            x = section.positions[:, 0] / u.um
+            y = section.positions[:, 1] / u.um
+            z = section.positions[:, 2] / u.um
 
-                    # Line representation
-                    fig.add_trace(
-                        go.Scatter3d(
-                            x=x, y=y, z=z,
-                            mode='lines',
-                            name=name,
-                            line=dict(width=2)
-                        )
-                    )
+            # Line representation
+            fig.add_trace(go.Scatter3d(x=x, y=y, z=z, mode='lines', name=name, line=dict(width=2)))
 
-                    # Points representation
-                    fig.add_trace(
-                        go.Scatter3d(
-                            x=x, y=y, z=z,
-                            mode='markers',
-                            name=f"{name}_points",
-                            marker=dict(
-                                size=section.diam.flatten().magnitude / 2,
-                                opacity=0.5
-                            )
-                        )
-                    )
-                else:
-                    # For CylinderSection - simplified representation
-                    # Create line from start to end
-                    pass  # Implement based on CylinderSection specifics
-
-            # Update layout
-            fig.update_layout(
-                title="Neuron Morphology",
-                scene=dict(
-                    xaxis_title="X (μm)",
-                    yaxis_title="Y (μm)",
-                    zaxis_title="Z (μm)",
-                    aspectmode='data'
+            # Points representation
+            fig.add_trace(
+                go.Scatter3d(
+                    x=x, y=y, z=z, mode='markers', name=f"{name}_points",
+                    marker=dict(size=section.diams.flatten() / u.um / 2, opacity=0.5)
                 )
             )
 
-            return fig
+        # Update layout
+        fig.update_layout(
+            title="Neuron Morphology",
+            scene=dict(
+                xaxis_title="X (μm)",
+                yaxis_title="Y (μm)",
+                zaxis_title="Z (μm)",
+                aspectmode='data'
+            )
+        )
+
+        return fig
+
+    def set_passive_params(
+        self,
+        nseg_length: u.Quantity = 40 * u.um,
+        Ra_soma: u.Quantity = 122. * u.ohm * u.cm,
+        cm_soma: u.Quantity = 1 * u.uF / u.cm ** 2,
+        Ra_dend: u.Quantity = 122. * u.ohm * u.cm,
+        cm_dend: u.Quantity = 2.5 * u.uF / u.cm ** 2,
+        Ra_axon: u.Quantity = 122. * u.ohm * u.cm,
+        cm_axon: u.Quantity = 1 * u.uF / u.cm ** 2,
+    ):
+        """
+        Configure passive electrical properties and segment counts for all sections in the morphology.
+
+        This method iterates over all sections in the morphology and sets the number of segments (`nseg`),
+        axial resistivity (`Ra`), and specific membrane capacitance (`cm`) for each section based on its type.
+        The section type is determined by the presence of the substrings 'soma', 'dend', or 'axon' in the section name.
+
+        Parameters
+        ----------
+        nseg_length : u.Quantity, optional
+            Target length for each segment (default: 40 µm). The number of segments for each section is computed as
+            `1 + 2 * floor(section_length / nseg_length)`.
+        Ra_soma : u.Quantity, optional
+            Axial resistivity for soma sections (default: 122 Ω·cm).
+        cm_soma : u.Quantity, optional
+            Specific membrane capacitance for soma sections (default: 1 µF/cm²).
+        Ra_dend : u.Quantity, optional
+            Axial resistivity for dendrite sections (default: 122 Ω·cm).
+        cm_dend : u.Quantity, optional
+            Specific membrane capacitance for dendrite sections (default: 2.5 µF/cm²).
+        Ra_axon : u.Quantity, optional
+            Axial resistivity for axon sections (default: 122 Ω·cm).
+        cm_axon : u.Quantity, optional
+            Specific membrane capacitance for axon sections (default: 1 µF/cm²).
+
+        Processing Steps
+        ----------------
+        1. For each section in the morphology:
+            a. Compute the number of segments (`nseg`) based on the section's length and `nseg_length`.
+            b. Set `Ra` and `cm` according to the section type:
+                - If 'soma' in section name: use `Ra_soma` and `cm_soma`.
+                - If 'dend' in section name: use `Ra_dend` and `cm_dend`.
+                - If 'axon' in section name: use `Ra_axon` and `cm_axon`.
+
+        Notes
+        -----
+        - Section type is determined by substring matching in the section name.
+        - This method is useful for initializing passive properties before simulation or analysis.
+        - All units must be compatible with the expected quantities.
+        """
+        for k, v in tuple(self.sections.items()):
+            # Update nseg based on section length
+            nseg = int(1 + 2 * np.floor(v.L / nseg_length))
+
+            # Set Ra and cm by section type
+            if 'soma' in k:
+                self.sections[k] = v.replace(nseg=nseg, Ra=Ra_soma, cm=cm_soma)
+            elif 'dend' in k:
+                self.sections[k] = v.replace(nseg=nseg, Ra=Ra_dend, cm=cm_dend)
+            elif 'axon' in k:
+                self.sections[k] = v.replace(nseg=nseg, Ra=Ra_axon, cm=cm_axon)

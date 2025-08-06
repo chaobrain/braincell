@@ -15,9 +15,12 @@
 
 
 import os
+from pathlib import Path
 
+import brainunit as u
 import numpy as np
 
+from ._morphology import Morphology
 from ._morphology_utils import get_type_name
 
 
@@ -708,14 +711,6 @@ def visualize_neuron(viz_data):
         else:
             return 'gray'  # Other
 
-    # Type name mapping
-    type_names = {
-        1: "Soma",
-        2: "Axon",
-        3: "Dendrite",
-        4: "Apical dendrite"
-    }
-
     # Create edge traces
     edge_x, edge_y, edge_z = [], [], []
     for i, j in edges:
@@ -741,7 +736,7 @@ def visualize_neuron(viz_data):
     for t in unique_types:
         mask = types == t
         color = get_color(t)
-        type_name = type_names.get(t, f"Type {t}")
+        type_name = get_type_name(t)
         trace = go.Scatter3d(
             x=coords[mask, 0],
             y=coords[mask, 1],
@@ -784,27 +779,75 @@ def visualize_neuron(viz_data):
     return fig
 
 
-def from_swc(filename):
+def from_swc(filename: str | Path) -> Morphology:
+    """
+    Parse a SWC file and construct a Morphology object.
+
+    This function reads a `.swc` file describing neuron morphology, parses its structure,
+    processes soma and branch sections, and returns a Morphology object suitable for
+    further analysis or simulation.
+
+    Args:
+        filename (str or Path): Path to the SWC file to be parsed. The file must have a `.swc` extension.
+
+    Returns:
+        Morphology: An instance of the Morphology class containing all sections and their connections.
+
+    Processing steps:
+        1. Validates the file extension.
+        2. Parses the SWC file into a list of Import3dSection objects.
+        3. Assigns unique names to each section based on type and order.
+        4. Extracts positions and diameters for each section and stores them in a dictionary.
+        5. Creates a Morphology object and adds all sections.
+        6. Establishes parent-child connections between sections.
+        7. Returns the fully constructed Morphology object.
+
+    Raises:
+        ValueError: If the file does not have a `.swc` extension or cannot be read.
+    """
+
+    # Check if the file has the correct extension
+    _, postfix = os.path.splitext(filename)
+    if postfix != '.swc':
+        raise ValueError(f"File {filename} is not an SWC file.")
+
     # Create SWC reader
     reader = Import3dSWCRead()
     if not reader.input(filename):
         raise ValueError(f"Failed to read SWC file: {filename}")
 
-    # 1. Extract point data from SWC sections and prepare section_dicts
+    # Extract point data from SWC sections and prepare section_dicts
     section_dicts = {}
     for swc_section in reader.sections:
         section_type = swc_section.type
         section_name = f"{get_type_name(section_type)}_{swc_section.id}"
 
         # Extract point data
-        positions = np.column_stack([
-            swc_section.x, swc_section.y, swc_section.z
-        ])
+        positions = np.column_stack(
+            [
+                swc_section.x, swc_section.y, swc_section.z
+            ]
+        )
         diams = swc_section.d
 
         section_dicts[section_name] = {
-            'positions':  positions,
-            'diams': diams,
+            'positions': positions * u.um,
+            'diams': diams * u.um,
             'nseg': 1  # Default to 1, might need adjustment based on points or length
         }
-    return reader.sections, section_dicts
+
+    morphology = Morphology()
+
+    # Add all sections using add_multiple_sections method
+    morphology.add_multiple_sections(section_dicts)
+
+    # Prepare connection information and establish connections
+    connections = []
+    for swc_section in reader.sections:
+        if swc_section.parentsec is not None:
+            child_name = f"{get_type_name(swc_section.type)}_{swc_section.id}"
+            parent_name = f"{get_type_name(swc_section.parentsec.type)}_{swc_section.parentsec.id}"
+            parent_loc = swc_section.parentx  # Connection position
+            connections.append((child_name, parent_name, parent_loc))
+    morphology.connect_sections(connections)
+    return morphology

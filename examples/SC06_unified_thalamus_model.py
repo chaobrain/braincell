@@ -436,7 +436,7 @@ def try_network(state='delta'):
 
 
 if __name__ == '__main__':
-    # try_network('delta')
-    # try_network('spindle')
+    try_network('delta')
+    try_network('spindle')
     try_network('alpha')
     try_network('gamma')

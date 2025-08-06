@@ -20,8 +20,8 @@ import brainunit as u
 
 from ._base import HHTypedNeuron, IonChannel
 from ._integrator import get_integrator
+from ._integrator_protocol import DiffEqState, IndependentIntegration
 from ._morphology import Morphology
-from ._protocol import DiffEqState
 from ._typing import Initializer
 
 __all__ = [
@@ -119,9 +119,6 @@ class MultiCompartment(HHTypedNeuron):
         # numerical solver
         self.solver = get_integrator(solver)
 
-    def __getattr__(self, name):
-        return getattr(self.morphology, name)
-
     @property
     def pop_size(self) -> Tuple[int, ...]:
         """
@@ -176,30 +173,8 @@ class MultiCompartment(HHTypedNeuron):
             of the ion channels.
         """
         for key, node in self.nodes(IonChannel, allowed_hierarchy=(1, 1)).items():
-            node.pre_integral(self.V.value)
-
-    def update_state(self, *args):
-        """
-        Perform pre-integration operations on the neuron's ion channels.
-
-        This method is called before the integration step to prepare the ion channels
-        for the upcoming computation. It iterates through all ion channels associated
-        with this neuron and calls their respective pre_integral methods.
-
-        Parameters
-        -----------
-        *args : tuple
-            Variable length argument list. Not used in the current implementation
-            but allows for future extensibility.
-
-        Returns
-        --------
-        None
-            This method doesn't return any value but updates the internal state
-            of the ion channels.
-        """
-        for key, node in self.nodes(IonChannel, allowed_hierarchy=(1, 1)).items():
-            node.update_state(self.V.value)
+            if not isinstance(node, IndependentIntegration):
+                node.pre_integral(self.V.value)
 
     def compute_derivative(self, I_ext=0. * u.nA):
         """
@@ -247,9 +222,13 @@ class MultiCompartment(HHTypedNeuron):
         # [ integrate dynamics of ion and ion channel ]
         # check whether the children channel have the correct parents.
         for key, node in self.nodes(IonChannel, allowed_hierarchy=(1, 1)).items():
-            node.compute_derivative(self.V.value)
+            if not isinstance(node, IndependentIntegration):
+                node.compute_derivative(self.V.value)
 
     def compute_membrane_derivative(self, V, I_ext=0. * u.nA):
+        # ---------
+        # This function is specifically designed for the ``voltage`` solver,
+
         # [ Compute the derivative of membrane potential ]
         # 1. external currents
         I_ext = I_ext / self.area
@@ -264,9 +243,6 @@ class MultiCompartment(HHTypedNeuron):
 
         # 5. derivatives
         v_derivative = (I_ext + I_syn + I_channel) / self.cm
-
-        for key, node in self.nodes(IonChannel, allowed_hierarchy=(1, 1)).items():
-            node.compute_derivative(self.V.value)
         return v_derivative
 
     def post_integral(self, I_ext=0. * u.nA):
@@ -290,7 +266,8 @@ class MultiCompartment(HHTypedNeuron):
         """
         self.V.value = self.sum_delta_inputs(init=self.V.value)
         for key, node in self.nodes(IonChannel, allowed_hierarchy=(1, 1)).items():
-            node.post_integral(self.V.value)
+            if not isinstance(node, IndependentIntegration):
+                node.post_integral(self.V.value)
 
     def update(self, I_ext=0. * u.nA):
         """
@@ -310,6 +287,9 @@ class MultiCompartment(HHTypedNeuron):
             A binary value indicating whether a spike has occurred (1) or not (0)
             for each compartment of the neuron.
         """
+        for key, node in self.nodes(IonChannel, allowed_hierarchy=(1, 1)).items():
+            node.update(self.V.value)
+
         last_V = self.V.value
         t = brainstate.environ.get('t')
         dt = brainstate.environ.get('dt')

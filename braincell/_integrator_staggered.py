@@ -19,7 +19,7 @@ import brainunit as u
 from ._integrator_exp_euler import ind_exp_euler_step
 from ._integrator_voltage_solver import dhs_voltage_step
 from ._misc import set_module_as
-from ._protocol import DiffEqState, DiffEqModule
+from ._integrator_protocol import DiffEqState, DiffEqModule
 
 __all__ = [
     'staggered_step',
@@ -35,24 +35,17 @@ def staggered_step(
 ):
     from ._multi_compartment import MultiCompartment
     assert isinstance(target, MultiCompartment), (
-        f"The target should be a {MultiCompartment.__name__} for the stagger integrator. "
-        f"But got {type(target)} instead."
+        f"The stagger integrator only support {MultiCompartment.__name__}, "
+        f"but we got {type(target)} instead."
     )
 
-    # sparse_voltage_step(target, t, dt, *args)
+    # voltage integration
     dhs_voltage_step(target, t, dt, *args)
-    # excluded_paths
-    all_states = brainstate.graph.states(target)
-    diffeq_states, _ = all_states.split(DiffEqState, ...)
-    excluded_paths = [('V',)]
-    for key in diffeq_states.keys():
-        if 'INa_Rsg' in key:
-            excluded_paths.append(key)
 
-    # update markov
-    for _ in range(2):
-        target.update_state(*args)
-        target.pre_integral(*args)
+    # # update markov
+    # for _ in range(2):
+    #     target.update_state(*args)
+    #     target.pre_integral(*args)
 
-    # ind_exp_euler for non-v and non-markov
-    ind_exp_euler_step(target, t, dt, *args, excluded_paths=excluded_paths)
+    # ind_exp_euler for ion channels
+    ind_exp_euler_step(target, t, dt, *args, excluded_paths=[('V',)])

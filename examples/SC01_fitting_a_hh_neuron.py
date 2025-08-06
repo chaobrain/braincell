@@ -230,9 +230,8 @@ def fitting_by_nevergrad(method='DE', n_sample=200, n_iter=20):
     print(f"Method: {method}, n_sample: {n_sample}")
 
     @brainstate.transform.jit
-    @brainstate.transform.vmap
     def loss_with_multiple_run(**params):
-        return compare_potentials(params)
+        return brainstate.transform.vmap(compare_potentials)(params)
 
     opt = braintools.optim.NevergradOptimizer(
         loss_with_multiple_run,

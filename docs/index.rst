@@ -104,9 +104,9 @@ We are building the `brain modeling ecosystem <https://brain-modeling.readthedoc
    :hidden:
 
 
-   tutorial/cell-zh.ipynb
    tutorial/channel-zh.ipynb
    tutorial/ion-zh.ipynb
+   tutorial/cell-zh.ipynb
 
 
 .. toctree::
@@ -114,10 +114,10 @@ We are building the `brain modeling ecosystem <https://brain-modeling.readthedoc
    :caption: Advanced Tutorials
    :hidden:
 
-   advanced tutorial/rationale-zh.ipynb
-   advanced tutorial/differential equation-zh.ipynb
-   advanced tutorial/Examples-zh.ipynb
-   advanced tutorial/more-zh.ipynb
+   advanced_tutorial/rationale-zh.ipynb
+   advanced_tutorial/differential_equation-zh.ipynb
+   advanced_tutorial/examples.rst
+   advanced_tutorial/more-zh.ipynb
 
 
 .. toctree::

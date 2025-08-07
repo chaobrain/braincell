@@ -13,11 +13,21 @@
 # limitations under the License.
 # ==============================================================================
 from typing import Tuple
+
 import brainunit as u
-import numpy as np
-import networkx as nx
-import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
+import matplotlib.pyplot as plt
+import numpy as np
+
+nx = None
+
+
+def get_networkx():
+    global nx
+    if nx is None:
+        import networkx as nx
+    return nx
+
 
 class UnionFind:
     """
@@ -215,9 +225,11 @@ def build_segment_graph(merged_edges):
     G : nx.DiGraph
         The directed graph of the merged segment structure.
     """
+    nx = get_networkx()
     G = nx.DiGraph()
     G.add_edges_from(merged_edges)
     return G
+
 
 def classify_segment_nodes(num_segments, uf, G):
     """
@@ -337,6 +349,7 @@ def dhs_group_by_depth(depths_sorted, max_group_size):
     groups.reverse()
     return groups
 
+
 def tree_layout(G, root=None, dx=1.5, dy=1.7):
     """
     Compute a simple layered (tree-like) layout for a directed graph.
@@ -393,7 +406,7 @@ def plot_tree(G, node_labels, center_ids, noncenter_nonleaf_ids, leaf_ids, root=
     root : int, optional
         Node id to use as the root for layout.
     """
-
+    nx = get_networkx()
     color_map = {}
     for nid in G.nodes:
         if nid in center_ids:
@@ -493,7 +506,7 @@ def build_conductance_matrix(G, nid_half_map, seg_resistances):
             if pair in nid_half_map:
                 sec, which_half = nid_half_map[pair]
                 if which_half == '0-0.5':
-                    resistance = float(seg_resistances[sec][0]) 
+                    resistance = float(seg_resistances[sec][0])
                 elif which_half == '0.5-1':
                     resistance = float(seg_resistances[sec][1])
                 else:
@@ -520,6 +533,7 @@ def get_root_and_depths(G):
     depths : dict
         node id -> depth (distance from root)
     """
+    nx = get_networkx()
     root = [n for n in G.nodes if G.in_degree(n) == 0][0]
     depths = nx.single_source_shortest_path_length(G, root)
     return root, depths
@@ -568,6 +582,7 @@ def build_parent_dict(G, root):
     Build a dict mapping each node to its parent, using BFS.
     Root will not be present as a key.
     """
+    nx = get_networkx()
     return dict(nx.bfs_predecessors(G, root))
 
 
@@ -817,7 +832,7 @@ class BranchingTree:
         # build lowers and uppers
         mask = parent_rows != -1
         idx = u.math.arange(self.num_segments)
-        
+
         # lowers: gmat_sorted[i, parent_rows[i]]，仅当 parent!=-1
         lowers_all = gmat_sorted[idx, parent_rows]
         lowers = u.math.where(mask, lowers_all, 0.0)

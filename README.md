@@ -11,7 +11,7 @@
 <p align="center">
 	<a href="https://pypi.org/project/braincell/"><img alt="Supported Python Version" src="https://img.shields.io/pypi/pyversions/braincell"></a>
 	<a href="https://github.com/chaobrain/braincell/blob/main/LICENSE"><img alt="LICENSE" src="https://img.shields.io/badge/License-Apache%202.0-blue.svg"></a>
-    <a href='https://braincell.readthedocs.io/en/latest/?badge=latest'>
+    <a href='https://braincell.readthedocs.io/?badge=latest'>
         <img src='https://readthedocs.org/projects/braincell/badge/?version=latest' alt='Documentation Status' />
     </a>  	
     <a href="https://badge.fury.io/py/braincell"><img alt="PyPI version" src="https://badge.fury.io/py/braincell.svg"></a>

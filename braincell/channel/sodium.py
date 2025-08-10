@@ -604,9 +604,7 @@ class INa_Rsg(SodiumChannel, IndependentIntegration):
                              ) / u.ms
 
     def update(self, V, Na: IonInfo):
-        t = brainstate.environ.get('t')
-        dt = brainstate.environ.get('dt')
-        self.solver(self, t, dt, V, Na)
+        self.solver(self, V, Na)
 
 
 

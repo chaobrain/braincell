@@ -16,12 +16,13 @@
 import functools
 import importlib.util
 
+import brainstate
 import brainunit as u
 import jax.numpy as jnp
 
+from ._integrator_protocol import DiffEqModule
 from ._integrator_util import apply_standard_solver_step
 from ._misc import set_module_as, ModuleNotFound
-from ._integrator_protocol import DiffEqModule
 from ._typing import VectorFiled, Y0, T, DT
 
 __all__ = [
@@ -86,7 +87,7 @@ def _diffrax_explicit_solver(
 
 
 @set_module_as('braincell')
-def diffrax_euler_step(target: DiffEqModule, t: T, dt: DT, *args):
+def diffrax_euler_step(target: DiffEqModule, *args):
     """
     Advances the state of a differential equation module by one integration step using the Euler method
     from the diffrax library: `diffrax.Euler <https://docs.kidger.site/diffrax/api/solvers/ode_solvers/#diffrax.Euler>`_.
@@ -96,8 +97,6 @@ def diffrax_euler_step(target: DiffEqModule, t: T, dt: DT, *args):
 
     Args:
         target (DiffEqModule): The differential equation module whose state will be advanced.
-        t (u.Quantity[u.second]): The current simulation time, represented as a quantity with units of seconds.
-        dt (u.Quantity[u.second]): The numerical time step of the integration step.
         *args: Additional arguments to be passed to the solver, such as step size or solver-specific options.
 
     Returns:
@@ -111,11 +110,13 @@ def diffrax_euler_step(target: DiffEqModule, t: T, dt: DT, *args):
         - It is part of a suite of step functions that provide different integration methods.
         - The function is designed to be compatible with the braincell integration framework.
     """
+    t = brainstate.environ.get('t')
+    dt = brainstate.environ.get('dt')
     _diffrax_explicit_solver(diffrax.Euler(), target, t, dt, *args)
 
 
 @set_module_as('braincell')
-def diffrax_heun_step(target: DiffEqModule, t: T, dt: DT, *args):
+def diffrax_heun_step(target: DiffEqModule, *args):
     """
     Advances the state of a differential equation module by one integration step using the Heun method
     from the diffrax library: `diffrax.Heun <https://docs.kidger.site/diffrax/api/solvers/ode_solvers/#diffrax.Heun>`_.
@@ -126,8 +127,6 @@ def diffrax_heun_step(target: DiffEqModule, t: T, dt: DT, *args):
 
     Args:
         target (DiffEqModule): The differential equation module whose state will be advanced.
-        t (u.Quantity[u.second]): The current simulation time, represented as a quantity with units of seconds.
-        dt (u.Quantity[u.second]): The numerical time step of the integration step.
         *args: Additional arguments to be passed to the solver, such as step size or solver-specific options.
 
     Returns:
@@ -141,11 +140,13 @@ def diffrax_heun_step(target: DiffEqModule, t: T, dt: DT, *args):
         - It is part of a suite of step functions that provide different integration methods.
         - The function is designed to be compatible with the braincell integration framework.
     """
+    t = brainstate.environ.get('t')
+    dt = brainstate.environ.get('dt')
     _diffrax_explicit_solver(diffrax.Heun(), target, t, dt, *args)
 
 
 @set_module_as('braincell')
-def diffrax_midpoint_step(target: DiffEqModule, t: T, dt: DT, *args):
+def diffrax_midpoint_step(target: DiffEqModule, *args):
     """
     Advances the state of a differential equation module by one integration step using the Midpoint method
     from the diffrax library: `diffrax.Midpoint <https://docs.kidger.site/diffrax/api/solvers/ode_solvers/#diffrax.Midpoint>`_.
@@ -156,8 +157,6 @@ def diffrax_midpoint_step(target: DiffEqModule, t: T, dt: DT, *args):
 
     Args:
         target (DiffEqModule): The differential equation module whose state will be advanced.
-        t (u.Quantity[u.second]): The current simulation time, represented as a quantity with units of seconds.
-        dt (u.Quantity[u.second]): The numerical time step of the integration step.
         *args: Additional arguments to be passed to the solver, such as step size or solver-specific options.
 
     Returns:
@@ -171,11 +170,13 @@ def diffrax_midpoint_step(target: DiffEqModule, t: T, dt: DT, *args):
         - It is part of a suite of step functions that provide different integration methods.
         - The function is designed to be compatible with the braincell integration framework.
     """
+    t = brainstate.environ.get('t')
+    dt = brainstate.environ.get('dt')
     _diffrax_explicit_solver(diffrax.Midpoint(), target, t, dt, *args)
 
 
 @set_module_as('braincell')
-def diffrax_ralston_step(target: DiffEqModule, t: T, dt: DT, *args):
+def diffrax_ralston_step(target: DiffEqModule, *args):
     """
     Advances the state of a differential equation module by one integration step using the Ralston method
     from the diffrax library: `diffrax.Ralston <https://docs.kidger.site/diffrax/api/solvers/ode_solvers/#diffrax.Ralston>`_.
@@ -186,8 +187,6 @@ def diffrax_ralston_step(target: DiffEqModule, t: T, dt: DT, *args):
 
     Args:
         target (DiffEqModule): The differential equation module whose state will be advanced.
-        t (u.Quantity[u.second]): The current simulation time, represented as a quantity with units of seconds.
-        dt (u.Quantity[u.second]): The numerical time step of the integration step.
         *args: Additional arguments to be passed to the solver, such as step size or solver-specific options.
 
     Returns:
@@ -201,11 +200,13 @@ def diffrax_ralston_step(target: DiffEqModule, t: T, dt: DT, *args):
         - It is part of a suite of step functions that provide different integration methods.
         - The function is designed to be compatible with the braincell integration framework.
     """
+    t = brainstate.environ.get('t')
+    dt = brainstate.environ.get('dt')
     _diffrax_explicit_solver(diffrax.Ralston(), target, t, dt, *args)
 
 
 @set_module_as('braincell')
-def diffrax_bosh3_step(target: DiffEqModule, t: T, dt: DT, *args):
+def diffrax_bosh3_step(target: DiffEqModule, *args):
     """
     Advances the state of a differential equation module by one integration step using the Bosh3 method
     from the diffrax library: `diffrax.Bosh3 <https://docs.kidger.site/diffrax/api/solvers/ode_solvers/#diffrax.Bosh3>`_.
@@ -216,8 +217,6 @@ def diffrax_bosh3_step(target: DiffEqModule, t: T, dt: DT, *args):
 
     Args:
         target (DiffEqModule): The differential equation module whose state will be advanced.
-        t (u.Quantity[u.second]): The current simulation time, represented as a quantity with units of seconds.
-        dt (u.Quantity[u.second]): The numerical time step of the integration step.
         *args: Additional arguments to be passed to the solver, such as step size or solver-specific options.
 
     Returns:
@@ -231,11 +230,13 @@ def diffrax_bosh3_step(target: DiffEqModule, t: T, dt: DT, *args):
         - It is part of a suite of step functions that provide different integration methods.
         - The function is designed to be compatible with the braincell integration framework.
     """
+    t = brainstate.environ.get('t')
+    dt = brainstate.environ.get('dt')
     _diffrax_explicit_solver(diffrax.Bosh3(), target, t, dt, *args)
 
 
 @set_module_as('braincell')
-def diffrax_tsit5_step(target: DiffEqModule, t: T, dt: DT, *args):
+def diffrax_tsit5_step(target: DiffEqModule, *args):
     """
     Advances the state of a differential equation module by one integration step using the Tsit5 method
     from the diffrax library: `diffrax.Tsit5 <https://docs.kidger.site/diffrax/api/solvers/ode_solvers/#diffrax.Tsit5>`_.
@@ -246,8 +247,6 @@ def diffrax_tsit5_step(target: DiffEqModule, t: T, dt: DT, *args):
 
     Args:
         target (DiffEqModule): The differential equation module whose state will be advanced.
-        t (u.Quantity[u.second]): The current simulation time, represented as a quantity with units of seconds.
-        dt (u.Quantity[u.second]): The numerical time step of the integration step.
         *args: Additional arguments to be passed to the solver, such as step size or solver-specific options.
 
     Returns:
@@ -261,11 +260,13 @@ def diffrax_tsit5_step(target: DiffEqModule, t: T, dt: DT, *args):
         - It is part of a suite of step functions that provide different integration methods.
         - The function is designed to be compatible with the braincell integration framework.
     """
+    t = brainstate.environ.get('t')
+    dt = brainstate.environ.get('dt')
     _diffrax_explicit_solver(diffrax.Tsit5(), target, t, dt, *args)
 
 
 @set_module_as('braincell')
-def diffrax_dopri5_step(target: DiffEqModule, t: T, dt: DT, *args):
+def diffrax_dopri5_step(target: DiffEqModule, *args):
     """
     Advances the state of a differential equation module by one integration step using the Dopri5 method
     from the diffrax library: `diffrax.Dopri5 <https://docs.kidger.site/diffrax/api/solvers/ode_solvers/#diffrax.Dopri5>`_.
@@ -276,8 +277,6 @@ def diffrax_dopri5_step(target: DiffEqModule, t: T, dt: DT, *args):
 
     Args:
         target (DiffEqModule): The differential equation module whose state will be advanced.
-        t (u.Quantity[u.second]): The current simulation time, represented as a quantity with units of seconds.
-        dt (u.Quantity[u.second]): The numerical time step of the integration step.
         *args: Additional arguments to be passed to the solver, such as step size or solver-specific options.
 
     Returns:
@@ -291,11 +290,13 @@ def diffrax_dopri5_step(target: DiffEqModule, t: T, dt: DT, *args):
         - It is part of a suite of step functions that provide different integration methods.
         - The function is designed to be compatible with the braincell integration framework.
     """
+    t = brainstate.environ.get('t')
+    dt = brainstate.environ.get('dt')
     _diffrax_explicit_solver(diffrax.Dopri5(), target, t, dt, *args)
 
 
 @set_module_as('braincell')
-def diffrax_dopri8_step(target: DiffEqModule, t: T, dt: DT, *args):
+def diffrax_dopri8_step(target: DiffEqModule, *args):
     """
     Advances the state of a differential equation module by one integration step using the Dopri8 method
     from the diffrax library: `diffrax.Dopri8 <https://docs.kidger.site/diffrax/api/solvers/ode_solvers/#diffrax.Dopri8>`_.
@@ -306,8 +307,6 @@ def diffrax_dopri8_step(target: DiffEqModule, t: T, dt: DT, *args):
 
     Args:
         target (DiffEqModule): The differential equation module whose state will be advanced.
-        t (u.Quantity[u.second]): The current simulation time, represented as a quantity with units of seconds.
-        dt (u.Quantity[u.second]): The numerical time step of the integration step.
         *args: Additional arguments to be passed to the solver, such as step size or solver-specific options.
 
     Returns:
@@ -321,6 +320,8 @@ def diffrax_dopri8_step(target: DiffEqModule, t: T, dt: DT, *args):
         - It is part of a suite of step functions that provide different integration methods.
         - The function is designed to be compatible with the braincell integration framework.
     """
+    t = brainstate.environ.get('t')
+    dt = brainstate.environ.get('dt')
     _diffrax_explicit_solver(diffrax.Dopri8(), target, t, dt, *args)
 
 
@@ -348,7 +349,7 @@ def _diffrax_implicit_solver(solver, target: DiffEqModule, t: T, dt: DT, *args):
 
 
 @set_module_as('braincell')
-def diffrax_bwd_euler_step(target: DiffEqModule, t: T, dt: DT, *args, tol=1e-5):
+def diffrax_bwd_euler_step(target: DiffEqModule, *args, tol=1e-5):
     """
     Advances the state of a differential equation module by one integration step using the implicit
     Backward Euler method from the diffrax library:
@@ -361,8 +362,6 @@ def diffrax_bwd_euler_step(target: DiffEqModule, t: T, dt: DT, *args, tol=1e-5):
 
     Args:
         target (DiffEqModule): The differential equation module whose state will be advanced.
-        t (T): The current simulation time.
-        dt (DT): The numerical time step of the integration step.
         *args: Additional arguments to be passed to the solver.
         tol (float, optional): Tolerance for the root-finding algorithm used in the implicit step.
             Defaults to 1e-5.
@@ -380,6 +379,8 @@ def diffrax_bwd_euler_step(target: DiffEqModule, t: T, dt: DT, *args, tol=1e-5):
         - It is part of a suite of step functions that provide different integration methods.
         - The function is designed to be compatible with the braincell integration framework.
     """
+    t = brainstate.environ.get('t')
+    dt = brainstate.environ.get('dt')
     _diffrax_explicit_solver(
         diffrax.ImplicitEuler(root_finder=diffrax.VeryChord(rtol=tol, atol=tol)),
         target, t, dt, *args
@@ -387,7 +388,7 @@ def diffrax_bwd_euler_step(target: DiffEqModule, t: T, dt: DT, *args, tol=1e-5):
 
 
 @set_module_as('braincell')
-def diffrax_kvaerno3_step(target: DiffEqModule, t: T, dt: DT, *args, tol=1e-5):
+def diffrax_kvaerno3_step(target: DiffEqModule, *args, tol=1e-5):
     """
     Advances the state of a differential equation module by one integration step using the Kvaerno3 method
     from the diffrax library: `diffrax.Kvaerno3 <https://docs.kidger.site/diffrax/api/solvers/ode_solvers/#diffrax.Kvaerno3>`_.
@@ -398,8 +399,6 @@ def diffrax_kvaerno3_step(target: DiffEqModule, t: T, dt: DT, *args, tol=1e-5):
 
     Args:
         target (DiffEqModule): The differential equation module whose state will be advanced.
-        t (T): The current simulation time.
-        dt (DT): The numerical time step of the integration step.
         *args: Additional arguments to be passed to the solver.
         tol (float, optional): Tolerance for the root-finding algorithm used in the implicit step.
             Defaults to 1e-5.
@@ -417,6 +416,8 @@ def diffrax_kvaerno3_step(target: DiffEqModule, t: T, dt: DT, *args, tol=1e-5):
         - It is part of a suite of step functions that provide different integration methods.
         - The function is designed to be compatible with the braincell integration framework.
     """
+    t = brainstate.environ.get('t')
+    dt = brainstate.environ.get('dt')
     _diffrax_explicit_solver(
         diffrax.Kvaerno3(root_finder=diffrax.VeryChord(rtol=tol, atol=tol)),
         target, t, dt, *args
@@ -424,7 +425,7 @@ def diffrax_kvaerno3_step(target: DiffEqModule, t: T, dt: DT, *args, tol=1e-5):
 
 
 @set_module_as('braincell')
-def diffrax_kvaerno4_step(target: DiffEqModule, t: T, dt: DT, *args, tol=1e-5):
+def diffrax_kvaerno4_step(target: DiffEqModule, *args, tol=1e-5):
     """
     Advances the state of a differential equation module by one integration step using the Kvaerno4 method
     from the diffrax library: `diffrax.Kvaerno4 <https://docs.kidger.site/diffrax/api/solvers/ode_solvers/#diffrax.Kvaerno4>`_.
@@ -435,8 +436,6 @@ def diffrax_kvaerno4_step(target: DiffEqModule, t: T, dt: DT, *args, tol=1e-5):
 
     Args:
         target (DiffEqModule): The differential equation module whose state will be advanced.
-        t (T): The current simulation time.
-        dt (DT): The numerical time step of the integration step.
         *args: Additional arguments to be passed to the solver.
         tol (float, optional): Tolerance for the root-finding algorithm used in the implicit step.
             Defaults to 1e-5.
@@ -454,6 +453,8 @@ def diffrax_kvaerno4_step(target: DiffEqModule, t: T, dt: DT, *args, tol=1e-5):
         - It is part of a suite of step functions that provide different integration methods.
         - The function is designed to be compatible with the braincell integration framework.
     """
+    t = brainstate.environ.get('t')
+    dt = brainstate.environ.get('dt')
     _diffrax_explicit_solver(
         diffrax.Kvaerno4(root_finder=diffrax.VeryChord(rtol=tol, atol=tol)),
         target, t, dt, *args
@@ -461,7 +462,7 @@ def diffrax_kvaerno4_step(target: DiffEqModule, t: T, dt: DT, *args, tol=1e-5):
 
 
 @set_module_as('braincell')
-def diffrax_kvaerno5_step(target: DiffEqModule, t: T, dt: DT, *args, tol=1e-5):
+def diffrax_kvaerno5_step(target: DiffEqModule, *args, tol=1e-5):
     """
     Advances the state of a differential equation module by one integration step using the Kvaerno5 method
     from the diffrax library: `diffrax.Kvaerno5 <https://docs.kidger.site/diffrax/api/solvers/ode_solvers/#diffrax.Kvaerno5>`_.
@@ -472,8 +473,6 @@ def diffrax_kvaerno5_step(target: DiffEqModule, t: T, dt: DT, *args, tol=1e-5):
 
     Args:
         target (DiffEqModule): The differential equation module whose state will be advanced.
-        t (T): The current simulation time.
-        dt (DT): The numerical time step of the integration step.
         *args: Additional arguments to be passed to the solver.
         tol (float, optional): Tolerance for the root-finding algorithm used in the implicit step.
             Defaults to 1e-5.
@@ -491,6 +490,8 @@ def diffrax_kvaerno5_step(target: DiffEqModule, t: T, dt: DT, *args, tol=1e-5):
         - It is part of a suite of step functions that provide different integration methods.
         - The function is designed to be compatible with the braincell integration framework.
     """
+    t = brainstate.environ.get('t')
+    dt = brainstate.environ.get('dt')
     _diffrax_explicit_solver(
         diffrax.Kvaerno5(root_finder=diffrax.VeryChord(rtol=tol, atol=tol)),
         target, t, dt, *args

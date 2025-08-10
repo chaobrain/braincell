@@ -279,10 +279,8 @@ class SingleCompartment(HHTypedNeuron):
             node.update(self.V.value)
 
         # numerical integration
-        t = brainstate.environ.get('t')
-        dt = brainstate.environ.get('dt')
         last_V = self.V.value
-        self.solver(self, t, dt, I_ext)
+        self.solver(self, I_ext)
         spk = self.get_spike(last_V, self.V.value)
         self.spike.value = spk
         return spk

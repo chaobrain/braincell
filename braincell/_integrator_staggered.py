@@ -14,12 +14,11 @@
 # ==============================================================================
 
 import brainstate
-import brainunit as u
 
 from ._integrator_exp_euler import ind_exp_euler_step
+from ._integrator_protocol import DiffEqModule
 from ._integrator_voltage_solver import dhs_voltage_step
 from ._misc import set_module_as
-from ._integrator_protocol import DiffEqState, DiffEqModule
 
 __all__ = [
     'staggered_step',
@@ -29,8 +28,6 @@ __all__ = [
 @set_module_as('braincell')
 def staggered_step(
     target: DiffEqModule,
-    t: u.Quantity[u.second],
-    dt: u.Quantity[u.second],
     *args
 ):
     from ._multi_compartment import MultiCompartment
@@ -38,6 +35,8 @@ def staggered_step(
         f"The stagger integrator only support {MultiCompartment.__name__}, "
         f"but we got {type(target)} instead."
     )
+    t = brainstate.environ.get('t')
+    dt = brainstate.environ.get('dt')
 
     # voltage integration
     dhs_voltage_step(target, t, dt, *args)

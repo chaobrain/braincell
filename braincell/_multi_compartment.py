@@ -293,7 +293,7 @@ class MultiCompartment(HHTypedNeuron):
         last_V = self.V.value
         t = brainstate.environ.get('t')
         dt = brainstate.environ.get('dt')
-        self.solver(self, t, dt, I_ext)
+        self.solver(self, I_ext)
         return self.get_spike(last_V, self.V.value)
 
     def get_spike(self, last_V, next_V):

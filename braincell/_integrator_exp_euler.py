@@ -91,7 +91,7 @@ def _exponential_euler(f, y0, t, dt, args=()):
 
 
 @set_module_as('braincell')
-def exp_euler_step(target: DiffEqModule, t: T, dt: DT, *args):
+def exp_euler_step(target: DiffEqModule, *args):
     r"""
     Perform an exponential Euler step for solving differential equations.
 
@@ -128,11 +128,7 @@ def exp_euler_step(target: DiffEqModule, t: T, dt: DT, *args):
     target : DiffEqModule
         The target module containing the differential equations to be solved.
         Must be an instance of HHTypedNeuron.
-    t : u.Quantity[u.second]
-        The current time point in the simulation.
-    dt : u.Quantity[u.second]
-        The numerical time step of the integration step.
-    *args : 
+    *args :
         Additional arguments to be passed to the underlying implementation.
 
     Raises
@@ -153,6 +149,8 @@ def exp_euler_step(target: DiffEqModule, t: T, dt: DT, *args):
     )
     from braincell._single_compartment import SingleCompartment
     from braincell._multi_compartment import MultiCompartment
+    t = brainstate.environ.get('t')
+    dt = brainstate.environ.get('dt')
 
     if isinstance(target, SingleCompartment):
         apply_standard_solver_step(
@@ -179,7 +177,7 @@ def exp_euler_step(target: DiffEqModule, t: T, dt: DT, *args):
 
 
 @set_module_as('braincell')
-def ind_exp_euler_step(target: DiffEqModule, t: T, dt: DT, *args, excluded_paths=()):
+def ind_exp_euler_step(target: DiffEqModule,  *args, excluded_paths=()):
     """
     Perform an independent exponential Euler integration step for each DiffEqState in the target module.
 
@@ -200,10 +198,6 @@ def ind_exp_euler_step(target: DiffEqModule, t: T, dt: DT, *args, excluded_paths
     target : DiffEqModule
         The module containing the differential equation states to be integrated.
         Must be an instance of HHTypedNeuron.
-    t : T
-        The current simulation time.
-    dt : DT
-        The integration time step.
     args : Any
         Additional arguments passed to the module's integration hooks.
     excluded_paths: tuple
@@ -228,6 +222,8 @@ def ind_exp_euler_step(target: DiffEqModule, t: T, dt: DT, *args, excluded_paths
         f"The target should be a {DiffEqModule.__name__}. "
         f"But got {type(target)} instead."
     )
+    t = brainstate.environ.get('t')
+    dt = brainstate.environ.get('dt')
 
     # Pre-integration hook (e.g., update gating variables)
     target.pre_integral(*args)

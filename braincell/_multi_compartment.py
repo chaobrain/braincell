@@ -28,7 +28,6 @@ __all__ = [
     'MultiCompartment',
 ]
 
-
 class MultiCompartment(HHTypedNeuron):
     r"""
     A multi-compartment neuronal model that simulates spatially extended neurons.
@@ -206,7 +205,7 @@ class MultiCompartment(HHTypedNeuron):
         """
         # [ Compute the derivative of membrane potential ]
         # 1. external currents
-        I_ext = I_ext / self.area
+        I_ext = I_ext / self.morphology.area
 
         # 2. synapse currents
         I_syn = self.sum_current_inputs(0. * u.nA / u.cm ** 2, self.V.value)
@@ -217,7 +216,7 @@ class MultiCompartment(HHTypedNeuron):
             I_channel = ch.current(self.V.value) if I_channel is None else (I_channel + ch.current(self.V.value))
 
         # 4. derivatives
-        self.V.derivative = (I_ext + I_syn + I_channel) / self.cm
+        self.V.derivative = (I_ext + I_syn + I_channel) / self.morphology.cm
 
         # [ integrate dynamics of ion and ion channel ]
         # check whether the children channel have the correct parents.
@@ -231,7 +230,7 @@ class MultiCompartment(HHTypedNeuron):
 
         # [ Compute the derivative of membrane potential ]
         # 1. external currents
-        I_ext = I_ext / self.area
+        I_ext = I_ext / self.morphology.area
 
         # 3. synapse currents
         I_syn = self.sum_current_inputs(0. * u.nA / u.cm ** 2, self.V.value)
@@ -242,7 +241,7 @@ class MultiCompartment(HHTypedNeuron):
             I_channel = ch.current(self.V.value) if I_channel is None else (I_channel + ch.current(self.V.value))
 
         # 5. derivatives
-        v_derivative = (I_ext + I_syn + I_channel) / self.cm
+        v_derivative = (I_ext + I_syn + I_channel) / self.morphology.cm
         return v_derivative
 
     def post_integral(self, I_ext=0. * u.nA):
@@ -288,7 +287,8 @@ class MultiCompartment(HHTypedNeuron):
             for each compartment of the neuron.
         """
         for key, node in self.nodes(IonChannel, allowed_hierarchy=(1, 1)).items():
-            node.update(self.V.value)
+            for _ in range(1):
+                node.update(self.V.value)
 
         last_V = self.V.value
         t = brainstate.environ.get('t')

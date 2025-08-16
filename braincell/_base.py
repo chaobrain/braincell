@@ -881,7 +881,7 @@ class Ion(IonChannel, Container):
 
     def update(self, V, *args, **kwargs):
         ion_info = self.pack_info()
-        for key, node in brainstate.graph.nodes(IonChannel, allowed_hierarchy=(1, 1)).items():
+        for key, node in brainstate.graph.nodes(self, Channel, allowed_hierarchy=(1, 1)).items():
             node.update(V, ion_info)
 
     def register_external_current(self, key: Hashable, fun: Callable):

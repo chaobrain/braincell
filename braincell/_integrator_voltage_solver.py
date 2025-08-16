@@ -32,57 +32,79 @@ from ._integrator_protocol import DiffEqModule
 @set_module_as('braincell')
 def dhs_voltage_step(target, t, dt, *args):
     """
-    Implicit euler solver with the `dendritic hierarchical scheduling` (DHS, Zhang et al., 2023).
+    Implicit Euler solver using Dendritic Hierarchical Scheduling (DHS).
+    
+    Advances the membrane potential `V` of a multi-compartment neuron model by one
+    time step `dt` using an implicit scheme adapted to tree-structured morphologies.
+
+    Steps:
+    1. Gather morphology and solver metadata (branch tree, parent lookup, etc.).
+    2. Assemble the linear system Ax = b for implicit Euler update:
+         (I + dt * (G + V_linear)) V_{n+1} = V_n + dt * V_const
+    3. Expand `V_linear` and `V_const` into full node vectors with correct shape (P, n_nodes).
+    4. Scale diagonals, uppers, lowers with dt, and add unit diagonal to internal nodes.
+    5. Append a "spurious" compartment (masking trick for solver stability).
+    6. Use batched DHS solver (via vmap) to solve all populations in parallel.
+    7. Write solution back to target.V.value (only internal nodes).
     """
 
-    # branching tree information
-    branch_tree = target.to_branch_tree()
-    diags = branch_tree.diags  # [n_neuron, 2*n_seg+1]
-    uppers = branch_tree.uppers
-    lowers = branch_tree.lowers
-    parent_lookup = branch_tree.parent_lookup
-    internal_node_inds = branch_tree.internal_node_inds
-    flipped_comp_edges = branch_tree.flipped_comp_edges
+    # --- 1. Extract morphology data (sizes: n_nodes) ---
+    bt = target.morphology.branch_tree
+    diags, uppers, lowers, parent_lookup, internal_node_inds, flipped_comp_edges = (
+        bt.diags, bt.uppers, bt.lowers, bt.parent_lookup, bt.internal_node_inds, bt.flipped_comp_edges
+    )
+    n_nodes = len(diags)  # total number of nodes including boundary
+    # uppers, lowers, diags: (n_nodes,)
 
-    # membrane potential at time n
-    V_n = target.V.value
+    # --- 2. Current membrane potential (sizes: P, Nseg) ---
+    V_n = target.V.value         # (P, Nseg), P = popsize, Nseg = number of internal segments
+    P = V_n.shape[0]
 
-    # linear and constant term
-    linear, const = _linear_and_const_term(target, V_n, *args)
+    # --- 3. Assemble linear system terms ---
+    linear, const = _linear_and_const_term(target, V_n, *args)   # (P, Nseg)
 
-    n_nodes = len(diags)
-    V_linear = u.math.zeros(n_nodes) * u.get_unit(linear)
-    V_linear = V_linear.at[internal_node_inds].set(-linear.ravel())
-    V_const = u.math.zeros(n_nodes) * u.get_unit(const)
-    V_const = V_const.at[internal_node_inds].set(const.ravel())
-    V = u.math.zeros(n_nodes) * u.get_unit(V_n)
-    V = V.at[internal_node_inds].set(V_n.ravel())
+    # Scatter into full node vectors (P, n_nodes)
+    V_linear, V_const, V = [
+        (u.math.zeros((P, n_nodes)) * u.get_unit(val)).at[:, internal_node_inds].set(val)
+        for val in (-linear, const, V_n)
+    ]
+    # V_linear, V_const, V: (P, n_nodes)
 
-    # diags = I + dt * (G_diags + linear_term)
-    diags = dt * (diags + V_linear)
-    diags = diags.at[internal_node_inds].add(1.0)
-    solves = V + dt * V_const
-    uppers = dt * uppers
-    lowers = dt * lowers
+    # --- 4. Build system matrices for implicit Euler ---
+    diags = (dt * (diags + V_linear)).at[:, internal_node_inds].add(1.0)  # (P, n_nodes)
+    solves = V + dt * V_const                                           # (P, n_nodes)
+    uppers, lowers = [dt * u.math.broadcast_to(x, (P, n_nodes)) for x in (uppers, lowers)]  # (P, n_nodes)
 
-    # Add a spurious compartment that is modified by the masking.
-    diags = u.math.concatenate([diags, u.math.asarray([1.0 * u.get_unit(diags)])])
-    solves = u.math.concatenate([solves, u.math.asarray([0.0 * u.get_unit(solves)])])
-    uppers = u.math.concatenate([uppers, u.math.asarray([0.0 * u.get_unit(uppers)])])
-    lowers = u.math.concatenate([lowers, u.math.asarray([0.0 * u.get_unit(lowers)])])
+    # --- 5. Add spurious compartment (masking trick) ---
+    diags  = u.math.concatenate([diags,  u.math.ones((P, 1)) * u.get_unit(diags)], axis=1)  # (P, n_nodes+1)
+    solves, uppers, lowers = [
+        u.math.concatenate([arr, u.math.zeros((P, 1)) * u.get_unit(arr)], axis=1)
+        for arr in (solves, uppers, lowers)
+    ]
+    # All arrays now have shape (P, n_nodes+1)
 
-    # Triangulate by unrolling the loop of the levels.
+    # --- 6. Solve system in batch using DHS triangulation + backsub ---
+    solves = jax.vmap(
+        solve_one,
+        in_axes=(0, 0, 0, 0, None, None, None),  # batch over population P
+        out_axes=0
+    )(diags, solves, lowers, uppers, flipped_comp_edges, n_nodes, parent_lookup)
+    # solves: (P, n_nodes+1)
+
+    # --- 7. Store result back to target (only internal nodes) ---
+    target.V.value = solves[:, internal_node_inds]  # (P, Nseg)
+    
+def solve_one(diags, solves, lowers, uppers, flipped_comp_edges, n_nodes, parent_lookup):
     steps = len(flipped_comp_edges)
     for i in range(steps):
-        diags, solves = _comp_based_triang(diags, solves, lowers, uppers, flipped_comp_edges[i])
+        diags, solves = _comp_based_triang(
+            diags, solves, lowers, uppers, flipped_comp_edges[i]
+        )
 
-    # Back substitute with recursive doubling.
     solves = _comp_based_backsub_recursive_doubling(
         diags, solves, lowers, steps, n_nodes, parent_lookup
     )
-
-    target.V.value = solves[internal_node_inds].reshape((1, -1))
-
+    return solves
 
 def _comp_based_triang(diags, solves, lowers, uppers, comp_edge):
     """
@@ -198,7 +220,6 @@ def dense_voltage_step():
     Implicit euler solver implementation by solving the dense matrix system.
     """
     pass
-
 
 def _dense_solve_v(
     Laplacian_matrix: brainstate.typing.ArrayLike,

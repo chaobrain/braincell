@@ -438,7 +438,7 @@ class INa_HH1952(INa_p3q_markov):
         return 1 / (1 + u.math.exp(-(V - 10) / 10))
 
 
-class INa_Rsg(SodiumChannel, IndependentIntegration):
+class INa_Rsg(SodiumChannel, IndependentIntegration): 
     __module__ = 'braincell.channel'
 
     def __init__(
@@ -447,7 +447,7 @@ class INa_Rsg(SodiumChannel, IndependentIntegration):
         T: brainstate.typing.ArrayLike = u.celsius2kelvin(22.),
         g_max: Union[brainstate.typing.ArrayLike, Callable] = 15. * (u.mS / u.cm ** 2),
         name: Optional[str] = None,
-        solver: str = 'implicit_euler'
+        solver: str = 'exp_euler'
     ):
         super().__init__(size=size, name=name, )
 
@@ -482,207 +482,122 @@ class INa_Rsg(SodiumChannel, IndependentIntegration):
         self.solver = get_integrator(solver)
 
     def init_state(self, V, Na: IonInfo, batch_size=None):
-        self.C1 = DiffEqState(brainstate.init.param(u.math.zeros, self.varshape, batch_size))
-        self.C2 = DiffEqState(brainstate.init.param(u.math.zeros, self.varshape, batch_size))
-        self.C3 = DiffEqState(brainstate.init.param(u.math.zeros, self.varshape, batch_size))
-        self.C4 = DiffEqState(brainstate.init.param(u.math.zeros, self.varshape, batch_size))
-        self.C5 = DiffEqState(brainstate.init.param(u.math.zeros, self.varshape, batch_size))
-        self.O = DiffEqState(brainstate.init.param(u.math.zeros, self.varshape, batch_size))
-        self.B = DiffEqState(brainstate.init.param(u.math.zeros, self.varshape, batch_size))
-        self.I1 = DiffEqState(brainstate.init.param(u.math.zeros, self.varshape, batch_size))
-        self.I2 = DiffEqState(brainstate.init.param(u.math.zeros, self.varshape, batch_size))
-        self.I3 = DiffEqState(brainstate.init.param(u.math.zeros, self.varshape, batch_size))
-        self.I4 = DiffEqState(brainstate.init.param(u.math.zeros, self.varshape, batch_size))
-        self.I5 = DiffEqState(brainstate.init.param(u.math.zeros, self.varshape, batch_size))
 
+        state_names = ["C1", "C2", "C3", "C4", "C5",  "I1", "I2", "I3", "I4", "I5", "O", "B",]
+        for name in state_names:
+            state = DiffEqState(brainstate.init.param(u.math.zeros, self.varshape, batch_size))
+            setattr(self, name, state)
+        
+        self.state_names = state_names 
+        self.redundant_state = "I6"
+
+        self.state_pairs = [
+            ("C1", "C2", "f01", "b01"),
+            ("C2", "C3", "f02", "b02"),
+            ("C3", "C4", "f03", "b03"),
+            ("C4", "C5", "f04", "b04"),
+            ("C5", "O",  "f0O", "b0O"),
+            ("O",  "B",  "fip", "bip"),
+            ("O",  "I6", "fin", "bin"),
+            ("I1", "I2", "f11", "b11"),
+            ("I2", "I3", "f12", "b12"),
+            ("I3", "I4", "f13", "b13"),
+            ("I4", "I5", "f14", "b14"),
+            ("I5", "I6", "f1n", "b1n"),
+            ("C1", "I1", "fi1", "bi1"),
+            ("C2", "I2", "fi2", "bi2"),
+            ("C3", "I3", "fi3", "bi3"),
+            ("C4", "I4", "fi4", "bi4"),
+            ("C5", "I5", "fi5", "bi5"),
+        ]
+        
     def reset_state(self, V, Na: IonInfo, batch_size=None):
-        self.C1.value = brainstate.init.param(u.math.zeros, self.varshape, batch_size)
-        self.C2.value = brainstate.init.param(u.math.zeros, self.varshape, batch_size)
-        self.C3.value = brainstate.init.param(u.math.zeros, self.varshape, batch_size)
-        self.C4.value = brainstate.init.param(u.math.zeros, self.varshape, batch_size)
-        self.C5.value = brainstate.init.param(u.math.zeros, self.varshape, batch_size)
-        self.O.value = brainstate.init.param(u.math.zeros, self.varshape, batch_size)
-        self.B.value = brainstate.init.param(u.math.zeros, self.varshape, batch_size)
-        self.I1.value = brainstate.init.param(u.math.zeros, self.varshape, batch_size)
-        self.I2.value = brainstate.init.param(u.math.zeros, self.varshape, batch_size)
-        self.I3.value = brainstate.init.param(u.math.zeros, self.varshape, batch_size)
-        self.I4.value = brainstate.init.param(u.math.zeros, self.varshape, batch_size)
-        self.I5.value = brainstate.init.param(u.math.zeros, self.varshape, batch_size)
+        
+        state_names = ["C1", "C2", "C3", "C4", "C5", "O", "B", "I1", "I2", "I3", "I4", "I5"]
+        for name in state_names:
+            state = DiffEqState(brainstate.init.param(u.math.zeros, self.varshape, batch_size))
+            setattr(self, name, state)
 
     def pre_integral(self, V, Na: IonInfo):
-        state_value = u.math.clip(
-            u.math.stack(
-                [
-                    self.C1.value, self.C2.value, self.C3.value, self.C4.value, self.C5.value,
-                    self.I1.value, self.I2.value, self.I3.value, self.I4.value, self.I5.value,
-                    self.O.value, self.B.value
-                ]
-            ),
-            0.,
-            1.,
-        )
-        state_sum = state_value.sum(axis=0, keepdims=True)
-        (
-            self.C1.value, self.C2.value, self.C3.value, self.C4.value, self.C5.value,
-            self.I1.value, self.I2.value, self.I3.value, self.I4.value, self.I5.value,
-            self.O.value, self.B.value
-        ) = u.math.where(state_sum > 1., state_value / state_sum, state_value)
+        # state_value = u.math.clip(u.math.stack([getattr(self, name).value for name in self.state_names]), 0., 1.,)
+        # state_sum = state_value.sum(axis=0, keepdims=True)
+        # state_value = u.math.where(state_sum > 1., state_value / state_sum , state_value)
+        pass
 
     def compute_derivative(self, V, Na: IonInfo):
-        I6 = 1 - (
-            self.I1.value + self.I2.value + self.I3.value + self.I4.value + self.I5.value +
-            self.O.value + self.B.value +
-            self.C1.value + self.C2.value + self.C3.value + self.C4.value + self.C5.value
-        )
-        self.C1.derivative = (
-                                 self.I1.value * self.bi1(V) +
-                                 self.C2.value * self.b01(V) -
-                                 self.C1.value * (self.fi1(V) + self.f01(V))
-                             ) / u.ms
-        self.C2.derivative = (
-                                 self.C1.value * self.f01(V) +
-                                 self.I2.value * self.bi2(V) +
-                                 self.C3.value * self.b02(V) -
-                                 self.C2.value * (self.b01(V) + self.fi2(V) + self.f02(V))
-                             ) / u.ms
-        self.C3.derivative = (
-                                 self.C2.value * self.f02(V) +
-                                 self.I3.value * self.bi3(V) +
-                                 self.C4.value * self.b03(V) -
-                                 self.C3.value * (self.b02(V) + self.fi3(V) + self.f03(V))
-                             ) / u.ms
-        self.C4.derivative = (
-                                 self.C3.value * self.f03(V) +
-                                 self.I4.value * self.bi4(V) +
-                                 self.C5.value * self.b04(V) -
-                                 self.C4.value * (self.b03(V) + self.fi4(V) + self.f04(V))
-                             ) / u.ms
-        self.C5.derivative = (
-                                 self.C4.value * self.f04(V) +
-                                 self.I5.value * self.bi5(V) +
-                                 self.O.value * self.b0O(V) -
-                                 self.C5.value * (self.b04(V) + self.fi5(V) + self.f0O(V))
-                             ) / u.ms
-        self.O.derivative = (
-                                self.C5.value * self.f0O(V) +
-                                self.B.value * self.bip(V) +
-                                I6 * self.bin(V) -
-                                self.O.value * (self.b0O(V) + self.fip(V) + self.fin(V))
-                            ) / u.ms
-        self.B.derivative = (
-                                self.O.value * self.fip(V) -
-                                self.B.value * self.bip(V)
-                            ) / u.ms
-        self.I1.derivative = (
-                                 self.C1.value * self.fi1(V) +
-                                 self.I2.value * self.b11(V) -
-                                 self.I1.value * (self.bi1(V) + self.f11(V))
-                             ) / u.ms
-        self.I2.derivative = (
-                                 self.I1.value * self.f11(V) +
-                                 self.C2.value * self.fi2(V) +
-                                 self.I3.value * self.b12(V) -
-                                 self.I2.value * (self.b11(V) + self.bi2(V) + self.f12(V))
-                             ) / u.ms
-        self.I3.derivative = (
-                                 self.I2.value * self.f12(V) +
-                                 self.C3.value * self.fi3(V) +
-                                 self.I4.value * self.b13(V) -
-                                 self.I3.value * (self.b12(V) + self.bi3(V) + self.f13(V))
-                             ) / u.ms
-        self.I4.derivative = (
-                                 self.I3.value * self.f13(V) +
-                                 self.C4.value * self.fi4(V) +
-                                 self.I5.value * self.b14(V) -
-                                 self.I4.value * (self.b13(V) + self.bi4(V) + self.f14(V))
-                             ) / u.ms
-        self.I5.derivative = (
-                                 self.I4.value * self.f14(V) +
-                                 self.C5.value * self.fi5(V) +
-                                 I6 * self.b1n(V) -
-                                 self.I5.value * (self.b14(V) + self.bi5(V) + self.f1n(V))
-                             ) / u.ms
+
+        state_value =u.math.stack([getattr(self, name).value for name in self.state_names])
+        state_dict = {name: state_value[i] for i, name in enumerate(self.state_names)}
+        state_dict[self.redundant_state] = 1.0 - u.math.sum(state_value, axis=0) 
+        
+        for src, dst, f_rate, b_rate in self.state_pairs:
+
+            f = getattr(self, f_rate)(V)  
+            b = getattr(self, b_rate)(V)  
+            getattr(self, src).derivative += (-state_dict[src] * f + state_dict[dst] * b) / u.ms
+            getattr(self, dst).derivative += ( state_dict[src] * f - state_dict[dst] * b) / u.ms
 
     def update(self, V, Na: IonInfo):
-        t = brainstate.environ.get('t')
-        dt = brainstate.environ.get('dt')
-        self.solver(self, t, dt, V, Na)
+                
+        # --- 1. Time step ---
+        dt = u.get_magnitude(brainstate.environ.get_dt())  # scalar
 
+        # --- 2. Stack current state values into tensor ---
+        state_value = u.math.stack([getattr(self, name).value for name in self.state_names])
+        # shape = (S, P, N)
+        # S = number of non-redundant states
+        # P = number of populations
+        # N = number of compartments/segments
 
+        # --- 3. Define ODE function to compute derivatives ---
+        def ode_fn(S, V):
+            """
+            Compute time derivatives of channel states for given voltage V.
 
-        V = V.reshape(-1)
-        dt = u.get_magnitude(brainstate.environ.get_dt()) / 2
+            Parameters
+            ----------
+            S : array, shape (S, P, N)
+                Current state values
+            V : array, shape (P, N)
+                Membrane voltage
 
-        State_value = u.math.stack([
-            self.C1.value, self.C2.value, self.C3.value, self.C4.value, self.C5.value,
-            self.I1.value, self.I2.value, self.I3.value, self.I4.value, self.I5.value, self.O.value, self.B.value,
-        ])
-        State_value = State_value.reshape(-1, len(self.C1.value.squeeze()))
+            Returns
+            -------
+            derivs_stacked : array, shape (S, P, N)
+                Time derivatives of non-redundant states
 
-        N, M = State_value.shape
+            Notes
+            -----
+            - Redundant state is computed automatically: I = 1 - sum(other states)
+            - Each state derivative is computed using forward/backward rates from self.state_pairs
+            """
+            # --- 3a. Create dict of states including redundant ---
+            state_dict = {name: S[i] for i, name in enumerate(self.state_names)}
+            state_dict[self.redundant_state] = 1.0 - u.math.sum(S, axis=0)  # shape (P, N)
 
-        def rhs(S):
-            C1, C2, C3, C4, C5, I1, I2, I3, I4, I5, O, B = (
-                S[0], S[1], S[2], S[3], S[4], S[5], S[6], S[7], S[8], S[9], S[10], S[11])
-            I6 = 1 - (C1 + C2 + C3 + C4 + C5 + I1 + I2 + I3 + I4 + I5 + O + B)
-            dC1 = (I1 * self.bi1(V) + C2 * self.b01(V) - C1 * (self.fi1(V) + self.f01(V)))
-            dC2 = (C1 * self.f01(V) + I2 * self.bi2(V) + C3 * self.b02(V) - C2 * (
-                self.b01(V) + self.fi2(V) + self.f02(V)))
-            dC3 = (C2 * self.f02(V) + I3 * self.bi3(V) + C4 * self.b03(V) - C3 * (
-                self.b02(V) + self.fi3(V) + self.f03(V)))
-            dC4 = (C3 * self.f03(V) + I4 * self.bi4(V) + C5 * self.b04(V) - C4 * (
-                self.b03(V) + self.fi4(V) + self.f04(V)))
-            dC5 = (C4 * self.f04(V) + I5 * self.bi5(V) + O * self.b0O(V) - C5 * (
-                self.b04(V) + self.fi5(V) + self.f0O(V)))
-            dI1 = (C1 * self.fi1(V) + I2 * self.b11(V) - I1 * (self.bi1(V) + self.f11(V)))
-            dI2 = (I1 * self.f11(V) + C2 * self.fi2(V) + I3 * self.b12(V) - I2 * (
-                self.b11(V) + self.bi2(V) + self.f12(V)))
-            dI3 = (I2 * self.f12(V) + C3 * self.fi3(V) + I4 * self.b13(V) - I3 * (
-                self.b12(V) + self.bi3(V) + self.f13(V)))
-            dI4 = (I3 * self.f13(V) + C4 * self.fi4(V) + I5 * self.b14(V) - I4 * (
-                self.b13(V) + self.bi4(V) + self.f14(V)))
-            dI5 = (I4 * self.f14(V) + C5 * self.fi5(V) + I6 * self.b1n(V) - I5 * (
-                self.b14(V) + self.bi5(V) + self.f1n(V)))
-            dO = (C5 * self.f0O(V) + B * self.bip(V) + I6 * self.bin(V) - O * (self.b0O(V) + self.fip(V) + self.fin(V)))
-            dB = (O * self.fip(V) - B * self.bip(V))
+            # --- 3b. Initialize derivatives dict ---
+            derivs = {name: u.math.zeros_like(state_dict[name]) for name in state_dict}  # shape (P, N)
 
-            return u.math.stack([dC1, dC2, dC3, dC4, dC5, dI1, dI2, dI3, dI4, dI5, dO, dB])  # shape: (N, M)
+            # --- 3c. Compute derivatives from state transitions ---
+            for from_state, to_state, forward_rate_fn, backward_rate_fn in self.state_pairs:
+                f = getattr(self, forward_rate_fn)(V)   # forward rate, shape (P, N)
+                b = getattr(self, backward_rate_fn)(V)  # backward rate, shape (P, N)
 
-        def rhs_point(S_point):
-            return rhs(S_point.reshape(N, 1))[:, 0]
+                derivs[from_state] += -state_dict[from_state] * f + state_dict[to_state] * b
+                derivs[to_state]   +=  state_dict[from_state] * f - state_dict[to_state] * b
 
-        A_all = jax.vmap(jax.jacfwd(rhs_point))(State_value.T)  # shape: (M, N, N)
+            # --- 3d. Stack derivatives for solver ---
+            return u.math.stack([derivs[name] for name in self.state_names], axis=0)  # shape (S, P, N)
 
-        # 计算导数值 (N, M)
-        dS_val = rhs(State_value)
+        # --- 4. Solve linear ODE system using backward Euler ---
+        S_next = backward_euler_solver(ode_fn, state_value, dt, V)  # shape (S, P, N)
 
-        # 计算 b 项：b = dS - A @ S
-        # A_all: (M, N, N), State_value.T: (M, N)
-        b_val = dS_val.T - jax.vmap(lambda A, S: A @ S)(A_all, State_value.T)  # shape: (M, N)
-
-        # 向后欧拉更新: (I - dt * A) S_{n+1} = S_n + b
-        Id = u.math.eye(N)[None, :, :]  # (1, N, N) for broadcasting
-        A_dt = dt * A_all  # (M, N, N)
-        lhs = Id - A_dt  # (M, N, N)
-        rhs_val = State_value.T + dt * b_val  # (M, N)  # 右侧为 S_n + b
-        # solve I - dt * A) S_{n+1} = S_n + b
-        S_new = jax.vmap(u.math.linalg.solve)(lhs, rhs_val)  # (M, N)
-        S_new_T = S_new.T  # (N, M) 返回与 State_value 同维度
-
-        self.C1.value = S_new_T[0].reshape(1, -1)
-        self.C2.value = S_new_T[1].reshape(1, -1)
-        self.C3.value = S_new_T[2].reshape(1, -1)
-        self.C4.value = S_new_T[3].reshape(1, -1)
-        self.C5.value = S_new_T[4].reshape(1, -1)
-        self.I1.value = S_new_T[5].reshape(1, -1)
-        self.I2.value = S_new_T[6].reshape(1, -1)
-        self.I3.value = S_new_T[7].reshape(1, -1)
-        self.I4.value = S_new_T[8].reshape(1, -1)
-        self.I5.value = S_new_T[9].reshape(1, -1)
-        self.O.value = S_new_T[10].reshape(1, -1)
-        self.B.value = S_new_T[11].reshape(1, -1)
+        # --- 5. Unpack updated states back into channel object ---
+        for i, name in enumerate(self.state_names):
+            getattr(self, name).value = S_next[i]  # shape (P, N)
 
     def current(self, V, Na: IonInfo):
+        #jax.debug.print('O = {}',self.O.value)
         return self.g_max * self.O.value * (Na.E - V)
 
     f01 = lambda self, V: 4 * self.alpha * u.math.exp((V / u.mV) / self.x1) * self.phi
@@ -721,3 +636,75 @@ class INa_Rsg(SodiumChannel, IndependentIntegration):
     bi5 = lambda self, V: self.Coff * self.btfac ** 4 * self.phi
     bin = lambda self, V: self.Ooff * self.phi
 
+def backward_euler_solver(ode_fn, S, dt, *args):
+    """
+    Solve a linear ODE system using the Backward Euler (implicit Euler) method for batched multi-dimensional states.
+
+    Parameters
+    ----------
+    ode_fn : callable
+        Linear ODE function: dS/dt = f(S, *args)
+        Input: S with shape (State, batch_dims...)
+        Output: f(S) with the same shape as S
+        Note: Since the system is linear, the Jacobian J = df/dS is constant and represents the coefficient matrix.
+    S : array_like
+        Current state, shape = (State, batch_dims...)
+    dt : float
+        Time step for the backward Euler update
+    *args :
+        Additional arguments passed to ode_fn
+
+    Returns
+    -------
+    S_next : array_like
+        Updated state after one backward Euler step, shape = (State, batch_dims...)
+
+    Notes
+    -----
+    For linear systems, f(S) = J @ S + c. The implicit Euler step is:
+        S_{n+1} = S_n + dt * f(S_{n+1})
+
+    This can be rewritten as a linear system for S_{n+1}:
+        (I - dt * J) @ S_{n+1} = S_n + dt * (f(S_n) - J @ S_n)
+
+    In this implementation:
+    - J = Jacobian of ode_fn w.r.t. S, shape = (State, State, batch_dims...)
+    - b = f(S) - J @ S, shape = (State, batch_dims...)  # residual / constant term
+    - lhs = I - dt * J, shape = (State, State, batch_dims...)
+    - rhs = S + dt * b, shape = (State, batch_dims...)
+    - The linear system is solved for each batch element independently.
+    
+    All batch dimensions of S are automatically handled using reshape + solve.
+    """
+
+    # --- 1. Compute Jacobian w.r.t. state dimension (axis 0) ---
+    jac_fn = jax.jacfwd(ode_fn, argnums=0)  # df/dS, shape = (State, State, batch_dims...)
+    mapped_fn = jac_fn
+    
+    # --- 2. Map Jacobian computation over all batch dimensions ---
+    for i in range(S.ndim - 1):
+        # vmap along each batch axis to handle high-dimensional batches
+        # in_axes and out_axes set to propagate batch dimensions correctly
+        mapped_fn = jax.vmap(mapped_fn, in_axes=(i+1, i), out_axes=i+2)
+    J = mapped_fn(S, *args)  # shape = (State, State, batch_dims...)
+
+    # --- 3. Compute residual term ---
+    dS = ode_fn(S, *args)                     # f(S), shape = (State, batch_dims...)
+    b = dS - u.math.einsum('ij...,j...->i...', J, S)  # residual: f(S) - J @ S, same shape as S
+
+    # --- 4. Form Backward Euler linear system ---
+    # (I - dt * J) @ S_{n+1} = S_n + dt * b
+    I = u.math.eye(S.shape[0])[..., None, None]  # identity matrix, shape = (State, State, 1, 1, ...)
+    lhs = I - dt * J                             # left-hand side matrix, shape = (State, State, batch_dims...)
+    rhs = S + dt * b                             # right-hand side, shape = (State, batch_dims...)
+
+    # --- 5. Reshape for batch solve ---
+    # reshape lhs to (batch_size, State, State) and rhs to (batch_size, State)
+    lhs_reshaped = lhs.reshape(S.shape[0], S.shape[0], -1).transpose(2, 0, 1)
+    rhs_reshaped = rhs.reshape(S.shape[0], -1).T
+
+    # --- 6. Solve linear system for each batch ---
+    S_next = u.math.linalg.solve(lhs_reshaped, rhs_reshaped[..., None])[..., 0]  # shape = (batch_size, State)
+    S_next = S_next.T.reshape(S.shape)  # reshape back to original shape: (State, batch_dims...)
+
+    return S_next

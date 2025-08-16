@@ -493,9 +493,9 @@ def build_conductance_matrix(G, nid_half_map, seg_resistances):
             if pair in nid_half_map:
                 sec, which_half = nid_half_map[pair]
                 if which_half == '0-0.5':
-                    resistance = float(seg_resistances[sec][0]) 
+                    resistance = seg_resistances[sec][0]
                 elif which_half == '0.5-1':
-                    resistance = float(seg_resistances[sec][1])
+                    resistance = seg_resistances[sec][1]
                 else:
                     raise ValueError(f"Unexpected segment half '{which_half}' for pair {pair}")
                 g = 1.0 / resistance

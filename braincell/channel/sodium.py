@@ -521,11 +521,17 @@ class INa_Rsg(SodiumChannel, IndependentIntegration):
         state_dict = {name: state_value[i] for i, name in enumerate(self.state_names)}
         state_dict[self.redundant_state] = 1.0 - u.math.sum(state_value, axis=0)
 
+        derivative_dict = {name: u.math.zeros_like(st) for name, st in state_dict.items()}
+       
         for src, dst, f_rate, b_rate in self.state_pairs:
             f = getattr(self, f_rate)(V)
             b = getattr(self, b_rate)(V)
-            getattr(self, src).derivative += (-state_dict[src] * f + state_dict[dst] * b) / u.ms
-            getattr(self, dst).derivative += (state_dict[src] * f - state_dict[dst] * b) / u.ms
+            derivative_dict[src] += -state_dict[src] * f + state_dict[dst] * b 
+            derivative_dict[dst] += state_dict[src] * f - state_dict[dst] * b  
+
+        for name in self.state_names:
+            getattr(self, name).derivative = derivative_dict[name] /u.ms
+
 
     def current(self, V, Na: IonInfo):
         return self.g_max * self.O.value * (Na.E - V)

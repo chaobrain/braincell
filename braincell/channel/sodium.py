@@ -444,7 +444,6 @@ class INa_Rsg(SodiumChannel, IndependentIntegration):
         solver: str = 'backward_euler',
     ):
         super().__init__(size=size, name=name)
-        # self.solver = get_integrator(solver)
         IndependentIntegration.__init__(self, solver=solver)
 
         T = u.kelvin2celsius(T)

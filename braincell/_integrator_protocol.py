@@ -220,5 +220,4 @@ class IndependentIntegration(brainstate.mixin.Mixin):
         self.solver = get_integrator(solver)
 
     def make_integration(self, *args, **kwargs):
-        print('Updating IndependentIntegration with solver:', self.solver)
         self.solver(self, *args, **kwargs)

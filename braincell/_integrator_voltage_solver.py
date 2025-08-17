@@ -25,9 +25,8 @@ import brainunit as u
 import jax
 import jax.numpy as jnp
 
+from ._integrator_protocol import DiffEqModule
 from ._misc import set_module_as
-from ._integrator_protocol import DiffEqModule
-from ._integrator_protocol import DiffEqModule
 
 
 @set_module_as('braincell')
@@ -52,7 +51,7 @@ def dhs_voltage_step(target, t, dt, *args):
     # --- 1. Extract morphology data (sizes: n_nodes) ---
     if not hasattr(target.morphology, 'branch_tree'):
         with jax.ensure_compile_time_eval():
-           target.morphology.to_branch_tree()
+            target.morphology.to_branch_tree()
     bt = target.morphology.branch_tree
     diags, uppers, lowers, parent_lookup, internal_node_inds, flipped_comp_edges = (
         bt.diags, bt.uppers, bt.lowers, bt.parent_lookup, bt.internal_node_inds, bt.flipped_comp_edges
@@ -61,11 +60,11 @@ def dhs_voltage_step(target, t, dt, *args):
     # uppers, lowers, diags: (n_nodes,)
 
     # --- 2. Current membrane potential (sizes: P, Nseg) ---
-    V_n = target.V.value         # (P, Nseg), P = popsize, Nseg = number of internal segments
+    V_n = target.V.value  # (P, Nseg), P = popsize, Nseg = number of internal segments
     P = V_n.shape[0]
 
     # --- 3. Assemble linear system terms ---
-    linear, const = _linear_and_const_term(target, V_n, *args)   # (P, Nseg)
+    linear, const = _linear_and_const_term(target, V_n, *args)  # (P, Nseg)
 
     # Scatter into full node vectors (P, n_nodes)
     V_linear, V_const, V = [
@@ -76,11 +75,11 @@ def dhs_voltage_step(target, t, dt, *args):
 
     # --- 4. Build system matrices for implicit Euler ---
     diags = (dt * (diags + V_linear)).at[:, internal_node_inds].add(1.0)  # (P, n_nodes)
-    solves = V + dt * V_const                                           # (P, n_nodes)
+    solves = V + dt * V_const  # (P, n_nodes)
     uppers, lowers = [dt * u.math.broadcast_to(x, (P, n_nodes)) for x in (uppers, lowers)]  # (P, n_nodes)
 
     # --- 5. Add spurious compartment (masking trick) ---
-    diags  = u.math.concatenate([diags,  u.math.ones((P, 1)) * u.get_unit(diags)], axis=1)  # (P, n_nodes+1)
+    diags = u.math.concatenate([diags, u.math.ones((P, 1)) * u.get_unit(diags)], axis=1)  # (P, n_nodes+1)
     solves, uppers, lowers = [
         u.math.concatenate([arr, u.math.zeros((P, 1)) * u.get_unit(arr)], axis=1)
         for arr in (solves, uppers, lowers)
@@ -97,7 +96,8 @@ def dhs_voltage_step(target, t, dt, *args):
 
     # --- 7. Store result back to target (only internal nodes) ---
     target.V.value = solves[:, internal_node_inds]  # (P, Nseg)
-    
+
+
 def solve_one(diags, solves, lowers, uppers, flipped_comp_edges, n_nodes, parent_lookup):
     steps = len(flipped_comp_edges)
     for i in range(steps):
@@ -109,6 +109,7 @@ def solve_one(diags, solves, lowers, uppers, flipped_comp_edges, n_nodes, parent
         diags, solves, lowers, steps, n_nodes, parent_lookup
     )
     return solves
+
 
 def _comp_based_triang(diags, solves, lowers, uppers, comp_edge):
     """
@@ -224,6 +225,7 @@ def dense_voltage_step():
     Implicit euler solver implementation by solving the dense matrix system.
     """
     pass
+
 
 def _dense_solve_v(
     Laplacian_matrix: brainstate.typing.ArrayLike,

@@ -17,9 +17,8 @@
 
 from typing import Union, Callable
 
-import brainunit as u
-
 import brainstate
+import brainunit as u
 
 __all__ = [
     'AMPA',

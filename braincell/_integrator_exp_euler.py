@@ -30,15 +30,8 @@ from ._integrator_util import (
     _check_diffeq_state_derivative,
     split_diffeq_states,
 )
-from ._integrator_protocol import DiffEqModule
-from ._integrator_util import (
-    apply_standard_solver_step,
-    jacrev_last_dim,
-    _check_diffeq_state_derivative,
-    split_diffeq_states,
-)
 from ._misc import set_module_as
-from ._typing import Path, T, DT
+from ._typing import Path
 
 __all__ = [
     'exp_euler_step',

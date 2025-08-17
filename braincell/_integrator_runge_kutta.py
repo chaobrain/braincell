@@ -20,8 +20,8 @@ import brainstate
 import brainunit as u
 import jax
 
-from ._misc import set_module_as
 from ._integrator_protocol import DiffEqState, DiffEqModule
+from ._misc import set_module_as
 from ._typing import T, DT
 
 __all__ = [

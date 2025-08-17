@@ -85,10 +85,7 @@ from typing import Optional, Dict, Sequence, Callable, NamedTuple, Tuple, Type, 
 
 import brainstate
 import numpy as np
-import numpy as np
 from brainstate.mixin import _JointGenericAlias
-
-from ._integrator_protocol import DiffEqModule, IndependentIntegration
 
 from ._integrator_protocol import DiffEqModule, IndependentIntegration
 from ._misc import set_module_as, Container, TreeNode

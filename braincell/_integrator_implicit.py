@@ -22,10 +22,10 @@ from jax.experimental import sparse
 from jax.scipy.linalg import lu_factor, lu_solve
 
 from ._integrator_exp_euler import _exponential_euler
+from ._integrator_protocol import DiffEqModule
 from ._integrator_runge_kutta import rk4_step
 from ._integrator_util import apply_standard_solver_step, jacrev_last_dim
 from ._misc import set_module_as
-from ._integrator_protocol import DiffEqModule
 from ._typing import T, DT
 
 __all__ = [

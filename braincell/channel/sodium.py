@@ -11,7 +11,6 @@ import brainstate
 import brainunit as u
 
 from braincell._base import Channel, IonInfo
-from braincell._integrator import get_integrator
 from braincell._integrator_protocol import DiffEqState, IndependentIntegration
 from braincell.ion import Sodium
 

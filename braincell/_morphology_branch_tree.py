@@ -13,6 +13,7 @@
 # limitations under the License.
 # ==============================================================================
 from typing import Tuple
+
 import brainunit as u
 import matplotlib.patches as mpatches
 import matplotlib.pyplot as plt

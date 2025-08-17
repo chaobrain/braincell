@@ -14,8 +14,7 @@ import jax
 
 from braincell._base import Channel, IonInfo
 from braincell._integrator import get_integrator
-from braincell._integrator_integrator import get_integrator
-from braincell._integrator_protocol import DiffEqState, IndependentIntegration, IndependentIntegration
+from braincell._integrator_protocol import DiffEqState, IndependentIntegration
 from braincell.ion import Sodium
 
 __all__ = [
@@ -440,7 +439,7 @@ class INa_HH1952(INa_p3q_markov):
         return 1 / (1 + u.math.exp(-(V - 10) / 10))
 
 
-class INa_Rsg(SodiumChannel, IndependentIntegration, IndependentIntegration): 
+class INa_Rsg(SodiumChannel, IndependentIntegration): 
     __module__ = 'braincell.channel'
 
     def __init__(
@@ -449,9 +448,11 @@ class INa_Rsg(SodiumChannel, IndependentIntegration, IndependentIntegration):
         T: brainstate.typing.ArrayLike = u.celsius2kelvin(22.),
         g_max: Union[brainstate.typing.ArrayLike, Callable] = 15. * (u.mS / u.cm ** 2),
         name: Optional[str] = None,
-        solver: str = 'implicit_euler'
+        solver: str = 'backward_euler',
     ):
-        super().__init__(size=size, name=name, )
+        SodiumChannel.__init__(self, size=size, name=name)
+        #IndependentIntegration.__init__(self, solver=get_integrator(solver))
+        self.solver=get_integrator(solver)
 
         T = u.kelvin2celsius(T)
         self.phi = brainstate.init.param(3 ** ((T - 22) / 10), self.varshape, allow_none=False)
@@ -481,10 +482,7 @@ class INa_Rsg(SodiumChannel, IndependentIntegration, IndependentIntegration):
         self.alfac = (self.Oon / self.Con) ** (1 / 4)
         self.btfac = (self.Ooff / self.Coff) ** (1 / 4)
 
-        self.solver = get_integrator(solver)
-
-        self.solver = get_integrator(solver)
-
+    def init_state(self, V, Na: IonInfo, batch_size=None):
         state_names = ["C1", "C2", "C3", "C4", "C5",  "I1", "I2", "I3", "I4", "I5", "O", "B",]
         for name in state_names:
             state = DiffEqState(brainstate.init.param(u.math.zeros, self.varshape, batch_size))
@@ -520,12 +518,13 @@ class INa_Rsg(SodiumChannel, IndependentIntegration, IndependentIntegration):
             state = DiffEqState(brainstate.init.param(u.math.zeros, self.varshape, batch_size))
             setattr(self, name, state)
 
+    
     def pre_integral(self, V, Na: IonInfo):
         # state_value = u.math.clip(u.math.stack([getattr(self, name).value for name in self.state_names]), 0., 1.,)
         # state_sum = state_value.sum(axis=0, keepdims=True)
         # state_value = u.math.where(state_sum > 1., state_value / state_sum , state_value)
         pass
-
+    
     def compute_derivative(self, V, Na: IonInfo):
 
         state_value =u.math.stack([getattr(self, name).value for name in self.state_names])
@@ -538,9 +537,10 @@ class INa_Rsg(SodiumChannel, IndependentIntegration, IndependentIntegration):
             b = getattr(self, b_rate)(V)  
             getattr(self, src).derivative += (-state_dict[src] * f + state_dict[dst] * b) / u.ms
             getattr(self, dst).derivative += ( state_dict[src] * f - state_dict[dst] * b) / u.ms
-
+    
     def update(self, V, Na: IonInfo):
-                
+        self.solver(self, V, Na)
+    '''
         # --- 1. Time step ---
         dt = u.get_magnitude(brainstate.environ.get_dt())  # scalar
 
@@ -597,7 +597,7 @@ class INa_Rsg(SodiumChannel, IndependentIntegration, IndependentIntegration):
         # --- 5. Unpack updated states back into channel object ---
         for i, name in enumerate(self.state_names):
             getattr(self, name).value = S_next[i]  # shape (P, N)
-
+    '''
     def current(self, V, Na: IonInfo):
         #jax.debug.print('O = {}',self.O.value)
         return self.g_max * self.O.value * (Na.E - V)

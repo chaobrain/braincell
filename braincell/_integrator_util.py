@@ -240,7 +240,6 @@ def apply_standard_solver_step(
         other_states[key].value = val
     target.post_integral(*args)
 
-
 def jacrev_last_dim(
     fn: Callable[[Y0], Y1] | Callable[[Y0], Tuple[Y1, Aux]],
     hid_vals: Y0,

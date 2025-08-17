@@ -44,4 +44,4 @@ def staggered_step(
     dhs_voltage_step(target, t, dt, *args)
 
     # ind_exp_euler for ion channels
-    ind_exp_euler_step(target, t, dt, *args, excluded_paths=[('V',)])
+    ind_exp_euler_step(target, *args, excluded_paths=[('V',)])

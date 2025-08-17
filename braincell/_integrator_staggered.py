@@ -34,17 +34,14 @@ def staggered_step(
     assert isinstance(target, MultiCompartment), (
         f"The stagger integrator only support {MultiCompartment.__name__}, "
         f"but we got {type(target)} instead."
+        f"The stagger integrator only support {MultiCompartment.__name__}, "
+        f"but we got {type(target)} instead."
     )
     t = brainstate.environ.get('t')
     dt = brainstate.environ.get('dt')
 
     # voltage integration
     dhs_voltage_step(target, t, dt, *args)
-
-    # # update markov
-    # for _ in range(2):
-    #     target.update_state(*args)
-    #     target.pre_integral(*args)
 
     # ind_exp_euler for ion channels
     ind_exp_euler_step(target, t, dt, *args, excluded_paths=[('V',)])

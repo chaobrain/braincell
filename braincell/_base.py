@@ -85,7 +85,10 @@ from typing import Optional, Dict, Sequence, Callable, NamedTuple, Tuple, Type, 
 
 import brainstate
 import numpy as np
+import numpy as np
 from brainstate.mixin import _JointGenericAlias
+
+from ._integrator_protocol import DiffEqModule, IndependentIntegration
 
 from ._integrator_protocol import DiffEqModule, IndependentIntegration
 from ._misc import set_module_as, Container, TreeNode
@@ -881,7 +884,7 @@ class Ion(IonChannel, Container):
 
     def update(self, V, *args, **kwargs):
         ion_info = self.pack_info()
-        for key, node in brainstate.graph.nodes(IonChannel, allowed_hierarchy=(1, 1)).items():
+        for key, node in brainstate.graph.nodes(self, Channel, allowed_hierarchy=(1, 1)).items():
             node.update(V, ion_info)
 
     def register_external_current(self, key: Hashable, fun: Callable):

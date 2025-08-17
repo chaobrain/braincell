@@ -13,7 +13,6 @@
 # limitations under the License.
 # ==============================================================================
 from typing import Tuple
-
 import brainunit as u
 import matplotlib.patches as mpatches
 import matplotlib.pyplot as plt
@@ -230,7 +229,6 @@ def build_segment_graph(merged_edges):
     G.add_edges_from(merged_edges)
     return G
 
-
 def classify_segment_nodes(num_segments, uf, G):
     """
     Classify merged nodes as segment centers, non-center non-leaf, or leaf nodes.
@@ -348,7 +346,6 @@ def dhs_group_by_depth(depths_sorted, max_group_size):
         groups.append(sorted(group))
     groups.reverse()
     return groups
-
 
 def tree_layout(G, root=None, dx=1.5, dy=1.7):
     """
@@ -508,7 +505,7 @@ def build_conductance_matrix(G, nid_half_map, seg_resistances):
                 if which_half == '0-0.5':
                     resistance = float(seg_resistances[sec][0])
                 elif which_half == '0.5-1':
-                    resistance = float(seg_resistances[sec][1])
+                    resistance = seg_resistances[sec][1]
                 else:
                     raise ValueError(f"Unexpected segment half '{which_half}' for pair {pair}")
                 g = 1.0 / resistance
@@ -833,6 +830,17 @@ class BranchingTree:
         mask = parent_rows != -1
         idx = u.math.arange(self.num_segments)
 
+        # lowers: gmat_sorted[i, parent_rows[i]]，仅当 parent!=-1
+        lowers_all = gmat_sorted[idx, parent_rows]
+        lowers = u.math.where(mask, lowers_all, 0.0)
+
+        # uppers: gmat_sorted[parent_rows[i], i]，仅当 parent!=-1
+        uppers_all = gmat_sorted[parent_rows, idx]
+        uppers = u.math.where(mask, uppers_all, 0.0)
+
+        self.parent_lookup = np.array(parent_rows + [-1])
+
+        
         # lowers: gmat_sorted[i, parent_rows[i]]，仅当 parent!=-1
         lowers_all = gmat_sorted[idx, parent_rows]
         lowers = u.math.where(mask, lowers_all, 0.0)

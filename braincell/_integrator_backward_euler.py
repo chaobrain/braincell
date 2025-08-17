@@ -18,22 +18,14 @@ import brainunit as u
 import jax
 import jax.numpy as jnp
 
-from ._base import HHTypedNeuron
 from ._integrator_protocol import DiffEqModule
-from ._integrator_util import (
-    apply_standard_solver_step,
-    jacrev_last_dim,
-)
-from ._integrator_protocol import DiffEqModule
-from ._integrator_util import (
-    apply_standard_solver_step,
-    jacrev_last_dim,
-)
+from ._integrator_util import apply_standard_solver_step, jacrev_last_dim
 from ._misc import set_module_as
 
 __all__ = [
     'backward_euler_step',
 ]
+
 
 def _backward_euler(f, y0, t, dt, args=()):
     """
@@ -58,7 +50,7 @@ def _backward_euler(f, y0, t, dt, args=()):
 
     # Flatten batch dimensions
     A = A.reshape((-1, A.shape[-2], A.shape[-1]))  # (B, M, M)
-    df = df.reshape((-1, df.shape[-1]))           # (B, M)
+    df = df.reshape((-1, df.shape[-1]))  # (B, M)
 
     n = y0.shape[-1]
     I = jnp.eye(n)
@@ -72,6 +64,7 @@ def _backward_euler(f, y0, t, dt, args=()):
     # Compute the new state
     y1 = y0 + updates
     return y1, aux
+
 
 @set_module_as('braincell')
 def backward_euler_step(target: DiffEqModule, *args):
@@ -133,4 +126,3 @@ def backward_euler_step(target: DiffEqModule, *args):
         *args,
         merging='stack'  # [n_neuron, n_state]
     )
-

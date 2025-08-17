@@ -675,7 +675,8 @@ class IonChannel(brainstate.graph.Node, TreeNode, DiffEqModule):
         pass
 
     def update(self, *args, **kwargs):
-        pass
+        if isinstance(self, IndependentIntegration):
+            self.make_integration(*args, **kwargs)
 
 
 class IonInfo(NamedTuple):

@@ -21,13 +21,13 @@ import brainunit as u
 from ._base import HHTypedNeuron, IonChannel
 from ._integrator import get_integrator
 from ._integrator_protocol import DiffEqState, IndependentIntegration
-from ._integrator_protocol import DiffEqState, IndependentIntegration
 from ._morphology import Morphology
 from ._typing import Initializer
 
 __all__ = [
     'MultiCompartment',
 ]
+
 
 class MultiCompartment(HHTypedNeuron):
     r"""

@@ -50,6 +50,9 @@ def dhs_voltage_step(target, t, dt, *args):
     """
 
     # --- 1. Extract morphology data (sizes: n_nodes) ---
+    if not hasattr(target.morphology, 'branch_tree'):
+        with jax.ensure_compile_time_eval():
+           target.morphology.to_branch_tree()
     bt = target.morphology.branch_tree
     diags, uppers, lowers, parent_lookup, internal_node_inds, flipped_comp_edges = (
         bt.diags, bt.uppers, bt.lowers, bt.parent_lookup, bt.internal_node_inds, bt.flipped_comp_edges

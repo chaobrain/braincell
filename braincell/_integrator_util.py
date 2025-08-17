@@ -75,7 +75,7 @@ def split_diffeq_states(module: DiffEqModule):
     >>> all_states, diffeq_states, other_states = split_diffeq_states(my_module)
     """
     # exclude IndependentIntegration module
-    independent_modules = brainstate.graph.nodes(module, IndependentIntegration)
+    independent_modules = brainstate.graph.nodes(module, IndependentIntegration, allowed_hierarchy=(1, 1000000000000))
     all_states = brainstate.graph.states(module)
     diffeq_states, other_states = all_states.split(functools.partial(_filter_diffeq, independent_modules), ...)
     return all_states, diffeq_states, other_states

@@ -32,23 +32,34 @@ from ._misc import set_module_as
 @set_module_as('braincell')
 def dhs_voltage_step(target, t, dt, *args):
     """
-    Implicit Euler solver using Dendritic Hierarchical Scheduling (DHS).
-    
-    Advances the membrane potential `V` of a multi-compartment neuron model by one
-    time step `dt` using an implicit scheme adapted to tree-structured morphologies.
+    Implicit Euler solver for multi-compartment neurons using 
+    Dendritic Hierarchical Scheduling (DHS).
+
+    Purpose:
+        Advance the membrane potential V by one timestep dt 
+        with an implicit scheme tailored for tree-structured morphologies.
 
     Steps:
-    1. Gather morphology and solver metadata (branch tree, parent lookup, etc.).
-    2. Assemble the linear system Ax = b for implicit Euler update:
-         (I + dt * (G + V_linear)) V_{n+1} = V_n + dt * V_const
-    3. Expand `V_linear` and `V_const` into full node vectors with correct shape (P, n_nodes).
-    4. Scale diagonals, uppers, lowers with dt, and add unit diagonal to internal nodes.
-    5. Append a "spurious" compartment (masking trick for solver stability).
-    6. Use batched DHS solver (via vmap) to solve all populations in parallel.
-    7. Write solution back to target.V.value (only internal nodes).
+        1. Ensure branch-tree representation is available, and extract
+           morphology metadata: diagonals, upper/lower off-diagonals,
+           parent indices, internal node indices, and flipped edges.
+        2. Extract the current membrane potential V and compute 
+           linear and constant contributions from all ion channels and synapses.
+        3. Reshape all vectors to consistent batch shape (P, Nseg) and 
+           scatter values into full node arrays including boundary nodes.
+        4. Assemble the implicit Euler system:
+               - Scale diagonals, uppers, and lowers by dt.
+               - Add unit diagonal to internal nodes to include I-term.
+               - Construct the RHS vector for the linear system.
+        5. Append a "virtual" or spurious node to improve numerical stability 
+           and simplify boundary handling.
+        6. Solve the linear system for all populations in parallel 
+           using DHS forward elimination + back-substitution (via vmap).
+        7. Extract internal node results and write them back to 
+           target.V.value, preserving the original shape.
     """
 
-    # --- 1. Extract morphology data (sizes: n_nodes) ---
+    # --- Step 1: Extract morphology and solver metadata ---
     if not hasattr(target.morphology, 'branch_tree'):
         with jax.ensure_compile_time_eval():
             target.morphology.to_branch_tree()
@@ -56,46 +67,41 @@ def dhs_voltage_step(target, t, dt, *args):
     diags, uppers, lowers, parent_lookup, internal_node_inds, flipped_comp_edges = (
         bt.diags, bt.uppers, bt.lowers, bt.parent_lookup, bt.internal_node_inds, bt.flipped_comp_edges
     )
-    n_nodes = len(diags)  # total number of nodes including boundary
-    # uppers, lowers, diags: (n_nodes,)
+    n_nodes = len(diags)  # total number of nodes including boundaries
 
-    # --- 2. Current membrane potential (sizes: P, Nseg) ---
-    V_n = target.V.value  # (P, Nseg), P = popsize, Nseg = number of internal segments
-    P = V_n.shape[0]
+    # --- Step 2: Get current membrane potential and compute linear/constant terms ---
+    V_n = target.V.value  # (P, Nseg)
+    linear, const = _linear_and_const_term(target, V_n, *args)
 
-    # --- 3. Assemble linear system terms ---
-    linear, const = _linear_and_const_term(target, V_n, *args)  # (P, Nseg)
-
-    # Scatter into full node vectors (P, n_nodes)
-    V_linear, V_const, V = [
+    # --- Step 3: Reshape vectors and scatter to full node arrays ---
+    V_n, linear, const = [x.reshape((-1, V_n.shape[-1])) for x in (V_n, linear, const)]
+    P = V_n.shape[0]  # population size
+    V, V_linear, V_const = [
         (u.math.zeros((P, n_nodes)) * u.get_unit(val)).at[:, internal_node_inds].set(val)
-        for val in (-linear, const, V_n)
+        for val in (V_n, -linear, const)
     ]
-    # V_linear, V_const, V: (P, n_nodes)
 
-    # --- 4. Build system matrices for implicit Euler ---
-    diags = (dt * (diags + V_linear)).at[:, internal_node_inds].add(1.0)  # (P, n_nodes)
-    solves = V + dt * V_const  # (P, n_nodes)
-    uppers, lowers = [dt * u.math.broadcast_to(x, (P, n_nodes)) for x in (uppers, lowers)]  # (P, n_nodes)
+    # --- Step 4: Build implicit Euler system matrices ---
+    diags = (dt * (diags + V_linear)).at[:, internal_node_inds].add(1.0)  # scale diagonals + unit I-term
+    solves = V + dt * V_const  # RHS vector
+    uppers = dt * uppers       # scale upper off-diagonal
+    lowers = dt * lowers       # scale lower off-diagonal
 
-    # --- 5. Add spurious compartment (masking trick) ---
-    diags = u.math.concatenate([diags, u.math.ones((P, 1)) * u.get_unit(diags)], axis=1)  # (P, n_nodes+1)
-    solves, uppers, lowers = [
-        u.math.concatenate([arr, u.math.zeros((P, 1)) * u.get_unit(arr)], axis=1)
-        for arr in (solves, uppers, lowers)
-    ]
-    # All arrays now have shape (P, n_nodes+1)
+    # --- Step 5: Append virtual/spurious compartment for stability ---
+    diags = u.math.concatenate([diags, u.math.ones((P, 1)) * u.get_unit(diags)], axis=1)
+    solves = u.math.concatenate([solves, u.math.zeros((P, 1)) * u.get_unit(solves)], axis=1)
+    lowers = u.math.concatenate([lowers, u.math.zeros((), dtype=lowers.dtype)])
+    uppers = u.math.concatenate([uppers, u.math.zeros((), dtype=uppers.dtype)])
 
-    # --- 6. Solve system in batch using DHS triangulation + backsub ---
+    # --- Step 6: Solve the linear system for all populations in batch ---
     solves = jax.vmap(
         solve_one,
-        in_axes=(0, 0, 0, 0, None, None, None),  # batch over population P
+        in_axes=(0, 0, None, None, None, None, None),  # batch over population
         out_axes=0
     )(diags, solves, lowers, uppers, flipped_comp_edges, n_nodes, parent_lookup)
-    # solves: (P, n_nodes+1)
 
-    # --- 7. Store result back to target (only internal nodes) ---
-    target.V.value = solves[:, internal_node_inds]  # (P, Nseg)
+    # --- Step 7: Write back results for internal nodes only ---
+    target.V.value = solves[:, internal_node_inds].reshape(target.V.value.shape)
 
 
 def solve_one(diags, solves, lowers, uppers, flipped_comp_edges, n_nodes, parent_lookup):

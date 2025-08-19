@@ -25,63 +25,96 @@ import brainunit as u
 import jax
 import jax.numpy as jnp
 
-from ._misc import set_module_as
 from ._integrator_protocol import DiffEqModule
+from ._misc import set_module_as
 
 
 @set_module_as('braincell')
 def dhs_voltage_step(target, t, dt, *args):
     """
-    Implicit euler solver with the `dendritic hierarchical scheduling` (DHS, Zhang et al., 2023).
+    Implicit Euler solver for multi-compartment neurons using 
+    Dendritic Hierarchical Scheduling (DHS).
+
+    Purpose:
+        Advance the membrane potential V by one timestep dt 
+        with an implicit scheme tailored for tree-structured morphologies.
+
+    Steps:
+        1. Ensure branch-tree representation is available, and extract
+           morphology metadata: diagonals, upper/lower off-diagonals,
+           parent indices, internal node indices, and flipped edges.
+        2. Extract the current membrane potential V and compute 
+           linear and constant contributions from all ion channels and synapses.
+        3. Reshape all vectors to consistent batch shape (P, Nseg) and 
+           scatter values into full node arrays including boundary nodes.
+        4. Assemble the implicit Euler system:
+               - Scale diagonals, uppers, and lowers by dt.
+               - Add unit diagonal to internal nodes to include I-term.
+               - Construct the RHS vector for the linear system.
+        5. Append a "virtual" or spurious node to improve numerical stability 
+           and simplify boundary handling.
+        6. Solve the linear system for all populations in parallel 
+           using DHS forward elimination + back-substitution (via vmap).
+        7. Extract internal node results and write them back to 
+           target.V.value, preserving the original shape.
     """
 
-    # branching tree information
-    branch_tree = target.to_branch_tree()
-    diags = branch_tree.diags  # [n_neuron, 2*n_seg+1]
-    uppers = branch_tree.uppers
-    lowers = branch_tree.lowers
-    parent_lookup = branch_tree.parent_lookup
-    internal_node_inds = branch_tree.internal_node_inds
-    flipped_comp_edges = branch_tree.flipped_comp_edges
+    # --- Step 1: Extract morphology and solver metadata ---
+    if not hasattr(target.morphology, 'branch_tree'):
+        with jax.ensure_compile_time_eval():
+            target.morphology.to_branch_tree()
+    bt = target.morphology.branch_tree
+    diags, uppers, lowers, parent_lookup, internal_node_inds, flipped_comp_edges = (
+        bt.diags, bt.uppers, bt.lowers, bt.parent_lookup, bt.internal_node_inds, bt.flipped_comp_edges
+    )
+    n_nodes = len(diags)  # total number of nodes including boundaries
 
-    # membrane potential at time n
-    V_n = target.V.value
-
-    # linear and constant term
+    # --- Step 2: Get current membrane potential and compute linear/constant terms ---
+    V_n = target.V.value  # (P, Nseg)
     linear, const = _linear_and_const_term(target, V_n, *args)
 
-    n_nodes = len(diags)
-    V_linear = u.math.zeros(n_nodes) * u.get_unit(linear)
-    V_linear = V_linear.at[internal_node_inds].set(-linear.ravel())
-    V_const = u.math.zeros(n_nodes) * u.get_unit(const)
-    V_const = V_const.at[internal_node_inds].set(const.ravel())
-    V = u.math.zeros(n_nodes) * u.get_unit(V_n)
-    V = V.at[internal_node_inds].set(V_n.ravel())
+    # --- Step 3: Reshape vectors and scatter to full node arrays ---
+    V_n, linear, const = [x.reshape((-1, V_n.shape[-1])) for x in (V_n, linear, const)]
+    P = V_n.shape[0]  # population size
+    V, V_linear, V_const = [
+        (u.math.zeros((P, n_nodes)) * u.get_unit(val)).at[:, internal_node_inds].set(val)
+        for val in (V_n, -linear, const)
+    ]
 
-    # diags = I + dt * (G_diags + linear_term)
-    diags = dt * (diags + V_linear)
-    diags = diags.at[internal_node_inds].add(1.0)
-    solves = V + dt * V_const
-    uppers = dt * uppers
-    lowers = dt * lowers
+    # --- Step 4: Build implicit Euler system matrices ---
+    diags = (dt * (diags + V_linear)).at[:, internal_node_inds].add(1.0)  # scale diagonals + unit I-term
+    solves = V + dt * V_const  # RHS vector
+    uppers = dt * uppers       # scale upper off-diagonal
+    lowers = dt * lowers       # scale lower off-diagonal
 
-    # Add a spurious compartment that is modified by the masking.
-    diags = u.math.concatenate([diags, u.math.asarray([1.0 * u.get_unit(diags)])])
-    solves = u.math.concatenate([solves, u.math.asarray([0.0 * u.get_unit(solves)])])
-    uppers = u.math.concatenate([uppers, u.math.asarray([0.0 * u.get_unit(uppers)])])
-    lowers = u.math.concatenate([lowers, u.math.asarray([0.0 * u.get_unit(lowers)])])
+    # --- Step 5: Append virtual/spurious compartment for stability ---
+    diags = u.math.concatenate([diags, u.math.ones((P, 1)) * u.get_unit(diags)], axis=1)
+    solves = u.math.concatenate([solves, u.math.zeros((P, 1)) * u.get_unit(solves)], axis=1)
+    lowers = u.math.concatenate([lowers, u.math.zeros((), dtype=lowers.dtype)])
+    uppers = u.math.concatenate([uppers, u.math.zeros((), dtype=uppers.dtype)])
 
-    # Triangulate by unrolling the loop of the levels.
+    # --- Step 6: Solve the linear system for all populations in batch ---
+    solves = jax.vmap(
+        solve_one,
+        in_axes=(0, 0, None, None, None, None, None),  # batch over population
+        out_axes=0
+    )(diags, solves, lowers, uppers, flipped_comp_edges, n_nodes, parent_lookup)
+
+    # --- Step 7: Write back results for internal nodes only ---
+    target.V.value = solves[:, internal_node_inds].reshape(target.V.value.shape)
+
+
+def solve_one(diags, solves, lowers, uppers, flipped_comp_edges, n_nodes, parent_lookup):
     steps = len(flipped_comp_edges)
     for i in range(steps):
-        diags, solves = _comp_based_triang(diags, solves, lowers, uppers, flipped_comp_edges[i])
+        diags, solves = _comp_based_triang(
+            diags, solves, lowers, uppers, flipped_comp_edges[i]
+        )
 
-    # Back substitute with recursive doubling.
     solves = _comp_based_backsub_recursive_doubling(
         diags, solves, lowers, steps, n_nodes, parent_lookup
     )
-
-    target.V.value = solves[internal_node_inds].reshape((1, -1))
+    return solves
 
 
 def _comp_based_triang(diags, solves, lowers, uppers, comp_edge):

@@ -13,6 +13,7 @@
 # limitations under the License.
 # ==============================================================================
 
+from typing import Callable
 
 import brainstate
 from brainstate._state import record_state_value_write
@@ -213,4 +214,10 @@ class IndependentIntegration(brainstate.mixin.Mixin):
     - This class does not implement any additional methods or properties.
     - It is intended to be used as a mixin alongside other module base classes.
     """
-    pass
+
+    def __init__(self, solver: str | Callable, **kwargs):
+        from ._integrator import get_integrator
+        self.solver = get_integrator(solver)
+
+    def make_integration(self, *args, **kwargs):
+        self.solver(self, *args, **kwargs)

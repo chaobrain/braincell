@@ -31,7 +31,7 @@ from ._integrator_util import (
     split_diffeq_states,
 )
 from ._misc import set_module_as
-from ._typing import Path, T, DT
+from ._typing import Path
 
 __all__ = [
     'exp_euler_step',

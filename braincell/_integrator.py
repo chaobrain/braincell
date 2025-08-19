@@ -15,14 +15,17 @@
 
 from typing import Callable
 
+from ._integrator_backward_euler import *
 from ._integrator_diffrax import *
 from ._integrator_exp_euler import *
 from ._integrator_runge_kutta import *
 from ._integrator_staggered import *
 
-
 __all__ = [
     'get_integrator',
+
+    # implicit backward Euler
+    'backward_euler_step',
 
     # exponential Euler
     'exp_euler_step',

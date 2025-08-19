@@ -22,10 +22,10 @@ from jax.experimental import sparse
 from jax.scipy.linalg import lu_factor, lu_solve
 
 from ._integrator_exp_euler import _exponential_euler
+from ._integrator_protocol import DiffEqModule
 from ._integrator_runge_kutta import rk4_step
 from ._integrator_util import apply_standard_solver_step, jacrev_last_dim
 from ._misc import set_module_as
-from ._integrator_protocol import DiffEqModule
 from ._typing import T, DT
 
 __all__ = [
@@ -164,7 +164,6 @@ def _newton_method_manual_parallel(
     """
 
     def g(t, y, *args):
-        # jax.debug.print("arg ={a}", a = args)
         if order == 1:
             return y - y0 - dt * f(t + dt, y, *args)[0]
         elif order == 2:
@@ -218,7 +217,6 @@ def _newton_method_manual_parallel(
     aux = {}
     return result, aux
 
-
 def _implicit_euler_for_axial_current(A, y0, dt):
     r"""
     Implicit Euler Integrator for linear ODEs of the form:
@@ -254,14 +252,6 @@ def _implicit_euler_for_axial_current(A, y0, dt):
         lhs = I - dt * A
         rhs = y0
         y1 = u.math.linalg.solve(lhs, rhs)
-
-    # # residual
-    # residual = rhs - lhs @ y1
-    # residual_norm = jnp.linalg.norm(u.get_magnitude(residual))
-    # jax.debug.print('Residual norm = {a}', a = residual_norm)
-    # jax.debug.print('Relative error = {a}', a = relative_error)
-    # cond = jnp.linalg.cond(u.get_magnitude(lhs))
-    # jax.debug.print('cond = {a}', a = cond)
 
     return y1
 
@@ -322,7 +312,6 @@ def _crank_nicolson_for_axial_current(A, y0, dt):
     # cond = jnp.linalg.cond(u.get_magnitude(lhs))
     # jax.debug.print('cond = {a}', a = cond)
     return y1
-
 
 @set_module_as('braincell')
 def implicit_euler_step(

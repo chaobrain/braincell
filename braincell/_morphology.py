@@ -31,7 +31,6 @@ from ._morphology_utils import (
 )
 from ._typing import SectionName
 
-
 __all__ = [
     'Segment',
     'Section',
@@ -595,7 +594,6 @@ class Morphology(brainstate.util.PrettyObject):
 
         # connection sections, parent section id and location
         connection_sec_list = self._connection_sec_list()
-        print(connection_sec_list)
         _, parent_id, parent_x = compute_connection_seg(nsegs, connection_sec_list)
 
         # cm for each segment
@@ -603,8 +601,11 @@ class Morphology(brainstate.util.PrettyObject):
 
         # area for each segment
         area_segmid = u.math.array([seg.area for seg in self.segments])
-
-        return BranchingTree(seg_ri, parent_id, parent_x, cm_segmid, area_segmid)
+        self.cm = cm_segmid
+        self.area = area_segmid
+        
+        self.branch_tree = BranchingTree(seg_ri, parent_id, parent_x, cm_segmid, area_segmid)
+        return self.branch_tree
 
     def add_cylinder_section(
         self,

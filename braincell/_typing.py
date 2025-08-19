@@ -14,7 +14,6 @@
 # ==============================================================================
 
 from typing import Union, Callable, Hashable, Tuple, Dict
-from typing import Union, Callable, Hashable, Tuple, Dict
 
 import brainstate
 import brainunit as u

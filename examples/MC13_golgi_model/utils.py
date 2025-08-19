@@ -1,9 +1,14 @@
+import warnings
+
 import brainstate
 import braintools
 import brainunit as u
 import matplotlib.pyplot as plt
 import numpy as np
-from neuron import h, gui
+try:
+    from neuron import h, gui
+except ImportError:
+    warnings.warn('NEURON is not installed. NEURON-related functions will not work.', ImportWarning)
 
 
 # NEURON run

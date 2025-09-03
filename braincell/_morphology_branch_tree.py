@@ -857,6 +857,13 @@ class BranchingTree:
         self.uppers = uppers * gmat_sorted_unit
         self.lowers = lowers * gmat_sorted_unit
 
+        ## another format for flipped_comp_edges
+        self.edges = np.concatenate(self.flipped_comp_edges, axis=0)
+        self.level_size = np.array([len(level) for level in self.flipped_comp_edges])
+        self.level_start = np.concatenate([np.array([0]), np.cumsum(self.level_size)])[:-1]
+
+
+
     def _preprocess_branching_tree(
         self,
         parent_id,

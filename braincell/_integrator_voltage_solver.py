@@ -24,6 +24,7 @@ import brainstate
 import brainunit as u
 import jax
 import jax.numpy as jnp
+import jax.experimental.pallas as pl
 
 from ._integrator_protocol import DiffEqModule
 from ._misc import set_module_as
@@ -64,8 +65,8 @@ def dhs_voltage_step(target, t, dt, *args):
         with jax.ensure_compile_time_eval():
             target.morphology.to_branch_tree()
     bt = target.morphology.branch_tree
-    diags, uppers, lowers, parent_lookup, internal_node_inds, flipped_comp_edges = (
-        bt.diags, bt.uppers, bt.lowers, bt.parent_lookup, bt.internal_node_inds, bt.flipped_comp_edges
+    diags, uppers, lowers, parent_lookup, internal_node_inds, flipped_comp_edges, edges, level_size, level_start = (
+        bt.diags, bt.uppers, bt.lowers, bt.parent_lookup, bt.internal_node_inds, bt.flipped_comp_edges, bt.edges, bt.level_size, bt.level_start
     )
     n_nodes = len(diags)  # total number of nodes including boundaries
 
@@ -93,16 +94,80 @@ def dhs_voltage_step(target, t, dt, *args):
     lowers = u.math.concatenate([lowers, u.math.zeros((), dtype=lowers.dtype)])
     uppers = u.math.concatenate([uppers, u.math.zeros((), dtype=uppers.dtype)])
 
-    # --- Step 6: Solve the linear system for all populations in batch ---
-    solves = jax.vmap(
-        solve_one,
-        in_axes=(0, 0, None, None, None, None, None),  # batch over population
-        out_axes=0
-    )(diags, solves, lowers, uppers, flipped_comp_edges, n_nodes, parent_lookup)
+    # # --- Step 6: Solve the linear system for all populations in batch ---
+    # solves = jax.vmap(
+    #     solve_one,
+    #     in_axes=(0, 0, None, None, None, None, None),  # batch over population
+    #     out_axes=0
+    # )(diags, solves, lowers, uppers, flipped_comp_edges, n_nodes, parent_lookup)
+    
 
-    # --- Step 7: Write back results for internal nodes only ---
-    target.V.value = solves[:, internal_node_inds].reshape(target.V.value.shape)
+    # # # # --- Step 7: Write back results for internal nodes only ---
+    # target.V.value = solves[:, internal_node_inds].reshape(target.V.value.shape) 
+    
+    ## pallas version
+    diags, solves = u.get_magnitude(diags).reshape(-1), u.get_magnitude(solves).reshape(-1)
+    diags, solves = run_levels_per_kernel(edges, diags, solves, uppers, lowers, level_start, level_size)
+    steps = len(flipped_comp_edges)
+    solves = _comp_based_backsub_recursive_doubling(
+    diags, solves, lowers, steps, n_nodes, parent_lookup
+    )
 
+    target.V.value = solves.reshape((1,-1))[:, internal_node_inds].reshape(target.V.value.shape) * u.mV
+
+def kernel_one_level(
+    edges_ref,
+    diags_ref,
+    solves_ref,
+    uppers_ref,
+    lowers_ref,
+    start_ref,  # scalar
+    size_ref,   # scalar
+    out_diags_ref,
+    out_solves_ref,
+):
+    tid = pl.program_id(0)
+
+    start = pl.load(start_ref, ())
+    size  = pl.load(size_ref,  ())
+
+    active = tid < size
+    e = start + tid
+
+    c = pl.load(edges_ref, (e, 0), mask=active, other=0)
+    p = pl.load(edges_ref, (e, 1), mask=active, other=-1)
+    valid = active & (p >= 0)
+
+    up = pl.load(uppers_ref, c, mask=valid, other=0.0)
+    lo = pl.load(lowers_ref, c, mask=valid, other=0.0)
+    dc = pl.load(diags_ref,  c, mask=valid, other=1.0)
+    sc = pl.load(solves_ref, c, mask=valid, other=0.0)
+
+    mul = up / dc
+    pl.atomic_add(out_diags_ref, p, -lo * mul, mask=valid)
+    pl.atomic_add(out_solves_ref, p, -sc * mul, mask=valid)
+
+def run_levels_per_kernel(edges, diags, solves, uppers, lowers, level_start, level_size):
+    
+    call_one_level = pl.pallas_call(
+        kernel_one_level,
+        out_shape=(
+            jax.ShapeDtypeStruct(diags.shape,  diags.dtype),
+            jax.ShapeDtypeStruct(solves.shape, solves.dtype),
+        ),
+        grid=(32,),
+        input_output_aliases={1: 0, 2: 1},
+    )
+
+    def _run(edges, diags, solves, uppers, lowers, level_start, level_size):
+        def body(d, carry):
+            di, so = carry
+            s  = jax.lax.dynamic_index_in_dim(level_start, d, keepdims=False)
+            sz = jax.lax.dynamic_index_in_dim(level_size,  d, keepdims=False)
+            out_di, out_so = call_one_level(edges, di, so, uppers, lowers, s, sz)
+            return (out_di, out_so)
+        return jax.lax.fori_loop(0, level_size.shape[0], body, (diags, solves))
+    return _run(edges, diags, solves, uppers, lowers, level_start, level_size)
 
 def solve_one(diags, solves, lowers, uppers, flipped_comp_edges, n_nodes, parent_lookup):
     steps = len(flipped_comp_edges)
@@ -140,7 +205,6 @@ def _comp_based_triang(diags, solves, lowers, uppers, comp_edge):
     solves = solves.at[parent].add(-child_solve * multiplier)
 
     return diags, solves
-
 
 def _comp_based_backsub_recursive_doubling(
     diags,

@@ -23,7 +23,6 @@ import brainevent
 import brainstate
 import brainunit as u
 import jax
-import jax.numpy as jnp
 import jax.experimental.pallas as pl
 import jax.numpy as jnp
 import numpy as np
@@ -110,43 +109,90 @@ def dhs_voltage_step(target, t, dt, *args):
     #     in_axes=(0, 0, None, None, None, None, None),  # batch over population
     #     out_axes=0
     # )(diags, solves, lowers, uppers, flipped_comp_edges, n_nodes, parent_lookup)
-    
 
     # # # # --- Step 7: Write back results for internal nodes only ---
     # target.V.value = solves[:, internal_node_inds].reshape(target.V.value.shape) 
-    
 
-    ## pallas version
-    # diags, solves = u.get_magnitude(diags).reshape(-1), u.get_magnitude(solves).reshape(-1)
-    # diags, solves = run_all_levels_single_kernel(edges, diags, solves, uppers, lowers, level_start, level_size)
-    # steps = len(flipped_comp_edges)
-    # solves = _comp_based_backsub_recursive_doubling(
-    # diags, solves, lowers, steps, n_nodes, parent_lookup
-    # )
-
-    # target.V.value = solves.reshape((1,-1))[:, internal_node_inds].reshape(target.V.value.shape) * u.mV
-
-    ## vmap
     diags, solves = u.get_magnitude(diags), u.get_magnitude(solves)
-    steps = len(flipped_comp_edges)
+    # diags: [n_neuron, n_nodes]
+    # solves: [n_neuron, n_nodes]
+    #         n_nodes = 2 * n_compartment + 1
+    # lowers: [n_nodes]
+    # uppers: [n_nodes]
+    # parent_lookup: [n_nodes]
+    # edges: [n_nodes - 1, 2]
+
+    n_steps = len(flipped_comp_edges)
     solves = jax.vmap(
         solve_one_kernel,
         in_axes=(0, 0, None, None, None, None, None, None),  # batch over population
         out_axes=0
-    )(diags, solves, lowers, uppers, n_nodes, parent_lookup, edges, steps)
+    )(diags, solves, lowers, uppers, n_nodes, parent_lookup, edges, n_steps)
     target.V.value = solves[:, internal_node_inds].reshape(target.V.value.shape) * u.mV
 
-def solve_one_kernel(diags, solves, lowers, uppers, n_nodes, parent_lookup, edges, steps):
 
-    diags, solves = run_all_levels_single_kernel(edges, diags, solves, uppers, lowers, parent_lookup)
+
+
+def run_all_levels_single_kernel_v2(diags, solves, uppers, lowers, edges, parent_lookup, n_nodes, n_steps):
+    def kernel_all_levels_serial(
+        edges_ref,
+        diags_ref,
+        solves_ref,
+        uppers_ref,
+        lowers_ref,
+        # outputs
+        out_diags_ref,
+        out_solves_ref,
+    ):
+        i_neuron = pl.program_id(0)
+
+        def forward_body(i_edge, _):
+            children_id = pl.load(edges_ref, (i_edge, 0))  # int
+            parent_id = pl.load(edges_ref, (i_edge, 1))  # int
+            valid = parent_id >= 0
+
+            upper = pl.load(uppers_ref, children_id, mask=valid, other=0.0)
+            lower = pl.load(lowers_ref, children_id, mask=valid, other=0.0)
+            diag_c = pl.load(diags_ref, children_id, mask=valid, other=1.0)
+            solve_c = pl.load(solves_ref, children_id, mask=valid, other=0.0)
+
+            mul = upper / diag_c
+            diag_p = pl.load(out_diags_ref, parent_id, mask=valid, other=0.0)
+            solve_p = pl.load(out_solves_ref, parent_id, mask=valid, other=0.0)
+
+            pl.store(out_diags_ref, parent_id, diag_p - lower * mul, mask=valid)
+            pl.store(out_solves_ref, parent_id, solve_p - solve_c * mul, mask=valid)
+            return None
+
+        jax.lax.fori_loop(0, n_nodes - 1, forward_body, None)
+
+
+    call_all = pl.pallas_call(
+        kernel_all_levels_serial,
+        out_shape=(
+            jax.ShapeDtypeStruct(diags.shape, diags.dtype),
+            jax.ShapeDtypeStruct(solves.shape, solves.dtype),
+        ),
+        grid=(diags.shape[0],),
+        input_output_aliases={1: 0, 2: 1},
+    )
+    return call_all(edges, diags, solves, uppers, lowers)
+
+
+
+
+
+def solve_one_kernel(diags, solves, lowers, uppers, n_nodes, parent_lookup, edges, n_steps):
+    diags, solves = run_all_levels_single_kernel(edges, diags, solves, uppers, lowers)
     solves = _comp_based_backsub_recursive_doubling(
-        diags, solves, lowers, steps, n_nodes, parent_lookup
+        diags, solves, lowers, n_steps, n_nodes, parent_lookup
     )
     return solves
 
-def kernel_all_levels_serial(
 
-    edges_ref, diags_ref, solves_ref, uppers_ref, lowers_ref, num_edges_ref, parent_lookup_ref, out_diags_ref, out_solves_ref,
+def kernel_all_levels_serial(
+    edges_ref, diags_ref, solves_ref, uppers_ref, lowers_ref, num_edges_ref, out_diags_ref,
+    out_solves_ref,
 ):
     E = pl.load(num_edges_ref, ())
 
@@ -157,7 +203,7 @@ def kernel_all_levels_serial(
 
         upper = pl.load(uppers_ref, c, mask=valid, other=0.0)
         lower = pl.load(lowers_ref, c, mask=valid, other=0.0)
-        diag_c = pl.load(diags_ref,  c, mask=valid, other=1.0)
+        diag_c = pl.load(diags_ref, c, mask=valid, other=1.0)
         solve_c = pl.load(solves_ref, c, mask=valid, other=0.0)
 
         mul = upper / diag_c
@@ -170,26 +216,9 @@ def kernel_all_levels_serial(
 
     jax.lax.fori_loop(0, E, forward_body, None)
 
-    # def back_body(i, _):
-    #     p = pl.load(parent_lookup_ref, i)
-    #     is_child = p >= 0
 
-    #     sc = pl.load(out_solves_ref, i)
-    #     dc = pl.load(out_diags_ref,  i)
-
-    #     sp = pl.load(out_solves_ref, p, mask=is_child, other=0.0)
-    #     dp = pl.load(out_diags_ref,  p, mask=is_child, other=1.0)
-    #     lc = pl.load(lowers_ref,     i, mask=is_child, other=0.0)
-
-    #     pl.store(out_solves_ref, i, (sc*dp - lc * sp ) / (dc*dp))
-    #     pl.store(out_diags_ref, i, 1.0)
-    #     return None
-
-    # return  jax.lax.fori_loop(0, E, back_body, None)
-
-def run_all_levels_single_kernel(edges, diags, solves, uppers, lowers, parent_lookup):
+def run_all_levels_single_kernel(edges, diags, solves, uppers, lowers):
     num_levels = jnp.asarray(diags.shape[0], dtype=jnp.int32)
-    #num_rows = jnp.asarray(diags.shape[0], dtype=jnp.int32)
 
     call_all = pl.pallas_call(
         kernel_all_levels_serial,
@@ -200,12 +229,7 @@ def run_all_levels_single_kernel(edges, diags, solves, uppers, lowers, parent_lo
         grid=(1,),
         input_output_aliases={1: 0, 2: 1},
     )
-
-    out_di, out_so = call_all(
-        edges, diags, solves, uppers, lowers,
-        num_levels, parent_lookup #level_start, level_size, parent_lookup, num_rows
-    )
-    return out_di, out_so
+    return call_all(edges, diags, solves, uppers, lowers, num_levels)
 
 
 def solve_one(diags, solves, lowers, uppers, flipped_comp_edges, n_nodes, parent_lookup):
@@ -231,7 +255,7 @@ def _comp_based_triang(diags, solves, lowers, uppers, comp_edge):
     # `flipped_comp_edges` has shape `(num_levels, num_comps_per_level, 2)`. We first
     # get the relevant level with `[index]` and then we get all children and parents
     # in the level.
-    child = comp_edge[:, 0]
+    child = comp_edge[:, 0]  # vector
     lower_val = lowers[child]
     upper_val = uppers[child]
     child_diag = diags[child]

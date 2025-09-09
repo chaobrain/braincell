@@ -23,8 +23,9 @@ import brainevent
 import brainstate
 import brainunit as u
 import jax
-import jax.numpy as jnp
 import jax.experimental.pallas as pl
+import jax.numpy as jnp
+import numpy as np
 
 from ._integrator_protocol import DiffEqModule
 from ._misc import set_module_as
@@ -64,9 +65,17 @@ def dhs_voltage_step(target, t, dt, *args):
     if not hasattr(target.morphology, 'branch_tree'):
         with jax.ensure_compile_time_eval():
             target.morphology.to_branch_tree()
-    bt = target.morphology.branch_tree
+    tree = target.morphology.branch_tree
     diags, uppers, lowers, parent_lookup, internal_node_inds, flipped_comp_edges, edges, level_size, level_start = (
-        bt.diags, bt.uppers, bt.lowers, bt.parent_lookup, bt.internal_node_inds, bt.flipped_comp_edges, bt.edges, bt.level_size, bt.level_start
+        tree.diags,
+        tree.uppers,
+        tree.lowers,
+        tree.parent_lookup,
+        tree.internal_node_inds,
+        tree.flipped_comp_edges,
+        tree.edges,
+        tree.level_size,
+        tree.level_start
     )
     n_nodes = len(diags)  # total number of nodes including boundaries
 
@@ -85,8 +94,8 @@ def dhs_voltage_step(target, t, dt, *args):
     # --- Step 4: Build implicit Euler system matrices ---
     diags = (dt * (diags + V_linear)).at[:, internal_node_inds].add(1.0)  # scale diagonals + unit I-term
     solves = V + dt * V_const  # RHS vector
-    uppers = dt * uppers       # scale upper off-diagonal
-    lowers = dt * lowers       # scale lower off-diagonal
+    uppers = dt * uppers  # scale upper off-diagonal
+    lowers = dt * lowers  # scale lower off-diagonal
 
     # --- Step 5: Append virtual/spurious compartment for stability ---
     diags = u.math.concatenate([diags, u.math.ones((P, 1)) * u.get_unit(diags)], axis=1)
@@ -100,20 +109,17 @@ def dhs_voltage_step(target, t, dt, *args):
     #     in_axes=(0, 0, None, None, None, None, None),  # batch over population
     #     out_axes=0
     # )(diags, solves, lowers, uppers, flipped_comp_edges, n_nodes, parent_lookup)
-    
 
     # # # # --- Step 7: Write back results for internal nodes only ---
     # target.V.value = solves[:, internal_node_inds].reshape(target.V.value.shape) 
-    
-    ## pallas version
+
+    # pallas version
     diags, solves = u.get_magnitude(diags).reshape(-1), u.get_magnitude(solves).reshape(-1)
     diags, solves = run_levels_per_kernel(edges, diags, solves, uppers, lowers, level_start, level_size)
-    steps = len(flipped_comp_edges)
-    solves = _comp_based_backsub_recursive_doubling(
-    diags, solves, lowers, steps, n_nodes, parent_lookup
-    )
+    n_step = len(flipped_comp_edges)
+    solves = _comp_based_backsub_recursive_doubling(diags, solves, lowers, n_step, n_nodes, parent_lookup)
+    target.V.value = solves.reshape((1, -1))[:, internal_node_inds].reshape(target.V.value.shape) * u.mV
 
-    target.V.value = solves.reshape((1,-1))[:, internal_node_inds].reshape(target.V.value.shape) * u.mV
 
 def kernel_one_level(
     edges_ref,
@@ -122,14 +128,14 @@ def kernel_one_level(
     uppers_ref,
     lowers_ref,
     start_ref,  # scalar
-    size_ref,   # scalar
+    size_ref,  # scalar
     out_diags_ref,
     out_solves_ref,
 ):
     tid = pl.program_id(0)
 
     start = pl.load(start_ref, ())
-    size  = pl.load(size_ref,  ())
+    size = pl.load(size_ref, ())
 
     active = tid < size
     e = start + tid
@@ -140,19 +146,19 @@ def kernel_one_level(
 
     up = pl.load(uppers_ref, c, mask=valid, other=0.0)
     lo = pl.load(lowers_ref, c, mask=valid, other=0.0)
-    dc = pl.load(diags_ref,  c, mask=valid, other=1.0)
+    dc = pl.load(diags_ref, c, mask=valid, other=1.0)
     sc = pl.load(solves_ref, c, mask=valid, other=0.0)
 
     mul = up / dc
     pl.atomic_add(out_diags_ref, p, -lo * mul, mask=valid)
     pl.atomic_add(out_solves_ref, p, -sc * mul, mask=valid)
 
+
 def run_levels_per_kernel(edges, diags, solves, uppers, lowers, level_start, level_size):
-    
     call_one_level = pl.pallas_call(
         kernel_one_level,
         out_shape=(
-            jax.ShapeDtypeStruct(diags.shape,  diags.dtype),
+            jax.ShapeDtypeStruct(diags.shape, diags.dtype),
             jax.ShapeDtypeStruct(solves.shape, solves.dtype),
         ),
         grid=(32,),
@@ -162,23 +168,28 @@ def run_levels_per_kernel(edges, diags, solves, uppers, lowers, level_start, lev
     def _run(edges, diags, solves, uppers, lowers, level_start, level_size):
         def body(d, carry):
             di, so = carry
-            s  = jax.lax.dynamic_index_in_dim(level_start, d, keepdims=False)
-            sz = jax.lax.dynamic_index_in_dim(level_size,  d, keepdims=False)
+            s = jax.lax.dynamic_index_in_dim(level_start, d, keepdims=False)
+            sz = jax.lax.dynamic_index_in_dim(level_size, d, keepdims=False)
             out_di, out_so = call_one_level(edges, di, so, uppers, lowers, s, sz)
-            return (out_di, out_so)
+            return out_di, out_so
+
         return jax.lax.fori_loop(0, level_size.shape[0], body, (diags, solves))
+
     return _run(edges, diags, solves, uppers, lowers, level_start, level_size)
 
+
 def solve_one(diags, solves, lowers, uppers, flipped_comp_edges, n_nodes, parent_lookup):
+    # diags: [n_compartments+1]
+    # solves: [n_compartments+1]
+    # lowers: [n_compartments+1]
+    # uppers: [n_compartments+1]
+    # flipped_comp_edges: [num_levels, num_comps_per_level, 2]
+    # n_nodes: int
+    # parent_lookup: [n_compartments+1]
     steps = len(flipped_comp_edges)
     for i in range(steps):
-        diags, solves = _comp_based_triang(
-            diags, solves, lowers, uppers, flipped_comp_edges[i]
-        )
-
-    solves = _comp_based_backsub_recursive_doubling(
-        diags, solves, lowers, steps, n_nodes, parent_lookup
-    )
+        diags, solves = _comp_based_triang(diags, solves, lowers, uppers, flipped_comp_edges[i])
+    solves = _comp_based_backsub_recursive_doubling(diags, solves, lowers, steps, n_nodes, parent_lookup)
     return solves
 
 
@@ -203,8 +214,8 @@ def _comp_based_triang(diags, solves, lowers, uppers, comp_edge):
     parent = comp_edge[:, 1]
     diags = diags.at[parent].add(-lower_val * multiplier)
     solves = solves.at[parent].add(-child_solve * multiplier)
-
     return diags, solves
+
 
 def _comp_based_backsub_recursive_doubling(
     diags,
@@ -212,7 +223,7 @@ def _comp_based_backsub_recursive_doubling(
     lowers,
     steps: int,
     n_nodes: int,
-    parent_lookup: jnp.ndarray,
+    parent_lookup: np.ndarray,
 ):
     """Backsubstitute with recursive doubling.
 
@@ -454,16 +465,11 @@ def _linear_and_const_term(target: DiffEqModule, V_n, *args):
     get the linear and constant term of voltage.
     """
     from ._multi_compartment import MultiCompartment
-    assert isinstance(target, MultiCompartment), (
-        'The target should be a MultiCompartment for the sparse integrator. '
-    )
+    assert isinstance(target, MultiCompartment), 'The target should be a MultiCompartment for the sparse integrator.'
 
     # compute the linear and derivative term
     linear, derivative = brainstate.transform.vector_grad(
-        target.compute_membrane_derivative,
-        argnums=0,
-        return_value=True,
-        unit_aware=False,
+        target.compute_membrane_derivative, argnums=0, return_value=True, unit_aware=False,
     )(V_n, *args)
 
     # Convert linearization to a unit-aware quantity

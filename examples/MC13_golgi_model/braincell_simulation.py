@@ -64,9 +64,19 @@ Ena = 60
 V_init = -65 * np.ones(nseg)
 popsize = 10  # number of cells in the population
 cell_braincell = Golgi(
-    popsize=popsize, morphology=Golgi_mor, el=El, gl=gl,
-    gh1=gh1, gh2=gh2, ek=Ek, gkv11=gkv11, gkv34=gkv34,
-    gkv43=gkv43, ena=Ena, gnarsg=gnarsg, V_init=V_init
+    popsize=popsize,
+    morphology=Golgi_mor,
+    el=El,
+    gl=gl,
+    gh1=gh1,
+    gh2=gh2,
+    ek=Ek,
+    gkv11=gkv11,
+    gkv34=gkv34,
+    gkv43=gkv43,
+    ena=Ena,
+    gnarsg=gnarsg,
+    V_init=V_init
 )
 
 DT = 0.01

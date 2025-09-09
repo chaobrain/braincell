@@ -19,11 +19,9 @@
 Implementation of the backward Euler integrator for voltage dynamics in multicompartment models.
 """
 
-import brainevent
 import brainstate
 import brainunit as u
 import jax
-import jax.experimental.pallas as pl
 import jax.numpy as jnp
 import numpy as np
 
@@ -109,137 +107,256 @@ def dhs_voltage_step(target, t, dt, *args):
     #     in_axes=(0, 0, None, None, None, None, None),  # batch over population
     #     out_axes=0
     # )(diags, solves, lowers, uppers, flipped_comp_edges, n_nodes, parent_lookup)
-
+    #
     # # # # --- Step 7: Write back results for internal nodes only ---
-    # target.V.value = solves[:, internal_node_inds].reshape(target.V.value.shape) 
+    # target.V.value = solves[:, internal_node_inds].reshape(target.V.value.shape)
 
-    diags, solves = u.get_magnitude(diags), u.get_magnitude(solves)
-    # diags: [n_neuron, n_nodes]
-    # solves: [n_neuron, n_nodes]
-    #         n_nodes = 2 * n_compartment + 1
-    # lowers: [n_nodes]
-    # uppers: [n_nodes]
-    # parent_lookup: [n_nodes]
-    # edges: [n_nodes - 1, 2]
+    with jax.ensure_compile_time_eval():
+        level_sizes = np.asarray([edges.shape[0] for edges in flipped_comp_edges])
+        edges = np.concatenate(flipped_comp_edges, axis=0)
+        min_level_size = int(level_sizes.min())
+        max_level_size = int(level_sizes.max())
+    diags, solves = comp_based_triang_call(diags, solves, lowers, uppers, edges, level_sizes, n_block=min_level_size)
+    solves = comp_based_backsub_call(diags, solves, lowers, parent_lookup, n_steps=len(flipped_comp_edges))
+    target.V.value = solves[:, internal_node_inds].reshape(target.V.value.shape)
 
-    n_steps = len(flipped_comp_edges)
-    solves = jax.vmap(
-        solve_one_kernel,
-        in_axes=(0, 0, None, None, None, None, None, None),  # batch over population
-        out_axes=0
-    )(diags, solves, lowers, uppers, n_nodes, parent_lookup, edges, n_steps)
-    target.V.value = solves[:, internal_node_inds].reshape(target.V.value.shape) * u.mV
-
-
-
-
-def run_all_levels_single_kernel_v2(diags, solves, uppers, lowers, edges, parent_lookup, n_nodes, n_steps):
-    def kernel_all_levels_serial(
-        edges_ref,
-        diags_ref,
-        solves_ref,
-        uppers_ref,
-        lowers_ref,
-        # outputs
-        out_diags_ref,
-        out_solves_ref,
-    ):
-        i_neuron = pl.program_id(0)
-
-        def forward_body(i_edge, _):
-            children_id = pl.load(edges_ref, (i_edge, 0))  # int
-            parent_id = pl.load(edges_ref, (i_edge, 1))  # int
-            valid = parent_id >= 0
-
-            upper = pl.load(uppers_ref, children_id, mask=valid, other=0.0)
-            lower = pl.load(lowers_ref, children_id, mask=valid, other=0.0)
-            diag_c = pl.load(diags_ref, children_id, mask=valid, other=1.0)
-            solve_c = pl.load(solves_ref, children_id, mask=valid, other=0.0)
-
-            mul = upper / diag_c
-            diag_p = pl.load(out_diags_ref, parent_id, mask=valid, other=0.0)
-            solve_p = pl.load(out_solves_ref, parent_id, mask=valid, other=0.0)
-
-            pl.store(out_diags_ref, parent_id, diag_p - lower * mul, mask=valid)
-            pl.store(out_solves_ref, parent_id, solve_p - solve_c * mul, mask=valid)
-            return None
-
-        jax.lax.fori_loop(0, n_nodes - 1, forward_body, None)
+    # diags, solves = u.get_magnitude(diags), u.get_magnitude(solves)
+    # # diags: [n_neuron, n_nodes]
+    # # solves: [n_neuron, n_nodes]
+    # #         n_nodes = 2 * n_compartment + 1
+    # # lowers: [n_nodes]
+    # # uppers: [n_nodes]
+    # # parent_lookup: [n_nodes]
+    # # edges: [n_nodes - 1, 2]
+    #
+    # n_steps = len(flipped_comp_edges)
+    # solves = jax.vmap(
+    #     solve_one_kernel,
+    #     in_axes=(0, 0, None, None, None, None, None, None),  # batch over population
+    #     out_axes=0
+    # )(diags, solves, lowers, uppers, n_nodes, parent_lookup, edges, n_steps)
+    # target.V.value = solves[:, internal_node_inds].reshape(target.V.value.shape) * u.mV
 
 
-    call_all = pl.pallas_call(
-        kernel_all_levels_serial,
-        out_shape=(
-            jax.ShapeDtypeStruct(diags.shape, diags.dtype),
-            jax.ShapeDtypeStruct(solves.shape, solves.dtype),
-        ),
-        grid=(diags.shape[0],),
-        input_output_aliases={1: 0, 2: 1},
-    )
-    return call_all(edges, diags, solves, uppers, lowers)
+import brainevent
+from brainevent._misc import generate_block_dim
+from brainevent._compatible_import import pallas as pl
 
 
-
-
-
-def solve_one_kernel(diags, solves, lowers, uppers, n_nodes, parent_lookup, edges, n_steps):
-    diags, solves = run_all_levels_single_kernel(edges, diags, solves, uppers, lowers)
-    solves = _comp_based_backsub_recursive_doubling(
-        diags, solves, lowers, n_steps, n_nodes, parent_lookup
-    )
-    return solves
-
-
-def kernel_all_levels_serial(
-    edges_ref, diags_ref, solves_ref, uppers_ref, lowers_ref, num_edges_ref, out_diags_ref,
-    out_solves_ref,
+def pallas_kernel_generator(
+    diags_info: jax.ShapeDtypeStruct,
+    n_steps: int,
+    n_block: int,
+    **kwargs
 ):
-    E = pl.load(num_edges_ref, ())
+    block_size = generate_block_dim(diags_info.shape[0], maximum=2048)
+    n_neuron_loop = pl.cdiv(diags_info.shape[0], block_size)
 
-    def forward_body(e, _):
-        c = pl.load(edges_ref, (e, 0))
-        p = pl.load(edges_ref, (e, 1))
-        valid = p >= 0
+    def kernel(
+        diags_ref,  # [n_neuron, n_nodes]
+        solves_ref,  # [n_neuron, n_nodes]
+        lowers_ref,  # [ n_nodes]
+        uppers_ref,  # [ n_nodes]
+        edges_ref,  # [ n_nodes-1, 2]
+        level_size_ref,  # [ n_steps]
+        # outs
+        out_diags_ref,  # [n_neuron, n_nodes]
+        out_solves_ref,  # [n_neuron, n_nodes]
+    ):
+        i_block = pl.program_id(0)
 
-        upper = pl.load(uppers_ref, c, mask=valid, other=0.0)
-        lower = pl.load(lowers_ref, c, mask=valid, other=0.0)
-        diag_c = pl.load(diags_ref, c, mask=valid, other=1.0)
-        solve_c = pl.load(solves_ref, c, mask=valid, other=0.0)
+        def step_loop_fn(i_step, i_edge_start):
+            size = level_size_ref[i_step]
+            i_edge_end = i_edge_start + size
 
-        mul = upper / diag_c
-        diag_p = pl.load(out_diags_ref, p, mask=valid, other=0.0)
-        solve_p = pl.load(out_solves_ref, p, mask=valid, other=0.0)
+            def edge_loop_fn(i_edge):
+                child = edges_ref[i_edge, 0]
+                parent = edges_ref[i_edge, 1]
+                lower_val = lowers_ref[child]
+                upper_val = uppers_ref[child]
 
-        pl.store(out_diags_ref, p, diag_p - lower * mul, mask=valid)
-        pl.store(out_solves_ref, p, solve_p - solve_c * mul, mask=valid)
-        return None
+                for i_neuron in range(n_neuron_loop):
+                    mask = jnp.arange(block_size) + i_neuron * block_size < diags_info.shape[0]
+                    child_diag = pl.load(diags_ref, (pl.dslice(i_neuron * block_size, block_size), child), mask=mask)
+                    child_solve = pl.load(solves_ref, (pl.dslice(i_neuron * block_size, block_size), child), mask=mask)
 
-    jax.lax.fori_loop(0, E, forward_body, None)
+                    # Factor that the child row has to be multiplied by.
+                    multiplier = upper_val / child_diag
 
+                    pl.atomic_add(out_diags_ref,
+                                  (pl.dslice(i_neuron * block_size, block_size), parent),
+                                  -lower_val * multiplier,
+                                  mask=mask)
+                    pl.atomic_add(out_solves_ref,
+                                  (pl.dslice(i_neuron * block_size, block_size), parent),
+                                  -child_solve * multiplier,
+                                  mask=mask)
+                return i_edge + n_block
 
-def run_all_levels_single_kernel(edges, diags, solves, uppers, lowers):
-    num_levels = jnp.asarray(diags.shape[0], dtype=jnp.int32)
+            jax.lax.while_loop(lambda i_edge: i_edge < i_edge_end, edge_loop_fn, i_edge_start + i_block)
+            return i_edge_end
 
-    call_all = pl.pallas_call(
-        kernel_all_levels_serial,
-        out_shape=(
-            jax.ShapeDtypeStruct(diags.shape, diags.dtype),
-            jax.ShapeDtypeStruct(solves.shape, solves.dtype),
-        ),
-        grid=(1,),
-        input_output_aliases={1: 0, 2: 1},
+        jax.lax.fori_loop(0, n_steps, step_loop_fn, 0)
+
+    return brainevent.pallas_kernel(
+        kernel,
+        tile=(n_block,),
+        input_output_aliases={0: 0, 1: 1},
+        outs=kwargs['outs']
     )
-    return call_all(edges, diags, solves, uppers, lowers, num_levels)
+
+
+comp_based_triang = brainevent.XLACustomKernel('comp_based_triang')
+comp_based_triang.def_gpu_kernel(pallas=pallas_kernel_generator)
+
+
+def comp_based_triang_call(
+    diags,  # [n_neuron, n_nodes]
+    solves,  # [n_neuron, n_nodes]
+    lowers,  # [ n_nodes]
+    uppers,  # [ n_nodes]
+    edges,  # [ n_nodes-1, 2]
+    level_size,  # [ n_steps]
+    *,
+    n_block
+):
+    return comp_based_triang(
+        diags, solves, lowers, uppers, edges, level_size,
+        n_steps=level_size.shape[0], n_block=n_block,
+        outs=(jax.ShapeDtypeStruct(diags.shape, diags.dtype),
+              jax.ShapeDtypeStruct(solves.shape, solves.dtype))
+    )
+
+
+def warp_kernel_generator(
+    diags_info: jax.ShapeDtypeStruct,
+    solves_info: jax.ShapeDtypeStruct,
+    lowers_info: jax.ShapeDtypeStruct,
+    parent_lookup_info: jax.ShapeDtypeStruct,
+    n_steps: int,
+    **kwargs
+):
+    import warp
+
+    def kernel(
+        diags_ref: brainevent.jaxinfo_to_warpinfo(diags_info),
+        solves_ref: brainevent.jaxinfo_to_warpinfo(solves_info),
+        lowers_ref: brainevent.jaxinfo_to_warpinfo(lowers_info),
+        parent_lookup_ref: brainevent.jaxinfo_to_warpinfo(parent_lookup_info),
+        out_solve_ref: brainevent.jaxinfo_to_warpinfo(solves_info),
+    ):
+        i_neuron = warp.tid()
+        diags = warp.tile_load(diags_ref[i_neuron])
+        solves = warp.tile_load(solves_ref[i_neuron])
+        lowers = warp.tile_load(lowers_ref)
+        parent_lookup = warp.tile_load(parent_lookup_ref)
+
+        lowers[0] = 0.0
+        lower_effect = -lowers / diags
+        solve_effect = solves / diags
+
+        step = 1
+        while step <= n_steps:
+            # For each node, get its k-step parent, where k=`step`.
+            k_step_parent = warp.tile_arange(diags_ref.shape[1] + 1)
+            for _ in range(step):
+                k_step_parent = parent_lookup[k_step_parent]
+
+            # Update.
+            solve_effect = lower_effect * solve_effect[k_step_parent] + solve_effect
+            lower_effect *= lower_effect[k_step_parent]
+            step *= 2
+
+        warp.tile_store(out_solve_ref[i_neuron], solve_effect)
+
+    return brainevent.warp_kernel(kernel, dim=(diags_info.shape[0],))
+
+
+comp_based_backsub = brainevent.XLACustomKernel('comp_based_backsub')
+comp_based_backsub.def_gpu_kernel(warp=warp_kernel_generator)
+
+
+def comp_based_backsub_call(
+    diags,
+    solves,
+    lowers,
+    parent_lookup,
+    *,
+    n_steps: int,
+):
+    return comp_based_backsub(
+        diags, solves, lowers, parent_lookup,
+        n_steps=n_steps,
+        diags_info=jax.ShapeDtypeStruct(diags.shape, diags.dtype),
+        solves_info=jax.ShapeDtypeStruct(diags.shape, diags.dtype),
+        lowers_info=jax.ShapeDtypeStruct(diags.shape, diags.dtype),
+        parent_lookup_info=jax.ShapeDtypeStruct(parent_lookup.shape, parent_lookup.dtype),
+        outs=(jax.ShapeDtypeStruct(diags.shape, diags.dtype),
+              jax.ShapeDtypeStruct(diags.shape, diags.dtype),)
+    )[0]
+
+
+#
+#
+#
+# def solve_one_kernel(diags, solves, lowers, uppers, n_nodes, parent_lookup, edges, n_steps):
+#     diags, solves = run_all_levels_single_kernel(edges, diags, solves, uppers, lowers)
+#     solves = _comp_based_backsub_recursive_doubling(
+#         diags, solves, lowers, n_steps, n_nodes, parent_lookup
+#     )
+#     return solves
+#
+#
+# def kernel_all_levels_serial(
+#     edges_ref, diags_ref, solves_ref, uppers_ref, lowers_ref, num_edges_ref, out_diags_ref,
+#     out_solves_ref,
+# ):
+#     E = pl.load(num_edges_ref, ())
+#
+#     def forward_body(e, _):
+#         c = pl.load(edges_ref, (e, 0))
+#         p = pl.load(edges_ref, (e, 1))
+#         valid = p >= 0
+#
+#         upper = pl.load(uppers_ref, c, mask=valid, other=0.0)
+#         lower = pl.load(lowers_ref, c, mask=valid, other=0.0)
+#         diag_c = pl.load(diags_ref, c, mask=valid, other=1.0)
+#         solve_c = pl.load(solves_ref, c, mask=valid, other=0.0)
+#
+#         mul = upper / diag_c
+#         diag_p = pl.load(out_diags_ref, p, mask=valid, other=0.0)
+#         solve_p = pl.load(out_solves_ref, p, mask=valid, other=0.0)
+#
+#         pl.store(out_diags_ref, p, diag_p - lower * mul, mask=valid)
+#         pl.store(out_solves_ref, p, solve_p - solve_c * mul, mask=valid)
+#         return None
+#
+#     jax.lax.fori_loop(0, E, forward_body, None)
+#
+#
+# def run_all_levels_single_kernel(edges, diags, solves, uppers, lowers):
+#     num_levels = jnp.asarray(diags.shape[0], dtype=jnp.int32)
+#
+#     call_all = pl.pallas_call(
+#         kernel_all_levels_serial,
+#         out_shape=(
+#             jax.ShapeDtypeStruct(diags.shape, diags.dtype),
+#             jax.ShapeDtypeStruct(solves.shape, solves.dtype),
+#         ),
+#         grid=(1,),
+#         input_output_aliases={1: 0, 2: 1},
+#     )
+#     return call_all(edges, diags, solves, uppers, lowers, num_levels)
 
 
 def solve_one(diags, solves, lowers, uppers, flipped_comp_edges, n_nodes, parent_lookup):
-    # diags: [n_compartments+1]
-    # solves: [n_compartments+1]
-    # lowers: [n_compartments+1]
-    # uppers: [n_compartments+1]
+    # diags: [n_neuron, n_nodes]
+    # solves: [n_neuron, n_nodes]
+    # lowers: [n_nodes]
+    # uppers: [n_nodes]
     # flipped_comp_edges: [num_levels, num_comps_per_level, 2]
     # n_nodes: int
-    # parent_lookup: [n_compartments+1]
+    # parent_lookup: [n_nodes]
     steps = len(flipped_comp_edges)
     for i in range(steps):
         diags, solves = _comp_based_triang(diags, solves, lowers, uppers, flipped_comp_edges[i])

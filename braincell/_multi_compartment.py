@@ -291,8 +291,6 @@ class MultiCompartment(HHTypedNeuron):
             node.update(self.V.value)
 
         last_V = self.V.value
-        t = brainstate.environ.get('t')
-        dt = brainstate.environ.get('dt')
         self.solver(self, I_ext)
         return self.get_spike(last_V, self.V.value)
 

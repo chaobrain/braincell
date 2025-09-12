@@ -21,8 +21,7 @@ import numpy as np
 import braincell
 from utils import seg_ion_params, BraincellRun, step_input
 
-brainstate.environ.set(precision=64)
-
+brainstate.environ.set(precision=32)
 
 class Golgi(braincell.MultiCompartment):
     def __init__(self, popsize, morphology, el, gl, gh1, gh2, ek, gkv11, gkv34, gkv43, ena, gnarsg, V_init=-65):
@@ -76,7 +75,7 @@ cell_braincell = Golgi(
     gkv43=gkv43,
     ena=Ena,
     gnarsg=gnarsg,
-    V_init=V_init
+    V_init=V_init,
 )
 
 DT = 0.01

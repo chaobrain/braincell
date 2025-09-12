@@ -201,8 +201,8 @@ def pallas_kernel_generator(
             size = level_size[i_level]
             child = pl.load(children_ref, pl.dslice(i_edge, size))
             parent = pl.load(parents_ref, pl.dslice(i_edge, size))
-            lower_val = lowers_ref[child]
-            upper_val = uppers_ref[child]
+            lower_val = pl.load(lowers_ref, child)
+            upper_val = pl.load(uppers_ref, child)
 
             child_diag = pl.load(diags_ref, (pl.dslice(i_neuron, block_size), child), mask=mask)
             child_solve = pl.load(solves_ref, (pl.dslice(i_neuron, block_size), child), mask=mask)

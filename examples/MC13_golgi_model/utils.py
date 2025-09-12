@@ -48,6 +48,7 @@ def step_stim(cell, delay, dur, amp):
 
 
 # Braincell run 
+@brainstate.transform.jit(static_argnums=(0,))
 def BraincellRun(cell, I, dt):
     # time
     brainstate.environ.set(dt=dt * u.ms)

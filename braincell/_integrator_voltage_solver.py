@@ -115,10 +115,14 @@ def dhs_voltage_step(target, t, dt, *args):
 
     # --- Alternative DHS solver using custom pallas and warp kernels ---
     diags, solves = u.get_magnitude(diags), u.get_magnitude(solves)
-    diags, solves = comp_based_triang_call(diags, solves, lowers, uppers, edges, level_sizes)
+    diags, solves = comp_based_triang_call(diags, solves, lowers, uppers, edges)# level_sizes
     # solves = comp_based_backsub_call(solves/diags, lowers/diags, parent_lookup, n_nodes = n_nodes+1, n_steps=len(flipped_comp_edges))
-    steps = len(flipped_comp_edges)
-    solves = _comp_based_backsub_recursive_doubling(diags, solves, lowers, steps, n_nodes, parent_lookup)
+    solves = jax.vmap(
+        solve_one_kernel,
+        in_axes=(0, 0, None, None, None, None, None),  # batch over population
+        out_axes=0
+    )(diags, solves, lowers, uppers, flipped_comp_edges, n_nodes, parent_lookup)
+    #solves = _comp_based_backsub_recursive_doubling(diags, solves, lowers, steps, n_nodes, parent_lookup)
     target.V.value = solves[:, internal_node_inds].reshape(target.V.value.shape) * u.mV
 
 
@@ -153,11 +157,11 @@ def pallas_kernel_generator_v1(diags_info: jax.ShapeDtypeStruct, **kwargs):
             # Factor that the child row has to be multiplied by.
             multiplier = upper_val / child_diag
 
-            pl.atomic_add(out_diags_ref,
+            pl.store(out_diags_ref,
                           (pl.dslice(i_neuron, block_size), parent),
                           -lower_val * multiplier,
                           mask=mask)
-            pl.atomic_add(out_solves_ref,
+            pl.store(out_solves_ref,
                           (pl.dslice(i_neuron, block_size), parent),
                           -child_solve * multiplier,
                           mask=mask)
@@ -231,7 +235,7 @@ def pallas_kernel_generator(
 
 
 comp_based_triang = brainevent.XLACustomKernel('comp_based_triang')
-comp_based_triang.def_gpu_kernel(pallas=pallas_kernel_generator)
+comp_based_triang.def_gpu_kernel(pallas=pallas_kernel_generator_v1)
 
 
 def comp_based_triang_call(
@@ -240,17 +244,17 @@ def comp_based_triang_call(
     lowers,  # [ n_nodes]
     uppers,  # [ n_nodes]
     edges,  # [ n_nodes-1, 2]
-    level_size,  # [ n_nodes-1, 2]
+    #level_size,  # [ n_nodes-1, 2]
 ):
     return comp_based_triang(
         diags,
         solves,
         lowers,
         uppers,
-        edges[:, 0],
-        edges[:, 1],
-        level_size,
-        n_level=level_size.shape[0],
+        edges,
+        #edges[:, 1],
+        #level_size,
+        #n_level=level_size.shape[0],
         diags_info=jax.ShapeDtypeStruct(diags.shape, diags.dtype),
         outs=(jax.ShapeDtypeStruct(diags.shape, diags.dtype),
               jax.ShapeDtypeStruct(solves.shape, solves.dtype))
@@ -373,6 +377,17 @@ def comp_based_backsub_call(
 #     )
 #     return call_all(edges, diags, solves, uppers, lowers, num_levels)
 
+def solve_one_kernel(diags, solves, lowers, uppers, flipped_comp_edges, n_nodes, parent_lookup):
+    # diags: [n_neuron, n_nodes]
+    # solves: [n_neuron, n_nodes]
+    # lowers: [n_nodes]
+    # uppers: [n_nodes]
+    # flipped_comp_edges: [num_levels, num_comps_per_level, 2]
+    # n_nodes: int
+    # parent_lookup: [n_nodes]
+    steps = len(flipped_comp_edges)
+    solves = _comp_based_backsub_recursive_doubling(diags, solves, lowers, steps, n_nodes, parent_lookup)
+    return solves
 
 def solve_one(diags, solves, lowers, uppers, flipped_comp_edges, n_nodes, parent_lookup):
     # diags: [n_neuron, n_nodes]

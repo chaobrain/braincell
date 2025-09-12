@@ -19,14 +19,14 @@
 Implementation of the backward Euler integrator for voltage dynamics in multicompartment models.
 """
 
+import brainevent
 import brainstate
 import brainunit as u
 import jax
 import jax.numpy as jnp
 import numpy as np
-import brainevent
-from brainevent._misc import generate_block_dim
 from brainevent._compatible_import import pallas as pl
+from brainevent._misc import generate_block_dim
 
 from ._integrator_protocol import DiffEqModule
 from ._misc import set_module_as
@@ -96,38 +96,35 @@ def dhs_voltage_step(target, t, dt, *args):
     solves = V + dt * V_const  # RHS vector
     uppers = dt * uppers  # scale upper off-diagonal
     lowers = dt * lowers  # scale lower off-diagonal
-    
+
     # --- Step 5: Append virtual/spurious compartment for stability ---
     diags = u.math.concatenate([diags, u.math.ones((P, 1)) * u.get_unit(diags)], axis=1)
     solves = u.math.concatenate([solves, u.math.zeros((P, 1)) * u.get_unit(solves)], axis=1)
     lowers = u.math.concatenate([lowers, u.math.zeros((), dtype=lowers.dtype)])
     uppers = u.math.concatenate([uppers, u.math.zeros((), dtype=uppers.dtype)])
-    
+
     # # --- Step 6: Solve the linear system for all populations in batch ---
     # solves = jax.vmap(
     #     solve_one,
     #     in_axes=(0, 0, None, None, None, None, None),  # batch over population
     #     out_axes=0
     # )(diags, solves, lowers, uppers, flipped_comp_edges, n_nodes, parent_lookup)
-    
+
     # # # # --- Step 7: Write back results for internal nodes only ---
     # target.V.value = solves[:, internal_node_inds].reshape(target.V.value.shape)
 
     # --- Alternative DHS solver using custom pallas and warp kernels ---
     diags, solves = u.get_magnitude(diags), u.get_magnitude(solves)
-    diags, solves = comp_based_triang_call(diags, solves, lowers, uppers, edges)
+    diags, solves = comp_based_triang_call(diags, solves, lowers, uppers, edges, level_sizes)
     # solves = comp_based_backsub_call(solves/diags, lowers/diags, parent_lookup, n_nodes = n_nodes+1, n_steps=len(flipped_comp_edges))
     steps = len(flipped_comp_edges)
     solves = _comp_based_backsub_recursive_doubling(diags, solves, lowers, steps, n_nodes, parent_lookup)
-    target.V.value = solves[:, internal_node_inds].reshape(target.V.value.shape)* u.mV
+    target.V.value = solves[:, internal_node_inds].reshape(target.V.value.shape) * u.mV
 
 
-def pallas_kernel_generator(
-    diags_info: jax.ShapeDtypeStruct,
-    **kwargs
-):
-    block_size = generate_block_dim(diags_info.shape[0], maximum=4096)
-    block_size = 32
+def pallas_kernel_generator_v1(diags_info: jax.ShapeDtypeStruct, **kwargs):
+    block_size = generate_block_dim(diags_info.shape[0], maximum=512)
+    # block_size = 32
     n_neuron_loop = pl.cdiv(diags_info.shape[0], block_size)
 
     def kernel(
@@ -175,6 +172,64 @@ def pallas_kernel_generator(
     )
 
 
+def pallas_kernel_generator(
+    diags_info: jax.ShapeDtypeStruct,
+    n_level: int,
+    **kwargs
+):
+    block_size = generate_block_dim(diags_info.shape[0], maximum=512)
+    # block_size = 32
+    n_neuron_loop = pl.cdiv(diags_info.shape[0], block_size)
+
+    def kernel(
+        diags_ref,  # [n_neuron, n_nodes]
+        solves_ref,  # [n_neuron, n_nodes]
+        lowers_ref,  # [ n_nodes]
+        uppers_ref,  # [ n_nodes]
+        children_ref,  # [ n_nodes-1]
+        parents_ref,  # [ n_nodes-1]
+        level_size,  # [ n_nodes-1]
+        # outs
+        out_diags_ref,  # [n_neuron, n_nodes]
+        out_solves_ref,  # [n_neuron, n_nodes]
+    ):
+        i_neuron_block = pl.program_id(0)
+        i_neuron = i_neuron_block * block_size
+        mask = jnp.arange(block_size) + i_neuron < diags_info.shape[0]
+
+        def edge_loop_fn(i_level, i_edge):
+            size = level_size[i_level]
+            child = pl.load(children_ref, pl.dslice(i_edge, size))
+            parent = pl.load(parents_ref, pl.dslice(i_edge, size))
+            lower_val = lowers_ref[child]
+            upper_val = uppers_ref[child]
+
+            child_diag = pl.load(diags_ref, (pl.dslice(i_neuron, block_size), child), mask=mask)
+            child_solve = pl.load(solves_ref, (pl.dslice(i_neuron, block_size), child), mask=mask)
+
+            # Factor that the child row has to be multiplied by.
+            multiplier = upper_val / child_diag
+
+            pl.atomic_add(out_diags_ref,
+                          (pl.dslice(i_neuron, block_size), parent),
+                          -lower_val * multiplier,
+                          mask=mask)
+            pl.atomic_add(out_solves_ref,
+                          (pl.dslice(i_neuron, block_size), parent),
+                          -child_solve * multiplier,
+                          mask=mask)
+            return i_edge + size
+
+        jax.lax.fori_loop(0, n_level, edge_loop_fn, 0)
+
+    return brainevent.pallas_kernel(
+        kernel,
+        tile=(n_neuron_loop,),
+        input_output_aliases={0: 0, 1: 1},
+        outs=kwargs['outs']
+    )
+
+
 comp_based_triang = brainevent.XLACustomKernel('comp_based_triang')
 comp_based_triang.def_gpu_kernel(pallas=pallas_kernel_generator)
 
@@ -185,17 +240,22 @@ def comp_based_triang_call(
     lowers,  # [ n_nodes]
     uppers,  # [ n_nodes]
     edges,  # [ n_nodes-1, 2]
+    level_size,  # [ n_nodes-1, 2]
 ):
     return comp_based_triang(
         diags,
         solves,
         lowers,
         uppers,
-        edges,
+        edges[:, 0],
+        edges[:, 1],
+        level_size,
+        n_level=level_size.shape[0],
         diags_info=jax.ShapeDtypeStruct(diags.shape, diags.dtype),
         outs=(jax.ShapeDtypeStruct(diags.shape, diags.dtype),
               jax.ShapeDtypeStruct(solves.shape, solves.dtype))
     )
+
 
 def warp_kernel_generator(
     solves_info: jax.ShapeDtypeStruct,
@@ -207,6 +267,7 @@ def warp_kernel_generator(
 ):
     import warp
     WARP_TILE_SIZE = warp.constant(solves_info.shape[1])
+
     def kernel(
         solves_ref: brainevent.jaxinfo_to_warpinfo(solves_info),
         lowers_ref: brainevent.jaxinfo_to_warpinfo(lowers_info),
@@ -216,7 +277,7 @@ def warp_kernel_generator(
         i_neuron = warp.tid()
 
         solves = warp.tile_load(solves_ref[i_neuron], WARP_TILE_SIZE)
-        lowers = warp.tile_load(lowers_ref[i_neuron],  WARP_TILE_SIZE)
+        lowers = warp.tile_load(lowers_ref[i_neuron], WARP_TILE_SIZE)
         parent_lookup = warp.tile_load(parent_lookup_ref, WARP_TILE_SIZE)
 
         # diags = warp.tile_load(diags_ref, shape=(1, n_nodes), offset=(i_neuron, 0))
@@ -239,7 +300,8 @@ def warp_kernel_generator(
 
         warp.tile_store(out_solve_ref[i_neuron], solves)
 
-    return brainevent.warp_kernel(kernel, dim=(solves_info.shape[0], ),)
+    return brainevent.warp_kernel(kernel, dim=(solves_info.shape[0],), )
+
 
 comp_based_backsub = brainevent.XLACustomKernel('comp_based_backsub')
 comp_based_backsub.def_gpu_kernel(warp=warp_kernel_generator)
@@ -260,7 +322,7 @@ def comp_based_backsub_call(
         solves_info=jax.ShapeDtypeStruct(solves.shape, solves.dtype),
         lowers_info=jax.ShapeDtypeStruct(lowers.shape, lowers.dtype),
         parent_lookup_info=jax.ShapeDtypeStruct(parent_lookup.shape, parent_lookup.dtype),
-        outs=(jax.ShapeDtypeStruct(solves.shape, solves.dtype), )
+        outs=(jax.ShapeDtypeStruct(solves.shape, solves.dtype),)
     )[0]
 
 

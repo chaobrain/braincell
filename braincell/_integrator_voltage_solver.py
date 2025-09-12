@@ -116,9 +116,15 @@ def dhs_voltage_step(target, t, dt, *args):
     # --- Alternative DHS solver using custom pallas and warp kernels ---
     diags, solves = u.get_magnitude(diags), u.get_magnitude(solves)
     diags, solves = comp_based_triang_call(diags, solves, lowers, uppers, edges)
+
+    solves = jax.vmap(
+        solve_one_kernel,
+        in_axes=(0, 0, None, None, None, None, None),  # batch over population
+        out_axes=0
+    )(diags, solves, lowers, uppers, flipped_comp_edges, n_nodes, parent_lookup)
     # solves = comp_based_backsub_call(solves/diags, lowers/diags, parent_lookup, n_nodes = n_nodes+1, n_steps=len(flipped_comp_edges))
-    steps = len(flipped_comp_edges)
-    solves = _comp_based_backsub_recursive_doubling(diags, solves, lowers, steps, n_nodes, parent_lookup)
+    #steps = len(flipped_comp_edges)
+    #solves = _comp_based_backsub_recursive_doubling(diags, solves, lowers, steps, n_nodes, parent_lookup)
     target.V.value = solves[:, internal_node_inds].reshape(target.V.value.shape)* u.mV
 
 
@@ -126,8 +132,8 @@ def pallas_kernel_generator(
     diags_info: jax.ShapeDtypeStruct,
     **kwargs
 ):
-    block_size = generate_block_dim(diags_info.shape[0], maximum=4096)
-    block_size = 32
+    block_size = generate_block_dim(diags_info.shape[0], maximum=512)
+    #block_size = 32
     n_neuron_loop = pl.cdiv(diags_info.shape[0], block_size)
 
     def kernel(
@@ -311,6 +317,18 @@ def comp_based_backsub_call(
 #     )
 #     return call_all(edges, diags, solves, uppers, lowers, num_levels)
 
+
+def solve_one_kernel(diags, solves, lowers, uppers, flipped_comp_edges, n_nodes, parent_lookup):
+    # diags: [n_neuron, n_nodes]
+    # solves: [n_neuron, n_nodes]
+    # lowers: [n_nodes]
+    # uppers: [n_nodes]
+    # flipped_comp_edges: [num_levels, num_comps_per_level, 2]
+    # n_nodes: int
+    # parent_lookup: [n_nodes]
+    steps = len(flipped_comp_edges)
+    solves = _comp_based_backsub_recursive_doubling(diags, solves, lowers, steps, n_nodes, parent_lookup)
+    return solves
 
 def solve_one(diags, solves, lowers, uppers, flipped_comp_edges, n_nodes, parent_lookup):
     # diags: [n_neuron, n_nodes]

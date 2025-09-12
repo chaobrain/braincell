@@ -115,14 +115,15 @@ def dhs_voltage_step(target, t, dt, *args):
 
     # --- Alternative DHS solver using custom pallas and warp kernels ---
     diags, solves = u.get_magnitude(diags), u.get_magnitude(solves)
-    diags, solves = comp_based_triang_call(diags, solves, lowers, uppers, edges, level_sizes, n_block = 1)
-    solves = comp_based_backsub_call(solves/diags, lowers/diags, parent_lookup, n_nodes = n_nodes+1, n_steps=len(flipped_comp_edges))
+    diags, solves = comp_based_triang_call(diags, solves, lowers, uppers, edges)
+    # solves = comp_based_backsub_call(solves/diags, lowers/diags, parent_lookup, n_nodes = n_nodes+1, n_steps=len(flipped_comp_edges))
+    steps = len(flipped_comp_edges)
+    solves = _comp_based_backsub_recursive_doubling(diags, solves, lowers, steps, n_nodes, parent_lookup)
     target.V.value = solves[:, internal_node_inds].reshape(target.V.value.shape)* u.mV
-    
+
+
 def pallas_kernel_generator(
     diags_info: jax.ShapeDtypeStruct,
-    n_steps: int,
-    n_block: int,
     **kwargs
 ):
     block_size = generate_block_dim(diags_info.shape[0], maximum=4096)
@@ -135,7 +136,6 @@ def pallas_kernel_generator(
         lowers_ref,  # [ n_nodes]
         uppers_ref,  # [ n_nodes]
         edges_ref,  # [ n_nodes-1, 2]
-        level_size_ref,  # [ n_steps]
         # outs
         out_diags_ref,  # [n_neuron, n_nodes]
         out_solves_ref,  # [n_neuron, n_nodes]
@@ -144,36 +144,28 @@ def pallas_kernel_generator(
         i_neuron = i_neuron_block * block_size
         mask = jnp.arange(block_size) + i_neuron < diags_info.shape[0]
 
-        def step_loop_fn(i_step, i_edge_start):
-            size = level_size_ref[i_step]
-            i_edge_end = i_edge_start + size
+        def edge_loop_fn(i_edge, _):
+            child = edges_ref[i_edge, 0]
+            parent = edges_ref[i_edge, 1]
+            lower_val = lowers_ref[child]
+            upper_val = uppers_ref[child]
 
-            def edge_loop_fn(i_edge):
-                child = edges_ref[i_edge, 0]
-                parent = edges_ref[i_edge, 1]
-                lower_val = lowers_ref[child]
-                upper_val = uppers_ref[child]
+            child_diag = pl.load(diags_ref, (pl.dslice(i_neuron, block_size), child), mask=mask)
+            child_solve = pl.load(solves_ref, (pl.dslice(i_neuron, block_size), child), mask=mask)
 
-                child_diag = pl.load(diags_ref, (pl.dslice(i_neuron, block_size), child), mask=mask)
-                child_solve = pl.load(solves_ref, (pl.dslice(i_neuron, block_size), child), mask=mask)
+            # Factor that the child row has to be multiplied by.
+            multiplier = upper_val / child_diag
 
-                # Factor that the child row has to be multiplied by.
-                multiplier = upper_val / child_diag
+            pl.atomic_add(out_diags_ref,
+                          (pl.dslice(i_neuron, block_size), parent),
+                          -lower_val * multiplier,
+                          mask=mask)
+            pl.atomic_add(out_solves_ref,
+                          (pl.dslice(i_neuron, block_size), parent),
+                          -child_solve * multiplier,
+                          mask=mask)
 
-                pl.atomic_add(out_diags_ref,
-                              (pl.dslice(i_neuron, block_size), parent),
-                              -lower_val * multiplier,
-                              mask=mask)
-                pl.atomic_add(out_solves_ref,
-                              (pl.dslice(i_neuron, block_size), parent),
-                              -child_solve * multiplier,
-                              mask=mask)
-                return i_edge + n_block
-
-            jax.lax.while_loop(lambda i_edge: i_edge < i_edge_end, edge_loop_fn, i_edge_start)
-            return i_edge_end
-
-        jax.lax.fori_loop(0, n_steps, step_loop_fn, 0)
+        jax.lax.fori_loop(0, edges_ref.shape[0], edge_loop_fn, None)
 
     return brainevent.pallas_kernel(
         kernel,
@@ -193,14 +185,14 @@ def comp_based_triang_call(
     lowers,  # [ n_nodes]
     uppers,  # [ n_nodes]
     edges,  # [ n_nodes-1, 2]
-    level_size,  # [ n_steps]
-    *,
-    n_block
 ):
     return comp_based_triang(
-        diags, solves, lowers, uppers, edges, level_size, 
+        diags,
+        solves,
+        lowers,
+        uppers,
+        edges,
         diags_info=jax.ShapeDtypeStruct(diags.shape, diags.dtype),
-        n_steps=level_size.shape[0], n_block=n_block,
         outs=(jax.ShapeDtypeStruct(diags.shape, diags.dtype),
               jax.ShapeDtypeStruct(solves.shape, solves.dtype))
     )

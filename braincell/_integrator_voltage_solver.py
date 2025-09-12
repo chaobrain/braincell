@@ -126,6 +126,7 @@ def pallas_kernel_generator(
     **kwargs
 ):
     block_size = generate_block_dim(diags_info.shape[0], maximum=4096)
+    block_size = 32
     n_neuron_loop = pl.cdiv(diags_info.shape[0], block_size)
 
     def kernel(
@@ -139,7 +140,9 @@ def pallas_kernel_generator(
         out_diags_ref,  # [n_neuron, n_nodes]
         out_solves_ref,  # [n_neuron, n_nodes]
     ):
-        i_block = pl.program_id(0)
+        i_neuron_block = pl.program_id(0)
+        i_neuron = i_neuron_block * block_size
+        mask = jnp.arange(block_size) + i_neuron < diags_info.shape[0]
 
         def step_loop_fn(i_step, i_edge_start):
             size = level_size_ref[i_step]
@@ -151,32 +154,30 @@ def pallas_kernel_generator(
                 lower_val = lowers_ref[child]
                 upper_val = uppers_ref[child]
 
-                for i_neuron in range(n_neuron_loop):
-                    mask = jnp.arange(block_size) + i_neuron * block_size < diags_info.shape[0]
-                    child_diag = pl.load(diags_ref, (pl.dslice(i_neuron * block_size, block_size), child), mask=mask)
-                    child_solve = pl.load(solves_ref, (pl.dslice(i_neuron * block_size, block_size), child), mask=mask)
+                child_diag = pl.load(diags_ref, (pl.dslice(i_neuron, block_size), child), mask=mask)
+                child_solve = pl.load(solves_ref, (pl.dslice(i_neuron, block_size), child), mask=mask)
 
-                    # Factor that the child row has to be multiplied by.
-                    multiplier = upper_val / child_diag
+                # Factor that the child row has to be multiplied by.
+                multiplier = upper_val / child_diag
 
-                    pl.atomic_add(out_diags_ref,
-                                  (pl.dslice(i_neuron * block_size, block_size), parent),
-                                  -lower_val * multiplier,
-                                  mask=mask)
-                    pl.atomic_add(out_solves_ref,
-                                  (pl.dslice(i_neuron * block_size, block_size), parent),
-                                  -child_solve * multiplier,
-                                  mask=mask)
+                pl.atomic_add(out_diags_ref,
+                              (pl.dslice(i_neuron, block_size), parent),
+                              -lower_val * multiplier,
+                              mask=mask)
+                pl.atomic_add(out_solves_ref,
+                              (pl.dslice(i_neuron, block_size), parent),
+                              -child_solve * multiplier,
+                              mask=mask)
                 return i_edge + n_block
 
-            jax.lax.while_loop(lambda i_edge: i_edge < i_edge_end, edge_loop_fn, i_edge_start + i_block)
+            jax.lax.while_loop(lambda i_edge: i_edge < i_edge_end, edge_loop_fn, i_edge_start)
             return i_edge_end
 
         jax.lax.fori_loop(0, n_steps, step_loop_fn, 0)
 
     return brainevent.pallas_kernel(
         kernel,
-        tile=(n_block,),
+        tile=(n_neuron_loop,),
         input_output_aliases={0: 0, 1: 1},
         outs=kwargs['outs']
     )

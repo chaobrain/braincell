@@ -58,12 +58,7 @@ def _backward_euler(f, y0, t, dt, args=()):
     # Solve linear system: (I - dt * A) @ Δy = dt * df
     LHS = I - dt * A
     RHS = dt * df
-    #updates = jnp.linalg.solve(LHS, RHS.reshape(-1, n, 1)).reshape(y0.shape)
     updates = jax.scipy.linalg.solve(LHS, RHS.reshape(-1, n, 1)).reshape(y0.shape)
-    #updates = jax.vmap(lambda A_, df_: jnp.linalg.solve(I - dt * A_, dt * df_))(A, df)
-
-    # Reshape updates back to original shape
-    #updates = updates.reshape(y0.shape)
 
     # Compute the new state
     y1 = y0 + updates

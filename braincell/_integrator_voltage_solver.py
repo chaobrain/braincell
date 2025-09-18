@@ -106,9 +106,9 @@ def dhs_voltage_step(target, t, dt, *args):
     # --- Step 6: Solve the linear system for all populations in batch ---
     solves = solves.to_decimal(u.mV)
     n_steps = len(flipped_comp_edges)
-    diags, solves = comp_triang_call(diags, solves, lowers, uppers, edges)
+    # diags, solves = comp_triang_call(diags, solves, lowers, uppers, edges)
     # solves = comp_backsub_call(diags, solves, lowers, parent_lookup, n_nodes=n_nodes, n_steps=n_steps)
-    # diags, solves = comp_triang_raw(diags, solves, lowers, uppers, edges)
+    diags, solves = comp_triang_raw(diags, solves, lowers, uppers, edges, level_sizes)
     solves = comp_backsub_raw(diags, solves, lowers, parent_lookup, n_nodes=n_nodes, n_steps=n_steps)
     # --- Step 7: Write back results for internal nodes only ---
     target.V.value = solves[:, internal_node_inds].reshape(target.V.value.shape) * u.mV
@@ -209,26 +209,45 @@ def comp_triang_call(diags, solves, lowers, uppers, edges):
     )
 
 
-def comp_triang_raw(diags, solves, lowers, uppers, edges):
+def comp_triang_raw(diags, solves, lowers, uppers, edges, level_sizes):
     _check_comp_triang(diags, solves, lowers, uppers, edges)
 
-    def loop_fn(val, edge):
-        diags_, solves_ = val
-        child, parent = edge
-        lower_val = lowers[child]
-        upper_val = uppers[child]
-        child_diag = diags_[:, child]
-        child_solve = solves_[:, child]
+    def version1():
+        def loop_fn(val, edge):
+            diags_, solves_ = val
+            child, parent = edge
+            lower_val = lowers[child]
+            upper_val = uppers[child]
+            child_diag = diags_[:, child]
+            child_solve = solves_[:, child]
+
+            # Factor that the child row has to be multiplied by.
+            multiplier = upper_val / child_diag
+
+            # Updates to diagonal and solve
+            diags_ = diags_.at[:, parent].add(-lower_val * multiplier)
+            solves_ = solves_.at[:, parent].add(-child_solve * multiplier)
+            return (diags_, solves_), None
+
+        return jax.lax.scan(loop_fn, (diags, solves), edges)[0]
+
+    with jax.ensure_compile_time_eval():
+        level_sizes = np.cumsum(np.insert(level_sizes, 0, 0))
+    for i in range(level_sizes.shape[0] - 1):
+        children = edges[level_sizes[i]:level_sizes[i + 1], 0]
+        parent = edges[level_sizes[i]:level_sizes[i + 1], 1]
+        lower_val = lowers[children]
+        upper_val = uppers[children]
+        child_diag = diags[:, children]
+        child_solve = solves[:, children]
 
         # Factor that the child row has to be multiplied by.
         multiplier = upper_val / child_diag
 
         # Updates to diagonal and solve
-        diags_ = diags_.at[:, parent].add(-lower_val * multiplier)
-        solves_ = solves_.at[:, parent].add(-child_solve * multiplier)
-        return (diags_, solves_), None
-
-    return jax.lax.scan(loop_fn, (diags, solves), edges)[0]
+        diags = diags.at[:, parent].add(-lower_val * multiplier)
+        solves = solves.at[:, parent].add(-child_solve * multiplier)
+    return diags, solves
 
 
 def _comp_backsub_numba_kernel_generator(n_nodes: int, n_steps: int, **kwargs):

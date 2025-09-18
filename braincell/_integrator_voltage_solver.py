@@ -108,6 +108,7 @@ def dhs_voltage_step(target, t, dt, *args):
     n_steps = len(flipped_comp_edges)
     # diags, solves = comp_triang_call(diags, solves, lowers, uppers, edges)
     # solves = comp_backsub_call(diags, solves, lowers, parent_lookup, n_nodes=n_nodes, n_steps=n_steps)
+    # diags, solves = comp_triang_call_v2(diags, solves, lowers, uppers, edges, level_sizes)
     diags, solves = comp_triang_raw(diags, solves, lowers, uppers, edges, level_sizes)
     solves = comp_backsub_raw(diags, solves, lowers, parent_lookup, n_nodes=n_nodes, n_steps=n_steps)
     # --- Step 7: Write back results for internal nodes only ---
@@ -231,6 +232,8 @@ def comp_triang_raw(diags, solves, lowers, uppers, edges, level_sizes):
 
         return jax.lax.scan(loop_fn, (diags, solves), edges)[0]
 
+    return version1()
+
     with jax.ensure_compile_time_eval():
         level_sizes = np.cumsum(np.insert(level_sizes, 0, 0))
     for i in range(level_sizes.shape[0] - 1):
@@ -248,6 +251,54 @@ def comp_triang_raw(diags, solves, lowers, uppers, edges, level_sizes):
         diags = diags.at[:, parent].add(-lower_val * multiplier)
         solves = solves.at[:, parent].add(-child_solve * multiplier)
     return diags, solves
+
+
+def comp_triang_call_v2(diags, solves, lowers, uppers, edges, level_sizes):
+    _check_comp_triang(diags, solves, lowers, uppers, edges)
+    block_size = generate_block_dim(diags.shape[0], maximum=128)
+    n_neuron_loop = pl.cdiv(diags.shape[0], block_size)
+
+    with jax.ensure_compile_time_eval():
+        level_sizes = np.cumsum(np.insert(level_sizes, 0, 0))
+
+    def kernel(
+        diags_ref,  # [n_neuron, n_nodes]
+        solves_ref,  # [n_neuron, n_nodes]
+        lowers_ref,  # [ n_nodes]
+        uppers_ref,  # [ n_nodes]
+        children_ref,  # [ n_nodes-1]
+        parent_ref,  # [ n_nodes-1]
+        # outs
+        out_diags_ref,  # [n_neuron, n_nodes]
+        out_solves_ref,  # [n_neuron, n_nodes]
+    ):
+        i_neuron_block = pl.program_id(0)
+        i_neuron = i_neuron_block * block_size
+        mask = jnp.arange(block_size) + i_neuron < diags_ref.shape[0]
+        mask = mask[:, np.newaxis]
+
+        for i in range(level_sizes.shape[0] - 1):
+            child = children_ref[level_sizes[i]:level_sizes[i + 1]]
+            parent = parent_ref[level_sizes[i]:level_sizes[i + 1]]
+            lower_val = lowers_ref[child]
+            upper_val = uppers_ref[child]
+            child_diag = pl.load(diags_ref, (pl.dslice(i_neuron, block_size), child), mask=mask)
+            child_solve = pl.load(solves_ref, (pl.dslice(i_neuron, block_size), child), mask=mask)
+            multiplier = upper_val / child_diag
+            index = (pl.dslice(i_neuron, block_size), parent)
+            old_diag = pl.load(out_diags_ref, index, mask=mask)
+            old_solve = pl.load(out_solves_ref, index, mask=mask)
+            pl.store(out_diags_ref, index, old_diag - lower_val * multiplier, mask=mask)
+            pl.store(out_solves_ref, index, old_solve - child_solve * multiplier, mask=mask)
+
+    return pl.pallas_call(
+        kernel,
+        grid=(n_neuron_loop,),
+        out_shape=(
+            jax.ShapeDtypeStruct(diags.shape, diags.dtype),
+            jax.ShapeDtypeStruct(solves.shape, solves.dtype)
+        ),
+    )(diags, solves, lowers, uppers, edges[:, 0], edges[:, 1])
 
 
 def _comp_backsub_numba_kernel_generator(n_nodes: int, n_steps: int, **kwargs):

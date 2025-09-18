@@ -19,7 +19,7 @@ import brainstate
 import brainunit as u
 import matplotlib.pyplot as plt
 
-brainstate.environ.set(precision=64, platform='cpu')
+brainstate.environ.set(precision=64, platform='gpu')
 
 import braincell
 import numpy as np

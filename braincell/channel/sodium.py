@@ -475,8 +475,8 @@ class INa_Rsg(SodiumChannel, IndependentIntegration):
         self.btfac = (self.Ooff / self.Coff) ** (1 / 4)
 
     def make_integration(self, *args, **kwargs):
-        with brainstate.environ.context(dt=brainstate.environ.get_dt() / 10):
-            brainstate.transform.for_loop(lambda i: self.solver(self, *args, **kwargs), u.math.arange(10))
+        with brainstate.environ.context(dt=brainstate.environ.get_dt() / 5):
+            brainstate.transform.for_loop(lambda i: self.solver(self, *args, **kwargs), u.math.arange(5))
 
     def init_state(self, V, Na: IonInfo, batch_size=None):
         state_names = ["C1", "C2", "C3", "C4", "C5", "I1", "I2", "I3", "I4", "I5", "O", "B", ]

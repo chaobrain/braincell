@@ -197,7 +197,7 @@ morphology.set_passive_params()
 
 gl, gh1, gh2, gkv11, gkv34, gkv43, gnarsg, gcagrc, gcav23, gcav31, gkca31 = seg_ion_params(morphology)
 cell_braincell = Golgi(
-    popsize=1,  # number of cells in the population
+    popsize=128,  # number of cells in the population
     morphology=morphology,
     E_L=-55. * u.mV,
     gl=gl,

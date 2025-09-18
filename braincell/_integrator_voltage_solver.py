@@ -232,7 +232,7 @@ def comp_triang_raw(diags, solves, lowers, uppers, edges, level_sizes):
 
         return jax.lax.scan(loop_fn, (diags, solves), edges)[0]
 
-    return version1()
+    # return version1()
 
     with jax.ensure_compile_time_eval():
         level_sizes = np.cumsum(np.insert(level_sizes, 0, 0))

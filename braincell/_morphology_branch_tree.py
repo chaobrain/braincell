@@ -230,6 +230,7 @@ def build_segment_graph(merged_edges):
     G.add_edges_from(merged_edges)
     return G
 
+
 def classify_segment_nodes(num_segments, uf, G):
     """
     Classify merged nodes as segment centers, non-center non-leaf, or leaf nodes.
@@ -347,6 +348,7 @@ def dhs_group_by_depth(depths_sorted, max_group_size):
         groups.append(sorted(group))
     groups.reverse()
     return groups
+
 
 def tree_layout(G, root=None, dx=1.5, dy=1.7):
     """
@@ -841,21 +843,15 @@ class BranchingTree:
 
         self.parent_lookup = np.array(parent_rows + [-1])
 
-        
-        # lowers: gmat_sorted[i, parent_rows[i]]，仅当 parent!=-1
-        lowers_all = gmat_sorted[idx, parent_rows]
-        lowers = u.math.where(mask, lowers_all, 0.0)
-
-        # uppers: gmat_sorted[parent_rows[i], i]，仅当 parent!=-1
-        uppers_all = gmat_sorted[parent_rows, idx]
-        uppers = u.math.where(mask, uppers_all, 0.0)
-
-        self.parent_lookup = np.array(parent_rows + [-1])
-
         # finalize
         self.diags = np.diag(gmat_sorted) * gmat_sorted_unit
         self.uppers = uppers * gmat_sorted_unit
         self.lowers = lowers * gmat_sorted_unit
+
+        # another format for flipped_comp_edges
+        self.edges = np.concatenate(self.flipped_comp_edges, axis=0)
+        self.level_size = np.array([len(level) for level in self.flipped_comp_edges])
+        self.level_start = np.concatenate([np.array([0]), np.cumsum(self.level_size)])[:-1]
 
     def _preprocess_branching_tree(
         self,

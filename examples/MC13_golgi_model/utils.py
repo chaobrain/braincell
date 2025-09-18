@@ -56,7 +56,7 @@ def BraincellRun(cell, I, dt):
     cell.init_state()
     cell.reset_state()
     # run
-    vs = brainstate.compile.for_loop(cell.step_run, times, I)
+    vs = brainstate.compile.for_loop(cell.step_run, times, I) #vs = 
 
     return times.to_decimal(u.ms), vs.to_decimal(u.mV)
 

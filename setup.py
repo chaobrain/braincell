@@ -34,6 +34,7 @@ with io.open(os.path.join(here, 'README.md'), 'r', encoding='utf-8') as f:
 # installation packages
 packages = find_packages(
     exclude=[
+        "dev*",
         "docs*",
         "build*",
         "examples*",

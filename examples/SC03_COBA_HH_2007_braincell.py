@@ -20,12 +20,11 @@
 #   Simulation of networks of spiking neurons: a review of tools and strategies., J. Comput. Neurosci., 23, 3, 349–98
 #
 
+import brainstate
 import brainunit as u
 import matplotlib.pyplot as plt
 
 import braincell
-import brainstate
-
 
 V_th = -20. * u.mV
 area = 20000 * u.um ** 2
@@ -37,16 +36,12 @@ class HH(braincell.SingleCompartment):
     def __init__(self, in_size):
         super().__init__(in_size, C=Cm, solver='ind_exp_euler')
         self.na = braincell.ion.SodiumFixed(in_size, E=50. * u.mV)
-        self.na.add_elem(
-            INa=braincell.channel.INa_TM1991(in_size, g_max=(100. * u.mS * u.cm ** -2) * area, V_sh=-63. * u.mV)
-        )
+        self.na.add(INa=braincell.channel.INa_TM1991(in_size, g_max=100. * u.mS / u.cm ** 2 * area, V_sh=-63. * u.mV))
 
         self.k = braincell.ion.PotassiumFixed(in_size, E=-90 * u.mV)
-        self.k.add_elem(
-            IK=braincell.channel.IK_TM1991(in_size, g_max=(30. * u.mS * u.cm ** -2) * area, V_sh=-63. * u.mV)
-        )
+        self.k.add(IK=braincell.channel.IK_TM1991(in_size, g_max=30. * u.mS / u.cm ** 2 * area, V_sh=-63. * u.mV))
 
-        self.IL = braincell.channel.IL(in_size, E=-60. * u.mV, g_max=(5. * u.nS * u.cm ** -2) * area)
+        self.IL = braincell.channel.IL(in_size, E=-60. * u.mV, g_max=5. * u.nS / u.cm ** 2 * area)
 
 
 class EINet(brainstate.nn.DynamicsGroup):

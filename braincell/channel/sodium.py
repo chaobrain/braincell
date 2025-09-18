@@ -9,6 +9,7 @@ from typing import Union, Callable, Optional
 
 import brainstate
 import brainunit as u
+import jax.tree
 
 from braincell._base import Channel, IonInfo
 from braincell._integrator_protocol import DiffEqState, IndependentIntegration
@@ -473,6 +474,10 @@ class INa_Rsg(SodiumChannel, IndependentIntegration):
         self.alfac = (self.Oon / self.Con) ** (1 / 4)
         self.btfac = (self.Ooff / self.Coff) ** (1 / 4)
 
+    def make_integration(self, *args, **kwargs):
+        with brainstate.environ.context(dt=brainstate.environ.get_dt() / 10):
+            brainstate.transform.for_loop(lambda i: self.solver(self, *args, **kwargs), u.math.arange(10))
+
     def init_state(self, V, Na: IonInfo, batch_size=None):
         state_names = ["C1", "C2", "C3", "C4", "C5", "I1", "I2", "I3", "I4", "I5", "O", "B", ]
         for name in state_names:
@@ -518,21 +523,22 @@ class INa_Rsg(SodiumChannel, IndependentIntegration):
     def compute_derivative(self, V, Na: IonInfo):
         state_value = u.math.stack([getattr(self, name).value for name in self.state_names])
         state_dict = {name: state_value[i] for i, name in enumerate(self.state_names)}
+        state_dict = jax.tree.map(lambda x: u.math.clip(x, 0., 1.), state_dict)
         state_dict[self.redundant_state] = 1.0 - u.math.sum(state_value, axis=0)
 
         derivative_dict = {name: u.math.zeros_like(st) for name, st in state_dict.items()}
-       
+
         for src, dst, f_rate, b_rate in self.state_pairs:
             f = getattr(self, f_rate)(V)
             b = getattr(self, b_rate)(V)
-            derivative_dict[src] += -state_dict[src] * f + state_dict[dst] * b 
-            derivative_dict[dst] += state_dict[src] * f - state_dict[dst] * b  
+            derivative_dict[src] += -state_dict[src] * f + state_dict[dst] * b
+            derivative_dict[dst] += state_dict[src] * f - state_dict[dst] * b
 
         for name in self.state_names:
-            getattr(self, name).derivative = derivative_dict[name] /u.ms 
-        
+            getattr(self, name).derivative = derivative_dict[name] / u.ms
+
     def current(self, V, Na: IonInfo):
-        return self.g_max * self.O.value * (Na.E - V) 
+        return self.g_max * self.O.value * (Na.E - V)
 
     f01 = lambda self, V: 4 * self.alpha * u.math.exp((V / u.mV) / self.x1) * self.phi
     f02 = lambda self, V: 3 * self.alpha * u.math.exp((V / u.mV) / self.x1) * self.phi

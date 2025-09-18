@@ -19,7 +19,8 @@ import brainstate
 import brainunit as u
 import matplotlib.pyplot as plt
 
-brainstate.environ.set(precision=64, platform='gpu')
+# brainstate.environ.set(precision=64, platform='gpu')
+brainstate.environ.set(precision=64, )
 
 import braincell
 import numpy as np
@@ -181,7 +182,9 @@ class Golgi(braincell.MultiCompartment):
         self.k.add(IKv43=braincell.channel.IKv43_Ma2020(self.varshape, g_max=gkv43 * u.mS / (u.cm ** 2)))
 
         self.na = braincell.ion.SodiumFixed(self.varshape, E=E_Na)
-        self.na.add(INa_Rsg=braincell.channel.INa_Rsg(self.varshape, g_max=gnarsg * u.mS / (u.cm ** 2)))
+        self.na.add(INa_Rsg=braincell.channel.INa_Rsg(self.varshape, g_max=gnarsg * u.mS / (u.cm ** 2), solver='rk4'))
+        # self.na.add(INa_Rsg=braincell.channel.INa_Rsg(self.varshape, g_max=gnarsg * u.mS / (u.cm ** 2),
+        #                                               solver='backward_euler'))
 
     def step_run(self, t, inp):
         with brainstate.environ.context(t=t):
@@ -194,7 +197,7 @@ morphology.set_passive_params()
 
 gl, gh1, gh2, gkv11, gkv34, gkv43, gnarsg, gcagrc, gcav23, gcav31, gkca31 = seg_ion_params(morphology)
 cell_braincell = Golgi(
-    popsize=128,  # number of cells in the population
+    popsize=1,  # number of cells in the population
     morphology=morphology,
     E_L=-55. * u.mV,
     gl=gl,

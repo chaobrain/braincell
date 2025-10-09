@@ -15,6 +15,7 @@
 
 from typing import Callable
 
+import braincell
 import brainstate
 from brainstate._state import record_state_value_write
 

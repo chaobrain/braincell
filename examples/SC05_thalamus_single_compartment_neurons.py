@@ -183,7 +183,7 @@ def try_neuron_simulation():
     neu.init_state()
 
     t0 = time.time()
-    vs = brainstate.compile.for_loop(neu.step_run, times, I)
+    vs = brainstate.transform.for_loop(neu.step_run, times, I)
     t1 = time.time()
     print(f"Elapsed time: {t1 - t0:.4f} s")
 

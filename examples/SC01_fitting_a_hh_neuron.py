@@ -172,7 +172,7 @@ def simulate_model(gl, g_na, g_kd, C):
 
     indices = np.arange(current.shape[0])
     current = u.math.expand_dims(current, axis=-1)  # [T, B, 1]
-    return brainstate.compile.for_loop(step_fun, indices, current)  # (T, B)
+    return brainstate.transform.for_loop(step_fun, indices, current)  # (T, B)
 
 
 def compare_potentials(param):

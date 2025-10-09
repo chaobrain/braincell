@@ -17,6 +17,7 @@ from typing import Optional, Callable, Tuple, Union
 
 import brainstate
 import brainunit as u
+import braintools
 
 from ._base import HHTypedNeuron, IonChannel
 from ._integrator import get_integrator
@@ -90,7 +91,7 @@ class SingleCompartment(HHTypedNeuron):
         C: Initializer = 1. * u.uF / u.cm ** 2,
         V_th: Initializer = 0. * u.mV,
         V_initializer: Initializer = brainstate.init.Uniform(-70 * u.mV, -60. * u.mV),
-        spk_fun: Callable = brainstate.surrogate.ReluGrad(),
+        spk_fun: Callable = braintools.surrogate.ReluGrad(),
         solver: Union[str, Callable] = 'rk2',
         name: Optional[str] = None,
         **ion_channels

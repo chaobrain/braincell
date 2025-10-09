@@ -102,11 +102,11 @@ def fitting_example():
     @jax.vmap
     @jax.jit
     def compute_grad(param):
-        grads, loss = brainstate.augment.grad(loss_per_param, argnums=0, return_value=True)(param)
+        grads, loss = brainstate.transform.grad(loss_per_param, argnums=0, return_value=True)(param)
         return grads, loss
 
     # find the best loss and parameter in the batch
-    @brainstate.compile.jit
+    @brainstate.transform.jit
     def best_loss_and_param(params, losses):
         i_best = u.math.argmin(losses)
         return losses[i_best], params[i_best]
@@ -116,7 +116,7 @@ def fitting_example():
     optimizer.register_trainable_weights({'param': param_to_optimize})
 
     # Step 6: training
-    @brainstate.compile.jit
+    @brainstate.transform.jit
     def train_step_per_epoch():
         grads, losses = compute_grad(param_to_optimize.value)
         optimizer.update({'param': grads})

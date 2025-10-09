@@ -229,3 +229,4 @@ cython_debug/
 /docs/_static/braincell.psd
 
 /examples/MC13_golgi_model/x86_64/
+/.claude/

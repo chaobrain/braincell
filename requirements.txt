@@ -1,6 +1,7 @@
 numpy
 scipy
 jax
-brainunit>=0.0.2.post20240903
+brainunit>=0.0.4
 brainstate>=0.0.2
 brainevent>=0.0.2
+brainpy>=3.0.0

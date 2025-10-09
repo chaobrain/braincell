@@ -68,6 +68,6 @@ Documentation = "https://braincell.readthedocs.io/"
 [project.optional-dependencies]
 cpu = ["jax[cpu]", "brainstate", "brainunit", "brainevent", "brainpy", "braintools"]
 cuda12 = ["jax[cuda12]", "brainstate", "brainunit", "brainevent", "brainpy", "braintools"]
-cuda12 = ["jax[cuda13]", "brainstate", "brainunit", "brainevent", "brainpy", "braintools"]
+cuda13 = ["jax[cuda13]", "brainstate", "brainunit", "brainevent", "brainpy", "braintools"]
 tpu = ["jax[tpu]", "brainstate", "brainunit", "brainevent", "brainpy", "braintools"]
 testing = ["pytest", "jax", "brainstate", "brainunit", "brainevent", "brainpy", "braintools"]

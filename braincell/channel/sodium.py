@@ -441,7 +441,7 @@ class INa_Rsg(SodiumChannel, IndependentIntegration):
         T: brainstate.typing.ArrayLike = u.celsius2kelvin(22.),
         g_max: Union[brainstate.typing.ArrayLike, Callable] = 15. * (u.mS / u.cm ** 2),
         name: Optional[str] = None,
-        solver: str = 'backward_euler',
+        solver: str = 'rk4',
     ):
         super().__init__(size=size, name=name)
         IndependentIntegration.__init__(self, solver=solver)
@@ -508,16 +508,12 @@ class INa_Rsg(SodiumChannel, IndependentIntegration):
         ]
 
     def reset_state(self, V, Na: IonInfo, batch_size=None):
-
         state_names = ["C1", "C2", "C3", "C4", "C5", "O", "B", "I1", "I2", "I3", "I4", "I5"]
         for name in state_names:
             state = DiffEqState(brainstate.init.param(u.math.zeros, self.varshape, batch_size))
             setattr(self, name, state)
 
     def pre_integral(self, V, Na: IonInfo):
-        # state_value = u.math.clip(u.math.stack([getattr(self, name).value for name in self.state_names]), 0., 1.,)
-        # state_sum = state_value.sum(axis=0, keepdims=True)
-        # state_value = u.math.where(state_sum > 1., state_value / state_sum , state_value)
         pass
 
     def compute_derivative(self, V, Na: IonInfo):
@@ -527,7 +523,6 @@ class INa_Rsg(SodiumChannel, IndependentIntegration):
         state_dict[self.redundant_state] = 1.0 - u.math.sum(state_value, axis=0)
 
         derivative_dict = {name: u.math.zeros_like(st) for name, st in state_dict.items()}
-
         for src, dst, f_rate, b_rate in self.state_pairs:
             f = getattr(self, f_rate)(V)
             b = getattr(self, b_rate)(V)

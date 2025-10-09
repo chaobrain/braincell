@@ -46,7 +46,7 @@ def step_fun(t):
 
 with brainstate.environ.context(dt=0.1 * u.ms):
     times = u.math.arange(0. * u.ms, 100 * u.ms, brainstate.environ.get_dt())
-    vs = brainstate.compile.for_loop(step_fun, times)
+    vs = brainstate.transform.for_loop(step_fun, times)
 
 plt.plot(times, u.math.squeeze(vs))
 plt.show()

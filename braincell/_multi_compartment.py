@@ -15,6 +15,7 @@
 
 from typing import Callable, Tuple
 
+import braintools
 import brainstate
 import brainunit as u
 
@@ -87,7 +88,7 @@ class MultiCompartment(HHTypedNeuron):
         # membrane potentials
         V_th: Initializer = 0. * u.mV,
         V_initializer: Initializer = brainstate.init.Uniform(-70 * u.mV, -60. * u.mV),
-        spk_fun: Callable = brainstate.surrogate.ReluGrad(),
+        spk_fun: Callable = braintools.surrogate.ReluGrad(),
 
         # others
         solver: str | Callable = 'exp_euler',

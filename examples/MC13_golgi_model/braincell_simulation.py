@@ -182,9 +182,7 @@ class Golgi(braincell.MultiCompartment):
         self.k.add(IKv43=braincell.channel.IKv43_Ma2020(self.varshape, g_max=gkv43 * u.mS / (u.cm ** 2)))
 
         self.na = braincell.ion.SodiumFixed(self.varshape, E=E_Na)
-        self.na.add(INa_Rsg=braincell.channel.INa_Rsg(self.varshape, g_max=gnarsg * u.mS / (u.cm ** 2), solver='rk4'))
-        # self.na.add(INa_Rsg=braincell.channel.INa_Rsg(self.varshape, g_max=gnarsg * u.mS / (u.cm ** 2),
-        #                                               solver='backward_euler'))
+        self.na.add(INa_Rsg=braincell.channel.INa_Rsg(self.varshape, g_max=gnarsg * u.mS / (u.cm ** 2)))
 
     def step_run(self, t, inp):
         with brainstate.environ.context(t=t):

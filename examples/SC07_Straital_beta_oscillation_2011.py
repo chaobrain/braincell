@@ -23,6 +23,7 @@ Implementation of the paper:
 """
 
 
+import brainpy
 import brainstate
 import braintools
 import brainunit as u
@@ -88,7 +89,7 @@ class MChannel(braincell.channel.PotassiumChannel):
         self.p = braincell.DiffEqState(p_inf)
 
 
-class GABAa(brainstate.nn.Synapse):
+class GABAa(brainpy.Synapse):
     def __init__(self, in_size, g_max=0.1 * (u.mS / u.cm ** 2), tau=13.0 * u.ms):
         super().__init__(in_size)
         self.g_max = g_max
@@ -126,10 +127,10 @@ class StraitalNetwork(brainstate.nn.Module):
 
         self.pop = MSNCell(size, solver='ind_exp_euler', g_M=g_M)
         self.syn = GABAa(size, g_max=0.1 * (u.mS / u.cm ** 2), tau=13.0 * u.ms)
-        self.conn = brainstate.nn.CurrentProj(
+        self.conn = brainpy.CurrentProj(
             # comm=brainstate.nn.FixedNumConn(size, size, 0.3, 0.1 / (size * 0.3) * (u.mS / u.cm ** 2)),
             comm=brainstate.nn.AllToAll(size, size, w_init=0.1 / size * (u.mS / u.cm ** 2)),
-            out=brainstate.nn.COBA(E=-80. * u.mV),
+            out=brainpy.COBA(E=-80. * u.mV),
             post=self.pop,
         )
 
@@ -150,7 +151,7 @@ def try_single_neuron():
             return neuron.V.value
 
     indices = np.arange(10000 * u.ms / brainstate.environ.get_dt(), dtype=np.int32)
-    V = brainstate.compile.for_loop(step_run, indices)
+    V = brainstate.transform.for_loop(step_run, indices)
 
     plt.plot(indices * brainstate.environ.get_dt(), V)
     plt.show()
@@ -168,7 +169,7 @@ def try_network_model():
             current = net.conn.out(net.pop.V.value)
             return spk, u.math.sum(current)
 
-    spk, current = brainstate.compile.for_loop(step_run, indices)
+    spk, current = brainstate.transform.for_loop(step_run, indices)
 
     fig, gs = braintools.visualize.get_figure(2, 1, 4, 12)
     fig.add_subplot(gs[0, 0])

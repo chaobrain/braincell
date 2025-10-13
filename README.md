@@ -38,11 +38,12 @@ Here is an example to model the **single-compartment** thalamus neuron model by 
 ```python
 import braincell
 import brainstate
+import braintools
 import brainunit as u
 
 class HTC(braincell.SingleCompartment):
     def __init__(self, size, solver: str = 'ind_exp_euler'):
-        super().__init__(size, V_initializer=brainstate.init.Constant(-65. * u.mV), V_th=20. * u.mV, solver=solver)
+        super().__init__(size, V_initializer=braintools.init.Constant(-65. * u.mV), V_th=20. * u.mV, solver=solver)
 
         self.na = braincell.ion.SodiumFixed(size, E=50. * u.mV)
         self.na.add(INa=braincell.channel.INa_Ba2002(size, V_sh=-30 * u.mV))

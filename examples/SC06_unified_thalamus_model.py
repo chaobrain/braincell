@@ -264,14 +264,14 @@ class Thalamus(brainstate.nn.Module):
         self.gj_RE = brainpy.SymmetryGapJunction(
             self.RE, 'V', conn=ProbDist(dist=2., prob=0.3, pre_ratio=0.2), weight=1 / 300 * u.mS
         )
-        self.RE2RE = brainpy.CurrentProj(
+        self.RE2RE = brainpy.state.CurrentProj(
             self.RE.align_pre(
                 brainpy.STD.desc(tau=700 * u.ms, U=0.07)
             ).align_pre(
                 brainpy.GABAa(self.RE.varshape, alpha=10.5 / (u.ms * u.mM), beta=0.166 / u.ms)
             ).prefetch_delay('g', 2 * u.ms),
             comm=brainstate.nn.FixedNumConn(self.RE.varshape, self.RE.varshape, 0.2, 1e-3),
-            out=brainpy.COBA(E=-70. * u.mV),
+            out=brainpy.state.COBA(E=-70. * u.mV),
             post=self.RE,
         )
 

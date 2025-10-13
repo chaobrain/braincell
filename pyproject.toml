@@ -50,10 +50,10 @@ classifiers = [
 dependencies = [
     "numpy>=1.15",
     "brainunit>=0.0.8",
-    "brainstate>=0.1.0",
+    "brainstate>=0.2.0",
     "brainevent>=0.0.2",
     "scipy",
-    "brainpy>=3.0.0",
+    "brainpy>=2.7.0",
     "braintools>=0.1.0",
 ]
 

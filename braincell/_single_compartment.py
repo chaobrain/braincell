@@ -96,28 +96,6 @@ class SingleCompartment(HHTypedNeuron):
         name: Optional[str] = None,
         **ion_channels
     ):
-        """
-        Initialize a :class:`SingleCompartment` neuron.
-
-        Parameters
-        ----------
-        size : brainstate.typing.Size
-            The size of the neuron group.
-        C : Union[brainstate.typing.ArrayLike, Callable], optional
-            Membrane capacitance. Default is 1. * u.uF / u.cm ** 2.
-        V_th : Union[brainstate.typing.ArrayLike, Callable], optional
-            Threshold voltage. Default is 0. * u.mV.
-        V_initializer : Union[brainstate.typing.ArrayLike, Callable], optional
-            Initial membrane potential. Default is uniform distribution between -70 mV and -60 mV.
-        spk_fun : Callable, optional
-            Spike function. Default is brainstate.surrogate.ReluGrad().
-        solver : str | Callable, optional
-            Numerical solver for integration. Default is 'rk2'.
-        name : Optional[str], optional
-            Name of the neuron group. Default is None.
-        **ion_channels : dict
-            Additional ion channels to be added to the neuron.
-        """
         super().__init__(size, name=name, **ion_channels)
         assert self.n_compartment == 1, "SingleCompartment neuron should have only one compartment."
         self.C = brainstate.init.param(C, self.varshape)
@@ -183,7 +161,7 @@ class SingleCompartment(HHTypedNeuron):
         Reset the state of the neuron.
 
         This method resets the membrane potential (V) to its initial value and
-        reinitializes other state variables through the parent class.
+        reinitialized other state variables through the parent class.
 
         Parameters
         ----------

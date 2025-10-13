@@ -99,9 +99,6 @@ def diffrax_euler_step(target: DiffEqModule, *args):
         target (DiffEqModule): The differential equation module whose state will be advanced.
         *args: Additional arguments to be passed to the solver, such as step size or solver-specific options.
 
-    Returns:
-        None: The function updates the state of the target module in place.
-
     Raises:
         ModuleNotFoundError: If the diffrax library is not installed.
 
@@ -128,9 +125,6 @@ def diffrax_heun_step(target: DiffEqModule, *args):
     Args:
         target (DiffEqModule): The differential equation module whose state will be advanced.
         *args: Additional arguments to be passed to the solver, such as step size or solver-specific options.
-
-    Returns:
-        None: The function updates the state of the target module in place.
 
     Raises:
         ModuleNotFoundError: If the diffrax library is not installed.
@@ -159,9 +153,6 @@ def diffrax_midpoint_step(target: DiffEqModule, *args):
         target (DiffEqModule): The differential equation module whose state will be advanced.
         *args: Additional arguments to be passed to the solver, such as step size or solver-specific options.
 
-    Returns:
-        None: The function updates the state of the target module in place.
-
     Raises:
         ModuleNotFoundError: If the diffrax library is not installed.
 
@@ -188,9 +179,6 @@ def diffrax_ralston_step(target: DiffEqModule, *args):
     Args:
         target (DiffEqModule): The differential equation module whose state will be advanced.
         *args: Additional arguments to be passed to the solver, such as step size or solver-specific options.
-
-    Returns:
-        None: The function updates the state of the target module in place.
 
     Raises:
         ModuleNotFoundError: If the diffrax library is not installed.
@@ -219,9 +207,6 @@ def diffrax_bosh3_step(target: DiffEqModule, *args):
         target (DiffEqModule): The differential equation module whose state will be advanced.
         *args: Additional arguments to be passed to the solver, such as step size or solver-specific options.
 
-    Returns:
-        None: The function updates the state of the target module in place.
-
     Raises:
         ModuleNotFoundError: If the diffrax library is not installed.
 
@@ -249,8 +234,6 @@ def diffrax_tsit5_step(target: DiffEqModule, *args):
         target (DiffEqModule): The differential equation module whose state will be advanced.
         *args: Additional arguments to be passed to the solver, such as step size or solver-specific options.
 
-    Returns:
-        None: The function updates the state of the target module in place.
 
     Raises:
         ModuleNotFoundError: If the diffrax library is not installed.
@@ -279,8 +262,6 @@ def diffrax_dopri5_step(target: DiffEqModule, *args):
         target (DiffEqModule): The differential equation module whose state will be advanced.
         *args: Additional arguments to be passed to the solver, such as step size or solver-specific options.
 
-    Returns:
-        None: The function updates the state of the target module in place.
 
     Raises:
         ModuleNotFoundError: If the diffrax library is not installed.
@@ -309,8 +290,6 @@ def diffrax_dopri8_step(target: DiffEqModule, *args):
         target (DiffEqModule): The differential equation module whose state will be advanced.
         *args: Additional arguments to be passed to the solver, such as step size or solver-specific options.
 
-    Returns:
-        None: The function updates the state of the target module in place.
 
     Raises:
         ModuleNotFoundError: If the diffrax library is not installed.
@@ -366,8 +345,6 @@ def diffrax_bwd_euler_step(target: DiffEqModule, *args, tol=1e-5):
         tol (float, optional): Tolerance for the root-finding algorithm used in the implicit step.
             Defaults to 1e-5.
 
-    Returns:
-        None: The function updates the state of the target module in place.
 
     Raises:
         ModuleNotFoundError: If the diffrax library is not installed.
@@ -403,8 +380,6 @@ def diffrax_kvaerno3_step(target: DiffEqModule, *args, tol=1e-5):
         tol (float, optional): Tolerance for the root-finding algorithm used in the implicit step.
             Defaults to 1e-5.
 
-    Returns:
-        None: The function updates the state of the target module in place.
 
     Raises:
         ModuleNotFoundError: If the diffrax library is not installed.
@@ -440,8 +415,6 @@ def diffrax_kvaerno4_step(target: DiffEqModule, *args, tol=1e-5):
         tol (float, optional): Tolerance for the root-finding algorithm used in the implicit step.
             Defaults to 1e-5.
 
-    Returns:
-        None: The function updates the state of the target module in place.
 
     Raises:
         ModuleNotFoundError: If the diffrax library is not installed.
@@ -477,8 +450,6 @@ def diffrax_kvaerno5_step(target: DiffEqModule, *args, tol=1e-5):
         tol (float, optional): Tolerance for the root-finding algorithm used in the implicit step.
             Defaults to 1e-5.
 
-    Returns:
-        None: The function updates the state of the target module in place.
 
     Raises:
         ModuleNotFoundError: If the diffrax library is not installed.

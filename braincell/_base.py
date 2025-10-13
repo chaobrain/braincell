@@ -84,6 +84,7 @@ may be defined in other files within the BrainCell library.
 from typing import Optional, Dict, Sequence, Callable, NamedTuple, Tuple, Type, Hashable
 
 import brainstate
+import brainpy
 import numpy as np
 from brainstate.mixin import _JointGenericAlias
 
@@ -105,9 +106,30 @@ __all__ = [
 ]
 
 
-class HHTypedNeuron(brainstate.nn.Dynamics, Container, DiffEqModule):
+class HHTypedNeuron(brainpy.state.Dynamics, Container, DiffEqModule):
     """
     The base class for the Hodgkin-Huxley typed neuronal membrane dynamics.
+
+    Parameters
+    ----------
+    size : brainstate.typing.Size
+        The size of the simulation target. Can be an integer or a tuple of integers.
+        Must be at least 1-dimensional, representing (..., n_neuron, n_compartment).
+
+    name : Optional[str]
+        The name of the HHTypedNeuron instance. If not provided, a default name will be used.
+
+    **ion_channels
+        A dictionary of ion channel instances to be added to the neuron.
+        Each key-value pair represents an ion channel name and its corresponding instance.
+
+    Raises
+    ------
+    ValueError
+        If the size parameter is not correctly formatted (must be int or tuple/list of int).
+
+    AssertionError
+        If the size is less than 1-dimensional.
     """
     __module__ = 'braincell'
     _container_name = 'ion_channels'
@@ -118,33 +140,6 @@ class HHTypedNeuron(brainstate.nn.Dynamics, Container, DiffEqModule):
         name: Optional[str] = None,
         **ion_channels
     ):
-        """
-        Initialize a new instance of HHTypedNeuron.
-
-        This function sets up the basic structure of a Hodgkin-Huxley typed neuron,
-        including its size, name, and ion channels.
-
-        Parameters
-        ----------
-        size : brainstate.typing.Size
-            The size of the simulation target. Can be an integer or a tuple of integers.
-            Must be at least 1-dimensional, representing (..., n_neuron, n_compartment).
-
-        name : Optional[str]
-            The name of the HHTypedNeuron instance. If not provided, a default name will be used.
-
-        **ion_channels : dict
-            A dictionary of ion channel instances to be added to the neuron.
-            Each key-value pair represents an ion channel name and its corresponding instance.
-
-        Raises
-        ------
-        ValueError
-            If the size parameter is not correctly formatted (must be int or tuple/list of int).
-
-        AssertionError
-            If the size is less than 1-dimensional.
-        """
         super().__init__(size, name=name)
 
         # attribute for ``Container``
@@ -205,11 +200,11 @@ class HHTypedNeuron(brainstate.nn.Dynamics, Container, DiffEqModule):
 
         Parameters
         ----------
-        *args : tuple
+        *args
             Variable length argument list. Specific arguments should be defined
             in the subclass implementation.
 
-        **kwargs : dict
+        **kwargs
             Arbitrary keyword arguments. Specific keyword arguments should be
             defined in the subclass implementation.
 
@@ -242,11 +237,11 @@ class HHTypedNeuron(brainstate.nn.Dynamics, Container, DiffEqModule):
 
         Parameters
         ----------
-        *args : tuple
+        *args
             Variable length argument list. Specific arguments should be defined
             in the subclass implementation.
 
-        **kwargs : dict
+        **kwargs
             Arbitrary keyword arguments. Specific keyword arguments should be
             defined in the subclass implementation.
 
@@ -276,20 +271,13 @@ class HHTypedNeuron(brainstate.nn.Dynamics, Container, DiffEqModule):
 
         Parameters
         ----------
-        *args : tuple
+        *args
             Variable length argument list. Specific arguments should be defined
             in the subclass implementation.
 
-        **kwargs : dict
+        **kwargs
             Arbitrary keyword arguments. Specific keyword arguments should be
             defined in the subclass implementation.
-
-        Returns
-        -------
-        None
-            This method does not return a value directly. Instead, it should
-            update the internal state of the object to reflect the computed
-            derivatives.
 
         Raises
         ------
@@ -316,19 +304,13 @@ class HHTypedNeuron(brainstate.nn.Dynamics, Container, DiffEqModule):
 
         Parameters
         ----------
-        *args : tuple
+        *args
             Variable length argument list. Specific arguments should be defined
             in the subclass implementation.
 
-        **kwargs : dict
+        **kwargs
             Arbitrary keyword arguments. Specific keyword arguments should be
             defined in the subclass implementation.
-
-        Returns
-        -------
-        None
-            This method does not return a value. It performs in-place updates
-            on the neuron's state variables.
 
         Notes
         -----
@@ -352,12 +334,6 @@ class HHTypedNeuron(brainstate.nn.Dynamics, Container, DiffEqModule):
         batch_size : int, optional
             The batch size for the simulation. If provided, it will be passed to each
             channel's init_state method to initialize states with the specified batch size.
-
-        Returns
-        -------
-        None
-            This method doesn't return any value. It performs in-place initialization
-            of the state variables for all ion channels.
 
         Notes
         -----
@@ -386,12 +362,6 @@ class HHTypedNeuron(brainstate.nn.Dynamics, Container, DiffEqModule):
             channel's reset_state method to reset states with the specified batch size.
             This is useful for maintaining consistency in batched simulations.
 
-        Returns
-        -------
-        None
-            This method doesn't return any value. It performs in-place reset of
-            the state variables for all ion channels in the neuron group.
-
         Notes
         -----
         - The method uses the current membrane potential (self.V.value) when resetting
@@ -414,11 +384,6 @@ class HHTypedNeuron(brainstate.nn.Dynamics, Container, DiffEqModule):
         **elements: Any
             A dictionary of new elements to add. Each key-value pair represents an ion channel
             name and its corresponding instance.
-
-        Returns
-        -------
-        None
-            This method doesn't return a value. It updates the ion_channels attribute in-place.
 
         Raises
         ------
@@ -500,36 +465,6 @@ class IonChannel(brainstate.graph.Node, TreeNode, DiffEqModule):
         size: brainstate.typing.Size,
         name: Optional[str] = None,
     ):
-        """
-        Initialize an IonChannel instance.
-
-        This method sets up the basic properties of an ion channel, including its size and name.
-        It performs type checking and formatting on the size parameter to ensure it meets
-        the required specifications.
-
-        Parameters
-        ----------
-        size : brainstate.typing.Size
-            The size of the ion channel. This can be an integer, or a tuple/list of integers.
-            It should represent the dimensions of the channel, with at least one dimension
-            (e.g., number of neurons, number of compartments).
-
-        name : Optional[str], default=None
-            The name of the ion channel. If not provided, the channel will be unnamed.
-
-        Raises
-        ------
-        ValueError
-            If the size is not an integer or a non-empty tuple/list of integers.
-        AssertionError
-            If the size has less than one dimension.
-
-        Notes
-        -----
-        - The size is stored as a tuple, even if a single integer is provided.
-        - The size must have at least one dimension to represent the number of neurons
-          or compartments.
-        """
         # size
         if isinstance(size, (list, tuple)):
             if len(size) <= 0:
@@ -570,9 +505,9 @@ class IonChannel(brainstate.graph.Node, TreeNode, DiffEqModule):
 
         Parameters
         ----------
-        *args : tuple
+        *args
             Variable length argument list.
-        **kwargs : dict
+        **kwargs
             Arbitrary keyword arguments.
 
         Raises
@@ -592,9 +527,9 @@ class IonChannel(brainstate.graph.Node, TreeNode, DiffEqModule):
 
         Parameters
         ----------
-        *args : tuple
+        *args
             Variable length argument list.
-        **kwargs : dict
+        **kwargs
             Arbitrary keyword arguments.
         """
         pass
@@ -608,9 +543,9 @@ class IonChannel(brainstate.graph.Node, TreeNode, DiffEqModule):
 
         Parameters
         ----------
-        *args : tuple
+        *args
             Variable length argument list.
-        **kwargs : dict
+        **kwargs
             Arbitrary keyword arguments.
 
         Raises
@@ -629,9 +564,9 @@ class IonChannel(brainstate.graph.Node, TreeNode, DiffEqModule):
 
         Parameters
         ----------
-        *args : tuple
+        *args
             Variable length argument list.
-        **kwargs : dict
+        **kwargs
             Arbitrary keyword arguments.
 
         Raises
@@ -649,9 +584,9 @@ class IonChannel(brainstate.graph.Node, TreeNode, DiffEqModule):
 
         Parameters
         ----------
-        *args : tuple
+        *args
             Variable length argument list.
-        **kwargs : dict
+        **kwargs
             Arbitrary keyword arguments.
         """
         pass
@@ -664,9 +599,9 @@ class IonChannel(brainstate.graph.Node, TreeNode, DiffEqModule):
 
         Parameters
         ----------
-        *args : tuple
+        *args
             Variable length argument list.
-        **kwargs : dict
+        **kwargs
             Arbitrary keyword arguments.
         """
         pass
@@ -727,6 +662,17 @@ class Ion(IonChannel, Container):
     behavior of multiple ion channels of the same ion type and provides methods for
     initializing, updating, and querying the state of these channels throughout the
     simulation process.
+
+    Parameters:
+    -----------
+    size : brainstate.typing.Size
+        The size of the ion channel, typically representing the number of
+        neurons or compartments.
+    name : Optional[str], default=None
+        The name of the Ion instance. If not provided, the instance will be unnamed.
+    **channels
+        Additional keyword arguments for specifying Channel instances to be
+        included in this Ion object.
     """
 
     __module__ = 'braincell'
@@ -741,23 +687,6 @@ class Ion(IonChannel, Container):
         name: Optional[str] = None,
         **channels
     ) -> None:
-        """
-        Initialize an Ion instance.
-
-        This constructor sets up an Ion object with specified size and name,
-        and initializes its channels and external currents.
-
-        Parameters:
-        -----------
-        size : brainstate.typing.Size
-            The size of the ion channel, typically representing the number of
-            neurons or compartments.
-        name : Optional[str], default=None
-            The name of the Ion instance. If not provided, the instance will be unnamed.
-        **channels : dict
-            Additional keyword arguments for specifying Channel instances to be
-            included in this Ion object.
-        """
         super().__init__(size, name=name)
         self.channels: Dict[str, Channel] = dict()
         self.channels.update(self._format_elements(Channel, **channels))
@@ -911,6 +840,7 @@ class Ion(IonChannel, Container):
 
         Returns:
             IonInfo: A named tuple containing:
+
                 - E (array-like): The reversal potential of the ion.
                 - C (array-like): The concentration of the ion.
 
@@ -987,14 +917,14 @@ class MixIons(IonChannel, Container):
 
         Parameters
         ----------
-        *ions : Ion
+        *ions
             Variable number of Ion instances to be combined in this mixed channel.
             At least two ions must be provided.
 
         name : Optional[str], default=None
             The name of this MixIons instance. If not provided, the instance will be unnamed.
 
-        **channels : dict
+        **channels
             Additional keyword arguments for specifying Channel instances to be included
             in this MixIons object.
 
@@ -1050,12 +980,6 @@ class MixIons(IonChannel, Container):
         V : array-like
             The current membrane potential for all neurons in the simulation.
 
-        Returns
-        -------
-        None
-            This method doesn't return a value. It updates the state of each channel
-            in place as necessary before integration.
-
         Notes
         -----
         The method retrieves all Channel nodes, packs the necessary ion information
@@ -1082,12 +1006,6 @@ class MixIons(IonChannel, Container):
         V : array-like
             The current membrane potential for all neurons in the simulation.
 
-        Returns
-        -------
-        None
-            This method doesn't return a value. It updates the state derivatives of each
-            channel in place.
-
         Notes:
         ------
         The method retrieves all Channel nodes, packs the necessary ion information
@@ -1112,12 +1030,6 @@ class MixIons(IonChannel, Container):
         ----------
         V : array-like
             The current membrane potential for all neurons in the simulation.
-
-        Returns
-        -------
-        None
-            This method doesn't return a value. It updates the state of each channel
-            in place as necessary after integration.
 
         Notes
         -----
@@ -1190,11 +1102,6 @@ class MixIons(IonChannel, Container):
             The batch size for the simulation. If provided, it will be used to initialize
             the states with the specified batch size.
 
-        Returns
-        -------
-        None
-            This method doesn't return a value. It initializes the state of each channel in place.
-
         Notes
         -----
         The method retrieves all Channel nodes, checks their hierarchies, packs the necessary
@@ -1225,11 +1132,6 @@ class MixIons(IonChannel, Container):
         batch_size : int, optional
             The batch size for the simulation. If provided, it will be used to reset
             the states with the specified batch size, ensuring consistency in batched simulations.
-
-        Returns
-        -------
-        None
-            This method doesn't return a value. It resets the state of each channel in place.
 
         Notes
         -----
@@ -1267,14 +1169,9 @@ class MixIons(IonChannel, Container):
 
         Parameters
         ----------
-        **elements : Any
+        **elements
             A dictionary of new elements to add. Each key-value pair represents a
             channel name and its corresponding Channel instance.
-
-        Returns
-        -------
-        None
-            This method doesn't return a value. It updates the MixIons instance in-place.
 
         Raises
         ------
@@ -1330,7 +1227,7 @@ def mix_ions(*ions) -> MixIons:
 
     Parameters
     ----------
-    *ions : Ion
+    *ions
         One or more instances of the Ion class. Each instance represents a specific
         type of ion (e.g., sodium, potassium, calcium) that will be part of the
         mixed ion channel.

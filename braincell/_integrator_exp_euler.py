@@ -128,7 +128,7 @@ def exp_euler_step(target: DiffEqModule, *args):
     target : DiffEqModule
         The target module containing the differential equations to be solved.
         Must be an instance of HHTypedNeuron.
-    *args :
+    *args
         Additional arguments to be passed to the underlying implementation.
 
     Raises

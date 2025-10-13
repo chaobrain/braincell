@@ -228,13 +228,8 @@ def euler_step(
     -----------
     target : DiffEqModule
         The differential equation module that defines the system to be integrated.
-    *args :
+    *args
         Additional arguments to be passed to the target's methods.
-
-    Returns
-    --------
-    None
-        This function updates the state of the target in-place and does not return a value.
 
     Note
     -----
@@ -291,13 +286,8 @@ def midpoint_step(
     -----------
     target : DiffEqModule
         The differential equation module that defines the system to be integrated.
-    *args :
+    *args
         Additional arguments to be passed to the target's methods.
-
-    Returns
-    --------
-    None
-        This function updates the state of the target in-place and does not return a value.
 
     Note
     -----
@@ -355,13 +345,8 @@ def rk2_step(
     -----------
     target : DiffEqModule
         The differential equation module that defines the system to be integrated.
-    *args :
+    *args
         Additional arguments to be passed to the target's methods.
-
-    Returns
-    --------
-    None
-        This function updates the state of the target in-place and does not return a value.
 
     Note
     ----
@@ -420,7 +405,7 @@ def heun2_step(
     ----------
     target : DiffEqModule
         The differential equation module that defines the system to be integrated.
-    *args :
+    *args
         Additional arguments to be passed to the target's methods.
 
     Returns
@@ -484,7 +469,7 @@ def ralston2_step(
     ----------
     target : DiffEqModule
         The differential equation module that defines the system to be integrated.
-    *args :
+    *args
         Additional arguments to be passed to the target's methods.
 
     Returns
@@ -547,13 +532,8 @@ def rk3_step(
     ----------
     target : DiffEqModule
         The differential equation module that defines the system to be integrated.
-    *args :
+    *args
         Additional arguments to be passed to the target's methods.
-
-    Returns
-    --------
-    None
-        This function updates the state of the target in-place and does not return a value.
 
     Note
     -----
@@ -601,13 +581,8 @@ def heun3_step(
     -----------
     target : DiffEqModule
         The differential equation module that defines the system to be integrated.
-    *args :
+    *args
         Additional arguments to be passed to the target's methods.
-
-    Returns
-    --------
-    None
-        This function updates the state of the target in-place and does not return a value.
 
     Note
     -----
@@ -655,13 +630,8 @@ def ssprk3_step(
     -----------
     target : DiffEqModule
         The differential equation module that defines the system to be integrated.
-    *args :
+    *args
         Additional arguments to be passed to the target's methods.
-
-    Returns
-    --------
-    None
-        This function updates the state of the target in-place and does not return a value.
 
     Note
     -----
@@ -709,13 +679,8 @@ def ralston3_step(
     -----------
     target : DiffEqModule
         The differential equation module that defines the system to be integrated.
-    *args :
+    *args
         Additional arguments to be passed to the target's methods.
-
-    Returns
-    --------
-    None
-        This function updates the state of the target in-place and does not return a value.
 
     Note
     -----
@@ -765,13 +730,8 @@ def rk4_step(
     -----------
     target : DiffEqModule
         The differential equation module that defines the system to be integrated.
-    *args :
+    *args
         Additional arguments to be passed to the target's methods.
-
-    Returns
-    --------
-    None
-        This function updates the state of the target in-place and does not return a value.
 
     Note
     -----
@@ -820,13 +780,8 @@ def ralston4_step(
     -----------
     target : DiffEqModule
         The differential equation module that defines the system to be integrated.
-    *args :
+    *args
         Additional arguments to be passed to the target's methods.
-
-    Returns
-    --------
-    None
-        This function updates the state of the target in-place and does not return a value.
 
     Note
     -----

@@ -18,6 +18,7 @@
 from typing import Union, Callable, Optional
 
 import brainstate
+import braintools
 import brainunit as u
 
 from braincell._base import Ion, Channel, HHTypedNeuron
@@ -64,8 +65,8 @@ class CalciumFixed(Calcium):
         **channels
     ):
         super().__init__(size, name=name, **channels)
-        self.E = brainstate.init.param(E, self.varshape, allow_none=False)
-        self.C = brainstate.init.param(C, self.varshape, allow_none=False)
+        self.E = braintools.init.param(E, self.varshape, allow_none=False)
+        self.C = braintools.init.param(C, self.varshape, allow_none=False)
 
     def reset_state(self, V, batch_size=None):
         ca_info = self.pack_info()
@@ -97,25 +98,25 @@ class _CalciumDynamics(Calcium):
         size: brainstate.typing.Size,
         C0: Union[brainstate.typing.ArrayLike, Callable] = 2. * u.mM,
         T: Union[brainstate.typing.ArrayLike, Callable] = u.celsius2kelvin(36.),
-        C_initializer: Union[brainstate.typing.ArrayLike, Callable] = brainstate.init.Constant(2.4e-4 * u.mM),
+        C_initializer: Union[brainstate.typing.ArrayLike, Callable] = braintools.init.Constant(2.4e-4 * u.mM),
         name: Optional[str] = None,
         **channels
     ):
         super().__init__(size, name=name, **channels)
 
         # parameters
-        self.C0 = brainstate.init.param(C0, self.varshape, allow_none=False)
-        self.T = brainstate.init.param(T, self.varshape, allow_none=False)  # temperature
+        self.C0 = braintools.init.param(C0, self.varshape, allow_none=False)
+        self.T = braintools.init.param(T, self.varshape, allow_none=False)  # temperature
         self._constant = u.gas_constant * self.T / (2 * u.faraday_constant)
         self._C_initializer = C_initializer
 
     def init_state(self, V, batch_size=None):
         # Calcium concentration
-        self.C = DiffEqState(brainstate.init.param(self._C_initializer, self.varshape, batch_size))
+        self.C = DiffEqState(braintools.init.param(self._C_initializer, self.varshape, batch_size))
         super().init_state(V, batch_size)
 
     def reset_state(self, V, batch_size=None):
-        self.C.value = brainstate.init.param(self._C_initializer, self.varshape, batch_size)
+        self.C.value = braintools.init.param(self._C_initializer, self.varshape, batch_size)
         super().reset_state(V, batch_size)
 
     def derivative(self, C, V):
@@ -259,16 +260,16 @@ class CalciumDetailed(_CalciumDynamics):
         tau: Union[brainstate.typing.ArrayLike, Callable] = 5. * u.ms,
         C_rest: Union[brainstate.typing.ArrayLike, Callable] = 2.4e-4 * u.mM,
         C0: Union[brainstate.typing.ArrayLike, Callable] = 2. * u.mM,
-        C_initializer: Union[brainstate.typing.ArrayLike, Callable] = brainstate.init.Constant(2.4e-4 * u.mM),
+        C_initializer: Union[brainstate.typing.ArrayLike, Callable] = braintools.init.Constant(2.4e-4 * u.mM),
         name: Optional[str] = None,
         **channels
     ):
         super().__init__(size, name=name, T=T, C0=C0, C_initializer=C_initializer, **channels)
 
         # parameters
-        self.d = brainstate.init.param(d, self.varshape, allow_none=False)
-        self.tau = brainstate.init.param(tau, self.varshape, allow_none=False)
-        self.C_rest = brainstate.init.param(C_rest, self.varshape, allow_none=False)
+        self.d = braintools.init.param(d, self.varshape, allow_none=False)
+        self.tau = braintools.init.param(tau, self.varshape, allow_none=False)
+        self.C_rest = braintools.init.param(C_rest, self.varshape, allow_none=False)
 
     def derivative(self, C, V):
         ICa = self.current(V, include_external=True)
@@ -295,7 +296,7 @@ class CalciumFirstOrder(_CalciumDynamics):
         alpha: Union[brainstate.typing.ArrayLike, Callable] = 0.13,
         beta: Union[brainstate.typing.ArrayLike, Callable] = 0.075,
         C0: Union[brainstate.typing.ArrayLike, Callable] = 2. * u.mM,
-        C_initializer: Union[brainstate.typing.ArrayLike, Callable] = brainstate.init.Constant(2.4e-4 * u.mM),
+        C_initializer: Union[brainstate.typing.ArrayLike, Callable] = braintools.init.Constant(2.4e-4 * u.mM),
         name: Optional[str] = None,
         **channels
     ):
@@ -309,8 +310,8 @@ class CalciumFirstOrder(_CalciumDynamics):
         )
 
         # parameters
-        self.alpha = brainstate.init.param(alpha, self.varshape, allow_none=False)
-        self.beta = brainstate.init.param(beta, self.varshape, allow_none=False)
+        self.alpha = braintools.init.param(alpha, self.varshape, allow_none=False)
+        self.beta = braintools.init.param(beta, self.varshape, allow_none=False)
 
     def derivative(self, C, V):
         ICa = self.current(V, include_external=True)

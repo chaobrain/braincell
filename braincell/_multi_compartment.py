@@ -16,7 +16,6 @@
 from typing import Callable, Tuple
 
 import braintools
-import brainstate
 import brainunit as u
 
 from ._base import HHTypedNeuron, IonChannel
@@ -87,7 +86,7 @@ class MultiCompartment(HHTypedNeuron):
 
         # membrane potentials
         V_th: Initializer = 0. * u.mV,
-        V_initializer: Initializer = brainstate.init.Uniform(-70 * u.mV, -60. * u.mV),
+        V_initializer: Initializer = braintools.init.Uniform(-70 * u.mV, -60. * u.mV),
         spk_fun: Callable = braintools.surrogate.ReluGrad(),
 
         # others
@@ -112,7 +111,7 @@ class MultiCompartment(HHTypedNeuron):
         super().__init__(size, **ion_channels)
 
         # parameters for membrane potentials
-        self.V_th = brainstate.init.param(V_th, self.varshape)
+        self.V_th = braintools.init.param(V_th, self.varshape)
         self.V_initializer = V_initializer
         self.spk_fun = spk_fun
         self.morphology = morphology
@@ -146,11 +145,11 @@ class MultiCompartment(HHTypedNeuron):
         return self.varshape[-1]
 
     def init_state(self, batch_size=None):
-        self.V = DiffEqState(brainstate.init.param(self.V_initializer, self.varshape, batch_size))
+        self.V = DiffEqState(braintools.init.param(self.V_initializer, self.varshape, batch_size))
         super().init_state(batch_size)
 
     def reset_state(self, batch_size=None):
-        self.V.value = brainstate.init.param(self.V_initializer, self.varshape, batch_size)
+        self.V.value = braintools.init.param(self.V_initializer, self.varshape, batch_size)
         super().reset_state(batch_size)
 
     def pre_integral(self, *args):

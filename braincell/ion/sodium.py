@@ -16,6 +16,7 @@
 from typing import Union, Callable, Optional
 
 import brainstate
+import braintools
 import brainunit as u
 
 from braincell._base import Ion
@@ -59,5 +60,5 @@ class SodiumFixed(Sodium):
         **channels
     ):
         super().__init__(size, name=name, **channels)
-        self.E = brainstate.init.param(E, self.varshape, allow_none=False)
-        self.C = brainstate.init.param(C, self.varshape, allow_none=False)
+        self.E = braintools.init.param(E, self.varshape, allow_none=False)
+        self.C = braintools.init.param(C, self.varshape, allow_none=False)

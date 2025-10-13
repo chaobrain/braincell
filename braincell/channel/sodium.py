@@ -8,6 +8,7 @@ This module implements voltage-dependent sodium channel.
 from typing import Union, Callable, Optional
 
 import brainstate
+import braintools
 import brainunit as u
 import jax.tree
 
@@ -161,12 +162,12 @@ class INa_p3q_markov(SodiumChannel):
         super().__init__(size=size, name=name, )
 
         # parameters
-        self.phi = brainstate.init.param(phi, self.varshape, allow_none=False)
-        self.g_max = brainstate.init.param(g_max, self.varshape, allow_none=False)
+        self.phi = braintools.init.param(phi, self.varshape, allow_none=False)
+        self.g_max = braintools.init.param(g_max, self.varshape, allow_none=False)
 
     def init_state(self, V, Na: IonInfo, batch_size=None):
-        self.p = DiffEqState(brainstate.init.param(u.math.zeros, self.varshape, batch_size))
-        self.q = DiffEqState(brainstate.init.param(u.math.zeros, self.varshape, batch_size))
+        self.p = DiffEqState(braintools.init.param(u.math.zeros, self.varshape, batch_size))
+        self.q = DiffEqState(braintools.init.param(u.math.zeros, self.varshape, batch_size))
 
     def reset_state(self, V, Na: IonInfo, batch_size=None):
         alpha = self.f_p_alpha(V)
@@ -256,8 +257,8 @@ class INa_Ba2002(INa_p3q_markov):
             phi=3 ** ((T - 36) / 10),
             g_max=g_max,
         )
-        self.T = brainstate.init.param(T, self.varshape, allow_none=False)
-        self.V_sh = brainstate.init.param(V_sh, self.varshape, allow_none=False)
+        self.T = braintools.init.param(T, self.varshape, allow_none=False)
+        self.V_sh = braintools.init.param(V_sh, self.varshape, allow_none=False)
 
     def f_p_alpha(self, V):
         V = (V - self.V_sh).to_decimal(u.mV)
@@ -337,7 +338,7 @@ class INa_TM1991(INa_p3q_markov):
             phi=phi,
             g_max=g_max,
         )
-        self.V_sh = brainstate.init.param(V_sh, self.varshape, allow_none=False)
+        self.V_sh = braintools.init.param(V_sh, self.varshape, allow_none=False)
 
     def f_p_alpha(self, V):
         V = (self.V_sh - V).to_decimal(u.mV)
@@ -413,7 +414,7 @@ class INa_HH1952(INa_p3q_markov):
         name: Optional[str] = None,
     ):
         super().__init__(size, name=name, phi=phi, g_max=g_max)
-        self.V_sh = brainstate.init.param(V_sh, self.varshape, allow_none=False)
+        self.V_sh = braintools.init.param(V_sh, self.varshape, allow_none=False)
 
     def f_p_alpha(self, V):
         temp = (V - self.V_sh).to_decimal(u.mV) - 5
@@ -447,8 +448,8 @@ class INa_Rsg(SodiumChannel, IndependentIntegration):
         IndependentIntegration.__init__(self, solver=solver)
 
         T = u.kelvin2celsius(T)
-        self.phi = brainstate.init.param(3 ** ((T - 22) / 10), self.varshape, allow_none=False)
-        self.g_max = brainstate.init.param(g_max, self.varshape, allow_none=False)
+        self.phi = braintools.init.param(3 ** ((T - 22) / 10), self.varshape, allow_none=False)
+        self.g_max = braintools.init.param(g_max, self.varshape, allow_none=False)
 
         self.Con = 0.005
         self.Coff = 0.5
@@ -481,7 +482,7 @@ class INa_Rsg(SodiumChannel, IndependentIntegration):
     def init_state(self, V, Na: IonInfo, batch_size=None):
         state_names = ["C1", "C2", "C3", "C4", "C5", "I1", "I2", "I3", "I4", "I5", "O", "B", ]
         for name in state_names:
-            state = DiffEqState(brainstate.init.param(u.math.zeros, self.varshape, batch_size))
+            state = DiffEqState(braintools.init.param(u.math.zeros, self.varshape, batch_size))
             setattr(self, name, state)
 
         self.state_names = state_names
@@ -510,7 +511,7 @@ class INa_Rsg(SodiumChannel, IndependentIntegration):
     def reset_state(self, V, Na: IonInfo, batch_size=None):
         state_names = ["C1", "C2", "C3", "C4", "C5", "O", "B", "I1", "I2", "I3", "I4", "I5"]
         for name in state_names:
-            state = DiffEqState(brainstate.init.param(u.math.zeros, self.varshape, batch_size))
+            state = DiffEqState(braintools.init.param(u.math.zeros, self.varshape, batch_size))
             setattr(self, name, state)
 
     def pre_integral(self, V, Na: IonInfo):

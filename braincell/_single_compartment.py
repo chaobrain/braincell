@@ -90,7 +90,7 @@ class SingleCompartment(HHTypedNeuron):
         size: brainstate.typing.Size,
         C: Initializer = 1. * u.uF / u.cm ** 2,
         V_th: Initializer = 0. * u.mV,
-        V_initializer: Initializer = brainstate.init.Uniform(-70 * u.mV, -60. * u.mV),
+        V_initializer: Initializer = braintools.init.Uniform(-70 * u.mV, -60. * u.mV),
         spk_fun: Callable = braintools.surrogate.ReluGrad(),
         solver: Union[str, Callable] = 'rk2',
         name: Optional[str] = None,
@@ -98,8 +98,8 @@ class SingleCompartment(HHTypedNeuron):
     ):
         super().__init__(size, name=name, **ion_channels)
         assert self.n_compartment == 1, "SingleCompartment neuron should have only one compartment."
-        self.C = brainstate.init.param(C, self.varshape)
-        self.V_th = brainstate.init.param(V_th, self.varshape)
+        self.C = braintools.init.param(C, self.varshape)
+        self.V_th = braintools.init.param(V_th, self.varshape)
         self.V_initializer = V_initializer
         self.spk_fun = spk_fun
         self.solver = get_integrator(solver)
@@ -152,7 +152,7 @@ class SingleCompartment(HHTypedNeuron):
         -------
         None
         """
-        self.V = DiffEqState(brainstate.init.param(self.V_initializer, self.varshape, batch_size))
+        self.V = DiffEqState(braintools.init.param(self.V_initializer, self.varshape, batch_size))
         self.spike = brainstate.ShortTermState(self.get_spike(self.V.value, self.V.value))
         super().init_state(batch_size)
 
@@ -172,7 +172,7 @@ class SingleCompartment(HHTypedNeuron):
         -------
         None
         """
-        self.V.value = brainstate.init.param(self.V_initializer, self.varshape, batch_size)
+        self.V.value = braintools.init.param(self.V_initializer, self.varshape, batch_size)
         self.spike.value = self.get_spike(self.V.value, self.V.value)
         super().init_state(batch_size)
 

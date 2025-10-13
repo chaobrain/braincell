@@ -7,6 +7,7 @@ This module implements hyperpolarization-activated cation channel.
 from typing import Union, Callable, Optional
 
 import brainstate
+import braintools
 import brainunit as u
 
 from braincell._base import Channel, HHTypedNeuron
@@ -68,12 +69,12 @@ class Ih_HM1992(Channel):
         super().__init__(size=size, name=name, )
 
         # parameters
-        self.phi = brainstate.init.param(phi, self.varshape, allow_none=False)
-        self.g_max = brainstate.init.param(g_max, self.varshape, allow_none=False)
-        self.E = brainstate.init.param(E, self.varshape, allow_none=False)
+        self.phi = braintools.init.param(phi, self.varshape, allow_none=False)
+        self.g_max = braintools.init.param(g_max, self.varshape, allow_none=False)
+        self.E = braintools.init.param(E, self.varshape, allow_none=False)
 
     def init_state(self, V, batch_size=None):
-        self.p = DiffEqState(brainstate.init.param(u.math.zeros, self.varshape, batch_size))
+        self.p = DiffEqState(braintools.init.param(u.math.zeros, self.varshape, batch_size))
 
     def reset_state(self, V, batch_size=None):
         self.p.value = self.f_p_inf(V)
@@ -172,21 +173,21 @@ class Ih_HM1992(Channel):
 #     )
 #
 #     # parameters
-#     self.T = brainstate.init.param(T, self.varshape, allow_none=False)
-#     self.T_base = brainstate.init.param(T_base, self.varshape, allow_none=False)
+#     self.T = braintools.init.param(T, self.varshape, allow_none=False)
+#     self.T_base = braintools.init.param(T_base, self.varshape, allow_none=False)
 #     if phi is None:
 #       self.phi = self.T_base ** ((self.T - 24.) / 10)
 #     else:
-#       self.phi = brainstate.init.param(phi, self.varshape, allow_none=False)
-#     self.E = brainstate.init.param(E, self.varshape, allow_none=False)
-#     self.k2 = brainstate.init.param(k2, self.varshape, allow_none=False)
-#     self.Ca_half = brainstate.init.param(Ca_half, self.varshape, allow_none=False)
+#       self.phi = braintools.init.param(phi, self.varshape, allow_none=False)
+#     self.E = braintools.init.param(E, self.varshape, allow_none=False)
+#     self.k2 = braintools.init.param(k2, self.varshape, allow_none=False)
+#     self.Ca_half = braintools.init.param(Ca_half, self.varshape, allow_none=False)
 #     self.k1 = self.k2 / self.Ca_half ** 4
-#     self.k4 = brainstate.init.param(k4, self.varshape, allow_none=False)
+#     self.k4 = braintools.init.param(k4, self.varshape, allow_none=False)
 #     self.k3 = self.k4 / 0.01
-#     self.V_sh = brainstate.init.param(V_sh, self.varshape, allow_none=False)
-#     self.g_max = brainstate.init.param(g_max, self.varshape, allow_none=False)
-#     self.g_inc = brainstate.init.param(g_inc, self.varshape, allow_none=False)
+#     self.V_sh = braintools.init.param(V_sh, self.varshape, allow_none=False)
+#     self.g_max = braintools.init.param(g_max, self.varshape, allow_none=False)
+#     self.g_inc = braintools.init.param(g_inc, self.varshape, allow_none=False)
 #
 #   def dO(self, O, t, OL, V):
 #     inf = self.f_inf(V)
@@ -210,9 +211,9 @@ class Ih_HM1992(Channel):
 #     return self.g_max * (self.O.value + self.g_inc * self.OL.value) * (self.E - V)
 #
 #   def init_state(self, V, Ca, batch_size=None):
-#     self.O = DiffEqState(brainstate.init.param(u.math.zeros, self.varshape, batch_size))
-#     self.OL = DiffEqState(brainstate.init.param(u.math.zeros, self.varshape, batch_size))
-#     self.P1 = DiffEqState(brainstate.init.param(u.math.zeros, self.varshape, batch_size))
+#     self.O = DiffEqState(braintools.init.param(u.math.zeros, self.varshape, batch_size))
+#     self.OL = DiffEqState(braintools.init.param(u.math.zeros, self.varshape, batch_size))
+#     self.P1 = DiffEqState(braintools.init.param(u.math.zeros, self.varshape, batch_size))
 #
 #   def reset_state(self, V, Ca: IonInfo, batch_size=None):
 #     varshape = self.varshape if (batch_size is None) else ((batch_size,) + self.varshape)
@@ -268,14 +269,14 @@ class Ih1_Ma2020(Channel):
 
         # parameters
         T = u.kelvin2celsius(T)
-        self.g_max = brainstate.init.param(g_max, self.varshape, allow_none=False)
-        self.E = brainstate.init.param(E, self.varshape, allow_none=False)
-        self.T = brainstate.init.param(T, self.varshape, allow_none=False)
-        self.T_base_g = brainstate.init.param(T_base_g, self.varshape, allow_none=False)
-        self.T_base_channel = brainstate.init.param(T_base_channel, self.varshape, allow_none=False)
-        self.phi_g = brainstate.init.param(T_base_g ** ((T - 23) / 10), self.varshape, allow_none=False)
-        self.phi_channel = brainstate.init.param(T_base_channel ** ((T - 23) / 10), self.varshape, allow_none=False)
-        self.V_sh = brainstate.init.param(V_sh, self.varshape, allow_none=False)
+        self.g_max = braintools.init.param(g_max, self.varshape, allow_none=False)
+        self.E = braintools.init.param(E, self.varshape, allow_none=False)
+        self.T = braintools.init.param(T, self.varshape, allow_none=False)
+        self.T_base_g = braintools.init.param(T_base_g, self.varshape, allow_none=False)
+        self.T_base_channel = braintools.init.param(T_base_channel, self.varshape, allow_none=False)
+        self.phi_g = braintools.init.param(T_base_g ** ((T - 23) / 10), self.varshape, allow_none=False)
+        self.phi_channel = braintools.init.param(T_base_channel ** ((T - 23) / 10), self.varshape, allow_none=False)
+        self.V_sh = braintools.init.param(V_sh, self.varshape, allow_none=False)
 
         self.Ehalf = -72.49
         self.c = 0.11305
@@ -290,8 +291,8 @@ class Ih1_Ma2020(Channel):
         self.tEs = 2.302585092
 
     def init_state(self, V, batch_size=None):
-        self.p = DiffEqState(brainstate.init.param(u.math.zeros, self.varshape, batch_size))
-        self.q = DiffEqState(brainstate.init.param(u.math.zeros, self.varshape, batch_size))
+        self.p = DiffEqState(braintools.init.param(u.math.zeros, self.varshape, batch_size))
+        self.q = DiffEqState(braintools.init.param(u.math.zeros, self.varshape, batch_size))
 
     def reset_state(self, V, batch_size=None):
         self.p.value = self.f_p_inf(V)
@@ -353,14 +354,14 @@ class Ih2_Ma2020(Channel):
 
         # parameters
         T = u.kelvin2celsius(T)
-        self.g_max = brainstate.init.param(g_max, self.varshape, allow_none=False)
-        self.E = brainstate.init.param(E, self.varshape, allow_none=False)
-        self.T = brainstate.init.param(T, self.varshape, allow_none=False)
-        self.T_base_g = brainstate.init.param(T_base_g, self.varshape, allow_none=False)
-        self.T_base_channel = brainstate.init.param(T_base_channel, self.varshape, allow_none=False)
-        self.phi_g = brainstate.init.param(T_base_g ** ((T - 23) / 10), self.varshape, allow_none=False)
-        self.phi_channel = brainstate.init.param(T_base_channel ** ((T - 23) / 10), self.varshape, allow_none=False)
-        self.V_sh = brainstate.init.param(V_sh, self.varshape, allow_none=False)
+        self.g_max = braintools.init.param(g_max, self.varshape, allow_none=False)
+        self.E = braintools.init.param(E, self.varshape, allow_none=False)
+        self.T = braintools.init.param(T, self.varshape, allow_none=False)
+        self.T_base_g = braintools.init.param(T_base_g, self.varshape, allow_none=False)
+        self.T_base_channel = braintools.init.param(T_base_channel, self.varshape, allow_none=False)
+        self.phi_g = braintools.init.param(T_base_g ** ((T - 23) / 10), self.varshape, allow_none=False)
+        self.phi_channel = braintools.init.param(T_base_channel ** ((T - 23) / 10), self.varshape, allow_none=False)
+        self.V_sh = braintools.init.param(V_sh, self.varshape, allow_none=False)
 
         self.Ehalf = -81.95
         self.c = 0.1661
@@ -375,8 +376,8 @@ class Ih2_Ma2020(Channel):
         self.tEs = 2.3026
 
     def init_state(self, V, batch_size=None):
-        self.p = DiffEqState(brainstate.init.param(u.math.zeros, self.varshape, batch_size))
-        self.q = DiffEqState(brainstate.init.param(u.math.zeros, self.varshape, batch_size))
+        self.p = DiffEqState(braintools.init.param(u.math.zeros, self.varshape, batch_size))
+        self.q = DiffEqState(braintools.init.param(u.math.zeros, self.varshape, batch_size))
 
     def reset_state(self, V, batch_size=None):
         self.p.value = self.f_p_inf(V)

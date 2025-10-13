@@ -89,7 +89,7 @@ class MChannel(braincell.channel.PotassiumChannel):
         self.p = braincell.DiffEqState(p_inf)
 
 
-class GABAa(brainpy.Synapse):
+class GABAa(brainpy.state.Synapse):
     def __init__(self, in_size, g_max=0.1 * (u.mS / u.cm ** 2), tau=13.0 * u.ms):
         super().__init__(in_size)
         self.g_max = g_max
@@ -127,10 +127,10 @@ class StraitalNetwork(brainstate.nn.Module):
 
         self.pop = MSNCell(size, solver='ind_exp_euler', g_M=g_M)
         self.syn = GABAa(size, g_max=0.1 * (u.mS / u.cm ** 2), tau=13.0 * u.ms)
-        self.conn = brainpy.CurrentProj(
+        self.conn = brainpy.state.CurrentProj(
             # comm=brainstate.nn.FixedNumConn(size, size, 0.3, 0.1 / (size * 0.3) * (u.mS / u.cm ** 2)),
-            comm=brainstate.nn.AllToAll(size, size, w_init=0.1 / size * (u.mS / u.cm ** 2)),
-            out=brainpy.COBA(E=-80. * u.mV),
+            comm=braintools.conn.AllToAll(size, size, w_init=0.1 / size * (u.mS / u.cm ** 2)),
+            out=brainpy.state.COBA(E=-80. * u.mV),
             post=self.pop,
         )
 

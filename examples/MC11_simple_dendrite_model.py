@@ -25,7 +25,7 @@ class INa(braincell.channel.SodiumChannel):
     def __init__(self, size, g_max):
         super().__init__(size)
 
-        self.g_max = brainstate.init.param(g_max, self.varshape)
+        self.g_max = braintools.init.param(g_max, self.varshape)
 
     def init_state(self, V, Na: braincell.IonInfo, batch_size: int = None):
         self.m = braincell.DiffEqState(self.m_inf(V))
@@ -52,7 +52,7 @@ class INa(braincell.channel.SodiumChannel):
 class IK(braincell.channel.PotassiumChannel):
     def __init__(self, size, g_max):
         super().__init__(size)
-        self.g_max = brainstate.init.param(g_max, self.varshape)
+        self.g_max = braintools.init.param(g_max, self.varshape)
 
     def init_state(self, V, K: braincell.IonInfo, batch_size: int = None):
         self.n = braincell.DiffEqState(self.n_inf(V))
@@ -78,8 +78,8 @@ class ThreeCompartmentHH(braincell.MultiCompartment):
             diam=(12.6157, 1., 1.) * u.um,
             L=(12.6157, 200., 400.) * u.um,
             V_th=20. * u.mV,
-            V_initializer=brainstate.init.Constant(-65 * u.mV),
-            spk_fun=brainstate.surrogate.ReluGrad(),
+            V_initializer=braintools.init.Constant(-65 * u.mV),
+            spk_fun=braintools.surrogate.ReluGrad(),
         )
 
         self.IL = braincell.channel.IL(self.size, E=(-54.3, -65., -65.) * u.mV, g_max=[0.0003, 0.001, 0.001] * s)

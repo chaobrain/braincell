@@ -167,8 +167,8 @@ class Golgi(braincell.MultiCompartment):
             popsize=popsize,
             morphology=morphology,
             V_th=20. * u.mV,
-            V_initializer=brainstate.init.Constant(V_init),
-            spk_fun=brainstate.surrogate.ReluGrad(),
+            V_initializer=braintools.init.Constant(V_init),
+            spk_fun=braintools.surrogate.ReluGrad(),
             solver='staggered'
         )
 

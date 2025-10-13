@@ -17,6 +17,7 @@ import brainstate
 import brainunit as u
 
 import braincell
+import braintools
 
 s = u.siemens / u.cm ** 2
 

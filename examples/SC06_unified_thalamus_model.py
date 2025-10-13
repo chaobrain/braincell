@@ -126,28 +126,28 @@ class Thalamus(brainstate.nn.Module):
         # noises
         self.noise2HTC = brainpy.state.AlignPostProj(
             brainpy.state.PoissonSpike(self.HTC.varshape, freqs=100 * u.Hz),
-            comm=braintools.conn.OneToOne(self.HTC.varshape, g_input['TC'], ),
+            comm=brainstate.nn.OneToOne(self.HTC.varshape, g_input['TC'], ),
             syn=brainpy.state.Expon.desc(self.HTC.varshape, tau=5. * u.ms),
             out=brainpy.state.COBA.desc(E=0. * u.mV),
             post=self.HTC,
         )
         self.noise2RTC = brainpy.state.AlignPostProj(
             brainpy.state.PoissonSpike(self.RTC.varshape, freqs=100 * u.Hz),
-            comm=braintools.conn.OneToOne(self.RTC.varshape, g_input['TC']),
+            comm=brainstate.nn.OneToOne(self.RTC.varshape, g_input['TC']),
             syn=brainpy.state.Expon.desc(self.RTC.varshape, tau=5. * u.ms),
             out=brainpy.state.COBA.desc(E=0. * u.mV),
             post=self.RTC,
         )
         self.noise2IN = brainpy.state.AlignPostProj(
             brainpy.state.PoissonSpike(self.IN.varshape, freqs=100 * u.Hz),
-            comm=braintools.conn.OneToOne(self.IN.varshape, g_input['IN']),
+            comm=brainstate.nn.OneToOne(self.IN.varshape, g_input['IN']),
             syn=brainpy.state.Expon.desc(self.IN.varshape, tau=5. * u.ms),
             out=brainpy.state.COBA.desc(E=0. * u.mV),
             post=self.IN,
         )
         self.noise2RE = brainpy.state.AlignPostProj(
             brainpy.state.PoissonSpike(self.RE.varshape, freqs=100 * u.Hz),
-            comm=braintools.conn.OneToOne(self.RE.varshape, g_input['RE']),
+            comm=brainstate.nn.OneToOne(self.RE.varshape, g_input['RE']),
             syn=brainpy.state.Expon.desc(self.RE.varshape, tau=5. * u.ms),
             out=brainpy.state.COBA.desc(E=0. * u.mV),
             post=self.RE,

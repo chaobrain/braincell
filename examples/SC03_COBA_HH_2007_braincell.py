@@ -21,7 +21,6 @@
 #
 
 import brainpy
-import braintools
 import brainstate
 import brainunit as u
 import matplotlib.pyplot as plt

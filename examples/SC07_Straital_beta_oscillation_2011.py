@@ -129,7 +129,7 @@ class StraitalNetwork(brainstate.nn.Module):
         self.syn = GABAa(size, g_max=0.1 * (u.mS / u.cm ** 2), tau=13.0 * u.ms)
         self.conn = brainpy.state.CurrentProj(
             # comm=brainstate.nn.FixedNumConn(size, size, 0.3, 0.1 / (size * 0.3) * (u.mS / u.cm ** 2)),
-            comm=braintools.conn.AllToAll(size, size, w_init=0.1 / size * (u.mS / u.cm ** 2)),
+            comm=brainstate.nn.AllToAll(size, size, w_init=0.1 / size * (u.mS / u.cm ** 2)),
             out=brainpy.state.COBA(E=-80. * u.mV),
             post=self.pop,
         )

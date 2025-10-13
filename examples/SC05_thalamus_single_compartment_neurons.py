@@ -173,7 +173,7 @@ class TRN(ThalamusNeuron):
 def try_neuron_simulation():
     brainstate.environ.set(dt=0.1 * u.ms)
 
-    I = braintools.input.section_input(values=[0, 0.05, 0], durations=[50 * u.ms, 200 * u.ms, 100 * u.ms]) * u.uA
+    I = braintools.input.section(values=[0, 0.05, 0], durations=[50 * u.ms, 200 * u.ms, 100 * u.ms]) * u.uA
     times = u.math.arange(I.shape[0]) * brainstate.environ.get_dt()
 
     neu = TRN(1)  # [n_neuron, ]

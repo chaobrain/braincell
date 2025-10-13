@@ -20,6 +20,7 @@
 #   Simulation of networks of spiking neurons: a review of tools and strategies., J. Comput. Neurosci., 23, 3, 349–98
 #
 
+import brainpy
 import brainstate
 import brainunit as u
 import matplotlib.pyplot as plt
@@ -44,7 +45,7 @@ class HH(braincell.SingleCompartment):
         self.IL = braincell.channel.IL(in_size, E=-60. * u.mV, g_max=5. * u.nS / u.cm ** 2 * area)
 
 
-class EINet(brainstate.nn.DynamicsGroup):
+class EINet(brainstate.nn.Module):
     def __init__(self):
         super().__init__()
         self.n_exc = 3200
@@ -52,16 +53,16 @@ class EINet(brainstate.nn.DynamicsGroup):
         self.num = self.n_exc + self.n_inh
         self.N = HH(self.num)
 
-        self.E = brainstate.nn.AlignPostProj(
+        self.E = brainpy.state.AlignPostProj(
             comm=brainstate.nn.EventFixedProb(self.n_exc, self.num, conn_num=0.02, conn_weight=6. * u.nS),
-            syn=brainstate.nn.Expon(self.num, tau=5. * u.ms),
-            out=brainstate.nn.COBA(E=0. * u.mV),
+            syn=brainpy.state.Expon(self.num, tau=5. * u.ms),
+            out=brainpy.state.COBA(E=0. * u.mV),
             post=self.N
         )
-        self.I = brainstate.nn.AlignPostProj(
+        self.I = brainpy.state.AlignPostProj(
             comm=brainstate.nn.EventFixedProb(self.n_inh, self.num, conn_num=0.02, conn_weight=67. * u.nS),
-            syn=brainstate.nn.Expon(self.num, tau=10. * u.ms),
-            out=brainstate.nn.COBA(E=-80. * u.mV),
+            syn=brainpy.state.Expon(self.num, tau=10. * u.ms),
+            out=brainpy.state.COBA(E=-80. * u.mV),
             post=self.N
         )
 

@@ -17,6 +17,7 @@
 from typing import Union, Callable, Optional
 
 import brainstate
+import braintools
 import brainunit as u
 
 from braincell._base import Ion, Channel
@@ -59,8 +60,8 @@ class PotassiumFixed(Potassium):
         **channels
     ):
         super().__init__(size, name=name, **channels)
-        self.E = brainstate.init.param(E, self.varshape)
-        self.C = brainstate.init.param(C, self.varshape)
+        self.E = braintools.init.param(E, self.varshape)
+        self.C = braintools.init.param(C, self.varshape)
 
     def reset_state(self, V, batch_size=None):
         nodes = brainstate.graph.nodes(self, Channel, allowed_hierarchy=(1, 1)).values()

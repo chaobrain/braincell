@@ -18,6 +18,7 @@
 from typing import Union, Callable
 
 import brainstate
+import braintools
 import brainunit as u
 
 __all__ = [
@@ -54,21 +55,21 @@ class AMPA(brainstate.nn.Synapse):
         super().__init__(in_size=in_size)
 
         # parameters
-        self.alpha = brainstate.init.param(alpha)
-        self.beta = brainstate.init.param(beta)
-        self.T = brainstate.init.param(T)
+        self.alpha = braintools.init.param(alpha)
+        self.beta = braintools.init.param(beta)
+        self.T = braintools.init.param(T)
 
     def init_state(self, **kwargs):
         """
         Initialize the hidden state `g` (synaptic conductance) to zeros.
         """
-        self.g = brainstate.HiddenState(brainstate.init.param(u.math.zeros, self.varshape))
+        self.g = brainstate.HiddenState(braintools.init.param(u.math.zeros, self.varshape))
 
     def reset_state(self, **kwargs):
         """
         Reset the hidden state `g` (synaptic conductance) to zeros.
         """
-        self.g.value = brainstate.init.param(u.math.zeros, self.varshape)
+        self.g.value = braintools.init.param(u.math.zeros, self.varshape)
 
     def update(self, pre_spike):
         """
@@ -115,21 +116,21 @@ class GABAa(brainstate.nn.Synapse):
         super().__init__(in_size=in_size)
 
         # parameters
-        self.alpha = brainstate.init.param(alpha)
-        self.beta = brainstate.init.param(beta)
-        self.T = brainstate.init.param(T)
+        self.alpha = braintools.init.param(alpha)
+        self.beta = braintools.init.param(beta)
+        self.T = braintools.init.param(T)
 
     def init_state(self, **kwargs):
         """
         Initialize the hidden state `g` (synaptic conductance) to zeros.
         """
-        self.g = brainstate.HiddenState(brainstate.init.param(u.math.zeros, self.varshape))
+        self.g = brainstate.HiddenState(braintools.init.param(u.math.zeros, self.varshape))
 
     def reset_state(self, **kwargs):
         """
         Reset the hidden state `g` (synaptic conductance) to zeros.
         """
-        self.g.value = brainstate.init.param(u.math.zeros, self.varshape)
+        self.g.value = braintools.init.param(u.math.zeros, self.varshape)
 
     def update(self, pre_spike):
         """
@@ -182,25 +183,25 @@ class NMDA(brainstate.nn.Synapse):
         super().__init__(in_size=in_size)
 
         # Initialize model parameters
-        self.alpha1 = brainstate.init.param(alpha1)
-        self.beta1 = brainstate.init.param(beta1)
-        self.alpha2 = brainstate.init.param(alpha2)
-        self.beta2 = brainstate.init.param(beta2)
-        self.T = brainstate.init.param(T)
+        self.alpha1 = braintools.init.param(alpha1)
+        self.beta1 = braintools.init.param(beta1)
+        self.alpha2 = braintools.init.param(alpha2)
+        self.beta2 = braintools.init.param(beta2)
+        self.T = braintools.init.param(T)
 
     def init_state(self, **kwargs):
         """
         Initialize the hidden states `g` (synaptic conductance) and `x` (auxiliary variable) to zeros.
         """
-        self.g = brainstate.HiddenState(brainstate.init.param(u.math.zeros, self.varshape))
-        self.x = brainstate.HiddenState(brainstate.init.param(u.math.zeros, self.varshape))
+        self.g = brainstate.HiddenState(braintools.init.param(u.math.zeros, self.varshape))
+        self.x = brainstate.HiddenState(braintools.init.param(u.math.zeros, self.varshape))
 
     def reset_state(self, **kwargs):
         """
         Reset the hidden states `g` (synaptic conductance) and `x` (auxiliary variable) to zeros.
         """
-        self.g.value = brainstate.init.param(u.math.zeros, self.varshape)
-        self.x.value = brainstate.init.param(u.math.zeros, self.varshape)
+        self.g.value = braintools.init.param(u.math.zeros, self.varshape)
+        self.x.value = braintools.init.param(u.math.zeros, self.varshape)
 
     def update(self, pre_spike):
         """

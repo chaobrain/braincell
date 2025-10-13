@@ -14,8 +14,8 @@
 # ==============================================================================
 
 
-__version__ = "0.0.5"
-__version_info__ = (0, 5, 0)
+__version__ = "0.0.6"
+__version_info__ = (0, 0, 6)
 
 from . import channel
 from . import ion

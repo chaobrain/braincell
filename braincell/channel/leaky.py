@@ -8,6 +8,7 @@ This module implements leakage channel.
 from typing import Union, Callable, Sequence, Optional
 
 import brainstate
+import braintools
 import brainunit as u
 
 from braincell._base import HHTypedNeuron, Channel
@@ -124,8 +125,8 @@ class IL(LeakageChannel):
     ):
         super().__init__(size=size, name=name, )
 
-        self.E = brainstate.init.param(E, self.varshape, allow_none=False)
-        self.g_max = brainstate.init.param(g_max, self.varshape, allow_none=False)
+        self.E = braintools.init.param(E, self.varshape, allow_none=False)
+        self.g_max = braintools.init.param(g_max, self.varshape, allow_none=False)
 
     def current(self, V):
         return self.g_max * (self.E - V)

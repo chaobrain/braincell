@@ -8,6 +8,7 @@ This module implements voltage-dependent calcium channel.
 from typing import Union, Callable, Optional
 
 import brainstate
+import braintools
 import brainunit as u
 
 from braincell._base import Channel, IonInfo
@@ -159,12 +160,12 @@ class ICaN_IS2008(CalciumChannel):
     ):
         super().__init__(size=size, name=name, )
         # parameters
-        self.E = brainstate.init.param(E, self.varshape, allow_none=False)
-        self.g_max = brainstate.init.param(g_max, self.varshape, allow_none=False)
-        self.phi = brainstate.init.param(phi, self.varshape, allow_none=False)
+        self.E = braintools.init.param(E, self.varshape, allow_none=False)
+        self.g_max = braintools.init.param(g_max, self.varshape, allow_none=False)
+        self.phi = braintools.init.param(phi, self.varshape, allow_none=False)
 
     def init_state(self, V, Ca: IonInfo, batch_size: int = None):
-        self.p = DiffEqState(brainstate.init.param(u.math.zeros, self.varshape, batch_size))
+        self.p = DiffEqState(braintools.init.param(u.math.zeros, self.varshape, batch_size))
 
     def reset_state(self, V, Ca: IonInfo, batch_size=None):
         V = V.to_decimal(u.mV)
@@ -222,13 +223,13 @@ class _ICa_p2q_ss(CalciumChannel):
         super().__init__(size=size, name=name, )
 
         # parameters
-        self.phi_p = brainstate.init.param(phi_p, self.varshape, allow_none=False)
-        self.phi_q = brainstate.init.param(phi_q, self.varshape, allow_none=False)
-        self.g_max = brainstate.init.param(g_max, self.varshape, allow_none=False)
+        self.phi_p = braintools.init.param(phi_p, self.varshape, allow_none=False)
+        self.phi_q = braintools.init.param(phi_q, self.varshape, allow_none=False)
+        self.g_max = braintools.init.param(g_max, self.varshape, allow_none=False)
 
     def init_state(self, V, Ca: IonInfo, batch_size: int = None):
-        self.p = DiffEqState(brainstate.init.param(u.math.zeros, self.varshape, batch_size))
-        self.q = DiffEqState(brainstate.init.param(u.math.zeros, self.varshape, batch_size))
+        self.p = DiffEqState(braintools.init.param(u.math.zeros, self.varshape, batch_size))
+        self.q = DiffEqState(braintools.init.param(u.math.zeros, self.varshape, batch_size))
 
     def reset_state(self, V, Ca, batch_size=None):
         self.p.value = self.f_p_inf(V)
@@ -297,13 +298,13 @@ class _ICa_p2q_markov(CalciumChannel):
         super().__init__(size=size, name=name, )
 
         # parameters
-        self.phi_p = brainstate.init.param(phi_p, self.varshape, allow_none=False)
-        self.phi_q = brainstate.init.param(phi_q, self.varshape, allow_none=False)
-        self.g_max = brainstate.init.param(g_max, self.varshape, allow_none=False)
+        self.phi_p = braintools.init.param(phi_p, self.varshape, allow_none=False)
+        self.phi_q = braintools.init.param(phi_q, self.varshape, allow_none=False)
+        self.g_max = braintools.init.param(g_max, self.varshape, allow_none=False)
 
     def init_state(self, V, Ca: IonInfo, batch_size: int = None):
-        self.p = DiffEqState(brainstate.init.param(u.math.zeros, self.varshape, batch_size))
-        self.q = DiffEqState(brainstate.init.param(u.math.zeros, self.varshape, batch_size))
+        self.p = DiffEqState(braintools.init.param(u.math.zeros, self.varshape, batch_size))
+        self.q = DiffEqState(braintools.init.param(u.math.zeros, self.varshape, batch_size))
 
     def reset_state(self, V, Ca, batch_size=None):
         alpha, beta = self.f_p_alpha(V), self.f_p_beta(V)
@@ -409,10 +410,10 @@ class ICaT_HM1992(_ICa_p2q_ss):
         )
 
         # parameters
-        self.T = brainstate.init.param(T, self.varshape, allow_none=False)
-        self.T_base_p = brainstate.init.param(T_base_p, self.varshape, allow_none=False)
-        self.T_base_q = brainstate.init.param(T_base_q, self.varshape, allow_none=False)
-        self.V_sh = brainstate.init.param(V_sh, self.varshape, allow_none=False)
+        self.T = braintools.init.param(T, self.varshape, allow_none=False)
+        self.T_base_p = braintools.init.param(T_base_p, self.varshape, allow_none=False)
+        self.T_base_q = braintools.init.param(T_base_q, self.varshape, allow_none=False)
+        self.V_sh = braintools.init.param(V_sh, self.varshape, allow_none=False)
 
     def f_p_inf(self, V):
         V = (V - self.V_sh).to_decimal(u.mV)
@@ -511,10 +512,10 @@ class ICaT_HP1992(_ICa_p2q_ss):
         )
 
         # parameters
-        self.T = brainstate.init.param(T, self.varshape, allow_none=False)
-        self.T_base_p = brainstate.init.param(T_base_p, self.varshape, allow_none=False)
-        self.T_base_q = brainstate.init.param(T_base_q, self.varshape, allow_none=False)
-        self.V_sh = brainstate.init.param(V_sh, self.varshape, allow_none=False)
+        self.T = braintools.init.param(T, self.varshape, allow_none=False)
+        self.T_base_p = braintools.init.param(T_base_p, self.varshape, allow_none=False)
+        self.T_base_q = braintools.init.param(T_base_q, self.varshape, allow_none=False)
+        self.V_sh = braintools.init.param(V_sh, self.varshape, allow_none=False)
 
     def f_p_inf(self, V):
         V = (V - self.V_sh).to_decimal(u.mV)
@@ -606,10 +607,10 @@ class ICaHT_HM1992(_ICa_p2q_ss):
         )
 
         # parameters
-        self.T = brainstate.init.param(T, self.varshape, allow_none=False)
-        self.T_base_p = brainstate.init.param(T_base_p, self.varshape, allow_none=False)
-        self.T_base_q = brainstate.init.param(T_base_q, self.varshape, allow_none=False)
-        self.V_sh = brainstate.init.param(V_sh, self.varshape, allow_none=False)
+        self.T = braintools.init.param(T, self.varshape, allow_none=False)
+        self.T_base_p = braintools.init.param(T_base_p, self.varshape, allow_none=False)
+        self.T_base_q = braintools.init.param(T_base_q, self.varshape, allow_none=False)
+        self.V_sh = braintools.init.param(V_sh, self.varshape, allow_none=False)
 
     def f_p_inf(self, V):
         V = (V - self.V_sh).to_decimal(u.mV)
@@ -706,10 +707,10 @@ class ICaHT_Re1993(_ICa_p2q_markov):
             phi_p=phi_p,
             phi_q=phi_q,
         )
-        self.T = brainstate.init.param(T, self.varshape, allow_none=False)
-        self.T_base_p = brainstate.init.param(T_base_p, self.varshape, allow_none=False)
-        self.T_base_q = brainstate.init.param(T_base_q, self.varshape, allow_none=False)
-        self.V_sh = brainstate.init.param(V_sh, self.varshape, allow_none=False)
+        self.T = braintools.init.param(T, self.varshape, allow_none=False)
+        self.T_base_p = braintools.init.param(T_base_p, self.varshape, allow_none=False)
+        self.T_base_q = braintools.init.param(T_base_q, self.varshape, allow_none=False)
+        self.V_sh = braintools.init.param(V_sh, self.varshape, allow_none=False)
 
     def f_p_alpha(self, V):
         V = (- V + self.V_sh).to_decimal(u.mV)
@@ -797,10 +798,10 @@ class ICaL_IS2008(_ICa_p2q_ss):
         )
 
         # parameters
-        self.T = brainstate.init.param(T, self.varshape, allow_none=False)
-        self.T_base_p = brainstate.init.param(T_base_p, self.varshape, allow_none=False)
-        self.T_base_q = brainstate.init.param(T_base_q, self.varshape, allow_none=False)
-        self.V_sh = brainstate.init.param(V_sh, self.varshape, allow_none=False)
+        self.T = braintools.init.param(T, self.varshape, allow_none=False)
+        self.T_base_p = braintools.init.param(T_base_p, self.varshape, allow_none=False)
+        self.T_base_q = braintools.init.param(T_base_q, self.varshape, allow_none=False)
+        self.V_sh = braintools.init.param(V_sh, self.varshape, allow_none=False)
 
     def f_p_inf(self, V):
         V = (V - self.V_sh).to_decimal(u.mV)
@@ -842,19 +843,19 @@ class ICav12_Ma2020(CalciumChannel):
 
         # parameters
         T = u.kelvin2celsius(T)
-        self.g_max = brainstate.init.param(g_max, self.varshape, allow_none=False)
-        self.T = brainstate.init.param(T, self.varshape, allow_none=False)
-        self.T_base = brainstate.init.param(T_base, self.varshape, allow_none=False)
-        self.V_sh = brainstate.init.param(V_sh, self.varshape, allow_none=False)
-        self.phi = brainstate.init.param(1., self.varshape, allow_none=False)
+        self.g_max = braintools.init.param(g_max, self.varshape, allow_none=False)
+        self.T = braintools.init.param(T, self.varshape, allow_none=False)
+        self.T_base = braintools.init.param(T_base, self.varshape, allow_none=False)
+        self.V_sh = braintools.init.param(V_sh, self.varshape, allow_none=False)
+        self.phi = braintools.init.param(1., self.varshape, allow_none=False)
 
         self.kf = 0.0005
         self.VDI = 0.17
 
     def init_state(self, V, Ca: IonInfo, batch_size: int = None):
-        self.m = DiffEqState(brainstate.init.param(u.math.zeros, self.varshape, batch_size))
-        self.h = DiffEqState(brainstate.init.param(u.math.zeros, self.varshape, batch_size))
-        self.n = DiffEqState(brainstate.init.param(u.math.zeros, self.varshape, batch_size))
+        self.m = DiffEqState(braintools.init.param(u.math.zeros, self.varshape, batch_size))
+        self.h = DiffEqState(braintools.init.param(u.math.zeros, self.varshape, batch_size))
+        self.n = DiffEqState(braintools.init.param(u.math.zeros, self.varshape, batch_size))
 
     def reset_state(self, V, Ca, batch_size=None):
         self.m.value = self.f_m_inf(V)
@@ -916,19 +917,19 @@ class ICav13_Ma2020(CalciumChannel):
 
         # parameters
         T = u.kelvin2celsius(T)
-        self.g_max = brainstate.init.param(g_max, self.varshape, allow_none=False)
-        self.T = brainstate.init.param(T, self.varshape, allow_none=False)
-        self.T_base = brainstate.init.param(T_base, self.varshape, allow_none=False)
-        self.V_sh = brainstate.init.param(V_sh, self.varshape, allow_none=False)
-        self.phi = brainstate.init.param(1., self.varshape, allow_none=False)
+        self.g_max = braintools.init.param(g_max, self.varshape, allow_none=False)
+        self.T = braintools.init.param(T, self.varshape, allow_none=False)
+        self.T_base = braintools.init.param(T_base, self.varshape, allow_none=False)
+        self.V_sh = braintools.init.param(V_sh, self.varshape, allow_none=False)
+        self.phi = braintools.init.param(1., self.varshape, allow_none=False)
 
         self.kf = 0.0005
         self.VDI = 1
 
     def init_state(self, V, Ca: IonInfo, batch_size: int = None):
-        self.m = DiffEqState(brainstate.init.param(u.math.zeros, self.varshape, batch_size))
-        self.h = DiffEqState(brainstate.init.param(u.math.zeros, self.varshape, batch_size))
-        self.n = DiffEqState(brainstate.init.param(u.math.zeros, self.varshape, batch_size))
+        self.m = DiffEqState(braintools.init.param(u.math.zeros, self.varshape, batch_size))
+        self.h = DiffEqState(braintools.init.param(u.math.zeros, self.varshape, batch_size))
+        self.n = DiffEqState(braintools.init.param(u.math.zeros, self.varshape, batch_size))
 
     def reset_state(self, V, Ca, batch_size=None):
         self.m.value = self.f_m_inf(V)
@@ -997,17 +998,17 @@ class ICav23_Ma2020(CalciumChannel):
 
         # parameters
         T = u.kelvin2celsius(T)
-        self.g_max = brainstate.init.param(g_max, self.varshape, allow_none=False)
-        self.T = brainstate.init.param(T, self.varshape, allow_none=False)
-        self.T_base = brainstate.init.param(T_base, self.varshape, allow_none=False)
-        self.V_sh = brainstate.init.param(V_sh, self.varshape, allow_none=False)
-        self.phi = brainstate.init.param(1., self.varshape, allow_none=False)
+        self.g_max = braintools.init.param(g_max, self.varshape, allow_none=False)
+        self.T = braintools.init.param(T, self.varshape, allow_none=False)
+        self.T_base = braintools.init.param(T_base, self.varshape, allow_none=False)
+        self.V_sh = braintools.init.param(V_sh, self.varshape, allow_none=False)
+        self.phi = braintools.init.param(1., self.varshape, allow_none=False)
 
         self.eca = 140 * u.mV
 
     def init_state(self, V, Ca: IonInfo, batch_size: int = None):
-        self.m = DiffEqState(brainstate.init.param(u.math.zeros, self.varshape, batch_size))
-        self.h = DiffEqState(brainstate.init.param(u.math.zeros, self.varshape, batch_size))
+        self.m = DiffEqState(braintools.init.param(u.math.zeros, self.varshape, batch_size))
+        self.h = DiffEqState(braintools.init.param(u.math.zeros, self.varshape, batch_size))
 
     def reset_state(self, V, Ca, batch_size=None):
         self.m.value = self.f_m_inf(V)
@@ -1067,11 +1068,11 @@ class ICav31_Ma2020(CalciumChannel):
 
         # parameters
         T = u.kelvin2celsius(T)
-        self.g_max = brainstate.init.param(g_max, self.varshape, allow_none=False)
-        self.T = brainstate.init.param(T, self.varshape, allow_none=False)
-        self.T_base = brainstate.init.param(T_base, self.varshape, allow_none=False)
-        self.V_sh = brainstate.init.param(V_sh, self.varshape, allow_none=False)
-        self.phi = brainstate.init.param(T_base ** ((T - 37) / 10), self.varshape, allow_none=False)
+        self.g_max = braintools.init.param(g_max, self.varshape, allow_none=False)
+        self.T = braintools.init.param(T, self.varshape, allow_none=False)
+        self.T_base = braintools.init.param(T_base, self.varshape, allow_none=False)
+        self.V_sh = braintools.init.param(V_sh, self.varshape, allow_none=False)
+        self.phi = braintools.init.param(T_base ** ((T - 37) / 10), self.varshape, allow_none=False)
 
         self.v0_m_inf = -52 * u.mV
         self.v0_h_inf = -72 * u.mV
@@ -1092,8 +1093,8 @@ class ICav31_Ma2020(CalciumChannel):
         self.z = 2
 
     def init_state(self, V, Ca: IonInfo, batch_size: int = None):
-        self.p = DiffEqState(brainstate.init.param(u.math.zeros, self.varshape, batch_size))
-        self.q = DiffEqState(brainstate.init.param(u.math.zeros, self.varshape, batch_size))
+        self.p = DiffEqState(braintools.init.param(u.math.zeros, self.varshape, batch_size))
+        self.q = DiffEqState(braintools.init.param(u.math.zeros, self.varshape, batch_size))
 
     def reset_state(self, V, Ca, batch_size=None):
         self.p.value = self.f_p_inf(V)
@@ -1159,11 +1160,11 @@ class ICaGrc_Ma2020(CalciumChannel):
 
         # parameters
         T = u.kelvin2celsius(T)
-        self.g_max = brainstate.init.param(g_max, self.varshape, allow_none=False)
-        self.T = brainstate.init.param(T, self.varshape, allow_none=False)
-        self.T_base = brainstate.init.param(T_base, self.varshape, allow_none=False)
-        self.V_sh = brainstate.init.param(V_sh, self.varshape, allow_none=False)
-        self.phi = brainstate.init.param(T_base ** ((T - 20) / 10), self.varshape, allow_none=False)
+        self.g_max = braintools.init.param(g_max, self.varshape, allow_none=False)
+        self.T = braintools.init.param(T, self.varshape, allow_none=False)
+        self.T_base = braintools.init.param(T_base, self.varshape, allow_none=False)
+        self.V_sh = braintools.init.param(V_sh, self.varshape, allow_none=False)
+        self.phi = braintools.init.param(T_base ** ((T - 20) / 10), self.varshape, allow_none=False)
 
         self.eca = 129.33 * u.mV
 
@@ -1184,8 +1185,8 @@ class ICaGrc_Ma2020(CalciumChannel):
         self.V0beta_u = -48
 
     def init_state(self, V, Ca: IonInfo, batch_size: int = None):
-        self.m = DiffEqState(brainstate.init.param(u.math.zeros, self.varshape, batch_size))
-        self.h = DiffEqState(brainstate.init.param(u.math.zeros, self.varshape, batch_size))
+        self.m = DiffEqState(braintools.init.param(u.math.zeros, self.varshape, batch_size))
+        self.h = DiffEqState(braintools.init.param(u.math.zeros, self.varshape, batch_size))
 
     def reset_state(self, V, Ca, batch_size=None):
         self.m.value = self.f_m_inf(V)

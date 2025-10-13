@@ -48,13 +48,13 @@ class INa(braincell.Channel):
         vth: Union[brainstate.typing.ArrayLike, Callable] = -63 * u.mV,
     ):
         super().__init__(size)
-        self.ENa = brainstate.init.param(ENa, self.varshape)
-        self.gNa = brainstate.init.param(gNa, self.varshape)
-        self.V_th = brainstate.init.param(vth, self.varshape)
+        self.ENa = braintools.init.param(ENa, self.varshape)
+        self.gNa = braintools.init.param(gNa, self.varshape)
+        self.V_th = braintools.init.param(vth, self.varshape)
 
     def init_state(self, V, batch_size=None):
-        self.m = braincell.DiffEqState(brainstate.init.param(u.math.zeros, self.varshape))
-        self.h = braincell.DiffEqState(brainstate.init.param(u.math.zeros, self.varshape))
+        self.m = braincell.DiffEqState(braintools.init.param(u.math.zeros, self.varshape))
+        self.h = braincell.DiffEqState(braintools.init.param(u.math.zeros, self.varshape))
 
     #  m channel
     m_alpha = lambda self, V: 0.32 * 4 / u.math.exprel((13. * u.mV - V + self.V_th).to_decimal(u.mV) / 4.)
@@ -89,12 +89,12 @@ class IK(braincell.Channel):
         vth: Union[brainstate.typing.ArrayLike, Callable] = -63 * u.mV,
     ):
         super().__init__(size)
-        self.EK = brainstate.init.param(EK, self.varshape)
-        self.gK = brainstate.init.param(gK, self.varshape)
-        self.V_th = brainstate.init.param(vth, self.varshape)
+        self.EK = braintools.init.param(EK, self.varshape)
+        self.gK = braintools.init.param(gK, self.varshape)
+        self.V_th = braintools.init.param(vth, self.varshape)
 
     def init_state(self, V, batch_size=None):
-        self.n = braincell.DiffEqState(brainstate.init.param(u.math.zeros, self.varshape))
+        self.n = braincell.DiffEqState(braintools.init.param(u.math.zeros, self.varshape))
 
     # n channel
     n_alpha = lambda self, V: 0.032 * 5 / u.math.exprel((15. * u.mV - V + self.V_th).to_decimal(u.mV) / 5.)
@@ -114,7 +114,7 @@ class HH(braincell.SingleCompartment):
     def __init__(
         self,
         size,
-        v_initializer: Callable = brainstate.init.Uniform(-70 * u.mV, -60. * u.mV),
+        v_initializer: Callable = braintools.init.Uniform(-70 * u.mV, -60. * u.mV),
         gL: Union[brainstate.typing.ArrayLike, Callable] = 0.003 * u.mS,
         gNa: Union[brainstate.typing.ArrayLike, Callable] = 120. * u.mS,
         gK: Union[brainstate.typing.ArrayLike, Callable] = 36. * u.mS,
@@ -162,7 +162,7 @@ def simulate_model(gl, g_na, g_kd, C):
     current = inp_traces.T
     assert current.ndim == 2  # [T, B]
     n_input = current.shape[1]
-    hh = HH((n_input, 1), gL=gl, gNa=g_na, gK=g_kd, C=C, v_initializer=brainstate.init.Constant(-65. * u.mV), )
+    hh = HH((n_input, 1), gL=gl, gNa=g_na, gK=g_kd, C=C, v_initializer=braintools.init.Constant(-65. * u.mV), )
     hh.init_state()
 
     def step_fun(i, inp):

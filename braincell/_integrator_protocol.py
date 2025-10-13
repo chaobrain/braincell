@@ -15,7 +15,6 @@
 
 from typing import Callable
 
-import braincell
 import brainstate
 from brainstate._state import record_state_value_write
 
@@ -26,7 +25,7 @@ __all__ = [
 ]
 
 
-class DiffEqState(brainstate.ShortTermState):
+class DiffEqState(brainstate.HiddenState):
     """
     A state that integrates the state of the system to the integral of the state.
 

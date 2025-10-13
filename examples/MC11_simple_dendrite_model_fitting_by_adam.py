@@ -112,7 +112,7 @@ def fitting_example():
         return losses[i_best], params[i_best]
 
     # define the optimizer
-    optimizer = brainstate.optim.Adam(lr=1e-3)
+    optimizer = braintools.optim.Adam(lr=1e-3)
     optimizer.register_trainable_weights({'param': param_to_optimize})
 
     # Step 6: training

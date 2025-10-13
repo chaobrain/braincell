@@ -90,38 +90,16 @@ class SingleCompartment(HHTypedNeuron):
         size: brainstate.typing.Size,
         C: Initializer = 1. * u.uF / u.cm ** 2,
         V_th: Initializer = 0. * u.mV,
-        V_initializer: Initializer = brainstate.init.Uniform(-70 * u.mV, -60. * u.mV),
+        V_initializer: Initializer = braintools.init.Uniform(-70 * u.mV, -60. * u.mV),
         spk_fun: Callable = braintools.surrogate.ReluGrad(),
         solver: Union[str, Callable] = 'rk2',
         name: Optional[str] = None,
         **ion_channels
     ):
-        """
-        Initialize a :class:`SingleCompartment` neuron.
-
-        Parameters
-        ----------
-        size : brainstate.typing.Size
-            The size of the neuron group.
-        C : Union[brainstate.typing.ArrayLike, Callable], optional
-            Membrane capacitance. Default is 1. * u.uF / u.cm ** 2.
-        V_th : Union[brainstate.typing.ArrayLike, Callable], optional
-            Threshold voltage. Default is 0. * u.mV.
-        V_initializer : Union[brainstate.typing.ArrayLike, Callable], optional
-            Initial membrane potential. Default is uniform distribution between -70 mV and -60 mV.
-        spk_fun : Callable, optional
-            Spike function. Default is brainstate.surrogate.ReluGrad().
-        solver : str | Callable, optional
-            Numerical solver for integration. Default is 'rk2'.
-        name : Optional[str], optional
-            Name of the neuron group. Default is None.
-        **ion_channels : dict
-            Additional ion channels to be added to the neuron.
-        """
         super().__init__(size, name=name, **ion_channels)
         assert self.n_compartment == 1, "SingleCompartment neuron should have only one compartment."
-        self.C = brainstate.init.param(C, self.varshape)
-        self.V_th = brainstate.init.param(V_th, self.varshape)
+        self.C = braintools.init.param(C, self.varshape)
+        self.V_th = braintools.init.param(V_th, self.varshape)
         self.V_initializer = V_initializer
         self.spk_fun = spk_fun
         self.solver = get_integrator(solver)
@@ -174,7 +152,7 @@ class SingleCompartment(HHTypedNeuron):
         -------
         None
         """
-        self.V = DiffEqState(brainstate.init.param(self.V_initializer, self.varshape, batch_size))
+        self.V = DiffEqState(braintools.init.param(self.V_initializer, self.varshape, batch_size))
         self.spike = brainstate.ShortTermState(self.get_spike(self.V.value, self.V.value))
         super().init_state(batch_size)
 
@@ -183,7 +161,7 @@ class SingleCompartment(HHTypedNeuron):
         Reset the state of the neuron.
 
         This method resets the membrane potential (V) to its initial value and
-        reinitializes other state variables through the parent class.
+        reinitialized other state variables through the parent class.
 
         Parameters
         ----------
@@ -194,7 +172,7 @@ class SingleCompartment(HHTypedNeuron):
         -------
         None
         """
-        self.V.value = brainstate.init.param(self.V_initializer, self.varshape, batch_size)
+        self.V.value = braintools.init.param(self.V_initializer, self.varshape, batch_size)
         self.spike.value = self.get_spike(self.V.value, self.V.value)
         super().init_state(batch_size)
 

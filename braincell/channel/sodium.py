@@ -23,6 +23,7 @@ __all__ = [
     'INa_TM1991',
     'INa_HH1952',
     'INa_Rsg',
+    'SynExp',
 ]
 
 
@@ -124,6 +125,34 @@ class SodiumChannel(Channel):
         """
         pass
 
+class SynExp(SodiumChannel):
+
+    def __init__(
+        self,
+        size,
+        g_max = 1.0 * (u.mS / u.cm**2),   # 最大电导（有单位）
+        tau = 2.0 * u.ms,                 # 时间常数（单位 ms）
+        E_syn = -80 * u.mV,               # 反转电位
+        name=None
+    ):
+        super().__init__(size=size, name=name)
+
+        # Parameters with physical units
+        self.g_max = braintools.init.param(g_max, self.varshape)
+        self.tau   = braintools.init.param(tau,   self.varshape)
+        self.E_syn = braintools.init.param(E_syn, self.varshape)
+
+    def init_state(self, V, Na: IonInfo, batch_size=None):
+        self.g = DiffEqState(braintools.init.param(u.math.zeros, self.varshape, batch_size))
+
+    def reset_state(self, V, Na: IonInfo, batch_size=None):
+        self.g = DiffEqState(braintools.init.param(u.math.zeros, self.varshape, batch_size))
+
+    def compute_derivative(self, V, Na: IonInfo):
+        self.g.derivative = - self.g.value / self.tau
+    
+    def current(self, V, Na: IonInfo):
+        return self.g_max * self.g.value * (self.E_syn - V)  
 
 class INa_p3q_markov(SodiumChannel):
     r"""
@@ -443,6 +472,7 @@ class INa_Rsg(SodiumChannel, IndependentIntegration):
         g_max: Union[brainstate.typing.ArrayLike, Callable] = 15. * (u.mS / u.cm ** 2),
         name: Optional[str] = None,
         solver: str = 'rk4',
+        compute_steps = 1,
     ):
         super().__init__(size=size, name=name)
         IndependentIntegration.__init__(self, solver=solver)
@@ -475,9 +505,11 @@ class INa_Rsg(SodiumChannel, IndependentIntegration):
         self.alfac = (self.Oon / self.Con) ** (1 / 4)
         self.btfac = (self.Ooff / self.Coff) ** (1 / 4)
 
+        self.compute_steps = compute_steps
+
     def make_integration(self, *args, **kwargs):
-        with brainstate.environ.context(dt=brainstate.environ.get_dt() / 5):
-            brainstate.transform.for_loop(lambda i: self.solver(self, *args, **kwargs), u.math.arange(5))
+        with brainstate.environ.context(dt=brainstate.environ.get_dt() / self.compute_steps):
+            brainstate.transform.for_loop(lambda i: self.solver(self, *args, **kwargs), u.math.arange(self.compute_steps))
 
     def init_state(self, V, Na: IonInfo, batch_size=None):
         state_names = ["C1", "C2", "C3", "C4", "C5", "I1", "I2", "I3", "I4", "I5", "O", "B", ]

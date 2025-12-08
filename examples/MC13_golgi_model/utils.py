@@ -1,5 +1,5 @@
 import warnings
-
+import time
 import brainstate
 import braintools
 import brainunit as u
@@ -34,8 +34,11 @@ def NeuronRun(cell, stim, tstop, dt, v_init):
     h.dt = dt
     h.v_init = v_init
     h.finitialize(v_init)
-
-    h.continuerun(tstop)
+    t0 = time.time()
+    h.tstop = 100
+    h.run()
+    t1 = time.time()
+    print(f'NEURON simulation time with dt={dt} ms: {t1 - t0} s')
     return t_vec, v_vecs, spike_times
 
 
@@ -68,7 +71,7 @@ def step_input(num, dur, amp, dt):
     for i in range(len(value)):
         value = value.at[i, 0].set(amp[i])
 
-    I = braintools.input.section_input(values=value, durations=dur * u.ms) * u.nA
+    I = braintools.input.section(values=value, durations=dur * u.ms) * u.nA
     return I
 
 
@@ -342,6 +345,113 @@ def plot_voltage_comparison(
     plt.tight_layout()
     plt.show()
 
+
+def plot_traces(v, n=5, t=None, label="cell"):
+    """
+    Plot the first n traces (columns) of v.
+
+    Args:
+        v: array-like, shape (T, N)
+        n: number of traces to plot
+        t: optional time axis, shape (T,), defaults to 0..T-1
+        label: y-label prefix
+    """
+    v = np.asarray(v)
+    if v.ndim != 2:
+        raise ValueError(f"v must be (T, N), got {v.shape}")
+
+    T, N = v.shape
+    n = max(1, min(int(n), N))
+
+    if t is None:
+        t = np.arange(T)
+    else:
+        t = np.asarray(t)
+        if t.shape != (T,):
+            raise ValueError(f"t must be shape ({T},), got {t.shape}")
+
+    fig, axes = plt.subplots(n, 1, figsize=(12, 2.2 * n), sharex=True)
+    axes = np.atleast_1d(axes)
+
+    for i, ax in enumerate(axes[:n]):
+        ax.plot(t, v[:, i])
+        ax.set_ylabel(f"{label} {i}")
+        ax.grid(alpha=0.3)
+
+    axes[min(n - 1, len(axes) - 1)].set_xlabel("time")
+    fig.tight_layout()
+    plt.show()
+
+def plot_spike_raster(
+    spikes,
+    dt_ms=0.01,
+    segment_idx=0,
+    time_unit="ms",          # "ms" or "s"
+    t_range=None,            # (t_start, t_end) in time_unit
+    max_units=300,
+    seed=0,
+    title="Spike raster",
+    dot_size=6,
+    alpha=0.7,
+    color="tab:orange",
+    edgecolors="none",
+):
+    """
+    Raster plot for one segment only.
+
+    Args:
+        spikes: np.ndarray, shape (T, C, S), bool or 0/1
+        dt_ms:  time step in milliseconds
+        segment_idx: which segment to plot
+        time_unit: "ms" or "s" (also applies to t_range)
+        t_range: (start, end) in time_unit
+        max_units: subsample cells if C > max_units
+    """
+    spikes = np.asarray(spikes)
+    if spikes.ndim != 3:
+        raise ValueError(f"spikes must be (T, C, S), got {spikes.shape}")
+    T, C, S = spikes.shape
+    if not (0 <= segment_idx < S):
+        raise ValueError(f"segment_idx out of range: {segment_idx}, S={S}")
+    if time_unit not in ("ms", "s"):
+        raise ValueError("time_unit must be 'ms' or 's'")
+
+    times_ms = np.arange(T) * float(dt_ms)
+
+    # time window
+    if t_range is not None:
+        t0, t1 = t_range
+        if time_unit == "s":
+            t0, t1 = t0 * 1000.0, t1 * 1000.0
+        i0 = max(0, int(np.floor(t0 / dt_ms)))
+        i1 = min(T, int(np.ceil(t1 / dt_ms)))
+        spikes = spikes[i0:i1]
+        times_ms = times_ms[i0:i1]
+
+    # pick one segment: (Tv, C)
+    data = spikes[:, :, segment_idx].astype(bool)
+
+    # subsample cells
+    rng = np.random.default_rng(seed)
+    if C > max_units:
+        keep = np.sort(rng.choice(C, size=max_units, replace=False))
+        data = data[:, keep]
+        C = max_units
+
+    t_idx, c_idx = np.where(data)
+    x = times_ms[t_idx] if time_unit == "ms" else (times_ms[t_idx] / 1000.0)
+
+    fig_h = max(3, C * 0.02)
+    plt.figure(figsize=(12, fig_h))
+    plt.scatter(x, c_idx, s=dot_size, c=color, alpha=alpha, edgecolors=edgecolors)
+    plt.ylim(-1, C)
+    plt.title(title, fontsize=18)
+    plt.xlabel(f"time ({time_unit})", fontsize=16)
+    plt.ylabel("cell", fontsize=16)
+    plt.xticks(fontsize=14)
+    plt.yticks(fontsize=14)
+    plt.tight_layout()
+    plt.show()
 # dt v.s error 
 
 # num_dt = 5

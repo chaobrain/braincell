@@ -12,15 +12,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ==============================================================================
-
+import os 
+os.environ["CUDA_VISIBLE_DEVICES"] = "7"
 import jax
 import time
 import brainstate
 import brainunit as u
 import matplotlib.pyplot as plt
 
-# brainstate.environ.set(precision=64, platform='gpu')
-brainstate.environ.set(precision=64, )
+brainstate.environ.set(precision=32, platform='gpu')
 
 import braincell
 import numpy as np
@@ -50,7 +50,7 @@ def step_input(num, dur, amp):
     value = u.math.zeros((len(dur), num))
     for i in range(len(value)):
         value = value.at[i, 0].set(amp[i])
-    return braintools.input.section_input(values=value, durations=dur * u.ms) * u.nA
+    return braintools.input.section(values=value, durations=dur * u.ms) * u.nA
 
 
 def seg_ion_params(morphology):
@@ -181,8 +181,8 @@ class Golgi(braincell.MultiCompartment):
         self.k.add(IKv34=braincell.channel.IKv34_Ma2020(self.varshape, g_max=gkv34 * u.mS / (u.cm ** 2)))
         self.k.add(IKv43=braincell.channel.IKv43_Ma2020(self.varshape, g_max=gkv43 * u.mS / (u.cm ** 2)))
 
-        self.na = braincell.ion.SodiumFixed(self.varshape, E=E_Na)
-        self.na.add(INa_Rsg=braincell.channel.INa_Rsg(self.varshape, g_max=gnarsg * u.mS / (u.cm ** 2)))
+        #self.na = braincell.ion.SodiumFixed(self.varshape, E=E_Na)
+        #self.na.add(INa_Rsg=braincell.channel.INa_Rsg(self.varshape, g_max=gnarsg * u.mS / (u.cm ** 2), solver = 'rk4', compute_steps=5))
 
     def step_run(self, t, inp):
         with brainstate.environ.context(t=t):
@@ -195,7 +195,7 @@ morphology.set_passive_params()
 
 gl, gh1, gh2, gkv11, gkv34, gkv43, gnarsg, gcagrc, gcav23, gcav31, gkca31 = seg_ion_params(morphology)
 cell_braincell = Golgi(
-    popsize=128,  # number of cells in the population
+    popsize=1000,  # number of cells in the population
     morphology=morphology,
     E_L=-55. * u.mV,
     gl=gl,
@@ -215,8 +215,9 @@ cell_braincell = Golgi(
 def simulate(I):
     times = u.math.arange(I.shape[0]) * brainstate.environ.get_dt()
     cell_braincell.init_state()
-    vs = brainstate.compile.for_loop(cell_braincell.step_run, times, I)  # vs =
-    return times.to_decimal(u.ms), vs.to_decimal(u.mV)
+    cell_braincell.reset_state()
+    vs = brainstate.transform.for_loop(cell_braincell.step_run, times, I)  # vs =
+    return times.to_decimal(u.ms), vs[:,0,0].to_decimal(u.mV)
 
 
 brainstate.environ.set(dt=0.01 * u.ms)
@@ -231,9 +232,10 @@ t_braincell, v_braincell = jax.block_until_ready(simulate(I))
 t3 = time.time()
 print(f'First run time = {t1 - t0} s, second run time = {t3 - t2} s')
 
-plt.plot(t_braincell, v_braincell[:, 0, 0], label='soma')
-plt.plot(t_braincell, v_braincell[:, 0, -1], label='distal dendrite')
+plt.plot(t_braincell, v_braincell, label='soma')
+#plt.plot(t_braincell, v_braincell[:, 0, -1], label='distal dendrite')
 plt.xlabel('Time (ms)')
 plt.ylabel('Membrane potential (mV)')
 plt.legend()
+plt.savefig('golgi_braincell_voltage.png')
 plt.show()

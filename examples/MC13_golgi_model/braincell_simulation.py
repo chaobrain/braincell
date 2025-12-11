@@ -50,7 +50,7 @@ def step_input(num, dur, amp):
     value = u.math.zeros((len(dur), num))
     for i in range(len(value)):
         value = value.at[i, 0].set(amp[i])
-    return braintools.input.section_input(values=value, durations=dur * u.ms) * u.nA
+    return braintools.input.section(values=value, durations=dur * u.ms) * u.nA
 
 
 def seg_ion_params(morphology):
@@ -182,7 +182,7 @@ class Golgi(braincell.MultiCompartment):
         self.k.add(IKv43=braincell.channel.IKv43_Ma2020(self.varshape, g_max=gkv43 * u.mS / (u.cm ** 2)))
 
         self.na = braincell.ion.SodiumFixed(self.varshape, E=E_Na)
-        self.na.add(INa_Rsg=braincell.channel.INa_Rsg(self.varshape, g_max=gnarsg * u.mS / (u.cm ** 2)))
+        self.na.add(INa_Rsg=braincell.channel.INa_Rsg(self.varshape, g_max=gnarsg * u.mS / (u.cm ** 2), solver='backward_euler'))
 
     def step_run(self, t, inp):
         with brainstate.environ.context(t=t):
@@ -215,7 +215,7 @@ cell_braincell = Golgi(
 def simulate(I):
     times = u.math.arange(I.shape[0]) * brainstate.environ.get_dt()
     cell_braincell.init_state()
-    vs = brainstate.compile.for_loop(cell_braincell.step_run, times, I)  # vs =
+    vs = brainstate.transform.for_loop(cell_braincell.step_run, times, I)  # vs =
     return times.to_decimal(u.ms), vs.to_decimal(u.mV)
 
 

@@ -1,5 +1,8 @@
 [build-system]
-requires = ["setuptools>=45", "setuptools-scm[toml]>=6.2"]
+requires = [
+    "setuptools>=45",
+    "setuptools-scm[toml]>=6.2"
+]
 build-backend = "setuptools.build_meta"
 
 
@@ -19,18 +22,18 @@ exclude = [
 version = { attr = "braincell.__version__" }
 
 
-[tool.distutils.bdist_wheel]
-universal = true
-
-
 [project]
 name = "braincell"
 description = "Biologically Detailed Brain Cell Modeling in JAX"
 readme = "README.md"
-license = "Apache-2.0"
 requires-python = ">=3.10"
 authors = [{ name = "BrainCell Developers", email = "chao.brain@qq.com" }]
-keywords = ["dendritic computation", "dendritic modeling", "brain modeling", "neuron simulation"]
+keywords = [
+    "dendritic computation",
+    "dendritic modeling",
+    "brain modeling",
+    "neuron simulation",
+]
 classifiers = [
     "Natural Language :: English",
     "Operating System :: OS Independent",
@@ -40,13 +43,13 @@ classifiers = [
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Intended Audience :: Science/Research",
     "Topic :: Scientific/Engineering :: Bio-Informatics",
     "Topic :: Scientific/Engineering :: Mathematics",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
     "Topic :: Software Development :: Libraries",
 ]
-
 dependencies = [
     "numpy>=1.15",
     "brainunit>=0.0.8",
@@ -56,14 +59,15 @@ dependencies = [
     "brainpy>=2.7.0",
     "braintools>=0.1.0",
 ]
-
 dynamic = ["version"]
+
 
 [project.urls]
 Homepage = "https://github.com/chaobrain/braincell"
 Documentation = "https://braincell.readthedocs.io/"
 "Bug Tracker" = "https://github.com/chaobrain/braincell/issues"
 "Source Code" = "https://github.com/chaobrain/braincell"
+
 
 [project.optional-dependencies]
 cpu = ["jax[cpu]", "brainstate", "brainunit", "brainevent", "brainpy", "braintools"]

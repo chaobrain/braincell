@@ -22,7 +22,6 @@ Implementation of the paper:
   Proceedings of the national academy of sciences 108.28 (2011): 11620-11625.
 """
 
-
 import brainpy
 import brainstate
 import braintools
@@ -160,7 +159,8 @@ def try_single_neuron():
 def try_network_model():
     net = StraitalNetwork(100)
     brainstate.nn.init_all_states(net)
-    indices = np.arange(10000 * u.ms / brainstate.environ.get_dt(), dtype=np.int32)
+    duration = 10000 * u.ms
+    indices = np.arange(duration / brainstate.environ.get_dt(), dtype=np.int32)
 
     def step_run(i):
         with brainstate.environ.context(i=i, t=brainstate.environ.get_dt() * i):
@@ -177,6 +177,7 @@ def try_network_model():
     fig.add_subplot(gs[1, 0])
     times, indices = u.math.where(spk)
     plt.scatter(times, indices, s=1)
+    plt.xlim(-1, duration / u.ms + 1)
     plt.show()
 
 

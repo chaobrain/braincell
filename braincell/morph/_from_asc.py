@@ -22,7 +22,7 @@ import numpy as np
 from scipy.interpolate import interp1d
 
 from ._morphology import Morphology
-from ._morphology_utils import get_type_name
+from ._utils import get_type_name
 
 
 class Token:

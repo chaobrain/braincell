@@ -17,6 +17,7 @@ import brainstate
 import brainunit as u
 import numpy as np
 
+
 def calculate_total_resistance_and_area(
     points: brainstate.typing.Array,
     resistivity: u.Quantity = 100.0

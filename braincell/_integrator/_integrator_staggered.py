@@ -24,6 +24,7 @@ __all__ = [
     'staggered_step',
 ]
 
+
 @set_module_as('braincell')
 def staggered_step(
     target: DiffEqModule,

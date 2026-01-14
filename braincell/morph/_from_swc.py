@@ -21,7 +21,7 @@ import brainunit as u
 import numpy as np
 
 from ._morphology import Morphology
-from ._morphology_utils import get_type_name
+from ._utils import get_type_name
 
 
 class Import3dSection:

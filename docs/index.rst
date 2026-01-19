@@ -1,5 +1,5 @@
-Biologically Detailed Brain Cell Modeling in JAX
-================================================
+Biologically Detailed Brain Cell Modeling
+=========================================
 
 
 ``braincell`` provides a unified interface for modeling single-compartment and multi-compartment Hodgkin-Huxley-styled neuron models.

@@ -1,12 +1,12 @@
-Morphology Processing
-=====================
+``braincell.morph`` module
+==========================
+
+.. currentmodule:: braincell.morph
+.. automodule:: braincell.morph
 
 
-.. currentmodule:: braincell
-.. automodule:: braincell
 
-
-`braincell` provides diverse tools for morphology processing, enabling the representation
+`braincell.morph` provides diverse tools for morphology processing, enabling the representation
 and manipulation of neuronal structures.
 
 

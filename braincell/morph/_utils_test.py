@@ -20,7 +20,7 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 
-from braincell._morphology_utils import (
+from braincell.morph._utils import (
     compute_line_ratios,
     calculate_total_resistance_and_area,
     find_ratio_interval,

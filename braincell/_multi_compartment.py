@@ -19,7 +19,7 @@ import braintools
 import brainunit as u
 
 from ._base import HHTypedNeuron, IonChannel
-from ._integrator import get_integrator, DiffEqState, IndependentIntegration
+from .quad import get_integrator, DiffEqState, IndependentIntegration
 from .morph import Morphology
 from ._typing import Initializer
 

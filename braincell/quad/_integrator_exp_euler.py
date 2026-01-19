@@ -22,7 +22,6 @@ import jax
 import jax.numpy as jnp
 from jax.scipy.linalg import expm
 
-from braincell._base import HHTypedNeuron
 from braincell._misc import set_module_as
 from braincell._typing import Path
 from ._integrator_protocol import DiffEqModule
@@ -143,12 +142,13 @@ def exp_euler_step(target: DiffEqModule, *args):
     `_exp_euler_step_impl` function, which this function wraps and potentially
     vectorizes for population-level computations.
     """
+    from braincell._base import HHTypedNeuron
+    from braincell._single_compartment import SingleCompartment
+    from braincell._multi_compartment import MultiCompartment
     assert isinstance(target, HHTypedNeuron), (
         f"The target should be a {HHTypedNeuron.__name__}. "
         f"But got {type(target)} instead."
     )
-    from braincell._single_compartment import SingleCompartment
-    from braincell._multi_compartment import MultiCompartment
     t = brainstate.environ.get('t')
     dt = brainstate.environ.get('dt')
 

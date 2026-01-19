@@ -22,7 +22,7 @@ import braintools
 import brainunit as u
 
 from braincell._base import Ion, Channel, HHTypedNeuron
-from braincell._integrator import DiffEqState
+from braincell.quad import DiffEqState
 
 __all__ = [
     'Calcium',

@@ -88,7 +88,7 @@ import brainpy
 import numpy as np
 from brainstate.mixin import _JointGenericAlias
 
-from ._integrator import DiffEqModule, IndependentIntegration
+from .quad import DiffEqModule, IndependentIntegration
 from ._misc import set_module_as, Container, TreeNode
 
 __all__ = [

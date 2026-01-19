@@ -21,6 +21,7 @@ from . import channel
 from . import ion
 from . import morph
 from . import neuron
+from . import quad
 from ._base import (
     HHTypedNeuron,
     IonChannel,
@@ -30,10 +31,10 @@ from ._base import (
     mix_ions,
     IonInfo,
 )
-from ._integrator import *
 from ._multi_compartment import MultiCompartment
 from ._single_compartment import SingleCompartment
 from .morph import *
+from .quad import *
 
 _deprecations = {
     'SingleCompartment': (

@@ -1,5 +1,5 @@
-Numerical Integration Methods
-=============================
+``braincell.quad`` module
+=========================
 
 .. currentmodule:: braincell.quad
 .. automodule:: braincell.quad

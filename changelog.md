@@ -1,5 +1,36 @@
 # Release Notes
 
+## Version 0.0.7
+
+This release focuses on structural refactoring to improve codebase organization, specifically grouping morphology and integrator components into dedicated sub-packages (`braincell.morph` and `braincell.quad`).
+
+### Refactoring & Code Organization
+
+- **Morphology Sub-package** (`braincell.morph`)
+  - Moved and renamed morphology-related modules into `braincell/morph/`:
+    - `_morphology.py` -> `morph/_morphology.py`
+    - `_morphology_branch_tree.py` -> `morph/_branch_tree.py`
+    - `_morphology_from_asc.py` -> `morph/_from_asc.py`
+    - `_morphology_from_swc.py` -> `morph/_from_swc.py`
+    - `_morphology_utils.py` -> `morph/_utils.py`
+
+- **Integrator Sub-package** (`braincell.quad`)
+  - Moved all integrator and solver modules into `braincell/quad/`:
+    - `_integrator*.py` files moved to `braincell/quad/`.
+  - This improves the clarity of the top-level namespace.
+
+### Documentation
+
+- **Structure Updates**
+  - Updated API documentation to reflect the new module structure.
+  - Simplified `index.rst` and reorganized API reference pages.
+  - Updated copyright to reflect membership in the BrainX Ecosystem.
+
+### CI/CD
+
+- **Workflow Updates**
+  - Bumped versions for `actions/checkout`, `upload-artifact`, and `download-artifact`.
+
 ## Version 0.0.6
 
 This release focuses on major dependency updates, code modernization, and extensive refactoring to improve compatibility with the latest BrainPy ecosystem.

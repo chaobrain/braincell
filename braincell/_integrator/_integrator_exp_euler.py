@@ -22,7 +22,9 @@ import jax
 import jax.numpy as jnp
 from jax.scipy.linalg import expm
 
-from ._base import HHTypedNeuron
+from braincell._base import HHTypedNeuron
+from braincell._misc import set_module_as
+from braincell._typing import Path
 from ._integrator_protocol import DiffEqModule
 from ._integrator_util import (
     apply_standard_solver_step,
@@ -30,8 +32,6 @@ from ._integrator_util import (
     _check_diffeq_state_derivative,
     split_diffeq_states,
 )
-from ._misc import set_module_as
-from ._typing import Path
 
 __all__ = [
     'exp_euler_step',
@@ -177,7 +177,7 @@ def exp_euler_step(target: DiffEqModule, *args):
 
 
 @set_module_as('braincell')
-def ind_exp_euler_step(target: DiffEqModule,  *args, excluded_paths=()):
+def ind_exp_euler_step(target: DiffEqModule, *args, excluded_paths=()):
     """
     Perform an independent exponential Euler integration step for each DiffEqState in the target module.
 

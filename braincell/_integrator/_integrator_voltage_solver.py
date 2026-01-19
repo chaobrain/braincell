@@ -28,8 +28,8 @@ import numpy as np
 from brainevent._compatible_import import pallas as pl
 from brainevent._misc import generate_block_dim
 
+from braincell._misc import set_module_as
 from ._integrator_protocol import DiffEqModule
-from ._misc import set_module_as
 
 
 @set_module_as('braincell')

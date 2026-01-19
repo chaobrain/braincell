@@ -13,7 +13,7 @@ import brainunit as u
 import jax.tree
 
 from braincell._base import Channel, IonInfo
-from braincell._integrator_protocol import DiffEqState, IndependentIntegration
+from braincell._integrator import DiffEqState, IndependentIntegration
 from braincell.ion import Sodium
 
 __all__ = [

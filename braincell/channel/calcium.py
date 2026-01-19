@@ -12,7 +12,7 @@ import braintools
 import brainunit as u
 
 from braincell._base import Channel, IonInfo
-from braincell._integrator_protocol import DiffEqState
+from braincell._integrator import DiffEqState
 from braincell.ion import Calcium
 
 __all__ = [

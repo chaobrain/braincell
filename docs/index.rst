@@ -60,11 +60,14 @@ Installation
 
           pip install -U braincell[cpu]
 
-    .. tab-item:: GPU (CUDA 12.0)
+    .. tab-item:: GPU (CUDA)
 
        .. code-block:: bash
 
           pip install -U braincell[cuda12]
+
+          # or
+          pip install -U braincell[cuda13]
 
     .. tab-item:: TPU
 

@@ -13,5 +13,5 @@
 # limitations under the License.
 # ==============================================================================
 
-from ._integrator_protocol import DiffEqModule, DiffEqState, IndependentIntegration
 from ._integrator import *
+from ._integrator_protocol import DiffEqModule, DiffEqState, IndependentIntegration

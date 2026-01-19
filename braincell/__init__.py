@@ -14,8 +14,8 @@
 # ==============================================================================
 
 
-__version__ = "0.0.6"
-__version_info__ = (0, 0, 6)
+__version__ = "0.0.7"
+__version_info__ = tuple(map(int, __version__.split(".")))
 
 from . import channel
 from . import ion
@@ -31,15 +31,9 @@ from ._base import (
     IonInfo,
 )
 from ._integrator import *
-from _integrator._integrator_protocol import (
-    DiffEqState,
-    DiffEqModule,
-    IndependentIntegration,
-)
 from ._multi_compartment import MultiCompartment
 from ._single_compartment import SingleCompartment
-from .morph._from_asc import from_asc
-from .morph._from_swc import from_swc
+from .morph import *
 
 _deprecations = {
     'SingleCompartment': (

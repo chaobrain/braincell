@@ -15,10 +15,10 @@
 
 import brainstate
 
+from braincell._misc import set_module_as
 from ._integrator_exp_euler import ind_exp_euler_step
 from ._integrator_protocol import DiffEqModule
 from ._integrator_voltage_solver import dhs_voltage_step
-from ._misc import set_module_as
 
 __all__ = [
     'staggered_step',

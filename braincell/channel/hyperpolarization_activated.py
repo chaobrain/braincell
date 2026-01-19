@@ -11,7 +11,7 @@ import braintools
 import brainunit as u
 
 from braincell._base import Channel, HHTypedNeuron
-from braincell._integrator_protocol import DiffEqState
+from braincell.quad import DiffEqState
 
 __all__ = [
     'Ih_HM1992',

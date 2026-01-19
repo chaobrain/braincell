@@ -107,6 +107,5 @@ Sodium Channels
    INa_TM1991
    INa_HH1952
    INa_Rsg
-   INa_Rsg_B
 
 

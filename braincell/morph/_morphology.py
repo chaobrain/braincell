@@ -1,4 +1,4 @@
-# Copyright 2024 BDP Ecosystem Limited. All Rights Reserved.
+# Copyright 2024 BrainX Ecosystem Limited. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -21,15 +21,15 @@ import brainstate
 import brainunit as u
 import numpy as np
 
-from ._morphology_branch_tree import BranchingTree
-from ._morphology_utils import (
+from ._branch_tree import BranchingTree
+from ._utils import (
     calculate_total_resistance_and_area,
     generate_interpolated_nodes,
     compute_connection_seg,
     compute_line_ratios,
     init_coupling_weight_nodes,
 )
-from ._typing import SectionName
+from braincell._typing import SectionName
 
 __all__ = [
     'Segment',
@@ -925,7 +925,7 @@ class Morphology(brainstate.util.PrettyObject):
         Morphology
             A Morphology object created from the SWC file
         """
-        from ._morphology_from_swc import from_swc
+        from ._from_swc import from_swc
         return from_swc(filename)
 
     @classmethod
@@ -943,7 +943,7 @@ class Morphology(brainstate.util.PrettyObject):
         Morphology
             A Morphology object created from the ASC file
         """
-        from ._morphology_from_asc import from_asc
+        from ._from_asc import from_asc
         return from_asc(filename)
 
     def visualize(self):

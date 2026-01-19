@@ -231,3 +231,4 @@ cython_debug/
 /examples/MC13_golgi_model/x86_64/
 /.claude/
 /dev/replace_init.py
+/dev/replace_all.py

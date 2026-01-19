@@ -1,4 +1,4 @@
-# Copyright 2024 BDP Ecosystem Limited. All Rights Reserved.
+# Copyright 2024 BrainX Ecosystem Limited. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -18,9 +18,9 @@ import brainunit as u
 import jax
 import jax.numpy as jnp
 
+from braincell._misc import set_module_as
 from ._integrator_protocol import DiffEqModule
 from ._integrator_util import apply_standard_solver_step, jacrev_last_dim
-from ._misc import set_module_as
 
 __all__ = [
     'backward_euler_step',

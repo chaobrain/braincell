@@ -1,4 +1,4 @@
-# Copyright 2024 BDP Ecosystem Limited. All Rights Reserved.
+# Copyright 2024 BrainX Ecosystem Limited. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -22,7 +22,8 @@ import jax
 import jax.numpy as jnp
 from jax.scipy.linalg import expm
 
-from ._base import HHTypedNeuron
+from braincell._misc import set_module_as
+from braincell._typing import Path
 from ._integrator_protocol import DiffEqModule
 from ._integrator_util import (
     apply_standard_solver_step,
@@ -30,8 +31,6 @@ from ._integrator_util import (
     _check_diffeq_state_derivative,
     split_diffeq_states,
 )
-from ._misc import set_module_as
-from ._typing import Path
 
 __all__ = [
     'exp_euler_step',
@@ -143,12 +142,13 @@ def exp_euler_step(target: DiffEqModule, *args):
     `_exp_euler_step_impl` function, which this function wraps and potentially
     vectorizes for population-level computations.
     """
+    from braincell._base import HHTypedNeuron
+    from braincell._single_compartment import SingleCompartment
+    from braincell._multi_compartment import MultiCompartment
     assert isinstance(target, HHTypedNeuron), (
         f"The target should be a {HHTypedNeuron.__name__}. "
         f"But got {type(target)} instead."
     )
-    from braincell._single_compartment import SingleCompartment
-    from braincell._multi_compartment import MultiCompartment
     t = brainstate.environ.get('t')
     dt = brainstate.environ.get('dt')
 
@@ -177,7 +177,7 @@ def exp_euler_step(target: DiffEqModule, *args):
 
 
 @set_module_as('braincell')
-def ind_exp_euler_step(target: DiffEqModule,  *args, excluded_paths=()):
+def ind_exp_euler_step(target: DiffEqModule, *args, excluded_paths=()):
     """
     Perform an independent exponential Euler integration step for each DiffEqState in the target module.
 

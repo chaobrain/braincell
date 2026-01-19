@@ -1,4 +1,4 @@
-# Copyright 2024 BDP Ecosystem Limited. All Rights Reserved.
+# Copyright 2024 BrainX Ecosystem Limited. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -21,8 +21,8 @@ import brainunit as u
 import jax
 import jax.numpy as jnp
 
+from braincell._typing import T, DT, Y0, Y1, Aux, Jacobian, VectorFiled, Args
 from ._integrator_protocol import DiffEqState, DiffEqModule, IndependentIntegration
-from ._typing import T, DT, Y0, Y1, Aux, Jacobian, VectorFiled, Args
 
 
 def _filter_diffeq(independent_modules, path, value):
@@ -239,6 +239,7 @@ def apply_standard_solver_step(
     for key, val in other_vals.items():
         other_states[key].value = val
     target.post_integral(*args)
+
 
 def jacrev_last_dim(
     fn: Callable[[Y0], Y1] | Callable[[Y0], Tuple[Y1, Aux]],

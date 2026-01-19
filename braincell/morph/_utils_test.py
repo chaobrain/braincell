@@ -1,4 +1,4 @@
-# Copyright 2024 BDP Ecosystem Limited. All Rights Reserved.
+# Copyright 2024 BrainX Ecosystem Limited. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -20,7 +20,7 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 
-from braincell._morphology_utils import (
+from braincell.morph._utils import (
     compute_line_ratios,
     calculate_total_resistance_and_area,
     find_ratio_interval,

@@ -1,4 +1,4 @@
-# Copyright 2024 BDP Ecosystem Limited. All Rights Reserved.
+# Copyright 2024 BrainX Ecosystem Limited. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -20,8 +20,7 @@ import brainunit as u
 import braintools
 
 from ._base import HHTypedNeuron, IonChannel
-from ._integrator import get_integrator
-from ._integrator_protocol import DiffEqState, IndependentIntegration
+from .quad import get_integrator, DiffEqState, IndependentIntegration
 from ._typing import Initializer
 
 __all__ = [

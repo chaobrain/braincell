@@ -1,4 +1,4 @@
-# Copyright 2025 BDP Ecosystem Limited. All Rights Reserved.
+# Copyright 2025 BrainX Ecosystem Limited. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -21,7 +21,7 @@ import brainunit as u
 import numpy as np
 
 from ._morphology import Morphology
-from ._morphology_utils import get_type_name
+from ._utils import get_type_name
 
 
 class Import3dSection:

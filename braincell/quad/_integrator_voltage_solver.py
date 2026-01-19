@@ -1,4 +1,4 @@
-# Copyright 2025 BDP Ecosystem Limited. All Rights Reserved.
+# Copyright 2025 BrainX Ecosystem Limited. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -28,8 +28,8 @@ import numpy as np
 from brainevent._compatible_import import pallas as pl
 from brainevent._misc import generate_block_dim
 
+from braincell._misc import set_module_as
 from ._integrator_protocol import DiffEqModule
-from ._misc import set_module_as
 
 
 @set_module_as('braincell')

@@ -1,4 +1,4 @@
-# Copyright 2024 BDP Ecosystem Limited. All Rights Reserved.
+# Copyright 2024 BrainX Ecosystem Limited. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -20,9 +20,9 @@ import brainstate
 import brainunit as u
 import jax
 
+from braincell._misc import set_module_as
+from braincell._typing import T, DT
 from ._integrator_protocol import DiffEqState, DiffEqModule
-from ._misc import set_module_as
-from ._typing import T, DT
 
 __all__ = [
     'euler_step',

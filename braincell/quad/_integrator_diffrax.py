@@ -1,4 +1,4 @@
-# Copyright 2024 BDP Ecosystem Limited. All Rights Reserved.
+# Copyright 2024 BrainX Ecosystem Limited. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -20,10 +20,10 @@ import brainstate
 import brainunit as u
 import jax.numpy as jnp
 
+from braincell._misc import set_module_as, ModuleNotFound
+from braincell._typing import VectorFiled, Y0, T, DT
 from ._integrator_protocol import DiffEqModule
 from ._integrator_util import apply_standard_solver_step
-from ._misc import set_module_as, ModuleNotFound
-from ._typing import VectorFiled, Y0, T, DT
 
 __all__ = [
     # runge-kutta methods

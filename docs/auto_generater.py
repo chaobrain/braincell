@@ -269,7 +269,7 @@ def main():
     os.makedirs('apis/', exist_ok=True)
 
     # _write_module(
-    #     module_name='braincell._integrator',
+    #     module_name='braincell.quad',
     #     automodule='braincell',
     #     filename='apis/integration.rst',
     #     header='Numerical Integration Methods',

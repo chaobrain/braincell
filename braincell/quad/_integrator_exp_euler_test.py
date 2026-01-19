@@ -1,4 +1,4 @@
-# Copyright 2025 BDP Ecosystem Limited. All Rights Reserved.
+# Copyright 2025 BrainX Ecosystem Limited. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -64,67 +64,7 @@ def compare(method):
 
 class TestRungeKutta:
     def test_euler_step(self):
-        dts, norms = compare('euler')
-        plt.loglog(dts, norms)
-        # plt.show()
-        plt.close()
-
-    def test_midpoint_step(self):
-        dts, norms = compare('midpoint')
-        plt.loglog(dts, norms)
-        # plt.show()
-        plt.close()
-
-    def test_rk2_step(self):
-        dts, norms = compare('rk2')
-        plt.loglog(dts, norms)
-        # plt.show()
-        plt.close()
-
-    def test_heun2_step(self):
-        dts, norms = compare('heun2')
-        plt.loglog(dts, norms)
-        # plt.show()
-        plt.close()
-
-    def test_ralston2_step(self):
-        dts, norms = compare('ralston2')
-        plt.loglog(dts, norms)
-        # plt.show()
-        plt.close()
-
-    def test_rk3_step(self):
-        dts, norms = compare('rk3')
-        plt.loglog(dts, norms)
-        # plt.show()
-        plt.close()
-
-    def test_heun3_step(self):
-        dts, norms = compare('heun3')
-        plt.loglog(dts, norms)
-        # plt.show()
-        plt.close()
-
-    def test_ssprk3_step(self):
-        dts, norms = compare('ssprk3')
-        plt.loglog(dts, norms)
-        # plt.show()
-        plt.close()
-
-    def test_ralston3_step(self):
-        dts, norms = compare('ralston3')
-        plt.loglog(dts, norms)
-        # plt.show()
-        plt.close()
-
-    def test_rk4_step(self):
-        dts, norms = compare('rk4')
-        plt.loglog(dts, norms)
-        # plt.show()
-        plt.close()
-
-    def test_ralston4_step(self):
-        dts, norms = compare('ralston4')
+        dts, norms = compare('ind_exp_euler')
         plt.loglog(dts, norms)
         # plt.show()
         plt.close()

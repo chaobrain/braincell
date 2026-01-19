@@ -1,4 +1,4 @@
-# Copyright 2024 BDP Ecosystem Limited. All Rights Reserved.
+# Copyright 2024 BrainX Ecosystem Limited. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -21,12 +21,12 @@ import scipy.sparse as sp
 from jax.experimental import sparse
 from jax.scipy.linalg import lu_factor, lu_solve
 
+from braincell._misc import set_module_as
+from braincell._typing import T, DT
 from ._integrator_exp_euler import _exponential_euler
 from ._integrator_protocol import DiffEqModule
 from ._integrator_runge_kutta import rk4_step
 from ._integrator_util import apply_standard_solver_step, jacrev_last_dim
-from ._misc import set_module_as
-from ._typing import T, DT
 
 __all__ = [
     'implicit_euler_step',
@@ -217,6 +217,7 @@ def _newton_method_manual_parallel(
     aux = {}
     return result, aux
 
+
 def _implicit_euler_for_axial_current(A, y0, dt):
     r"""
     Implicit Euler Integrator for linear ODEs of the form:
@@ -312,6 +313,7 @@ def _crank_nicolson_for_axial_current(A, y0, dt):
     # cond = jnp.linalg.cond(u.get_magnitude(lhs))
     # jax.debug.print('cond = {a}', a = cond)
     return y1
+
 
 @set_module_as('braincell')
 def implicit_euler_step(

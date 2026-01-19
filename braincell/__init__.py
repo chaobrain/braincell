@@ -1,4 +1,4 @@
-# Copyright 2024 BDP Ecosystem Limited. All Rights Reserved.
+# Copyright 2024 BrainX Ecosystem Limited. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -14,12 +14,14 @@
 # ==============================================================================
 
 
-__version__ = "0.0.6"
-__version_info__ = (0, 0, 6)
+__version__ = "0.0.7"
+__version_info__ = tuple(map(int, __version__.split(".")))
 
 from . import channel
 from . import ion
+from . import morph
 from . import neuron
+from . import quad
 from ._base import (
     HHTypedNeuron,
     IonChannel,
@@ -29,27 +31,10 @@ from ._base import (
     mix_ions,
     IonInfo,
 )
-from ._integrator import *
-from ._integrator_protocol import (
-    DiffEqState,
-    DiffEqModule,
-    IndependentIntegration,
-)
-from ._morphology import (
-    Segment,
-    Section,
-    CylinderSection,
-    PointSection,
-    Morphology,
-)
-from ._morphology_from_asc import from_asc
-from ._morphology_from_swc import from_swc
-from ._multi_compartment import (
-    MultiCompartment,
-)
-from ._single_compartment import (
-    SingleCompartment,
-)
+from ._multi_compartment import MultiCompartment
+from ._single_compartment import SingleCompartment
+from .morph import *
+from .quad import *
 
 _deprecations = {
     'SingleCompartment': (
@@ -65,5 +50,6 @@ _deprecations = {
 }
 
 from braincell._misc import deprecation_getattr
+
 neuron.__getattr__ = deprecation_getattr(__name__, _deprecations)
 del deprecation_getattr

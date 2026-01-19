@@ -1,4 +1,4 @@
-# Copyright 2024 BDP Ecosystem Limited. All Rights Reserved.
+# Copyright 2024 BrainX Ecosystem Limited. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -22,7 +22,7 @@ import braintools
 import brainunit as u
 
 from braincell._base import Ion, Channel, HHTypedNeuron
-from braincell._integrator_protocol import DiffEqState
+from braincell.quad import DiffEqState
 
 __all__ = [
     'Calcium',

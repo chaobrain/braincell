@@ -3,5 +3,5 @@ scipy
 jax
 brainunit>=0.0.4
 brainstate>=0.2.9
-brainevent>=0.0.2
+brainevent>=0.0.7
 brainpy>=2.7.5

@@ -85,11 +85,7 @@ def _normalize_bound(bound: object, *, unit: Any, name: str) -> Any:
     """Convert a bound into raw decimal data in the target unit."""
 
     if is_quantity(bound):
-        u.fail_for_dimension_mismatch(
-            bound,
-            unit,
-            f"{name} bound must have unit compatible with {unit}.",
-        )
+        u.fail_for_dimension_mismatch(bound, unit, f"{name} bound must have unit compatible with {unit}.")
         return np.asarray(bound.to_decimal(unit), dtype=float)
     try:
         return np.asarray(bound, dtype=float)

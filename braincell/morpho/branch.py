@@ -36,11 +36,10 @@ def _normalize_segment_vector(
     """Normalize a 1D segment parameter and allow scalar sugar for one segment."""
 
     quantity = normalize_param(value, name=name, unit=unit, bounds=bounds)
-    array = mantissa(quantity)
-    if array.ndim == 0:
-        return u.Quantity(array.reshape(1), u.get_unit(quantity))
-    if array.ndim != 1:
-        raise ValueError(f"{name} must be 1D, got shape {array.shape!r}.")
+    if quantity.ndim == 0:
+        return quantity.reshape(1)
+    if quantity.ndim != 1:
+        raise ValueError(f"{name} must be 1D, got shape {quantity.shape!r}.")
     return quantity
 
 

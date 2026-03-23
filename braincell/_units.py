@@ -14,7 +14,6 @@ from typing import Any
 import brainunit as u
 import numpy as np
 
-
 _BOUND_OPERATORS = ("ge", "gt", "le", "lt")
 
 
@@ -30,24 +29,25 @@ def mantissa(value: object) -> Any:
     return np.asarray(u.get_mantissa(value), dtype=float)
 
 
-def _decimal_data(value: object, *, unit: Any, name: str) -> object:
-    """Convert nested quantity leaves into raw decimals in the target unit."""
+def _decimal_data(value: object, *, unit: u.Unit, name: str) -> object:
+    """Convert nested quantity leaves into raw decimals in the target unit.
+
+    Raises ``TypeError`` for unitless numeric inputs – callers must
+    supply an explicit ``brainunit`` quantity so that physical dimensions
+    are never silently assumed.
+    """
 
     if is_quantity(value):
-        u.fail_for_dimension_mismatch(
-            value,
-            unit,
-            f"{name} must have unit compatible with {unit}.",
-        )
+        u.fail_for_dimension_mismatch(value, unit, f"{name} must have unit compatible with {unit}.")
         return value.to_decimal(unit)
     if isinstance(value, (list, tuple)):
         return [_decimal_data(item, unit=unit, name=name) for item in value]
     if hasattr(value, "tolist") and not isinstance(value, (str, bytes)):
-        try:
-            return _decimal_data(value.tolist(), unit=unit, name=name)
-        except TypeError:
-            pass
-    return value
+        return _decimal_data(value.tolist(), unit=unit, name=name)
+    raise TypeError(
+        f"{name} requires an explicit unit (expected unit compatible with "
+        f"{unit}), but received a bare numeric value {value!r}."
+    )
 
 
 def _normalize_quantity(param: object, *, unit: Any, name: str) -> Any:
@@ -134,7 +134,8 @@ def normalize_param(
     """Normalize one parameter to a base unit and validate shape and values.
 
     Rules:
-    - unitless numeric inputs are interpreted in the provided `unit`
+
+    - unitless numeric inputs are **rejected** with a ``TypeError``
     - quantity inputs must have compatible dimensions and are converted to `unit`
     - mantissas are normalized to `numpy.ndarray`
     - shape and numeric bounds are checked after conversion into `unit`

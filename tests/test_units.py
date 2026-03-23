@@ -8,19 +8,29 @@ from braincell._units import mantissa, normalize_param, segment_lengths_from_poi
 
 
 class UnitHelpersTest(unittest.TestCase):
-    def test_normalize_param_accepts_unitless_numeric_inputs(self) -> None:
-        values = normalize_param(
-            [0.01, 0.02],
-            name="lengths",
-            unit=u.mm,
-            shape=(None,),
-            bounds={"gt": 0},
-        )
+    def test_normalize_param_rejects_unitless_numeric_inputs(self) -> None:
+        with self.assertRaises(TypeError):
+            normalize_param(
+                [0.01, 0.02],
+                name="lengths",
+                unit=u.mm,
+                shape=(None,),
+                bounds={"gt": 0},
+            )
 
-        self.assertEqual(u.get_unit(values), u.mm)
-        self.assertTrue(np.array_equal(mantissa(values), np.array([0.01, 0.02])))
-        self.assertTrue(u.math.array_equal(values[:1], np.array([0.01]) * u.mm))
-        self.assertAlmostEqual(u.math.sum(values).to_decimal(u.mm), 0.03)
+        with self.assertRaises(TypeError):
+            normalize_param(
+                0.5,
+                name="radius",
+                unit=u.um,
+            )
+
+        with self.assertRaises(TypeError):
+            normalize_param(
+                np.array([1.0, 2.0]),
+                name="lengths",
+                unit=u.um,
+            )
 
     def test_normalize_param_converts_to_base_unit(self) -> None:
         converted = normalize_param(
@@ -48,7 +58,7 @@ class UnitHelpersTest(unittest.TestCase):
     def test_normalize_param_rejects_invalid_shape_bounds_and_dimension(self) -> None:
         with self.assertRaises(ValueError):
             normalize_param(
-                [[0.0, 1.0], [2.0, 3.0]],
+                np.array([[0.0, 1.0], [2.0, 3.0]]) * u.um,
                 name="points",
                 unit=u.um,
                 shape=(None, 3),
@@ -56,7 +66,7 @@ class UnitHelpersTest(unittest.TestCase):
 
         with self.assertRaises(ValueError):
             normalize_param(
-                [-1.0, 2.0],
+                np.array([-1.0, 2.0]) * u.um,
                 name="radii",
                 unit=u.um,
                 shape=(None,),

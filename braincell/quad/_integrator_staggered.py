@@ -30,7 +30,7 @@ def staggered_step(
     target: DiffEqModule,
     *args
 ):
-    from ._multi_compartment import MultiCompartment
+    from braincell._multi_compartment import MultiCompartment
     assert isinstance(target, MultiCompartment), (
         f"The stagger integrator only support {MultiCompartment.__name__}, "
         f"but we got {type(target)} instead."

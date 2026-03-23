@@ -7,7 +7,7 @@ from typing import Any
 
 import numpy as np
 
-from .._units import (
+from braincell._units import (
     mantissa,
     normalize_param,
     segment_lengths_from_points,
@@ -24,6 +24,7 @@ _ALLOWED_BRANCH_TYPES = {
     "dend",
     "soma",
 }
+
 
 def _normalize_segment_vector(
     value: object,
@@ -285,7 +286,7 @@ class Branch:
         values = []
         for length_um, r0_um, r1_um in zip(lengths_um, radii_prox_um, radii_dist_um):
             slant_um = float(np.sqrt(length_um * length_um + (r1_um - r0_um) ** 2))
-            values.append(u.Quantity(float(np.pi * (r0_um + r1_um) * slant_um), u.um**2))
+            values.append(u.Quantity(float(np.pi * (r0_um + r1_um) * slant_um), u.um ** 2))
         return tuple(values)
 
     def total_lateral_area(self):
@@ -298,5 +299,5 @@ class Branch:
         values = []
         for length_um, r0_um, r1_um in zip(lengths_um, radii_prox_um, radii_dist_um):
             volume_um3 = float(np.pi * length_um * (r0_um * r0_um + r0_um * r1_um + r1_um * r1_um) / 3.0)
-            values.append(u.Quantity(volume_um3, u.um**3))
+            values.append(u.Quantity(volume_um3, u.um ** 3))
         return tuple(values)

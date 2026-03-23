@@ -7,9 +7,9 @@ from pathlib import Path
 
 import numpy as np
 
-from ..._units import u
-from ...morpho.branch import Branch
-from ...morpho.morpho import Morpho
+from braincell._units import u
+from braincell.morpho.branch import Branch
+from braincell.morpho.morpho import Morpho
 from .rules import apply_swc_rules, raise_for_swc_errors
 from .soma import (
     contour_equivalent_center_radius,

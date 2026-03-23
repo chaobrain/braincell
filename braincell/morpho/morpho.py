@@ -20,22 +20,6 @@ from typing import Optional, Union
 
 from .branch import Branch
 
-
-@dataclass(frozen=True)
-class BranchConnection:
-    """A directed edge between two branches.
-
-    `parent_x` preserves the attachment site on the parent branch. `child_x`
-    keeps the child-side attachment site explicit using the same normalized
-    `[0, 1]` coordinate system as the parent branch.
-    """
-
-    parent_branch: int
-    child_branch: int
-    parent_x: float
-    child_x: float = 0.0
-
-
 _MORPHO_RESERVED_NAMES = {
     "attach",
     "branch_by_index",
@@ -67,6 +51,8 @@ _BRANCH_RESERVED_NAMES = set(Branch.__dataclass_fields__) | {
     name for name in dir(Branch) if not name.startswith("_")
 }
 
+ParentRef = Union[str, "MorphoBranch"]
+
 
 @dataclass
 class _NodeState:
@@ -81,7 +67,19 @@ class _NodeState:
     children: dict[str, int] = field(default_factory=dict)
 
 
-ParentRef = Union[str, "MorphoBranch"]
+@dataclass(frozen=True)
+class BranchConnection:
+    """A directed edge between two branches.
+
+    `parent_x` preserves the attachment site on the parent branch. `child_x`
+    keeps the child-side attachment site explicit using the same normalized
+    `[0, 1]` coordinate system as the parent branch.
+    """
+
+    parent_branch: int
+    child_branch: int
+    parent_x: float
+    child_x: float = 0.0
 
 
 class Morpho:
@@ -122,7 +120,7 @@ class Morpho:
         cls,
         path,
         *,
-        options=None,
+        options: 'SwcReadOptions' = None,
         return_report: bool = False,
     ):
         """Load a morphology from a SWC file through the reader pipeline."""
@@ -189,19 +187,13 @@ class Morpho:
         lines = [self.root.name]
         child_ids = tuple(self._get_node(self._root_id).children.values())
         for index, child_id in enumerate(child_ids):
-            lines.extend(
-                self._format_topology(
-                    child_id,
-                    prefix="",
-                    is_last=index == len(child_ids) - 1,
-                )
-            )
+            lines.extend(self._format_topology(child_id, prefix="", is_last=index == len(child_ids) - 1))
         return "\n".join(lines)
 
     def vis3d(
         self,
         *,
-        backend: str | None = "pyvista",
+        backend: str | None = None,
         region=None,
         locset=None,
         values=None,
@@ -223,7 +215,7 @@ class Morpho:
         raise NotImplementedError("Morpho.vis2d(...) is not implemented yet.")
 
     def select(self, expr, *, cache=None):
-        from ..filter import LocsetExpr, RegionExpr
+        from braincell.filter import LocsetExpr, RegionExpr
 
         if not isinstance(expr, (RegionExpr, LocsetExpr)):
             raise TypeError(
@@ -446,15 +438,9 @@ class MorphoBranch:
         object.__setattr__(self, "_owner", owner)
         object.__setattr__(self, "_node_id", node_id)
 
-    # Internal handles --------------------------------------------------------
-
     @property
-    def _node(self) -> _NodeState:
+    def node(self) -> _NodeState:
         return self._owner._get_node(self._node_id)
-
-    @property
-    def _branch(self) -> Branch:
-        return self._owner._get_branch(self._node_id)
 
     @property
     def index(self) -> int:
@@ -462,13 +448,11 @@ class MorphoBranch:
 
     @property
     def branch(self) -> Branch:
-        return self._branch
-
-    # Topology-aware properties ----------------------------------------------
+        return self._owner._get_branch(self._node_id)
 
     @property
     def name(self) -> str:
-        return self._node.name
+        return self.node.name
 
     @property
     def type(self) -> str:
@@ -476,21 +460,21 @@ class MorphoBranch:
 
     @property
     def parent(self) -> Optional["MorphoBranch"]:
-        if self._node.parent_id is None:
+        if self.node.parent_id is None:
             return None
-        return MorphoBranch(self._owner, self._node.parent_id)
+        return MorphoBranch(self._owner, self.node.parent_id)
 
     @property
     def parent_x(self) -> Optional[float]:
-        if self._node.parent_id is None:
+        if self.node.parent_id is None:
             return None
-        return self._node.parent_x
+        return self.node.parent_x
 
     @property
     def child_x(self) -> Optional[float]:
-        if self._node.parent_id is None:
+        if self.node.parent_id is None:
             return None
-        return self._node.child_x
+        return self.node.child_x
 
     @property
     def children(self) -> tuple["MorphoBranch", ...]:
@@ -528,7 +512,7 @@ class MorphoBranch:
 
     def __getattr__(self, name: str) -> object:
         try:
-            return object.__getattribute__(self._branch, name)
+            return object.__getattribute__(self.branch, name)
         except AttributeError:
             return self._owner._get_child(self._node_id, name)
 
@@ -541,8 +525,8 @@ class MorphoBranch:
     def __dir__(self) -> list[str]:
         return sorted(
             set(super().__dir__())
-            | set(name for name in dir(self._branch) if not name.startswith("_"))
-            | set(self._node.children)
+            | set(name for name in dir(self.branch) if not name.startswith("_"))
+            | set(self.node.children)
         )
 
     def __repr__(self) -> str:

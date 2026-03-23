@@ -3,10 +3,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from ..filter import LocsetMask, RegionMask
-from ..morpho import Morpho
-from .geometry import build_render_geometry_3d
+from braincell.filter import LocsetMask, RegionMask
+from braincell.morpho import Morpho
 from .backends import BackendChooser
+from .geometry import build_render_geometry_3d
 from .types import RenderGeometry3D
 
 ArrayLike = Any

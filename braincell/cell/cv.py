@@ -6,10 +6,10 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
-from .._units import u
-from ..filter import RegionMask
-from ..mech import DensityMechanism
-from ..morpho import Branch
+from braincell._units import u
+from braincell.filter import RegionMask
+from braincell.mech import DensityMechanism
+from braincell.morpho import Branch
 from .cv_geo import CVFrustum, CVGeo, axial_resistance_from_factor
 
 if TYPE_CHECKING:

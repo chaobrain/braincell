@@ -5,9 +5,9 @@ from typing import Any
 
 import numpy as np
 
-from .._units import u
-from ..filter import AllRegion, LocsetExpr, RegionExpr
-from ..mech import (
+from braincell._units import u
+from braincell.filter import AllRegion, LocsetExpr, RegionExpr
+from braincell.mech import (
     CableProperties,
     CurrentClamp,
     DensityMechanism,
@@ -15,7 +15,7 @@ from ..mech import (
     ProbeMechanism,
     SynapseMechanism,
 )
-from ..morpho import Morpho
+from braincell.morpho import Morpho
 from .cv_geo import CVGeo, EPSILON, interval_lateral_area, map_point_to_cv
 
 PointMechanismRuntime = (
@@ -27,7 +27,7 @@ PointMechanismRuntime = (
 
 _DEFAULT_CABLE = CableProperties(
     resting_potential=-65.0 * u.mV,
-    membrane_capacitance=1.0 * (u.uF / u.cm**2),
+    membrane_capacitance=1.0 * (u.uF / u.cm ** 2),
     axial_resistivity=100.0 * (u.ohm * u.cm),
 )
 
@@ -249,7 +249,7 @@ def _coverage_area_fraction(
     cv_geo: CVGeo,
     intervals: tuple[tuple[float, float], ...],
 ) -> float:
-    total_area_um2 = float(np.asarray(cv_geo.lateral_area.to_decimal(u.um**2), dtype=float))
+    total_area_um2 = float(np.asarray(cv_geo.lateral_area.to_decimal(u.um ** 2), dtype=float))
     if total_area_um2 <= EPSILON:
         return 0.0
 
@@ -261,7 +261,7 @@ def _coverage_area_fraction(
         if end - start <= EPSILON:
             continue
         overlap_area = interval_lateral_area(branch, prox=start, dist=end)
-        overlap_area_um2 += float(np.asarray(overlap_area.to_decimal(u.um**2), dtype=float))
+        overlap_area_um2 += float(np.asarray(overlap_area.to_decimal(u.um ** 2), dtype=float))
 
     return max(0.0, min(1.0, overlap_area_um2 / total_area_um2))
 

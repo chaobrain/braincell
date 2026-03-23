@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from numbers import Integral
 
-from ..filter import LocsetExpr, RegionExpr
-from ..morpho import Morpho
+from braincell.filter import LocsetExpr, RegionExpr
+from braincell.morpho import Morpho
 from .cv import CV, CVPolicy, assemble_cv
 from .cv_geo import build_cv_geo
 from .cv_mech import (

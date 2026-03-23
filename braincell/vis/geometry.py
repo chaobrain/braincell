@@ -4,8 +4,8 @@ from collections import OrderedDict
 
 import numpy as np
 
-from .._units import u
-from ..morpho import Morpho
+from braincell._units import u
+from braincell.morpho import Morpho
 from .types import BranchPolyline3D, BranchTypeBatch3D, RenderGeometry3D, color_for_branch_type
 
 

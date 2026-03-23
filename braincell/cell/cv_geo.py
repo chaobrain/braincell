@@ -5,8 +5,8 @@ from typing import Any
 
 import numpy as np
 
-from .._units import u
-from ..morpho import Branch, Morpho
+from braincell._units import u
+from braincell.morpho import Branch, Morpho
 
 Quantity = Any
 EPSILON = 1e-12
@@ -208,7 +208,7 @@ def map_point_to_cv(
 
 def axial_resistance_from_factor(ra: Quantity, *, factor: Quantity) -> Quantity:
     ra_ohm_cm = float(np.asarray(ra.to_decimal(u.ohm * u.cm), dtype=float))
-    factor_per_cm = float(np.asarray(factor.to_decimal(u.cm**-1), dtype=float))
+    factor_per_cm = float(np.asarray(factor.to_decimal(u.cm ** -1), dtype=float))
     return u.Quantity(ra_ohm_cm * factor_per_cm, u.ohm)
 
 
@@ -220,7 +220,7 @@ def interval_lateral_area(
     epsilon: float = EPSILON,
 ) -> Quantity:
     frusta = _build_frusta(branch, prox=float(prox), dist=float(dist), epsilon=epsilon)
-    return u.Quantity(_frusta_lateral_area(frusta), u.um**2)
+    return u.Quantity(_frusta_lateral_area(frusta), u.um ** 2)
 
 
 def _build_geo_fields(
@@ -244,10 +244,10 @@ def _build_geo_fields(
     return (
         frusta,
         u.Quantity(_frusta_total_length_um(frusta), u.um),
-        u.Quantity(area, u.um**2),
-        u.Quantity(_frusta_axial_factor_per_cm(frusta), u.cm**-1),
-        u.Quantity(_frusta_axial_factor_per_cm(prox_frusta), u.cm**-1),
-        u.Quantity(_frusta_axial_factor_per_cm(dist_frusta), u.cm**-1),
+        u.Quantity(area, u.um ** 2),
+        u.Quantity(_frusta_axial_factor_per_cm(frusta), u.cm ** -1),
+        u.Quantity(_frusta_axial_factor_per_cm(prox_frusta), u.cm ** -1),
+        u.Quantity(_frusta_axial_factor_per_cm(dist_frusta), u.cm ** -1),
     )
 
 

@@ -1,8 +1,10 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
 import importlib.util
+from dataclasses import dataclass, field
 from typing import Any
+
+from .api import RenderRequest
 
 
 @dataclass(frozen=True)
@@ -17,7 +19,7 @@ class PyVistaBackend:
     def available(self) -> bool:
         return importlib.util.find_spec("pyvista") is not None
 
-    def render(self, request: object) -> object:
+    def render(self, request: RenderRequest) -> object:
         geometry3d = getattr(request, "geometry3d", None)
         if geometry3d is None:
             raise ValueError("PyVistaBackend requires 3D render geometry.")

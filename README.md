@@ -21,8 +21,8 @@
 
 
 
-[braincell](https://github.com/chaobrain/braincell) provides a unified interface for modeling single-compartment and multi-compartment Hodgkin-Huxley-styled neuron models. 
-It is built on top of [JAX](https://github.com/jax-ml/jax) and [brainstate](https://github.com/chaobrain/brainstate), offering a highly parallelized and efficient simulation 
+[braincell](https://github.com/chaobrain/braincell) provides a unified interface for single-compartment Hodgkin-Huxley-styled neuron models together with modern morphology tooling.
+It is built on top of [JAX](https://github.com/jax-ml/jax) and [brainstate](https://github.com/chaobrain/brainstate), offering a highly parallelized and efficient simulation
 of biophysically detailed brain cell models.
 
 
@@ -67,31 +67,7 @@ class HTC(braincell.SingleCompartment):
 ```
 
 
-Here is an example to model the **multi-compartment** neuron model by using the interface of `braincell.MultiCompartment`:
-
-
-```python
-import braincell
-import brainstate
-import brainunit as u
-
-
-class HTC(braincell.MultiCompartment):
-    def __init__(self, size, solver: str = 'staggered'):
-        morphology = braincell.Morphology.from_swc(...)
-        super().__init__(size, 
-                         morphology=morphology,   # the only difference from SingleCompartment
-                         V_initializer=brainstate.init.Constant(-65. * u.mV), 
-                         V_th=20. * u.mV, 
-                         solver=solver)
-        
-        self.na = braincell.ion.SodiumFixed(size, E=50. * u.mV)
-        self.na.add(INa=braincell.channel.INa_Ba2002(size, V_sh=-30 * u.mV))
-
-        self.k = braincell.ion.PotassiumFixed(size, E=-90. * u.mV)
-        self.k.add(IDR=braincell.channel.IKDR_Ba2002(size, V_sh=-30. * u.mV, phi=0.25))
-
-```
+Legacy multi-compartment examples are archived under `legacy/examples/`.
 
 
 
@@ -120,4 +96,3 @@ The official documentation is hosted on Read the Docs: [https://braincell.readth
 ## See also the ecosystem
 
 BrainCell is one part of our brain modeling ecosystem: https://brainmodeling.readthedocs.io/
-

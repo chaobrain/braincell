@@ -1,0 +1,8 @@
+./kv.c: ../kv.mod
+	@printf " -> $(C_GREEN)NMODL$(C_RESET) $<\\n"
+	(cd "..";  MODLUNIT=$(NRNUNITS) $(NOCMODL) "kv.mod" -o "/home/swl/braincell/examples/ion_test/x86_64")
+
+./kv.o: ./kv.c
+	@printf " -> $(C_GREEN)Compiling$(C_RESET) $<\\n"
+	$(COMPILE) -I".." $(INCLUDES) -fPIC -c $< -o $@
+

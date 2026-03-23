@@ -1,0 +1,46 @@
+{
+  "global": {
+    "dt_ms": 0.025,
+    "v_init_mV": -65.0,
+    "temperature_celsius": 25.0
+  },
+  "geometry": {
+    "L_um": 10.0,
+    "diam_um": 31.830988618379067,
+    "cm_uF_cm2": 1.0,
+    "Ra_ohm_cm": 100.0
+  },
+  "neuron": {
+    "mod_dir": ".",
+    "mechanism": "Kv",
+    "pas": {
+      "g_S_cm2": 0.0001,
+      "e_mV": -65.0
+    },
+    "channel_params": {
+      "gbar_S_cm2": 0.01
+    },
+    "ek_mV": -80.0,
+    "gate_var": "n"
+  },
+  "braincell": {
+    "solver": "rk4",
+    "ion_E_mV": -80.0,
+    "leak": {
+      "g_S_cm2": 0.0001,
+      "e_mV": -65.0
+    },
+    "channel_params": {
+    "g_max_S_cm2": 0.01
+    }
+  },
+  "sweep_grid": {
+    "tstop_ms": [50.0, 100.0],
+    "amp_nA": [0.01, 0.02],
+    "delay_ms": [0.0, 10.0],
+    "dur_ms": [20.0, 50.0]
+  },
+  "metrics": {
+    "observables": ["v_mV", "ik_mA_cm2", "gate_n"]
+  }
+}

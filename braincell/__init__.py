@@ -13,43 +13,77 @@
 # limitations under the License.
 # ==============================================================================
 
-
 __version__ = "0.0.8"
 __version_info__ = tuple(map(int, __version__.split(".")))
 
-from . import channel
-from . import ion
-from . import morph
+from . import mech
 from . import neuron
 from . import quad
+from .mech import channel, ion, synapse
 from ._base import (
-    HHTypedNeuron,
-    IonChannel,
-    Ion,
     Channel,
+    HHTypedNeuron,
+    Ion,
+    IonInfo,
+    IonChannel,
     MixIons,
     mix_ions,
-    IonInfo,
 )
-from ._multi_compartment import MultiCompartment
 from ._single_compartment import SingleCompartment
-from .morph import *
+from .cell import CVPolicy, Cell
+from .filter import LocsetExpr, RegionExpr, SelectionCache
+from .io import AscReader, NeuroMlReader, SwcIssue, SwcReadOptions, SwcReader, SwcReport
+from .mech import CableProperties, CurrentClamp, DensityMechanism, PointMechanism, ProbeMechanism
+from .morpho import Branch, BranchConnection, Morpho, MorphoBranch
 from .quad import *
 
-_deprecations = {
+_neuron_deprecations = {
     'SingleCompartment': (
         f"braincell.neuron.SingleCompartment has been moved "
         f"into braincell.SingleCompartment",
         SingleCompartment
     ),
-    'MultiCompartment': (
-        f"braincell.neuron.MultiCompartment has been moved "
-        f"into braincell.MultiCompartment",
-        MultiCompartment
-    ),
 }
 
 from braincell._misc import deprecation_getattr
 
-neuron.__getattr__ = deprecation_getattr(__name__, _deprecations)
+neuron.__getattr__ = deprecation_getattr(__name__, _neuron_deprecations)
 del deprecation_getattr
+
+
+__all__ = [
+    "AscReader",
+    "Branch",
+    "BranchConnection",
+    "CableProperties",
+    "Cell",
+    "Channel",
+    "CurrentClamp",
+    "DensityMechanism",
+    "CVPolicy",
+    "HHTypedNeuron",
+    "Ion",
+    "IonChannel",
+    "IonInfo",
+    "LocsetExpr",
+    "MixIons",
+    "Morpho",
+    "MorphoBranch",
+    "NeuroMlReader",
+    "PointMechanism",
+    "ProbeMechanism",
+    "RegionExpr",
+    "SelectionCache",
+    "SingleCompartment",
+    "SwcIssue",
+    "SwcReadOptions",
+    "SwcReader",
+    "SwcReport",
+    "channel",
+    "ion",
+    "mix_ions",
+    "mech",
+    "neuron",
+    "quad",
+    "synapse",
+]

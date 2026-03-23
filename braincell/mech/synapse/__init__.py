@@ -1,4 +1,4 @@
-# Copyright 2026 BrainX Ecosystem Limited. All Rights Reserved.
+# Copyright 2025 BrainX Ecosystem Limited. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -13,13 +13,9 @@
 # limitations under the License.
 # ==============================================================================
 
-__all__ = ["MultiCompartment"]
+# -*- coding: utf-8 -*-
 
+from .markov import *
+from .markov import __all__ as _markov_all
 
-def __getattr__(name):
-    if name == "MultiCompartment":
-        raise ImportError(
-            "braincell.MultiCompartment has been archived to legacy/morph and is no longer "
-            "supported in the active runtime. Keep legacy/morph for reference only."
-        )
-    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+__all__ = _markov_all

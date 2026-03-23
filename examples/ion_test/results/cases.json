@@ -1,0 +1,100 @@
+[
+  {
+    "case_id": 0,
+    "tstop_ms": 50.0,
+    "amp_nA": 0.01,
+    "delay_ms": 0.0,
+    "dur_ms": 20.0
+  },
+  {
+    "case_id": 1,
+    "tstop_ms": 50.0,
+    "amp_nA": 0.01,
+    "delay_ms": 0.0,
+    "dur_ms": 50.0
+  },
+  {
+    "case_id": 2,
+    "tstop_ms": 50.0,
+    "amp_nA": 0.01,
+    "delay_ms": 10.0,
+    "dur_ms": 20.0
+  },
+  {
+    "case_id": 3,
+    "tstop_ms": 50.0,
+    "amp_nA": 0.02,
+    "delay_ms": 0.0,
+    "dur_ms": 20.0
+  },
+  {
+    "case_id": 4,
+    "tstop_ms": 50.0,
+    "amp_nA": 0.02,
+    "delay_ms": 0.0,
+    "dur_ms": 50.0
+  },
+  {
+    "case_id": 5,
+    "tstop_ms": 50.0,
+    "amp_nA": 0.02,
+    "delay_ms": 10.0,
+    "dur_ms": 20.0
+  },
+  {
+    "case_id": 6,
+    "tstop_ms": 100.0,
+    "amp_nA": 0.01,
+    "delay_ms": 0.0,
+    "dur_ms": 20.0
+  },
+  {
+    "case_id": 7,
+    "tstop_ms": 100.0,
+    "amp_nA": 0.01,
+    "delay_ms": 0.0,
+    "dur_ms": 50.0
+  },
+  {
+    "case_id": 8,
+    "tstop_ms": 100.0,
+    "amp_nA": 0.01,
+    "delay_ms": 10.0,
+    "dur_ms": 20.0
+  },
+  {
+    "case_id": 9,
+    "tstop_ms": 100.0,
+    "amp_nA": 0.01,
+    "delay_ms": 10.0,
+    "dur_ms": 50.0
+  },
+  {
+    "case_id": 10,
+    "tstop_ms": 100.0,
+    "amp_nA": 0.02,
+    "delay_ms": 0.0,
+    "dur_ms": 20.0
+  },
+  {
+    "case_id": 11,
+    "tstop_ms": 100.0,
+    "amp_nA": 0.02,
+    "delay_ms": 0.0,
+    "dur_ms": 50.0
+  },
+  {
+    "case_id": 12,
+    "tstop_ms": 100.0,
+    "amp_nA": 0.02,
+    "delay_ms": 10.0,
+    "dur_ms": 20.0
+  },
+  {
+    "case_id": 13,
+    "tstop_ms": 100.0,
+    "amp_nA": 0.02,
+    "delay_ms": 10.0,
+    "dur_ms": 50.0
+  }
+]

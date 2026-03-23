@@ -216,7 +216,7 @@ class IndependentIntegration(brainstate.mixin.Mixin):
     """
 
     def __init__(self, solver: str | Callable, **kwargs):
-        from ._integrator import get_integrator
+        from ._all import get_integrator
         self.solver = get_integrator(solver)
 
     def make_integration(self, *args, **kwargs):

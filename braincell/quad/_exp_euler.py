@@ -24,8 +24,8 @@ from jax.scipy.linalg import expm
 
 from braincell._misc import set_module_as
 from braincell._typing import Path
-from ._integrator_protocol import DiffEqModule
-from ._integrator_util import (
+from ._protocol import DiffEqModule
+from ._util import (
     apply_standard_solver_step,
     jacrev_last_dim,
     _check_diffeq_state_derivative,

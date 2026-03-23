@@ -22,7 +22,7 @@ import jax
 import jax.numpy as jnp
 
 from braincell._typing import T, DT, Y0, Y1, Aux, Jacobian, VectorFiled, Args
-from ._integrator_protocol import DiffEqState, DiffEqModule, IndependentIntegration
+from ._protocol import DiffEqState, DiffEqModule, IndependentIntegration
 
 
 def _filter_diffeq(independent_modules, path, value):

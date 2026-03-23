@@ -22,8 +22,8 @@ import jax.numpy as jnp
 
 from braincell._misc import set_module_as, ModuleNotFound
 from braincell._typing import VectorFiled, Y0, T, DT
-from ._integrator_protocol import DiffEqModule
-from ._integrator_util import apply_standard_solver_step
+from ._protocol import DiffEqModule
+from ._util import apply_standard_solver_step
 
 __all__ = [
     # runge-kutta methods

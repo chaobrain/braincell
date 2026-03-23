@@ -22,7 +22,7 @@ import jax
 
 from braincell._misc import set_module_as
 from braincell._typing import T, DT
-from ._integrator_protocol import DiffEqState, DiffEqModule
+from ._protocol import DiffEqState, DiffEqModule
 
 __all__ = [
     'euler_step',

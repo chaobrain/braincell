@@ -47,9 +47,7 @@ _MORPHO_BRANCH_RESERVED_NAMES = {
     "parent",
     "parent_x",
 }
-_BRANCH_RESERVED_NAMES = set(Branch.__dataclass_fields__) | {
-    name for name in dir(Branch) if not name.startswith("_")
-}
+_BRANCH_RESERVED_NAMES = set(Branch.__dataclass_fields__) | {name for name in dir(Branch) if not name.startswith("_")}
 
 ParentRef = Union[str, "MorphoBranch"]
 

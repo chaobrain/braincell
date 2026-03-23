@@ -17,9 +17,7 @@ __version__ = "0.0.8"
 __version_info__ = tuple(map(int, __version__.split(".")))
 
 from . import mech
-from . import neuron
 from . import quad
-from .mech import channel, ion, synapse
 from ._base import (
     Channel,
     HHTypedNeuron,
@@ -34,6 +32,7 @@ from .cell import CVPolicy, Cell
 from .filter import LocsetExpr, RegionExpr, SelectionCache
 from .io import AscReader, NeuroMlReader, SwcIssue, SwcReadOptions, SwcReader, SwcReport
 from .mech import CableProperties, CurrentClamp, DensityMechanism, PointMechanism, ProbeMechanism
+from .mech import channel, ion, synapse
 from .morpho import Branch, BranchConnection, Morpho, MorphoBranch
 from .quad import *
 
@@ -44,12 +43,6 @@ _neuron_deprecations = {
         SingleCompartment
     ),
 }
-
-from braincell._misc import deprecation_getattr
-
-neuron.__getattr__ = deprecation_getattr(__name__, _neuron_deprecations)
-del deprecation_getattr
-
 
 __all__ = [
     "AscReader",
@@ -83,7 +76,6 @@ __all__ = [
     "ion",
     "mix_ions",
     "mech",
-    "neuron",
     "quad",
     "synapse",
 ]

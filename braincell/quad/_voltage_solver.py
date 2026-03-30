@@ -317,7 +317,7 @@ def sparse_voltage_step(target, t, dt, *args):
     """
     Implicit euler solver implementation by solving the sparse matrix system.
     """
-    from ._multi_compartment import MultiCompartment
+    from braincell._multi_compartment import MultiCompartment
     assert isinstance(target, MultiCompartment), (
         'The target should be a MultiCompartment for the sparse integrator. '
     )
@@ -425,7 +425,7 @@ def _linear_and_const_term(target: DiffEqModule, V_n, *args):
     """
     get the linear and constant term of voltage.
     """
-    from ._multi_compartment import MultiCompartment
+    from braincell._multi_compartment import MultiCompartment
     assert isinstance(target, MultiCompartment), 'The target should be a MultiCompartment for the sparse integrator.'
 
     # compute the linear and derivative term

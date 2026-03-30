@@ -295,6 +295,58 @@ def rule_invalid_parent_index(context: _SwcContext) -> None:
             _set_attr(context, row, "parent_id", -1)
 
 
+def rule_duplicate_xyzr_parent_child(context: _SwcContext) -> None:
+    if not context.use_corrections:
+        rows_by_id = {row.node_id: row for row in context.rows if row.node_id is not None}
+        for row in context.rows:
+            if row.node_id is None or row.parent_id in (None, -1):
+                continue
+            parent = rows_by_id.get(row.parent_id)
+            if parent is None:
+                continue
+            if (row.x, row.y, row.z, row.radius) != (parent.x, parent.y, parent.z, parent.radius):
+                continue
+            _add_warning(
+                context,
+                "geometry.duplicate_xyzr_node",
+                f"SWC node {row.node_id} duplicates parent {parent.node_id} in xyzr and would be merged into the parent.",
+                line_number=row.line_number,
+                node_id=row.node_id,
+                fix_message="merge duplicate xyzr node into parent",
+            )
+        return
+
+    while True:
+        rows_by_id = {row.node_id: row for row in context.rows if row.node_id is not None}
+        changed = False
+        for row in list(context.rows):
+            if row.node_id is None or row.parent_id in (None, -1):
+                continue
+            parent = rows_by_id.get(row.parent_id)
+            if parent is None:
+                continue
+            if (row.x, row.y, row.z, row.radius) != (parent.x, parent.y, parent.z, parent.radius):
+                continue
+            duplicate_id = row.node_id
+            keep_id = parent.node_id
+            _add_warning(
+                context,
+                "geometry.duplicate_xyzr_node",
+                f"SWC node {duplicate_id} duplicates parent {keep_id} in xyzr and was merged into the parent.",
+                line_number=row.line_number,
+                node_id=duplicate_id,
+                fix_message="merge duplicate xyzr node into parent",
+            )
+            for candidate in context.rows:
+                if candidate.parent_id == duplicate_id:
+                    candidate.parent_id = keep_id
+            context.rows.remove(row)
+            changed = True
+            break
+        if not changed:
+            return
+
+
 def rule_no_soma_samples(context: _SwcContext) -> None:
     if any(row.type_code == 1 for row in context.rows):
         return
@@ -422,22 +474,6 @@ def rule_tree_integrity(context: _SwcContext) -> None:
         )
 
 
-def rule_abnormal_compartments(context: _SwcContext) -> None:
-    rows_by_id = {row.node_id: row for row in context.rows if row.node_id is not None}
-    for row in rows_by_id.values():
-        if row.parent_id == -1 or row.parent_id not in rows_by_id:
-            continue
-        parent = rows_by_id[row.parent_id]
-        if (row.x, row.y, row.z) == (parent.x, parent.y, parent.z):
-            _add_error(
-                context,
-                "geometry.zero_length_segment",
-                f"SWC node {row.node_id} duplicates parent {parent.node_id} coordinates.",
-                line_number=row.line_number,
-                node_id=row.node_id,
-            )
-
-
 SWC_RULES = (
     rule_missing_field_columns,
     rule_tree_sample_count,
@@ -446,11 +482,11 @@ SWC_RULES = (
     rule_radius_positive_double,
     rule_nonstandard_type_id,
     rule_invalid_parent_index,
+    rule_duplicate_xyzr_parent_child,
     rule_no_soma_samples,
     rule_contour,
     rule_sorted_index_order,
     rule_index_sequential,
     rule_root_parent_index,
     rule_tree_integrity,
-    rule_abnormal_compartments,
 )

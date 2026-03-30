@@ -131,14 +131,14 @@ class Cell:
 def _clone_morpho(morpho: Morpho) -> Morpho:
     cloned = Morpho.from_root(morpho.root.branch, name=morpho.root.name)
     for index in range(1, len(morpho.branches)):
-        branch = morpho.branch_by_index(index)
+        branch = morpho.branch(index=index)
         parent = branch.parent
         if parent is None:
             continue
         cloned.attach(
             parent=parent.name,
-            child=f"child_{index}",
-            branch=branch.branch,
+            child_branch=branch.branch,
+            child_name=branch.name,
             parent_x=float(branch.parent_x),  # type: ignore[arg-type]
             child_x=float(branch.child_x),  # type: ignore[arg-type]
         )

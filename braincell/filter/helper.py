@@ -108,20 +108,20 @@ def _coerce_filterable_scalar(property_name: str, value: object) -> object:
 
 
 def _resolve_branch_property(morpho: Morpho, branch_index: int, property_name: str) -> object:
-    branch_view = morpho.branch_by_index(branch_index)
+    branch_view = morpho.branch(index=branch_index)
 
     if property_name == "branch_id":
         return branch_index
     if property_name == "parent_id":
         return -1 if branch_view.parent is None else branch_view.parent.index
-    if property_name == "n_child":
-        return len(branch_view.children)
+    if property_name == "n_children":
+        return branch_view.n_children
     if property_name == "branch_order":
         return len(morpho.path_to_root(branch_index)) - 1
     if property_name == "n_tapers":
         return branch_view.n_segments
-    if property_name in ("length", "total_length"):
-        return branch_view.total_length
+    if property_name == "length":
+        return branch_view.length
     if property_name in {"area", "volume", "max_radius", "min_radius"}:
         raise ValueError(
             f"Branch property {property_name!r} is not supported in this version."
@@ -551,11 +551,11 @@ def difference_locset_points(
 def branch_points_locations(morpho: Morpho, *, epsilon: float = EPSILON) -> tuple[Location, ...]:
     points: list[Location] = []
     for parent_branch in range(len(morpho.branches)):
-        child_ids = morpho.children_of(parent_branch)
-        if len(child_ids) < 2:
+        children = morpho.branch(index=parent_branch).children
+        if len(children) < 2:
             continue
-        for child_id in child_ids:
-            parent_x = morpho.branch_by_index(child_id).parent_x
+        for child in children:
+            parent_x = child.parent_x
             if parent_x is None:
                 continue
             points.append((parent_branch, float(parent_x)))
@@ -565,13 +565,13 @@ def branch_points_locations(morpho: Morpho, *, epsilon: float = EPSILON) -> tupl
 def terminal_locations(morpho: Morpho, *, epsilon: float = EPSILON) -> tuple[Location, ...]:
     points: list[Location] = []
     for branch_idx in range(len(morpho.branches)):
-        if len(morpho.children_of(branch_idx)) == 0:
+        if len(morpho.branch(index=branch_idx).children) == 0:
             points.append((branch_idx, 1.0))
     return normalize_locset_points(points, epsilon=epsilon)
 
 
 def _interval_measure_um(morpho: Morpho, branch: int, prox: float, dist: float) -> float:
-    total_length_um = float(np.asarray(morpho.branches[branch].total_length.to_decimal(u.um), dtype=float))
+    total_length_um = float(np.asarray(morpho.branches[branch].length.to_decimal(u.um), dtype=float))
     return (dist - prox) * total_length_um
 
 

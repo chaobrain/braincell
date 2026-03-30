@@ -30,10 +30,10 @@ from ._base import (
 from ._single_compartment import SingleCompartment
 from .cell import CVPolicy, Cell
 from .filter import LocsetExpr, RegionExpr, SelectionCache
-from .io import AscReader, NeuroMlReader, SwcIssue, SwcReadOptions, SwcReader, SwcReport
+from .io import AscIssue, AscMetadata, AscReader, AscReport, NeuroMlReader, SwcIssue, SwcReadOptions, SwcReader, SwcReport
 from .mech import CableProperties, CurrentClamp, DensityMechanism, PointMechanism, ProbeMechanism
 from .mech import channel, ion, synapse
-from .morpho import Branch, BranchConnection, Morpho, MorphoBranch
+from .morpho import Branch, MorphoEdge, Morpho, MorphoBranch
 from .quad import *
 
 _neuron_deprecations = {
@@ -46,8 +46,11 @@ _neuron_deprecations = {
 
 __all__ = [
     "AscReader",
+    "AscIssue",
+    "AscMetadata",
+    "AscReport",
     "Branch",
-    "BranchConnection",
+    "MorphoEdge",
     "CableProperties",
     "Cell",
     "Channel",

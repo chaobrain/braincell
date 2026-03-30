@@ -1,25 +1,8 @@
 # 方案一 `morpho` 结构图
 
-这版 `morpho` 只保留一个公开树对象：`Morpho`。
-
-结论先说：
-
 - `Branch` 是纯几何值对象
 - `Morpho` 是唯一公开的形态树，负责编辑、查询和连接关系
 - `MorphoBranch` 是用户真正操作的 branch 视图
-- 不再有公开 `Morphology` 或 `snapshot()`
-
-## 主结构图
-
-```mermaid
-flowchart TD
-    B[Branch\n纯几何]
-    MO[Morpho\n可变树 owner]
-    N[MorphoBranch\n树内 branch 视图]
-
-    MO --> N
-    N --> B
-```
 
 对应含义：
 
@@ -30,7 +13,7 @@ flowchart TD
   - `Branch` 的几何属性
   - 树内的拓扑关系
   - 局部编辑入口
-- `Branch` 本身直接存段级几何，不再额外包 `Frustum`
+- `Branch` 本身直接存段级几何，不再额外包 `Frustum`圆台类
 - 所有几何量都基于 `brainunit`，在 `Branch` 内部统一规范化到 `u.um`
 
 ## 最常见的调用流
@@ -62,7 +45,7 @@ sequenceDiagram
 - 如果 `Branch.name is None`，最终 branch 名会自动生成为 `type_N`
 - 因此槽位名和最终 branch 名可以不同
 
-## 公开接口怎么分工
+## 公开接口命名
 
 `Branch`：
 

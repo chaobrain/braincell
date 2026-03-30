@@ -119,10 +119,20 @@ class SwcReader:
     ) -> list[_SwcBranch]:
         branches: list[_SwcBranch] = []
 
-        def walk_root_branch() -> tuple[tuple[int, ...], int]:
+        def walk_root_branch() -> tuple[tuple[int, ...], int, tuple[int, ...]]:
             root_type = map_swc_type_code(nodes[root_id].type_code)
             point_ids = [root_id]
             current_id = root_id
+            root_side_child_ids: tuple[int, ...] = tuple()
+
+            child_ids = children[current_id]
+            same_type_child_ids = [child_id for child_id in child_ids if map_swc_type_code(nodes[child_id].type_code) == root_type]
+            if len(child_ids) != 1 and same_type_child_ids:
+                main_child_id = same_type_child_ids[0]
+                point_ids.append(main_child_id)
+                current_id = main_child_id
+                root_side_child_ids = tuple(child_id for child_id in child_ids if child_id != main_child_id)
+
             while True:
                 child_ids = children[current_id]
                 if len(child_ids) != 1:
@@ -132,7 +142,7 @@ class SwcReader:
                     break
                 point_ids.append(child_id)
                 current_id = child_id
-            return tuple(point_ids), current_id
+            return tuple(point_ids), current_id, root_side_child_ids
 
         def walk_child_branch(parent_index: int, attach: _SwcAttach, start_node_id: int) -> None:
             branch_type = map_swc_type_code(nodes[start_node_id].type_code)
@@ -160,7 +170,7 @@ class SwcReader:
             for child_id in children[current_id]:
                 walk_child_branch(branch_index, _SwcAttach(node_id=current_id), child_id)
 
-        root_point_ids, root_end_id = walk_root_branch()
+        root_point_ids, root_end_id, root_side_child_ids = walk_root_branch()
         root_index = len(branches)
         branches.append(
             _SwcBranch(
@@ -170,6 +180,8 @@ class SwcReader:
                 start_node_id=root_id,
             )
         )
+        for child_id in root_side_child_ids:
+            walk_child_branch(root_index, _SwcAttach(node_id=root_id), child_id)
         for child_id in children[root_end_id]:
             walk_child_branch(root_index, _SwcAttach(node_id=root_end_id), child_id)
         return branches
@@ -182,7 +194,6 @@ class SwcReader:
         root_id: int,
         contour_soma_ids: set[int],
     ) -> list[_SwcBranch]:
-        branches: list[_SwcBranch] = []
         soma_ids = self._collect_soma_component(nodes, children, root_id)
         ordered_soma_rows = [row for row in rows if row.node_id in soma_ids]
         ordered_soma_ids = tuple(row.node_id for row in ordered_soma_rows)
@@ -191,8 +202,7 @@ class SwcReader:
 
         if len(ordered_soma_rows) == 1:
             root_branch, child_tasks = self._make_single_point_soma_branch(ordered_soma_rows[0], nodes, children)
-        elif contour_soma_ids and set(ordered_soma_ids).issubset(contour_soma_ids):
-            root_branch, child_tasks = self._make_contour_soma_branch(ordered_soma_rows, nodes, children)
+            branches = [root_branch]
         else:
             is_special, ordered_special_rows = is_special_three_point_soma(ordered_soma_rows)
             if is_special and ordered_special_rows is not None:
@@ -201,15 +211,52 @@ class SwcReader:
                     nodes,
                     children,
                 )
+                branches = [root_branch]
+            elif self._is_nonbranching_soma_component(soma_ids, children, nodes):
+                if contour_soma_ids and set(ordered_soma_ids).issubset(contour_soma_ids):
+                    root_branch, child_tasks = self._make_contour_soma_branch(ordered_soma_rows, nodes, children)
+                else:
+                    root_branch, child_tasks = self._make_regular_soma_branch(ordered_soma_ids, nodes, children)
+                branches = [root_branch]
             else:
-                root_branch, child_tasks = self._make_regular_soma_branch(ordered_soma_ids, nodes, children)
+                branches, child_tasks = self._make_branched_soma_branches(
+                    nodes=nodes,
+                    children=children,
+                    root_id=root_id,
+                    soma_ids=soma_ids,
+                )
 
-        branches.append(root_branch)
+        return self._append_child_subtrees(branches, child_tasks, nodes, children)
 
+    def _append_child_subtrees(
+        self,
+        branches: list[_SwcBranch],
+        child_tasks: tuple[tuple[_SwcAttach, int, int], ...],
+        nodes: dict[int, _SwcRow],
+        children: dict[int, list[int]],
+    ) -> list[_SwcBranch]:
         def walk_child_branch(parent_index: int, attach: _SwcAttach, start_node_id: int) -> None:
+            parent_branch_type = branches[parent_index].branch_type
             branch_type = map_swc_type_code(nodes[start_node_id].type_code)
             point_ids = [start_node_id]
             current_id = start_node_id
+            side_child_ids: tuple[int, ...] = tuple()
+            branch_attach = attach
+
+            if parent_branch_type == "soma":
+                child_ids = children[current_id]
+                same_type_child_ids = [
+                    child_id
+                    for child_id in child_ids
+                    if map_swc_type_code(nodes[child_id].type_code) == branch_type
+                ]
+                if len(child_ids) != 1 and same_type_child_ids:
+                    main_child_id = same_type_child_ids[0]
+                    point_ids.append(main_child_id)
+                    current_id = main_child_id
+                    side_child_ids = tuple(child_id for child_id in child_ids if child_id != main_child_id)
+                    branch_attach = self._con2prox_attach(attach, start_node_id, nodes)
+
             while True:
                 child_ids = children[current_id]
                 if len(child_ids) != 1:
@@ -226,15 +273,31 @@ class SwcReader:
                     branch_type=branch_type,
                     parent_index=parent_index,
                     start_node_id=start_node_id,
-                    attach=attach,
+                    attach=branch_attach,
                 )
             )
+            for child_id in side_child_ids:
+                walk_child_branch(branch_index, _SwcAttach(node_id=start_node_id), child_id)
             for child_id in children[current_id]:
                 walk_child_branch(branch_index, _SwcAttach(node_id=current_id), child_id)
 
-        for attach, child_id in child_tasks:
-            walk_child_branch(0, attach, child_id)
+        for attach, child_id, parent_index in child_tasks:
+            walk_child_branch(parent_index, attach, child_id)
         return branches
+
+    def _con2prox_attach(
+        self,
+        attach: _SwcAttach,
+        start_node_id: int,
+        nodes: dict[int, _SwcRow],
+    ) -> _SwcAttach:
+        row = nodes[start_node_id]
+        return _SwcAttach(
+            node_id=attach.node_id,
+            point=tuple(row_point(row)),
+            radius=row_radius(row),
+            parent_x=attach.parent_x,
+        )
 
     def _build_morpho(
         self,
@@ -257,12 +320,12 @@ class SwcReader:
             parent_x = self._attachment_x(branches[parent_index], branch_info.attach, nodes)
             branch_views[branch_index] = tree.attach(
                 parent=parent_view,
-                child=f"swc_{branch_info.start_node_id}",
-                branch=self._make_branch(
+                child_branch=self._make_branch(
                     branch_info,
                     nodes,
                     parent_branch_type=branches[parent_index].branch_type,
                 ),
+                child_name=None,
                 parent_x=parent_x,
                 child_x=0.0,
             )
@@ -278,7 +341,7 @@ class SwcReader:
         if branch.override_points is not None and branch.override_radii is not None:
             points = np.array(branch.override_points, dtype=float) * u.um
             radii = np.array(branch.override_radii, dtype=float) * u.um
-            return Branch.xyz_shared(points=points, radii=radii, type=branch.branch_type)
+            return Branch.from_points(points=points, radii=radii, type=branch.branch_type)
 
         point_ids = list(branch.point_ids)
         points = [row_point(nodes[node_id]) for node_id in point_ids]
@@ -286,35 +349,27 @@ class SwcReader:
 
         if branch.attach is not None:
             attach_point, attach_radius = self._attach_geometry(branch.attach, nodes)
-            attach_radius_for_child = self._child_attach_radius(
-                parent_branch_type=parent_branch_type,
-                child_branch_type=branch.branch_type,
-                parent_attach_radius=attach_radius,
-                first_real_child_radius=radii[0],
-            )
-            if not np.allclose(points[0], attach_point):
+            should_copy_attach = True
+            if parent_branch_type == "soma" and branch.attach.parent_x == 0.5 and len(point_ids) > 1:
+                should_copy_attach = False
+            if np.allclose(points[0], attach_point):
+                should_copy_attach = False
+
+            attach_radius_for_child = float(attach_radius)
+            if parent_branch_type == "soma":
+                attach_radius_for_child = float(radii[0])
+
+            if should_copy_attach:
                 points.insert(0, attach_point)
                 radii.insert(0, attach_radius_for_child)
-            else:
+            elif np.allclose(points[0], attach_point):
                 radii[0] = attach_radius_for_child
 
-        return Branch.xyz_shared(
+        return Branch.from_points(
             points=np.array(points, dtype=float) * u.um,
             radii=np.array(radii, dtype=float) * u.um,
             type=branch.branch_type,
         )
-
-    def _child_attach_radius(
-        self,
-        *,
-        parent_branch_type: str | None,
-        child_branch_type: str,
-        parent_attach_radius: float,
-        first_real_child_radius: float,
-    ) -> float:
-        if parent_branch_type == "soma" and child_branch_type != "soma":
-            return float(first_real_child_radius)
-        return float(parent_attach_radius)
 
     def _attachment_x(
         self,
@@ -368,22 +423,22 @@ class SwcReader:
         soma_row: _SwcRow,
         nodes: dict[int, _SwcRow],
         children: dict[int, list[int]],
-    ) -> tuple[_SwcBranch, tuple[tuple[_SwcAttach, int], ...]]:
+    ) -> tuple[_SwcBranch, tuple[tuple[_SwcAttach, int, int], ...]]:
         center = row_point(soma_row)
         radius = max(row_radius(soma_row), MIN_SYNTHETIC_LENGTH_UM)
-        offset = np.array([radius, 0.0, 0.0], dtype=float)
-        points = (tuple(center - offset), tuple(center), tuple(center + offset))
-        radii = (radius, radius, radius)
-        child_tasks = tuple((_SwcAttach(point=tuple(center), radius=radius, parent_x=0.5), child_id) for child_id in children[soma_row.node_id])
+        root_branch = self._synthetic_soma_branch(
+            center=center,
+            radius=radius,
+            point_ids=(soma_row.node_id,),
+            start_node_id=soma_row.node_id,
+        )
+        child_tasks = tuple(
+            (_SwcAttach(point=tuple(center), radius=radius, parent_x=0.5), child_id, 0)
+            for child_id in children[soma_row.node_id]
+            if map_swc_type_code(nodes[child_id].type_code) != "soma"
+        )
         return (
-            _SwcBranch(
-                point_ids=(soma_row.node_id,),
-                branch_type="soma",
-                parent_index=None,
-                start_node_id=soma_row.node_id,
-                override_points=points,
-                override_radii=radii,
-            ),
+            root_branch,
             child_tasks,
         )
 
@@ -392,62 +447,46 @@ class SwcReader:
         soma_rows: tuple[_SwcRow, _SwcRow, _SwcRow],
         nodes: dict[int, _SwcRow],
         children: dict[int, list[int]],
-    ) -> tuple[_SwcBranch, tuple[tuple[_SwcAttach, int], ...]]:
+    ) -> tuple[_SwcBranch, tuple[tuple[_SwcAttach, int, int], ...]]:
         center_row = soma_rows[0]
-        linear_rows = self._linearize_special_three_point_soma_rows(soma_rows)
+        center = row_point(center_row)
+        radius = max(row_radius(center_row), MIN_SYNTHETIC_LENGTH_UM)
         child_tasks = tuple(
             (
                 _SwcAttach(
                     node_id=center_row.node_id,
-                    point=tuple(row_point(center_row)),
-                    radius=row_radius(center_row),
+                    point=tuple(center),
+                    radius=radius,
                     parent_x=0.5,
                 ),
                 child_id,
+                0,
             )
             for child_id in children[center_row.node_id]
             if map_swc_type_code(nodes[child_id].type_code) != "soma"
         )
         return (
-            _SwcBranch(
-                point_ids=tuple(row.node_id for row in linear_rows),
-                branch_type="soma",
-                parent_index=None,
-                start_node_id=linear_rows[0].node_id,
+            self._synthetic_soma_branch(
+                center=center,
+                radius=radius,
+                point_ids=tuple(row.node_id for row in soma_rows),
+                start_node_id=center_row.node_id,
             ),
             child_tasks,
         )
-
-    def _linearize_special_three_point_soma_rows(
-        self,
-        soma_rows: tuple[_SwcRow, _SwcRow, _SwcRow],
-    ) -> tuple[_SwcRow, _SwcRow, _SwcRow]:
-        center_row, side_a_row, side_b_row = soma_rows
-        center_point = row_point(center_row)
-        side_a_point = row_point(side_a_row)
-        side_b_point = row_point(side_b_row)
-        direction = side_a_point - center_point
-        if np.linalg.norm(direction) == 0.0:
-            direction = side_b_point - center_point
-        projection_a = float(np.dot(side_a_point - center_point, direction))
-        projection_b = float(np.dot(side_b_point - center_point, direction))
-        left_row, right_row = (
-            (side_a_row, side_b_row) if projection_a <= projection_b else (side_b_row, side_a_row)
-        )
-        return (left_row, center_row, right_row)
 
     def _make_regular_soma_branch(
         self,
         soma_ids: tuple[int, ...],
         nodes: dict[int, _SwcRow],
         children: dict[int, list[int]],
-    ) -> tuple[_SwcBranch, tuple[tuple[_SwcAttach, int], ...]]:
-        child_tasks: list[tuple[_SwcAttach, int]] = []
+    ) -> tuple[_SwcBranch, tuple[tuple[_SwcAttach, int, int], ...]]:
+        child_tasks: list[tuple[_SwcAttach, int, int]] = []
         for soma_id in soma_ids:
             for child_id in children[soma_id]:
                 if map_swc_type_code(nodes[child_id].type_code) == "soma":
                     continue
-                child_tasks.append((_SwcAttach(node_id=soma_id), child_id))
+                child_tasks.append((_SwcAttach(node_id=soma_id, parent_x=self._section_attach_x(soma_ids, soma_id)), child_id, 0))
         return (
             _SwcBranch(
                 point_ids=soma_ids,
@@ -463,29 +502,138 @@ class SwcReader:
         soma_rows: list[_SwcRow],
         nodes: dict[int, _SwcRow],
         children: dict[int, list[int]],
-    ) -> tuple[_SwcBranch, tuple[tuple[_SwcAttach, int], ...]]:
+    ) -> tuple[_SwcBranch, tuple[tuple[_SwcAttach, int, int], ...]]:
         center, radius = contour_equivalent_center_radius(soma_rows)
         radius = max(radius, MIN_SYNTHETIC_LENGTH_UM)
-        offset = np.array([radius, 0.0, 0.0], dtype=float)
-        points = (tuple(center - offset), tuple(center), tuple(center + offset))
-        radii = (radius, radius, radius)
-        child_tasks: list[tuple[_SwcAttach, int]] = []
+        child_tasks: list[tuple[_SwcAttach, int, int]] = []
         for row in soma_rows:
             for child_id in children[row.node_id]:
                 if map_swc_type_code(nodes[child_id].type_code) == "soma":
                     continue
-                child_tasks.append((_SwcAttach(point=tuple(center), radius=radius, parent_x=0.5), child_id))
+                child_tasks.append((_SwcAttach(point=tuple(center), radius=radius, parent_x=0.5), child_id, 0))
         return (
-            _SwcBranch(
+            self._synthetic_soma_branch(
+                center=center,
+                radius=radius,
                 point_ids=tuple(row.node_id for row in soma_rows),
-                branch_type="soma",
-                parent_index=None,
                 start_node_id=soma_rows[0].node_id,
-                override_points=points,
-                override_radii=radii,
             ),
             tuple(child_tasks),
         )
+
+    def _make_branched_soma_branches(
+        self,
+        *,
+        nodes: dict[int, _SwcRow],
+        children: dict[int, list[int]],
+        root_id: int,
+        soma_ids: set[int],
+    ) -> tuple[list[_SwcBranch], tuple[tuple[_SwcAttach, int, int], ...]]:
+        branches: list[_SwcBranch] = []
+        child_tasks: list[tuple[_SwcAttach, int, int]] = []
+
+        def walk_section(parent_index: int | None, start_node_id: int, attach: _SwcAttach | None) -> int:
+            point_ids = [start_node_id]
+            current_id = start_node_id
+            root_side_soma_child_ids: tuple[int, ...] = tuple()
+
+            if parent_index is None:
+                soma_child_ids = self._soma_child_ids(current_id, children, nodes)
+                if len(soma_child_ids) > 1:
+                    main_child_id = soma_child_ids[0]
+                    point_ids.append(main_child_id)
+                    current_id = main_child_id
+                    root_side_soma_child_ids = tuple(child_id for child_id in soma_child_ids[1:])
+
+            while True:
+                soma_child_ids = self._soma_child_ids(current_id, children, nodes)
+                if len(soma_child_ids) != 1:
+                    break
+                child_id = soma_child_ids[0]
+                point_ids.append(child_id)
+                current_id = child_id
+
+            branch_index = len(branches)
+            branches.append(
+                _SwcBranch(
+                    point_ids=tuple(point_ids),
+                    branch_type="soma",
+                    parent_index=parent_index,
+                    start_node_id=start_node_id,
+                    attach=attach,
+                )
+            )
+
+            effective_point_ids = self._effective_branch_point_ids(tuple(point_ids), attach)
+            for node_id in point_ids:
+                parent_x = self._section_attach_x(effective_point_ids, node_id)
+                for child_id in children[node_id]:
+                    if map_swc_type_code(nodes[child_id].type_code) == "soma":
+                        continue
+                    child_tasks.append((_SwcAttach(node_id=node_id, parent_x=parent_x), child_id, branch_index))
+
+            for child_id in root_side_soma_child_ids:
+                walk_section(branch_index, child_id, _SwcAttach(node_id=start_node_id, parent_x=0.0))
+            for child_id in self._soma_child_ids(current_id, children, nodes):
+                walk_section(branch_index, child_id, _SwcAttach(node_id=current_id, parent_x=1.0))
+            return branch_index
+
+        walk_section(None, root_id, None)
+        return branches, tuple(child_tasks)
+
+    def _synthetic_soma_branch(
+        self,
+        *,
+        center: np.ndarray,
+        radius: float,
+        point_ids: tuple[int, ...],
+        start_node_id: int,
+    ) -> _SwcBranch:
+        offset = np.array([radius, 0.0, 0.0], dtype=float)
+        return _SwcBranch(
+            point_ids=point_ids,
+            branch_type="soma",
+            parent_index=None,
+            start_node_id=start_node_id,
+            override_points=(tuple(center - offset), tuple(center), tuple(center + offset)),
+            override_radii=(radius, radius, radius),
+        )
+
+    def _section_attach_x(self, point_ids: tuple[int, ...], attach_node_id: int) -> float:
+        if attach_node_id == point_ids[0]:
+            return 0.0
+        if attach_node_id == point_ids[-1]:
+            return 1.0
+        return 0.5
+
+    def _effective_branch_point_ids(
+        self,
+        point_ids: tuple[int, ...],
+        attach: _SwcAttach | None,
+    ) -> tuple[int, ...]:
+        if attach is None or attach.node_id is None:
+            return point_ids
+        if attach.parent_x == 0.5 and len(point_ids) > 1:
+            return point_ids
+        if point_ids and attach.node_id == point_ids[0]:
+            return point_ids
+        return (attach.node_id, *point_ids)
+
+    def _is_nonbranching_soma_component(
+        self,
+        soma_ids: set[int],
+        children: dict[int, list[int]],
+        nodes: dict[int, _SwcRow],
+    ) -> bool:
+        return all(len(self._soma_child_ids(node_id, children, nodes)) <= 1 for node_id in soma_ids)
+
+    def _soma_child_ids(
+        self,
+        node_id: int,
+        children: dict[int, list[int]],
+        nodes: dict[int, _SwcRow],
+    ) -> list[int]:
+        return [child_id for child_id in children[node_id] if map_swc_type_code(nodes[child_id].type_code) == "soma"]
 
     def _attach_geometry(
         self,

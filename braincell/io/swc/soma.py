@@ -31,24 +31,19 @@ def is_special_three_point_soma(rows: Iterable[_SwcRow]) -> tuple[bool, tuple[_S
     center = row_point(center_row)
     side_a = row_point(side_a_row)
     side_b = row_point(side_b_row)
-    diameter = 2.0 * row_radius(center_row)
     abs_tol = max(_SPECIAL_THREE_POINT_RADIUS_TOL_SCALE * row_radius(center_row), _REL_TOL)
 
-    if min(_distance(center, side_a), _distance(center, side_b), _distance(side_a, side_b)) <= 0.0:
+    if min(_distance(center, side_a), _distance(center, side_b)) <= 0.0:
         return False, None
 
     radii = np.array([row_radius(row) for row in soma_rows], dtype=float)
     if not np.allclose(radii, radii[0], rtol=_REL_TOL, atol=abs_tol):
         return False, None
 
-    if not _is_collinear(center, side_a, side_b, abs_tol=abs_tol):
+    radius = row_radius(center_row)
+    if not math.isclose(_distance(center, side_a), radius, rel_tol=_REL_TOL, abs_tol=abs_tol):
         return False, None
-
-    midpoint = (side_a + side_b) / 2.0
-    if not np.allclose(center, midpoint, rtol=_REL_TOL, atol=abs_tol):
-        return False, None
-
-    if not math.isclose(_distance(side_a, side_b), diameter, rel_tol=_REL_TOL, abs_tol=abs_tol):
+    if not math.isclose(_distance(center, side_b), radius, rel_tol=_REL_TOL, abs_tol=abs_tol):
         return False, None
 
     return True, soma_rows

@@ -100,19 +100,19 @@ def build_cv_geo(
             children_by_cv[left].append(right)
 
     # Attach branch roots to their parent branch CV.
-    for connection in morpho.connections:
-        parent_ids = cv_ids_by_branch[connection.parent_branch]
-        child_ids = cv_ids_by_branch[connection.child_branch]
+    for edge in morpho.edges:
+        parent_ids = cv_ids_by_branch[edge.parent.index]
+        child_ids = cv_ids_by_branch[edge.child.index]
         parent_cv = _locate_branch_cv_by_x(
             parent_ids,
             temp_geo,
-            x=connection.parent_x,
+            x=edge.parent_x,
             epsilon=EPSILON,
         )
         child_cv = _locate_branch_cv_by_x(
             child_ids,
             temp_geo,
-            x=connection.child_x,
+            x=edge.child_x,
             epsilon=EPSILON,
         )
         if parent_by_cv[child_cv] is None:
@@ -185,7 +185,7 @@ def _resolve_max_cv_len_counts(morpho: Morpho, *, policy: object) -> tuple[int, 
 
 
 def _strict_count_from_max_len_um(*, branch: Branch, max_len_um: float) -> int:
-    branch_len_um = float(np.asarray(branch.total_length.to_decimal(u.um), dtype=float))
+    branch_len_um = float(np.asarray(branch.length.to_decimal(u.um), dtype=float))
     ratio = branch_len_um / max_len_um
     # Keep CV length <= max_len_um while damping tiny floating point overshoot near integers.
     n_cv = int(np.ceil(ratio - EPSILON))
@@ -262,20 +262,20 @@ def _build_frusta(
         raise ValueError(f"CV bounds must satisfy 0 <= prox < dist <= 1, got {(prox, dist)!r}.")
 
     lengths_um = np.asarray(branch.lengths.to_decimal(u.um), dtype=float)
-    radii_prox_um = np.asarray(branch.radii_prox.to_decimal(u.um), dtype=float)
-    radii_dist_um = np.asarray(branch.radii_dist.to_decimal(u.um), dtype=float)
+    radii_prox_um = np.asarray(branch.radii_proximal.to_decimal(u.um), dtype=float)
+    radii_dist_um = np.asarray(branch.radii_distal.to_decimal(u.um), dtype=float)
     total_length_um = float(np.sum(lengths_um))
     if total_length_um <= epsilon:
         return ()
 
-    proximal_points = (
-        np.asarray(branch.proximal_points.to_decimal(u.um), dtype=float)
-        if branch.proximal_points is not None
+    points_proximal = (
+        np.asarray(branch.points_proximal.to_decimal(u.um), dtype=float)
+        if branch.points_proximal is not None
         else None
     )
-    distal_points = (
-        np.asarray(branch.distal_points.to_decimal(u.um), dtype=float)
-        if branch.distal_points is not None
+    points_distal = (
+        np.asarray(branch.points_distal.to_decimal(u.um), dtype=float)
+        if branch.points_distal is not None
         else None
     )
 
@@ -288,6 +288,28 @@ def _build_frusta(
     for seg_idx, seg_length_um in enumerate(lengths_um):
         seg_start_um = float(segment_starts_um[seg_idx])
         seg_end_um = float(segment_ends_um[seg_idx])
+
+        if seg_length_um <= epsilon:
+            boundary_x = 1.0 if total_length_um <= epsilon else seg_start_um / total_length_um
+            if not _interval_owns_boundary(prox=prox, dist=dist, x=boundary_x, epsilon=epsilon):
+                continue
+
+            point = None
+            if points_proximal is not None and points_distal is not None:
+                point = u.Quantity(points_proximal[seg_idx], u.um)
+
+            frusta.append(
+                CVFrustum(
+                    prox=float(boundary_x),
+                    dist=float(boundary_x),
+                    length=u.Quantity(0.0, u.um),
+                    radius_prox=u.Quantity(float(radii_prox_um[seg_idx]), u.um),
+                    radius_dist=u.Quantity(float(radii_dist_um[seg_idx]), u.um),
+                    point_prox=point,
+                    point_dist=point,
+                )
+            )
+            continue
 
         left_um = max(seg_start_um, start_um)
         right_um = min(seg_end_um, end_um)
@@ -305,9 +327,9 @@ def _build_frusta(
         x1 = max(prox, min(dist, right_um / total_length_um))
         point0 = None
         point1 = None
-        if proximal_points is not None and distal_points is not None:
-            seg_p0 = proximal_points[seg_idx]
-            seg_p1 = distal_points[seg_idx]
+        if points_proximal is not None and points_distal is not None:
+            seg_p0 = points_proximal[seg_idx]
+            seg_p1 = points_distal[seg_idx]
             point0 = u.Quantity(seg_p0 + (seg_p1 - seg_p0) * t0, u.um)
             point1 = u.Quantity(seg_p0 + (seg_p1 - seg_p0) * t1, u.um)
 
@@ -323,6 +345,14 @@ def _build_frusta(
             )
         )
     return tuple(frusta)
+
+
+def _interval_owns_boundary(*, prox: float, dist: float, x: float, epsilon: float) -> bool:
+    if x < prox - epsilon:
+        return False
+    if x < dist - epsilon:
+        return True
+    return dist >= 1.0 - epsilon and x <= dist + epsilon
 
 
 def _frusta_total_length_um(frusta: tuple[CVFrustum, ...]) -> float:

@@ -3,300 +3,324 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
 
 import numpy as np
 
-from braincell._units import (
-    mantissa,
-    normalize_param,
-    segment_lengths_from_points,
-    u,
-)
+from braincell._units import normalize_param, u
 
 _ALLOWED_BRANCH_TYPES = {
-    "apical_dend",
-    "apical_dendrite",
+    "soma",
+    "dend",
     "axon",
     "basal_dend",
     "basal_dendrite",
+    "apical_dend",
+    "apical_dendrite",
     "custom",
-    "dend",
-    "soma",
 }
-
-
-def _normalize_segment_vector(
-    value: object,
-    *,
-    name: str,
-    unit: Any,
-    bounds: dict[str, object] | None = None,
-) -> Any:
-    """Normalize a 1D segment parameter and allow scalar sugar for one segment."""
-
-    quantity = normalize_param(value, name=name, unit=unit, bounds=bounds)
-    if quantity.ndim == 0:
-        return quantity.reshape(1)
-    if quantity.ndim != 1:
-        raise ValueError(f"{name} must be 1D, got shape {quantity.shape!r}.")
-    return quantity
 
 
 @dataclass(frozen=True)
 class Branch:
-    """A named anatomical branch with segment-wise cable geometry.
+    """An anatomical branch geometry with segment-wise cable properties.
 
     All geometric quantities are stored as `brainunit` values and normalized to
-    `u.um` internally. The constructor accepts raw lists, NumPy arrays, JAX
-    arrays, or existing `brainunit` quantities; bare numeric inputs are assumed
-    to be in micrometers.
+    `u.um` internally. Callers must supply explicit-unit quantities; bare
+    numeric inputs are rejected.
     """
 
     lengths: u.Quantity[u.um]
-    radii_prox: u.Quantity[u.um]
-    radii_dist: u.Quantity[u.um]
-    proximal_points: u.Quantity[u.um] | None = None
-    distal_points: u.Quantity[u.um] | None = None
-    name: str | None = None
+    radii_proximal: u.Quantity[u.um]
+    radii_distal: u.Quantity[u.um]
+    points_proximal: u.Quantity[u.um] | None = None
+    points_distal: u.Quantity[u.um] | None = None
     type: str = "custom"
 
     def __post_init__(self) -> None:
-        lengths = _normalize_segment_vector(
-            self.lengths,
-            name="lengths",
-            unit=u.um,
-            bounds={"gt": 0},
-        )
-        radii_prox = _normalize_segment_vector(
-            self.radii_prox,
-            name="radii_prox",
-            unit=u.um,
-            bounds={"ge": 0},
-        )
-        radii_dist = _normalize_segment_vector(
-            self.radii_dist,
-            name="radii_dist",
-            unit=u.um,
-            bounds={"ge": 0},
-        )
-        proximal_points = normalize_param(
-            self.proximal_points,
-            name="proximal_points",
-            unit=u.um,
-            shape=(None, 3),
-            allow_none=True,
-        )
-        distal_points = normalize_param(
-            self.distal_points,
-            name="distal_points",
-            unit=u.um,
-            shape=(None, 3),
-            allow_none=True,
-        )
-
-        object.__setattr__(self, "lengths", lengths)
-        object.__setattr__(self, "radii_prox", radii_prox)
-        object.__setattr__(self, "radii_dist", radii_dist)
-        object.__setattr__(self, "proximal_points", proximal_points)
-        object.__setattr__(self, "distal_points", distal_points)
+        for name, kwargs in [
+            ("lengths", {"unit": u.um, "shape": (None,), "bounds": {"ge": 0 * u.um}}),
+            ("radii_proximal", {"unit": u.um, "shape": (None,), "bounds": {"gt": 0 * u.um}}),
+            ("radii_distal", {"unit": u.um, "shape": (None,), "bounds": {"gt": 0 * u.um}}),
+            ("points_proximal", {"unit": u.um, "shape": (None, 3), "allow_none": True}),
+            ("points_distal", {"unit": u.um, "shape": (None, 3), "allow_none": True}),
+        ]:
+            object.__setattr__(self, name, normalize_param(getattr(self, name), name=name, **kwargs))
 
         if self.type not in _ALLOWED_BRANCH_TYPES:
-            raise ValueError(
-                f"type must be one of {sorted(_ALLOWED_BRANCH_TYPES)!r}, got {self.type!r}."
-            )
-
-        n_segments = len(lengths)
-        if n_segments == 0:
+            raise ValueError(f"type must be one of {sorted(_ALLOWED_BRANCH_TYPES)!r}, got {self.type!r}.")
+        if self.lengths.shape[0] == 0:
             raise ValueError("Branch must contain at least one segment.")
-        if len(radii_prox) != n_segments:
-            raise ValueError("radii_prox must match lengths segment count.")
-        if len(radii_dist) != n_segments:
-            raise ValueError("radii_dist must match lengths segment count.")
-        if proximal_points is not None and len(proximal_points) != n_segments:
-            raise ValueError("proximal_points must match lengths segment count.")
-        if distal_points is not None and len(distal_points) != n_segments:
-            raise ValueError("distal_points must match lengths segment count.")
+        lengths_um = np.asarray(self.lengths.to_decimal(u.um), dtype=float)
+        if float(np.sum(lengths_um)) <= 0.0:
+            raise ValueError("Branch total length must be > 0.")
+        if (self.points_proximal is None) != (self.points_distal is None):
+            raise ValueError("points_proximal and points_distal must both be provided or both be None.")
+
+        for name in ["radii_proximal", "radii_distal", "points_proximal", "points_distal"]:
+            arr = getattr(self, name)
+            if arr is not None and arr.shape[0] != self.lengths.shape[0]:
+                raise ValueError(f"{name} must match lengths segment count.")
+
+        if self.points_proximal is not None and self.points_distal is not None:
+            points_proximal_um = np.asarray(self.points_proximal.to_decimal(u.um), dtype=float)
+            points_distal_um = np.asarray(self.points_distal.to_decimal(u.um), dtype=float)
+            point_lengths = u.Quantity(np.linalg.norm(points_distal_um - points_proximal_um, axis=1), u.um)
+            if not np.allclose(
+                lengths_um,
+                np.asarray(point_lengths.to_decimal(u.um), dtype=float),
+            ):
+                raise ValueError("lengths must match point-derived segment lengths.")
 
     @classmethod
-    def lengths_shared(
+    def from_lengths(
         cls,
+        *,
         lengths: u.Quantity[u.um],
-        radii: u.Quantity[u.um],
-        *,
-        name: str | None = None,
+        radii: u.Quantity[u.um] | None = None,
+        radii_proximal: u.Quantity[u.um] | None = None,
+        radii_distal: u.Quantity[u.um] | None = None,
         type: str = "custom",
     ) -> "Branch":
-        """Build from segment lengths plus a continuous radius sequence."""
-
-        lengths_q = _normalize_segment_vector(
-            lengths,
-            name="lengths",
-            unit=u.um,
-            bounds={"gt": 0},
+        lengths = normalize_param(lengths, name="lengths", unit=u.um, shape=(None,), bounds={"ge": 0 * u.um})
+        radii_proximal, radii_distal = cls._resolve_radius_inputs(
+            "from_lengths",
+            radii=radii,
+            radii_proximal=radii_proximal,
+            radii_distal=radii_distal,
+            n_shared=len(lengths) + 1,
         )
-        radii_q = normalize_param(
-            radii,
-            name="radii",
-            unit=u.um,
-            shape=(None,),
-            bounds={"ge": 0},
+        lengths, radii_proximal, radii_distal, _, _ = cls._canonicalize_segments(
+            lengths=lengths,
+            radii_proximal=radii_proximal,
+            radii_distal=radii_distal,
+            points_proximal=None,
+            points_distal=None,
         )
-        if len(radii_q) != len(lengths_q) + 1:
-            raise ValueError("lengths_shared requires one more radius than segment length.")
         return cls(
-            lengths=lengths_q,
-            radii_prox=radii_q[:-1],
-            radii_dist=radii_q[1:],
-            name=name,
+            lengths=lengths,
+            radii_proximal=radii_proximal,
+            radii_distal=radii_distal,
             type=type,
         )
 
     @classmethod
-    def lengths_paired(
+    def from_points(
         cls,
+        *,
+        points: u.Quantity[u.um],
+        radii: u.Quantity[u.um] | None = None,
+        radii_proximal: u.Quantity[u.um] | None = None,
+        radii_distal: u.Quantity[u.um] | None = None,
+        type: str = "custom",
+    ) -> "Branch":
+        points = normalize_param(points, name="points", unit=u.um, shape=(None, 3))
+        if points.shape[0] < 2:
+            raise ValueError("from_points() requires at least two points.")
+
+        radii_proximal, radii_distal = cls._resolve_radius_inputs(
+            "from_points",
+            radii=radii,
+            radii_proximal=radii_proximal,
+            radii_distal=radii_distal,
+            n_shared=points.shape[0],
+        )
+
+        points_proximal = points[:-1]
+        points_distal = points[1:]
+        points_um = np.asarray(points.to_decimal(u.um), dtype=float)
+        lengths = u.Quantity(np.linalg.norm(points_um[1:] - points_um[:-1], axis=1), u.um)
+        lengths, radii_proximal, radii_distal, points_proximal, points_distal = cls._canonicalize_segments(
+            lengths=lengths,
+            radii_proximal=radii_proximal,
+            radii_distal=radii_distal,
+            points_proximal=points_proximal,
+            points_distal=points_distal,
+        )
+
+        return cls(
+            lengths=lengths,
+            radii_proximal=radii_proximal,
+            radii_distal=radii_distal,
+            points_proximal=points_proximal,
+            points_distal=points_distal,
+            type=type,
+        )
+
+    @staticmethod
+    def _resolve_radius_inputs(
+        method_name: str,
+        *,
+        radii: u.Quantity[u.um] | None,
+        radii_proximal: u.Quantity[u.um] | None,
+        radii_distal: u.Quantity[u.um] | None,
+        n_shared: int,
+    ) -> tuple[u.Quantity[u.um], u.Quantity[u.um]]:
+        if radii is not None:
+            if radii_proximal is not None or radii_distal is not None:
+                raise TypeError(
+                    "`radii` and `radii_proximal`/`radii_distal` cannot be provided together"
+                )
+            shared_radii = normalize_param(radii, name="radii", unit=u.um, shape=(None,))
+            if len(shared_radii) != n_shared:
+                raise ValueError(
+                    f"{method_name}() shared `radii` must have length {n_shared}."
+                )
+            return shared_radii[:-1], shared_radii[1:]
+
+        if radii_proximal is not None or radii_distal is not None:
+            if radii_proximal is None or radii_distal is None:
+                raise TypeError(
+                    "`radii_proximal` and `radii_distal` must be provided together"
+                )
+            return radii_proximal, radii_distal
+
+        raise TypeError(
+            "one of `radii` or (`radii_proximal` and `radii_distal`) is required"
+        )
+
+    @staticmethod
+    def _canonicalize_segments(
+        *,
         lengths: u.Quantity[u.um],
-        radii_pairs: u.Quantity[u.um],
-        *,
-        name: str | None = None,
-        type: str = "custom",
-    ) -> "Branch":
-        """Build from segment lengths plus per-segment `(r_prox, r_dist)` pairs."""
+        radii_proximal: u.Quantity[u.um],
+        radii_distal: u.Quantity[u.um],
+        points_proximal: u.Quantity[u.um] | None,
+        points_distal: u.Quantity[u.um] | None,
+    ) -> tuple[
+        u.Quantity[u.um],
+        u.Quantity[u.um],
+        u.Quantity[u.um],
+        u.Quantity[u.um] | None,
+        u.Quantity[u.um] | None,
+    ]:
+        if len(lengths) <= 1:
+            return lengths, radii_proximal, radii_distal, points_proximal, points_distal
 
-        lengths_q = _normalize_segment_vector(
-            lengths,
-            name="lengths",
-            unit=u.um,
-            bounds={"gt": 0},
-        )
-        radii_pairs_q = normalize_param(
-            radii_pairs,
-            name="radii_pairs",
-            unit=u.um,
-            shape=(None, 2),
-            bounds={"ge": 0},
-        )
-        if len(radii_pairs_q) != len(lengths_q):
-            raise ValueError("radii_pairs must match lengths segment count.")
-        return cls(
-            lengths=lengths_q,
-            radii_prox=radii_pairs_q[:, 0],
-            radii_dist=radii_pairs_q[:, 1],
-            name=name,
-            type=type,
-        )
+        lengths_um = np.asarray(lengths.to_decimal(u.um), dtype=float)
+        radii_prox_um = np.asarray(radii_proximal.to_decimal(u.um), dtype=float)
+        radii_dist_um = np.asarray(radii_distal.to_decimal(u.um), dtype=float)
+        points_prox_um = None if points_proximal is None else np.asarray(points_proximal.to_decimal(u.um), dtype=float)
+        points_dist_um = None if points_distal is None else np.asarray(points_distal.to_decimal(u.um), dtype=float)
 
-    @classmethod
-    def xyz_shared(
-        cls,
-        points: u.Quantity[u.um],
-        radii: u.Quantity[u.um],
-        *,
-        name: str | None = None,
-        type: str = "custom",
-    ) -> "Branch":
-        """Build from 3D points plus a continuous radius sequence."""
+        discontinuous = ~np.isclose(radii_dist_um[:-1], radii_prox_um[1:])
+        n_segments = len(lengths_um)
+        n_jumps = int(np.count_nonzero(discontinuous))
+        out_size = n_segments + n_jumps
 
-        points_q = normalize_param(
-            points,
-            name="points",
-            unit=u.um,
-            shape=(None, 3),
-        )
-        radii_q = normalize_param(
-            radii,
-            name="radii",
-            unit=u.um,
-            shape=(None,),
-            bounds={"ge": 0},
-        )
-        if len(points_q) < 2:
-            raise ValueError("xyz_shared requires at least two points.")
-        if len(radii_q) != len(points_q):
-            raise ValueError("radii must contain one value per point.")
-        return cls(
-            lengths=segment_lengths_from_points(points_q),
-            radii_prox=radii_q[:-1],
-            radii_dist=radii_q[1:],
-            proximal_points=points_q[:-1],
-            distal_points=points_q[1:],
-            name=name,
-            type=type,
+        out_lengths = np.empty(out_size, dtype=float)
+        out_radii_prox = np.empty(out_size, dtype=float)
+        out_radii_dist = np.empty(out_size, dtype=float)
+        out_points_prox = None if points_prox_um is None else np.empty((out_size, 3), dtype=float)
+        out_points_dist = None if points_dist_um is None else np.empty((out_size, 3), dtype=float)
+
+        out_index = 0
+        for index in range(n_segments):
+            out_lengths[out_index] = lengths_um[index]
+            out_radii_prox[out_index] = radii_prox_um[index]
+            out_radii_dist[out_index] = radii_dist_um[index]
+            if out_points_prox is not None and out_points_dist is not None:
+                out_points_prox[out_index] = points_prox_um[index]
+                out_points_dist[out_index] = points_dist_um[index]
+            out_index += 1
+
+            if index == n_segments - 1 or not discontinuous[index]:
+                continue
+
+            out_lengths[out_index] = 0.0
+            out_radii_prox[out_index] = radii_dist_um[index]
+            out_radii_dist[out_index] = radii_prox_um[index + 1]
+            if out_points_prox is not None and out_points_dist is not None:
+                out_points_prox[out_index] = points_dist_um[index]
+                out_points_dist[out_index] = points_dist_um[index]
+            out_index += 1
+
+        normalized_points_prox = None if out_points_prox is None else u.Quantity(out_points_prox, u.um)
+        normalized_points_dist = None if out_points_dist is None else u.Quantity(out_points_dist, u.um)
+        return (
+            u.Quantity(out_lengths, u.um),
+            u.Quantity(out_radii_prox, u.um),
+            u.Quantity(out_radii_dist, u.um),
+            normalized_points_prox,
+            normalized_points_dist,
         )
 
-    @classmethod
-    def xyz_paired(
-        cls,
-        points: u.Quantity[u.um],
-        radii_pairs: u.Quantity[u.um],
-        *,
-        name: str | None = None,
-        type: str = "custom",
-    ) -> "Branch":
-        """Build from 3D points plus per-segment `(r_prox, r_dist)` pairs."""
+    @property
+    def radii(self) -> u.Quantity[u.um]:
+        """Return shared radii `[n_segments + 1]` when segment boundaries are continuous."""
 
-        points_q = normalize_param(
-            points,
-            name="points",
-            unit=u.um,
-            shape=(None, 3),
-        )
-        radii_pairs_q = normalize_param(
-            radii_pairs,
-            name="radii_pairs",
-            unit=u.um,
-            shape=(None, 2),
-            bounds={"ge": 0},
-        )
-        if len(points_q) < 2:
-            raise ValueError("xyz_paired requires at least two points.")
-        if len(radii_pairs_q) != len(points_q) - 1:
-            raise ValueError("radii_pairs must match the number of point-to-point segments.")
-        return cls(
-            lengths=segment_lengths_from_points(points_q),
-            radii_prox=radii_pairs_q[:, 0],
-            radii_dist=radii_pairs_q[:, 1],
-            proximal_points=points_q[:-1],
-            distal_points=points_q[1:],
-            name=name,
-            type=type,
-        )
+        if not u.math.allclose(self.radii_distal[:-1], self.radii_proximal[1:]):
+            raise ValueError(
+                "Branch radii are discontinuous across segment boundaries; use "
+                "radii_proximal and radii_distal."
+            )
+        return u.math.concatenate((self.radii_proximal[:1], self.radii_distal), axis=0)
+
+    @property
+    def points(self) -> u.Quantity[u.um] | None:
+        """Return shared points `[n_segments + 1, 3]` when point geometry is continuous.
+
+        For branches created by `from_lengths(...)`, this returns `None`.
+        """
+        if self.points_proximal is None or self.points_distal is None:
+            return None
+        if not u.math.allclose(self.points_distal[:-1], self.points_proximal[1:]):
+            raise ValueError(
+                "Branch points are discontinuous across segment boundaries; use "
+                "points_proximal and points_distal."
+            )
+        return u.math.concatenate((self.points_proximal[:1], self.points_distal), axis=0)
 
     @property
     def n_segments(self) -> int:
         return len(self.lengths)
 
-    @property
-    def total_length(self) -> u.Quantity[u.um]:
-        return u.math.sum(self.lengths)
+    def _segment_arrays_um(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        return (
+            np.asarray(self.lengths.to_decimal(u.um), dtype=float),
+            np.asarray(self.radii_proximal.to_decimal(u.um), dtype=float),
+            np.asarray(self.radii_distal.to_decimal(u.um), dtype=float),
+        )
 
     @property
-    def radius_proximal(self) -> u.Quantity[u.um]:
-        return self.radii_prox[0]
+    def length(self) -> u.Quantity[u.um]:
+        lengths_um, _, _ = self._segment_arrays_um()
+        return u.Quantity(np.sum(lengths_um), u.um)
 
     @property
-    def radius_distal(self) -> u.Quantity[u.um]:
-        return self.radii_dist[-1]
+    def mean_radius(self) -> u.Quantity[u.um]:
+        lengths_um, r0_um, r1_um = self._segment_arrays_um()
+        total_length_um = float(np.sum(lengths_um))
+        if total_length_um <= 0.0:
+            raise ValueError("Branch total length must be > 0.")
+        values_um = 0.5 * (r0_um + r1_um)
+        return u.Quantity(np.sum(lengths_um * values_um) / total_length_um, u.um)
 
-    def lateral_areas(self) -> tuple[object, ...]:
-        lengths_um = np.asarray(self.lengths.to_decimal(u.um), dtype=float)
-        radii_prox_um = np.asarray(self.radii_prox.to_decimal(u.um), dtype=float)
-        radii_dist_um = np.asarray(self.radii_dist.to_decimal(u.um), dtype=float)
-        values = []
-        for length_um, r0_um, r1_um in zip(lengths_um, radii_prox_um, radii_dist_um):
-            slant_um = float(np.sqrt(length_um * length_um + (r1_um - r0_um) ** 2))
-            values.append(u.Quantity(float(np.pi * (r0_um + r1_um) * slant_um), u.um ** 2))
-        return tuple(values)
+    @property
+    def areas(self) -> u.Quantity[u.um ** 2]:
+        lengths_um, r0_um, r1_um = self._segment_arrays_um()
+        values = np.pi * (r0_um + r1_um) * np.sqrt(lengths_um * lengths_um + (r1_um - r0_um) * (r1_um - r0_um))
+        return u.Quantity(values, u.um ** 2)
 
-    def total_lateral_area(self):
-        return sum(self.lateral_areas())
+    @property
+    def area(self) -> u.Quantity[u.um ** 2]:
+        lengths_um, r0_um, r1_um = self._segment_arrays_um()
+        value = np.sum(np.pi * (r0_um + r1_um) * np.sqrt(lengths_um * lengths_um + (r1_um - r0_um) * (r1_um - r0_um)))
+        return u.Quantity(value, u.um ** 2)
 
-    def volumes(self) -> tuple[object, ...]:
-        lengths_um = np.asarray(self.lengths.to_decimal(u.um), dtype=float)
-        radii_prox_um = np.asarray(self.radii_prox.to_decimal(u.um), dtype=float)
-        radii_dist_um = np.asarray(self.radii_dist.to_decimal(u.um), dtype=float)
-        values = []
-        for length_um, r0_um, r1_um in zip(lengths_um, radii_prox_um, radii_dist_um):
-            volume_um3 = float(np.pi * length_um * (r0_um * r0_um + r0_um * r1_um + r1_um * r1_um) / 3.0)
-            values.append(u.Quantity(volume_um3, u.um ** 3))
-        return tuple(values)
+    @property
+    def volumes(self) -> u.Quantity[u.um ** 3]:
+        lengths_um, r0_um, r1_um = self._segment_arrays_um()
+        values = np.pi * lengths_um * (r0_um * r0_um + r0_um * r1_um + r1_um * r1_um) / 3.0
+        return u.Quantity(values, u.um ** 3)
+
+    @property
+    def volume(self) -> u.Quantity[u.um ** 3]:
+        lengths_um, r0_um, r1_um = self._segment_arrays_um()
+        value = np.sum(np.pi * lengths_um * (r0_um * r0_um + r0_um * r1_um + r1_um * r1_um) / 3.0)
+        return u.Quantity(value, u.um ** 3)
+
+    def __repr__(self) -> str:
+        return (
+            f"Branch(type={self.type!r}, n_segments={self.n_segments!r}, "
+            f"length={self.length!r}, area={self.area!r})"
+        )

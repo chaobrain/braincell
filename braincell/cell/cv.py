@@ -80,16 +80,16 @@ class CV:
                     raise ValueError("CV frusta are missing distal point geometry.")
                 points.append(np.asarray(point_dist.to_decimal(u.um), dtype=float))
             radii_um = np.concatenate((r0_um[:1], r1_um), axis=0)
-            return Branch.xyz_shared(
+            return Branch.from_points(
                 points=u.Quantity(np.asarray(points, dtype=float), u.um),
                 radii=u.Quantity(np.asarray(radii_um, dtype=float), u.um),
                 type=self.branch_type,
             )
 
-        pairs = np.stack((r0_um, r1_um), axis=1)
-        return Branch.lengths_paired(
+        return Branch.from_lengths(
             lengths=u.Quantity(lengths_um, u.um),
-            radii_pairs=u.Quantity(pairs, u.um),
+            radii_proximal=u.Quantity(r0_um, u.um),
+            radii_distal=u.Quantity(r1_um, u.um),
             type=self.branch_type,
         )
 

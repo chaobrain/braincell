@@ -630,7 +630,7 @@ def run(cfg: Dict[str, Any], out_dir: Path, do_plot: bool) -> int:
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Single-ion NEURON vs braincell comparison template.")
+    parser = argparse.ArgumentParser(description="Single-ion NEURON vs braincell comparison helper.")
     parser.add_argument("--config", required=True, help="Path to JSON config file.")
     parser.add_argument("--out", default=None, help="Output directory (default: <config_dir>/results).")
     parser.set_defaults(plot=True)

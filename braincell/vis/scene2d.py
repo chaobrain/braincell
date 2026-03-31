@@ -5,7 +5,8 @@ import numpy as np
 from braincell._units import u
 from braincell.morpho import Morpho
 
-from .scene import Polyline2D, RenderScene2D, color_for_branch_type
+from .layout2d import build_layout_branches_2d
+from .scene import Polygon2D, Polyline2D, RenderScene2D, color_for_branch_type
 
 
 _PROJECTION_AXES = {
@@ -25,8 +26,10 @@ def build_render_scene_2d(
         raise TypeError(f"build_render_scene_2d(...) expects Morpho, got {type(morpho).__name__!s}.")
     if mode == "projected":
         return build_scene2d_projected(morpho, projection_plane=projection_plane)
-    if mode == "layout":
-        return build_scene2d_layout(morpho)
+    if mode == "tree":
+        return build_scene2d_tree(morpho)
+    if mode == "frustum":
+        return build_scene2d_frustum(morpho)
     raise ValueError(f"Unsupported 2D mode {mode!r}.")
 
 
@@ -77,10 +80,69 @@ def build_scene2d_projected(morpho: Morpho, *, projection_plane: str = "xy") -> 
     )
 
 
-def build_scene2d_layout(morpho: Morpho) -> RenderScene2D:
+def build_scene2d_tree(morpho: Morpho) -> RenderScene2D:
     if not isinstance(morpho, Morpho):
-        raise TypeError(f"build_scene2d_layout(...) expects Morpho, got {type(morpho).__name__!s}.")
-    raise NotImplementedError("2D layout mode is not implemented yet.")
+        raise TypeError(f"build_scene2d_tree(...) expects Morpho, got {type(morpho).__name__!s}.")
+
+    polylines: list[Polyline2D] = []
+    for layout in build_layout_branches_2d(morpho, mode="tree"):
+        width_um = 2.0 * float(layout.radii_proximal_um[0])
+        polylines.append(
+            Polyline2D(
+                branch_index=layout.branch_index,
+                branch_name=layout.branch_name,
+                branch_type=layout.branch_type,
+                points_um=layout.segment_points_um[[0, -1]],
+                widths_um=np.array([width_um, width_um], dtype=float),
+                color_rgb=color_for_branch_type(layout.branch_type),
+                draw_order=layout.branch_index,
+            )
+        )
+
+    return RenderScene2D(
+        polylines=tuple(polylines),
+        draw_order=tuple(polyline.draw_order for polyline in polylines),
+        mode="tree",
+    )
+
+
+def build_scene2d_frustum(morpho: Morpho) -> RenderScene2D:
+    if not isinstance(morpho, Morpho):
+        raise TypeError(f"build_scene2d_frustum(...) expects Morpho, got {type(morpho).__name__!s}.")
+
+    polygons: list[Polygon2D] = []
+    draw_order = 0
+    for layout in build_layout_branches_2d(morpho, mode="frustum"):
+        for segment_index in range(len(layout.segment_points_um) - 1):
+            start_um = layout.segment_points_um[segment_index]
+            end_um = layout.segment_points_um[segment_index + 1]
+            radius_prox_um = float(layout.radii_proximal_um[segment_index])
+            radius_dist_um = float(layout.radii_distal_um[segment_index])
+            polygon_points_um = np.vstack(
+                [
+                    start_um + layout.normal_um * radius_prox_um,
+                    end_um + layout.normal_um * radius_dist_um,
+                    end_um - layout.normal_um * radius_dist_um,
+                    start_um - layout.normal_um * radius_prox_um,
+                ]
+            )
+            polygons.append(
+                Polygon2D(
+                    branch_index=layout.branch_index,
+                    branch_name=layout.branch_name,
+                    branch_type=layout.branch_type,
+                    points_um=polygon_points_um,
+                    color_rgb=color_for_branch_type(layout.branch_type),
+                    draw_order=draw_order,
+                )
+            )
+            draw_order += 1
+
+    return RenderScene2D(
+        polygons=tuple(polygons),
+        draw_order=tuple(polygon.draw_order for polygon in polygons),
+        mode="frustum",
+    )
 
 
 def build_projected_scene_2d(morpho: Morpho, *, projection_plane: str = "xy") -> RenderScene2D:

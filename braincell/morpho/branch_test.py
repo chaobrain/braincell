@@ -364,3 +364,87 @@ class BranchTest(unittest.TestCase):
             type="axon",
         )
         self.assertTrue(u.math.array_equal(branch.lengths, np.array([40.0]) * u.um))
+
+    def test_branch_equality_supports_vector_fields(self) -> None:
+        shared = Branch.from_lengths(
+            lengths=[10.0, 20.0] * u.um,
+            radii=[3.0, 2.0, 1.0] * u.um,
+            type="apical_dendrite",
+        )
+        paired = Branch.from_lengths(
+            lengths=[10.0, 20.0] * u.um,
+            radii_proximal=[3.0, 2.0] * u.um,
+            radii_distal=[2.0, 1.0] * u.um,
+            type="apical_dendrite",
+        )
+        self.assertEqual(shared, paired)
+
+    def test_branch_equality_supports_discontinuous_geometries(self) -> None:
+        paired = Branch.from_lengths(
+            lengths=[10.0, 20.0] * u.um,
+            radii_proximal=[3.0, 2.0] * u.um,
+            radii_distal=[1.0, 1.0] * u.um,
+        )
+        shared = Branch.from_lengths(
+            lengths=[10.0, 0.0, 20.0] * u.um,
+            radii=[3.0, 1.0, 2.0, 1.0] * u.um,
+        )
+        self.assertEqual(shared, paired)
+
+    def test_branch_equality_supports_point_geometry(self) -> None:
+        left = Branch.from_points(
+            points=[(0.0, 0.0, 0.0), (3.0, 4.0, 0.0), (3.0, 4.0, 12.0)] * u.um,
+            radii=[2.0, 1.5, 1.0] * u.um,
+            type="soma",
+        )
+        right = Branch.from_points(
+            points=np.array([[0.0, 0.0, 0.0], [3.0, 4.0, 0.0], [3.0, 4.0, 12.0]]) * u.um,
+            radii=[2.0, 1.5, 1.0] * u.um,
+            type="soma",
+        )
+        self.assertEqual(left, right)
+
+    def test_branch_equality_rejects_type_geometry_and_point_mismatches(self) -> None:
+        base = Branch.from_lengths(
+            lengths=[10.0, 20.0] * u.um,
+            radii=[3.0, 2.0, 1.0] * u.um,
+            type="axon",
+        )
+        self.assertNotEqual(
+            base,
+            Branch.from_lengths(
+                lengths=[10.0, 20.0] * u.um,
+                radii=[3.0, 2.0, 1.0] * u.um,
+                type="basal_dendrite",
+            ),
+        )
+        self.assertNotEqual(
+            base,
+            Branch.from_lengths(
+                lengths=[10.0, 21.0] * u.um,
+                radii=[3.0, 2.0, 1.0] * u.um,
+                type="axon",
+            ),
+        )
+        self.assertNotEqual(
+            Branch.from_points(
+                points=[(0.0, 0.0, 0.0), (10.0, 0.0, 0.0)] * u.um,
+                radii=[2.0, 1.0] * u.um,
+                type="axon",
+            ),
+            Branch.from_lengths(
+                lengths=[10.0] * u.um,
+                radii=[2.0, 1.0] * u.um,
+                type="axon",
+            ),
+        )
+
+    def test_branch_equality_handles_other_types_and_hashing(self) -> None:
+        branch = Branch.from_lengths(
+            lengths=[10.0] * u.um,
+            radii=[2.0, 1.0] * u.um,
+            type="axon",
+        )
+        self.assertFalse(branch == object())
+        with self.assertRaises(TypeError):
+            hash(branch)

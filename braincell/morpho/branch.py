@@ -20,7 +20,7 @@ _ALLOWED_BRANCH_TYPES = {
 }
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, eq=False)
 class Branch:
     """An anatomical branch geometry with segment-wise cable properties.
 
@@ -35,6 +35,7 @@ class Branch:
     points_proximal: u.Quantity[u.um] | None = None
     points_distal: u.Quantity[u.um] | None = None
     type: str = "custom"
+    __hash__ = None
 
     def __post_init__(self) -> None:
         for name, kwargs in [
@@ -281,6 +282,30 @@ class Branch:
             np.asarray(self.radii_distal.to_decimal(u.um), dtype=float),
         )
 
+    @staticmethod
+    def _quantity_allclose(lhs, rhs) -> bool:
+        if lhs.shape != rhs.shape:
+            return False
+        return bool(u.math.allclose(lhs, rhs))
+
+    @classmethod
+    def _optional_quantity_allclose(cls, lhs, rhs) -> bool:
+        if lhs is None or rhs is None:
+            return lhs is None and rhs is None
+        return cls._quantity_allclose(lhs, rhs)
+
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, Branch):
+            return NotImplemented
+        return (
+            self.type == other.type
+            and self._quantity_allclose(self.lengths, other.lengths)
+            and self._quantity_allclose(self.radii_proximal, other.radii_proximal)
+            and self._quantity_allclose(self.radii_distal, other.radii_distal)
+            and self._optional_quantity_allclose(self.points_proximal, other.points_proximal)
+            and self._optional_quantity_allclose(self.points_distal, other.points_distal)
+        )
+
     @property
     def length(self) -> u.Quantity[u.um]:
         lengths_um, _, _ = self._segment_arrays_um()
@@ -290,8 +315,6 @@ class Branch:
     def mean_radius(self) -> u.Quantity[u.um]:
         lengths_um, r0_um, r1_um = self._segment_arrays_um()
         total_length_um = float(np.sum(lengths_um))
-        if total_length_um <= 0.0:
-            raise ValueError("Branch total length must be > 0.")
         values_um = 0.5 * (r0_um + r1_um)
         return u.Quantity(np.sum(lengths_um * values_um) / total_length_um, u.um)
 

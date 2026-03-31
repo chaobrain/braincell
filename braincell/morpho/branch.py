@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import warnings
 from dataclasses import dataclass
 
 import numpy as np
 
-from braincell._units import normalize_param, u
+import brainunit as u
+from braincell._units import normalize_param
 
 _ALLOWED_BRANCH_TYPES = {
     "soma",
@@ -52,7 +54,10 @@ class Branch:
             raise ValueError("Branch must contain at least one segment.")
         lengths_um = np.asarray(self.lengths.to_decimal(u.um), dtype=float)
         if float(np.sum(lengths_um)) <= 0.0:
-            raise ValueError("Branch total length must be > 0.")
+            raise ValueError(
+                "Branch total length must be > 0. "
+                "All segment lengths are zero; at least one segment must have a positive length."
+            )
         if (self.points_proximal is None) != (self.points_distal is None):
             raise ValueError("points_proximal and points_distal must both be provided or both be None.")
 
@@ -129,6 +134,16 @@ class Branch:
         points_distal = points[1:]
         points_um = np.asarray(points.to_decimal(u.um), dtype=float)
         lengths = u.Quantity(np.linalg.norm(points_um[1:] - points_um[:-1], axis=1), u.um)
+
+        zero_mask = np.isclose(np.asarray(lengths.to_decimal(u.um), dtype=float), 0.0)
+        if np.any(zero_mask):
+            indices = np.flatnonzero(zero_mask).tolist()
+            warnings.warn(
+                f"from_points() produced {int(np.sum(zero_mask))} zero-length segment(s) "
+                f"from coincident consecutive points at index pair(s) {indices}. "
+                "These degenerate segments are kept but contribute zero volume.",
+                stacklevel=2,
+            )
         lengths, radii_proximal, radii_distal, points_proximal, points_distal = cls._canonicalize_segments(
             lengths=lengths,
             radii_proximal=radii_proximal,
@@ -246,7 +261,14 @@ class Branch:
 
     @property
     def radii(self) -> u.Quantity[u.um]:
-        """Return shared radii `[n_segments + 1]` when segment boundaries are continuous."""
+        """Return shared radii ``[n_segments + 1]`` when segment boundaries are continuous.
+
+        Raises ``ValueError`` if any adjacent boundary has ``radii_distal[i] != radii_proximal[i+1]``.
+
+        Note: for a single-segment branch the boundary check is vacuously satisfied
+        (there are no inter-segment boundaries), so this property always succeeds
+        even if the segment is tapered (``radii_proximal != radii_distal``).
+        """
 
         if not u.math.allclose(self.radii_distal[:-1], self.radii_proximal[1:]):
             raise ValueError(
@@ -257,9 +279,14 @@ class Branch:
 
     @property
     def points(self) -> u.Quantity[u.um] | None:
-        """Return shared points `[n_segments + 1, 3]` when point geometry is continuous.
+        """Return shared points ``[n_segments + 1, 3]`` when point geometry is continuous.
 
-        For branches created by `from_lengths(...)`, this returns `None`.
+        Returns ``None`` for branches created by ``from_lengths(...)`` (no point geometry).
+        Raises ``ValueError`` if any adjacent boundary has ``points_distal[i] != points_proximal[i+1]``.
+
+        Note: for a single-segment branch the boundary check is vacuously satisfied
+        (there are no inter-segment boundaries), so this property always succeeds
+        regardless of whether the two endpoint coordinates coincide.
         """
         if self.points_proximal is None or self.points_distal is None:
             return None
@@ -290,22 +317,25 @@ class Branch:
     def mean_radius(self) -> u.Quantity[u.um]:
         lengths_um, r0_um, r1_um = self._segment_arrays_um()
         total_length_um = float(np.sum(lengths_um))
-        if total_length_um <= 0.0:
-            raise ValueError("Branch total length must be > 0.")
         values_um = 0.5 * (r0_um + r1_um)
         return u.Quantity(np.sum(lengths_um * values_um) / total_length_um, u.um)
 
     @property
     def areas(self) -> u.Quantity[u.um ** 2]:
+        """Lateral surface area of each segment (frustum formula).
+
+        Zero-length jump segments inserted at radius discontinuities by
+        `_canonicalize_segments` contribute a non-zero annular end-cap area
+        ``π(r0 + r1)|r1 - r0|``. This is geometrically correct but may be
+        unexpected when iterating segment areas individually.
+        """
         lengths_um, r0_um, r1_um = self._segment_arrays_um()
         values = np.pi * (r0_um + r1_um) * np.sqrt(lengths_um * lengths_um + (r1_um - r0_um) * (r1_um - r0_um))
         return u.Quantity(values, u.um ** 2)
 
     @property
     def area(self) -> u.Quantity[u.um ** 2]:
-        lengths_um, r0_um, r1_um = self._segment_arrays_um()
-        value = np.sum(np.pi * (r0_um + r1_um) * np.sqrt(lengths_um * lengths_um + (r1_um - r0_um) * (r1_um - r0_um)))
-        return u.Quantity(value, u.um ** 2)
+        return self.areas.sum()
 
     @property
     def volumes(self) -> u.Quantity[u.um ** 3]:
@@ -315,9 +345,7 @@ class Branch:
 
     @property
     def volume(self) -> u.Quantity[u.um ** 3]:
-        lengths_um, r0_um, r1_um = self._segment_arrays_um()
-        value = np.sum(np.pi * lengths_um * (r0_um * r0_um + r0_um * r1_um + r1_um * r1_um) / 3.0)
-        return u.Quantity(value, u.um ** 3)
+        return self.volumes.sum()
 
     def __repr__(self) -> str:
         return (

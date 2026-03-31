@@ -18,8 +18,8 @@ class MorphoTest(unittest.TestCase):
         axon = Branch.from_lengths(lengths=[40.0] * u.um, radii=[0.8, 0.4] * u.um, type="axon")
 
         tree = Morpho.from_root(soma, name="soma")
-        dend_view = tree.soma.attach(dend, name="dend", parent_x=0.9)
-        axon_view = tree.attach(parent=tree.soma, child_branch=axon, child_name=None, parent_x=0.2, child_x=1.0)
+        dend_view = tree.soma.attach(dend, name="dend", parent_x=1.0)
+        axon_view = tree.attach(parent=tree.soma, child_branch=axon, child_name=None, parent_x=0.5, child_x=1.0)
         tree.soma.extra = Branch.from_lengths(
             lengths=[30.0] * u.um,
             radii=[1.0, 0.6] * u.um,
@@ -31,7 +31,7 @@ class MorphoTest(unittest.TestCase):
         self.assertIsNone(tree.soma.parent_id)
         self.assertEqual(dend_view.parent.name, "soma")
         self.assertEqual(dend_view.parent_id, 0)
-        self.assertEqual(dend_view.parent_x, 0.9)
+        self.assertEqual(dend_view.parent_x, 1.0)
         self.assertEqual(axon_view.child_x, 1.0)
         self.assertEqual(tree.branch(index=1).name, "dend")
         self.assertEqual(tree.branch(name="axon_0").parent.name, "soma")
@@ -42,7 +42,7 @@ class MorphoTest(unittest.TestCase):
         self.assertEqual(tree.path_to_root(2), (0, 2))
         self.assertEqual(len(tree.branches), 4)
         self.assertEqual(len(tree.edges), 3)
-        self.assertEqual(tree.edges[0].parent_x, 0.9)
+        self.assertEqual(tree.edges[0].parent_x, 1.0)
         self.assertEqual(tree.edges[0].child_x, 0.0)
         self.assertEqual(tree.edges[1].child_x, 1.0)
         self.assertEqual(tree.soma.length.to_decimal(u.um), 20.0)
@@ -64,10 +64,10 @@ class MorphoTest(unittest.TestCase):
         soma = Branch.from_lengths(lengths=[20.0] * u.um, radii=[10.0, 10.0] * u.um, type="soma")
         dend = Branch.from_lengths(lengths=[60.0] * u.um, radii=[2.0, 1.0] * u.um, type="basal_dendrite")
         tree = Morpho.from_root(soma, name="soma")
-        branch = tree.soma[0.3, 1.0].attach(dend, name="dend")
+        branch = tree.soma[0.5, 1.0].attach(dend, name="dend")
 
         self.assertEqual(branch.name, "dend")
-        self.assertEqual(branch.parent_x, 0.3)
+        self.assertEqual(branch.parent_x, 0.5)
         self.assertEqual(branch.child_x, 1.0)
         self.assertEqual(tree.edges[0].child_x, 1.0)
 
@@ -76,16 +76,31 @@ class MorphoTest(unittest.TestCase):
         dend = Branch.from_lengths(lengths=[60.0] * u.um, radii=[2.0, 1.0] * u.um, type="basal_dendrite")
         tree = Morpho.from_root(soma, name="soma")
 
-        child0 = tree.soma[0.3, 0].attach(dend, name="d0")
+        child0 = tree.soma[0.0, 0].attach(dend, name="d0")
         child1 = tree.soma.attach(dend, name="d1", child_x=1.0)
 
+        self.assertEqual(child0.parent_x, 0.0)
         self.assertEqual(child0.child_x, 0.0)
+        self.assertEqual(child1.parent_x, 1.0)
         self.assertEqual(child1.child_x, 1.0)
+
+        midpoint = tree.soma.attach(dend, name="d_mid", parent_x=0.5)
+        self.assertEqual(midpoint.parent_x, 0.5)
+
+        for invalid in (0.2, 0.3, 0.4, 0.7, 0.9, -1, 2):
+            with self.subTest(parent_x=invalid):
+                with self.assertRaises(ValueError):
+                    tree.soma.attach(dend, parent_x=invalid)
 
         for invalid in (0.4, -1, 2):
             with self.subTest(child_x=invalid):
                 with self.assertRaises(ValueError):
                     tree.soma.attach(dend, child_x=invalid)
+
+        for invalid in (True, False):
+            with self.subTest(parent_x=invalid):
+                with self.assertRaises(TypeError):
+                    tree.soma.attach(dend, parent_x=invalid)
 
         for invalid in (True, False):
             with self.subTest(child_x=invalid):
@@ -162,6 +177,92 @@ class MorphoTest(unittest.TestCase):
             tree.branch(name="soma", order="type")
         with self.assertRaises(ValueError):
             tree.branches_by(order="unknown")
+
+    def test_summary_exposes_compact_tree_metrics(self) -> None:
+        soma = Branch.from_lengths(lengths=[20.0] * u.um, radii=[10.0, 10.0] * u.um, type="soma")
+        dend = Branch.from_lengths(lengths=[60.0] * u.um, radii=[2.0, 1.0] * u.um, type="basal_dendrite")
+
+        tree = Morpho.from_root(soma, name="soma")
+        tree.soma.dend = dend
+
+        summary = tree.summary()
+
+        self.assertEqual(summary["root_name"], "soma")
+        self.assertEqual(summary["root_type"], "soma")
+        self.assertEqual(summary["n_branches"], tree.n_branches)
+        self.assertEqual(summary["n_stems"], tree.n_stems)
+        self.assertEqual(summary["n_bifurcations"], tree.n_bifurcations)
+        self.assertEqual(summary["max_branch_order"], tree.max_branch_order)
+        self.assertEqual(summary["total_length"], tree.total_length)
+        self.assertEqual(summary["total_area"], tree.total_area)
+        self.assertEqual(summary["total_volume"], tree.total_volume)
+        self.assertEqual(summary["mean_radius"], tree.mean_radius)
+        self.assertFalse(summary["has_point_geometry"])
+        self.assertFalse(summary["has_full_point_geometry_for_distance_metrics"])
+
+    def test_summary_reports_point_geometry_capabilities(self) -> None:
+        soma = Branch.from_points(points=[(0.0, 0.0, 0.0), (10.0, 0.0, 0.0)] * u.um, radii=[5.0, 5.0] * u.um, type="soma")
+        dend = Branch.from_points(points=[(5.0, 0.0, 0.0), (5.0, 10.0, 0.0)] * u.um, radii=[2.0, 1.0] * u.um, type="basal_dendrite")
+
+        tree = Morpho.from_root(soma, name="soma")
+        tree.soma.main = dend
+
+        summary = tree.summary()
+
+        self.assertTrue(summary["has_point_geometry"])
+        self.assertTrue(summary["has_full_point_geometry_for_distance_metrics"])
+
+    def test_morpho_equality_compares_structure_and_geometry(self) -> None:
+        soma = Branch.from_lengths(lengths=[20.0] * u.um, radii=[10.0, 10.0] * u.um, type="soma")
+        dend = Branch.from_lengths(lengths=[60.0] * u.um, radii=[2.0, 1.0] * u.um, type="basal_dendrite")
+        axon = Branch.from_lengths(lengths=[40.0] * u.um, radii=[0.8, 0.4] * u.um, type="axon")
+
+        tree0 = Morpho.from_root(soma, name="soma")
+        tree0.soma.attach(dend, name="dend", parent_x=1.0)
+        tree0.attach(parent="soma", child_branch=axon, child_name="axon", parent_x=0.5, child_x=1.0)
+
+        tree1 = Morpho.from_root(soma, name="soma")
+        tree1.soma.dend = dend
+        tree1.soma[0.5, 1.0].axon = axon
+
+        self.assertEqual(tree0, tree1)
+
+        renamed = Morpho.from_root(soma, name="soma")
+        renamed.soma.attach(dend, name="d_other", parent_x=1.0)
+        renamed.soma[0.5, 1.0].axon = axon
+        self.assertNotEqual(tree0, renamed)
+
+        shifted = Morpho.from_root(soma, name="soma")
+        shifted.soma.attach(dend, name="dend", parent_x=0.0)
+        shifted.soma[0.5, 1.0].axon = axon
+        self.assertNotEqual(tree0, shifted)
+
+        other_geom = Morpho.from_root(soma, name="soma")
+        other_geom.soma.attach(
+            Branch.from_lengths(lengths=[61.0] * u.um, radii=[2.0, 1.0] * u.um, type="basal_dendrite"),
+            name="dend",
+            parent_x=1.0,
+        )
+        other_geom.soma[0.5, 1.0].axon = axon
+        self.assertNotEqual(tree0, other_geom)
+
+        self.assertFalse(tree0 == object())
+        with self.assertRaises(TypeError):
+            hash(tree0)
+
+    def test_parent_x_midpoint_is_soma_only(self) -> None:
+        soma = Branch.from_lengths(lengths=[20.0] * u.um, radii=[10.0, 10.0] * u.um, type="soma")
+        dend = Branch.from_lengths(lengths=[60.0] * u.um, radii=[2.0, 1.0] * u.um, type="basal_dendrite")
+        tuft = Branch.from_lengths(lengths=[30.0] * u.um, radii=[1.0, 0.6] * u.um, type="apical_dendrite")
+
+        tree = Morpho.from_root(soma, name="soma")
+        tree.soma.dend = dend
+
+        with self.assertRaises(ValueError):
+            tree.dend.attach(tuft, parent_x=0.5)
+
+        with self.assertRaises(ValueError):
+            tree.dend[0.5].attach(tuft, name="tuft")
 
     def test_metric_exposes_tree_level_metrics_with_compatible_shortcuts(self) -> None:
         soma = Branch.from_lengths(lengths=[20.0] * u.um, radii=[10.0, 10.0] * u.um, type="soma")

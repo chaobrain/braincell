@@ -92,6 +92,7 @@ class Morpho:
             parent_x=1.0,
             child_x=0.0,
         )
+    __hash__ = None
 
     @classmethod
     def from_root(cls, branch: Branch, *, name: str | None = "soma") -> "Morpho":
@@ -176,6 +177,22 @@ class Morpho:
 
     def path_to_root(self, branch_index: int) -> tuple[int, ...]:
         return self.metric.path_to_root(branch_index)
+
+    def summary(self) -> dict[str, object]:
+        return {
+            "root_name": self.root.name,
+            "root_type": self.root.type,
+            "n_branches": self.n_branches,
+            "n_stems": self.n_stems,
+            "n_bifurcations": self.n_bifurcations,
+            "max_branch_order": self.max_branch_order,
+            "total_length": self.total_length,
+            "total_area": self.total_area,
+            "total_volume": self.total_volume,
+            "mean_radius": self.mean_radius,
+            "has_point_geometry": any(branch.branch.points is not None for branch in self.branches),
+            "has_full_point_geometry_for_distance_metrics": self._has_full_point_geometry_for_distance_metrics(),
+        }
 
     def topo(self) -> str:
         """Return a line-oriented text view of the branch topology."""
@@ -287,6 +304,11 @@ class Morpho:
     def __len__(self) -> int:
         return len(self._nodes)
 
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, Morpho):
+            return NotImplemented
+        return self._eq_records() == other._eq_records()
+
     def __repr__(self) -> str:
         return f"Morpho(root={self._root_name!r}, branches={len(self)!r})"
 
@@ -341,9 +363,13 @@ class Morpho:
             return self._name_to_id[parent]
         raise TypeError("parent must be a branch name or MorphoBranch.")
 
-    def _validate_parent_x(self, parent_x: float) -> None:
-        if not 0.0 <= parent_x <= 1.0:
-            raise ValueError(f"parent_x must be within [0, 1], got {parent_x!r}.")
+    def _validate_parent_x(self, parent: "MorphoBranch", parent_x: float) -> None:
+        if isinstance(parent_x, bool):
+            raise TypeError(f"parent_x must be 0, 0.5, or 1, got {parent_x!r}.")
+        if parent_x not in (0, 0.0, 0.5, 1, 1.0):
+            raise ValueError(f"parent_x must be 0, 0.5, or 1, got {parent_x!r}.")
+        if float(parent_x) == 0.5 and parent.type != "soma":
+            raise ValueError("parent_x=0.5 is only allowed when the parent branch type is 'soma'.")
 
     def _validate_child_x(self, child_x: float) -> None:
         if isinstance(child_x, bool):
@@ -426,7 +452,7 @@ class Morpho:
             raise ValueError(
                 f"Parent branch {parent.name!r} already has a child named {resolved_name!r}."
             )
-        self._validate_parent_x(parent_x)
+        self._validate_parent_x(parent, parent_x)
         self._validate_child_x(child_x)
         node_id = self._register_node(
             name=resolved_name,
@@ -437,6 +463,28 @@ class Morpho:
         )
         parent._children[resolved_name] = node_id
         return self._get_node(node_id)
+
+    def _has_full_point_geometry_for_distance_metrics(self) -> bool:
+        root = self.root.branch
+        if root.points_proximal is None:
+            return False
+        return all(branch.branch.points_distal is not None for branch in self.branches if branch.n_children == 0)
+
+    def _eq_records(self) -> tuple[tuple[object, ...], ...]:
+        records = []
+        for branch in self.branches:
+            parent = branch.parent
+            records.append(
+                (
+                    branch.name,
+                    branch.branch,
+                    None if parent is None else parent.name,
+                    None if parent is None else float(branch.parent_x),
+                    None if parent is None else float(branch.child_x),
+                    tuple(child.name for child in branch.children),
+                )
+            )
+        return tuple(records)
 
     def _get_child(self, parent_id: int, child_name: str) -> "MorphoBranch":
         parent = self._get_node(parent_id)
@@ -568,7 +616,7 @@ class MorphoBranch:
 
 
 class _MorphAttachPoint:
-    """Internal helper for `tree.soma[0.3].dend = Branch(...)` syntax."""
+    """Internal helper for `tree.soma[0.5].dend = Branch(...)` syntax."""
 
     def __init__(self, parent: MorphoBranch, *, parent_x: float, child_x: float) -> None:
         object.__setattr__(self, "_parent", parent)
@@ -597,9 +645,13 @@ class _MorphAttachPoint:
 
 
 def _parse_attachment_key(key: object) -> tuple[float, float]:
+    if isinstance(key, bool):
+        raise TypeError(f"Attachment keys must be numeric, got {key!r}.")
     if isinstance(key, tuple):
         if len(key) != 2:
             raise ValueError("Attachment keys must be [parent_x] or [parent_x, child_x].")
+        if isinstance(key[0], bool) or isinstance(key[1], bool):
+            raise TypeError(f"Attachment keys must be numeric, got {key!r}.")
         parent_x = float(key[0])
         child_x = float(key[1])
         return parent_x, child_x

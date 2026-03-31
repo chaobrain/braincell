@@ -66,6 +66,16 @@ class Polyline2D:
 
 
 @dataclass(frozen=True)
+class Polygon2D:
+    branch_index: int
+    branch_name: str
+    branch_type: str
+    points_um: np.ndarray
+    color_rgb: tuple[int, int, int]
+    draw_order: int = 0
+
+
+@dataclass(frozen=True)
 class Circle2D:
     center_um: np.ndarray
     radius_um: float
@@ -90,6 +100,7 @@ class RenderScene3D:
 @dataclass(frozen=True)
 class RenderScene2D:
     polylines: tuple[Polyline2D, ...] = ()
+    polygons: tuple[Polygon2D, ...] = ()
     circles: tuple[Circle2D, ...] = ()
     labels: tuple[Label2D, ...] = ()
     draw_order: tuple[int, ...] = ()

@@ -40,6 +40,18 @@ class MatplotlibBackend:
             linewidth = max(float(np.mean(polyline.widths_um)), 0.5)
             ax.plot(polyline.points_um[:, 0], polyline.points_um[:, 1], color=color, linewidth=linewidth)
 
+        for polygon in scene.polygons:
+            color = tuple(channel / 255.0 for channel in polygon.color_rgb)
+            patch = plt.Polygon(
+                polygon.points_um,
+                closed=True,
+                facecolor=color,
+                edgecolor=color,
+                alpha=0.3,
+                linewidth=1.0,
+            )
+            ax.add_patch(patch)
+
         for circle in scene.circles:
             color = tuple(channel / 255.0 for channel in circle.color_rgb)
             patch = plt.Circle(circle.center_um, circle.radius_um, color=color, fill=False)
@@ -49,7 +61,44 @@ class MatplotlibBackend:
             color = tuple(channel / 255.0 for channel in label.color_rgb)
             ax.text(label.position_um[0], label.position_um[1], label.text, color=color)
 
+        _set_scene_limits(ax, scene)
         ax.set_aspect("equal", adjustable="datalim")
         if not self.show_axes:
             ax.axis("off")
         return ax
+
+
+def _set_scene_limits(ax, scene: RenderScene2D) -> None:
+    bounds: list[np.ndarray] = []
+
+    for polyline in scene.polylines:
+        if polyline.points_um.size:
+            bounds.append(np.asarray(polyline.points_um, dtype=float))
+
+    for polygon in scene.polygons:
+        if polygon.points_um.size:
+            bounds.append(np.asarray(polygon.points_um, dtype=float))
+
+    for circle in scene.circles:
+        center = np.asarray(circle.center_um, dtype=float)
+        radius = float(circle.radius_um)
+        bounds.append(
+            np.array(
+                [
+                    center + np.array([-radius, -radius], dtype=float),
+                    center + np.array([radius, radius], dtype=float),
+                ]
+            )
+        )
+
+    if not bounds:
+        return
+
+    all_points = np.vstack(bounds)
+    min_xy = np.min(all_points, axis=0)
+    max_xy = np.max(all_points, axis=0)
+    span_xy = max_xy - min_xy
+    padding_xy = np.maximum(span_xy * 0.05, 1.0)
+
+    ax.set_xlim(float(min_xy[0] - padding_xy[0]), float(max_xy[0] + padding_xy[0]))
+    ax.set_ylim(float(min_xy[1] - padding_xy[1]), float(max_xy[1] + padding_xy[1]))

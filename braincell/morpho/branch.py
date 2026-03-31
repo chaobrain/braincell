@@ -22,7 +22,7 @@ _ALLOWED_BRANCH_TYPES = {
 }
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, eq=False)
 class Branch:
     """An anatomical branch geometry with segment-wise cable properties.
 
@@ -37,6 +37,7 @@ class Branch:
     points_proximal: u.Quantity[u.um] | None = None
     points_distal: u.Quantity[u.um] | None = None
     type: str = "custom"
+    __hash__ = None
 
     def __post_init__(self) -> None:
         for name, kwargs in [
@@ -306,6 +307,30 @@ class Branch:
             np.asarray(self.lengths.to_decimal(u.um), dtype=float),
             np.asarray(self.radii_proximal.to_decimal(u.um), dtype=float),
             np.asarray(self.radii_distal.to_decimal(u.um), dtype=float),
+        )
+
+    @staticmethod
+    def _quantity_allclose(lhs, rhs) -> bool:
+        if lhs.shape != rhs.shape:
+            return False
+        return bool(u.math.allclose(lhs, rhs))
+
+    @classmethod
+    def _optional_quantity_allclose(cls, lhs, rhs) -> bool:
+        if lhs is None or rhs is None:
+            return lhs is None and rhs is None
+        return cls._quantity_allclose(lhs, rhs)
+
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, Branch):
+            return NotImplemented
+        return (
+            self.type == other.type
+            and self._quantity_allclose(self.lengths, other.lengths)
+            and self._quantity_allclose(self.radii_proximal, other.radii_proximal)
+            and self._quantity_allclose(self.radii_distal, other.radii_distal)
+            and self._optional_quantity_allclose(self.points_proximal, other.points_proximal)
+            and self._optional_quantity_allclose(self.points_distal, other.points_distal)
         )
 
     @property

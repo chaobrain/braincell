@@ -110,7 +110,7 @@ class Morpho:
     ):
         """Load a morphology from a SWC file through the reader pipeline."""
 
-        from ..io import SwcReader
+        from braincell.io import SwcReader
 
         reader = SwcReader() if options is None else SwcReader(options=options)
         return reader.read(path, return_report=return_report)
@@ -119,7 +119,7 @@ class Morpho:
     def from_asc(cls, path, *, return_report: bool = False):
         """Load a morphology from a Neurolucida ASC file through the reader pipeline."""
 
-        from ..io import AscReader
+        from braincell.io import AscReader
 
         return AscReader().read(path, return_report=return_report)
 
@@ -216,7 +216,7 @@ class Morpho:
         jupyter_backend: str | None = None,
         return_plotter: bool = False,
     ) -> object:
-        from ..vis.plot3d import plot3d
+        from braincell.vis.plot3d import plot3d
 
         return plot3d(
             self,
@@ -245,7 +245,7 @@ class Morpho:
         return_plotter: bool = False,
         projection_plane: str = "xy",
     ) -> object:
-        from ..vis.plot2d import plot2d
+        from braincell.vis.plot2d import plot2d
 
         return plot2d(
             self,
@@ -280,7 +280,20 @@ class Morpho:
         parent_x: float = 1.0,
         child_x: float = 0.0,
     ) -> "MorphoBranch":
-        """Attach a child branch to a named parent or parent branch view."""
+        """Attach a child branch to a named parent or parent branch view.
+
+        Args:
+            parent: Parent branch name or MorphoBranch instance
+            child_branch: Branch geometry to attach
+            child_name: Optional name for the child branch
+            parent_x: Attachment point on parent branch (0=proximal, 0.5=midpoint for soma only, 1=distal)
+            child_x: Attachment point on child branch (0=proximal, 1=distal)
+
+        Note:
+            parent_x=0 attaches to the proximal end of the parent branch. This is typically
+            used when the parent is itself a child branch and you want to attach at its
+            connection point rather than its distal end.
+        """
 
         parent_id = self._resolve_parent(parent)
         return self._insert_child(
@@ -340,8 +353,12 @@ class Morpho:
 
     def _path_node_ids(self, node_id: int) -> tuple[int, ...]:
         path = [node_id]
+        seen = {node_id}
         node = self._get_node(node_id)
         while node.parent_id is not None:
+            if node.parent_id in seen:
+                raise ValueError(f"Cycle detected in morphology tree at node {node_id}")
+            seen.add(node.parent_id)
             node = self._get_node(node.parent_id)
             path.append(node._node_id)
         return tuple(reversed(path))
@@ -571,7 +588,19 @@ class MorphoBranch:
         parent_x: float = 1.0,
         child_x: float = 0.0,
     ) -> "MorphoBranch":
-        """Attach a child explicitly from this branch."""
+        """Attach a child explicitly from this branch.
+
+        Args:
+            branch: Branch geometry to attach
+            name: Optional name for the child branch
+            parent_x: Attachment point on this branch (0=proximal, 0.5=midpoint for soma only, 1=distal)
+            child_x: Attachment point on child branch (0=proximal, 1=distal)
+
+        Note:
+            parent_x=0 attaches to the proximal end of this branch. This is typically
+            used when this branch is itself a child and you want to attach at its
+            connection point rather than its distal end.
+        """
 
         return self._owner.attach(
             parent=self,
@@ -654,5 +683,12 @@ def _parse_attachment_key(key: object) -> tuple[float, float]:
             raise TypeError(f"Attachment keys must be numeric, got {key!r}.")
         parent_x = float(key[0])
         child_x = float(key[1])
+        if parent_x not in (0, 0.0, 0.5, 1, 1.0):
+            raise ValueError(f"parent_x must be 0, 0.5, or 1, got {parent_x!r}.")
+        if child_x not in (0, 0.0, 1, 1.0):
+            raise ValueError(f"child_x must be 0 or 1, got {child_x!r}.")
         return parent_x, child_x
-    return float(key), 0.0
+    parent_x = float(key)
+    if parent_x not in (0, 0.0, 0.5, 1, 1.0):
+        raise ValueError(f"parent_x must be 0, 0.5, or 1, got {parent_x!r}.")
+    return parent_x, 0.0

@@ -37,7 +37,6 @@ class Branch:
     points_proximal: u.Quantity[u.um] | None = None
     points_distal: u.Quantity[u.um] | None = None
     type: str = "custom"
-    __hash__ = None
 
     def __post_init__(self) -> None:
         for name, kwargs in [

@@ -33,21 +33,21 @@ _MORPHO_METRIC_PROPERTY_NAMES = {
 }
 
 _MORPHO_RESERVED_NAMES = {
-    "attach",
-    "branch",
-    "branches",
-    "branches_by",
-    "edges",
-    "from_asc",
-    "from_root",
-    "from_swc",
-    "metric",
-    "path_to_root",
-    "root",
-    "select",
-    "vis2d",
-    "vis3d",
-} | _MORPHO_METRIC_PROPERTY_NAMES
+                             "attach",
+                             "branch",
+                             "branches",
+                             "branches_by",
+                             "edges",
+                             "from_asc",
+                             "from_root",
+                             "from_swc",
+                             "metric",
+                             "path_to_root",
+                             "root",
+                             "select",
+                             "vis2d",
+                             "vis3d",
+                         } | _MORPHO_METRIC_PROPERTY_NAMES
 _MORPHO_BRANCH_RESERVED_NAMES = {
     "attach",
     "branch",
@@ -92,7 +92,6 @@ class Morpho:
             parent_x=1.0,
             child_x=0.0,
         )
-    __hash__ = None
 
     @classmethod
     def from_root(cls, branch: Branch, *, name: str | None = "soma") -> "Morpho":
@@ -148,7 +147,6 @@ class Morpho:
     @property
     def metric(self) -> MorphMetrics:
         return MorphMetrics(self)
-
 
     def branches_by(self, *, order: str = "default") -> tuple["MorphoBranch", ...]:
         return tuple(self._get_node(node_id) for node_id in self._ordered_node_ids_by(order))
@@ -333,9 +331,11 @@ class Morpho:
         if order == "default":
             return ordered_ids
         if order == "type":
-            return tuple(sorted(ordered_ids, key=lambda node_id: (self._get_node(node_id).type, self._get_node(node_id).name)))
+            return tuple(
+                sorted(ordered_ids, key=lambda node_id: (self._get_node(node_id).type, self._get_node(node_id).name)))
         if order == "depth":
-            return tuple(sorted(ordered_ids, key=lambda node_id: (len(self._path_node_ids(node_id)), self._branch_index(node_id))))
+            return tuple(sorted(ordered_ids,
+                                key=lambda node_id: (len(self._path_node_ids(node_id)), self._branch_index(node_id))))
         raise ValueError(f"Unsupported branch order {order!r}.")
 
     def _branch_index_map(self, *, order: str = "default") -> dict[int, int]:

@@ -29,7 +29,7 @@ def dataclass_full_dict(obj):
 
     props = {
         k: getattr(obj, k)
-        for k in dir(obj)
+        for k in obj.__dict__
         if isinstance(getattr(type(obj), k, None), property)
     }
 

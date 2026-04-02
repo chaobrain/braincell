@@ -36,7 +36,7 @@ tree, report = Morpho.from_swc("file.swc", return_report=True)
 或者直接用 reader：
 
 ```python
-from braincell.io import SwcReader
+from braincell.io.swc import SwcReader
 
 reader = SwcReader()
 tree = reader.read("file.swc")

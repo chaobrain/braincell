@@ -14,7 +14,6 @@
 # ==============================================================================
 
 
-
 from numbers import Integral
 
 from braincell.filter import LocsetExpr, RegionExpr

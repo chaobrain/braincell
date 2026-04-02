@@ -20,7 +20,7 @@ from pathlib import Path
 
 import numpy as np
 
-from braincell._misc import u
+import brainunit as u
 from braincell.morpho.branch import Branch, branch_class_for_type
 from braincell.morpho.morpho import Morpho
 from .rules import apply_swc_rules, raise_for_swc_errors

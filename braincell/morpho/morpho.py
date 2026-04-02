@@ -314,7 +314,7 @@ class Morpho:
             ... )  # doctest: +SKIP
         """
 
-        from braincell.io import SwcReader
+        from braincell.io.swc import SwcReader
 
         reader = SwcReader() if options is None else SwcReader(options=options)
         return reader.read(path, return_report=return_report)
@@ -352,7 +352,7 @@ class Morpho:
             >>> morpho = Morpho.from_asc("neuron.asc")  # doctest: +SKIP
         """
 
-        from braincell.io import AscReader
+        from braincell.io.asc import AscReader
 
         return AscReader().read(path, return_report=return_report)
 

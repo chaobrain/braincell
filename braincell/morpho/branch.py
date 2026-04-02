@@ -794,6 +794,8 @@ class Soma(Branch):
     and the constructor automatically set ``type="soma"``; passing
     ``type`` explicitly raises :class:`TypeError`.
 
+    Equivalent to ``Branch(..., type="soma")``.
+
     See Also
     --------
     Branch : Base class with full documentation.
@@ -810,6 +812,8 @@ class Dendrite(Branch):
     Represents a generic dendrite segment. All factory methods
     and the constructor automatically set ``type="dendrite"``; passing
     ``type`` explicitly raises :class:`TypeError`.
+
+    Equivalent to ``Branch(..., type="dendrite")``.
 
     See Also
     --------
@@ -828,6 +832,8 @@ class Axon(Branch):
     automatically set ``type="axon"``; passing ``type`` explicitly
     raises :class:`TypeError`.
 
+    Equivalent to ``Branch(..., type="axon")``.
+
     See Also
     --------
     Branch : Base class with full documentation.
@@ -844,6 +850,8 @@ class BasalDendrite(Branch):
     Represents a basal dendrite segment. All factory methods and the
     constructor automatically set ``type="basal_dendrite"``; passing
     ``type`` explicitly raises :class:`TypeError`.
+
+    Equivalent to ``Branch(..., type="basal_dendrite")``.
 
     See Also
     --------
@@ -862,6 +870,8 @@ class ApicalDendrite(Branch):
     constructor automatically set ``type="apical_dendrite"``; passing
     ``type`` explicitly raises :class:`TypeError`.
 
+    Equivalent to ``Branch(..., type="apical_dendrite")``.
+
     See Also
     --------
     Branch : Base class with full documentation.
@@ -879,6 +889,8 @@ class CustomBranch(Branch):
     factory methods and the constructor automatically set
     ``type="custom"``; passing ``type`` explicitly raises
     :class:`TypeError`.
+
+    Equivalent to ``Branch(..., type="custom")``.
 
     See Also
     --------

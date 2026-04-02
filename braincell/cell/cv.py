@@ -14,14 +14,13 @@
 # ==============================================================================
 
 
-
 from dataclasses import dataclass
 from typing import Any
 from typing import TYPE_CHECKING
 
+import brainunit as u
 import numpy as np
 
-from braincell._misc import u
 from braincell.filter import RegionMask
 from braincell.mech import DensityMechanism
 from braincell.morpho import Branch

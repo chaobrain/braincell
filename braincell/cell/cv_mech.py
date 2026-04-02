@@ -14,13 +14,12 @@
 # ==============================================================================
 
 
-
 from dataclasses import dataclass
 from typing import Any
 
+import brainunit as u
 import numpy as np
 
-from braincell._misc import u
 from braincell.filter import AllRegion, LocsetExpr, RegionExpr
 from braincell.mech import (
     CableProperties,

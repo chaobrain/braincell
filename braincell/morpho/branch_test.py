@@ -14,11 +14,11 @@
 # ==============================================================================
 
 
-
 import math
 import unittest
-from braincell._test_support import FakeBackend, jnp, np, u
+
 from braincell import Branch
+from braincell._test_support import FakeBackend, jnp, np, u
 from braincell.vis import BackendChooser
 
 
@@ -142,15 +142,15 @@ class BranchTest(unittest.TestCase):
             type="axon",
         )
 
-        expected_area = math.pi * (2.0 + 1.0) * math.sqrt(10.0**2 + (1.0 - 2.0) ** 2)
-        expected_volume = math.pi * 10.0 * (2.0**2 + 2.0 * 1.0 + 1.0**2) / 3.0
+        expected_area = math.pi * (2.0 + 1.0) * math.sqrt(10.0 ** 2 + (1.0 - 2.0) ** 2)
+        expected_volume = math.pi * 10.0 * (2.0 ** 2 + 2.0 * 1.0 + 1.0 ** 2) / 3.0
 
         self.assertAlmostEqual(branch.length.to_decimal(u.um), 10.0)
         self.assertAlmostEqual(branch.mean_radius.to_decimal(u.um), 1.5)
-        self.assertAlmostEqual(float(branch.areas[0].to_decimal(u.um**2)), expected_area, places=5)
-        self.assertAlmostEqual(float(branch.area.to_decimal(u.um**2)), expected_area, places=5)
-        self.assertAlmostEqual(float(branch.volumes[0].to_decimal(u.um**3)), expected_volume, places=5)
-        self.assertAlmostEqual(float(branch.volume.to_decimal(u.um**3)), expected_volume, places=5)
+        self.assertAlmostEqual(float(branch.areas[0].to_decimal(u.um ** 2)), expected_area, places=5)
+        self.assertAlmostEqual(float(branch.area.to_decimal(u.um ** 2)), expected_area, places=5)
+        self.assertAlmostEqual(float(branch.volumes[0].to_decimal(u.um ** 3)), expected_volume, places=5)
+        self.assertAlmostEqual(float(branch.volume.to_decimal(u.um ** 3)), expected_volume, places=5)
         self.assertTrue(u.math.allclose(branch.area, u.math.sum(branch.areas)))
         self.assertTrue(u.math.allclose(branch.volume, u.math.sum(branch.volumes)))
 
@@ -163,8 +163,8 @@ class BranchTest(unittest.TestCase):
         )
 
         self.assertAlmostEqual(branch.length.to_decimal(u.um), 30.0)
-        self.assertAlmostEqual(float(branch.areas[1].to_decimal(u.um**2)), math.pi * (2.0**2 - 1.0**2), places=7)
-        self.assertAlmostEqual(float(branch.volumes[1].to_decimal(u.um**3)), 0.0, places=9)
+        self.assertAlmostEqual(float(branch.areas[1].to_decimal(u.um ** 2)), math.pi * (2.0 ** 2 - 1.0 ** 2), places=7)
+        self.assertAlmostEqual(float(branch.volumes[1].to_decimal(u.um ** 3)), 0.0, places=9)
         self.assertAlmostEqual(branch.mean_radius.to_decimal(u.um), 2.5)
 
     def test_branch_rejects_zero_total_length(self) -> None:
@@ -229,11 +229,14 @@ class BranchTest(unittest.TestCase):
 
     def test_branch_init_rejects_bad_shapes(self) -> None:
         with self.assertRaises(ValueError):
-            Branch(lengths=np.array([[[10.0], [20.0]]]) * u.um, radii_proximal=[2.0, 1.0] * u.um, radii_distal=[1.0, 0.5] * u.um, type="axon")
+            Branch(lengths=np.array([[[10.0], [20.0]]]) * u.um, radii_proximal=[2.0, 1.0] * u.um,
+                   radii_distal=[1.0, 0.5] * u.um, type="axon")
         with self.assertRaises(ValueError):
-            Branch(lengths=[10.0] * u.um, radii_proximal=np.array([[[2.0], [1.0]]]) * u.um, radii_distal=[1.0] * u.um, type="axon")
+            Branch(lengths=[10.0] * u.um, radii_proximal=np.array([[[2.0], [1.0]]]) * u.um, radii_distal=[1.0] * u.um,
+                   type="axon")
         with self.assertRaises(ValueError):
-            Branch(lengths=[10.0] * u.um, radii_proximal=[2.0] * u.um, radii_distal=np.array([[[1.0], [0.5]]]) * u.um, type="axon")
+            Branch(lengths=[10.0] * u.um, radii_proximal=[2.0] * u.um, radii_distal=np.array([[[1.0], [0.5]]]) * u.um,
+                   type="axon")
         with self.assertRaises(ValueError):
             Branch(
                 lengths=[10.0] * u.um,

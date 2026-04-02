@@ -14,8 +14,8 @@
 # ==============================================================================
 
 from .branch import Branch
-from .morpho import MorphoEdge, Morpho, MorphoBranch
 from .metrics import MorphMetrics
+from .morpho import MorphoEdge, Morpho, MorphoBranch
 
 __all__ = [
     "Branch",

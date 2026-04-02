@@ -23,8 +23,6 @@ User-facing entry points:
 In normal use, users only need `Morpho` and `MorphoBranch`.
 """
 
-
-
 from dataclasses import dataclass
 from typing import Callable, Optional, Union
 

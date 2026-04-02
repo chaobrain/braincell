@@ -14,12 +14,10 @@
 # ==============================================================================
 
 
-
 import unittest
 
-from braincell._test_support import np, u
-
 from braincell import Branch, Morpho, MorphoBranch
+from braincell._test_support import np, u
 
 
 class MorphoTest(unittest.TestCase):
@@ -216,8 +214,10 @@ class MorphoTest(unittest.TestCase):
         self.assertFalse(summary["has_full_point_geometry_for_distance_metrics"])
 
     def test_summary_reports_point_geometry_capabilities(self) -> None:
-        soma = Branch.from_points(points=[(0.0, 0.0, 0.0), (10.0, 0.0, 0.0)] * u.um, radii=[5.0, 5.0] * u.um, type="soma")
-        dend = Branch.from_points(points=[(5.0, 0.0, 0.0), (5.0, 10.0, 0.0)] * u.um, radii=[2.0, 1.0] * u.um, type="basal_dendrite")
+        soma = Branch.from_points(points=[(0.0, 0.0, 0.0), (10.0, 0.0, 0.0)] * u.um, radii=[5.0, 5.0] * u.um,
+                                  type="soma")
+        dend = Branch.from_points(points=[(5.0, 0.0, 0.0), (5.0, 10.0, 0.0)] * u.um, radii=[2.0, 1.0] * u.um,
+                                  type="basal_dendrite")
 
         tree = Morpho.from_root(soma, name="soma")
         tree.soma.main = dend
@@ -329,9 +329,12 @@ class MorphoTest(unittest.TestCase):
         )
 
     def test_metric_exposes_coordinate_ranges_for_point_geometries(self) -> None:
-        soma = Branch.from_points(points=[(0.0, 0.0, 0.0), (0.0, 10.0, 0.0)] * u.um, radii=[10.0, 10.0] * u.um, type="soma")
-        dend = Branch.from_points(points=[(0.0, 10.0, 0.0), (30.0, 5.0, -2.0)] * u.um, radii=[2.0, 1.0] * u.um, type="basal_dendrite")
-        tuft = Branch.from_points(points=[(0.0, 10.0, 0.0), (-7.0, 4.0, 9.0)] * u.um, radii=[2.0, 1.0] * u.um, type="apical_dendrite")
+        soma = Branch.from_points(points=[(0.0, 0.0, 0.0), (0.0, 10.0, 0.0)] * u.um, radii=[10.0, 10.0] * u.um,
+                                  type="soma")
+        dend = Branch.from_points(points=[(0.0, 10.0, 0.0), (30.0, 5.0, -2.0)] * u.um, radii=[2.0, 1.0] * u.um,
+                                  type="basal_dendrite")
+        tuft = Branch.from_points(points=[(0.0, 10.0, 0.0), (-7.0, 4.0, 9.0)] * u.um, radii=[2.0, 1.0] * u.um,
+                                  type="apical_dendrite")
 
         tree = Morpho.from_root(soma, name="soma")
         tree.soma.dend = dend
@@ -351,10 +354,14 @@ class MorphoTest(unittest.TestCase):
         self.assertEqual(tree.z_range.to_decimal(u.um), 11.0)
 
     def test_metric_exposes_neuromorpho_distance_metrics(self) -> None:
-        soma = Branch.from_points(points=[(0.0, 0.0, 0.0), (10.0, 0.0, 0.0)] * u.um, radii=[5.0, 5.0] * u.um, type="soma")
-        main = Branch.from_points(points=[(5.0, 0.0, 0.0), (5.0, 10.0, 0.0)] * u.um, radii=[2.0, 1.5] * u.um, type="basal_dendrite")
-        tuft = Branch.from_points(points=[(5.0, 10.0, 0.0), (5.0, 20.0, 0.0)] * u.um, radii=[1.5, 1.0] * u.um, type="apical_dendrite")
-        side = Branch.from_points(points=[(10.0, 0.0, 0.0), (12.0, 0.0, 0.0)] * u.um, radii=[1.0, 0.8] * u.um, type="axon")
+        soma = Branch.from_points(points=[(0.0, 0.0, 0.0), (10.0, 0.0, 0.0)] * u.um, radii=[5.0, 5.0] * u.um,
+                                  type="soma")
+        main = Branch.from_points(points=[(5.0, 0.0, 0.0), (5.0, 10.0, 0.0)] * u.um, radii=[2.0, 1.5] * u.um,
+                                  type="basal_dendrite")
+        tuft = Branch.from_points(points=[(5.0, 10.0, 0.0), (5.0, 20.0, 0.0)] * u.um, radii=[1.5, 1.0] * u.um,
+                                  type="apical_dendrite")
+        side = Branch.from_points(points=[(10.0, 0.0, 0.0), (12.0, 0.0, 0.0)] * u.um, radii=[1.0, 0.8] * u.um,
+                                  type="axon")
 
         tree = Morpho.from_root(soma, name="soma")
         tree.soma.attach(main, name="main", parent_x=0.5)

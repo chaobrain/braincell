@@ -13,7 +13,7 @@
 # limitations under the License.
 # ==============================================================================
 
-from __future__ import annotations
+
 
 from .backend import BackendChooser, validate_backend_for_scene
 from .scene import OverlaySpec, RenderRequest

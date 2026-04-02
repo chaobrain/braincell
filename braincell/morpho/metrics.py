@@ -13,7 +13,7 @@
 # limitations under the License.
 # ==============================================================================
 
-from __future__ import annotations
+
 
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
@@ -28,7 +28,7 @@ if TYPE_CHECKING:
 
 @dataclass(frozen=True)
 class MorphMetrics:
-    morpho: Morpho
+    morpho: 'Morpho'
 
     def _all_segment_arrays_um(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         lengths = []

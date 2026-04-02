@@ -15,7 +15,7 @@
 
 """Immutable geometry primitives for the layered architecture."""
 
-from __future__ import annotations
+
 
 import warnings
 from dataclasses import dataclass

@@ -13,7 +13,7 @@
 # limitations under the License.
 # ==============================================================================
 
-from __future__ import annotations
+
 
 from dataclasses import dataclass
 from typing import Any
@@ -109,7 +109,7 @@ class CV:
         )
 
 
-def assemble_cv(*, cv_geo: CVGeo, mech: CVMech) -> CV:
+def assemble_cv(*, cv_geo: CVGeo, mech: 'CVMech') -> CV:
     return CV(
         id=cv_geo.id,
         branch_id=cv_geo.branch_id,

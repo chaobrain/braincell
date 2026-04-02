@@ -15,7 +15,7 @@
 
 """Shared unit-normalization helpers for explicit `brainunit` inputs."""
 
-from __future__ import annotations
+
 
 from typing import Any
 

@@ -24,7 +24,7 @@ The script sweeps over a Cartesian grid of simulation settings and reports
 per-case + aggregated errors for selected observables.
 """
 
-from __future__ import annotations
+
 
 import argparse
 import csv

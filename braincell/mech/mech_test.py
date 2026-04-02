@@ -14,10 +14,9 @@
 # ==============================================================================
 
 
-
 import unittest
 
-from braincell._test_support import u
+import brainunit as u
 
 from braincell import CableProperties, CurrentClamp
 from braincell.mech.point import GapJunctionMechanism, ProbeMechanism, SynapseMechanism
@@ -27,12 +26,12 @@ class MechanismTest(unittest.TestCase):
     def test_cable_properties_store_quantity_fields(self) -> None:
         cable = CableProperties(
             resting_potential=-65.0 * u.mV,
-            membrane_capacitance=1.0 * (u.uF / u.cm**2),
+            membrane_capacitance=1.0 * (u.uF / u.cm ** 2),
             axial_resistivity=100.0 * (u.ohm * u.cm),
         )
 
         self.assertEqual(cable.resting_potential.to_decimal(u.mV), -65.0)
-        self.assertEqual(cable.membrane_capacitance.to_decimal(u.uF / u.cm**2), 1.0)
+        self.assertEqual(cable.membrane_capacitance.to_decimal(u.uF / u.cm ** 2), 1.0)
         self.assertEqual(cable.axial_resistivity.to_decimal(u.ohm * u.cm), 100.0)
         self.assertAlmostEqual(
             cable.temperature.to_decimal(u.kelvin),

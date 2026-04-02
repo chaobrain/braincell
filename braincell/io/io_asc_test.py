@@ -68,7 +68,7 @@ class AscReaderTest(unittest.TestCase):
         self.assertEqual(tree.root.type, "soma")
         self.assertEqual(len(tree.branches), 4)
         self.assertEqual(tree.root.n_children, 1)
-        self.assertEqual(tree.branch(index=1).type, "dend")
+        self.assertEqual(tree.branch(index=1).type, "dendrite")
         self.assertEqual(tree.branch(index=1).parent_x, 0.5)
         self.assertEqual(tree.branch(index=1).n_children, 2)
         self.assertEqual(tree.branch(index=2).parent_x, 1.0)

@@ -29,10 +29,8 @@ VALID_SWC_FIXTURES = ("grc.swc", "io.swc")
 ALLOWED_TYPES = {
     "soma",
     "axon",
-    "dend",
-    "basal_dend",
+    "dendrite",
     "basal_dendrite",
-    "apical_dend",
     "apical_dendrite",
     "custom",
 }

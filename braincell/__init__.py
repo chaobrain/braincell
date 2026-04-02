@@ -33,30 +33,39 @@ from .filter import LocsetExpr, RegionExpr, SelectionCache
 from .io import AscIssue, AscMetadata, AscReader, AscReport, NeuroMlReader, SwcIssue, SwcReadOptions, SwcReader, SwcReport
 from .mech import CableProperties, CurrentClamp, DensityMechanism, PointMechanism, ProbeMechanism
 from .mech import channel, ion, synapse
-from .morpho import Branch, MorphoEdge, Morpho, MorphoBranch
+from .morpho import (
+    ApicalDendrite,
+    Axon,
+    BasalDendrite,
+    Branch,
+    CustomBranch,
+    Dendrite,
+    MorphoEdge,
+    Morpho,
+    MorphoBranch,
+    Soma,
+    branch_class_for_type,
+)
 from .quad import *
 
-_neuron_deprecations = {
-    'SingleCompartment': (
-        f"braincell.neuron.SingleCompartment has been moved "
-        f"into braincell.SingleCompartment",
-        SingleCompartment
-    ),
-}
 
 __all__ = [
+    "ApicalDendrite",
     "AscReader",
     "AscIssue",
     "AscMetadata",
     "AscReport",
+    "Axon",
+    "BasalDendrite",
     "Branch",
-    "MorphoEdge",
     "CableProperties",
     "Cell",
     "Channel",
     "CurrentClamp",
-    "DensityMechanism",
+    "CustomBranch",
     "CVPolicy",
+    "Dendrite",
+    "DensityMechanism",
     "HHTypedNeuron",
     "Ion",
     "IonChannel",
@@ -65,16 +74,19 @@ __all__ = [
     "MixIons",
     "Morpho",
     "MorphoBranch",
+    "MorphoEdge",
     "NeuroMlReader",
     "PointMechanism",
     "ProbeMechanism",
     "RegionExpr",
     "SelectionCache",
     "SingleCompartment",
+    "Soma",
     "SwcIssue",
     "SwcReadOptions",
     "SwcReader",
     "SwcReport",
+    "branch_class_for_type",
     "channel",
     "ion",
     "mix_ions",

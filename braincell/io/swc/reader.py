@@ -21,7 +21,7 @@ from pathlib import Path
 import numpy as np
 
 from braincell._misc import u
-from braincell.morpho.branch import Branch
+from braincell.morpho.branch import Branch, branch_class_for_type
 from braincell.morpho.morpho import Morpho
 from .rules import apply_swc_rules, raise_for_swc_errors
 from .soma import (
@@ -355,7 +355,7 @@ class SwcReader:
         if branch.override_points is not None and branch.override_radii is not None:
             points = np.array(branch.override_points, dtype=float) * u.um
             radii = np.array(branch.override_radii, dtype=float) * u.um
-            return Branch.from_points(points=points, radii=radii, type=branch.branch_type)
+            return branch_class_for_type(branch.branch_type).from_points(points=points, radii=radii)
 
         point_ids = list(branch.point_ids)
         points = [row_point(nodes[node_id]) for node_id in point_ids]
@@ -379,10 +379,9 @@ class SwcReader:
             elif np.allclose(points[0], attach_point):
                 radii[0] = attach_radius_for_child
 
-        return Branch.from_points(
+        return branch_class_for_type(branch.branch_type).from_points(
             points=np.array(points, dtype=float) * u.um,
             radii=np.array(radii, dtype=float) * u.um,
-            type=branch.branch_type,
         )
 
     def _attachment_x(

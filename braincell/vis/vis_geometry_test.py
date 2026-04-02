@@ -37,7 +37,7 @@ def _length_only_tree() -> Morpho:
         type="apical_dendrite",
     )
     tree = Morpho.from_root(soma, name="soma")
-    tree.attach(parent="soma", child_branch=dend, child_name="dend", parent_x=1.0)
+    tree.attach(parent="soma", child_branch=dend, child_name="dendrite", parent_x=1.0)
     return tree
 
 
@@ -86,7 +86,7 @@ class VisGeometryTest(unittest.TestCase):
         self.assertEqual(len(layouts), 2)
         self.assertTrue(np.allclose(layouts[0].segment_points_um[0], np.array([0.0, 0.0])))
         self.assertAlmostEqual(layouts[0].total_length_um, layouts[1].total_length_um)
-        expected_radius_um = float(tree.branch(name="dend").mean_radius.to_decimal(u.um))
+        expected_radius_um = float(tree.branch(name="dendrite").mean_radius.to_decimal(u.um))
         self.assertAlmostEqual(float(layouts[1].radii_proximal_um[0]), expected_radius_um)
 
     def test_frustum_scene_builds_polygon_per_segment(self) -> None:
@@ -99,7 +99,7 @@ class VisGeometryTest(unittest.TestCase):
         root_polygon = scene.polygons[0]
         self.assertEqual(root_polygon.points_um.shape, (4, 2))
 
-        child_polygons = [polygon for polygon in scene.polygons if polygon.branch_name == "dend"]
+        child_polygons = [polygon for polygon in scene.polygons if polygon.branch_name == "dendrite"]
         first_child = child_polygons[0]
         start_midpoint = 0.5 * (first_child.points_um[0] + first_child.points_um[3])
         end_midpoint = 0.5 * (first_child.points_um[1] + first_child.points_um[2])

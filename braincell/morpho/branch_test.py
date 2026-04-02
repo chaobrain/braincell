@@ -472,7 +472,7 @@ class BranchTest(unittest.TestCase):
         branch = Branch.from_lengths(
             lengths=[10.0, 15.0] * u.um,
             radii=[2.0, 1.5, 1.0] * u.um,
-            type="dend",
+            type="dendrite",
         )
         backend = FakeBackend()
         request = branch.vis2d(mode="frustum", show=False, chooser=BackendChooser(backends=(backend,)))

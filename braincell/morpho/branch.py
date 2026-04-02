@@ -17,6 +17,7 @@
 
 import warnings
 from dataclasses import dataclass
+from typing import ClassVar
 
 import brainunit as u
 import numpy as np
@@ -25,14 +26,14 @@ from braincell._misc import normalize_param
 
 _ALLOWED_BRANCH_TYPES = {
     "soma",
-    "dend",
+    "dendrite",
     "axon",
-    "basal_dend",
     "basal_dendrite",
-    "apical_dend",
     "apical_dendrite",
     "custom",
 }
+
+_UNSET = object()
 
 
 @dataclass(frozen=True, eq=False)
@@ -71,9 +72,9 @@ class Branch:
         Must be provided together with *points_proximal* or both set to
         ``None``.
     type : str
-        Anatomical branch type.  One of ``"soma"``, ``"dend"``, ``"axon"``,
-        ``"basal_dend"``, ``"basal_dendrite"``, ``"apical_dend"``,
-        ``"apical_dendrite"``, or ``"custom"`` (default).
+        Anatomical branch type.  One of ``"soma"``, ``"dendrite"``,
+        ``"axon"``, ``"basal_dendrite"``, ``"apical_dendrite"``,
+        or ``"custom"`` (default).
 
     Raises
     ------
@@ -115,7 +116,7 @@ class Branch:
         >>> b = Branch.from_lengths(
         ...     lengths=[10.0, 15.0, 20.0] * u.um,
         ...     radii=[3.0, 2.5, 2.0, 1.5] * u.um,
-        ...     type="dend",
+        ...     type="dendrite",
         ... )
         >>> b.n_segments
         3
@@ -144,6 +145,8 @@ class Branch:
     points_distal: u.Quantity[u.um] | None = None
     type: str = "custom"
 
+    _BRANCH_TYPE: ClassVar[str | None] = None
+
     def __post_init__(self) -> None:
         for name, kwargs in [
             ("lengths", {"unit": u.um, "shape": (None,), "bounds": {"ge": 0 * u.um}}),
@@ -154,6 +157,12 @@ class Branch:
         ]:
             object.__setattr__(self, name, normalize_param(getattr(self, name), name=name, **kwargs))
 
+        expected_type = type(self)._BRANCH_TYPE
+        if expected_type is not None and self.type != expected_type:
+            raise TypeError(
+                f"{type(self).__name__} requires type={expected_type!r}, got {self.type!r}. "
+                f"Do not pass the 'type' parameter when constructing {type(self).__name__}."
+            )
         if self.type not in _ALLOWED_BRANCH_TYPES:
             raise ValueError(f"type must be one of {sorted(_ALLOWED_BRANCH_TYPES)!r}, got {self.type!r}.")
         if self.lengths.shape[0] == 0:
@@ -190,7 +199,7 @@ class Branch:
         radii: u.Quantity[u.um] | None = None,
         radii_proximal: u.Quantity[u.um] | None = None,
         radii_distal: u.Quantity[u.um] | None = None,
-        type: str = "custom",
+        type: str = _UNSET,
     ) -> "Branch":
         """Create a branch from segment lengths and radii.
 
@@ -208,7 +217,8 @@ class Branch:
             Distal radius of each segment, shape ``(n_segments,)``.
             Must be provided together with *radii_proximal*.
         type : str
-            Branch type (default ``"custom"``).
+            Branch type (default ``"custom"``).  Not accepted by typed
+            subclasses such as :class:`Soma`, :class:`Dendrite`, etc.
 
         Returns
         -------
@@ -220,6 +230,7 @@ class Branch:
         TypeError
             If neither *radii* nor the pair (*radii_proximal*, *radii_distal*)
             is provided, or if both are provided simultaneously.
+            Also raised if *type* is passed to a typed subclass.
         ValueError
             If array shapes are inconsistent or radius discontinuities exist.
 
@@ -237,11 +248,20 @@ class Branch:
             >>> b = Branch.from_lengths(
             ...     lengths=[10.0, 20.0] * u.um,
             ...     radii=[2.0, 1.5, 1.0] * u.um,
-            ...     type="dend",
+            ...     type="dendrite",
             ... )
             >>> b.n_segments
             2
         """
+        if cls._BRANCH_TYPE is not None:
+            if type is not _UNSET:
+                raise TypeError(
+                    f"{cls.__name__}.from_lengths() does not accept 'type'. "
+                    f"The type is fixed to {cls._BRANCH_TYPE!r}."
+                )
+            type = cls._BRANCH_TYPE
+        elif type is _UNSET:
+            type = "custom"
         lengths = normalize_param(lengths, name="lengths", unit=u.um, shape=(None,), bounds={"ge": 0 * u.um})
         radii_proximal, radii_distal = cls._resolve_radius_inputs(
             "from_lengths",
@@ -272,7 +292,7 @@ class Branch:
         radii: u.Quantity[u.um] | None = None,
         radii_proximal: u.Quantity[u.um] | None = None,
         radii_distal: u.Quantity[u.um] | None = None,
-        type: str = "custom",
+        type: str = _UNSET,
     ) -> "Branch":
         """Create a branch from ordered 3-D point coordinates.
 
@@ -295,7 +315,8 @@ class Branch:
             Distal radius of each segment, shape ``(n_points - 1,)``.
             Must be provided together with *radii_proximal*.
         type : str
-            Branch type (default ``"custom"``).
+            Branch type (default ``"custom"``).  Not accepted by typed
+            subclasses such as :class:`Soma`, :class:`Dendrite`, etc.
 
         Returns
         -------
@@ -307,6 +328,7 @@ class Branch:
         TypeError
             If neither *radii* nor the pair (*radii_proximal*, *radii_distal*)
             is provided, or if both are provided simultaneously.
+            Also raised if *type* is passed to a typed subclass.
         ValueError
             If *points* has fewer than two rows or array shapes are
             inconsistent.
@@ -339,6 +361,15 @@ class Branch:
             >>> b.points.shape
             (3, 3)
         """
+        if cls._BRANCH_TYPE is not None:
+            if type is not _UNSET:
+                raise TypeError(
+                    f"{cls.__name__}.from_points() does not accept 'type'. "
+                    f"The type is fixed to {cls._BRANCH_TYPE!r}."
+                )
+            type = cls._BRANCH_TYPE
+        elif type is _UNSET:
+            type = "custom"
         points = normalize_param(points, name="points", unit=u.um, shape=(None, 3))
         if points.shape[0] < 2:
             raise ValueError("from_points() requires at least two points.")
@@ -726,7 +757,7 @@ class Branch:
             >>> branch = Branch.from_lengths(
             ...     lengths=[10.0, 15.0, 20.0] * u.um,
             ...     radii=[3.0, 2.5, 2.0, 1.5] * u.um,
-            ...     type="dend",
+            ...     type="dendrite",
             ... )
             >>> branch.vis2d()  # doctest: +SKIP
         """
@@ -750,6 +781,147 @@ class Branch:
 
     def __repr__(self) -> str:
         return (
-            f"Branch(type={self.type!r}, n_segments={self.n_segments!r}, "
+            f"{type(self).__name__}(type={self.type!r}, n_segments={self.n_segments!r}, "
             f"length={self.length!r}, area={self.area!r})"
         )
+
+
+@dataclass(frozen=True, eq=False, repr=False)
+class Soma(Branch):
+    """A :class:`Branch` with type fixed to ``"soma"``.
+
+    Represents the cell body (soma) of a neuron. All factory methods
+    and the constructor automatically set ``type="soma"``; passing
+    ``type`` explicitly raises :class:`TypeError`.
+
+    See Also
+    --------
+    Branch : Base class with full documentation.
+    """
+
+    _BRANCH_TYPE: ClassVar[str] = "soma"
+    type: str = "soma"
+
+
+@dataclass(frozen=True, eq=False, repr=False)
+class Dendrite(Branch):
+    """A :class:`Branch` with type fixed to ``"dendrite"``.
+
+    Represents a generic dendrite segment. All factory methods
+    and the constructor automatically set ``type="dendrite"``; passing
+    ``type`` explicitly raises :class:`TypeError`.
+
+    See Also
+    --------
+    Branch : Base class with full documentation.
+    """
+
+    _BRANCH_TYPE: ClassVar[str] = "dendrite"
+    type: str = "dendrite"
+
+
+@dataclass(frozen=True, eq=False, repr=False)
+class Axon(Branch):
+    """A :class:`Branch` with type fixed to ``"axon"``.
+
+    Represents an axon segment. All factory methods and the constructor
+    automatically set ``type="axon"``; passing ``type`` explicitly
+    raises :class:`TypeError`.
+
+    See Also
+    --------
+    Branch : Base class with full documentation.
+    """
+
+    _BRANCH_TYPE: ClassVar[str] = "axon"
+    type: str = "axon"
+
+
+@dataclass(frozen=True, eq=False, repr=False)
+class BasalDendrite(Branch):
+    """A :class:`Branch` with type fixed to ``"basal_dendrite"``.
+
+    Represents a basal dendrite segment. All factory methods and the
+    constructor automatically set ``type="basal_dendrite"``; passing
+    ``type`` explicitly raises :class:`TypeError`.
+
+    See Also
+    --------
+    Branch : Base class with full documentation.
+    """
+
+    _BRANCH_TYPE: ClassVar[str] = "basal_dendrite"
+    type: str = "basal_dendrite"
+
+
+@dataclass(frozen=True, eq=False, repr=False)
+class ApicalDendrite(Branch):
+    """A :class:`Branch` with type fixed to ``"apical_dendrite"``.
+
+    Represents an apical dendrite segment. All factory methods and the
+    constructor automatically set ``type="apical_dendrite"``; passing
+    ``type`` explicitly raises :class:`TypeError`.
+
+    See Also
+    --------
+    Branch : Base class with full documentation.
+    """
+
+    _BRANCH_TYPE: ClassVar[str] = "apical_dendrite"
+    type: str = "apical_dendrite"
+
+
+@dataclass(frozen=True, eq=False, repr=False)
+class CustomBranch(Branch):
+    """A :class:`Branch` with type fixed to ``"custom"``.
+
+    Represents a branch with unspecified anatomical identity. All
+    factory methods and the constructor automatically set
+    ``type="custom"``; passing ``type`` explicitly raises
+    :class:`TypeError`.
+
+    See Also
+    --------
+    Branch : Base class with full documentation.
+    """
+
+    _BRANCH_TYPE: ClassVar[str] = "custom"
+    type: str = "custom"
+
+
+_BRANCH_TYPE_TO_CLASS: dict[str, type[Branch]] = {
+    "soma": Soma,
+    "dendrite": Dendrite,
+    "axon": Axon,
+    "basal_dendrite": BasalDendrite,
+    "apical_dendrite": ApicalDendrite,
+    "custom": CustomBranch,
+}
+
+
+def branch_class_for_type(branch_type: str) -> type[Branch]:
+    """Return the :class:`Branch` subclass for the given type string.
+
+    Parameters
+    ----------
+    branch_type : str
+        One of the allowed branch type strings (e.g. ``"soma"``,
+        ``"dendrite"``, ``"axon"``).
+
+    Returns
+    -------
+    type[Branch]
+        The corresponding subclass.
+
+    Raises
+    ------
+    ValueError
+        If *branch_type* is not a recognised branch type.
+    """
+    cls = _BRANCH_TYPE_TO_CLASS.get(branch_type)
+    if cls is None:
+        raise ValueError(
+            f"Unknown branch type {branch_type!r}. "
+            f"Allowed types: {sorted(_BRANCH_TYPE_TO_CLASS)!r}."
+        )
+    return cls

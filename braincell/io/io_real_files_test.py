@@ -23,10 +23,8 @@ FIXTURE_DIR = Path(__file__).resolve().parent / "morpho_files"
 ALLOWED_TYPES = {
     "soma",
     "axon",
-    "dend",
-    "basal_dend",
+    "dendrite",
     "basal_dendrite",
-    "apical_dend",
     "apical_dendrite",
     "custom",
 }

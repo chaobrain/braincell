@@ -31,7 +31,7 @@ class MorphoTest(unittest.TestCase):
         axon = Branch.from_lengths(lengths=[40.0] * u.um, radii=[0.8, 0.4] * u.um, type="axon")
 
         tree = Morpho.from_root(soma, name="soma")
-        dend_view = tree.soma.attach(dend, name="dend", parent_x=1.0)
+        dend_view = tree.soma.attach(dend, name="dendrite", parent_x=1.0)
         axon_view = tree.attach(parent=tree.soma, child_branch=axon, child_name=None, parent_x=0.5, child_x=1.0)
         tree.soma.extra = Branch.from_lengths(
             lengths=[30.0] * u.um,
@@ -46,9 +46,9 @@ class MorphoTest(unittest.TestCase):
         self.assertEqual(dend_view.parent_id, 0)
         self.assertEqual(dend_view.parent_x, 1.0)
         self.assertEqual(axon_view.child_x, 1.0)
-        self.assertEqual(tree.branch(index=1).name, "dend")
+        self.assertEqual(tree.branch(index=1).name, "dendrite")
         self.assertEqual(tree.branch(name="axon_0").parent.name, "soma")
-        self.assertEqual(tree.soma.dend.name, "dend")
+        self.assertEqual(tree.soma.dendrite.name, "dendrite")
         self.assertEqual(tree.soma.type, "soma")
         self.assertEqual(tree.soma.axon_0.name, "axon_0")
         self.assertEqual(tree.soma.n_children, 3)
@@ -66,7 +66,7 @@ class MorphoTest(unittest.TestCase):
             "\n".join(
                 (
                     "soma",
-                    "├── dend",
+                    "├── dendrite",
                     "├── axon_0",
                     "└── extra",
                 )
@@ -77,9 +77,9 @@ class MorphoTest(unittest.TestCase):
         soma = Branch.from_lengths(lengths=[20.0] * u.um, radii=[10.0, 10.0] * u.um, type="soma")
         dend = Branch.from_lengths(lengths=[60.0] * u.um, radii=[2.0, 1.0] * u.um, type="basal_dendrite")
         tree = Morpho.from_root(soma, name="soma")
-        branch = tree.soma[0.5, 1.0].attach(dend, name="dend")
+        branch = tree.soma[0.5, 1.0].attach(dend, name="dendrite")
 
-        self.assertEqual(branch.name, "dend")
+        self.assertEqual(branch.name, "dendrite")
         self.assertEqual(branch.parent_x, 0.5)
         self.assertEqual(branch.child_x, 1.0)
         self.assertEqual(tree.edges[0].child_x, 1.0)
@@ -145,16 +145,16 @@ class MorphoTest(unittest.TestCase):
 
     def test_auto_names_apply_only_when_explicit_name_is_missing(self) -> None:
         soma = Branch.from_lengths(lengths=[20.0] * u.um, radii=[10.0, 10.0] * u.um, type="soma")
-        dend = Branch.from_lengths(lengths=[60.0] * u.um, radii=[2.0, 1.0] * u.um, type="dend")
+        dend = Branch.from_lengths(lengths=[60.0] * u.um, radii=[2.0, 1.0] * u.um, type="dendrite")
 
         tree = Morpho.from_root(soma, name="soma")
         explicit = tree.soma.attach(dend, name="first")
         auto0 = tree.soma.attach(dend)
-        auto1 = tree.soma.attach(Branch.from_lengths(lengths=[60.0] * u.um, radii=[2.0, 1.0] * u.um, type="dend"))
+        auto1 = tree.soma.attach(Branch.from_lengths(lengths=[60.0] * u.um, radii=[2.0, 1.0] * u.um, type="dendrite"))
 
         self.assertEqual(explicit.name, "first")
-        self.assertEqual(auto0.name, "dend_0")
-        self.assertEqual(auto1.name, "dend_1")
+        self.assertEqual(auto0.name, "dendrite_0")
+        self.assertEqual(auto1.name, "dendrite_1")
 
     def test_root_can_opt_into_type_based_auto_naming(self) -> None:
         axon = Branch.from_lengths(lengths=[40.0] * u.um, radii=[0.8, 0.4] * u.um, type="axon")
@@ -233,11 +233,11 @@ class MorphoTest(unittest.TestCase):
         axon = Branch.from_lengths(lengths=[40.0] * u.um, radii=[0.8, 0.4] * u.um, type="axon")
 
         tree0 = Morpho.from_root(soma, name="soma")
-        tree0.soma.attach(dend, name="dend", parent_x=1.0)
+        tree0.soma.attach(dend, name="dendrite", parent_x=1.0)
         tree0.attach(parent="soma", child_branch=axon, child_name="axon", parent_x=0.5, child_x=1.0)
 
         tree1 = Morpho.from_root(soma, name="soma")
-        tree1.soma.dend = dend
+        tree1.soma.dendrite = dend
         tree1.soma[0.5, 1.0].axon = axon
 
         self.assertEqual(tree0, tree1)
@@ -248,14 +248,14 @@ class MorphoTest(unittest.TestCase):
         self.assertNotEqual(tree0, renamed)
 
         shifted = Morpho.from_root(soma, name="soma")
-        shifted.soma.attach(dend, name="dend", parent_x=0.0)
+        shifted.soma.attach(dend, name="dendrite", parent_x=0.0)
         shifted.soma[0.5, 1.0].axon = axon
         self.assertNotEqual(tree0, shifted)
 
         other_geom = Morpho.from_root(soma, name="soma")
         other_geom.soma.attach(
             Branch.from_lengths(lengths=[61.0] * u.um, radii=[2.0, 1.0] * u.um, type="basal_dendrite"),
-            name="dend",
+            name="dendrite",
             parent_x=1.0,
         )
         other_geom.soma[0.5, 1.0].axon = axon

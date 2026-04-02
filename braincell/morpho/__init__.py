@@ -13,14 +13,30 @@
 # limitations under the License.
 # ==============================================================================
 
-from .branch import Branch
+from .branch import (
+    ApicalDendrite,
+    Axon,
+    BasalDendrite,
+    Branch,
+    CustomBranch,
+    Dendrite,
+    Soma,
+    branch_class_for_type,
+)
 from .metrics import MorphMetrics
 from .morpho import MorphoEdge, Morpho, MorphoBranch
 
 __all__ = [
+    "ApicalDendrite",
+    "Axon",
+    "BasalDendrite",
     "Branch",
+    "CustomBranch",
+    "Dendrite",
     "MorphoEdge",
     "Morpho",
     "MorphoBranch",
     "MorphMetrics",
+    "Soma",
+    "branch_class_for_type",
 ]

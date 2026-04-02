@@ -14,11 +14,10 @@
 # ==============================================================================
 
 
-
 from dataclasses import dataclass
 from typing import Any, Union
 
-from .._misc import u
+import brainunit as u
 
 
 @dataclass(frozen=True)

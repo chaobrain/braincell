@@ -24,12 +24,13 @@ from .types import AscMetadata, AscReport
 from ..swc.types import MIN_SYNTHETIC_LENGTH_UM
 from ..._misc import u
 from ...morpho import Branch, Morpho, MorphoBranch
+from ...morpho.branch import Soma, branch_class_for_type
 
 _PIPE = object()
 _NEURITE_TYPE_MAP = {
     "axon": "axon",
-    "dendrite": "dend",
-    "dend": "dend",
+    "dendrite": "dendrite",
+    "dend": "dendrite",
     "apical": "apical_dendrite",
     "apicaldendrite": "apical_dendrite",
     "apicaldend": "apical_dendrite",
@@ -464,10 +465,9 @@ class AscReader:
         if float(np.sum(lengths_um)) <= 0.0:
             return None
 
-        return Branch.from_points(
+        return branch_class_for_type(segment.branch_type).from_points(
             points=np.asarray(points, dtype=float) * u.um,
             radii=np.asarray(radii, dtype=float) * u.um,
-            type=segment.branch_type,
         )
 
     def _dedupe_shared_points(
@@ -522,7 +522,7 @@ class AscReader:
         offset = np.array([radius, 0.0, 0.0], dtype=float)
         points = np.array((center - offset, center, center + offset), dtype=float) * u.um
         radii = np.array((radius, radius, radius), dtype=float) * u.um
-        return Branch.from_points(points=points, radii=radii, type="soma")
+        return Soma.from_points(points=points, radii=radii)
 
     def _collect_metadata(self, expr: object, metadata: AscMetadata) -> None:
         if isinstance(expr, str):

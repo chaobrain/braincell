@@ -25,11 +25,9 @@ from braincell.morpho import Morpho
 ALLEN_RGB_BY_TYPE = {
     "soma": (0, 0, 0),
     "axon": (70, 130, 180),
-    "basal_dend": (178, 34, 34),
     "basal_dendrite": (178, 34, 34),
-    "apical_dend": (255, 127, 80),
     "apical_dendrite": (255, 127, 80),
-    "dend": (205, 92, 92),
+    "dendrite": (205, 92, 92),
     "custom": (110, 110, 110),
 }
 

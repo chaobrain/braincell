@@ -17,6 +17,7 @@
 
 from typing import Union, Callable
 
+import brainpy 
 import brainstate
 import braintools
 import brainunit as u
@@ -28,7 +29,7 @@ __all__ = [
 ]
 
 
-class AMPA(brainstate.nn.Synapse):
+class AMPA(brainpy.state.Synapse):
     """
     AMPA synapse model class.
 
@@ -89,7 +90,7 @@ class AMPA(brainstate.nn.Synapse):
         return self.g.value
 
 
-class GABAa(brainstate.nn.Synapse):
+class GABAa(brainpy.state.Synapse):
     """
     GABAa synapse model class.
 
@@ -150,7 +151,7 @@ class GABAa(brainstate.nn.Synapse):
         return self.g.value
 
 
-class NMDA(brainstate.nn.Synapse):
+class NMDA(brainpy.state.Synapse):
     """
     NMDA synapse model class.
 

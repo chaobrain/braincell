@@ -46,7 +46,7 @@ def _length_only_tree() -> Morpho:
         type="apical_dendrite",
     )
     tree = Morpho.from_root(soma, name="soma")
-    tree.attach(parent="soma", child_branch=dend, child_name="dend", parent_x=1.0)
+    tree.attach(parent="soma", child_branch=dend, child_name="dendrite", parent_x=1.0)
     return tree
 
 

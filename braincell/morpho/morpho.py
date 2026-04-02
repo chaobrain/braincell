@@ -123,7 +123,7 @@ class MorphoEdge:
         >>> dend = Branch.from_lengths(
         ...     lengths=[50.0] * u.um,
         ...     radii=[2.0, 1.0] * u.um,
-        ...     type="dend",
+        ...     type="dendrite",
         ... )
         >>> morpho = Morpho.from_root(soma, name="soma")
         >>> morpho.soma.dend = dend
@@ -201,7 +201,7 @@ class Morpho:
         >>> dend = Branch.from_lengths(
         ...     lengths=[50.0, 40.0] * u.um,
         ...     radii=[2.0, 1.5, 1.0] * u.um,
-        ...     type="dend",
+        ...     type="dendrite",
         ... )
         >>> morpho = Morpho.from_root(soma, name="soma")
         >>> morpho.soma.dend = dend
@@ -935,7 +935,7 @@ class Morpho:
         .. code-block:: python
 
             >>> from braincell.filter import branch_in
-            >>> region = morpho.select(branch_in("type", "dend"))  # doctest: +SKIP
+            >>> region = morpho.select(branch_in("type", "dendrite"))  # doctest: +SKIP
         """
         from braincell.filter import LocsetExpr, RegionExpr
 
@@ -1009,7 +1009,7 @@ class Morpho:
             >>> dend = Branch.from_lengths(
             ...     lengths=[50.0] * u.um,
             ...     radii=[2.0, 1.0] * u.um,
-            ...     type="dend",
+            ...     type="dendrite",
             ... )
             >>> morpho = Morpho.from_root(soma, name="soma")
             >>> child = morpho.attach(
@@ -1322,7 +1322,7 @@ class MorphoBranch:
         >>> dend = Branch.from_lengths(
         ...     lengths=[50.0] * u.um,
         ...     radii=[2.0, 1.0] * u.um,
-        ...     type="dend",
+        ...     type="dendrite",
         ... )
         >>> morpho = Morpho.from_root(soma, name="soma")
         >>> morpho.soma.dend = dend

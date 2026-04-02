@@ -63,7 +63,7 @@ class MorphMetrics:
         >>> dend = Branch.from_lengths(
         ...     lengths=[50.0, 40.0] * u.um,
         ...     radii=[2.0, 1.5, 1.0] * u.um,
-        ...     type="dend",
+        ...     type="dendrite",
         ... )
         >>> morpho = Morpho.from_root(soma, name="soma")
         >>> morpho.soma.dend = dend

@@ -14,15 +14,13 @@
 # ==============================================================================
 
 
-
 from dataclasses import dataclass, field
-import math
 from os import PathLike
 from pathlib import Path
 
 import numpy as np
 
-from braincell._units import u
+from braincell._misc import u
 from braincell.morpho.branch import Branch
 from braincell.morpho.morpho import Morpho
 from .rules import apply_swc_rules, raise_for_swc_errors
@@ -141,7 +139,8 @@ class SwcReader:
             root_side_child_ids: tuple[int, ...] = tuple()
 
             child_ids = children[current_id]
-            same_type_child_ids = [child_id for child_id in child_ids if map_swc_type_code(nodes[child_id].type_code) == root_type]
+            same_type_child_ids = [child_id for child_id in child_ids if
+                                   map_swc_type_code(nodes[child_id].type_code) == root_type]
             if len(child_ids) != 1 and same_type_child_ids:
                 main_child_id = same_type_child_ids[0]
                 point_ids.append(main_child_id)
@@ -403,7 +402,8 @@ class SwcReader:
         if len(parent_points) == 1:
             return 1.0
         attach_idx = parent_branch.point_ids.index(attach.node_id)
-        lengths = [np.linalg.norm(parent_points[index + 1] - parent_points[index]) for index in range(len(parent_points) - 1)]
+        lengths = [np.linalg.norm(parent_points[index + 1] - parent_points[index]) for index in
+                   range(len(parent_points) - 1)]
         total = sum(lengths)
         if total <= 0.0:
             return 1.0
@@ -501,7 +501,8 @@ class SwcReader:
             for child_id in children[soma_id]:
                 if map_swc_type_code(nodes[child_id].type_code) == "soma":
                     continue
-                child_tasks.append((_SwcAttach(node_id=soma_id, parent_x=self._section_attach_x(soma_ids, soma_id)), child_id, 0))
+                child_tasks.append(
+                    (_SwcAttach(node_id=soma_id, parent_x=self._section_attach_x(soma_ids, soma_id)), child_id, 0))
         return (
             _SwcBranch(
                 point_ids=soma_ids,

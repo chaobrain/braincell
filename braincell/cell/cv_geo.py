@@ -20,7 +20,7 @@ from typing import Any
 
 import numpy as np
 
-from braincell._units import u
+from braincell._misc import u
 from braincell.morpho import Branch, Morpho
 
 Quantity = Any

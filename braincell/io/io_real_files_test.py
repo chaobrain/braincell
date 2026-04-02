@@ -14,12 +14,10 @@
 # ==============================================================================
 
 
-
 import unittest
 from pathlib import Path
 
 from braincell import AscReader, Morpho, SwcReader
-
 
 FIXTURE_DIR = Path(__file__).resolve().parent / "morpho_files"
 ALLOWED_TYPES = {

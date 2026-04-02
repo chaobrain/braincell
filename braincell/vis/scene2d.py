@@ -14,15 +14,12 @@
 # ==============================================================================
 
 
-
 import numpy as np
 
-from braincell._units import u
+from braincell._misc import u
 from braincell.morpho import Morpho
-
 from .layout2d import build_layout_branches_2d
 from .scene import Polygon2D, Polyline2D, RenderScene2D, color_for_branch_type
-
 
 _PROJECTION_AXES = {
     "xy": (0, 1),

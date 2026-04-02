@@ -16,7 +16,7 @@
 
 
 from dataclasses import dataclass
-from .._units import u
+from .._misc import u
 
 
 @dataclass(frozen=True)

@@ -14,15 +14,13 @@
 # ==============================================================================
 
 
-
 import tempfile
 import textwrap
 import unittest
 from pathlib import Path
 
-from braincell._test_support import np, u
-
 from braincell import Morpho, SwcReadOptions, SwcReader
+from braincell._test_support import np, u
 from braincell.io.swc.soma import is_contour_soma, is_special_three_point_soma
 from braincell.io.swc.types import _SwcAttach, _SwcBranch, _SwcRow
 

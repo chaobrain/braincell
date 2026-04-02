@@ -23,7 +23,7 @@ from dataclasses import dataclass
 import numpy as np
 
 import brainunit as u
-from braincell._units import normalize_param
+from braincell._misc import normalize_param
 
 _ALLOWED_BRANCH_TYPES = {
     "soma",

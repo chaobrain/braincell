@@ -14,10 +14,8 @@
 # ==============================================================================
 
 
-
 from dataclasses import dataclass, field
 from pathlib import Path
-
 
 SWC_TYPE_MAP = {
     0: "custom",

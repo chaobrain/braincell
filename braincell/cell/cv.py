@@ -21,7 +21,7 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
-from braincell._units import u
+from braincell._misc import u
 from braincell.filter import RegionMask
 from braincell.mech import DensityMechanism
 from braincell.morpho import Branch

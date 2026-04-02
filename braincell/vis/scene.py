@@ -14,17 +14,13 @@
 # ==============================================================================
 
 
-
 from dataclasses import dataclass, field
-from typing import Any
 
 import numpy as np
+from brainstate.typing import ArrayLike
 
 from braincell.filter import LocsetMask, RegionMask
 from braincell.morpho import Morpho
-
-from brainstate.typing import ArrayLike
-
 
 ALLEN_RGB_BY_TYPE = {
     "soma": (0, 0, 0),

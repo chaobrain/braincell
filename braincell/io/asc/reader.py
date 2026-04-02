@@ -14,16 +14,16 @@
 # ==============================================================================
 
 
-
 from dataclasses import dataclass
 from os import PathLike
 from pathlib import Path
+
 import numpy as np
 
-from ..._units import u
-from ...morpho import Branch, Morpho, MorphoBranch
-from ..swc.types import MIN_SYNTHETIC_LENGTH_UM
 from .types import AscMetadata, AscReport
+from ..swc.types import MIN_SYNTHETIC_LENGTH_UM
+from ..._misc import u
+from ...morpho import Branch, Morpho, MorphoBranch
 
 _PIPE = object()
 _NEURITE_TYPE_MAP = {
@@ -114,11 +114,11 @@ class AscReader:
             if char == ";":
                 end = text.find("\n", index)
                 if end == -1:
-                    comment = text[index + 1 :].strip()
+                    comment = text[index + 1:].strip()
                     if comment:
                         metadata.comments.append(comment)
                     break
-                comment = text[index + 1 : end].strip()
+                comment = text[index + 1: end].strip()
                 if comment:
                     metadata.comments.append(comment)
                 index = end
@@ -143,7 +143,7 @@ class AscReader:
                     end += 1
                 if end >= len(text):
                     raise ValueError(f"Unterminated string literal at line {line_number}.")
-                tokens.append(_AscToken("string", text[index + 1 : end], line_number))
+                tokens.append(_AscToken("string", text[index + 1: end], line_number))
                 index = end + 1
                 continue
 
@@ -350,7 +350,8 @@ class AscReader:
                 raise ValueError(f"ASC import failed for {path}: no geometry points were found.")
             center = first_point.xyz
             radius = max(float(first_point.radius), MIN_SYNTHETIC_LENGTH_UM)
-            report.add_warning("topology.synthetic_soma", "ASC file has no CellBody contour; synthesized a soma from the first neurite root point.")
+            report.add_warning("topology.synthetic_soma",
+                               "ASC file has no CellBody contour; synthesized a soma from the first neurite root point.")
 
         soma_branch = self._synthetic_soma_branch(center=center, radius=radius)
         morpho = Morpho.from_root(soma_branch, name="soma")

@@ -18,7 +18,7 @@
 from dataclasses import dataclass
 from typing import Any, Union
 
-from .._units import u
+from .._misc import u
 
 
 @dataclass(frozen=True)

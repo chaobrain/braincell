@@ -14,14 +14,12 @@
 # ==============================================================================
 
 
-
 from collections import OrderedDict
 
 import numpy as np
 
-from braincell._units import u
+from braincell._misc import u
 from braincell.morpho import Morpho
-
 from .scene import BranchPolyline3D, BranchTypeBatch3D, RenderScene3D, color_for_branch_type
 
 

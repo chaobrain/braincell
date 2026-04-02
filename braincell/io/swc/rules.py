@@ -14,11 +14,10 @@
 # ==============================================================================
 
 
-
 from pathlib import Path
 
 from .soma import is_contour_soma
-from .types import SWC_TYPE_MAP, SwcReport, _SwcContext, _SwcRawRow, _SwcRow
+from .types import SWC_TYPE_MAP, SwcReport, _SwcContext, _SwcRow
 
 
 def apply_swc_rules(context: _SwcContext) -> None:

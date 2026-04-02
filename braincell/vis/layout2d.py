@@ -14,15 +14,13 @@
 # ==============================================================================
 
 
-
 import math
 from dataclasses import dataclass
 
 import numpy as np
 
-from braincell._units import u
+from braincell._misc import u
 from braincell.morpho import Morpho, MorphoBranch
-
 
 _ROOT_CHILD_SPAN_RAD = math.radians(120.0)
 

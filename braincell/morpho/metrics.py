@@ -28,6 +28,53 @@ if TYPE_CHECKING:
 
 @dataclass(frozen=True)
 class MorphMetrics:
+    """Compute geometric and topological metrics on a morphology tree.
+
+    ``MorphMetrics`` is a frozen dataclass that wraps a
+    :class:`~braincell.morpho.Morpho` instance and exposes
+    whole-morphology scalar measurements as properties.  It is typically
+    accessed through :attr:`Morpho.metric` rather than constructed
+    directly.
+
+    All length-based quantities are returned as ``brainunit`` values in
+    micrometres (``u.um``).
+
+    Parameters
+    ----------
+    morpho : Morpho
+        The morphology tree to measure.
+
+    See Also
+    --------
+    Morpho.metric : Convenience accessor that creates a ``MorphMetrics``.
+    Morpho.summary : Dictionary of key metrics for quick inspection.
+
+    Examples
+    --------
+
+    .. code-block:: python
+
+        >>> import brainunit as u
+        >>> from braincell import Branch, Morpho
+        >>> soma = Branch.from_lengths(
+        ...     lengths=[20.0] * u.um,
+        ...     radii=[10.0, 10.0] * u.um,
+        ...     type="soma",
+        ... )
+        >>> dend = Branch.from_lengths(
+        ...     lengths=[50.0, 40.0] * u.um,
+        ...     radii=[2.0, 1.5, 1.0] * u.um,
+        ...     type="dend",
+        ... )
+        >>> morpho = Morpho.from_root(soma, name="soma")
+        >>> morpho.soma.dend = dend
+        >>> m = morpho.metric
+        >>> m.n_branches
+        2
+        >>> m.n_stems
+        1
+    """
+
     morpho: 'Morpho'
 
     def _all_segment_arrays_um(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -86,11 +133,30 @@ class MorphMetrics:
 
     @property
     def total_length(self) -> Quantity:
+        """Total length of all segments across the entire morphology.
+
+        Returns
+        -------
+        Quantity[u.um]
+            Sum of all segment lengths.
+        """
         lengths_um, _, _ = self._all_segment_arrays_um()
         return u.Quantity(np.sum(lengths_um), u.um)
 
     @property
     def mean_radius(self) -> Quantity:
+        """Length-weighted mean radius across the entire morphology.
+
+        Returns
+        -------
+        Quantity[u.um]
+            Average radius weighted by segment length.
+
+        Raises
+        ------
+        ValueError
+            If total morphology length is zero.
+        """
         lengths_um, r0_um, r1_um = self._all_segment_arrays_um()
         total_length_um = float(np.sum(lengths_um))
         if total_length_um <= 0.0:
@@ -100,46 +166,146 @@ class MorphMetrics:
 
     @property
     def total_area(self) -> Quantity:
+        """Total lateral surface area across the entire morphology.
+
+        Uses the frustum formula per segment.
+
+        Returns
+        -------
+        Quantity[u.um ** 2]
+            Total surface area.
+        """
         lengths_um, r0_um, r1_um = self._all_segment_arrays_um()
         value = np.sum(np.pi * (r0_um + r1_um) * np.sqrt(lengths_um * lengths_um + (r1_um - r0_um) * (r1_um - r0_um)))
         return u.Quantity(value, u.um ** 2)
 
     @property
     def total_volume(self) -> Quantity:
+        """Total volume across the entire morphology.
+
+        Uses the frustum formula per segment.
+
+        Returns
+        -------
+        Quantity[u.um ** 3]
+            Total volume.
+        """
         lengths_um, r0_um, r1_um = self._all_segment_arrays_um()
         value = np.sum(np.pi * lengths_um * (r0_um * r0_um + r0_um * r1_um + r1_um * r1_um) / 3.0)
         return u.Quantity(value, u.um ** 3)
 
     @property
     def n_branches(self) -> int:
+        """Total number of branches in the morphology.
+
+        Returns
+        -------
+        int
+            Branch count (including root).
+        """
         return len(self.morpho.branches)
 
     @property
     def n_stems(self) -> int:
+        """Number of stem branches (direct children of the root).
+
+        Returns
+        -------
+        int
+            Count of root's children.
+        """
         return self.morpho.root.n_children
 
     @property
     def n_bifurcations(self) -> int:
+        """Number of bifurcation points in the morphology.
+
+        A branch counts as a bifurcation if it has two or more children.
+
+        Returns
+        -------
+        int
+            Count of branches with ``n_children >= 2``.
+        """
         return sum(branch.n_children >= 2 for branch in self.morpho.branches)
 
     @property
     def x_range(self) -> Quantity:
+        """Extent of the morphology along the x-axis.
+
+        Returns
+        -------
+        Quantity[u.um]
+            ``max(x) - min(x)`` across all branch points.
+
+        Raises
+        ------
+        ValueError
+            If the morphology has no point geometry.
+        """
         return self._axis_range(axis=0)
 
     @property
     def y_range(self) -> Quantity:
+        """Extent of the morphology along the y-axis.
+
+        Returns
+        -------
+        Quantity[u.um]
+            ``max(y) - min(y)`` across all branch points.
+
+        Raises
+        ------
+        ValueError
+            If the morphology has no point geometry.
+        """
         return self._axis_range(axis=1)
 
     @property
     def z_range(self) -> Quantity:
+        """Extent of the morphology along the z-axis.
+
+        Returns
+        -------
+        Quantity[u.um]
+            ``max(z) - min(z)`` across all branch points.
+
+        Raises
+        ------
+        ValueError
+            If the morphology has no point geometry.
+        """
         return self._axis_range(axis=2)
 
     @property
     def max_branch_order(self) -> int:
+        """Maximum branch order (depth) in the morphology tree.
+
+        The branch order of the root is 0; each edge traversed toward a
+        terminal adds 1.
+
+        Returns
+        -------
+        int
+            Longest root-to-branch path length in edges.
+        """
         return max(len(self.morpho._path_node_ids(branch._node_id)) - 1 for branch in self.morpho.branches)
 
     @property
     def max_euclidean_distance(self) -> Quantity:
+        """Maximum straight-line distance from root to any terminal tip.
+
+        Returns
+        -------
+        Quantity[u.um]
+            Largest Euclidean distance between the root's first proximal
+            point and the last distal point of every terminal branch.
+
+        Raises
+        ------
+        ValueError
+            If the root or any terminal branch lacks 3-D point geometry.
+        """
         tip_points = []
         for branch_index in self._terminal_branch_indices():
             branch = self.morpho.branch(index=branch_index).branch
@@ -157,6 +323,16 @@ class MorphMetrics:
 
     @property
     def max_path_distance(self) -> Quantity:
+        """Maximum path distance from root to any terminal tip.
+
+        Path distance is the sum of segment lengths traversed along the
+        tree from the root attachment point to a terminal branch tip.
+
+        Returns
+        -------
+        Quantity[u.um]
+            Longest cumulative path length to any terminal.
+        """
         terminal_branch_indices = self._terminal_branch_indices()
         if not terminal_branch_indices:
             return u.Quantity(0.0, u.um)
@@ -181,6 +357,19 @@ class MorphMetrics:
         return u.Quantity(coords.max() - coords.min(), u.um)
 
     def path_to_root(self, branch_index: int) -> tuple[int, ...]:
+        """Return the ordered path of branch indices from root to a given branch.
+
+        Parameters
+        ----------
+        branch_index : int
+            Index of the target branch in default ordering.
+
+        Returns
+        -------
+        tuple of int
+            Sequence of branch indices starting at the root and ending at
+            *branch_index*.
+        """
         node_id = self.morpho._node_id_from_index(branch_index)
         return tuple(
             self.morpho._branch_index(path_node_id)
@@ -188,6 +377,25 @@ class MorphMetrics:
         )
 
     def path_length_to_root(self, branch_index: int) -> Quantity:
+        """Return the path length from a branch to the root.
+
+        .. note:: Not yet implemented.
+
+        Parameters
+        ----------
+        branch_index : int
+            Index of the target branch in default ordering.
+
+        Returns
+        -------
+        Quantity[u.um]
+            Cumulative segment length along the path to root.
+
+        Raises
+        ------
+        NotImplementedError
+            Always, until implemented.
+        """
         raise NotImplementedError
 
     def shortest_path_length(
@@ -195,4 +403,28 @@ class MorphMetrics:
         from_site: tuple[int, float],
         to_site: tuple[int, float],
     ) -> Quantity:
+        """Return the shortest path length between two sites on the tree.
+
+        A site is a ``(branch_index, position)`` pair where *position*
+        is a fractional location along the branch (0 = proximal, 1 = distal).
+
+        .. note:: Not yet implemented.
+
+        Parameters
+        ----------
+        from_site : tuple of (int, float)
+            Start site as ``(branch_index, position)``.
+        to_site : tuple of (int, float)
+            End site as ``(branch_index, position)``.
+
+        Returns
+        -------
+        Quantity[u.um]
+            Shortest path length through the tree between the two sites.
+
+        Raises
+        ------
+        NotImplementedError
+            Always, until implemented.
+        """
         raise NotImplementedError

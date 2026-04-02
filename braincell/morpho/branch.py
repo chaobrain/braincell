@@ -39,11 +39,104 @@ _ALLOWED_BRANCH_TYPES = {
 
 @dataclass(frozen=True, eq=False)
 class Branch:
-    """An anatomical branch geometry with segment-wise cable properties.
+    """Immutable geometry primitive representing an anatomical branch.
 
-    All geometric quantities are stored as `brainunit` values and normalized to
-    `u.um` internally. Callers must supply explicit-unit quantities; bare
-    numeric inputs are rejected.
+    A ``Branch`` stores segment-wise cable properties — lengths, proximal and
+    distal radii, and optional 3-D point coordinates — for one contiguous
+    stretch of neuronal morphology (soma, dendrite, axon, etc.).
+
+    All geometric quantities are stored as ``brainunit`` values and normalised
+    to ``u.um`` internally.  Bare numeric inputs are **rejected** with
+    ``TypeError``; every value must carry explicit units.
+
+    Branches are **frozen dataclasses**: once constructed their geometry
+    cannot be changed.  Use :class:`~braincell.morpho.Morpho` to compose
+    branches into a mutable morphology tree.
+
+    Parameters
+    ----------
+    lengths : Quantity[u.um]
+        Per-segment lengths, shape ``(n_segments,)``.  Each value must be
+        ``>= 0``; the total must be ``> 0``.
+    radii_proximal : Quantity[u.um]
+        Proximal radius of each segment, shape ``(n_segments,)``.
+        Must be ``> 0``.
+    radii_distal : Quantity[u.um]
+        Distal radius of each segment, shape ``(n_segments,)``.
+        Must be ``> 0``.
+    points_proximal : Quantity[u.um] or None
+        Proximal 3-D endpoint of each segment, shape ``(n_segments, 3)``.
+        Must be provided together with *points_distal* or both set to
+        ``None``.
+    points_distal : Quantity[u.um] or None
+        Distal 3-D endpoint of each segment, shape ``(n_segments, 3)``.
+        Must be provided together with *points_proximal* or both set to
+        ``None``.
+    type : str
+        Anatomical branch type.  One of ``"soma"``, ``"dend"``, ``"axon"``,
+        ``"basal_dend"``, ``"basal_dendrite"``, ``"apical_dend"``,
+        ``"apical_dendrite"``, or ``"custom"`` (default).
+
+    Raises
+    ------
+    TypeError
+        If any geometric input is a bare number without ``brainunit`` units.
+    ValueError
+        If *lengths* is empty, total length is zero, array shapes are
+        inconsistent, *type* is not in the allowed set, or point-derived
+        lengths do not match *lengths*.
+
+    See Also
+    --------
+    Branch.from_lengths : Preferred constructor from segment lengths.
+    Branch.from_points : Preferred constructor from 3-D point sequences.
+    Morpho : Mutable morphology tree that owns branches.
+
+    Notes
+    -----
+    Prefer the factory classmethods :meth:`from_lengths` and
+    :meth:`from_points` over the raw constructor.  The factories handle
+    shared-radius expansion and automatically insert zero-length jump
+    segments at radius discontinuities between adjacent segments.
+
+    Each segment is modelled as a truncated cone (frustum).  Surface areas
+    are computed with the lateral-surface formula
+    :math:`A = \\pi (r_0 + r_1) \\sqrt{L^2 + (r_1 - r_0)^2}`
+    and volumes with the frustum formula
+    :math:`V = \\frac{\\pi L}{3} (r_0^2 + r_0 r_1 + r_1^2)`.
+
+    Examples
+    --------
+
+    Create a branch from segment lengths and shared radii:
+
+    .. code-block:: python
+
+        >>> import brainunit as u
+        >>> from braincell import Branch
+        >>> b = Branch.from_lengths(
+        ...     lengths=[10.0, 15.0, 20.0] * u.um,
+        ...     radii=[3.0, 2.5, 2.0, 1.5] * u.um,
+        ...     type="dend",
+        ... )
+        >>> b.n_segments
+        3
+        >>> b.length
+        45.0 * umetre
+
+    Create a branch from 3-D coordinates:
+
+    .. code-block:: python
+
+        >>> import numpy as np
+        >>> pts = np.array([[0, 0, 0], [10, 0, 0], [10, 20, 0]]) * u.um
+        >>> b = Branch.from_points(
+        ...     points=pts,
+        ...     radii=[2.0, 1.5, 1.0] * u.um,
+        ...     type="axon",
+        ... )
+        >>> b.points is not None
+        True
     """
 
     lengths: u.Quantity[u.um]
@@ -101,6 +194,56 @@ class Branch:
         radii_distal: u.Quantity[u.um] | None = None,
         type: str = "custom",
     ) -> "Branch":
+        """Create a branch from segment lengths and radii.
+
+        Parameters
+        ----------
+        lengths : Quantity[u.um]
+            Per-segment lengths, shape ``(n_segments,)``.
+        radii : Quantity[u.um] or None
+            Shared radii at segment boundaries, shape ``(n_segments + 1,)``.
+            Mutually exclusive with *radii_proximal* and *radii_distal*.
+        radii_proximal : Quantity[u.um] or None
+            Proximal radius of each segment, shape ``(n_segments,)``.
+            Must be provided together with *radii_distal*.
+        radii_distal : Quantity[u.um] or None
+            Distal radius of each segment, shape ``(n_segments,)``.
+            Must be provided together with *radii_proximal*.
+        type : str
+            Branch type (default ``"custom"``).
+
+        Returns
+        -------
+        Branch
+            New branch with no 3-D point geometry.
+
+        Raises
+        ------
+        TypeError
+            If neither *radii* nor the pair (*radii_proximal*, *radii_distal*)
+            is provided, or if both are provided simultaneously.
+        ValueError
+            If array shapes are inconsistent or radius discontinuities exist.
+
+        See Also
+        --------
+        from_points : Create a branch from 3-D point coordinates.
+
+        Examples
+        --------
+
+        .. code-block:: python
+
+            >>> import brainunit as u
+            >>> from braincell import Branch
+            >>> b = Branch.from_lengths(
+            ...     lengths=[10.0, 20.0] * u.um,
+            ...     radii=[2.0, 1.5, 1.0] * u.um,
+            ...     type="dend",
+            ... )
+            >>> b.n_segments
+            2
+        """
         lengths = normalize_param(lengths, name="lengths", unit=u.um, shape=(None,), bounds={"ge": 0 * u.um})
         radii_proximal, radii_distal = cls._resolve_radius_inputs(
             "from_lengths",
@@ -133,6 +276,71 @@ class Branch:
         radii_distal: u.Quantity[u.um] | None = None,
         type: str = "custom",
     ) -> "Branch":
+        """Create a branch from ordered 3-D point coordinates.
+
+        Segment lengths are computed automatically from consecutive point
+        distances.  Warns if any pair of consecutive points coincide
+        (producing zero-length segments).
+
+        Parameters
+        ----------
+        points : Quantity[u.um]
+            Ordered 3-D coordinates, shape ``(n_points, 3)`` with
+            ``n_points >= 2``.
+        radii : Quantity[u.um] or None
+            Shared radii at each point, shape ``(n_points,)``.
+            Mutually exclusive with *radii_proximal* and *radii_distal*.
+        radii_proximal : Quantity[u.um] or None
+            Proximal radius of each segment, shape ``(n_points - 1,)``.
+            Must be provided together with *radii_distal*.
+        radii_distal : Quantity[u.um] or None
+            Distal radius of each segment, shape ``(n_points - 1,)``.
+            Must be provided together with *radii_proximal*.
+        type : str
+            Branch type (default ``"custom"``).
+
+        Returns
+        -------
+        Branch
+            New branch with 3-D point geometry attached.
+
+        Raises
+        ------
+        TypeError
+            If neither *radii* nor the pair (*radii_proximal*, *radii_distal*)
+            is provided, or if both are provided simultaneously.
+        ValueError
+            If *points* has fewer than two rows or array shapes are
+            inconsistent.
+
+        Warns
+        -----
+        UserWarning
+            If consecutive points coincide, producing zero-length segments.
+
+        See Also
+        --------
+        from_lengths : Create a branch from segment lengths (no 3-D points).
+
+        Examples
+        --------
+
+        .. code-block:: python
+
+            >>> import brainunit as u
+            >>> import numpy as np
+            >>> from braincell import Branch
+            >>> pts = np.array([[0, 0, 0], [10, 0, 0], [10, 20, 0]]) * u.um
+            >>> b = Branch.from_points(
+            ...     points=pts,
+            ...     radii=[2.0, 1.5, 1.0] * u.um,
+            ...     type="axon",
+            ... )
+            >>> b.n_segments
+            2
+            >>> b.points.shape
+            (3, 3)
+        """
         points = normalize_param(points, name="points", unit=u.um, shape=(None, 3))
         if points.shape[0] < 2:
             raise ValueError("from_points() requires at least two points.")
@@ -276,13 +484,25 @@ class Branch:
 
     @property
     def radii(self) -> u.Quantity[u.um]:
-        """Return shared radii ``[n_segments + 1]`` when segment boundaries are continuous.
+        """Shared radii at segment boundaries when continuous.
 
-        Raises ``ValueError`` if any adjacent boundary has ``radii_distal[i] != radii_proximal[i+1]``.
+        Returns
+        -------
+        Quantity[u.um]
+            Shared radii array, shape ``(n_segments + 1,)``.
 
-        Note: for a single-segment branch the boundary check is vacuously satisfied
-        (there are no inter-segment boundaries), so this property always succeeds
-        even if the segment is tapered (``radii_proximal != radii_distal``).
+        Raises
+        ------
+        ValueError
+            If any adjacent boundary has
+            ``radii_distal[i] != radii_proximal[i+1]``.
+
+        Notes
+        -----
+        For a single-segment branch the boundary check is vacuously satisfied
+        (there are no inter-segment boundaries), so this property always
+        succeeds even if the segment is tapered
+        (``radii_proximal != radii_distal``).
         """
 
         if not u.math.allclose(self.radii_distal[:-1], self.radii_proximal[1:]):
@@ -294,14 +514,25 @@ class Branch:
 
     @property
     def points(self) -> u.Quantity[u.um] | None:
-        """Return shared points ``[n_segments + 1, 3]`` when point geometry is continuous.
+        """Shared 3-D points at segment boundaries when continuous.
 
-        Returns ``None`` for branches created by ``from_lengths(...)`` (no point geometry).
-        Raises ``ValueError`` if any adjacent boundary has ``points_distal[i] != points_proximal[i+1]``.
+        Returns
+        -------
+        Quantity[u.um] or None
+            Shared points array, shape ``(n_segments + 1, 3)``, or ``None``
+            for branches created by :meth:`from_lengths` (no point geometry).
 
-        Note: for a single-segment branch the boundary check is vacuously satisfied
-        (there are no inter-segment boundaries), so this property always succeeds
-        regardless of whether the two endpoint coordinates coincide.
+        Raises
+        ------
+        ValueError
+            If any adjacent boundary has
+            ``points_distal[i] != points_proximal[i+1]``.
+
+        Notes
+        -----
+        For a single-segment branch the boundary check is vacuously satisfied
+        (there are no inter-segment boundaries), so this property always
+        succeeds regardless of whether the two endpoint coordinates coincide.
         """
         if self.points_proximal is None or self.points_distal is None:
             return None
@@ -314,6 +545,13 @@ class Branch:
 
     @property
     def n_segments(self) -> int:
+        """Return the number of segments in this branch.
+
+        Returns
+        -------
+        int
+            Segment count, always ``>= 1``.
+        """
         return len(self.lengths)
 
     def _segment_arrays_um(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -349,11 +587,28 @@ class Branch:
 
     @property
     def length(self) -> u.Quantity[u.um]:
+        """Return the total length of this branch.
+
+        Returns
+        -------
+        Quantity[u.um]
+            Sum of all segment lengths.
+        """
         lengths_um, _, _ = self._segment_arrays_um()
         return u.Quantity(np.sum(lengths_um), u.um)
 
     @property
     def mean_radius(self) -> u.Quantity[u.um]:
+        """Return the length-weighted mean radius of this branch.
+
+        Each segment contributes its average radius
+        ``0.5 * (r_proximal + r_distal)`` weighted by its length.
+
+        Returns
+        -------
+        Quantity[u.um]
+            Length-weighted average radius.
+        """
         lengths_um, r0_um, r1_um = self._segment_arrays_um()
         total_length_um = float(np.sum(lengths_um))
         values_um = 0.5 * (r0_um + r1_um)
@@ -363,10 +618,17 @@ class Branch:
     def areas(self) -> u.Quantity[u.um ** 2]:
         """Lateral surface area of each segment (frustum formula).
 
+        Returns
+        -------
+        Quantity[u.um ** 2]
+            Area array, shape ``(n_segments,)``.
+
+        Notes
+        -----
         Zero-length jump segments inserted at radius discontinuities by
-        `_canonicalize_segments` contribute a non-zero annular end-cap area
-        ``π(r0 + r1)|r1 - r0|``. This is geometrically correct but may be
-        unexpected when iterating segment areas individually.
+        ``_canonicalize_segments`` contribute a non-zero annular end-cap area
+        :math:`\\pi (r_0 + r_1) |r_1 - r_0|`.  This is geometrically correct
+        but may be unexpected when iterating segment areas individually.
         """
         lengths_um, r0_um, r1_um = self._segment_arrays_um()
         values = np.pi * (r0_um + r1_um) * np.sqrt(lengths_um * lengths_um + (r1_um - r0_um) * (r1_um - r0_um))
@@ -374,16 +636,37 @@ class Branch:
 
     @property
     def area(self) -> u.Quantity[u.um ** 2]:
+        """Total lateral surface area (sum of segment areas).
+
+        Returns
+        -------
+        Quantity[u.um ** 2]
+            Total surface area.
+        """
         return self.areas.sum()
 
     @property
     def volumes(self) -> u.Quantity[u.um ** 3]:
+        """Per-segment volumes (frustum formula).
+
+        Returns
+        -------
+        Quantity[u.um ** 3]
+            Volume array, shape ``(n_segments,)``.
+        """
         lengths_um, r0_um, r1_um = self._segment_arrays_um()
         values = np.pi * lengths_um * (r0_um * r0_um + r0_um * r1_um + r1_um * r1_um) / 3.0
         return u.Quantity(values, u.um ** 3)
 
     @property
     def volume(self) -> u.Quantity[u.um ** 3]:
+        """Total volume (sum of segment volumes).
+
+        Returns
+        -------
+        Quantity[u.um ** 3]
+            Total volume.
+        """
         return self.volumes.sum()
 
     def vis2d(

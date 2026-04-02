@@ -83,7 +83,60 @@ ParentRef = Union[str, "MorphoBranch"]
 
 @dataclass(frozen=True)
 class MorphoEdge:
-    """A directed edge between two morphology branches."""
+    """A directed edge between two morphology branches.
+
+    ``MorphoEdge`` is a frozen dataclass representing a parent-child
+    connection in a :class:`Morpho` tree.  It records which branches are
+    connected and where on each branch the attachment occurs.
+
+    Edges are typically obtained via :attr:`Morpho.edges` rather than
+    constructed directly.
+
+    Parameters
+    ----------
+    parent : MorphoBranch
+        The parent branch in the connection.
+    child : MorphoBranch
+        The child branch in the connection.
+    parent_x : float
+        Attachment point on the parent branch.  One of ``0`` (proximal),
+        ``0.5`` (midpoint, soma only), or ``1`` (distal).
+    child_x : float
+        Attachment point on the child branch.  One of ``0`` (proximal) or
+        ``1`` (distal).  Default is ``0``.
+
+    See Also
+    --------
+    Morpho.edges : Retrieve all edges in a morphology.
+    Morpho.attach : Attach a child branch to a parent.
+
+    Examples
+    --------
+
+    .. code-block:: python
+
+        >>> import brainunit as u
+        >>> from braincell import Branch, Morpho
+        >>> soma = Branch.from_lengths(
+        ...     lengths=[20.0] * u.um,
+        ...     radii=[10.0, 10.0] * u.um,
+        ...     type="soma",
+        ... )
+        >>> dend = Branch.from_lengths(
+        ...     lengths=[50.0] * u.um,
+        ...     radii=[2.0, 1.0] * u.um,
+        ...     type="dend",
+        ... )
+        >>> morpho = Morpho.from_root(soma, name="soma")
+        >>> morpho.soma.dend = dend
+        >>> edges = morpho.edges
+        >>> len(edges)
+        1
+        >>> edges[0].parent.name
+        'soma'
+        >>> edges[0].child.name
+        'dend'
+    """
 
     parent: "MorphoBranch"
     child: "MorphoBranch"
@@ -92,7 +145,81 @@ class MorphoEdge:
 
 
 class Morpho:
-    """Mutable morphology tree used for authoring, querying, and visualization."""
+    """Mutable morphology tree for authoring, querying, and visualization.
+
+    ``Morpho`` is the central entry point for building neuron morphologies.
+    It owns a tree of :class:`MorphoBranch` nodes, each wrapping an
+    immutable :class:`Branch` geometry.  Children are attached via
+    :meth:`attach`, attribute assignment on a :class:`MorphoBranch`, or
+    the ``branch[parent_x].child_name = branch`` syntax sugar.
+
+    Prefer the factory classmethods :meth:`from_root`, :meth:`from_swc`,
+    and :meth:`from_asc` over the raw constructor.
+
+    Parameters
+    ----------
+    root_name : str or None
+        Name of the root branch.  If ``None``, a name is auto-generated
+        from the branch type (e.g., ``"soma_0"``).
+    root_branch : Branch
+        Geometry of the root branch.
+
+    Raises
+    ------
+    ValueError
+        If *root_name* is a reserved name or already taken, or is not a
+        valid Python identifier.
+
+    See Also
+    --------
+    Branch : Immutable segment geometry.
+    MorphoBranch : Tree-local branch node view.
+    MorphMetrics : Whole-morphology metric calculator.
+
+    Notes
+    -----
+    Branch names must be valid Python identifiers (no leading underscore)
+    and must not collide with reserved method or metric names.  Auto-naming
+    follows the pattern ``"{type}_{n}"`` (e.g., ``"dend_0"``, ``"axon_1"``).
+
+    Metric properties (``total_length``, ``n_branches``, etc.) are
+    accessible directly on the ``Morpho`` instance via ``__getattr__``
+    delegation to :class:`MorphMetrics`.
+
+    Examples
+    --------
+
+    Build a simple morphology by hand:
+
+    .. code-block:: python
+
+        >>> import brainunit as u
+        >>> from braincell import Branch, Morpho
+        >>> soma = Branch.from_lengths(
+        ...     lengths=[20.0] * u.um,
+        ...     radii=[10.0, 10.0] * u.um,
+        ...     type="soma",
+        ... )
+        >>> dend = Branch.from_lengths(
+        ...     lengths=[50.0, 40.0] * u.um,
+        ...     radii=[2.0, 1.5, 1.0] * u.um,
+        ...     type="dend",
+        ... )
+        >>> morpho = Morpho.from_root(soma, name="soma")
+        >>> morpho.soma.dend = dend
+        >>> len(morpho)
+        2
+        >>> morpho.n_branches
+        2
+        >>> morpho.total_length
+        110.0 * umetre
+
+    Load from an SWC file:
+
+    .. code-block:: python
+
+        >>> morpho = Morpho.from_swc("neuron.swc")  # doctest: +SKIP
+    """
 
     def __init__(self, *, root_name: str | None, root_branch: Branch) -> None:
         self._nodes: dict[int, MorphoBranch] = {}
@@ -110,7 +237,37 @@ class Morpho:
 
     @classmethod
     def from_root(cls, branch: Branch, *, name: str | None = "soma") -> "Morpho":
-        """Create a new editable tree from one root branch."""
+        """Create a new morphology tree from a single root branch.
+
+        Parameters
+        ----------
+        branch : Branch
+            Geometry of the root branch (typically a soma).
+        name : str or None
+            Name for the root branch (default ``"soma"``).  If ``None``,
+            auto-generated from the branch type.
+
+        Returns
+        -------
+        Morpho
+            New morphology containing only the root.
+
+        Examples
+        --------
+
+        .. code-block:: python
+
+            >>> import brainunit as u
+            >>> from braincell import Branch, Morpho
+            >>> soma = Branch.from_lengths(
+            ...     lengths=[20.0] * u.um,
+            ...     radii=[10.0, 10.0] * u.um,
+            ...     type="soma",
+            ... )
+            >>> morpho = Morpho.from_root(soma, name="soma")
+            >>> morpho.root.name
+            'soma'
+        """
 
         return cls(root_name=name, root_branch=branch)
 
@@ -122,7 +279,42 @@ class Morpho:
         options: 'SwcReadOptions' = None,
         return_report: bool = False,
     ):
-        """Load a morphology from a SWC file through the reader pipeline."""
+        """Load a morphology from an SWC file.
+
+        Delegates to :class:`~braincell.io.SwcReader` for parsing and
+        validation.
+
+        Parameters
+        ----------
+        path : str or Path
+            Path to the SWC file.
+        options : SwcReadOptions or None
+            Reader configuration (soma handling, repairs, etc.).
+            Uses defaults when ``None``.
+        return_report : bool
+            If ``True``, return a ``(Morpho, SwcReport)`` tuple instead
+            of just the morphology.
+
+        Returns
+        -------
+        Morpho or (Morpho, SwcReport)
+            The loaded morphology, optionally with a diagnostic report.
+
+        See Also
+        --------
+        from_asc : Load from Neurolucida ASC format.
+
+        Examples
+        --------
+
+        .. code-block:: python
+
+            >>> from braincell import Morpho
+            >>> morpho = Morpho.from_swc("neuron.swc")  # doctest: +SKIP
+            >>> morpho, report = Morpho.from_swc(
+            ...     "neuron.swc", return_report=True
+            ... )  # doctest: +SKIP
+        """
 
         from braincell.io import SwcReader
 
@@ -131,7 +323,36 @@ class Morpho:
 
     @classmethod
     def from_asc(cls, path, *, return_report: bool = False):
-        """Load a morphology from a Neurolucida ASC file through the reader pipeline."""
+        """Load a morphology from a Neurolucida ASC file.
+
+        Delegates to :class:`~braincell.io.AscReader` for parsing and
+        validation.
+
+        Parameters
+        ----------
+        path : str or Path
+            Path to the ASC file.
+        return_report : bool
+            If ``True``, return a ``(Morpho, AscReport)`` tuple instead
+            of just the morphology.
+
+        Returns
+        -------
+        Morpho or (Morpho, AscReport)
+            The loaded morphology, optionally with a diagnostic report.
+
+        See Also
+        --------
+        from_swc : Load from SWC format.
+
+        Examples
+        --------
+
+        .. code-block:: python
+
+            >>> from braincell import Morpho
+            >>> morpho = Morpho.from_asc("neuron.asc")  # doctest: +SKIP
+        """
 
         from braincell.io import AscReader
 
@@ -139,14 +360,39 @@ class Morpho:
 
     @property
     def root(self) -> "MorphoBranch":
+        """The root branch of this morphology.
+
+        Returns
+        -------
+        MorphoBranch
+            Root branch node.
+        """
         return self._get_node(self._root_id)
 
     @property
     def branches(self) -> tuple["MorphoBranch", ...]:
+        """All branches in default order (by node ID).
+
+        Returns
+        -------
+        tuple of MorphoBranch
+            All branches in the tree.
+
+        See Also
+        --------
+        branches_by : Query branches in a specific order.
+        """
         return self.branches_by(order="default")
 
     @property
     def edges(self) -> tuple[MorphoEdge, ...]:
+        """All directed edges in the morphology tree.
+
+        Returns
+        -------
+        tuple of MorphoEdge
+            Parent-child connections, excluding the root (which has no parent).
+        """
         return tuple(
             MorphoEdge(
                 parent=self._get_node(node.parent_id),
@@ -161,9 +407,38 @@ class Morpho:
 
     @property
     def metric(self) -> MorphMetrics:
+        """Metric calculator for this morphology.
+
+        Returns
+        -------
+        MorphMetrics
+            Frozen metrics object bound to this morphology.
+
+        See Also
+        --------
+        MorphMetrics : Detailed metric documentation.
+        """
         return MorphMetrics(self)
 
     def branches_by(self, *, order: str = "default") -> tuple["MorphoBranch", ...]:
+        """Query branches in a specific order.
+
+        Parameters
+        ----------
+        order : str
+            Ordering strategy: ``"default"`` (by node ID), ``"type"``
+            (by type then name), or ``"depth"`` (by depth then index).
+
+        Returns
+        -------
+        tuple of MorphoBranch
+            Ordered branches.
+
+        Raises
+        ------
+        ValueError
+            If *order* is not recognized.
+        """
         return tuple(self._get_node(node_id) for node_id in self._ordered_node_ids_by(order))
 
     def branch(
@@ -173,6 +448,34 @@ class Morpho:
         index: int | None = None,
         order: str | None = None,
     ) -> "MorphoBranch":
+        """Retrieve a single branch by name or index.
+
+        Parameters
+        ----------
+        name : str or None
+            Branch name.  Mutually exclusive with *index*.
+        index : int or None
+            Branch index in the specified *order*.  Mutually exclusive
+            with *name*.
+        order : str or None
+            Ordering strategy when querying by *index*: ``"default"``,
+            ``"type"``, or ``"depth"``.  Ignored when querying by *name*.
+
+        Returns
+        -------
+        MorphoBranch
+            The requested branch.
+
+        Raises
+        ------
+        TypeError
+            If neither or both of *name* and *index* are provided, or if
+            *order* is given with *name*.
+        KeyError
+            If *name* does not exist.
+        IndexError
+            If *index* is out of range.
+        """
         if (name is None) == (index is None):
             raise TypeError("exactly one of `name` or `index` must be provided")
         if name is not None:
@@ -189,9 +492,45 @@ class Morpho:
             raise IndexError(f"Branch index {index!r} is out of range.") from exc
 
     def path_to_root(self, branch_index: int) -> tuple[int, ...]:
+        """Return the ordered path of branch indices from root to a given branch.
+
+        Parameters
+        ----------
+        branch_index : int
+            Index of the target branch in default ordering.
+
+        Returns
+        -------
+        tuple of int
+            Sequence of branch indices starting at the root and ending at
+            *branch_index*.
+
+        See Also
+        --------
+        MorphMetrics.path_to_root : Equivalent method on the metrics object.
+        """
         return self.metric.path_to_root(branch_index)
 
     def summary(self) -> dict[str, object]:
+        """Return a dictionary of key morphology metrics.
+
+        Returns
+        -------
+        dict
+            Summary containing: ``root_name``, ``root_type``, ``n_branches``,
+            ``n_stems``, ``n_bifurcations``, ``max_branch_order``,
+            ``total_length``, ``total_area``, ``total_volume``,
+            ``mean_radius``, ``has_point_geometry``,
+            ``has_full_point_geometry_for_distance_metrics``.
+
+        Examples
+        --------
+
+        .. code-block:: python
+
+            >>> morpho.summary()  # doctest: +SKIP
+            {'root_name': 'soma', 'n_branches': 5, ...}
+        """
         return {
             "root_name": self.root.name,
             "root_type": self.root.type,
@@ -208,7 +547,25 @@ class Morpho:
         }
 
     def topo(self) -> str:
-        """Return a line-oriented text view of the branch topology."""
+        """Return a line-oriented text view of the branch topology.
+
+        Returns
+        -------
+        str
+            ASCII tree representation showing parent-child relationships.
+
+        Examples
+        --------
+
+        .. code-block:: python
+
+            >>> print(morpho.topo())  # doctest: +SKIP
+            soma
+            ├── dend_0
+            │   ├── dend_1
+            │   └── dend_2
+            └── axon_0
+        """
 
         lines = [self.root.name]
         child_ids = tuple(self.root._children.values())
@@ -550,6 +907,38 @@ class Morpho:
         return result
 
     def select(self, expr, *, cache=None):
+        """Evaluate a region or location-set expression on this morphology.
+
+        Parameters
+        ----------
+        expr : RegionExpr or LocsetExpr
+            Filter expression to evaluate.
+        cache : SelectionCache or None
+            Optional cache for repeated evaluations.
+
+        Returns
+        -------
+        RegionMask or LocsetMask
+            Evaluated mask result.
+
+        Raises
+        ------
+        TypeError
+            If *expr* is not a ``RegionExpr`` or ``LocsetExpr``.
+
+        See Also
+        --------
+        braincell.filter.RegionExpr : Region filter expressions.
+        braincell.filter.LocsetExpr : Location-set expressions.
+
+        Examples
+        --------
+
+        .. code-block:: python
+
+            >>> from braincell.filter import branch_in
+            >>> region = morpho.select(branch_in("type", "dend"))  # doctest: +SKIP
+        """
         from braincell.filter import LocsetExpr, RegionExpr
 
         if not isinstance(expr, (RegionExpr, LocsetExpr)):
@@ -568,19 +957,70 @@ class Morpho:
         parent_x: float = 1.0,
         child_x: float = 0.0,
     ) -> "MorphoBranch":
-        """Attach a child branch to a named parent or parent branch view.
+        """Attach a child branch to a parent in this morphology.
 
-        Args:
-            parent: Parent branch name or MorphoBranch instance
-            child_branch: Branch geometry to attach
-            child_name: Optional name for the child branch
-            parent_x: Attachment point on parent branch (0=proximal, 0.5=midpoint for soma only, 1=distal)
-            child_x: Attachment point on child branch (0=proximal, 1=distal)
+        Parameters
+        ----------
+        parent : str or MorphoBranch
+            Parent branch, specified by name or node reference.
+        child_branch : Branch
+            Geometry of the child branch to attach.
+        child_name : str or None
+            Name for the child branch.  If ``None``, auto-generated from
+            the branch type (e.g., ``"dend_0"``).
+        parent_x : float
+            Attachment point on the parent branch: ``0`` (proximal),
+            ``0.5`` (midpoint, soma only), or ``1`` (distal, default).
+        child_x : float
+            Attachment point on the child branch: ``0`` (proximal,
+            default) or ``1`` (distal).
 
-        Note:
-            parent_x=0 attaches to the proximal end of the parent branch. This is typically
-            used when the parent is itself a child branch and you want to attach at its
-            connection point rather than its distal end.
+        Returns
+        -------
+        MorphoBranch
+            The newly attached child branch node.
+
+        Raises
+        ------
+        ValueError
+            If *parent_x* or *child_x* is invalid, if *parent_x* is ``0.5``
+            on a non-soma parent, or if *child_name* already exists.
+        TypeError
+            If *parent* is not a string or ``MorphoBranch``.
+        KeyError
+            If *parent* is a string that does not match any branch name.
+
+        Notes
+        -----
+        ``parent_x=0`` attaches to the proximal end of the parent branch.
+        This is typically used when the parent is itself a child branch and
+        you want to attach at its connection point rather than its distal end.
+
+        Examples
+        --------
+
+        .. code-block:: python
+
+            >>> import brainunit as u
+            >>> from braincell import Branch, Morpho
+            >>> soma = Branch.from_lengths(
+            ...     lengths=[20.0] * u.um,
+            ...     radii=[10.0, 10.0] * u.um,
+            ...     type="soma",
+            ... )
+            >>> dend = Branch.from_lengths(
+            ...     lengths=[50.0] * u.um,
+            ...     radii=[2.0, 1.0] * u.um,
+            ...     type="dend",
+            ... )
+            >>> morpho = Morpho.from_root(soma, name="soma")
+            >>> child = morpho.attach(
+            ...     parent="soma",
+            ...     child_branch=dend,
+            ...     child_name="apical",
+            ... )
+            >>> child.name
+            'apical'
         """
 
         parent_id = self._resolve_parent(parent)
@@ -827,7 +1267,72 @@ _MORPHO_BRANCH_PUBLIC_ATTRS: dict[str, _MorphoBranchAttrGetter] = {
 
 
 class MorphoBranch:
-    """A tree-local branch node bound to exactly one Morpho owner."""
+    """A tree-local branch node bound to exactly one :class:`Morpho` owner.
+
+    ``MorphoBranch`` provides transparent access to branch geometry
+    (via delegation to :class:`Branch`) and tree navigation (parent,
+    children).  It also supports syntax sugar for attaching children:
+
+    * **Attribute assignment**: ``parent.dend = Branch(...)``
+    * **Subscript syntax**: ``parent[0.5].dend = Branch(...)``
+
+    ``MorphoBranch`` instances are created internally by :class:`Morpho`
+    and should not be constructed directly.
+
+    Parameters
+    ----------
+    owner : Morpho
+        The morphology tree that owns this node.
+    node_id : int
+        Unique node identifier within the tree.
+    name : str
+        Branch name.
+    branch : Branch
+        Underlying geometry object.
+    parent_id : int or None
+        Node ID of the parent (``None`` for the root).
+    parent_x : float
+        Attachment point on the parent branch.
+    child_x : float
+        Attachment point on the child branch.
+
+    See Also
+    --------
+    Morpho : The tree container that owns ``MorphoBranch`` nodes.
+    Branch : The immutable geometry wrapped by this node.
+
+    Notes
+    -----
+    ``MorphoBranch`` delegates attribute access to the underlying
+    :class:`Branch` via ``__getattr__``, so all geometry properties
+    (``length``, ``area``, ``n_segments``, ``type``, etc.) are accessible
+    directly on the node.  Child branches can also be retrieved by name
+    (e.g., ``morpho.soma.dend``).
+
+    Examples
+    --------
+
+    .. code-block:: python
+
+        >>> import brainunit as u
+        >>> from braincell import Branch, Morpho
+        >>> soma = Branch.from_lengths(
+        ...     lengths=[20.0] * u.um,
+        ...     radii=[10.0, 10.0] * u.um,
+        ...     type="soma",
+        ... )
+        >>> dend = Branch.from_lengths(
+        ...     lengths=[50.0] * u.um,
+        ...     radii=[2.0, 1.0] * u.um,
+        ...     type="dend",
+        ... )
+        >>> morpho = Morpho.from_root(soma, name="soma")
+        >>> morpho.soma.dend = dend
+        >>> morpho.soma.n_children
+        1
+        >>> morpho.soma.dend.length
+        50.0 * umetre
+    """
 
     def __init__(
         self,
@@ -851,23 +1356,68 @@ class MorphoBranch:
 
     @property
     def index(self) -> int:
+        """Index of this branch in the default ordering.
+
+        Returns
+        -------
+        int
+            Position in the default (by node ID) ordering.
+
+        See Also
+        --------
+        index_by : Index in a specific ordering.
+        """
         return self._owner._branch_index(self._node_id)
 
     def index_by(self, *, order: str = "default") -> int:
+        """Index of this branch in a specific ordering.
+
+        Parameters
+        ----------
+        order : str
+            Ordering strategy: ``"default"`` (by node ID), ``"type"``
+            (by type then name), or ``"depth"`` (by depth then index).
+
+        Returns
+        -------
+        int
+            Position in the requested ordering.
+        """
         return self._owner._branch_index(self._node_id, order=order)
 
     @property
     def parent(self) -> Optional["MorphoBranch"]:
+        """Parent branch node, or ``None`` for the root.
+
+        Returns
+        -------
+        MorphoBranch or None
+            Parent node.
+        """
         if self._parent_id is None:
             return None
         return self._owner._get_node(self._parent_id)
 
     @property
     def children(self) -> tuple["MorphoBranch", ...]:
+        """All direct children of this branch.
+
+        Returns
+        -------
+        tuple of MorphoBranch
+            Child branch nodes.
+        """
         return tuple(self._owner._get_node(child_id) for child_id in self._children.values())
 
     @property
     def n_children(self) -> int:
+        """Number of direct children.
+
+        Returns
+        -------
+        int
+            Child count.
+        """
         return len(self._children)
 
     def attach(
@@ -878,18 +1428,46 @@ class MorphoBranch:
         parent_x: float = 1.0,
         child_x: float = 0.0,
     ) -> "MorphoBranch":
-        """Attach a child explicitly from this branch.
+        """Attach a child branch to this branch.
 
-        Args:
-            branch: Branch geometry to attach
-            name: Optional name for the child branch
-            parent_x: Attachment point on this branch (0=proximal, 0.5=midpoint for soma only, 1=distal)
-            child_x: Attachment point on child branch (0=proximal, 1=distal)
+        Parameters
+        ----------
+        branch : Branch
+            Geometry of the child branch to attach.
+        name : str or None
+            Name for the child branch.  If ``None``, auto-generated from
+            the branch type.
+        parent_x : float
+            Attachment point on this branch: ``0`` (proximal), ``0.5``
+            (midpoint, soma only), or ``1`` (distal, default).
+        child_x : float
+            Attachment point on the child branch: ``0`` (proximal,
+            default) or ``1`` (distal).
 
-        Note:
-            parent_x=0 attaches to the proximal end of this branch. This is typically
-            used when this branch is itself a child and you want to attach at its
-            connection point rather than its distal end.
+        Returns
+        -------
+        MorphoBranch
+            The newly attached child branch node.
+
+        Raises
+        ------
+        ValueError
+            If *parent_x* or *child_x* is invalid.
+
+        Notes
+        -----
+        ``parent_x=0`` attaches to the proximal end of this branch.  This
+        is typically used when this branch is itself a child and you want
+        to attach at its connection point rather than its distal end.
+
+        Examples
+        --------
+
+        .. code-block:: python
+
+            >>> child = morpho.soma.attach(dend_branch, name="apical")  # doctest: +SKIP
+            >>> child.name  # doctest: +SKIP
+            'apical'
         """
 
         return self._owner.attach(

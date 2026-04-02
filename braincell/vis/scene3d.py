@@ -26,6 +26,8 @@ from .scene import BranchPolyline3D, BranchTypeBatch3D, RenderScene3D, color_for
 def build_render_scene_3d(morpho: Morpho) -> RenderScene3D:
     if not isinstance(morpho, Morpho):
         raise TypeError(f"build_render_scene_3d(...) expects Morpho, got {type(morpho).__name__!s}.")
+    if not morpho.has_full_point_geometry:
+        raise ValueError("3D visualization requires full point geometry on every branch.")
 
     branches: list[BranchPolyline3D] = []
     for branch_index in range(len(morpho)):

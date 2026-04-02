@@ -28,17 +28,28 @@ def plot2d(
     mode: str = "projected",
     backend: str | None = None,
     chooser: BackendChooser | None = None,
+    ax=None,
     notebook: bool | None = None,
     jupyter_backend: str | None = None,
     return_plotter: bool = False,
     projection_plane: str = "xy",
+    min_branch_angle_deg: float | None = 25.0,
+    root_layout: str = "type_split",
+    layout_family: str = "stem",
 ) -> object:
     from braincell.morpho import Morpho
 
     if not isinstance(morpho, Morpho):
         raise TypeError(f"plot2d(...) expects Morpho, got {type(morpho).__name__!s}.")
 
-    scene = build_render_scene_2d(morpho, mode=mode, projection_plane=projection_plane)
+    scene = build_render_scene_2d(
+        morpho,
+        mode=mode,
+        projection_plane=projection_plane,
+        min_branch_angle_deg=min_branch_angle_deg,
+        root_layout=root_layout,
+        layout_family=layout_family,
+    )
     chooser = chooser or BackendChooser.default()
     request = RenderRequest(
         morpho=morpho,
@@ -46,6 +57,7 @@ def plot2d(
         dimensionality="2d",
         mode=mode,
         scene=scene,
+        ax=ax,
         notebook=notebook,
         jupyter_backend=jupyter_backend,
         return_plotter=return_plotter,

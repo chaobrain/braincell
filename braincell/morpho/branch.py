@@ -781,8 +781,21 @@ class Branch:
 
     def __repr__(self) -> str:
         return (
-            f"{type(self).__name__}(type={self.type!r}, n_segments={self.n_segments!r}, "
-            f"length={self.length!r}, area={self.area!r})"
+            f"Branch(type={self.type!r}, n_segments={self.n_segments!r}, "
+            f"length={self.length!r}, mean_radius={self.mean_radius!r}, "
+            f"area={self.area!r}, volume={self.volume!r})"
+        )
+
+    def __str__(self) -> str:
+        return (
+            f"{'-'*35}\n"
+            f"{'type':<12} | {self.type}\n"
+            f"{'n_segments':<12} | {self.n_segments}\n"
+            f"{'length':<12} | {self.length:.2f}\n"
+            f"{'mean_radius':<12} | {self.mean_radius:.2f}\n"
+            f"{'area':<12} | {self.area:.2f}\n"
+            f"{'volume':<12} | {self.volume:.2f}\n"
+            f"{'-'*35}\n"
         )
 
 

@@ -31,6 +31,8 @@ from .cv_mech import (
     normalize_paint_rules,
     normalize_place_rule,
 )
+from .point_scheduling import PointScheduling, build_point_scheduling
+from .point_tree import PointTree, build_point_tree
 
 
 class Cell:
@@ -47,6 +49,8 @@ class Cell:
         self._paint_rules: tuple[PaintRule, ...] = default_paint_rules()
         self._place_rules: tuple[PlaceRule, ...] = ()
         self._cvs: tuple[CV, ...] | None = None
+        self._point_tree: PointTree | None = None
+        self._point_scheduling: dict[tuple[str, int], PointScheduling] = {}
         self._dirty = True
         self._rebuild_if_needed()
 
@@ -112,6 +116,38 @@ class Cell:
             "n_place_rules": len(self._place_rules),
         }
 
+    def point_tree(self) -> PointTree:
+        self._rebuild_if_needed()
+        cached = self._point_tree
+        if cached is not None:
+            return cached
+        tree = build_point_tree(
+            self._morpho,
+            cvs=self.cvs,
+        )
+        self._point_tree = tree
+        return tree
+
+    def point_scheduling(
+        self,
+        *,
+        max_group_size: int = 32,
+        algorithm: str = "dhs",
+    ) -> PointScheduling:
+        self._rebuild_if_needed()
+        cache_key = (algorithm, max_group_size)
+        cached = self._point_scheduling.get(cache_key)
+        if cached is not None:
+            return cached
+        tree = self.point_tree()
+        scheduling = build_point_scheduling(
+            tree,
+            max_group_size=max_group_size,
+            algorithm=algorithm,
+        )
+        self._point_scheduling[cache_key] = scheduling
+        return scheduling
+
     def _rebuild_if_needed(self) -> tuple[CV, ...]:
         if not self._dirty and self._cvs is not None:
             return self._cvs
@@ -138,6 +174,8 @@ class Cell:
             assemble_cv(cv_geo=piece, mech=cv_mech[piece.id])
             for piece in cv_geo
         )
+        self._point_tree = None
+        self._point_scheduling = {}
         self._dirty = False
         return self._cvs
 

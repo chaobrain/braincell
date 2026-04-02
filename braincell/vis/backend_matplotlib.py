@@ -46,7 +46,11 @@ class MatplotlibBackend:
 
         import matplotlib.pyplot as plt
 
-        fig, ax = plt.subplots()
+        if request.ax is None:
+            fig, ax = plt.subplots()
+        else:
+            ax = request.ax
+            fig = ax.figure
         fig.patch.set_facecolor(self.background)
         ax.set_facecolor(self.background)
 

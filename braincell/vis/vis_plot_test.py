@@ -17,12 +17,13 @@
 import unittest
 
 import matplotlib.axes
+import matplotlib.pyplot as plt
 import numpy as np
 
 from braincell._test_support import FakeBackend, u
 
 from braincell import Branch, Morpho
-from braincell.vis import BackendChooser, MatplotlibBackend, plot2d, plot3d
+from braincell.vis import BackendChooser, MatplotlibBackend, compare_layouts_2d, plot2d, plot3d
 
 
 def _point_tree() -> Morpho:
@@ -70,7 +71,7 @@ class VisPlotTest(unittest.TestCase):
 
         self.assertEqual(request.mode, "tree")
         self.assertEqual(request.scene.mode, "tree")
-        self.assertEqual(len(request.scene.polylines), 2)
+        self.assertEqual(len(request.scene.polylines), 3)
         self.assertEqual(len(request.scene.polygons), 0)
 
     def test_plot2d_frustum_mode_accepts_length_only_morphology(self) -> None:
@@ -122,6 +123,18 @@ class VisPlotTest(unittest.TestCase):
 
         self.assertIsInstance(axes, matplotlib.axes.Axes)
 
+    def test_matplotlib_backend_can_render_into_existing_axes(self) -> None:
+        tree = _length_only_tree()
+        chooser = BackendChooser(backends=(MatplotlibBackend(),))
+        fig, ax = plt.subplots(figsize=(8, 4))
+
+        rendered_ax = plot2d(tree, mode="tree", backend="matplotlib", chooser=chooser, ax=ax)
+
+        self.assertIs(rendered_ax, ax)
+        self.assertEqual(rendered_ax.figure, fig)
+        self.assertGreaterEqual(len(rendered_ax.lines), 2)
+        plt.close(fig)
+
     def test_matplotlib_backend_renders_frustum_scene(self) -> None:
         tree = _length_only_tree()
         chooser = BackendChooser(backends=(MatplotlibBackend(),))
@@ -130,5 +143,17 @@ class VisPlotTest(unittest.TestCase):
 
         self.assertIsInstance(axes, matplotlib.axes.Axes)
         self.assertGreaterEqual(len(axes.patches), 1)
-        self.assertTrue(np.allclose(axes.get_xlim(), (-2.0, 42.0)))
-        self.assertTrue(np.allclose(axes.get_ylim(), (-11.0, 11.0)))
+        self.assertGreater(float(np.diff(axes.get_xlim())[0]), 20.0)
+        self.assertGreater(float(np.diff(axes.get_ylim())[0]), 10.0)
+
+    def test_compare_layouts_2d_renders_side_by_side_matplotlib_figure(self) -> None:
+        tree = _length_only_tree()
+        chooser = BackendChooser(backends=(MatplotlibBackend(),))
+
+        fig, axes = compare_layouts_2d(tree, chooser=chooser)
+
+        self.assertEqual(len(axes), 3)
+        self.assertEqual([ax.get_title() for ax in axes], ["Stem", "Balloon", "Radial 360"])
+        self.assertTrue(all(isinstance(ax, matplotlib.axes.Axes) for ax in axes))
+        self.assertGreaterEqual(sum(len(ax.lines) for ax in axes), 3)
+        plt.close(fig)

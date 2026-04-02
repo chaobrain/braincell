@@ -30,6 +30,8 @@ from .branch import Branch
 from .metrics import MorphMetrics
 
 _MORPHO_METRIC_PROPERTY_NAMES = {
+    "depth",
+    "height",
     "max_euclidean_distance",
     "max_branch_order",
     "max_path_distance",
@@ -40,27 +42,29 @@ _MORPHO_METRIC_PROPERTY_NAMES = {
     "total_area",
     "total_length",
     "total_volume",
+    "width",
     "x_range",
     "y_range",
     "z_range",
 }
 
 _MORPHO_RESERVED_NAMES = {
-                             "attach",
-                             "branch",
-                             "branches",
-                             "branches_by",
-                             "edges",
-                             "from_asc",
-                             "from_root",
-                             "from_swc",
-                             "metric",
-                             "path_to_root",
-                             "root",
-                             "select",
-                             "vis2d",
-                             "vis3d",
-                         } | _MORPHO_METRIC_PROPERTY_NAMES
+    "attach",
+    "branch",
+    "branches",
+    "branches_by_order",
+    "edges",
+    "from_asc",
+    "from_root",
+    "from_swc",
+    "has_full_point_geometry",
+    "metric",
+    "path_to_root",
+    "root",
+    "select",
+    "vis2d",
+    "vis3d",
+} | _MORPHO_METRIC_PROPERTY_NAMES
 _MORPHO_BRANCH_RESERVED_NAMES = {
     "attach",
     "branch",
@@ -418,7 +422,7 @@ class Morpho:
         """
         return MorphMetrics(self)
 
-    def branches_by(self, *, order: str = "default") -> tuple["MorphoBranch", ...]:
+    def branches_by_order(self, *, order: str = "default") -> tuple["MorphoBranch", ...]:
         """Query branches in a specific order.
 
         Parameters
@@ -439,6 +443,13 @@ class Morpho:
         """
         return tuple(self._get_node(node_id) for node_id in self._ordered_node_ids_by(order))
 
+    @property
+    def has_full_point_geometry(self) -> bool:
+        return all(
+            branch.branch.points_proximal is not None and branch.branch.points_distal is not None
+            for branch in self.branches
+        )
+    
     def branch(
         self,
         *,
@@ -540,8 +551,7 @@ class Morpho:
             "total_area": self.total_area,
             "total_volume": self.total_volume,
             "mean_radius": self.mean_radius,
-            "has_point_geometry": any(branch.branch.points is not None for branch in self.branches),
-            "has_full_point_geometry_for_distance_metrics": self._has_full_point_geometry_for_distance_metrics(),
+            "has_full_point_geometry": self.has_full_point_geometry,
         }
 
     def topo(self) -> str:
@@ -733,11 +743,14 @@ class Morpho:
         locset=None,
         values=None,
         chooser=None,
-        projection_plane: str = "xy",
+        ax=None,
         notebook: bool | None = None,
         jupyter_backend: str | None = None,
         return_plotter: bool = False,
-        show: bool = True,
+        projection_plane: str = "xy",
+        min_branch_angle_deg: float | None = 25.0,
+        root_layout: str = "type_split",
+        layout_family: str = "stem",
     ) -> object:
         """Visualize this morphology in 2D.
 
@@ -893,10 +906,14 @@ class Morpho:
             mode=mode,
             backend=backend,
             chooser=chooser,
+            ax=ax,
             notebook=notebook,
             jupyter_backend=jupyter_backend,
             return_plotter=return_plotter,
             projection_plane=projection_plane,
+            min_branch_angle_deg=min_branch_angle_deg,
+            root_layout=root_layout,
+            layout_family=layout_family,
         )
         if show:
             import matplotlib.pyplot as plt
@@ -1049,7 +1066,22 @@ class Morpho:
         return self._eq_records() == other._eq_records()
 
     def __repr__(self) -> str:
-        return f"Morpho(root={self._root_name!r}, branches={len(self)!r})"
+        geo_status = "complete 3d points" if self.has_full_point_geometry else "incomplete 3d points"
+        return f"Morpho(root={self.root.name!r}, n_branches={self.n_branches}, geometry = {geo_status})"
+    
+    def __str__(self) -> str:
+        """Return a formatted summary with key metrics."""
+        geo_status = "complete 3d points" if self.has_full_point_geometry else "incomplete 3d points"
+        return (
+            f"{'-'*35}\n"
+            f"{'root':<12} | {self.root.name}\n"
+            f"{'n_branches':<12} | {self.n_branches}\n"
+            f"{'geometry':<12} | {geo_status}\n"
+            f"{'length':<12} | {self.total_length:.2f}\n"
+            f"{'area':<12} | {self.total_area:.2f}\n"
+            f"{'volume':<12} | {self.total_volume:.2f}\n"
+            f"{'-'*35}\n"
+        )
 
     def _ordered_node_ids(self) -> tuple[int, ...]:
         return tuple(sorted(self._nodes))
@@ -1065,6 +1097,29 @@ class Morpho:
             return tuple(sorted(ordered_ids,
                                 key=lambda node_id: (len(self._path_node_ids(node_id)), self._branch_index(node_id))))
         raise ValueError(f"Unsupported branch order {order!r}.")
+
+    @staticmethod
+    def _branch_type_rank(branch_type: str) -> tuple[int, int, str]:
+        swc_type_map = Morpho._swc_type_map()
+        type_bucket = {
+            "soma": "soma",
+            "axon": "axon",
+            "dend": "basal_dendrite",
+            "basal_dend": "basal_dendrite",
+            "basal_dendrite": "basal_dendrite",
+            "apical_dend": "apical_dendrite",
+            "apical_dendrite": "apical_dendrite",
+        }.get(branch_type, branch_type)
+        swc_rank = next((code for code, name in swc_type_map.items() if name == type_bucket and code != 0), None)
+        if swc_rank is None:
+            return (1, 0, type_bucket)
+        return (0, swc_rank, type_bucket)
+
+    @staticmethod
+    def _swc_type_map() -> dict[int, str]:
+        from ..io.swc.types import SWC_TYPE_MAP
+
+        return SWC_TYPE_MAP
 
     def _branch_index_map(self, *, order: str = "default") -> dict[int, int]:
         return {node_id: index for index, node_id in enumerate(self._ordered_node_ids_by(order))}
@@ -1208,12 +1263,6 @@ class Morpho:
         )
         parent._children[resolved_name] = node_id
         return self._get_node(node_id)
-
-    def _has_full_point_geometry_for_distance_metrics(self) -> bool:
-        root = self.root.branch
-        if root.points_proximal is None:
-            return False
-        return all(branch.branch.points_distal is not None for branch in self.branches if branch.n_children == 0)
 
     def _eq_records(self) -> tuple[tuple[object, ...], ...]:
         records = []
@@ -1537,7 +1586,6 @@ class _MorphAttachPoint:
             f"_MorphAttachPoint(parent={self._parent.name!r}, "
             f"parent_x={self._parent_x!r}, child_x={self._child_x!r})"
         )
-
 
 def _parse_attachment_key(key: object) -> tuple[float, float]:
     if isinstance(key, bool):

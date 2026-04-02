@@ -124,6 +124,7 @@ class RenderRequest:
     dimensionality: str = "3d"
     mode: str | None = None
     scene: RenderScene2D | RenderScene3D | None = None
+    ax: object | None = None
     notebook: bool | None = None
     jupyter_backend: str | None = None
     return_plotter: bool = False

@@ -199,6 +199,23 @@ class FilterVisTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Unsupported 3D mode"):
             tree.vis3d(mode="layout")
 
+    def test_morpho_vis3d_requires_full_point_geometry(self) -> None:
+        soma = Branch.from_points(
+            points=[[0.0, 0.0, 0.0], [20.0, 0.0, 0.0]] * u.um,
+            radii=[10.0, 10.0] * u.um,
+            type="soma",
+        )
+        dend = Branch.from_lengths(
+            lengths=[80.0] * u.um,
+            radii=[2.0, 1.0] * u.um,
+            type="apical_dendrite",
+        )
+        tree = Morpho.from_root(soma, name="soma")
+        tree.soma.dend = dend
+
+        with self.assertRaisesRegex(ValueError, "3D visualization requires full point geometry on every branch"):
+            tree.vis3d()
+
     def test_morpho_vis2d_routes_into_2d_plot_dispatch(self) -> None:
         soma = Branch.from_points(
             points=[[0.0, 0.0, 0.0], [20.0, 0.0, 0.0]] * u.um,
@@ -222,6 +239,31 @@ class FilterVisTest(unittest.TestCase):
         self.assertEqual(rendered.scene.projection_plane, "xy")
         self.assertEqual(len(rendered.scene.polylines), 2)
         self.assertTrue(np.allclose(rendered.scene.polylines[1].points_um[:, 0], np.array([20.0, 20.0])))
+
+    def test_morpho_vis2d_accepts_layout_parameters(self) -> None:
+        soma = Branch.from_lengths(lengths=[20.0] * u.um, radii=[10.0, 10.0] * u.um, type="soma")
+        dend_a = Branch.from_lengths(lengths=[30.0] * u.um, radii=[2.0, 1.5] * u.um, type="apical_dendrite")
+        dend_b = Branch.from_lengths(lengths=[30.0] * u.um, radii=[2.0, 1.5] * u.um, type="basal_dendrite")
+        tree = Morpho.from_root(soma, name="soma")
+        tree.attach(parent="soma", child_branch=dend_a, child_name="dend_a", parent_x=1.0)
+        tree.attach(parent="soma", child_branch=dend_b, child_name="dend_b", parent_x=1.0)
+
+        rendered = tree.vis2d(
+            mode="tree",
+            min_branch_angle_deg=90.0,
+            root_layout="legacy",
+            layout_family="stem",
+            chooser=BackendChooser(backends=(FakeBackend(),)),
+            backend="fake",
+        )
+
+        self.assertEqual(rendered.mode, "tree")
+        child_angles = sorted(
+            np.degrees(np.arctan2(polyline.points_um[-1, 1] - polyline.points_um[0, 1], polyline.points_um[-1, 0] - polyline.points_um[0, 0]))
+            for polyline in rendered.scene.polylines
+            if polyline.branch_name in {"dend_a", "dend_b"}
+        )
+        self.assertGreaterEqual(child_angles[1] - child_angles[0], 90.0 - 1e-6)
 
     def test_branch_views_are_rejected_by_downstream_entrypoints(self) -> None:
         soma = Branch.from_lengths(lengths=[20.0] * u.um, radii=[10.0, 10.0] * u.um, type="soma")

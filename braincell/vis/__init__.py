@@ -16,6 +16,7 @@
 from .backend import BackendChooser, RenderBackend
 from .backend_matplotlib import MatplotlibBackend
 from .backend_pyvista import PyVistaBackend
+from .compare2d import compare_layouts_2d
 from .layout2d import LayoutBranch2D, build_layout_branches_2d
 from .plot2d import plot2d
 from .plot3d import plot3d
@@ -45,6 +46,7 @@ __all__ = [
     "build_scene2d_frustum",
     "build_scene2d_projected",
     "build_scene2d_tree",
+    "compare_layouts_2d",
     "plot2d",
     "plot3d",
 ]

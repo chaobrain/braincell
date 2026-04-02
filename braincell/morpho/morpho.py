@@ -228,21 +228,146 @@ class Morpho:
         notebook: bool | None = None,
         jupyter_backend: str | None = None,
         return_plotter: bool = False,
+        show: bool = True,
     ) -> object:
+        """Visualize this morphology in 3D.
+
+        Renders the morphology as 3-D tubes using the PyVista backend.
+        All branches must have been created with :meth:`Branch.from_points`
+        (i.e. they must carry 3-D point geometry).
+
+        Parameters
+        ----------
+        mode : str
+            Visualization mode.  Currently only ``"geometry"`` is supported.
+        backend : str or None
+            Rendering backend name (e.g., ``"pyvista"``).
+            Auto-selected when *None*.
+        region : RegionMask or None
+            Evaluated region mask to attach as an overlay.  Obtain one
+            via ``expr.evaluate(morpho)`` or ``morpho.select(expr)``.
+        locset : LocsetMask or None
+            Evaluated location-set mask to attach as an overlay.
+        values : array-like or None
+            Per-branch or per-segment scalar values for colour-mapping.
+        chooser : BackendChooser or None
+            Explicit backend chooser; overrides *backend* when given.
+        notebook : bool or None
+            Enable notebook-specific rendering when *True*.
+        jupyter_backend : str or None
+            Jupyter backend name for notebook rendering (e.g.,
+            ``"trame"``, ``"static"``).
+        return_plotter : bool
+            If *True*, return the PyVista plotter object instead of
+            displaying the figure.
+        show : bool
+            If *True* (default), call the backend's show method after
+            rendering.  Set to *False* to suppress the blocking display
+            call.
+
+        Returns
+        -------
+        object
+            The PyVista plotter when *return_plotter* is True;
+            otherwise the backend's default display result.
+
+        See Also
+        --------
+        vis2d : 2-D visualization with the Matplotlib backend.
+
+        Examples
+        --------
+
+        **Basic 3-D rendering** of a soma with one dendrite:
+
+        .. code-block:: python
+
+            >>> import brainunit as u
+            >>> from braincell import Branch, Morpho
+            >>> soma = Branch.from_points(
+            ...     points=[[0, 0, 0], [20, 0, 0]] * u.um,
+            ...     radii=[10.0, 10.0] * u.um,
+            ...     type="soma",
+            ... )
+            >>> dend = Branch.from_points(
+            ...     points=[[20, 0, 0], [20, 80, 0]] * u.um,
+            ...     radii=[2.0, 1.0] * u.um,
+            ...     type="apical_dendrite",
+            ... )
+            >>> morpho = Morpho.from_root(soma, name="soma")
+            >>> morpho.soma.dend = dend
+            >>> morpho.vis3d()  # doctest: +SKIP
+
+        **Multi-branch morphology** with basal dendrites and an axon:
+
+        .. code-block:: python
+
+            >>> import numpy as np
+            >>> basal = Branch.from_points(
+            ...     points=[[0, 0, 0], [-30, -50, 10]] * u.um,
+            ...     radii=[3.0, 1.5] * u.um,
+            ...     type="basal_dendrite",
+            ... )
+            >>> axon = Branch.from_points(
+            ...     points=[[0, 0, 0], [0, 0, -100]] * u.um,
+            ...     radii=[1.0, 0.5] * u.um,
+            ...     type="axon",
+            ... )
+            >>> morpho.attach(parent="soma", child_branch=basal,
+            ...               child_name="basal", parent_x=0.0)  # doctest: +SKIP
+            >>> morpho.attach(parent="soma", child_branch=axon,
+            ...               child_name="axon", parent_x=0.5)  # doctest: +SKIP
+            >>> morpho.vis3d()  # doctest: +SKIP
+
+        **Highlight a region** — e.g. the full extent of all dendrites:
+
+        .. code-block:: python
+
+            >>> from braincell.filter import branch_in
+            >>> region = branch_in("type", ("apical_dendrite", "basal_dendrite")).evaluate(morpho)
+            >>> morpho.vis3d(region=region)  # doctest: +SKIP
+
+        **Mark specific locations** — e.g. branch points and terminals:
+
+        .. code-block:: python
+
+            >>> from braincell.filter import BranchPoints, Terminals
+            >>> locset = (BranchPoints() | Terminals()).evaluate(morpho)
+            >>> morpho.vis3d(locset=locset)  # doctest: +SKIP
+
+        **Retrieve the PyVista plotter** for further customisation:
+
+        .. code-block:: python
+
+            >>> plotter = morpho.vis3d(return_plotter=True, show=False)  # doctest: +SKIP
+            >>> plotter.add_text("My neuron", font_size=12)  # doctest: +SKIP
+            >>> plotter.show()  # doctest: +SKIP
+
+        **Notebook rendering** with the Trame backend:
+
+        .. code-block:: python
+
+            >>> morpho.vis3d(notebook=True, jupyter_backend="trame")  # doctest: +SKIP
+        """
         from braincell.vis.plot3d import plot3d
 
-        return plot3d(
+        result = plot3d(
             self,
-            mode=mode,
             region=region,
             locset=locset,
             values=values,
+            mode=mode,
             backend=backend,
             chooser=chooser,
             notebook=notebook,
             jupyter_backend=jupyter_backend,
             return_plotter=return_plotter,
         )
+        if show:
+            import matplotlib.pyplot as plt
+
+            plt.show()
+        return result
 
     def vis2d(
         self,
@@ -253,26 +378,176 @@ class Morpho:
         locset=None,
         values=None,
         chooser=None,
+        projection_plane: str = "xy",
         notebook: bool | None = None,
         jupyter_backend: str | None = None,
         return_plotter: bool = False,
-        projection_plane: str = "xy",
+        show: bool = True,
     ) -> object:
+        """Visualize this morphology in 2D.
+
+        Renders the morphology tree using the Matplotlib backend. Three
+        rendering modes are available:
+
+        * ``"projected"`` — projects 3-D point coordinates onto a 2-D plane.
+          Requires branches built with :meth:`Branch.from_points`.
+        * ``"tree"`` — schematic fan-out layout computed from branch lengths.
+          Works with any branch (no 3-D points required).
+        * ``"frustum"`` — draws each segment as a filled polygon whose width
+          matches the proximal/distal radii.  Works with any branch.
+
+        Parameters
+        ----------
+        mode : str
+            Visualization mode: ``"projected"`` (default), ``"tree"``,
+            or ``"frustum"``.
+        backend : str or None
+            Rendering backend name (e.g., ``"matplotlib"``).
+            Auto-selected when *None*.
+        region : RegionMask or None
+            Evaluated region mask to attach as an overlay.  Obtain one
+            via ``expr.evaluate(morpho)`` or ``morpho.select(expr)``.
+        locset : LocsetMask or None
+            Evaluated location-set mask to attach as an overlay.
+        values : array-like or None
+            Per-branch or per-segment scalar values for colour-mapping.
+        chooser : BackendChooser or None
+            Explicit backend chooser; overrides *backend* when given.
+        projection_plane : str
+            Axis pair for ``"projected"`` mode: ``"xy"`` (default),
+            ``"xz"``, or ``"yz"``.  Ignored by other modes.
+        notebook : bool or None
+            Enable notebook-specific rendering when *True*.
+        jupyter_backend : str or None
+            Jupyter backend name for notebook rendering.
+        return_plotter : bool
+            If *True*, return the ``matplotlib.axes.Axes`` object instead
+            of displaying the figure.
+        show : bool
+            If *True* (default), call ``matplotlib.pyplot.show()`` after
+            rendering.  Set to *False* to suppress the blocking display
+            call (useful in scripts, tests, or when embedding the axes
+            in a larger figure).
+
+        Returns
+        -------
+        object
+            The ``matplotlib.axes.Axes`` when *return_plotter* is True;
+            otherwise the backend's default display result.
+
+        Raises
+        ------
+        ValueError
+            If *mode* is ``"projected"`` and any branch lacks 3-D point
+            geometry.
+
+        See Also
+        --------
+        Branch.vis2d : Quick visualization of a single branch.
+        vis3d : 3-D visualization with the PyVista backend.
+
+        Examples
+        --------
+
+        **Projected mode** — project 3-D coordinates onto the *xy* plane:
+
+        .. code-block:: python
+
+            >>> import brainunit as u
+            >>> from braincell import Branch, Morpho
+            >>> soma = Branch.from_points(
+            ...     points=[[0, 0, 0], [20, 0, 0]] * u.um,
+            ...     radii=[10.0, 10.0] * u.um,
+            ...     type="soma",
+            ... )
+            >>> dend = Branch.from_points(
+            ...     points=[[20, 0, 0], [20, 80, 0]] * u.um,
+            ...     radii=[2.0, 1.0] * u.um,
+            ...     type="apical_dendrite",
+            ... )
+            >>> morpho = Morpho.from_root(soma, name="soma")
+            >>> morpho.soma.dend = dend
+            >>> morpho.vis2d()  # doctest: +SKIP
+
+        **Tree mode** — schematic layout (works without 3-D points):
+
+        .. code-block:: python
+
+            >>> soma = Branch.from_lengths(
+            ...     lengths=[20.0] * u.um,
+            ...     radii=[10.0, 10.0] * u.um,
+            ...     type="soma",
+            ... )
+            >>> dend = Branch.from_lengths(
+            ...     lengths=[8.0, 12.0] * u.um,
+            ...     radii=[2.0, 1.5, 1.0] * u.um,
+            ...     type="apical_dendrite",
+            ... )
+            >>> axon = Branch.from_lengths(
+            ...     lengths=[30.0, 25.0] * u.um,
+            ...     radii=[1.0, 0.8, 0.5] * u.um,
+            ...     type="axon",
+            ... )
+            >>> morpho = Morpho.from_root(soma, name="soma")
+            >>> morpho.soma.dend = dend
+            >>> morpho.soma.axon = axon
+            >>> morpho.vis2d(mode="tree")  # doctest: +SKIP
+
+        **Frustum mode** — filled polygons showing segment radii:
+
+        .. code-block:: python
+
+            >>> morpho.vis2d(mode="frustum")  # doctest: +SKIP
+
+        **Change projection plane** to *xz*:
+
+        .. code-block:: python
+
+            >>> morpho.vis2d(projection_plane="xz")  # doctest: +SKIP
+
+        **Retrieve the Axes** for further customisation:
+
+        .. code-block:: python
+
+            >>> ax = morpho.vis2d(return_plotter=True, show=False)  # doctest: +SKIP
+            >>> ax.set_title("My morphology")  # doctest: +SKIP
+
+        **Overlay a region mask** (e.g. highlight all axon branches):
+
+        .. code-block:: python
+
+            >>> from braincell.filter import branch_in
+            >>> region = branch_in("type", "axon").evaluate(morpho)
+            >>> morpho.vis2d(region=region)  # doctest: +SKIP
+
+        **Overlay a location set** (e.g. mark terminal points):
+
+        .. code-block:: python
+
+            >>> from braincell.filter import Terminals
+            >>> locset = Terminals().evaluate(morpho)
+            >>> morpho.vis2d(locset=locset)  # doctest: +SKIP
+        """
         from braincell.vis.plot2d import plot2d
 
-        return plot2d(
+        result = plot2d(
             self,
-            mode=mode,
-            backend=backend,
             region=region,
             locset=locset,
             values=values,
+            mode=mode,
+            backend=backend,
             chooser=chooser,
             notebook=notebook,
             jupyter_backend=jupyter_backend,
             return_plotter=return_plotter,
             projection_plane=projection_plane,
         )
+        if show:
+            import matplotlib.pyplot as plt
+
+            plt.show()
+        return result
 
     def select(self, expr, *, cache=None):
         from braincell.filter import LocsetExpr, RegionExpr

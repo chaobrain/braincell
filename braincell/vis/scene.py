@@ -23,7 +23,7 @@ import numpy as np
 from braincell.filter import LocsetMask, RegionMask
 from braincell.morpho import Morpho
 
-ArrayLike = Any
+from brainstate.typing import ArrayLike
 
 
 ALLEN_RGB_BY_TYPE = {

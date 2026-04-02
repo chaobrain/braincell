@@ -386,6 +386,87 @@ class Branch:
     def volume(self) -> u.Quantity[u.um ** 3]:
         return self.volumes.sum()
 
+    def vis2d(
+        self,
+        *,
+        mode: str = "frustum",
+        backend: str | None = None,
+        chooser=None,
+        projection_plane: str = "xy",
+        return_plotter: bool = False,
+        show: bool = True,
+    ) -> object:
+        """Visualize this branch in 2D.
+
+        Creates a temporary single-branch morphology and renders it using
+        the existing 2D visualization pipeline.
+
+        Parameters
+        ----------
+        mode : str
+            Visualization mode: ``"frustum"`` (default, shows segment widths
+            as polygons), ``"tree"`` (schematic polyline), or ``"projected"``
+            (3-D point projection, requires point geometry).
+        backend : str or None
+            Rendering backend name (e.g., ``"matplotlib"``).
+            Auto-selected when *None*.
+        chooser : BackendChooser or None
+            Explicit backend chooser; overrides *backend* when given.
+        projection_plane : str
+            Projection plane for ``"projected"`` mode: ``"xy"``, ``"xz"``,
+            or ``"yz"`` (default ``"xy"``).
+        return_plotter : bool
+            If *True*, return the backend plotter/axes object instead of
+            displaying the figure.
+        show : bool
+            If *True* (default), call ``matplotlib.pyplot.show()`` after
+            rendering. Set to *False* to suppress display (e.g., when
+            embedding in a larger figure or running in tests).
+
+        Returns
+        -------
+        object
+            The backend plotter/axes when *return_plotter* is True;
+            otherwise the backend's default display result.
+
+        Raises
+        ------
+        ValueError
+            If *mode* is ``"projected"`` and the branch has no 3-D point
+            geometry.
+
+        Examples
+        --------
+
+        .. code-block:: python
+
+            >>> import brainunit as u
+            >>> from braincell import Branch
+            >>> branch = Branch.from_lengths(
+            ...     lengths=[10.0, 15.0, 20.0] * u.um,
+            ...     radii=[3.0, 2.5, 2.0, 1.5] * u.um,
+            ...     type="dend",
+            ... )
+            >>> branch.vis2d()  # doctest: +SKIP
+        """
+        from braincell.morpho import Morpho
+        from braincell.vis import plot2d
+
+        morpho = Morpho.from_root(self, name="soma")
+        result = plot2d(
+            morpho,
+            mode=mode,
+            backend=backend,
+            chooser=chooser,
+            projection_plane=projection_plane,
+            return_plotter=return_plotter,
+        )
+        if show:
+            import matplotlib.pyplot as plt
+
+            plt.show()
+        return result
+
     def __repr__(self) -> str:
         return (
             f"Branch(type={self.type!r}, n_segments={self.n_segments!r}, "

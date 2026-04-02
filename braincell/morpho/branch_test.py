@@ -17,8 +17,9 @@ from __future__ import annotations
 
 import math
 import unittest
-from braincell._test_support import jnp, np, u
+from braincell._test_support import FakeBackend, jnp, np, u
 from braincell import Branch
+from braincell.vis import BackendChooser
 
 
 class BranchTest(unittest.TestCase):
@@ -463,3 +464,35 @@ class BranchTest(unittest.TestCase):
         self.assertFalse(branch == object())
         with self.assertRaises(TypeError):
             hash(branch)
+
+    def test_vis2d_frustum_mode(self) -> None:
+        branch = Branch.from_lengths(
+            lengths=[10.0, 15.0] * u.um,
+            radii=[2.0, 1.5, 1.0] * u.um,
+            type="dend",
+        )
+        backend = FakeBackend()
+        request = branch.vis2d(mode="frustum", show=False, chooser=BackendChooser(backends=(backend,)))
+
+        self.assertEqual(request.mode, "frustum")
+        self.assertGreater(len(request.scene.polygons), 0)
+
+    def test_vis2d_tree_mode(self) -> None:
+        branch = Branch.from_lengths(
+            lengths=[20.0] * u.um,
+            radii=[3.0, 3.0] * u.um,
+        )
+        backend = FakeBackend()
+        request = branch.vis2d(mode="tree", show=False, chooser=BackendChooser(backends=(backend,)))
+
+        self.assertEqual(request.mode, "tree")
+        self.assertEqual(len(request.scene.polylines), 1)
+
+    def test_vis2d_projected_mode_requires_points(self) -> None:
+        branch = Branch.from_lengths(
+            lengths=[10.0] * u.um,
+            radii=[2.0, 2.0] * u.um,
+        )
+        backend = FakeBackend()
+        with self.assertRaises(ValueError):
+            branch.vis2d(mode="projected", show=False, chooser=BackendChooser(backends=(backend,)))

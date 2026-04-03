@@ -14,15 +14,14 @@
 # ==============================================================================
 
 
-
 import unittest
 from dataclasses import is_dataclass
 
+import brainunit as u
 import numpy as np
 
-from braincell._test_support import FakeBackend, u
-
 from braincell import Branch, Cell, Morpho
+from braincell._test_support import FakeBackend
 from braincell.filter import AllRegion, BranchSlice, RootLocation, Terminals, branch_in
 from braincell.vis import BackendChooser, plot2d, plot3d
 
@@ -56,7 +55,8 @@ class FilterVisTest(unittest.TestCase):
         self.assertEqual(cell.n_cv, 2)
         self.assertEqual(backend.last_request.morpho.branch(name="soma").type, "soma")
         self.assertEqual(backend.last_request.dimensionality, "3d")
-        self.assertEqual({batch.branch_type for batch in backend.last_request.scene.batches}, {"soma", "apical_dendrite"})
+        self.assertEqual({batch.branch_type for batch in backend.last_request.scene.batches},
+                         {"soma", "apical_dendrite"})
 
     def test_broadcast_branch_slice_region_flows_into_plot(self) -> None:
         soma = Branch.from_points(

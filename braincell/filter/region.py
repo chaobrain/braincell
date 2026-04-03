@@ -15,17 +15,15 @@
 
 """Lazy region expressions for selecting continuous morphology subdomains."""
 
-
-
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Any
 
-from ..morpho import Morpho
+from brainunit import Quantity
+
 from . import helper
 from .cache import SelectionCache
+from ..morpho import Morpho
 
-Quantity = Any
 ClosedSide = str
 
 __all__ = [

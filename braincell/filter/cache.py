@@ -14,11 +14,9 @@
 # ==============================================================================
 
 
-
 from dataclasses import dataclass, field
-from typing import Any
 
-Quantity = Any
+from brainunit import Quantity
 
 
 @dataclass

@@ -14,7 +14,6 @@
 # ==============================================================================
 
 
-
 import unittest
 
 from braincell import Branch, Morpho

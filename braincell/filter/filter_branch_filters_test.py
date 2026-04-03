@@ -14,10 +14,9 @@
 # ==============================================================================
 
 
-
 import unittest
 
-from braincell._test_support import u
+import brainunit as u
 
 from braincell import Branch, Morpho
 from braincell.filter import BranchInFilter, BranchRangeFilter, branch_in, branch_range
@@ -121,6 +120,6 @@ class BranchFilterTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             BranchRangeFilter(property="branch_id", bounds=(2, 1), closed="both").evaluate(tree)
         with self.assertRaises(ValueError):
-            BranchRangeFilter(property="volume", bounds=(None, 100 * (u.um**3)), closed="right").evaluate(tree)
+            BranchRangeFilter(property="volume", bounds=(None, 100 * (u.um ** 3)), closed="right").evaluate(tree)
         with self.assertRaises(TypeError):
             BranchRangeFilter(property="branch_id", bounds=(0, 1), unit=u.um, closed="both")

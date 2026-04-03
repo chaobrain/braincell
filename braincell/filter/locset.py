@@ -14,17 +14,16 @@
 # ==============================================================================
 
 
-
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Any
 
-from ..morpho import Morpho
+from brainunit import Quantity
+
 from . import helper
 from .cache import SelectionCache
 from .region import RegionExpr
+from ..morpho import Morpho
 
-Quantity = Any
 Location = tuple[int, float]
 
 __all__ = [

@@ -14,7 +14,6 @@
 # ==============================================================================
 
 
-
 from numbers import Integral, Real
 
 import brainunit as u

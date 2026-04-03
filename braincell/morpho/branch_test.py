@@ -17,12 +17,25 @@
 import math
 import unittest
 
+import brainunit as u
+import numpy as np
+
 from braincell import Branch
-from braincell._test_support import FakeBackend, jnp, np, u
+from braincell.morpho import vis as morpho_vis
 from braincell.vis import BackendChooser
+from braincell.vis._test_helper import FakeBackend
+
+try:
+    import jax.numpy as jnp
+except ModuleNotFoundError:
+    jnp = None
 
 
 class BranchTest(unittest.TestCase):
+    def setUp(self) -> None:
+        morpho_vis.reset_defaults()
+        self.addCleanup(morpho_vis.reset_defaults)
+
     def test_branch_init_accepts_valid_quantities(self) -> None:
         branch = Branch(
             lengths=10.0 * u.um,
@@ -497,5 +510,29 @@ class BranchTest(unittest.TestCase):
             radii=[2.0, 2.0] * u.um,
         )
         backend = FakeBackend()
-        with self.assertRaises(ValueError):
+        with self.assertRaisesRegex(ValueError, "mode='tree'.*mode='frustum'"):
             branch.vis2d(mode="projected", show=False, chooser=BackendChooser(backends=(backend,)))
+
+    def test_vis3d_geometry_mode(self) -> None:
+        branch = Branch.from_points(
+            points=[[0.0, 0.0, 0.0], [10.0, 0.0, 0.0]] * u.um,
+            radii=[2.0, 1.0] * u.um,
+            type="axon",
+        )
+        backend = FakeBackend()
+
+        request = branch.vis3d(show=False, chooser=BackendChooser(backends=(backend,)))
+
+        self.assertEqual(request.mode, "geometry")
+        self.assertEqual(len(request.scene.branches), 1)
+
+    def test_vis3d_requires_points_and_suggests_2d_modes(self) -> None:
+        branch = Branch.from_lengths(
+            lengths=[10.0] * u.um,
+            radii=[2.0, 1.0] * u.um,
+            type="axon",
+        )
+        backend = FakeBackend()
+
+        with self.assertRaisesRegex(ValueError, r"vis2d\(mode='tree'\).+vis2d\(mode='frustum'\)"):
+            branch.vis3d(show=False, chooser=BackendChooser(backends=(backend,)))

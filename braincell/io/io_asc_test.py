@@ -19,7 +19,8 @@ import textwrap
 import unittest
 from pathlib import Path
 
-from braincell import AscReader, Morpho
+from braincell import Morpho
+from braincell.io.asc import AscReader
 
 
 class AscReaderTest(unittest.TestCase):

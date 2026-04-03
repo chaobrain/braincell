@@ -17,7 +17,7 @@
 
 import unittest
 
-from braincell._test_support import u
+import brainunit as u
 
 from braincell import Branch, CVPolicy, Cell, Morpho
 
@@ -83,9 +83,9 @@ class CVPolicyTest(unittest.TestCase):
         cell = Cell(tree, cv_policy=CVPolicy(mode="max_cv_len", max_cv_len=5.0 * u.um))
 
         self.assertEqual(cell.n_cv, 4)
-        self.assertEqual(cell.cv(2).parent_cv, 1)
-        self.assertIn(2, cell.cv(1).children_cv)
-        self.assertEqual(cell.cv(3).parent_cv, 2)
+        self.assertEqual(cell.cvs[2].parent_cv, 1)
+        self.assertIn(2, cell.cvs[1].children_cv)
+        self.assertEqual(cell.cvs[3].parent_cv, 2)
 
     def test_policy_validation_errors(self) -> None:
         tree = _build_two_branch_tree()
@@ -104,4 +104,3 @@ class CVPolicyTest(unittest.TestCase):
             Cell(tree, cv_policy=CVPolicy(mode="max_cv_len", max_cv_len=20.0))
         with self.assertRaises(ValueError):
             Cell(tree, cv_policy=CVPolicy(mode="max_cv_len", max_cv_len=0.0 * u.um))
-

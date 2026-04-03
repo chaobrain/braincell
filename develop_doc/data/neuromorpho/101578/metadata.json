@@ -1,0 +1,126 @@
+{
+  "archive": "Luebke",
+  "download_items": [
+    {
+      "downloaded_now": false,
+      "filename": "Dec4IR1d.CNG.swc",
+      "kind": "standard",
+      "path": "develop_doc/data/neuromorpho/101578/Dec4IR1d.CNG.swc",
+      "url": "https://neuromorpho.org/dableFiles/luebke/CNG%20version/Dec4IR1d.CNG.swc"
+    }
+  ],
+  "download_mode": "standard",
+  "links": {
+    "measurements": {
+      "href": "http://neuromorpho.org/api/morphometry/id/101578"
+    },
+    "persistence_vector": {
+      "href": "http://neuromorpho.org/api/pvec/id/101578"
+    },
+    "self": {
+      "href": "http://neuromorpho.org/api/neuron/id/101578"
+    }
+  },
+  "measurement": {
+    "bif_ampl_local": 69.1559,
+    "bif_ampl_remote": 72.6038,
+    "branch_Order": 6.0,
+    "contraction": 0.816772,
+    "depth": 32.44,
+    "diameter": 0.663419,
+    "eucDistance": 146.307,
+    "fractal_Dim": 1.06565,
+    "fragmentation": 1916.0,
+    "height": 166.449,
+    "length": 1642.52,
+    "n_bifs": 20.0,
+    "n_branch": 46.0,
+    "n_stems": 6.0,
+    "neuron_id": 101578,
+    "neuron_name": "Dec4IR1d",
+    "partition_asymmetry": 0.451429,
+    "pathDistance": 180.057,
+    "pk_classic": 1.48965,
+    "soma_Surface": 736.331,
+    "surface": 3533.82,
+    "volume": 662.946,
+    "width": 128.091
+  },
+  "measurement_url": "http://neuromorpho.org/api/morphometry/id/101578",
+  "neuron": {
+    "_links": {
+      "measurements": {
+        "href": "http://neuromorpho.org/api/morphometry/id/101578"
+      },
+      "persistence_vector": {
+        "href": "http://neuromorpho.org/api/pvec/id/101578"
+      },
+      "self": {
+        "href": "http://neuromorpho.org/api/neuron/id/101578"
+      }
+    },
+    "age_classification": "young adult",
+    "age_scale": "Day",
+    "archive": "Luebke",
+    "attributes": "Diameter, 3D, Angles",
+    "brain_region": [
+      "neocortex",
+      "somatosensory",
+      "barrel",
+      "layer 4",
+      "primary somatosensory"
+    ],
+    "cell_type": [
+      "principal cell",
+      "stellate",
+      "Tbr2 lineage"
+    ],
+    "corrected_value": null,
+    "corrected_xy": null,
+    "corrected_z": null,
+    "deposition_date": "2018-07-27",
+    "domain": "Dendrites, Soma, No Axon",
+    "experiment_condition": [
+      "Control"
+    ],
+    "gender": "Male/Female",
+    "magnification": "20",
+    "max_age": "21.0",
+    "max_weight": "Not Reported",
+    "min_age": "21.0",
+    "min_weight": "Not Reported",
+    "neuron_id": 101578,
+    "neuron_name": "Dec4IR1d",
+    "note": "",
+    "objective_type": "dry",
+    "original_format": "Neurolucida.dat",
+    "physical_Integrity": "Dendrites Moderate",
+    "png_url": "http://neuromorpho.org/images/imageFiles/Luebke/Dec4IR1d.png",
+    "protocol": "in vitro",
+    "reconstruction_software": "Neurolucida",
+    "reference_doi": [
+      "10.1093/cercor/bhy019"
+    ],
+    "reference_pmid": [
+      "29415216"
+    ],
+    "reported_value": null,
+    "reported_xy": null,
+    "reported_z": null,
+    "scientific_name": null,
+    "shrinkage_corrected": "",
+    "shrinkage_reported": "Not Reported",
+    "slicing_direction": "coronal",
+    "slicing_thickness": "300",
+    "soma_surface": "736.331",
+    "species": "mouse",
+    "stain": "Biocytin, Streptavidin-Alexa 405",
+    "strain": "CD1",
+    "surface": "3533.82",
+    "upload_date": "2018-11-27",
+    "volume": "662.946"
+  },
+  "neuron_id": 101578,
+  "neuron_name": "Dec4IR1d",
+  "original_format": "Neurolucida.dat"
+}

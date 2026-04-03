@@ -20,10 +20,10 @@ import types
 import unittest
 from unittest import mock
 
-import braincell._test_support  # noqa: F401
+import brainunit as u
 
 from braincell import Branch, Morpho
-from braincell._test_support import u
+from braincell.morpho import vis as morpho_vis
 from braincell.vis import PyVistaBackend, RenderRequest, build_render_scene_3d
 
 
@@ -66,8 +66,8 @@ class _FakePlotter:
     def show_axes(self) -> None:
         self.axes_shown = True
 
-    def add_mesh(self, mesh, color=None) -> None:
-        self.meshes.append((mesh, color))
+    def add_mesh(self, mesh, color=None, opacity=None) -> None:
+        self.meshes.append((mesh, color, opacity))
 
     def show(self, **kwargs):
         self.show_calls.append(kwargs)
@@ -151,6 +151,10 @@ def _fake_pyvista(plotter_cls, *, extension_available=False):
 
 
 class PyVistaBackendTest(unittest.TestCase):
+    def setUp(self) -> None:
+        morpho_vis.reset_defaults()
+        self.addCleanup(morpho_vis.reset_defaults)
+
     def test_render_rejects_non_3d_scene(self) -> None:
         branch = Branch.from_points(
             points=[[0.0, 0.0, 0.0], [10.0, 0.0, 0.0]] * u.um,
@@ -174,7 +178,18 @@ class PyVistaBackendTest(unittest.TestCase):
         self.assertEqual(plotter.kwargs, {"off_screen": True})
         self.assertEqual(plotter.background, "white")
         self.assertEqual(len(plotter.meshes), 1)
+        self.assertEqual(plotter.meshes[0][2], 1.0)
         self.assertEqual(plotter.show_calls, [])
+
+    def test_render_uses_configured_opacity(self) -> None:
+        fake_pv = _fake_pyvista(_FakePlotter)
+        backend = PyVistaBackend(plotter_kwargs={"off_screen": True}, show_axes=False)
+        morpho_vis.configure(alpha_3d_tube=0.35)
+
+        with mock.patch.dict("sys.modules", {"pyvista": fake_pv}):
+            plotter = backend.render(_request(notebook=False))
+
+        self.assertEqual(plotter.meshes[0][2], 0.35)
 
     def test_render_uses_client_first_for_headless_notebook_auto_mode(self) -> None:
         fake_pv = _fake_pyvista(_FakePlotter)

@@ -19,15 +19,18 @@ import textwrap
 import unittest
 from pathlib import Path
 
-from braincell import Morpho, SwcReadOptions, SwcReader
-from braincell._test_support import np, u
+import brainunit as u
+import numpy as np
+
+from braincell import Morpho
+from braincell.io.swc import SwcReadOptions, SwcReader
 from braincell.io.swc.soma import is_contour_soma, is_special_three_point_soma
 from braincell.io.swc.types import _SwcAttach, _SwcBranch, _SwcRow
 
 
 class SwcReaderTest(unittest.TestCase):
     def _morpho_file(self, name: str) -> Path:
-        return Path(__file__).with_name("morpho_files") / name
+        return Path(__file__).resolve().parents[2] / "develop_doc" / "morpho_files" / name
 
     def _write_swc(self, body: str) -> Path:
         temp_dir = tempfile.TemporaryDirectory()
@@ -213,6 +216,40 @@ class SwcReaderTest(unittest.TestCase):
                     "    └── basal_dendrite_1",
                 )
             ),
+        )
+
+    def test_reader_neuromorpho_mode_copies_midpoint_soma_attach_point(self) -> None:
+        path = self._write_swc(
+            """
+            1 1 0 0 0 10 -1
+            2 3 0 10 0 2 1
+            3 3 0 20 0 1 2
+            4 2 10 0 0 1 1
+            5 2 20 0 0 0.5 4
+            """
+        )
+
+        tree = SwcReader(options=SwcReadOptions(mode="neuromorpho")).read(path)
+        main = tree.branch(name="basal_dendrite_0").branch
+        axon = tree.branch(name="axon_0").branch
+
+        self.assertTrue(
+            np.allclose(
+                self._branch_points_um(main),
+                np.array([[0.0, 0.0, 0.0], [0.0, 10.0, 0.0], [0.0, 20.0, 0.0]]),
+            )
+        )
+        self.assertTrue(
+            np.allclose(
+                self._branch_point_radii_um(main),
+                np.array([2.0, 2.0, 1.0]),
+            )
+        )
+        self.assertTrue(
+            np.allclose(
+                self._branch_points_um(axon),
+                np.array([[0.0, 0.0, 0.0], [10.0, 0.0, 0.0], [20.0, 0.0, 0.0]]),
+            )
         )
 
     def test_reader_applies_con2prox_to_mixed_type_siblings_under_soma(self) -> None:
@@ -772,6 +809,46 @@ class SwcReaderTest(unittest.TestCase):
         self.assertIsInstance(tree, Morpho)
         self.assertFalse(report.has_errors)
         self.assertIn("topology.invalid_parent", self._issue_codes(report))
+
+    def test_morpho_from_swc_mode_matches_options(self) -> None:
+        path = self._write_swc(
+            """
+            1 1 0 0 0 10 -1
+            2 3 10 0 0 2 1
+            3 3 20 0 0 1 2
+            """
+        )
+
+        via_mode = Morpho.from_swc(path, mode="neuromorpho")
+        via_options = Morpho.from_swc(path, options=SwcReadOptions(mode="neuromorpho"))
+
+        self.assertEqual(via_mode, via_options)
+
+    def test_morpho_from_swc_rejects_conflicting_mode_and_options(self) -> None:
+        path = self._write_swc(
+            """
+            1 1 0 0 0 10 -1
+            2 3 10 0 0 2 1
+            """
+        )
+
+        with self.assertRaisesRegex(ValueError, "Conflicting SWC import mode"):
+            Morpho.from_swc(path, mode="neuromorpho", options=SwcReadOptions(mode="neuron"))
+
+    def test_neuromorpho_mode_does_not_change_non_midpoint_attachment(self) -> None:
+        path = self._write_swc(
+            """
+            1 1 -10 0 0 10 -1
+            2 1 0 0 0 5 1
+            3 1 10 0 0 10 2
+            4 3 10 10 0 2 3
+            """
+        )
+
+        neuron_tree = SwcReader(options=SwcReadOptions(mode="neuron")).read(path)
+        neuromorpho_tree = SwcReader(options=SwcReadOptions(mode="neuromorpho")).read(path)
+
+        self.assertEqual(neuron_tree, neuromorpho_tree)
 
     def test_reader_error_uses_pretty_error_report(self) -> None:
         path = self._write_swc(

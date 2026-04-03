@@ -16,11 +16,19 @@
 from .cell import Cell
 from .cv import CV, CVPolicy
 from .cv_mech import PaintRule, PlaceRule
+from .point_scheduling import PointScheduling
+from .point_tree import CVEdge, CVPoint, ComputeEdge, ComputePoint, PointTree
 
 __all__ = [
+    "CVEdge",
+    "CVPoint",
+    "ComputeEdge",
+    "ComputePoint",
     "CV",
     "CVPolicy",
     "Cell",
     "PaintRule",
+    "PointScheduling",
+    "PointTree",
     "PlaceRule",
 ]

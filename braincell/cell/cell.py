@@ -14,8 +14,6 @@
 # ==============================================================================
 
 
-from numbers import Integral
-
 from braincell.filter import LocsetExpr, RegionExpr
 from braincell.morpho import Morpho
 from .cv import CV, CVPolicy, assemble_cv
@@ -31,6 +29,8 @@ from .cv_mech import (
     normalize_paint_rules,
     normalize_place_rule,
 )
+from .point_scheduling import PointScheduling, build_point_scheduling
+from .point_tree import PointTree, build_point_tree
 
 
 class Cell:
@@ -47,6 +47,8 @@ class Cell:
         self._paint_rules: tuple[PaintRule, ...] = default_paint_rules()
         self._place_rules: tuple[PlaceRule, ...] = ()
         self._cvs: tuple[CV, ...] | None = None
+        self._point_tree: PointTree | None = None
+        self._point_scheduling: dict[tuple[str, int], PointScheduling] = {}
         self._dirty = True
         self._rebuild_if_needed()
 
@@ -96,21 +98,55 @@ class Cell:
     def cvs(self) -> tuple[CV, ...]:
         return self._rebuild_if_needed()
 
-    def cv(self, index: int) -> CV:
-        if isinstance(index, bool) or not isinstance(index, Integral):
-            raise TypeError(f"Cell.cv(...) index must be int, got {index!r}.")
-        idx = int(index)
-        cvs = self.cvs
-        if idx < 0 or idx >= len(cvs):
-            raise IndexError(f"CV index {idx!r} is out of range [0, {len(cvs)}).")
-        return cvs[idx]
+    def __repr__(self) -> str:
+        return (
+            f"Cell(root={self.morpho.root.name!r}, n_branches={len(self.morpho.branches)!r}, "
+            f"n_cv={self.n_cv!r}, n_paint_rules={len(self.paint_rules)!r}, "
+            f"n_place_rules={len(self.place_rules)!r})"
+        )
 
-    def summary(self) -> dict[str, object]:
-        return {
-            "n_cv": self.n_cv,
-            "n_paint_rules": len(self._paint_rules),
-            "n_place_rules": len(self._place_rules),
-        }
+    def __str__(self) -> str:
+        return (
+            f"{'-'*35}\n"
+            f"{'root':<14} | {self.morpho.root.name}\n"
+            f"{'n_branches':<14} | {len(self.morpho.branches)}\n"
+            f"{'n_cv':<14} | {self.n_cv}\n"
+            f"{'n_paint_rules':<14} | {len(self.paint_rules)}\n"
+            f"{'n_place_rules':<14} | {len(self.place_rules)}\n"
+            f"{'-'*35}\n"
+        )
+
+    def point_tree(self) -> PointTree:
+        self._rebuild_if_needed()
+        cached = self._point_tree
+        if cached is not None:
+            return cached
+        tree = build_point_tree(
+            self._morpho,
+            cvs=self.cvs,
+        )
+        self._point_tree = tree
+        return tree
+
+    def point_scheduling(
+        self,
+        *,
+        max_group_size: int = 32,
+        algorithm: str = "dhs",
+    ) -> PointScheduling:
+        self._rebuild_if_needed()
+        cache_key = (algorithm, max_group_size)
+        cached = self._point_scheduling.get(cache_key)
+        if cached is not None:
+            return cached
+        tree = self.point_tree()
+        scheduling = build_point_scheduling(
+            tree,
+            max_group_size=max_group_size,
+            algorithm=algorithm,
+        )
+        self._point_scheduling[cache_key] = scheduling
+        return scheduling
 
     def _rebuild_if_needed(self) -> tuple[CV, ...]:
         if not self._dirty and self._cvs is not None:
@@ -138,6 +174,8 @@ class Cell:
             assemble_cv(cv_geo=piece, mech=cv_mech[piece.id])
             for piece in cv_geo
         )
+        self._point_tree = None
+        self._point_scheduling = {}
         self._dirty = False
         return self._cvs
 

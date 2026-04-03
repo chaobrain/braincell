@@ -1,0 +1,126 @@
+{
+  "archive": "Luebke",
+  "download_items": [
+    {
+      "downloaded_now": false,
+      "filename": "Dec3IR3d-tgv.CNG.swc",
+      "kind": "standard",
+      "path": "develop_doc/data/neuromorpho/101577/Dec3IR3d-tgv.CNG.swc",
+      "url": "https://neuromorpho.org/dableFiles/luebke/CNG%20version/Dec3IR3d-tgv.CNG.swc"
+    }
+  ],
+  "download_mode": "standard",
+  "links": {
+    "measurements": {
+      "href": "http://neuromorpho.org/api/morphometry/id/101577"
+    },
+    "persistence_vector": {
+      "href": "http://neuromorpho.org/api/pvec/id/101577"
+    },
+    "self": {
+      "href": "http://neuromorpho.org/api/neuron/id/101577"
+    }
+  },
+  "measurement": {
+    "bif_ampl_local": 53.8392,
+    "bif_ampl_remote": 61.8321,
+    "branch_Order": 6.0,
+    "contraction": 0.893973,
+    "depth": 36.89,
+    "diameter": 0.759671,
+    "eucDistance": 133.627,
+    "fractal_Dim": 1.03187,
+    "fragmentation": 2647.0,
+    "height": 168.869,
+    "length": 1680.31,
+    "n_bifs": 23.0,
+    "n_branch": 48.0,
+    "n_stems": 2.0,
+    "neuron_id": 101577,
+    "neuron_name": "Dec3IR3d-tgv",
+    "partition_asymmetry": 0.36853,
+    "pathDistance": 162.459,
+    "pk_classic": 1.93724,
+    "soma_Surface": 551.654,
+    "surface": 4209.26,
+    "volume": 1015.23,
+    "width": 94.4807
+  },
+  "measurement_url": "http://neuromorpho.org/api/morphometry/id/101577",
+  "neuron": {
+    "_links": {
+      "measurements": {
+        "href": "http://neuromorpho.org/api/morphometry/id/101577"
+      },
+      "persistence_vector": {
+        "href": "http://neuromorpho.org/api/pvec/id/101577"
+      },
+      "self": {
+        "href": "http://neuromorpho.org/api/neuron/id/101577"
+      }
+    },
+    "age_classification": "young adult",
+    "age_scale": "Day",
+    "archive": "Luebke",
+    "attributes": "Diameter, 3D, Angles",
+    "brain_region": [
+      "neocortex",
+      "somatosensory",
+      "barrel",
+      "layer 4",
+      "primary somatosensory"
+    ],
+    "cell_type": [
+      "principal cell",
+      "stellate",
+      "Tbr2 lineage"
+    ],
+    "corrected_value": null,
+    "corrected_xy": null,
+    "corrected_z": null,
+    "deposition_date": "2018-07-27",
+    "domain": "Dendrites, Soma, No Axon",
+    "experiment_condition": [
+      "Control"
+    ],
+    "gender": "Male/Female",
+    "magnification": "20",
+    "max_age": "21.0",
+    "max_weight": "Not Reported",
+    "min_age": "21.0",
+    "min_weight": "Not Reported",
+    "neuron_id": 101577,
+    "neuron_name": "Dec3IR3d-tgv",
+    "note": "",
+    "objective_type": "dry",
+    "original_format": "Neurolucida.dat",
+    "physical_Integrity": "Dendrites Moderate",
+    "png_url": "http://neuromorpho.org/images/imageFiles/Luebke/Dec3IR3d-tgv.png",
+    "protocol": "in vitro",
+    "reconstruction_software": "Neurolucida",
+    "reference_doi": [
+      "10.1093/cercor/bhy019"
+    ],
+    "reference_pmid": [
+      "29415216"
+    ],
+    "reported_value": null,
+    "reported_xy": null,
+    "reported_z": null,
+    "scientific_name": null,
+    "shrinkage_corrected": "",
+    "shrinkage_reported": "Not Reported",
+    "slicing_direction": "coronal",
+    "slicing_thickness": "300",
+    "soma_surface": "551.654",
+    "species": "mouse",
+    "stain": "Biocytin, Streptavidin-Alexa 405",
+    "strain": "CD1",
+    "surface": "4209.26",
+    "upload_date": "2018-11-27",
+    "volume": "1015.23"
+  },
+  "neuron_id": 101577,
+  "neuron_name": "Dec3IR3d-tgv",
+  "original_format": "Neurolucida.dat"
+}

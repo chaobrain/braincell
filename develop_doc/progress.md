@@ -115,7 +115,7 @@ pytest --collect-only -q
 
 ### `morpho`
 
-- `Branch.lateral_areas()`
+- `Branch.areas()`
 - `Branch.volumes()`
 - `morpho/metrics.py` 里的度量实现
 - `io/asc/` 与 `io/neuroml2/` 中的 `AscReader` / `NeuroMlReader`

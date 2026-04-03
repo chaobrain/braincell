@@ -15,6 +15,7 @@
 
 
 from .backend import BackendChooser, validate_backend_for_scene
+from .config import resolve_default_3d_mode
 from .scene import OverlaySpec, RenderRequest
 from .scene3d import build_render_scene_3d
 
@@ -25,7 +26,7 @@ def plot3d(
     region=None,
     locset=None,
     values=None,
-    mode: str = "geometry",
+    mode: str | None = None,
     backend: str | None = None,
     chooser: BackendChooser | None = None,
     notebook: bool | None = None,
@@ -36,8 +37,9 @@ def plot3d(
 
     if not isinstance(morpho, Morpho):
         raise TypeError(f"plot3d(...) expects Morpho, got {type(morpho).__name__!s}.")
-    if mode != "geometry":
-        raise ValueError(f"Unsupported 3D mode {mode!r}. Expected 'geometry'.")
+    resolved_mode = resolve_default_3d_mode(mode)
+    if resolved_mode != "geometry":
+        raise ValueError(f"Unsupported 3D mode {resolved_mode!r}. Expected 'geometry'.")
 
     scene = build_render_scene_3d(morpho)
     chooser = chooser or BackendChooser.default()
@@ -45,7 +47,7 @@ def plot3d(
         morpho=morpho,
         overlay=OverlaySpec(region=region, locset=locset, values=values),
         dimensionality="3d",
-        mode=mode,
+        mode=resolved_mode,
         scene=scene,
         notebook=notebook,
         jupyter_backend=jupyter_backend,

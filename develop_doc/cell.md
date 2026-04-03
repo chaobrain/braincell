@@ -34,8 +34,7 @@
 - `paint(region, *mechanisms)`
 - `place(locset, *point_mech)`
 - `n_cv`
-- `cv(i) -> CV`
-- `summary()`
+- `cvs[i] -> CV`
 
 ### `class CV`
 
@@ -63,7 +62,7 @@
 派生属性：
 
 - `length`
-- `lateral_area`
+- `area`
 - `r_axial_prox`
 - `r_axial_dist`
 - `r_axial`
@@ -142,12 +141,7 @@
 ### 派生属性
 
 - `length = (dist - prox) * branch.total_length`
-- `lateral_area = CV 内所有圆台侧面积之和`
-
-`Branch` 层建议补齐：
-
-- `Branch.lateral_areas()`
-- `Branch.total_lateral_area()`
+- `area = CV 内所有圆台侧面积之和`
 
 ### 轴向电阻
 
@@ -195,7 +189,7 @@
 `Cell` 层查询的是抽象声明与离散结果：
 
 - 原始规则：`paint_rules`、`place_rules`
-- 离散结果：`cv(i)` 的属性与机制视图
+- 离散结果：`cvs[i]` 的属性与机制视图
 
 懒重建触发条件：
 
@@ -206,7 +200,7 @@
 触发后行为：
 
 - 仅标记 `dirty`
-- 下次查询 `n_cv/cv()/summary()` 时重建
+- 下次查询 `n_cv/cvs` 时重建
 
 ---
 

@@ -96,7 +96,7 @@ def morpho_summary_df(morpho):
 
 def morpho_branches_df(morpho, order="default"):
     rows = []
-    for branch in morpho.branches_by(order=order):
+    for branch in morpho.branches_by_order(order=order):
         parent = branch.parent
         rows.append(
             {

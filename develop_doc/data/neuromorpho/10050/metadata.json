@@ -1,0 +1,122 @@
+{
+  "archive": "Scanziani",
+  "download_items": [
+    {
+      "downloaded_now": false,
+      "filename": "ChR2-negative-06.CNG.swc",
+      "kind": "standard",
+      "path": "develop_doc/data/neuromorpho/10050/ChR2-negative-06.CNG.swc",
+      "url": "https://neuromorpho.org/dableFiles/scanziani/CNG%20version/ChR2-negative-06.CNG.swc"
+    }
+  ],
+  "download_mode": "standard",
+  "links": {
+    "measurements": {
+      "href": "http://neuromorpho.org/api/morphometry/id/10050"
+    },
+    "persistence_vector": {
+      "href": "http://neuromorpho.org/api/pvec/id/10050"
+    },
+    "self": {
+      "href": "http://neuromorpho.org/api/neuron/id/10050"
+    }
+  },
+  "measurement": {
+    "bif_ampl_local": 91.64,
+    "bif_ampl_remote": 63.21,
+    "branch_Order": 9.0,
+    "contraction": 0.91,
+    "depth": 15.65,
+    "diameter": 0.11,
+    "eucDistance": 386.57,
+    "fractal_Dim": 1.02668,
+    "fragmentation": 2898.0,
+    "height": 433.11,
+    "length": 2023.69,
+    "n_bifs": 22.0,
+    "n_branch": 48.0,
+    "n_stems": 4.0,
+    "neuron_id": 10050,
+    "neuron_name": "ChR2-negative-06",
+    "partition_asymmetry": 0.61,
+    "pathDistance": 417.91,
+    "pk_classic": 2.0,
+    "soma_Surface": 452.88,
+    "surface": 699.33,
+    "volume": 19.23,
+    "width": 264.52
+  },
+  "measurement_url": "http://neuromorpho.org/api/morphometry/id/10050",
+  "neuron": {
+    "_links": {
+      "measurements": {
+        "href": "http://neuromorpho.org/api/morphometry/id/10050"
+      },
+      "persistence_vector": {
+        "href": "http://neuromorpho.org/api/pvec/id/10050"
+      },
+      "self": {
+        "href": "http://neuromorpho.org/api/neuron/id/10050"
+      }
+    },
+    "age_classification": "not reported",
+    "age_scale": null,
+    "archive": "Scanziani",
+    "attributes": "No Diameter, 3D, Angles",
+    "brain_region": [
+      "neocortex",
+      "occipital",
+      "layer 6"
+    ],
+    "cell_type": [
+      "principal cell"
+    ],
+    "corrected_value": null,
+    "corrected_xy": null,
+    "corrected_z": null,
+    "deposition_date": "2012-07-01",
+    "domain": "Dendrites, Soma, No Axon",
+    "experiment_condition": [
+      "Control"
+    ],
+    "gender": "Not reported",
+    "magnification": "63",
+    "max_age": "Not Reported",
+    "max_weight": "Not Reported",
+    "min_age": "Not Reported",
+    "min_weight": "Not Reported",
+    "neuron_id": 10050,
+    "neuron_name": "ChR2-negative-06",
+    "note": null,
+    "objective_type": "oil",
+    "original_format": "Neurolucida.dat",
+    "physical_Integrity": "Dendrites Incomplete",
+    "png_url": "http://neuromorpho.org/images/imageFiles/Scanziani/ChR2-negative-06.png",
+    "protocol": "in vitro",
+    "reconstruction_software": "Neurolucida",
+    "reference_doi": [
+      "10.1038/nature10835"
+    ],
+    "reference_pmid": [
+      "22367547"
+    ],
+    "reported_value": null,
+    "reported_xy": null,
+    "reported_z": null,
+    "scientific_name": null,
+    "shrinkage_corrected": "",
+    "shrinkage_reported": "Not Reported",
+    "slicing_direction": "coronal",
+    "slicing_thickness": "50",
+    "soma_surface": "452.88",
+    "species": "mouse",
+    "stain": "biocytin",
+    "strain": "transgenic",
+    "surface": "699.33",
+    "upload_date": "2014-05-30",
+    "volume": "19.23"
+  },
+  "neuron_id": 10050,
+  "neuron_name": "ChR2-negative-06",
+  "original_format": "Neurolucida.dat"
+}

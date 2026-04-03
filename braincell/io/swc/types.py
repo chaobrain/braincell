@@ -25,6 +25,7 @@ SWC_TYPE_MAP = {
     4: "apical_dendrite",
 }
 MIN_SYNTHETIC_LENGTH_UM = 1e-6
+SWC_IMPORT_MODES = ("neuron", "neuromorpho")
 
 
 def map_swc_type_code(type_code: int) -> str:
@@ -36,6 +37,11 @@ class SwcReadOptions:
     standardize_safe_fixes: bool = True
     unknown_type_as_custom: bool = True
     require_root_type_soma: bool = False
+    mode: str = "neuron"
+
+    def __post_init__(self) -> None:
+        if self.mode not in SWC_IMPORT_MODES:
+            raise ValueError(f"mode must be one of {SWC_IMPORT_MODES!r}, got {self.mode!r}.")
 
 
 @dataclass(frozen=True)

@@ -15,6 +15,7 @@
 
 
 from .backend import BackendChooser, validate_backend_for_scene
+from .config import resolve_default_2d_mode
 from .scene import OverlaySpec, RenderRequest
 from .scene2d import build_render_scene_2d
 
@@ -25,27 +26,40 @@ def plot2d(
     region=None,
     locset=None,
     values=None,
-    mode: str = "projected",
+    mode: str | None = None,
     backend: str | None = None,
     chooser: BackendChooser | None = None,
+    ax=None,
     notebook: bool | None = None,
     jupyter_backend: str | None = None,
     return_plotter: bool = False,
     projection_plane: str = "xy",
+    min_branch_angle_deg: float | None = 25.0,
+    root_layout: str = "type_split",
+    layout_family: str = "stem",
 ) -> object:
     from braincell.morpho import Morpho
 
     if not isinstance(morpho, Morpho):
         raise TypeError(f"plot2d(...) expects Morpho, got {type(morpho).__name__!s}.")
 
-    scene = build_render_scene_2d(morpho, mode=mode, projection_plane=projection_plane)
+    resolved_mode = resolve_default_2d_mode(mode)
+    scene = build_render_scene_2d(
+        morpho,
+        mode=resolved_mode,
+        projection_plane=projection_plane,
+        min_branch_angle_deg=min_branch_angle_deg,
+        root_layout=root_layout,
+        layout_family=layout_family,
+    )
     chooser = chooser or BackendChooser.default()
     request = RenderRequest(
         morpho=morpho,
         overlay=OverlaySpec(region=region, locset=locset, values=values),
         dimensionality="2d",
-        mode=mode,
+        mode=resolved_mode,
         scene=scene,
+        ax=ax,
         notebook=notebook,
         jupyter_backend=jupyter_backend,
         return_plotter=return_plotter,

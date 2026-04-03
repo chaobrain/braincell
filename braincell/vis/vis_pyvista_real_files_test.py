@@ -18,8 +18,6 @@
 import unittest
 from pathlib import Path
 
-import braincell._test_support  # noqa: F401
-
 try:
     import pyvista as pv
 except ModuleNotFoundError:  # pragma: no cover - optional dependency
@@ -29,7 +27,7 @@ from braincell import Morpho
 from braincell.vis import BackendChooser, PyVistaBackend
 
 
-FIXTURE_DIR = Path(__file__).resolve().parents[1] / "io" / "morpho_files"
+FIXTURE_DIR = Path(__file__).resolve().parents[2] / "develop_doc" / "morpho_files"
 VALID_SWC_FIXTURES = ("grc.swc", "io.swc")
 
 

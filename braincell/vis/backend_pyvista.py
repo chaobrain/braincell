@@ -65,7 +65,7 @@ class PyVistaBackend:
                 n_sides=self.tube_sides,
             )
             color = tuple(channel / 255.0 for channel in batch.color_rgb)
-            plotter.add_mesh(tube, color=color)
+            plotter.add_mesh(tube, color=color, opacity=batch.opacity)
 
         notebook = request.notebook
         if notebook is None:

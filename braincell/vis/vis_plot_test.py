@@ -16,14 +16,15 @@
 
 import unittest
 
+import brainunit as u
 import matplotlib.axes
 import matplotlib.pyplot as plt
 import numpy as np
 
-from braincell._test_support import FakeBackend, u
-
 from braincell import Branch, Morpho
+from braincell.morpho import vis as morpho_vis
 from braincell.vis import BackendChooser, MatplotlibBackend, compare_layouts_2d, plot2d, plot3d
+from braincell.vis._test_helper import FakeBackend
 
 
 def _point_tree() -> Morpho:
@@ -52,16 +53,20 @@ def _length_only_tree() -> Morpho:
 
 
 class VisPlotTest(unittest.TestCase):
-    def test_plot2d_defaults_to_projected_mode(self) -> None:
+    def setUp(self) -> None:
+        morpho_vis.reset_defaults()
+        self.addCleanup(morpho_vis.reset_defaults)
+
+    def test_plot2d_defaults_to_frustum_mode(self) -> None:
         tree = _point_tree()
         backend = FakeBackend()
 
         request = plot2d(tree, chooser=BackendChooser(backends=(backend,)))
 
         self.assertEqual(request.dimensionality, "2d")
-        self.assertEqual(request.mode, "projected")
-        self.assertEqual(request.scene.mode, "projected")
-        self.assertEqual(request.scene.projection_plane, "xy")
+        self.assertEqual(request.mode, "frustum")
+        self.assertEqual(request.scene.mode, "frustum")
+        self.assertEqual(request.scene.projection_plane, None)
 
     def test_plot2d_tree_mode_accepts_length_only_morphology(self) -> None:
         tree = _length_only_tree()
@@ -88,8 +93,14 @@ class VisPlotTest(unittest.TestCase):
     def test_plot2d_projected_mode_requires_points(self) -> None:
         tree = _length_only_tree()
 
-        with self.assertRaisesRegex(ValueError, "point geometry"):
+        with self.assertRaisesRegex(ValueError, "mode='tree'.*mode='frustum'"):
             plot2d(tree, mode="projected", chooser=BackendChooser(backends=(FakeBackend(),)))
+
+    def test_plot3d_requires_points_and_suggests_2d_fallbacks(self) -> None:
+        tree = _length_only_tree()
+
+        with self.assertRaisesRegex(ValueError, r"vis2d\(mode='tree'\).+vis2d\(mode='frustum'\)"):
+            plot3d(tree, chooser=BackendChooser(backends=(FakeBackend(),)))
 
     def test_plot2d_rejects_unknown_mode(self) -> None:
         tree = _point_tree()
@@ -119,9 +130,27 @@ class VisPlotTest(unittest.TestCase):
         tree = _point_tree()
         chooser = BackendChooser(backends=(MatplotlibBackend(),))
 
-        axes = plot2d(tree, backend="matplotlib", chooser=chooser)
+        axes = plot2d(tree, mode="projected", backend="matplotlib", chooser=chooser)
 
         self.assertIsInstance(axes, matplotlib.axes.Axes)
+
+    def test_global_vis_defaults_change_mode_and_style(self) -> None:
+        morpho_vis.configure(
+            mode_2d_default="tree",
+            branch_type_colors={"soma": "#123456"},
+            alpha_2d_line=0.25,
+            alpha_3d_tube=0.4,
+        )
+        backend = FakeBackend()
+
+        request_2d = plot2d(_point_tree(), chooser=BackendChooser(backends=(backend,)))
+        request_3d = plot3d(_point_tree(), chooser=BackendChooser(backends=(backend,)))
+
+        self.assertEqual(request_2d.mode, "tree")
+        self.assertTrue(all(polyline.color_rgb == (18, 52, 86) for polyline in request_2d.scene.polylines))
+        self.assertTrue(all(abs(polyline.alpha - 0.25) < 1e-9 for polyline in request_2d.scene.polylines))
+        self.assertEqual(request_3d.scene.batches[0].color_rgb, (18, 52, 86))
+        self.assertAlmostEqual(request_3d.scene.batches[0].opacity, 0.4)
 
     def test_matplotlib_backend_can_render_into_existing_axes(self) -> None:
         tree = _length_only_tree()

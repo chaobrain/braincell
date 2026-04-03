@@ -50,19 +50,20 @@ class PointTree:
     matrix_index_to_point_id: np.ndarray
     cv_id_to_matrix_index: np.ndarray
 
-    @property
-    def point_count(self) -> int:
-        return len(self.points)
+    def __repr__(self) -> str:
+        return (
+            f"PointTree(n_points={len(self.points)!r}, n_edges={len(self.edges)!r}, "
+            f"root_point_id={self.root_point_id!r})"
+        )
 
-    @property
-    def edge_count(self) -> int:
-        return len(self.edges)
-
-    def point(self, point_id: int) -> ComputePoint:
-        return self.points[point_id]
-
-    def edge(self, edge_id: int) -> ComputeEdge:
-        return self.edges[edge_id]
+    def __str__(self) -> str:
+        return (
+            f"{'-'*35}\n"
+            f"{'n_points':<14} | {len(self.points)}\n"
+            f"{'n_edges':<14} | {len(self.edges)}\n"
+            f"{'root_point_id':<14} | {self.root_point_id}\n"
+            f"{'-'*35}\n"
+        )
 
 
 @dataclass

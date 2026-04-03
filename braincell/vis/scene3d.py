@@ -20,14 +20,17 @@ import numpy as np
 
 import brainunit as u
 from braincell.morpho import Morpho
-from .scene import BranchPolyline3D, BranchTypeBatch3D, RenderScene3D, color_for_branch_type
+from .scene import alpha_for_3d_tube, BranchPolyline3D, BranchTypeBatch3D, RenderScene3D, color_for_branch_type
 
 
 def build_render_scene_3d(morpho: Morpho) -> RenderScene3D:
     if not isinstance(morpho, Morpho):
         raise TypeError(f"build_render_scene_3d(...) expects Morpho, got {type(morpho).__name__!s}.")
     if not morpho.has_full_point_geometry:
-        raise ValueError("3D visualization requires full point geometry on every branch.")
+        raise ValueError(
+            "3D mode='geometry' requires complete point geometry on every branch. "
+            "Use vis2d(mode='tree') or vis2d(mode='frustum') for length/radius-only morphologies."
+        )
 
     branches: list[BranchPolyline3D] = []
     for branch_index in range(len(morpho)):
@@ -35,7 +38,8 @@ def build_render_scene_3d(morpho: Morpho) -> RenderScene3D:
         branch = branch_view.branch
         if branch.points_proximal is None or branch.points_distal is None:
             raise ValueError(
-                f"Branch {branch_view.name!r} lacks 3D point geometry and cannot be rendered in 3D."
+                f"Branch {branch_view.name!r} lacks complete 3D point geometry and cannot be rendered with "
+                "mode='geometry'. Use mode='tree' or mode='frustum' in 2D instead."
             )
         points_um = np.vstack(
             [
@@ -89,6 +93,7 @@ def build_render_scene_3d(morpho: Morpho) -> RenderScene3D:
             BranchTypeBatch3D(
                 branch_type=branch_type,
                 color_rgb=color_for_branch_type(branch_type),
+                opacity=alpha_for_3d_tube(),
                 branch_indices=tuple(branch_indices),
                 branch_names=tuple(branch_names),
                 points_um=np.vstack(points_all),

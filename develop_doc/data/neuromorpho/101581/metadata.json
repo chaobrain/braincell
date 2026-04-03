@@ -1,0 +1,126 @@
+{
+  "archive": "Luebke",
+  "download_items": [
+    {
+      "downloaded_now": false,
+      "filename": "Nov3IR3k.CNG.swc",
+      "kind": "standard",
+      "path": "develop_doc/data/neuromorpho/101581/Nov3IR3k.CNG.swc",
+      "url": "https://neuromorpho.org/dableFiles/luebke/CNG%20version/Nov3IR3k.CNG.swc"
+    }
+  ],
+  "download_mode": "standard",
+  "links": {
+    "measurements": {
+      "href": "http://neuromorpho.org/api/morphometry/id/101581"
+    },
+    "persistence_vector": {
+      "href": "http://neuromorpho.org/api/pvec/id/101581"
+    },
+    "self": {
+      "href": "http://neuromorpho.org/api/neuron/id/101581"
+    }
+  },
+  "measurement": {
+    "bif_ampl_local": 65.8162,
+    "bif_ampl_remote": 73.8317,
+    "branch_Order": 5.0,
+    "contraction": 0.827507,
+    "depth": 37.48,
+    "diameter": 1.15463,
+    "eucDistance": 120.155,
+    "fractal_Dim": 1.06174,
+    "fragmentation": 1241.0,
+    "height": 191.6,
+    "length": 1878.76,
+    "n_bifs": 22.0,
+    "n_branch": 48.0,
+    "n_stems": 4.0,
+    "neuron_id": 101581,
+    "neuron_name": "Nov3IR3k",
+    "partition_asymmetry": 0.405303,
+    "pathDistance": 161.988,
+    "pk_classic": 1.93838,
+    "soma_Surface": 524.298,
+    "surface": 6998.02,
+    "volume": 2280.18,
+    "width": 118.238
+  },
+  "measurement_url": "http://neuromorpho.org/api/morphometry/id/101581",
+  "neuron": {
+    "_links": {
+      "measurements": {
+        "href": "http://neuromorpho.org/api/morphometry/id/101581"
+      },
+      "persistence_vector": {
+        "href": "http://neuromorpho.org/api/pvec/id/101581"
+      },
+      "self": {
+        "href": "http://neuromorpho.org/api/neuron/id/101581"
+      }
+    },
+    "age_classification": "young adult",
+    "age_scale": "Day",
+    "archive": "Luebke",
+    "attributes": "Diameter, 3D, Angles",
+    "brain_region": [
+      "neocortex",
+      "somatosensory",
+      "barrel",
+      "layer 4",
+      "primary somatosensory"
+    ],
+    "cell_type": [
+      "principal cell",
+      "stellate",
+      "Tbr2 lineage"
+    ],
+    "corrected_value": null,
+    "corrected_xy": null,
+    "corrected_z": null,
+    "deposition_date": "2018-07-27",
+    "domain": "Dendrites, Soma, No Axon",
+    "experiment_condition": [
+      "Control"
+    ],
+    "gender": "Male/Female",
+    "magnification": "20",
+    "max_age": "21.0",
+    "max_weight": "Not Reported",
+    "min_age": "21.0",
+    "min_weight": "Not Reported",
+    "neuron_id": 101581,
+    "neuron_name": "Nov3IR3k",
+    "note": "",
+    "objective_type": "dry",
+    "original_format": "Neurolucida.dat",
+    "physical_Integrity": "Dendrites Moderate",
+    "png_url": "http://neuromorpho.org/images/imageFiles/Luebke/Nov3IR3k.png",
+    "protocol": "in vitro",
+    "reconstruction_software": "Neurolucida",
+    "reference_doi": [
+      "10.1093/cercor/bhy019"
+    ],
+    "reference_pmid": [
+      "29415216"
+    ],
+    "reported_value": null,
+    "reported_xy": null,
+    "reported_z": null,
+    "scientific_name": null,
+    "shrinkage_corrected": "",
+    "shrinkage_reported": "Not Reported",
+    "slicing_direction": "coronal",
+    "slicing_thickness": "300",
+    "soma_surface": "524.298",
+    "species": "mouse",
+    "stain": "Biocytin, Streptavidin-Alexa 405",
+    "strain": "CD1",
+    "surface": "6998.02",
+    "upload_date": "2018-11-27",
+    "volume": "2280.18"
+  },
+  "neuron_id": 101581,
+  "neuron_name": "Nov3IR3k",
+  "original_format": "Neurolucida.dat"
+}

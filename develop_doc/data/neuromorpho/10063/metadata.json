@@ -1,0 +1,122 @@
+{
+  "archive": "Scanziani",
+  "download_items": [
+    {
+      "downloaded_now": false,
+      "filename": "TypeA-06.CNG.swc",
+      "kind": "standard",
+      "path": "develop_doc/data/neuromorpho/10063/TypeA-06.CNG.swc",
+      "url": "https://neuromorpho.org/dableFiles/scanziani/CNG%20version/TypeA-06.CNG.swc"
+    }
+  ],
+  "download_mode": "standard",
+  "links": {
+    "measurements": {
+      "href": "http://neuromorpho.org/api/morphometry/id/10063"
+    },
+    "persistence_vector": {
+      "href": "http://neuromorpho.org/api/pvec/id/10063"
+    },
+    "self": {
+      "href": "http://neuromorpho.org/api/neuron/id/10063"
+    }
+  },
+  "measurement": {
+    "bif_ampl_local": 75.35,
+    "bif_ampl_remote": 82.26,
+    "branch_Order": 20.0,
+    "contraction": 0.77,
+    "depth": 96.48,
+    "diameter": 0.11,
+    "eucDistance": 714.99,
+    "fractal_Dim": 1.05,
+    "fragmentation": 5939.0,
+    "height": 730.38,
+    "length": 3393.31,
+    "n_bifs": 38.0,
+    "n_branch": 80.0,
+    "n_stems": 4.0,
+    "neuron_id": 10063,
+    "neuron_name": "TypeA-06",
+    "partition_asymmetry": 0.53,
+    "pathDistance": 958.68,
+    "pk_classic": 2.0,
+    "soma_Surface": 454.76,
+    "surface": 1172.64,
+    "volume": 32.24,
+    "width": 176.68
+  },
+  "measurement_url": "http://neuromorpho.org/api/morphometry/id/10063",
+  "neuron": {
+    "_links": {
+      "measurements": {
+        "href": "http://neuromorpho.org/api/morphometry/id/10063"
+      },
+      "persistence_vector": {
+        "href": "http://neuromorpho.org/api/pvec/id/10063"
+      },
+      "self": {
+        "href": "http://neuromorpho.org/api/neuron/id/10063"
+      }
+    },
+    "age_classification": "not reported",
+    "age_scale": null,
+    "archive": "Scanziani",
+    "attributes": "No Diameter, 3D, Angles",
+    "brain_region": [
+      "neocortex",
+      "occipital",
+      "layer 6"
+    ],
+    "cell_type": [
+      "principal cell"
+    ],
+    "corrected_value": null,
+    "corrected_xy": null,
+    "corrected_z": null,
+    "deposition_date": "2012-07-01",
+    "domain": "Dendrites, Soma, No Axon",
+    "experiment_condition": [
+      "Control"
+    ],
+    "gender": "Not reported",
+    "magnification": "63",
+    "max_age": "Not Reported",
+    "max_weight": "Not Reported",
+    "min_age": "Not Reported",
+    "min_weight": "Not Reported",
+    "neuron_id": 10063,
+    "neuron_name": "TypeA-06",
+    "note": null,
+    "objective_type": "oil",
+    "original_format": "Neurolucida.dat",
+    "physical_Integrity": "Dendrites Incomplete",
+    "png_url": "http://neuromorpho.org/images/imageFiles/Scanziani/TypeA-06.png",
+    "protocol": "in vitro",
+    "reconstruction_software": "Neurolucida",
+    "reference_doi": [
+      "10.1038/nature10835"
+    ],
+    "reference_pmid": [
+      "22367547"
+    ],
+    "reported_value": null,
+    "reported_xy": null,
+    "reported_z": null,
+    "scientific_name": null,
+    "shrinkage_corrected": "",
+    "shrinkage_reported": "Not Reported",
+    "slicing_direction": "coronal",
+    "slicing_thickness": "50",
+    "soma_surface": "454.76",
+    "species": "mouse",
+    "stain": "biocytin",
+    "strain": "transgenic",
+    "surface": "1172.64",
+    "upload_date": "2014-05-30",
+    "volume": "32.24"
+  },
+  "neuron_id": 10063,
+  "neuron_name": "TypeA-06",
+  "original_format": "Neurolucida.dat"
+}

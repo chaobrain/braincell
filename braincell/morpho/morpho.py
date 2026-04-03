@@ -33,8 +33,10 @@ _MORPHO_METRIC_PROPERTY_NAMES = {
     "depth",
     "height",
     "max_euclidean_distance",
+    "max_euclidean_distance_excluding_soma",
     "max_branch_order",
     "max_path_distance",
+    "max_path_distance_excluding_soma",
     "mean_radius",
     "n_bifurcations",
     "n_branches",
@@ -52,7 +54,7 @@ _MORPHO_RESERVED_NAMES = {
     "attach",
     "branch",
     "branches",
-    "branches_by_order",
+    "branch_by_order",
     "edges",
     "from_asc",
     "from_root",
@@ -279,6 +281,7 @@ class Morpho:
         path,
         *,
         options: 'SwcReadOptions' = None,
+        mode: str | None = None,
         return_report: bool = False,
     ):
         """Load a morphology from an SWC file.
@@ -293,6 +296,11 @@ class Morpho:
         options : SwcReadOptions or None
             Reader configuration (soma handling, repairs, etc.).
             Uses defaults when ``None``.
+        mode : str or None
+            Convenience import mode. Supported values are ``"neuron"``
+            (default behavior) and ``"neuromorpho"`` (copy midpoint soma
+            attachment points into child branches). When provided together
+            with *options*, it must match ``options.mode``.
         return_report : bool
             If ``True``, return a ``(Morpho, SwcReport)`` tuple instead
             of just the morphology.
@@ -318,7 +326,16 @@ class Morpho:
             ... )  # doctest: +SKIP
         """
 
-        from braincell.io.swc import SwcReader
+        from braincell.io.swc import SwcReadOptions, SwcReader
+
+        if mode is not None:
+            validated_options = SwcReadOptions(mode=mode)
+            if options is None:
+                options = validated_options
+            elif options.mode != validated_options.mode:
+                raise ValueError(
+                    f"Conflicting SWC import mode: mode={mode!r} does not match options.mode={options.mode!r}."
+                )
 
         reader = SwcReader() if options is None else SwcReader(options=options)
         return reader.read(path, return_report=return_report)
@@ -382,9 +399,9 @@ class Morpho:
 
         See Also
         --------
-        branches_by : Query branches in a specific order.
+        branch_by_order : Query branches in a specific order.
         """
-        return self.branches_by(order="default")
+        return self.branch_by_order(order="default")
 
     @property
     def edges(self) -> tuple[MorphoEdge, ...]:
@@ -422,14 +439,14 @@ class Morpho:
         """
         return MorphMetrics(self)
 
-    def branches_by_order(self, *, order: str = "default") -> tuple["MorphoBranch", ...]:
+    def branch_by_order(self, *, order: str = "default") -> tuple["MorphoBranch", ...]:
         """Query branches in a specific order.
 
         Parameters
         ----------
         order : str
             Ordering strategy: ``"default"`` (by node ID), ``"type"``
-            (by type then name), or ``"depth"`` (by depth then index).
+            (by SWC type rank then name), or ``"depth"`` (by depth then index).
 
         Returns
         -------
@@ -584,7 +601,7 @@ class Morpho:
     def vis3d(
         self,
         *,
-        mode: str = "geometry",
+        mode: str | None = None,
         backend: str | None = None,
         region=None,
         locset=None,
@@ -603,8 +620,10 @@ class Morpho:
 
         Parameters
         ----------
-        mode : str
-            Visualization mode.  Currently only ``"geometry"`` is supported.
+        mode : str or None
+            Visualization mode. When omitted, uses the global 3-D
+            default configured via ``braincell.morpho.vis.configure(...)``.
+            The initial default is ``"geometry"``.
         backend : str or None
             Rendering backend name (e.g., ``"pyvista"``).
             Auto-selected when *None*.
@@ -737,7 +756,7 @@ class Morpho:
     def vis2d(
         self,
         *,
-        mode: str = "projected",
+        mode: str | None = None,
         backend: str | None = None,
         region=None,
         locset=None,
@@ -747,6 +766,7 @@ class Morpho:
         notebook: bool | None = None,
         jupyter_backend: str | None = None,
         return_plotter: bool = False,
+        show: bool = True,
         projection_plane: str = "xy",
         min_branch_angle_deg: float | None = 25.0,
         root_layout: str = "type_split",
@@ -766,9 +786,11 @@ class Morpho:
 
         Parameters
         ----------
-        mode : str
-            Visualization mode: ``"projected"`` (default), ``"tree"``,
-            or ``"frustum"``.
+        mode : str or None
+            Visualization mode: ``"projected"``, ``"tree"``, or
+            ``"frustum"``. When omitted, uses the global 2-D default
+            configured via ``braincell.morpho.vis.configure(...)``.
+            The initial default is ``"frustum"``.
         backend : str or None
             Rendering backend name (e.g., ``"matplotlib"``).
             Auto-selected when *None*.
@@ -1092,7 +1114,14 @@ class Morpho:
             return ordered_ids
         if order == "type":
             return tuple(
-                sorted(ordered_ids, key=lambda node_id: (self._get_node(node_id).type, self._get_node(node_id).name)))
+                sorted(
+                    ordered_ids,
+                    key=lambda node_id: (
+                        self._branch_type_rank(self._get_node(node_id).type),
+                        self._get_node(node_id).name,
+                    ),
+                )
+            )
         if order == "depth":
             return tuple(sorted(ordered_ids,
                                 key=lambda node_id: (len(self._path_node_ids(node_id)), self._branch_index(node_id))))
@@ -1105,6 +1134,7 @@ class Morpho:
             "soma": "soma",
             "axon": "axon",
             "dend": "basal_dendrite",
+            "dendrite": "basal_dendrite",
             "basal_dend": "basal_dendrite",
             "basal_dendrite": "basal_dendrite",
             "apical_dend": "apical_dendrite",
@@ -1423,7 +1453,7 @@ class MorphoBranch:
         ----------
         order : str
             Ordering strategy: ``"default"`` (by node ID), ``"type"``
-            (by type then name), or ``"depth"`` (by depth then index).
+            (by SWC type rank then name), or ``"depth"`` (by depth then index).
 
         Returns
         -------

@@ -17,9 +17,11 @@
 import unittest
 from pathlib import Path
 
-from braincell import AscReader, Morpho, SwcReader
+from braincell import Morpho
+from braincell.io.asc import AscReader
+from braincell.io.swc import SwcReader
 
-FIXTURE_DIR = Path(__file__).resolve().parent / "morpho_files"
+FIXTURE_DIR = Path(__file__).resolve().parents[2] / "develop_doc" / "morpho_files"
 ALLOWED_TYPES = {
     "soma",
     "axon",

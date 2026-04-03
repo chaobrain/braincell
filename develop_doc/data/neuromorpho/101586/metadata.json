@@ -1,0 +1,126 @@
+{
+  "archive": "Luebke",
+  "download_items": [
+    {
+      "downloaded_now": false,
+      "filename": "Oct6IR3f-20x-NL-tgv.CNG.swc",
+      "kind": "standard",
+      "path": "develop_doc/data/neuromorpho/101586/Oct6IR3f-20x-NL-tgv.CNG.swc",
+      "url": "https://neuromorpho.org/dableFiles/luebke/CNG%20version/Oct6IR3f-20x-NL-tgv.CNG.swc"
+    }
+  ],
+  "download_mode": "standard",
+  "links": {
+    "measurements": {
+      "href": "http://neuromorpho.org/api/morphometry/id/101586"
+    },
+    "persistence_vector": {
+      "href": "http://neuromorpho.org/api/pvec/id/101586"
+    },
+    "self": {
+      "href": "http://neuromorpho.org/api/neuron/id/101586"
+    }
+  },
+  "measurement": {
+    "bif_ampl_local": 71.7385,
+    "bif_ampl_remote": 47.9378,
+    "branch_Order": 5.0,
+    "contraction": 0.845423,
+    "depth": 31.53,
+    "diameter": 0.856987,
+    "eucDistance": 164.443,
+    "fractal_Dim": 1.04768,
+    "fragmentation": 1749.0,
+    "height": 192.997,
+    "length": 2506.56,
+    "n_bifs": 23.0,
+    "n_branch": 54.0,
+    "n_stems": 8.0,
+    "neuron_id": 101586,
+    "neuron_name": "Oct6IR3f-20x-NL-tgv",
+    "partition_asymmetry": 0.404969,
+    "pathDistance": 196.058,
+    "pk_classic": 1.84654,
+    "soma_Surface": 2174.63,
+    "surface": 6896.25,
+    "volume": 1644.59,
+    "width": 200.819
+  },
+  "measurement_url": "http://neuromorpho.org/api/morphometry/id/101586",
+  "neuron": {
+    "_links": {
+      "measurements": {
+        "href": "http://neuromorpho.org/api/morphometry/id/101586"
+      },
+      "persistence_vector": {
+        "href": "http://neuromorpho.org/api/pvec/id/101586"
+      },
+      "self": {
+        "href": "http://neuromorpho.org/api/neuron/id/101586"
+      }
+    },
+    "age_classification": "young adult",
+    "age_scale": "Day",
+    "archive": "Luebke",
+    "attributes": "Diameter, 3D, Angles",
+    "brain_region": [
+      "neocortex",
+      "somatosensory",
+      "barrel",
+      "layer 4",
+      "primary somatosensory"
+    ],
+    "cell_type": [
+      "principal cell",
+      "stellate",
+      "Tbr2 lineage"
+    ],
+    "corrected_value": null,
+    "corrected_xy": null,
+    "corrected_z": null,
+    "deposition_date": "2018-07-27",
+    "domain": "Dendrites, Soma, No Axon",
+    "experiment_condition": [
+      "Control"
+    ],
+    "gender": "Male/Female",
+    "magnification": "20",
+    "max_age": "21.0",
+    "max_weight": "Not Reported",
+    "min_age": "21.0",
+    "min_weight": "Not Reported",
+    "neuron_id": 101586,
+    "neuron_name": "Oct6IR3f-20x-NL-tgv",
+    "note": "",
+    "objective_type": "dry",
+    "original_format": "Neurolucida.dat",
+    "physical_Integrity": "Dendrites Moderate",
+    "png_url": "http://neuromorpho.org/images/imageFiles/Luebke/Oct6IR3f-20x-NL-tgv.png",
+    "protocol": "in vitro",
+    "reconstruction_software": "Neurolucida",
+    "reference_doi": [
+      "10.1093/cercor/bhy019"
+    ],
+    "reference_pmid": [
+      "29415216"
+    ],
+    "reported_value": null,
+    "reported_xy": null,
+    "reported_z": null,
+    "scientific_name": null,
+    "shrinkage_corrected": "",
+    "shrinkage_reported": "Not Reported",
+    "slicing_direction": "coronal",
+    "slicing_thickness": "300",
+    "soma_surface": "2174.63",
+    "species": "mouse",
+    "stain": "Biocytin, Streptavidin-Alexa 405",
+    "strain": "CD1",
+    "surface": "6896.25",
+    "upload_date": "2018-11-27",
+    "volume": "1644.59"
+  },
+  "neuron_id": 101586,
+  "neuron_name": "Oct6IR3f-20x-NL-tgv",
+  "original_format": "Neurolucida.dat"
+}

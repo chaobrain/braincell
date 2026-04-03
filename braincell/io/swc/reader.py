@@ -364,7 +364,12 @@ class SwcReader:
         if branch.attach is not None:
             attach_point, attach_radius = self._attach_geometry(branch.attach, nodes)
             should_copy_attach = True
-            if parent_branch_type == "soma" and branch.attach.parent_x == 0.5 and len(point_ids) > 1:
+            if (
+                parent_branch_type == "soma"
+                and branch.attach.parent_x == 0.5
+                and len(point_ids) > 1
+                and self.options.mode == "neuron"
+            ):
                 should_copy_attach = False
             if np.allclose(points[0], attach_point):
                 should_copy_attach = False

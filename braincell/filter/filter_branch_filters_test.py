@@ -17,7 +17,7 @@
 
 import unittest
 
-from braincell._test_support import u
+import brainunit as u
 
 from braincell import Branch, Morpho
 from braincell.filter import BranchInFilter, BranchRangeFilter, branch_in, branch_range

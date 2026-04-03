@@ -18,7 +18,7 @@
 import math
 import unittest
 
-from braincell._test_support import u
+import brainunit as u
 
 import braincell
 
@@ -81,8 +81,7 @@ class CellFacadeTest(unittest.TestCase):
         cell = Cell(_build_tree())
         self.assertEqual(cell.n_cv, 2)
         self.assertEqual(len(cell.paint_rules), 1)
-        self.assertEqual(cell.summary()["n_paint_rules"], 1)
-        cv0 = cell.cv(0)
+        cv0 = cell.cvs[0]
         self.assertAlmostEqual(cv0.v.to_decimal(u.mV), -65.0, places=12)
         self.assertAlmostEqual(cv0.cm.to_decimal(u.uF / u.cm**2), 1.0, places=12)
         self.assertAlmostEqual(cv0.ra.to_decimal(u.ohm * u.cm), 100.0, places=12)
@@ -92,12 +91,34 @@ class CellFacadeTest(unittest.TestCase):
             places=12,
         )
 
+    def test_repr_and_str_expose_compact_cell_summary(self) -> None:
+        cell = Cell(_build_tree())
+        cell.place(
+            RootLocation(x=0.5),
+            CurrentClamp(amplitude=0.1 * u.nA, delay=1.0 * u.ms, duration=1.0 * u.ms),
+        )
+
+        self.assertEqual(
+            repr(cell),
+            "Cell(root='soma', n_branches=2, n_cv=2, n_paint_rules=1, n_place_rules=1)",
+        )
+        self.assertEqual(
+            str(cell),
+            "-----------------------------------\n"
+            "root           | soma\n"
+            "n_branches     | 2\n"
+            "n_cv           | 2\n"
+            "n_paint_rules  | 1\n"
+            "n_place_rules  | 1\n"
+            "-----------------------------------\n",
+        )
+
     def test_point_tree_counts_points_and_orders_root_first(self) -> None:
         cell = Cell(_build_tree())
         tree = cell.point_tree()
 
-        self.assertEqual(tree.point_count, cell.n_cv + len(cell.morpho.branches) + 1)
-        self.assertEqual(tree.edge_count, tree.point_count - 1)
+        self.assertEqual(len(tree.points), cell.n_cv + len(cell.morpho.branches) + 1)
+        self.assertEqual(len(tree.edges), len(tree.points) - 1)
         self.assertEqual(_point_roles(tree, int(tree.matrix_index_to_point_id[0])), ((0, "proximal"),))
         self.assertEqual(
             [_point_roles(tree, int(point_id)) for point_id in tree.matrix_index_to_point_id.tolist()],
@@ -111,6 +132,22 @@ class CellFacadeTest(unittest.TestCase):
         )
         self.assertEqual(tree.point_parent.tolist(), [-1, 0, 1, 2, 3])
 
+    def test_point_tree_repr_and_str_expose_compact_summary(self) -> None:
+        point_tree = Cell(_build_tree()).point_tree()
+
+        self.assertEqual(
+            repr(point_tree),
+            "PointTree(n_points=5, n_edges=4, root_point_id=0)",
+        )
+        self.assertEqual(
+            str(point_tree),
+            "-----------------------------------\n"
+            "n_points       | 5\n"
+            "n_edges        | 4\n"
+            "root_point_id  | 0\n"
+            "-----------------------------------\n",
+        )
+
     def test_cell_freezes_morphology_snapshot(self) -> None:
         tree = _build_tree()
         cell = Cell(tree)
@@ -120,7 +157,7 @@ class CellFacadeTest(unittest.TestCase):
 
     def test_cable_paint_hits_midpoint_only(self) -> None:
         cell = Cell(_build_tree())
-        base = cell.cv(0)
+        base = cell.cvs[0]
         cell.paint(
             BranchSlice(branch_index=0, prox=0.0, dist=0.49),
             CableProperties(
@@ -130,7 +167,7 @@ class CellFacadeTest(unittest.TestCase):
                 temperature=u.celsius2kelvin(20.0),
             ),
         )
-        cv0 = cell.cv(0)
+        cv0 = cell.cvs[0]
         self.assertAlmostEqual(cv0.cm.to_decimal(u.uF / u.cm**2), base.cm.to_decimal(u.uF / u.cm**2), places=12)
         self.assertAlmostEqual(cv0.ra.to_decimal(u.ohm * u.cm), base.ra.to_decimal(u.ohm * u.cm), places=12)
         self.assertAlmostEqual(cv0.v.to_decimal(u.mV), base.v.to_decimal(u.mV), places=12)
@@ -145,7 +182,7 @@ class CellFacadeTest(unittest.TestCase):
                 temperature=u.celsius2kelvin(20.0),
             ),
         )
-        cv0 = cell.cv(0)
+        cv0 = cell.cvs[0]
         self.assertAlmostEqual(cv0.cm.to_decimal(u.uF / u.cm**2), 2.0, places=12)
         self.assertAlmostEqual(cv0.ra.to_decimal(u.ohm * u.cm), 200.0, places=12)
         self.assertAlmostEqual(cv0.v.to_decimal(u.mV), -70.0, places=12)
@@ -197,7 +234,7 @@ class CellFacadeTest(unittest.TestCase):
             DensityMechanism(channel_type="leaky", params=(("g_max", 4.0 * (u.mS / u.cm**2)),)),
             DensityMechanism(ion_type="sodium", params=(("c0", 12.0),)),
         )
-        cv0 = cell.cv(0)
+        cv0 = cell.cvs[0]
         self.assertEqual(len(cv0.density_mech), 2)
         channel = next(mech for mech in cv0.density_mech if mech.channel_type is not None)
         ion = next(mech for mech in cv0.density_mech if mech.ion_type is not None)
@@ -218,11 +255,11 @@ class CellFacadeTest(unittest.TestCase):
         cell.place(RootLocation(x=1.0), stim_parent_end)
 
         # RootLocation(x=0.5) on branch 0 should map to right CV (id 1).
-        self.assertEqual(len(cell.cv(0).point_mech), 0)
-        self.assertEqual(len(cell.cv(1).point_mech), 2)
+        self.assertEqual(len(cell.cvs[0].point_mech), 0)
+        self.assertEqual(len(cell.cvs[1].point_mech), 2)
         # parent branch endpoint remains on branch 0 last CV, not child branch first CV.
-        self.assertEqual(cell.cv(1).point_mech[-1].amplitude.to_decimal(u.nA), 0.2)
-        self.assertEqual(len(cell.cv(2).point_mech), 0)
+        self.assertEqual(cell.cvs[1].point_mech[-1].amplitude.to_decimal(u.nA), 0.2)
+        self.assertEqual(len(cell.cvs[2].point_mech), 0)
 
     def test_cv_geometry_and_split_axial_resistance(self) -> None:
         soma = Branch.from_lengths(
@@ -232,12 +269,12 @@ class CellFacadeTest(unittest.TestCase):
         )
         tree = Morpho.from_root(soma, name="soma")
         cell = Cell(tree, cv_policy=CVPolicy(cv_per_branch=1))
-        cv0 = cell.cv(0)
+        cv0 = cell.cvs[0]
         self.assertFalse(hasattr(cv0, "mean_radius"))
 
         area1 = math.pi * (1.0 + 2.0) * math.sqrt(10.0**2 + (2.0 - 1.0) ** 2)
         area2 = math.pi * (2.0 + 3.0) * math.sqrt(20.0**2 + (3.0 - 2.0) ** 2)
-        self.assertAlmostEqual(cv0.lateral_area.to_decimal(u.um**2), area1 + area2, places=9)
+        self.assertAlmostEqual(cv0.area.to_decimal(u.um**2), area1 + area2, places=9)
 
         expected_total = 100.0 * (
             (10.0e-4) / (math.pi * (1.0e-4) * (2.0e-4))
@@ -266,18 +303,18 @@ class CellFacadeTest(unittest.TestCase):
         )
         tree = Morpho.from_root(soma, name="soma")
 
-        whole = Cell(tree, cv_policy=CVPolicy(cv_per_branch=1)).cv(0)
+        whole = Cell(tree, cv_policy=CVPolicy(cv_per_branch=1)).cvs[0]
         split = Cell(tree, cv_policy=CVPolicy(cv_per_branch=2))
-        cv_left = split.cv(0)
-        cv_right = split.cv(1)
+        cv_left = split.cvs[0]
+        cv_right = split.cvs[1]
 
         jump_area = math.pi * (3.0**2 - 1.0**2)
         seg1 = math.pi * (2.0 + 1.0) * math.sqrt(10.0**2 + (1.0 - 2.0) ** 2)
         seg2 = math.pi * (3.0 + 0.5) * math.sqrt(10.0**2 + (0.5 - 3.0) ** 2)
 
-        self.assertAlmostEqual(whole.lateral_area.to_decimal(u.um**2), seg1 + jump_area + seg2, places=9)
-        self.assertAlmostEqual(cv_left.lateral_area.to_decimal(u.um**2), seg1, places=9)
-        self.assertAlmostEqual(cv_right.lateral_area.to_decimal(u.um**2), jump_area + seg2, places=9)
+        self.assertAlmostEqual(whole.area.to_decimal(u.um**2), seg1 + jump_area + seg2, places=9)
+        self.assertAlmostEqual(cv_left.area.to_decimal(u.um**2), seg1, places=9)
+        self.assertAlmostEqual(cv_right.area.to_decimal(u.um**2), jump_area + seg2, places=9)
         self.assertAlmostEqual(whole.r_axial.to_decimal(u.ohm), cv_left.r_axial.to_decimal(u.ohm) + cv_right.r_axial.to_decimal(u.ohm), places=9)
 
     def test_point_tree_internal_attachment_absorbs_to_parent_midpoint(self) -> None:
@@ -293,7 +330,7 @@ class CellFacadeTest(unittest.TestCase):
         dend_cv_id = next(cv.id for cv in cell.cvs if cv.branch_id == 1)
         root_mid_point_id = _point_id_by_role(point_tree, cv_id=root_cv_id, position="mid")
         dend_mid_point_id = _point_id_by_role(point_tree, cv_id=dend_cv_id, position="mid")
-        self.assertEqual(point_tree.point_count, cell.n_cv + len(cell.morpho.branches) + 1)
+        self.assertEqual(len(point_tree.points), cell.n_cv + len(cell.morpho.branches) + 1)
         self.assertIn((dend_cv_id, "proximal"), _point_roles(point_tree, root_mid_point_id))
         self.assertEqual(int(point_tree.point_parent[dend_mid_point_id]), root_mid_point_id)
 
@@ -313,7 +350,7 @@ class CellFacadeTest(unittest.TestCase):
         twig_cv_id = next(cv.id for cv in cell.cvs if cv.branch_id == 2)
         parent_point_id = _point_id_by_role(point_tree, cv_id=soma_cv_id, position="distal")
         twig_mid_point_id = _point_id_by_role(point_tree, cv_id=twig_cv_id, position="mid")
-        self.assertEqual(point_tree.point_count, cell.n_cv + len(cell.morpho.branches) + 1)
+        self.assertEqual(len(point_tree.points), cell.n_cv + len(cell.morpho.branches) + 1)
         self.assertIn((dend_cv_id, "proximal"), _point_roles(point_tree, parent_point_id))
         self.assertIn((twig_cv_id, "proximal"), _point_roles(point_tree, parent_point_id))
         self.assertEqual(int(point_tree.point_parent[twig_mid_point_id]), parent_point_id)
@@ -385,7 +422,7 @@ class CellFacadeTest(unittest.TestCase):
                 expected_parent_point_id = _point_id_by_role(point_tree, cv_id=parent_cv_id, position=expected_parent_position)
                 child_terminal_point_id = int(point_tree.branch_terminal_point_id[1])
 
-                self.assertEqual(point_tree.edge_count, point_tree.point_count - 1)
+                self.assertEqual(len(point_tree.edges), len(point_tree.points) - 1)
                 self.assertEqual(int(point_tree.point_parent[child_mid_point_id]), expected_parent_point_id)
                 self.assertIn((child_cv_id, expected_child_attach_position), _point_roles(point_tree, expected_parent_point_id))
                 self.assertEqual(
@@ -439,7 +476,7 @@ class CellFacadeTest(unittest.TestCase):
         )
         tree = Morpho.from_root(soma, name="soma")
         cell = Cell(tree, cv_policy=CVPolicy(cv_per_branch=2))
-        branch_slice = cell.cv(1).as_branch()
+        branch_slice = cell.cvs[1].as_branch()
         self.assertEqual(branch_slice.type, "soma")
         self.assertGreater(float(branch_slice.length.to_decimal(u.um)), 0.0)
 
@@ -504,7 +541,7 @@ class CellFacadeTest(unittest.TestCase):
             DensityMechanism(channel_type="leaky", params=(("g_max", "not-scalable"),)),
             DensityMechanism(channel_type="leaky", params=(("tau", 10.0),)),
         )
-        cv0 = cell.cv(0)
+        cv0 = cell.cvs[0]
         self.assertEqual(len(cv0.density_mech), 2)
 
         with_gmax = next(

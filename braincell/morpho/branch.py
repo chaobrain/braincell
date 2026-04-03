@@ -701,7 +701,7 @@ class Branch:
     def vis2d(
         self,
         *,
-        mode: str = "frustum",
+        mode: str | None = None,
         backend: str | None = None,
         chooser=None,
         projection_plane: str = "xy",
@@ -715,10 +715,12 @@ class Branch:
 
         Parameters
         ----------
-        mode : str
-            Visualization mode: ``"frustum"`` (default, shows segment widths
-            as polygons), ``"tree"`` (schematic polyline), or ``"projected"``
-            (3-D point projection, requires point geometry).
+        mode : str or None
+            Visualization mode: ``"frustum"`` (shows segment widths as
+            polygons), ``"tree"`` (schematic polyline), or ``"projected"``
+            (3-D point projection, requires point geometry). When omitted,
+            uses the global 2-D default configured via
+            ``braincell.morpho.vis.configure(...)``.
         backend : str or None
             Rendering backend name (e.g., ``"matplotlib"``).
             Auto-selected when *None*.
@@ -771,6 +773,74 @@ class Branch:
             backend=backend,
             chooser=chooser,
             projection_plane=projection_plane,
+            return_plotter=return_plotter,
+        )
+        if show:
+            import matplotlib.pyplot as plt
+
+            plt.show()
+        return result
+
+    def vis3d(
+        self,
+        *,
+        mode: str | None = None,
+        backend: str | None = None,
+        chooser=None,
+        notebook: bool | None = None,
+        jupyter_backend: str | None = None,
+        return_plotter: bool = False,
+        show: bool = True,
+    ) -> object:
+        """Visualize this branch in 3D.
+
+        Creates a temporary single-branch morphology and renders it using
+        the existing 3D visualization pipeline.
+
+        Parameters
+        ----------
+        mode : str or None
+            Visualization mode. When omitted, uses the global 3-D default
+            configured via ``braincell.morpho.vis.configure(...)``. The
+            initial default is ``"geometry"``.
+        backend : str or None
+            Rendering backend name (e.g., ``"pyvista"``).
+            Auto-selected when *None*.
+        chooser : BackendChooser or None
+            Explicit backend chooser; overrides *backend* when given.
+        notebook : bool or None
+            Enable notebook-specific rendering when *True*.
+        jupyter_backend : str or None
+            Jupyter backend name for notebook rendering.
+        return_plotter : bool
+            If *True*, return the backend plotter object instead of
+            displaying the figure.
+        show : bool
+            If *True* (default), call ``matplotlib.pyplot.show()`` after
+            rendering. Set to *False* to suppress display.
+
+        Returns
+        -------
+        object
+            The backend plotter when *return_plotter* is True; otherwise
+            the backend's default display result.
+
+        Raises
+        ------
+        ValueError
+            If the branch lacks complete 3-D point geometry.
+        """
+        from braincell.morpho import Morpho
+        from braincell.vis import plot3d
+
+        morpho = Morpho.from_root(self, name="soma")
+        result = plot3d(
+            morpho,
+            mode=mode,
+            backend=backend,
+            chooser=chooser,
+            notebook=notebook,
+            jupyter_backend=jupyter_backend,
             return_plotter=return_plotter,
         )
         if show:

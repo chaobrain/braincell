@@ -32,8 +32,28 @@ if TYPE_CHECKING:
 
 @dataclass(frozen=True)
 class CVPolicy:
+    """Discretization policy for turning each morphology branch into CVs.
+
+    Supported modes
+    ---------------
+    - ``"cv_per_branch"``:
+      Every branch receives the same number of CVs from ``cv_per_branch``.
+      This is the default mode.
+    - ``"max_cv_len"``:
+      Each branch is split independently so that every CV length stays below
+      ``max_cv_len`` (up to floating point tolerance).
+
+    Notes
+    -----
+    The actual mode dispatch lives in :mod:`braincell.cell.cv_geo`, but these
+    three fields are the complete public configuration surface.
+    """
+
+    # Dispatch key interpreted by ``cv_geo._resolve_cv_counts(...)``.
     mode: str = "cv_per_branch"
+    # Used when ``mode == "cv_per_branch"``.
     cv_per_branch: int = 1
+    # Used when ``mode == "max_cv_len"``.
     max_cv_len: Any | None = None
 
 
@@ -47,7 +67,7 @@ class CV:
     parent_cv: int | None
     children_cv: tuple[int, ...]
     length: Any
-    lateral_area: Any
+    area: Any
     cm: Any
     ra: Any
     v: Any
@@ -118,7 +138,7 @@ def assemble_cv(*, cv_geo: CVGeo, mech: 'CVMech') -> CV:
         parent_cv=cv_geo.parent_cv,
         children_cv=cv_geo.children_cv,
         length=cv_geo.length,
-        lateral_area=cv_geo.lateral_area,
+        area=cv_geo.lateral_area,
         cm=mech.cm,
         ra=mech.ra,
         v=mech.v,

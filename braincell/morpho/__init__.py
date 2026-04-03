@@ -13,6 +13,8 @@
 # limitations under the License.
 # ==============================================================================
 
+import importlib
+
 from .branch import (
     ApicalDendrite,
     Axon,
@@ -39,4 +41,11 @@ __all__ = [
     "MorphMetrics",
     "Soma",
     "branch_class_for_type",
+    "vis",
 ]
+
+
+def __getattr__(name: str):
+    if name == "vis":
+        return importlib.import_module(".vis", __name__)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

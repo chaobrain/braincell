@@ -157,14 +157,18 @@ def build_cv_geo(
 
 
 def _resolve_cv_counts(morpho: Morpho, *, policy: object) -> tuple[int, ...]:
+    # ``CVPolicy.mode`` is dispatched here; the public class stays lightweight,
+    # while the operational behavior lives in this geometry builder.
     mode = getattr(policy, "mode", None)
     if not isinstance(mode, str):
         raise TypeError(
             "build_cv_geo(...) expects a CVPolicy-like object with string field 'mode'."
         )
     if mode == "cv_per_branch":
+        # Uniform CV count on every branch.
         return _resolve_cv_per_branch_counts(morpho, policy=policy)
     if mode == "max_cv_len":
+        # Per-branch CV count chosen to satisfy the requested maximum CV length.
         return _resolve_max_cv_len_counts(morpho, policy=policy)
     raise ValueError(
         f"Unsupported cv policy mode {mode!r}. Supported modes are 'cv_per_branch' and 'max_cv_len'."

@@ -1,0 +1,123 @@
+{
+  "archive": "Prince",
+  "download_items": [
+    {
+      "downloaded_now": false,
+      "filename": "C1q-Cell7-40x.CNG.swc",
+      "kind": "standard",
+      "path": "develop_doc/data/neuromorpho/10075/C1q-Cell7-40x.CNG.swc",
+      "url": "https://neuromorpho.org/dableFiles/prince/CNG%20version/C1q-Cell7-40x.CNG.swc"
+    }
+  ],
+  "download_mode": "standard",
+  "links": {
+    "measurements": {
+      "href": "http://neuromorpho.org/api/morphometry/id/10075"
+    },
+    "persistence_vector": {
+      "href": "http://neuromorpho.org/api/pvec/id/10075"
+    },
+    "self": {
+      "href": "http://neuromorpho.org/api/neuron/id/10075"
+    }
+  },
+  "measurement": {
+    "bif_ampl_local": 57.93,
+    "bif_ampl_remote": 44.38,
+    "branch_Order": 4.0,
+    "contraction": 0.93,
+    "depth": 113.93,
+    "diameter": 0.87,
+    "eucDistance": 163.94,
+    "fractal_Dim": 1.01806,
+    "fragmentation": 804.0,
+    "height": 217.45,
+    "length": 3269.83,
+    "n_bifs": 23.0,
+    "n_branch": 59.0,
+    "n_stems": 13.0,
+    "neuron_id": 10075,
+    "neuron_name": "C1q-Cell7-40x",
+    "partition_asymmetry": 0.36,
+    "pathDistance": 170.41,
+    "pk_classic": 1.65,
+    "soma_Surface": 1412.42,
+    "surface": 9003.35,
+    "volume": 2224.96,
+    "width": 170.11
+  },
+  "measurement_url": "http://neuromorpho.org/api/morphometry/id/10075",
+  "neuron": {
+    "_links": {
+      "measurements": {
+        "href": "http://neuromorpho.org/api/morphometry/id/10075"
+      },
+      "persistence_vector": {
+        "href": "http://neuromorpho.org/api/pvec/id/10075"
+      },
+      "self": {
+        "href": "http://neuromorpho.org/api/neuron/id/10075"
+      }
+    },
+    "age_classification": "young",
+    "age_scale": "Day",
+    "archive": "Prince",
+    "attributes": "Diameter, 3D, Angles",
+    "brain_region": [
+      "neocortex",
+      "somatosensory",
+      "layer 5"
+    ],
+    "cell_type": [
+      "pyramidal",
+      "principal cell"
+    ],
+    "corrected_value": null,
+    "corrected_xy": null,
+    "corrected_z": null,
+    "deposition_date": "2013-08-26",
+    "domain": "Dendrites, Soma, No Axon",
+    "experiment_condition": [
+      "Knockout"
+    ],
+    "gender": "Male",
+    "magnification": "40",
+    "max_age": "23.0",
+    "max_weight": "Not Reported",
+    "min_age": "23.0",
+    "min_weight": "Not Reported",
+    "neuron_id": 10075,
+    "neuron_name": "C1q-Cell7-40x",
+    "note": "Physical integrity for basal dendrites is complete, whereas apical tree was not traced.",
+    "objective_type": "oil",
+    "original_format": "Neurolucida.asc",
+    "physical_Integrity": "Dendrites Moderate",
+    "png_url": "http://neuromorpho.org/images/imageFiles/Prince/C1q-Cell7-40x.png",
+    "protocol": "in vitro",
+    "reconstruction_software": "Neurolucida",
+    "reference_doi": [
+      "10.1111/epi.12195"
+    ],
+    "reference_pmid": [
+      "23621154"
+    ],
+    "reported_value": null,
+    "reported_xy": null,
+    "reported_z": null,
+    "scientific_name": null,
+    "shrinkage_corrected": "",
+    "shrinkage_reported": "Not Reported",
+    "slicing_direction": "Not reported",
+    "slicing_thickness": "Not reported",
+    "soma_surface": "1412.42",
+    "species": "mouse",
+    "stain": "biocytin",
+    "strain": "Not reported",
+    "surface": "9003.35",
+    "upload_date": "2014-05-30",
+    "volume": "2224.96"
+  },
+  "neuron_id": 10075,
+  "neuron_name": "C1q-Cell7-40x",
+  "original_format": "Neurolucida.asc"
+}

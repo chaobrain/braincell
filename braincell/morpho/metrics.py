@@ -76,6 +76,29 @@ class MorphMetrics:
 
     morpho: 'Morpho'
 
+    def __repr__(self) -> str:
+        return (
+            f"MorphMetrics(n_branches={self.n_branches!r}, n_stems={self.n_stems!r}, "
+            f"n_bifurcations={self.n_bifurcations!r}, total_length={self.total_length!r}, "
+            f"mean_radius={self.mean_radius!r}, total_area={self.total_area!r}, "
+            f"total_volume={self.total_volume!r})"
+        )
+
+    def __str__(self) -> str:
+        return (
+            f"{'-'*35}\n"
+            f"{'n_branches':<16} | {self.n_branches}\n"
+            f"{'n_stems':<16} | {self.n_stems}\n"
+            f"{'n_bifurcations':<16} | {self.n_bifurcations}\n"
+            f"{'max_branch_order':<16} | {self.max_branch_order}\n"
+            f"{'total_length':<16} | {self.total_length:.2f}\n"
+            f"{'mean_radius':<16} | {self.mean_radius:.2f}\n"
+            f"{'total_area':<16} | {self.total_area:.2f}\n"
+            f"{'total_volume':<16} | {self.total_volume:.2f}\n"
+            f"{'max_path_dist':<16} | {self.max_path_distance:.2f}\n"
+            f"{'-'*35}\n"
+        )
+
     def _require_full_point_geometry(self, *, feature: str) -> None:
         if not self.morpho.has_full_point_geometry:
             raise ValueError(f"{feature} require full point geometry on every branch.")
@@ -312,7 +335,37 @@ class MorphMetrics:
     def _terminal_branch_indices(self) -> tuple[int, ...]:
         return tuple(branch.index for branch in self.morpho.branches if branch.n_children == 0)
 
-    def _root_attach_distances_um(self) -> dict[int, float]:
+    def _point_on_branch_at_x_um(self, branch, x: float) -> np.ndarray:
+        self._require_full_point_geometry(feature="Euclidean distance metrics")
+        points = branch.points
+        if points is None:
+            raise ValueError("Euclidean distance metrics require full point geometry on every branch.")
+
+        points_um = np.asarray(points.to_decimal(u.um), dtype=float)
+        if np.isclose(float(x), 0.0):
+            return points_um[0]
+        if np.isclose(float(x), 1.0):
+            return points_um[-1]
+
+        lengths_um = np.asarray(branch.lengths.to_decimal(u.um), dtype=float)
+        total_length_um = float(np.sum(lengths_um))
+        if total_length_um <= 0.0:
+            return points_um[0]
+
+        target_length_um = float(x) * total_length_um
+        prefix_length_um = 0.0
+        for index, segment_length_um in enumerate(lengths_um):
+            next_prefix_length_um = prefix_length_um + segment_length_um
+            if target_length_um <= next_prefix_length_um or index == len(lengths_um) - 1:
+                if np.isclose(segment_length_um, 0.0):
+                    return points_um[index]
+                fraction = (target_length_um - prefix_length_um) / segment_length_um
+                return points_um[index] + fraction * (points_um[index + 1] - points_um[index])
+            prefix_length_um = next_prefix_length_um
+
+        return points_um[-1]
+
+    def _root_attach_distances_um(self, *, exclude_root_soma: bool = False) -> dict[int, float]:
         ordered_ids = self.morpho._ordered_node_ids_by("depth")
         distances_um: dict[int, float] = {self.morpho.root._node_id: 0.0}
         attach_x: dict[int, float] = {self.morpho.root._node_id: self._root_branch_attach_x()}
@@ -330,10 +383,65 @@ class MorphMetrics:
             parent_distance_um = distances_um[parent_id]
             parent_length_um = self._branch_length_um(self.morpho._branch_index(parent_id))
 
-            distances_um[node_id] = parent_distance_um + abs(float(node.parent_x) - parent_attach_x) * parent_length_um
+            if exclude_root_soma and parent_id == self.morpho.root._node_id and self.morpho.root.type == "soma":
+                distances_um[node_id] = 0.0
+            else:
+                distances_um[node_id] = (
+                    parent_distance_um + abs(float(node.parent_x) - parent_attach_x) * parent_length_um
+                )
             attach_x[node_id] = float(node.child_x)
 
         return distances_um
+
+    def _max_path_distance_um(self, *, exclude_root_soma: bool) -> float:
+        terminal_branch_indices = self._terminal_branch_indices()
+        if not terminal_branch_indices:
+            return 0.0
+        if exclude_root_soma and self.morpho.root.type == "soma" and self.morpho.root.n_children == 0:
+            return 0.0
+
+        attach_distances_um = self._root_attach_distances_um(exclude_root_soma=exclude_root_soma)
+        max_distance_um = 0.0
+        for branch_index in terminal_branch_indices:
+            node_id = self.morpho._node_id_from_index(branch_index)
+            branch = self.morpho.branch(index=branch_index)
+            branch_length_um = self._branch_length_um(branch_index)
+            attach_x = self._root_branch_attach_x() if branch.parent_id is None else float(branch.child_x)
+            distance_um = attach_distances_um[node_id] + abs(1.0 - attach_x) * branch_length_um
+            max_distance_um = max(max_distance_um, distance_um)
+        return max_distance_um
+
+    def _root_subtree_reference_point_um(self, terminal_node_id: int) -> np.ndarray:
+        path_node_ids = self.morpho._path_node_ids(terminal_node_id)
+        if len(path_node_ids) <= 1:
+            return self._root_point_um()
+        first_child = self.morpho._get_node(path_node_ids[1])
+        return self._point_on_branch_at_x_um(self.morpho.root.branch, float(first_child.parent_x))
+
+    def _max_euclidean_distance_um(self, *, exclude_root_soma: bool) -> float:
+        self._require_full_point_geometry(feature="Euclidean distance metrics")
+        terminal_branch_indices = self._terminal_branch_indices()
+        if not terminal_branch_indices:
+            return 0.0
+        if exclude_root_soma and self.morpho.root.type == "soma" and self.morpho.root.n_children == 0:
+            return 0.0
+
+        tip_points = []
+        start_points = []
+        root_point_um = self._root_point_um()
+        for branch_index in terminal_branch_indices:
+            node_id = self.morpho._node_id_from_index(branch_index)
+            branch = self.morpho.branch(index=branch_index).branch
+            tip_points.append(np.asarray(branch.points_distal.to_decimal(u.um), dtype=float)[-1])
+            if exclude_root_soma and self.morpho.root.type == "soma":
+                start_points.append(self._root_subtree_reference_point_um(node_id))
+            else:
+                start_points.append(root_point_um)
+
+        tip_points_um = np.asarray(tip_points, dtype=float)
+        start_points_um = np.asarray(start_points, dtype=float)
+        distances_um = np.linalg.norm(tip_points_um - start_points_um, axis=1)
+        return float(np.max(distances_um))
 
     @property
     def total_length(self) -> Quantity:
@@ -522,19 +630,13 @@ class MorphMetrics:
         ValueError
             If the root or any terminal branch lacks 3-D point geometry.
         """
-        self._require_full_point_geometry(feature="Euclidean distance metrics")
-        tip_points = []
-        for branch_index in self._terminal_branch_indices():
-            branch = self.morpho.branch(index=branch_index).branch
-            tip_points.append(np.asarray(branch.points_distal.to_decimal(u.um), dtype=float)[-1])
+        return u.Quantity(self._max_euclidean_distance_um(exclude_root_soma=False), u.um)
 
-        if not tip_points:
-            return u.Quantity(0.0, u.um)
-
-        root_point_um = self._root_point_um()
-        tip_points_um = np.asarray(tip_points, dtype=float)
-        distances_um = np.linalg.norm(tip_points_um - root_point_um, axis=1)
-        return u.Quantity(float(np.max(distances_um)), u.um)
+    @property
+    def max_euclidean_distance_excluding_soma(self) -> Quantity:
+        if self.morpho.root.type != "soma":
+            return self.max_euclidean_distance
+        return u.Quantity(self._max_euclidean_distance_um(exclude_root_soma=True), u.um)
 
     @property
     def max_path_distance(self) -> Quantity:
@@ -548,21 +650,13 @@ class MorphMetrics:
         Quantity[u.um]
             Longest cumulative path length to any terminal.
         """
-        terminal_branch_indices = self._terminal_branch_indices()
-        if not terminal_branch_indices:
-            return u.Quantity(0.0, u.um)
+        return u.Quantity(self._max_path_distance_um(exclude_root_soma=False), u.um)
 
-        attach_distances_um = self._root_attach_distances_um()
-        max_distance_um = 0.0
-        for branch_index in terminal_branch_indices:
-            node_id = self.morpho._node_id_from_index(branch_index)
-            branch = self.morpho.branch(index=branch_index)
-            branch_length_um = self._branch_length_um(branch_index)
-            attach_x = self._root_branch_attach_x() if branch.parent_id is None else float(branch.child_x)
-            distance_um = attach_distances_um[node_id] + abs(1.0 - attach_x) * branch_length_um
-            max_distance_um = max(max_distance_um, distance_um)
-
-        return u.Quantity(max_distance_um, u.um)
+    @property
+    def max_path_distance_excluding_soma(self) -> Quantity:
+        if self.morpho.root.type != "soma":
+            return self.max_path_distance
+        return u.Quantity(self._max_path_distance_um(exclude_root_soma=True), u.um)
 
     def _axis_range(self, *, axis: int) -> Quantity:
         self._require_full_point_geometry(feature="Coordinate range metrics")

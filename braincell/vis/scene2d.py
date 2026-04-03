@@ -19,7 +19,7 @@ import numpy as np
 
 from braincell.morpho import Morpho
 from .layout2d import build_layout_branches_2d
-from .scene import Polygon2D, Polyline2D, RenderScene2D, color_for_branch_type
+from .scene import alpha_for_2d_line, alpha_for_2d_poly, Polygon2D, Polyline2D, RenderScene2D, color_for_branch_type
 
 _PROJECTION_AXES = {
     "xy": (0, 1),
@@ -31,7 +31,7 @@ _PROJECTION_AXES = {
 def build_render_scene_2d(
     morpho: Morpho,
     *,
-    mode: str = "projected",
+    mode: str = "frustum",
     projection_plane: str = "xy",
     min_branch_angle_deg: float | None = 25.0,
     root_layout: str = "type_split",
@@ -70,7 +70,8 @@ def build_scene2d_projected(morpho: Morpho, *, projection_plane: str = "xy") -> 
         branch = branch_view.branch
         if branch.points_proximal is None or branch.points_distal is None:
             raise ValueError(
-                f"Branch {branch_view.name!r} lacks 3D point geometry and cannot be projected into 2D."
+                f"Branch {branch_view.name!r} lacks complete 3D point geometry and cannot be rendered with "
+                "mode='projected'. Use mode='tree' or mode='frustum' instead."
             )
         points_um = np.vstack(
             [
@@ -93,6 +94,7 @@ def build_scene2d_projected(morpho: Morpho, *, projection_plane: str = "xy") -> 
                 points_um=projected_points,
                 widths_um=widths_um,
                 color_rgb=color_for_branch_type(branch_view.type),
+                alpha=alpha_for_2d_line(),
                 draw_order=branch_index,
             )
         )
@@ -139,6 +141,7 @@ def build_scene2d_tree(
                         dtype=float,
                     ),
                     color_rgb=color_for_branch_type(layout.branch_type),
+                    alpha=alpha_for_2d_line(),
                     draw_order=draw_order,
                 )
             )
@@ -191,6 +194,7 @@ def build_scene2d_frustum(
                     branch_type=layout.branch_type,
                     points_um=polygon_points_um,
                     color_rgb=color_for_branch_type(layout.branch_type),
+                    alpha=alpha_for_2d_poly(),
                     draw_order=draw_order,
                 )
             )

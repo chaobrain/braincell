@@ -18,13 +18,13 @@
 import unittest
 from dataclasses import is_dataclass
 
+import brainunit as u
 import numpy as np
-
-from braincell._test_support import FakeBackend, u
 
 from braincell import Branch, Cell, Morpho
 from braincell.filter import AllRegion, BranchSlice, RootLocation, Terminals, branch_in
 from braincell.vis import BackendChooser, plot2d, plot3d
+from braincell.vis._test_helper import FakeBackend
 
 
 class FilterVisTest(unittest.TestCase):

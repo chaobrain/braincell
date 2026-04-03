@@ -17,6 +17,7 @@
 
 import unittest
 
+import brainunit as u
 from braincell import Branch, Morpho
 from braincell.filter import BranchSlice, RegionSetOp
 from braincell.filter import helper as helper_mod
@@ -25,9 +26,9 @@ from braincell.filter import region as region_mod
 
 
 def _build_tree() -> Morpho:
-    soma = Branch.from_lengths(lengths=[20.0], radii=[10.0, 10.0], type="soma")
-    dend = Branch.from_lengths(lengths=[80.0], radii=[2.0, 1.0], type="basal_dendrite")
-    axon = Branch.from_lengths(lengths=[120.0], radii=[0.8, 0.5], type="axon")
+    soma = Branch.from_lengths(lengths=[20.0] * u.um, radii=[10.0, 10.0] * u.um, type="soma")
+    dend = Branch.from_lengths(lengths=[80.0] * u.um, radii=[2.0, 1.0] * u.um, type="basal_dendrite")
+    axon = Branch.from_lengths(lengths=[120.0] * u.um, radii=[0.8, 0.5] * u.um, type="axon")
 
     tree = Morpho.from_root(soma, name="soma")
     tree.soma.dend = dend

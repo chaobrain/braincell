@@ -1,0 +1,123 @@
+{
+  "archive": "Prince",
+  "download_items": [
+    {
+      "downloaded_now": false,
+      "filename": "Ctrl-Cell3-40x.CNG.swc",
+      "kind": "standard",
+      "path": "develop_doc/data/neuromorpho/10076/Ctrl-Cell3-40x.CNG.swc",
+      "url": "https://neuromorpho.org/dableFiles/prince/CNG%20version/Ctrl-Cell3-40x.CNG.swc"
+    }
+  ],
+  "download_mode": "standard",
+  "links": {
+    "measurements": {
+      "href": "http://neuromorpho.org/api/morphometry/id/10076"
+    },
+    "persistence_vector": {
+      "href": "http://neuromorpho.org/api/pvec/id/10076"
+    },
+    "self": {
+      "href": "http://neuromorpho.org/api/neuron/id/10076"
+    }
+  },
+  "measurement": {
+    "bif_ampl_local": 59.86,
+    "bif_ampl_remote": 51.73,
+    "branch_Order": 5.0,
+    "contraction": 0.93,
+    "depth": 62.4,
+    "diameter": 0.85,
+    "eucDistance": 187.07,
+    "fractal_Dim": 1.01885,
+    "fragmentation": 488.0,
+    "height": 200.46,
+    "length": 2002.73,
+    "n_bifs": 14.0,
+    "n_branch": 35.0,
+    "n_stems": 7.0,
+    "neuron_id": 10076,
+    "neuron_name": "Ctrl-Cell3-40x",
+    "partition_asymmetry": 0.47,
+    "pathDistance": 209.85,
+    "pk_classic": 1.2,
+    "soma_Surface": 851.85,
+    "surface": 5274.83,
+    "volume": 1243.25,
+    "width": 183.07
+  },
+  "measurement_url": "http://neuromorpho.org/api/morphometry/id/10076",
+  "neuron": {
+    "_links": {
+      "measurements": {
+        "href": "http://neuromorpho.org/api/morphometry/id/10076"
+      },
+      "persistence_vector": {
+        "href": "http://neuromorpho.org/api/pvec/id/10076"
+      },
+      "self": {
+        "href": "http://neuromorpho.org/api/neuron/id/10076"
+      }
+    },
+    "age_classification": "young",
+    "age_scale": "Day",
+    "archive": "Prince",
+    "attributes": "Diameter, 3D, Angles",
+    "brain_region": [
+      "neocortex",
+      "somatosensory",
+      "layer 5"
+    ],
+    "cell_type": [
+      "pyramidal",
+      "principal cell"
+    ],
+    "corrected_value": null,
+    "corrected_xy": null,
+    "corrected_z": null,
+    "deposition_date": "2013-08-26",
+    "domain": "Dendrites, Soma, No Axon",
+    "experiment_condition": [
+      "Control"
+    ],
+    "gender": "Male",
+    "magnification": "40",
+    "max_age": "23.0",
+    "max_weight": "Not Reported",
+    "min_age": "23.0",
+    "min_weight": "Not Reported",
+    "neuron_id": 10076,
+    "neuron_name": "Ctrl-Cell3-40x",
+    "note": "Physical integrity for basal dendrites is complete, whereas apical tree was not traced.",
+    "objective_type": "oil",
+    "original_format": "Neurolucida.asc",
+    "physical_Integrity": "Dendrites Moderate",
+    "png_url": "http://neuromorpho.org/images/imageFiles/Prince/Ctrl-Cell3-40x.png",
+    "protocol": "in vitro",
+    "reconstruction_software": "Neurolucida",
+    "reference_doi": [
+      "10.1111/epi.12195"
+    ],
+    "reference_pmid": [
+      "23621154"
+    ],
+    "reported_value": null,
+    "reported_xy": null,
+    "reported_z": null,
+    "scientific_name": null,
+    "shrinkage_corrected": "",
+    "shrinkage_reported": "Not Reported",
+    "slicing_direction": "Not reported",
+    "slicing_thickness": "Not reported",
+    "soma_surface": "851.85",
+    "species": "mouse",
+    "stain": "biocytin",
+    "strain": "Not reported",
+    "surface": "5274.83",
+    "upload_date": "2014-05-30",
+    "volume": "1243.25"
+  },
+  "neuron_id": 10076,
+  "neuron_name": "Ctrl-Cell3-40x",
+  "original_format": "Neurolucida.asc"
+}

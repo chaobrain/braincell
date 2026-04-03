@@ -18,9 +18,8 @@
 import math
 import unittest
 
+import brainunit as u
 import numpy as np
-
-from braincell._test_support import u
 
 from braincell import Branch, Morpho
 from braincell.vis import build_layout_branches_2d, build_render_scene_2d, build_render_scene_3d
@@ -39,7 +38,7 @@ def _length_only_tree() -> Morpho:
         type="apical_dendrite",
     )
     tree = Morpho.from_root(soma, name="soma")
-    tree.attach(parent="soma", child_branch=dend, child_name="dendrite", parent_x=1.0)
+    tree.attach(parent="soma", child_branch=dend, child_name="dend", parent_x=1.0)
     return tree
 
 
@@ -214,7 +213,7 @@ class VisGeometryTest(unittest.TestCase):
         root_polygon = scene.polygons[0]
         self.assertEqual(root_polygon.points_um.shape, (4, 2))
 
-        child_polygons = [polygon for polygon in scene.polygons if polygon.branch_name == "dendrite"]
+        child_polygons = [polygon for polygon in scene.polygons if polygon.branch_name == "dend"]
         first_child = child_polygons[0]
         start_midpoint = 0.5 * (first_child.points_um[0] + first_child.points_um[3])
         end_midpoint = 0.5 * (first_child.points_um[1] + first_child.points_um[2])

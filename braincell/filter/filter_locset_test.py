@@ -17,7 +17,7 @@
 
 import unittest
 
-from braincell._test_support import u
+import brainunit as u
 
 from braincell import Branch, Morpho
 from braincell.filter import (
@@ -39,7 +39,7 @@ def _build_branchpoint_tree() -> Morpho:
     tuft = Branch.from_lengths(lengths=[15.0] * u.um, radii=[0.9, 0.7] * u.um, type="apical_dendrite")
 
     tree = Morpho.from_root(soma, name="soma")
-    tree.soma.attach(basal, name="basal", parent_x=0.25)
+    tree.soma.attach(basal, name="basal", parent_x=1.0)
     tree.soma.attach(axon, name="axon", parent_x=0.5)
     tree.soma.attach(apical, name="apical", parent_x=0.5)
     tree.soma.basal.tuft = tuft
@@ -76,7 +76,7 @@ class BasicLocsetTest(unittest.TestCase):
 
         locset = BranchPoints().evaluate(tree)
 
-        self.assertEqual(locset.points, ((0, 0.25), (0, 0.5)))
+        self.assertEqual(locset.points, ((0, 0.5), (0, 1.0)))
 
     def test_terminals_returns_leaf_branch_distal_points(self) -> None:
         tree = _build_branchpoint_tree()

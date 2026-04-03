@@ -57,7 +57,13 @@ class MatplotlibBackend:
         for polyline in scene.polylines:
             color = tuple(channel / 255.0 for channel in polyline.color_rgb)
             linewidth = max(float(np.mean(polyline.widths_um)), 0.5)
-            ax.plot(polyline.points_um[:, 0], polyline.points_um[:, 1], color=color, linewidth=linewidth)
+            ax.plot(
+                polyline.points_um[:, 0],
+                polyline.points_um[:, 1],
+                color=color,
+                linewidth=linewidth,
+                alpha=polyline.alpha,
+            )
 
         for polygon in scene.polygons:
             color = tuple(channel / 255.0 for channel in polygon.color_rgb)
@@ -66,7 +72,7 @@ class MatplotlibBackend:
                 closed=True,
                 facecolor=color,
                 edgecolor=color,
-                alpha=0.3,
+                alpha=polygon.alpha,
                 linewidth=1.0,
             )
             ax.add_patch(patch)

@@ -13,27 +13,41 @@
 # limitations under the License.
 # ==============================================================================
 
+from __future__ import annotations
+
 
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 
 import numpy as np
 from brainstate.typing import ArrayLike
 
-from braincell.filter import LocsetMask, RegionMask
-from braincell.morpho import Morpho
+from .config import (
+    alpha_for_2d_line as _alpha_for_2d_line,
+    alpha_for_2d_poly as _alpha_for_2d_poly,
+    alpha_for_3d_tube as _alpha_for_3d_tube,
+    color_for_branch_type as _color_for_branch_type,
+)
 
-ALLEN_RGB_BY_TYPE = {
-    "soma": (0, 0, 0),
-    "axon": (70, 130, 180),
-    "basal_dendrite": (178, 34, 34),
-    "apical_dendrite": (255, 127, 80),
-    "dendrite": (205, 92, 92),
-    "custom": (110, 110, 110),
-}
+if TYPE_CHECKING:
+    from braincell.filter import LocsetMask, RegionMask
+    from braincell.morpho import Morpho
 
 
 def color_for_branch_type(branch_type: str) -> tuple[int, int, int]:
-    return ALLEN_RGB_BY_TYPE.get(branch_type, ALLEN_RGB_BY_TYPE["custom"])
+    return _color_for_branch_type(branch_type)
+
+
+def alpha_for_2d_line() -> float:
+    return _alpha_for_2d_line()
+
+
+def alpha_for_2d_poly() -> float:
+    return _alpha_for_2d_poly()
+
+
+def alpha_for_3d_tube() -> float:
+    return _alpha_for_3d_tube()
 
 
 @dataclass(frozen=True)
@@ -56,6 +70,7 @@ class BranchPolyline3D:
 class BranchTypeBatch3D:
     branch_type: str
     color_rgb: tuple[int, int, int]
+    opacity: float
     branch_indices: tuple[int, ...]
     branch_names: tuple[str, ...]
     points_um: np.ndarray
@@ -71,6 +86,7 @@ class Polyline2D:
     points_um: np.ndarray
     widths_um: np.ndarray
     color_rgb: tuple[int, int, int]
+    alpha: float = 1.0
     draw_order: int = 0
 
 
@@ -81,6 +97,7 @@ class Polygon2D:
     branch_type: str
     points_um: np.ndarray
     color_rgb: tuple[int, int, int]
+    alpha: float = 1.0
     draw_order: int = 0
 
 

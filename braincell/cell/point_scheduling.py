@@ -32,9 +32,10 @@ def build_point_scheduling(
 
     peel_level_by_point = _compute_peel_levels(point_tree=point_tree)
     row_to_point_id = _build_row_to_point_id(point_tree=point_tree, peel_level_by_point=peel_level_by_point)
-    point_id_to_row = np.empty(point_tree.point_count, dtype=np.int32)
-    point_id_to_row[row_to_point_id] = np.arange(point_tree.point_count, dtype=np.int32)
-    parent_rows = np.full(point_tree.point_count, -1, dtype=np.int32)
+    point_count = len(point_tree.points)
+    point_id_to_row = np.empty(point_count, dtype=np.int32)
+    point_id_to_row[row_to_point_id] = np.arange(point_count, dtype=np.int32)
+    parent_rows = np.full(point_count, -1, dtype=np.int32)
     for row, point_id in enumerate(row_to_point_id.tolist()):
         parent_id = int(point_tree.point_parent[point_id])
         if parent_id >= 0:
@@ -87,8 +88,9 @@ def _validate_max_group_size(max_group_size: int) -> None:
 
 
 def _compute_peel_levels(*, point_tree: PointTree) -> np.ndarray:
-    levels = np.zeros(point_tree.point_count, dtype=np.int32)
-    for point_id in range(point_tree.point_count - 1, -1, -1):
+    point_count = len(point_tree.points)
+    levels = np.zeros(point_count, dtype=np.int32)
+    for point_id in range(point_count - 1, -1, -1):
         children_ids = point_tree.point_children[point_id]
         if len(children_ids) == 0:
             levels[point_id] = 0

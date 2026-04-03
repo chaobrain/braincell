@@ -14,8 +14,6 @@
 # ==============================================================================
 
 
-from numbers import Integral
-
 from braincell.filter import LocsetExpr, RegionExpr
 from braincell.morpho import Morpho
 from .cv import CV, CVPolicy, assemble_cv
@@ -100,21 +98,23 @@ class Cell:
     def cvs(self) -> tuple[CV, ...]:
         return self._rebuild_if_needed()
 
-    def cv(self, index: int) -> CV:
-        if isinstance(index, bool) or not isinstance(index, Integral):
-            raise TypeError(f"Cell.cv(...) index must be int, got {index!r}.")
-        idx = int(index)
-        cvs = self.cvs
-        if idx < 0 or idx >= len(cvs):
-            raise IndexError(f"CV index {idx!r} is out of range [0, {len(cvs)}).")
-        return cvs[idx]
+    def __repr__(self) -> str:
+        return (
+            f"Cell(root={self.morpho.root.name!r}, n_branches={len(self.morpho.branches)!r}, "
+            f"n_cv={self.n_cv!r}, n_paint_rules={len(self.paint_rules)!r}, "
+            f"n_place_rules={len(self.place_rules)!r})"
+        )
 
-    def summary(self) -> dict[str, object]:
-        return {
-            "n_cv": self.n_cv,
-            "n_paint_rules": len(self._paint_rules),
-            "n_place_rules": len(self._place_rules),
-        }
+    def __str__(self) -> str:
+        return (
+            f"{'-'*35}\n"
+            f"{'root':<14} | {self.morpho.root.name}\n"
+            f"{'n_branches':<14} | {len(self.morpho.branches)}\n"
+            f"{'n_cv':<14} | {self.n_cv}\n"
+            f"{'n_paint_rules':<14} | {len(self.paint_rules)}\n"
+            f"{'n_place_rules':<14} | {len(self.place_rules)}\n"
+            f"{'-'*35}\n"
+        )
 
     def point_tree(self) -> PointTree:
         self._rebuild_if_needed()

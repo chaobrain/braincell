@@ -308,13 +308,9 @@ class MorphoTest(unittest.TestCase):
         tree.soma.dend = dend
         tree.soma.dend.tuft = tuft
 
-        self.assertEqual(tree.metric.n_branches, 3)
         self.assertEqual(tree.n_branches, 3)
-        self.assertEqual(tree.metric.n_stems, 1)
         self.assertEqual(tree.n_stems, 1)
-        self.assertEqual(tree.metric.n_bifurcations, 0)
         self.assertEqual(tree.n_bifurcations, 0)
-        self.assertEqual(tree.metric.max_branch_order, 2)
         self.assertEqual(tree.max_branch_order, 2)
         self.assertEqual(tree.soma.branch, soma)
         self.assertEqual(tree.soma.mean_radius.to_decimal(u.um), 10.0)
@@ -323,29 +319,17 @@ class MorphoTest(unittest.TestCase):
         self.assertEqual(tree.soma.dend.n_children, 1)
         self.assertAlmostEqual(tree.soma.dend.tuft.mean_radius.to_decimal(u.um), 0.8)
         self.assertEqual(tree.soma.dend.tuft.n_children, 0)
-        self.assertEqual(tree.metric.path_to_root(2), (0, 1, 2))
         self.assertEqual(tree.path_to_root(2), (0, 1, 2))
-        self.assertEqual(tree.metric.max_path_distance.to_decimal(u.um), 110.0)
         self.assertEqual(tree.max_path_distance.to_decimal(u.um), 110.0)
-        self.assertAlmostEqual(tree.metric.mean_radius.to_decimal(u.um), 314.0 / 110.0)
         self.assertAlmostEqual(tree.mean_radius.to_decimal(u.um), 314.0 / 110.0)
-        self.assertEqual(tree.metric.total_length.to_decimal(u.um), 110.0)
         self.assertEqual(tree.total_length.to_decimal(u.um), 110.0)
         self.assertAlmostEqual(
-            tree.metric.total_area.to_decimal(u.um ** 2),
+            tree.total_area.to_decimal(u.um ** 2),
             (soma.area + dend.area + tuft.area).to_decimal(u.um ** 2),
         )
         self.assertAlmostEqual(
-            tree.total_area.to_decimal(u.um ** 2),
-            tree.metric.total_area.to_decimal(u.um ** 2),
-        )
-        self.assertAlmostEqual(
-            tree.metric.total_volume.to_decimal(u.um ** 3),
-            (soma.volume + dend.volume + tuft.volume).to_decimal(u.um ** 3),
-        )
-        self.assertAlmostEqual(
             tree.total_volume.to_decimal(u.um ** 3),
-            tree.metric.total_volume.to_decimal(u.um ** 3),
+            (soma.volume + dend.volume + tuft.volume).to_decimal(u.um ** 3),
         )
 
     def test_metric_repr_and_str_expose_compact_summary(self) -> None:
@@ -355,17 +339,9 @@ class MorphoTest(unittest.TestCase):
         tree = Morpho.from_root(soma, name="soma")
         tree.soma.dend = dend
 
-        summary_repr = repr(tree.metric)
-        summary_str = str(tree.metric)
-
-        self.assertIn("MorphMetrics(", summary_repr)
-        self.assertIn("n_branches=2", summary_repr)
-        self.assertIn("n_stems=1", summary_repr)
-        self.assertIn("n_bifurcations=0", summary_repr)
-        self.assertIn("total_length=", summary_repr)
-        self.assertIn("mean_radius=", summary_repr)
-        self.assertIn("total_area=", summary_repr)
-        self.assertIn("total_volume=", summary_repr)
+        summary_str = tree.metric
+        self.assertIsInstance(summary_str, str)
+        self.assertEqual(str(tree.metric), tree.metric)
 
         self.assertIn("n_branches", summary_str)
         self.assertIn("n_stems", summary_str)
@@ -389,83 +365,12 @@ class MorphoTest(unittest.TestCase):
         tree.soma.dend = dend
         tree.soma.tuft = tuft
 
-        self.assertEqual(tree.metric.n_stems, 2)
         self.assertEqual(tree.n_stems, 2)
-        self.assertEqual(tree.metric.n_bifurcations, 1)
         self.assertEqual(tree.n_bifurcations, 1)
-        self.assertEqual(tree.metric.max_branch_order, 1)
         self.assertEqual(tree.max_branch_order, 1)
-        self.assertEqual(tree.metric.x_range.to_decimal(u.um), 37.0)
         self.assertEqual(tree.x_range.to_decimal(u.um), 37.0)
-        self.assertEqual(tree.metric.y_range.to_decimal(u.um), 10.0)
         self.assertEqual(tree.y_range.to_decimal(u.um), 10.0)
-        self.assertEqual(tree.metric.z_range.to_decimal(u.um), 11.0)
         self.assertEqual(tree.z_range.to_decimal(u.um), 11.0)
-
-    def test_metric_exposes_neuromorpho_style_height_width_depth(self) -> None:
-        soma = Branch.from_points(points=[(0.0, 0.0, 0.0), (0.0, 1.0, 0.0)] * u.um, radii=[5.0, 5.0] * u.um, type="soma")
-        tall_lo = Branch.from_points(points=[(0.0, 0.0, 0.0), (0.0, -30.0, 0.0)] * u.um, radii=[1.0, 1.0] * u.um, type="basal_dendrite")
-        tall_hi = Branch.from_points(points=[(0.0, 0.0, 0.0), (0.0, 30.0, 0.0)] * u.um, radii=[1.0, 1.0] * u.um, type="basal_dendrite")
-        height_tree = Morpho.from_root(soma, name="soma")
-        height_tree.soma.tall_lo = tall_lo
-        height_tree.soma.tall_hi = tall_hi
-        self.assertEqual(height_tree.metric.height.to_decimal(u.um), 60.0)
-        self.assertEqual(height_tree.height.to_decimal(u.um), 60.0)
-        self.assertEqual(height_tree.metric.width.to_decimal(u.um), 0.0)
-        self.assertEqual(height_tree.metric.depth.to_decimal(u.um), 0.0)
-
-        wide_lo = Branch.from_points(points=[(0.0, 0.0, 0.0), (-10.0, 0.0, 0.0)] * u.um, radii=[1.0, 1.0] * u.um, type="apical_dendrite")
-        wide_hi = Branch.from_points(points=[(0.0, 0.0, 0.0), (10.0, 0.0, 0.0)] * u.um, radii=[1.0, 1.0] * u.um, type="apical_dendrite")
-        width_tree = Morpho.from_root(soma, name="soma")
-        width_tree.soma.wide_lo = wide_lo
-        width_tree.soma.wide_hi = wide_hi
-        self.assertEqual(width_tree.metric.height.to_decimal(u.um), 20.0)
-        self.assertEqual(width_tree.height.to_decimal(u.um), 20.0)
-        self.assertEqual(width_tree.metric.width.to_decimal(u.um), 0.0)
-        self.assertEqual(width_tree.metric.depth.to_decimal(u.um), 0.0)
-
-        deep_lo = Branch.from_points(points=[(0.0, 0.0, 0.0), (0.0, 0.0, -4.0)] * u.um, radii=[1.0, 1.0] * u.um, type="axon")
-        deep_hi = Branch.from_points(points=[(0.0, 0.0, 0.0), (0.0, 0.0, 4.0)] * u.um, radii=[1.0, 1.0] * u.um, type="axon")
-        depth_tree = Morpho.from_root(soma, name="soma")
-        depth_tree.soma.deep_lo = deep_lo
-        depth_tree.soma.deep_hi = deep_hi
-        self.assertEqual(depth_tree.metric.height.to_decimal(u.um), 8.0)
-        self.assertEqual(depth_tree.height.to_decimal(u.um), 8.0)
-        self.assertEqual(depth_tree.metric.width.to_decimal(u.um), 0.0)
-        self.assertEqual(depth_tree.metric.depth.to_decimal(u.um), 0.0)
-
-    def test_height_width_depth_use_lmeasure_style_length_weighted_span(self) -> None:
-        soma = Branch.from_points(points=[(0.0, 0.0, 0.0), (1.0, 0.0, 0.0)] * u.um, radii=[5.0, 5.0] * u.um, type="soma")
-        arbor_points = [(float(index), 0.0, 0.0) for index in range(21)] + [(100.0, 0.0, 0.0)]
-        arbor = Branch.from_points(points=arbor_points * u.um, radii=[1.0] * len(arbor_points) * u.um, type="basal_dendrite")
-
-        tree = Morpho.from_root(soma, name="soma")
-        tree.soma.main = arbor
-
-        self.assertAlmostEqual(tree.height.to_decimal(u.um), 94.0, places=4)
-        self.assertAlmostEqual(tree.width.to_decimal(u.um), 0.0, places=5)
-        self.assertAlmostEqual(tree.depth.to_decimal(u.um), 0.0, places=5)
-        self.assertEqual(tree.x_range.to_decimal(u.um), 100.0)
-
-    def test_height_width_depth_ignore_soma_in_orientation_and_span(self) -> None:
-        soma = Branch.from_points(points=[(0.0, 0.0, 0.0), (200.0, 0.0, 0.0)] * u.um, radii=[5.0, 5.0] * u.um, type="soma")
-        arbor = Branch.from_points(points=[(100.0, -10.0, 0.0), (100.0, 0.0, 0.0), (100.0, 10.0, 0.0)] * u.um, radii=[1.0, 1.0, 1.0] * u.um, type="basal_dendrite")
-
-        tree = Morpho.from_root(soma, name="soma")
-        tree.soma.main = arbor
-
-        self.assertEqual(tree.height.to_decimal(u.um), 10.0)
-        self.assertEqual(tree.width.to_decimal(u.um), 0.0)
-        self.assertEqual(tree.depth.to_decimal(u.um), 0.0)
-
-    def test_height_width_depth_return_zero_for_soma_only_tree(self) -> None:
-        soma = Branch.from_points(points=[(0.0, 0.0, 0.0), (10.0, 0.0, 0.0)] * u.um, radii=[5.0, 5.0] * u.um, type="soma")
-
-        tree = Morpho.from_root(soma, name="soma")
-
-        self.assertEqual(tree.height.to_decimal(u.um), 0.0)
-        self.assertEqual(tree.width.to_decimal(u.um), 0.0)
-        self.assertEqual(tree.depth.to_decimal(u.um), 0.0)
 
     def test_metric_exposes_neuromorpho_distance_metrics(self) -> None:
         soma = Branch.from_points(points=[(0.0, 0.0, 0.0), (10.0, 0.0, 0.0)] * u.um, radii=[5.0, 5.0] * u.um,
@@ -482,13 +387,9 @@ class MorphoTest(unittest.TestCase):
         tree.main.attach(tuft, name="tuft")
         tree.soma.attach(side, name="side", parent_x=1.0)
 
-        self.assertAlmostEqual(tree.metric.max_path_distance.to_decimal(u.um), 25.0)
         self.assertAlmostEqual(tree.max_path_distance.to_decimal(u.um), 25.0)
-        self.assertAlmostEqual(tree.metric.max_euclidean_distance.to_decimal(u.um), np.sqrt(425.0))
         self.assertAlmostEqual(tree.max_euclidean_distance.to_decimal(u.um), np.sqrt(425.0))
-        self.assertAlmostEqual(tree.metric.max_path_distance_excluding_soma.to_decimal(u.um), 20.0)
         self.assertAlmostEqual(tree.max_path_distance_excluding_soma.to_decimal(u.um), 20.0)
-        self.assertAlmostEqual(tree.metric.max_euclidean_distance_excluding_soma.to_decimal(u.um), 20.0)
         self.assertAlmostEqual(tree.max_euclidean_distance_excluding_soma.to_decimal(u.um), 20.0)
 
     def test_excluding_soma_distances_remove_full_root_contribution_at_distal_attach(self) -> None:
@@ -554,13 +455,7 @@ class MorphoTest(unittest.TestCase):
         self.assertFalse(tree.has_full_point_geometry)
 
         with self.assertRaisesRegex(ValueError, "Coordinate range metrics require full point geometry on every branch"):
-            _ = tree.metric.x_range
-        with self.assertRaisesRegex(ValueError, "Coordinate range metrics require full point geometry on every branch"):
             _ = tree.x_range
-        with self.assertRaisesRegex(ValueError, "Height/width/depth metrics require full point geometry on every branch"):
-            _ = tree.metric.height
-        with self.assertRaisesRegex(ValueError, "Height/width/depth metrics require full point geometry on every branch"):
-            _ = tree.height
 
     def test_max_euclidean_distance_requires_full_point_geometry(self) -> None:
         soma = Branch.from_points(points=[(0.0, 0.0, 0.0), (10.0, 0.0, 0.0)] * u.um, radii=[5.0, 5.0] * u.um, type="soma")
@@ -570,9 +465,9 @@ class MorphoTest(unittest.TestCase):
         tree.soma.dend = dend
 
         with self.assertRaisesRegex(ValueError, "Euclidean distance metrics require full point geometry on every branch"):
-            _ = tree.metric.max_euclidean_distance
+            _ = tree.max_euclidean_distance
         with self.assertRaisesRegex(ValueError, "Euclidean distance metrics require full point geometry on every branch"):
-            _ = tree.metric.max_euclidean_distance_excluding_soma
+            _ = tree.max_euclidean_distance_excluding_soma
 
     def test_foreign_missing_and_reserved_children_are_rejected(self) -> None:
         soma0 = Branch.from_lengths(lengths=[20.0] * u.um, radii=[10.0, 10.0] * u.um, type="soma")

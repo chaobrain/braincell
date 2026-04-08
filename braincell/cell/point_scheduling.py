@@ -9,6 +9,16 @@ from .point_tree import PointTree
 
 @dataclass(frozen=True)
 class PointScheduling:
+    """Execution-oriented grouping derived from a :class:`PointTree`.
+
+    This structure stores a row ordering and level/group decomposition for the
+    compute-point tree. The current builder supports the ``dhs`` algorithm and
+    prepares the arrays a runtime solver will need for parent lookup, grouped
+    traversal, and edge processing.
+
+    ``Cell.point_scheduling(...)`` memoizes these schedules by algorithm and
+    ``max_group_size`` on top of the cached :class:`PointTree`.
+    """
     algorithm: str
     row_to_point_id: np.ndarray
     point_id_to_row: np.ndarray

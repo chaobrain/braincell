@@ -14,12 +14,15 @@
 # ==============================================================================
 
 from .asc import AscIssue, AscMetadata, AscReader, AscReport
-from .neuron_diff import (
-    compare_swc_with_neuron,
-    compute_braincell_metrics,
-    compute_neuron_metrics,
-    load_swc_morphology,
-    supported_metric_names,
+from .neuromorpho import (
+    find_standard_swc,
+    load_cached_metadata,
+    NeuroMorphoClient,
+    NeuroMorphoDetail,
+    NeuroMorphoDownloadItem,
+    NeuroMorphoDownloadRecord,
+    NeuroMorphoNeuron,
+    NeuroMorphoSearchPage,
 )
 from .neuroml2 import NeuroMlReader
 from .swc import SwcIssue, SwcReadOptions, SwcReader, SwcReport
@@ -29,14 +32,17 @@ __all__ = [
     "AscMetadata",
     "AscReader",
     "AscReport",
-    "compare_swc_with_neuron",
-    "compute_braincell_metrics",
-    "compute_neuron_metrics",
-    "load_swc_morphology",
+    "find_standard_swc",
+    "load_cached_metadata",
+    "NeuroMorphoClient",
+    "NeuroMorphoDetail",
+    "NeuroMorphoDownloadItem",
+    "NeuroMorphoDownloadRecord",
+    "NeuroMorphoNeuron",
+    "NeuroMorphoSearchPage",
     "NeuroMlReader",
     "SwcIssue",
     "SwcReadOptions",
     "SwcReader",
     "SwcReport",
-    "supported_metric_names",
 ]

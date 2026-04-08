@@ -28,7 +28,7 @@ from ._base import (
     mix_ions,
 )
 from ._single_compartment import SingleCompartment
-from .cell import CVPolicy, Cell
+from .cell import CVPerBranch, CVPolicy, Cell, DLambda, MaxCVLen
 from .filter import (
     LocsetExpr,
     RegionExpr,
@@ -67,7 +67,9 @@ __all__ = [
     "Channel",
     "CurrentClamp",
     "CustomBranch",
+    "CVPerBranch",
     "CVPolicy",
+    "DLambda",
     "Dendrite",
     "DensityMechanism",
     "HHTypedNeuron",
@@ -76,6 +78,7 @@ __all__ = [
     "IonInfo",
     "LocsetExpr",
     "MixIons",
+    "MaxCVLen",
     "Morpho",
     "MorphoBranch",
     "MorphoEdge",

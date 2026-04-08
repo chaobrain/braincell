@@ -75,7 +75,7 @@ class SwcReaderTest(unittest.TestCase):
         radii.extend(radius.to_decimal(u.um) for radius in branch.radii_distal)
         return np.array(radii, dtype=float)
 
-    def test_contour_rule_uses_start_mid_end_curvature_angle(self) -> None:
+    def test_contour_rule_is_disabled(self) -> None:
         acute_rows = (
             self._soma_row(1, 0.0, 0.0),
             self._soma_row(2, 5.0, 1.0),
@@ -95,8 +95,8 @@ class SwcReaderTest(unittest.TestCase):
             self._soma_row(4, 10.0, 0.0),
         )
 
-        self.assertTrue(is_contour_soma(acute_rows))
-        self.assertTrue(is_contour_soma(right_rows))
+        self.assertFalse(is_contour_soma(acute_rows))
+        self.assertFalse(is_contour_soma(right_rows))
         self.assertFalse(is_contour_soma(obtuse_rows))
 
     def test_special_three_point_rule_uses_center_first_topology(self) -> None:
@@ -110,12 +110,27 @@ class SwcReaderTest(unittest.TestCase):
             self._soma_row(2, 0.0, 0.0, radius=5.0, parent_id=1),
             self._soma_row(3, 5.0, 0.0, radius=5.0, parent_id=2),
         )
+        empty_children = {1: [], 2: [], 3: []}
 
-        is_special, ordered = is_special_three_point_soma(special_rows)
+        is_special, ordered = is_special_three_point_soma(special_rows, empty_children)
         self.assertTrue(is_special)
         self.assertIsNotNone(ordered)
         self.assertEqual(ordered[0].node_id, 1)
-        self.assertFalse(is_special_three_point_soma(chain_rows)[0])
+        self.assertFalse(is_special_three_point_soma(chain_rows, empty_children)[0])
+
+    def test_special_three_point_rule_requires_leaf_side_points(self) -> None:
+        rows = (
+            self._soma_row(1, 0.0, 0.0, radius=5.0, parent_id=-1),
+            self._soma_row(2, -5.0, 0.0, radius=5.0, parent_id=1),
+            self._soma_row(3, 0.0, 5.0, radius=5.0, parent_id=1),
+        )
+
+        self.assertFalse(
+            is_special_three_point_soma(rows, {1: [2, 3], 2: [4], 3: []})[0]
+        )
+        self.assertFalse(
+            is_special_three_point_soma(rows, {1: [2, 3], 2: [], 3: [4]})[0]
+        )
 
     def test_reader_builds_compressed_tree_and_maps_known_types(self) -> None:
         path = self._write_swc(
@@ -328,6 +343,22 @@ class SwcReaderTest(unittest.TestCase):
         self.assertNotAlmostEqual(dend_radii[0], 10.0)
         self.assertEqual(tree.edges[0].parent_x, 0.5)
 
+    def test_three_point_soma_with_side_child_is_not_collapsed_to_special_case(self) -> None:
+        path = self._write_swc(
+            """
+            1 1 0 0 0 10 -1
+            2 1 -10 0 0 10 1
+            3 1 0 10 0 10 1
+            4 3 -10 10 0 2 2
+            """
+        )
+
+        tree = SwcReader().read(path)
+        soma_names = [branch.name for branch in tree.branches if branch.type == "soma"]
+
+        self.assertEqual(len(soma_names), 2)
+        self.assertEqual(tree.branch(name="basal_dendrite_0").parent_x, 1.0)
+
     def test_nonbranching_multi_point_soma_uses_midpoint_attachment_for_internal_children(self) -> None:
         path = self._write_swc(
             """
@@ -451,7 +482,7 @@ class SwcReaderTest(unittest.TestCase):
             )
         )
         self.assertEqual(soma_children[0].parent_x, 0.0)
-        self.assertEqual(tree.branch(name="basal_dendrite_0").parent_x, 0.0)
+        self.assertEqual(tree.branch(name="basal_dendrite_0").parent_x, 1.0)
 
     def test_reader_imports_bundled_io_file_without_single_point_root_error(self) -> None:
         tree = SwcReader().read(self._morpho_file("io.swc"))
@@ -477,7 +508,7 @@ class SwcReaderTest(unittest.TestCase):
         self.assertNotAlmostEqual(dend_radii[0], 10.0)
         self.assertEqual(tree.edges[0].parent_x, 1.0)
 
-    def test_contour_soma_becomes_equivalent_single_point_then_midpoint_attachment(self) -> None:
+    def test_multi_point_soma_is_preserved_and_contour_conversion_is_disabled(self) -> None:
         path = self._write_swc(
             """
             1 1 0 0 0 5 -1
@@ -493,9 +524,10 @@ class SwcReaderTest(unittest.TestCase):
         dend_points = self._branch_points_um(tree.branch(name="basal_dendrite_0").branch)
         dend_radii = self._branch_point_radii_um(tree.branch(name="basal_dendrite_0").branch)
 
-        self.assertIn("semantics.contour", self._issue_codes(report))
-        self.assertTrue(np.allclose(soma_points[1], np.array([0.0, 1.0, 0.0])))
-        self.assertTrue(np.allclose(dend_points[0], np.array([0.0, 1.0, 0.0])))
+        self.assertNotIn("semantics.contour", self._issue_codes(report))
+        self.assertEqual(soma_points.shape, (4, 3))
+        self.assertTrue(np.allclose(soma_points, np.array([[0.0, 0.0, 0.0], [5.0, 1.0, 0.0], [0.0, 2.0, 0.0], [-5.0, 1.0, 0.0]])))
+        self.assertTrue(np.allclose(dend_points[0], np.array([5.0, 1.0, 0.0])))
         self.assertAlmostEqual(dend_radii[0], dend_radii[1])
         self.assertNotAlmostEqual(dend_radii[0], 10.0)
         self.assertEqual(tree.edges[0].parent_x, 0.5)
@@ -849,6 +881,95 @@ class SwcReaderTest(unittest.TestCase):
         neuromorpho_tree = SwcReader(options=SwcReadOptions(mode="neuromorpho")).read(path)
 
         self.assertEqual(neuron_tree, neuromorpho_tree)
+
+    def test_neuron_mode_does_not_copy_midpoint_attach_for_two_point_child(self) -> None:
+        path = self._write_swc(
+            """
+            1 1 0 0 0 10 -1
+            2 3 0 10 0 2 1
+            3 3 0 20 0 2 2
+            """
+        )
+
+        neuron_tree = SwcReader(options=SwcReadOptions(mode="neuron")).read(path)
+        neuromorpho_tree = SwcReader(options=SwcReadOptions(mode="neuromorpho")).read(path)
+
+        neuron_points = self._branch_points_um(neuron_tree.branch(name="basal_dendrite_0").branch)
+        neuromorpho_points = self._branch_points_um(neuromorpho_tree.branch(name="basal_dendrite_0").branch)
+
+        self.assertTrue(np.allclose(neuron_points, np.array([[0.0, 10.0, 0.0], [0.0, 20.0, 0.0]])))
+        self.assertTrue(
+            np.allclose(neuromorpho_points, np.array([[0.0, 0.0, 0.0], [0.0, 10.0, 0.0], [0.0, 20.0, 0.0]]))
+        )
+
+    def test_neuron_mode_keeps_root_branched_soma_single_point_proximal_child(self) -> None:
+        path = self._write_swc(
+            """
+            1 1 0 0 0 5 -1
+            2 1 10 0 0 5 1
+            3 1 20 0 0 5 2
+            4 1 -10 0 0 5 1
+            5 1 -20 0 0 5 4
+            6 3 0 10 0 1 1
+            """
+        )
+
+        neuron_tree = SwcReader(options=SwcReadOptions(mode="neuron")).read(path)
+        neuromorpho_tree = SwcReader(options=SwcReadOptions(mode="neuromorpho")).read(path)
+
+        neuron_points = self._branch_points_um(neuron_tree.branch(name="basal_dendrite_0").branch)
+        neuromorpho_points = self._branch_points_um(neuromorpho_tree.branch(name="basal_dendrite_0").branch)
+
+        self.assertTrue(np.allclose(neuron_points, np.array([[0.0, 0.0, 0.0], [0.0, 10.0, 0.0]])))
+        self.assertTrue(np.allclose(neuromorpho_points, neuron_points))
+
+    def test_neuron_mode_does_not_copy_root_branched_soma_two_point_proximal_child(self) -> None:
+        path = self._write_swc(
+            """
+            1 1 0 0 0 5 -1
+            2 1 10 0 0 5 1
+            3 1 20 0 0 5 2
+            4 1 -10 0 0 5 1
+            5 1 -20 0 0 5 4
+            6 3 0 10 0 1 1
+            7 3 0 20 0 1 6
+            """
+        )
+
+        neuron_tree = SwcReader(options=SwcReadOptions(mode="neuron")).read(path)
+        neuromorpho_tree = SwcReader(options=SwcReadOptions(mode="neuromorpho")).read(path)
+
+        neuron_points = self._branch_points_um(neuron_tree.branch(name="basal_dendrite_0").branch)
+        neuromorpho_points = self._branch_points_um(neuromorpho_tree.branch(name="basal_dendrite_0").branch)
+
+        self.assertTrue(np.allclose(neuron_points, np.array([[0.0, 10.0, 0.0], [0.0, 20.0, 0.0]])))
+        self.assertTrue(
+            np.allclose(neuromorpho_points, np.array([[0.0, 0.0, 0.0], [0.0, 10.0, 0.0], [0.0, 20.0, 0.0]]))
+        )
+
+    def test_neuromorpho_mode_still_copies_nonroot_proximal_attach(self) -> None:
+        path = self._write_swc(
+            """
+            1 1 0 0 0 5 -1
+            2 1 10 0 0 5 1
+            3 1 20 0 0 5 2
+            4 1 30 0 0 5 3
+            5 1 10 10 0 5 2
+            6 1 10 20 0 5 5
+            7 3 -10 0 0 2 1
+            8 3 -20 0 0 2 7
+            """
+        )
+
+        neuron_tree = SwcReader(options=SwcReadOptions(mode="neuron")).read(path)
+        neuromorpho_tree = SwcReader(options=SwcReadOptions(mode="neuromorpho")).read(path)
+
+        neuron_points = self._branch_points_um(neuron_tree.branch(name="basal_dendrite_0").branch)
+        neuromorpho_points = self._branch_points_um(neuromorpho_tree.branch(name="basal_dendrite_0").branch)
+
+        expected = np.array([[0.0, 0.0, 0.0], [-10.0, 0.0, 0.0], [-20.0, 0.0, 0.0]])
+        self.assertTrue(np.allclose(neuron_points, expected))
+        self.assertTrue(np.allclose(neuromorpho_points, expected))
 
     def test_reader_error_uses_pretty_error_report(self) -> None:
         path = self._write_swc(

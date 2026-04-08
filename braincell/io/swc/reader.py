@@ -218,7 +218,7 @@ class SwcReader:
             root_branch, child_tasks = self._make_single_point_soma_branch(ordered_soma_rows[0], nodes, children)
             branches = [root_branch]
         else:
-            is_special, ordered_special_rows = is_special_three_point_soma(ordered_soma_rows)
+            is_special, ordered_special_rows = is_special_three_point_soma(ordered_soma_rows, children)
             if is_special and ordered_special_rows is not None:
                 root_branch, child_tasks = self._make_special_three_point_soma_branch(
                     ordered_special_rows,
@@ -227,6 +227,8 @@ class SwcReader:
                 )
                 branches = [root_branch]
             elif self._is_nonbranching_soma_component(soma_ids, children, nodes):
+                # Contour-soma recognition is disabled, so multi-point soma
+                # components remain regular soma sections during SWC import.
                 if contour_soma_ids and set(ordered_soma_ids).issubset(contour_soma_ids):
                     root_branch, child_tasks = self._make_contour_soma_branch(ordered_soma_rows, nodes, children)
                 else:
@@ -363,16 +365,13 @@ class SwcReader:
 
         if branch.attach is not None:
             attach_point, attach_radius = self._attach_geometry(branch.attach, nodes)
-            should_copy_attach = True
-            if (
-                parent_branch_type == "soma"
-                and branch.attach.parent_x == 0.5
-                and len(point_ids) > 1
-                and self.options.mode == "neuron"
-            ):
-                should_copy_attach = False
-            if np.allclose(points[0], attach_point):
-                should_copy_attach = False
+            should_copy_attach = self._should_copy_attach_geometry(
+                parent_branch_type=parent_branch_type,
+                attach=branch.attach,
+                point_ids=point_ids,
+                points=points,
+                attach_point=attach_point,
+            )
 
             attach_radius_for_child = float(attach_radius)
             if parent_branch_type == "soma":
@@ -388,6 +387,25 @@ class SwcReader:
             points=np.array(points, dtype=float) * u.um,
             radii=np.array(radii, dtype=float) * u.um,
         )
+
+    def _should_copy_attach_geometry(
+        self,
+        *,
+        parent_branch_type: str | None,
+        attach: _SwcAttach,
+        point_ids: list[int],
+        points: list[np.ndarray],
+        attach_point: np.ndarray,
+    ) -> bool:
+        if np.allclose(points[0], attach_point):
+            return False
+        if self.options.mode != "neuron" or parent_branch_type != "soma":
+            return True
+        if attach.parent_x == 0.5 and len(point_ids) > 1:
+            return False
+        if attach.is_root_branched_soma_proximal and len(point_ids) > 1:
+            return False
+        return True
 
     def _attachment_x(
         self,
@@ -551,6 +569,7 @@ class SwcReader:
     ) -> tuple[list[_SwcBranch], tuple[tuple[_SwcAttach, int, int], ...]]:
         branches: list[_SwcBranch] = []
         child_tasks: list[tuple[_SwcAttach, int, int]] = []
+        root_is_immediately_branched = len(self._soma_child_ids(root_id, children, nodes)) > 1
 
         def walk_section(parent_index: int | None, start_node_id: int, attach: _SwcAttach | None) -> int:
             point_ids = [start_node_id]
@@ -590,7 +609,22 @@ class SwcReader:
                 for child_id in children[node_id]:
                     if map_swc_type_code(nodes[child_id].type_code) == "soma":
                         continue
-                    child_tasks.append((_SwcAttach(node_id=node_id, parent_x=parent_x), child_id, branch_index))
+                    child_tasks.append(
+                        (
+                            _SwcAttach(
+                                node_id=node_id,
+                                parent_x=parent_x,
+                                is_root_branched_soma_proximal=(
+                                    parent_index is None
+                                    and root_is_immediately_branched
+                                    and node_id == point_ids[0]
+                                    and parent_x == 0.0
+                                ),
+                            ),
+                            child_id,
+                            branch_index,
+                        )
+                    )
 
             for child_id in root_side_soma_child_ids:
                 walk_section(branch_index, child_id, _SwcAttach(node_id=start_node_id, parent_x=0.0))

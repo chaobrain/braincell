@@ -63,6 +63,10 @@ class SingleCompartment(HHTypedNeuron):
     ----------
     size : int, sequence of int
         The network size of this neuron group.
+    length : Initializer, optional
+        Compartment length used to compute membrane area. Default is 10 um
+    radius : Initializer, optional
+        Compartment radius used to compute membrane area. Default is 5 um
     C : Initializer, optional
         Membrane capacitance. Default is 1.0 uF/cm²
     V_th : Initializer, optional
@@ -87,6 +91,8 @@ class SingleCompartment(HHTypedNeuron):
     def __init__(
         self,
         size: brainstate.typing.Size,
+        length: Initializer = 10. * u.um,
+        radius: Initializer = 5. * u.um,
         C: Initializer = 1. * u.uF / u.cm ** 2,
         V_th: Initializer = 0. * u.mV,
         V_initializer: Initializer = braintools.init.Uniform(-70 * u.mV, -60. * u.mV),
@@ -97,6 +103,8 @@ class SingleCompartment(HHTypedNeuron):
     ):
         super().__init__(size, name=name, **ion_channels)
         assert self.n_compartment == 1, "SingleCompartment neuron should have only one compartment."
+        self.length = braintools.init.param(length, self.varshape)
+        self.radius = braintools.init.param(radius, self.varshape)
         self.C = braintools.init.param(C, self.varshape)
         self.V_th = braintools.init.param(V_th, self.varshape)
         self.V_initializer = V_initializer
@@ -134,6 +142,19 @@ class SingleCompartment(HHTypedNeuron):
             The number of compartments, which is 1 for :class:`SingleCompartment` neurons.
         """
         return 1
+
+    @property
+    def area(self):
+        """Membrane area used to convert injected current into current density."""
+        return 2. * u.math.pi * self.radius * self.length
+
+    def _normalize_external_current(self, I_ext):
+        if isinstance(I_ext, u.Quantity):
+            if I_ext.has_same_unit(1. * u.nA / (u.cm ** 2)):
+                return I_ext.in_unit(u.nA / (u.cm ** 2))
+            if I_ext.has_same_unit(1. * u.nA):
+                return (I_ext / self.area).in_unit(u.nA / (u.cm ** 2))
+        return I_ext
 
     def init_state(self, batch_size=None):
         """
@@ -201,8 +222,9 @@ class SingleCompartment(HHTypedNeuron):
         Parameters
         ----------
         I_ext : float, optional
-            External current input. Default is 0 nA/cm^2.
+            External current input. Supports either current density or total current.
         """
+        I_ext = self._normalize_external_current(I_ext)
         I_ext = self.sum_current_inputs(I_ext, self.V.value)
         for key, ch in self.nodes(IonChannel, allowed_hierarchy=(1, 1)).items():
             try:

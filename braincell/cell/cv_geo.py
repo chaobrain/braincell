@@ -21,6 +21,7 @@ import brainunit as u
 import numpy as np
 
 from braincell.morpho import Branch, Morpho
+from .cv_policy import CVPolicy
 
 Quantity = Any
 EPSILON = 1e-12
@@ -28,6 +29,13 @@ EPSILON = 1e-12
 
 @dataclass(frozen=True)
 class CVFrustum:
+    """Single frustum slice belonging to one CV interval.
+
+    A ``CV`` may span several morphology segments or partial segments. This
+    class preserves those exact geometric pieces after clipping by ``prox`` and
+    ``dist`` bounds. ``CV.as_branch()`` later uses these slices to reconstruct a
+    branch-shaped debug view.
+    """
     prox: float
     dist: float
     length: Quantity
@@ -39,6 +47,13 @@ class CVFrustum:
 
 @dataclass(frozen=True)
 class CVGeo:
+    """Geometry/topology record for one CV before mechanism attachment.
+
+    This type is the output of :func:`build_cv_geo` and the input to
+    :func:`assemble_cv`. It intentionally excludes mutable or rule-derived
+    mechanism state so that geometry splitting and mechanism mapping stay
+    decoupled.
+    """
     id: int
     branch_id: int
     branch_type: str
@@ -62,17 +77,19 @@ def build_cv_geo(
 ) -> tuple[tuple[CVGeo, ...], dict[int, tuple[int, ...]]]:
     if not isinstance(morpho, Morpho):
         raise TypeError(f"build_cv_geo(...) expects Morpho, got {type(morpho).__name__!s}.")
-    n_by_branch = _resolve_cv_counts(morpho, policy=policy)
+    if not isinstance(policy, CVPolicy):
+        raise TypeError("build_cv_geo(...) expects a CVPolicy instance.")
+    bounds_by_branch = policy.resolve_cv_bounds(morpho)
     cv_ids_by_branch: dict[int, tuple[int, ...]] = {}
     temp_geo: list[CVGeo] = []
 
     cv_id = 0
     for branch_id, branch in enumerate(morpho.branches):
-        n_per_branch = n_by_branch[branch_id]
+        branch_bounds = bounds_by_branch[branch_id]
         ids: list[int] = []
-        for offset in range(n_per_branch):
-            prox = float(offset) / float(n_per_branch)
-            dist = float(offset + 1) / float(n_per_branch)
+        for prox, dist in branch_bounds:
+            prox = float(prox)
+            dist = float(dist)
             midpoint = 0.5 * (prox + dist)
             (
                 frusta,
@@ -154,62 +171,6 @@ def build_cv_geo(
         for cv in temp_geo
     )
     return cvs, cv_ids_by_branch
-
-
-def _resolve_cv_counts(morpho: Morpho, *, policy: object) -> tuple[int, ...]:
-    # ``CVPolicy.mode`` is dispatched here; the public class stays lightweight,
-    # while the operational behavior lives in this geometry builder.
-    mode = getattr(policy, "mode", None)
-    if not isinstance(mode, str):
-        raise TypeError(
-            "build_cv_geo(...) expects a CVPolicy-like object with string field 'mode'."
-        )
-    if mode == "cv_per_branch":
-        # Uniform CV count on every branch.
-        return _resolve_cv_per_branch_counts(morpho, policy=policy)
-    if mode == "max_cv_len":
-        # Per-branch CV count chosen to satisfy the requested maximum CV length.
-        return _resolve_max_cv_len_counts(morpho, policy=policy)
-    raise ValueError(
-        f"Unsupported cv policy mode {mode!r}. Supported modes are 'cv_per_branch' and 'max_cv_len'."
-    )
-
-
-def _resolve_cv_per_branch_counts(morpho: Morpho, *, policy: object) -> tuple[int, ...]:
-    cv_per_branch = getattr(policy, "cv_per_branch", None)
-    if isinstance(cv_per_branch, bool) or not isinstance(cv_per_branch, int):
-        raise TypeError(f"cv_per_branch must be integer, got {cv_per_branch!r}.")
-    if cv_per_branch <= 0:
-        raise ValueError(f"cv_per_branch must be > 0, got {cv_per_branch!r}.")
-    n_per_branch = int(cv_per_branch)
-    return tuple(n_per_branch for _ in morpho.branches)
-
-
-def _resolve_max_cv_len_counts(morpho: Morpho, *, policy: object) -> tuple[int, ...]:
-    max_cv_len = getattr(policy, "max_cv_len", None)
-    if not hasattr(max_cv_len, "to_decimal"):
-        raise TypeError(f"max_cv_len must be a length Quantity, got {max_cv_len!r}.")
-    try:
-        max_len_um = float(np.asarray(max_cv_len.to_decimal(u.um), dtype=float))
-    except Exception as exc:  # pragma: no cover - defensive for foreign quantity types
-        raise TypeError(f"max_cv_len must be a length Quantity, got {max_cv_len!r}.") from exc
-    if not np.isfinite(max_len_um) or max_len_um <= 0.0:
-        raise ValueError(f"max_cv_len must be > 0, got {max_cv_len!r}.")
-
-    return tuple(
-        _strict_count_from_max_len_um(branch=branch, max_len_um=max_len_um)
-        for branch in morpho.branches
-    )
-
-
-def _strict_count_from_max_len_um(*, branch: Branch, max_len_um: float) -> int:
-    branch_len_um = float(np.asarray(branch.length.to_decimal(u.um), dtype=float))
-    ratio = branch_len_um / max_len_um
-    # Keep CV length <= max_len_um while damping tiny floating point overshoot near integers.
-    n_cv = int(np.ceil(ratio - EPSILON))
-    return max(1, n_cv)
-
-
 def map_point_to_cv(
     point: tuple[int, float],
     *,

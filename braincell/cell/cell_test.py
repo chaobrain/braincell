@@ -24,11 +24,13 @@ import braincell
 
 from braincell import (
     Branch,
+    CVPerBranch,
     CVPolicy,
     CableProperties,
     Cell,
     CurrentClamp,
     DensityMechanism,
+    MaxCVLen,
     Morpho,
 )
 from braincell.filter import BranchSlice, RootLocation
@@ -247,7 +249,7 @@ class CellFacadeTest(unittest.TestCase):
         dend = Branch.from_lengths(lengths=[10.0] * u.um, radii=[2.0, 1.0] * u.um, type="basal_dendrite")
         tree = Morpho.from_root(soma, name="soma")
         tree.soma.d = dend
-        cell = Cell(tree, cv_policy=CVPolicy(cv_per_branch=2))
+        cell = Cell(tree, cv_policy=CVPerBranch(cv_per_branch=2))
 
         stim_boundary = CurrentClamp(amplitude=0.1 * u.nA, delay=1.0 * u.ms, duration=1.0 * u.ms)
         stim_parent_end = CurrentClamp(amplitude=0.2 * u.nA, delay=1.0 * u.ms, duration=1.0 * u.ms)
@@ -268,7 +270,7 @@ class CellFacadeTest(unittest.TestCase):
             type="soma",
         )
         tree = Morpho.from_root(soma, name="soma")
-        cell = Cell(tree, cv_policy=CVPolicy(cv_per_branch=1))
+        cell = Cell(tree, cv_policy=CVPerBranch(cv_per_branch=1))
         cv0 = cell.cvs[0]
         self.assertFalse(hasattr(cv0, "mean_radius"))
 
@@ -303,8 +305,8 @@ class CellFacadeTest(unittest.TestCase):
         )
         tree = Morpho.from_root(soma, name="soma")
 
-        whole = Cell(tree, cv_policy=CVPolicy(cv_per_branch=1)).cvs[0]
-        split = Cell(tree, cv_policy=CVPolicy(cv_per_branch=2))
+        whole = Cell(tree, cv_policy=CVPerBranch(cv_per_branch=1)).cvs[0]
+        split = Cell(tree, cv_policy=CVPerBranch(cv_per_branch=2))
         cv_left = split.cvs[0]
         cv_right = split.cvs[1]
 
@@ -323,7 +325,7 @@ class CellFacadeTest(unittest.TestCase):
         tree = Morpho.from_root(soma, name="soma")
         tree.attach(parent="soma", child_branch=dend, child_name="dend", parent_x=0.5)
 
-        cell = Cell(tree, cv_policy=CVPolicy(cv_per_branch=1))
+        cell = Cell(tree, cv_policy=CVPerBranch(cv_per_branch=1))
         point_tree = cell.point_tree()
 
         root_cv_id = next(cv.id for cv in cell.cvs if cv.branch_id == 0)
@@ -342,7 +344,7 @@ class CellFacadeTest(unittest.TestCase):
         tree.soma.dend = dend
         tree.attach(parent="dend", child_branch=twig, child_name="twig", parent_x=0.0)
 
-        cell = Cell(tree, cv_policy=CVPolicy(cv_per_branch=1))
+        cell = Cell(tree, cv_policy=CVPerBranch(cv_per_branch=1))
         point_tree = cell.point_tree()
 
         soma_cv_id = next(cv.id for cv in cell.cvs if cv.branch_id == 0)
@@ -363,7 +365,7 @@ class CellFacadeTest(unittest.TestCase):
         tree.attach(parent="soma", child_branch=dend, child_name="dend", parent_x=1.0, child_x=1.0)
         tree.attach(parent="dend", child_branch=twig, child_name="twig", parent_x=0.0)
 
-        cell = Cell(tree, cv_policy=CVPolicy(cv_per_branch=2))
+        cell = Cell(tree, cv_policy=CVPerBranch(cv_per_branch=2))
         point_tree = cell.point_tree()
 
         dend_cv_ids = [cv.id for cv in cell.cvs if cv.branch_id == 1]
@@ -389,7 +391,7 @@ class CellFacadeTest(unittest.TestCase):
     def test_point_tree_aggregates_adjacent_cv_halves_into_single_compute_edge(self) -> None:
         soma = Branch.from_lengths(lengths=[20.0] * u.um, radii=[10.0, 10.0] * u.um, type="soma")
         tree = Morpho.from_root(soma, name="soma")
-        cell = Cell(tree, cv_policy=CVPolicy(cv_per_branch=2))
+        cell = Cell(tree, cv_policy=CVPerBranch(cv_per_branch=2))
         point_tree = cell.point_tree()
 
         left_cv_id, right_cv_id = [cv.id for cv in cell.cvs if cv.branch_id == 0]
@@ -414,7 +416,7 @@ class CellFacadeTest(unittest.TestCase):
                 morpho = Morpho.from_root(soma, name="soma")
                 morpho.attach(parent="soma", child_branch=dend, child_name="dend", parent_x=parent_x, child_x=child_x)
 
-                cell = Cell(morpho, cv_policy=CVPolicy(cv_per_branch=1))
+                cell = Cell(morpho, cv_policy=CVPerBranch(cv_per_branch=1))
                 point_tree = cell.point_tree()
                 parent_cv_id = next(cv.id for cv in cell.cvs if cv.branch_id == 0)
                 child_cv_id = next(cv.id for cv in cell.cvs if cv.branch_id == 1)
@@ -450,7 +452,7 @@ class CellFacadeTest(unittest.TestCase):
         tree.attach(parent="soma", child_branch=left, child_name="left", parent_x=0.5)
         tree.attach(parent="soma", child_branch=right, child_name="right", parent_x=0.5)
 
-        cell = Cell(tree, cv_policy=CVPolicy(cv_per_branch=1))
+        cell = Cell(tree, cv_policy=CVPerBranch(cv_per_branch=1))
         point_tree = cell.point_tree()
         scheduling = cell.point_scheduling(max_group_size=1)
 
@@ -475,7 +477,7 @@ class CellFacadeTest(unittest.TestCase):
             type="soma",
         )
         tree = Morpho.from_root(soma, name="soma")
-        cell = Cell(tree, cv_policy=CVPolicy(cv_per_branch=2))
+        cell = Cell(tree, cv_policy=CVPerBranch(cv_per_branch=2))
         branch_slice = cell.cvs[1].as_branch()
         self.assertEqual(branch_slice.type, "soma")
         self.assertGreater(float(branch_slice.length.to_decimal(u.um)), 0.0)
@@ -504,7 +506,7 @@ class CellFacadeTest(unittest.TestCase):
         original_cvs = cell._cvs
         self.assertIsNotNone(original_cvs)
 
-        cell.cv_policy = CVPolicy(cv_per_branch=2)
+        cell.cv_policy = CVPerBranch(cv_per_branch=2)
         self.assertTrue(cell._dirty)
         self.assertIs(cell._cvs, original_cvs)
 
@@ -557,8 +559,11 @@ class CellFacadeTest(unittest.TestCase):
         self.assertAlmostEqual(dict(no_gmax.params)["coverage_area_fraction"], 0.5, places=12)
 
     def test_public_exports_remain_stable(self) -> None:
+        from braincell import CVPerBranch as PublicCVPerBranch
         from braincell import CVPolicy as PublicCVPolicy
         from braincell import Cell as PublicCell
+        from braincell import DLambda as PublicDLambda
+        from braincell import MaxCVLen as PublicMaxCVLen
         from braincell.cell import CV as PublicCV
         from braincell.cell import CVEdge as PublicCVEdge
         from braincell.cell import CVPoint as PublicCVPoint
@@ -572,6 +577,9 @@ class CellFacadeTest(unittest.TestCase):
 
         self.assertIs(PublicCell, Cell)
         self.assertIs(PublicCVPolicy, CVPolicy)
+        self.assertIs(PublicCVPerBranch, CVPerBranch)
+        self.assertIs(PublicMaxCVLen, MaxCVLen)
+        self.assertEqual(PublicDLambda.__name__, "DLambda")
         self.assertEqual(PublicCV.__name__, "CV")
         self.assertEqual(PublicCVEdge.__name__, "CVEdge")
         self.assertEqual(PublicCVPoint.__name__, "CVPoint")

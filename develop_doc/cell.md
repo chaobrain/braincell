@@ -4,7 +4,7 @@
 
 `cell` 当前只做前端建模与可检查数据，不进入计算执行层。
 
-- 入口固定为：`Cell(morpho, cv_policy=CVPolicy())`
+- 入口固定为：`Cell(morpho, cv_policy=CVPerBranch())`
 - 自动离散得到 `CV` 集合
 - 支持 `paint` / `place` 规则积累与查询
 - 支持懒重建（改了 `cv_policy`、`paint`、`place` 后置脏）
@@ -74,13 +74,14 @@
 
 ### `class CVPolicy`
 
-离散策略对象。
+离散策略基类。
 
-- 默认：每个 branch 1 个 CV
-- 支持 `mode="cv_per_branch"`：每个 branch 使用统一 `cv_per_branch`
-- 支持 `mode="max_cv_len"`：按 `max_cv_len` 计算每个 branch 的 CV 数量
+- 默认：`CVPerBranch()`，即每个 branch 1 个 CV
+- 支持 `CVPerBranch(cv_per_branch=...)`：每个 branch 使用统一 `cv_per_branch`
+- 支持 `MaxCVLen(max_cv_len=...)`：按 `max_cv_len` 计算每个 branch 的 CV 数量
   - 规则：`n = max(1, ceil(branch_total_length / max_cv_len))`
   - 语义：保证每段 CV 长度不超过 `max_cv_len`（浮点容差内）
+- 预留 `DLambda()`：当前仅占位，尚未实现
 
 ### `class PaintRule`
 
@@ -101,7 +102,8 @@
 ## 当前代码组织（实现约定）
 
 - `cell/cell.py`：`Cell` 对外接口与重建编排（总控）
-- `cell/cv.py`：`CV`、`CVPolicy` 与 `CV` 组装逻辑
+- `cell/cv.py`：`CV` 与 `CV` 组装逻辑
+- `cell/cv_policy.py`：`CVPolicy` 基类和各类离散策略
 - `cell/cv_geo.py`：`CVGeo` + `CVFrustum`，负责离散、几何、拓扑映射
 - `cell/cv_mech.py`：`CVMech` + `PaintRule/PlaceRule`，负责规则归一化与应用
 

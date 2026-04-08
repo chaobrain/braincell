@@ -25,7 +25,6 @@ from .branch import (
     Soma,
     branch_class_for_type,
 )
-from .metrics import MorphMetrics
 from .morpho import MorphoEdge, Morpho, MorphoBranch
 
 __all__ = [
@@ -38,7 +37,6 @@ __all__ = [
     "MorphoEdge",
     "Morpho",
     "MorphoBranch",
-    "MorphMetrics",
     "Soma",
     "branch_class_for_type",
     "vis",

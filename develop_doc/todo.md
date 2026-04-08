@@ -10,7 +10,7 @@
 | Morpho | 根分支构建、`attach`、属性语法糖挂接、拓扑查询、`topo` 树输出 | 已完成 |
 | Morpho | `from_swc` / `from_asc` 入口 | 已完成 |
 | Morpho | 高级树编辑（删除 subtree、拼接/合并 tree） | 未完成 |
-| Metric | 总长度、总面积、总体积、branch order、path distance、euclidean distance、height/width/depth 等度量 | 已完成 |
+| Metric | 总长度、总面积、总体积、branch order、path distance、euclidean distance 等度量 | 已完成 |
 
 ## IO
 
@@ -19,7 +19,7 @@
 | 文件格式 | SWC 导入、rulebook 检查/修正、report | 已完成 |
 | 文件格式 | ASC 导入：简单 Neurolucida 树、metadata、`Morpho.from_asc(..., return_report=True)` | 大部分完成 |
 | 文件格式 | NeuroML2 导入 | 未完成 |
-| 对比检测 | 通过 NEURON 导入 SWC，进行 metric 对比 | 已完成 |
+| 对比检测 | 通过 `develop_doc/neuron_diff.py` 走 NEURON 导入 SWC，进行开发期 metric 对比 | 已完成 |
 | 对比检测 | 通过 Neuromorpho API 下载并进行对比 | 未完成 |
 
 ## Vis
@@ -63,7 +63,7 @@
 | 模块子项 | 内容 | 完成状态 |
 | --- | --- | --- |
 | Cell | `Cell(morpho, cv_policy)` 前端入口、形态快照、`paint` / `place`、懒重建 | 已完成 |
-| CV 离散 | `CVPolicy(cv_per_branch / max_cv_len)`、CV 几何、轴向电阻拆分 | 已完成 |
+| CV 离散 | `CVPolicy` 基类 + `CVPerBranch / MaxCVLen / DLambda`、CV 几何、轴向电阻拆分 | 已完成 |
 | 机制映射 | cable paint、density paint、point place 映射到 CV | 已完成 |
 | PointTree | 计算点、边、attachment 处理 | 已完成 |
 | Scheduling | `PointScheduling` / DHS 分组 | 已完成 |

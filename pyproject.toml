@@ -54,6 +54,7 @@ classifiers = [
 ]
 dependencies = [
     "numpy>=1.15",
+    "requests",
     "brainunit>=0.0.8",
     "brainstate>=0.2.0",
     "brainevent>=0.0.7",
@@ -69,6 +70,9 @@ Homepage = "https://github.com/chaobrain/braincell"
 Documentation = "https://braincell.readthedocs.io/"
 "Bug Tracker" = "https://github.com/chaobrain/braincell/issues"
 "Source Code" = "https://github.com/chaobrain/braincell"
+
+[project.scripts]
+braincell-neuromorpho = "braincell.io.neuromorpho:main"
 
 
 [project.optional-dependencies]

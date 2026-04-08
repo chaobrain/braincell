@@ -16,7 +16,6 @@
 
 from pathlib import Path
 
-from .soma import is_contour_soma
 from .types import SWC_TYPE_MAP, SwcReport, _SwcContext, _SwcRow
 
 
@@ -368,16 +367,10 @@ def rule_no_soma_samples(context: _SwcContext) -> None:
 
 
 def rule_contour(context: _SwcContext) -> None:
-    soma_rows = [row for row in context.rows if row.type_code == 1]
-    if not soma_rows:
-        return
-    if is_contour_soma(soma_rows):
-        context.contour_soma_ids = {row.node_id for row in soma_rows if row.node_id is not None}
-        _add_warning(
-            context,
-            "semantics.contour",
-            "Soma samples were interpreted as a contour and will be converted to an equivalent cylinder.",
-        )
+    # Contour-soma detection is disabled for SWC import. Keep the rule so the
+    # pipeline shape stays stable, but do not classify any soma samples as a
+    # contour-derived equivalent geometry.
+    del context
 
 
 def rule_sorted_index_order(context: _SwcContext) -> None:

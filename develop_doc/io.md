@@ -11,7 +11,7 @@
 ## 当前目录
 
 - `braincell/io/__init__.py`
-  - 顶层导出 `SwcReader`、`AscReader`、`NeuroMlReader` 及 SWC report 类型
+  - 顶层导出 `SwcReader`、`AscReader`、`NeuroMlReader`、`neuromorpho` 相关客户端与 report 类型
 - `braincell/io/swc/`
   - `reader.py`：`SwcReader`
   - `rules.py`：单一 `check + correct` rulebook
@@ -62,7 +62,7 @@ report = reader.check("file.swc")
 - 单点 soma / 特殊三点 soma / 普通多点 soma / contour soma 处理
   - 特殊三点 soma 当前按“第一个点是中心点，后两个点挂在中心两侧”识别
 - 连续 degree-2 链压缩为 `Branch`
-- `tests/morpho_files/*.swc` 的真实 fixture smoke 测试
+- `develop_doc/morpho_files/*.swc` / `*.asc` 的真实 fixture smoke 测试
 
 当前主 pipeline：
 
@@ -88,20 +88,26 @@ report = reader.check("file.swc")
 
 ## 测试与 fixture
 
-- `tests/test_io_swc.py`
+- `braincell/io/io_swc_test.py`
   - synthetic SWC case
   - rulebook、report、soma 逻辑
-- `tests/test_io_real_files.py`
-  - `tests/morpho_files/*.swc` / `*.asc`
+- `braincell/io/io_real_files_test.py`
+  - `develop_doc/morpho_files/*.swc` / `*.asc`
   - 当前主要做 smoke + 基本不变量
 
 真实 morphology fixture 目前放在：
 
-- `tests/morpho_files/grc.swc`
-- `tests/morpho_files/io.swc`
-- `tests/morpho_files/bc.swc`
-- `tests/morpho_files/goc.asc`
-- `tests/morpho_files/pc.asc`
+- `develop_doc/morpho_files/grc.swc`
+- `develop_doc/morpho_files/io.swc`
+- `develop_doc/morpho_files/bc.swc`
+- `develop_doc/morpho_files/goc.asc`
+- `develop_doc/morpho_files/pc.asc`
+
+开发验证工具：
+
+- `develop_doc/neuron_diff.py`
+  - 通过 NEURON 导入 SWC，和 BrainCell 计算的 morphology metrics 做对比
+  - 这是开发验证资产，不再作为 `braincell.io` 的公开接口导出
 
 ## 下一步建议
 

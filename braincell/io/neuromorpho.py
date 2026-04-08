@@ -1,15 +1,25 @@
-from __future__ import annotations
+# Copyright 2026 BrainX Ecosystem Limited. All Rights Reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ==============================================================================
 
 import argparse
 import json
 import re
-import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
 from urllib.parse import quote
-
-import requests
 
 API_BASE = "https://neuromorpho.org/api"
 FILE_BASE = "https://neuromorpho.org/dableFiles"
@@ -129,10 +139,19 @@ class NeuroMorphoDownloadRecord:
 class NeuroMorphoClient:
     def __init__(
         self,
-        session: requests.Session | None = None,
+        session=None,
         timeout: float = DEFAULT_TIMEOUT,
         cache_dir: str | Path | None = None,
     ) -> None:
+
+        try:
+            import requests
+        except Exception as e:
+            raise ImportError(
+                "The 'requests' library is required to use NeuroMorphoClient. "
+                "Please install it with 'pip install requests'."
+            ) from e
+
         self.session = session or requests.Session()
         self.timeout = timeout
         self.cache_dir = Path(cache_dir) if cache_dir is not None else None
@@ -291,7 +310,7 @@ class NeuroMorphoClient:
             "measurement_url": _coerce_url(
                 str(resolved.payload.get("_links", {}).get("measurements", {}).get("href", ""))
             )
-            or None,
+                               or None,
             "links": resolved.payload.get("_links", {}),
             "neuron": resolved.payload,
             "measurement": measurement,

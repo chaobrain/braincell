@@ -13,8 +13,6 @@
 # limitations under the License.
 # ==============================================================================
 
-import importlib
-
 from .branch import (
     ApicalDendrite,
     Axon,
@@ -25,7 +23,11 @@ from .branch import (
     Soma,
     branch_class_for_type,
 )
-from .morpho import MorphoEdge, Morpho, MorphoBranch
+from .morpho import (
+    MorphoEdge,
+    Morpho,
+    MorphoBranch,
+)
 
 __all__ = [
     "ApicalDendrite",
@@ -39,11 +41,4 @@ __all__ = [
     "MorphoBranch",
     "Soma",
     "branch_class_for_type",
-    "vis",
 ]
-
-
-def __getattr__(name: str):
-    if name == "vis":
-        return importlib.import_module(".vis", __name__)
-    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

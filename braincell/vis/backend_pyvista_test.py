@@ -23,7 +23,7 @@ from unittest import mock
 import brainunit as u
 
 from braincell import Branch, Morpho
-from braincell.morpho import vis as morpho_vis
+from braincell import vis as morpho_vis
 from braincell.vis import PyVistaBackend, RenderRequest, build_render_scene_3d
 
 

@@ -13,7 +13,14 @@
 # limitations under the License.
 # ==============================================================================
 
-from .asc import AscIssue, AscMetadata, AscReader, AscReport
+from .asc import (
+    AscIssue,
+    AscMetadata,
+    AscReader,
+    AscReport,
+
+)
+from .neuroml2 import NeuroMlReader
 from .neuromorpho import (
     find_standard_swc,
     load_cached_metadata,
@@ -24,8 +31,12 @@ from .neuromorpho import (
     NeuroMorphoNeuron,
     NeuroMorphoSearchPage,
 )
-from .neuroml2 import NeuroMlReader
-from .swc import SwcIssue, SwcReadOptions, SwcReader, SwcReport
+from .swc import (
+    SwcIssue,
+    SwcReadOptions,
+    SwcReader,
+    SwcReport,
+)
 
 __all__ = [
     "AscIssue",

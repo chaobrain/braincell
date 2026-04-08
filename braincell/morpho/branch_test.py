@@ -21,7 +21,7 @@ import brainunit as u
 import numpy as np
 
 from braincell import Branch
-from braincell.morpho import vis as morpho_vis
+from braincell import vis as morpho_vis
 from braincell.vis import BackendChooser
 from braincell.vis._test_helper import FakeBackend
 

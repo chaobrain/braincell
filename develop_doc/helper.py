@@ -14,7 +14,6 @@
 # ==============================================================================
 
 
-
 from dataclasses import asdict
 
 import pandas as pd
@@ -164,10 +163,14 @@ def morpho_compare_df(left, right, *, names=("left", "right")):
     rows = [
         {"key": "same_tree", left_name: None, right_name: None, "match": left == right},
         {"key": "same_topology", left_name: None, right_name: None, "match": left.topo() == right.topo()},
-        {"key": "n_branches", left_name: left.n_branches, right_name: right.n_branches, "match": left.n_branches == right.n_branches},
-        {"key": "max_branch_order", left_name: left.max_branch_order, right_name: right.max_branch_order, "match": left.max_branch_order == right.max_branch_order},
-        {"key": "total_length", left_name: left.total_length, right_name: right.total_length, "match": left.total_length == right.total_length},
-        {"key": "max_path_distance", left_name: left.max_path_distance, right_name: right.max_path_distance, "match": left.max_path_distance == right.max_path_distance},
+        {"key": "n_branches", left_name: left.n_branches, right_name: right.n_branches,
+         "match": left.n_branches == right.n_branches},
+        {"key": "max_branch_order", left_name: left.max_branch_order, right_name: right.max_branch_order,
+         "match": left.max_branch_order == right.max_branch_order},
+        {"key": "total_length", left_name: left.total_length, right_name: right.total_length,
+         "match": left.total_length == right.total_length},
+        {"key": "max_path_distance", left_name: left.max_path_distance, right_name: right.max_path_distance,
+         "match": left.max_path_distance == right.max_path_distance},
     ]
     return pd.DataFrame(rows)
 

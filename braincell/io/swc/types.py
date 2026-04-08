@@ -211,6 +211,7 @@ class _SwcAttach:
     point: tuple[float, float, float] | None = None
     radius: float | None = None
     parent_x: float | None = None
+    is_root_branched_soma_proximal: bool = False
 
 
 @dataclass(frozen=True)

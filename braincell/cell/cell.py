@@ -16,7 +16,7 @@
 
 from braincell.filter import LocsetExpr, RegionExpr
 from braincell.morpho import Morpho
-from .cv import CV, CVPolicy, assemble_cv
+from .cv import CV, assemble_cv
 from .cv_geo import build_cv_geo
 from .cv_mech import (
     PaintRule,
@@ -29,18 +29,45 @@ from .cv_mech import (
     normalize_paint_rules,
     normalize_place_rule,
 )
+from .cv_policy import CVPerBranch, CVPolicy
 from .point_scheduling import PointScheduling, build_point_scheduling
 from .point_tree import PointTree, build_point_tree
 
 
 class Cell:
-    """Frontend-only cell object built around CV and paint/place declarations."""
+    """Frontend cell facade built from a :class:`Morpho` plus paint/place rules.
+
+    ``Cell`` is the main entry point for the current ``braincell.cell`` layer.
+    It owns an editable morphology snapshot, a CV discretization policy, and the
+    declarative ``paint(...)`` / ``place(...)`` rules that will later be lowered
+    onto control volumes.
+
+    Main responsibilities:
+
+    - keep the original morphology snapshot isolated from later user edits
+    - lazily rebuild CVs after ``cv_policy`` / ``paint`` / ``place`` changes
+    - expose assembled :class:`CV` objects through :attr:`cvs`
+    - build higher-level execution helpers such as :class:`PointTree` and
+      :class:`PointScheduling`
+
+    Important collaborators:
+
+    - :class:`CVPolicy` decides how each branch is split into CV intervals
+    - :func:`build_cv_geo` creates the geometry/topology skeleton for each CV
+    - :mod:`cv_mech` maps cable, density, and point mechanisms onto those CVs
+    - :func:`build_point_tree` and :func:`build_point_scheduling` derive
+      compute-point views from the assembled CV list
+
+    The public workflow is intentionally small: create ``Cell(...)``, call
+    ``paint(...)`` and ``place(...)`` to accumulate declarations, then inspect
+    ``cvs``, ``point_tree()``, or ``point_scheduling(...)``.
+    """
 
     def __init__(self, morpho: Morpho, *, cv_policy: CVPolicy | None = None) -> None:
         if not isinstance(morpho, Morpho):
             raise TypeError(f"Cell expects Morpho, got {type(morpho).__name__!s}.")
         self._morpho = _clone_morpho(morpho)
-        self._cv_policy = CVPolicy() if cv_policy is None else cv_policy
+        self._cv_policy = CVPerBranch() if cv_policy is None else cv_policy
         if not isinstance(self._cv_policy, CVPolicy):
             raise TypeError(f"cv_policy must be CVPolicy, got {type(self._cv_policy).__name__!s}.")
 

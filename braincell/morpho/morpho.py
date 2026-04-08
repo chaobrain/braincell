@@ -26,12 +26,13 @@ In normal use, users only need `Morpho` and `MorphoBranch`.
 from dataclasses import dataclass
 from typing import Callable, Optional, Union
 
+import brainunit as u
+import numpy as np
+from brainunit import Quantity
+
 from .branch import Branch
-from .metrics import MorphMetrics
 
 _MORPHO_METRIC_PROPERTY_NAMES = {
-    "depth",
-    "height",
     "max_euclidean_distance",
     "max_euclidean_distance_excluding_soma",
     "max_branch_order",
@@ -44,7 +45,6 @@ _MORPHO_METRIC_PROPERTY_NAMES = {
     "total_area",
     "total_length",
     "total_volume",
-    "width",
     "x_range",
     "y_range",
     "z_range",
@@ -62,8 +62,10 @@ _MORPHO_RESERVED_NAMES = {
     "has_full_point_geometry",
     "metric",
     "path_to_root",
+    "path_length_to_root",
     "root",
     "select",
+    "shortest_path_length",
     "vis2d",
     "vis3d",
 } | _MORPHO_METRIC_PROPERTY_NAMES
@@ -178,7 +180,6 @@ class Morpho:
     --------
     Branch : Immutable segment geometry.
     MorphoBranch : Tree-local branch node view.
-    MorphMetrics : Whole-morphology metric calculator.
 
     Notes
     -----
@@ -186,9 +187,8 @@ class Morpho:
     and must not collide with reserved method or metric names.  Auto-naming
     follows the pattern ``"{type}_{n}"`` (e.g., ``"dend_0"``, ``"axon_1"``).
 
-    Metric properties (``total_length``, ``n_branches``, etc.) are
-    accessible directly on the ``Morpho`` instance via ``__getattr__``
-    delegation to :class:`MorphMetrics`.
+    Whole-morphology metrics (``total_length``, ``n_branches``, etc.)
+    are exposed directly on the ``Morpho`` instance.
 
     Examples
     --------
@@ -298,9 +298,10 @@ class Morpho:
             Uses defaults when ``None``.
         mode : str or None
             Convenience import mode. Supported values are ``"neuron"``
-            (default behavior) and ``"neuromorpho"`` (copy midpoint soma
-            attachment points into child branches). When provided together
-            with *options*, it must match ``options.mode``.
+            (NEURON-style soma attachment handling) and ``"neuromorpho"``
+            (copy soma attachment points into child branches). When
+            provided together with *options*, it must match
+            ``options.mode``.
         return_report : bool
             If ``True``, return a ``(Morpho, SwcReport)`` tuple instead
             of just the morphology.
@@ -424,20 +425,25 @@ class Morpho:
             if node.parent_id is not None
         )
 
+    def _format_metric_summary(self) -> str:
+        return (
+            f"{'-'*35}\n"
+            f"{'n_branches':<16} | {self.n_branches}\n"
+            f"{'n_stems':<16} | {self.n_stems}\n"
+            f"{'n_bifurcations':<16} | {self.n_bifurcations}\n"
+            f"{'max_branch_order':<16} | {self.max_branch_order}\n"
+            f"{'total_length':<16} | {self.total_length:.2f}\n"
+            f"{'mean_radius':<16} | {self.mean_radius:.2f}\n"
+            f"{'total_area':<16} | {self.total_area:.2f}\n"
+            f"{'total_volume':<16} | {self.total_volume:.2f}\n"
+            f"{'max_path_dist':<16} | {self.max_path_distance:.2f}\n"
+            f"{'-'*35}\n"
+        )
+
     @property
-    def metric(self) -> MorphMetrics:
-        """Metric calculator for this morphology.
-
-        Returns
-        -------
-        MorphMetrics
-            Frozen metrics object bound to this morphology.
-
-        See Also
-        --------
-        MorphMetrics : Detailed metric documentation.
-        """
-        return MorphMetrics(self)
+    def metric(self) -> str:
+        """Formatted metric summary for this morphology."""
+        return self._format_metric_summary()
 
     def branch_by_order(self, *, order: str = "default") -> tuple["MorphoBranch", ...]:
         """Query branches in a specific order.
@@ -466,7 +472,229 @@ class Morpho:
             branch.branch.points_proximal is not None and branch.branch.points_distal is not None
             for branch in self.branches
         )
-    
+
+    def _require_full_point_geometry(self, *, feature: str) -> None:
+        if not self.has_full_point_geometry:
+            raise ValueError(f"{feature} require full point geometry on every branch.")
+
+    def _all_segment_arrays_um(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        lengths = []
+        radii_proximal = []
+        radii_distal = []
+        for branch in self.branches:
+            lengths_um, r0_um, r1_um = branch.branch._segment_arrays_um()
+            lengths.append(lengths_um)
+            radii_proximal.append(r0_um)
+            radii_distal.append(r1_um)
+        return (
+            np.concatenate(lengths),
+            np.concatenate(radii_proximal),
+            np.concatenate(radii_distal),
+        )
+
+    def _branch_length_um(self, branch_index: int) -> float:
+        branch = self.branch(index=branch_index).branch
+        return float(np.sum(np.asarray(branch.lengths.to_decimal(u.um), dtype=float)))
+
+    def _root_branch_attach_x(self) -> float:
+        return 0.0
+
+    def _root_point_um(self) -> np.ndarray:
+        self._require_full_point_geometry(feature="Euclidean distance metrics")
+        root = self.root.branch
+        return np.asarray(root.points_proximal.to_decimal(u.um), dtype=float)[0]
+
+    def _terminal_branch_indices(self) -> tuple[int, ...]:
+        return tuple(branch.index for branch in self.branches if branch.n_children == 0)
+
+    def _point_on_branch_at_x_um(self, branch: Branch, x: float) -> np.ndarray:
+        self._require_full_point_geometry(feature="Euclidean distance metrics")
+        points = branch.points
+        if points is None:
+            raise ValueError("Euclidean distance metrics require full point geometry on every branch.")
+
+        points_um = np.asarray(points.to_decimal(u.um), dtype=float)
+        if np.isclose(float(x), 0.0):
+            return points_um[0]
+        if np.isclose(float(x), 1.0):
+            return points_um[-1]
+
+        lengths_um = np.asarray(branch.lengths.to_decimal(u.um), dtype=float)
+        total_length_um = float(np.sum(lengths_um))
+        if total_length_um <= 0.0:
+            return points_um[0]
+
+        target_length_um = float(x) * total_length_um
+        prefix_length_um = 0.0
+        for index, segment_length_um in enumerate(lengths_um):
+            next_prefix_length_um = prefix_length_um + segment_length_um
+            if target_length_um <= next_prefix_length_um or index == len(lengths_um) - 1:
+                if np.isclose(segment_length_um, 0.0):
+                    return points_um[index]
+                fraction = (target_length_um - prefix_length_um) / segment_length_um
+                return points_um[index] + fraction * (points_um[index + 1] - points_um[index])
+            prefix_length_um = next_prefix_length_um
+
+        return points_um[-1]
+
+    def _root_attach_distances_um(self, *, exclude_root_soma: bool = False) -> dict[int, float]:
+        ordered_ids = self._ordered_node_ids_by("depth")
+        distances_um: dict[int, float] = {self.root._node_id: 0.0}
+        attach_x: dict[int, float] = {self.root._node_id: self._root_branch_attach_x()}
+
+        for node_id in ordered_ids:
+            if node_id == self.root._node_id:
+                continue
+
+            node = self._get_node(node_id)
+            parent_id = node.parent_id
+            if parent_id is None:
+                continue
+
+            parent_attach_x = attach_x[parent_id]
+            parent_distance_um = distances_um[parent_id]
+            parent_length_um = self._branch_length_um(self._branch_index(parent_id))
+
+            if exclude_root_soma and parent_id == self.root._node_id and self.root.type == "soma":
+                distances_um[node_id] = 0.0
+            else:
+                distances_um[node_id] = (
+                    parent_distance_um + abs(float(node.parent_x) - parent_attach_x) * parent_length_um
+                )
+            attach_x[node_id] = float(node.child_x)
+
+        return distances_um
+
+    def _max_path_distance_um(self, *, exclude_root_soma: bool) -> float:
+        terminal_branch_indices = self._terminal_branch_indices()
+        if not terminal_branch_indices:
+            return 0.0
+        if exclude_root_soma and self.root.type == "soma" and self.root.n_children == 0:
+            return 0.0
+
+        attach_distances_um = self._root_attach_distances_um(exclude_root_soma=exclude_root_soma)
+        max_distance_um = 0.0
+        for branch_index in terminal_branch_indices:
+            node_id = self._node_id_from_index(branch_index)
+            branch = self.branch(index=branch_index)
+            branch_length_um = self._branch_length_um(branch_index)
+            attach_x = self._root_branch_attach_x() if branch.parent_id is None else float(branch.child_x)
+            distance_um = attach_distances_um[node_id] + abs(1.0 - attach_x) * branch_length_um
+            max_distance_um = max(max_distance_um, distance_um)
+        return max_distance_um
+
+    def _root_subtree_reference_point_um(self, terminal_node_id: int) -> np.ndarray:
+        path_node_ids = self._path_node_ids(terminal_node_id)
+        if len(path_node_ids) <= 1:
+            return self._root_point_um()
+        first_child = self._get_node(path_node_ids[1])
+        return self._point_on_branch_at_x_um(self.root.branch, float(first_child.parent_x))
+
+    def _max_euclidean_distance_um(self, *, exclude_root_soma: bool) -> float:
+        self._require_full_point_geometry(feature="Euclidean distance metrics")
+        terminal_branch_indices = self._terminal_branch_indices()
+        if not terminal_branch_indices:
+            return 0.0
+        if exclude_root_soma and self.root.type == "soma" and self.root.n_children == 0:
+            return 0.0
+
+        tip_points = []
+        start_points = []
+        root_point_um = self._root_point_um()
+        for branch_index in terminal_branch_indices:
+            node_id = self._node_id_from_index(branch_index)
+            branch = self.branch(index=branch_index).branch
+            tip_points.append(np.asarray(branch.points_distal.to_decimal(u.um), dtype=float)[-1])
+            if exclude_root_soma and self.root.type == "soma":
+                start_points.append(self._root_subtree_reference_point_um(node_id))
+            else:
+                start_points.append(root_point_um)
+
+        tip_points_um = np.asarray(tip_points, dtype=float)
+        start_points_um = np.asarray(start_points, dtype=float)
+        distances_um = np.linalg.norm(tip_points_um - start_points_um, axis=1)
+        return float(np.max(distances_um))
+
+    @property
+    def total_length(self) -> Quantity:
+        lengths_um, _, _ = self._all_segment_arrays_um()
+        return u.Quantity(np.sum(lengths_um), u.um)
+
+    @property
+    def mean_radius(self) -> Quantity:
+        lengths_um, r0_um, r1_um = self._all_segment_arrays_um()
+        total_length_um = float(np.sum(lengths_um))
+        if total_length_um <= 0.0:
+            raise ValueError("Morphology total length must be > 0.")
+        values_um = 0.5 * (r0_um + r1_um)
+        return u.Quantity(np.sum(lengths_um * values_um) / total_length_um, u.um)
+
+    @property
+    def total_area(self) -> Quantity:
+        lengths_um, r0_um, r1_um = self._all_segment_arrays_um()
+        value = np.sum(np.pi * (r0_um + r1_um) * np.sqrt(lengths_um * lengths_um + (r1_um - r0_um) * (r1_um - r0_um)))
+        return u.Quantity(value, u.um ** 2)
+
+    @property
+    def total_volume(self) -> Quantity:
+        lengths_um, r0_um, r1_um = self._all_segment_arrays_um()
+        value = np.sum(np.pi * lengths_um * (r0_um * r0_um + r0_um * r1_um + r1_um * r1_um) / 3.0)
+        return u.Quantity(value, u.um ** 3)
+
+    @property
+    def n_branches(self) -> int:
+        return len(self.branches)
+
+    @property
+    def n_stems(self) -> int:
+        return self.root.n_children
+
+    @property
+    def n_bifurcations(self) -> int:
+        return sum(branch.n_children >= 2 for branch in self.branches)
+
+    def _axis_range(self, *, axis: int) -> Quantity:
+        self._require_full_point_geometry(feature="Coordinate range metrics")
+        point_sets = [branch.branch.points for branch in self.branches]
+        coords = np.concatenate([np.asarray(points.to_decimal(u.um), dtype=float)[:, axis] for points in point_sets])
+        return u.Quantity(coords.max() - coords.min(), u.um)
+
+    @property
+    def x_range(self) -> Quantity:
+        return self._axis_range(axis=0)
+
+    @property
+    def y_range(self) -> Quantity:
+        return self._axis_range(axis=1)
+
+    @property
+    def z_range(self) -> Quantity:
+        return self._axis_range(axis=2)
+
+    @property
+    def max_branch_order(self) -> int:
+        return max(len(self._path_node_ids(branch._node_id)) - 1 for branch in self.branches)
+
+    @property
+    def max_euclidean_distance(self) -> Quantity:
+        return u.Quantity(self._max_euclidean_distance_um(exclude_root_soma=False), u.um)
+
+    @property
+    def max_euclidean_distance_excluding_soma(self) -> Quantity:
+        if self.root.type != "soma":
+            return self.max_euclidean_distance
+        return u.Quantity(self._max_euclidean_distance_um(exclude_root_soma=True), u.um)
+
+    @property
+    def max_path_distance(self) -> Quantity:
+        return u.Quantity(self._max_path_distance_um(exclude_root_soma=False), u.um)
+
+    @property
+    def max_path_distance_excluding_soma(self) -> Quantity:
+        if self.root.type != "soma":
+            return self.max_path_distance
+        return u.Quantity(self._max_path_distance_um(exclude_root_soma=True), u.um)
+
     def branch(
         self,
         *,
@@ -530,12 +758,65 @@ class Morpho:
         tuple of int
             Sequence of branch indices starting at the root and ending at
             *branch_index*.
-
-        See Also
-        --------
-        MorphMetrics.path_to_root : Equivalent method on the metrics object.
         """
-        return self.metric.path_to_root(branch_index)
+        node_id = self._node_id_from_index(branch_index)
+        return tuple(
+            self._branch_index(path_node_id)
+            for path_node_id in self._path_node_ids(node_id)
+        )
+
+    def path_length_to_root(self, branch_index: int) -> Quantity:
+        """Return the path length from a branch to the root.
+
+        .. note:: Not yet implemented.
+
+        Parameters
+        ----------
+        branch_index : int
+            Index of the target branch in default ordering.
+
+        Returns
+        -------
+        Quantity[u.um]
+            Cumulative segment length along the path to root.
+
+        Raises
+        ------
+        NotImplementedError
+            Always, until implemented.
+        """
+        raise NotImplementedError
+
+    def shortest_path_length(
+        self,
+        from_site: tuple[int, float],
+        to_site: tuple[int, float],
+    ) -> Quantity:
+        """Return the shortest path length between two sites on the tree.
+
+        A site is a ``(branch_index, position)`` pair where *position*
+        is a fractional location along the branch (0 = proximal, 1 = distal).
+
+        .. note:: Not yet implemented.
+
+        Parameters
+        ----------
+        from_site : tuple of (int, float)
+            Start site as ``(branch_index, position)``.
+        to_site : tuple of (int, float)
+            End site as ``(branch_index, position)``.
+
+        Returns
+        -------
+        Quantity[u.um]
+            Shortest path length through the tree between the two sites.
+
+        Raises
+        ------
+        NotImplementedError
+            Always, until implemented.
+        """
+        raise NotImplementedError
 
     def summary(self) -> dict[str, object]:
         """Return a dictionary of key morphology metrics.
@@ -1070,14 +1351,12 @@ class Morpho:
         )
 
     def __getattr__(self, name: str) -> object:
-        if name in _MORPHO_METRIC_PROPERTY_NAMES:
-            return getattr(self.metric, name)
         if name in self._name_to_id:
             return self._get_node(self._name_to_id[name])
-        raise AttributeError(f"{type(self).__name__!s} has no branch or metric named {name!r}")
+        raise AttributeError(f"{type(self).__name__!s} has no branch named {name!r}")
 
     def __dir__(self) -> list[str]:
-        return sorted(set(super().__dir__()) | set(self._name_to_id) | _MORPHO_METRIC_PROPERTY_NAMES)
+        return sorted(set(super().__dir__()) | set(self._name_to_id))
 
     def __len__(self) -> int:
         return len(self._nodes)

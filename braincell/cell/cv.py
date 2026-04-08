@@ -24,6 +24,7 @@ import numpy as np
 from braincell.filter import RegionMask
 from braincell.mech import DensityMechanism
 from braincell.morpho import Branch
+from .cv_policy import CVPolicy
 from .cv_geo import CVFrustum, CVGeo, axial_resistance_from_factor
 
 if TYPE_CHECKING:
@@ -31,34 +32,23 @@ if TYPE_CHECKING:
 
 
 @dataclass(frozen=True)
-class CVPolicy:
-    """Discretization policy for turning each morphology branch into CVs.
-
-    Supported modes
-    ---------------
-    - ``"cv_per_branch"``:
-      Every branch receives the same number of CVs from ``cv_per_branch``.
-      This is the default mode.
-    - ``"max_cv_len"``:
-      Each branch is split independently so that every CV length stays below
-      ``max_cv_len`` (up to floating point tolerance).
-
-    Notes
-    -----
-    The actual mode dispatch lives in :mod:`braincell.cell.cv_geo`, but these
-    three fields are the complete public configuration surface.
-    """
-
-    # Dispatch key interpreted by ``cv_geo._resolve_cv_counts(...)``.
-    mode: str = "cv_per_branch"
-    # Used when ``mode == "cv_per_branch"``.
-    cv_per_branch: int = 1
-    # Used when ``mode == "max_cv_len"``.
-    max_cv_len: Any | None = None
-
-
-@dataclass(frozen=True)
 class CV:
+    """Final per-control-volume view exposed to users.
+
+    A ``CV`` is the assembled result of two lower layers:
+
+    - :class:`CVGeo` contributes geometric and topological information
+    - ``CVMech`` contributes cable properties and attached mechanisms
+
+    Each CV belongs to exactly one morphology branch interval ``(prox, dist)``
+    and stores the values that downstream runtime code will need most often:
+    geometry, axial resistances, cable parameters, density mechanisms, point
+    mechanisms, and parent/child CV connectivity.
+
+    The main convenience method is :meth:`as_branch`, which reconstructs a
+    standalone :class:`braincell.morpho.Branch` from the CV's frustum slices for
+    debugging, visualization, or fixture generation.
+    """
     id: int
     branch_id: int
     branch_type: str

@@ -14,8 +14,9 @@
 # ==============================================================================
 
 from .cell import Cell
-from .cv import CV, CVPolicy
+from .cv import CV
 from .cv_mech import PaintRule, PlaceRule
+from .cv_policy import CVPerBranch, CVPolicy, DLambda, MaxCVLen
 from .point_scheduling import PointScheduling
 from .point_tree import CVEdge, CVPoint, ComputeEdge, ComputePoint, PointTree
 
@@ -25,8 +26,11 @@ __all__ = [
     "ComputeEdge",
     "ComputePoint",
     "CV",
+    "CVPerBranch",
     "CVPolicy",
     "Cell",
+    "DLambda",
+    "MaxCVLen",
     "PaintRule",
     "PointScheduling",
     "PointTree",

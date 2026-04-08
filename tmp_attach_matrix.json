@@ -1,0 +1,4003 @@
+[
+  {
+    "case": "single_point_05_1pt",
+    "attach_point": [
+      11.0,
+      0.0,
+      0.0
+    ],
+    "neuron_ok": true,
+    "braincell_ok": true,
+    "neuron_sections": [
+      {
+        "name": "soma[0]",
+        "parent": null,
+        "parent_x": null,
+        "n3d": 3,
+        "pts": [
+          [
+            1.0,
+            0.0,
+            0.0,
+            10.0
+          ],
+          [
+            11.0,
+            0.0,
+            0.0,
+            10.0
+          ],
+          [
+            21.0,
+            0.0,
+            0.0,
+            10.0
+          ]
+        ]
+      },
+      {
+        "name": "dend[0]",
+        "parent": "soma[0]",
+        "parent_x": 0.5,
+        "n3d": 2,
+        "pts": [
+          [
+            11.0,
+            0.0,
+            0.0,
+            1.0
+          ],
+          [
+            20.0,
+            0.0,
+            0.0,
+            1.0
+          ]
+        ]
+      }
+    ],
+    "neuron_dend_count": 1,
+    "neuron_first_dend": {
+      "name": "dend[0]",
+      "parent": "soma[0]",
+      "parent_x": 0.5,
+      "n3d": 2,
+      "first_pt": [
+        11.0,
+        0.0,
+        0.0
+      ],
+      "copied_attach": true
+    },
+    "braincell_branches": [
+      {
+        "name": "soma",
+        "type": "soma",
+        "parent": null,
+        "parent_x": null,
+        "pts": [
+          [
+            1.0,
+            0.0,
+            0.0
+          ],
+          [
+            11.0,
+            0.0,
+            0.0
+          ],
+          [
+            21.0,
+            0.0,
+            0.0
+          ]
+        ]
+      },
+      {
+        "name": "basal_dendrite_0",
+        "type": "basal_dendrite",
+        "parent": "soma",
+        "parent_x": 0.5,
+        "pts": [
+          [
+            11.0,
+            0.0,
+            0.0
+          ],
+          [
+            20.0,
+            0.0,
+            0.0
+          ]
+        ]
+      }
+    ],
+    "braincell_dend_count": 1,
+    "braincell_first_dend": {
+      "name": "basal_dendrite_0",
+      "parent": "soma",
+      "parent_x": 0.5,
+      "npts": 2,
+      "first_pt": [
+        11.0,
+        0.0,
+        0.0
+      ],
+      "copied_attach": true
+    }
+  },
+  {
+    "case": "single_point_05_2pt",
+    "attach_point": [
+      11.0,
+      0.0,
+      0.0
+    ],
+    "neuron_ok": true,
+    "braincell_ok": true,
+    "neuron_sections": [
+      {
+        "name": "soma[0]",
+        "parent": null,
+        "parent_x": null,
+        "n3d": 3,
+        "pts": [
+          [
+            1.0,
+            0.0,
+            0.0,
+            10.0
+          ],
+          [
+            11.0,
+            0.0,
+            0.0,
+            10.0
+          ],
+          [
+            21.0,
+            0.0,
+            0.0,
+            10.0
+          ]
+        ]
+      },
+      {
+        "name": "dend[0]",
+        "parent": "soma[0]",
+        "parent_x": 0.5,
+        "n3d": 2,
+        "pts": [
+          [
+            20.0,
+            0.0,
+            0.0,
+            1.0
+          ],
+          [
+            30.0,
+            0.0,
+            0.0,
+            1.0
+          ]
+        ]
+      }
+    ],
+    "neuron_dend_count": 1,
+    "neuron_first_dend": {
+      "name": "dend[0]",
+      "parent": "soma[0]",
+      "parent_x": 0.5,
+      "n3d": 2,
+      "first_pt": [
+        20.0,
+        0.0,
+        0.0
+      ],
+      "copied_attach": false
+    },
+    "braincell_branches": [
+      {
+        "name": "soma",
+        "type": "soma",
+        "parent": null,
+        "parent_x": null,
+        "pts": [
+          [
+            1.0,
+            0.0,
+            0.0
+          ],
+          [
+            11.0,
+            0.0,
+            0.0
+          ],
+          [
+            21.0,
+            0.0,
+            0.0
+          ]
+        ]
+      },
+      {
+        "name": "basal_dendrite_0",
+        "type": "basal_dendrite",
+        "parent": "soma",
+        "parent_x": 0.5,
+        "pts": [
+          [
+            11.0,
+            0.0,
+            0.0
+          ],
+          [
+            20.0,
+            0.0,
+            0.0
+          ],
+          [
+            30.0,
+            0.0,
+            0.0
+          ]
+        ]
+      }
+    ],
+    "braincell_dend_count": 1,
+    "braincell_first_dend": {
+      "name": "basal_dendrite_0",
+      "parent": "soma",
+      "parent_x": 0.5,
+      "npts": 3,
+      "first_pt": [
+        11.0,
+        0.0,
+        0.0
+      ],
+      "copied_attach": true
+    }
+  },
+  {
+    "case": "special3_05_1pt",
+    "attach_point": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "neuron_ok": true,
+    "braincell_ok": true,
+    "neuron_sections": [
+      {
+        "name": "soma[0]",
+        "parent": null,
+        "parent_x": null,
+        "n3d": 3,
+        "pts": [
+          [
+            -10.0,
+            0.0,
+            0.0,
+            10.0
+          ],
+          [
+            0.0,
+            0.0,
+            0.0,
+            10.0
+          ],
+          [
+            10.0,
+            0.0,
+            0.0,
+            10.0
+          ]
+        ]
+      },
+      {
+        "name": "dend[0]",
+        "parent": "soma[0]",
+        "parent_x": 0.5,
+        "n3d": 2,
+        "pts": [
+          [
+            0.0,
+            0.0,
+            0.0,
+            2.0
+          ],
+          [
+            0.0,
+            10.0,
+            0.0,
+            2.0
+          ]
+        ]
+      }
+    ],
+    "neuron_dend_count": 1,
+    "neuron_first_dend": {
+      "name": "dend[0]",
+      "parent": "soma[0]",
+      "parent_x": 0.5,
+      "n3d": 2,
+      "first_pt": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "copied_attach": true
+    },
+    "braincell_branches": [
+      {
+        "name": "soma",
+        "type": "soma",
+        "parent": null,
+        "parent_x": null,
+        "pts": [
+          [
+            -10.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            10.0,
+            0.0,
+            0.0
+          ]
+        ]
+      },
+      {
+        "name": "basal_dendrite_0",
+        "type": "basal_dendrite",
+        "parent": "soma",
+        "parent_x": 0.5,
+        "pts": [
+          [
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            10.0,
+            0.0
+          ]
+        ]
+      }
+    ],
+    "braincell_dend_count": 1,
+    "braincell_first_dend": {
+      "name": "basal_dendrite_0",
+      "parent": "soma",
+      "parent_x": 0.5,
+      "npts": 2,
+      "first_pt": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "copied_attach": true
+    }
+  },
+  {
+    "case": "special3_05_2pt",
+    "attach_point": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "neuron_ok": true,
+    "braincell_ok": true,
+    "neuron_sections": [
+      {
+        "name": "soma[0]",
+        "parent": null,
+        "parent_x": null,
+        "n3d": 3,
+        "pts": [
+          [
+            -10.0,
+            0.0,
+            0.0,
+            10.0
+          ],
+          [
+            0.0,
+            0.0,
+            0.0,
+            10.0
+          ],
+          [
+            10.0,
+            0.0,
+            0.0,
+            10.0
+          ]
+        ]
+      },
+      {
+        "name": "dend[0]",
+        "parent": "soma[0]",
+        "parent_x": 0.5,
+        "n3d": 2,
+        "pts": [
+          [
+            0.0,
+            10.0,
+            0.0,
+            2.0
+          ],
+          [
+            0.0,
+            20.0,
+            0.0,
+            2.0
+          ]
+        ]
+      }
+    ],
+    "neuron_dend_count": 1,
+    "neuron_first_dend": {
+      "name": "dend[0]",
+      "parent": "soma[0]",
+      "parent_x": 0.5,
+      "n3d": 2,
+      "first_pt": [
+        0.0,
+        10.0,
+        0.0
+      ],
+      "copied_attach": false
+    },
+    "braincell_branches": [
+      {
+        "name": "soma",
+        "type": "soma",
+        "parent": null,
+        "parent_x": null,
+        "pts": [
+          [
+            -10.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            10.0,
+            0.0,
+            0.0
+          ]
+        ]
+      },
+      {
+        "name": "basal_dendrite_0",
+        "type": "basal_dendrite",
+        "parent": "soma",
+        "parent_x": 0.5,
+        "pts": [
+          [
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            10.0,
+            0.0
+          ],
+          [
+            0.0,
+            20.0,
+            0.0
+          ]
+        ]
+      }
+    ],
+    "braincell_dend_count": 1,
+    "braincell_first_dend": {
+      "name": "basal_dendrite_0",
+      "parent": "soma",
+      "parent_x": 0.5,
+      "npts": 3,
+      "first_pt": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "copied_attach": true
+    }
+  },
+  {
+    "case": "three_point_regular_1_1pt",
+    "attach_point": [
+      10.0,
+      0.0,
+      -10.0
+    ],
+    "neuron_ok": true,
+    "braincell_ok": true,
+    "neuron_sections": [
+      {
+        "name": "soma[0]",
+        "parent": null,
+        "parent_x": null,
+        "n3d": 3,
+        "pts": [
+          [
+            -10.0,
+            0.0,
+            0.0,
+            10.0
+          ],
+          [
+            0.0,
+            0.0,
+            0.0,
+            5.0
+          ],
+          [
+            10.0,
+            0.0,
+            -10.0,
+            10.0
+          ]
+        ]
+      },
+      {
+        "name": "dend[0]",
+        "parent": "soma[0]",
+        "parent_x": 1.0,
+        "n3d": 2,
+        "pts": [
+          [
+            10.0,
+            0.0,
+            -10.0,
+            2.0
+          ],
+          [
+            10.0,
+            10.0,
+            0.0,
+            2.0
+          ]
+        ]
+      }
+    ],
+    "neuron_dend_count": 1,
+    "neuron_first_dend": {
+      "name": "dend[0]",
+      "parent": "soma[0]",
+      "parent_x": 1.0,
+      "n3d": 2,
+      "first_pt": [
+        10.0,
+        0.0,
+        -10.0
+      ],
+      "copied_attach": true
+    },
+    "braincell_branches": [
+      {
+        "name": "soma",
+        "type": "soma",
+        "parent": null,
+        "parent_x": null,
+        "pts": [
+          [
+            -10.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            10.0,
+            0.0,
+            -10.0
+          ]
+        ]
+      },
+      {
+        "name": "basal_dendrite_0",
+        "type": "basal_dendrite",
+        "parent": "soma",
+        "parent_x": 1.0,
+        "pts": [
+          [
+            10.0,
+            0.0,
+            -10.0
+          ],
+          [
+            10.0,
+            10.0,
+            0.0
+          ]
+        ]
+      }
+    ],
+    "braincell_dend_count": 1,
+    "braincell_first_dend": {
+      "name": "basal_dendrite_0",
+      "parent": "soma",
+      "parent_x": 1.0,
+      "npts": 2,
+      "first_pt": [
+        10.0,
+        0.0,
+        -10.0
+      ],
+      "copied_attach": true
+    }
+  },
+  {
+    "case": "three_point_regular_1_2pt",
+    "attach_point": [
+      10.0,
+      0.0,
+      -10.0
+    ],
+    "neuron_ok": true,
+    "braincell_ok": true,
+    "neuron_sections": [
+      {
+        "name": "soma[0]",
+        "parent": null,
+        "parent_x": null,
+        "n3d": 3,
+        "pts": [
+          [
+            -10.0,
+            0.0,
+            0.0,
+            10.0
+          ],
+          [
+            0.0,
+            0.0,
+            0.0,
+            5.0
+          ],
+          [
+            10.0,
+            0.0,
+            -10.0,
+            10.0
+          ]
+        ]
+      },
+      {
+        "name": "dend[0]",
+        "parent": "soma[0]",
+        "parent_x": 1.0,
+        "n3d": 3,
+        "pts": [
+          [
+            10.0,
+            0.0,
+            -10.0,
+            2.0
+          ],
+          [
+            10.0,
+            10.0,
+            0.0,
+            2.0
+          ],
+          [
+            10.0,
+            20.0,
+            0.0,
+            2.0
+          ]
+        ]
+      }
+    ],
+    "neuron_dend_count": 1,
+    "neuron_first_dend": {
+      "name": "dend[0]",
+      "parent": "soma[0]",
+      "parent_x": 1.0,
+      "n3d": 3,
+      "first_pt": [
+        10.0,
+        0.0,
+        -10.0
+      ],
+      "copied_attach": true
+    },
+    "braincell_branches": [
+      {
+        "name": "soma",
+        "type": "soma",
+        "parent": null,
+        "parent_x": null,
+        "pts": [
+          [
+            -10.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            10.0,
+            0.0,
+            -10.0
+          ]
+        ]
+      },
+      {
+        "name": "basal_dendrite_0",
+        "type": "basal_dendrite",
+        "parent": "soma",
+        "parent_x": 1.0,
+        "pts": [
+          [
+            10.0,
+            0.0,
+            -10.0
+          ],
+          [
+            10.0,
+            10.0,
+            0.0
+          ],
+          [
+            10.0,
+            20.0,
+            0.0
+          ]
+        ]
+      }
+    ],
+    "braincell_dend_count": 1,
+    "braincell_first_dend": {
+      "name": "basal_dendrite_0",
+      "parent": "soma",
+      "parent_x": 1.0,
+      "npts": 3,
+      "first_pt": [
+        10.0,
+        0.0,
+        -10.0
+      ],
+      "copied_attach": true
+    }
+  },
+  {
+    "case": "unbranched_0_1pt",
+    "attach_point": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "neuron_ok": true,
+    "braincell_ok": true,
+    "neuron_sections": [
+      {
+        "name": "soma[0]",
+        "parent": null,
+        "parent_x": null,
+        "n3d": 4,
+        "pts": [
+          [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ],
+          [
+            1.0,
+            0.0,
+            0.0,
+            1.0
+          ],
+          [
+            2.0,
+            0.0,
+            0.0,
+            1.0
+          ],
+          [
+            2.0,
+            1.0,
+            0.0,
+            1.0
+          ]
+        ]
+      },
+      {
+        "name": "dend[0]",
+        "parent": "soma[0]",
+        "parent_x": 0.0,
+        "n3d": 2,
+        "pts": [
+          [
+            0.0,
+            0.0,
+            0.0,
+            0.5
+          ],
+          [
+            2.0,
+            0.5,
+            0.0,
+            0.5
+          ]
+        ]
+      }
+    ],
+    "neuron_dend_count": 1,
+    "neuron_first_dend": {
+      "name": "dend[0]",
+      "parent": "soma[0]",
+      "parent_x": 0.0,
+      "n3d": 2,
+      "first_pt": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "copied_attach": true
+    },
+    "braincell_branches": [
+      {
+        "name": "soma",
+        "type": "soma",
+        "parent": null,
+        "parent_x": null,
+        "pts": [
+          [
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            1.0,
+            0.0,
+            0.0
+          ],
+          [
+            2.0,
+            0.0,
+            0.0
+          ],
+          [
+            2.0,
+            1.0,
+            0.0
+          ]
+        ]
+      },
+      {
+        "name": "basal_dendrite_0",
+        "type": "basal_dendrite",
+        "parent": "soma",
+        "parent_x": 0.0,
+        "pts": [
+          [
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            2.0,
+            0.5,
+            0.0
+          ]
+        ]
+      }
+    ],
+    "braincell_dend_count": 1,
+    "braincell_first_dend": {
+      "name": "basal_dendrite_0",
+      "parent": "soma",
+      "parent_x": 0.0,
+      "npts": 2,
+      "first_pt": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "copied_attach": true
+    }
+  },
+  {
+    "case": "unbranched_0_2pt",
+    "attach_point": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "neuron_ok": true,
+    "braincell_ok": true,
+    "neuron_sections": [
+      {
+        "name": "soma[0]",
+        "parent": null,
+        "parent_x": null,
+        "n3d": 4,
+        "pts": [
+          [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ],
+          [
+            1.0,
+            0.0,
+            0.0,
+            1.0
+          ],
+          [
+            2.0,
+            0.0,
+            0.0,
+            1.0
+          ],
+          [
+            2.0,
+            1.0,
+            0.0,
+            1.0
+          ]
+        ]
+      },
+      {
+        "name": "dend[0]",
+        "parent": "soma[0]",
+        "parent_x": 0.0,
+        "n3d": 3,
+        "pts": [
+          [
+            0.0,
+            0.0,
+            0.0,
+            0.5
+          ],
+          [
+            2.0,
+            0.5,
+            0.0,
+            0.5
+          ],
+          [
+            5.0,
+            0.5,
+            0.0,
+            0.5
+          ]
+        ]
+      }
+    ],
+    "neuron_dend_count": 1,
+    "neuron_first_dend": {
+      "name": "dend[0]",
+      "parent": "soma[0]",
+      "parent_x": 0.0,
+      "n3d": 3,
+      "first_pt": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "copied_attach": true
+    },
+    "braincell_branches": [
+      {
+        "name": "soma",
+        "type": "soma",
+        "parent": null,
+        "parent_x": null,
+        "pts": [
+          [
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            1.0,
+            0.0,
+            0.0
+          ],
+          [
+            2.0,
+            0.0,
+            0.0
+          ],
+          [
+            2.0,
+            1.0,
+            0.0
+          ]
+        ]
+      },
+      {
+        "name": "basal_dendrite_0",
+        "type": "basal_dendrite",
+        "parent": "soma",
+        "parent_x": 0.0,
+        "pts": [
+          [
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            2.0,
+            0.5,
+            0.0
+          ],
+          [
+            5.0,
+            0.5,
+            0.0
+          ]
+        ]
+      }
+    ],
+    "braincell_dend_count": 1,
+    "braincell_first_dend": {
+      "name": "basal_dendrite_0",
+      "parent": "soma",
+      "parent_x": 0.0,
+      "npts": 3,
+      "first_pt": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "copied_attach": true
+    }
+  },
+  {
+    "case": "unbranched_05_1pt",
+    "attach_point": [
+      1.0,
+      0.0,
+      0.0
+    ],
+    "neuron_ok": true,
+    "braincell_ok": true,
+    "neuron_sections": [
+      {
+        "name": "soma[0]",
+        "parent": null,
+        "parent_x": null,
+        "n3d": 4,
+        "pts": [
+          [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ],
+          [
+            1.0,
+            0.0,
+            0.0,
+            1.0
+          ],
+          [
+            2.0,
+            0.0,
+            0.0,
+            1.0
+          ],
+          [
+            2.0,
+            1.0,
+            0.0,
+            1.0
+          ]
+        ]
+      },
+      {
+        "name": "dend[0]",
+        "parent": "soma[0]",
+        "parent_x": 0.5,
+        "n3d": 2,
+        "pts": [
+          [
+            1.0,
+            0.0,
+            0.0,
+            0.5
+          ],
+          [
+            2.0,
+            0.5,
+            0.0,
+            0.5
+          ]
+        ]
+      }
+    ],
+    "neuron_dend_count": 1,
+    "neuron_first_dend": {
+      "name": "dend[0]",
+      "parent": "soma[0]",
+      "parent_x": 0.5,
+      "n3d": 2,
+      "first_pt": [
+        1.0,
+        0.0,
+        0.0
+      ],
+      "copied_attach": true
+    },
+    "braincell_branches": [
+      {
+        "name": "soma",
+        "type": "soma",
+        "parent": null,
+        "parent_x": null,
+        "pts": [
+          [
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            1.0,
+            0.0,
+            0.0
+          ],
+          [
+            2.0,
+            0.0,
+            0.0
+          ],
+          [
+            2.0,
+            1.0,
+            0.0
+          ]
+        ]
+      },
+      {
+        "name": "basal_dendrite_0",
+        "type": "basal_dendrite",
+        "parent": "soma",
+        "parent_x": 0.5,
+        "pts": [
+          [
+            1.0,
+            0.0,
+            0.0
+          ],
+          [
+            2.0,
+            0.5,
+            0.0
+          ]
+        ]
+      }
+    ],
+    "braincell_dend_count": 1,
+    "braincell_first_dend": {
+      "name": "basal_dendrite_0",
+      "parent": "soma",
+      "parent_x": 0.5,
+      "npts": 2,
+      "first_pt": [
+        1.0,
+        0.0,
+        0.0
+      ],
+      "copied_attach": true
+    }
+  },
+  {
+    "case": "unbranched_05_2pt",
+    "attach_point": [
+      1.0,
+      0.0,
+      0.0
+    ],
+    "neuron_ok": true,
+    "braincell_ok": true,
+    "neuron_sections": [
+      {
+        "name": "soma[0]",
+        "parent": null,
+        "parent_x": null,
+        "n3d": 4,
+        "pts": [
+          [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ],
+          [
+            1.0,
+            0.0,
+            0.0,
+            1.0
+          ],
+          [
+            2.0,
+            0.0,
+            0.0,
+            1.0
+          ],
+          [
+            2.0,
+            1.0,
+            0.0,
+            1.0
+          ]
+        ]
+      },
+      {
+        "name": "dend[0]",
+        "parent": "soma[0]",
+        "parent_x": 0.5,
+        "n3d": 2,
+        "pts": [
+          [
+            2.0,
+            0.5,
+            0.0,
+            0.5
+          ],
+          [
+            5.0,
+            0.5,
+            0.0,
+            0.5
+          ]
+        ]
+      }
+    ],
+    "neuron_dend_count": 1,
+    "neuron_first_dend": {
+      "name": "dend[0]",
+      "parent": "soma[0]",
+      "parent_x": 0.5,
+      "n3d": 2,
+      "first_pt": [
+        2.0,
+        0.5,
+        0.0
+      ],
+      "copied_attach": false
+    },
+    "braincell_branches": [
+      {
+        "name": "soma",
+        "type": "soma",
+        "parent": null,
+        "parent_x": null,
+        "pts": [
+          [
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            1.0,
+            0.0,
+            0.0
+          ],
+          [
+            2.0,
+            0.0,
+            0.0
+          ],
+          [
+            2.0,
+            1.0,
+            0.0
+          ]
+        ]
+      },
+      {
+        "name": "basal_dendrite_0",
+        "type": "basal_dendrite",
+        "parent": "soma",
+        "parent_x": 0.5,
+        "pts": [
+          [
+            1.0,
+            0.0,
+            0.0
+          ],
+          [
+            2.0,
+            0.5,
+            0.0
+          ],
+          [
+            5.0,
+            0.5,
+            0.0
+          ]
+        ]
+      }
+    ],
+    "braincell_dend_count": 1,
+    "braincell_first_dend": {
+      "name": "basal_dendrite_0",
+      "parent": "soma",
+      "parent_x": 0.5,
+      "npts": 3,
+      "first_pt": [
+        1.0,
+        0.0,
+        0.0
+      ],
+      "copied_attach": true
+    }
+  },
+  {
+    "case": "unbranched_1_1pt",
+    "attach_point": [
+      2.0,
+      1.0,
+      0.0
+    ],
+    "neuron_ok": true,
+    "braincell_ok": true,
+    "neuron_sections": [
+      {
+        "name": "soma[0]",
+        "parent": null,
+        "parent_x": null,
+        "n3d": 4,
+        "pts": [
+          [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ],
+          [
+            1.0,
+            0.0,
+            0.0,
+            1.0
+          ],
+          [
+            2.0,
+            0.0,
+            0.0,
+            1.0
+          ],
+          [
+            2.0,
+            1.0,
+            0.0,
+            1.0
+          ]
+        ]
+      },
+      {
+        "name": "dend[0]",
+        "parent": "soma[0]",
+        "parent_x": 1.0,
+        "n3d": 2,
+        "pts": [
+          [
+            2.0,
+            1.0,
+            0.0,
+            0.5
+          ],
+          [
+            2.0,
+            0.5,
+            0.0,
+            0.5
+          ]
+        ]
+      }
+    ],
+    "neuron_dend_count": 1,
+    "neuron_first_dend": {
+      "name": "dend[0]",
+      "parent": "soma[0]",
+      "parent_x": 1.0,
+      "n3d": 2,
+      "first_pt": [
+        2.0,
+        1.0,
+        0.0
+      ],
+      "copied_attach": true
+    },
+    "braincell_branches": [
+      {
+        "name": "soma",
+        "type": "soma",
+        "parent": null,
+        "parent_x": null,
+        "pts": [
+          [
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            1.0,
+            0.0,
+            0.0
+          ],
+          [
+            2.0,
+            0.0,
+            0.0
+          ],
+          [
+            2.0,
+            1.0,
+            0.0
+          ]
+        ]
+      },
+      {
+        "name": "basal_dendrite_0",
+        "type": "basal_dendrite",
+        "parent": "soma",
+        "parent_x": 1.0,
+        "pts": [
+          [
+            2.0,
+            1.0,
+            0.0
+          ],
+          [
+            2.0,
+            0.5,
+            0.0
+          ]
+        ]
+      }
+    ],
+    "braincell_dend_count": 1,
+    "braincell_first_dend": {
+      "name": "basal_dendrite_0",
+      "parent": "soma",
+      "parent_x": 1.0,
+      "npts": 2,
+      "first_pt": [
+        2.0,
+        1.0,
+        0.0
+      ],
+      "copied_attach": true
+    }
+  },
+  {
+    "case": "unbranched_1_2pt",
+    "attach_point": [
+      2.0,
+      1.0,
+      0.0
+    ],
+    "neuron_ok": true,
+    "braincell_ok": true,
+    "neuron_sections": [
+      {
+        "name": "soma[0]",
+        "parent": null,
+        "parent_x": null,
+        "n3d": 4,
+        "pts": [
+          [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ],
+          [
+            1.0,
+            0.0,
+            0.0,
+            1.0
+          ],
+          [
+            2.0,
+            0.0,
+            0.0,
+            1.0
+          ],
+          [
+            2.0,
+            1.0,
+            0.0,
+            1.0
+          ]
+        ]
+      },
+      {
+        "name": "dend[0]",
+        "parent": "soma[0]",
+        "parent_x": 1.0,
+        "n3d": 3,
+        "pts": [
+          [
+            2.0,
+            1.0,
+            0.0,
+            0.5
+          ],
+          [
+            2.0,
+            0.5,
+            0.0,
+            0.5
+          ],
+          [
+            5.0,
+            0.5,
+            0.0,
+            0.5
+          ]
+        ]
+      }
+    ],
+    "neuron_dend_count": 1,
+    "neuron_first_dend": {
+      "name": "dend[0]",
+      "parent": "soma[0]",
+      "parent_x": 1.0,
+      "n3d": 3,
+      "first_pt": [
+        2.0,
+        1.0,
+        0.0
+      ],
+      "copied_attach": true
+    },
+    "braincell_branches": [
+      {
+        "name": "soma",
+        "type": "soma",
+        "parent": null,
+        "parent_x": null,
+        "pts": [
+          [
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            1.0,
+            0.0,
+            0.0
+          ],
+          [
+            2.0,
+            0.0,
+            0.0
+          ],
+          [
+            2.0,
+            1.0,
+            0.0
+          ]
+        ]
+      },
+      {
+        "name": "basal_dendrite_0",
+        "type": "basal_dendrite",
+        "parent": "soma",
+        "parent_x": 1.0,
+        "pts": [
+          [
+            2.0,
+            1.0,
+            0.0
+          ],
+          [
+            2.0,
+            0.5,
+            0.0
+          ],
+          [
+            5.0,
+            0.5,
+            0.0
+          ]
+        ]
+      }
+    ],
+    "braincell_dend_count": 1,
+    "braincell_first_dend": {
+      "name": "basal_dendrite_0",
+      "parent": "soma",
+      "parent_x": 1.0,
+      "npts": 3,
+      "first_pt": [
+        2.0,
+        1.0,
+        0.0
+      ],
+      "copied_attach": true
+    }
+  },
+  {
+    "case": "branched_nonroot_root0_1pt",
+    "attach_point": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "neuron_ok": true,
+    "braincell_ok": true,
+    "neuron_sections": [
+      {
+        "name": "soma[0]",
+        "parent": null,
+        "parent_x": null,
+        "n3d": 2,
+        "pts": [
+          [
+            0.0,
+            0.0,
+            0.0,
+            5.0
+          ],
+          [
+            10.0,
+            0.0,
+            0.0,
+            5.0
+          ]
+        ]
+      },
+      {
+        "name": "soma[1]",
+        "parent": "soma[0]",
+        "parent_x": 1.0,
+        "n3d": 3,
+        "pts": [
+          [
+            10.0,
+            0.0,
+            0.0,
+            5.0
+          ],
+          [
+            20.0,
+            0.0,
+            0.0,
+            5.0
+          ],
+          [
+            30.0,
+            0.0,
+            0.0,
+            5.0
+          ]
+        ]
+      },
+      {
+        "name": "soma[2]",
+        "parent": "soma[0]",
+        "parent_x": 1.0,
+        "n3d": 3,
+        "pts": [
+          [
+            10.0,
+            0.0,
+            0.0,
+            5.0
+          ],
+          [
+            10.0,
+            10.0,
+            0.0,
+            5.0
+          ],
+          [
+            10.0,
+            20.0,
+            0.0,
+            5.0
+          ]
+        ]
+      },
+      {
+        "name": "dend[0]",
+        "parent": "soma[0]",
+        "parent_x": 0.0,
+        "n3d": 2,
+        "pts": [
+          [
+            0.0,
+            0.0,
+            0.0,
+            2.0
+          ],
+          [
+            -10.0,
+            0.0,
+            0.0,
+            2.0
+          ]
+        ]
+      }
+    ],
+    "neuron_dend_count": 1,
+    "neuron_first_dend": {
+      "name": "dend[0]",
+      "parent": "soma[0]",
+      "parent_x": 0.0,
+      "n3d": 2,
+      "first_pt": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "copied_attach": true
+    },
+    "braincell_branches": [
+      {
+        "name": "soma",
+        "type": "soma",
+        "parent": null,
+        "parent_x": null,
+        "pts": [
+          [
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            10.0,
+            0.0,
+            0.0
+          ]
+        ]
+      },
+      {
+        "name": "soma_0",
+        "type": "soma",
+        "parent": "soma",
+        "parent_x": 1.0,
+        "pts": [
+          [
+            10.0,
+            0.0,
+            0.0
+          ],
+          [
+            20.0,
+            0.0,
+            0.0
+          ],
+          [
+            30.0,
+            0.0,
+            0.0
+          ]
+        ]
+      },
+      {
+        "name": "soma_1",
+        "type": "soma",
+        "parent": "soma",
+        "parent_x": 1.0,
+        "pts": [
+          [
+            10.0,
+            0.0,
+            0.0
+          ],
+          [
+            10.0,
+            10.0,
+            0.0
+          ],
+          [
+            10.0,
+            20.0,
+            0.0
+          ]
+        ]
+      },
+      {
+        "name": "basal_dendrite_0",
+        "type": "basal_dendrite",
+        "parent": "soma",
+        "parent_x": 0.0,
+        "pts": [
+          [
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            -10.0,
+            0.0,
+            0.0
+          ]
+        ]
+      }
+    ],
+    "braincell_dend_count": 1,
+    "braincell_first_dend": {
+      "name": "basal_dendrite_0",
+      "parent": "soma",
+      "parent_x": 0.0,
+      "npts": 2,
+      "first_pt": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "copied_attach": true
+    }
+  },
+  {
+    "case": "branched_nonroot_root0_2pt",
+    "attach_point": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "neuron_ok": true,
+    "braincell_ok": true,
+    "neuron_sections": [
+      {
+        "name": "soma[0]",
+        "parent": null,
+        "parent_x": null,
+        "n3d": 2,
+        "pts": [
+          [
+            0.0,
+            0.0,
+            0.0,
+            5.0
+          ],
+          [
+            10.0,
+            0.0,
+            0.0,
+            5.0
+          ]
+        ]
+      },
+      {
+        "name": "soma[1]",
+        "parent": "soma[0]",
+        "parent_x": 1.0,
+        "n3d": 3,
+        "pts": [
+          [
+            10.0,
+            0.0,
+            0.0,
+            5.0
+          ],
+          [
+            20.0,
+            0.0,
+            0.0,
+            5.0
+          ],
+          [
+            30.0,
+            0.0,
+            0.0,
+            5.0
+          ]
+        ]
+      },
+      {
+        "name": "soma[2]",
+        "parent": "soma[0]",
+        "parent_x": 1.0,
+        "n3d": 3,
+        "pts": [
+          [
+            10.0,
+            0.0,
+            0.0,
+            5.0
+          ],
+          [
+            10.0,
+            10.0,
+            0.0,
+            5.0
+          ],
+          [
+            10.0,
+            20.0,
+            0.0,
+            5.0
+          ]
+        ]
+      },
+      {
+        "name": "dend[0]",
+        "parent": "soma[0]",
+        "parent_x": 0.0,
+        "n3d": 3,
+        "pts": [
+          [
+            0.0,
+            0.0,
+            0.0,
+            2.0
+          ],
+          [
+            -10.0,
+            0.0,
+            0.0,
+            2.0
+          ],
+          [
+            -20.0,
+            0.0,
+            0.0,
+            2.0
+          ]
+        ]
+      }
+    ],
+    "neuron_dend_count": 1,
+    "neuron_first_dend": {
+      "name": "dend[0]",
+      "parent": "soma[0]",
+      "parent_x": 0.0,
+      "n3d": 3,
+      "first_pt": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "copied_attach": true
+    },
+    "braincell_branches": [
+      {
+        "name": "soma",
+        "type": "soma",
+        "parent": null,
+        "parent_x": null,
+        "pts": [
+          [
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            10.0,
+            0.0,
+            0.0
+          ]
+        ]
+      },
+      {
+        "name": "soma_0",
+        "type": "soma",
+        "parent": "soma",
+        "parent_x": 1.0,
+        "pts": [
+          [
+            10.0,
+            0.0,
+            0.0
+          ],
+          [
+            20.0,
+            0.0,
+            0.0
+          ],
+          [
+            30.0,
+            0.0,
+            0.0
+          ]
+        ]
+      },
+      {
+        "name": "soma_1",
+        "type": "soma",
+        "parent": "soma",
+        "parent_x": 1.0,
+        "pts": [
+          [
+            10.0,
+            0.0,
+            0.0
+          ],
+          [
+            10.0,
+            10.0,
+            0.0
+          ],
+          [
+            10.0,
+            20.0,
+            0.0
+          ]
+        ]
+      },
+      {
+        "name": "basal_dendrite_0",
+        "type": "basal_dendrite",
+        "parent": "soma",
+        "parent_x": 0.0,
+        "pts": [
+          [
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            -10.0,
+            0.0,
+            0.0
+          ],
+          [
+            -20.0,
+            0.0,
+            0.0
+          ]
+        ]
+      }
+    ],
+    "braincell_dend_count": 1,
+    "braincell_first_dend": {
+      "name": "basal_dendrite_0",
+      "parent": "soma",
+      "parent_x": 0.0,
+      "npts": 3,
+      "first_pt": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "copied_attach": true
+    }
+  },
+  {
+    "case": "branched_nonroot_side05_1pt",
+    "attach_point": [
+      10.0,
+      10.0,
+      0.0
+    ],
+    "neuron_ok": true,
+    "braincell_ok": true,
+    "neuron_sections": [
+      {
+        "name": "soma[0]",
+        "parent": null,
+        "parent_x": null,
+        "n3d": 2,
+        "pts": [
+          [
+            0.0,
+            0.0,
+            0.0,
+            5.0
+          ],
+          [
+            10.0,
+            0.0,
+            0.0,
+            5.0
+          ]
+        ]
+      },
+      {
+        "name": "soma[1]",
+        "parent": "soma[0]",
+        "parent_x": 1.0,
+        "n3d": 3,
+        "pts": [
+          [
+            10.0,
+            0.0,
+            0.0,
+            5.0
+          ],
+          [
+            20.0,
+            0.0,
+            0.0,
+            5.0
+          ],
+          [
+            30.0,
+            0.0,
+            0.0,
+            5.0
+          ]
+        ]
+      },
+      {
+        "name": "soma[2]",
+        "parent": "soma[0]",
+        "parent_x": 1.0,
+        "n3d": 3,
+        "pts": [
+          [
+            10.0,
+            0.0,
+            0.0,
+            5.0
+          ],
+          [
+            10.0,
+            10.0,
+            0.0,
+            5.0
+          ],
+          [
+            10.0,
+            20.0,
+            0.0,
+            5.0
+          ]
+        ]
+      },
+      {
+        "name": "dend[0]",
+        "parent": "soma[2]",
+        "parent_x": 0.5,
+        "n3d": 2,
+        "pts": [
+          [
+            10.0,
+            10.0,
+            0.0,
+            2.0
+          ],
+          [
+            10.0,
+            30.0,
+            0.0,
+            2.0
+          ]
+        ]
+      }
+    ],
+    "neuron_dend_count": 1,
+    "neuron_first_dend": {
+      "name": "dend[0]",
+      "parent": "soma[2]",
+      "parent_x": 0.5,
+      "n3d": 2,
+      "first_pt": [
+        10.0,
+        10.0,
+        0.0
+      ],
+      "copied_attach": true
+    },
+    "braincell_branches": [
+      {
+        "name": "soma",
+        "type": "soma",
+        "parent": null,
+        "parent_x": null,
+        "pts": [
+          [
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            10.0,
+            0.0,
+            0.0
+          ]
+        ]
+      },
+      {
+        "name": "soma_0",
+        "type": "soma",
+        "parent": "soma",
+        "parent_x": 1.0,
+        "pts": [
+          [
+            10.0,
+            0.0,
+            0.0
+          ],
+          [
+            20.0,
+            0.0,
+            0.0
+          ],
+          [
+            30.0,
+            0.0,
+            0.0
+          ]
+        ]
+      },
+      {
+        "name": "soma_1",
+        "type": "soma",
+        "parent": "soma",
+        "parent_x": 1.0,
+        "pts": [
+          [
+            10.0,
+            0.0,
+            0.0
+          ],
+          [
+            10.0,
+            10.0,
+            0.0
+          ],
+          [
+            10.0,
+            20.0,
+            0.0
+          ]
+        ]
+      },
+      {
+        "name": "basal_dendrite_0",
+        "type": "basal_dendrite",
+        "parent": "soma_1",
+        "parent_x": 0.5,
+        "pts": [
+          [
+            10.0,
+            10.0,
+            0.0
+          ],
+          [
+            10.0,
+            30.0,
+            0.0
+          ]
+        ]
+      }
+    ],
+    "braincell_dend_count": 1,
+    "braincell_first_dend": {
+      "name": "basal_dendrite_0",
+      "parent": "soma_1",
+      "parent_x": 0.5,
+      "npts": 2,
+      "first_pt": [
+        10.0,
+        10.0,
+        0.0
+      ],
+      "copied_attach": true
+    }
+  },
+  {
+    "case": "branched_nonroot_side05_2pt",
+    "attach_point": [
+      10.0,
+      10.0,
+      0.0
+    ],
+    "neuron_ok": true,
+    "braincell_ok": true,
+    "neuron_sections": [
+      {
+        "name": "soma[0]",
+        "parent": null,
+        "parent_x": null,
+        "n3d": 2,
+        "pts": [
+          [
+            0.0,
+            0.0,
+            0.0,
+            5.0
+          ],
+          [
+            10.0,
+            0.0,
+            0.0,
+            5.0
+          ]
+        ]
+      },
+      {
+        "name": "soma[1]",
+        "parent": "soma[0]",
+        "parent_x": 1.0,
+        "n3d": 3,
+        "pts": [
+          [
+            10.0,
+            0.0,
+            0.0,
+            5.0
+          ],
+          [
+            20.0,
+            0.0,
+            0.0,
+            5.0
+          ],
+          [
+            30.0,
+            0.0,
+            0.0,
+            5.0
+          ]
+        ]
+      },
+      {
+        "name": "soma[2]",
+        "parent": "soma[0]",
+        "parent_x": 1.0,
+        "n3d": 3,
+        "pts": [
+          [
+            10.0,
+            0.0,
+            0.0,
+            5.0
+          ],
+          [
+            10.0,
+            10.0,
+            0.0,
+            5.0
+          ],
+          [
+            10.0,
+            20.0,
+            0.0,
+            5.0
+          ]
+        ]
+      },
+      {
+        "name": "dend[0]",
+        "parent": "soma[2]",
+        "parent_x": 0.5,
+        "n3d": 2,
+        "pts": [
+          [
+            10.0,
+            30.0,
+            0.0,
+            2.0
+          ],
+          [
+            10.0,
+            40.0,
+            0.0,
+            2.0
+          ]
+        ]
+      }
+    ],
+    "neuron_dend_count": 1,
+    "neuron_first_dend": {
+      "name": "dend[0]",
+      "parent": "soma[2]",
+      "parent_x": 0.5,
+      "n3d": 2,
+      "first_pt": [
+        10.0,
+        30.0,
+        0.0
+      ],
+      "copied_attach": false
+    },
+    "braincell_branches": [
+      {
+        "name": "soma",
+        "type": "soma",
+        "parent": null,
+        "parent_x": null,
+        "pts": [
+          [
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            10.0,
+            0.0,
+            0.0
+          ]
+        ]
+      },
+      {
+        "name": "soma_0",
+        "type": "soma",
+        "parent": "soma",
+        "parent_x": 1.0,
+        "pts": [
+          [
+            10.0,
+            0.0,
+            0.0
+          ],
+          [
+            20.0,
+            0.0,
+            0.0
+          ],
+          [
+            30.0,
+            0.0,
+            0.0
+          ]
+        ]
+      },
+      {
+        "name": "soma_1",
+        "type": "soma",
+        "parent": "soma",
+        "parent_x": 1.0,
+        "pts": [
+          [
+            10.0,
+            0.0,
+            0.0
+          ],
+          [
+            10.0,
+            10.0,
+            0.0
+          ],
+          [
+            10.0,
+            20.0,
+            0.0
+          ]
+        ]
+      },
+      {
+        "name": "basal_dendrite_0",
+        "type": "basal_dendrite",
+        "parent": "soma_1",
+        "parent_x": 0.5,
+        "pts": [
+          [
+            10.0,
+            10.0,
+            0.0
+          ],
+          [
+            10.0,
+            30.0,
+            0.0
+          ],
+          [
+            10.0,
+            40.0,
+            0.0
+          ]
+        ]
+      }
+    ],
+    "braincell_dend_count": 1,
+    "braincell_first_dend": {
+      "name": "basal_dendrite_0",
+      "parent": "soma_1",
+      "parent_x": 0.5,
+      "npts": 3,
+      "first_pt": [
+        10.0,
+        10.0,
+        0.0
+      ],
+      "copied_attach": true
+    }
+  },
+  {
+    "case": "branched_nonroot_side1_1pt",
+    "attach_point": [
+      10.0,
+      20.0,
+      0.0
+    ],
+    "neuron_ok": true,
+    "braincell_ok": true,
+    "neuron_sections": [
+      {
+        "name": "soma[0]",
+        "parent": null,
+        "parent_x": null,
+        "n3d": 2,
+        "pts": [
+          [
+            0.0,
+            0.0,
+            0.0,
+            5.0
+          ],
+          [
+            10.0,
+            0.0,
+            0.0,
+            5.0
+          ]
+        ]
+      },
+      {
+        "name": "soma[1]",
+        "parent": "soma[0]",
+        "parent_x": 1.0,
+        "n3d": 3,
+        "pts": [
+          [
+            10.0,
+            0.0,
+            0.0,
+            5.0
+          ],
+          [
+            20.0,
+            0.0,
+            0.0,
+            5.0
+          ],
+          [
+            30.0,
+            0.0,
+            0.0,
+            5.0
+          ]
+        ]
+      },
+      {
+        "name": "soma[2]",
+        "parent": "soma[0]",
+        "parent_x": 1.0,
+        "n3d": 3,
+        "pts": [
+          [
+            10.0,
+            0.0,
+            0.0,
+            5.0
+          ],
+          [
+            10.0,
+            10.0,
+            0.0,
+            5.0
+          ],
+          [
+            10.0,
+            20.0,
+            0.0,
+            5.0
+          ]
+        ]
+      },
+      {
+        "name": "dend[0]",
+        "parent": "soma[2]",
+        "parent_x": 1.0,
+        "n3d": 2,
+        "pts": [
+          [
+            10.0,
+            20.0,
+            0.0,
+            2.0
+          ],
+          [
+            10.0,
+            30.0,
+            0.0,
+            2.0
+          ]
+        ]
+      }
+    ],
+    "neuron_dend_count": 1,
+    "neuron_first_dend": {
+      "name": "dend[0]",
+      "parent": "soma[2]",
+      "parent_x": 1.0,
+      "n3d": 2,
+      "first_pt": [
+        10.0,
+        20.0,
+        0.0
+      ],
+      "copied_attach": true
+    },
+    "braincell_branches": [
+      {
+        "name": "soma",
+        "type": "soma",
+        "parent": null,
+        "parent_x": null,
+        "pts": [
+          [
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            10.0,
+            0.0,
+            0.0
+          ]
+        ]
+      },
+      {
+        "name": "soma_0",
+        "type": "soma",
+        "parent": "soma",
+        "parent_x": 1.0,
+        "pts": [
+          [
+            10.0,
+            0.0,
+            0.0
+          ],
+          [
+            20.0,
+            0.0,
+            0.0
+          ],
+          [
+            30.0,
+            0.0,
+            0.0
+          ]
+        ]
+      },
+      {
+        "name": "soma_1",
+        "type": "soma",
+        "parent": "soma",
+        "parent_x": 1.0,
+        "pts": [
+          [
+            10.0,
+            0.0,
+            0.0
+          ],
+          [
+            10.0,
+            10.0,
+            0.0
+          ],
+          [
+            10.0,
+            20.0,
+            0.0
+          ]
+        ]
+      },
+      {
+        "name": "basal_dendrite_0",
+        "type": "basal_dendrite",
+        "parent": "soma_1",
+        "parent_x": 1.0,
+        "pts": [
+          [
+            10.0,
+            20.0,
+            0.0
+          ],
+          [
+            10.0,
+            30.0,
+            0.0
+          ]
+        ]
+      }
+    ],
+    "braincell_dend_count": 1,
+    "braincell_first_dend": {
+      "name": "basal_dendrite_0",
+      "parent": "soma_1",
+      "parent_x": 1.0,
+      "npts": 2,
+      "first_pt": [
+        10.0,
+        20.0,
+        0.0
+      ],
+      "copied_attach": true
+    }
+  },
+  {
+    "case": "branched_nonroot_side1_2pt",
+    "attach_point": [
+      10.0,
+      20.0,
+      0.0
+    ],
+    "neuron_ok": true,
+    "braincell_ok": true,
+    "neuron_sections": [
+      {
+        "name": "soma[0]",
+        "parent": null,
+        "parent_x": null,
+        "n3d": 2,
+        "pts": [
+          [
+            0.0,
+            0.0,
+            0.0,
+            5.0
+          ],
+          [
+            10.0,
+            0.0,
+            0.0,
+            5.0
+          ]
+        ]
+      },
+      {
+        "name": "soma[1]",
+        "parent": "soma[0]",
+        "parent_x": 1.0,
+        "n3d": 3,
+        "pts": [
+          [
+            10.0,
+            0.0,
+            0.0,
+            5.0
+          ],
+          [
+            20.0,
+            0.0,
+            0.0,
+            5.0
+          ],
+          [
+            30.0,
+            0.0,
+            0.0,
+            5.0
+          ]
+        ]
+      },
+      {
+        "name": "soma[2]",
+        "parent": "soma[0]",
+        "parent_x": 1.0,
+        "n3d": 3,
+        "pts": [
+          [
+            10.0,
+            0.0,
+            0.0,
+            5.0
+          ],
+          [
+            10.0,
+            10.0,
+            0.0,
+            5.0
+          ],
+          [
+            10.0,
+            20.0,
+            0.0,
+            5.0
+          ]
+        ]
+      },
+      {
+        "name": "dend[0]",
+        "parent": "soma[2]",
+        "parent_x": 1.0,
+        "n3d": 3,
+        "pts": [
+          [
+            10.0,
+            20.0,
+            0.0,
+            2.0
+          ],
+          [
+            10.0,
+            30.0,
+            0.0,
+            2.0
+          ],
+          [
+            10.0,
+            40.0,
+            0.0,
+            2.0
+          ]
+        ]
+      }
+    ],
+    "neuron_dend_count": 1,
+    "neuron_first_dend": {
+      "name": "dend[0]",
+      "parent": "soma[2]",
+      "parent_x": 1.0,
+      "n3d": 3,
+      "first_pt": [
+        10.0,
+        20.0,
+        0.0
+      ],
+      "copied_attach": true
+    },
+    "braincell_branches": [
+      {
+        "name": "soma",
+        "type": "soma",
+        "parent": null,
+        "parent_x": null,
+        "pts": [
+          [
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            10.0,
+            0.0,
+            0.0
+          ]
+        ]
+      },
+      {
+        "name": "soma_0",
+        "type": "soma",
+        "parent": "soma",
+        "parent_x": 1.0,
+        "pts": [
+          [
+            10.0,
+            0.0,
+            0.0
+          ],
+          [
+            20.0,
+            0.0,
+            0.0
+          ],
+          [
+            30.0,
+            0.0,
+            0.0
+          ]
+        ]
+      },
+      {
+        "name": "soma_1",
+        "type": "soma",
+        "parent": "soma",
+        "parent_x": 1.0,
+        "pts": [
+          [
+            10.0,
+            0.0,
+            0.0
+          ],
+          [
+            10.0,
+            10.0,
+            0.0
+          ],
+          [
+            10.0,
+            20.0,
+            0.0
+          ]
+        ]
+      },
+      {
+        "name": "basal_dendrite_0",
+        "type": "basal_dendrite",
+        "parent": "soma_1",
+        "parent_x": 1.0,
+        "pts": [
+          [
+            10.0,
+            20.0,
+            0.0
+          ],
+          [
+            10.0,
+            30.0,
+            0.0
+          ],
+          [
+            10.0,
+            40.0,
+            0.0
+          ]
+        ]
+      }
+    ],
+    "braincell_dend_count": 1,
+    "braincell_first_dend": {
+      "name": "basal_dendrite_0",
+      "parent": "soma_1",
+      "parent_x": 1.0,
+      "npts": 3,
+      "first_pt": [
+        10.0,
+        20.0,
+        0.0
+      ],
+      "copied_attach": true
+    }
+  },
+  {
+    "case": "branched_root_0_1pt",
+    "attach_point": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "neuron_ok": true,
+    "braincell_ok": true,
+    "neuron_sections": [
+      {
+        "name": "soma[0]",
+        "parent": null,
+        "parent_x": null,
+        "n3d": 3,
+        "pts": [
+          [
+            0.0,
+            0.0,
+            0.0,
+            5.0
+          ],
+          [
+            10.0,
+            0.0,
+            0.0,
+            5.0
+          ],
+          [
+            20.0,
+            0.0,
+            0.0,
+            5.0
+          ]
+        ]
+      },
+      {
+        "name": "soma[1]",
+        "parent": "soma[0]",
+        "parent_x": 0.0,
+        "n3d": 3,
+        "pts": [
+          [
+            0.0,
+            0.0,
+            0.0,
+            5.0
+          ],
+          [
+            -10.0,
+            0.0,
+            0.0,
+            5.0
+          ],
+          [
+            -20.0,
+            0.0,
+            0.0,
+            5.0
+          ]
+        ]
+      }
+    ],
+    "neuron_dend_count": 0,
+    "neuron_first_dend": null,
+    "braincell_branches": [
+      {
+        "name": "soma",
+        "type": "soma",
+        "parent": null,
+        "parent_x": null,
+        "pts": [
+          [
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            10.0,
+            0.0,
+            0.0
+          ],
+          [
+            20.0,
+            0.0,
+            0.0
+          ]
+        ]
+      },
+      {
+        "name": "soma_0",
+        "type": "soma",
+        "parent": "soma",
+        "parent_x": 0.0,
+        "pts": [
+          [
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            -10.0,
+            0.0,
+            0.0
+          ],
+          [
+            -20.0,
+            0.0,
+            0.0
+          ]
+        ]
+      },
+      {
+        "name": "basal_dendrite_0",
+        "type": "basal_dendrite",
+        "parent": "soma",
+        "parent_x": 0.0,
+        "pts": [
+          [
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            10.0,
+            0.0
+          ]
+        ]
+      }
+    ],
+    "braincell_dend_count": 1,
+    "braincell_first_dend": {
+      "name": "basal_dendrite_0",
+      "parent": "soma",
+      "parent_x": 0.0,
+      "npts": 2,
+      "first_pt": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "copied_attach": true
+    }
+  },
+  {
+    "case": "branched_root_0_2pt",
+    "attach_point": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "neuron_ok": true,
+    "braincell_ok": true,
+    "neuron_sections": [
+      {
+        "name": "soma[0]",
+        "parent": null,
+        "parent_x": null,
+        "n3d": 3,
+        "pts": [
+          [
+            0.0,
+            0.0,
+            0.0,
+            5.0
+          ],
+          [
+            10.0,
+            0.0,
+            0.0,
+            5.0
+          ],
+          [
+            20.0,
+            0.0,
+            0.0,
+            5.0
+          ]
+        ]
+      },
+      {
+        "name": "soma[1]",
+        "parent": "soma[0]",
+        "parent_x": 0.0,
+        "n3d": 3,
+        "pts": [
+          [
+            0.0,
+            0.0,
+            0.0,
+            5.0
+          ],
+          [
+            -10.0,
+            0.0,
+            0.0,
+            5.0
+          ],
+          [
+            -20.0,
+            0.0,
+            0.0,
+            5.0
+          ]
+        ]
+      },
+      {
+        "name": "dend[0]",
+        "parent": "soma[0]",
+        "parent_x": 0.0,
+        "n3d": 2,
+        "pts": [
+          [
+            0.0,
+            10.0,
+            0.0,
+            1.0
+          ],
+          [
+            0.0,
+            20.0,
+            0.0,
+            1.0
+          ]
+        ]
+      }
+    ],
+    "neuron_dend_count": 1,
+    "neuron_first_dend": {
+      "name": "dend[0]",
+      "parent": "soma[0]",
+      "parent_x": 0.0,
+      "n3d": 2,
+      "first_pt": [
+        0.0,
+        10.0,
+        0.0
+      ],
+      "copied_attach": false
+    },
+    "braincell_branches": [
+      {
+        "name": "soma",
+        "type": "soma",
+        "parent": null,
+        "parent_x": null,
+        "pts": [
+          [
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            10.0,
+            0.0,
+            0.0
+          ],
+          [
+            20.0,
+            0.0,
+            0.0
+          ]
+        ]
+      },
+      {
+        "name": "soma_0",
+        "type": "soma",
+        "parent": "soma",
+        "parent_x": 0.0,
+        "pts": [
+          [
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            -10.0,
+            0.0,
+            0.0
+          ],
+          [
+            -20.0,
+            0.0,
+            0.0
+          ]
+        ]
+      },
+      {
+        "name": "basal_dendrite_0",
+        "type": "basal_dendrite",
+        "parent": "soma",
+        "parent_x": 0.0,
+        "pts": [
+          [
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            10.0,
+            0.0
+          ],
+          [
+            0.0,
+            20.0,
+            0.0
+          ]
+        ]
+      }
+    ],
+    "braincell_dend_count": 1,
+    "braincell_first_dend": {
+      "name": "basal_dendrite_0",
+      "parent": "soma",
+      "parent_x": 0.0,
+      "npts": 3,
+      "first_pt": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "copied_attach": true
+    }
+  },
+  {
+    "case": "branched_root_main1_1pt",
+    "attach_point": [
+      20.0,
+      0.0,
+      0.0
+    ],
+    "neuron_ok": true,
+    "braincell_ok": true,
+    "neuron_sections": [
+      {
+        "name": "soma[0]",
+        "parent": null,
+        "parent_x": null,
+        "n3d": 3,
+        "pts": [
+          [
+            0.0,
+            0.0,
+            0.0,
+            5.0
+          ],
+          [
+            10.0,
+            0.0,
+            0.0,
+            5.0
+          ],
+          [
+            20.0,
+            0.0,
+            0.0,
+            5.0
+          ]
+        ]
+      },
+      {
+        "name": "soma[1]",
+        "parent": "soma[0]",
+        "parent_x": 0.0,
+        "n3d": 3,
+        "pts": [
+          [
+            0.0,
+            0.0,
+            0.0,
+            5.0
+          ],
+          [
+            -10.0,
+            0.0,
+            0.0,
+            5.0
+          ],
+          [
+            -20.0,
+            0.0,
+            0.0,
+            5.0
+          ]
+        ]
+      },
+      {
+        "name": "dend[0]",
+        "parent": "soma[0]",
+        "parent_x": 1.0,
+        "n3d": 2,
+        "pts": [
+          [
+            20.0,
+            0.0,
+            0.0,
+            1.0
+          ],
+          [
+            20.0,
+            10.0,
+            0.0,
+            1.0
+          ]
+        ]
+      }
+    ],
+    "neuron_dend_count": 1,
+    "neuron_first_dend": {
+      "name": "dend[0]",
+      "parent": "soma[0]",
+      "parent_x": 1.0,
+      "n3d": 2,
+      "first_pt": [
+        20.0,
+        0.0,
+        0.0
+      ],
+      "copied_attach": true
+    },
+    "braincell_branches": [
+      {
+        "name": "soma",
+        "type": "soma",
+        "parent": null,
+        "parent_x": null,
+        "pts": [
+          [
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            10.0,
+            0.0,
+            0.0
+          ],
+          [
+            20.0,
+            0.0,
+            0.0
+          ]
+        ]
+      },
+      {
+        "name": "soma_0",
+        "type": "soma",
+        "parent": "soma",
+        "parent_x": 0.0,
+        "pts": [
+          [
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            -10.0,
+            0.0,
+            0.0
+          ],
+          [
+            -20.0,
+            0.0,
+            0.0
+          ]
+        ]
+      },
+      {
+        "name": "basal_dendrite_0",
+        "type": "basal_dendrite",
+        "parent": "soma",
+        "parent_x": 1.0,
+        "pts": [
+          [
+            20.0,
+            0.0,
+            0.0
+          ],
+          [
+            20.0,
+            10.0,
+            0.0
+          ]
+        ]
+      }
+    ],
+    "braincell_dend_count": 1,
+    "braincell_first_dend": {
+      "name": "basal_dendrite_0",
+      "parent": "soma",
+      "parent_x": 1.0,
+      "npts": 2,
+      "first_pt": [
+        20.0,
+        0.0,
+        0.0
+      ],
+      "copied_attach": true
+    }
+  },
+  {
+    "case": "branched_root_main1_2pt",
+    "attach_point": [
+      20.0,
+      0.0,
+      0.0
+    ],
+    "neuron_ok": true,
+    "braincell_ok": true,
+    "neuron_sections": [
+      {
+        "name": "soma[0]",
+        "parent": null,
+        "parent_x": null,
+        "n3d": 3,
+        "pts": [
+          [
+            0.0,
+            0.0,
+            0.0,
+            5.0
+          ],
+          [
+            10.0,
+            0.0,
+            0.0,
+            5.0
+          ],
+          [
+            20.0,
+            0.0,
+            0.0,
+            5.0
+          ]
+        ]
+      },
+      {
+        "name": "soma[1]",
+        "parent": "soma[0]",
+        "parent_x": 0.0,
+        "n3d": 3,
+        "pts": [
+          [
+            0.0,
+            0.0,
+            0.0,
+            5.0
+          ],
+          [
+            -10.0,
+            0.0,
+            0.0,
+            5.0
+          ],
+          [
+            -20.0,
+            0.0,
+            0.0,
+            5.0
+          ]
+        ]
+      },
+      {
+        "name": "dend[0]",
+        "parent": "soma[0]",
+        "parent_x": 1.0,
+        "n3d": 3,
+        "pts": [
+          [
+            20.0,
+            0.0,
+            0.0,
+            1.0
+          ],
+          [
+            20.0,
+            10.0,
+            0.0,
+            1.0
+          ],
+          [
+            20.0,
+            20.0,
+            0.0,
+            1.0
+          ]
+        ]
+      }
+    ],
+    "neuron_dend_count": 1,
+    "neuron_first_dend": {
+      "name": "dend[0]",
+      "parent": "soma[0]",
+      "parent_x": 1.0,
+      "n3d": 3,
+      "first_pt": [
+        20.0,
+        0.0,
+        0.0
+      ],
+      "copied_attach": true
+    },
+    "braincell_branches": [
+      {
+        "name": "soma",
+        "type": "soma",
+        "parent": null,
+        "parent_x": null,
+        "pts": [
+          [
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            10.0,
+            0.0,
+            0.0
+          ],
+          [
+            20.0,
+            0.0,
+            0.0
+          ]
+        ]
+      },
+      {
+        "name": "soma_0",
+        "type": "soma",
+        "parent": "soma",
+        "parent_x": 0.0,
+        "pts": [
+          [
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            -10.0,
+            0.0,
+            0.0
+          ],
+          [
+            -20.0,
+            0.0,
+            0.0
+          ]
+        ]
+      },
+      {
+        "name": "basal_dendrite_0",
+        "type": "basal_dendrite",
+        "parent": "soma",
+        "parent_x": 1.0,
+        "pts": [
+          [
+            20.0,
+            0.0,
+            0.0
+          ],
+          [
+            20.0,
+            10.0,
+            0.0
+          ],
+          [
+            20.0,
+            20.0,
+            0.0
+          ]
+        ]
+      }
+    ],
+    "braincell_dend_count": 1,
+    "braincell_first_dend": {
+      "name": "basal_dendrite_0",
+      "parent": "soma",
+      "parent_x": 1.0,
+      "npts": 3,
+      "first_pt": [
+        20.0,
+        0.0,
+        0.0
+      ],
+      "copied_attach": true
+    }
+  },
+  {
+    "case": "branched_root_side1_1pt",
+    "attach_point": [
+      -20.0,
+      0.0,
+      0.0
+    ],
+    "neuron_ok": true,
+    "braincell_ok": true,
+    "neuron_sections": [
+      {
+        "name": "soma[0]",
+        "parent": null,
+        "parent_x": null,
+        "n3d": 3,
+        "pts": [
+          [
+            0.0,
+            0.0,
+            0.0,
+            5.0
+          ],
+          [
+            10.0,
+            0.0,
+            0.0,
+            5.0
+          ],
+          [
+            20.0,
+            0.0,
+            0.0,
+            5.0
+          ]
+        ]
+      },
+      {
+        "name": "soma[1]",
+        "parent": "soma[0]",
+        "parent_x": 0.0,
+        "n3d": 3,
+        "pts": [
+          [
+            0.0,
+            0.0,
+            0.0,
+            5.0
+          ],
+          [
+            -10.0,
+            0.0,
+            0.0,
+            5.0
+          ],
+          [
+            -20.0,
+            0.0,
+            0.0,
+            5.0
+          ]
+        ]
+      },
+      {
+        "name": "dend[0]",
+        "parent": "soma[1]",
+        "parent_x": 1.0,
+        "n3d": 2,
+        "pts": [
+          [
+            -20.0,
+            0.0,
+            0.0,
+            1.0
+          ],
+          [
+            -20.0,
+            10.0,
+            0.0,
+            1.0
+          ]
+        ]
+      }
+    ],
+    "neuron_dend_count": 1,
+    "neuron_first_dend": {
+      "name": "dend[0]",
+      "parent": "soma[1]",
+      "parent_x": 1.0,
+      "n3d": 2,
+      "first_pt": [
+        -20.0,
+        0.0,
+        0.0
+      ],
+      "copied_attach": true
+    },
+    "braincell_branches": [
+      {
+        "name": "soma",
+        "type": "soma",
+        "parent": null,
+        "parent_x": null,
+        "pts": [
+          [
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            10.0,
+            0.0,
+            0.0
+          ],
+          [
+            20.0,
+            0.0,
+            0.0
+          ]
+        ]
+      },
+      {
+        "name": "soma_0",
+        "type": "soma",
+        "parent": "soma",
+        "parent_x": 0.0,
+        "pts": [
+          [
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            -10.0,
+            0.0,
+            0.0
+          ],
+          [
+            -20.0,
+            0.0,
+            0.0
+          ]
+        ]
+      },
+      {
+        "name": "basal_dendrite_0",
+        "type": "basal_dendrite",
+        "parent": "soma_0",
+        "parent_x": 1.0,
+        "pts": [
+          [
+            -20.0,
+            0.0,
+            0.0
+          ],
+          [
+            -20.0,
+            10.0,
+            0.0
+          ]
+        ]
+      }
+    ],
+    "braincell_dend_count": 1,
+    "braincell_first_dend": {
+      "name": "basal_dendrite_0",
+      "parent": "soma_0",
+      "parent_x": 1.0,
+      "npts": 2,
+      "first_pt": [
+        -20.0,
+        0.0,
+        0.0
+      ],
+      "copied_attach": true
+    }
+  },
+  {
+    "case": "branched_root_side1_2pt",
+    "attach_point": [
+      -20.0,
+      0.0,
+      0.0
+    ],
+    "neuron_ok": true,
+    "braincell_ok": true,
+    "neuron_sections": [
+      {
+        "name": "soma[0]",
+        "parent": null,
+        "parent_x": null,
+        "n3d": 3,
+        "pts": [
+          [
+            0.0,
+            0.0,
+            0.0,
+            5.0
+          ],
+          [
+            10.0,
+            0.0,
+            0.0,
+            5.0
+          ],
+          [
+            20.0,
+            0.0,
+            0.0,
+            5.0
+          ]
+        ]
+      },
+      {
+        "name": "soma[1]",
+        "parent": "soma[0]",
+        "parent_x": 0.0,
+        "n3d": 3,
+        "pts": [
+          [
+            0.0,
+            0.0,
+            0.0,
+            5.0
+          ],
+          [
+            -10.0,
+            0.0,
+            0.0,
+            5.0
+          ],
+          [
+            -20.0,
+            0.0,
+            0.0,
+            5.0
+          ]
+        ]
+      },
+      {
+        "name": "dend[0]",
+        "parent": "soma[1]",
+        "parent_x": 1.0,
+        "n3d": 3,
+        "pts": [
+          [
+            -20.0,
+            0.0,
+            0.0,
+            1.0
+          ],
+          [
+            -20.0,
+            10.0,
+            0.0,
+            1.0
+          ],
+          [
+            -20.0,
+            20.0,
+            0.0,
+            1.0
+          ]
+        ]
+      }
+    ],
+    "neuron_dend_count": 1,
+    "neuron_first_dend": {
+      "name": "dend[0]",
+      "parent": "soma[1]",
+      "parent_x": 1.0,
+      "n3d": 3,
+      "first_pt": [
+        -20.0,
+        0.0,
+        0.0
+      ],
+      "copied_attach": true
+    },
+    "braincell_branches": [
+      {
+        "name": "soma",
+        "type": "soma",
+        "parent": null,
+        "parent_x": null,
+        "pts": [
+          [
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            10.0,
+            0.0,
+            0.0
+          ],
+          [
+            20.0,
+            0.0,
+            0.0
+          ]
+        ]
+      },
+      {
+        "name": "soma_0",
+        "type": "soma",
+        "parent": "soma",
+        "parent_x": 0.0,
+        "pts": [
+          [
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            -10.0,
+            0.0,
+            0.0
+          ],
+          [
+            -20.0,
+            0.0,
+            0.0
+          ]
+        ]
+      },
+      {
+        "name": "basal_dendrite_0",
+        "type": "basal_dendrite",
+        "parent": "soma_0",
+        "parent_x": 1.0,
+        "pts": [
+          [
+            -20.0,
+            0.0,
+            0.0
+          ],
+          [
+            -20.0,
+            10.0,
+            0.0
+          ],
+          [
+            -20.0,
+            20.0,
+            0.0
+          ]
+        ]
+      }
+    ],
+    "braincell_dend_count": 1,
+    "braincell_first_dend": {
+      "name": "basal_dendrite_0",
+      "parent": "soma_0",
+      "parent_x": 1.0,
+      "npts": 3,
+      "first_pt": [
+        -20.0,
+        0.0,
+        0.0
+      ],
+      "copied_attach": true
+    }
+  }
+]

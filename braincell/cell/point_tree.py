@@ -13,24 +13,42 @@ _POSITION_ORDER = {"proximal": 0, "mid": 1, "distal": 2}
 
 @dataclass(frozen=True)
 class CVPoint:
+    """Reference from a compute point back to one CV-local role.
+
+    A single compute point may coincide with several CV-local positions after
+    attachment merging, so :class:`ComputePoint` stores a tuple of these records.
+    """
     cv_id: int
     position: str
 
 
 @dataclass(frozen=True)
 class ComputePoint:
+    """Merged point in the compute graph derived from CV geometry.
+
+    ``ComputePoint`` is not tied to just one CV. It represents one unique node
+    in the assembled tree after CV proximal/mid/distal locations have been
+    merged across attachments and shared boundaries.
+    """
     id: int
     cv_points: tuple[CVPoint, ...]
 
 
 @dataclass(frozen=True)
 class CVEdge:
+    """Reference from a compute edge back to one CV half-edge."""
     cv_id: int
     half: str
 
 
 @dataclass(frozen=True)
 class ComputeEdge:
+    """Directed edge in the compute graph between two merged points.
+
+    Like :class:`ComputePoint`, a compute edge may aggregate contributions from
+    one or more CV-local half-edges. This is the connectivity that later matrix
+    assembly and scheduling logic work with.
+    """
     id: int
     parent_point_id: int
     child_point_id: int
@@ -39,6 +57,22 @@ class ComputeEdge:
 
 @dataclass(frozen=True)
 class PointTree:
+    """Compute-point view of a cell's CV topology.
+
+    ``PointTree`` is built from the immutable :class:`CV` list and converts
+    branch/CV-centered geometry into a point-edge tree better suited for matrix
+    assembly and traversal algorithms.
+
+    It records:
+
+    - merged compute points and edges
+    - parent/child relations between points
+    - mappings between CV ids, point ids, and matrix ordering indices
+    - fast lookup of midpoint points and branch terminal points
+
+    ``Cell.point_tree()`` caches this object, and :class:`PointScheduling`
+    consumes it to build DHS-style processing groups.
+    """
     points: tuple[ComputePoint, ...]
     edges: tuple[ComputeEdge, ...]
     point_parent: np.ndarray

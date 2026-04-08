@@ -48,12 +48,25 @@ _DEFAULT_CABLE = CableProperties(
 
 @dataclass(frozen=True)
 class PaintRule:
+    """Normalized ``Cell.paint(...)`` declaration.
+
+    Each rule binds one :class:`RegionExpr` to either cable properties or a
+    density mechanism. ``Cell`` stores these rules in declaration order and
+    applies them during lazy rebuild. Cable rules overwrite midpoint cable
+    values, while density rules append scaled mechanisms based on CV coverage.
+    """
     region: RegionExpr
     mechanism: CableProperties | DensityMechanism
 
 
 @dataclass(frozen=True)
 class PlaceRule:
+    """Normalized ``Cell.place(...)`` declaration.
+
+    A place rule maps one :class:`LocsetExpr` to a tuple of point mechanisms.
+    The current cell frontend only supports ``site='mid'``, so evaluated points
+    are attached to the midpoint of the CV selected by :func:`map_point_to_cv`.
+    """
     locset: LocsetExpr
     mechanisms: tuple[object, ...]
     site: str = "mid"
@@ -61,6 +74,13 @@ class PlaceRule:
 
 @dataclass
 class CVMech:
+    """Mutable mechanism accumulator used only during ``Cell`` rebuild.
+
+    ``CVMech`` starts from default cable properties, then ``apply_paint_rules``
+    and ``apply_place_rules`` mutate it in place for one CV. After all rules are
+    applied, :func:`assemble_cv` freezes the result into the immutable
+    user-facing :class:`CV`.
+    """
     cm: object
     ra: object
     v: object

@@ -15,7 +15,7 @@
 
 
 import math
-from typing import Iterable
+from collections.abc import Iterable, Mapping
 
 import numpy as np
 
@@ -33,13 +33,18 @@ def row_radius(row: _SwcRow) -> float:
     return float(row.radius)
 
 
-def is_special_three_point_soma(rows: Iterable[_SwcRow]) -> tuple[bool, tuple[_SwcRow, _SwcRow, _SwcRow] | None]:
+def is_special_three_point_soma(
+    rows: Iterable[_SwcRow],
+    children_by_id: Mapping[int, list[int] | tuple[int, ...]],
+) -> tuple[bool, tuple[_SwcRow, _SwcRow, _SwcRow] | None]:
     soma_rows = tuple(rows)
     if len(soma_rows) != 3:
         return False, None
 
     center_row, side_a_row, side_b_row = soma_rows
     if side_a_row.parent_id != center_row.node_id or side_b_row.parent_id != center_row.node_id:
+        return False, None
+    if children_by_id.get(side_a_row.node_id) or children_by_id.get(side_b_row.node_id):
         return False, None
 
     center = row_point(center_row)
@@ -64,20 +69,11 @@ def is_special_three_point_soma(rows: Iterable[_SwcRow]) -> tuple[bool, tuple[_S
 
 
 def is_contour_soma(rows: Iterable[_SwcRow]) -> bool:
-    soma_rows = tuple(rows)
-    if len(soma_rows) <= 3:
-        return False
-    start_row = soma_rows[0]
-    end_row = soma_rows[-1]
-    mid_row = _curvature_midpoint(soma_rows)
-    if mid_row is None:
-        return False
-    angle = _interior_angle_degrees(
-        row_point(start_row),
-        row_point(mid_row),
-        row_point(end_row),
-    )
-    return angle <= 90.0 + _REL_TOL
+    # SWC contour-soma recognition is intentionally disabled. Multi-point soma
+    # samples are imported as regular soma sections; contour reconstruction is
+    # no longer supported during SWC import.
+    del rows
+    return False
 
 
 def contour_equivalent_center_radius(rows: Iterable[_SwcRow]) -> tuple[np.ndarray, float]:

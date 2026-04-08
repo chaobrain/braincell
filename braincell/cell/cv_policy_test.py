@@ -19,7 +19,7 @@ import unittest
 
 import brainunit as u
 
-from braincell import Branch, CVPolicy, Cell, Morpho
+from braincell import Branch, CVPerBranch, CVPolicy, Cell, DLambda, MaxCVLen, Morpho
 
 
 def _branch_cv_counts(cell: Cell) -> dict[int, int]:
@@ -48,17 +48,41 @@ def _build_two_branch_tree() -> Morpho:
 
 
 class CVPolicyTest(unittest.TestCase):
+    def test_base_policy_is_abstract(self) -> None:
+        with self.assertRaises(TypeError):
+            CVPolicy()
+
+    def test_cv_per_branch_resolve_bounds_on_policy(self) -> None:
+        tree = _build_three_branch_tree()
+        policy = CVPerBranch(cv_per_branch=2)
+        self.assertEqual(
+            policy.resolve_cv_bounds(tree),
+            (
+                ((0.0, 0.5), (0.5, 1.0)),
+                ((0.0, 0.5), (0.5, 1.0)),
+                ((0.0, 0.5), (0.5, 1.0)),
+            ),
+        )
+
     def test_cv_per_branch_counts_cvs_on_each_branch(self) -> None:
         tree = _build_three_branch_tree()
-        cell = Cell(tree, cv_policy=CVPolicy(cv_per_branch=3))
+        cell = Cell(tree, cv_policy=CVPerBranch(cv_per_branch=3))
         self.assertEqual(cell.n_cv, 9)
         self.assertEqual(_branch_cv_counts(cell), {0: 3, 1: 3, 2: 3})
 
-    def test_max_cv_len_uses_ceil_per_branch(self) -> None:
+    def test_max_cv_len_resolve_bounds_on_policy(self) -> None:
         tree = _build_two_branch_tree()
+        policy = MaxCVLen(max_cv_len=20.0 * u.um)
+        self.assertEqual(
+            policy.resolve_cv_bounds(tree),
+            (
+                ((0.0, 0.2), (0.2, 0.4), (0.4, 0.6), (0.6, 0.8), (0.8, 1.0)),
+                ((0.0, 1.0 / 3.0), (1.0 / 3.0, 2.0 / 3.0), (2.0 / 3.0, 1.0)),
+            ),
+        )
         cell = Cell(
             tree,
-            cv_policy=CVPolicy(mode="max_cv_len", max_cv_len=20.0 * u.um),
+            cv_policy=policy,
         )
         self.assertEqual(cell.n_cv, 8)
         self.assertEqual(_branch_cv_counts(cell), {0: 5, 1: 3})
@@ -66,10 +90,7 @@ class CVPolicyTest(unittest.TestCase):
     def test_max_cv_len_bounds_each_cv_length(self) -> None:
         tree = _build_two_branch_tree()
         max_len = 12.5 * u.um
-        cell = Cell(
-            tree,
-            cv_policy=CVPolicy(mode="max_cv_len", max_cv_len=max_len),
-        )
+        cell = Cell(tree, cv_policy=MaxCVLen(max_cv_len=max_len))
 
         max_len_um = float(max_len.to_decimal(u.um))
         for cv in cell.cvs:
@@ -80,7 +101,7 @@ class CVPolicyTest(unittest.TestCase):
         dend = Branch.from_lengths(lengths=[10.0] * u.um, radii=[2.0, 1.0] * u.um, type="basal_dendrite")
         tree = Morpho.from_root(soma, name="soma")
         tree.soma.d = dend
-        cell = Cell(tree, cv_policy=CVPolicy(mode="max_cv_len", max_cv_len=5.0 * u.um))
+        cell = Cell(tree, cv_policy=MaxCVLen(max_cv_len=5.0 * u.um))
 
         self.assertEqual(cell.n_cv, 4)
         self.assertEqual(cell.cvs[2].parent_cv, 1)
@@ -90,17 +111,24 @@ class CVPolicyTest(unittest.TestCase):
     def test_policy_validation_errors(self) -> None:
         tree = _build_two_branch_tree()
 
+        with self.assertRaises(TypeError):
+            Cell(tree, cv_policy=CVPerBranch(cv_per_branch=True))
         with self.assertRaises(ValueError):
-            Cell(tree, cv_policy=CVPolicy(mode="unsupported"))
+            Cell(tree, cv_policy=CVPerBranch(cv_per_branch=0))
 
         with self.assertRaises(TypeError):
-            Cell(tree, cv_policy=CVPolicy(mode="cv_per_branch", cv_per_branch=True))
+            Cell(tree, cv_policy=object())
+        with self.assertRaises(TypeError):
+            Cell(tree, cv_policy=MaxCVLen(max_cv_len=20.0))
         with self.assertRaises(ValueError):
-            Cell(tree, cv_policy=CVPolicy(mode="cv_per_branch", cv_per_branch=0))
+            Cell(tree, cv_policy=MaxCVLen(max_cv_len=0.0 * u.um))
 
-        with self.assertRaises(TypeError):
-            Cell(tree, cv_policy=CVPolicy(mode="max_cv_len"))
-        with self.assertRaises(TypeError):
-            Cell(tree, cv_policy=CVPolicy(mode="max_cv_len", max_cv_len=20.0))
-        with self.assertRaises(ValueError):
-            Cell(tree, cv_policy=CVPolicy(mode="max_cv_len", max_cv_len=0.0 * u.um))
+    def test_d_lambda_is_placeholder(self) -> None:
+        tree = _build_two_branch_tree()
+        with self.assertRaises(NotImplementedError):
+            Cell(tree, cv_policy=DLambda())
+
+    def test_public_base_class_is_still_exported(self) -> None:
+        self.assertTrue(issubclass(CVPerBranch, CVPolicy))
+        self.assertTrue(issubclass(MaxCVLen, CVPolicy))
+        self.assertTrue(issubclass(DLambda, CVPolicy))

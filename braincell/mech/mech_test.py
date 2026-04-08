@@ -14,10 +14,13 @@
 # ==============================================================================
 
 
+import math
 import unittest
 
+import braintools
 import brainunit as u
 
+import braincell
 from braincell import CableProperties, CurrentClamp
 from braincell.mech.point import GapJunctionMechanism, ProbeMechanism, SynapseMechanism
 
@@ -51,3 +54,33 @@ class MechanismTest(unittest.TestCase):
         self.assertEqual(synapse.synapse_type, "exp2syn")
         self.assertEqual(gap.params[0], ("g", 1.0))
         self.assertEqual(probe.variable, "v")
+
+    def test_single_compartment_default_area_uses_default_geometry(self) -> None:
+        cell = braincell.SingleCompartment(1)
+        expected_area = 2.0 * math.pi * 5.0 * 10.0
+        self.assertAlmostEqual(cell.area.to_decimal(u.um ** 2), expected_area, places=12)
+
+    def test_single_compartment_accepts_total_current_in_nA(self) -> None:
+        cell = braincell.SingleCompartment(
+            1,
+            V_initializer=braintools.init.Uniform(-65.0 * u.mV, -65.0 * u.mV),
+        )
+        cell.init_state()
+        cell.compute_derivative(1.0 * u.nA)
+        derivative_from_total = cell.V.derivative
+
+        density = (1.0 * u.nA / cell.area).in_unit(u.nA / (u.cm ** 2))
+        cell.compute_derivative(density)
+        derivative_from_density = cell.V.derivative
+
+        self.assertTrue(
+            u.math.allclose(
+                derivative_from_total.to_decimal(u.mV / u.ms),
+                derivative_from_density.to_decimal(u.mV / u.ms),
+            )
+        )
+
+    def test_single_compartment_area_uses_explicit_geometry(self) -> None:
+        cell = braincell.SingleCompartment(1, length=20.0 * u.um, radius=2.0 * u.um)
+        expected_area = 2.0 * math.pi * 2.0 * 20.0
+        self.assertAlmostEqual(cell.area.to_decimal(u.um ** 2), expected_area, places=12)

@@ -23,7 +23,7 @@ User-facing entry points:
 In normal use, users only need `Morpho` and `MorphoBranch`.
 """
 
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from typing import Callable, Optional, Union
 
 import brainunit as u
@@ -148,6 +148,78 @@ class MorphoEdge:
     child: "MorphoBranch"
     parent_x: float
     child_x: float = 0.0
+
+
+@dataclass(frozen=True)
+class MorphoMetric:
+    """Snapshot of whole-morphology metrics."""
+
+    n_branches: int
+    n_stems: int
+    n_bifurcations: int
+    max_branch_order: int
+    total_length: Quantity
+    mean_radius: Quantity
+    total_area: Quantity
+    total_volume: Quantity
+    max_path_distance: Quantity
+    max_path_distance_excluding_soma: Quantity
+    max_euclidean_distance: Optional[Quantity]
+    max_euclidean_distance_excluding_soma: Optional[Quantity]
+    x_range: Optional[Quantity]
+    y_range: Optional[Quantity]
+    z_range: Optional[Quantity]
+    has_full_point_geometry: bool
+
+    @classmethod
+    def from_morpho(cls, morpho: "Morpho") -> "MorphoMetric":
+        has_full_point_geometry = morpho.has_full_point_geometry
+        return cls(
+            n_branches=morpho.n_branches,
+            n_stems=morpho.n_stems,
+            n_bifurcations=morpho.n_bifurcations,
+            max_branch_order=morpho.max_branch_order,
+            total_length=morpho.total_length,
+            mean_radius=morpho.mean_radius,
+            total_area=morpho.total_area,
+            total_volume=morpho.total_volume,
+            max_path_distance=morpho.max_path_distance,
+            max_path_distance_excluding_soma=morpho.max_path_distance_excluding_soma,
+            max_euclidean_distance=morpho.max_euclidean_distance if has_full_point_geometry else None,
+            max_euclidean_distance_excluding_soma=(
+                morpho.max_euclidean_distance_excluding_soma if has_full_point_geometry else None
+            ),
+            x_range=morpho.x_range if has_full_point_geometry else None,
+            y_range=morpho.y_range if has_full_point_geometry else None,
+            z_range=morpho.z_range if has_full_point_geometry else None,
+            has_full_point_geometry=has_full_point_geometry,
+        )
+
+    @staticmethod
+    def _format_value(value: object) -> str:
+        if value is None:
+            return "unavailable"
+        if isinstance(value, Quantity):
+            return f"{value:.2f}"
+        return str(value)
+
+    def as_dict(self) -> dict[str, object]:
+        return asdict(self)
+
+    def __str__(self) -> str:
+        return (
+            f"{'-'*35}\n"
+            f"{'n_branches':<16} | {self.n_branches}\n"
+            f"{'n_stems':<16} | {self.n_stems}\n"
+            f"{'n_bifurcations':<16} | {self.n_bifurcations}\n"
+            f"{'max_branch_order':<16} | {self.max_branch_order}\n"
+            f"{'total_length':<16} | {self._format_value(self.total_length)}\n"
+            f"{'mean_radius':<16} | {self._format_value(self.mean_radius)}\n"
+            f"{'total_area':<16} | {self._format_value(self.total_area)}\n"
+            f"{'total_volume':<16} | {self._format_value(self.total_volume)}\n"
+            f"{'max_path_dist':<16} | {self._format_value(self.max_path_distance)}\n"
+            f"{'-'*35}\n"
+        )
 
 
 class Morpho:
@@ -425,25 +497,10 @@ class Morpho:
             if node.parent_id is not None
         )
 
-    def _format_metric_summary(self) -> str:
-        return (
-            f"{'-'*35}\n"
-            f"{'n_branches':<16} | {self.n_branches}\n"
-            f"{'n_stems':<16} | {self.n_stems}\n"
-            f"{'n_bifurcations':<16} | {self.n_bifurcations}\n"
-            f"{'max_branch_order':<16} | {self.max_branch_order}\n"
-            f"{'total_length':<16} | {self.total_length:.2f}\n"
-            f"{'mean_radius':<16} | {self.mean_radius:.2f}\n"
-            f"{'total_area':<16} | {self.total_area:.2f}\n"
-            f"{'total_volume':<16} | {self.total_volume:.2f}\n"
-            f"{'max_path_dist':<16} | {self.max_path_distance:.2f}\n"
-            f"{'-'*35}\n"
-        )
-
     @property
-    def metric(self) -> str:
-        """Formatted metric summary for this morphology."""
-        return self._format_metric_summary()
+    def metric(self) -> MorphoMetric:
+        """Whole-morphology metrics exposed as a dataclass snapshot."""
+        return MorphoMetric.from_morpho(self)
 
     def branch_by_order(self, *, order: str = "default") -> tuple["MorphoBranch", ...]:
         """Query branches in a specific order.
@@ -817,40 +874,6 @@ class Morpho:
             Always, until implemented.
         """
         raise NotImplementedError
-
-    def summary(self) -> dict[str, object]:
-        """Return a dictionary of key morphology metrics.
-
-        Returns
-        -------
-        dict
-            Summary containing: ``root_name``, ``root_type``, ``n_branches``,
-            ``n_stems``, ``n_bifurcations``, ``max_branch_order``,
-            ``total_length``, ``total_area``, ``total_volume``,
-            ``mean_radius``, ``has_point_geometry``,
-            ``has_full_point_geometry_for_distance_metrics``.
-
-        Examples
-        --------
-
-        .. code-block:: python
-
-            >>> morpho.summary()  # doctest: +SKIP
-            {'root_name': 'soma', 'n_branches': 5, ...}
-        """
-        return {
-            "root_name": self.root.name,
-            "root_type": self.root.type,
-            "n_branches": self.n_branches,
-            "n_stems": self.n_stems,
-            "n_bifurcations": self.n_bifurcations,
-            "max_branch_order": self.max_branch_order,
-            "total_length": self.total_length,
-            "total_area": self.total_area,
-            "total_volume": self.total_volume,
-            "mean_radius": self.mean_radius,
-            "has_full_point_geometry": self.has_full_point_geometry,
-        }
 
     def topo(self) -> str:
         """Return a line-oriented text view of the branch topology.

@@ -85,7 +85,7 @@ def _summary_value(value):
 
 # ====== morpho wrappers ======
 def morpho_summary_dict(morpho):
-    return dict(morpho.summary())
+    return dict(morpho.metric.as_dict())
 
 
 def morpho_summary_df(morpho):

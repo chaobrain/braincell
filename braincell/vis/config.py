@@ -16,6 +16,22 @@
 from dataclasses import dataclass, field
 from typing import Iterable
 
+__all__ = [
+    "DEFAULT_BRANCH_TYPE_COLORS",
+    "SUPPORTED_2D_MODES",
+    "SUPPORTED_3D_MODES",
+    "VisDefaults",
+    "alpha_for_2d_line",
+    "alpha_for_2d_poly",
+    "alpha_for_3d_tube",
+    "color_for_branch_type",
+    "configure",
+    "get_defaults",
+    "reset_defaults",
+    "resolve_default_2d_mode",
+    "resolve_default_3d_mode",
+    "set_defaults",
+]
 
 DEFAULT_BRANCH_TYPE_COLORS = {
     "soma": (0, 0, 0),
@@ -170,21 +186,3 @@ def _normalize_color(color: object) -> tuple[int, int, int]:
     if not all(0 <= channel <= 255 for channel in scaled):
         raise ValueError(f"RGB channels must be between 0 and 255, got {color!r}.")
     return scaled
-
-
-__all__ = [
-    "DEFAULT_BRANCH_TYPE_COLORS",
-    "SUPPORTED_2D_MODES",
-    "SUPPORTED_3D_MODES",
-    "VisDefaults",
-    "alpha_for_2d_line",
-    "alpha_for_2d_poly",
-    "alpha_for_3d_tube",
-    "color_for_branch_type",
-    "configure",
-    "get_defaults",
-    "reset_defaults",
-    "resolve_default_2d_mode",
-    "resolve_default_3d_mode",
-    "set_defaults",
-]

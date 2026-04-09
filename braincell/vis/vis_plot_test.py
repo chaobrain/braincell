@@ -24,7 +24,22 @@ import numpy as np
 from braincell import Branch, Morpho
 from braincell import vis as morpho_vis
 from braincell.vis import BackendChooser, MatplotlibBackend, compare_layouts_2d, plot2d, plot3d
-from braincell.vis._test_helper import FakeBackend
+
+
+
+
+class FakeBackend:
+    name = "fake"
+
+    def __init__(self) -> None:
+        self.last_request = None
+
+    def available(self) -> bool:
+        return True
+
+    def render(self, request):
+        self.last_request = request
+        return request
 
 
 def _point_tree() -> Morpho:

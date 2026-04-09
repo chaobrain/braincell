@@ -65,7 +65,10 @@ class BackendChooser:
         raise RuntimeError("No visualization backend is available.")
 
 
-def validate_backend_for_scene(backend: RenderBackend, scene: RenderScene2D | RenderScene3D | None) -> None:
+def validate_backend_for_scene(
+    backend: RenderBackend,
+    scene: RenderScene2D | RenderScene3D | None
+) -> None:
     scene_kind = getattr(backend, "scene_kind", None)
     if scene_kind is None or scene is None:
         return

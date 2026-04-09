@@ -142,9 +142,9 @@ def load_swc_morphology(swc_filename: str | Path) -> tuple[Any, ...]:
     return sections
 
 
-def _braincell_metric_record(morpho: Morpho, summary: dict[str, object], metric_name: str) -> dict[str, object]:
+def _braincell_metric_record(morpho: Morpho, metric: object, metric_name: str) -> dict[str, object]:
     if metric_name in _SUMMARY_METRIC_NAMES:
-        value = summary[metric_name]
+        value = getattr(metric, metric_name)
         if metric_name in {"n_branches", "n_stems", "n_bifurcations", "max_branch_order"}:
             return _available_metric(int(value), unit="count")
         unit = {
@@ -173,9 +173,9 @@ def compute_braincell_metrics(
     path = _validate_swc_path(swc_filename)
     selected_metric_names = _resolve_metric_names(metric_names=metric_names, include_optional=include_optional)
     morpho = Morpho.from_swc(path, options=swc_options)
-    summary = morpho.summary()
+    metric = morpho.metric
     return {
-        metric_name: _braincell_metric_record(morpho, summary, metric_name)
+        metric_name: _braincell_metric_record(morpho, metric, metric_name)
         for metric_name in selected_metric_names
     }
 

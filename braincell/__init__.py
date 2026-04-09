@@ -28,7 +28,13 @@ from ._base import (
     mix_ions,
 )
 from ._single_compartment import SingleCompartment
-from .cell import CVPerBranch, CVPolicy, Cell, DLambda, MaxCVLen
+from .cell import (
+    CVPerBranch,
+    CVPolicy,
+    Cell,
+    DLambda,
+    MaxCVLen,
+)
 from .filter import (
     LocsetExpr,
     RegionExpr,
@@ -50,6 +56,7 @@ from .morpho import (
     CustomBranch,
     Dendrite,
     MorphoEdge,
+    MorphoMetric,
     Morpho,
     MorphoBranch,
     Soma,
@@ -82,6 +89,7 @@ __all__ = [
     "Morpho",
     "MorphoBranch",
     "MorphoEdge",
+    "MorphoMetric",
     "PointMechanism",
     "ProbeMechanism",
     "RegionExpr",

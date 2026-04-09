@@ -23,12 +23,24 @@ import numpy as np
 from braincell import Branch
 from braincell import vis as morpho_vis
 from braincell.vis import BackendChooser
-from braincell.vis._test_helper import FakeBackend
+import jax.numpy as jnp
 
-try:
-    import jax.numpy as jnp
-except ModuleNotFoundError:
-    jnp = None
+
+
+
+class FakeBackend:
+    name = "fake"
+
+    def __init__(self) -> None:
+        self.last_request = None
+
+    def available(self) -> bool:
+        return True
+
+    def render(self, request):
+        self.last_request = request
+        return request
+
 
 
 class BranchTest(unittest.TestCase):

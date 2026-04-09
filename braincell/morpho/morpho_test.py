@@ -14,12 +14,13 @@
 # ==============================================================================
 
 
+from dataclasses import is_dataclass
 import unittest
 
 import brainunit as u
 import numpy as np
 
-from braincell import Branch, Morpho, MorphoBranch
+from braincell import Branch, Morpho, MorphoBranch, MorphoMetric
 
 
 class MorphoTest(unittest.TestCase):
@@ -197,56 +198,6 @@ class MorphoTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             tree.branch_by_order(order="unknown")
 
-    def test_summary_exposes_compact_tree_metrics(self) -> None:
-        soma = Branch.from_lengths(lengths=[20.0] * u.um, radii=[10.0, 10.0] * u.um, type="soma")
-        dend = Branch.from_lengths(lengths=[60.0] * u.um, radii=[2.0, 1.0] * u.um, type="basal_dendrite")
-
-        tree = Morpho.from_root(soma, name="soma")
-        tree.soma.dend = dend
-
-        summary = tree.summary()
-
-        self.assertEqual(summary["root_name"], "soma")
-        self.assertEqual(summary["root_type"], "soma")
-        self.assertEqual(summary["n_branches"], tree.n_branches)
-        self.assertEqual(summary["n_stems"], tree.n_stems)
-        self.assertEqual(summary["n_bifurcations"], tree.n_bifurcations)
-        self.assertEqual(summary["max_branch_order"], tree.max_branch_order)
-        self.assertEqual(summary["total_length"], tree.total_length)
-        self.assertEqual(summary["total_area"], tree.total_area)
-        self.assertEqual(summary["total_volume"], tree.total_volume)
-        self.assertEqual(summary["mean_radius"], tree.mean_radius)
-        self.assertFalse(tree.has_full_point_geometry)
-        self.assertFalse(summary["has_full_point_geometry"])
-        self.assertNotIn("has_point_geometry", summary)
-        self.assertNotIn("has_full_point_geometry_for_distance_metrics", summary)
-
-    def test_summary_reports_point_geometry_capabilities(self) -> None:
-        soma = Branch.from_points(points=[(0.0, 0.0, 0.0), (10.0, 0.0, 0.0)] * u.um, radii=[5.0, 5.0] * u.um,
-                                  type="soma")
-        dend = Branch.from_points(points=[(5.0, 0.0, 0.0), (5.0, 10.0, 0.0)] * u.um, radii=[2.0, 1.0] * u.um,
-                                  type="basal_dendrite")
-
-        tree = Morpho.from_root(soma, name="soma")
-        tree.soma.main = dend
-
-        summary = tree.summary()
-
-        self.assertTrue(tree.has_full_point_geometry)
-        self.assertTrue(summary["has_full_point_geometry"])
-
-    def test_summary_reports_partial_point_geometry_as_false(self) -> None:
-        soma = Branch.from_points(points=[(0.0, 0.0, 0.0), (10.0, 0.0, 0.0)] * u.um, radii=[5.0, 5.0] * u.um, type="soma")
-        dend = Branch.from_lengths(lengths=[20.0] * u.um, radii=[2.0, 1.0] * u.um, type="basal_dendrite")
-
-        tree = Morpho.from_root(soma, name="soma")
-        tree.soma.main = dend
-
-        summary = tree.summary()
-
-        self.assertFalse(tree.has_full_point_geometry)
-        self.assertFalse(summary["has_full_point_geometry"])
-
     def test_morpho_equality_compares_structure_and_geometry(self) -> None:
         soma = Branch.from_lengths(lengths=[20.0] * u.um, radii=[10.0, 10.0] * u.um, type="soma")
         dend = Branch.from_lengths(lengths=[60.0] * u.um, radii=[2.0, 1.0] * u.um, type="basal_dendrite")
@@ -332,16 +283,28 @@ class MorphoTest(unittest.TestCase):
             (soma.volume + dend.volume + tuft.volume).to_decimal(u.um ** 3),
         )
 
-    def test_metric_repr_and_str_expose_compact_summary(self) -> None:
+    def test_metric_returns_dataclass_snapshot_with_compact_str(self) -> None:
         soma = Branch.from_lengths(lengths=[20.0] * u.um, radii=[10.0, 10.0] * u.um, type="soma")
         dend = Branch.from_lengths(lengths=[60.0] * u.um, radii=[2.0, 1.0] * u.um, type="basal_dendrite")
 
         tree = Morpho.from_root(soma, name="soma")
         tree.soma.dend = dend
 
-        summary_str = tree.metric
-        self.assertIsInstance(summary_str, str)
-        self.assertEqual(str(tree.metric), tree.metric)
+        metric = tree.metric
+        summary_str = str(metric)
+
+        self.assertIsInstance(metric, MorphoMetric)
+        self.assertTrue(is_dataclass(metric))
+        self.assertEqual(metric.n_branches, tree.n_branches)
+        self.assertEqual(metric.n_stems, tree.n_stems)
+        self.assertEqual(metric.n_bifurcations, tree.n_bifurcations)
+        self.assertEqual(metric.max_branch_order, tree.max_branch_order)
+        self.assertEqual(metric.total_length, tree.total_length)
+        self.assertEqual(metric.total_area, tree.total_area)
+        self.assertEqual(metric.total_volume, tree.total_volume)
+        self.assertEqual(metric.mean_radius, tree.mean_radius)
+        self.assertEqual(metric.max_path_distance, tree.max_path_distance)
+        self.assertFalse(metric.has_full_point_geometry)
 
         self.assertIn("n_branches", summary_str)
         self.assertIn("n_stems", summary_str)
@@ -352,6 +315,23 @@ class MorphoTest(unittest.TestCase):
         self.assertIn("total_area", summary_str)
         self.assertIn("total_volume", summary_str)
         self.assertIn("max_path_dist", summary_str)
+
+    def test_metric_uses_optional_fields_for_unavailable_point_metrics(self) -> None:
+        soma = Branch.from_lengths(lengths=[20.0] * u.um, radii=[10.0, 10.0] * u.um, type="soma")
+        dend = Branch.from_lengths(lengths=[60.0] * u.um, radii=[2.0, 1.0] * u.um, type="basal_dendrite")
+
+        tree = Morpho.from_root(soma, name="soma")
+        tree.soma.dend = dend
+
+        metric = tree.metric
+
+        self.assertEqual(metric.n_branches, tree.n_branches)
+        self.assertFalse(metric.has_full_point_geometry)
+        self.assertIsNone(metric.max_euclidean_distance)
+        self.assertIsNone(metric.max_euclidean_distance_excluding_soma)
+        self.assertIsNone(metric.x_range)
+        self.assertIsNone(metric.y_range)
+        self.assertIsNone(metric.z_range)
 
     def test_metric_exposes_coordinate_ranges_for_point_geometries(self) -> None:
         soma = Branch.from_points(points=[(0.0, 0.0, 0.0), (0.0, 10.0, 0.0)] * u.um, radii=[10.0, 10.0] * u.um,
@@ -365,12 +345,18 @@ class MorphoTest(unittest.TestCase):
         tree.soma.dend = dend
         tree.soma.tuft = tuft
 
+        metric = tree.metric
+
         self.assertEqual(tree.n_stems, 2)
         self.assertEqual(tree.n_bifurcations, 1)
         self.assertEqual(tree.max_branch_order, 1)
         self.assertEqual(tree.x_range.to_decimal(u.um), 37.0)
         self.assertEqual(tree.y_range.to_decimal(u.um), 10.0)
         self.assertEqual(tree.z_range.to_decimal(u.um), 11.0)
+        self.assertTrue(metric.has_full_point_geometry)
+        self.assertEqual(metric.x_range, tree.x_range)
+        self.assertEqual(metric.y_range, tree.y_range)
+        self.assertEqual(metric.z_range, tree.z_range)
 
     def test_metric_exposes_neuromorpho_distance_metrics(self) -> None:
         soma = Branch.from_points(points=[(0.0, 0.0, 0.0), (10.0, 0.0, 0.0)] * u.um, radii=[5.0, 5.0] * u.um,

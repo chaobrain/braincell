@@ -25,6 +25,7 @@ from .branch import (
 )
 from .morpho import (
     MorphoEdge,
+    MorphoMetric,
     Morpho,
     MorphoBranch,
 )
@@ -37,6 +38,7 @@ __all__ = [
     "CustomBranch",
     "Dendrite",
     "MorphoEdge",
+    "MorphoMetric",
     "Morpho",
     "MorphoBranch",
     "Soma",

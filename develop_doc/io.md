@@ -86,28 +86,6 @@ report = reader.check("file.swc")
 - 更完整的 SWC abnormal compartments 规则
 - 更系统的 ASC / NeuroML2 格式设计文档
 
-## 测试与 fixture
-
-- `braincell/io/io_swc_test.py`
-  - synthetic SWC case
-  - rulebook、report、soma 逻辑
-- `braincell/io/io_real_files_test.py`
-  - `develop_doc/morpho_files/*.swc` / `*.asc`
-  - 当前主要做 smoke + 基本不变量
-
-真实 morphology fixture 目前放在：
-
-- `develop_doc/morpho_files/grc.swc`
-- `develop_doc/morpho_files/io.swc`
-- `develop_doc/morpho_files/bc.swc`
-- `develop_doc/morpho_files/goc.asc`
-- `develop_doc/morpho_files/pc.asc`
-
-开发验证工具：
-
-- `develop_doc/neuron_diff.py`
-  - 通过 NEURON 导入 SWC，和 BrainCell 计算的 morphology metrics 做对比
-  - 这是开发验证资产，不再作为 `braincell.io` 的公开接口导出
 
 ## 下一步建议
 

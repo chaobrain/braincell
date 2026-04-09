@@ -27,6 +27,16 @@ from braincell.io.swc import SwcReadOptions, SwcReader
 from braincell.io.swc.soma import is_contour_soma, is_special_three_point_soma
 from braincell.io.swc.types import _SwcAttach, _SwcBranch, _SwcRow
 
+FIXTURE_DIR = Path(__file__).resolve().parents[2] / "develop_doc" / "morpho_files"
+ALLOWED_TYPES = {
+    "soma",
+    "axon",
+    "dendrite",
+    "basal_dendrite",
+    "apical_dendrite",
+    "custom",
+}
+
 
 class SwcReaderTest(unittest.TestCase):
     def _morpho_file(self, name: str) -> Path:
@@ -526,7 +536,8 @@ class SwcReaderTest(unittest.TestCase):
 
         self.assertNotIn("semantics.contour", self._issue_codes(report))
         self.assertEqual(soma_points.shape, (4, 3))
-        self.assertTrue(np.allclose(soma_points, np.array([[0.0, 0.0, 0.0], [5.0, 1.0, 0.0], [0.0, 2.0, 0.0], [-5.0, 1.0, 0.0]])))
+        self.assertTrue(
+            np.allclose(soma_points, np.array([[0.0, 0.0, 0.0], [5.0, 1.0, 0.0], [0.0, 2.0, 0.0], [-5.0, 1.0, 0.0]])))
         self.assertTrue(np.allclose(dend_points[0], np.array([5.0, 1.0, 0.0])))
         self.assertAlmostEqual(dend_radii[0], dend_radii[1])
         self.assertNotAlmostEqual(dend_radii[0], 10.0)
@@ -1012,3 +1023,59 @@ class SwcReaderTest(unittest.TestCase):
                 self.assertTrue(report.has_errors)
                 with self.assertRaises(ValueError):
                     SwcReader().read(path)
+
+
+class SwcRealFileSmokeTest(unittest.TestCase):
+    def test_valid_real_swc_fixtures_pass_smoke_checks(self) -> None:
+        for fixture_name in ("grc.swc", "io.swc"):
+            with self.subTest(fixture=fixture_name):
+                path = FIXTURE_DIR / fixture_name
+                report = SwcReader().check(path)
+                self.assertFalse(report.has_errors)
+                tree = SwcReader().read(path)
+                self.assertGreater(len(tree.branches), 0)
+                self.assertEqual(len(tree.edges), len(tree.branches) - 1)
+                self.assertTrue(tree.topo())
+                self.assertTrue(all(branch.type in ALLOWED_TYPES for branch in tree.branches))
+
+    def test_valid_real_swc_fixtures_support_morpho_from_swc(self) -> None:
+        for fixture_name in ("grc.swc", "io.swc"):
+            with self.subTest(fixture=fixture_name):
+                path = FIXTURE_DIR / fixture_name
+                tree = Morpho.from_swc(path)
+                tree_with_report, report = Morpho.from_swc(path, return_report=True)
+
+                self.assertIsInstance(tree, Morpho)
+                self.assertIsInstance(tree_with_report, Morpho)
+                self.assertFalse(report.has_errors)
+                self.assertGreater(len(tree.branches), 0)
+                self.assertTrue(tree.root.name)
+                self.assertTrue(tree.topo())
+                self.assertTrue(all(branch.type in ALLOWED_TYPES for branch in tree.branches))
+
+    def test_problematic_real_swc_fixture_surfaces_check_warnings(self) -> None:
+        path = FIXTURE_DIR / "bc.swc"
+
+        report = SwcReader().check(path)
+
+        self.assertFalse(report.has_errors)
+        self.assertTrue(report.has_warnings)
+        self.assertTrue(any(issue.code == "geometry.duplicate_xyzr_node" for issue in report.issues))
+        self.assertTrue(any(issue.code == "semantics.unknown_type" for issue in report.issues))
+
+        tree = SwcReader().read(path)
+
+        self.assertIsInstance(tree, Morpho)
+        self.assertGreater(len(tree.branches), 0)
+        self.assertTrue(tree.topo())
+
+    def test_problematic_real_swc_fixture_supports_morpho_import_with_warnings(self) -> None:
+        path = FIXTURE_DIR / "bc.swc"
+
+        tree, report = Morpho.from_swc(path, return_report=True)
+
+        self.assertIsInstance(tree, Morpho)
+        self.assertFalse(report.has_errors)
+        self.assertTrue(report.has_warnings)
+        self.assertGreater(len(tree.branches), 0)
+        self.assertTrue(tree.topo())

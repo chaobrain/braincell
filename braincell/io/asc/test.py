@@ -22,6 +22,16 @@ from pathlib import Path
 from braincell import Morpho
 from braincell.io.asc import AscReader
 
+FIXTURE_DIR = Path(__file__).resolve().parents[2] / "develop_doc" / "morpho_files"
+ALLOWED_TYPES = {
+    "soma",
+    "axon",
+    "dendrite",
+    "basal_dendrite",
+    "apical_dendrite",
+    "custom",
+}
+
 
 class AscReaderTest(unittest.TestCase):
     def _write_asc(self, body: str) -> Path:
@@ -103,3 +113,32 @@ class AscReaderTest(unittest.TestCase):
         self.assertFalse(report.has_errors)
         self.assertEqual(tree.root.type, "soma")
         self.assertEqual(tree.branch(index=1).type, "axon")
+
+
+class AscRealFileSmokeTest(unittest.TestCase):
+    def test_valid_real_asc_fixtures_pass_smoke_checks(self) -> None:
+        reader = AscReader()
+        for fixture_name in ("goc.asc", "pc.asc"):
+            with self.subTest(fixture=fixture_name):
+                tree, report = reader.read(FIXTURE_DIR / fixture_name, return_report=True)
+
+                self.assertIsInstance(tree, Morpho)
+                self.assertFalse(report.has_errors)
+                self.assertGreater(len(tree.branches), 0)
+                self.assertEqual(tree.root.type, "soma")
+                self.assertTrue(tree.topo())
+                self.assertTrue(all(branch.type in ALLOWED_TYPES for branch in tree.branches))
+
+    def test_valid_real_asc_fixtures_support_morpho_from_asc(self) -> None:
+        for fixture_name in ("goc.asc", "pc.asc"):
+            with self.subTest(fixture=fixture_name):
+                path = FIXTURE_DIR / fixture_name
+                tree = Morpho.from_asc(path)
+                tree_with_report, report = Morpho.from_asc(path, return_report=True)
+
+                self.assertIsInstance(tree, Morpho)
+                self.assertIsInstance(tree_with_report, Morpho)
+                self.assertFalse(report.has_errors)
+                self.assertGreater(len(tree.branches), 0)
+                self.assertEqual(tree.root.type, "soma")
+                self.assertTrue(tree.topo())

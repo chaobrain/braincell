@@ -23,7 +23,7 @@ from .branch import (
     Soma,
     branch_class_for_type,
 )
-from .morpho import (
+from .morphology import (
     MorphoEdge,
     MorphoMetric,
     Morphology,

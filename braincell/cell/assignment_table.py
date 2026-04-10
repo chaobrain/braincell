@@ -16,9 +16,6 @@ from braincell.mech.point import (
 )
 from braincell.mech.spec import MechanismSpec, density_class_name, density_instance_name, is_density_mechanism
 
-if False:  # pragma: no cover
-    from .runtime import CellRuntimeState
-
 __all__ = [
     "MechanismObjectCell",
     "MechanismObjectTable",

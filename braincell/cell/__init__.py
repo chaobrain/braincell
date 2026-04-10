@@ -16,7 +16,6 @@
 from .cell import Cell
 from .cv import CV
 from .cv_policy import CompositeByTypePolicy, CVPerBranch, CVPolicy, CVPolicyByTypeRule, DLambda, MaxCVLen
-from .profile import CellProfileReport
 from .point_tree import PointScheduling, PointTree
 
 __all__ = [
@@ -26,7 +25,6 @@ __all__ = [
     "CVPolicy",
     "CVPolicyByTypeRule",
     "Cell",
-    "CellProfileReport",
     "DLambda",
     "MaxCVLen",
     "PointScheduling",

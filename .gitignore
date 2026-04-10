@@ -233,3 +233,4 @@ develop_doc/data/neuromorpho/
 /.claude/
 /dev/replace_init.py
 /dev/replace_all.py
+/develop_doc/checkpoint/

@@ -27,6 +27,7 @@ from braincell.filter import LocsetExpr, RegionExpr
 from braincell.morpho import Morpho
 from braincell.quad import DiffEqState, IndependentIntegration, get_integrator
 from braincell.quad import _voltage_solver as voltage_solver
+from .assignment_table import MechanismObjectCell, MechanismObjectTable, mechanism_cell_key
 from .cv import CV, assemble_cv
 from .cv_geo import build_cv_geo
 from .cv_mech import (
@@ -47,7 +48,6 @@ from .runtime import (
     build_placeholder_ions,
     clone_morpho,
     cv_value_vector,
-    fill_like,
     gather_midpoint_values,
     install_cell_runtime,
     is_python_zero,
@@ -55,7 +55,6 @@ from .runtime import (
     matches_last_dim,
     scatter_midpoint_values,
 )
-from .assignment_table import MechanismObjectCell, MechanismObjectTable, mechanism_cell_key
 
 __all__ = ["Cell"]
 
@@ -234,13 +233,13 @@ class Cell(HHTypedNeuron):
 
     def __str__(self) -> str:
         return (
-            f"{'-'*35}\n"
+            f"{'-' * 35}\n"
             f"{'root':<14} | {self.morpho.root.name}\n"
             f"{'n_branches':<14} | {len(self.morpho.branches)}\n"
             f"{'n_cv':<14} | {self.n_cv}\n"
             f"{'n_paint_rules':<14} | {len(self.paint_rules)}\n"
             f"{'n_place_rules':<14} | {len(self.place_rules)}\n"
-            f"{'-'*35}\n"
+            f"{'-' * 35}\n"
         )
 
     def point_tree(self) -> PointTree:
@@ -414,28 +413,6 @@ class Cell(HHTypedNeuron):
         spk = self.get_spike(last_V, self.V.value)
         self.spike.value = spk
         return spk
-
-    def profile(
-        self,
-        *,
-        steps: int = 20,
-        warmup_steps: int = 1,
-        repeat_init: int = 3,
-        I_ext=0.0 * u.nA,
-        include_cprofile: bool = False,
-        top_k: int = 20,
-    ):
-        from .profile import profile_cell
-
-        return profile_cell(
-            self,
-            steps=steps,
-            warmup_steps=warmup_steps,
-            repeat_init=repeat_init,
-            I_ext=I_ext,
-            include_cprofile=include_cprofile,
-            top_k=top_k,
-        )
 
     @property
     def V_initializer(self) -> object:

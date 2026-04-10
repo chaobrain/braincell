@@ -20,8 +20,6 @@ from braincell.mech.spec import density_class_name, density_params, density_sign
 from braincell.morpho import Morpho
 from .point_tree import PointTree
 
-if False:  # pragma: no cover
-    from .cell import Cell
 
 __all__ = ["CellRuntimeState"]
 

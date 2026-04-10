@@ -128,3 +128,154 @@ class TestRungeKutta:
         plt.loglog(dts, norms)
         # plt.show()
         plt.close()
+
+
+# --------------------------------------------------------------------------- #
+# Convergence on a linear ODE with a known analytical solution.
+#
+# These tests do not require the HH machinery: they exercise each step
+# function on a minimal :class:`DiffEqModule` whose exact solution is
+# ``x(t) = x0 * exp(-t/tau)``.
+# --------------------------------------------------------------------------- #
+import math
+import unittest
+
+import jax.numpy as jnp
+import numpy as np
+
+from braincell.quad import (
+    DiffEqModule,
+    DiffEqState,
+    euler_step,
+    heun2_step,
+    heun3_step,
+    midpoint_step,
+    ralston2_step,
+    ralston3_step,
+    ralston4_step,
+    rk2_step,
+    rk3_step,
+    rk4_step,
+    ssprk3_step,
+)
+
+
+class _LinearDecay(brainstate.nn.Module, DiffEqModule):
+    """Scalar linear ODE ``dx/dt = -x/tau`` for analytical comparisons."""
+
+    def __init__(self, x0=1.0, tau_ms=10.0, shape=(3,)):
+        super().__init__()
+        self.tau = tau_ms * u.ms
+        self.x = DiffEqState(jnp.full(shape, x0, dtype=jnp.float32) * u.mV)
+        self.aux = brainstate.ShortTermState(jnp.zeros(shape, dtype=jnp.float32))
+        self.pre_calls = 0
+        self.post_calls = 0
+
+    def pre_integral(self, *args, **kwargs):
+        self.pre_calls += 1
+
+    def post_integral(self, *args, **kwargs):
+        self.post_calls += 1
+
+    def compute_derivative(self, *args, **kwargs):
+        self.x.derivative = -self.x.value / self.tau
+
+
+def _drive(method, dt_ms=0.1, n_steps=100, x0=1.0, tau_ms=10.0):
+    """Drive ``method`` ``n_steps`` times on a fresh :class:`_LinearDecay`."""
+    m = _LinearDecay(x0=x0, tau_ms=tau_ms)
+    dt = dt_ms * u.ms
+    with brainstate.environ.context(dt=dt):
+        for i in range(n_steps):
+            with brainstate.environ.context(t=i * dt):
+                method(m)
+    return float(m.x.value.to_decimal(u.mV)[0]), m
+
+
+class RungeKuttaConvergenceTest(unittest.TestCase):
+    """Verifies each RK step on a linear ODE with known analytical solution."""
+
+    # ``set_module_as`` rewrites ``__name__`` to ``"braincell"``, so we keep
+    # the canonical name alongside the function for nicer test labels.
+    METHODS_AND_ORDERS = [
+        ('euler', euler_step, 1),
+        ('midpoint', midpoint_step, 2),
+        ('rk2', rk2_step, 2),
+        ('heun2', heun2_step, 2),
+        ('ralston2', ralston2_step, 2),
+        ('rk3', rk3_step, 3),
+        ('heun3', heun3_step, 3),
+        ('ssprk3', ssprk3_step, 3),
+        ('ralston3', ralston3_step, 3),
+        ('rk4', rk4_step, 4),
+        ('ralston4', ralston4_step, 4),
+    ]
+
+    def _final_value(self, method, dt_ms, n_steps, tau_ms=10.0):
+        return _drive(method, dt_ms=dt_ms, n_steps=n_steps, tau_ms=tau_ms)[0]
+
+    def test_each_method_matches_analytical_solution(self):
+        # 100 steps of dt=0.1 ms over a tau=10 ms decay → final value
+        # should be close to exp(-1) ≈ 0.367879.
+        target = math.exp(-1.0)
+        for name, method, order in self.METHODS_AND_ORDERS:
+            with self.subTest(method=name, order=order):
+                final = self._final_value(method, dt_ms=0.1, n_steps=100)
+                # Allow looser tolerance for low-order methods.
+                tol = {1: 5e-3, 2: 1e-4, 3: 1e-5, 4: 1e-6}[order]
+                self.assertAlmostEqual(final, target, delta=tol)
+
+    def test_global_error_decreases_with_step_size(self):
+        # Each integrator should be consistent: shrinking the step size
+        # from 0.4 ms down to 0.1 ms should not *increase* the global error.
+        # (Going below 0.05 ms makes float32 noise dominate the higher-order
+        # methods, so we stop there.)
+        target = math.exp(-1.0)
+        for name, method, order in self.METHODS_AND_ORDERS:
+            with self.subTest(method=name):
+                err_coarse = abs(
+                    self._final_value(method, dt_ms=0.4, n_steps=25) - target
+                )
+                err_fine = abs(
+                    self._final_value(method, dt_ms=0.1, n_steps=100) - target
+                )
+                # Small noise margin so float32 round-off near the noise
+                # floor doesn't trip an otherwise consistent method.
+                self.assertLessEqual(err_fine, err_coarse + 1e-5)
+
+    def test_convergence_order_estimate(self):
+        # Empirically estimate convergence order on the linear decay using
+        # only first- and second-order methods, where the error stays well
+        # above the float32 noise floor for the step sizes considered.
+        target = math.exp(-1.0)
+        order_methods = [
+            (name, m, o) for name, m, o in self.METHODS_AND_ORDERS if o <= 2
+        ]
+        for name, method, order in order_methods:
+            with self.subTest(method=name, order=order):
+                err1 = abs(self._final_value(method, dt_ms=0.4, n_steps=25) - target)
+                err2 = abs(self._final_value(method, dt_ms=0.2, n_steps=50) - target)
+                if err1 < 1e-6 or err2 == 0:
+                    continue
+                empirical = math.log(err1 / err2, 2)
+                # Require at least half the theoretical order to allow for
+                # higher-order error terms on this small problem.
+                self.assertGreater(empirical, 0.5 * order)
+
+    def test_pre_and_post_integral_called_once_per_step(self):
+        m = _LinearDecay()
+        with brainstate.environ.context(t=0. * u.ms, dt=0.1 * u.ms):
+            rk4_step(m)
+        self.assertEqual(m.pre_calls, 1)
+        self.assertEqual(m.post_calls, 1)
+
+    def test_aux_state_unchanged_after_step(self):
+        m = _LinearDecay()
+        before = np.array(m.aux.value)
+        with brainstate.environ.context(t=0. * u.ms, dt=0.1 * u.ms):
+            rk4_step(m)
+        np.testing.assert_array_equal(m.aux.value, before)
+
+
+if __name__ == "__main__":
+    unittest.main()

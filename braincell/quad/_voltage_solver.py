@@ -41,8 +41,6 @@ from ._registry import register_integrator
 
 __all__ = [
     "dhs_voltage_step",
-    "comp_triang_raw",
-    "comp_backsub_raw",
 ]
 
 

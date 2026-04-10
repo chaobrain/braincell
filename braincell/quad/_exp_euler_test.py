@@ -68,3 +68,78 @@ class TestRungeKutta:
         plt.loglog(dts, norms)
         # plt.show()
         plt.close()
+
+
+# --------------------------------------------------------------------------- #
+# Unit tests for exp_euler / ind_exp_euler that do not require the full HH
+# stack. ind_exp_euler is exact for a locally linear ODE so we can compare
+# against ``exp(-dt/tau)`` directly.
+# --------------------------------------------------------------------------- #
+import math
+import unittest
+
+import jax.numpy as jnp
+import numpy as np
+
+from braincell.quad import (
+    DiffEqModule,
+    DiffEqState,
+    exp_euler_step,
+    ind_exp_euler_step,
+)
+
+
+class _LinearDecay(brainstate.nn.Module, DiffEqModule):
+    """Scalar linear ODE ``dx/dt = -x/tau``."""
+
+    def __init__(self, x0=1.0, tau_ms=10.0, shape=(3,)):
+        super().__init__()
+        self.tau = tau_ms * u.ms
+        self.x = DiffEqState(jnp.full(shape, x0, dtype=jnp.float32) * u.mV)
+
+    def compute_derivative(self, *args, **kwargs):
+        self.x.derivative = -self.x.value / self.tau
+
+
+class IndExpEulerLinearTest(unittest.TestCase):
+
+    def test_one_step_matches_exponential(self):
+        # For dx/dt = lambda * x with constant lambda, ind_exp_euler should
+        # produce y_{n+1} = y_n * exp(lambda * dt) up to float precision.
+        m = _LinearDecay()
+        with brainstate.environ.context(t=0. * u.ms, dt=0.1 * u.ms):
+            ind_exp_euler_step(m)
+        expected = math.exp(-0.01)  # dt/tau = 0.1/10 = 0.01
+        self.assertAlmostEqual(
+            float(m.x.value.to_decimal(u.mV)[0]), expected, places=5
+        )
+
+    def test_excluded_paths_are_skipped(self):
+        m = _LinearDecay()
+        original = np.array(m.x.value.to_decimal(u.mV))
+        with brainstate.environ.context(t=0. * u.ms, dt=0.1 * u.ms):
+            ind_exp_euler_step(m, excluded_paths=[("x",)])
+        np.testing.assert_array_equal(
+            np.array(m.x.value.to_decimal(u.mV)), original
+        )
+
+    def test_rejects_non_diffeq_module(self):
+        class Plain(brainstate.nn.Module):
+            pass
+
+        with self.assertRaises(AssertionError):
+            with brainstate.environ.context(t=0. * u.ms, dt=0.1 * u.ms):
+                ind_exp_euler_step(Plain())
+
+
+class ExpEulerTypeGuardTest(unittest.TestCase):
+    """``exp_euler_step`` requires an ``HHTypedNeuron`` target."""
+
+    def test_rejects_minimal_diffeq_module(self):
+        with self.assertRaises(AssertionError):
+            with brainstate.environ.context(t=0. * u.ms, dt=0.1 * u.ms):
+                exp_euler_step(_LinearDecay())
+
+
+if __name__ == "__main__":
+    unittest.main()

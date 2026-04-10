@@ -261,5 +261,97 @@ class GlobalRegistryIntegrationTest(unittest.TestCase):
         self.assertFalse(missing, f"Missing canonical names: {sorted(missing)}")
 
 
+class PublicSurfaceTest(unittest.TestCase):
+    """Tests targeting the public ``braincell.quad`` package surface."""
+
+    def test_get_integrator_resolves_all_canonical_names(self):
+        for name in quad.get_registry().names():
+            with self.subTest(name=name):
+                self.assertTrue(callable(quad.get_integrator(name)))
+
+    def test_get_integrator_unknown_close_match_suggestion(self):
+        with self.assertRaises(ValueError) as ctx:
+            quad.get_integrator("rk44")
+        self.assertIn("Did you mean", str(ctx.exception))
+        self.assertIn("rk4", str(ctx.exception))
+
+    def test_get_integrator_rejects_invalid_type(self):
+        with self.assertRaises(TypeError):
+            quad.get_integrator(3.14)  # type: ignore[arg-type]
+
+    def test_all_integrators_is_read_only_view(self):
+        # Mapping protocol checks.
+        self.assertGreater(len(quad.all_integrators), 5)
+        self.assertIn("euler", quad.all_integrators)
+        self.assertIs(quad.all_integrators["euler"], quad.euler_step)
+        # Iteration includes alias keys (legacy contract).
+        self.assertIn("explicit", list(quad.all_integrators))
+        # The view is read-only — there is no __setitem__.
+        with self.assertRaises(TypeError):
+            quad.all_integrators["euler"] = lambda *a, **k: None  # type: ignore[index]
+
+    def test_all_integrators_repr_is_informative(self):
+        rep = repr(quad.all_integrators)
+        self.assertIn("_RegistryDictView", rep)
+        self.assertIn("euler", rep)
+
+
+class RegistryMetadataTest(unittest.TestCase):
+    """Categories, orders, and module strings for in-tree integrators."""
+
+    EXPECTED = {
+        "euler": ("explicit", 1),
+        "midpoint": ("explicit", 2),
+        "rk2": ("explicit", 2),
+        "heun2": ("explicit", 2),
+        "ralston2": ("explicit", 2),
+        "rk3": ("explicit", 3),
+        "heun3": ("explicit", 3),
+        "ssprk3": ("explicit", 3),
+        "ralston3": ("explicit", 3),
+        "rk4": ("explicit", 4),
+        "ralston4": ("explicit", 4),
+        "exp_euler": ("exponential", 1),
+        "ind_exp_euler": ("exponential", 1),
+        "backward_euler": ("implicit", 1),
+        "implicit_euler": ("implicit", 1),
+        "staggered": ("staggered", None),
+        "dhs_voltage": ("voltage", None),
+    }
+
+    def test_categories_and_orders(self):
+        registry = quad.get_registry()
+        for name, (category, order) in self.EXPECTED.items():
+            with self.subTest(name=name):
+                entry = registry.entry(name)
+                self.assertEqual(entry.category, category)
+                self.assertEqual(entry.order, order)
+                # The module field should point at a braincell.quad submodule.
+                self.assertTrue(entry.module.startswith("braincell.quad."))
+
+    def test_by_category_groups(self):
+        registry = quad.get_registry()
+        explicit_names = {e.name for e in registry.by_category("explicit")}
+        self.assertTrue({"euler", "midpoint", "rk4"} <= explicit_names)
+        implicit_names = {e.name for e in registry.by_category("implicit")}
+        self.assertIn("backward_euler", implicit_names)
+        self.assertIn("implicit_euler", implicit_names)
+        exponential_names = {e.name for e in registry.by_category("exponential")}
+        self.assertIn("exp_euler", exponential_names)
+        self.assertIn("ind_exp_euler", exponential_names)
+
+
+class GlobalRegisterIntegratorDecoratorTest(unittest.TestCase):
+    """The ``register_integrator`` decorator on the global singleton."""
+
+    def test_collision_with_existing_canonical_name_rejected(self):
+        from braincell.quad import register_integrator
+
+        with self.assertRaises(ValueError):
+            @register_integrator("euler")
+            def _stub(target, *args):
+                return None
+
+
 if __name__ == "__main__":
     unittest.main()

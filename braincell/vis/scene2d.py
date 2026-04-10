@@ -31,31 +31,33 @@ _PROJECTION_AXES = {
 def build_render_scene_2d(
     morpho: Morpho,
     *,
-    mode: str = "frustum",
+    layout: str = "stem",
+    shape: str = "frustum",
     projection_plane: str = "xy",
     min_branch_angle_deg: float | None = 25.0,
     root_layout: str = "type_split",
-    layout_family: str = "stem",
 ) -> RenderScene2D:
     if not isinstance(morpho, Morpho):
         raise TypeError(f"build_render_scene_2d(...) expects Morpho, got {type(morpho).__name__!s}.")
-    if mode == "projected":
+    if layout == "projected":
+        if shape != "line":
+            raise ValueError("layout='projected' only supports shape='line'.")
         return build_scene2d_projected(morpho, projection_plane=projection_plane)
-    if mode == "tree":
-        return build_scene2d_tree(
+    if shape == "line":
+        return build_scene2d_line(
             morpho,
             min_branch_angle_deg=min_branch_angle_deg,
             root_layout=root_layout,
-            layout_family=layout_family,
+            layout=layout,
         )
-    if mode == "frustum":
+    if shape == "frustum":
         return build_scene2d_frustum(
             morpho,
             min_branch_angle_deg=min_branch_angle_deg,
             root_layout=root_layout,
-            layout_family=layout_family,
+            layout=layout,
         )
-    raise ValueError(f"Unsupported 2D mode {mode!r}.")
+    raise ValueError(f"Unsupported 2D shape {shape!r}.")
 
 
 def build_scene2d_projected(morpho: Morpho, *, projection_plane: str = "xy") -> RenderScene2D:
@@ -71,7 +73,7 @@ def build_scene2d_projected(morpho: Morpho, *, projection_plane: str = "xy") -> 
         if branch.points_proximal is None or branch.points_distal is None:
             raise ValueError(
                 f"Branch {branch_view.name!r} lacks complete 3D point geometry and cannot be rendered with "
-                "mode='projected'. Use mode='tree' or mode='frustum' instead."
+                "layout='projected'. Use layout='stem' with shape='line' or shape='frustum' instead."
             )
         points_um = np.vstack(
             [
@@ -103,44 +105,45 @@ def build_scene2d_projected(morpho: Morpho, *, projection_plane: str = "xy") -> 
         polylines=tuple(polylines),
         draw_order=tuple(polyline.draw_order for polyline in polylines),
         projection_plane=projection_plane,
-        mode="projected",
+        layout="projected",
+        shape="line",
     )
 
 
-def build_scene2d_tree(
+def build_scene2d_line(
     morpho: Morpho,
     *,
     min_branch_angle_deg: float | None = 25.0,
     root_layout: str = "type_split",
-    layout_family: str = "stem",
+    layout: str = "stem",
 ) -> RenderScene2D:
     if not isinstance(morpho, Morpho):
-        raise TypeError(f"build_scene2d_tree(...) expects Morpho, got {type(morpho).__name__!s}.")
+        raise TypeError(f"build_scene2d_line(...) expects Morpho, got {type(morpho).__name__!s}.")
 
     polylines: list[Polyline2D] = []
     draw_order = 0
-    for layout in build_layout_branches_2d(
+    for branch_layout in build_layout_branches_2d(
         morpho,
         mode="tree",
         min_branch_angle_deg=min_branch_angle_deg,
         root_layout=root_layout,
-        layout_family=layout_family,
+        layout_family=layout,
     ):
-        for segment_index in range(len(layout.segment_points_um) - 1):
+        for segment_index in range(len(branch_layout.segment_points_um) - 1):
             polylines.append(
                 Polyline2D(
-                    branch_index=layout.branch_index,
-                    branch_name=layout.branch_name,
-                    branch_type=layout.branch_type,
-                    points_um=layout.segment_points_um[segment_index: segment_index + 2],
+                    branch_index=branch_layout.branch_index,
+                    branch_name=branch_layout.branch_name,
+                    branch_type=branch_layout.branch_type,
+                    points_um=branch_layout.segment_points_um[segment_index: segment_index + 2],
                     widths_um=np.array(
                         [
-                            2.0 * float(layout.radii_proximal_um[segment_index]),
-                            2.0 * float(layout.radii_distal_um[segment_index]),
+                            2.0 * float(branch_layout.radii_proximal_um[segment_index]),
+                            2.0 * float(branch_layout.radii_distal_um[segment_index]),
                         ],
                         dtype=float,
                     ),
-                    color_rgb=color_for_branch_type(layout.branch_type),
+                    color_rgb=color_for_branch_type(branch_layout.branch_type),
                     alpha=alpha_for_2d_line(),
                     draw_order=draw_order,
                 )
@@ -150,7 +153,8 @@ def build_scene2d_tree(
     return RenderScene2D(
         polylines=tuple(polylines),
         draw_order=tuple(polyline.draw_order for polyline in polylines),
-        mode="tree",
+        layout=layout,
+        shape="line",
     )
 
 
@@ -159,26 +163,26 @@ def build_scene2d_frustum(
     *,
     min_branch_angle_deg: float | None = 25.0,
     root_layout: str = "type_split",
-    layout_family: str = "stem",
+    layout: str = "stem",
 ) -> RenderScene2D:
     if not isinstance(morpho, Morpho):
         raise TypeError(f"build_scene2d_frustum(...) expects Morpho, got {type(morpho).__name__!s}.")
 
     polygons: list[Polygon2D] = []
     draw_order = 0
-    for layout in build_layout_branches_2d(
+    for branch_layout in build_layout_branches_2d(
         morpho,
         mode="frustum",
         min_branch_angle_deg=min_branch_angle_deg,
         root_layout=root_layout,
-        layout_family=layout_family,
+        layout_family=layout,
     ):
-        for segment_index in range(len(layout.segment_points_um) - 1):
-            start_um = layout.segment_points_um[segment_index]
-            end_um = layout.segment_points_um[segment_index + 1]
-            normal_um = layout.segment_normals_um[segment_index]
-            radius_prox_um = float(layout.radii_proximal_um[segment_index])
-            radius_dist_um = float(layout.radii_distal_um[segment_index])
+        for segment_index in range(len(branch_layout.segment_points_um) - 1):
+            start_um = branch_layout.segment_points_um[segment_index]
+            end_um = branch_layout.segment_points_um[segment_index + 1]
+            normal_um = branch_layout.segment_normals_um[segment_index]
+            radius_prox_um = float(branch_layout.radii_proximal_um[segment_index])
+            radius_dist_um = float(branch_layout.radii_distal_um[segment_index])
             polygon_points_um = np.vstack(
                 [
                     start_um + normal_um * radius_prox_um,
@@ -189,11 +193,11 @@ def build_scene2d_frustum(
             )
             polygons.append(
                 Polygon2D(
-                    branch_index=layout.branch_index,
-                    branch_name=layout.branch_name,
-                    branch_type=layout.branch_type,
+                    branch_index=branch_layout.branch_index,
+                    branch_name=branch_layout.branch_name,
+                    branch_type=branch_layout.branch_type,
                     points_um=polygon_points_um,
-                    color_rgb=color_for_branch_type(layout.branch_type),
+                    color_rgb=color_for_branch_type(branch_layout.branch_type),
                     alpha=alpha_for_2d_poly(),
                     draw_order=draw_order,
                 )
@@ -203,7 +207,8 @@ def build_scene2d_frustum(
     return RenderScene2D(
         polygons=tuple(polygons),
         draw_order=tuple(polygon.draw_order for polygon in polygons),
-        mode="frustum",
+        layout=layout,
+        shape="frustum",
     )
 
 

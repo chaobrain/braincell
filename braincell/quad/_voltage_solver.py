@@ -13,13 +13,23 @@
 # limitations under the License.
 # ==============================================================================
 
-# -*- coding: utf-8 -*-
+"""Voltage solver for the active point-tree runtime.
 
-"""
-Implementation of the backward Euler integrator for voltage dynamics in multicompartment models.
+Type responsibilities in this file:
+
+- ``u.Quantity`` stays at the solver boundary where physical units matter.
+  Examples: ``target.V.value``, CV capacitance, axial resistance, membrane
+  derivative linearization.
+- ``np.ndarray`` is only used for static topology metadata that is built once
+  from the point tree or inside ``ensure_compile_time_eval`` blocks.
+  Examples: row lookup tables, DHS edge ordering, parent lookup.
+- ``jnp.ndarray`` is used for the numerical hot path executed every step.
+  Examples: diagonal/off-diagonal coefficients, right-hand side vectors, and
+  the DHS forward/backward elimination kernels.
 """
 
-import brainevent
+from dataclasses import dataclass
+
 import brainstate
 import brainunit as u
 import jax
@@ -27,415 +37,411 @@ import jax.numpy as jnp
 import numpy as np
 
 from braincell._misc import set_module_as
-from ._protocol import DiffEqModule
+
+__all__ = [
+    "dhs_voltage_step",
+    "comp_triang_raw",
+    "comp_backsub_raw",
+]
 
 
-@set_module_as('braincell')
+@dataclass(frozen=True)
+class DHSStaticCache:
+    n_point: int
+    dynamic_rows_np: np.ndarray
+    dynamic_rows_jnp: jnp.ndarray
+    diag_base_jnp: jnp.ndarray
+    diag_base_with_sentinel_jnp: jnp.ndarray
+    lowers_with_sentinel_jnp: jnp.ndarray
+    uppers_with_sentinel_jnp: jnp.ndarray
+    parent_lookup_jnp: jnp.ndarray
+    edges_jnp: jnp.ndarray
+    level_offsets_np: np.ndarray
+    backsub_indices_jnp: jnp.ndarray
+
+
+@dataclass(frozen=True)
+class DHSNumericState:
+    diags: jnp.ndarray
+    solves: jnp.ndarray
+    lowers: jnp.ndarray
+    uppers: jnp.ndarray
+    parent_lookup: jnp.ndarray
+    edges: jnp.ndarray
+    dynamic_rows: jnp.ndarray
+    n_point: int
+
+
+@set_module_as("braincell")
 def dhs_voltage_step(target, t, dt, *args):
+    """Advance midpoint voltages by one implicit-Euler DHS step.
+
+    The public cell voltage lives on CV midpoints with shape ``[..., n_cv]``.
+    DHS solves the linear system on point-tree rows with shape ``[batch, n_point]``
+    plus one sentinel row used by the recursive doubling back-substitution.
     """
-    Implicit Euler solver for multi-compartment neurons using 
-    Dendritic Hierarchical Scheduling (DHS).
+    if not hasattr(target, "point_tree") or not hasattr(target, "point_scheduling"):
+        raise TypeError(f"dhs_voltage_step(...) requires a point-tree aware target, got {type(target)}.")
 
-    Purpose:
-        Advance the membrane potential V by one timestep dt 
-        with an implicit scheme tailored for tree-structured morphologies.
+    point_tree = target.point_tree()
+    scheduling = target.point_scheduling(algorithm="dhs")
+    system = _point_tree_linear_system(target, point_tree=point_tree, scheduling=scheduling, dt=dt)
+    static_cache = _get_dhs_static_cache(target, system)
 
-    Steps:
-        1. Ensure branch-tree representation is available, and extract
-           morphology metadata: diagonals, upper/lower off-diagonals,
-           parent indices, internal node indices, and flipped edges.
-        2. Extract the current membrane potential V and compute 
-           linear and constant contributions from all ion channels and synapses.
-        3. Reshape all vectors to consistent batch shape (P, Nseg) and 
-           scatter values into full node arrays including boundary nodes.
-        4. Assemble the implicit Euler system:
-               - Scale diagonals, uppers, and lowers by dt.
-               - Add unit diagonal to internal nodes to include I-term.
-               - Construct the RHS vector for the linear system.
-        5. Append a "virtual" or spurious node to improve numerical stability 
-           and simplify boundary handling.
-        6. Solve the linear system for all populations in parallel 
-           using DHS forward elimination + back-substitution (via vmap).
-        7. Extract internal node results and write them back to 
-           target.V.value, preserving the original shape.
-    """
-
-    # --- Step 1: Extract morphology and solver metadata ---
-    if not hasattr(target.morphology, 'branch_tree'):
-        with jax.ensure_compile_time_eval():
-            target.morphology.to_branch_tree()
-    tree = target.morphology.branch_tree
-    diags, uppers, lowers, parent_lookup, internal_node_inds, flipped_comp_edges, edges, level_sizes, level_start = (
-        tree.diags,
-        tree.uppers,
-        tree.lowers,
-        tree.parent_lookup,
-        tree.internal_node_inds,
-        tree.flipped_comp_edges,
-        tree.edges,
-        tree.level_size,
-        tree.level_start
-    )
-    n_nodes = len(diags)  # total number of nodes including boundaries
-    # --- Step 2: Get current membrane potential and compute linear/constant terms ---
-    V_n = target.V.value  # (P, Nseg)
+    # Boundary quantities keep units. The hot path below converts them once to
+    # fixed numerical units before entering the JAX kernels.
+    V_n = target.V.value
     linear, const = _linear_and_const_term(target, V_n, *args)
+    numeric = _build_dhs_numeric_state(
+        V_n,
+        linear,
+        const,
+        dt=dt,
+        static_cache=static_cache,
+    )
+    diags, solves = comp_triang_raw(
+        numeric.diags,
+        numeric.solves,
+        numeric.lowers,
+        numeric.uppers,
+        numeric.edges,
+        static_cache.level_offsets_np,
+    )
+    solves = comp_backsub_raw(
+        diags,
+        solves,
+        numeric.lowers,
+        static_cache.backsub_indices_jnp,
+    )
+    target.V.value = _restore_midpoint_voltage(
+        solves,
+        dynamic_rows=numeric.dynamic_rows,
+        target_shape=target.V.value.shape,
+    )
 
-    # --- Step 3: Reshape vectors and scatter to full node arrays ---
+
+def _point_tree_linear_system(target, *, point_tree, scheduling, dt) -> dict[str, object]:
+    """Build the static axial system from the point tree.
+
+    Returned arrays are static topology metadata:
+
+    - ``dynamic_rows``: midpoint row indices
+    - ``diag_base``: dimensionless diagonal coefficients ``dt * axial_diag``
+    - ``lowers``/``uppers``: dimensionless off-diagonal coefficients
+    - ``parent_lookup``/``edges``/``level_size``: integer scheduling metadata
+    """
+    n_point, dynamic_rows, axial_matrix = _build_point_tree_axial_matrix(
+        target,
+        point_tree=point_tree,
+        point_id_to_row=scheduling.point_id_to_row,
+    )
+    dt_ms = _scalar_decimal(dt, u.ms)
+
+    diag_base = dt_ms * np.diag(axial_matrix)
+    lowers = np.zeros((n_point,), dtype=float)
+    uppers = np.zeros((n_point,), dtype=float)
+    for row, parent_row in enumerate(scheduling.parent_rows.tolist()):
+        if parent_row < 0:
+            continue
+        lowers[row] = dt_ms * axial_matrix[row, parent_row]
+        uppers[row] = dt_ms * axial_matrix[parent_row, row]
+
+    parent_lookup = np.empty((n_point + 1,), dtype=np.int32)
+    spurious_row = n_point
+    parent_lookup[:n_point] = np.where(scheduling.parent_rows >= 0, scheduling.parent_rows, spurious_row)
+    parent_lookup[spurious_row] = spurious_row
+    edges, level_size = _build_dhs_edge_order(scheduling)
+
+    return {
+        "n_point": n_point,
+        "dynamic_rows": dynamic_rows,
+        "diag_base": diag_base,
+        "lowers": lowers,
+        "uppers": uppers,
+        "edges": edges,
+        "level_size": level_size,
+        "parent_lookup": parent_lookup,
+    }
+
+
+def _build_point_tree_axial_matrix(target, *, point_tree, point_id_to_row) -> tuple[int, np.ndarray, np.ndarray]:
+    """Assemble the mixed point-tree axial operator in ``ms^-1``."""
+    n_point = len(point_tree.points)
+    point_id_to_row = np.asarray(point_id_to_row, dtype=np.int32)
+    cv_row_by_cv = point_id_to_row[point_tree.cv_midpoint_point_id]
+    dynamic_rows = np.asarray([int(cv_row_by_cv[cv_id]) for cv_id in range(len(target.cvs))], dtype=np.int32)
+    row_capacitance = _row_capacitance_scale(target, dynamic_rows=dynamic_rows, n_point=n_point)
+    axial_matrix = np.zeros((n_point, n_point), dtype=float)
+
+    for edge in point_tree.edges:
+        parent_row = int(point_id_to_row[edge.parent_point_id])
+        child_row = int(point_id_to_row[edge.child_point_id])
+        conductance = _edge_conductance(edge=edge, cvs=target.cvs)
+
+        # Dynamic rows use physical membrane capacitance. Algebraic boundary rows
+        # use an arbitrary nonzero scale because the row is only used as a
+        # constraint during static reduction.
+        parent_coeff = _scalar_decimal(conductance / row_capacitance[parent_row], u.ms ** -1)
+        child_coeff = _scalar_decimal(conductance / row_capacitance[child_row], u.ms ** -1)
+
+        axial_matrix[parent_row, parent_row] += parent_coeff
+        axial_matrix[parent_row, child_row] -= parent_coeff
+        axial_matrix[child_row, child_row] += child_coeff
+        axial_matrix[child_row, parent_row] -= child_coeff
+    return n_point, dynamic_rows, axial_matrix
+
+
+def _build_cv_axial_operator(target, *, point_tree, scheduling) -> np.ndarray:
+    """Reduce the mixed point-tree axial system to a CV-midpoint operator."""
+    _, dynamic_rows, axial_matrix = _build_point_tree_axial_matrix(
+        target,
+        point_tree=point_tree,
+        point_id_to_row=scheduling.point_id_to_row,
+    )
+    dynamic_rows = np.asarray(dynamic_rows, dtype=np.int32)
+    algebraic_rows = np.asarray(
+        [row for row in range(axial_matrix.shape[0]) if row not in set(dynamic_rows.tolist())],
+        dtype=np.int32,
+    )
+    if algebraic_rows.size == 0:
+        reduced = axial_matrix[np.ix_(dynamic_rows, dynamic_rows)]
+    else:
+        dynamic_dynamic = axial_matrix[np.ix_(dynamic_rows, dynamic_rows)]
+        dynamic_algebraic = axial_matrix[np.ix_(dynamic_rows, algebraic_rows)]
+        algebraic_dynamic = axial_matrix[np.ix_(algebraic_rows, dynamic_rows)]
+        algebraic_algebraic = axial_matrix[np.ix_(algebraic_rows, algebraic_rows)]
+        reduced = dynamic_dynamic - dynamic_algebraic @ np.linalg.solve(algebraic_algebraic, algebraic_dynamic)
+    return np.asarray(reduced, dtype=np.float32)
+
+
+def _build_dhs_static_cache(system: dict[str, object]) -> DHSStaticCache:
+    n_point = int(system["n_point"])
+    dynamic_rows_np = np.asarray(system["dynamic_rows"], dtype=np.int32)
+    diag_base_jnp = jnp.asarray(system["diag_base"], dtype=jnp.float32)
+    level_size_np = np.asarray(system["level_size"], dtype=np.int32)
+    level_offsets_np = np.cumsum(np.insert(level_size_np, 0, 0)).astype(np.int32, copy=False)
+    parent_lookup_np = np.asarray(system["parent_lookup"], dtype=np.int32)
+    diag_base_with_sentinel_jnp = jnp.concatenate(
+        [diag_base_jnp, jnp.ones((1,), dtype=diag_base_jnp.dtype)],
+        axis=0,
+    )
+    lower_base = jnp.asarray(system["lowers"], dtype=jnp.float32)
+    upper_base = jnp.asarray(system["uppers"], dtype=jnp.float32)
+    return DHSStaticCache(
+        n_point=n_point,
+        dynamic_rows_np=dynamic_rows_np,
+        dynamic_rows_jnp=jnp.asarray(dynamic_rows_np),
+        diag_base_jnp=diag_base_jnp,
+        diag_base_with_sentinel_jnp=diag_base_with_sentinel_jnp,
+        lowers_with_sentinel_jnp=jnp.concatenate([lower_base, jnp.zeros((1,), dtype=lower_base.dtype)], axis=0),
+        uppers_with_sentinel_jnp=jnp.concatenate([upper_base, jnp.zeros((1,), dtype=upper_base.dtype)], axis=0),
+        parent_lookup_jnp=jnp.asarray(parent_lookup_np),
+        edges_jnp=jnp.asarray(system["edges"]),
+        level_offsets_np=level_offsets_np,
+        backsub_indices_jnp=jnp.asarray(_build_backsub_indices(parent_lookup_np, n_nodes=n_point)),
+    )
+
+
+def _get_dhs_static_cache(target, system: dict[str, object]) -> DHSStaticCache:
+    runtime = getattr(target, "_compiled_runtime", None)
+    cache = getattr(runtime, "dhs_static_cache", None)
+    if cache is not None:
+        return cache
+    return _build_dhs_static_cache(system)
+
+
+def _build_dhs_numeric_state(V_n, linear, const, *, dt, static_cache: DHSStaticCache) -> DHSNumericState:
     V_n, linear, const = [x.reshape((-1, V_n.shape[-1])) for x in (V_n, linear, const)]
-    P = V_n.shape[0]  # population size
-    V, V_linear, V_const = [
-        u.math.zeros((P, n_nodes), unit=u.get_unit(val)).at[:, internal_node_inds].set(val)
-        for val in (V_n, -linear, const)
-    ]
+    batch_size = V_n.shape[0]
+    n_point = static_cache.n_point
 
-    # --- Step 4: Build implicit Euler system matrices ---
-    diags = (dt * (diags + V_linear)).at[:, internal_node_inds].add(1.0)  # scale diagonals + unit I-term
-    solves = V + dt * V_const  # RHS vector
-    uppers = dt * uppers  # scale upper off-diagonal
-    lowers = dt * lowers  # scale lower off-diagonal
+    rhs_midpoint_mv = _to_decimal(V_n + dt * const, u.mV)
+    linear_ms_inv = _to_decimal(linear, u.ms ** -1)
+    dt_ms = _scalar_decimal(dt, u.ms)
 
-    # --- Step 5: Append virtual/spurious compartment for stability ---
-    diags = u.math.concatenate([diags, u.math.ones((P, 1)) * u.get_unit(diags)], axis=1)
-    solves = u.math.concatenate([solves, u.math.zeros((P, 1)) * u.get_unit(solves)], axis=1)
-    lowers = u.math.concatenate([lowers, u.math.zeros((), dtype=lowers.dtype)])
-    uppers = u.math.concatenate([uppers, u.math.zeros((), dtype=uppers.dtype)])
+    diags = jnp.broadcast_to(static_cache.diag_base_with_sentinel_jnp[None, :], (batch_size, n_point + 1))
+    diags = diags.at[:, static_cache.dynamic_rows_jnp].add(1.0 - dt_ms * linear_ms_inv)
 
-    # --- Step 6: Solve the linear system for all populations in batch ---
-    solves = solves.to_decimal(u.mV)
-    n_steps = len(flipped_comp_edges)
-    # diags, solves = comp_triang_call(diags, solves, lowers, uppers, edges)
-    # solves = comp_backsub_call(diags, solves, lowers, parent_lookup, n_nodes=n_nodes, n_steps=n_steps)
-    # diags, solves = comp_triang_call_v2(diags, solves, lowers, uppers, edges, level_sizes)
-    diags, solves = comp_triang_raw(diags, solves, lowers, uppers, edges, level_sizes)
-    solves = comp_backsub_raw(diags, solves, lowers, parent_lookup, n_nodes=n_nodes, n_steps=n_steps)
-    # --- Step 7: Write back results for internal nodes only ---
-    target.V.value = solves[:, internal_node_inds].reshape(target.V.value.shape) * u.mV
+    solves = jnp.zeros((batch_size, n_point + 1), dtype=rhs_midpoint_mv.dtype)
+    solves = solves.at[:, static_cache.dynamic_rows_jnp].set(rhs_midpoint_mv)
+
+    return DHSNumericState(
+        diags=diags,
+        solves=solves,
+        lowers=static_cache.lowers_with_sentinel_jnp,
+        uppers=static_cache.uppers_with_sentinel_jnp,
+        parent_lookup=static_cache.parent_lookup_jnp,
+        edges=static_cache.edges_jnp,
+        dynamic_rows=static_cache.dynamic_rows_jnp,
+        n_point=n_point,
+    )
+
+
+def _restore_midpoint_voltage(solves: jnp.ndarray, *, dynamic_rows: jnp.ndarray, target_shape: tuple[int, ...]) -> object:
+    return solves[:, dynamic_rows].reshape(target_shape) * u.mV
+
+
+def _edge_conductance(*, edge, cvs) -> object:
+    """Sum all half-CV conductances attached to one point-tree edge."""
+    conductance = None
+    for role in edge.cv_edges:
+        cv = cvs[role.cv_id]
+        resistance = cv.r_axial_prox if role.half == "prox" else cv.r_axial_dist
+        value = 1.0 / resistance
+        conductance = value if conductance is None else (conductance + value)
+    if conductance is None:
+        raise ValueError(f"Point-tree edge {edge.id!r} has no CV edge roles.")
+    return conductance
+
+
+def _row_capacitance_scale(target, *, dynamic_rows: np.ndarray, n_point: int) -> list[object]:
+    """Return per-row membrane capacitance used in static axial assembly.
+
+    Only CV midpoint rows carry membrane capacitance. Boundary rows are algebraic
+    rows, so a dummy capacitance is used there because the corresponding axial
+    coefficients are never consumed as membrane rows.
+    """
+    midpoint_capacitances = [cv.area * cv.cm for cv in target.cvs]
+    if len(midpoint_capacitances) == 0:
+        raise ValueError("Point-tree linear system requires at least one CV.")
+
+    row_capacitance: list[object] = [1.0 * u.uF for _ in range(n_point)]
+    for cv_id, row in enumerate(dynamic_rows.tolist()):
+        row_capacitance[int(row)] = midpoint_capacitances[cv_id]
+    return row_capacitance
+
+
+def _build_dhs_edge_order(scheduling) -> tuple[np.ndarray, np.ndarray]:
+    """Build leaf-to-root DHS elimination groups as static integer arrays."""
+    edge_pairs: list[list[int]] = []
+    level_size: list[int] = []
+    for group in reversed(scheduling.groups):
+        level_edges = []
+        for row in group.tolist():
+            parent_row = int(scheduling.parent_rows[row])
+            if parent_row >= 0:
+                level_edges.append([int(row), parent_row])
+        if level_edges:
+            edge_pairs.extend(level_edges)
+            level_size.append(len(level_edges))
+
+    if edge_pairs:
+        return np.asarray(edge_pairs, dtype=np.int32), np.asarray(level_size, dtype=np.int32)
+    return np.empty((0, 2), dtype=np.int32), np.empty((0,), dtype=np.int32)
 
 
 def _check_comp_triang(diags, solves, lowers, uppers, edges):
+    """Kernel contract check: only raw numerical arrays are allowed here."""
     assert not isinstance(diags, u.Quantity)
     assert not isinstance(solves, u.Quantity)
     assert not isinstance(lowers, u.Quantity)
     assert not isinstance(uppers, u.Quantity)
     assert not isinstance(edges, u.Quantity)
-    assert diags.ndim == 2, 'diags should be 2D'
-    assert solves.ndim == 2, 'solves should be 2D'
-    assert lowers.ndim == 1, 'lowers should be 1D'
-    assert uppers.ndim == 1, 'uppers should be 1D'
-
-    assert lowers.shape[0] == diags.shape[1], 'lowers should have same length as diags.shape[1]'
-    assert uppers.shape[0] == diags.shape[1], 'uppers should have same length as diags.shape[1]'
+    assert diags.ndim == 2
+    assert solves.ndim == 2
+    assert lowers.ndim == 1
+    assert uppers.ndim == 1
+    assert lowers.shape[0] == diags.shape[1]
+    assert uppers.shape[0] == diags.shape[1]
     assert edges.ndim == 2 and edges.shape[1] == 2
 
 
-def comp_triang_raw(diags, solves, lowers, uppers, edges, level_sizes):
+def comp_triang_raw(diags, solves, lowers, uppers, edges, level_offsets):
+    """DHS forward elimination on raw ``jnp.ndarray`` inputs."""
     _check_comp_triang(diags, solves, lowers, uppers, edges)
-
-    with jax.ensure_compile_time_eval():
-        level_sizes = np.cumsum(np.insert(level_sizes, 0, 0))
-    for i in range(level_sizes.shape[0] - 1):
-        children = edges[level_sizes[i]:level_sizes[i + 1], 0]
-        parent = edges[level_sizes[i]:level_sizes[i + 1], 1]
+    for i in range(level_offsets.shape[0] - 1):
+        children = edges[level_offsets[i]:level_offsets[i + 1], 0]
+        parent = edges[level_offsets[i]:level_offsets[i + 1], 1]
         lower_val = lowers[children]
         upper_val = uppers[children]
         child_diag = diags[:, children]
         child_solve = solves[:, children]
 
-        # Factor that the child row has to be multiplied by.
         multiplier = upper_val / child_diag
-
-        # Updates to diagonal and solve
         diags = diags.at[:, parent].add(-lower_val * multiplier)
         solves = solves.at[:, parent].add(-child_solve * multiplier)
     return diags, solves
 
 
-def _check_comp_backsub(diags, solves, lowers, parent_lookup):
+def _check_comp_backsub(diags, solves, lowers, backsub_indices):
+    """Kernel contract check: recursive doubling only accepts raw arrays."""
     assert not isinstance(diags, u.Quantity)
     assert not isinstance(solves, u.Quantity)
     assert not isinstance(lowers, u.Quantity)
-    assert not isinstance(parent_lookup, u.Quantity)
-    assert diags.ndim == 2, 'diags should be 2D'
-    assert solves.ndim == 2, 'solves should be 2D'
-    assert lowers.ndim == 1, 'lowers should be 1D'
-    assert diags.shape == solves.shape, 'diags and solves should have the same shape'
-    assert lowers.shape[0] == diags.shape[1], 'lowers should have same length as diags.shape[1]'
-    assert parent_lookup.ndim == 1, 'parent_lookup should be 1D'
-    assert parent_lookup.shape[0] == diags.shape[1], 'parent_lookup should have same length as diags.shape[1]'
+    assert not isinstance(backsub_indices, u.Quantity)
+    assert diags.ndim == 2
+    assert solves.ndim == 2
+    assert lowers.ndim == 1
+    assert diags.shape == solves.shape
+    assert lowers.shape[0] == diags.shape[1]
+    assert backsub_indices.ndim == 2
+    assert backsub_indices.shape[1] == diags.shape[1]
 
 
-def _get_index_comp_backsub(parent_lookup, n_steps, n_nodes):
-    with jax.ensure_compile_time_eval():
-        parent_lookup = np.asarray(parent_lookup)
-        indices = []
-        old_step = 0
-        new_step = 1
-        k_step_parent = np.arange(n_nodes + 1)
-        while new_step <= n_steps:
-            for _ in range(new_step - old_step):
-                k_step_parent = parent_lookup[k_step_parent]
-            old_step = new_step
-            new_step = 2 * new_step
-            indices.append(k_step_parent)
-        indices = np.asarray(indices)
-    return indices
+def _build_backsub_indices(parent_lookup: np.ndarray, *, n_nodes: int) -> np.ndarray:
+    """Precompute recursive-doubling ancestor jumps as static metadata."""
+    parent_lookup = np.asarray(parent_lookup, dtype=np.int32)
+    indices = []
+    old_step = 0
+    new_step = 1
+    k_step_parent = np.arange(n_nodes + 1, dtype=np.int32)
+    while new_step <= max(1, n_nodes):
+        for _ in range(new_step - old_step):
+            k_step_parent = parent_lookup[k_step_parent]
+        old_step = new_step
+        new_step = 2 * new_step
+        indices.append(k_step_parent)
+    return np.asarray(indices, dtype=np.int32)
 
 
 def comp_backsub_raw(
     diags,
     solves,
     lowers,
-    parent_lookup,
-    *,
-    n_nodes: int,
-    n_steps: int,
+    backsub_indices,
 ):
-    """Backsubstitute with recursive doubling.
-
-    This function contains a lot of math, so I will describe what is going on here:
-
-    The matrix describes a system like:
-    diag[n] * x[n] + lower[n] * x[parent] = solve[n]
-
-    We rephrase this as:
-    x[n] = solve[n]/diag[n] - lower[n]/diag[n] * x[parent].
-
-    and we call variables as follows:
-    solve/diag => solve_effect
-    -lower/diag => lower_effect
-
-    This gives:
-    x[n] = solve_effect[n] + lower_effect[n] * x[parent].
-
-    Recursive doubling solves this equation for `x` in log_2(N) steps. How?
-
-    (1) Notice that lower_effect[n]=0, because x[0] has no parent.
-
-    (2) In the first step, recursive doubling substitutes x[parent] into
-    every equation. This leads to something like:
-    x[n] = solve_effect[n] + lower_effect[n] * (solve_effect[parent] + ...
-    ...lower_effect[parent] * x[parent[parent]])
-
-    Abbreviate this as:
-    new_solve_effect[n] = solve_effect[n] + lower_effect[n] * solve_effect[parent]
-    new_lower_effect[n] = lower_effect[n] + lower_effect[parent]
-    x[n] = new_solve_effect[n] + new_lower_effect[n] * x[parent[parent]]
-    Importantly, every node n is now a function of its two-step parent.
-
-    (3) In the next step, recursive doubling substitutes x[parent[parent]].
-    Since x[parent[parent]] already depends on its own _two-step_ parent,
-    every node then depends on its four step parent. This introduces the
-    log_2 scaling.
-
-    (4) The algorithm terminates when all `new_lower_effect=0`. This
-    naturally happens because `lower_effect[0]=0`, and the recursion
-    keeps multiplying new_lower_effect with the `lower_effect[parent]`.
-    """
-    _check_comp_backsub(diags, solves, lowers, parent_lookup)
-    indices = _get_index_comp_backsub(parent_lookup, n_steps, n_nodes)
-
-    # Why `lowers = lowers.at[0].set(0.0)`? During triangulation (and the
-    # cpu-optimized solver), we never access `lowers[0]`. Its value should
-    # be zero (because the zero-eth compartment does not have a `lower`), but
-    # it is not for coding convenience in the other solvers. For the recursive
-    # doubling solver below, we do use lowers[0], so we set it to the value
-    # it should have anyways: 0.
+    """DHS recursive-doubling back substitution on raw ``jnp.ndarray`` inputs."""
+    _check_comp_backsub(diags, solves, lowers, backsub_indices)
     lowers = lowers.at[0].set(0.0)
-
-    # Rephrase the equations as a recursion.
-    # x[n] = solve[n]/diag[n] - lower[n]/diag[n] * x[parent].
-    # x[n] = solve_effect[n] + lower_effect[n] * x[parent].
     lower_effect = -lowers / diags
     solve_effect = solves / diags
 
-    for i in range(indices.shape[0]):
-        k_step_parent = indices[i]
+    for i in range(backsub_indices.shape[0]):
+        k_step_parent = backsub_indices[i]
         solve_effect = solve_effect + lower_effect * solve_effect[:, k_step_parent]
         lower_effect = lower_effect * lower_effect[:, k_step_parent]
 
-    # We have to return a `diags` because the final solution is computed as
-    # `solves/diags` (see `step_voltage_implicit_with_dhs_solve`). For recursive
-    # doubling, the solution should just be `solve_effect`, so we define diags as
-    # 1.0 so the division has no effect.
     return solve_effect
 
 
-@set_module_as('braincell')
-def dense_voltage_step():
+def _linear_and_const_term(target, V_n, *args):
+    """Linearize membrane dynamics around ``V_n``.
+
+    Returns two boundary quantities with units:
+
+    - ``linear`` in ``ms^-1``
+    - ``const`` in voltage/time
     """
-    Implicit euler solver implementation by solving the dense matrix system.
-    """
-    pass
-
-
-def _dense_solve_v(
-    Laplacian_matrix: brainstate.typing.ArrayLike,
-    D_linear: brainstate.typing.ArrayLike,
-    D_const: brainstate.typing.ArrayLike,
-    dt: brainstate.typing.ArrayLike,
-    V_n: brainstate.typing.ArrayLike
-):
-    """
-    Set the left-hand side (lhs) and right-hand side (rhs) of the implicit equation:
-    V^{n+1} (I + dt*(L_matrix + D_linear)) = V^{n} + dt*D_const
-
-    Parameters:
-    - Laplacian_matrix: The Laplacian matrix L describing diffusion between compartments
-    - D_linear: Diagonal matrix of linear coefficients for voltage-dependent currents
-                D_linear = diag(∑g_i^{t+dt}) where g_i^t are time-dependent conductances
-    - D_const: Vector of constant terms from voltage-independent currents
-               D_const = ∑(g_i^{t+dt}·E_i) +I^{t+dt}_ext where E_i are reversal potentials
-    - V_n: Membrane potential vector at current time step n
-
-    Returns:
-    - V^{n+1} = lhs^{-1} * rhs
-
-    Notes:
-    - This function constructs the matrices for solving the next time step
-      in a compartmental model using an implicit Euler method.
-    - The Laplacian matrix accounts for passive diffusion between compartments.
-    - D_linear and D_const incorporate active membrane currents (ionic, synaptic, external).
-    - The implicit formulation ensures numerical stability for stiff systems.
-    """
-
-    # Compute the left-hand side matrix
-    # lhs = I + dt*(Laplacian_matrix + D_linear)
-    n_compartments = Laplacian_matrix.shape[0]
-
-    # dense method
-    I_matrix = jnp.eye(n_compartments)
-    lhs = I_matrix + dt * (Laplacian_matrix + u.math.diag(D_linear))
-    rhs = V_n + dt * D_const
-    print(lhs.shape, rhs.shape)
-    result = u.math.linalg.solve(lhs, rhs)
-    return result
-
-
-@set_module_as('braincell')
-def sparse_voltage_step(target, t, dt, *args):
-    """
-    Implicit euler solver implementation by solving the sparse matrix system.
-    """
-    from braincell._multi_compartment import MultiCompartment
-    assert isinstance(target, MultiCompartment), (
-        'The target should be a MultiCompartment for the sparse integrator. '
-    )
-
-    # membrane potential at time n
-    V_n = target.V.value
-
-    # laplacian matrix
-    L_matrix = _laplacian_matrix(target)
-
-    # linear and constant term
-    linear, const = _linear_and_const_term(target, V_n, *args)
-
-    # solve the membrane potential at time n+1
-    # -linear cause from left to right, the sign changed
-    target.V.value = _sparse_solve_v(L_matrix, -linear, const, dt, V_n)
-
-
-def _sparse_solve_v(
-    Laplacian_matrix: brainevent.CSR,
-    D_linear,
-    D_const,
-    dt: brainstate.typing.ArrayLike,
-    V_n: brainstate.typing.ArrayLike
-):
-    r"""
-    Set the left-hand side (lhs) and right-hand side (rhs) of the implicit equation:
-
-    $$
-    V^{n+1} (I + dt*(\mathrm{L_matrix} + \mathrm{D_linear})) = V^{n} + dt*\mathrm{D_const}
-    $$
-
-    Parameters:
-    - Laplacian_matrix: The Laplacian matrix L describing diffusion between compartments
-    - D_linear: Diagonal matrix of linear coefficients for voltage-dependent currents
-                D_linear = diag(∑g_i^{t+dt}) where g_i^t are time-dependent conductances
-    - D_const: Vector of constant terms from voltage-independent currents
-               D_const = ∑(g_i^{t+dt}·E_i) +I^{t+dt}_ext where E_i are reversal potentials
-    - V_n: Membrane potential vector at current time step n
-
-    Returns:
-    - V^{n+1} = lhs^{-1} * rhs
-
-    Notes:
-    - This function constructs the matrices for solving the next time step
-      in a compartmental model using an implicit Euler method.
-    - The Laplacian matrix accounts for passive diffusion between compartments.
-    - D_linear and D_const incorporate active membrane currents (ionic, synaptic, external).
-    - The implicit formulation ensures numerical stability for stiff systems.
-    """
-
-    # Compute the left-hand side matrix
-    # lhs = I + dt*(Laplacian_matrix + D_linear)
-    lhs = (dt * Laplacian_matrix).diag_add(dt * D_linear.reshape(-1) + 1)
-
-    # Compute the right-hand side vector: rhs = V_n + dt*D_const
-    rhs = V_n + dt * D_const
-    result = lhs.solve(rhs.reshape(-1)).reshape((1, -1))
-    return result
-
-
-def _laplacian_matrix(target: DiffEqModule) -> brainevent.CSR:
-    """
-    Construct the Laplacian matrix L = diag(G'*1) - G' for the given target,
-    where G' = G/(area*cm) is the normalized conductance matrix.
-
-    Parameters:
-        target: A DiffEqModule instance containing compartmental model parameters
-
-    Returns:
-        L_matrix: The Laplacian matrix representing the conductance term
-                  of the compartmental model's differential equations
-
-    Notes:
-        - Computes the Laplacian matrix which describes the electrical conductance
-          between compartments in a compartmental model.
-        - The diagonal elements are set to the sum of the respective row's
-          off-diagonal elements to ensure conservation of current.
-        - The normalization by (area*cm) accounts for compartment geometry and membrane properties.
-    """
-    from braincell._multi_compartment import MultiCompartment
-    target: MultiCompartment
-
-    with jax.ensure_compile_time_eval():
-        # Extract model parameters
-        cm = target.cm
-        area = target.area
-        G_matrix = target.conductance_matrix  # TODO
-        n_compartment = target.n_compartment
-
-        # Compute negative normalized conductance matrix: element-wise division by (cm * area)
-        L_matrix = -G_matrix / (cm * area)[:, u.math.newaxis]
-
-        # Set diagonal elements to enforce Kirchhoff's current law
-        # This constructs the Laplacian matrix L
-        L_matrix = L_matrix.at[jnp.diag_indices(n_compartment)].set(-u.math.sum(L_matrix, axis=1))
-
-        # convert to CSR format
-        L_matrix = brainevent.CSR.fromdense(L_matrix)
-
-    return L_matrix
-
-
-def _linear_and_const_term(target: DiffEqModule, V_n, *args):
-    """
-    get the linear and constant term of voltage.
-    """
-    from braincell._multi_compartment import MultiCompartment
-    assert isinstance(target, MultiCompartment), 'The target should be a MultiCompartment for the sparse integrator.'
-
-    # compute the linear and derivative term
-    linear, derivative = brainstate.transform.vector_grad(
-        target.compute_membrane_derivative, argnums=0, return_value=True, unit_aware=False,
-    )(V_n, *args)
-
-    # Convert linearization to a unit-aware quantity
+    if hasattr(target, "_voltage_linearizer"):
+        linearizer = target._voltage_linearizer()
+    else:
+        linearizer = brainstate.transform.vector_grad(
+            target.compute_membrane_derivative,
+            argnums=0,
+            return_value=True,
+            unit_aware=False,
+        )
+    linear, derivative = linearizer(V_n, *args)
     linear = u.Quantity(u.get_mantissa(linear), u.get_unit(derivative) / u.get_unit(linear))
-
-    # Compute constant term
     const = derivative - V_n * linear
-    return linear, const  # [n_neuron, n_segments]
+    return linear, const
+
+
+def _to_decimal(value: object, unit: object) -> jnp.ndarray:
+    """Convert a quantity-like value to a hot-path ``jnp.ndarray``."""
+    return jnp.asarray(value.to_decimal(unit), dtype=float)
+
+
+def _scalar_decimal(value: object, unit: object) -> float:
+    """Convert a scalar quantity to Python float for static assembly."""
+    return float(np.asarray(value.to_decimal(unit), dtype=float))

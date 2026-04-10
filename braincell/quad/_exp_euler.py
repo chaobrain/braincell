@@ -56,7 +56,6 @@ def power_iteration_expm(A, num_steps=20, method='scipy'):
     else:
         raise ValueError('Unsupported method "{}"'.format(method))
 
-
 def _exponential_euler(f, y0, t, dt, args=()):
     dt = u.get_magnitude(dt)
     A, df, aux = jacrev_last_dim(lambda y: f(t, y, *args), y0, has_aux=True)
@@ -143,8 +142,8 @@ def exp_euler_step(target: DiffEqModule, *args):
     vectorizes for population-level computations.
     """
     from braincell._base import HHTypedNeuron
+    from braincell.cell.cell import Cell
     from braincell._single_compartment import SingleCompartment
-    from braincell._multi_compartment import MultiCompartment
     assert isinstance(target, HHTypedNeuron), (
         f"The target should be a {HHTypedNeuron.__name__}. "
         f"But got {type(target)} instead."
@@ -162,7 +161,7 @@ def exp_euler_step(target: DiffEqModule, *args):
             merging='stack'  # [n_neuron, n_state]
         )
 
-    elif isinstance(target, MultiCompartment):
+    elif isinstance(target, Cell):
         apply_standard_solver_step(
             _exponential_euler,
             target,

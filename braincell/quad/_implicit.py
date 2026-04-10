@@ -500,9 +500,9 @@ def splitting_step(
     *args :
         Additional arguments to be passed to the differential equation.
     """
-    from braincell._multi_compartment import MultiCompartment
+    from braincell.cell.cell import Cell
 
-    if isinstance(target, MultiCompartment):
+    if isinstance(target, Cell):
 
         def solve_axial():
             # dt = brainstate.environ.get_dt()
@@ -551,8 +551,8 @@ def cn_rk4_step(
     dt: DT,
     *args
 ):
-    from braincell._multi_compartment import MultiCompartment
-    assert isinstance(target, MultiCompartment)
+    from braincell.cell.cell import Cell
+    assert isinstance(target, Cell)
 
     def solve_axial():
         V_n = target.V.value
@@ -573,8 +573,8 @@ def cn_exp_euler_step(
     dt: DT,
     *args
 ):
-    from braincell._multi_compartment import MultiCompartment
-    assert isinstance(target, MultiCompartment)
+    from braincell.cell.cell import Cell
+    assert isinstance(target, Cell)
 
     with brainstate.environ.context(compute_axial_current=False):
         apply_standard_solver_step(_exponential_euler, target, t, dt, *args, merging='stack')
@@ -613,9 +613,9 @@ def implicit_rk4_step(
     *args :
         Additional arguments to be passed to the differential equation.
     """
-    from braincell._multi_compartment import MultiCompartment
+    from braincell.cell.cell import Cell
 
-    if isinstance(target, MultiCompartment):
+    if isinstance(target, Cell):
         with brainstate.environ.context(compute_axial_current=False):
             rk4_step(target, t, dt, *args, )
 
@@ -656,9 +656,9 @@ def implicit_exp_euler_step(
     *args :
         Additional arguments to be passed to the differential equation.
     """
-    from braincell._multi_compartment import MultiCompartment
+    from braincell.cell.cell import Cell
 
-    if isinstance(target, MultiCompartment):
+    if isinstance(target, Cell):
 
         with brainstate.environ.context(compute_axial_current=False):
             apply_standard_solver_step(_exponential_euler, target, t, dt, *args, merging='stack')
@@ -700,9 +700,9 @@ def exp_exp_euler_step(
     *args :
         Additional arguments to be passed to the differential equation.
     """
-    from braincell._multi_compartment import MultiCompartment
+    from braincell.cell.cell import Cell
 
-    if isinstance(target, MultiCompartment):
+    if isinstance(target, Cell):
 
         with brainstate.environ.context(compute_axial_current=False):
             apply_standard_solver_step(_exponential_euler, target, t, dt, *args, merging='stack')

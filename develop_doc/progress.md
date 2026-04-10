@@ -62,9 +62,9 @@
   - `cv.py`：`CV`
   - `cv_policy.py`：`CVPolicy / CVPerBranch / MaxCVLen / DLambda`
   - `cv_geo.py`：CV 几何离散
-  - `cv_mech.py`：`PaintRule / PlaceRule`
-  - `point_tree.py`：`PointTree`
-  - `point_scheduling.py`：`PointScheduling`
+  - `cv_mech.py`：内部规则与 CV 机制应用
+  - `point_tree.py`：`PointTree / PointScheduling`
+  - `runtime.py`：内部编译桥
 - `Cell(morpho, cv_policy=...)`、`paint(...)`、`place(...)`、懒重建已经落地
 - `PointTree` 和 scheduling 相关基础结构已存在并有测试覆盖
 

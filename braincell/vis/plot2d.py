@@ -15,7 +15,7 @@
 
 
 from .backend import BackendChooser, validate_backend_for_scene
-from .config import resolve_default_2d_mode
+from .config import resolve_default_2d_layout, resolve_default_2d_shape
 from .scene import OverlaySpec, RenderRequest
 from .scene2d import build_render_scene_2d
 
@@ -26,7 +26,8 @@ def plot2d(
     region=None,
     locset=None,
     values=None,
-    mode: str | None = None,
+    layout: str | None = None,
+    shape: str | None = None,
     backend: str | None = None,
     chooser: BackendChooser | None = None,
     ax=None,
@@ -36,28 +37,29 @@ def plot2d(
     projection_plane: str = "xy",
     min_branch_angle_deg: float | None = 25.0,
     root_layout: str = "type_split",
-    layout_family: str = "stem",
 ) -> object:
     from braincell.morpho import Morpho
 
     if not isinstance(morpho, Morpho):
         raise TypeError(f"plot2d(...) expects Morpho, got {type(morpho).__name__!s}.")
 
-    resolved_mode = resolve_default_2d_mode(mode)
+    resolved_layout = resolve_default_2d_layout(layout)
+    resolved_shape = resolve_default_2d_shape(shape)
     scene = build_render_scene_2d(
         morpho,
-        mode=resolved_mode,
+        layout=resolved_layout,
+        shape=resolved_shape,
         projection_plane=projection_plane,
         min_branch_angle_deg=min_branch_angle_deg,
         root_layout=root_layout,
-        layout_family=layout_family,
     )
     chooser = chooser or BackendChooser.default()
     request = RenderRequest(
         morpho=morpho,
         overlay=OverlaySpec(region=region, locset=locset, values=values),
         dimensionality="2d",
-        mode=resolved_mode,
+        layout=resolved_layout,
+        shape=resolved_shape,
         scene=scene,
         ax=ax,
         notebook=notebook,

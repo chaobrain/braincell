@@ -701,7 +701,8 @@ class Branch:
     def vis2d(
         self,
         *,
-        mode: str | None = None,
+        layout: str | None = None,
+        shape: str | None = None,
         backend: str | None = None,
         chooser=None,
         projection_plane: str = "xy",
@@ -715,20 +716,21 @@ class Branch:
 
         Parameters
         ----------
-        mode : str or None
-            Visualization mode: ``"frustum"`` (shows segment widths as
-            polygons), ``"tree"`` (schematic polyline), or ``"projected"``
-            (3-D point projection, requires point geometry). When omitted,
-            uses the global 2-D default configured via
+        layout : str or None
+            2-D layout choice: ``"projected"``, ``"stem"``,
+            ``"balloon"``, or ``"radial_360"``. When omitted, uses the
+            global 2-D default configured via
             ``braincell.morpho.vis.configure(...)``.
+        shape : str or None
+            2-D drawing shape: ``"line"`` or ``"frustum"``.
         backend : str or None
             Rendering backend name (e.g., ``"matplotlib"``).
             Auto-selected when *None*.
         chooser : BackendChooser or None
             Explicit backend chooser; overrides *backend* when given.
         projection_plane : str
-            Projection plane for ``"projected"`` mode: ``"xy"``, ``"xz"``,
-            or ``"yz"`` (default ``"xy"``).
+            Projection plane for ``layout="projected"``: ``"xy"``,
+            ``"xz"``, or ``"yz"`` (default ``"xy"``).
         return_plotter : bool
             If *True*, return the backend plotter/axes object instead of
             displaying the figure.
@@ -746,8 +748,9 @@ class Branch:
         Raises
         ------
         ValueError
-            If *mode* is ``"projected"`` and the branch has no 3-D point
-            geometry.
+            If ``layout="projected"`` and the branch has no 3-D point
+            geometry, or if ``layout="projected"`` is combined with
+            ``shape="frustum"``.
 
         Examples
         --------
@@ -769,7 +772,8 @@ class Branch:
         morpho = Morpho.from_root(self, name="soma")
         result = plot2d(
             morpho,
-            mode=mode,
+            layout=layout,
+            shape=shape,
             backend=backend,
             chooser=chooser,
             projection_plane=projection_plane,

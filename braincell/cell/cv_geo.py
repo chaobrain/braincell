@@ -14,6 +14,13 @@
 # ==============================================================================
 
 
+"""Geometry/topology lowering from morphology branches into control volumes.
+
+``cv_geo.py`` is the geometry-only stage of the pipeline. It decides how a
+branch is split into CV intervals and computes the topological/metric fields
+needed later by mechanism attachment and runtime assembly.
+"""
+
 from dataclasses import dataclass
 from typing import Any
 
@@ -74,12 +81,13 @@ def build_cv_geo(
     morpho: Morpho,
     *,
     policy: object,
+    paint_rules: tuple[object, ...] | None = None,
 ) -> tuple[tuple[CVGeo, ...], dict[int, tuple[int, ...]]]:
     if not isinstance(morpho, Morpho):
         raise TypeError(f"build_cv_geo(...) expects Morpho, got {type(morpho).__name__!s}.")
     if not isinstance(policy, CVPolicy):
         raise TypeError("build_cv_geo(...) expects a CVPolicy instance.")
-    bounds_by_branch = policy.resolve_cv_bounds(morpho)
+    bounds_by_branch = policy.resolve_cv_bounds(morpho, paint_rules=paint_rules)
     cv_ids_by_branch: dict[int, tuple[int, ...]] = {}
     temp_geo: list[CVGeo] = []
 

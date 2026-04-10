@@ -55,7 +55,7 @@ from ._runge_kutta import (
     ssprk3_step,
 )
 from ._staggered import staggered_step
-from ._voltage_solver import dhs_voltage_step, dense_voltage_step, sparse_voltage_step
+from ._voltage_solver import dhs_voltage_step
 
 __all__ = [
     'get_integrator',
@@ -110,8 +110,6 @@ __all__ = [
 
     # voltage solver
     'dhs_voltage_step',
-    'dense_voltage_step',
-    'sparse_voltage_step',
 
     # modules
     'DiffEqModule',

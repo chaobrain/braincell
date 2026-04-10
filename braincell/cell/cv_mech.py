@@ -25,10 +25,13 @@ from braincell.mech import (
     CableProperties,
     CurrentClamp,
     DensityMechanism,
+    FunctionClamp,
     GapJunctionMechanism,
     ProbeMechanism,
+    SineClamp,
     SynapseMechanism,
 )
+from braincell.mech.spec import density_class_name, density_params, density_replace_params, is_density_mechanism
 from braincell.morpho import Morpho
 from .cv_geo import CVGeo, EPSILON, interval_lateral_area, map_point_to_cv
 
@@ -36,6 +39,8 @@ PointMechanismRuntime = (
     SynapseMechanism,
     GapJunctionMechanism,
     CurrentClamp,
+    SineClamp,
+    FunctionClamp,
     ProbeMechanism,
 )
 
@@ -44,6 +49,11 @@ _DEFAULT_CABLE = CableProperties(
     membrane_capacitance=1.0 * (u.uF / u.cm ** 2),
     axial_resistivity=100.0 * (u.ohm * u.cm),
 )
+
+# This module has one job: translate frontend ``paint`` / ``place``
+# declarations into per-CV mechanism payloads during ``Cell`` rebuild. The
+# results are still declaration-layer data; runtime lowering happens later in
+# ``runtime.py``.
 
 
 @dataclass(frozen=True)
@@ -56,7 +66,7 @@ class PaintRule:
     values, while density rules append scaled mechanisms based on CV coverage.
     """
     region: RegionExpr
-    mechanism: CableProperties | DensityMechanism
+    mechanism: CableProperties | object
 
 
 @dataclass(frozen=True)
@@ -85,7 +95,7 @@ class CVMech:
     ra: object
     v: object
     temp: u.Quantity[u.kelvin]
-    density_mech: list[DensityMechanism]
+    density_mech: list[object]
     point_mech: list[object]
 
 
@@ -110,6 +120,8 @@ def init_cv_mech(n_cv: int) -> list[CVMech]:
 
 
 def normalize_paint_rules(region: RegionExpr, mechanisms: tuple[object, ...]) -> tuple[PaintRule, ...]:
+    # Rule normalization keeps the public ``Cell.paint(...)`` surface flexible
+    # while making later rebuild code operate on one predictable internal shape.
     if not isinstance(region, RegionExpr):
         raise TypeError(f"Cell.paint(...) expects RegionExpr, got {type(region).__name__!s}.")
     if len(mechanisms) == 0:
@@ -125,11 +137,12 @@ def normalize_paint_rules(region: RegionExpr, mechanisms: tuple[object, ...]) ->
                 )
             )
             continue
-        if isinstance(mechanism, DensityMechanism):
+        if is_density_mechanism(mechanism):
             new_rules.append(PaintRule(region=region, mechanism=mechanism))
             continue
         raise TypeError(
-            "Cell.paint(...) mechanisms must be CableProperties or DensityMechanism, "
+            "Cell.paint(...) mechanisms must be CableProperties, DensityMechanism, "
+            "or braincell.mech.Channel/Ion specs, "
             f"got {type(mechanism).__name__!s}."
         )
     return tuple(new_rules)
@@ -139,6 +152,8 @@ def merge_paint_rules(
     existing: tuple[PaintRule, ...],
     incoming: tuple[PaintRule, ...],
 ) -> tuple[PaintRule, ...]:
+    # Cable-property rules overwrite previous cable defaults on the same region,
+    # while density mechanisms accumulate in declaration order.
     merged = list(existing)
     for rule in incoming:
         if isinstance(rule.mechanism, CableProperties):
@@ -179,6 +194,8 @@ def apply_paint_rules(
     paint_rules: tuple[PaintRule, ...],
     mechs: list[CVMech],
 ) -> None:
+    # Paint rules are applied onto mutable ``CVMech`` buckets so coverage logic
+    # and cable overwrites can be resolved before the final immutable ``CV`` is built.
     for rule in paint_rules:
         mask = rule.region.evaluate(morpho)
         intervals_by_branch = _group_intervals_by_branch(mask.intervals)
@@ -202,7 +219,7 @@ def apply_paint_rules(
                     mech.temp = mechanism.temperature
                     continue
 
-                if isinstance(mechanism, DensityMechanism):
+                if is_density_mechanism(mechanism):
                     area_fraction = _coverage_area_fraction(
                         morpho,
                         cv_geo=cv_geo,
@@ -228,6 +245,8 @@ def apply_place_rules(
     place_rules: tuple[PlaceRule, ...],
     mechs: list[CVMech],
 ) -> None:
+    # Place rules do not instantiate runtime nodes here. They only attach point
+    # mechanism declarations to the CV whose midpoint owns the requested location.
     for rule in place_rules:
         if rule.site != "mid":
             raise ValueError(f"Unsupported place site {rule.site!r}; only 'mid' is allowed.")
@@ -301,18 +320,19 @@ def _coverage_area_fraction(
 
 
 def _scale_density_for_coverage(
-    mechanism: DensityMechanism,
+    mechanism: object,
     *,
     area_fraction: float,
-) -> DensityMechanism:
-    if mechanism.channel_type is None:
+) -> object:
+    category, _ = density_class_name(mechanism)
+    if category != "channel":
         return mechanism
     if area_fraction >= 1.0 - EPSILON:
         return mechanism
 
     updated: list[tuple[str, Any]] = []
     scaled_gmax = False
-    for key, value in mechanism.params:
+    for key, value in density_params(mechanism):
         if key == "g_max":
             scaled_gmax = True
             try:
@@ -326,11 +346,7 @@ def _scale_density_for_coverage(
     if not scaled_gmax:
         updated.append(("coverage_area_fraction", float(area_fraction)))
 
-    return DensityMechanism(
-        ion_type=mechanism.ion_type,
-        channel_type=mechanism.channel_type,
-        params=tuple(updated),
-    )
+    return density_replace_params(mechanism, params=tuple(updated))
 
 
 def _coerce_temperature(value: object, *, name: str) -> u.Quantity[u.kelvin]:

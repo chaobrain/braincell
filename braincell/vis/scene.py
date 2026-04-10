@@ -128,7 +128,8 @@ class RenderScene2D:
     labels: tuple[Label2D, ...] = ()
     draw_order: tuple[int, ...] = ()
     projection_plane: str | None = None
-    mode: str = "projected"
+    layout: str = "projected"
+    shape: str = "line"
 
 
 @dataclass(frozen=True)
@@ -137,6 +138,8 @@ class RenderRequest:
     overlay: OverlaySpec = field(default_factory=OverlaySpec)
     dimensionality: str = "3d"
     mode: str | None = None
+    layout: str | None = None
+    shape: str | None = None
     scene: RenderScene2D | RenderScene3D | None = None
     ax: object | None = None
     notebook: bool | None = None

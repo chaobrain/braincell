@@ -13,9 +13,20 @@
 # limitations under the License.
 # ==============================================================================
 
+from __future__ import annotations
 
+from typing import Callable
+
+import brainstate
+import braintools
+import brainunit as u
+import numpy as np
+
+from braincell._base import HHTypedNeuron, IonChannel
 from braincell.filter import LocsetExpr, RegionExpr
 from braincell.morpho import Morpho
+from braincell.quad import DiffEqState, IndependentIntegration, get_integrator
+from braincell.quad import _voltage_solver as voltage_solver
 from .cv import CV, assemble_cv
 from .cv_geo import build_cv_geo
 from .cv_mech import (
@@ -30,43 +41,94 @@ from .cv_mech import (
     normalize_place_rule,
 )
 from .cv_policy import CVPerBranch, CVPolicy
-from .point_scheduling import PointScheduling, build_point_scheduling
-from .point_tree import PointTree, build_point_tree
+from .point_tree import PointScheduling, PointTree, build_point_scheduling, build_point_tree
+from .runtime import (
+    CellRuntimeState,
+    build_placeholder_ions,
+    clone_morpho,
+    cv_value_vector,
+    fill_like,
+    gather_midpoint_values,
+    install_cell_runtime,
+    is_python_zero,
+    mechanism_signature,
+    matches_last_dim,
+    scatter_midpoint_values,
+)
+from .assignment_table import MechanismObjectCell, MechanismObjectTable, mechanism_cell_key
+
+__all__ = ["Cell"]
 
 
-class Cell:
-    """Frontend cell facade built from a :class:`Morpho` plus paint/place rules.
+class Cell(HHTypedNeuron):
+    """Main cell object owning declaration, compilation, and runtime state.
 
-    ``Cell`` is the main entry point for the current ``braincell.cell`` layer.
-    It owns an editable morphology snapshot, a CV discretization policy, and the
-    declarative ``paint(...)`` / ``place(...)`` rules that will later be lowered
-    onto control volumes.
+    ``Cell`` is the public orchestration object for the whole ``cell`` stack.
+    It plays three roles at once:
 
-    Main responsibilities:
+    - declaration frontend: collect ``paint`` / ``place`` requests
+    - lazy rebuild owner: lower morphology + policy + rules into immutable CVs
+    - runtime facade: compile layouts into runtime nodes and expose simulation APIs
 
-    - keep the original morphology snapshot isolated from later user edits
-    - lazily rebuild CVs after ``cv_policy`` / ``paint`` / ``place`` changes
-    - expose assembled :class:`CV` objects through :attr:`cvs`
-    - build higher-level execution helpers such as :class:`PointTree` and
-      :class:`PointScheduling`
+    The key design choice is that declaration is cheap while rebuild/compile is
+    deferred. Mutating declarations only flips dirty flags; the expensive
+    geometry/mechanism/runtime work happens later when a derived view is needed.
 
-    Important collaborators:
+    Core owned state:
 
-    - :class:`CVPolicy` decides how each branch is split into CV intervals
-    - :func:`build_cv_geo` creates the geometry/topology skeleton for each CV
-    - :mod:`cv_mech` maps cable, density, and point mechanisms onto those CVs
-    - :func:`build_point_tree` and :func:`build_point_scheduling` derive
-      compute-point views from the assembled CV list
+    - a cloned morphology snapshot that no longer follows outside edits
+    - one active :class:`CVPolicy`
+    - normalized ``paint`` and ``place`` declarations
+    - cached immutable :class:`CV` objects and derived :class:`PointTree`
+    - cached compiled :class:`CellRuntimeState`
+    - dirty flags tracking whether structure, mechanisms, or installed runtime
+      must be rebuilt
 
-    The public workflow is intentionally small: create ``Cell(...)``, call
-    ``paint(...)`` and ``place(...)`` to accumulate declarations, then inspect
-    ``cvs``, ``point_tree()``, or ``point_scheduling(...)``.
+    Main method groups:
+
+    - declaration: :meth:`paint`, :meth:`place`
+    - structural inspection: :attr:`cvs`, :meth:`point_tree`,
+      :meth:`point_scheduling`
+    - runtime inspection: layout/state/runtime-node getters
+    - state lifecycle: :meth:`init_state`, :meth:`reset_state`
+    - solver path: :meth:`compute_derivative`, :meth:`update`,
+      :meth:`compute_membrane_derivative`, :meth:`compute_axial_derivative`
+
+    Main collaborators:
+
+    - :func:`build_cv_geo` decides CV geometry from morphology and policy
+    - :mod:`cv_mech` maps declaration rules onto those CVs
+    - :class:`PointTree` provides the merged point-edge execution view
+    - :class:`CellRuntimeState` lowers immutable declarations into runtime
+      layouts, state buffers, and installed mechanism nodes
+
+    The result is that users interact almost entirely with ``Cell``, while the
+    lower layers stay explicit and inspectable for debugging or solver work.
     """
 
-    def __init__(self, morpho: Morpho, *, cv_policy: CVPolicy | None = None) -> None:
+    __module__ = "braincell.cell"
+
+    def __init__(
+        self,
+        morpho: Morpho,
+        *,
+        cv_policy: CVPolicy | None = None,
+        V_th: object = -75 * u.mV,
+        V_initializer: object | None = None,
+        spk_fun: Callable = braintools.surrogate.ReluGrad(),
+        solver: str | Callable = "explicit",
+        name: str | None = None,
+    ) -> None:
         if not isinstance(morpho, Morpho):
             raise TypeError(f"Cell expects Morpho, got {type(morpho).__name__!s}.")
-        self._morpho = _clone_morpho(morpho)
+
+        super().__init__(
+            size=(1,),
+            name=name,
+            **build_placeholder_ions(),
+        )
+
+        self._morpho = clone_morpho(morpho)
         self._cv_policy = CVPerBranch() if cv_policy is None else cv_policy
         if not isinstance(self._cv_policy, CVPolicy):
             raise TypeError(f"cv_policy must be CVPolicy, got {type(self._cv_policy).__name__!s}.")
@@ -76,8 +138,30 @@ class Cell:
         self._cvs: tuple[CV, ...] | None = None
         self._point_tree: PointTree | None = None
         self._point_scheduling: dict[tuple[str, int], PointScheduling] = {}
-        self._dirty = True
+        self._compiled_runtime: CellRuntimeState | None = None
+        self._cached_voltage_linearizer = None
+        self._cached_axial_operator = None
+        self._frontend_dirty = True
+        self._structure_dirty = True
+        self._mechanism_dirty = True
+        self._value_dirty = False
+        self._state_initialized = False
+        self._V_th_value = V_th
+        self._V_initializer_spec = V_initializer
+        self._spk_fun = spk_fun
+        self.solver_name, self.solver = _resolve_solver(solver)
+
+        # Build the first immutable CV view eagerly so basic inspection APIs are
+        # available right after construction. Runtime installation still stays lazy.
         self._rebuild_if_needed()
+
+    @property
+    def pop_size(self) -> tuple[int, ...]:
+        return ()
+
+    @property
+    def n_compartment(self) -> int:
+        return self.varshape[-1]
 
     @property
     def morpho(self) -> Morpho:
@@ -92,7 +176,7 @@ class Cell:
         if not isinstance(value, CVPolicy):
             raise TypeError(f"cv_policy must be CVPolicy, got {type(value).__name__!s}.")
         self._cv_policy = value
-        self._dirty = True
+        self._mark_dirty(structure=True, mechanism=True)
 
     @property
     def paint_rules(self) -> tuple[PaintRule, ...]:
@@ -103,18 +187,22 @@ class Cell:
         return self._place_rules
 
     def paint(self, region: RegionExpr, *mechanisms: object) -> "Cell":
+        # ``paint`` only records normalized declarations. No runtime mutation
+        # happens here; the next rebuild will replay all rules onto fresh CVs.
         self._paint_rules = merge_paint_rules(
             self._paint_rules,
             normalize_paint_rules(region, mechanisms),
         )
-        self._dirty = True
+        self._mark_dirty(mechanism=True)
         return self
 
     def place(self, locset: LocsetExpr, *mechanisms: object) -> "Cell":
+        # Point mechanisms are stored as declarations on the frontend, then
+        # attached to the CV that owns the evaluated location during rebuild.
         self._place_rules = self._place_rules + (
             normalize_place_rule(locset, mechanisms),
         )
-        self._dirty = True
+        self._mark_dirty(mechanism=True)
         return self
 
     @property
@@ -124,6 +212,18 @@ class Cell:
     @property
     def cvs(self) -> tuple[CV, ...]:
         return self._rebuild_if_needed()
+
+    @property
+    def layouts(self):
+        return self._ensure_runtime_compiled().layouts
+
+    @property
+    def voltage_shape(self) -> tuple[int, ...]:
+        return self._ensure_runtime_compiled().voltage_shape
+
+    @property
+    def _dirty(self) -> bool:
+        return self._frontend_dirty
 
     def __repr__(self) -> str:
         return (
@@ -148,6 +248,9 @@ class Cell:
         cached = self._point_tree
         if cached is not None:
             return cached
+        # ``PointTree`` is the execution view derived from the current immutable
+        # CV list. It is not a second morphology object; it is a merged point-edge
+        # graph used by runtime lowering and matrix assembly.
         tree = build_point_tree(
             self._morpho,
             cvs=self.cvs,
@@ -167,6 +270,8 @@ class Cell:
         if cached is not None:
             return cached
         tree = self.point_tree()
+        # Scheduling is derived entirely from the point tree and cached
+        # separately because callers may request different algorithms/group sizes.
         scheduling = build_point_scheduling(
             tree,
             max_group_size=max_group_size,
@@ -175,11 +280,187 @@ class Cell:
         self._point_scheduling[cache_key] = scheduling
         return scheduling
 
+    def get_point_layouts(self, point_id: int):
+        return self._ensure_runtime_compiled().get_point_layouts(point_id)
+
+    def get_cv_layouts(self, cv_id: int):
+        return self._ensure_runtime_compiled().get_cv_layouts(cv_id)
+
+    def expected_state_shape(self, layout_id: int, var_name: str) -> tuple[int, ...]:
+        return self._ensure_runtime_compiled().expected_state_shape(layout_id, var_name)
+
+    def get_state(self, layout_id: int, var_name: str):
+        return self._ensure_runtime_compiled().get_state(layout_id, var_name)
+
+    def set_state(self, layout_id: int, var_name: str, value: object) -> None:
+        runtime = self._ensure_runtime_compiled()
+        runtime.set_state(layout_id, var_name, value)
+        self._value_dirty = False
+
+    def get_point_state(self, point_id: int) -> dict[int, dict[str, object]]:
+        return self._ensure_runtime_compiled().get_point_state(point_id)
+
+    def get_cv_state(self, cv_id: int) -> dict[int, dict[str, object]]:
+        return self._ensure_runtime_compiled().get_cv_state(cv_id)
+
+    def get_runtime_node(self, layout_id: int) -> object:
+        return self._ensure_runtime_compiled().get_runtime_node(layout_id)
+
+    def get_ion(self, name: str) -> object:
+        return self._ensure_runtime_compiled().get_ion(name)
+
+    def mech_table(self) -> MechanismObjectTable:
+        self._ensure_runtime_compiled()
+        return self._mech_table()
+
+    def init_state(self, batch_size=None) -> None:
+        # ``init_state`` is the boundary where declaration-level state becomes a
+        # runnable neuron object with concrete voltage/spike/channel states.
+        self._ensure_runtime_compiled()
+        self.V = DiffEqState(braintools.init.param(self._resolve_V_initializer(), self.varshape, batch_size))
+        self.spike = brainstate.ShortTermState(self.get_spike(self.V.value, self.V.value))
+        point_V = self._point_voltage(self.V.value)
+        nodes = self.nodes(IonChannel, allowed_hierarchy=(1, 1)).values()
+        for channel in nodes:
+            channel.init_state(point_V, batch_size=batch_size)
+        self._state_initialized = True
+        self._value_dirty = False
+
+    def reset_state(self, batch_size=None) -> None:
+        if self._compiled_runtime is None or self._structure_dirty or self._mechanism_dirty or not hasattr(self, "V"):
+            self.init_state(batch_size=batch_size)
+            return
+        if not self._state_initialized:
+            self.init_state(batch_size=batch_size)
+            return
+        self.V.value = braintools.init.param(self._resolve_V_initializer(), self.varshape, batch_size)
+        self.spike.value = self.get_spike(self.V.value, self.V.value)
+        point_V = self._point_voltage(self.V.value)
+        for channel in self.nodes(IonChannel, allowed_hierarchy=(1, 1)).values():
+            channel.reset_state(point_V, batch_size=batch_size)
+        self._value_dirty = False
+
+    def pre_integral(self, I_ext=0.0 * u.nA):
+        self._ensure_runtime_ready()
+        point_V = self._point_voltage(self.V.value)
+        for _, node in self.nodes(IonChannel, allowed_hierarchy=(1, 1)).items():
+            if not isinstance(node, IndependentIntegration):
+                node.pre_integral(point_V)
+
+    def compute_derivative(self, I_ext=0.0 * u.nA):
+        self._ensure_runtime_ready()
+        self.V.derivative = self.compute_voltage_derivative(self.V.value, I_ext)
+        point_V = self._point_voltage(self.V.value)
+        for _, node in self.nodes(IonChannel, allowed_hierarchy=(1, 1)).items():
+            if not isinstance(node, IndependentIntegration):
+                node.compute_derivative(point_V)
+
+    def compute_membrane_derivative(self, V, I_ext=0.0 * u.nA):
+        point_V = self._point_voltage(V)
+        # Point clamps are intrinsic declarations owned by the cell. ``I_ext`` is
+        # the caller-supplied external current pathway. Both are converted into
+        # point-level current density before they are summed with channel currents.
+        point_clamp_input = self._point_clamp_input()
+        point_external_input = self._point_external_input(I_ext)
+        summed_inputs = self.sum_current_inputs(point_clamp_input, point_external_input, point_V)
+        I_total = None if is_python_zero(summed_inputs) else summed_inputs
+        for key, ch in self.nodes(IonChannel, allowed_hierarchy=(1, 1)).items():
+            try:
+                current = ch.current(point_V)
+                if current is None:
+                    continue
+                I_total = current if I_total is None else (I_total + current)
+            except Exception as exc:
+                raise ValueError(
+                    f"Error in computing current for ion channel '{key}': \n"
+                    f"{ch}\n"
+                    f"Error: {exc}"
+                ) from exc
+        if I_total is None:
+            I_total = 0.0 * (u.nA / (u.cm ** 2))
+        return self._midpoint_current(I_total) / self.C
+
+    def compute_axial_derivative(self, V):
+        operator = u.math.asarray(self._axial_operator())
+        V_decimal = u.math.asarray(V.to_decimal(u.mV))
+        axial_decimal = -u.math.matmul(V_decimal, operator.T)
+        return axial_decimal * (u.mV / u.ms)
+
+    def compute_voltage_derivative(self, V, I_ext=0.0 * u.nA):
+        return self.compute_membrane_derivative(V, I_ext) + self.compute_axial_derivative(V)
+
+    def post_integral(self, I_ext=0.0 * u.nA):
+        self._ensure_runtime_ready()
+        self.V.value = self.sum_delta_inputs(init=self.V.value)
+        point_V = self._point_voltage(self.V.value)
+        for _, node in self.nodes(IonChannel, allowed_hierarchy=(1, 1)).items():
+            if not isinstance(node, IndependentIntegration):
+                node.post_integral(point_V)
+
+    def update(self, I_ext=0.0 * u.nA):
+        self._ensure_runtime_ready()
+        point_V = self._point_voltage(self.V.value)
+        for _, node in self.nodes(IonChannel, allowed_hierarchy=(1, 1)).items():
+            node.update(point_V)
+
+        last_V = self.V.value
+        dt = brainstate.environ.get("dt")
+        if dt is None:
+            raise ValueError("Cell.update(...) requires brainstate.environ['dt'] to be set.")
+        # The solver always advances the installed runtime object. The frontend
+        # declaration layer should already be frozen at this point.
+        with brainstate.environ.context(t=brainstate.environ.get("t", 0.0 * u.ms)):
+            self.solver(self, I_ext)
+        spk = self.get_spike(last_V, self.V.value)
+        self.spike.value = spk
+        return spk
+
+    def profile(
+        self,
+        *,
+        steps: int = 20,
+        warmup_steps: int = 1,
+        repeat_init: int = 3,
+        I_ext=0.0 * u.nA,
+        include_cprofile: bool = False,
+        top_k: int = 20,
+    ):
+        from .profile import profile_cell
+
+        return profile_cell(
+            self,
+            steps=steps,
+            warmup_steps=warmup_steps,
+            repeat_init=repeat_init,
+            I_ext=I_ext,
+            include_cprofile=include_cprofile,
+            top_k=top_k,
+        )
+
+    @property
+    def V_initializer(self) -> object:
+        return self._resolve_V_initializer()
+
+    def get_spike(self, last_V, next_V):
+        denom = 20.0 * u.mV
+        return (
+            self._spk_fun((next_V - self.V_th) / denom) *
+            self._spk_fun((self.V_th - last_V) / denom)
+        )
+
     def _rebuild_if_needed(self) -> tuple[CV, ...]:
-        if not self._dirty and self._cvs is not None:
+        if not self._frontend_dirty and self._cvs is not None:
             return self._cvs
 
-        cv_geo, cv_ids_by_branch = build_cv_geo(self._morpho, policy=self._cv_policy)
+        # Rebuild pipeline:
+        # 1. split morphology into CV geometry from the active CV policy
+        # 2. accumulate rule effects into mutable per-CV mechanism buckets
+        # 3. freeze those buckets into immutable user-facing ``CV`` objects
+        cv_geo, cv_ids_by_branch = build_cv_geo(
+            self._morpho,
+            policy=self._cv_policy,
+            paint_rules=self._paint_rules,
+        )
         cv_mech = init_cv_mech(len(cv_geo))
 
         apply_paint_rules(
@@ -201,24 +482,259 @@ class Cell:
             assemble_cv(cv_geo=piece, mech=cv_mech[piece.id])
             for piece in cv_geo
         )
+        # Any frontend rebuild invalidates all derived execution views and the
+        # compiled runtime bridge, because point ids/layout ids may have changed.
+        self._frontend_dirty = False
         self._point_tree = None
         self._point_scheduling = {}
-        self._dirty = False
+        self._compiled_runtime = None
+        self._cached_voltage_linearizer = None
+        self._cached_axial_operator = None
+        self._state_initialized = False
         return self._cvs
 
+    def _ensure_runtime_compiled(self) -> CellRuntimeState:
+        self._rebuild_if_needed()
+        cached = self._compiled_runtime
+        if cached is not None and not self._structure_dirty and not self._mechanism_dirty:
+            return cached
 
-def _clone_morpho(morpho: Morpho) -> Morpho:
-    cloned = Morpho.from_root(morpho.root.branch, name=morpho.root.name)
-    for index in range(1, len(morpho.branches)):
-        branch = morpho.branch(index=index)
-        parent = branch.parent
-        if parent is None:
-            continue
-        cloned.attach(
-            parent=parent.name,
-            child_branch=branch.branch,
-            child_name=branch.name,
-            parent_x=float(branch.parent_x),  # type: ignore[arg-type]
-            child_x=float(branch.child_x),  # type: ignore[arg-type]
+        # Runtime compilation lowers immutable CV declarations into layout/state
+        # buffers plus installed runtime nodes. This is the bridge from frontend
+        # declarations to simulation-ready objects.
+        compiled = CellRuntimeState.from_cell(self)
+        self._compiled_runtime = compiled
+        install_cell_runtime(self, compiled)
+        self._structure_dirty = False
+        self._mechanism_dirty = False
+        self._value_dirty = False
+        self._state_initialized = False
+        return compiled
+
+    def _ensure_runtime_ready(self) -> None:
+        if self._compiled_runtime is None or self._structure_dirty or self._mechanism_dirty:
+            raise ValueError("Cell runtime is stale; call Cell.init_state() after changing cv_policy, paint, or place.")
+        if not self._state_initialized or not hasattr(self, "V") or not hasattr(self, "spike"):
+            raise ValueError("Cell state is not initialized; call Cell.init_state() first.")
+
+    def _mark_dirty(self, *, structure: bool = False, mechanism: bool = False) -> None:
+        # Dirty flags separate "what changed" so callers can reason about why a
+        # later ``init_state`` or runtime compile is required.
+        # - structure: CV splitting / point tree / axial operator may change
+        # - mechanism: layouts / state buffers / runtime nodes may change
+        if structure:
+            self._structure_dirty = True
+        if mechanism:
+            self._mechanism_dirty = True
+        self._frontend_dirty = True
+        self._value_dirty = False
+        self._compiled_runtime = None
+        self._cached_voltage_linearizer = None
+        self._cached_axial_operator = None
+        self._state_initialized = False
+
+    def _resolve_V_initializer(self) -> object:
+        if self._V_initializer_spec is not None:
+            return self._V_initializer_spec
+        runtime = self._compiled_runtime
+        if runtime is None:
+            self._ensure_runtime_compiled()
+            runtime = self._compiled_runtime
+        if runtime is None:
+            raise ValueError("Cell runtime has not been compiled; cannot resolve V initializer.")
+        return cv_value_vector(self, attr_name="v")
+
+    def _point_voltage(self, cv_voltage: object) -> object:
+        runtime = self._ensure_runtime_compiled()
+        point_ids = runtime.point_tree.cv_midpoint_point_id
+        # Runtime channels and clamps operate on point-space arrays, while the
+        # public membrane state is CV-shaped. Midpoint scattering bridges them.
+        return scatter_midpoint_values(
+            values=cv_voltage,
+            point_ids=point_ids,
+            n_point=runtime.n_point,
         )
-    return cloned
+
+    def _midpoint_current(self, point_values: object) -> object:
+        runtime = self._ensure_runtime_compiled()
+        point_ids = runtime.point_tree.cv_midpoint_point_id
+        return gather_midpoint_values(point_values, point_ids=point_ids)
+
+    def _point_external_input(self, value: object) -> object:
+        runtime = self._ensure_runtime_compiled()
+        value = self._normalize_external_current(value)
+        if matches_last_dim(value, runtime.n_cv):
+            # CV-shaped inputs are only defined on CV midpoints, so they need the
+            # same midpoint scatter that voltage uses.
+            return scatter_midpoint_values(
+                values=value,
+                point_ids=runtime.point_tree.cv_midpoint_point_id,
+                n_point=runtime.n_point,
+            )
+        return value
+
+    def _normalize_external_current(self, value: object) -> object:
+        runtime = self._ensure_runtime_compiled()
+        if not isinstance(value, u.Quantity):
+            return value
+
+        current_density_unit = 1.0 * u.nA / (u.cm ** 2)
+        total_current_unit = 1.0 * u.nA
+        if value.has_same_unit(current_density_unit):
+            return value.in_unit(u.nA / (u.cm ** 2))
+        if value.has_same_unit(total_current_unit):
+            area = cv_value_vector(self, attr_name="area")
+            # Total current inputs are normalized into current density because the
+            # channel solver sums everything in ``nA / cm^2`` at point space.
+            if matches_last_dim(value, runtime.n_point):
+                point_area = self._point_area()
+                return (value / point_area).in_unit(u.nA / (u.cm ** 2))
+            if matches_last_dim(value, runtime.n_cv):
+                return (value / area).in_unit(u.nA / (u.cm ** 2))
+            if getattr(value, "shape", ()) == ():
+                return (value / area).in_unit(u.nA / (u.cm ** 2))
+        return value
+
+    def _point_area(self) -> object:
+        runtime = self._ensure_runtime_compiled()
+        area = cv_value_vector(self, attr_name="area")
+        return scatter_midpoint_values(
+            values=area,
+            point_ids=runtime.point_tree.cv_midpoint_point_id,
+            n_point=runtime.n_point,
+        )
+
+    def _mech_table(self) -> MechanismObjectTable:
+        runtime = self._ensure_runtime_compiled()
+        point_tree = self.point_tree()
+        column_ids = tuple(range(len(point_tree.points)))
+
+        row_keys: list[tuple[str, str]] = []
+        row_labels: list[str] = []
+        row_index_by_key: dict[tuple[str, str], int] = {}
+        pending_cells: list[tuple[int, int, MechanismObjectCell]] = []
+        layout_id_by_signature = {
+            (layout.target,) + mechanism_signature(runtime.get_layout_mechanism(layout.id)): layout.id
+            for layout in runtime.layouts
+        }
+
+        def ensure_row(mechanism: object) -> int:
+            row_key = mechanism_cell_key(mechanism)
+            row_index = row_index_by_key.get(row_key)
+            if row_index is not None:
+                return row_index
+            row_index = len(row_keys)
+            row_keys.append(row_key)
+            class_name, instance_name = row_key
+            row_labels.append(class_name if class_name == instance_name else f"{instance_name}:{class_name}")
+            row_index_by_key[row_key] = row_index
+            return row_index
+
+        for cv in self.cvs:
+            midpoint_point_id = int(point_tree.cv_midpoint_point_id[cv.id])
+            for mechanism in cv.density_mech:
+                row_key = mechanism_cell_key(mechanism)
+                row_index = ensure_row(mechanism)
+                layout_id = layout_id_by_signature[("density",) + mechanism_signature(mechanism)]
+                column_id = midpoint_point_id
+                pending_cells.append(
+                    (
+                        row_index,
+                        int(column_id),
+                        MechanismObjectCell(
+                            runtime=runtime,
+                            layout_id=int(layout_id),
+                            class_name=row_key[0],
+                            instance_name=row_key[1],
+                            column_id=int(column_id),
+                            domain="point",
+                            cv_id=None,
+                            point_id=midpoint_point_id,
+                        ),
+                    )
+                )
+            for mechanism in cv.point_mech:
+                row_key = mechanism_cell_key(mechanism)
+                row_index = ensure_row(mechanism)
+                layout_id = layout_id_by_signature[("point",) + mechanism_signature(mechanism)]
+                column_id = midpoint_point_id
+                pending_cells.append(
+                    (
+                        row_index,
+                        int(column_id),
+                        MechanismObjectCell(
+                            runtime=runtime,
+                            layout_id=int(layout_id),
+                            class_name=row_key[0],
+                            instance_name=row_key[1],
+                            column_id=int(column_id),
+                            domain="point",
+                            cv_id=None,
+                            point_id=midpoint_point_id,
+                        ),
+                    )
+                )
+
+        values = np.full((len(row_keys), len(column_ids)), None, dtype=object)
+        for row_index, column_id, cell in pending_cells:
+            values[row_index, int(column_id)] = cell
+
+        return MechanismObjectTable(
+            domain="point",
+            row_keys=tuple(row_keys),
+            row_labels=tuple(row_labels),
+            column_ids=column_ids,
+            values=values,
+        )
+
+    def _point_clamp_input(self) -> object:
+        runtime = self._ensure_runtime_compiled()
+        try:
+            t = brainstate.environ.get("t")
+        except KeyError:
+            t = 0.0 * u.ms
+        # Placed clamps are evaluated per active point, then normalized by the
+        # local midpoint area so they participate in the same current-density sum
+        # as channels and user-provided external inputs.
+        point_current = runtime.evaluate_point_clamps(t=t)
+        return (point_current / self._point_area()).in_unit(u.nA / (u.cm ** 2))
+
+    def _voltage_linearizer(self):
+        self._ensure_runtime_compiled()
+        cached = self._cached_voltage_linearizer
+        if cached is not None:
+            return cached
+        cached = brainstate.transform.vector_grad(
+            self.compute_membrane_derivative,
+            argnums=0,
+            return_value=True,
+            unit_aware=False,
+        )
+        self._cached_voltage_linearizer = cached
+        return cached
+
+    def _axial_operator(self):
+        self._ensure_runtime_compiled()
+        cached = self._cached_axial_operator
+        if cached is not None:
+            return cached
+        # The axial operator depends on the current point-tree lowering and
+        # scheduling, so it is cached only after runtime/structure are up to date.
+        cached = voltage_solver._build_cv_axial_operator(
+            self,
+            point_tree=self.point_tree(),
+            scheduling=self.point_scheduling(algorithm="dhs"),
+        )
+        self._cached_axial_operator = cached
+        return cached
+
+
+def _resolve_solver(solver: str | Callable) -> tuple[str, Callable]:
+    if isinstance(solver, str):
+        solver_name = str(solver)
+        integrator_name = "euler" if solver_name == "explicit" else solver_name
+        return solver_name, get_integrator(integrator_name)
+    if callable(solver):
+        solver_name = getattr(solver, "__name__", type(solver).__name__)
+        return solver_name, solver
+    raise TypeError(f"solver must be str or callable, got {type(solver).__name__!s}.")

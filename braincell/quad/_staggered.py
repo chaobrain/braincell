@@ -30,14 +30,11 @@ def staggered_step(
     target: DiffEqModule,
     *args
 ):
-    from braincell._multi_compartment import MultiCompartment
-    assert isinstance(target, MultiCompartment), (
-        f"The stagger integrator only support {MultiCompartment.__name__}, "
-        f"but we got {type(target)} instead."
-        f"The stagger integrator only support {MultiCompartment.__name__}, "
+    assert isinstance(target, DiffEqModule), (
+        f"The stagger integrator only support {DiffEqModule.__name__}, "
         f"but we got {type(target)} instead."
     )
-    t = brainstate.environ.get('t')
+    t = brainstate.environ.get('t', 0.0)
     dt = brainstate.environ.get('dt')
 
     # voltage integration

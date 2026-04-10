@@ -2,7 +2,7 @@
 
 ## 目标与边界
 
-`cell` 当前只做前端建模与可检查数据，不进入计算执行层。
+`cell` 现在既做前端建模，也作为运行时主对象。
 
 - 入口固定为：`Cell(morpho, cv_policy=CVPerBranch())`
 - 自动离散得到 `CV` 集合
@@ -11,9 +11,8 @@
 
 本层明确不做：
 
-- 不提供 `run()`
-- 不组装 `HHTypedNeuron`
-- 不执行积分与矩阵求解
+- 不单独再暴露 `MultiCompartment` / `CellExecution` 这类中间壳对象
+- 不要求用户手动再包装一层执行对象
 
 ---
 
@@ -21,13 +20,14 @@
 
 ### `class Cell`
 
-前端主对象，持有：
+主对象，持有：
 
 - 形态快照：`morpho`
 - 离散策略：`cv_policy`
 - 离散结果：`cvs`
 - 原始规则：`paint_rules`、`place_rules`
-- 缓存状态：`dirty`
+- 编译缓存：layout / runtime node / ion / state buffer
+- 运行时状态：`V`、`spike`
 
 对外接口：
 
@@ -35,6 +35,13 @@
 - `place(locset, *point_mech)`
 - `n_cv`
 - `cvs[i] -> CV`
+- `init_state()`
+- `reset_state()`
+- `pre_integral() / compute_derivative() / post_integral() / update()`
+- `layouts`
+- `get_state()` / `set_state()`
+- `get_point_state()` / `get_cv_state()`
+- `get_ion()`
 
 ### `class CV`
 
@@ -78,24 +85,20 @@
 
 - 默认：`CVPerBranch()`，即每个 branch 1 个 CV
 - 支持 `CVPerBranch(cv_per_branch=...)`：每个 branch 使用统一 `cv_per_branch`
-- 支持 `MaxCVLen(max_cv_len=...)`：按 `max_cv_len` 计算每个 branch 的 CV 数量
-  - 规则：`n = max(1, ceil(branch_total_length / max_cv_len))`
-  - 语义：保证每段 CV 长度不超过 `max_cv_len`（浮点容差内）
-- 预留 `DLambda()`：当前仅占位，尚未实现
+- 支持 `MaxCVLen(max_cv_len=..., keep_odd=True)`：按 `max_cv_len` 计算每个 branch 的 CV 数量
+  - 规则：先算 `n = max(1, ceil(branch_total_length / max_cv_len))`
+  - 若 `keep_odd=True` 且 `n` 为偶数，则提升为 `n + 1`
+  - 语义：默认对齐 NEURON 风格偏好奇数分段；若要严格长度上限可用 `keep_odd=False`
+- 支持 `DLambda(d_lambda=..., frequency=100 * u.Hz, keep_odd=True)`：按 branch 级电长度决定 CV 数量
+  - `d_lambda` 必须显式给出
+  - `frequency` 默认 `100 Hz`
+  - `keep_odd=True` 时，自动分段数若为偶数则提升到下一个奇数
+  - `Ra/cm` 不从 policy 参数读取，而是从默认 cable 和 `paint(CableProperties)` 推导
+  - 支持不同 branch 使用不同 `Ra/cm`
+  - 若同一 branch 内 `Ra/cm` 不一致，则直接报错，要求统一该 branch 或改用其他 `cv_policy`
+  - `v_rest` / `temperature` 不参与 `DLambda` 的 branch 内一致性检查
 
-### `class PaintRule`
-
-保存原始 `paint` 声明：
-
-- 哪个 `region`
-- paint 了哪些机制/属性
-
-### `class PlaceRule`
-
-保存原始 `place` 声明：
-
-- 哪个 `locset`
-- 放了哪些点机制对象
+`PaintRule` / `PlaceRule` 仍存在于实现内部，用于保存标准化后的声明，但不再作为公开主接口导出或文档重点强调。
 
 ---
 
@@ -105,7 +108,9 @@
 - `cell/cv.py`：`CV` 与 `CV` 组装逻辑
 - `cell/cv_policy.py`：`CVPolicy` 基类和各类离散策略
 - `cell/cv_geo.py`：`CVGeo` + `CVFrustum`，负责离散、几何、拓扑映射
-- `cell/cv_mech.py`：`CVMech` + `PaintRule/PlaceRule`，负责规则归一化与应用
+- `cell/cv_mech.py`：内部规则与 CV 机制应用
+- `cell/point_tree.py`：`PointTree`、`PointScheduling` 与两者 builder
+- `cell/runtime.py`：内部编译 helper，负责 mechanism grouping、layout lowering、runtime node 与 state query
 
 ---
 
@@ -186,12 +191,13 @@
 
 ---
 
-## 查询与懒重建
+## 查询、编译与懒重建
 
-`Cell` 层查询的是抽象声明与离散结果：
+`Cell` 层查询包含两类内容：
 
 - 原始规则：`paint_rules`、`place_rules`
 - 离散结果：`cvs[i]` 的属性与机制视图
+- 编译结果：`layouts`、`get_state()`、`get_ion()` 等
 
 懒重建触发条件：
 
@@ -201,8 +207,24 @@
 
 触发后行为：
 
+---
+
+## 当前实现进展补充
+
+- `Cell.update(I_ext)` 现在按旧版 `MultiCompartment` 语义接收外部总电流，默认单位是 `u.nA`
+- 若传入的是总电流，`Cell` 内部会按 CV 面积换成电流密度后再参与膜方程
+- 若传入的已经是电流密度 `u.nA / u.cm**2`，当前实现也兼容
+- `staggered` 电压求解器的热路径已尽量改为 `jnp` / `u.math`，`numpy` 仅保留在静态拓扑与编译期数据整理中
+
 - 仅标记 `dirty`
-- 下次查询 `n_cv/cvs` 时重建
+- 下次查询 `n_cv/cvs` 时重建前端离散结果
+- 下次 `init_state()` 时重新编译 runtime，并重建真实 state
+
+运行时约束：
+
+- `paint/place/cv_policy` 修改后，必须重新 `init_state()`
+- `reset_state()` 可以在需要时隐式补编译
+- `update()` / `compute_derivative()` 不会隐式编译，未初始化会直接报错
 
 ---
 
@@ -219,3 +241,44 @@
 - 旧 `DiscretizationPolicy` 命名（迁移到 `CVPolicy`）
 
 文档标准以 `Cell + CV` 为唯一主干，其他均为内部实现细节。
+
+---
+
+## 当前进展
+
+### 已完成
+
+- `Cell` 已直接继承 `HHTypedNeuron`
+- `Cell.init_state()` 负责 runtime 编译与 state 创建
+- `Cell` 已直接接管 `reset_state/pre_integral/compute_derivative/post_integral/update`
+- `CellRuntimeState` 退化为内部编译缓存，不再作为公开主接口
+- `braincell.mech.Channel("IL")` 与 `braincell.mech.Channel("INa_HH1952")` 已能创建真实 runtime channel，并绑定到默认 `na/k/ca`
+- `Cell` 已可直接查询 `layouts/get_state/get_point_state/get_cv_state/get_runtime_node/get_ion`
+- `Cell.V` 的公开尺寸现在固定为 `n_cv`
+- runtime channel / ion 仍按 `point_tree` 的 `n_point = n_cv + n_branch + 1` 创建
+- `braincell.quad._voltage_solver.dhs_voltage_step()` 已改为从 `point_tree` 中的调度视图提取树结构
+- `Cell(solver="staggered")` 已可直接走新的 point-tree DHS 电压求解
+
+### 当前约束
+
+- `density_mech` 当前仍先映射到 `cv_midpoint_point_id`
+- 默认离子先固定为全局 `na/k/ca`
+- `dense/sparse` 自动阈值切换接口已保留，但阈值策略尚未实装
+- solver 内部会把 `n_cv` 的 `V` scatter 到 `n_point`，只在 midpoint row 写入/读回
+- 当前 buffer 以 bridge view 为主，参数/状态先用 object array 承载，不做真实数值积分
+
+### 下一步
+
+- 已接入 `braincell.mech.Channel("IL", ...)` 这类简短 spec，`Cell.paint(...)` 可直接接受，旧 `DensityMechanism` 仍兼容
+- 已打通 `Channel("IL", ...) -> CellRuntimeState.runtime_nodes -> braincell.channel.IL(size=(n_point,))`
+- 当前 `set_state(layout_id, var_name, value)` 会同步更新 bridge buffer 和已注册的 `IL` runtime node 参数
+- 已增加默认全局固定 ion 容器：`runtime.ions["na" | "k" | "ca"]`
+- 已打通 `Channel("INa_HH1952", ...) -> runtime.get_runtime_node(layout_id) -> runtime.get_ion("na").channels["INa"]`
+- 当前 `INa_HH1952` spec 里的 `T` 会在 runtime bridge 中转换成底层构造参数 `phi`
+- 当前仍只支持 dense runtime；`k/ca` 容器已创建但还未绑定新的真实 channel
+- 下一步优先做更多 ion-bound channel 映射，或者设计 `cell.ion[...]` / `cell.soma.channel[...]` 这种更直接的 facade
+
+### 公开面收口
+
+- `braincell.cell` 与顶层 `braincell` 只稳定导出：`Cell`、`CV`、`CVPolicy*`、`PointTree`、`PointScheduling`、`CellProfileReport`
+- `PaintRule`、`PlaceRule`、`MechanismLayout`、`CellExecution` 不再作为稳定公开 API

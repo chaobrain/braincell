@@ -22,8 +22,10 @@ import brainunit as u
 import numpy as np
 
 from braincell import Branch, Morpho
-from braincell.vis import build_layout_branches_2d, build_render_scene_2d, build_render_scene_3d
+from braincell.vis.layout2d import build_layout_branches_2d
 from braincell.vis.layout2d import tangent_on_layout_branch
+from braincell.vis.scene2d import build_render_scene_2d
+from braincell.vis.scene3d import build_render_scene_3d
 
 
 def _length_only_tree() -> Morpho:
@@ -206,9 +208,10 @@ class VisGeometryTest(unittest.TestCase):
     def test_frustum_scene_builds_polygon_per_segment(self) -> None:
         tree = _length_only_tree()
 
-        scene = build_render_scene_2d(tree, mode="frustum")
+        scene = build_render_scene_2d(tree, layout="stem", shape="frustum")
 
-        self.assertEqual(scene.mode, "frustum")
+        self.assertEqual(scene.layout, "stem")
+        self.assertEqual(scene.shape, "frustum")
         self.assertEqual(len(scene.polygons), 3)
         root_polygon = scene.polygons[0]
         self.assertEqual(root_polygon.points_um.shape, (4, 2))
@@ -319,8 +322,8 @@ class VisGeometryTest(unittest.TestCase):
 
         self.assertTrue(np.allclose(length_layouts["dend"].segment_points_um, point_layouts["dend"].segment_points_um))
 
-        length_scene = build_render_scene_2d(length_tree, mode="frustum")
-        point_scene = build_render_scene_2d(point_tree, mode="frustum")
+        length_scene = build_render_scene_2d(length_tree, layout="stem", shape="frustum")
+        point_scene = build_render_scene_2d(point_tree, layout="stem", shape="frustum")
 
         self.assertEqual(len(length_scene.polygons), len(point_scene.polygons))
         for length_polygon, point_polygon in zip(length_scene.polygons, point_scene.polygons):

@@ -31,11 +31,17 @@ from ._version import (
     __version_info__,
 )
 from .cell import (
+    CompositeByTypePolicy,
+    CV,
     CVPerBranch,
     CVPolicy,
+    CVPolicyByTypeRule,
     Cell,
+    CellProfileReport,
     DLambda,
     MaxCVLen,
+    PointScheduling,
+    PointTree,
 )
 from .filter import (
     LocsetExpr,
@@ -46,8 +52,10 @@ from .mech import (
     CableProperties,
     CurrentClamp,
     DensityMechanism,
+    FunctionClamp,
     PointMechanism,
-    ProbeMechanism
+    ProbeMechanism,
+    SineClamp,
 )
 from .mech import channel, ion, synapse
 from .morpho import (
@@ -74,13 +82,17 @@ __all__ = [
     "CableProperties",
     "Cell",
     "Channel",
+    "CompositeByTypePolicy",
     "CurrentClamp",
     "CustomBranch",
+    "CV",
     "CVPerBranch",
     "CVPolicy",
+    "CVPolicyByTypeRule",
     "DLambda",
     "Dendrite",
     "DensityMechanism",
+    "FunctionClamp",
     "HHTypedNeuron",
     "Ion",
     "IonChannel",
@@ -92,11 +104,15 @@ __all__ = [
     "MorphoBranch",
     "MorphoEdge",
     "MorphoMetric",
+    "PointScheduling",
+    "PointTree",
     "PointMechanism",
     "ProbeMechanism",
     "RegionExpr",
     "SelectionCache",
+    "SineClamp",
     "SingleCompartment",
+    "CellProfileReport",
     "Soma",
     "branch_class_for_type",
     "channel",

@@ -24,7 +24,8 @@ except ModuleNotFoundError:  # pragma: no cover - optional dependency
     pv = None
 
 from braincell import Morpho
-from braincell.vis import BackendChooser, PyVistaBackend
+from braincell.vis.backend import BackendChooser
+from braincell.vis.backend_pyvista import PyVistaBackend
 
 
 FIXTURE_DIR = Path(__file__).resolve().parents[2] / "develop_doc" / "morpho_files"

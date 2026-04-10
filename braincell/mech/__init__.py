@@ -18,15 +18,30 @@ from . import ion
 from . import synapse
 from .cable import CableProperties
 from .density import DensityMechanism
-from .point import CurrentClamp, GapJunctionMechanism, PointMechanism, ProbeMechanism, SynapseMechanism
+from .point import (
+    CurrentClamp,
+    FunctionClamp,
+    GapJunctionMechanism,
+    PointMechanism,
+    ProbeMechanism,
+    SineClamp,
+    SynapseMechanism,
+)
+from .spec import Channel, Ion, MechanismSpec, Synapse
 
 __all__ = [
     "CableProperties",
+    "Channel",
     "CurrentClamp",
     "DensityMechanism",
+    "FunctionClamp",
     "GapJunctionMechanism",
+    "Ion",
+    "MechanismSpec",
     "PointMechanism",
     "ProbeMechanism",
+    "SineClamp",
+    "Synapse",
     "SynapseMechanism",
     "channel",
     "ion",

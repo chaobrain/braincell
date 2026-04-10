@@ -19,7 +19,7 @@ import unittest
 from pathlib import Path
 
 from braincell import Morpho
-from braincell.vis import build_render_scene_3d
+from braincell.vis.scene3d import build_render_scene_3d
 
 
 FIXTURE_DIR = Path(__file__).resolve().parents[2] / "develop_doc" / "morpho_files"

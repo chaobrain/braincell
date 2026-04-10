@@ -22,23 +22,9 @@ import numpy as np
 
 from braincell import Branch, Cell, Morpho
 from braincell.filter import AllRegion, BranchSlice, RootLocation, Terminals, branch_in
-from braincell.vis import BackendChooser, plot2d, plot3d
-
-
-
-class FakeBackend:
-    name = "fake"
-
-    def __init__(self) -> None:
-        self.last_request = None
-
-    def available(self) -> bool:
-        return True
-
-    def render(self, request):
-        self.last_request = request
-        return request
-
+from braincell.vis import plot2d, plot3d
+from braincell.vis.backend import BackendChooser
+from braincell.vis._test_helper import FakeBackend
 
 
 class FilterVisTest(unittest.TestCase):
@@ -228,7 +214,7 @@ class FilterVisTest(unittest.TestCase):
         tree = Morpho.from_root(soma, name="soma")
         tree.soma.dend = dend
 
-        with self.assertRaisesRegex(ValueError, "3D visualization requires full point geometry on every branch"):
+        with self.assertRaisesRegex(ValueError, "requires complete point geometry on every branch"):
             tree.vis3d()
 
     def test_morpho_vis2d_routes_into_2d_plot_dispatch(self) -> None:
@@ -248,12 +234,13 @@ class FilterVisTest(unittest.TestCase):
         rendered = tree.vis2d(chooser=BackendChooser(backends=(FakeBackend(),)), backend="fake")
 
         self.assertEqual(rendered.dimensionality, "2d")
-        self.assertEqual(rendered.mode, "projected")
+        self.assertEqual(rendered.layout, "stem")
+        self.assertEqual(rendered.shape, "frustum")
         self.assertIsNotNone(rendered.scene)
-        self.assertEqual(rendered.scene.mode, "projected")
-        self.assertEqual(rendered.scene.projection_plane, "xy")
-        self.assertEqual(len(rendered.scene.polylines), 2)
-        self.assertTrue(np.allclose(rendered.scene.polylines[1].points_um[:, 0], np.array([20.0, 20.0])))
+        self.assertEqual(rendered.scene.layout, "stem")
+        self.assertEqual(rendered.scene.shape, "frustum")
+        self.assertEqual(rendered.scene.projection_plane, None)
+        self.assertEqual(len(rendered.scene.polygons), 2)
 
     def test_morpho_vis2d_accepts_layout_parameters(self) -> None:
         soma = Branch.from_lengths(lengths=[20.0] * u.um, radii=[10.0, 10.0] * u.um, type="soma")
@@ -264,15 +251,16 @@ class FilterVisTest(unittest.TestCase):
         tree.attach(parent="soma", child_branch=dend_b, child_name="dend_b", parent_x=1.0)
 
         rendered = tree.vis2d(
-            mode="tree",
+            layout="stem",
+            shape="line",
             min_branch_angle_deg=90.0,
             root_layout="legacy",
-            layout_family="stem",
             chooser=BackendChooser(backends=(FakeBackend(),)),
             backend="fake",
         )
 
-        self.assertEqual(rendered.mode, "tree")
+        self.assertEqual(rendered.layout, "stem")
+        self.assertEqual(rendered.shape, "line")
         child_angles = sorted(
             np.degrees(np.arctan2(polyline.points_um[-1, 1] - polyline.points_um[0, 1], polyline.points_um[-1, 0] - polyline.points_um[0, 0]))
             for polyline in rendered.scene.polylines

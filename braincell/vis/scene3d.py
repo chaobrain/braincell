@@ -29,7 +29,8 @@ def build_render_scene_3d(morpho: Morpho) -> RenderScene3D:
     if not morpho.has_full_point_geometry:
         raise ValueError(
             "3D mode='geometry' requires complete point geometry on every branch. "
-            "Use vis2d(mode='tree') or vis2d(mode='frustum') for length/radius-only morphologies."
+            "Use vis2d(layout='stem', shape='line') or vis2d(layout='stem', shape='frustum') "
+            "for length/radius-only morphologies."
         )
 
     branches: list[BranchPolyline3D] = []
@@ -39,7 +40,7 @@ def build_render_scene_3d(morpho: Morpho) -> RenderScene3D:
         if branch.points_proximal is None or branch.points_distal is None:
             raise ValueError(
                 f"Branch {branch_view.name!r} lacks complete 3D point geometry and cannot be rendered with "
-                "mode='geometry'. Use mode='tree' or mode='frustum' in 2D instead."
+                "mode='geometry'. Use layout='stem' with shape='line' or shape='frustum' in 2D instead."
             )
         points_um = np.vstack(
             [

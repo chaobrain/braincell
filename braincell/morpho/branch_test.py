@@ -21,26 +21,14 @@ import brainunit as u
 import numpy as np
 
 from braincell import Branch
-from braincell import vis as morpho_vis
-from braincell.vis import BackendChooser
-import jax.numpy as jnp
+from braincell.morpho import vis as morpho_vis
+from braincell.vis.backend import BackendChooser
+from braincell.vis._test_helper import FakeBackend
 
-
-
-
-class FakeBackend:
-    name = "fake"
-
-    def __init__(self) -> None:
-        self.last_request = None
-
-    def available(self) -> bool:
-        return True
-
-    def render(self, request):
-        self.last_request = request
-        return request
-
+try:
+    import jax.numpy as jnp
+except ModuleNotFoundError:
+    jnp = None
 
 
 class BranchTest(unittest.TestCase):
@@ -493,37 +481,39 @@ class BranchTest(unittest.TestCase):
         with self.assertRaises(TypeError):
             hash(branch)
 
-    def test_vis2d_frustum_mode(self) -> None:
+    def test_vis2d_frustum_shape(self) -> None:
         branch = Branch.from_lengths(
             lengths=[10.0, 15.0] * u.um,
             radii=[2.0, 1.5, 1.0] * u.um,
             type="dendrite",
         )
         backend = FakeBackend()
-        request = branch.vis2d(mode="frustum", show=False, chooser=BackendChooser(backends=(backend,)))
+        request = branch.vis2d(layout="stem", shape="frustum", show=False, chooser=BackendChooser(backends=(backend,)))
 
-        self.assertEqual(request.mode, "frustum")
+        self.assertEqual(request.layout, "stem")
+        self.assertEqual(request.shape, "frustum")
         self.assertGreater(len(request.scene.polygons), 0)
 
-    def test_vis2d_tree_mode(self) -> None:
+    def test_vis2d_line_shape(self) -> None:
         branch = Branch.from_lengths(
             lengths=[20.0] * u.um,
             radii=[3.0, 3.0] * u.um,
         )
         backend = FakeBackend()
-        request = branch.vis2d(mode="tree", show=False, chooser=BackendChooser(backends=(backend,)))
+        request = branch.vis2d(layout="stem", shape="line", show=False, chooser=BackendChooser(backends=(backend,)))
 
-        self.assertEqual(request.mode, "tree")
+        self.assertEqual(request.layout, "stem")
+        self.assertEqual(request.shape, "line")
         self.assertEqual(len(request.scene.polylines), 1)
 
-    def test_vis2d_projected_mode_requires_points(self) -> None:
+    def test_vis2d_projected_layout_requires_points(self) -> None:
         branch = Branch.from_lengths(
             lengths=[10.0] * u.um,
             radii=[2.0, 2.0] * u.um,
         )
         backend = FakeBackend()
-        with self.assertRaisesRegex(ValueError, "mode='tree'.*mode='frustum'"):
-            branch.vis2d(mode="projected", show=False, chooser=BackendChooser(backends=(backend,)))
+        with self.assertRaisesRegex(ValueError, "layout='stem'.*shape='line'.*shape='frustum'"):
+            branch.vis2d(layout="projected", shape="line", show=False, chooser=BackendChooser(backends=(backend,)))
 
     def test_vis3d_geometry_mode(self) -> None:
         branch = Branch.from_points(
@@ -546,5 +536,5 @@ class BranchTest(unittest.TestCase):
         )
         backend = FakeBackend()
 
-        with self.assertRaisesRegex(ValueError, r"vis2d\(mode='tree'\).+vis2d\(mode='frustum'\)"):
+        with self.assertRaisesRegex(ValueError, r"vis2d\(layout='stem', shape='line'\).+vis2d\(layout='stem', shape='frustum'\)"):
             branch.vis3d(show=False, chooser=BackendChooser(backends=(backend,)))

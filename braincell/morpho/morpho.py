@@ -1135,7 +1135,8 @@ class Morpho:
     def vis2d(
         self,
         *,
-        mode: str | None = None,
+        layout: str | None = None,
+        shape: str | None = None,
         backend: str | None = None,
         region=None,
         locset=None,
@@ -1149,27 +1150,31 @@ class Morpho:
         projection_plane: str = "xy",
         min_branch_angle_deg: float | None = 25.0,
         root_layout: str = "type_split",
-        layout_family: str = "stem",
     ) -> object:
         """Visualize this morphology in 2D.
 
-        Renders the morphology tree using the Matplotlib backend. Three
-        rendering modes are available:
+        Renders the morphology tree using the Matplotlib backend. The 2-D
+        visualization is controlled by:
 
-        * ``"projected"`` — projects 3-D point coordinates onto a 2-D plane.
-          Requires branches built with :meth:`Branch.from_points`.
-        * ``"tree"`` — schematic fan-out layout computed from branch lengths.
-          Works with any branch (no 3-D points required).
-        * ``"frustum"`` — draws each segment as a filled polygon whose width
-          matches the proximal/distal radii.  Works with any branch.
+        * ``layout`` — how 2-D coordinates are obtained:
+          ``"projected"``, ``"stem"``, ``"balloon"``, or ``"radial_360"``.
+        * ``shape`` — how those 2-D coordinates are drawn:
+          ``"line"`` or ``"frustum"``.
 
         Parameters
         ----------
-        mode : str or None
-            Visualization mode: ``"projected"``, ``"tree"``, or
-            ``"frustum"``. When omitted, uses the global 2-D default
-            configured via ``braincell.morpho.vis.configure(...)``.
-            The initial default is ``"frustum"``.
+        layout : str or None
+            2-D layout choice. ``"projected"`` uses projected 3-D point
+            geometry. ``"stem"``, ``"balloon"``, and ``"radial_360"``
+            use the schematic branch layout pipeline. When omitted, uses
+            the global 2-D default configured via
+            ``braincell.morpho.vis.configure(...)``. The initial default
+            is ``"stem"``.
+        shape : str or None
+            2-D drawing shape: ``"line"`` or ``"frustum"``. When omitted,
+            uses the global 2-D default configured via
+            ``braincell.morpho.vis.configure(...)``. The initial default
+            is ``"frustum"``.
         backend : str or None
             Rendering backend name (e.g., ``"matplotlib"``).
             Auto-selected when *None*.
@@ -1183,8 +1188,14 @@ class Morpho:
         chooser : BackendChooser or None
             Explicit backend chooser; overrides *backend* when given.
         projection_plane : str
-            Axis pair for ``"projected"`` mode: ``"xy"`` (default),
-            ``"xz"``, or ``"yz"``.  Ignored by other modes.
+            Axis pair for ``layout="projected"``: ``"xy"`` (default),
+            ``"xz"``, or ``"yz"``. Ignored by schematic layouts.
+        min_branch_angle_deg : float or None
+            Minimum branch separation angle for schematic layouts.
+            Ignored by ``layout="projected"``.
+        root_layout : str
+            Root branching strategy for schematic layouts. Ignored by
+            ``layout="projected"``.
         notebook : bool or None
             Enable notebook-specific rendering when *True*.
         jupyter_backend : str or None
@@ -1207,8 +1218,9 @@ class Morpho:
         Raises
         ------
         ValueError
-            If *mode* is ``"projected"`` and any branch lacks 3-D point
-            geometry.
+            If ``layout="projected"`` and any branch lacks 3-D point
+            geometry, or if ``layout="projected"`` is combined with
+            ``shape="frustum"``.
 
         See Also
         --------
@@ -1218,84 +1230,23 @@ class Morpho:
         Examples
         --------
 
-        **Projected mode** — project 3-D coordinates onto the *xy* plane:
+        **Projected layout** with line drawing:
 
         .. code-block:: python
 
-            >>> import brainunit as u
-            >>> from braincell import Branch, Morpho
-            >>> soma = Branch.from_points(
-            ...     points=[[0, 0, 0], [20, 0, 0]] * u.um,
-            ...     radii=[10.0, 10.0] * u.um,
-            ...     type="soma",
-            ... )
-            >>> dend = Branch.from_points(
-            ...     points=[[20, 0, 0], [20, 80, 0]] * u.um,
-            ...     radii=[2.0, 1.0] * u.um,
-            ...     type="apical_dendrite",
-            ... )
-            >>> morpho = Morpho.from_root(soma, name="soma")
-            >>> morpho.soma.dend = dend
-            >>> morpho.vis2d()  # doctest: +SKIP
+            >>> morpho.vis2d(layout="projected", shape="line")  # doctest: +SKIP
 
-        **Tree mode** — schematic layout (works without 3-D points):
+        **Stem layout** with line drawing:
 
         .. code-block:: python
 
-            >>> soma = Branch.from_lengths(
-            ...     lengths=[20.0] * u.um,
-            ...     radii=[10.0, 10.0] * u.um,
-            ...     type="soma",
-            ... )
-            >>> dend = Branch.from_lengths(
-            ...     lengths=[8.0, 12.0] * u.um,
-            ...     radii=[2.0, 1.5, 1.0] * u.um,
-            ...     type="apical_dendrite",
-            ... )
-            >>> axon = Branch.from_lengths(
-            ...     lengths=[30.0, 25.0] * u.um,
-            ...     radii=[1.0, 0.8, 0.5] * u.um,
-            ...     type="axon",
-            ... )
-            >>> morpho = Morpho.from_root(soma, name="soma")
-            >>> morpho.soma.dend = dend
-            >>> morpho.soma.axon = axon
-            >>> morpho.vis2d(mode="tree")  # doctest: +SKIP
+            >>> morpho.vis2d(layout="stem", shape="line")  # doctest: +SKIP
 
-        **Frustum mode** — filled polygons showing segment radii:
+        **Stem layout** with frustum drawing:
 
         .. code-block:: python
 
-            >>> morpho.vis2d(mode="frustum")  # doctest: +SKIP
-
-        **Change projection plane** to *xz*:
-
-        .. code-block:: python
-
-            >>> morpho.vis2d(projection_plane="xz")  # doctest: +SKIP
-
-        **Retrieve the Axes** for further customisation:
-
-        .. code-block:: python
-
-            >>> ax = morpho.vis2d(return_plotter=True, show=False)  # doctest: +SKIP
-            >>> ax.set_title("My morphology")  # doctest: +SKIP
-
-        **Overlay a region mask** (e.g. highlight all axon branches):
-
-        .. code-block:: python
-
-            >>> from braincell.filter import branch_in
-            >>> region = branch_in("type", "axon").evaluate(morpho)
-            >>> morpho.vis2d(region=region)  # doctest: +SKIP
-
-        **Overlay a location set** (e.g. mark terminal points):
-
-        .. code-block:: python
-
-            >>> from braincell.filter import Terminals
-            >>> locset = Terminals().evaluate(morpho)
-            >>> morpho.vis2d(locset=locset)  # doctest: +SKIP
+            >>> morpho.vis2d(layout="stem", shape="frustum")  # doctest: +SKIP
         """
         from braincell.vis.plot2d import plot2d
 
@@ -1304,7 +1255,8 @@ class Morpho:
             region=region,
             locset=locset,
             values=values,
-            mode=mode,
+            layout=layout,
+            shape=shape,
             backend=backend,
             chooser=chooser,
             ax=ax,
@@ -1314,7 +1266,6 @@ class Morpho:
             projection_plane=projection_plane,
             min_branch_angle_deg=min_branch_angle_deg,
             root_layout=root_layout,
-            layout_family=layout_family,
         )
         if show:
             import matplotlib.pyplot as plt

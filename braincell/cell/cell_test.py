@@ -44,6 +44,16 @@ def _build_tree() -> Morpho:
     return tree
 
 
+def _build_three_branch_tree() -> Morpho:
+    soma = Branch.from_lengths(lengths=[20.0] * u.um, radii=[10.0, 10.0] * u.um, type="soma")
+    dend = Branch.from_lengths(lengths=[80.0] * u.um, radii=[2.0, 1.0] * u.um, type="basal_dendrite")
+    axon = Branch.from_lengths(lengths=[120.0] * u.um, radii=[1.0, 0.6] * u.um, type="axon")
+    tree = Morpho.from_root(soma, name="soma")
+    tree.attach(parent="soma", child_branch=dend, child_name="dend", parent_x=1.0)
+    tree.attach(parent="soma", child_branch=axon, child_name="axon", parent_x=0.0)
+    return tree
+
+
 def _point_id_by_role(point_tree, *, cv_id: int, position: str) -> int:
     matches = [
         point.id
@@ -243,6 +253,26 @@ class CellFacadeTest(unittest.TestCase):
         gmax = dict(channel.params)["g_max"]
         self.assertAlmostEqual(float(gmax.to_decimal(u.mS / u.cm**2)), 2.0, places=12)
         self.assertEqual(dict(ion.params)["c0"], 12.0)
+
+    def test_channel_spec_paint_scales_by_area_fraction(self) -> None:
+        tree = Morpho.from_root(
+            Branch.from_lengths(lengths=[20.0] * u.um, radii=[10.0, 10.0] * u.um, type="soma"),
+            name="soma",
+        )
+        cell = Cell(tree)
+        cell.paint(
+            BranchSlice(branch_index=0, prox=0.0, dist=0.5),
+            braincell.mech.Channel("IL", g_max=4.0 * (u.mS / u.cm**2), E=-72.0 * u.mV),
+        )
+
+        cv0 = cell.cvs[0]
+        self.assertEqual(len(cv0.density_mech), 1)
+        channel = cv0.density_mech[0]
+        self.assertEqual(channel.category, "channel")
+        self.assertEqual(channel.name, "IL")
+        params = dict(channel.params)
+        self.assertAlmostEqual(float(params["g_max"].to_decimal(u.mS / u.cm**2)), 2.0, places=12)
+        self.assertAlmostEqual(float(params["E"].to_decimal(u.mV)), -72.0, places=12)
 
     def test_place_boundary_goes_to_right_cv_and_branch_endpoint_stays_local(self) -> None:
         soma = Branch.from_lengths(lengths=[10.0] * u.um, radii=[3.0, 2.0] * u.um, type="soma")
@@ -499,6 +529,8 @@ class CellFacadeTest(unittest.TestCase):
             cell.paint(BranchSlice(branch_index=0, prox=0.0, dist=1.0))
         with self.assertRaises(ValueError):
             cell.place(RootLocation(x=0.5))
+        with self.assertRaises(TypeError):
+            cell.paint(BranchSlice(branch_index=0, prox=0.0, dist=1.0), braincell.mech.Synapse("Foo"))
         self.assertFalse(hasattr(braincell, "DiscretizationPolicy"))
 
     def test_lazy_rebuild_only_happens_on_query(self) -> None:
@@ -559,34 +591,152 @@ class CellFacadeTest(unittest.TestCase):
         self.assertAlmostEqual(dict(no_gmax.params)["coverage_area_fraction"], 0.5, places=12)
 
     def test_public_exports_remain_stable(self) -> None:
+        from braincell import CV as PublicTopLevelCV
         from braincell import CVPerBranch as PublicCVPerBranch
         from braincell import CVPolicy as PublicCVPolicy
         from braincell import Cell as PublicCell
+        from braincell import CellProfileReport as PublicCellProfileReport
         from braincell import DLambda as PublicDLambda
         from braincell import MaxCVLen as PublicMaxCVLen
+        from braincell import PointScheduling as PublicTopLevelPointScheduling
+        from braincell import PointTree as PublicTopLevelPointTree
         from braincell.cell import CV as PublicCV
-        from braincell.cell import CVEdge as PublicCVEdge
-        from braincell.cell import CVPoint as PublicCVPoint
-        from braincell.cell import ComputeEdge as PublicComputeEdge
-        from braincell.cell import ComputePoint as PublicComputePoint
-        from braincell.cell import PaintRule as PublicPaintRule
         from braincell.cell import PointScheduling as PublicPointScheduling
         from braincell.cell import PointTree as PublicPointTree
-        from braincell.cell import PlaceRule as PublicPlaceRule
         import braincell.cell as public_cell_module
 
         self.assertIs(PublicCell, Cell)
+        self.assertEqual(PublicTopLevelCV.__name__, "CV")
         self.assertIs(PublicCVPolicy, CVPolicy)
         self.assertIs(PublicCVPerBranch, CVPerBranch)
         self.assertIs(PublicMaxCVLen, MaxCVLen)
         self.assertEqual(PublicDLambda.__name__, "DLambda")
         self.assertEqual(PublicCV.__name__, "CV")
-        self.assertEqual(PublicCVEdge.__name__, "CVEdge")
-        self.assertEqual(PublicCVPoint.__name__, "CVPoint")
-        self.assertEqual(PublicComputeEdge.__name__, "ComputeEdge")
-        self.assertEqual(PublicComputePoint.__name__, "ComputePoint")
-        self.assertEqual(PublicPaintRule.__name__, "PaintRule")
         self.assertEqual(PublicPointScheduling.__name__, "PointScheduling")
         self.assertEqual(PublicPointTree.__name__, "PointTree")
-        self.assertEqual(PublicPlaceRule.__name__, "PlaceRule")
+        self.assertEqual(PublicTopLevelPointScheduling.__name__, "PointScheduling")
+        self.assertEqual(PublicTopLevelPointTree.__name__, "PointTree")
+        self.assertEqual(PublicCellProfileReport.__name__, "CellProfileReport")
+        self.assertFalse(hasattr(public_cell_module, "PaintRule"))
+        self.assertFalse(hasattr(public_cell_module, "PlaceRule"))
+        self.assertFalse(hasattr(public_cell_module, "CVPoint"))
+        self.assertFalse(hasattr(public_cell_module, "CVEdge"))
+        self.assertFalse(hasattr(public_cell_module, "ComputePoint"))
+        self.assertFalse(hasattr(public_cell_module, "ComputeEdge"))
+        self.assertFalse(hasattr(public_cell_module, "MechanismLayout"))
         self.assertFalse(hasattr(public_cell_module, "AxialEdge"))
+
+    def test_mechanism_object_table_later_paint_overrides_same_row_same_cv(self) -> None:
+        cell = Cell(_build_tree())
+        cell.paint(
+            braincell.filter.AllRegion(),
+            braincell.mech.Channel("IL", g_max=0.1 * (u.mS / u.cm ** 2), E=-70.0 * u.mV),
+        )
+        cell.paint(
+            braincell.filter.BranchInFilter("type", "soma"),
+            braincell.mech.Channel("IL", g_max=0.2 * (u.mS / u.cm ** 2), E=-68.0 * u.mV),
+        )
+
+        table = cell.mech_table()
+        soma_point_ids = {
+            int(cell.point_tree().cv_midpoint_point_id[cv.id])
+            for cv in cell.cvs
+            if cv.branch_type == "soma"
+        }
+        dend_point_ids = {
+            int(cell.point_tree().cv_midpoint_point_id[cv.id])
+            for cv in cell.cvs
+            if cv.branch_type == "basal_dendrite"
+        }
+
+        for point_id in soma_point_ids:
+            soma_cell = table.get_by_label("IL", point_id)
+            self.assertIsNotNone(soma_cell)
+            assert soma_cell is not None
+            self.assertAlmostEqual(float(soma_cell.g_max.to_decimal(u.mS / u.cm ** 2)), 0.2, places=12)
+        for point_id in dend_point_ids:
+            dend_cell = table.get_by_label("IL", point_id)
+            self.assertIsNotNone(dend_cell)
+            assert dend_cell is not None
+            self.assertAlmostEqual(float(dend_cell.g_max.to_decimal(u.mS / u.cm ** 2)), 0.1, places=12)
+
+    def test_mech_table_uses_midpoint_points(self) -> None:
+        cell = Cell(_build_three_branch_tree(), cv_policy=CVPerBranch(cv_per_branch=2), solver="staggered")
+        cell.paint(
+            braincell.filter.AllRegion(),
+            braincell.mech.Channel("IL", g_max=0.1 * (u.mS / u.cm ** 2), E=-70.0 * u.mV),
+        )
+        cell.paint(
+            braincell.filter.BranchInFilter("type", "soma"),
+            braincell.mech.Channel("INa_HH1952", g_max=120.0 * (u.mS / u.cm ** 2)),
+            braincell.mech.Channel("IK_HH1952", g_max=36.0 * (u.mS / u.cm ** 2)),
+        )
+        cell.paint(
+            braincell.filter.BranchInFilter("type", "basal_dendrite"),
+            braincell.mech.Channel("INa_HH1952", g_max=100.0 * (u.mS / u.cm ** 2)),
+            braincell.mech.Channel("IK_HH1952", g_max=30.0 * (u.mS / u.cm ** 2)),
+        )
+        cell.paint(
+            braincell.filter.BranchInFilter("type", "axon"),
+            braincell.mech.Channel("INa_HH1952", g_max=140.0 * (u.mS / u.cm ** 2)),
+            braincell.mech.Channel("IK_HH1952", g_max=40.0 * (u.mS / u.cm ** 2)),
+        )
+        cell.init_state()
+
+        table = cell.mech_table()
+        self.assertEqual(table.row_labels, ("IL", "INa_HH1952", "IK_HH1952"))
+        self.assertEqual(table.shape, (3, len(cell.point_tree().points)))
+
+        midpoint_ids = {int(cell.point_tree().cv_midpoint_point_id[cv.id]) for cv in cell.cvs}
+        for point_id in table.column_ids:
+            point_cell = table.get_by_label("IL", point_id)
+            if point_id in midpoint_ids:
+                self.assertIsNotNone(point_cell)
+                assert point_cell is not None
+                self.assertEqual(point_cell.point_id, point_id)
+                self.assertAlmostEqual(float(point_cell.g_max.to_decimal(u.mS / u.cm ** 2)), 0.1, places=12)
+            else:
+                self.assertIsNone(point_cell)
+
+        soma_point_ids = {
+            int(cell.point_tree().cv_midpoint_point_id[cv.id])
+            for cv in cell.cvs
+            if cv.branch_type == "soma"
+        }
+        dend_point_ids = {
+            int(cell.point_tree().cv_midpoint_point_id[cv.id])
+            for cv in cell.cvs
+            if cv.branch_type == "basal_dendrite"
+        }
+        axon_point_ids = {
+            int(cell.point_tree().cv_midpoint_point_id[cv.id])
+            for cv in cell.cvs
+            if cv.branch_type == "axon"
+        }
+
+        for point_id in soma_point_ids:
+            ina = table.get_by_label("INa_HH1952", point_id)
+            ik = table.get_by_label("IK_HH1952", point_id)
+            self.assertIsNotNone(ina)
+            self.assertIsNotNone(ik)
+            assert ina is not None and ik is not None
+            self.assertAlmostEqual(float(ina.g_max.to_decimal(u.mS / u.cm ** 2)), 120.0, places=12)
+            self.assertAlmostEqual(float(ik.g_max.to_decimal(u.mS / u.cm ** 2)), 36.0, places=12)
+
+        for point_id in dend_point_ids:
+            ina = table.get_by_label("INa_HH1952", point_id)
+            ik = table.get_by_label("IK_HH1952", point_id)
+            self.assertIsNotNone(ina)
+            self.assertIsNotNone(ik)
+            assert ina is not None and ik is not None
+            self.assertAlmostEqual(float(ina.g_max.to_decimal(u.mS / u.cm ** 2)), 100.0, places=12)
+            self.assertAlmostEqual(float(ik.g_max.to_decimal(u.mS / u.cm ** 2)), 30.0, places=12)
+
+        for point_id in axon_point_ids:
+            ina = table.get_by_label("INa_HH1952", point_id)
+            ik = table.get_by_label("IK_HH1952", point_id)
+            self.assertIsNotNone(ina)
+            self.assertIsNotNone(ik)
+            assert ina is not None and ik is not None
+            self.assertAlmostEqual(float(ina.g_max.to_decimal(u.mS / u.cm ** 2)), 140.0, places=12)
+            self.assertAlmostEqual(float(ik.g_max.to_decimal(u.mS / u.cm ** 2)), 40.0, places=12)

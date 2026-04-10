@@ -21,7 +21,7 @@ import braintools
 import brainunit as u
 
 import braincell
-from braincell import CableProperties, CurrentClamp
+from braincell import CableProperties, CurrentClamp, FunctionClamp, SineClamp
 from braincell.mech.point import GapJunctionMechanism, ProbeMechanism, SynapseMechanism
 
 
@@ -44,6 +44,13 @@ class MechanismTest(unittest.TestCase):
 
     def test_point_mechanism_dataclasses_are_constructible(self) -> None:
         clamp = CurrentClamp(amplitude=0.2 * u.nA, delay=2.0 * u.ms, duration=1.0 * u.ms)
+        step_clamp = CurrentClamp(
+            start=1.0 * u.ms,
+            durations=(2.0 * u.ms, 3.0 * u.ms),
+            amplitudes=(0.0 * u.nA, 0.3 * u.nA),
+        )
+        sine = SineClamp(amplitude=0.4 * u.nA, frequency=50.0 * u.Hz, duration=5.0 * u.ms)
+        function = FunctionClamp(fn=lambda local_t: 0.1 * u.nA, duration=4.0 * u.ms)
         synapse = SynapseMechanism(synapse_type="exp2syn", params=(("tau", 5.0),))
         gap = GapJunctionMechanism(params=(("g", 1.0),))
         probe = ProbeMechanism(variable="v", target="soma")
@@ -51,6 +58,10 @@ class MechanismTest(unittest.TestCase):
         self.assertEqual(clamp.amplitude.to_decimal(u.nA), 0.2)
         self.assertEqual(clamp.delay.to_decimal(u.ms), 2.0)
         self.assertEqual(clamp.duration.to_decimal(u.ms), 1.0)
+        self.assertEqual(tuple(item.to_decimal(u.ms) for item in step_clamp.durations), (2.0, 3.0))
+        self.assertEqual(tuple(item.to_decimal(u.nA) for item in step_clamp.amplitudes), (0.0, 0.3))
+        self.assertEqual(sine.frequency.to_decimal(u.Hz), 50.0)
+        self.assertTrue(callable(function.fn))
         self.assertEqual(synapse.synapse_type, "exp2syn")
         self.assertEqual(gap.params[0], ("g", 1.0))
         self.assertEqual(probe.variable, "v")

@@ -14,6 +14,13 @@
 # ==============================================================================
 
 
+"""Final user-facing control-volume records.
+
+This module is intentionally small: geometry is lowered in ``cv_geo.py``,
+declaration rules are accumulated in ``cv_mech.py``, and this file only freezes
+those two lower layers into the immutable ``CV`` objects exposed by ``Cell.cvs``.
+"""
+
 from dataclasses import dataclass
 from typing import Any
 from typing import TYPE_CHECKING
@@ -22,7 +29,6 @@ import brainunit as u
 import numpy as np
 
 from braincell.filter import RegionMask
-from braincell.mech import DensityMechanism
 from braincell.morpho import Branch
 from .cv_policy import CVPolicy
 from .cv_geo import CVFrustum, CVGeo, axial_resistance_from_factor
@@ -65,7 +71,7 @@ class CV:
     r_axial: Any
     r_axial_prox: Any
     r_axial_dist: Any
-    density_mech: tuple[DensityMechanism, ...]
+    density_mech: tuple[object, ...]
     point_mech: tuple[object, ...]
     _frusta: tuple[CVFrustum, ...]
 

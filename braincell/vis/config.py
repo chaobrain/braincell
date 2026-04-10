@@ -41,13 +41,15 @@ DEFAULT_BRANCH_TYPE_COLORS = {
     "dendrite": (205, 92, 92),
     "custom": (110, 110, 110),
 }
-SUPPORTED_2D_MODES = frozenset({"projected", "tree", "frustum"})
+SUPPORTED_2D_LAYOUTS = frozenset({"projected", "stem", "balloon", "radial_360"})
+SUPPORTED_2D_SHAPES = frozenset({"line", "frustum"})
 SUPPORTED_3D_MODES = frozenset({"geometry"})
 
 
 @dataclass
 class VisDefaults:
-    mode_2d_default: str = "frustum"
+    layout_2d_default: str = "stem"
+    shape_2d_default: str = "frustum"
     mode_3d_default: str = "geometry"
     branch_type_colors: dict[str, tuple[int, int, int]] = field(
         default_factory=lambda: dict(DEFAULT_BRANCH_TYPE_COLORS)
@@ -72,7 +74,8 @@ def reset_defaults() -> VisDefaults:
 
 def configure(
     *,
-    mode_2d_default: str | None = None,
+    layout_2d_default: str | None = None,
+    shape_2d_default: str | None = None,
     mode_3d_default: str | None = None,
     branch_type_colors: dict[str, object] | None = None,
     replace_branch_type_colors: bool = False,
@@ -83,8 +86,18 @@ def configure(
     global _VIS_DEFAULTS
 
     updated = get_defaults()
-    if mode_2d_default is not None:
-        updated.mode_2d_default = _normalize_mode(mode_2d_default, supported=SUPPORTED_2D_MODES, label="2D")
+    if layout_2d_default is not None:
+        updated.layout_2d_default = _normalize_mode(
+            layout_2d_default,
+            supported=SUPPORTED_2D_LAYOUTS,
+            label="2D layout",
+        )
+    if shape_2d_default is not None:
+        updated.shape_2d_default = _normalize_mode(
+            shape_2d_default,
+            supported=SUPPORTED_2D_SHAPES,
+            label="2D shape",
+        )
     if mode_3d_default is not None:
         updated.mode_3d_default = _normalize_mode(mode_3d_default, supported=SUPPORTED_3D_MODES, label="3D")
     if branch_type_colors is not None:
@@ -109,8 +122,12 @@ def configure(
 set_defaults = configure
 
 
-def resolve_default_2d_mode(mode: str | None) -> str:
-    return _VIS_DEFAULTS.mode_2d_default if mode is None else mode
+def resolve_default_2d_layout(layout: str | None) -> str:
+    return _VIS_DEFAULTS.layout_2d_default if layout is None else layout
+
+
+def resolve_default_2d_shape(shape: str | None) -> str:
+    return _VIS_DEFAULTS.shape_2d_default if shape is None else shape
 
 
 def resolve_default_3d_mode(mode: str | None) -> str:
@@ -138,7 +155,8 @@ def alpha_for_3d_tube() -> float:
 
 def _copy_defaults(defaults: VisDefaults) -> VisDefaults:
     return VisDefaults(
-        mode_2d_default=defaults.mode_2d_default,
+        layout_2d_default=defaults.layout_2d_default,
+        shape_2d_default=defaults.shape_2d_default,
         mode_3d_default=defaults.mode_3d_default,
         branch_type_colors=dict(defaults.branch_type_colors),
         alpha_2d_poly=defaults.alpha_2d_poly,
@@ -186,3 +204,23 @@ def _normalize_color(color: object) -> tuple[int, int, int]:
     if not all(0 <= channel <= 255 for channel in scaled):
         raise ValueError(f"RGB channels must be between 0 and 255, got {color!r}.")
     return scaled
+
+
+__all__ = [
+    "DEFAULT_BRANCH_TYPE_COLORS",
+    "SUPPORTED_2D_LAYOUTS",
+    "SUPPORTED_2D_SHAPES",
+    "SUPPORTED_3D_MODES",
+    "VisDefaults",
+    "alpha_for_2d_line",
+    "alpha_for_2d_poly",
+    "alpha_for_3d_tube",
+    "color_for_branch_type",
+    "configure",
+    "get_defaults",
+    "reset_defaults",
+    "resolve_default_2d_layout",
+    "resolve_default_2d_shape",
+    "resolve_default_3d_mode",
+    "set_defaults",
+]

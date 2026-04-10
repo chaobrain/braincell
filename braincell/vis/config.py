@@ -18,7 +18,6 @@ from typing import Iterable
 
 __all__ = [
     "DEFAULT_BRANCH_TYPE_COLORS",
-    "SUPPORTED_2D_MODES",
     "SUPPORTED_3D_MODES",
     "VisDefaults",
     "alpha_for_2d_line",
@@ -28,7 +27,6 @@ __all__ = [
     "configure",
     "get_defaults",
     "reset_defaults",
-    "resolve_default_2d_mode",
     "resolve_default_3d_mode",
     "set_defaults",
 ]

@@ -450,6 +450,81 @@ class Morpho:
 
         return AscReader().read(path, return_report=return_report)
 
+    def save_checkpoint(self, path):
+        """Write this morphology to a braincell checkpoint file.
+
+        Checkpoints are a lossless on-disk snapshot that preserves branch
+        names, ``parent_x``/``child_x`` attachments (including ``0.5``
+        soma midpoints), and the auto-naming counters consulted by
+        :meth:`attach`. Unlike SWC/ASC, the round-trip is bit-exact.
+
+        Parameters
+        ----------
+        path : str or os.PathLike
+            Destination path. ``.bcm`` is appended automatically when the
+            supplied path has no suffix.
+
+        Returns
+        -------
+        Path
+            The final path the checkpoint was written to.
+
+        See Also
+        --------
+        Morpho.load_checkpoint : Inverse operation.
+        Morpho.from_swc : Load a morphology from an SWC interchange file.
+        Morpho.from_asc : Load a morphology from a Neurolucida ASC file.
+
+        Examples
+        --------
+
+        .. code-block:: python
+
+            >>> from braincell import Morpho
+            >>> morpho = Morpho.from_swc("neuron.swc")  # doctest: +SKIP
+            >>> morpho.save_checkpoint("neuron.bcm")  # doctest: +SKIP
+        """
+        from .checkpoint import save_morpho
+
+        return save_morpho(self, path)
+
+    @classmethod
+    def load_checkpoint(cls, path) -> "Morpho":
+        """Load a morphology from a braincell checkpoint file.
+
+        Parameters
+        ----------
+        path : str or os.PathLike
+            Path to a ``.bcm`` checkpoint produced by
+            :meth:`save_checkpoint`.
+
+        Returns
+        -------
+        Morpho
+            The reconstructed morphology, equal to the saved tree under
+            :meth:`__eq__`.
+
+        Raises
+        ------
+        CheckpointError
+            If the file is missing, corrupt, or is not a morpho checkpoint.
+
+        See Also
+        --------
+        Morpho.save_checkpoint : Inverse operation.
+
+        Examples
+        --------
+
+        .. code-block:: python
+
+            >>> from braincell import Morpho
+            >>> morpho = Morpho.load_checkpoint("neuron.bcm")  # doctest: +SKIP
+        """
+        from .checkpoint import load_morpho
+
+        return load_morpho(path)
+
     @property
     def root(self) -> "MorphoBranch":
         """The root branch of this morphology.
@@ -1374,8 +1449,15 @@ class Morpho:
         )
 
     def __getattr__(self, name: str) -> object:
-        if name in self._name_to_id:
-            return self._get_node(self._name_to_id[name])
+        # Underscore-prefixed names never name a branch. Failing fast avoids
+        # unbounded recursion when pickle / copy.deepcopy probe for
+        # ``__setstate__`` etc. on a partially-initialised instance whose
+        # ``_name_to_id`` dict has not yet been restored.
+        if name.startswith("_"):
+            raise AttributeError(name)
+        name_to_id = self.__dict__.get("_name_to_id")
+        if name_to_id is not None and name in name_to_id:
+            return self._get_node(name_to_id[name])
         raise AttributeError(f"{type(self).__name__!s} has no branch named {name!r}")
 
     def __dir__(self) -> list[str]:
@@ -1862,6 +1944,13 @@ class MorphoBranch:
         return _MorphAttachPoint(self, parent_x=parent_x, child_x=child_x)
 
     def __getattr__(self, name: str) -> object:
+        # Underscore-prefixed names never resolve through the dynamic branch /
+        # child lookup path. Bailing out early avoids unbounded recursion when
+        # pickle (or copy.deepcopy) probes for ``__setstate__`` etc. on a
+        # partially-initialised instance whose ``_branch`` / ``_owner`` slots
+        # have not yet been restored.
+        if name.startswith("_"):
+            raise AttributeError(name)
         getter = _MORPHO_BRANCH_PUBLIC_ATTRS.get(name)
         if getter is not None:
             return getter(self)

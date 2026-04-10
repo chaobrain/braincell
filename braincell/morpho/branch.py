@@ -868,6 +868,93 @@ class Branch:
             f"{'-'*35}\n"
         )
 
+    def save_checkpoint(self, path):
+        """Write this branch to a braincell checkpoint file.
+
+        Parameters
+        ----------
+        path : str or os.PathLike
+            Destination path. ``.bcm`` is appended automatically when the
+            supplied path has no suffix.
+
+        Returns
+        -------
+        Path
+            The final path the checkpoint was written to.
+
+        See Also
+        --------
+        Branch.load_checkpoint : Inverse operation.
+        Morpho.save_checkpoint : Persist a whole morphology tree.
+
+        Examples
+        --------
+
+        .. code-block:: python
+
+            >>> import brainunit as u
+            >>> from braincell import Branch
+            >>> branch = Branch.from_lengths(
+            ...     lengths=[10.0, 15.0] * u.um,
+            ...     radii=[2.0, 1.5, 1.0] * u.um,
+            ...     type="dendrite",
+            ... )
+            >>> branch.save_checkpoint("dend.bcm")  # doctest: +SKIP
+        """
+        from .checkpoint import save_branch
+
+        return save_branch(self, path)
+
+    @classmethod
+    def load_checkpoint(cls, path) -> "Branch":
+        """Load a branch from a braincell checkpoint file.
+
+        Parameters
+        ----------
+        path : str or os.PathLike
+            Path to a ``.bcm`` checkpoint produced by
+            :meth:`save_checkpoint`.
+
+        Returns
+        -------
+        Branch
+            The reconstructed branch as the appropriate typed subclass
+            (e.g. :class:`Soma`, :class:`Dendrite`).
+
+        Raises
+        ------
+        TypeError
+            If called on a typed subclass (e.g. ``Soma.load_checkpoint``)
+            and the saved branch type does not match the subclass type.
+        CheckpointError
+            If the file is not a valid branch checkpoint.
+
+        See Also
+        --------
+        Branch.save_checkpoint : Inverse operation.
+        Morpho.load_checkpoint : Load a whole morphology tree.
+
+        Examples
+        --------
+
+        .. code-block:: python
+
+            >>> from braincell import Branch
+            >>> branch = Branch.load_checkpoint("dend.bcm")  # doctest: +SKIP
+        """
+        from .checkpoint import load_branch
+
+        loaded = load_branch(path)
+        expected_type = cls._BRANCH_TYPE
+        if expected_type is not None and loaded.type != expected_type:
+            actual_cls = branch_class_for_type(loaded.type)
+            raise TypeError(
+                f"{cls.__name__}.load_checkpoint(): file holds a "
+                f"{loaded.type!r} branch. Use Branch.load_checkpoint() or "
+                f"{actual_cls.__name__}.load_checkpoint() instead."
+            )
+        return loaded
+
 
 @dataclass(frozen=True, eq=False, repr=False)
 class Soma(Branch):

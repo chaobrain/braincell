@@ -23,6 +23,14 @@ from .branch import (
     Soma,
     branch_class_for_type,
 )
+from .checkpoint import (
+    CheckpointError,
+    CheckpointVersionError,
+    load_branch,
+    load_morpho,
+    save_branch,
+    save_morpho,
+)
 from .morpho import (
     MorphoEdge,
     MorphoMetric,
@@ -35,6 +43,8 @@ __all__ = [
     "Axon",
     "BasalDendrite",
     "Branch",
+    "CheckpointError",
+    "CheckpointVersionError",
     "CustomBranch",
     "Dendrite",
     "MorphoEdge",
@@ -43,4 +53,8 @@ __all__ = [
     "MorphoBranch",
     "Soma",
     "branch_class_for_type",
+    "load_branch",
+    "load_morpho",
+    "save_branch",
+    "save_morpho",
 ]

@@ -33,7 +33,7 @@ from braincell import (
     Morpho,
     Soma,
 )
-from braincell.morpho import (
+from braincell.io import (
     CheckpointError,
     CheckpointVersionError,
     load_branch,
@@ -41,7 +41,7 @@ from braincell.morpho import (
     save_branch,
     save_morpho,
 )
-from braincell.morpho import checkpoint as checkpoint_module
+from braincell.io import checkpoint as checkpoint_module
 
 
 FIXTURE_DIR = Path(__file__).resolve().parents[2] / "develop_doc" / "morpho_files"
@@ -362,7 +362,7 @@ class CheckpointFormatErrorTest(unittest.TestCase):
         self._write_npz_with_manifest(
             path,
             {
-                "format": "braincell.morpho.checkpoint",
+                "format": "braincell.io.checkpoint",
                 "version": 999,
                 "kind": "branch",
                 "branch": {"type": "soma", "n_segments": 1, "has_points": False},
@@ -376,7 +376,7 @@ class CheckpointFormatErrorTest(unittest.TestCase):
         self._write_npz_with_manifest(
             path,
             {
-                "format": "braincell.morpho.checkpoint",
+                "format": "braincell.io.checkpoint",
                 "version": -1,
                 "kind": "branch",
             },
@@ -411,7 +411,7 @@ class CheckpointFormatErrorTest(unittest.TestCase):
         self._write_npz_with_manifest(
             path,
             {
-                "format": "braincell.morpho.checkpoint",
+                "format": "braincell.io.checkpoint",
                 "version": 1,
                 "kind": "morpho",
                 "branches": [],
@@ -449,7 +449,7 @@ class CheckpointFormatErrorTest(unittest.TestCase):
     def test_morpho_manifest_cycle_detection(self) -> None:
         # Two non-root branches that reference each other as parents.
         manifest = {
-            "format": "braincell.morpho.checkpoint",
+            "format": "braincell.io.checkpoint",
             "version": 1,
             "kind": "morpho",
             "root_name": "soma",

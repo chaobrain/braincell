@@ -51,8 +51,7 @@ import brainunit as u
 import numpy as np
 
 from braincell._version import __version__ as _BC_VERSION
-from .branch import Branch, branch_class_for_type
-from .morpho import Morpho
+from braincell.morpho import Branch, Morpho, branch_class_for_type
 
 __all__ = [
     "CheckpointError",
@@ -63,7 +62,7 @@ __all__ = [
     "save_morpho",
 ]
 
-_FORMAT = "braincell.morpho.checkpoint"
+_FORMAT = "braincell.io.checkpoint"
 _CURRENT_VERSION = 1
 _DEFAULT_SUFFIX = ".bcm"
 

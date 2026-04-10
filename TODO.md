@@ -9,6 +9,7 @@
 | Branch | 基础属性、`from_lengths` / `from_points` 两类构建、面积/体积计算 | 已完成 |
 | Morpho | 根分支构建、`attach`、属性语法糖挂接、拓扑查询、`topo` 树输出 | 已完成 |
 | Morpho | `from_swc` / `from_asc` 入口 | 已完成 |
+| Morpho | `save_checkpoint` / `load_checkpoint`：`.bcm` 自包含格式 + pickle / `copy.deepcopy` 支持 | 已完成 |
 | Morpho | 高级树编辑（删除 subtree、拼接/合并 tree） | 未完成 |
 | Metric | 总长度、总面积、总体积、branch order、path distance、euclidean distance 等度量 | 已完成 |
 
@@ -23,7 +24,7 @@
 | 对比检测 | 通过 `develop_doc/neuron_diff.py` 走 NEURON 导入 SWC，进行开发期 metric 对比 | 已完成 |
 | 对比检测 | 通过 Neuromorpho API 下载并进行对比 | 未完成 |
 
-- [ ] checkpoints 
+- [x] checkpoints（`braincell/io/checkpoint.py`：`save_branch` / `load_branch` / `save_morpho` / `load_morpho`，`.bcm` 单文件格式 + 教程 `develop_doc/morpho-checkpoint.ipynb`）
 - [ ] NMODL parsing compiler
 
 

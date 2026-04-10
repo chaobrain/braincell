@@ -484,7 +484,7 @@ class Morpho:
             >>> morpho = Morpho.from_swc("neuron.swc")  # doctest: +SKIP
             >>> morpho.save_checkpoint("neuron.bcm")  # doctest: +SKIP
         """
-        from .checkpoint import save_morpho
+        from braincell.io.checkpoint import save_morpho
 
         return save_morpho(self, path)
 
@@ -521,7 +521,7 @@ class Morpho:
             >>> from braincell import Morpho
             >>> morpho = Morpho.load_checkpoint("neuron.bcm")  # doctest: +SKIP
         """
-        from .checkpoint import load_morpho
+        from braincell.io.checkpoint import load_morpho
 
         return load_morpho(path)
 

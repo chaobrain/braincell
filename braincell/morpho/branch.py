@@ -901,7 +901,7 @@ class Branch:
             ... )
             >>> branch.save_checkpoint("dend.bcm")  # doctest: +SKIP
         """
-        from .checkpoint import save_branch
+        from braincell.io.checkpoint import save_branch
 
         return save_branch(self, path)
 
@@ -942,7 +942,7 @@ class Branch:
             >>> from braincell import Branch
             >>> branch = Branch.load_checkpoint("dend.bcm")  # doctest: +SKIP
         """
-        from .checkpoint import load_branch
+        from braincell.io.checkpoint import load_branch
 
         loaded = load_branch(path)
         expected_type = cls._BRANCH_TYPE

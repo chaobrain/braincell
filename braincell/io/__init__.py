@@ -20,6 +20,14 @@ from .asc import (
     AscReport,
 
 )
+from .checkpoint import (
+    CheckpointError,
+    CheckpointVersionError,
+    load_branch,
+    load_morpho,
+    save_branch,
+    save_morpho,
+)
 from .neuroml2 import NeuroMlReader
 from .neuromorpho import (
     find_standard_swc,
@@ -43,8 +51,12 @@ __all__ = [
     "AscMetadata",
     "AscReader",
     "AscReport",
+    "CheckpointError",
+    "CheckpointVersionError",
     "find_standard_swc",
+    "load_branch",
     "load_cached_metadata",
+    "load_morpho",
     "NeuroMorphoClient",
     "NeuroMorphoDetail",
     "NeuroMorphoDownloadItem",
@@ -52,6 +64,8 @@ __all__ = [
     "NeuroMorphoNeuron",
     "NeuroMorphoSearchPage",
     "NeuroMlReader",
+    "save_branch",
+    "save_morpho",
     "SwcIssue",
     "SwcReadOptions",
     "SwcReader",

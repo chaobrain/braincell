@@ -13,31 +13,11 @@
 # limitations under the License.
 # ==============================================================================
 
-from .cable import CableProperties
-from .density import DensityMechanism
-from .point import (
-    CurrentClamp,
-    FunctionClamp,
-    GapJunctionMechanism,
-    PointMechanism,
-    ProbeMechanism,
-    SineClamp,
-    SynapseMechanism,
-)
-from .spec import Channel, Ion, MechanismSpec, Synapse
+from .calcium import *
+from .calcium import __all__ as _calcium_all
+from .potassium import *
+from .potassium import __all__ as _potassium_all
+from .sodium import *
+from .sodium import __all__ as _sodium_all
 
-__all__ = [
-    "CableProperties",
-    "Channel",
-    "CurrentClamp",
-    "DensityMechanism",
-    "FunctionClamp",
-    "GapJunctionMechanism",
-    "Ion",
-    "MechanismSpec",
-    "PointMechanism",
-    "ProbeMechanism",
-    "SineClamp",
-    "Synapse",
-    "SynapseMechanism",
-]
+__all__ = _calcium_all + _potassium_all + _sodium_all

@@ -5,9 +5,8 @@ from __future__ import annotations
 import braintools
 import brainunit as u
 
-from braincell._base import IonInfo
 from braincell.quad import DiffEqState
-from braincell.mech.channel import {{ context.base_class_name }}
+from braincell.channel import {{context.base_class_name}}
 
 ONE_ION_HH_OHMIC_IR = {{ context_python }}
 

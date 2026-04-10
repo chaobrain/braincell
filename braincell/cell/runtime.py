@@ -6,8 +6,7 @@ import numpy as np
 import brainunit as u
 
 from braincell._base import IonChannel
-from braincell.mech import channel as runtime_channel
-from braincell.mech import ion as runtime_ion
+from braincell import channel as runtime_channel, ion as runtime_ion
 from braincell.mech.point import (
     CurrentClamp,
     FunctionClamp,

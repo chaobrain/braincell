@@ -14,8 +14,7 @@
 # ==============================================================================
 
 
-from . import mech
-from . import quad
+from . import quad, mech, channel, synapse, ion
 from ._base import (
     Channel,
     HHTypedNeuron,
@@ -56,7 +55,6 @@ from .mech import (
     ProbeMechanism,
     SineClamp,
 )
-from .mech import channel, ion, synapse
 from .morph import (
     ApicalDendrite,
     Axon,

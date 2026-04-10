@@ -18,6 +18,7 @@ import brainstate
 from braincell._misc import set_module_as
 from ._exp_euler import ind_exp_euler_step
 from ._protocol import DiffEqModule
+from ._registry import register_integrator
 from ._voltage_solver import dhs_voltage_step
 
 __all__ = [
@@ -25,6 +26,12 @@ __all__ = [
 ]
 
 
+@register_integrator(
+    "staggered",
+    aliases=("stagger",),
+    category="staggered",
+    description="Staggered voltage / ion-channel splitting using DHS + ind_exp_euler.",
+)
 @set_module_as('braincell')
 def staggered_step(
     target: DiffEqModule,

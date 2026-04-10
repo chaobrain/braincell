@@ -25,6 +25,7 @@ from jax.scipy.linalg import expm
 from braincell._misc import set_module_as
 from braincell._typing import Path
 from ._protocol import DiffEqModule
+from ._registry import register_integrator
 from ._util import (
     apply_standard_solver_step,
     jacrev_last_dim,
@@ -88,6 +89,12 @@ def _exponential_euler(f, y0, t, dt, args=()):
     return y1, aux
 
 
+@register_integrator(
+    "exp_euler",
+    category="exponential",
+    order=1,
+    description="Coupled exponential Euler step linearizing the full state vector.",
+)
 @set_module_as('braincell')
 def exp_euler_step(target: DiffEqModule, *args):
     r"""
@@ -175,6 +182,12 @@ def exp_euler_step(target: DiffEqModule, *args):
         raise ValueError(f"Unknown target type: {type(target)}")
 
 
+@register_integrator(
+    "ind_exp_euler",
+    category="exponential",
+    order=1,
+    description="Independent exponential Euler step (per-state linearization).",
+)
 @set_module_as('braincell')
 def ind_exp_euler_step(target: DiffEqModule, *args, excluded_paths=()):
     """

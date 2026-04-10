@@ -709,8 +709,9 @@ class Cell(HHTypedNeuron):
 def _resolve_solver(solver: str | Callable) -> tuple[str, Callable]:
     if isinstance(solver, str):
         solver_name = str(solver)
-        integrator_name = "euler" if solver_name == "explicit" else solver_name
-        return solver_name, get_integrator(integrator_name)
+        # The "explicit" → euler mapping is now an alias on the registered
+        # euler integrator, so a plain registry lookup is sufficient.
+        return solver_name, get_integrator(solver_name)
     if callable(solver):
         solver_name = getattr(solver, "__name__", type(solver).__name__)
         return solver_name, solver

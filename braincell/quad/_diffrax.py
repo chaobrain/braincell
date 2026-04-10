@@ -20,9 +20,10 @@ import brainstate
 import brainunit as u
 import jax.numpy as jnp
 
-from braincell._misc import set_module_as, ModuleNotFound
+from braincell._misc import set_module_as
 from braincell._typing import VectorFiled, Y0, T, DT
 from ._protocol import DiffEqModule
+from ._registry import register_integrator
 from ._util import apply_standard_solver_step
 
 __all__ = [
@@ -43,12 +44,57 @@ __all__ = [
     'diffrax_kvaerno5_step',
 ]
 
+# ``find_spec`` only checks whether the package is importable; it does not
+# actually import diffrax (or any of its sizable dependency tree such as
+# equinox, jaxtyping, and sympy). The real import is deferred until the
+# first time a ``diffrax_*_step`` function is invoked — see ``__getattr__``
+# below.
 diffrax_installed = importlib.util.find_spec('diffrax') is not None
-if not diffrax_installed:
-    diffrax = ModuleNotFound('diffrax')
 
-else:
-    import diffrax
+
+def __getattr__(name):
+    """Lazily import :mod:`diffrax` on first attribute access.
+
+    This module is imported eagerly by :mod:`braincell.quad.__init__` so its
+    ``diffrax_*_step`` functions are visible and (if diffrax is installed)
+    registered in the integrator registry. Importing the actual ``diffrax``
+    package, however, is expensive — it transitively pulls in equinox,
+    jaxtyping, sympy, and friends — so we defer it until the first call to
+    one of the diffrax-backed step functions.
+
+    PEP 562 module ``__getattr__`` is invoked when ``diffrax`` is referenced
+    inside a step body and not yet present in this module's globals. We
+    import diffrax once, stash it in ``globals()`` so subsequent lookups
+    take the fast attribute path, and return it.
+
+    Raises
+    ------
+    ModuleNotFoundError
+        If diffrax is not installed and the user calls a diffrax-backed
+        step function.
+    """
+    if name == 'diffrax':
+        import diffrax as _diffrax
+        globals()['diffrax'] = _diffrax
+        return _diffrax
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
+def _register_diffrax(*args, **kwargs):
+    """Conditional decorator that only registers when diffrax is installed.
+
+    When ``diffrax`` is missing, the decorated function still exists (so
+    ``from braincell.quad import diffrax_*_step`` keeps working) but it is
+    not added to the integrator registry. Calling it raises a clean
+    ``ModuleNotFoundError`` from the lazy import in :func:`__getattr__`.
+    """
+    if diffrax_installed:
+        return register_integrator(*args, **kwargs)
+
+    def _identity(func):
+        return func
+
+    return _identity
 
 
 def _explicit_solver(solver, fn: VectorFiled, y0: Y0, t0: T, dt: DT, args=()):
@@ -86,6 +132,12 @@ def _diffrax_explicit_solver(
     )
 
 
+@_register_diffrax(
+    "diffrax_euler",
+    category="diffrax",
+    order=1,
+    description="diffrax.Euler explicit Euler step.",
+)
 @set_module_as('braincell')
 def diffrax_euler_step(target: DiffEqModule, *args):
     """
@@ -112,6 +164,12 @@ def diffrax_euler_step(target: DiffEqModule, *args):
     _diffrax_explicit_solver(diffrax.Euler(), target, t, dt, *args)
 
 
+@_register_diffrax(
+    "diffrax_heun",
+    category="diffrax",
+    order=2,
+    description="diffrax.Heun improved-Euler step.",
+)
 @set_module_as('braincell')
 def diffrax_heun_step(target: DiffEqModule, *args):
     """
@@ -139,6 +197,12 @@ def diffrax_heun_step(target: DiffEqModule, *args):
     _diffrax_explicit_solver(diffrax.Heun(), target, t, dt, *args)
 
 
+@_register_diffrax(
+    "diffrax_midpoint",
+    category="diffrax",
+    order=2,
+    description="diffrax.Midpoint second-order Runge-Kutta step.",
+)
 @set_module_as('braincell')
 def diffrax_midpoint_step(target: DiffEqModule, *args):
     """
@@ -166,6 +230,12 @@ def diffrax_midpoint_step(target: DiffEqModule, *args):
     _diffrax_explicit_solver(diffrax.Midpoint(), target, t, dt, *args)
 
 
+@_register_diffrax(
+    "diffrax_ralston",
+    category="diffrax",
+    order=2,
+    description="diffrax.Ralston second-order Runge-Kutta step.",
+)
 @set_module_as('braincell')
 def diffrax_ralston_step(target: DiffEqModule, *args):
     """
@@ -193,6 +263,12 @@ def diffrax_ralston_step(target: DiffEqModule, *args):
     _diffrax_explicit_solver(diffrax.Ralston(), target, t, dt, *args)
 
 
+@_register_diffrax(
+    "diffrax_bosh3",
+    category="diffrax",
+    order=3,
+    description="diffrax.Bosh3 third-order Runge-Kutta step.",
+)
 @set_module_as('braincell')
 def diffrax_bosh3_step(target: DiffEqModule, *args):
     """
@@ -220,6 +296,12 @@ def diffrax_bosh3_step(target: DiffEqModule, *args):
     _diffrax_explicit_solver(diffrax.Bosh3(), target, t, dt, *args)
 
 
+@_register_diffrax(
+    "diffrax_tsit5",
+    category="diffrax",
+    order=5,
+    description="diffrax.Tsit5 fifth-order Runge-Kutta step.",
+)
 @set_module_as('braincell')
 def diffrax_tsit5_step(target: DiffEqModule, *args):
     """
@@ -248,6 +330,12 @@ def diffrax_tsit5_step(target: DiffEqModule, *args):
     _diffrax_explicit_solver(diffrax.Tsit5(), target, t, dt, *args)
 
 
+@_register_diffrax(
+    "diffrax_dopri5",
+    category="diffrax",
+    order=5,
+    description="diffrax.Dopri5 Dormand-Prince 5(4) step.",
+)
 @set_module_as('braincell')
 def diffrax_dopri5_step(target: DiffEqModule, *args):
     """
@@ -276,6 +364,12 @@ def diffrax_dopri5_step(target: DiffEqModule, *args):
     _diffrax_explicit_solver(diffrax.Dopri5(), target, t, dt, *args)
 
 
+@_register_diffrax(
+    "diffrax_dopri8",
+    category="diffrax",
+    order=8,
+    description="diffrax.Dopri8 Dormand-Prince 8(5,3) step.",
+)
 @set_module_as('braincell')
 def diffrax_dopri8_step(target: DiffEqModule, *args):
     """
@@ -327,6 +421,12 @@ def _diffrax_implicit_solver(solver, target: DiffEqModule, t: T, dt: DT, *args):
     )
 
 
+@_register_diffrax(
+    "diffrax_bwd_euler",
+    category="diffrax",
+    order=1,
+    description="diffrax.ImplicitEuler backward Euler step.",
+)
 @set_module_as('braincell')
 def diffrax_bwd_euler_step(target: DiffEqModule, *args, tol=1e-5):
     """
@@ -364,6 +464,12 @@ def diffrax_bwd_euler_step(target: DiffEqModule, *args, tol=1e-5):
     )
 
 
+@_register_diffrax(
+    "diffrax_kvaerno3",
+    category="diffrax",
+    order=3,
+    description="diffrax.Kvaerno3 implicit third-order step.",
+)
 @set_module_as('braincell')
 def diffrax_kvaerno3_step(target: DiffEqModule, *args, tol=1e-5):
     """
@@ -399,6 +505,12 @@ def diffrax_kvaerno3_step(target: DiffEqModule, *args, tol=1e-5):
     )
 
 
+@_register_diffrax(
+    "diffrax_kvaerno4",
+    category="diffrax",
+    order=4,
+    description="diffrax.Kvaerno4 implicit fourth-order step.",
+)
 @set_module_as('braincell')
 def diffrax_kvaerno4_step(target: DiffEqModule, *args, tol=1e-5):
     """
@@ -434,6 +546,12 @@ def diffrax_kvaerno4_step(target: DiffEqModule, *args, tol=1e-5):
     )
 
 
+@_register_diffrax(
+    "diffrax_kvaerno5",
+    category="diffrax",
+    order=5,
+    description="diffrax.Kvaerno5 implicit fifth-order step.",
+)
 @set_module_as('braincell')
 def diffrax_kvaerno5_step(target: DiffEqModule, *args, tol=1e-5):
     """

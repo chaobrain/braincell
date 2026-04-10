@@ -13,8 +13,16 @@
 # limitations under the License.
 # ==============================================================================
 
-from typing import Callable
+from typing import Callable, Mapping
 
+from ._registry import (
+    IntegratorEntry,
+    IntegratorRegistry,
+    get_registry,
+    register_integrator,
+)
+# Importing the step modules below has the side effect of populating the
+# global registry via @register_integrator decorators on each *_step function.
 from ._backward_euler import backward_euler_step
 from ._diffrax import (
     diffrax_bosh3_step,
@@ -58,7 +66,13 @@ from ._staggered import staggered_step
 from ._voltage_solver import dhs_voltage_step
 
 __all__ = [
+    # registry
     'get_integrator',
+    'register_integrator',
+    'get_registry',
+    'IntegratorEntry',
+    'IntegratorRegistry',
+    'all_integrators',
 
     # implicit backward Euler
     'backward_euler_step',
@@ -117,38 +131,97 @@ __all__ = [
     'IndependentIntegration',
 ]
 
-all_integrators = {k.replace('_step', ''): v for k, v in locals().items() if k.endswith('_step')}
+
+class _RegistryDictView(Mapping[str, Callable]):
+    """Read-only mapping view backed by the integrator registry.
+
+    Provides backwards compatibility for the legacy ``all_integrators`` dict
+    while keeping the registry as the single source of truth. Alias names
+    are included so existing lookups such as ``all_integrators['explicit']``
+    continue to resolve.
+    """
+
+    def __init__(self, registry: IntegratorRegistry) -> None:
+        self._registry = registry
+
+    def __getitem__(self, name: str) -> Callable:
+        try:
+            return self._registry[name]
+        except KeyError:
+            raise KeyError(name)
+
+    def __iter__(self):
+        return iter(self._registry.as_dict(include_aliases=True))
+
+    def __len__(self) -> int:
+        return len(self._registry.as_dict(include_aliases=True))
+
+    def __contains__(self, name: object) -> bool:
+        return name in self._registry
+
+    def __repr__(self) -> str:
+        return f"_RegistryDictView({sorted(self._registry.as_dict(include_aliases=True))!r})"
+
+
+#: Backwards-compatible mapping view of the integrator registry.
+#:
+#: This object behaves like the legacy ``{name: func}`` dict that lived in
+#: this module, but it is now backed by :class:`IntegratorRegistry`. Treat it
+#: as read-only; new integrators should be registered with
+#: :func:`register_integrator`.
+all_integrators: Mapping[str, Callable] = _RegistryDictView(get_registry())
 
 
 def get_integrator(method: str | Callable) -> Callable:
-    """
-    Get the integrator function by name or return the provided callable.
+    """Resolve a numerical integrator from a string name or a callable.
 
-    This function retrieves the appropriate integrator function based on the input.
-    If a string is provided, it looks up the corresponding integrator in the
-    `all_integrators` dictionary. If a callable is provided, it returns that callable directly.
+    Parameters
+    ----------
+    method : str or Callable
+        Either the registered name (canonical or alias) of an integrator or
+        a step function to use directly.
 
-    Args:
-        method (str | Callable): The numerical integrator name as a string or a callable function.
-            If a string, it should be one of the keys in the `all_integrators` dictionary.
-            If a callable, it should be a valid integrator function.
+    Returns
+    -------
+    Callable
+        The integrator step function corresponding to ``method``.
 
-    Returns:
-        Callable: The integrator function corresponding to the input method.
+    Raises
+    ------
+    ValueError
+        If ``method`` is a string that does not match any registered
+        integrator. The error message includes a "did you mean ...?"
+        suggestion when a close match exists.
+    TypeError
+        If ``method`` is neither a string nor a callable.
 
-    Raises:
-        ValueError: If the input method is neither a valid string key in `all_integrators`
-            nor a callable function.
+    Examples
+    --------
 
-    Examples::
-        >>> get_integrator('euler')
+    .. code-block:: python
+
+        >>> from braincell.quad import get_integrator
+        >>> get_integrator('euler')              # doctest: +ELLIPSIS
         <function euler_step at ...>
-        >>> get_integrator(custom_integrator_function)
-        <function custom_integrator_function at ...>
+        >>> get_integrator('explicit') is get_integrator('euler')
+        True
+        >>> get_integrator('stagger') is get_integrator('staggered')
+        True
     """
-    if isinstance(method, str):
-        return all_integrators[method]
-    elif callable(method):
+    if callable(method):
         return method
-    else:
-        raise ValueError(f"Invalid integrator method: {method}")
+    if isinstance(method, str):
+        registry = get_registry()
+        try:
+            return registry[method]
+        except KeyError:
+            suggestions = registry.suggest(method, n=1)
+            hint = f" Did you mean {suggestions[0]!r}?" if suggestions else ""
+            available = ", ".join(registry.names())
+            raise ValueError(
+                f"Unknown integrator {method!r}.{hint} "
+                f"Available: {available}."
+            )
+    raise TypeError(
+        f"Integrator method must be a string or callable, got {type(method).__name__}."
+    )

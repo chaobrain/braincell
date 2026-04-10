@@ -23,6 +23,7 @@ import jax
 from braincell._misc import set_module_as
 from braincell._typing import T, DT
 from ._protocol import DiffEqState, DiffEqModule
+from ._registry import register_integrator
 
 __all__ = [
     'euler_step',
@@ -195,6 +196,13 @@ ralston4_tableau = ButcherTableau(
 )
 
 
+@register_integrator(
+    "euler",
+    aliases=("explicit",),
+    category="explicit",
+    order=1,
+    description="Forward (explicit) Euler method.",
+)
 @set_module_as('braincell')
 def euler_step(
     target: DiffEqModule,
@@ -250,6 +258,12 @@ def euler_step(
     _general_rk_step(euler_tableau, target, t, dt, *args)
 
 
+@register_integrator(
+    "midpoint",
+    category="explicit",
+    order=2,
+    description="Explicit midpoint (modified Euler) method.",
+)
 @set_module_as('braincell')
 def midpoint_step(
     target: DiffEqModule,
@@ -309,6 +323,12 @@ def midpoint_step(
     _general_rk_step(midpoint_tableau, target, t, dt, *args)
 
 
+@register_integrator(
+    "rk2",
+    category="explicit",
+    order=2,
+    description="Generic second-order Runge-Kutta method.",
+)
 @set_module_as('braincell')
 def rk2_step(
     target: DiffEqModule,
@@ -368,6 +388,12 @@ def rk2_step(
     _general_rk_step(rk2_tableau, target, t, dt, *args)
 
 
+@register_integrator(
+    "heun2",
+    category="explicit",
+    order=2,
+    description="Heun's second-order Runge-Kutta method.",
+)
 @set_module_as('braincell')
 def heun2_step(
     target: DiffEqModule,
@@ -432,6 +458,12 @@ def heun2_step(
     _general_rk_step(heun2_tableau, target, t, dt, *args)
 
 
+@register_integrator(
+    "ralston2",
+    category="explicit",
+    order=2,
+    description="Ralston's second-order Runge-Kutta method.",
+)
 @set_module_as('braincell')
 def ralston2_step(
     target: DiffEqModule,
@@ -496,6 +528,12 @@ def ralston2_step(
     _general_rk_step(ralston2_tableau, target, t, dt, *args)
 
 
+@register_integrator(
+    "rk3",
+    category="explicit",
+    order=3,
+    description="Classical third-order Runge-Kutta method.",
+)
 @set_module_as('braincell')
 def rk3_step(
     target: DiffEqModule,
@@ -545,6 +583,12 @@ def rk3_step(
     _general_rk_step(rk3_tableau, target, t, dt, *args)
 
 
+@register_integrator(
+    "heun3",
+    category="explicit",
+    order=3,
+    description="Heun's third-order Runge-Kutta method.",
+)
 @set_module_as('braincell')
 def heun3_step(
     target: DiffEqModule,
@@ -594,6 +638,12 @@ def heun3_step(
     _general_rk_step(heun3_tableau, target, t, dt, *args)
 
 
+@register_integrator(
+    "ssprk3",
+    category="explicit",
+    order=3,
+    description="Strong-stability-preserving third-order Runge-Kutta (SSPRK3).",
+)
 @set_module_as('braincell')
 def ssprk3_step(
     target: DiffEqModule,
@@ -643,6 +693,12 @@ def ssprk3_step(
     _general_rk_step(ssprk3_tableau, target, t, dt, *args)
 
 
+@register_integrator(
+    "ralston3",
+    category="explicit",
+    order=3,
+    description="Ralston's third-order Runge-Kutta method.",
+)
 @set_module_as('braincell')
 def ralston3_step(
     target: DiffEqModule,
@@ -692,6 +748,12 @@ def ralston3_step(
     _general_rk_step(ralston3_tableau, target, t, dt, *args)
 
 
+@register_integrator(
+    "rk4",
+    category="explicit",
+    order=4,
+    description="Classical four-stage fourth-order Runge-Kutta method.",
+)
 @set_module_as('braincell')
 def rk4_step(
     target: DiffEqModule,
@@ -743,6 +805,12 @@ def rk4_step(
     _general_rk_step(rk4_tableau, target, t, dt, *args)
 
 
+@register_integrator(
+    "ralston4",
+    category="explicit",
+    order=4,
+    description="Ralston's fourth-order Runge-Kutta method.",
+)
 @set_module_as('braincell')
 def ralston4_step(
     target: DiffEqModule,

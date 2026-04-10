@@ -25,6 +25,7 @@ from braincell._misc import set_module_as
 from braincell._typing import T, DT
 from ._exp_euler import _exponential_euler
 from ._protocol import DiffEqModule
+from ._registry import register_integrator
 from ._runge_kutta import rk4_step
 from ._util import apply_standard_solver_step, jacrev_last_dim
 
@@ -315,6 +316,12 @@ def _crank_nicolson_for_axial_current(A, y0, dt):
     return y1
 
 
+@register_integrator(
+    "implicit_euler",
+    category="implicit",
+    order=1,
+    description="Implicit Euler via Newton iteration.",
+)
 @set_module_as('braincell')
 def implicit_euler_step(
     target: DiffEqModule,
@@ -476,6 +483,11 @@ def construct_lu_sparse(target):
         return
 
 
+@register_integrator(
+    "splitting",
+    category="implicit",
+    description="Operator-splitting solver pairing implicit axial currents with Newton-based gating updates.",
+)
 @set_module_as('braincell')
 def splitting_step(
     target: DiffEqModule,
@@ -544,6 +556,11 @@ def splitting_step(
         apply_standard_solver_step(_newton_method, target, t, dt, *args)
 
 
+@register_integrator(
+    "cn_rk4",
+    category="implicit",
+    description="Crank-Nicolson axial currents combined with explicit RK4 gating updates.",
+)
 @set_module_as('braincell')
 def cn_rk4_step(
     target: DiffEqModule,
@@ -566,6 +583,11 @@ def cn_rk4_step(
     integral()
 
 
+@register_integrator(
+    "cn_exp_euler",
+    category="implicit",
+    description="Crank-Nicolson axial currents combined with exponential Euler gating updates.",
+)
 @set_module_as('braincell')
 def cn_exp_euler_step(
     target: DiffEqModule,
@@ -589,6 +611,12 @@ def cn_exp_euler_step(
     integral()
 
 
+@register_integrator(
+    "implicit_rk4",
+    category="implicit",
+    order=4,
+    description="Implicit axial currents combined with explicit RK4 gating updates.",
+)
 @set_module_as('braincell')
 def implicit_rk4_step(
     target: DiffEqModule,
@@ -632,6 +660,11 @@ def implicit_rk4_step(
         apply_standard_solver_step(_newton_method, target, t, dt, *args)
 
 
+@register_integrator(
+    "implicit_exp_euler",
+    category="implicit",
+    description="Implicit axial currents combined with exponential Euler gating updates.",
+)
 @set_module_as('braincell')
 def implicit_exp_euler_step(
     target: DiffEqModule,
@@ -676,6 +709,11 @@ def implicit_exp_euler_step(
         apply_standard_solver_step(_newton_method, target, t, dt, *args)
 
 
+@register_integrator(
+    "exp_exp_euler",
+    category="exponential",
+    description="Exponential axial integration paired with exponential Euler gating updates.",
+)
 @set_module_as('braincell')
 def exp_exp_euler_step(
     target: DiffEqModule,

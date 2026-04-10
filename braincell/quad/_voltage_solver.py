@@ -37,6 +37,7 @@ import jax.numpy as jnp
 import numpy as np
 
 from braincell._misc import set_module_as
+from ._registry import register_integrator
 
 __all__ = [
     "dhs_voltage_step",
@@ -72,6 +73,11 @@ class DHSNumericState:
     n_point: int
 
 
+@register_integrator(
+    "dhs_voltage",
+    category="voltage",
+    description="Implicit-Euler DHS voltage solve on the active point-tree runtime.",
+)
 @set_module_as("braincell")
 def dhs_voltage_step(target, t, dt, *args):
     """Advance midpoint voltages by one implicit-Euler DHS step.

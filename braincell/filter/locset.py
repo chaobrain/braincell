@@ -22,7 +22,7 @@ from brainunit import Quantity
 from . import helper
 from .cache import SelectionCache
 from .region import RegionExpr
-from ..morpho import Morpho
+from ..morph import Morphology
 
 Location = tuple[int, float]
 
@@ -64,7 +64,7 @@ class LocsetExpr(ABC):
     @abstractmethod
     def evaluate(
         self,
-        morpho: Morpho,
+        morpho: Morphology,
         cache: SelectionCache | None = None,
     ) -> LocsetMask:
         raise NotImplementedError
@@ -74,24 +74,24 @@ class LocsetExpr(ABC):
 class RootLocation(LocsetExpr):
     x: float
 
-    def evaluate(self, morpho: Morpho, cache: SelectionCache | None = None) -> LocsetMask:
-        if not isinstance(morpho, Morpho):
+    def evaluate(self, morpho: Morphology, cache: SelectionCache | None = None) -> LocsetMask:
+        if not isinstance(morpho, Morphology):
             raise TypeError(f"RootLocation expects Morpho, got {type(morpho).__name__!s}.")
         return LocsetMask(helper.normalize_locset_points(((0, self.x),)))
 
 
 @dataclass(frozen=True)
 class BranchPoints(LocsetExpr):
-    def evaluate(self, morpho: Morpho, cache: SelectionCache | None = None) -> LocsetMask:
-        if not isinstance(morpho, Morpho):
+    def evaluate(self, morpho: Morphology, cache: SelectionCache | None = None) -> LocsetMask:
+        if not isinstance(morpho, Morphology):
             raise TypeError(f"BranchPoints expects Morpho, got {type(morpho).__name__!s}.")
         return LocsetMask(helper.branch_points_locations(morpho))
 
 
 @dataclass(frozen=True)
 class Terminals(LocsetExpr):
-    def evaluate(self, morpho: Morpho, cache: SelectionCache | None = None) -> LocsetMask:
-        if not isinstance(morpho, Morpho):
+    def evaluate(self, morpho: Morphology, cache: SelectionCache | None = None) -> LocsetMask:
+        if not isinstance(morpho, Morphology):
             raise TypeError(f"Terminals expects Morpho, got {type(morpho).__name__!s}.")
         return LocsetMask(helper.terminal_locations(morpho))
 
@@ -101,7 +101,7 @@ class RegionAnchors(LocsetExpr):
     region: RegionExpr
     x: float
 
-    def evaluate(self, morpho: Morpho, cache: SelectionCache | None = None) -> LocsetMask:
+    def evaluate(self, morpho: Morphology, cache: SelectionCache | None = None) -> LocsetMask:
         raise NotImplementedError("RegionAnchors is not implemented in this version.")
 
 
@@ -110,8 +110,8 @@ class UniformSamples(LocsetExpr):
     region: RegionExpr
     count: int
 
-    def evaluate(self, morpho: Morpho, cache: SelectionCache | None = None) -> LocsetMask:
-        if not isinstance(morpho, Morpho):
+    def evaluate(self, morpho: Morphology, cache: SelectionCache | None = None) -> LocsetMask:
+        if not isinstance(morpho, Morphology):
             raise TypeError(f"UniformSamples expects Morpho, got {type(morpho).__name__!s}.")
         if not isinstance(self.region, RegionExpr):
             raise TypeError(
@@ -134,8 +134,8 @@ class RandomSamples(LocsetExpr):
     count: int
     seed: int
 
-    def evaluate(self, morpho: Morpho, cache: SelectionCache | None = None) -> LocsetMask:
-        if not isinstance(morpho, Morpho):
+    def evaluate(self, morpho: Morphology, cache: SelectionCache | None = None) -> LocsetMask:
+        if not isinstance(morpho, Morphology):
             raise TypeError(f"RandomSamples expects Morpho, got {type(morpho).__name__!s}.")
         if not isinstance(self.region, RegionExpr):
             raise TypeError(
@@ -158,7 +158,7 @@ class StepSamples(LocsetExpr):
     region: RegionExpr
     step: Quantity
 
-    def evaluate(self, morpho: Morpho, cache: SelectionCache | None = None) -> LocsetMask:
+    def evaluate(self, morpho: Morphology, cache: SelectionCache | None = None) -> LocsetMask:
         raise NotImplementedError
 
 
@@ -167,8 +167,8 @@ class LocsetSetOp(LocsetExpr):
     op: str
     operands: tuple[LocsetExpr, ...]
 
-    def evaluate(self, morpho: Morpho, cache: SelectionCache | None = None) -> LocsetMask:
-        if not isinstance(morpho, Morpho):
+    def evaluate(self, morpho: Morphology, cache: SelectionCache | None = None) -> LocsetMask:
+        if not isinstance(morpho, Morphology):
             raise TypeError(f"LocsetSetOp expects Morpho, got {type(morpho).__name__!s}.")
         if self.op not in {"union", "intersection", "difference"}:
             raise ValueError(f"Unsupported locset set operation {self.op!r}.")

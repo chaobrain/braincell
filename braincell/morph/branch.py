@@ -49,7 +49,7 @@ class Branch:
     ``TypeError``; every value must carry explicit units.
 
     Branches are **frozen dataclasses**: once constructed their geometry
-    cannot be changed.  Use :class:`~braincell.morpho.Morpho` to compose
+    cannot be changed.  Use :class:`~braincell.morph.Morpho` to compose
     branches into a mutable morphology tree.
 
     Parameters
@@ -720,7 +720,7 @@ class Branch:
             2-D layout choice: ``"projected"``, ``"stem"``,
             ``"balloon"``, or ``"radial_360"``. When omitted, uses the
             global 2-D default configured via
-            ``braincell.morpho.vis.configure(...)``.
+            ``braincell.morph.vis.configure(...)``.
         shape : str or None
             2-D drawing shape: ``"line"`` or ``"frustum"``.
         backend : str or None
@@ -766,10 +766,10 @@ class Branch:
             ... )
             >>> branch.vis2d()  # doctest: +SKIP
         """
-        from braincell.morpho import Morpho
+        from braincell.morph import Morphology
         from braincell.vis import plot2d
 
-        morpho = Morpho.from_root(self, name="soma")
+        morpho = Morphology.from_root(self, name="soma")
         result = plot2d(
             morpho,
             layout=layout,
@@ -805,7 +805,7 @@ class Branch:
         ----------
         mode : str or None
             Visualization mode. When omitted, uses the global 3-D default
-            configured via ``braincell.morpho.vis.configure(...)``. The
+            configured via ``braincell.morph.vis.configure(...)``. The
             initial default is ``"geometry"``.
         backend : str or None
             Rendering backend name (e.g., ``"pyvista"``).
@@ -834,10 +834,10 @@ class Branch:
         ValueError
             If the branch lacks complete 3-D point geometry.
         """
-        from braincell.morpho import Morpho
+        from braincell.morph import Morphology
         from braincell.vis import plot3d
 
-        morpho = Morpho.from_root(self, name="soma")
+        morpho = Morphology.from_root(self, name="soma")
         result = plot3d(
             morpho,
             mode=mode,

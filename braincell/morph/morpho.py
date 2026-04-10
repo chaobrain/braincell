@@ -122,7 +122,7 @@ class MorphoEdge:
     .. code-block:: python
 
         >>> import brainunit as u
-        >>> from braincell import Branch, Morpho
+        >>> from braincell import Branch, Morphology
         >>> soma = Branch.from_lengths(
         ...     lengths=[20.0] * u.um,
         ...     radii=[10.0, 10.0] * u.um,
@@ -133,9 +133,9 @@ class MorphoEdge:
         ...     radii=[2.0, 1.0] * u.um,
         ...     type="dendrite",
         ... )
-        >>> morpho = Morpho.from_root(soma, name="soma")
-        >>> morpho.soma.dend = dend
-        >>> edges = morpho.edges
+        >>> morph = Morphology.from_root(soma, name="soma")
+        >>> morph.soma.dend = dend
+        >>> edges = morph.edges
         >>> len(edges)
         1
         >>> edges[0].parent.name
@@ -172,7 +172,7 @@ class MorphoMetric:
     has_full_point_geometry: bool
 
     @classmethod
-    def from_morpho(cls, morpho: "Morpho") -> "MorphoMetric":
+    def from_morpho(cls, morpho: "Morphology") -> "MorphoMetric":
         has_full_point_geometry = morpho.has_full_point_geometry
         return cls(
             n_branches=morpho.n_branches,
@@ -222,7 +222,7 @@ class MorphoMetric:
         )
 
 
-class Morpho:
+class Morphology:
     """Mutable morphology tree for authoring, querying, and visualization.
 
     ``Morpho`` is the central entry point for building neuron morphologies.
@@ -270,7 +270,7 @@ class Morpho:
     .. code-block:: python
 
         >>> import brainunit as u
-        >>> from braincell import Branch, Morpho
+        >>> from braincell import Branch, Morphology
         >>> soma = Branch.from_lengths(
         ...     lengths=[20.0] * u.um,
         ...     radii=[10.0, 10.0] * u.um,
@@ -281,20 +281,20 @@ class Morpho:
         ...     radii=[2.0, 1.5, 1.0] * u.um,
         ...     type="dendrite",
         ... )
-        >>> morpho = Morpho.from_root(soma, name="soma")
-        >>> morpho.soma.dend = dend
-        >>> len(morpho)
+        >>> morph = Morphology.from_root(soma, name="soma")
+        >>> morph.soma.dend = dend
+        >>> len(morph)
         2
-        >>> morpho.n_branches
+        >>> morph.n_branches
         2
-        >>> morpho.total_length
+        >>> morph.total_length
         110.0 * umetre
 
     Load from an SWC file:
 
     .. code-block:: python
 
-        >>> morpho = Morpho.from_swc("neuron.swc")  # doctest: +SKIP
+        >>> morph = Morphology.from_swc("neuron.swc")  # doctest: +SKIP
     """
 
     def __init__(self, *, root_name: str | None, root_branch: Branch) -> None:
@@ -312,7 +312,7 @@ class Morpho:
         )
 
     @classmethod
-    def from_root(cls, branch: Branch, *, name: str | None = "soma") -> "Morpho":
+    def from_root(cls, branch: Branch, *, name: str | None = "soma") -> "Morphology":
         """Create a new morphology tree from a single root branch.
 
         Parameters
@@ -325,7 +325,7 @@ class Morpho:
 
         Returns
         -------
-        Morpho
+        Morphology
             New morphology containing only the root.
 
         Examples
@@ -334,14 +334,14 @@ class Morpho:
         .. code-block:: python
 
             >>> import brainunit as u
-            >>> from braincell import Branch, Morpho
+            >>> from braincell import Branch, Morphology
             >>> soma = Branch.from_lengths(
             ...     lengths=[20.0] * u.um,
             ...     radii=[10.0, 10.0] * u.um,
             ...     type="soma",
             ... )
-            >>> morpho = Morpho.from_root(soma, name="soma")
-            >>> morpho.root.name
+            >>> morph = Morphology.from_root(soma, name="soma")
+            >>> morph.root.name
             'soma'
         """
 
@@ -380,7 +380,7 @@ class Morpho:
 
         Returns
         -------
-        Morpho or (Morpho, SwcReport)
+        Morphology or (Morphology, SwcReport)
             The loaded morphology, optionally with a diagnostic report.
 
         See Also
@@ -392,9 +392,9 @@ class Morpho:
 
         .. code-block:: python
 
-            >>> from braincell import Morpho
-            >>> morpho = Morpho.from_swc("neuron.swc")  # doctest: +SKIP
-            >>> morpho, report = Morpho.from_swc(
+            >>> from braincell import Morphology
+            >>> morph = Morphology.from_swc("neuron.swc")  # doctest: +SKIP
+            >>> morph, report = Morphology.from_swc(
             ...     "neuron.swc", return_report=True
             ... )  # doctest: +SKIP
         """
@@ -430,7 +430,7 @@ class Morpho:
 
         Returns
         -------
-        Morpho or (Morpho, AscReport)
+        Morphology or (Morphology, AscReport)
             The loaded morphology, optionally with a diagnostic report.
 
         See Also
@@ -442,8 +442,8 @@ class Morpho:
 
         .. code-block:: python
 
-            >>> from braincell import Morpho
-            >>> morpho = Morpho.from_asc("neuron.asc")  # doctest: +SKIP
+            >>> from braincell import Morphology
+            >>> morph = Morphology.from_asc("neuron.asc")  # doctest: +SKIP
         """
 
         from braincell.io.asc import AscReader
@@ -480,16 +480,16 @@ class Morpho:
 
         .. code-block:: python
 
-            >>> from braincell import Morpho
-            >>> morpho = Morpho.from_swc("neuron.swc")  # doctest: +SKIP
-            >>> morpho.save_checkpoint("neuron.bcm")  # doctest: +SKIP
+            >>> from braincell import Morphology
+            >>> morph = Morphology.from_swc("neuron.swc")  # doctest: +SKIP
+            >>> morph.save_checkpoint("neuron.bcm")  # doctest: +SKIP
         """
         from braincell.io.checkpoint import save_morpho
 
         return save_morpho(self, path)
 
     @classmethod
-    def load_checkpoint(cls, path) -> "Morpho":
+    def load_checkpoint(cls, path) -> "Morphology":
         """Load a morphology from a braincell checkpoint file.
 
         Parameters
@@ -500,14 +500,14 @@ class Morpho:
 
         Returns
         -------
-        Morpho
+        Morphology
             The reconstructed morphology, equal to the saved tree under
             :meth:`__eq__`.
 
         Raises
         ------
         CheckpointError
-            If the file is missing, corrupt, or is not a morpho checkpoint.
+            If the file is missing, corrupt, or is not a morph checkpoint.
 
         See Also
         --------
@@ -518,8 +518,8 @@ class Morpho:
 
         .. code-block:: python
 
-            >>> from braincell import Morpho
-            >>> morpho = Morpho.load_checkpoint("neuron.bcm")  # doctest: +SKIP
+            >>> from braincell import Morphology
+            >>> morph = Morphology.load_checkpoint("neuron.bcm")  # doctest: +SKIP
         """
         from braincell.io.checkpoint import load_morpho
 
@@ -963,7 +963,7 @@ class Morpho:
 
         .. code-block:: python
 
-            >>> print(morpho.topo())  # doctest: +SKIP
+            >>> print(morph.topo())  # doctest: +SKIP
             soma
             ├── dend_0
             │   ├── dend_1
@@ -1001,14 +1001,14 @@ class Morpho:
         ----------
         mode : str or None
             Visualization mode. When omitted, uses the global 3-D
-            default configured via ``braincell.morpho.vis.configure(...)``.
+            default configured via ``braincell.morph.vis.configure(...)``.
             The initial default is ``"geometry"``.
         backend : str or None
             Rendering backend name (e.g., ``"pyvista"``).
             Auto-selected when *None*.
         region : RegionMask or None
             Evaluated region mask to attach as an overlay.  Obtain one
-            via ``expr.evaluate(morpho)`` or ``morpho.select(expr)``.
+            via ``expr.evaluate(morph)`` or ``morph.select(expr)``.
         locset : LocsetMask or None
             Evaluated location-set mask to attach as an overlay.
         values : array-like or None
@@ -1046,7 +1046,7 @@ class Morpho:
         .. code-block:: python
 
             >>> import brainunit as u
-            >>> from braincell import Branch, Morpho
+            >>> from braincell import Branch, Morphology
             >>> soma = Branch.from_points(
             ...     points=[[0, 0, 0], [20, 0, 0]] * u.um,
             ...     radii=[10.0, 10.0] * u.um,
@@ -1057,9 +1057,9 @@ class Morpho:
             ...     radii=[2.0, 1.0] * u.um,
             ...     type="apical_dendrite",
             ... )
-            >>> morpho = Morpho.from_root(soma, name="soma")
-            >>> morpho.soma.dend = dend
-            >>> morpho.vis3d()  # doctest: +SKIP
+            >>> morph = Morphology.from_root(soma, name="soma")
+            >>> morph.soma.dend = dend
+            >>> morph.vis3d()  # doctest: +SKIP
 
         **Multi-branch morphology** with basal dendrites and an axon:
 
@@ -1076,33 +1076,33 @@ class Morpho:
             ...     radii=[1.0, 0.5] * u.um,
             ...     type="axon",
             ... )
-            >>> morpho.attach(parent="soma", child_branch=basal,
+            >>> morph.attach(parent="soma", child_branch=basal,
             ...               child_name="basal", parent_x=0.0)  # doctest: +SKIP
-            >>> morpho.attach(parent="soma", child_branch=axon,
+            >>> morph.attach(parent="soma", child_branch=axon,
             ...               child_name="axon", parent_x=0.5)  # doctest: +SKIP
-            >>> morpho.vis3d()  # doctest: +SKIP
+            >>> morph.vis3d()  # doctest: +SKIP
 
         **Highlight a region** — e.g. the full extent of all dendrites:
 
         .. code-block:: python
 
             >>> from braincell.filter import branch_in
-            >>> region = branch_in("type", ("apical_dendrite", "basal_dendrite")).evaluate(morpho)
-            >>> morpho.vis3d(region=region)  # doctest: +SKIP
+            >>> region = branch_in("type", ("apical_dendrite", "basal_dendrite")).evaluate(morph)
+            >>> morph.vis3d(region=region)  # doctest: +SKIP
 
         **Mark specific locations** — e.g. branch points and terminals:
 
         .. code-block:: python
 
             >>> from braincell.filter import BranchPoints, Terminals
-            >>> locset = (BranchPoints() | Terminals()).evaluate(morpho)
-            >>> morpho.vis3d(locset=locset)  # doctest: +SKIP
+            >>> locset = (BranchPoints() | Terminals()).evaluate(morph)
+            >>> morph.vis3d(locset=locset)  # doctest: +SKIP
 
         **Retrieve the PyVista plotter** for further customisation:
 
         .. code-block:: python
 
-            >>> plotter = morpho.vis3d(return_plotter=True, show=False)  # doctest: +SKIP
+            >>> plotter = morph.vis3d(return_plotter=True, show=False)  # doctest: +SKIP
             >>> plotter.add_text("My neuron", font_size=12)  # doctest: +SKIP
             >>> plotter.show()  # doctest: +SKIP
 
@@ -1110,7 +1110,7 @@ class Morpho:
 
         .. code-block:: python
 
-            >>> morpho.vis3d(notebook=True, jupyter_backend="trame")  # doctest: +SKIP
+            >>> morph.vis3d(notebook=True, jupyter_backend="trame")  # doctest: +SKIP
         """
         from braincell.vis.plot3d import plot3d
 
@@ -1168,19 +1168,19 @@ class Morpho:
             geometry. ``"stem"``, ``"balloon"``, and ``"radial_360"``
             use the schematic branch layout pipeline. When omitted, uses
             the global 2-D default configured via
-            ``braincell.morpho.vis.configure(...)``. The initial default
+            ``braincell.morph.vis.configure(...)``. The initial default
             is ``"stem"``.
         shape : str or None
             2-D drawing shape: ``"line"`` or ``"frustum"``. When omitted,
             uses the global 2-D default configured via
-            ``braincell.morpho.vis.configure(...)``. The initial default
+            ``braincell.morph.vis.configure(...)``. The initial default
             is ``"frustum"``.
         backend : str or None
             Rendering backend name (e.g., ``"matplotlib"``).
             Auto-selected when *None*.
         region : RegionMask or None
             Evaluated region mask to attach as an overlay.  Obtain one
-            via ``expr.evaluate(morpho)`` or ``morpho.select(expr)``.
+            via ``expr.evaluate(morph)`` or ``morph.select(expr)``.
         locset : LocsetMask or None
             Evaluated location-set mask to attach as an overlay.
         values : array-like or None
@@ -1234,19 +1234,19 @@ class Morpho:
 
         .. code-block:: python
 
-            >>> morpho.vis2d(layout="projected", shape="line")  # doctest: +SKIP
+            >>> morph.vis2d(layout="projected", shape="line")  # doctest: +SKIP
 
         **Stem layout** with line drawing:
 
         .. code-block:: python
 
-            >>> morpho.vis2d(layout="stem", shape="line")  # doctest: +SKIP
+            >>> morph.vis2d(layout="stem", shape="line")  # doctest: +SKIP
 
         **Stem layout** with frustum drawing:
 
         .. code-block:: python
 
-            >>> morpho.vis2d(layout="stem", shape="frustum")  # doctest: +SKIP
+            >>> morph.vis2d(layout="stem", shape="frustum")  # doctest: +SKIP
         """
         from braincell.vis.plot2d import plot2d
 
@@ -1304,7 +1304,7 @@ class Morpho:
         .. code-block:: python
 
             >>> from braincell.filter import branch_in
-            >>> region = morpho.select(branch_in("type", "dendrite"))  # doctest: +SKIP
+            >>> region = morph.select(branch_in("type", "dendrite"))  # doctest: +SKIP
         """
         from braincell.filter import LocsetExpr, RegionExpr
 
@@ -1369,7 +1369,7 @@ class Morpho:
         .. code-block:: python
 
             >>> import brainunit as u
-            >>> from braincell import Branch, Morpho
+            >>> from braincell import Branch, Morphology
             >>> soma = Branch.from_lengths(
             ...     lengths=[20.0] * u.um,
             ...     radii=[10.0, 10.0] * u.um,
@@ -1380,8 +1380,8 @@ class Morpho:
             ...     radii=[2.0, 1.0] * u.um,
             ...     type="dendrite",
             ... )
-            >>> morpho = Morpho.from_root(soma, name="soma")
-            >>> child = morpho.attach(
+            >>> morph = Morphology.from_root(soma, name="soma")
+            >>> child = morph.attach(
             ...     parent="soma",
             ...     child_branch=dend,
             ...     child_name="apical",
@@ -1418,7 +1418,7 @@ class Morpho:
         return len(self._nodes)
 
     def __eq__(self, other: object) -> bool:
-        if not isinstance(other, Morpho):
+        if not isinstance(other, Morphology):
             return NotImplemented
         return self._eq_records() == other._eq_records()
 
@@ -1464,7 +1464,7 @@ class Morpho:
 
     @staticmethod
     def _branch_type_rank(branch_type: str) -> tuple[int, int, str]:
-        swc_type_map = Morpho._swc_type_map()
+        swc_type_map = Morphology._swc_type_map()
         type_bucket = {
             "soma": "soma",
             "axon": "axon",
@@ -1693,7 +1693,7 @@ class MorphoBranch:
 
     Parameters
     ----------
-    owner : Morpho
+    owner : Morphology
         The morphology tree that owns this node.
     node_id : int
         Unique node identifier within the tree.
@@ -1719,7 +1719,7 @@ class MorphoBranch:
     :class:`Branch` via ``__getattr__``, so all geometry properties
     (``length``, ``area``, ``n_segments``, ``type``, etc.) are accessible
     directly on the node.  Child branches can also be retrieved by name
-    (e.g., ``morpho.soma.dend``).
+    (e.g., ``morph.soma.dend``).
 
     Examples
     --------
@@ -1727,7 +1727,7 @@ class MorphoBranch:
     .. code-block:: python
 
         >>> import brainunit as u
-        >>> from braincell import Branch, Morpho
+        >>> from braincell import Branch, Morphology
         >>> soma = Branch.from_lengths(
         ...     lengths=[20.0] * u.um,
         ...     radii=[10.0, 10.0] * u.um,
@@ -1738,17 +1738,17 @@ class MorphoBranch:
         ...     radii=[2.0, 1.0] * u.um,
         ...     type="dendrite",
         ... )
-        >>> morpho = Morpho.from_root(soma, name="soma")
-        >>> morpho.soma.dend = dend
-        >>> morpho.soma.n_children
+        >>> morph = Morphology.from_root(soma, name="soma")
+        >>> morph.soma.dend = dend
+        >>> morph.soma.n_children
         1
-        >>> morpho.soma.dend.length
+        >>> morph.soma.dend.length
         50.0 * umetre
     """
 
     def __init__(
         self,
-        owner: Morpho,
+        owner: Morphology,
         node_id: int,
         *,
         name: str,
@@ -1877,7 +1877,7 @@ class MorphoBranch:
 
         .. code-block:: python
 
-            >>> child = morpho.soma.attach(dend_branch, name="apical")  # doctest: +SKIP
+            >>> child = morph.soma.attach(dend_branch, name="apical")  # doctest: +SKIP
             >>> child.name  # doctest: +SKIP
             'apical'
         """

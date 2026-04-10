@@ -18,7 +18,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from braincell.morpho import Morpho
+from braincell.morph import Morphology
 from .cv import CV
 from .cv_geo import EPSILON
 
@@ -215,11 +215,11 @@ class _BranchTraversal:
 
 
 def build_point_tree(
-    morpho: Morpho,
+    morpho: Morphology,
     *,
     cvs: tuple[CV, ...],
 ) -> PointTree:
-    if not isinstance(morpho, Morpho):
+    if not isinstance(morpho, Morphology):
         raise TypeError(f"build_point_tree(...) expects Morpho, got {type(morpho).__name__!s}.")
 
     cv_ids_by_branch = _group_cv_ids_by_branch(cvs=cvs, n_branches=len(morpho.branches))

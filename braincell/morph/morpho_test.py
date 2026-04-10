@@ -20,7 +20,7 @@ import unittest
 import brainunit as u
 import numpy as np
 
-from braincell import Branch, Morpho, MorphoBranch, MorphoMetric
+from braincell import Branch, Morphology, MorphoBranch, MorphoMetric
 
 
 class MorphoTest(unittest.TestCase):
@@ -33,7 +33,7 @@ class MorphoTest(unittest.TestCase):
         )
         axon = Branch.from_lengths(lengths=[40.0] * u.um, radii=[0.8, 0.4] * u.um, type="axon")
 
-        tree = Morpho.from_root(soma, name="soma")
+        tree = Morphology.from_root(soma, name="soma")
         dend_view = tree.soma.attach(dend, name="dendrite", parent_x=1.0)
         axon_view = tree.attach(parent=tree.soma, child_branch=axon, child_name=None, parent_x=0.5, child_x=1.0)
         tree.soma.extra = Branch.from_lengths(
@@ -79,7 +79,7 @@ class MorphoTest(unittest.TestCase):
     def test_attach_by_name_and_attachment_point(self) -> None:
         soma = Branch.from_lengths(lengths=[20.0] * u.um, radii=[10.0, 10.0] * u.um, type="soma")
         dend = Branch.from_lengths(lengths=[60.0] * u.um, radii=[2.0, 1.0] * u.um, type="basal_dendrite")
-        tree = Morpho.from_root(soma, name="soma")
+        tree = Morphology.from_root(soma, name="soma")
         branch = tree.soma[0.5, 1.0].attach(dend, name="dendrite")
 
         self.assertEqual(branch.name, "dendrite")
@@ -90,7 +90,7 @@ class MorphoTest(unittest.TestCase):
     def test_child_x_accepts_only_endpoint_values(self) -> None:
         soma = Branch.from_lengths(lengths=[20.0] * u.um, radii=[10.0, 10.0] * u.um, type="soma")
         dend = Branch.from_lengths(lengths=[60.0] * u.um, radii=[2.0, 1.0] * u.um, type="basal_dendrite")
-        tree = Morpho.from_root(soma, name="soma")
+        tree = Morphology.from_root(soma, name="soma")
 
         child0 = tree.soma[0.0, 0].attach(dend, name="d0")
         child1 = tree.soma.attach(dend, name="d1", child_x=1.0)
@@ -129,7 +129,7 @@ class MorphoTest(unittest.TestCase):
         tuft = Branch.from_lengths(lengths=[30.0] * u.um, radii=[1.0, 0.6] * u.um, type="apical_dendrite")
         axon = Branch.from_lengths(lengths=[40.0] * u.um, radii=[0.8, 0.4] * u.um, type="axon")
 
-        tree = Morpho.from_root(soma, name="soma")
+        tree = Morphology.from_root(soma, name="soma")
         tree.soma.dend = dend
         tree.soma.dend.tuft = tuft
         tree.soma.axon = axon
@@ -150,7 +150,7 @@ class MorphoTest(unittest.TestCase):
         soma = Branch.from_lengths(lengths=[20.0] * u.um, radii=[10.0, 10.0] * u.um, type="soma")
         dend = Branch.from_lengths(lengths=[60.0] * u.um, radii=[2.0, 1.0] * u.um, type="dendrite")
 
-        tree = Morpho.from_root(soma, name="soma")
+        tree = Morphology.from_root(soma, name="soma")
         explicit = tree.soma.attach(dend, name="first")
         auto0 = tree.soma.attach(dend)
         auto1 = tree.soma.attach(Branch.from_lengths(lengths=[60.0] * u.um, radii=[2.0, 1.0] * u.um, type="dendrite"))
@@ -162,7 +162,7 @@ class MorphoTest(unittest.TestCase):
     def test_root_can_opt_into_type_based_auto_naming(self) -> None:
         axon = Branch.from_lengths(lengths=[40.0] * u.um, radii=[0.8, 0.4] * u.um, type="axon")
 
-        tree = Morpho.from_root(axon, name=None)
+        tree = Morphology.from_root(axon, name=None)
 
         self.assertEqual(tree.root.name, "axon_0")
         self.assertEqual(tree.topo(), "axon_0")
@@ -174,7 +174,7 @@ class MorphoTest(unittest.TestCase):
         apical = Branch.from_lengths(lengths=[30.0] * u.um, radii=[1.2, 0.8] * u.um, type="apical_dendrite")
         custom = Branch.from_lengths(lengths=[25.0] * u.um, radii=[0.7, 0.5] * u.um, type="custom")
 
-        tree = Morpho.from_root(soma, name="soma")
+        tree = Morphology.from_root(soma, name="soma")
         tree.soma.d = dend
         tree.soma.a = axon
         tree.soma.t = apical
@@ -203,27 +203,27 @@ class MorphoTest(unittest.TestCase):
         dend = Branch.from_lengths(lengths=[60.0] * u.um, radii=[2.0, 1.0] * u.um, type="basal_dendrite")
         axon = Branch.from_lengths(lengths=[40.0] * u.um, radii=[0.8, 0.4] * u.um, type="axon")
 
-        tree0 = Morpho.from_root(soma, name="soma")
+        tree0 = Morphology.from_root(soma, name="soma")
         tree0.soma.attach(dend, name="dendrite", parent_x=1.0)
         tree0.attach(parent="soma", child_branch=axon, child_name="axon", parent_x=0.5, child_x=1.0)
 
-        tree1 = Morpho.from_root(soma, name="soma")
+        tree1 = Morphology.from_root(soma, name="soma")
         tree1.soma.dendrite = dend
         tree1.soma[0.5, 1.0].axon = axon
 
         self.assertEqual(tree0, tree1)
 
-        renamed = Morpho.from_root(soma, name="soma")
+        renamed = Morphology.from_root(soma, name="soma")
         renamed.soma.attach(dend, name="d_other", parent_x=1.0)
         renamed.soma[0.5, 1.0].axon = axon
         self.assertNotEqual(tree0, renamed)
 
-        shifted = Morpho.from_root(soma, name="soma")
+        shifted = Morphology.from_root(soma, name="soma")
         shifted.soma.attach(dend, name="dendrite", parent_x=0.0)
         shifted.soma[0.5, 1.0].axon = axon
         self.assertNotEqual(tree0, shifted)
 
-        other_geom = Morpho.from_root(soma, name="soma")
+        other_geom = Morphology.from_root(soma, name="soma")
         other_geom.soma.attach(
             Branch.from_lengths(lengths=[61.0] * u.um, radii=[2.0, 1.0] * u.um, type="basal_dendrite"),
             name="dendrite",
@@ -241,7 +241,7 @@ class MorphoTest(unittest.TestCase):
         dend = Branch.from_lengths(lengths=[60.0] * u.um, radii=[2.0, 1.0] * u.um, type="basal_dendrite")
         tuft = Branch.from_lengths(lengths=[30.0] * u.um, radii=[1.0, 0.6] * u.um, type="apical_dendrite")
 
-        tree = Morpho.from_root(soma, name="soma")
+        tree = Morphology.from_root(soma, name="soma")
         tree.soma.dend = dend
 
         with self.assertRaises(ValueError):
@@ -255,7 +255,7 @@ class MorphoTest(unittest.TestCase):
         dend = Branch.from_lengths(lengths=[60.0] * u.um, radii=[2.0, 1.0] * u.um, type="basal_dendrite")
         tuft = Branch.from_lengths(lengths=[30.0] * u.um, radii=[1.0, 0.6] * u.um, type="apical_dendrite")
 
-        tree = Morpho.from_root(soma, name="soma")
+        tree = Morphology.from_root(soma, name="soma")
         tree.soma.dend = dend
         tree.soma.dend.tuft = tuft
 
@@ -287,7 +287,7 @@ class MorphoTest(unittest.TestCase):
         soma = Branch.from_lengths(lengths=[20.0] * u.um, radii=[10.0, 10.0] * u.um, type="soma")
         dend = Branch.from_lengths(lengths=[60.0] * u.um, radii=[2.0, 1.0] * u.um, type="basal_dendrite")
 
-        tree = Morpho.from_root(soma, name="soma")
+        tree = Morphology.from_root(soma, name="soma")
         tree.soma.dend = dend
 
         metric = tree.metric
@@ -320,7 +320,7 @@ class MorphoTest(unittest.TestCase):
         soma = Branch.from_lengths(lengths=[20.0] * u.um, radii=[10.0, 10.0] * u.um, type="soma")
         dend = Branch.from_lengths(lengths=[60.0] * u.um, radii=[2.0, 1.0] * u.um, type="basal_dendrite")
 
-        tree = Morpho.from_root(soma, name="soma")
+        tree = Morphology.from_root(soma, name="soma")
         tree.soma.dend = dend
 
         metric = tree.metric
@@ -341,7 +341,7 @@ class MorphoTest(unittest.TestCase):
         tuft = Branch.from_points(points=[(0.0, 10.0, 0.0), (-7.0, 4.0, 9.0)] * u.um, radii=[2.0, 1.0] * u.um,
                                   type="apical_dendrite")
 
-        tree = Morpho.from_root(soma, name="soma")
+        tree = Morphology.from_root(soma, name="soma")
         tree.soma.dend = dend
         tree.soma.tuft = tuft
 
@@ -368,7 +368,7 @@ class MorphoTest(unittest.TestCase):
         side = Branch.from_points(points=[(10.0, 0.0, 0.0), (12.0, 0.0, 0.0)] * u.um, radii=[1.0, 0.8] * u.um,
                                   type="axon")
 
-        tree = Morpho.from_root(soma, name="soma")
+        tree = Morphology.from_root(soma, name="soma")
         tree.soma.attach(main, name="main", parent_x=0.5)
         tree.main.attach(tuft, name="tuft")
         tree.soma.attach(side, name="side", parent_x=1.0)
@@ -384,7 +384,7 @@ class MorphoTest(unittest.TestCase):
         distal = Branch.from_points(points=[(10.0, 0.0, 0.0), (10.0, 16.0, 0.0)] * u.um, radii=[2.0, 1.0] * u.um,
                                     type="basal_dendrite")
 
-        tree = Morpho.from_root(soma, name="soma")
+        tree = Morphology.from_root(soma, name="soma")
         tree.soma.attach(distal, name="distal", parent_x=1.0)
 
         self.assertAlmostEqual(tree.max_path_distance.to_decimal(u.um), 26.0)
@@ -400,7 +400,7 @@ class MorphoTest(unittest.TestCase):
         distal = Branch.from_points(points=[(10.0, 0.0, 0.0), (10.0, 16.0, 0.0)] * u.um, radii=[2.0, 1.0] * u.um,
                                     type="axon")
 
-        tree = Morpho.from_root(soma, name="soma")
+        tree = Morphology.from_root(soma, name="soma")
         tree.soma.attach(midpoint, name="midpoint", parent_x=0.5)
         tree.soma.attach(distal, name="distal", parent_x=1.0)
 
@@ -416,7 +416,7 @@ class MorphoTest(unittest.TestCase):
         child = Branch.from_points(points=[(12.0, 0.0, 0.0), (12.0, 8.0, 0.0)] * u.um, radii=[1.0, 0.8] * u.um,
                                    type="basal_dendrite")
 
-        tree = Morpho.from_root(root, name="axon")
+        tree = Morphology.from_root(root, name="axon")
         tree.axon.attach(child, name="child")
 
         self.assertEqual(tree.max_path_distance_excluding_soma, tree.max_path_distance)
@@ -426,7 +426,7 @@ class MorphoTest(unittest.TestCase):
         soma = Branch.from_points(points=[(0.0, 0.0, 0.0), (10.0, 0.0, 0.0)] * u.um, radii=[5.0, 5.0] * u.um,
                                   type="soma")
 
-        tree = Morpho.from_root(soma, name="soma")
+        tree = Morphology.from_root(soma, name="soma")
 
         self.assertEqual(tree.max_path_distance_excluding_soma.to_decimal(u.um), 0.0)
         self.assertEqual(tree.max_euclidean_distance_excluding_soma.to_decimal(u.um), 0.0)
@@ -435,7 +435,7 @@ class MorphoTest(unittest.TestCase):
         soma = Branch.from_points(points=[(0.0, 0.0, 0.0), (10.0, 0.0, 0.0)] * u.um, radii=[5.0, 5.0] * u.um, type="soma")
         dend = Branch.from_lengths(lengths=[20.0] * u.um, radii=[1.0, 0.8] * u.um, type="basal_dendrite")
 
-        tree = Morpho.from_root(soma, name="soma")
+        tree = Morphology.from_root(soma, name="soma")
         tree.soma.dend = dend
 
         self.assertFalse(tree.has_full_point_geometry)
@@ -447,7 +447,7 @@ class MorphoTest(unittest.TestCase):
         soma = Branch.from_points(points=[(0.0, 0.0, 0.0), (10.0, 0.0, 0.0)] * u.um, radii=[5.0, 5.0] * u.um, type="soma")
         dend = Branch.from_lengths(lengths=[20.0] * u.um, radii=[1.0, 0.8] * u.um, type="basal_dendrite")
 
-        tree = Morpho.from_root(soma, name="soma")
+        tree = Morphology.from_root(soma, name="soma")
         tree.soma.dend = dend
 
         with self.assertRaisesRegex(ValueError, "Euclidean distance metrics require full point geometry on every branch"):
@@ -460,8 +460,8 @@ class MorphoTest(unittest.TestCase):
         soma1 = Branch.from_lengths(lengths=[18.0] * u.um, radii=[9.0, 9.0] * u.um, type="soma")
         dend = Branch.from_lengths(lengths=[60.0] * u.um, radii=[2.0, 1.0] * u.um, type="basal_dendrite")
 
-        tree0 = Morpho.from_root(soma0, name="soma")
-        tree1 = Morpho.from_root(soma1, name="other")
+        tree0 = Morphology.from_root(soma0, name="soma")
+        tree1 = Morphology.from_root(soma1, name="other")
         tree0.soma.dend = dend
 
         with self.assertRaises(ValueError):

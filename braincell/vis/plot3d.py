@@ -33,9 +33,9 @@ def plot3d(
     jupyter_backend: str | None = None,
     return_plotter: bool = False,
 ) -> object:
-    from braincell.morpho import Morpho
+    from braincell.morph import Morphology
 
-    if not isinstance(morpho, Morpho):
+    if not isinstance(morpho, Morphology):
         raise TypeError(f"plot3d(...) expects Morpho, got {type(morpho).__name__!s}.")
     resolved_mode = resolve_default_3d_mode(mode)
     if resolved_mode != "geometry":

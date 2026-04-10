@@ -20,7 +20,7 @@ from dataclasses import dataclass
 import numpy as np
 
 import brainunit as u
-from braincell.morpho import Morpho, MorphoBranch
+from braincell.morph import Morphology, MorphoBranch
 
 _ROOT_CHILD_SPAN_RAD = math.radians(120.0)
 _DEFAULT_SIDE_BRANCH_ANGLE_RAD = math.radians(35.0)
@@ -95,14 +95,14 @@ class _StemAngleProfile:
 
 
 def build_layout_branches_2d(
-    morpho: Morpho,
+    morpho: Morphology,
     *,
     mode: str,
     min_branch_angle_deg: float | None = 25.0,
     root_layout: str = "type_split",
     layout_family: str = "stem",
 ) -> tuple[LayoutBranch2D, ...]:
-    if not isinstance(morpho, Morpho):
+    if not isinstance(morpho, Morphology):
         raise TypeError(f"build_layout_branches_2d(...) expects Morpho, got {type(morpho).__name__!s}.")
     if mode not in {"tree", "frustum"}:
         raise ValueError(f"Unsupported layout mode {mode!r}.")
@@ -174,7 +174,7 @@ def sample_layout_branch(layout: LayoutBranch2D, x: float) -> tuple[np.ndarray, 
     return start_um + direction_um * offset_um, direction_um
 
 
-def _build_layout_specs(morpho: Morpho) -> dict[int, _LayoutSpec2D]:
+def _build_layout_specs(morpho: Morphology) -> dict[int, _LayoutSpec2D]:
     return {
         branch.index: _LayoutSpec2D(
             segment_lengths_um=np.asarray(branch.lengths.to_decimal(u.um), dtype=float),
@@ -228,7 +228,7 @@ def _path_lengths_um_by_branch(root: MorphoBranch) -> dict[int, float]:
 
 
 def _build_layout_branches_stem_linear(
-    morpho: Morpho,
+    morpho: Morphology,
     *,
     layout_specs: dict[int, _LayoutSpec2D],
     min_branch_angle_deg: float | None,
@@ -264,7 +264,7 @@ def _build_layout_branches_stem_linear(
 
 
 def _build_layout_branches_stem(
-    morpho: Morpho,
+    morpho: Morphology,
     *,
     layout_specs: dict[int, _LayoutSpec2D],
     min_branch_angle_deg: float | None,
@@ -300,7 +300,7 @@ def _build_layout_branches_stem(
 
 
 def _build_layout_branches_balloon(
-    morpho: Morpho,
+    morpho: Morphology,
     *,
     layout_specs: dict[int, _LayoutSpec2D],
     min_branch_angle_deg: float | None,
@@ -335,7 +335,7 @@ def _build_layout_branches_balloon(
 
 
 def _build_layout_branches_radial_360(
-    morpho: Morpho,
+    morpho: Morphology,
     *,
     layout_specs: dict[int, _LayoutSpec2D],
     min_branch_angle_deg: float | None,
@@ -1260,7 +1260,7 @@ def _clamp_angle_to_root_group(angle_rad: float, *, group_name: str) -> float:
 
 
 def _build_layout_branches_legacy(
-    morpho: Morpho,
+    morpho: Morphology,
     *,
     layout_specs: dict[int, _LayoutSpec2D],
     min_branch_angle_deg: float | None,
@@ -1597,7 +1597,7 @@ def _leaf_branches_dfs(node: MorphoBranch) -> list[MorphoBranch]:
     return leaves
 
 
-def _dendrogram_unit_scale_um(morpho: Morpho, y_units_by_branch: dict[int, float]) -> float:
+def _dendrogram_unit_scale_um(morpho: Morphology, y_units_by_branch: dict[int, float]) -> float:
     max_ratio = 0.0
     for branch in morpho.branches:
         parent = branch.parent

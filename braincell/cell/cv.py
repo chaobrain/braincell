@@ -29,7 +29,7 @@ import brainunit as u
 import numpy as np
 
 from braincell.filter import RegionMask
-from braincell.morpho import Branch
+from braincell.morph import Branch
 from .cv_policy import CVPolicy
 from .cv_geo import CVFrustum, CVGeo, axial_resistance_from_factor
 
@@ -52,7 +52,7 @@ class CV:
     mechanisms, and parent/child CV connectivity.
 
     The main convenience method is :meth:`as_branch`, which reconstructs a
-    standalone :class:`braincell.morpho.Branch` from the CV's frustum slices for
+    standalone :class:`braincell.morph.Branch` from the CV's frustum slices for
     debugging, visualization, or fixture generation.
     """
     id: int

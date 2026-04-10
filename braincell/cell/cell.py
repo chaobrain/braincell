@@ -24,7 +24,7 @@ import numpy as np
 
 from braincell._base import HHTypedNeuron, IonChannel
 from braincell.filter import LocsetExpr, RegionExpr
-from braincell.morpho import Morpho
+from braincell.morph import Morphology
 from braincell.quad import DiffEqState, IndependentIntegration, get_integrator
 from braincell.quad import _voltage_solver as voltage_solver
 from .assignment_table import MechanismObjectCell, MechanismObjectTable, mechanism_cell_key
@@ -109,7 +109,7 @@ class Cell(HHTypedNeuron):
 
     def __init__(
         self,
-        morpho: Morpho,
+        morpho: Morphology,
         *,
         cv_policy: CVPolicy | None = None,
         V_th: object = -75 * u.mV,
@@ -118,7 +118,7 @@ class Cell(HHTypedNeuron):
         solver: str | Callable = "explicit",
         name: str | None = None,
     ) -> None:
-        if not isinstance(morpho, Morpho):
+        if not isinstance(morpho, Morphology):
             raise TypeError(f"Cell expects Morpho, got {type(morpho).__name__!s}.")
 
         super().__init__(
@@ -163,7 +163,7 @@ class Cell(HHTypedNeuron):
         return self.varshape[-1]
 
     @property
-    def morpho(self) -> Morpho:
+    def morpho(self) -> Morphology:
         return self._morpho
 
     @property

@@ -21,8 +21,8 @@ import matplotlib.axes
 import matplotlib.pyplot as plt
 import numpy as np
 
-from braincell import Branch, Morpho
-from braincell.morpho import vis as morpho_vis
+from braincell import Branch, Morphology
+from braincell.morph import vis as morpho_vis
 from braincell.vis import plot2d, plot3d
 from braincell.vis.backend import BackendChooser
 from braincell.vis.backend_matplotlib import MatplotlibBackend
@@ -30,16 +30,16 @@ from braincell.vis.compare2d import compare_layouts_2d
 from braincell.vis._test_helper import FakeBackend
 
 
-def _point_tree() -> Morpho:
+def _point_tree() -> Morphology:
     soma = Branch.from_points(
         points=[[0.0, 0.0, 0.0], [10.0, 0.0, 1.0]] * u.um,
         radii=[5.0, 5.0] * u.um,
         type="soma",
     )
-    return Morpho.from_root(soma, name="soma")
+    return Morphology.from_root(soma, name="soma")
 
 
-def _length_only_tree() -> Morpho:
+def _length_only_tree() -> Morphology:
     soma = Branch.from_lengths(
         lengths=[20.0] * u.um,
         radii=[10.0, 10.0] * u.um,
@@ -50,7 +50,7 @@ def _length_only_tree() -> Morpho:
         radii=[2.0, 1.5, 1.0] * u.um,
         type="apical_dendrite",
     )
-    tree = Morpho.from_root(soma, name="soma")
+    tree = Morphology.from_root(soma, name="soma")
     tree.attach(parent="soma", child_branch=dend, child_name="dendrite", parent_x=1.0)
     return tree
 

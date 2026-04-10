@@ -28,7 +28,7 @@ class Golgi_morpho_1():
         txt_path = os.path.join(current_dir, 'Optimization_result.txt')
         h.load_file('stdlib.hoc')
         h.load_file('import3d.hoc')
-        # morpho
+        # morph
         cell = h.Import3d_Neurolucida3()
         cell.input(asc_path)
         i3d = h.Import3d_GUI(cell, 0)

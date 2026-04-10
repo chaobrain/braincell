@@ -34,9 +34,9 @@ def compare_layouts_2d(
     min_branch_angle_deg: float | None = 25.0,
     root_layout: str = "type_split",
 ) -> tuple[object, tuple[object, ...]]:
-    from braincell.morpho import Morpho
+    from braincell.morph import Morphology
 
-    if not isinstance(morpho, Morpho):
+    if not isinstance(morpho, Morphology):
         raise TypeError(f"compare_layouts_2d(...) expects Morpho, got {type(morpho).__name__!s}.")
     if not layouts:
         raise ValueError("compare_layouts_2d(...) requires at least one layout family.")

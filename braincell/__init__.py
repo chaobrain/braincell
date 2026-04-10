@@ -58,7 +58,7 @@ from .mech import (
     SineClamp,
 )
 from .mech import channel, ion, synapse
-from .morpho import (
+from .morph import (
     ApicalDendrite,
     Axon,
     BasalDendrite,
@@ -67,7 +67,7 @@ from .morpho import (
     Dendrite,
     MorphoEdge,
     MorphoMetric,
-    Morpho,
+    Morphology,
     MorphoBranch,
     Soma,
     branch_class_for_type,
@@ -100,7 +100,7 @@ __all__ = [
     "LocsetExpr",
     "MixIons",
     "MaxCVLen",
-    "Morpho",
+    "Morphology",
     "MorphoBranch",
     "MorphoEdge",
     "MorphoMetric",

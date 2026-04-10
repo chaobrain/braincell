@@ -18,7 +18,7 @@
 import unittest
 from pathlib import Path
 
-from braincell import Morpho
+from braincell import Morphology
 from braincell.vis.scene3d import build_render_scene_3d
 
 
@@ -38,7 +38,7 @@ class RealFileVisTest(unittest.TestCase):
     def test_valid_real_swc_fixtures_build_render_scene_3d(self) -> None:
         for fixture_name in VALID_SWC_FIXTURES:
             with self.subTest(fixture=fixture_name):
-                tree = Morpho.from_swc(FIXTURE_DIR / fixture_name)
+                tree = Morphology.from_swc(FIXTURE_DIR / fixture_name)
                 scene = build_render_scene_3d(tree)
 
                 self.assertEqual(len(scene.branches), len(tree.branches))

@@ -21,7 +21,7 @@ import brainunit as u
 import numpy as np
 
 from braincell.mech import CableProperties
-from braincell.morpho import Morpho, branch_class_for_type
+from braincell.morph import Morphology, branch_class_for_type
 
 if TYPE_CHECKING:
     from .cv_mech import PaintRule
@@ -52,7 +52,7 @@ class CVPolicy(ABC):
     @abstractmethod
     def resolve_cv_bounds(
         self,
-        morpho: Morpho,
+        morpho: Morphology,
         *,
         paint_rules: tuple["PaintRule", ...] | None = None,
     ) -> BoundsByBranch:
@@ -72,7 +72,7 @@ class CVPerBranch(CVPolicy):
 
     def resolve_cv_bounds(
         self,
-        morpho: Morpho,
+        morpho: Morphology,
         *,
         paint_rules: tuple["PaintRule", ...] | None = None,
     ) -> BoundsByBranch:
@@ -105,7 +105,7 @@ class MaxCVLen(CVPolicy):
 
     def resolve_cv_bounds(
         self,
-        morpho: Morpho,
+        morpho: Morphology,
         *,
         paint_rules: tuple["PaintRule", ...] | None = None,
     ) -> BoundsByBranch:
@@ -140,7 +140,7 @@ class DLambda(CVPolicy):
 
     def resolve_cv_bounds(
         self,
-        morpho: Morpho,
+        morpho: Morphology,
         *,
         paint_rules: tuple["PaintRule", ...] | None = None,
     ) -> BoundsByBranch:
@@ -211,7 +211,7 @@ class CompositeByTypePolicy(CVPolicy):
 
     def resolve_cv_bounds(
         self,
-        morpho: Morpho,
+        morpho: Morphology,
         *,
         paint_rules: tuple["PaintRule", ...] | None = None,
     ) -> BoundsByBranch:
@@ -282,7 +282,7 @@ def _bounds_from_d_lambda(
 
 
 def _resolve_branch_cable_properties(
-    morpho: Morpho,
+    morpho: Morphology,
     *,
     paint_rules: tuple["PaintRule", ...] | None,
 ) -> tuple[tuple[float, float], ...]:

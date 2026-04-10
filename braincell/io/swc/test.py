@@ -22,7 +22,7 @@ from pathlib import Path
 import brainunit as u
 import numpy as np
 
-from braincell import Morpho
+from braincell import Morphology
 from braincell.io.swc import SwcReadOptions, SwcReader
 from braincell.io.swc.soma import is_contour_soma, is_special_three_point_soma
 from braincell.io.swc.types import _SwcAttach, _SwcBranch, _SwcRow
@@ -847,9 +847,9 @@ class SwcReaderTest(unittest.TestCase):
             """
         )
 
-        tree, report = Morpho.from_swc(path, return_report=True)
+        tree, report = Morphology.from_swc(path, return_report=True)
 
-        self.assertIsInstance(tree, Morpho)
+        self.assertIsInstance(tree, Morphology)
         self.assertFalse(report.has_errors)
         self.assertIn("topology.invalid_parent", self._issue_codes(report))
 
@@ -862,8 +862,8 @@ class SwcReaderTest(unittest.TestCase):
             """
         )
 
-        via_mode = Morpho.from_swc(path, mode="neuromorpho")
-        via_options = Morpho.from_swc(path, options=SwcReadOptions(mode="neuromorpho"))
+        via_mode = Morphology.from_swc(path, mode="neuromorpho")
+        via_options = Morphology.from_swc(path, options=SwcReadOptions(mode="neuromorpho"))
 
         self.assertEqual(via_mode, via_options)
 
@@ -876,7 +876,7 @@ class SwcReaderTest(unittest.TestCase):
         )
 
         with self.assertRaisesRegex(ValueError, "Conflicting SWC import mode"):
-            Morpho.from_swc(path, mode="neuromorpho", options=SwcReadOptions(mode="neuron"))
+            Morphology.from_swc(path, mode="neuromorpho", options=SwcReadOptions(mode="neuron"))
 
     def test_neuromorpho_mode_does_not_change_non_midpoint_attachment(self) -> None:
         path = self._write_swc(
@@ -1042,11 +1042,11 @@ class SwcRealFileSmokeTest(unittest.TestCase):
         for fixture_name in ("grc.swc", "io.swc"):
             with self.subTest(fixture=fixture_name):
                 path = FIXTURE_DIR / fixture_name
-                tree = Morpho.from_swc(path)
-                tree_with_report, report = Morpho.from_swc(path, return_report=True)
+                tree = Morphology.from_swc(path)
+                tree_with_report, report = Morphology.from_swc(path, return_report=True)
 
-                self.assertIsInstance(tree, Morpho)
-                self.assertIsInstance(tree_with_report, Morpho)
+                self.assertIsInstance(tree, Morphology)
+                self.assertIsInstance(tree_with_report, Morphology)
                 self.assertFalse(report.has_errors)
                 self.assertGreater(len(tree.branches), 0)
                 self.assertTrue(tree.root.name)
@@ -1065,16 +1065,16 @@ class SwcRealFileSmokeTest(unittest.TestCase):
 
         tree = SwcReader().read(path)
 
-        self.assertIsInstance(tree, Morpho)
+        self.assertIsInstance(tree, Morphology)
         self.assertGreater(len(tree.branches), 0)
         self.assertTrue(tree.topo())
 
     def test_problematic_real_swc_fixture_supports_morpho_import_with_warnings(self) -> None:
         path = FIXTURE_DIR / "bc.swc"
 
-        tree, report = Morpho.from_swc(path, return_report=True)
+        tree, report = Morphology.from_swc(path, return_report=True)
 
-        self.assertIsInstance(tree, Morpho)
+        self.assertIsInstance(tree, Morphology)
         self.assertFalse(report.has_errors)
         self.assertTrue(report.has_warnings)
         self.assertGreater(len(tree.branches), 0)

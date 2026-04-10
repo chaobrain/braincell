@@ -26,7 +26,7 @@ from .branch import (
 from .morpho import (
     MorphoEdge,
     MorphoMetric,
-    Morpho,
+    Morphology,
     MorphoBranch,
 )
 
@@ -39,7 +39,7 @@ __all__ = [
     "Dendrite",
     "MorphoEdge",
     "MorphoMetric",
-    "Morpho",
+    "Morphology",
     "MorphoBranch",
     "Soma",
     "branch_class_for_type",

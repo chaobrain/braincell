@@ -27,7 +27,7 @@ from typing import Any
 import brainunit as u
 import numpy as np
 
-from braincell.morpho import Branch, Morpho
+from braincell.morph import Branch, Morphology
 from .cv_policy import CVPolicy
 
 Quantity = Any
@@ -78,12 +78,12 @@ class CVGeo:
 
 
 def build_cv_geo(
-    morpho: Morpho,
+    morpho: Morphology,
     *,
     policy: object,
     paint_rules: tuple[object, ...] | None = None,
 ) -> tuple[tuple[CVGeo, ...], dict[int, tuple[int, ...]]]:
-    if not isinstance(morpho, Morpho):
+    if not isinstance(morpho, Morphology):
         raise TypeError(f"build_cv_geo(...) expects Morpho, got {type(morpho).__name__!s}.")
     if not isinstance(policy, CVPolicy):
         raise TypeError("build_cv_geo(...) expects a CVPolicy instance.")

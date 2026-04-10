@@ -30,7 +30,7 @@ from braincell import (
     Branch,
     CustomBranch,
     Dendrite,
-    Morpho,
+    Morphology,
     Soma,
 )
 from braincell.io import (
@@ -67,7 +67,7 @@ def _make_points_branch(*, type: str = "axon") -> Branch:
     return Branch.from_points(points=pts, radii=[2.0, 1.5, 1.0, 0.5] * u.um, type=type)
 
 
-def _make_complex_morpho() -> Morpho:
+def _make_complex_morpho() -> Morphology:
     soma = Branch.from_points(
         points=[[0.0, 0.0, 0.0], [20.0, 0.0, 0.0]] * u.um,
         radii=[10.0, 10.0] * u.um,
@@ -94,7 +94,7 @@ def _make_complex_morpho() -> Morpho:
         type="axon",
     )
 
-    morpho = Morpho.from_root(soma, name="soma")
+    morpho = Morphology.from_root(soma, name="soma")
     morpho.attach(parent="soma", child_branch=apical, child_name="apical", parent_x=1.0)
     morpho.attach(parent="soma", child_branch=basal_a, child_name="basal_a", parent_x=0.0)
     morpho.attach(parent="soma", child_branch=basal_b, child_name="basal_b", parent_x=0.0)
@@ -187,7 +187,7 @@ class CheckpointBranchRoundTripTest(unittest.TestCase):
         self.assertEqual(loaded, branch)
 
     def test_save_branch_rejects_morpho(self) -> None:
-        morpho = Morpho.from_root(
+        morpho = Morphology.from_root(
             Branch.from_lengths(lengths=[20.0] * u.um, radii=[10.0, 10.0] * u.um, type="soma"),
             name="soma",
         )
@@ -211,7 +211,7 @@ class CheckpointBranchRoundTripTest(unittest.TestCase):
 
     def test_load_branch_on_morpho_file_raises(self) -> None:
         morpho = _make_complex_morpho()
-        path = save_morpho(morpho, self.tmp / "morpho.bcm")
+        path = save_morpho(morpho, self.tmp / "morph.bcm")
         with self.assertRaises(CheckpointError) as cm:
             load_branch(path)
         self.assertIn("load_morpho", str(cm.exception))
@@ -232,7 +232,7 @@ class CheckpointMorphoRoundTripTest(unittest.TestCase):
         dend = Branch.from_lengths(
             lengths=[50.0] * u.um, radii=[2.0, 1.0] * u.um, type="dendrite"
         )
-        morpho = Morpho.from_root(soma, name="soma")
+        morpho = Morphology.from_root(soma, name="soma")
         morpho.soma.dendrite = dend
 
         path = save_morpho(morpho, self.tmp / "simple.bcm")
@@ -261,12 +261,12 @@ class CheckpointMorphoRoundTripTest(unittest.TestCase):
     def test_morpho_method_delegates(self) -> None:
         morpho = _make_complex_morpho()
         path = morpho.save_checkpoint(self.tmp / "via_method.bcm")
-        loaded = Morpho.load_checkpoint(path)
+        loaded = Morphology.load_checkpoint(path)
         self.assertEqual(loaded, morpho)
 
     def test_type_name_counters_restored(self) -> None:
         soma = Branch.from_lengths(lengths=[20.0] * u.um, radii=[10.0, 10.0] * u.um, type="soma")
-        morpho = Morpho.from_root(soma, name="soma")
+        morpho = Morphology.from_root(soma, name="soma")
         for _ in range(3):
             morpho.attach(
                 parent="soma",
@@ -298,7 +298,7 @@ class CheckpointMorphoRoundTripTest(unittest.TestCase):
         if not swc_path.exists():
             self.skipTest(f"fixture {swc_path} not present")
 
-        morpho = Morpho.from_swc(swc_path)
+        morpho = Morphology.from_swc(swc_path)
         path = morpho.save_checkpoint(self.tmp / "ca1.bcm")
         loaded = load_morpho(path)
         self.assertEqual(loaded, morpho)
@@ -312,7 +312,7 @@ class CheckpointMorphoRoundTripTest(unittest.TestCase):
             if not asc_path.exists():
                 continue
             with self.subTest(fixture=name):
-                morpho = Morpho.from_asc(asc_path)
+                morpho = Morphology.from_asc(asc_path)
                 path = morpho.save_checkpoint(self.tmp / f"{name}.bcm")
                 loaded = load_morpho(path)
                 self.assertEqual(loaded, morpho)
@@ -413,7 +413,7 @@ class CheckpointFormatErrorTest(unittest.TestCase):
             {
                 "format": "braincell.io.checkpoint",
                 "version": 1,
-                "kind": "morpho",
+                "kind": "morph",
                 "branches": [],
                 "root_name": "soma",
             },
@@ -423,9 +423,9 @@ class CheckpointFormatErrorTest(unittest.TestCase):
         self.assertIn("no branches", str(cm.exception))
 
     def test_morpho_manifest_root_name_mismatch(self) -> None:
-        # Build a real morpho, then rewrite the manifest with a wrong root_name.
+        # Build a real morph, then rewrite the manifest with a wrong root_name.
         soma = Branch.from_lengths(lengths=[20.0] * u.um, radii=[10.0, 10.0] * u.um, type="soma")
-        morpho = Morpho.from_root(soma, name="soma")
+        morpho = Morphology.from_root(soma, name="soma")
         path = save_morpho(morpho, self.tmp / "mismatch.bcm")
 
         with np.load(path, allow_pickle=False) as data:
@@ -451,7 +451,7 @@ class CheckpointFormatErrorTest(unittest.TestCase):
         manifest = {
             "format": "braincell.io.checkpoint",
             "version": 1,
-            "kind": "morpho",
+            "kind": "morph",
             "root_name": "soma",
             "type_name_counters": {},
             "branches": [

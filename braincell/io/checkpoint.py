@@ -51,7 +51,7 @@ import brainunit as u
 import numpy as np
 
 from braincell._version import __version__ as _BC_VERSION
-from braincell.morpho import Branch, Morpho, branch_class_for_type
+from braincell.morph import Branch, Morphology, branch_class_for_type
 
 __all__ = [
     "CheckpointError",
@@ -213,12 +213,12 @@ def load_branch(path: str | os.PathLike) -> Branch:
     return _build_branch(arrays, branch_type=spec["type"])
 
 
-def save_morpho(morpho: Morpho, path: str | os.PathLike) -> Path:
+def save_morpho(morpho: Morphology, path: str | os.PathLike) -> Path:
     """Write a :class:`Morpho` to a braincell checkpoint file.
 
     Parameters
     ----------
-    morpho : Morpho
+    morpho : Morphology
         Morphology to serialize. The current default-ordering snapshot is
         captured; the in-memory tree is not modified.
     path : str or os.PathLike
@@ -233,14 +233,14 @@ def save_morpho(morpho: Morpho, path: str | os.PathLike) -> Path:
     Raises
     ------
     TypeError
-        If *morpho* is not a :class:`Morpho` instance.
+        If *morph* is not a :class:`Morpho` instance.
 
     See Also
     --------
     load_morpho : Inverse operation.
     save_branch : Persist a single branch.
     """
-    if not isinstance(morpho, Morpho):
+    if not isinstance(morpho, Morphology):
         raise TypeError(
             f"save_morpho() expects a Morpho instance, got {type(morpho).__name__}."
         )
@@ -272,7 +272,7 @@ def save_morpho(morpho: Morpho, path: str | os.PathLike) -> Path:
     manifest = {
         "format": _FORMAT,
         "version": _CURRENT_VERSION,
-        "kind": "morpho",
+        "kind": "morph",
         "created_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "braincell_version": _BC_VERSION,
         "unit": "um",
@@ -283,7 +283,7 @@ def save_morpho(morpho: Morpho, path: str | os.PathLike) -> Path:
     return _write_npz(path, manifest, payload)
 
 
-def load_morpho(path: str | os.PathLike) -> Morpho:
+def load_morpho(path: str | os.PathLike) -> Morphology:
     """Load a :class:`Morpho` from a braincell checkpoint file.
 
     Parameters
@@ -293,7 +293,7 @@ def load_morpho(path: str | os.PathLike) -> Morpho:
 
     Returns
     -------
-    Morpho
+    Morphology
         The reconstructed morphology, with the same branch names,
         ``parent_x``/``child_x`` attachments, and auto-naming counters
         as the saved tree.
@@ -314,7 +314,7 @@ def load_morpho(path: str | os.PathLike) -> Morpho:
     """
     manifest, payload = _read_npz(path)
     _check_format(manifest, source=path)
-    if manifest.get("kind") != "morpho":
+    if manifest.get("kind") != "morph":
         raise CheckpointError(
             f"{os.fspath(path)!s}: this is a {manifest.get('kind')!r} checkpoint; "
             "use load_branch() instead of load_morpho()."
@@ -323,7 +323,7 @@ def load_morpho(path: str | os.PathLike) -> Morpho:
     branch_specs = manifest.get("branches")
     if not isinstance(branch_specs, list) or not branch_specs:
         raise CheckpointError(
-            f"{os.fspath(path)!s}: morpho checkpoint has no branches."
+            f"{os.fspath(path)!s}: morph checkpoint has no branches."
         )
 
     by_name: dict[str, dict[str, Any]] = {}
@@ -359,7 +359,7 @@ def load_morpho(path: str | os.PathLike) -> Morpho:
         source=path,
     )
     root_branch = _build_branch(root_arrays, branch_type=root_spec["type"])
-    morpho = Morpho.from_root(root_branch, name=root_spec["name"])
+    morpho = Morphology.from_root(root_branch, name=root_spec["name"])
 
     inserted: set[str] = {root_spec["name"]}
     for spec in branch_specs:

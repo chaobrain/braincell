@@ -21,8 +21,8 @@ from pathlib import Path
 import numpy as np
 
 import brainunit as u
-from braincell.morpho.branch import Branch, branch_class_for_type
-from braincell.morpho.morpho import Morpho
+from braincell.morph.branch import Branch, branch_class_for_type
+from braincell.morph.morpho import Morphology
 from .rules import apply_swc_rules, raise_for_swc_errors
 from .soma import (
     contour_equivalent_center_radius,
@@ -52,7 +52,7 @@ class SwcReader:
         path: str | PathLike[str],
         *,
         return_report: bool = False,
-    ) -> Morpho | tuple[Morpho, SwcReport]:
+    ) -> Morphology | tuple[Morphology, SwcReport]:
         context = self._run_pipeline(Path(path), mark_fix_applied=True)
         raise_for_swc_errors(context.report, context.path)
         self._build_graph_index(context)
@@ -319,13 +319,13 @@ class SwcReader:
         self,
         branches: list[_SwcBranch],
         nodes: dict[int, _SwcRow],
-    ) -> Morpho:
+    ) -> Morphology:
         if not branches:
             raise ValueError("SWC extraction produced no branches.")
 
         root_branch = self._make_branch(branches[0], nodes)
         root_name = "soma" if branches[0].branch_type == "soma" else None
-        tree = Morpho.from_root(root_branch, name=root_name)
+        tree = Morphology.from_root(root_branch, name=root_name)
         branch_views = {0: tree.root}
 
         for branch_index, branch_info in enumerate(branches[1:], start=1):

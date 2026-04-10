@@ -38,9 +38,9 @@ def plot2d(
     min_branch_angle_deg: float | None = 25.0,
     root_layout: str = "type_split",
 ) -> object:
-    from braincell.morpho import Morpho
+    from braincell.morph import Morphology
 
-    if not isinstance(morpho, Morpho):
+    if not isinstance(morpho, Morphology):
         raise TypeError(f"plot2d(...) expects Morpho, got {type(morpho).__name__!s}.")
 
     resolved_layout = resolve_default_2d_layout(layout)

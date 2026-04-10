@@ -18,7 +18,7 @@ import unittest
 
 import brainunit as u
 
-from braincell import Branch, Morpho
+from braincell import Branch, Morphology
 from braincell.filter import (
     BranchPoints,
     BranchSlice,
@@ -30,14 +30,14 @@ from braincell.filter import (
 )
 
 
-def _build_branchpoint_tree() -> Morpho:
+def _build_branchpoint_tree() -> Morphology:
     soma = Branch.from_lengths(lengths=[20.0] * u.um, radii=[10.0, 10.0] * u.um, type="soma")
     basal = Branch.from_lengths(lengths=[30.0] * u.um, radii=[2.0, 1.0] * u.um, type="basal_dendrite")
     axon = Branch.from_lengths(lengths=[10.0] * u.um, radii=[0.8, 0.5] * u.um, type="axon")
     apical = Branch.from_lengths(lengths=[20.0] * u.um, radii=[1.5, 1.0] * u.um, type="apical_dendrite")
     tuft = Branch.from_lengths(lengths=[15.0] * u.um, radii=[0.9, 0.7] * u.um, type="apical_dendrite")
 
-    tree = Morpho.from_root(soma, name="soma")
+    tree = Morphology.from_root(soma, name="soma")
     tree.soma.attach(basal, name="basal", parent_x=1.0)
     tree.soma.attach(axon, name="axon", parent_x=0.5)
     tree.soma.attach(apical, name="apical", parent_x=0.5)
@@ -45,11 +45,11 @@ def _build_branchpoint_tree() -> Morpho:
     return tree
 
 
-def _build_sampling_tree() -> Morpho:
+def _build_sampling_tree() -> Morphology:
     soma = Branch.from_lengths(lengths=[10.0] * u.um, radii=[10.0, 10.0] * u.um, type="soma")
     dend = Branch.from_lengths(lengths=[30.0] * u.um, radii=[2.0, 1.0] * u.um, type="basal_dendrite")
 
-    tree = Morpho.from_root(soma, name="soma")
+    tree = Morphology.from_root(soma, name="soma")
     tree.soma.dend = dend
     return tree
 

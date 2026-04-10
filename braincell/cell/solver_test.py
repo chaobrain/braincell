@@ -20,21 +20,21 @@ import brainstate
 import brainunit as u
 
 import braincell
-from braincell import Branch, Cell, Morpho
+from braincell import Branch, Cell, Morphology
 from braincell.filter import BranchSlice, RootLocation, Terminals
 
 
-def _build_tree() -> Morpho:
+def _build_tree() -> Morphology:
     soma = Branch.from_lengths(lengths=[20.0] * u.um, radii=[10.0, 10.0] * u.um, type="soma")
     dend = Branch.from_lengths(lengths=[100.0] * u.um, radii=[2.0, 1.0] * u.um, type="basal_dendrite")
-    tree = Morpho.from_root(soma, name="soma")
+    tree = Morphology.from_root(soma, name="soma")
     tree.soma.dend = dend
     return tree
 
 
-def _build_soma_tree() -> Morpho:
+def _build_soma_tree() -> Morphology:
     soma = Branch.from_lengths(lengths=[20.0] * u.um, radii=[8.0, 8.0] * u.um, type="soma")
-    return Morpho.from_root(soma, name="soma")
+    return Morphology.from_root(soma, name="soma")
 
 
 class CellExecutionTest(unittest.TestCase):

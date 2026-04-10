@@ -23,7 +23,7 @@ try:
 except ModuleNotFoundError:  # pragma: no cover - optional dependency
     pv = None
 
-from braincell import Morpho
+from braincell import Morphology
 from braincell.vis.backend import BackendChooser
 from braincell.vis.backend_pyvista import PyVistaBackend
 
@@ -38,7 +38,7 @@ class RealFilePyVistaVisTest(unittest.TestCase):
             self.skipTest("pyvista is not installed.")
         for fixture_name in VALID_SWC_FIXTURES:
             with self.subTest(fixture=fixture_name):
-                tree = Morpho.from_swc(FIXTURE_DIR / fixture_name)
+                tree = Morphology.from_swc(FIXTURE_DIR / fixture_name)
                 backend = PyVistaBackend(plotter_kwargs={"off_screen": True}, show_axes=False)
                 chooser = BackendChooser(backends=(backend,))
                 plotter = tree.vis3d(backend="pyvista", chooser=chooser)

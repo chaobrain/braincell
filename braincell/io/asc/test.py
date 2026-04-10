@@ -19,7 +19,7 @@ import textwrap
 import unittest
 from pathlib import Path
 
-from braincell import Morpho
+from braincell import Morphology
 from braincell.io.asc import AscReader
 
 FIXTURE_DIR = Path(__file__).resolve().parents[2] / "develop_doc" / "morpho_files"
@@ -74,7 +74,7 @@ class AscReaderTest(unittest.TestCase):
 
         tree, report = AscReader().read(path, return_report=True)
 
-        self.assertIsInstance(tree, Morpho)
+        self.assertIsInstance(tree, Morphology)
         self.assertFalse(report.has_errors)
         self.assertEqual(tree.root.type, "soma")
         self.assertEqual(len(tree.branches), 4)
@@ -107,9 +107,9 @@ class AscReaderTest(unittest.TestCase):
             '''
         )
 
-        tree, report = Morpho.from_asc(path, return_report=True)
+        tree, report = Morphology.from_asc(path, return_report=True)
 
-        self.assertIsInstance(tree, Morpho)
+        self.assertIsInstance(tree, Morphology)
         self.assertFalse(report.has_errors)
         self.assertEqual(tree.root.type, "soma")
         self.assertEqual(tree.branch(index=1).type, "axon")
@@ -122,7 +122,7 @@ class AscRealFileSmokeTest(unittest.TestCase):
             with self.subTest(fixture=fixture_name):
                 tree, report = reader.read(FIXTURE_DIR / fixture_name, return_report=True)
 
-                self.assertIsInstance(tree, Morpho)
+                self.assertIsInstance(tree, Morphology)
                 self.assertFalse(report.has_errors)
                 self.assertGreater(len(tree.branches), 0)
                 self.assertEqual(tree.root.type, "soma")
@@ -133,11 +133,11 @@ class AscRealFileSmokeTest(unittest.TestCase):
         for fixture_name in ("goc.asc", "pc.asc"):
             with self.subTest(fixture=fixture_name):
                 path = FIXTURE_DIR / fixture_name
-                tree = Morpho.from_asc(path)
-                tree_with_report, report = Morpho.from_asc(path, return_report=True)
+                tree = Morphology.from_asc(path)
+                tree_with_report, report = Morphology.from_asc(path, return_report=True)
 
-                self.assertIsInstance(tree, Morpho)
-                self.assertIsInstance(tree_with_report, Morpho)
+                self.assertIsInstance(tree, Morphology)
+                self.assertIsInstance(tree_with_report, Morphology)
                 self.assertFalse(report.has_errors)
                 self.assertGreater(len(tree.branches), 0)
                 self.assertEqual(tree.root.type, "soma")

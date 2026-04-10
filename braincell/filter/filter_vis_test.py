@@ -20,7 +20,7 @@ from dataclasses import is_dataclass
 import brainunit as u
 import numpy as np
 
-from braincell import Branch, Cell, Morpho
+from braincell import Branch, Cell, Morphology
 from braincell.filter import AllRegion, BranchSlice, RootLocation, Terminals, branch_in
 from braincell.vis import plot2d, plot3d
 from braincell.vis.backend import BackendChooser
@@ -39,7 +39,7 @@ class FilterVisTest(unittest.TestCase):
             radii=[2.0, 1.0] * u.um,
             type="apical_dendrite",
         )
-        tree = Morpho.from_root(soma, name="soma")
+        tree = Morphology.from_root(soma, name="soma")
         tree.soma.dend = dend
 
         region = AllRegion().evaluate(tree)
@@ -75,7 +75,7 @@ class FilterVisTest(unittest.TestCase):
             radii=[0.8, 0.5] * u.um,
             type="axon",
         )
-        tree = Morpho.from_root(soma, name="soma")
+        tree = Morphology.from_root(soma, name="soma")
         tree.soma.dend = dend
         tree.soma.axon = axon
 
@@ -112,7 +112,7 @@ class FilterVisTest(unittest.TestCase):
             radii=[0.8, 0.5] * u.um,
             type="axon",
         )
-        tree = Morpho.from_root(soma, name="soma")
+        tree = Morphology.from_root(soma, name="soma")
         tree.soma.dend = dend
         tree.soma.axon = axon
 
@@ -131,7 +131,7 @@ class FilterVisTest(unittest.TestCase):
     def test_morpho_select_is_region_eval_sugar(self) -> None:
         soma = Branch.from_lengths(lengths=[20.0] * u.um, radii=[10.0, 10.0] * u.um, type="soma")
         dend = Branch.from_lengths(lengths=[80.0] * u.um, radii=[2.0, 1.0] * u.um, type="apical_dendrite")
-        tree = Morpho.from_root(soma, name="soma")
+        tree = Morphology.from_root(soma, name="soma")
         tree.soma.dend = dend
 
         expr = BranchSlice(branch_index=[0, 1], prox=0.0, dist=1.0)
@@ -143,7 +143,7 @@ class FilterVisTest(unittest.TestCase):
     def test_morpho_select_accepts_locset_expr(self) -> None:
         soma = Branch.from_lengths(lengths=[20.0] * u.um, radii=[10.0, 10.0] * u.um, type="soma")
         dend = Branch.from_lengths(lengths=[80.0] * u.um, radii=[2.0, 1.0] * u.um, type="apical_dendrite")
-        tree = Morpho.from_root(soma, name="soma")
+        tree = Morphology.from_root(soma, name="soma")
         tree.soma.dend = dend
 
         expr = RootLocation(x=0.5) | Terminals()
@@ -155,7 +155,7 @@ class FilterVisTest(unittest.TestCase):
 
     def test_morpho_select_rejects_non_filter_expr(self) -> None:
         soma = Branch.from_lengths(lengths=[20.0] * u.um, radii=[10.0, 10.0] * u.um, type="soma")
-        tree = Morpho.from_root(soma, name="soma")
+        tree = Morphology.from_root(soma, name="soma")
 
         with self.assertRaises(TypeError):
             tree.select(123)  # type: ignore[arg-type]
@@ -166,7 +166,7 @@ class FilterVisTest(unittest.TestCase):
             radii=[10.0, 10.0] * u.um,
             type="soma",
         )
-        tree = Morpho.from_root(soma, name="soma")
+        tree = Morphology.from_root(soma, name="soma")
         backend = FakeBackend()
 
         rendered = tree.vis3d(chooser=BackendChooser(backends=(backend,)), backend="fake")
@@ -182,7 +182,7 @@ class FilterVisTest(unittest.TestCase):
             radii=[10.0, 10.0] * u.um,
             type="soma",
         )
-        tree = Morpho.from_root(soma, name="soma")
+        tree = Morphology.from_root(soma, name="soma")
         backend = FakeBackend()
 
         rendered = tree.vis3d(mode="geometry", chooser=BackendChooser(backends=(backend,)), backend="fake")
@@ -195,7 +195,7 @@ class FilterVisTest(unittest.TestCase):
             radii=[10.0, 10.0] * u.um,
             type="soma",
         )
-        tree = Morpho.from_root(soma, name="soma")
+        tree = Morphology.from_root(soma, name="soma")
 
         with self.assertRaisesRegex(ValueError, "Unsupported 3D mode"):
             tree.vis3d(mode="layout")
@@ -211,7 +211,7 @@ class FilterVisTest(unittest.TestCase):
             radii=[2.0, 1.0] * u.um,
             type="apical_dendrite",
         )
-        tree = Morpho.from_root(soma, name="soma")
+        tree = Morphology.from_root(soma, name="soma")
         tree.soma.dend = dend
 
         with self.assertRaisesRegex(ValueError, "requires complete point geometry on every branch"):
@@ -228,7 +228,7 @@ class FilterVisTest(unittest.TestCase):
             radii=[2.0, 1.0] * u.um,
             type="apical_dendrite",
         )
-        tree = Morpho.from_root(soma, name="soma")
+        tree = Morphology.from_root(soma, name="soma")
         tree.soma.dend = dend
 
         rendered = tree.vis2d(chooser=BackendChooser(backends=(FakeBackend(),)), backend="fake")
@@ -246,7 +246,7 @@ class FilterVisTest(unittest.TestCase):
         soma = Branch.from_lengths(lengths=[20.0] * u.um, radii=[10.0, 10.0] * u.um, type="soma")
         dend_a = Branch.from_lengths(lengths=[30.0] * u.um, radii=[2.0, 1.5] * u.um, type="apical_dendrite")
         dend_b = Branch.from_lengths(lengths=[30.0] * u.um, radii=[2.0, 1.5] * u.um, type="basal_dendrite")
-        tree = Morpho.from_root(soma, name="soma")
+        tree = Morphology.from_root(soma, name="soma")
         tree.attach(parent="soma", child_branch=dend_a, child_name="dend_a", parent_x=1.0)
         tree.attach(parent="soma", child_branch=dend_b, child_name="dend_b", parent_x=1.0)
 
@@ -270,7 +270,7 @@ class FilterVisTest(unittest.TestCase):
 
     def test_branch_views_are_rejected_by_downstream_entrypoints(self) -> None:
         soma = Branch.from_lengths(lengths=[20.0] * u.um, radii=[10.0, 10.0] * u.um, type="soma")
-        tree = Morpho.from_root(soma, name="soma")
+        tree = Morphology.from_root(soma, name="soma")
         backend = FakeBackend()
 
         with self.assertRaises(TypeError):

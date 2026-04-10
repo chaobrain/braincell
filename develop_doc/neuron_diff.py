@@ -21,7 +21,7 @@ from typing import Any
 
 import brainunit as u
 
-from braincell.morpho import Morpho
+from braincell.morph import Morphology
 
 __all__ = [
     "compare_swc_with_neuron",
@@ -142,7 +142,7 @@ def load_swc_morphology(swc_filename: str | Path) -> tuple[Any, ...]:
     return sections
 
 
-def _braincell_metric_record(morpho: Morpho, metric: object, metric_name: str) -> dict[str, object]:
+def _braincell_metric_record(morpho: Morphology, metric: object, metric_name: str) -> dict[str, object]:
     if metric_name in _SUMMARY_METRIC_NAMES:
         value = getattr(metric, metric_name)
         if metric_name in {"n_branches", "n_stems", "n_bifurcations", "max_branch_order"}:
@@ -172,7 +172,7 @@ def compute_braincell_metrics(
 ) -> dict[str, dict[str, object]]:
     path = _validate_swc_path(swc_filename)
     selected_metric_names = _resolve_metric_names(metric_names=metric_names, include_optional=include_optional)
-    morpho = Morpho.from_swc(path, options=swc_options)
+    morpho = Morphology.from_swc(path, options=swc_options)
     metric = morpho.metric
     return {
         metric_name: _braincell_metric_record(morpho, metric, metric_name)

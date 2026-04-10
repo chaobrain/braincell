@@ -21,14 +21,14 @@ import unittest
 import brainunit as u
 import numpy as np
 
-from braincell import Branch, Morpho
+from braincell import Branch, Morphology
 from braincell.vis.layout2d import build_layout_branches_2d
 from braincell.vis.layout2d import tangent_on_layout_branch
 from braincell.vis.scene2d import build_render_scene_2d
 from braincell.vis.scene3d import build_render_scene_3d
 
 
-def _length_only_tree() -> Morpho:
+def _length_only_tree() -> Morphology:
     soma = Branch.from_lengths(
         lengths=[20.0] * u.um,
         radii=[10.0, 10.0] * u.um,
@@ -39,12 +39,12 @@ def _length_only_tree() -> Morpho:
         radii=[2.0, 1.5, 1.0] * u.um,
         type="apical_dendrite",
     )
-    tree = Morpho.from_root(soma, name="soma")
+    tree = Morphology.from_root(soma, name="soma")
     tree.attach(parent="soma", child_branch=dend, child_name="dend", parent_x=1.0)
     return tree
 
 
-def _point_tree_with_same_lengths() -> Morpho:
+def _point_tree_with_same_lengths() -> Morphology:
     soma = Branch.from_points(
         points=[[0.0, 0.0, 0.0], [0.0, 20.0, 0.0]] * u.um,
         radii=[10.0, 10.0] * u.um,
@@ -55,12 +55,12 @@ def _point_tree_with_same_lengths() -> Morpho:
         radii=[2.0, 1.5, 1.0] * u.um,
         type="apical_dendrite",
     )
-    tree = Morpho.from_root(soma, name="soma")
+    tree = Morphology.from_root(soma, name="soma")
     tree.attach(parent="soma", child_branch=dend, child_name="dend", parent_x=1.0)
     return tree
 
 
-def _root_split_tree() -> Morpho:
+def _root_split_tree() -> Morphology:
     soma = Branch.from_lengths(
         lengths=[20.0] * u.um,
         radii=[10.0, 10.0] * u.um,
@@ -76,13 +76,13 @@ def _root_split_tree() -> Morpho:
         radii=[1.0, 0.8] * u.um,
         type="axon",
     )
-    tree = Morpho.from_root(soma, name="soma")
+    tree = Morphology.from_root(soma, name="soma")
     tree.attach(parent="soma", child_branch=dend, child_name="dend", parent_x=1.0)
     tree.attach(parent="soma", child_branch=axon, child_name="axon", parent_x=1.0)
     return tree
 
 
-def _legacy_angle_tree() -> Morpho:
+def _legacy_angle_tree() -> Morphology:
     soma = Branch.from_lengths(
         lengths=[20.0] * u.um,
         radii=[10.0, 10.0] * u.um,
@@ -98,13 +98,13 @@ def _legacy_angle_tree() -> Morpho:
         radii=[2.0, 1.5] * u.um,
         type="basal_dendrite",
     )
-    tree = Morpho.from_root(soma, name="soma")
+    tree = Morphology.from_root(soma, name="soma")
     tree.attach(parent="soma", child_branch=dend_a, child_name="dend_a", parent_x=1.0)
     tree.attach(parent="soma", child_branch=dend_b, child_name="dend_b", parent_x=1.0)
     return tree
 
 
-def _stem_tree() -> Morpho:
+def _stem_tree() -> Morphology:
     soma = Branch.from_lengths(
         lengths=[12.0] * u.um,
         radii=[8.0, 8.0] * u.um,
@@ -125,14 +125,14 @@ def _stem_tree() -> Morpho:
         radii=[1.5, 1.0] * u.um,
         type="apical_dendrite",
     )
-    tree = Morpho.from_root(soma, name="soma")
+    tree = Morphology.from_root(soma, name="soma")
     tree.attach(parent="soma", child_branch=trunk, child_name="trunk", parent_x=1.0)
     tree.attach(parent="soma", child_branch=side, child_name="side", parent_x=1.0)
     tree.attach(parent="trunk", child_branch=trunk_child, child_name="trunk_child", parent_x=1.0)
     return tree
 
 
-def _overlap_tree() -> Morpho:
+def _overlap_tree() -> Morphology:
     soma = Branch.from_lengths(
         lengths=[10.0] * u.um,
         radii=[5.0, 5.0] * u.um,
@@ -148,7 +148,7 @@ def _overlap_tree() -> Morpho:
         radii=[1.0, 0.8] * u.um,
         type="axon",
     )
-    tree = Morpho.from_root(soma, name="soma")
+    tree = Morphology.from_root(soma, name="soma")
     tree.attach(parent="soma", child_branch=axon_0, child_name="axon_0", parent_x=0.5)
     tree.attach(parent="axon_0", child_branch=axon_1, child_name="axon_1", parent_x=0.0, child_x=0.0)
     return tree
@@ -171,7 +171,7 @@ class VisGeometryTest(unittest.TestCase):
             radii=[2.0, 1.0] * u.um,
             type="apical_dendrite",
         )
-        tree = Morpho.from_root(soma, name="soma")
+        tree = Morphology.from_root(soma, name="soma")
         tree.attach(parent="soma", child_branch=axon, child_name="axon_slot", parent_x=1.0)
         tree.attach(parent="soma", child_branch=dend, child_name="dend_slot", parent_x=1.0)
 
@@ -186,7 +186,7 @@ class VisGeometryTest(unittest.TestCase):
 
     def test_build_render_scene_3d_requires_point_geometry(self) -> None:
         soma = Branch.from_lengths(lengths=[20.0] * u.um, radii=[10.0, 10.0] * u.um, type="soma")
-        tree = Morpho.from_root(soma, name="soma")
+        tree = Morphology.from_root(soma, name="soma")
 
         with self.assertRaises(ValueError):
             build_render_scene_3d(tree)
@@ -274,7 +274,7 @@ class VisGeometryTest(unittest.TestCase):
         soma = Branch.from_lengths(lengths=[12.0] * u.um, radii=[8.0, 8.0] * u.um, type="soma")
         trunk = Branch.from_lengths(lengths=[8.0, 12.0] * u.um, radii=[2.0, 1.5, 1.0] * u.um, type="apical_dendrite")
         side = Branch.from_lengths(lengths=[3.0, 3.0] * u.um, radii=[1.0, 1.0, 1.0] * u.um, type="basal_dendrite")
-        tree = Morpho.from_root(soma, name="soma")
+        tree = Morphology.from_root(soma, name="soma")
         tree.attach(parent="soma", child_branch=trunk, child_name="trunk", parent_x=1.0)
         tree.attach(parent="trunk", child_branch=side, child_name="side", parent_x=0.0)
 
@@ -287,7 +287,7 @@ class VisGeometryTest(unittest.TestCase):
         soma = Branch.from_lengths(lengths=[12.0] * u.um, radii=[8.0, 8.0] * u.um, type="soma")
         trunk = Branch.from_lengths(lengths=[8.0, 12.0] * u.um, radii=[2.0, 1.5, 1.0] * u.um, type="apical_dendrite")
         side = Branch.from_lengths(lengths=[3.0, 3.0] * u.um, radii=[1.0, 1.0, 1.0] * u.um, type="basal_dendrite")
-        tree = Morpho.from_root(soma, name="soma")
+        tree = Morphology.from_root(soma, name="soma")
         tree.attach(parent="soma", child_branch=trunk, child_name="trunk", parent_x=1.0)
         tree.attach(parent="trunk", child_branch=side, child_name="side", parent_x=0.0)
 
@@ -304,7 +304,7 @@ class VisGeometryTest(unittest.TestCase):
             radii=[1.0, 1.0, 1.0, 1.0, 1.0] * u.um,
             type="basal_dendrite",
         )
-        tree = Morpho.from_root(soma, name="soma")
+        tree = Morphology.from_root(soma, name="soma")
         tree.attach(parent="soma", child_branch=trunk, child_name="trunk", parent_x=1.0)
         tree.attach(parent="trunk", child_branch=side, child_name="side", parent_x=0.0)
 
@@ -342,7 +342,7 @@ class VisGeometryTest(unittest.TestCase):
         soma = Branch.from_lengths(lengths=[20.0] * u.um, radii=[10.0, 10.0] * u.um, type="soma")
         dend_a = Branch.from_lengths(lengths=[5.0, 5.0, 10.0] * u.um, radii=[2.0, 1.8, 1.4, 1.0] * u.um, type="apical_dendrite")
         dend_b = Branch.from_lengths(lengths=[8.0] * u.um, radii=[1.5, 1.0] * u.um, type="basal_dendrite")
-        tree = Morpho.from_root(soma, name="soma")
+        tree = Morphology.from_root(soma, name="soma")
         tree.attach(parent="soma", child_branch=dend_a, child_name="dend_a", parent_x=1.0)
         tree.attach(parent="soma", child_branch=dend_b, child_name="dend_b", parent_x=1.0)
 
@@ -357,7 +357,7 @@ class VisGeometryTest(unittest.TestCase):
 
     def test_radial_360_spreads_root_stems_across_multiple_quadrants(self) -> None:
         soma = Branch.from_lengths(lengths=[12.0] * u.um, radii=[6.0, 6.0] * u.um, type="soma")
-        tree = Morpho.from_root(soma, name="soma")
+        tree = Morphology.from_root(soma, name="soma")
         for index in range(4):
             tree.attach(
                 parent="soma",

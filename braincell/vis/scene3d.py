@@ -19,12 +19,12 @@ from collections import OrderedDict
 import numpy as np
 
 import brainunit as u
-from braincell.morpho import Morpho
+from braincell.morph import Morphology
 from .scene import alpha_for_3d_tube, BranchPolyline3D, BranchTypeBatch3D, RenderScene3D, color_for_branch_type
 
 
-def build_render_scene_3d(morpho: Morpho) -> RenderScene3D:
-    if not isinstance(morpho, Morpho):
+def build_render_scene_3d(morpho: Morphology) -> RenderScene3D:
+    if not isinstance(morpho, Morphology):
         raise TypeError(f"build_render_scene_3d(...) expects Morpho, got {type(morpho).__name__!s}.")
     if not morpho.has_full_point_geometry:
         raise ValueError(

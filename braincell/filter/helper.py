@@ -19,7 +19,7 @@ from numbers import Integral, Real
 import brainunit as u
 import numpy as np
 
-from ..morpho import Morpho
+from ..morph import Morphology
 
 Interval = tuple[int, float, float]
 Location = tuple[int, float]
@@ -121,7 +121,7 @@ def _coerce_filterable_scalar(property_name: str, value: object) -> object:
     )
 
 
-def _resolve_branch_property(morpho: Morpho, branch_index: int, property_name: str) -> object:
+def _resolve_branch_property(morpho: Morphology, branch_index: int, property_name: str) -> object:
     branch_view = morpho.branch(index=branch_index)
 
     if property_name == "branch_id":
@@ -260,7 +260,7 @@ def _matches_in(value: object, *, candidates: tuple[object, ...], property_name:
 
 
 def branch_slice_intervals(
-    morpho: Morpho,
+    morpho: Morphology,
     *,
     branch_index: object,
     prox: object,
@@ -291,7 +291,7 @@ def branch_slice_intervals(
 
 
 def branch_in_intervals(
-    morpho: Morpho,
+    morpho: Morphology,
     *,
     property_name: object,
     values: object,
@@ -307,7 +307,7 @@ def branch_in_intervals(
 
 
 def branch_range_intervals(
-    morpho: Morpho,
+    morpho: Morphology,
     *,
     property_name: object,
     bounds: object,
@@ -562,7 +562,7 @@ def difference_locset_points(
     return tuple(sorted(left_norm - right_norm, key=lambda item: (item[0], item[1])))
 
 
-def branch_points_locations(morpho: Morpho, *, epsilon: float = EPSILON) -> tuple[Location, ...]:
+def branch_points_locations(morpho: Morphology, *, epsilon: float = EPSILON) -> tuple[Location, ...]:
     points: list[Location] = []
     for parent_branch in range(len(morpho.branches)):
         children = morpho.branch(index=parent_branch).children
@@ -576,7 +576,7 @@ def branch_points_locations(morpho: Morpho, *, epsilon: float = EPSILON) -> tupl
     return normalize_locset_points(points, epsilon=epsilon)
 
 
-def terminal_locations(morpho: Morpho, *, epsilon: float = EPSILON) -> tuple[Location, ...]:
+def terminal_locations(morpho: Morphology, *, epsilon: float = EPSILON) -> tuple[Location, ...]:
     points: list[Location] = []
     for branch_idx in range(len(morpho.branches)):
         if len(morpho.branch(index=branch_idx).children) == 0:
@@ -584,13 +584,13 @@ def terminal_locations(morpho: Morpho, *, epsilon: float = EPSILON) -> tuple[Loc
     return normalize_locset_points(points, epsilon=epsilon)
 
 
-def _interval_measure_um(morpho: Morpho, branch: int, prox: float, dist: float) -> float:
+def _interval_measure_um(morpho: Morphology, branch: int, prox: float, dist: float) -> float:
     total_length_um = float(np.asarray(morpho.branches[branch].length.to_decimal(u.um), dtype=float))
     return (dist - prox) * total_length_um
 
 
 def _sample_entries(
-    morpho: Morpho,
+    morpho: Morphology,
     intervals: tuple[Interval, ...],
     *,
     epsilon: float,
@@ -613,7 +613,7 @@ def _coerce_positive_count(name: str, count: object) -> int:
 
 
 def uniform_samples_from_region(
-    morpho: Morpho,
+    morpho: Morphology,
     *,
     intervals: tuple[Interval, ...],
     count: object,
@@ -644,7 +644,7 @@ def uniform_samples_from_region(
 
 
 def random_samples_from_region(
-    morpho: Morpho,
+    morpho: Morphology,
     *,
     intervals: tuple[Interval, ...],
     count: object,

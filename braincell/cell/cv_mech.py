@@ -32,7 +32,7 @@ from braincell.mech import (
     SynapseMechanism,
 )
 from braincell.mech.spec import density_class_name, density_params, density_replace_params, is_density_mechanism
-from braincell.morpho import Morpho
+from braincell.morph import Morphology
 from .cv_geo import CVGeo, EPSILON, interval_lateral_area, map_point_to_cv
 
 PointMechanismRuntime = (
@@ -187,7 +187,7 @@ def normalize_place_rule(locset: LocsetExpr, mechanisms: tuple[object, ...]) -> 
 
 
 def apply_paint_rules(
-    morpho: Morpho,
+    morpho: Morphology,
     *,
     cvs: tuple[CVGeo, ...],
     cv_ids_by_branch: dict[int, tuple[int, ...]],
@@ -238,7 +238,7 @@ def apply_paint_rules(
 
 
 def apply_place_rules(
-    morpho: Morpho,
+    morpho: Morphology,
     *,
     cvs: tuple[CVGeo, ...],
     cv_ids_by_branch: dict[int, tuple[int, ...]],
@@ -297,7 +297,7 @@ def _group_intervals_by_branch(
 
 
 def _coverage_area_fraction(
-    morpho: Morpho,
+    morpho: Morphology,
     *,
     cv_geo: CVGeo,
     intervals: tuple[tuple[float, float], ...],

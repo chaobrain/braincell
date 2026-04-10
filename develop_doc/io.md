@@ -27,10 +27,10 @@
 推荐入口：
 
 ```python
-from braincell import Morpho
+from braincell import Morphology
 
-tree = Morpho.from_swc("file.swc")
-tree, report = Morpho.from_swc("file.swc", return_report=True)
+tree = Morphology.from_swc("file.swc")
+tree, report = Morphology.from_swc("file.swc", return_report=True)
 ```
 
 或者直接用 reader：

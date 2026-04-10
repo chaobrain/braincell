@@ -28,7 +28,7 @@ from .config import (
 
 if TYPE_CHECKING:
     from braincell.filter import LocsetMask, RegionMask
-    from braincell.morpho import Morpho
+    from braincell.morph import Morphology
 
 
 def color_for_branch_type(branch_type: str) -> tuple[int, int, int]:
@@ -134,7 +134,7 @@ class RenderScene2D:
 
 @dataclass(frozen=True)
 class RenderRequest:
-    morpho: Morpho
+    morpho: Morphology
     overlay: OverlaySpec = field(default_factory=OverlaySpec)
     dimensionality: str = "3d"
     mode: str | None = None

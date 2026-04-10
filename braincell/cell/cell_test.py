@@ -31,24 +31,24 @@ from braincell import (
     CurrentClamp,
     DensityMechanism,
     MaxCVLen,
-    Morpho,
+    Morphology,
 )
 from braincell.filter import BranchSlice, RootLocation
 
 
-def _build_tree() -> Morpho:
+def _build_tree() -> Morphology:
     soma = Branch.from_lengths(lengths=[20.0] * u.um, radii=[10.0, 10.0] * u.um, type="soma")
     dend = Branch.from_lengths(lengths=[100.0] * u.um, radii=[2.0, 1.0] * u.um, type="basal_dendrite")
-    tree = Morpho.from_root(soma, name="soma")
+    tree = Morphology.from_root(soma, name="soma")
     tree.soma.dend = dend
     return tree
 
 
-def _build_three_branch_tree() -> Morpho:
+def _build_three_branch_tree() -> Morphology:
     soma = Branch.from_lengths(lengths=[20.0] * u.um, radii=[10.0, 10.0] * u.um, type="soma")
     dend = Branch.from_lengths(lengths=[80.0] * u.um, radii=[2.0, 1.0] * u.um, type="basal_dendrite")
     axon = Branch.from_lengths(lengths=[120.0] * u.um, radii=[1.0, 0.6] * u.um, type="axon")
-    tree = Morpho.from_root(soma, name="soma")
+    tree = Morphology.from_root(soma, name="soma")
     tree.attach(parent="soma", child_branch=dend, child_name="dend", parent_x=1.0)
     tree.attach(parent="soma", child_branch=axon, child_name="axon", parent_x=0.0)
     return tree
@@ -239,7 +239,7 @@ class CellFacadeTest(unittest.TestCase):
 
     def test_density_paint_channel_scales_by_area_fraction(self) -> None:
         soma = Branch.from_lengths(lengths=[20.0] * u.um, radii=[10.0, 10.0] * u.um, type="soma")
-        tree = Morpho.from_root(soma, name="soma")
+        tree = Morphology.from_root(soma, name="soma")
         cell = Cell(tree)
         cell.paint(
             BranchSlice(branch_index=0, prox=0.0, dist=0.5),
@@ -255,7 +255,7 @@ class CellFacadeTest(unittest.TestCase):
         self.assertEqual(dict(ion.params)["c0"], 12.0)
 
     def test_channel_spec_paint_scales_by_area_fraction(self) -> None:
-        tree = Morpho.from_root(
+        tree = Morphology.from_root(
             Branch.from_lengths(lengths=[20.0] * u.um, radii=[10.0, 10.0] * u.um, type="soma"),
             name="soma",
         )
@@ -277,7 +277,7 @@ class CellFacadeTest(unittest.TestCase):
     def test_place_boundary_goes_to_right_cv_and_branch_endpoint_stays_local(self) -> None:
         soma = Branch.from_lengths(lengths=[10.0] * u.um, radii=[3.0, 2.0] * u.um, type="soma")
         dend = Branch.from_lengths(lengths=[10.0] * u.um, radii=[2.0, 1.0] * u.um, type="basal_dendrite")
-        tree = Morpho.from_root(soma, name="soma")
+        tree = Morphology.from_root(soma, name="soma")
         tree.soma.d = dend
         cell = Cell(tree, cv_policy=CVPerBranch(cv_per_branch=2))
 
@@ -299,7 +299,7 @@ class CellFacadeTest(unittest.TestCase):
             radii=[1.0, 2.0, 3.0] * u.um,
             type="soma",
         )
-        tree = Morpho.from_root(soma, name="soma")
+        tree = Morphology.from_root(soma, name="soma")
         cell = Cell(tree, cv_policy=CVPerBranch(cv_per_branch=1))
         cv0 = cell.cvs[0]
         self.assertFalse(hasattr(cv0, "mean_radius"))
@@ -333,7 +333,7 @@ class CellFacadeTest(unittest.TestCase):
             radii_distal=[1.0, 0.5] * u.um,
             type="soma",
         )
-        tree = Morpho.from_root(soma, name="soma")
+        tree = Morphology.from_root(soma, name="soma")
 
         whole = Cell(tree, cv_policy=CVPerBranch(cv_per_branch=1)).cvs[0]
         split = Cell(tree, cv_policy=CVPerBranch(cv_per_branch=2))
@@ -352,7 +352,7 @@ class CellFacadeTest(unittest.TestCase):
     def test_point_tree_internal_attachment_absorbs_to_parent_midpoint(self) -> None:
         soma = Branch.from_lengths(lengths=[20.0] * u.um, radii=[10.0, 10.0] * u.um, type="soma")
         dend = Branch.from_lengths(lengths=[40.0] * u.um, radii=[2.0, 1.0] * u.um, type="basal_dendrite")
-        tree = Morpho.from_root(soma, name="soma")
+        tree = Morphology.from_root(soma, name="soma")
         tree.attach(parent="soma", child_branch=dend, child_name="dend", parent_x=0.5)
 
         cell = Cell(tree, cv_policy=CVPerBranch(cv_per_branch=1))
@@ -370,7 +370,7 @@ class CellFacadeTest(unittest.TestCase):
         soma = Branch.from_lengths(lengths=[20.0] * u.um, radii=[10.0, 10.0] * u.um, type="soma")
         dend = Branch.from_lengths(lengths=[40.0] * u.um, radii=[2.0, 1.0] * u.um, type="basal_dendrite")
         twig = Branch.from_lengths(lengths=[20.0] * u.um, radii=[1.0, 0.8] * u.um, type="basal_dendrite")
-        tree = Morpho.from_root(soma, name="soma")
+        tree = Morphology.from_root(soma, name="soma")
         tree.soma.dend = dend
         tree.attach(parent="dend", child_branch=twig, child_name="twig", parent_x=0.0)
 
@@ -391,7 +391,7 @@ class CellFacadeTest(unittest.TestCase):
         soma = Branch.from_lengths(lengths=[20.0] * u.um, radii=[10.0, 10.0] * u.um, type="soma")
         dend = Branch.from_lengths(lengths=[40.0] * u.um, radii=[2.0, 1.0] * u.um, type="basal_dendrite")
         twig = Branch.from_lengths(lengths=[20.0] * u.um, radii=[1.0, 0.8] * u.um, type="basal_dendrite")
-        tree = Morpho.from_root(soma, name="soma")
+        tree = Morphology.from_root(soma, name="soma")
         tree.attach(parent="soma", child_branch=dend, child_name="dend", parent_x=1.0, child_x=1.0)
         tree.attach(parent="dend", child_branch=twig, child_name="twig", parent_x=0.0)
 
@@ -420,7 +420,7 @@ class CellFacadeTest(unittest.TestCase):
 
     def test_point_tree_aggregates_adjacent_cv_halves_into_single_compute_edge(self) -> None:
         soma = Branch.from_lengths(lengths=[20.0] * u.um, radii=[10.0, 10.0] * u.um, type="soma")
-        tree = Morpho.from_root(soma, name="soma")
+        tree = Morphology.from_root(soma, name="soma")
         cell = Cell(tree, cv_policy=CVPerBranch(cv_per_branch=2))
         point_tree = cell.point_tree()
 
@@ -443,7 +443,7 @@ class CellFacadeTest(unittest.TestCase):
             with self.subTest(parent_x=parent_x, child_x=child_x):
                 soma = Branch.from_lengths(lengths=[20.0] * u.um, radii=[10.0, 10.0] * u.um, type="soma")
                 dend = Branch.from_lengths(lengths=[40.0] * u.um, radii=[2.0, 1.0] * u.um, type="basal_dendrite")
-                morpho = Morpho.from_root(soma, name="soma")
+                morpho = Morphology.from_root(soma, name="soma")
                 morpho.attach(parent="soma", child_branch=dend, child_name="dend", parent_x=parent_x, child_x=child_x)
 
                 cell = Cell(morpho, cv_policy=CVPerBranch(cv_per_branch=1))
@@ -478,7 +478,7 @@ class CellFacadeTest(unittest.TestCase):
         soma = Branch.from_lengths(lengths=[20.0] * u.um, radii=[10.0, 10.0] * u.um, type="soma")
         left = Branch.from_lengths(lengths=[20.0] * u.um, radii=[2.0, 1.0] * u.um, type="basal_dendrite")
         right = Branch.from_lengths(lengths=[20.0] * u.um, radii=[2.0, 1.0] * u.um, type="basal_dendrite")
-        tree = Morpho.from_root(soma, name="soma")
+        tree = Morphology.from_root(soma, name="soma")
         tree.attach(parent="soma", child_branch=left, child_name="left", parent_x=0.5)
         tree.attach(parent="soma", child_branch=right, child_name="right", parent_x=0.5)
 
@@ -506,7 +506,7 @@ class CellFacadeTest(unittest.TestCase):
             radii=[2.0, 1.5, 1.0] * u.um,
             type="soma",
         )
-        tree = Morpho.from_root(soma, name="soma")
+        tree = Morphology.from_root(soma, name="soma")
         cell = Cell(tree, cv_policy=CVPerBranch(cv_per_branch=2))
         branch_slice = cell.cvs[1].as_branch()
         self.assertEqual(branch_slice.type, "soma")
@@ -568,7 +568,7 @@ class CellFacadeTest(unittest.TestCase):
 
     def test_density_paint_channel_fallback_records_area_fraction(self) -> None:
         soma = Branch.from_lengths(lengths=[20.0] * u.um, radii=[10.0, 10.0] * u.um, type="soma")
-        tree = Morpho.from_root(soma, name="soma")
+        tree = Morphology.from_root(soma, name="soma")
         cell = Cell(tree)
         cell.paint(
             BranchSlice(branch_index=0, prox=0.0, dist=0.5),

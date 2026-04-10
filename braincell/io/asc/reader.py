@@ -23,8 +23,8 @@ import numpy as np
 from .types import AscMetadata, AscReport
 from ..swc.types import MIN_SYNTHETIC_LENGTH_UM
 from ..._misc import u
-from ...morpho import Branch, Morpho, MorphoBranch
-from ...morpho.branch import Soma, branch_class_for_type
+from ...morph import Branch, Morphology, MorphoBranch
+from ...morph.branch import Soma, branch_class_for_type
 
 _PIPE = object()
 _NEURITE_TYPE_MAP = {
@@ -338,7 +338,7 @@ class AscReader:
         report: AscReport,
         *,
         path: Path,
-    ) -> Morpho:
+    ) -> Morphology:
         if not contours and not neurites:
             raise ValueError(f"ASC import failed for {path}: no soma contour or neurites were found.")
 
@@ -355,7 +355,7 @@ class AscReader:
                                "ASC file has no CellBody contour; synthesized a soma from the first neurite root point.")
 
         soma_branch = self._synthetic_soma_branch(center=center, radius=radius)
-        morpho = Morpho.from_root(soma_branch, name="soma")
+        morpho = Morphology.from_root(soma_branch, name="soma")
         for neurite in neurites:
             self._attach_segment(
                 parent=morpho.root,

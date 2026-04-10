@@ -17,7 +17,7 @@
 import brainunit as u
 import numpy as np
 
-from braincell.morpho import Morpho
+from braincell.morph import Morphology
 from .layout2d import build_layout_branches_2d
 from .scene import alpha_for_2d_line, alpha_for_2d_poly, Polygon2D, Polyline2D, RenderScene2D, color_for_branch_type
 
@@ -29,7 +29,7 @@ _PROJECTION_AXES = {
 
 
 def build_render_scene_2d(
-    morpho: Morpho,
+    morpho: Morphology,
     *,
     layout: str = "stem",
     shape: str = "frustum",
@@ -37,7 +37,7 @@ def build_render_scene_2d(
     min_branch_angle_deg: float | None = 25.0,
     root_layout: str = "type_split",
 ) -> RenderScene2D:
-    if not isinstance(morpho, Morpho):
+    if not isinstance(morpho, Morphology):
         raise TypeError(f"build_render_scene_2d(...) expects Morpho, got {type(morpho).__name__!s}.")
     if layout == "projected":
         if shape != "line":
@@ -60,7 +60,7 @@ def build_render_scene_2d(
     raise ValueError(f"Unsupported 2D shape {shape!r}.")
 
 
-def build_scene2d_projected(morpho: Morpho, *, projection_plane: str = "xy") -> RenderScene2D:
+def build_scene2d_projected(morpho: Morphology, *, projection_plane: str = "xy") -> RenderScene2D:
     try:
         first_axis, second_axis = _PROJECTION_AXES[projection_plane]
     except KeyError as exc:
@@ -111,13 +111,13 @@ def build_scene2d_projected(morpho: Morpho, *, projection_plane: str = "xy") -> 
 
 
 def build_scene2d_line(
-    morpho: Morpho,
+    morpho: Morphology,
     *,
     min_branch_angle_deg: float | None = 25.0,
     root_layout: str = "type_split",
     layout: str = "stem",
 ) -> RenderScene2D:
-    if not isinstance(morpho, Morpho):
+    if not isinstance(morpho, Morphology):
         raise TypeError(f"build_scene2d_line(...) expects Morpho, got {type(morpho).__name__!s}.")
 
     polylines: list[Polyline2D] = []
@@ -159,13 +159,13 @@ def build_scene2d_line(
 
 
 def build_scene2d_frustum(
-    morpho: Morpho,
+    morpho: Morphology,
     *,
     min_branch_angle_deg: float | None = 25.0,
     root_layout: str = "type_split",
     layout: str = "stem",
 ) -> RenderScene2D:
-    if not isinstance(morpho, Morpho):
+    if not isinstance(morpho, Morphology):
         raise TypeError(f"build_scene2d_frustum(...) expects Morpho, got {type(morpho).__name__!s}.")
 
     polygons: list[Polygon2D] = []
@@ -212,5 +212,5 @@ def build_scene2d_frustum(
     )
 
 
-def build_projected_scene_2d(morpho: Morpho, *, projection_plane: str = "xy") -> RenderScene2D:
+def build_projected_scene_2d(morpho: Morphology, *, projection_plane: str = "xy") -> RenderScene2D:
     return build_scene2d_projected(morpho, projection_plane=projection_plane)

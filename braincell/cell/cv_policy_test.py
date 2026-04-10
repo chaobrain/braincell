@@ -29,7 +29,7 @@ from braincell import (
     Cell,
     DLambda,
     MaxCVLen,
-    Morpho,
+    Morphology,
 )
 from braincell.filter import BranchSlice
 
@@ -41,30 +41,30 @@ def _branch_cv_counts(cell: Cell) -> dict[int, int]:
     return counts
 
 
-def _build_three_branch_tree() -> Morpho:
+def _build_three_branch_tree() -> Morphology:
     soma = Branch.from_lengths(lengths=[20.0] * u.um, radii=[8.0, 8.0] * u.um, type="soma")
     dend_a = Branch.from_lengths(lengths=[30.0] * u.um, radii=[2.0, 1.5] * u.um, type="basal_dendrite")
     dend_b = Branch.from_lengths(lengths=[40.0] * u.um, radii=[2.5, 1.0] * u.um, type="apical_dendrite")
-    tree = Morpho.from_root(soma, name="soma")
+    tree = Morphology.from_root(soma, name="soma")
     tree.soma.a = dend_a
     tree.soma.b = dend_b
     return tree
 
 
-def _build_two_branch_tree() -> Morpho:
+def _build_two_branch_tree() -> Morphology:
     soma = Branch.from_lengths(lengths=[100.0] * u.um, radii=[10.0, 8.0] * u.um, type="soma")
     dend = Branch.from_lengths(lengths=[45.0] * u.um, radii=[2.0, 1.0] * u.um, type="basal_dendrite")
-    tree = Morpho.from_root(soma, name="soma")
+    tree = Morphology.from_root(soma, name="soma")
     tree.soma.d = dend
     return tree
 
 
-def _build_mixed_type_tree() -> Morpho:
+def _build_mixed_type_tree() -> Morphology:
     soma = Branch.from_lengths(lengths=[20.0] * u.um, radii=[8.0, 8.0] * u.um, type="soma")
     axon = Branch.from_lengths(lengths=[80.0] * u.um, radii=[1.0, 0.8] * u.um, type="axon")
     basal = Branch.from_lengths(lengths=[30.0] * u.um, radii=[2.0, 1.5] * u.um, type="basal_dendrite")
     apical = Branch.from_lengths(lengths=[45.0] * u.um, radii=[2.5, 1.2] * u.um, type="apical_dendrite")
-    tree = Morpho.from_root(soma, name="soma")
+    tree = Morphology.from_root(soma, name="soma")
     tree.soma.ax = axon
     tree.soma.ba = basal
     tree.soma.ap = apical
@@ -113,7 +113,7 @@ class CVPolicyTest(unittest.TestCase):
 
     def test_max_cv_len_promotes_even_count_to_odd_by_default(self) -> None:
         soma = Branch.from_lengths(lengths=[10.0] * u.um, radii=[3.0, 2.0] * u.um, type="soma")
-        tree = Morpho.from_root(soma, name="soma")
+        tree = Morphology.from_root(soma, name="soma")
         policy = MaxCVLen(max_cv_len=5.0 * u.um)
         self.assertEqual(
             policy.resolve_cv_bounds(tree),
@@ -124,7 +124,7 @@ class CVPolicyTest(unittest.TestCase):
 
     def test_max_cv_len_can_disable_keep_odd(self) -> None:
         soma = Branch.from_lengths(lengths=[10.0] * u.um, radii=[3.0, 2.0] * u.um, type="soma")
-        tree = Morpho.from_root(soma, name="soma")
+        tree = Morphology.from_root(soma, name="soma")
         policy = MaxCVLen(max_cv_len=5.0 * u.um, keep_odd=False)
         self.assertEqual(
             policy.resolve_cv_bounds(tree),
@@ -145,7 +145,7 @@ class CVPolicyTest(unittest.TestCase):
     def test_max_cv_len_preserves_cross_branch_topology(self) -> None:
         soma = Branch.from_lengths(lengths=[10.0] * u.um, radii=[3.0, 2.0] * u.um, type="soma")
         dend = Branch.from_lengths(lengths=[10.0] * u.um, radii=[2.0, 1.0] * u.um, type="basal_dendrite")
-        tree = Morpho.from_root(soma, name="soma")
+        tree = Morphology.from_root(soma, name="soma")
         tree.soma.d = dend
         cell = Cell(tree, cv_policy=MaxCVLen(max_cv_len=5.0 * u.um))
 
@@ -191,7 +191,7 @@ class CVPolicyTest(unittest.TestCase):
 
     def test_d_lambda_promotes_even_count_to_odd_by_default(self) -> None:
         soma = Branch.from_lengths(lengths=[78.0] * u.um, radii=[1.0, 1.0] * u.um, type="soma")
-        tree = Morpho.from_root(soma, name="soma")
+        tree = Morphology.from_root(soma, name="soma")
         cell_odd = Cell(tree, cv_policy=DLambda(d_lambda=0.1))
         cell_even = Cell(tree, cv_policy=DLambda(d_lambda=0.1, keep_odd=False))
         self.assertEqual(cell_even.n_cv, 2)

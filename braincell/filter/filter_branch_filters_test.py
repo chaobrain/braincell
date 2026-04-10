@@ -18,17 +18,17 @@ import unittest
 
 import brainunit as u
 
-from braincell import Branch, Morpho
+from braincell import Branch, Morphology
 from braincell.filter import BranchInFilter, BranchRangeFilter, branch_in, branch_range
 
 
-def _build_tree() -> Morpho:
+def _build_tree() -> Morphology:
     soma = Branch.from_lengths(lengths=[20.0] * u.um, radii=[10.0, 10.0] * u.um, type="soma")
     dend = Branch.from_lengths(lengths=[80.0] * u.um, radii=[2.0, 1.0] * u.um, type="basal_dendrite")
     axon = Branch.from_lengths(lengths=[120.0] * u.um, radii=[0.8, 0.5] * u.um, type="axon")
     tuft = Branch.from_lengths(lengths=[30.0] * u.um, radii=[1.0, 0.6] * u.um, type="apical_dendrite")
 
-    tree = Morpho.from_root(soma, name="soma")
+    tree = Morphology.from_root(soma, name="soma")
     tree.soma.dend = dend
     tree.soma.axon = axon
     tree.soma.dend.tuft = tuft

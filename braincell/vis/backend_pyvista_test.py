@@ -22,8 +22,8 @@ from unittest import mock
 
 import brainunit as u
 
-from braincell import Branch, Morpho
-from braincell.morpho import vis as morpho_vis
+from braincell import Branch, Morphology
+from braincell.morph import vis as morpho_vis
 from braincell.vis.backend_pyvista import PyVistaBackend
 from braincell.vis.scene import RenderRequest
 from braincell.vis.scene3d import build_render_scene_3d
@@ -131,7 +131,7 @@ def _request(*, notebook: bool | None = None, jupyter_backend: str | None = None
         radii=[2.0, 2.0] * u.um,
         type="soma",
     )
-    tree = Morpho.from_root(branch, name="soma")
+    tree = Morphology.from_root(branch, name="soma")
     return RenderRequest(
         morpho=tree,
         dimensionality="3d",
@@ -163,7 +163,7 @@ class PyVistaBackendTest(unittest.TestCase):
             radii=[2.0, 2.0] * u.um,
             type="soma",
         )
-        tree = Morpho.from_root(branch, name="soma")
+        tree = Morphology.from_root(branch, name="soma")
         backend = PyVistaBackend()
 
         with self.assertRaisesRegex(ValueError, "RenderScene3D"):

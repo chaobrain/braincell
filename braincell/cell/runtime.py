@@ -17,7 +17,7 @@ from braincell.mech.point import (
     SynapseMechanism,
 )
 from braincell.mech.spec import density_class_name, density_params, density_signature, is_density_mechanism
-from braincell.morpho import Morpho
+from braincell.morph import Morphology
 from .point_tree import PointTree
 
 
@@ -333,8 +333,8 @@ def build_placeholder_ions() -> dict[str, object]:
     }
 
 
-def clone_morpho(morpho: Morpho) -> Morpho:
-    cloned = Morpho.from_root(morpho.root.branch, name=morpho.root.name)
+def clone_morpho(morpho: Morphology) -> Morphology:
+    cloned = Morphology.from_root(morpho.root.branch, name=morpho.root.name)
     for index in range(1, len(morpho.branches)):
         branch = morpho.branch(index=index)
         parent = branch.parent

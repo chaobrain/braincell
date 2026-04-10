@@ -51,17 +51,16 @@ rules, NEURON HOC compatibility, GUI tools, and stand-alone NMODL execution
                               ▼
 ┌──────────────────────────────────────────────────────────────────────┐
 │                       braincell.morph                                │
-│   Branch (frozen) · Morphology (mutable tree) · MorphoMetric         │
+│           Branch (frozen) · Morphology (mutable tree)                │
 └──────────────┬───────────────────────────────────┬───────────────────┘
                │ Morphology                        │
                ▼                                   ▼
 ┌─────────────────────────────┐    ┌────────────────────────────────────┐
 │      braincell.filter       │    │           braincell.mech           │
 │  RegionExpr · LocsetExpr    │    │  CableProperties · DensityMech ·   │
-│  SelectionCache             │    │  PointMech · ion · channel ·       │
-│                             │    │  synapse                           │
+│  SelectionCache             │    │  PointMechanism · MechanismSpec    │
 └──────────────┬──────────────┘    └─────────────────┬──────────────────┘
-               │ selection                           │ mechanisms
+               │ selection                           │ declarations
                ▼                                     ▼
 ┌──────────────────────────────────────────────────────────────────────┐
 │                        braincell.cell                                │
@@ -82,6 +81,16 @@ rules, NEURON HOC compatibility, GUI tools, and stand-alone NMODL execution
 
 ```
 ┌──────────────────────────────────────────────────────────────────────┐
+│        braincell.ion · braincell.channel · braincell.synapse         │
+│   concrete Ion species (Na, K, Ca) · IonChannel implementations      │
+│   (Na, K, Ca, Ih, K_Ca, leaky) · Markov synapse models               │
+└──────────────────────────────────────────────────────────────────────┘
+   (supply concrete mechanism objects consumed by mech.DensityMechanism
+    / mech.PointMechanism declarations and installed inside braincell.cell)
+```
+
+```
+┌──────────────────────────────────────────────────────────────────────┐
 │                         braincell.vis                                │
 │   2D / 3D scenes · matplotlib & PyVista backends ·                   │
 │   region / locset / value overlays                                   │
@@ -90,8 +99,12 @@ rules, NEURON HOC compatibility, GUI tools, and stand-alone NMODL execution
 ```
 
 The directional rule of thumb: **`io → morph → {filter, mech} → cell → quad`**,
-with `vis` reading anything from `morph` upward and `_base` providing
-shared abstract types for everything below `cell`.
+with `ion` / `channel` / `synapse` as peer top-level modules supplying concrete
+mechanism implementations that `mech` wraps into `DensityMechanism` /
+`PointMechanism` declarations at paint/place time, `vis` reading anything from
+`morph` upward, and `_base` providing shared abstract types
+(`HHTypedNeuron`, `IonChannel`, `Ion`, `Channel`, `MixIons`) for everything
+below `cell`.
 
 ---
 

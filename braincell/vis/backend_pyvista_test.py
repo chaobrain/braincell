@@ -14,7 +14,6 @@
 # ==============================================================================
 
 
-
 import os
 import types
 import unittest
@@ -23,7 +22,7 @@ from unittest import mock
 import brainunit as u
 
 from braincell import Branch, Morphology
-from braincell.morph import vis as morpho_vis
+from braincell import vis
 from braincell.vis.backend_pyvista import PyVistaBackend
 from braincell.vis.scene import RenderRequest
 from braincell.vis.scene3d import build_render_scene_3d
@@ -84,8 +83,6 @@ class _FakePlotter:
 
     def close(self) -> None:
         self.closed = True
-
-
 
 
 class _NeedsRenderedPlotter(_FakePlotter):
@@ -154,8 +151,8 @@ def _fake_pyvista(plotter_cls, *, extension_available=False):
 
 class PyVistaBackendTest(unittest.TestCase):
     def setUp(self) -> None:
-        morpho_vis.reset_defaults()
-        self.addCleanup(morpho_vis.reset_defaults)
+        vis.reset_defaults()
+        self.addCleanup(vis.reset_defaults)
 
     def test_render_rejects_non_3d_scene(self) -> None:
         branch = Branch.from_points(
@@ -186,7 +183,7 @@ class PyVistaBackendTest(unittest.TestCase):
     def test_render_uses_configured_opacity(self) -> None:
         fake_pv = _fake_pyvista(_FakePlotter)
         backend = PyVistaBackend(plotter_kwargs={"off_screen": True}, show_axes=False)
-        morpho_vis.configure(alpha_3d_tube=0.35)
+        vis.configure(alpha_3d_tube=0.35)
 
         with mock.patch.dict("sys.modules", {"pyvista": fake_pv}):
             plotter = backend.render(_request(notebook=False))
@@ -204,7 +201,6 @@ class PyVistaBackendTest(unittest.TestCase):
         self.assertEqual(viewer["viewer"]["jupyter_backend"], "client")
         self.assertTrue(fake_pv.global_theme.trame.server_proxy_enabled)
         self.assertEqual(fake_pv.global_theme.trame.server_proxy_prefix, "/proxy/")
-
 
     def test_render_prerenders_plotter_before_client_show(self) -> None:
         fake_pv = _fake_pyvista(_NeedsRenderedPlotter)

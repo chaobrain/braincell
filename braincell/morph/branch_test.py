@@ -21,14 +21,11 @@ import brainunit as u
 import numpy as np
 
 from braincell import Branch
-from braincell.morph import vis as morpho_vis
+from braincell import vis as morpho_vis
 from braincell.vis.backend import BackendChooser
 from braincell.vis._test_helper import FakeBackend
 
-try:
-    import jax.numpy as jnp
-except ModuleNotFoundError:
-    jnp = None
+import jax.numpy as jnp
 
 
 class BranchTest(unittest.TestCase):

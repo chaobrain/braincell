@@ -74,51 +74,75 @@ def _backward_euler(f, y0, t, dt, args=()):
 )
 @set_module_as('braincell')
 def backward_euler_step(target: DiffEqModule, *args):
-    r"""
-    Perform a backward (implicit) Euler step for solving differential equations.
+    r"""Advance one step with the linearised backward (implicit) Euler method.
 
-    This function applies the backward Euler method to solve differential equations
-    for a given target module. It can handle both single neurons and populations of neurons.
+    Backward Euler discretises an ODE :math:`dy/dt = f(t, y)` as
 
-    Mathematical Description
-    -------------------------
-    The backward Euler method is used to solve differential equations of the form:
+    .. math::
 
-    $$
-    \frac{dy}{dt} = f(y, t)
-    $$
+        y_{n+1} = y_n + \Delta t \, f(t_{n+1}, y_{n+1}),
 
-    The implicit Euler scheme is given by:
+    which is implicit in :math:`y_{n+1}`. Rather than running a Newton
+    solver to convergence (see :func:`implicit_euler_step` for that
+    variant), this routine takes a single Newton step from a local
+    Jacobian:
 
-    $$
-    y_{n+1} = y_n + \Delta t \, f(y_{n+1}, t_{n+1})
-    $$
+    .. math::
 
-    which is implicit in $y_{n+1}$. In practice, the system is linearized using the Jacobian:
+        J = \frac{\partial f}{\partial y}\bigg|_{y_n}, \qquad
+        (I - \Delta t \, J)\, \Delta y = \Delta t \, f(t_n, y_n), \qquad
+        y_{n+1} = y_n + \Delta y.
 
-    $$
-    (I - \Delta t J) \Delta y = \Delta t f(y_n, t_n), \quad y_{n+1} = y_n + \Delta y
-    $$
+    The result is the so-called *Rosenbrock* / *linearly implicit Euler*
+    update — first-order accurate, :math:`L`-stable, and considerably
+    cheaper than full Newton because the Jacobian is built once per step
+    and the linear system is solved by a batched
+    :func:`jax.scipy.linalg.solve`. It is the recommended choice for
+    medium-stiff Hodgkin-Huxley models when matrix-exponential schemes
+    such as :func:`exp_euler_step` are too expensive.
 
     Parameters
     ----------
     target : DiffEqModule
-        The target module containing the differential equations to be solved.
-        Must be an instance of HHTypedNeuron.
-    *args :
-        Additional arguments to be passed to the underlying implementation.
+        The module whose differential states are to be advanced. Must be
+        an :class:`HHTypedNeuron` (single compartment or multi-compartment).
+    *args
+        Extra positional arguments forwarded to ``target``'s
+        :meth:`pre_integral`, :meth:`compute_derivative`, and
+        :meth:`post_integral` hooks.
+
+    Returns
+    -------
+    None
+        ``target``'s differential states are updated in place.
 
     Raises
     ------
     AssertionError
-        If the target is not an instance of :class:`HHTypedNeuron`.
+        Raised inside :func:`apply_standard_solver_step` if *target* is
+        not a :class:`DiffEqModule`.
+
+    See Also
+    --------
+    implicit_euler_step : Full Newton iteration on the same residual.
+    exp_euler_step : Matrix-exponential exponential Euler step.
 
     Notes
     -----
-    This function uses vectorization (vmap) to handle populations of neurons efficiently.
-    The actual computation of the backward Euler step is performed in the
-    `_backward_euler` function, which this function wraps and potentially
-    vectorizes for population-level computations.
+    The current time and step size are read from the active
+    :mod:`brainstate.environ` context. State leaves are stacked along the
+    last axis (``merging='stack'``) before the linear solve.
+
+    Examples
+    --------
+
+    .. code-block:: python
+
+        >>> import brainstate
+        >>> import brainunit as u
+        >>> from braincell.quad import backward_euler_step
+        >>> with brainstate.environ.context(t=0. * u.ms, dt=0.025 * u.ms):
+        ...     backward_euler_step(my_neuron, input_current)  # doctest: +SKIP
     """
 
     t = brainstate.environ.get('t')

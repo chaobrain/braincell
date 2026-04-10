@@ -26,7 +26,7 @@ from braincell._base import HHTypedNeuron, IonChannel
 from braincell.filter import LocsetExpr, RegionExpr
 from braincell.morph import Morphology
 from braincell.quad import DiffEqState, IndependentIntegration, get_integrator
-from braincell.quad import _voltage_solver as voltage_solver
+from braincell.quad import _staggered as voltage_solver
 from .assignment_table import MechanismObjectCell, MechanismObjectTable, mechanism_cell_key
 from .cv import CV, assemble_cv
 from .cv_geo import build_cv_geo

@@ -97,56 +97,89 @@ def _exponential_euler(f, y0, t, dt, args=()):
 )
 @set_module_as('braincell')
 def exp_euler_step(target: DiffEqModule, *args):
-    r"""
-    Perform an exponential Euler step for solving differential equations.
+    r"""Advance one step with the (coupled) exponential Euler method.
 
-    This function applies the exponential Euler method to solve differential equations
-    for a given target module. It can handle both single neurons and populations of neurons.
+    The exponential Euler method targets semi-linear ODEs of the form
 
-    Mathematical Description
-    -------------------------
-    The exponential Euler method is used to solve differential equations of the form:
+    .. math::
 
-    $$
-    \frac{dy}{dt} = Ay + f(y, t)
-    $$
+        \frac{dy}{dt} = A(y_n)\, y + g(t, y),
 
-    where $A$ is a linear operator and $f(y, t)$ is a nonlinear function.
+    where the local Jacobian :math:`A(y_n) = \partial f / \partial y` is
+    treated implicitly via the matrix exponential while the residual
+    :math:`g` is held frozen at :math:`y_n`. The update reads
 
-    The exponential Euler scheme is given by:
+    .. math::
 
-    $$
-    y_{n+1} = e^{A\Delta t}y_n + \Delta t\varphi_1(A\Delta t)f(y_n, t_n)
-    $$
+        y_{n+1} = y_n + \Delta t \, \varphi_1(\Delta t \, A)\, f(t_n, y_n),
+        \qquad
+        \varphi_1(z) = \frac{e^{z} - 1}{z}.
 
-    where $\varphi_1(z)$ is the first order exponential integrator function defined as:
+    Equivalently, with :math:`A` the local linearization,
 
-    $$
-    \varphi_1(z) = \frac{e^z - 1}{z}
-    $$
+    .. math::
 
-    This method is particularly effective for stiff problems where $A$ represents
-    the stiff linear part of the system.
+        y_{n+1} = A^{-1}\!\left(e^{\Delta t A} - I\right) f(t_n, y_n) + y_n.
+
+    Because the linear part is integrated exactly, the scheme is
+    A-stable for the local linearization and remains accurate where
+    forward Euler would blow up. It is the workhorse explicit-style
+    integrator for Hodgkin-Huxley type membranes.
+
+    Unlike :func:`ind_exp_euler_step`, this routine treats the entire
+    state vector as a single coupled block: it builds the dense local
+    Jacobian over all :class:`DiffEqState` leaves, computes its matrix
+    exponential, and applies it in one shot. That captures cross-state
+    coupling exactly to first order in :math:`\Delta t` but costs
+    :math:`O(M^3)` per step in the state dimension :math:`M`.
 
     Parameters
     ----------
     target : DiffEqModule
-        The target module containing the differential equations to be solved.
-        Must be an instance of HHTypedNeuron.
+        The neuron model to advance. Must be an :class:`HHTypedNeuron`
+        subclass — currently :class:`SingleCompartment` (states are
+        stacked along ``[n_neuron, n_state]``) or
+        :class:`braincell.cell.Cell` (states are concatenated along
+        ``[n_neuron, n_compartment * n_state]``).
     *args
-        Additional arguments to be passed to the underlying implementation.
+        Extra positional arguments forwarded to ``target``'s
+        :meth:`pre_integral`, :meth:`compute_derivative`, and
+        :meth:`post_integral` hooks (typically the input current
+        for this step).
+
+    Returns
+    -------
+    None
+        ``target``'s differential states are updated in place.
 
     Raises
     ------
     AssertionError
-        If the target is not an instance of :class:`HHTypedNeuron`.
+        If *target* is not an :class:`HHTypedNeuron`.
+    ValueError
+        If *target* is an :class:`HHTypedNeuron` of an unsupported subtype.
+
+    See Also
+    --------
+    ind_exp_euler_step : State-by-state variant that linearizes each
+        :class:`DiffEqState` independently.
+    backward_euler_step : Linearized backward Euler counterpart.
 
     Notes
     -----
-    This function uses vectorization (vmap) to handle populations of neurons efficiently.
-    The actual computation of the exponential Euler step is performed in the
-    `_exp_euler_step_impl` function, which this function wraps and potentially
-    vectorizes for population-level computations.
+    The current time and step size are read from the active
+    :mod:`brainstate.environ` context.
+
+    Examples
+    --------
+
+    .. code-block:: python
+
+        >>> import brainstate
+        >>> import brainunit as u
+        >>> from braincell.quad import exp_euler_step
+        >>> with brainstate.environ.context(t=0. * u.ms, dt=0.025 * u.ms):
+        ...     exp_euler_step(my_neuron, input_current)    # doctest: +SKIP
     """
     from braincell._base import HHTypedNeuron
     from braincell.cell.cell import Cell
@@ -190,45 +223,95 @@ def exp_euler_step(target: DiffEqModule, *args):
 )
 @set_module_as('braincell')
 def ind_exp_euler_step(target: DiffEqModule, *args, excluded_paths=()):
-    """
-    Perform an independent exponential Euler integration step for each DiffEqState in the target module.
+    r"""Advance each :class:`DiffEqState` independently with exponential Euler.
 
-    This function applies the exponential Euler method to each differential equation state (DiffEqState)
-    in the target module independently, rather than as a coupled system. This is in contrast to
-    :func:`exp_euler_step`, which typically handles the system as a whole (potentially vectorized for populations).
-    The independent approach is useful when the states are weakly coupled or can be updated separately.
+    This is the *decoupled* sibling of :func:`exp_euler_step`. Instead of
+    building one global Jacobian over the full state vector, the routine
+    iterates over every :class:`DiffEqState` :math:`y^{(k)}` in *target*
+    and treats the others as frozen at their current values, fitting the
+    local linearization
 
-    Comparison with :func:`exp_euler_step`:
+    .. math::
 
-    - :func:`exp_euler_step` applies the exponential Euler method to the entire system, handling all states together,
-      which is suitable for tightly coupled systems or when vectorization is desired.
-    - :func:`ind_exp_euler_step` updates each DiffEqState independently, which can be more efficient or appropriate
-      for loosely coupled or independent states, but may not capture interactions between states as accurately.
+        \frac{d y^{(k)}}{dt} \approx \lambda^{(k)} y^{(k)} + b^{(k)}
+
+    via :func:`brainstate.transform.vector_grad` and applying the
+    component-wise exponential Euler update
+
+    .. math::
+
+        y^{(k)}_{n+1} = y^{(k)}_n
+            + \Delta t \, \varphi_1\!\left(\Delta t \, \lambda^{(k)}\right) f^{(k)}(t_n, y_n),
+
+    using :func:`brainunit.math.exprel` to evaluate
+    :math:`\varphi_1(z) = (e^{z} - 1)/z` accurately near :math:`z = 0`.
+
+    The trade-off compared with :func:`exp_euler_step`:
+
+    - :func:`exp_euler_step` is more accurate when states are tightly
+      coupled, because it builds the full :math:`M \times M` Jacobian and
+      uses a true matrix exponential.
+    - :func:`ind_exp_euler_step` is much cheaper for large state vectors
+      and is the right choice when each variable is mostly self-coupled
+      (the typical pattern for HH-style gating variables and ion
+      concentrations) and especially when the voltage equation is being
+      solved by a separate solver (see :func:`staggered_step`).
 
     Parameters
     ----------
     target : DiffEqModule
-        The module containing the differential equation states to be integrated.
-        Must be an instance of HHTypedNeuron.
-    args : Any
-        Additional arguments passed to the module's integration hooks.
-    excluded_paths: tuple
-        The path to exclude from the integration step. This is useful for skipping certain states.
+        The module whose :class:`DiffEqState` leaves will be advanced.
+    *args
+        Extra positional arguments forwarded to ``target``'s
+        :meth:`pre_integral`, :meth:`compute_derivative`, and
+        :meth:`post_integral` hooks.
+    excluded_paths : tuple of tuple, optional
+        Iterable of state paths to skip. Each entry is a tuple of attribute
+        names identifying a :class:`DiffEqState` inside *target*'s state
+        graph. The classic use is ``excluded_paths=[('V',)]`` from
+        :func:`staggered_step`, which leaves the membrane voltage
+        untouched so the upstream cable solve is preserved.
 
-    Notes
-    -----
-    - The function uses `brainstate.transform.vector_grad` to compute the linearization and derivative
-      for each state, and applies the exponential Euler update formula using the `exprel` function.
-    - State values are updated in-place, and auxiliary state values are handled for consistency.
-    - Data type checks ensure compatibility with JAX and the exponential Euler method.
+    Returns
+    -------
+    None
+        Differential states are updated in place; auxiliary (non-DiffEq)
+        states are written from the trace captured during the first
+        Jacobian evaluation.
 
     Raises
     ------
     AssertionError
-        If the target is not an instance of :class:`HHTypedNeuron`.
+        If *target* is not a :class:`DiffEqModule`, or if it has no
+        :class:`DiffEqState` leaves.
     ValueError
-        If the input data type is not a supported floating point type.
-        If a state in the trace is not found in the state list.
+        If a state value uses an unsupported (non-floating) dtype, or if
+        an unknown state appears in the trace.
+
+    See Also
+    --------
+    exp_euler_step : Coupled (full-Jacobian) exponential Euler.
+    staggered_step : Operator-splitting scheme that combines DHS for the
+        voltage equation with this routine for everything else.
+
+    Notes
+    -----
+    The current time and step size are read from the active
+    :mod:`brainstate.environ` context.
+
+    Examples
+    --------
+
+    .. code-block:: python
+
+        >>> import brainstate
+        >>> import brainunit as u
+        >>> from braincell.quad import ind_exp_euler_step
+        >>> with brainstate.environ.context(t=0. * u.ms, dt=0.025 * u.ms):
+        ...     ind_exp_euler_step(
+        ...         my_cell, input_current,
+        ...         excluded_paths=[('V',)],
+        ...     )                                           # doctest: +SKIP
     """
     assert isinstance(target, DiffEqModule), (
         f"The target should be a {DiffEqModule.__name__}. "

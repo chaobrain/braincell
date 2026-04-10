@@ -329,22 +329,52 @@ def implicit_euler_step(
     dt: DT,
     *args
 ):
-    """
-    Applies the implicit Euler method to solve a differential equation.
+    r"""Advance one step with the implicit (backward) Euler method.
 
-    This function uses the Newton method to solve the implicit equation
-    arising from the implicit Euler discretization of the ODE.
+    Solves
 
-    Parameters:
-    -----------
+    .. math::
+
+        y_{n+1} = y_n + \Delta t \, f(t_{n+1}, y_{n+1})
+
+    by Newton iteration on the residual
+    :math:`g(y) = y - y_n - \Delta t \, f(t + \Delta t, y)`. Each
+    iteration assembles the full Jacobian
+    :math:`J = \partial g / \partial y` and updates
+    :math:`y \leftarrow y - J^{-1} g(y)` until either the residual norm or
+    the Jacobian norm falls below ``1e-5`` or 100 iterations have been
+    spent.
+
+    Implicit Euler is :math:`L`-stable, so it tolerates arbitrarily large
+    time steps on stiff problems at the cost of damping high-frequency
+    components. Local truncation error is :math:`O(\Delta t^2)`; global
+    error is :math:`O(\Delta t)`.
+
+    Parameters
+    ----------
     target : DiffEqModule
-        The differential equation module to be solved.
-    t : u.Quantity[u.second]
-        The current time in the simulation.
-    dt : u.Quantity[u.second]
-        The numerical time step for the integration.
-    *args : 
-        Additional arguments to be passed to the differential equation.
+        The module whose :class:`DiffEqState` leaves are advanced.
+    t : Quantity[time]
+        Current simulation time.
+    dt : Quantity[time]
+        Time step. Must carry units of time (e.g. ``0.025 * u.ms``).
+    *args
+        Extra positional arguments forwarded to ``target``'s
+        ``compute_derivative`` and ``pre/post_integral`` hooks.
+
+    Returns
+    -------
+    None
+        ``target``'s differential states are updated in place.
+
+    See Also
+    --------
+    backward_euler_step : Single-Jacobian linearized backward Euler
+        (one Newton iteration).
+    splitting_step : Backward Euler for the cable equation paired with a
+        Newton solve for the gating variables.
+    cn_exp_euler_step : Crank-Nicolson cable solve combined with
+        exponential Euler gating.
     """
     apply_standard_solver_step(
         _newton_method, target, t, dt, *args
@@ -495,22 +525,57 @@ def splitting_step(
     dt: DT,
     *args
 ):
-    """
-    Applies the splitting solver method to solve a differential equation.
+    r"""Advance a multi-compartment cell with operator-splitting.
 
-    This function uses the Newton method to solve the implicit equation
-    arising from the implicit Euler discretization of the ODE.
+    Two complementary updates are applied within a single ``dt``:
+
+    1. **Channels and concentrations.** With axial currents temporarily
+       disabled (``compute_axial_current=False``), every
+       :class:`DiffEqState` in *target* is advanced by the manually
+       parallelised Newton iteration in
+       :func:`_newton_method_manual_parallel`. This handles ion channel
+       gating variables, calcium pools, and any other non-voltage state.
+    2. **Cable voltage.** A dense LU factorisation of the implicit-Euler
+       cable matrix :math:`I - \Delta t A` is constructed once via
+       :func:`construct_lu` and reused with :func:`jax.scipy.linalg.lu_solve`
+       to solve for the new midpoint voltages. The factorisation lives
+       inside ``ensure_compile_time_eval`` so it is hoisted out of the
+       JIT cache.
+
+    For non-:class:`Cell` targets the splitting collapses to a single
+    Newton solve over the whole state vector.
+
+    Splitting recovers full-cable stability while keeping the channel
+    update embarrassingly parallel across compartments. It is the
+    historical NEURON-style integrator and is provided here mainly for
+    comparison against :func:`staggered_step`, which uses a sparser DHS
+    cable solve.
 
     Parameters
     ----------
     target : DiffEqModule
-        The differential equation module to be solved.
-    t : u.Quantity[u.second]
-        The current time in the simulation.
-    dt : u.Quantity[u.second]
-        The numerical time step for the integration.
-    *args :
-        Additional arguments to be passed to the differential equation.
+        The module to advance. When *target* is a
+        :class:`braincell.cell.Cell`, the splitting branch is used;
+        otherwise the routine falls back to a plain Newton step.
+    t : Quantity[time]
+        Current simulation time.
+    dt : Quantity[time]
+        Time step. Must carry units of time.
+    *args
+        Extra positional arguments forwarded to ``target``'s
+        ``compute_derivative`` and ``pre/post_integral`` hooks.
+
+    Returns
+    -------
+    None
+        ``target``'s state — voltage and channel/ion variables — is
+        updated in place.
+
+    See Also
+    --------
+    staggered_step : Sparser DHS-based splitting suitable for large trees.
+    cn_rk4_step, implicit_rk4_step, implicit_exp_euler_step : Other
+        cable/gating splitting recipes.
     """
     from braincell.cell.cell import Cell
 
@@ -538,7 +603,7 @@ def splitting_step(
 
         '''
         for _ in range(len(target.pop_size)):
-            integral = brainstate.augment.vmap(solve_axial, in_states=target.states())
+            integral = brainstate.transform.vmap2(solve_axial, in_states=target.states())
         integral()
         '''
 
@@ -548,7 +613,7 @@ def splitting_step(
         with brainstate.environ.context(compute_axial_current=False):
             apply_standard_solver_step(_newton_method_manual_parallel, target, t, dt, *args, merging='stack')
         for _ in range(len(target.pop_size)):
-            integral = brainstate.augment.vmap(solve_axial, in_states=target.states())
+            integral = brainstate.transform.vmap2(solve_axial, in_states=target.states())
         integral()
         # jax.debug.print('step2 cost {a}',a = time.time() - s2t1)
 
@@ -568,8 +633,52 @@ def cn_rk4_step(
     dt: DT,
     *args
 ):
-    from braincell.cell.cell import Cell
-    assert isinstance(target, Cell)
+    r"""Advance a cell with Crank-Nicolson voltage and explicit RK4 channels.
+
+    Performs a two-stage operator-splitting update inside one ``dt``:
+
+    1. **Channels and concentrations.** With axial currents temporarily
+       disabled, every non-voltage :class:`DiffEqState` is advanced by
+       :func:`rk4_step` (classical four-stage fourth-order Runge-Kutta).
+    2. **Cable voltage.** A Crank-Nicolson step is then applied to the
+       linear axial system :math:`dV/dt = A V` via
+       :func:`_crank_nicolson_for_axial_current`, which solves
+       :math:`(I - \tfrac{\Delta t}{2} A) V_{n+1} = (I + \tfrac{\Delta t}{2} A) V_n`.
+
+    The voltage solve is second-order accurate and unconditionally stable;
+    the channel update is fourth-order accurate. The combined scheme is
+    therefore second-order overall and well suited to dendrites where the
+    cable equation dominates the stiffness budget.
+
+    Parameters
+    ----------
+    target : Cell
+        Multi-compartment cell to advance.
+    t : Quantity[time]
+        Current simulation time.
+    dt : Quantity[time]
+        Time step.
+    *args
+        Extra positional arguments forwarded to the channel and voltage
+        solvers.
+
+    Returns
+    -------
+    None
+        ``target``'s state is updated in place.
+
+    Raises
+    ------
+    AssertionError
+        If *target* is not a :class:`braincell.cell.Cell`.
+
+    See Also
+    --------
+    cn_exp_euler_step : Same Crank-Nicolson voltage solve paired with
+        exponential Euler channel updates.
+    implicit_rk4_step : Implicit Euler voltage solve paired with RK4
+        channels.
+    """
 
     def solve_axial():
         V_n = target.V.value
@@ -579,7 +688,7 @@ def cn_rk4_step(
     with brainstate.environ.context(compute_axial_current=False):
         rk4_step(target, t, dt, *args, )
     for _ in range(len(target.pop_size)):
-        integral = brainstate.augment.vmap(solve_axial, in_states=target.states())
+        integral = brainstate.transform.vmap2(solve_axial, in_states=target.states())
     integral()
 
 
@@ -595,8 +704,54 @@ def cn_exp_euler_step(
     dt: DT,
     *args
 ):
-    from braincell.cell.cell import Cell
-    assert isinstance(target, Cell)
+    r"""Advance a cell with Crank-Nicolson voltage and exponential Euler channels.
+
+    Operator-splitting update inside one ``dt``:
+
+    1. **Channels and concentrations.** With axial currents disabled, all
+       non-voltage :class:`DiffEqState` leaves are advanced by the coupled
+       exponential Euler update from :func:`_exponential_euler` (the same
+       linearised matrix-exponential step used by :func:`exp_euler_step`).
+    2. **Cable voltage.** The linear axial system is then advanced by a
+       Crank-Nicolson half-implicit step,
+       :math:`(I - \tfrac{\Delta t}{2} A) V_{n+1} = (I + \tfrac{\Delta t}{2} A) V_n`.
+
+    The Crank-Nicolson voltage solve is second-order accurate and
+    unconditionally stable. Pairing it with exponential Euler for the
+    channels is the recommended choice when the channel kinetics are very
+    stiff (e.g. fast sodium activation) — exponential Euler captures the
+    local exponential decay exactly while Crank-Nicolson keeps the cable
+    update centred in time.
+
+    Parameters
+    ----------
+    target : Cell
+        Multi-compartment cell to advance.
+    t : Quantity[time]
+        Current simulation time.
+    dt : Quantity[time]
+        Time step.
+    *args
+        Extra positional arguments forwarded to the channel and voltage
+        solvers.
+
+    Returns
+    -------
+    None
+        ``target``'s state is updated in place.
+
+    Raises
+    ------
+    AssertionError
+        If *target* is not a :class:`braincell.cell.Cell`.
+
+    See Also
+    --------
+    cn_rk4_step : Same Crank-Nicolson voltage solve paired with classical
+        RK4 channel updates.
+    implicit_exp_euler_step : Implicit Euler voltage solve paired with
+        exponential Euler channel updates.
+    """
 
     with brainstate.environ.context(compute_axial_current=False):
         apply_standard_solver_step(_exponential_euler, target, t, dt, *args, merging='stack')
@@ -607,7 +762,7 @@ def cn_exp_euler_step(
         target.V.value = _crank_nicolson_for_axial_current(A_matrix, V_n, dt)
 
     for _ in range(len(target.pop_size)):
-        integral = brainstate.augment.vmap(solve_axial, in_states=target.states())
+        integral = brainstate.transform.vmap2(solve_axial, in_states=target.states())
     integral()
 
 
@@ -624,22 +779,52 @@ def implicit_rk4_step(
     dt: DT,
     *args
 ):
-    """
-    Applies the splitting solver method to solve a differential equation.
+    r"""Advance a cell with implicit Euler voltage and explicit RK4 channels.
 
-    This function uses the Newton method to solve the implicit equation
-    arising from the implicit Euler discretization of the ODE.
+    Operator-splitting update inside one ``dt`` for a multi-compartment
+    cell:
+
+    1. **Channels and concentrations.** With axial currents temporarily
+       disabled, every non-voltage :class:`DiffEqState` is advanced by
+       :func:`rk4_step`.
+    2. **Cable voltage.** The linear axial system :math:`dV/dt = A V` is
+       then advanced by one implicit-Euler solve via
+       :func:`_implicit_euler_for_axial_current`,
+       :math:`(I - \Delta t A) V_{n+1} = V_n`.
+
+    For non-:class:`Cell` targets the routine falls back to a single
+    Newton-based implicit Euler step on the full state vector.
+
+    The implicit Euler voltage solve is :math:`L`-stable and damps
+    high-frequency cable modes; the explicit RK4 channel update gives the
+    rest of the system fourth-order accuracy. Use this scheme when the
+    cable equation is the only severely stiff component and you want
+    extra accuracy on smooth gating dynamics.
 
     Parameters
     ----------
     target : DiffEqModule
-        The differential equation module to be solved.
-    t : u.Quantity[u.second]
-        The current time in the simulation.
-    dt : u.Quantity[u.second]
-        The numerical time step for the integration.
-    *args :
-        Additional arguments to be passed to the differential equation.
+        The module to advance. Splitting is used when *target* is a
+        :class:`braincell.cell.Cell`; otherwise the routine reduces to a
+        plain Newton step.
+    t : Quantity[time]
+        Current simulation time.
+    dt : Quantity[time]
+        Time step.
+    *args
+        Extra positional arguments forwarded to the channel and voltage
+        solvers.
+
+    Returns
+    -------
+    None
+        ``target``'s state is updated in place.
+
+    See Also
+    --------
+    cn_rk4_step : Crank-Nicolson voltage solve paired with RK4 channels.
+    implicit_exp_euler_step : Implicit Euler voltage solve paired with
+        exponential Euler channels.
     """
     from braincell.cell.cell import Cell
 
@@ -653,7 +838,7 @@ def implicit_rk4_step(
             target.V.value = _implicit_euler_for_axial_current(A_matrix, V_n, dt)
 
         for _ in range(len(target.pop_size)):
-            integral = brainstate.augment.vmap(solve_axial, in_states=target.states())
+            integral = brainstate.transform.vmap2(solve_axial, in_states=target.states())
         integral()
 
     else:
@@ -672,22 +857,50 @@ def implicit_exp_euler_step(
     dt: DT,
     *args
 ):
-    """
-    Applies the splitting solver method to solve a differential equation.
+    r"""Advance a cell with implicit Euler voltage and exponential Euler channels.
 
-    This function uses the Newton method to solve the implicit equation
-    arising from the implicit Euler discretization of the ODE.
+    Operator-splitting update inside one ``dt`` for a multi-compartment
+    cell:
+
+    1. **Channels and concentrations.** With axial currents temporarily
+       disabled, every non-voltage :class:`DiffEqState` is advanced by
+       the coupled exponential Euler update from
+       :func:`_exponential_euler`.
+    2. **Cable voltage.** The linear axial system :math:`dV/dt = A V` is
+       then advanced by one implicit-Euler solve via
+       :func:`_implicit_euler_for_axial_current`,
+       :math:`(I - \Delta t A) V_{n+1} = V_n`.
+
+    For non-:class:`Cell` targets the routine falls back to a single
+    Newton-based implicit Euler step on the full state vector.
+
+    The combination of an :math:`L`-stable cable solve and an
+    :math:`A`-stable channel solve makes this scheme robust at large time
+    steps and is the recommended choice for multi-compartment Hodgkin-Huxley
+    models when accuracy on smooth dynamics is less critical than stability.
 
     Parameters
     ----------
     target : DiffEqModule
-        The differential equation module to be solved.
-    t : u.Quantity[u.second]
-        The current time in the simulation.
-    dt : u.Quantity[u.second]
-        The numerical time step for the integration.
-    *args :
-        Additional arguments to be passed to the differential equation.
+        The module to advance.
+    t : Quantity[time]
+        Current simulation time.
+    dt : Quantity[time]
+        Time step.
+    *args
+        Extra positional arguments forwarded to the channel and voltage
+        solvers.
+
+    Returns
+    -------
+    None
+        ``target``'s state is updated in place.
+
+    See Also
+    --------
+    implicit_rk4_step : Implicit Euler voltage paired with RK4 channels.
+    cn_exp_euler_step : Crank-Nicolson voltage paired with exponential
+        Euler channels.
     """
     from braincell.cell.cell import Cell
 
@@ -702,7 +915,7 @@ def implicit_exp_euler_step(
             target.V.value = _implicit_euler_for_axial_current(A_matrix, V_n, dt)
 
         for _ in range(len(target.pop_size)):
-            integral = brainstate.augment.vmap(solve_axial, in_states=target.states())
+            integral = brainstate.transform.vmap2(solve_axial, in_states=target.states())
         integral()
 
     else:
@@ -721,22 +934,50 @@ def exp_exp_euler_step(
     dt: DT,
     *args
 ):
-    """
-    Applies the splitting solver method to solve a differential equation.
+    r"""Advance a cell with exponential cable and exponential Euler channels.
 
-    This function uses the Newton method to solve the implicit equation
-    arising from the implicit Euler discretization of the ODE.
+    Operator-splitting update inside one ``dt`` for a multi-compartment
+    cell:
+
+    1. **Channels and concentrations.** With axial currents temporarily
+       disabled, every non-voltage :class:`DiffEqState` is advanced by
+       the coupled exponential Euler update from
+       :func:`_exponential_euler`.
+    2. **Cable voltage.** The linear axial system :math:`dV/dt = A V` is
+       then advanced by one step of the implicit Euler solver
+       :func:`_implicit_euler_for_axial_current`. Despite the function
+       name, the *cable* update used here is the same implicit Euler
+       solve as :func:`implicit_exp_euler_step`; the ``exp_exp`` label
+       refers to using exponential Euler on **both** the channel update
+       and (conceptually) on the linear cable equation, where one step
+       of implicit Euler approximates :math:`e^{\Delta t A} V_n`.
+
+    For non-:class:`Cell` targets the routine falls back to a single
+    Newton solve.
 
     Parameters
     ----------
     target : DiffEqModule
-        The differential equation module to be solved.
-    t : u.Quantity[u.second]
-        The current time in the simulation.
-    dt : u.Quantity[u.second]
-        The numerical time step for the integration.
-    *args :
-        Additional arguments to be passed to the differential equation.
+        The module to advance.
+    t : Quantity[time]
+        Current simulation time.
+    dt : Quantity[time]
+        Time step.
+    *args
+        Extra positional arguments forwarded to the channel and voltage
+        solvers.
+
+    Returns
+    -------
+    None
+        ``target``'s state is updated in place.
+
+    See Also
+    --------
+    implicit_exp_euler_step : Same composition under a more descriptive
+        name.
+    cn_exp_euler_step : Crank-Nicolson voltage paired with exponential
+        Euler channels.
     """
     from braincell.cell.cell import Cell
 
@@ -752,7 +993,7 @@ def exp_exp_euler_step(
             target.V.value = _implicit_euler_for_axial_current(A_matrix, V_n, dt)  # expm(dt*A_matrix)@V_n
 
         for _ in range(len(target.pop_size)):
-            integral = brainstate.augment.vmap(solve_axial, in_states=target.states())
+            integral = brainstate.transform.vmap2(solve_axial, in_states=target.states())
         integral()
 
     else:

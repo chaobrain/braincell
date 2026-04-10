@@ -140,24 +140,44 @@ def _diffrax_explicit_solver(
 )
 @set_module_as('braincell')
 def diffrax_euler_step(target: DiffEqModule, *args):
-    """
-    Advances the state of a differential equation module by one integration step using the Euler method
-    from the diffrax library: `diffrax.Euler <https://docs.kidger.site/diffrax/api/solvers/ode_solvers/#diffrax.Euler>`_.
+    """Advance one step with diffrax's explicit Euler solver.
 
-    This function serves as a wrapper that applies the explicit Euler solver to the given target module.
-    It is intended for use in time-stepping routines where the state of the system is updated in-place.
+    Wraps `diffrax.Euler
+    <https://docs.kidger.site/diffrax/api/solvers/ode_solvers/#diffrax.Euler>`_
+    so it can be driven from the same ``brainstate.environ`` context as
+    the native braincell integrators. The first call triggers a one-time
+    import of :mod:`diffrax` (see :func:`__getattr__`); subsequent calls
+    take the fast path.
 
-    Args:
-        target (DiffEqModule): The differential equation module whose state will be advanced.
-        *args: Additional arguments to be passed to the solver, such as step size or solver-specific options.
+    Parameters
+    ----------
+    target : DiffEqModule
+        Module whose differential states will be advanced.
+    *args
+        Extra positional arguments forwarded to ``target``'s
+        ``compute_derivative`` and ``pre/post_integral`` hooks.
 
-    Raises:
-        ModuleNotFoundError: If the diffrax library is not installed.
+    Returns
+    -------
+    None
+        ``target``'s state is updated in place.
 
-    Notes:
-        - This function relies on the diffrax.Euler solver for numerical integration.
-        - It is part of a suite of step functions that provide different integration methods.
-        - The function is designed to be compatible with the braincell integration framework.
+    Raises
+    ------
+    ModuleNotFoundError
+        If :mod:`diffrax` is not installed.
+
+    See Also
+    --------
+    euler_step : Native (no-diffrax) explicit Euler implementation.
+    diffrax_heun_step, diffrax_midpoint_step, diffrax_ralston_step :
+        Other low-order diffrax-backed schemes.
+
+    Notes
+    -----
+    The current time and step size are read from the active
+    :mod:`brainstate.environ` context. The braincell state vector is
+    stacked along the last axis before being handed to diffrax.
     """
     t = brainstate.environ.get('t')
     dt = brainstate.environ.get('dt')
@@ -172,25 +192,33 @@ def diffrax_euler_step(target: DiffEqModule, *args):
 )
 @set_module_as('braincell')
 def diffrax_heun_step(target: DiffEqModule, *args):
-    """
-    Advances the state of a differential equation module by one integration step using the Heun method
-    from the diffrax library: `diffrax.Heun <https://docs.kidger.site/diffrax/api/solvers/ode_solvers/#diffrax.Heun>`_.
+    """Advance one step with diffrax's Heun (improved Euler) solver.
 
-    This function serves as a wrapper that applies the explicit Heun solver (also known as the improved Euler method)
-    to the given target module. It is intended for use in time-stepping routines where the state of the system
-    is updated in-place.
+    Wraps `diffrax.Heun
+    <https://docs.kidger.site/diffrax/api/solvers/ode_solvers/#diffrax.Heun>`_,
+    a two-stage second-order explicit Runge-Kutta method.
 
-    Args:
-        target (DiffEqModule): The differential equation module whose state will be advanced.
-        *args: Additional arguments to be passed to the solver, such as step size or solver-specific options.
+    Parameters
+    ----------
+    target : DiffEqModule
+        Module whose differential states will be advanced.
+    *args
+        Extra positional arguments forwarded to ``target``'s integration
+        hooks.
 
-    Raises:
-        ModuleNotFoundError: If the diffrax library is not installed.
+    Returns
+    -------
+    None
+        ``target``'s state is updated in place.
 
-    Notes:
-        - This function relies on the diffrax.Heun solver for numerical integration.
-        - It is part of a suite of step functions that provide different integration methods.
-        - The function is designed to be compatible with the braincell integration framework.
+    Raises
+    ------
+    ModuleNotFoundError
+        If :mod:`diffrax` is not installed.
+
+    See Also
+    --------
+    heun2_step : Native (no-diffrax) Heun implementation.
     """
     t = brainstate.environ.get('t')
     dt = brainstate.environ.get('dt')
@@ -205,25 +233,33 @@ def diffrax_heun_step(target: DiffEqModule, *args):
 )
 @set_module_as('braincell')
 def diffrax_midpoint_step(target: DiffEqModule, *args):
-    """
-    Advances the state of a differential equation module by one integration step using the Midpoint method
-    from the diffrax library: `diffrax.Midpoint <https://docs.kidger.site/diffrax/api/solvers/ode_solvers/#diffrax.Midpoint>`_.
+    """Advance one step with diffrax's explicit midpoint solver.
 
-    This function serves as a wrapper that applies the explicit Midpoint solver (a second-order Runge-Kutta method)
-    to the given target module. It is intended for use in time-stepping routines where the state of the system
-    is updated in-place.
+    Wraps `diffrax.Midpoint
+    <https://docs.kidger.site/diffrax/api/solvers/ode_solvers/#diffrax.Midpoint>`_,
+    a two-stage second-order explicit Runge-Kutta method.
 
-    Args:
-        target (DiffEqModule): The differential equation module whose state will be advanced.
-        *args: Additional arguments to be passed to the solver, such as step size or solver-specific options.
+    Parameters
+    ----------
+    target : DiffEqModule
+        Module whose differential states will be advanced.
+    *args
+        Extra positional arguments forwarded to ``target``'s integration
+        hooks.
 
-    Raises:
-        ModuleNotFoundError: If the diffrax library is not installed.
+    Returns
+    -------
+    None
+        ``target``'s state is updated in place.
 
-    Notes:
-        - This function relies on the diffrax.Midpoint solver for numerical integration.
-        - It is part of a suite of step functions that provide different integration methods.
-        - The function is designed to be compatible with the braincell integration framework.
+    Raises
+    ------
+    ModuleNotFoundError
+        If :mod:`diffrax` is not installed.
+
+    See Also
+    --------
+    midpoint_step : Native (no-diffrax) midpoint implementation.
     """
     t = brainstate.environ.get('t')
     dt = brainstate.environ.get('dt')
@@ -238,25 +274,34 @@ def diffrax_midpoint_step(target: DiffEqModule, *args):
 )
 @set_module_as('braincell')
 def diffrax_ralston_step(target: DiffEqModule, *args):
-    """
-    Advances the state of a differential equation module by one integration step using the Ralston method
-    from the diffrax library: `diffrax.Ralston <https://docs.kidger.site/diffrax/api/solvers/ode_solvers/#diffrax.Ralston>`_.
+    """Advance one step with diffrax's Ralston second-order solver.
 
-    This function serves as a wrapper that applies the explicit Ralston solver (a second-order Runge-Kutta method)
-    to the given target module. It is intended for use in time-stepping routines where the state of the system
-    is updated in-place.
+    Wraps `diffrax.Ralston
+    <https://docs.kidger.site/diffrax/api/solvers/ode_solvers/#diffrax.Ralston>`_,
+    the second-order explicit Runge-Kutta method that minimises the
+    leading-order truncation error coefficient.
 
-    Args:
-        target (DiffEqModule): The differential equation module whose state will be advanced.
-        *args: Additional arguments to be passed to the solver, such as step size or solver-specific options.
+    Parameters
+    ----------
+    target : DiffEqModule
+        Module whose differential states will be advanced.
+    *args
+        Extra positional arguments forwarded to ``target``'s integration
+        hooks.
 
-    Raises:
-        ModuleNotFoundError: If the diffrax library is not installed.
+    Returns
+    -------
+    None
+        ``target``'s state is updated in place.
 
-    Notes:
-        - This function relies on the diffrax.Ralston solver for numerical integration.
-        - It is part of a suite of step functions that provide different integration methods.
-        - The function is designed to be compatible with the braincell integration framework.
+    Raises
+    ------
+    ModuleNotFoundError
+        If :mod:`diffrax` is not installed.
+
+    See Also
+    --------
+    ralston2_step : Native (no-diffrax) Ralston implementation.
     """
     t = brainstate.environ.get('t')
     dt = brainstate.environ.get('dt')
@@ -271,25 +316,37 @@ def diffrax_ralston_step(target: DiffEqModule, *args):
 )
 @set_module_as('braincell')
 def diffrax_bosh3_step(target: DiffEqModule, *args):
-    """
-    Advances the state of a differential equation module by one integration step using the Bosh3 method
-    from the diffrax library: `diffrax.Bosh3 <https://docs.kidger.site/diffrax/api/solvers/ode_solvers/#diffrax.Bosh3>`_.
+    """Advance one step with diffrax's Bogacki-Shampine 3(2) solver.
 
-    This function serves as a wrapper that applies the explicit Bosh3 solver (a third-order Runge-Kutta method)
-    to the given target module. It is intended for use in time-stepping routines where the state of the system
-    is updated in-place.
+    Wraps `diffrax.Bosh3
+    <https://docs.kidger.site/diffrax/api/solvers/ode_solvers/#diffrax.Bosh3>`_,
+    the third-order Bogacki-Shampine explicit Runge-Kutta method (the
+    fixed-step ``BS23`` solver familiar from MATLAB's ``ode23``). Note
+    that braincell drives diffrax with a fixed step, so the embedded
+    error estimator that the original BS23 uses for adaptive stepping is
+    discarded here.
 
-    Args:
-        target (DiffEqModule): The differential equation module whose state will be advanced.
-        *args: Additional arguments to be passed to the solver, such as step size or solver-specific options.
+    Parameters
+    ----------
+    target : DiffEqModule
+        Module whose differential states will be advanced.
+    *args
+        Extra positional arguments forwarded to ``target``'s integration
+        hooks.
 
-    Raises:
-        ModuleNotFoundError: If the diffrax library is not installed.
+    Returns
+    -------
+    None
+        ``target``'s state is updated in place.
 
-    Notes:
-        - This function relies on the diffrax.Bosh3 solver for numerical integration.
-        - It is part of a suite of step functions that provide different integration methods.
-        - The function is designed to be compatible with the braincell integration framework.
+    Raises
+    ------
+    ModuleNotFoundError
+        If :mod:`diffrax` is not installed.
+
+    See Also
+    --------
+    rk3_step, ssprk3_step : Native third-order RK alternatives.
     """
     t = brainstate.environ.get('t')
     dt = brainstate.environ.get('dt')
@@ -304,26 +361,37 @@ def diffrax_bosh3_step(target: DiffEqModule, *args):
 )
 @set_module_as('braincell')
 def diffrax_tsit5_step(target: DiffEqModule, *args):
-    """
-    Advances the state of a differential equation module by one integration step using the Tsit5 method
-    from the diffrax library: `diffrax.Tsit5 <https://docs.kidger.site/diffrax/api/solvers/ode_solvers/#diffrax.Tsit5>`_.
+    """Advance one step with diffrax's Tsitouras 5(4) solver.
 
-    This function serves as a wrapper that applies the explicit Tsit5 solver (a fifth-order Runge-Kutta method)
-    to the given target module. It is intended for use in time-stepping routines where the state of the system
-    is updated in-place.
+    Wraps `diffrax.Tsit5
+    <https://docs.kidger.site/diffrax/api/solvers/ode_solvers/#diffrax.Tsit5>`_,
+    a fifth-order explicit Runge-Kutta method tuned to minimise the
+    leading-order error coefficient. Tsit5 is the default explicit
+    solver in many modern ODE libraries (e.g. Julia's
+    ``DifferentialEquations.jl``).
 
-    Args:
-        target (DiffEqModule): The differential equation module whose state will be advanced.
-        *args: Additional arguments to be passed to the solver, such as step size or solver-specific options.
+    Parameters
+    ----------
+    target : DiffEqModule
+        Module whose differential states will be advanced.
+    *args
+        Extra positional arguments forwarded to ``target``'s integration
+        hooks.
 
+    Returns
+    -------
+    None
+        ``target``'s state is updated in place.
 
-    Raises:
-        ModuleNotFoundError: If the diffrax library is not installed.
+    Raises
+    ------
+    ModuleNotFoundError
+        If :mod:`diffrax` is not installed.
 
-    Notes:
-        - This function relies on the diffrax.Tsit5 solver for numerical integration.
-        - It is part of a suite of step functions that provide different integration methods.
-        - The function is designed to be compatible with the braincell integration framework.
+    See Also
+    --------
+    diffrax_dopri5_step : Dormand-Prince 5(4), an alternative fifth-order
+        explicit method.
     """
     t = brainstate.environ.get('t')
     dt = brainstate.environ.get('dt')
@@ -338,26 +406,35 @@ def diffrax_tsit5_step(target: DiffEqModule, *args):
 )
 @set_module_as('braincell')
 def diffrax_dopri5_step(target: DiffEqModule, *args):
-    """
-    Advances the state of a differential equation module by one integration step using the Dopri5 method
-    from the diffrax library: `diffrax.Dopri5 <https://docs.kidger.site/diffrax/api/solvers/ode_solvers/#diffrax.Dopri5>`_.
+    """Advance one step with diffrax's Dormand-Prince 5(4) solver.
 
-    This function serves as a wrapper that applies the explicit Dormand-Prince 5(4) solver (a fifth-order Runge-Kutta method)
-    to the given target module. It is intended for use in time-stepping routines where the state of the system
-    is updated in-place.
+    Wraps `diffrax.Dopri5
+    <https://docs.kidger.site/diffrax/api/solvers/ode_solvers/#diffrax.Dopri5>`_,
+    the classical explicit Dormand-Prince fifth-order Runge-Kutta method
+    used by SciPy's ``RK45`` and MATLAB's ``ode45``.
 
-    Args:
-        target (DiffEqModule): The differential equation module whose state will be advanced.
-        *args: Additional arguments to be passed to the solver, such as step size or solver-specific options.
+    Parameters
+    ----------
+    target : DiffEqModule
+        Module whose differential states will be advanced.
+    *args
+        Extra positional arguments forwarded to ``target``'s integration
+        hooks.
 
+    Returns
+    -------
+    None
+        ``target``'s state is updated in place.
 
-    Raises:
-        ModuleNotFoundError: If the diffrax library is not installed.
+    Raises
+    ------
+    ModuleNotFoundError
+        If :mod:`diffrax` is not installed.
 
-    Notes:
-        - This function relies on the diffrax.Dopri5 solver for numerical integration.
-        - It is part of a suite of step functions that provide different integration methods.
-        - The function is designed to be compatible with the braincell integration framework.
+    See Also
+    --------
+    diffrax_tsit5_step, diffrax_dopri8_step : Other diffrax-backed
+        higher-order explicit Runge-Kutta solvers.
     """
     t = brainstate.environ.get('t')
     dt = brainstate.environ.get('dt')
@@ -372,26 +449,35 @@ def diffrax_dopri5_step(target: DiffEqModule, *args):
 )
 @set_module_as('braincell')
 def diffrax_dopri8_step(target: DiffEqModule, *args):
-    """
-    Advances the state of a differential equation module by one integration step using the Dopri8 method
-    from the diffrax library: `diffrax.Dopri8 <https://docs.kidger.site/diffrax/api/solvers/ode_solvers/#diffrax.Dopri8>`_.
+    """Advance one step with diffrax's Dormand-Prince 8(5,3) solver.
 
-    This function serves as a wrapper that applies the explicit Dormand-Prince 8(5,3) solver (an eighth-order Runge-Kutta method)
-    to the given target module. It is intended for use in time-stepping routines where the state of the system
-    is updated in-place.
+    Wraps `diffrax.Dopri8
+    <https://docs.kidger.site/diffrax/api/solvers/ode_solvers/#diffrax.Dopri8>`_,
+    a high-order explicit Runge-Kutta method (Prince-Dormand 8(7)) for
+    smooth, non-stiff problems where extreme accuracy is needed.
 
-    Args:
-        target (DiffEqModule): The differential equation module whose state will be advanced.
-        *args: Additional arguments to be passed to the solver, such as step size or solver-specific options.
+    Parameters
+    ----------
+    target : DiffEqModule
+        Module whose differential states will be advanced.
+    *args
+        Extra positional arguments forwarded to ``target``'s integration
+        hooks.
 
+    Returns
+    -------
+    None
+        ``target``'s state is updated in place.
 
-    Raises:
-        ModuleNotFoundError: If the diffrax library is not installed.
+    Raises
+    ------
+    ModuleNotFoundError
+        If :mod:`diffrax` is not installed.
 
-    Notes:
-        - This function relies on the diffrax.Dopri8 solver for numerical integration.
-        - It is part of a suite of step functions that provide different integration methods.
-        - The function is designed to be compatible with the braincell integration framework.
+    See Also
+    --------
+    diffrax_dopri5_step, diffrax_tsit5_step : Cheaper fifth-order
+        alternatives.
     """
     t = brainstate.environ.get('t')
     dt = brainstate.environ.get('dt')
@@ -429,32 +515,39 @@ def _diffrax_implicit_solver(solver, target: DiffEqModule, t: T, dt: DT, *args):
 )
 @set_module_as('braincell')
 def diffrax_bwd_euler_step(target: DiffEqModule, *args, tol=1e-5):
-    """
-    Advances the state of a differential equation module by one integration step using the implicit
-    Backward Euler method from the diffrax library:
-    `diffrax.ImplicitEuler <https://docs.kidger.site/diffrax/api/solvers/ode_solvers/#diffrax.ImplicitEuler>`_.
+    """Advance one step with diffrax's implicit (backward) Euler solver.
 
-    This function serves as a wrapper that applies the implicit Backward Euler solver to the given
-    target module. It is intended for use in time-stepping routines where the state of the system
-    is updated in-place. The root-finding tolerance for the implicit step can be controlled via the
-    `tol` parameter.
+    Wraps `diffrax.ImplicitEuler
+    <https://docs.kidger.site/diffrax/api/solvers/ode_solvers/#diffrax.ImplicitEuler>`_,
+    an :math:`L`-stable first-order implicit method. The implicit
+    residual is solved by a ``diffrax.VeryChord`` chord iteration with
+    matching relative and absolute tolerances.
 
-    Args:
-        target (DiffEqModule): The differential equation module whose state will be advanced.
-        *args: Additional arguments to be passed to the solver.
-        tol (float, optional): Tolerance for the root-finding algorithm used in the implicit step.
-            Defaults to 1e-5.
+    Parameters
+    ----------
+    target : DiffEqModule
+        Module whose differential states will be advanced.
+    *args
+        Extra positional arguments forwarded to ``target``'s integration
+        hooks.
+    tol : float, optional
+        Combined relative and absolute tolerance for the chord
+        root-finder. Defaults to ``1e-5``.
 
+    Returns
+    -------
+    None
+        ``target``'s state is updated in place.
 
-    Raises:
-        ModuleNotFoundError: If the diffrax library is not installed.
+    Raises
+    ------
+    ModuleNotFoundError
+        If :mod:`diffrax` is not installed.
 
-    Notes:
-        - This function relies on the diffrax.ImplicitEuler solver for numerical integration.
-        - The root-finding algorithm used is diffrax.VeryChord, with both relative and absolute
-          tolerances set to `tol`.
-        - It is part of a suite of step functions that provide different integration methods.
-        - The function is designed to be compatible with the braincell integration framework.
+    See Also
+    --------
+    backward_euler_step : Native (no-diffrax) linearised backward Euler.
+    implicit_euler_step : Native Newton-iteration backward Euler.
     """
     t = brainstate.environ.get('t')
     dt = brainstate.environ.get('dt')
@@ -472,30 +565,39 @@ def diffrax_bwd_euler_step(target: DiffEqModule, *args, tol=1e-5):
 )
 @set_module_as('braincell')
 def diffrax_kvaerno3_step(target: DiffEqModule, *args, tol=1e-5):
-    """
-    Advances the state of a differential equation module by one integration step using the Kvaerno3 method
-    from the diffrax library: `diffrax.Kvaerno3 <https://docs.kidger.site/diffrax/api/solvers/ode_solvers/#diffrax.Kvaerno3>`_.
+    """Advance one step with diffrax's Kvaerno 3 ESDIRK solver.
 
-    This function serves as a wrapper that applies the implicit Kvaerno3 solver (a third-order method)
-    to the given target module. It is intended for use in time-stepping routines where the state of the system
-    is updated in-place. The root-finding tolerance for the implicit step can be controlled via the `tol` parameter.
+    Wraps `diffrax.Kvaerno3
+    <https://docs.kidger.site/diffrax/api/solvers/ode_solvers/#diffrax.Kvaerno3>`_,
+    a third-order, :math:`L`-stable explicit-singly-diagonally-implicit
+    Runge-Kutta (ESDIRK) method designed for stiff systems. Implicit
+    stages are solved by a ``diffrax.VeryChord`` chord iteration.
 
-    Args:
-        target (DiffEqModule): The differential equation module whose state will be advanced.
-        *args: Additional arguments to be passed to the solver.
-        tol (float, optional): Tolerance for the root-finding algorithm used in the implicit step.
-            Defaults to 1e-5.
+    Parameters
+    ----------
+    target : DiffEqModule
+        Module whose differential states will be advanced.
+    *args
+        Extra positional arguments forwarded to ``target``'s integration
+        hooks.
+    tol : float, optional
+        Combined relative and absolute tolerance for the chord
+        root-finder. Defaults to ``1e-5``.
 
+    Returns
+    -------
+    None
+        ``target``'s state is updated in place.
 
-    Raises:
-        ModuleNotFoundError: If the diffrax library is not installed.
+    Raises
+    ------
+    ModuleNotFoundError
+        If :mod:`diffrax` is not installed.
 
-    Notes:
-        - This function relies on the diffrax.Kvaerno3 solver for numerical integration.
-        - The root-finding algorithm used is diffrax.VeryChord, with both relative and absolute
-          tolerances set to `tol`.
-        - It is part of a suite of step functions that provide different integration methods.
-        - The function is designed to be compatible with the braincell integration framework.
+    See Also
+    --------
+    diffrax_kvaerno4_step, diffrax_kvaerno5_step : Higher-order Kvaerno
+        variants from the same family.
     """
     t = brainstate.environ.get('t')
     dt = brainstate.environ.get('dt')
@@ -513,30 +615,36 @@ def diffrax_kvaerno3_step(target: DiffEqModule, *args, tol=1e-5):
 )
 @set_module_as('braincell')
 def diffrax_kvaerno4_step(target: DiffEqModule, *args, tol=1e-5):
-    """
-    Advances the state of a differential equation module by one integration step using the Kvaerno4 method
-    from the diffrax library: `diffrax.Kvaerno4 <https://docs.kidger.site/diffrax/api/solvers/ode_solvers/#diffrax.Kvaerno4>`_.
+    """Advance one step with diffrax's Kvaerno 4 ESDIRK solver.
 
-    This function serves as a wrapper that applies the implicit Kvaerno4 solver (a fourth-order method)
-    to the given target module. It is intended for use in time-stepping routines where the state of the system
-    is updated in-place. The root-finding tolerance for the implicit step can be controlled via the `tol` parameter.
+    Wraps `diffrax.Kvaerno4
+    <https://docs.kidger.site/diffrax/api/solvers/ode_solvers/#diffrax.Kvaerno4>`_,
+    a fourth-order, :math:`L`-stable ESDIRK method for stiff systems.
 
-    Args:
-        target (DiffEqModule): The differential equation module whose state will be advanced.
-        *args: Additional arguments to be passed to the solver.
-        tol (float, optional): Tolerance for the root-finding algorithm used in the implicit step.
-            Defaults to 1e-5.
+    Parameters
+    ----------
+    target : DiffEqModule
+        Module whose differential states will be advanced.
+    *args
+        Extra positional arguments forwarded to ``target``'s integration
+        hooks.
+    tol : float, optional
+        Combined relative and absolute tolerance for the chord
+        root-finder. Defaults to ``1e-5``.
 
+    Returns
+    -------
+    None
+        ``target``'s state is updated in place.
 
-    Raises:
-        ModuleNotFoundError: If the diffrax library is not installed.
+    Raises
+    ------
+    ModuleNotFoundError
+        If :mod:`diffrax` is not installed.
 
-    Notes:
-        - This function relies on the diffrax.Kvaerno4 solver for numerical integration.
-        - The root-finding algorithm used is diffrax.VeryChord, with both relative and absolute
-          tolerances set to `tol`.
-        - It is part of a suite of step functions that provide different integration methods.
-        - The function is designed to be compatible with the braincell integration framework.
+    See Also
+    --------
+    diffrax_kvaerno3_step, diffrax_kvaerno5_step : Other Kvaerno variants.
     """
     t = brainstate.environ.get('t')
     dt = brainstate.environ.get('dt')
@@ -554,30 +662,37 @@ def diffrax_kvaerno4_step(target: DiffEqModule, *args, tol=1e-5):
 )
 @set_module_as('braincell')
 def diffrax_kvaerno5_step(target: DiffEqModule, *args, tol=1e-5):
-    """
-    Advances the state of a differential equation module by one integration step using the Kvaerno5 method
-    from the diffrax library: `diffrax.Kvaerno5 <https://docs.kidger.site/diffrax/api/solvers/ode_solvers/#diffrax.Kvaerno5>`_.
+    """Advance one step with diffrax's Kvaerno 5 ESDIRK solver.
 
-    This function serves as a wrapper that applies the implicit Kvaerno5 solver (a fifth-order method)
-    to the given target module. It is intended for use in time-stepping routines where the state of the system
-    is updated in-place. The root-finding tolerance for the implicit step can be controlled via the `tol` parameter.
+    Wraps `diffrax.Kvaerno5
+    <https://docs.kidger.site/diffrax/api/solvers/ode_solvers/#diffrax.Kvaerno5>`_,
+    a fifth-order, :math:`L`-stable ESDIRK method for stiff systems.
 
-    Args:
-        target (DiffEqModule): The differential equation module whose state will be advanced.
-        *args: Additional arguments to be passed to the solver.
-        tol (float, optional): Tolerance for the root-finding algorithm used in the implicit step.
-            Defaults to 1e-5.
+    Parameters
+    ----------
+    target : DiffEqModule
+        Module whose differential states will be advanced.
+    *args
+        Extra positional arguments forwarded to ``target``'s integration
+        hooks.
+    tol : float, optional
+        Combined relative and absolute tolerance for the chord
+        root-finder. Defaults to ``1e-5``.
 
+    Returns
+    -------
+    None
+        ``target``'s state is updated in place.
 
-    Raises:
-        ModuleNotFoundError: If the diffrax library is not installed.
+    Raises
+    ------
+    ModuleNotFoundError
+        If :mod:`diffrax` is not installed.
 
-    Notes:
-        - This function relies on the diffrax.Kvaerno5 solver for numerical integration.
-        - The root-finding algorithm used is diffrax.VeryChord, with both relative and absolute
-          tolerances set to `tol`.
-        - It is part of a suite of step functions that provide different integration methods.
-        - The function is designed to be compatible with the braincell integration framework.
+    See Also
+    --------
+    diffrax_kvaerno3_step, diffrax_kvaerno4_step : Lower-order Kvaerno
+        variants.
     """
     t = brainstate.environ.get('t')
     dt = brainstate.environ.get('dt')

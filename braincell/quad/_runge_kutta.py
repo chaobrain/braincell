@@ -42,7 +42,29 @@ __all__ = [
 
 @dataclass(frozen=True)
 class ButcherTableau:
-    """The Butcher tableau for an explicit or diagonal Runge--Kutta method."""
+    """Butcher tableau for an explicit or diagonally-implicit Runge-Kutta method.
+
+    A Butcher tableau encodes the coefficients of an :math:`s`-stage
+    Runge-Kutta scheme. For a stage value :math:`k_i`,
+
+    .. math::
+
+        k_i = f\\!\\left(t_n + c_i \\Delta t,\\
+            y_n + \\Delta t \\sum_{j=1}^{s} a_{ij} k_j\\right),
+        \\qquad
+        y_{n+1} = y_n + \\Delta t \\sum_{i=1}^{s} b_i k_i.
+
+    Attributes
+    ----------
+    A : Sequence[Sequence[float]]
+        Lower-triangular stage-coupling matrix :math:`a_{ij}`. The first row
+        is conventionally empty for explicit methods.
+    B : Sequence[float]
+        Stage weights :math:`b_i` used to combine the :math:`k_i` into the
+        final update.
+    C : Sequence[float]
+        Time offsets :math:`c_i` at which each stage derivative is evaluated.
+    """
 
     A: Sequence[Sequence]  # The A matrix in the Butcher tableau.
     B: Sequence  # The B vector in the Butcher tableau.
@@ -68,7 +90,6 @@ def _rk_update(
     st.value = jax.tree.map(_step, y0, *ks, is_leaf=u.math.is_quantity)
 
 
-@set_module_as('braincell')
 def _general_rk_step(
     tableau: ButcherTableau,
     target: DiffEqModule,
@@ -208,50 +229,74 @@ def euler_step(
     target: DiffEqModule,
     *args,
 ):
-    r"""
-    Perform a single step of the Euler method for solving differential equations.
+    r"""Advance one step with the explicit (forward) Euler method.
 
-    This function applies the Euler method, which is the simplest explicit method
-    for numerical integration of ordinary differential equations.
+    Forward Euler is the simplest explicit Runge-Kutta scheme. For a system
 
-    Mathematical Description
-    -------------------------
-    For a differential equation of the form $\frac{dy}{dt} = f(t, y)$, the Euler method
-    approximates the solution using the following equation:
+    .. math::
 
-    $$
-    y_{n+1} = y_n + \Delta t \cdot f(t_n, y_n)
-    $$
+        \frac{dy}{dt} = f(t, y),
 
-    Where:
-    - $y_n$ is the current state
-    - $t_n$ is the current time
-    - $\Delta t$ is the time step
-    - $f(t_n, y_n)$ is the right-hand side of the differential equation
+    the update reads
 
-    The local truncation error of the Euler method is $O(\Delta t^2)$, and the global
-    truncation error is $O(\Delta t)$.
+    .. math::
+
+        y_{n+1} = y_n + \Delta t \, f(t_n, y_n).
+
+    The local truncation error is :math:`O(\Delta t^2)` and the global
+    error is :math:`O(\Delta t)` (first-order accurate). The method is
+    only conditionally stable; for stiff problems prefer
+    :func:`backward_euler_step`, :func:`exp_euler_step`, or one of the
+    implicit Runge-Kutta variants.
 
     Parameters
-    -----------
+    ----------
     target : DiffEqModule
-        The differential equation module that defines the system to be integrated.
+        Differential-equation module to advance. Its
+        :meth:`pre_integral`, :meth:`compute_derivative`, and
+        :meth:`post_integral` hooks are called by the underlying
+        Runge-Kutta driver.
     *args
-        Additional arguments to be passed to the target's methods.
+        Extra positional arguments forwarded to ``target``'s pre/derivative/post
+        hooks (typically the input currents for this step).
 
-    Note
+    Returns
+    -------
+    None
+        The state held inside *target* (every :class:`DiffEqState`) is
+        updated in place.
+
+    See Also
+    --------
+    midpoint_step, rk2_step, heun2_step : Second-order explicit RK schemes.
+    rk4_step : Classical fourth-order Runge-Kutta.
+    backward_euler_step : Implicit (backward) Euler counterpart.
+
+    Notes
     -----
-    The Euler method uses the simplest Butcher tableau:
+    The corresponding Butcher tableau (stored as ``euler_tableau``) is
 
-    $$
-    \begin{array}{c|c}
-    0 & 0 \\
-    \hline
-    & 1
-    \end{array}
-    $$
+    .. math::
 
-    This tableau is defined elsewhere in the module as `euler_tableau`.
+        \begin{array}{c|c}
+        0 & 0 \\
+        \hline
+          & 1
+        \end{array}.
+
+    The current time ``t`` and step size ``dt`` are read from the active
+    :mod:`brainstate.environ` context.
+
+    Examples
+    --------
+
+    .. code-block:: python
+
+        >>> import brainstate
+        >>> import brainunit as u
+        >>> from braincell.quad import euler_step
+        >>> with brainstate.environ.context(t=0. * u.ms, dt=0.01 * u.ms):
+        ...     euler_step(my_neuron)                       # doctest: +SKIP
     """
     t = brainstate.environ.get('t')
     dt = brainstate.environ.get('dt')
@@ -269,54 +314,63 @@ def midpoint_step(
     target: DiffEqModule,
     *args,
 ):
-    r"""
-    Perform a single step of the midpoint method for solving differential equations.
+    r"""Advance one step with the explicit midpoint (modified Euler) method.
 
-    This function applies the midpoint method, which is a second-order Runge-Kutta method
-    that provides improved accuracy over the Euler method.
+    The midpoint method is a two-stage, second-order explicit Runge-Kutta
+    scheme:
 
-    Mathematical Description
-    -------------------------
-    For a differential equation of the form $\frac{dy}{dt} = f(t, y)$, the midpoint method
-    approximates the solution using the following steps:
+    .. math::
 
-    $$
-    \begin{align*}
-    k_1 &= f(t_n, y_n) \\
-    k_2 &= f(t_n + \frac{\Delta t}{2}, y_n + \frac{\Delta t}{2} k_1) \\
-    y_{n+1} &= y_n + \Delta t \cdot k_2
-    \end{align*}
-    $$
+        k_1 &= f(t_n, y_n), \\
+        k_2 &= f\!\left(t_n + \tfrac{\Delta t}{2},\
+            y_n + \tfrac{\Delta t}{2}\, k_1\right), \\
+        y_{n+1} &= y_n + \Delta t \, k_2.
 
-    Where:
-    - $y_n$ is the current state
-    - $t_n$ is the current time
-    - $\Delta t$ is the time step
-
-    The local truncation error of the midpoint method is $O(\Delta t^3)$, and the global
-    truncation error is $O(\Delta t^2)$.
+    Local truncation error is :math:`O(\Delta t^3)` and global error is
+    :math:`O(\Delta t^2)`.
 
     Parameters
-    -----------
+    ----------
     target : DiffEqModule
-        The differential equation module that defines the system to be integrated.
+        Differential-equation module to advance.
     *args
-        Additional arguments to be passed to the target's methods.
+        Extra positional arguments forwarded to ``target``'s integration
+        hooks.
 
-    Note
+    Returns
+    -------
+    None
+        Updates *target*'s state in place.
+
+    See Also
+    --------
+    euler_step : First-order explicit Euler.
+    rk2_step, heun2_step, ralston2_step : Other second-order Runge-Kutta
+        schemes.
+
+    Notes
     -----
-    The midpoint method uses the following Butcher tableau:
+    Butcher tableau (``midpoint_tableau``):
 
-    $$
-    \begin{array}{c|cc}
-    0 & 0 & 0 \\
-    \frac{1}{2} & \frac{1}{2} & 0 \\
-    \hline
-    & 0 & 1
-    \end{array}
-    $$
+    .. math::
 
-    This tableau is defined elsewhere in the module as `midpoint_tableau`.
+        \begin{array}{c|cc}
+        0           & 0           & 0 \\
+        \tfrac{1}{2} & \tfrac{1}{2} & 0 \\
+        \hline
+                    & 0           & 1
+        \end{array}
+
+    Examples
+    --------
+
+    .. code-block:: python
+
+        >>> import brainstate
+        >>> import brainunit as u
+        >>> from braincell.quad import midpoint_step
+        >>> with brainstate.environ.context(t=0. * u.ms, dt=0.01 * u.ms):
+        ...     midpoint_step(my_neuron)                    # doctest: +SKIP
     """
     t = brainstate.environ.get('t')
     dt = brainstate.environ.get('dt')
@@ -334,54 +388,63 @@ def rk2_step(
     target: DiffEqModule,
     *args,
 ):
-    r"""
-    Perform a single step of the second-order Runge-Kutta method for solving differential equations.
+    r"""Advance one step with a generic second-order Runge-Kutta method.
 
-    This function applies the second-order Runge-Kutta method, which is an explicit
-    integration scheme that provides improved accuracy over the Euler method.
+    The two-stage scheme used here is
 
-    Mathematical Description
-    -------------------------
-    For a differential equation of the form $\frac{dy}{dt} = f(t, y)$, the second-order Runge-Kutta method
-    approximates the solution using the following steps:
+    .. math::
 
-    $$
-    \begin{align*}
-    k_1 &= f(t_n, y_n) \\
-    k_2 &= f(t_n + \frac{2}{3}\Delta t, y_n + \frac{2}{3}\Delta t \cdot k_1) \\
-    y_{n+1} &= y_n + \Delta t \cdot (\frac{1}{4}k_1 + \frac{3}{4}k_2)
-    \end{align*}
-    $$
+        k_1 &= f(t_n, y_n), \\
+        k_2 &= f\!\left(t_n + \tfrac{2}{3}\Delta t,\
+            y_n + \tfrac{2}{3}\Delta t \, k_1\right), \\
+        y_{n+1} &= y_n + \Delta t \left(\tfrac{1}{4} k_1 + \tfrac{3}{4} k_2\right).
 
-    Where:
-    - $y_n$ is the current state
-    - $t_n$ is the current time
-    - $\Delta t$ is the time step
-
-    The local truncation error of this method is $O(\Delta t^3)$, and the global
-    truncation error is $O(\Delta t^2)$.
+    It coincides with Ralston's two-stage method, which is the second-order
+    explicit Runge-Kutta method that minimises the leading-order truncation
+    error coefficient. Local truncation error is :math:`O(\Delta t^3)` and
+    global error is :math:`O(\Delta t^2)`.
 
     Parameters
-    -----------
+    ----------
     target : DiffEqModule
-        The differential equation module that defines the system to be integrated.
+        Differential-equation module to advance.
     *args
-        Additional arguments to be passed to the target's methods.
+        Extra positional arguments forwarded to ``target``'s integration
+        hooks.
 
-    Note
-    ----
-    This second-order Runge-Kutta method uses the following Butcher tableau:
+    Returns
+    -------
+    None
+        Updates *target*'s state in place.
 
-    $$
-    \begin{array}{c|cc}
-    0 & 0 & 0 \\
-    \frac{2}{3} & \frac{2}{3} & 0 \\
-    \hline
-    & \frac{1}{4} & \frac{3}{4}
-    \end{array}
-    $$
+    See Also
+    --------
+    midpoint_step, heun2_step, ralston2_step : Alternative second-order
+        explicit Runge-Kutta variants.
 
-    This tableau is defined elsewhere in the module as `rk2_tableau`.
+    Notes
+    -----
+    Butcher tableau (``rk2_tableau``):
+
+    .. math::
+
+        \begin{array}{c|cc}
+        0           & 0           & 0 \\
+        \tfrac{2}{3} & \tfrac{2}{3} & 0 \\
+        \hline
+                    & \tfrac{1}{4} & \tfrac{3}{4}
+        \end{array}
+
+    Examples
+    --------
+
+    .. code-block:: python
+
+        >>> import brainstate
+        >>> import brainunit as u
+        >>> from braincell.quad import rk2_step
+        >>> with brainstate.environ.context(t=0. * u.ms, dt=0.01 * u.ms):
+        ...     rk2_step(my_neuron)                         # doctest: +SKIP
     """
     t = brainstate.environ.get('t')
     dt = brainstate.environ.get('dt')
@@ -399,59 +462,61 @@ def heun2_step(
     target: DiffEqModule,
     *args,
 ):
-    r"""
-    Perform a single step of Heun's second-order Runge-Kutta method for solving differential equations.
+    r"""Advance one step with Heun's second-order Runge-Kutta method.
 
-    This function applies Heun's second-order Runge-Kutta method, which is an explicit
-    integration scheme that provides improved accuracy over the Euler method.
+    Heun's method (also known as the explicit trapezoidal rule or improved
+    Euler) is a two-stage, second-order explicit scheme:
 
-    Mathematical Description
-    ------------------------
-    For a differential equation of the form $\frac{dy}{dt} = f(t, y)$, Heun's second-order method
-    approximates the solution using the following steps:
+    .. math::
 
-    $$
-    \begin{align*}
-    k_1 &= f(t_n, y_n) \\
-    k_2 &= f(t_n + \Delta t, y_n + \Delta t \cdot k_1)
-    \end{align*}
-    $$
+        k_1 &= f(t_n, y_n), \\
+        k_2 &= f\!\left(t_n + \Delta t,\, y_n + \Delta t \, k_1\right), \\
+        y_{n+1} &= y_n + \tfrac{\Delta t}{2}\left(k_1 + k_2\right).
 
-    The final step is:
-
-    $$
-    y_{n+1} = y_n + \frac{\Delta t}{2}(k_1 + k_2)
-    $$
-
-    Where $\Delta t$ is the time step, and $t_n$ and $y_n$ are the time and state at the n-th step.
-
-    This method has a local truncation error of $O(\Delta t^3)$ and a global truncation error of $O(\Delta t^2)$.
+    Local truncation error is :math:`O(\Delta t^3)`; global error is
+    :math:`O(\Delta t^2)`.
 
     Parameters
     ----------
     target : DiffEqModule
-        The differential equation module that defines the system to be integrated.
+        Differential-equation module to advance.
     *args
-        Additional arguments to be passed to the target's methods.
+        Extra positional arguments forwarded to ``target``'s integration
+        hooks.
 
     Returns
     -------
     None
-        This function updates the state of the target in-place and does not return a value.
+        Updates *target*'s state in place.
 
-    Note
-    ----
-    This method uses the Butcher tableau specific to Heun's second-order method,
-    which is defined elsewhere in the module as `heun2_tableau`. The Butcher tableau for this method is:
+    See Also
+    --------
+    midpoint_step, rk2_step, ralston2_step : Other second-order explicit
+        Runge-Kutta variants.
 
-    $$
-    \begin{array}{c|cc}
-    0 & 0 & 0 \\
-    1 & 1 & 0 \\
-    \hline
-    & \frac{1}{2} & \frac{1}{2}
-    \end{array}
-    $$
+    Notes
+    -----
+    Butcher tableau (``heun2_tableau``):
+
+    .. math::
+
+        \begin{array}{c|cc}
+        0 & 0           & 0 \\
+        1 & 1           & 0 \\
+        \hline
+          & \tfrac{1}{2} & \tfrac{1}{2}
+        \end{array}
+
+    Examples
+    --------
+
+    .. code-block:: python
+
+        >>> import brainstate
+        >>> import brainunit as u
+        >>> from braincell.quad import heun2_step
+        >>> with brainstate.environ.context(t=0. * u.ms, dt=0.01 * u.ms):
+        ...     heun2_step(my_neuron)                       # doctest: +SKIP
     """
     t = brainstate.environ.get('t')
     dt = brainstate.environ.get('dt')
@@ -469,59 +534,70 @@ def ralston2_step(
     target: DiffEqModule,
     *args,
 ):
-    r"""
-    Perform a single step of Ralston's second-order Runge-Kutta method for solving differential equations.
+    r"""Advance one step with Ralston's second-order Runge-Kutta method.
 
-    This function applies Ralston's second-order Runge-Kutta method, which is an explicit
-    integration scheme designed to minimize the truncation error for a given step size.
+    Ralston's second-order method is the two-stage explicit Runge-Kutta
+    scheme that minimises the leading-order truncation error coefficient
+    among second-order RK2 variants:
 
-    Mathematical Description
-    ------------------------
-    For a differential equation of the form $\frac{dy}{dt} = f(t, y)$, Ralston's second-order method
-    approximates the solution using the following steps:
+    .. math::
 
-    $$
-    \begin{align*}
-    k_1 &= f(t_n, y_n) \\
-    k_2 &= f(t_n + \frac{2}{3}\Delta t, y_n + \frac{2}{3}\Delta t \cdot k_1)
-    \end{align*}
-    $$
+        k_1 &= f(t_n, y_n), \\
+        k_2 &= f\!\left(t_n + \tfrac{2}{3}\Delta t,\
+            y_n + \tfrac{2}{3}\Delta t \, k_1\right), \\
+        y_{n+1} &= y_n + \tfrac{\Delta t}{4}\left(k_1 + 3 k_2\right).
 
-    The final step is:
-
-    $$
-    y_{n+1} = y_n + \frac{\Delta t}{4}(k_1 + 3k_2)
-    $$
-
-    Where $\Delta t$ is the time step, and $t_n$ and $y_n$ are the time and state at the n-th step.
-
-    This method has a local truncation error of $O(\Delta t^3)$ and a global truncation error of $O(\Delta t^2)$.
+    It is therefore identical to :func:`rk2_step` and useful when an
+    error-optimal RK2 scheme is desired without committing to higher
+    cost. Local truncation error is :math:`O(\Delta t^3)`; global error
+    is :math:`O(\Delta t^2)`.
 
     Parameters
     ----------
     target : DiffEqModule
-        The differential equation module that defines the system to be integrated.
+        Differential-equation module to advance.
     *args
-        Additional arguments to be passed to the target's methods.
+        Extra positional arguments forwarded to ``target``'s integration
+        hooks.
 
     Returns
     -------
     None
-        This function updates the state of the target in-place and does not return a value.
+        Updates *target*'s state in place.
 
-    Note
-    ----
-    This method uses the Butcher tableau specific to Ralston's second-order method,
-    which is defined elsewhere in the module as `ralston2_tableau`. The Butcher tableau for this method is:
+    See Also
+    --------
+    rk2_step, midpoint_step, heun2_step : Alternative second-order
+        explicit Runge-Kutta variants.
 
-    $$
-    \begin{array}{c|cc}
-    0 & 0 & 0 \\
-    \frac{2}{3} & \frac{2}{3} & 0 \\
-    \hline
-    & \frac{1}{4} & \frac{3}{4}
-    \end{array}
-    $$
+    Notes
+    -----
+    Butcher tableau (``ralston2_tableau``):
+
+    .. math::
+
+        \begin{array}{c|cc}
+        0           & 0           & 0 \\
+        \tfrac{2}{3} & \tfrac{2}{3} & 0 \\
+        \hline
+                    & \tfrac{1}{4} & \tfrac{3}{4}
+        \end{array}
+
+    References
+    ----------
+    .. [1] Ralston, A. (1962). "Runge-Kutta methods with minimum error
+           bounds." *Mathematics of Computation*, 16(80), 431-437.
+
+    Examples
+    --------
+
+    .. code-block:: python
+
+        >>> import brainstate
+        >>> import brainunit as u
+        >>> from braincell.quad import ralston2_step
+        >>> with brainstate.environ.context(t=0. * u.ms, dt=0.01 * u.ms):
+        ...     ralston2_step(my_neuron)                    # doctest: +SKIP
     """
     t = brainstate.environ.get('t')
     dt = brainstate.environ.get('dt')
@@ -539,44 +615,65 @@ def rk3_step(
     target: DiffEqModule,
     *args,
 ):
-    r"""
-    Perform a single step of the third-order Runge-Kutta method for solving differential equations.
+    r"""Advance one step with the classical third-order Runge-Kutta method.
 
-    This function applies the third-order Runge-Kutta method, which is an explicit
-    integration scheme that provides improved accuracy over lower-order methods.
+    The classical (Kutta's) three-stage RK3 scheme is
 
-    Mathematical Description
-    ------------------------
-    For a differential equation of the form $\frac{dy}{dt} = f(t, y)$, the third-order Runge-Kutta method
-    approximates the solution using the following steps:
+    .. math::
 
-    $$
-    \begin{align*}
-    k_1 &= f(t_n, y_n) \\
-    k_2 &= f(t_n + \frac{1}{2}\Delta t, y_n + \frac{1}{2}\Delta t \cdot k_1) \\
-    k_3 &= f(t_n + \Delta t, y_n - \Delta t \cdot k_1 + 2\Delta t \cdot k_2)
-    \end{align*}
-    $$
+        k_1 &= f(t_n, y_n), \\
+        k_2 &= f\!\left(t_n + \tfrac{1}{2}\Delta t,\
+            y_n + \tfrac{1}{2}\Delta t \, k_1\right), \\
+        k_3 &= f\!\left(t_n + \Delta t,\
+            y_n - \Delta t \, k_1 + 2 \Delta t \, k_2\right), \\
+        y_{n+1} &= y_n + \tfrac{\Delta t}{6}\left(k_1 + 4 k_2 + k_3\right).
 
-    The final step is:
-
-    $$
-    y_{n+1} = y_n + \frac{\Delta t}{6}(k_1 + 4k_2 + k_3)
-    $$
-
-    Where $\Delta t$ is the time step, and $t_n$ and $y_n$ are the time and state at the n-th step.
+    Local truncation error is :math:`O(\Delta t^4)`; global error is
+    :math:`O(\Delta t^3)`.
 
     Parameters
     ----------
     target : DiffEqModule
-        The differential equation module that defines the system to be integrated.
+        Differential-equation module to advance.
     *args
-        Additional arguments to be passed to the target's methods.
+        Extra positional arguments forwarded to ``target``'s integration
+        hooks.
 
-    Note
+    Returns
+    -------
+    None
+        Updates *target*'s state in place.
+
+    See Also
+    --------
+    heun3_step, ralston3_step, ssprk3_step : Alternative third-order
+        explicit Runge-Kutta variants.
+    rk4_step : Fourth-order classical Runge-Kutta.
+
+    Notes
     -----
-    This method uses the Butcher tableau specific to the third-order Runge-Kutta method,
-    which is defined elsewhere in the module as `rk3_tableau`.
+    Butcher tableau (``rk3_tableau``):
+
+    .. math::
+
+        \begin{array}{c|ccc}
+        0           & 0           & 0 & 0 \\
+        \tfrac{1}{2} & \tfrac{1}{2} & 0 & 0 \\
+        1           & -1          & 2 & 0 \\
+        \hline
+                    & \tfrac{1}{6} & \tfrac{2}{3} & \tfrac{1}{6}
+        \end{array}
+
+    Examples
+    --------
+
+    .. code-block:: python
+
+        >>> import brainstate
+        >>> import brainunit as u
+        >>> from braincell.quad import rk3_step
+        >>> with brainstate.environ.context(t=0. * u.ms, dt=0.01 * u.ms):
+        ...     rk3_step(my_neuron)                         # doctest: +SKIP
     """
     t = brainstate.environ.get('t')
     dt = brainstate.environ.get('dt')
@@ -594,44 +691,64 @@ def heun3_step(
     target: DiffEqModule,
     *args,
 ):
-    r"""
-    Perform a single step of Heun's third-order Runge-Kutta method for solving differential equations.
+    r"""Advance one step with Heun's third-order Runge-Kutta method.
 
-    This function applies Heun's third-order Runge-Kutta method, which is an explicit
-    integration scheme that provides improved accuracy over lower-order methods.
+    Heun's three-stage third-order Runge-Kutta scheme:
 
-    Mathematical Description
-    -------------------------
-    For a differential equation of the form $\frac{dy}{dt} = f(t, y)$, Heun's third-order method
-    approximates the solution using the following steps:
+    .. math::
 
-    $$
-    \begin{align*}
-    k_1 &= f(t_n, y_n) \\
-    k_2 &= f(t_n + \frac{1}{3}\Delta t, y_n + \frac{1}{3}\Delta t \cdot k_1) \\
-    k_3 &= f(t_n + \frac{2}{3}\Delta t, y_n + \frac{2}{3}\Delta t \cdot k_2)
-    \end{align*}
-    $$
+        k_1 &= f(t_n, y_n), \\
+        k_2 &= f\!\left(t_n + \tfrac{1}{3}\Delta t,\
+            y_n + \tfrac{1}{3}\Delta t \, k_1\right), \\
+        k_3 &= f\!\left(t_n + \tfrac{2}{3}\Delta t,\
+            y_n + \tfrac{2}{3}\Delta t \, k_2\right), \\
+        y_{n+1} &= y_n + \tfrac{\Delta t}{4}\left(k_1 + 3 k_3\right).
 
-    The final step is:
-
-    $$
-    y_{n+1} = y_n + \frac{\Delta t}{4}(k_1 + 3k_3)
-    $$
-
-    Where $\Delta t$ is the time step, and $t_n$ and $y_n$ are the time and state at the n-th step.
+    Local truncation error is :math:`O(\Delta t^4)`; global error is
+    :math:`O(\Delta t^3)`.
 
     Parameters
-    -----------
+    ----------
     target : DiffEqModule
-        The differential equation module that defines the system to be integrated.
+        Differential-equation module to advance.
     *args
-        Additional arguments to be passed to the target's methods.
+        Extra positional arguments forwarded to ``target``'s integration
+        hooks.
 
-    Note
+    Returns
+    -------
+    None
+        Updates *target*'s state in place.
+
+    See Also
+    --------
+    rk3_step, ralston3_step, ssprk3_step : Alternative third-order
+        explicit Runge-Kutta variants.
+
+    Notes
     -----
-    This method uses the Butcher tableau specific to Heun's third-order method,
-    which is defined elsewhere in the module as `heun3_tableau`.
+    Butcher tableau (``heun3_tableau``):
+
+    .. math::
+
+        \begin{array}{c|ccc}
+        0           & 0           & 0           & 0 \\
+        \tfrac{1}{3} & \tfrac{1}{3} & 0           & 0 \\
+        \tfrac{2}{3} & 0           & \tfrac{2}{3} & 0 \\
+        \hline
+                    & \tfrac{1}{4} & 0           & \tfrac{3}{4}
+        \end{array}
+
+    Examples
+    --------
+
+    .. code-block:: python
+
+        >>> import brainstate
+        >>> import brainunit as u
+        >>> from braincell.quad import heun3_step
+        >>> with brainstate.environ.context(t=0. * u.ms, dt=0.01 * u.ms):
+        ...     heun3_step(my_neuron)                       # doctest: +SKIP
     """
     t = brainstate.environ.get('t')
     dt = brainstate.environ.get('dt')
@@ -649,44 +766,74 @@ def ssprk3_step(
     target: DiffEqModule,
     *args,
 ):
-    r"""
-    Perform a single step of the Strong Stability Preserving Runge-Kutta 3rd order (SSPRK3) method for solving differential equations.
+    r"""Advance one step with the Strong-Stability-Preserving RK3 method.
 
-    This function applies the SSPRK3 method, which is designed to maintain strong stability properties
-    for certain classes of differential equations, particularly those with discontinuities or sharp gradients.
+    The Shu-Osher third-order strong-stability-preserving Runge-Kutta
+    scheme (SSPRK3) is a convex combination of forward Euler steps:
 
-    Mathematical Description
-    -------------------------
-    For a differential equation of the form $\frac{dy}{dt} = f(t, y)$, the SSPRK3 method
-    approximates the solution using the following steps:
+    .. math::
 
-    $$
-    \begin{align*}
-    k_1 &= f(t_n, y_n) \\
-    k_2 &= f(t_n + \Delta t, y_n + \Delta t \cdot k_1) \\
-    k_3 &= f(t_n + \frac{1}{2}\Delta t, y_n + \frac{1}{4}\Delta t \cdot k_1 + \frac{1}{4}\Delta t \cdot k_2)
-    \end{align*}
-    $$
+        k_1 &= f(t_n, y_n), \\
+        k_2 &= f\!\left(t_n + \Delta t,\, y_n + \Delta t \, k_1\right), \\
+        k_3 &= f\!\left(t_n + \tfrac{1}{2}\Delta t,\
+            y_n + \tfrac{1}{4}\Delta t \, k_1 + \tfrac{1}{4}\Delta t \, k_2\right), \\
+        y_{n+1} &= y_n + \tfrac{\Delta t}{6}\left(k_1 + k_2 + 4 k_3\right).
 
-    The final step is:
-
-    $$
-    y_{n+1} = y_n + \frac{\Delta t}{6}(k_1 + k_2 + 4k_3)
-    $$
-
-    Where $\Delta t$ is the time step, and $t_n$ and $y_n$ are the time and state at the n-th step.
+    Because every stage can be written as a convex combination of forward
+    Euler updates, SSPRK3 inherits the monotonicity (TVD) properties of
+    forward Euler under the same CFL number. This makes it the explicit
+    method of choice for problems with discontinuities or sharp gradients
+    where preserving positivity matters. Local truncation error is
+    :math:`O(\Delta t^4)`; global error is :math:`O(\Delta t^3)`.
 
     Parameters
-    -----------
+    ----------
     target : DiffEqModule
-        The differential equation module that defines the system to be integrated.
+        Differential-equation module to advance.
     *args
-        Additional arguments to be passed to the target's methods.
+        Extra positional arguments forwarded to ``target``'s integration
+        hooks.
 
-    Note
+    Returns
+    -------
+    None
+        Updates *target*'s state in place.
+
+    See Also
+    --------
+    rk3_step, heun3_step, ralston3_step : Alternative third-order
+        explicit Runge-Kutta variants.
+
+    Notes
     -----
-    This method uses the Butcher tableau specific to the SSPRK3 method,
-    which is defined elsewhere in the module as `ssprk3_tableau`.
+    Butcher tableau (``ssprk3_tableau``):
+
+    .. math::
+
+        \begin{array}{c|ccc}
+        0           & 0           & 0           & 0 \\
+        1           & 1           & 0           & 0 \\
+        \tfrac{1}{2} & \tfrac{1}{4} & \tfrac{1}{4} & 0 \\
+        \hline
+                    & \tfrac{1}{6} & \tfrac{1}{6} & \tfrac{2}{3}
+        \end{array}
+
+    References
+    ----------
+    .. [1] Shu, C.-W. and Osher, S. (1988). "Efficient implementation of
+           essentially non-oscillatory shock-capturing schemes."
+           *Journal of Computational Physics*, 77(2), 439-471.
+
+    Examples
+    --------
+
+    .. code-block:: python
+
+        >>> import brainstate
+        >>> import brainunit as u
+        >>> from braincell.quad import ssprk3_step
+        >>> with brainstate.environ.context(t=0. * u.ms, dt=0.01 * u.ms):
+        ...     ssprk3_step(my_neuron)                      # doctest: +SKIP
     """
     t = brainstate.environ.get('t')
     dt = brainstate.environ.get('dt')
@@ -704,44 +851,72 @@ def ralston3_step(
     target: DiffEqModule,
     *args,
 ):
-    r"""
-    Perform a single step of Ralston's third-order Runge-Kutta method for solving differential equations.
+    r"""Advance one step with Ralston's third-order Runge-Kutta method.
 
-    This function applies Ralston's third-order Runge-Kutta method, which is an explicit
-    integration scheme designed to minimize the truncation error for a given step size.
+    Ralston's three-stage third-order RK method is the third-order
+    explicit Runge-Kutta scheme that minimises the leading-order
+    truncation error coefficient:
 
-    Mathematical Description
-    -------------------------
-    For a differential equation of the form $\frac{dy}{dt} = f(t, y)$, Ralston's third-order method
-    approximates the solution using the following steps:
+    .. math::
 
-    $$
-    \begin{align*}
-    k_1 &= f(t_n, y_n) \\
-    k_2 &= f(t_n + \frac{1}{2}\Delta t, y_n + \frac{1}{2}\Delta t \cdot k_1) \\
-    k_3 &= f(t_n + \frac{3}{4}\Delta t, y_n + \frac{3}{4}\Delta t \cdot k_2)
-    \end{align*}
-    $$
+        k_1 &= f(t_n, y_n), \\
+        k_2 &= f\!\left(t_n + \tfrac{1}{2}\Delta t,\
+            y_n + \tfrac{1}{2}\Delta t \, k_1\right), \\
+        k_3 &= f\!\left(t_n + \tfrac{3}{4}\Delta t,\
+            y_n + \tfrac{3}{4}\Delta t \, k_2\right), \\
+        y_{n+1} &= y_n + \Delta t \left(\tfrac{2}{9} k_1
+            + \tfrac{1}{3} k_2 + \tfrac{4}{9} k_3\right).
 
-    The final step is:
-
-    $$
-    y_{n+1} = y_n + \Delta t \cdot (\frac{2}{9}k_1 + \frac{1}{3}k_2 + \frac{4}{9}k_3)
-    $$
-
-    Where $\Delta t$ is the time step, and $t_n$ and $y_n$ are the time and state at the n-th step.
+    Local truncation error is :math:`O(\Delta t^4)`; global error is
+    :math:`O(\Delta t^3)`.
 
     Parameters
-    -----------
+    ----------
     target : DiffEqModule
-        The differential equation module that defines the system to be integrated.
+        Differential-equation module to advance.
     *args
-        Additional arguments to be passed to the target's methods.
+        Extra positional arguments forwarded to ``target``'s integration
+        hooks.
 
-    Note
+    Returns
+    -------
+    None
+        Updates *target*'s state in place.
+
+    See Also
+    --------
+    rk3_step, heun3_step, ssprk3_step : Alternative third-order
+        explicit Runge-Kutta variants.
+
+    Notes
     -----
-    This method uses the Butcher tableau specific to Ralston's third-order method,
-    which is defined elsewhere in the module as `ralston3_tableau`.
+    Butcher tableau (``ralston3_tableau``):
+
+    .. math::
+
+        \begin{array}{c|ccc}
+        0           & 0           & 0           & 0 \\
+        \tfrac{1}{2} & \tfrac{1}{2} & 0           & 0 \\
+        \tfrac{3}{4} & 0           & \tfrac{3}{4} & 0 \\
+        \hline
+                    & \tfrac{2}{9} & \tfrac{1}{3} & \tfrac{4}{9}
+        \end{array}
+
+    References
+    ----------
+    .. [1] Ralston, A. (1962). "Runge-Kutta methods with minimum error
+           bounds." *Mathematics of Computation*, 16(80), 431-437.
+
+    Examples
+    --------
+
+    .. code-block:: python
+
+        >>> import brainstate
+        >>> import brainunit as u
+        >>> from braincell.quad import ralston3_step
+        >>> with brainstate.environ.context(t=0. * u.ms, dt=0.01 * u.ms):
+        ...     ralston3_step(my_neuron)                    # doctest: +SKIP
     """
     t = brainstate.environ.get('t')
     dt = brainstate.environ.get('dt')
@@ -759,46 +934,69 @@ def rk4_step(
     target: DiffEqModule,
     *args,
 ):
-    r"""
-    Perform a single step of the fourth-order Runge-Kutta method (RK4) for solving differential equations.
+    r"""Advance one step with the classical fourth-order Runge-Kutta method.
 
-    This function applies the classical RK4 method to numerically integrate a system of 
-    differential equations. RK4 is a widely used method that provides a good balance 
-    between accuracy and computational cost.
+    The classical RK4 scheme is the four-stage, fourth-order explicit
+    Runge-Kutta method:
 
-    Mathematical Description
-    -------------------------
-    For a differential equation of the form $\frac{dy}{dt} = f(t, y)$, the RK4 method
-    approximates the solution using the following steps:
+    .. math::
 
-    $$
-    \begin{align*}
-    k_1 &= f(t_n, y_n) \\
-    k_2 &= f(t_n + \frac{\Delta t}{2}, y_n + \frac{\Delta t}{2} k_1) \\
-    k_3 &= f(t_n + \frac{\Delta t}{2}, y_n + \frac{\Delta t}{2} k_2) \\
-    k_4 &= f(t_n + \Delta t, y_n + \Delta t k_3)
-    \end{align*}
-    $$
+        k_1 &= f(t_n, y_n), \\
+        k_2 &= f\!\left(t_n + \tfrac{\Delta t}{2},\
+            y_n + \tfrac{\Delta t}{2} k_1\right), \\
+        k_3 &= f\!\left(t_n + \tfrac{\Delta t}{2},\
+            y_n + \tfrac{\Delta t}{2} k_2\right), \\
+        k_4 &= f\!\left(t_n + \Delta t,\, y_n + \Delta t \, k_3\right), \\
+        y_{n+1} &= y_n + \tfrac{\Delta t}{6}\left(k_1 + 2 k_2 + 2 k_3 + k_4\right).
 
-    The final step is:
-
-    $$
-    y_{n+1} = y_n + \frac{\Delta t}{6}(k_1 + 2k_2 + 2k_3 + k_4)
-    $$
-
-    Where $\Delta t$ is the time step, and $t_n$ and $y_n$ are the time and state at the n-th step.
+    Local truncation error is :math:`O(\Delta t^5)`; global error is
+    :math:`O(\Delta t^4)`. RK4 is the canonical fixed-step ODE solver and
+    is a sensible default whenever the right-hand side is smooth and the
+    problem is not stiff.
 
     Parameters
-    -----------
+    ----------
     target : DiffEqModule
-        The differential equation module that defines the system to be integrated.
+        Differential-equation module to advance.
     *args
-        Additional arguments to be passed to the target's methods.
+        Extra positional arguments forwarded to ``target``'s integration
+        hooks.
 
-    Note
+    Returns
+    -------
+    None
+        Updates *target*'s state in place.
+
+    See Also
+    --------
+    ralston4_step : An error-optimal four-stage fourth-order variant.
+    rk3_step : Lower-order three-stage scheme with cheaper steps.
+
+    Notes
     -----
-    This method uses the Butcher tableau specific to the classical fourth-order Runge-Kutta method,
-    which is defined elsewhere in the module as `rk4_tableau`.
+    Butcher tableau (``rk4_tableau``):
+
+    .. math::
+
+        \begin{array}{c|cccc}
+        0           & 0           & 0           & 0 & 0 \\
+        \tfrac{1}{2} & \tfrac{1}{2} & 0           & 0 & 0 \\
+        \tfrac{1}{2} & 0           & \tfrac{1}{2} & 0 & 0 \\
+        1           & 0           & 0           & 1 & 0 \\
+        \hline
+                    & \tfrac{1}{6} & \tfrac{1}{3} & \tfrac{1}{3} & \tfrac{1}{6}
+        \end{array}
+
+    Examples
+    --------
+
+    .. code-block:: python
+
+        >>> import brainstate
+        >>> import brainunit as u
+        >>> from braincell.quad import rk4_step
+        >>> with brainstate.environ.context(t=0. * u.ms, dt=0.01 * u.ms):
+        ...     rk4_step(my_neuron)                         # doctest: +SKIP
     """
     t = brainstate.environ.get('t')
     dt = brainstate.environ.get('dt')
@@ -816,45 +1014,71 @@ def ralston4_step(
     target: DiffEqModule,
     *args,
 ):
-    r"""
-    Perform a single step of Ralston's fourth-order Runge-Kutta method for solving differential equations.
+    r"""Advance one step with Ralston's fourth-order Runge-Kutta method.
 
-    This function applies Ralston's fourth-order Runge-Kutta method, which is an explicit
-    integration scheme designed to minimize the truncation error for a given step size.
+    Ralston's four-stage fourth-order RK method uses non-rational
+    coefficients chosen to minimise the leading-order truncation error
+    coefficient relative to classical RK4:
 
-    Mathematical Description
-    -------------------------
-    For a differential equation of the form $\frac{dy}{dt} = f(t, y)$, the Ralston's fourth-order method
-    approximates the solution using the following steps:
+    .. math::
 
-    $$
-    \begin{align*}
-    k_1 &= f(t_n, y_n) \\
-    k_2 &= f(t_n + 0.4\Delta t, y_n + 0.4\Delta t \cdot k_1) \\
-    k_3 &= f(t_n + 0.45573725\Delta t, y_n + 0.29697761\Delta t \cdot k_1 + 0.15875964\Delta t \cdot k_2) \\
-    k_4 &= f(t_n + \Delta t, y_n + 0.21810040\Delta t \cdot k_1 - 3.05096516\Delta t \cdot k_2 + 3.83286476\Delta t \cdot k_3)
-    \end{align*}
-    $$
+        k_1 &= f(t_n, y_n), \\
+        k_2 &= f(t_n + 0.4\,\Delta t,\
+                  y_n + 0.4\,\Delta t \, k_1), \\
+        k_3 &= f(t_n + 0.45573725\,\Delta t,\
+                  y_n + 0.29697761\,\Delta t \, k_1
+                      + 0.15875964\,\Delta t \, k_2), \\
+        k_4 &= f(t_n + \Delta t,\
+                  y_n + 0.21810040\,\Delta t \, k_1
+                      - 3.05096516\,\Delta t \, k_2
+                      + 3.83286476\,\Delta t \, k_3), \\
+        y_{n+1} &= y_n + \Delta t \,\bigl(
+                  0.17476028\, k_1
+                - 0.55148066\, k_2
+                + 1.20553560\, k_3
+                + 0.17118478\, k_4 \bigr).
 
-    The final step is:
-
-    $$
-    y_{n+1} = y_n + \Delta t \cdot (0.17476028 \cdot k_1 - 0.55148066 \cdot k_2 + 1.20553560 \cdot k_3 + 0.17118478 \cdot k_4)
-    $$
-
-    Where $\Delta t$ is the time step, and $t_n$ and $y_n$ are the time and state at the n-th step.
+    Local truncation error is :math:`O(\Delta t^5)`; global error is
+    :math:`O(\Delta t^4)`. The negative weight on :math:`k_2` makes this
+    scheme slightly more sensitive to floating-point cancellation than
+    classical :func:`rk4_step`, but the leading error constant is smaller.
 
     Parameters
-    -----------
+    ----------
     target : DiffEqModule
-        The differential equation module that defines the system to be integrated.
+        Differential-equation module to advance.
     *args
-        Additional arguments to be passed to the target's methods.
+        Extra positional arguments forwarded to ``target``'s integration
+        hooks.
 
-    Note
+    Returns
+    -------
+    None
+        Updates *target*'s state in place.
+
+    See Also
+    --------
+    rk4_step : Classical fourth-order Runge-Kutta with rational weights.
+
+    Notes
     -----
-    This method uses the Butcher tableau specific to Ralston's fourth-order method,
-    which is defined elsewhere in the module as `ralston4_tableau`.
+    The Butcher tableau is stored as ``ralston4_tableau``.
+
+    References
+    ----------
+    .. [1] Ralston, A. (1962). "Runge-Kutta methods with minimum error
+           bounds." *Mathematics of Computation*, 16(80), 431-437.
+
+    Examples
+    --------
+
+    .. code-block:: python
+
+        >>> import brainstate
+        >>> import brainunit as u
+        >>> from braincell.quad import ralston4_step
+        >>> with brainstate.environ.context(t=0. * u.ms, dt=0.01 * u.ms):
+        ...     ralston4_step(my_neuron)                    # doctest: +SKIP
     """
     t = brainstate.environ.get('t')
     dt = brainstate.environ.get('dt')

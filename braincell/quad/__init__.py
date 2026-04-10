@@ -62,8 +62,7 @@ from ._runge_kutta import (
     rk4_step,
     ssprk3_step,
 )
-from ._staggered import staggered_step
-from ._voltage_solver import dhs_voltage_step
+from ._staggered import dhs_voltage_step, staggered_step
 
 __all__ = [
     # registry

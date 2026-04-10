@@ -26,20 +26,46 @@ __all__ = [
 
 
 class DiffEqState(brainstate.HiddenState):
-    """
-    A state that integrates the state of the system to the integral of the state.
+    """A :mod:`brainstate` state that participates in numerical integration.
 
-    This class represents a differential equation state, which can be used for both
-    Ordinary Differential Equations (ODE) and Stochastic Differential Equations (SDE).
-    It provides properties for the derivative and diffusion of the state.
+    A :class:`DiffEqState` is the unit of work consumed by every solver in
+    :mod:`braincell.quad`. It extends :class:`brainstate.HiddenState` with
+    two extra slots — ``derivative`` and ``diffusion`` — that the
+    surrounding solver writes during one ODE/SDE step:
+
+    - ``derivative`` is the right-hand side :math:`f(t, y)` for an ODE
+      :math:`\\dot y = f(t, y)`, or the *drift* term for an SDE
+      :math:`dy = f(t, y)\\,dt + g(t, y)\\,dW`.
+    - ``diffusion`` is the SDE noise coefficient :math:`g(t, y)`. It
+      stays ``None`` for plain ODE systems.
+
+    Solver step functions (``*_step``) read the current ``value`` of every
+    :class:`DiffEqState` in a :class:`DiffEqModule`, call
+    :meth:`DiffEqModule.compute_derivative` to populate ``derivative``
+    (and optionally ``diffusion``), and then write the integrated result
+    back into ``value``.
+
+    Both setters call :func:`brainstate._state.record_state_value_write`
+    so that any active state-trace stack picks up the assignment — the
+    Runge-Kutta and exponential-Euler drivers rely on this to discover
+    which states actually participate in the integration.
 
     Attributes
     ----------
     derivative : brainstate.typing.PyTree
-        The derivative of the differential equation state.
+        Time derivative (or SDE drift) of the state. Set inside
+        :meth:`DiffEqModule.compute_derivative`. Must carry units that
+        satisfy ``unit(derivative) * unit(dt) == unit(value)``.
     diffusion : brainstate.typing.PyTree
-        The diffusion of the differential equation state.
+        Optional SDE diffusion coefficient. ``None`` denotes a
+        deterministic ODE system.
 
+    See Also
+    --------
+    DiffEqModule : Container that owns and updates :class:`DiffEqState`
+        instances.
+    IndependentIntegration : Mixin that excludes a submodule's states
+        from the main integrator.
     """
 
     __module__ = 'braincell'
@@ -116,16 +142,32 @@ class DiffEqState(brainstate.HiddenState):
 
 
 class DiffEqModule(brainstate.mixin.Mixin):
-    """
-    A mixin class that provides differential equation functionality.
+    """Mixin marking a module as integrable by :mod:`braincell.quad`.
 
-    This class serves as a mixin to add differential equation capabilities to other classes.
-    It defines the core interface for implementing ordinary differential equations (ODEs)
-    and stochastic differential equations (SDEs).
+    Any class that mixes in :class:`DiffEqModule` exposes the small
+    interface that every numerical integrator in :mod:`braincell.quad`
+    relies on:
 
-    The class includes methods for pre-integration preparation, derivative computation,
-    and post-integration processing. Subclasses must implement the compute_derivative
-    method to define the specific differential equation for the system.
+    - :meth:`pre_integral` — invoked once at the start of each step,
+      before any derivative is computed. Use it to refresh
+      voltage-dependent rate constants, recompute synaptic input, or
+      perform other one-time-per-step bookkeeping.
+    - :meth:`compute_derivative` — required override that writes
+      ``state.derivative`` (and optionally ``state.diffusion``) for every
+      :class:`DiffEqState` owned by the module.
+    - :meth:`post_integral` — invoked once at the end of each step, after
+      the integrated values have been written back. Use it to clamp
+      states, project onto manifolds, or fire post-step events.
+
+    Concrete subclasses include :class:`braincell.SingleCompartment` and
+    :class:`braincell.cell.Cell`. Solvers receive a :class:`DiffEqModule`
+    as their ``target`` argument and read ``t``/``dt`` from the active
+    :mod:`brainstate.environ` context.
+
+    See Also
+    --------
+    DiffEqState : Per-variable state container the solvers update.
+    IndependentIntegration : Excludes a submodule from the main solver.
     """
 
     __module__ = 'braincell'
@@ -188,31 +230,46 @@ class DiffEqModule(brainstate.mixin.Mixin):
 
 
 class IndependentIntegration(brainstate.mixin.Mixin):
-    """
-    Mixin class to indicate independent integration of module states.
+    """Mixin that opts a submodule out of its parent's integration loop.
 
-    This class serves as a marker for modules whose states should be excluded from
-    the main integration process and instead be integrated independently. When a
-    module inherits from `IndependentIntegration`, its states are not included in
-    the set of states to be integrated by the primary numerical integrator.
+    States owned by an :class:`IndependentIntegration` submodule are
+    filtered out by :func:`braincell.quad._util.split_diffeq_states`, so
+    they are *not* touched by whichever solver is driving the parent
+    :class:`DiffEqModule`. The submodule then advances its own states by
+    calling :meth:`make_integration`, which dispatches through whatever
+    solver was named at construction time.
 
-    This is useful in scenarios where certain subsystems require specialized or
-    decoupled integration strategies, such as different time steps or custom solvers.
+    This is the right tool when a sub-system needs a different time step
+    or a fundamentally different solver from the rest of the cell — for
+    example, fast voltage gating that should run with exponential Euler
+    while the surrounding model uses RK4, or a calcium pool that prefers
+    backward Euler.
 
-    Usage of this mixin allows the integration framework to identify and handle
-    such modules separately, ensuring modularity and flexibility in the integration
-    of complex systems.
+    Parameters
+    ----------
+    solver : str or Callable
+        Name of a registered integrator (canonical or alias) or a step
+        function. Resolved through :func:`braincell.quad.get_integrator`,
+        so unknown strings raise :class:`ValueError`.
+    **kwargs
+        Forwarded to other ``Mixin`` bases in the MRO.
+
+    See Also
+    --------
+    DiffEqModule : Parent integration interface.
+    braincell.quad.get_integrator : Solver lookup.
 
     Examples
     --------
-    >>> class MySubsystem(IndependentIntegration, DiffEqModule):
-    ...     pass
-    >>> # States in MySubsystem will be integrated independently.
 
-    Notes
-    -----
-    - This class does not implement any additional methods or properties.
-    - It is intended to be used as a mixin alongside other module base classes.
+    .. code-block:: python
+
+        >>> from braincell.quad import DiffEqModule, IndependentIntegration
+        >>> class FastGate(IndependentIntegration, DiffEqModule):
+        ...     def __init__(self):
+        ...         super().__init__(solver='exp_euler')
+        ...     def compute_derivative(self, *args):
+        ...         ...                                    # doctest: +SKIP
     """
 
     def __init__(self, solver: str | Callable, **kwargs):
@@ -220,4 +277,5 @@ class IndependentIntegration(brainstate.mixin.Mixin):
         self.solver = get_integrator(solver)
 
     def make_integration(self, *args, **kwargs):
+        """Run one step of the configured solver on this submodule."""
         self.solver(self, *args, **kwargs)

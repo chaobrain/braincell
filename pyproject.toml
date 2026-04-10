@@ -72,7 +72,7 @@ Documentation = "https://braincell.readthedocs.io/"
 "Source Code" = "https://github.com/chaobrain/braincell"
 
 [project.scripts]
-braincell-neuromorpho = "braincell.io.neuromorpho:main"
+braincell-neuromorpho = "braincell.io.neuromorpho.cli:main"
 
 
 [project.optional-dependencies]

@@ -1,4 +1,4 @@
-from __future__ import annotations
+
 
 from .backend import lookup
 from .backend import node_text

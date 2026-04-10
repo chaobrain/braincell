@@ -1,4 +1,4 @@
-from __future__ import annotations
+
 
 from .variants.one_ion_hh_ohmic import VARIANT_NAME as ONE_ION_HH_OHMIC_VARIANT
 from .variants.one_ion_hh_ohmic import build_one_ion_hh_ohmic_ir

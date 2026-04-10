@@ -46,6 +46,7 @@ from .filter import (
     RegionExpr,
     SelectionCache
 )
+from .io.neuromorpho import load_neuromorpho
 from .mech import (
     CableProperties,
     CurrentClamp,
@@ -95,6 +96,7 @@ __all__ = [
     "IonChannel",
     "IonInfo",
     "LocsetExpr",
+    "load_neuromorpho",
     "MixIons",
     "MaxCVLen",
     "Morphology",

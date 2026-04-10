@@ -16,7 +16,7 @@
 
 """Single-channel point-neuron comparison between NEURON and braincell."""
 
-from __future__ import annotations
+
 
 import inspect
 import math

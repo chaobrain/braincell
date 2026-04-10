@@ -1,4 +1,4 @@
-from __future__ import annotations
+
 
 from .variants.braincell_one_ion_hh_ohmic import VARIANT_NAME as BRAINCELL_ONE_ION_HH_OHMIC_VARIANT
 from .variants.braincell_one_ion_hh_ohmic import run as run_braincell_one_ion_hh_ohmic

@@ -450,6 +450,80 @@ class Morphology:
 
         return AscReader().read(path, return_report=return_report)
 
+    @classmethod
+    def from_neuromorpho(
+        cls,
+        neuron_id,
+        *,
+        cache_dir=None,
+        mode='neuromorpho',
+        client=None,
+        return_report: bool = False,
+        overwrite: bool = False,
+    ):
+        """Fetch a NeuroMorpho.Org neuron and return it as a :class:`Morphology`.
+
+        Downloads the standardized CNG SWC into ``cache_dir``
+        (defaulting to ``~/.cache/braincell/neuromorpho``) and parses it
+        with :meth:`from_swc` using ``mode="neuromorpho"``. Already-cached
+        neurons are not re-downloaded unless ``overwrite=True``.
+
+        Parameters
+        ----------
+        neuron_id : int
+            NeuroMorpho.Org numeric identifier (e.g. ``10047``).
+        cache_dir : str or Path or None
+            Cache root. ``None`` resolves to
+            ``~/.cache/braincell/neuromorpho``.
+        mode : str or None
+            SWC import mode forwarded to :meth:`from_swc`. Defaults to
+            ``"neuromorpho"`` (copies soma attachment points into child
+            branches).
+        client : NeuroMorphoClient or None
+            Optional pre-configured client (custom session, retries,
+            etc.). A transient client is created when ``None``.
+        return_report : bool
+            If ``True``, also return the :class:`SwcReport` from parsing.
+        overwrite : bool
+            If ``True``, re-download even when the file is already cached.
+
+        Returns
+        -------
+        Morphology or (Morphology, SwcReport)
+            The parsed morphology, optionally with a diagnostic report.
+
+        Raises
+        ------
+        NeuroMorphoNotFoundError
+            If ``neuron_id`` does not exist upstream.
+        NeuroMorphoHTTPError
+            On non-recoverable HTTP errors.
+
+        See Also
+        --------
+        from_swc : Load from a local SWC file.
+        from_asc : Load from a local Neurolucida ASC file.
+
+        Examples
+        --------
+
+        .. code-block:: python
+
+            >>> from braincell import Morphology
+            >>> morph = Morphology.from_neuromorpho(10047)  # doctest: +SKIP
+        """
+
+        from braincell.io.neuromorpho import load_neuromorpho
+
+        return load_neuromorpho(
+            neuron_id,
+            cache_dir=cache_dir,
+            mode=mode,
+            client=client,
+            return_report=return_report,
+            overwrite=overwrite,
+        )
+
     def save_checkpoint(self, path):
         """Write this morphology to a braincell checkpoint file.
 

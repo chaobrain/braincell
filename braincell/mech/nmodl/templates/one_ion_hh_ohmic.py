@@ -1,6 +1,6 @@
 """Generated one-ion HH ohmic channel from {{ context.source_file }}."""
 
-from __future__ import annotations
+
 
 import braintools
 import brainunit as u

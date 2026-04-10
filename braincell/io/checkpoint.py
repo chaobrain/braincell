@@ -38,7 +38,7 @@ The default file extension is ``.bcm`` ("BrainCell Morphology"). The save
 helpers append it automatically when the supplied path has no suffix.
 """
 
-from __future__ import annotations
+
 
 import json
 import os

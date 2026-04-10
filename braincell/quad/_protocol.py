@@ -140,6 +140,19 @@ class DiffEqState(brainstate.HiddenState):
         record_state_value_write(self)
         self._diffusion = value
 
+    def __pretty_repr_item__(self, k, v):
+        if k == '_derivative':
+            if self._derivative is not None:
+                return 'derivative', self._derivative
+            else:
+                return None
+        if k == '_diffusion':
+            if self._diffusion is not None:
+                return 'diffusion', self._diffusion
+            else:
+                return None
+        return super().__pretty_repr_item__(k, v)
+
 
 class DiffEqModule(brainstate.mixin.Mixin):
     """Mixin marking a module as integrable by :mod:`braincell.quad`.

@@ -149,8 +149,24 @@ internal dependencies · status · open work**.
     rulebook (`rules.py`) and soma reconstruction (`soma.py`).
   - `asc.AscReader`, `AscReport`, `AscIssue`, `AscMetadata`.
   - `neuroml2.NeuroMlReader`.
-  - `neuromorpho.NeuroMorphoClient`, `find_standard_swc`,
-    `load_cached_metadata`.
+  - `neuromorpho` package — three-tier NeuroMorpho.Org integration:
+    - Tier 1: `load_neuromorpho` (also re-exported as
+      `braincell.load_neuromorpho`), `fetch_neuromorpho`, and the
+      `Morphology.from_neuromorpho` classmethod sibling to `from_swc` /
+      `from_asc`.
+    - Tier 2: `NeuroMorphoClient` (typed `search` / `iter_search`,
+      `get_neuron`, `get_measurement`, `describe`, `download` with
+      `dry_run=True`, configurable `retries` / `backoff_base`).
+    - Tier 3: `NeuroMorphoCache`, `NeuroMorphoCacheLayout`,
+      `NeuroMorphoQuery`, `NeuroMorphoMeasurement`, `NeuroMorphoFilePlan`,
+      `NeuroMorphoUrls`, `NeuroMorphoCacheStatus`,
+      `NeuroMorphoSearchPage`, `NeuroMorphoDetail`,
+      `NeuroMorphoDownloadItem`, `NeuroMorphoDownloadRecord`,
+      `NeuroMorphoNeuron`, plus pure URL helpers
+      (`build_standard_swc_url`, `build_original_file_url`,
+      `infer_original_extension`, `plan_neuron_files`).
+    - Errors: `NeuroMorphoError`, `NeuroMorphoHTTPError`,
+      `NeuroMorphoNotFoundError`.
   - `io.checkpoint` — `save_branch` / `load_branch` /
     `save_morpho` / `load_morpho` and the `.bcm` single-file format.
 - **Status**
@@ -162,8 +178,16 @@ internal dependencies · status · open work**.
   - [ ] NeuroML2 import — reader stub exists; needs cell, segment-group,
     biophysics decoding and round-trip tests.
   - [x] NEURON-based diff harness via `develop_doc/neuron_diff.py`.
-  - [ ] NeuroMorpho download + automated metric diff against reference
-    statistics (to back the comparator above with a public corpus).
+  - [x] NeuroMorpho.Org integration: Tier 1 `load_neuromorpho` /
+    `fetch_neuromorpho` one-liners, Tier 2 `NeuroMorphoClient` with
+    typed `iter_search` / `download` / retries, Tier 3 `NeuroMorphoCache`
+    plus pure URL helpers, full NumPy-doc docstrings, and
+    `Morphology.from_neuromorpho` classmethod. Notebook walkthrough at
+    `develop_doc/neuromorpho_diff.ipynb` shows the full search → cache →
+    metric-diff loop.
+  - [ ] Automated metric diff against published NeuroMorpho reference
+    statistics promoted from the notebook into a pytest case (so the
+    NeuroMorpho corpus becomes a wide regression net).
   - [x] Checkpoint API and `.bcm` format with notebook tutorial
     (`develop_doc/morpho-checkpoint.ipynb`).
   - [ ] **NMODL parsing compiler** — currently research-only under
@@ -345,7 +369,7 @@ internal dependencies · status · open work**.
   - [ ] **Adaptive timestep wrapper** that produces a registered
     integrator from any embedded RK pair (currently only available
     via diffrax).
-  - [ ] **Convergence test matrix** — pytest-driven order-of-accuracy
+  - [x] **Convergence test matrix** — pytest-driven order-of-accuracy
     checks for every registered integrator on a small set of
     reference ODEs (passive cable, single HH spike, two-branch Y).
   - [ ] **Performance benchmarks** vs NEURON / Arbor on the standard
@@ -485,7 +509,13 @@ internal and may change without deprecation.
 - **Morphology layer**: `Branch`, `Soma`, `Dendrite`, `Axon`,
   `BasalDendrite`, `ApicalDendrite`, `CustomBranch`,
   `branch_class_for_type`, `Morphology`, `MorphoBranch`, `MorphoEdge`,
-  `MorphoMetric`.
+  `MorphoMetric`. The `Morphology` class also exposes the
+  `from_swc` / `from_asc` / `from_neuromorpho` classmethod constructors.
+- **External-data entry points** (top-level re-exports): `load_neuromorpho`.
+  Tier-2 / Tier-3 NeuroMorpho.Org symbols (`NeuroMorphoClient`,
+  `NeuroMorphoCache`, `NeuroMorphoQuery`, `NeuroMorphoMeasurement`,
+  `NeuroMorphoError`, …) live under `braincell.io.neuromorpho` and
+  `braincell.io`.
 - **Filter layer**: `RegionExpr`, `LocsetExpr`, `SelectionCache`.
 - **Mechanism layer**: `CableProperties`, `DensityMechanism`,
   `PointMechanism`, `CurrentClamp`, `SineClamp`, `FunctionClamp`,
@@ -645,8 +675,11 @@ report.
   files).
 - [ ] NeuroML2 reader: cells, segment groups, biophysics, point
   mechanisms.
-- [ ] NeuroMorpho download + automated metric diff against published
-  reference statistics.
+- [x] NeuroMorpho.Org client (search, download, cache, typed query and
+  measurement) plus `Morphology.from_neuromorpho` and notebook
+  walkthrough at `develop_doc/neuromorpho_diff.ipynb`.
+- [ ] Promote the NeuroMorpho metric diff from the notebook to an
+  automated pytest case using a small published reference corpus.
 - [ ] Add a `Morphology.from_neuroml2(...)` constructor + tests.
 
 ### M5 — Mechanism validation and codegen

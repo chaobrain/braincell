@@ -29,7 +29,7 @@ import jax.tree
 
 from braincell._base import Channel, IonInfo
 from braincell.quad import DiffEqState, IndependentIntegration
-from ..ion import Sodium
+from braincell.ion import Sodium
 
 __all__ = [
     'SodiumChannel',

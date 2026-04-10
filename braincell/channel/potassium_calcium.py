@@ -29,7 +29,7 @@ import jax
 
 from braincell._base import IonInfo, Channel
 from braincell.quad import DiffEqState
-from ..ion import Calcium, Potassium
+from braincell.ion import Calcium, Potassium
 
 __all__ = [
     'KCaChannel',

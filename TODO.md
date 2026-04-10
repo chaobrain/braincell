@@ -2,7 +2,7 @@
 
 以下状态按当前代码与测试实况整理。
 
-## Morpho
+## `braincell.morph` module
 
 - [x] Branch：基础属性、`from_lengths` / `from_points` 两类构建、面积/体积计算
 - [x] Morpho：根分支构建、`attach`、属性语法糖挂接、拓扑查询、`topo` 树输出
@@ -12,7 +12,7 @@
 - [x] Metric：总长度、总面积、总体积、branch order、path distance、euclidean distance 等度量
 
 
-## IO
+## `braincell.io` module
 
 - [x] 文件格式：SWC 导入、rulebook 检查/修正、report
 - [~] 文件格式：ASC 导入：简单 Neurolucida 树、metadata、`Morpho.from_asc(..., return_report=True)`（大部分完成)
@@ -25,7 +25,7 @@
 - [ ] xx
 
 
-## Vis
+## `braincell.vis` module
 
 - [x] 3D：具备 points 的 Branch / Morpho 3D 渲染，scene 构建与 PyVista backend
 - [x] 2D：projected 模式：基于真实 points 的 2D 投影
@@ -35,7 +35,7 @@
 - [~] Overlay：`region` / `locset` / `values` 参数已接入统一绘图入口，但真实高亮/着色语义仍较弱（部分完成）
 
 
-## Filter
+## `braincell.filter` module
 
 - [x] Region：`BranchSlice` 区间选择、广播输入、集合运算（并/交/差/补）
 - [x] Region：离散变量筛选：按 `type` / `name` / `branch_order` / `parent_id` / `n_children`
@@ -49,7 +49,7 @@
 - [ ] Locset：由 Region 生成 anchors / 固定步长采样
 
 
-## mech
+## `braincell.mech` module
 
 - [x] Cable：`CableProperties` 数据容器
 - [x] Density：`DensityMechanism` 数据容器
@@ -58,7 +58,7 @@
 - [~] 运行时集成：与真实仿真执行链路的完整编译/运行集成（部分完成）
 
 
-## cell
+## `braincell.cell` module
 
 - [x] Cell：`Cell(morpho, cv_policy)` 前端入口、形态快照、`paint` / `place`、懒重建
 - [x] CV 离散：`CVPolicy` 基类 + `CVPerBranch / MaxCVLen / DLambda`、CV 几何、轴向电阻拆分
@@ -66,3 +66,10 @@
 - [x] PointTree：计算点、边、attachment 处理
 - [x] Scheduling：`PointScheduling` / DHS 分组
 - [ ] 执行层：`run()`、`HHTypedNeuron` 编译、quad/JAX 真实仿真执行
+
+
+## `braincell.quad` module
+
+
+
+

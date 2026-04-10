@@ -15,12 +15,6 @@
 
 from typing import Callable, Mapping
 
-from ._registry import (
-    IntegratorEntry,
-    IntegratorRegistry,
-    get_registry,
-    register_integrator,
-)
 # Importing the step modules below has the side effect of populating the
 # global registry via @register_integrator decorators on each *_step function.
 from ._backward_euler import backward_euler_step
@@ -38,7 +32,10 @@ from ._diffrax import (
     diffrax_ralston_step,
     diffrax_tsit5_step,
 )
-from ._exp_euler import exp_euler_step, ind_exp_euler_step
+from ._exp_euler import (
+    exp_euler_step,
+    ind_exp_euler_step,
+)
 from ._implicit import (
     cn_exp_euler_step,
     cn_rk4_step,
@@ -48,7 +45,17 @@ from ._implicit import (
     implicit_rk4_step,
     splitting_step,
 )
-from ._protocol import DiffEqModule, DiffEqState, IndependentIntegration
+from ._protocol import (
+    DiffEqModule,
+    DiffEqState,
+    IndependentIntegration,
+)
+from ._registry import (
+    IntegratorEntry,
+    IntegratorRegistry,
+    get_registry,
+    register_integrator,
+)
 from ._runge_kutta import (
     euler_step,
     heun2_step,
@@ -62,7 +69,7 @@ from ._runge_kutta import (
     rk4_step,
     ssprk3_step,
 )
-from ._staggered import dhs_voltage_step, staggered_step
+from ._staggered import staggered_step
 
 __all__ = [
     # registry
@@ -120,9 +127,6 @@ __all__ = [
     'cn_rk4_step',
     'cn_exp_euler_step',
     'exp_exp_euler_step',
-
-    # voltage solver
-    'dhs_voltage_step',
 
     # modules
     'DiffEqModule',

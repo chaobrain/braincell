@@ -13,8 +13,6 @@
 # limitations under the License.
 # ==============================================================================
 
-__version__ = "0.0.8"
-__version_info__ = tuple(map(int, __version__.split(".")))
 
 from . import mech
 from . import quad
@@ -28,6 +26,10 @@ from ._base import (
     mix_ions,
 )
 from ._single_compartment import SingleCompartment
+from ._version import (
+    __version__,
+    __version_info__,
+)
 from .cell import (
     CVPerBranch,
     CVPolicy,

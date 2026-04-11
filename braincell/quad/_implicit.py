@@ -555,7 +555,7 @@ def splitting_step(
     ----------
     target : DiffEqModule
         The module to advance. When *target* is a
-        :class:`braincell.cell.Cell`, the splitting branch is used;
+        :class:`braincell.Cell`, the splitting branch is used;
         otherwise the routine falls back to a plain Newton step.
     t : Quantity[time]
         Current simulation time.
@@ -577,7 +577,7 @@ def splitting_step(
     cn_rk4_step, implicit_rk4_step, implicit_exp_euler_step : Other
         cable/gating splitting recipes.
     """
-    from braincell.cell.cell import Cell
+    from braincell._multi_compartment import Cell
 
     if isinstance(target, Cell):
 
@@ -670,7 +670,7 @@ def cn_rk4_step(
     Raises
     ------
     AssertionError
-        If *target* is not a :class:`braincell.cell.Cell`.
+        If *target* is not a :class:`braincell.Cell`.
 
     See Also
     --------
@@ -743,7 +743,7 @@ def cn_exp_euler_step(
     Raises
     ------
     AssertionError
-        If *target* is not a :class:`braincell.cell.Cell`.
+        If *target* is not a :class:`braincell.Cell`.
 
     See Also
     --------
@@ -805,7 +805,7 @@ def implicit_rk4_step(
     ----------
     target : DiffEqModule
         The module to advance. Splitting is used when *target* is a
-        :class:`braincell.cell.Cell`; otherwise the routine reduces to a
+        :class:`braincell.Cell`; otherwise the routine reduces to a
         plain Newton step.
     t : Quantity[time]
         Current simulation time.
@@ -826,7 +826,7 @@ def implicit_rk4_step(
     implicit_exp_euler_step : Implicit Euler voltage solve paired with
         exponential Euler channels.
     """
-    from braincell.cell.cell import Cell
+    from braincell._multi_compartment import Cell
 
     if isinstance(target, Cell):
         with brainstate.environ.context(compute_axial_current=False):
@@ -902,7 +902,7 @@ def implicit_exp_euler_step(
     cn_exp_euler_step : Crank-Nicolson voltage paired with exponential
         Euler channels.
     """
-    from braincell.cell.cell import Cell
+    from braincell._multi_compartment import Cell
 
     if isinstance(target, Cell):
 
@@ -979,7 +979,7 @@ def exp_exp_euler_step(
     cn_exp_euler_step : Crank-Nicolson voltage paired with exponential
         Euler channels.
     """
-    from braincell.cell.cell import Cell
+    from braincell._multi_compartment import Cell
 
     if isinstance(target, Cell):
 

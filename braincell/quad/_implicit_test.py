@@ -18,7 +18,7 @@
 The cell-only step functions in this module (``splitting_step``,
 ``cn_rk4_step``, ``cn_exp_euler_step``, ``implicit_rk4_step``,
 ``implicit_exp_euler_step``, ``exp_exp_euler_step``) require a multi-
-compartment :class:`braincell.cell.Cell` target with a full conductance
+compartment :class:`braincell.Cell` target with a full conductance
 matrix and are exercised by their dedicated cell tests.
 
 What we test here is the small subset that runs on a minimal

@@ -24,22 +24,21 @@ from ._base import (
     MixIons,
     mix_ions,
 )
+from ._multi_compartment import Cell
 from ._single_compartment import SingleCompartment
 from ._version import (
     __version__,
     __version_info__,
 )
-from .cell import (
+from .compute import PointScheduling, PointTree
+from .cv import (
     CompositeByTypePolicy,
     CV,
     CVPerBranch,
     CVPolicy,
     CVPolicyByTypeRule,
-    Cell,
     DLambda,
     MaxCVLen,
-    PointScheduling,
-    PointTree,
 )
 from .filter import (
     LocsetExpr,

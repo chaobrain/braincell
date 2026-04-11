@@ -280,5 +280,5 @@
 
 ### 公开面收口
 
-- `braincell.cell` 与顶层 `braincell` 只稳定导出：`Cell`、`CV`、`CVPolicy*`、`PointTree`、`PointScheduling`、`CellProfileReport`
+- `braincell.cv`、`braincell.compute` 与顶层 `braincell` 只稳定导出：`Cell`、`CV`、`CVPolicy*`、`PointTree`、`PointScheduling`、`CellProfileReport`
 - `PaintRule`、`PlaceRule`、`MechanismLayout`、`CellExecution` 不再作为稳定公开 API

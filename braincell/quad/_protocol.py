@@ -173,7 +173,7 @@ class DiffEqModule(brainstate.mixin.Mixin):
       states, project onto manifolds, or fire post-step events.
 
     Concrete subclasses include :class:`braincell.SingleCompartment` and
-    :class:`braincell.cell.Cell`. Solvers receive a :class:`DiffEqModule`
+    :class:`braincell.Cell`. Solvers receive a :class:`DiffEqModule`
     as their ``target`` argument and read ``t``/``dt`` from the active
     :mod:`brainstate.environ` context.
 

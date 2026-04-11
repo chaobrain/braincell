@@ -139,7 +139,7 @@ def exp_euler_step(target: DiffEqModule, *args):
         The neuron model to advance. Must be an :class:`HHTypedNeuron`
         subclass — currently :class:`SingleCompartment` (states are
         stacked along ``[n_neuron, n_state]``) or
-        :class:`braincell.cell.Cell` (states are concatenated along
+        :class:`braincell.Cell` (states are concatenated along
         ``[n_neuron, n_compartment * n_state]``).
     *args
         Extra positional arguments forwarded to ``target``'s
@@ -182,7 +182,7 @@ def exp_euler_step(target: DiffEqModule, *args):
         ...     exp_euler_step(my_neuron, input_current)    # doctest: +SKIP
     """
     from braincell._base import HHTypedNeuron
-    from braincell.cell.cell import Cell
+    from braincell._multi_compartment import Cell
     from braincell._single_compartment import SingleCompartment
     assert isinstance(target, HHTypedNeuron), (
         f"The target should be a {HHTypedNeuron.__name__}. "

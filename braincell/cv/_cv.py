@@ -1,0 +1,148 @@
+# Copyright 2026 BrainX Ecosystem Limited. All Rights Reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ==============================================================================
+
+
+"""Final user-facing control-volume records.
+
+This module is intentionally small: geometry is lowered in ``cv_geo.py``,
+declaration rules are accumulated in ``cv_mech.py``, and this file only freezes
+those two lower layers into the immutable ``CV`` objects exposed by ``Cell.cvs``.
+"""
+
+from dataclasses import dataclass
+from typing import Any
+from typing import TYPE_CHECKING
+
+import brainunit as u
+import numpy as np
+
+from braincell.filter import RegionMask
+from braincell.morph import Branch
+from ._policy import CVPolicy
+from ._geo import CVFrustum, CVGeo, axial_resistance_from_factor
+
+if TYPE_CHECKING:
+    from ._mech import CVMech
+
+
+@dataclass(frozen=True)
+class CV:
+    """Final per-control-volume view exposed to users.
+
+    A ``CV`` is the assembled result of two lower layers:
+
+    - :class:`CVGeo` contributes geometric and topological information
+    - ``CVMech`` contributes cable properties and attached mechanisms
+
+    Each CV belongs to exactly one morphology branch interval ``(prox, dist)``
+    and stores the values that downstream runtime code will need most often:
+    geometry, axial resistances, cable parameters, density mechanisms, point
+    mechanisms, and parent/child CV connectivity.
+
+    The main convenience method is :meth:`as_branch`, which reconstructs a
+    standalone :class:`braincell.morph.Branch` from the CV's frustum slices for
+    debugging, visualization, or fixture generation.
+    """
+    id: int
+    branch_id: int
+    branch_type: str
+    prox: float
+    dist: float
+    parent_cv: int | None
+    children_cv: tuple[int, ...]
+    length: Any
+    area: Any
+    cm: Any
+    ra: Any
+    v: Any
+    temp: u.Quantity[u.kelvin]
+    r_axial: Any
+    r_axial_prox: Any
+    r_axial_dist: Any
+    density_mech: tuple[object, ...]
+    point_mech: tuple[object, ...]
+    _frusta: tuple[CVFrustum, ...]
+
+    @property
+    def region(self) -> RegionMask:
+        return RegionMask(((self.branch_id, self.prox, self.dist),))
+
+    def as_branch(self) -> Branch:
+        if len(self._frusta) == 0:
+            raise ValueError("Cannot convert empty CV geometry into Branch.")
+
+        lengths_um = np.asarray(
+            [float(np.asarray(piece.length.to_decimal(u.um), dtype=float)) for piece in self._frusta],
+            dtype=float,
+        )
+        r0_um = np.asarray(
+            [float(np.asarray(piece.radius_prox.to_decimal(u.um), dtype=float)) for piece in self._frusta],
+            dtype=float,
+        )
+        r1_um = np.asarray(
+            [float(np.asarray(piece.radius_dist.to_decimal(u.um), dtype=float)) for piece in self._frusta],
+            dtype=float,
+        )
+
+        has_points = all(
+            piece.point_prox is not None and piece.point_dist is not None for piece in self._frusta
+        )
+        if has_points:
+            first = self._frusta[0].point_prox
+            if first is None:
+                raise ValueError("CV frusta are missing proximal point geometry.")
+            points: list[np.ndarray] = [np.asarray(first.to_decimal(u.um), dtype=float)]
+            for piece in self._frusta:
+                point_dist = piece.point_dist
+                if point_dist is None:
+                    raise ValueError("CV frusta are missing distal point geometry.")
+                points.append(np.asarray(point_dist.to_decimal(u.um), dtype=float))
+            radii_um = np.concatenate((r0_um[:1], r1_um), axis=0)
+            return Branch.from_points(
+                points=u.Quantity(np.asarray(points, dtype=float), u.um),
+                radii=u.Quantity(np.asarray(radii_um, dtype=float), u.um),
+                type=self.branch_type,
+            )
+
+        return Branch.from_lengths(
+            lengths=u.Quantity(lengths_um, u.um),
+            radii_proximal=u.Quantity(r0_um, u.um),
+            radii_distal=u.Quantity(r1_um, u.um),
+            type=self.branch_type,
+        )
+
+
+def assemble_cv(*, cv_geo: CVGeo, mech: 'CVMech') -> CV:
+    return CV(
+        id=cv_geo.id,
+        branch_id=cv_geo.branch_id,
+        branch_type=cv_geo.branch_type,
+        prox=cv_geo.prox,
+        dist=cv_geo.dist,
+        parent_cv=cv_geo.parent_cv,
+        children_cv=cv_geo.children_cv,
+        length=cv_geo.length,
+        area=cv_geo.lateral_area,
+        cm=mech.cm,
+        ra=mech.ra,
+        v=mech.v,
+        temp=mech.temp,
+        r_axial=axial_resistance_from_factor(mech.ra, factor=cv_geo.axial_factor_total),
+        r_axial_prox=axial_resistance_from_factor(mech.ra, factor=cv_geo.axial_factor_prox),
+        r_axial_dist=axial_resistance_from_factor(mech.ra, factor=cv_geo.axial_factor_dist),
+        density_mech=tuple(mech.density_mech),
+        point_mech=tuple(mech.point_mech),
+        _frusta=cv_geo.frusta,
+    )

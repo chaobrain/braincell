@@ -63,9 +63,12 @@ rules, NEURON HOC compatibility, GUI tools, and stand-alone NMODL execution
                │ selection                           │ declarations
                ▼                                     ▼
 ┌──────────────────────────────────────────────────────────────────────┐
-│                        braincell.cell                                │
-│   Cell (declaration + lazy rebuild) · CV · CVPolicy ·                │
-│   PaintRule / PlaceRule · PointTree · PointScheduling · runtime      │
+│   braincell.cv              │           braincell.compute            │
+│   CV · CVPolicy ·           │   PointTree · PointScheduling ·        │
+│   PaintRule / PlaceRule     │   CellRuntimeState · assignment table  │
+├─────────────────────────────┴────────────────────────────────────────┤
+│                braincell._multi_compartment (Cell)                   │
+│    declaration frontend · lazy rebuild · runtime facade              │
 └──────────────────────────────┬───────────────────────────────────────┘
                                │ HHTypedNeuron
                                ▼
@@ -86,7 +89,7 @@ rules, NEURON HOC compatibility, GUI tools, and stand-alone NMODL execution
 │   (Na, K, Ca, Ih, K_Ca, leaky) · Markov synapse models               │
 └──────────────────────────────────────────────────────────────────────┘
    (supply concrete mechanism objects consumed by mech.DensityMechanism
-    / mech.PointMechanism declarations and installed inside braincell.cell)
+    / mech.PointMechanism declarations and installed inside braincell.Cell)
 ```
 
 ```
@@ -98,13 +101,14 @@ rules, NEURON HOC compatibility, GUI tools, and stand-alone NMODL execution
        (consumes Branch / Morphology / Cell / RegionExpr / LocsetExpr)
 ```
 
-The directional rule of thumb: **`io → morph → {filter, mech} → cell → quad`**,
+The directional rule of thumb:
+**`io → morph → {filter, mech} → cv → compute → _multi_compartment → quad`**,
 with `ion` / `channel` / `synapse` as peer top-level modules supplying concrete
 mechanism implementations that `mech` wraps into `DensityMechanism` /
 `PointMechanism` declarations at paint/place time, `vis` reading anything from
 `morph` upward, and `_base` providing shared abstract types
 (`HHTypedNeuron`, `IonChannel`, `Ion`, `Channel`, `MixIons`) for everything
-below `cell`.
+below `Cell`.
 
 ---
 
@@ -287,31 +291,40 @@ internal dependencies · status · open work**.
     `mech/nmodl/`; the missing piece is the lowering pass that emits
     `IonChannel` / `DensityMechanism` subclasses.
 
-### 3.5 `braincell.cell` — declaration, discretization, runtime
+### 3.5 `braincell.cv` / `braincell.compute` / `_multi_compartment` — declaration, discretization, runtime
 
-- **Purpose** — the orchestration layer. Owns the user-facing `Cell`
-  object that turns *(Morphology, CVPolicy, paint/place declarations)*
-  into a runnable `HHTypedNeuron`.
-- **Key types and files**
-  - `cell.py` — `Cell(HHTypedNeuron)`. Three roles: declaration
-    frontend, lazy rebuild owner, runtime facade.
-  - `cv.py` — `CV` dataclass plus `assemble_cv` to materialize the
-    array-of-CVs view.
-  - `cv_geo.py` — `build_cv_geo` reduces a `Morphology` + `CVPolicy`
-    into per-CV geometry (length, area, volume, axial conductance,
-    parent index).
-  - `cv_mech.py` — `PaintRule`, `PlaceRule`, default rules,
+- **Purpose** — the orchestration layer. Three co-operating pieces turn
+  *(Morphology, CVPolicy, paint/place declarations)* into a runnable
+  `HHTypedNeuron`:
+  - `braincell.cv` owns the pure control-volume layer (geometry +
+    mechanism rules + policies).
+  - `braincell.compute` owns the execution-graph / runtime lowering
+    built on top of `cv`.
+  - `braincell._multi_compartment` owns the public `Cell` class that
+    composes `cv` + `compute` into a declaration / lazy-rebuild /
+    runtime facade.
+- **Key files**
+  - `braincell/_multi_compartment.py` — `Cell(HHTypedNeuron)`.
+    Declaration frontend, lazy rebuild owner, runtime facade. Tests in
+    `_multi_compartment_test.py` and `_multi_compartment_solver_test.py`.
+  - `braincell/cv/_cv.py` — `CV` dataclass plus `assemble_cv` to
+    materialize the array-of-CVs view.
+  - `braincell/cv/_geo.py` — `build_cv_geo` reduces a `Morphology` +
+    `CVPolicy` into per-CV geometry (length, area, volume, axial
+    conductance, parent index).
+  - `braincell/cv/_mech.py` — `PaintRule`, `PlaceRule`, default rules,
     normalization, `init_cv_mech`, paint/place application.
-  - `cv_policy.py` — `CVPolicy` ABC plus `CVPerBranch`, `MaxCVLen`,
-    `DLambda`, `CVPolicyByTypeRule`, `CompositeByTypePolicy`.
-  - `point_tree.py` — `PointTree`, `CVPoint`, `CVEdge`, `ComputePoint`,
-    `ComputeEdge`, `build_point_tree`, `build_point_scheduling`.
-  - `point_scheduling.py` — `PointScheduling` and DHS (Dependent
-    Hines Solver) grouping for vectorized parent traversal.
-  - `assignment_table.py` — `MechanismObjectCell`, `MechanismObjectTable`
-    keyed by `mechanism_cell_key`.
-  - `runtime.py` — `CellRuntimeState`, `install_cell_runtime`,
-    `cv_value_vector`, midpoint scatter/gather utilities.
+  - `braincell/cv/_policy.py` — `CVPolicy` ABC plus `CVPerBranch`,
+    `MaxCVLen`, `DLambda`, `CVPolicyByTypeRule`, `CompositeByTypePolicy`.
+  - `braincell/compute/_point_tree.py` — `PointTree`, `CVPoint`,
+    `CVEdge`, `ComputePoint`, `ComputeEdge`, `PointScheduling`,
+    `build_point_tree`, `build_point_scheduling` (PointScheduling +
+    DHS grouping for vectorized parent traversal live here too).
+  - `braincell/compute/_assignment_table.py` — `MechanismObjectCell`,
+    `MechanismObjectTable` keyed by `mechanism_cell_key`.
+  - `braincell/compute/_runtime.py` — `CellRuntimeState`,
+    `install_cell_runtime`, `cv_value_vector`, midpoint scatter/gather
+    utilities. Tests in `_runtime_test.py`.
 - **Status**
   - [x] `Cell(morpho, cv_policy)` declaration entry, morphology
     snapshotting, `paint` / `place` API, lazy rebuild flags.

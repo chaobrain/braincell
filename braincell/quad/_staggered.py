@@ -82,7 +82,7 @@ def staggered_step(
     target : DiffEqModule
         A multi-compartment cell exposing ``point_tree``,
         ``point_scheduling``, and a voltage state ``V``. In practice this is
-        a :class:`braincell.cell.Cell` instance whose membrane state is laid
+        a :class:`braincell.Cell` instance whose membrane state is laid
         out on a point tree compatible with the DHS scheduler.
     *args
         Forwarded verbatim to :meth:`DiffEqModule.compute_derivative` and
@@ -203,7 +203,7 @@ def dhs_voltage_step(target, t, dt, *args):
         A point-tree aware cell that exposes ``point_tree()``,
         ``point_scheduling("dhs")``, a voltage state ``V``, and a per-CV
         capacitance/area description. In practice this is a
-        :class:`braincell.cell.Cell` instance.
+        :class:`braincell.Cell` instance.
     t : Quantity[time]
         Current simulation time. Used by ``compute_membrane_derivative`` and
         any time-dependent input bound through ``args``.

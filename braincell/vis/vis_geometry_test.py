@@ -22,26 +22,15 @@ import brainunit as u
 import numpy as np
 
 from braincell import Branch, Morphology
+from braincell.vis._testing import (
+    make_length_only_tree,
+    make_root_split_tree,
+    make_two_dendrite_tree,
+)
 from braincell.vis.layout2d import build_layout_branches_2d
 from braincell.vis.layout2d import tangent_on_layout_branch
 from braincell.vis.scene2d import build_render_scene_2d
 from braincell.vis.scene3d import build_render_scene_3d
-
-
-def _length_only_tree() -> Morphology:
-    soma = Branch.from_lengths(
-        lengths=[20.0] * u.um,
-        radii=[10.0, 10.0] * u.um,
-        type="soma",
-    )
-    dend = Branch.from_lengths(
-        lengths=[8.0, 12.0] * u.um,
-        radii=[2.0, 1.5, 1.0] * u.um,
-        type="apical_dendrite",
-    )
-    tree = Morphology.from_root(soma, name="soma")
-    tree.attach(parent="soma", child_branch=dend, child_name="dend", parent_x=1.0)
-    return tree
 
 
 def _point_tree_with_same_lengths() -> Morphology:
@@ -57,50 +46,6 @@ def _point_tree_with_same_lengths() -> Morphology:
     )
     tree = Morphology.from_root(soma, name="soma")
     tree.attach(parent="soma", child_branch=dend, child_name="dend", parent_x=1.0)
-    return tree
-
-
-def _root_split_tree() -> Morphology:
-    soma = Branch.from_lengths(
-        lengths=[20.0] * u.um,
-        radii=[10.0, 10.0] * u.um,
-        type="soma",
-    )
-    dend = Branch.from_lengths(
-        lengths=[25.0] * u.um,
-        radii=[2.0, 1.5] * u.um,
-        type="apical_dendrite",
-    )
-    axon = Branch.from_lengths(
-        lengths=[18.0] * u.um,
-        radii=[1.0, 0.8] * u.um,
-        type="axon",
-    )
-    tree = Morphology.from_root(soma, name="soma")
-    tree.attach(parent="soma", child_branch=dend, child_name="dend", parent_x=1.0)
-    tree.attach(parent="soma", child_branch=axon, child_name="axon", parent_x=1.0)
-    return tree
-
-
-def _legacy_angle_tree() -> Morphology:
-    soma = Branch.from_lengths(
-        lengths=[20.0] * u.um,
-        radii=[10.0, 10.0] * u.um,
-        type="soma",
-    )
-    dend_a = Branch.from_lengths(
-        lengths=[15.0] * u.um,
-        radii=[2.0, 1.5] * u.um,
-        type="apical_dendrite",
-    )
-    dend_b = Branch.from_lengths(
-        lengths=[15.0] * u.um,
-        radii=[2.0, 1.5] * u.um,
-        type="basal_dendrite",
-    )
-    tree = Morphology.from_root(soma, name="soma")
-    tree.attach(parent="soma", child_branch=dend_a, child_name="dend_a", parent_x=1.0)
-    tree.attach(parent="soma", child_branch=dend_b, child_name="dend_b", parent_x=1.0)
     return tree
 
 
@@ -183,6 +128,19 @@ class VisGeometryTest(unittest.TestCase):
         self.assertEqual(soma_branch.branch_name, "soma")
         self.assertEqual(soma_branch.points_um.shape, (2, 3))
         self.assertTrue(np.allclose(soma_branch.radii_um, np.array([5.0, 5.0])))
+        self.assertEqual(scene.mode, "geometry")
+
+    def test_build_render_scene_3d_carries_skeleton_mode(self) -> None:
+        soma = Branch.from_points(
+            points=[[0.0, 0.0, 0.0], [10.0, 0.0, 0.0]] * u.um,
+            radii=[5.0, 5.0] * u.um,
+            type="soma",
+        )
+        tree = Morphology.from_root(soma, name="soma")
+
+        scene = build_render_scene_3d(tree, mode="skeleton")
+
+        self.assertEqual(scene.mode, "skeleton")
 
     def test_build_render_scene_3d_requires_point_geometry(self) -> None:
         soma = Branch.from_lengths(lengths=[20.0] * u.um, radii=[10.0, 10.0] * u.um, type="soma")
@@ -192,7 +150,7 @@ class VisGeometryTest(unittest.TestCase):
             build_render_scene_3d(tree)
 
     def test_tree_layout_uses_actual_branch_segment_lengths_and_radii(self) -> None:
-        tree = _length_only_tree()
+        tree = make_length_only_tree()
 
         layouts = build_layout_branches_2d(tree, mode="tree")
 
@@ -205,8 +163,29 @@ class VisGeometryTest(unittest.TestCase):
         self.assertTrue(np.allclose(layouts[1].radii_proximal_um, np.array([2.0, 1.5])))
         self.assertTrue(np.allclose(layouts[1].radii_distal_um, np.array([1.5, 1.0])))
 
+    def test_length_only_tree_soma_has_exact_horizontal_centerline(self) -> None:
+        """A length-only single-soma tree with a 20 µm soma segment
+        should have its layout centerline running from (0, 0) to (20, 0)
+        along the +x axis — this is a fixed anchor point for the stem
+        layout that must not drift.
+        """
+        soma = Branch.from_lengths(
+            lengths=[20.0] * u.um,
+            radii=[10.0, 10.0] * u.um,
+            type="soma",
+        )
+        tree = Morphology.from_root(soma, name="soma")
+
+        layouts = build_layout_branches_2d(tree, mode="tree")
+        soma_layout = layouts[0]
+
+        self.assertEqual(soma_layout.segment_points_um.shape, (2, 2))
+        self.assertTrue(np.allclose(soma_layout.segment_points_um[0], np.array([0.0, 0.0])))
+        self.assertTrue(np.allclose(soma_layout.segment_points_um[-1], np.array([20.0, 0.0])))
+        self.assertTrue(np.allclose(soma_layout.end_direction_um, np.array([1.0, 0.0])))
+
     def test_frustum_scene_builds_polygon_per_segment(self) -> None:
-        tree = _length_only_tree()
+        tree = make_length_only_tree()
 
         scene = build_render_scene_2d(tree, layout="stem", shape="frustum")
 
@@ -228,7 +207,7 @@ class VisGeometryTest(unittest.TestCase):
         self.assertAlmostEqual(float(distal_width), 3.0)
 
     def test_root_type_split_places_axon_and_dendrite_in_opposite_half_planes(self) -> None:
-        tree = _root_split_tree()
+        tree = make_root_split_tree()
 
         layouts = build_layout_branches_2d(tree, mode="tree")
         dend = next(layout for layout in layouts if layout.branch_name == "dend")
@@ -238,7 +217,7 @@ class VisGeometryTest(unittest.TestCase):
         self.assertLess(axon.end_direction_um[1], 0.0)
 
     def test_min_branch_angle_deg_is_applied_in_legacy_layout(self) -> None:
-        tree = _legacy_angle_tree()
+        tree = make_two_dendrite_tree()
 
         layouts = build_layout_branches_2d(
             tree,
@@ -314,7 +293,7 @@ class VisGeometryTest(unittest.TestCase):
         self.assertTrue(np.allclose(layout.segment_directions_um[-2], layout.segment_directions_um[-1]))
 
     def test_tree_and_frustum_ignore_real_points_geometry(self) -> None:
-        length_tree = _length_only_tree()
+        length_tree = make_length_only_tree()
         point_tree = _point_tree_with_same_lengths()
 
         length_layouts = {layout.branch_name: layout for layout in build_layout_branches_2d(length_tree, mode="tree")}
@@ -330,7 +309,7 @@ class VisGeometryTest(unittest.TestCase):
             self.assertTrue(np.allclose(length_polygon.points_um, point_polygon.points_um))
 
     def test_balloon_layout_assigns_distinct_child_angles(self) -> None:
-        tree = _legacy_angle_tree()
+        tree = make_two_dendrite_tree()
 
         layouts = {layout.branch_name: layout for layout in build_layout_branches_2d(tree, mode="tree", layout_family="balloon")}
         dend_a_angle = math.degrees(math.atan2(layouts["dend_a"].end_direction_um[1], layouts["dend_a"].end_direction_um[0]))
@@ -377,3 +356,55 @@ class VisGeometryTest(unittest.TestCase):
             for layout in layouts.values()
         }
         self.assertGreaterEqual(len(quadrants), 3)
+
+
+class LayoutFamilyParametricTest(unittest.TestCase):
+    """Shared invariants across all non-legacy layout families.
+
+    Parametrized over (family) × (mode) so that adding a new layout family
+    automatically picks up the whole test matrix by appending one name.
+    """
+
+    families = ("stem", "balloon", "radial_360")
+    modes = ("tree", "frustum")
+
+    def test_all_layouts_produce_one_entry_per_branch(self) -> None:
+        tree = make_two_dendrite_tree()
+        expected_count = len(tree.branches)
+        for family in self.families:
+            for mode in self.modes:
+                with self.subTest(family=family, mode=mode):
+                    layouts = build_layout_branches_2d(tree, mode=mode, layout_family=family)
+                    self.assertEqual(len(layouts), expected_count)
+
+    def test_all_layouts_produce_finite_coordinates(self) -> None:
+        tree = make_length_only_tree()
+        for family in self.families:
+            for mode in self.modes:
+                with self.subTest(family=family, mode=mode):
+                    layouts = build_layout_branches_2d(tree, mode=mode, layout_family=family)
+                    for layout in layouts:
+                        self.assertTrue(np.all(np.isfinite(layout.segment_points_um)))
+                        self.assertTrue(np.all(np.isfinite(layout.segment_directions_um)))
+                        self.assertTrue(np.all(np.isfinite(layout.cumulative_lengths_um)))
+
+    def test_all_layouts_preserve_total_length(self) -> None:
+        tree = make_length_only_tree()
+        expected_lengths = {
+            branch.index: float(np.sum(np.asarray(branch.lengths.to_decimal(u.um), dtype=float)))
+            for branch in tree.branches
+        }
+        for family in self.families:
+            for mode in self.modes:
+                with self.subTest(family=family, mode=mode):
+                    layouts = build_layout_branches_2d(tree, mode=mode, layout_family=family)
+                    for layout in layouts:
+                        self.assertAlmostEqual(
+                            layout.total_length_um,
+                            expected_lengths[layout.branch_index],
+                            places=6,
+                        )
+
+
+if __name__ == "__main__":
+    unittest.main()

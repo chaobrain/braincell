@@ -21,18 +21,21 @@ import sys
 from dataclasses import dataclass, field
 from typing import Any
 
+import numpy as np
+
 from .scene import RenderRequest, RenderScene3D
 
 
 @dataclass(frozen=True)
 class PyVistaBackend:
     name: str = "pyvista"
-    scene_kind: str | None = "3d"
+    supported_scene_kinds: frozenset[str] = frozenset({"3d"})
     tube_sides: int = 12
     radius_scale: float = 1.0
     background: str = "white"
     show_axes: bool = True
     plotter_kwargs: dict[str, Any] = field(default_factory=dict)
+    skeleton_line_width: float = 2.0
 
     def available(self) -> bool:
         try:
@@ -49,25 +52,75 @@ class PyVistaBackend:
 
         import pyvista as pv
 
+        backend_options = request.backend_options or {}
+        notebook = backend_options.get("notebook")
+        jupyter_backend = backend_options.get("jupyter_backend")
+        return_plotter = bool(backend_options.get("return_plotter", False))
+
         plotter = pv.Plotter(**self.plotter_kwargs)
         plotter.set_background(self.background)
         if self.show_axes:
             plotter.show_axes()
 
+        mode = scene.mode if scene.mode else "geometry"
+
         for batch in scene.batches:
             poly = pv.PolyData()
             poly.points = batch.points_um
             poly.lines = batch.lines
-            poly.point_data["radius"] = batch.radii_um * float(self.radius_scale)
-            tube = poly.tube(
-                scalars="radius",
-                absolute=True,
-                n_sides=self.tube_sides,
-            )
-            color = tuple(channel / 255.0 for channel in batch.color_rgb)
-            plotter.add_mesh(tube, color=color, opacity=batch.opacity)
+            color = _rgb_to_float(batch.color_rgb)
+            if mode == "skeleton":
+                plotter.add_mesh(
+                    poly,
+                    color=color,
+                    opacity=batch.opacity,
+                    line_width=self.skeleton_line_width,
+                )
+            else:
+                poly.point_data["radius"] = batch.radii_um * float(self.radius_scale)
+                tube = poly.tube(
+                    scalars="radius",
+                    absolute=True,
+                    n_sides=self.tube_sides,
+                )
+                plotter.add_mesh(tube, color=color, opacity=batch.opacity)
 
-        notebook = request.notebook
+        # Overlay: region highlight strokes
+        for stroke in scene.highlight_strokes:
+            if stroke.points_um.shape[0] < 2:
+                continue
+            poly = pv.PolyData()
+            poly.points = stroke.points_um
+            n_points = stroke.points_um.shape[0]
+            cell = np.concatenate(
+                [np.array([n_points], dtype=np.int64), np.arange(n_points, dtype=np.int64)]
+            )
+            poly.lines = cell
+            color = _rgb_to_float(stroke.color_rgb)
+            if mode == "skeleton":
+                plotter.add_mesh(
+                    poly,
+                    color=color,
+                    opacity=stroke.opacity,
+                    line_width=max(self.skeleton_line_width * 2.0, 3.0),
+                )
+            else:
+                poly.point_data["radius"] = stroke.radii_um * float(self.radius_scale) * 1.15
+                tube = poly.tube(
+                    scalars="radius",
+                    absolute=True,
+                    n_sides=self.tube_sides,
+                )
+                plotter.add_mesh(tube, color=color, opacity=stroke.opacity)
+
+        # Overlay: locset markers as small spheres
+        for marker in scene.markers:
+            sphere = pv.Sphere(
+                radius=float(marker.radius_um),
+                center=tuple(float(c) for c in marker.position_um),
+            )
+            plotter.add_mesh(sphere, color=_rgb_to_float(marker.color_rgb))
+
         if notebook is None:
             notebook = _running_in_notebook()
         if not notebook:
@@ -76,22 +129,22 @@ class PyVistaBackend:
         diagnostics = _configure_trame_for_notebook(pv)
         attempted = []
         failures: list[tuple[str, str]] = []
-        for jupyter_backend in _notebook_backends(request.jupyter_backend):
+        for candidate in _notebook_backends(jupyter_backend):
             _prepare_plotter_for_notebook(plotter)
-            attempted.append(jupyter_backend)
+            attempted.append(candidate)
             try:
                 viewer = plotter.show(
-                    jupyter_backend=jupyter_backend,
+                    jupyter_backend=candidate,
                     return_viewer=True,
                     auto_close=False,
                 )
             except Exception as exc:
-                failures.append((jupyter_backend, f"{type(exc).__name__}: {exc}"))
+                failures.append((candidate, f"{type(exc).__name__}: {exc}"))
                 continue
             if viewer is None:
-                failures.append((jupyter_backend, "RuntimeError: PyVista returned no notebook viewer."))
+                failures.append((candidate, "RuntimeError: PyVista returned no notebook viewer."))
                 continue
-            if request.return_plotter:
+            if return_plotter:
                 return plotter
             return viewer
 
@@ -107,6 +160,10 @@ class PyVistaBackend:
             "Server/trame modes may also require a virtual framebuffer. "
             "You can still pass return_plotter=True to receive the raw Plotter."
         )
+
+
+def _rgb_to_float(rgb: tuple[int, int, int]) -> tuple[float, float, float]:
+    return tuple(float(channel) / 255.0 for channel in rgb)  # type: ignore[return-value]
 
 
 def _notebook_backends(requested: str | None) -> tuple[str, ...]:

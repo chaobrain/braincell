@@ -72,12 +72,12 @@ def compare_layouts_2d(
         backend_impl.render(
             RenderRequest(
                 morpho=morpho,
+                scene=scene,
                 overlay=OverlaySpec(),
                 dimensionality="2d",
                 layout=layout,
                 shape=shape,
-                scene=scene,
-                ax=ax,
+                backend_options={"ax": ax},
             )
         )
         ax.set_title(_layout_title(layout))

@@ -13,23 +13,9 @@
 # limitations under the License.
 # ==============================================================================
 
+from contextlib import contextmanager
 from dataclasses import dataclass, field
-from typing import Iterable
-
-__all__ = [
-    "DEFAULT_BRANCH_TYPE_COLORS",
-    "SUPPORTED_3D_MODES",
-    "VisDefaults",
-    "alpha_for_2d_line",
-    "alpha_for_2d_poly",
-    "alpha_for_3d_tube",
-    "color_for_branch_type",
-    "configure",
-    "get_defaults",
-    "reset_defaults",
-    "resolve_default_3d_mode",
-    "set_defaults",
-]
+from typing import Iterable, Iterator
 
 DEFAULT_BRANCH_TYPE_COLORS = {
     "soma": (0, 0, 0),
@@ -39,9 +25,12 @@ DEFAULT_BRANCH_TYPE_COLORS = {
     "dendrite": (205, 92, 92),
     "custom": (110, 110, 110),
 }
+DEFAULT_HIGHLIGHT_COLOR = (255, 215, 0)  # gold — used for region overlays
+DEFAULT_MARKER_COLOR = (30, 144, 255)  # dodger blue — used for locset overlays
+
 SUPPORTED_2D_LAYOUTS = frozenset({"projected", "stem", "balloon", "radial_360"})
 SUPPORTED_2D_SHAPES = frozenset({"line", "frustum"})
-SUPPORTED_3D_MODES = frozenset({"geometry"})
+SUPPORTED_3D_MODES = frozenset({"geometry", "skeleton"})
 
 
 @dataclass
@@ -55,6 +44,11 @@ class VisDefaults:
     alpha_2d_poly: float = 0.3
     alpha_2d_line: float = 1.0
     alpha_3d_tube: float = 1.0
+    highlight_color: tuple[int, int, int] = DEFAULT_HIGHLIGHT_COLOR
+    highlight_alpha: float = 0.9
+    marker_color: tuple[int, int, int] = DEFAULT_MARKER_COLOR
+    marker_size_2d: float = 36.0
+    marker_radius_3d_um: float = 1.5
 
 
 _VIS_DEFAULTS = VisDefaults()
@@ -80,6 +74,11 @@ def configure(
     alpha_2d_poly: float | None = None,
     alpha_2d_line: float | None = None,
     alpha_3d_tube: float | None = None,
+    highlight_color: object | None = None,
+    highlight_alpha: float | None = None,
+    marker_color: object | None = None,
+    marker_size_2d: float | None = None,
+    marker_radius_3d_um: float | None = None,
 ) -> VisDefaults:
     global _VIS_DEFAULTS
 
@@ -112,12 +111,66 @@ def configure(
         updated.alpha_2d_line = _normalize_alpha(alpha_2d_line, label="alpha_2d_line")
     if alpha_3d_tube is not None:
         updated.alpha_3d_tube = _normalize_alpha(alpha_3d_tube, label="alpha_3d_tube")
+    if highlight_color is not None:
+        updated.highlight_color = _normalize_color(highlight_color)
+    if highlight_alpha is not None:
+        updated.highlight_alpha = _normalize_alpha(highlight_alpha, label="highlight_alpha")
+    if marker_color is not None:
+        updated.marker_color = _normalize_color(marker_color)
+    if marker_size_2d is not None:
+        value = float(marker_size_2d)
+        if value <= 0.0:
+            raise ValueError(f"marker_size_2d must be > 0, got {marker_size_2d!r}.")
+        updated.marker_size_2d = value
+    if marker_radius_3d_um is not None:
+        value = float(marker_radius_3d_um)
+        if value <= 0.0:
+            raise ValueError(f"marker_radius_3d_um must be > 0, got {marker_radius_3d_um!r}.")
+        updated.marker_radius_3d_um = value
 
     _VIS_DEFAULTS = updated
     return get_defaults()
 
 
 set_defaults = configure
+
+
+@contextmanager
+def theme(**overrides: object) -> Iterator[VisDefaults]:
+    """Temporarily override visualization defaults for the duration of a block.
+
+    All keyword arguments are forwarded to :func:`configure`. On exit the
+    previous defaults are restored, even if the block raised.
+
+    Parameters
+    ----------
+    **overrides
+        Any keyword accepted by :func:`configure`, e.g. ``layout_2d_default``,
+        ``branch_type_colors``, ``alpha_2d_line``, ``highlight_color``.
+
+    Yields
+    ------
+    VisDefaults
+        A snapshot of the effective defaults inside the ``with`` block.
+
+    Examples
+    --------
+
+    .. code-block:: python
+
+        >>> import braincell.vis as vis
+        >>> with vis.theme(branch_type_colors={"axon": "#ff0000"}):
+        ...     morpho.vis2d()  # doctest: +SKIP
+        >>> morpho.vis2d()       # doctest: +SKIP  — original colors restored
+    """
+    global _VIS_DEFAULTS
+
+    snapshot = _copy_defaults(_VIS_DEFAULTS)
+    try:
+        configure(**overrides)  # type: ignore[arg-type]
+        yield get_defaults()
+    finally:
+        _VIS_DEFAULTS = snapshot
 
 
 def resolve_default_2d_layout(layout: str | None) -> str:
@@ -151,6 +204,26 @@ def alpha_for_3d_tube() -> float:
     return _VIS_DEFAULTS.alpha_3d_tube
 
 
+def highlight_color() -> tuple[int, int, int]:
+    return _VIS_DEFAULTS.highlight_color
+
+
+def highlight_alpha() -> float:
+    return _VIS_DEFAULTS.highlight_alpha
+
+
+def marker_color() -> tuple[int, int, int]:
+    return _VIS_DEFAULTS.marker_color
+
+
+def marker_size_2d() -> float:
+    return _VIS_DEFAULTS.marker_size_2d
+
+
+def marker_radius_3d_um() -> float:
+    return _VIS_DEFAULTS.marker_radius_3d_um
+
+
 def _copy_defaults(defaults: VisDefaults) -> VisDefaults:
     return VisDefaults(
         layout_2d_default=defaults.layout_2d_default,
@@ -160,6 +233,11 @@ def _copy_defaults(defaults: VisDefaults) -> VisDefaults:
         alpha_2d_poly=defaults.alpha_2d_poly,
         alpha_2d_line=defaults.alpha_2d_line,
         alpha_3d_tube=defaults.alpha_3d_tube,
+        highlight_color=defaults.highlight_color,
+        highlight_alpha=defaults.highlight_alpha,
+        marker_color=defaults.marker_color,
+        marker_size_2d=defaults.marker_size_2d,
+        marker_radius_3d_um=defaults.marker_radius_3d_um,
     )
 
 
@@ -203,22 +281,3 @@ def _normalize_color(color: object) -> tuple[int, int, int]:
         raise ValueError(f"RGB channels must be between 0 and 255, got {color!r}.")
     return scaled
 
-
-__all__ = [
-    "DEFAULT_BRANCH_TYPE_COLORS",
-    "SUPPORTED_2D_LAYOUTS",
-    "SUPPORTED_2D_SHAPES",
-    "SUPPORTED_3D_MODES",
-    "VisDefaults",
-    "alpha_for_2d_line",
-    "alpha_for_2d_poly",
-    "alpha_for_3d_tube",
-    "color_for_branch_type",
-    "configure",
-    "get_defaults",
-    "reset_defaults",
-    "resolve_default_2d_layout",
-    "resolve_default_2d_shape",
-    "resolve_default_3d_mode",
-    "set_defaults",
-]

@@ -17,14 +17,14 @@
 class FakeBackend:
     """Scene-agnostic test double that records the last :class:`RenderRequest`.
 
-    The backend intentionally reports ``scene_kind = None`` so it is accepted by
-    both 2D and 3D dispatchers via :func:`validate_backend_for_scene`, and
-    returns the request unchanged so tests can inspect the scene that would be
-    rendered.
+    Advertises ``supported_scene_kinds = frozenset({"2d", "3d"})`` so
+    :func:`validate_backend_for_scene` accepts it for either dispatch
+    direction, and returns the request unchanged so tests can inspect
+    the scene that would be rendered.
     """
 
     name = "fake"
-    scene_kind: str | None = None
+    supported_scene_kinds = frozenset({"2d", "3d"})
 
     def __init__(self) -> None:
         self.last_request = None

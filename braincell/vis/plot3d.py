@@ -15,7 +15,7 @@
 
 
 from .backend import BackendChooser, validate_backend_for_scene
-from .config import resolve_default_3d_mode
+from .config import SUPPORTED_3D_MODES, resolve_default_3d_mode
 from .scene import OverlaySpec, RenderRequest
 from .scene3d import build_render_scene_3d
 
@@ -38,20 +38,27 @@ def plot3d(
     if not isinstance(morpho, Morphology):
         raise TypeError(f"plot3d(...) expects Morpho, got {type(morpho).__name__!s}.")
     resolved_mode = resolve_default_3d_mode(mode)
-    if resolved_mode != "geometry":
-        raise ValueError(f"Unsupported 3D mode {resolved_mode!r}. Expected 'geometry'.")
+    if resolved_mode not in SUPPORTED_3D_MODES:
+        expected = ", ".join(sorted(repr(item) for item in SUPPORTED_3D_MODES))
+        raise ValueError(f"Unsupported 3D mode {resolved_mode!r}. Expected one of {expected}.")
 
-    scene = build_render_scene_3d(morpho)
+    overlay = OverlaySpec(region=region, locset=locset, values=values)
+    scene = build_render_scene_3d(morpho, mode=resolved_mode, overlay=overlay)
     chooser = chooser or BackendChooser.default()
+    backend_options: dict = {}
+    if notebook is not None:
+        backend_options["notebook"] = notebook
+    if jupyter_backend is not None:
+        backend_options["jupyter_backend"] = jupyter_backend
+    if return_plotter:
+        backend_options["return_plotter"] = True
     request = RenderRequest(
         morpho=morpho,
-        overlay=OverlaySpec(region=region, locset=locset, values=values),
+        scene=scene,
+        overlay=overlay,
         dimensionality="3d",
         mode=resolved_mode,
-        scene=scene,
-        notebook=notebook,
-        jupyter_backend=jupyter_backend,
-        return_plotter=return_plotter,
+        backend_options=backend_options,
     )
     backend_impl = chooser.pick(requested=backend, scene_kind="3d")
     validate_backend_for_scene(backend_impl, scene)

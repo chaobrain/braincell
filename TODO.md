@@ -394,13 +394,27 @@ internal dependencies · status · open work**.
   interactive 3D backend (PyVista) and a static / publication 2D
   backend (matplotlib).
 - **Key types and files**
-  - `scene.py`, `scene2d.py`, `scene3d.py` — scene graph builder.
+  - `scene.py` — frozen dataclass primitives (`Polyline2D`, `Polygon2D`,
+    `Circle2D`, `Label2D`, `BranchPolyline3D`, `BranchTypeBatch3D`),
+    `RenderScene2D` / `RenderScene3D` containers, `RenderRequest`,
+    `OverlaySpec`.
+  - `scene2d.py`, `scene3d.py` — scene builders that strip brainunits
+    (`.to_decimal(u.um)`) and translate morphology + layout into
+    primitive tuples.
   - `plot2d.py`, `plot3d.py` — high-level user entry points.
-  - `backend.py`, `backend_matplotlib.py`, `backend_pyvista.py` —
-    rendering backends.
-  - `layout2d.py`, `compare2d.py` — automatic 2D layouts and side-by-
-    side morphology comparison.
-  - `config.py` — style configuration shared across backends.
+  - `backend.py` — `RenderBackend` Protocol + `BackendChooser`.
+  - `backend_matplotlib.py`, `backend_pyvista.py` — concrete backends
+    with lazy optional imports.
+  - `layout2d.py` — **monolithic 1.7k LOC** 2D tree-layout engine
+    covering stem / trunk_first / balloon / radial_360 / legacy
+    families, collision detection, scoring, and geometry utilities.
+    Scheduled for split into `vis/layout/` (see M6 Phase 2).
+  - `compare2d.py` — side-by-side comparison of layout families on the
+    same morphology.
+  - `config.py` — `VisDefaults` dataclass singleton plus
+    `configure_defaults` / `get_defaults` / `reset_defaults`.
+  - `_test_helper.py` — `FakeBackend` scene-capturing double for unit
+    tests.
 - **Status**
   - [x] 3D rendering of `Branch` / `Morphology` with point geometry,
     scene composition, PyVista backend.
@@ -409,14 +423,63 @@ internal dependencies · status · open work**.
   - [x] 2D frustum auto-layout.
   - [x] Stem / balloon / radial360 layout family with matplotlib
     comparison output.
-  - [~] Overlays: `region` / `locset` / `values` parameters are wired
-    through the unified plotting entry point, but the highlight /
-    coloring semantics are still primitive — gaps:
-    - per-CV value colormap with proper colorbars and unit labels;
-    - locset markers respecting region restriction;
-    - hover/pick metadata in PyVista linking back to branch IDs.
-  - [ ] **Time-series animation** of voltage / state arrays once the
-    runtime layer (§3.5) lands.
+  - [x] `OverlaySpec` plumbed end-to-end for `region` / `locset` /
+    `values`, with per-CV value colormaps, locset scatter markers,
+    and region recolor passes consumed by both backends.
+  - [x] `RenderRequest` uses a neutral `backend_options` mapping;
+    backend-specific kwargs no longer pollute the shared schema.
+  - [x] Backend capability registry via `supported_scene_kinds:
+    frozenset[str]` so a future backend can declare multi-format
+    support.
+  - [x] `plot3d(mode="skeleton")` fast-preview path (centerline-only,
+    no tube generation) alongside the default `"geometry"` mode.
+  - [x] `RenderScene2D.draw_order` honored by the matplotlib backend
+    (primitives sorted by draw_order → `zorder=` argument).
+  - [x] `braincell.vis.theme(**overrides)` context manager for scoped
+    style overrides; tests no longer need manual `reset_defaults()`.
+  - [x] Shared `vis/_testing.py` helpers and parametrized layout-family
+    tests covering the shared invariants across stem / balloon /
+    radial_360.
+  - [ ] **`layout2d.py` refactor** into `vis/layout/` with separate
+    files for `_stem.py`, `_balloon.py`, `_radial.py`, `_legacy.py`,
+    `_collision.py`, `_geometry.py`, and a `LayoutConfig` dataclass
+    that externalizes the current magic numbers and scoring weights
+    (M6 Phase 2).
+  - [ ] **Color-by-values** for 2D and 3D scenes: accept per-branch /
+    per-segment / per-CV scalars, vectorize the matplotlib path via
+    `LineCollection` / `PolyCollection`, pass through to PyVista via
+    `polydata.point_data["values"]` + `add_mesh(scalars=..., cmap=...)`.
+    Proper colorbars and unit labels (M6 Phase 3).
+  - [ ] **`plot_movie`** — time-varying values over a morphology using
+    matplotlib `FuncAnimation` or `pyvista.Plotter.open_movie`; builds
+    the scene once and swaps the values array per frame.
+  - [ ] **`plot_traces`** — time-series at `locset` locations,
+    color-synced with the morphology view.
+  - [ ] **Morphometry / topology plots**: `plot_dendrogram`,
+    `plot_topology`, `plot_sholl`, `plot_branch_order_histogram`.
+  - [ ] **Generalized comparison**: `compare_morphologies`,
+    `compare_values`.
+  - [ ] **Interactivity**: matplotlib pick/hover callbacks; PyVista
+    point/cell picking mapped back to branch/CV IDs; optional Plotly
+    backend for dependency-light interactive notebook 3D.
+  - [ ] **Export polish**: unified `save_figure`, `PublicationTheme`
+    preset, LaTeX-friendly defaults.
+  - [ ] **Visual regression tests** via `pytest-mpl` with golden PNGs
+    under `braincell/vis/_baseline_images/` (Linux CI only).
+  - [ ] **Performance baselines** via `pytest-benchmark` on small /
+    medium / large (10k-branch synthetic) morphologies.
+  - [ ] **Layout caching** keyed on `(morpho.metric, LayoutConfig)`
+    so repeated notebook calls skip the stem-search cost.
+- **Open risks**
+  - `layout2d.py` is the largest single file in the module and holds
+    the most bug-prone code (heuristic collision avoidance, magic
+    scoring weights). Any behavior-changing edit before the mechanical
+    split into `vis/layout/` costs reviewer bandwidth disproportionate
+    to the change.
+  - Optional dependencies (`matplotlib`, `pyvista`) must stay lazy-
+    imported inside backend `.render()` calls. The import-time test
+    from §4.5 / risk #5 should grow to assert that neither is loaded
+    after `import braincell.vis`.
 
 ### 3.8 `braincell` package root — neuron base classes
 
@@ -711,13 +774,96 @@ from NMODL.
 
 ### M6 — Visualization polish
 
-Goal: publication-quality static plots and interactive 3D inspection
-including time-series.
+Goal: publication-quality static plots, interactive 3D inspection,
+time-series rendering, and a maintainable layout engine.
 
-- [ ] Per-CV value overlays with proper colormaps, units, colorbars.
-- [ ] Locset markers respecting region restriction.
-- [ ] PyVista hover/pick mapping back to branch IDs.
-- [ ] Time-series animation of `Cell.run` traces.
+The module is small (~4k LOC) but `layout2d.py` alone is 1.7k LOC of
+heuristic tree-layout code and the overlay feature was half-wired. The
+milestone is broken into four landable phases so each phase leaves the
+module shippable.
+
+**Phase 1 — Stabilize and unblock (P0).** Fix dead/half-wired features,
+clean the API schema, set up test infrastructure.
+
+- [x] Finish `OverlaySpec` end-to-end: region recolor, locset scatter
+  markers, per-CV value colormap consumed by both backends.
+- [x] Replace `RenderBackend.scene_kind: str | None` with
+  `supported_scene_kinds: frozenset[str]`; update `BackendChooser.pick`
+  and `validate_backend_for_scene`.
+- [x] Refactor `RenderRequest` to use a neutral
+  `backend_options: Mapping[str, Any]`; move `ax`, `notebook`,
+  `jupyter_backend`, `return_plotter` into it. User-facing `plot2d` /
+  `plot3d` kwargs stay stable.
+- [x] Add `plot3d(mode="skeleton")` alongside `"geometry"`; open up
+  the mode parameter through `scene3d` + `PyVistaBackend`.
+- [x] Wire `RenderScene2D.draw_order` and per-primitive `draw_order`
+  into the matplotlib backend (`zorder=` argument).
+- [x] Add `braincell.vis.theme(**overrides)` context manager for
+  scoped style overrides.
+- [x] Create `braincell/vis/_testing.py` with shared fixture builders
+  (underscore-prefixed so pytest skips it); parametrize layout-family
+  tests over (stem, balloon, radial_360); add at least one
+  numeric-coordinate assertion on a hand-verifiable tree.
+
+**Phase 2 — Refactor `layout2d.py` (P0).**
+
+- [ ] Mechanical split of `layout2d.py` into `braincell/vis/layout/`:
+  `_common.py`, `_dispatch.py`, `_stem.py`, `_balloon.py`, `_radial.py`,
+  `_legacy.py`, `_collision.py`, `_geometry.py`. Zero logic changes;
+  each new file ships with a sibling `*_test.py` on day one.
+- [ ] Register-based layout dispatch via `@register_layout("name")` so
+  third parties can add new families without editing the dispatcher.
+- [ ] Promote the 22 magic constants (angles, margins, retry limits,
+  scoring weights) to a `LayoutConfig` dataclass; accept an optional
+  `layout_config=` kwarg on `plot2d`; document every weight in the
+  dataclass docstring.
+- [ ] Deprecate the legacy layout (`DeprecationWarning` on first use).
+- [ ] Replace O(branches²) collision detection with a 2D spatial-hash
+  in `_collision.py`.
+- [ ] Property-based tests (hypothesis) on random small trees asserting
+  "no inter-branch overlap up to margin" for stem / balloon /
+  radial_360.
+
+**Phase 3 — Scientific visualization features (P1).**
+
+- [ ] Color-by-values on 2D: per-segment scalars via matplotlib
+  `LineCollection` / `PolyCollection` (also gives a 10–50× speedup on
+  large morphologies).
+- [ ] Color-by-values on 3D: `polydata.point_data["values"]` +
+  `add_mesh(scalars=..., cmap=..., scalar_bar_args=...)`.
+- [ ] Proper colorbars with unit labels; `vmin` / `vmax` / `cmap` /
+  `norm` surfaced through the public API.
+- [ ] `plot_movie(morpho, values_over_time, dt=..., out=None)` —
+  build scene once, swap values per frame, write via
+  matplotlib `FuncAnimation` or `pyvista.Plotter.open_movie`.
+- [ ] `plot_traces(cell, recordings, locations, ...)` — time-series
+  panels color-synced with the morphology view.
+- [ ] Layout caching keyed on `(morpho.metric, LayoutConfig hash)`.
+- [ ] `plot_dendrogram`, `plot_topology`, `plot_sholl`,
+  `plot_branch_order_histogram`.
+- [ ] Visual regression tests via `pytest-mpl` (Linux CI only, with a
+  generous initial tolerance and a small baseline image set).
+
+**Phase 4 — Interactivity, export, docs (P2/P3).**
+
+- [ ] Matplotlib pick / hover hooks exposed through a
+  `hooks=VisHooks(on_pick=..., on_hover=...)` parameter.
+- [ ] PyVista point/cell picking mapped back to branch/CV IDs.
+- [ ] Optional Plotly backend (`backend_plotly.py`) for
+  dependency-light interactive 3D in notebooks without VTK; gated
+  behind a `[vis-interactive]` extras_require.
+- [ ] Unified `save_figure(obj, path, dpi=..., transparent=...)`
+  handling both matplotlib and PyVista returns.
+- [ ] `PublicationTheme` preset in `config.py` (serif font, no grid,
+  higher contrast palette, thicker lines).
+- [ ] Generalized `compare_morphologies([m1, m2], layout=...,
+  align="soma")` and `compare_values(morpho, [values_a, values_b])`.
+- [ ] Performance baselines via `pytest-benchmark` on small / medium /
+  large synthetic morphologies.
+- [ ] Narrative `develop_doc/vis.ipynb` tutorial covering quick start,
+  layout gallery, styling, color-by-values, overlays, animation,
+  publication export.
+- [ ] Sphinx autodoc wiring for `braincell.vis` public surface.
 
 ### M7 — Numerics hardening
 

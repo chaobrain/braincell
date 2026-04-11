@@ -129,20 +129,32 @@ def _request(*, notebook: bool | None = None, jupyter_backend: str | None = None
         type="soma",
     )
     tree = Morphology.from_root(branch, name="soma")
+    backend_options: dict = {}
+    if notebook is not None:
+        backend_options["notebook"] = notebook
+    if jupyter_backend is not None:
+        backend_options["jupyter_backend"] = jupyter_backend
+    if return_plotter:
+        backend_options["return_plotter"] = True
     return RenderRequest(
         morpho=tree,
         dimensionality="3d",
         scene=build_render_scene_3d(tree),
-        notebook=notebook,
-        jupyter_backend=jupyter_backend,
-        return_plotter=return_plotter,
+        backend_options=backend_options,
     )
+
+
+class _FakeSphere:
+    def __init__(self, *, radius, center) -> None:
+        self.radius = radius
+        self.center = center
 
 
 def _fake_pyvista(plotter_cls, *, extension_available=False):
     return types.SimpleNamespace(
         Plotter=plotter_cls,
         PolyData=_FakePolyData,
+        Sphere=_FakeSphere,
         global_theme=types.SimpleNamespace(
             trame=_FakeTrameConfig(),
         ),

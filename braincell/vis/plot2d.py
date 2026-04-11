@@ -45,6 +45,7 @@ def plot2d(
 
     resolved_layout = resolve_default_2d_layout(layout)
     resolved_shape = resolve_default_2d_shape(shape)
+    overlay = OverlaySpec(region=region, locset=locset, values=values)
     scene = build_render_scene_2d(
         morpho,
         layout=resolved_layout,
@@ -52,19 +53,26 @@ def plot2d(
         projection_plane=projection_plane,
         min_branch_angle_deg=min_branch_angle_deg,
         root_layout=root_layout,
+        overlay=overlay,
     )
     chooser = chooser or BackendChooser.default()
+    backend_options: dict = {}
+    if ax is not None:
+        backend_options["ax"] = ax
+    if notebook is not None:
+        backend_options["notebook"] = notebook
+    if jupyter_backend is not None:
+        backend_options["jupyter_backend"] = jupyter_backend
+    if return_plotter:
+        backend_options["return_plotter"] = True
     request = RenderRequest(
         morpho=morpho,
-        overlay=OverlaySpec(region=region, locset=locset, values=values),
+        scene=scene,
+        overlay=overlay,
         dimensionality="2d",
         layout=resolved_layout,
         shape=resolved_shape,
-        scene=scene,
-        ax=ax,
-        notebook=notebook,
-        jupyter_backend=jupyter_backend,
-        return_plotter=return_plotter,
+        backend_options=backend_options,
     )
     backend_impl = chooser.pick(requested=backend, scene_kind="2d")
     validate_backend_for_scene(backend_impl, scene)

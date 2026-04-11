@@ -21,13 +21,22 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from .scene import RenderRequest, RenderScene2D
+from .scene import (
+    HighlightStroke2D,
+    Marker2D,
+    Polygon2D,
+    Polyline2D,
+    RenderRequest,
+    RenderScene2D,
+)
+
+_BASE_OVERLAY_OFFSET = 10_000  # overlays drawn strictly above all base primitives
 
 
 @dataclass(frozen=True)
 class MatplotlibBackend:
     name: str = "matplotlib"
-    scene_kind: str | None = "2d"
+    supported_scene_kinds: frozenset[str] = frozenset({"2d"})
     background: str = "white"
     show_axes: bool = False
 
@@ -46,51 +55,118 @@ class MatplotlibBackend:
 
         import matplotlib.pyplot as plt
 
-        if request.ax is None:
+        ax = request.backend_options.get("ax") if request.backend_options else None
+        if ax is None:
             fig, ax = plt.subplots()
         else:
-            ax = request.ax
             fig = ax.figure
         fig.patch.set_facecolor(self.background)
         ax.set_facecolor(self.background)
 
-        for polyline in scene.polylines:
-            color = tuple(channel / 255.0 for channel in polyline.color_rgb)
-            linewidth = max(float(np.mean(polyline.widths_um)), 0.5)
-            ax.plot(
-                polyline.points_um[:, 0],
-                polyline.points_um[:, 1],
-                color=color,
-                linewidth=linewidth,
-                alpha=polyline.alpha,
-            )
-
-        for polygon in scene.polygons:
-            color = tuple(channel / 255.0 for channel in polygon.color_rgb)
-            patch = plt.Polygon(
-                polygon.points_um,
-                closed=True,
-                facecolor=color,
-                edgecolor=color,
-                alpha=polygon.alpha,
-                linewidth=1.0,
-            )
-            ax.add_patch(patch)
+        # Render all base primitives in ``draw_order`` so test expectations
+        # that inspect `ax.lines` / `ax.patches` match the data order the
+        # scene declares, and so later primitives sit above earlier ones.
+        polygons = sorted(scene.polygons, key=_primitive_order)
+        polylines = sorted(scene.polylines, key=_primitive_order)
+        for polygon in polygons:
+            _draw_polygon(ax, plt, polygon)
+        for polyline in polylines:
+            _draw_polyline(ax, polyline)
 
         for circle in scene.circles:
-            color = tuple(channel / 255.0 for channel in circle.color_rgb)
-            patch = plt.Circle(circle.center_um, circle.radius_um, color=color, fill=False)
+            color = _rgb_to_float(circle.color_rgb)
+            patch = plt.Circle(
+                circle.center_um,
+                circle.radius_um,
+                color=color,
+                fill=False,
+                zorder=circle.draw_order,
+            )
             ax.add_patch(patch)
 
         for label in scene.labels:
-            color = tuple(channel / 255.0 for channel in label.color_rgb)
-            ax.text(label.position_um[0], label.position_um[1], label.text, color=color)
+            color = _rgb_to_float(label.color_rgb)
+            ax.text(
+                label.position_um[0],
+                label.position_um[1],
+                label.text,
+                color=color,
+                zorder=label.draw_order,
+            )
+
+        for stroke in sorted(scene.highlight_strokes, key=_primitive_order):
+            _draw_highlight_stroke(ax, stroke)
+
+        for marker in sorted(scene.markers, key=_primitive_order):
+            _draw_marker(ax, marker)
 
         _set_scene_limits(ax, scene)
         ax.set_aspect("equal", adjustable="datalim")
         if not self.show_axes:
             ax.axis("off")
         return ax
+
+
+def _primitive_order(primitive) -> int:
+    return getattr(primitive, "draw_order", 0)
+
+
+def _rgb_to_float(rgb: tuple[int, int, int]) -> tuple[float, float, float]:
+    return tuple(float(channel) / 255.0 for channel in rgb)  # type: ignore[return-value]
+
+
+def _draw_polyline(ax, polyline: Polyline2D) -> None:
+    color = _rgb_to_float(polyline.color_rgb)
+    linewidth = max(float(np.mean(polyline.widths_um)), 0.5)
+    ax.plot(
+        polyline.points_um[:, 0],
+        polyline.points_um[:, 1],
+        color=color,
+        linewidth=linewidth,
+        alpha=polyline.alpha,
+        zorder=polyline.draw_order,
+    )
+
+
+def _draw_polygon(ax, plt, polygon: Polygon2D) -> None:
+    color = _rgb_to_float(polygon.color_rgb)
+    patch = plt.Polygon(
+        polygon.points_um,
+        closed=True,
+        facecolor=color,
+        edgecolor=color,
+        alpha=polygon.alpha,
+        linewidth=1.0,
+        zorder=polygon.draw_order,
+    )
+    ax.add_patch(patch)
+
+
+def _draw_highlight_stroke(ax, stroke: HighlightStroke2D) -> None:
+    color = _rgb_to_float(stroke.color_rgb)
+    ax.plot(
+        stroke.points_um[:, 0],
+        stroke.points_um[:, 1],
+        color=color,
+        linewidth=stroke.linewidth,
+        alpha=stroke.alpha,
+        zorder=_BASE_OVERLAY_OFFSET + stroke.draw_order,
+        solid_capstyle="round",
+        solid_joinstyle="round",
+    )
+
+
+def _draw_marker(ax, marker: Marker2D) -> None:
+    color = _rgb_to_float(marker.color_rgb)
+    ax.scatter(
+        marker.position_um[0],
+        marker.position_um[1],
+        s=marker.size,
+        c=[color],
+        edgecolors="black",
+        linewidths=0.5,
+        zorder=_BASE_OVERLAY_OFFSET + marker.draw_order,
+    )
 
 
 def _set_scene_limits(ax, scene: RenderScene2D) -> None:
@@ -115,6 +191,13 @@ def _set_scene_limits(ax, scene: RenderScene2D) -> None:
                 ]
             )
         )
+
+    for stroke in scene.highlight_strokes:
+        if stroke.points_um.size:
+            bounds.append(np.asarray(stroke.points_um, dtype=float))
+
+    for marker in scene.markers:
+        bounds.append(np.asarray(marker.position_um, dtype=float).reshape(1, -1))
 
     if not bounds:
         return

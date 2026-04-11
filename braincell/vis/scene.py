@@ -14,7 +14,7 @@
 # ==============================================================================
 
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
+from typing import Any, Mapping, TYPE_CHECKING
 
 import numpy as np
 from brainstate.typing import ArrayLike
@@ -47,12 +47,30 @@ def alpha_for_3d_tube() -> float:
     return _alpha_for_3d_tube()
 
 
+# ---------------------------------------------------------------------------
+# Overlay input spec (what the user passes to plot2d / plot3d)
+# ---------------------------------------------------------------------------
+
 @dataclass(frozen=True)
 class OverlaySpec:
+    """User-facing overlay request passed through ``plot2d`` / ``plot3d``.
+
+    The scene builders translate this into concrete overlay *primitives*
+    (``HighlightStroke2D`` / ``Marker2D`` / ``HighlightStroke3D`` /
+    ``Marker3D``) that the backends then render on top of the base scene.
+
+    Fields are plain masks so callers can build them with
+    ``region_expr.evaluate(morpho)`` / ``locset_expr.evaluate(morpho)``.
+    """
+
     region: "RegionMask | None" = None
     locset: "LocsetMask | None" = None
     values: ArrayLike | None = None
 
+
+# ---------------------------------------------------------------------------
+# 3D scene primitives
+# ---------------------------------------------------------------------------
 
 @dataclass(frozen=True)
 class BranchPolyline3D:
@@ -74,6 +92,38 @@ class BranchTypeBatch3D:
     radii_um: np.ndarray
     lines: np.ndarray
 
+
+@dataclass(frozen=True)
+class HighlightStroke3D:
+    """Polyline fragment emitted for a region interval overlay in 3D.
+
+    The backend renders this as an accent-colored stroke on top of the
+    base tube/skeleton for the affected branch.
+    """
+
+    branch_index: int
+    branch_name: str
+    branch_type: str
+    points_um: np.ndarray
+    radii_um: np.ndarray
+    color_rgb: tuple[int, int, int]
+    opacity: float = 1.0
+
+
+@dataclass(frozen=True)
+class Marker3D:
+    """Scatter marker emitted from a locset point in 3D."""
+
+    branch_index: int
+    x: float
+    position_um: np.ndarray
+    color_rgb: tuple[int, int, int]
+    radius_um: float = 1.5
+
+
+# ---------------------------------------------------------------------------
+# 2D scene primitives
+# ---------------------------------------------------------------------------
 
 @dataclass(frozen=True)
 class Polyline2D:
@@ -115,9 +165,42 @@ class Label2D:
 
 
 @dataclass(frozen=True)
+class HighlightStroke2D:
+    """Polyline fragment emitted for a region interval overlay in 2D."""
+
+    branch_index: int
+    branch_name: str
+    branch_type: str
+    points_um: np.ndarray
+    color_rgb: tuple[int, int, int]
+    linewidth: float
+    alpha: float = 1.0
+    draw_order: int = 0
+
+
+@dataclass(frozen=True)
+class Marker2D:
+    """Scatter marker emitted from a locset point in 2D."""
+
+    branch_index: int
+    x: float
+    position_um: np.ndarray
+    color_rgb: tuple[int, int, int]
+    size: float = 30.0
+    draw_order: int = 0
+
+
+# ---------------------------------------------------------------------------
+# Scene containers
+# ---------------------------------------------------------------------------
+
+@dataclass(frozen=True)
 class RenderScene3D:
     branches: tuple[BranchPolyline3D, ...]
     batches: tuple[BranchTypeBatch3D, ...]
+    highlight_strokes: tuple[HighlightStroke3D, ...] = ()
+    markers: tuple[Marker3D, ...] = ()
+    mode: str = "geometry"
 
 
 @dataclass(frozen=True)
@@ -126,22 +209,32 @@ class RenderScene2D:
     polygons: tuple[Polygon2D, ...] = ()
     circles: tuple[Circle2D, ...] = ()
     labels: tuple[Label2D, ...] = ()
+    highlight_strokes: tuple[HighlightStroke2D, ...] = ()
+    markers: tuple[Marker2D, ...] = ()
     draw_order: tuple[int, ...] = ()
     projection_plane: str | None = None
     layout: str = "projected"
     shape: str = "line"
 
 
+# ---------------------------------------------------------------------------
+# Render request — neutral schema with a backend_options escape hatch
+# ---------------------------------------------------------------------------
+
 @dataclass(frozen=True)
 class RenderRequest:
+    """Dispatched to a backend's ``render`` method.
+
+    Backend-specific parameters (matplotlib ``ax``, pyvista ``notebook``,
+    ``jupyter_backend``, ``return_plotter``) live in ``backend_options``
+    so that adding a new backend does not require editing this schema.
+    """
+
     morpho: "Morphology"
+    scene: RenderScene2D | RenderScene3D | None = None
     overlay: OverlaySpec = field(default_factory=OverlaySpec)
     dimensionality: str = "3d"
     mode: str | None = None
     layout: str | None = None
     shape: str | None = None
-    scene: RenderScene2D | RenderScene3D | None = None
-    ax: object | None = None
-    notebook: bool | None = None
-    jupyter_backend: str | None = None
-    return_plotter: bool = False
+    backend_options: Mapping[str, Any] = field(default_factory=dict)

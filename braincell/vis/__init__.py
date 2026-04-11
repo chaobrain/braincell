@@ -13,7 +13,14 @@
 # limitations under the License.
 # ==============================================================================
 
-from .config import VisDefaults, configure as configure_defaults, get_defaults, reset_defaults, set_defaults
+from .config import (
+    VisDefaults,
+    configure as configure_defaults,
+    get_defaults,
+    reset_defaults,
+    set_defaults,
+    theme,
+)
 from .plot2d import plot2d
 from .plot3d import plot3d
 
@@ -25,4 +32,5 @@ __all__ = [
     "plot3d",
     "reset_defaults",
     "set_defaults",
+    "theme",
 ]

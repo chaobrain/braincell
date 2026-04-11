@@ -17,44 +17,24 @@
 import unittest
 from unittest import mock
 
-import brainunit as u
 import matplotlib.axes
 import matplotlib.pyplot as plt
 import numpy as np
 
-from braincell import Branch, Morphology
 from braincell import vis as morpho_vis
+from braincell.filter import AllRegion, BranchPoints, Terminals
 from braincell.vis import plot2d, plot3d
 from braincell.vis.backend import BackendChooser
 from braincell.vis.backend_matplotlib import MatplotlibBackend
 from braincell.vis.backend_pyvista import PyVistaBackend
 from braincell.vis.compare2d import compare_layouts_2d
 from braincell.vis._test_helper import FakeBackend
-
-
-def _point_tree() -> Morphology:
-    soma = Branch.from_points(
-        points=[[0.0, 0.0, 0.0], [10.0, 0.0, 1.0]] * u.um,
-        radii=[5.0, 5.0] * u.um,
-        type="soma",
-    )
-    return Morphology.from_root(soma, name="soma")
-
-
-def _length_only_tree() -> Morphology:
-    soma = Branch.from_lengths(
-        lengths=[20.0] * u.um,
-        radii=[10.0, 10.0] * u.um,
-        type="soma",
-    )
-    dend = Branch.from_lengths(
-        lengths=[8.0, 12.0] * u.um,
-        radii=[2.0, 1.5, 1.0] * u.um,
-        type="apical_dendrite",
-    )
-    tree = Morphology.from_root(soma, name="soma")
-    tree.attach(parent="soma", child_branch=dend, child_name="dendrite", parent_x=1.0)
-    return tree
+from braincell.vis._testing import (
+    make_length_only_tree,
+    make_point_tree,
+    make_projected_point_tree,
+    make_root_split_tree,
+)
 
 
 class VisPlotTest(unittest.TestCase):
@@ -63,7 +43,7 @@ class VisPlotTest(unittest.TestCase):
         self.addCleanup(morpho_vis.reset_defaults)
 
     def test_plot2d_defaults_to_stem_frustum(self) -> None:
-        tree = _point_tree()
+        tree = make_point_tree()
         backend = FakeBackend()
 
         request = plot2d(tree, chooser=BackendChooser(backends=(backend,)))
@@ -76,7 +56,7 @@ class VisPlotTest(unittest.TestCase):
         self.assertEqual(request.scene.projection_plane, None)
 
     def test_plot2d_line_shape_accepts_length_only_morphology(self) -> None:
-        tree = _length_only_tree()
+        tree = make_length_only_tree()
         backend = FakeBackend()
 
         request = plot2d(tree, layout="stem", shape="line", chooser=BackendChooser(backends=(backend,)))
@@ -89,7 +69,7 @@ class VisPlotTest(unittest.TestCase):
         self.assertEqual(len(request.scene.polygons), 0)
 
     def test_plot2d_frustum_shape_accepts_length_only_morphology(self) -> None:
-        tree = _length_only_tree()
+        tree = make_length_only_tree()
         backend = FakeBackend()
 
         request = plot2d(tree, layout="stem", shape="frustum", chooser=BackendChooser(backends=(backend,)))
@@ -102,37 +82,46 @@ class VisPlotTest(unittest.TestCase):
         self.assertEqual(len(request.scene.polylines), 0)
 
     def test_plot2d_projected_layout_requires_points(self) -> None:
-        tree = _length_only_tree()
+        tree = make_length_only_tree()
 
         with self.assertRaisesRegex(ValueError, "layout='stem'.*shape='line'.*shape='frustum'"):
             plot2d(tree, layout="projected", shape="line", chooser=BackendChooser(backends=(FakeBackend(),)))
 
     def test_plot3d_requires_points_and_suggests_2d_fallbacks(self) -> None:
-        tree = _length_only_tree()
+        tree = make_length_only_tree()
 
         with self.assertRaisesRegex(ValueError, r"vis2d\(layout='stem', shape='line'\).+vis2d\(layout='stem', shape='frustum'\)"):
             plot3d(tree, chooser=BackendChooser(backends=(FakeBackend(),)))
 
     def test_plot2d_rejects_unknown_shape(self) -> None:
-        tree = _point_tree()
+        tree = make_point_tree()
 
         with self.assertRaisesRegex(ValueError, "Unsupported 2D shape"):
             plot2d(tree, layout="stem", shape="layout", chooser=BackendChooser(backends=(FakeBackend(),)))
 
     def test_plot2d_projected_layout_rejects_frustum_shape(self) -> None:
-        tree = _point_tree()
+        tree = make_point_tree()
 
         with self.assertRaisesRegex(ValueError, "layout='projected' only supports shape='line'"):
             plot2d(tree, layout="projected", shape="frustum", chooser=BackendChooser(backends=(FakeBackend(),)))
 
     def test_plot3d_rejects_unknown_mode(self) -> None:
-        tree = _point_tree()
+        tree = make_point_tree()
 
         with self.assertRaisesRegex(ValueError, "Unsupported 3D mode"):
             plot3d(tree, mode="projected")
 
+    def test_plot3d_accepts_skeleton_mode(self) -> None:
+        tree = make_point_tree()
+        backend = FakeBackend()
+
+        request = plot3d(tree, mode="skeleton", chooser=BackendChooser(backends=(backend,)))
+
+        self.assertEqual(request.mode, "skeleton")
+        self.assertEqual(request.scene.mode, "skeleton")
+
     def test_plot2d_rejects_pyvista_backend(self) -> None:
-        tree = _point_tree()
+        tree = make_point_tree()
 
         # Force PyVista to report as available so the dispatch reaches the
         # scene-kind validation step even when pyvista isn't installed.
@@ -141,13 +130,13 @@ class VisPlotTest(unittest.TestCase):
                 plot2d(tree, backend="pyvista")
 
     def test_plot3d_rejects_matplotlib_backend(self) -> None:
-        tree = _point_tree()
+        tree = make_point_tree()
 
         with self.assertRaisesRegex(ValueError, "only supports 2D scenes"):
             plot3d(tree, backend="matplotlib")
 
     def test_matplotlib_backend_renders_projected_scene(self) -> None:
-        tree = _point_tree()
+        tree = make_point_tree()
         chooser = BackendChooser(backends=(MatplotlibBackend(),))
 
         axes = plot2d(tree, layout="projected", shape="line", backend="matplotlib", chooser=chooser)
@@ -164,8 +153,8 @@ class VisPlotTest(unittest.TestCase):
         )
         backend = FakeBackend()
 
-        request_2d = plot2d(_point_tree(), chooser=BackendChooser(backends=(backend,)))
-        request_3d = plot3d(_point_tree(), chooser=BackendChooser(backends=(backend,)))
+        request_2d = plot2d(make_point_tree(), chooser=BackendChooser(backends=(backend,)))
+        request_3d = plot3d(make_point_tree(), chooser=BackendChooser(backends=(backend,)))
 
         self.assertEqual(request_2d.layout, "stem")
         self.assertEqual(request_2d.shape, "line")
@@ -174,8 +163,38 @@ class VisPlotTest(unittest.TestCase):
         self.assertEqual(request_3d.scene.batches[0].color_rgb, (18, 52, 86))
         self.assertAlmostEqual(request_3d.scene.batches[0].opacity, 0.4)
 
+    def test_theme_context_manager_restores_defaults_on_exit(self) -> None:
+        backend = FakeBackend()
+
+        with morpho_vis.theme(branch_type_colors={"soma": "#ff0000"}, alpha_2d_line=0.1):
+            inside = plot2d(
+                make_point_tree(),
+                shape="line",
+                chooser=BackendChooser(backends=(backend,)),
+            )
+            self.assertEqual(inside.scene.polylines[0].color_rgb, (255, 0, 0))
+            self.assertAlmostEqual(inside.scene.polylines[0].alpha, 0.1)
+
+        after = plot2d(
+            make_point_tree(),
+            shape="line",
+            chooser=BackendChooser(backends=(backend,)),
+        )
+        # Soma default is black (0, 0, 0); alpha_2d_line defaults to 1.0.
+        self.assertEqual(after.scene.polylines[0].color_rgb, (0, 0, 0))
+        self.assertAlmostEqual(after.scene.polylines[0].alpha, 1.0)
+
+    def test_theme_context_manager_restores_on_exception(self) -> None:
+        original = morpho_vis.get_defaults().branch_type_colors["soma"]
+
+        with self.assertRaises(RuntimeError):
+            with morpho_vis.theme(branch_type_colors={"soma": "#abcdef"}):
+                raise RuntimeError("boom")
+
+        self.assertEqual(morpho_vis.get_defaults().branch_type_colors["soma"], original)
+
     def test_matplotlib_backend_can_render_into_existing_axes(self) -> None:
-        tree = _length_only_tree()
+        tree = make_length_only_tree()
         chooser = BackendChooser(backends=(MatplotlibBackend(),))
         fig, ax = plt.subplots(figsize=(8, 4))
 
@@ -187,7 +206,7 @@ class VisPlotTest(unittest.TestCase):
         plt.close(fig)
 
     def test_matplotlib_backend_renders_frustum_scene(self) -> None:
-        tree = _length_only_tree()
+        tree = make_length_only_tree()
         chooser = BackendChooser(backends=(MatplotlibBackend(),))
 
         axes = plot2d(tree, layout="stem", shape="frustum", backend="matplotlib", chooser=chooser)
@@ -198,7 +217,7 @@ class VisPlotTest(unittest.TestCase):
         self.assertGreater(float(np.diff(axes.get_ylim())[0]), 10.0)
 
     def test_compare_layouts_2d_renders_side_by_side_matplotlib_figure(self) -> None:
-        tree = _length_only_tree()
+        tree = make_length_only_tree()
         chooser = BackendChooser(backends=(MatplotlibBackend(),))
 
         fig, axes = compare_layouts_2d(tree, chooser=chooser)
@@ -208,3 +227,136 @@ class VisPlotTest(unittest.TestCase):
         self.assertTrue(all(isinstance(ax, matplotlib.axes.Axes) for ax in axes))
         self.assertGreaterEqual(sum(len(ax.lines) for ax in axes), 3)
         plt.close(fig)
+
+
+class VisOverlayTest(unittest.TestCase):
+    def setUp(self) -> None:
+        morpho_vis.reset_defaults()
+        self.addCleanup(morpho_vis.reset_defaults)
+
+    def test_plot2d_with_region_overlay_emits_highlight_strokes(self) -> None:
+        tree = make_length_only_tree()
+        region = AllRegion().evaluate(tree)
+        backend = FakeBackend()
+
+        rendered = plot2d(
+            tree,
+            layout="stem",
+            shape="line",
+            region=region,
+            chooser=BackendChooser(backends=(backend,)),
+        )
+
+        self.assertIs(rendered.overlay.region, region)
+        self.assertEqual(len(rendered.scene.highlight_strokes), len(tree.branches))
+        for stroke, branch in zip(rendered.scene.highlight_strokes, tree.branches):
+            self.assertEqual(stroke.branch_index, branch.index)
+            self.assertGreaterEqual(stroke.points_um.shape[0], 2)
+            self.assertGreater(stroke.linewidth, 0.0)
+
+    def test_plot2d_with_locset_overlay_emits_markers(self) -> None:
+        tree = make_length_only_tree()
+        locset = Terminals().evaluate(tree)
+        backend = FakeBackend()
+
+        rendered = plot2d(
+            tree,
+            layout="stem",
+            shape="line",
+            locset=locset,
+            chooser=BackendChooser(backends=(backend,)),
+        )
+
+        self.assertIs(rendered.overlay.locset, locset)
+        self.assertEqual(len(rendered.scene.markers), len(locset.points))
+        for marker in rendered.scene.markers:
+            self.assertEqual(marker.position_um.shape, (2,))
+
+    def test_plot3d_with_region_overlay_emits_highlight_strokes(self) -> None:
+        tree = make_projected_point_tree()
+        region = AllRegion().evaluate(tree)
+        backend = FakeBackend()
+
+        rendered = plot3d(tree, region=region, chooser=BackendChooser(backends=(backend,)))
+
+        self.assertIs(rendered.overlay.region, region)
+        self.assertEqual(len(rendered.scene.highlight_strokes), len(tree.branches))
+        for stroke in rendered.scene.highlight_strokes:
+            self.assertEqual(stroke.points_um.shape[1], 3)
+
+    def test_plot3d_with_locset_overlay_emits_markers(self) -> None:
+        tree = make_projected_point_tree()
+        locset = (BranchPoints() | Terminals()).evaluate(tree)
+        backend = FakeBackend()
+
+        rendered = plot3d(tree, locset=locset, chooser=BackendChooser(backends=(backend,)))
+
+        self.assertIs(rendered.overlay.locset, locset)
+        self.assertEqual(len(rendered.scene.markers), len(locset.points))
+        for marker in rendered.scene.markers:
+            self.assertEqual(marker.position_um.shape, (3,))
+
+    def test_plot2d_rejects_values_overlay_until_phase_3(self) -> None:
+        tree = make_length_only_tree()
+
+        with self.assertRaisesRegex(NotImplementedError, "Color-by-values"):
+            plot2d(
+                tree,
+                layout="stem",
+                shape="line",
+                values=np.array([1.0, 2.0]),
+                chooser=BackendChooser(backends=(FakeBackend(),)),
+            )
+
+    def test_plot3d_rejects_values_overlay_until_phase_3(self) -> None:
+        tree = make_projected_point_tree()
+
+        with self.assertRaisesRegex(NotImplementedError, "Color-by-values"):
+            plot3d(
+                tree,
+                values=np.array([1.0, 2.0]),
+                chooser=BackendChooser(backends=(FakeBackend(),)),
+            )
+
+    def test_matplotlib_renders_region_highlight_strokes_on_top(self) -> None:
+        tree = make_length_only_tree()
+        region = AllRegion().evaluate(tree)
+        chooser = BackendChooser(backends=(MatplotlibBackend(),))
+
+        ax = plot2d(
+            tree,
+            layout="stem",
+            shape="line",
+            region=region,
+            backend="matplotlib",
+            chooser=chooser,
+        )
+
+        # Base polylines + overlay strokes are both rendered as `ax.lines`
+        # entries. The overlay strokes get a high zorder so they render
+        # above the base; count them instead of asserting pixel output.
+        overlay_lines = [line for line in ax.lines if line.get_zorder() >= 10_000]
+        self.assertEqual(len(overlay_lines), len(tree.branches))
+        plt.close(ax.figure)
+
+    def test_matplotlib_renders_locset_markers_as_scatter(self) -> None:
+        tree = make_length_only_tree()
+        locset = Terminals().evaluate(tree)
+        chooser = BackendChooser(backends=(MatplotlibBackend(),))
+
+        ax = plot2d(
+            tree,
+            layout="stem",
+            shape="line",
+            locset=locset,
+            backend="matplotlib",
+            chooser=chooser,
+        )
+
+        # Each Marker2D becomes one `PathCollection` from `ax.scatter`.
+        self.assertGreaterEqual(len(ax.collections), len(locset.points))
+        plt.close(ax.figure)
+
+
+if __name__ == "__main__":
+    unittest.main()

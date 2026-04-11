@@ -16,6 +16,7 @@
 
 from .backend import BackendChooser, validate_backend_for_scene
 from .config import SUPPORTED_3D_MODES, resolve_default_3d_mode
+from .plot2d import _build_value_spec
 from .scene import OverlaySpec, RenderRequest
 from .scene3d import build_render_scene_3d
 
@@ -26,6 +27,12 @@ def plot3d(
     region=None,
     locset=None,
     values=None,
+    cmap: str | None = None,
+    vmin: float | None = None,
+    vmax: float | None = None,
+    norm=None,
+    value_label: str | None = None,
+    show_colorbar: bool = True,
     mode: str | None = None,
     backend: str | None = None,
     chooser: BackendChooser | None = None,
@@ -42,7 +49,16 @@ def plot3d(
         expected = ", ".join(sorted(repr(item) for item in SUPPORTED_3D_MODES))
         raise ValueError(f"Unsupported 3D mode {resolved_mode!r}. Expected one of {expected}.")
 
-    overlay = OverlaySpec(region=region, locset=locset, values=values)
+    values_spec = _build_value_spec(
+        values,
+        cmap=cmap,
+        vmin=vmin,
+        vmax=vmax,
+        norm=norm,
+        value_label=value_label,
+        show_colorbar=show_colorbar,
+    )
+    overlay = OverlaySpec(region=region, locset=locset, values=values_spec)
     scene = build_render_scene_3d(morpho, mode=resolved_mode, overlay=overlay)
     chooser = chooser or BackendChooser.default()
     backend_options: dict = {}

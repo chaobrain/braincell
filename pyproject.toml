@@ -54,11 +54,9 @@ classifiers = [
 ]
 dependencies = [
     "numpy>=1.15",
-    "requests",
     "brainunit>=0.0.8",
     "brainstate>=0.2.0",
     "brainevent>=0.0.7",
-    "scipy",
     "brainpy>=2.7.5",
     "braintools>=0.1.0",
 ]
@@ -81,3 +79,4 @@ cuda12 = ["jax[cuda12]"]
 cuda13 = ["jax[cuda13]"]
 tpu = ["jax[tpu]"]
 testing = ["pytest", "jax"]
+vis = ['matplotlib']

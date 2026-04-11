@@ -23,7 +23,8 @@ from typing import Any
 
 import numpy as np
 
-from .scene import RenderRequest, RenderScene3D
+from ._values import resolved_colorbar_label
+from .scene import RenderRequest, RenderScene3D, ValueBatch3D, ValueSpec
 
 
 @dataclass(frozen=True)
@@ -64,26 +65,43 @@ class PyVistaBackend:
 
         mode = scene.mode if scene.mode else "geometry"
 
-        for batch in scene.batches:
-            poly = pv.PolyData()
-            poly.points = batch.points_um
-            poly.lines = batch.lines
-            color = _rgb_to_float(batch.color_rgb)
-            if mode == "skeleton":
-                plotter.add_mesh(
-                    poly,
-                    color=color,
-                    opacity=batch.opacity,
-                    line_width=self.skeleton_line_width,
-                )
-            else:
-                poly.point_data["radius"] = batch.radii_um * float(self.radius_scale)
-                tube = poly.tube(
-                    scalars="radius",
-                    absolute=True,
-                    n_sides=self.tube_sides,
-                )
-                plotter.add_mesh(tube, color=color, opacity=batch.opacity)
+        # If a value spec is supplied, render one coloured mesh per value
+        # batch instead of the per-type coloured meshes. The base
+        # ``scene.batches`` are used for geometry grouping only and are
+        # skipped so the two paths don't double-render.
+        value_spec = scene.value_spec
+        if scene.value_batches and value_spec is not None:
+            _render_value_batches_pyvista(
+                pv,
+                plotter,
+                scene.value_batches,
+                mode=mode,
+                value_spec=value_spec,
+                tube_sides=self.tube_sides,
+                radius_scale=self.radius_scale,
+                skeleton_line_width=self.skeleton_line_width,
+            )
+        else:
+            for batch in scene.batches:
+                poly = pv.PolyData()
+                poly.points = batch.points_um
+                poly.lines = batch.lines
+                color = _rgb_to_float(batch.color_rgb)
+                if mode == "skeleton":
+                    plotter.add_mesh(
+                        poly,
+                        color=color,
+                        opacity=batch.opacity,
+                        line_width=self.skeleton_line_width,
+                    )
+                else:
+                    poly.point_data["radius"] = batch.radii_um * float(self.radius_scale)
+                    tube = poly.tube(
+                        scalars="radius",
+                        absolute=True,
+                        n_sides=self.tube_sides,
+                    )
+                    plotter.add_mesh(tube, color=color, opacity=batch.opacity)
 
         # Overlay: region highlight strokes
         for stroke in scene.highlight_strokes:
@@ -164,6 +182,73 @@ class PyVistaBackend:
 
 def _rgb_to_float(rgb: tuple[int, int, int]) -> tuple[float, float, float]:
     return tuple(float(channel) / 255.0 for channel in rgb)  # type: ignore[return-value]
+
+
+def _render_value_batches_pyvista(
+    pv: Any,
+    plotter: Any,
+    value_batches: tuple[ValueBatch3D, ...],
+    *,
+    mode: str,
+    value_spec: ValueSpec,
+    tube_sides: int,
+    radius_scale: float,
+    skeleton_line_width: float,
+) -> None:
+    """Render scalar-valued PolyData batches with a single scalar bar."""
+    import numpy as np  # local import keeps module-level surface small
+
+    # Compute a shared vmin/vmax over every batch so the colour scale
+    # is consistent across branches/types.
+    all_values: list[float] = []
+    for batch in value_batches:
+        if batch.point_values.size:
+            all_values.append(float(np.min(batch.point_values)))
+            all_values.append(float(np.max(batch.point_values)))
+    vmin = value_spec.vmin if value_spec.vmin is not None else (min(all_values) if all_values else 0.0)
+    vmax = value_spec.vmax if value_spec.vmax is not None else (max(all_values) if all_values else 1.0)
+    if vmin == vmax:
+        vmin = vmin - 0.5
+        vmax = vmax + 0.5
+    clim = (vmin, vmax)
+
+    title = resolved_colorbar_label(value_spec, value_spec.unit_label)
+    scalar_bar_args = {"title": title if title is not None else "values"}
+
+    for index, batch in enumerate(value_batches):
+        poly = pv.PolyData()
+        poly.points = batch.points_um
+        poly.lines = batch.lines
+        poly.point_data["values"] = batch.point_values
+        first = index == 0
+        show_scalar_bar = bool(value_spec.show_colorbar) and first
+        if mode == "skeleton":
+            plotter.add_mesh(
+                poly,
+                scalars="values",
+                cmap=value_spec.cmap,
+                clim=clim,
+                opacity=batch.opacity,
+                line_width=skeleton_line_width,
+                show_scalar_bar=show_scalar_bar,
+                scalar_bar_args=scalar_bar_args if show_scalar_bar else None,
+            )
+        else:
+            poly.point_data["radius"] = batch.radii_um * float(radius_scale)
+            tube = poly.tube(
+                scalars="radius",
+                absolute=True,
+                n_sides=tube_sides,
+            )
+            plotter.add_mesh(
+                tube,
+                scalars="values",
+                cmap=value_spec.cmap,
+                clim=clim,
+                opacity=batch.opacity,
+                show_scalar_bar=show_scalar_bar,
+                scalar_bar_args=scalar_bar_args if show_scalar_bar else None,
+            )
 
 
 def _notebook_backends(requested: str | None) -> tuple[str, ...]:

@@ -18,6 +18,7 @@ import brainunit as u
 import numpy as np
 
 from braincell.morph import Morphology
+from ._values import resolve_values
 from .config import (
     highlight_alpha as _highlight_alpha,
     highlight_color as _highlight_color,
@@ -26,12 +27,16 @@ from .config import (
 )
 from .layout import LayoutBranch2D, LayoutConfig, build_layout_branches_2d
 from .scene import (
+    BranchValues,
     HighlightStroke2D,
     Marker2D,
     OverlaySpec,
     Polygon2D,
+    PolygonValuesBatch2D,
     Polyline2D,
+    PolylineValues2D,
     RenderScene2D,
+    ValueSpec,
     alpha_for_2d_line,
     alpha_for_2d_poly,
     color_for_branch_type,
@@ -57,7 +62,6 @@ def build_render_scene_2d(
 ) -> RenderScene2D:
     if not isinstance(morpho, Morphology):
         raise TypeError(f"build_render_scene_2d(...) expects Morpho, got {type(morpho).__name__!s}.")
-    _reject_values_overlay(overlay)
     if layout == "projected":
         if shape != "line":
             raise ValueError("layout='projected' only supports shape='line'.")
@@ -94,7 +98,10 @@ def build_scene2d_projected(
     except KeyError as exc:
         raise ValueError(f"Unsupported projection plane {projection_plane!r}.") from exc
 
+    value_spec, per_branch_values, unit_label = _resolve_overlay_values(overlay, morpho)
+
     polylines: list[Polyline2D] = []
+    polyline_values: list[PolylineValues2D] = []
     centerlines: dict[int, _Centerline2D] = {}
     for branch_index in range(len(morpho)):
         branch_view = morpho.branch(index=branch_index)
@@ -117,18 +124,32 @@ def build_scene2d_projected(
                 np.asarray(branch.radii_distal.to_decimal(u.um), dtype=float),
             ]
         )
-        polylines.append(
-            Polyline2D(
-                branch_index=branch_index,
-                branch_name=branch_view.name,
-                branch_type=branch_view.type,
-                points_um=projected_points,
-                widths_um=widths_um,
-                color_rgb=color_for_branch_type(branch_view.type),
-                alpha=alpha_for_2d_line(),
-                draw_order=branch_index,
+        if per_branch_values is None:
+            polylines.append(
+                Polyline2D(
+                    branch_index=branch_index,
+                    branch_name=branch_view.name,
+                    branch_type=branch_view.type,
+                    points_um=projected_points,
+                    widths_um=widths_um,
+                    color_rgb=color_for_branch_type(branch_view.type),
+                    alpha=alpha_for_2d_line(),
+                    draw_order=branch_index,
+                )
             )
-        )
+        else:
+            branch_values = per_branch_values[branch_index]
+            polyline_values.append(
+                PolylineValues2D(
+                    branch_index=branch_index,
+                    branch_name=branch_view.name,
+                    branch_type=branch_view.type,
+                    points_um=projected_points,
+                    segment_values=branch_values.segment_values,
+                    widths_um=widths_um,
+                    draw_order=branch_index,
+                )
+            )
         centerlines[branch_index] = _Centerline2D.from_points(
             branch_index=branch_index,
             branch_name=branch_view.name,
@@ -137,17 +158,23 @@ def build_scene2d_projected(
             widths_um=widths_um,
         )
 
+    base_count = len(polylines) + len(polyline_values)
     highlight_strokes, markers = _build_overlay_primitives_2d(
         overlay,
         centerlines,
-        next_draw_order=len(polylines),
+        next_draw_order=base_count,
     )
 
+    draw_order = tuple(
+        p.draw_order for p in polylines
+    ) + tuple(p.draw_order for p in polyline_values)
     return RenderScene2D(
         polylines=tuple(polylines),
+        polyline_values=tuple(polyline_values),
+        value_spec=_with_unit_label(value_spec, unit_label),
         highlight_strokes=highlight_strokes,
         markers=markers,
-        draw_order=tuple(polyline.draw_order for polyline in polylines),
+        draw_order=draw_order,
         projection_plane=projection_plane,
         layout="projected",
         shape="line",
@@ -166,7 +193,10 @@ def build_scene2d_line(
     if not isinstance(morpho, Morphology):
         raise TypeError(f"build_scene2d_line(...) expects Morpho, got {type(morpho).__name__!s}.")
 
+    value_spec, per_branch_values, unit_label = _resolve_overlay_values(overlay, morpho)
+
     polylines: list[Polyline2D] = []
+    polyline_values: list[PolylineValues2D] = []
     centerlines: dict[int, _Centerline2D] = {}
     draw_order = 0
     for branch_layout in build_layout_branches_2d(
@@ -178,22 +208,42 @@ def build_scene2d_line(
         layout_config=layout_config,
     ):
         centerlines[branch_layout.branch_index] = _Centerline2D.from_layout(branch_layout)
-        for segment_index in range(len(branch_layout.segment_points_um) - 1):
-            polylines.append(
-                Polyline2D(
+        n_points = len(branch_layout.segment_points_um)
+        if per_branch_values is None:
+            for segment_index in range(n_points - 1):
+                polylines.append(
+                    Polyline2D(
+                        branch_index=branch_layout.branch_index,
+                        branch_name=branch_layout.branch_name,
+                        branch_type=branch_layout.branch_type,
+                        points_um=branch_layout.segment_points_um[segment_index: segment_index + 2],
+                        widths_um=np.array(
+                            [
+                                2.0 * float(branch_layout.radii_proximal_um[segment_index]),
+                                2.0 * float(branch_layout.radii_distal_um[segment_index]),
+                            ],
+                            dtype=float,
+                        ),
+                        color_rgb=color_for_branch_type(branch_layout.branch_type),
+                        alpha=alpha_for_2d_line(),
+                        draw_order=draw_order,
+                    )
+                )
+                draw_order += 1
+        else:
+            branch_values = per_branch_values[branch_layout.branch_index]
+            widths = np.empty(n_points, dtype=float)
+            if n_points > 0:
+                widths[0] = 2.0 * float(branch_layout.radii_proximal_um[0])
+                widths[1:] = 2.0 * np.asarray(branch_layout.radii_distal_um, dtype=float)
+            polyline_values.append(
+                PolylineValues2D(
                     branch_index=branch_layout.branch_index,
                     branch_name=branch_layout.branch_name,
                     branch_type=branch_layout.branch_type,
-                    points_um=branch_layout.segment_points_um[segment_index: segment_index + 2],
-                    widths_um=np.array(
-                        [
-                            2.0 * float(branch_layout.radii_proximal_um[segment_index]),
-                            2.0 * float(branch_layout.radii_distal_um[segment_index]),
-                        ],
-                        dtype=float,
-                    ),
-                    color_rgb=color_for_branch_type(branch_layout.branch_type),
-                    alpha=alpha_for_2d_line(),
+                    points_um=np.asarray(branch_layout.segment_points_um, dtype=float),
+                    segment_values=branch_values.segment_values,
+                    widths_um=widths,
                     draw_order=draw_order,
                 )
             )
@@ -205,11 +255,16 @@ def build_scene2d_line(
         next_draw_order=draw_order,
     )
 
+    draw_order_tuple = tuple(p.draw_order for p in polylines) + tuple(
+        p.draw_order for p in polyline_values
+    )
     return RenderScene2D(
         polylines=tuple(polylines),
+        polyline_values=tuple(polyline_values),
+        value_spec=_with_unit_label(value_spec, unit_label),
         highlight_strokes=highlight_strokes,
         markers=markers,
-        draw_order=tuple(polyline.draw_order for polyline in polylines),
+        draw_order=draw_order_tuple,
         layout=layout,
         shape="line",
     )
@@ -227,7 +282,10 @@ def build_scene2d_frustum(
     if not isinstance(morpho, Morphology):
         raise TypeError(f"build_scene2d_frustum(...) expects Morpho, got {type(morpho).__name__!s}.")
 
+    value_spec, per_branch_values, unit_label = _resolve_overlay_values(overlay, morpho)
+
     polygons: list[Polygon2D] = []
+    polygon_value_batches: list[PolygonValuesBatch2D] = []
     centerlines: dict[int, _Centerline2D] = {}
     draw_order = 0
     for branch_layout in build_layout_branches_2d(
@@ -239,32 +297,64 @@ def build_scene2d_frustum(
         layout_config=layout_config,
     ):
         centerlines[branch_layout.branch_index] = _Centerline2D.from_layout(branch_layout)
-        for segment_index in range(len(branch_layout.segment_points_um) - 1):
-            start_um = branch_layout.segment_points_um[segment_index]
-            end_um = branch_layout.segment_points_um[segment_index + 1]
-            normal_um = branch_layout.segment_normals_um[segment_index]
-            radius_prox_um = float(branch_layout.radii_proximal_um[segment_index])
-            radius_dist_um = float(branch_layout.radii_distal_um[segment_index])
-            polygon_points_um = np.vstack(
-                [
-                    start_um + normal_um * radius_prox_um,
-                    end_um + normal_um * radius_dist_um,
-                    end_um - normal_um * radius_dist_um,
-                    start_um - normal_um * radius_prox_um,
-                ]
-            )
-            polygons.append(
-                Polygon2D(
-                    branch_index=branch_layout.branch_index,
-                    branch_name=branch_layout.branch_name,
-                    branch_type=branch_layout.branch_type,
-                    points_um=polygon_points_um,
-                    color_rgb=color_for_branch_type(branch_layout.branch_type),
-                    alpha=alpha_for_2d_poly(),
-                    draw_order=draw_order,
+        n_segments = len(branch_layout.segment_points_um) - 1
+
+        if per_branch_values is None:
+            for segment_index in range(n_segments):
+                start_um = branch_layout.segment_points_um[segment_index]
+                end_um = branch_layout.segment_points_um[segment_index + 1]
+                normal_um = branch_layout.segment_normals_um[segment_index]
+                radius_prox_um = float(branch_layout.radii_proximal_um[segment_index])
+                radius_dist_um = float(branch_layout.radii_distal_um[segment_index])
+                polygon_points_um = np.vstack(
+                    [
+                        start_um + normal_um * radius_prox_um,
+                        end_um + normal_um * radius_dist_um,
+                        end_um - normal_um * radius_dist_um,
+                        start_um - normal_um * radius_prox_um,
+                    ]
                 )
-            )
-            draw_order += 1
+                polygons.append(
+                    Polygon2D(
+                        branch_index=branch_layout.branch_index,
+                        branch_name=branch_layout.branch_name,
+                        branch_type=branch_layout.branch_type,
+                        points_um=polygon_points_um,
+                        color_rgb=color_for_branch_type(branch_layout.branch_type),
+                        alpha=alpha_for_2d_poly(),
+                        draw_order=draw_order,
+                    )
+                )
+                draw_order += 1
+        else:
+            branch_values = per_branch_values[branch_layout.branch_index]
+            if n_segments > 0:
+                polygons_um = np.empty((n_segments, 4, 2), dtype=float)
+                for segment_index in range(n_segments):
+                    start_um = branch_layout.segment_points_um[segment_index]
+                    end_um = branch_layout.segment_points_um[segment_index + 1]
+                    normal_um = branch_layout.segment_normals_um[segment_index]
+                    radius_prox_um = float(branch_layout.radii_proximal_um[segment_index])
+                    radius_dist_um = float(branch_layout.radii_distal_um[segment_index])
+                    polygons_um[segment_index] = np.vstack(
+                        [
+                            start_um + normal_um * radius_prox_um,
+                            end_um + normal_um * radius_dist_um,
+                            end_um - normal_um * radius_dist_um,
+                            start_um - normal_um * radius_prox_um,
+                        ]
+                    )
+                polygon_value_batches.append(
+                    PolygonValuesBatch2D(
+                        branch_index=branch_layout.branch_index,
+                        branch_name=branch_layout.branch_name,
+                        branch_type=branch_layout.branch_type,
+                        polygons_um=polygons_um,
+                        polygon_values=branch_values.segment_values,
+                        draw_order=draw_order,
+                    )
+                )
+                draw_order += 1
 
     highlight_strokes, markers = _build_overlay_primitives_2d(
         overlay,
@@ -272,11 +362,16 @@ def build_scene2d_frustum(
         next_draw_order=draw_order,
     )
 
+    draw_order_tuple = tuple(p.draw_order for p in polygons) + tuple(
+        b.draw_order for b in polygon_value_batches
+    )
     return RenderScene2D(
         polygons=tuple(polygons),
+        polygon_value_batches=tuple(polygon_value_batches),
+        value_spec=_with_unit_label(value_spec, unit_label),
         highlight_strokes=highlight_strokes,
         markers=markers,
-        draw_order=tuple(polygon.draw_order for polygon in polygons),
+        draw_order=draw_order_tuple,
         layout=layout,
         shape="frustum",
     )
@@ -463,10 +558,36 @@ def _build_overlay_primitives_2d(
     return tuple(strokes), tuple(markers)
 
 
-def _reject_values_overlay(overlay: OverlaySpec | None) -> None:
-    if overlay is not None and overlay.values is not None:
-        raise NotImplementedError(
-            "Color-by-values overlays are scheduled for M6 Phase 3. "
-            "Only region= and locset= overlays are wired through in the "
-            "current release."
-        )
+def _resolve_overlay_values(
+    overlay: OverlaySpec | None,
+    morpho: Morphology,
+) -> tuple[ValueSpec | None, dict[int, BranchValues] | None, str | None]:
+    """Return ``(spec, per_branch_values, unit_label)`` or ``(None, None, None)``."""
+    if overlay is None:
+        return None, None, None
+    spec = overlay.values_spec()
+    if spec is None:
+        return None, None, None
+    per_branch, unit_label = resolve_values(morpho, spec)
+    return spec, per_branch, unit_label
+
+
+def _with_unit_label(
+    spec: ValueSpec | None,
+    unit_label: str | None,
+) -> ValueSpec | None:
+    """Inject the unit label from the input array into the spec when empty."""
+    if spec is None:
+        return None
+    if unit_label is None or spec.unit_label is not None:
+        return spec
+    return ValueSpec(
+        values=spec.values,
+        cmap=spec.cmap,
+        vmin=spec.vmin,
+        vmax=spec.vmax,
+        norm=spec.norm,
+        label=spec.label,
+        unit_label=unit_label,
+        show_colorbar=spec.show_colorbar,
+    )

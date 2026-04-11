@@ -31,6 +31,85 @@ if TYPE_CHECKING:
     from braincell.morph import Morphology
 
 
+# ---------------------------------------------------------------------------
+# Value spec — styling for color-by-values overlays (M6 Phase 3)
+# ---------------------------------------------------------------------------
+
+@dataclass(frozen=True)
+class ValueSpec:
+    """Styling parameters for a color-by-values overlay.
+
+    Parameters
+    ----------
+    values : ArrayLike
+        Per-element scalar array. The number of elements is interpreted
+        against the morphology:
+
+        * ``n_branches`` — one scalar per branch (the whole branch is
+          shaded with that single colour);
+        * total segment count — one scalar per segment (matplotlib
+          ``LineCollection`` / ``PolyCollection`` uses the corresponding
+          per-segment colour);
+        * total centerline-point count (``segments + branches``) — one
+          scalar per polyline point (used directly as
+          ``polydata.point_data``).
+
+        Values may carry ``brainunit`` units; the units are used to
+        generate a default colourbar label when ``unit_label`` is unset.
+    cmap : str
+        Matplotlib colormap name, forwarded to
+        :class:`matplotlib.cm.ScalarMappable` and PyVista ``add_mesh``.
+    vmin, vmax : float or None
+        Fixed colour-scale bounds. When either is ``None`` the missing
+        bound is derived from the data range.
+    norm : object or None
+        Optional matplotlib ``Normalize``-compatible object. Takes
+        precedence over *vmin*/*vmax* for the 2D backend.
+    label : str or None
+        Colourbar title. When ``None`` no title is drawn.
+    unit_label : str or None
+        Optional unit string appended to *label* on the colourbar.
+    show_colorbar : bool
+        Whether to render a colourbar alongside the scene (matplotlib
+        only; PyVista always draws its own scalar bar when scalars are
+        present).
+    """
+
+    values: ArrayLike
+    cmap: str = "viridis"
+    vmin: float | None = None
+    vmax: float | None = None
+    norm: Any | None = None
+    label: str | None = None
+    unit_label: str | None = None
+    show_colorbar: bool = True
+
+
+# ---------------------------------------------------------------------------
+# Resolved per-branch value arrays
+# ---------------------------------------------------------------------------
+
+@dataclass(frozen=True)
+class BranchValues:
+    """Per-branch centerline-point scalar array.
+
+    The scene builders use :class:`BranchValues` as the canonical in-scene
+    representation of a color-by-values request. One ``BranchValues``
+    entry exists per branch; ``point_values`` stores a scalar for every
+    centerline point (one more than the number of segments).
+    """
+
+    branch_index: int
+    point_values: np.ndarray  # shape (n_points,)
+
+    @property
+    def segment_values(self) -> np.ndarray:
+        """Per-segment midpoint scalars: ``0.5 * (v[i] + v[i+1])``."""
+        if self.point_values.size <= 1:
+            return self.point_values.copy()
+        return 0.5 * (self.point_values[:-1] + self.point_values[1:])
+
+
 def color_for_branch_type(branch_type: str) -> tuple[int, int, int]:
     return _color_for_branch_type(branch_type)
 
@@ -61,11 +140,27 @@ class OverlaySpec:
 
     Fields are plain masks so callers can build them with
     ``region_expr.evaluate(morpho)`` / ``locset_expr.evaluate(morpho)``.
+
+    ``values`` may be either a bare array (interpreted with default
+    styling) or a :class:`ValueSpec` carrying colormap / bounds / label
+    information.
     """
 
     region: "RegionMask | None" = None
     locset: "LocsetMask | None" = None
-    values: ArrayLike | None = None
+    values: "ValueSpec | ArrayLike | None" = None
+
+    def values_spec(self) -> "ValueSpec | None":
+        """Return the normalized :class:`ValueSpec`, or ``None``.
+
+        Accepts either a bare array (upgraded to ``ValueSpec`` with
+        default styling) or an already-constructed :class:`ValueSpec`.
+        """
+        if self.values is None:
+            return None
+        if isinstance(self.values, ValueSpec):
+            return self.values
+        return ValueSpec(values=self.values)
 
 
 # ---------------------------------------------------------------------------
@@ -91,6 +186,26 @@ class BranchTypeBatch3D:
     points_um: np.ndarray
     radii_um: np.ndarray
     lines: np.ndarray
+
+
+@dataclass(frozen=True)
+class ValueBatch3D:
+    """Scalar-valued PolyData batch for a color-by-values 3D scene.
+
+    Mirrors :class:`BranchTypeBatch3D` but carries a per-point scalar
+    array consumed by ``PyVista.add_mesh(scalars=...)``. One
+    ``ValueBatch3D`` is emitted per branch type so that the batch's
+    geometry can still be grouped the same way the base renderer does.
+    """
+
+    branch_type: str
+    branch_indices: tuple[int, ...]
+    branch_names: tuple[str, ...]
+    points_um: np.ndarray
+    radii_um: np.ndarray
+    lines: np.ndarray
+    point_values: np.ndarray  # shape (n_points,)
+    opacity: float
 
 
 @dataclass(frozen=True)
@@ -165,6 +280,44 @@ class Label2D:
 
 
 @dataclass(frozen=True)
+class PolylineValues2D:
+    """Per-segment scalar-valued polyline for a single branch in 2D.
+
+    Emitted by the scene builder when the caller supplies ``values=``
+    and ``shape='line'``. The matplotlib backend vectorizes rendering
+    via :class:`matplotlib.collections.LineCollection`, with one
+    segment drawn per consecutive pair of points and one scalar per
+    segment from :attr:`segment_values`.
+    """
+
+    branch_index: int
+    branch_name: str
+    branch_type: str
+    points_um: np.ndarray  # shape (n_points, 2)
+    segment_values: np.ndarray  # shape (n_points - 1,)
+    widths_um: np.ndarray  # shape (n_points,) — per-point centerline diameter
+    draw_order: int = 0
+
+
+@dataclass(frozen=True)
+class PolygonValuesBatch2D:
+    """Batched scalar-valued quad polygons for a single branch (frustum).
+
+    For ``shape='frustum'`` each segment is drawn as a trapezoid with
+    a per-polygon scalar; using a batched primitive lets the
+    matplotlib backend materialise the whole branch as a single
+    :class:`matplotlib.collections.PolyCollection`.
+    """
+
+    branch_index: int
+    branch_name: str
+    branch_type: str
+    polygons_um: np.ndarray  # shape (n_segments, 4, 2)
+    polygon_values: np.ndarray  # shape (n_segments,)
+    draw_order: int = 0
+
+
+@dataclass(frozen=True)
 class HighlightStroke2D:
     """Polyline fragment emitted for a region interval overlay in 2D."""
 
@@ -200,6 +353,8 @@ class RenderScene3D:
     batches: tuple[BranchTypeBatch3D, ...]
     highlight_strokes: tuple[HighlightStroke3D, ...] = ()
     markers: tuple[Marker3D, ...] = ()
+    value_batches: tuple[ValueBatch3D, ...] = ()
+    value_spec: ValueSpec | None = None
     mode: str = "geometry"
 
 
@@ -211,6 +366,9 @@ class RenderScene2D:
     labels: tuple[Label2D, ...] = ()
     highlight_strokes: tuple[HighlightStroke2D, ...] = ()
     markers: tuple[Marker2D, ...] = ()
+    polyline_values: tuple[PolylineValues2D, ...] = ()
+    polygon_value_batches: tuple[PolygonValuesBatch2D, ...] = ()
+    value_spec: ValueSpec | None = None
     draw_order: tuple[int, ...] = ()
     projection_plane: str | None = None
     layout: str = "projected"

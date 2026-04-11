@@ -39,11 +39,6 @@ Passing ``layout_config=None`` through the entire layout stack means
 "use :data:`DEFAULT_LAYOUT_CONFIG`", which recovers the pre-Phase-2
 behaviour byte-for-byte.
 
-References
-----------
-The design of the stem scoring function is described in
-``develop_doc/vis.ipynb`` (under the "Stem layout scoring" section) and
-in the Phase 2 block of ``TODO.md``.
 """
 
 

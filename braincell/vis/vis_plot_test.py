@@ -296,25 +296,59 @@ class VisOverlayTest(unittest.TestCase):
         for marker in rendered.scene.markers:
             self.assertEqual(marker.position_um.shape, (3,))
 
-    def test_plot2d_rejects_values_overlay_until_phase_3(self) -> None:
+    def test_plot2d_per_branch_values_emit_value_primitives(self) -> None:
+        tree = make_length_only_tree()
+        backend = FakeBackend()
+
+        rendered = plot2d(
+            tree,
+            layout="stem",
+            shape="line",
+            values=np.array([0.1, 0.9]),
+            chooser=BackendChooser(backends=(backend,)),
+        )
+
+        self.assertIsNotNone(rendered.scene.value_spec)
+        self.assertEqual(len(rendered.scene.polyline_values), len(tree.branches))
+        self.assertEqual(len(rendered.scene.polylines), 0)
+
+    def test_plot2d_frustum_values_emit_polygon_value_batches(self) -> None:
+        tree = make_length_only_tree()
+        backend = FakeBackend()
+
+        rendered = plot2d(
+            tree,
+            layout="stem",
+            shape="frustum",
+            values=np.array([0.1, 0.9]),
+            chooser=BackendChooser(backends=(backend,)),
+        )
+
+        self.assertEqual(len(rendered.scene.polygon_value_batches), len(tree.branches))
+        self.assertEqual(len(rendered.scene.polygons), 0)
+
+    def test_plot3d_per_branch_values_emit_value_batches(self) -> None:
+        tree = make_projected_point_tree()
+        backend = FakeBackend()
+
+        rendered = plot3d(
+            tree,
+            values=np.array([0.25, 0.75]),
+            chooser=BackendChooser(backends=(backend,)),
+        )
+
+        self.assertGreaterEqual(len(rendered.scene.value_batches), 1)
+        self.assertIsNotNone(rendered.scene.value_spec)
+
+    def test_plot2d_values_length_mismatch_raises(self) -> None:
         tree = make_length_only_tree()
 
-        with self.assertRaisesRegex(NotImplementedError, "Color-by-values"):
+        with self.assertRaisesRegex(ValueError, "ValueSpec.values has length"):
             plot2d(
                 tree,
                 layout="stem",
                 shape="line",
-                values=np.array([1.0, 2.0]),
-                chooser=BackendChooser(backends=(FakeBackend(),)),
-            )
-
-    def test_plot3d_rejects_values_overlay_until_phase_3(self) -> None:
-        tree = make_projected_point_tree()
-
-        with self.assertRaisesRegex(NotImplementedError, "Color-by-values"):
-            plot3d(
-                tree,
-                values=np.array([1.0, 2.0]),
+                values=np.array([1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0]),
                 chooser=BackendChooser(backends=(FakeBackend(),)),
             )
 

@@ -17,7 +17,7 @@
 from .backend import BackendChooser, validate_backend_for_scene
 from .config import resolve_default_2d_layout, resolve_default_2d_shape
 from .layout import LayoutConfig
-from .scene import OverlaySpec, RenderRequest
+from .scene import OverlaySpec, RenderRequest, ValueSpec
 from .scene2d import build_render_scene_2d
 
 
@@ -27,6 +27,12 @@ def plot2d(
     region=None,
     locset=None,
     values=None,
+    cmap: str | None = None,
+    vmin: float | None = None,
+    vmax: float | None = None,
+    norm=None,
+    value_label: str | None = None,
+    show_colorbar: bool = True,
     layout: str | None = None,
     shape: str | None = None,
     backend: str | None = None,
@@ -47,7 +53,16 @@ def plot2d(
 
     resolved_layout = resolve_default_2d_layout(layout)
     resolved_shape = resolve_default_2d_shape(shape)
-    overlay = OverlaySpec(region=region, locset=locset, values=values)
+    values_spec = _build_value_spec(
+        values,
+        cmap=cmap,
+        vmin=vmin,
+        vmax=vmax,
+        norm=norm,
+        value_label=value_label,
+        show_colorbar=show_colorbar,
+    )
+    overlay = OverlaySpec(region=region, locset=locset, values=values_spec)
     scene = build_render_scene_2d(
         morpho,
         layout=resolved_layout,
@@ -80,3 +95,44 @@ def plot2d(
     backend_impl = chooser.pick(requested=backend, scene_kind="2d")
     validate_backend_for_scene(backend_impl, scene)
     return backend_impl.render(request)
+
+
+def _build_value_spec(
+    values,
+    *,
+    cmap: str | None,
+    vmin: float | None,
+    vmax: float | None,
+    norm,
+    value_label: str | None,
+    show_colorbar: bool,
+) -> ValueSpec | None:
+    """Normalize ``plot2d``/``plot3d`` value keywords into a :class:`ValueSpec`."""
+    if values is None:
+        if any(k is not None for k in (cmap, vmin, vmax, norm, value_label)):
+            raise ValueError(
+                "values=... is required when passing cmap/vmin/vmax/norm/value_label."
+            )
+        return None
+    if isinstance(values, ValueSpec):
+        # Fold caller-supplied style kwargs on top of the spec. A kwarg
+        # that's None leaves the spec field untouched.
+        return ValueSpec(
+            values=values.values,
+            cmap=cmap if cmap is not None else values.cmap,
+            vmin=vmin if vmin is not None else values.vmin,
+            vmax=vmax if vmax is not None else values.vmax,
+            norm=norm if norm is not None else values.norm,
+            label=value_label if value_label is not None else values.label,
+            unit_label=values.unit_label,
+            show_colorbar=show_colorbar if show_colorbar is not values.show_colorbar else values.show_colorbar,
+        )
+    return ValueSpec(
+        values=values,
+        cmap=cmap if cmap is not None else "viridis",
+        vmin=vmin,
+        vmax=vmax,
+        norm=norm,
+        label=value_label,
+        show_colorbar=show_colorbar,
+    )

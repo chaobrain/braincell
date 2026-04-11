@@ -22,16 +22,33 @@ from .config import (
     theme,
 )
 from .layout import LayoutConfig
+from .morphometry import (
+    plot_branch_order_histogram,
+    plot_dendrogram,
+    plot_sholl,
+    plot_topology,
+)
+from .movie import plot_movie
 from .plot2d import plot2d
 from .plot3d import plot3d
+from .scene import OverlaySpec, ValueSpec
+from .traces import plot_traces
 
 __all__ = [
     "LayoutConfig",
+    "OverlaySpec",
+    "ValueSpec",
     "VisDefaults",
     "configure_defaults",
     "get_defaults",
     "plot2d",
     "plot3d",
+    "plot_branch_order_histogram",
+    "plot_dendrogram",
+    "plot_movie",
+    "plot_sholl",
+    "plot_topology",
+    "plot_traces",
     "reset_defaults",
     "set_defaults",
     "theme",

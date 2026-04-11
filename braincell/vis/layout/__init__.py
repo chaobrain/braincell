@@ -34,6 +34,7 @@ Sub-modules
 """
 
 
+from ._cache import LayoutCache, get_default_layout_cache
 from ._common import LayoutBranch2D
 from ._config import DEFAULT_LAYOUT_CONFIG, LayoutConfig
 from ._dispatch import build_layout_branches_2d
@@ -46,8 +47,10 @@ from ._geometry import (
 __all__ = [
     "DEFAULT_LAYOUT_CONFIG",
     "LayoutBranch2D",
+    "LayoutCache",
     "LayoutConfig",
     "build_layout_branches_2d",
+    "get_default_layout_cache",
     "point_on_layout_branch",
     "sample_layout_branch",
     "tangent_on_layout_branch",

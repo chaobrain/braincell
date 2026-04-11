@@ -20,6 +20,7 @@ import brainunit as u
 import numpy as np
 
 from braincell.morph import Morphology
+from ._values import resolve_values
 from .config import (
     highlight_alpha as _highlight_alpha,
     highlight_color as _highlight_color,
@@ -29,10 +30,13 @@ from .config import (
 from .scene import (
     BranchPolyline3D,
     BranchTypeBatch3D,
+    BranchValues,
     HighlightStroke3D,
     Marker3D,
     OverlaySpec,
     RenderScene3D,
+    ValueBatch3D,
+    ValueSpec,
     alpha_for_3d_tube,
     color_for_branch_type,
 )
@@ -54,7 +58,7 @@ def build_render_scene_3d(
             "Use vis2d(layout='stem', shape='line') or vis2d(layout='stem', shape='frustum') "
             "for length/radius-only morphologies."
         )
-    _reject_values_overlay(overlay)
+    value_spec, per_branch_values, unit_label = _resolve_overlay_values_3d(overlay, morpho)
 
     branches: list[BranchPolyline3D] = []
     for branch_index in range(len(morpho)):
@@ -96,12 +100,14 @@ def build_render_scene_3d(
         grouped.setdefault(branch.branch_type, []).append(branch)
 
     batches: list[BranchTypeBatch3D] = []
+    value_batches: list[ValueBatch3D] = []
     for branch_type, type_branches in grouped.items():
         points_all: list[np.ndarray] = []
         radii_all: list[np.ndarray] = []
         lines_all: list[np.ndarray] = []
         branch_indices: list[int] = []
         branch_names: list[str] = []
+        point_values_all: list[np.ndarray] = []
         offset = 0
         for branch in type_branches:
             n_points = len(branch.points_um)
@@ -112,7 +118,19 @@ def build_render_scene_3d(
             lines_all.append(cell)
             branch_indices.append(branch.branch_index)
             branch_names.append(branch.branch_name)
+            if per_branch_values is not None:
+                branch_values = per_branch_values[branch.branch_index]
+                pv = np.asarray(branch_values.point_values, dtype=float)
+                if pv.size != n_points:
+                    raise ValueError(
+                        f"Value array for branch {branch.branch_name!r} has length {pv.size} "
+                        f"but the branch has {n_points} centerline points."
+                    )
+                point_values_all.append(pv)
             offset += n_points
+        stacked_points = np.vstack(points_all)
+        stacked_radii = np.concatenate(radii_all)
+        stacked_lines = np.concatenate(lines_all).astype(np.int64)
         batches.append(
             BranchTypeBatch3D(
                 branch_type=branch_type,
@@ -120,11 +138,24 @@ def build_render_scene_3d(
                 opacity=alpha_for_3d_tube(),
                 branch_indices=tuple(branch_indices),
                 branch_names=tuple(branch_names),
-                points_um=np.vstack(points_all),
-                radii_um=np.concatenate(radii_all),
-                lines=np.concatenate(lines_all).astype(np.int64),
+                points_um=stacked_points,
+                radii_um=stacked_radii,
+                lines=stacked_lines,
             )
         )
+        if per_branch_values is not None:
+            value_batches.append(
+                ValueBatch3D(
+                    branch_type=branch_type,
+                    branch_indices=tuple(branch_indices),
+                    branch_names=tuple(branch_names),
+                    points_um=stacked_points,
+                    radii_um=stacked_radii,
+                    lines=stacked_lines,
+                    point_values=np.concatenate(point_values_all),
+                    opacity=alpha_for_3d_tube(),
+                )
+            )
 
     branch_lookup = {branch.branch_index: branch for branch in branches}
     highlight_strokes, markers = _build_overlay_primitives_3d(overlay, branch_lookup)
@@ -134,6 +165,8 @@ def build_render_scene_3d(
         batches=tuple(batches),
         highlight_strokes=highlight_strokes,
         markers=markers,
+        value_batches=tuple(value_batches),
+        value_spec=_with_unit_label_3d(value_spec, unit_label),
         mode=mode,
     )
 
@@ -278,10 +311,34 @@ def _build_overlay_primitives_3d(
     return tuple(strokes), tuple(markers)
 
 
-def _reject_values_overlay(overlay: OverlaySpec | None) -> None:
-    if overlay is not None and overlay.values is not None:
-        raise NotImplementedError(
-            "Color-by-values overlays are scheduled for M6 Phase 3. "
-            "Only region= and locset= overlays are wired through in the "
-            "current release."
-        )
+def _resolve_overlay_values_3d(
+    overlay: OverlaySpec | None,
+    morpho: Morphology,
+) -> tuple[ValueSpec | None, dict[int, BranchValues] | None, str | None]:
+    if overlay is None:
+        return None, None, None
+    spec = overlay.values_spec()
+    if spec is None:
+        return None, None, None
+    per_branch, unit_label = resolve_values(morpho, spec)
+    return spec, per_branch, unit_label
+
+
+def _with_unit_label_3d(
+    spec: ValueSpec | None,
+    unit_label: str | None,
+) -> ValueSpec | None:
+    if spec is None:
+        return None
+    if unit_label is None or spec.unit_label is not None:
+        return spec
+    return ValueSpec(
+        values=spec.values,
+        cmap=spec.cmap,
+        vmin=spec.vmin,
+        vmax=spec.vmax,
+        norm=spec.norm,
+        label=spec.label,
+        unit_label=unit_label,
+        show_colorbar=spec.show_colorbar,
+    )

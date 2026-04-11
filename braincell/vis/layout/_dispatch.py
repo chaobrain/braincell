@@ -35,6 +35,7 @@ import warnings
 from braincell.morph import Morphology
 
 from ._balloon import _build_layout_branches_balloon
+from ._cache import LayoutCache, get_default_layout_cache
 from ._common import LayoutBranch2D, _build_layout_specs
 from ._config import DEFAULT_LAYOUT_CONFIG, LayoutConfig
 from ._legacy import _build_layout_branches_legacy
@@ -64,6 +65,8 @@ def build_layout_branches_2d(
     root_layout: str = "type_split",
     layout_family: str = "stem",
     layout_config: LayoutConfig | None = None,
+    cache: LayoutCache | None = None,
+    use_cache: bool = True,
 ) -> tuple[LayoutBranch2D, ...]:
     if not isinstance(morpho, Morphology):
         raise TypeError(f"build_layout_branches_2d(...) expects Morpho, got {type(morpho).__name__!s}.")
@@ -82,41 +85,56 @@ def build_layout_branches_2d(
     layout_family = _LAYOUT_FAMILY_ALIASES.get(layout_family, layout_family)
 
     config = layout_config or DEFAULT_LAYOUT_CONFIG
-    layout_specs = _build_layout_specs(morpho)
-    if layout_family == "balloon":
-        return _build_layout_branches_balloon(
+
+    def _build() -> tuple[LayoutBranch2D, ...]:
+        layout_specs = _build_layout_specs(morpho)
+        if layout_family == "balloon":
+            return _build_layout_branches_balloon(
+                morpho,
+                layout_specs=layout_specs,
+                min_branch_angle_deg=min_branch_angle_deg,
+                root_layout=root_layout,
+                layout_config=config,
+            )
+        if layout_family == "radial_360":
+            return _build_layout_branches_radial_360(
+                morpho,
+                layout_specs=layout_specs,
+                min_branch_angle_deg=min_branch_angle_deg,
+                layout_config=config,
+            )
+        if root_layout == "legacy":
+            return _build_layout_branches_legacy(
+                morpho,
+                layout_specs=layout_specs,
+                min_branch_angle_deg=min_branch_angle_deg,
+                layout_config=config,
+            )
+        if mode == "frustum":
+            return _build_layout_branches_stem_linear(
+                morpho,
+                layout_specs=layout_specs,
+                min_branch_angle_deg=min_branch_angle_deg,
+                root_layout=root_layout,
+                layout_config=config,
+            )
+        return _build_layout_branches_stem(
             morpho,
             layout_specs=layout_specs,
             min_branch_angle_deg=min_branch_angle_deg,
             root_layout=root_layout,
             layout_config=config,
         )
-    if layout_family == "radial_360":
-        return _build_layout_branches_radial_360(
-            morpho,
-            layout_specs=layout_specs,
-            min_branch_angle_deg=min_branch_angle_deg,
-            layout_config=config,
-        )
-    if root_layout == "legacy":
-        return _build_layout_branches_legacy(
-            morpho,
-            layout_specs=layout_specs,
-            min_branch_angle_deg=min_branch_angle_deg,
-            layout_config=config,
-        )
-    if mode == "frustum":
-        return _build_layout_branches_stem_linear(
-            morpho,
-            layout_specs=layout_specs,
-            min_branch_angle_deg=min_branch_angle_deg,
-            root_layout=root_layout,
-            layout_config=config,
-        )
-    return _build_layout_branches_stem(
+
+    if not use_cache:
+        return _build()
+    active_cache = cache if cache is not None else get_default_layout_cache()
+    return active_cache.get_or_build(
         morpho,
-        layout_specs=layout_specs,
-        min_branch_angle_deg=min_branch_angle_deg,
+        mode=mode,
+        layout_family=layout_family,
         root_layout=root_layout,
+        min_branch_angle_deg=min_branch_angle_deg,
         layout_config=config,
+        build=_build,
     )

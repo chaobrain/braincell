@@ -410,16 +410,30 @@ internal dependencies · status · open work**.
     `_geometry.py` (pure-numeric sampling and branch construction),
     `_collision.py` (spatial-hash collision scoring),
     `_config.py` (`LayoutConfig` frozen dataclass, the tunable
-    knobs), `_stem.py` / `_balloon.py` / `_radial.py` /
-    `_legacy.py` (layout families), and `_dispatch.py`
-    (`build_layout_branches_2d` entry point). Each file ships with
-    a sibling `*_test.py`.
+    knobs), `_cache.py` (`LayoutCache` LRU keyed on a morphology
+    snapshot plus the layout config), `_stem.py` / `_balloon.py` /
+    `_radial.py` / `_legacy.py` (layout families), and `_dispatch.py`
+    (`build_layout_branches_2d` entry point, cache-aware). Each file
+    ships with a sibling `*_test.py`.
   - `compare2d.py` — side-by-side comparison of layout families on the
     same morphology.
   - `config.py` — `VisDefaults` dataclass singleton plus
     `configure_defaults` / `get_defaults` / `reset_defaults`.
+  - `_values.py` — colour-by-values normalisation (per-branch /
+    per-segment / per-centerline-point → per-point scalar arrays)
+    plus :mod:`brainunit` unit-label extraction.
+  - `movie.py` — `plot_movie` time-varying colour-by-values
+    animation (matplotlib `FuncAnimation` + pyvista
+    `Plotter.open_movie`).
+  - `traces.py` — `plot_traces` morphology-synchronized time-series
+    panels.
+  - `morphometry.py` — `plot_dendrogram`, `plot_topology`,
+    `plot_sholl`, `plot_branch_order_histogram`, and the
+    `compute_sholl_profile` / `ShollProfile` helpers.
   - `_test_helper.py` — `FakeBackend` scene-capturing double for unit
     tests.
+  - `visual_regression_test.py` — `pytest-mpl` baseline image
+    regression suite (skipped when `pytest_mpl` is not installed).
 - **Status**
   - [x] 3D rendering of `Branch` / `Morphology` with point geometry,
     scene composition, PyVista backend.
@@ -452,18 +466,36 @@ internal dependencies · status · open work**.
     (M6 Phase 2). The legacy family now emits a `DeprecationWarning`,
     the collision backend uses a 2D spatial hash, and `plot2d`
     accepts `layout_config=` as an optional user knob.
-  - [ ] **Color-by-values** for 2D and 3D scenes: accept per-branch /
-    per-segment / per-CV scalars, vectorize the matplotlib path via
-    `LineCollection` / `PolyCollection`, pass through to PyVista via
-    `polydata.point_data["values"]` + `add_mesh(scalars=..., cmap=...)`.
-    Proper colorbars and unit labels (M6 Phase 3).
-  - [ ] **`plot_movie`** — time-varying values over a morphology using
-    matplotlib `FuncAnimation` or `pyvista.Plotter.open_movie`; builds
-    the scene once and swaps the values array per frame.
-  - [ ] **`plot_traces`** — time-series at `locset` locations,
-    color-synced with the morphology view.
-  - [ ] **Morphometry / topology plots**: `plot_dendrogram`,
-    `plot_topology`, `plot_sholl`, `plot_branch_order_histogram`.
+  - [x] **Color-by-values** for 2D and 3D scenes: accept per-branch /
+    per-segment / per-centerline-point scalars. The matplotlib
+    backend uses vectorized `LineCollection` / `PolyCollection`
+    (10–50× speedup on dense scenes), the PyVista backend writes
+    `polydata.point_data["values"]` and calls
+    `add_mesh(scalars=..., cmap=..., scalar_bar_args=...)`. Proper
+    colorbars with unit labels, plus `vmin` / `vmax` / `cmap` /
+    `norm` surfaced through `plot2d` / `plot3d` (M6 Phase 3).
+  - [x] **`plot_movie`** — time-varying values over a morphology
+    using matplotlib `FuncAnimation` (2D) or
+    `pyvista.Plotter.open_movie` (3D). The 2D path builds the scene
+    once and mutates the `LineCollection` / `PolyCollection` scalar
+    array per frame; the 3D path rewrites
+    `polydata.point_data["values"]` and writes one frame per
+    timestep.
+  - [x] **`plot_traces`** — stacked time-series panels at `locset`
+    locations, color-synced with markers on a left-hand morphology
+    view (optional).
+  - [x] **Morphometry / topology plots**: `plot_dendrogram`,
+    `plot_topology`, `plot_sholl` (with `compute_sholl_profile` and
+    `ShollProfile` helpers), `plot_branch_order_histogram`.
+  - [x] **Layout caching** — `LayoutCache` LRU keyed on a stable
+    morphology snapshot plus the `LayoutConfig` hash. The
+    dispatcher consults `get_default_layout_cache()` on every call;
+    callers can pass a scoped `cache=LayoutCache(...)` or opt out
+    with `use_cache=False`.
+  - [x] **Visual regression tests** via `pytest-mpl` with 12 baseline
+    slots under `braincell/vis/_baseline_images/` — the whole module
+    skips when `pytest_mpl` is not installed so the base suite
+    stays dependency-free.
   - [ ] **Generalized comparison**: `compare_morphologies`,
     `compare_values`.
   - [ ] **Interactivity**: matplotlib pick/hover callbacks; PyVista
@@ -471,12 +503,8 @@ internal dependencies · status · open work**.
     backend for dependency-light interactive notebook 3D.
   - [ ] **Export polish**: unified `save_figure`, `PublicationTheme`
     preset, LaTeX-friendly defaults.
-  - [ ] **Visual regression tests** via `pytest-mpl` with golden PNGs
-    under `braincell/vis/_baseline_images/` (Linux CI only).
   - [ ] **Performance baselines** via `pytest-benchmark` on small /
     medium / large (10k-branch synthetic) morphologies.
-  - [ ] **Layout caching** keyed on `(morpho.metric, LayoutConfig)`
-    so repeated notebook calls skip the stem-search cost.
 - **Open risks**
   - The stem layout family still holds the most bug-prone code
     (heuristic collision avoidance, the multi-weight scoring
@@ -788,8 +816,11 @@ time-series rendering, and a maintainable layout engine.
 The module is small (~4k LOC) and the 2D layout engine — previously
 a 1.7k LOC `layout2d.py` monolith — was split in Phase 2 into the
 `vis/layout/` package. The overlay feature was finished in Phase 1.
-The milestone is broken into four landable phases so each phase leaves
-the module shippable.
+Phase 3 added scientific-visualization features (colour-by-values
+with vectorized matplotlib / PyVista rendering, `plot_movie`,
+`plot_traces`, the morphometry plot suite, layout caching, and
+`pytest-mpl` baselines). The milestone is broken into four landable
+phases so each phase leaves the module shippable.
 
 **Phase 1 — Stabilize and unblock (P0).** Fix dead/half-wired features,
 clean the API schema, set up test infrastructure.
@@ -823,8 +854,8 @@ clean the API schema, set up test infrastructure.
   new file ships with a sibling `*_test.py` on day one.
 - [ ] Register-based layout dispatch via `@register_layout("name")` so
   third parties can add new families without editing the dispatcher.
-  (Deferred — left for Phase 3 so third-party registration lands with
-  the `plot_movie` / `plot_traces` user-facing additions.)
+  (Deferred further into Phase 4 — bundled with the interactivity /
+  export surface work, since it's purely an API tweak.)
 - [x] Promote the ~20 magic constants (angles, margins, retry limits,
   scoring weights) to a `LayoutConfig` dataclass in
   `vis/layout/_config.py`; accept an optional `layout_config=` kwarg
@@ -844,23 +875,45 @@ clean the API schema, set up test infrastructure.
 
 **Phase 3 — Scientific visualization features (P1).**
 
-- [ ] Color-by-values on 2D: per-segment scalars via matplotlib
+- [x] Color-by-values on 2D: per-segment scalars via matplotlib
   `LineCollection` / `PolyCollection` (also gives a 10–50× speedup on
-  large morphologies).
-- [ ] Color-by-values on 3D: `polydata.point_data["values"]` +
-  `add_mesh(scalars=..., cmap=..., scalar_bar_args=...)`.
-- [ ] Proper colorbars with unit labels; `vmin` / `vmax` / `cmap` /
-  `norm` surfaced through the public API.
-- [ ] `plot_movie(morpho, values_over_time, dt=..., out=None)` —
-  build scene once, swap values per frame, write via
-  matplotlib `FuncAnimation` or `pyvista.Plotter.open_movie`.
-- [ ] `plot_traces(cell, recordings, locations, ...)` — time-series
-  panels color-synced with the morphology view.
-- [ ] Layout caching keyed on `(morpho.metric, LayoutConfig hash)`.
-- [ ] `plot_dendrogram`, `plot_topology`, `plot_sholl`,
-  `plot_branch_order_histogram`.
-- [ ] Visual regression tests via `pytest-mpl` (Linux CI only, with a
-  generous initial tolerance and a small baseline image set).
+  large morphologies). Implemented in `vis/backend_matplotlib.py` via
+  the `polyline_values` / `polygon_value_batches` scene primitives;
+  the vectorized path is taken exactly when the caller supplies
+  `values=`.
+- [x] Color-by-values on 3D: `polydata.point_data["values"]` +
+  `add_mesh(scalars=..., cmap=..., scalar_bar_args=...)`. Wired
+  through `ValueBatch3D` primitives in `scene3d.py` and a dedicated
+  ``_render_value_batches_pyvista`` helper in `backend_pyvista.py`.
+- [x] Proper colorbars with unit labels; `vmin` / `vmax` / `cmap` /
+  `norm` / `value_label` / `show_colorbar` surfaced through `plot2d`
+  and `plot3d`, driven by the new `ValueSpec` dataclass in
+  `vis/scene.py`. `brainunit` units on the values array are
+  auto-propagated to the colour-bar label.
+- [x] `plot_movie(morpho, values_over_time, dt=..., out=None)` —
+  build scene once, swap values per frame, write via matplotlib
+  `FuncAnimation` (2D) or `pyvista.Plotter.open_movie` (3D). Lives
+  in `vis/movie.py`; `MovieResult` carries the animation handle,
+  frame count, and output path.
+- [x] `plot_traces(morpho, t, values_over_time, locset=...)` —
+  stacked time-series panels color-synced with the morphology view.
+  Lives in `vis/traces.py` with a `TracesResult` return container.
+- [x] Layout caching keyed on `(morpho.metric, LayoutConfig hash)` —
+  `vis/layout/_cache.py` provides an LRU `LayoutCache` and
+  `get_default_layout_cache()`; the dispatcher uses it by default
+  and callers can pass `cache=` or `use_cache=False`.
+- [x] `plot_dendrogram`, `plot_topology`, `plot_sholl`,
+  `plot_branch_order_histogram` live in `vis/morphometry.py` (plus
+  the `compute_sholl_profile` helper and `ShollProfile` dataclass).
+- [x] Visual regression tests via `pytest-mpl` — 12 baseline slots in
+  `vis/visual_regression_test.py`; the whole module is skipped when
+  `pytest_mpl` is not installed. Re-generate baselines with
+  ``pytest braincell/vis/visual_regression_test.py --mpl-generate-path=braincell/vis/_baseline_images``.
+- [ ] **Deferred to Phase 4:** register-based layout dispatch via
+  ``@register_layout("name")`` so third-party families can plug in
+  without editing the dispatcher. Bundled with the Phase 4
+  interactivity / export polish work since it's primarily an API
+  surface tweak rather than a user-visible feature.
 
 **Phase 4 — Interactivity, export, docs (P2/P3).**
 

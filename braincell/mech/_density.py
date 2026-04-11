@@ -46,8 +46,8 @@ from ._base import Mechanism
 from ._params import Params
 
 __all__ = [
-    "Channel",
     "Density",
+    "Channel",
     "Ion",
 ]
 

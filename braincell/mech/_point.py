@@ -43,9 +43,9 @@ from ._base import Mechanism
 from ._params import Params
 
 __all__ = [
+    "Point",
     "CurrentClamp",
     "FunctionClamp",
-    "Point",
     "ProbeMechanism",
     "SineClamp",
     "Synapse",

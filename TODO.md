@@ -58,8 +58,9 @@ if it returns, lives behind milestone M5 Phase 4).
                ▼                                   ▼
 ┌─────────────────────────────┐    ┌────────────────────────────────────┐
 │      braincell.filter       │    │           braincell.mech           │
-│  RegionExpr · LocsetExpr    │    │  CableProperty · DensityMechanism  │
-│  SelectionCache             │    │  PointMechanism · MechanismRegistry│
+│  RegionExpr · LocsetExpr    │    │  Mechanism · CableProperty         │
+│  SelectionCache             │    │  Density · Point · Junction        │
+│                             │    │  MechanismRegistry                 │
 └──────────────┬──────────────┘    └─────────────────┬──────────────────┘
                │ selection                           │ declarations
                ▼                                     ▼
@@ -89,8 +90,8 @@ if it returns, lives behind milestone M5 Phase 4).
 │   concrete Ion species (Na, K, Ca) · IonChannel implementations      │
 │   (Na, K, Ca, Ih, K_Ca, leaky) · Markov synapse models               │
 └──────────────────────────────────────────────────────────────────────┘
-   (supply concrete mechanism objects consumed by mech.DensityMechanism
-    / mech.PointMechanism declarations and installed inside braincell.Cell)
+   (supply concrete mechanism objects consumed by mech.Density /
+    mech.Point declarations and installed inside braincell.Cell)
 ```
 
 ```
@@ -105,11 +106,11 @@ if it returns, lives behind milestone M5 Phase 4).
 The directional rule of thumb:
 **`io → morph → {filter, mech} → cv → compute → _multi_compartment → quad`**,
 with `ion` / `channel` / `synapse` as peer top-level modules supplying concrete
-mechanism implementations that `mech` wraps into `DensityMechanism` /
-`PointMechanism` declarations at paint/place time, `vis` reading anything from
-`morph` upward, and `_base` providing shared abstract types
-(`HHTypedNeuron`, `IonChannel`, `Ion`, `Channel`, `MixIons`) for everything
-below `Cell`.
+mechanism implementations that `mech` wraps into `Density` (`Channel` /
+`Ion`) and `Point` (`CurrentClamp`, `Synapse`, `Junction`, …) declarations
+at paint/place time, `vis` reading anything from `morph` upward, and
+`_base` providing shared abstract types (`HHTypedNeuron`, `IonChannel`,
+`Ion`, `Channel`, `MixIons`) for everything below `Cell`.
 
 ---
 
@@ -265,9 +266,13 @@ internal dependencies · status · open work**.
   `braincell.synapse`) and register themselves with the
   `MechanismRegistry` at import time via class-level decorators; the
   runtime lowering in `braincell.compute._runtime` resolves a
-  `DensityMechanism.class_name` through the registry when it installs
-  channels on a cell.
+  `Density.class_name` through the registry when it installs channels
+  on a cell.
 - **Key files & types**
+  - `mech/_base.py` — `Mechanism` marker base class. Every mechanism
+    declaration (density or point) inherits from it, so consumers can
+    check `isinstance(x, Mechanism)` without having to know whether
+    they hold a `Density` or a `Point`.
   - `mech/_registry.py` — `MechanismEntry(category, name, cls,
     aliases)` frozen dataclass, `MechanismRegistry` with
     `register` / `unregister` / `add_alias` / `contains` / `get` /
@@ -287,51 +292,76 @@ internal dependencies · status · open work**.
     (`Params.coerce(value)`), supports `**params` unpacking via the
     `Mapping` protocol, and exposes non-mutating `with_updates(...)` /
     `without(...)`.
-  - `mech/_density.py` — `DensityMechanism(category, class_name,
-    params, name, coverage_area_fraction)` frozen dataclass — the
-    **single** type for both channel and ion declarations, with a
-    `category` discriminator. `coverage_area_fraction` is a dedicated
-    first-class field, not a pseudo-parameter. `instance_name` falls
-    back to `class_name`, `identity = (instance_name, class_name)`
-    drives paint-layout grouping, and `with_params(...)` /
-    `with_coverage(...)` / `with_name(...)` return non-mutating copies.
-    Public factories `Channel(name, /, *, name=None, **params)` and
-    `Ion(name, /, *, name=None, **params)` are the ergonomic entry
-    points.
-  - `mech/_point.py` — `PointMechanism` plain base class (not a
-    `Union`; use `isinstance(x, PointMechanism)` in consumers) plus
-    concrete frozen-dataclass subclasses `CurrentClamp`, `SineClamp`,
-    `FunctionClamp`, `ProbeMechanism`, `SynapseMechanism`, and
-    `GapJunctionMechanism`. `CurrentClamp` has one canonical form
-    `(start, durations, amplitudes)` and a `CurrentClamp.step(amplitude,
-    duration, delay=...)` classmethod shortcut. `Synapse(class_name,
-    /, *, name=None, **params)` is the keyword factory for
-    `SynapseMechanism`.
+  - `mech/_density.py` — `Density(Mechanism)` abstract base plus the
+    concrete subclasses `Channel(Density)` and `Ion(Density)`. `Density`
+    is a manually-immutable `__slots__` class (not a dataclass) with a
+    `category: ClassVar[str]` discriminator set by each subclass
+    (`"channel"` / `"ion"`). The constructor accepts `class_name` as
+    either a string **or** a class (`braincell.channel.IL`); types are
+    resolved to their canonical registry name via reverse lookup.
+    `coverage_area_fraction` is a dedicated first-class field, not a
+    pseudo-parameter. `instance_name` falls back to `class_name`,
+    `identity = (instance_name, class_name)` drives paint-layout
+    grouping, and `with_params(...)` / `with_coverage(...)` /
+    `with_name(...)` return non-mutating copies via an internal
+    `object.__new__` + `object.__setattr__` bypass. `Channel` and
+    `Ion` collect parameters via `**params` kwargs.
+  - `mech/_point.py` — `Point(Mechanism)` plain base class (not a
+    `Union`; use `isinstance(x, Point)` in consumers) plus concrete
+    frozen-dataclass subclasses `CurrentClamp`, `SineClamp`,
+    `FunctionClamp`, `ProbeMechanism`, and `Synapse`. `CurrentClamp`
+    has one canonical form `(start, durations, amplitudes)` and a
+    `CurrentClamp.step(amplitude, duration, delay=...)` classmethod
+    shortcut. `Synapse` is itself a frozen dataclass
+    (`synapse_type`, `params`, `name`); there is no separate factory
+    function.
+  - `mech/_junction.py` — `Junction(Point)` frozen dataclass for
+    gap-junction coupling declarations. Placeholder implementation
+    (`params` field only); lives in its own module so downstream
+    work on gap-junction state and partner wiring has a clean home.
   - `mech/_cable.py` — `CableProperty` frozen dataclass
     (`resting_potential`, `membrane_capacitance`, `axial_resistivity`,
     `temperature`, all `brainunit` quantities; temperature defaults to
     36 °C via a `default_factory` and is coerced to kelvin in
     `__post_init__`). Exposes non-mutating `with_updates(**kwargs)`.
-  - `mech/__init__.py` — re-exports the public surface.
-  - Co-located tests: `_registry_test.py`, `_params_test.py`,
-    `_density_test.py`, `_point_test.py`, `_cable_test.py`.
+  - `mech/__init__.py` — re-exports the public surface
+    (`Mechanism`, `Density`, `Channel`, `Ion`, `Point`, `CurrentClamp`,
+    `SineClamp`, `FunctionClamp`, `ProbeMechanism`, `Synapse`,
+    `Junction`, `CableProperty`, `Params`, registry API).
+  - Co-located tests: `_base_test.py`, `_registry_test.py`,
+    `_params_test.py`, `_density_test.py`, `_point_test.py`,
+    `_junction_test.py`, `_cable_test.py`.
 - **Status**
-  - [x] `CableProperty`, `DensityMechanism`, and the full
-    `PointMechanism` family as frozen dataclasses with `brainunit`
-    typed fields and co-located tests.
+  - [x] `CableProperty`, `Density` (with `Channel` / `Ion`
+    subclasses), and the full `Point` family (`CurrentClamp`,
+    `SineClamp`, `FunctionClamp`, `ProbeMechanism`, `Synapse`,
+    `Junction`) with `brainunit`-typed fields and co-located tests.
+    Everything inherits from a shared `Mechanism` marker base class.
   - [x] **One type per concept.** The legacy `MechanismSpec` /
     `DensityMechanism` duality and the eight `density_*` isinstance-
     dispatch helpers in `spec.py` are gone. Every density declaration
-    is a single `DensityMechanism` with a `category` discriminator;
-    every point declaration is a `PointMechanism` subclass.
+    is a `Density` subclass (`Channel` or `Ion`) carrying a
+    `category` `ClassVar`; every point declaration is a `Point`
+    subclass.
+  - [x] **Class-based `Channel` / `Ion`.** `braincell.mech.Channel`
+    and `braincell.mech.Ion` are real classes (not factory functions)
+    inheriting from `Density`. They accept the target class as either
+    a string name (`"IL"`) or the concrete class object
+    (`braincell.channel.IL`); the class form is reverse-looked-up in
+    the registry to produce the canonical name so aliases continue to
+    collapse into one identity. Top-level `braincell.Channel` /
+    `braincell.Ion` still point at the runtime base classes from
+    `_base.py`; the declaration-layer classes are reached via
+    `braincell.mech.Channel` / `braincell.mech.Ion` to avoid the
+    name collision.
   - [x] **Mechanism registry.** `MechanismRegistry` + the
     `@register_channel` / `@register_ion` / `@register_synapse`
     decorators ship in `mech/_registry.py`. ~49 concrete classes in
     `braincell.channel`, `braincell.ion`, and `braincell.synapse`
     self-register at import time. `get_registry().get(category,
     class_name)` is the single lookup path used by
-    `compute/_runtime.py` to resolve `DensityMechanism.class_name`
-    into a runtime class. Channel-to-ion binding is inferred from
+    `compute/_runtime.py` to resolve `Density.class_name` into a
+    runtime class. Channel-to-ion binding is inferred from
     `issubclass(cls.root_type, Sodium / Potassium / Calcium)`, not
     from hardcoded class-name matching. Abstract base classes
     (`LeakageChannel`, `SodiumChannel`, `Calcium`, …) are deliberately
@@ -343,7 +373,7 @@ internal dependencies · status · open work**.
     hash-insensitive; `class_name`, `name`, `category`, and
     `coverage_area_fraction` remain position-sensitive.
   - [x] **`coverage_area_fraction` as a first-class field** on
-    `DensityMechanism`. The old abstraction leak where
+    `Density`. The old abstraction leak where
     `cv/_mech._scale_density_for_coverage` smuggled the coverage
     fraction through `params["coverage_area_fraction"]` and
     `compute/_runtime._runtime_constructor_params` had to filter it
@@ -365,6 +395,12 @@ internal dependencies · status · open work**.
     that points at the offending `paint(...)` call. The infrastructure
     for this lives on the mechanism registry: each entry can declare
     the expected unit per parameter name.
+  - [ ] **`Junction` runtime wiring** — `Junction` currently ships
+    as a placeholder frozen dataclass with only a `params` field.
+    It needs a `partner` reference (locset or another placed
+    `Junction`), symmetric pair resolution in the runtime, and a
+    gap-junction current contribution in the voltage solve. Tracked
+    as the first sub-task in milestone M5 Phase 3.
   - [ ] **`ProbeMechanism` variable taxonomy** — `variable` is
     currently a free-form string. Promote it to a typed enum of known
     probes (`"v"`, `"ina"`, `"ik"`, `"ica"`, `"cai"`, `"cao"`,
@@ -399,12 +435,23 @@ internal dependencies · status · open work**.
     `compute/_runtime.py`. New ion species must either set
     `root_type` on their channels or we extend the dispatch to walk
     a lookup table — do not hardcode class-name matching.
+  - **Name collision with `_base.Channel` / `_base.Ion`.** The
+    declaration-layer `Channel` / `Ion` classes live under
+    `braincell.mech`, not at the top level of `braincell`, because
+    `braincell.Channel` / `braincell.Ion` already resolve to the
+    runtime base classes from `_base.py`. Tutorials and user code
+    should use the fully-qualified `braincell.mech.Channel` /
+    `braincell.mech.Ion` when declaring mechanisms on a `Cell`.
   - The module is intentionally free of `brainstate` / JAX state —
     keeping `mech` purely declarative makes importing `braincell.mech`
     cheap and keeps the declaration frontend usable even in
     environments where the numerical runtime is absent. Do not
     import `brainstate`, `jax`, or any concrete channel/ion/synapse
-    class inside `braincell/mech/`.
+    class inside `braincell/mech/`. The one permitted dynamic
+    import is inside `_density._resolve_class_name`, which consults
+    the registry via a lazy `from ._registry import get_registry`
+    local import when a user passes a class object instead of a
+    name string.
 
 ### 3.5 `braincell.cv` / `braincell.compute` / `_multi_compartment` — declaration, discretization, runtime
 
@@ -846,11 +893,11 @@ internal dependencies · status · open work**.
     `KCaChannel`) are deliberately not decorated.
   - [ ] **Parameter metadata** — each channel should declare the
     unit of every user-facing parameter (`g_max` in `S/cm²`, `E` in
-    `mV`, time constants in `ms`, …) so that
-    `DensityMechanism.params` validation can produce an actionable
-    error at paint time rather than an opaque JAX trace failure.
-    Store the per-parameter unit on `MechanismEntry.metadata` and
-    consult it during `DensityMechanism.__post_init__`.
+    `mV`, time constants in `ms`, …) so that `Density.params`
+    validation can produce an actionable error at paint time rather
+    than an opaque JAX trace failure. Store the per-parameter unit
+    on `MechanismEntry.metadata` and consult it during
+    `Density.__init__`.
   - [ ] **GHK current formulation** — calcium channels currently
     compute `I = g_max * p^a * q^b * (E − V)` with a Nernst-derived
     `E`. Add an opt-in GHK (Goldman–Hodgkin–Katz) formulation as a
@@ -978,7 +1025,7 @@ All planned execution-layer work in §3.5 must respect this contract.
 | Metrics | `MorphoMetric` | frozen snapshot | recomputed on demand | `Morphology` |
 | Selection | `RegionExpr`, `LocsetExpr` | frozen expression | reusable | user |
 | Selection cache | `SelectionCache` | mutable | per-Morphology | filter layer |
-| Mechanisms | `CableProperty`, `DensityMechanism`, `PointMechanism*` | frozen dataclass | declaration | user |
+| Mechanisms | `CableProperty`, `Density` (`Channel`, `Ion`), `Point*` (`CurrentClamp`, `Synapse`, `Junction`, …) | frozen dataclass / slots | declaration | user |
 | Mechanisms | `Ion`, `Channel`, `IonChannel`, `MixIons` | hybrid (JAX state) | per-cell | `Cell` |
 | Discretization | `CV` | frozen | rebuilt on dirty | `Cell` |
 | Discretization | `PaintRule`, `PlaceRule` | frozen | rebuilt on dirty | `Cell` |
@@ -1006,11 +1053,12 @@ internal and may change without deprecation.
   `NeuroMorphoError`, …) live under `braincell.io.neuromorpho` and
   `braincell.io`.
 - **Filter layer**: `RegionExpr`, `LocsetExpr`, `SelectionCache`.
-- **Mechanism declaration layer** (`braincell.mech`): `CableProperty`,
-  `DensityMechanism`, `PointMechanism`, `CurrentClamp`, `SineClamp`,
-  `FunctionClamp`, `ProbeMechanism`, `SynapseMechanism`,
-  `GapJunctionMechanism`, the keyword factories (`mech.Channel`,
-  `mech.Ion`, `mech.Synapse`), the frozen `Params` mapping, and the
+- **Mechanism declaration layer** (`braincell.mech`): `Mechanism`
+  (marker base), `CableProperty`, `Density` (and its concrete
+  subclasses `Channel` / `Ion`, which accept the target as either a
+  string or a class object), `Point` (and its concrete subclasses
+  `CurrentClamp`, `SineClamp`, `FunctionClamp`, `ProbeMechanism`,
+  `Synapse`, `Junction`), the frozen `Params` mapping, and the
   registry API (`MechanismRegistry`, `MechanismEntry`,
   `get_registry`, `register_channel`, `register_ion`,
   `register_synapse`).
@@ -1072,7 +1120,9 @@ cell.paint(
   ),
 )
 cell.paint(soma_region, mech.Ion("SodiumFixed"))
-cell.paint(soma_region, mech.Channel("INa_Ba2002", g_max=0.12 * u.S / u.cm ** 2))
+# mech.Channel / mech.Ion accept either a registry name string or the
+# concrete class itself — both route through the mechanism registry.
+cell.paint(soma_region, mech.Channel(braincell.channel.INa_Ba2002, g_max=0.12 * u.S / u.cm ** 2))
 cell.place(
     braincell.LocsetExpr.root(),
     mech.CurrentClamp.step(0.2 * u.nA, 50 * u.ms, delay=10 * u.ms),

@@ -224,7 +224,7 @@ ralston4_tableau = ButcherTableau(
     order=1,
     description="Forward (explicit) Euler method.",
 )
-@set_module_as('braincell')
+@set_module_as('braincell.quad')
 def euler_step(
     target: DiffEqModule,
     *args,
@@ -309,7 +309,7 @@ def euler_step(
     order=2,
     description="Explicit midpoint (modified Euler) method.",
 )
-@set_module_as('braincell')
+@set_module_as('braincell.quad')
 def midpoint_step(
     target: DiffEqModule,
     *args,
@@ -383,7 +383,7 @@ def midpoint_step(
     order=2,
     description="Generic second-order Runge-Kutta method.",
 )
-@set_module_as('braincell')
+@set_module_as('braincell.quad')
 def rk2_step(
     target: DiffEqModule,
     *args,
@@ -457,7 +457,7 @@ def rk2_step(
     order=2,
     description="Heun's second-order Runge-Kutta method.",
 )
-@set_module_as('braincell')
+@set_module_as('braincell.quad')
 def heun2_step(
     target: DiffEqModule,
     *args,
@@ -529,7 +529,7 @@ def heun2_step(
     order=2,
     description="Ralston's second-order Runge-Kutta method.",
 )
-@set_module_as('braincell')
+@set_module_as('braincell.quad')
 def ralston2_step(
     target: DiffEqModule,
     *args,
@@ -610,7 +610,7 @@ def ralston2_step(
     order=3,
     description="Classical third-order Runge-Kutta method.",
 )
-@set_module_as('braincell')
+@set_module_as('braincell.quad')
 def rk3_step(
     target: DiffEqModule,
     *args,
@@ -686,7 +686,7 @@ def rk3_step(
     order=3,
     description="Heun's third-order Runge-Kutta method.",
 )
-@set_module_as('braincell')
+@set_module_as('braincell.quad')
 def heun3_step(
     target: DiffEqModule,
     *args,
@@ -761,7 +761,7 @@ def heun3_step(
     order=3,
     description="Strong-stability-preserving third-order Runge-Kutta (SSPRK3).",
 )
-@set_module_as('braincell')
+@set_module_as('braincell.quad')
 def ssprk3_step(
     target: DiffEqModule,
     *args,
@@ -846,7 +846,7 @@ def ssprk3_step(
     order=3,
     description="Ralston's third-order Runge-Kutta method.",
 )
-@set_module_as('braincell')
+@set_module_as('braincell.quad')
 def ralston3_step(
     target: DiffEqModule,
     *args,
@@ -929,7 +929,7 @@ def ralston3_step(
     order=4,
     description="Classical four-stage fourth-order Runge-Kutta method.",
 )
-@set_module_as('braincell')
+@set_module_as('braincell.quad')
 def rk4_step(
     target: DiffEqModule,
     *args,
@@ -1009,7 +1009,7 @@ def rk4_step(
     order=4,
     description="Ralston's fourth-order Runge-Kutta method.",
 )
-@set_module_as('braincell')
+@set_module_as('braincell.quad')
 def ralston4_step(
     target: DiffEqModule,
     *args,

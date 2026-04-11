@@ -51,7 +51,7 @@ __all__ = [
     category="staggered",
     description="Staggered voltage / ion-channel splitting using DHS + ind_exp_euler.",
 )
-@set_module_as('braincell')
+@set_module_as('braincell.quad')
 def staggered_step(
     target: DiffEqModule,
     *args

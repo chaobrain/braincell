@@ -322,7 +322,7 @@ def _crank_nicolson_for_axial_current(A, y0, dt):
     order=1,
     description="Implicit Euler via Newton iteration.",
 )
-@set_module_as('braincell')
+@set_module_as('braincell.quad')
 def implicit_euler_step(
     target: DiffEqModule,
     t: T,
@@ -518,7 +518,7 @@ def construct_lu_sparse(target):
     category="implicit",
     description="Operator-splitting solver pairing implicit axial currents with Newton-based gating updates.",
 )
-@set_module_as('braincell')
+@set_module_as('braincell.quad')
 def splitting_step(
     target: DiffEqModule,
     t: T,
@@ -626,7 +626,7 @@ def splitting_step(
     category="implicit",
     description="Crank-Nicolson axial currents combined with explicit RK4 gating updates.",
 )
-@set_module_as('braincell')
+@set_module_as('braincell.quad')
 def cn_rk4_step(
     target: DiffEqModule,
     t: T,
@@ -697,7 +697,7 @@ def cn_rk4_step(
     category="implicit",
     description="Crank-Nicolson axial currents combined with exponential Euler gating updates.",
 )
-@set_module_as('braincell')
+@set_module_as('braincell.quad')
 def cn_exp_euler_step(
     target: DiffEqModule,
     t: T,
@@ -772,7 +772,7 @@ def cn_exp_euler_step(
     order=4,
     description="Implicit axial currents combined with explicit RK4 gating updates.",
 )
-@set_module_as('braincell')
+@set_module_as('braincell.quad')
 def implicit_rk4_step(
     target: DiffEqModule,
     t: T,
@@ -850,7 +850,7 @@ def implicit_rk4_step(
     category="implicit",
     description="Implicit axial currents combined with exponential Euler gating updates.",
 )
-@set_module_as('braincell')
+@set_module_as('braincell.quad')
 def implicit_exp_euler_step(
     target: DiffEqModule,
     t: T,
@@ -927,7 +927,7 @@ def implicit_exp_euler_step(
     category="exponential",
     description="Exponential axial integration paired with exponential Euler gating updates.",
 )
-@set_module_as('braincell')
+@set_module_as('braincell.quad')
 def exp_exp_euler_step(
     target: DiffEqModule,
     t: T,

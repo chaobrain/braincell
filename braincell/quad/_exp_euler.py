@@ -95,7 +95,7 @@ def _exponential_euler(f, y0, t, dt, args=()):
     order=1,
     description="Coupled exponential Euler step linearizing the full state vector.",
 )
-@set_module_as('braincell')
+@set_module_as('braincell.quad')
 def exp_euler_step(target: DiffEqModule, *args):
     r"""Advance one step with the (coupled) exponential Euler method.
 
@@ -221,7 +221,7 @@ def exp_euler_step(target: DiffEqModule, *args):
     order=1,
     description="Independent exponential Euler step (per-state linearization).",
 )
-@set_module_as('braincell')
+@set_module_as('braincell.quad')
 def ind_exp_euler_step(target: DiffEqModule, *args, excluded_paths=()):
     r"""Advance each :class:`DiffEqState` independently with exponential Euler.
 

@@ -72,7 +72,7 @@ def _backward_euler(f, y0, t, dt, args=()):
     order=1,
     description="Backward (implicit) Euler method via local Jacobian linearization.",
 )
-@set_module_as('braincell')
+@set_module_as('braincell.quad')
 def backward_euler_step(target: DiffEqModule, *args):
     r"""Advance one step with the linearised backward (implicit) Euler method.
 

@@ -138,7 +138,7 @@ def _diffrax_explicit_solver(
     order=1,
     description="diffrax.Euler explicit Euler step.",
 )
-@set_module_as('braincell')
+@set_module_as('braincell.quad')
 def diffrax_euler_step(target: DiffEqModule, *args):
     """Advance one step with diffrax's explicit Euler solver.
 
@@ -190,7 +190,7 @@ def diffrax_euler_step(target: DiffEqModule, *args):
     order=2,
     description="diffrax.Heun improved-Euler step.",
 )
-@set_module_as('braincell')
+@set_module_as('braincell.quad')
 def diffrax_heun_step(target: DiffEqModule, *args):
     """Advance one step with diffrax's Heun (improved Euler) solver.
 
@@ -231,7 +231,7 @@ def diffrax_heun_step(target: DiffEqModule, *args):
     order=2,
     description="diffrax.Midpoint second-order Runge-Kutta step.",
 )
-@set_module_as('braincell')
+@set_module_as('braincell.quad')
 def diffrax_midpoint_step(target: DiffEqModule, *args):
     """Advance one step with diffrax's explicit midpoint solver.
 
@@ -272,7 +272,7 @@ def diffrax_midpoint_step(target: DiffEqModule, *args):
     order=2,
     description="diffrax.Ralston second-order Runge-Kutta step.",
 )
-@set_module_as('braincell')
+@set_module_as('braincell.quad')
 def diffrax_ralston_step(target: DiffEqModule, *args):
     """Advance one step with diffrax's Ralston second-order solver.
 
@@ -314,7 +314,7 @@ def diffrax_ralston_step(target: DiffEqModule, *args):
     order=3,
     description="diffrax.Bosh3 third-order Runge-Kutta step.",
 )
-@set_module_as('braincell')
+@set_module_as('braincell.quad')
 def diffrax_bosh3_step(target: DiffEqModule, *args):
     """Advance one step with diffrax's Bogacki-Shampine 3(2) solver.
 
@@ -359,7 +359,7 @@ def diffrax_bosh3_step(target: DiffEqModule, *args):
     order=5,
     description="diffrax.Tsit5 fifth-order Runge-Kutta step.",
 )
-@set_module_as('braincell')
+@set_module_as('braincell.quad')
 def diffrax_tsit5_step(target: DiffEqModule, *args):
     """Advance one step with diffrax's Tsitouras 5(4) solver.
 
@@ -404,7 +404,7 @@ def diffrax_tsit5_step(target: DiffEqModule, *args):
     order=5,
     description="diffrax.Dopri5 Dormand-Prince 5(4) step.",
 )
-@set_module_as('braincell')
+@set_module_as('braincell.quad')
 def diffrax_dopri5_step(target: DiffEqModule, *args):
     """Advance one step with diffrax's Dormand-Prince 5(4) solver.
 
@@ -447,7 +447,7 @@ def diffrax_dopri5_step(target: DiffEqModule, *args):
     order=8,
     description="diffrax.Dopri8 Dormand-Prince 8(5,3) step.",
 )
-@set_module_as('braincell')
+@set_module_as('braincell.quad')
 def diffrax_dopri8_step(target: DiffEqModule, *args):
     """Advance one step with diffrax's Dormand-Prince 8(5,3) solver.
 
@@ -513,7 +513,7 @@ def _diffrax_implicit_solver(solver, target: DiffEqModule, t: T, dt: DT, *args):
     order=1,
     description="diffrax.ImplicitEuler backward Euler step.",
 )
-@set_module_as('braincell')
+@set_module_as('braincell.quad')
 def diffrax_bwd_euler_step(target: DiffEqModule, *args, tol=1e-5):
     """Advance one step with diffrax's implicit (backward) Euler solver.
 
@@ -563,7 +563,7 @@ def diffrax_bwd_euler_step(target: DiffEqModule, *args, tol=1e-5):
     order=3,
     description="diffrax.Kvaerno3 implicit third-order step.",
 )
-@set_module_as('braincell')
+@set_module_as('braincell.quad')
 def diffrax_kvaerno3_step(target: DiffEqModule, *args, tol=1e-5):
     """Advance one step with diffrax's Kvaerno 3 ESDIRK solver.
 
@@ -613,7 +613,7 @@ def diffrax_kvaerno3_step(target: DiffEqModule, *args, tol=1e-5):
     order=4,
     description="diffrax.Kvaerno4 implicit fourth-order step.",
 )
-@set_module_as('braincell')
+@set_module_as('braincell.quad')
 def diffrax_kvaerno4_step(target: DiffEqModule, *args, tol=1e-5):
     """Advance one step with diffrax's Kvaerno 4 ESDIRK solver.
 
@@ -660,7 +660,7 @@ def diffrax_kvaerno4_step(target: DiffEqModule, *args, tol=1e-5):
     order=5,
     description="diffrax.Kvaerno5 implicit fifth-order step.",
 )
-@set_module_as('braincell')
+@set_module_as('braincell.quad')
 def diffrax_kvaerno5_step(target: DiffEqModule, *args, tol=1e-5):
     """Advance one step with diffrax's Kvaerno 5 ESDIRK solver.
 

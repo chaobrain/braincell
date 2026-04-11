@@ -218,7 +218,7 @@ cython_debug/
 
 /docs/apis/simulation/generated/
 !/brainpy/dyn/tests/data/
-develop_doc/data/neuromorpho/
+/examples/multi_compartment/data/neuromorpho/
 /examples/dynamics_simulation/data/
 /examples/training_snn_models/logs/T100_b64_lr0.001/
 /examples/training_snn_models/logs/
@@ -233,5 +233,5 @@ develop_doc/data/neuromorpho/
 /.claude/
 /dev/replace_init.py
 /dev/replace_all.py
-/develop_doc/checkpoint/
+/examples/multi_compartment/checkpoint/
 /dev/

@@ -190,19 +190,19 @@ internal dependencies · status · open work**.
     handled minimally — see `io/asc/test.py` skips.
   - [ ] NeuroML2 import — reader stub exists; needs cell, segment-group,
     biophysics decoding and round-trip tests.
-  - [x] NEURON-based diff harness via `develop_doc/neuron_diff.py`.
+  - [x] NEURON-based diff harness via `examples/multi_compartment/neuron_diff.py`.
   - [x] NeuroMorpho.Org integration: Tier 1 `load_neuromorpho` /
     `fetch_neuromorpho` one-liners, Tier 2 `NeuroMorphoClient` with
     typed `iter_search` / `download` / retries, Tier 3 `NeuroMorphoCache`
     plus pure URL helpers, full NumPy-doc docstrings, and
     `Morphology.from_neuromorpho` classmethod. Notebook walkthrough at
-    `develop_doc/neuromorpho_diff.ipynb` shows the full search → cache →
+    `examples/multi_compartment/neuromorpho.ipynb` shows the full search → cache →
     metric-diff loop.
   - [ ] Automated metric diff against published NeuroMorpho reference
     statistics promoted from the notebook into a pytest case (so the
     NeuroMorpho corpus becomes a wide regression net).
   - [x] Checkpoint API and `.bcm` format with notebook tutorial
-    (`develop_doc/morpho-checkpoint.ipynb`).
+    (`examples/multi_compartment/morphology-checkpoint.ipynb`).
   - [ ] **NMODL parsing compiler** — currently research-only under
     `mech/nmodl/`; will be promoted to a real codegen target once the
     runtime mechanism layer stabilizes.
@@ -540,7 +540,7 @@ internal dependencies · status · open work**.
     `vis/perf_benchmark_test.py` — layout build, scene build, and
     plot2d render on 50 / 500 / 2000-branch synthetic morphologies,
     skipped when the plugin is absent (M6 Phase 4).
-  - [x] **Narrative tutorial**: `develop_doc/vis.ipynb` — quick start,
+  - [x] **Narrative tutorial**: `examples/multi_compartment/vis.ipynb` — quick start,
     layout gallery, styling/themes, color-by-values, overlays, movie,
     trace panels, morphometry, interactivity, publication export,
     comparison (M6 Phase 4).
@@ -626,7 +626,7 @@ All planned execution-layer work in §3.5 must respect this contract.
 - pytest with `unittest.TestCase`; tests live next to source as
   `*_test.py` (exception: `io/swc/test.py`, `io/asc/test.py`).
 - `conftest.py` forces `JAX_PLATFORMS=cpu` and `MPLBACKEND=Agg`.
-- IO test fixtures live in `develop_doc/morpho_files/`.
+- IO test fixtures live in `examples/multi_compartment/morpho_files/`.
 - New code is expected to ship with co-located tests and to keep
   per-module test runtime under a few seconds on CPU.
 
@@ -637,7 +637,7 @@ All planned execution-layer work in §3.5 must respect this contract.
 - Examples must be `.. code-block:: python` blocks compatible with
   doctest.
 - High-level narrative documentation lives under `docs/`; design
-  notebooks live under `develop_doc/`.
+  notebooks live under `examples/multi_compartment/`.
 
 ---
 
@@ -767,7 +767,7 @@ braincell.vis.compare2d(morpho_a, morpho_b, layout="frustum")
 | `diffrax` | optional | extra integrator family in `quad/_diffrax.py` |
 | `pyvista` | optional | 3D visualization backend |
 | `matplotlib` | optional | 2D visualization backend |
-| `NEURON` | dev only | reference comparator under `develop_doc/` |
+| `NEURON` | dev only | reference comparator under `examples/multi_compartment/` |
 
 Optional dependencies must be **lazily imported** so the base install
 stays small. `quad/_diffrax.py` already follows this pattern via
@@ -796,7 +796,7 @@ Goal: a user can declare mechanisms on a multi-CV cell and call
   Hodgkin–Huxley axon spikes within 5% of NEURON reference timing.
 
 Acceptance: `examples/SC0X.py` runs end to end on a multi-branch cell;
-notebook tutorial under `develop_doc/` reproduces the result.
+notebook tutorial under `examples/multi_compartment/` reproduces the result.
 
 ### M2 — Filter expressivity
 
@@ -839,7 +839,7 @@ report.
   mechanisms.
 - [x] NeuroMorpho.Org client (search, download, cache, typed query and
   measurement) plus `Morphology.from_neuromorpho` and notebook
-  walkthrough at `develop_doc/neuromorpho_diff.ipynb`.
+  walkthrough at `examples/multi_compartment/neuromorpho.ipynb`.
 - [ ] Promote the NeuroMorpho metric diff from the notebook to an
   automated pytest case using a small published reference corpus.
 - [ ] Add a `Morphology.from_neuroml2(...)` constructor + tests.
@@ -1010,7 +1010,7 @@ clean the API schema, set up test infrastructure.
   and large (2000) chain morphologies. Covers layout build, scene
   build, and end-to-end plot2d render. Skipped when the plugin is
   absent.
-- [x] Narrative `develop_doc/vis.ipynb` tutorial (26 cells) covering
+- [x] Narrative `examples/multi_compartment/vis.ipynb` tutorial (26 cells) covering
   quick start, layout gallery, styling, color-by-values, overlays,
   animation, trace panels, morphometry, interactivity (`VisHooks`),
   publication export (`publication_theme` + `save_figure`), and the
@@ -1049,7 +1049,7 @@ performance-tested.
 | 3 | **Unit-handling regressions.** A path that drops units causes incorrect physics with no exception. | Correctness. | Keep `normalize_param` as the single chokepoint; add property tests that pass mixed-unit inputs and verify canonical-unit storage. |
 | 4 | **JAX retracing on harmless mutations.** Recompiles dominate wall time on parameter sweeps. | Performance. | Separate "structure" (shapes, dtypes, mechanism set) from "parameters" (numeric values) at the `Cell.compile` boundary; only the former triggers retrace. |
 | 5 | **Optional-dependency hazards.** Importing `braincell.quad` must not pay diffrax / pyvista cost. | Startup time and install footprint. | Preserve and extend the lazy-import pattern in `_diffrax.py`; add an import-time test that asserts neither diffrax nor pyvista is loaded after `import braincell`. |
-| 6 | **Format heterogeneity in IO.** SWC / ASC / NeuroML2 each have edge cases that silently corrupt geometry. | Correctness. | Always return a `Report`; expand fixture corpus under `develop_doc/morpho_files/`; use NeuroMorpho diff (M4) as a wide regression net. |
+| 6 | **Format heterogeneity in IO.** SWC / ASC / NeuroML2 each have edge cases that silently corrupt geometry. | Correctness. | Always return a `Report`; expand fixture corpus under `examples/multi_compartment/morpho_files/`; use NeuroMorpho diff (M4) as a wide regression net. |
 | 7 | **Channel correctness vs NEURON.** Subtle gating bugs can pass smoke tests but produce wrong dynamics. | Scientific validity. | Promote `mech/mod_validate/` to CI (M5); compare voltage-clamp and current-clamp traces against `.mod` references. |
 | 8 | **Mutability of `Morphology` colliding with planned tree edits.** Aliasing can corrupt cached metrics or in-flight `Cell` builds. | Correctness. | Tree edits go through copy-on-write helpers; `MorphoMetric` invalidation is mandatory on every mutator. |
 | 9 | **DHS voltage solver scaling.** The branched-cable solve is the inner loop; regressions here regress every cell. | Performance. | Lock down a microbenchmark for `dhs_voltage_step` and run nightly (M7). |

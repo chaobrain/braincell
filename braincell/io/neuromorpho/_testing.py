@@ -34,11 +34,13 @@ __all__ = [
 
 
 #: Path to the minimal SWC fixture used by tests that need to actually
-#: parse a morphology. The fixture lives under ``develop_doc/morpho_files/``,
-#: matching the convention used by every other reader test.
+#: parse a morphology. The fixture lives under
+#: ``examples/multi_compartment/morpho_files/``, matching the convention
+#: used by every other reader test.
 FIXTURE_SWC = (
     Path(__file__).resolve().parents[3]
-    / "develop_doc"
+    / "examples"
+    / "multi_compartment"
     / "morpho_files"
     / "three_points_soma.swc"
 )

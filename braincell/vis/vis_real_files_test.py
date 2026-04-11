@@ -20,7 +20,7 @@ from pathlib import Path
 from braincell import Morphology
 from braincell.vis.scene3d import build_render_scene_3d
 
-FIXTURE_DIR = Path(__file__).resolve().parents[2] / "develop_doc" / "morpho_files"
+FIXTURE_DIR = Path(__file__).resolve().parents[2] / "examples" / "multi_compartment" / "morpho_files"
 VALID_SWC_FIXTURES = ("grc.swc", "io.swc")
 ALLOWED_TYPES = {
     "soma",

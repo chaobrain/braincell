@@ -22,7 +22,7 @@ from pathlib import Path
 from braincell import Morphology
 from braincell.io.asc import AscReader
 
-FIXTURE_DIR = Path(__file__).resolve().parents[2] / "develop_doc" / "morpho_files"
+FIXTURE_DIR = Path(__file__).resolve().parents[3] / "examples" / "multi_compartment" / "morpho_files"
 ALLOWED_TYPES = {
     "soma",
     "axon",

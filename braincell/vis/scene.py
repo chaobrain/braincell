@@ -49,8 +49,8 @@ def alpha_for_3d_tube() -> float:
 
 @dataclass(frozen=True)
 class OverlaySpec:
-    region: RegionMask | None = None
-    locset: LocsetMask | None = None
+    region: "RegionMask | None" = None
+    locset: "LocsetMask | None" = None
     values: ArrayLike | None = None
 
 
@@ -134,7 +134,7 @@ class RenderScene2D:
 
 @dataclass(frozen=True)
 class RenderRequest:
-    morpho: Morphology
+    morpho: "Morphology"
     overlay: OverlaySpec = field(default_factory=OverlaySpec)
     dimensionality: str = "3d"
     mode: str | None = None

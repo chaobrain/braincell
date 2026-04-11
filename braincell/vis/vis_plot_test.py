@@ -15,6 +15,7 @@
 
 
 import unittest
+from unittest import mock
 
 import brainunit as u
 import matplotlib.axes
@@ -22,10 +23,11 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from braincell import Branch, Morphology
-from braincell.morph import vis as morpho_vis
+from braincell import vis as morpho_vis
 from braincell.vis import plot2d, plot3d
 from braincell.vis.backend import BackendChooser
 from braincell.vis.backend_matplotlib import MatplotlibBackend
+from braincell.vis.backend_pyvista import PyVistaBackend
 from braincell.vis.compare2d import compare_layouts_2d
 from braincell.vis._test_helper import FakeBackend
 
@@ -132,8 +134,11 @@ class VisPlotTest(unittest.TestCase):
     def test_plot2d_rejects_pyvista_backend(self) -> None:
         tree = _point_tree()
 
-        with self.assertRaisesRegex(ValueError, "only supports 3D scenes"):
-            plot2d(tree, backend="pyvista")
+        # Force PyVista to report as available so the dispatch reaches the
+        # scene-kind validation step even when pyvista isn't installed.
+        with mock.patch.object(PyVistaBackend, "available", return_value=True):
+            with self.assertRaisesRegex(ValueError, "only supports 3D scenes"):
+                plot2d(tree, backend="pyvista")
 
     def test_plot3d_rejects_matplotlib_backend(self) -> None:
         tree = _point_tree()
@@ -150,7 +155,7 @@ class VisPlotTest(unittest.TestCase):
         self.assertIsInstance(axes, matplotlib.axes.Axes)
 
     def test_global_vis_defaults_change_layout_shape_and_style(self) -> None:
-        morpho_vis.configure(
+        morpho_vis.configure_defaults(
             layout_2d_default="stem",
             shape_2d_default="line",
             branch_type_colors={"soma": "#123456"},

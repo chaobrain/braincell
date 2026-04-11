@@ -183,7 +183,7 @@ class PyVistaBackendTest(unittest.TestCase):
     def test_render_uses_configured_opacity(self) -> None:
         fake_pv = _fake_pyvista(_FakePlotter)
         backend = PyVistaBackend(plotter_kwargs={"off_screen": True}, show_axes=False)
-        vis.configure(alpha_3d_tube=0.35)
+        vis.configure_defaults(alpha_3d_tube=0.35)
 
         with mock.patch.dict("sys.modules", {"pyvista": fake_pv}):
             plotter = backend.render(_request(notebook=False))
@@ -196,7 +196,11 @@ class PyVistaBackendTest(unittest.TestCase):
 
         with mock.patch.dict("sys.modules", {"pyvista": fake_pv}):
             with mock.patch.dict(os.environ, {}, clear=True):
-                viewer = backend.render(_request(notebook=True))
+                with mock.patch(
+                    "braincell.vis.backend_pyvista.importlib.util.find_spec",
+                    return_value=object(),
+                ):
+                    viewer = backend.render(_request(notebook=True))
 
         self.assertEqual(viewer["viewer"]["jupyter_backend"], "client")
         self.assertTrue(fake_pv.global_theme.trame.server_proxy_enabled)
@@ -259,8 +263,12 @@ class PyVistaBackendTest(unittest.TestCase):
 
         with mock.patch.dict("sys.modules", {"pyvista": fake_pv}):
             with mock.patch.dict(os.environ, {}, clear=True):
-                with self.assertRaisesRegex(RuntimeError, "Attempted backends: client, html") as ctx:
-                    backend.render(_request(notebook=True))
+                with mock.patch(
+                    "braincell.vis.backend_pyvista.importlib.util.find_spec",
+                    return_value=object(),
+                ):
+                    with self.assertRaisesRegex(RuntimeError, "Attempted backends: client, html") as ctx:
+                        backend.render(_request(notebook=True))
 
         self.assertIn("client: RuntimeError: client boom", str(ctx.exception))
         self.assertIn("html: RuntimeError: html boom", str(ctx.exception))

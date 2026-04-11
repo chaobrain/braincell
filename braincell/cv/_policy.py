@@ -20,7 +20,7 @@ from typing import TYPE_CHECKING
 import brainunit as u
 import numpy as np
 
-from braincell.mech import CableProperties
+from braincell.mech import CableProperty
 from braincell.morph import Morphology, branch_class_for_type
 
 if TYPE_CHECKING:
@@ -29,7 +29,7 @@ if TYPE_CHECKING:
 EPSILON = 1e-12
 Bounds = tuple[tuple[float, float], ...]
 BoundsByBranch = tuple[Bounds, ...]
-_DEFAULT_D_LAMBDA_CABLE = CableProperties(
+_DEFAULT_D_LAMBDA_CABLE = CableProperty(
     resting_potential=-65.0 * u.mV,
     membrane_capacitance=1.0 * (u.uF / u.cm ** 2),
     axial_resistivity=100.0 * (u.ohm * u.cm),
@@ -286,12 +286,12 @@ def _resolve_branch_cable_properties(
     *,
     paint_rules: tuple["PaintRule", ...] | None,
 ) -> tuple[tuple[float, float], ...]:
-    branch_intervals: list[list[tuple[float, float, CableProperties]]] = [
+    branch_intervals: list[list[tuple[float, float, CableProperty]]] = [
         [(0.0, 1.0, _DEFAULT_D_LAMBDA_CABLE)] for _ in morpho.branches
     ]
     for rule in paint_rules or ():
         mechanism = getattr(rule, "mechanism", None)
-        if not isinstance(mechanism, CableProperties):
+        if not isinstance(mechanism, CableProperty):
             continue
         region = getattr(rule, "region", None)
         if region is None or not hasattr(region, "evaluate"):
@@ -342,10 +342,10 @@ def _sorted_unique_coords(values: list[float]) -> list[float]:
 
 
 def _last_cable_covering(
-    rules: list[tuple[float, float, CableProperties]],
+    rules: list[tuple[float, float, CableProperty]],
     *,
     x: float,
-) -> CableProperties:
+) -> CableProperty:
     selected = rules[0][2]
     for prox, dist, cable in rules:
         if prox - EPSILON <= x <= dist + EPSILON:
@@ -353,7 +353,7 @@ def _last_cable_covering(
     return selected
 
 
-def _cable_signature(cable: CableProperties) -> tuple[float, float]:
+def _cable_signature(cable: CableProperty) -> tuple[float, float]:
     ra = float(np.asarray(cable.axial_resistivity.to_decimal(u.ohm * u.cm), dtype=float))
     cm = float(np.asarray(cable.membrane_capacitance.to_decimal(u.uF / u.cm ** 2), dtype=float))
     return (ra, cm)

@@ -733,14 +733,14 @@ distal_region = braincell.RegionExpr.branch_range(50 * u.um, None)
 cell = braincell.Cell(morpho, cv_policy=braincell.DLambda(0.1))
 
 cell.paint(
-    braincell.RegionExpr.everywhere(),
-    braincell.CableProperties(
-        membrane_capacitance=1.0 * (u.uF / u.cm**2),
-        axial_resistivity=100.0 * (u.ohm * u.cm),
-        resting_potential=-65 * u.mV,
-    ),
+  braincell.RegionExpr.everywhere(),
+  braincell.CableProperty(
+    membrane_capacitance=1.0 * (u.uF / u.cm ** 2),
+    axial_resistivity=100.0 * (u.ohm * u.cm),
+    resting_potential=-65 * u.mV,
+  ),
 )
-cell.paint(soma_region, braincell.channel.INa_Ba2002(g_max=0.12 * u.S / u.cm**2))
+cell.paint(soma_region, braincell.channel.INa_Ba2002(g_max=0.12 * u.S / u.cm ** 2))
 cell.place(braincell.LocsetExpr.root(), braincell.CurrentClamp(amp=0.2 * u.nA, dur=50 * u.ms))
 cell.place(braincell.LocsetExpr.terminals(), braincell.ProbeMechanism("v"))
 ```

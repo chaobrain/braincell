@@ -13,7 +13,7 @@
 # limitations under the License.
 # ==============================================================================
 
-from .cable import CableProperties
+from .cable import CableProperty
 from .density import DensityMechanism
 from .point import (
     CurrentClamp,
@@ -27,7 +27,7 @@ from .point import (
 from .spec import Channel, Ion, MechanismSpec, Synapse
 
 __all__ = [
-    "CableProperties",
+    "CableProperty",
     "Channel",
     "CurrentClamp",
     "DensityMechanism",

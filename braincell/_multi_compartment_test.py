@@ -25,7 +25,7 @@ import braincell
 from braincell import (
     Branch,
     CVPerBranch,
-    CableProperties,
+    CableProperty,
     Cell,
     CurrentClamp,
     DensityMechanism,
@@ -179,7 +179,7 @@ class CellFacadeTest(unittest.TestCase):
         base = cell.cvs[0]
         cell.paint(
             BranchSlice(branch_index=0, prox=0.0, dist=0.49),
-            CableProperties(
+            CableProperty(
                 resting_potential=-70.0 * u.mV,
                 membrane_capacitance=2.0 * (u.uF / u.cm ** 2),
                 axial_resistivity=200.0 * (u.ohm * u.cm),
@@ -194,7 +194,7 @@ class CellFacadeTest(unittest.TestCase):
 
         cell.paint(
             BranchSlice(branch_index=0, prox=0.49, dist=0.51),
-            CableProperties(
+            CableProperty(
                 resting_potential=-70.0 * u.mV,
                 membrane_capacitance=2.0 * (u.uF / u.cm ** 2),
                 axial_resistivity=200.0 * (u.ohm * u.cm),
@@ -212,7 +212,7 @@ class CellFacadeTest(unittest.TestCase):
         region = BranchSlice(branch_index=0, prox=0.0, dist=1.0)
         cell.paint(
             region,
-            CableProperties(
+            CableProperty(
                 resting_potential=-70.0 * u.mV,
                 membrane_capacitance=2.0 * (u.uF / u.cm ** 2),
                 axial_resistivity=200.0 * (u.ohm * u.cm),
@@ -223,7 +223,7 @@ class CellFacadeTest(unittest.TestCase):
 
         cell.paint(
             region,
-            CableProperties(
+            CableProperty(
                 resting_potential=-60.0 * u.mV,
                 membrane_capacitance=3.0 * (u.uF / u.cm ** 2),
                 axial_resistivity=300.0 * (u.ohm * u.cm),
@@ -234,7 +234,7 @@ class CellFacadeTest(unittest.TestCase):
 
         last = next(rule for rule in cell.paint_rules if rule.region == region)
         cable = last.mechanism
-        self.assertIsInstance(cable, CableProperties)
+        self.assertIsInstance(cable, CableProperty)
         self.assertAlmostEqual(cable.resting_potential.to_decimal(u.mV), -60.0, places=12)
         self.assertAlmostEqual(cable.membrane_capacitance.to_decimal(u.uF / u.cm ** 2), 3.0, places=12)
         self.assertAlmostEqual(cable.axial_resistivity.to_decimal(u.ohm * u.cm), 300.0, places=12)
@@ -554,7 +554,7 @@ class CellFacadeTest(unittest.TestCase):
 
         cell.paint(
             BranchSlice(branch_index=0, prox=0.4, dist=0.6),
-            CableProperties(
+            CableProperty(
                 resting_potential=-75.0 * u.mV,
                 membrane_capacitance=1.2 * (u.uF / u.cm ** 2),
                 axial_resistivity=120.0 * (u.ohm * u.cm),

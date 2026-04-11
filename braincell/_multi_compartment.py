@@ -127,7 +127,7 @@ class Cell(HHTypedNeuron):
         V_th: object = -75 * u.mV,
         V_initializer: object | None = None,
         spk_fun: Callable = braintools.surrogate.ReluGrad(),
-        solver: str | Callable = "explicit",
+        solver: str | Callable = "staggered",
         name: str | None = None,
     ) -> None:
         if not isinstance(morpho, Morphology):

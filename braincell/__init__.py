@@ -47,7 +47,7 @@ from .filter import (
 )
 from .io.neuromorpho import load_neuromorpho
 from .mech import (
-    CableProperties,
+    CableProperty,
     CurrentClamp,
     DensityMechanism,
     FunctionClamp,
@@ -76,7 +76,7 @@ __all__ = [
     "Axon",
     "BasalDendrite",
     "Branch",
-    "CableProperties",
+    "CableProperty",
     "Cell",
     "Channel",
     "CompositeByTypePolicy",

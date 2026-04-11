@@ -22,7 +22,7 @@ import numpy as np
 
 from braincell.filter import AllRegion, LocsetExpr, RegionExpr
 from braincell.mech import (
-    CableProperties,
+    CableProperty,
     CurrentClamp,
     DensityMechanism,
     FunctionClamp,
@@ -44,7 +44,7 @@ PointMechanismRuntime = (
     ProbeMechanism,
 )
 
-_DEFAULT_CABLE = CableProperties(
+_DEFAULT_CABLE = CableProperty(
     resting_potential=-65.0 * u.mV,
     membrane_capacitance=1.0 * (u.uF / u.cm ** 2),
     axial_resistivity=100.0 * (u.ohm * u.cm),
@@ -66,7 +66,7 @@ class PaintRule:
     values, while density rules append scaled mechanisms based on CV coverage.
     """
     region: RegionExpr
-    mechanism: CableProperties | object
+    mechanism: CableProperty | object
 
 
 @dataclass(frozen=True)
@@ -129,7 +129,7 @@ def normalize_paint_rules(region: RegionExpr, mechanisms: tuple[object, ...]) ->
 
     new_rules: list[PaintRule] = []
     for mechanism in mechanisms:
-        if isinstance(mechanism, CableProperties):
+        if isinstance(mechanism, CableProperty):
             new_rules.append(
                 PaintRule(
                     region=region,
@@ -156,12 +156,12 @@ def merge_paint_rules(
     # while density mechanisms accumulate in declaration order.
     merged = list(existing)
     for rule in incoming:
-        if isinstance(rule.mechanism, CableProperties):
+        if isinstance(rule.mechanism, CableProperty):
             merged = [
                 item
                 for item in merged
                 if not (
-                    isinstance(item.mechanism, CableProperties)
+                    isinstance(item.mechanism, CableProperty)
                     and item.region == rule.region
                 )
             ]
@@ -210,7 +210,7 @@ def apply_paint_rules(
                 cv_geo = cvs[cv_id]
                 mech = mechs[cv_id]
 
-                if isinstance(mechanism, CableProperties):
+                if isinstance(mechanism, CableProperty):
                     if not _contains_coord(cv_geo.midpoint, intervals, epsilon=EPSILON):
                         continue
                     mech.cm = mechanism.membrane_capacitance
@@ -263,8 +263,8 @@ def apply_place_rules(
             mechs[cv_id].point_mech.extend(rule.mechanisms)
 
 
-def _normalize_cable_properties(mechanism: CableProperties) -> CableProperties:
-    return CableProperties(
+def _normalize_cable_properties(mechanism: CableProperty) -> CableProperty:
+    return CableProperty(
         resting_potential=mechanism.resting_potential,
         membrane_capacitance=mechanism.membrane_capacitance,
         axial_resistivity=mechanism.axial_resistivity,

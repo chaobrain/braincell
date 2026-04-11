@@ -25,7 +25,7 @@ from braincell import (
     CVPerBranch,
     CVPolicy,
     CVPolicyByTypeRule,
-    CableProperties,
+    CableProperty,
     Cell,
     DLambda,
     MaxCVLen,
@@ -180,7 +180,7 @@ class CVPolicyTest(unittest.TestCase):
         cell = Cell(tree, cv_policy=DLambda(d_lambda=0.1, keep_odd=False))
         cell.paint(
             BranchSlice(branch_index=1, prox=0.0, dist=1.0),
-            CableProperties(
+            CableProperty(
                 resting_potential=-65.0 * u.mV,
                 membrane_capacitance=2.0 * (u.uF / u.cm ** 2),
                 axial_resistivity=200.0 * (u.ohm * u.cm),
@@ -203,7 +203,7 @@ class CVPolicyTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "branch-wise uniform cable properties"):
             cell.paint(
                 BranchSlice(branch_index=1, prox=0.0, dist=0.5),
-                CableProperties(
+                CableProperty(
                     resting_potential=-65.0 * u.mV,
                     membrane_capacitance=2.0 * (u.uF / u.cm ** 2),
                     axial_resistivity=200.0 * (u.ohm * u.cm),
@@ -215,7 +215,7 @@ class CVPolicyTest(unittest.TestCase):
         cell = Cell(tree, cv_policy=DLambda(d_lambda=0.1))
         cell.paint(
             BranchSlice(branch_index=1, prox=0.0, dist=0.5),
-            CableProperties(
+            CableProperty(
                 resting_potential=-55.0 * u.mV,
                 membrane_capacitance=1.0 * (u.uF / u.cm ** 2),
                 axial_resistivity=100.0 * (u.ohm * u.cm),

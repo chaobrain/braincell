@@ -21,13 +21,13 @@ import braintools
 import brainunit as u
 
 import braincell
-from braincell import CableProperties, CurrentClamp, FunctionClamp, SineClamp
+from braincell import CableProperty, CurrentClamp, FunctionClamp, SineClamp
 from braincell.mech.point import GapJunctionMechanism, ProbeMechanism, SynapseMechanism
 
 
 class MechanismTest(unittest.TestCase):
     def test_cable_properties_store_quantity_fields(self) -> None:
-        cable = CableProperties(
+        cable = CableProperty(
             resting_potential=-65.0 * u.mV,
             membrane_capacitance=1.0 * (u.uF / u.cm ** 2),
             axial_resistivity=100.0 * (u.ohm * u.cm),

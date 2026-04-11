@@ -20,7 +20,7 @@ import brainunit as u
 
 
 @dataclass(frozen=True)
-class CableProperties:
+class CableProperty:
     resting_potential: u.Quantity[u.mV]
     membrane_capacitance: u.Quantity[u.uF / u.cm ** 2]
     axial_resistivity: u.Quantity[u.ohm * u.cm]

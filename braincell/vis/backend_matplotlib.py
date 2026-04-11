@@ -22,6 +22,7 @@ from dataclasses import dataclass
 import numpy as np
 
 from ._values import resolved_colorbar_label
+from .hooks import PickInfo, VisHooks
 from .scene import (
     HighlightStroke2D,
     Marker2D,
@@ -35,6 +36,12 @@ from .scene import (
 )
 
 _BASE_OVERLAY_OFFSET = 10_000  # overlays drawn strictly above all base primitives
+
+# Attribute name used to attach pick metadata to every drawn artist. Each
+# value is either a single dict (for single-segment artists like Polyline2D
+# or Polygon2D) or a list of dicts (for LineCollection / PolyCollection
+# artists that batch many segments).
+_BC_PICK_META = "_bc_pick_meta"
 
 
 @dataclass(frozen=True)
@@ -129,6 +136,12 @@ class MatplotlibBackend:
         ax.set_aspect("equal", adjustable="datalim")
         if not self.show_axes:
             ax.axis("off")
+
+        # Wire optional pick / hover callbacks last so every artist is on
+        # the axes before the callbacks consult them.
+        hooks = request.backend_options.get("hooks") if request.backend_options else None
+        if isinstance(hooks, VisHooks) and hooks.is_active():
+            connect_hooks(ax, hooks)
         return ax
 
 
@@ -149,13 +162,24 @@ def _rgb_to_float(rgb: tuple[int, int, int]) -> tuple[float, float, float]:
 def _draw_polyline(ax, polyline: Polyline2D) -> None:
     color = _rgb_to_float(polyline.color_rgb)
     linewidth = max(float(np.mean(polyline.widths_um)), 0.5)
-    ax.plot(
+    (line,) = ax.plot(
         polyline.points_um[:, 0],
         polyline.points_um[:, 1],
         color=color,
         linewidth=linewidth,
         alpha=polyline.alpha,
         zorder=polyline.draw_order,
+    )
+    setattr(
+        line,
+        _BC_PICK_META,
+        {
+            "branch_index": polyline.branch_index,
+            "branch_name": polyline.branch_name,
+            "branch_type": polyline.branch_type,
+            "segment_index": None,
+            "points_um": np.asarray(polyline.points_um, dtype=float),
+        },
     )
 
 
@@ -171,6 +195,16 @@ def _draw_polygon(ax, plt, polygon: Polygon2D) -> None:
         zorder=polygon.draw_order,
     )
     ax.add_patch(patch)
+    setattr(
+        patch,
+        _BC_PICK_META,
+        {
+            "branch_index": polygon.branch_index,
+            "branch_name": polygon.branch_name,
+            "branch_type": polygon.branch_type,
+            "segment_index": None,
+        },
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -237,6 +271,23 @@ def _draw_value_polyline(
         joinstyle="round",
     )
     ax.add_collection(lc)
+    # One pick-meta dict per segment so picks report the correct sub-range.
+    n_segs = segments.shape[0]
+    segment_meta = [
+        {
+            "branch_index": polyline.branch_index,
+            "branch_name": polyline.branch_name,
+            "branch_type": polyline.branch_type,
+            "segment_index": i,
+            "value": float(values[i]) if i < values.size else None,
+            "segment_start": segments[i, 0],
+            "segment_end": segments[i, 1],
+            "x_start": i / n_segs,
+            "x_end": (i + 1) / n_segs,
+        }
+        for i in range(n_segs)
+    ]
+    setattr(lc, _BC_PICK_META, segment_meta)
 
 
 def _draw_value_polygons(
@@ -262,6 +313,20 @@ def _draw_value_polygons(
         zorder=batch.draw_order,
     )
     ax.add_collection(pc)
+    n_segs = polygons_um.shape[0]
+    segment_meta = [
+        {
+            "branch_index": batch.branch_index,
+            "branch_name": batch.branch_name,
+            "branch_type": batch.branch_type,
+            "segment_index": i,
+            "value": float(values[i]) if i < values.size else None,
+            "x_start": i / n_segs,
+            "x_end": (i + 1) / n_segs,
+        }
+        for i in range(n_segs)
+    ]
+    setattr(pc, _BC_PICK_META, segment_meta)
 
 
 def _draw_colorbar(fig, ax, *, value_spec: ValueSpec, norm, unit_label: str | None) -> None:
@@ -355,3 +420,168 @@ def _set_scene_limits(ax, scene: RenderScene2D) -> None:
 
     ax.set_xlim(float(min_xy[0] - padding_xy[0]), float(max_xy[0] + padding_xy[0]))
     ax.set_ylim(float(min_xy[1] - padding_xy[1]), float(max_xy[1] + padding_xy[1]))
+
+
+# ---------------------------------------------------------------------------
+# Interactive picking / hovering
+# ---------------------------------------------------------------------------
+
+def _resolve_pick_meta(artist, event) -> dict | None:
+    """Return the pick-metadata dict for a picked artist + pick event.
+
+    Handles both single-segment artists (Line2D / Polygon) and batched
+    collections (LineCollection / PolyCollection). For collections the
+    index is recovered from ``event.ind``.
+    """
+    meta = getattr(artist, _BC_PICK_META, None)
+    if meta is None:
+        return None
+    if isinstance(meta, list):
+        ind = getattr(event, "ind", None)
+        if ind is None or len(ind) == 0:
+            return None
+        index = int(ind[0])
+        if index < 0 or index >= len(meta):
+            return None
+        return meta[index]
+    return meta
+
+
+def _pick_info_from_meta(meta: dict, *, artist, xdata: float | None, ydata: float | None) -> PickInfo:
+    position = None
+    if xdata is not None and ydata is not None:
+        position = np.array([xdata, ydata], dtype=float)
+    x_coord = None
+    if "x_start" in meta and "x_end" in meta:
+        x_coord = 0.5 * (float(meta["x_start"]) + float(meta["x_end"]))
+    value = meta.get("value")
+    return PickInfo(
+        branch_index=int(meta["branch_index"]),
+        branch_name=str(meta["branch_name"]),
+        branch_type=str(meta["branch_type"]),
+        segment_index=meta.get("segment_index"),
+        x=x_coord,
+        value=float(value) if value is not None else None,
+        position_um=position,
+        artist=artist,
+    )
+
+
+def _find_hover_meta(ax, event) -> tuple[object, dict] | None:
+    """Locate the topmost artist under ``event`` carrying pick metadata."""
+    if event.inaxes is not ax:
+        return None
+
+    # Sort candidates with the topmost zorder first so hover prefers the
+    # artist the user can actually see.
+    candidates: list = []
+    for coll in ax.collections:
+        if hasattr(coll, _BC_PICK_META):
+            candidates.append(coll)
+    for line in ax.lines:
+        if hasattr(line, _BC_PICK_META):
+            candidates.append(line)
+    for patch in ax.patches:
+        if hasattr(patch, _BC_PICK_META):
+            candidates.append(patch)
+
+    candidates.sort(key=lambda artist: getattr(artist, "get_zorder", lambda: 0)(), reverse=True)
+
+    for artist in candidates:
+        contains, details = artist.contains(event)
+        if not contains:
+            continue
+        meta = getattr(artist, _BC_PICK_META, None)
+        if meta is None:
+            continue
+        if isinstance(meta, list):
+            ind = details.get("ind") if isinstance(details, dict) else None
+            if ind is None or len(ind) == 0:
+                continue
+            index = int(ind[0])
+            if 0 <= index < len(meta):
+                return artist, meta[index]
+            continue
+        return artist, meta
+    return None
+
+
+def connect_hooks(ax, hooks: VisHooks) -> dict[str, int]:
+    """Wire :class:`VisHooks` callbacks onto an existing matplotlib axes.
+
+    Called automatically by :class:`MatplotlibBackend.render` when a
+    :class:`VisHooks` is passed through ``backend_options``, but also
+    usable directly by callers that build scenes manually. The return
+    value is a dict of matplotlib connection ids keyed by
+    ``"pick"`` / ``"motion"``, suitable for
+    :meth:`Figure.canvas.mpl_disconnect` later.
+
+    Parameters
+    ----------
+    ax : matplotlib.axes.Axes
+        Target axes. All value-bearing artists on ``ax`` must carry the
+        pick metadata produced by :class:`MatplotlibBackend.render`.
+    hooks : VisHooks
+        The bundle of ``on_pick`` / ``on_hover`` / ``on_leave``
+        callbacks to wire up.
+
+    Returns
+    -------
+    dict
+        A ``{event_name: connection_id}`` mapping of the event handlers
+        that were actually registered.
+
+    Notes
+    -----
+    Collections and lines on ``ax`` are made pickable (``set_picker``)
+    so that clicks dispatch through the matplotlib ``pick_event`` path.
+    The hover path uses ``motion_notify_event`` + ``artist.contains``
+    because ``pick_event`` only fires on button clicks.
+    """
+    if not hooks.is_active():
+        return {}
+
+    fig = ax.figure
+    connection_ids: dict[str, int] = {}
+
+    if hooks.on_pick is not None:
+        for artist in list(ax.collections) + list(ax.lines) + list(ax.patches):
+            if not hasattr(artist, _BC_PICK_META):
+                continue
+            artist.set_picker(True)
+
+        def _on_pick(event):
+            artist = event.artist
+            meta = _resolve_pick_meta(artist, event)
+            if meta is None:
+                return
+            mouse = getattr(event, "mouseevent", None)
+            xdata = getattr(mouse, "xdata", None) if mouse is not None else None
+            ydata = getattr(mouse, "ydata", None) if mouse is not None else None
+            info = _pick_info_from_meta(meta, artist=artist, xdata=xdata, ydata=ydata)
+            hooks.on_pick(info)
+
+        connection_ids["pick"] = fig.canvas.mpl_connect("pick_event", _on_pick)
+
+    if hooks.on_hover is not None or hooks.on_leave is not None:
+        state = {"last_key": None}
+
+        def _on_motion(event):
+            match = _find_hover_meta(ax, event)
+            if match is None:
+                if state["last_key"] is not None and hooks.on_leave is not None:
+                    hooks.on_leave()
+                state["last_key"] = None
+                return
+            artist, meta = match
+            key = (id(artist), meta.get("segment_index"))
+            if key == state["last_key"]:
+                return
+            state["last_key"] = key
+            if hooks.on_hover is not None:
+                info = _pick_info_from_meta(meta, artist=artist, xdata=event.xdata, ydata=event.ydata)
+                hooks.on_hover(info)
+
+        connection_ids["motion"] = fig.canvas.mpl_connect("motion_notify_event", _on_motion)
+
+    return connection_ids

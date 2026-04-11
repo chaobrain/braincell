@@ -53,9 +53,13 @@ class BackendChooser:
     @classmethod
     def default(cls) -> "BackendChooser":
         from .backend_matplotlib import MatplotlibBackend
+        from .backend_plotly import PlotlyBackend
         from .backend_pyvista import PyVistaBackend
 
-        return cls(backends=(MatplotlibBackend(), PyVistaBackend()))
+        # Order matters: PyVista wins over Plotly for 3D when both are
+        # installed because it's the higher-fidelity backend; matplotlib
+        # sits first overall because it's always installed in dev envs.
+        return cls(backends=(MatplotlibBackend(), PyVistaBackend(), PlotlyBackend()))
 
     def pick(self, *, requested: str | None = None, scene_kind: str | None = None) -> RenderBackend:
         if requested is not None:

@@ -13,15 +13,22 @@
 # limitations under the License.
 # ==============================================================================
 
+from .compare import compare_morphologies, compare_values
 from .config import (
+    PUBLICATION_BRANCH_TYPE_COLORS,
+    PUBLICATION_RC_PARAMS,
+    PublicationTheme,
     VisDefaults,
     configure as configure_defaults,
     get_defaults,
+    publication_theme,
     reset_defaults,
     set_defaults,
     theme,
 )
-from .layout import LayoutConfig
+from .export import save_figure
+from .hooks import PickInfo, VisHooks
+from .layout import LayoutCache, LayoutConfig
 from .morphometry import (
     plot_branch_order_histogram,
     plot_dendrogram,
@@ -35,10 +42,18 @@ from .scene import OverlaySpec, ValueSpec
 from .traces import plot_traces
 
 __all__ = [
+    "LayoutCache",
     "LayoutConfig",
     "OverlaySpec",
+    "PUBLICATION_BRANCH_TYPE_COLORS",
+    "PUBLICATION_RC_PARAMS",
+    "PickInfo",
+    "PublicationTheme",
     "ValueSpec",
     "VisDefaults",
+    "VisHooks",
+    "compare_morphologies",
+    "compare_values",
     "configure_defaults",
     "get_defaults",
     "plot2d",
@@ -49,7 +64,9 @@ __all__ = [
     "plot_sholl",
     "plot_topology",
     "plot_traces",
+    "publication_theme",
     "reset_defaults",
+    "save_figure",
     "set_defaults",
     "theme",
 ]

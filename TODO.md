@@ -392,7 +392,8 @@ internal dependencies · status · open work**.
 
 - **Purpose** — render morphologies and cell-level data with both an
   interactive 3D backend (PyVista) and a static / publication 2D
-  backend (matplotlib).
+  backend (matplotlib), plus a dependency-light Plotly backend for
+  interactive notebook 3D without VTK.
 - **Key types and files**
   - `scene.py` — frozen dataclass primitives (`Polyline2D`, `Polygon2D`,
     `Circle2D`, `Label2D`, `BranchPolyline3D`, `BranchTypeBatch3D`),
@@ -403,8 +404,24 @@ internal dependencies · status · open work**.
     primitive tuples.
   - `plot2d.py`, `plot3d.py` — high-level user entry points.
   - `backend.py` — `RenderBackend` Protocol + `BackendChooser`.
-  - `backend_matplotlib.py`, `backend_pyvista.py` — concrete backends
-    with lazy optional imports.
+  - `backend_matplotlib.py`, `backend_pyvista.py`, `backend_plotly.py` —
+    concrete backends with lazy optional imports. The matplotlib
+    backend attaches per-artist pick metadata; the PyVista backend
+    attaches a point→branch lookup so `enable_point_picking` can
+    resolve clicks.
+  - `hooks.py` — `VisHooks(on_pick=..., on_hover=..., on_leave=...)`
+    plus the `PickInfo` payload delivered to user callbacks
+    (backend-agnostic; wired in both matplotlib and PyVista).
+  - `export.py` — unified `save_figure(figure, path, dpi=..., transparent=...)`
+    that dispatches on matplotlib `Axes`/`Figure`, pyvista `Plotter`,
+    or plotly `Figure`.
+  - `compare.py` — generalized `compare_morphologies([m1, m2, ...])` and
+    `compare_values(morpho, [values_a, values_b, ...])` side-by-side
+    helpers built on top of `plot2d`.
+  - `perf_benchmark_test.py` — `pytest-benchmark` baselines for layout
+    build, scene build, and end-to-end plot2d render on 50 / 500 /
+    2000-branch synthetic morphologies (skipped when
+    `pytest-benchmark` is not installed).
   - `layout/` — 2D tree-layout engine split across
     `_common.py` (shared dataclasses + tree helpers),
     `_geometry.py` (pure-numeric sampling and branch construction),
@@ -416,9 +433,12 @@ internal dependencies · status · open work**.
     (`build_layout_branches_2d` entry point, cache-aware). Each file
     ships with a sibling `*_test.py`.
   - `compare2d.py` — side-by-side comparison of layout families on the
-    same morphology.
+    same morphology (legacy, specific to layout-family gallery).
   - `config.py` — `VisDefaults` dataclass singleton plus
-    `configure_defaults` / `get_defaults` / `reset_defaults`.
+    `configure_defaults` / `get_defaults` / `reset_defaults`,
+    `theme(**overrides)` scoped context manager, and
+    `PublicationTheme` / `publication_theme()` which flips both vis
+    defaults and matplotlib `rcParams` for LaTeX-friendly output.
   - `_values.py` — colour-by-values normalisation (per-branch /
     per-segment / per-centerline-point → per-point scalar arrays)
     plus :mod:`brainunit` unit-label extraction.
@@ -496,15 +516,38 @@ internal dependencies · status · open work**.
     slots under `braincell/vis/_baseline_images/` — the whole module
     skips when `pytest_mpl` is not installed so the base suite
     stays dependency-free.
-  - [ ] **Generalized comparison**: `compare_morphologies`,
-    `compare_values`.
-  - [ ] **Interactivity**: matplotlib pick/hover callbacks; PyVista
-    point/cell picking mapped back to branch/CV IDs; optional Plotly
-    backend for dependency-light interactive notebook 3D.
-  - [ ] **Export polish**: unified `save_figure`, `PublicationTheme`
-    preset, LaTeX-friendly defaults.
-  - [ ] **Performance baselines** via `pytest-benchmark` on small /
-    medium / large (10k-branch synthetic) morphologies.
+  - [x] **Generalized comparison**: `compare_morphologies([m1, m2, ...])`
+    and `compare_values(morpho, [values_a, values_b, ...])` in
+    `vis/compare.py` (M6 Phase 4).
+  - [x] **Interactivity**: `VisHooks(on_pick=, on_hover=, on_leave=)` +
+    `PickInfo` in `vis/hooks.py`. The matplotlib backend attaches
+    per-artist pick metadata and wires `pick_event` /
+    `motion_notify_event` handlers; the PyVista backend builds a
+    point→branch lookup and calls `enable_point_picking`
+    (M6 Phase 4).
+  - [x] **Plotly backend**: `backend_plotly.py` renders value scenes
+    as `Scatter3d` traces with per-point `line.color` / `colorscale`
+    and a shared scalar bar; gated on
+    `importlib.util.find_spec("plotly")` so the base install stays
+    dependency-free (M6 Phase 4).
+  - [x] **Export polish**: unified `save_figure(figure, path, ...)` in
+    `vis/export.py` that dispatches on matplotlib `Axes`/`Figure`,
+    pyvista `Plotter`, or plotly `Figure`; `PublicationTheme` preset
+    plus `publication_theme()` context manager in `config.py` that
+    flips both vis defaults and matplotlib `rcParams` (serif font,
+    thicker lines, no grid, print-friendly palette) (M6 Phase 4).
+  - [x] **Performance baselines** via `pytest-benchmark` in
+    `vis/perf_benchmark_test.py` — layout build, scene build, and
+    plot2d render on 50 / 500 / 2000-branch synthetic morphologies,
+    skipped when the plugin is absent (M6 Phase 4).
+  - [x] **Narrative tutorial**: `develop_doc/vis.ipynb` — quick start,
+    layout gallery, styling/themes, color-by-values, overlays, movie,
+    trace panels, morphometry, interactivity, publication export,
+    comparison (M6 Phase 4).
+  - [x] **Sphinx autodoc wiring**: `docs/apis/vis.rst` exposes the
+    whole public surface (plot entry points, morphometry helpers,
+    comparison helpers, hooks, themes, layout engine) through
+    `autosummary` and is linked from `docs/index.rst` (M6 Phase 4).
 - **Open risks**
   - The stem layout family still holds the most bug-prone code
     (heuristic collision avoidance, the multi-weight scoring
@@ -512,10 +555,17 @@ internal dependencies · status · open work**.
     but remains the largest file in the package. Tuning individual
     scoring weights now goes through `LayoutConfig` rather than
     editing module-level constants, which makes experiments safer.
-  - Optional dependencies (`matplotlib`, `pyvista`) must stay lazy-
-    imported inside backend `.render()` calls. The import-time test
-    from §4.5 / risk #5 should grow to assert that neither is loaded
-    after `import braincell.vis`.
+  - Optional dependencies (`matplotlib`, `pyvista`, `plotly`,
+    `pytest-mpl`, `pytest-benchmark`) must stay lazy-imported inside
+    the backend that uses them. The import-time test from §4.5 /
+    risk #5 should grow to assert that none of the heavy optional
+    deps are loaded after `import braincell.vis`.
+  - `VisHooks` on the matplotlib backend relies on `pick_event` and
+    `motion_notify_event`, which only fire with an interactive
+    matplotlib backend. Notebook users should pick a GUI backend
+    (e.g. `%matplotlib widget`) — the Agg backend used in tests
+    will register the handlers but never deliver events, which the
+    tests explicitly cover.
 
 ### 3.8 `braincell` package root — neuron base classes
 
@@ -819,8 +869,14 @@ a 1.7k LOC `layout2d.py` monolith — was split in Phase 2 into the
 Phase 3 added scientific-visualization features (colour-by-values
 with vectorized matplotlib / PyVista rendering, `plot_movie`,
 `plot_traces`, the morphometry plot suite, layout caching, and
-`pytest-mpl` baselines). The milestone is broken into four landable
-phases so each phase leaves the module shippable.
+`pytest-mpl` baselines). Phase 4 closed the interactivity /
+publication-polish gap: `VisHooks` pick/hover callbacks for
+matplotlib and PyVista, the Plotly backend for dependency-light
+interactive 3D, `save_figure` + `PublicationTheme`,
+`compare_morphologies` / `compare_values`, `pytest-benchmark` perf
+baselines, a 26-cell narrative notebook, and Sphinx autodoc wiring.
+The milestone is broken into four landable phases so each phase
+leaves the module shippable.
 
 **Phase 1 — Stabilize and unblock (P0).** Fix dead/half-wired features,
 clean the API schema, set up test infrastructure.
@@ -917,23 +973,57 @@ clean the API schema, set up test infrastructure.
 
 **Phase 4 — Interactivity, export, docs (P2/P3).**
 
-- [ ] Matplotlib pick / hover hooks exposed through a
-  `hooks=VisHooks(on_pick=..., on_hover=...)` parameter.
-- [ ] PyVista point/cell picking mapped back to branch/CV IDs.
-- [ ] Optional Plotly backend (`backend_plotly.py`) for
-  dependency-light interactive 3D in notebooks without VTK; gated
-  behind a `[vis-interactive]` extras_require.
-- [ ] Unified `save_figure(obj, path, dpi=..., transparent=...)`
-  handling both matplotlib and PyVista returns.
-- [ ] `PublicationTheme` preset in `config.py` (serif font, no grid,
-  higher contrast palette, thicker lines).
-- [ ] Generalized `compare_morphologies([m1, m2], layout=...,
-  align="soma")` and `compare_values(morpho, [values_a, values_b])`.
-- [ ] Performance baselines via `pytest-benchmark` on small / medium /
-  large synthetic morphologies.
-- [ ] Narrative `develop_doc/vis.ipynb` tutorial covering quick start,
-  layout gallery, styling, color-by-values, overlays, animation,
-  publication export.
+- [x] Matplotlib pick / hover hooks exposed through a
+  `hooks=VisHooks(on_pick=..., on_hover=..., on_leave=...)` parameter.
+  Lives in `vis/hooks.py`; the matplotlib backend attaches
+  `_bc_pick_meta` to every drawn artist (single dict for base
+  polylines / polygons, list of per-segment dicts for
+  `LineCollection` / `PolyCollection` value primitives) and wires
+  `pick_event` / `motion_notify_event` handlers in
+  `connect_hooks(ax, hooks)`.
+- [x] PyVista point/cell picking mapped back to branch/CV IDs via a
+  `_bc_point_branch_map` attached to the plotter at render time;
+  `connect_pyvista_hooks` calls
+  `plotter.enable_point_picking(callback=...)` and resolves the
+  nearest point in the global point table.
+- [x] Optional Plotly backend (`backend_plotly.py`) for
+  dependency-light interactive 3D in notebooks without VTK; renders
+  branches as `Scatter3d` line traces with shared colour scales for
+  value batches. Gated on `importlib.util.find_spec("plotly")`.
+- [x] Unified `save_figure(obj, path, dpi=..., transparent=..., format=...)`
+  in `vis/export.py` handling matplotlib (`Axes`/`Figure`), pyvista
+  (`Plotter` — raster via `screenshot`, HTML via `export_html`,
+  vector via `save_graphic` when VTK supports it), and plotly
+  (`Figure` — `write_image` / `write_html`). Type dispatch with a
+  clear error for unrecognised objects.
+- [x] `PublicationTheme` preset in `config.py` (serif font, no grid,
+  thicker lines, print-friendly palette), plus
+  `publication_theme(preset, rc_overrides=...)` context manager that
+  patches both vis defaults and matplotlib `rcParams` with exception-
+  safe restore semantics.
+- [x] Generalized `compare_morphologies([m1, m2], layout=...,
+  align="soma")` and `compare_values(morpho, [values_a, values_b])`
+  in `vis/compare.py`; thin `plot2d` wrappers so every styling knob
+  remains available unchanged.
+- [x] Performance baselines via `pytest-benchmark` in
+  `vis/perf_benchmark_test.py` on small (50 branches), medium (500),
+  and large (2000) chain morphologies. Covers layout build, scene
+  build, and end-to-end plot2d render. Skipped when the plugin is
+  absent.
+- [x] Narrative `develop_doc/vis.ipynb` tutorial (26 cells) covering
+  quick start, layout gallery, styling, color-by-values, overlays,
+  animation, trace panels, morphometry, interactivity (`VisHooks`),
+  publication export (`publication_theme` + `save_figure`), and the
+  new comparison helpers. Every code cell executes end-to-end.
+- [x] Sphinx autodoc wiring for `braincell.vis` — new
+  `docs/apis/vis.rst` autosummaries the whole public surface
+  (plot entry points, morphometry, comparison helpers, hooks,
+  themes, layout engine), linked from `docs/index.rst`.
+- [ ] **Still deferred:** register-based layout dispatch via
+  `@register_layout("name")` so third-party families can plug in
+  without editing `_dispatch.py`. Holds no user-visible ticket but
+  remains a small API tweak to land whenever the layout package
+  stabilises.
 - [ ] Sphinx autodoc wiring for `braincell.vis` public surface.
 
 ### M7 — Numerics hardening

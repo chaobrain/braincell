@@ -60,6 +60,8 @@ class _FakePlotter:
         self.closed = False
         self._first_time = True
         self._rendered = False
+        self.pick_callback = None
+        self.pick_enabled = False
 
     def set_background(self, color) -> None:
         self.background = color
@@ -83,6 +85,10 @@ class _FakePlotter:
 
     def close(self) -> None:
         self.closed = True
+
+    def enable_point_picking(self, *, callback, show_message=True, use_picker=True):
+        self.pick_callback = callback
+        self.pick_enabled = True
 
 
 class _NeedsRenderedPlotter(_FakePlotter):
@@ -293,3 +299,53 @@ class PyVistaBackendTest(unittest.TestCase):
         with mock.patch.dict("sys.modules", {"pyvista": fake_pv}):
             with self.assertRaisesRegex(RuntimeError, "PyVista returned no notebook viewer"):
                 backend.render(_request(notebook=True, jupyter_backend="html"))
+
+
+class PyVistaPickMetadataTest(unittest.TestCase):
+    def test_render_attaches_point_branch_map(self) -> None:
+        fake_pv = _fake_pyvista(_FakePlotter)
+        backend = PyVistaBackend(plotter_kwargs={"off_screen": True}, show_axes=False)
+
+        with mock.patch.dict("sys.modules", {"pyvista": fake_pv}):
+            plotter = backend.render(_request(notebook=False))
+
+        from braincell.vis.backend_pyvista import _BC_POINT_BRANCH_MAP
+
+        entries = getattr(plotter, _BC_POINT_BRANCH_MAP, None)
+        self.assertIsNotNone(entries)
+        self.assertGreater(len(entries), 0)
+        first = entries[0]
+        self.assertEqual(first["branch_type"], "soma")
+        self.assertIn("position_um", first)
+
+    def test_hooks_enable_point_picking(self) -> None:
+        from braincell.vis.hooks import PickInfo, VisHooks
+
+        fake_pv = _fake_pyvista(_FakePlotter)
+        backend = PyVistaBackend(plotter_kwargs={"off_screen": True}, show_axes=False)
+
+        captured: list[PickInfo] = []
+        hooks = VisHooks(on_pick=lambda info: captured.append(info))
+        branch = Branch.from_points(
+            points=[[0.0, 0.0, 0.0], [10.0, 0.0, 0.0]] * u.um,
+            radii=[2.0, 2.0] * u.um,
+            type="soma",
+        )
+        tree = Morphology.from_root(branch, name="soma")
+        request = RenderRequest(
+            morpho=tree,
+            dimensionality="3d",
+            scene=build_render_scene_3d(tree),
+            backend_options={"notebook": False, "hooks": hooks},
+        )
+
+        with mock.patch.dict("sys.modules", {"pyvista": fake_pv}):
+            plotter = backend.render(request)
+
+        self.assertTrue(plotter.pick_enabled)
+        self.assertIsNotNone(plotter.pick_callback)
+        # Simulate a click roughly at the distal end of the soma.
+        plotter.pick_callback([10.0, 0.0, 0.0])
+        self.assertEqual(len(captured), 1)
+        self.assertEqual(captured[0].branch_type, "soma")
+        self.assertIsNotNone(captured[0].position_um)

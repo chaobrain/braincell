@@ -135,6 +135,170 @@ def configure(
 set_defaults = configure
 
 
+# ---------------------------------------------------------------------------
+# Publication theme preset
+# ---------------------------------------------------------------------------
+
+
+# Branch colours chosen for a publication-ready palette — higher
+# contrast, print-friendly, and accessible to the common forms of
+# colour blindness (the palette is adapted from Paul Tol's "muted"
+# cycle: https://personal.sron.nl/~pault/). The keys mirror the
+# default ``DEFAULT_BRANCH_TYPE_COLORS`` so callers can diff the two
+# presets side by side.
+PUBLICATION_BRANCH_TYPE_COLORS = {
+    "soma": (17, 17, 17),
+    "axon": (51, 34, 136),
+    "basal_dendrite": (136, 34, 85),
+    "apical_dendrite": (204, 102, 119),
+    "dendrite": (170, 68, 153),
+    "custom": (68, 68, 68),
+}
+
+
+# Matplotlib rcParams applied when the publication theme is active.
+# The aim is LaTeX-style output: serif font, thicker lines, no grid,
+# tight margins. Values are chosen for raster export at 300 dpi and
+# look good in PDF / PNG / SVG without further tweaking.
+PUBLICATION_RC_PARAMS: dict[str, object] = {
+    "font.family": "serif",
+    "font.serif": ["DejaVu Serif", "Times New Roman", "Times", "serif"],
+    "font.size": 11.0,
+    "axes.titlesize": 12.0,
+    "axes.labelsize": 11.0,
+    "axes.linewidth": 1.2,
+    "axes.grid": False,
+    "xtick.labelsize": 10.0,
+    "ytick.labelsize": 10.0,
+    "xtick.direction": "out",
+    "ytick.direction": "out",
+    "lines.linewidth": 1.6,
+    "lines.antialiased": True,
+    "figure.dpi": 150.0,
+    "savefig.dpi": 300.0,
+    "savefig.bbox": "tight",
+    "savefig.transparent": False,
+}
+
+
+@dataclass(frozen=True)
+class PublicationTheme:
+    """Publication-quality styling preset for :mod:`braincell.vis`.
+
+    Bundles a :class:`VisDefaults` diff (serif-friendly branch colours,
+    thicker strokes) with a matplotlib ``rcParams`` block so a single
+    context manager flips both at once.
+
+    Parameters
+    ----------
+    branch_type_colors : mapping
+        Branch-type colour overrides. Defaults to
+        :data:`PUBLICATION_BRANCH_TYPE_COLORS`.
+    rc_params : mapping
+        Matplotlib ``rcParams`` applied inside the theme. Defaults to
+        :data:`PUBLICATION_RC_PARAMS`.
+    alpha_2d_line : float
+        Line alpha used by the 2D backend. Defaults to ``1.0`` (opaque).
+    alpha_2d_poly : float
+        Polygon alpha used by the 2D frustum backend. Defaults to
+        ``0.55`` — a little darker than the interactive default so
+        printed output reads at a glance.
+    alpha_3d_tube : float
+        Tube alpha used by the 3D backend. Defaults to ``1.0``.
+
+    Examples
+    --------
+
+    .. code-block:: python
+
+        >>> from braincell.vis import publication_theme, plot2d
+        >>> with publication_theme():                 # doctest: +SKIP
+        ...     plot2d(tree, layout='stem')           # doctest: +SKIP
+    """
+
+    branch_type_colors: dict[str, tuple[int, int, int]] = field(
+        default_factory=lambda: dict(PUBLICATION_BRANCH_TYPE_COLORS)
+    )
+    rc_params: dict[str, object] = field(default_factory=lambda: dict(PUBLICATION_RC_PARAMS))
+    alpha_2d_line: float = 1.0
+    alpha_2d_poly: float = 0.55
+    alpha_3d_tube: float = 1.0
+
+
+@contextmanager
+def publication_theme(
+    preset: PublicationTheme | None = None,
+    *,
+    rc_overrides: dict[str, object] | None = None,
+) -> Iterator[VisDefaults]:
+    """Activate the :class:`PublicationTheme` for the duration of a block.
+
+    On entry this context manager applies the preset's branch colours
+    and alphas to :data:`_VIS_DEFAULTS` **and** patches matplotlib's
+    ``rcParams`` with the preset's styling block. On exit both are
+    restored, even if the body raised.
+
+    Parameters
+    ----------
+    preset : PublicationTheme or None
+        Theme to activate. When ``None`` the default instance is used.
+    rc_overrides : mapping or None
+        Extra ``rcParams`` applied on top of the preset. Useful for
+        one-off tweaks without subclassing the preset.
+
+    Yields
+    ------
+    VisDefaults
+        A snapshot of the vis defaults active inside the block.
+
+    Notes
+    -----
+    The matplotlib patch goes through
+    :func:`matplotlib.rcParams.update` and is restored from the
+    original values — this is the same mechanism :func:`plt.rc_context`
+    uses internally, but scoped to the keys the preset actually sets
+    so unrelated rc state is left alone.
+    """
+    global _VIS_DEFAULTS
+
+    active = preset or PublicationTheme()
+    vis_snapshot = _copy_defaults(_VIS_DEFAULTS)
+
+    # Apply vis defaults.
+    configure(
+        branch_type_colors=dict(active.branch_type_colors),
+        alpha_2d_line=active.alpha_2d_line,
+        alpha_2d_poly=active.alpha_2d_poly,
+        alpha_3d_tube=active.alpha_3d_tube,
+    )
+
+    # Apply matplotlib rcParams lazily — only import if available.
+    import importlib.util
+
+    mpl_available = importlib.util.find_spec("matplotlib") is not None
+    rc_snapshot: dict[str, object] = {}
+    if mpl_available:
+        import matplotlib as mpl
+
+        merged_rc = dict(active.rc_params)
+        if rc_overrides is not None:
+            merged_rc.update(rc_overrides)
+        # Skip unknown keys so tests never crash on older matplotlib.
+        valid_keys = set(mpl.rcParams.keys())
+        effective_rc = {k: v for k, v in merged_rc.items() if k in valid_keys}
+        rc_snapshot = {key: mpl.rcParams[key] for key in effective_rc}
+        mpl.rcParams.update(effective_rc)
+
+    try:
+        yield get_defaults()
+    finally:
+        _VIS_DEFAULTS = vis_snapshot
+        if mpl_available and rc_snapshot:
+            import matplotlib as mpl
+
+            mpl.rcParams.update(rc_snapshot)
+
+
 @contextmanager
 def theme(**overrides: object) -> Iterator[VisDefaults]:
     """Temporarily override visualization defaults for the duration of a block.

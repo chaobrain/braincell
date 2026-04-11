@@ -16,6 +16,7 @@
 
 from .backend import BackendChooser, validate_backend_for_scene
 from .config import SUPPORTED_3D_MODES, resolve_default_3d_mode
+from .hooks import VisHooks
 from .plot2d import _build_value_spec
 from .scene import OverlaySpec, RenderRequest
 from .scene3d import build_render_scene_3d
@@ -39,6 +40,7 @@ def plot3d(
     notebook: bool | None = None,
     jupyter_backend: str | None = None,
     return_plotter: bool = False,
+    hooks: VisHooks | None = None,
 ) -> object:
     from braincell.morph import Morphology
 
@@ -68,6 +70,8 @@ def plot3d(
         backend_options["jupyter_backend"] = jupyter_backend
     if return_plotter:
         backend_options["return_plotter"] = True
+    if hooks is not None:
+        backend_options["hooks"] = hooks
     request = RenderRequest(
         morpho=morpho,
         scene=scene,

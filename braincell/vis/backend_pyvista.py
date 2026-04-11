@@ -24,7 +24,13 @@ from typing import Any
 import numpy as np
 
 from ._values import resolved_colorbar_label
+from .hooks import PickInfo, VisHooks
 from .scene import RenderRequest, RenderScene3D, ValueBatch3D, ValueSpec
+
+# Attribute name used by the PyVista backend to attach a point→branch
+# lookup table to a plotter. Downstream picking callbacks read it via
+# ``getattr(plotter, _BC_POINT_BRANCH_MAP, None)``.
+_BC_POINT_BRANCH_MAP = "_bc_point_branch_map"
 
 
 @dataclass(frozen=True)
@@ -62,6 +68,14 @@ class PyVistaBackend:
         plotter.set_background(self.background)
         if self.show_axes:
             plotter.show_axes()
+
+        # Build a point→branch map up front so picking callbacks can
+        # resolve clicked points back to (branch_index, branch_name,
+        # branch_type). The map aggregates every branch in the scene in
+        # the order they will be added to the plotter, matching the
+        # concatenation order used when PyVista assembles PolyData.
+        point_branch_map = _build_point_branch_map(scene)
+        setattr(plotter, _BC_POINT_BRANCH_MAP, point_branch_map)
 
         mode = scene.mode if scene.mode else "geometry"
 
@@ -138,6 +152,12 @@ class PyVistaBackend:
                 center=tuple(float(c) for c in marker.position_um),
             )
             plotter.add_mesh(sphere, color=_rgb_to_float(marker.color_rgb))
+
+        # Optional pick hooks — wired last so every mesh is already on
+        # the plotter before picking is enabled.
+        hooks = backend_options.get("hooks") if backend_options else None
+        if isinstance(hooks, VisHooks) and hooks.is_active():
+            connect_pyvista_hooks(plotter, hooks)
 
         if notebook is None:
             notebook = _running_in_notebook()
@@ -313,3 +333,113 @@ def _prepare_plotter_for_notebook(plotter: Any) -> None:
         plotter._on_first_render_request()
     if hasattr(plotter, "render"):
         plotter.render()
+
+
+# ---------------------------------------------------------------------------
+# Interactive picking
+# ---------------------------------------------------------------------------
+
+
+def _build_point_branch_map(scene: RenderScene3D) -> list[dict[str, Any]]:
+    """Build a flat list of per-point pick metadata for a 3D scene.
+
+    Entry ``i`` describes the global ``i``-th point produced when the
+    backend renders every branch in order. The PyVista backend uses the
+    same ordering for its ``BranchTypeBatch3D`` meshes, so an index
+    returned by ``enable_point_picking`` can be resolved directly via
+    this table.
+    """
+    entries: list[dict[str, Any]] = []
+    n_branches = len(scene.branches)
+    for branch in scene.branches:
+        n_points = int(branch.points_um.shape[0])
+        for local_index in range(n_points):
+            entries.append(
+                {
+                    "branch_index": int(branch.branch_index),
+                    "branch_name": str(branch.branch_name),
+                    "branch_type": str(branch.branch_type),
+                    "segment_index": max(local_index - 1, 0) if n_points > 1 else 0,
+                    "x": float(local_index) / max(n_points - 1, 1),
+                    "position_um": np.asarray(branch.points_um[local_index], dtype=float),
+                }
+            )
+    if not entries and n_branches == 0:
+        return entries
+    return entries
+
+
+def _pick_info_from_point(
+    entries: list[dict[str, Any]],
+    point_index: int,
+    *,
+    artist: Any = None,
+) -> PickInfo | None:
+    if point_index < 0 or point_index >= len(entries):
+        return None
+    entry = entries[point_index]
+    return PickInfo(
+        branch_index=entry["branch_index"],
+        branch_name=entry["branch_name"],
+        branch_type=entry["branch_type"],
+        segment_index=entry.get("segment_index"),
+        x=entry.get("x"),
+        value=None,
+        position_um=entry.get("position_um"),
+        artist=artist,
+    )
+
+
+def connect_pyvista_hooks(plotter: Any, hooks: VisHooks) -> None:
+    """Wire :class:`VisHooks` callbacks onto an existing PyVista plotter.
+
+    Uses :meth:`pyvista.Plotter.enable_point_picking` when available so
+    clicking a point on a branch fires the ``on_pick`` callback with a
+    :class:`PickInfo` resolved through the plotter's stored
+    ``_bc_point_branch_map``. PyVista does not expose a cheap hover
+    event, so ``on_hover`` / ``on_leave`` are silently ignored by this
+    backend — callers that need hover semantics should use the
+    matplotlib backend.
+
+    Parameters
+    ----------
+    plotter : pyvista.Plotter
+        Plotter produced by :meth:`PyVistaBackend.render`. Must still
+        carry the ``_bc_point_branch_map`` attribute so the callback
+        can resolve point indices.
+    hooks : VisHooks
+        Callback bundle. Only ``on_pick`` is honored.
+
+    Notes
+    -----
+    The callback signature expected by PyVista is a single-argument
+    callable that receives the picked ``numpy.ndarray`` point; we wrap
+    the user callback so it sees a :class:`PickInfo` instead.
+    """
+    if not hooks.is_active() or hooks.on_pick is None:
+        return
+    entries = getattr(plotter, _BC_POINT_BRANCH_MAP, None)
+    if not entries:
+        return
+    if not hasattr(plotter, "enable_point_picking"):
+        return
+    # Precompute an array of 3D positions so nearest-point lookup is
+    # cheap when PyVista passes us a world-space point.
+    positions = np.asarray([entry["position_um"] for entry in entries], dtype=float)
+
+    def _on_pv_pick(picked_point, *_args, **_kwargs):
+        if picked_point is None:
+            return
+        try:
+            pt = np.asarray(picked_point, dtype=float).reshape(-1)
+        except Exception:
+            return
+        if pt.size < 3 or positions.size == 0:
+            return
+        diffs = positions[:, : pt.size] - pt[np.newaxis, : pt.size]
+        nearest = int(np.argmin(np.sum(diffs * diffs, axis=1)))
+        info = _pick_info_from_point(entries, nearest, artist=plotter)
+        if info is not None:
+            hooks.on_pick(info)
+
+    plotter.enable_point_picking(callback=_on_pv_pick, show_message=False, use_picker=True)

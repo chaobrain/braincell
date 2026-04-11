@@ -16,6 +16,7 @@
 
 from .backend import BackendChooser, validate_backend_for_scene
 from .config import resolve_default_2d_layout, resolve_default_2d_shape
+from .hooks import VisHooks
 from .layout import LayoutConfig
 from .scene import OverlaySpec, RenderRequest, ValueSpec
 from .scene2d import build_render_scene_2d
@@ -45,6 +46,7 @@ def plot2d(
     min_branch_angle_deg: float | None = 25.0,
     root_layout: str = "type_split",
     layout_config: LayoutConfig | None = None,
+    hooks: VisHooks | None = None,
 ) -> object:
     from braincell.morph import Morphology
 
@@ -83,6 +85,8 @@ def plot2d(
         backend_options["jupyter_backend"] = jupyter_backend
     if return_plotter:
         backend_options["return_plotter"] = True
+    if hooks is not None:
+        backend_options["hooks"] = hooks
     request = RenderRequest(
         morpho=morpho,
         scene=scene,

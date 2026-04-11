@@ -164,7 +164,8 @@ def try_network_model():
 
     def step_run(i):
         with brainstate.environ.context(i=i, t=brainstate.environ.get_dt() * i):
-            inp = (0.12 + brainstate.random.randn() * 1.4) * (u.uA / u.cm ** 2)
+            # inp = (0.12 + brainstate.random.randn() * 1.4) * (u.uA / u.cm ** 2)
+            inp = brainstate.random.poisson(lam=1.) * (u.uA / u.cm ** 2)
             spk = net.update(inp)
             current = net.conn.out(net.pop.V.value)
             return spk, u.math.sum(current)

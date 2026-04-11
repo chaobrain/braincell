@@ -28,6 +28,7 @@ import brainunit as u
 import jax.tree
 
 from braincell._base import Channel, IonInfo
+from braincell.mech import register_channel
 from braincell.quad import DiffEqState, IndependentIntegration
 from braincell.ion import Sodium
 
@@ -140,6 +141,7 @@ class SodiumChannel(Channel):
         pass
 
 
+@register_channel("INa_p3q_markov")
 class INa_p3q_markov(SodiumChannel):
     r"""
     The sodium current model of :math:`p^3q` current which described with first-order Markov chain.
@@ -214,6 +216,7 @@ class INa_p3q_markov(SodiumChannel):
         raise NotImplementedError
 
 
+@register_channel("INa_Ba2002")
 class INa_Ba2002(INa_p3q_markov):
     r"""
     The sodium current model.
@@ -294,6 +297,7 @@ class INa_Ba2002(INa_p3q_markov):
         return 4. / (1. + u.math.exp(-(V - 40.) / 5.))
 
 
+@register_channel("INa_TM1991")
 class INa_TM1991(INa_p3q_markov):
     r"""
     The sodium current model described by (Traub and Miles, 1991) [1]_.
@@ -374,6 +378,7 @@ class INa_TM1991(INa_p3q_markov):
         return 4. / (1 + u.math.exp(-(V - 40) / 5))
 
 
+@register_channel("INa_HH1952")
 class INa_HH1952(INa_p3q_markov):
     r"""
     The sodium current model described by Hodgkin–Huxley model [1]_.
@@ -448,6 +453,7 @@ class INa_HH1952(INa_p3q_markov):
         return 1 / (1 + u.math.exp(-(V - 10) / 10))
 
 
+@register_channel("INa_Rsg")
 class INa_Rsg(SodiumChannel, IndependentIntegration):
     __module__ = 'braincell.channel'
 

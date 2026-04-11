@@ -27,6 +27,7 @@ import braintools
 import brainunit as u
 
 from braincell._base import HHTypedNeuron, Channel
+from braincell.mech import register_channel
 
 __all__ = [
     'LeakageChannel',
@@ -118,6 +119,7 @@ class LeakageChannel(Channel):
         pass
 
 
+@register_channel("IL", aliases=("leaky",))
 class IL(LeakageChannel):
     """The leakage channel current.
 

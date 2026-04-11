@@ -18,20 +18,12 @@ from typing import Literal
 
 import numpy as np
 
-from braincell.mech.density import DensityMechanism
-from braincell.mech.point import (
-    CurrentClamp,
-    FunctionClamp,
+from braincell.mech import (
+    DensityMechanism,
     GapJunctionMechanism,
+    PointMechanism,
     ProbeMechanism,
-    SineClamp,
     SynapseMechanism,
-)
-from braincell.mech.spec import (
-    MechanismSpec,
-    density_class_name,
-    density_instance_name,
-    is_density_mechanism,
 )
 from ._runtime import CellRuntimeState
 
@@ -101,10 +93,9 @@ class MechanismObjectCell:
         if self.point_id is not None and self.runtime.has_layout_value(self.layout_id, key):
             return self.runtime.get_layout_value(self.layout_id, point_id=self.point_id, var_name=key)
         declaration = self.declaration
-        if is_density_mechanism(declaration):
-            params = dict(_mechanism_params(declaration))
-            if key in params:
-                return params[key]
+        if isinstance(declaration, DensityMechanism):
+            if key in declaration.params:
+                return declaration.params[key]
         node = self.node
         if hasattr(node, key):
             return getattr(node, key)
@@ -165,24 +156,29 @@ class MechanismObjectTable:
 
 
 def mechanism_cell_key(mechanism: object) -> tuple[str, str]:
-    if is_density_mechanism(mechanism):
-        return density_class_name(mechanism)[1], density_instance_name(mechanism)
+    """Return a ``(class_name, instance_name)`` key for table indexing.
+
+    Every mechanism type is mapped to a stable tuple that table views
+    use as a row identifier. Density mechanisms use
+    ``(class_name, instance_name)`` (which collapses to
+    ``(class_name, class_name)`` when no explicit name override was
+    provided). Point mechanisms fall back to their Python class name
+    on both axes unless they carry their own identity.
+    """
+    if isinstance(mechanism, DensityMechanism):
+        return (mechanism.class_name, mechanism.instance_name)
     if isinstance(mechanism, SynapseMechanism):
-        return mechanism.synapse_type, mechanism.synapse_type
+        return (mechanism.synapse_type, mechanism.instance_name)
     if isinstance(mechanism, ProbeMechanism):
         class_name = "ProbeMechanism"
-        instance_name = mechanism.variable if mechanism.target is None else f"{mechanism.variable}@{mechanism.target}"
-        return class_name, instance_name
-    if isinstance(mechanism, (GapJunctionMechanism, CurrentClamp, SineClamp, FunctionClamp)):
+        instance_name = (
+            mechanism.variable
+            if mechanism.target is None
+            else f"{mechanism.variable}@{mechanism.target}"
+        )
+        return (class_name, instance_name)
+    if isinstance(mechanism, PointMechanism):
         class_name = type(mechanism).__name__
-        return class_name, class_name
+        return (class_name, class_name)
     class_name = type(mechanism).__name__
-    return class_name, class_name
-
-
-def _mechanism_params(mechanism: object) -> tuple[tuple[str, object], ...]:
-    if isinstance(mechanism, DensityMechanism):
-        return tuple(mechanism.params)
-    if isinstance(mechanism, MechanismSpec):
-        return tuple(mechanism.params)
-    return ()
+    return (class_name, class_name)

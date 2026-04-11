@@ -15,7 +15,6 @@
 
 
 from dataclasses import dataclass
-from typing import Any
 
 import brainunit as u
 import numpy as np
@@ -23,26 +22,12 @@ import numpy as np
 from braincell.filter import AllRegion, LocsetExpr, RegionExpr
 from braincell.mech import (
     CableProperty,
-    CurrentClamp,
     DensityMechanism,
-    FunctionClamp,
-    GapJunctionMechanism,
-    ProbeMechanism,
-    SineClamp,
-    SynapseMechanism,
+    PointMechanism,
 )
-from braincell.mech.spec import density_class_name, density_params, density_replace_params, is_density_mechanism
 from braincell.morph import Morphology
 from ._geo import CVGeo, EPSILON, interval_lateral_area, map_point_to_cv
 
-PointMechanismRuntime = (
-    SynapseMechanism,
-    GapJunctionMechanism,
-    CurrentClamp,
-    SineClamp,
-    FunctionClamp,
-    ProbeMechanism,
-)
 
 _DEFAULT_CABLE = CableProperty(
     resting_potential=-65.0 * u.mV,
@@ -66,7 +51,7 @@ class PaintRule:
     values, while density rules append scaled mechanisms based on CV coverage.
     """
     region: RegionExpr
-    mechanism: CableProperty | object
+    mechanism: CableProperty | DensityMechanism
 
 
 @dataclass(frozen=True)
@@ -78,7 +63,7 @@ class PlaceRule:
     are attached to the midpoint of the CV selected by :func:`map_point_to_cv`.
     """
     locset: LocsetExpr
-    mechanisms: tuple[object, ...]
+    mechanisms: tuple[PointMechanism, ...]
     site: str = "mid"
 
 
@@ -95,8 +80,8 @@ class CVMech:
     ra: object
     v: object
     temp: u.Quantity[u.kelvin]
-    density_mech: list[object]
-    point_mech: list[object]
+    density_mech: list[DensityMechanism]
+    point_mech: list[PointMechanism]
 
 
 def default_paint_rules() -> tuple[PaintRule, ...]:
@@ -119,30 +104,29 @@ def init_cv_mech(n_cv: int) -> list[CVMech]:
     ]
 
 
-def normalize_paint_rules(region: RegionExpr, mechanisms: tuple[object, ...]) -> tuple[PaintRule, ...]:
+def normalize_paint_rules(
+    region: RegionExpr, mechanisms: tuple[object, ...]
+) -> tuple[PaintRule, ...]:
     # Rule normalization keeps the public ``Cell.paint(...)`` surface flexible
     # while making later rebuild code operate on one predictable internal shape.
     if not isinstance(region, RegionExpr):
-        raise TypeError(f"Cell.paint(...) expects RegionExpr, got {type(region).__name__!s}.")
+        raise TypeError(
+            f"Cell.paint(...) expects RegionExpr, got {type(region).__name__!s}."
+        )
     if len(mechanisms) == 0:
         raise ValueError("Cell.paint(...) expects at least one mechanism.")
 
     new_rules: list[PaintRule] = []
     for mechanism in mechanisms:
         if isinstance(mechanism, CableProperty):
-            new_rules.append(
-                PaintRule(
-                    region=region,
-                    mechanism=_normalize_cable_properties(mechanism),
-                )
-            )
+            new_rules.append(PaintRule(region=region, mechanism=mechanism))
             continue
-        if is_density_mechanism(mechanism):
+        if isinstance(mechanism, DensityMechanism):
             new_rules.append(PaintRule(region=region, mechanism=mechanism))
             continue
         raise TypeError(
-            "Cell.paint(...) mechanisms must be CableProperties, DensityMechanism, "
-            "or braincell.mech.Channel/Ion specs, "
+            "Cell.paint(...) mechanisms must be CableProperty or "
+            "DensityMechanism (use braincell.mech.Channel / Ion factories), "
             f"got {type(mechanism).__name__!s}."
         )
     return tuple(new_rules)
@@ -169,17 +153,21 @@ def merge_paint_rules(
     return tuple(merged)
 
 
-def normalize_place_rule(locset: LocsetExpr, mechanisms: tuple[object, ...]) -> PlaceRule:
+def normalize_place_rule(
+    locset: LocsetExpr, mechanisms: tuple[object, ...]
+) -> PlaceRule:
     if not isinstance(locset, LocsetExpr):
-        raise TypeError(f"Cell.place(...) expects LocsetExpr, got {type(locset).__name__!s}.")
+        raise TypeError(
+            f"Cell.place(...) expects LocsetExpr, got {type(locset).__name__!s}."
+        )
     if len(mechanisms) == 0:
         raise ValueError("Cell.place(...) expects at least one point mechanism.")
 
-    normalized: list[object] = []
+    normalized: list[PointMechanism] = []
     for mechanism in mechanisms:
-        if not isinstance(mechanism, PointMechanismRuntime):
+        if not isinstance(mechanism, PointMechanism):
             raise TypeError(
-                "Cell.place(...) mechanisms must be point mechanisms, "
+                "Cell.place(...) mechanisms must be PointMechanism instances, "
                 f"got {type(mechanism).__name__!s}."
             )
         normalized.append(mechanism)
@@ -219,7 +207,7 @@ def apply_paint_rules(
                     mech.temp = mechanism.temperature
                     continue
 
-                if is_density_mechanism(mechanism):
+                if isinstance(mechanism, DensityMechanism):
                     area_fraction = _coverage_area_fraction(
                         morpho,
                         cv_geo=cv_geo,
@@ -234,7 +222,9 @@ def apply_paint_rules(
                     mech.density_mech.append(scaled)
                     continue
 
-                raise TypeError(f"Unsupported paint mechanism type {type(mechanism).__name__!s}.")
+                raise TypeError(
+                    f"Unsupported paint mechanism type {type(mechanism).__name__!s}."
+                )
 
 
 def apply_place_rules(
@@ -261,18 +251,6 @@ def apply_place_rules(
             if cv_id is None:
                 continue
             mechs[cv_id].point_mech.extend(rule.mechanisms)
-
-
-def _normalize_cable_properties(mechanism: CableProperty) -> CableProperty:
-    return CableProperty(
-        resting_potential=mechanism.resting_potential,
-        membrane_capacitance=mechanism.membrane_capacitance,
-        axial_resistivity=mechanism.axial_resistivity,
-        temperature=_coerce_temperature(
-            mechanism.temperature,
-            name="CableProperties.temperature",
-        ),
-    )
 
 
 def _contains_coord(
@@ -320,39 +298,30 @@ def _coverage_area_fraction(
 
 
 def _scale_density_for_coverage(
-    mechanism: object,
+    mechanism: DensityMechanism,
     *,
     area_fraction: float,
-) -> object:
-    category, _ = density_class_name(mechanism)
-    if category != "channel":
+) -> DensityMechanism:
+    """Scale a partial-CV channel's conductance by its coverage fraction.
+
+    The scaling only applies to ``"channel"`` category mechanisms. Ions
+    are not conductance-bearing so they are returned unchanged.
+
+    When the channel exposes a ``g_max`` parameter, we multiply it in
+    place and leave ``coverage_area_fraction`` at 1.0. Otherwise we
+    stash the fraction in :attr:`DensityMechanism.coverage_area_fraction`
+    so later passes can consume it. Either way the fraction is tracked
+    as a first-class field, not as a pseudo-parameter smuggled through
+    ``params``.
+    """
+    if mechanism.category != "channel":
         return mechanism
     if area_fraction >= 1.0 - EPSILON:
         return mechanism
-
-    updated: list[tuple[str, Any]] = []
-    scaled_gmax = False
-    for key, value in density_params(mechanism):
-        if key == "g_max":
-            scaled_gmax = True
-            try:
-                updated.append((key, value * float(area_fraction)))
-            except Exception:
-                updated.append((key, value))
-                updated.append(("coverage_area_fraction", float(area_fraction)))
-            continue
-        updated.append((key, value))
-
-    if not scaled_gmax:
-        updated.append(("coverage_area_fraction", float(area_fraction)))
-
-    return density_replace_params(mechanism, params=tuple(updated))
-
-
-def _coerce_temperature(value: object, *, name: str) -> u.Quantity[u.kelvin]:
-    if not hasattr(value, "to_decimal") or not callable(getattr(value, "to_decimal")):
-        raise TypeError(f"{name} must be a temperature Quantity, got {value!r}.")
-    decimal = np.asarray(value.to_decimal(u.kelvin), dtype=float)
-    if decimal.ndim != 0:
-        raise TypeError(f"{name} must be scalar temperature Quantity, got shape {decimal.shape!r}.")
-    return u.Quantity(float(decimal), u.kelvin)
+    if "g_max" in mechanism.params:
+        try:
+            scaled = mechanism.params["g_max"] * float(area_fraction)
+        except Exception:
+            return mechanism.with_coverage(area_fraction)
+        return mechanism.with_params(g_max=scaled)
+    return mechanism.with_coverage(area_fraction)

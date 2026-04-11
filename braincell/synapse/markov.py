@@ -17,10 +17,12 @@
 
 from typing import Union, Callable
 
-import brainpy 
+import brainpy
 import brainstate
 import braintools
 import brainunit as u
+
+from braincell.mech import register_synapse
 
 __all__ = [
     'AMPA',
@@ -29,6 +31,7 @@ __all__ = [
 ]
 
 
+@register_synapse("AMPA")
 class AMPA(brainpy.state.Synapse):
     """
     AMPA synapse model class.
@@ -90,6 +93,7 @@ class AMPA(brainpy.state.Synapse):
         return self.g.value
 
 
+@register_synapse("GABAa")
 class GABAa(brainpy.state.Synapse):
     """
     GABAa synapse model class.
@@ -151,6 +155,7 @@ class GABAa(brainpy.state.Synapse):
         return self.g.value
 
 
+@register_synapse("NMDA")
 class NMDA(brainpy.state.Synapse):
     """
     NMDA synapse model class.

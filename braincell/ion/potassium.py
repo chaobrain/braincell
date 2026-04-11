@@ -21,6 +21,7 @@ import braintools
 import brainunit as u
 
 from braincell._base import Ion, Channel
+from braincell.mech import register_ion
 
 __all__ = [
     'Potassium',
@@ -43,6 +44,7 @@ class Potassium(Ion):
     __module__ = 'braincell.ion'
 
 
+@register_ion("PotassiumFixed")
 class PotassiumFixed(Potassium):
     """Fixed Sodium dynamics.
 

@@ -17,7 +17,8 @@ import unittest
 
 import brainunit as u
 
-from braincell import Branch, CVPerBranch, Cell, CurrentClamp, DensityMechanism, FunctionClamp, Morphology, SineClamp
+import braincell
+from braincell import Branch, CVPerBranch, Cell, CurrentClamp, FunctionClamp, Morphology, SineClamp
 from braincell.filter import BranchSlice, RootLocation
 
 
@@ -34,7 +35,7 @@ class CellRuntimeStateTest(unittest.TestCase):
         cell = Cell(_build_tree())
         cell.paint(
             BranchSlice(branch_index=[0, 1], prox=0.0, dist=1.0),
-            DensityMechanism(channel_type="leaky", params=(("g_max", 4.0 * (u.mS / u.cm**2)),)),
+            braincell.mech.Channel("leaky", g_max=4.0 * (u.mS / u.cm**2)),
         )
 
         self.assertEqual(cell.n_cv, 2)
@@ -59,14 +60,14 @@ class CellRuntimeStateTest(unittest.TestCase):
         cell = Cell(_build_tree())
         cell.place(
             RootLocation(x=0.5),
-            CurrentClamp(amplitude=0.1 * u.nA, delay=1.0 * u.ms, duration=2.0 * u.ms),
+            CurrentClamp.step(0.1 * u.nA, 2.0 * u.ms, delay=1.0 * u.ms),
         )
 
         self.assertEqual(len(cell.layouts), 1)
         layout = cell.layouts[0]
         self.assertEqual(layout.layout, "sparse")
         self.assertEqual(layout.target, "point")
-        self.assertEqual(layout.kind, "current_clamp")
+        self.assertEqual(layout.kind, "CurrentClamp")
         self.assertEqual(layout.n_active, 1)
         self.assertEqual(layout.point_index.tolist(), [1])
         self.assertIsNone(layout.point_mask)
@@ -136,9 +137,9 @@ class CellRuntimeStateTest(unittest.TestCase):
         cell = Cell(_build_tree(), cv_policy=CVPerBranch())
         cell.paint(
             BranchSlice(branch_index=[0, 1], prox=0.0, dist=1.0),
-            DensityMechanism(channel_type="leaky", params=(("g_max", 4.0 * (u.mS / u.cm**2)),)),
+            braincell.mech.Channel("leaky", g_max=4.0 * (u.mS / u.cm**2)),
         )
-        clamp = CurrentClamp(amplitude=0.1 * u.nA, delay=1.0 * u.ms, duration=2.0 * u.ms)
+        clamp = CurrentClamp.step(0.1 * u.nA, 2.0 * u.ms, delay=1.0 * u.ms)
         cell.place(RootLocation(x=0.5), clamp)
 
         self.assertEqual(len(cell.layouts), 2)
@@ -162,7 +163,7 @@ class CellRuntimeStateTest(unittest.TestCase):
 
         cell.place(
             RootLocation(x=0.5),
-            CurrentClamp(amplitude=0.1 * u.nA, delay=1.0 * u.ms, duration=2.0 * u.ms),
+            CurrentClamp.step(0.1 * u.nA, 2.0 * u.ms, delay=1.0 * u.ms),
         )
         second = cell.layouts
 
@@ -173,7 +174,7 @@ class CellRuntimeStateTest(unittest.TestCase):
         cell = Cell(_build_tree())
         cell.place(
             RootLocation(x=0.5),
-            CurrentClamp(amplitude=0.1 * u.nA, delay=1.0 * u.ms, duration=2.0 * u.ms),
+            CurrentClamp.step(0.1 * u.nA, 2.0 * u.ms, delay=1.0 * u.ms),
         )
 
         layout = cell.layouts[0]
@@ -202,17 +203,11 @@ class CellRuntimeStateTest(unittest.TestCase):
         self.assertAlmostEqual(float(current_late[1].to_decimal(u.nA)), 0.6, places=6)
 
     def test_density_mechanism_leaky_builds_runtime_il_node(self) -> None:
-        import braincell
-
         cell = Cell(_build_tree())
         cell.paint(
             BranchSlice(branch_index=[0, 1], prox=0.0, dist=1.0),
-            DensityMechanism(
-                channel_type="leaky",
-                params=(
-                    ("g_max", 4.0 * (u.mS / u.cm**2)),
-                    ("E", -69.0 * u.mV),
-                ),
+            braincell.mech.Channel(
+                "leaky", g_max=4.0 * (u.mS / u.cm**2), E=-69.0 * u.mV
             ),
         )
 
@@ -252,8 +247,6 @@ class CellRuntimeStateTest(unittest.TestCase):
         self.assertEqual(cell.get_ion("ca").varshape, (5,))
 
     def test_channel_spec_ina_hh1952_builds_runtime_node_and_binds_to_na(self) -> None:
-        import braincell
-
         cell = Cell(_build_tree())
         cell.paint(
             BranchSlice(branch_index=[0, 1], prox=0.0, dist=1.0),
@@ -270,7 +263,9 @@ class CellRuntimeStateTest(unittest.TestCase):
         na = cell.get_ion("na")
 
         self.assertIsInstance(node, braincell.channel.INa_HH1952)
-        self.assertIs(na.channels["INa"], node)
+        # Channels are now keyed on the declaration's instance name, which
+        # defaults to the class name. Users can override with name=.
+        self.assertIs(na.channels["INa_HH1952"], node)
         self.assertAlmostEqual(float(node.g_max[1].to_decimal(u.mS / u.cm**2)), 12.0, places=12)
         self.assertAlmostEqual(float(node.g_max[0].to_decimal(u.mS / u.cm**2)), 0.0, places=12)
         self.assertAlmostEqual(float(node.V_sh[1].to_decimal(u.mV)), -50.0, places=12)
@@ -298,14 +293,13 @@ class CellRuntimeStateTest(unittest.TestCase):
         self.assertAlmostEqual(float(node.g_max[0].to_decimal(u.mS / u.cm**2)), 0.0, places=12)
         self.assertAlmostEqual(float(node.V_sh[1].to_decimal(u.mV)), -42.0, places=12)
 
-    def test_unsupported_runtime_channel_raises(self) -> None:
-        import braincell
-
+    def test_unknown_channel_name_raises_key_error(self) -> None:
         cell = Cell(_build_tree())
         cell.paint(
             BranchSlice(branch_index=[0, 1], prox=0.0, dist=1.0),
-            braincell.mech.Channel("IK_Kv_test", g_max=12.0 * (u.mS / u.cm**2)),
+            braincell.mech.Channel("__totally_unregistered__", g_max=12.0 * (u.mS / u.cm**2)),
         )
 
-        with self.assertRaises(NotImplementedError):
+        with self.assertRaises(KeyError) as ctx:
             _ = cell.layouts
+        self.assertIn("__totally_unregistered__", str(ctx.exception))

@@ -20,6 +20,7 @@ import braintools
 import brainunit as u
 
 from braincell._base import Ion
+from braincell.mech import register_ion
 
 __all__ = [
     'Sodium',
@@ -42,6 +43,7 @@ class Sodium(Ion):
     __module__ = 'braincell.ion'
 
 
+@register_ion("SodiumFixed")
 class SodiumFixed(Sodium):
     """
     Fixed Sodium dynamics.

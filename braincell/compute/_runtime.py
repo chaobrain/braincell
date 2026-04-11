@@ -19,17 +19,19 @@ from dataclasses import dataclass, fields, is_dataclass
 import brainunit as u
 import numpy as np
 
-from braincell import channel as runtime_channel, ion as runtime_ion
+from braincell import ion as runtime_ion
 from braincell._base import IonChannel
-from braincell.mech.point import (
+from braincell.mech import (
     CurrentClamp,
+    DensityMechanism,
     FunctionClamp,
     GapJunctionMechanism,
+    PointMechanism,
     ProbeMechanism,
     SineClamp,
     SynapseMechanism,
+    get_registry,
 )
-from braincell.mech.spec import density_class_name, density_params, density_signature, is_density_mechanism
 from braincell.morph import Morphology
 from ._point_tree import PointTree
 
@@ -304,7 +306,7 @@ class CellRuntimeState:
         for layout in self.layouts:
             if layout.target != "point" or layout.point_index is None:
                 continue
-            if layout.kind not in {"current_clamp", "sine_clamp", "function_clamp"}:
+            if layout.kind not in {"CurrentClamp", "SineClamp", "FunctionClamp"}:
                 continue
             local_currents = _evaluate_clamp_layout(self, layout=layout, t=t)
             if len(local_currents) != len(layout.point_index):
@@ -421,59 +423,59 @@ def choose_layout(*, target: str) -> str:
 
 
 def mechanism_kind(mechanism: object) -> str:
-    if is_density_mechanism(mechanism):
-        category, class_name = density_class_name(mechanism)
-        return f"{category}:{class_name}"
+    """Return a stable string tag describing the mechanism's type.
+
+    For density mechanisms the tag is ``"{category}:{class_name}"``.
+    Point mechanisms use their class ``__name__`` (``CurrentClamp``,
+    ``SineClamp``, ``ProbeMechanism`` …), with ``ProbeMechanism``
+    appending the variable/target for debuggability.
+    """
+    if isinstance(mechanism, DensityMechanism):
+        return f"{mechanism.category}:{mechanism.class_name}"
     if isinstance(mechanism, SynapseMechanism):
         return f"synapse:{mechanism.synapse_type}"
-    if isinstance(mechanism, GapJunctionMechanism):
-        return "gap_junction"
-    if isinstance(mechanism, CurrentClamp):
-        return "current_clamp"
-    if isinstance(mechanism, SineClamp):
-        return "sine_clamp"
-    if isinstance(mechanism, FunctionClamp):
-        return "function_clamp"
     if isinstance(mechanism, ProbeMechanism):
         return f"probe:{mechanism.variable}:{mechanism.target}"
+    if isinstance(mechanism, PointMechanism):
+        return type(mechanism).__name__
     return type(mechanism).__name__
 
 
 def mechanism_signature(mechanism: object) -> tuple[object, ...]:
-    if is_density_mechanism(mechanism):
-        return ("density",) + density_signature(mechanism)
-    if isinstance(mechanism, SynapseMechanism):
-        return ("synapse", mechanism.synapse_type, tuple(mechanism.params))
-    if isinstance(mechanism, GapJunctionMechanism):
-        return ("gap_junction", tuple(mechanism.params))
-    if isinstance(mechanism, CurrentClamp):
-        return ("current_clamp", mechanism.start, mechanism.durations, mechanism.amplitudes)
-    if isinstance(mechanism, SineClamp):
-        return (
-            "sine_clamp",
-            mechanism.amplitude,
-            mechanism.frequency,
-            mechanism.phase,
-            mechanism.offset,
-            mechanism.start,
-            mechanism.duration,
-        )
-    if isinstance(mechanism, FunctionClamp):
-        return ("function_clamp", id(mechanism.fn), mechanism.start, mechanism.duration)
-    if isinstance(mechanism, ProbeMechanism):
-        return ("probe", mechanism.variable, mechanism.target)
-    return (type(mechanism).__name__, repr(mechanism))
+    """Return a hashable signature used to group declarations.
+
+    Every supported mechanism type is a frozen dataclass with
+    structural equality, so the signature reduces to
+    ``(type_name, mechanism)``. Two declarations that compare equal
+    share a signature and are grouped into one runtime layout.
+
+    Notes
+    -----
+    For :class:`FunctionClamp`, the ``fn`` field is compared by
+    identity under the dataclass-generated ``__eq__`` — two separately
+    constructed ``lambda`` closures with identical bodies are treated
+    as distinct signatures.
+    """
+    return (type(mechanism).__qualname__, mechanism)
 
 
 def _mechanism_var_names(mechanism: object) -> tuple[str, ...]:
-    if is_density_mechanism(mechanism):
-        return tuple(str(key) for key, _ in density_params(mechanism))
+    """Return the state-buffer variable names for a mechanism.
+
+    For :class:`DensityMechanism` this is the declared ``params``
+    keys. For synapses and gap junctions it is the parameter keys
+    (or a single default name when empty). For clamps it is the
+    concrete dataclass field names, and for probes it is a 1-tuple
+    containing the probed variable name.
+    """
+    if isinstance(mechanism, DensityMechanism):
+        return tuple(mechanism.params.keys())
     if isinstance(mechanism, SynapseMechanism):
-        names = [str(key) for key, _ in mechanism.params]
-        return tuple(names if len(names) > 0 else ["g"])
+        names = tuple(mechanism.params.keys())
+        return names if names else ("g",)
     if isinstance(mechanism, GapJunctionMechanism):
-        names = [str(key) for key, _ in mechanism.params]
-        return tuple(names if len(names) > 0 else ["conductance"])
+        names = tuple(mechanism.params.keys())
+        return names if names else ("conductance",)
     if isinstance(mechanism, CurrentClamp):
         return ("start", "durations", "amplitudes")
     if isinstance(mechanism, SineClamp):
@@ -488,14 +490,18 @@ def _mechanism_var_names(mechanism: object) -> tuple[str, ...]:
 
 
 def _mechanism_var_value(mechanism: object, var_name: str) -> object:
-    if is_density_mechanism(mechanism):
-        params = dict(density_params(mechanism))
-        if var_name not in params:
+    if isinstance(mechanism, DensityMechanism):
+        if var_name not in mechanism.params:
             raise KeyError(f"Mechanism has no parameter {var_name!r}.")
-        return params[var_name]
+        return mechanism.params[var_name]
+    if isinstance(mechanism, (SynapseMechanism, GapJunctionMechanism)):
+        if var_name in mechanism.params:
+            return mechanism.params[var_name]
     if hasattr(mechanism, var_name):
         return getattr(mechanism, var_name)
-    raise KeyError(f"Mechanism {type(mechanism).__name__} has no attribute {var_name!r}.")
+    raise KeyError(
+        f"Mechanism {type(mechanism).__name__} has no attribute {var_name!r}."
+    )
 
 
 def _allocate_state_buffer(mechanism: object, *, var_name: str, shape: tuple[int, ...]) -> np.ndarray:
@@ -546,13 +552,13 @@ def _evaluate_clamp_layout(runtime: CellRuntimeState, *, layout: MechanismLayout
     local_t = (t - _scalar_state_value(runtime, layout_id=layout.id, var_name="start")).in_unit(u.ms)
     out: list[object] = []
     for local_index in range(layout.n_active):
-        if layout.kind == "current_clamp":
+        if layout.kind == "CurrentClamp":
             out.append(_eval_current_clamp(runtime, layout_id=layout.id, local_index=local_index, local_t=local_t))
             continue
-        if layout.kind == "sine_clamp":
+        if layout.kind == "SineClamp":
             out.append(_eval_sine_clamp(runtime, layout_id=layout.id, local_index=local_index, local_t=local_t))
             continue
-        if layout.kind == "function_clamp":
+        if layout.kind == "FunctionClamp":
             out.append(_eval_function_clamp(runtime, layout_id=layout.id, local_index=local_index, local_t=local_t))
             continue
         raise ValueError(f"Unsupported clamp layout kind {layout.kind!r}.")
@@ -653,33 +659,52 @@ def _instantiate_runtime_node(
 ) -> object | None:
     if layout.target != "density" or layout.layout != "dense":
         return None
-    if not is_density_mechanism(mechanism):
+    if not isinstance(mechanism, DensityMechanism):
+        return None
+    if mechanism.category != "channel":
         return None
 
-    category, name = density_class_name(mechanism)
-    if category != "channel":
-        return None
-
-    runtime_cls, ion_key, channel_key = _resolve_runtime_channel_spec(name)
-    params = _runtime_constructor_params(layout=layout, mechanism=mechanism, state_buffers=state_buffers)
-    size = next(iter(params.values())).shape if len(params) > 0 and hasattr(next(iter(params.values())), "shape") else (
-        layout.n_active,)
+    runtime_cls = get_registry().get("channel", mechanism.class_name)
+    params = _runtime_constructor_params(
+        layout=layout, mechanism=mechanism, state_buffers=state_buffers
+    )
+    if len(params) > 0 and hasattr(next(iter(params.values())), "shape"):
+        size = next(iter(params.values())).shape
+    else:
+        size = (layout.n_active,)
     node = runtime_cls(size=size, **params)
+
+    ion_key = _channel_ion_key(runtime_cls)
     if ion_key is not None:
+        channel_key = mechanism.instance_name
         ions[ion_key].add(**{channel_key: node})
     return node
 
 
-def _resolve_runtime_channel_spec(name: str) -> tuple[object, str | None, str]:
-    if name == "IL":
-        return runtime_channel.IL, None, "IL"
-    if name == "leaky":
-        return runtime_channel.IL, None, "IL"
-    if name == "INa_HH1952":
-        return runtime_channel.INa_HH1952, "na", "INa"
-    if name == "IK_HH1952":
-        return runtime_channel.IK_HH1952, "k", "IK"
-    raise NotImplementedError(f"Runtime channel instantiation is not implemented for {name!r}.")
+def _channel_ion_key(cls: type) -> str | None:
+    """Infer the ion-container key for a concrete channel class.
+
+    Returns ``"na"``, ``"k"``, or ``"ca"`` when the class's
+    ``root_type`` is a subclass of the corresponding ion base, or
+    ``None`` when the channel installs at root level (e.g. leak
+    channels whose ``root_type`` is :class:`HHTypedNeuron`). Channels
+    with compound ``root_type`` (e.g. ``JointTypes[Potassium,
+    Calcium]`` for K-Ca channels) also return ``None`` — they need
+    per-channel runtime wiring that is not yet implemented.
+    """
+    root_type = getattr(cls, "root_type", None)
+    if root_type is None or not isinstance(root_type, type):
+        return None
+    try:
+        if issubclass(root_type, runtime_ion.Sodium):
+            return "na"
+        if issubclass(root_type, runtime_ion.Potassium):
+            return "k"
+        if issubclass(root_type, runtime_ion.Calcium):
+            return "ca"
+    except TypeError:
+        return None
+    return None
 
 
 def _runtime_param_value(
@@ -750,23 +775,34 @@ def _as_runtime_array(values: np.ndarray) -> object:
 def _runtime_constructor_params(
     *,
     layout: MechanismLayout,
-    mechanism: object,
+    mechanism: DensityMechanism,
     state_buffers: dict[tuple[int, str], np.ndarray],
 ) -> dict[str, object]:
-    category, name = density_class_name(mechanism)
-    if category != "channel":
+    """Build the kwargs passed to a concrete channel class's ``__init__``.
+
+    Reads each declared parameter from its state buffer (so
+    per-point values already live in the buffer, not in the frozen
+    declaration). ``coverage_area_fraction`` is a :class:`DensityMechanism`
+    field, not a param, so it does not leak into kwargs.
+
+    Notes
+    -----
+    HH1952 channels expose a ``T`` parameter in their declaration but
+    accept ``phi`` in their constructor (the Q10 scaling factor
+    derived from temperature). This translation is applied here.
+    """
+    if mechanism.category != "channel":
         return {}
 
     raw: dict[str, object] = {}
-    for var_name in _mechanism_var_names(mechanism):
-        if var_name == "coverage_area_fraction":
-            continue
-        raw[var_name] = _runtime_param_value(layout=layout, var_name=var_name, state_buffers=state_buffers)
+    for var_name in mechanism.params.keys():
+        raw[var_name] = _runtime_param_value(
+            layout=layout, var_name=var_name, state_buffers=state_buffers
+        )
 
-    if name in {"INa_HH1952", "IK_HH1952"}:
+    if mechanism.class_name in {"INa_HH1952", "IK_HH1952"}:
         if "T" in raw and "phi" not in raw:
             raw["phi"] = _runtime_temperature_phi(raw.pop("T"))
-        return raw
     return raw
 
 
@@ -778,4 +814,17 @@ def _runtime_temperature_phi(temperature: object) -> object:
 
 
 def _is_root_level_runtime_node(kind: str) -> bool:
-    return kind in {"channel:IL", "channel:leaky"}
+    """Return True when a channel layout installs at the root level.
+
+    Root-level channels are those whose concrete class has
+    ``root_type == HHTypedNeuron`` (i.e. not bound to an ion
+    container). The registry is consulted to inspect the class.
+    """
+    if not kind.startswith("channel:"):
+        return False
+    class_name = kind.split(":", 1)[1]
+    try:
+        cls = get_registry().get("channel", class_name)
+    except KeyError:
+        return False
+    return _channel_ion_key(cls) is None

@@ -26,6 +26,7 @@ import braintools
 import brainunit as u
 
 from braincell._base import Channel, HHTypedNeuron
+from braincell.mech import register_channel
 from braincell.quad import DiffEqState
 
 __all__ = [
@@ -35,6 +36,7 @@ __all__ = [
 ]
 
 
+@register_channel("Ih_HM1992")
 class Ih_HM1992(Channel):
     r"""
     The hyperpolarization-activated cation current model propsoed by (Huguenard & McCormick, 1992) [1]_.
@@ -252,6 +254,7 @@ class Ih_HM1992(Channel):
 #                           u.math.exp(-(V + 89 - self.V_sh) / 11.6))) / self.phi
 
 
+@register_channel("Ih1_Ma2020")
 class Ih1_Ma2020(Channel):
     r"""
     TITLE Cerebellum Golgi Cell Model
@@ -340,6 +343,7 @@ class Ih1_Ma2020(Channel):
         return self.rA * V + self.rB
 
 
+@register_channel("Ih2_Ma2020")
 class Ih2_Ma2020(Channel):
     r"""
     TITLE Cerebellum Golgi Cell Model

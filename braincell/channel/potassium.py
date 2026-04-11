@@ -27,6 +27,7 @@ import braintools
 import brainunit as u
 
 from braincell._base import Channel, IonInfo
+from braincell.mech import register_channel
 from braincell.quad import DiffEqState
 from braincell.ion import Potassium
 
@@ -150,6 +151,7 @@ class PotassiumChannel(Channel):
         pass
 
 
+@register_channel("IK_p4_markov")
 class IK_p4_markov(PotassiumChannel):
     r"""The delayed rectifier potassium channel of :math:`p^4`
     current which described with first-order Markov chain.
@@ -215,6 +217,7 @@ class IK_p4_markov(PotassiumChannel):
         raise NotImplementedError
 
 
+@register_channel("IKDR_Ba2002")
 class IKDR_Ba2002(IK_p4_markov):
     r"""The delayed rectifier potassium channel current.
 
@@ -290,6 +293,7 @@ class IKDR_Ba2002(IK_p4_markov):
         return 0.5 * u.math.exp(-(V - 10.) / 40.)
 
 
+@register_channel("IK_TM1991")
 class IK_TM1991(IK_p4_markov):
     r"""The potassium channel described by (Traub and Miles, 1991) [1]_.
 
@@ -352,6 +356,7 @@ class IK_TM1991(IK_p4_markov):
         return 0.5 * u.math.exp((10 + V) / 40)
 
 
+@register_channel("IK_HH1952")
 class IK_HH1952(IK_p4_markov):
     r"""The potassium channel described by Hodgkin–Huxley model [1]_.
 
@@ -416,6 +421,7 @@ class IK_HH1952(IK_p4_markov):
         return 0.125 * u.math.exp(-(V + 20) / 80)
 
 
+@register_channel("IKA_p4q_ss")
 class IKA_p4q_ss(PotassiumChannel):
     r"""
     The rapidly inactivating Potassium channel of :math:`p^4q`
@@ -501,6 +507,7 @@ class IKA_p4q_ss(PotassiumChannel):
         raise NotImplementedError
 
 
+@register_channel("IKA1_HM1992")
 class IKA1_HM1992(IKA_p4q_ss):
     r"""The rapidly inactivating Potassium channel (IA1) model proposed by (Huguenard & McCormick, 1992) [2]_.
 
@@ -593,6 +600,7 @@ class IKA1_HM1992(IKA_p4q_ss):
         )
 
 
+@register_channel("IKA2_HM1992")
 class IKA2_HM1992(IKA_p4q_ss):
     r"""The rapidly inactivating Potassium channel (IA2) model proposed by (Huguenard & McCormick, 1992) [2]_.
 
@@ -685,6 +693,7 @@ class IKA2_HM1992(IKA_p4q_ss):
         )
 
 
+@register_channel("IKK2_pq_ss")
 class IKK2_pq_ss(PotassiumChannel):
     r"""The slowly inactivating Potassium channel of :math:`pq`
     current which described with steady-state format.
@@ -768,6 +777,7 @@ class IKK2_pq_ss(PotassiumChannel):
         raise NotImplementedError
 
 
+@register_channel("IKK2A_HM1992")
 class IKK2A_HM1992(IKK2_pq_ss):
     r"""The slowly inactivating Potassium channel (IK2a) model proposed by (Huguenard & McCormick, 1992) [2]_.
 
@@ -852,6 +862,7 @@ class IKK2A_HM1992(IKK2_pq_ss):
                      u.math.exp(-(V + 130.) / 7.1))
 
 
+@register_channel("IKK2B_HM1992")
 class IKK2B_HM1992(IKK2_pq_ss):
     r"""The slowly inactivating Potassium channel (IK2b) model proposed by (Huguenard & McCormick, 1992) [2]_.
 
@@ -942,6 +953,7 @@ class IKK2B_HM1992(IKK2_pq_ss):
         )
 
 
+@register_channel("IKNI_Ya1989")
 class IKNI_Ya1989(PotassiumChannel):
     r"""A slow non-inactivating K+ current described by Yamada et al. (1989) [1]_.
 
@@ -1024,6 +1036,7 @@ class IKNI_Ya1989(PotassiumChannel):
         return self.tau_max / (3.3 * u.math.exp(temp / 20.) + u.math.exp(-temp / 20.))
 
 
+@register_channel("IK_Leak")
 class IK_Leak(PotassiumChannel):
     """The potassium leak channel current.
 
@@ -1056,6 +1069,7 @@ class IK_Leak(PotassiumChannel):
         return self.g_max * (K.E - V)
 
 
+@register_channel("IKv11_Ak2007")
 class IKv11_Ak2007(PotassiumChannel):
     r"""
     TITLE Voltage-gated low threshold potassium current from Kv1 subunits
@@ -1158,6 +1172,7 @@ class IKv11_Ak2007(PotassiumChannel):
         return self.cb * u.math.exp(-(V + self.cvb) / self.ckb)
 
 
+@register_channel("IKv34_Ma2020")
 class IKv34_Ma2020(PotassiumChannel):
     r"""
     : HH TEA-sensitive Purkinje potassium current
@@ -1243,6 +1258,7 @@ class IKv34_Ma2020(PotassiumChannel):
         return 1000 * htau_func
 
 
+@register_channel("IKv43_Ma2020")
 class IKv43_Ma2020(PotassiumChannel):
     r"""
     TITLE Cerebellum Granule Cell Model
@@ -1346,6 +1362,7 @@ class IKv43_Ma2020(PotassiumChannel):
         return 1. / (self.f_q_alpha(V) + self.f_q_beta(V))
 
 
+@register_channel("IKM_Grc_Ma2020")
 class IKM_Grc_Ma2020(PotassiumChannel):
     r"""
     TITLE Cerebellum Granule Cell Model
@@ -1425,6 +1442,7 @@ def _to_decimal_if_possible(value, unit):
         return None
     return value.to_decimal(unit) if hasattr(value, "to_decimal") else value
 
+@register_channel("IK_Kv_test")
 class IK_Kv_test(PotassiumChannel):
     __module__ = "braincell.channel"
 

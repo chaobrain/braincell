@@ -28,7 +28,6 @@ from braincell import (
     CableProperty,
     Cell,
     CurrentClamp,
-    DensityMechanism,
     Morphology,
 )
 from braincell.filter import (
@@ -114,7 +113,7 @@ class CellFacadeTest(unittest.TestCase):
         cell = Cell(_build_tree())
         cell.place(
             RootLocation(x=0.5),
-            CurrentClamp(amplitude=0.1 * u.nA, delay=1.0 * u.ms, duration=1.0 * u.ms),
+            CurrentClamp.step(0.1 * u.nA, 1.0 * u.ms, delay=1.0 * u.ms),
         )
 
         self.assertEqual(
@@ -250,16 +249,16 @@ class CellFacadeTest(unittest.TestCase):
         cell = Cell(tree)
         cell.paint(
             BranchSlice(branch_index=0, prox=0.0, dist=0.5),
-            DensityMechanism(channel_type="leaky", params=(("g_max", 4.0 * (u.mS / u.cm ** 2)),)),
-            DensityMechanism(ion_type="sodium", params=(("c0", 12.0),)),
+            braincell.mech.Channel("leaky", g_max=4.0 * (u.mS / u.cm ** 2)),
+            braincell.mech.Ion("SodiumFixed", c0=12.0),
         )
         cv0 = cell.cvs[0]
         self.assertEqual(len(cv0.density_mech), 2)
-        channel = next(mech for mech in cv0.density_mech if mech.channel_type is not None)
-        ion = next(mech for mech in cv0.density_mech if mech.ion_type is not None)
-        gmax = dict(channel.params)["g_max"]
+        channel = next(mech for mech in cv0.density_mech if mech.category == "channel")
+        ion = next(mech for mech in cv0.density_mech if mech.category == "ion")
+        gmax = channel.params["g_max"]
         self.assertAlmostEqual(float(gmax.to_decimal(u.mS / u.cm ** 2)), 2.0, places=12)
-        self.assertEqual(dict(ion.params)["c0"], 12.0)
+        self.assertEqual(ion.params["c0"], 12.0)
 
     def test_channel_spec_paint_scales_by_area_fraction(self) -> None:
         tree = Morphology.from_root(
@@ -276,10 +275,12 @@ class CellFacadeTest(unittest.TestCase):
         self.assertEqual(len(cv0.density_mech), 1)
         channel = cv0.density_mech[0]
         self.assertEqual(channel.category, "channel")
-        self.assertEqual(channel.name, "IL")
-        params = dict(channel.params)
-        self.assertAlmostEqual(float(params["g_max"].to_decimal(u.mS / u.cm ** 2)), 2.0, places=12)
-        self.assertAlmostEqual(float(params["E"].to_decimal(u.mV)), -72.0, places=12)
+        self.assertEqual(channel.class_name, "IL")
+        self.assertEqual(channel.instance_name, "IL")
+        self.assertAlmostEqual(
+            float(channel.params["g_max"].to_decimal(u.mS / u.cm ** 2)), 2.0, places=12
+        )
+        self.assertAlmostEqual(float(channel.params["E"].to_decimal(u.mV)), -72.0, places=12)
 
     def test_place_boundary_goes_to_right_cv_and_branch_endpoint_stays_local(self) -> None:
         soma = Branch.from_lengths(lengths=[10.0] * u.um, radii=[3.0, 2.0] * u.um, type="soma")
@@ -288,8 +289,8 @@ class CellFacadeTest(unittest.TestCase):
         tree.soma.d = dend
         cell = Cell(tree, cv_policy=CVPerBranch(cv_per_branch=2))
 
-        stim_boundary = CurrentClamp(amplitude=0.1 * u.nA, delay=1.0 * u.ms, duration=1.0 * u.ms)
-        stim_parent_end = CurrentClamp(amplitude=0.2 * u.nA, delay=1.0 * u.ms, duration=1.0 * u.ms)
+        stim_boundary = CurrentClamp.step(0.1 * u.nA, 1.0 * u.ms, delay=1.0 * u.ms)
+        stim_parent_end = CurrentClamp.step(0.2 * u.nA, 1.0 * u.ms, delay=1.0 * u.ms)
         cell.place(RootLocation(x=0.5), stim_boundary)
         cell.place(RootLocation(x=1.0), stim_parent_end)
 
@@ -297,7 +298,7 @@ class CellFacadeTest(unittest.TestCase):
         self.assertEqual(len(cell.cvs[0].point_mech), 0)
         self.assertEqual(len(cell.cvs[1].point_mech), 2)
         # parent branch endpoint remains on branch 0 last CV, not child branch first CV.
-        self.assertEqual(cell.cvs[1].point_mech[-1].amplitude.to_decimal(u.nA), 0.2)
+        self.assertEqual(cell.cvs[1].point_mech[-1].amplitudes[0].to_decimal(u.nA), 0.2)
         self.assertEqual(len(cell.cvs[2].point_mech), 0)
 
     def test_cv_geometry_and_split_axial_resistance(self) -> None:
@@ -528,13 +529,17 @@ class CellFacadeTest(unittest.TestCase):
         with self.assertRaises(TypeError):
             Cell(tree.soma)  # type: ignore[arg-type]
         with self.assertRaises(TypeError):
-            cell.paint(RootLocation(x=0.5), DensityMechanism(channel_type="hh"))  # type: ignore[arg-type]
+            # RootLocation is not a RegionExpr.
+            cell.paint(
+                RootLocation(x=0.5),
+                braincell.mech.Channel("IL"),
+            )  # type: ignore[arg-type]
         with self.assertRaises(TypeError):
-            cell.place(BranchSlice(branch_index=0, prox=0.0, dist=1.0), CurrentClamp(  # type: ignore[arg-type]
-                amplitude=0.2 * u.nA,
-                delay=2.0 * u.ms,
-                duration=1.0 * u.ms,
-            ))
+            # CurrentClamp is a PointMechanism, not a density mechanism — rejected by place when passed a BranchSlice since the locset type is wrong.
+            cell.place(
+                BranchSlice(branch_index=0, prox=0.0, dist=1.0),  # type: ignore[arg-type]
+                CurrentClamp.step(0.2 * u.nA, 1.0 * u.ms, delay=2.0 * u.ms),
+            )
         with self.assertRaises(ValueError):
             cell.paint(BranchSlice(branch_index=0, prox=0.0, dist=1.0))
         with self.assertRaises(ValueError):
@@ -565,7 +570,7 @@ class CellFacadeTest(unittest.TestCase):
 
         cell.place(
             RootLocation(x=0.5),
-            CurrentClamp(amplitude=0.05 * u.nA, delay=1.0 * u.ms, duration=1.0 * u.ms),
+            CurrentClamp.step(0.05 * u.nA, 1.0 * u.ms, delay=1.0 * u.ms),
         )
         self.assertTrue(cell._dirty)
         self.assertIs(cell._cvs, original_cvs)
@@ -582,23 +587,22 @@ class CellFacadeTest(unittest.TestCase):
         cell = Cell(tree)
         cell.paint(
             BranchSlice(branch_index=0, prox=0.0, dist=0.5),
-            DensityMechanism(channel_type="leaky", params=(("g_max", "not-scalable"),)),
-            DensityMechanism(channel_type="leaky", params=(("tau", 10.0),)),
+            braincell.mech.Channel("leaky", g_max="not-scalable"),
+            braincell.mech.Channel("leaky", tau=10.0),
         )
         cv0 = cell.cvs[0]
         self.assertEqual(len(cv0.density_mech), 2)
 
-        with_gmax = next(
-            mech for mech in cv0.density_mech if "g_max" in dict(mech.params)
-        )
-        self.assertEqual(dict(with_gmax.params)["g_max"], "not-scalable")
-        self.assertAlmostEqual(dict(with_gmax.params)["coverage_area_fraction"], 0.5, places=12)
+        with_gmax = next(mech for mech in cv0.density_mech if "g_max" in mech.params)
+        self.assertEqual(with_gmax.params["g_max"], "not-scalable")
+        self.assertAlmostEqual(with_gmax.coverage_area_fraction, 0.5, places=12)
+        # coverage is a first-class field now, not a pseudo-parameter.
+        self.assertNotIn("coverage_area_fraction", with_gmax.params)
 
-        no_gmax = next(
-            mech for mech in cv0.density_mech if "tau" in dict(mech.params)
-        )
-        self.assertEqual(dict(no_gmax.params)["tau"], 10.0)
-        self.assertAlmostEqual(dict(no_gmax.params)["coverage_area_fraction"], 0.5, places=12)
+        no_gmax = next(mech for mech in cv0.density_mech if "tau" in mech.params)
+        self.assertEqual(no_gmax.params["tau"], 10.0)
+        self.assertAlmostEqual(no_gmax.coverage_area_fraction, 0.5, places=12)
+        self.assertNotIn("coverage_area_fraction", no_gmax.params)
 
     def test_mechanism_object_table_later_paint_overrides_same_row_same_cv(self) -> None:
         cell = Cell(_build_tree())
@@ -1021,7 +1025,7 @@ class CellExecutionTest(unittest.TestCase):
         cell = Cell(_build_tree(), solver="explicit", cv_policy=braincell.CVPerBranch(cv_per_branch=1))
         cell.place(
             RootLocation(x=0.5),
-            braincell.CurrentClamp(amplitude=0.2 * u.nA, delay=0.0 * u.ms, duration=10.0 * u.ms),
+            braincell.CurrentClamp.step(0.2 * u.nA, 10.0 * u.ms, delay=0.0 * u.ms),
         )
         cell.init_state()
 
@@ -1035,7 +1039,7 @@ class CellExecutionTest(unittest.TestCase):
         cell = Cell(_build_tree(), solver="explicit", cv_policy=braincell.CVPerBranch(cv_per_branch=1))
         cell.place(
             Terminals(),
-            braincell.CurrentClamp(amplitude=0.15 * u.nA, delay=0.0 * u.ms, duration=10.0 * u.ms),
+            braincell.CurrentClamp.step(0.15 * u.nA, 10.0 * u.ms, delay=0.0 * u.ms),
         )
         cell.init_state()
 

@@ -51,9 +51,15 @@ from .mech import (
     CurrentClamp,
     DensityMechanism,
     FunctionClamp,
+    MechanismRegistry,
+    Params,
     PointMechanism,
     ProbeMechanism,
     SineClamp,
+    get_registry,
+    register_channel,
+    register_ion,
+    register_synapse,
 )
 from .morph import (
     ApicalDendrite,
@@ -72,6 +78,8 @@ from .morph import (
 from .quad import *
 
 __all__ = [
+    "__version__",
+    "__version_info__",
     "ApicalDendrite",
     "Axon",
     "BasalDendrite",
@@ -96,8 +104,14 @@ __all__ = [
     "IonInfo",
     "LocsetExpr",
     "load_neuromorpho",
+    "MechanismRegistry",
     "MixIons",
     "MaxCVLen",
+    "Params",
+    "get_registry",
+    "register_channel",
+    "register_ion",
+    "register_synapse",
     "Morphology",
     "MorphoBranch",
     "MorphoEdge",

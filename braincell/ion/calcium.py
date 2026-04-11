@@ -22,6 +22,7 @@ import braintools
 import brainunit as u
 
 from braincell._base import Ion, Channel, HHTypedNeuron
+from braincell.mech import register_ion
 from braincell.quad import DiffEqState
 
 __all__ = [
@@ -48,6 +49,7 @@ class Calcium(Ion):
     root_type = HHTypedNeuron
 
 
+@register_ion("CalciumFixed")
 class CalciumFixed(Calcium):
     """Fixed Calcium dynamics.
 
@@ -141,6 +143,7 @@ class _CalciumDynamics(Calcium):
         return self._constant * u.math.log(self.C0 / C)
 
 
+@register_ion("CalciumDetailed")
 class CalciumDetailed(_CalciumDynamics):
     r"""Dynamical Calcium model proposed.
 
@@ -278,6 +281,7 @@ class CalciumDetailed(_CalciumDynamics):
         return drive + (self.C_rest - C) / self.tau
 
 
+@register_ion("CalciumFirstOrder")
 class CalciumFirstOrder(_CalciumDynamics):
     r"""
     The first-order calcium concentration model.

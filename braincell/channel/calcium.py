@@ -27,6 +27,7 @@ import braintools
 import brainunit as u
 
 from braincell._base import Channel, IonInfo
+from braincell.mech import register_channel
 from braincell.quad import DiffEqState
 from braincell.ion import Calcium
 
@@ -125,6 +126,7 @@ class CalciumChannel(Channel):
         pass
 
 
+@register_channel("ICaN_IS2008")
 class ICaN_IS2008(CalciumChannel):
     r"""The calcium-activated non-selective cation channel model
     proposed by (Inoue & Strowbridge, 2008) [2]_.
@@ -349,6 +351,7 @@ class _ICa_p2q_markov(CalciumChannel):
         raise NotImplementedError
 
 
+@register_channel("ICaT_HM1992")
 class ICaT_HM1992(_ICa_p2q_ss):
     r"""
     The low-threshold T-type calcium current model proposed by (Huguenard & McCormick, 1992) [1]_.
@@ -450,6 +453,7 @@ class ICaT_HM1992(_ICa_p2q_ss):
                             u.math.exp((V + 467.) / 66.6))
 
 
+@register_channel("ICaT_HP1992")
 class ICaT_HP1992(_ICa_p2q_ss):
     r"""The low-threshold T-type calcium current model for thalamic
     reticular nucleus proposed by (Huguenard & Prince, 1992) [1]_.
@@ -551,6 +555,7 @@ class ICaT_HP1992(_ICa_p2q_ss):
                            u.math.exp(-(V + 407.) / 50.))
 
 
+@register_channel("ICaHT_HM1992")
 class ICaHT_HM1992(_ICa_p2q_ss):
     r"""The high-threshold T-type calcium current model proposed by (Huguenard & McCormick, 1992) [1]_.
 
@@ -647,6 +652,7 @@ class ICaHT_HM1992(_ICa_p2q_ss):
                             u.math.exp((V + 467.) / 66.6))
 
 
+@register_channel("ICaHT_Re1993")
 class ICaHT_Re1993(_ICa_p2q_markov):
     r"""The high-threshold T-type calcium current model proposed by (Reuveni, et al., 1993) [1]_.
 
@@ -745,6 +751,7 @@ class ICaHT_Re1993(_ICa_p2q_markov):
         return 0.0065 / (u.math.exp((-15. + V) / 28.) + 1.)
 
 
+@register_channel("ICaL_IS2008")
 class ICaL_IS2008(_ICa_p2q_ss):
     r"""The L-type calcium channel model proposed by (Inoue & Strowbridge, 2008) [1]_.
 
@@ -835,6 +842,7 @@ class ICaL_IS2008(_ICa_p2q_ss):
         return 300. + 100. / (u.math.exp((V + 40) / 9.5) + u.math.exp(-(V + 40) / 9.5))
 
 
+@register_channel("ICav12_Ma2020")
 class ICav12_Ma2020(CalciumChannel):
     r"""
     : model from Evans et al 2013, transferred from GENESIS to NEURON by Beining et al (2016), "A novel comprehensive and consistent electrophysiologcal model of dentate granule cells"
@@ -910,6 +918,7 @@ class ICav12_Ma2020(CalciumChannel):
         return self.g_max * self.m.value * self.h.value * self.n.value * (Ca.E - V)
 
 
+@register_channel("ICav13_Ma2020")
 class ICav13_Ma2020(CalciumChannel):
     r"""
     : model from Evans et al 2013, transferred from GENESIS to NEURON by Beining et al (2016), "A novel comprehensive and consistent electrophysiologcal model of dentate granule cells"
@@ -985,6 +994,7 @@ class ICav13_Ma2020(CalciumChannel):
         return self.g_max * self.m.value * self.h.value * self.n.value * (Ca.E - V)
 
 
+@register_channel("ICav23_Ma2020")
 class ICav23_Ma2020(CalciumChannel):
     r"""
     Ca R-type channel with medium threshold for activation.
@@ -1051,6 +1061,7 @@ class ICav23_Ma2020(CalciumChannel):
         return 5.
 
 
+@register_channel("ICav31_Ma2020")
 class ICav31_Ma2020(CalciumChannel):
     r"""
     Low threshold calcium current Cerebellum Purkinje Cell Model.
@@ -1147,6 +1158,7 @@ class ICav31_Ma2020(CalciumChannel):
         return -self.g_max * self.p.value ** 2 * self.q.value * self.ghk(V, Ca.C)
 
 
+@register_channel("ICaGrc_Ma2020")
 class ICaGrc_Ma2020(CalciumChannel):
     r"""
     Cerebellum Granule Cell Model.

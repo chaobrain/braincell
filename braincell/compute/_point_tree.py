@@ -18,9 +18,9 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from braincell.morph import Morphology
 from braincell.cv._cv import CV
 from braincell.cv._geo import EPSILON
+from braincell.morph import Morphology
 
 __all__ = [
     "PointTree",
@@ -154,11 +154,11 @@ class PointTree:
 
     def __str__(self) -> str:
         return (
-            f"{'-'*35}\n"
+            f"{'-' * 35}\n"
             f"{'n_points':<14} | {len(self.points)}\n"
             f"{'n_edges':<14} | {len(self.edges)}\n"
             f"{'root_point_id':<14} | {self.root_point_id}\n"
-            f"{'-'*35}\n"
+            f"{'-' * 35}\n"
         )
 
 
@@ -306,7 +306,8 @@ def build_point_tree(
 
         for index, cv_id in enumerate(ordered_cv_ids):
             midpoint_point_id = int(cv_midpoint_point_id[cv_id])
-            parent_point_id = attachment_point_id if index == 0 else int(cv_midpoint_point_id[ordered_cv_ids[index - 1]])
+            parent_point_id = attachment_point_id if index == 0 else int(
+                cv_midpoint_point_id[ordered_cv_ids[index - 1]])
             child_point_id = terminal_point_id if index == len(ordered_cv_ids) - 1 else int(
                 cv_midpoint_point_id[ordered_cv_ids[index + 1]]
             )

@@ -14,14 +14,13 @@
 # ==============================================================================
 
 
-
 from dataclasses import dataclass, fields, is_dataclass
 
-import numpy as np
 import brainunit as u
+import numpy as np
 
-from braincell._base import IonChannel
 from braincell import channel as runtime_channel, ion as runtime_ion
+from braincell._base import IonChannel
 from braincell.mech.point import (
     CurrentClamp,
     FunctionClamp,
@@ -33,7 +32,6 @@ from braincell.mech.point import (
 from braincell.mech.spec import density_class_name, density_params, density_signature, is_density_mechanism
 from braincell.morph import Morphology
 from ._point_tree import PointTree
-
 
 __all__ = ["CellRuntimeState"]
 
@@ -321,6 +319,7 @@ class CellRuntimeState:
             point_current_decimal = point_current_decimal.at[layout.point_index].add(local_current_decimal)
         return u.Quantity(point_current_decimal, u.nA)
 
+
 def install_cell_runtime(cell: "Cell", runtime: CellRuntimeState) -> None:
     cell._in_size = (runtime.n_cv,)
     cell._out_size = (runtime.n_cv,)
@@ -521,7 +520,8 @@ def _write_state_buffer(buffer: np.ndarray, value: object) -> None:
         incoming = np.empty(buffer.shape, dtype=object)
         flat_values = list(value)
         if len(flat_values) != buffer.size:
-            raise ValueError(f"State assignment shape mismatch: expected {buffer.shape!r}, got sequence length {len(flat_values)!r}.")
+            raise ValueError(
+                f"State assignment shape mismatch: expected {buffer.shape!r}, got sequence length {len(flat_values)!r}.")
         incoming.flat[:] = flat_values
         buffer[...] = incoming
         return
@@ -579,15 +579,18 @@ def _eval_current_clamp(runtime: CellRuntimeState, *, layout_id: int, local_inde
     local_t_decimal = local_t.to_decimal(u.ms)
     end_decimal = u.math.cumsum(duration_decimal)
     start_decimal = end_decimal - duration_decimal
-    is_active = u.math.logical_and(local_t_decimal >= 0.0, u.math.logical_and(local_t_decimal >= start_decimal, local_t_decimal < end_decimal))
+    is_active = u.math.logical_and(local_t_decimal >= 0.0,
+                                   u.math.logical_and(local_t_decimal >= start_decimal, local_t_decimal < end_decimal))
     current_decimal = u.math.sum(u.math.where(is_active, amplitude_decimal, 0.0))
     return u.Quantity(current_decimal, u.nA)
 
 
 def _eval_sine_clamp(runtime: CellRuntimeState, *, layout_id: int, local_index: int, local_t) -> object:
     duration = _scalar_state_value(runtime, layout_id=layout_id, var_name="duration", local_index=local_index)
-    amplitude_decimal = _scalar_state_value(runtime, layout_id=layout_id, var_name="amplitude", local_index=local_index).to_decimal(u.nA)
-    offset_decimal = _scalar_state_value(runtime, layout_id=layout_id, var_name="offset", local_index=local_index).to_decimal(u.nA)
+    amplitude_decimal = _scalar_state_value(runtime, layout_id=layout_id, var_name="amplitude",
+                                            local_index=local_index).to_decimal(u.nA)
+    offset_decimal = _scalar_state_value(runtime, layout_id=layout_id, var_name="offset",
+                                         local_index=local_index).to_decimal(u.nA)
     frequency = _scalar_state_value(runtime, layout_id=layout_id, var_name="frequency", local_index=local_index)
     phase = u.math.asarray(_scalar_state_value(runtime, layout_id=layout_id, var_name="phase", local_index=local_index))
     local_t_ms = local_t.to_decimal(u.ms)
@@ -659,7 +662,8 @@ def _instantiate_runtime_node(
 
     runtime_cls, ion_key, channel_key = _resolve_runtime_channel_spec(name)
     params = _runtime_constructor_params(layout=layout, mechanism=mechanism, state_buffers=state_buffers)
-    size = next(iter(params.values())).shape if len(params) > 0 and hasattr(next(iter(params.values())), "shape") else (layout.n_active,)
+    size = next(iter(params.values())).shape if len(params) > 0 and hasattr(next(iter(params.values())), "shape") else (
+        layout.n_active,)
     node = runtime_cls(size=size, **params)
     if ion_key is not None:
         ions[ion_key].add(**{channel_key: node})

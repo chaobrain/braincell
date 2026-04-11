@@ -14,26 +14,28 @@
 # ==============================================================================
 
 
-
 import math
 import unittest
+from unittest import mock
 
+import brainstate
 import brainunit as u
 
 import braincell
-
 from braincell import (
     Branch,
     CVPerBranch,
-    CVPolicy,
     CableProperties,
     Cell,
     CurrentClamp,
     DensityMechanism,
-    MaxCVLen,
     Morphology,
 )
-from braincell.filter import BranchSlice, RootLocation
+from braincell.filter import (
+    BranchSlice,
+    RootLocation,
+    Terminals,
+)
 
 
 def _build_tree() -> Morphology:
@@ -88,6 +90,11 @@ def _edge_roles(point_tree, *, parent_point_id: int, child_point_id: int) -> tup
     return tuple((role.cv_id, role.half) for role in matches[0].cv_edges)
 
 
+def _build_soma_tree() -> Morphology:
+    soma = Branch.from_lengths(lengths=[20.0] * u.um, radii=[8.0, 8.0] * u.um, type="soma")
+    return Morphology.from_root(soma, name="soma")
+
+
 class CellFacadeTest(unittest.TestCase):
     def test_default_cell_has_cv_and_default_paint_rules(self) -> None:
         cell = Cell(_build_tree())
@@ -95,7 +102,7 @@ class CellFacadeTest(unittest.TestCase):
         self.assertEqual(len(cell.paint_rules), 1)
         cv0 = cell.cvs[0]
         self.assertAlmostEqual(cv0.v.to_decimal(u.mV), -65.0, places=12)
-        self.assertAlmostEqual(cv0.cm.to_decimal(u.uF / u.cm**2), 1.0, places=12)
+        self.assertAlmostEqual(cv0.cm.to_decimal(u.uF / u.cm ** 2), 1.0, places=12)
         self.assertAlmostEqual(cv0.ra.to_decimal(u.ohm * u.cm), 100.0, places=12)
         self.assertAlmostEqual(
             cv0.temp.to_decimal(u.kelvin),
@@ -174,13 +181,13 @@ class CellFacadeTest(unittest.TestCase):
             BranchSlice(branch_index=0, prox=0.0, dist=0.49),
             CableProperties(
                 resting_potential=-70.0 * u.mV,
-                membrane_capacitance=2.0 * (u.uF / u.cm**2),
+                membrane_capacitance=2.0 * (u.uF / u.cm ** 2),
                 axial_resistivity=200.0 * (u.ohm * u.cm),
                 temperature=u.celsius2kelvin(20.0),
             ),
         )
         cv0 = cell.cvs[0]
-        self.assertAlmostEqual(cv0.cm.to_decimal(u.uF / u.cm**2), base.cm.to_decimal(u.uF / u.cm**2), places=12)
+        self.assertAlmostEqual(cv0.cm.to_decimal(u.uF / u.cm ** 2), base.cm.to_decimal(u.uF / u.cm ** 2), places=12)
         self.assertAlmostEqual(cv0.ra.to_decimal(u.ohm * u.cm), base.ra.to_decimal(u.ohm * u.cm), places=12)
         self.assertAlmostEqual(cv0.v.to_decimal(u.mV), base.v.to_decimal(u.mV), places=12)
         self.assertAlmostEqual(cv0.temp.to_decimal(u.kelvin), base.temp.to_decimal(u.kelvin), places=12)
@@ -189,13 +196,13 @@ class CellFacadeTest(unittest.TestCase):
             BranchSlice(branch_index=0, prox=0.49, dist=0.51),
             CableProperties(
                 resting_potential=-70.0 * u.mV,
-                membrane_capacitance=2.0 * (u.uF / u.cm**2),
+                membrane_capacitance=2.0 * (u.uF / u.cm ** 2),
                 axial_resistivity=200.0 * (u.ohm * u.cm),
                 temperature=u.celsius2kelvin(20.0),
             ),
         )
         cv0 = cell.cvs[0]
-        self.assertAlmostEqual(cv0.cm.to_decimal(u.uF / u.cm**2), 2.0, places=12)
+        self.assertAlmostEqual(cv0.cm.to_decimal(u.uF / u.cm ** 2), 2.0, places=12)
         self.assertAlmostEqual(cv0.ra.to_decimal(u.ohm * u.cm), 200.0, places=12)
         self.assertAlmostEqual(cv0.v.to_decimal(u.mV), -70.0, places=12)
         self.assertAlmostEqual(cv0.temp.to_decimal(u.kelvin), u.celsius2kelvin(20.0).to_decimal(u.kelvin), places=12)
@@ -207,7 +214,7 @@ class CellFacadeTest(unittest.TestCase):
             region,
             CableProperties(
                 resting_potential=-70.0 * u.mV,
-                membrane_capacitance=2.0 * (u.uF / u.cm**2),
+                membrane_capacitance=2.0 * (u.uF / u.cm ** 2),
                 axial_resistivity=200.0 * (u.ohm * u.cm),
                 temperature=u.celsius2kelvin(20.0),
             ),
@@ -218,7 +225,7 @@ class CellFacadeTest(unittest.TestCase):
             region,
             CableProperties(
                 resting_potential=-60.0 * u.mV,
-                membrane_capacitance=3.0 * (u.uF / u.cm**2),
+                membrane_capacitance=3.0 * (u.uF / u.cm ** 2),
                 axial_resistivity=300.0 * (u.ohm * u.cm),
                 temperature=u.celsius2kelvin(30.0),
             ),
@@ -229,7 +236,7 @@ class CellFacadeTest(unittest.TestCase):
         cable = last.mechanism
         self.assertIsInstance(cable, CableProperties)
         self.assertAlmostEqual(cable.resting_potential.to_decimal(u.mV), -60.0, places=12)
-        self.assertAlmostEqual(cable.membrane_capacitance.to_decimal(u.uF / u.cm**2), 3.0, places=12)
+        self.assertAlmostEqual(cable.membrane_capacitance.to_decimal(u.uF / u.cm ** 2), 3.0, places=12)
         self.assertAlmostEqual(cable.axial_resistivity.to_decimal(u.ohm * u.cm), 300.0, places=12)
         self.assertAlmostEqual(
             cable.temperature.to_decimal(u.kelvin),
@@ -243,7 +250,7 @@ class CellFacadeTest(unittest.TestCase):
         cell = Cell(tree)
         cell.paint(
             BranchSlice(branch_index=0, prox=0.0, dist=0.5),
-            DensityMechanism(channel_type="leaky", params=(("g_max", 4.0 * (u.mS / u.cm**2)),)),
+            DensityMechanism(channel_type="leaky", params=(("g_max", 4.0 * (u.mS / u.cm ** 2)),)),
             DensityMechanism(ion_type="sodium", params=(("c0", 12.0),)),
         )
         cv0 = cell.cvs[0]
@@ -251,7 +258,7 @@ class CellFacadeTest(unittest.TestCase):
         channel = next(mech for mech in cv0.density_mech if mech.channel_type is not None)
         ion = next(mech for mech in cv0.density_mech if mech.ion_type is not None)
         gmax = dict(channel.params)["g_max"]
-        self.assertAlmostEqual(float(gmax.to_decimal(u.mS / u.cm**2)), 2.0, places=12)
+        self.assertAlmostEqual(float(gmax.to_decimal(u.mS / u.cm ** 2)), 2.0, places=12)
         self.assertEqual(dict(ion.params)["c0"], 12.0)
 
     def test_channel_spec_paint_scales_by_area_fraction(self) -> None:
@@ -262,7 +269,7 @@ class CellFacadeTest(unittest.TestCase):
         cell = Cell(tree)
         cell.paint(
             BranchSlice(branch_index=0, prox=0.0, dist=0.5),
-            braincell.mech.Channel("IL", g_max=4.0 * (u.mS / u.cm**2), E=-72.0 * u.mV),
+            braincell.mech.Channel("IL", g_max=4.0 * (u.mS / u.cm ** 2), E=-72.0 * u.mV),
         )
 
         cv0 = cell.cvs[0]
@@ -271,7 +278,7 @@ class CellFacadeTest(unittest.TestCase):
         self.assertEqual(channel.category, "channel")
         self.assertEqual(channel.name, "IL")
         params = dict(channel.params)
-        self.assertAlmostEqual(float(params["g_max"].to_decimal(u.mS / u.cm**2)), 2.0, places=12)
+        self.assertAlmostEqual(float(params["g_max"].to_decimal(u.mS / u.cm ** 2)), 2.0, places=12)
         self.assertAlmostEqual(float(params["E"].to_decimal(u.mV)), -72.0, places=12)
 
     def test_place_boundary_goes_to_right_cv_and_branch_endpoint_stays_local(self) -> None:
@@ -304,9 +311,9 @@ class CellFacadeTest(unittest.TestCase):
         cv0 = cell.cvs[0]
         self.assertFalse(hasattr(cv0, "mean_radius"))
 
-        area1 = math.pi * (1.0 + 2.0) * math.sqrt(10.0**2 + (2.0 - 1.0) ** 2)
-        area2 = math.pi * (2.0 + 3.0) * math.sqrt(20.0**2 + (3.0 - 2.0) ** 2)
-        self.assertAlmostEqual(cv0.area.to_decimal(u.um**2), area1 + area2, places=9)
+        area1 = math.pi * (1.0 + 2.0) * math.sqrt(10.0 ** 2 + (2.0 - 1.0) ** 2)
+        area2 = math.pi * (2.0 + 3.0) * math.sqrt(20.0 ** 2 + (3.0 - 2.0) ** 2)
+        self.assertAlmostEqual(cv0.area.to_decimal(u.um ** 2), area1 + area2, places=9)
 
         expected_total = 100.0 * (
             (10.0e-4) / (math.pi * (1.0e-4) * (2.0e-4))
@@ -340,14 +347,15 @@ class CellFacadeTest(unittest.TestCase):
         cv_left = split.cvs[0]
         cv_right = split.cvs[1]
 
-        jump_area = math.pi * (3.0**2 - 1.0**2)
-        seg1 = math.pi * (2.0 + 1.0) * math.sqrt(10.0**2 + (1.0 - 2.0) ** 2)
-        seg2 = math.pi * (3.0 + 0.5) * math.sqrt(10.0**2 + (0.5 - 3.0) ** 2)
+        jump_area = math.pi * (3.0 ** 2 - 1.0 ** 2)
+        seg1 = math.pi * (2.0 + 1.0) * math.sqrt(10.0 ** 2 + (1.0 - 2.0) ** 2)
+        seg2 = math.pi * (3.0 + 0.5) * math.sqrt(10.0 ** 2 + (0.5 - 3.0) ** 2)
 
-        self.assertAlmostEqual(whole.area.to_decimal(u.um**2), seg1 + jump_area + seg2, places=9)
-        self.assertAlmostEqual(cv_left.area.to_decimal(u.um**2), seg1, places=9)
-        self.assertAlmostEqual(cv_right.area.to_decimal(u.um**2), jump_area + seg2, places=9)
-        self.assertAlmostEqual(whole.r_axial.to_decimal(u.ohm), cv_left.r_axial.to_decimal(u.ohm) + cv_right.r_axial.to_decimal(u.ohm), places=9)
+        self.assertAlmostEqual(whole.area.to_decimal(u.um ** 2), seg1 + jump_area + seg2, places=9)
+        self.assertAlmostEqual(cv_left.area.to_decimal(u.um ** 2), seg1, places=9)
+        self.assertAlmostEqual(cv_right.area.to_decimal(u.um ** 2), jump_area + seg2, places=9)
+        self.assertAlmostEqual(whole.r_axial.to_decimal(u.ohm),
+                               cv_left.r_axial.to_decimal(u.ohm) + cv_right.r_axial.to_decimal(u.ohm), places=9)
 
     def test_point_tree_internal_attachment_absorbs_to_parent_midpoint(self) -> None:
         soma = Branch.from_lengths(lengths=[20.0] * u.um, radii=[10.0, 10.0] * u.um, type="soma")
@@ -451,12 +459,14 @@ class CellFacadeTest(unittest.TestCase):
                 parent_cv_id = next(cv.id for cv in cell.cvs if cv.branch_id == 0)
                 child_cv_id = next(cv.id for cv in cell.cvs if cv.branch_id == 1)
                 child_mid_point_id = _point_id_by_role(point_tree, cv_id=child_cv_id, position="mid")
-                expected_parent_point_id = _point_id_by_role(point_tree, cv_id=parent_cv_id, position=expected_parent_position)
+                expected_parent_point_id = _point_id_by_role(point_tree, cv_id=parent_cv_id,
+                                                             position=expected_parent_position)
                 child_terminal_point_id = int(point_tree.branch_terminal_point_id[1])
 
                 self.assertEqual(len(point_tree.edges), len(point_tree.points) - 1)
                 self.assertEqual(int(point_tree.point_parent[child_mid_point_id]), expected_parent_point_id)
-                self.assertIn((child_cv_id, expected_child_attach_position), _point_roles(point_tree, expected_parent_point_id))
+                self.assertIn((child_cv_id, expected_child_attach_position),
+                              _point_roles(point_tree, expected_parent_point_id))
                 self.assertEqual(
                     _edge_roles(
                         point_tree,
@@ -546,7 +556,7 @@ class CellFacadeTest(unittest.TestCase):
             BranchSlice(branch_index=0, prox=0.4, dist=0.6),
             CableProperties(
                 resting_potential=-75.0 * u.mV,
-                membrane_capacitance=1.2 * (u.uF / u.cm**2),
+                membrane_capacitance=1.2 * (u.uF / u.cm ** 2),
                 axial_resistivity=120.0 * (u.ohm * u.cm),
             ),
         )
@@ -704,3 +714,333 @@ class CellFacadeTest(unittest.TestCase):
             assert ina is not None and ik is not None
             self.assertAlmostEqual(float(ina.g_max.to_decimal(u.mS / u.cm ** 2)), 140.0, places=12)
             self.assertAlmostEqual(float(ik.g_max.to_decimal(u.mS / u.cm ** 2)), 40.0, places=12)
+
+
+class CellExecutionTest(unittest.TestCase):
+    def test_cell_is_runtime_object_after_init_state(self) -> None:
+        cell = Cell(_build_tree())
+        cell.paint(
+            BranchSlice(branch_index=[0, 1], prox=0.0, dist=1.0),
+            braincell.mech.Channel("IL", g_max=4.0 * (u.mS / u.cm ** 2), E=-68.0 * u.mV),
+            braincell.mech.Channel("INa_HH1952", g_max=12.0 * (u.mS / u.cm ** 2)),
+        )
+
+        cell.init_state()
+
+        self.assertIsInstance(cell, braincell.HHTypedNeuron)
+        self.assertEqual(cell.varshape, (2,))
+        self.assertIs(cell.ion_channels["na"], cell.get_ion("na"))
+        self.assertIs(cell.ion_channels["k"], cell.get_ion("k"))
+        self.assertIs(cell.ion_channels["ca"], cell.get_ion("ca"))
+        self.assertTrue(any(key.startswith("layout_") for key in cell.ion_channels))
+
+    def test_reset_state_reinitializes_cell_state(self) -> None:
+        cell = Cell(_build_tree())
+        cell.paint(
+            BranchSlice(branch_index=[0, 1], prox=0.0, dist=1.0),
+            braincell.mech.Channel("IL", g_max=4.0 * (u.mS / u.cm ** 2), E=-68.0 * u.mV),
+        )
+
+        cell.init_state()
+        self.assertEqual(cell.V.value.shape, (2,))
+        self.assertEqual(cell.spike.value.shape, (2,))
+
+        original = cell.V.value
+        cell.V.value = cell.V.value + 1.0 * u.mV
+        cell.reset_state()
+        self.assertEqual(cell.V.value.shape, (2,))
+        self.assertFalse(u.math.all(cell.V.value == original + 1.0 * u.mV))
+
+    def test_compute_derivative_and_update_work_on_cell(self) -> None:
+        cell = Cell(_build_tree())
+        cell.paint(
+            BranchSlice(branch_index=[0, 1], prox=0.0, dist=1.0),
+            braincell.mech.Channel("IL", g_max=4.0 * (u.mS / u.cm ** 2), E=-68.0 * u.mV),
+        )
+
+        cell.init_state()
+        cell.compute_derivative()
+        self.assertEqual(cell.V.derivative.shape, (2,))
+
+        with brainstate.environ.context(dt=0.01 * u.ms):
+            spike = cell.update()
+        self.assertEqual(spike.shape, (2,))
+
+    def test_staggered_solver_updates_cv_sized_voltage(self) -> None:
+        cell = Cell(_build_tree(), solver="staggered")
+        cell.paint(
+            BranchSlice(branch_index=[0, 1], prox=0.0, dist=1.0),
+            braincell.mech.Channel("IL", g_max=4.0 * (u.mS / u.cm ** 2), E=-68.0 * u.mV),
+        )
+
+        cell.init_state()
+        with brainstate.environ.context(dt=0.01 * u.ms):
+            spike = cell.update()
+        self.assertEqual(cell.V.value.shape, (2,))
+        self.assertEqual(spike.shape, (2,))
+
+    def test_exp_euler_solver_uses_cell_bridge_without_legacy_multicompartment(self) -> None:
+        cell = Cell(_build_tree(), solver="exp_euler")
+        cell.paint(
+            BranchSlice(branch_index=[0, 1], prox=0.0, dist=1.0),
+            braincell.mech.Channel("IL", g_max=4.0 * (u.mS / u.cm ** 2), E=-68.0 * u.mV),
+        )
+        cell.init_state()
+
+        with mock.patch("braincell.quad._exp_euler.apply_standard_solver_step") as step_mock:
+            with brainstate.environ.context(dt=0.01 * u.ms, t=0.0 * u.ms):
+                cell.update()
+
+        self.assertTrue(step_mock.called)
+        self.assertEqual(step_mock.call_args.kwargs["merging"], "concat")
+
+    def test_splitting_solver_uses_cell_bridge_without_legacy_multicompartment(self) -> None:
+        cell = Cell(_build_tree(), solver="splitting")
+        cell.init_state()
+
+        with mock.patch("braincell.quad._implicit.apply_standard_solver_step") as step_mock:
+            with self.assertRaises(UnboundLocalError):
+                braincell.quad.splitting_step(cell, 0.0 * u.ms, 0.01 * u.ms)
+
+        self.assertTrue(step_mock.called)
+
+    def test_cn_rk4_solver_uses_cell_bridge_without_legacy_multicompartment(self) -> None:
+        cell = Cell(_build_tree(), solver="cn_rk4")
+        cell.init_state()
+
+        with mock.patch("braincell.quad._implicit.rk4_step") as rk4_mock:
+            with self.assertRaises(UnboundLocalError):
+                with mock.patch("braincell.quad._implicit.brainstate.transform.vmap",
+                                side_effect=RuntimeError("bridge reached")):
+                    braincell.quad.cn_rk4_step(cell, 0.0 * u.ms, 0.01 * u.ms)
+
+        self.assertTrue(rk4_mock.called)
+
+    def test_cn_exp_euler_solver_uses_cell_bridge_without_legacy_multicompartment(self) -> None:
+        cell = Cell(_build_tree(), solver="cn_exp_euler")
+        cell.init_state()
+
+        with mock.patch("braincell.quad._implicit.apply_standard_solver_step") as step_mock:
+            with self.assertRaises(UnboundLocalError):
+                with mock.patch("braincell.quad._implicit.brainstate.transform.vmap",
+                                side_effect=RuntimeError("bridge reached")):
+                    braincell.quad.cn_exp_euler_step(cell, 0.0 * u.ms, 0.01 * u.ms)
+
+        self.assertTrue(step_mock.called)
+        self.assertEqual(step_mock.call_args.kwargs["merging"], "stack")
+
+    def test_implicit_rk4_solver_uses_cell_bridge_without_legacy_multicompartment(self) -> None:
+        cell = Cell(_build_tree(), solver="implicit_rk4")
+        cell.init_state()
+
+        with mock.patch("braincell.quad._implicit.rk4_step") as rk4_mock:
+            with self.assertRaises(UnboundLocalError):
+                with mock.patch("braincell.quad._implicit.brainstate.transform.vmap",
+                                side_effect=RuntimeError("bridge reached")):
+                    braincell.quad.implicit_rk4_step(cell, 0.0 * u.ms, 0.01 * u.ms)
+
+        self.assertTrue(rk4_mock.called)
+
+    def test_implicit_exp_euler_solver_uses_cell_bridge_without_legacy_multicompartment(self) -> None:
+        cell = Cell(_build_tree(), solver="implicit_exp_euler")
+        cell.init_state()
+
+        with mock.patch("braincell.quad._implicit.apply_standard_solver_step") as step_mock:
+            with self.assertRaises(UnboundLocalError):
+                with mock.patch("braincell.quad._implicit.brainstate.transform.vmap",
+                                side_effect=RuntimeError("bridge reached")):
+                    braincell.quad.implicit_exp_euler_step(cell, 0.0 * u.ms, 0.01 * u.ms)
+
+        self.assertTrue(step_mock.called)
+        self.assertEqual(step_mock.call_args.kwargs["merging"], "stack")
+
+    def test_exp_exp_euler_solver_uses_cell_bridge_without_legacy_multicompartment(self) -> None:
+        cell = Cell(_build_tree(), solver="exp_exp_euler")
+        cell.init_state()
+
+        with mock.patch("braincell.quad._implicit.apply_standard_solver_step") as step_mock:
+            with self.assertRaises(UnboundLocalError):
+                with mock.patch("braincell.quad._implicit.brainstate.transform.vmap",
+                                side_effect=RuntimeError("bridge reached")):
+                    braincell.quad.exp_exp_euler_step(cell, 0.0 * u.ms, 0.01 * u.ms)
+
+        self.assertTrue(step_mock.called)
+        self.assertEqual(step_mock.call_args.kwargs["merging"], "stack")
+
+    def test_staggered_solver_single_cv_leak_moves_toward_reversal(self) -> None:
+        cell = Cell(_build_soma_tree(), solver="staggered", cv_policy=braincell.CVPerBranch(cv_per_branch=1))
+        cell.paint(
+            BranchSlice(branch_index=0, prox=0.0, dist=1.0),
+            braincell.mech.Channel("IL", g_max=0.1 * (u.mS / u.cm ** 2), E=-68.0 * u.mV),
+        )
+
+        cell.init_state()
+        initial = cell.V.value
+        with brainstate.environ.context(dt=0.01 * u.ms):
+            cell.update()
+        self.assertLess(float(cell.V.value[0].to_decimal(u.mV)), float(initial[0].to_decimal(u.mV)))
+        self.assertGreater(float(cell.V.value[0].to_decimal(u.mV)), -68.0)
+
+    def test_total_current_input_matches_current_density_input(self) -> None:
+        cell_total = Cell(_build_soma_tree(), solver="explicit", cv_policy=braincell.CVPerBranch(cv_per_branch=1))
+        cell_density = Cell(_build_soma_tree(), solver="explicit", cv_policy=braincell.CVPerBranch(cv_per_branch=1))
+        for cell in (cell_total, cell_density):
+            cell.paint(
+                BranchSlice(branch_index=0, prox=0.0, dist=1.0),
+                braincell.mech.Channel("IL", g_max=0.1 * (u.mS / u.cm ** 2), E=-68.0 * u.mV),
+            )
+            cell.init_state()
+
+        initial = -65.0 * u.mV
+        cell_total.V.value = u.math.asarray([initial.to_decimal(u.mV)]) * u.mV
+        cell_density.V.value = u.math.asarray([initial.to_decimal(u.mV)]) * u.mV
+        area = cell_total.cvs[0].area
+        total_current = 0.05 * u.nA
+        current_density = total_current / area
+
+        with brainstate.environ.context(dt=0.01 * u.ms, t=0.0 * u.ms):
+            cell_total.update(total_current)
+            cell_density.update(current_density)
+
+        self.assertAlmostEqual(
+            float(cell_total.V.value[0].to_decimal(u.mV)),
+            float(cell_density.V.value[0].to_decimal(u.mV)),
+            places=6,
+        )
+
+    def test_compute_axial_derivative_is_zero_for_single_cv(self) -> None:
+        cell = Cell(_build_soma_tree(), solver="explicit", cv_policy=braincell.CVPerBranch(cv_per_branch=1))
+        cell.init_state()
+
+        derivative = cell.compute_axial_derivative(u.math.asarray([-65.0]) * u.mV)
+        self.assertEqual(derivative.shape, (1,))
+        self.assertAlmostEqual(float(derivative[0].to_decimal(u.mV / u.ms)), 0.0, places=8)
+
+    def test_compute_axial_derivative_couples_two_cv_cable(self) -> None:
+        cell = Cell(_build_soma_tree(), solver="explicit", cv_policy=braincell.CVPerBranch(cv_per_branch=2))
+        cell.init_state()
+
+        derivative = cell.compute_axial_derivative(u.math.asarray([-60.0, -80.0]) * u.mV)
+        self.assertEqual(derivative.shape, (2,))
+        self.assertLess(float(derivative[0].to_decimal(u.mV / u.ms)), 0.0)
+        self.assertGreater(float(derivative[1].to_decimal(u.mV / u.ms)), 0.0)
+
+    def test_explicit_solver_uses_axial_coupling(self) -> None:
+        cell = Cell(_build_soma_tree(), solver="explicit", cv_policy=braincell.CVPerBranch(cv_per_branch=2))
+        cell.init_state()
+        cell.V.value = u.math.asarray([-60.0, -80.0]) * u.mV
+
+        with brainstate.environ.context(dt=1e-6 * u.ms, t=0.0 * u.ms):
+            cell.update()
+
+        self.assertGreater(float(cell.V.value[0].to_decimal(u.mV)), -80.0)
+        self.assertLess(float(cell.V.value[0].to_decimal(u.mV)), -60.0)
+        self.assertGreater(float(cell.V.value[1].to_decimal(u.mV)), -80.0)
+        self.assertLess(float(cell.V.value[1].to_decimal(u.mV)), -60.0)
+
+    def test_staggered_solver_two_cv_passive_cable_stays_symmetric(self) -> None:
+        tree = _build_soma_tree()
+        cell = Cell(tree, solver="staggered", cv_policy=braincell.CVPerBranch(cv_per_branch=2))
+        cell.paint(
+            BranchSlice(branch_index=0, prox=0.0, dist=1.0),
+            braincell.mech.Channel("IL", g_max=0.1 * (u.mS / u.cm ** 2), E=-68.0 * u.mV),
+        )
+
+        cell.init_state()
+        initial = cell.V.value
+        with brainstate.environ.context(dt=0.01 * u.ms):
+            cell.update()
+
+        self.assertEqual(cell.V.value.shape, (2,))
+        self.assertLess(float(cell.V.value[0].to_decimal(u.mV)), float(initial[0].to_decimal(u.mV)))
+        self.assertLess(float(cell.V.value[1].to_decimal(u.mV)), float(initial[1].to_decimal(u.mV)))
+        self.assertAlmostEqual(
+            float(cell.V.value[0].to_decimal(u.mV)),
+            float(cell.V.value[1].to_decimal(u.mV)),
+            places=6,
+        )
+
+    def test_staggered_solver_branched_passive_cell_matches_explicit_direction(self) -> None:
+        tree = _build_tree()
+        explicit = Cell(tree, solver="explicit", cv_policy=braincell.CVPerBranch(cv_per_branch=1))
+        staggered = Cell(tree, solver="staggered", cv_policy=braincell.CVPerBranch(cv_per_branch=1))
+        for cell in (explicit, staggered):
+            cell.paint(
+                BranchSlice(branch_index=[0, 1], prox=0.0, dist=1.0),
+                braincell.mech.Channel("IL", g_max=0.1 * (u.mS / u.cm ** 2), E=-68.0 * u.mV),
+            )
+            cell.init_state()
+
+        with brainstate.environ.context(dt=0.01 * u.ms, t=0.0 * u.ms):
+            explicit.update()
+            staggered.update()
+
+        self.assertEqual(staggered.V.value.shape, explicit.V.value.shape)
+        for index in range(staggered.V.value.shape[0]):
+            explicit_v = float(explicit.V.value[index].to_decimal(u.mV))
+            staggered_v = float(staggered.V.value[index].to_decimal(u.mV))
+            self.assertLess(staggered_v, -65.0)
+            self.assertGreater(staggered_v, -68.0)
+            self.assertAlmostEqual(staggered_v, explicit_v, places=3)
+
+    def test_update_requires_init_state_after_declaration_change(self) -> None:
+        cell = Cell(_build_tree())
+        cell.init_state()
+        cell.paint(
+            BranchSlice(branch_index=[0, 1], prox=0.0, dist=1.0),
+            braincell.mech.Channel("IL", g_max=4.0 * (u.mS / u.cm ** 2), E=-68.0 * u.mV),
+        )
+
+        with self.assertRaisesRegex(ValueError, "Cell.init_state"):
+            cell.compute_derivative()
+
+    def test_placed_current_clamp_removes_manual_step_current_logic(self) -> None:
+        cell = Cell(_build_soma_tree(), solver="explicit", cv_policy=braincell.CVPerBranch(cv_per_branch=1))
+        cell.place(
+            RootLocation(x=0.5),
+            braincell.CurrentClamp(
+                start=1.0 * u.ms,
+                durations=(2.0 * u.ms, 2.0 * u.ms),
+                amplitudes=(0.0 * u.nA, 0.2 * u.nA),
+            ),
+        )
+        cell.init_state()
+
+        with brainstate.environ.context(t=0.5 * u.ms):
+            early = cell.compute_membrane_derivative(cell.V.value)
+        with brainstate.environ.context(t=3.5 * u.ms):
+            late = cell.compute_membrane_derivative(cell.V.value)
+        with brainstate.environ.context(t=5.5 * u.ms):
+            after = cell.compute_membrane_derivative(cell.V.value)
+
+        self.assertAlmostEqual(float(early[0].to_decimal(u.mV / u.ms)), 0.0, places=8)
+        self.assertGreater(float(late[0].to_decimal(u.mV / u.ms)), 0.0)
+        self.assertAlmostEqual(float(after[0].to_decimal(u.mV / u.ms)), 0.0, places=8)
+
+    def test_placed_current_clamp_targets_only_selected_point(self) -> None:
+        cell = Cell(_build_tree(), solver="explicit", cv_policy=braincell.CVPerBranch(cv_per_branch=1))
+        cell.place(
+            RootLocation(x=0.5),
+            braincell.CurrentClamp(amplitude=0.2 * u.nA, delay=0.0 * u.ms, duration=10.0 * u.ms),
+        )
+        cell.init_state()
+
+        with brainstate.environ.context(t=1.0 * u.ms):
+            derivative = cell.compute_membrane_derivative(cell.V.value)
+
+        self.assertGreater(float(derivative[0].to_decimal(u.mV / u.ms)), 0.0)
+        self.assertAlmostEqual(float(derivative[1].to_decimal(u.mV / u.ms)), 0.0, places=8)
+
+    def test_multiple_terminal_clamps_do_not_broadcast_to_all_points(self) -> None:
+        cell = Cell(_build_tree(), solver="explicit", cv_policy=braincell.CVPerBranch(cv_per_branch=1))
+        cell.place(
+            Terminals(),
+            braincell.CurrentClamp(amplitude=0.15 * u.nA, delay=0.0 * u.ms, duration=10.0 * u.ms),
+        )
+        cell.init_state()
+
+        with brainstate.environ.context(t=1.0 * u.ms):
+            derivative = cell.compute_membrane_derivative(cell.V.value)
+
+        self.assertAlmostEqual(float(derivative[0].to_decimal(u.mV / u.ms)), 0.0, places=8)
+        self.assertGreater(float(derivative[1].to_decimal(u.mV / u.ms)), 0.0)

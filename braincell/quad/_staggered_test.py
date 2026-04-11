@@ -29,8 +29,8 @@ import brainunit as u
 import jax.numpy as jnp
 import numpy as np
 
-from braincell.quad import DiffEqModule, get_registry, staggered_step, dhs_voltage_step
-from braincell.quad._staggered import _build_backsub_indices, comp_backsub_raw, comp_triang_raw
+from braincell.quad import DiffEqModule, get_registry, staggered_step
+from braincell.quad._staggered import _build_backsub_indices, comp_backsub_raw, comp_triang_raw, dhs_voltage_step
 
 
 class DhsVoltageGuardTest(unittest.TestCase):

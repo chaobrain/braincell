@@ -20,27 +20,28 @@ import brainunit as u
 from braincell.mech import (
     CurrentClamp,
     FunctionClamp,
-    GapJunctionMechanism,
+    Junction,
+    Mechanism,
     Params,
-    PointMechanism,
+    Point,
     ProbeMechanism,
     SineClamp,
     Synapse,
-    SynapseMechanism,
 )
 
 
-class PointMechanismBaseTest(unittest.TestCase):
-    def test_every_concrete_subclass_is_PointMechanism(self) -> None:
+class PointBaseTest(unittest.TestCase):
+    def test_every_concrete_subclass_is_Point(self) -> None:
         cc = CurrentClamp.step(0.1 * u.nA, 1.0 * u.ms)
         sine = SineClamp(amplitude=0.1 * u.nA, frequency=10 * u.Hz)
         fc = FunctionClamp(fn=lambda t: 0.1 * u.nA)
         probe = ProbeMechanism(variable="v")
-        syn = SynapseMechanism(synapse_type="AMPA")
-        gap = GapJunctionMechanism()
+        syn = Synapse(synapse_type="AMPA")
+        gap = Junction()
 
         for mech in (cc, sine, fc, probe, syn, gap):
-            self.assertIsInstance(mech, PointMechanism)
+            self.assertIsInstance(mech, Point)
+            self.assertIsInstance(mech, Mechanism)
 
 
 class CurrentClampTest(unittest.TestCase):
@@ -155,50 +156,34 @@ class ProbeMechanismTest(unittest.TestCase):
         self.assertEqual(hash(a), hash(b))
 
 
-class SynapseMechanismTest(unittest.TestCase):
+class SynapseTest(unittest.TestCase):
     def test_direct_construction(self) -> None:
-        syn = SynapseMechanism(
+        syn = Synapse(
             synapse_type="AMPA",
             params=Params(tau=5.0),
         )
         self.assertEqual(syn.synapse_type, "AMPA")
         self.assertEqual(syn.params["tau"], 5.0)
 
-    def test_factory_builds_synapse(self) -> None:
-        syn = Synapse("AMPA", tau_rise=0.5, tau_decay=5.0)
-        self.assertIsInstance(syn, SynapseMechanism)
-        self.assertEqual(syn.synapse_type, "AMPA")
-        self.assertEqual(syn.params["tau_rise"], 0.5)
-
     def test_default_instance_name(self) -> None:
-        syn = Synapse("AMPA")
+        syn = Synapse(synapse_type="AMPA")
         self.assertEqual(syn.instance_name, "AMPA")
         self.assertEqual(syn.identity, ("AMPA", "AMPA"))
 
     def test_override_instance_name(self) -> None:
-        syn = Synapse("AMPA", name="ampa_main")
+        syn = Synapse(synapse_type="AMPA", name="ampa_main")
         self.assertEqual(syn.instance_name, "ampa_main")
         self.assertEqual(syn.identity, ("ampa_main", "AMPA"))
 
-    def test_keyword_order_insensitive_equality(self) -> None:
-        a = Synapse("AMPA", tau_rise=0.5, tau_decay=5.0)
-        b = Synapse("AMPA", tau_decay=5.0, tau_rise=0.5)
+    def test_equality_and_hash(self) -> None:
+        a = Synapse(synapse_type="AMPA", params=Params(tau=5.0))
+        b = Synapse(synapse_type="AMPA", params=Params(tau=5.0))
         self.assertEqual(a, b)
         self.assertEqual(hash(a), hash(b))
 
     def test_empty_synapse_type_rejected(self) -> None:
         with self.assertRaises(ValueError):
-            SynapseMechanism(synapse_type="")
-
-
-class GapJunctionMechanismTest(unittest.TestCase):
-    def test_default_empty_params(self) -> None:
-        gap = GapJunctionMechanism()
-        self.assertEqual(len(gap.params), 0)
-
-    def test_with_params(self) -> None:
-        gap = GapJunctionMechanism(params=Params(g=1.0))
-        self.assertEqual(gap.params["g"], 1.0)
+            Synapse(synapse_type="")
 
 
 if __name__ == "__main__":

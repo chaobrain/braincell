@@ -19,11 +19,10 @@ from typing import Literal
 import numpy as np
 
 from braincell.mech import (
-    DensityMechanism,
-    GapJunctionMechanism,
-    PointMechanism,
+    Density,
+    Point,
     ProbeMechanism,
-    SynapseMechanism,
+    Synapse,
 )
 from ._runtime import CellRuntimeState
 
@@ -93,7 +92,7 @@ class MechanismObjectCell:
         if self.point_id is not None and self.runtime.has_layout_value(self.layout_id, key):
             return self.runtime.get_layout_value(self.layout_id, point_id=self.point_id, var_name=key)
         declaration = self.declaration
-        if isinstance(declaration, DensityMechanism):
+        if isinstance(declaration, Density):
             if key in declaration.params:
                 return declaration.params[key]
         node = self.node
@@ -159,15 +158,15 @@ def mechanism_cell_key(mechanism: object) -> tuple[str, str]:
     """Return a ``(class_name, instance_name)`` key for table indexing.
 
     Every mechanism type is mapped to a stable tuple that table views
-    use as a row identifier. Density mechanisms use
+    use as a row identifier. :class:`Density` mechanisms use
     ``(class_name, instance_name)`` (which collapses to
     ``(class_name, class_name)`` when no explicit name override was
-    provided). Point mechanisms fall back to their Python class name
-    on both axes unless they carry their own identity.
+    provided). :class:`Point` mechanisms fall back to their Python
+    class name on both axes unless they carry their own identity.
     """
-    if isinstance(mechanism, DensityMechanism):
+    if isinstance(mechanism, Density):
         return (mechanism.class_name, mechanism.instance_name)
-    if isinstance(mechanism, SynapseMechanism):
+    if isinstance(mechanism, Synapse):
         return (mechanism.synapse_type, mechanism.instance_name)
     if isinstance(mechanism, ProbeMechanism):
         class_name = "ProbeMechanism"
@@ -177,7 +176,7 @@ def mechanism_cell_key(mechanism: object) -> tuple[str, str]:
             else f"{mechanism.variable}@{mechanism.target}"
         )
         return (class_name, instance_name)
-    if isinstance(mechanism, PointMechanism):
+    if isinstance(mechanism, Point):
         class_name = type(mechanism).__name__
         return (class_name, class_name)
     class_name = type(mechanism).__name__

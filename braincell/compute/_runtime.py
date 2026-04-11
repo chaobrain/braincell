@@ -23,13 +23,13 @@ from braincell import ion as runtime_ion
 from braincell._base import IonChannel
 from braincell.mech import (
     CurrentClamp,
-    DensityMechanism,
+    Density,
     FunctionClamp,
-    GapJunctionMechanism,
-    PointMechanism,
+    Junction,
+    Point,
     ProbeMechanism,
     SineClamp,
-    SynapseMechanism,
+    Synapse,
     get_registry,
 )
 from braincell.morph import Morphology
@@ -425,18 +425,19 @@ def choose_layout(*, target: str) -> str:
 def mechanism_kind(mechanism: object) -> str:
     """Return a stable string tag describing the mechanism's type.
 
-    For density mechanisms the tag is ``"{category}:{class_name}"``.
-    Point mechanisms use their class ``__name__`` (``CurrentClamp``,
-    ``SineClamp``, ``ProbeMechanism`` …), with ``ProbeMechanism``
-    appending the variable/target for debuggability.
+    For :class:`Density` mechanisms the tag is
+    ``"{category}:{class_name}"``. :class:`Point` mechanisms use their
+    class ``__name__`` (``CurrentClamp``, ``SineClamp``,
+    ``ProbeMechanism`` …), with ``ProbeMechanism`` appending the
+    variable/target for debuggability.
     """
-    if isinstance(mechanism, DensityMechanism):
+    if isinstance(mechanism, Density):
         return f"{mechanism.category}:{mechanism.class_name}"
-    if isinstance(mechanism, SynapseMechanism):
+    if isinstance(mechanism, Synapse):
         return f"synapse:{mechanism.synapse_type}"
     if isinstance(mechanism, ProbeMechanism):
         return f"probe:{mechanism.variable}:{mechanism.target}"
-    if isinstance(mechanism, PointMechanism):
+    if isinstance(mechanism, Point):
         return type(mechanism).__name__
     return type(mechanism).__name__
 
@@ -462,18 +463,18 @@ def mechanism_signature(mechanism: object) -> tuple[object, ...]:
 def _mechanism_var_names(mechanism: object) -> tuple[str, ...]:
     """Return the state-buffer variable names for a mechanism.
 
-    For :class:`DensityMechanism` this is the declared ``params``
-    keys. For synapses and gap junctions it is the parameter keys
-    (or a single default name when empty). For clamps it is the
-    concrete dataclass field names, and for probes it is a 1-tuple
-    containing the probed variable name.
+    For :class:`Density` this is the declared ``params`` keys. For
+    synapses and junctions it is the parameter keys (or a single
+    default name when empty). For clamps it is the concrete dataclass
+    field names, and for probes it is a 1-tuple containing the probed
+    variable name.
     """
-    if isinstance(mechanism, DensityMechanism):
+    if isinstance(mechanism, Density):
         return tuple(mechanism.params.keys())
-    if isinstance(mechanism, SynapseMechanism):
+    if isinstance(mechanism, Synapse):
         names = tuple(mechanism.params.keys())
         return names if names else ("g",)
-    if isinstance(mechanism, GapJunctionMechanism):
+    if isinstance(mechanism, Junction):
         names = tuple(mechanism.params.keys())
         return names if names else ("conductance",)
     if isinstance(mechanism, CurrentClamp):
@@ -490,11 +491,11 @@ def _mechanism_var_names(mechanism: object) -> tuple[str, ...]:
 
 
 def _mechanism_var_value(mechanism: object, var_name: str) -> object:
-    if isinstance(mechanism, DensityMechanism):
+    if isinstance(mechanism, Density):
         if var_name not in mechanism.params:
             raise KeyError(f"Mechanism has no parameter {var_name!r}.")
         return mechanism.params[var_name]
-    if isinstance(mechanism, (SynapseMechanism, GapJunctionMechanism)):
+    if isinstance(mechanism, (Synapse, Junction)):
         if var_name in mechanism.params:
             return mechanism.params[var_name]
     if hasattr(mechanism, var_name):
@@ -659,7 +660,7 @@ def _instantiate_runtime_node(
 ) -> object | None:
     if layout.target != "density" or layout.layout != "dense":
         return None
-    if not isinstance(mechanism, DensityMechanism):
+    if not isinstance(mechanism, Density):
         return None
     if mechanism.category != "channel":
         return None
@@ -775,14 +776,14 @@ def _as_runtime_array(values: np.ndarray) -> object:
 def _runtime_constructor_params(
     *,
     layout: MechanismLayout,
-    mechanism: DensityMechanism,
+    mechanism: Density,
     state_buffers: dict[tuple[int, str], np.ndarray],
 ) -> dict[str, object]:
     """Build the kwargs passed to a concrete channel class's ``__init__``.
 
     Reads each declared parameter from its state buffer (so
     per-point values already live in the buffer, not in the frozen
-    declaration). ``coverage_area_fraction`` is a :class:`DensityMechanism`
+    declaration). ``coverage_area_fraction`` is a :class:`Density`
     field, not a param, so it does not leak into kwargs.
 
     Notes

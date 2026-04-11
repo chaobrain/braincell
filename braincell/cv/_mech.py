@@ -22,8 +22,8 @@ import numpy as np
 from braincell.filter import AllRegion, LocsetExpr, RegionExpr
 from braincell.mech import (
     CableProperty,
-    DensityMechanism,
-    PointMechanism,
+    Density,
+    Point,
 )
 from braincell.morph import Morphology
 from ._geo import CVGeo, EPSILON, interval_lateral_area, map_point_to_cv
@@ -51,7 +51,7 @@ class PaintRule:
     values, while density rules append scaled mechanisms based on CV coverage.
     """
     region: RegionExpr
-    mechanism: CableProperty | DensityMechanism
+    mechanism: CableProperty | Density
 
 
 @dataclass(frozen=True)
@@ -63,7 +63,7 @@ class PlaceRule:
     are attached to the midpoint of the CV selected by :func:`map_point_to_cv`.
     """
     locset: LocsetExpr
-    mechanisms: tuple[PointMechanism, ...]
+    mechanisms: tuple[Point, ...]
     site: str = "mid"
 
 
@@ -80,8 +80,8 @@ class CVMech:
     ra: object
     v: object
     temp: u.Quantity[u.kelvin]
-    density_mech: list[DensityMechanism]
-    point_mech: list[PointMechanism]
+    density_mech: list[Density]
+    point_mech: list[Point]
 
 
 def default_paint_rules() -> tuple[PaintRule, ...]:
@@ -121,12 +121,12 @@ def normalize_paint_rules(
         if isinstance(mechanism, CableProperty):
             new_rules.append(PaintRule(region=region, mechanism=mechanism))
             continue
-        if isinstance(mechanism, DensityMechanism):
+        if isinstance(mechanism, Density):
             new_rules.append(PaintRule(region=region, mechanism=mechanism))
             continue
         raise TypeError(
             "Cell.paint(...) mechanisms must be CableProperty or "
-            "DensityMechanism (use braincell.mech.Channel / Ion factories), "
+            "Density (use braincell.mech.Channel / Ion), "
             f"got {type(mechanism).__name__!s}."
         )
     return tuple(new_rules)
@@ -163,11 +163,11 @@ def normalize_place_rule(
     if len(mechanisms) == 0:
         raise ValueError("Cell.place(...) expects at least one point mechanism.")
 
-    normalized: list[PointMechanism] = []
+    normalized: list[Point] = []
     for mechanism in mechanisms:
-        if not isinstance(mechanism, PointMechanism):
+        if not isinstance(mechanism, Point):
             raise TypeError(
-                "Cell.place(...) mechanisms must be PointMechanism instances, "
+                "Cell.place(...) mechanisms must be Point instances, "
                 f"got {type(mechanism).__name__!s}."
             )
         normalized.append(mechanism)
@@ -207,7 +207,7 @@ def apply_paint_rules(
                     mech.temp = mechanism.temperature
                     continue
 
-                if isinstance(mechanism, DensityMechanism):
+                if isinstance(mechanism, Density):
                     area_fraction = _coverage_area_fraction(
                         morpho,
                         cv_geo=cv_geo,
@@ -298,10 +298,10 @@ def _coverage_area_fraction(
 
 
 def _scale_density_for_coverage(
-    mechanism: DensityMechanism,
+    mechanism: Density,
     *,
     area_fraction: float,
-) -> DensityMechanism:
+) -> Density:
     """Scale a partial-CV channel's conductance by its coverage fraction.
 
     The scaling only applies to ``"channel"`` category mechanisms. Ions
@@ -309,7 +309,7 @@ def _scale_density_for_coverage(
 
     When the channel exposes a ``g_max`` parameter, we multiply it in
     place and leave ``coverage_area_fraction`` at 1.0. Otherwise we
-    stash the fraction in :attr:`DensityMechanism.coverage_area_fraction`
+    stash the fraction in :attr:`Density.coverage_area_fraction`
     so later passes can consume it. Either way the fraction is tracked
     as a first-class field, not as a pseudo-parameter smuggled through
     ``params``.

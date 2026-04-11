@@ -18,22 +18,20 @@
 A *point mechanism* is a declaration that gets attached to one specific
 location on a cell (a compartment midpoint in the current
 implementation) rather than distributed over a region. All point
-mechanisms share :class:`PointMechanism` as a common base class so that
-downstream consumers can dispatch on
-``isinstance(x, PointMechanism)``.
+mechanisms share :class:`Point` as a common base class so that
+downstream consumers can dispatch on ``isinstance(x, Point)``.
 
-Concrete point mechanisms:
+Concrete point mechanisms defined here:
 
 - :class:`CurrentClamp` — piecewise-constant current injection.
 - :class:`SineClamp` — sinusoidal current injection.
 - :class:`FunctionClamp` — arbitrary ``t → I`` callable.
 - :class:`ProbeMechanism` — recorder for a named variable.
-- :class:`SynapseMechanism` — registry-keyed synapse model.
-- :class:`GapJunctionMechanism` — gap-junction coupling placeholder.
+- :class:`Synapse` — registry-keyed synapse model.
 
-The ergonomic factory :func:`Synapse` builds a
-:class:`SynapseMechanism` the same way :func:`braincell.mech.Channel`
-builds a :class:`DensityMechanism`.
+The :class:`~braincell.mech.Junction` gap-junction declaration also
+inherits from :class:`Point` but lives in its own module
+:mod:`braincell.mech._junction`.
 """
 
 from dataclasses import dataclass, field
@@ -41,32 +39,30 @@ from typing import Any, Callable
 
 import brainunit as u
 
+from ._base import Mechanism
 from ._params import Params
 
 __all__ = [
     "CurrentClamp",
     "FunctionClamp",
-    "GapJunctionMechanism",
-    "PointMechanism",
+    "Point",
     "ProbeMechanism",
     "SineClamp",
     "Synapse",
-    "SynapseMechanism",
 ]
 
 
-class PointMechanism:
+class Point(Mechanism):
     """Marker base class for point-located mechanism declarations.
 
     All concrete subclasses are frozen :func:`~dataclasses.dataclass`
     types — this base exists solely so that consumers can write
-    ``isinstance(x, PointMechanism)`` instead of maintaining a parallel
-    tuple of concrete types.
+    ``isinstance(x, Point)`` instead of maintaining a parallel tuple
+    of concrete types.
 
-    :class:`PointMechanism` defines no abstract methods. Runtime
-    evaluation of clamp-like mechanisms happens in
-    :mod:`braincell.compute._runtime`, which inspects concrete
-    subclasses directly.
+    :class:`Point` defines no abstract methods. Runtime evaluation of
+    clamp-like mechanisms happens in :mod:`braincell.compute._runtime`,
+    which inspects concrete subclasses directly.
     """
 
     __slots__ = ()
@@ -78,7 +74,7 @@ class PointMechanism:
 
 
 @dataclass(frozen=True)
-class CurrentClamp(PointMechanism):
+class CurrentClamp(Point):
     """Piecewise-constant current clamp.
 
     The canonical form is a multi-segment step protocol. Users with a
@@ -202,7 +198,7 @@ class CurrentClamp(PointMechanism):
 
 
 @dataclass(frozen=True)
-class SineClamp(PointMechanism):
+class SineClamp(Point):
     """Sinusoidal current clamp.
 
     Parameters
@@ -231,7 +227,7 @@ class SineClamp(PointMechanism):
 
 
 @dataclass(frozen=True)
-class FunctionClamp(PointMechanism):
+class FunctionClamp(Point):
     """Arbitrary-callable current clamp.
 
     Parameters
@@ -260,12 +256,12 @@ class FunctionClamp(PointMechanism):
 
 
 # ---------------------------------------------------------------------------
-# Observers & couplings
+# Observers & synapses
 # ---------------------------------------------------------------------------
 
 
 @dataclass(frozen=True)
-class ProbeMechanism(PointMechanism):
+class ProbeMechanism(Point):
     """Observer that records a named variable at a point location.
 
     Parameters
@@ -283,7 +279,7 @@ class ProbeMechanism(PointMechanism):
 
 
 @dataclass(frozen=True)
-class SynapseMechanism(PointMechanism):
+class Synapse(Point):
     """Registry-keyed synapse declaration.
 
     Parameters
@@ -296,9 +292,15 @@ class SynapseMechanism(PointMechanism):
     name : str or None
         Optional instance label.
 
-    See Also
+    Examples
     --------
-    Synapse : Ergonomic factory.
+
+    .. code-block:: python
+
+        >>> from braincell.mech import Synapse
+        >>> syn = Synapse(synapse_type="AMPA")
+        >>> syn.synapse_type
+        'AMPA'
     """
 
     synapse_type: str
@@ -308,12 +310,12 @@ class SynapseMechanism(PointMechanism):
     def __post_init__(self) -> None:
         if not isinstance(self.synapse_type, str) or not self.synapse_type:
             raise ValueError(
-                f"SynapseMechanism.synapse_type must be a non-empty "
-                f"string, got {self.synapse_type!r}."
+                f"Synapse.synapse_type must be a non-empty string, "
+                f"got {self.synapse_type!r}."
             )
         if self.name is not None and not isinstance(self.name, str):
             raise TypeError(
-                f"SynapseMechanism.name must be a string or None, "
+                f"Synapse.name must be a string or None, "
                 f"got {type(self.name).__name__!r}."
             )
         object.__setattr__(self, "params", Params.coerce(self.params))
@@ -327,65 +329,6 @@ class SynapseMechanism(PointMechanism):
     def identity(self) -> tuple[str, str]:
         """Return ``(instance_name, synapse_type)`` for table views."""
         return (self.instance_name, self.synapse_type)
-
-
-@dataclass(frozen=True)
-class GapJunctionMechanism(PointMechanism):
-    """Gap-junction coupling declaration (placeholder).
-
-    The current implementation records only a parameter bundle. A
-    future revision should add a ``partner`` locset/cell handle so
-    multi-cell gap junctions can be expressed end-to-end.
-    """
-
-    params: Params = field(default_factory=Params)
-
-    def __post_init__(self) -> None:
-        object.__setattr__(self, "params", Params.coerce(self.params))
-
-
-# ---------------------------------------------------------------------------
-# Factories
-# ---------------------------------------------------------------------------
-
-
-def Synapse(
-    class_name: str,
-    /,
-    *,
-    name: str | None = None,
-    **params: Any,
-) -> SynapseMechanism:
-    """Build a :class:`SynapseMechanism` with keyword parameters.
-
-    Parameters
-    ----------
-    class_name : str
-        Registry key for the target synapse class (e.g. ``"AMPA"``).
-    name : str or None
-        Optional instance label.
-    **params
-        Synapse parameters.
-
-    Returns
-    -------
-    SynapseMechanism
-
-    Examples
-    --------
-
-    .. code-block:: python
-
-        >>> from braincell.mech import Synapse
-        >>> syn = Synapse("AMPA", tau_rise=0.5, tau_decay=5.0)
-        >>> syn.synapse_type
-        'AMPA'
-    """
-    return SynapseMechanism(
-        synapse_type=class_name,
-        params=Params(params),
-        name=name,
-    )
 
 
 # ---------------------------------------------------------------------------

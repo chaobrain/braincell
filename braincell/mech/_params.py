@@ -255,7 +255,7 @@ class Params(Mapping[str, Any]):
         -------
         Params
             If ``value`` is already a :class:`Params`, it is returned
-            unchanged. Otherwise a new instance is constructed.
+            unchanged. Otherwise, a new instance is constructed.
         """
         if isinstance(value, Params):
             return value

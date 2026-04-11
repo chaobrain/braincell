@@ -17,6 +17,7 @@
 
 import math
 import unittest
+import warnings
 
 import brainunit as u
 import numpy as np
@@ -27,8 +28,8 @@ from braincell.vis._testing import (
     make_root_split_tree,
     make_two_dendrite_tree,
 )
-from braincell.vis.layout2d import build_layout_branches_2d
-from braincell.vis.layout2d import tangent_on_layout_branch
+from braincell.vis.layout import build_layout_branches_2d
+from braincell.vis.layout import tangent_on_layout_branch
 from braincell.vis.scene2d import build_render_scene_2d
 from braincell.vis.scene3d import build_render_scene_3d
 
@@ -219,12 +220,14 @@ class VisGeometryTest(unittest.TestCase):
     def test_min_branch_angle_deg_is_applied_in_legacy_layout(self) -> None:
         tree = make_two_dendrite_tree()
 
-        layouts = build_layout_branches_2d(
-            tree,
-            mode="tree",
-            min_branch_angle_deg=90.0,
-            root_layout="legacy",
-        )
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", DeprecationWarning)
+            layouts = build_layout_branches_2d(
+                tree,
+                mode="tree",
+                min_branch_angle_deg=90.0,
+                root_layout="legacy",
+            )
         child_angles = sorted(
             math.degrees(math.atan2(layout.end_direction_um[1], layout.end_direction_um[0]))
             for layout in layouts

@@ -16,6 +16,7 @@
 
 from .backend import BackendChooser, validate_backend_for_scene
 from .config import resolve_default_2d_layout, resolve_default_2d_shape
+from .layout import LayoutConfig
 from .scene import OverlaySpec, RenderRequest
 from .scene2d import build_render_scene_2d
 
@@ -37,6 +38,7 @@ def plot2d(
     projection_plane: str = "xy",
     min_branch_angle_deg: float | None = 25.0,
     root_layout: str = "type_split",
+    layout_config: LayoutConfig | None = None,
 ) -> object:
     from braincell.morph import Morphology
 
@@ -54,6 +56,7 @@ def plot2d(
         min_branch_angle_deg=min_branch_angle_deg,
         root_layout=root_layout,
         overlay=overlay,
+        layout_config=layout_config,
     )
     chooser = chooser or BackendChooser.default()
     backend_options: dict = {}

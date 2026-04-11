@@ -131,7 +131,7 @@ class CellExecutionTest(unittest.TestCase):
 
         with mock.patch("braincell.quad._implicit.rk4_step") as rk4_mock:
             with self.assertRaises(UnboundLocalError):
-                with mock.patch("braincell.quad._implicit.brainstate.augment.vmap", side_effect=RuntimeError("bridge reached")):
+                with mock.patch("braincell.quad._implicit.brainstate.transform.vmap", side_effect=RuntimeError("bridge reached")):
                     braincell.quad.cn_rk4_step(cell, 0.0 * u.ms, 0.01 * u.ms)
 
         self.assertTrue(rk4_mock.called)
@@ -142,7 +142,7 @@ class CellExecutionTest(unittest.TestCase):
 
         with mock.patch("braincell.quad._implicit.apply_standard_solver_step") as step_mock:
             with self.assertRaises(UnboundLocalError):
-                with mock.patch("braincell.quad._implicit.brainstate.augment.vmap", side_effect=RuntimeError("bridge reached")):
+                with mock.patch("braincell.quad._implicit.brainstate.transform.vmap", side_effect=RuntimeError("bridge reached")):
                     braincell.quad.cn_exp_euler_step(cell, 0.0 * u.ms, 0.01 * u.ms)
 
         self.assertTrue(step_mock.called)
@@ -154,7 +154,7 @@ class CellExecutionTest(unittest.TestCase):
 
         with mock.patch("braincell.quad._implicit.rk4_step") as rk4_mock:
             with self.assertRaises(UnboundLocalError):
-                with mock.patch("braincell.quad._implicit.brainstate.augment.vmap", side_effect=RuntimeError("bridge reached")):
+                with mock.patch("braincell.quad._implicit.brainstate.transform.vmap", side_effect=RuntimeError("bridge reached")):
                     braincell.quad.implicit_rk4_step(cell, 0.0 * u.ms, 0.01 * u.ms)
 
         self.assertTrue(rk4_mock.called)
@@ -165,7 +165,7 @@ class CellExecutionTest(unittest.TestCase):
 
         with mock.patch("braincell.quad._implicit.apply_standard_solver_step") as step_mock:
             with self.assertRaises(UnboundLocalError):
-                with mock.patch("braincell.quad._implicit.brainstate.augment.vmap", side_effect=RuntimeError("bridge reached")):
+                with mock.patch("braincell.quad._implicit.brainstate.transform.vmap", side_effect=RuntimeError("bridge reached")):
                     braincell.quad.implicit_exp_euler_step(cell, 0.0 * u.ms, 0.01 * u.ms)
 
         self.assertTrue(step_mock.called)
@@ -177,7 +177,7 @@ class CellExecutionTest(unittest.TestCase):
 
         with mock.patch("braincell.quad._implicit.apply_standard_solver_step") as step_mock:
             with self.assertRaises(UnboundLocalError):
-                with mock.patch("braincell.quad._implicit.brainstate.augment.vmap", side_effect=RuntimeError("bridge reached")):
+                with mock.patch("braincell.quad._implicit.brainstate.transform.vmap", side_effect=RuntimeError("bridge reached")):
                     braincell.quad.exp_exp_euler_step(cell, 0.0 * u.ms, 0.01 * u.ms)
 
         self.assertTrue(step_mock.called)

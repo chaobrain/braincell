@@ -121,7 +121,7 @@ def integrate(method: str, dt=0.01 * u.ms):
 
     with brainstate.environ.context(dt=dt):
         times = u.math.arange(0. * u.ms, 10 * u.ms, brainstate.environ.get_dt())
-        vs = brainstate.compile.for_loop(step_fun, times)
+        vs = brainstate.transform.for_loop(step_fun, times)
     return vs
 
 

@@ -405,10 +405,15 @@ internal dependencies · status · open work**.
   - `backend.py` — `RenderBackend` Protocol + `BackendChooser`.
   - `backend_matplotlib.py`, `backend_pyvista.py` — concrete backends
     with lazy optional imports.
-  - `layout2d.py` — **monolithic 1.7k LOC** 2D tree-layout engine
-    covering stem / trunk_first / balloon / radial_360 / legacy
-    families, collision detection, scoring, and geometry utilities.
-    Scheduled for split into `vis/layout/` (see M6 Phase 2).
+  - `layout/` — 2D tree-layout engine split across
+    `_common.py` (shared dataclasses + tree helpers),
+    `_geometry.py` (pure-numeric sampling and branch construction),
+    `_collision.py` (spatial-hash collision scoring),
+    `_config.py` (`LayoutConfig` frozen dataclass, the tunable
+    knobs), `_stem.py` / `_balloon.py` / `_radial.py` /
+    `_legacy.py` (layout families), and `_dispatch.py`
+    (`build_layout_branches_2d` entry point). Each file ships with
+    a sibling `*_test.py`.
   - `compare2d.py` — side-by-side comparison of layout families on the
     same morphology.
   - `config.py` — `VisDefaults` dataclass singleton plus
@@ -440,11 +445,13 @@ internal dependencies · status · open work**.
   - [x] Shared `vis/_testing.py` helpers and parametrized layout-family
     tests covering the shared invariants across stem / balloon /
     radial_360.
-  - [ ] **`layout2d.py` refactor** into `vis/layout/` with separate
-    files for `_stem.py`, `_balloon.py`, `_radial.py`, `_legacy.py`,
-    `_collision.py`, `_geometry.py`, and a `LayoutConfig` dataclass
-    that externalizes the current magic numbers and scoring weights
-    (M6 Phase 2).
+  - [x] **`layout2d.py` refactor** into `vis/layout/` with separate
+    files for `_common.py`, `_dispatch.py`, `_stem.py`, `_balloon.py`,
+    `_radial.py`, `_legacy.py`, `_collision.py`, `_geometry.py`,
+    and a `_config.py` holding the `LayoutConfig` frozen dataclass
+    (M6 Phase 2). The legacy family now emits a `DeprecationWarning`,
+    the collision backend uses a 2D spatial hash, and `plot2d`
+    accepts `layout_config=` as an optional user knob.
   - [ ] **Color-by-values** for 2D and 3D scenes: accept per-branch /
     per-segment / per-CV scalars, vectorize the matplotlib path via
     `LineCollection` / `PolyCollection`, pass through to PyVista via
@@ -471,11 +478,12 @@ internal dependencies · status · open work**.
   - [ ] **Layout caching** keyed on `(morpho.metric, LayoutConfig)`
     so repeated notebook calls skip the stem-search cost.
 - **Open risks**
-  - `layout2d.py` is the largest single file in the module and holds
-    the most bug-prone code (heuristic collision avoidance, magic
-    scoring weights). Any behavior-changing edit before the mechanical
-    split into `vis/layout/` costs reviewer bandwidth disproportionate
-    to the change.
+  - The stem layout family still holds the most bug-prone code
+    (heuristic collision avoidance, the multi-weight scoring
+    function). After the Phase 2 split it lives in `vis/layout/_stem.py`
+    but remains the largest file in the package. Tuning individual
+    scoring weights now goes through `LayoutConfig` rather than
+    editing module-level constants, which makes experiments safer.
   - Optional dependencies (`matplotlib`, `pyvista`) must stay lazy-
     imported inside backend `.render()` calls. The import-time test
     from §4.5 / risk #5 should grow to assert that neither is loaded
@@ -777,10 +785,11 @@ from NMODL.
 Goal: publication-quality static plots, interactive 3D inspection,
 time-series rendering, and a maintainable layout engine.
 
-The module is small (~4k LOC) but `layout2d.py` alone is 1.7k LOC of
-heuristic tree-layout code and the overlay feature was half-wired. The
-milestone is broken into four landable phases so each phase leaves the
-module shippable.
+The module is small (~4k LOC) and the 2D layout engine — previously
+a 1.7k LOC `layout2d.py` monolith — was split in Phase 2 into the
+`vis/layout/` package. The overlay feature was finished in Phase 1.
+The milestone is broken into four landable phases so each phase leaves
+the module shippable.
 
 **Phase 1 — Stabilize and unblock (P0).** Fix dead/half-wired features,
 clean the API schema, set up test infrastructure.
@@ -807,22 +816,31 @@ clean the API schema, set up test infrastructure.
 
 **Phase 2 — Refactor `layout2d.py` (P0).**
 
-- [ ] Mechanical split of `layout2d.py` into `braincell/vis/layout/`:
+- [x] Mechanical split of `layout2d.py` into `braincell/vis/layout/`:
   `_common.py`, `_dispatch.py`, `_stem.py`, `_balloon.py`, `_radial.py`,
-  `_legacy.py`, `_collision.py`, `_geometry.py`. Zero logic changes;
-  each new file ships with a sibling `*_test.py` on day one.
+  `_legacy.py`, `_collision.py`, `_geometry.py`, plus `_config.py`
+  holding the new `LayoutConfig` dataclass. Zero logic changes; each
+  new file ships with a sibling `*_test.py` on day one.
 - [ ] Register-based layout dispatch via `@register_layout("name")` so
   third parties can add new families without editing the dispatcher.
-- [ ] Promote the 22 magic constants (angles, margins, retry limits,
-  scoring weights) to a `LayoutConfig` dataclass; accept an optional
-  `layout_config=` kwarg on `plot2d`; document every weight in the
-  dataclass docstring.
-- [ ] Deprecate the legacy layout (`DeprecationWarning` on first use).
-- [ ] Replace O(branches²) collision detection with a 2D spatial-hash
-  in `_collision.py`.
-- [ ] Property-based tests (hypothesis) on random small trees asserting
-  "no inter-branch overlap up to margin" for stem / balloon /
-  radial_360.
+  (Deferred — left for Phase 3 so third-party registration lands with
+  the `plot_movie` / `plot_traces` user-facing additions.)
+- [x] Promote the ~20 magic constants (angles, margins, retry limits,
+  scoring weights) to a `LayoutConfig` dataclass in
+  `vis/layout/_config.py`; accept an optional `layout_config=` kwarg
+  on `plot2d`, `build_render_scene_2d`, and `build_layout_branches_2d`;
+  document every weight in the dataclass docstring.
+- [x] Deprecate the legacy layout (`DeprecationWarning` on first use
+  of `root_layout='legacy'`, scheduled for removal in v0.1.0).
+- [x] Replace O(branches²) collision detection with a 2D spatial-hash
+  in `_collision.py` (`_SegmentSpatialHash` with build-once-per-fork
+  reuse in the stem family) plus a brute-force reference scorer kept
+  for test double equivalence checks.
+- [x] Property-based tests (hypothesis) on random small trees asserting
+  "no inter-branch overlap" for stem / balloon / radial_360 with
+  uniform children, plus length/count/finiteness invariants over a
+  wider strategy. The whole module is skipped when `hypothesis` is
+  not installed.
 
 **Phase 3 — Scientific visualization features (P1).**
 

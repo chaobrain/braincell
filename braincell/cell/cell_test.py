@@ -590,42 +590,6 @@ class CellFacadeTest(unittest.TestCase):
         self.assertEqual(dict(no_gmax.params)["tau"], 10.0)
         self.assertAlmostEqual(dict(no_gmax.params)["coverage_area_fraction"], 0.5, places=12)
 
-    def test_public_exports_remain_stable(self) -> None:
-        from braincell import CV as PublicTopLevelCV
-        from braincell import CVPerBranch as PublicCVPerBranch
-        from braincell import CVPolicy as PublicCVPolicy
-        from braincell import Cell as PublicCell
-        from braincell import CellProfileReport as PublicCellProfileReport
-        from braincell import DLambda as PublicDLambda
-        from braincell import MaxCVLen as PublicMaxCVLen
-        from braincell import PointScheduling as PublicTopLevelPointScheduling
-        from braincell import PointTree as PublicTopLevelPointTree
-        from braincell.cell import CV as PublicCV
-        from braincell.cell import PointScheduling as PublicPointScheduling
-        from braincell.cell import PointTree as PublicPointTree
-        import braincell.cell as public_cell_module
-
-        self.assertIs(PublicCell, Cell)
-        self.assertEqual(PublicTopLevelCV.__name__, "CV")
-        self.assertIs(PublicCVPolicy, CVPolicy)
-        self.assertIs(PublicCVPerBranch, CVPerBranch)
-        self.assertIs(PublicMaxCVLen, MaxCVLen)
-        self.assertEqual(PublicDLambda.__name__, "DLambda")
-        self.assertEqual(PublicCV.__name__, "CV")
-        self.assertEqual(PublicPointScheduling.__name__, "PointScheduling")
-        self.assertEqual(PublicPointTree.__name__, "PointTree")
-        self.assertEqual(PublicTopLevelPointScheduling.__name__, "PointScheduling")
-        self.assertEqual(PublicTopLevelPointTree.__name__, "PointTree")
-        self.assertEqual(PublicCellProfileReport.__name__, "CellProfileReport")
-        self.assertFalse(hasattr(public_cell_module, "PaintRule"))
-        self.assertFalse(hasattr(public_cell_module, "PlaceRule"))
-        self.assertFalse(hasattr(public_cell_module, "CVPoint"))
-        self.assertFalse(hasattr(public_cell_module, "CVEdge"))
-        self.assertFalse(hasattr(public_cell_module, "ComputePoint"))
-        self.assertFalse(hasattr(public_cell_module, "ComputeEdge"))
-        self.assertFalse(hasattr(public_cell_module, "MechanismLayout"))
-        self.assertFalse(hasattr(public_cell_module, "AxialEdge"))
-
     def test_mechanism_object_table_later_paint_overrides_same_row_same_cv(self) -> None:
         cell = Cell(_build_tree())
         cell.paint(

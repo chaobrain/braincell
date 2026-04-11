@@ -18,6 +18,7 @@ from collections.abc import Sequence
 import numpy as np
 
 from .backend import BackendChooser, validate_backend_for_scene
+from .layout import LayoutConfig
 from .scene import OverlaySpec, RenderRequest
 from .scene2d import build_render_scene_2d
 
@@ -33,6 +34,7 @@ def compare_layouts_2d(
     figsize: tuple[float, float] | None = None,
     min_branch_angle_deg: float | None = 25.0,
     root_layout: str = "type_split",
+    layout_config: LayoutConfig | None = None,
 ) -> tuple[object, tuple[object, ...]]:
     from braincell.morph import Morphology
 
@@ -67,6 +69,7 @@ def compare_layouts_2d(
             shape=shape,
             min_branch_angle_deg=min_branch_angle_deg,
             root_layout=root_layout,
+            layout_config=layout_config,
         )
         validate_backend_for_scene(backend_impl, scene)
         backend_impl.render(

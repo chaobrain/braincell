@@ -15,6 +15,7 @@
 
 
 import unittest
+import warnings
 from dataclasses import is_dataclass
 
 import brainunit as u
@@ -250,14 +251,16 @@ class FilterVisTest(unittest.TestCase):
         tree.attach(parent="soma", child_branch=dend_a, child_name="dend_a", parent_x=1.0)
         tree.attach(parent="soma", child_branch=dend_b, child_name="dend_b", parent_x=1.0)
 
-        rendered = tree.vis2d(
-            layout="stem",
-            shape="line",
-            min_branch_angle_deg=90.0,
-            root_layout="legacy",
-            chooser=BackendChooser(backends=(FakeBackend(),)),
-            backend="fake",
-        )
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", DeprecationWarning)
+            rendered = tree.vis2d(
+                layout="stem",
+                shape="line",
+                min_branch_angle_deg=90.0,
+                root_layout="legacy",
+                chooser=BackendChooser(backends=(FakeBackend(),)),
+                backend="fake",
+            )
 
         self.assertEqual(rendered.layout, "stem")
         self.assertEqual(rendered.shape, "line")

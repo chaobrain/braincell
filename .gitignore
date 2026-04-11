@@ -229,7 +229,7 @@ develop_doc/data/neuromorpho/
 /docs/apis/deprecated/generated/
 /docs/_static/braincell.psd
 
-/examples/MC13_golgi_model/x86_64/
+/examples/multi_compartment/x86_64/
 /.claude/
 /dev/replace_init.py
 /dev/replace_all.py

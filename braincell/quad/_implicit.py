@@ -87,7 +87,7 @@ def _newton_method(f, y0, t, dt, args=(), modified=False, tol=1e-5, max_iter=100
 
     def body_fun(carry):
         i, y1, _ = carry
-        A, df = brainstate.augment.jacfwd(lambda y: g(t, y, *args), return_value=True, has_aux=False)(y1)
+        A, df = brainstate.transform.jacfwd(lambda y: g(t, y, *args), return_value=True, has_aux=False)(y1)
         # df: [n_neuron, n_compartment, M]
         # A: [n_neuron, n_compartment, M, M]
         # df: [n_neuron * n_compartment, M]

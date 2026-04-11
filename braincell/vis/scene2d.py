@@ -24,7 +24,7 @@ from .config import (
     marker_color as _marker_color,
     marker_size_2d as _marker_size_2d,
 )
-from .layout2d import LayoutBranch2D, build_layout_branches_2d
+from .layout import LayoutBranch2D, LayoutConfig, build_layout_branches_2d
 from .scene import (
     HighlightStroke2D,
     Marker2D,
@@ -53,6 +53,7 @@ def build_render_scene_2d(
     min_branch_angle_deg: float | None = 25.0,
     root_layout: str = "type_split",
     overlay: OverlaySpec | None = None,
+    layout_config: LayoutConfig | None = None,
 ) -> RenderScene2D:
     if not isinstance(morpho, Morphology):
         raise TypeError(f"build_render_scene_2d(...) expects Morpho, got {type(morpho).__name__!s}.")
@@ -68,6 +69,7 @@ def build_render_scene_2d(
             root_layout=root_layout,
             layout=layout,
             overlay=overlay,
+            layout_config=layout_config,
         )
     if shape == "frustum":
         return build_scene2d_frustum(
@@ -76,6 +78,7 @@ def build_render_scene_2d(
             root_layout=root_layout,
             layout=layout,
             overlay=overlay,
+            layout_config=layout_config,
         )
     raise ValueError(f"Unsupported 2D shape {shape!r}.")
 
@@ -158,6 +161,7 @@ def build_scene2d_line(
     root_layout: str = "type_split",
     layout: str = "stem",
     overlay: OverlaySpec | None = None,
+    layout_config: LayoutConfig | None = None,
 ) -> RenderScene2D:
     if not isinstance(morpho, Morphology):
         raise TypeError(f"build_scene2d_line(...) expects Morpho, got {type(morpho).__name__!s}.")
@@ -171,6 +175,7 @@ def build_scene2d_line(
         min_branch_angle_deg=min_branch_angle_deg,
         root_layout=root_layout,
         layout_family=layout,
+        layout_config=layout_config,
     ):
         centerlines[branch_layout.branch_index] = _Centerline2D.from_layout(branch_layout)
         for segment_index in range(len(branch_layout.segment_points_um) - 1):
@@ -217,6 +222,7 @@ def build_scene2d_frustum(
     root_layout: str = "type_split",
     layout: str = "stem",
     overlay: OverlaySpec | None = None,
+    layout_config: LayoutConfig | None = None,
 ) -> RenderScene2D:
     if not isinstance(morpho, Morphology):
         raise TypeError(f"build_scene2d_frustum(...) expects Morpho, got {type(morpho).__name__!s}.")
@@ -230,6 +236,7 @@ def build_scene2d_frustum(
         min_branch_angle_deg=min_branch_angle_deg,
         root_layout=root_layout,
         layout_family=layout,
+        layout_config=layout_config,
     ):
         centerlines[branch_layout.branch_index] = _Centerline2D.from_layout(branch_layout)
         for segment_index in range(len(branch_layout.segment_points_um) - 1):

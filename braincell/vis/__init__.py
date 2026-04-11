@@ -21,10 +21,12 @@ from .config import (
     set_defaults,
     theme,
 )
+from .layout import LayoutConfig
 from .plot2d import plot2d
 from .plot3d import plot3d
 
 __all__ = [
+    "LayoutConfig",
     "VisDefaults",
     "configure_defaults",
     "get_defaults",

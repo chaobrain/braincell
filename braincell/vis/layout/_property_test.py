@@ -59,7 +59,7 @@ else:  # pragma: no cover - skip path
         return decorator
 
 
-_LAYOUT_FAMILIES = ("stem", "balloon", "radial_360")
+_LAYOUT_FAMILIES = ("fan", "stem", "balloon", "radial_360")
 _MODES = ("tree", "frustum")
 
 

@@ -24,6 +24,7 @@ import numpy as np
 
 from braincell import Branch, Morphology
 from braincell.vis._testing import (
+    make_fan_root_partition_tree,
     make_length_only_tree,
     make_root_split_tree,
     make_two_dendrite_tree,
@@ -360,6 +361,60 @@ class VisGeometryTest(unittest.TestCase):
         }
         self.assertGreaterEqual(len(quadrants), 3)
 
+    def test_fan_root_parent_x_partition_uses_left_middle_right_sectors(self) -> None:
+        tree = make_fan_root_partition_tree()
+
+        layouts = {
+            layout.branch_name: layout
+            for layout in build_layout_branches_2d(tree, mode="tree", layout_family="fan")
+            if layout.branch_name != "soma"
+        }
+
+        self.assertLess(layouts["left_dend"].end_direction_um[0], 0.0)
+        self.assertGreater(layouts["mid_dend"].end_direction_um[1], 0.0)
+        self.assertLess(layouts["mid_axon"].end_direction_um[1], 0.0)
+        self.assertGreater(layouts["right_near"].end_direction_um[0], 0.0)
+        self.assertGreater(layouts["right_far"].end_direction_um[0], 0.0)
+
+    def test_fan_respects_min_branch_angle_for_siblings(self) -> None:
+        tree = make_two_dendrite_tree()
+        layouts = {
+            layout.branch_name: layout
+            for layout in build_layout_branches_2d(
+                tree,
+                mode="tree",
+                layout_family="fan",
+                min_branch_angle_deg=30.0,
+            )
+            if layout.branch_name.startswith("dend")
+        }
+        angle = math.degrees(
+            math.acos(
+                float(
+                    np.clip(
+                        np.dot(layouts["dend_a"].end_direction_um, layouts["dend_b"].end_direction_um)
+                        / (
+                            np.linalg.norm(layouts["dend_a"].end_direction_um)
+                            * np.linalg.norm(layouts["dend_b"].end_direction_um)
+                        ),
+                        -1.0,
+                        1.0,
+                    )
+                )
+            )
+        )
+        self.assertGreaterEqual(angle, 29.0)
+
+    def test_fan_branches_keep_constant_direction(self) -> None:
+        tree = make_fan_root_partition_tree()
+        layouts = [
+            layout
+            for layout in build_layout_branches_2d(tree, mode="tree", layout_family="fan")
+            if layout.branch_name != "soma"
+        ]
+        for layout in layouts:
+            self.assertTrue(np.allclose(layout.segment_directions_um[0], layout.segment_directions_um[-1]))
+
 
 class LayoutFamilyParametricTest(unittest.TestCase):
     """Shared invariants across all non-legacy layout families.
@@ -368,7 +423,7 @@ class LayoutFamilyParametricTest(unittest.TestCase):
     automatically picks up the whole test matrix by appending one name.
     """
 
-    families = ("stem", "balloon", "radial_360")
+    families = ("fan", "stem", "balloon", "radial_360")
     modes = ("tree", "frustum")
 
     def test_all_layouts_produce_one_entry_per_branch(self) -> None:

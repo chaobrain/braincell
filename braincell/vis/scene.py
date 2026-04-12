@@ -20,9 +20,11 @@ import numpy as np
 from brainstate.typing import ArrayLike
 
 from .config import (
+    alpha_for_2d as _alpha_for_2d,
     alpha_for_2d_line as _alpha_for_2d_line,
     alpha_for_2d_poly as _alpha_for_2d_poly,
     alpha_for_3d_tube as _alpha_for_3d_tube,
+    color_for_2d_branch_type as _color_for_2d_branch_type,
     color_for_branch_type as _color_for_branch_type,
 )
 
@@ -112,6 +114,14 @@ class BranchValues:
 
 def color_for_branch_type(branch_type: str) -> tuple[int, int, int]:
     return _color_for_branch_type(branch_type)
+
+
+def color_for_2d_branch_type(branch_type: str) -> tuple[int, int, int]:
+    return _color_for_2d_branch_type(branch_type)
+
+
+def alpha_for_2d() -> float:
+    return _alpha_for_2d()
 
 
 def alpha_for_2d_line() -> float:

@@ -82,8 +82,28 @@ class LayoutConfig:
     balloon_bend_fraction : float
         Same idea for the balloon family. Smaller values make each
         branch curve more sharply near its root.
+    fan_bend_fraction : float
+        Same idea for the fan family.
     radial_bend_fraction : float
         Same idea for the radial_360 family.
+    fan_root_left_span_rad : float
+        Angular span used for root children attached at the extreme
+        left side of the soma.
+    fan_root_middle_upper_span_rad : float
+        Angular span used for the upper root sector for center-attached
+        children.
+    fan_root_middle_lower_span_rad : float
+        Angular span used for the lower root sector for center-attached
+        children.
+    fan_root_right_span_rad : float
+        Angular span used for root children attached away from the
+        center/right side of the soma.
+    fan_root_left_max_parent_x : float
+        Maximum ``parent_x`` classified into the left sector.
+    fan_root_middle_min_parent_x : float
+        Inclusive lower bound of the center band.
+    fan_root_middle_max_parent_x : float
+        Inclusive upper bound of the center band.
     stem_root_full_span_rad : float
         Full angular span used for root children when ``root_layout``
         is not ``'type_split'`` (all children packed into one arc).
@@ -141,6 +161,7 @@ class LayoutConfig:
     # --- Bend fractions ---
     default_bend_fraction: float = 0.4
     balloon_bend_fraction: float = 0.22
+    fan_bend_fraction: float = 0.24
     radial_bend_fraction: float = 0.25
 
     # --- Root layout spans (radians) ---
@@ -149,9 +170,18 @@ class LayoutConfig:
     balloon_root_span_rad: float = math.radians(180.0)
     balloon_child_span_rad: float = math.radians(120.0)
     balloon_type_split_span_rad: float = math.radians(110.0)
+    fan_root_left_span_rad: float = math.radians(95.0)
+    fan_root_middle_upper_span_rad: float = math.radians(70.0)
+    fan_root_middle_lower_span_rad: float = math.radians(70.0)
+    fan_root_right_span_rad: float = math.radians(95.0)
     radial_root_span_rad: float = 2.0 * math.pi
     radial_child_span_rad: float = math.radians(150.0)
     legacy_root_child_span_rad: float = math.radians(120.0)
+
+    # --- Fan root parent_x bins ---
+    fan_root_left_max_parent_x: float = 0.02
+    fan_root_middle_min_parent_x: float = 0.35
+    fan_root_middle_max_parent_x: float = 0.65
 
     # --- Stem tree-layout scoring weights ---
     #

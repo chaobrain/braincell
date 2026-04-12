@@ -26,7 +26,8 @@ Sub-modules
 - ``_common``     — shared dataclasses, constants, tree-analysis helpers.
 - ``_geometry``   — pure-numeric construction and sampling primitives.
 - ``_collision``  — collision scoring for stem candidate ranking.
-- ``_stem``       — default stem / trunk_first layout family.
+- ``_fan``        — recursive fan layout family (leaf-weighted sectors).
+- ``_stem``       — stem / trunk_first layout family.
 - ``_balloon``    — balloon layout family (leaf-count weighted cones).
 - ``_radial``     — radial-360 layout family (full circle spread).
 - ``_legacy``     — original legacy layout (kept for back-compat).

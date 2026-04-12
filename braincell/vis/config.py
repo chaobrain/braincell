@@ -28,21 +28,23 @@ DEFAULT_BRANCH_TYPE_COLORS = {
 DEFAULT_HIGHLIGHT_COLOR = (255, 215, 0)  # gold — used for region overlays
 DEFAULT_MARKER_COLOR = (30, 144, 255)  # dodger blue — used for locset overlays
 
-SUPPORTED_2D_LAYOUTS = frozenset({"projected", "stem", "balloon", "radial_360"})
+SUPPORTED_2D_LAYOUTS = frozenset({"projected", "fan", "stem", "balloon", "radial_360"})
 SUPPORTED_2D_SHAPES = frozenset({"line", "frustum"})
 SUPPORTED_3D_MODES = frozenset({"geometry", "skeleton"})
 
 
 @dataclass
 class VisDefaults:
-    layout_2d_default: str = "stem"
+    layout_2d_default: str = "fan"
     shape_2d_default: str = "frustum"
     mode_3d_default: str = "geometry"
     branch_type_colors: dict[str, tuple[int, int, int]] = field(
         default_factory=lambda: dict(DEFAULT_BRANCH_TYPE_COLORS)
     )
-    alpha_2d_poly: float = 0.3
-    alpha_2d_line: float = 1.0
+    branch_type_colors_2d: dict[str, tuple[int, int, int]] | None = None
+    alpha_2d: float = 0.8
+    alpha_2d_poly: float | None = None
+    alpha_2d_line: float | None = None
     alpha_3d_tube: float = 1.0
     highlight_color: tuple[int, int, int] = DEFAULT_HIGHLIGHT_COLOR
     highlight_alpha: float = 0.9
@@ -70,7 +72,10 @@ def configure(
     shape_2d_default: str | None = None,
     mode_3d_default: str | None = None,
     branch_type_colors: dict[str, object] | None = None,
+    branch_type_colors_2d: dict[str, object] | None = None,
     replace_branch_type_colors: bool = False,
+    replace_branch_type_colors_2d: bool = False,
+    alpha_2d: float | None = None,
     alpha_2d_poly: float | None = None,
     alpha_2d_line: float | None = None,
     alpha_3d_tube: float | None = None,
@@ -105,6 +110,19 @@ def configure(
             merged = dict(updated.branch_type_colors)
             merged.update(normalized)
             updated.branch_type_colors = merged
+    if branch_type_colors_2d is not None:
+        normalized_2d = {
+            str(branch_type): _normalize_color(color)
+            for branch_type, color in branch_type_colors_2d.items()
+        }
+        if replace_branch_type_colors_2d or updated.branch_type_colors_2d is None:
+            updated.branch_type_colors_2d = normalized_2d
+        else:
+            merged_2d = dict(updated.branch_type_colors_2d)
+            merged_2d.update(normalized_2d)
+            updated.branch_type_colors_2d = merged_2d
+    if alpha_2d is not None:
+        updated.alpha_2d = _normalize_alpha(alpha_2d, label="alpha_2d")
     if alpha_2d_poly is not None:
         updated.alpha_2d_poly = _normalize_alpha(alpha_2d_poly, label="alpha_2d_poly")
     if alpha_2d_line is not None:
@@ -194,15 +212,14 @@ class PublicationTheme:
     branch_type_colors : mapping
         Branch-type colour overrides. Defaults to
         :data:`PUBLICATION_BRANCH_TYPE_COLORS`.
+    branch_type_colors_2d : mapping or None
+        Optional 2D-only branch-type colour overrides. When ``None``,
+        the generic ``branch_type_colors`` palette is reused for 2D.
     rc_params : mapping
         Matplotlib ``rcParams`` applied inside the theme. Defaults to
         :data:`PUBLICATION_RC_PARAMS`.
-    alpha_2d_line : float
-        Line alpha used by the 2D backend. Defaults to ``1.0`` (opaque).
-    alpha_2d_poly : float
-        Polygon alpha used by the 2D frustum backend. Defaults to
-        ``0.55`` — a little darker than the interactive default so
-        printed output reads at a glance.
+    alpha_2d : float
+        Shared 2D opacity used by both line and frustum rendering.
     alpha_3d_tube : float
         Tube alpha used by the 3D backend. Defaults to ``1.0``.
 
@@ -219,9 +236,9 @@ class PublicationTheme:
     branch_type_colors: dict[str, tuple[int, int, int]] = field(
         default_factory=lambda: dict(PUBLICATION_BRANCH_TYPE_COLORS)
     )
+    branch_type_colors_2d: dict[str, tuple[int, int, int]] | None = None
     rc_params: dict[str, object] = field(default_factory=lambda: dict(PUBLICATION_RC_PARAMS))
-    alpha_2d_line: float = 1.0
-    alpha_2d_poly: float = 0.55
+    alpha_2d: float = 0.7
     alpha_3d_tube: float = 1.0
 
 
@@ -267,8 +284,12 @@ def publication_theme(
     # Apply vis defaults.
     configure(
         branch_type_colors=dict(active.branch_type_colors),
-        alpha_2d_line=active.alpha_2d_line,
-        alpha_2d_poly=active.alpha_2d_poly,
+        branch_type_colors_2d=(
+            dict(active.branch_type_colors_2d)
+            if active.branch_type_colors_2d is not None
+            else None
+        ),
+        alpha_2d=active.alpha_2d,
         alpha_3d_tube=active.alpha_3d_tube,
     )
 
@@ -356,12 +377,32 @@ def color_for_branch_type(branch_type: str) -> tuple[int, int, int]:
     )
 
 
+def color_for_2d_branch_type(branch_type: str) -> tuple[int, int, int]:
+    if _VIS_DEFAULTS.branch_type_colors_2d is not None:
+        return _VIS_DEFAULTS.branch_type_colors_2d.get(
+            branch_type,
+            _VIS_DEFAULTS.branch_type_colors_2d.get(
+                "custom",
+                color_for_branch_type(branch_type),
+            ),
+        )
+    return color_for_branch_type(branch_type)
+
+
+def alpha_for_2d() -> float:
+    return _VIS_DEFAULTS.alpha_2d
+
+
 def alpha_for_2d_poly() -> float:
-    return _VIS_DEFAULTS.alpha_2d_poly
+    if _VIS_DEFAULTS.alpha_2d_poly is not None:
+        return _VIS_DEFAULTS.alpha_2d_poly
+    return _VIS_DEFAULTS.alpha_2d
 
 
 def alpha_for_2d_line() -> float:
-    return _VIS_DEFAULTS.alpha_2d_line
+    if _VIS_DEFAULTS.alpha_2d_line is not None:
+        return _VIS_DEFAULTS.alpha_2d_line
+    return _VIS_DEFAULTS.alpha_2d
 
 
 def alpha_for_3d_tube() -> float:
@@ -394,6 +435,12 @@ def _copy_defaults(defaults: VisDefaults) -> VisDefaults:
         shape_2d_default=defaults.shape_2d_default,
         mode_3d_default=defaults.mode_3d_default,
         branch_type_colors=dict(defaults.branch_type_colors),
+        branch_type_colors_2d=(
+            dict(defaults.branch_type_colors_2d)
+            if defaults.branch_type_colors_2d is not None
+            else None
+        ),
+        alpha_2d=defaults.alpha_2d,
         alpha_2d_poly=defaults.alpha_2d_poly,
         alpha_2d_line=defaults.alpha_2d_line,
         alpha_3d_tube=defaults.alpha_3d_tube,
@@ -444,4 +491,3 @@ def _normalize_color(color: object) -> tuple[int, int, int]:
     if not all(0 <= channel <= 255 for channel in scaled):
         raise ValueError(f"RGB channels must be between 0 and 255, got {color!r}.")
     return scaled
-

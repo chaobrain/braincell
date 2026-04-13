@@ -49,6 +49,7 @@ class ValidationTest(unittest.TestCase):
     def test_valid_families_and_root_layouts_constants(self) -> None:
         # Defensive sanity check so renaming a family doesn't silently
         # break the dispatcher.
+        self.assertIn("fan", _VALID_LAYOUT_FAMILIES)
         self.assertIn("stem", _VALID_LAYOUT_FAMILIES)
         self.assertIn("balloon", _VALID_LAYOUT_FAMILIES)
         self.assertIn("radial_360", _VALID_LAYOUT_FAMILIES)
@@ -59,9 +60,14 @@ class ValidationTest(unittest.TestCase):
 
 
 class DispatchSmokeTest(unittest.TestCase):
-    def test_dispatches_to_stem_by_default(self) -> None:
+    def test_dispatches_to_default_layout_by_default(self) -> None:
         tree = make_length_only_tree()
         layouts = build_layout_branches_2d(tree, mode="tree")
+        self.assertEqual(len(layouts), len(tree.branches))
+
+    def test_dispatches_to_fan(self) -> None:
+        tree = make_length_only_tree()
+        layouts = build_layout_branches_2d(tree, mode="tree", layout_family="fan")
         self.assertEqual(len(layouts), len(tree.branches))
 
     def test_trunk_first_is_alias_for_stem(self) -> None:

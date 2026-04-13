@@ -93,15 +93,23 @@ class LayoutConfigDataclassTest(unittest.TestCase):
             "collision_cell_size_um",
             "default_bend_fraction",
             "balloon_bend_fraction",
+            "fan_bend_fraction",
             "radial_bend_fraction",
             "stem_root_full_span_rad",
             "stem_root_group_span_rad",
             "balloon_root_span_rad",
             "balloon_child_span_rad",
             "balloon_type_split_span_rad",
+            "fan_root_left_span_rad",
+            "fan_root_middle_upper_span_rad",
+            "fan_root_middle_lower_span_rad",
+            "fan_root_right_span_rad",
             "radial_root_span_rad",
             "radial_child_span_rad",
             "legacy_root_child_span_rad",
+            "fan_root_left_max_parent_x",
+            "fan_root_middle_min_parent_x",
+            "fan_root_middle_max_parent_x",
             "stem_collision_weight",
             "stem_tail_delta_weight",
             "stem_settle_delta_weight",
@@ -207,6 +215,32 @@ class LayoutConfigThreadingTest(unittest.TestCase):
                 smooth_layouts["dend_a"].segment_points_um,
             )
         )
+
+    def test_fan_layout_branches_are_straight(self) -> None:
+        soma = Branch.from_lengths(lengths=[20.0] * u.um, radii=[10.0, 10.0] * u.um, type="soma")
+        dend_a = Branch.from_lengths(
+            lengths=[5.0, 5.0, 5.0] * u.um,
+            radii=[2.0, 1.8, 1.5, 1.0] * u.um,
+            type="apical_dendrite",
+        )
+        dend_b = Branch.from_lengths(
+            lengths=[5.0, 5.0, 5.0] * u.um,
+            radii=[2.0, 1.8, 1.5, 1.0] * u.um,
+            type="apical_dendrite",
+        )
+        tree = Morphology.from_root(soma, name="soma")
+        tree.attach(parent="soma", child_branch=dend_a, child_name="dend_a", parent_x=1.0)
+        tree.attach(parent="soma", child_branch=dend_b, child_name="dend_b", parent_x=1.0)
+        layouts = {
+            layout.branch_name: layout
+            for layout in build_layout_branches_2d(
+                tree,
+                mode="tree",
+                layout_family="fan",
+            )
+        }
+        self.assertTrue(np.allclose(layouts["dend_a"].segment_directions_um[0], layouts["dend_a"].segment_directions_um[-1]))
+        self.assertTrue(np.allclose(layouts["dend_b"].segment_directions_um[0], layouts["dend_b"].segment_directions_um[-1]))
 
 
 if __name__ == "__main__":

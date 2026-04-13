@@ -1,0 +1,111 @@
+{
+  "source_file": "/home/swl/braincell/examples/convert_mod/nmodl/mod_files/kv.mod",
+  "title": "Simplified Kv example for BrainCell template generation",
+  "mechanism_name": "Kv",
+  "class_name": "IK_Kv",
+  "template_name": "one_ion_hh_ohmic.py",
+  "supported": true,
+  "rejection_reasons": [],
+  "manual_fix_required": [],
+  "unsupported_blocks": {},
+  "base_class_name": "PotassiumChannel",
+  "ion_name": "k",
+  "ion_arg_name": "K",
+  "g_max_param": {
+    "target_name": "g_max",
+    "safe_name": "g_max",
+    "source_name": "gbar",
+    "default_expression": "0.0 * (u.S / (u.cm ** 2))",
+    "unit": "S/cm2"
+  },
+  "v_shift_param": {
+    "target_name": "V_sh",
+    "safe_name": "V_sh",
+    "default_expression": "0. * u.mV"
+  },
+  "temperature_param": {
+    "target_name": "temp",
+    "safe_name": "temp",
+    "default_expression": "u.celsius2kelvin(23)"
+  },
+  "tref_expression": "u.celsius2kelvin(23)",
+  "extra_parameters": [
+    {
+      "source_name": "Ra",
+      "safe_name": "Ra",
+      "default_expression": "0.02 * (1 / u.mV / u.ms)",
+      "unit": "/mV/ms"
+    },
+    {
+      "source_name": "Rb",
+      "safe_name": "Rb",
+      "default_expression": "0.006 * (1 / u.mV / u.ms)",
+      "unit": "/mV/ms"
+    },
+    {
+      "source_name": "q",
+      "safe_name": "q",
+      "default_expression": "9 * (u.mV)",
+      "unit": "mV"
+    },
+    {
+      "source_name": "v12",
+      "safe_name": "v12",
+      "default_expression": "25 * (u.mV)",
+      "unit": "mV"
+    }
+  ],
+  "gates": [
+    {
+      "name": "n",
+      "safe_name": "n",
+      "q10_expression": "1.0",
+      "q10_source": "default:1.0",
+      "source_form": "inf_tau",
+      "inf_expression_source": "1/(1+exp(-(v-v12)/q))",
+      "tau_expression_source": "1/((1)*(((Ra)*((v)-(v12))/(1-exp(-((v)-(v12))/(q))))+((-Rb)*((v)-(v12))/(1-exp(-((v)-(v12))/(-q))))))",
+      "inf_source_name": "ninf",
+      "tau_source_name": "ntau",
+      "alpha_source_name": null,
+      "beta_source_name": null,
+      "derivative_expression": "(ninf-n)/ntau",
+      "power": 1,
+      "helper_alias_lines": [
+        "Ra = self.Ra / (1 / u.mV / u.ms)",
+        "Rb = self.Rb / (1 / u.mV / u.ms)",
+        "q = self.q / (u.mV)",
+        "v12 = self.v12 / (u.mV)"
+      ],
+      "inf_expr_python": "1/(1+u.math.exp(-(V-v12)/q))",
+      "tau_expr_python": "1/((1)*(((Ra)*((V)-(v12))/(1-u.math.exp(-((V)-(v12))/(q))))+((-Rb)*((V)-(v12))/(1-u.math.exp(-((V)-(v12))/(-q))))))"
+    }
+  ],
+  "current_model": {
+    "ion_name": "k",
+    "ion_arg_name": "K",
+    "base_class_name": "PotassiumChannel",
+    "write_var": "ik",
+    "read_var": "ek",
+    "conductance_source_name": "gbar",
+    "driving_force": "voltage_minus_reversal",
+    "gate_powers": {
+      "n": 1
+    },
+    "gate_product_expression": "self.n.value",
+    "current_expression_python": "self.g_max * self.n.value * (K.E - V)"
+  },
+  "source_summary": {
+    "function_names": [
+      "rateconst"
+    ],
+    "procedure_assignments": {
+      "tadj": "1",
+      "ninf": "1/(1+exp(-(v-v12)/q))",
+      "ntau": "1/((1)*(((Ra)*((v)-(v12))/(1-exp(-((v)-(v12))/(q))))+((-Rb)*((v)-(v12))/(1-exp(-((v)-(v12))/(-q))))))"
+    },
+    "breakpoint_assignments": {
+      "i": "gbar*n*(v-ek)",
+      "ik": "gbar*n*(v-ek)"
+    }
+  }
+}

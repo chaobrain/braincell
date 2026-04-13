@@ -26,7 +26,7 @@ from .scene2d import build_render_scene_2d
 def compare_layouts_2d(
     morpho,
     *,
-    layouts: Sequence[str] = ("stem", "balloon", "radial_360"),
+    layouts: Sequence[str] = ("fan", "stem", "balloon", "radial_360"),
     shape: str = "line",
     chooser: BackendChooser | None = None,
     backend: str = "matplotlib",
@@ -90,6 +90,7 @@ def compare_layouts_2d(
 
 def _layout_title(layout: str) -> str:
     return {
+        "fan": "Fan",
         "stem": "Stem",
         "trunk_first": "Stem",
         "balloon": "Balloon",

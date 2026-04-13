@@ -144,3 +144,51 @@ def make_projected_point_tree() -> Morphology:
     tree = Morphology.from_root(soma, name="soma")
     tree.attach(parent="soma", child_branch=dend, child_name="dend", parent_x=1.0)
     return tree
+
+
+def make_fan_root_partition_tree() -> Morphology:
+    """Soma with children attached at left / middle / right root positions.
+
+    The chosen ``parent_x`` values exercise the intended default fan
+    root binning with the values the current morphology API allows:
+      * ``0.0`` -> left sector
+      * ``0.5`` -> middle sector
+      * ``1.0`` -> right sector
+    """
+    soma = Branch.from_lengths(
+        lengths=[20.0] * u.um,
+        radii=[10.0, 10.0] * u.um,
+        type="soma",
+    )
+    tree = Morphology.from_root(soma, name="soma")
+    tree.attach(
+        parent="soma",
+        child_branch=Branch.from_lengths(lengths=[12.0] * u.um, radii=[1.8, 1.1] * u.um, type="apical_dendrite"),
+        child_name="left_dend",
+        parent_x=0.0,
+    )
+    tree.attach(
+        parent="soma",
+        child_branch=Branch.from_lengths(lengths=[12.0] * u.um, radii=[1.6, 1.0] * u.um, type="apical_dendrite"),
+        child_name="mid_dend",
+        parent_x=0.5,
+    )
+    tree.attach(
+        parent="soma",
+        child_branch=Branch.from_lengths(lengths=[12.0] * u.um, radii=[1.0, 0.7] * u.um, type="axon"),
+        child_name="mid_axon",
+        parent_x=0.5,
+    )
+    tree.attach(
+        parent="soma",
+        child_branch=Branch.from_lengths(lengths=[12.0] * u.um, radii=[1.5, 0.9] * u.um, type="basal_dendrite"),
+        child_name="right_near",
+        parent_x=1.0,
+    )
+    tree.attach(
+        parent="soma",
+        child_branch=Branch.from_lengths(lengths=[12.0] * u.um, radii=[1.5, 0.9] * u.um, type="apical_dendrite"),
+        child_name="right_far",
+        parent_x=1.0,
+    )
+    return tree

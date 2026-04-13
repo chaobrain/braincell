@@ -38,6 +38,7 @@ from ._balloon import _build_layout_branches_balloon
 from ._cache import LayoutCache, get_default_layout_cache
 from ._common import LayoutBranch2D, _build_layout_specs
 from ._config import DEFAULT_LAYOUT_CONFIG, LayoutConfig
+from ._fan import _build_layout_branches_fan
 from ._legacy import _build_layout_branches_legacy
 from ._radial import _build_layout_branches_radial_360
 from ._stem import (
@@ -46,7 +47,7 @@ from ._stem import (
 )
 
 _VALID_ROOT_LAYOUTS = {"type_split", "legacy"}
-_VALID_LAYOUT_FAMILIES = {"stem", "trunk_first", "balloon", "radial_360"}
+_VALID_LAYOUT_FAMILIES = {"fan", "stem", "trunk_first", "balloon", "radial_360"}
 _LAYOUT_FAMILY_ALIASES = {"trunk_first": "stem"}
 
 _LEGACY_DEPRECATION_MESSAGE = (
@@ -88,6 +89,13 @@ def build_layout_branches_2d(
 
     def _build() -> tuple[LayoutBranch2D, ...]:
         layout_specs = _build_layout_specs(morpho)
+        if layout_family == "fan":
+            return _build_layout_branches_fan(
+                morpho,
+                layout_specs=layout_specs,
+                min_branch_angle_deg=min_branch_angle_deg,
+                layout_config=config,
+            )
         if layout_family == "balloon":
             return _build_layout_branches_balloon(
                 morpho,

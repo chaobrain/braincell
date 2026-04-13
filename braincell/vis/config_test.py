@@ -24,6 +24,7 @@ from braincell.vis.config import (
     PublicationTheme,
     get_defaults,
     publication_theme,
+    resolve_default_2d_layout,
     reset_defaults,
 )
 
@@ -54,12 +55,13 @@ class PublicationThemeContextManagerTest(unittest.TestCase):
         mpl.rcParams.update(self._rc_before)
 
     def test_enter_applies_vis_defaults(self) -> None:
-        baseline_alpha = get_defaults().alpha_2d_poly
+        baseline_alpha = get_defaults().alpha_2d
         with publication_theme():
             inside = get_defaults()
-            self.assertEqual(inside.alpha_2d_line, 1.0)
-            self.assertEqual(inside.alpha_2d_poly, 0.55)
-        self.assertEqual(get_defaults().alpha_2d_poly, baseline_alpha)
+            self.assertEqual(inside.alpha_2d, 0.7)
+            self.assertIsNone(inside.alpha_2d_line)
+            self.assertIsNone(inside.alpha_2d_poly)
+        self.assertEqual(get_defaults().alpha_2d, baseline_alpha)
 
     def test_enter_applies_rc_params(self) -> None:
         original_lw = mpl.rcParams["lines.linewidth"]
@@ -88,6 +90,16 @@ class PublicationThemeContextManagerTest(unittest.TestCase):
         for key in PUBLICATION_RC_PARAMS:
             if key in baseline:
                 self.assertEqual(mpl.rcParams[key], baseline[key])
+
+
+class DefaultsTest(unittest.TestCase):
+    def setUp(self) -> None:
+        reset_defaults()
+        self.addCleanup(reset_defaults)
+
+    def test_default_2d_layout_is_fan(self) -> None:
+        self.assertEqual(get_defaults().layout_2d_default, "fan")
+        self.assertEqual(resolve_default_2d_layout(None), "fan")
 
 
 if __name__ == "__main__":

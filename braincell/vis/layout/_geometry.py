@@ -104,6 +104,36 @@ def _make_layout_branch(
     )
 
 
+def _make_straight_layout_branch(
+    branch: MorphoBranch,
+    *,
+    spec: _LayoutSpec2D,
+    attach_um: np.ndarray,
+    target_angle_rad: float,
+    child_x: float,
+) -> LayoutBranch2D:
+    segment_angles_rad = np.full(len(spec.segment_lengths_um), target_angle_rad, dtype=float)
+    return _layout_branch_from_angles(
+        branch,
+        spec=spec,
+        attach_um=attach_um,
+        child_x=child_x,
+        segment_angles_rad=segment_angles_rad,
+    )
+
+
+def _make_centered_horizontal_layout_branch(
+    branch: MorphoBranch,
+    *,
+    spec: _LayoutSpec2D,
+    center_um: np.ndarray,
+) -> LayoutBranch2D:
+    cumulative_lengths_um = np.concatenate(([0.0], np.cumsum(spec.segment_lengths_um)))
+    x_coords = cumulative_lengths_um - 0.5 * float(cumulative_lengths_um[-1])
+    points_um = np.column_stack((x_coords, np.zeros_like(x_coords)))
+    return _layout_branch_from_points(branch, spec, points_um + np.asarray(center_um, dtype=float))
+
+
 def _layout_branch_from_angles(
     branch: MorphoBranch,
     *,

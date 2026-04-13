@@ -39,7 +39,7 @@ from .scene import (
     ValueSpec,
     alpha_for_2d_line,
     alpha_for_2d_poly,
-    color_for_branch_type,
+    color_for_2d_branch_type,
 )
 
 _PROJECTION_AXES = {
@@ -132,7 +132,7 @@ def build_scene2d_projected(
                     branch_type=branch_view.type,
                     points_um=projected_points,
                     widths_um=widths_um,
-                    color_rgb=color_for_branch_type(branch_view.type),
+                    color_rgb=color_for_2d_branch_type(branch_view.type),
                     alpha=alpha_for_2d_line(),
                     draw_order=branch_index,
                 )
@@ -224,7 +224,7 @@ def build_scene2d_line(
                             ],
                             dtype=float,
                         ),
-                        color_rgb=color_for_branch_type(branch_layout.branch_type),
+                        color_rgb=color_for_2d_branch_type(branch_layout.branch_type),
                         alpha=alpha_for_2d_line(),
                         draw_order=draw_order,
                     )
@@ -320,7 +320,7 @@ def build_scene2d_frustum(
                         branch_name=branch_layout.branch_name,
                         branch_type=branch_layout.branch_type,
                         points_um=polygon_points_um,
-                        color_rgb=color_for_branch_type(branch_layout.branch_type),
+                        color_rgb=color_for_2d_branch_type(branch_layout.branch_type),
                         alpha=alpha_for_2d_poly(),
                         draw_order=draw_order,
                     )

@@ -1,11 +1,15 @@
 {
   "source_file": "/home/swl/braincell/examples/convert_mod/nmodl/mod_files/kv.mod",
+  "pipeline": "canonical_default__one_ion_hh_ohmic__braincell_one_ion_hh_ohmic",
   "saved_files": [
-    "rendered_channel.py",
-    "braincell_ir.json",
     "ast.json",
-    "block_counts.json",
     "raw_blocks.json",
-    "canonical_blocks.json"
+    "canonical_blocks.json",
+    "bc_ast.json",
+    "semantic_ir.json",
+    "target_ir.json",
+    "rendered_channel.py",
+    "validation.json",
+    "metadata.json"
   ]
 }

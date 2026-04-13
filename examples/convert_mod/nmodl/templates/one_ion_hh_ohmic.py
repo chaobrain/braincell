@@ -32,13 +32,13 @@ class {{ context.class_name }}({{ context.base_class_name }}):
         self.{{ parameter.safe_name }} = braintools.init.param({{ parameter.safe_name }}, self.varshape, allow_none=False)
 {% endfor %}
 
-        self.Tref = {{ context.tref_expression }}
+        self.temp_ref = {{ context.tref_expression }}
 {% for gate in context.gates %}
         self.Q10_{{ gate.safe_name }} = {{ gate.q10_expression }}
 {% endfor %}
 
     def _q10(self, Q10):
-        return Q10 ** (((self.temp - self.Tref) / u.kelvin) / 10.0)
+        return Q10 ** (((self.temp - self.temp_ref) / u.kelvin) / 10.0)
 
     def init_state(self, V, {{ context.ion_arg_name }}: IonInfo, batch_size=None):
 {% for gate in context.gates %}

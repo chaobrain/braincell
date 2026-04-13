@@ -2,47 +2,58 @@
 
 ## Summary
 
-This directory now exposes a single BrainCell-oriented path with a fixed three-step shape:
+当前这条 BrainCell-oriented 流水线的重点是“分层降级”，而不是把 parser AST 直接交给模板：
 
 ```text
 .mod
--> AST
--> RawBlocks
--> CanonicalBlocks
--> one_ion_hh_ohmic IR
--> templates/one_ion_hh_ohmic.py
--> generated Python
+-> parser AST
+-> raw_blocks
+-> canonical_blocks
+-> bc_ast
+-> semantic_ir
+-> target_ir
+-> rendered Python
+-> render validation
 ```
 
-There is no toy backend anymore. The only supported generation target is `one_ion_hh_ohmic`.
-The number of steps is fixed; extensibility comes from adding variants inside each step directory.
+外层入口仍然是三个 step，但内部边界已经拆成：
+
+- Step 1: parser AST -> `raw_blocks` / `canonical_blocks` / `bc_ast`
+- Step 2: `bc_ast` -> `semantic_ir` -> `target_ir`
+- Step 3: `target_ir` -> rendered Python -> validation
 
 ## Entry Points
 
 | Stage | Output | Entry point |
 | --- | --- | --- |
-| Parse and normalize | AST, RawBlocks, CanonicalBlocks | `steps/inspect_ast/cli.py` |
-| IR inspection | support summary and `one_ion_hh_ohmic IR` | `steps/inspect_ir/cli.py` |
-| Render inspection | rendered Python preview, optional file write | `steps/render/cli.py` |
+| Parse and normalize | `raw_blocks`, `canonical_blocks`, `bc_ast` | `steps/inspect_ast/cli.py` |
+| IR inspection | `semantic_ir`, `target_ir`, support summary | `steps/inspect_ir/cli.py` |
+| Render inspection | rendered Python preview, validation, optional file write | `steps/render/cli.py` |
 | Direct conversion | generated BrainCell `.py` file | `examples/generate_braincell.py` |
 | Walkthrough | notebook inspection of the full flow | `examples/walktrough.ipynb` |
 
 ## Layout
 
 - `steps/inspect_ast/`
-  - Step 1 parsing, RawBlocks, CanonicalBlocks, and Step 1 variants
+  - Step 1 parser-facing normalization
 - `steps/inspect_ir/`
-  - Step 2 IR extraction and Step 2 variants
+  - Step 2 orchestration
+- `steps/model.py`
+  - shared dataclasses for `bc_ast`, `semantic_ir`, `target_ir`
+- `steps/semantic_ir.py`
+  - semantic recovery from `bc_ast`
+- `steps/target_ir.py`
+  - BrainCell density-channel lowering
 - `steps/render/`
-  - Step 3 render helpers and Step 3 variants
+  - Step 3 render helpers and render validation
 - `steps/flow.py`
-  - fixed three-step runner
+  - fixed step runner
 - `steps/registry.py`
   - legal variant combinations
 
 ## Step Variants
 
-The current registered combination is:
+当前注册组合仍然是：
 
 ```text
 step1: canonical_default
@@ -50,91 +61,103 @@ step2: one_ion_hh_ohmic
 step3: braincell_one_ion_hh_ohmic
 ```
 
-Conceptually, future pipelines are composed as:
+它们现在的职责是：
 
-```text
-step1:<variant> + step2:<variant> + step3:<variant>
-```
-
-Not every combination is valid. Allowed combinations are declared in `steps/registry.py`.
+- `canonical_default`
+  - 产出 `raw_blocks`、`canonical_blocks`、`bc_ast`
+- `one_ion_hh_ohmic`
+  - 从 `bc_ast` 构建 `semantic_ir`
+  - 再 lowering 到当前 density-channel `target_ir`
+- `braincell_one_ion_hh_ohmic`
+  - 渲染 target IR
+  - 对生成源码做 `compile + exec` 验证
 
 ## Data Boundaries
 
 ### Step 1: parse and normalize
 
-- Purpose: parsed NMODL syntax tree from the backend parser
-- Current variant: `canonical_default`
-- Outputs:
-  - AST
-  - RawBlocks
-  - CanonicalBlocks
+当前 Step 1 输出：
 
-### Step 2: build BrainCell IR
+- parser AST
+- `raw_blocks`
+- `canonical_blocks`
+- `bc_ast`
 
-- Purpose: convert Step 1 output into a target BrainCell IR family
-- Current variant: `one_ion_hh_ohmic`
-- Outputs:
-  - support summary
-  - rejection reasons
-  - IR payload
+`bc_ast` 是 BrainCell 自己的 typed AST 边界。它保留：
 
-### Step 3: render
+- `NEURON`/`USEION`/`RANGE`/`GLOBAL`
+- `PARAMETER`/`ASSIGNED`/`STATE`
+- `INITIAL`/`BREAKPOINT`/`SOLVE`
+- `FUNCTION`/`PROCEDURE`
+- statement / expression 级别的结构和 source span
 
-- Purpose: convert a supported Step 2 IR into generated Python
-- Current variant: `braincell_one_ion_hh_ohmic`
-- Outputs:
-  - rendered text
-  - optional file write
+### Step 2: semantic recovery and lowering
 
-## Step 1 Coverage
+Step 2 先构建 `semantic_ir`，再构建 `target_ir`。
 
-`canonical_default` currently provides:
+`semantic_ir` 当前重点字段：
 
-- AST parsing
-- RawBlocks extraction
-- CanonicalBlocks normalization
+- `symbols`
+- `procedure_env`
+- `breakpoint_assignments`
+- `currents`
+- `gate_kinetics`
+- `ion_dependencies`
+- `unsupported_features`
 
-CanonicalBlocks currently covers:
+`target_ir` 当前重点字段：
 
-- `TITLE`
-- `COMMENT`
-- `NEURON`
-- `UNITS`
-- `PARAMETER`
-- `ASSIGNED`
-- `STATE`
-- `INITIAL`
-- `BREAKPOINT`
-- `DERIVATIVE`
-- `FUNCTION`
-- `PROCEDURE`
+- `target_family`
+- `class_name`
+- `base_class_name`
+- `g_max_param`
+- `gates`
+- `current_model`
+- `supported`
+- `rejection_reasons`
 
-RawBlocks can still preserve many advanced blocks even when they are not yet normalized.
+### Step 3: render and validation
 
-## What The Current Template Understands
+Step 3 当前输出：
 
-The current template family accepts only mechanisms that satisfy all of these:
+- `rendered_text`
+- `summary`
+- `validation`
 
-- exactly one `USEION`
-- one ohmic current
-- conductance parameter identifiable from the current expression
-- gate powers identifiable from the current expression
-- every participating gate reducible to `inf/tau`
-  - either directly
-  - or by conversion from `alpha/beta`
+`validation` 现在会记录：
 
-Positive examples:
+- 是否 `compile` 成功
+- 是否 `exec` 成功
+- 是否成功取得目标 class
+
+## Current Coverage
+
+当前 density-channel lowering 接受：
+
+- 恰好一个 `USEION`
+- 可识别的单 ohmic current
+- 可识别 gate power
+- 参与电流的 gate 可规约到
+  - `hh_ohmic_inf_tau`
+  - `hh_ohmic_alpha_beta`
+
+正例：
 
 - `examples/convert_mod/nmodl/mod_files/kv.mod`
 - `examples/convert_mod/nmodl/mod_files/na_alpha_beta.mod`
 
-Negative example:
+反例：
 
 - `examples/convert_mod/nmodl/mod_files/hh.mod`
 
+`hh.mod` 不是 parser 失败，而是：
+
+- `semantic_ir` 能完整构建
+- 但 `target_ir` 因 `multi_useion` 和 `nonspecific_current` 被拒绝
+
 ## Current Unsupported Areas
 
-The parser can still preserve many advanced blocks in RawBlocks, but the BrainCell path does not yet normalize or generate them:
+虽然 Step 1 仍可保留原始块文本，但当前 BrainCell path 不会生成这些高级结构：
 
 - `KINETIC`
 - `DISCRETE`
@@ -151,16 +174,17 @@ The parser can still preserve many advanced blocks in RawBlocks, but the BrainCe
 
 ## Extension Direction
 
-The clean extension path is:
+后续扩展仍然遵循原来的分层思路，但边界应以当前实现为准：
 
-1. add new Step 1 variants when canonicalization itself needs different strategies
-2. add new Step 2 variants for new BrainCell IR families
-3. add new Step 3 variants for matching renderers/templates
-4. register only valid combinations in `steps/registry.py`
+1. 先扩展 Step 1 的 `bc_ast` 规范化能力
+2. 再扩展 `semantic_ir` 对语义和符号的恢复
+3. 再增加新的 `target_ir` 家族
+4. 最后增加匹配的 renderer / template / validation
 
-This keeps:
+这样可以保持：
 
-- Step 1 internals inside `inspect_ast/`
-- Step 2 internals inside `inspect_ir/`
-- Step 3 internals inside `render/`
-- orchestration rules in `steps/flow.py` and `steps/registry.py`
+- parser-facing 逻辑在 `inspect_ast/`
+- semantics 在 `semantic_ir.py`
+- BrainCell lowering 在 `target_ir.py`
+- 渲染和验证在 `render/`
+- orchestration 继续留在 `flow.py` 和 `registry.py`

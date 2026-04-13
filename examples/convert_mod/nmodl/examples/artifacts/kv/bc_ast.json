@@ -1,0 +1,1796 @@
+{
+  "source_file": "/home/swl/braincell/examples/convert_mod/nmodl/mod_files/kv.mod",
+  "title": "Simplified Kv example for BrainCell template generation",
+  "mechanism_name": "Kv",
+  "raw_blocks": {
+    "TITLE": [
+      "TITLE Simplified Kv example for BrainCell template generation"
+    ],
+    "COMMENT": [],
+    "NEURON": [
+      "NEURON {\n    SUFFIX Kv\n    USEION k READ ek WRITE ik\n    RANGE gbar, i, v12, q\n}"
+    ],
+    "UNITS": [
+      "UNITS {\n    (mA) = (milliamp)\n    (mV) = (millivolt)\n    (S) = (siemens)\n}"
+    ],
+    "PARAMETER": [
+      "PARAMETER {\n    gbar = 0.0 (S/cm2)\n    Ra = 0.02 (/mV/ms)\n    Rb = 0.006 (/mV/ms)\n    v12 = 25 (mV)\n    q = 9 (mV)\n}"
+    ],
+    "ASSIGNED": [
+      "ASSIGNED {\n    v (mV)\n    i (mA/cm2)\n    ik (mA/cm2)\n    ek (mV)\n    ninf\n    ntau (ms)\n    tadj\n}"
+    ],
+    "STATE": [
+      "STATE {\n    n\n}"
+    ],
+    "INITIAL": [
+      "INITIAL {\n    rates(v)\n    n = ninf\n}"
+    ],
+    "BREAKPOINT": [
+      "BREAKPOINT {\n    SOLVE states METHOD cnexp\n    i = gbar*n*(v-ek)\n    ik = i\n}"
+    ],
+    "DERIVATIVE": [
+      "DERIVATIVE states {\n    rates(v)\n    n' = (ninf-n)/ntau\n}"
+    ],
+    "FUNCTION": [
+      "FUNCTION rateconst(v(mV), r(/mV/ms), th(mV), q(mV)) (/ms) {\n    rateconst = r*(v-th)/(1-exp(-(v-th)/q))\n}"
+    ],
+    "PROCEDURE": [
+      "PROCEDURE rates(v(mV)) {\n    tadj = 1\n    ninf = 1/(1+exp(-(v-v12)/q))\n    ntau = 1/(tadj*(rateconst(v, Ra, v12, q)+rateconst(v, -Rb, v12, -q)))\n}"
+    ],
+    "KINETIC": [],
+    "DISCRETE": [],
+    "NET_RECEIVE": [],
+    "BEFORE": [],
+    "AFTER": [],
+    "INDEPENDENT": [],
+    "CONSTANT": [],
+    "LINEAR": [],
+    "NONLINEAR": [],
+    "FUNCTION_TABLE": [],
+    "CVODE": [],
+    "LONGITUDINAL_DIFFUSION": []
+  },
+  "canonical_blocks": {
+    "TITLE": {
+      "text": "Simplified Kv example for BrainCell template generation"
+    },
+    "COMMENT": [],
+    "NEURON": {
+      "suffix": "Kv",
+      "useion": [
+        {
+          "ion": "k",
+          "read": [
+            "ek"
+          ],
+          "write": [
+            "ik"
+          ]
+        }
+      ],
+      "range": [
+        "gbar",
+        "i",
+        "v12",
+        "q"
+      ],
+      "global": [],
+      "nonspecific_current": []
+    },
+    "UNITS": {
+      "mA": "milliamp",
+      "mV": "millivolt",
+      "S": "siemens"
+    },
+    "PARAMETER": [
+      {
+        "name": "gbar",
+        "value": 0.0,
+        "unit": "S/cm2"
+      },
+      {
+        "name": "Ra",
+        "value": 0.02,
+        "unit": "/mV/ms"
+      },
+      {
+        "name": "Rb",
+        "value": 0.006,
+        "unit": "/mV/ms"
+      },
+      {
+        "name": "v12",
+        "value": 25,
+        "unit": "mV"
+      },
+      {
+        "name": "q",
+        "value": 9,
+        "unit": "mV"
+      }
+    ],
+    "ASSIGNED": [
+      {
+        "name": "v",
+        "unit": "mV"
+      },
+      {
+        "name": "i",
+        "unit": "mA/cm2"
+      },
+      {
+        "name": "ik",
+        "unit": "mA/cm2"
+      },
+      {
+        "name": "ek",
+        "unit": "mV"
+      },
+      {
+        "name": "ninf",
+        "unit": null
+      },
+      {
+        "name": "ntau",
+        "unit": "ms"
+      },
+      {
+        "name": "tadj",
+        "unit": null
+      }
+    ],
+    "STATE": {
+      "variables": [
+        {
+          "name": "n",
+          "power": 1
+        }
+      ]
+    },
+    "INITIAL": {
+      "func_calls": [
+        {
+          "name": "rates",
+          "args": [
+            "v"
+          ]
+        }
+      ],
+      "statements": [
+        {
+          "assigned_var": "n",
+          "expression": "ninf"
+        }
+      ],
+      "other_statements": []
+    },
+    "BREAKPOINT": {
+      "solve_stmt": {
+        "target": "states",
+        "method": "cnexp"
+      },
+      "func_calls": [],
+      "statements": [
+        {
+          "assigned_var": "i",
+          "expression": "gbar*n*(v-ek)"
+        },
+        {
+          "assigned_var": "ik",
+          "expression": "i"
+        }
+      ],
+      "other_statements": []
+    },
+    "DERIVATIVE": [
+      {
+        "name": "states",
+        "func_calls": [
+          {
+            "name": "rates",
+            "args": [
+              "v"
+            ]
+          }
+        ],
+        "statements": [
+          {
+            "assigned_var": "n",
+            "prime_var": "n'",
+            "expression": "(ninf-n)/ntau"
+          }
+        ],
+        "other_statements": []
+      }
+    ],
+    "FUNCTION": [
+      {
+        "signature": {
+          "name": "rateconst",
+          "params": [
+            {
+              "name": "v",
+              "unit": "mV"
+            },
+            {
+              "name": "r",
+              "unit": "/mV/ms"
+            },
+            {
+              "name": "th",
+              "unit": "mV"
+            },
+            {
+              "name": "q",
+              "unit": "mV"
+            }
+          ],
+          "returned_unit": "/ms"
+        },
+        "locals": [],
+        "statements": [
+          {
+            "assigned_var": "rateconst",
+            "expression": "r*(v-th)/(1-exp(-(v-th)/q))"
+          }
+        ]
+      }
+    ],
+    "PROCEDURE": [
+      {
+        "signature": {
+          "name": "rates",
+          "params": [
+            {
+              "name": "v",
+              "unit": "mV"
+            }
+          ]
+        },
+        "locals": [],
+        "statements": [
+          {
+            "assigned_var": "tadj",
+            "expression": "1"
+          },
+          {
+            "assigned_var": "ninf",
+            "expression": "1/(1+exp(-(v-v12)/q))"
+          },
+          {
+            "assigned_var": "ntau",
+            "expression": "1/(tadj*(rateconst(v, Ra, v12, q)+rateconst(v, -Rb, v12, -q)))"
+          }
+        ]
+      }
+    ],
+    "KINETIC": [],
+    "DISCRETE": [],
+    "NET_RECEIVE": [],
+    "BEFORE": [],
+    "AFTER": [],
+    "INDEPENDENT": [],
+    "CONSTANT": [],
+    "LINEAR": [],
+    "NONLINEAR": [],
+    "FUNCTION_TABLE": [],
+    "CVODE": [],
+    "LONGITUDINAL_DIFFUSION": []
+  },
+  "comments": [],
+  "useions": [
+    {
+      "ion": "k",
+      "read": [
+        "ek"
+      ],
+      "write": [
+        "ik"
+      ],
+      "source_span": {
+        "start_line": 5,
+        "start_column": 12,
+        "end_line": 5,
+        "end_column": 13,
+        "snippet": "k"
+      }
+    }
+  ],
+  "ranges": [
+    "gbar",
+    "i",
+    "v12",
+    "q"
+  ],
+  "globals": [],
+  "nonspecific_currents": [],
+  "parameters": [
+    {
+      "name": "gbar",
+      "unit": "S/cm2",
+      "value": 0.0,
+      "source_span": {
+        "start_line": 6,
+        "start_column": 11,
+        "end_line": 6,
+        "end_column": 15,
+        "snippet": "gbar"
+      }
+    },
+    {
+      "name": "Ra",
+      "unit": "/mV/ms",
+      "value": 0.02,
+      "source_span": {
+        "start_line": 17,
+        "start_column": 5,
+        "end_line": 17,
+        "end_column": 7,
+        "snippet": "Ra"
+      }
+    },
+    {
+      "name": "Rb",
+      "unit": "/mV/ms",
+      "value": 0.006,
+      "source_span": {
+        "start_line": 18,
+        "start_column": 5,
+        "end_line": 18,
+        "end_column": 7,
+        "snippet": "Rb"
+      }
+    },
+    {
+      "name": "v12",
+      "unit": "mV",
+      "value": 25,
+      "source_span": {
+        "start_line": 6,
+        "start_column": 20,
+        "end_line": 6,
+        "end_column": 23,
+        "snippet": "v12"
+      }
+    },
+    {
+      "name": "q",
+      "unit": "mV",
+      "value": 9,
+      "source_span": {
+        "start_line": 6,
+        "start_column": 25,
+        "end_line": 6,
+        "end_column": 26,
+        "snippet": "q"
+      }
+    }
+  ],
+  "assigned": [
+    {
+      "name": "v",
+      "unit": "mV",
+      "power": null,
+      "source_span": {
+        "start_line": 1,
+        "start_column": 19,
+        "end_line": 1,
+        "end_column": 20,
+        "snippet": "v"
+      }
+    },
+    {
+      "name": "i",
+      "unit": "mA/cm2",
+      "power": null,
+      "source_span": {
+        "start_line": 1,
+        "start_column": 8,
+        "end_line": 1,
+        "end_column": 9,
+        "snippet": "i"
+      }
+    },
+    {
+      "name": "ik",
+      "unit": "mA/cm2",
+      "power": null,
+      "source_span": {
+        "start_line": 5,
+        "start_column": 28,
+        "end_line": 5,
+        "end_column": 30,
+        "snippet": "ik"
+      }
+    },
+    {
+      "name": "ek",
+      "unit": "mV",
+      "power": null,
+      "source_span": {
+        "start_line": 5,
+        "start_column": 19,
+        "end_line": 5,
+        "end_column": 21,
+        "snippet": "ek"
+      }
+    },
+    {
+      "name": "ninf",
+      "unit": null,
+      "power": null,
+      "source_span": {
+        "start_line": 28,
+        "start_column": 5,
+        "end_line": 28,
+        "end_column": 9,
+        "snippet": "ninf"
+      }
+    },
+    {
+      "name": "ntau",
+      "unit": "ms",
+      "power": null,
+      "source_span": {
+        "start_line": 29,
+        "start_column": 5,
+        "end_line": 29,
+        "end_column": 9,
+        "snippet": "ntau"
+      }
+    },
+    {
+      "name": "tadj",
+      "unit": null,
+      "power": null,
+      "source_span": {
+        "start_line": 30,
+        "start_column": 5,
+        "end_line": 30,
+        "end_column": 9,
+        "snippet": "tadj"
+      }
+    }
+  ],
+  "states": [
+    {
+      "name": "n",
+      "unit": null,
+      "power": 1,
+      "source_span": {
+        "start_line": 1,
+        "start_column": 37,
+        "end_line": 1,
+        "end_column": 38,
+        "snippet": "n"
+      }
+    }
+  ],
+  "initial": [
+    {
+      "kind": "call",
+      "code": "rates",
+      "assigned_var": null,
+      "prime_var": null,
+      "expression": null,
+      "name": "rates",
+      "args": [
+        {
+          "kind": "name",
+          "text": "v",
+          "operator": null,
+          "name": "v",
+          "value": null,
+          "args": [],
+          "left": null,
+          "right": null,
+          "operand": null,
+          "source_span": {
+            "start_line": 1,
+            "start_column": 19,
+            "end_line": 1,
+            "end_column": 20,
+            "snippet": "v"
+          }
+        }
+      ],
+      "names": [],
+      "target": null,
+      "method": null,
+      "source_span": {
+        "start_line": 44,
+        "start_column": 5,
+        "end_line": 44,
+        "end_column": 10,
+        "snippet": "rates"
+      }
+    },
+    {
+      "kind": "assignment",
+      "code": "ninf",
+      "assigned_var": "n",
+      "prime_var": null,
+      "expression": {
+        "kind": "name",
+        "text": "ninf",
+        "operator": null,
+        "name": "ninf",
+        "value": null,
+        "args": [],
+        "left": null,
+        "right": null,
+        "operand": null,
+        "source_span": {
+          "start_line": 28,
+          "start_column": 5,
+          "end_line": 28,
+          "end_column": 9,
+          "snippet": "ninf"
+        }
+      },
+      "name": null,
+      "args": [],
+      "names": [],
+      "target": null,
+      "method": null,
+      "source_span": {
+        "start_line": 28,
+        "start_column": 5,
+        "end_line": 28,
+        "end_column": 9,
+        "snippet": "ninf"
+      }
+    }
+  ],
+  "breakpoint": [
+    {
+      "kind": "solve",
+      "code": "SOLVE states METHOD cnexp",
+      "assigned_var": null,
+      "prime_var": null,
+      "expression": null,
+      "name": null,
+      "args": [],
+      "names": [],
+      "target": "states",
+      "method": "cnexp",
+      "source_span": {
+        "start_line": 38,
+        "start_column": 11,
+        "end_line": 38,
+        "end_column": 17,
+        "snippet": "states"
+      }
+    },
+    {
+      "kind": "assignment",
+      "code": "gbar*n*(v-ek)",
+      "assigned_var": "i",
+      "prime_var": null,
+      "expression": {
+        "kind": "binary",
+        "text": "gbar*n*(v-ek)",
+        "operator": "Mult",
+        "name": null,
+        "value": null,
+        "args": [],
+        "left": {
+          "kind": "binary",
+          "text": "gbar * n",
+          "operator": "Mult",
+          "name": null,
+          "value": null,
+          "args": [],
+          "left": {
+            "kind": "name",
+            "text": "gbar",
+            "operator": null,
+            "name": "gbar",
+            "value": null,
+            "args": [],
+            "left": null,
+            "right": null,
+            "operand": null,
+            "source_span": {
+              "start_line": 6,
+              "start_column": 11,
+              "end_line": 6,
+              "end_column": 15,
+              "snippet": "gbar"
+            }
+          },
+          "right": {
+            "kind": "name",
+            "text": "n",
+            "operator": null,
+            "name": "n",
+            "value": null,
+            "args": [],
+            "left": null,
+            "right": null,
+            "operand": null,
+            "source_span": {
+              "start_line": 1,
+              "start_column": 37,
+              "end_line": 1,
+              "end_column": 38,
+              "snippet": "n"
+            }
+          },
+          "operand": null,
+          "source_span": {
+            "start_line": null,
+            "start_column": null,
+            "end_line": null,
+            "end_column": null,
+            "snippet": "gbar * n"
+          }
+        },
+        "right": {
+          "kind": "binary",
+          "text": "v - ek",
+          "operator": "Sub",
+          "name": null,
+          "value": null,
+          "args": [],
+          "left": {
+            "kind": "name",
+            "text": "v",
+            "operator": null,
+            "name": "v",
+            "value": null,
+            "args": [],
+            "left": null,
+            "right": null,
+            "operand": null,
+            "source_span": {
+              "start_line": 1,
+              "start_column": 19,
+              "end_line": 1,
+              "end_column": 20,
+              "snippet": "v"
+            }
+          },
+          "right": {
+            "kind": "name",
+            "text": "ek",
+            "operator": null,
+            "name": "ek",
+            "value": null,
+            "args": [],
+            "left": null,
+            "right": null,
+            "operand": null,
+            "source_span": {
+              "start_line": 5,
+              "start_column": 19,
+              "end_line": 5,
+              "end_column": 21,
+              "snippet": "ek"
+            }
+          },
+          "operand": null,
+          "source_span": {
+            "start_line": null,
+            "start_column": null,
+            "end_line": null,
+            "end_column": null,
+            "snippet": "v - ek"
+          }
+        },
+        "operand": null,
+        "source_span": {
+          "start_line": 39,
+          "start_column": 9,
+          "end_line": 39,
+          "end_column": 22,
+          "snippet": "gbar*n*(v-ek)"
+        }
+      },
+      "name": null,
+      "args": [],
+      "names": [],
+      "target": null,
+      "method": null,
+      "source_span": {
+        "start_line": 39,
+        "start_column": 9,
+        "end_line": 39,
+        "end_column": 22,
+        "snippet": "gbar*n*(v-ek)"
+      }
+    },
+    {
+      "kind": "assignment",
+      "code": "i",
+      "assigned_var": "ik",
+      "prime_var": null,
+      "expression": {
+        "kind": "name",
+        "text": "i",
+        "operator": null,
+        "name": "i",
+        "value": null,
+        "args": [],
+        "left": null,
+        "right": null,
+        "operand": null,
+        "source_span": {
+          "start_line": 1,
+          "start_column": 8,
+          "end_line": 1,
+          "end_column": 9,
+          "snippet": "i"
+        }
+      },
+      "name": null,
+      "args": [],
+      "names": [],
+      "target": null,
+      "method": null,
+      "source_span": {
+        "start_line": 1,
+        "start_column": 8,
+        "end_line": 1,
+        "end_column": 9,
+        "snippet": "i"
+      }
+    }
+  ],
+  "solve_blocks": [
+    {
+      "target": "states",
+      "method": "cnexp",
+      "source_span": {
+        "start_line": 38,
+        "start_column": 11,
+        "end_line": 38,
+        "end_column": 17,
+        "snippet": "states"
+      }
+    }
+  ],
+  "derivative_blocks": {
+    "states": [
+      {
+        "kind": "derivative_assignment",
+        "code": "(ninf-n)/ntau",
+        "assigned_var": "n",
+        "prime_var": "n'",
+        "expression": {
+          "kind": "binary",
+          "text": "(ninf-n)/ntau",
+          "operator": "Div",
+          "name": null,
+          "value": null,
+          "args": [],
+          "left": {
+            "kind": "binary",
+            "text": "ninf - n",
+            "operator": "Sub",
+            "name": null,
+            "value": null,
+            "args": [],
+            "left": {
+              "kind": "name",
+              "text": "ninf",
+              "operator": null,
+              "name": "ninf",
+              "value": null,
+              "args": [],
+              "left": null,
+              "right": null,
+              "operand": null,
+              "source_span": {
+                "start_line": 28,
+                "start_column": 5,
+                "end_line": 28,
+                "end_column": 9,
+                "snippet": "ninf"
+              }
+            },
+            "right": {
+              "kind": "name",
+              "text": "n",
+              "operator": null,
+              "name": "n",
+              "value": null,
+              "args": [],
+              "left": null,
+              "right": null,
+              "operand": null,
+              "source_span": {
+                "start_line": 1,
+                "start_column": 37,
+                "end_line": 1,
+                "end_column": 38,
+                "snippet": "n"
+              }
+            },
+            "operand": null,
+            "source_span": {
+              "start_line": null,
+              "start_column": null,
+              "end_line": null,
+              "end_column": null,
+              "snippet": "ninf - n"
+            }
+          },
+          "right": {
+            "kind": "name",
+            "text": "ntau",
+            "operator": null,
+            "name": "ntau",
+            "value": null,
+            "args": [],
+            "left": null,
+            "right": null,
+            "operand": null,
+            "source_span": {
+              "start_line": 29,
+              "start_column": 5,
+              "end_line": 29,
+              "end_column": 9,
+              "snippet": "ntau"
+            }
+          },
+          "operand": null,
+          "source_span": {
+            "start_line": 45,
+            "start_column": 10,
+            "end_line": 45,
+            "end_column": 23,
+            "snippet": "(ninf-n)/ntau"
+          }
+        },
+        "name": null,
+        "args": [],
+        "names": [],
+        "target": null,
+        "method": null,
+        "source_span": {
+          "start_line": 45,
+          "start_column": 10,
+          "end_line": 45,
+          "end_column": 23,
+          "snippet": "(ninf-n)/ntau"
+        }
+      }
+    ]
+  },
+  "functions": [
+    {
+      "name": "rateconst",
+      "params": [
+        {
+          "name": "v",
+          "unit": "mV",
+          "value": null,
+          "source_span": {
+            "start_line": 1,
+            "start_column": 19,
+            "end_line": 1,
+            "end_column": 20,
+            "snippet": "v"
+          }
+        },
+        {
+          "name": "r",
+          "unit": "/mV/ms",
+          "value": null,
+          "source_span": {
+            "start_line": 1,
+            "start_column": 31,
+            "end_line": 1,
+            "end_column": 32,
+            "snippet": "r"
+          }
+        },
+        {
+          "name": "th",
+          "unit": "mV",
+          "value": null,
+          "source_span": {
+            "start_line": 53,
+            "start_column": 38,
+            "end_line": 53,
+            "end_column": 40,
+            "snippet": "th"
+          }
+        },
+        {
+          "name": "q",
+          "unit": "mV",
+          "value": null,
+          "source_span": {
+            "start_line": 6,
+            "start_column": 25,
+            "end_line": 6,
+            "end_column": 26,
+            "snippet": "q"
+          }
+        }
+      ],
+      "locals": [],
+      "statements": [
+        {
+          "kind": "assignment",
+          "code": "r*(v-th)/(1-exp(-(v-th)/q))",
+          "assigned_var": "rateconst",
+          "prime_var": null,
+          "expression": {
+            "kind": "binary",
+            "text": "r*(v-th)/(1-exp(-(v-th)/q))",
+            "operator": "Div",
+            "name": null,
+            "value": null,
+            "args": [],
+            "left": {
+              "kind": "binary",
+              "text": "r * (v - th)",
+              "operator": "Mult",
+              "name": null,
+              "value": null,
+              "args": [],
+              "left": {
+                "kind": "name",
+                "text": "r",
+                "operator": null,
+                "name": "r",
+                "value": null,
+                "args": [],
+                "left": null,
+                "right": null,
+                "operand": null,
+                "source_span": {
+                  "start_line": 1,
+                  "start_column": 31,
+                  "end_line": 1,
+                  "end_column": 32,
+                  "snippet": "r"
+                }
+              },
+              "right": {
+                "kind": "binary",
+                "text": "v - th",
+                "operator": "Sub",
+                "name": null,
+                "value": null,
+                "args": [],
+                "left": {
+                  "kind": "name",
+                  "text": "v",
+                  "operator": null,
+                  "name": "v",
+                  "value": null,
+                  "args": [],
+                  "left": null,
+                  "right": null,
+                  "operand": null,
+                  "source_span": {
+                    "start_line": 1,
+                    "start_column": 19,
+                    "end_line": 1,
+                    "end_column": 20,
+                    "snippet": "v"
+                  }
+                },
+                "right": {
+                  "kind": "name",
+                  "text": "th",
+                  "operator": null,
+                  "name": "th",
+                  "value": null,
+                  "args": [],
+                  "left": null,
+                  "right": null,
+                  "operand": null,
+                  "source_span": {
+                    "start_line": 53,
+                    "start_column": 38,
+                    "end_line": 53,
+                    "end_column": 40,
+                    "snippet": "th"
+                  }
+                },
+                "operand": null,
+                "source_span": {
+                  "start_line": null,
+                  "start_column": null,
+                  "end_line": null,
+                  "end_column": null,
+                  "snippet": "v - th"
+                }
+              },
+              "operand": null,
+              "source_span": {
+                "start_line": null,
+                "start_column": null,
+                "end_line": null,
+                "end_column": null,
+                "snippet": "r * (v - th)"
+              }
+            },
+            "right": {
+              "kind": "binary",
+              "text": "1 - exp(-(v - th) / q)",
+              "operator": "Sub",
+              "name": null,
+              "value": null,
+              "args": [],
+              "left": {
+                "kind": "literal",
+                "text": "1",
+                "operator": null,
+                "name": null,
+                "value": 1,
+                "args": [],
+                "left": null,
+                "right": null,
+                "operand": null,
+                "source_span": {
+                  "start_line": 6,
+                  "start_column": 21,
+                  "end_line": 6,
+                  "end_column": 22,
+                  "snippet": "1"
+                }
+              },
+              "right": {
+                "kind": "call",
+                "text": "exp(-(v - th) / q)",
+                "operator": null,
+                "name": "exp",
+                "value": null,
+                "args": [
+                  {
+                    "kind": "binary",
+                    "text": "-(v - th) / q",
+                    "operator": "Div",
+                    "name": null,
+                    "value": null,
+                    "args": [],
+                    "left": {
+                      "kind": "unary",
+                      "text": "-(v - th)",
+                      "operator": "USub",
+                      "name": null,
+                      "value": null,
+                      "args": [],
+                      "left": null,
+                      "right": null,
+                      "operand": {
+                        "kind": "binary",
+                        "text": "v - th",
+                        "operator": "Sub",
+                        "name": null,
+                        "value": null,
+                        "args": [],
+                        "left": {
+                          "kind": "name",
+                          "text": "v",
+                          "operator": null,
+                          "name": "v",
+                          "value": null,
+                          "args": [],
+                          "left": null,
+                          "right": null,
+                          "operand": null,
+                          "source_span": {
+                            "start_line": 1,
+                            "start_column": 19,
+                            "end_line": 1,
+                            "end_column": 20,
+                            "snippet": "v"
+                          }
+                        },
+                        "right": {
+                          "kind": "name",
+                          "text": "th",
+                          "operator": null,
+                          "name": "th",
+                          "value": null,
+                          "args": [],
+                          "left": null,
+                          "right": null,
+                          "operand": null,
+                          "source_span": {
+                            "start_line": 53,
+                            "start_column": 38,
+                            "end_line": 53,
+                            "end_column": 40,
+                            "snippet": "th"
+                          }
+                        },
+                        "operand": null,
+                        "source_span": {
+                          "start_line": null,
+                          "start_column": null,
+                          "end_line": null,
+                          "end_column": null,
+                          "snippet": "v - th"
+                        }
+                      },
+                      "source_span": {
+                        "start_line": null,
+                        "start_column": null,
+                        "end_line": null,
+                        "end_column": null,
+                        "snippet": "-(v - th)"
+                      }
+                    },
+                    "right": {
+                      "kind": "name",
+                      "text": "q",
+                      "operator": null,
+                      "name": "q",
+                      "value": null,
+                      "args": [],
+                      "left": null,
+                      "right": null,
+                      "operand": null,
+                      "source_span": {
+                        "start_line": 6,
+                        "start_column": 25,
+                        "end_line": 6,
+                        "end_column": 26,
+                        "snippet": "q"
+                      }
+                    },
+                    "operand": null,
+                    "source_span": {
+                      "start_line": null,
+                      "start_column": null,
+                      "end_line": null,
+                      "end_column": null,
+                      "snippet": "-(v - th) / q"
+                    }
+                  }
+                ],
+                "left": null,
+                "right": null,
+                "operand": null,
+                "source_span": {
+                  "start_line": null,
+                  "start_column": null,
+                  "end_line": null,
+                  "end_column": null,
+                  "snippet": "exp(-(v - th) / q)"
+                }
+              },
+              "operand": null,
+              "source_span": {
+                "start_line": null,
+                "start_column": null,
+                "end_line": null,
+                "end_column": null,
+                "snippet": "1 - exp(-(v - th) / q)"
+              }
+            },
+            "operand": null,
+            "source_span": {
+              "start_line": 54,
+              "start_column": 17,
+              "end_line": 54,
+              "end_column": 44,
+              "snippet": "r*(v-th)/(1-exp(-(v-th)/q))"
+            }
+          },
+          "name": null,
+          "args": [],
+          "names": [],
+          "target": null,
+          "method": null,
+          "source_span": {
+            "start_line": 54,
+            "start_column": 17,
+            "end_line": 54,
+            "end_column": 44,
+            "snippet": "r*(v-th)/(1-exp(-(v-th)/q))"
+          }
+        }
+      ],
+      "returned_unit": "/ms",
+      "source_span": {
+        "start_line": 53,
+        "start_column": 10,
+        "end_line": 53,
+        "end_column": 19,
+        "snippet": "rateconst"
+      }
+    }
+  ],
+  "procedures": [
+    {
+      "name": "rates",
+      "params": [
+        {
+          "name": "v",
+          "unit": "mV",
+          "value": null,
+          "source_span": {
+            "start_line": 1,
+            "start_column": 19,
+            "end_line": 1,
+            "end_column": 20,
+            "snippet": "v"
+          }
+        }
+      ],
+      "locals": [],
+      "statements": [
+        {
+          "kind": "assignment",
+          "code": "1",
+          "assigned_var": "tadj",
+          "prime_var": null,
+          "expression": {
+            "kind": "literal",
+            "text": "1",
+            "operator": null,
+            "name": null,
+            "value": 1,
+            "args": [],
+            "left": null,
+            "right": null,
+            "operand": null,
+            "source_span": {
+              "start_line": 6,
+              "start_column": 21,
+              "end_line": 6,
+              "end_column": 22,
+              "snippet": "1"
+            }
+          },
+          "name": null,
+          "args": [],
+          "names": [],
+          "target": null,
+          "method": null,
+          "source_span": {
+            "start_line": 6,
+            "start_column": 21,
+            "end_line": 6,
+            "end_column": 22,
+            "snippet": "1"
+          }
+        },
+        {
+          "kind": "assignment",
+          "code": "1/(1+exp(-(v-v12)/q))",
+          "assigned_var": "ninf",
+          "prime_var": null,
+          "expression": {
+            "kind": "binary",
+            "text": "1/(1+exp(-(v-v12)/q))",
+            "operator": "Div",
+            "name": null,
+            "value": null,
+            "args": [],
+            "left": {
+              "kind": "literal",
+              "text": "1",
+              "operator": null,
+              "name": null,
+              "value": 1,
+              "args": [],
+              "left": null,
+              "right": null,
+              "operand": null,
+              "source_span": {
+                "start_line": 6,
+                "start_column": 21,
+                "end_line": 6,
+                "end_column": 22,
+                "snippet": "1"
+              }
+            },
+            "right": {
+              "kind": "binary",
+              "text": "1 + exp(-(v - v12) / q)",
+              "operator": "Add",
+              "name": null,
+              "value": null,
+              "args": [],
+              "left": {
+                "kind": "literal",
+                "text": "1",
+                "operator": null,
+                "name": null,
+                "value": 1,
+                "args": [],
+                "left": null,
+                "right": null,
+                "operand": null,
+                "source_span": {
+                  "start_line": 6,
+                  "start_column": 21,
+                  "end_line": 6,
+                  "end_column": 22,
+                  "snippet": "1"
+                }
+              },
+              "right": {
+                "kind": "call",
+                "text": "exp(-(v - v12) / q)",
+                "operator": null,
+                "name": "exp",
+                "value": null,
+                "args": [
+                  {
+                    "kind": "binary",
+                    "text": "-(v - v12) / q",
+                    "operator": "Div",
+                    "name": null,
+                    "value": null,
+                    "args": [],
+                    "left": {
+                      "kind": "unary",
+                      "text": "-(v - v12)",
+                      "operator": "USub",
+                      "name": null,
+                      "value": null,
+                      "args": [],
+                      "left": null,
+                      "right": null,
+                      "operand": {
+                        "kind": "binary",
+                        "text": "v - v12",
+                        "operator": "Sub",
+                        "name": null,
+                        "value": null,
+                        "args": [],
+                        "left": {
+                          "kind": "name",
+                          "text": "v",
+                          "operator": null,
+                          "name": "v",
+                          "value": null,
+                          "args": [],
+                          "left": null,
+                          "right": null,
+                          "operand": null,
+                          "source_span": {
+                            "start_line": 1,
+                            "start_column": 19,
+                            "end_line": 1,
+                            "end_column": 20,
+                            "snippet": "v"
+                          }
+                        },
+                        "right": {
+                          "kind": "name",
+                          "text": "v12",
+                          "operator": null,
+                          "name": "v12",
+                          "value": null,
+                          "args": [],
+                          "left": null,
+                          "right": null,
+                          "operand": null,
+                          "source_span": {
+                            "start_line": 6,
+                            "start_column": 20,
+                            "end_line": 6,
+                            "end_column": 23,
+                            "snippet": "v12"
+                          }
+                        },
+                        "operand": null,
+                        "source_span": {
+                          "start_line": null,
+                          "start_column": null,
+                          "end_line": null,
+                          "end_column": null,
+                          "snippet": "v - v12"
+                        }
+                      },
+                      "source_span": {
+                        "start_line": null,
+                        "start_column": null,
+                        "end_line": null,
+                        "end_column": null,
+                        "snippet": "-(v - v12)"
+                      }
+                    },
+                    "right": {
+                      "kind": "name",
+                      "text": "q",
+                      "operator": null,
+                      "name": "q",
+                      "value": null,
+                      "args": [],
+                      "left": null,
+                      "right": null,
+                      "operand": null,
+                      "source_span": {
+                        "start_line": 6,
+                        "start_column": 25,
+                        "end_line": 6,
+                        "end_column": 26,
+                        "snippet": "q"
+                      }
+                    },
+                    "operand": null,
+                    "source_span": {
+                      "start_line": null,
+                      "start_column": null,
+                      "end_line": null,
+                      "end_column": null,
+                      "snippet": "-(v - v12) / q"
+                    }
+                  }
+                ],
+                "left": null,
+                "right": null,
+                "operand": null,
+                "source_span": {
+                  "start_line": null,
+                  "start_column": null,
+                  "end_line": null,
+                  "end_column": null,
+                  "snippet": "exp(-(v - v12) / q)"
+                }
+              },
+              "operand": null,
+              "source_span": {
+                "start_line": null,
+                "start_column": null,
+                "end_line": null,
+                "end_column": null,
+                "snippet": "1 + exp(-(v - v12) / q)"
+              }
+            },
+            "operand": null,
+            "source_span": {
+              "start_line": 59,
+              "start_column": 12,
+              "end_line": 59,
+              "end_column": 33,
+              "snippet": "1/(1+exp(-(v-v12)/q))"
+            }
+          },
+          "name": null,
+          "args": [],
+          "names": [],
+          "target": null,
+          "method": null,
+          "source_span": {
+            "start_line": 59,
+            "start_column": 12,
+            "end_line": 59,
+            "end_column": 33,
+            "snippet": "1/(1+exp(-(v-v12)/q))"
+          }
+        },
+        {
+          "kind": "assignment",
+          "code": "1/(tadj*(rateconst(v, Ra, v12, q)+rateconst(v, -Rb, v12, -q)))",
+          "assigned_var": "ntau",
+          "prime_var": null,
+          "expression": {
+            "kind": "binary",
+            "text": "1/(tadj*(rateconst(v, Ra, v12, q)+rateconst(v, -Rb, v12, -q)))",
+            "operator": "Div",
+            "name": null,
+            "value": null,
+            "args": [],
+            "left": {
+              "kind": "literal",
+              "text": "1",
+              "operator": null,
+              "name": null,
+              "value": 1,
+              "args": [],
+              "left": null,
+              "right": null,
+              "operand": null,
+              "source_span": {
+                "start_line": 6,
+                "start_column": 21,
+                "end_line": 6,
+                "end_column": 22,
+                "snippet": "1"
+              }
+            },
+            "right": {
+              "kind": "binary",
+              "text": "tadj * (rateconst(v, Ra, v12, q) + rateconst(v, -Rb, v12, -q))",
+              "operator": "Mult",
+              "name": null,
+              "value": null,
+              "args": [],
+              "left": {
+                "kind": "name",
+                "text": "tadj",
+                "operator": null,
+                "name": "tadj",
+                "value": null,
+                "args": [],
+                "left": null,
+                "right": null,
+                "operand": null,
+                "source_span": {
+                  "start_line": 30,
+                  "start_column": 5,
+                  "end_line": 30,
+                  "end_column": 9,
+                  "snippet": "tadj"
+                }
+              },
+              "right": {
+                "kind": "binary",
+                "text": "rateconst(v, Ra, v12, q) + rateconst(v, -Rb, v12, -q)",
+                "operator": "Add",
+                "name": null,
+                "value": null,
+                "args": [],
+                "left": {
+                  "kind": "call",
+                  "text": "rateconst(v, Ra, v12, q)",
+                  "operator": null,
+                  "name": "rateconst",
+                  "value": null,
+                  "args": [
+                    {
+                      "kind": "name",
+                      "text": "v",
+                      "operator": null,
+                      "name": "v",
+                      "value": null,
+                      "args": [],
+                      "left": null,
+                      "right": null,
+                      "operand": null,
+                      "source_span": {
+                        "start_line": 1,
+                        "start_column": 19,
+                        "end_line": 1,
+                        "end_column": 20,
+                        "snippet": "v"
+                      }
+                    },
+                    {
+                      "kind": "name",
+                      "text": "Ra",
+                      "operator": null,
+                      "name": "Ra",
+                      "value": null,
+                      "args": [],
+                      "left": null,
+                      "right": null,
+                      "operand": null,
+                      "source_span": {
+                        "start_line": 17,
+                        "start_column": 5,
+                        "end_line": 17,
+                        "end_column": 7,
+                        "snippet": "Ra"
+                      }
+                    },
+                    {
+                      "kind": "name",
+                      "text": "v12",
+                      "operator": null,
+                      "name": "v12",
+                      "value": null,
+                      "args": [],
+                      "left": null,
+                      "right": null,
+                      "operand": null,
+                      "source_span": {
+                        "start_line": 6,
+                        "start_column": 20,
+                        "end_line": 6,
+                        "end_column": 23,
+                        "snippet": "v12"
+                      }
+                    },
+                    {
+                      "kind": "name",
+                      "text": "q",
+                      "operator": null,
+                      "name": "q",
+                      "value": null,
+                      "args": [],
+                      "left": null,
+                      "right": null,
+                      "operand": null,
+                      "source_span": {
+                        "start_line": 6,
+                        "start_column": 25,
+                        "end_line": 6,
+                        "end_column": 26,
+                        "snippet": "q"
+                      }
+                    }
+                  ],
+                  "left": null,
+                  "right": null,
+                  "operand": null,
+                  "source_span": {
+                    "start_line": 60,
+                    "start_column": 21,
+                    "end_line": 60,
+                    "end_column": 45,
+                    "snippet": "rateconst(v, Ra, v12, q)"
+                  }
+                },
+                "right": {
+                  "kind": "call",
+                  "text": "rateconst(v, -Rb, v12, -q)",
+                  "operator": null,
+                  "name": "rateconst",
+                  "value": null,
+                  "args": [
+                    {
+                      "kind": "name",
+                      "text": "v",
+                      "operator": null,
+                      "name": "v",
+                      "value": null,
+                      "args": [],
+                      "left": null,
+                      "right": null,
+                      "operand": null,
+                      "source_span": {
+                        "start_line": 1,
+                        "start_column": 19,
+                        "end_line": 1,
+                        "end_column": 20,
+                        "snippet": "v"
+                      }
+                    },
+                    {
+                      "kind": "unary",
+                      "text": "-Rb",
+                      "operator": "USub",
+                      "name": null,
+                      "value": null,
+                      "args": [],
+                      "left": null,
+                      "right": null,
+                      "operand": {
+                        "kind": "name",
+                        "text": "Rb",
+                        "operator": null,
+                        "name": "Rb",
+                        "value": null,
+                        "args": [],
+                        "left": null,
+                        "right": null,
+                        "operand": null,
+                        "source_span": {
+                          "start_line": 18,
+                          "start_column": 5,
+                          "end_line": 18,
+                          "end_column": 7,
+                          "snippet": "Rb"
+                        }
+                      },
+                      "source_span": {
+                        "start_line": 60,
+                        "start_column": 59,
+                        "end_line": 60,
+                        "end_column": 62,
+                        "snippet": "-Rb"
+                      }
+                    },
+                    {
+                      "kind": "name",
+                      "text": "v12",
+                      "operator": null,
+                      "name": "v12",
+                      "value": null,
+                      "args": [],
+                      "left": null,
+                      "right": null,
+                      "operand": null,
+                      "source_span": {
+                        "start_line": 6,
+                        "start_column": 20,
+                        "end_line": 6,
+                        "end_column": 23,
+                        "snippet": "v12"
+                      }
+                    },
+                    {
+                      "kind": "unary",
+                      "text": "-q",
+                      "operator": "USub",
+                      "name": null,
+                      "value": null,
+                      "args": [],
+                      "left": null,
+                      "right": null,
+                      "operand": {
+                        "kind": "name",
+                        "text": "q",
+                        "operator": null,
+                        "name": "q",
+                        "value": null,
+                        "args": [],
+                        "left": null,
+                        "right": null,
+                        "operand": null,
+                        "source_span": {
+                          "start_line": 6,
+                          "start_column": 25,
+                          "end_line": 6,
+                          "end_column": 26,
+                          "snippet": "q"
+                        }
+                      },
+                      "source_span": {
+                        "start_line": 60,
+                        "start_column": 69,
+                        "end_line": 60,
+                        "end_column": 71,
+                        "snippet": "-q"
+                      }
+                    }
+                  ],
+                  "left": null,
+                  "right": null,
+                  "operand": null,
+                  "source_span": {
+                    "start_line": 60,
+                    "start_column": 46,
+                    "end_line": 60,
+                    "end_column": 72,
+                    "snippet": "rateconst(v, -Rb, v12, -q)"
+                  }
+                },
+                "operand": null,
+                "source_span": {
+                  "start_line": null,
+                  "start_column": null,
+                  "end_line": null,
+                  "end_column": null,
+                  "snippet": "rateconst(v, Ra, v12, q) + rateconst(v, -Rb, v12, -q)"
+                }
+              },
+              "operand": null,
+              "source_span": {
+                "start_line": null,
+                "start_column": null,
+                "end_line": null,
+                "end_column": null,
+                "snippet": "tadj * (rateconst(v, Ra, v12, q) + rateconst(v, -Rb, v12, -q))"
+              }
+            },
+            "operand": null,
+            "source_span": {
+              "start_line": 60,
+              "start_column": 12,
+              "end_line": 60,
+              "end_column": 74,
+              "snippet": "1/(tadj*(rateconst(v, Ra, v12, q)+rateconst(v, -Rb, v12, -q)))"
+            }
+          },
+          "name": null,
+          "args": [],
+          "names": [],
+          "target": null,
+          "method": null,
+          "source_span": {
+            "start_line": 60,
+            "start_column": 12,
+            "end_line": 60,
+            "end_column": 74,
+            "snippet": "1/(tadj*(rateconst(v, Ra, v12, q)+rateconst(v, -Rb, v12, -q)))"
+          }
+        }
+      ],
+      "returned_unit": null,
+      "source_span": {
+        "start_line": 44,
+        "start_column": 5,
+        "end_line": 44,
+        "end_column": 10,
+        "snippet": "rates"
+      }
+    }
+  ],
+  "unsupported_blocks": {}
+}

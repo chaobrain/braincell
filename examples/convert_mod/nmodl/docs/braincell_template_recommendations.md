@@ -93,7 +93,7 @@ g_max * gate_product * (K.E - V)
 The generated class standardizes temperature as:
 
 - runtime `temp=u.celsius2kelvin(23)`
-- fixed `Tref=u.celsius2kelvin(23)`
+- fixed `temp_ref=u.celsius2kelvin(23)`
 - per-gate `Q10_gate`, default `1.0`
 
 ## Current IR Shape

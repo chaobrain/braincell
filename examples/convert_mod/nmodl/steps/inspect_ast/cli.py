@@ -50,6 +50,7 @@ def main(argv: list[str]) -> int:
         "reconstructed_nmodl": step1_result["reconstructed_nmodl"],
         "raw_blocks": step1_result["raw_blocks"],
         "canonical_blocks": step1_result["canonical_blocks"],
+        "bc_ast": step1_result["bc_ast"],
         "ast_json": step1_result["ast_json"],
     }
     print(json.dumps(payload, indent=2))

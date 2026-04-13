@@ -307,13 +307,8 @@ class SwcReader:
         start_node_id: int,
         nodes: dict[int, _SwcRow],
     ) -> _SwcAttach:
-        row = nodes[start_node_id]
-        return _SwcAttach(
-            node_id=attach.node_id,
-            point=tuple(row_point(row)),
-            radius=row_radius(row),
-            parent_x=attach.parent_x,
-        )
+        del start_node_id, nodes
+        return attach
 
     def _build_morpho(
         self,
@@ -401,11 +396,7 @@ class SwcReader:
             return False
         if self.options.mode != "neuron" or parent_branch_type != "soma":
             return True
-        if attach.parent_x == 0.5 and len(point_ids) > 1:
-            return False
-        if attach.is_root_branched_soma_proximal and len(point_ids) > 1:
-            return False
-        return True
+        return len(point_ids) == 1 or attach.parent_x != 0.5
 
     def _attachment_x(
         self,
@@ -569,7 +560,6 @@ class SwcReader:
     ) -> tuple[list[_SwcBranch], tuple[tuple[_SwcAttach, int, int], ...]]:
         branches: list[_SwcBranch] = []
         child_tasks: list[tuple[_SwcAttach, int, int]] = []
-        root_is_immediately_branched = len(self._soma_child_ids(root_id, children, nodes)) > 1
 
         def walk_section(parent_index: int | None, start_node_id: int, attach: _SwcAttach | None) -> int:
             point_ids = [start_node_id]
@@ -614,12 +604,6 @@ class SwcReader:
                             _SwcAttach(
                                 node_id=node_id,
                                 parent_x=parent_x,
-                                is_root_branched_soma_proximal=(
-                                    parent_index is None
-                                    and root_is_immediately_branched
-                                    and node_id == point_ids[0]
-                                    and parent_x == 0.0
-                                ),
                             ),
                             child_id,
                             branch_index,

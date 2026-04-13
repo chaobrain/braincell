@@ -1469,11 +1469,11 @@ class IK_Kv_test(PotassiumChannel):
         self.q = braintools.init.param(q, self.varshape, allow_none=False)
         self.v12 = braintools.init.param(v12, self.varshape, allow_none=False)
 
-        self.Tref = u.celsius2kelvin(23)
+        self.temp_ref = u.celsius2kelvin(23)
         self.Q10_n = 1.0
 
     def _q10(self, Q10):
-        return Q10 ** (((self.temp - self.Tref)/u.kelvin) / 10.0)
+        return Q10 ** (((self.temp - self.temp_ref)/u.kelvin) / 10.0)
 
     def init_state(self, V, K: IonInfo, batch_size=None):
         self.n = DiffEqState(

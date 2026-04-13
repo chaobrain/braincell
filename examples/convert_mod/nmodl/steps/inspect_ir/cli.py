@@ -46,6 +46,8 @@ def main(argv: list[str]) -> int:
         "step2_variant": spec.step2,
         "source_file": step2_result["source_file"],
         "summary": step2_result["summary"],
+        "semantic_ir": step2_result["semantic_ir"],
+        "target_ir": step2_result["target_ir"],
         "braincell_ir": step2_result["ir"],
     }
     print(json.dumps(payload, indent=2))

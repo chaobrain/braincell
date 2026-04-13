@@ -1,12 +1,26 @@
-"""Generated one-ion HH ohmic channel from /home/swl/braincell/examples/convert_mod/nmodl/mod_files/kv.mod."""
-
-
+"""Generated Braincell density channel from /home/swl/braincell/examples/convert_mod/nmodl/mod_files/kv.mod."""
 
 import braintools
 import brainunit as u
 
-from braincell.quad import DiffEqState
+from braincell._base import IonInfo
 from braincell.channel import PotassiumChannel
+from braincell.mech import get_registry
+from braincell.mech import register_channel
+from braincell.quad import DiffEqState
+
+
+def _to_decimal_if_possible(value, unit):
+    if value is None:
+        return None
+    return value.to_decimal(unit) if hasattr(value, "to_decimal") else value
+
+
+def _register_generated_channel(cls):
+    registry = get_registry()
+    if not registry.contains("channel", "IK_Kv"):
+        register_channel("IK_Kv")(cls)
+    return cls
 
 
 class IK_Kv(PotassiumChannel):
@@ -15,7 +29,7 @@ class IK_Kv(PotassiumChannel):
     def __init__(
         self,
         size,
-        g_max=0.0 * (u.S / (u.cm ** 2)),
+        g_max=0.0 * (u.siemens / (u.cm ** 2)),
         V_sh=0. * u.mV,
         temp=u.celsius2kelvin(23),
         Ra=0.02 * (1 / u.mV / u.ms),
@@ -34,11 +48,11 @@ class IK_Kv(PotassiumChannel):
         self.q = braintools.init.param(q, self.varshape, allow_none=False)
         self.v12 = braintools.init.param(v12, self.varshape, allow_none=False)
 
-        self.Tref = u.celsius2kelvin(23)
+        self.temp_ref = u.celsius2kelvin(23)
         self.Q10_n = 1.0
 
     def _q10(self, Q10):
-        return Q10 ** (((self.temp - self.Tref) / u.kelvin) / 10.0)
+        return Q10 ** (((self.temp - self.temp_ref) / u.kelvin) / 10.0)
 
     def init_state(self, V, K: IonInfo, batch_size=None):
         self.n = DiffEqState(
@@ -58,7 +72,12 @@ class IK_Kv(PotassiumChannel):
 
     def compute_derivative(self, V, K: IonInfo):
         phi_n = self._q10(self.Q10_n)
-        self.n.derivative = phi_n * (self.f_n_inf(V) - self.n.value) / self.f_n_tau(V) / u.ms
+        self.n.derivative = (
+            phi_n
+            * (self.f_n_inf(V) - self.n.value)
+            / self.f_n_tau(V)
+            / u.ms
+        )
 
     def current(self, V, K: IonInfo):
         return self.g_max * self.n.value * (K.E - V)
@@ -79,3 +98,4 @@ class IK_Kv(PotassiumChannel):
         v12 = self.v12 / (u.mV)
         return 1/((1)*(((Ra)*((V)-(v12))/(1-u.math.exp(-((V)-(v12))/(q))))+((-Rb)*((V)-(v12))/(1-u.math.exp(-((V)-(v12))/(-q))))))
 
+_register_generated_channel(IK_Kv)

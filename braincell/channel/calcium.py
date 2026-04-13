@@ -1080,7 +1080,6 @@ class ICav31_Ma2020(CalciumChannel):
     """
     __module__ = 'braincell.channel'
     root_type = Calcium
-
     def __init__(
         self,
         size: brainstate.typing.Size,

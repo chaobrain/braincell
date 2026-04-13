@@ -1,69 +1,85 @@
 # BrainCell NMODL Pipeline
 
-This directory is a step-by-step `.mod -> BrainCell channel` conversion toolchain.
+这个目录现在提供的是一条可检查的 `.mod -> BrainCell density channel` 转换链，重点不是“直接套模板”，而是把 NMODL 逐层降到 BrainCell 自己的中间表示。
 
-Current end-to-end target:
+当前首版稳定支持的目标机制是：
 
-- `one_ion_hh_ohmic`
+- 单 `USEION`
+- Hodgkin-Huxley 风格门控动力学
+- ohmic current
+- 生成 BrainCell Python density channel 源码
 
-That means:
+当前代表性样例：
 
-- exactly one `USEION`
-- Hodgkin-Huxley style gate dynamics
-- one ohmic current
-- BrainCell current sign convention: `g_max * gates * (Ion.E - V)`
+- `mod_files/kv.mod`
+  - 正例，`inf/tau`
+- `mod_files/na_alpha_beta.mod`
+  - 正例，`alpha/beta`
+- `mod_files/hh.mod`
+  - 反例，语义层保留，但因多离子和 `NONSPECIFIC_CURRENT` 在 target lowering 阶段拒绝
 
-## Directory Layout
-
-- `mod_files/`
-  - sample input `.mod` files
-  - `kv.mod`: positive single-ion `inf/tau` example
-  - `na_alpha_beta.mod`: positive single-ion `alpha/beta` example
-  - `hh.mod`: rejection example; intentionally unsupported because it is multi-ion
-- `examples/`
-  - `generate_braincell.py`: one command that runs all three steps and writes the final generated Python
-  - `walktrough.ipynb`: notebook walkthrough for step-by-step inspection, including saving the final rendered result
-- `steps/`
-  - `inspect_ast/`: Step 1 implementation, variants, and `cli.py`
-  - `inspect_ir/`: Step 2 implementation, variants, and `cli.py`
-  - `render/`: Step 3 implementation, variants, and `cli.py`
-  - `flow.py`: fixed three-step runner
-  - `registry.py`: legal step combinations
-- `templates/`
-  - `one_ion_hh_ohmic.py`: current Jinja template used by Step 3
-- `docs/`
-  - architecture and template notes
-
-## Pipeline Shape
+## 当前流水线
 
 ```text
 .mod
--> AST
--> RawBlocks
--> CanonicalBlocks
--> one_ion_hh_ohmic IR
--> templates/one_ion_hh_ohmic.py
--> generated BrainCell channel
+-> parser AST
+-> raw_blocks
+-> canonical_blocks
+-> bc_ast
+-> semantic_ir
+-> target_ir
+-> rendered Python
+-> render validation
 ```
 
-The step count is fixed:
+外部 CLI 仍然保持三步入口，但内部边界已经是四层：
 
-1. Step 1: parse and normalize
-2. Step 2: build BrainCell IR
-3. Step 3: render Python from IR
+1. Step 1
+   - 解析并规范化
+   - 产出 `raw_blocks`、`canonical_blocks`、`bc_ast`
+2. Step 2
+   - 构建 `semantic_ir`
+   - 再 lowering 到 `target_ir`
+3. Step 3
+   - 渲染 Python 源码
+   - 执行 `compile + exec` 验证
 
-What can vary is the variant selected inside each step.
+## 目录结构
 
-## Environment
+- `mod_files/`
+  - 示例 `.mod` 输入
+- `examples/`
+  - `generate_braincell.py`
+    - 一条命令跑完整流水线并写出最终 `.py`
+  - `walktrough.ipynb`
+    - 逐层 walkthrough notebook
+- `steps/`
+  - `inspect_ast/`
+    - Step 1
+  - `inspect_ir/`
+    - Step 2
+  - `render/`
+    - Step 3
+  - `model.py`
+    - `bc_ast` / `semantic_ir` / `target_ir` 的 dataclass 边界
+  - `semantic_ir.py`
+    - 语义恢复
+  - `target_ir.py`
+    - BrainCell density-channel lowering
+- `templates/`
+  - `density_channel.py`
+    - 当前 renderer 使用的模板
+- `docs/`
+  - 架构说明
 
-补充说明：第一步 AST 解析依赖额外的 NMODL Python backend，不一定已经包含在当前环境里。当前代码会优先尝试 `neuron.nmodl`，如果没有，则尝试 `nmodl.dsl`；如果两者都没有，通常需要在当前环境里额外安装 Blue Brain 的 `nmodl` Python 包。
+## 环境依赖
 
-The scripts need one of these NMODL Python API backends:
+第一步 AST 解析依赖 NMODL Python backend。当前代码会优先尝试：
 
 - `neuron.nmodl`
-- `nmodl.dsl` from Blue Brain's `nmodl` package
+- `nmodl.dsl`
 
-Quick backend check:
+快速检查：
 
 ```bash
 python - <<'PY'
@@ -74,222 +90,75 @@ for name in ("neuron.nmodl", "nmodl.dsl"):
 PY
 ```
 
-If neither backend is available, install `nmodl` or switch to an environment that already provides `neuron.nmodl`.
+若两者都不可用，需要安装 Blue Brain 的 `nmodl` 包，或切换到已经提供 `neuron.nmodl` 的环境。
 
-If Jinja2 is missing:
+渲染阶段还需要 `jinja2`：
 
 ```bash
 python -m pip install jinja2
 ```
 
-确认这些依赖没问题后，下一步直接参考 `examples/walktrough.ipynb`。
+## 当前入口
 
-## Current Variants
-
-Step 1 variants:
-
-- `canonical_default`
-  - status: implemented and registered
-  - purpose: parse `.mod`, reconstruct source, collect RawBlocks, and build CanonicalBlocks
-
-Step 2 variants:
-
-- `one_ion_hh_ohmic`
-  - status: implemented and registered
-  - purpose: convert CanonicalBlocks into a BrainCell IR for a single-ion HH ohmic channel
-
-Step 3 variants:
-
-- `braincell_one_ion_hh_ohmic`
-  - status: implemented and registered
-  - purpose: render the Step 2 IR with the `one_ion_hh_ohmic.py` template
-
-Current legal combinations:
-
-- `canonical_default -> one_ion_hh_ohmic -> braincell_one_ion_hh_ohmic`
-
-Current named pipeline string:
-
-```text
-canonical_default__one_ion_hh_ohmic__braincell_one_ion_hh_ohmic
-```
-
-No other combinations are currently registered in `steps/registry.py`.
-
-## Step 1 Support
-
-Entry point:
+### Step 1: AST / blocks / bc_ast
 
 ```bash
 python examples/convert_mod/nmodl/steps/inspect_ast/cli.py \
   examples/convert_mod/nmodl/mod_files/kv.mod
 ```
 
-What Step 1 does:
-
-- parse `.mod` into an AST
-- reconstruct the normalized source text
-- extract RawBlocks
-- build CanonicalBlocks
-- report block counts and the AST JSON payload
-
-What `canonical_default` currently canonicalizes:
-
-- `TITLE`
-- `COMMENT`
-- `NEURON`
-- `UNITS`
-- `PARAMETER`
-- `ASSIGNED`
-- `STATE`
-- `INITIAL`
-- `BREAKPOINT`
-- `DERIVATIVE`
-- `FUNCTION`
-- `PROCEDURE`
-
-What Step 1 can still preserve only as raw, not normalized:
-
-- advanced blocks that appear in the parser output but are not yet part of CanonicalBlocks
-- examples include `KINETIC`, `NET_RECEIVE`, `LINEAR`, `NONLINEAR`, and other advanced constructs
-
-What to expect as output:
+当前输出重点：
 
 - `ast_root_type`
 - `block_counts`
-- `reconstructed_nmodl`
 - `raw_blocks`
 - `canonical_blocks`
+- `bc_ast`
 - `ast_json`
 
-## Step 2 Support
-
-Entry point:
+### Step 2: semantic_ir / target_ir
 
 ```bash
 python examples/convert_mod/nmodl/steps/inspect_ir/cli.py \
   examples/convert_mod/nmodl/mod_files/kv.mod
 ```
 
-What Step 2 does:
-
-- take Step 1 canonical output
-- decide whether the mechanism matches a supported BrainCell family
-- build a typed IR payload
-- report support or rejection reasons
-
-What `one_ion_hh_ohmic` currently supports:
-
-- exactly one `USEION`
-- ion types `k`, `na`, `ca`
-- one ohmic current
-- gate product extractable from the current expression
-- gate kinetics reducible to `inf/tau`
-- direct `inf/tau` forms
-- `alpha/beta -> inf/tau` conversion
-- BrainCell sign convention rewrite to `(Ion.E - V)`
-- temperature fields normalized to `temp`, `Tref`, and per-gate `Q10`
-
-What Step 2 currently rejects:
-
-- multi-ion mechanisms
-- non-ohmic currents
-- gates that cannot be reduced to `inf/tau`
-- mechanisms whose current expression does not cleanly expose conductance and gate powers
-
-What to expect as output:
+当前输出重点：
 
 - `summary`
+- `semantic_ir`
+- `target_ir`
 - `braincell_ir`
-- `supported: true/false`
-- `rejection_reasons`
 
-Use this rejection example:
+这里的 `braincell_ir` 目前等同于当前 target IR payload，保留是为了兼容旧入口。
 
-```bash
-python examples/convert_mod/nmodl/steps/inspect_ir/cli.py \
-  examples/convert_mod/nmodl/mod_files/hh.mod
-```
-
-## Step 3 Support
-
-Entry point:
+### Step 3: render preview / validation
 
 ```bash
 python examples/convert_mod/nmodl/steps/render/cli.py \
   examples/convert_mod/nmodl/mod_files/kv.mod
 ```
 
-What Step 3 does:
+当前输出重点：
 
-- run the full 1 -> 2 -> 3 chain
-- render the supported IR into Python source
-- print a preview
-- optionally write the rendered file
+- `summary`
+- `render_preview`
+- `validation`
 
-Current render variant:
+`validation` 现在会报告生成源码是否能：
 
-- `braincell_one_ion_hh_ohmic`
+- `compile`
+- `exec`
+- 取到目标 class
 
-Current Jinja template:
-
-- `templates/one_ion_hh_ohmic.py`
-
-What the current template generates:
-
-- a BrainCell channel class inheriting from the ion-specific base class
-- `init_state`
-- `reset_state`
-- `compute_derivative`
-- `current`
-- one `f_<gate>_inf`
-- one `f_<gate>_tau`
-
-What the generated class no longer exposes as class attributes:
-
-- `source_file`
-- `mechanism_name`
-- `manual_fix_required`
-
-Current Step 3 limitation:
-
-- it only renders IR that Step 2 marked as supported
-- unsupported IR exits with rejection reasons instead of generating fallback code
-
-Preview only:
-
-```bash
-python examples/convert_mod/nmodl/steps/render/cli.py \
-  examples/convert_mod/nmodl/mod_files/kv.mod
-```
-
-Preview and write file:
-
-```bash
-python examples/convert_mod/nmodl/steps/render/cli.py \
-  examples/convert_mod/nmodl/mod_files/kv.mod \
-  -o /tmp/kv_channel.py
-```
-
-## One-Step Run
-
-If you do not want to inspect each stage separately, use the combined entry:
+### 一步生成源码
 
 ```bash
 python examples/convert_mod/nmodl/examples/generate_braincell.py \
   examples/convert_mod/nmodl/mod_files/kv.mod
 ```
 
-This command:
-
-1. resolves the registered step combination
-2. runs Step 1
-3. runs Step 2
-4. runs Step 3
-5. writes the final generated Python file
-6. prints a JSON summary and preview
-
-You can also specify the pipeline explicitly:
+可显式指定 pipeline：
 
 ```bash
 python examples/convert_mod/nmodl/examples/generate_braincell.py \
@@ -297,47 +166,82 @@ python examples/convert_mod/nmodl/examples/generate_braincell.py \
   --pipeline canonical_default__one_ion_hh_ohmic__braincell_one_ion_hh_ohmic
 ```
 
-Default output file:
+默认输出：
 
 - `examples/generated_<mod_stem>_one_ion_hh_ohmic.py`
 
-Custom output file:
+## 当前支持范围
 
-```bash
-python examples/convert_mod/nmodl/examples/generate_braincell.py \
-  examples/convert_mod/nmodl/mod_files/kv.mod \
-  -o /tmp/kv_channel.py
-```
+首版 target lowering 接受：
 
-## Notebook Use
+- 恰好一个 `USEION`
+- 可识别的单 ohmic current
+- 可从 current expression 中提取 gate powers
+- 参与电流的 gate 可规约为
+  - `inf/tau`
+  - 或 `alpha/beta`
 
-Walkthrough notebook:
+当前 `target_family`：
+
+- `hh_ohmic_inf_tau`
+- `hh_ohmic_alpha_beta`
+
+## 当前不支持
+
+虽然 parser 和 Step 1 还能保留很多高级块，但当前 BrainCell density-channel 路径还不会生成它们：
+
+- `KINETIC`
+- `DISCRETE`
+- `NET_RECEIVE`
+- `BEFORE`
+- `AFTER`
+- `INDEPENDENT`
+- `CONSTANT`
+- `LINEAR`
+- `NONLINEAR`
+- `FUNCTION_TABLE`
+- `CVODE`
+- `LONGITUDINAL_DIFFUSION`
+
+此外，下列机制目前会在 target lowering 阶段拒绝：
+
+- 多 `USEION`
+- `NONSPECIFIC_CURRENT`
+- 非 ohmic current
+- 无法识别 gate power 或门控动力学的机制
+
+## Walkthrough
+
+推荐先打开：
 
 - `examples/walktrough.ipynb`
 
-This notebook is for manual inspection of:
+这个 notebook 会按当前实现顺序展示：
 
-- parsed AST
-- RawBlocks
-- CanonicalBlocks
-- Step 2 IR
-- rendered Python preview
-- writing the core step artifacts and final rendered Python into one artifact directory
+1. 输入 `.mod`
+2. parser AST 摘要
+3. `raw_blocks`
+4. `canonical_blocks`
+5. `bc_ast`
+6. `semantic_ir`
+7. `target_ir`
+8. `rendered Python`
+9. `validation`
+10. 正例 / 反例对照
 
-It is now grouped with the runnable examples instead of living in a separate `notebooks/` directory.
-Unlike `generate_braincell.py`, it is also the only entry that saves the core step artifacts into one folder.
+它也会通过 `steps.save_pipeline_artifacts()` 把核心产物保存到 `examples/artifacts/<mod_stem>/` 下面，便于人工检查。
 
-## Recommended Usage Order
+## 推荐使用顺序
 
-For development or debugging:
+调试或扩展转换器时：
 
-1. run Step 1 on a `.mod` file and inspect `canonical_blocks`
-2. run Step 2 and inspect `summary` plus `rejection_reasons`
-3. run Step 3 only after Step 2 reports `supported: true`
-4. use `generate_braincell.py` when the step-by-step inspection already looks correct
+1. 先看 Step 1 的 `bc_ast`
+2. 再看 Step 2 的 `semantic_ir`
+3. 确认 `target_ir["supported"]` 为 `true`
+4. 最后再看 Step 3 的 render preview 和 validation
 
-For quick smoke tests:
+快速 smoke test：
 
-1. start with `mod_files/kv.mod`
-2. verify `mod_files/hh.mod` is rejected at Step 2
-3. verify `mod_files/na_alpha_beta.mod` can pass the `alpha/beta -> inf/tau` path
+1. 先跑 `kv.mod`
+2. 再跑 `na_alpha_beta.mod`
+3. 最后确认 `hh.mod` 在 target lowering 阶段被拒绝

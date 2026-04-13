@@ -30,7 +30,6 @@ from ._version import (
     __version__,
     __version_info__,
 )
-from .compute import PointScheduling, PointTree
 from .cv import (
     CompositeByTypePolicy,
     CV,
@@ -40,30 +39,7 @@ from .cv import (
     DLambda,
     MaxCVLen,
 )
-from .filter import (
-    LocsetExpr,
-    RegionExpr,
-    SelectionCache
-)
 from .io.neuromorpho import load_neuromorpho
-from .mech import (
-    CableProperty,
-    CurrentClamp,
-    Density,
-    FunctionClamp,
-    Junction,
-    Mechanism,
-    MechanismRegistry,
-    Params,
-    Point,
-    ProbeMechanism,
-    SineClamp,
-    Synapse,
-    get_registry,
-    register_channel,
-    register_ion,
-    register_synapse,
-)
 from .morph import (
     ApicalDendrite,
     Axon,
@@ -78,7 +54,6 @@ from .morph import (
     Soma,
     branch_class_for_type,
 )
-from .quad import *
 
 __all__ = [
     "__version__",
@@ -87,11 +62,9 @@ __all__ = [
     "Axon",
     "BasalDendrite",
     "Branch",
-    "CableProperty",
     "Cell",
     "Channel",
     "CompositeByTypePolicy",
-    "CurrentClamp",
     "CustomBranch",
     "CV",
     "CVPerBranch",
@@ -99,38 +72,19 @@ __all__ = [
     "CVPolicyByTypeRule",
     "DLambda",
     "Dendrite",
-    "Density",
-    "FunctionClamp",
     "HHTypedNeuron",
     "Ion",
     "IonChannel",
     "IonInfo",
-    "Junction",
-    "LocsetExpr",
     "load_neuromorpho",
-    "Mechanism",
-    "MechanismRegistry",
     "MixIons",
     "MaxCVLen",
-    "Params",
-    "get_registry",
-    "register_channel",
-    "register_ion",
-    "register_synapse",
     "Morphology",
     "MorphoBranch",
     "MorphoEdge",
     "MorphoMetric",
-    "Point",
-    "PointScheduling",
-    "PointTree",
-    "ProbeMechanism",
-    "RegionExpr",
-    "SelectionCache",
-    "SineClamp",
     "SingleCompartment",
     "Soma",
-    "Synapse",
     "branch_class_for_type",
     "channel",
     "ion",

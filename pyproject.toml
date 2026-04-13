@@ -22,7 +22,7 @@ exclude = [
 
 
 [tool.setuptools.dynamic]
-version = { attr = "braincell.__version__" }
+version = { attr = "braincell._version.__version__" }
 
 
 [project]

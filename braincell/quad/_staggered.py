@@ -32,6 +32,8 @@ from dataclasses import dataclass
 
 import brainstate
 import brainunit as u
+import jax
+jax.config.update("jax_enable_x64", True)
 import jax.numpy as jnp
 import numpy as np
 
@@ -372,13 +374,13 @@ def _build_cv_axial_operator(target, *, point_tree, scheduling) -> np.ndarray:
         algebraic_dynamic = axial_matrix[np.ix_(algebraic_rows, dynamic_rows)]
         algebraic_algebraic = axial_matrix[np.ix_(algebraic_rows, algebraic_rows)]
         reduced = dynamic_dynamic - dynamic_algebraic @ np.linalg.solve(algebraic_algebraic, algebraic_dynamic)
-    return np.asarray(reduced, dtype=np.float32)
+    return np.asarray(reduced, dtype=float)
 
 
 def _build_dhs_static_cache(system: dict[str, object]) -> DHSStaticCache:
     n_point = int(system["n_point"])
     dynamic_rows_np = np.asarray(system["dynamic_rows"], dtype=np.int32)
-    diag_base_jnp = jnp.asarray(system["diag_base"], dtype=jnp.float32)
+    diag_base_jnp = jnp.asarray(system["diag_base"], dtype=jnp.float64)
     level_size_np = np.asarray(system["level_size"], dtype=np.int32)
     level_offsets_np = np.cumsum(np.insert(level_size_np, 0, 0)).astype(np.int32, copy=False)
     parent_lookup_np = np.asarray(system["parent_lookup"], dtype=np.int32)
@@ -386,8 +388,8 @@ def _build_dhs_static_cache(system: dict[str, object]) -> DHSStaticCache:
         [diag_base_jnp, jnp.ones((1,), dtype=diag_base_jnp.dtype)],
         axis=0,
     )
-    lower_base = jnp.asarray(system["lowers"], dtype=jnp.float32)
-    upper_base = jnp.asarray(system["uppers"], dtype=jnp.float32)
+    lower_base = jnp.asarray(system["lowers"], dtype=jnp.float64)
+    upper_base = jnp.asarray(system["uppers"], dtype=jnp.float64)
     return DHSStaticCache(
         n_point=n_point,
         dynamic_rows_np=dynamic_rows_np,
@@ -445,14 +447,34 @@ def _restore_midpoint_voltage(solves: jnp.ndarray, *, dynamic_rows: jnp.ndarray,
 
 def _edge_conductance(*, edge, cvs) -> object:
     """Sum all half-CV conductances attached to one point-tree edge."""
-    conductance = None
+    if len(edge.cv_edges) == 0:
+        raise ValueError(f"Point-tree edge {edge.id!r} has no CV edge roles.")
+
+    resistances = []
+    branch_ids = set()
     for role in edge.cv_edges:
         cv = cvs[role.cv_id]
+        branch_ids.add(int(cv.branch_id))
         resistance = cv.r_axial_prox if role.half == "prox" else cv.r_axial_dist
+        resistances.append(resistance)
+
+    # When two adjacent CV halves come from the same branch interior, the two
+    # half-segment resistances sit in series between the midpoint voltages.
+    # Explicitly reassembled one-CV-per-branch morphologies model that internal
+    # boundary with an algebraic point; after elimination the equivalent
+    # midpoint conductance is 1 / (R_left + R_right), not 1/R_left + 1/R_right.
+    if len(resistances) > 1 and len(branch_ids) == 1:
+        total_resistance = None
+        for resistance in resistances:
+            total_resistance = resistance if total_resistance is None else (total_resistance + resistance)
+        if total_resistance is None:  # pragma: no cover
+            raise ValueError(f"Point-tree edge {edge.id!r} did not produce a total resistance.")
+        return 1.0 / total_resistance
+
+    conductance = None
+    for resistance in resistances:
         value = 1.0 / resistance
         conductance = value if conductance is None else (conductance + value)
-    if conductance is None:
-        raise ValueError(f"Point-tree edge {edge.id!r} has no CV edge roles.")
     return conductance
 
 
@@ -601,7 +623,7 @@ def _linear_and_const_term(target, V_n, *args):
 
 def _to_decimal(value: object, unit: object) -> jnp.ndarray:
     """Convert a quantity-like value to a hot-path ``jnp.ndarray``."""
-    return jnp.asarray(value.to_decimal(unit), dtype=float)
+    return jnp.asarray(value.to_decimal(unit), dtype=jnp.float64)
 
 
 def _scalar_decimal(value: object, unit: object) -> float:

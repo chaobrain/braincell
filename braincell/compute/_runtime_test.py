@@ -18,8 +18,16 @@ import unittest
 import brainunit as u
 
 import braincell
-from braincell import Branch, CVPerBranch, Cell, CurrentClamp, FunctionClamp, Morphology, SineClamp
-from braincell.filter import BranchSlice, RootLocation
+from braincell import (
+    Branch,
+    CVPerBranch,
+    Cell,
+    CurrentClamp,
+    FunctionClamp,
+    Morphology,
+    SineClamp,
+)
+from braincell.filter import BranchSlice, RootLocation, at
 
 
 def _build_tree() -> Morphology:
@@ -201,6 +209,130 @@ class CellRuntimeStateTest(unittest.TestCase):
         self.assertAlmostEqual(float(current_early[1].to_decimal(u.nA)), 0.7, places=6)
         self.assertAlmostEqual(float(current_early[0].to_decimal(u.nA)), 0.0, places=6)
         self.assertAlmostEqual(float(current_late[1].to_decimal(u.nA)), 0.6, places=6)
+
+    def test_probe_layouts_are_sparse_and_allocate_no_state_buffers(self) -> None:
+        cell = Cell(_build_tree())
+        cell.place(
+            at("soma", 0.5),
+            braincell.mech.StateProbe(),
+            braincell.mech.MechanismProbe(mechanism="INa_HH1952", field="p"),
+            braincell.mech.CurrentProbe(ion="na", mechanism="INa_HH1952"),
+        )
+
+        self.assertEqual(len(cell.layouts), 3)
+        self.assertTrue(all(layout.layout == "sparse" for layout in cell.layouts))
+        self.assertTrue(all(layout.target == "point" for layout in cell.layouts))
+        resolved_names = []
+        for layout in cell.layouts:
+            self.assertEqual(layout.point_index.tolist(), [1])
+            self.assertEqual(cell.get_point_state(1)[layout.id], {})
+            declaration = cell._ensure_runtime_compiled().get_layout_mechanism(layout.id)
+            resolved_names.append(declaration.name)
+        self.assertEqual(
+            sorted(resolved_names),
+            ["soma(0.5)_INa_HH1952_current", "soma(0.5)_INa_HH1952_p", "soma(0.5)_v"],
+        )
+
+    def test_sample_probe_reads_voltage_and_channel_gate_state(self) -> None:
+        cell = Cell(_build_tree())
+        cell.paint(
+            BranchSlice(branch_index=[0, 1], prox=0.0, dist=1.0),
+            braincell.mech.Channel(
+                "INa_HH1952",
+                g_max=12.0 * (u.mS / u.cm**2),
+                V_sh=-50.0 * u.mV,
+                T=u.celsius2kelvin(36.0),
+            ),
+        )
+        cell.place(
+            at("soma", 0.5),
+            braincell.mech.StateProbe(),
+            braincell.mech.MechanismProbe(mechanism="INa_HH1952", field="p"),
+        )
+        cell.init_state()
+
+        samples = cell.sample_probes()
+        channel_layout = next(
+            layout for layout in cell.layouts
+            if isinstance(cell._ensure_runtime_compiled().get_layout_mechanism(layout.id), braincell.mech.Channel)
+        )
+        node = cell.get_runtime_node(channel_layout.id)
+
+        self.assertEqual(samples["soma(0.5)_v"], cell.V.value[0])
+        self.assertEqual(samples["soma(0.5)_INa_HH1952_p"], node.p.value[1])
+        self.assertEqual(cell.sample_probe("soma(0.5)_INa_HH1952_p"), node.p.value[1])
+
+    def test_sample_probe_reads_mechanism_and_total_ion_current(self) -> None:
+        cell = Cell(_build_tree())
+        cell.paint(
+            BranchSlice(branch_index=[0, 1], prox=0.0, dist=1.0),
+            braincell.mech.Channel(
+                "IK_Kv_test",
+                g_max=0.1 * (u.mS / u.cm**2),
+                v12=25.0 * u.mV,
+                q=9.0,
+            ),
+        )
+        cell.place(
+            at("soma", 0.5),
+            braincell.mech.CurrentProbe(ion="k", mechanism="IK_Kv_test"),
+            braincell.mech.CurrentProbe(ion="k"),
+        )
+        cell.init_state()
+
+        samples = cell.sample_probes()
+        ion = cell.get_ion("k")
+        node = ion.channels["IK_Kv_test"]
+        point_V = cell._point_voltage(cell.V.value)
+        expected_mechanism = node.current(point_V, ion.pack_info())[1]
+        expected_total = ion.current(point_V, include_external=False)[1]
+
+        self.assertEqual(samples["soma(0.5)_IK_Kv_test_current"], expected_mechanism)
+        self.assertEqual(samples["soma(0.5)_k_current"], expected_total)
+
+    def test_sample_probe_rejects_non_state_field_and_unknown_mechanism(self) -> None:
+        cell = Cell(_build_tree())
+        cell.paint(
+            BranchSlice(branch_index=[0, 1], prox=0.0, dist=1.0),
+            braincell.mech.Channel(
+                "INa_HH1952",
+                g_max=12.0 * (u.mS / u.cm**2),
+                V_sh=-50.0 * u.mV,
+                T=u.celsius2kelvin(36.0),
+            ),
+        )
+        cell.place(
+            at("soma", 0.5),
+            braincell.mech.MechanismProbe(mechanism="INa_HH1952", field="g_max"),
+            braincell.mech.MechanismProbe(mechanism="missing", field="p"),
+        )
+        cell.init_state()
+
+        with self.assertRaises(ValueError):
+            cell.sample_probe("soma(0.5)_INa_HH1952_g_max")
+        with self.assertRaises(KeyError):
+            cell.sample_probe("soma(0.5)_missing_p")
+
+    def test_sample_probes_requires_unique_names(self) -> None:
+        cell = Cell(_build_tree())
+        cell.paint(
+            BranchSlice(branch_index=[0, 1], prox=0.0, dist=1.0),
+            braincell.mech.Channel(
+                "INa_HH1952",
+                g_max=12.0 * (u.mS / u.cm**2),
+                V_sh=-50.0 * u.mV,
+                T=u.celsius2kelvin(36.0),
+            ),
+        )
+        cell.place(
+            at("soma", 0.5),
+            braincell.mech.StateProbe(name="dup"),
+            braincell.mech.MechanismProbe(name="dup", mechanism="INa_HH1952", field="p"),
+        )
+        cell.init_state()
+
+        with self.assertRaises(ValueError):
+            cell.sample_probes()
 
     def test_density_mechanism_leaky_builds_runtime_il_node(self) -> None:
         cell = Cell(_build_tree())

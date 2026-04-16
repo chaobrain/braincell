@@ -18,6 +18,12 @@
 - `mod_files/hh.mod`
   - 反例，语义层保留，但因多离子和 `NONSPECIFIC_CURRENT` 在 target lowering 阶段拒绝
 
+如果你现在主要是在补 NMODL 基础，而不是直接改 pipeline，建议先看：
+
+- `docs/nmodl_mental_model_zh.md`
+  - 从最小 leak 机制、`hh.mod`、`NET_RECEIVE` 三个层次理解 `PARAMETER` / `ASSIGNED` / `STATE` 与 `INITIAL` / `BREAKPOINT` / `DERIVATIVE`
+  - 顺带整理了 `NEURON 8.2.x`、`9.0` 与 Arbor 的关键差异
+
 ## 当前流水线
 
 ```text

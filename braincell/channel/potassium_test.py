@@ -42,6 +42,7 @@ from braincell.channel.potassium import (
     IKv43_Ma2020,
     PotassiumChannel,
 )
+from braincell.channel.potassium_v2 import IK_Leak_v2
 
 
 def _k_info(size: int = 1) -> IonInfo:
@@ -344,6 +345,33 @@ class IKLeakTest(unittest.TestCase):
     def test_compute_derivative_is_noop(self) -> None:
         ch = IK_Leak(size=1)
         self.assertIsNone(ch.compute_derivative(_V([-60.0]), _k_info()))
+
+
+class IKLeakV2Test(unittest.TestCase):
+    def test_current_matches_legacy_implementation(self) -> None:
+        legacy = IK_Leak(size=1, g_max=0.005 * (u.mS / u.cm ** 2))
+        proto = IK_Leak_v2(size=1, g_max=0.005 * (u.mS / u.cm ** 2))
+        V = _V([-60.0])
+        k = _k_info()
+        i_legacy = legacy.current(V, k)
+        i_proto = proto.current(V, k)
+        self.assertTrue(
+            u.math.allclose(
+                i_proto.to_decimal(_DENSITY_UNIT),
+                i_legacy.to_decimal(_DENSITY_UNIT),
+                atol=1e-9,
+            )
+        )
+
+    def test_can_be_driven_by_potassium_ion_payload(self) -> None:
+        ch = IK_Leak_v2(size=1)
+        V = _V([-60.0])
+        k = _k_info()
+        ch.init_state(V, k)
+        ch.reset_state(V, k)
+        ch.compute_derivative(V, k)
+        i = ch.current(V, k)
+        self.assertEqual(i.shape, (1,))
 
 
 class IKv11_Ak2007Test(unittest.TestCase):

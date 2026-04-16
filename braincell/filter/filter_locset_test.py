@@ -20,6 +20,7 @@ import brainunit as u
 
 from braincell import Branch, Morphology
 from braincell.filter import (
+    AtLocation,
     BranchPoints,
     BranchSlice,
     LocsetSetOp,
@@ -27,6 +28,7 @@ from braincell.filter import (
     RootLocation,
     Terminals,
     UniformSamples,
+    at,
 )
 
 
@@ -70,12 +72,41 @@ def _point_is_in_region(
 
 
 class BasicLocsetTest(unittest.TestCase):
+    def test_at_location_accepts_branch_index_and_name(self) -> None:
+        tree = _build_branchpoint_tree()
+
+        by_index = at(0, 0.5).evaluate(tree)
+        by_name = at("basal", 0.25).evaluate(tree)
+        explicit = AtLocation(branch="axon", x=1.0).evaluate(tree)
+
+        self.assertEqual(by_index.points, ((0, 0.5),))
+        self.assertEqual(by_index.display_names, ("soma(0.5)",))
+        self.assertEqual(by_name.points, ((1, 0.25),))
+        self.assertEqual(by_name.display_names, ("basal(0.25)",))
+        self.assertEqual(explicit.points, ((2, 1.0),))
+        self.assertEqual(explicit.display_names, ("axon(1)",))
+
+    def test_at_location_rejects_invalid_branch_reference_and_x(self) -> None:
+        tree = _build_branchpoint_tree()
+
+        with self.assertRaises(KeyError):
+            at("missing", 0.5).evaluate(tree)
+        with self.assertRaises(IndexError):
+            at(99, 0.5).evaluate(tree)
+        with self.assertRaises(TypeError):
+            at(1.2, 0.5).evaluate(tree)  # type: ignore[arg-type]
+        with self.assertRaises(ValueError):
+            at(0, -0.1).evaluate(tree)
+        with self.assertRaises(ValueError):
+            at(0, 1.1).evaluate(tree)
+
     def test_branch_points_returns_parent_side_points_for_multifurcations(self) -> None:
         tree = _build_branchpoint_tree()
 
         locset = BranchPoints().evaluate(tree)
 
         self.assertEqual(locset.points, ((0, 0.5), (0, 1.0)))
+        self.assertEqual(locset.display_names, ("soma(0.5)", "soma(1)"))
 
     def test_terminals_returns_leaf_branch_distal_points(self) -> None:
         tree = _build_branchpoint_tree()

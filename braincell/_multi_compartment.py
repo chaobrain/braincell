@@ -13,13 +13,14 @@
 # limitations under the License.
 # ==============================================================================
 
-
-
+from dataclasses import dataclass
 from typing import Callable
 
 import brainstate
 import braintools
 import brainunit as u
+import jax
+import jax.numpy as jnp
 import numpy as np
 
 from braincell._base import HHTypedNeuron, IonChannel
@@ -61,11 +62,19 @@ from braincell.cv._mech import (
 )
 from braincell.cv._policy import CVPerBranch, CVPolicy
 from braincell.filter import LocsetExpr, RegionExpr
+from braincell.mech import CurrentProbe, Density, MechanismProbe, StateProbe
 from braincell.morph import Morphology
 from braincell.quad import DiffEqState, IndependentIntegration, get_integrator
 from braincell.quad import _staggered as voltage_solver
 
-__all__ = ["Cell"]
+__all__ = ["Cell", "RunResult"]
+
+
+@jax.tree_util.register_dataclass
+@dataclass(frozen=True)
+class RunResult:
+    time: object
+    traces: dict[str, object]
 
 
 class Cell(HHTypedNeuron):
@@ -157,6 +166,7 @@ class Cell(HHTypedNeuron):
         self._mechanism_dirty = True
         self._value_dirty = False
         self._state_initialized = False
+        self._current_time = brainstate.ShortTermState(0.0 * u.ms)
         self._V_th_value = V_th
         self._V_initializer_spec = V_initializer
         self._spk_fun = spk_fun
@@ -231,6 +241,10 @@ class Cell(HHTypedNeuron):
     @property
     def voltage_shape(self) -> tuple[int, ...]:
         return self._ensure_runtime_compiled().voltage_shape
+
+    @property
+    def current_time(self):
+        return self._current_time.value
 
     @property
     def _dirty(self) -> bool:
@@ -320,6 +334,74 @@ class Cell(HHTypedNeuron):
     def get_ion(self, name: str) -> object:
         return self._ensure_runtime_compiled().get_ion(name)
 
+    def sample_probe(self, name: str) -> object:
+        self._ensure_runtime_ready()
+        runtime = self._ensure_runtime_compiled()
+        matches: list[tuple[object, object]] = []
+        for layout in runtime.layouts:
+            declaration = runtime.get_layout_mechanism(layout.id)
+            if isinstance(declaration, (StateProbe, MechanismProbe, CurrentProbe)) and _probe_name(declaration) == name:
+                matches.append((layout, declaration))
+        if len(matches) == 0:
+            raise KeyError(f"No probe is registered with name {name!r}.")
+        if len(matches) > 1:
+            raise ValueError(f"Multiple probes share the same name {name!r}; probe names must be unique.")
+        layout, declaration = matches[0]
+        return self._sample_probe_layout(runtime, layout=layout, declaration=declaration)
+
+    def sample_probes(self) -> dict[str, object]:
+        self._ensure_runtime_ready()
+        runtime = self._ensure_runtime_compiled()
+        sampled: dict[str, object] = {}
+        for layout in runtime.layouts:
+            declaration = runtime.get_layout_mechanism(layout.id)
+            if not isinstance(declaration, (StateProbe, MechanismProbe, CurrentProbe)):
+                continue
+            probe_name = _probe_name(declaration)
+            if probe_name in sampled:
+                raise ValueError(
+                    f"Multiple probes share the same name {probe_name!r}; probe names must be unique."
+                )
+            sampled[probe_name] = self._sample_probe_layout(
+                runtime,
+                layout=layout,
+                declaration=declaration,
+            )
+        return sampled
+
+    def run(self, *, dt, duration) -> RunResult:
+        self._ensure_runtime_ready()
+        _validate_time_quantity(dt, name="dt")
+        _validate_time_quantity(duration, name="duration")
+
+        initial_samples = self.sample_probes()
+        if len(initial_samples) == 0:
+            raise ValueError("Cell.run(...) requires at least one placed probe.")
+        ordered_names = tuple(sorted(initial_samples))
+
+        with brainstate.environ.context(dt=dt):
+            start_t = self.current_time
+            relative_times = u.math.arange(0.0 * u.ms, duration, brainstate.environ.get_dt())
+            if int(relative_times.shape[0]) == 0:
+                raise ValueError("Cell.run(...) produced no timesteps; ensure duration > 0 and dt > 0.")
+            times = start_t + relative_times
+
+            def _step_run(t):
+                self._current_time.value = t
+                self.update()
+                snapshot = self.sample_probes()
+                return tuple(snapshot[name] for name in ordered_names)
+
+            traces_over_time = brainstate.transform.for_loop(_step_run, times)
+            self._current_time.value = start_t + (int(times.shape[0]) * brainstate.environ.get_dt())
+
+        traces_tuple = _normalize_run_traces(traces_over_time, n_traces=len(ordered_names))
+        traces = {
+            name: trace
+            for name, trace in zip(ordered_names, traces_tuple)
+        }
+        return RunResult(time=times, traces=traces)
+
     def mech_table(self) -> MechanismObjectTable:
         self._ensure_runtime_compiled()
         return self._mech_table()
@@ -330,6 +412,7 @@ class Cell(HHTypedNeuron):
         self._ensure_runtime_compiled()
         self.V = DiffEqState(braintools.init.param(self._resolve_V_initializer(), self.varshape, batch_size))
         self.spike = brainstate.ShortTermState(self.get_spike(self.V.value, self.V.value))
+        self._current_time.value = 0.0 * u.ms
         point_V = self._point_voltage(self.V.value)
         nodes = self.nodes(IonChannel, allowed_hierarchy=(1, 1)).values()
         for channel in nodes:
@@ -346,27 +429,31 @@ class Cell(HHTypedNeuron):
             return
         self.V.value = braintools.init.param(self._resolve_V_initializer(), self.varshape, batch_size)
         self.spike.value = self.get_spike(self.V.value, self.V.value)
+        self._current_time.value = 0.0 * u.ms
         point_V = self._point_voltage(self.V.value)
         for channel in self.nodes(IonChannel, allowed_hierarchy=(1, 1)).values():
             channel.reset_state(point_V, batch_size=batch_size)
         self._value_dirty = False
 
-    def pre_integral(self, I_ext=0.0 * u.nA):
+    def pre_integral(self, I_ext=0.0):
         self._ensure_runtime_ready()
         point_V = self._point_voltage(self.V.value)
         for _, node in self.nodes(IonChannel, allowed_hierarchy=(1, 1)).items():
             if not isinstance(node, IndependentIntegration):
                 node.pre_integral(point_V)
 
-    def compute_derivative(self, I_ext=0.0 * u.nA):
+    def compute_derivative(self, I_ext=0.0):
         self._ensure_runtime_ready()
-        self.V.derivative = self.compute_voltage_derivative(self.V.value, I_ext)
+        if is_python_zero(I_ext):
+            self.V.derivative = self.compute_voltage_derivative(self.V.value)
+        else:
+            self.V.derivative = self.compute_voltage_derivative(self.V.value, I_ext)
         point_V = self._point_voltage(self.V.value)
         for _, node in self.nodes(IonChannel, allowed_hierarchy=(1, 1)).items():
             if not isinstance(node, IndependentIntegration):
                 node.compute_derivative(point_V)
 
-    def compute_membrane_derivative(self, V, I_ext=0.0 * u.nA):
+    def compute_membrane_derivative(self, V, I_ext=0.0):
         point_V = self._point_voltage(V)
         # Point clamps are intrinsic declarations owned by the cell. ``I_ext`` is
         # the caller-supplied external current pathway. Both are converted into
@@ -392,15 +479,17 @@ class Cell(HHTypedNeuron):
         return self._midpoint_current(I_total) / self.C
 
     def compute_axial_derivative(self, V):
-        operator = u.math.asarray(self._axial_operator())
-        V_decimal = u.math.asarray(V.to_decimal(u.mV))
-        axial_decimal = -u.math.matmul(V_decimal, operator.T)
+        operator = jnp.asarray(self._axial_operator(), dtype=jnp.float64)
+        V_decimal = jnp.asarray(V.to_decimal(u.mV), dtype=jnp.float64)
+        axial_decimal = -jnp.matmul(V_decimal, operator.T)
         return axial_decimal * (u.mV / u.ms)
 
-    def compute_voltage_derivative(self, V, I_ext=0.0 * u.nA):
+    def compute_voltage_derivative(self, V, I_ext=0.0):
+        if is_python_zero(I_ext):
+            return self.compute_membrane_derivative(V) + self.compute_axial_derivative(V)
         return self.compute_membrane_derivative(V, I_ext) + self.compute_axial_derivative(V)
 
-    def post_integral(self, I_ext=0.0 * u.nA):
+    def post_integral(self, I_ext=0.0):
         self._ensure_runtime_ready()
         self.V.value = self.sum_delta_inputs(init=self.V.value)
         point_V = self._point_voltage(self.V.value)
@@ -408,7 +497,7 @@ class Cell(HHTypedNeuron):
             if not isinstance(node, IndependentIntegration):
                 node.post_integral(point_V)
 
-    def update(self, I_ext=0.0 * u.nA):
+    def update(self, I_ext=0.0):
         self._ensure_runtime_ready()
         point_V = self._point_voltage(self.V.value)
         for _, node in self.nodes(IonChannel, allowed_hierarchy=(1, 1)).items():
@@ -419,8 +508,13 @@ class Cell(HHTypedNeuron):
         if dt is None:
             raise ValueError("Cell.update(...) requires brainstate.environ['dt'] to be set.")
         # The solver always advances the installed runtime object. The frontend
-        # declaration layer should already be frozen at this point.
-        with brainstate.environ.context(t=brainstate.environ.get("t", 0.0 * u.ms)):
+        # declaration layer should already be frozen at this point. Point-clamp
+        # evaluation reads either ``brainstate.environ['t']`` or the cell-owned
+        # ``current_time`` fallback, so ``update()`` itself does not need to
+        # mutate the global time environment.
+        if is_python_zero(I_ext):
+            self.solver(self)
+        else:
             self.solver(self, I_ext)
         spk = self.get_spike(last_V, self.V.value)
         self.spike.value = spk
@@ -593,6 +687,14 @@ class Cell(HHTypedNeuron):
             n_point=runtime.n_point,
         )
 
+    def _point_area_decimal(self, *, unit) -> np.ndarray:
+        runtime = self._ensure_runtime_compiled()
+        point_area = np.zeros((runtime.n_point,), dtype=float)
+        for cv in self.cvs:
+            point_id = int(runtime.point_tree.cv_midpoint_point_id[cv.id])
+            point_area[point_id] = float(np.asarray(cv.area.to_decimal(unit), dtype=float))
+        return point_area
+
     def _mech_table(self) -> MechanismObjectTable:
         runtime = self._ensure_runtime_compiled()
         point_tree = self.point_tree()
@@ -681,12 +783,37 @@ class Cell(HHTypedNeuron):
         try:
             t = brainstate.environ.get("t")
         except KeyError:
-            t = 0.0 * u.ms
-        # Placed clamps are evaluated per active point, then normalized by the
-        # local midpoint area so they participate in the same current-density sum
-        # as channels and user-provided external inputs.
+            t = self.current_time
+        # Clamp current is evaluated in point space, but only active midpoint
+        # points have membrane area. Normalize only those active clamp points
+        # instead of dividing the full point vector, which would hit 0-area
+        # topology points (root/terminal connectors) and create 0/0 -> NaN.
         point_current = runtime.evaluate_point_clamps(t=t)
-        return (point_current / self._point_area()).in_unit(u.nA / (u.cm ** 2))
+        active_point_ids: list[int] = []
+        for layout in runtime.layouts:
+            if layout.target != "point" or layout.point_index is None:
+                continue
+            if layout.kind not in {"CurrentClamp", "SineClamp", "FunctionClamp"}:
+                continue
+            active_point_ids.extend(int(point_id) for point_id in layout.point_index.tolist())
+
+        point_density_decimal = u.math.zeros((runtime.n_point,), dtype=float)
+        if len(active_point_ids) == 0:
+            return u.Quantity(point_density_decimal, u.nA / (u.cm ** 2))
+
+        unique_active_point_ids = np.asarray(sorted(set(active_point_ids)), dtype=np.int32)
+        point_current_decimal = u.math.asarray(point_current.to_decimal(u.nA))
+        point_area_decimal = self._point_area_decimal(unit=u.cm ** 2)
+        active_area_decimal = point_area_decimal[unique_active_point_ids]
+        if np.any(active_area_decimal <= 0.0):
+            bad_ids = unique_active_point_ids[active_area_decimal <= 0.0].tolist()
+            raise ValueError(
+                "Point clamp active points must have positive membrane area, "
+                f"got non-positive area at point ids {bad_ids!r}."
+            )
+        active_density_decimal = point_current_decimal[unique_active_point_ids] / active_area_decimal
+        point_density_decimal = point_density_decimal.at[unique_active_point_ids].set(active_density_decimal)
+        return u.Quantity(point_density_decimal, u.nA / (u.cm ** 2))
 
     def _voltage_linearizer(self):
         self._ensure_runtime_compiled()
@@ -717,6 +844,121 @@ class Cell(HHTypedNeuron):
         self._cached_axial_operator = cached
         return cached
 
+    def _sample_probe_layout(self, runtime: CellRuntimeState, *, layout: object, declaration: object) -> object:
+        point_ids = getattr(layout, "point_index", None)
+        if point_ids is None:
+            raise ValueError(f"Probe layout {getattr(layout, 'id', None)!r} is missing point_index.")
+        samples = []
+        for point_id in point_ids.tolist():
+            if isinstance(declaration, StateProbe):
+                samples.append(self._sample_state_probe_point(runtime, declaration=declaration, point_id=int(point_id)))
+            elif isinstance(declaration, MechanismProbe):
+                samples.append(
+                    self._sample_mechanism_probe_point(
+                        runtime,
+                        declaration=declaration,
+                        point_id=int(point_id),
+                    )
+                )
+            elif isinstance(declaration, CurrentProbe):
+                samples.append(
+                    self._sample_current_probe_point(
+                        runtime,
+                        declaration=declaration,
+                        point_id=int(point_id),
+                    )
+                )
+            else:  # pragma: no cover
+                raise TypeError(f"Unsupported probe declaration type {type(declaration).__name__!s}.")
+        return _pack_probe_samples(samples)
+
+    def _sample_state_probe_point(
+        self,
+        runtime: CellRuntimeState,
+        *,
+        declaration: StateProbe,
+        point_id: int,
+    ) -> object:
+        if declaration.field != "v":
+            raise ValueError(f"Unsupported StateProbe field {declaration.field!r}.")
+        cv_id = _midpoint_cv_id(runtime, point_id=point_id)
+        return _select_last_axis(self.V.value, cv_id)
+
+    def _sample_mechanism_probe_point(
+        self,
+        runtime: CellRuntimeState,
+        *,
+        declaration: MechanismProbe,
+        point_id: int,
+    ) -> object:
+        matched_layouts = []
+        for layout in runtime.get_point_layouts(point_id):
+            mechanism = runtime.get_layout_mechanism(layout.id)
+            if isinstance(mechanism, Density) and mechanism.instance_name == declaration.mechanism:
+                matched_layouts.append(layout)
+        if len(matched_layouts) > 1:
+            raise ValueError(
+                f"Probe {_probe_name(declaration)!r} matched multiple mechanisms named "
+                f"{declaration.mechanism!r} at point {point_id!r}."
+            )
+        if len(matched_layouts) == 1:
+            node = runtime.get_runtime_node(matched_layouts[0].id)
+            raw = _probe_state_attr(node, declaration.field, probe_name=_probe_name(declaration))
+            return _select_last_axis(raw.value, point_id)
+
+        ion_matches = []
+        for ion_key, ion in runtime.ions.items():
+            identifiers = {str(ion_key), type(ion).__name__}
+            ion_name = getattr(ion, "name", None)
+            if isinstance(ion_name, str) and ion_name:
+                identifiers.add(ion_name)
+            if declaration.mechanism in identifiers:
+                ion_matches.append(ion)
+        if len(ion_matches) > 1:
+            raise ValueError(
+                f"Probe {_probe_name(declaration)!r} matched multiple ions named {declaration.mechanism!r}."
+            )
+        if len(ion_matches) == 1:
+            raw = _probe_state_attr(ion_matches[0], declaration.field, probe_name=_probe_name(declaration))
+            return _select_last_axis(raw.value, point_id)
+
+        raise KeyError(
+            f"Probe {_probe_name(declaration)!r} could not find a mechanism or ion named "
+            f"{declaration.mechanism!r} at point {point_id!r}."
+        )
+
+    def _sample_current_probe_point(
+        self,
+        runtime: CellRuntimeState,
+        *,
+        declaration: CurrentProbe,
+        point_id: int,
+    ) -> object:
+        point_V = self._point_voltage(self.V.value)
+        ion = runtime.get_ion(declaration.ion)
+        if declaration.mechanism is not None:
+            matched_layouts = []
+            for layout in runtime.get_point_layouts(point_id):
+                mechanism = runtime.get_layout_mechanism(layout.id)
+                if isinstance(mechanism, Density) and mechanism.instance_name == declaration.mechanism:
+                    matched_layouts.append(layout)
+            if len(matched_layouts) > 1:
+                raise ValueError(
+                    f"Probe {_probe_name(declaration)!r} matched multiple mechanisms named "
+                    f"{declaration.mechanism!r} at point {point_id!r}."
+                )
+            if len(matched_layouts) == 0:
+                raise KeyError(
+                    f"Probe {_probe_name(declaration)!r} could not find a mechanism named "
+                    f"{declaration.mechanism!r} at point {point_id!r}."
+                )
+            node = runtime.get_runtime_node(matched_layouts[0].id)
+            current = _probe_current_value(node, point_V, ion.pack_info(), probe_name=_probe_name(declaration))
+            return _select_last_axis(current, point_id)
+
+        current = ion.current(point_V, include_external=False)
+        return _select_last_axis(current, point_id)
+
 
 def _resolve_solver(solver: str | Callable) -> tuple[str, Callable]:
     if isinstance(solver, str):
@@ -728,3 +970,83 @@ def _resolve_solver(solver: str | Callable) -> tuple[str, Callable]:
         solver_name = getattr(solver, "__name__", type(solver).__name__)
         return solver_name, solver
     raise TypeError(f"solver must be str or callable, got {type(solver).__name__!s}.")
+
+
+def _midpoint_cv_id(runtime: CellRuntimeState, *, point_id: int) -> int:
+    matches = np.flatnonzero(runtime.point_tree.cv_midpoint_point_id == int(point_id))
+    if len(matches) != 1:
+        raise ValueError(
+            f"Point {point_id!r} is not a unique CV midpoint; got CV matches {matches.tolist()!r}."
+        )
+    return int(matches[0])
+
+
+def _select_last_axis(value: object, index: int) -> object:
+    value = value.value if isinstance(value, brainstate.State) else value
+    shape = getattr(value, "shape", ())
+    if shape in (None, ()):
+        return value
+    return value[..., int(index)]
+
+
+def _probe_state_attr(owner: object, field: str, *, probe_name: str) -> brainstate.State:
+    if not hasattr(owner, field):
+        raise KeyError(f"Probe {probe_name!r} field {field!r} was not found on {type(owner).__name__!s}.")
+    raw = getattr(owner, field)
+    if not isinstance(raw, brainstate.State):
+        raise ValueError(
+            f"Probe {probe_name!r} field {field!r} on {type(owner).__name__!s} is not a runtime state."
+        )
+    return raw
+
+
+def _probe_current_value(owner: object, point_V: object, ion_info: object, *, probe_name: str) -> object:
+    if not hasattr(owner, "current"):
+        raise KeyError(f"Probe {probe_name!r} target {type(owner).__name__!s} has no current(...) method.")
+    try:
+        return owner.current(point_V, ion_info)
+    except TypeError:
+        return owner.current(point_V)
+
+
+def _pack_probe_samples(samples: list[object]) -> object:
+    if len(samples) == 0:
+        return u.math.asarray([])
+    if len(samples) == 1:
+        return samples[0]
+    first = samples[0]
+    if hasattr(first, "unit"):
+        unit = first.unit
+        decimals = [sample.to_decimal(unit) for sample in samples]
+        return u.Quantity(u.math.asarray(decimals), unit)
+    return u.math.asarray(samples)
+
+
+def _probe_name(declaration: StateProbe | MechanismProbe | CurrentProbe) -> str:
+    if declaration.name is None:
+        raise ValueError(
+            f"Probe declaration {type(declaration).__name__!s} has no resolved name."
+        )
+    return declaration.name
+
+
+def _validate_time_quantity(value: object, *, name: str) -> None:
+    if not hasattr(value, "to_decimal"):
+        raise TypeError(f"Cell.run(...) {name} must be a time quantity, got {value!r}.")
+    decimal = np.asarray(value.to_decimal(u.ms), dtype=float)
+    if decimal.shape not in ((), (1,)):
+        raise ValueError(f"Cell.run(...) {name} must be scalar, got shape {decimal.shape!r}.")
+    if float(decimal.reshape(())) <= 0.0:
+        raise ValueError(f"Cell.run(...) {name} must be > 0, got {value!r}.")
+
+
+def _normalize_run_traces(values: object, *, n_traces: int) -> tuple[object, ...]:
+    if n_traces == 1:
+        return values if isinstance(values, tuple) else (values,)
+    if not isinstance(values, tuple):
+        raise TypeError(f"Cell.run(...) expected {n_traces} trace arrays, got {type(values).__name__!s}.")
+    if len(values) != n_traces:
+        raise ValueError(
+            f"Cell.run(...) expected {n_traces} trace arrays, got {len(values)!r}."
+        )
+    return values

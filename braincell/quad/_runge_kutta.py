@@ -298,7 +298,7 @@ def euler_step(
         >>> with brainstate.environ.context(t=0. * u.ms, dt=0.01 * u.ms):
         ...     euler_step(my_neuron)                       # doctest: +SKIP
     """
-    t = brainstate.environ.get('t')
+    t = brainstate.environ.get('t', getattr(target, 'current_time', 0.0 * u.ms))
     dt = brainstate.environ.get('dt')
     _general_rk_step(euler_tableau, target, t, dt, *args)
 
@@ -372,7 +372,7 @@ def midpoint_step(
         >>> with brainstate.environ.context(t=0. * u.ms, dt=0.01 * u.ms):
         ...     midpoint_step(my_neuron)                    # doctest: +SKIP
     """
-    t = brainstate.environ.get('t')
+    t = brainstate.environ.get('t', getattr(target, 'current_time', 0.0 * u.ms))
     dt = brainstate.environ.get('dt')
     _general_rk_step(midpoint_tableau, target, t, dt, *args)
 
@@ -446,7 +446,7 @@ def rk2_step(
         >>> with brainstate.environ.context(t=0. * u.ms, dt=0.01 * u.ms):
         ...     rk2_step(my_neuron)                         # doctest: +SKIP
     """
-    t = brainstate.environ.get('t')
+    t = brainstate.environ.get('t', getattr(target, 'current_time', 0.0 * u.ms))
     dt = brainstate.environ.get('dt')
     _general_rk_step(rk2_tableau, target, t, dt, *args)
 
@@ -518,7 +518,7 @@ def heun2_step(
         >>> with brainstate.environ.context(t=0. * u.ms, dt=0.01 * u.ms):
         ...     heun2_step(my_neuron)                       # doctest: +SKIP
     """
-    t = brainstate.environ.get('t')
+    t = brainstate.environ.get('t', getattr(target, 'current_time', 0.0 * u.ms))
     dt = brainstate.environ.get('dt')
     _general_rk_step(heun2_tableau, target, t, dt, *args)
 
@@ -599,7 +599,7 @@ def ralston2_step(
         >>> with brainstate.environ.context(t=0. * u.ms, dt=0.01 * u.ms):
         ...     ralston2_step(my_neuron)                    # doctest: +SKIP
     """
-    t = brainstate.environ.get('t')
+    t = brainstate.environ.get('t', getattr(target, 'current_time', 0.0 * u.ms))
     dt = brainstate.environ.get('dt')
     _general_rk_step(ralston2_tableau, target, t, dt, *args)
 
@@ -675,7 +675,7 @@ def rk3_step(
         >>> with brainstate.environ.context(t=0. * u.ms, dt=0.01 * u.ms):
         ...     rk3_step(my_neuron)                         # doctest: +SKIP
     """
-    t = brainstate.environ.get('t')
+    t = brainstate.environ.get('t', getattr(target, 'current_time', 0.0 * u.ms))
     dt = brainstate.environ.get('dt')
     _general_rk_step(rk3_tableau, target, t, dt, *args)
 
@@ -750,7 +750,7 @@ def heun3_step(
         >>> with brainstate.environ.context(t=0. * u.ms, dt=0.01 * u.ms):
         ...     heun3_step(my_neuron)                       # doctest: +SKIP
     """
-    t = brainstate.environ.get('t')
+    t = brainstate.environ.get('t', getattr(target, 'current_time', 0.0 * u.ms))
     dt = brainstate.environ.get('dt')
     _general_rk_step(heun3_tableau, target, t, dt, *args)
 
@@ -835,7 +835,7 @@ def ssprk3_step(
         >>> with brainstate.environ.context(t=0. * u.ms, dt=0.01 * u.ms):
         ...     ssprk3_step(my_neuron)                      # doctest: +SKIP
     """
-    t = brainstate.environ.get('t')
+    t = brainstate.environ.get('t', getattr(target, 'current_time', 0.0 * u.ms))
     dt = brainstate.environ.get('dt')
     _general_rk_step(ssprk3_tableau, target, t, dt, *args)
 
@@ -918,7 +918,7 @@ def ralston3_step(
         >>> with brainstate.environ.context(t=0. * u.ms, dt=0.01 * u.ms):
         ...     ralston3_step(my_neuron)                    # doctest: +SKIP
     """
-    t = brainstate.environ.get('t')
+    t = brainstate.environ.get('t', getattr(target, 'current_time', 0.0 * u.ms))
     dt = brainstate.environ.get('dt')
     _general_rk_step(ralston3_tableau, target, t, dt, *args)
 
@@ -998,7 +998,7 @@ def rk4_step(
         >>> with brainstate.environ.context(t=0. * u.ms, dt=0.01 * u.ms):
         ...     rk4_step(my_neuron)                         # doctest: +SKIP
     """
-    t = brainstate.environ.get('t')
+    t = brainstate.environ.get('t', getattr(target, 'current_time', 0.0 * u.ms))
     dt = brainstate.environ.get('dt')
     _general_rk_step(rk4_tableau, target, t, dt, *args)
 
@@ -1080,6 +1080,6 @@ def ralston4_step(
         >>> with brainstate.environ.context(t=0. * u.ms, dt=0.01 * u.ms):
         ...     ralston4_step(my_neuron)                    # doctest: +SKIP
     """
-    t = brainstate.environ.get('t')
+    t = brainstate.environ.get('t', getattr(target, 'current_time', 0.0 * u.ms))
     dt = brainstate.environ.get('dt')
     _general_rk_step(ralston4_tableau, target, t, dt, *args)

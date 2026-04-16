@@ -20,7 +20,8 @@ import unittest
 import brainunit as u
 import numpy as np
 
-from braincell import Branch, Morphology, MorphoBranch, MorphoMetric
+from braincell import Branch, Morphology
+from braincell.morph import MorphoBranch, MorphoMetric
 
 
 class MorphoTest(unittest.TestCase):

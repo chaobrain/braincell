@@ -22,13 +22,16 @@ import numpy as np
 from braincell import ion as runtime_ion
 from braincell._base import IonChannel
 from braincell.mech import (
+    CurrentProbe,
     CurrentClamp,
     Density,
     FunctionClamp,
     Junction,
+    MechanismProbe,
     Point,
     ProbeMechanism,
     SineClamp,
+    StateProbe,
     Synapse,
     get_registry,
 )
@@ -428,13 +431,20 @@ def mechanism_kind(mechanism: object) -> str:
     For :class:`Density` mechanisms the tag is
     ``"{category}:{class_name}"``. :class:`Point` mechanisms use their
     class ``__name__`` (``CurrentClamp``, ``SineClamp``,
-    ``ProbeMechanism`` …), with ``ProbeMechanism`` appending the
-    variable/target for debuggability.
+    ``StateProbe`` / ``MechanismProbe`` / ``CurrentProbe`` / ``ProbeMechanism`` appending
+    their selector fields for debuggability.
     """
     if isinstance(mechanism, Density):
         return f"{mechanism.category}:{mechanism.class_name}"
     if isinstance(mechanism, Synapse):
         return f"synapse:{mechanism.synapse_type}"
+    if isinstance(mechanism, StateProbe):
+        return f"state_probe:{mechanism.field}:{mechanism.name}"
+    if isinstance(mechanism, MechanismProbe):
+        return f"mechanism_probe:{mechanism.mechanism}:{mechanism.field}:{mechanism.name}"
+    if isinstance(mechanism, CurrentProbe):
+        target = mechanism.mechanism if mechanism.mechanism is not None else mechanism.ion
+        return f"current_probe:{target}:{mechanism.name}"
     if isinstance(mechanism, ProbeMechanism):
         return f"probe:{mechanism.variable}:{mechanism.target}"
     if isinstance(mechanism, Point):
@@ -466,8 +476,8 @@ def _mechanism_var_names(mechanism: object) -> tuple[str, ...]:
     For :class:`Density` this is the declared ``params`` keys. For
     synapses and junctions it is the parameter keys (or a single
     default name when empty). For clamps it is the concrete dataclass
-    field names, and for probes it is a 1-tuple containing the probed
-    variable name.
+    field names. The v1 probe declarations do not allocate their own
+    state buffers; they are read through explicit sampling helpers.
     """
     if isinstance(mechanism, Density):
         return tuple(mechanism.params.keys())
@@ -483,6 +493,8 @@ def _mechanism_var_names(mechanism: object) -> tuple[str, ...]:
         return ("amplitude", "frequency", "phase", "offset", "start", "duration")
     if isinstance(mechanism, FunctionClamp):
         return ("fn", "start", "duration")
+    if isinstance(mechanism, (StateProbe, MechanismProbe, CurrentProbe)):
+        return ()
     if isinstance(mechanism, ProbeMechanism):
         return (mechanism.variable,)
     if is_dataclass(mechanism):

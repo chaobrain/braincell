@@ -196,10 +196,12 @@ class FilterModuleAllTest(unittest.TestCase):
     def test_locset_module_declares_all(self) -> None:
         self.assertIn("LocsetMask", locset_mod.__all__)
         self.assertIn("LocsetExpr", locset_mod.__all__)
+        self.assertIn("AtLocation", locset_mod.__all__)
         self.assertIn("RootLocation", locset_mod.__all__)
         self.assertIn("RandomSamples", locset_mod.__all__)
         self.assertIn("LocsetSetOp", locset_mod.__all__)
         self.assertIn("StepSamples", locset_mod.__all__)
+        self.assertIn("at", locset_mod.__all__)
 
     def test_helper_module_declares_all(self) -> None:
         self.assertIn("branch_slice_intervals", helper_mod.__all__)

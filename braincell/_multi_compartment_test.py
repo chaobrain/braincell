@@ -20,6 +20,7 @@ from unittest import mock
 
 import brainstate
 import brainunit as u
+import numpy as np
 
 import braincell
 from braincell import (
@@ -29,11 +30,13 @@ from braincell import (
     Cell,
     CurrentClamp,
     Morphology,
+    RunResult,
 )
 from braincell.filter import (
     BranchSlice,
     RootLocation,
     Terminals,
+    at,
 )
 
 
@@ -298,6 +301,26 @@ class CellFacadeTest(unittest.TestCase):
         self.assertEqual(len(cell.cvs[0].point_mech), 0)
         self.assertEqual(len(cell.cvs[1].point_mech), 2)
         # parent branch endpoint remains on branch 0 last CV, not child branch first CV.
+        self.assertEqual(cell.cvs[1].point_mech[-1].amplitudes[0].to_decimal(u.nA), 0.2)
+        self.assertEqual(len(cell.cvs[2].point_mech), 0)
+
+    def test_place_at_location_follows_existing_boundary_mapping_rules(self) -> None:
+        soma = Branch.from_lengths(lengths=[10.0] * u.um, radii=[3.0, 2.0] * u.um, type="soma")
+        dend = Branch.from_lengths(lengths=[10.0] * u.um, radii=[2.0, 1.0] * u.um, type="basal_dendrite")
+        tree = Morphology.from_root(soma, name="soma")
+        tree.soma.d = dend
+        cell = Cell(tree, cv_policy=CVPerBranch(cv_per_branch=2))
+
+        stim_boundary = CurrentClamp.step(0.1 * u.nA, 1.0 * u.ms, delay=1.0 * u.ms)
+        stim_parent_end = CurrentClamp.step(0.2 * u.nA, 1.0 * u.ms, delay=1.0 * u.ms)
+        cell.place(at("soma", 0.5), stim_boundary)
+        cell.place(at(0, 1.0), stim_parent_end)
+
+        # Single-point locsets reuse the existing point-to-CV mapping:
+        # boundaries go to the right CV, while a branch endpoint stays on the
+        # parent branch's terminal CV even when a child attaches there.
+        self.assertEqual(len(cell.cvs[0].point_mech), 0)
+        self.assertEqual(len(cell.cvs[1].point_mech), 2)
         self.assertEqual(cell.cvs[1].point_mech[-1].amplitudes[0].to_decimal(u.nA), 0.2)
         self.assertEqual(len(cell.cvs[2].point_mech), 0)
 
@@ -770,6 +793,116 @@ class CellExecutionTest(unittest.TestCase):
             spike = cell.update()
         self.assertEqual(spike.shape, (2,))
 
+    def test_run_returns_result_with_all_probe_traces(self) -> None:
+        cell = Cell(_build_tree())
+        cell.paint(
+            BranchSlice(branch_index=[0, 1], prox=0.0, dist=1.0),
+            braincell.mech.Channel("INa_HH1952", g_max=12.0 * (u.mS / u.cm ** 2)),
+        )
+        cell.place(
+            at("soma", 0.5),
+            braincell.mech.StateProbe(),
+            braincell.mech.MechanismProbe(mechanism="INa_HH1952", field="p"),
+        )
+        cell.init_state()
+
+        result = cell.run(dt=0.01 * u.ms, duration=0.05 * u.ms)
+
+        self.assertIsInstance(result, RunResult)
+        self.assertEqual(result.time.shape, (5,))
+        self.assertEqual(sorted(result.traces), ["soma(0.5)_INa_HH1952_p", "soma(0.5)_v"])
+        self.assertEqual(result.traces["soma(0.5)_v"].shape, (5,))
+        self.assertEqual(result.traces["soma(0.5)_INa_HH1952_p"].shape, (5,))
+        self.assertEqual(cell.current_time, 0.05 * u.ms)
+
+    def test_run_with_single_probe_returns_single_trace(self) -> None:
+        cell = Cell(_build_tree())
+        cell.place(
+            at("soma", 0.5),
+            braincell.mech.StateProbe(),
+        )
+        cell.init_state()
+
+        result = cell.run(dt=0.01 * u.ms, duration=0.03 * u.ms)
+
+        self.assertEqual(result.time.shape, (3,))
+        self.assertEqual(list(result.traces), ["soma(0.5)_v"])
+        self.assertEqual(result.traces["soma(0.5)_v"].shape, (3,))
+
+    def test_run_requires_initialized_state(self) -> None:
+        cell = Cell(_build_tree())
+        cell.place(at("soma", 0.5), braincell.mech.StateProbe())
+
+        with self.assertRaises(ValueError):
+            cell.run(dt=0.01 * u.ms, duration=0.03 * u.ms)
+
+    def test_run_requires_at_least_one_probe(self) -> None:
+        cell = Cell(_build_tree())
+        cell.init_state()
+
+        with self.assertRaises(ValueError):
+            cell.run(dt=0.01 * u.ms, duration=0.03 * u.ms)
+
+    def test_run_validates_dt_and_duration(self) -> None:
+        cell = Cell(_build_tree())
+        cell.place(at("soma", 0.5), braincell.mech.StateProbe())
+        cell.init_state()
+
+        with self.assertRaises(ValueError):
+            cell.run(dt=0.0 * u.ms, duration=0.03 * u.ms)
+        with self.assertRaises(ValueError):
+            cell.run(dt=0.01 * u.ms, duration=0.0 * u.ms)
+        with self.assertRaises(TypeError):
+            cell.run(dt=0.01, duration=0.03 * u.ms)  # type: ignore[arg-type]
+
+    def test_run_advances_absolute_time_across_calls_and_reset_state_resets_it(self) -> None:
+        cell = Cell(_build_tree())
+        cell.paint(
+            BranchSlice(branch_index=[0, 1], prox=0.0, dist=1.0),
+            braincell.mech.Channel("INa_HH1952", g_max=12.0 * (u.mS / u.cm ** 2)),
+        )
+        cell.place(
+            at("soma", 0.5),
+            braincell.mech.StateProbe(),
+            braincell.mech.MechanismProbe(mechanism="INa_HH1952", field="p"),
+            braincell.CurrentClamp.step(0.2 * u.nA, 0.01 * u.ms, delay=0.0 * u.ms),
+        )
+        cell.init_state()
+
+        first = cell.run(dt=0.01 * u.ms, duration=0.02 * u.ms)
+        second = cell.run(dt=0.01 * u.ms, duration=0.02 * u.ms)
+
+        self.assertEqual(first.time[0], 0.0 * u.ms)
+        self.assertEqual(first.time[-1], 0.01 * u.ms)
+        self.assertEqual(second.time[0], 0.02 * u.ms)
+        self.assertEqual(second.time[-1], 0.03 * u.ms)
+        self.assertEqual(cell.current_time, 0.04 * u.ms)
+        runtime = cell._ensure_runtime_compiled()
+        current_after_window = runtime.evaluate_point_clamps(t=second.time[0])
+        self.assertAlmostEqual(float(current_after_window[1].to_decimal(u.nA)), 0.0, places=12)
+
+        cell.reset_state()
+        self.assertEqual(cell.current_time, 0.0 * u.ms)
+
+    def test_run_is_make_jaxpr_safe(self) -> None:
+        cell = Cell(_build_tree())
+        cell.paint(
+            BranchSlice(branch_index=[0, 1], prox=0.0, dist=1.0),
+            braincell.mech.Channel("INa_HH1952", g_max=12.0 * (u.mS / u.cm ** 2)),
+        )
+        cell.place(
+            at("soma", 0.5),
+            braincell.mech.StateProbe(),
+            braincell.mech.MechanismProbe(mechanism="INa_HH1952", field="p"),
+        )
+        cell.init_state()
+
+        jaxpr, _ = brainstate.transform.make_jaxpr(
+            lambda: cell.run(dt=0.01 * u.ms, duration=0.02 * u.ms)
+        )()
+
+        self.assertIsNotNone(jaxpr)
+
     def test_staggered_solver_updates_cv_sized_voltage(self) -> None:
         cell = Cell(_build_tree(), solver="staggered")
         cell.paint(
@@ -929,6 +1062,15 @@ class CellExecutionTest(unittest.TestCase):
         self.assertLess(float(derivative[0].to_decimal(u.mV / u.ms)), 0.0)
         self.assertGreater(float(derivative[1].to_decimal(u.mV / u.ms)), 0.0)
 
+    def test_compute_axial_derivative_is_zero_for_uniform_multi_cv_voltage(self) -> None:
+        cell = Cell(_build_tree(), solver="staggered", cv_policy=braincell.CVPerBranch(cv_per_branch=2))
+        cell.init_state()
+
+        derivative = cell.compute_axial_derivative(u.math.asarray([-65.0, -65.0, -65.0, -65.0]) * u.mV)
+        self.assertEqual(derivative.shape, (4,))
+        for value in derivative:
+            self.assertAlmostEqual(float(value.to_decimal(u.mV / u.ms)), 0.0, places=8)
+
     def test_explicit_solver_uses_axial_coupling(self) -> None:
         cell = Cell(_build_soma_tree(), solver="explicit", cv_policy=braincell.CVPerBranch(cv_per_branch=2))
         cell.init_state()
@@ -1021,6 +1163,23 @@ class CellExecutionTest(unittest.TestCase):
         self.assertGreater(float(late[0].to_decimal(u.mV / u.ms)), 0.0)
         self.assertAlmostEqual(float(after[0].to_decimal(u.mV / u.ms)), 0.0, places=8)
 
+    def test_point_clamp_input_normalizes_only_active_midpoints(self) -> None:
+        cell = Cell(_build_tree(), solver="explicit", cv_policy=braincell.CVPerBranch(cv_per_branch=1))
+        cell.place(
+            RootLocation(x=0.5),
+            braincell.CurrentClamp.step(0.2 * u.nA, 10.0 * u.ms, delay=0.0 * u.ms),
+        )
+        cell.init_state()
+
+        with brainstate.environ.context(t=1.0 * u.ms):
+            point_clamp_input = np.asarray(cell._point_clamp_input().to_decimal(u.nA / (u.cm ** 2)), dtype=float)
+
+        self.assertFalse(np.isnan(point_clamp_input).any())
+        self.assertGreater(point_clamp_input[1], 0.0)
+        self.assertAlmostEqual(point_clamp_input[0], 0.0, places=12)
+        self.assertAlmostEqual(point_clamp_input[2], 0.0, places=12)
+        self.assertAlmostEqual(point_clamp_input[4], 0.0, places=12)
+
     def test_placed_current_clamp_targets_only_selected_point(self) -> None:
         cell = Cell(_build_tree(), solver="explicit", cv_policy=braincell.CVPerBranch(cv_per_branch=1))
         cell.place(
@@ -1034,6 +1193,21 @@ class CellExecutionTest(unittest.TestCase):
 
         self.assertGreater(float(derivative[0].to_decimal(u.mV / u.ms)), 0.0)
         self.assertAlmostEqual(float(derivative[1].to_decimal(u.mV / u.ms)), 0.0, places=8)
+
+    def test_default_zero_external_current_does_not_suppress_point_clamp(self) -> None:
+        cell = Cell(_build_tree(), solver="staggered", cv_policy=braincell.CVPerBranch(cv_per_branch=1))
+        cell.place(
+            RootLocation(x=0.5),
+            braincell.CurrentClamp.step(0.2 * u.nA, 10.0 * u.ms, delay=0.0 * u.ms),
+        )
+        cell.init_state()
+
+        with brainstate.environ.context(dt=0.01 * u.ms, t=0.0 * u.ms):
+            before = float(cell.V.value[0].to_decimal(u.mV))
+            cell.update()
+            after = float(cell.V.value[0].to_decimal(u.mV))
+
+        self.assertGreater(after, before)
 
     def test_multiple_terminal_clamps_do_not_broadcast_to_all_points(self) -> None:
         cell = Cell(_build_tree(), solver="explicit", cv_policy=braincell.CVPerBranch(cv_per_branch=1))

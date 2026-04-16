@@ -145,7 +145,7 @@ def backward_euler_step(target: DiffEqModule, *args):
         ...     backward_euler_step(my_neuron, input_current)  # doctest: +SKIP
     """
 
-    t = brainstate.environ.get('t')
+    t = brainstate.environ.get('t', getattr(target, 'current_time', 0.0 * u.ms))
     dt = brainstate.environ.get('dt')
 
     apply_standard_solver_step(

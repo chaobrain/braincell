@@ -179,7 +179,7 @@ def diffrax_euler_step(target: DiffEqModule, *args):
     :mod:`brainstate.environ` context. The braincell state vector is
     stacked along the last axis before being handed to diffrax.
     """
-    t = brainstate.environ.get('t')
+    t = brainstate.environ.get('t', getattr(target, 'current_time', 0.0 * u.ms))
     dt = brainstate.environ.get('dt')
     _diffrax_explicit_solver(diffrax.Euler(), target, t, dt, *args)
 
@@ -220,7 +220,7 @@ def diffrax_heun_step(target: DiffEqModule, *args):
     --------
     heun2_step : Native (no-diffrax) Heun implementation.
     """
-    t = brainstate.environ.get('t')
+    t = brainstate.environ.get('t', getattr(target, 'current_time', 0.0 * u.ms))
     dt = brainstate.environ.get('dt')
     _diffrax_explicit_solver(diffrax.Heun(), target, t, dt, *args)
 
@@ -261,7 +261,7 @@ def diffrax_midpoint_step(target: DiffEqModule, *args):
     --------
     midpoint_step : Native (no-diffrax) midpoint implementation.
     """
-    t = brainstate.environ.get('t')
+    t = brainstate.environ.get('t', getattr(target, 'current_time', 0.0 * u.ms))
     dt = brainstate.environ.get('dt')
     _diffrax_explicit_solver(diffrax.Midpoint(), target, t, dt, *args)
 
@@ -303,7 +303,7 @@ def diffrax_ralston_step(target: DiffEqModule, *args):
     --------
     ralston2_step : Native (no-diffrax) Ralston implementation.
     """
-    t = brainstate.environ.get('t')
+    t = brainstate.environ.get('t', getattr(target, 'current_time', 0.0 * u.ms))
     dt = brainstate.environ.get('dt')
     _diffrax_explicit_solver(diffrax.Ralston(), target, t, dt, *args)
 
@@ -348,7 +348,7 @@ def diffrax_bosh3_step(target: DiffEqModule, *args):
     --------
     rk3_step, ssprk3_step : Native third-order RK alternatives.
     """
-    t = brainstate.environ.get('t')
+    t = brainstate.environ.get('t', getattr(target, 'current_time', 0.0 * u.ms))
     dt = brainstate.environ.get('dt')
     _diffrax_explicit_solver(diffrax.Bosh3(), target, t, dt, *args)
 
@@ -393,7 +393,7 @@ def diffrax_tsit5_step(target: DiffEqModule, *args):
     diffrax_dopri5_step : Dormand-Prince 5(4), an alternative fifth-order
         explicit method.
     """
-    t = brainstate.environ.get('t')
+    t = brainstate.environ.get('t', getattr(target, 'current_time', 0.0 * u.ms))
     dt = brainstate.environ.get('dt')
     _diffrax_explicit_solver(diffrax.Tsit5(), target, t, dt, *args)
 
@@ -436,7 +436,7 @@ def diffrax_dopri5_step(target: DiffEqModule, *args):
     diffrax_tsit5_step, diffrax_dopri8_step : Other diffrax-backed
         higher-order explicit Runge-Kutta solvers.
     """
-    t = brainstate.environ.get('t')
+    t = brainstate.environ.get('t', getattr(target, 'current_time', 0.0 * u.ms))
     dt = brainstate.environ.get('dt')
     _diffrax_explicit_solver(diffrax.Dopri5(), target, t, dt, *args)
 
@@ -479,7 +479,7 @@ def diffrax_dopri8_step(target: DiffEqModule, *args):
     diffrax_dopri5_step, diffrax_tsit5_step : Cheaper fifth-order
         alternatives.
     """
-    t = brainstate.environ.get('t')
+    t = brainstate.environ.get('t', getattr(target, 'current_time', 0.0 * u.ms))
     dt = brainstate.environ.get('dt')
     _diffrax_explicit_solver(diffrax.Dopri8(), target, t, dt, *args)
 
@@ -549,7 +549,7 @@ def diffrax_bwd_euler_step(target: DiffEqModule, *args, tol=1e-5):
     backward_euler_step : Native (no-diffrax) linearised backward Euler.
     implicit_euler_step : Native Newton-iteration backward Euler.
     """
-    t = brainstate.environ.get('t')
+    t = brainstate.environ.get('t', getattr(target, 'current_time', 0.0 * u.ms))
     dt = brainstate.environ.get('dt')
     _diffrax_explicit_solver(
         diffrax.ImplicitEuler(root_finder=diffrax.VeryChord(rtol=tol, atol=tol)),
@@ -599,7 +599,7 @@ def diffrax_kvaerno3_step(target: DiffEqModule, *args, tol=1e-5):
     diffrax_kvaerno4_step, diffrax_kvaerno5_step : Higher-order Kvaerno
         variants from the same family.
     """
-    t = brainstate.environ.get('t')
+    t = brainstate.environ.get('t', getattr(target, 'current_time', 0.0 * u.ms))
     dt = brainstate.environ.get('dt')
     _diffrax_explicit_solver(
         diffrax.Kvaerno3(root_finder=diffrax.VeryChord(rtol=tol, atol=tol)),
@@ -646,7 +646,7 @@ def diffrax_kvaerno4_step(target: DiffEqModule, *args, tol=1e-5):
     --------
     diffrax_kvaerno3_step, diffrax_kvaerno5_step : Other Kvaerno variants.
     """
-    t = brainstate.environ.get('t')
+    t = brainstate.environ.get('t', getattr(target, 'current_time', 0.0 * u.ms))
     dt = brainstate.environ.get('dt')
     _diffrax_explicit_solver(
         diffrax.Kvaerno4(root_finder=diffrax.VeryChord(rtol=tol, atol=tol)),
@@ -694,7 +694,7 @@ def diffrax_kvaerno5_step(target: DiffEqModule, *args, tol=1e-5):
     diffrax_kvaerno3_step, diffrax_kvaerno4_step : Lower-order Kvaerno
         variants.
     """
-    t = brainstate.environ.get('t')
+    t = brainstate.environ.get('t', getattr(target, 'current_time', 0.0 * u.ms))
     dt = brainstate.environ.get('dt')
     _diffrax_explicit_solver(
         diffrax.Kvaerno5(root_finder=diffrax.VeryChord(rtol=tol, atol=tol)),

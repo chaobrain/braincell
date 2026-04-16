@@ -18,14 +18,17 @@ import unittest
 import brainunit as u
 
 from braincell.mech import (
+    CurrentProbe,
     CurrentClamp,
     FunctionClamp,
     Junction,
+    MechanismProbe,
     Mechanism,
     Params,
     Point,
     ProbeMechanism,
     SineClamp,
+    StateProbe,
     Synapse,
 )
 
@@ -35,11 +38,14 @@ class PointBaseTest(unittest.TestCase):
         cc = CurrentClamp.step(0.1 * u.nA, 1.0 * u.ms)
         sine = SineClamp(amplitude=0.1 * u.nA, frequency=10 * u.Hz)
         fc = FunctionClamp(fn=lambda t: 0.1 * u.nA)
+        state_probe = StateProbe(name="v_soma")
+        mechanism_probe = MechanismProbe(name="na_p", mechanism="na_soma", field="p")
+        current_probe = CurrentProbe(ion="na", mechanism="na_soma")
         probe = ProbeMechanism(variable="v")
         syn = Synapse(synapse_type="AMPA")
         gap = Junction()
 
-        for mech in (cc, sine, fc, probe, syn, gap):
+        for mech in (cc, sine, fc, state_probe, mechanism_probe, current_probe, probe, syn, gap):
             self.assertIsInstance(mech, Point)
             self.assertIsInstance(mech, Mechanism)
 
@@ -137,6 +143,54 @@ class FunctionClampTest(unittest.TestCase):
         b = FunctionClamp(fn=lambda t: 0.1 * u.nA)
         # Identity-based equality since lambdas compare by is
         self.assertNotEqual(a, b)
+
+
+class StateProbeTest(unittest.TestCase):
+    def test_basic_construction(self) -> None:
+        probe = StateProbe()
+        self.assertIsNone(probe.name)
+        self.assertEqual(probe.field, "v")
+
+    def test_only_v_is_supported(self) -> None:
+        with self.assertRaises(ValueError):
+            StateProbe(name="bad", field="cm")
+
+
+class MechanismProbeTest(unittest.TestCase):
+    def test_basic_construction(self) -> None:
+        probe = MechanismProbe(mechanism="na_soma", field="p")
+        self.assertIsNone(probe.name)
+        self.assertEqual(probe.mechanism, "na_soma")
+        self.assertEqual(probe.field, "p")
+
+    def test_fields_must_be_non_empty(self) -> None:
+        with self.assertRaises(ValueError):
+            MechanismProbe(name="x", mechanism="", field="p")
+        with self.assertRaises(ValueError):
+            MechanismProbe(name="x", mechanism="na", field="")
+        with self.assertRaises(ValueError):
+            MechanismProbe(name="", mechanism="na", field="p")
+
+
+class CurrentProbeTest(unittest.TestCase):
+    def test_basic_construction_with_mechanism(self) -> None:
+        probe = CurrentProbe(ion="k", mechanism="IK_Kv_test")
+        self.assertEqual(probe.ion, "k")
+        self.assertEqual(probe.mechanism, "IK_Kv_test")
+        self.assertIsNone(probe.name)
+
+    def test_basic_construction_for_total_ion_current(self) -> None:
+        probe = CurrentProbe(ion="k")
+        self.assertEqual(probe.ion, "k")
+        self.assertIsNone(probe.mechanism)
+
+    def test_invalid_fields_raise(self) -> None:
+        with self.assertRaises(ValueError):
+            CurrentProbe(ion="")
+        with self.assertRaises(ValueError):
+            CurrentProbe(ion="k", mechanism="")
+        with self.assertRaises(ValueError):
+            CurrentProbe(ion="k", name="")
 
 
 class ProbeMechanismTest(unittest.TestCase):

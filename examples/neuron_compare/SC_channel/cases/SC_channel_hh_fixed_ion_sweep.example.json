@@ -1,0 +1,92 @@
+{
+  "template_family": "single_compartment_channel",
+  "template_variant": "hh_fixed_ion",
+  "config_id": "kv_test_cartesian_smoke",
+  "base_case": {
+    "pair_id": "kv_test",
+    "mod_dir": "/home/swl/braincell/examples/convert_mod/mod_validate/mods",
+    "morphology": {
+      "length_um": 10.0,
+      "diam_um": 31.830988618379067,
+      "cm_uF_cm2": 1.0
+    },
+    "simulation": {
+      "dt_ms": 0.025,
+      "duration_ms": 4.0,
+      "v_init_mV": -65.0,
+      "temperature_celsius": 25.0
+    },
+    "stimulus": {
+      "kind": "dc",
+      "delay_ms": 0.0,
+      "dur_ms": 4.0,
+      "amp_nA": 0.02
+    },
+    "ion": {
+      "mode": "fixed",
+      "fixed_E_mV": -80.0
+    },
+    "channel_overrides": {
+      "g_max_S_cm2": 0.0,
+      "v12_mV": 25.0,
+      "q": 9.0
+    }
+  },
+  "sweep_axes": {
+    "simulation.temperature_celsius": [
+      10.0,
+      25.0,
+      35.0
+    ],
+    "simulation.v_init_mV": [
+      -65.0,
+      -30.0,
+      0.0
+    ]
+  },
+  "case_groups": [
+    {
+      "group_id": "dc_polarity",
+      "description": "DC step polarity and conductance smoke sweep.",
+      "overrides": {},
+      "sweep_axes": {
+        "stimulus.amp_nA": [
+          -0.02,
+          0.02
+        ],
+        "channel_overrides.g_max_S_cm2": [
+          0.0,
+          0.001
+        ]
+      }
+    },
+    {
+      "group_id": "ac_sine",
+      "description": "Sine-clamp amplitude/frequency smoke sweep.",
+      "overrides": {
+        "stimulus": {
+          "kind": "sine",
+          "start_ms": 0.0,
+          "duration_ms": 4.0,
+          "amplitude_nA": 0.02,
+          "frequency_hz": 250.0,
+          "phase_rad": 0.0,
+          "offset_nA": 0.0
+        }
+      },
+      "sweep_axes": {
+        "stimulus.amplitude_nA": [
+          0.01,
+          0.02
+        ],
+        "stimulus.frequency_hz": [
+          100.0,
+          250.0
+        ]
+      }
+    }
+  ],
+  "outputs": {
+    "plot": false
+  }
+}

@@ -29,6 +29,8 @@ Location = tuple[int, float]
 __all__ = [
     "LocsetMask",
     "LocsetExpr",
+    "AtLocation",
+    "at",
     "RootLocation",
     "BranchPoints",
     "Terminals",
@@ -43,6 +45,14 @@ __all__ = [
 @dataclass(frozen=True)
 class LocsetMask:
     points: tuple[Location, ...]
+    display_names: tuple[str, ...]
+
+    def __post_init__(self) -> None:
+        if len(self.points) != len(self.display_names):
+            raise ValueError(
+                "LocsetMask.points and display_names must have the same length, "
+                f"got {len(self.points)!r} and {len(self.display_names)!r}."
+            )
 
 
 class LocsetExpr(ABC):
@@ -71,13 +81,43 @@ class LocsetExpr(ABC):
 
 
 @dataclass(frozen=True)
+class AtLocation(LocsetExpr):
+    branch: int | str
+    x: float
+
+    def evaluate(self, morpho: Morphology, cache: SelectionCache | None = None) -> LocsetMask:
+        _ = cache
+        if not isinstance(morpho, Morphology):
+            raise TypeError(f"AtLocation expects Morpho, got {type(morpho).__name__!s}.")
+        if isinstance(self.branch, bool):
+            raise TypeError("AtLocation.branch expects int or str, got bool.")
+        if isinstance(self.branch, int):
+            branch_view = morpho.branch(index=self.branch)
+        elif isinstance(self.branch, str):
+            branch_view = morpho.branch(name=self.branch)
+        else:
+            raise TypeError(
+                "AtLocation.branch expects int or str, "
+                f"got {type(self.branch).__name__!s}."
+            )
+        branch_id = branch_view.index
+        points = helper.normalize_locset_points(((branch_id, self.x),))
+        return LocsetMask(points=points, display_names=_display_names_for_points(morpho, points))
+
+
+def at(branch: int | str, x: float) -> AtLocation:
+    return AtLocation(branch=branch, x=x)
+
+
+@dataclass(frozen=True)
 class RootLocation(LocsetExpr):
     x: float
 
     def evaluate(self, morpho: Morphology, cache: SelectionCache | None = None) -> LocsetMask:
         if not isinstance(morpho, Morphology):
             raise TypeError(f"RootLocation expects Morpho, got {type(morpho).__name__!s}.")
-        return LocsetMask(helper.normalize_locset_points(((0, self.x),)))
+        points = helper.normalize_locset_points(((0, self.x),))
+        return LocsetMask(points=points, display_names=_display_names_for_points(morpho, points))
 
 
 @dataclass(frozen=True)
@@ -85,7 +125,8 @@ class BranchPoints(LocsetExpr):
     def evaluate(self, morpho: Morphology, cache: SelectionCache | None = None) -> LocsetMask:
         if not isinstance(morpho, Morphology):
             raise TypeError(f"BranchPoints expects Morpho, got {type(morpho).__name__!s}.")
-        return LocsetMask(helper.branch_points_locations(morpho))
+        points = helper.branch_points_locations(morpho)
+        return LocsetMask(points=points, display_names=_display_names_for_points(morpho, points))
 
 
 @dataclass(frozen=True)
@@ -93,7 +134,8 @@ class Terminals(LocsetExpr):
     def evaluate(self, morpho: Morphology, cache: SelectionCache | None = None) -> LocsetMask:
         if not isinstance(morpho, Morphology):
             raise TypeError(f"Terminals expects Morpho, got {type(morpho).__name__!s}.")
-        return LocsetMask(helper.terminal_locations(morpho))
+        points = helper.terminal_locations(morpho)
+        return LocsetMask(points=points, display_names=_display_names_for_points(morpho, points))
 
 
 @dataclass(frozen=True)
@@ -119,13 +161,12 @@ class UniformSamples(LocsetExpr):
                 f"got {type(self.region).__name__!s}."
             )
         mask = self.region.evaluate(morpho, cache=cache)
-        return LocsetMask(
-            helper.uniform_samples_from_region(
+        points = helper.uniform_samples_from_region(
                 morpho,
                 intervals=mask.intervals,
                 count=self.count,
             )
-        )
+        return LocsetMask(points=points, display_names=_display_names_for_points(morpho, points))
 
 
 @dataclass(frozen=True)
@@ -143,14 +184,13 @@ class RandomSamples(LocsetExpr):
                 f"got {type(self.region).__name__!s}."
             )
         mask = self.region.evaluate(morpho, cache=cache)
-        return LocsetMask(
-            helper.random_samples_from_region(
+        points = helper.random_samples_from_region(
                 morpho,
                 intervals=mask.intervals,
                 count=self.count,
                 seed=self.seed,
             )
-        )
+        return LocsetMask(points=points, display_names=_display_names_for_points(morpho, points))
 
 
 @dataclass(frozen=True)
@@ -184,4 +224,14 @@ class LocsetSetOp(LocsetExpr):
                 current = helper.intersect_locset_points(current, other)
             else:
                 current = helper.difference_locset_points(current, other)
-        return LocsetMask(current)
+        return LocsetMask(points=current, display_names=_display_names_for_points(morpho, current))
+
+
+def _display_names_for_points(morpho: Morphology, points: tuple[Location, ...]) -> tuple[str, ...]:
+    return tuple(_display_name_for_point(morpho, point) for point in points)
+
+
+def _display_name_for_point(morpho: Morphology, point: Location) -> str:
+    branch_id, x = point
+    branch_name = morpho.branch(index=int(branch_id)).name
+    return f"{branch_name}({float(x):g})"

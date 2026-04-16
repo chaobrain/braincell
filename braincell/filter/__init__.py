@@ -15,6 +15,7 @@
 
 from .cache import SelectionCache
 from .locset import (
+    AtLocation,
     BranchPoints,
     LocsetMask,
     LocsetExpr,
@@ -25,6 +26,7 @@ from .locset import (
     StepSamples,
     Terminals,
     UniformSamples,
+    at,
 )
 from .region import (
     AllRegion,
@@ -45,6 +47,7 @@ from .region import (
 
 __all__ = [
     "AllRegion",
+    "AtLocation",
     "BranchInFilter",
     "BranchRangeFilter",
     "BranchPoints",
@@ -67,6 +70,7 @@ __all__ = [
     "Terminals",
     "TreeDistanceRegion",
     "UniformSamples",
+    "at",
     "branch_in",
     "branch_range",
 ]

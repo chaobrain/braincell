@@ -30,6 +30,7 @@ from braincell.channel.sodium import (
     INa_p3q_markov,
     SodiumChannel,
 )
+from braincell.channel.sodium_v2 import INa_HH1952_v2
 
 
 def _na_info(size: int = 1) -> IonInfo:
@@ -218,6 +219,65 @@ class INa_TM1991Test(_Markov_p3q_Mixin, unittest.TestCase):
 
 class INa_HH1952Test(_Markov_p3q_Mixin, unittest.TestCase):
     CLS = INa_HH1952
+
+
+class INa_HH1952V2Test(unittest.TestCase):
+    def test_reset_state_matches_legacy_implementation(self) -> None:
+        legacy = INa_HH1952(size=1)
+        proto = INa_HH1952_v2(size=1)
+        V = _V([-65.0])
+        na = _na_info()
+
+        legacy.init_state(V, na)
+        proto.init_state(V, na)
+        legacy.reset_state(V, na)
+        proto.reset_state(V, na)
+
+        self.assertTrue(u.math.allclose(proto.p.value, legacy.p.value, atol=1e-6))
+        self.assertTrue(u.math.allclose(proto.q.value, legacy.q.value, atol=1e-6))
+
+    def test_compute_derivative_matches_legacy_implementation(self) -> None:
+        legacy = INa_HH1952(size=1)
+        proto = INa_HH1952_v2(size=1)
+        V = _V([-60.0])
+        na = _na_info()
+
+        legacy.init_state(V, na)
+        proto.init_state(V, na)
+        legacy.reset_state(V, na)
+        proto.reset_state(V, na)
+        legacy.p.value = jnp.array([0.1])
+        legacy.q.value = jnp.array([0.9])
+        proto.p.value = jnp.array([0.1])
+        proto.q.value = jnp.array([0.9])
+
+        legacy.compute_derivative(V, na)
+        proto.compute_derivative(V, na)
+
+        self.assertTrue(u.math.allclose(proto.p.derivative, legacy.p.derivative, atol=1e-6 * u.Hz))
+        self.assertTrue(u.math.allclose(proto.q.derivative, legacy.q.derivative, atol=1e-6 * u.Hz))
+
+    def test_current_matches_legacy_implementation(self) -> None:
+        legacy = INa_HH1952(size=1)
+        proto = INa_HH1952_v2(size=1)
+        V = _V([-60.0])
+        na = _na_info()
+
+        legacy.init_state(V, na)
+        proto.init_state(V, na)
+        legacy.reset_state(V, na)
+        proto.reset_state(V, na)
+
+        i_legacy = legacy.current(V, na)
+        i_proto = proto.current(V, na)
+        unit = u.mS / u.cm ** 2 * u.mV
+        self.assertTrue(
+            u.math.allclose(
+                i_proto.to_decimal(unit),
+                i_legacy.to_decimal(unit),
+                atol=1e-6,
+            )
+        )
 
 
 class INaRsgTest(unittest.TestCase):

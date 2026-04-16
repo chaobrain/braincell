@@ -14,7 +14,7 @@
 # ==============================================================================
 
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 import brainunit as u
 import numpy as np
@@ -22,8 +22,11 @@ import numpy as np
 from braincell.filter import AllRegion, LocsetExpr, RegionExpr
 from braincell.mech import (
     CableProperty,
+    CurrentProbe,
     Density,
+    MechanismProbe,
     Point,
+    StateProbe,
 )
 from braincell.morph import Morphology
 from ._geo import CVGeo, EPSILON, interval_lateral_area, map_point_to_cv
@@ -240,8 +243,8 @@ def apply_place_rules(
     for rule in place_rules:
         if rule.site != "mid":
             raise ValueError(f"Unsupported place site {rule.site!r}; only 'mid' is allowed.")
-        points = rule.locset.evaluate(morpho).points
-        for point in points:
+        mask = rule.locset.evaluate(morpho)
+        for point, display_name in zip(mask.points, mask.display_names):
             cv_id = map_point_to_cv(
                 point,
                 cvs=cvs,
@@ -250,7 +253,10 @@ def apply_place_rules(
             )
             if cv_id is None:
                 continue
-            mechs[cv_id].point_mech.extend(rule.mechanisms)
+            mechs[cv_id].point_mech.extend(
+                _resolve_point_mechanism_name(mechanism, display_name=display_name)
+                for mechanism in rule.mechanisms
+            )
 
 
 def _contains_coord(
@@ -272,6 +278,29 @@ def _group_intervals_by_branch(
     for branch, prox, dist in intervals:
         grouped.setdefault(int(branch), []).append((float(prox), float(dist)))
     return {branch: tuple(ranges) for branch, ranges in grouped.items()}
+
+
+def _resolve_point_mechanism_name(mechanism: Point, *, display_name: str) -> Point:
+    if isinstance(mechanism, StateProbe):
+        return mechanism if mechanism.name is not None else replace(
+            mechanism,
+            name=f"{display_name}_{mechanism.field}",
+        )
+    if isinstance(mechanism, MechanismProbe):
+        return mechanism if mechanism.name is not None else replace(
+            mechanism,
+            name=f"{display_name}_{mechanism.mechanism}_{mechanism.field}",
+        )
+    if isinstance(mechanism, CurrentProbe):
+        suffix = (
+            f"{mechanism.mechanism}_current"
+            if mechanism.mechanism is not None else f"{mechanism.ion}_current"
+        )
+        return mechanism if mechanism.name is not None else replace(
+            mechanism,
+            name=f"{display_name}_{suffix}",
+        )
+    return mechanism
 
 
 def _coverage_area_fraction(

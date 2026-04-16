@@ -14,23 +14,33 @@ from braincell.quad import DiffEqState
 
 __all__ = [
     "Gate",
-    "GateChannelTemplate",
-    "q10_scale",
-    "shifted_voltage",
+    "Transition",
+    "OpenState",
+    "Passive",
+    "HH",
+    "Markov",
+    "ghk_flux",
 ]
 
 
-def shifted_voltage(V, V_sh):
-    return V - V_sh
+def ghk_flux(V, ci, co, z, T):
+    """Unit-aware GHK flux helper with a small-zeta stable branch."""
+
+    zeta = (z * u.faraday_constant * V) / (u.gas_constant * T)
+    exp_term = u.math.exp(-zeta)
+    numerator = ci - co * exp_term
+    small_branch = (z * u.faraday_constant) * numerator * (1 + zeta / 2)
+    regular_branch = (z * zeta * u.faraday_constant) * numerator / (1 - exp_term)
+    return u.math.where(u.math.abs(1 - exp_term) <= 1e-6, small_branch, regular_branch)
 
 
-def q10_scale(temp, temp_ref, q10):
-    return q10 ** (((temp - temp_ref) / u.kelvin) / 10.0)
+def _resolve_value(owner, value):
+    return value(owner) if callable(value) else value
 
 
 @dataclass(frozen=True)
 class Gate:
-    """Minimal metadata for one gate in a gate-based channel."""
+    """Metadata for one HH gate."""
 
     name: str
     power: int = 1
@@ -52,36 +62,61 @@ class Gate:
                 f"Gate {self.name!r}: q10 and temp_ref must be provided together."
             )
 
-    def f_phi(self, channel):
-        if self.phi is not None:
-            return self.phi
-        if self.q10 is not None:
-            return q10_scale(channel.temp, self.temp_ref, self.q10)
+
+@dataclass(frozen=True)
+class Transition:
+    """One directed/reversible transition used by Markov channels."""
+
+    src: str
+    dst: str
+    forward: str
+    backward: str | None = None
+
+
+@dataclass(frozen=True)
+class OpenState:
+    """One conducting state and its contribution weight."""
+
+    name: str
+    weight: float = 1.0
+
+
+class Passive(Channel):
+    """No-state channel dynamics."""
+
+    def init_state(self, V, *ions, batch_size: int = None):
+        _ = (self, V, ions, batch_size)
+
+    def reset_state(self, V, *ions, batch_size: int = None):
+        _ = (self, V, ions, batch_size)
+
+    def compute_derivative(self, V, *ions):
+        _ = (self, V, ions)
+
+    def conductance_factor(self, V, *ions):
+        _ = (self, V, ions)
         return 1.0
 
 
-class GateChannelTemplate(Channel):
-    """Minimal gate-based channel skeleton using only ``inf/tau`` kinetics."""
+class HH(Channel):
+    """HH gate dynamics with per-gate auto-detected form.
 
-    gate_defs: ClassVar[tuple[Gate, ...]] = ()
-    g_max_attr: ClassVar[str] = "g_max"
+    For each gate ``g`` exactly one of the following method pairs must exist:
 
-    def _iter_gate_defs(self) -> tuple[Gate, ...]:
-        return type(self).gate_defs
+    - ``f_<g>_inf`` and ``f_<g>_tau``
+    - ``f_<g>_alpha`` and ``f_<g>_beta``
+    """
 
-    def _expected_ion_arg_count(self) -> int:
-        root_type = getattr(self, "root_type", None)
-        if hasattr(root_type, "__args__"):
-            return len(root_type.__args__)
-        return 1
+    gates: ClassVar[tuple[Gate | tuple[Any, ...], ...]] = ()
 
-    def _split_ion_infos_and_batch_size(self, args, batch_size):
-        if batch_size is not None:
-            return tuple(args), batch_size
-        expected = self._expected_ion_arg_count()
-        if len(args) == expected + 1 and (args[-1] is None or isinstance(args[-1], int)):
-            return tuple(args[:-1]), args[-1]
-        return tuple(args), None
+    def _iter_gates(self) -> tuple[Gate, ...]:
+        items = []
+        for gate in type(self).gates:
+            if isinstance(gate, Gate):
+                items.append(gate)
+            else:
+                items.append(Gate(*gate))
+        return tuple(items)
 
     def _gate_state(self, gate: Gate) -> DiffEqState:
         return getattr(self, gate.name)
@@ -90,51 +125,207 @@ class GateChannelTemplate(Channel):
         return self._gate_state(gate).value
 
     def gate_phi(self, gate: Gate):
-        return gate.f_phi(self)
+        """Resolve one gate's temperature factor.
 
-    def _gate_inf(self, gate: Gate, V, *ion_infos):
-        return getattr(self, f"f_{gate.name}_inf")(V, *ion_infos)
+        Resolution order is intentionally simple:
 
-    def _gate_tau(self, gate: Gate, V, *ion_infos):
-        return getattr(self, f"f_{gate.name}_tau")(V, *ion_infos)
+        1. explicit ``phi``
+        2. ``q10`` + ``temp_ref`` using ``self.temp``
+        3. default ``1.0``
+        """
+        if gate.phi is not None:
+            return _resolve_value(self, gate.phi)
+        if gate.q10 is not None:
+            q10 = _resolve_value(self, gate.q10)
+            temp_ref = _resolve_value(self, gate.temp_ref)
+            return q10 ** (((self.temp - temp_ref) / u.kelvin) / 10.0)
+        return 1.0
 
-    def _gate_derivative(self, gate: Gate, V, *ion_infos):
-        value = self._gate_value(gate)
-        phi = self.gate_phi(gate)
-        return phi * (self._gate_inf(gate, V, *ion_infos) - value) / self._gate_tau(gate, V, *ion_infos) / u.ms
+    def _has_inf_tau(self, gate: Gate) -> bool:
+        return hasattr(self, f"f_{gate.name}_inf") and hasattr(self, f"f_{gate.name}_tau")
 
-    def gating_product(self):
-        product = 1.0
-        for gate in self._iter_gate_defs():
-            value = self._gate_value(gate)
-            product = product * (value if gate.power == 1 else value ** gate.power)
-        return product
+    def _has_alpha_beta(self, gate: Gate) -> bool:
+        return hasattr(self, f"f_{gate.name}_alpha") and hasattr(self, f"f_{gate.name}_beta")
 
-    def conductance(self, V, *ion_infos):
-        return getattr(self, self.g_max_attr) * self.gating_product()
+    def _gate_form(self, gate: Gate) -> str:
+        has_inf_tau = self._has_inf_tau(gate)
+        has_alpha_beta = self._has_alpha_beta(gate)
+        if has_inf_tau and has_alpha_beta:
+            raise ValueError(
+                f"Gate {gate.name!r} defines both inf/tau and alpha/beta forms; choose one."
+            )
+        if has_inf_tau:
+            return "inf_tau"
+        if has_alpha_beta:
+            return "alpha_beta"
+        raise ValueError(
+            f"Gate {gate.name!r} must define either inf/tau or alpha/beta methods."
+        )
 
-    def drive(self, V, *ion_infos):
-        raise NotImplementedError
-
-    def current(self, V, *ion_infos):
-        return self.conductance(V, *ion_infos) * self.drive(V, *ion_infos)
-
-    def init_state(self, V, *args, batch_size: int = None):
-        _, batch_size = self._split_ion_infos_and_batch_size(args, batch_size)
-        for gate in self._iter_gate_defs():
+    def init_state(self, V, *ions, batch_size: int = None):
+        _ = (V, ions)
+        for gate in self._iter_gates():
             setattr(
                 self,
                 gate.name,
                 DiffEqState(braintools.init.param(u.math.zeros, self.varshape, batch_size)),
             )
 
-    def reset_state(self, V, *args, batch_size: int = None):
-        ion_infos, batch_size = self._split_ion_infos_and_batch_size(args, batch_size)
-        for gate in self._iter_gate_defs():
-            self._gate_state(gate).value = self._gate_inf(gate, V, *ion_infos)
-            if isinstance(batch_size, int):
-                assert self._gate_state(gate).value.shape[0] == batch_size
+    def conductance_factor(self, V, *ions):
+        _ = (V, ions)
+        product = 1.0
+        for gate in self._iter_gates():
+            value = self._gate_value(gate)
+            product = product * (value if gate.power == 1 else value ** gate.power)
+        return product
 
-    def compute_derivative(self, V, *ion_infos):
-        for gate in self._iter_gate_defs():
-            self._gate_state(gate).derivative = self._gate_derivative(gate, V, *ion_infos)
+
+    def reset_state(self, V, *ions, batch_size: int = None):
+        for gate in self._iter_gates():
+            form = self._gate_form(gate)
+            if form == "inf_tau":
+                value = getattr(self, f"f_{gate.name}_inf")(V, *ions)
+            else:
+                alpha = getattr(self, f"f_{gate.name}_alpha")(V, *ions)
+                beta = getattr(self, f"f_{gate.name}_beta")(V, *ions)
+                value = alpha / (alpha + beta)
+            self._gate_state(gate).value = value
+            if isinstance(batch_size, int):
+                assert value.shape[0] == batch_size
+
+    def compute_derivative(self, V, *ions):
+        for gate in self._iter_gates():
+            value = self._gate_value(gate)
+            phi = self.gate_phi(gate)
+            form = self._gate_form(gate)
+            if form == "inf_tau":
+                inf = getattr(self, f"f_{gate.name}_inf")(V, *ions)
+                tau = getattr(self, f"f_{gate.name}_tau")(V, *ions)
+                derivative = phi * (inf - value) / tau / u.ms
+            else:
+                alpha = getattr(self, f"f_{gate.name}_alpha")(V, *ions)
+                beta = getattr(self, f"f_{gate.name}_beta")(V, *ions)
+                derivative = phi * (alpha * (1.0 - value) - beta * value) / u.ms
+            self._gate_state(gate).derivative = derivative
+
+
+class Markov(Channel):
+    """Probability-state channel kinetics described by transition pairs."""
+
+    pairs: ClassVar[tuple[Transition | tuple[Any, ...], ...]] = ()
+    conserve: ClassVar[Any] = 1.0
+    dependent_state: ClassVar[str | None] = None
+    conducting: ClassVar[tuple[OpenState | tuple[Any, ...], ...]] = ()
+
+    def _iter_pairs(self) -> tuple[Transition, ...]:
+        items = []
+        for pair in type(self).pairs:
+            if isinstance(pair, Transition):
+                items.append(pair)
+            else:
+                items.append(Transition(*pair))
+        return tuple(items)
+
+    def _iter_conducting(self) -> tuple[OpenState, ...]:
+        items = []
+        for state in type(self).conducting:
+            if isinstance(state, OpenState):
+                items.append(state)
+            else:
+                items.append(OpenState(*state))
+        return tuple(items)
+
+    def _state_names(self) -> tuple[str, ...]:
+        names: list[str] = []
+        seen: set[str] = set()
+        for pair in self._iter_pairs():
+            for name in (pair.src, pair.dst):
+                if name not in seen:
+                    names.append(name)
+                    seen.add(name)
+        for state in self._iter_conducting():
+            if state.name not in seen:
+                names.append(state.name)
+                seen.add(state.name)
+        return tuple(names)
+
+    def _dependent_state_name(self) -> str:
+        state_names = self._state_names()
+        if len(state_names) < 2:
+            raise ValueError("Markov requires at least two states.")
+        if type(self).dependent_state is not None:
+            if type(self).dependent_state not in state_names:
+                raise ValueError(
+                    f"dependent_state {type(self).dependent_state!r} is not present in Markov states."
+                )
+            return type(self).dependent_state
+        return state_names[-1]
+
+    def _independent_state_names(self) -> tuple[str, ...]:
+        dependent = self._dependent_state_name()
+        return tuple(name for name in self._state_names() if name != dependent)
+
+    def _state_zero(self):
+        independent = self._independent_state_names()
+        if not independent:
+            raise ValueError("Markov requires at least one independent state.")
+        return u.math.zeros_like(getattr(self, independent[0]).value)
+
+    def _conserve_value(self):
+        return _resolve_value(self, type(self).conserve)
+
+    def init_state(self, V, *ions, batch_size: int = None):
+        _ = (V, ions)
+        for name in self._independent_state_names():
+            setattr(
+                self,
+                name,
+                DiffEqState(braintools.init.param(u.math.zeros, self.varshape, batch_size)),
+            )
+
+    def reset_state(self, V, *ions, batch_size: int = None):
+        _ = (V, ions)
+        for name in self._independent_state_names():
+            value = braintools.init.param(u.math.zeros, self.varshape, batch_size)
+            getattr(self, name).value = value
+            if isinstance(batch_size, int):
+                assert value.shape[0] == batch_size
+
+    def state_values(self):
+        states = {
+            name: getattr(self, name).value
+            for name in self._independent_state_names()
+        }
+        dependent = self._dependent_state_name()
+        total = None
+        for value in states.values():
+            total = value if total is None else (total + value)
+        if total is None:
+            total = 0.0
+        states[dependent] = self._conserve_value() - total
+        return states
+
+    def compute_derivative(self, V, *ions):
+        states = self.state_values()
+        derivatives = {name: self._state_zero() for name in states}
+
+        for pair in self._iter_pairs():
+            forward = getattr(self, pair.forward)(V, *ions)
+            derivatives[pair.src] = derivatives[pair.src] - states[pair.src] * forward
+            derivatives[pair.dst] = derivatives[pair.dst] + states[pair.src] * forward
+
+            if pair.backward is not None:
+                backward = getattr(self, pair.backward)(V, *ions)
+                derivatives[pair.src] = derivatives[pair.src] + states[pair.dst] * backward
+                derivatives[pair.dst] = derivatives[pair.dst] - states[pair.dst] * backward
+
+        for name in self._independent_state_names():
+            getattr(self, name).derivative = derivatives[name] / u.ms
+
+    def conductance_factor(self, V, *ions):
+        _ = (V, ions)
+        states = self.state_values()
+        factor = 0.0
+        for state in self._iter_conducting():
+            factor = factor + states[state.name] * state.weight
+        return factor

@@ -15,6 +15,7 @@
 
 
 from . import quad, mech, channel, synapse, ion
+from .mech import CableProperty, CurrentClamp, FunctionClamp, SineClamp
 from ._base import (
     Channel,
     HHTypedNeuron,
@@ -24,7 +25,7 @@ from ._base import (
     MixIons,
     mix_ions,
 )
-from ._multi_compartment import Cell
+from ._multi_compartment import Cell, RunResult
 from ._single_compartment import SingleCompartment
 from ._version import (
     __version__,
@@ -47,12 +48,8 @@ from .morph import (
     Branch,
     CustomBranch,
     Dendrite,
-    MorphoEdge,
-    MorphoMetric,
     Morphology,
-    MorphoBranch,
     Soma,
-    branch_class_for_type,
 )
 
 __all__ = [
@@ -62,16 +59,19 @@ __all__ = [
     "Axon",
     "BasalDendrite",
     "Branch",
+    "CableProperty",
     "Cell",
     "Channel",
     "CompositeByTypePolicy",
     "CustomBranch",
+    "CurrentClamp",
     "CV",
     "CVPerBranch",
     "CVPolicy",
     "CVPolicyByTypeRule",
     "DLambda",
     "Dendrite",
+    "FunctionClamp",
     "HHTypedNeuron",
     "Ion",
     "IonChannel",
@@ -80,16 +80,14 @@ __all__ = [
     "MixIons",
     "MaxCVLen",
     "Morphology",
-    "MorphoBranch",
-    "MorphoEdge",
-    "MorphoMetric",
+    "RunResult",
     "SingleCompartment",
     "Soma",
-    "branch_class_for_type",
     "channel",
     "ion",
     "mix_ions",
     "mech",
     "quad",
+    "SineClamp",
     "synapse",
 ]

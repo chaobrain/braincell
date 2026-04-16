@@ -1,0 +1,2918 @@
+[
+  {
+    "case_id": "dc_polarity__000",
+    "channel_overrides": {
+      "g_max_S_cm2": 0.0,
+      "q": 9.0,
+      "v12_mV": 25.0
+    },
+    "group_id": "dc_polarity",
+    "ion": {
+      "fixed_E_mV": -80.0,
+      "mode": "fixed"
+    },
+    "leak": {
+      "e_mV": -65.0,
+      "enabled": false,
+      "g_S_cm2": 0.0
+    },
+    "mod_dir": "/home/swl/braincell/examples/convert_mod/mod_validate/mods",
+    "morphology": {
+      "cm_uF_cm2": 1.0,
+      "length_um": 10.0,
+      "radius_um": 15.915494309189533
+    },
+    "pair_id": "kv_test",
+    "simulation": {
+      "dt_ms": 0.025,
+      "duration_ms": 4.0,
+      "temperature_celsius": 10.0,
+      "v_init_mV": -65.0
+    },
+    "stimulus": {
+      "amp_nA": -0.02,
+      "delay_ms": 0.0,
+      "dur_ms": 4.0,
+      "kind": "dc"
+    },
+    "template_family": "single_compartment_channel",
+    "template_variant": "hh_fixed_ion"
+  },
+  {
+    "case_id": "dc_polarity__001",
+    "channel_overrides": {
+      "g_max_S_cm2": 0.001,
+      "q": 9.0,
+      "v12_mV": 25.0
+    },
+    "group_id": "dc_polarity",
+    "ion": {
+      "fixed_E_mV": -80.0,
+      "mode": "fixed"
+    },
+    "leak": {
+      "e_mV": -65.0,
+      "enabled": false,
+      "g_S_cm2": 0.0
+    },
+    "mod_dir": "/home/swl/braincell/examples/convert_mod/mod_validate/mods",
+    "morphology": {
+      "cm_uF_cm2": 1.0,
+      "length_um": 10.0,
+      "radius_um": 15.915494309189533
+    },
+    "pair_id": "kv_test",
+    "simulation": {
+      "dt_ms": 0.025,
+      "duration_ms": 4.0,
+      "temperature_celsius": 10.0,
+      "v_init_mV": -65.0
+    },
+    "stimulus": {
+      "amp_nA": -0.02,
+      "delay_ms": 0.0,
+      "dur_ms": 4.0,
+      "kind": "dc"
+    },
+    "template_family": "single_compartment_channel",
+    "template_variant": "hh_fixed_ion"
+  },
+  {
+    "case_id": "dc_polarity__002",
+    "channel_overrides": {
+      "g_max_S_cm2": 0.0,
+      "q": 9.0,
+      "v12_mV": 25.0
+    },
+    "group_id": "dc_polarity",
+    "ion": {
+      "fixed_E_mV": -80.0,
+      "mode": "fixed"
+    },
+    "leak": {
+      "e_mV": -65.0,
+      "enabled": false,
+      "g_S_cm2": 0.0
+    },
+    "mod_dir": "/home/swl/braincell/examples/convert_mod/mod_validate/mods",
+    "morphology": {
+      "cm_uF_cm2": 1.0,
+      "length_um": 10.0,
+      "radius_um": 15.915494309189533
+    },
+    "pair_id": "kv_test",
+    "simulation": {
+      "dt_ms": 0.025,
+      "duration_ms": 4.0,
+      "temperature_celsius": 10.0,
+      "v_init_mV": -65.0
+    },
+    "stimulus": {
+      "amp_nA": 0.02,
+      "delay_ms": 0.0,
+      "dur_ms": 4.0,
+      "kind": "dc"
+    },
+    "template_family": "single_compartment_channel",
+    "template_variant": "hh_fixed_ion"
+  },
+  {
+    "case_id": "dc_polarity__003",
+    "channel_overrides": {
+      "g_max_S_cm2": 0.001,
+      "q": 9.0,
+      "v12_mV": 25.0
+    },
+    "group_id": "dc_polarity",
+    "ion": {
+      "fixed_E_mV": -80.0,
+      "mode": "fixed"
+    },
+    "leak": {
+      "e_mV": -65.0,
+      "enabled": false,
+      "g_S_cm2": 0.0
+    },
+    "mod_dir": "/home/swl/braincell/examples/convert_mod/mod_validate/mods",
+    "morphology": {
+      "cm_uF_cm2": 1.0,
+      "length_um": 10.0,
+      "radius_um": 15.915494309189533
+    },
+    "pair_id": "kv_test",
+    "simulation": {
+      "dt_ms": 0.025,
+      "duration_ms": 4.0,
+      "temperature_celsius": 10.0,
+      "v_init_mV": -65.0
+    },
+    "stimulus": {
+      "amp_nA": 0.02,
+      "delay_ms": 0.0,
+      "dur_ms": 4.0,
+      "kind": "dc"
+    },
+    "template_family": "single_compartment_channel",
+    "template_variant": "hh_fixed_ion"
+  },
+  {
+    "case_id": "dc_polarity__004",
+    "channel_overrides": {
+      "g_max_S_cm2": 0.0,
+      "q": 9.0,
+      "v12_mV": 25.0
+    },
+    "group_id": "dc_polarity",
+    "ion": {
+      "fixed_E_mV": -80.0,
+      "mode": "fixed"
+    },
+    "leak": {
+      "e_mV": -65.0,
+      "enabled": false,
+      "g_S_cm2": 0.0
+    },
+    "mod_dir": "/home/swl/braincell/examples/convert_mod/mod_validate/mods",
+    "morphology": {
+      "cm_uF_cm2": 1.0,
+      "length_um": 10.0,
+      "radius_um": 15.915494309189533
+    },
+    "pair_id": "kv_test",
+    "simulation": {
+      "dt_ms": 0.025,
+      "duration_ms": 4.0,
+      "temperature_celsius": 10.0,
+      "v_init_mV": -30.0
+    },
+    "stimulus": {
+      "amp_nA": -0.02,
+      "delay_ms": 0.0,
+      "dur_ms": 4.0,
+      "kind": "dc"
+    },
+    "template_family": "single_compartment_channel",
+    "template_variant": "hh_fixed_ion"
+  },
+  {
+    "case_id": "dc_polarity__005",
+    "channel_overrides": {
+      "g_max_S_cm2": 0.001,
+      "q": 9.0,
+      "v12_mV": 25.0
+    },
+    "group_id": "dc_polarity",
+    "ion": {
+      "fixed_E_mV": -80.0,
+      "mode": "fixed"
+    },
+    "leak": {
+      "e_mV": -65.0,
+      "enabled": false,
+      "g_S_cm2": 0.0
+    },
+    "mod_dir": "/home/swl/braincell/examples/convert_mod/mod_validate/mods",
+    "morphology": {
+      "cm_uF_cm2": 1.0,
+      "length_um": 10.0,
+      "radius_um": 15.915494309189533
+    },
+    "pair_id": "kv_test",
+    "simulation": {
+      "dt_ms": 0.025,
+      "duration_ms": 4.0,
+      "temperature_celsius": 10.0,
+      "v_init_mV": -30.0
+    },
+    "stimulus": {
+      "amp_nA": -0.02,
+      "delay_ms": 0.0,
+      "dur_ms": 4.0,
+      "kind": "dc"
+    },
+    "template_family": "single_compartment_channel",
+    "template_variant": "hh_fixed_ion"
+  },
+  {
+    "case_id": "dc_polarity__006",
+    "channel_overrides": {
+      "g_max_S_cm2": 0.0,
+      "q": 9.0,
+      "v12_mV": 25.0
+    },
+    "group_id": "dc_polarity",
+    "ion": {
+      "fixed_E_mV": -80.0,
+      "mode": "fixed"
+    },
+    "leak": {
+      "e_mV": -65.0,
+      "enabled": false,
+      "g_S_cm2": 0.0
+    },
+    "mod_dir": "/home/swl/braincell/examples/convert_mod/mod_validate/mods",
+    "morphology": {
+      "cm_uF_cm2": 1.0,
+      "length_um": 10.0,
+      "radius_um": 15.915494309189533
+    },
+    "pair_id": "kv_test",
+    "simulation": {
+      "dt_ms": 0.025,
+      "duration_ms": 4.0,
+      "temperature_celsius": 10.0,
+      "v_init_mV": -30.0
+    },
+    "stimulus": {
+      "amp_nA": 0.02,
+      "delay_ms": 0.0,
+      "dur_ms": 4.0,
+      "kind": "dc"
+    },
+    "template_family": "single_compartment_channel",
+    "template_variant": "hh_fixed_ion"
+  },
+  {
+    "case_id": "dc_polarity__007",
+    "channel_overrides": {
+      "g_max_S_cm2": 0.001,
+      "q": 9.0,
+      "v12_mV": 25.0
+    },
+    "group_id": "dc_polarity",
+    "ion": {
+      "fixed_E_mV": -80.0,
+      "mode": "fixed"
+    },
+    "leak": {
+      "e_mV": -65.0,
+      "enabled": false,
+      "g_S_cm2": 0.0
+    },
+    "mod_dir": "/home/swl/braincell/examples/convert_mod/mod_validate/mods",
+    "morphology": {
+      "cm_uF_cm2": 1.0,
+      "length_um": 10.0,
+      "radius_um": 15.915494309189533
+    },
+    "pair_id": "kv_test",
+    "simulation": {
+      "dt_ms": 0.025,
+      "duration_ms": 4.0,
+      "temperature_celsius": 10.0,
+      "v_init_mV": -30.0
+    },
+    "stimulus": {
+      "amp_nA": 0.02,
+      "delay_ms": 0.0,
+      "dur_ms": 4.0,
+      "kind": "dc"
+    },
+    "template_family": "single_compartment_channel",
+    "template_variant": "hh_fixed_ion"
+  },
+  {
+    "case_id": "dc_polarity__008",
+    "channel_overrides": {
+      "g_max_S_cm2": 0.0,
+      "q": 9.0,
+      "v12_mV": 25.0
+    },
+    "group_id": "dc_polarity",
+    "ion": {
+      "fixed_E_mV": -80.0,
+      "mode": "fixed"
+    },
+    "leak": {
+      "e_mV": -65.0,
+      "enabled": false,
+      "g_S_cm2": 0.0
+    },
+    "mod_dir": "/home/swl/braincell/examples/convert_mod/mod_validate/mods",
+    "morphology": {
+      "cm_uF_cm2": 1.0,
+      "length_um": 10.0,
+      "radius_um": 15.915494309189533
+    },
+    "pair_id": "kv_test",
+    "simulation": {
+      "dt_ms": 0.025,
+      "duration_ms": 4.0,
+      "temperature_celsius": 10.0,
+      "v_init_mV": 0.0
+    },
+    "stimulus": {
+      "amp_nA": -0.02,
+      "delay_ms": 0.0,
+      "dur_ms": 4.0,
+      "kind": "dc"
+    },
+    "template_family": "single_compartment_channel",
+    "template_variant": "hh_fixed_ion"
+  },
+  {
+    "case_id": "dc_polarity__009",
+    "channel_overrides": {
+      "g_max_S_cm2": 0.001,
+      "q": 9.0,
+      "v12_mV": 25.0
+    },
+    "group_id": "dc_polarity",
+    "ion": {
+      "fixed_E_mV": -80.0,
+      "mode": "fixed"
+    },
+    "leak": {
+      "e_mV": -65.0,
+      "enabled": false,
+      "g_S_cm2": 0.0
+    },
+    "mod_dir": "/home/swl/braincell/examples/convert_mod/mod_validate/mods",
+    "morphology": {
+      "cm_uF_cm2": 1.0,
+      "length_um": 10.0,
+      "radius_um": 15.915494309189533
+    },
+    "pair_id": "kv_test",
+    "simulation": {
+      "dt_ms": 0.025,
+      "duration_ms": 4.0,
+      "temperature_celsius": 10.0,
+      "v_init_mV": 0.0
+    },
+    "stimulus": {
+      "amp_nA": -0.02,
+      "delay_ms": 0.0,
+      "dur_ms": 4.0,
+      "kind": "dc"
+    },
+    "template_family": "single_compartment_channel",
+    "template_variant": "hh_fixed_ion"
+  },
+  {
+    "case_id": "dc_polarity__010",
+    "channel_overrides": {
+      "g_max_S_cm2": 0.0,
+      "q": 9.0,
+      "v12_mV": 25.0
+    },
+    "group_id": "dc_polarity",
+    "ion": {
+      "fixed_E_mV": -80.0,
+      "mode": "fixed"
+    },
+    "leak": {
+      "e_mV": -65.0,
+      "enabled": false,
+      "g_S_cm2": 0.0
+    },
+    "mod_dir": "/home/swl/braincell/examples/convert_mod/mod_validate/mods",
+    "morphology": {
+      "cm_uF_cm2": 1.0,
+      "length_um": 10.0,
+      "radius_um": 15.915494309189533
+    },
+    "pair_id": "kv_test",
+    "simulation": {
+      "dt_ms": 0.025,
+      "duration_ms": 4.0,
+      "temperature_celsius": 10.0,
+      "v_init_mV": 0.0
+    },
+    "stimulus": {
+      "amp_nA": 0.02,
+      "delay_ms": 0.0,
+      "dur_ms": 4.0,
+      "kind": "dc"
+    },
+    "template_family": "single_compartment_channel",
+    "template_variant": "hh_fixed_ion"
+  },
+  {
+    "case_id": "dc_polarity__011",
+    "channel_overrides": {
+      "g_max_S_cm2": 0.001,
+      "q": 9.0,
+      "v12_mV": 25.0
+    },
+    "group_id": "dc_polarity",
+    "ion": {
+      "fixed_E_mV": -80.0,
+      "mode": "fixed"
+    },
+    "leak": {
+      "e_mV": -65.0,
+      "enabled": false,
+      "g_S_cm2": 0.0
+    },
+    "mod_dir": "/home/swl/braincell/examples/convert_mod/mod_validate/mods",
+    "morphology": {
+      "cm_uF_cm2": 1.0,
+      "length_um": 10.0,
+      "radius_um": 15.915494309189533
+    },
+    "pair_id": "kv_test",
+    "simulation": {
+      "dt_ms": 0.025,
+      "duration_ms": 4.0,
+      "temperature_celsius": 10.0,
+      "v_init_mV": 0.0
+    },
+    "stimulus": {
+      "amp_nA": 0.02,
+      "delay_ms": 0.0,
+      "dur_ms": 4.0,
+      "kind": "dc"
+    },
+    "template_family": "single_compartment_channel",
+    "template_variant": "hh_fixed_ion"
+  },
+  {
+    "case_id": "dc_polarity__012",
+    "channel_overrides": {
+      "g_max_S_cm2": 0.0,
+      "q": 9.0,
+      "v12_mV": 25.0
+    },
+    "group_id": "dc_polarity",
+    "ion": {
+      "fixed_E_mV": -80.0,
+      "mode": "fixed"
+    },
+    "leak": {
+      "e_mV": -65.0,
+      "enabled": false,
+      "g_S_cm2": 0.0
+    },
+    "mod_dir": "/home/swl/braincell/examples/convert_mod/mod_validate/mods",
+    "morphology": {
+      "cm_uF_cm2": 1.0,
+      "length_um": 10.0,
+      "radius_um": 15.915494309189533
+    },
+    "pair_id": "kv_test",
+    "simulation": {
+      "dt_ms": 0.025,
+      "duration_ms": 4.0,
+      "temperature_celsius": 25.0,
+      "v_init_mV": -65.0
+    },
+    "stimulus": {
+      "amp_nA": -0.02,
+      "delay_ms": 0.0,
+      "dur_ms": 4.0,
+      "kind": "dc"
+    },
+    "template_family": "single_compartment_channel",
+    "template_variant": "hh_fixed_ion"
+  },
+  {
+    "case_id": "dc_polarity__013",
+    "channel_overrides": {
+      "g_max_S_cm2": 0.001,
+      "q": 9.0,
+      "v12_mV": 25.0
+    },
+    "group_id": "dc_polarity",
+    "ion": {
+      "fixed_E_mV": -80.0,
+      "mode": "fixed"
+    },
+    "leak": {
+      "e_mV": -65.0,
+      "enabled": false,
+      "g_S_cm2": 0.0
+    },
+    "mod_dir": "/home/swl/braincell/examples/convert_mod/mod_validate/mods",
+    "morphology": {
+      "cm_uF_cm2": 1.0,
+      "length_um": 10.0,
+      "radius_um": 15.915494309189533
+    },
+    "pair_id": "kv_test",
+    "simulation": {
+      "dt_ms": 0.025,
+      "duration_ms": 4.0,
+      "temperature_celsius": 25.0,
+      "v_init_mV": -65.0
+    },
+    "stimulus": {
+      "amp_nA": -0.02,
+      "delay_ms": 0.0,
+      "dur_ms": 4.0,
+      "kind": "dc"
+    },
+    "template_family": "single_compartment_channel",
+    "template_variant": "hh_fixed_ion"
+  },
+  {
+    "case_id": "dc_polarity__014",
+    "channel_overrides": {
+      "g_max_S_cm2": 0.0,
+      "q": 9.0,
+      "v12_mV": 25.0
+    },
+    "group_id": "dc_polarity",
+    "ion": {
+      "fixed_E_mV": -80.0,
+      "mode": "fixed"
+    },
+    "leak": {
+      "e_mV": -65.0,
+      "enabled": false,
+      "g_S_cm2": 0.0
+    },
+    "mod_dir": "/home/swl/braincell/examples/convert_mod/mod_validate/mods",
+    "morphology": {
+      "cm_uF_cm2": 1.0,
+      "length_um": 10.0,
+      "radius_um": 15.915494309189533
+    },
+    "pair_id": "kv_test",
+    "simulation": {
+      "dt_ms": 0.025,
+      "duration_ms": 4.0,
+      "temperature_celsius": 25.0,
+      "v_init_mV": -65.0
+    },
+    "stimulus": {
+      "amp_nA": 0.02,
+      "delay_ms": 0.0,
+      "dur_ms": 4.0,
+      "kind": "dc"
+    },
+    "template_family": "single_compartment_channel",
+    "template_variant": "hh_fixed_ion"
+  },
+  {
+    "case_id": "dc_polarity__015",
+    "channel_overrides": {
+      "g_max_S_cm2": 0.001,
+      "q": 9.0,
+      "v12_mV": 25.0
+    },
+    "group_id": "dc_polarity",
+    "ion": {
+      "fixed_E_mV": -80.0,
+      "mode": "fixed"
+    },
+    "leak": {
+      "e_mV": -65.0,
+      "enabled": false,
+      "g_S_cm2": 0.0
+    },
+    "mod_dir": "/home/swl/braincell/examples/convert_mod/mod_validate/mods",
+    "morphology": {
+      "cm_uF_cm2": 1.0,
+      "length_um": 10.0,
+      "radius_um": 15.915494309189533
+    },
+    "pair_id": "kv_test",
+    "simulation": {
+      "dt_ms": 0.025,
+      "duration_ms": 4.0,
+      "temperature_celsius": 25.0,
+      "v_init_mV": -65.0
+    },
+    "stimulus": {
+      "amp_nA": 0.02,
+      "delay_ms": 0.0,
+      "dur_ms": 4.0,
+      "kind": "dc"
+    },
+    "template_family": "single_compartment_channel",
+    "template_variant": "hh_fixed_ion"
+  },
+  {
+    "case_id": "dc_polarity__016",
+    "channel_overrides": {
+      "g_max_S_cm2": 0.0,
+      "q": 9.0,
+      "v12_mV": 25.0
+    },
+    "group_id": "dc_polarity",
+    "ion": {
+      "fixed_E_mV": -80.0,
+      "mode": "fixed"
+    },
+    "leak": {
+      "e_mV": -65.0,
+      "enabled": false,
+      "g_S_cm2": 0.0
+    },
+    "mod_dir": "/home/swl/braincell/examples/convert_mod/mod_validate/mods",
+    "morphology": {
+      "cm_uF_cm2": 1.0,
+      "length_um": 10.0,
+      "radius_um": 15.915494309189533
+    },
+    "pair_id": "kv_test",
+    "simulation": {
+      "dt_ms": 0.025,
+      "duration_ms": 4.0,
+      "temperature_celsius": 25.0,
+      "v_init_mV": -30.0
+    },
+    "stimulus": {
+      "amp_nA": -0.02,
+      "delay_ms": 0.0,
+      "dur_ms": 4.0,
+      "kind": "dc"
+    },
+    "template_family": "single_compartment_channel",
+    "template_variant": "hh_fixed_ion"
+  },
+  {
+    "case_id": "dc_polarity__017",
+    "channel_overrides": {
+      "g_max_S_cm2": 0.001,
+      "q": 9.0,
+      "v12_mV": 25.0
+    },
+    "group_id": "dc_polarity",
+    "ion": {
+      "fixed_E_mV": -80.0,
+      "mode": "fixed"
+    },
+    "leak": {
+      "e_mV": -65.0,
+      "enabled": false,
+      "g_S_cm2": 0.0
+    },
+    "mod_dir": "/home/swl/braincell/examples/convert_mod/mod_validate/mods",
+    "morphology": {
+      "cm_uF_cm2": 1.0,
+      "length_um": 10.0,
+      "radius_um": 15.915494309189533
+    },
+    "pair_id": "kv_test",
+    "simulation": {
+      "dt_ms": 0.025,
+      "duration_ms": 4.0,
+      "temperature_celsius": 25.0,
+      "v_init_mV": -30.0
+    },
+    "stimulus": {
+      "amp_nA": -0.02,
+      "delay_ms": 0.0,
+      "dur_ms": 4.0,
+      "kind": "dc"
+    },
+    "template_family": "single_compartment_channel",
+    "template_variant": "hh_fixed_ion"
+  },
+  {
+    "case_id": "dc_polarity__018",
+    "channel_overrides": {
+      "g_max_S_cm2": 0.0,
+      "q": 9.0,
+      "v12_mV": 25.0
+    },
+    "group_id": "dc_polarity",
+    "ion": {
+      "fixed_E_mV": -80.0,
+      "mode": "fixed"
+    },
+    "leak": {
+      "e_mV": -65.0,
+      "enabled": false,
+      "g_S_cm2": 0.0
+    },
+    "mod_dir": "/home/swl/braincell/examples/convert_mod/mod_validate/mods",
+    "morphology": {
+      "cm_uF_cm2": 1.0,
+      "length_um": 10.0,
+      "radius_um": 15.915494309189533
+    },
+    "pair_id": "kv_test",
+    "simulation": {
+      "dt_ms": 0.025,
+      "duration_ms": 4.0,
+      "temperature_celsius": 25.0,
+      "v_init_mV": -30.0
+    },
+    "stimulus": {
+      "amp_nA": 0.02,
+      "delay_ms": 0.0,
+      "dur_ms": 4.0,
+      "kind": "dc"
+    },
+    "template_family": "single_compartment_channel",
+    "template_variant": "hh_fixed_ion"
+  },
+  {
+    "case_id": "dc_polarity__019",
+    "channel_overrides": {
+      "g_max_S_cm2": 0.001,
+      "q": 9.0,
+      "v12_mV": 25.0
+    },
+    "group_id": "dc_polarity",
+    "ion": {
+      "fixed_E_mV": -80.0,
+      "mode": "fixed"
+    },
+    "leak": {
+      "e_mV": -65.0,
+      "enabled": false,
+      "g_S_cm2": 0.0
+    },
+    "mod_dir": "/home/swl/braincell/examples/convert_mod/mod_validate/mods",
+    "morphology": {
+      "cm_uF_cm2": 1.0,
+      "length_um": 10.0,
+      "radius_um": 15.915494309189533
+    },
+    "pair_id": "kv_test",
+    "simulation": {
+      "dt_ms": 0.025,
+      "duration_ms": 4.0,
+      "temperature_celsius": 25.0,
+      "v_init_mV": -30.0
+    },
+    "stimulus": {
+      "amp_nA": 0.02,
+      "delay_ms": 0.0,
+      "dur_ms": 4.0,
+      "kind": "dc"
+    },
+    "template_family": "single_compartment_channel",
+    "template_variant": "hh_fixed_ion"
+  },
+  {
+    "case_id": "dc_polarity__020",
+    "channel_overrides": {
+      "g_max_S_cm2": 0.0,
+      "q": 9.0,
+      "v12_mV": 25.0
+    },
+    "group_id": "dc_polarity",
+    "ion": {
+      "fixed_E_mV": -80.0,
+      "mode": "fixed"
+    },
+    "leak": {
+      "e_mV": -65.0,
+      "enabled": false,
+      "g_S_cm2": 0.0
+    },
+    "mod_dir": "/home/swl/braincell/examples/convert_mod/mod_validate/mods",
+    "morphology": {
+      "cm_uF_cm2": 1.0,
+      "length_um": 10.0,
+      "radius_um": 15.915494309189533
+    },
+    "pair_id": "kv_test",
+    "simulation": {
+      "dt_ms": 0.025,
+      "duration_ms": 4.0,
+      "temperature_celsius": 25.0,
+      "v_init_mV": 0.0
+    },
+    "stimulus": {
+      "amp_nA": -0.02,
+      "delay_ms": 0.0,
+      "dur_ms": 4.0,
+      "kind": "dc"
+    },
+    "template_family": "single_compartment_channel",
+    "template_variant": "hh_fixed_ion"
+  },
+  {
+    "case_id": "dc_polarity__021",
+    "channel_overrides": {
+      "g_max_S_cm2": 0.001,
+      "q": 9.0,
+      "v12_mV": 25.0
+    },
+    "group_id": "dc_polarity",
+    "ion": {
+      "fixed_E_mV": -80.0,
+      "mode": "fixed"
+    },
+    "leak": {
+      "e_mV": -65.0,
+      "enabled": false,
+      "g_S_cm2": 0.0
+    },
+    "mod_dir": "/home/swl/braincell/examples/convert_mod/mod_validate/mods",
+    "morphology": {
+      "cm_uF_cm2": 1.0,
+      "length_um": 10.0,
+      "radius_um": 15.915494309189533
+    },
+    "pair_id": "kv_test",
+    "simulation": {
+      "dt_ms": 0.025,
+      "duration_ms": 4.0,
+      "temperature_celsius": 25.0,
+      "v_init_mV": 0.0
+    },
+    "stimulus": {
+      "amp_nA": -0.02,
+      "delay_ms": 0.0,
+      "dur_ms": 4.0,
+      "kind": "dc"
+    },
+    "template_family": "single_compartment_channel",
+    "template_variant": "hh_fixed_ion"
+  },
+  {
+    "case_id": "dc_polarity__022",
+    "channel_overrides": {
+      "g_max_S_cm2": 0.0,
+      "q": 9.0,
+      "v12_mV": 25.0
+    },
+    "group_id": "dc_polarity",
+    "ion": {
+      "fixed_E_mV": -80.0,
+      "mode": "fixed"
+    },
+    "leak": {
+      "e_mV": -65.0,
+      "enabled": false,
+      "g_S_cm2": 0.0
+    },
+    "mod_dir": "/home/swl/braincell/examples/convert_mod/mod_validate/mods",
+    "morphology": {
+      "cm_uF_cm2": 1.0,
+      "length_um": 10.0,
+      "radius_um": 15.915494309189533
+    },
+    "pair_id": "kv_test",
+    "simulation": {
+      "dt_ms": 0.025,
+      "duration_ms": 4.0,
+      "temperature_celsius": 25.0,
+      "v_init_mV": 0.0
+    },
+    "stimulus": {
+      "amp_nA": 0.02,
+      "delay_ms": 0.0,
+      "dur_ms": 4.0,
+      "kind": "dc"
+    },
+    "template_family": "single_compartment_channel",
+    "template_variant": "hh_fixed_ion"
+  },
+  {
+    "case_id": "dc_polarity__023",
+    "channel_overrides": {
+      "g_max_S_cm2": 0.001,
+      "q": 9.0,
+      "v12_mV": 25.0
+    },
+    "group_id": "dc_polarity",
+    "ion": {
+      "fixed_E_mV": -80.0,
+      "mode": "fixed"
+    },
+    "leak": {
+      "e_mV": -65.0,
+      "enabled": false,
+      "g_S_cm2": 0.0
+    },
+    "mod_dir": "/home/swl/braincell/examples/convert_mod/mod_validate/mods",
+    "morphology": {
+      "cm_uF_cm2": 1.0,
+      "length_um": 10.0,
+      "radius_um": 15.915494309189533
+    },
+    "pair_id": "kv_test",
+    "simulation": {
+      "dt_ms": 0.025,
+      "duration_ms": 4.0,
+      "temperature_celsius": 25.0,
+      "v_init_mV": 0.0
+    },
+    "stimulus": {
+      "amp_nA": 0.02,
+      "delay_ms": 0.0,
+      "dur_ms": 4.0,
+      "kind": "dc"
+    },
+    "template_family": "single_compartment_channel",
+    "template_variant": "hh_fixed_ion"
+  },
+  {
+    "case_id": "dc_polarity__024",
+    "channel_overrides": {
+      "g_max_S_cm2": 0.0,
+      "q": 9.0,
+      "v12_mV": 25.0
+    },
+    "group_id": "dc_polarity",
+    "ion": {
+      "fixed_E_mV": -80.0,
+      "mode": "fixed"
+    },
+    "leak": {
+      "e_mV": -65.0,
+      "enabled": false,
+      "g_S_cm2": 0.0
+    },
+    "mod_dir": "/home/swl/braincell/examples/convert_mod/mod_validate/mods",
+    "morphology": {
+      "cm_uF_cm2": 1.0,
+      "length_um": 10.0,
+      "radius_um": 15.915494309189533
+    },
+    "pair_id": "kv_test",
+    "simulation": {
+      "dt_ms": 0.025,
+      "duration_ms": 4.0,
+      "temperature_celsius": 35.0,
+      "v_init_mV": -65.0
+    },
+    "stimulus": {
+      "amp_nA": -0.02,
+      "delay_ms": 0.0,
+      "dur_ms": 4.0,
+      "kind": "dc"
+    },
+    "template_family": "single_compartment_channel",
+    "template_variant": "hh_fixed_ion"
+  },
+  {
+    "case_id": "dc_polarity__025",
+    "channel_overrides": {
+      "g_max_S_cm2": 0.001,
+      "q": 9.0,
+      "v12_mV": 25.0
+    },
+    "group_id": "dc_polarity",
+    "ion": {
+      "fixed_E_mV": -80.0,
+      "mode": "fixed"
+    },
+    "leak": {
+      "e_mV": -65.0,
+      "enabled": false,
+      "g_S_cm2": 0.0
+    },
+    "mod_dir": "/home/swl/braincell/examples/convert_mod/mod_validate/mods",
+    "morphology": {
+      "cm_uF_cm2": 1.0,
+      "length_um": 10.0,
+      "radius_um": 15.915494309189533
+    },
+    "pair_id": "kv_test",
+    "simulation": {
+      "dt_ms": 0.025,
+      "duration_ms": 4.0,
+      "temperature_celsius": 35.0,
+      "v_init_mV": -65.0
+    },
+    "stimulus": {
+      "amp_nA": -0.02,
+      "delay_ms": 0.0,
+      "dur_ms": 4.0,
+      "kind": "dc"
+    },
+    "template_family": "single_compartment_channel",
+    "template_variant": "hh_fixed_ion"
+  },
+  {
+    "case_id": "dc_polarity__026",
+    "channel_overrides": {
+      "g_max_S_cm2": 0.0,
+      "q": 9.0,
+      "v12_mV": 25.0
+    },
+    "group_id": "dc_polarity",
+    "ion": {
+      "fixed_E_mV": -80.0,
+      "mode": "fixed"
+    },
+    "leak": {
+      "e_mV": -65.0,
+      "enabled": false,
+      "g_S_cm2": 0.0
+    },
+    "mod_dir": "/home/swl/braincell/examples/convert_mod/mod_validate/mods",
+    "morphology": {
+      "cm_uF_cm2": 1.0,
+      "length_um": 10.0,
+      "radius_um": 15.915494309189533
+    },
+    "pair_id": "kv_test",
+    "simulation": {
+      "dt_ms": 0.025,
+      "duration_ms": 4.0,
+      "temperature_celsius": 35.0,
+      "v_init_mV": -65.0
+    },
+    "stimulus": {
+      "amp_nA": 0.02,
+      "delay_ms": 0.0,
+      "dur_ms": 4.0,
+      "kind": "dc"
+    },
+    "template_family": "single_compartment_channel",
+    "template_variant": "hh_fixed_ion"
+  },
+  {
+    "case_id": "dc_polarity__027",
+    "channel_overrides": {
+      "g_max_S_cm2": 0.001,
+      "q": 9.0,
+      "v12_mV": 25.0
+    },
+    "group_id": "dc_polarity",
+    "ion": {
+      "fixed_E_mV": -80.0,
+      "mode": "fixed"
+    },
+    "leak": {
+      "e_mV": -65.0,
+      "enabled": false,
+      "g_S_cm2": 0.0
+    },
+    "mod_dir": "/home/swl/braincell/examples/convert_mod/mod_validate/mods",
+    "morphology": {
+      "cm_uF_cm2": 1.0,
+      "length_um": 10.0,
+      "radius_um": 15.915494309189533
+    },
+    "pair_id": "kv_test",
+    "simulation": {
+      "dt_ms": 0.025,
+      "duration_ms": 4.0,
+      "temperature_celsius": 35.0,
+      "v_init_mV": -65.0
+    },
+    "stimulus": {
+      "amp_nA": 0.02,
+      "delay_ms": 0.0,
+      "dur_ms": 4.0,
+      "kind": "dc"
+    },
+    "template_family": "single_compartment_channel",
+    "template_variant": "hh_fixed_ion"
+  },
+  {
+    "case_id": "dc_polarity__028",
+    "channel_overrides": {
+      "g_max_S_cm2": 0.0,
+      "q": 9.0,
+      "v12_mV": 25.0
+    },
+    "group_id": "dc_polarity",
+    "ion": {
+      "fixed_E_mV": -80.0,
+      "mode": "fixed"
+    },
+    "leak": {
+      "e_mV": -65.0,
+      "enabled": false,
+      "g_S_cm2": 0.0
+    },
+    "mod_dir": "/home/swl/braincell/examples/convert_mod/mod_validate/mods",
+    "morphology": {
+      "cm_uF_cm2": 1.0,
+      "length_um": 10.0,
+      "radius_um": 15.915494309189533
+    },
+    "pair_id": "kv_test",
+    "simulation": {
+      "dt_ms": 0.025,
+      "duration_ms": 4.0,
+      "temperature_celsius": 35.0,
+      "v_init_mV": -30.0
+    },
+    "stimulus": {
+      "amp_nA": -0.02,
+      "delay_ms": 0.0,
+      "dur_ms": 4.0,
+      "kind": "dc"
+    },
+    "template_family": "single_compartment_channel",
+    "template_variant": "hh_fixed_ion"
+  },
+  {
+    "case_id": "dc_polarity__029",
+    "channel_overrides": {
+      "g_max_S_cm2": 0.001,
+      "q": 9.0,
+      "v12_mV": 25.0
+    },
+    "group_id": "dc_polarity",
+    "ion": {
+      "fixed_E_mV": -80.0,
+      "mode": "fixed"
+    },
+    "leak": {
+      "e_mV": -65.0,
+      "enabled": false,
+      "g_S_cm2": 0.0
+    },
+    "mod_dir": "/home/swl/braincell/examples/convert_mod/mod_validate/mods",
+    "morphology": {
+      "cm_uF_cm2": 1.0,
+      "length_um": 10.0,
+      "radius_um": 15.915494309189533
+    },
+    "pair_id": "kv_test",
+    "simulation": {
+      "dt_ms": 0.025,
+      "duration_ms": 4.0,
+      "temperature_celsius": 35.0,
+      "v_init_mV": -30.0
+    },
+    "stimulus": {
+      "amp_nA": -0.02,
+      "delay_ms": 0.0,
+      "dur_ms": 4.0,
+      "kind": "dc"
+    },
+    "template_family": "single_compartment_channel",
+    "template_variant": "hh_fixed_ion"
+  },
+  {
+    "case_id": "dc_polarity__030",
+    "channel_overrides": {
+      "g_max_S_cm2": 0.0,
+      "q": 9.0,
+      "v12_mV": 25.0
+    },
+    "group_id": "dc_polarity",
+    "ion": {
+      "fixed_E_mV": -80.0,
+      "mode": "fixed"
+    },
+    "leak": {
+      "e_mV": -65.0,
+      "enabled": false,
+      "g_S_cm2": 0.0
+    },
+    "mod_dir": "/home/swl/braincell/examples/convert_mod/mod_validate/mods",
+    "morphology": {
+      "cm_uF_cm2": 1.0,
+      "length_um": 10.0,
+      "radius_um": 15.915494309189533
+    },
+    "pair_id": "kv_test",
+    "simulation": {
+      "dt_ms": 0.025,
+      "duration_ms": 4.0,
+      "temperature_celsius": 35.0,
+      "v_init_mV": -30.0
+    },
+    "stimulus": {
+      "amp_nA": 0.02,
+      "delay_ms": 0.0,
+      "dur_ms": 4.0,
+      "kind": "dc"
+    },
+    "template_family": "single_compartment_channel",
+    "template_variant": "hh_fixed_ion"
+  },
+  {
+    "case_id": "dc_polarity__031",
+    "channel_overrides": {
+      "g_max_S_cm2": 0.001,
+      "q": 9.0,
+      "v12_mV": 25.0
+    },
+    "group_id": "dc_polarity",
+    "ion": {
+      "fixed_E_mV": -80.0,
+      "mode": "fixed"
+    },
+    "leak": {
+      "e_mV": -65.0,
+      "enabled": false,
+      "g_S_cm2": 0.0
+    },
+    "mod_dir": "/home/swl/braincell/examples/convert_mod/mod_validate/mods",
+    "morphology": {
+      "cm_uF_cm2": 1.0,
+      "length_um": 10.0,
+      "radius_um": 15.915494309189533
+    },
+    "pair_id": "kv_test",
+    "simulation": {
+      "dt_ms": 0.025,
+      "duration_ms": 4.0,
+      "temperature_celsius": 35.0,
+      "v_init_mV": -30.0
+    },
+    "stimulus": {
+      "amp_nA": 0.02,
+      "delay_ms": 0.0,
+      "dur_ms": 4.0,
+      "kind": "dc"
+    },
+    "template_family": "single_compartment_channel",
+    "template_variant": "hh_fixed_ion"
+  },
+  {
+    "case_id": "dc_polarity__032",
+    "channel_overrides": {
+      "g_max_S_cm2": 0.0,
+      "q": 9.0,
+      "v12_mV": 25.0
+    },
+    "group_id": "dc_polarity",
+    "ion": {
+      "fixed_E_mV": -80.0,
+      "mode": "fixed"
+    },
+    "leak": {
+      "e_mV": -65.0,
+      "enabled": false,
+      "g_S_cm2": 0.0
+    },
+    "mod_dir": "/home/swl/braincell/examples/convert_mod/mod_validate/mods",
+    "morphology": {
+      "cm_uF_cm2": 1.0,
+      "length_um": 10.0,
+      "radius_um": 15.915494309189533
+    },
+    "pair_id": "kv_test",
+    "simulation": {
+      "dt_ms": 0.025,
+      "duration_ms": 4.0,
+      "temperature_celsius": 35.0,
+      "v_init_mV": 0.0
+    },
+    "stimulus": {
+      "amp_nA": -0.02,
+      "delay_ms": 0.0,
+      "dur_ms": 4.0,
+      "kind": "dc"
+    },
+    "template_family": "single_compartment_channel",
+    "template_variant": "hh_fixed_ion"
+  },
+  {
+    "case_id": "dc_polarity__033",
+    "channel_overrides": {
+      "g_max_S_cm2": 0.001,
+      "q": 9.0,
+      "v12_mV": 25.0
+    },
+    "group_id": "dc_polarity",
+    "ion": {
+      "fixed_E_mV": -80.0,
+      "mode": "fixed"
+    },
+    "leak": {
+      "e_mV": -65.0,
+      "enabled": false,
+      "g_S_cm2": 0.0
+    },
+    "mod_dir": "/home/swl/braincell/examples/convert_mod/mod_validate/mods",
+    "morphology": {
+      "cm_uF_cm2": 1.0,
+      "length_um": 10.0,
+      "radius_um": 15.915494309189533
+    },
+    "pair_id": "kv_test",
+    "simulation": {
+      "dt_ms": 0.025,
+      "duration_ms": 4.0,
+      "temperature_celsius": 35.0,
+      "v_init_mV": 0.0
+    },
+    "stimulus": {
+      "amp_nA": -0.02,
+      "delay_ms": 0.0,
+      "dur_ms": 4.0,
+      "kind": "dc"
+    },
+    "template_family": "single_compartment_channel",
+    "template_variant": "hh_fixed_ion"
+  },
+  {
+    "case_id": "dc_polarity__034",
+    "channel_overrides": {
+      "g_max_S_cm2": 0.0,
+      "q": 9.0,
+      "v12_mV": 25.0
+    },
+    "group_id": "dc_polarity",
+    "ion": {
+      "fixed_E_mV": -80.0,
+      "mode": "fixed"
+    },
+    "leak": {
+      "e_mV": -65.0,
+      "enabled": false,
+      "g_S_cm2": 0.0
+    },
+    "mod_dir": "/home/swl/braincell/examples/convert_mod/mod_validate/mods",
+    "morphology": {
+      "cm_uF_cm2": 1.0,
+      "length_um": 10.0,
+      "radius_um": 15.915494309189533
+    },
+    "pair_id": "kv_test",
+    "simulation": {
+      "dt_ms": 0.025,
+      "duration_ms": 4.0,
+      "temperature_celsius": 35.0,
+      "v_init_mV": 0.0
+    },
+    "stimulus": {
+      "amp_nA": 0.02,
+      "delay_ms": 0.0,
+      "dur_ms": 4.0,
+      "kind": "dc"
+    },
+    "template_family": "single_compartment_channel",
+    "template_variant": "hh_fixed_ion"
+  },
+  {
+    "case_id": "dc_polarity__035",
+    "channel_overrides": {
+      "g_max_S_cm2": 0.001,
+      "q": 9.0,
+      "v12_mV": 25.0
+    },
+    "group_id": "dc_polarity",
+    "ion": {
+      "fixed_E_mV": -80.0,
+      "mode": "fixed"
+    },
+    "leak": {
+      "e_mV": -65.0,
+      "enabled": false,
+      "g_S_cm2": 0.0
+    },
+    "mod_dir": "/home/swl/braincell/examples/convert_mod/mod_validate/mods",
+    "morphology": {
+      "cm_uF_cm2": 1.0,
+      "length_um": 10.0,
+      "radius_um": 15.915494309189533
+    },
+    "pair_id": "kv_test",
+    "simulation": {
+      "dt_ms": 0.025,
+      "duration_ms": 4.0,
+      "temperature_celsius": 35.0,
+      "v_init_mV": 0.0
+    },
+    "stimulus": {
+      "amp_nA": 0.02,
+      "delay_ms": 0.0,
+      "dur_ms": 4.0,
+      "kind": "dc"
+    },
+    "template_family": "single_compartment_channel",
+    "template_variant": "hh_fixed_ion"
+  },
+  {
+    "case_id": "ac_sine__000",
+    "channel_overrides": {
+      "g_max_S_cm2": 0.0,
+      "q": 9.0,
+      "v12_mV": 25.0
+    },
+    "group_id": "ac_sine",
+    "ion": {
+      "fixed_E_mV": -80.0,
+      "mode": "fixed"
+    },
+    "leak": {
+      "e_mV": -65.0,
+      "enabled": false,
+      "g_S_cm2": 0.0
+    },
+    "mod_dir": "/home/swl/braincell/examples/convert_mod/mod_validate/mods",
+    "morphology": {
+      "cm_uF_cm2": 1.0,
+      "length_um": 10.0,
+      "radius_um": 15.915494309189533
+    },
+    "pair_id": "kv_test",
+    "simulation": {
+      "dt_ms": 0.025,
+      "duration_ms": 4.0,
+      "temperature_celsius": 10.0,
+      "v_init_mV": -65.0
+    },
+    "stimulus": {
+      "amplitude_nA": 0.01,
+      "duration_ms": 4.0,
+      "frequency_hz": 100.0,
+      "kind": "sine",
+      "offset_nA": 0.0,
+      "phase_rad": 0.0,
+      "start_ms": 0.0
+    },
+    "template_family": "single_compartment_channel",
+    "template_variant": "hh_fixed_ion"
+  },
+  {
+    "case_id": "ac_sine__001",
+    "channel_overrides": {
+      "g_max_S_cm2": 0.0,
+      "q": 9.0,
+      "v12_mV": 25.0
+    },
+    "group_id": "ac_sine",
+    "ion": {
+      "fixed_E_mV": -80.0,
+      "mode": "fixed"
+    },
+    "leak": {
+      "e_mV": -65.0,
+      "enabled": false,
+      "g_S_cm2": 0.0
+    },
+    "mod_dir": "/home/swl/braincell/examples/convert_mod/mod_validate/mods",
+    "morphology": {
+      "cm_uF_cm2": 1.0,
+      "length_um": 10.0,
+      "radius_um": 15.915494309189533
+    },
+    "pair_id": "kv_test",
+    "simulation": {
+      "dt_ms": 0.025,
+      "duration_ms": 4.0,
+      "temperature_celsius": 10.0,
+      "v_init_mV": -65.0
+    },
+    "stimulus": {
+      "amplitude_nA": 0.01,
+      "duration_ms": 4.0,
+      "frequency_hz": 250.0,
+      "kind": "sine",
+      "offset_nA": 0.0,
+      "phase_rad": 0.0,
+      "start_ms": 0.0
+    },
+    "template_family": "single_compartment_channel",
+    "template_variant": "hh_fixed_ion"
+  },
+  {
+    "case_id": "ac_sine__002",
+    "channel_overrides": {
+      "g_max_S_cm2": 0.0,
+      "q": 9.0,
+      "v12_mV": 25.0
+    },
+    "group_id": "ac_sine",
+    "ion": {
+      "fixed_E_mV": -80.0,
+      "mode": "fixed"
+    },
+    "leak": {
+      "e_mV": -65.0,
+      "enabled": false,
+      "g_S_cm2": 0.0
+    },
+    "mod_dir": "/home/swl/braincell/examples/convert_mod/mod_validate/mods",
+    "morphology": {
+      "cm_uF_cm2": 1.0,
+      "length_um": 10.0,
+      "radius_um": 15.915494309189533
+    },
+    "pair_id": "kv_test",
+    "simulation": {
+      "dt_ms": 0.025,
+      "duration_ms": 4.0,
+      "temperature_celsius": 10.0,
+      "v_init_mV": -65.0
+    },
+    "stimulus": {
+      "amplitude_nA": 0.02,
+      "duration_ms": 4.0,
+      "frequency_hz": 100.0,
+      "kind": "sine",
+      "offset_nA": 0.0,
+      "phase_rad": 0.0,
+      "start_ms": 0.0
+    },
+    "template_family": "single_compartment_channel",
+    "template_variant": "hh_fixed_ion"
+  },
+  {
+    "case_id": "ac_sine__003",
+    "channel_overrides": {
+      "g_max_S_cm2": 0.0,
+      "q": 9.0,
+      "v12_mV": 25.0
+    },
+    "group_id": "ac_sine",
+    "ion": {
+      "fixed_E_mV": -80.0,
+      "mode": "fixed"
+    },
+    "leak": {
+      "e_mV": -65.0,
+      "enabled": false,
+      "g_S_cm2": 0.0
+    },
+    "mod_dir": "/home/swl/braincell/examples/convert_mod/mod_validate/mods",
+    "morphology": {
+      "cm_uF_cm2": 1.0,
+      "length_um": 10.0,
+      "radius_um": 15.915494309189533
+    },
+    "pair_id": "kv_test",
+    "simulation": {
+      "dt_ms": 0.025,
+      "duration_ms": 4.0,
+      "temperature_celsius": 10.0,
+      "v_init_mV": -65.0
+    },
+    "stimulus": {
+      "amplitude_nA": 0.02,
+      "duration_ms": 4.0,
+      "frequency_hz": 250.0,
+      "kind": "sine",
+      "offset_nA": 0.0,
+      "phase_rad": 0.0,
+      "start_ms": 0.0
+    },
+    "template_family": "single_compartment_channel",
+    "template_variant": "hh_fixed_ion"
+  },
+  {
+    "case_id": "ac_sine__004",
+    "channel_overrides": {
+      "g_max_S_cm2": 0.0,
+      "q": 9.0,
+      "v12_mV": 25.0
+    },
+    "group_id": "ac_sine",
+    "ion": {
+      "fixed_E_mV": -80.0,
+      "mode": "fixed"
+    },
+    "leak": {
+      "e_mV": -65.0,
+      "enabled": false,
+      "g_S_cm2": 0.0
+    },
+    "mod_dir": "/home/swl/braincell/examples/convert_mod/mod_validate/mods",
+    "morphology": {
+      "cm_uF_cm2": 1.0,
+      "length_um": 10.0,
+      "radius_um": 15.915494309189533
+    },
+    "pair_id": "kv_test",
+    "simulation": {
+      "dt_ms": 0.025,
+      "duration_ms": 4.0,
+      "temperature_celsius": 10.0,
+      "v_init_mV": -30.0
+    },
+    "stimulus": {
+      "amplitude_nA": 0.01,
+      "duration_ms": 4.0,
+      "frequency_hz": 100.0,
+      "kind": "sine",
+      "offset_nA": 0.0,
+      "phase_rad": 0.0,
+      "start_ms": 0.0
+    },
+    "template_family": "single_compartment_channel",
+    "template_variant": "hh_fixed_ion"
+  },
+  {
+    "case_id": "ac_sine__005",
+    "channel_overrides": {
+      "g_max_S_cm2": 0.0,
+      "q": 9.0,
+      "v12_mV": 25.0
+    },
+    "group_id": "ac_sine",
+    "ion": {
+      "fixed_E_mV": -80.0,
+      "mode": "fixed"
+    },
+    "leak": {
+      "e_mV": -65.0,
+      "enabled": false,
+      "g_S_cm2": 0.0
+    },
+    "mod_dir": "/home/swl/braincell/examples/convert_mod/mod_validate/mods",
+    "morphology": {
+      "cm_uF_cm2": 1.0,
+      "length_um": 10.0,
+      "radius_um": 15.915494309189533
+    },
+    "pair_id": "kv_test",
+    "simulation": {
+      "dt_ms": 0.025,
+      "duration_ms": 4.0,
+      "temperature_celsius": 10.0,
+      "v_init_mV": -30.0
+    },
+    "stimulus": {
+      "amplitude_nA": 0.01,
+      "duration_ms": 4.0,
+      "frequency_hz": 250.0,
+      "kind": "sine",
+      "offset_nA": 0.0,
+      "phase_rad": 0.0,
+      "start_ms": 0.0
+    },
+    "template_family": "single_compartment_channel",
+    "template_variant": "hh_fixed_ion"
+  },
+  {
+    "case_id": "ac_sine__006",
+    "channel_overrides": {
+      "g_max_S_cm2": 0.0,
+      "q": 9.0,
+      "v12_mV": 25.0
+    },
+    "group_id": "ac_sine",
+    "ion": {
+      "fixed_E_mV": -80.0,
+      "mode": "fixed"
+    },
+    "leak": {
+      "e_mV": -65.0,
+      "enabled": false,
+      "g_S_cm2": 0.0
+    },
+    "mod_dir": "/home/swl/braincell/examples/convert_mod/mod_validate/mods",
+    "morphology": {
+      "cm_uF_cm2": 1.0,
+      "length_um": 10.0,
+      "radius_um": 15.915494309189533
+    },
+    "pair_id": "kv_test",
+    "simulation": {
+      "dt_ms": 0.025,
+      "duration_ms": 4.0,
+      "temperature_celsius": 10.0,
+      "v_init_mV": -30.0
+    },
+    "stimulus": {
+      "amplitude_nA": 0.02,
+      "duration_ms": 4.0,
+      "frequency_hz": 100.0,
+      "kind": "sine",
+      "offset_nA": 0.0,
+      "phase_rad": 0.0,
+      "start_ms": 0.0
+    },
+    "template_family": "single_compartment_channel",
+    "template_variant": "hh_fixed_ion"
+  },
+  {
+    "case_id": "ac_sine__007",
+    "channel_overrides": {
+      "g_max_S_cm2": 0.0,
+      "q": 9.0,
+      "v12_mV": 25.0
+    },
+    "group_id": "ac_sine",
+    "ion": {
+      "fixed_E_mV": -80.0,
+      "mode": "fixed"
+    },
+    "leak": {
+      "e_mV": -65.0,
+      "enabled": false,
+      "g_S_cm2": 0.0
+    },
+    "mod_dir": "/home/swl/braincell/examples/convert_mod/mod_validate/mods",
+    "morphology": {
+      "cm_uF_cm2": 1.0,
+      "length_um": 10.0,
+      "radius_um": 15.915494309189533
+    },
+    "pair_id": "kv_test",
+    "simulation": {
+      "dt_ms": 0.025,
+      "duration_ms": 4.0,
+      "temperature_celsius": 10.0,
+      "v_init_mV": -30.0
+    },
+    "stimulus": {
+      "amplitude_nA": 0.02,
+      "duration_ms": 4.0,
+      "frequency_hz": 250.0,
+      "kind": "sine",
+      "offset_nA": 0.0,
+      "phase_rad": 0.0,
+      "start_ms": 0.0
+    },
+    "template_family": "single_compartment_channel",
+    "template_variant": "hh_fixed_ion"
+  },
+  {
+    "case_id": "ac_sine__008",
+    "channel_overrides": {
+      "g_max_S_cm2": 0.0,
+      "q": 9.0,
+      "v12_mV": 25.0
+    },
+    "group_id": "ac_sine",
+    "ion": {
+      "fixed_E_mV": -80.0,
+      "mode": "fixed"
+    },
+    "leak": {
+      "e_mV": -65.0,
+      "enabled": false,
+      "g_S_cm2": 0.0
+    },
+    "mod_dir": "/home/swl/braincell/examples/convert_mod/mod_validate/mods",
+    "morphology": {
+      "cm_uF_cm2": 1.0,
+      "length_um": 10.0,
+      "radius_um": 15.915494309189533
+    },
+    "pair_id": "kv_test",
+    "simulation": {
+      "dt_ms": 0.025,
+      "duration_ms": 4.0,
+      "temperature_celsius": 10.0,
+      "v_init_mV": 0.0
+    },
+    "stimulus": {
+      "amplitude_nA": 0.01,
+      "duration_ms": 4.0,
+      "frequency_hz": 100.0,
+      "kind": "sine",
+      "offset_nA": 0.0,
+      "phase_rad": 0.0,
+      "start_ms": 0.0
+    },
+    "template_family": "single_compartment_channel",
+    "template_variant": "hh_fixed_ion"
+  },
+  {
+    "case_id": "ac_sine__009",
+    "channel_overrides": {
+      "g_max_S_cm2": 0.0,
+      "q": 9.0,
+      "v12_mV": 25.0
+    },
+    "group_id": "ac_sine",
+    "ion": {
+      "fixed_E_mV": -80.0,
+      "mode": "fixed"
+    },
+    "leak": {
+      "e_mV": -65.0,
+      "enabled": false,
+      "g_S_cm2": 0.0
+    },
+    "mod_dir": "/home/swl/braincell/examples/convert_mod/mod_validate/mods",
+    "morphology": {
+      "cm_uF_cm2": 1.0,
+      "length_um": 10.0,
+      "radius_um": 15.915494309189533
+    },
+    "pair_id": "kv_test",
+    "simulation": {
+      "dt_ms": 0.025,
+      "duration_ms": 4.0,
+      "temperature_celsius": 10.0,
+      "v_init_mV": 0.0
+    },
+    "stimulus": {
+      "amplitude_nA": 0.01,
+      "duration_ms": 4.0,
+      "frequency_hz": 250.0,
+      "kind": "sine",
+      "offset_nA": 0.0,
+      "phase_rad": 0.0,
+      "start_ms": 0.0
+    },
+    "template_family": "single_compartment_channel",
+    "template_variant": "hh_fixed_ion"
+  },
+  {
+    "case_id": "ac_sine__010",
+    "channel_overrides": {
+      "g_max_S_cm2": 0.0,
+      "q": 9.0,
+      "v12_mV": 25.0
+    },
+    "group_id": "ac_sine",
+    "ion": {
+      "fixed_E_mV": -80.0,
+      "mode": "fixed"
+    },
+    "leak": {
+      "e_mV": -65.0,
+      "enabled": false,
+      "g_S_cm2": 0.0
+    },
+    "mod_dir": "/home/swl/braincell/examples/convert_mod/mod_validate/mods",
+    "morphology": {
+      "cm_uF_cm2": 1.0,
+      "length_um": 10.0,
+      "radius_um": 15.915494309189533
+    },
+    "pair_id": "kv_test",
+    "simulation": {
+      "dt_ms": 0.025,
+      "duration_ms": 4.0,
+      "temperature_celsius": 10.0,
+      "v_init_mV": 0.0
+    },
+    "stimulus": {
+      "amplitude_nA": 0.02,
+      "duration_ms": 4.0,
+      "frequency_hz": 100.0,
+      "kind": "sine",
+      "offset_nA": 0.0,
+      "phase_rad": 0.0,
+      "start_ms": 0.0
+    },
+    "template_family": "single_compartment_channel",
+    "template_variant": "hh_fixed_ion"
+  },
+  {
+    "case_id": "ac_sine__011",
+    "channel_overrides": {
+      "g_max_S_cm2": 0.0,
+      "q": 9.0,
+      "v12_mV": 25.0
+    },
+    "group_id": "ac_sine",
+    "ion": {
+      "fixed_E_mV": -80.0,
+      "mode": "fixed"
+    },
+    "leak": {
+      "e_mV": -65.0,
+      "enabled": false,
+      "g_S_cm2": 0.0
+    },
+    "mod_dir": "/home/swl/braincell/examples/convert_mod/mod_validate/mods",
+    "morphology": {
+      "cm_uF_cm2": 1.0,
+      "length_um": 10.0,
+      "radius_um": 15.915494309189533
+    },
+    "pair_id": "kv_test",
+    "simulation": {
+      "dt_ms": 0.025,
+      "duration_ms": 4.0,
+      "temperature_celsius": 10.0,
+      "v_init_mV": 0.0
+    },
+    "stimulus": {
+      "amplitude_nA": 0.02,
+      "duration_ms": 4.0,
+      "frequency_hz": 250.0,
+      "kind": "sine",
+      "offset_nA": 0.0,
+      "phase_rad": 0.0,
+      "start_ms": 0.0
+    },
+    "template_family": "single_compartment_channel",
+    "template_variant": "hh_fixed_ion"
+  },
+  {
+    "case_id": "ac_sine__012",
+    "channel_overrides": {
+      "g_max_S_cm2": 0.0,
+      "q": 9.0,
+      "v12_mV": 25.0
+    },
+    "group_id": "ac_sine",
+    "ion": {
+      "fixed_E_mV": -80.0,
+      "mode": "fixed"
+    },
+    "leak": {
+      "e_mV": -65.0,
+      "enabled": false,
+      "g_S_cm2": 0.0
+    },
+    "mod_dir": "/home/swl/braincell/examples/convert_mod/mod_validate/mods",
+    "morphology": {
+      "cm_uF_cm2": 1.0,
+      "length_um": 10.0,
+      "radius_um": 15.915494309189533
+    },
+    "pair_id": "kv_test",
+    "simulation": {
+      "dt_ms": 0.025,
+      "duration_ms": 4.0,
+      "temperature_celsius": 25.0,
+      "v_init_mV": -65.0
+    },
+    "stimulus": {
+      "amplitude_nA": 0.01,
+      "duration_ms": 4.0,
+      "frequency_hz": 100.0,
+      "kind": "sine",
+      "offset_nA": 0.0,
+      "phase_rad": 0.0,
+      "start_ms": 0.0
+    },
+    "template_family": "single_compartment_channel",
+    "template_variant": "hh_fixed_ion"
+  },
+  {
+    "case_id": "ac_sine__013",
+    "channel_overrides": {
+      "g_max_S_cm2": 0.0,
+      "q": 9.0,
+      "v12_mV": 25.0
+    },
+    "group_id": "ac_sine",
+    "ion": {
+      "fixed_E_mV": -80.0,
+      "mode": "fixed"
+    },
+    "leak": {
+      "e_mV": -65.0,
+      "enabled": false,
+      "g_S_cm2": 0.0
+    },
+    "mod_dir": "/home/swl/braincell/examples/convert_mod/mod_validate/mods",
+    "morphology": {
+      "cm_uF_cm2": 1.0,
+      "length_um": 10.0,
+      "radius_um": 15.915494309189533
+    },
+    "pair_id": "kv_test",
+    "simulation": {
+      "dt_ms": 0.025,
+      "duration_ms": 4.0,
+      "temperature_celsius": 25.0,
+      "v_init_mV": -65.0
+    },
+    "stimulus": {
+      "amplitude_nA": 0.01,
+      "duration_ms": 4.0,
+      "frequency_hz": 250.0,
+      "kind": "sine",
+      "offset_nA": 0.0,
+      "phase_rad": 0.0,
+      "start_ms": 0.0
+    },
+    "template_family": "single_compartment_channel",
+    "template_variant": "hh_fixed_ion"
+  },
+  {
+    "case_id": "ac_sine__014",
+    "channel_overrides": {
+      "g_max_S_cm2": 0.0,
+      "q": 9.0,
+      "v12_mV": 25.0
+    },
+    "group_id": "ac_sine",
+    "ion": {
+      "fixed_E_mV": -80.0,
+      "mode": "fixed"
+    },
+    "leak": {
+      "e_mV": -65.0,
+      "enabled": false,
+      "g_S_cm2": 0.0
+    },
+    "mod_dir": "/home/swl/braincell/examples/convert_mod/mod_validate/mods",
+    "morphology": {
+      "cm_uF_cm2": 1.0,
+      "length_um": 10.0,
+      "radius_um": 15.915494309189533
+    },
+    "pair_id": "kv_test",
+    "simulation": {
+      "dt_ms": 0.025,
+      "duration_ms": 4.0,
+      "temperature_celsius": 25.0,
+      "v_init_mV": -65.0
+    },
+    "stimulus": {
+      "amplitude_nA": 0.02,
+      "duration_ms": 4.0,
+      "frequency_hz": 100.0,
+      "kind": "sine",
+      "offset_nA": 0.0,
+      "phase_rad": 0.0,
+      "start_ms": 0.0
+    },
+    "template_family": "single_compartment_channel",
+    "template_variant": "hh_fixed_ion"
+  },
+  {
+    "case_id": "ac_sine__015",
+    "channel_overrides": {
+      "g_max_S_cm2": 0.0,
+      "q": 9.0,
+      "v12_mV": 25.0
+    },
+    "group_id": "ac_sine",
+    "ion": {
+      "fixed_E_mV": -80.0,
+      "mode": "fixed"
+    },
+    "leak": {
+      "e_mV": -65.0,
+      "enabled": false,
+      "g_S_cm2": 0.0
+    },
+    "mod_dir": "/home/swl/braincell/examples/convert_mod/mod_validate/mods",
+    "morphology": {
+      "cm_uF_cm2": 1.0,
+      "length_um": 10.0,
+      "radius_um": 15.915494309189533
+    },
+    "pair_id": "kv_test",
+    "simulation": {
+      "dt_ms": 0.025,
+      "duration_ms": 4.0,
+      "temperature_celsius": 25.0,
+      "v_init_mV": -65.0
+    },
+    "stimulus": {
+      "amplitude_nA": 0.02,
+      "duration_ms": 4.0,
+      "frequency_hz": 250.0,
+      "kind": "sine",
+      "offset_nA": 0.0,
+      "phase_rad": 0.0,
+      "start_ms": 0.0
+    },
+    "template_family": "single_compartment_channel",
+    "template_variant": "hh_fixed_ion"
+  },
+  {
+    "case_id": "ac_sine__016",
+    "channel_overrides": {
+      "g_max_S_cm2": 0.0,
+      "q": 9.0,
+      "v12_mV": 25.0
+    },
+    "group_id": "ac_sine",
+    "ion": {
+      "fixed_E_mV": -80.0,
+      "mode": "fixed"
+    },
+    "leak": {
+      "e_mV": -65.0,
+      "enabled": false,
+      "g_S_cm2": 0.0
+    },
+    "mod_dir": "/home/swl/braincell/examples/convert_mod/mod_validate/mods",
+    "morphology": {
+      "cm_uF_cm2": 1.0,
+      "length_um": 10.0,
+      "radius_um": 15.915494309189533
+    },
+    "pair_id": "kv_test",
+    "simulation": {
+      "dt_ms": 0.025,
+      "duration_ms": 4.0,
+      "temperature_celsius": 25.0,
+      "v_init_mV": -30.0
+    },
+    "stimulus": {
+      "amplitude_nA": 0.01,
+      "duration_ms": 4.0,
+      "frequency_hz": 100.0,
+      "kind": "sine",
+      "offset_nA": 0.0,
+      "phase_rad": 0.0,
+      "start_ms": 0.0
+    },
+    "template_family": "single_compartment_channel",
+    "template_variant": "hh_fixed_ion"
+  },
+  {
+    "case_id": "ac_sine__017",
+    "channel_overrides": {
+      "g_max_S_cm2": 0.0,
+      "q": 9.0,
+      "v12_mV": 25.0
+    },
+    "group_id": "ac_sine",
+    "ion": {
+      "fixed_E_mV": -80.0,
+      "mode": "fixed"
+    },
+    "leak": {
+      "e_mV": -65.0,
+      "enabled": false,
+      "g_S_cm2": 0.0
+    },
+    "mod_dir": "/home/swl/braincell/examples/convert_mod/mod_validate/mods",
+    "morphology": {
+      "cm_uF_cm2": 1.0,
+      "length_um": 10.0,
+      "radius_um": 15.915494309189533
+    },
+    "pair_id": "kv_test",
+    "simulation": {
+      "dt_ms": 0.025,
+      "duration_ms": 4.0,
+      "temperature_celsius": 25.0,
+      "v_init_mV": -30.0
+    },
+    "stimulus": {
+      "amplitude_nA": 0.01,
+      "duration_ms": 4.0,
+      "frequency_hz": 250.0,
+      "kind": "sine",
+      "offset_nA": 0.0,
+      "phase_rad": 0.0,
+      "start_ms": 0.0
+    },
+    "template_family": "single_compartment_channel",
+    "template_variant": "hh_fixed_ion"
+  },
+  {
+    "case_id": "ac_sine__018",
+    "channel_overrides": {
+      "g_max_S_cm2": 0.0,
+      "q": 9.0,
+      "v12_mV": 25.0
+    },
+    "group_id": "ac_sine",
+    "ion": {
+      "fixed_E_mV": -80.0,
+      "mode": "fixed"
+    },
+    "leak": {
+      "e_mV": -65.0,
+      "enabled": false,
+      "g_S_cm2": 0.0
+    },
+    "mod_dir": "/home/swl/braincell/examples/convert_mod/mod_validate/mods",
+    "morphology": {
+      "cm_uF_cm2": 1.0,
+      "length_um": 10.0,
+      "radius_um": 15.915494309189533
+    },
+    "pair_id": "kv_test",
+    "simulation": {
+      "dt_ms": 0.025,
+      "duration_ms": 4.0,
+      "temperature_celsius": 25.0,
+      "v_init_mV": -30.0
+    },
+    "stimulus": {
+      "amplitude_nA": 0.02,
+      "duration_ms": 4.0,
+      "frequency_hz": 100.0,
+      "kind": "sine",
+      "offset_nA": 0.0,
+      "phase_rad": 0.0,
+      "start_ms": 0.0
+    },
+    "template_family": "single_compartment_channel",
+    "template_variant": "hh_fixed_ion"
+  },
+  {
+    "case_id": "ac_sine__019",
+    "channel_overrides": {
+      "g_max_S_cm2": 0.0,
+      "q": 9.0,
+      "v12_mV": 25.0
+    },
+    "group_id": "ac_sine",
+    "ion": {
+      "fixed_E_mV": -80.0,
+      "mode": "fixed"
+    },
+    "leak": {
+      "e_mV": -65.0,
+      "enabled": false,
+      "g_S_cm2": 0.0
+    },
+    "mod_dir": "/home/swl/braincell/examples/convert_mod/mod_validate/mods",
+    "morphology": {
+      "cm_uF_cm2": 1.0,
+      "length_um": 10.0,
+      "radius_um": 15.915494309189533
+    },
+    "pair_id": "kv_test",
+    "simulation": {
+      "dt_ms": 0.025,
+      "duration_ms": 4.0,
+      "temperature_celsius": 25.0,
+      "v_init_mV": -30.0
+    },
+    "stimulus": {
+      "amplitude_nA": 0.02,
+      "duration_ms": 4.0,
+      "frequency_hz": 250.0,
+      "kind": "sine",
+      "offset_nA": 0.0,
+      "phase_rad": 0.0,
+      "start_ms": 0.0
+    },
+    "template_family": "single_compartment_channel",
+    "template_variant": "hh_fixed_ion"
+  },
+  {
+    "case_id": "ac_sine__020",
+    "channel_overrides": {
+      "g_max_S_cm2": 0.0,
+      "q": 9.0,
+      "v12_mV": 25.0
+    },
+    "group_id": "ac_sine",
+    "ion": {
+      "fixed_E_mV": -80.0,
+      "mode": "fixed"
+    },
+    "leak": {
+      "e_mV": -65.0,
+      "enabled": false,
+      "g_S_cm2": 0.0
+    },
+    "mod_dir": "/home/swl/braincell/examples/convert_mod/mod_validate/mods",
+    "morphology": {
+      "cm_uF_cm2": 1.0,
+      "length_um": 10.0,
+      "radius_um": 15.915494309189533
+    },
+    "pair_id": "kv_test",
+    "simulation": {
+      "dt_ms": 0.025,
+      "duration_ms": 4.0,
+      "temperature_celsius": 25.0,
+      "v_init_mV": 0.0
+    },
+    "stimulus": {
+      "amplitude_nA": 0.01,
+      "duration_ms": 4.0,
+      "frequency_hz": 100.0,
+      "kind": "sine",
+      "offset_nA": 0.0,
+      "phase_rad": 0.0,
+      "start_ms": 0.0
+    },
+    "template_family": "single_compartment_channel",
+    "template_variant": "hh_fixed_ion"
+  },
+  {
+    "case_id": "ac_sine__021",
+    "channel_overrides": {
+      "g_max_S_cm2": 0.0,
+      "q": 9.0,
+      "v12_mV": 25.0
+    },
+    "group_id": "ac_sine",
+    "ion": {
+      "fixed_E_mV": -80.0,
+      "mode": "fixed"
+    },
+    "leak": {
+      "e_mV": -65.0,
+      "enabled": false,
+      "g_S_cm2": 0.0
+    },
+    "mod_dir": "/home/swl/braincell/examples/convert_mod/mod_validate/mods",
+    "morphology": {
+      "cm_uF_cm2": 1.0,
+      "length_um": 10.0,
+      "radius_um": 15.915494309189533
+    },
+    "pair_id": "kv_test",
+    "simulation": {
+      "dt_ms": 0.025,
+      "duration_ms": 4.0,
+      "temperature_celsius": 25.0,
+      "v_init_mV": 0.0
+    },
+    "stimulus": {
+      "amplitude_nA": 0.01,
+      "duration_ms": 4.0,
+      "frequency_hz": 250.0,
+      "kind": "sine",
+      "offset_nA": 0.0,
+      "phase_rad": 0.0,
+      "start_ms": 0.0
+    },
+    "template_family": "single_compartment_channel",
+    "template_variant": "hh_fixed_ion"
+  },
+  {
+    "case_id": "ac_sine__022",
+    "channel_overrides": {
+      "g_max_S_cm2": 0.0,
+      "q": 9.0,
+      "v12_mV": 25.0
+    },
+    "group_id": "ac_sine",
+    "ion": {
+      "fixed_E_mV": -80.0,
+      "mode": "fixed"
+    },
+    "leak": {
+      "e_mV": -65.0,
+      "enabled": false,
+      "g_S_cm2": 0.0
+    },
+    "mod_dir": "/home/swl/braincell/examples/convert_mod/mod_validate/mods",
+    "morphology": {
+      "cm_uF_cm2": 1.0,
+      "length_um": 10.0,
+      "radius_um": 15.915494309189533
+    },
+    "pair_id": "kv_test",
+    "simulation": {
+      "dt_ms": 0.025,
+      "duration_ms": 4.0,
+      "temperature_celsius": 25.0,
+      "v_init_mV": 0.0
+    },
+    "stimulus": {
+      "amplitude_nA": 0.02,
+      "duration_ms": 4.0,
+      "frequency_hz": 100.0,
+      "kind": "sine",
+      "offset_nA": 0.0,
+      "phase_rad": 0.0,
+      "start_ms": 0.0
+    },
+    "template_family": "single_compartment_channel",
+    "template_variant": "hh_fixed_ion"
+  },
+  {
+    "case_id": "ac_sine__023",
+    "channel_overrides": {
+      "g_max_S_cm2": 0.0,
+      "q": 9.0,
+      "v12_mV": 25.0
+    },
+    "group_id": "ac_sine",
+    "ion": {
+      "fixed_E_mV": -80.0,
+      "mode": "fixed"
+    },
+    "leak": {
+      "e_mV": -65.0,
+      "enabled": false,
+      "g_S_cm2": 0.0
+    },
+    "mod_dir": "/home/swl/braincell/examples/convert_mod/mod_validate/mods",
+    "morphology": {
+      "cm_uF_cm2": 1.0,
+      "length_um": 10.0,
+      "radius_um": 15.915494309189533
+    },
+    "pair_id": "kv_test",
+    "simulation": {
+      "dt_ms": 0.025,
+      "duration_ms": 4.0,
+      "temperature_celsius": 25.0,
+      "v_init_mV": 0.0
+    },
+    "stimulus": {
+      "amplitude_nA": 0.02,
+      "duration_ms": 4.0,
+      "frequency_hz": 250.0,
+      "kind": "sine",
+      "offset_nA": 0.0,
+      "phase_rad": 0.0,
+      "start_ms": 0.0
+    },
+    "template_family": "single_compartment_channel",
+    "template_variant": "hh_fixed_ion"
+  },
+  {
+    "case_id": "ac_sine__024",
+    "channel_overrides": {
+      "g_max_S_cm2": 0.0,
+      "q": 9.0,
+      "v12_mV": 25.0
+    },
+    "group_id": "ac_sine",
+    "ion": {
+      "fixed_E_mV": -80.0,
+      "mode": "fixed"
+    },
+    "leak": {
+      "e_mV": -65.0,
+      "enabled": false,
+      "g_S_cm2": 0.0
+    },
+    "mod_dir": "/home/swl/braincell/examples/convert_mod/mod_validate/mods",
+    "morphology": {
+      "cm_uF_cm2": 1.0,
+      "length_um": 10.0,
+      "radius_um": 15.915494309189533
+    },
+    "pair_id": "kv_test",
+    "simulation": {
+      "dt_ms": 0.025,
+      "duration_ms": 4.0,
+      "temperature_celsius": 35.0,
+      "v_init_mV": -65.0
+    },
+    "stimulus": {
+      "amplitude_nA": 0.01,
+      "duration_ms": 4.0,
+      "frequency_hz": 100.0,
+      "kind": "sine",
+      "offset_nA": 0.0,
+      "phase_rad": 0.0,
+      "start_ms": 0.0
+    },
+    "template_family": "single_compartment_channel",
+    "template_variant": "hh_fixed_ion"
+  },
+  {
+    "case_id": "ac_sine__025",
+    "channel_overrides": {
+      "g_max_S_cm2": 0.0,
+      "q": 9.0,
+      "v12_mV": 25.0
+    },
+    "group_id": "ac_sine",
+    "ion": {
+      "fixed_E_mV": -80.0,
+      "mode": "fixed"
+    },
+    "leak": {
+      "e_mV": -65.0,
+      "enabled": false,
+      "g_S_cm2": 0.0
+    },
+    "mod_dir": "/home/swl/braincell/examples/convert_mod/mod_validate/mods",
+    "morphology": {
+      "cm_uF_cm2": 1.0,
+      "length_um": 10.0,
+      "radius_um": 15.915494309189533
+    },
+    "pair_id": "kv_test",
+    "simulation": {
+      "dt_ms": 0.025,
+      "duration_ms": 4.0,
+      "temperature_celsius": 35.0,
+      "v_init_mV": -65.0
+    },
+    "stimulus": {
+      "amplitude_nA": 0.01,
+      "duration_ms": 4.0,
+      "frequency_hz": 250.0,
+      "kind": "sine",
+      "offset_nA": 0.0,
+      "phase_rad": 0.0,
+      "start_ms": 0.0
+    },
+    "template_family": "single_compartment_channel",
+    "template_variant": "hh_fixed_ion"
+  },
+  {
+    "case_id": "ac_sine__026",
+    "channel_overrides": {
+      "g_max_S_cm2": 0.0,
+      "q": 9.0,
+      "v12_mV": 25.0
+    },
+    "group_id": "ac_sine",
+    "ion": {
+      "fixed_E_mV": -80.0,
+      "mode": "fixed"
+    },
+    "leak": {
+      "e_mV": -65.0,
+      "enabled": false,
+      "g_S_cm2": 0.0
+    },
+    "mod_dir": "/home/swl/braincell/examples/convert_mod/mod_validate/mods",
+    "morphology": {
+      "cm_uF_cm2": 1.0,
+      "length_um": 10.0,
+      "radius_um": 15.915494309189533
+    },
+    "pair_id": "kv_test",
+    "simulation": {
+      "dt_ms": 0.025,
+      "duration_ms": 4.0,
+      "temperature_celsius": 35.0,
+      "v_init_mV": -65.0
+    },
+    "stimulus": {
+      "amplitude_nA": 0.02,
+      "duration_ms": 4.0,
+      "frequency_hz": 100.0,
+      "kind": "sine",
+      "offset_nA": 0.0,
+      "phase_rad": 0.0,
+      "start_ms": 0.0
+    },
+    "template_family": "single_compartment_channel",
+    "template_variant": "hh_fixed_ion"
+  },
+  {
+    "case_id": "ac_sine__027",
+    "channel_overrides": {
+      "g_max_S_cm2": 0.0,
+      "q": 9.0,
+      "v12_mV": 25.0
+    },
+    "group_id": "ac_sine",
+    "ion": {
+      "fixed_E_mV": -80.0,
+      "mode": "fixed"
+    },
+    "leak": {
+      "e_mV": -65.0,
+      "enabled": false,
+      "g_S_cm2": 0.0
+    },
+    "mod_dir": "/home/swl/braincell/examples/convert_mod/mod_validate/mods",
+    "morphology": {
+      "cm_uF_cm2": 1.0,
+      "length_um": 10.0,
+      "radius_um": 15.915494309189533
+    },
+    "pair_id": "kv_test",
+    "simulation": {
+      "dt_ms": 0.025,
+      "duration_ms": 4.0,
+      "temperature_celsius": 35.0,
+      "v_init_mV": -65.0
+    },
+    "stimulus": {
+      "amplitude_nA": 0.02,
+      "duration_ms": 4.0,
+      "frequency_hz": 250.0,
+      "kind": "sine",
+      "offset_nA": 0.0,
+      "phase_rad": 0.0,
+      "start_ms": 0.0
+    },
+    "template_family": "single_compartment_channel",
+    "template_variant": "hh_fixed_ion"
+  },
+  {
+    "case_id": "ac_sine__028",
+    "channel_overrides": {
+      "g_max_S_cm2": 0.0,
+      "q": 9.0,
+      "v12_mV": 25.0
+    },
+    "group_id": "ac_sine",
+    "ion": {
+      "fixed_E_mV": -80.0,
+      "mode": "fixed"
+    },
+    "leak": {
+      "e_mV": -65.0,
+      "enabled": false,
+      "g_S_cm2": 0.0
+    },
+    "mod_dir": "/home/swl/braincell/examples/convert_mod/mod_validate/mods",
+    "morphology": {
+      "cm_uF_cm2": 1.0,
+      "length_um": 10.0,
+      "radius_um": 15.915494309189533
+    },
+    "pair_id": "kv_test",
+    "simulation": {
+      "dt_ms": 0.025,
+      "duration_ms": 4.0,
+      "temperature_celsius": 35.0,
+      "v_init_mV": -30.0
+    },
+    "stimulus": {
+      "amplitude_nA": 0.01,
+      "duration_ms": 4.0,
+      "frequency_hz": 100.0,
+      "kind": "sine",
+      "offset_nA": 0.0,
+      "phase_rad": 0.0,
+      "start_ms": 0.0
+    },
+    "template_family": "single_compartment_channel",
+    "template_variant": "hh_fixed_ion"
+  },
+  {
+    "case_id": "ac_sine__029",
+    "channel_overrides": {
+      "g_max_S_cm2": 0.0,
+      "q": 9.0,
+      "v12_mV": 25.0
+    },
+    "group_id": "ac_sine",
+    "ion": {
+      "fixed_E_mV": -80.0,
+      "mode": "fixed"
+    },
+    "leak": {
+      "e_mV": -65.0,
+      "enabled": false,
+      "g_S_cm2": 0.0
+    },
+    "mod_dir": "/home/swl/braincell/examples/convert_mod/mod_validate/mods",
+    "morphology": {
+      "cm_uF_cm2": 1.0,
+      "length_um": 10.0,
+      "radius_um": 15.915494309189533
+    },
+    "pair_id": "kv_test",
+    "simulation": {
+      "dt_ms": 0.025,
+      "duration_ms": 4.0,
+      "temperature_celsius": 35.0,
+      "v_init_mV": -30.0
+    },
+    "stimulus": {
+      "amplitude_nA": 0.01,
+      "duration_ms": 4.0,
+      "frequency_hz": 250.0,
+      "kind": "sine",
+      "offset_nA": 0.0,
+      "phase_rad": 0.0,
+      "start_ms": 0.0
+    },
+    "template_family": "single_compartment_channel",
+    "template_variant": "hh_fixed_ion"
+  },
+  {
+    "case_id": "ac_sine__030",
+    "channel_overrides": {
+      "g_max_S_cm2": 0.0,
+      "q": 9.0,
+      "v12_mV": 25.0
+    },
+    "group_id": "ac_sine",
+    "ion": {
+      "fixed_E_mV": -80.0,
+      "mode": "fixed"
+    },
+    "leak": {
+      "e_mV": -65.0,
+      "enabled": false,
+      "g_S_cm2": 0.0
+    },
+    "mod_dir": "/home/swl/braincell/examples/convert_mod/mod_validate/mods",
+    "morphology": {
+      "cm_uF_cm2": 1.0,
+      "length_um": 10.0,
+      "radius_um": 15.915494309189533
+    },
+    "pair_id": "kv_test",
+    "simulation": {
+      "dt_ms": 0.025,
+      "duration_ms": 4.0,
+      "temperature_celsius": 35.0,
+      "v_init_mV": -30.0
+    },
+    "stimulus": {
+      "amplitude_nA": 0.02,
+      "duration_ms": 4.0,
+      "frequency_hz": 100.0,
+      "kind": "sine",
+      "offset_nA": 0.0,
+      "phase_rad": 0.0,
+      "start_ms": 0.0
+    },
+    "template_family": "single_compartment_channel",
+    "template_variant": "hh_fixed_ion"
+  },
+  {
+    "case_id": "ac_sine__031",
+    "channel_overrides": {
+      "g_max_S_cm2": 0.0,
+      "q": 9.0,
+      "v12_mV": 25.0
+    },
+    "group_id": "ac_sine",
+    "ion": {
+      "fixed_E_mV": -80.0,
+      "mode": "fixed"
+    },
+    "leak": {
+      "e_mV": -65.0,
+      "enabled": false,
+      "g_S_cm2": 0.0
+    },
+    "mod_dir": "/home/swl/braincell/examples/convert_mod/mod_validate/mods",
+    "morphology": {
+      "cm_uF_cm2": 1.0,
+      "length_um": 10.0,
+      "radius_um": 15.915494309189533
+    },
+    "pair_id": "kv_test",
+    "simulation": {
+      "dt_ms": 0.025,
+      "duration_ms": 4.0,
+      "temperature_celsius": 35.0,
+      "v_init_mV": -30.0
+    },
+    "stimulus": {
+      "amplitude_nA": 0.02,
+      "duration_ms": 4.0,
+      "frequency_hz": 250.0,
+      "kind": "sine",
+      "offset_nA": 0.0,
+      "phase_rad": 0.0,
+      "start_ms": 0.0
+    },
+    "template_family": "single_compartment_channel",
+    "template_variant": "hh_fixed_ion"
+  },
+  {
+    "case_id": "ac_sine__032",
+    "channel_overrides": {
+      "g_max_S_cm2": 0.0,
+      "q": 9.0,
+      "v12_mV": 25.0
+    },
+    "group_id": "ac_sine",
+    "ion": {
+      "fixed_E_mV": -80.0,
+      "mode": "fixed"
+    },
+    "leak": {
+      "e_mV": -65.0,
+      "enabled": false,
+      "g_S_cm2": 0.0
+    },
+    "mod_dir": "/home/swl/braincell/examples/convert_mod/mod_validate/mods",
+    "morphology": {
+      "cm_uF_cm2": 1.0,
+      "length_um": 10.0,
+      "radius_um": 15.915494309189533
+    },
+    "pair_id": "kv_test",
+    "simulation": {
+      "dt_ms": 0.025,
+      "duration_ms": 4.0,
+      "temperature_celsius": 35.0,
+      "v_init_mV": 0.0
+    },
+    "stimulus": {
+      "amplitude_nA": 0.01,
+      "duration_ms": 4.0,
+      "frequency_hz": 100.0,
+      "kind": "sine",
+      "offset_nA": 0.0,
+      "phase_rad": 0.0,
+      "start_ms": 0.0
+    },
+    "template_family": "single_compartment_channel",
+    "template_variant": "hh_fixed_ion"
+  },
+  {
+    "case_id": "ac_sine__033",
+    "channel_overrides": {
+      "g_max_S_cm2": 0.0,
+      "q": 9.0,
+      "v12_mV": 25.0
+    },
+    "group_id": "ac_sine",
+    "ion": {
+      "fixed_E_mV": -80.0,
+      "mode": "fixed"
+    },
+    "leak": {
+      "e_mV": -65.0,
+      "enabled": false,
+      "g_S_cm2": 0.0
+    },
+    "mod_dir": "/home/swl/braincell/examples/convert_mod/mod_validate/mods",
+    "morphology": {
+      "cm_uF_cm2": 1.0,
+      "length_um": 10.0,
+      "radius_um": 15.915494309189533
+    },
+    "pair_id": "kv_test",
+    "simulation": {
+      "dt_ms": 0.025,
+      "duration_ms": 4.0,
+      "temperature_celsius": 35.0,
+      "v_init_mV": 0.0
+    },
+    "stimulus": {
+      "amplitude_nA": 0.01,
+      "duration_ms": 4.0,
+      "frequency_hz": 250.0,
+      "kind": "sine",
+      "offset_nA": 0.0,
+      "phase_rad": 0.0,
+      "start_ms": 0.0
+    },
+    "template_family": "single_compartment_channel",
+    "template_variant": "hh_fixed_ion"
+  },
+  {
+    "case_id": "ac_sine__034",
+    "channel_overrides": {
+      "g_max_S_cm2": 0.0,
+      "q": 9.0,
+      "v12_mV": 25.0
+    },
+    "group_id": "ac_sine",
+    "ion": {
+      "fixed_E_mV": -80.0,
+      "mode": "fixed"
+    },
+    "leak": {
+      "e_mV": -65.0,
+      "enabled": false,
+      "g_S_cm2": 0.0
+    },
+    "mod_dir": "/home/swl/braincell/examples/convert_mod/mod_validate/mods",
+    "morphology": {
+      "cm_uF_cm2": 1.0,
+      "length_um": 10.0,
+      "radius_um": 15.915494309189533
+    },
+    "pair_id": "kv_test",
+    "simulation": {
+      "dt_ms": 0.025,
+      "duration_ms": 4.0,
+      "temperature_celsius": 35.0,
+      "v_init_mV": 0.0
+    },
+    "stimulus": {
+      "amplitude_nA": 0.02,
+      "duration_ms": 4.0,
+      "frequency_hz": 100.0,
+      "kind": "sine",
+      "offset_nA": 0.0,
+      "phase_rad": 0.0,
+      "start_ms": 0.0
+    },
+    "template_family": "single_compartment_channel",
+    "template_variant": "hh_fixed_ion"
+  },
+  {
+    "case_id": "ac_sine__035",
+    "channel_overrides": {
+      "g_max_S_cm2": 0.0,
+      "q": 9.0,
+      "v12_mV": 25.0
+    },
+    "group_id": "ac_sine",
+    "ion": {
+      "fixed_E_mV": -80.0,
+      "mode": "fixed"
+    },
+    "leak": {
+      "e_mV": -65.0,
+      "enabled": false,
+      "g_S_cm2": 0.0
+    },
+    "mod_dir": "/home/swl/braincell/examples/convert_mod/mod_validate/mods",
+    "morphology": {
+      "cm_uF_cm2": 1.0,
+      "length_um": 10.0,
+      "radius_um": 15.915494309189533
+    },
+    "pair_id": "kv_test",
+    "simulation": {
+      "dt_ms": 0.025,
+      "duration_ms": 4.0,
+      "temperature_celsius": 35.0,
+      "v_init_mV": 0.0
+    },
+    "stimulus": {
+      "amplitude_nA": 0.02,
+      "duration_ms": 4.0,
+      "frequency_hz": 250.0,
+      "kind": "sine",
+      "offset_nA": 0.0,
+      "phase_rad": 0.0,
+      "start_ms": 0.0
+    },
+    "template_family": "single_compartment_channel",
+    "template_variant": "hh_fixed_ion"
+  }
+]

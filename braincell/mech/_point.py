@@ -26,7 +26,10 @@ Concrete point mechanisms defined here:
 - :class:`CurrentClamp` — piecewise-constant current injection.
 - :class:`SineClamp` — sinusoidal current injection.
 - :class:`FunctionClamp` — arbitrary ``t → I`` callable.
-- :class:`ProbeMechanism` — recorder for a named variable.
+- :class:`StateProbe` — probe for cell-owned state such as ``v``.
+- :class:`MechanismProbe` — probe for runtime state on a named mechanism.
+- :class:`CurrentProbe` — probe for mechanism or total ion current.
+- :class:`ProbeMechanism` — legacy recorder for a named variable.
 - :class:`Synapse` — registry-keyed synapse model.
 
 The :class:`~braincell.mech.Junction` gap-junction declaration also
@@ -46,6 +49,9 @@ __all__ = [
     "Point",
     "CurrentClamp",
     "FunctionClamp",
+    "StateProbe",
+    "MechanismProbe",
+    "CurrentProbe",
     "ProbeMechanism",
     "SineClamp",
     "Synapse",
@@ -258,6 +264,60 @@ class FunctionClamp(Point):
 # ---------------------------------------------------------------------------
 # Observers & synapses
 # ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class StateProbe(Point):
+    """Probe for cell-owned state at one placed location."""
+
+    name: str | None = None
+    field: str = "v"
+
+    def __post_init__(self) -> None:
+        if self.name is not None and (not isinstance(self.name, str) or not self.name):
+            raise ValueError(f"StateProbe.name must be a non-empty string or None, got {self.name!r}.")
+        if not isinstance(self.field, str) or not self.field:
+            raise ValueError(f"StateProbe.field must be a non-empty string, got {self.field!r}.")
+        if self.field != "v":
+            raise ValueError(f"Unsupported StateProbe field {self.field!r}; only 'v' is supported.")
+
+
+@dataclass(frozen=True)
+class MechanismProbe(Point):
+    """Probe for runtime state on a named mechanism."""
+
+    mechanism: str
+    field: str
+    name: str | None = None
+
+    def __post_init__(self) -> None:
+        if self.name is not None and (not isinstance(self.name, str) or not self.name):
+            raise ValueError(f"MechanismProbe.name must be a non-empty string or None, got {self.name!r}.")
+        for field_name in ("mechanism", "field"):
+            value = getattr(self, field_name)
+            if not isinstance(value, str) or not value:
+                raise ValueError(
+                    f"MechanismProbe.{field_name} must be a non-empty string, got {value!r}."
+                )
+
+
+@dataclass(frozen=True)
+class CurrentProbe(Point):
+    """Probe for current at a placed location."""
+
+    ion: str
+    mechanism: str | None = None
+    name: str | None = None
+
+    def __post_init__(self) -> None:
+        if self.name is not None and (not isinstance(self.name, str) or not self.name):
+            raise ValueError(f"CurrentProbe.name must be a non-empty string or None, got {self.name!r}.")
+        if not isinstance(self.ion, str) or not self.ion:
+            raise ValueError(f"CurrentProbe.ion must be a non-empty string, got {self.ion!r}.")
+        if self.mechanism is not None and (not isinstance(self.mechanism, str) or not self.mechanism):
+            raise ValueError(
+                f"CurrentProbe.mechanism must be a non-empty string or None, got {self.mechanism!r}."
+            )
 
 
 @dataclass(frozen=True)

@@ -188,7 +188,7 @@ def exp_euler_step(target: DiffEqModule, *args):
         f"The target should be a {HHTypedNeuron.__name__}. "
         f"But got {type(target)} instead."
     )
-    t = brainstate.environ.get('t')
+    t = brainstate.environ.get('t', getattr(target, 'current_time', 0.0 * u.ms))
     dt = brainstate.environ.get('dt')
 
     if isinstance(target, SingleCompartment):
@@ -317,7 +317,7 @@ def ind_exp_euler_step(target: DiffEqModule, *args, excluded_paths=()):
         f"The target should be a {DiffEqModule.__name__}. "
         f"But got {type(target)} instead."
     )
-    t = brainstate.environ.get('t')
+    t = brainstate.environ.get('t', getattr(target, 'current_time', 0.0 * u.ms))
     dt = brainstate.environ.get('dt')
 
     # Pre-integration hook (e.g., update gating variables)

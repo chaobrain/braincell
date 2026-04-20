@@ -8,6 +8,9 @@ brainpy/math/brainpy_object/tests/io_test_tmp*
 lib/
 
 development
+/.codex
+/examples/convert_mod/
+/.claudegitignore
 
 brainpy/dyn/tests/data
 examples/dynamics_simulation/data
@@ -236,3 +239,4 @@ x86_64/
 /dev/replace_all.py
 /examples/multi_compartment/checkpoint/
 /dev/
+/.claudegitignore

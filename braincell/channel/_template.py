@@ -8,6 +8,7 @@ from typing import ClassVar
 
 import braintools
 import brainunit as u
+import jax.numpy as jnp
 
 from braincell._base import Channel
 from braincell.quad import DiffEqState
@@ -15,7 +16,6 @@ from braincell.quad import DiffEqState
 __all__ = [
     "Gate",
     "Transition",
-    "OpenState",
     "Passive",
     "HH",
     "Markov",
@@ -71,14 +71,6 @@ class Transition:
     dst: str
     forward: str
     backward: str | None = None
-
-
-@dataclass(frozen=True)
-class OpenState:
-    """One conducting state and its contribution weight."""
-
-    name: str
-    weight: float = 1.0
 
 
 class Passive(Channel):
@@ -210,12 +202,23 @@ class HH(Channel):
 
 
 class Markov(Channel):
-    """Probability-state channel kinetics described by transition pairs."""
+    """Probability-state channel kinetics described by transition pairs.
+
+    ``pairs`` define one conserved probability pool. By default the dependent
+    state is the last state whose name is first discovered while scanning
+    ``pairs``. Override ``dependent_state`` when that order-based default is
+    not the intended hidden state.
+
+    ``state_values()`` returns the raw stored states plus the reconstructed
+    dependent state. ``compute_derivative()`` uses ``_kinetic_state_values()``,
+    which clips each independent state to ``[0, 1]`` before evaluating the
+    transition graph while still reconstructing the dependent state from the
+    raw stored sum.
+    """
 
     pairs: ClassVar[tuple[Transition | tuple[Any, ...], ...]] = ()
     conserve: ClassVar[Any] = 1.0
     dependent_state: ClassVar[str | None] = None
-    conducting: ClassVar[tuple[OpenState | tuple[Any, ...], ...]] = ()
 
     def _iter_pairs(self) -> tuple[Transition, ...]:
         items = []
@@ -226,15 +229,6 @@ class Markov(Channel):
                 items.append(Transition(*pair))
         return tuple(items)
 
-    def _iter_conducting(self) -> tuple[OpenState, ...]:
-        items = []
-        for state in type(self).conducting:
-            if isinstance(state, OpenState):
-                items.append(state)
-            else:
-                items.append(OpenState(*state))
-        return tuple(items)
-
     def _state_names(self) -> tuple[str, ...]:
         names: list[str] = []
         seen: set[str] = set()
@@ -243,10 +237,6 @@ class Markov(Channel):
                 if name not in seen:
                     names.append(name)
                     seen.add(name)
-        for state in self._iter_conducting():
-            if state.name not in seen:
-                names.append(state.name)
-                seen.add(state.name)
         return tuple(names)
 
     def _dependent_state_name(self) -> str:
@@ -274,6 +264,54 @@ class Markov(Channel):
     def _conserve_value(self):
         return _resolve_value(self, type(self).conserve)
 
+    def _independent_state_values(self):
+        return {
+            name: getattr(self, name).value
+            for name in self._independent_state_names()
+        }
+
+    def _dependent_state_value(self, states):
+        total = None
+        for value in states.values():
+            total = value if total is None else (total + value)
+        if total is None:
+            total = 0.0
+        return self._conserve_value() - total
+
+    def _project_independent_state(self, name: str, value):
+        _ = name
+        return u.math.clip(value, 0.0, 1.0)
+
+    def _kinetic_state_values(self):
+        raw_states = self._independent_state_values()
+        states = {
+            name: self._project_independent_state(name, value)
+            for name, value in raw_states.items()
+        }
+        states[self._dependent_state_name()] = self._dependent_state_value(raw_states)
+        return states
+
+    def pre_integral(self, V, *ions):
+        _ = (V, ions)
+
+    def post_integral(self, V, *ions):
+        _ = (V, ions)
+
+    @property
+    def state_names(self) -> tuple[str, ...]:
+        return self._independent_state_names()
+
+    @property
+    def redundant_state(self) -> str:
+        return self._dependent_state_name()
+
+    @property
+    def state_pairs(self) -> tuple[tuple[str, str, str, str | None], ...]:
+        return tuple(
+            (pair.src, pair.dst, pair.forward, pair.backward)
+            for pair in self._iter_pairs()
+        )
+
     def init_state(self, V, *ions, batch_size: int = None):
         _ = (V, ions)
         for name in self._independent_state_names():
@@ -291,22 +329,89 @@ class Markov(Channel):
             if isinstance(batch_size, int):
                 assert value.shape[0] == batch_size
 
-    def state_values(self):
-        states = {
-            name: getattr(self, name).value
-            for name in self._independent_state_names()
+    def _solve_steady_state(self, V, *ions):
+        state_names = self._state_names()
+        dependent_index = state_names.index(self._dependent_state_name())
+        template = jnp.asarray(u.get_magnitude(self._state_zero()))
+        template_shape = template.shape
+        flat_size = int(template.size)
+
+        def _flatten_like(value, label: str):
+            array = jnp.asarray(u.get_magnitude(value))
+            if array.shape != template_shape:
+                if array.size == 1:
+                    array = jnp.full(template_shape, array.reshape(()), dtype=array.dtype)
+                else:
+                    try:
+                        array = jnp.broadcast_to(array, template_shape)
+                    except ValueError as err:
+                        raise ValueError(
+                            f"{type(self).__name__}.{label} could not be broadcast to steady-state shape {template_shape}."
+                        ) from err
+            return array.reshape(flat_size)
+
+        conserve = _flatten_like(self._conserve_value(), "conserve")
+        rates = []
+        for pair in self._iter_pairs():
+            rates.append(_flatten_like(getattr(self, pair.forward)(V, *ions), pair.forward))
+            if pair.backward is not None:
+                rates.append(_flatten_like(getattr(self, pair.backward)(V, *ions), pair.backward))
+
+        dtype = jnp.result_type(template, conserve, *rates) if rates else jnp.result_type(template, conserve)
+        conserve = conserve.astype(dtype)
+        generator = jnp.zeros((flat_size, len(state_names), len(state_names)), dtype=dtype)
+
+        for pair in self._iter_pairs():
+            src = state_names.index(pair.src)
+            dst = state_names.index(pair.dst)
+            forward = _flatten_like(getattr(self, pair.forward)(V, *ions), pair.forward).astype(dtype)
+            generator = generator.at[:, src, src].add(-forward)
+            generator = generator.at[:, dst, src].add(forward)
+            if pair.backward is not None:
+                backward = _flatten_like(getattr(self, pair.backward)(V, *ions), pair.backward).astype(dtype)
+                generator = generator.at[:, src, dst].add(backward)
+                generator = generator.at[:, dst, dst].add(-backward)
+
+        lhs = generator.at[:, dependent_index, :].set(jnp.ones((flat_size, len(state_names)), dtype=dtype))
+        rhs = jnp.zeros((flat_size, len(state_names)), dtype=dtype).at[:, dependent_index].set(conserve)
+        try:
+            solution = jnp.linalg.solve(lhs, rhs[..., None]).squeeze(-1)
+        except Exception as err:
+            raise ValueError(f"{type(self).__name__} steady-state linear system could not be solved.") from err
+
+        if not bool(jnp.all(jnp.isfinite(solution))):
+            raise ValueError(f"{type(self).__name__} steady-state solve returned non-finite values.")
+
+        tol = 1e-7
+        if bool(jnp.any(solution < -tol)) or bool(jnp.any(solution > conserve[:, None] + tol)):
+            raise ValueError(f"{type(self).__name__} steady-state solve returned out-of-range probabilities.")
+
+        solution = jnp.clip(solution, 0.0, None)
+        totals = solution.sum(axis=1, keepdims=True)
+        if not bool(jnp.all(totals > 0.0)):
+            raise ValueError(f"{type(self).__name__} steady-state solve collapsed to zero probability mass.")
+        solution = solution * (conserve[:, None] / totals)
+
+        return {
+            name: solution[:, index].reshape(template_shape)
+            for index, name in enumerate(state_names)
         }
-        dependent = self._dependent_state_name()
-        total = None
-        for value in states.values():
-            total = value if total is None else (total + value)
-        if total is None:
-            total = 0.0
-        states[dependent] = self._conserve_value() - total
+
+    def reset_steady_state(self, V, *ions, batch_size: int = None):
+        states = self._solve_steady_state(V, *ions)
+        for name in self._independent_state_names():
+            value = states[name]
+            getattr(self, name).value = value
+            if isinstance(batch_size, int):
+                assert value.shape[0] == batch_size
+
+    def state_values(self):
+        states = self._independent_state_values()
+        states[self._dependent_state_name()] = self._dependent_state_value(states)
         return states
 
     def compute_derivative(self, V, *ions):
-        states = self.state_values()
+        states = self._kinetic_state_values()
         derivatives = {name: self._state_zero() for name in states}
 
         for pair in self._iter_pairs():
@@ -321,11 +426,3 @@ class Markov(Channel):
 
         for name in self._independent_state_names():
             getattr(self, name).derivative = derivatives[name] / u.ms
-
-    def conductance_factor(self, V, *ions):
-        _ = (V, ions)
-        states = self.state_values()
-        factor = 0.0
-        for state in self._iter_conducting():
-            factor = factor + states[state.name] * state.weight
-        return factor

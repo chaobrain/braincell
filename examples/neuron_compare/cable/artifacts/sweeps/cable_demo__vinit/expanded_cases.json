@@ -1,0 +1,60 @@
+[
+  {
+    "cable": {
+      "cm_uF_cm2": 1.0,
+      "ra_ohm_cm": 100.0
+    },
+    "case_id": "v_init_scan__000",
+    "cv_policy": {
+      "cv_per_branch": 3,
+      "kind": "CVPerBranch"
+    },
+    "group_id": "v_init_scan",
+    "morphology": {
+      "kind": "swc",
+      "path": "/home/swl/braincell/examples/multi_compartment/morpho_files/unbranched_soma.swc"
+    },
+    "simulation": {
+      "dt_ms": 0.025,
+      "duration_ms": 2.0,
+      "v_init_mV": -70.0
+    },
+    "stimulus": {
+      "amp_nA": 0.0,
+      "delay_ms": 0.0,
+      "dur_ms": 2.0,
+      "kind": "dc_step",
+      "target": "root_soma_midpoint"
+    },
+    "template_family": "multi_compartment_cable"
+  },
+  {
+    "cable": {
+      "cm_uF_cm2": 1.0,
+      "ra_ohm_cm": 100.0
+    },
+    "case_id": "v_init_scan__001",
+    "cv_policy": {
+      "cv_per_branch": 3,
+      "kind": "CVPerBranch"
+    },
+    "group_id": "v_init_scan",
+    "morphology": {
+      "kind": "swc",
+      "path": "/home/swl/braincell/examples/multi_compartment/morpho_files/unbranched_soma.swc"
+    },
+    "simulation": {
+      "dt_ms": 0.025,
+      "duration_ms": 2.0,
+      "v_init_mV": -50.0
+    },
+    "stimulus": {
+      "amp_nA": 0.0,
+      "delay_ms": 0.0,
+      "dur_ms": 2.0,
+      "kind": "dc_step",
+      "target": "root_soma_midpoint"
+    },
+    "template_family": "multi_compartment_cable"
+  }
+]

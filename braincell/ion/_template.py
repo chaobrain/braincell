@@ -2,220 +2,181 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Any
-from typing import ClassVar
+"""Shared ion-side templates.
+
+This module contains mixins used by concrete ion classes such as
+``SodiumFixed`` or ``CalciumDetailed``. The public lifecycle still lives on
+``Ion``; these mixins only provide helper methods and lifecycle hooks for
+common ion patterns:
+
+- fixed ``Ci/Co/E``
+- fixed ``Ci/Co`` with ``E`` initialized from Nernst
+- dynamic ``Ci`` with Nernst-computed ``E``
+"""
 
 import brainstate
 import braintools
 import brainunit as u
 
-from braincell._base import Channel
 from braincell.quad import DiffEqState
-from braincell.quad import IndependentIntegration
 
 __all__ = [
-    "IonData",
-    "Constant",
-    "InitNernst",
-    "DynamicNernst",
+    "FixedIon",
+    "InitNernstIon",
+    "DynamicNernstIon",
 ]
 
 
-@dataclass(frozen=True)
-class IonData:
-    """Template-only ion payload used by channel prototypes."""
+class FixedIon:
+    """Helper mixin for ions with fixed ``Ci/Co/E`` state."""
 
-    Ci: Any
-    Co: Any
-    E: Any
-    valence: Any
+    def _init_fixed_ion(self, *, Ci=None, Co=None, E=None, valence=None):
+        """Materialize one fixed ion payload onto ``self``.
 
-    @property
-    def C(self):
-        return self.Ci
+        ``Ci``/``Co``/``valence`` fall back to species-level defaults when
+        omitted. ``E`` must always be provided explicitly by the concrete fixed
+        class, typically via its constructor default.
+        """
+        if E is None:
+            raise ValueError(f"{type(self).__name__} requires an explicit fixed reversal potential E.")
 
-    @property
-    def C0(self):
-        return self.Co
-
-    @property
-    def z(self):
-        return self.valence
-
-
-def _resolve_value(owner, value):
-    return value(owner) if callable(value) else value
-
-
-def _materialize(value):
-    return value.value if isinstance(value, brainstate.State) else value
-
-
-def _channel_nodes(owner):
-    return tuple(brainstate.graph.nodes(owner, Channel, allowed_hierarchy=(1, 1)).values())
-
-
-def _check_hierarchies(owner, nodes):
-    if hasattr(owner, "check_hierarchies"):
-        owner.check_hierarchies(type(owner), *tuple(nodes))
-
-
-def _init_child_channels(owner, V, batch_size=None):
-    nodes = _channel_nodes(owner)
-    _check_hierarchies(owner, nodes)
-    ion_data = owner.pack_info()
-    for node in nodes:
-        node.init_state(V, ion_data, batch_size)
-
-
-def _reset_child_channels(owner, V, batch_size=None):
-    nodes = _channel_nodes(owner)
-    ion_data = owner.pack_info()
-    for node in nodes:
-        node.reset_state(V, ion_data, batch_size)
-
-
-def _compute_child_channel_derivatives(owner, V):
-    ion_data = owner.pack_info()
-    for node in _channel_nodes(owner):
-        if not isinstance(node, IndependentIntegration):
-            node.compute_derivative(V, ion_data)
-
-
-def _nernst(Ci, Co, valence, T):
-    return (u.gas_constant * T / (valence * u.faraday_constant)) * u.math.log(Co / Ci)
-
-
-class _IonTemplateMixin:
-    ci_attr: ClassVar[str] = "Ci"
-    co_attr: ClassVar[str] = "Co"
-    e_attr: ClassVar[str] = "E"
-    valence_attr: ClassVar[str] = "valence"
-    temp_attr: ClassVar[str] = "T"
-
-    def _ci_value(self):
-        return _materialize(getattr(self, type(self).ci_attr))
-
-    def _co_value(self):
-        return _materialize(getattr(self, type(self).co_attr))
-
-    def _e_value(self):
-        return _materialize(getattr(self, type(self).e_attr))
-
-    def _valence_value(self):
-        return _materialize(getattr(self, type(self).valence_attr))
-
-    def _temp_value(self):
-        return _materialize(getattr(self, type(self).temp_attr))
-
-
-class Constant(_IonTemplateMixin):
-    """Fixed ``Ci/Co/E`` ion template with no Nernst coupling."""
-
-    def init_state(self, V, batch_size: int = None):
-        _init_child_channels(self, V, batch_size=batch_size)
-
-    def reset_state(self, V, batch_size: int = None):
-        _reset_child_channels(self, V, batch_size=batch_size)
-
-    def compute_derivative(self, V):
-        _compute_child_channel_derivatives(self, V)
-
-    def pack_info(self) -> IonData:
-        return IonData(
-            Ci=self._ci_value(),
-            Co=self._co_value(),
-            E=self._e_value(),
-            valence=self._valence_value(),
+        self.Ci = braintools.init.param(
+            type(self).default_Ci if Ci is None else Ci,
+            self.varshape,
+            allow_none=False,
+        )
+        self.Co = braintools.init.param(
+            type(self).default_Co if Co is None else Co,
+            self.varshape,
+            allow_none=False,
+        )
+        self.E = braintools.init.param(E, self.varshape, allow_none=False)
+        self.valence = braintools.init.param(
+            type(self).default_valence if valence is None else valence,
+            self.varshape,
+            allow_none=False,
         )
 
 
-class InitNernst(_IonTemplateMixin):
-    """Fixed ``Ci/Co`` with ``E`` computed once during init/reset."""
+class InitNernstIon:
+    """Helper mixin for ions with fixed ``Ci/Co`` and stored Nernst ``E``.
+
+    ``E`` is stored as a regular attribute and refreshed during
+    ``init_state()`` / ``reset_state()`` via ion-level hooks.
+    """
+
+    def _init_nernst_ion(self, *, Ci=None, Co=None, temp=None, valence=None):
+        """Initialize the fixed concentrations needed by a stored-Nernst ion."""
+        if temp is None:
+            raise ValueError(f"{type(self).__name__} requires an explicit temperature value.")
+
+        self.Ci = braintools.init.param(
+            type(self).default_Ci if Ci is None else Ci,
+            self.varshape,
+            allow_none=False,
+        )
+        self.Co = braintools.init.param(
+            type(self).default_Co if Co is None else Co,
+            self.varshape,
+            allow_none=False,
+        )
+        self.valence = braintools.init.param(
+            type(self).default_valence if valence is None else valence,
+            self.varshape,
+            allow_none=False,
+        )
+        self.temp = braintools.init.param(temp, self.varshape, allow_none=False)
+        self.E = None
 
     def _update_reversal(self):
-        E = _nernst(
-            Ci=self._ci_value(),
-            Co=self._co_value(),
-            valence=self._valence_value(),
-            T=self._temp_value(),
-        )
-        setattr(self, type(self).e_attr, E)
+        """Recompute and store ``E`` from the current ``Ci/Co/temp/valence``."""
+        Ci = self.Ci.value if isinstance(self.Ci, brainstate.State) else self.Ci
+        Co = self.Co.value if isinstance(self.Co, brainstate.State) else self.Co
+        valence = self.valence.value if isinstance(self.valence, brainstate.State) else self.valence
+        temp = self.temp.value if isinstance(self.temp, brainstate.State) else self.temp
+        self.E = (
+            u.gas_constant * temp / (valence * u.faraday_constant)
+        ) * u.math.log(Co / Ci)
 
-    def init_state(self, V, batch_size: int = None):
+    def _ion_init_state_hook(self, V, batch_size: int = None):
+        _ = (V, batch_size)
         self._update_reversal()
-        _init_child_channels(self, V, batch_size=batch_size)
 
-    def reset_state(self, V, batch_size: int = None):
+    def _ion_reset_state_hook(self, V, batch_size: int = None):
+        _ = (V, batch_size)
         self._update_reversal()
-        _reset_child_channels(self, V, batch_size=batch_size)
 
-    def compute_derivative(self, V):
-        _compute_child_channel_derivatives(self, V)
 
-    def pack_info(self) -> IonData:
-        return IonData(
-            Ci=self._ci_value(),
-            Co=self._co_value(),
-            E=self._e_value(),
-            valence=self._valence_value(),
+class DynamicNernstIon:
+    """Helper mixin for ions with dynamic ``Ci`` and computed Nernst ``E``.
+
+    ``Ci`` is created as a :class:`DiffEqState` during ``init_state()`` and is
+    reset from the stored initializer during ``reset_state()``. ``E`` is a
+    derived property computed on demand from the current ``Ci``.
+    """
+
+    #: When true, the template precomputes the aggregate ion current and passes
+    #: it to ``derivative(..., total_current=...)``. Leave false for models that
+    #: do not need current-driven concentration dynamics.
+    uses_total_current = False
+
+    def _init_dynamic_nernst_ion(self, *, Co=None, temp=None, valence=None, Ci_initializer=None):
+        """Initialize the static fields and remember the ``Ci`` initializer."""
+        if temp is None:
+            raise ValueError(f"{type(self).__name__} requires an explicit temperature value.")
+
+        self.Co = braintools.init.param(
+            type(self).default_Co if Co is None else Co,
+            self.varshape,
+            allow_none=False,
         )
-
-
-class DynamicNernst(_IonTemplateMixin):
-    """Dynamic ``Ci`` with per-step Nernst reversal updates."""
-
-    ci_state: ClassVar[str] = "Ci"
-    ci_initializer: ClassVar[Any] = 0.0 * u.mM
-
-    def _ci_state(self):
-        return getattr(self, type(self).ci_state)
-
-    def _ci_value(self):
-        return self._ci_state().value
+        self.valence = braintools.init.param(
+            type(self).default_valence if valence is None else valence,
+            self.varshape,
+            allow_none=False,
+        )
+        self.temp = braintools.init.param(temp, self.varshape, allow_none=False)
+        self._Ci_initializer = type(self).default_Ci if Ci_initializer is None else Ci_initializer
 
     @property
     def E(self):
-        return _nernst(
-            Ci=self._ci_value(),
-            Co=self._co_value(),
-            valence=self._valence_value(),
-            T=self._temp_value(),
+        """Compute ``E`` from the current dynamic ``Ci`` via Nernst."""
+        Ci = self.Ci.value if isinstance(self.Ci, brainstate.State) else self.Ci
+        Co = self.Co.value if isinstance(self.Co, brainstate.State) else self.Co
+        valence = self.valence.value if isinstance(self.valence, brainstate.State) else self.valence
+        temp = self.temp.value if isinstance(self.temp, brainstate.State) else self.temp
+        return (u.gas_constant * temp / (valence * u.faraday_constant)) * u.math.log(Co / Ci)
+
+    def _ion_init_state_hook(self, V, batch_size: int = None):
+        """Create the runtime ``Ci`` state from the stored initializer."""
+        _ = V
+        self.Ci = DiffEqState(
+            braintools.init.param(self._Ci_initializer, self.varshape, batch_size),
         )
 
-    def init_state(self, V, batch_size: int = None):
-        initial = _resolve_value(self, type(self).ci_initializer)
-        setattr(
-            self,
-            type(self).ci_state,
-            DiffEqState(braintools.init.param(initial, self.varshape, batch_size)),
-        )
-        _init_child_channels(self, V, batch_size=batch_size)
-
-    def reset_state(self, V, batch_size: int = None):
+    def _ion_reset_state_hook(self, V, batch_size: int = None):
+        """Reset the dynamic ``Ci`` state back to its initializer."""
+        _ = V
         value = braintools.init.param(
-            _resolve_value(self, type(self).ci_initializer),
+            self._Ci_initializer,
             self.varshape,
             batch_size,
         )
-        self._ci_state().value = value
+        self.Ci.value = value
         if isinstance(batch_size, int):
             assert value.shape[0] == batch_size
-        _reset_child_channels(self, V, batch_size=batch_size)
 
-    def compute_derivative(self, V):
-        _compute_child_channel_derivatives(self, V)
-        total_current = self.current(V, include_external=True)
-        self._ci_state().derivative = self.ci_derivative(self._ci_value(), V, total_current)
-
-    def ci_derivative(self, Ci, V, total_current):
-        raise NotImplementedError
-
-    def pack_info(self) -> IonData:
-        return IonData(
-            Ci=self._ci_value(),
-            Co=self._co_value(),
-            E=self.E,
-            valence=self._valence_value(),
+    def _ion_compute_derivative_hook(self, V):
+        """Populate ``Ci.derivative`` using the concrete ion model."""
+        total_current = None
+        if type(self).uses_total_current:
+            total_current = self.current(V, include_external=True)
+        self.Ci.derivative = self.derivative(
+            self.Ci.value,
+            V,
+            total_current=total_current,
         )
+
+    def derivative(self, Ci, V, total_current=None):
+        """Return ``dCi/dt`` for the concrete dynamic ion model."""
+        raise NotImplementedError

@@ -18,6 +18,7 @@ from .asc import (
     AscMetadata,
     AscReader,
     AscReport,
+    AscSpineRecord,
 
 )
 from .checkpoint import (
@@ -62,6 +63,7 @@ __all__ = [
     "AscMetadata",
     "AscReader",
     "AscReport",
+    "AscSpineRecord",
     "CheckpointError",
     "CheckpointVersionError",
     "DEFAULT_USER_CACHE_DIR",

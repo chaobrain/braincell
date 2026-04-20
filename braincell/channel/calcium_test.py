@@ -38,13 +38,14 @@ from braincell.channel.calcium import (
     _ICa_p2q_markov,
     _ICa_p2q_ss,
 )
-from braincell.channel.calcium_v2 import ICav31_Ma2020_v2
 
 
 def _ca_info(size: int = 1, C: float = 1e-4) -> IonInfo:
     return IonInfo(
-        C=jnp.full((size,), C) * u.mM,
+        Ci=jnp.full((size,), C) * u.mM,
+        Co=jnp.full((size,), 2.0) * u.mM,
         E=jnp.full((size,), 120.0) * u.mV,
+        valence=2,
     )
 
 
@@ -264,7 +265,7 @@ class ICaN_IS2008Test(unittest.TestCase):
         ch.init_state(V, ca)
         ch.reset_state(V, ca)
         i = ch.current(V, ca)
-        M = ca.C / (ca.C + 0.2 * u.mM)
+        M = ca.Ci / (ca.Ci + 0.2 * u.mM)
         expected = ch.g_max * M * ch.p.value * (ch.E - V)
         self.assertTrue(
             u.math.allclose(
@@ -368,76 +369,6 @@ class ICav31_Ma2020Test(unittest.TestCase):
         # GHK current density has units of A / m^2 – just check we get a
         # finite array back in that dimension class.
         self.assertEqual(i.shape, (1,))
-
-
-class ICav31_Ma2020V2Test(unittest.TestCase):
-    def test_v2_uses_new_temperature_style(self) -> None:
-        ch = ICav31_Ma2020_v2(size=1)
-        self.assertTrue(hasattr(ch, "temp"))
-        self.assertFalse(hasattr(ch, "phi"))
-        self.assertFalse(hasattr(ch, "T"))
-
-    def test_reset_state_matches_legacy_implementation(self) -> None:
-        legacy = ICav31_Ma2020(size=1)
-        proto = ICav31_Ma2020_v2(size=1)
-        V = _V([-50.0])
-        ca = _ca_info()
-
-        legacy.init_state(V, ca)
-        proto.init_state(V, ca)
-        legacy.reset_state(V, ca)
-        proto.reset_state(V, ca)
-
-        self.assertTrue(u.math.allclose(proto.p.value, legacy.p.value, atol=1e-6))
-        self.assertTrue(u.math.allclose(proto.q.value, legacy.q.value, atol=1e-6))
-
-    def test_compute_derivative_matches_legacy_implementation(self) -> None:
-        legacy = ICav31_Ma2020(size=1)
-        proto = ICav31_Ma2020_v2(size=1)
-        V = _V([-50.0])
-        ca = _ca_info()
-
-        legacy.init_state(V, ca)
-        proto.init_state(V, ca)
-        legacy.reset_state(V, ca)
-        proto.reset_state(V, ca)
-        legacy.p.value = jnp.array([0.3])
-        legacy.q.value = jnp.array([0.7])
-        proto.p.value = jnp.array([0.3])
-        proto.q.value = jnp.array([0.7])
-
-        legacy.compute_derivative(V, ca)
-        proto.compute_derivative(V, ca)
-
-        self.assertTrue(u.math.allclose(proto.p.derivative, legacy.p.derivative, atol=1e-6 * u.Hz))
-        self.assertTrue(u.math.allclose(proto.q.derivative, legacy.q.derivative, atol=1e-6 * u.Hz))
-
-    def test_current_matches_legacy_implementation(self) -> None:
-        legacy = ICav31_Ma2020_v2(size=1)
-        proto = ICav31_Ma2020(size=1)
-        V = _V([-50.0])
-        ca = _ca_info()
-
-        legacy.init_state(V, ca)
-        proto.init_state(V, ca)
-        legacy.reset_state(V, ca)
-        proto.reset_state(V, ca)
-
-        i_legacy = legacy.current(V, ca)
-        i_proto = proto.current(V, ca)
-        unit = i_legacy.unit
-        self.assertTrue(
-            u.math.allclose(
-                i_proto.to_decimal(unit),
-                i_legacy.to_decimal(unit),
-                atol=1e-6,
-            )
-        )
-
-    def test_v2_uses_p_max_name(self) -> None:
-        ch = ICav31_Ma2020_v2(size=1)
-        self.assertTrue(hasattr(ch, "p_max"))
-        self.assertFalse(hasattr(ch, "g_max"))
 
 
 class ICaGrc_Ma2020Test(_CavMaMixin, unittest.TestCase):

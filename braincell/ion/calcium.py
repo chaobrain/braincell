@@ -21,13 +21,14 @@ import brainstate
 import braintools
 import brainunit as u
 
-from braincell._base import Ion, Channel, HHTypedNeuron
+from braincell._base import Ion, HHTypedNeuron
 from braincell.mech import register_ion
-from braincell.quad import DiffEqState
+from braincell.ion._template import DynamicNernstIon, FixedIon, InitNernstIon
 
 __all__ = [
     'Calcium',
     'CalciumFixed',
+    'CalciumInitNernst',
     'CalciumDetailed',
     'CalciumFirstOrder',
 ]
@@ -47,10 +48,14 @@ class Calcium(Ion):
     __module__ = 'braincell.ion'
 
     root_type = HHTypedNeuron
+    ion_symbol = 'Ca'
+    default_Ci = 5e-05 * u.mM
+    default_Co = 2.0 * u.mM
+    default_valence = 2
 
 
 @register_ion("CalciumFixed")
-class CalciumFixed(Calcium):
+class CalciumFixed(Calcium, FixedIon):
     """Fixed Calcium dynamics.
 
     This calcium model has no dynamics. It holds fixed reversal
@@ -61,90 +66,39 @@ class CalciumFixed(Calcium):
     def __init__(
         self,
         size: brainstate.typing.Size,
-        E: Union[brainstate.typing.ArrayLike, Callable] = 120. * u.mV,
-        C: Union[brainstate.typing.ArrayLike, Callable] = 2.4e-4 * u.mM,
+        E: Union[brainstate.typing.ArrayLike, Callable, None] = 120. * u.mV,
+        Ci: Union[brainstate.typing.ArrayLike, Callable, None] = None,
+        Co: Union[brainstate.typing.ArrayLike, Callable, None] = None,
+        valence: Union[brainstate.typing.ArrayLike, Callable, None] = None,
         name: Optional[str] = None,
         **channels
     ):
         super().__init__(size, name=name, **channels)
-        self.E = braintools.init.param(E, self.varshape, allow_none=False)
-        self.C = braintools.init.param(C, self.varshape, allow_none=False)
-
-    def reset_state(self, V, batch_size=None):
-        ca_info = self.pack_info()
-        nodes = brainstate.graph.nodes(self, Channel, allowed_hierarchy=(1, 1)).values()
-        self.check_hierarchies(type(self), *tuple(nodes))
-        for node in nodes:
-            node.reset_state(V, ca_info, batch_size=batch_size)
+        self._init_fixed_ion(Ci=Ci, Co=Co, E=E, valence=valence)
 
 
-class _CalciumDynamics(Calcium):
-    """Calcium ion flow with dynamics.
+@register_ion("CalciumInitNernst")
+class CalciumInitNernst(Calcium, InitNernstIon):
+    """Fixed ``Ci/Co`` calcium model with ``E`` initialized from Nernst."""
 
-    Parameters
-    ----------
-    size: int, tuple of int
-      The ion size.
-    C0: brainstate.typing.ArrayLike, Callable
-      The Calcium concentration outside of membrane.
-    T: brainstate.typing.ArrayLike, Callable
-      The temperature.
-    C_initializer: brainstate.typing.ArrayLike, Callable
-      The initializer for Calcium concentration.
-    name: str
-      The ion name.
-    """
+    __module__ = 'braincell.ion'
 
     def __init__(
         self,
         size: brainstate.typing.Size,
-        C0: Union[brainstate.typing.ArrayLike, Callable] = 2. * u.mM,
-        T: Union[brainstate.typing.ArrayLike, Callable] = u.celsius2kelvin(36.),
-        C_initializer: Union[brainstate.typing.ArrayLike, Callable] = braintools.init.Constant(2.4e-4 * u.mM),
+        temp: Union[brainstate.typing.ArrayLike, Callable] = u.celsius2kelvin(36.),
+        Ci: Union[brainstate.typing.ArrayLike, Callable, None] = None,
+        Co: Union[brainstate.typing.ArrayLike, Callable, None] = None,
+        valence: Union[brainstate.typing.ArrayLike, Callable, None] = None,
         name: Optional[str] = None,
         **channels
     ):
         super().__init__(size, name=name, **channels)
-
-        # parameters
-        self.C0 = braintools.init.param(C0, self.varshape, allow_none=False)
-        self.T = braintools.init.param(T, self.varshape, allow_none=False)  # temperature
-        self._constant = u.gas_constant * self.T / (2 * u.faraday_constant)
-        self._C_initializer = C_initializer
-
-    def init_state(self, V, batch_size=None):
-        # Calcium concentration
-        self.C = DiffEqState(braintools.init.param(self._C_initializer, self.varshape, batch_size))
-        super().init_state(V, batch_size)
-
-    def reset_state(self, V, batch_size=None):
-        self.C.value = braintools.init.param(self._C_initializer, self.varshape, batch_size)
-        super().reset_state(V, batch_size)
-
-    def derivative(self, C, V):
-        raise NotImplementedError
-
-    def compute_derivative(self, V):
-        ca_info = self.pack_info()
-        nodes = brainstate.graph.nodes(self, Channel, allowed_hierarchy=(1, 1)).values()
-        self.check_hierarchies(type(self), *tuple(nodes))
-        for node in nodes:
-            node.compute_derivative(V, ca_info)
-        self.C.derivative = self.derivative(self.C.value, V)
-
-    @property
-    def E(self):
-        return self._reversal_potential(self.C.value)
-
-    def _reversal_potential(self, C):
-        # The Nernst relation:
-        #
-        # E_{\mathrm{Ca}}=\frac{RT}{2F}\log\frac{[\mathrm{Ca}]_{\mathrm{o}}}{[\mathrm{Ca}]_{\mathrm{i}}}
-        return self._constant * u.math.log(self.C0 / C)
+        self._init_nernst_ion(Ci=Ci, Co=Co, temp=temp, valence=valence)
 
 
 @register_ion("CalciumDetailed")
-class CalciumDetailed(_CalciumDynamics):
+class CalciumDetailed(Calcium, DynamicNernstIon):
     r"""Dynamical Calcium model proposed.
 
     **1. The dynamics of intracellular** :math:`Ca^{2+}`
@@ -236,7 +190,7 @@ class CalciumDetailed(_CalciumDynamics):
       The time constant of the :math:`Ca ^{2+}` removal rate. (ms)
     C_rest : float
       The resting :math:`Ca ^{2+}` concentration.
-    C0 : float
+    Co : float
       The :math:`Ca ^{2+}` concentration outside of the membrane.
     R : float
       The gas constant. (:math:` J*mol^{-1}*K^{-1}`)
@@ -254,35 +208,42 @@ class CalciumDetailed(_CalciumDynamics):
 
     """
     __module__ = 'braincell.ion'
+    uses_total_current = True
 
     def __init__(
         self,
         size: brainstate.typing.Size,
-        T: Union[brainstate.typing.ArrayLike, Callable] = u.celsius2kelvin(36.),
+        temp: Union[brainstate.typing.ArrayLike, Callable] = u.celsius2kelvin(36.),
         d: Union[brainstate.typing.ArrayLike, Callable] = 1. * u.um,
         tau: Union[brainstate.typing.ArrayLike, Callable] = 5. * u.ms,
         C_rest: Union[brainstate.typing.ArrayLike, Callable] = 2.4e-4 * u.mM,
-        C0: Union[brainstate.typing.ArrayLike, Callable] = 2. * u.mM,
-        C_initializer: Union[brainstate.typing.ArrayLike, Callable] = braintools.init.Constant(2.4e-4 * u.mM),
+        Co: Union[brainstate.typing.ArrayLike, Callable, None] = None,
+        Ci_initializer: Union[brainstate.typing.ArrayLike, Callable] = braintools.init.Constant(2.4e-4 * u.mM),
         name: Optional[str] = None,
         **channels
     ):
-        super().__init__(size, name=name, T=T, C0=C0, C_initializer=C_initializer, **channels)
+        super().__init__(size, name=name, **channels)
+        self._init_dynamic_nernst_ion(
+            Co=Co,
+            temp=temp,
+            valence=None,
+            Ci_initializer=Ci_initializer,
+        )
 
         # parameters
         self.d = braintools.init.param(d, self.varshape, allow_none=False)
         self.tau = braintools.init.param(tau, self.varshape, allow_none=False)
         self.C_rest = braintools.init.param(C_rest, self.varshape, allow_none=False)
 
-    def derivative(self, C, V):
-        ICa = self.current(V, include_external=True)
-        drive = ICa / (2 * u.faraday_constant * self.d)
+    def derivative(self, Ci, V, total_current=None):
+        _ = V
+        drive = total_current / (2 * u.faraday_constant * self.d)
         drive = u.math.maximum(drive, u.math.zeros_like(drive))
-        return drive + (self.C_rest - C) / self.tau
+        return drive + (self.C_rest - Ci) / self.tau
 
 
 @register_ion("CalciumFirstOrder")
-class CalciumFirstOrder(_CalciumDynamics):
+class CalciumFirstOrder(Calcium, DynamicNernstIon):
     r"""
     The first-order calcium concentration model.
 
@@ -292,32 +253,32 @@ class CalciumFirstOrder(_CalciumDynamics):
 
     """
     __module__ = 'braincell.ion'
+    uses_total_current = True
 
     def __init__(
         self,
         size: brainstate.typing.Size,
-        T: Union[brainstate.typing.ArrayLike, Callable] = u.celsius2kelvin(36.),
+        temp: Union[brainstate.typing.ArrayLike, Callable] = u.celsius2kelvin(36.),
         alpha: Union[brainstate.typing.ArrayLike, Callable] = 0.13,
         beta: Union[brainstate.typing.ArrayLike, Callable] = 0.075,
-        C0: Union[brainstate.typing.ArrayLike, Callable] = 2. * u.mM,
-        C_initializer: Union[brainstate.typing.ArrayLike, Callable] = braintools.init.Constant(2.4e-4 * u.mM),
+        Co: Union[brainstate.typing.ArrayLike, Callable, None] = None,
+        Ci_initializer: Union[brainstate.typing.ArrayLike, Callable] = braintools.init.Constant(2.4e-4 * u.mM),
         name: Optional[str] = None,
         **channels
     ):
-        super().__init__(
-            size,
-            name=name,
-            T=T,
-            C0=C0,
-            C_initializer=C_initializer,
-            **channels
+        super().__init__(size, name=name, **channels)
+        self._init_dynamic_nernst_ion(
+            Co=Co,
+            temp=temp,
+            valence=None,
+            Ci_initializer=Ci_initializer,
         )
 
         # parameters
         self.alpha = braintools.init.param(alpha, self.varshape, allow_none=False)
         self.beta = braintools.init.param(beta, self.varshape, allow_none=False)
 
-    def derivative(self, C, V):
-        ICa = self.current(V, include_external=True)
-        drive = u.math.maximum(self.alpha * ICa, 0. * u.mM)
-        return drive - self.beta * C
+    def derivative(self, Ci, V, total_current=None):
+        _ = V
+        drive = u.math.maximum(self.alpha * total_current, 0. * u.mM)
+        return drive - self.beta * Ci

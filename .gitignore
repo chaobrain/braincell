@@ -156,6 +156,7 @@ target/
 
 # Jupyter Notebook
 .ipynb_checkpoints
+examples/neuron_compare/channel_no_conc/artifacts/
 
 # IPython
 profile_default/
@@ -229,7 +230,7 @@ cython_debug/
 /docs/apis/deprecated/generated/
 /docs/_static/braincell.psd
 
-/examples/multi_compartment/x86_64/
+x86_64/
 /.claude/
 /dev/replace_init.py
 /dev/replace_all.py

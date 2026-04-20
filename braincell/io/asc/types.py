@@ -35,9 +35,22 @@ class AscIssue:
         return self.format_block()
 
 
+@dataclass(frozen=True)
+class AscSpineRecord:
+    base_xyz: tuple[float, float, float]
+    base_diameter: float
+    tip_xyz: tuple[float, float, float]
+    tip_diameter: float
+    class_type: int | float | None = None
+    class_label: str | None = None
+    properties: tuple[tuple[object, ...], ...] = ()
+    line_number: int | None = None
+
+
 @dataclass
 class AscMetadata:
-    spines: list[object] = field(default_factory=list)
+    spines: list[AscSpineRecord] = field(default_factory=list)
+    spine_annotations: list[object] = field(default_factory=list)
     markers: list[object] = field(default_factory=list)
     filled_circles: list[object] = field(default_factory=list)
     comments: list[str] = field(default_factory=list)

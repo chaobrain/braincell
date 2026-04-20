@@ -22,7 +22,8 @@ import jax.numpy as jnp
 
 from braincell._base import HHTypedNeuron, Ion, IonInfo
 from braincell.channel.potassium import IK_TM1991
-from braincell.ion.potassium import Potassium, PotassiumFixed
+from braincell.ion._template import InitNernstIon
+from braincell.ion.potassium import Potassium, PotassiumFixed, PotassiumInitNernst
 
 
 def _V(values, unit=u.mV):
@@ -49,11 +50,13 @@ class PotassiumFixedDefaultsTest(unittest.TestCase):
         k = PotassiumFixed(size=1)
         self.assertTrue(u.math.allclose(k.E, -95.0 * u.mV, atol=1e-9 * u.mV))
 
-    def test_default_concentration(self) -> None:
+    def test_default_intracellular_and_extracellular_concentrations(self) -> None:
         k = PotassiumFixed(size=1)
         self.assertTrue(
-            u.math.allclose(k.C, 0.0400811 * u.mM, atol=1e-9 * u.mM)
+            u.math.allclose(k.Ci, 54.4 * u.mM, atol=1e-9 * u.mM)
         )
+        self.assertTrue(u.math.allclose(k.Co, 2.5 * u.mM, atol=1e-9 * u.mM))
+        self.assertTrue(u.math.allclose(k.valence, jnp.ones((1,)), atol=1e-9))
 
     def test_varshape_matches_size(self) -> None:
         self.assertEqual(PotassiumFixed(size=1).varshape, (1,))
@@ -61,23 +64,33 @@ class PotassiumFixedDefaultsTest(unittest.TestCase):
         self.assertEqual(PotassiumFixed(size=(2, 3)).varshape, (2, 3))
 
     def test_custom_scalar_parameters_are_honoured(self) -> None:
-        k = PotassiumFixed(size=2, E=-80.0 * u.mV, C=0.1 * u.mM)
+        k = PotassiumFixed(size=2, E=-80.0 * u.mV, Ci=0.1 * u.mM, Co=3.0 * u.mM, valence=1)
         self.assertTrue(u.math.allclose(k.E, -80.0 * u.mV, atol=1e-9 * u.mV))
-        self.assertTrue(u.math.allclose(k.C, 0.1 * u.mM, atol=1e-9 * u.mM))
+        self.assertTrue(u.math.allclose(k.Ci, 0.1 * u.mM, atol=1e-9 * u.mM))
+        self.assertTrue(u.math.allclose(k.Co, 3.0 * u.mM, atol=1e-9 * u.mM))
 
     def test_callable_parameters_broadcast_across_size(self) -> None:
         k = PotassiumFixed(
             size=3,
             E=lambda shape: jnp.array([-90.0, -95.0, -100.0]) * u.mV,
-            C=lambda shape: jnp.array([0.04, 0.05, 0.06]) * u.mM,
+            Ci=lambda shape: jnp.array([0.04, 0.05, 0.06]) * u.mM,
+            Co=lambda shape: jnp.array([2.5, 2.6, 2.7]) * u.mM,
         )
         self.assertEqual(k.E.shape, (3,))
-        self.assertEqual(k.C.shape, (3,))
+        self.assertEqual(k.Ci.shape, (3,))
+        self.assertEqual(k.Co.shape, (3,))
         self.assertTrue(
             u.math.allclose(
                 k.E,
                 jnp.array([-90.0, -95.0, -100.0]) * u.mV,
                 atol=1e-9 * u.mV,
+            )
+        )
+        self.assertTrue(
+            u.math.allclose(
+                k.Ci,
+                jnp.array([0.04, 0.05, 0.06]) * u.mM,
+                atol=1e-9 * u.mM,
             )
         )
 
@@ -89,10 +102,12 @@ class PotassiumFixedPackInfoTest(unittest.TestCase):
         self.assertIsInstance(info, IonInfo)
 
     def test_pack_info_fields_match_stored_values(self) -> None:
-        k = PotassiumFixed(size=1, E=-85.0 * u.mV, C=0.02 * u.mM)
+        k = PotassiumFixed(size=1, E=-85.0 * u.mV, Ci=0.02 * u.mM, Co=2.8 * u.mM, valence=1)
         info = k.pack_info()
-        self.assertTrue(u.math.allclose(info.C, 0.02 * u.mM, atol=1e-9 * u.mM))
+        self.assertTrue(u.math.allclose(info.Ci, 0.02 * u.mM, atol=1e-9 * u.mM))
+        self.assertTrue(u.math.allclose(info.Co, 2.8 * u.mM, atol=1e-9 * u.mM))
         self.assertTrue(u.math.allclose(info.E, -85.0 * u.mV, atol=1e-9 * u.mV))
+        self.assertTrue(u.math.allclose(info.valence, jnp.ones((1,)), atol=1e-9))
 
 
 class PotassiumFixedContainerTest(unittest.TestCase):
@@ -195,6 +210,36 @@ class PotassiumFixedLifecycleTest(unittest.TestCase):
         k.reset_state(V)
         k.compute_derivative(V)
         self.assertEqual(k.channels["IK"].p.derivative.shape, (1,))
+
+
+class PotassiumInitNernstTest(unittest.TestCase):
+    def test_is_init_nernst_ion(self) -> None:
+        self.assertTrue(issubclass(PotassiumInitNernst, Potassium))
+        self.assertTrue(issubclass(PotassiumInitNernst, InitNernstIon))
+
+    def test_E_is_initialized_from_nernst_on_init_and_reset(self) -> None:
+        k = PotassiumInitNernst(size=1)
+        V = _V([-65.0])
+
+        self.assertIsNone(k.E)
+        k.init_state(V)
+        expected = (
+            u.gas_constant * k.temp / (k.valence * u.faraday_constant)
+            * u.math.log(k.Co / k.Ci)
+        )
+        self.assertTrue(u.math.allclose(k.E.to_decimal(u.mV), expected.to_decimal(u.mV), atol=1e-6))
+
+        first_E = k.E
+        k.Ci = jnp.array([10.0]) * u.mM
+        self.assertTrue(u.math.allclose(k.E.to_decimal(u.mV), first_E.to_decimal(u.mV), atol=1e-6))
+
+        k.reset_state(V)
+        self.assertFalse(u.math.allclose(k.E.to_decimal(u.mV), first_E.to_decimal(u.mV), atol=1e-6))
+
+    def test_custom_Ci_and_Co_are_respected(self) -> None:
+        k = PotassiumInitNernst(size=1, Ci=60.0 * u.mM, Co=3.0 * u.mM)
+        self.assertTrue(u.math.allclose(k.Ci, 60.0 * u.mM, atol=1e-9 * u.mM))
+        self.assertTrue(u.math.allclose(k.Co, 3.0 * u.mM, atol=1e-9 * u.mM))
 
 
 if __name__ == "__main__":

@@ -20,7 +20,7 @@ from pathlib import Path
 
 import numpy as np
 
-from .types import AscMetadata, AscReport
+from .types import AscMetadata, AscReport, AscSpineRecord
 from ..swc.types import MIN_SYNTHETIC_LENGTH_UM
 from ..._misc import u
 from ...morph import Branch, Morphology, MorphoBranch
@@ -58,12 +58,16 @@ class _AscPoint:
     x: float
     y: float
     z: float
-    radius: float
+    diameter: float
     line_number: int
 
     @property
     def xyz(self) -> np.ndarray:
         return np.array([self.x, self.y, self.z], dtype=float)
+
+    @property
+    def radius(self) -> float:
+        return 0.5 * float(self.diameter)
 
 
 @dataclass(frozen=True)
@@ -71,6 +75,12 @@ class _AscSegment:
     points: tuple[_AscPoint, ...]
     children: tuple["_AscSegment", ...]
     branch_type: str
+
+
+@dataclass(frozen=True)
+class _AscSpineBlock:
+    items: tuple[object, ...]
+    line_number: int
 
 
 @dataclass(frozen=True)
@@ -132,6 +142,14 @@ class AscReader:
                 tokens.append(_AscToken("rparen", char, line_number))
                 index += 1
                 continue
+            if char == "<":
+                tokens.append(_AscToken("leftsp", char, line_number))
+                index += 1
+                continue
+            if char == ">":
+                tokens.append(_AscToken("rightsp", char, line_number))
+                index += 1
+                continue
             if char == "|":
                 tokens.append(_AscToken("pipe", char, line_number))
                 index += 1
@@ -149,7 +167,7 @@ class AscReader:
                 continue
 
             end = index
-            while end < len(text) and text[end] not in "()|;, \t\r\n":
+            while end < len(text) and text[end] not in "()<>|;, \t\r\n":
                 end += 1
             raw = text[index:end]
             tokens.append(_AscToken("atom", self._coerce_atom(raw), line_number))
@@ -187,6 +205,19 @@ class AscReader:
             if index >= len(tokens):
                 raise ValueError(f"Unclosed '(' at line {token.line_number}.")
             return tuple(items), index + 1
+        if token.kind == "leftsp":
+            items: list[object] = []
+            index += 1
+            while index < len(tokens) and tokens[index].kind != "rightsp":
+                if tokens[index].kind == "pipe":
+                    items.append(_PIPE)
+                    index += 1
+                    continue
+                item, index = self._parse_expression(tokens, index)
+                items.append(item)
+            if index >= len(tokens):
+                raise ValueError(f"Unclosed '<' at line {token.line_number}.")
+            return _AscSpineBlock(items=tuple(items), line_number=token.line_number), index + 1
         if token.kind in {"string", "atom"}:
             return token.value, index + 1
         if token.kind == "pipe":
@@ -260,6 +291,25 @@ class AscReader:
         for item in items:
             if self._is_annotation(item):
                 continue
+            if isinstance(item, _AscSpineBlock):
+                if seen_children:
+                    report.add_warning(
+                        "syntax.spine_after_children",
+                        "Ignoring ASC spine block that appeared after child branches had started.",
+                        line_number=item.line_number,
+                    )
+                    continue
+                if not points:
+                    report.add_warning(
+                        "syntax.spine_before_point",
+                        "Ignoring ASC spine block that appeared before any parent branch point.",
+                        line_number=item.line_number,
+                    )
+                    continue
+                spine_record = self._spine_record_from_block(base_point=points[-1], block=item, report=report)
+                if spine_record is not None:
+                    report.metadata.spines.append(spine_record)
+                continue
             if self._is_point_expr(item):
                 if seen_children:
                     report.add_warning(
@@ -277,6 +327,77 @@ class AscReader:
                 continue
 
         return _AscSegment(points=tuple(points), children=tuple(children), branch_type=branch_type)
+
+    def _spine_record_from_block(
+        self,
+        *,
+        base_point: _AscPoint,
+        block: _AscSpineBlock,
+        report: AscReport,
+    ) -> AscSpineRecord | None:
+        property_exprs: list[tuple[object, ...]] = []
+        tip_points: list[_AscPoint] = []
+
+        for item in block.items:
+            if self._is_point_expr(item):
+                tip_points.append(self._point_from_expr(item))
+                continue
+            if isinstance(item, tuple):
+                property_exprs.append(item)
+                continue
+            if item is _PIPE:
+                report.add_warning(
+                    "syntax.spine_pipe",
+                    "Ignoring unexpected '|' inside ASC spine block.",
+                    line_number=block.line_number,
+                )
+                continue
+            report.add_warning(
+                "syntax.spine_item",
+                f"Ignoring unexpected ASC spine item {item!r}.",
+                line_number=block.line_number,
+            )
+
+        if len(tip_points) == 0:
+            report.add_warning(
+                "syntax.spine_missing_tip",
+                "Ignoring ASC spine block with no tip point.",
+                line_number=block.line_number,
+            )
+            return None
+        if len(tip_points) > 1:
+            report.add_warning(
+                "syntax.spine_multiple_tips",
+                "Ignoring ASC spine block with multiple tip points.",
+                line_number=block.line_number,
+            )
+            return None
+
+        class_type: int | float | None = None
+        class_label: str | None = None
+        for expr in property_exprs:
+            key = self._head_key(expr)
+            if key != "class" or len(expr) < 3:
+                continue
+            raw_type = expr[1]
+            raw_label = expr[2]
+            if isinstance(raw_type, (int, float)):
+                value = float(raw_type)
+                class_type = int(value) if value.is_integer() else value
+            if isinstance(raw_label, str):
+                class_label = raw_label
+
+        tip_point = tip_points[0]
+        return AscSpineRecord(
+            base_xyz=(float(base_point.x), float(base_point.y), float(base_point.z)),
+            base_diameter=float(base_point.diameter),
+            tip_xyz=(float(tip_point.x), float(tip_point.y), float(tip_point.z)),
+            tip_diameter=float(tip_point.diameter),
+            class_type=class_type,
+            class_label=class_label,
+            properties=tuple(property_exprs),
+            line_number=block.line_number,
+        )
 
     def _split_arms(self, expr: tuple[object, ...]) -> tuple[tuple[object, ...], ...]:
         arms: list[list[object]] = [[]]
@@ -304,30 +425,7 @@ class AscReader:
             return _AscSegment(points=(), children=children, branch_type=segment.branch_type)
 
         if len(points) == 1:
-            if not children:
-                return None
-            if len(children) == 1:
-                child = children[0]
-                merged = _AscSegment(
-                    points=self._merge_point_sequences(points, child.points),
-                    children=child.children,
-                    branch_type=segment.branch_type,
-                )
-                return self._normalize_segment(merged)
-
-            pushed_children = []
-            for child in children:
-                merged = _AscSegment(
-                    points=self._merge_point_sequences(points, child.points),
-                    children=child.children,
-                    branch_type=segment.branch_type,
-                )
-                normalized = self._normalize_segment(merged)
-                if normalized is not None:
-                    pushed_children.append(normalized)
-            if len(pushed_children) == 1:
-                return pushed_children[0]
-            return _AscSegment(points=(), children=tuple(pushed_children), branch_type=segment.branch_type)
+            return _AscSegment(points=points, children=children, branch_type=segment.branch_type)
 
         return _AscSegment(points=points, children=children, branch_type=segment.branch_type)
 
@@ -343,8 +441,9 @@ class AscReader:
             raise ValueError(f"ASC import failed for {path}: no soma contour or neurites were found.")
 
         if contours:
-            all_points = [point for contour in contours for point in contour]
-            center, radius = self._contour_center_radius(tuple(all_points))
+            soma_branch, center, radius = self._soma_branch_from_contours(contours, path=path)
+            stack = self._merge_soma_contours(contours)[0]
+            soma_bbox_xy = self._soma_loose_bbox_xy(stack)
         else:
             first_point = self._first_point(neurites)
             if first_point is None:
@@ -353,10 +452,19 @@ class AscReader:
             radius = max(float(first_point.radius), MIN_SYNTHETIC_LENGTH_UM)
             report.add_warning("topology.synthetic_soma",
                                "ASC file has no CellBody contour; synthesized a soma from the first neurite root point.")
+            soma_branch = self._synthetic_soma_branch(center=center, radius=radius)
+            soma_bbox_xy = None
 
-        soma_branch = self._synthetic_soma_branch(center=center, radius=radius)
         morpho = Morphology.from_root(soma_branch, name="soma")
         for neurite in neurites:
+            if soma_bbox_xy is not None:
+                root_point = self._first_point((neurite,))
+                if root_point is not None and not self._point_inside_bbox_xy(root_point.xyz, soma_bbox_xy):
+                    report.add_warning(
+                        "topology.root_outside_soma_bbox",
+                        "Main branch root is outside the soma bounding box; connected to the nearest soma center.",
+                        line_number=root_point.line_number if root_point.line_number > 0 else None,
+                    )
             self._attach_segment(
                 parent=morpho.root,
                 segment=neurite,
@@ -432,6 +540,19 @@ class AscReader:
                 report=report,
             )
 
+    # NEURON Import3d_Neurolucida3() parity notes for ASC geometry:
+    # - Column 4 in Neurolucida ASC points is treated as diameter, not radius.
+    # - Single-contour CellBody is converted with NEURON-style 21-point principal-axis sampling.
+    # - Multi-contour CellBody stacks follow the NEURON stack centroid/diameter path instead of forcing 21 points.
+    # - For non-soma parent/child attachments, if child-first xyz differs from the parent terminal xyz, copy the
+    #   parent terminal xyz into the child branch; the copied point keeps the child's diameter, not the parent's.
+    # - If child-first xyz already matches the parent terminal xyz, do not inject another attachment point.
+    # - Angle-bracket spine blocks are metadata attached to the preceding branch point; they do not become branches
+    #   or section pt3d points, but they must not terminate the parent point stream.
+    # - Preserve repeated consecutive points and one-point sections; NEURON read_nlcda3.hoc can keep both as real
+    #   section geometry, and import3d_gui.hoc instantiate() then emits them through pt3dadd()/pt3dstyle().
+    # - Root soma attachment remains a logical parent_x=0.5 rule; it is not modeled by inserting a soma midpoint
+    #   into child pt3d geometry.
     def _segment_branch(
         self,
         segment: _AscSegment,
@@ -450,14 +571,11 @@ class AscReader:
             if np.allclose(points[0], attach_point):
                 should_copy_attach = False
 
-            attach_radius_for_child = radii[0] if parent_branch_type == "soma" else float(attach_radius)
+            attach_radius_for_child = radii[0]
             if should_copy_attach:
                 points.insert(0, np.asarray(attach_point, dtype=float))
                 radii.insert(0, attach_radius_for_child)
-            elif np.allclose(points[0], attach_point):
-                radii[0] = attach_radius_for_child
 
-        points, radii = self._dedupe_shared_points(points, radii)
         if len(points) < 2:
             return None
 
@@ -501,7 +619,7 @@ class AscReader:
         return prefix + suffix
 
     def _same_point(self, left: _AscPoint, right: _AscPoint) -> bool:
-        return np.allclose(left.xyz, right.xyz) and np.isclose(left.radius, right.radius)
+        return np.allclose(left.xyz, right.xyz) and np.isclose(left.diameter, right.diameter)
 
     def _first_point(self, segments: tuple[_AscSegment, ...]) -> _AscPoint | None:
         for segment in segments:
@@ -512,11 +630,350 @@ class AscReader:
                 return first
         return None
 
+    def _soma_branch_from_contours(
+        self,
+        contours: tuple[tuple[_AscPoint, ...], ...],
+        *,
+        path: Path,
+    ) -> tuple[Branch, np.ndarray, float]:
+        stacks = self._merge_soma_contours(contours)
+        if len(stacks) != 1:
+            raise ValueError(
+                f"ASC import failed for {path}: found {len(stacks)} disjoint CellBody contour groups; "
+                "Braincell currently supports exactly one soma."
+            )
+
+        stack = stacks[0]
+        if len(stack) == 1:
+            points, radii, center = self._contour2centroid(stack[0])
+        else:
+            self._validate_soma_stack(stack, path=path)
+            points, radii = self._contourstack2centroid(stack)
+            center = self._soma_stack_center(stack)
+
+        branch = Soma.from_points(points=points * u.um, radii=radii * u.um)
+        return branch, center, float(radii[len(radii) // 2])
+
+    def _merge_soma_contours(
+        self,
+        contours: tuple[tuple[_AscPoint, ...], ...],
+    ) -> tuple[tuple[tuple[_AscPoint, ...], ...], ...]:
+        if not contours:
+            return tuple()
+
+        stacks: list[tuple[tuple[_AscPoint, ...], ...]] = []
+        current_stack: list[tuple[_AscPoint, ...]] = [contours[0]]
+        previous_bbox = self._contour_bbox_xy(contours[0])
+        for contour in contours[1:]:
+            bbox = self._contour_bbox_xy(contour)
+            if self._xy_intersect(previous_bbox, bbox):
+                current_stack.append(contour)
+            else:
+                stacks.append(tuple(current_stack))
+                current_stack = [contour]
+            previous_bbox = bbox
+        stacks.append(tuple(current_stack))
+        return tuple(stacks)
+
+    def _contour_bbox_xy(self, contour: tuple[_AscPoint, ...]) -> tuple[float, float, float, float]:
+        xs = [point.x for point in contour]
+        ys = [point.y for point in contour]
+        return min(xs), max(xs), min(ys), max(ys)
+
+    def _xy_intersect(
+        self,
+        left: tuple[float, float, float, float],
+        right: tuple[float, float, float, float],
+    ) -> bool:
+        xmin1, xmax1, ymin1, ymax1 = left
+        xmin2, xmax2, ymin2, ymax2 = right
+        return not (xmax1 < xmin2 or xmax2 < xmin1 or ymax1 < ymin2 or ymax2 < ymin1)
+
+    def _soma_loose_bbox_xy(
+        self,
+        stack: tuple[tuple[_AscPoint, ...], ...],
+    ) -> tuple[float, float, float, float]:
+        if len(stack) == 1:
+            xmin, xmax, ymin, ymax = self._contour_bbox_xy(stack[0])
+            return xmin - 0.5, xmax + 0.5, ymin - 0.5, ymax + 0.5
+
+        bboxes = [self._contour_bbox_xy(contour) for contour in stack]
+        return (
+            min(bbox[0] for bbox in bboxes),
+            max(bbox[1] for bbox in bboxes),
+            min(bbox[2] for bbox in bboxes),
+            max(bbox[3] for bbox in bboxes),
+        )
+
+    def _point_inside_bbox_xy(
+        self,
+        xyz: np.ndarray,
+        bbox_xy: tuple[float, float, float, float],
+    ) -> bool:
+        xmin, xmax, ymin, ymax = bbox_xy
+        x, y = float(xyz[0]), float(xyz[1])
+        return xmin <= x <= xmax and ymin <= y <= ymax
+
+    def _validate_soma_stack(
+        self,
+        stack: tuple[tuple[_AscPoint, ...], ...],
+        *,
+        path: Path,
+        tol: float = 1e-6,
+    ) -> None:
+        direction = 0
+        previous_z = self._contour_constant_z(stack[0], path=path, contour_index=0)
+        for index, contour in enumerate(stack[1:], start=1):
+            current_z = self._contour_constant_z(contour, path=path, contour_index=index)
+            delta_z = current_z - previous_z
+            if abs(delta_z) <= tol:
+                raise ValueError(
+                    f"ASC import failed for {path}: adjacent CellBody contours share the same z value "
+                    f"({current_z:.6g}); NEURON-style soma stacks require strictly monotonic z."
+                )
+            current_direction = 1 if delta_z > 0.0 else -1
+            if direction == 0:
+                direction = current_direction
+            elif direction != current_direction:
+                raise ValueError(
+                    f"ASC import failed for {path}: CellBody contour stack is not monotonic in z."
+                )
+            previous_z = current_z
+
+    def _contour_constant_z(
+        self,
+        contour: tuple[_AscPoint, ...],
+        *,
+        path: Path,
+        contour_index: int,
+        tol: float = 1e-6,
+    ) -> float:
+        z0 = float(contour[0].z)
+        for point in contour[1:]:
+            if abs(float(point.z) - z0) > tol:
+                raise ValueError(
+                    f"ASC import failed for {path}: CellBody contour {contour_index} does not have constant z."
+                )
+        return z0
+
     def _contour_center_radius(self, points: tuple[_AscPoint, ...]) -> tuple[np.ndarray, float]:
         xyz = np.array([point.xyz for point in points], dtype=float)
         center = xyz.mean(axis=0)
         radius = max(np.linalg.norm(point.xyz - center) + float(point.radius) for point in points)
         return center, max(float(radius), MIN_SYNTHETIC_LENGTH_UM)
+
+    def _contourcenter(
+        self,
+        contour: tuple[_AscPoint, ...],
+        *,
+        num: int = 101,
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        x = np.array([point.x for point in contour], dtype=float)
+        y = np.array([point.y for point in contour], dtype=float)
+        z = np.array([point.z for point in contour], dtype=float)
+        seg_lengths = np.sqrt(np.diff(x) ** 2 + np.diff(y) ** 2 + np.diff(z) ** 2)
+        perimeter = np.zeros(len(x), dtype=float)
+        perimeter[1:] = np.cumsum(seg_lengths)
+        d_uniform = np.linspace(0.0, perimeter[-1], num)
+        x_new = np.interp(d_uniform, perimeter, x)
+        y_new = np.interp(d_uniform, perimeter, y)
+        z_new = np.interp(d_uniform, perimeter, z)
+        mean = np.array([x_new.mean(), y_new.mean(), z_new.mean()], dtype=float)
+        return mean, x_new, y_new, z_new
+
+    def _soma_axis_sampling(
+        self,
+        contour: tuple[_AscPoint, ...],
+        *,
+        n_samples: int = 21,
+        arclength_resample: int = 101,
+    ) -> tuple[np.ndarray, np.ndarray]:
+        mean, x_new, y_new, _ = self._contourcenter(contour, num=arclength_resample)
+        mean_xy = mean[:2]
+
+        pts = np.stack([x_new, y_new], axis=1)
+        pts_centered = pts - mean_xy
+        cov = np.cov(pts_centered, rowvar=False)
+        _, eigvecs = np.linalg.eigh(cov)
+        major = eigvecs[:, 1]
+        minor = eigvecs[:, 0]
+        neuron_major = self._neuron_major_xy_for_contour(contour)
+        if neuron_major is not None:
+            if float(np.dot(major, neuron_major)) < 0.0:
+                major = -major
+        else:
+            if major[np.argmax(np.abs(major))] < 0.0:
+                major = -major
+            first_projection = (np.array([contour[0].x, contour[0].y], dtype=float) - mean_xy) @ major
+            last_projection = (np.array([contour[-1].x, contour[-1].y], dtype=float) - mean_xy) @ major
+            if first_projection > 0.0 and last_projection < 0.0:
+                major = -major
+        major = major / np.linalg.norm(major)
+        minor = minor / np.linalg.norm(minor)
+
+        d = (pts - mean_xy) @ major
+        rad = (pts - mean_xy) @ minor
+
+        def _rotate(values: np.ndarray, k: int) -> np.ndarray:
+            return np.concatenate([values[k:], values[:k]])
+
+        def _keep_strictly_monotonic(
+            x_values: np.ndarray,
+            y_values: np.ndarray,
+            *,
+            increasing: bool,
+            tol: float = 1e-8,
+        ) -> tuple[np.ndarray, np.ndarray]:
+            keep_indices = [0]
+            for index in range(1, len(x_values)):
+                if increasing:
+                    if x_values[index] > x_values[keep_indices[-1]] + tol:
+                        keep_indices.append(index)
+                elif x_values[index] < x_values[keep_indices[-1]] - tol:
+                    keep_indices.append(index)
+            keep = np.asarray(keep_indices, dtype=int)
+            return x_values[keep], y_values[keep]
+
+        def _interp_strict(xp: np.ndarray, fp: np.ndarray, x_values: np.ndarray) -> np.ndarray:
+            if len(xp) == 1:
+                return np.full_like(x_values, fp[0], dtype=float)
+            if xp[0] > xp[-1]:
+                xp = xp[::-1]
+                fp = fp[::-1]
+            return np.interp(x_values, xp, fp)
+
+        index_max = int(np.argmax(d))
+        index_min = int(np.argmin(d))
+        d_rot = _rotate(d, index_max)
+        rad_rot = _rotate(rad, index_max)
+        index_min_rot = int(np.where(d_rot == d[index_min])[0][0])
+
+        d_side1 = d_rot[:index_min_rot][::-1]
+        rad_side1 = rad_rot[:index_min_rot][::-1]
+        d_side2 = d_rot[index_min_rot:]
+        rad_side2 = rad_rot[index_min_rot:]
+
+        inc1 = len(d_side1) > 1 and bool(d_side1[1] > d_side1[0])
+        inc2 = len(d_side2) > 1 and bool(d_side2[1] > d_side2[0])
+        d_side1_new, rad_side1_new = _keep_strictly_monotonic(d_side1, rad_side1, increasing=inc1)
+        d_side2_new, rad_side2_new = _keep_strictly_monotonic(d_side2, rad_side2, increasing=inc2)
+
+        d_all_sorted = np.sort(np.concatenate([d_side1_new, d_side2_new]))
+        d_min = float(d_all_sorted[1])
+        d_max = float(d_all_sorted[-2])
+        d_interp = np.linspace(d_min, d_max, n_samples)
+        xy_interp = mean_xy[None, :] + d_interp[:, None] * major[None, :]
+
+        rad1_interp = _interp_strict(d_side1_new, rad_side1_new, d_interp)
+        rad2_interp = _interp_strict(d_side2_new, rad_side2_new, d_interp)
+        diam_interp = np.abs(rad1_interp - rad2_interp)
+        diam_interp[0] = 0.5 * (diam_interp[0] + diam_interp[1])
+        diam_interp[-1] = 0.5 * (diam_interp[-1] + diam_interp[-2])
+        return xy_interp, diam_interp
+
+    def _neuron_major_xy_for_contour(
+        self,
+        contour: tuple[_AscPoint, ...],
+    ) -> np.ndarray | None:
+        try:
+            from neuron import h
+        except Exception:
+            return None
+
+        h.load_file("stdlib.hoc")
+        h.load_file("import3d.hoc")
+
+        helper = h.Import3d_Section(0, 1)
+        xv = h.Vector([float(point.x) for point in contour])
+        yv = h.Vector([float(point.y) for point in contour])
+        zv = h.Vector([float(point.z) for point in contour])
+        mean = helper.contourcenter(xv, yv, zv)
+
+        pts = h.Matrix(3, int(xv.size()))
+        row0 = xv.c()
+        row1 = yv.c()
+        row2 = zv.c()
+        row0.sub(mean.x[0])
+        row1.sub(mean.x[1])
+        row2.sub(mean.x[2])
+        pts.setrow(0, row0)
+        pts.setrow(1, row1)
+        pts.setrow(2, row2)
+
+        matrix = h.Matrix(3, 3)
+        for row in range(3):
+            for col in range(row, 3):
+                value = pts.getrow(row).mul(pts.getrow(col)).sum()
+                matrix.x[row][col] = value
+                matrix.x[col][row] = value
+
+        eigenvalues = matrix.symmeig(matrix)
+        major = matrix.getcol(int(eigenvalues.max_ind()))
+        major_xy = np.array([float(major.x[0]), float(major.x[1])], dtype=float)
+        if np.allclose(major_xy, 0.0):
+            return None
+        return major_xy / np.linalg.norm(major_xy)
+
+    def _contour2centroid(
+        self,
+        contour: tuple[_AscPoint, ...],
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        xy, diameters = self._soma_axis_sampling(contour, n_samples=21)
+        mean, _, _, _ = self._contourcenter(contour)
+        z_value = float(contour[0].z) if contour else 0.0
+        points = np.column_stack([xy, np.full(len(diameters), z_value, dtype=float)])
+        radii = 0.5 * np.asarray(diameters, dtype=float)
+        return points, radii, mean
+
+    def _approximate_contour_by_circle(
+        self,
+        contour: tuple[_AscPoint, ...],
+        *,
+        num: int = 101,
+    ) -> tuple[np.ndarray, float]:
+        center, x_new, y_new, z_new = self._contourcenter(contour, num=num)
+        xyz = np.array([point.xyz for point in contour], dtype=float)
+        perimeter = float(np.sum(np.linalg.norm(np.roll(xyz, -1, axis=0) - xyz, axis=1)))
+        resampled = np.stack([x_new, y_new, z_new], axis=1)
+        mean_radius = float(np.mean(np.linalg.norm(resampled - center[None, :], axis=1)))
+        diameter = mean_radius + perimeter / (2.0 * np.pi)
+        return center, diameter
+
+    def _contourstack2centroid(
+        self,
+        stack: tuple[tuple[_AscPoint, ...], ...],
+    ) -> tuple[np.ndarray, np.ndarray]:
+        points = []
+        radii = []
+        for contour in stack:
+            center, diameter = self._approximate_contour_by_circle(contour)
+            points.append(center)
+            radii.append(0.5 * float(diameter))
+        return np.asarray(points, dtype=float), np.asarray(radii, dtype=float)
+
+    def _soma_stack_center(
+        self,
+        stack: tuple[tuple[_AscPoint, ...], ...],
+    ) -> np.ndarray:
+        centers = np.asarray([self._contourcenter(contour)[0] for contour in stack], dtype=float)
+        if len(centers) == 1:
+            return centers[0]
+
+        lengths = [0.0]
+        total_length = 0.0
+        for index in range(1, len(centers)):
+            total_length += float(np.linalg.norm(centers[index] - centers[index - 1]))
+            lengths.append(total_length)
+
+        if total_length <= 0.0:
+            return centers[0]
+
+        target = 0.5 * total_length
+        for index in range(1, len(lengths)):
+            if lengths[index] > target:
+                fraction = (target - lengths[index - 1]) / (lengths[index] - lengths[index - 1])
+                return fraction * centers[index] + (1.0 - fraction) * centers[index - 1]
+        return centers[-1]
 
     def _synthetic_soma_branch(self, *, center: np.ndarray, radius: float) -> Branch:
         offset = np.array([radius, 0.0, 0.0], dtype=float)
@@ -529,6 +986,10 @@ class AscReader:
             if expr.strip() and self._normalize_name(expr) not in _IGNORED_SYMBOLS:
                 metadata.source_labels.append(expr)
             return
+        if isinstance(expr, _AscSpineBlock):
+            for item in expr.items:
+                self._collect_metadata(item, metadata)
+            return
         if not isinstance(expr, tuple):
             return
         if self._is_point_expr(expr):
@@ -538,7 +999,7 @@ class AscReader:
         if key == "color":
             metadata.colors.append(expr)
         elif key == "spine":
-            metadata.spines.append(expr)
+            metadata.spine_annotations.append(expr)
         elif key == "marker":
             metadata.markers.append(expr)
         elif key == "filledcircle":
@@ -550,12 +1011,31 @@ class AscReader:
     def _is_annotation(self, expr: object) -> bool:
         if isinstance(expr, str):
             return self._normalize_name(expr) in _IGNORED_SYMBOLS
+        if isinstance(expr, _AscSpineBlock):
+            return False
         if not isinstance(expr, tuple):
             return False
         if self._is_point_expr(expr):
             return False
+        if self._is_property_expr(expr):
+            return True
         key = self._head_key(expr)
         return key in _ANNOTATION_KEYS or key in {"spine", "marker", "filledcircle"}
+
+    def _is_property_expr(self, expr: object) -> bool:
+        if not isinstance(expr, tuple) or len(expr) == 0:
+            return False
+        if self._is_point_expr(expr):
+            return False
+        key = self._head_key(expr)
+        if key is None:
+            return False
+        for item in expr[1:]:
+            if item is _PIPE or isinstance(item, _AscSpineBlock):
+                return False
+            if isinstance(item, tuple) and not self._is_point_expr(item):
+                return False
+        return True
 
     def _head_key(self, expr: tuple[object, ...]) -> str | None:
         if not expr:
@@ -577,7 +1057,7 @@ class AscReader:
             x=float(expr[0]),
             y=float(expr[1]),
             z=float(expr[2]),
-            radius=max(float(expr[3]), 0.0),
+            diameter=max(float(expr[3]), 0.0),
             line_number=0,
         )
 

@@ -24,9 +24,13 @@ import brainunit as u
 from braincell.morph import Morphology
 
 __all__ = [
+    "compare_asc_with_neuron",
+    "compare_morphology_with_neuron",
     "compare_swc_with_neuron",
     "compute_braincell_metrics",
     "compute_neuron_metrics",
+    "load_asc_morphology",
+    "load_neuron_morphology",
     "load_swc_morphology",
     "supported_metric_names",
 ]
@@ -92,11 +96,34 @@ def supported_metric_names(*, include_optional: bool = False) -> tuple[str, ...]
     return _ALL_METRIC_NAMES
 
 
+def _validate_morphology_path(filename: str | Path) -> Path:
+    path = Path(filename)
+    if path.suffix.lower() not in {".swc", ".asc"}:
+        raise ValueError(f"neuron_diff only supports .swc or .asc files, got {path!s}.")
+    return path
+
+
 def _validate_swc_path(swc_filename: str | Path) -> Path:
-    path = Path(swc_filename)
+    path = _validate_morphology_path(swc_filename)
     if path.suffix.lower() != ".swc":
         raise ValueError(f"compare_swc_with_neuron only supports .swc files, got {path!s}.")
     return path
+
+
+def _validate_asc_path(asc_filename: str | Path) -> Path:
+    path = _validate_morphology_path(asc_filename)
+    if path.suffix.lower() != ".asc":
+        raise ValueError(f"compare_asc_with_neuron only supports .asc files, got {path!s}.")
+    return path
+
+
+def _morphology_kind(path: str | Path) -> str:
+    suffix = Path(path).suffix.lower()
+    if suffix == ".swc":
+        return "swc"
+    if suffix == ".asc":
+        return "asc"
+    raise ValueError(f"Unsupported morphology file suffix {suffix!r}.")
 
 
 def _import_neuron_h():
@@ -124,13 +151,28 @@ def load_swc_morphology(swc_filename: str | Path) -> tuple[Any, ...]:
     """Load a SWC file through NEURON import3d and return its instantiated sections."""
 
     path = _validate_swc_path(swc_filename)
+    return load_neuron_morphology(path)
+
+
+def load_asc_morphology(asc_filename: str | Path) -> tuple[Any, ...]:
+    """Load an ASC file through NEURON import3d and return its instantiated sections."""
+
+    path = _validate_asc_path(asc_filename)
+    return load_neuron_morphology(path)
+
+
+def load_neuron_morphology(filename: str | Path) -> tuple[Any, ...]:
+    """Load a supported morphology file through NEURON import3d and return instantiated sections."""
+
+    path = _validate_morphology_path(filename)
+    kind = _morphology_kind(path)
     h = _import_neuron_h()
     h.load_file("stdlib.hoc")
     h.load_file("import3d.hoc")
     _clear_loaded_neuron_sections()
 
     existing_count = sum(1 for _ in h.allsec())
-    cell = h.Import3d_SWC_read()
+    cell = h.Import3d_SWC_read() if kind == "swc" else h.Import3d_Neurolucida3()
     cell.input(str(path))
     h.Import3d_GUI(cell, 0).instantiate(None)
 
@@ -170,9 +212,13 @@ def compute_braincell_metrics(
     metric_names: Iterable[str] | None = None,
     include_optional: bool = False,
 ) -> dict[str, dict[str, object]]:
-    path = _validate_swc_path(swc_filename)
+    path = _validate_morphology_path(swc_filename)
     selected_metric_names = _resolve_metric_names(metric_names=metric_names, include_optional=include_optional)
-    morpho = Morphology.from_swc(path, options=swc_options)
+    kind = _morphology_kind(path)
+    if kind == "swc":
+        morpho = Morphology.from_swc(path, options=swc_options)
+    else:
+        morpho = Morphology.from_asc(path)
     metric = morpho.metric
     return {
         metric_name: _braincell_metric_record(morpho, metric, metric_name)
@@ -398,6 +444,36 @@ def compare_swc_with_neuron(
     include_optional: bool = False,
 ) -> dict[str, object]:
     path = _validate_swc_path(swc_filename)
+    return compare_morphology_with_neuron(
+        path,
+        swc_options=swc_options,
+        metric_names=metric_names,
+        include_optional=include_optional,
+    )
+
+
+def compare_asc_with_neuron(
+    asc_filename: str | Path,
+    *,
+    metric_names: Iterable[str] | None = None,
+    include_optional: bool = False,
+) -> dict[str, object]:
+    path = _validate_asc_path(asc_filename)
+    return compare_morphology_with_neuron(
+        path,
+        metric_names=metric_names,
+        include_optional=include_optional,
+    )
+
+
+def compare_morphology_with_neuron(
+    filename: str | Path,
+    *,
+    swc_options=None,
+    metric_names: Iterable[str] | None = None,
+    include_optional: bool = False,
+) -> dict[str, object]:
+    path = _validate_morphology_path(filename)
     selected_metric_names = _resolve_metric_names(metric_names=metric_names, include_optional=include_optional)
     braincell_metrics = compute_braincell_metrics(
         path,
@@ -406,12 +482,13 @@ def compare_swc_with_neuron(
         include_optional=include_optional,
     )
     neuron_metrics = compute_neuron_metrics(
-        load_swc_morphology(path),
+        load_neuron_morphology(path),
         metric_names=selected_metric_names,
         include_optional=include_optional,
     )
     return {
         "path": str(path),
+        "kind": _morphology_kind(path),
         "selected_metrics": selected_metric_names,
         "braincell": braincell_metrics,
         "neuron": neuron_metrics,

@@ -1,0 +1,17 @@
+{
+  "config_id": "cable_demo__vinit",
+  "failed_cases": [],
+  "n_failed_cases": 0,
+  "n_success_cases": 2,
+  "n_total_cases": 2,
+  "observables": {
+    "voltage": {
+      "mae_mean": 6.827619950892464e-12,
+      "max_abs_max": 1.5631940186722204e-11,
+      "n_cases": 2,
+      "rel_mae_pct_mean": 1.139706741680259e-11,
+      "rmse_mean": 7.851009287186632e-12
+    }
+  },
+  "template_family": "multi_compartment_cable"
+}

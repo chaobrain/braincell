@@ -1,0 +1,30 @@
+{
+  "meta": {
+    "label": "PC Kir2p3 MA24"
+  },
+  "identity": {
+    "mod_dir": "/home/swl/braincell/examples/neuron_compare/Cerebellum_mod/PC/channel"
+  },
+  "mapping": {
+    "current": "ik",
+    "impl_name": {
+      "common": "Kir2p3_MA24_PC"
+    },
+    "gate_names": {
+      "common": [
+        "d"
+      ]
+    },
+    "channel_params": {
+      "g_max_S_cm2": {
+        "neuron": "gkbar",
+        "braincell": "g_max"
+      }
+    }
+  },
+  "templates": [
+    "../../templates/vinit_celsius.json",
+    "../../templates/dc.json",
+    "../../templates/ac.json"
+  ]
+}

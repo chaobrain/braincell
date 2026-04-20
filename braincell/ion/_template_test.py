@@ -7,11 +7,11 @@ import brainunit as u
 import jax.numpy as jnp
 
 from braincell._base import Channel
+from braincell._base import IonInfo
 from braincell.ion import Calcium
-from braincell.ion._template import Constant
-from braincell.ion._template import DynamicNernst
-from braincell.ion._template import InitNernst
-from braincell.ion._template import IonData
+from braincell.ion._template import DynamicNernstIon
+from braincell.ion._template import FixedIon
+from braincell.ion._template import InitNernstIon
 
 
 class _RecorderChannel(Channel):
@@ -39,57 +39,77 @@ class _RecorderChannel(Channel):
         return 0.25 * u.mM / u.ms
 
 
-class _ConstantIon(Constant, Calcium):
-    def __init__(self, size=1):
-        super().__init__(size=size, name=None, probe=_RecorderChannel(size=size))
-        self.Ci = braintools.init.param(2.0e-4 * u.mM, self.varshape, allow_none=False)
-        self.Co = braintools.init.param(2.0 * u.mM, self.varshape, allow_none=False)
-        self.E = braintools.init.param(120.0 * u.mV, self.varshape, allow_none=False)
-        self.valence = 2
-
-
-class _InitNernstIon(InitNernst, Calcium):
-    def __init__(self, size=1):
-        super().__init__(size=size, name=None, probe=_RecorderChannel(size=size))
-        self.Ci = braintools.init.param(2.0e-4 * u.mM, self.varshape, allow_none=False)
-        self.Co = braintools.init.param(2.0 * u.mM, self.varshape, allow_none=False)
-        self.valence = 2
-        self.T = u.celsius2kelvin(36.0)
-        self.E = None
-
-
-class _DynamicNernstIon(DynamicNernst, Calcium):
-    ci_initializer = 2.0e-4 * u.mM
+class _ConstantIon(Calcium, FixedIon):
+    default_Ci = 2.0e-4 * u.mM
+    default_Co = 2.0 * u.mM
+    default_valence = 2
 
     def __init__(self, size=1):
         super().__init__(size=size, name=None, probe=_RecorderChannel(size=size))
-        self.Co = braintools.init.param(2.0 * u.mM, self.varshape, allow_none=False)
-        self.valence = 2
-        self.T = u.celsius2kelvin(36.0)
+        self._init_fixed_ion(E=120.0 * u.mV)
 
-    def ci_derivative(self, Ci, V, total_current):
+
+class _InitNernstIon(Calcium, InitNernstIon):
+    default_Ci = 2.0e-4 * u.mM
+    default_Co = 2.0 * u.mM
+    default_valence = 2
+
+    def __init__(self, size=1):
+        super().__init__(size=size, name=None, probe=_RecorderChannel(size=size))
+        self._init_nernst_ion(temp=u.celsius2kelvin(36.0))
+
+
+class _DynamicNernstIon(Calcium, DynamicNernstIon):
+    default_Co = 2.0 * u.mM
+    default_valence = 2
+    uses_total_current = True
+
+    def __init__(self, size=1):
+        super().__init__(size=size, name=None, probe=_RecorderChannel(size=size))
+        self._init_dynamic_nernst_ion(
+            temp=u.celsius2kelvin(36.0),
+            Co=None,
+            valence=None,
+            Ci_initializer=2.0e-4 * u.mM,
+        )
+
+    def derivative(self, Ci, V, total_current=None):
         _ = V
         return 0.1 * total_current - 0.05 * Ci / u.ms
 
 
-class IonTemplateTest(unittest.TestCase):
-    def test_ion_data_aliases(self) -> None:
-        info = IonData(
-            Ci=jnp.array([0.1]) * u.mM,
-            Co=jnp.array([2.0]) * u.mM,
-            E=jnp.array([120.0]) * u.mV,
-            valence=2,
-        )
-        self.assertTrue(u.math.allclose(info.C, info.Ci, atol=1e-12 * u.mM))
-        self.assertTrue(u.math.allclose(info.C0, info.Co, atol=1e-12 * u.mM))
-        self.assertEqual(info.z, info.valence)
+class _DynamicNernstIonNoCurrent(Calcium, DynamicNernstIon):
+    default_Co = 2.0 * u.mM
+    default_valence = 2
+    uses_total_current = False
 
+    def __init__(self, size=1):
+        super().__init__(size=size, name=None)
+        self.last_total_current = "unset"
+        self._init_dynamic_nernst_ion(
+            temp=u.celsius2kelvin(36.0),
+            Co=None,
+            valence=None,
+            Ci_initializer=2.0e-4 * u.mM,
+        )
+
+    def current(self, V, include_external=False):
+        _ = (V, include_external)
+        raise AssertionError("current() should not be called when uses_total_current is False.")
+
+    def derivative(self, Ci, V, total_current=None):
+        _ = V
+        self.last_total_current = total_current
+        return -0.05 * Ci / u.ms
+
+
+class IonTemplateTest(unittest.TestCase):
     def test_constant_pack_info_and_child_derivative(self) -> None:
         ion = _ConstantIon(size=1)
         V = jnp.array([-65.0]) * u.mV
 
         info = ion.pack_info()
-        self.assertIsInstance(info, IonData)
+        self.assertIsInstance(info, IonInfo)
         self.assertTrue(u.math.allclose(info.Ci, ion.Ci, atol=1e-12 * u.mM))
         self.assertTrue(u.math.allclose(info.Co, ion.Co, atol=1e-12 * u.mM))
         self.assertTrue(u.math.allclose(info.E, ion.E, atol=1e-9 * u.mV))
@@ -98,7 +118,12 @@ class IonTemplateTest(unittest.TestCase):
         ion.init_state(V)
         ion.reset_state(V)
         ion.compute_derivative(V)
-        self.assertIsInstance(ion.channels["probe"].last_ion, IonData)
+        self.assertIsInstance(ion.channels["probe"].last_ion, IonInfo)
+
+    def test_species_first_inheritance_keeps_template_hooks_active(self) -> None:
+        self.assertLess(_ConstantIon.__mro__.index(Calcium), _ConstantIon.__mro__.index(FixedIon))
+        self.assertTrue(hasattr(_InitNernstIon, "_ion_init_state_hook"))
+        self.assertTrue(hasattr(_DynamicNernstIon, "_ion_compute_derivative_hook"))
 
     def test_init_nernst_only_updates_on_reset(self) -> None:
         ion = _InitNernstIon(size=1)
@@ -107,7 +132,7 @@ class IonTemplateTest(unittest.TestCase):
         ion.init_state(V)
         first_E = ion.E
         expected = (
-            u.gas_constant * ion.T / (ion.valence * u.faraday_constant)
+            u.gas_constant * ion.temp / (ion.valence * u.faraday_constant)
             * u.math.log(ion.Co / ion.Ci)
         )
         self.assertTrue(u.math.allclose(first_E.to_decimal(u.mV), expected.to_decimal(u.mV), atol=1e-6))
@@ -139,8 +164,18 @@ class IonTemplateTest(unittest.TestCase):
             )
         )
         info = ion.channels["probe"].last_ion
-        self.assertIsInstance(info, IonData)
-        self.assertTrue(u.math.allclose(info.C, ion.Ci.value, atol=1e-12 * u.mM))
+        self.assertIsInstance(info, IonInfo)
+        self.assertTrue(u.math.allclose(info.Ci, ion.Ci.value, atol=1e-12 * u.mM))
+
+    def test_dynamic_nernst_skips_current_when_total_current_not_needed(self) -> None:
+        ion = _DynamicNernstIonNoCurrent(size=1)
+        V = jnp.array([-65.0]) * u.mV
+
+        ion.init_state(V)
+        ion.reset_state(V)
+        ion.compute_derivative(V)
+
+        self.assertIsNone(ion.last_total_current)
 
 
 if __name__ == "__main__":

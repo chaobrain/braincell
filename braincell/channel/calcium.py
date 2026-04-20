@@ -195,7 +195,7 @@ class ICaN_IS2008(CalciumChannel):
         self.p.derivative = self.phi * (phi_p - self.p.value) / p_inf / u.ms
 
     def current(self, V, Ca: IonInfo):
-        M = Ca.C / (Ca.C + 0.2 * u.mM)
+        M = Ca.Ci / (Ca.Ci + 0.2 * u.mM)
         g = self.g_max * M * self.p.value
         return g * (self.E - V)
 
@@ -900,7 +900,7 @@ class ICav12_Ma2020(CalciumChannel):
 
     def f_n_inf(self, V, Ca):
         V = V.to_decimal(u.mV)
-        return u.math.ones_like(V) * self.kf / (self.kf + Ca.C / u.mM)
+        return u.math.ones_like(V) * self.kf / (self.kf + Ca.Ci / u.mM)
 
     def f_m_tau(self, V):
         V = V.to_decimal(u.mV)
@@ -975,7 +975,7 @@ class ICav13_Ma2020(CalciumChannel):
 
     def f_n_inf(self, V, Ca):
         V = V.to_decimal(u.mV)
-        return u.math.ones_like(V) * self.kf / (self.kf + Ca.C / u.mM)
+        return u.math.ones_like(V) * self.kf / (self.kf + Ca.Ci / u.mM)
 
     def f_m_tau(self, V):
         V = V.to_decimal(u.mV)
@@ -1154,7 +1154,7 @@ class ICav31_Ma2020(CalciumChannel):
         return u.math.where(u.math.abs((1 - u.math.exp(-zeta))) <= 1e-6, g_1, g_2)
 
     def current(self, V, Ca: IonInfo):
-        return -self.g_max * self.p.value ** 2 * self.q.value * self.ghk(V, Ca.C)
+        return -self.g_max * self.p.value ** 2 * self.q.value * self.ghk(V, Ca.Ci)
 
 
 @register_channel("ICaGrc_Ma2020")

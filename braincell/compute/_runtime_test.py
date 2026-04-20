@@ -290,6 +290,33 @@ class CellRuntimeStateTest(unittest.TestCase):
         self.assertEqual(samples["soma(0.5)_IK_Kv_test_current"], expected_mechanism)
         self.assertEqual(samples["soma(0.5)_k_current"], expected_total)
 
+    def test_sample_probe_reads_pure_channel_current_without_ion_selector(self) -> None:
+        cell = Cell(_build_tree())
+        cell.paint(
+            BranchSlice(branch_index=[0, 1], prox=0.0, dist=1.0),
+            braincell.mech.Channel(
+                "IL",
+                g_max=0.1 * (u.mS / u.cm**2),
+                E=-68.0 * u.mV,
+            ),
+        )
+        cell.place(
+            at("soma", 0.5),
+            braincell.mech.CurrentProbe(mechanism="IL"),
+        )
+        cell.init_state()
+
+        samples = cell.sample_probes()
+        channel_layout = next(
+            layout for layout in cell.layouts
+            if isinstance(cell._ensure_runtime_compiled().get_layout_mechanism(layout.id), braincell.mech.Channel)
+        )
+        node = cell.get_runtime_node(channel_layout.id)
+        point_V = cell._point_voltage(cell.V.value)
+        expected_current = node.current(point_V)[1]
+
+        self.assertEqual(samples["soma(0.5)_IL_current"], expected_current)
+
     def test_sample_probe_rejects_non_state_field_and_unknown_mechanism(self) -> None:
         cell = Cell(_build_tree())
         cell.paint(

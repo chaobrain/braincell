@@ -11,7 +11,6 @@ from braincell._base import IonInfo
 from braincell.channel._template import Gate
 from braincell.channel._template import HH
 from braincell.channel._template import Markov
-from braincell.channel._template import OpenState
 from braincell.channel._template import Passive
 from braincell.channel._template import Transition
 from braincell.channel._template import ghk_flux
@@ -21,15 +20,19 @@ from braincell.ion import Potassium
 
 def _k_info(size: int = 1) -> IonInfo:
     return IonInfo(
-        C=jnp.full((size,), 0.04) * u.mM,
+        Ci=jnp.full((size,), 0.04) * u.mM,
+        Co=jnp.full((size,), 2.5) * u.mM,
         E=jnp.full((size,), -90.0) * u.mV,
+        valence=1,
     )
 
 
 def _ca_info(size: int = 1) -> IonInfo:
     return IonInfo(
-        C=jnp.full((size,), 2.0e-4) * u.mM,
+        Ci=jnp.full((size,), 2.0e-4) * u.mM,
+        Co=jnp.full((size,), 2.0) * u.mM,
         E=jnp.full((size,), 120.0) * u.mV,
+        valence=2,
     )
 
 
@@ -151,7 +154,7 @@ class _ExampleGHK(HH):
     def current(self, V, Ca: IonInfo):
         return self.p_max * self.conductance_factor(V, Ca) * ghk_flux(
             V=V,
-            ci=Ca.C,
+            ci=Ca.Ci,
             co=self.Co,
             z=self.valence,
             T=self.T,
@@ -166,7 +169,6 @@ class _ExampleMarkov(Markov):
     )
     conserve = 1.0
     dependent_state = "C"
-    conducting = (OpenState("O", 1.0), ("I", 0.5))
 
     def __init__(self, size=1):
         super().__init__(size=size, name=None)
@@ -185,7 +187,67 @@ class _ExampleMarkov(Markov):
         return 0.05
 
     def current(self, V, K: IonInfo):
-        return self.g_max * self.conductance_factor(V, K) * (K.E - V)
+        return self.g_max * (self.O.value + 0.5 * self.I.value) * (K.E - V)
+
+
+class _ExampleMarkovImplicitDependent(Markov):
+    root_type = Potassium
+    pairs = (
+        Transition("C", "O", "open_rate", "close_rate"),
+        ("O", "I", "inactivate_rate", None),
+    )
+
+    def __init__(self, size=1):
+        super().__init__(size=size, name=None)
+        self.g_max = braintools.init.param(0.3 * (u.mS / u.cm ** 2), self.varshape, allow_none=False)
+
+    def open_rate(self, V, K: IonInfo):
+        _ = (V, K)
+        return 0.2
+
+    def close_rate(self, V, K: IonInfo):
+        _ = (V, K)
+        return 0.1
+
+    def inactivate_rate(self, V, K: IonInfo):
+        _ = (V, K)
+        return 0.05
+
+    def current(self, V, K: IonInfo):
+        states = self.state_values()
+        return self.g_max * states["O"] * (K.E - V)
+
+
+class _ExampleMarkovTwoOpenStates(Markov):
+    root_type = Potassium
+    pairs = (
+        Transition("C", "O1", "open1_rate", "close1_rate"),
+        ("O1", "O2", "open2_rate", "close2_rate"),
+    )
+
+    def __init__(self, size=1):
+        super().__init__(size=size, name=None)
+        self.g_max = braintools.init.param(0.2 * (u.mS / u.cm ** 2), self.varshape, allow_none=False)
+
+    def open1_rate(self, V, K: IonInfo):
+        _ = (V, K)
+        return 0.2
+
+    def close1_rate(self, V, K: IonInfo):
+        _ = (V, K)
+        return 0.1
+
+    def open2_rate(self, V, K: IonInfo):
+        _ = (V, K)
+        return 0.05
+
+    def close2_rate(self, V, K: IonInfo):
+        _ = (V, K)
+        return 0.02
+
+    def current(self, V, K: IonInfo):
+        states = self.state_values()
+        return self.g_max * (states["O1"] + states["O2"]) * (K.E - V)
 
 
 class _ExampleHHMixed(HH):
@@ -365,7 +427,7 @@ class ChannelTemplateTest(unittest.TestCase):
 
         expected = ch.p_max * ch.p.value ** 2 * ch.q.value * ghk_flux(
             V=V,
-            ci=Ca.C,
+            ci=Ca.Ci,
             co=ch.Co,
             z=ch.valence,
             T=ch.T,
@@ -379,6 +441,15 @@ class ChannelTemplateTest(unittest.TestCase):
         K = _k_info()
 
         ch.init_state(V, K)
+        self.assertEqual(ch.state_names, ("O", "I"))
+        self.assertEqual(ch.redundant_state, "C")
+        self.assertEqual(
+            ch.state_pairs,
+            (
+                ("C", "O", "open_rate", "close_rate"),
+                ("O", "I", "inactivate_rate", None),
+            ),
+        )
         self.assertTrue(hasattr(ch, "O"))
         self.assertTrue(hasattr(ch, "I"))
         self.assertFalse(hasattr(ch, "C"))
@@ -400,8 +471,139 @@ class ChannelTemplateTest(unittest.TestCase):
         self.assertTrue(u.math.allclose(ch.O.derivative, expected_dO, atol=1e-6 * u.Hz))
         self.assertTrue(u.math.allclose(ch.I.derivative, expected_dI, atol=1e-6 * u.Hz))
 
-        factor = ch.conductance_factor(V, K)
-        self.assertTrue(u.math.allclose(factor, states["O"] + 0.5 * states["I"], atol=1e-6))
+        current = ch.current(V, K)
+        expected_current = ch.g_max * (states["O"] + 0.5 * states["I"]) * (K.E - V)
+        unit = u.mS / u.cm ** 2 * u.mV
+        self.assertTrue(
+            u.math.allclose(
+                current.to_decimal(unit),
+                expected_current.to_decimal(unit),
+                atol=1e-6,
+            )
+        )
+
+    def test_markov_defaults_dependent_state_to_last_discovered_name(self) -> None:
+        ch = _ExampleMarkovImplicitDependent(size=1)
+        V = jnp.array([-65.0]) * u.mV
+        K = _k_info()
+
+        ch.init_state(V, K)
+        self.assertEqual(ch.redundant_state, "I")
+        self.assertEqual(ch.state_names, ("C", "O"))
+        self.assertTrue(hasattr(ch, "C"))
+        self.assertTrue(hasattr(ch, "O"))
+        self.assertFalse(hasattr(ch, "I"))
+
+        ch.C.value = jnp.array([0.3])
+        ch.O.value = jnp.array([0.2])
+        states = ch.state_values()
+        self.assertTrue(u.math.allclose(states["I"], jnp.array([0.5]), atol=1e-6))
+
+    def test_markov_pre_and_post_integral_are_no_ops(self) -> None:
+        ch = _ExampleMarkov(size=1)
+        V = jnp.array([-65.0]) * u.mV
+        K = _k_info()
+
+        self.assertIsNone(ch.pre_integral(V, K))
+        self.assertIsNone(ch.post_integral(V, K))
+
+    def test_markov_reset_steady_state_solves_stationary_distribution(self) -> None:
+        ch = _ExampleMarkov(size=1)
+        V = jnp.array([-65.0]) * u.mV
+        K = _k_info()
+
+        ch.init_state(V, K)
+        ch.reset_steady_state(V, K)
+        states = ch.state_values()
+
+        total = states["C"] + states["O"] + states["I"]
+        self.assertTrue(u.math.allclose(total, jnp.array([1.0]), atol=1e-6))
+        self.assertTrue(u.math.allclose(states["I"], jnp.array([1.0]), atol=1e-6))
+
+        ch.compute_derivative(V, K)
+        self.assertTrue(u.math.allclose(ch.O.derivative, jnp.array([0.0]) / u.ms, atol=1e-6 * u.Hz))
+        self.assertTrue(u.math.allclose(ch.I.derivative, jnp.array([0.0]) / u.ms, atol=1e-6 * u.Hz))
+
+    def test_markov_reset_steady_state_supports_implicit_dependent_state(self) -> None:
+        ch = _ExampleMarkovImplicitDependent(size=1)
+        V = jnp.array([-65.0]) * u.mV
+        K = _k_info()
+
+        ch.init_state(V, K)
+        ch.reset_steady_state(V, K)
+        states = ch.state_values()
+
+        total = states["C"] + states["O"] + states["I"]
+        self.assertTrue(u.math.allclose(total, jnp.array([1.0]), atol=1e-6))
+        self.assertTrue(u.math.allclose(states["I"], jnp.array([1.0]), atol=1e-6))
+
+        ch.compute_derivative(V, K)
+        self.assertTrue(u.math.allclose(ch.C.derivative, jnp.array([0.0]) / u.ms, atol=1e-6 * u.Hz))
+        self.assertTrue(u.math.allclose(ch.O.derivative, jnp.array([0.0]) / u.ms, atol=1e-6 * u.Hz))
+
+    def test_markov_kinetic_states_clip_independent_states_for_dynamics(self) -> None:
+        ch = _ExampleMarkov(size=1)
+        V = jnp.array([-65.0]) * u.mV
+        K = _k_info()
+
+        ch.init_state(V, K)
+        ch.O.value = jnp.array([1.2])
+        ch.I.value = jnp.array([-0.1])
+
+        raw_states = ch.state_values()
+        kinetic_states = ch._kinetic_state_values()
+        self.assertTrue(u.math.allclose(raw_states["O"], jnp.array([1.2]), atol=1e-6))
+        self.assertTrue(u.math.allclose(raw_states["I"], jnp.array([-0.1]), atol=1e-6))
+        self.assertTrue(u.math.allclose(raw_states["C"], jnp.array([-0.1]), atol=1e-6))
+        self.assertTrue(u.math.allclose(kinetic_states["O"], jnp.array([1.0]), atol=1e-6))
+        self.assertTrue(u.math.allclose(kinetic_states["I"], jnp.array([0.0]), atol=1e-6))
+        self.assertTrue(u.math.allclose(kinetic_states["C"], jnp.array([-0.1]), atol=1e-6))
+
+    def test_markov_kinetic_states_can_project_independent_states_only_for_dynamics(self) -> None:
+        ch = _ExampleMarkov(size=1)
+        V = jnp.array([-65.0]) * u.mV
+        K = _k_info()
+
+        ch.init_state(V, K)
+        ch.O.value = jnp.array([1.2])
+        ch.I.value = jnp.array([-0.1])
+
+        raw_states = ch.state_values()
+        kinetic_states = ch._kinetic_state_values()
+        self.assertTrue(u.math.allclose(raw_states["O"], jnp.array([1.2]), atol=1e-6))
+        self.assertTrue(u.math.allclose(raw_states["I"], jnp.array([-0.1]), atol=1e-6))
+        self.assertTrue(u.math.allclose(raw_states["C"], jnp.array([-0.1]), atol=1e-6))
+        self.assertTrue(u.math.allclose(kinetic_states["O"], jnp.array([1.0]), atol=1e-6))
+        self.assertTrue(u.math.allclose(kinetic_states["I"], jnp.array([0.0]), atol=1e-6))
+        self.assertTrue(u.math.allclose(kinetic_states["C"], jnp.array([-0.1]), atol=1e-6))
+
+        ch.compute_derivative(V, K)
+        expected_dO = (kinetic_states["C"] * 0.2 - kinetic_states["O"] * 0.1 - kinetic_states["O"] * 0.05) / u.ms
+        expected_dI = (kinetic_states["O"] * 0.05) / u.ms
+        self.assertTrue(u.math.allclose(ch.O.derivative, expected_dO, atol=1e-6 * u.Hz))
+        self.assertTrue(u.math.allclose(ch.I.derivative, expected_dI, atol=1e-6 * u.Hz))
+
+    def test_markov_current_can_sum_multiple_open_states_manually(self) -> None:
+        ch = _ExampleMarkovTwoOpenStates(size=1)
+        V = jnp.array([-65.0]) * u.mV
+        K = _k_info()
+
+        ch.init_state(V, K)
+        ch.C.value = jnp.array([0.3])
+        ch.O1.value = jnp.array([0.2])
+        states = ch.state_values()
+        self.assertTrue(u.math.allclose(states["O2"], jnp.array([0.5]), atol=1e-6))
+
+        current = ch.current(V, K)
+        expected_current = ch.g_max * (states["O1"] + states["O2"]) * (K.E - V)
+        unit = u.mS / u.cm ** 2 * u.mV
+        self.assertTrue(
+            u.math.allclose(
+                current.to_decimal(unit),
+                expected_current.to_decimal(unit),
+                atol=1e-6,
+            )
+        )
 
     def test_ghk_flux_small_voltage_is_finite(self) -> None:
         value = ghk_flux(

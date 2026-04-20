@@ -11,41 +11,28 @@
 - `AC`:交流电
 - `temperature`:温度
 
-因此这里按不同模板家族拆分为多个子文件夹，分别处理 `single-compartment` / `multi-compartment`、`channel` / `ion` / `cable` 等不同对比场景。
+因此这里按不同模板家族拆分为多个子文件夹，分别处理受限的单通道对比与多房室 cable 对比。
 
 ## Typical Flow
 
 通常按下面的流程组织每个家族：
 
-1. 在 `specs/` 中定义该家族要验证的对象、边界和比较目标。
-2. 在 `cases/` 中准备单 case 或 sweep 输入，配置 morphology、mechanism、stimulus、temperature 等条件。
-3. 在 `templates/` 中分别构建 `NEURON` 与 `braincell` 的仿真入口并执行 compare。
-4. 在 `artifacts/` 与 `notebooks/` 中查看结果、汇总误差并做调试分析。
+1. 准备输入配置。
+2. 构建 `NEURON` 与 `braincell` 的仿真入口并执行 compare。
+3. 在 `artifacts/` 与 notebook/workflow 中查看结果、汇总误差并做调试分析。
 
 当前目录已按模板家族重组，每个家族单独维护自己的说明、样例、模板、结果与 notebook。
 
 ## Families
 
-- `MC_cable/`
-- `MC_ion/`
-- `MC_channel/`
-- `SC_ion/`
-- `SC_channel/`
+- `cable/`
+- `channel_no_conc/`
 
 ## Common Layout
 
-每个家族目录统一包含：
+当前两个家族都保留自己的 `README.md`、实现模板、输入配置、测试与工作流入口。
 
-- `README.md`
-- `specs/`
-- `cases/`
-- `templates/`
-- `artifacts/`
-- `notebooks/`
+目前活跃维护的家族：
 
-目前已具备较完整模板与产物的家族：
-
-- `MC_cable`
-- `SC_channel`
-
-其余家族先保留骨架、spec、样例和入口模板，后续逐步补齐实现。
+- `cable`
+- `channel_no_conc`

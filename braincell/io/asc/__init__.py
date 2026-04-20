@@ -14,6 +14,6 @@
 # ==============================================================================
 
 from .reader import AscReader
-from .types import AscIssue, AscMetadata, AscReport
+from .types import AscIssue, AscMetadata, AscReport, AscSpineRecord
 
-__all__ = ["AscIssue", "AscMetadata", "AscReader", "AscReport"]
+__all__ = ["AscIssue", "AscMetadata", "AscReader", "AscReport", "AscSpineRecord"]

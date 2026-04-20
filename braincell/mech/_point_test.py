@@ -179,6 +179,11 @@ class CurrentProbeTest(unittest.TestCase):
         self.assertEqual(probe.mechanism, "IK_Kv_test")
         self.assertIsNone(probe.name)
 
+    def test_basic_construction_with_mechanism_only(self) -> None:
+        probe = CurrentProbe(mechanism="Ih_HM1992")
+        self.assertIsNone(probe.ion)
+        self.assertEqual(probe.mechanism, "Ih_HM1992")
+
     def test_basic_construction_for_total_ion_current(self) -> None:
         probe = CurrentProbe(ion="k")
         self.assertEqual(probe.ion, "k")
@@ -189,6 +194,8 @@ class CurrentProbeTest(unittest.TestCase):
             CurrentProbe(ion="")
         with self.assertRaises(ValueError):
             CurrentProbe(ion="k", mechanism="")
+        with self.assertRaises(ValueError):
+            CurrentProbe()
         with self.assertRaises(ValueError):
             CurrentProbe(ion="k", name="")
 

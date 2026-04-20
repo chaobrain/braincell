@@ -19,8 +19,12 @@ from .calcium import *
 from .calcium import __all__ as calcium_all
 from .hyperpolarization_activated import *
 from .hyperpolarization_activated import __all__ as hyperpolarization_activated_all
+from .hh_no_conc import *
+from .hh_no_conc import __all__ as hh_no_conc_all
 from .leaky import *
 from .leaky import __all__ as leaky_all
+from .markov_no_conc import *
+from .markov_no_conc import __all__ as markov_no_conc_all
 from .potassium import *
 from .potassium import __all__ as potassium_all
 from .potassium_calcium import *
@@ -30,8 +34,10 @@ from .sodium import __all__ as sodium_all
 
 __all__ = (
     calcium_all +
+    hh_no_conc_all +
     hyperpolarization_activated_all +
     leaky_all +
+    markov_no_conc_all +
     potassium_all +
     potassium_calcium_all +
     sodium_all

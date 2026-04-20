@@ -935,7 +935,6 @@ class Cell(HHTypedNeuron):
         point_id: int,
     ) -> object:
         point_V = self._point_voltage(self.V.value)
-        ion = runtime.get_ion(declaration.ion)
         if declaration.mechanism is not None:
             matched_layouts = []
             for layout in runtime.get_point_layouts(point_id):
@@ -953,9 +952,15 @@ class Cell(HHTypedNeuron):
                     f"{declaration.mechanism!r} at point {point_id!r}."
                 )
             node = runtime.get_runtime_node(matched_layouts[0].id)
-            current = _probe_current_value(node, point_V, ion.pack_info(), probe_name=_probe_name(declaration))
+            ion_info = _probe_current_ion_info(runtime, declaration=declaration, mechanism=node)
+            current = _probe_current_value(node, point_V, ion_info, probe_name=_probe_name(declaration))
             return _select_last_axis(current, point_id)
 
+        if declaration.ion is None:
+            raise ValueError(
+                f"Probe {_probe_name(declaration)!r} must define 'ion' when 'mechanism' is omitted."
+            )
+        ion = runtime.get_ion(declaration.ion)
         current = ion.current(point_V, include_external=False)
         return _select_last_axis(current, point_id)
 
@@ -1000,9 +1005,26 @@ def _probe_state_attr(owner: object, field: str, *, probe_name: str) -> brainsta
     return raw
 
 
-def _probe_current_value(owner: object, point_V: object, ion_info: object, *, probe_name: str) -> object:
+def _probe_current_ion_info(runtime: CellRuntimeState, *, declaration: CurrentProbe, mechanism: object) -> object | None:
+    if declaration.ion is not None:
+        return runtime.get_ion(declaration.ion).pack_info()
+
+    mechanism_name = declaration.mechanism
+    if mechanism_name is None:
+        return None
+
+    for ion in runtime.ions.values():
+        channels = getattr(ion, "channels", None)
+        if isinstance(channels, dict) and mechanism_name in channels and channels[mechanism_name] is mechanism:
+            return ion.pack_info()
+    return None
+
+
+def _probe_current_value(owner: object, point_V: object, ion_info: object | None, *, probe_name: str) -> object:
     if not hasattr(owner, "current"):
         raise KeyError(f"Probe {probe_name!r} target {type(owner).__name__!s} has no current(...) method.")
+    if ion_info is None:
+        return owner.current(point_V)
     try:
         return owner.current(point_V, ion_info)
     except TypeError:

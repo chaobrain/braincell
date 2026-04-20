@@ -305,19 +305,21 @@ class MechanismProbe(Point):
 class CurrentProbe(Point):
     """Probe for current at a placed location."""
 
-    ion: str
+    ion: str | None = None
     mechanism: str | None = None
     name: str | None = None
 
     def __post_init__(self) -> None:
         if self.name is not None and (not isinstance(self.name, str) or not self.name):
             raise ValueError(f"CurrentProbe.name must be a non-empty string or None, got {self.name!r}.")
-        if not isinstance(self.ion, str) or not self.ion:
-            raise ValueError(f"CurrentProbe.ion must be a non-empty string, got {self.ion!r}.")
+        if self.ion is not None and (not isinstance(self.ion, str) or not self.ion):
+            raise ValueError(f"CurrentProbe.ion must be a non-empty string or None, got {self.ion!r}.")
         if self.mechanism is not None and (not isinstance(self.mechanism, str) or not self.mechanism):
             raise ValueError(
                 f"CurrentProbe.mechanism must be a non-empty string or None, got {self.mechanism!r}."
             )
+        if self.ion is None and self.mechanism is None:
+            raise ValueError("CurrentProbe requires at least one of 'ion' or 'mechanism'.")
 
 
 @dataclass(frozen=True)

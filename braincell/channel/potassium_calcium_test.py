@@ -34,15 +34,19 @@ from braincell.channel.potassium_calcium import (
 
 def _k_info(size: int = 1) -> IonInfo:
     return IonInfo(
-        C=jnp.full((size,), 140.0) * u.mM,
+        Ci=jnp.full((size,), 140.0) * u.mM,
+        Co=jnp.full((size,), 2.5) * u.mM,
         E=jnp.full((size,), -90.0) * u.mV,
+        valence=1,
     )
 
 
 def _ca_info(size: int = 1, C: float = 1e-4) -> IonInfo:
     return IonInfo(
-        C=jnp.full((size,), C) * u.mM,
+        Ci=jnp.full((size,), C) * u.mM,
+        Co=jnp.full((size,), 2.0) * u.mM,
         E=jnp.full((size,), 120.0) * u.mV,
+        valence=2,
     )
 
 
@@ -92,7 +96,7 @@ class IAHPDe1994Test(unittest.TestCase):
         ch.init_state(V, k, ca)
         ch.reset_state(V, k, ca)
 
-        C2 = ch.alpha * (ca.C / u.mM) ** ch.n
+        C2 = ch.alpha * (ca.Ci / u.mM) ** ch.n
         expected = C2 / (C2 + ch.beta)
         self.assertTrue(u.math.allclose(ch.p.value, expected, atol=1e-6))
 
@@ -122,7 +126,7 @@ class IAHPDe1994Test(unittest.TestCase):
         ch.p.value = jnp.array([0.2])
         ch.compute_derivative(V, k, ca)
 
-        C2 = ch.alpha * (ca.C / u.mM) ** ch.n
+        C2 = ch.alpha * (ca.Ci / u.mM) ** ch.n
         C3 = C2 + ch.beta
         expected = ch.phi * (C2 / C3 - 0.2) * C3 / u.ms
         self.assertTrue(u.math.allclose(ch.p.derivative, expected, atol=1e-6 * u.Hz))

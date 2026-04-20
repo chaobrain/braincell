@@ -22,7 +22,8 @@ import jax.numpy as jnp
 
 from braincell._base import HHTypedNeuron, Ion, IonInfo
 from braincell.channel.sodium import INa_TM1991
-from braincell.ion.sodium import Sodium, SodiumFixed
+from braincell.ion._template import InitNernstIon
+from braincell.ion.sodium import Sodium, SodiumFixed, SodiumInitNernst
 
 
 def _V(values, unit=u.mV):
@@ -51,11 +52,15 @@ class SodiumFixedDefaultsTest(unittest.TestCase):
         na = SodiumFixed(size=1)
         self.assertTrue(u.math.allclose(na.E, 50.0 * u.mV, atol=1e-9 * u.mV))
 
-    def test_default_concentration_is_small_mM(self) -> None:
+    def test_default_intracellular_concentration_is_10_mM(self) -> None:
         na = SodiumFixed(size=1)
         self.assertTrue(
-            u.math.allclose(na.C, 0.0400811 * u.mM, atol=1e-9 * u.mM)
+            u.math.allclose(na.Ci, 10.0 * u.mM, atol=1e-9 * u.mM)
         )
+        self.assertTrue(
+            u.math.allclose(na.Co, 140.0 * u.mM, atol=1e-9 * u.mM)
+        )
+        self.assertTrue(u.math.allclose(na.valence, jnp.ones((1,)), atol=1e-9))
 
     def test_varshape_matches_size(self) -> None:
         self.assertEqual(SodiumFixed(size=1).varshape, (1,))
@@ -63,23 +68,29 @@ class SodiumFixedDefaultsTest(unittest.TestCase):
         self.assertEqual(SodiumFixed(size=(2, 3)).varshape, (2, 3))
 
     def test_custom_scalar_parameters_are_honoured(self) -> None:
-        na = SodiumFixed(size=3, E=40.0 * u.mV, C=0.5 * u.mM)
+        na = SodiumFixed(size=3, E=40.0 * u.mV, Ci=0.5 * u.mM, Co=100.0 * u.mM, valence=1)
         self.assertTrue(u.math.allclose(na.E, 40.0 * u.mV, atol=1e-9 * u.mV))
-        self.assertTrue(u.math.allclose(na.C, 0.5 * u.mM, atol=1e-9 * u.mM))
+        self.assertTrue(u.math.allclose(na.Ci, 0.5 * u.mM, atol=1e-9 * u.mM))
+        self.assertTrue(u.math.allclose(na.Co, 100.0 * u.mM, atol=1e-9 * u.mM))
 
     def test_callable_parameters_broadcast_across_size(self) -> None:
         na = SodiumFixed(
             size=2,
             E=lambda shape: jnp.array([50.0, 40.0]) * u.mV,
-            C=lambda shape: jnp.array([0.1, 0.2]) * u.mM,
+            Ci=lambda shape: jnp.array([0.1, 0.2]) * u.mM,
+            Co=lambda shape: jnp.array([140.0, 141.0]) * u.mM,
         )
         self.assertEqual(na.E.shape, (2,))
-        self.assertEqual(na.C.shape, (2,))
+        self.assertEqual(na.Ci.shape, (2,))
+        self.assertEqual(na.Co.shape, (2,))
         self.assertTrue(
             u.math.allclose(na.E, jnp.array([50.0, 40.0]) * u.mV, atol=1e-9 * u.mV)
         )
         self.assertTrue(
-            u.math.allclose(na.C, jnp.array([0.1, 0.2]) * u.mM, atol=1e-9 * u.mM)
+            u.math.allclose(na.Ci, jnp.array([0.1, 0.2]) * u.mM, atol=1e-9 * u.mM)
+        )
+        self.assertTrue(
+            u.math.allclose(na.Co, jnp.array([140.0, 141.0]) * u.mM, atol=1e-9 * u.mM)
         )
 
 
@@ -92,10 +103,12 @@ class SodiumFixedPackInfoTest(unittest.TestCase):
         self.assertIsInstance(info, IonInfo)
 
     def test_pack_info_fields_match_stored_values(self) -> None:
-        na = SodiumFixed(size=1, E=30.0 * u.mV, C=0.2 * u.mM)
+        na = SodiumFixed(size=1, E=30.0 * u.mV, Ci=0.2 * u.mM, Co=120.0 * u.mM, valence=1)
         info = na.pack_info()
-        self.assertTrue(u.math.allclose(info.C, 0.2 * u.mM, atol=1e-9 * u.mM))
+        self.assertTrue(u.math.allclose(info.Ci, 0.2 * u.mM, atol=1e-9 * u.mM))
+        self.assertTrue(u.math.allclose(info.Co, 120.0 * u.mM, atol=1e-9 * u.mM))
         self.assertTrue(u.math.allclose(info.E, 30.0 * u.mV, atol=1e-9 * u.mV))
+        self.assertTrue(u.math.allclose(info.valence, jnp.ones((1,)), atol=1e-9))
 
 
 class SodiumFixedContainerTest(unittest.TestCase):
@@ -203,6 +216,36 @@ class SodiumFixedLifecycleTest(unittest.TestCase):
         ch = na.channels["INa"]
         self.assertEqual(ch.p.derivative.shape, (1,))
         self.assertEqual(ch.q.derivative.shape, (1,))
+
+
+class SodiumInitNernstTest(unittest.TestCase):
+    def test_is_init_nernst_ion(self) -> None:
+        self.assertTrue(issubclass(SodiumInitNernst, Sodium))
+        self.assertTrue(issubclass(SodiumInitNernst, InitNernstIon))
+
+    def test_E_is_initialized_from_nernst_on_init_and_reset(self) -> None:
+        na = SodiumInitNernst(size=1)
+        V = _V([-65.0])
+
+        self.assertIsNone(na.E)
+        na.init_state(V)
+        expected = (
+            u.gas_constant * na.temp / (na.valence * u.faraday_constant)
+            * u.math.log(na.Co / na.Ci)
+        )
+        self.assertTrue(u.math.allclose(na.E.to_decimal(u.mV), expected.to_decimal(u.mV), atol=1e-6))
+
+        first_E = na.E
+        na.Ci = jnp.array([20.0]) * u.mM
+        self.assertTrue(u.math.allclose(na.E.to_decimal(u.mV), first_E.to_decimal(u.mV), atol=1e-6))
+
+        na.reset_state(V)
+        self.assertFalse(u.math.allclose(na.E.to_decimal(u.mV), first_E.to_decimal(u.mV), atol=1e-6))
+
+    def test_custom_Ci_and_Co_are_respected(self) -> None:
+        na = SodiumInitNernst(size=1, Ci=15.0 * u.mM, Co=130.0 * u.mM)
+        self.assertTrue(u.math.allclose(na.Ci, 15.0 * u.mM, atol=1e-9 * u.mM))
+        self.assertTrue(u.math.allclose(na.Co, 130.0 * u.mM, atol=1e-9 * u.mM))
 
 
 if __name__ == "__main__":

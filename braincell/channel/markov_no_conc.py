@@ -28,7 +28,7 @@ __all__ = [
 
 
 @register_channel("Nav1p6_MA20_GoC")
-class Nav1p6_MA20_GoC(Markov, IndependentIntegration):
+class Nav1p6_MA20_GoC(Markov):
     """Template-based import of ``Nav1p6_MA20_GoC.mod``."""
 
     __module__ = "braincell.channel"
@@ -63,15 +63,11 @@ class Nav1p6_MA20_GoC(Markov, IndependentIntegration):
         solver: str = "rk4",
         substeps: int = 5,
     ):
-        super().__init__(size=size, name=name)
-        IndependentIntegration.__init__(self, solver=solver)
+        super().__init__(size=size, name=name, solver=solver, substeps=substeps)
 
         self.temp = braintools.init.param(temp, self.varshape, allow_none=False)
         self.phi = 3 ** (((self.temp - u.celsius2kelvin(22.0)) / u.kelvin) / 10.0)
         self.g_max = braintools.init.param(g_max, self.varshape, allow_none=False)
-        self.substeps = int(substeps)
-        if self.substeps < 1:
-            raise ValueError("substeps must be at least 1.")
 
         self.Con = 0.005
         self.Coff = 0.5
@@ -96,13 +92,6 @@ class Nav1p6_MA20_GoC(Markov, IndependentIntegration):
 
         self.alfac = (self.Oon / self.Con) ** (1 / 4)
         self.btfac = (self.Ooff / self.Coff) ** (1 / 4)
-
-    def make_integration(self, *args, **kwargs):
-        with brainstate.environ.context(dt=brainstate.environ.get_dt() / self.substeps):
-            brainstate.transform.for_loop(
-                lambda i: self.solver(self, *args, **kwargs),
-                u.math.arange(self.substeps),
-            )
 
     def current(self, V, Na: IonInfo):
         return self.g_max * self.O.value * (Na.E - V)
@@ -286,15 +275,11 @@ class Nav_MA20_GrC(Markov, IndependentIntegration):
         solver: str = "rk4",
         substeps: int = 5,
     ):
-        super().__init__(size=size, name=name)
-        IndependentIntegration.__init__(self, solver=solver)
+        super().__init__(size=size, name=name, solver=solver, substeps=substeps)
 
         self.temp = braintools.init.param(temp, self.varshape, allow_none=False)
         self.g_max = braintools.init.param(g_max, self.varshape, allow_none=False)
         self.phi = 3 ** (((self.temp - u.celsius2kelvin(20.0)) / u.kelvin) / 10.0)
-        self.substeps = int(substeps)
-        if self.substeps < 1:
-            raise ValueError("substeps must be at least 1.")
 
         self.Aalfa = 353.91
         self.Valfa = 13.99
@@ -313,13 +298,6 @@ class Nav_MA20_GrC(Markov, IndependentIntegration):
         self.n2 = 3.279
         self.n3 = 1.83
         self.n4 = 0.738
-
-    def make_integration(self, *args, **kwargs):
-        with brainstate.environ.context(dt=brainstate.environ.get_dt() / self.substeps):
-            brainstate.transform.for_loop(
-                lambda i: self.solver(self, *args, **kwargs),
-                u.math.arange(self.substeps),
-            )
 
     def current(self, V, Na: IonInfo):
         return self.g_max * self.O.value * (Na.E - V)
@@ -417,15 +395,11 @@ class NaFHF_MA20_GrC(Markov, IndependentIntegration):
         solver: str = "rk4",
         substeps: int = 5,
     ):
-        super().__init__(size=size, name=name)
-        IndependentIntegration.__init__(self, solver=solver)
+        super().__init__(size=size, name=name, solver=solver, substeps=substeps)
 
         self.temp = braintools.init.param(temp, self.varshape, allow_none=False)
         self.g_max = braintools.init.param(g_max, self.varshape, allow_none=False)
         self.phi = 3 ** (((self.temp - u.celsius2kelvin(20.0)) / u.kelvin) / 10.0)
-        self.substeps = int(substeps)
-        if self.substeps < 1:
-            raise ValueError("substeps must be at least 1.")
 
         self.Aalfa = 353.91
         self.Valfa = 13.99
@@ -448,13 +422,6 @@ class NaFHF_MA20_GrC(Markov, IndependentIntegration):
         self.ALoff = 0.5
         self.c = 20.0
         self.d = 0.075
-
-    def make_integration(self, *args, **kwargs):
-        with brainstate.environ.context(dt=brainstate.environ.get_dt() / self.substeps):
-            brainstate.transform.for_loop(
-                lambda i: self.solver(self, *args, **kwargs),
-                u.math.arange(self.substeps),
-            )
 
     def current(self, V, Na: IonInfo):
         return self.g_max * self.O.value * (Na.E - V)

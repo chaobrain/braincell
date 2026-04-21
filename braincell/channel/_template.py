@@ -2,20 +2,21 @@
 
 
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Optional
 from typing import ClassVar
 
+import brainstate
 import braintools
 import brainunit as u
 import jax.numpy as jnp
 
 from braincell._base import Channel
 from braincell.quad.protocol import DiffEqState
+from braincell.quad.protocol import IndependentIntegration
 
 __all__ = [
     "Gate",
     "Transition",
-    "Passive",
     "HH",
     "Markov",
     "ghk_flux",
@@ -70,23 +71,6 @@ class Transition:
     dst: str
     forward: str
     backward: str | None = None
-
-
-class Passive(Channel):
-    """No-state channel dynamics."""
-
-    def init_state(self, V, *ions, batch_size: int = None):
-        _ = (self, V, ions, batch_size)
-
-    def reset_state(self, V, *ions, batch_size: int = None):
-        _ = (self, V, ions, batch_size)
-
-    def compute_derivative(self, V, *ions):
-        _ = (self, V, ions)
-
-    def conductance_factor(self, V, *ions):
-        _ = (self, V, ions)
-        return 1.0
 
 
 class HH(Channel):
@@ -199,7 +183,7 @@ class HH(Channel):
             self._gate_state(gate).derivative = derivative
 
 
-class Markov(Channel):
+class Markov(Channel, IndependentIntegration):
     """Probability-state channel kinetics described by transition pairs.
 
     ``pairs`` define one conserved probability pool. By default the dependent
@@ -217,6 +201,27 @@ class Markov(Channel):
     pairs: ClassVar[tuple[Transition | tuple[Any, ...], ...]] = ()
     conserve: ClassVar[Any] = 1.0
     dependent_state: ClassVar[str | None] = None
+
+    def __init__(
+        self,
+        size: brainstate.typing.Size,
+        name: Optional[str] = None,
+        solver: str = "rk4",
+        substeps: int = 5,
+    ):
+        super().__init__(size=size, name=name)
+        IndependentIntegration.__init__(self, solver=solver)
+
+        self.substeps = int(substeps)
+        if self.substeps < 1:
+            raise ValueError("substeps must be at least 1.")
+
+    def make_integration(self, *args, **kwargs):
+        with brainstate.environ.context(dt=brainstate.environ.get_dt() / self.substeps):
+            brainstate.transform.for_loop(
+                lambda i: self.solver(self, *args, **kwargs),
+                u.math.arange(self.substeps),
+            )
 
     def _iter_pairs(self) -> tuple[Transition, ...]:
         items = []

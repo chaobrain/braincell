@@ -13,34 +13,18 @@
 # limitations under the License.
 # ==============================================================================
 
-from .branch import (
-    ApicalDendrite,
-    Axon,
-    BasalDendrite,
-    Branch,
-    CustomBranch,
-    Dendrite,
-    Soma,
+from ._branch import (
     branch_class_for_type,
 )
-from .morphology import (
+from ._morphology import (
     MorphoEdge,
     MorphoMetric,
-    Morphology,
     MorphoBranch,
 )
 
 __all__ = [
-    "ApicalDendrite",
-    "Axon",
-    "BasalDendrite",
-    "Branch",
-    "CustomBranch",
-    "Dendrite",
     "MorphoEdge",
     "MorphoMetric",
-    "Morphology",
     "MorphoBranch",
-    "Soma",
     "branch_class_for_type",
 ]

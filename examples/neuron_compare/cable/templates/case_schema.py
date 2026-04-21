@@ -1,6 +1,6 @@
 """Case schema for the multi-compartment cable voltage-compare template."""
 
-from __future__ import annotations
+
 
 from dataclasses import dataclass
 from pathlib import Path

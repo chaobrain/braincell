@@ -1,6 +1,6 @@
 """Output helpers shared by channel_no_conc sweep dispatch."""
 
-from __future__ import annotations
+
 
 import csv
 import json

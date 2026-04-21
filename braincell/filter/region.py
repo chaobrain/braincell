@@ -22,7 +22,7 @@ from brainunit import Quantity
 
 from . import helper
 from .cache import SelectionCache
-from ..morph import Morphology
+from braincell.morph._morphology import Morphology
 
 ClosedSide = str
 

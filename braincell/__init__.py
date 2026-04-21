@@ -14,8 +14,11 @@
 # ==============================================================================
 
 
+from braincell.quad._protocol import (
+    DiffEqState,
+    DiffEqModule,
+)
 from . import quad, mech, channel, synapse, ion
-from .mech import CableProperty, CurrentClamp, FunctionClamp, SineClamp
 from ._base import (
     Channel,
     HHTypedNeuron,
@@ -25,8 +28,13 @@ from ._base import (
     MixIons,
     mix_ions,
 )
-from ._multi_compartment import Cell, RunResult
-from ._single_compartment import SingleCompartment
+from ._multi_compartment import (
+    Cell,
+    RunResult,
+)
+from ._single_compartment import (
+    SingleCompartment,
+)
 from ._version import (
     __version__,
     __version_info__,
@@ -41,20 +49,32 @@ from .cv import (
     MaxCVLen,
 )
 from .io.neuromorpho import load_neuromorpho
-from .morph import (
+from .mech import (
+    CableProperty,
+    CurrentClamp,
+    FunctionClamp,
+    SineClamp,
+)
+from .morph._branch import (
     ApicalDendrite,
     Axon,
     BasalDendrite,
     Branch,
     CustomBranch,
     Dendrite,
-    Morphology,
     Soma,
+)
+from .morph._morphology import (
+    Morphology,
 )
 
 __all__ = [
     "__version__",
     "__version_info__",
+
+    "DiffEqState",
+    "DiffEqModule",
+
     "ApicalDendrite",
     "Axon",
     "BasalDendrite",

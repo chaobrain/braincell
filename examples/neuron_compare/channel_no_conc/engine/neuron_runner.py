@@ -1,6 +1,6 @@
 """Run one NEURON-side case for channel_no_conc."""
 
-from __future__ import annotations
+
 
 from pathlib import Path
 from typing import Any

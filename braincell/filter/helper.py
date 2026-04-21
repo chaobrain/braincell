@@ -19,7 +19,7 @@ from numbers import Integral, Real
 import brainunit as u
 import numpy as np
 
-from ..morph import Morphology
+from braincell.morph._morphology import Morphology
 
 Interval = tuple[int, float, float]
 Location = tuple[int, float]

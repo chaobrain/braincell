@@ -1,6 +1,6 @@
 """Schema and sweep synthesis for single-channel no-concentration comparisons."""
 
-from __future__ import annotations
+
 
 from dataclasses import dataclass
 import itertools

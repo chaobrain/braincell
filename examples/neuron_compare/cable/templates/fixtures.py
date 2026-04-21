@@ -1,6 +1,6 @@
 """Shared fixtures for multi-compartment cable tests and sweeps."""
 
-from __future__ import annotations
+
 
 from pathlib import Path
 import tempfile

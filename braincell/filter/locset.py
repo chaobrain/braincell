@@ -22,7 +22,7 @@ from brainunit import Quantity
 from . import helper
 from .cache import SelectionCache
 from .region import RegionExpr
-from ..morph import Morphology
+from braincell.morph._morphology import Morphology
 
 Location = tuple[int, float]
 

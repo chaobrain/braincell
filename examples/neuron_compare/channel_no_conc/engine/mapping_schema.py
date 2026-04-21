@@ -1,6 +1,6 @@
 """Mapping schema for single-channel no-concentration comparisons."""
 
-from __future__ import annotations
+
 
 from dataclasses import dataclass
 from pathlib import Path

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Run one braincell-side case for the multi-compartment cable template."""
 
-from __future__ import annotations
+
 
 from collections import defaultdict
 from pathlib import Path

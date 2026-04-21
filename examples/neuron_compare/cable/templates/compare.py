@@ -1,6 +1,6 @@
 """Compare one cable case between braincell and NEURON."""
 
-from __future__ import annotations
+
 
 import json
 from pathlib import Path

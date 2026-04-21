@@ -21,8 +21,8 @@ from pathlib import Path
 import numpy as np
 
 import brainunit as u
-from braincell.morph.branch import Branch, branch_class_for_type
-from braincell.morph.morphology import Morphology
+from braincell.morph._branch import Branch, branch_class_for_type
+from braincell.morph._morphology import Morphology
 from .rules import apply_swc_rules, raise_for_swc_errors
 from .soma import (
     contour_equivalent_center_radius,

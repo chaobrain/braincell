@@ -1,6 +1,6 @@
 """Run one braincell-side case for channel_no_conc."""
 
-from __future__ import annotations
+
 
 import inspect
 from pathlib import Path

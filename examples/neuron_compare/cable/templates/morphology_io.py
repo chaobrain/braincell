@@ -1,6 +1,6 @@
 """Local morphology import helpers for multi-compartment cable comparisons."""
 
-from __future__ import annotations
+
 
 from pathlib import Path
 from typing import Any

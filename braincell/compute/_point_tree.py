@@ -20,7 +20,7 @@ import numpy as np
 
 from braincell.cv._cv import CV
 from braincell.cv._geo import EPSILON
-from braincell.morph import Morphology
+from braincell.morph._morphology import Morphology
 
 __all__ = [
     "PointTree",

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Run one NEURON-side case for the multi-compartment cable template."""
 
-from __future__ import annotations
+
 
 from pathlib import Path
 from typing import Any

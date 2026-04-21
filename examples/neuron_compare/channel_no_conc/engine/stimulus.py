@@ -1,6 +1,6 @@
 """Stimulus helpers shared by channel_no_conc."""
 
-from __future__ import annotations
+
 
 import math
 

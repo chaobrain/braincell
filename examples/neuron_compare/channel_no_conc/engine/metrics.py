@@ -1,6 +1,6 @@
 """Metric helpers shared by channel_no_conc."""
 
-from __future__ import annotations
+
 
 from typing import Any
 

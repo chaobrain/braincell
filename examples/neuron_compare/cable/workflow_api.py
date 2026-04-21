@@ -1,6 +1,6 @@
 """Notebook-facing workflow helpers for cable comparisons."""
 
-from __future__ import annotations
+
 
 import csv
 import json

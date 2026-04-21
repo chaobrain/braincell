@@ -17,7 +17,7 @@
 from dataclasses import dataclass
 from os import PathLike
 
-from ...morph import Morphology
+from braincell.morph._morphology import Morphology
 
 
 @dataclass(frozen=True)

@@ -1,6 +1,6 @@
 """Output helpers shared by cable sweep dispatch."""
 
-from __future__ import annotations
+
 
 import csv
 import json

@@ -240,3 +240,4 @@ x86_64/
 /examples/multi_compartment/checkpoint/
 /dev/
 /.claudegitignore
+/CLAUDE.md

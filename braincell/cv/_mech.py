@@ -28,7 +28,7 @@ from braincell.mech import (
     Point,
     StateProbe,
 )
-from braincell.morph import Morphology
+from braincell.morph._morphology import Morphology
 from ._geo import CVGeo, EPSILON, interval_lateral_area, map_point_to_cv
 
 

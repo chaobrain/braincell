@@ -1,6 +1,6 @@
 """Shared schema helpers for NEURON vs braincell comparison templates."""
 
-from __future__ import annotations
+
 
 from typing import Any, Mapping
 

@@ -1,6 +1,6 @@
 """Compare one channel_no_conc case between braincell and NEURON."""
 
-from __future__ import annotations
+
 
 from typing import Any
 

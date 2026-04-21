@@ -1,6 +1,6 @@
 """Branch/section mapping helpers for multi-compartment cable comparisons."""
 
-from __future__ import annotations
+
 
 from dataclasses import dataclass
 import math

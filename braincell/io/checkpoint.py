@@ -51,7 +51,8 @@ import brainunit as u
 import numpy as np
 
 from braincell._version import __version__ as _BC_VERSION
-from braincell.morph import Branch, Morphology, branch_class_for_type
+from braincell.morph._morphology import Branch, Morphology
+from braincell.morph._branch import branch_class_for_type
 
 __all__ = [
     "CheckpointError",

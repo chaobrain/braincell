@@ -28,7 +28,7 @@ import brainunit as u
 
 from braincell._base import Channel, IonInfo
 from braincell.mech import register_channel
-from braincell.quad import DiffEqState
+from braincell.quad._protocol import DiffEqState
 from braincell.ion import Calcium
 
 __all__ = [

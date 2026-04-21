@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Dispatcher for channel_no_conc compare inputs."""
 
-from __future__ import annotations
+
 
 import argparse
 import csv

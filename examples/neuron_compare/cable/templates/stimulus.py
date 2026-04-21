@@ -1,6 +1,6 @@
 """Shared stimulus helpers for the multi-compartment cable template."""
 
-from __future__ import annotations
+
 
 import math
 

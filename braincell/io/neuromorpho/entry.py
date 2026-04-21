@@ -32,7 +32,7 @@ from .urls import DownloadMode
 
 if TYPE_CHECKING:
     from braincell.io.swc.types import SwcReport
-    from braincell.morph.morphology import Morphology
+    from braincell.morph._morphology import Morphology
 
 __all__ = [
     "DEFAULT_USER_CACHE_DIR",
@@ -219,7 +219,7 @@ def load_neuromorpho(
         >>> morph, report = load_neuromorpho(10047, return_report=True)  # doctest: +SKIP
     """
 
-    from braincell.morph.morphology import Morphology
+    from braincell.morph._morphology import Morphology
 
     resolved_client, cache_root = _resolve_client(client, cache_dir)
     record = resolved_client.download(

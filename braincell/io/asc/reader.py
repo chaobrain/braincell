@@ -21,10 +21,10 @@ from pathlib import Path
 import numpy as np
 
 from .types import AscMetadata, AscReport, AscSpineRecord
-from ..swc.types import MIN_SYNTHETIC_LENGTH_UM
-from ..._misc import u
-from ...morph import Branch, Morphology, MorphoBranch
-from ...morph.branch import Soma, branch_class_for_type
+from braincell.io.swc.types import MIN_SYNTHETIC_LENGTH_UM
+from braincell._misc import u
+from braincell.morph._morphology import Branch, Morphology, MorphoBranch
+from braincell.morph._branch import Soma, branch_class_for_type
 
 _PIPE = object()
 _NEURITE_TYPE_MAP = {

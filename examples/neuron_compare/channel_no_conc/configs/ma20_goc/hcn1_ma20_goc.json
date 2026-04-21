@@ -1,0 +1,41 @@
+{
+  "meta": {
+    "label": "GoC HCN1 MA20"
+  },
+  "identity": {
+    "mod_dir": "/home/swl/braincell/examples/neuron_compare/Cerebellum_mod/GoC/channel"
+  },
+  "defaults": {
+    "channel_params": {
+      "g_max_S_cm2": 0.00005,
+      "E_mV": -20.0
+    }
+  },
+  "mapping": {
+    "current": "ih",
+    "impl_name": {
+      "common": "HCN1_MA20_GoC"
+    },
+    "gate_names": {
+      "common": [
+        "o_fast",
+        "o_slow"
+      ]
+    },
+    "channel_params": {
+      "g_max_S_cm2": {
+        "neuron": "gbar",
+        "braincell": "g_max"
+      },
+      "E_mV": {
+        "neuron": "Erev",
+        "braincell": "E"
+      }
+    }
+  },
+  "templates": [
+    "../../templates/vinit_celsius.json",
+    "../../templates/dc.json",
+    "../../templates/ac.json"
+  ]
+}

@@ -1,0 +1,34 @@
+{
+  "n_success_cases": 14,
+  "per_observable": {
+    "v_mV": {
+      "mae_mean": 0.003144661095293279,
+      "rmse_mean": 0.0038194809551826375,
+      "max_abs_max": 0.00899248188999735,
+      "rel_mae_pct_mean": 0.00556476553906103
+    },
+    "ik_mA_cm2": {
+      "mae_mean": 3.72048034800654e-08,
+      "rmse_mean": 5.0088174414138126e-08,
+      "max_abs_max": 2.780800212411928e-07,
+      "rel_mae_pct_mean": 0.12889570074507822
+    },
+    "gate_n": {
+      "mae_mean": 3.7388202800651476e-08,
+      "rmse_mean": 6.188728645497096e-08,
+      "max_abs_max": 4.022151562065317e-07,
+      "rel_mae_pct_mean": 0.0296183755088311
+    }
+  },
+  "overall": {
+    "case_weighted_mean_rmse": 0.0012731976435478357,
+    "case_weighted_mean_mae": 0.0010482452294331866
+  },
+  "worst_case_by_mean_rmse": {
+    "case_id": 3,
+    "mean_rmse": 0.001957153161260275
+  },
+  "n_total_cases": 14,
+  "n_failed_cases": 0,
+  "failed_cases": []
+}

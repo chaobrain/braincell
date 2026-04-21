@@ -1,0 +1,28 @@
+{
+  "template_family": "multi_compartment_cable",
+  "case_id": "cable_dc_smoke",
+  "morphology": {
+    "kind": "swc",
+    "path": "/home/swl/braincell/examples/multi_compartment/morpho_files/io.swc"
+  },
+  "simulation": {
+    "dt_ms": 0.01,
+    "duration_ms": 5.0,
+    "v_init_mV": -65.0
+  },
+  "cable": {
+    "ra_ohm_cm": 100.0,
+    "cm_uF_cm2": 1.0
+  },
+  "cv_policy": {
+    "kind": "CVPerBranch",
+    "cv_per_branch": 3
+  },
+  "stimulus": {
+    "kind": "dc_step",
+    "target": "root_soma_midpoint",
+    "delay_ms": 0.5,
+    "dur_ms": 1.0,
+    "amp_nA": 0.1
+  }
+}

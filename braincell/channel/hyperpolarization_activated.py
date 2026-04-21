@@ -1,4 +1,19 @@
 # -*- coding: utf-8 -*-
+# Copyright 2026 BrainX Ecosystem Limited. All Rights Reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ==============================================================================
+
 
 """
 This module implements hyperpolarization-activated cation channel.
@@ -11,7 +26,8 @@ import braintools
 import brainunit as u
 
 from braincell._base import Channel, HHTypedNeuron
-from braincell.quad import DiffEqState
+from braincell.mech import register_channel
+from braincell.quad.protocol import DiffEqState
 
 __all__ = [
     'Ih_HM1992',
@@ -20,6 +36,7 @@ __all__ = [
 ]
 
 
+@register_channel("Ih_HM1992")
 class Ih_HM1992(Channel):
     r"""
     The hyperpolarization-activated cation current model propsoed by (Huguenard & McCormick, 1992) [1]_.
@@ -237,6 +254,7 @@ class Ih_HM1992(Channel):
 #                           u.math.exp(-(V + 89 - self.V_sh) / 11.6))) / self.phi
 
 
+@register_channel("Ih1_Ma2020")
 class Ih1_Ma2020(Channel):
     r"""
     TITLE Cerebellum Golgi Cell Model
@@ -325,6 +343,7 @@ class Ih1_Ma2020(Channel):
         return self.rA * V + self.rB
 
 
+@register_channel("Ih2_Ma2020")
 class Ih2_Ma2020(Channel):
     r"""
     TITLE Cerebellum Golgi Cell Model

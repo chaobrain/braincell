@@ -1,4 +1,18 @@
 # -*- coding: utf-8 -*-
+# Copyright 2026 BrainX Ecosystem Limited. All Rights Reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ==============================================================================
 
 
 """
@@ -13,8 +27,9 @@ import brainunit as u
 import jax
 
 from braincell._base import IonInfo, Channel
-from braincell.quad import DiffEqState
 from braincell.ion import Calcium, Potassium
+from braincell.mech import register_channel
+from braincell.quad.protocol import DiffEqState
 
 __all__ = [
     'KCaChannel',
@@ -38,6 +53,7 @@ class KCaChannel(Channel):
     __module__ = 'braincell.channel'
 
     root_type = brainstate.mixin.JointTypes[Potassium, Calcium]
+    current_owner_type = Potassium
 
     def pre_integral(self, V, K: IonInfo, Ca: IonInfo):
         """
@@ -143,6 +159,7 @@ class KCaChannel(Channel):
         pass
 
 
+@register_channel("IAHP_De1994")
 class IAHP_De1994(KCaChannel):
     r"""The calcium-dependent potassium current model proposed by (Destexhe, et al., 1994) [1]_.
 
@@ -214,7 +231,7 @@ class IAHP_De1994(KCaChannel):
         self.phi = braintools.init.param(phi, self.varshape, allow_none=False)
 
     def compute_derivative(self, V, K: IonInfo, Ca: IonInfo):
-        C2 = self.alpha * u.math.power(Ca.C / u.mM, self.n)
+        C2 = self.alpha * u.math.power(Ca.Ci / u.mM, self.n)
         C3 = C2 + self.beta
         self.p.derivative = self.phi * (C2 / C3 - self.p.value) * C3 / u.ms
 
@@ -225,7 +242,7 @@ class IAHP_De1994(KCaChannel):
         self.p = DiffEqState(braintools.init.param(u.math.zeros, self.varshape, batch_size))
 
     def reset_state(self, V, K: IonInfo, Ca: IonInfo, batch_size=None):
-        C2 = self.alpha * u.math.power(Ca.C / u.mM, self.n)
+        C2 = self.alpha * u.math.power(Ca.Ci / u.mM, self.n)
         C3 = C2 + self.beta
         if batch_size is None:
             self.p.value = u.math.broadcast_to(C2 / C3, self.varshape)
@@ -234,6 +251,7 @@ class IAHP_De1994(KCaChannel):
             assert self.p.value.shape[0] == batch_size
 
 
+@register_channel("IKca3_1_Ma2020")
 class IKca3_1_Ma2020(KCaChannel):
     r'''
       TITLE Calcium dependent potassium channel
@@ -282,11 +300,11 @@ class IKca3_1_Ma2020(KCaChannel):
         return u.math.exp((V + 70.) / 27.)
 
     def p_concdep(self, Ca):
-        # concdep_1 = 500 * (0.015 - Ca.C / u.mM) / (u.math.exp((0.015 - Ca.C / u.mM) / 0.0013) - 1)
-        concdep_1 = 500 * 0.0013 / u.math.exprel((0.015 - Ca.C / u.mM) / 0.0013)
+        # concdep_1 = 500 * (0.015 - Ca.Ci / u.mM) / (u.math.exp((0.015 - Ca.Ci / u.mM) / 0.0013) - 1)
+        concdep_1 = 500 * 0.0013 / u.math.exprel((0.015 - Ca.Ci / u.mM) / 0.0013)
         with jax.ensure_compile_time_eval():
             concdep_2 = 500 * 0.005 / (u.math.exp(0.005 / 0.0013) - 1)
-        return u.math.where(Ca.C / u.mM < 0.01, concdep_1, concdep_2)
+        return u.math.where(Ca.Ci / u.mM < 0.01, concdep_1, concdep_2)
 
     def init_state(self, V, K: IonInfo, Ca: IonInfo, batch_size=None):
         self.p = DiffEqState(braintools.init.param(u.math.zeros, self.varshape, batch_size))
@@ -299,6 +317,7 @@ class IKca3_1_Ma2020(KCaChannel):
         self.p.derivative = self.phi * (self.p_inf(V, Ca) - self.p.value) / self.p_tau(V, Ca) / u.ms
 
 
+@register_channel("IKca2_2_Ma2020")
 class IKca2_2_Ma2020(KCaChannel):
     r'''
     TITLE SK2 multi-state model Cerebellum Golgi Cell Model
@@ -391,9 +410,9 @@ class IKca2_2_Ma2020(KCaChannel):
         self.O1.derivative = (self.C3.value * self.diro1_t(Ca) - self.O1.value * self.invo1_t(Ca)) / u.ms
         self.O2.derivative = (self.C4.value * self.diro2_t(Ca) - self.O2.value * self.invo2_t(Ca)) / u.ms
 
-    dirc2_t_ca = lambda self, Ca: self.dirc2_t * (Ca.C / u.mM) / self.diff
-    dirc3_t_ca = lambda self, Ca: self.dirc3_t * (Ca.C / u.mM) / self.diff
-    dirc4_t_ca = lambda self, Ca: self.dirc4_t * (Ca.C / u.mM) / self.diff
+    dirc2_t_ca = lambda self, Ca: self.dirc2_t * (Ca.Ci / u.mM) / self.diff
+    dirc3_t_ca = lambda self, Ca: self.dirc3_t * (Ca.Ci / u.mM) / self.diff
+    dirc4_t_ca = lambda self, Ca: self.dirc4_t * (Ca.Ci / u.mM) / self.diff
 
     invc1_t = lambda self, Ca: self.invc1 * self.phi
     invc2_t = lambda self, Ca: self.invc2 * self.phi
@@ -407,6 +426,7 @@ class IKca2_2_Ma2020(KCaChannel):
     dirc4_t = lambda self, Ca: self.dirc4 * self.phi
 
 
+@register_channel("IKca1_1_Ma2020")
 class IKca1_1_Ma2020(KCaChannel):
     r'''
     TITLE Large conductance Ca2+ activated K+ channel mslo
@@ -521,15 +541,15 @@ class IKca1_1_Ma2020(KCaChannel):
     def current(self, V, K: IonInfo, Ca: IonInfo):
         return self.g_max * (self.O0.value + self.O1.value + self.O2.value + self.O3.value + self.O4.value) * (K.E - V)
 
-    c01 = lambda self, Ca: 4 * (Ca.C / u.mM) * self.k1 * self.onoffrate * self.phi
-    c12 = lambda self, Ca: 3 * (Ca.C / u.mM) * self.k1 * self.onoffrate * self.phi
-    c23 = lambda self, Ca: 2 * (Ca.C / u.mM) * self.k1 * self.onoffrate * self.phi
-    c34 = lambda self, Ca: 1 * (Ca.C / u.mM) * self.k1 * self.onoffrate * self.phi
+    c01 = lambda self, Ca: 4 * (Ca.Ci / u.mM) * self.k1 * self.onoffrate * self.phi
+    c12 = lambda self, Ca: 3 * (Ca.Ci / u.mM) * self.k1 * self.onoffrate * self.phi
+    c23 = lambda self, Ca: 2 * (Ca.Ci / u.mM) * self.k1 * self.onoffrate * self.phi
+    c34 = lambda self, Ca: 1 * (Ca.Ci / u.mM) * self.k1 * self.onoffrate * self.phi
 
-    o01 = lambda self, Ca: 4 * (Ca.C / u.mM) * self.k1 * self.onoffrate * self.phi
-    o12 = lambda self, Ca: 3 * (Ca.C / u.mM) * self.k1 * self.onoffrate * self.phi
-    o23 = lambda self, Ca: 2 * (Ca.C / u.mM) * self.k1 * self.onoffrate * self.phi
-    o34 = lambda self, Ca: 1 * (Ca.C / u.mM) * self.k1 * self.onoffrate * self.phi
+    o01 = lambda self, Ca: 4 * (Ca.Ci / u.mM) * self.k1 * self.onoffrate * self.phi
+    o12 = lambda self, Ca: 3 * (Ca.Ci / u.mM) * self.k1 * self.onoffrate * self.phi
+    o23 = lambda self, Ca: 2 * (Ca.Ci / u.mM) * self.k1 * self.onoffrate * self.phi
+    o34 = lambda self, Ca: 1 * (Ca.Ci / u.mM) * self.k1 * self.onoffrate * self.phi
 
     c10 = lambda self, Ca: 1 * self.Kc * self.k1 * self.onoffrate * self.phi
     c21 = lambda self, Ca: 2 * self.Kc * self.k1 * self.onoffrate * self.phi

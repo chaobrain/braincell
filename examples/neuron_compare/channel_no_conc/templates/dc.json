@@ -1,0 +1,43 @@
+{
+  "meta": {
+    "label": "DC amplitude scan"
+  },
+  "base": {
+    "morphology": {
+      "length_um": 10.0,
+      "diam_um": 31.830988618379067,
+      "cm_uF_cm2": 1.0
+    },
+    "simulation": {
+      "dt_ms": 0.025,
+      "duration_ms": 10.0,
+      "v_init_mV": -65.0,
+      "temperature_celsius": 25.0
+    },
+    "stimulus": {
+      "kind": "dc",
+      "delay_ms": 1.0,
+      "dur_ms": 8.0,
+      "amp_nA": 0.0
+    },
+    "leak": {
+      "enabled": false,
+      "g_S_cm2": 0.0,
+      "e_mV": -65.0
+    }
+  },
+  "group": {
+    "group_id": "dc",
+    "description": "Sweep DC stimulus amplitude on a shared single-compartment base case.",
+    "sweep_axes": {
+      "stimulus.amp_nA": [
+        -0.05,
+        0.0,
+        0.05
+      ]
+    }
+  },
+  "outputs": {
+    "plot": false
+  }
+}

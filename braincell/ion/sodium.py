@@ -20,10 +20,13 @@ import braintools
 import brainunit as u
 
 from braincell._base import Ion
+from braincell.mech import register_ion
+from braincell.ion._template import FixedIon, InitNernstIon
 
 __all__ = [
     'Sodium',
     'SodiumFixed',
+    'SodiumInitNernst',
 ]
 
 
@@ -40,9 +43,14 @@ class Sodium(Ion):
         specific sodium ion models with defined dynamics and properties.
     """
     __module__ = 'braincell.ion'
+    ion_symbol = 'Na'
+    default_Ci = 10. * u.mM
+    default_Co = 140. * u.mM
+    default_valence = 1
 
 
-class SodiumFixed(Sodium):
+@register_ion("SodiumFixed")
+class SodiumFixed(Sodium, FixedIon):
     """
     Fixed Sodium dynamics.
 
@@ -54,11 +62,32 @@ class SodiumFixed(Sodium):
     def __init__(
         self,
         size: brainstate.typing.Size,
-        E: Union[brainstate.typing.ArrayLike, Callable] = 50. * u.mV,
-        C: Union[brainstate.typing.ArrayLike, Callable] = 0.0400811 * u.mM,
+        E: Union[brainstate.typing.ArrayLike, Callable, None] = 50. * u.mV,
+        Ci: Union[brainstate.typing.ArrayLike, Callable, None] = None,
+        Co: Union[brainstate.typing.ArrayLike, Callable, None] = None,
+        valence: Union[brainstate.typing.ArrayLike, Callable, None] = None,
         name: Optional[str] = None,
         **channels
     ):
         super().__init__(size, name=name, **channels)
-        self.E = braintools.init.param(E, self.varshape, allow_none=False)
-        self.C = braintools.init.param(C, self.varshape, allow_none=False)
+        self._init_fixed_ion(Ci=Ci, Co=Co, E=E, valence=valence)
+
+
+@register_ion("SodiumInitNernst")
+class SodiumInitNernst(Sodium, InitNernstIon):
+    """Fixed ``Ci/Co`` sodium model with ``E`` initialized from Nernst."""
+
+    __module__ = 'braincell.ion'
+
+    def __init__(
+        self,
+        size: brainstate.typing.Size,
+        temp: Union[brainstate.typing.ArrayLike, Callable] = u.celsius2kelvin(36.),
+        Ci: Union[brainstate.typing.ArrayLike, Callable, None] = None,
+        Co: Union[brainstate.typing.ArrayLike, Callable, None] = None,
+        valence: Union[brainstate.typing.ArrayLike, Callable, None] = None,
+        name: Optional[str] = None,
+        **channels
+    ):
+        super().__init__(size, name=name, **channels)
+        self._init_nernst_ion(Ci=Ci, Co=Co, temp=temp, valence=valence)

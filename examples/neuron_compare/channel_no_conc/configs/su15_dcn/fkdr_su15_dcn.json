@@ -1,0 +1,35 @@
+{
+  "meta": {
+    "label": "DCN fKdr SU15"
+  },
+  "identity": {
+    "mod_dir": "/home/swl/braincell/examples/neuron_compare/Cerebellum_mod/DCN/channel"
+  },
+  "defaults": {
+    "channel_params": {
+      "g_max_S_cm2": 0.00001
+    }
+  },
+  "mapping": {
+    "current": "ik",
+    "impl_name": {
+      "common": "fKdr_SU15_DCN"
+    },
+    "gate_names": {
+      "common": [
+        "m"
+      ]
+    },
+    "channel_params": {
+      "g_max_S_cm2": {
+        "neuron": "gbar",
+        "braincell": "g_max"
+      }
+    }
+  },
+  "templates": [
+    "../../templates/vinit_celsius.json",
+    "../../templates/dc.json",
+    "../../templates/ac.json"
+  ]
+}

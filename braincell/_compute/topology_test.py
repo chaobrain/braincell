@@ -18,8 +18,12 @@
 import unittest
 
 import brainunit as u
+import numpy as np
 
-from braincell._compute.topology import build_point_tree
+from braincell._compute.topology import (
+    _compute_peel_levels,
+    build_point_tree,
+)
 from braincell._cv import CVPerBranch
 from braincell._cv.base import build_cvs
 from braincell.morph.branch import Branch
@@ -72,6 +76,46 @@ class BuildPointTreeEdgeHalves(unittest.TestCase):
                 ["dist", "prox"],
                 f"CV {cv_id} must record exactly one prox and one dist edge role; got {halves!r}.",
             )
+
+
+class ComputePeelLevels(unittest.TestCase):
+
+    def test_peel_levels_correct_when_child_id_less_than_parent_id(self) -> None:
+        # Graph with root id > child ids: root=3, children=(0, 1); 0 -> 2.
+        point_parent = np.asarray([3, 3, 0, -1], dtype=np.int32)
+        point_children = (
+            (2,),
+            (),
+            (),
+            (0, 1),
+        )
+        levels = _compute_peel_levels(
+            point_parent=point_parent,
+            point_children=point_children,
+        )
+        # Leaves (1, 2) have peel 0; node 0 has peel 1; root 3 has peel 2.
+        self.assertEqual(levels.tolist(), [1, 0, 0, 2])
+
+    def test_peel_levels_handle_isolated_leaves(self) -> None:
+        point_parent = np.asarray([-1, -1], dtype=np.int32)
+        point_children = ((), ())
+        levels = _compute_peel_levels(
+            point_parent=point_parent,
+            point_children=point_children,
+        )
+        self.assertEqual(levels.tolist(), [0, 0])
+
+    def test_peel_levels_raise_on_cycle(self) -> None:
+        # Contrived cycle 0 -> 1 -> 0. Not producible by build_point_tree but
+        # peel computation must terminate with a clear error.
+        point_parent = np.asarray([1, 0], dtype=np.int32)
+        point_children = ((1,), (0,))
+        with self.assertRaises(ValueError) as ctx:
+            _compute_peel_levels(
+                point_parent=point_parent,
+                point_children=point_children,
+            )
+        self.assertIn("cycle", str(ctx.exception).lower())
 
 
 if __name__ == "__main__":

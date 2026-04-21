@@ -546,15 +546,84 @@ def _validate_max_group_size(max_group_size: int) -> None:
         raise ValueError(f"max_group_size must be > 0, got {max_group_size!r}.")
 
 
-def _compute_peel_levels(*, point_tree: PointTree) -> np.ndarray:
-    point_count = len(point_tree.points)
-    levels = np.zeros(point_count, dtype=np.int32)
-    for point_id in range(point_count - 1, -1, -1):
-        children_ids = point_tree.point_children[point_id]
-        if len(children_ids) == 0:
-            levels[point_id] = 0
-        else:
-            levels[point_id] = 1 + max(levels[child_id] for child_id in children_ids)
+def _compute_peel_levels(
+    *,
+    point_parent: np.ndarray | None = None,
+    point_children: tuple[tuple[int, ...], ...] | None = None,
+    point_tree: "PointTree | None" = None,
+) -> np.ndarray:
+    """Assign each point its distance-to-farthest-leaf (peel level).
+
+    Leaves are level ``0``. Interior points are ``1 + max(level[child])``.
+    Works irrespective of the numeric ordering of point ids.
+
+    Parameters
+    ----------
+    point_parent : np.ndarray, optional
+        ``(n_point,)`` int array; ``-1`` for the root. Mutually exclusive
+        with ``point_tree``.
+    point_children : tuple of tuples, optional
+        ``(n_point,)`` tuples of child ids. Must be supplied alongside
+        ``point_parent``.
+    point_tree : PointTree, optional
+        Supply instead of the two arrays above.
+
+    Returns
+    -------
+    np.ndarray
+        ``(n_point,)`` int32.
+
+    Raises
+    ------
+    ValueError
+        If a cycle is detected or a node is never reached from any leaf.
+    TypeError
+        If the caller mixes ``point_tree`` with the raw arrays, or omits both.
+    """
+    if point_tree is not None:
+        if point_parent is not None or point_children is not None:
+            raise TypeError(
+                "_compute_peel_levels: pass either point_tree or "
+                "(point_parent, point_children), not both."
+            )
+        point_parent = point_tree.point_parent
+        point_children = point_tree.point_children
+    if point_parent is None or point_children is None:
+        raise TypeError(
+            "_compute_peel_levels: supply point_tree or both "
+            "point_parent and point_children."
+        )
+
+    n_point = int(len(point_parent))
+    levels = np.full(n_point, -1, dtype=np.int32)
+    remaining_children = np.asarray(
+        [len(children) for children in point_children], dtype=np.int32
+    )
+
+    frontier: list[int] = [
+        pid for pid, count in enumerate(remaining_children.tolist()) if count == 0
+    ]
+    for pid in frontier:
+        levels[pid] = 0
+
+    cursor = 0
+    while cursor < len(frontier):
+        pid = frontier[cursor]
+        cursor += 1
+        parent = int(point_parent[pid])
+        if parent < 0:
+            continue
+        candidate = int(levels[pid]) + 1
+        if int(levels[parent]) < candidate:
+            levels[parent] = candidate
+        remaining_children[parent] -= 1
+        if int(remaining_children[parent]) == 0:
+            frontier.append(parent)
+
+    if (levels < 0).any():
+        raise ValueError(
+            "compute_peel_levels: cycle detected or point unreachable from any leaf."
+        )
     return levels
 
 

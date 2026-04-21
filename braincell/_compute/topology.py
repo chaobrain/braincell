@@ -642,18 +642,31 @@ def _compute_peel_levels(
     return levels
 
 
+def _order_points_by_peel_then_matrix(
+    *,
+    point_tree: PointTree,
+    peel_levels: np.ndarray,
+) -> np.ndarray:
+    """Permutation of point ids: peel-descending, then matrix-ascending.
+
+    ``np.lexsort`` uses the LAST key as primary; we pass ``-peel_levels``
+    last so higher peel comes first, and ``point_id_to_matrix_index``
+    first so it acts as a tie-breaker within a peel level.
+    """
+    matrix_idx = np.asarray(point_tree.point_id_to_matrix_index, dtype=np.int32)
+    peels = np.asarray(peel_levels, dtype=np.int32)
+    return np.lexsort((matrix_idx, -peels)).astype(np.int32)
+
+
 def _build_row_to_point_id(
     *,
     point_tree: PointTree,
     peel_level_by_point: np.ndarray,
 ) -> np.ndarray:
-    rows: list[int] = []
-    max_level = int(peel_level_by_point.max(initial=0))
-    for level in range(max_level, -1, -1):
-        point_ids = [point_id for point_id, peel in enumerate(peel_level_by_point) if int(peel) == level]
-        point_ids.sort(key=lambda point_id: int(point_tree.point_id_to_matrix_index[point_id]))
-        rows.extend(point_ids)
-    return np.asarray(rows, dtype=np.int32)
+    return _order_points_by_peel_then_matrix(
+        point_tree=point_tree,
+        peel_levels=peel_level_by_point,
+    )
 
 
 def _build_groups(
@@ -663,12 +676,24 @@ def _build_groups(
     point_id_to_row: np.ndarray,
     max_group_size: int,
 ) -> tuple[np.ndarray, ...]:
+    order = _order_points_by_peel_then_matrix(
+        point_tree=point_tree,
+        peel_levels=peel_level_by_point,
+    )
+    if len(order) == 0:
+        return ()
+
+    peels_ordered = peel_level_by_point[order]
+    level_starts: list[int] = [0]
+    for i in range(1, len(order)):
+        if int(peels_ordered[i]) != int(peels_ordered[i - 1]):
+            level_starts.append(i)
+    level_starts.append(len(order))
+
     groups: list[np.ndarray] = []
-    max_level = int(peel_level_by_point.max(initial=0))
-    for level in range(max_level, -1, -1):
-        point_ids = [point_id for point_id, peel in enumerate(peel_level_by_point) if int(peel) == level]
-        point_ids.sort(key=lambda point_id: int(point_tree.point_id_to_matrix_index[point_id]))
-        for start in range(0, len(point_ids), max_group_size):
-            chunk = point_ids[start:start + max_group_size]
-            groups.append(np.asarray([int(point_id_to_row[point_id]) for point_id in chunk], dtype=np.int32))
+    for a, b in zip(level_starts[:-1], level_starts[1:]):
+        for chunk_start in range(a, b, max_group_size):
+            chunk_point_ids = order[chunk_start:chunk_start + max_group_size]
+            rows = point_id_to_row[chunk_point_ids]
+            groups.append(np.asarray(rows, dtype=np.int32))
     return tuple(groups)

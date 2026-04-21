@@ -30,7 +30,7 @@ from .config import (
 
 if TYPE_CHECKING:
     from braincell.filter import LocsetMask, RegionMask
-    from braincell.morph import Morphology
+    from braincell import Morphology
 
 
 # ---------------------------------------------------------------------------

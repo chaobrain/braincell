@@ -150,7 +150,7 @@ class LayoutCacheBehaviourTest(unittest.TestCase):
         tree_a = _make_small_tree()
         tree_b = _make_small_tree()
         # Change a radius so the key differs.
-        from braincell.morph import Morphology as _Morphology
+        from braincell import Morphology as _Morphology
         tree_c = _Morphology.from_root(
             Branch.from_lengths(lengths=[20.0] * u.um, radii=[8.0, 8.0] * u.um, type="soma"),
             name="soma",

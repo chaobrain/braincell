@@ -21,7 +21,7 @@ from typing import Any
 
 import brainunit as u
 
-from braincell.morph import Morphology
+from braincell import Morphology
 
 __all__ = [
     "compare_asc_with_neuron",

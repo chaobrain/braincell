@@ -65,7 +65,8 @@ from braincell.filter import LocsetExpr, RegionExpr
 from braincell.mech import CurrentProbe, Density, MechanismProbe, StateProbe
 from braincell.morph.morphology import Morphology
 from braincell.quad.protocol import DiffEqState, IndependentIntegration
-from braincell.quad import _staggered as voltage_solver, get_integrator
+from braincell.quad import get_integrator
+from braincell.quad._staggered import build_cv_axial_operator
 
 __all__ = ["Cell", "RunResult"]
 
@@ -845,7 +846,7 @@ class Cell(HHTypedNeuron):
             return cached
         # The axial operator depends on the current point-tree lowering and
         # scheduling, so it is cached only after runtime/structure are up to date.
-        cached = voltage_solver._build_cv_axial_operator(
+        cached = build_cv_axial_operator(
             self,
             point_tree=self.point_tree(),
             scheduling=self.point_scheduling(algorithm="dhs"),

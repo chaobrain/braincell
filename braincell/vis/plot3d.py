@@ -42,7 +42,7 @@ def plot3d(
     return_plotter: bool = False,
     hooks: VisHooks | None = None,
 ) -> object:
-    from braincell.morph import Morphology
+    from braincell import Morphology
 
     if not isinstance(morpho, Morphology):
         raise TypeError(f"plot3d(...) expects Morpho, got {type(morpho).__name__!s}.")

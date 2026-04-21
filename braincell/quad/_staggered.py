@@ -32,14 +32,13 @@ from dataclasses import dataclass
 
 import brainstate
 import brainunit as u
-import jax
 import jax.numpy as jnp
 import numpy as np
 
 from braincell._misc import set_module_as
 from ._exp_euler import ind_exp_euler_step
-from .protocol import DiffEqModule
 from ._registry import register_integrator
+from .protocol import DiffEqModule
 
 __all__ = [
     'staggered_step',
@@ -353,7 +352,7 @@ def _build_point_tree_axial_matrix(target, *, point_tree, point_id_to_row) -> tu
     return n_point, dynamic_rows, axial_matrix
 
 
-def _build_cv_axial_operator(target, *, point_tree, scheduling) -> np.ndarray:
+def build_cv_axial_operator(target, *, point_tree, scheduling) -> np.ndarray:
     """Reduce the mixed point-tree axial system to a CV-midpoint operator."""
     _, dynamic_rows, axial_matrix = _build_point_tree_axial_matrix(
         target,

@@ -766,7 +766,7 @@ class Branch:
             ... )
             >>> branch.vis2d()  # doctest: +SKIP
         """
-        from braincell.morph import Morphology
+        from braincell import Morphology
         from braincell.vis import plot2d
 
         morpho = Morphology.from_root(self, name="soma")
@@ -834,7 +834,7 @@ class Branch:
         ValueError
             If the branch lacks complete 3-D point geometry.
         """
-        from braincell.morph import Morphology
+        from braincell import Morphology
         from braincell.vis import plot3d
 
         morpho = Morphology.from_root(self, name="soma")

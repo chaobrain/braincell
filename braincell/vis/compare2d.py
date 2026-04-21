@@ -36,7 +36,7 @@ def compare_layouts_2d(
     root_layout: str = "type_split",
     layout_config: LayoutConfig | None = None,
 ) -> tuple[object, tuple[object, ...]]:
-    from braincell.morph import Morphology
+    from braincell import Morphology
 
     if not isinstance(morpho, Morphology):
         raise TypeError(f"compare_layouts_2d(...) expects Morpho, got {type(morpho).__name__!s}.")

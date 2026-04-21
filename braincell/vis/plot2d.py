@@ -48,7 +48,7 @@ def plot2d(
     layout_config: LayoutConfig | None = None,
     hooks: VisHooks | None = None,
 ) -> object:
-    from braincell.morph import Morphology
+    from braincell import Morphology
 
     if not isinstance(morpho, Morphology):
         raise TypeError(f"plot2d(...) expects Morpho, got {type(morpho).__name__!s}.")

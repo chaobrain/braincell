@@ -30,11 +30,20 @@ import jax.numpy as jnp
 import numpy as np
 
 from braincell import (
+    Branch,
+    CVPerBranch,
+    Cell,
     DiffEqModule,
-    DiffEqState,
+    Morphology,
 )
 from braincell.quad import  get_registry, staggered_step
-from braincell.quad._staggered import _build_backsub_indices, comp_backsub_raw, comp_triang_raw, dhs_voltage_step
+from braincell.quad._staggered import (
+    _build_backsub_indices,
+    _to_jax_quantity,
+    comp_backsub_raw,
+    comp_triang_raw,
+    dhs_voltage_step,
+)
 
 
 class DhsVoltageGuardTest(unittest.TestCase):
@@ -84,12 +93,24 @@ class CompTriangRawTest(unittest.TestCase):
                 np.array([0], dtype=np.int32),
             )
 
-    def test_kernel_contract_violation_on_quantity_input(self):
-        # Quantities are not allowed in the hot path.
+    def test_accepts_unitless_quantity_factors_and_quantity_solves(self):
+        diags = u.Quantity(jnp.array([[2.0]]), u.UNITLESS)
+        solves = jnp.array([[1.0]]) * u.mV
+        lowers = u.Quantity(jnp.array([0.0]), u.UNITLESS)
+        uppers = u.Quantity(jnp.array([0.0]), u.UNITLESS)
+        edges = np.empty((0, 2), dtype=np.int32)
+        level_offsets = np.array([0], dtype=np.int32)
+        new_diags, new_solves = comp_triang_raw(diags, solves, lowers, uppers, edges, level_offsets)
+        self.assertIsInstance(new_diags, u.Quantity)
+        self.assertTrue(u.get_unit(new_diags).is_unitless)
+        self.assertIsInstance(new_solves, u.Quantity)
+        self.assertTrue(u.get_unit(new_solves).has_same_dim(u.mV))
+
+    def test_kernel_contract_violation_on_dimful_diags(self):
         diags = jnp.array([[2.0]]) * u.mV
-        solves = jnp.array([[1.0]])
-        lowers = jnp.array([0.0])
-        uppers = jnp.array([0.0])
+        solves = jnp.array([[1.0]]) * u.mV
+        lowers = u.Quantity(jnp.array([0.0]), u.UNITLESS)
+        uppers = u.Quantity(jnp.array([0.0]), u.UNITLESS)
         edges = jnp.empty((0, 2), dtype=jnp.int32)
         level_offsets = np.array([0], dtype=np.int32)
         with self.assertRaises(AssertionError):
@@ -105,6 +126,15 @@ class CompBacksubRawTest(unittest.TestCase):
         backsub_indices = jnp.zeros((1, 2), dtype=jnp.int32)
         with self.assertRaises(AssertionError):
             comp_backsub_raw(diags, solves, lowers, backsub_indices)
+
+    def test_accepts_quantity_solves(self):
+        diags = u.Quantity(jnp.array([[2.0, 3.0]]), u.UNITLESS)
+        solves = jnp.array([[1.0, 2.0]]) * u.mV
+        lowers = u.Quantity(jnp.array([0.0, 0.0]), u.UNITLESS)
+        backsub_indices = np.zeros((1, 2), dtype=np.int32)
+        out = comp_backsub_raw(diags, solves, lowers, backsub_indices)
+        self.assertIsInstance(out, u.Quantity)
+        self.assertTrue(u.get_unit(out).has_same_dim(u.mV))
 
 
 class BuildBacksubIndicesTest(unittest.TestCase):
@@ -161,6 +191,50 @@ class StaggeredRegistryMetadataTest(unittest.TestCase):
         self.assertEqual(entry.category, "staggered")
         self.assertEqual(entry.aliases, ("stagger",))
         self.assertTrue(entry.description)
+
+
+class DhsRuntimeCacheTest(unittest.TestCase):
+
+    def _simple_cell(self):
+        soma = Branch.from_lengths(
+            lengths=[20.0] * u.um,
+            radii=[10.0, 10.0] * u.um,
+            type="soma",
+        )
+        cell = Cell(Morphology.from_root(soma, name="soma"), cv_policy=CVPerBranch())
+        cell.init_state()
+        return cell
+
+    def test_cache_rebuilds_when_precision_changes(self):
+        cell = self._simple_cell()
+
+        with brainstate.environ.context(dt=0.1 * u.ms, precision=32):
+            dhs_voltage_step(cell, 0.0 * u.ms, 0.1 * u.ms)
+            source32 = cell.runtime.dhs_static_source_np
+            cache32 = cell.runtime.dhs_static_cache
+            self.assertEqual(source32.diag_ms_inv_np.dtype, np.float64)
+            self.assertEqual(source32.dynamic_rows_np.dtype, np.int32)
+            self.assertEqual(cache32.float_dtype, jnp.dtype(jnp.float32))
+
+            dhs_voltage_step(cell, 0.0 * u.ms, 0.1 * u.ms)
+            self.assertIs(source32, cell.runtime.dhs_static_source_np)
+            self.assertIs(cache32, cell.runtime.dhs_static_cache)
+
+        with brainstate.environ.context(dt=0.1 * u.ms, precision=64):
+            dhs_voltage_step(cell, 0.0 * u.ms, 0.1 * u.ms)
+            source64 = cell.runtime.dhs_static_source_np
+            cache64 = cell.runtime.dhs_static_cache
+            self.assertIs(source32, source64)
+            self.assertEqual(cache64.float_dtype, jnp.dtype(jnp.float64))
+            self.assertIsNot(cache32, cache64)
+
+    def test_to_jax_quantity_preserves_existing_dtype(self):
+        with brainstate.environ.context(precision=32):
+            voltage32 = jnp.asarray([1.0, 2.0]) * u.mV
+
+        with brainstate.environ.context(precision=64):
+            preserved = _to_jax_quantity(voltage32, u.mV)
+            self.assertEqual(preserved.dtype, jnp.dtype(jnp.float32))
 
 
 if __name__ == "__main__":

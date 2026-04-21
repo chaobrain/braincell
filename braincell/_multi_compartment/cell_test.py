@@ -2,7 +2,10 @@
 
 import unittest
 
+import brainstate
 import brainunit as u
+import jax.numpy as jnp
+import numpy as np
 
 import braincell.mech as mech
 from braincell import Branch, CVPerBranch, Cell, CurrentClamp, Morphology
@@ -164,6 +167,21 @@ class TestCellLifecycle(unittest.TestCase):
         first_runtime = cell._runtime
         cell.run(dt=0.1 * u.ms, duration=0.5 * u.ms)
         self.assertIs(cell._runtime, first_runtime)
+
+    def test_axial_operator_cache_tracks_precision(self):
+        cell = _simple_cell()
+        with brainstate.environ.context(precision=32):
+            cell.init_state()
+            cache32 = cell.runtime.axial_operator_cache
+            self.assertEqual(cell._axial_jax.dtype, jnp.dtype(jnp.float32))
+            self.assertEqual(cell.runtime.axial_operator_np.dtype, np.float64)
+            self.assertIsNotNone(cache32)
+
+        with brainstate.environ.context(precision=64):
+            operator64 = cell._get_axial_operator()
+            cache64 = cell.runtime.axial_operator_cache
+            self.assertEqual(operator64.dtype, jnp.dtype(jnp.float64))
+            self.assertIsNot(cache32, cache64)
 
 
 if __name__ == "__main__":

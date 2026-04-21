@@ -122,7 +122,10 @@ class CellRuntimeState:
     ion_class_candidates: dict[str, tuple[str, ...]]
     bound_ion_keys: dict[int, tuple[str, ...]]
     current_owner_keys: dict[int, str | None]
+    dhs_static_source_np: object | None = None
     dhs_static_cache: object | None = None
+    axial_operator_np: np.ndarray | None = None
+    axial_operator_cache: object | None = None
     clamp_active_table: object | None = None
     cv_area: object | None = None  # (n_cv,) brainunit Quantity, cm^2
 
@@ -268,7 +271,10 @@ class CellRuntimeState:
             ion_class_candidates=ion_class_candidates,
             bound_ion_keys=bound_ion_keys,
             current_owner_keys=current_owner_keys,
+            dhs_static_source_np=None,
             dhs_static_cache=None,
+            axial_operator_np=None,
+            axial_operator_cache=None,
             clamp_active_table=clamp_active_table,
             cv_area=cv_area,
         )

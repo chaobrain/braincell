@@ -29,7 +29,7 @@ import brainunit as u
 import numpy as np
 
 from braincell.filter import RegionMask
-from braincell.morph._morphology import Branch
+from braincell.morph.morphology import Branch
 from ._geo import (
     CVFrustum,
     CVGeo,

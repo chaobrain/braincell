@@ -22,7 +22,7 @@ import jax.numpy as jnp
 
 from ._base import HHTypedNeuron, IonChannel
 from .quad import get_integrator
-from .quad._protocol import DiffEqState, IndependentIntegration
+from .quad.protocol import DiffEqState, IndependentIntegration
 from ._typing import Initializer
 
 __all__ = [

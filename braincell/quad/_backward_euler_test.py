@@ -34,7 +34,7 @@ import braincell
 from braincell.quad import (
     backward_euler_step,
 )
-from braincell.quad._protocol import (
+from braincell.quad.protocol import (
     DiffEqModule,
     DiffEqState,
 )

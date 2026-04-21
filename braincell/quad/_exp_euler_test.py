@@ -81,7 +81,7 @@ import unittest
 import jax.numpy as jnp
 import numpy as np
 
-from braincell.quad._protocol import (
+from braincell.quad.protocol import (
     DiffEqModule,
     DiffEqState,
 )

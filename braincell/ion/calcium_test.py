@@ -32,7 +32,7 @@ from braincell.ion.calcium import (
     CalciumInitNernst,
 )
 from braincell.ion._template import DynamicNernstIon, InitNernstIon
-from braincell.quad._protocol import DiffEqState
+from braincell.quad.protocol import DiffEqState
 
 
 def _V(values, unit=u.mV):

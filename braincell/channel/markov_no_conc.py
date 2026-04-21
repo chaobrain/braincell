@@ -13,7 +13,7 @@ from braincell._base import IonInfo
 from braincell.channel._template import Markov
 from braincell.ion import Sodium
 from braincell.mech import register_channel
-from braincell.quad._protocol import IndependentIntegration
+from braincell.quad.protocol import IndependentIntegration
 
 __all__ = [
     "Nav1p6_MA20_GoC",

@@ -41,7 +41,7 @@ from typing import Any
 
 import numpy as np
 
-from braincell.morph._morphology import Morphology
+from braincell.morph.morphology import Morphology
 from .layout import LayoutConfig
 from .scene import ValueSpec
 

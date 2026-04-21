@@ -10,7 +10,7 @@ import brainunit as u
 import jax.numpy as jnp
 
 from braincell._base import Channel
-from braincell.quad._protocol import DiffEqState
+from braincell.quad.protocol import DiffEqState
 
 __all__ = [
     "Gate",

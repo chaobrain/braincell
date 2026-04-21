@@ -22,7 +22,7 @@ import jax
 import jax.numpy as jnp
 
 from braincell._typing import T, DT, Y0, Y1, Aux, Jacobian, VectorFiled, Args
-from ._protocol import DiffEqState, DiffEqModule, IndependentIntegration
+from .protocol import DiffEqState, DiffEqModule, IndependentIntegration
 
 
 def _array_dtype(value) -> jnp.dtype:

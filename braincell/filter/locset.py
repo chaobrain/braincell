@@ -19,7 +19,7 @@ from dataclasses import dataclass
 
 from brainunit import Quantity
 
-from braincell.morph._morphology import Morphology
+from braincell.morph.morphology import Morphology
 from . import helper
 from .cache import SelectionCache
 from .region import RegionExpr

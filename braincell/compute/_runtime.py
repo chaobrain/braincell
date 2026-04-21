@@ -37,7 +37,7 @@ from braincell.mech import (
     Synapse,
     get_registry,
 )
-from braincell.morph._morphology import Morphology
+from braincell.morph.morphology import Morphology
 from ._point_tree import PointTree
 
 __all__ = ["CellRuntimeState"]

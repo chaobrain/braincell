@@ -23,7 +23,7 @@ import jax.numpy as jnp
 
 from braincell._misc import set_module_as
 from braincell._typing import T, DT
-from ._protocol import DiffEqState, DiffEqModule
+from .protocol import DiffEqState, DiffEqModule
 from ._registry import register_integrator
 
 __all__ = [

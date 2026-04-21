@@ -37,7 +37,7 @@ under control in long-running notebooks.
 from collections import OrderedDict
 from typing import Callable, Hashable
 
-from braincell.morph._morphology import Morphology
+from braincell.morph.morphology import Morphology
 from ._common import LayoutBranch2D
 from ._config import DEFAULT_LAYOUT_CONFIG, LayoutConfig
 

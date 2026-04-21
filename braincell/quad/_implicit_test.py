@@ -42,7 +42,7 @@ from braincell.quad import (
     implicit_rk4_step,
     splitting_step,
 )
-from braincell.quad._protocol import (
+from braincell.quad.protocol import (
     DiffEqModule,
     DiffEqState,
 )

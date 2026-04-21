@@ -13,10 +13,10 @@
 # limitations under the License.
 # ==============================================================================
 
-from ._branch import (
+from .branch import (
     branch_class_for_type,
 )
-from ._morphology import (
+from .morphology import (
     MorphoEdge,
     MorphoMetric,
     MorphoBranch,

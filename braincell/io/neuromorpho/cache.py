@@ -36,7 +36,7 @@ from .urls import safe_filename
 
 if TYPE_CHECKING:
     from braincell.io.swc.types import SwcReport
-    from braincell.morph._morphology import Morphology
+    from braincell.morph.morphology import Morphology
 
 __all__ = [
     "NeuroMorphoCache",
@@ -425,7 +425,7 @@ class NeuroMorphoCache:
             If no standardized SWC file is cached for *neuron_id*.
         """
 
-        from braincell.morph._morphology import Morphology
+        from braincell.morph.morphology import Morphology
 
         path = self.standard_swc_path(neuron_id)
         if path is None:

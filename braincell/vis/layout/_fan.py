@@ -31,7 +31,7 @@ import math
 import numpy as np
 
 from braincell.morph import MorphoBranch
-from braincell.morph._morphology import Morphology
+from braincell.morph.morphology import Morphology
 
 from ._common import (
     LayoutBranch2D,

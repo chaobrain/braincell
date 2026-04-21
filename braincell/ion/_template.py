@@ -18,7 +18,7 @@ import brainstate
 import braintools
 import brainunit as u
 
-from braincell.quad._protocol import DiffEqState
+from braincell.quad.protocol import DiffEqState
 
 __all__ = [
     "FixedIon",

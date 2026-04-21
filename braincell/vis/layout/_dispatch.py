@@ -32,7 +32,7 @@ subsumes it and legacy is scheduled for removal in v0.1.0.
 
 import warnings
 
-from braincell.morph._morphology import Morphology
+from braincell.morph.morphology import Morphology
 
 from ._balloon import _build_layout_branches_balloon
 from ._cache import LayoutCache, get_default_layout_cache

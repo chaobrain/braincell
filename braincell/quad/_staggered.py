@@ -38,7 +38,7 @@ import numpy as np
 
 from braincell._misc import set_module_as
 from ._exp_euler import ind_exp_euler_step
-from ._protocol import DiffEqModule
+from .protocol import DiffEqModule
 from ._registry import register_integrator
 
 __all__ = [

@@ -41,7 +41,7 @@ can forward it to the value spec's colour-bar label.
 
 import numpy as np
 
-from braincell.morph._morphology import Morphology
+from braincell.morph.morphology import Morphology
 from .scene import BranchValues, ValueSpec
 
 try:  # pragma: no cover - branched off at import

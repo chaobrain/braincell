@@ -19,7 +19,7 @@ import jax
 import jax.numpy as jnp
 
 from braincell._misc import set_module_as
-from ._protocol import DiffEqModule
+from .protocol import DiffEqModule
 from ._registry import register_integrator
 from ._util import apply_standard_solver_step, jacrev_last_dim
 

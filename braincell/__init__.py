@@ -14,7 +14,7 @@
 # ==============================================================================
 
 
-from braincell.quad._protocol import (
+from braincell.quad.protocol import (
     DiffEqModule,
     DiffEqState,
     IndependentIntegration,
@@ -56,7 +56,7 @@ from .mech import (
     FunctionClamp,
     SineClamp,
 )
-from .morph._branch import (
+from .morph.branch import (
     ApicalDendrite,
     Axon,
     BasalDendrite,
@@ -65,7 +65,7 @@ from .morph._branch import (
     Dendrite,
     Soma,
 )
-from .morph._morphology import (
+from .morph.morphology import (
     Morphology,
 )
 

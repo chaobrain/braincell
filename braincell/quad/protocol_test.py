@@ -30,7 +30,7 @@ import numpy as np
 from braincell.quad import (
     get_integrator,
 )
-from braincell.quad._protocol import (
+from braincell.quad.protocol import (
     DiffEqModule,
     DiffEqState,
     IndependentIntegration,

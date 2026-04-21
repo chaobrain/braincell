@@ -13,7 +13,7 @@
 # limitations under the License.
 # ==============================================================================
 
-from dataclasses import dataclass
+from dataclasses import dataclass, fields, is_dataclass
 from typing import Literal
 
 import numpy as np
@@ -104,10 +104,31 @@ class MechanismObjectCell:
         raise AttributeError(f"Mechanism cell {self.row_label!r} has no parameter {key!r}.")
 
     def __getattr__(self, name: str) -> object:
-        try:
-            return self.get_param(name)
-        except AttributeError as exc:
-            raise AttributeError(name) from exc
+        if name.startswith("_") or name in {
+            "runtime", "layout_id", "class_name", "instance_name",
+            "column_id", "domain", "cv_id", "point_id",
+        }:
+            raise AttributeError(name)
+        declaration = self.declaration
+        node = self.node
+        candidates: set[str] = set()
+        if hasattr(declaration, "params"):
+            candidates.update(declaration.params.keys())
+        if is_dataclass(declaration):
+            candidates.update(f.name for f in fields(declaration))
+        if node is not None and node is not declaration:
+            candidates.update(
+                attr_name for attr_name in dir(node) if not attr_name.startswith("_")
+            )
+        if name in candidates:
+            try:
+                return self.get_param(name)
+            except AttributeError:
+                pass
+        raise AttributeError(
+            f"Mechanism cell {self.row_label!r} has no attribute {name!r}. "
+            f"Known params: {sorted(candidates)!r}."
+        )
 
 
 @dataclass(frozen=True)

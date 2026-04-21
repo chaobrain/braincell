@@ -19,7 +19,7 @@ The lifecycle has two phases:
 convenience. Subsequent ``run`` calls never re-initialize.
 """
 
-from typing import Callable
+from typing import Callable, Optional
 
 import brainstate
 import braintools
@@ -28,6 +28,7 @@ import jax.numpy as jnp
 import numpy as np
 
 from braincell._base import HHTypedNeuron, IonChannel
+from braincell._typing import Initializer
 from braincell.compute._assignment_table import (
     MechanismObjectCell,
     MechanismObjectTable,
@@ -59,7 +60,6 @@ from braincell.morph.morphology import Morphology
 from braincell.quad import get_integrator
 from braincell.quad._staggered import build_cv_axial_operator
 from braincell.quad.protocol import DiffEqState, IndependentIntegration
-
 from . import bridge, currents, probes, run as run_module
 
 __all__ = ["Cell"]
@@ -83,7 +83,7 @@ class Cell(HHTypedNeuron):
     cv_policy : CVPolicy, optional
         Control-volume splitting policy; defaults to :class:`CVPerBranch`.
     V_th : Quantity
-        Spike-detection threshold (default ``-75 mV``).
+        Spike-detection threshold (default ``0. mV``).
     V_init : Quantity or Callable or None
         Initial voltage. ``None`` means "use per-CV resting potential".
     spk_fun : Callable
@@ -104,8 +104,8 @@ class Cell(HHTypedNeuron):
         morpho: Morphology,
         *,
         cv_policy: CVPolicy | None = None,
-        V_th=-75 * u.mV,
-        V_init=None,
+        V_th: u.Quantity = 0 * u.mV,
+        V_init: Optional[Initializer] = None,
         spk_fun: Callable = braintools.surrogate.ReluGrad(),
         solver: str | Callable = "staggered",
         name: str | None = None,
@@ -681,7 +681,7 @@ class Cell(HHTypedNeuron):
                     row_index = ensure_row(mechanism)
                     layout_id = layout_id_by_signature[
                         (target_label,) + mechanism_signature(mechanism)
-                    ]
+                        ]
                     pending_cells.append(
                         (
                             row_index,

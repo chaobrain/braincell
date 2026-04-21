@@ -13,53 +13,33 @@
 # limitations under the License.
 # ==============================================================================
 
-
-"""Final user-facing control-volume records.
-
-This module is intentionally small: geometry is lowered in ``cv_geo.py``,
-declaration rules are accumulated in ``cv_mech.py``, and this file only freezes
-those two lower layers into the immutable ``CV`` objects exposed by ``Cell.cvs``.
-"""
+"""User-facing control-volume records and build entry point."""
 
 from dataclasses import dataclass
-from typing import Any
 from typing import TYPE_CHECKING
 
 import brainunit as u
-import numpy as np
 
 from braincell.filter import RegionMask
-from braincell.morph.morphology import Branch
-from ._geo import (
-    CVFrustum,
-    CVGeo,
-    axial_resistance_from_factor,
-    frusta_boundary_radii,
-    frusta_midpoint_radius,
-)
+from braincell.mech import Density, Point
 
 if TYPE_CHECKING:
-    from ._mech import CVMech
+    from braincell.cv._policy import CVPolicy
+    from braincell.cv._lower import PaintRule, PlaceRule
+    from braincell.morph.morphology import Morphology
 
 
 @dataclass(frozen=True)
 class CV:
-    """Final per-control-volume view exposed to users.
+    """Immutable per-control-volume record exposed to users.
 
-    A ``CV`` is the assembled result of two lower layers:
-
-    - :class:`CVGeo` contributes geometric and topological information
-    - ``CVMech`` contributes cable properties and attached mechanisms
-
-    Each CV belongs to exactly one morphology branch interval ``(prox, dist)``
-    and stores the values that downstream runtime code will need most often:
-    geometry, axial resistances, cable parameters, density mechanisms, point
-    mechanisms, and parent/child CV connectivity.
-
-    The main convenience method is :meth:`as_branch`, which reconstructs a
-    standalone :class:`braincell.morph.Branch` from the CV's frustum slices for
-    debugging, visualization, or fixture generation.
+    Geometry, cable properties, and attached mechanisms are all frozen
+    into this dataclass by :func:`build_cvs`. CVs carry no references
+    back to their source morphology or rules — any post-build analysis
+    must re-derive from morpho plus the CV's ``(branch_id, prox, dist)``
+    range (see :func:`braincell.cv._debug.cv_to_branch`).
     """
+
     id: int
     branch_id: int
     branch_type: str
@@ -67,101 +47,44 @@ class CV:
     dist: float
     parent_cv: int | None
     children_cv: tuple[int, ...]
-    length: Any
-    area: Any
-    cm: Any
-    ra: Any
-    v: Any
-    temp: u.Quantity[u.kelvin]
-    r_axial: Any
-    r_axial_prox: Any
-    r_axial_dist: Any
-    density_mech: tuple[object, ...]
-    point_mech: tuple[object, ...]
-    _frusta: tuple[CVFrustum, ...]
+    length: u.Quantity
+    area: u.Quantity
+    cm: u.Quantity
+    ra: u.Quantity
+    v: u.Quantity
+    temp: u.Quantity
+    r_axial: u.Quantity
+    r_axial_prox: u.Quantity
+    r_axial_dist: u.Quantity
+    radius_prox: u.Quantity
+    radius_mid: u.Quantity
+    radius_dist: u.Quantity
+    density_mech: tuple[Density, ...]
+    point_mech: tuple[Point, ...]
 
     @property
     def region(self) -> RegionMask:
+        """Return the ``RegionMask`` covering this CV's branch interval."""
         return RegionMask(((self.branch_id, self.prox, self.dist),))
 
     @property
-    def radius_prox(self):
-        radius_prox, _ = frusta_boundary_radii(self._frusta)
-        return radius_prox
-
-    @property
-    def radius_dist(self):
-        _, radius_dist = frusta_boundary_radii(self._frusta)
-        return radius_dist
-
-    @property
-    def diam_mid(self):
-        return 2.0 * frusta_midpoint_radius(self._frusta)
-
-    def as_branch(self) -> Branch:
-        if len(self._frusta) == 0:
-            raise ValueError("Cannot convert empty CV geometry into Branch.")
-
-        lengths_um = np.asarray(
-            [float(np.asarray(piece.length.to_decimal(u.um), dtype=float)) for piece in self._frusta],
-            dtype=float,
-        )
-        r0_um = np.asarray(
-            [float(np.asarray(piece.radius_prox.to_decimal(u.um), dtype=float)) for piece in self._frusta],
-            dtype=float,
-        )
-        r1_um = np.asarray(
-            [float(np.asarray(piece.radius_dist.to_decimal(u.um), dtype=float)) for piece in self._frusta],
-            dtype=float,
-        )
-
-        has_points = all(
-            piece.point_prox is not None and piece.point_dist is not None for piece in self._frusta
-        )
-        if has_points:
-            first = self._frusta[0].point_prox
-            if first is None:
-                raise ValueError("CV frusta are missing proximal point geometry.")
-            points: list[np.ndarray] = [np.asarray(first.to_decimal(u.um), dtype=float)]
-            for piece in self._frusta:
-                point_dist = piece.point_dist
-                if point_dist is None:
-                    raise ValueError("CV frusta are missing distal point geometry.")
-                points.append(np.asarray(point_dist.to_decimal(u.um), dtype=float))
-            radii_um = np.concatenate((r0_um[:1], r1_um), axis=0)
-            return Branch.from_points(
-                points=u.Quantity(np.asarray(points, dtype=float), u.um),
-                radii=u.Quantity(np.asarray(radii_um, dtype=float), u.um),
-                type=self.branch_type,
-            )
-
-        return Branch.from_lengths(
-            lengths=u.Quantity(lengths_um, u.um),
-            radii_proximal=u.Quantity(r0_um, u.um),
-            radii_distal=u.Quantity(r1_um, u.um),
-            type=self.branch_type,
-        )
+    def diam_mid(self) -> u.Quantity:
+        """Diameter at the CV midpoint."""
+        return 2.0 * self.radius_mid
 
 
-def assemble_cv(*, cv_geo: CVGeo, mech: 'CVMech') -> CV:
-    return CV(
-        id=cv_geo.id,
-        branch_id=cv_geo.branch_id,
-        branch_type=cv_geo.branch_type,
-        prox=cv_geo.prox,
-        dist=cv_geo.dist,
-        parent_cv=cv_geo.parent_cv,
-        children_cv=cv_geo.children_cv,
-        length=cv_geo.length,
-        area=cv_geo.lateral_area,
-        cm=mech.cm,
-        ra=mech.ra,
-        v=mech.v,
-        temp=mech.temp,
-        r_axial=axial_resistance_from_factor(mech.ra, factor=cv_geo.axial_factor_total),
-        r_axial_prox=axial_resistance_from_factor(mech.ra, factor=cv_geo.axial_factor_prox),
-        r_axial_dist=axial_resistance_from_factor(mech.ra, factor=cv_geo.axial_factor_dist),
-        density_mech=tuple(mech.density_mech),
-        point_mech=tuple(mech.point_mech),
-        _frusta=cv_geo.frusta,
+def build_cvs(
+    morpho: "Morphology",
+    *,
+    policy: "CVPolicy",
+    paint_rules: "tuple[PaintRule, ...]" = (),
+    place_rules: "tuple[PlaceRule, ...]" = (),
+) -> tuple[CV, ...]:
+    """Lower a morphology + policy + rules into a frozen ``tuple[CV, ...]``."""
+    from braincell.cv._lower import lower
+    return lower(
+        morpho,
+        policy=policy,
+        paint_rules=paint_rules,
+        place_rules=place_rules,
     )

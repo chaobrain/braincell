@@ -1,4 +1,4 @@
-"""Membrane-current summation pipeline for :class:`RunnableCell`.
+"""Membrane-current summation pipeline for :class:`Cell`.
 
 Responsibilities:
 
@@ -22,7 +22,7 @@ from braincell.compute._runtime import CellRuntimeState
 from . import bridge
 
 if TYPE_CHECKING:
-    from .runnable import RunnableCell
+    from .cell import Cell
 
 __all__ = ["total_membrane_current"]
 
@@ -30,7 +30,7 @@ _CURRENT_DENSITY = u.nA / u.cm ** 2
 
 
 def total_membrane_current(
-    host: "RunnableCell",
+    host: "Cell",
     *,
     V_cv,
     I_ext,

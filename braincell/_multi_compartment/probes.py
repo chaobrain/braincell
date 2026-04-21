@@ -1,8 +1,7 @@
-"""Probe sampling helpers for :class:`RunnableCell`.
+"""Probe sampling helpers for :class:`Cell`.
 
-Extracted from the legacy ``Cell`` — the sampling logic is unchanged,
-but each helper now takes an explicit ``RunnableCell`` argument instead
-of being a bound method on the (stateful, dirty-flag-managed) Cell.
+Each helper takes an explicit :class:`Cell` (expected to be in the
+``INITIALIZED`` phase — i.e. after :meth:`Cell.init_state`).
 """
 
 from typing import TYPE_CHECKING
@@ -21,12 +20,12 @@ from braincell.mech import (
 from . import bridge
 
 if TYPE_CHECKING:
-    from .runnable import RunnableCell
+    from .cell import Cell
 
 __all__ = ["sample_probe", "sample_probes"]
 
 
-def sample_probe(rcell: "RunnableCell", name: str) -> object:
+def sample_probe(rcell: "Cell", name: str) -> object:
     """Return the current sample for the probe named ``name``."""
     runtime = rcell.runtime
     matches: list[tuple[object, object]] = []
@@ -45,7 +44,7 @@ def sample_probe(rcell: "RunnableCell", name: str) -> object:
     return _sample_probe_layout(rcell, runtime, layout=layout, declaration=declaration)
 
 
-def sample_probes(rcell: "RunnableCell") -> dict[str, object]:
+def sample_probes(rcell: "Cell") -> dict[str, object]:
     """Return a ``{probe_name: sample}`` dict for every placed probe."""
     runtime = rcell.runtime
     sampled: dict[str, object] = {}
@@ -65,7 +64,7 @@ def sample_probes(rcell: "RunnableCell") -> dict[str, object]:
 
 
 def _sample_probe_layout(
-    rcell: "RunnableCell",
+    rcell: "Cell",
     runtime: CellRuntimeState,
     *,
     layout: object,
@@ -104,7 +103,7 @@ def _sample_probe_layout(
 
 
 def _sample_state_probe_point(
-    rcell: "RunnableCell",
+    rcell: "Cell",
     runtime: CellRuntimeState,
     *,
     declaration: StateProbe,
@@ -117,7 +116,7 @@ def _sample_state_probe_point(
 
 
 def _sample_mechanism_probe_point(
-    rcell: "RunnableCell",
+    rcell: "Cell",
     runtime: CellRuntimeState,
     *,
     declaration: MechanismProbe,
@@ -157,7 +156,7 @@ def _sample_mechanism_probe_point(
 
 
 def _sample_current_probe_point(
-    rcell: "RunnableCell",
+    rcell: "Cell",
     runtime: CellRuntimeState,
     *,
     declaration: CurrentProbe,

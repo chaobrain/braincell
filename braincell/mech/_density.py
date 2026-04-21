@@ -82,9 +82,9 @@ class Density(Mechanism):
         used as the display label (see :attr:`instance_name`).
     coverage_area_fraction : float
         Fraction in ``[0, 1]`` of the target control volume's lateral
-        area covered by this declaration. Set by
-        :func:`braincell.cv._mech._scale_density_for_coverage` when a
-        paint region only partially overlaps a CV. Defaults to ``1.0``.
+        area covered by this declaration. Set by the control-volume
+        lowering pipeline (:mod:`braincell.cv._lower`) when a paint
+        region only partially overlaps a CV. Defaults to ``1.0``.
 
     Raises
     ------

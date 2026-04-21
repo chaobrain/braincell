@@ -15,18 +15,15 @@
 
 """Control-volume (CV) layer: geometry, mechanism rules, and policies.
 
-This package freezes a :class:`braincell.morph.Morphology` together with a
-:class:`CVPolicy` into an immutable list of :class:`CV` records. It has three
-internal layers:
+The package resolves a :class:`braincell.morph.Morphology` together with a
+:class:`CVPolicy` and paint / place rules into an immutable
+``tuple[braincell.cv.CV, ...]`` via the internal ``build_cvs`` entry point.
 
-- :mod:`braincell.cv._geo` lowers morphology + policy into geometric CV data
-- :mod:`braincell.cv._mech` maps ``paint`` / ``place`` declaration rules onto
-  the CVs produced by ``_geo``
-- :mod:`braincell.cv._cv` freezes both lower layers into the user-facing
-  :class:`CV` objects exposed by ``Cell.cvs``
-
-The :class:`CVPolicy` hierarchy in :mod:`braincell.cv._policy` is the knob
-callers use to pick how a morphology is discretized.
+- :mod:`braincell.cv._policy` — CV discretization policies.
+- :mod:`braincell.cv._lower` — pure-functional lowering pipeline
+  (``lower``, rule dataclasses, merge helpers).
+- :mod:`braincell.cv._cv` — ``CV`` dataclass and the ``build_cvs`` entry.
+- :mod:`braincell.cv._debug` — helpers for reconstructing geometry from a CV.
 """
 
 from ._cv import CV

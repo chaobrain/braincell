@@ -47,7 +47,7 @@ class CellRuntimeStateTest(unittest.TestCase):
         )
 
         self.assertEqual(cell.n_cv, 2)
-        rcell = cell.build()
+        cell.init_state(); rcell = cell
 
         self.assertEqual(len(rcell.point_tree().points), 5)
         self.assertEqual(len(rcell.layouts), 1)
@@ -73,7 +73,7 @@ class CellRuntimeStateTest(unittest.TestCase):
             CurrentClamp.step(0.1 * u.nA, 2.0 * u.ms, delay=1.0 * u.ms),
         )
 
-        rcell = cell.build()
+        cell.init_state(); rcell = cell
 
         self.assertEqual(len(rcell.layouts), 1)
         layout = rcell.layouts[0]
@@ -100,7 +100,7 @@ class CellRuntimeStateTest(unittest.TestCase):
             braincell.mech.Channel("IL", g_max=4.0 * (u.mS / u.cm ** 2), E=-68.0 * u.mV),
         )
 
-        rcell = cell.build()
+        cell.init_state(); rcell = cell
 
         self.assertEqual(len(rcell.layouts), 1)
         layout = rcell.layouts[0]
@@ -130,7 +130,7 @@ class CellRuntimeStateTest(unittest.TestCase):
             braincell.mech.Channel("IL", name="leak_main", g_max=4.0 * (u.mS / u.cm ** 2), E=-68.0 * u.mV),
         )
 
-        rcell = cell.build()
+        cell.init_state(); rcell = cell
 
         self.assertEqual(len(rcell.layouts), 1)
         self.assertEqual(rcell.layouts[0].point_index.tolist(), [1, 3])
@@ -145,7 +145,7 @@ class CellRuntimeStateTest(unittest.TestCase):
             braincell.mech.Channel("IL", name="leak_b", g_max=4.0 * (u.mS / u.cm ** 2), E=-68.0 * u.mV),
         )
 
-        rcell = cell.build()
+        cell.init_state(); rcell = cell
 
         self.assertEqual(len(rcell.layouts), 2)
         self.assertEqual({layout.kind for layout in rcell.layouts}, {"channel:IL"})
@@ -160,7 +160,7 @@ class CellRuntimeStateTest(unittest.TestCase):
         clamp = CurrentClamp.step(0.1 * u.nA, 2.0 * u.ms, delay=1.0 * u.ms)
         cell.place(RootLocation(x=0.5), clamp)
 
-        rcell = cell.build()
+        cell.init_state(); rcell = cell
 
         self.assertEqual(len(rcell.layouts), 2)
         dense = next(layout for layout in rcell.layouts if layout.layout == "dense")
@@ -178,14 +178,17 @@ class CellRuntimeStateTest(unittest.TestCase):
     def test_rebuild_after_place_produces_new_runtime(self) -> None:
         cell = Cell(_build_tree())
 
-        first = cell.build().layouts
+        cell.init_state()
+        first = cell.layouts
         self.assertEqual(len(first), 0)
 
+        cell.reset()
         cell.place(
             RootLocation(x=0.5),
             CurrentClamp.step(0.1 * u.nA, 2.0 * u.ms, delay=1.0 * u.ms),
         )
-        second = cell.build().layouts
+        cell.init_state()
+        second = cell.layouts
 
         self.assertIsNot(first, second)
         self.assertEqual(len(second), 1)
@@ -197,7 +200,7 @@ class CellRuntimeStateTest(unittest.TestCase):
             CurrentClamp.step(0.1 * u.nA, 2.0 * u.ms, delay=1.0 * u.ms),
         )
 
-        rcell = cell.build()
+        cell.init_state(); rcell = cell
 
         layout = rcell.layouts[0]
         rcell.set_state(layout.id, "amplitudes", (0.25 * u.nA, 0.05 * u.nA))
@@ -216,7 +219,7 @@ class CellRuntimeStateTest(unittest.TestCase):
             SineClamp(amplitude=0.2 * u.nA, frequency=500.0 * u.Hz, offset=0.1 * u.nA, duration=4.0 * u.ms),
             FunctionClamp(fn=lambda local_t: 0.4 * u.nA if local_t < 1.0 * u.ms else 0.0 * u.nA, duration=3.0 * u.ms),
         )
-        rcell = cell.build()
+        cell.init_state(); rcell = cell
 
         runtime = rcell.runtime
 
@@ -237,7 +240,7 @@ class CellRuntimeStateTest(unittest.TestCase):
             braincell.mech.CurrentProbe(ion="na", mechanism="INa_HH1952"),
         )
 
-        rcell = cell.build()
+        cell.init_state(); rcell = cell
 
         self.assertEqual(len(rcell.layouts), 3)
         self.assertTrue(all(layout.layout == "sparse" for layout in rcell.layouts))
@@ -269,7 +272,7 @@ class CellRuntimeStateTest(unittest.TestCase):
             braincell.mech.StateProbe(),
             braincell.mech.MechanismProbe(mechanism="INa_HH1952", field="p"),
         )
-        rcell = cell.build()
+        cell.init_state(); rcell = cell
 
         samples = rcell.sample_probes()
         channel_layout = next(
@@ -298,7 +301,7 @@ class CellRuntimeStateTest(unittest.TestCase):
             braincell.mech.CurrentProbe(ion="k", mechanism="IK_Kv_test"),
             braincell.mech.CurrentProbe(ion="k"),
         )
-        rcell = cell.build()
+        cell.init_state(); rcell = cell
 
         samples = rcell.sample_probes()
         ion = rcell.get_ion("k")
@@ -324,7 +327,7 @@ class CellRuntimeStateTest(unittest.TestCase):
             at("soma", 0.5),
             braincell.mech.CurrentProbe(mechanism="IL"),
         )
-        rcell = cell.build()
+        cell.init_state(); rcell = cell
 
         samples = rcell.sample_probes()
         channel_layout = next(
@@ -353,7 +356,7 @@ class CellRuntimeStateTest(unittest.TestCase):
             braincell.mech.MechanismProbe(mechanism="INa_HH1952", field="g_max"),
             braincell.mech.MechanismProbe(mechanism="missing", field="p"),
         )
-        rcell = cell.build()
+        cell.init_state(); rcell = cell
 
         with self.assertRaises(ValueError):
             rcell.sample_probe("soma(0.5)_INa_HH1952_g_max")
@@ -376,7 +379,7 @@ class CellRuntimeStateTest(unittest.TestCase):
             braincell.mech.StateProbe(name="dup"),
             braincell.mech.MechanismProbe(name="dup", mechanism="INa_HH1952", field="p"),
         )
-        rcell = cell.build()
+        cell.init_state(); rcell = cell
 
         with self.assertRaises(ValueError):
             rcell.sample_probes()
@@ -390,7 +393,7 @@ class CellRuntimeStateTest(unittest.TestCase):
             ),
         )
 
-        rcell = cell.build()
+        cell.init_state(); rcell = cell
 
         layout = rcell.layouts[0]
         node = rcell.get_runtime_node(layout.id)
@@ -408,7 +411,7 @@ class CellRuntimeStateTest(unittest.TestCase):
             braincell.mech.Channel("IL", g_max=4.0 * (u.mS / u.cm ** 2), E=-68.0 * u.mV),
         )
 
-        rcell = cell.build()
+        cell.init_state(); rcell = cell
 
         layout = rcell.layouts[0]
         rcell.set_state(layout.id, "g_max", 2.5 * (u.mS / u.cm ** 2))
@@ -422,7 +425,7 @@ class CellRuntimeStateTest(unittest.TestCase):
 
         cell = Cell(_build_tree())
 
-        rcell = cell.build()
+        cell.init_state(); rcell = cell
 
         self.assertIsInstance(rcell.get_ion("na"), braincell.ion.SodiumFixed)
         self.assertIsInstance(rcell.get_ion("k"), braincell.ion.PotassiumFixed)
@@ -434,7 +437,7 @@ class CellRuntimeStateTest(unittest.TestCase):
     def test_runtime_ions_expose_point_space_geometry_arrays(self) -> None:
         cell = Cell(_build_tree())
 
-        rcell = cell.build()
+        cell.init_state(); rcell = cell
 
         na = rcell.get_ion("na")
         self.assertEqual(na.length.shape, (5,))
@@ -458,7 +461,7 @@ class CellRuntimeStateTest(unittest.TestCase):
             braincell.mech.Ion("SodiumFixed", name="na_left", E=55.0 * u.mV),
         )
 
-        rcell = cell.build()
+        cell.init_state(); rcell = cell
 
         layout = next(layout for layout in rcell.layouts if layout.kind == "ion:SodiumFixed")
         node = rcell.get_runtime_node(layout.id)
@@ -485,7 +488,7 @@ class CellRuntimeStateTest(unittest.TestCase):
             ),
         )
 
-        rcell = cell.build()
+        cell.init_state(); rcell = cell
 
         na = rcell.get_ion("na")
         self.assertIsInstance(na, braincell.ion.SodiumInitNernst)
@@ -507,7 +510,7 @@ class CellRuntimeStateTest(unittest.TestCase):
             braincell.mech.Ion("CalciumFixed", name="ca_lva", E=110.0 * u.mV),
         )
 
-        rcell = cell.build()
+        cell.init_state(); rcell = cell
 
         self.assertIs(rcell.get_ion("ca_hva"), rcell.get_ion("ca_hva"))
         self.assertIs(rcell.get_ion("ca_lva"), rcell.get_ion("ca_lva"))
@@ -531,7 +534,7 @@ class CellRuntimeStateTest(unittest.TestCase):
             braincell.mech.Channel("INa_HH1952", g_max=12.0 * (u.mS / u.cm ** 2), ion_name="na_soma"),
         )
 
-        rcell = cell.build()
+        cell.init_state(); rcell = cell
 
         channel_layout = next(layout for layout in rcell.layouts if layout.kind == "channel:INa_HH1952")
         na_soma = rcell.get_ion("na_soma")
@@ -559,7 +562,7 @@ class CellRuntimeStateTest(unittest.TestCase):
         )
 
         with self.assertRaises(ValueError) as ctx:
-            rcell = cell.build()
+            cell.init_state(); rcell = cell
 
             _ = rcell.layouts
         self.assertIn("ambiguous", str(ctx.exception))
@@ -575,7 +578,7 @@ class CellRuntimeStateTest(unittest.TestCase):
             braincell.mech.Ion("SodiumFixed", name="na_right", E=45.0 * u.mV),
         )
 
-        rcell = cell.build()
+        cell.init_state(); rcell = cell
         layout = next(
             layout
             for layout in rcell.layouts
@@ -611,7 +614,7 @@ class CellRuntimeStateTest(unittest.TestCase):
             ),
         )
 
-        rcell = cell.build()
+        cell.init_state(); rcell = cell
         layout = next(layout for layout in rcell.layouts if layout.kind == "ion:CalciumDetailed")
         ion = rcell.get_ion("ca_dyn")
 
@@ -644,7 +647,7 @@ class CellRuntimeStateTest(unittest.TestCase):
         )
 
         with self.assertRaises(ValueError) as ctx:
-            rcell = cell.build()
+            cell.init_state(); rcell = cell
 
             _ = rcell.layouts
         self.assertIn("cannot mix classes", str(ctx.exception))
@@ -662,7 +665,7 @@ class CellRuntimeStateTest(unittest.TestCase):
             braincell.mech.Channel("IKca3_1_Ma2020", ion_names={"ca": "ca_hva"}),
         )
 
-        rcell = cell.build()
+        cell.init_state(); rcell = cell
 
         layout = next(layout for layout in rcell.layouts if layout.kind == "channel:IKca3_1_Ma2020")
         runtime = rcell.runtime
@@ -692,7 +695,7 @@ class CellRuntimeStateTest(unittest.TestCase):
             braincell.mech.CurrentProbe(mechanism="IKca3_1_Ma2020"),
             braincell.mech.CurrentProbe(ion="k_main"),
         )
-        rcell = cell.build()
+        cell.init_state(); rcell = cell
 
         samples = rcell.sample_probes()
         runtime = rcell.runtime
@@ -722,7 +725,7 @@ class CellRuntimeStateTest(unittest.TestCase):
             ),
         )
 
-        rcell = cell.build()
+        cell.init_state(); rcell = cell
         layout = rcell.layouts[0]
         node = rcell.get_runtime_node(layout.id)
         na = rcell.get_ion("na")
@@ -749,7 +752,7 @@ class CellRuntimeStateTest(unittest.TestCase):
             ),
         )
 
-        rcell = cell.build()
+        cell.init_state(); rcell = cell
         layout = rcell.layouts[0]
         rcell.set_state(layout.id, "g_max", 8.0 * (u.mS / u.cm ** 2))
         rcell.set_state(layout.id, "V_sh", -42.0 * u.mV)
@@ -767,7 +770,117 @@ class CellRuntimeStateTest(unittest.TestCase):
         )
 
         with self.assertRaises(KeyError) as ctx:
-            rcell = cell.build()
+            cell.init_state(); rcell = cell
 
             _ = rcell.layouts
         self.assertIn("__totally_unregistered__", str(ctx.exception))
+
+
+class _StubCell(braincell.HHTypedNeuron):
+    """Minimal :class:`HHTypedNeuron` double for install/uninstall tests."""
+
+    __module__ = "braincell.compute._runtime_test"
+
+    def __init__(self, V_th=-55.0 * u.mV, n_cv: int = 3):
+        from braincell.compute._runtime import build_placeholder_ions
+
+        braincell.HHTypedNeuron.__init__(
+            self, size=(1,), name="stub", **build_placeholder_ions()
+        )
+        self._V_th = V_th
+
+        class _FakeCV:
+            def __init__(self, cm):
+                self.cm = cm
+
+        self._cvs = tuple(_FakeCV(1.0 * u.uF / u.cm ** 2) for _ in range(n_cv))
+
+    @property
+    def V_th(self):
+        return self._V_th
+
+    @V_th.setter
+    def V_th(self, value):
+        self._V_th = value
+
+    @property
+    def cvs(self):
+        return self._cvs
+
+    @property
+    def varshape(self):
+        return (len(self._cvs),)
+
+
+class TestInstallCellRuntime(unittest.TestCase):
+
+    def _runtime_double(self, n_cv: int):
+        from unittest.mock import MagicMock
+        from braincell.compute._runtime import CellRuntimeState
+
+        runtime = MagicMock(spec=CellRuntimeState)
+        runtime.n_cv = n_cv
+        runtime.ions = {}
+        runtime.layouts = ()
+        runtime.runtime_nodes = {}
+        return runtime
+
+    def test_install_returns_tuple_of_installed_plain_attr_names(self):
+        from braincell.compute._runtime import install_cell_runtime
+
+        cell = _StubCell(n_cv=4)
+        installed = install_cell_runtime(cell, self._runtime_double(n_cv=4))
+
+        self.assertIsInstance(installed, tuple)
+        self.assertEqual(
+            set(installed),
+            {"_in_size", "_out_size", "ion_channels", "C"},
+        )
+        for name in installed:
+            self.assertTrue(
+                hasattr(cell, name),
+                f"install_cell_runtime should have set attribute {name!r}.",
+            )
+        # V_th still reachable via the property setter (not in returned list).
+        self.assertTrue(hasattr(cell, "V_th"))
+
+
+class TestUninstallCellRuntime(unittest.TestCase):
+
+    def _runtime_double(self, n_cv: int):
+        from unittest.mock import MagicMock
+        from braincell.compute._runtime import CellRuntimeState
+
+        runtime = MagicMock(spec=CellRuntimeState)
+        runtime.n_cv = n_cv
+        runtime.ions = {}
+        runtime.layouts = ()
+        runtime.runtime_nodes = {}
+        return runtime
+
+    def test_uninstall_round_trip(self):
+        from braincell._base import IonChannel
+        from braincell.compute._runtime import (
+            install_cell_runtime,
+            uninstall_cell_runtime,
+        )
+
+        cell = _StubCell(n_cv=2)
+        runtime = self._runtime_double(n_cv=2)
+
+        installed = install_cell_runtime(cell, runtime)
+        for name in installed:
+            self.assertTrue(hasattr(cell, name))
+
+        uninstall_cell_runtime(cell, installed)
+
+        for name in installed:
+            self.assertFalse(
+                hasattr(cell, name),
+                f"uninstall_cell_runtime should have removed {name!r}.",
+            )
+        self.assertEqual(
+            dict(cell.nodes(IonChannel, allowed_hierarchy=(1, 1))),
+            {},
+            "No IonChannel nodes should remain after uninstall.",
+        )

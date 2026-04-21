@@ -7,19 +7,16 @@ on:
   push:
     branches:
       - '**'        # matches every branch
-  pull_request:
-    branches:
-      - '**'        # matches every branch
 
 
 permissions:
   contents: read  # to fetch code
   actions: write  # to cancel previous workflows
 
-# This is what will cancel the workflow
-concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.head.repo.full_name || github.repository }}-${{ github.head_ref || github.ref_name }}
-  cancel-in-progress: true
+## This is what will cancel the workflow
+#concurrency:
+#  group: ${{ github.workflow }}-${{ github.event.pull_request.head.repo.full_name || github.repository }}-${{ github.head_ref || github.ref_name }}
+#  cancel-in-progress: true
 
 env:
   JAX_ENABLE_X64: "1"

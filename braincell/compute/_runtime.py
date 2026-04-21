@@ -40,7 +40,7 @@ from braincell.mech import (
 from braincell.morph.morphology import Morphology
 from ._point_tree import PointTree
 
-__all__ = ["CellRuntimeState"]
+__all__ = ["CellRuntimeState", "install_cell_runtime", "uninstall_cell_runtime"]
 
 
 @dataclass(frozen=True)
@@ -388,7 +388,16 @@ class CellRuntimeState:
         return u.Quantity(point_current_decimal, u.nA)
 
 
-def install_cell_runtime(cell: "Cell", runtime: CellRuntimeState) -> None:
+def install_cell_runtime(cell: "Cell", runtime: CellRuntimeState) -> tuple[str, ...]:
+    """Install runtime nodes + ``C`` + ``V_th`` onto ``cell``.
+
+    Returns the tuple of plain-attribute names set so callers can pass
+    the list to :func:`uninstall_cell_runtime` for a clean teardown.
+    ``V_th`` is overwritten via its property setter but is *not*
+    included in the returned tuple: the property-backed attribute
+    cannot be ``delattr``-ed, so owners (e.g. :class:`Cell`) are
+    expected to save / restore the declaration value themselves.
+    """
     cell._in_size = (runtime.n_cv,)
     cell._out_size = (runtime.n_cv,)
 
@@ -402,7 +411,21 @@ def install_cell_runtime(cell: "Cell", runtime: CellRuntimeState) -> None:
 
     cell.ion_channels = cell._format_elements(IonChannel, **root_nodes)
     cell.C = cv_value_vector(cell, attr_name="cm")
-    cell.V_th = fill_like(cell.varshape, cell._V_th_value)
+    cell.V_th = fill_like(cell.varshape, cell.V_th)
+    return ("_in_size", "_out_size", "ion_channels", "C")
+
+
+def uninstall_cell_runtime(cell: "Cell", installed_names: tuple[str, ...]) -> None:
+    """Remove attributes installed by :func:`install_cell_runtime`.
+
+    ``installed_names`` is the tuple returned by the matching
+    ``install_cell_runtime`` call. Each name is removed via
+    :func:`delattr` so subsequent ``init_state()`` calls re-install
+    cleanly without colliding with stale attributes.
+    """
+    for name in installed_names:
+        if hasattr(cell, name):
+            delattr(cell, name)
 
 
 def build_placeholder_ions(size = (1,)) -> dict[str, object]:

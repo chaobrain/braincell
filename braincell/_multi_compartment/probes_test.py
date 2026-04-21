@@ -1,8 +1,8 @@
 """Unit tests for :mod:`braincell._multi_compartment.probes`.
 
-Full probe-sampling flows require a built ``RunnableCell`` and are
-exercised in ``runnable_test.py``. These tests lock down the small
-pure helpers so regressions stay local.
+Full probe-sampling flows require an initialized ``Cell`` and are
+exercised in ``cell_test.py``. These tests lock down the small pure
+helpers so regressions stay local.
 """
 
 import unittest

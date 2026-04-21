@@ -18,24 +18,14 @@ from typing import Optional, Callable, Tuple, Union
 import brainstate
 import brainunit as u
 import braintools
-import jax.numpy as jnp
 
 from ._base import HHTypedNeuron, IonChannel
-from .quad import get_integrator
-from .quad.protocol import DiffEqState, IndependentIntegration
+from .quad import get_integrator, DiffEqState, IndependentIntegration
 from ._typing import Initializer
 
 __all__ = [
     'SingleCompartment',
 ]
-
-
-def _cast_like(value, like):
-    dtype = jnp.asarray(u.get_magnitude(like)).dtype
-    if isinstance(value, u.Quantity):
-        unit = u.get_unit(value)
-        return jnp.asarray(value.to_decimal(unit), dtype=dtype) * unit
-    return jnp.asarray(value, dtype=dtype)
 
 
 class SingleCompartment(HHTypedNeuron):
@@ -73,10 +63,6 @@ class SingleCompartment(HHTypedNeuron):
     ----------
     size : int, sequence of int
         The network size of this neuron group.
-    length : Initializer, optional
-        Compartment length used to compute membrane area. Default is 10 um
-    radius : Initializer, optional
-        Compartment radius used to compute membrane area. Default is 5 um
     C : Initializer, optional
         Membrane capacitance. Default is 1.0 uF/cm²
     V_th : Initializer, optional
@@ -101,8 +87,6 @@ class SingleCompartment(HHTypedNeuron):
     def __init__(
         self,
         size: brainstate.typing.Size,
-        length: Initializer = 10. * u.um,
-        radius: Initializer = 5. * u.um,
         C: Initializer = 1. * u.uF / u.cm ** 2,
         V_th: Initializer = 0. * u.mV,
         V_initializer: Initializer = braintools.init.Uniform(-70 * u.mV, -60. * u.mV),
@@ -113,8 +97,6 @@ class SingleCompartment(HHTypedNeuron):
     ):
         super().__init__(size, name=name, **ion_channels)
         assert self.n_compartment == 1, "SingleCompartment neuron should have only one compartment."
-        self.length = braintools.init.param(length, self.varshape)
-        self.radius = braintools.init.param(radius, self.varshape)
         self.C = braintools.init.param(C, self.varshape)
         self.V_th = braintools.init.param(V_th, self.varshape)
         self.V_initializer = V_initializer
@@ -152,11 +134,6 @@ class SingleCompartment(HHTypedNeuron):
             The number of compartments, which is 1 for :class:`SingleCompartment` neurons.
         """
         return 1
-
-    @property
-    def area(self):
-        """Membrane area used to convert injected current into current density."""
-        return 2. * u.math.pi * self.radius * self.length
 
     def init_state(self, batch_size=None):
         """
@@ -196,7 +173,7 @@ class SingleCompartment(HHTypedNeuron):
         """
         self.V.value = braintools.init.param(self.V_initializer, self.varshape, batch_size)
         self.spike.value = self.get_spike(self.V.value, self.V.value)
-        super().reset_state(batch_size)
+        super().init_state(batch_size)
 
     def pre_integral(self, I_ext=0. * u.nA / u.cm ** 2):
         """
@@ -224,7 +201,7 @@ class SingleCompartment(HHTypedNeuron):
         Parameters
         ----------
         I_ext : float, optional
-            External current input. Supports either current density or total current.
+            External current input. Default is 0 nA/cm^2.
         """
         I_ext = self.sum_current_inputs(I_ext, self.V.value)
         for key, ch in self.nodes(IonChannel, allowed_hierarchy=(1, 1)).items():
@@ -305,14 +282,12 @@ class SingleCompartment(HHTypedNeuron):
         spike : array-like
             An array indicating whether a spike occurred (1) or not (0) for each neuron.
         """
-        denom = _cast_like(20.0 * u.mV, next_V)
-        V_th = _cast_like(self.V_th, next_V)
+        denom = 20.0 * u.mV
         return (
-            self.spk_fun((next_V - V_th) / denom) *
-            self.spk_fun((V_th - last_V) / denom)
+            self.spk_fun((next_V - self.V_th) / denom) *
+            self.spk_fun((self.V_th - last_V) / denom)
         )
 
     def soma_spike(self):
-        denom = _cast_like(20.0 * u.mV, self.V.value)
-        V_th = _cast_like(self.V_th, self.V.value)
-        return self.spk_fun((self.V.value - V_th) / denom)
+        denom = 20.0 * u.mV
+        return self.spk_fun((self.V.value - self.V_th) / denom)

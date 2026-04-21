@@ -14,102 +14,42 @@
 # ==============================================================================
 
 
-from braincell.quad.protocol import (
-    DiffEqModule,
-    DiffEqState,
-    IndependentIntegration,
-)
-from . import quad, mech, channel, synapse, ion
+__version__ = "0.0.8"
+__version_info__ = tuple(map(int, __version__.split(".")))
+
+from . import channel
+from . import ion
+from . import morph
+from . import neuron
+from . import quad
 from ._base import (
-    Channel,
     HHTypedNeuron,
-    Ion,
-    IonInfo,
     IonChannel,
+    Ion,
+    Channel,
     MixIons,
     mix_ions,
+    IonInfo,
 )
-from ._multi_compartment import (
-    Cell,
-    RunResult,
-)
-from ._single_compartment import (
-    SingleCompartment,
-)
-from ._version import (
-    __version__,
-    __version_info__,
-)
-from .cv import (
-    CompositeByTypePolicy,
-    CV,
-    CVPerBranch,
-    CVPolicy,
-    CVPolicyByTypeRule,
-    DLambda,
-    MaxCVLen,
-)
-from .io.neuromorpho import load_neuromorpho
-from .mech import (
-    CableProperty,
-    CurrentClamp,
-    FunctionClamp,
-    SineClamp,
-)
-from .morph.branch import (
-    ApicalDendrite,
-    Axon,
-    BasalDendrite,
-    Branch,
-    CustomBranch,
-    Dendrite,
-    Soma,
-)
-from .morph.morphology import (
-    Morphology,
-)
+from ._multi_compartment import MultiCompartment
+from ._single_compartment import SingleCompartment
+from .morph import *
+from .quad import *
 
-__all__ = [
-    "__version__",
-    "__version_info__",
+_deprecations = {
+    'SingleCompartment': (
+        f"braincell.neuron.SingleCompartment has been moved "
+        f"into braincell.SingleCompartment",
+        SingleCompartment
+    ),
+    'MultiCompartment': (
+        f"braincell.neuron.MultiCompartment has been moved "
+        f"into braincell.MultiCompartment",
+        MultiCompartment
+    ),
+}
 
-    "DiffEqState",
-    "DiffEqModule",
-    "IndependentIntegration",
+from braincell._misc import deprecation_getattr
 
-    "ApicalDendrite",
-    "Axon",
-    "BasalDendrite",
-    "Branch",
-    "CableProperty",
-    "Cell",
-    "Channel",
-    "CompositeByTypePolicy",
-    "CustomBranch",
-    "CurrentClamp",
-    "CV",
-    "CVPerBranch",
-    "CVPolicy",
-    "CVPolicyByTypeRule",
-    "DLambda",
-    "Dendrite",
-    "FunctionClamp",
-    "HHTypedNeuron",
-    "Ion",
-    "IonChannel",
-    "IonInfo",
-    "load_neuromorpho",
-    "MixIons",
-    "MaxCVLen",
-    "Morphology",
-    "RunResult",
-    "SingleCompartment",
-    "Soma",
-    "channel",
-    "ion",
-    "mix_ions",
-    "mech",
-    "quad",
-    "SineClamp",
-    "synapse",
-]
+neuron.__getattr__ = deprecation_getattr(__name__, _deprecations)
+del deprecation_getattr

@@ -88,7 +88,7 @@ import brainpy
 import numpy as np
 from brainstate.mixin import _JointGenericAlias
 
-from .quad.protocol import DiffEqModule, IndependentIntegration
+from .quad import DiffEqModule, IndependentIntegration
 from ._misc import set_module_as, Container, TreeNode
 
 __all__ = [
@@ -615,35 +615,26 @@ class IonInfo(NamedTuple):
     """
     A named tuple representing the information of an ion in a neuron model.
 
-    This class encapsulates the intracellular/extracellular concentrations of
-    an ion, its reversal potential, and its valence. It is used to store and
-    pass ion-related information in various neuronal simulation contexts.
+    This class encapsulates two key properties of an ion: its concentration
+    and its reversal potential. It is used to store and pass ion-related
+    information in various neuronal simulation contexts.
 
     Attributes:
-        Ci (brainstate.typing.ArrayLike): The intracellular ion concentration.
-            This represents the concentration of the ion inside the cell,
-            typically in units of millimoles per liter (mM).
-
-        Co (brainstate.typing.ArrayLike): The extracellular ion concentration.
-            This represents the concentration of the ion outside the cell,
-            typically in units of millimoles per liter (mM).
+        C (brainstate.typing.ArrayLike): The ion concentration.
+            This represents the concentration of the ion, typically
+            in units of millimoles per liter (mM).
 
         E (brainstate.typing.ArrayLike): The reversal potential.
             This represents the electrical potential at which there is no net
             flow of the ion across the membrane, typically in millivolts (mV).
 
-        valence (brainstate.typing.ArrayLike): The ionic valence.
-            This represents the charge number used in Nernst/GHK relations.
-
     Note:
-        ``Ci``, ``Co``, ``E``, and ``valence`` are expected to be array-like
-        objects or scalars, allowing representation of these properties across
-        multiple neurons or compartments simultaneously.
+        Both C and E are expected to be array-like objects, allowing for
+        representation of these properties across multiple neurons or
+        compartments simultaneously.
     """
-    Ci: brainstate.typing.ArrayLike
-    Co: brainstate.typing.ArrayLike
+    C: brainstate.typing.ArrayLike
     E: brainstate.typing.ArrayLike
-    valence: brainstate.typing.ArrayLike
 
 
 class Ion(IonChannel, Container):
@@ -737,13 +728,10 @@ class Ion(IonChannel, Container):
         Parameters:
             V (array-like): The membrane potential for all neurons/compartments.
         """
-        nodes = tuple(brainstate.graph.nodes(self, Channel, allowed_hierarchy=(1, 1)).values())
-        self.check_hierarchies(type(self), *nodes)
-        ion_info = self.pack_info()
-        for node in nodes:
+        nodes = brainstate.graph.nodes(self, Channel, allowed_hierarchy=(1, 1))
+        for node in nodes.values():
             if not isinstance(node, IndependentIntegration):
-                node.compute_derivative(V, ion_info)
-        self._run_ion_hook("_ion_compute_derivative_hook", V)
+                node.compute_derivative(V, self.pack_info())
 
     def post_integral(self, V):
         """
@@ -798,9 +786,8 @@ class Ion(IonChannel, Container):
             V (array-like): The membrane potential for all neurons/compartments.
             batch_size (int, optional): The batch size for initialization. Default is None.
         """
-        nodes = tuple(brainstate.graph.nodes(self, Channel, allowed_hierarchy=(1, 1)).values())
-        self.check_hierarchies(type(self), *nodes)
-        self._run_ion_hook("_ion_init_state_hook", V, batch_size=batch_size)
+        nodes = brainstate.graph.nodes(self, Channel, allowed_hierarchy=(1, 1)).values()
+        self.check_hierarchies(type(self), *tuple(nodes))
         ion_info = self.pack_info()
         for node in nodes:
             node: Channel
@@ -816,9 +803,7 @@ class Ion(IonChannel, Container):
             V (array-like): The membrane potential for all neurons/compartments.
             batch_size (int, optional): The batch size for resetting. Default is None.
         """
-        nodes = tuple(brainstate.graph.nodes(self, Channel, allowed_hierarchy=(1, 1)).values())
-        self.check_hierarchies(type(self), *nodes)
-        self._run_ion_hook("_ion_reset_state_hook", V, batch_size=batch_size)
+        nodes = brainstate.graph.nodes(self, Channel, allowed_hierarchy=(1, 1)).values()
         ion_info = self.pack_info()
         for node in nodes:
             node: Channel
@@ -828,11 +813,6 @@ class Ion(IonChannel, Container):
         ion_info = self.pack_info()
         for key, node in brainstate.graph.nodes(self, Channel, allowed_hierarchy=(1, 1)).items():
             node.update(V, ion_info)
-
-    def _run_ion_hook(self, name: str, *args, **kwargs):
-        hook = getattr(self, name, None)
-        if hook is not None:
-            hook(*args, **kwargs)
 
     def register_external_current(self, key: Hashable, fun: Callable):
         """
@@ -855,31 +835,23 @@ class Ion(IonChannel, Container):
         """
         Pack the ion information into an IonInfo object.
 
-        This method collects the intracellular/extracellular concentrations
-        (Ci/Co), reversal potential (E), and valence of the ion and packages
-        them into an IonInfo named tuple.
+        This method collects the reversal potential (E) and concentration (C) of the ion
+        and packages them into an IonInfo named tuple.
 
         Returns:
             IonInfo: A named tuple containing:
 
-                - Ci (array-like): The intracellular ion concentration.
-                - Co (array-like): The extracellular ion concentration.
                 - E (array-like): The reversal potential of the ion.
-                - valence (array-like): The ionic valence.
+                - C (array-like): The concentration of the ion.
 
         Notes:
-            If an attribute is an instance of brainstate.State, its ``value``
-            attribute is used. Otherwise, the raw attribute value is used.
+            If E or C are instances of brainstate.State, their 'value' attribute is used.
+            Otherwise, the E and C values are used directly.
         """
-        Ci = self.Ci
-        Ci = Ci.value if isinstance(Ci, brainstate.State) else Ci
-        Co = self.Co
-        Co = Co.value if isinstance(Co, brainstate.State) else Co
         E = self.E
         E = E.value if isinstance(E, brainstate.State) else E
-        valence = self.valence
-        valence = valence.value if isinstance(valence, brainstate.State) else valence
-        return IonInfo(Ci=Ci, Co=Co, E=E, valence=valence)
+        C = self.C.value if isinstance(self.C, brainstate.State) else self.C
+        return IonInfo(E=E, C=C)
 
     def add(self, **elements):
         """

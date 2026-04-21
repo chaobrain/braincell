@@ -16,6 +16,4 @@
 # -*- coding: utf-8 -*-
 
 from .markov import *
-from .markov import __all__ as _markov_all
 
-__all__ = _markov_all

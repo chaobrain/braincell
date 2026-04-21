@@ -1,3 +1,0 @@
-case_id,group_id,status,stimulus_kind,morphology_kind,morphology_path,dt_ms,cv_per_branch,observable,n_samples,mae,rmse,max_abs,rel_mae_pct,error_message
-v_init_scan__000,v_init_scan,ok,dc_step,swc,/home/swl/braincell/examples/multi_compartment/morpho_files/unbranched_soma.swc,0.025,3,voltage,80,7.90360369743818e-12,9.088990200764237e-12,1.5631940186722204e-11,1.1290862424911686e-11,
-v_init_scan__001,v_init_scan,ok,dc_step,swc,/home/swl/braincell/examples/multi_compartment/morpho_files/unbranched_soma.swc,0.025,3,voltage,80,5.7516362043467474e-12,6.613028373609024e-12,1.1361578344804002e-11,1.1503272408693495e-11,

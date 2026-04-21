@@ -13,18 +13,6 @@
 # limitations under the License.
 # ==============================================================================
 
-from .branch import (
-    branch_class_for_type,
-)
-from .morphology import (
-    MorphoEdge,
-    MorphoMetric,
-    MorphoBranch,
-)
-
-__all__ = [
-    "MorphoEdge",
-    "MorphoMetric",
-    "MorphoBranch",
-    "branch_class_for_type",
-]
+from ._from_asc import from_asc
+from ._from_swc import from_swc
+from ._morphology import Morphology, Segment, Section, CylinderSection, PointSection

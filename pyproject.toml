@@ -9,20 +9,17 @@ build-backend = "setuptools.build_meta"
 [tool.setuptools.packages.find]
 exclude = [
     "dev*",
-    "develop*",
     "docs*",
     "build*",
     "dist*",
     "examples*",
-    "legacy*",
     "braincell.egg-info*",
-    "braincell/__pycache__*",
-    "tests*"
+    "braincell/__pycache__*"
 ]
 
 
 [tool.setuptools.dynamic]
-version = { attr = "braincell._version.__version__" }
+version = { attr = "braincell.__version__" }
 
 
 [project]
@@ -57,6 +54,7 @@ dependencies = [
     "brainunit>=0.0.8",
     "brainstate>=0.2.0",
     "brainevent>=0.0.7",
+    "scipy",
     "brainpy>=2.7.5",
     "braintools>=0.1.0",
 ]
@@ -69,49 +67,10 @@ Documentation = "https://braincell.readthedocs.io/"
 "Bug Tracker" = "https://github.com/chaobrain/braincell/issues"
 "Source Code" = "https://github.com/chaobrain/braincell"
 
-[project.scripts]
-braincell-neuromorpho = "braincell.io.neuromorpho.cli:main"
-
 
 [project.optional-dependencies]
-# JAX backends
 cpu = ["jax[cpu]"]
 cuda12 = ["jax[cuda12]"]
 cuda13 = ["jax[cuda13]"]
 tpu = ["jax[tpu]"]
-
-# Visualization: 2D (matplotlib) + 3D (pyvista / plotly) backends
-vis = [
-    "matplotlib",
-    "pyvista",
-    "plotly",
-]
-
-# Advanced ODE solvers in braincell.quad (DOPRI, TSIT, Kvaerno, ...)
-quad = ["diffrax"]
-
-# NeuroMorpho.Org client in braincell.io.neuromorpho
-io = ["requests"]
-
-# Convenience aggregator: everything a user-facing install might need
-all = [
-    "matplotlib",
-    "pyvista",
-    "plotly",
-    "diffrax",
-    "requests",
-]
-
-# Testing + development dependencies
-testing = [
-    "pytest",
-    "jax",
-    "matplotlib",
-    "pyvista",
-    "plotly",
-    "diffrax",
-    "requests",
-    "pytest-mpl",
-    "pytest-benchmark",
-    "hypothesis",
-]
+testing = ["pytest", "jax"]

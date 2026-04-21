@@ -53,6 +53,16 @@ class DensityConstructionTest(unittest.TestCase):
         spec = Channel("IL", g_max=0.1 * (u.mS / u.cm ** 2))
         self.assertEqual(spec.coverage_area_fraction, 1.0)
 
+    def test_channel_can_store_single_ion_selector(self) -> None:
+        spec = Channel("INa_HH1952", ion_name="na_main")
+        self.assertEqual(spec.ion_name, "na_main")
+        self.assertIsNone(spec.ion_names)
+
+    def test_channel_can_store_multi_ion_selectors(self) -> None:
+        spec = Channel("IKca1_1_Ma2020", ion_names={"k": "k_main", "ca": "ca_local"})
+        self.assertIsNone(spec.ion_name)
+        self.assertEqual(spec.ion_names, (("ca", "ca_local"), ("k", "k_main")))
+
 
 class DensityClassArgumentTest(unittest.TestCase):
     def test_channel_accepts_type_argument(self) -> None:
@@ -97,6 +107,22 @@ class DensityValidationTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             Channel("IL", coverage_area_fraction=-0.1)
 
+    def test_channel_cannot_define_both_ion_name_and_ion_names(self) -> None:
+        with self.assertRaises(ValueError):
+            Channel("IKca1_1_Ma2020", ion_name="ca_main", ion_names={"ca": "ca_main"})
+
+    def test_invalid_ion_name_rejected(self) -> None:
+        with self.assertRaises(TypeError):
+            Channel("INa_HH1952", ion_name=42)  # type: ignore[arg-type]
+
+    def test_invalid_ion_names_mapping_rejected(self) -> None:
+        with self.assertRaises(TypeError):
+            Channel("IKca1_1_Ma2020", ion_names="ca_main")  # type: ignore[arg-type]
+        with self.assertRaises(TypeError):
+            Channel("IKca1_1_Ma2020", ion_names={"": "ca_main"})
+        with self.assertRaises(TypeError):
+            Channel("IKca1_1_Ma2020", ion_names={"ca": 1})  # type: ignore[arg-type]
+
 
 class DensityIdentityTest(unittest.TestCase):
     def test_default_instance_name_is_class_name(self) -> None:
@@ -131,6 +157,11 @@ class DensityEqualityTest(unittest.TestCase):
         c = Channel("SodiumFixed")
         i = Ion("SodiumFixed")
         self.assertNotEqual(c, i)
+
+    def test_channel_ion_selectors_participate_in_equality(self) -> None:
+        a = Channel("INa_HH1952", ion_name="na_a")
+        b = Channel("INa_HH1952", ion_name="na_b")
+        self.assertNotEqual(a, b)
 
     def test_can_use_as_dict_key(self) -> None:
         a = Channel("IL", g_max=0.1 * (u.mS / u.cm ** 2), E=-70 * u.mV)
@@ -169,10 +200,10 @@ class DensityUpdatesTest(unittest.TestCase):
         self.assertIsInstance(updated, Channel)
 
     def test_updates_preserve_ion_subclass(self) -> None:
-        original = Ion("SodiumFixed", c0=12.0)
-        updated = original.with_params(c0=15.0)
+        original = Ion("SodiumFixed", Ci=12.0 * u.mM)
+        updated = original.with_params(Ci=15.0 * u.mM)
         self.assertIsInstance(updated, Ion)
-        self.assertEqual(updated.params["c0"], 15.0)
+        self.assertEqual(updated.params["Ci"], 15.0 * u.mM)
 
 
 class DensityImmutabilityTest(unittest.TestCase):

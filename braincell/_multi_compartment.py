@@ -906,20 +906,12 @@ class Cell(HHTypedNeuron):
             raw = _probe_state_attr(node, declaration.field, probe_name=_probe_name(declaration))
             return _select_last_axis(raw.value, point_id)
 
-        ion_matches = []
-        for ion_key, ion in runtime.ions.items():
-            identifiers = {str(ion_key), type(ion).__name__}
-            ion_name = getattr(ion, "name", None)
-            if isinstance(ion_name, str) and ion_name:
-                identifiers.add(ion_name)
-            if declaration.mechanism in identifiers:
-                ion_matches.append(ion)
-        if len(ion_matches) > 1:
-            raise ValueError(
-                f"Probe {_probe_name(declaration)!r} matched multiple ions named {declaration.mechanism!r}."
-            )
-        if len(ion_matches) == 1:
-            raw = _probe_state_attr(ion_matches[0], declaration.field, probe_name=_probe_name(declaration))
+        try:
+            ion = runtime.get_ion(declaration.mechanism)
+        except KeyError:
+            ion = None
+        if ion is not None:
+            raw = _probe_state_attr(ion, declaration.field, probe_name=_probe_name(declaration))
             return _select_last_axis(raw.value, point_id)
 
         raise KeyError(
@@ -951,9 +943,22 @@ class Cell(HHTypedNeuron):
                     f"Probe {_probe_name(declaration)!r} could not find a mechanism named "
                     f"{declaration.mechanism!r} at point {point_id!r}."
                 )
-            node = runtime.get_runtime_node(matched_layouts[0].id)
-            ion_info = _probe_current_ion_info(runtime, declaration=declaration, mechanism=node)
-            current = _probe_current_value(node, point_V, ion_info, probe_name=_probe_name(declaration))
+            layout_id = matched_layouts[0].id
+            node = runtime.get_runtime_node(layout_id)
+            bound_ion_keys = runtime.bound_ion_keys.get(layout_id, ())
+            if len(bound_ion_keys) > 1:
+                current = node.current(
+                    point_V,
+                    *tuple(runtime.get_ion(ion_key).pack_info() for ion_key in bound_ion_keys),
+                )
+            else:
+                ion_info = _probe_current_ion_info(
+                    runtime,
+                    declaration=declaration,
+                    mechanism=node,
+                    layout_id=layout_id,
+                )
+                current = _probe_current_value(node, point_V, ion_info, probe_name=_probe_name(declaration))
             return _select_last_axis(current, point_id)
 
         if declaration.ion is None:
@@ -1005,9 +1010,20 @@ def _probe_state_attr(owner: object, field: str, *, probe_name: str) -> brainsta
     return raw
 
 
-def _probe_current_ion_info(runtime: CellRuntimeState, *, declaration: CurrentProbe, mechanism: object) -> object | None:
+def _probe_current_ion_info(
+    runtime: CellRuntimeState,
+    *,
+    declaration: CurrentProbe,
+    mechanism: object,
+    layout_id: int | None = None,
+) -> object | None:
     if declaration.ion is not None:
         return runtime.get_ion(declaration.ion).pack_info()
+
+    if layout_id is not None:
+        owner_key = runtime.current_owner_keys.get(int(layout_id))
+        if owner_key is not None:
+            return runtime.get_ion(owner_key).pack_info()
 
     mechanism_name = declaration.mechanism
     if mechanism_name is None:

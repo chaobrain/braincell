@@ -15,12 +15,14 @@
 
 
 from dataclasses import dataclass, fields, is_dataclass
+import inspect
 
 import brainunit as u
 import numpy as np
 
 from braincell import ion as runtime_ion
-from braincell._base import IonChannel
+from braincell._base import Channel, IonChannel
+from braincell.ion._template import DynamicNernstIon, FixedIon, InitNernstIon
 from braincell.mech import (
     CurrentProbe,
     CurrentClamp,
@@ -115,6 +117,11 @@ class CellRuntimeState:
     layout_mechanisms: dict[int, object]
     runtime_nodes: dict[int, object]
     ions: dict[str, object]
+    ion_aliases: dict[str, str]
+    ion_family_candidates: dict[str, tuple[str, ...]]
+    ion_class_candidates: dict[str, tuple[str, ...]]
+    bound_ion_keys: dict[int, tuple[str, ...]]
+    current_owner_keys: dict[int, str | None]
     dhs_static_cache: object | None = None
 
     @classmethod
@@ -204,11 +211,25 @@ class CellRuntimeState:
                     shape=shape,
                 )
 
-        ions, runtime_nodes = _build_runtime_nodes(
+        (
+            ions,
+            ion_aliases,
+            ion_family_candidates,
+            ion_class_candidates,
+            runtime_nodes,
+            bound_ion_keys,
+            current_owner_keys,
+        ) = _build_runtime_nodes(
             n_point=n_point,
             layouts=tuple(layouts),
             layout_mechanisms=layout_mechanisms,
             state_buffers=state_buffers,
+        )
+        _attach_runtime_ion_geometry(
+            ions=ions,
+            cvs=cell.cvs,
+            point_ids=point_tree.cv_midpoint_point_id,
+            n_point=n_point,
         )
         return cls(
             point_tree=point_tree,
@@ -223,6 +244,11 @@ class CellRuntimeState:
             layout_mechanisms=layout_mechanisms,
             runtime_nodes=runtime_nodes,
             ions=ions,
+            ion_aliases=ion_aliases,
+            ion_family_candidates=ion_family_candidates,
+            ion_class_candidates=ion_class_candidates,
+            bound_ion_keys=bound_ion_keys,
+            current_owner_keys=current_owner_keys,
             dhs_static_cache=None,
         )
 
@@ -289,10 +315,26 @@ class CellRuntimeState:
         return self.layout_mechanisms[key]
 
     def get_ion(self, name: str) -> object:
+        return self.ions[self.resolve_ion_key(name)]
+
+    def resolve_ion_key(self, name: str) -> str:
         key = str(name)
-        if key not in self.ions:
+        if key in self.ions:
+            return key
+        alias = self.ion_aliases.get(key)
+        if alias is None:
+            family_candidates = self.ion_family_candidates.get(key)
+            if family_candidates is not None and len(family_candidates) > 1:
+                raise ValueError(
+                    f"Ion selector {name!r} is ambiguous; family {key!r} has candidates {list(family_candidates)!r}."
+                )
+            class_candidates = self.ion_class_candidates.get(key)
+            if class_candidates is not None and len(class_candidates) > 1:
+                raise ValueError(
+                    f"Ion selector {name!r} is ambiguous; class {key!r} has candidates {list(class_candidates)!r}."
+                )
             raise KeyError(f"No ion container is registered for {name!r}.")
-        return self.ions[key]
+        return alias
 
     def has_layout_value(self, layout_id: int, var_name: str) -> bool:
         return (int(layout_id), str(var_name)) in self.state_buffers
@@ -404,6 +446,38 @@ def scatter_midpoint_values(*, values: object, point_ids: np.ndarray, n_point: i
 
 def gather_midpoint_values(values: object, *, point_ids: np.ndarray) -> object:
     return values[..., point_ids]
+
+
+def _attach_runtime_ion_geometry(
+    *,
+    ions: dict[str, object],
+    cvs: tuple[object, ...],
+    point_ids: np.ndarray,
+    n_point: int,
+) -> None:
+    length = _scatter_cv_geometry(cvs=cvs, attr_name="length", point_ids=point_ids, n_point=n_point)
+    area = _scatter_cv_geometry(cvs=cvs, attr_name="area", point_ids=point_ids, n_point=n_point)
+    diam_mid = _scatter_cv_geometry(cvs=cvs, attr_name="diam_mid", point_ids=point_ids, n_point=n_point)
+    radius_prox = _scatter_cv_geometry(cvs=cvs, attr_name="radius_prox", point_ids=point_ids, n_point=n_point)
+    radius_dist = _scatter_cv_geometry(cvs=cvs, attr_name="radius_dist", point_ids=point_ids, n_point=n_point)
+
+    for ion in ions.values():
+        setattr(ion, "length", length)
+        setattr(ion, "area", area)
+        setattr(ion, "diam_mid", diam_mid)
+        setattr(ion, "radius_prox", radius_prox)
+        setattr(ion, "radius_dist", radius_dist)
+
+
+def _scatter_cv_geometry(
+    *,
+    cvs: tuple[object, ...],
+    attr_name: str,
+    point_ids: np.ndarray,
+    n_point: int,
+) -> object:
+    values = quantity_vector([getattr(cv, attr_name) for cv in cvs])
+    return scatter_midpoint_values(values=values, point_ids=point_ids, n_point=n_point)
 
 
 def matches_last_dim(value: object, size: int) -> bool:
@@ -638,20 +712,102 @@ def _build_runtime_nodes(
     layouts: tuple[MechanismLayout, ...],
     layout_mechanisms: dict[int, object],
     state_buffers: dict[tuple[int, str], np.ndarray],
-) -> tuple[dict[str, object], dict[int, object]]:
-    ions = _build_default_ions(n_point)
-    runtime_nodes: dict[int, object] = {}
+) -> tuple[
+    dict[str, object],
+    dict[str, str],
+    dict[str, tuple[str, ...]],
+    dict[str, tuple[str, ...]],
+    dict[int, object],
+    dict[int, tuple[str, ...]],
+    dict[int, str | None],
+]:
+    (
+        ions,
+        ion_aliases,
+        ion_family_candidates,
+        ion_class_candidates,
+        ion_runtime_nodes,
+    ) = _build_runtime_ions(
+        n_point=n_point,
+        layouts=layouts,
+        layout_mechanisms=layout_mechanisms,
+        state_buffers=state_buffers,
+    )
+    runtime_nodes: dict[int, object] = dict(ion_runtime_nodes)
+    bound_ion_keys: dict[int, tuple[str, ...]] = {}
+    current_owner_keys: dict[int, str | None] = {}
     for layout in layouts:
         mechanism = layout_mechanisms[layout.id]
-        node = _instantiate_runtime_node(
+        node, layout_bound_ion_keys, current_owner_key = _instantiate_runtime_node(
             layout=layout,
             mechanism=mechanism,
             state_buffers=state_buffers,
             ions=ions,
+            ion_aliases=ion_aliases,
+            ion_family_candidates=ion_family_candidates,
         )
         if node is not None:
             runtime_nodes[layout.id] = node
-    return ions, runtime_nodes
+            bound_ion_keys[layout.id] = layout_bound_ion_keys
+            current_owner_keys[layout.id] = current_owner_key
+    return ions, ion_aliases, ion_family_candidates, ion_class_candidates, runtime_nodes, bound_ion_keys, current_owner_keys
+
+
+def _build_runtime_ions(
+    *,
+    n_point: int,
+    layouts: tuple[MechanismLayout, ...],
+    layout_mechanisms: dict[int, object],
+    state_buffers: dict[tuple[int, str], np.ndarray],
+) -> tuple[
+    dict[str, object],
+    dict[str, str],
+    dict[str, tuple[str, ...]],
+    dict[str, tuple[str, ...]],
+    dict[int, object],
+]:
+    ion_instances, ion_family_candidates = _collect_runtime_ion_instances(
+        layouts=layouts,
+        layout_mechanisms=layout_mechanisms,
+    )
+    ions: dict[str, object] = {}
+    ion_class_candidates: dict[str, list[str]] = {}
+    ion_runtime_nodes: dict[int, object] = {}
+
+    for instance_name, record in ion_instances.items():
+        runtime_ion = _instantiate_runtime_ion_instance(
+            instance_name=instance_name,
+            runtime_cls=record["runtime_cls"],
+            layouts=tuple(record["layouts"]),
+            declarations=tuple(record["declarations"]),
+            state_buffers=state_buffers,
+            n_point=n_point,
+        )
+        ions[instance_name] = runtime_ion
+        ion_class_candidates.setdefault(record["runtime_cls"].__name__, []).append(instance_name)
+        for layout in record["layouts"]:
+            ion_runtime_nodes[layout.id] = runtime_ion
+
+    for family_key in ("na", "k", "ca"):
+        if family_key in ion_family_candidates:
+            continue
+        default_ion = _build_default_ions(n_point)[family_key]
+        ions[family_key] = default_ion
+        ion_family_candidates[family_key] = [family_key]
+        ion_class_candidates.setdefault(type(default_ion).__name__, []).append(family_key)
+
+    ion_aliases = _build_ion_alias_map(
+        ions=ions,
+        ion_family_candidates=ion_family_candidates,
+        ion_class_candidates=ion_class_candidates,
+    )
+    return (
+        ions,
+        ion_aliases,
+        {key: tuple(value) for key, value in ion_family_candidates.items()},
+        {key: tuple(value) for key, value in ion_class_candidates.items()},
+        ion_runtime_nodes,
+    )
 
 
 def _build_default_ions(n_point: int) -> dict[str, object]:
@@ -663,19 +819,237 @@ def _build_default_ions(n_point: int) -> dict[str, object]:
     }
 
 
+def _collect_runtime_ion_instances(
+    *,
+    layouts: tuple[MechanismLayout, ...],
+    layout_mechanisms: dict[int, object],
+) -> tuple[dict[str, dict[str, object]], dict[str, list[str]]]:
+    instances: dict[str, dict[str, object]] = {}
+    family_candidates: dict[str, list[str]] = {}
+
+    for layout in layouts:
+        if layout.target != "density":
+            continue
+        mechanism = layout_mechanisms[layout.id]
+        if not isinstance(mechanism, Density) or mechanism.category != "ion":
+            continue
+        runtime_cls = get_registry().get("ion", mechanism.class_name)
+        species_key = _runtime_ion_species_key(runtime_cls)
+        family = _runtime_ion_family(runtime_cls)
+
+        instance_name = mechanism.instance_name
+        if instance_name in {"na", "k", "ca"} and instance_name != species_key:
+            raise ValueError(
+                f"Ion instance name {instance_name!r} conflicts with canonical family key for a different ion family."
+            )
+        record = instances.get(instance_name)
+        if record is None:
+            record = {
+                "runtime_cls": runtime_cls,
+                "family": family,
+                "layouts": [],
+                "declarations": [],
+            }
+            instances[instance_name] = record
+            family_candidates.setdefault(species_key, []).append(instance_name)
+        elif record["runtime_cls"] is not runtime_cls:
+            raise ValueError(
+                f"Ion instance name {instance_name!r} cannot mix classes "
+                f"{record['runtime_cls'].__name__!r} and {runtime_cls.__name__!r}."
+            )
+        elif _runtime_ion_species_key(record["runtime_cls"]) != species_key:
+            raise ValueError(
+                f"Ion instance name {instance_name!r} cannot be reused across families "
+                f"{_runtime_ion_species_key(record['runtime_cls'])!r} and {species_key!r}."
+            )
+
+        record["layouts"].append(layout)
+        record["declarations"].append(mechanism)
+
+    return instances, family_candidates
+
+
+def _build_ion_alias_map(
+    *,
+    ions: dict[str, object],
+    ion_family_candidates: dict[str, list[str]],
+    ion_class_candidates: dict[str, list[str]],
+) -> dict[str, str]:
+    aliases: dict[str, str] = {}
+
+    def register(alias: str, canonical: str) -> None:
+        existing = aliases.get(alias)
+        if existing is not None and existing != canonical:
+            raise ValueError(
+                f"Ion alias {alias!r} conflicts between species {existing!r} and {canonical!r}."
+            )
+        aliases[alias] = canonical
+
+    for instance_name in ions:
+        register(instance_name, instance_name)
+
+    for family_key, candidates in ion_family_candidates.items():
+        if len(candidates) == 1:
+            register(family_key, candidates[0])
+
+    for class_name, candidates in ion_class_candidates.items():
+        unique_candidates = tuple(dict.fromkeys(candidates))
+        if len(unique_candidates) == 1:
+            register(class_name, unique_candidates[0])
+
+    return aliases
+
+
+def _runtime_ion_species_key(cls: type) -> str:
+    if issubclass(cls, runtime_ion.Sodium):
+        return "na"
+    if issubclass(cls, runtime_ion.Potassium):
+        return "k"
+    if issubclass(cls, runtime_ion.Calcium):
+        return "ca"
+    raise ValueError(f"Unsupported ion runtime class {cls.__name__!r}: cannot infer species key.")
+
+
+def _runtime_ion_family(cls: type) -> str:
+    if issubclass(cls, DynamicNernstIon):
+        return "dynamic"
+    if issubclass(cls, InitNernstIon):
+        return "init_nernst"
+    if issubclass(cls, FixedIon):
+        return "fixed"
+    raise ValueError(f"Unsupported ion runtime class {cls.__name__!r}: unsupported ion template family.")
+
+
+def _supported_ion_runtime_params(cls: type) -> tuple[str, ...]:
+    signature = inspect.signature(cls.__init__)
+    supported: list[str] = []
+    for name, parameter in signature.parameters.items():
+        if name in {"self", "size", "name"}:
+            continue
+        if parameter.kind in (inspect.Parameter.VAR_POSITIONAL, inspect.Parameter.VAR_KEYWORD):
+            continue
+        supported.append(name)
+    return tuple(supported)
+
+
+def _ion_runtime_attr_name(cls: type, param_name: str) -> str:
+    if param_name == "Ci_initializer" and issubclass(cls, DynamicNernstIon):
+        return "_Ci_initializer"
+    return param_name
+
+
+def _normalize_ion_runtime_param_value(cls: type, param_name: str, value: object) -> object:
+    if param_name == "Ci_initializer" and issubclass(cls, DynamicNernstIon):
+        inner = getattr(value, "value", None)
+        if hasattr(inner, "to_decimal"):
+            return inner
+    return value
+
+
+def _instantiate_runtime_ion_instance(
+    *,
+    instance_name: str,
+    runtime_cls: type,
+    layouts: tuple[MechanismLayout, ...],
+    declarations: tuple[Density, ...],
+    state_buffers: dict[tuple[int, str], np.ndarray],
+    n_point: int,
+) -> object:
+    supported_params = _supported_ion_runtime_params(runtime_cls)
+    unsupported_params: dict[int, set[str]] = {}
+    for layout, declaration in zip(layouts, declarations):
+        invalid = set(declaration.params.keys()) - set(supported_params)
+        if invalid:
+            unsupported_params[layout.id] = invalid
+    if unsupported_params:
+        layout_id, invalid = next(iter(unsupported_params.items()))
+        raise ValueError(
+            f"Ion layout {layout_id!r} for instance {instance_name!r} uses unsupported runtime ion params "
+            f"{sorted(invalid)!r} on {runtime_cls.__name__!r}."
+        )
+
+    baseline_ion = runtime_cls(size=(n_point,))
+    full_param_values: dict[str, np.ndarray] = {}
+    for param_name in supported_params:
+        baseline_value = _normalize_ion_runtime_param_value(
+            runtime_cls,
+            param_name,
+            getattr(baseline_ion, _ion_runtime_attr_name(runtime_cls, param_name)),
+        )
+        full_param_values[param_name] = _object_array_from_value(baseline_value, shape=(n_point,))
+
+    for layout, declaration in zip(layouts, declarations):
+        point_index = layout.point_index
+        if point_index is None:
+            raise ValueError(f"Ion layout {layout.id!r} is missing point_index.")
+        for param_name in declaration.params.keys():
+            values = _object_array_from_buffer(state_buffers[(layout.id, param_name)])
+            if param_name == "Ci_initializer" and issubclass(runtime_cls, DynamicNernstIon):
+                for index in point_index.tolist():
+                    full_param_values[param_name][index] = _normalize_ion_runtime_param_value(
+                        runtime_cls,
+                        param_name,
+                        values[index],
+                    )
+            else:
+                full_param_values[param_name][point_index] = values[point_index]
+
+    runtime_kwargs = {
+        param_name: _as_runtime_array(values)
+        for param_name, values in full_param_values.items()
+    }
+    return runtime_cls(size=(n_point,), name=instance_name, **runtime_kwargs)
+
+
+class _BoundIonChannelRuntime(Channel):
+    __module__ = "braincell.compute"
+
+    def __init__(self, channel: object, *, bound_ions: tuple[object, ...], owner_ion: object):
+        super().__init__(size=channel.size, name=getattr(channel, "name", None))
+        self._channel = channel
+        self._bound_ions = tuple(bound_ions)
+        self.root_type = type(owner_ion)
+
+    def _infos(self):
+        return tuple(ion.pack_info() for ion in self._bound_ions)
+
+    def pre_integral(self, V, *unused):
+        return self._channel.pre_integral(V, *self._infos())
+
+    def compute_derivative(self, V, *unused):
+        return self._channel.compute_derivative(V, *self._infos())
+
+    def post_integral(self, V, *unused):
+        return self._channel.post_integral(V, *self._infos())
+
+    def init_state(self, V, *unused, batch_size=None):
+        return self._channel.init_state(V, *self._infos(), batch_size=batch_size)
+
+    def reset_state(self, V, *unused, batch_size=None):
+        return self._channel.reset_state(V, *self._infos(), batch_size=batch_size)
+
+    def update(self, V, *unused):
+        return self._channel.update(V, *self._infos())
+
+    def current(self, V, *unused):
+        return self._channel.current(V, *self._infos())
+
+
 def _instantiate_runtime_node(
     *,
     layout: MechanismLayout,
     mechanism: object,
     state_buffers: dict[tuple[int, str], np.ndarray],
     ions: dict[str, object],
-) -> object | None:
+    ion_aliases: dict[str, str],
+    ion_family_candidates: dict[str, tuple[str, ...]],
+) -> tuple[object | None, tuple[str, ...], str | None]:
     if layout.target != "density" or layout.layout != "dense":
-        return None
+        return None, (), None
     if not isinstance(mechanism, Density):
-        return None
+        return None, (), None
     if mechanism.category != "channel":
-        return None
+        return None, (), None
 
     runtime_cls = get_registry().get("channel", mechanism.class_name)
     params = _runtime_constructor_params(
@@ -686,28 +1060,147 @@ def _instantiate_runtime_node(
     else:
         size = (layout.n_active,)
     node = runtime_cls(size=size, **params)
-
-    ion_key = _channel_ion_key(runtime_cls)
-    if ion_key is not None:
+    bound_ions, current_owner_key = _resolve_channel_runtime_bindings(
+        runtime_cls=runtime_cls,
+        mechanism=mechanism,
+        ions=ions,
+        ion_aliases=ion_aliases,
+        ion_family_candidates=ion_family_candidates,
+    )
+    if current_owner_key is not None:
         channel_key = mechanism.instance_name
-        ions[ion_key].add(**{channel_key: node})
-    return node
+        owner_ion = ions[current_owner_key]
+        if len(bound_ions) == 1 and bound_ions[0][0] == current_owner_key:
+            owner_ion.add(**{channel_key: node})
+        else:
+            wrapper = _BoundIonChannelRuntime(
+                node,
+                bound_ions=tuple(ion for _, ion in bound_ions),
+                owner_ion=owner_ion,
+            )
+            owner_ion.add(**{channel_key: wrapper})
+    return node, tuple(ion_key for ion_key, _ in bound_ions), current_owner_key
 
 
-def _channel_ion_key(cls: type) -> str | None:
-    """Infer the ion-container key for a concrete channel class.
+def _resolve_channel_runtime_bindings(
+    *,
+    runtime_cls: type,
+    mechanism: Density,
+    ions: dict[str, object],
+    ion_aliases: dict[str, str],
+    ion_family_candidates: dict[str, tuple[str, ...]],
+) -> tuple[tuple[tuple[str, object], ...], str | None]:
+    family_slots = _channel_family_slots(runtime_cls)
+    if len(family_slots) == 0:
+        if getattr(mechanism, "ion_name", None) is not None or getattr(mechanism, "ion_names", None) is not None:
+            raise ValueError(
+                f"Channel {mechanism.class_name!r} does not bind ions but ion selectors were provided."
+            )
+        return (), None
 
-    Returns ``"na"``, ``"k"``, or ``"ca"`` when the class's
-    ``root_type`` is a subclass of the corresponding ion base, or
-    ``None`` when the channel installs at root level (e.g. leak
-    channels whose ``root_type`` is :class:`HHTypedNeuron`). Channels
-    with compound ``root_type`` (e.g. ``JointTypes[Potassium,
-    Calcium]`` for K-Ca channels) also return ``None`` — they need
-    per-channel runtime wiring that is not yet implemented.
-    """
+    if len(family_slots) == 1:
+        if getattr(mechanism, "ion_names", None) is not None:
+            raise ValueError(
+                f"Single-ion channel {mechanism.class_name!r} must use ion_name, not ion_names."
+            )
+        family_key = family_slots[0][0]
+        ion_key = _resolve_ion_instance_key(
+            family_key=family_key,
+            selector=getattr(mechanism, "ion_name", None),
+            ions=ions,
+            ion_aliases=ion_aliases,
+            ion_family_candidates=ion_family_candidates,
+        )
+        return ((ion_key, ions[ion_key]),), ion_key
+
+    if getattr(mechanism, "ion_name", None) is not None:
+        raise ValueError(
+            f"Mixed-ion channel {mechanism.class_name!r} must use ion_names, not ion_name."
+        )
+    selector_map = dict(getattr(mechanism, "ion_names", ()) or ())
+    slot_keys = {family_key for family_key, _ in family_slots}
+    unknown_selector_keys = set(selector_map.keys()) - slot_keys
+    if unknown_selector_keys:
+        raise ValueError(
+            f"Mixed-ion channel {mechanism.class_name!r} received unknown ion_names keys "
+            f"{sorted(unknown_selector_keys)!r}; expected subset of {sorted(slot_keys)!r}."
+        )
+
+    bound_ions: list[tuple[str, object]] = []
+    for family_key, _ in family_slots:
+        ion_key = _resolve_ion_instance_key(
+            family_key=family_key,
+            selector=selector_map.get(family_key),
+            ions=ions,
+            ion_aliases=ion_aliases,
+            ion_family_candidates=ion_family_candidates,
+        )
+        bound_ions.append((ion_key, ions[ion_key]))
+
+    current_owner_family = _channel_current_owner_family(runtime_cls)
+    if current_owner_family is None:
+        raise ValueError(
+            f"Mixed-ion channel class {runtime_cls.__name__!r} must define current_owner_type."
+        )
+    owner_candidates = [ion_key for (family_key, _), (ion_key, _) in zip(family_slots, bound_ions) if family_key == current_owner_family]
+    if len(owner_candidates) != 1:
+        raise ValueError(
+            f"Mixed-ion channel class {runtime_cls.__name__!r} could not resolve a unique current owner for family "
+            f"{current_owner_family!r}."
+        )
+    return tuple(bound_ions), owner_candidates[0]
+
+
+def _resolve_ion_instance_key(
+    *,
+    family_key: str,
+    selector: str | None,
+    ions: dict[str, object],
+    ion_aliases: dict[str, str],
+    ion_family_candidates: dict[str, tuple[str, ...]],
+) -> str:
+    candidates = ion_family_candidates.get(family_key, ())
+    if len(candidates) == 0:
+        raise KeyError(f"No ion candidates are registered for family {family_key!r}.")
+    if selector is None:
+        if len(candidates) == 1:
+            return candidates[0]
+        raise ValueError(
+            f"Ion family {family_key!r} is ambiguous; candidates are {list(candidates)!r}. "
+            f"Declare an explicit ion selector for this family."
+        )
+
+    ion_key = selector if selector in ions else ion_aliases.get(selector)
+    if ion_key is None:
+        raise KeyError(f"Ion selector {selector!r} could not be resolved for family {family_key!r}.")
+    if ion_key not in candidates:
+        raise ValueError(
+            f"Ion selector {selector!r} resolved to {ion_key!r}, which is not a candidate for family "
+            f"{family_key!r} ({list(candidates)!r})."
+        )
+    return ion_key
+
+
+def _channel_family_slots(cls: type) -> tuple[tuple[str, type], ...]:
     root_type = getattr(cls, "root_type", None)
-    if root_type is None or not isinstance(root_type, type):
-        return None
+    if root_type is None:
+        return ()
+    args = getattr(root_type, "__args__", None)
+    if args:
+        slots = []
+        for root in args:
+            family = _root_type_to_family(root)
+            if family is not None:
+                slots.append((family, root))
+        return tuple(slots)
+    if isinstance(root_type, type):
+        family = _root_type_to_family(root_type)
+        if family is not None:
+            return ((family, root_type),)
+    return ()
+
+
+def _root_type_to_family(root_type: type) -> str | None:
     try:
         if issubclass(root_type, runtime_ion.Sodium):
             return "na"
@@ -718,6 +1211,18 @@ def _channel_ion_key(cls: type) -> str | None:
     except TypeError:
         return None
     return None
+
+
+def _channel_current_owner_family(cls: type) -> str | None:
+    family_slots = _channel_family_slots(cls)
+    if len(family_slots) == 0:
+        return None
+    if len(family_slots) == 1:
+        return family_slots[0][0]
+    owner_type = getattr(cls, "current_owner_type", None)
+    if owner_type is None:
+        return None
+    return _root_type_to_family(owner_type)
 
 
 def _runtime_param_value(
@@ -739,6 +1244,9 @@ def _sync_runtime_node_param(runtime: CellRuntimeState, *, layout_id: int, var_n
         return
     layout = runtime.layouts[int(layout_id)]
     kind = layout.kind
+    if kind.startswith("ion:"):
+        _sync_runtime_ion(runtime, layout_id=int(layout_id))
+        return
     if kind in {"channel:INa_HH1952", "channel:IK_HH1952"} and var_name == "T":
         setattr(
             node,
@@ -753,6 +1261,54 @@ def _sync_runtime_node_param(runtime: CellRuntimeState, *, layout_id: int, var_n
         var_name,
         _runtime_param_value(layout=layout, var_name=var_name, state_buffers=runtime.state_buffers),
     )
+
+
+def _sync_runtime_ion(runtime: CellRuntimeState, *, layout_id: int) -> None:
+    layout = runtime.layouts[int(layout_id)]
+    mechanism = runtime.layout_mechanisms[int(layout_id)]
+    if not isinstance(mechanism, Density) or mechanism.category != "ion":
+        return
+    instance_name = mechanism.instance_name
+    ion = runtime.ions[instance_name]
+    supported_params = _supported_ion_runtime_params(type(ion))
+    full_values = {
+        param_name: _object_array_from_value(
+            _normalize_ion_runtime_param_value(
+                type(ion),
+                param_name,
+                getattr(ion, _ion_runtime_attr_name(type(ion), param_name)),
+            ),
+            shape=(runtime.n_point,),
+        )
+        for param_name in supported_params
+    }
+
+    for candidate in runtime.layouts:
+        candidate_mechanism = runtime.layout_mechanisms[candidate.id]
+        if candidate.target != "density":
+            continue
+        if not isinstance(candidate_mechanism, Density) or candidate_mechanism.category != "ion":
+            continue
+        if candidate_mechanism.instance_name != instance_name:
+            continue
+        if candidate.point_index is None:
+            raise ValueError(f"Ion layout {candidate.id!r} is missing point_index.")
+        for param_name in candidate_mechanism.params.keys():
+            values = _object_array_from_buffer(runtime.state_buffers[(candidate.id, param_name)])
+            if param_name == "Ci_initializer" and isinstance(ion, DynamicNernstIon):
+                for index in candidate.point_index.tolist():
+                    full_values[param_name][index] = _normalize_ion_runtime_param_value(
+                        type(ion),
+                        param_name,
+                        values[index],
+                    )
+            else:
+                full_values[param_name][candidate.point_index] = values[candidate.point_index]
+
+    for param_name, values in full_values.items():
+        setattr(ion, _ion_runtime_attr_name(type(ion), param_name), _as_runtime_array(values))
+    if hasattr(ion, "_update_reversal") and callable(getattr(ion, "_update_reversal")):
+        ion._update_reversal()
 
 
 def _mask_quantity_like(values: np.ndarray, mask: np.ndarray) -> np.ndarray:
@@ -775,11 +1331,24 @@ def _object_array_from_buffer(buffer: np.ndarray) -> np.ndarray:
     return values
 
 
+def _object_array_from_value(value: object, *, shape: tuple[int, ...]) -> np.ndarray:
+    values = np.empty(shape, dtype=object)
+    raw_shape = getattr(value, "shape", ())
+    if raw_shape not in (None, (), shape):
+        raise ValueError(f"Cannot coerce value with shape {raw_shape!r} into object array shape {shape!r}.")
+    if raw_shape == shape:
+        for index in np.ndindex(shape):
+            values[index] = value[index]
+        return values
+    values.fill(value)
+    return values
+
+
 def _as_runtime_array(values: np.ndarray) -> object:
     if values.size == 0:
         return values
     first = values.flat[0]
-    if hasattr(first, "unit"):
+    if hasattr(first, "to_decimal") and callable(getattr(first, "to_decimal")):
         decimals = np.asarray([item.to_decimal(first.unit) for item in values.flat], dtype=float).reshape(values.shape)
         return u.Quantity(decimals, first.unit)
     return np.asarray(values.tolist())
@@ -840,4 +1409,4 @@ def _is_root_level_runtime_node(kind: str) -> bool:
         cls = get_registry().get("channel", class_name)
     except KeyError:
         return False
-    return _channel_ion_key(cls) is None
+    return _channel_current_owner_family(cls) is None

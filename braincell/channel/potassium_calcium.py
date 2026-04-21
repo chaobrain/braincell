@@ -54,6 +54,7 @@ class KCaChannel(Channel):
     __module__ = 'braincell.channel'
 
     root_type = brainstate.mixin.JointTypes[Potassium, Calcium]
+    current_owner_type = Potassium
 
     def pre_integral(self, V, K: IonInfo, Ca: IonInfo):
         """

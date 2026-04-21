@@ -77,6 +77,37 @@ class CVGeo:
     axial_factor_dist: Quantity
 
 
+def frusta_boundary_radii(frusta: tuple[CVFrustum, ...]) -> tuple[Quantity, Quantity]:
+    if len(frusta) == 0:
+        raise ValueError("Cannot resolve boundary radii from empty frusta.")
+    return frusta[0].radius_prox, frusta[-1].radius_dist
+
+
+def frusta_midpoint_radius(frusta: tuple[CVFrustum, ...]) -> Quantity:
+    if len(frusta) == 0:
+        raise ValueError("Cannot resolve midpoint radius from empty frusta.")
+    total_length_um = _frusta_total_length_um(frusta)
+    if total_length_um <= EPSILON:
+        r0 = float(np.asarray(frusta[0].radius_prox.to_decimal(u.um), dtype=float))
+        r1 = float(np.asarray(frusta[-1].radius_dist.to_decimal(u.um), dtype=float))
+        return u.Quantity(0.5 * (r0 + r1), u.um)
+
+    target_length_um = 0.5 * total_length_um
+    walked_um = 0.0
+    for piece in frusta:
+        piece_length_um = float(np.asarray(piece.length.to_decimal(u.um), dtype=float))
+        r0_um = float(np.asarray(piece.radius_prox.to_decimal(u.um), dtype=float))
+        r1_um = float(np.asarray(piece.radius_dist.to_decimal(u.um), dtype=float))
+        next_walked_um = walked_um + piece_length_um
+        if next_walked_um >= target_length_um - EPSILON:
+            if piece_length_um <= EPSILON:
+                return u.Quantity(0.5 * (r0_um + r1_um), u.um)
+            ratio = max(0.0, min(1.0, (target_length_um - walked_um) / piece_length_um))
+            return u.Quantity(r0_um + (r1_um - r0_um) * ratio, u.um)
+        walked_um = next_walked_um
+    return frusta[-1].radius_dist
+
+
 def build_cv_geo(
     morpho: Morphology,
     *,

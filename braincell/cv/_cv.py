@@ -31,7 +31,13 @@ import numpy as np
 from braincell.filter import RegionMask
 from braincell.morph import Branch
 from ._policy import CVPolicy
-from ._geo import CVFrustum, CVGeo, axial_resistance_from_factor
+from ._geo import (
+    CVFrustum,
+    CVGeo,
+    axial_resistance_from_factor,
+    frusta_boundary_radii,
+    frusta_midpoint_radius,
+)
 
 if TYPE_CHECKING:
     from ._mech import CVMech
@@ -78,6 +84,20 @@ class CV:
     @property
     def region(self) -> RegionMask:
         return RegionMask(((self.branch_id, self.prox, self.dist),))
+
+    @property
+    def radius_prox(self):
+        radius_prox, _ = frusta_boundary_radii(self._frusta)
+        return radius_prox
+
+    @property
+    def radius_dist(self):
+        _, radius_dist = frusta_boundary_radii(self._frusta)
+        return radius_dist
+
+    @property
+    def diam_mid(self):
+        return 2.0 * frusta_midpoint_radius(self._frusta)
 
     def as_branch(self) -> Branch:
         if len(self._frusta) == 0:

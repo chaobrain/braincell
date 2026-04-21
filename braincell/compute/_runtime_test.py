@@ -405,6 +405,267 @@ class CellRuntimeStateTest(unittest.TestCase):
         self.assertEqual(cell.get_ion("k").varshape, (5,))
         self.assertEqual(cell.get_ion("ca").varshape, (5,))
 
+    def test_runtime_ions_expose_point_space_geometry_arrays(self) -> None:
+        cell = Cell(_build_tree())
+
+        na = cell.get_ion("na")
+        self.assertEqual(na.length.shape, (5,))
+        self.assertEqual(na.area.shape, (5,))
+        self.assertEqual(na.diam_mid.shape, (5,))
+        self.assertEqual(na.radius_prox.shape, (5,))
+        self.assertEqual(na.radius_dist.shape, (5,))
+
+        self.assertAlmostEqual(float(na.length[1].to_decimal(u.um)), 20.0, places=12)
+        self.assertAlmostEqual(float(na.length[3].to_decimal(u.um)), 100.0, places=12)
+        self.assertAlmostEqual(float(na.diam_mid[1].to_decimal(u.um)), 20.0, places=12)
+        self.assertAlmostEqual(float(na.diam_mid[3].to_decimal(u.um)), 3.0, places=12)
+        self.assertAlmostEqual(float(na.radius_prox[1].to_decimal(u.um)), 10.0, places=12)
+        self.assertAlmostEqual(float(na.radius_dist[3].to_decimal(u.um)), 1.0, places=12)
+        self.assertAlmostEqual(float(na.area[0].to_decimal(u.um ** 2)), 0.0, places=12)
+
+    def test_single_named_ion_keeps_family_and_class_aliases(self) -> None:
+        cell = Cell(_build_tree())
+        cell.paint(
+            BranchSlice(branch_index=0, prox=0.0, dist=1.0),
+            braincell.mech.Ion("SodiumFixed", name="na_left", E=55.0 * u.mV),
+        )
+
+        layout = next(layout for layout in cell.layouts if layout.kind == "ion:SodiumFixed")
+        node = cell.get_runtime_node(layout.id)
+        na = cell.get_ion("na")
+
+        self.assertIs(node, na)
+        self.assertIs(cell.get_ion("SodiumFixed"), na)
+        self.assertIs(cell.get_ion("na_left"), na)
+        self.assertIsInstance(na, braincell.ion.SodiumFixed)
+        self.assertEqual(layout.point_index.tolist(), [1])
+        self.assertAlmostEqual(float(na.E[1].to_decimal(u.mV)), 55.0, places=12)
+        self.assertAlmostEqual(float(na.E[3].to_decimal(u.mV)), 50.0, places=12)
+
+    def test_explicit_init_nernst_ion_replaces_default_species_container(self) -> None:
+        cell = Cell(_build_tree())
+        cell.paint(
+            BranchSlice(branch_index=[0, 1], prox=0.0, dist=1.0),
+            braincell.mech.Ion(
+                "SodiumInitNernst",
+                name="na_pool",
+                temp=u.celsius2kelvin(30.0),
+                Ci=12.0 * u.mM,
+                Co=145.0 * u.mM,
+            ),
+        )
+
+        na = cell.get_ion("na")
+        self.assertIsInstance(na, braincell.ion.SodiumInitNernst)
+        self.assertIs(cell.get_ion("SodiumInitNernst"), na)
+        self.assertIs(cell.get_ion("na_pool"), na)
+        self.assertAlmostEqual(float(na.temp[1].to_decimal(u.kelvin)), float(u.celsius2kelvin(30.0).to_decimal(u.kelvin)), places=12)
+        self.assertAlmostEqual(float(na.Ci[1].to_decimal(u.mM)), 12.0, places=12)
+        self.assertAlmostEqual(float(na.Co[1].to_decimal(u.mM)), 145.0, places=12)
+
+    def test_multiple_named_ions_make_family_lookup_ambiguous(self) -> None:
+        cell = Cell(_build_tree())
+        cell.paint(
+            BranchSlice(branch_index=0, prox=0.0, dist=1.0),
+            braincell.mech.Ion("CalciumFixed", name="ca_hva", E=120.0 * u.mV),
+        )
+        cell.paint(
+            BranchSlice(branch_index=1, prox=0.0, dist=1.0),
+            braincell.mech.Ion("CalciumFixed", name="ca_lva", E=110.0 * u.mV),
+        )
+
+        self.assertIs(cell.get_ion("ca_hva"), cell.get_ion("ca_hva"))
+        self.assertIs(cell.get_ion("ca_lva"), cell.get_ion("ca_lva"))
+        with self.assertRaises(ValueError):
+            cell.get_ion("ca")
+        with self.assertRaises(ValueError):
+            cell.get_ion("CalciumFixed")
+
+    def test_single_ion_channel_binds_to_explicit_runtime_ion(self) -> None:
+        cell = Cell(_build_tree())
+        cell.paint(
+            BranchSlice(branch_index=0, prox=0.0, dist=1.0),
+            braincell.mech.Ion("SodiumFixed", name="na_soma", E=55.0 * u.mV),
+        )
+        cell.paint(
+            BranchSlice(branch_index=1, prox=0.0, dist=1.0),
+            braincell.mech.Ion("SodiumFixed", name="na_dend", E=45.0 * u.mV),
+        )
+        cell.paint(
+            BranchSlice(branch_index=0, prox=0.0, dist=1.0),
+            braincell.mech.Channel("INa_HH1952", g_max=12.0 * (u.mS / u.cm**2), ion_name="na_soma"),
+        )
+
+        channel_layout = next(layout for layout in cell.layouts if layout.kind == "channel:INa_HH1952")
+        na_soma = cell.get_ion("na_soma")
+        na_dend = cell.get_ion("na_dend")
+        node = cell.get_runtime_node(channel_layout.id)
+
+        self.assertIs(na_soma.channels["INa_HH1952"], node)
+        self.assertNotIn("INa_HH1952", na_dend.channels)
+        self.assertAlmostEqual(float(na_soma.E[1].to_decimal(u.mV)), 55.0, places=12)
+        self.assertAlmostEqual(float(na_dend.E[3].to_decimal(u.mV)), 45.0, places=12)
+
+    def test_single_ion_channel_requires_selector_when_family_is_ambiguous(self) -> None:
+        cell = Cell(_build_tree())
+        cell.paint(
+            BranchSlice(branch_index=0, prox=0.0, dist=1.0),
+            braincell.mech.Ion("CalciumFixed", name="ca_hva"),
+        )
+        cell.paint(
+            BranchSlice(branch_index=1, prox=0.0, dist=1.0),
+            braincell.mech.Ion("CalciumFixed", name="ca_lva"),
+        )
+        cell.paint(
+            BranchSlice(branch_index=[0, 1], prox=0.0, dist=1.0),
+            braincell.mech.Channel("ICaT_HM1992"),
+        )
+
+        with self.assertRaises(ValueError) as ctx:
+            _ = cell.layouts
+        self.assertIn("ambiguous", str(ctx.exception))
+
+    def test_set_state_on_named_ion_layout_updates_only_that_instance(self) -> None:
+        cell = Cell(_build_tree())
+        cell.paint(
+            BranchSlice(branch_index=0, prox=0.0, dist=1.0),
+            braincell.mech.Ion("SodiumFixed", name="na_left", E=55.0 * u.mV),
+        )
+        cell.paint(
+            BranchSlice(branch_index=1, prox=0.0, dist=1.0),
+            braincell.mech.Ion("SodiumFixed", name="na_right", E=45.0 * u.mV),
+        )
+
+        layout = next(
+            layout
+            for layout in cell.layouts
+            if layout.kind == "ion:SodiumFixed"
+            and cell._ensure_runtime_compiled().get_layout_mechanism(layout.id).instance_name == "na_left"
+        )
+        na_left = cell.get_ion("na_left")
+        na_right = cell.get_ion("na_right")
+        cell.set_state(layout.id, "E", 42.0 * u.mV)
+
+        self.assertAlmostEqual(float(na_left.E[1].to_decimal(u.mV)), 42.0, places=12)
+        self.assertAlmostEqual(float(na_right.E[3].to_decimal(u.mV)), 45.0, places=12)
+
+    def test_dynamic_ion_lifecycle_runs_in_runtime(self) -> None:
+        cell = Cell(_build_tree())
+        cell.paint(
+            BranchSlice(branch_index=[0, 1], prox=0.0, dist=1.0),
+            braincell.mech.Ion(
+                "CalciumDetailed",
+                name="ca_dyn",
+                d=0.5 * u.um,
+                tau=10.0 * u.ms,
+                C_rest=5e-5 * u.mM,
+                Ci_initializer=2.4e-4 * u.mM,
+            ),
+        )
+        cell.paint(
+            BranchSlice(branch_index=0, prox=0.0, dist=1.0),
+            braincell.mech.Channel(
+                "ICaT_HM1992",
+                ion_name="ca_dyn",
+                g_max=2.0 * (u.mS / u.cm**2),
+            ),
+        )
+
+        layout = next(layout for layout in cell.layouts if layout.kind == "ion:CalciumDetailed")
+        ion = cell.get_ion("ca_dyn")
+
+        self.assertIs(cell.get_ion("ca"), ion)
+        self.assertIs(cell.get_ion("CalciumDetailed"), ion)
+
+        cell.init_state()
+        self.assertIsInstance(ion.Ci, braincell.quad.DiffEqState)
+        self.assertAlmostEqual(float(ion.Ci.value[1].to_decimal(u.mM)), 2.4e-4, places=12)
+
+        ion.Ci.value = ion.Ci.value.at[1].set(1.0e-3 * u.mM)
+        cell.reset_state()
+        self.assertAlmostEqual(float(ion.Ci.value[1].to_decimal(u.mM)), 2.4e-4, places=12)
+
+        cell.compute_derivative()
+        self.assertEqual(ion.Ci.derivative.shape, (5,))
+
+        cell.set_state(layout.id, "Ci_initializer", 7.0e-4 * u.mM)
+        cell.reset_state()
+        self.assertAlmostEqual(float(ion.Ci.value[1].to_decimal(u.mM)), 7.0e-4, places=12)
+
+    def test_same_ion_instance_name_cannot_mix_different_classes(self) -> None:
+        cell = Cell(_build_tree())
+        cell.paint(
+            BranchSlice(branch_index=0, prox=0.0, dist=1.0),
+            braincell.mech.Ion("SodiumFixed", name="na_main"),
+        )
+        cell.paint(
+            BranchSlice(branch_index=1, prox=0.0, dist=1.0),
+            braincell.mech.Ion("SodiumInitNernst", name="na_main"),
+        )
+
+        with self.assertRaises(ValueError) as ctx:
+            _ = cell.layouts
+        self.assertIn("cannot mix classes", str(ctx.exception))
+
+    def test_mixed_ion_channel_binds_per_family_and_uses_owner_ion_bucket(self) -> None:
+        cell = Cell(_build_tree())
+        cell.paint(
+            BranchSlice(branch_index=[0, 1], prox=0.0, dist=1.0),
+            braincell.mech.Ion("PotassiumFixed", name="k_main", E=-88.0 * u.mV),
+            braincell.mech.Ion("CalciumFixed", name="ca_hva", Ci=2e-4 * u.mM),
+            braincell.mech.Ion("CalciumFixed", name="ca_lva", Ci=5e-4 * u.mM),
+        )
+        cell.paint(
+            BranchSlice(branch_index=[0, 1], prox=0.0, dist=1.0),
+            braincell.mech.Channel("IKca3_1_Ma2020", ion_names={"ca": "ca_hva"}),
+        )
+
+        layout = next(layout for layout in cell.layouts if layout.kind == "channel:IKca3_1_Ma2020")
+        runtime = cell._ensure_runtime_compiled()
+        node = cell.get_runtime_node(layout.id)
+        k_main = cell.get_ion("k_main")
+        ca_hva = cell.get_ion("ca_hva")
+
+        self.assertEqual(runtime.current_owner_keys[layout.id], "k_main")
+        self.assertIn("IKca3_1_Ma2020", k_main.channels)
+        self.assertNotIn("IKca3_1_Ma2020", ca_hva.channels)
+        self.assertIsInstance(node, braincell.channel.IKca3_1_Ma2020)
+
+    def test_mixed_ion_channel_probe_uses_bound_ions_and_owner_total_current(self) -> None:
+        cell = Cell(_build_tree())
+        cell.paint(
+            BranchSlice(branch_index=[0, 1], prox=0.0, dist=1.0),
+            braincell.mech.Ion("PotassiumFixed", name="k_main", E=-88.0 * u.mV),
+            braincell.mech.Ion("CalciumFixed", name="ca_hva", Ci=2e-4 * u.mM),
+            braincell.mech.Ion("CalciumFixed", name="ca_lva", Ci=5e-4 * u.mM),
+        )
+        cell.paint(
+            BranchSlice(branch_index=[0, 1], prox=0.0, dist=1.0),
+            braincell.mech.Channel("IKca3_1_Ma2020", ion_names={"ca": "ca_hva"}),
+        )
+        cell.place(
+            at("soma", 0.5),
+            braincell.mech.CurrentProbe(mechanism="IKca3_1_Ma2020"),
+            braincell.mech.CurrentProbe(ion="k_main"),
+        )
+        cell.init_state()
+
+        samples = cell.sample_probes()
+        runtime = cell._ensure_runtime_compiled()
+        layout = next(layout for layout in cell.layouts if layout.kind == "channel:IKca3_1_Ma2020")
+        node = cell.get_runtime_node(layout.id)
+        point_V = cell._point_voltage(cell.V.value)
+        expected_mechanism = node.current(
+            point_V,
+            cell.get_ion("k_main").pack_info(),
+            cell.get_ion("ca_hva").pack_info(),
+        )[1]
+        expected_total = cell.get_ion("k_main").current(point_V, include_external=False)[1]
+
+        self.assertEqual(runtime.bound_ion_keys[layout.id], ("k_main", "ca_hva"))
+        self.assertEqual(samples["soma(0.5)_IKca3_1_Ma2020_current"], expected_mechanism)
+        self.assertEqual(samples["soma(0.5)_k_main_current"], expected_total)
+
     def test_channel_spec_ina_hh1952_builds_runtime_node_and_binds_to_na(self) -> None:
         cell = Cell(_build_tree())
         cell.paint(

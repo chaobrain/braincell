@@ -1,4 +1,7 @@
-# braincell/_multi_compartment/__init__.py
-#
-# Rewrite in progress. Public names (``Cell``, ``RunnableCell``,
-# ``RunResult``) will be re-exported here as individual modules land.
+"""Multi-compartment cell declaration + runtime."""
+
+from .cell import Cell
+from .run import RunResult
+from .runnable import RunnableCell
+
+__all__ = ["Cell", "RunResult", "RunnableCell"]

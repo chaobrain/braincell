@@ -156,6 +156,25 @@ def merge_paint_rules(
     return tuple(merged)
 
 
+def merge_place_rules(
+    existing: tuple[PlaceRule, ...],
+    incoming: tuple[PlaceRule, ...],
+) -> tuple[PlaceRule, ...]:
+    """Append ``incoming`` place rules, dropping exact duplicates.
+
+    Two :class:`PlaceRule` s are considered duplicates when their
+    dataclass equality matches (same locset, same mechanism tuple,
+    same site). Callers that place the same clamp on the same locset
+    twice end up with a single rule instead of firing the clamp twice.
+    """
+    merged = list(existing)
+    for rule in incoming:
+        if rule in merged:
+            continue
+        merged.append(rule)
+    return tuple(merged)
+
+
 def normalize_place_rule(
     locset: LocsetExpr, mechanisms: tuple[object, ...]
 ) -> PlaceRule:

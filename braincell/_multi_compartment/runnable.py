@@ -76,6 +76,7 @@ class RunnableCell(HHTypedNeuron):
         self._morpho = morpho
         self._cvs = cvs
         self._V_th_value = V_th_value
+        self.V_th = V_th_value
         self._V_initializer_spec = V_initializer_spec
         self._spk_fun = spk_fun
         self.solver_name = solver_name

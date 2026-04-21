@@ -771,3 +771,113 @@ class CellRuntimeStateTest(unittest.TestCase):
 
             _ = rcell.layouts
         self.assertIn("__totally_unregistered__", str(ctx.exception))
+
+
+class _StubCell(braincell.HHTypedNeuron):
+    """Minimal :class:`HHTypedNeuron` double for install/uninstall tests."""
+
+    __module__ = "braincell.compute._runtime_test"
+
+    def __init__(self, V_th=-55.0 * u.mV, n_cv: int = 3):
+        from braincell.compute._runtime import build_placeholder_ions
+
+        braincell.HHTypedNeuron.__init__(
+            self, size=(1,), name="stub", **build_placeholder_ions()
+        )
+        self._V_th = V_th
+
+        class _FakeCV:
+            def __init__(self, cm):
+                self.cm = cm
+
+        self._cvs = tuple(_FakeCV(1.0 * u.uF / u.cm ** 2) for _ in range(n_cv))
+
+    @property
+    def V_th(self):
+        return self._V_th
+
+    @V_th.setter
+    def V_th(self, value):
+        self._V_th = value
+
+    @property
+    def cvs(self):
+        return self._cvs
+
+    @property
+    def varshape(self):
+        return (len(self._cvs),)
+
+
+class TestInstallCellRuntime(unittest.TestCase):
+
+    def _runtime_double(self, n_cv: int):
+        from unittest.mock import MagicMock
+        from braincell.compute._runtime import CellRuntimeState
+
+        runtime = MagicMock(spec=CellRuntimeState)
+        runtime.n_cv = n_cv
+        runtime.ions = {}
+        runtime.layouts = ()
+        runtime.runtime_nodes = {}
+        return runtime
+
+    def test_install_returns_tuple_of_installed_plain_attr_names(self):
+        from braincell.compute._runtime import install_cell_runtime
+
+        cell = _StubCell(n_cv=4)
+        installed = install_cell_runtime(cell, self._runtime_double(n_cv=4))
+
+        self.assertIsInstance(installed, tuple)
+        self.assertEqual(
+            set(installed),
+            {"_in_size", "_out_size", "ion_channels", "C"},
+        )
+        for name in installed:
+            self.assertTrue(
+                hasattr(cell, name),
+                f"install_cell_runtime should have set attribute {name!r}.",
+            )
+        # V_th still reachable via the property setter (not in returned list).
+        self.assertTrue(hasattr(cell, "V_th"))
+
+
+class TestUninstallCellRuntime(unittest.TestCase):
+
+    def _runtime_double(self, n_cv: int):
+        from unittest.mock import MagicMock
+        from braincell.compute._runtime import CellRuntimeState
+
+        runtime = MagicMock(spec=CellRuntimeState)
+        runtime.n_cv = n_cv
+        runtime.ions = {}
+        runtime.layouts = ()
+        runtime.runtime_nodes = {}
+        return runtime
+
+    def test_uninstall_round_trip(self):
+        from braincell._base import IonChannel
+        from braincell.compute._runtime import (
+            install_cell_runtime,
+            uninstall_cell_runtime,
+        )
+
+        cell = _StubCell(n_cv=2)
+        runtime = self._runtime_double(n_cv=2)
+
+        installed = install_cell_runtime(cell, runtime)
+        for name in installed:
+            self.assertTrue(hasattr(cell, name))
+
+        uninstall_cell_runtime(cell, installed)
+
+        for name in installed:
+            self.assertFalse(
+                hasattr(cell, name),
+                f"uninstall_cell_runtime should have removed {name!r}.",
+            )
+        self.assertEqual(
+            dict(cell.nodes(IonChannel, allowed_hierarchy=(1, 1))),
+            {},
+            "No IonChannel nodes should remain after uninstall.",
+        )

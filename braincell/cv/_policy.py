@@ -27,7 +27,8 @@ from braincell.morph.morphology import Morphology
 if TYPE_CHECKING:
     from ._mech import PaintRule
 
-EPSILON = 1e-12
+EPS_PARAM = 1e-9        # tolerance for normalized x in [0, 1]
+EPS_LEN_UM = 1e-6       # tolerance for physical μm lengths
 Bounds = tuple[tuple[float, float], ...]
 BoundsByBranch = tuple[Bounds, ...]
 _DEFAULT_D_LAMBDA_CABLE = CableProperty(
@@ -128,11 +129,18 @@ class MaxCVLen(CVPolicy):
 
 @dataclass(frozen=True)
 class DLambda(CVPolicy):
-    """Placeholder for future d-lambda-based discretization.
+    """Splits each branch using the NEURON-style d_lambda discretization.
 
-    The type exists so higher-level APIs can already speak in terms of
-    ``CVPolicy`` variants, but it intentionally raises
-    ``NotImplementedError`` today.
+    Computes ``lambda_f`` per segment from branch diameter, ``Ra``, ``cm``, and
+    ``frequency``. Sums the electrotonic length of the branch, divides by
+    ``d_lambda``, and rounds up to the next integer (optionally promoted to an
+    odd count when ``keep_odd`` is ``True``).
+
+    This policy requires uniform ``(Ra, cm)`` **within each branch**. Painting
+    a different ``CableProperty`` onto a sub-interval of a branch raises
+    ``ValueError``. Resting-potential and temperature variations within a
+    branch are explicitly allowed — only the two cable values that enter
+    ``lambda_f`` are checked for uniformity.
     """
 
     d_lambda: float
@@ -236,9 +244,9 @@ class CompositeByTypePolicy(CVPolicy):
 
 def _bounds_from_max_len_um(branch, *, max_len_um: float, keep_odd: bool) -> Bounds:
     branch_len_um = float(np.asarray(branch.length.to_decimal(u.um), dtype=float))
-    if branch_len_um <= max_len_um + EPSILON:
+    if branch_len_um <= max_len_um + EPS_LEN_UM:
         return ((0.0, 1.0),)
-    n_cv = int(np.ceil((branch_len_um / max_len_um) - EPSILON))
+    n_cv = int(np.ceil((branch_len_um / max_len_um) - EPS_PARAM))
     n_cv = max(1, n_cv)
     n_cv = _promote_to_odd(n_cv, keep_odd=keep_odd)
     return tuple(
@@ -273,7 +281,7 @@ def _bounds_from_d_lambda(
 
     lambda_f_um = 1.0e5 * np.sqrt(diam_um / (4.0 * np.pi * frequency_hz * ra_ohm_cm * cm_uF_per_cm2))
     electrotonic_length = float(np.sum(lengths_um / lambda_f_um))
-    n_cv = int(np.ceil((electrotonic_length / d_lambda) - EPSILON))
+    n_cv = int(np.ceil((electrotonic_length / d_lambda) - EPS_PARAM))
     n_cv = max(1, n_cv)
     n_cv = _promote_to_odd(n_cv, keep_odd=keep_odd)
     return tuple(
@@ -310,7 +318,7 @@ def _resolve_branch_cable_properties(
         pieces = _sorted_unique_coords(boundaries)
         effective: list[tuple[float, float]] = []
         for left, right in zip(pieces[:-1], pieces[1:]):
-            if right - left <= EPSILON:
+            if right - left <= EPS_PARAM:
                 continue
             x = 0.5 * (left + right)
             cable = _last_cable_covering(rules, x=x)
@@ -331,7 +339,7 @@ def _sorted_unique_coords(values: list[float]) -> list[float]:
     coords = sorted(float(value) for value in values)
     out: list[float] = []
     for value in coords:
-        if not out or abs(value - out[-1]) > EPSILON:
+        if not out or abs(value - out[-1]) > EPS_PARAM:
             out.append(value)
     if out[0] > 0.0:
         out.insert(0, 0.0)
@@ -349,7 +357,7 @@ def _last_cable_covering(
 ) -> CableProperty:
     selected = rules[0][2]
     for prox, dist, cable in rules:
-        if prox - EPSILON <= x <= dist + EPSILON:
+        if prox - EPS_PARAM <= x <= dist + EPS_PARAM:
             selected = cable
     return selected
 
@@ -362,6 +370,6 @@ def _cable_signature(cable: CableProperty) -> tuple[float, float]:
 
 def _same_cable_signature(lhs: tuple[float, float], rhs: tuple[float, float]) -> bool:
     return bool(
-        np.isclose(lhs[0], rhs[0], atol=EPSILON, rtol=EPSILON)
-        and np.isclose(lhs[1], rhs[1], atol=EPSILON, rtol=EPSILON)
+        np.isclose(lhs[0], rhs[0], atol=1e-9, rtol=1e-6)
+        and np.isclose(lhs[1], rhs[1], atol=1e-9, rtol=1e-6)
     )

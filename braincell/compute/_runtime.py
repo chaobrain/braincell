@@ -117,6 +117,11 @@ class CellRuntimeState:
     layout_mechanisms: dict[int, object]
     runtime_nodes: dict[int, object]
     ions: dict[str, object]
+    ion_aliases: dict[str, str]
+    ion_family_candidates: dict[str, tuple[str, ...]]
+    ion_class_candidates: dict[str, tuple[str, ...]]
+    bound_ion_keys: dict[int, tuple[str, ...]]
+    current_owner_keys: dict[int, str | None]
     dhs_static_cache: object | None = None
 
     @classmethod

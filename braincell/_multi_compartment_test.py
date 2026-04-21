@@ -22,6 +22,8 @@ import brainstate
 import brainunit as u
 import numpy as np
 
+brainstate.environ.set(precision=64)
+
 import braincell
 from braincell import (
     Branch,

@@ -27,7 +27,8 @@ from typing import Any
 import brainunit as u
 import numpy as np
 
-from braincell.morph.morphology import Branch, Morphology
+from braincell.morph.branch import Branch
+from braincell.morph.morphology import Morphology
 from ._policy import CVPolicy
 
 Quantity = Any

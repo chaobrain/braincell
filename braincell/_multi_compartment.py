@@ -64,9 +64,9 @@ from braincell.cv._policy import CVPerBranch, CVPolicy
 from braincell.filter import LocsetExpr, RegionExpr
 from braincell.mech import CurrentProbe, Density, MechanismProbe, StateProbe
 from braincell.morph.morphology import Morphology
-from braincell.quad.protocol import DiffEqState, IndependentIntegration
 from braincell.quad import get_integrator
 from braincell.quad._staggered import build_cv_axial_operator
+from braincell.quad.protocol import DiffEqState, IndependentIntegration
 
 __all__ = ["Cell", "RunResult"]
 
@@ -140,6 +140,7 @@ class Cell(HHTypedNeuron):
     def __init__(
         self,
         morpho: Morphology,
+        size: brainstate.typing.Size = (1,),
         *,
         cv_policy: CVPolicy | None = None,
         V_th: object = -75 * u.mV,
@@ -151,11 +152,7 @@ class Cell(HHTypedNeuron):
         if not isinstance(morpho, Morphology):
             raise TypeError(f"Cell expects Morpho, got {type(morpho).__name__!s}.")
 
-        super().__init__(
-            size=(1,),
-            name=name,
-            **build_placeholder_ions(),
-        )
+        super().__init__(size=size, name=name, **build_placeholder_ions(size))
 
         self._morpho = clone_morpho(morpho)
         self._cv_policy = CVPerBranch() if cv_policy is None else cv_policy
@@ -250,10 +247,6 @@ class Cell(HHTypedNeuron):
     @property
     def voltage_shape(self) -> tuple[int, ...]:
         return self._ensure_runtime_compiled().voltage_shape
-
-    @property
-    def current_time(self):
-        return self._current_time.value
 
     @property
     def _dirty(self) -> bool:
@@ -389,7 +382,7 @@ class Cell(HHTypedNeuron):
         ordered_names = tuple(sorted(initial_samples))
 
         with brainstate.environ.context(dt=dt):
-            start_t = self.current_time
+            start_t = self._current_time.value
             relative_times = u.math.arange(0.0 * u.ms, duration, brainstate.environ.get_dt())
             if int(relative_times.shape[0]) == 0:
                 raise ValueError("Cell.run(...) produced no timesteps; ensure duration > 0 and dt > 0.")
@@ -790,10 +783,7 @@ class Cell(HHTypedNeuron):
 
     def _point_clamp_input(self) -> object:
         runtime = self._ensure_runtime_compiled()
-        try:
-            t = brainstate.environ.get("t")
-        except KeyError:
-            t = self.current_time
+        t = brainstate.environ.get("t")
         # Clamp current is evaluated in point space, but only active midpoint
         # points have membrane area. Normalize only those active clamp points
         # instead of dividing the full point vector, which would hit 0-area

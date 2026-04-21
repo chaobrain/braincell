@@ -189,10 +189,6 @@ class SingleCompartment(HHTypedNeuron):
         ----------
         batch_size : int, optional
             The batch size for resetting. If None, no batch dimension is added.
-
-        Returns
-        -------
-        None
         """
         self.V.value = braintools.init.param(self.V_initializer, self.varshape, batch_size)
         self.spike.value = self.get_spike(self.V.value, self.V.value)

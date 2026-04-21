@@ -379,8 +379,7 @@ def install_cell_runtime(cell: "Cell", runtime: CellRuntimeState) -> None:
     cell.V_th = fill_like(cell.varshape, cell._V_th_value)
 
 
-def build_placeholder_ions() -> dict[str, object]:
-    size = (1,)
+def build_placeholder_ions(size = (1,)) -> dict[str, object]:
     return {
         "na": runtime_ion.SodiumFixed(size=size),
         "k": runtime_ion.PotassiumFixed(size=size),

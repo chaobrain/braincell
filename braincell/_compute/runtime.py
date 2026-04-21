@@ -16,10 +16,14 @@
 
 import inspect
 from dataclasses import dataclass, fields, is_dataclass
+from typing import Literal
 
 import brainunit as u
 import jax.numpy as jnp
 import numpy as np
+
+Target = Literal["density", "point"]
+Layout = Literal["dense", "sparse"]
 
 from braincell import ion as runtime_ion
 from braincell._base import Channel, IonChannel
@@ -86,8 +90,8 @@ class MechanismLayout:
 
     id: int
     kind: str
-    target: str
-    layout: str
+    target: Target
+    layout: Layout
     point_index: np.ndarray | None
     point_mask: np.ndarray | None
     n_active: int
@@ -176,7 +180,7 @@ def build_clamp_active_table(
     return ClampActiveTable(ids=ids, area=area.astype(np.float64, copy=False))
 
 
-@dataclass(frozen=True)
+@dataclass
 class CellRuntimeState:
     """Lightweight bridge state between ``Cell`` declarations and runtime layout.
 
@@ -540,7 +544,7 @@ class CellRuntimeState:
 ##   braincell._multi_compartment.bridge
 
 
-def choose_layout(*, target: str) -> str:
+def choose_layout(*, target: Target) -> Layout:
     if target == "point":
         return "sparse"
     if target == "density":

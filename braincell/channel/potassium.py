@@ -283,6 +283,15 @@ class IKDR_Ba2002(IK_p4_markov):
         self.T_base = braintools.init.param(T_base, self.varshape, allow_none=False)
         self.V_sh = braintools.init.param(V_sh, self.varshape, allow_none=False)
 
+    def _on_param_updated(self, var_name, new_value):
+        """Recompute the Q10 factor ``phi`` whenever ``T`` changes.
+
+        ``self.T`` is stored in Celsius; this mirrors the formula used
+        in :meth:`__init__`.
+        """
+        if var_name == "T":
+            self.phi = self.T_base ** ((new_value - 36) / 10)
+
     def f_p_alpha(self, V):
         V = (V - self.V_sh).to_decimal(u.mV)
         tmp = V - 15.
@@ -399,10 +408,18 @@ class IK_HH1952(IK_p4_markov):
         self,
         size: Union[int, Sequence[int]],
         g_max: Union[brainstate.typing.ArrayLike, Callable] = 10. * (u.mS / u.cm ** 2),
-        phi: Union[brainstate.typing.ArrayLike, Callable] = 1.,
+        phi: Optional[Union[brainstate.typing.ArrayLike, Callable]] = None,
+        T: Optional[brainstate.typing.ArrayLike] = None,
+        T_base: brainstate.typing.ArrayLike = 3.,
         V_sh: Union[int, brainstate.typing.ArrayLike, Callable] = -45. * u.mV,
         name: Optional[str] = None,
     ):
+        if T is not None:
+            T_c = u.kelvin2celsius(T)
+            phi = T_base ** ((T_c - 36) / 10) if phi is None else phi
+        else:
+            T_c = None
+            phi = 1. if phi is None else phi
         super().__init__(
             size,
             name=name,
@@ -410,6 +427,14 @@ class IK_HH1952(IK_p4_markov):
             g_max=g_max,
         )
         self.V_sh = braintools.init.param(V_sh, self.varshape, allow_none=False)
+        self.T_base = braintools.init.param(T_base, self.varshape, allow_none=False)
+        if T_c is not None:
+            self.T = braintools.init.param(T_c, self.varshape, allow_none=False)
+
+    def _on_param_updated(self, var_name, new_value):
+        """Recompute the Q10 factor ``phi`` when ``T`` changes."""
+        if var_name == "T":
+            self.phi = self.T_base ** ((new_value - 36) / 10)
 
     def f_p_alpha(self, V):
         V = (V - self.V_sh).to_decimal(u.mV)

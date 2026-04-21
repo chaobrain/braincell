@@ -1284,20 +1284,15 @@ def _sync_runtime_node_param(runtime: CellRuntimeState, *, layout_id: int, var_n
     if kind.startswith("ion:"):
         _sync_runtime_ion(runtime, layout_id=int(layout_id))
         return
-    if kind in {"channel:INa_HH1952", "channel:IK_HH1952"} and var_name == "T":
-        setattr(
-            node,
-            "phi",
-            _runtime_temperature_phi(
-                _runtime_param_value(layout=layout, var_name=var_name, state_buffers=runtime.state_buffers)
-            ),
-        )
-        return
-    setattr(
-        node,
-        var_name,
-        _runtime_param_value(layout=layout, var_name=var_name, state_buffers=runtime.state_buffers),
+    new_value = _runtime_param_value(
+        layout=layout,
+        var_name=var_name,
+        state_buffers=runtime.state_buffers,
     )
+    setattr(node, var_name, new_value)
+    hook = getattr(node, "_on_param_updated", None)
+    if callable(hook):
+        hook(var_name, new_value)
 
 
 def _sync_runtime_ion(runtime: CellRuntimeState, *, layout_id: int) -> None:
@@ -1399,37 +1394,19 @@ def _runtime_constructor_params(
 ) -> dict[str, object]:
     """Build the kwargs passed to a concrete channel class's ``__init__``.
 
-    Reads each declared parameter from its state buffer (so
-    per-point values already live in the buffer, not in the frozen
-    declaration). ``coverage_area_fraction`` is a :class:`Density`
-    field, not a param, so it does not leak into kwargs.
-
-    Notes
-    -----
-    HH1952 channels expose a ``T`` parameter in their declaration but
-    accept ``phi`` in their constructor (the Q10 scaling factor
-    derived from temperature). This translation is applied here.
+    Reads each declared parameter from its state buffer (so per-point
+    values already live in the buffer, not in the frozen declaration).
+    ``coverage_area_fraction`` is a :class:`Density` field, not a param,
+    so it does not leak into kwargs.
     """
     if mechanism.category != "channel":
         return {}
-
-    raw: dict[str, object] = {}
-    for var_name in mechanism.params.keys():
-        raw[var_name] = _runtime_param_value(
+    return {
+        var_name: _runtime_param_value(
             layout=layout, var_name=var_name, state_buffers=state_buffers
         )
-
-    if mechanism.class_name in {"INa_HH1952", "IK_HH1952"}:
-        if "T" in raw and "phi" not in raw:
-            raw["phi"] = _runtime_temperature_phi(raw.pop("T"))
-    return raw
-
-
-def _runtime_temperature_phi(temperature: object) -> object:
-    if hasattr(temperature, "to_decimal"):
-        temperature_c = u.kelvin2celsius(temperature)
-        return 3 ** ((temperature_c - 36) / 10)
-    return temperature
+        for var_name in mechanism.params.keys()
+    }
 
 
 def _is_root_level_runtime_node(kind: str) -> bool:

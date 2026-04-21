@@ -610,6 +610,24 @@ class IonChannel(brainstate.graph.Node, TreeNode, DiffEqModule):
         if isinstance(self, IndependentIntegration):
             self.make_integration(*args, **kwargs)
 
+    def _on_param_updated(self, var_name: str, new_value) -> None:
+        """Hook invoked after runtime state writes a parameter.
+
+        Default: no-op. Subclasses override to recompute derived
+        values when a specific parameter changes (for example, HH1952
+        channels recompute ``phi`` when ``T`` changes).
+
+        Parameters
+        ----------
+        var_name : str
+            The parameter name that was just updated.
+        new_value : object
+            The new value written to the runtime node attribute.
+            Typically a :class:`brainunit.Quantity` but may be a plain
+            array.
+        """
+        return None
+
 
 class IonInfo(NamedTuple):
     """

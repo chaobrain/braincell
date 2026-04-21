@@ -29,7 +29,11 @@ import brainunit as u
 import jax.numpy as jnp
 import numpy as np
 
-from braincell.quad import DiffEqModule, get_registry, staggered_step
+from braincell import (
+    DiffEqModule,
+    DiffEqState,
+)
+from braincell.quad import  get_registry, staggered_step
 from braincell.quad._staggered import _build_backsub_indices, comp_backsub_raw, comp_triang_raw, dhs_voltage_step
 
 

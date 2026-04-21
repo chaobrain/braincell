@@ -41,7 +41,8 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from braincell.morph import MorphoBranch, Morphology
+from braincell.morph import MorphoBranch
+from braincell.morph._morphology import Morphology
 
 from ._collision import _build_collision_index, _layout_collision_score
 from ._common import (

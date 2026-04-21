@@ -32,9 +32,11 @@ import matplotlib.pyplot as plt
 
 import braincell
 from braincell.quad import (
+    backward_euler_step,
+)
+from braincell.quad._protocol import (
     DiffEqModule,
     DiffEqState,
-    backward_euler_step,
 )
 
 

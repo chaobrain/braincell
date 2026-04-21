@@ -143,9 +143,12 @@ import unittest
 import jax.numpy as jnp
 import numpy as np
 
-from braincell.quad import (
+from braincell import (
     DiffEqModule,
     DiffEqState,
+)
+from braincell.quad import (
+
     euler_step,
     heun2_step,
     heun3_step,

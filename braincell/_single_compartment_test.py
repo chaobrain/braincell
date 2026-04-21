@@ -47,7 +47,8 @@ from braincell.channel import (
     INa_HH1952,
 )
 from braincell.ion import PotassiumFixed, SodiumFixed
-from braincell.quad._protocol import DiffEqState, rk2_step, rk4_step
+from braincell import DiffEqState
+from braincell.quad import rk2_step, rk4_step
 
 
 def _V(values, unit=u.mV):

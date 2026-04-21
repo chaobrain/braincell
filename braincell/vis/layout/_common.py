@@ -33,14 +33,14 @@ other module in ``braincell.vis.layout`` can import from it without risk
 of cycles.
 """
 
-
 import math
 from dataclasses import dataclass
 
 import brainunit as u
 import numpy as np
 
-from braincell.morph import MorphoBranch, Morphology
+from braincell.morph import MorphoBranch
+from braincell.morph._morphology import Morphology
 
 # ---------------------------------------------------------------------------
 # Shared angle / bend constants
@@ -240,7 +240,8 @@ def _weighted_child_intervals(
     child_intervals: list[tuple[MorphoBranch, tuple[float, float]]] = []
     for child_index, child in enumerate(children):
         weight = max(float(weights.get(child.index, 1.0)), 1e-6)
-        width_rad = available_span_rad * weight / total_weight if total_weight > 0.0 else available_span_rad / len(children)
+        width_rad = available_span_rad * weight / total_weight if total_weight > 0.0 else available_span_rad / len(
+            children)
         child_interval = (cursor_rad, cursor_rad + width_rad)
         child_intervals.append((child, child_interval))
         cursor_rad = child_interval[1]

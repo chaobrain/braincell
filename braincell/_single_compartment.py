@@ -20,7 +20,8 @@ import brainunit as u
 import braintools
 
 from ._base import HHTypedNeuron, IonChannel
-from .quad import get_integrator, DiffEqState, IndependentIntegration
+from .quad import get_integrator
+from .quad._protocol import DiffEqState, IndependentIntegration
 from ._typing import Initializer
 
 __all__ = [

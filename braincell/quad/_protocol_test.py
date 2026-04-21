@@ -28,10 +28,12 @@ import jax.numpy as jnp
 import numpy as np
 
 from braincell.quad import (
+    get_integrator,
+)
+from braincell.quad._protocol import (
     DiffEqModule,
     DiffEqState,
     IndependentIntegration,
-    get_integrator,
 )
 
 
@@ -63,6 +65,7 @@ class DiffEqModuleTest(unittest.TestCase):
     def test_compute_derivative_must_be_overridden(self):
         class Bare(brainstate.nn.Module, DiffEqModule):
             pass
+
         with self.assertRaises(NotImplementedError):
             Bare().compute_derivative()
 
@@ -70,6 +73,7 @@ class DiffEqModuleTest(unittest.TestCase):
         class Bare(brainstate.nn.Module, DiffEqModule):
             def compute_derivative(self):
                 pass
+
         b = Bare()
         # Both methods exist on the mixin and accept arbitrary args.
         self.assertIsNone(b.pre_integral(1, 2, k=3))
@@ -87,6 +91,7 @@ class IndependentIntegrationTest(unittest.TestCase):
 
             def compute_derivative(self, *args, **kwargs):
                 self.y.derivative = -self.y.value / (5. * u.ms)
+
         return Sub()
 
     def test_constructor_resolves_solver_string(self):

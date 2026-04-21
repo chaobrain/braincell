@@ -33,8 +33,6 @@ import brainunit as u
 import jax.numpy as jnp
 
 from braincell.quad import (
-    DiffEqModule,
-    DiffEqState,
     cn_exp_euler_step,
     cn_rk4_step,
     exp_exp_euler_step,
@@ -43,6 +41,10 @@ from braincell.quad import (
     implicit_exp_euler_step,
     implicit_rk4_step,
     splitting_step,
+)
+from braincell.quad._protocol import (
+    DiffEqModule,
+    DiffEqState,
 )
 
 

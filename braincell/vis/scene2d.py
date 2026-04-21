@@ -17,7 +17,7 @@
 import brainunit as u
 import numpy as np
 
-from braincell.morph import Morphology
+from braincell.morph._morphology import Morphology
 from ._values import resolve_values
 from .config import (
     highlight_alpha as _highlight_alpha,

@@ -2,13 +2,13 @@
 
 **Date:** 2026-04-21
 **Status:** Spec (awaiting plan)
-**Scope:** Full rewrite of `braincell/compute/` package. Public API may change. Downstream call sites in `_multi_compartment/` and `quad/` updated as needed.
+**Scope:** Full rewrite of the compute layer. Package renamed from `braincell/compute/` to `braincell/_compute/` (private). Inner module files drop their leading-underscore prefix (e.g. `_runtime.py` → `runtime.py`) since privacy is already expressed at the package boundary. Public API may change. Downstream call sites in `_multi_compartment/` and `quad/` updated as needed.
 
 ---
 
 ## 1. Motivation
 
-The current `braincell/compute/` package fuses too many concerns in one 1,450-line module (`_runtime.py`), stores state in `np.ndarray(dtype=object)` of brainunit `Quantity` values (defeats JIT, forces Python loops), and carries a circular import with `_multi_compartment/clamp_table.py`. During an audit of the existing module, six correctness bugs and a dozen architectural smells were found. Rewriting is cheaper than patch-in-place.
+The current `braincell/compute/` package fuses too many concerns in one 1,450-line module (`_runtime.py`), stores state in `np.ndarray(dtype=object)` of brainunit `Quantity` values (defeats JIT, forces Python loops), and carries a circular import with `_multi_compartment/clamp_table.py`. The package is also exposed as public (`braincell.compute`) despite none of its symbols being part of the intended user surface — they are all consumed only by `_multi_compartment/` and `quad/`. During an audit of the existing module, six correctness bugs and a dozen architectural smells were found. Rewriting (and demoting the package to private `_compute/`) is cheaper than patch-in-place.
 
 ### 1.1. Correctness bugs in the current module (must fix)
 
@@ -42,7 +42,7 @@ Locked via brainstorming Q&A before this spec was written:
 
 - **D1.** Full rewrite. Public API may change (e.g. `install_cell_runtime` / `uninstall_cell_runtime` removed). Downstream call sites updated.
 - **D2.** State buffers store `u.Quantity(jnp.ndarray, unit)` directly. No `np.ndarray(dtype=object)` intermediate.
-- **D3.** Three files in `compute/`: `_topology.py`, `_runtime.py`, `_table.py`. `_runtime.py` trimmed to ~500 lines by moving helpers out. `clamp_active_table` folds back in — kills the circular import.
+- **D3.** Three files in `braincell/_compute/`: `topology.py`, `runtime.py`, `table.py`. Package renamed from `compute/` to `_compute/` to mark it private. Inner files drop the `_` prefix since privacy is expressed once at the package boundary. `runtime.py` trimmed to ~500 lines by moving helpers out. `clamp_active_table` folds back in — kills the circular import.
 - **D4.** `Cell` owns runtime directly. No `install_cell_runtime` / `uninstall_cell_runtime` functions. `Cell.init_state()` inlines the setup.
 - **D5.** Magic strings replaced with `typing.Literal` on frozen dataclass fields (no runtime enum cost).
 - **D6.** HH1952 temperature→phi translation moves out of runtime. The `INa_HH1952` / `IK_HH1952` channel classes accept `T` and compute `phi` internally (or via a `Density` post-init hook). Runtime no longer special-cases channel names.
@@ -54,49 +54,51 @@ Locked via brainstorming Q&A before this spec was written:
 ## 3. Module layout
 
 ```
-braincell/compute/
-  __init__.py          public exports
-  _topology.py         PointTree, PointScheduling, builders
-  _runtime.py          CellRuntimeState, MechanismLayout, ClampActiveTable, compilation pipeline
-  _table.py            MechanismObjectTable, MechanismObjectCell, mechanism_cell_key
-  _topology_test.py    co-located tests (new)
-  _runtime_test.py     co-located tests (absorb existing)
-  _table_test.py       co-located tests (new)
+braincell/_compute/
+  __init__.py          internal re-exports (consumed by _multi_compartment/, quad/)
+  topology.py          PointTree, PointScheduling, builders
+  runtime.py           CellRuntimeState, MechanismLayout, ClampActiveTable, compilation pipeline
+  table.py             MechanismObjectTable, MechanismObjectCell, mechanism_cell_key
+  topology_test.py     co-located tests (new)
+  runtime_test.py      co-located tests (absorb existing)
+  table_test.py        co-located tests (new)
 ```
 
-### 3.1. Moved out of `compute/`
+Naming rationale: the package directory itself carries the leading `_` (mirrors the existing `_multi_compartment/` and `_base.py` convention), so inner modules do not need to repeat it. `runtime.py` reads cleaner than `_compute/_runtime.py`.
+
+### 3.1. Moved out of `_compute/`
 
 | From | To | Reason |
 |---|---|---|
-| `_runtime.py::clone_morpho` | `braincell/morph/morphology.py` | Pure morphology op. |
-| `_runtime.py::scatter_midpoint_values` | `_multi_compartment/bridge.py` | Sole consumer. |
-| `_runtime.py::gather_midpoint_values` | `_multi_compartment/bridge.py` | Sole consumer. |
-| `_runtime.py::cv_value_vector` | `_multi_compartment/bridge.py` | Sole consumer. |
-| `_runtime.py::fill_like` | `_multi_compartment/bridge.py` | Sole consumer. |
-| `_runtime.py::quantity_vector` | `_multi_compartment/bridge.py` | Sole consumer. |
-| `_runtime.py::build_placeholder_ions` | `braincell/ion/__init__.py` | Ion-module construction helper. |
-| `_runtime.py::install_cell_runtime` | removed | Inlined into `Cell.init_state()`. |
-| `_runtime.py::uninstall_cell_runtime` | removed | Inlined into `Cell.reset()`. |
-| `_multi_compartment/clamp_table.py::ClampActiveTable` | `compute/_runtime.py` | Folds in to kill circular import. |
-| `_multi_compartment/clamp_table.py::build_clamp_active_table` | `compute/_runtime.py` | Folds in to kill circular import. |
+| `runtime.py::clone_morpho` | `braincell/morph/morphology.py` | Pure morphology op. |
+| `runtime.py::scatter_midpoint_values` | `_multi_compartment/bridge.py` | Sole consumer. |
+| `runtime.py::gather_midpoint_values` | `_multi_compartment/bridge.py` | Sole consumer. |
+| `runtime.py::cv_value_vector` | `_multi_compartment/bridge.py` | Sole consumer. |
+| `runtime.py::fill_like` | `_multi_compartment/bridge.py` | Sole consumer. |
+| `runtime.py::quantity_vector` | `_multi_compartment/bridge.py` | Sole consumer. |
+| `runtime.py::build_placeholder_ions` | `braincell/ion/__init__.py` | Ion-module construction helper. |
+| `runtime.py::install_cell_runtime` | removed | Inlined into `Cell.init_state()`. |
+| `runtime.py::uninstall_cell_runtime` | removed | Inlined into `Cell.reset()`. |
+| `_multi_compartment/clamp_table.py::ClampActiveTable` | `_compute/runtime.py` | Folds in to kill circular import. |
+| `_multi_compartment/clamp_table.py::build_clamp_active_table` | `_compute/runtime.py` | Folds in to kill circular import. |
 
-`_multi_compartment/clamp_table.py` is deleted. `_multi_compartment/clamp_table_test.py` is merged into `compute/_runtime_test.py`.
+`_multi_compartment/clamp_table.py` is deleted. `_multi_compartment/clamp_table_test.py` is merged into `_compute/runtime_test.py`.
 
-### 3.2. Public `__init__.py`
+### 3.2. Package `__init__.py`
 
 ```python
-from ._topology import (
+from .topology import (
     PointTree, PointScheduling,
     CVPoint, ComputePoint, CVEdge, ComputeEdge,
     build_point_tree, build_point_scheduling,
 )
-from ._runtime import (
+from .runtime import (
     CellRuntimeState,
     MechanismLayout,
     ClampActiveTable,
     Target, Layout, Position, Half,
 )
-from ._table import (
+from .table import (
     MechanismObjectTable,
     MechanismObjectCell,
     mechanism_cell_key,
@@ -112,9 +114,11 @@ __all__ = [
 ]
 ```
 
+`braincell.compute` is removed from the public namespace. Any user code that imported `from braincell.compute import ...` must update to `from braincell._compute import ...` (with the understanding that `_compute` is internal and may break between releases). No such usage is expected outside the repo.
+
 ---
 
-## 4. `_topology.py` — point tree + scheduling
+## 4. `topology.py` — point tree + scheduling
 
 ### 4.1. Vocabulary (unified)
 
@@ -197,7 +201,7 @@ Used by both row_to_point_id and group building; no re-sort per level.
 
 ---
 
-## 5. `_runtime.py` — runtime state
+## 5. `runtime.py` — runtime state
 
 ### 5.1. Types
 
@@ -387,9 +391,9 @@ Ion instance resolution logic (`_collect_runtime_ion_instances`, `_build_ion_ali
 
 ---
 
-## 6. `_table.py` — inspection helpers
+## 6. `table.py` — inspection helpers
 
-Renamed from `_assignment_table.py`. Content unchanged: `MechanismObjectCell`, `MechanismObjectTable`, `mechanism_cell_key`. One cleanup:
+Renamed from `_assignment_table.py` (old) → `table.py` (new, inside `_compute/`). Content unchanged: `MechanismObjectCell`, `MechanismObjectTable`, `mechanism_cell_key`. One cleanup:
 
 - `MechanismObjectCell.__getattr__` currently delegates all unknown attribute lookups to `get_param`, which makes typos look like missing parameters. New behavior: `__getattr__` only resolves names the mechanism or node declares (whitelist from `_mechanism_var_names` plus `declaration.params`); unknown names raise `AttributeError` with a list of valid names.
 
@@ -483,9 +487,9 @@ Renamed from `_assignment_table.py`. Content unchanged: `MechanismObjectCell`, `
 
 ### 9.1. Test files
 
-- `compute/_topology_test.py` (new) — covers `PointTree`, `PointScheduling`, all builders. Moves existing point-tree tests here from wherever they live.
-- `compute/_runtime_test.py` (absorbs the current ~900-line file; grows with new cases).
-- `compute/_table_test.py` (new) — covers `MechanismObjectTable` / `MechanismObjectCell`.
+- `_compute/topology_test.py` (new) — covers `PointTree`, `PointScheduling`, all builders. Moves existing point-tree tests here from wherever they live.
+- `_compute/runtime_test.py` (absorbs the current ~900-line file; grows with new cases).
+- `_compute/table_test.py` (new) — covers `MechanismObjectTable` / `MechanismObjectCell`.
 
 ### 9.2. Must-add test cases (covering the bug fixes)
 
@@ -526,7 +530,7 @@ Renamed from `_assignment_table.py`. Content unchanged: `MechanismObjectCell`, `
 
 ### 9.6. Regression coverage
 
-All ~40 existing tests in `compute/_runtime_test.py` must pass unchanged (except for the ones that explicitly import `install_cell_runtime` / `uninstall_cell_runtime` — those get rewritten to test `Cell.init_state()` / `Cell.reset()` directly).
+All ~40 existing tests in `compute/_runtime_test.py` (old location) carry forward to `_compute/runtime_test.py` (new location) and must pass unchanged — except the ones that explicitly import `install_cell_runtime` / `uninstall_cell_runtime`, which get rewritten to test `Cell.init_state()` / `Cell.reset()` directly.
 
 ---
 
@@ -534,16 +538,17 @@ All ~40 existing tests in `compute/_runtime_test.py` must pass unchanged (except
 
 Implementation plan will cover this in detail; summarized here so the plan scope is visible:
 
-1. Introduce `_topology.py` as a copy of current `_point_tree.py` + fixes C1/C2/C3 + vocabulary unification. Update imports in `compute/__init__.py`. Existing tests stay green.
-2. Move helpers out of `_runtime.py` (`scatter_*`, `gather_*`, `quantity_*`, `fill_like`, `cv_value_vector`, `clone_morpho`, `build_placeholder_ions`) to their new homes. Update imports. Tests stay green.
-3. Fold `clamp_table.py` into `_runtime.py` (kill circular import). Delete `_multi_compartment/clamp_table.py`. Run tests.
-4. Remove HH1952 hardcode. Update `INa_HH1952` / `IK_HH1952` classes to accept `T`; teach runtime the generic `_on_param_updated` hook. Run tests.
-5. Swap state-buffer storage to `u.Quantity(jnp.ndarray, unit)`. This is the largest single change; touches `_allocate_state_buffer`, `_write_state_buffer`, `_extract_point_value`, `_instantiate_runtime_ion_instance`, `_sync_runtime_ion`, `_runtime_param_value`, `evaluate_point_clamps`. Ragged-step handling (5.4.2) included here.
-6. Remove `install_cell_runtime` / `uninstall_cell_runtime`; inline setup/teardown into `Cell`. Run tests.
-7. Magic strings → `Literal`. Mechanical.
-8. `FunctionClamp` signature fingerprinting. Add T4 test.
-9. Rename `_assignment_table.py` → `_table.py`; tighten `__getattr__`.
-10. Final pass on error messages + edge case coverage (section 8).
+1. Rename package `braincell/compute/` → `braincell/_compute/`. Within it, rename `_point_tree.py` → `topology.py`, `_runtime.py` → `runtime.py`, `_assignment_table.py` → `table.py`, and co-located test files to match. Update `__init__.py` and every import site in `_multi_compartment/` and `quad/`. This is a pure move — no behavior change. Run full test suite.
+2. Apply C1/C2/C3 topology fixes inside `topology.py` + vocabulary unification (`Position`, `Half`). Add T1/T2/T3 tests.
+3. Move helpers out of `runtime.py` (`scatter_*`, `gather_*`, `quantity_*`, `fill_like`, `cv_value_vector`, `clone_morpho`, `build_placeholder_ions`) to their new homes. Update imports. Tests stay green.
+4. Fold `clamp_table.py` into `runtime.py` (kills circular import). Delete `_multi_compartment/clamp_table.py`; merge its test file into `runtime_test.py`. Run tests.
+5. Remove HH1952 hardcode. Update `INa_HH1952` / `IK_HH1952` classes to accept `T`; teach runtime the generic `_on_param_updated` hook. Add T16/T17 tests.
+6. Swap state-buffer storage to `u.Quantity(jnp.ndarray, unit)`. Largest single change; touches `_allocate_state_buffer`, `_write_state_buffer`, `_extract_point_value`, `_instantiate_runtime_ion_instance`, `_sync_runtime_ion`, `_runtime_param_value`, `evaluate_point_clamps`. Ragged-step handling (5.4.2) included here. Add T7–T12 tests.
+7. Remove `install_cell_runtime` / `uninstall_cell_runtime`; inline setup/teardown into `Cell`. Add T13–T15 tests.
+8. Magic strings → `Literal`. Mechanical.
+9. `FunctionClamp` signature fingerprinting. Add T4 test.
+10. Tighten `MechanismObjectCell.__getattr__` (whitelist only declared vars).
+11. Final pass on error messages + edge case coverage (section 8). Full test + JIT-trace regression.
 
 Each step is a separate commit and all tests pass between steps.
 

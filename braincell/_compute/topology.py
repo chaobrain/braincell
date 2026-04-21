@@ -15,6 +15,7 @@
 
 
 from dataclasses import dataclass
+from typing import Literal
 
 import numpy as np
 
@@ -22,6 +23,9 @@ from braincell._cv.base import CV
 
 _EPS_PARAM = 1e-9   # normalized-x tolerance (formerly imported from cv._geo)
 from braincell.morph.morphology import Morphology
+
+Position = Literal["prox", "mid", "dist"]
+Half = Literal["prox", "dist"]
 
 __all__ = [
     "PointTree",
@@ -34,7 +38,7 @@ __all__ = [
 # not another morphology model; it is the merged point-edge graph used by the
 # voltage solver, sparse point mechanisms, and scheduling code.
 
-_POSITION_ORDER = {"proximal": 0, "mid": 1, "distal": 2}
+_POSITION_ORDER = {"prox": 0, "mid": 1, "dist": 2}
 
 
 @dataclass(frozen=True)
@@ -49,7 +53,7 @@ class CVPoint:
     point back to the original CV-local role that produced it.
     """
     cv_id: int
-    position: str
+    position: Position
 
 
 @dataclass(frozen=True)
@@ -57,7 +61,7 @@ class ComputePoint:
     """Merged point in the compute graph derived from CV geometry.
 
     ``ComputePoint`` is not tied to just one CV. It represents one unique node
-    in the assembled tree after CV proximal/mid/distal locations have been
+    in the assembled tree after CV prox/mid/dist locations have been
     merged across attachments and shared boundaries.
 
     Main payload:
@@ -81,7 +85,7 @@ class CVEdge:
     compute-graph edge say which CV-local half-edge contribution it came from.
     """
     cv_id: int
-    half: str
+    half: Half
 
 
 @dataclass(frozen=True)
@@ -255,7 +259,7 @@ def build_point_tree(
     if len(root_branch_cv_ids) == 0:
         raise ValueError("Root branch has no CVs.")
     root_first_cv_id = root_branch_cv_ids[0]
-    root_point_id = new_point(cv_id=root_first_cv_id, position="proximal")
+    root_point_id = new_point(cv_id=root_first_cv_id, position="prox")
     branch_endpoint_point_id_by_x[(0, 0.0)] = root_point_id
 
     for branch_id, branch in enumerate(morpho.branches):
@@ -515,12 +519,12 @@ def _exit_half_for_walk(attach_x: float) -> str:
     return "dist" if attach_x <= _EPS_PARAM else "prox"
 
 
-def _entry_position_for_walk(attach_x: float) -> str:
-    return "proximal" if attach_x <= _EPS_PARAM else "distal"
+def _entry_position_for_walk(attach_x: float) -> Position:
+    return "prox" if attach_x <= _EPS_PARAM else "dist"
 
 
-def _exit_position_for_walk(attach_x: float) -> str:
-    return "distal" if attach_x <= _EPS_PARAM else "proximal"
+def _exit_position_for_walk(attach_x: float) -> Position:
+    return "dist" if attach_x <= _EPS_PARAM else "prox"
 
 
 def _build_matrix_index_to_point_id(

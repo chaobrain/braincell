@@ -153,5 +153,16 @@ class LocateBranchCVByX(unittest.TestCase):
         self.assertIn("0.5", str(ctx.exception))
 
 
+class VocabularyLock(unittest.TestCase):
+
+    def test_cvpoint_positions_are_three_letter_codes(self) -> None:
+        morpho = _two_branch_morpho()
+        cvs = build_cvs(morpho, policy=CVPerBranch())
+        tree = build_point_tree(morpho, cvs=cvs)
+        seen = {cvp.position for point in tree.points for cvp in point.cv_points}
+        self.assertTrue(seen.issubset({"prox", "mid", "dist"}))
+        self.assertIn("mid", seen)
+
+
 if __name__ == "__main__":
     unittest.main()

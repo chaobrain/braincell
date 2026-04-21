@@ -15,7 +15,6 @@
 # ==============================================================================
 
 
-
 """
 This module implements calcium-dependent potassium channel.
 """
@@ -28,9 +27,9 @@ import brainunit as u
 import jax
 
 from braincell._base import IonInfo, Channel
-from braincell.mech import register_channel
-from braincell.quad import DiffEqState
 from braincell.ion import Calcium, Potassium
+from braincell.mech import register_channel
+from braincell.quad._protocol import DiffEqState
 
 __all__ = [
     'KCaChannel',

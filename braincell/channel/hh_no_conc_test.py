@@ -21,6 +21,8 @@ import brainunit as u
 import jax.numpy as jnp
 
 from braincell._base import HHTypedNeuron, IonInfo
+from braincell.channel.calcium import ICaGrc_Ma2020
+from braincell.channel.calcium import ICav23_Ma2020
 from braincell.channel.hh_no_conc import (
     HCN1_MA24_PC,
     HCN1_MA20_GoC,
@@ -64,8 +66,6 @@ from braincell.channel.hh_no_conc import (
     sKdr_SU15_DCN,
     _linoid_stable,
 )
-from braincell.channel.calcium import ICaGrc_Ma2020
-from braincell.channel.calcium import ICav23_Ma2020
 from braincell.channel.hyperpolarization_activated import Ih1_Ma2020, Ih2_Ma2020
 from braincell.channel.potassium import IKM_Grc_Ma2020, IKv11_Ak2007, IKv34_Ma2020, IKv43_Ma2020
 from braincell.ion import Calcium, Potassium, Sodium

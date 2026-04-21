@@ -21,7 +21,6 @@ import brainunit as u
 import jax.numpy as jnp
 
 from braincell._base import IonInfo
-from braincell.ion import Sodium
 from braincell.channel.sodium import (
     INa_Ba2002,
     INa_HH1952,
@@ -30,6 +29,7 @@ from braincell.channel.sodium import (
     INa_p3q_markov,
     SodiumChannel,
 )
+from braincell.ion import Sodium
 
 
 def _na_info(size: int = 1) -> IonInfo:

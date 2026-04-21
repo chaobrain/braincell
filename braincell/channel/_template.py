@@ -1,7 +1,6 @@
 # -*- coding: utf-8 -*-
 
 
-
 from dataclasses import dataclass
 from typing import Any
 from typing import ClassVar
@@ -11,7 +10,7 @@ import brainunit as u
 import jax.numpy as jnp
 
 from braincell._base import Channel
-from braincell.quad import DiffEqState
+from braincell.quad._protocol import DiffEqState
 
 __all__ = [
     "Gate",
@@ -170,7 +169,6 @@ class HH(Channel):
             value = self._gate_value(gate)
             product = product * (value if gate.power == 1 else value ** gate.power)
         return product
-
 
     def reset_state(self, V, *ions, batch_size: int = None):
         for gate in self._iter_gates():

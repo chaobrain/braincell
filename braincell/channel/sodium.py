@@ -28,9 +28,9 @@ import brainunit as u
 import jax.tree
 
 from braincell._base import Channel, IonInfo
-from braincell.mech import register_channel
-from braincell.quad import DiffEqState, IndependentIntegration
 from braincell.ion import Sodium
+from braincell.mech import register_channel
+from braincell.quad._protocol import DiffEqState, IndependentIntegration
 
 __all__ = [
     'SodiumChannel',

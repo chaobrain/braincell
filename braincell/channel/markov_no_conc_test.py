@@ -23,14 +23,14 @@ import jax.numpy as jnp
 
 from braincell._base import IonInfo
 from braincell.channel._template import Markov
+from braincell.channel.markov_no_conc import NaFHF_MA20_GrC
+from braincell.channel.markov_no_conc import Nav1p1_MA25_BC
+from braincell.channel.markov_no_conc import Nav1p1_RI21_SC
 from braincell.channel.markov_no_conc import Nav1p6_MA20_GoC
 from braincell.channel.markov_no_conc import Nav1p6_MA24_PC
 from braincell.channel.markov_no_conc import Nav1p6_MA25_BC
-from braincell.channel.markov_no_conc import Nav1p1_MA25_BC
-from braincell.channel.markov_no_conc import Nav1p1_RI21_SC
-from braincell.channel.markov_no_conc import Nav_MA20_GrC
 from braincell.channel.markov_no_conc import Nav1p6_RI21_SC
-from braincell.channel.markov_no_conc import NaFHF_MA20_GrC
+from braincell.channel.markov_no_conc import Nav_MA20_GrC
 from braincell.channel.sodium import INa_Rsg
 from braincell.ion import Sodium
 
@@ -541,17 +541,17 @@ class _Nav1p1Mixin:
 
         conductive = ch.g_max * ch.O.value * (na.E - V)
         gate_flip = (
-            ch.f01(V) * ch.C1.value
-            + (ch.f02(V) - ch.b01(V)) * ch.C2.value
-            + (ch.f03(V) - ch.b02(V)) * ch.C3.value
-            + (ch.f04(V) - ch.b03(V)) * ch.C4.value
-            - ch.b04(V) * ch.C5.value
-            + ch.f11(V) * ch.I1.value
-            + (ch.f12(V) - ch.b11(V)) * ch.I2.value
-            + (ch.f13(V) - ch.b12(V)) * ch.I3.value
-            + (ch.f14(V) - ch.b13(V)) * ch.I4.value
-            - ch.b14(V) * ch.I5.value
-        ) / u.ms
+                        ch.f01(V) * ch.C1.value
+                        + (ch.f02(V) - ch.b01(V)) * ch.C2.value
+                        + (ch.f03(V) - ch.b02(V)) * ch.C3.value
+                        + (ch.f04(V) - ch.b03(V)) * ch.C4.value
+                        - ch.b04(V) * ch.C5.value
+                        + ch.f11(V) * ch.I1.value
+                        + (ch.f12(V) - ch.b11(V)) * ch.I2.value
+                        + (ch.f13(V) - ch.b12(V)) * ch.I3.value
+                        + (ch.f14(V) - ch.b13(V)) * ch.I4.value
+                        - ch.b14(V) * ch.I5.value
+                    ) / u.ms
         nc = 1e12 * ch.g_max / ch.gunit
         igate = nc * 1e6 * ch.e0 * ch.zgate * gate_flip
         expected = conductive - igate
@@ -785,13 +785,13 @@ class NavMA20GrCTest(unittest.TestCase):
         ch.compute_derivative(V, na)
 
         expected_dO = (
-            states["C5"] * ch.f0O(V)
-            + states["OB"] * ch.bip(V)
-            + states["I6"] * ch.bin(V)
-            - states["O"] * ch.b0O(V)
-            - states["O"] * ch.fip(V)
-            - states["O"] * ch.fin(V)
-        ) / u.ms
+                          states["C5"] * ch.f0O(V)
+                          + states["OB"] * ch.bip(V)
+                          + states["I6"] * ch.bin(V)
+                          - states["O"] * ch.b0O(V)
+                          - states["O"] * ch.fip(V)
+                          - states["O"] * ch.fin(V)
+                      ) / u.ms
         expected_dOB = (states["O"] * ch.fip(V) - states["OB"] * ch.bip(V)) / u.ms
         self.assertTrue(u.math.allclose(ch.O.derivative, expected_dO, atol=1e-6 * u.Hz))
         self.assertTrue(u.math.allclose(ch.OB.derivative, expected_dOB, atol=1e-6 * u.Hz))
@@ -890,17 +890,17 @@ class NaFHFMA20GrCTest(unittest.TestCase):
         ch.compute_derivative(V, na)
 
         expected_dL3 = (
-            states["C3"] * ch.fl3(V)
-            + states["L4"] * ch.b33(V)
-            - states["L3"] * ch.bl3(V)
-            - states["L3"] * ch.f33(V)
-        ) / u.ms
+                           states["C3"] * ch.fl3(V)
+                           + states["L4"] * ch.b33(V)
+                           - states["L3"] * ch.bl3(V)
+                           - states["L3"] * ch.f33(V)
+                       ) / u.ms
         expected_dL6 = (
-            states["L5"] * ch.f3n(V)
-            + states["O"] * ch.fl6(V)
-            - states["L6"] * ch.b3n(V)
-            - states["L6"] * ch.bl6(V)
-        ) / u.ms
+                           states["L5"] * ch.f3n(V)
+                           + states["O"] * ch.fl6(V)
+                           - states["L6"] * ch.b3n(V)
+                           - states["L6"] * ch.bl6(V)
+                       ) / u.ms
         self.assertTrue(u.math.allclose(ch.L3.derivative, expected_dL3, atol=1e-6 * u.Hz))
         self.assertTrue(u.math.allclose(ch.L6.derivative, expected_dL6, atol=1e-6 * u.Hz))
 

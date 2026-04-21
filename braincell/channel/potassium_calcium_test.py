@@ -22,7 +22,6 @@ import brainunit as u
 import jax.numpy as jnp
 
 from braincell._base import IonInfo
-from braincell.ion import Calcium, Potassium
 from braincell.channel.potassium_calcium import (
     IAHP_De1994,
     IKca1_1_Ma2020,
@@ -30,6 +29,7 @@ from braincell.channel.potassium_calcium import (
     IKca3_1_Ma2020,
     KCaChannel,
 )
+from braincell.ion import Calcium, Potassium
 
 
 def _k_info(size: int = 1) -> IonInfo:

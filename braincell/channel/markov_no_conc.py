@@ -1,7 +1,6 @@
 # -*- coding: utf-8 -*-
 
 
-
 from typing import Callable
 from typing import Optional
 from typing import Union
@@ -114,10 +113,14 @@ class Nav1p6_MA20_GoC(Markov, IndependentIntegration):
     f04 = lambda self, V, *unused: 1 * self.alpha * u.math.exp((V / u.mV) / self.x1) * self.phi
     f0O = lambda self, V, *unused: self.gamma * u.math.exp((V / u.mV) / self.x3) * self.phi
     fip = lambda self, V, *unused: self.epsilon * u.math.exp((V / u.mV) / self.x5) * self.phi
-    f11 = lambda self, V, *unused: 4 * self.alpha * self.alfac * u.math.exp((V / u.mV + self.vshifti) / self.x1) * self.phi
-    f12 = lambda self, V, *unused: 3 * self.alpha * self.alfac * u.math.exp((V / u.mV + self.vshifti) / self.x1) * self.phi
-    f13 = lambda self, V, *unused: 2 * self.alpha * self.alfac * u.math.exp((V / u.mV + self.vshifti) / self.x1) * self.phi
-    f14 = lambda self, V, *unused: 1 * self.alpha * self.alfac * u.math.exp((V / u.mV + self.vshifti) / self.x1) * self.phi
+    f11 = lambda self, V, *unused: 4 * self.alpha * self.alfac * u.math.exp(
+        (V / u.mV + self.vshifti) / self.x1) * self.phi
+    f12 = lambda self, V, *unused: 3 * self.alpha * self.alfac * u.math.exp(
+        (V / u.mV + self.vshifti) / self.x1) * self.phi
+    f13 = lambda self, V, *unused: 2 * self.alpha * self.alfac * u.math.exp(
+        (V / u.mV + self.vshifti) / self.x1) * self.phi
+    f14 = lambda self, V, *unused: 1 * self.alpha * self.alfac * u.math.exp(
+        (V / u.mV + self.vshifti) / self.x1) * self.phi
     f1n = lambda self, V, *unused: self.gamma * u.math.exp((V / u.mV) / self.x3) * self.phi
     fi1 = lambda self, V, *unused: self.Con * self.phi
     fi2 = lambda self, V, *unused: self.Con * self.alfac * self.phi
@@ -126,16 +129,24 @@ class Nav1p6_MA20_GoC(Markov, IndependentIntegration):
     fi5 = lambda self, V, *unused: self.Con * self.alfac ** 4 * self.phi
     fin = lambda self, V, *unused: self.Oon * self.phi
 
-    b01 = lambda self, V, *unused: 1 * self.beta * u.math.exp((V / u.mV + self.vshifta) / (self.x2 + self.vshiftk)) * self.phi
-    b02 = lambda self, V, *unused: 2 * self.beta * u.math.exp((V / u.mV + self.vshifta) / (self.x2 + self.vshiftk)) * self.phi
-    b03 = lambda self, V, *unused: 3 * self.beta * u.math.exp((V / u.mV + self.vshifta) / (self.x2 + self.vshiftk)) * self.phi
-    b04 = lambda self, V, *unused: 4 * self.beta * u.math.exp((V / u.mV + self.vshifta) / (self.x2 + self.vshiftk)) * self.phi
+    b01 = lambda self, V, *unused: 1 * self.beta * u.math.exp(
+        (V / u.mV + self.vshifta) / (self.x2 + self.vshiftk)) * self.phi
+    b02 = lambda self, V, *unused: 2 * self.beta * u.math.exp(
+        (V / u.mV + self.vshifta) / (self.x2 + self.vshiftk)) * self.phi
+    b03 = lambda self, V, *unused: 3 * self.beta * u.math.exp(
+        (V / u.mV + self.vshifta) / (self.x2 + self.vshiftk)) * self.phi
+    b04 = lambda self, V, *unused: 4 * self.beta * u.math.exp(
+        (V / u.mV + self.vshifta) / (self.x2 + self.vshiftk)) * self.phi
     b0O = lambda self, V, *unused: self.delta * u.math.exp(V / u.mV / self.x4) * self.phi
     bip = lambda self, V, *unused: self.zeta * u.math.exp(V / u.mV / self.x6) * self.phi
-    b11 = lambda self, V, *unused: 1 * self.beta * self.btfac * u.math.exp((V / u.mV + self.vshifti) / self.x2) * self.phi
-    b12 = lambda self, V, *unused: 2 * self.beta * self.btfac * u.math.exp((V / u.mV + self.vshifti) / self.x2) * self.phi
-    b13 = lambda self, V, *unused: 3 * self.beta * self.btfac * u.math.exp((V / u.mV + self.vshifti) / self.x2) * self.phi
-    b14 = lambda self, V, *unused: 4 * self.beta * self.btfac * u.math.exp((V / u.mV + self.vshifti) / self.x2) * self.phi
+    b11 = lambda self, V, *unused: 1 * self.beta * self.btfac * u.math.exp(
+        (V / u.mV + self.vshifti) / self.x2) * self.phi
+    b12 = lambda self, V, *unused: 2 * self.beta * self.btfac * u.math.exp(
+        (V / u.mV + self.vshifti) / self.x2) * self.phi
+    b13 = lambda self, V, *unused: 3 * self.beta * self.btfac * u.math.exp(
+        (V / u.mV + self.vshifti) / self.x2) * self.phi
+    b14 = lambda self, V, *unused: 4 * self.beta * self.btfac * u.math.exp(
+        (V / u.mV + self.vshifti) / self.x2) * self.phi
     b1n = lambda self, V, *unused: self.delta * u.math.exp(V / u.mV / self.x4) * self.phi
     bi1 = lambda self, V, *unused: self.Coff * self.phi
     bi2 = lambda self, V, *unused: self.Coff * self.btfac * self.phi
@@ -213,17 +224,17 @@ class Nav1p1_MA25_BC(Nav1p6_MA20_GoC):
     def current(self, V, Na: IonInfo):
         conductive = self.g_max * self.O.value * (Na.E - V)
         gate_flip = (
-            self.f01(V) * self.C1.value
-            + (self.f02(V) - self.b01(V)) * self.C2.value
-            + (self.f03(V) - self.b02(V)) * self.C3.value
-            + (self.f04(V) - self.b03(V)) * self.C4.value
-            - self.b04(V) * self.C5.value
-            + self.f11(V) * self.I1.value
-            + (self.f12(V) - self.b11(V)) * self.I2.value
-            + (self.f13(V) - self.b12(V)) * self.I3.value
-            + (self.f14(V) - self.b13(V)) * self.I4.value
-            - self.b14(V) * self.I5.value
-        ) / u.ms
+                        self.f01(V) * self.C1.value
+                        + (self.f02(V) - self.b01(V)) * self.C2.value
+                        + (self.f03(V) - self.b02(V)) * self.C3.value
+                        + (self.f04(V) - self.b03(V)) * self.C4.value
+                        - self.b04(V) * self.C5.value
+                        + self.f11(V) * self.I1.value
+                        + (self.f12(V) - self.b11(V)) * self.I2.value
+                        + (self.f13(V) - self.b12(V)) * self.I3.value
+                        + (self.f14(V) - self.b13(V)) * self.I4.value
+                        - self.b14(V) * self.I5.value
+                    ) / u.ms
         nc = 1e12 * self.g_max / self.gunit
         igate = nc * 1e6 * self.e0 * self.zgate * gate_flip
         return conductive - u.math.where(self.gateCurrent != 0, igate, 0.0 * igate)

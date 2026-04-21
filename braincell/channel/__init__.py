@@ -17,10 +17,10 @@
 
 from .calcium import *
 from .calcium import __all__ as calcium_all
-from .hyperpolarization_activated import *
-from .hyperpolarization_activated import __all__ as hyperpolarization_activated_all
 from .hh_no_conc import *
 from .hh_no_conc import __all__ as hh_no_conc_all
+from .hyperpolarization_activated import *
+from .hyperpolarization_activated import __all__ as hyperpolarization_activated_all
 from .leaky import *
 from .leaky import __all__ as leaky_all
 from .markov_no_conc import *

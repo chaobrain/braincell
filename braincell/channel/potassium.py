@@ -27,9 +27,9 @@ import braintools
 import brainunit as u
 
 from braincell._base import Channel, IonInfo
-from braincell.mech import register_channel
-from braincell.quad import DiffEqState
 from braincell.ion import Potassium
+from braincell.mech import register_channel
+from braincell.quad._protocol import DiffEqState
 
 __all__ = [
     'PotassiumChannel',
@@ -1442,17 +1442,17 @@ def _to_decimal_if_possible(value, unit):
         return None
     return value.to_decimal(unit) if hasattr(value, "to_decimal") else value
 
+
 @register_channel("IK_Kv_test")
 class IK_Kv_test(PotassiumChannel):
     __module__ = "braincell.channel"
-
 
     def __init__(
         self,
         size,
         g_max=0.0 * (u.siemens / (u.cm ** 2)),
         V_sh=0. * u.mV,
-        temp=u.celsius2kelvin(25) ,
+        temp=u.celsius2kelvin(25),
         Ra=0.02 * (1 / u.mV / u.ms),
         Rb=0.006 * (1 / u.mV / u.ms),
         q=9 * (u.mV),
@@ -1473,7 +1473,7 @@ class IK_Kv_test(PotassiumChannel):
         self.Q10_n = 1.0
 
     def _q10(self, Q10):
-        return Q10 ** (((self.temp - self.temp_ref)/u.kelvin) / 10.0)
+        return Q10 ** (((self.temp - self.temp_ref) / u.kelvin) / 10.0)
 
     def init_state(self, V, K: IonInfo, batch_size=None):
         self.n = DiffEqState(
@@ -1504,15 +1504,16 @@ class IK_Kv_test(PotassiumChannel):
         return self.g_max * self.n.value * (K.E - V)
 
     def f_n_inf(self, V):
-        V = (V - self.V_sh)/(u.mV)
+        V = (V - self.V_sh) / (u.mV)
         q = _to_decimal_if_possible(self.q, u.mV)
         v12 = _to_decimal_if_possible(self.v12, u.mV)
-        return 1/(1+u.math.exp(-(V-v12)/q))
+        return 1 / (1 + u.math.exp(-(V - v12) / q))
 
     def f_n_tau(self, V):
         V = (V - self.V_sh).to_decimal(u.mV)
-        Ra = self.Ra/(1 / u.mV / u.ms)
-        Rb = self.Rb/(1 / u.mV / u.ms)
+        Ra = self.Ra / (1 / u.mV / u.ms)
+        Rb = self.Rb / (1 / u.mV / u.ms)
         q = _to_decimal_if_possible(self.q, u.mV)
         v12 = _to_decimal_if_possible(self.v12, u.mV)
-        return 1/((1)*(((Ra)*((V)-(v12))/(1-u.math.exp(-((V)-(v12))/(q))))+((-Rb)*((V)-(v12))/(1-u.math.exp(-((V)-(v12))/(-q))))))
+        return 1 / ((1) * (((Ra) * ((V) - (v12)) / (1 - u.math.exp(-((V) - (v12)) / (q)))) + (
+            (-Rb) * ((V) - (v12)) / (1 - u.math.exp(-((V) - (v12)) / (-q))))))

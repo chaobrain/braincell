@@ -29,10 +29,13 @@ from ._base import (
     MixIons,
     mix_ions,
 )
-from ._multi_compartment import (
-    Cell,
-    RunResult,
-)
+# Multi-compartment `Cell` is being rewritten; names will be re-enabled
+# as the new package modules land.
+# from ._multi_compartment import (
+#     Cell,
+#     RunnableCell,
+#     RunResult,
+# )
 from ._single_compartment import (
     SingleCompartment,
 )
@@ -82,7 +85,7 @@ __all__ = [
     "BasalDendrite",
     "Branch",
     "CableProperty",
-    "Cell",
+    # "Cell",  # re-enabled by multi-compartment rewrite
     "Channel",
     "CompositeByTypePolicy",
     "CustomBranch",
@@ -102,7 +105,8 @@ __all__ = [
     "MixIons",
     "MaxCVLen",
     "Morphology",
-    "RunResult",
+    # "RunResult",     # re-enabled by multi-compartment rewrite
+    # "RunnableCell",  # re-enabled by multi-compartment rewrite
     "SingleCompartment",
     "Soma",
     "channel",

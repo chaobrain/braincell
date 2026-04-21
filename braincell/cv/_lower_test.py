@@ -721,7 +721,6 @@ class LowerSmokeTest(unittest.TestCase):
 # Property-based invariants (skipped when hypothesis missing)
 # =============================================================================
 
-@unittest.skipUnless(_HAS_HYPOTHESIS, "hypothesis not installed")
 class LowerPropertyTest(unittest.TestCase):
 
     @given(cv_count=st.integers(min_value=1, max_value=8))

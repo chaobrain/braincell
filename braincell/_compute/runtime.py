@@ -308,6 +308,17 @@ class CellRuntimeState:
                 cv_to_layout_sets[cv_id].add(layout_spec.id)
 
             for var_name in _mechanism_var_names(mechanism):
+                if isinstance(mechanism, CurrentClamp) and var_name in ("durations", "amplitudes"):
+                    seq = mechanism.durations if var_name == "durations" else mechanism.amplitudes
+                    unit = u.ms if var_name == "durations" else u.nA
+                    quantity, mask = _allocate_clamp_ragged_buffer(
+                        per_point_sequences=[seq] * len(point_ids),
+                        unit=unit,
+                    )
+                    state_buffers[(layout_spec.id, var_name)] = quantity
+                    state_buffers[(layout_spec.id, f"_mask_{var_name}")] = mask
+                    state_shapes[(layout_spec.id, var_name)] = quantity.mantissa.shape
+                    continue
                 state_shapes[(layout_spec.id, var_name)] = shape
                 state_buffers[(layout_spec.id, var_name)] = _allocate_state_buffer(
                     mechanism,
@@ -401,6 +412,39 @@ class CellRuntimeState:
         if key not in self.state_buffers:
             raise KeyError(f"Unknown state buffer for {(layout_id, var_name)!r}.")
         layout = self.layouts[int(layout_id)]
+
+        mask_key = (int(layout_id), f"_mask_{var_name}")
+        if (
+            var_name in ("durations", "amplitudes")
+            and mask_key in self.state_buffers
+            and isinstance(value, (tuple, list))
+        ):
+            buffer = self.state_buffers[key]
+            if isinstance(buffer, u.Quantity):
+                unit = buffer.unit
+                n_active = buffer.mantissa.shape[0]
+                if value and isinstance(value[0], (list, tuple)):
+                    sequences = [list(row) for row in value]
+                else:
+                    if n_active != 1:
+                        raise ValueError(
+                            f"Flat sequence only valid for n_active=1 ragged clamp buffer; "
+                            f"got n_active={n_active}."
+                        )
+                    sequences = [list(value)]
+                if len(sequences) != n_active:
+                    raise ValueError(
+                        f"Ragged clamp buffer expected {n_active} per-point sequences; got {len(sequences)}."
+                    )
+                new_q, new_mask = _allocate_clamp_ragged_buffer(
+                    per_point_sequences=sequences, unit=unit
+                )
+                self.state_buffers[key] = new_q
+                self.state_buffers[mask_key] = new_mask
+                self.state_shapes[key] = new_q.mantissa.shape
+                _sync_runtime_node_param(self, layout_id=int(layout_id), var_name=str(var_name))
+                return
+
         self.state_buffers[key] = _write_state_buffer(
             layout, self.state_buffers[key], value
         )
@@ -638,6 +682,30 @@ def _mechanism_var_value(mechanism: object, var_name: str) -> object:
     )
 
 
+def _allocate_clamp_ragged_buffer(
+    *,
+    per_point_sequences: list,
+    unit,
+) -> tuple:
+    """Pack ragged per-point sequences into ``(Quantity 2D, bool mask 2D)``.
+
+    Each row ``i`` is zero-padded up to ``max_steps``; ``mask[i, j]`` is
+    ``True`` where the original sequence had a value. :func:`_eval_current_clamp`
+    multiplies through the mask so padded slots contribute nothing.
+    """
+    if not per_point_sequences:
+        raise ValueError("Ragged clamp buffer requires at least one sequence.")
+    max_steps = max(len(seq) for seq in per_point_sequences)
+    n_active = len(per_point_sequences)
+    mantissa = np.zeros((n_active, max_steps), dtype=np.float64)
+    mask = np.zeros((n_active, max_steps), dtype=bool)
+    for i, seq in enumerate(per_point_sequences):
+        for j, item in enumerate(seq):
+            mantissa[i, j] = float(item.to_decimal(unit))
+            mask[i, j] = True
+    return u.Quantity(mantissa, unit), mask
+
+
 def _is_ragged_param(value: object) -> bool:
     """True for callable / tuple / list param values.
 
@@ -699,8 +767,22 @@ def _write_state_buffer(layout: "MechanismLayout", buffer: object, value: object
             return u.Quantity(mantissa, target_unit)
 
         if isinstance(value, (list, tuple)):
-            decimals = [float(np.asarray(item.to_decimal(target_unit))) for item in value]
-            arr = np.asarray(decimals, dtype=np.float64)
+            if len(target_shape) == 2 and value and isinstance(value[0], (list, tuple)):
+                rows = [
+                    [float(np.asarray(q.to_decimal(target_unit))) for q in row]
+                    for row in value
+                ]
+                arr = np.asarray(rows, dtype=np.float64)
+            else:
+                decimals = [float(np.asarray(q.to_decimal(target_unit))) for q in value]
+                arr = np.asarray(decimals, dtype=np.float64)
+                if (
+                    len(target_shape) == 2
+                    and arr.ndim == 1
+                    and target_shape[0] == 1
+                    and arr.shape[0] == target_shape[1]
+                ):
+                    arr = arr.reshape(target_shape)
             if arr.shape != target_shape:
                 raise ValueError(
                     f"State assignment shape mismatch: expected {target_shape!r}, got {arr.shape!r}."
@@ -789,17 +871,26 @@ def _quantity_sequence_to_decimal_vector(values: object, *, unit: object) -> obj
 
 
 def _eval_current_clamp(runtime: CellRuntimeState, *, layout_id: int, local_index: int, local_t) -> object:
-    durations = _scalar_state_value(runtime, layout_id=layout_id, var_name="durations", local_index=local_index)
-    amplitudes = _scalar_state_value(runtime, layout_id=layout_id, var_name="amplitudes", local_index=local_index)
-    duration_decimal = _quantity_sequence_to_decimal_vector(durations, unit=u.ms)
-    amplitude_decimal = _quantity_sequence_to_decimal_vector(amplitudes, unit=u.nA)
-    local_t_decimal = local_t.to_decimal(u.ms)
-    end_decimal = u.math.cumsum(duration_decimal)
-    start_decimal = end_decimal - duration_decimal
-    is_active = u.math.logical_and(local_t_decimal >= 0.0,
-                                   u.math.logical_and(local_t_decimal >= start_decimal, local_t_decimal < end_decimal))
-    current_decimal = u.math.sum(u.math.where(is_active, amplitude_decimal, 0.0))
-    return u.Quantity(current_decimal, u.nA)
+    """Evaluate a :class:`CurrentClamp` step protocol at a padded local row.
+
+    Uses the ``(n_active, max_steps)`` :class:`u.Quantity` buffer paired
+    with the bool ``_mask_durations`` buffer: padded slots are masked
+    out so they never contribute to the accumulated current.
+    """
+    durations_q = runtime.state_buffers[(int(layout_id), "durations")]
+    amplitudes_q = runtime.state_buffers[(int(layout_id), "amplitudes")]
+    mask = runtime.state_buffers[(int(layout_id), "_mask_durations")]
+
+    dur_row = jnp.asarray(durations_q.mantissa[int(local_index)])
+    amp_row = jnp.asarray(amplitudes_q.mantissa[int(local_index)])
+    mask_row = jnp.asarray(mask[int(local_index)])
+
+    local_t_ms = local_t.to_decimal(u.ms)
+    ends = jnp.cumsum(dur_row)
+    starts = ends - dur_row
+    is_active = (local_t_ms >= 0.0) & (local_t_ms >= starts) & (local_t_ms < ends) & mask_row
+    current = jnp.sum(jnp.where(is_active, amp_row, 0.0))
+    return u.Quantity(current, u.nA)
 
 
 def _eval_sine_clamp(runtime: CellRuntimeState, *, layout_id: int, local_index: int, local_t) -> object:

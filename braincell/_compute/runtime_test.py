@@ -83,7 +83,7 @@ class CellRuntimeStateTest(unittest.TestCase):
         self.assertEqual(layout.n_active, 1)
         self.assertEqual(layout.point_index.tolist(), [1])
         self.assertIsNone(layout.point_mask)
-        self.assertEqual(rcell.expected_state_shape(layout.id, "amplitudes"), (1,))
+        self.assertEqual(rcell.expected_state_shape(layout.id, "amplitudes"), (1, 1))
         self.assertEqual(len(rcell.get_state(layout.id, "amplitudes")), 1)
         self.assertEqual(tuple(item.to_decimal(u.nA) for item in rcell.get_state(layout.id, "amplitudes")[0]), (0.1,))
         self.assertEqual(tuple(item.to_decimal(u.ms) for item in rcell.get_state(layout.id, "durations")[0]), (2.0,))
@@ -1088,3 +1088,45 @@ class StateBufferStorageTest(unittest.TestCase):
         layout = cell.layouts[0]
         buffer = cell.runtime.state_buffers[(layout.id, "g_max")]
         self.assertNotEqual(buffer.mantissa.dtype, np.dtype("O"))
+
+
+class RaggedCurrentClampBufferTest(unittest.TestCase):
+    """Task 13: CurrentClamp durations/amplitudes packed into padded + mask."""
+
+    def test_three_clamps_with_varying_step_counts_pad_and_mask(self) -> None:
+        cell = Cell(_build_tree())
+        cell.place(
+            at("soma", 0.25),
+            CurrentClamp(start=0.0 * u.ms, durations=(2.0 * u.ms,), amplitudes=(0.1 * u.nA,)),
+        )
+        cell.place(
+            at("soma", 0.5),
+            CurrentClamp(
+                start=0.0 * u.ms,
+                durations=(1.0 * u.ms, 1.0 * u.ms),
+                amplitudes=(0.1 * u.nA, 0.2 * u.nA),
+            ),
+        )
+        cell.place(
+            at("soma", 0.75),
+            CurrentClamp(
+                start=0.0 * u.ms,
+                durations=(0.5 * u.ms, 0.5 * u.ms, 1.0 * u.ms),
+                amplitudes=(0.1 * u.nA, 0.2 * u.nA, 0.3 * u.nA),
+            ),
+        )
+        cell.init_state()
+
+        current_clamp_layouts = [
+            layout for layout in cell.layouts if layout.kind == "CurrentClamp"
+        ]
+        self.assertGreaterEqual(len(current_clamp_layouts), 1)
+        for layout in current_clamp_layouts:
+            dur = cell.runtime.state_buffers[(layout.id, "durations")]
+            amp = cell.runtime.state_buffers[(layout.id, "amplitudes")]
+            self.assertTrue(hasattr(dur, "unit"))
+            self.assertEqual(dur.mantissa.ndim, 2)
+            self.assertEqual(amp.mantissa.shape, dur.mantissa.shape)
+            mask_key = (layout.id, "_mask_durations")
+            self.assertIn(mask_key, cell.runtime.state_buffers)
+            self.assertEqual(cell.runtime.state_buffers[mask_key].shape, dur.mantissa.shape)

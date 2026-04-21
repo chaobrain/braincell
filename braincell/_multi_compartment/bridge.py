@@ -1,13 +1,13 @@
 """CV ↔ point-space conversion helpers.
 
 Thin, named wrappers around
-:func:`braincell.compute._runtime.scatter_midpoint_values` /
-:func:`braincell.compute._runtime.gather_midpoint_values` so the
+:func:`braincell._compute.runtime.scatter_midpoint_values` /
+:func:`braincell._compute.runtime.gather_midpoint_values` so the
 surrounding pipeline reads naturally. The originals stay for other
 call sites.
 """
 
-from braincell.compute._runtime import (
+from braincell._compute.runtime import (
     CellRuntimeState,
     gather_midpoint_values,
     scatter_midpoint_values,

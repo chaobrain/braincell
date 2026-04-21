@@ -29,13 +29,13 @@ import numpy as np
 
 from braincell._base import HHTypedNeuron, IonChannel
 from braincell._typing import Initializer
-from braincell.compute._assignment_table import (
+from braincell._compute.table import (
     MechanismObjectCell,
     MechanismObjectTable,
     mechanism_cell_key,
 )
-from braincell.compute._point_tree import build_point_scheduling, build_point_tree
-from braincell.compute._runtime import (
+from braincell._compute.topology import build_point_scheduling, build_point_tree
+from braincell._compute.runtime import (
     CellRuntimeState,
     build_placeholder_ions,
     clone_morpho,

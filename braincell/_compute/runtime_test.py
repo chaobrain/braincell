@@ -779,10 +779,10 @@ class CellRuntimeStateTest(unittest.TestCase):
 class _StubCell(braincell.HHTypedNeuron):
     """Minimal :class:`HHTypedNeuron` double for install/uninstall tests."""
 
-    __module__ = "braincell.compute._runtime_test"
+    __module__ = "braincell._compute.runtime_test"
 
     def __init__(self, V_th=-55.0 * u.mV, n_cv: int = 3):
-        from braincell.compute._runtime import build_placeholder_ions
+        from braincell._compute.runtime import build_placeholder_ions
 
         braincell.HHTypedNeuron.__init__(
             self, size=(1,), name="stub", **build_placeholder_ions()
@@ -816,7 +816,7 @@ class TestInstallCellRuntime(unittest.TestCase):
 
     def _runtime_double(self, n_cv: int):
         from unittest.mock import MagicMock
-        from braincell.compute._runtime import CellRuntimeState
+        from braincell._compute.runtime import CellRuntimeState
 
         runtime = MagicMock(spec=CellRuntimeState)
         runtime.n_cv = n_cv
@@ -826,7 +826,7 @@ class TestInstallCellRuntime(unittest.TestCase):
         return runtime
 
     def test_install_returns_tuple_of_installed_plain_attr_names(self):
-        from braincell.compute._runtime import install_cell_runtime
+        from braincell._compute.runtime import install_cell_runtime
 
         cell = _StubCell(n_cv=4)
         installed = install_cell_runtime(cell, self._runtime_double(n_cv=4))
@@ -849,7 +849,7 @@ class TestUninstallCellRuntime(unittest.TestCase):
 
     def _runtime_double(self, n_cv: int):
         from unittest.mock import MagicMock
-        from braincell.compute._runtime import CellRuntimeState
+        from braincell._compute.runtime import CellRuntimeState
 
         runtime = MagicMock(spec=CellRuntimeState)
         runtime.n_cv = n_cv
@@ -860,7 +860,7 @@ class TestUninstallCellRuntime(unittest.TestCase):
 
     def test_uninstall_round_trip(self):
         from braincell._base import IonChannel
-        from braincell.compute._runtime import (
+        from braincell._compute.runtime import (
             install_cell_runtime,
             uninstall_cell_runtime,
         )

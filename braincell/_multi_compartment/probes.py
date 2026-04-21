@@ -10,7 +10,7 @@ import brainstate
 import brainunit as u
 import numpy as np
 
-from braincell.compute._runtime import CellRuntimeState
+from braincell._compute.runtime import CellRuntimeState
 from braincell.mech import (
     CurrentProbe,
     Density,

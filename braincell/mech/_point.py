@@ -67,7 +67,7 @@ class Point(Mechanism):
     of concrete types.
 
     :class:`Point` defines no abstract methods. Runtime evaluation of
-    clamp-like mechanisms happens in :mod:`braincell.compute._runtime`,
+    clamp-like mechanisms happens in :mod:`braincell._compute.runtime`,
     which inspects concrete subclasses directly.
     """
 

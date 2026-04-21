@@ -10,8 +10,8 @@ from dataclasses import dataclass
 import brainunit as u
 import numpy as np
 
-from braincell.compute._point_tree import PointTree
-from braincell.compute._runtime import MechanismLayout
+from braincell._compute.topology import PointTree
+from braincell._compute.runtime import MechanismLayout
 
 __all__ = ["CLAMP_KINDS", "ClampActiveTable", "build_clamp_active_table"]
 

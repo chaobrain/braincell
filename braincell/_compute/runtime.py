@@ -38,7 +38,7 @@ from braincell.mech import (
     get_registry,
 )
 from braincell.morph.morphology import Morphology
-from ._point_tree import PointTree
+from .topology import PointTree
 
 __all__ = ["CellRuntimeState", "install_cell_runtime", "uninstall_cell_runtime"]
 
@@ -1045,7 +1045,7 @@ def _instantiate_runtime_ion_instance(
 
 
 class _BoundIonChannelRuntime(Channel):
-    __module__ = "braincell.compute"
+    __module__ = "braincell._compute"
 
     def __init__(self, channel: object, *, bound_ions: tuple[object, ...], owner_ion: object):
         super().__init__(size=channel.size, name=getattr(channel, "name", None))

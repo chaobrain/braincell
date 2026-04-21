@@ -13,20 +13,20 @@
 # limitations under the License.
 # ==============================================================================
 
-"""Compute-graph layer: execution view and runtime state built from CVs.
+"""Private compute layer: execution view and runtime state built from CVs.
 
 This package turns the immutable CV layer into the structures the voltage
 solver and mechanism-lowering code actually execute against:
 
-- :mod:`braincell.compute._point_tree` — merged point/edge execution graph
-- :mod:`braincell.compute._runtime` — mechanism lowering and runtime state
-- :mod:`braincell.compute._assignment_table` — mechanism-object bookkeeping
+- :mod:`braincell._compute.topology` — merged point/edge execution graph
+- :mod:`braincell._compute.runtime` — mechanism lowering and runtime state
+- :mod:`braincell._compute.table` — mechanism-object bookkeeping
 
-The public surface is intentionally small; most callers interact with these
-pieces indirectly through :class:`braincell.Cell`.
+This package is private. External code should access the same symbols
+through :mod:`braincell` re-exports where appropriate.
 """
 
-from ._point_tree import PointScheduling, PointTree
+from .topology import PointScheduling, PointTree
 
 __all__ = [
     "PointScheduling",

@@ -1019,6 +1019,20 @@ class StateBufferStorageTest(unittest.TestCase):
 class RaggedCurrentClampBufferTest(unittest.TestCase):
     """Task 13: CurrentClamp durations/amplitudes packed into padded + mask."""
 
+    def test_identical_lambda_bodies_produce_one_layout(self) -> None:
+        cell = Cell(_build_tree())
+        cell.place(
+            at("soma", 0.5),
+            FunctionClamp(fn=lambda t: 0.1 * u.nA, duration=3.0 * u.ms, start=0.0 * u.ms),
+        )
+        cell.place(
+            at("soma", 0.75),
+            FunctionClamp(fn=lambda t: 0.1 * u.nA, duration=3.0 * u.ms, start=0.0 * u.ms),
+        )
+        cell.init_state()
+        fn_clamp_layouts = [layout for layout in cell.layouts if layout.kind == "FunctionClamp"]
+        self.assertEqual(len(fn_clamp_layouts), 1)
+
     def test_three_clamps_with_varying_step_counts_pad_and_mask(self) -> None:
         cell = Cell(_build_tree())
         cell.place(

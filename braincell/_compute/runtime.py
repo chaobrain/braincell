@@ -579,21 +579,46 @@ def mechanism_kind(mechanism: object) -> str:
     return type(mechanism).__name__
 
 
+def _fn_fingerprint(fn) -> tuple:
+    """Produce a hashable fingerprint for a callable ``fn``.
+
+    Structurally identical lambdas (same bytecode, consts, varnames,
+    and closure-cell contents) yield the same fingerprint, so two
+    separately-constructed ``lambda`` objects can merge into one
+    :class:`MechanismLayout` when used inside :class:`FunctionClamp`.
+    Non-hashable / opaque closure cells fall back to ``id(value)``.
+    """
+    code = fn.__code__
+    closure_cells: list[object] = []
+    for cell in (fn.__closure__ or ()):
+        v = cell.cell_contents
+        if hasattr(v, "to_decimal") and hasattr(v, "unit"):
+            closure_cells.append(("quantity", float(v.to_decimal(v.unit)), str(v.unit)))
+        elif isinstance(v, (int, float, str, bytes, bool)) or v is None:
+            closure_cells.append(("prim", v))
+        else:
+            closure_cells.append(("id", id(v)))
+    return (code.co_code, code.co_consts, code.co_varnames, tuple(closure_cells))
+
+
 def mechanism_signature(mechanism: object) -> tuple[object, ...]:
     """Return a hashable signature used to group declarations.
 
-    Every supported mechanism type is a frozen dataclass with
+    Most supported mechanism types are frozen dataclasses with
     structural equality, so the signature reduces to
-    ``(type_name, mechanism)``. Two declarations that compare equal
-    share a signature and are grouped into one runtime layout.
-
-    Notes
-    -----
-    For :class:`FunctionClamp`, the ``fn`` field is compared by
-    identity under the dataclass-generated ``__eq__`` — two separately
-    constructed ``lambda`` closures with identical bodies are treated
-    as distinct signatures.
+    ``(type_name, mechanism)``. :class:`FunctionClamp` is special-cased:
+    its ``fn`` field is compared by identity under the dataclass-
+    generated ``__eq__``, so we fingerprint the callable by bytecode +
+    normalized closure so structurally identical lambdas merge into
+    one layout.
     """
+    if isinstance(mechanism, FunctionClamp):
+        return (
+            "FunctionClamp",
+            _fn_fingerprint(mechanism.fn),
+            mechanism.start,
+            mechanism.duration,
+        )
     return (type(mechanism).__qualname__, mechanism)
 
 

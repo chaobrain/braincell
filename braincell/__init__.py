@@ -14,6 +14,9 @@
 # ==============================================================================
 
 
+from braincell._single_compartment import (
+    SingleCompartment,
+)
 from braincell.quad.protocol import (
     DiffEqModule,
     DiffEqState,
@@ -33,9 +36,6 @@ from ._multi_compartment import (
     Cell,
     RunResult,
     RunnableCell,
-)
-from ._single_compartment import (
-    SingleCompartment,
 )
 from ._version import (
     __version__,

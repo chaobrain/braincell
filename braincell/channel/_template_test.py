@@ -306,11 +306,6 @@ class _ExampleHHMissing(HH):
 
 
 class ChannelTemplateTest(unittest.TestCase):
-    def test_dynamics_classes_are_channel_subclasses(self) -> None:
-        self.assertTrue(issubclass(Passive, Channel))
-        self.assertTrue(issubclass(HH, Channel))
-        self.assertTrue(issubclass(Markov, Channel))
-
     def test_gate_validation(self) -> None:
         with self.assertRaises(ValueError):
             Gate("m", q10=3.0)

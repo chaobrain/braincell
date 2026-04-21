@@ -776,6 +776,38 @@ class CellRuntimeStateTest(unittest.TestCase):
         self.assertIn("__totally_unregistered__", str(ctx.exception))
 
 
+class EvaluatePointClampsJitTest(unittest.TestCase):
+    """Task 19: evaluate_point_clamps compiles under JAX without object dtype."""
+
+    def test_evaluate_point_clamps_jit_compiles(self) -> None:
+        cell = Cell(_build_tree())
+        cell.place(
+            at("soma", 0.5),
+            CurrentClamp(start=0.0 * u.ms, durations=(2.0 * u.ms,), amplitudes=(0.1 * u.nA,)),
+        )
+        cell.init_state()
+        runtime = cell.runtime
+        compiled = jax.jit(lambda t: runtime.evaluate_point_clamps(t=t))
+        out = compiled(0.5 * u.ms)
+        self.assertEqual(out.mantissa.shape, (runtime.n_point,))
+
+
+class DensityLayoutMaskingUnderJit(unittest.TestCase):
+    """Task 19 (C5-adjacent): density mantissa is JAX-friendly, no object dtype."""
+
+    def test_state_buffer_mantissa_sums_under_jit(self) -> None:
+        cell = Cell(_build_tree())
+        cell.paint(
+            BranchSlice(branch_index=0, prox=0.0, dist=1.0),
+            braincell.mech.Channel("IL", g_max=4.0 * (u.mS / u.cm ** 2), E=-68.0 * u.mV),
+        )
+        cell.init_state()
+        layout = cell.layouts[0]
+        mantissa = cell.runtime.state_buffers[(layout.id, "g_max")].mantissa
+        total = float(jax.jit(lambda x: jnp.asarray(x).sum())(mantissa))
+        self.assertGreater(total, 0.0)
+
+
 class IsRootLevelRuntimeNodeUnknownClassTest(unittest.TestCase):
     """Task 18 (C6): unknown channel kinds raise rather than silently return False."""
 

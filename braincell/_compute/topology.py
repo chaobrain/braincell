@@ -316,7 +316,7 @@ def build_point_tree(
                 parent_point_id,
                 midpoint_point_id,
                 cv_id=cv_id,
-                half=_entry_half_for_walk(attach_x) if index == 0 else _entry_half_for_walk(attach_x),
+                half=_entry_half_for_walk(attach_x),
             )
             add_edge_role(
                 midpoint_point_id,

@@ -37,12 +37,11 @@ from braincell._compute.table import (
 from braincell._compute.topology import build_point_scheduling, build_point_tree
 from braincell._compute.runtime import (
     CellRuntimeState,
+    _is_root_level_runtime_node,
     build_placeholder_ions,
     clone_morpho,
     cv_value_vector,
-    install_cell_runtime,
     mechanism_signature,
-    uninstall_cell_runtime,
 )
 from braincell._cv.base import build_cvs
 from braincell._cv.lower import (
@@ -145,7 +144,6 @@ class Cell(HHTypedNeuron):
         self._runtime: CellRuntimeState | None = None
         self._point_tree = None
         self._axial_jax = None
-        self._runtime_installed_names: tuple[str, ...] = ()
 
         self._initialized = False
 
@@ -326,9 +324,23 @@ class Cell(HHTypedNeuron):
         self._point_tree = build_point_tree(morpho, cvs=cvs)
         self._runtime = CellRuntimeState.from_cell(self)
 
-        # Save scalar V_th declaration before install overwrites it.
+        # Save scalar V_th declaration before the vector overwrite below.
         self._V_th_declaration = self._V_th
-        self._runtime_installed_names = install_cell_runtime(self, self._runtime)
+
+        self._in_size = (self._runtime.n_cv,)
+        self._out_size = (self._runtime.n_cv,)
+
+        root_nodes = dict(self._runtime.ions)
+        for layout in self._runtime.layouts:
+            node = self._runtime.runtime_nodes.get(layout.id)
+            if node is None:
+                continue
+            if _is_root_level_runtime_node(layout.kind):
+                root_nodes[f"layout_{layout.id}"] = node
+
+        self.ion_channels = self._format_elements(IonChannel, **root_nodes)
+        self.C = cv_value_vector(self, attr_name="cm")
+        self.V_th = bridge.fill_like(self.varshape, self.V_th)
 
         v_initializer = (
             self._V_init if self._V_init is not None
@@ -372,10 +384,11 @@ class Cell(HHTypedNeuron):
         """
         self._raise_if_not_initialized("reset()")
 
-        uninstall_cell_runtime(self, self._runtime_installed_names)
-        self._runtime_installed_names = ()
+        for name in ("_in_size", "_out_size", "ion_channels", "C"):
+            if hasattr(self, name):
+                delattr(self, name)
 
-        # Restore scalar V_th (install overwrote it with a vector).
+        # Restore scalar V_th (init_state overwrote it with a vector).
         self._V_th = self._V_th_declaration
 
         if hasattr(self, "V"):

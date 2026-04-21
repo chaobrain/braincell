@@ -56,11 +56,9 @@ __all__ = [
     "clone_morpho",
     "cv_value_vector",
     "fill_like",
-    "install_cell_runtime",
     "mechanism_signature",
     "quantity_vector",
     "scatter_midpoint_values",
-    "uninstall_cell_runtime",
 ]
 
 
@@ -534,46 +532,6 @@ class CellRuntimeState:
             local_current_decimal = _quantity_sequence_to_decimal_vector(local_currents, unit=u.nA)
             point_current_decimal = point_current_decimal.at[layout.point_index].add(local_current_decimal)
         return u.Quantity(point_current_decimal, u.nA)
-
-
-def install_cell_runtime(cell: "Cell", runtime: CellRuntimeState) -> tuple[str, ...]:
-    """Install runtime nodes + ``C`` + ``V_th`` onto ``cell``.
-
-    Returns the tuple of plain-attribute names set so callers can pass
-    the list to :func:`uninstall_cell_runtime` for a clean teardown.
-    ``V_th`` is overwritten via its property setter but is *not*
-    included in the returned tuple: the property-backed attribute
-    cannot be ``delattr``-ed, so owners (e.g. :class:`Cell`) are
-    expected to save / restore the declaration value themselves.
-    """
-    cell._in_size = (runtime.n_cv,)
-    cell._out_size = (runtime.n_cv,)
-
-    root_nodes = dict(runtime.ions)
-    for layout in runtime.layouts:
-        node = runtime.runtime_nodes.get(layout.id)
-        if node is None:
-            continue
-        if _is_root_level_runtime_node(layout.kind):
-            root_nodes[f"layout_{layout.id}"] = node
-
-    cell.ion_channels = cell._format_elements(IonChannel, **root_nodes)
-    cell.C = cv_value_vector(cell, attr_name="cm")
-    cell.V_th = fill_like(cell.varshape, cell.V_th)
-    return ("_in_size", "_out_size", "ion_channels", "C")
-
-
-def uninstall_cell_runtime(cell: "Cell", installed_names: tuple[str, ...]) -> None:
-    """Remove attributes installed by :func:`install_cell_runtime`.
-
-    ``installed_names`` is the tuple returned by the matching
-    ``install_cell_runtime`` call. Each name is removed via
-    :func:`delattr` so subsequent ``init_state()`` calls re-install
-    cleanly without colliding with stale attributes.
-    """
-    for name in installed_names:
-        if hasattr(cell, name):
-            delattr(cell, name)
 
 
 ## build_placeholder_ions moved to braincell.ion

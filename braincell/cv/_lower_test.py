@@ -17,12 +17,11 @@ import unittest
 
 import brainunit as u
 import numpy as np
+from hypothesis import given, settings
+from hypothesis import strategies as st
 
 from braincell.cv._cv import CV
 from braincell.cv._lower import (
-    EPS_AREA_UM2,
-    EPS_LEN_UM,
-    EPS_PARAM,
     PaintRule,
     PlaceRule,
     _apply_density,
@@ -38,7 +37,6 @@ from braincell.cv._lower import (
     _GeoCV,
     _MechBucket,
     _RegionCache,
-    _interval_contains,
     _lateral_area_um2,
     _locate_cv_on_branch,
     _midpoint_radius_um,
@@ -59,7 +57,6 @@ from braincell.filter import (
     AllRegion,
     AtLocation,
     BranchSlice,
-    RegionExpr,
 )
 from braincell.mech import (
     CableProperty,
@@ -353,7 +350,7 @@ class FrustumScalarsTest(unittest.TestCase):
         self.assertAlmostEqual(area, 40.0 * np.pi, places=6)
 
     def test_axial_factor_uniform(self) -> None:
-        frusta = self._single(10.0, 2.0, 2.0)   # 10 μm = 1e-3 cm
+        frusta = self._single(10.0, 2.0, 2.0)  # 10 μm = 1e-3 cm
         expected = 1e-3 / (np.pi * 2e-4 * 2e-4)
         self.assertAlmostEqual(_axial_factor_per_cm(frusta), expected, places=4)
 
@@ -723,15 +720,6 @@ class LowerSmokeTest(unittest.TestCase):
 # =============================================================================
 # Property-based invariants (skipped when hypothesis missing)
 # =============================================================================
-
-
-try:
-    from hypothesis import given, settings
-    from hypothesis import strategies as st
-    _HAS_HYPOTHESIS = True
-except ImportError:
-    _HAS_HYPOTHESIS = False
-
 
 @unittest.skipUnless(_HAS_HYPOTHESIS, "hypothesis not installed")
 class LowerPropertyTest(unittest.TestCase):

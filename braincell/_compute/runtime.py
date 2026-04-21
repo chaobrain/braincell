@@ -18,6 +18,7 @@ import inspect
 from dataclasses import dataclass, fields, is_dataclass
 
 import brainunit as u
+import jax.numpy as jnp
 import numpy as np
 
 from braincell import ion as runtime_ion
@@ -396,8 +397,13 @@ class CellRuntimeState:
         return self.state_buffers[key]
 
     def set_state(self, layout_id: int, var_name: str, value: object) -> None:
-        buffer = self.get_state(layout_id, var_name)
-        _write_state_buffer(buffer, value)
+        key = (int(layout_id), str(var_name))
+        if key not in self.state_buffers:
+            raise KeyError(f"Unknown state buffer for {(layout_id, var_name)!r}.")
+        layout = self.layouts[int(layout_id)]
+        self.state_buffers[key] = _write_state_buffer(
+            layout, self.state_buffers[key], value
+        )
         _sync_runtime_node_param(self, layout_id=int(layout_id), var_name=str(var_name))
 
     def get_point_state(self, point_id: int) -> dict[int, dict[str, object]]:
@@ -632,46 +638,118 @@ def _mechanism_var_value(mechanism: object, var_name: str) -> object:
     )
 
 
-def _allocate_state_buffer(mechanism: object, *, var_name: str, shape: tuple[int, ...]) -> np.ndarray:
+def _is_ragged_param(value: object) -> bool:
+    """True for callable / tuple / list param values.
+
+    Ragged params include :class:`CurrentClamp` ``durations`` /
+    ``amplitudes`` (tuple of Quantity) and :class:`FunctionClamp`
+    ``fn`` (callable). These are stored per-point as a Python tuple
+    buffer rather than a rectangular :class:`u.Quantity` array.
+    """
+    if callable(value):
+        return True
+    if isinstance(value, (tuple, list)):
+        return True
+    return False
+
+
+def _allocate_state_buffer(mechanism: object, *, var_name: str, shape: tuple[int, ...]) -> object:
+    """Allocate a state buffer for one mechanism parameter.
+
+    Returns a :class:`u.Quantity` whose mantissa is a :class:`jnp.ndarray`
+    when the declared value carries a unit. For ragged sequence / callable
+    values (``CurrentClamp.durations`` / ``.amplitudes`` / ``FunctionClamp.fn``)
+    the buffer is a Python tuple of length ``shape[0]`` (handled in Task 13).
+    Plain numeric values (no unit) become a :class:`jnp.ndarray`.
+    """
     value = _mechanism_var_value(mechanism, var_name)
-    array = np.empty(shape, dtype=object)
-    array.fill(value)
-    return array
+
+    if _is_ragged_param(value):
+        n = int(np.prod(shape, dtype=int)) if shape else 1
+        return tuple(value for _ in range(n))
+
+    if hasattr(value, "unit") and hasattr(value, "to_decimal"):
+        unit = value.unit
+        mantissa = np.full(shape, float(value.to_decimal(unit)), dtype=np.float64)
+        return u.Quantity(mantissa, unit)
+
+    return np.full(shape, value, dtype=np.float64)
 
 
-def _write_state_buffer(buffer: np.ndarray, value: object) -> None:
-    if isinstance(value, np.ndarray):
-        incoming = value.astype(object, copy=False)
-        if incoming.shape != buffer.shape:
-            raise ValueError(f"State assignment shape mismatch: expected {buffer.shape!r}, got {incoming.shape!r}.")
-        buffer[...] = incoming
-        return
+def _write_state_buffer(layout: "MechanismLayout", buffer: object, value: object) -> object:
+    """Write ``value`` into ``buffer``; return the possibly-new buffer.
 
-    if isinstance(value, (list, tuple)):
-        if buffer.size == 1:
-            buffer.flat[0] = tuple(value) if isinstance(value, list) else value
-            return
-        incoming = np.empty(buffer.shape, dtype=object)
-        flat_values = list(value)
-        if len(flat_values) != buffer.size:
-            raise ValueError(
-                f"State assignment shape mismatch: expected {buffer.shape!r}, got sequence length {len(flat_values)!r}.")
-        incoming.flat[:] = flat_values
-        buffer[...] = incoming
-        return
+    - Quantity buffer: broadcast scalar Quantity, validate unit and shape.
+    - Tuple buffer (ragged): replace whole tuple, or fill every slot with a
+      scalar.
+    - Plain ``jnp.ndarray`` buffer: broadcast scalar, validate shape.
+    """
+    if isinstance(buffer, u.Quantity):
+        target_shape = buffer.mantissa.shape
+        target_unit = buffer.unit
 
-    buffer.fill(value)
+        if isinstance(value, u.Quantity):
+            mantissa = np.asarray(value.to_decimal(target_unit), dtype=np.float64)
+            if mantissa.ndim == 0:
+                mantissa = np.broadcast_to(mantissa, target_shape).copy()
+            if mantissa.shape != target_shape:
+                raise ValueError(
+                    f"State assignment shape mismatch: expected {target_shape!r}, got {mantissa.shape!r}."
+                )
+            return u.Quantity(mantissa, target_unit)
+
+        if isinstance(value, (list, tuple)):
+            decimals = [float(np.asarray(item.to_decimal(target_unit))) for item in value]
+            arr = np.asarray(decimals, dtype=np.float64)
+            if arr.shape != target_shape:
+                raise ValueError(
+                    f"State assignment shape mismatch: expected {target_shape!r}, got {arr.shape!r}."
+                )
+            return u.Quantity(arr, target_unit)
+
+        raise TypeError(
+            f"State buffer for layout {layout.id!r} expects a Quantity or sequence of Quantities, "
+            f"got {type(value).__name__!r}."
+        )
+
+    if isinstance(buffer, tuple):
+        if isinstance(value, (tuple, list)):
+            if len(buffer) == 1:
+                return (tuple(value),)
+            if len(value) != len(buffer):
+                raise ValueError(
+                    f"State assignment shape mismatch for ragged buffer: expected length {len(buffer)}, got {len(value)}."
+                )
+            return tuple(value)
+        return tuple(value for _ in buffer)
+
+    arr = np.asarray(value, dtype=np.float64)
+    target_shape = np.asarray(buffer).shape
+    if arr.ndim == 0:
+        arr = np.broadcast_to(arr, target_shape).copy()
+    if arr.shape != target_shape:
+        raise ValueError(
+            f"State assignment shape mismatch: expected {target_shape!r}, got {arr.shape!r}."
+        )
+    return arr
 
 
-def _extract_point_value(layout: MechanismLayout, *, point_id: int, buffer: np.ndarray) -> object:
+def _extract_point_value(layout: MechanismLayout, *, point_id: int, buffer: object) -> object:
+    def _pick(index: int) -> object:
+        if isinstance(buffer, u.Quantity):
+            return u.Quantity(buffer.mantissa[index], buffer.unit)
+        if isinstance(buffer, tuple):
+            return buffer[index]
+        return buffer[index]
+
     if layout.layout == "dense":
-        return buffer[point_id]
+        return _pick(int(point_id))
     if layout.point_index is None:
         raise ValueError(f"Sparse layout {layout.id!r} is missing point_index.")
     matches = np.flatnonzero(layout.point_index == int(point_id))
     if len(matches) == 0:
         raise KeyError(f"Point {point_id!r} is not active in layout {layout.id!r}.")
-    return buffer[int(matches[0])]
+    return _pick(int(matches[0]))
 
 
 def _evaluate_clamp_layout(runtime: CellRuntimeState, *, layout: MechanismLayout, t) -> tuple[object, ...]:
@@ -695,7 +773,12 @@ def _evaluate_clamp_layout(runtime: CellRuntimeState, *, layout: MechanismLayout
 
 def _scalar_state_value(runtime: CellRuntimeState, *, layout_id: int, var_name: str, local_index: int = 0) -> object:
     buffer = runtime.state_buffers[(int(layout_id), str(var_name))]
-    return buffer.reshape((-1,))[int(local_index)]
+    index = int(local_index)
+    if isinstance(buffer, u.Quantity):
+        return u.Quantity(buffer.mantissa[index], buffer.unit)
+    if isinstance(buffer, tuple):
+        return buffer[index]
+    return buffer.reshape((-1,))[index]
 
 
 def _quantity_sequence_to_decimal_vector(values: object, *, unit: object) -> object:
@@ -988,9 +1071,16 @@ def _instantiate_runtime_ion_instance(
     runtime_cls: type,
     layouts: tuple[MechanismLayout, ...],
     declarations: tuple[Density, ...],
-    state_buffers: dict[tuple[int, str], np.ndarray],
+    state_buffers: dict,
     n_point: int,
 ) -> object:
+    """Build one runtime ion instance from its sparse declaration layouts.
+
+    Start from a baseline ion and replace per-point params where each
+    declaration layout requests them. Uses ``.at[point_index].set(...)``
+    on the Quantity mantissa — no Python loops on per-point Quantity
+    boxes.
+    """
     supported_params = _supported_ion_runtime_params(runtime_cls)
     unsupported_params: dict[int, set[str]] = {}
     for layout, declaration in zip(layouts, declarations):
@@ -1005,36 +1095,124 @@ def _instantiate_runtime_ion_instance(
         )
 
     baseline_ion = runtime_cls(size=(n_point,))
-    full_param_values: dict[str, np.ndarray] = {}
+    full_param_values: dict[str, object] = {}
     for param_name in supported_params:
         baseline_value = _normalize_ion_runtime_param_value(
             runtime_cls,
             param_name,
             getattr(baseline_ion, _ion_runtime_attr_name(runtime_cls, param_name)),
         )
-        full_param_values[param_name] = _object_array_from_value(baseline_value, shape=(n_point,))
+        full_param_values[param_name] = _ion_param_broadcast(baseline_value, shape=(n_point,))
 
     for layout, declaration in zip(layouts, declarations):
         point_index = layout.point_index
         if point_index is None:
             raise ValueError(f"Ion layout {layout.id!r} is missing point_index.")
         for param_name in declaration.params.keys():
-            values = _object_array_from_buffer(state_buffers[(layout.id, param_name)])
-            if param_name == "Ci_initializer" and issubclass(runtime_cls, DynamicNernstIon):
-                for index in point_index.tolist():
-                    full_param_values[param_name][index] = _normalize_ion_runtime_param_value(
-                        runtime_cls,
-                        param_name,
-                        values[index],
-                    )
-            else:
-                full_param_values[param_name][point_index] = values[point_index]
+            buffer = state_buffers[(layout.id, param_name)]
+            full_param_values[param_name] = _ion_param_scatter(
+                runtime_cls=runtime_cls,
+                param_name=param_name,
+                target=full_param_values[param_name],
+                buffer=buffer,
+                point_index=point_index,
+            )
 
-    runtime_kwargs = {
-        param_name: _as_runtime_array(values)
-        for param_name, values in full_param_values.items()
-    }
-    return runtime_cls(size=(n_point,), name=instance_name, **runtime_kwargs)
+    return runtime_cls(size=(n_point,), name=instance_name, **full_param_values)
+
+
+def _ion_param_broadcast(value: object, *, shape: tuple[int, ...]) -> object:
+    """Broadcast an ion baseline value onto ``shape``.
+
+    Handles three cases: already-shaped Quantity pass-through, scalar
+    Quantity broadcast, and plain numeric / object fallbacks. Returns
+    a buffer that :func:`_ion_param_scatter` can update in-place by
+    ``.at[...].set(...)``.
+    """
+    if isinstance(value, u.Quantity):
+        raw = value.mantissa if hasattr(value, "mantissa") else value.to_decimal(value.unit)
+        mantissa = np.asarray(raw, dtype=np.float64)
+        if mantissa.shape == shape:
+            return u.Quantity(mantissa.copy(), value.unit)
+        if mantissa.ndim == 0 or mantissa.shape == ():
+            return u.Quantity(np.full(shape, float(mantissa), dtype=np.float64), value.unit)
+        raise ValueError(
+            f"Cannot broadcast ion baseline value with shape {mantissa.shape!r} onto shape {shape!r}."
+        )
+    # Plain numeric baseline (e.g., valence): broadcast as numpy array.
+    if isinstance(value, (np.ndarray,)) or isinstance(value, (int, float)):
+        arr = np.asarray(value)
+        if arr.shape == shape:
+            return arr.copy()
+        if arr.ndim == 0:
+            return np.broadcast_to(arr, shape).copy()
+    if hasattr(value, "shape") and not callable(value):
+        arr = np.asarray(value)
+        if arr.shape == shape:
+            return arr.copy()
+        if arr.ndim == 0:
+            return np.broadcast_to(arr, shape).copy()
+    # Callable / opaque baseline: keep as tuple of length shape[0].
+    n = int(np.prod(shape, dtype=int)) if shape else 1
+    return tuple(value for _ in range(n))
+
+
+def _ion_param_scatter(
+    *,
+    runtime_cls: type,
+    param_name: str,
+    target: object,
+    buffer: object,
+    point_index: np.ndarray,
+) -> object:
+    """Scatter the values of one sparse ion-layout buffer into ``target``.
+
+    For ``Ci_initializer`` on :class:`DynamicNernstIon` (which may hold a
+    State-wrapped callable), fall back to the Python per-point path on a
+    tuple buffer. Rectangular Quantity buffers scatter via
+    ``.at[point_index].set(...)`` with unit coercion.
+    """
+    if isinstance(target, u.Quantity) and isinstance(buffer, u.Quantity):
+        target_unit = target.unit
+        src_mantissa = np.asarray(buffer.mantissa, dtype=np.float64)
+        # Sparse buffer has shape (n_active,) matching point_index; dense has (n_point,).
+        src = src_mantissa if src_mantissa.shape == point_index.shape else src_mantissa[point_index]
+        incoming = np.asarray(
+            u.Quantity(src, buffer.unit).to_decimal(target_unit), dtype=np.float64
+        )
+        new_mantissa = np.asarray(target.mantissa, dtype=np.float64).copy()
+        new_mantissa[point_index] = incoming
+        return u.Quantity(new_mantissa, target_unit)
+
+    if isinstance(target, tuple):
+        target_list = list(target)
+        for local_idx, global_idx in enumerate(point_index.tolist()):
+            if isinstance(buffer, u.Quantity):
+                target_list[int(global_idx)] = u.Quantity(buffer.mantissa[local_idx], buffer.unit)
+            elif isinstance(buffer, tuple):
+                target_list[int(global_idx)] = buffer[local_idx]
+            else:
+                target_list[int(global_idx)] = buffer[local_idx]
+        return tuple(target_list)
+
+    if isinstance(target, np.ndarray):
+        new_target = target.copy()
+        if isinstance(buffer, u.Quantity):
+            src = np.asarray(buffer.mantissa)
+        elif isinstance(buffer, np.ndarray):
+            src = buffer
+        else:
+            raise TypeError(
+                f"Cannot scatter non-array buffer into numpy target for ion param {param_name!r}."
+            )
+        src = src if src.shape == point_index.shape else src[point_index]
+        new_target[point_index] = src
+        return new_target
+
+    raise TypeError(
+        f"Unsupported target/buffer combination for ion param {param_name!r}: "
+        f"target={type(target).__name__}, buffer={type(buffer).__name__}."
+    )
 
 
 class _BoundIonChannelRuntime(Channel):
@@ -1266,13 +1444,24 @@ def _runtime_param_value(
     *,
     layout: MechanismLayout,
     var_name: str,
-    state_buffers: dict[tuple[int, str], np.ndarray],
+    state_buffers: dict,
 ) -> object:
+    """Materialize a runtime-facing value for a rectangular param.
+
+    For :class:`u.Quantity` buffers with a density mask over the declared
+    ``g*``-class conductance names, zero out inactive points in a
+    JAX-traceable way via :func:`jnp.where`. Other buffers pass through.
+    """
     buffer = state_buffers[(layout.id, var_name)]
-    values = _object_array_from_buffer(buffer)
-    if layout.point_mask is not None and var_name in {"g_max", "g", "gbar", "conductance"}:
-        values = _mask_quantity_like(values, layout.point_mask)
-    return _as_runtime_array(values)
+    if (
+        isinstance(buffer, u.Quantity)
+        and layout.point_mask is not None
+        and var_name in {"g_max", "g", "gbar", "conductance"}
+    ):
+        mask_bool = np.asarray(layout.point_mask)
+        masked_mantissa = np.where(mask_bool, np.asarray(buffer.mantissa), 0.0)
+        return u.Quantity(masked_mantissa, buffer.unit)
+    return buffer
 
 
 def _sync_runtime_node_param(runtime: CellRuntimeState, *, layout_id: int, var_name: str) -> None:
@@ -1296,24 +1485,26 @@ def _sync_runtime_node_param(runtime: CellRuntimeState, *, layout_id: int, var_n
 
 
 def _sync_runtime_ion(runtime: CellRuntimeState, *, layout_id: int) -> None:
-    layout = runtime.layouts[int(layout_id)]
+    """Rebuild the runtime ion's per-point params from state buffers.
+
+    Uses vectorised ``.at[point_index].set(...)`` on Quantity mantissas
+    instead of Python per-index loops.
+    """
     mechanism = runtime.layout_mechanisms[int(layout_id)]
     if not isinstance(mechanism, Density) or mechanism.category != "ion":
         return
     instance_name = mechanism.instance_name
     ion = runtime.ions[instance_name]
-    supported_params = _supported_ion_runtime_params(type(ion))
-    full_values = {
-        param_name: _object_array_from_value(
-            _normalize_ion_runtime_param_value(
-                type(ion),
-                param_name,
-                getattr(ion, _ion_runtime_attr_name(type(ion), param_name)),
-            ),
-            shape=(runtime.n_point,),
+    ion_cls = type(ion)
+    supported_params = _supported_ion_runtime_params(ion_cls)
+
+    full_values: dict[str, object] = {}
+    for param_name in supported_params:
+        baseline = _normalize_ion_runtime_param_value(
+            ion_cls, param_name,
+            getattr(ion, _ion_runtime_attr_name(ion_cls, param_name)),
         )
-        for param_name in supported_params
-    }
+        full_values[param_name] = _ion_param_broadcast(baseline, shape=(runtime.n_point,))
 
     for candidate in runtime.layouts:
         candidate_mechanism = runtime.layout_mechanisms[candidate.id]
@@ -1326,64 +1517,30 @@ def _sync_runtime_ion(runtime: CellRuntimeState, *, layout_id: int) -> None:
         if candidate.point_index is None:
             raise ValueError(f"Ion layout {candidate.id!r} is missing point_index.")
         for param_name in candidate_mechanism.params.keys():
-            values = _object_array_from_buffer(runtime.state_buffers[(candidate.id, param_name)])
-            if param_name == "Ci_initializer" and isinstance(ion, DynamicNernstIon):
-                for index in candidate.point_index.tolist():
-                    full_values[param_name][index] = _normalize_ion_runtime_param_value(
-                        type(ion),
-                        param_name,
-                        values[index],
-                    )
-            else:
-                full_values[param_name][candidate.point_index] = values[candidate.point_index]
+            buffer = runtime.state_buffers[(candidate.id, param_name)]
+            full_values[param_name] = _ion_param_scatter(
+                runtime_cls=ion_cls,
+                param_name=param_name,
+                target=full_values[param_name],
+                buffer=buffer,
+                point_index=candidate.point_index,
+            )
 
-    for param_name, values in full_values.items():
-        setattr(ion, _ion_runtime_attr_name(type(ion), param_name), _as_runtime_array(values))
+    for param_name, value in full_values.items():
+        setattr(ion, _ion_runtime_attr_name(ion_cls, param_name), value)
     if hasattr(ion, "_update_reversal") and callable(getattr(ion, "_update_reversal")):
         ion._update_reversal()
 
 
-def _mask_quantity_like(values: np.ndarray, mask: np.ndarray) -> np.ndarray:
-    masked = values.copy()
-    for index, active in enumerate(mask.tolist()):
-        if active:
-            continue
-        value = masked[index]
-        try:
-            masked[index] = 0 * value.unit
-        except Exception:
-            masked[index] = 0
-    return masked
-
-
-def _object_array_from_buffer(buffer: np.ndarray) -> np.ndarray:
-    values = np.empty(buffer.shape, dtype=object)
-    for index, item in enumerate(buffer.flat):
-        values.flat[index] = item
-    return values
-
-
-def _object_array_from_value(value: object, *, shape: tuple[int, ...]) -> np.ndarray:
-    values = np.empty(shape, dtype=object)
-    raw_shape = getattr(value, "shape", ())
-    if raw_shape not in (None, (), shape):
-        raise ValueError(f"Cannot coerce value with shape {raw_shape!r} into object array shape {shape!r}.")
-    if raw_shape == shape:
-        for index in np.ndindex(shape):
-            values[index] = value[index]
-        return values
-    values.fill(value)
-    return values
-
-
-def _as_runtime_array(values: np.ndarray) -> object:
-    if values.size == 0:
-        return values
-    first = values.flat[0]
-    if hasattr(first, "to_decimal") and callable(getattr(first, "to_decimal")):
-        decimals = np.asarray([item.to_decimal(first.unit) for item in values.flat], dtype=float).reshape(values.shape)
-        return u.Quantity(decimals, first.unit)
-    return np.asarray(values.tolist())
+def _quantity_full(shape: tuple[int, ...], value: object) -> object:
+    """Broadcast ``value`` to ``shape``, preserving unit if present."""
+    if isinstance(value, u.Quantity):
+        decimal = float(value.to_decimal(value.unit))
+        return u.Quantity(np.full(shape, decimal, dtype=np.float64), value.unit)
+    if hasattr(value, "unit") and hasattr(value, "to_decimal"):
+        decimal = float(value.to_decimal(value.unit))
+        return u.Quantity(np.full(shape, decimal, dtype=np.float64), value.unit)
+    return np.full(shape, value, dtype=np.float64)
 
 
 def _runtime_constructor_params(

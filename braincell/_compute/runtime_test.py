@@ -84,7 +84,7 @@ class CellRuntimeStateTest(unittest.TestCase):
         self.assertEqual(layout.point_index.tolist(), [1])
         self.assertIsNone(layout.point_mask)
         self.assertEqual(rcell.expected_state_shape(layout.id, "amplitudes"), (1,))
-        self.assertEqual(rcell.get_state(layout.id, "amplitudes").shape, (1,))
+        self.assertEqual(len(rcell.get_state(layout.id, "amplitudes")), 1)
         self.assertEqual(tuple(item.to_decimal(u.nA) for item in rcell.get_state(layout.id, "amplitudes")[0]), (0.1,))
         self.assertEqual(tuple(item.to_decimal(u.ms) for item in rcell.get_state(layout.id, "durations")[0]), (2.0,))
         self.assertEqual(rcell.get_state(layout.id, "start")[0], 1.0 * u.ms)
@@ -1024,3 +1024,67 @@ class TestBuildClampActiveTable(unittest.TestCase):
                 n_point=1,
             )
         )
+
+
+# ---------------------------------------------------------------------------
+# State-buffer storage tests (Task 12: Quantity(jnp.ndarray) rectangular).
+# ---------------------------------------------------------------------------
+
+import jax
+import jax.numpy as jnp
+
+
+class StateBufferStorageTest(unittest.TestCase):
+    """Task 12: rectangular params live as Quantity(jnp.ndarray, unit)."""
+
+    def test_density_buffer_is_quantity_backed_by_jax(self) -> None:
+        cell = Cell(_build_tree())
+        cell.paint(
+            BranchSlice(branch_index=[0, 1], prox=0.0, dist=1.0),
+            braincell.mech.Channel("leaky", g_max=4.0 * (u.mS / u.cm ** 2)),
+        )
+        cell.init_state()
+        layout = cell.layouts[0]
+        buffer = cell.runtime.state_buffers[(layout.id, "g_max")]
+        self.assertTrue(hasattr(buffer, "unit"))
+        self.assertTrue(hasattr(buffer, "mantissa"))
+        self.assertTrue(isinstance(buffer.mantissa, (np.ndarray, jnp.ndarray)))
+
+    def test_set_state_broadcast_scalar_and_readback(self) -> None:
+        cell = Cell(_build_tree())
+        cell.paint(
+            BranchSlice(branch_index=[0, 1], prox=0.0, dist=1.0),
+            braincell.mech.Channel("IL", g_max=4.0 * (u.mS / u.cm ** 2), E=-68.0 * u.mV),
+        )
+        cell.init_state()
+        layout = cell.layouts[0]
+        cell.runtime.set_state(layout.id, "g_max", 7.5 * (u.mS / u.cm ** 2))
+        new = cell.runtime.get_state(layout.id, "g_max")
+        self.assertAlmostEqual(
+            float(new[1].to_decimal(u.mS / u.cm ** 2)), 7.5, places=12
+        )
+
+    def test_set_state_shape_mismatch_raises(self) -> None:
+        cell = Cell(_build_tree())
+        cell.paint(
+            BranchSlice(branch_index=[0, 1], prox=0.0, dist=1.0),
+            braincell.mech.Channel("IL", g_max=4.0 * (u.mS / u.cm ** 2), E=-68.0 * u.mV),
+        )
+        cell.init_state()
+        layout = cell.layouts[0]
+        with self.assertRaises(ValueError):
+            cell.runtime.set_state(
+                layout.id, "g_max",
+                u.Quantity(jnp.ones((99,)), u.mS / u.cm ** 2),
+            )
+
+    def test_no_object_dtype_in_density_buffer(self) -> None:
+        cell = Cell(_build_tree())
+        cell.paint(
+            BranchSlice(branch_index=[0, 1], prox=0.0, dist=1.0),
+            braincell.mech.Channel("IL", g_max=4.0 * (u.mS / u.cm ** 2), E=-68.0 * u.mV),
+        )
+        cell.init_state()
+        layout = cell.layouts[0]
+        buffer = cell.runtime.state_buffers[(layout.id, "g_max")]
+        self.assertNotEqual(buffer.mantissa.dtype, np.dtype("O"))

@@ -123,6 +123,7 @@ class CellRuntimeState:
     bound_ion_keys: dict[int, tuple[str, ...]]
     current_owner_keys: dict[int, str | None]
     dhs_static_cache: object | None = None
+    clamp_active_table: object | None = None
 
     @classmethod
     def from_cell(cls, cell: "Cell") -> "CellRuntimeState":
@@ -231,6 +232,17 @@ class CellRuntimeState:
             point_ids=point_tree.cv_midpoint_point_id,
             n_point=n_point,
         )
+
+        # Import inside the method to avoid a circular import between
+        # compute._runtime and _multi_compartment.clamp_table.
+        from braincell._multi_compartment.clamp_table import build_clamp_active_table
+        clamp_active_table = build_clamp_active_table(
+            layouts=tuple(layouts),
+            cvs=cell.cvs,
+            point_tree=point_tree,
+            n_point=n_point,
+        )
+
         return cls(
             point_tree=point_tree,
             n_point=n_point,
@@ -250,6 +262,7 @@ class CellRuntimeState:
             bound_ion_keys=bound_ion_keys,
             current_owner_keys=current_owner_keys,
             dhs_static_cache=None,
+            clamp_active_table=clamp_active_table,
         )
 
     def get_point_layouts(self, point_id: int) -> tuple[MechanismLayout, ...]:

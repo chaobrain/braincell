@@ -20,14 +20,11 @@ import brainstate
 import braintools
 import brainunit as u
 
-from braincell._base import Ion
-from braincell.mech import register_ion
-from braincell.ion._template import FixedIon, InitNernstIon
+from braincell._base import Ion, Channel
 
 __all__ = [
     'Potassium',
     'PotassiumFixed',
-    'PotassiumInitNernst',
 ]
 
 
@@ -44,14 +41,9 @@ class Potassium(Ion):
         Potassium ion models with defined dynamics and properties.
     """
     __module__ = 'braincell.ion'
-    ion_symbol = 'K'
-    default_Ci = 54.4 * u.mM
-    default_Co = 2.5 * u.mM
-    default_valence = 1
 
 
-@register_ion("PotassiumFixed")
-class PotassiumFixed(Potassium, FixedIon):
+class PotassiumFixed(Potassium):
     """Fixed Sodium dynamics.
 
     This calcium model has no dynamics. It holds fixed reversal
@@ -62,32 +54,18 @@ class PotassiumFixed(Potassium, FixedIon):
     def __init__(
         self,
         size: brainstate.typing.Size,
-        E: Union[brainstate.typing.ArrayLike, Callable, None] = -95. * u.mV,
-        Ci: Union[brainstate.typing.ArrayLike, Callable, None] = None,
-        Co: Union[brainstate.typing.ArrayLike, Callable, None] = None,
-        valence: Union[brainstate.typing.ArrayLike, Callable, None] = None,
+        E: Union[brainstate.typing.ArrayLike, Callable] = -95. * u.mV,
+        C: Union[brainstate.typing.ArrayLike, Callable] = 0.0400811 * u.mM,
         name: Optional[str] = None,
         **channels
     ):
         super().__init__(size, name=name, **channels)
-        self._init_fixed_ion(Ci=Ci, Co=Co, E=E, valence=valence)
+        self.E = braintools.init.param(E, self.varshape)
+        self.C = braintools.init.param(C, self.varshape)
 
-
-@register_ion("PotassiumInitNernst")
-class PotassiumInitNernst(Potassium, InitNernstIon):
-    """Fixed ``Ci/Co`` potassium model with ``E`` initialized from Nernst."""
-
-    __module__ = 'braincell.ion'
-
-    def __init__(
-        self,
-        size: brainstate.typing.Size,
-        temp: Union[brainstate.typing.ArrayLike, Callable] = u.celsius2kelvin(36.),
-        Ci: Union[brainstate.typing.ArrayLike, Callable, None] = None,
-        Co: Union[brainstate.typing.ArrayLike, Callable, None] = None,
-        valence: Union[brainstate.typing.ArrayLike, Callable, None] = None,
-        name: Optional[str] = None,
-        **channels
-    ):
-        super().__init__(size, name=name, **channels)
-        self._init_nernst_ion(Ci=Ci, Co=Co, temp=temp, valence=valence)
+    def reset_state(self, V, batch_size=None):
+        nodes = brainstate.graph.nodes(self, Channel, allowed_hierarchy=(1, 1)).values()
+        self.check_hierarchies(type(self), *tuple(nodes))
+        ion_info = self.pack_info()
+        for node in nodes:
+            node.reset_state(V, ion_info, batch_size)

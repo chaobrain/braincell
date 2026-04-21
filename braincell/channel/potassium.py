@@ -1,19 +1,4 @@
 # -*- coding: utf-8 -*-
-# Copyright 2026 BrainX Ecosystem Limited. All Rights Reserved.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-# ==============================================================================
-
 
 """
 This module implements voltage-dependent potassium channel.
@@ -27,9 +12,8 @@ import braintools
 import brainunit as u
 
 from braincell._base import Channel, IonInfo
+from braincell.quad import DiffEqState
 from braincell.ion import Potassium
-from braincell.mech import register_channel
-from braincell.quad.protocol import DiffEqState
 
 __all__ = [
     'PotassiumChannel',
@@ -52,7 +36,6 @@ __all__ = [
     'IKv34_Ma2020',
     'IKv43_Ma2020',
     'IKM_Grc_Ma2020',
-    'IK_Kv_test',
 
 ]
 
@@ -151,7 +134,6 @@ class PotassiumChannel(Channel):
         pass
 
 
-@register_channel("IK_p4_markov")
 class IK_p4_markov(PotassiumChannel):
     r"""The delayed rectifier potassium channel of :math:`p^4`
     current which described with first-order Markov chain.
@@ -217,7 +199,6 @@ class IK_p4_markov(PotassiumChannel):
         raise NotImplementedError
 
 
-@register_channel("IKDR_Ba2002")
 class IKDR_Ba2002(IK_p4_markov):
     r"""The delayed rectifier potassium channel current.
 
@@ -293,7 +274,6 @@ class IKDR_Ba2002(IK_p4_markov):
         return 0.5 * u.math.exp(-(V - 10.) / 40.)
 
 
-@register_channel("IK_TM1991")
 class IK_TM1991(IK_p4_markov):
     r"""The potassium channel described by (Traub and Miles, 1991) [1]_.
 
@@ -356,7 +336,6 @@ class IK_TM1991(IK_p4_markov):
         return 0.5 * u.math.exp((10 + V) / 40)
 
 
-@register_channel("IK_HH1952")
 class IK_HH1952(IK_p4_markov):
     r"""The potassium channel described by Hodgkin–Huxley model [1]_.
 
@@ -421,7 +400,6 @@ class IK_HH1952(IK_p4_markov):
         return 0.125 * u.math.exp(-(V + 20) / 80)
 
 
-@register_channel("IKA_p4q_ss")
 class IKA_p4q_ss(PotassiumChannel):
     r"""
     The rapidly inactivating Potassium channel of :math:`p^4q`
@@ -507,7 +485,6 @@ class IKA_p4q_ss(PotassiumChannel):
         raise NotImplementedError
 
 
-@register_channel("IKA1_HM1992")
 class IKA1_HM1992(IKA_p4q_ss):
     r"""The rapidly inactivating Potassium channel (IA1) model proposed by (Huguenard & McCormick, 1992) [2]_.
 
@@ -600,7 +577,6 @@ class IKA1_HM1992(IKA_p4q_ss):
         )
 
 
-@register_channel("IKA2_HM1992")
 class IKA2_HM1992(IKA_p4q_ss):
     r"""The rapidly inactivating Potassium channel (IA2) model proposed by (Huguenard & McCormick, 1992) [2]_.
 
@@ -693,7 +669,6 @@ class IKA2_HM1992(IKA_p4q_ss):
         )
 
 
-@register_channel("IKK2_pq_ss")
 class IKK2_pq_ss(PotassiumChannel):
     r"""The slowly inactivating Potassium channel of :math:`pq`
     current which described with steady-state format.
@@ -777,7 +752,6 @@ class IKK2_pq_ss(PotassiumChannel):
         raise NotImplementedError
 
 
-@register_channel("IKK2A_HM1992")
 class IKK2A_HM1992(IKK2_pq_ss):
     r"""The slowly inactivating Potassium channel (IK2a) model proposed by (Huguenard & McCormick, 1992) [2]_.
 
@@ -862,7 +836,6 @@ class IKK2A_HM1992(IKK2_pq_ss):
                      u.math.exp(-(V + 130.) / 7.1))
 
 
-@register_channel("IKK2B_HM1992")
 class IKK2B_HM1992(IKK2_pq_ss):
     r"""The slowly inactivating Potassium channel (IK2b) model proposed by (Huguenard & McCormick, 1992) [2]_.
 
@@ -953,7 +926,6 @@ class IKK2B_HM1992(IKK2_pq_ss):
         )
 
 
-@register_channel("IKNI_Ya1989")
 class IKNI_Ya1989(PotassiumChannel):
     r"""A slow non-inactivating K+ current described by Yamada et al. (1989) [1]_.
 
@@ -1036,7 +1008,6 @@ class IKNI_Ya1989(PotassiumChannel):
         return self.tau_max / (3.3 * u.math.exp(temp / 20.) + u.math.exp(-temp / 20.))
 
 
-@register_channel("IK_Leak")
 class IK_Leak(PotassiumChannel):
     """The potassium leak channel current.
 
@@ -1069,7 +1040,6 @@ class IK_Leak(PotassiumChannel):
         return self.g_max * (K.E - V)
 
 
-@register_channel("IKv11_Ak2007")
 class IKv11_Ak2007(PotassiumChannel):
     r"""
     TITLE Voltage-gated low threshold potassium current from Kv1 subunits
@@ -1172,7 +1142,6 @@ class IKv11_Ak2007(PotassiumChannel):
         return self.cb * u.math.exp(-(V + self.cvb) / self.ckb)
 
 
-@register_channel("IKv34_Ma2020")
 class IKv34_Ma2020(PotassiumChannel):
     r"""
     : HH TEA-sensitive Purkinje potassium current
@@ -1258,7 +1227,6 @@ class IKv34_Ma2020(PotassiumChannel):
         return 1000 * htau_func
 
 
-@register_channel("IKv43_Ma2020")
 class IKv43_Ma2020(PotassiumChannel):
     r"""
     TITLE Cerebellum Granule Cell Model
@@ -1362,7 +1330,6 @@ class IKv43_Ma2020(PotassiumChannel):
         return 1. / (self.f_q_alpha(V) + self.f_q_beta(V))
 
 
-@register_channel("IKM_Grc_Ma2020")
 class IKM_Grc_Ma2020(PotassiumChannel):
     r"""
     TITLE Cerebellum Granule Cell Model
@@ -1435,85 +1402,3 @@ class IKM_Grc_Ma2020(PotassiumChannel):
 
     def f_p_tau(self, V):
         return 1. / (self.f_p_alpha(V) + self.f_p_beta(V))
-
-
-def _to_decimal_if_possible(value, unit):
-    if value is None:
-        return None
-    return value.to_decimal(unit) if hasattr(value, "to_decimal") else value
-
-
-@register_channel("IK_Kv_test")
-class IK_Kv_test(PotassiumChannel):
-    __module__ = "braincell.channel"
-
-    def __init__(
-        self,
-        size,
-        g_max=0.0 * (u.siemens / (u.cm ** 2)),
-        V_sh=0. * u.mV,
-        temp=u.celsius2kelvin(25),
-        Ra=0.02 * (1 / u.mV / u.ms),
-        Rb=0.006 * (1 / u.mV / u.ms),
-        q=9 * (u.mV),
-        v12=25 * (u.mV),
-        name=None,
-    ):
-        super().__init__(size=size, name=name)
-
-        self.g_max = braintools.init.param(g_max, self.varshape, allow_none=False)
-        self.V_sh = braintools.init.param(V_sh, self.varshape, allow_none=False)
-        self.temp = temp
-        self.Ra = braintools.init.param(Ra, self.varshape, allow_none=False)
-        self.Rb = braintools.init.param(Rb, self.varshape, allow_none=False)
-        self.q = braintools.init.param(q, self.varshape, allow_none=False)
-        self.v12 = braintools.init.param(v12, self.varshape, allow_none=False)
-
-        self.temp_ref = u.celsius2kelvin(23)
-        self.Q10_n = 1.0
-
-    def _q10(self, Q10):
-        return Q10 ** (((self.temp - self.temp_ref) / u.kelvin) / 10.0)
-
-    def init_state(self, V, K: IonInfo, batch_size=None):
-        self.n = DiffEqState(
-            braintools.init.param(u.math.zeros, self.varshape, batch_size)
-        )
-
-    def reset_state(self, V, K: IonInfo, batch_size=None):
-        self.n.value = self.f_n_inf(V)
-        if isinstance(batch_size, int):
-            assert self.n.value.shape[0] == batch_size
-
-    def pre_integral(self, V, K: IonInfo):
-        pass
-
-    def post_integral(self, V, K: IonInfo):
-        pass
-
-    def compute_derivative(self, V, K: IonInfo):
-        phi_n = self._q10(self.Q10_n)
-        self.n.derivative = (
-            phi_n
-            * (self.f_n_inf(V) - self.n.value)
-            / self.f_n_tau(V)
-            / u.ms
-        )
-
-    def current(self, V, K: IonInfo):
-        return self.g_max * self.n.value * (K.E - V)
-
-    def f_n_inf(self, V):
-        V = (V - self.V_sh) / (u.mV)
-        q = _to_decimal_if_possible(self.q, u.mV)
-        v12 = _to_decimal_if_possible(self.v12, u.mV)
-        return 1 / (1 + u.math.exp(-(V - v12) / q))
-
-    def f_n_tau(self, V):
-        V = (V - self.V_sh).to_decimal(u.mV)
-        Ra = self.Ra / (1 / u.mV / u.ms)
-        Rb = self.Rb / (1 / u.mV / u.ms)
-        q = _to_decimal_if_possible(self.q, u.mV)
-        v12 = _to_decimal_if_possible(self.v12, u.mV)
-        return 1 / ((1) * (((Ra) * ((V) - (v12)) / (1 - u.math.exp(-((V) - (v12)) / (q)))) + (
-            (-Rb) * ((V) - (v12)) / (1 - u.math.exp(-((V) - (v12)) / (-q))))))

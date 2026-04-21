@@ -1,19 +1,4 @@
 # -*- coding: utf-8 -*-
-# Copyright 2026 BrainX Ecosystem Limited. All Rights Reserved.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-# ==============================================================================
-
 
 """
 This module implements voltage-dependent sodium channel.
@@ -28,9 +13,8 @@ import brainunit as u
 import jax.tree
 
 from braincell._base import Channel, IonInfo
+from braincell.quad import DiffEqState, IndependentIntegration
 from braincell.ion import Sodium
-from braincell.mech import register_channel
-from braincell.quad.protocol import DiffEqState, IndependentIntegration
 
 __all__ = [
     'SodiumChannel',
@@ -141,7 +125,6 @@ class SodiumChannel(Channel):
         pass
 
 
-@register_channel("INa_p3q_markov")
 class INa_p3q_markov(SodiumChannel):
     r"""
     The sodium current model of :math:`p^3q` current which described with first-order Markov chain.
@@ -216,7 +199,6 @@ class INa_p3q_markov(SodiumChannel):
         raise NotImplementedError
 
 
-@register_channel("INa_Ba2002")
 class INa_Ba2002(INa_p3q_markov):
     r"""
     The sodium current model.
@@ -297,7 +279,6 @@ class INa_Ba2002(INa_p3q_markov):
         return 4. / (1. + u.math.exp(-(V - 40.) / 5.))
 
 
-@register_channel("INa_TM1991")
 class INa_TM1991(INa_p3q_markov):
     r"""
     The sodium current model described by (Traub and Miles, 1991) [1]_.
@@ -378,7 +359,6 @@ class INa_TM1991(INa_p3q_markov):
         return 4. / (1 + u.math.exp(-(V - 40) / 5))
 
 
-@register_channel("INa_HH1952")
 class INa_HH1952(INa_p3q_markov):
     r"""
     The sodium current model described by Hodgkin–Huxley model [1]_.
@@ -453,7 +433,6 @@ class INa_HH1952(INa_p3q_markov):
         return 1 / (1 + u.math.exp(-(V - 10) / 10))
 
 
-@register_channel("INa_Rsg")
 class INa_Rsg(SodiumChannel, IndependentIntegration):
     __module__ = 'braincell.channel'
 

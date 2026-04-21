@@ -8,9 +8,6 @@ brainpy/math/brainpy_object/tests/io_test_tmp*
 lib/
 
 development
-/.codex
-/examples/convert_mod/
-/.claudegitignore
 
 brainpy/dyn/tests/data
 examples/dynamics_simulation/data
@@ -159,7 +156,6 @@ target/
 
 # Jupyter Notebook
 .ipynb_checkpoints
-examples/neuron_compare/channel_no_conc/artifacts/
 
 # IPython
 profile_default/
@@ -222,7 +218,6 @@ cython_debug/
 
 /docs/apis/simulation/generated/
 !/brainpy/dyn/tests/data/
-/examples/multi_compartment/data/neuromorpho/
 /examples/dynamics_simulation/data/
 /examples/training_snn_models/logs/T100_b64_lr0.001/
 /examples/training_snn_models/logs/
@@ -233,12 +228,7 @@ cython_debug/
 /docs/apis/deprecated/generated/
 /docs/_static/braincell.psd
 
-x86_64/
+/examples/MC13_golgi_model/x86_64/
 /.claude/
 /dev/replace_init.py
 /dev/replace_all.py
-/examples/multi_compartment/checkpoint/
-/dev/
-/.claudegitignore
-/CLAUDE.md
-/AGENTS.md

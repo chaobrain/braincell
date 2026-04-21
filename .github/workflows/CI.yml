@@ -21,9 +21,6 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
-env:
-  JAX_ENABLE_X64: "1"
-
 
 jobs:
   test_linux:

@@ -19,10 +19,10 @@ from dataclasses import dataclass
 
 from brainunit import Quantity
 
+from braincell.morph._morphology import Morphology
 from . import helper
 from .cache import SelectionCache
 from .region import RegionExpr
-from braincell.morph._morphology import Morphology
 
 Location = tuple[int, float]
 
@@ -162,10 +162,10 @@ class UniformSamples(LocsetExpr):
             )
         mask = self.region.evaluate(morpho, cache=cache)
         points = helper.uniform_samples_from_region(
-                morpho,
-                intervals=mask.intervals,
-                count=self.count,
-            )
+            morpho,
+            intervals=mask.intervals,
+            count=self.count,
+        )
         return LocsetMask(points=points, display_names=_display_names_for_points(morpho, points))
 
 
@@ -185,11 +185,11 @@ class RandomSamples(LocsetExpr):
             )
         mask = self.region.evaluate(morpho, cache=cache)
         points = helper.random_samples_from_region(
-                morpho,
-                intervals=mask.intervals,
-                count=self.count,
-                seed=self.seed,
-            )
+            morpho,
+            intervals=mask.intervals,
+            count=self.count,
+            seed=self.seed,
+        )
         return LocsetMask(points=points, display_names=_display_names_for_points(morpho, points))
 
 

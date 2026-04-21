@@ -14,8 +14,8 @@
 # ==============================================================================
 
 
-from dataclasses import dataclass, fields, is_dataclass
 import inspect
+from dataclasses import dataclass, fields, is_dataclass
 
 import brainunit as u
 import numpy as np
@@ -1137,7 +1137,8 @@ def _resolve_channel_runtime_bindings(
         raise ValueError(
             f"Mixed-ion channel class {runtime_cls.__name__!r} must define current_owner_type."
         )
-    owner_candidates = [ion_key for (family_key, _), (ion_key, _) in zip(family_slots, bound_ions) if family_key == current_owner_family]
+    owner_candidates = [ion_key for (family_key, _), (ion_key, _) in zip(family_slots, bound_ions) if
+                        family_key == current_owner_family]
     if len(owner_candidates) != 1:
         raise ValueError(
             f"Mixed-ion channel class {runtime_cls.__name__!r} could not resolve a unique current owner for family "

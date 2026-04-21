@@ -20,9 +20,9 @@ from dataclasses import dataclass
 
 from brainunit import Quantity
 
+from braincell.morph._morphology import Morphology
 from . import helper
 from .cache import SelectionCache
-from braincell.morph._morphology import Morphology
 
 ClosedSide = str
 

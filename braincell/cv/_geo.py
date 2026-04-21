@@ -210,6 +210,8 @@ def build_cv_geo(
         for cv in temp_geo
     )
     return cvs, cv_ids_by_branch
+
+
 def map_point_to_cv(
     point: tuple[int, float],
     *,

@@ -7,7 +7,7 @@ from braincell._base import IonInfo
 from braincell.channel import PotassiumChannel
 from braincell.mech import get_registry
 from braincell.mech import register_channel
-from braincell.quad import DiffEqState
+from braincell.quad._protocol import DiffEqState
 
 
 def _to_decimal_if_possible(value, unit):

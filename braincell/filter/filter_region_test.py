@@ -17,6 +17,7 @@
 import unittest
 
 import brainunit as u
+
 from braincell import Branch, Morphology
 from braincell.filter import BranchSlice, RegionSetOp
 from braincell.filter import helper as helper_mod

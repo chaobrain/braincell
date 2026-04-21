@@ -43,7 +43,7 @@ class CellRuntimeStateTest(unittest.TestCase):
         cell = Cell(_build_tree())
         cell.paint(
             BranchSlice(branch_index=[0, 1], prox=0.0, dist=1.0),
-            braincell.mech.Channel("leaky", g_max=4.0 * (u.mS / u.cm**2)),
+            braincell.mech.Channel("leaky", g_max=4.0 * (u.mS / u.cm ** 2)),
         )
 
         self.assertEqual(cell.n_cv, 2)
@@ -59,7 +59,7 @@ class CellRuntimeStateTest(unittest.TestCase):
         self.assertEqual(cell.expected_state_shape(layout.id, "g_max"), (5,))
         self.assertEqual(cell.voltage_shape, (5,))
         self.assertEqual(cell.get_state(layout.id, "g_max").shape, (5,))
-        self.assertTrue(all(value == 4.0 * (u.mS / u.cm**2) for value in cell.get_state(layout.id, "g_max")))
+        self.assertTrue(all(value == 4.0 * (u.mS / u.cm ** 2) for value in cell.get_state(layout.id, "g_max")))
         self.assertEqual(tuple(layout.id for layout in cell.get_point_layouts(0)), ())
         self.assertEqual(tuple(layout.id for layout in cell.get_point_layouts(1)), (layout.id,))
         self.assertEqual(tuple(layout.id for layout in cell.get_point_layouts(3)), (layout.id,))
@@ -93,7 +93,7 @@ class CellRuntimeStateTest(unittest.TestCase):
         cell = Cell(_build_tree())
         cell.paint(
             BranchSlice(branch_index=[0, 1], prox=0.0, dist=1.0),
-            braincell.mech.Channel("IL", g_max=4.0 * (u.mS / u.cm**2), E=-68.0 * u.mV),
+            braincell.mech.Channel("IL", g_max=4.0 * (u.mS / u.cm ** 2), E=-68.0 * u.mV),
         )
 
         self.assertEqual(len(cell.layouts), 1)
@@ -102,13 +102,13 @@ class CellRuntimeStateTest(unittest.TestCase):
         self.assertEqual(layout.kind, "channel:IL")
         self.assertEqual(cell.expected_state_shape(layout.id, "g_max"), (5,))
         self.assertEqual(cell.expected_state_shape(layout.id, "E"), (5,))
-        self.assertEqual(cell.get_point_state(1)[layout.id]["g_max"], 4.0 * (u.mS / u.cm**2))
+        self.assertEqual(cell.get_point_state(1)[layout.id]["g_max"], 4.0 * (u.mS / u.cm ** 2))
         self.assertEqual(cell.get_point_state(3)[layout.id]["E"], -68.0 * u.mV)
         node = cell.get_runtime_node(layout.id)
         self.assertIsInstance(node, braincell.channel.IL)
         self.assertEqual(node.varshape, (5,))
-        self.assertAlmostEqual(float(node.g_max[1].to_decimal(u.mS / u.cm**2)), 4.0, places=12)
-        self.assertAlmostEqual(float(node.g_max[0].to_decimal(u.mS / u.cm**2)), 0.0, places=12)
+        self.assertAlmostEqual(float(node.g_max[1].to_decimal(u.mS / u.cm ** 2)), 4.0, places=12)
+        self.assertAlmostEqual(float(node.g_max[0].to_decimal(u.mS / u.cm ** 2)), 0.0, places=12)
         self.assertAlmostEqual(float(node.E[1].to_decimal(u.mV)), -68.0, places=12)
 
     def test_named_channel_spec_merges_across_regions_when_identity_matches(self) -> None:
@@ -117,11 +117,11 @@ class CellRuntimeStateTest(unittest.TestCase):
         cell = Cell(_build_tree())
         cell.paint(
             BranchSlice(branch_index=0, prox=0.0, dist=1.0),
-            braincell.mech.Channel("IL", name="leak_main", g_max=4.0 * (u.mS / u.cm**2), E=-68.0 * u.mV),
+            braincell.mech.Channel("IL", name="leak_main", g_max=4.0 * (u.mS / u.cm ** 2), E=-68.0 * u.mV),
         )
         cell.paint(
             BranchSlice(branch_index=1, prox=0.0, dist=1.0),
-            braincell.mech.Channel("IL", name="leak_main", g_max=4.0 * (u.mS / u.cm**2), E=-68.0 * u.mV),
+            braincell.mech.Channel("IL", name="leak_main", g_max=4.0 * (u.mS / u.cm ** 2), E=-68.0 * u.mV),
         )
 
         self.assertEqual(len(cell.layouts), 1)
@@ -133,8 +133,8 @@ class CellRuntimeStateTest(unittest.TestCase):
         cell = Cell(_build_tree())
         cell.paint(
             BranchSlice(branch_index=[0, 1], prox=0.0, dist=1.0),
-            braincell.mech.Channel("IL", name="leak_a", g_max=4.0 * (u.mS / u.cm**2), E=-68.0 * u.mV),
-            braincell.mech.Channel("IL", name="leak_b", g_max=4.0 * (u.mS / u.cm**2), E=-68.0 * u.mV),
+            braincell.mech.Channel("IL", name="leak_a", g_max=4.0 * (u.mS / u.cm ** 2), E=-68.0 * u.mV),
+            braincell.mech.Channel("IL", name="leak_b", g_max=4.0 * (u.mS / u.cm ** 2), E=-68.0 * u.mV),
         )
 
         self.assertEqual(len(cell.layouts), 2)
@@ -145,7 +145,7 @@ class CellRuntimeStateTest(unittest.TestCase):
         cell = Cell(_build_tree(), cv_policy=CVPerBranch())
         cell.paint(
             BranchSlice(branch_index=[0, 1], prox=0.0, dist=1.0),
-            braincell.mech.Channel("leaky", g_max=4.0 * (u.mS / u.cm**2)),
+            braincell.mech.Channel("leaky", g_max=4.0 * (u.mS / u.cm ** 2)),
         )
         clamp = CurrentClamp.step(0.1 * u.nA, 2.0 * u.ms, delay=1.0 * u.ms)
         cell.place(RootLocation(x=0.5), clamp)
@@ -158,9 +158,9 @@ class CellRuntimeStateTest(unittest.TestCase):
         self.assertEqual(tuple(layout.id for layout in cell.get_cv_layouts(0)), (dense.id, sparse.id))
         self.assertEqual(tuple(layout.id for layout in cell.get_cv_layouts(1)), (dense.id,))
         point_state = cell.get_point_state(1)
-        self.assertEqual(point_state[dense.id]["g_max"], 4.0 * (u.mS / u.cm**2))
+        self.assertEqual(point_state[dense.id]["g_max"], 4.0 * (u.mS / u.cm ** 2))
         self.assertEqual(tuple(item.to_decimal(u.nA) for item in point_state[sparse.id]["amplitudes"]), (0.1,))
-        self.assertEqual(cell.get_cv_state(0)[dense.id]["g_max"], 4.0 * (u.mS / u.cm**2))
+        self.assertEqual(cell.get_cv_state(0)[dense.id]["g_max"], 4.0 * (u.mS / u.cm ** 2))
         self.assertEqual({name for name in ("na", "k", "ca")}, {"na", "k", "ca"})
 
     def test_runtime_state_cache_is_invalidated_by_new_mapping(self) -> None:
@@ -189,8 +189,10 @@ class CellRuntimeStateTest(unittest.TestCase):
         cell.set_state(layout.id, "amplitudes", (0.25 * u.nA, 0.05 * u.nA))
         cell.set_state(layout.id, "durations", (1.5 * u.ms, 2.5 * u.ms))
 
-        self.assertEqual(tuple(item.to_decimal(u.nA) for item in cell.get_state(layout.id, "amplitudes")[0]), (0.25, 0.05))
-        self.assertEqual(tuple(item.to_decimal(u.ms) for item in cell.get_point_state(1)[layout.id]["durations"]), (1.5, 2.5))
+        self.assertEqual(tuple(item.to_decimal(u.nA) for item in cell.get_state(layout.id, "amplitudes")[0]),
+                         (0.25, 0.05))
+        self.assertEqual(tuple(item.to_decimal(u.ms) for item in cell.get_point_state(1)[layout.id]["durations"]),
+                         (1.5, 2.5))
 
     def test_runtime_evaluates_step_sine_and_function_clamps_on_target_points(self) -> None:
         cell = Cell(_build_tree())
@@ -239,7 +241,7 @@ class CellRuntimeStateTest(unittest.TestCase):
             BranchSlice(branch_index=[0, 1], prox=0.0, dist=1.0),
             braincell.mech.Channel(
                 "INa_HH1952",
-                g_max=12.0 * (u.mS / u.cm**2),
+                g_max=12.0 * (u.mS / u.cm ** 2),
                 V_sh=-50.0 * u.mV,
                 T=u.celsius2kelvin(36.0),
             ),
@@ -268,7 +270,7 @@ class CellRuntimeStateTest(unittest.TestCase):
             BranchSlice(branch_index=[0, 1], prox=0.0, dist=1.0),
             braincell.mech.Channel(
                 "IK_Kv_test",
-                g_max=0.1 * (u.mS / u.cm**2),
+                g_max=0.1 * (u.mS / u.cm ** 2),
                 v12=25.0 * u.mV,
                 q=9.0,
             ),
@@ -296,7 +298,7 @@ class CellRuntimeStateTest(unittest.TestCase):
             BranchSlice(branch_index=[0, 1], prox=0.0, dist=1.0),
             braincell.mech.Channel(
                 "IL",
-                g_max=0.1 * (u.mS / u.cm**2),
+                g_max=0.1 * (u.mS / u.cm ** 2),
                 E=-68.0 * u.mV,
             ),
         )
@@ -323,7 +325,7 @@ class CellRuntimeStateTest(unittest.TestCase):
             BranchSlice(branch_index=[0, 1], prox=0.0, dist=1.0),
             braincell.mech.Channel(
                 "INa_HH1952",
-                g_max=12.0 * (u.mS / u.cm**2),
+                g_max=12.0 * (u.mS / u.cm ** 2),
                 V_sh=-50.0 * u.mV,
                 T=u.celsius2kelvin(36.0),
             ),
@@ -346,7 +348,7 @@ class CellRuntimeStateTest(unittest.TestCase):
             BranchSlice(branch_index=[0, 1], prox=0.0, dist=1.0),
             braincell.mech.Channel(
                 "INa_HH1952",
-                g_max=12.0 * (u.mS / u.cm**2),
+                g_max=12.0 * (u.mS / u.cm ** 2),
                 V_sh=-50.0 * u.mV,
                 T=u.celsius2kelvin(36.0),
             ),
@@ -366,7 +368,7 @@ class CellRuntimeStateTest(unittest.TestCase):
         cell.paint(
             BranchSlice(branch_index=[0, 1], prox=0.0, dist=1.0),
             braincell.mech.Channel(
-                "leaky", g_max=4.0 * (u.mS / u.cm**2), E=-69.0 * u.mV
+                "leaky", g_max=4.0 * (u.mS / u.cm ** 2), E=-69.0 * u.mV
             ),
         )
 
@@ -374,8 +376,8 @@ class CellRuntimeStateTest(unittest.TestCase):
         node = cell.get_runtime_node(layout.id)
 
         self.assertIsInstance(node, braincell.channel.IL)
-        self.assertAlmostEqual(float(node.g_max[3].to_decimal(u.mS / u.cm**2)), 4.0, places=12)
-        self.assertAlmostEqual(float(node.g_max[2].to_decimal(u.mS / u.cm**2)), 0.0, places=12)
+        self.assertAlmostEqual(float(node.g_max[3].to_decimal(u.mS / u.cm ** 2)), 4.0, places=12)
+        self.assertAlmostEqual(float(node.g_max[2].to_decimal(u.mS / u.cm ** 2)), 0.0, places=12)
 
     def test_set_state_syncs_runtime_node_param(self) -> None:
         import braincell
@@ -383,15 +385,15 @@ class CellRuntimeStateTest(unittest.TestCase):
         cell = Cell(_build_tree())
         cell.paint(
             BranchSlice(branch_index=[0, 1], prox=0.0, dist=1.0),
-            braincell.mech.Channel("IL", g_max=4.0 * (u.mS / u.cm**2), E=-68.0 * u.mV),
+            braincell.mech.Channel("IL", g_max=4.0 * (u.mS / u.cm ** 2), E=-68.0 * u.mV),
         )
 
         layout = cell.layouts[0]
-        cell.set_state(layout.id, "g_max", 2.5 * (u.mS / u.cm**2))
+        cell.set_state(layout.id, "g_max", 2.5 * (u.mS / u.cm ** 2))
         node = cell.get_runtime_node(layout.id)
 
-        self.assertAlmostEqual(float(node.g_max[1].to_decimal(u.mS / u.cm**2)), 2.5, places=12)
-        self.assertAlmostEqual(float(node.g_max[0].to_decimal(u.mS / u.cm**2)), 0.0, places=12)
+        self.assertAlmostEqual(float(node.g_max[1].to_decimal(u.mS / u.cm ** 2)), 2.5, places=12)
+        self.assertAlmostEqual(float(node.g_max[0].to_decimal(u.mS / u.cm ** 2)), 0.0, places=12)
 
     def test_default_ions_are_available_with_global_shape(self) -> None:
         import braincell
@@ -459,7 +461,8 @@ class CellRuntimeStateTest(unittest.TestCase):
         self.assertIsInstance(na, braincell.ion.SodiumInitNernst)
         self.assertIs(cell.get_ion("SodiumInitNernst"), na)
         self.assertIs(cell.get_ion("na_pool"), na)
-        self.assertAlmostEqual(float(na.temp[1].to_decimal(u.kelvin)), float(u.celsius2kelvin(30.0).to_decimal(u.kelvin)), places=12)
+        self.assertAlmostEqual(float(na.temp[1].to_decimal(u.kelvin)),
+                               float(u.celsius2kelvin(30.0).to_decimal(u.kelvin)), places=12)
         self.assertAlmostEqual(float(na.Ci[1].to_decimal(u.mM)), 12.0, places=12)
         self.assertAlmostEqual(float(na.Co[1].to_decimal(u.mM)), 145.0, places=12)
 
@@ -493,7 +496,7 @@ class CellRuntimeStateTest(unittest.TestCase):
         )
         cell.paint(
             BranchSlice(branch_index=0, prox=0.0, dist=1.0),
-            braincell.mech.Channel("INa_HH1952", g_max=12.0 * (u.mS / u.cm**2), ion_name="na_soma"),
+            braincell.mech.Channel("INa_HH1952", g_max=12.0 * (u.mS / u.cm ** 2), ion_name="na_soma"),
         )
 
         channel_layout = next(layout for layout in cell.layouts if layout.kind == "channel:INa_HH1952")
@@ -567,7 +570,7 @@ class CellRuntimeStateTest(unittest.TestCase):
             braincell.mech.Channel(
                 "ICaT_HM1992",
                 ion_name="ca_dyn",
-                g_max=2.0 * (u.mS / u.cm**2),
+                g_max=2.0 * (u.mS / u.cm ** 2),
             ),
         )
 
@@ -672,7 +675,7 @@ class CellRuntimeStateTest(unittest.TestCase):
             BranchSlice(branch_index=[0, 1], prox=0.0, dist=1.0),
             braincell.mech.Channel(
                 "INa_HH1952",
-                g_max=12.0 * (u.mS / u.cm**2),
+                g_max=12.0 * (u.mS / u.cm ** 2),
                 V_sh=-50.0 * u.mV,
                 T=u.celsius2kelvin(36.0),
             ),
@@ -686,8 +689,8 @@ class CellRuntimeStateTest(unittest.TestCase):
         # Channels are now keyed on the declaration's instance name, which
         # defaults to the class name. Users can override with name=.
         self.assertIs(na.channels["INa_HH1952"], node)
-        self.assertAlmostEqual(float(node.g_max[1].to_decimal(u.mS / u.cm**2)), 12.0, places=12)
-        self.assertAlmostEqual(float(node.g_max[0].to_decimal(u.mS / u.cm**2)), 0.0, places=12)
+        self.assertAlmostEqual(float(node.g_max[1].to_decimal(u.mS / u.cm ** 2)), 12.0, places=12)
+        self.assertAlmostEqual(float(node.g_max[0].to_decimal(u.mS / u.cm ** 2)), 0.0, places=12)
         self.assertAlmostEqual(float(node.V_sh[1].to_decimal(u.mV)), -50.0, places=12)
 
     def test_set_state_syncs_runtime_node_param_for_ina_hh1952(self) -> None:
@@ -698,26 +701,26 @@ class CellRuntimeStateTest(unittest.TestCase):
             BranchSlice(branch_index=[0, 1], prox=0.0, dist=1.0),
             braincell.mech.Channel(
                 "INa_HH1952",
-                g_max=12.0 * (u.mS / u.cm**2),
+                g_max=12.0 * (u.mS / u.cm ** 2),
                 V_sh=-50.0 * u.mV,
                 T=u.celsius2kelvin(36.0),
             ),
         )
 
         layout = cell.layouts[0]
-        cell.set_state(layout.id, "g_max", 8.0 * (u.mS / u.cm**2))
+        cell.set_state(layout.id, "g_max", 8.0 * (u.mS / u.cm ** 2))
         cell.set_state(layout.id, "V_sh", -42.0 * u.mV)
         node = cell.get_runtime_node(layout.id)
 
-        self.assertAlmostEqual(float(node.g_max[1].to_decimal(u.mS / u.cm**2)), 8.0, places=12)
-        self.assertAlmostEqual(float(node.g_max[0].to_decimal(u.mS / u.cm**2)), 0.0, places=12)
+        self.assertAlmostEqual(float(node.g_max[1].to_decimal(u.mS / u.cm ** 2)), 8.0, places=12)
+        self.assertAlmostEqual(float(node.g_max[0].to_decimal(u.mS / u.cm ** 2)), 0.0, places=12)
         self.assertAlmostEqual(float(node.V_sh[1].to_decimal(u.mV)), -42.0, places=12)
 
     def test_unknown_channel_name_raises_key_error(self) -> None:
         cell = Cell(_build_tree())
         cell.paint(
             BranchSlice(branch_index=[0, 1], prox=0.0, dist=1.0),
-            braincell.mech.Channel("__totally_unregistered__", g_max=12.0 * (u.mS / u.cm**2)),
+            braincell.mech.Channel("__totally_unregistered__", g_max=12.0 * (u.mS / u.cm ** 2)),
         )
 
         with self.assertRaises(KeyError) as ctx:

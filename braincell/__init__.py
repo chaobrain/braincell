@@ -15,8 +15,9 @@
 
 
 from braincell.quad._protocol import (
-    DiffEqState,
     DiffEqModule,
+    DiffEqState,
+    IndependentIntegration,
 )
 from . import quad, mech, channel, synapse, ion
 from ._base import (
@@ -74,6 +75,7 @@ __all__ = [
 
     "DiffEqState",
     "DiffEqModule",
+    "IndependentIntegration",
 
     "ApicalDendrite",
     "Axon",

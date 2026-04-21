@@ -24,8 +24,8 @@ import numpy as np
 from braincell import Branch, Cell, Morphology
 from braincell.filter import AllRegion, BranchSlice, RootLocation, Terminals, branch_in
 from braincell.vis import plot2d, plot3d
-from braincell.vis.backend import BackendChooser
 from braincell.vis._test_helper import FakeBackend
+from braincell.vis.backend import BackendChooser
 
 
 class FilterVisTest(unittest.TestCase):
@@ -265,7 +265,8 @@ class FilterVisTest(unittest.TestCase):
         self.assertEqual(rendered.layout, "stem")
         self.assertEqual(rendered.shape, "line")
         child_angles = sorted(
-            np.degrees(np.arctan2(polyline.points_um[-1, 1] - polyline.points_um[0, 1], polyline.points_um[-1, 0] - polyline.points_um[0, 0]))
+            np.degrees(np.arctan2(polyline.points_um[-1, 1] - polyline.points_um[0, 1],
+                                  polyline.points_um[-1, 0] - polyline.points_um[0, 0]))
             for polyline in rendered.scene.polylines
             if polyline.branch_name in {"dend_a", "dend_b"}
         )

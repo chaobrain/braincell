@@ -31,12 +31,12 @@ from braincell.mech import (
 from braincell.morph._morphology import Morphology
 from ._geo import CVGeo, EPSILON, interval_lateral_area, map_point_to_cv
 
-
 _DEFAULT_CABLE = CableProperty(
     resting_potential=-65.0 * u.mV,
     membrane_capacitance=1.0 * (u.uF / u.cm ** 2),
     axial_resistivity=100.0 * (u.ohm * u.cm),
 )
+
 
 # This module has one job: translate frontend ``paint`` / ``place``
 # declarations into per-CV mechanism payloads during ``Cell`` rebuild. The

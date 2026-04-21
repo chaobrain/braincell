@@ -5,7 +5,7 @@
 import braintools
 import brainunit as u
 
-from braincell.quad import DiffEqState
+from braincell.quad._protocol import DiffEqState
 from braincell.channel import {{context.base_class_name}}
 
 

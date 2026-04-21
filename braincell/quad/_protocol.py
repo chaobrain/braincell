@@ -277,7 +277,7 @@ class IndependentIntegration(brainstate.mixin.Mixin):
 
     .. code-block:: python
 
-        >>> from braincell.quad import DiffEqModule, IndependentIntegration
+        >>> from braincell import DiffEqModule, IndependentIntegration
         >>> class FastGate(IndependentIntegration, DiffEqModule):
         ...     def __init__(self):
         ...         super().__init__(solver='exp_euler')

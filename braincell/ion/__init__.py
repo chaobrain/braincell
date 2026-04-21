@@ -14,10 +14,31 @@
 # ==============================================================================
 
 from .calcium import *
+from .calcium import CalciumFixed
 from .calcium import __all__ as _calcium_all
 from .potassium import *
+from .potassium import PotassiumFixed
 from .potassium import __all__ as _potassium_all
 from .sodium import *
+from .sodium import SodiumFixed
 from .sodium import __all__ as _sodium_all
 
-__all__ = _calcium_all + _potassium_all + _sodium_all
+__all__ = _calcium_all + _potassium_all + _sodium_all + ["build_placeholder_ions"]
+
+
+def build_placeholder_ions(size=(1,)) -> dict[str, object]:
+    """Return default Na/K/Ca fixed-ion containers for scaffolding.
+
+    Used by test doubles and by :class:`HHTypedNeuron` construction
+    before the real runtime ion containers are instantiated.
+
+    Parameters
+    ----------
+    size : tuple of int, optional
+        Varshape of the ion containers. Defaults to ``(1,)``.
+    """
+    return {
+        "na": SodiumFixed(size=size),
+        "k": PotassiumFixed(size=size),
+        "ca": CalciumFixed(size=size),
+    }

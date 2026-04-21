@@ -37,10 +37,30 @@ from braincell.mech import (
     Synapse,
     get_registry,
 )
-from braincell.morph.morphology import Morphology
+from braincell.ion import build_placeholder_ions
+from braincell.morph.morphology import Morphology, clone_morpho
+from braincell._multi_compartment.bridge import (
+    attach_runtime_ion_geometry,
+    cv_value_vector,
+    fill_like,
+    quantity_vector,
+    scatter_midpoint_values,
+)
 from .topology import PointTree
 
-__all__ = ["CellRuntimeState", "install_cell_runtime", "uninstall_cell_runtime"]
+__all__ = [
+    "CellRuntimeState",
+    "MechanismLayout",
+    "build_placeholder_ions",
+    "clone_morpho",
+    "cv_value_vector",
+    "fill_like",
+    "install_cell_runtime",
+    "mechanism_signature",
+    "quantity_vector",
+    "scatter_midpoint_values",
+    "uninstall_cell_runtime",
+]
 
 
 @dataclass(frozen=True)
@@ -227,7 +247,7 @@ class CellRuntimeState:
             layout_mechanisms=layout_mechanisms,
             state_buffers=state_buffers,
         )
-        _attach_runtime_ion_geometry(
+        attach_runtime_ion_geometry(
             ions=ions,
             cvs=cell.cvs,
             point_ids=point_tree.cv_midpoint_point_id,
@@ -428,110 +448,10 @@ def uninstall_cell_runtime(cell: "Cell", installed_names: tuple[str, ...]) -> No
             delattr(cell, name)
 
 
-def build_placeholder_ions(size = (1,)) -> dict[str, object]:
-    return {
-        "na": runtime_ion.SodiumFixed(size=size),
-        "k": runtime_ion.PotassiumFixed(size=size),
-        "ca": runtime_ion.CalciumFixed(size=size),
-    }
-
-
-def clone_morpho(morpho: Morphology) -> Morphology:
-    cloned = Morphology.from_root(morpho.root.branch, name=morpho.root.name)
-    for index in range(1, len(morpho.branches)):
-        branch = morpho.branch(index=index)
-        parent = branch.parent
-        if parent is None:
-            continue
-        cloned.attach(
-            parent=parent.name,
-            child_branch=branch.branch,
-            child_name=branch.name,
-            parent_x=float(branch.parent_x),  # type: ignore[arg-type]
-            child_x=float(branch.child_x),  # type: ignore[arg-type]
-        )
-    return cloned
-
-
-def cv_value_vector(cell: "Cell", *, attr_name: str) -> object:
-    return quantity_vector([getattr(cv, attr_name) for cv in cell.cvs])
-
-
-def fill_like(shape: tuple[int, ...], value: object) -> object:
-    values = [value for _ in range(int(np.prod(shape, dtype=int)))]
-    return quantity_vector(values, shape=shape)
-
-
-def quantity_vector(values: list[object], *, shape: tuple[int, ...] | None = None) -> object:
-    if len(values) == 0:
-        return values
-    first = values[0]
-    target_shape = (len(values),) if shape is None else shape
-    if hasattr(first, "unit"):
-        decimals = [item.to_decimal(first.unit) for item in values]
-        return u.Quantity(u.math.asarray(decimals).reshape(target_shape), first.unit)
-    return u.math.asarray(values).reshape(target_shape)
-
-
-def scatter_midpoint_values(*, values: object, point_ids: np.ndarray, n_point: int) -> object:
-    if hasattr(values, "unit"):
-        unit = values.unit
-        mantissa = u.math.asarray(values.to_decimal(unit))
-        base_shape = mantissa.shape[:-1] + (n_point,)
-        out = u.math.zeros(base_shape, dtype=mantissa.dtype)
-        out = out.at[..., point_ids].set(mantissa)
-        return u.Quantity(out, unit)
-    array = u.math.asarray(values)
-    base_shape = array.shape[:-1] + (n_point,)
-    out = u.math.zeros(base_shape, dtype=array.dtype)
-    return out.at[..., point_ids].set(array)
-
-
-def gather_midpoint_values(values: object, *, point_ids: np.ndarray) -> object:
-    return values[..., point_ids]
-
-
-def _attach_runtime_ion_geometry(
-    *,
-    ions: dict[str, object],
-    cvs: tuple[object, ...],
-    point_ids: np.ndarray,
-    n_point: int,
-) -> None:
-    length = _scatter_cv_geometry(cvs=cvs, attr_name="length", point_ids=point_ids, n_point=n_point)
-    area = _scatter_cv_geometry(cvs=cvs, attr_name="area", point_ids=point_ids, n_point=n_point)
-    diam_mid = _scatter_cv_geometry(cvs=cvs, attr_name="diam_mid", point_ids=point_ids, n_point=n_point)
-    radius_prox = _scatter_cv_geometry(cvs=cvs, attr_name="radius_prox", point_ids=point_ids, n_point=n_point)
-    radius_dist = _scatter_cv_geometry(cvs=cvs, attr_name="radius_dist", point_ids=point_ids, n_point=n_point)
-
-    for ion in ions.values():
-        setattr(ion, "length", length)
-        setattr(ion, "area", area)
-        setattr(ion, "diam_mid", diam_mid)
-        setattr(ion, "radius_prox", radius_prox)
-        setattr(ion, "radius_dist", radius_dist)
-
-
-def _scatter_cv_geometry(
-    *,
-    cvs: tuple[object, ...],
-    attr_name: str,
-    point_ids: np.ndarray,
-    n_point: int,
-) -> object:
-    values = quantity_vector([getattr(cv, attr_name) for cv in cvs])
-    return scatter_midpoint_values(values=values, point_ids=point_ids, n_point=n_point)
-
-
-def matches_last_dim(value: object, size: int) -> bool:
-    shape = getattr(value, "shape", None)
-    if shape is None or len(shape) == 0:
-        return False
-    return int(shape[-1]) == int(size)
-
-
-def is_python_zero(value: object) -> bool:
-    return isinstance(value, (int, float)) and value == 0
+## build_placeholder_ions moved to braincell.ion
+## clone_morpho moved to braincell.morph.morphology
+## scatter/gather/quantity/geometry helpers moved to
+##   braincell._multi_compartment.bridge
 
 
 def choose_layout(*, target: str) -> str:
@@ -854,12 +774,7 @@ def _build_runtime_ions(
 
 
 def _build_default_ions(n_point: int) -> dict[str, object]:
-    size = (n_point,)
-    return {
-        "na": runtime_ion.SodiumFixed(size=size),
-        "k": runtime_ion.PotassiumFixed(size=size),
-        "ca": runtime_ion.CalciumFixed(size=size),
-    }
+    return build_placeholder_ions(size=(n_point,))
 
 
 def _collect_runtime_ion_instances(

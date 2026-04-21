@@ -124,6 +124,7 @@ class CellRuntimeState:
     current_owner_keys: dict[int, str | None]
     dhs_static_cache: object | None = None
     clamp_active_table: object | None = None
+    cv_area: object | None = None  # (n_cv,) brainunit Quantity, cm^2
 
     @classmethod
     def from_cell(cls, cell: "Cell") -> "CellRuntimeState":
@@ -243,6 +244,12 @@ class CellRuntimeState:
             n_point=n_point,
         )
 
+        cv_area_decimal = np.asarray(
+            [float(np.asarray(cv.area.to_decimal(u.cm ** 2), dtype=float)) for cv in cell.cvs],
+            dtype=float,
+        )
+        cv_area = u.Quantity(cv_area_decimal, u.cm ** 2)
+
         return cls(
             point_tree=point_tree,
             n_point=n_point,
@@ -263,6 +270,7 @@ class CellRuntimeState:
             current_owner_keys=current_owner_keys,
             dhs_static_cache=None,
             clamp_active_table=clamp_active_table,
+            cv_area=cv_area,
         )
 
     def get_point_layouts(self, point_id: int) -> tuple[MechanismLayout, ...]:

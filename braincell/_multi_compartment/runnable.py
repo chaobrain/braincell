@@ -25,6 +25,7 @@ from braincell.compute._assignment_table import (
     MechanismObjectTable,
     mechanism_cell_key,
 )
+from braincell.compute._point_tree import build_point_scheduling
 from braincell.compute._runtime import (
     CellRuntimeState,
     build_placeholder_ions,
@@ -44,10 +45,6 @@ def _cast_like(value, like):
         unit = u.get_unit(value)
         return jnp.asarray(value.to_decimal(unit), dtype=dtype) * unit
     return jnp.asarray(value, dtype=dtype)
-
-
-def _is_python_zero(value) -> bool:
-    return isinstance(value, (int, float)) and value == 0
 
 
 class RunnableCell(HHTypedNeuron):
@@ -132,7 +129,6 @@ class RunnableCell(HHTypedNeuron):
         return self._point_tree
 
     def point_scheduling(self, *, max_group_size: int = 32, algorithm: str = "dhs"):
-        from braincell.compute._point_tree import build_point_scheduling
         key = (algorithm, int(max_group_size))
         cached = self._point_scheduling_cache.get(key)
         if cached is not None:
@@ -218,18 +214,16 @@ class RunnableCell(HHTypedNeuron):
             if not isinstance(node, IndependentIntegration):
                 node.post_integral(point_V)
 
-    def update(self, I_ext=0.0):
+    def update(self, I_ext=None):
         point_V = self._cv_to_point(self.V.value)
         for _, node in self.nodes(IonChannel, allowed_hierarchy=(1, 1)).items():
             node.update(point_V)
 
         last_V = self.V.value
         if brainstate.environ.get("dt", None) is None:
-            raise ValueError(
-                "RunnableCell.update(...) requires brainstate.environ['dt'] to be set."
-            )
+            raise ValueError("RunnableCell.update(...) requires brainstate.environ['dt'] to be set.")
 
-        if _is_python_zero(I_ext):
+        if I_ext is None:
             self.solver(self)
         else:
             self.solver(self, I_ext)

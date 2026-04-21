@@ -462,13 +462,25 @@ internal dependencies · status · open work**.
     mechanism rules + policies).
   - `braincell.compute` owns the execution-graph / runtime lowering
     built on top of `cv`.
-  - `braincell._multi_compartment` owns the public `Cell` class that
-    composes `cv` + `compute` into a declaration / lazy-rebuild /
-    runtime facade.
+  - `braincell._multi_compartment` owns the public `Cell` (mutable
+    declaration) and `RunnableCell` (frozen `HHTypedNeuron` runtime)
+    classes. The split replaces the old monolithic, dirty-flag-driven
+    `Cell` with a one-way pipeline `Cell → RunnableCell` driven by
+    `cell.build()`.
 - **Key files**
-  - `braincell/_multi_compartment.py` — `Cell(HHTypedNeuron)`.
-    Declaration frontend, lazy rebuild owner, runtime facade. Tests in
-    `_multi_compartment_test.py` and `_multi_compartment_solver_test.py`.
+  - `braincell/_multi_compartment/` — package.
+    - `cell.py` — `Cell` declaration frontend (mutable, no JAX state).
+    - `runnable.py` — `RunnableCell(HHTypedNeuron)` frozen runtime.
+    - `build.py` — `cell.build()` lowering pipeline.
+    - `bridge.py` — `cv_to_point` / `point_to_cv` scatter/gather.
+    - `currents.py` — `total_membrane_current` pipeline (bugs #1/#2
+      fixed: external current routed through `sum_current_inputs(init=)`;
+      ambiguous `(n_point,)` total current rejected).
+    - `clamp_table.py` — `ClampActiveTable` precomputed once at build.
+    - `probes.py` — `sample_probe(rcell, ...)` / `sample_probes(rcell)`.
+    - `run.py` — `rcell.run(dt=, duration=)` and the `RunResult`
+      pytree-registered dataclass.
+    - `*_test.py` — one co-located test per source module.
   - `braincell/cv/_cv.py` — `CV` dataclass plus `assemble_cv` to
     materialize the array-of-CVs view.
   - `braincell/cv/_geo.py` — `build_cv_geo` reduces a `Morphology` +
@@ -489,7 +501,9 @@ internal dependencies · status · open work**.
     utilities. Tests in `_runtime_test.py`.
 - **Status**
   - [x] `Cell(morpho, cv_policy)` declaration entry, morphology
-    snapshotting, `paint` / `place` API, lazy rebuild flags.
+    snapshotting, `paint` / `place` API. `Cell` is pure declaration —
+    no JAX state and no dirty flags; `cell.cvs` / `cell.n_cv` are
+    lazy previews memoized on declaration state.
   - [x] CV discretization: `CVPolicy` base + concrete policies, CV
     geometry, axial-resistance partitioning across branch joints.
   - [x] Mechanism mapping: cable paint, density paint, point place
@@ -497,22 +511,28 @@ internal dependencies · status · open work**.
   - [x] PointTree: compute points, compute edges, attachment handling.
   - [x] Scheduling: `PointScheduling` + DHS grouping for the voltage
     solver.
-  - [ ] **Execution layer**: `Cell.run(...)`, full `HHTypedNeuron`
-    compile path, end-to-end JAX simulation. The missing pieces are:
-    1. allocating and naming all `DiffEqState` channel/ion variables
-       per CV;
-    2. wiring `PaintRule`/`PlaceRule` outputs into a single fused
-       `dV/dt` + gating update;
-    3. dispatching to a `quad/` integrator selected by name;
-    4. trace recording via `ProbeMechanism`;
-    5. brainstate-compatible pytree flattening.
+  - [x] **Execution layer**: `cell.build()` lowers a declaration into
+    a frozen `RunnableCell(HHTypedNeuron)` via
+    `_multi_compartment/build.py`. The pipeline allocates `V` / `spike`
+    and per-channel / per-ion `DiffEqState`, installs a
+    `CellRuntimeState` with a precomputed `ClampActiveTable`, caches
+    the axial operator, and wires `rcell.run(dt=, duration=)` on top
+    of the `quad/` registry (default `staggered`). Trace recording
+    uses `StateProbe` / `MechanismProbe` / `CurrentProbe` sampled via
+    `rcell.sample_probe(...)` / `rcell.sample_probes()`. Two bugs
+    fixed along the way: external current is now routed through
+    `sum_current_inputs(init=I_ext_density)` (bug #1) and
+    `(n_point,)`-shaped total current in `nA` is rejected explicitly
+    instead of producing NaN (bug #2).
 - **Open risks**
-  - Two-phase build (declaration → rebuild → runtime install) needs
-    very precise dirty-flag discipline; otherwise users will silently
-    simulate against stale CV layouts.
+  - The `Cell → RunnableCell` arrow is one-way; `RunnableCell` must
+    never mutate or consult the originating `Cell`. Any future
+    convenience that tries to "rebuild in place" would re-introduce
+    the dirty-flag surface that this refactor removed.
   - The runtime/state shape must remain stable across `jit`
-    re-traces — every change to declared mechanisms is allowed to
-    re-trace, but parameter updates must not.
+    re-traces — every change to declared mechanisms on `Cell` is
+    allowed to re-trace, but parameter updates on an existing
+    `RunnableCell` must not.
 
 ### 3.6 `braincell.quad` — numerical integrators
 
@@ -949,8 +969,9 @@ internal dependencies · status · open work**.
   blocks every concrete cell composes.
 - `_single_compartment.py` — `SingleCompartment`, the simplest
   concrete neuron, used as a sanity surface and example.
-- `_multi_compartment.py` — `Cell`, the multi-compartment neuron
-  class composed with `cv` + `compute` (see §3.5).
+- `_multi_compartment/` — `Cell` (mutable declaration) and
+  `RunnableCell` (frozen `HHTypedNeuron` runtime produced by
+  `cell.build()`), composed with `cv` + `compute` (see §3.5).
 - `_misc.py` — `normalize_param` (the brainunit gatekeeper), helpers,
   decorators (`set_module_as`, `deprecation_getattr`), `Container`.
 - `_typing.py` — type aliases (`Initializer`, `ArrayLike`, `T`, `DT`).
@@ -979,21 +1000,25 @@ numerics with `TypeError`**. New modules must:
 - `IntegratorRegistry` is the single mutable global; entries are
   added at import time via decorators and never mutated afterwards.
 
-### 4.3 Lazy rebuild
+### 4.3 Cell → RunnableCell
 
-`Cell` is intentionally cheap to construct and mutate. Heavy work
-happens only when a derived view is requested. The expected sequence is:
+`Cell` is intentionally cheap to construct and mutate, and owns
+**no** JAX state. All runtime state is produced by `cell.build()`,
+which returns a frozen `RunnableCell`. The expected sequence is:
 
 ```
-Cell(morpho, policy)
-  → cell.paint(region, density_mech)        # cheap, marks dirty
-  → cell.place(locset, point_mech)          # cheap, marks dirty
-  → cell.cv_layout                          # rebuild CVs from morpho+policy
-  → cell.compile()                          # lower paint/place into JAX state
-  → cell.run(integrator, t_span, recorders) # JIT and step
+Cell(morpho, policy)                        # declaration only
+  → cell.paint(region, density_mech)        # cheap, mutates declaration
+  → cell.place(locset, point_mech)          # cheap, mutates declaration
+  → rcell = cell.build()                    # lower into frozen RunnableCell
+  → rcell.run(dt=..., duration=...)         # JIT and step (returns RunResult)
 ```
 
-All planned execution-layer work in §3.5 must respect this contract.
+Calling `cell.build()` twice produces two independent runnables. The
+`Cell` remains safe to mutate afterwards; the `RunnableCell` never
+consults or mutates the originating `Cell`. Execution-layer work must
+preserve this one-way arrow — no dirty-flag state machine, no
+in-place "rebuild on next use".
 
 ### 4.4 Testing
 
@@ -1026,12 +1051,12 @@ All planned execution-layer work in §3.5 must respect this contract.
 | Selection | `RegionExpr`, `LocsetExpr` | frozen expression | reusable | user |
 | Selection cache | `SelectionCache` | mutable | per-Morphology | filter layer |
 | Mechanisms | `CableProperty`, `Density` (`Channel`, `Ion`), `Point*` (`CurrentClamp`, `Synapse`, `Junction`, …) | frozen dataclass / slots | declaration | user |
-| Mechanisms | `Ion`, `Channel`, `IonChannel`, `MixIons` | hybrid (JAX state) | per-cell | `Cell` |
-| Discretization | `CV` | frozen | rebuilt on dirty | `Cell` |
-| Discretization | `PaintRule`, `PlaceRule` | frozen | rebuilt on dirty | `Cell` |
-| Topology | `PointTree`, `CVPoint`, `CVEdge` | frozen | rebuilt on dirty | `Cell` |
-| Scheduling | `PointScheduling` | frozen | rebuilt on dirty | `Cell` |
-| Runtime | `CellRuntimeState` | brainstate-managed | per-step | `Cell` |
+| Mechanisms | `Ion`, `Channel`, `IonChannel`, `MixIons` | hybrid (JAX state) | per-runnable | `RunnableCell` |
+| Discretization | `CV` | frozen | built at `cell.build()` | `Cell` (preview) / `RunnableCell` |
+| Discretization | `PaintRule`, `PlaceRule` | frozen | declaration | `Cell` |
+| Topology | `PointTree`, `CVPoint`, `CVEdge` | frozen | built at `cell.build()` | `RunnableCell` |
+| Scheduling | `PointScheduling` | frozen | built at `cell.build()` | `RunnableCell` |
+| Runtime | `CellRuntimeState`, `ClampActiveTable` | brainstate-managed | per-step | `RunnableCell` |
 | Numerics | `IntegratorEntry` | frozen | process lifetime | `IntegratorRegistry` |
 | Numerics | `DiffEqState`, `IndependentIntegration` | brainstate-managed | per-step | step function |
 
@@ -1073,9 +1098,9 @@ internal and may change without deprecation.
   `KCaChannel`) are public for subclassing.
 - **Synapses** (`braincell.synapse`): `AMPA`, `GABAa`, `NMDA` from
   `synapse.markov`.
-- **Cell layer**: `Cell`, `CV`, `CVPolicy`, `CVPerBranch`, `MaxCVLen`,
-  `DLambda`, `CVPolicyByTypeRule`, `CompositeByTypePolicy`,
-  `PointTree`, `PointScheduling`.
+- **Cell layer**: `Cell`, `RunnableCell`, `RunResult`, `CV`, `CVPolicy`,
+  `CVPerBranch`, `MaxCVLen`, `DLambda`, `CVPolicyByTypeRule`,
+  `CompositeByTypePolicy`, `PointTree`, `PointScheduling`.
 - **Numerics layer**: `register_integrator`, `get_integrator`,
   `get_registry`, `IntegratorEntry`, `IntegratorRegistry`,
   `all_integrators`, every `*_step` function listed in
@@ -1130,16 +1155,19 @@ cell.place(
 cell.place(braincell.LocsetExpr.terminals(), mech.ProbeMechanism("v"))
 ```
 
-### 7.3 Run a simulation (planned — see §3.5)
+### 7.3 Run a simulation
 
 ```python
-trace = cell.run(
-    integrator="staggered",
-    t_span=(0 * u.ms, 100 * u.ms),
-    dt=0.025 * u.ms,
-)
-braincell.vis.plot2d(cell, values=trace.v[-1])
+rcell = cell.build()                 # frozen RunnableCell(HHTypedNeuron)
+result = rcell.run(dt=0.025 * u.ms,
+                   duration=100 * u.ms)
+braincell.vis.plot2d(rcell, values=result.traces["soma(0.5)_v"][-1])
 ```
+
+`cell.build()` lowers the declaration into a frozen `RunnableCell` —
+all subsequent runtime inspection (`rcell.layouts`,
+`rcell.point_tree()`, `rcell.sample_probes()`, `rcell.current_time`,
+`rcell.get_state(...)`) lives on the runnable, not on `Cell`.
 
 ### 7.4 Compare two morphologies visually
 

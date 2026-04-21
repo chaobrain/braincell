@@ -32,17 +32,16 @@ from braincell.cv._mech import (
 )
 from braincell.quad._staggered import build_cv_axial_operator
 from braincell.quad.protocol import DiffEqState
+from .runnable import RunnableCell
 
 if TYPE_CHECKING:
     from .cell import Cell
-    from .runnable import RunnableCell
 
 __all__ = ["build"]
 
 
-def build(cell: "Cell") -> "RunnableCell":
+def build(cell: "Cell") -> RunnableCell:
     """Lower ``cell`` into a fresh :class:`RunnableCell`."""
-    from .runnable import RunnableCell
 
     # 1. Clone the morphology so the runnable owns its own topology.
     morpho = clone_morpho(cell.morpho)

@@ -45,6 +45,11 @@ from ._implicit import (
     implicit_rk4_step,
     splitting_step,
 )
+from .protocol import (
+    DiffEqModule,
+    DiffEqState,
+    IndependentIntegration,
+)
 from ._registry import (
     IntegratorEntry,
     IntegratorRegistry,
@@ -122,6 +127,11 @@ __all__ = [
     'cn_rk4_step',
     'cn_exp_euler_step',
     'exp_exp_euler_step',
+
+    # protocol
+    'DiffEqState',
+    'DiffEqModule',
+    'IndependentIntegration',
 
 ]
 

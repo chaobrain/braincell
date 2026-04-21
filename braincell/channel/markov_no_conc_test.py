@@ -21,6 +21,8 @@ import brainstate
 import brainunit as u
 import jax.numpy as jnp
 
+brainstate.environ.set(precision=64)
+
 from braincell._base import IonInfo
 from braincell.channel._template import Markov
 from braincell.channel.markov_no_conc import NaFHF_MA20_GrC

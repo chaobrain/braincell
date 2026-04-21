@@ -152,8 +152,6 @@ class SingleCompartment(HHTypedNeuron):
         if isinstance(I_ext, u.Quantity):
             if I_ext.has_same_unit(1. * u.nA / (u.cm ** 2)):
                 return I_ext.in_unit(u.nA / (u.cm ** 2))
-            if I_ext.has_same_unit(1. * u.nA):
-                return (I_ext / self.area).in_unit(u.nA / (u.cm ** 2))
         return I_ext
 
     def init_state(self, batch_size=None):

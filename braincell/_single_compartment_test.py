@@ -223,18 +223,14 @@ class SingleCompartmentNormalizeCurrentTest(unittest.TestCase):
             )
         )
 
-    def test_plain_current_is_divided_by_area(self) -> None:
+    def test_plain_current_passes_through_unchanged(self) -> None:
+        # nA (total current) must NOT be divided by area: channels built with
+        # total conductances (mS) also produce nA, so dividing only I_ext would
+        # create a dimensional mismatch when summing I_ext + ch.current().
         sc = SingleCompartment(size=1, length=10.0 * u.um, radius=5.0 * u.um)
         i = 1.0 * u.nA
         got = sc._normalize_external_current(i)
-        expected = (1.0 * u.nA / sc.area).in_unit(u.nA / u.cm ** 2)
-        self.assertTrue(
-            u.math.allclose(
-                got.to_decimal(u.nA / u.cm ** 2),
-                expected.to_decimal(u.nA / u.cm ** 2),
-                atol=1e-6,
-            )
-        )
+        self.assertIs(got, i)
 
     def test_non_current_quantity_is_returned_unchanged(self) -> None:
         sc = SingleCompartment(size=1)

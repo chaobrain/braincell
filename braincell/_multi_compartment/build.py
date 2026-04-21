@@ -8,8 +8,6 @@ with one linear function. Every call produces a fresh, independent
 with no shared state.
 """
 
-from __future__ import annotations
-
 from typing import TYPE_CHECKING
 
 import brainstate

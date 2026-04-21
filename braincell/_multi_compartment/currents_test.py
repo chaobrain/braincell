@@ -5,8 +5,6 @@ stubbed :class:`CellRuntimeState`. A full channel-current integration
 runs once ``Cell.build()`` lands.
 """
 
-from __future__ import annotations
-
 import unittest
 from dataclasses import dataclass
 

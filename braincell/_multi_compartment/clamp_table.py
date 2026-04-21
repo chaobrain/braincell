@@ -5,8 +5,6 @@ the legacy ``Cell._point_clamp_input`` used, and lets
 ``currents._clamp_density`` run without iterating over layouts.
 """
 
-from __future__ import annotations
-
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -18,7 +16,6 @@ if TYPE_CHECKING:
     from braincell.compute._runtime import MechanismLayout
 
 __all__ = ["CLAMP_KINDS", "ClampActiveTable", "build_clamp_active_table"]
-
 
 #: Clamp layout kinds that contribute point-space current via
 #: :meth:`CellRuntimeState.evaluate_point_clamps`.

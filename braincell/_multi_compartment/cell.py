@@ -7,8 +7,6 @@ owns no runtime state. Call :meth:`Cell.build` to produce a frozen
 remains mutable and safe to re-paint or re-place afterwards.
 """
 
-from __future__ import annotations
-
 from typing import TYPE_CHECKING, Callable
 
 import braintools
@@ -98,6 +96,9 @@ class Cell:
         self._cvs_cache: tuple | None = None
         self._cvs_cache_key: object = None
 
+        # Eagerly validate the policy by computing the initial CV preview.
+        _ = self.cvs
+
     # ------------------------------------------------------------------
     # Read-only accessors / mutable config
 
@@ -185,6 +186,11 @@ class Cell:
 
     # ------------------------------------------------------------------
     # Preview — CV tuple without runtime lowering
+
+    @property
+    def n_cv(self) -> int:
+        """Preview count of control volumes (``len(self.cvs)``)."""
+        return len(self.cvs)
 
     @property
     def cvs(self):

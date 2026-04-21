@@ -47,22 +47,24 @@ class CellRuntimeStateTest(unittest.TestCase):
         )
 
         self.assertEqual(cell.n_cv, 2)
-        self.assertEqual(len(cell.point_tree().points), 5)
-        self.assertEqual(len(cell.layouts), 1)
-        layout = cell.layouts[0]
+        rcell = cell.build()
+
+        self.assertEqual(len(rcell.point_tree().points), 5)
+        self.assertEqual(len(rcell.layouts), 1)
+        layout = rcell.layouts[0]
         self.assertEqual(layout.layout, "dense")
         self.assertEqual(layout.target, "density")
         self.assertEqual(layout.kind, "channel:leaky")
         self.assertEqual(layout.n_active, 2)
         self.assertEqual(layout.source_cv_ids, (0, 1))
         self.assertEqual(layout.point_index.tolist(), [1, 3])
-        self.assertEqual(cell.expected_state_shape(layout.id, "g_max"), (5,))
-        self.assertEqual(cell.voltage_shape, (5,))
-        self.assertEqual(cell.get_state(layout.id, "g_max").shape, (5,))
-        self.assertTrue(all(value == 4.0 * (u.mS / u.cm ** 2) for value in cell.get_state(layout.id, "g_max")))
-        self.assertEqual(tuple(layout.id for layout in cell.get_point_layouts(0)), ())
-        self.assertEqual(tuple(layout.id for layout in cell.get_point_layouts(1)), (layout.id,))
-        self.assertEqual(tuple(layout.id for layout in cell.get_point_layouts(3)), (layout.id,))
+        self.assertEqual(rcell.expected_state_shape(layout.id, "g_max"), (5,))
+        self.assertEqual(rcell.voltage_shape, (5,))
+        self.assertEqual(rcell.get_state(layout.id, "g_max").shape, (5,))
+        self.assertTrue(all(value == 4.0 * (u.mS / u.cm ** 2) for value in rcell.get_state(layout.id, "g_max")))
+        self.assertEqual(tuple(layout.id for layout in rcell.get_point_layouts(0)), ())
+        self.assertEqual(tuple(layout.id for layout in rcell.get_point_layouts(1)), (layout.id,))
+        self.assertEqual(tuple(layout.id for layout in rcell.get_point_layouts(3)), (layout.id,))
 
     def test_point_mechanism_builds_sparse_layout_with_local_shape(self) -> None:
         cell = Cell(_build_tree())
@@ -71,21 +73,23 @@ class CellRuntimeStateTest(unittest.TestCase):
             CurrentClamp.step(0.1 * u.nA, 2.0 * u.ms, delay=1.0 * u.ms),
         )
 
-        self.assertEqual(len(cell.layouts), 1)
-        layout = cell.layouts[0]
+        rcell = cell.build()
+
+        self.assertEqual(len(rcell.layouts), 1)
+        layout = rcell.layouts[0]
         self.assertEqual(layout.layout, "sparse")
         self.assertEqual(layout.target, "point")
         self.assertEqual(layout.kind, "CurrentClamp")
         self.assertEqual(layout.n_active, 1)
         self.assertEqual(layout.point_index.tolist(), [1])
         self.assertIsNone(layout.point_mask)
-        self.assertEqual(cell.expected_state_shape(layout.id, "amplitudes"), (1,))
-        self.assertEqual(cell.get_state(layout.id, "amplitudes").shape, (1,))
-        self.assertEqual(tuple(item.to_decimal(u.nA) for item in cell.get_state(layout.id, "amplitudes")[0]), (0.1,))
-        self.assertEqual(tuple(item.to_decimal(u.ms) for item in cell.get_state(layout.id, "durations")[0]), (2.0,))
-        self.assertEqual(cell.get_state(layout.id, "start")[0], 1.0 * u.ms)
-        self.assertEqual(tuple(layout.id for layout in cell.get_point_layouts(1)), (layout.id,))
-        self.assertEqual(cell.get_point_layouts(1), (layout,))
+        self.assertEqual(rcell.expected_state_shape(layout.id, "amplitudes"), (1,))
+        self.assertEqual(rcell.get_state(layout.id, "amplitudes").shape, (1,))
+        self.assertEqual(tuple(item.to_decimal(u.nA) for item in rcell.get_state(layout.id, "amplitudes")[0]), (0.1,))
+        self.assertEqual(tuple(item.to_decimal(u.ms) for item in rcell.get_state(layout.id, "durations")[0]), (2.0,))
+        self.assertEqual(rcell.get_state(layout.id, "start")[0], 1.0 * u.ms)
+        self.assertEqual(tuple(layout.id for layout in rcell.get_point_layouts(1)), (layout.id,))
+        self.assertEqual(rcell.get_point_layouts(1), (layout,))
 
     def test_channel_spec_builds_dense_layout_with_global_shape(self) -> None:
         import braincell
@@ -96,15 +100,17 @@ class CellRuntimeStateTest(unittest.TestCase):
             braincell.mech.Channel("IL", g_max=4.0 * (u.mS / u.cm ** 2), E=-68.0 * u.mV),
         )
 
-        self.assertEqual(len(cell.layouts), 1)
-        layout = cell.layouts[0]
+        rcell = cell.build()
+
+        self.assertEqual(len(rcell.layouts), 1)
+        layout = rcell.layouts[0]
         self.assertEqual(layout.layout, "dense")
         self.assertEqual(layout.kind, "channel:IL")
-        self.assertEqual(cell.expected_state_shape(layout.id, "g_max"), (5,))
-        self.assertEqual(cell.expected_state_shape(layout.id, "E"), (5,))
-        self.assertEqual(cell.get_point_state(1)[layout.id]["g_max"], 4.0 * (u.mS / u.cm ** 2))
-        self.assertEqual(cell.get_point_state(3)[layout.id]["E"], -68.0 * u.mV)
-        node = cell.get_runtime_node(layout.id)
+        self.assertEqual(rcell.expected_state_shape(layout.id, "g_max"), (5,))
+        self.assertEqual(rcell.expected_state_shape(layout.id, "E"), (5,))
+        self.assertEqual(rcell.get_point_state(1)[layout.id]["g_max"], 4.0 * (u.mS / u.cm ** 2))
+        self.assertEqual(rcell.get_point_state(3)[layout.id]["E"], -68.0 * u.mV)
+        node = rcell.get_runtime_node(layout.id)
         self.assertIsInstance(node, braincell.channel.IL)
         self.assertEqual(node.varshape, (5,))
         self.assertAlmostEqual(float(node.g_max[1].to_decimal(u.mS / u.cm ** 2)), 4.0, places=12)
@@ -124,8 +130,10 @@ class CellRuntimeStateTest(unittest.TestCase):
             braincell.mech.Channel("IL", name="leak_main", g_max=4.0 * (u.mS / u.cm ** 2), E=-68.0 * u.mV),
         )
 
-        self.assertEqual(len(cell.layouts), 1)
-        self.assertEqual(cell.layouts[0].point_index.tolist(), [1, 3])
+        rcell = cell.build()
+
+        self.assertEqual(len(rcell.layouts), 1)
+        self.assertEqual(rcell.layouts[0].point_index.tolist(), [1, 3])
 
     def test_same_class_different_names_build_distinct_layouts(self) -> None:
         import braincell
@@ -137,9 +145,11 @@ class CellRuntimeStateTest(unittest.TestCase):
             braincell.mech.Channel("IL", name="leak_b", g_max=4.0 * (u.mS / u.cm ** 2), E=-68.0 * u.mV),
         )
 
-        self.assertEqual(len(cell.layouts), 2)
-        self.assertEqual({layout.kind for layout in cell.layouts}, {"channel:IL"})
-        self.assertTrue(all(layout.point_index.tolist() == [1, 3] for layout in cell.layouts))
+        rcell = cell.build()
+
+        self.assertEqual(len(rcell.layouts), 2)
+        self.assertEqual({layout.kind for layout in rcell.layouts}, {"channel:IL"})
+        self.assertTrue(all(layout.point_index.tolist() == [1, 3] for layout in rcell.layouts))
 
     def test_runtime_state_keeps_dense_and_sparse_layouts_together(self) -> None:
         cell = Cell(_build_tree(), cv_policy=CVPerBranch())
@@ -150,30 +160,32 @@ class CellRuntimeStateTest(unittest.TestCase):
         clamp = CurrentClamp.step(0.1 * u.nA, 2.0 * u.ms, delay=1.0 * u.ms)
         cell.place(RootLocation(x=0.5), clamp)
 
-        self.assertEqual(len(cell.layouts), 2)
-        dense = next(layout for layout in cell.layouts if layout.layout == "dense")
-        sparse = next(layout for layout in cell.layouts if layout.layout == "sparse")
-        self.assertEqual(tuple(layout.id for layout in cell.get_point_layouts(1)), (dense.id, sparse.id))
-        self.assertEqual(tuple(layout.id for layout in cell.get_point_layouts(3)), (dense.id,))
-        self.assertEqual(tuple(layout.id for layout in cell.get_cv_layouts(0)), (dense.id, sparse.id))
-        self.assertEqual(tuple(layout.id for layout in cell.get_cv_layouts(1)), (dense.id,))
-        point_state = cell.get_point_state(1)
+        rcell = cell.build()
+
+        self.assertEqual(len(rcell.layouts), 2)
+        dense = next(layout for layout in rcell.layouts if layout.layout == "dense")
+        sparse = next(layout for layout in rcell.layouts if layout.layout == "sparse")
+        self.assertEqual(tuple(layout.id for layout in rcell.get_point_layouts(1)), (dense.id, sparse.id))
+        self.assertEqual(tuple(layout.id for layout in rcell.get_point_layouts(3)), (dense.id,))
+        self.assertEqual(tuple(layout.id for layout in rcell.get_cv_layouts(0)), (dense.id, sparse.id))
+        self.assertEqual(tuple(layout.id for layout in rcell.get_cv_layouts(1)), (dense.id,))
+        point_state = rcell.get_point_state(1)
         self.assertEqual(point_state[dense.id]["g_max"], 4.0 * (u.mS / u.cm ** 2))
         self.assertEqual(tuple(item.to_decimal(u.nA) for item in point_state[sparse.id]["amplitudes"]), (0.1,))
-        self.assertEqual(cell.get_cv_state(0)[dense.id]["g_max"], 4.0 * (u.mS / u.cm ** 2))
+        self.assertEqual(rcell.get_cv_state(0)[dense.id]["g_max"], 4.0 * (u.mS / u.cm ** 2))
         self.assertEqual({name for name in ("na", "k", "ca")}, {"na", "k", "ca"})
 
-    def test_runtime_state_cache_is_invalidated_by_new_mapping(self) -> None:
+    def test_rebuild_after_place_produces_new_runtime(self) -> None:
         cell = Cell(_build_tree())
 
-        first = cell.layouts
+        first = cell.build().layouts
         self.assertEqual(len(first), 0)
 
         cell.place(
             RootLocation(x=0.5),
             CurrentClamp.step(0.1 * u.nA, 2.0 * u.ms, delay=1.0 * u.ms),
         )
-        second = cell.layouts
+        second = cell.build().layouts
 
         self.assertIsNot(first, second)
         self.assertEqual(len(second), 1)
@@ -185,13 +197,15 @@ class CellRuntimeStateTest(unittest.TestCase):
             CurrentClamp.step(0.1 * u.nA, 2.0 * u.ms, delay=1.0 * u.ms),
         )
 
-        layout = cell.layouts[0]
-        cell.set_state(layout.id, "amplitudes", (0.25 * u.nA, 0.05 * u.nA))
-        cell.set_state(layout.id, "durations", (1.5 * u.ms, 2.5 * u.ms))
+        rcell = cell.build()
 
-        self.assertEqual(tuple(item.to_decimal(u.nA) for item in cell.get_state(layout.id, "amplitudes")[0]),
+        layout = rcell.layouts[0]
+        rcell.set_state(layout.id, "amplitudes", (0.25 * u.nA, 0.05 * u.nA))
+        rcell.set_state(layout.id, "durations", (1.5 * u.ms, 2.5 * u.ms))
+
+        self.assertEqual(tuple(item.to_decimal(u.nA) for item in rcell.get_state(layout.id, "amplitudes")[0]),
                          (0.25, 0.05))
-        self.assertEqual(tuple(item.to_decimal(u.ms) for item in cell.get_point_state(1)[layout.id]["durations"]),
+        self.assertEqual(tuple(item.to_decimal(u.ms) for item in rcell.get_point_state(1)[layout.id]["durations"]),
                          (1.5, 2.5))
 
     def test_runtime_evaluates_step_sine_and_function_clamps_on_target_points(self) -> None:
@@ -202,12 +216,14 @@ class CellRuntimeStateTest(unittest.TestCase):
             SineClamp(amplitude=0.2 * u.nA, frequency=500.0 * u.Hz, offset=0.1 * u.nA, duration=4.0 * u.ms),
             FunctionClamp(fn=lambda local_t: 0.4 * u.nA if local_t < 1.0 * u.ms else 0.0 * u.nA, duration=3.0 * u.ms),
         )
-        runtime = cell._ensure_runtime_compiled()
+        rcell = cell.build()
+
+        runtime = rcell.runtime
 
         current_early = runtime.evaluate_point_clamps(t=0.5 * u.ms)
         current_late = runtime.evaluate_point_clamps(t=2.5 * u.ms)
 
-        self.assertEqual(current_early.shape, (len(cell.point_tree().points),))
+        self.assertEqual(current_early.shape, (len(rcell.point_tree().points),))
         self.assertAlmostEqual(float(current_early[1].to_decimal(u.nA)), 0.7, places=6)
         self.assertAlmostEqual(float(current_early[0].to_decimal(u.nA)), 0.0, places=6)
         self.assertAlmostEqual(float(current_late[1].to_decimal(u.nA)), 0.6, places=6)
@@ -221,14 +237,16 @@ class CellRuntimeStateTest(unittest.TestCase):
             braincell.mech.CurrentProbe(ion="na", mechanism="INa_HH1952"),
         )
 
-        self.assertEqual(len(cell.layouts), 3)
-        self.assertTrue(all(layout.layout == "sparse" for layout in cell.layouts))
-        self.assertTrue(all(layout.target == "point" for layout in cell.layouts))
+        rcell = cell.build()
+
+        self.assertEqual(len(rcell.layouts), 3)
+        self.assertTrue(all(layout.layout == "sparse" for layout in rcell.layouts))
+        self.assertTrue(all(layout.target == "point" for layout in rcell.layouts))
         resolved_names = []
-        for layout in cell.layouts:
+        for layout in rcell.layouts:
             self.assertEqual(layout.point_index.tolist(), [1])
-            self.assertEqual(cell.get_point_state(1)[layout.id], {})
-            declaration = cell._ensure_runtime_compiled().get_layout_mechanism(layout.id)
+            self.assertEqual(rcell.get_point_state(1)[layout.id], {})
+            declaration = rcell.runtime.get_layout_mechanism(layout.id)
             resolved_names.append(declaration.name)
         self.assertEqual(
             sorted(resolved_names),
@@ -251,18 +269,18 @@ class CellRuntimeStateTest(unittest.TestCase):
             braincell.mech.StateProbe(),
             braincell.mech.MechanismProbe(mechanism="INa_HH1952", field="p"),
         )
-        cell.init_state()
+        rcell = cell.build()
 
-        samples = cell.sample_probes()
+        samples = rcell.sample_probes()
         channel_layout = next(
-            layout for layout in cell.layouts
-            if isinstance(cell._ensure_runtime_compiled().get_layout_mechanism(layout.id), braincell.mech.Channel)
+            layout for layout in rcell.layouts
+            if isinstance(rcell.runtime.get_layout_mechanism(layout.id), braincell.mech.Channel)
         )
-        node = cell.get_runtime_node(channel_layout.id)
+        node = rcell.get_runtime_node(channel_layout.id)
 
-        self.assertEqual(samples["soma(0.5)_v"], cell.V.value[0])
+        self.assertEqual(samples["soma(0.5)_v"], rcell.V.value[0])
         self.assertEqual(samples["soma(0.5)_INa_HH1952_p"], node.p.value[1])
-        self.assertEqual(cell.sample_probe("soma(0.5)_INa_HH1952_p"), node.p.value[1])
+        self.assertEqual(rcell.sample_probe("soma(0.5)_INa_HH1952_p"), node.p.value[1])
 
     def test_sample_probe_reads_mechanism_and_total_ion_current(self) -> None:
         cell = Cell(_build_tree())
@@ -280,12 +298,12 @@ class CellRuntimeStateTest(unittest.TestCase):
             braincell.mech.CurrentProbe(ion="k", mechanism="IK_Kv_test"),
             braincell.mech.CurrentProbe(ion="k"),
         )
-        cell.init_state()
+        rcell = cell.build()
 
-        samples = cell.sample_probes()
-        ion = cell.get_ion("k")
+        samples = rcell.sample_probes()
+        ion = rcell.get_ion("k")
         node = ion.channels["IK_Kv_test"]
-        point_V = cell._point_voltage(cell.V.value)
+        point_V = rcell._cv_to_point(rcell.V.value)
         expected_mechanism = node.current(point_V, ion.pack_info())[1]
         expected_total = ion.current(point_V, include_external=False)[1]
 
@@ -306,15 +324,15 @@ class CellRuntimeStateTest(unittest.TestCase):
             at("soma", 0.5),
             braincell.mech.CurrentProbe(mechanism="IL"),
         )
-        cell.init_state()
+        rcell = cell.build()
 
-        samples = cell.sample_probes()
+        samples = rcell.sample_probes()
         channel_layout = next(
-            layout for layout in cell.layouts
-            if isinstance(cell._ensure_runtime_compiled().get_layout_mechanism(layout.id), braincell.mech.Channel)
+            layout for layout in rcell.layouts
+            if isinstance(rcell.runtime.get_layout_mechanism(layout.id), braincell.mech.Channel)
         )
-        node = cell.get_runtime_node(channel_layout.id)
-        point_V = cell._point_voltage(cell.V.value)
+        node = rcell.get_runtime_node(channel_layout.id)
+        point_V = rcell._cv_to_point(rcell.V.value)
         expected_current = node.current(point_V)[1]
 
         self.assertEqual(samples["soma(0.5)_IL_current"], expected_current)
@@ -335,12 +353,12 @@ class CellRuntimeStateTest(unittest.TestCase):
             braincell.mech.MechanismProbe(mechanism="INa_HH1952", field="g_max"),
             braincell.mech.MechanismProbe(mechanism="missing", field="p"),
         )
-        cell.init_state()
+        rcell = cell.build()
 
         with self.assertRaises(ValueError):
-            cell.sample_probe("soma(0.5)_INa_HH1952_g_max")
+            rcell.sample_probe("soma(0.5)_INa_HH1952_g_max")
         with self.assertRaises(KeyError):
-            cell.sample_probe("soma(0.5)_missing_p")
+            rcell.sample_probe("soma(0.5)_missing_p")
 
     def test_sample_probes_requires_unique_names(self) -> None:
         cell = Cell(_build_tree())
@@ -358,10 +376,10 @@ class CellRuntimeStateTest(unittest.TestCase):
             braincell.mech.StateProbe(name="dup"),
             braincell.mech.MechanismProbe(name="dup", mechanism="INa_HH1952", field="p"),
         )
-        cell.init_state()
+        rcell = cell.build()
 
         with self.assertRaises(ValueError):
-            cell.sample_probes()
+            rcell.sample_probes()
 
     def test_density_mechanism_leaky_builds_runtime_il_node(self) -> None:
         cell = Cell(_build_tree())
@@ -372,8 +390,10 @@ class CellRuntimeStateTest(unittest.TestCase):
             ),
         )
 
-        layout = cell.layouts[0]
-        node = cell.get_runtime_node(layout.id)
+        rcell = cell.build()
+
+        layout = rcell.layouts[0]
+        node = rcell.get_runtime_node(layout.id)
 
         self.assertIsInstance(node, braincell.channel.IL)
         self.assertAlmostEqual(float(node.g_max[3].to_decimal(u.mS / u.cm ** 2)), 4.0, places=12)
@@ -388,9 +408,11 @@ class CellRuntimeStateTest(unittest.TestCase):
             braincell.mech.Channel("IL", g_max=4.0 * (u.mS / u.cm ** 2), E=-68.0 * u.mV),
         )
 
-        layout = cell.layouts[0]
-        cell.set_state(layout.id, "g_max", 2.5 * (u.mS / u.cm ** 2))
-        node = cell.get_runtime_node(layout.id)
+        rcell = cell.build()
+
+        layout = rcell.layouts[0]
+        rcell.set_state(layout.id, "g_max", 2.5 * (u.mS / u.cm ** 2))
+        node = rcell.get_runtime_node(layout.id)
 
         self.assertAlmostEqual(float(node.g_max[1].to_decimal(u.mS / u.cm ** 2)), 2.5, places=12)
         self.assertAlmostEqual(float(node.g_max[0].to_decimal(u.mS / u.cm ** 2)), 0.0, places=12)
@@ -400,17 +422,21 @@ class CellRuntimeStateTest(unittest.TestCase):
 
         cell = Cell(_build_tree())
 
-        self.assertIsInstance(cell.get_ion("na"), braincell.ion.SodiumFixed)
-        self.assertIsInstance(cell.get_ion("k"), braincell.ion.PotassiumFixed)
-        self.assertIsInstance(cell.get_ion("ca"), braincell.ion.CalciumFixed)
-        self.assertEqual(cell.get_ion("na").varshape, (5,))
-        self.assertEqual(cell.get_ion("k").varshape, (5,))
-        self.assertEqual(cell.get_ion("ca").varshape, (5,))
+        rcell = cell.build()
+
+        self.assertIsInstance(rcell.get_ion("na"), braincell.ion.SodiumFixed)
+        self.assertIsInstance(rcell.get_ion("k"), braincell.ion.PotassiumFixed)
+        self.assertIsInstance(rcell.get_ion("ca"), braincell.ion.CalciumFixed)
+        self.assertEqual(rcell.get_ion("na").varshape, (5,))
+        self.assertEqual(rcell.get_ion("k").varshape, (5,))
+        self.assertEqual(rcell.get_ion("ca").varshape, (5,))
 
     def test_runtime_ions_expose_point_space_geometry_arrays(self) -> None:
         cell = Cell(_build_tree())
 
-        na = cell.get_ion("na")
+        rcell = cell.build()
+
+        na = rcell.get_ion("na")
         self.assertEqual(na.length.shape, (5,))
         self.assertEqual(na.area.shape, (5,))
         self.assertEqual(na.diam_mid.shape, (5,))
@@ -432,13 +458,15 @@ class CellRuntimeStateTest(unittest.TestCase):
             braincell.mech.Ion("SodiumFixed", name="na_left", E=55.0 * u.mV),
         )
 
-        layout = next(layout for layout in cell.layouts if layout.kind == "ion:SodiumFixed")
-        node = cell.get_runtime_node(layout.id)
-        na = cell.get_ion("na")
+        rcell = cell.build()
+
+        layout = next(layout for layout in rcell.layouts if layout.kind == "ion:SodiumFixed")
+        node = rcell.get_runtime_node(layout.id)
+        na = rcell.get_ion("na")
 
         self.assertIs(node, na)
-        self.assertIs(cell.get_ion("SodiumFixed"), na)
-        self.assertIs(cell.get_ion("na_left"), na)
+        self.assertIs(rcell.get_ion("SodiumFixed"), na)
+        self.assertIs(rcell.get_ion("na_left"), na)
         self.assertIsInstance(na, braincell.ion.SodiumFixed)
         self.assertEqual(layout.point_index.tolist(), [1])
         self.assertAlmostEqual(float(na.E[1].to_decimal(u.mV)), 55.0, places=12)
@@ -457,10 +485,12 @@ class CellRuntimeStateTest(unittest.TestCase):
             ),
         )
 
-        na = cell.get_ion("na")
+        rcell = cell.build()
+
+        na = rcell.get_ion("na")
         self.assertIsInstance(na, braincell.ion.SodiumInitNernst)
-        self.assertIs(cell.get_ion("SodiumInitNernst"), na)
-        self.assertIs(cell.get_ion("na_pool"), na)
+        self.assertIs(rcell.get_ion("SodiumInitNernst"), na)
+        self.assertIs(rcell.get_ion("na_pool"), na)
         self.assertAlmostEqual(float(na.temp[1].to_decimal(u.kelvin)),
                                float(u.celsius2kelvin(30.0).to_decimal(u.kelvin)), places=12)
         self.assertAlmostEqual(float(na.Ci[1].to_decimal(u.mM)), 12.0, places=12)
@@ -477,12 +507,14 @@ class CellRuntimeStateTest(unittest.TestCase):
             braincell.mech.Ion("CalciumFixed", name="ca_lva", E=110.0 * u.mV),
         )
 
-        self.assertIs(cell.get_ion("ca_hva"), cell.get_ion("ca_hva"))
-        self.assertIs(cell.get_ion("ca_lva"), cell.get_ion("ca_lva"))
+        rcell = cell.build()
+
+        self.assertIs(rcell.get_ion("ca_hva"), rcell.get_ion("ca_hva"))
+        self.assertIs(rcell.get_ion("ca_lva"), rcell.get_ion("ca_lva"))
         with self.assertRaises(ValueError):
-            cell.get_ion("ca")
+            rcell.get_ion("ca")
         with self.assertRaises(ValueError):
-            cell.get_ion("CalciumFixed")
+            rcell.get_ion("CalciumFixed")
 
     def test_single_ion_channel_binds_to_explicit_runtime_ion(self) -> None:
         cell = Cell(_build_tree())
@@ -499,10 +531,12 @@ class CellRuntimeStateTest(unittest.TestCase):
             braincell.mech.Channel("INa_HH1952", g_max=12.0 * (u.mS / u.cm ** 2), ion_name="na_soma"),
         )
 
-        channel_layout = next(layout for layout in cell.layouts if layout.kind == "channel:INa_HH1952")
-        na_soma = cell.get_ion("na_soma")
-        na_dend = cell.get_ion("na_dend")
-        node = cell.get_runtime_node(channel_layout.id)
+        rcell = cell.build()
+
+        channel_layout = next(layout for layout in rcell.layouts if layout.kind == "channel:INa_HH1952")
+        na_soma = rcell.get_ion("na_soma")
+        na_dend = rcell.get_ion("na_dend")
+        node = rcell.get_runtime_node(channel_layout.id)
 
         self.assertIs(na_soma.channels["INa_HH1952"], node)
         self.assertNotIn("INa_HH1952", na_dend.channels)
@@ -525,7 +559,9 @@ class CellRuntimeStateTest(unittest.TestCase):
         )
 
         with self.assertRaises(ValueError) as ctx:
-            _ = cell.layouts
+            rcell = cell.build()
+
+            _ = rcell.layouts
         self.assertIn("ambiguous", str(ctx.exception))
 
     def test_set_state_on_named_ion_layout_updates_only_that_instance(self) -> None:
@@ -539,15 +575,16 @@ class CellRuntimeStateTest(unittest.TestCase):
             braincell.mech.Ion("SodiumFixed", name="na_right", E=45.0 * u.mV),
         )
 
+        rcell = cell.build()
         layout = next(
             layout
-            for layout in cell.layouts
+            for layout in rcell.layouts
             if layout.kind == "ion:SodiumFixed"
-            and cell._ensure_runtime_compiled().get_layout_mechanism(layout.id).instance_name == "na_left"
+            and rcell.runtime.get_layout_mechanism(layout.id).instance_name == "na_left"
         )
-        na_left = cell.get_ion("na_left")
-        na_right = cell.get_ion("na_right")
-        cell.set_state(layout.id, "E", 42.0 * u.mV)
+        na_left = rcell.get_ion("na_left")
+        na_right = rcell.get_ion("na_right")
+        rcell.set_state(layout.id, "E", 42.0 * u.mV)
 
         self.assertAlmostEqual(float(na_left.E[1].to_decimal(u.mV)), 42.0, places=12)
         self.assertAlmostEqual(float(na_right.E[3].to_decimal(u.mV)), 45.0, places=12)
@@ -574,25 +611,25 @@ class CellRuntimeStateTest(unittest.TestCase):
             ),
         )
 
-        layout = next(layout for layout in cell.layouts if layout.kind == "ion:CalciumDetailed")
-        ion = cell.get_ion("ca_dyn")
+        rcell = cell.build()
+        layout = next(layout for layout in rcell.layouts if layout.kind == "ion:CalciumDetailed")
+        ion = rcell.get_ion("ca_dyn")
 
-        self.assertIs(cell.get_ion("ca"), ion)
-        self.assertIs(cell.get_ion("CalciumDetailed"), ion)
+        self.assertIs(rcell.get_ion("ca"), ion)
+        self.assertIs(rcell.get_ion("CalciumDetailed"), ion)
 
-        cell.init_state()
         self.assertIsInstance(ion.Ci, braincell.quad.DiffEqState)
         self.assertAlmostEqual(float(ion.Ci.value[1].to_decimal(u.mM)), 2.4e-4, places=12)
 
         ion.Ci.value = ion.Ci.value.at[1].set(1.0e-3 * u.mM)
-        cell.reset_state()
+        rcell.reset_state()
         self.assertAlmostEqual(float(ion.Ci.value[1].to_decimal(u.mM)), 2.4e-4, places=12)
 
-        cell.compute_derivative()
+        rcell.compute_derivative()
         self.assertEqual(ion.Ci.derivative.shape, (5,))
 
-        cell.set_state(layout.id, "Ci_initializer", 7.0e-4 * u.mM)
-        cell.reset_state()
+        rcell.set_state(layout.id, "Ci_initializer", 7.0e-4 * u.mM)
+        rcell.reset_state()
         self.assertAlmostEqual(float(ion.Ci.value[1].to_decimal(u.mM)), 7.0e-4, places=12)
 
     def test_same_ion_instance_name_cannot_mix_different_classes(self) -> None:
@@ -607,7 +644,9 @@ class CellRuntimeStateTest(unittest.TestCase):
         )
 
         with self.assertRaises(ValueError) as ctx:
-            _ = cell.layouts
+            rcell = cell.build()
+
+            _ = rcell.layouts
         self.assertIn("cannot mix classes", str(ctx.exception))
 
     def test_mixed_ion_channel_binds_per_family_and_uses_owner_ion_bucket(self) -> None:
@@ -623,11 +662,13 @@ class CellRuntimeStateTest(unittest.TestCase):
             braincell.mech.Channel("IKca3_1_Ma2020", ion_names={"ca": "ca_hva"}),
         )
 
-        layout = next(layout for layout in cell.layouts if layout.kind == "channel:IKca3_1_Ma2020")
-        runtime = cell._ensure_runtime_compiled()
-        node = cell.get_runtime_node(layout.id)
-        k_main = cell.get_ion("k_main")
-        ca_hva = cell.get_ion("ca_hva")
+        rcell = cell.build()
+
+        layout = next(layout for layout in rcell.layouts if layout.kind == "channel:IKca3_1_Ma2020")
+        runtime = rcell.runtime
+        node = rcell.get_runtime_node(layout.id)
+        k_main = rcell.get_ion("k_main")
+        ca_hva = rcell.get_ion("ca_hva")
 
         self.assertEqual(runtime.current_owner_keys[layout.id], "k_main")
         self.assertIn("IKca3_1_Ma2020", k_main.channels)
@@ -651,19 +692,19 @@ class CellRuntimeStateTest(unittest.TestCase):
             braincell.mech.CurrentProbe(mechanism="IKca3_1_Ma2020"),
             braincell.mech.CurrentProbe(ion="k_main"),
         )
-        cell.init_state()
+        rcell = cell.build()
 
-        samples = cell.sample_probes()
-        runtime = cell._ensure_runtime_compiled()
-        layout = next(layout for layout in cell.layouts if layout.kind == "channel:IKca3_1_Ma2020")
-        node = cell.get_runtime_node(layout.id)
-        point_V = cell._point_voltage(cell.V.value)
+        samples = rcell.sample_probes()
+        runtime = rcell.runtime
+        layout = next(layout for layout in rcell.layouts if layout.kind == "channel:IKca3_1_Ma2020")
+        node = rcell.get_runtime_node(layout.id)
+        point_V = rcell._cv_to_point(rcell.V.value)
         expected_mechanism = node.current(
             point_V,
-            cell.get_ion("k_main").pack_info(),
-            cell.get_ion("ca_hva").pack_info(),
+            rcell.get_ion("k_main").pack_info(),
+            rcell.get_ion("ca_hva").pack_info(),
         )[1]
-        expected_total = cell.get_ion("k_main").current(point_V, include_external=False)[1]
+        expected_total = rcell.get_ion("k_main").current(point_V, include_external=False)[1]
 
         self.assertEqual(runtime.bound_ion_keys[layout.id], ("k_main", "ca_hva"))
         self.assertEqual(samples["soma(0.5)_IKca3_1_Ma2020_current"], expected_mechanism)
@@ -681,9 +722,10 @@ class CellRuntimeStateTest(unittest.TestCase):
             ),
         )
 
-        layout = cell.layouts[0]
-        node = cell.get_runtime_node(layout.id)
-        na = cell.get_ion("na")
+        rcell = cell.build()
+        layout = rcell.layouts[0]
+        node = rcell.get_runtime_node(layout.id)
+        na = rcell.get_ion("na")
 
         self.assertIsInstance(node, braincell.channel.INa_HH1952)
         # Channels are now keyed on the declaration's instance name, which
@@ -707,10 +749,11 @@ class CellRuntimeStateTest(unittest.TestCase):
             ),
         )
 
-        layout = cell.layouts[0]
-        cell.set_state(layout.id, "g_max", 8.0 * (u.mS / u.cm ** 2))
-        cell.set_state(layout.id, "V_sh", -42.0 * u.mV)
-        node = cell.get_runtime_node(layout.id)
+        rcell = cell.build()
+        layout = rcell.layouts[0]
+        rcell.set_state(layout.id, "g_max", 8.0 * (u.mS / u.cm ** 2))
+        rcell.set_state(layout.id, "V_sh", -42.0 * u.mV)
+        node = rcell.get_runtime_node(layout.id)
 
         self.assertAlmostEqual(float(node.g_max[1].to_decimal(u.mS / u.cm ** 2)), 8.0, places=12)
         self.assertAlmostEqual(float(node.g_max[0].to_decimal(u.mS / u.cm ** 2)), 0.0, places=12)
@@ -724,5 +767,7 @@ class CellRuntimeStateTest(unittest.TestCase):
         )
 
         with self.assertRaises(KeyError) as ctx:
-            _ = cell.layouts
+            rcell = cell.build()
+
+            _ = rcell.layouts
         self.assertIn("__totally_unregistered__", str(ctx.exception))

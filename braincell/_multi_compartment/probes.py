@@ -5,8 +5,6 @@ but each helper now takes an explicit ``RunnableCell`` argument instead
 of being a bound method on the (stateful, dirty-flag-managed) Cell.
 """
 
-from __future__ import annotations
-
 from typing import TYPE_CHECKING
 
 import brainstate
@@ -20,7 +18,6 @@ from braincell.mech import (
     MechanismProbe,
     StateProbe,
 )
-
 from . import bridge
 
 if TYPE_CHECKING:
@@ -36,7 +33,7 @@ def sample_probe(rcell: "RunnableCell", name: str) -> object:
     for layout in runtime.layouts:
         declaration = runtime.get_layout_mechanism(layout.id)
         if isinstance(declaration, (StateProbe, MechanismProbe, CurrentProbe)) \
-                and _probe_name(declaration) == name:
+            and _probe_name(declaration) == name:
             matches.append((layout, declaration))
     if len(matches) == 0:
         raise KeyError(f"No probe is registered with name {name!r}.")

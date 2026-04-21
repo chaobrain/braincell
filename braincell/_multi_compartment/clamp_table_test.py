@@ -6,8 +6,6 @@ real ``Cell`` → table appears on ``rcell.runtime``) runs once
 ``Cell.build()`` lands.
 """
 
-from __future__ import annotations
-
 import unittest
 from dataclasses import dataclass
 

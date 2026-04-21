@@ -12,8 +12,6 @@ Responsibilities:
 5. Bridge point-space sum back to CV-space for the voltage update.
 """
 
-from __future__ import annotations
-
 from typing import TYPE_CHECKING
 
 import brainunit as u
@@ -21,14 +19,12 @@ import jax.numpy as jnp
 
 from braincell._base import IonChannel
 from braincell.compute._runtime import CellRuntimeState
-
 from . import bridge
 
 if TYPE_CHECKING:
     from .runnable import RunnableCell
 
 __all__ = ["total_membrane_current"]
-
 
 _CURRENT_DENSITY = u.nA / u.cm ** 2
 

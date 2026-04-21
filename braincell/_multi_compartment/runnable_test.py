@@ -1,7 +1,5 @@
 """Integration tests for :class:`RunnableCell`."""
 
-from __future__ import annotations
-
 import unittest
 
 import brainstate

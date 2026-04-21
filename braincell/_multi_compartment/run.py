@@ -5,8 +5,6 @@ Propagates ``t`` through :mod:`brainstate.environ` inside the
 per step; the final post-loop time is pinned once after the scan.
 """
 
-from __future__ import annotations
-
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 

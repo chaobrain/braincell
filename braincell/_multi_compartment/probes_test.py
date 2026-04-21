@@ -5,8 +5,6 @@ exercised in ``runnable_test.py``. These tests lock down the small
 pure helpers so regressions stay local.
 """
 
-from __future__ import annotations
-
 import unittest
 
 import brainstate

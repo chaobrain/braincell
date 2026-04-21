@@ -6,8 +6,6 @@ End-to-end roundtrip on a real ``Cell`` is covered by
 ``runnable_test.py`` once ``Cell.build()`` lands.
 """
 
-from __future__ import annotations
-
 import unittest
 from dataclasses import dataclass
 

@@ -1,7 +1,5 @@
 """Unit tests for :class:`braincell.Cell`."""
 
-from __future__ import annotations
-
 import unittest
 
 import brainunit as u

@@ -4,8 +4,6 @@ The full :func:`run` loop is exercised end-to-end in
 ``runnable_test.py`` once ``Cell.build()`` lands.
 """
 
-from __future__ import annotations
-
 import unittest
 
 import brainunit as u

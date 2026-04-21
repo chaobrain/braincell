@@ -11,11 +11,10 @@ that never change after ``_attach_runtime`` returns. The object has
 no dirty flags.
 """
 
-from __future__ import annotations
-
 from typing import Callable
 
 import brainstate
+import braintools
 import brainunit as u
 import jax.numpy as jnp
 import numpy as np
@@ -31,9 +30,9 @@ from braincell.compute._runtime import (
     build_placeholder_ions,
     mechanism_signature,
 )
+from braincell.compute._runtime import cv_value_vector
 from braincell.morph.morphology import Morphology
 from braincell.quad.protocol import IndependentIntegration
-
 from . import bridge, currents, probes, run as run_module
 
 __all__ = ["RunnableCell"]
@@ -251,8 +250,6 @@ class RunnableCell(HHTypedNeuron):
         )
 
     def reset_state(self, batch_size=None) -> None:
-        import braintools
-        from braincell.compute._runtime import cv_value_vector
         v_init = self._V_initializer_spec
         if v_init is None:
             v_init = cv_value_vector(self, attr_name="v")
@@ -346,7 +343,7 @@ class RunnableCell(HHTypedNeuron):
                     row_index = ensure_row(mechanism)
                     layout_id = layout_id_by_signature[
                         (target_label,) + mechanism_signature(mechanism)
-                    ]
+                        ]
                     pending_cells.append(
                         (
                             row_index,

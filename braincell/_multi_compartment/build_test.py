@@ -1,7 +1,5 @@
 """Tests for :func:`braincell._multi_compartment.build.build`."""
 
-from __future__ import annotations
-
 import unittest
 
 import brainunit as u

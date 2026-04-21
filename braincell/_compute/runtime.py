@@ -1650,12 +1650,21 @@ def _is_root_level_runtime_node(kind: str) -> bool:
     Root-level channels are those whose concrete class has
     ``root_type == HHTypedNeuron`` (i.e. not bound to an ion
     container). The registry is consulted to inspect the class.
+
+    Raises
+    ------
+    ValueError
+        If ``kind`` names a channel class not registered in the
+        mechanism registry — previously this was silently treated
+        as "not root-level", hiding misspelled channel names.
     """
     if not kind.startswith("channel:"):
         return False
     class_name = kind.split(":", 1)[1]
     try:
         cls = get_registry().get("channel", class_name)
-    except KeyError:
-        return False
+    except KeyError as exc:
+        raise ValueError(
+            f"Unknown runtime channel class {class_name!r} for layout kind {kind!r}."
+        ) from exc
     return _channel_current_owner_family(cls) is None

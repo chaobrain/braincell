@@ -776,6 +776,16 @@ class CellRuntimeStateTest(unittest.TestCase):
         self.assertIn("__totally_unregistered__", str(ctx.exception))
 
 
+class IsRootLevelRuntimeNodeUnknownClassTest(unittest.TestCase):
+    """Task 18 (C6): unknown channel kinds raise rather than silently return False."""
+
+    def test_unknown_channel_kind_raises_value_error(self) -> None:
+        from braincell._compute.runtime import _is_root_level_runtime_node
+        with self.assertRaises(ValueError) as ctx:
+            _is_root_level_runtime_node("channel:__never_registered__")
+        self.assertIn("__never_registered__", str(ctx.exception))
+
+
 class CellLifecycleInlineTest(unittest.TestCase):
     """Task 14: init_state / reset own the install/uninstall work directly."""
 

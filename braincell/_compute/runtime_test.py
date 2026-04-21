@@ -884,3 +884,143 @@ class TestUninstallCellRuntime(unittest.TestCase):
             {},
             "No IonChannel nodes should remain after uninstall.",
         )
+
+
+# ---------------------------------------------------------------------------
+# ClampActiveTable tests (absorbed from former clamp_table_test.py)
+# ---------------------------------------------------------------------------
+
+from dataclasses import dataclass as _dataclass
+import numpy as np
+
+from braincell._compute.runtime import (
+    CLAMP_KINDS,
+    ClampActiveTable,
+    build_clamp_active_table,
+)
+
+
+@_dataclass
+class _ClampStubLayout:
+    target: str
+    kind: str
+    point_index: np.ndarray | None
+
+
+@_dataclass
+class _ClampStubCV:
+    id: int
+    area: object  # brainunit Quantity in cm^2
+
+
+@_dataclass
+class _ClampStubPointTree:
+    cv_midpoint_point_id: np.ndarray
+
+
+def _clamp_point_tree(n_cv: int) -> _ClampStubPointTree:
+    return _ClampStubPointTree(
+        cv_midpoint_point_id=np.arange(n_cv, dtype=np.int32),
+    )
+
+
+def _clamp_cv(cv_id: int, area_cm2: float) -> _ClampStubCV:
+    return _ClampStubCV(id=cv_id, area=area_cm2 * u.cm ** 2)
+
+
+class TestBuildClampActiveTable(unittest.TestCase):
+
+    def test_no_clamp_layouts_returns_none(self):
+        layouts = (
+            _ClampStubLayout(
+                target="density",
+                kind="IL",
+                point_index=np.asarray([0], dtype=np.int32),
+            ),
+        )
+        table = build_clamp_active_table(
+            layouts=layouts,
+            cvs=[_clamp_cv(0, 1e-6)],
+            point_tree=_clamp_point_tree(1),
+            n_point=1,
+        )
+        self.assertIsNone(table)
+
+    def test_current_clamp_builds_table(self):
+        layouts = (
+            _ClampStubLayout(
+                target="point",
+                kind="CurrentClamp",
+                point_index=np.asarray([1], dtype=np.int32),
+            ),
+        )
+        table = build_clamp_active_table(
+            layouts=layouts,
+            cvs=[_clamp_cv(0, 1e-6), _clamp_cv(1, 2e-6)],
+            point_tree=_clamp_point_tree(2),
+            n_point=2,
+        )
+        self.assertIsInstance(table, ClampActiveTable)
+        np.testing.assert_array_equal(table.ids, np.asarray([1], dtype=np.int32))
+        np.testing.assert_allclose(table.area, np.asarray([2e-6]))
+
+    def test_each_clamp_kind_is_recognized(self):
+        self.assertEqual(
+            CLAMP_KINDS, frozenset({"CurrentClamp", "SineClamp", "FunctionClamp"})
+        )
+
+    def test_ids_are_sorted_and_unique(self):
+        layouts = (
+            _ClampStubLayout(
+                target="point",
+                kind="CurrentClamp",
+                point_index=np.asarray([3, 1], dtype=np.int32),
+            ),
+            _ClampStubLayout(
+                target="point",
+                kind="SineClamp",
+                point_index=np.asarray([1, 2], dtype=np.int32),
+            ),
+        )
+        table = build_clamp_active_table(
+            layouts=layouts,
+            cvs=[_clamp_cv(i, 1e-6 * (i + 1)) for i in range(4)],
+            point_tree=_clamp_point_tree(4),
+            n_point=4,
+        )
+        np.testing.assert_array_equal(
+            table.ids, np.asarray([1, 2, 3], dtype=np.int32)
+        )
+
+    def test_zero_area_raises(self):
+        layouts = (
+            _ClampStubLayout(
+                target="point",
+                kind="CurrentClamp",
+                point_index=np.asarray([0], dtype=np.int32),
+            ),
+        )
+        with self.assertRaises(ValueError):
+            build_clamp_active_table(
+                layouts=layouts,
+                cvs=[_clamp_cv(0, 0.0)],
+                point_tree=_clamp_point_tree(1),
+                n_point=1,
+            )
+
+    def test_non_clamp_point_layout_ignored(self):
+        layouts = (
+            _ClampStubLayout(
+                target="point",
+                kind="Synapse",
+                point_index=np.asarray([0], dtype=np.int32),
+            ),
+        )
+        self.assertIsNone(
+            build_clamp_active_table(
+                layouts=layouts,
+                cvs=[_clamp_cv(0, 1e-6)],
+                point_tree=_clamp_point_tree(1),
+                n_point=1,
+            )
+        )

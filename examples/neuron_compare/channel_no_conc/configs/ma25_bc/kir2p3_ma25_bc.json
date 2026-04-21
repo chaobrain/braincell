@@ -1,0 +1,35 @@
+{
+  "meta": {
+    "label": "BC Kir2p3 MA25"
+  },
+  "identity": {
+    "mod_dir": "/home/swl/braincell/examples/neuron_compare/Cerebellum_mod/BC/channel"
+  },
+  "defaults": {
+    "channel_params": {
+      "g_max_S_cm2": 0.0009
+    }
+  },
+  "mapping": {
+    "current": "ik",
+    "impl_name": {
+      "common": "Kir2p3_MA25_BC"
+    },
+    "gate_names": {
+      "common": [
+        "d"
+      ]
+    },
+    "channel_params": {
+      "g_max_S_cm2": {
+        "neuron": "gkbar",
+        "braincell": "g_max"
+      }
+    }
+  },
+  "templates": [
+    "../../templates/vinit_celsius.json",
+    "../../templates/dc.json",
+    "../../templates/ac.json"
+  ]
+}

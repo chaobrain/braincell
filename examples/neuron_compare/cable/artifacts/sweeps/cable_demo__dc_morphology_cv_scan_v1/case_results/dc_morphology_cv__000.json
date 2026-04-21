@@ -1,0 +1,384 @@
+{
+  "alignment": {
+    "braincell_labels": [
+      {
+        "branch_id": 0,
+        "branch_name": "soma",
+        "branch_type": "soma",
+        "canonical_label": "soma[0]:cv0",
+        "canonical_name": "soma[0]",
+        "compartment_index": 0,
+        "dist": 1.0,
+        "local_index": 0,
+        "prox": 0.0
+      },
+      {
+        "branch_id": 1,
+        "branch_name": "basal_dendrite_0",
+        "branch_type": "basal_dendrite",
+        "canonical_label": "dend[0]:cv0",
+        "canonical_name": "dend[0]",
+        "compartment_index": 1,
+        "dist": 1.0,
+        "local_index": 0,
+        "prox": 0.0
+      }
+    ],
+    "branch_pairs": [
+      {
+        "braincell_branch_id": 0,
+        "braincell_branch_name": "soma",
+        "braincell_branch_type": "soma",
+        "braincell_canonical_name": "soma[0]",
+        "child_attach_diff": 0.0,
+        "length_diff_um": 0.0,
+        "match_score": 0.0,
+        "neuron_canonical_name": "soma[0]",
+        "neuron_section_index": 0,
+        "neuron_section_name": "soma[0]",
+        "neuron_section_type": "soma",
+        "parent_attach_diff": 0.0,
+        "subtree_signature": [
+          "soma",
+          3.0,
+          5.5,
+          1,
+          1,
+          [
+            "dend"
+          ],
+          [
+            [
+              "dend",
+              2.5,
+              2.5,
+              1,
+              0,
+              [],
+              []
+            ]
+          ]
+        ],
+        "subtree_total_length_diff_um": 0.0
+      },
+      {
+        "braincell_branch_id": 1,
+        "braincell_branch_name": "basal_dendrite_0",
+        "braincell_branch_type": "basal_dendrite",
+        "braincell_canonical_name": "dend[0]",
+        "child_attach_diff": 0.0,
+        "length_diff_um": 0.0,
+        "match_score": 0.0,
+        "neuron_canonical_name": "dend[0]",
+        "neuron_section_index": 1,
+        "neuron_section_name": "dend[0]",
+        "neuron_section_type": "basal_dendrite",
+        "parent_attach_diff": 0.0,
+        "subtree_signature": [
+          "dend",
+          2.5,
+          2.5,
+          1,
+          0,
+          [],
+          []
+        ],
+        "subtree_total_length_diff_um": 0.0
+      }
+    ],
+    "compartment_count": 2,
+    "compartment_pairs": [
+      {
+        "braincell_branch_id": 0,
+        "braincell_canonical_label": "soma[0]:cv0",
+        "braincell_canonical_name": "soma[0]",
+        "braincell_compartment_index": 0,
+        "local_index": 0,
+        "neuron_canonical_label": "soma[0]:seg0",
+        "neuron_canonical_name": "soma[0]",
+        "neuron_compartment_index": 0,
+        "neuron_section_index": 0
+      },
+      {
+        "braincell_branch_id": 1,
+        "braincell_canonical_label": "dend[0]:cv0",
+        "braincell_canonical_name": "dend[0]",
+        "braincell_compartment_index": 1,
+        "local_index": 0,
+        "neuron_canonical_label": "dend[0]:seg0",
+        "neuron_canonical_name": "dend[0]",
+        "neuron_compartment_index": 1,
+        "neuron_section_index": 1
+      }
+    ],
+    "neuron_labels": [
+      {
+        "canonical_label": "soma[0]:seg0",
+        "canonical_name": "soma[0]",
+        "compartment_index": 0,
+        "local_index": 0,
+        "section_index": 0,
+        "section_name": "soma[0]",
+        "x": 0.5
+      },
+      {
+        "canonical_label": "dend[0]:seg0",
+        "canonical_name": "dend[0]",
+        "compartment_index": 1,
+        "local_index": 0,
+        "section_index": 1,
+        "section_name": "dend[0]",
+        "x": 0.5
+      }
+    ],
+    "stimulus_target_pair": {
+      "braincell_branch_id": 0,
+      "braincell_branch_name": "soma",
+      "braincell_canonical_name": "soma[0]",
+      "braincell_compartment_index": 0,
+      "local_index": 0,
+      "neuron_canonical_name": "soma[0]",
+      "neuron_compartment_index": 0,
+      "neuron_section_index": 0,
+      "neuron_section_name": "soma[0]"
+    }
+  },
+  "braincell": {
+    "branch_order": [
+      {
+        "branch_id": 0,
+        "branch_name": "soma",
+        "branch_type": "soma"
+      },
+      {
+        "branch_id": 1,
+        "branch_name": "basal_dendrite_0",
+        "branch_type": "basal_dendrite"
+      }
+    ],
+    "voltage_mV": [
+      [
+        -64.99999999999423,
+        -64.99999999999424
+      ],
+      [
+        -64.99999999998846,
+        -64.99999999998847
+      ],
+      [
+        -64.99999999998269,
+        -64.9999999999827
+      ],
+      [
+        -64.99999999997692,
+        -64.99999999997694
+      ],
+      [
+        -64.99999999997117,
+        -64.99999999997118
+      ],
+      [
+        -46.26695027765798,
+        -46.29734209675072
+      ],
+      [
+        -27.54282908412014,
+        -27.57325572447509
+      ],
+      [
+        -8.81871812039747,
+        -8.849144800648688
+      ],
+      [
+        9.905392831602784,
+        9.874966151305859
+      ],
+      [
+        28.629503783587946,
+        28.599077103290973
+      ],
+      [
+        47.35361473557144,
+        47.32318805527447
+      ],
+      [
+        66.07772568755327,
+        66.0472990072563
+      ],
+      [
+        84.80183663953343,
+        84.77140995923646
+      ],
+      [
+        103.52594759151194,
+        103.49552091121498
+      ],
+      [
+        122.25005854348879,
+        122.21963186319184
+      ],
+      [
+        122.24111977315654,
+        122.24108491195231
+      ],
+      [
+        122.24110953159798,
+        122.24110949165598
+      ],
+      [
+        122.24110951985294,
+        122.2411095198072
+      ],
+      [
+        122.24110951982867,
+        122.24110951982864
+      ],
+      [
+        122.24110951981781,
+        122.24110951981784
+      ]
+    ]
+  },
+  "case_id": "dc_morphology_cv__000",
+  "metrics": {
+    "overall": {
+      "mae": 3.8295278059763406e-11,
+      "max_abs": 1.1074519079556921e-10,
+      "rel_mae_pct": 5.1704357240089536e-11,
+      "rmse": 5.022569507402316e-11
+    },
+    "per_compartment": [
+      {
+        "compartment_index": 0,
+        "mae": 3.830278316740987e-11,
+        "max_abs": 1.1074519079556921e-10,
+        "rel_mae_pct": 5.171236466680408e-11,
+        "rmse": 5.023378312565921e-11
+      },
+      {
+        "compartment_index": 1,
+        "mae": 3.8287772952116936e-11,
+        "max_abs": 1.1071676908613881e-10,
+        "rel_mae_pct": 5.169634915507125e-11,
+        "rmse": 5.021760571972488e-11
+      }
+    ]
+  },
+  "neuron": {
+    "section_order": [
+      {
+        "section_index": 0,
+        "section_name": "soma[0]"
+      },
+      {
+        "section_index": 1,
+        "section_name": "dend[0]"
+      }
+    ],
+    "voltage_mV": [
+      [
+        -65.0,
+        -65.0
+      ],
+      [
+        -65.0,
+        -65.0
+      ],
+      [
+        -65.0,
+        -65.0
+      ],
+      [
+        -65.0,
+        -65.0
+      ],
+      [
+        -65.0,
+        -65.0
+      ],
+      [
+        -46.26695027768575,
+        -46.29734209677848
+      ],
+      [
+        -27.542829084145186,
+        -27.57325572450013
+      ],
+      [
+        -8.818718120418133,
+        -8.84914480066935
+      ],
+      [
+        9.905392831588163,
+        9.874966151291236
+      ],
+      [
+        28.629503783581033,
+        28.59907710328405
+      ],
+      [
+        47.35361473557389,
+        47.32318805527691
+      ],
+      [
+        66.07772568756675,
+        66.04729900726977
+      ],
+      [
+        84.80183663955961,
+        84.77140995926263
+      ],
+      [
+        103.52594759155247,
+        103.49552091125548
+      ],
+      [
+        122.25005854354532,
+        122.21963186324834
+      ],
+      [
+        122.24111977322393,
+        122.24108491201967
+      ],
+      [
+        122.24110953167622,
+        122.24110949173418
+      ],
+      [
+        122.24110951994201,
+        122.24110951989626
+      ],
+      [
+        122.24110951992857,
+        122.24110951992851
+      ],
+      [
+        122.24110951992856,
+        122.24110951992856
+      ]
+    ]
+  },
+  "template_family": "multi_compartment_cable",
+  "time_ms": [
+    0.0,
+    0.1,
+    0.2,
+    0.30000000000000004,
+    0.4,
+    0.5,
+    0.6000000000000001,
+    0.7000000000000001,
+    0.8,
+    0.9,
+    1.0,
+    1.1,
+    1.2000000000000002,
+    1.3,
+    1.4000000000000001,
+    1.5,
+    1.6,
+    1.7000000000000002,
+    1.8,
+    1.9000000000000001
+  ]
+}

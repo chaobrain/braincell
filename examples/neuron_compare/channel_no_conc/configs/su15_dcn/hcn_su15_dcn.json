@@ -1,0 +1,40 @@
+{
+  "meta": {
+    "label": "DCN HCN SU15"
+  },
+  "identity": {
+    "mod_dir": "/home/swl/braincell/examples/neuron_compare/Cerebellum_mod/DCN/channel"
+  },
+  "defaults": {
+    "channel_params": {
+      "g_max_S_cm2": 0.00001,
+      "E_mV": -45.0
+    }
+  },
+  "mapping": {
+    "current": "ih",
+    "impl_name": {
+      "common": "HCN_SU15_DCN"
+    },
+    "gate_names": {
+      "common": [
+        "m"
+      ]
+    },
+    "channel_params": {
+      "g_max_S_cm2": {
+        "neuron": "gbar",
+        "braincell": "g_max"
+      },
+      "E_mV": {
+        "neuron": "eh",
+        "braincell": "E"
+      }
+    }
+  },
+  "templates": [
+    "../../templates/vinit_celsius.json",
+    "../../templates/dc.json",
+    "../../templates/ac.json"
+  ]
+}

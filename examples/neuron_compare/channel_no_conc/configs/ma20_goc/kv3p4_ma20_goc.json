@@ -1,0 +1,36 @@
+{
+  "meta": {
+    "label": "GoC Kv3p4 MA20"
+  },
+  "identity": {
+    "mod_dir": "/home/swl/braincell/examples/neuron_compare/Cerebellum_mod/GoC/channel"
+  },
+  "defaults": {
+    "channel_params": {
+      "g_max_S_cm2": 0.004
+    }
+  },
+  "mapping": {
+    "current": "ik",
+    "impl_name": {
+      "common": "Kv3p4_MA20_GoC"
+    },
+    "gate_names": {
+      "common": [
+        "m",
+        "h"
+      ]
+    },
+    "channel_params": {
+      "g_max_S_cm2": {
+        "neuron": "gkbar",
+        "braincell": "g_max"
+      }
+    }
+  },
+  "templates": [
+    "../../templates/vinit_celsius.json",
+    "../../templates/dc.json",
+    "../../templates/ac.json"
+  ]
+}

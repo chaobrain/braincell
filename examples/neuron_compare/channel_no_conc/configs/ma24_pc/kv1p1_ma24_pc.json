@@ -1,0 +1,30 @@
+{
+  "meta": {
+    "label": "PC Kv1p1 MA24"
+  },
+  "identity": {
+    "mod_dir": "/home/swl/braincell/examples/neuron_compare/Cerebellum_mod/PC/channel"
+  },
+  "mapping": {
+    "current": "ik",
+    "impl_name": {
+      "common": "Kv1p1_MA24_PC"
+    },
+    "gate_names": {
+      "common": [
+        "n"
+      ]
+    },
+    "channel_params": {
+      "g_max_S_cm2": {
+        "neuron": "gbar",
+        "braincell": "g_max"
+      }
+    }
+  },
+  "templates": [
+    "../../templates/vinit_celsius.json",
+    "../../templates/dc.json",
+    "../../templates/ac.json"
+  ]
+}

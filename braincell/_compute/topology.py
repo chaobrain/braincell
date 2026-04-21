@@ -485,15 +485,26 @@ def _locate_branch_cv_by_x(
     x: float,
     epsilon: float,
 ) -> int:
+    """Return the CV id whose normalised half-open interval contains ``x``.
+
+    Boundary cases: ``x <= 0 + epsilon`` snaps to ``ids[0]``;
+    ``x >= 1 - epsilon`` snaps to ``ids[-1]``. Interior ``x`` uses
+    ``[prox, dist)``. Raises :class:`ValueError` if the CV list has a
+    gap and ``x`` does not fall inside any tile — previously the
+    function silently returned ``ids[-1]``.
+    """
     if x <= 0.0 + epsilon:
         return ids[0]
     if x >= 1.0 - epsilon:
         return ids[-1]
     for cv_id in ids:
         cv = cvs[cv_id]
-        if x >= cv.prox - epsilon and x < cv.dist - epsilon:
+        if float(cv.prox) - epsilon <= x < float(cv.dist) - epsilon:
             return cv_id
-    return ids[-1]
+    raise ValueError(
+        f"_locate_branch_cv_by_x: x={x!r} lies in no CV interval among ids {list(ids)!r}. "
+        "This usually means the CV tiling of this branch has a gap or overlap."
+    )
 
 
 def _entry_half_for_walk(attach_x: float) -> str:

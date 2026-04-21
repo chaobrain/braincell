@@ -21,7 +21,9 @@ import brainunit as u
 import numpy as np
 
 from braincell._compute.topology import (
+    _EPS_PARAM,
     _compute_peel_levels,
+    _locate_branch_cv_by_x,
     build_point_tree,
 )
 from braincell._cv import CVPerBranch
@@ -116,6 +118,39 @@ class ComputePeelLevels(unittest.TestCase):
                 point_children=point_children,
             )
         self.assertIn("cycle", str(ctx.exception).lower())
+
+
+class _FakeCV:
+
+    def __init__(self, id_: int, prox: float, dist: float) -> None:
+        self.id = id_
+        self.prox = prox
+        self.dist = dist
+
+
+class LocateBranchCVByX(unittest.TestCase):
+
+    def _cvs(self, tiles):
+        return tuple(_FakeCV(i, p, d) for i, (p, d) in enumerate(tiles))
+
+    def test_interior_x_lands_in_matching_cv(self) -> None:
+        cvs = self._cvs([(0.0, 0.3), (0.3, 0.7), (0.7, 1.0)])
+        ids = (0, 1, 2)
+        got = _locate_branch_cv_by_x(ids, cvs, x=0.5, epsilon=_EPS_PARAM)
+        self.assertEqual(got, 1)
+
+    def test_x_near_one_returns_last_cv(self) -> None:
+        cvs = self._cvs([(0.0, 0.3), (0.3, 0.7), (0.7, 1.0)])
+        ids = (0, 1, 2)
+        got = _locate_branch_cv_by_x(ids, cvs, x=0.999, epsilon=_EPS_PARAM)
+        self.assertEqual(got, 2)
+
+    def test_x_in_gap_between_tiles_raises(self) -> None:
+        cvs = self._cvs([(0.0, 0.4), (0.6, 1.0)])
+        ids = (0, 1)
+        with self.assertRaises(ValueError) as ctx:
+            _locate_branch_cv_by_x(ids, cvs, x=0.5, epsilon=_EPS_PARAM)
+        self.assertIn("0.5", str(ctx.exception))
 
 
 if __name__ == "__main__":

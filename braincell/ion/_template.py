@@ -1,7 +1,6 @@
 # -*- coding: utf-8 -*-
 
 
-
 """Shared ion-side templates.
 
 This module contains mixins used by concrete ion classes such as
@@ -27,7 +26,7 @@ __all__ = [
 ]
 
 
-class FixedIon:
+class FixedIon(brainstate.mixin.Mixin):
     """Helper mixin for ions with fixed ``Ci/Co/E`` state."""
 
     def _init_fixed_ion(self, *, Ci=None, Co=None, E=None, valence=None):
@@ -58,7 +57,7 @@ class FixedIon:
         )
 
 
-class InitNernstIon:
+class InitNernstIon(brainstate.mixin.Mixin):
     """Helper mixin for ions with fixed ``Ci/Co`` and stored Nernst ``E``.
 
     ``E`` is stored as a regular attribute and refreshed during
@@ -95,8 +94,8 @@ class InitNernstIon:
         valence = self.valence.value if isinstance(self.valence, brainstate.State) else self.valence
         temp = self.temp.value if isinstance(self.temp, brainstate.State) else self.temp
         self.E = (
-            u.gas_constant * temp / (valence * u.faraday_constant)
-        ) * u.math.log(Co / Ci)
+                     u.gas_constant * temp / (valence * u.faraday_constant)
+                 ) * u.math.log(Co / Ci)
 
     def _ion_init_state_hook(self, V, batch_size: int = None):
         _ = (V, batch_size)
@@ -107,7 +106,7 @@ class InitNernstIon:
         self._update_reversal()
 
 
-class DynamicNernstIon:
+class DynamicNernstIon(brainstate.mixin.Mixin):
     """Helper mixin for ions with dynamic ``Ci`` and computed Nernst ``E``.
 
     ``Ci`` is created as a :class:`DiffEqState` during ``init_state()`` and is

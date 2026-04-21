@@ -162,6 +162,8 @@ from braincell.quad import (
     ssprk3_step,
 )
 
+_FLOAT_DTYPE = jnp.asarray(0.0).dtype
+
 
 class _LinearDecay(brainstate.nn.Module, DiffEqModule):
     """Scalar linear ODE ``dx/dt = -x/tau`` for analytical comparisons."""
@@ -169,8 +171,8 @@ class _LinearDecay(brainstate.nn.Module, DiffEqModule):
     def __init__(self, x0=1.0, tau_ms=10.0, shape=(3,)):
         super().__init__()
         self.tau = tau_ms * u.ms
-        self.x = DiffEqState(jnp.full(shape, x0, dtype=jnp.float32) * u.mV)
-        self.aux = brainstate.ShortTermState(jnp.zeros(shape, dtype=jnp.float32))
+        self.x = DiffEqState(jnp.full(shape, x0, dtype=_FLOAT_DTYPE) * u.mV)
+        self.aux = brainstate.ShortTermState(jnp.zeros(shape, dtype=_FLOAT_DTYPE))
         self.pre_calls = 0
         self.post_calls = 0
 

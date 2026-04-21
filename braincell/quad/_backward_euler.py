@@ -44,17 +44,18 @@ def _backward_euler(f, y0, t, dt, args=()):
         y1: updated state after one backward Euler step
         aux: optional auxiliary output from f
     """
-    dt = u.get_magnitude(dt)
+    dtype = y0.dtype
+    dt = jnp.asarray(u.get_magnitude(dt), dtype=dtype)
 
     # Compute Jacobian A = df/dy and function value df = f(y0)
     A, df, aux = jacrev_last_dim(lambda y: f(t, y, *args), y0, has_aux=True)
 
     # Flatten batch dimensions
-    A = A.reshape((-1, A.shape[-2], A.shape[-1]))  # (B, M, M)
-    df = df.reshape((-1, df.shape[-1]))  # (B, M)
+    A = jnp.asarray(A, dtype=dtype).reshape((-1, A.shape[-2], A.shape[-1]))  # (B, M, M)
+    df = jnp.asarray(df, dtype=dtype).reshape((-1, df.shape[-1]))  # (B, M)
 
     n = y0.shape[-1]
-    I = jnp.eye(n)
+    I = jnp.eye(n, dtype=dtype)
 
     # Solve linear system: (I - dt * A) @ Δy = dt * df
     LHS = I - dt * A

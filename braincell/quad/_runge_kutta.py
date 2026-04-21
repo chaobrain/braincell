@@ -19,6 +19,7 @@ from typing import Sequence
 import brainstate
 import brainunit as u
 import jax
+import jax.numpy as jnp
 
 from braincell._misc import set_module_as
 from braincell._typing import T, DT
@@ -71,6 +72,21 @@ class ButcherTableau:
     C: Sequence  # The C vector in the Butcher tableau.
 
 
+def _array_dtype(value) -> jnp.dtype:
+    return jnp.asarray(u.get_magnitude(value)).dtype
+
+
+def _cast_like(value, like):
+    dtype = _array_dtype(like)
+    if isinstance(value, u.Quantity):
+        unit = u.get_unit(value)
+        return jnp.asarray(value.to_decimal(unit), dtype=dtype) * unit
+    return jnp.asarray(value, dtype=dtype)
+
+
+def _cast_scalar_like(value, like):
+    return jnp.asarray(value, dtype=_array_dtype(like))
+
 def _rk_update(
     coeff: Sequence,
     st: brainstate.State,
@@ -81,11 +97,11 @@ def _rk_update(
     assert len(coeff) == len(ks), 'The number of coefficients must be equal to the number of ks.'
 
     def _step(y0_, *k_):
-        kds = [c_ * k_ for c_, k_ in zip(coeff, k_)]
+        kds = [_cast_scalar_like(c_, k_leaf) * k_leaf for c_, k_leaf in zip(coeff, k_)]
         update = kds[0]
         for kd in kds[1:]:
             update += kd
-        return y0_ + update * dt
+        return y0_ + update * _cast_like(dt, y0_)
 
     st.value = jax.tree.map(_step, y0, *ks, is_leaf=u.math.is_quantity)
 
@@ -105,7 +121,7 @@ def _general_rk_step(
 
     # k1: first derivative step
     assert len(tableau.A[0]) == 0, f'The first row of A must be empty. Got {tableau.A[0]}'
-    with brainstate.environ.context(t=t + tableau.C[0] * dt), brainstate.StateTraceStack() as trace:
+    with brainstate.environ.context(t=t), brainstate.StateTraceStack() as trace:
         # compute derivative
         target.compute_derivative(*args)
 
@@ -124,9 +140,15 @@ def _general_rk_step(
                     raise ValueError(f'State {st} is not for integral.')
         ks.append(k1hs)
 
+    time_like = y0[0] if y0 else dt
+    t_like = _cast_like(t, time_like)
+    dt_like = _cast_like(dt, time_like)
+
     # intermediate steps
     for i in range(1, len(tableau.C)):
-        with brainstate.environ.context(t=t + tableau.C[i] * dt), brainstate.check_state_value_tree():
+        with brainstate.environ.context(
+            t=t_like + _cast_scalar_like(tableau.C[i], time_like) * dt_like
+        ), brainstate.check_state_value_tree():
             for st, y0_, *ks_ in zip(states, y0, *ks):
                 _rk_update(tableau.A[i], st, y0_, dt, *ks_)
             target.compute_derivative(*args)

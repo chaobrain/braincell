@@ -235,10 +235,10 @@ class FilterVisTest(unittest.TestCase):
         rendered = tree.vis2d(chooser=BackendChooser(backends=(FakeBackend(),)), backend="fake")
 
         self.assertEqual(rendered.dimensionality, "2d")
-        self.assertEqual(rendered.layout, "stem")
+        self.assertEqual(rendered.layout, "fan")
         self.assertEqual(rendered.shape, "frustum")
         self.assertIsNotNone(rendered.scene)
-        self.assertEqual(rendered.scene.layout, "stem")
+        self.assertEqual(rendered.scene.layout, "fan")
         self.assertEqual(rendered.scene.shape, "frustum")
         self.assertEqual(rendered.scene.projection_plane, None)
         self.assertEqual(len(rendered.scene.polygons), 2)

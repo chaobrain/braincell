@@ -58,18 +58,19 @@ def power_iteration_expm(A, num_steps=20, method='scipy'):
         raise ValueError('Unsupported method "{}"'.format(method))
 
 def _exponential_euler(f, y0, t, dt, args=()):
-    dt = u.get_magnitude(dt)
+    dtype = y0.dtype
+    dt = jnp.asarray(u.get_magnitude(dt), dtype=dtype)
     A, df, aux = jacrev_last_dim(lambda y: f(t, y, *args), y0, has_aux=True)
 
     # reshape A from "[..., M, M]" to "[-1, M, M]"
-    A = A.reshape((-1, A.shape[-2], A.shape[-1]))
+    A = jnp.asarray(A, dtype=dtype).reshape((-1, A.shape[-2], A.shape[-1]))
 
     # reshape df from "[..., M]" to "[-1, M]"
-    df = df.reshape((-1, df.shape[-1]))
+    df = jnp.asarray(df, dtype=dtype).reshape((-1, df.shape[-1]))
 
     # Compute exp(hA) and phi(hA)
     n = y0.shape[-1]
-    I = jnp.eye(n)
+    I = jnp.eye(n, dtype=dtype)
     updates = jax.vmap(
         lambda A_, df_:
         (

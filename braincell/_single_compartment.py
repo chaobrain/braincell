@@ -18,6 +18,7 @@ from typing import Optional, Callable, Tuple, Union
 import brainstate
 import brainunit as u
 import braintools
+import jax.numpy as jnp
 
 from ._base import HHTypedNeuron, IonChannel
 from .quad import get_integrator
@@ -27,6 +28,14 @@ from ._typing import Initializer
 __all__ = [
     'SingleCompartment',
 ]
+
+
+def _cast_like(value, like):
+    dtype = jnp.asarray(u.get_magnitude(like)).dtype
+    if isinstance(value, u.Quantity):
+        unit = u.get_unit(value)
+        return jnp.asarray(value.to_decimal(unit), dtype=dtype) * unit
+    return jnp.asarray(value, dtype=dtype)
 
 
 class SingleCompartment(HHTypedNeuron):
@@ -296,12 +305,14 @@ class SingleCompartment(HHTypedNeuron):
         spike : array-like
             An array indicating whether a spike occurred (1) or not (0) for each neuron.
         """
-        denom = 20.0 * u.mV
+        denom = _cast_like(20.0 * u.mV, next_V)
+        V_th = _cast_like(self.V_th, next_V)
         return (
-            self.spk_fun((next_V - self.V_th) / denom) *
-            self.spk_fun((self.V_th - last_V) / denom)
+            self.spk_fun((next_V - V_th) / denom) *
+            self.spk_fun((V_th - last_V) / denom)
         )
 
     def soma_spike(self):
-        denom = 20.0 * u.mV
-        return self.spk_fun((self.V.value - self.V_th) / denom)
+        denom = _cast_like(20.0 * u.mV, self.V.value)
+        V_th = _cast_like(self.V_th, self.V.value)
+        return self.spk_fun((self.V.value - V_th) / denom)

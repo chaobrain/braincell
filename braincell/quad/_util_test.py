@@ -31,6 +31,8 @@ from braincell import (
     DiffEqState,
     IndependentIntegration,
 )
+
+_FLOAT_DTYPE = jnp.asarray(0.0).dtype
 from braincell.quad._util import (
     apply_standard_solver_step,
     jacrev_last_dim,
@@ -47,9 +49,9 @@ class _LinearDecay(brainstate.nn.Module, DiffEqModule):
     def __init__(self, shape=(2,)):
         super().__init__()
         self.tau = 10.0 * u.ms
-        self.x = DiffEqState(jnp.ones(shape, dtype=jnp.float32) * u.mV)
+        self.x = DiffEqState(jnp.ones(shape, dtype=_FLOAT_DTYPE) * u.mV)
         # A non-DiffEqState should be ignored by the integrator.
-        self.aux = brainstate.ShortTermState(jnp.zeros(shape, dtype=jnp.float32))
+        self.aux = brainstate.ShortTermState(jnp.zeros(shape, dtype=_FLOAT_DTYPE))
         self.pre_calls = 0
         self.post_calls = 0
 
@@ -67,7 +69,7 @@ class _IndepSub(brainstate.nn.Module, DiffEqModule, IndependentIntegration):
     def __init__(self):
         IndependentIntegration.__init__(self, "euler")
         brainstate.nn.Module.__init__(self)
-        self.y = DiffEqState(jnp.ones(2, dtype=jnp.float32) * u.mV)
+        self.y = DiffEqState(jnp.ones(2, dtype=_FLOAT_DTYPE) * u.mV)
 
     def compute_derivative(self, *args, **kwargs):
         self.y.derivative = -self.y.value / (5. * u.ms)
@@ -76,7 +78,7 @@ class _IndepSub(brainstate.nn.Module, DiffEqModule, IndependentIntegration):
 class _OuterWithIndep(brainstate.nn.Module, DiffEqModule):
     def __init__(self):
         super().__init__()
-        self.x = DiffEqState(jnp.ones(2, dtype=jnp.float32) * u.mV)
+        self.x = DiffEqState(jnp.ones(2, dtype=_FLOAT_DTYPE) * u.mV)
         self.sub = _IndepSub()
 
     def compute_derivative(self, *args, **kwargs):

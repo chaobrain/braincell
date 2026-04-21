@@ -18,8 +18,9 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from braincell.cv._cv import CV
-from braincell.cv._geo import EPSILON
+from braincell.cv import CV
+
+_EPS_PARAM = 1e-9   # normalized-x tolerance (formerly imported from cv._geo)
 from braincell.morph.morphology import Morphology
 
 __all__ = [
@@ -277,7 +278,7 @@ def build_point_tree(
                 cvs=cvs,
             )
             attach_x = float(edge.child_x)
-            ordered_cv_ids = branch_cv_ids if attach_x <= EPSILON else tuple(reversed(branch_cv_ids))
+            ordered_cv_ids = branch_cv_ids if attach_x <= _EPS_PARAM else tuple(reversed(branch_cv_ids))
 
         first_cv_id = ordered_cv_ids[0]
         add_point_role(
@@ -464,15 +465,15 @@ def _resolve_attachment_point(
     cv_ids_by_branch: tuple[tuple[int, ...], ...],
     cvs: tuple[CV, ...],
 ) -> int:
-    if parent_x <= 0.0 + EPSILON:
+    if parent_x <= 0.0 + _EPS_PARAM:
         return branch_endpoint_point_id_by_x[(parent_branch_id, 0.0)]
-    if parent_x >= 1.0 - EPSILON:
+    if parent_x >= 1.0 - _EPS_PARAM:
         return branch_endpoint_point_id_by_x[(parent_branch_id, 1.0)]
     cv_id = _locate_branch_cv_by_x(
         cv_ids_by_branch[parent_branch_id],
         cvs,
         x=float(parent_x),
-        epsilon=EPSILON,
+        epsilon=_EPS_PARAM,
     )
     return int(cv_midpoint_point_id[cv_id])
 
@@ -496,19 +497,19 @@ def _locate_branch_cv_by_x(
 
 
 def _entry_half_for_walk(attach_x: float) -> str:
-    return "prox" if attach_x <= EPSILON else "dist"
+    return "prox" if attach_x <= _EPS_PARAM else "dist"
 
 
 def _exit_half_for_walk(attach_x: float) -> str:
-    return "dist" if attach_x <= EPSILON else "prox"
+    return "dist" if attach_x <= _EPS_PARAM else "prox"
 
 
 def _entry_position_for_walk(attach_x: float) -> str:
-    return "proximal" if attach_x <= EPSILON else "distal"
+    return "proximal" if attach_x <= _EPS_PARAM else "distal"
 
 
 def _exit_position_for_walk(attach_x: float) -> str:
-    return "distal" if attach_x <= EPSILON else "proximal"
+    return "distal" if attach_x <= _EPS_PARAM else "proximal"
 
 
 def _build_matrix_index_to_point_id(

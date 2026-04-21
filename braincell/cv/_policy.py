@@ -46,9 +46,9 @@ class CVPolicy(ABC):
     normalized intervals should become control volumes. The rest of the cell
     stack treats policy output as the source of truth for CV splitting.
 
-    ``Cell`` owns one policy instance. During rebuild it calls
-    :meth:`resolve_cv_bounds`, passes the result into :func:`build_cv_geo`, and
-    then applies paint/place rules on top of those intervals.
+    ``Cell`` owns one policy instance. During rebuild the CV lowering pipeline
+    calls :meth:`resolve_cv_bounds`, feeds the result into the geometry /
+    mechanism passes, and freezes the outputs into :class:`CV` records.
     """
 
     @abstractmethod

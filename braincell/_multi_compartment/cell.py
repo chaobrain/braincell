@@ -43,15 +43,11 @@ from braincell.compute._runtime import (
     mechanism_signature,
     uninstall_cell_runtime,
 )
-from braincell.cv._cv import assemble_cv
-from braincell.cv._geo import build_cv_geo
-from braincell.cv._mech import (
+from braincell.cv._cv import build_cvs
+from braincell.cv._lower import (
     PaintRule,
     PlaceRule,
-    apply_paint_rules,
-    apply_place_rules,
     default_paint_rules,
-    init_cv_mech,
     merge_paint_rules,
     merge_place_rules,
     normalize_paint_rules,
@@ -287,28 +283,11 @@ class Cell(HHTypedNeuron):
         if self._cvs_cache is not None and self._cvs_cache_key == key:
             return self._cvs_cache
 
-        cv_geo, cv_ids_by_branch = build_cv_geo(
+        cvs = build_cvs(
             self._morpho,
             policy=self._cv_policy,
             paint_rules=self._paint_rules,
-        )
-        cv_mech = init_cv_mech(len(cv_geo))
-        apply_paint_rules(
-            self._morpho,
-            cvs=cv_geo,
-            cv_ids_by_branch=cv_ids_by_branch,
-            paint_rules=self._paint_rules,
-            mechs=cv_mech,
-        )
-        apply_place_rules(
-            self._morpho,
-            cvs=cv_geo,
-            cv_ids_by_branch=cv_ids_by_branch,
             place_rules=self._place_rules,
-            mechs=cv_mech,
-        )
-        cvs = tuple(
-            assemble_cv(cv_geo=piece, mech=cv_mech[piece.id]) for piece in cv_geo
         )
         self._cvs_cache = cvs
         self._cvs_cache_key = key
@@ -328,28 +307,11 @@ class Cell(HHTypedNeuron):
         self._raise_if_initialized("init_state()")
 
         morpho = clone_morpho(self._morpho)
-        cv_geo, cv_ids_by_branch = build_cv_geo(
+        cvs = build_cvs(
             morpho,
             policy=self._cv_policy,
             paint_rules=self._paint_rules,
-        )
-        cv_mech = init_cv_mech(len(cv_geo))
-        apply_paint_rules(
-            morpho,
-            cvs=cv_geo,
-            cv_ids_by_branch=cv_ids_by_branch,
-            paint_rules=self._paint_rules,
-            mechs=cv_mech,
-        )
-        apply_place_rules(
-            morpho,
-            cvs=cv_geo,
-            cv_ids_by_branch=cv_ids_by_branch,
             place_rules=self._place_rules,
-            mechs=cv_mech,
-        )
-        cvs = tuple(
-            assemble_cv(cv_geo=piece, mech=cv_mech[piece.id]) for piece in cv_geo
         )
 
         self._morpho = morpho
@@ -380,13 +342,14 @@ class Cell(HHTypedNeuron):
         for channel in self.nodes(IonChannel, allowed_hierarchy=(1, 1)).values():
             channel.init_state(point_V, batch_size=batch_size)
 
+        dtype = brainstate.environ.dftype()
         self._axial_jax = jnp.asarray(
             build_cv_axial_operator(
                 self,
                 point_tree=self._point_tree,
                 scheduling=self._point_scheduling_unchecked(algorithm="dhs"),
             ),
-            dtype=jnp.float64,
+            dtype=dtype,
         )
 
         self._initialized = True
@@ -555,7 +518,7 @@ class Cell(HHTypedNeuron):
 
     def compute_axial_derivative(self, V):
         self._raise_if_not_initialized("compute_axial_derivative()")
-        V_decimal = jnp.asarray(V.to_decimal(u.mV), dtype=jnp.float64)
+        V_decimal = jnp.asarray(V.to_decimal(u.mV), dtype=brainstate.environ.dftype())
         axial = -jnp.matmul(V_decimal, self._axial_jax.T)
         return axial * (u.mV / u.ms)
 

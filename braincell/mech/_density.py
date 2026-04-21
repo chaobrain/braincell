@@ -40,7 +40,7 @@ via :func:`braincell.mech.get_registry().get(category, class_name)
 <braincell.mech.MechanismRegistry.get>`.
 """
 
-from typing import Any, ClassVar
+from typing import Any, ClassVar, Mapping
 
 from ._base import Mechanism
 from ._params import Params
@@ -326,7 +326,7 @@ class Channel(Density):
         'IL'
     """
 
-    __slots__ = ()
+    __slots__ = ("ion_name", "ion_names")
     category: ClassVar[str] = _CHANNEL
 
     def __init__(
@@ -336,6 +336,8 @@ class Channel(Density):
         *,
         name: str | None = None,
         coverage_area_fraction: float = 1.0,
+        ion_name: str | None = None,
+        ion_names: Mapping[str, str] | None = None,
         **params: Any,
     ) -> None:
         super().__init__(
@@ -344,6 +346,43 @@ class Channel(Density):
             name=name,
             coverage_area_fraction=coverage_area_fraction,
         )
+        if ion_name is not None and (not isinstance(ion_name, str) or not ion_name):
+            raise TypeError(
+                f"Channel.ion_name must be a non-empty string or None, got {ion_name!r}."
+            )
+        normalized_ion_names = _normalize_ion_names(ion_names)
+        if ion_name is not None and normalized_ion_names is not None:
+            raise ValueError("Channel cannot define both ion_name and ion_names.")
+        object.__setattr__(self, "ion_name", ion_name)
+        object.__setattr__(self, "ion_names", normalized_ion_names)
+
+    def __eq__(self, other: object) -> bool:
+        result = super().__eq__(other)
+        if result is NotImplemented:
+            return result
+        return result and self.ion_name == other.ion_name and self.ion_names == other.ion_names
+
+    def __hash__(self) -> int:
+        return hash((super().__hash__(), self.ion_name, self.ion_names))
+
+    def __repr__(self) -> str:
+        base = super().__repr__()
+        base = base[:-1]
+        return (
+            f"{base}, "
+            f"ion_name={self.ion_name!r}, "
+            f"ion_names={dict(self.ion_names) if self.ion_names is not None else None!r})"
+        )
+
+    def _replace(self, **updates: Any) -> "Channel":
+        new = super()._replace(**updates)
+        object.__setattr__(new, "ion_name", updates.get("ion_name", self.ion_name))
+        object.__setattr__(
+            new,
+            "ion_names",
+            _normalize_ion_names(updates["ion_names"]) if "ion_names" in updates else self.ion_names,
+        )
+        return new
 
 
 class Ion(Density):
@@ -376,7 +415,8 @@ class Ion(Density):
 
         >>> import braincell
         >>> from braincell.mech import Ion
-        >>> Ion("SodiumFixed", c0=12.0).category
+        >>> import brainunit as u
+        >>> Ion("SodiumFixed", Ci=12.0 * u.mM).category
         'ion'
 
         >>> # Class-object form
@@ -440,3 +480,18 @@ def _resolve_class_name(category: str, value: Any) -> str:
         f"class_name must be a string or class, got "
         f"{type(value).__name__!r}."
     )
+
+
+def _normalize_ion_names(value: Mapping[str, str] | None) -> tuple[tuple[str, str], ...] | None:
+    if value is None:
+        return None
+    if not isinstance(value, Mapping):
+        raise TypeError(f"Channel.ion_names must be a mapping or None, got {type(value).__name__!r}.")
+    normalized: list[tuple[str, str]] = []
+    for key, item in value.items():
+        if not isinstance(key, str) or not key:
+            raise TypeError(f"Channel.ion_names keys must be non-empty strings, got {key!r}.")
+        if not isinstance(item, str) or not item:
+            raise TypeError(f"Channel.ion_names values must be non-empty strings, got {item!r}.")
+        normalized.append((key, item))
+    return tuple(sorted(normalized))

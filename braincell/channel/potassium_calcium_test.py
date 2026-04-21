@@ -64,6 +64,9 @@ class KCaChannelBaseTest(unittest.TestCase):
         self.assertIn(Potassium, root.__args__)
         self.assertIn(Calcium, root.__args__)
 
+    def test_current_owner_type_is_potassium(self) -> None:
+        self.assertIs(KCaChannel.current_owner_type, Potassium)
+
     def test_base_current_raises_not_implemented(self) -> None:
         class _Bare(KCaChannel):
             pass

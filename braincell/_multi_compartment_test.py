@@ -253,7 +253,7 @@ class CellFacadeTest(unittest.TestCase):
         cell.paint(
             BranchSlice(branch_index=0, prox=0.0, dist=0.5),
             braincell.mech.Channel("leaky", g_max=4.0 * (u.mS / u.cm ** 2)),
-            braincell.mech.Ion("SodiumFixed", c0=12.0),
+            braincell.mech.Ion("SodiumFixed", Ci=12.0 * u.mM),
         )
         cv0 = cell.cvs[0]
         self.assertEqual(len(cv0.density_mech), 2)
@@ -261,7 +261,7 @@ class CellFacadeTest(unittest.TestCase):
         ion = next(mech for mech in cv0.density_mech if mech.category == "ion")
         gmax = channel.params["g_max"]
         self.assertAlmostEqual(float(gmax.to_decimal(u.mS / u.cm ** 2)), 2.0, places=12)
-        self.assertEqual(ion.params["c0"], 12.0)
+        self.assertEqual(ion.params["Ci"], 12.0 * u.mM)
 
     def test_channel_spec_paint_scales_by_area_fraction(self) -> None:
         tree = Morphology.from_root(
@@ -356,6 +356,9 @@ class CellFacadeTest(unittest.TestCase):
             cv0.r_axial_prox.to_decimal(u.ohm) + cv0.r_axial_dist.to_decimal(u.ohm),
             places=9,
         )
+        self.assertAlmostEqual(cv0.radius_prox.to_decimal(u.um), 1.0, places=9)
+        self.assertAlmostEqual(cv0.radius_dist.to_decimal(u.um), 3.0, places=9)
+        self.assertAlmostEqual(cv0.diam_mid.to_decimal(u.um), 4.5, places=9)
 
     def test_zero_length_radius_jump_contributes_area_but_not_axial_resistance(self) -> None:
         soma = Branch.from_points(

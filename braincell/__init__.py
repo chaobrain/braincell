@@ -32,7 +32,6 @@ from ._base import (
 from ._multi_compartment import (
     Cell,
     RunResult,
-    RunnableCell,
 )
 from ._single_compartment import (
     SingleCompartment,
@@ -104,7 +103,6 @@ __all__ = [
     "MaxCVLen",
     "Morphology",
     "RunResult",
-    "RunnableCell",
     "SingleCompartment",
     "Soma",
     "channel",

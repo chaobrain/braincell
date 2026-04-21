@@ -36,6 +36,8 @@ from braincell.quad._protocol import (
     IndependentIntegration,
 )
 
+_FLOAT_DTYPE = jnp.asarray(0.0).dtype
+
 
 class DiffEqStateTest(unittest.TestCase):
 
@@ -53,10 +55,10 @@ class DiffEqStateTest(unittest.TestCase):
         np.testing.assert_array_equal(st.diffusion, 2 * d)
 
     def test_state_value_roundtrip(self):
-        v = jnp.arange(4, dtype=jnp.float32) * u.mV
+        v = jnp.arange(4, dtype=_FLOAT_DTYPE) * u.mV
         st = DiffEqState(v)
         np.testing.assert_array_equal(
-            st.value.to_decimal(u.mV), np.arange(4, dtype=np.float32)
+            st.value.to_decimal(u.mV), np.arange(4)
         )
 
 
@@ -87,7 +89,7 @@ class IndependentIntegrationTest(unittest.TestCase):
             def __init__(self):
                 IndependentIntegration.__init__(self, solver)
                 brainstate.nn.Module.__init__(self)
-                self.y = DiffEqState(jnp.ones(2, dtype=jnp.float32) * u.mV)
+                self.y = DiffEqState(jnp.ones(2, dtype=_FLOAT_DTYPE) * u.mV)
 
             def compute_derivative(self, *args, **kwargs):
                 self.y.derivative = -self.y.value / (5. * u.ms)

@@ -70,6 +70,14 @@ from braincell.quad import _staggered as voltage_solver, get_integrator
 __all__ = ["Cell", "RunResult"]
 
 
+def _cast_like(value, like):
+    dtype = jnp.asarray(u.get_magnitude(like)).dtype
+    if isinstance(value, u.Quantity):
+        unit = u.get_unit(value)
+        return jnp.asarray(value.to_decimal(unit), dtype=dtype) * unit
+    return jnp.asarray(value, dtype=dtype)
+
+
 @jax.tree_util.register_dataclass
 @dataclass(frozen=True)
 class RunResult:
@@ -525,10 +533,11 @@ class Cell(HHTypedNeuron):
         return self._resolve_V_initializer()
 
     def get_spike(self, last_V, next_V):
-        denom = 20.0 * u.mV
+        denom = _cast_like(20.0 * u.mV, next_V)
+        V_th = _cast_like(self.V_th, next_V)
         return (
-            self._spk_fun((next_V - self.V_th) / denom) *
-            self._spk_fun((self.V_th - last_V) / denom)
+            self._spk_fun((next_V - V_th) / denom) *
+            self._spk_fun((V_th - last_V) / denom)
         )
 
     def _rebuild_if_needed(self) -> tuple[CV, ...]:

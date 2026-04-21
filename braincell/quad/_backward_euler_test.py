@@ -39,6 +39,8 @@ from braincell.quad._protocol import (
     DiffEqState,
 )
 
+_FLOAT_DTYPE = jnp.asarray(0.0).dtype
+
 
 # --------------------------------------------------------------------------- #
 # Analytical-solution test on a linear ODE
@@ -49,7 +51,7 @@ class _LinearDecay(brainstate.nn.Module, DiffEqModule):
     def __init__(self, x0=1.0, tau_ms=10.0, shape=(3,)):
         super().__init__()
         self.tau = tau_ms * u.ms
-        self.x = DiffEqState(jnp.full(shape, x0, dtype=jnp.float32) * u.mV)
+        self.x = DiffEqState(jnp.full(shape, x0, dtype=_FLOAT_DTYPE) * u.mV)
 
     def compute_derivative(self, *args, **kwargs):
         self.x.derivative = -self.x.value / self.tau

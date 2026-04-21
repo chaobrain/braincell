@@ -37,6 +37,16 @@ from braincell.io.neuromorpho._testing import sample_neuron_payload
 from braincell.io.neuromorpho.cli import build_arg_parser, main
 
 
+def _parse_key_value_output(output: str) -> dict[str, str]:
+    parsed: dict[str, str] = {}
+    for line in output.splitlines():
+        if "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        parsed[key] = value
+    return parsed
+
+
 class CliSearchTest(unittest.TestCase):
     def test_search_subcommand_prints_page(self) -> None:
         fake_page = NeuroMorphoSearchPage(
@@ -117,7 +127,9 @@ class CliDownloadTest(unittest.TestCase):
                 ])
         self.assertEqual(exit_code, 0)
         out = stream.getvalue()
-        self.assertIn("metadata_path=/tmp/out/10047/metadata.json", out)
+        parsed = _parse_key_value_output(out)
+        self.assertEqual(Path(parsed["folder"]), record.folder)
+        self.assertEqual(Path(parsed["metadata_path"]), record.metadata_path)
         self.assertIn("downloaded_now=True", out)
 
 

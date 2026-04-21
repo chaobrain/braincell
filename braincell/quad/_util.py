@@ -25,6 +25,10 @@ from braincell._typing import T, DT, Y0, Y1, Aux, Jacobian, VectorFiled, Args
 from ._protocol import DiffEqState, DiffEqModule, IndependentIntegration
 
 
+def _array_dtype(value) -> jnp.dtype:
+    return jnp.asarray(u.get_magnitude(value)).dtype
+
+
 def _filter_diffeq(independent_modules, path, value):
     for module_path in independent_modules.keys():
         if path[:len(module_path)] == module_path:
@@ -278,7 +282,10 @@ def jacrev_last_dim(
     num_state = new_hid_vals.shape[-1]
     varshape = new_hid_vals.shape[:-1]
     assert num_state == hid_vals.shape[-1], 'Error: the number of input/output states should be the same.'
-    g_primals = u.math.broadcast_to(u.math.eye(num_state), (*varshape, num_state, num_state))
+    g_primals = u.math.broadcast_to(
+        u.math.eye(num_state, dtype=_array_dtype(new_hid_vals)),
+        (*varshape, num_state, num_state),
+    )
     jac = jax.vmap(f_vjp, in_axes=-2, out_axes=-2)(g_primals)
     if has_aux:
         return jac[0], new_hid_vals, aux

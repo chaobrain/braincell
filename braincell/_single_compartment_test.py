@@ -193,59 +193,6 @@ class SingleCompartmentPropertiesTest(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
-# _normalize_external_current
-# ---------------------------------------------------------------------------
-
-
-class SingleCompartmentNormalizeCurrentTest(unittest.TestCase):
-    def test_density_quantity_is_converted_to_nA_per_cm2(self) -> None:
-        sc = SingleCompartment(size=1)
-        i = 10.0 * u.uA / u.cm ** 2  # density but in different prefix
-        got = sc._normalize_external_current(i)
-        # 10 uA/cm² == 1e4 nA/cm²
-        self.assertTrue(
-            u.math.allclose(
-                got.to_decimal(u.nA / u.cm ** 2),
-                jnp.asarray(10_000.0),
-                atol=1e-6,
-            )
-        )
-
-    def test_passthrough_when_already_nA_per_cm2(self) -> None:
-        sc = SingleCompartment(size=1)
-        i = 7.5 * u.nA / u.cm ** 2
-        got = sc._normalize_external_current(i)
-        self.assertTrue(
-            u.math.allclose(
-                got.to_decimal(u.nA / u.cm ** 2),
-                jnp.asarray(7.5),
-                atol=1e-9,
-            )
-        )
-
-    def test_plain_current_passes_through_unchanged(self) -> None:
-        # nA (total current) must NOT be divided by area: channels built with
-        # total conductances (mS) also produce nA, so dividing only I_ext would
-        # create a dimensional mismatch when summing I_ext + ch.current().
-        sc = SingleCompartment(size=1, length=10.0 * u.um, radius=5.0 * u.um)
-        i = 1.0 * u.nA
-        got = sc._normalize_external_current(i)
-        self.assertIs(got, i)
-
-    def test_non_current_quantity_is_returned_unchanged(self) -> None:
-        sc = SingleCompartment(size=1)
-        i = 5.0 * u.mV  # not a current at all
-        got = sc._normalize_external_current(i)
-        self.assertIs(got, i)
-
-    def test_plain_array_is_returned_unchanged(self) -> None:
-        sc = SingleCompartment(size=1)
-        i = jnp.array([1.0, 2.0, 3.0])
-        got = sc._normalize_external_current(i)
-        self.assertIs(got, i)
-
-
-# ---------------------------------------------------------------------------
 # init_state / reset_state
 # ---------------------------------------------------------------------------
 
@@ -503,26 +450,6 @@ class SingleCompartmentComputeDerivativeTest(unittest.TestCase):
         self.assertEqual(sc.na.channels["INa"].q.derivative.shape, (1,))
         self.assertEqual(sc.k.channels["IK"].p.derivative.shape, (1,))
         self.assertEqual(sc.V.derivative.shape, (1,))
-
-    def test_nA_external_current_is_normalized_to_density(self) -> None:
-        # A plain ``u.nA`` value must be divided by the membrane area.
-        sc = SingleCompartment(
-            size=1,
-            V_initializer=braintools.init.Constant(-60.0 * u.mV),
-            C=1.0 * u.uF / u.cm ** 2,
-        )
-        sc.init_state()
-        I_nA = 0.05 * u.nA
-        sc.compute_derivative(I_nA)
-        expected_density = (I_nA / sc.area).in_unit(u.nA / u.cm ** 2)
-        expected = expected_density / (1.0 * u.uF / u.cm ** 2)
-        self.assertTrue(
-            u.math.allclose(
-                sc.V.derivative.to_decimal(u.mV / u.ms),
-                expected.to_decimal(u.mV / u.ms),
-                atol=1e-6,
-            )
-        )
 
     def test_bad_channel_current_is_wrapped_in_value_error(self) -> None:
         sc = SingleCompartment(size=1, bad=_BadChannel(size=1))

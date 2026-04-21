@@ -148,12 +148,6 @@ class SingleCompartment(HHTypedNeuron):
         """Membrane area used to convert injected current into current density."""
         return 2. * u.math.pi * self.radius * self.length
 
-    def _normalize_external_current(self, I_ext):
-        if isinstance(I_ext, u.Quantity):
-            if I_ext.has_same_unit(1. * u.nA / (u.cm ** 2)):
-                return I_ext.in_unit(u.nA / (u.cm ** 2))
-        return I_ext
-
     def init_state(self, batch_size=None):
         """
         Initialize the state of the neuron.
@@ -222,7 +216,6 @@ class SingleCompartment(HHTypedNeuron):
         I_ext : float, optional
             External current input. Supports either current density or total current.
         """
-        I_ext = self._normalize_external_current(I_ext)
         I_ext = self.sum_current_inputs(I_ext, self.V.value)
         for key, ch in self.nodes(IonChannel, allowed_hierarchy=(1, 1)).items():
             try:

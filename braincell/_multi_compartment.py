@@ -63,7 +63,7 @@ from braincell.cv._mech import (
 from braincell.cv._policy import CVPerBranch, CVPolicy
 from braincell.filter import LocsetExpr, RegionExpr
 from braincell.mech import CurrentProbe, Density, MechanismProbe, StateProbe
-from braincell.morph import Morphology
+from braincell.morph._morphology import Morphology
 from braincell.quad import DiffEqState, IndependentIntegration, get_integrator
 from braincell.quad import _staggered as voltage_solver
 

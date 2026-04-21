@@ -18,8 +18,8 @@
 import brainunit as u
 import numpy as np
 
-from braincell.cv._cv import CV
-from braincell.cv._lower import _build_frusta
+from braincell._cv.base import CV
+from braincell._cv.lower import _build_frusta
 from braincell.morph.branch import Branch, branch_class_for_type
 from braincell.morph.morphology import Morphology
 

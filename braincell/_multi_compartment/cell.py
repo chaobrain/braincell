@@ -44,8 +44,8 @@ from braincell.compute._runtime import (
     mechanism_signature,
     uninstall_cell_runtime,
 )
-from braincell.cv._cv import build_cvs
-from braincell.cv._lower import (
+from braincell._cv.base import build_cvs
+from braincell._cv.lower import (
     PaintRule,
     PlaceRule,
     default_paint_rules,
@@ -54,7 +54,7 @@ from braincell.cv._lower import (
     normalize_paint_rules,
     normalize_place_rule,
 )
-from braincell.cv._policy import CVPerBranch, CVPolicy
+from braincell._cv.policy import CVPerBranch, CVPolicy
 from braincell.filter import LocsetExpr, RegionExpr
 from braincell.morph.morphology import Morphology
 from braincell.quad import get_integrator

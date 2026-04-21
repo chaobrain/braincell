@@ -40,7 +40,7 @@ from ._version import (
     __version__,
     __version_info__,
 )
-from .cv import (
+from ._cv import (
     CompositeByTypePolicy,
     CV,
     CVPerBranch,

@@ -20,8 +20,8 @@ import numpy as np
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
-from braincell.cv._cv import CV
-from braincell.cv._lower import (
+from braincell._cv.base import CV
+from braincell._cv.lower import (
     PaintRule,
     PlaceRule,
     _apply_density,
@@ -52,7 +52,7 @@ from braincell.cv._lower import (
     normalize_paint_rules,
     normalize_place_rule,
 )
-from braincell.cv._policy import CVPerBranch, CVPolicy
+from braincell._cv.policy import CVPerBranch, CVPolicy
 from braincell.filter import (
     AllRegion,
     AtLocation,

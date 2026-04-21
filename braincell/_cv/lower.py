@@ -39,10 +39,10 @@ from braincell.mech import (
 )
 from braincell.morph.branch import Branch
 from braincell.morph.morphology import Morphology
-from ._policy import CVPolicy
+from .policy import CVPolicy
 
 if TYPE_CHECKING:
-    from ._cv import CV
+    from .base import CV
 
 __all__ = [
     "PaintRule",
@@ -912,7 +912,7 @@ def _validate_names(buckets: list[_MechBucket]) -> None:
 
 
 def _assemble(geo: _GeoCV, bucket: _MechBucket) -> "CV":
-    from ._cv import CV  # local import: _cv.py is created in Phase 6
+    from .base import CV  # local import: base.py is created in Phase 6
     cable = bucket.cable
     ra = cable.axial_resistivity
     ra_ohm_cm = float(np.asarray(ra.to_decimal(u.ohm * u.cm), dtype=float))

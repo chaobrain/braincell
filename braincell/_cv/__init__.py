@@ -26,8 +26,8 @@ The package resolves a :class:`braincell.morph.Morphology` together with a
 - :mod:`braincell.cv._debug` — helpers for reconstructing geometry from a CV.
 """
 
-from ._cv import CV
-from ._policy import (
+from .base import CV
+from .policy import (
     CompositeByTypePolicy,
     CVPerBranch,
     CVPolicy,

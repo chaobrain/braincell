@@ -18,10 +18,10 @@ import unittest
 import brainunit as u
 import numpy as np
 
-from braincell.cv import CVPerBranch
-from braincell.cv._cv import build_cvs
-from braincell.cv._debug import cv_to_branch
-from braincell.cv._lower import default_paint_rules
+from braincell._cv import CVPerBranch
+from braincell._cv.base import build_cvs
+from braincell._cv.debug import cv_to_branch
+from braincell._cv.lower import default_paint_rules
 from braincell.morph.branch import Branch
 from braincell.morph.morphology import Morphology
 

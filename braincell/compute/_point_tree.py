@@ -18,7 +18,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from braincell.cv import CV
+from braincell._cv.base import CV
 
 _EPS_PARAM = 1e-9   # normalized-x tolerance (formerly imported from cv._geo)
 from braincell.morph.morphology import Morphology

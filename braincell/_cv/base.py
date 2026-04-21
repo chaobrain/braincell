@@ -24,8 +24,8 @@ from braincell.filter import RegionMask
 from braincell.mech import Density, Point
 
 if TYPE_CHECKING:
-    from braincell.cv._policy import CVPolicy
-    from braincell.cv._lower import PaintRule, PlaceRule
+    from braincell._cv.policy import CVPolicy
+    from braincell._cv.lower import PaintRule, PlaceRule
     from braincell.morph.morphology import Morphology
 
 
@@ -81,7 +81,7 @@ def build_cvs(
     place_rules: "tuple[PlaceRule, ...]" = (),
 ) -> tuple[CV, ...]:
     """Lower a morphology + policy + rules into a frozen ``tuple[CV, ...]``."""
-    from braincell.cv._lower import lower
+    from braincell._cv.lower import lower
     return lower(
         morpho,
         policy=policy,

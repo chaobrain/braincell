@@ -353,7 +353,7 @@ def rule_duplicate_xyzr_parent_child(context: _SwcContext) -> None:
             for candidate in context.rows:
                 if candidate.parent_id == duplicate_id:
                     candidate.parent_id = keep_id
-            context.rows.remove(row)
+            context.rows = [r for r in context.rows if r is not row]
             changed = True
             break
         if not changed:
@@ -376,7 +376,14 @@ def rule_contour(context: _SwcContext) -> None:
 def rule_sorted_index_order(context: _SwcContext) -> None:
     if not context.rows:
         return
-    sorted_rows = sorted(context.rows, key=lambda row: (row.parent_id != -1, row.parent_id or -1, row.node_id or -1))
+    sorted_rows = sorted(
+        context.rows,
+        key=lambda row: (
+            row.parent_id not in (None, -1),
+            row.parent_id if row.parent_id not in (None, -1) else -1,
+            row.node_id if row.node_id is not None else -1,
+        ),
+    )
     if [row.line_number for row in sorted_rows] != [row.line_number for row in context.rows]:
         _add_warning(
             context,

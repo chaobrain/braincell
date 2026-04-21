@@ -384,12 +384,22 @@ def load_morpho(path: str | os.PathLike) -> Morphology:
             source=path,
         )
         child_branch = _build_branch(arrays, branch_type=spec["type"])
+        parent_x = float(spec["parent_x"])
+        child_x = float(spec["child_x"])
+        if not (0.0 <= parent_x <= 1.0):
+            raise CheckpointError(
+                f"{os.fspath(path)!s}: parent_x={parent_x!r} out of [0, 1] for branch {spec['name']!r}."
+            )
+        if not (0.0 <= child_x <= 1.0):
+            raise CheckpointError(
+                f"{os.fspath(path)!s}: child_x={child_x!r} out of [0, 1] for branch {spec['name']!r}."
+            )
         morpho.attach(
             parent=parent_name,
             child_branch=child_branch,
             child_name=spec["name"],
-            parent_x=float(spec["parent_x"]),
-            child_x=float(spec["child_x"]),
+            parent_x=parent_x,
+            child_x=child_x,
         )
         inserted.add(spec["name"])
 
@@ -461,7 +471,9 @@ def _read_npz(path: str | os.PathLike) -> tuple[dict[str, Any], dict[str, np.nda
                 )
             manifest_array = np.asarray(data["manifest"])
             payload = {key: np.asarray(data[key]) for key in keys if key != "manifest"}
-    except (zipfile.BadZipFile, OSError, ValueError) as exc:
+    except (zipfile.BadZipFile, OSError) as exc:
+        raise CheckpointError(f"{p!s}: cannot read checkpoint: {exc}") from exc
+    except ValueError as exc:
         if isinstance(exc, CheckpointError):
             raise
         raise CheckpointError(f"{p!s}: cannot read checkpoint: {exc}") from exc

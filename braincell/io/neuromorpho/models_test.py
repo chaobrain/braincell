@@ -32,14 +32,14 @@ class NeuroMorphoNeuronTest(unittest.TestCase):
         self.assertEqual(neuron.archive, "Scanziani")
         self.assertEqual(neuron.species, "mouse")
         self.assertEqual(neuron.original_format, "TypeA-10.asc")
-        self.assertEqual(neuron.brain_region, ["neocortex", "occipital", "layer 6"])
-        self.assertEqual(neuron.cell_type, ["principal cell"])
+        self.assertEqual(neuron.brain_region, ("neocortex", "occipital", "layer 6"))
+        self.assertEqual(neuron.cell_type, ("principal cell",))
 
     def test_from_payload_normalizes_string_to_list(self) -> None:
         payload = sample_neuron_payload(brain_region="hippocampus", cell_type="basket")
         neuron = NeuroMorphoNeuron.from_payload(payload)
-        self.assertEqual(neuron.brain_region, ["hippocampus"])
-        self.assertEqual(neuron.cell_type, ["basket"])
+        self.assertEqual(neuron.brain_region, ("hippocampus",))
+        self.assertEqual(neuron.cell_type, ("basket",))
 
     def test_payload_field_preserves_full_record(self) -> None:
         neuron = NeuroMorphoNeuron.from_payload(sample_neuron_payload())

@@ -41,8 +41,16 @@ def is_special_three_point_soma(
     if len(soma_rows) != 3:
         return False, None
 
-    center_row, side_a_row, side_b_row = soma_rows
-    if side_a_row.parent_id != center_row.node_id or side_b_row.parent_id != center_row.node_id:
+    center_row = None
+    side_a_row: _SwcRow
+    side_b_row: _SwcRow
+    for candidate in soma_rows:
+        others = [r for r in soma_rows if r is not candidate]
+        if len(others) == 2 and all(r.parent_id == candidate.node_id for r in others):
+            center_row = candidate
+            side_a_row, side_b_row = others
+            break
+    if center_row is None:
         return False, None
     if children_by_id.get(side_a_row.node_id) or children_by_id.get(side_b_row.node_id):
         return False, None

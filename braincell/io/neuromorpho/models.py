@@ -23,6 +23,7 @@ them perform I/O or HTTP requests.
 
 
 
+import dataclasses
 from dataclasses import dataclass, field
 from pathlib import Path
 from types import MappingProxyType
@@ -77,8 +78,8 @@ class NeuroMorphoNeuron:
     neuron_name: str
     archive: str | None
     species: str | None
-    brain_region: list[str]
-    cell_type: list[str]
+    brain_region: tuple[str, ...]
+    cell_type: tuple[str, ...]
     original_format: str | None
     png_url: str | None
     payload: dict[str, Any]
@@ -108,8 +109,8 @@ class NeuroMorphoNeuron:
             neuron_name=str(payload["neuron_name"]),
             archive=payload.get("archive"),
             species=payload.get("species"),
-            brain_region=list(brain_region),
-            cell_type=list(cell_type),
+            brain_region=tuple(brain_region),
+            cell_type=tuple(cell_type),
             original_format=payload.get("original_format"),
             png_url=payload.get("png_url"),
             payload=dict(payload),
@@ -566,6 +567,7 @@ class NeuroMorphoMeasurement:
         Any
         """
 
-        if hasattr(self, key) and key not in {"extras", "as_dict", "get", "from_payload"}:
+        _field_names = frozenset(f.name for f in dataclasses.fields(self))
+        if key in _field_names:
             return getattr(self, key)
         return self.extras.get(key, default)

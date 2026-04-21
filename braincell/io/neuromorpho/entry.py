@@ -81,6 +81,8 @@ def _resolve_client(
         # state the caller might rely on elsewhere — we just remember
         # the root locally.
         return client, cache_root
+    if cache_dir is not None:
+        return client, cache_root
     return client, client.cache.root
 
 

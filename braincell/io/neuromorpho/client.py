@@ -44,6 +44,7 @@ from .query import NeuroMorphoQuery
 from .urls import (
     API_BASE,
     DownloadMode,
+    _validate_mode,
     build_measurement_url,
     build_original_file_url,
     build_standard_swc_url,
@@ -343,7 +344,12 @@ class NeuroMorphoClient:
         if "neuron_id" not in payload:
             payload = dict(payload)
             payload["neuron_id"] = neuron_id
-        return NeuroMorphoMeasurement.from_payload(payload)
+        try:
+            return NeuroMorphoMeasurement.from_payload(payload)
+        except ValueError as exc:
+            raise NeuroMorphoError(
+                f"Malformed measurement payload from {url}: {exc}"
+            ) from exc
 
     def get_urls(self, neuron: NeuroMorphoNeuron) -> NeuroMorphoUrls:
         """Return the resolved URLs for *neuron*.
@@ -525,6 +531,7 @@ class NeuroMorphoClient:
             If neither ``output_dir`` nor a client cache is provided.
         """
 
+        _validate_mode(mode)
         if output_dir is None:
             if self._cache is None:
                 raise ValueError(
@@ -633,10 +640,16 @@ class NeuroMorphoClient:
                 raise NeuroMorphoHTTPError(
                     f"GET {url} returned HTTP {status}", status=status, url=url
                 )
-            with path.open("wb") as file_obj:
-                for chunk in response.iter_content(chunk_size=1 << 15):
-                    if chunk:
-                        file_obj.write(chunk)
+            tmp_path = path.with_suffix(path.suffix + ".tmp")
+            try:
+                with tmp_path.open("wb") as file_obj:
+                    for chunk in response.iter_content(chunk_size=1 << 15):
+                        if chunk:
+                            file_obj.write(chunk)
+                tmp_path.replace(path)
+            except BaseException:
+                tmp_path.unlink(missing_ok=True)
+                raise
         return True
 
     @staticmethod
@@ -669,7 +682,7 @@ class NeuroMorphoClient:
                     "kind": item.kind,
                     "url": item.url,
                     "filename": item.filename,
-                    "path": str(item.path),
+                    "path": item.path.name,
                     "downloaded_now": item.downloaded_now,
                     "reason": item.reason,
                 }

@@ -211,7 +211,9 @@ class NeuroMorphoCache:
         if metadata_exists:
             try:
                 metadata = json.loads(metadata_file.read_text(encoding="utf-8"))
-            except (OSError, json.JSONDecodeError):
+            except FileNotFoundError:
+                metadata = {}
+            except json.JSONDecodeError:
                 metadata = {}
             neuron_name = metadata.get("neuron_name")
             if isinstance(neuron_name, str):
@@ -320,9 +322,13 @@ class NeuroMorphoCache:
             raw_path = item.get("path")
             if raw_path:
                 candidate = Path(raw_path)
-                if candidate.exists():
-                    return candidate
-                candidate = folder / candidate.name
+                try:
+                    candidate.resolve().relative_to(folder.resolve())
+                    if candidate.exists():
+                        return candidate
+                except ValueError:
+                    pass
+                candidate = folder / Path(raw_path).name
                 if candidate.exists():
                     return candidate
             filename = item.get("filename")
@@ -372,9 +378,13 @@ class NeuroMorphoCache:
             raw_path = item.get("path")
             if raw_path:
                 candidate = Path(raw_path)
-                if candidate.exists():
-                    return candidate
-                candidate = folder / candidate.name
+                try:
+                    candidate.resolve().relative_to(folder.resolve())
+                    if candidate.exists():
+                        return candidate
+                except ValueError:
+                    pass
+                candidate = folder / Path(raw_path).name
                 if candidate.exists():
                     return candidate
             filename = item.get("filename")
@@ -471,6 +481,9 @@ class NeuroMorphoCache:
                 int(entry.name)
             except ValueError:
                 continue
-            shutil.rmtree(entry)
-            removed += 1
+            try:
+                shutil.rmtree(entry)
+                removed += 1
+            except OSError as exc:
+                raise OSError(f"Failed to remove cache folder {entry}: {exc}") from exc
         return removed

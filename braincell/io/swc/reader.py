@@ -86,7 +86,9 @@ class SwcReader:
 
     def _parse_rows(self, path: Path) -> list[_SwcRawRow]:
         rows: list[_SwcRawRow] = []
-        for line_number, raw_line in enumerate(path.read_text().splitlines(), start=1):
+        with path.open(encoding="utf-8", errors="replace") as fh:
+            raw_lines = list(fh)
+        for line_number, raw_line in enumerate(raw_lines, start=1):
             line = raw_line.strip()
             if not line or line.startswith("#"):
                 continue
@@ -414,7 +416,12 @@ class SwcReader:
         parent_points = [row_point(nodes[node_id]) for node_id in parent_branch.point_ids]
         if len(parent_points) == 1:
             return 1.0
-        attach_idx = parent_branch.point_ids.index(attach.node_id)
+        try:
+            attach_idx = parent_branch.point_ids.index(attach.node_id)
+        except ValueError:
+            raise ValueError(
+                f"SWC attachment node {attach.node_id!r} not found in parent branch point IDs."
+            )
         lengths = [np.linalg.norm(parent_points[index + 1] - parent_points[index]) for index in
                    range(len(parent_points) - 1)]
         total = sum(lengths)

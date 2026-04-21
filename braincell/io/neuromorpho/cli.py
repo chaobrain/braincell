@@ -502,7 +502,6 @@ def main(argv: list[str] | None = None) -> int:
     handler = _COMMAND_DISPATCH.get(args.command)
     if handler is None:
         parser.error(f"unknown command: {args.command}")
-        return 2
     try:
         return handler(args)
     except NeuroMorphoError as exc:

@@ -83,6 +83,7 @@ def safe_filename(name: str) -> str:
     """
 
     cleaned = re.sub(r"[^A-Za-z0-9._-]+", "_", name)
+    cleaned = re.sub(r"\.{2,}", "_", cleaned)
     return cleaned.strip("._") or "neuromorpho_neuron"
 
 
@@ -306,14 +307,24 @@ def plan_neuron_files(
             )
         else:
             url = build_original_file_url(neuron)
-            assert url is not None  # neuron.archive presence checked by caller
-            plans.append(
-                NeuroMorphoFilePlan(
-                    kind="original",
-                    url=url,
-                    filename=f"{stem}{suffix}",
-                    skip=False,
-                    reason=None,
+            if url is None:
+                plans.append(
+                    NeuroMorphoFilePlan(
+                        kind="original",
+                        url="",
+                        filename=stem,
+                        skip=True,
+                        reason="original file URL could not be constructed (missing archive)",
+                    )
                 )
-            )
+            else:
+                plans.append(
+                    NeuroMorphoFilePlan(
+                        kind="original",
+                        url=url,
+                        filename=f"{stem}{suffix}",
+                        skip=False,
+                        reason=None,
+                    )
+                )
     return tuple(plans)

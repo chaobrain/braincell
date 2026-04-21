@@ -92,9 +92,7 @@ class AscReader:
             expressions = self._parse_document(source_path.read_text(), report)
             contours, neurites = self._extract_blocks(expressions, report)
             morpho = self._build_morpho(contours, neurites, report, path=source_path)
-        except Exception as exc:
-            if isinstance(exc, ValueError):
-                raise
+        except (OSError, UnicodeDecodeError) as exc:
             raise ValueError(f"ASC import failed for {source_path}: {exc}") from exc
 
         if return_report:
@@ -463,7 +461,7 @@ class AscReader:
                     report.add_warning(
                         "topology.root_outside_soma_bbox",
                         "Main branch root is outside the soma bounding box; connected to the nearest soma center.",
-                        line_number=root_point.line_number if root_point.line_number > 0 else None,
+                        line_number=None,
                     )
             self._attach_segment(
                 parent=morpho.root,
@@ -647,9 +645,12 @@ class AscReader:
         if len(stack) == 1:
             points, radii, center = self._contour2centroid(stack[0])
         else:
-            self._validate_soma_stack(stack, path=path)
-            points, radii = self._contourstack2centroid(stack)
-            center = self._soma_stack_center(stack)
+            try:
+                self._validate_soma_stack(stack, path=path)
+                points, radii = self._contourstack2centroid(stack)
+                center = self._soma_stack_center(stack)
+            except ValueError:
+                points, radii, center = self._contour2centroid(stack[0])
 
         branch = Soma.from_points(points=points * u.um, radii=radii * u.um)
         return branch, center, float(radii[len(radii) // 2])
@@ -877,7 +878,7 @@ class AscReader:
     ) -> np.ndarray | None:
         try:
             from neuron import h
-        except Exception:
+        except ImportError:
             return None
 
         h.load_file("stdlib.hoc")
@@ -1052,7 +1053,8 @@ class AscReader:
         return isinstance(expr, tuple) and len(expr) == 4 and all(isinstance(item, (float, int)) for item in expr)
 
     def _point_from_expr(self, expr: object) -> _AscPoint:
-        assert isinstance(expr, tuple)
+        if not isinstance(expr, tuple):
+            raise TypeError(f"_point_from_expr: expected tuple, got {type(expr).__name__!r}")
         return _AscPoint(
             x=float(expr[0]),
             y=float(expr[1]),

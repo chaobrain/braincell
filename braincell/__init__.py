@@ -32,14 +32,6 @@ from ._base import (
     MixIons,
     mix_ions,
 )
-from ._multi_compartment import (
-    Cell,
-    RunResult,
-)
-from ._version import (
-    __version__,
-    __version_info__,
-)
 from ._cv import (
     CompositeByTypePolicy,
     CV,
@@ -49,6 +41,15 @@ from ._cv import (
     DLambda,
     MaxCVLen,
 )
+from ._multi_compartment import (
+    Cell,
+    RunResult,
+)
+from ._version import (
+    __version__,
+    __version_info__,
+)
+from .io.neuromorpho import load_neuromorpho
 from .mech import (
     CableProperty,
     CurrentClamp,
@@ -67,14 +68,6 @@ from .morph.branch import (
 from .morph.morphology import (
     Morphology,
 )
-
-def __getattr__(name):
-    if name == "load_neuromorpho":
-        from .io.neuromorpho import load_neuromorpho as _load_neuromorpho
-        globals()[name] = _load_neuromorpho
-        return _load_neuromorpho
-    raise AttributeError(f"module 'braincell' has no attribute {name!r}")
-
 
 __all__ = [
     "__version__",

@@ -20,10 +20,12 @@ convenience. Subsequent ``run`` calls never re-initialize.
 """
 
 from typing import Callable, Optional
+from dataclasses import dataclass
 
 import brainstate
 import braintools
 import brainunit as u
+import jax
 import jax.numpy as jnp
 import numpy as np
 
@@ -64,12 +66,24 @@ from . import bridge, currents, probes, run as run_module
 __all__ = ["Cell"]
 
 
+@dataclass(frozen=True)
+class AxialOperatorCache:
+    float_dtype: jnp.dtype
+    operator: object
+
+
 def _cast_like(value, like):
     dtype = jnp.asarray(u.get_magnitude(like)).dtype
     if isinstance(value, u.Quantity):
         unit = u.get_unit(value)
         return jnp.asarray(value.to_decimal(unit), dtype=dtype) * unit
     return jnp.asarray(value, dtype=dtype)
+
+
+def _is_traced_value(value) -> bool:
+    if isinstance(value, u.Quantity):
+        value = u.get_mantissa(value)
+    return isinstance(value, jax.core.Tracer)
 
 
 class Cell(HHTypedNeuron):
@@ -354,15 +368,16 @@ class Cell(HHTypedNeuron):
         for channel in self.nodes(IonChannel, allowed_hierarchy=(1, 1)).values():
             channel.init_state(point_V, batch_size=batch_size)
 
-        dtype = brainstate.environ.dftype()
-        self._axial_jax = jnp.asarray(
+        object.__setattr__(self._runtime, "axial_operator_np", np.asarray(
             build_cv_axial_operator(
                 self,
                 point_tree=self._point_tree,
                 scheduling=self._point_scheduling_unchecked(algorithm="dhs"),
             ),
-            dtype=dtype,
-        )
+            dtype=np.float64,
+        ))
+        object.__setattr__(self._runtime, "axial_operator_cache", None)
+        self._axial_jax = self._get_axial_operator()
 
         self._initialized = True
 
@@ -529,11 +544,31 @@ class Cell(HHTypedNeuron):
         I_total = currents.total_membrane_current(self, V_cv=V, I_ext=I_ext, t=t)
         return I_total / self.C
 
+    def _get_axial_operator(self):
+        runtime = self._runtime
+        if runtime is None:
+            raise RuntimeError("_get_axial_operator() requires init_state() first.")
+        float_dtype = jnp.asarray(0.0).dtype
+        cache = runtime.axial_operator_cache
+        if cache is not None and cache.float_dtype == float_dtype:
+            self._axial_jax = cache.operator
+            return cache.operator
+
+        if runtime.axial_operator_np is None:
+            raise ValueError("Cell runtime is missing axial_operator_np.")
+
+        operator = jnp.asarray(runtime.axial_operator_np, dtype=brainstate.environ.dftype()) * (u.ms ** -1)
+        cache = AxialOperatorCache(float_dtype=float_dtype, operator=operator)
+        if not _is_traced_value(operator):
+            object.__setattr__(runtime, "axial_operator_cache", cache)
+        self._axial_jax = operator
+        return operator
+
     def compute_axial_derivative(self, V):
         self._raise_if_not_initialized("compute_axial_derivative()")
-        V_decimal = jnp.asarray(V.to_decimal(u.mV), dtype=brainstate.environ.dftype())
-        axial = -jnp.matmul(V_decimal, self._axial_jax.T)
-        return axial * (u.mV / u.ms)
+        V_mv = u.Quantity(u.math.asarray(V.to_decimal(u.mV)), u.mV)
+        axial_operator = self._get_axial_operator()
+        return -u.math.matmul(V_mv, axial_operator.T)
 
     def compute_voltage_derivative(self, V, I_ext=0.0):
         return (
@@ -694,7 +729,7 @@ class Cell(HHTypedNeuron):
                     row_index = ensure_row(mechanism)
                     layout_id = layout_id_by_signature[
                         (target_label,) + mechanism_signature(mechanism)
-                        ]
+                    ]
                     pending_cells.append(
                         (
                             row_index,

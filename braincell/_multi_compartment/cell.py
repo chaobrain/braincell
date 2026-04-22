@@ -363,15 +363,15 @@ class Cell(HHTypedNeuron):
         for channel in self.nodes(IonChannel, allowed_hierarchy=(1, 1)).values():
             channel.init_state(point_V, batch_size=batch_size)
 
-        object.__setattr__(self._runtime, "axial_operator_np", np.asarray(
+        self._runtime.axial_operator_np = np.asarray(
             build_cv_axial_operator(
                 self,
                 point_tree=self._point_tree,
                 scheduling=self._point_scheduling_unchecked(algorithm="dhs"),
             ),
             dtype=np.float64,
-        ))
-        object.__setattr__(self._runtime, "axial_operator_cache", None)
+        )
+        self._runtime.axial_operator_cache = None
         self._axial_jax = self._get_axial_operator()
 
         self._initialized = True
@@ -555,7 +555,7 @@ class Cell(HHTypedNeuron):
         operator = jnp.asarray(runtime.axial_operator_np, dtype=brainstate.environ.dftype()) * (u.ms ** -1)
         cache = AxialOperatorCache(float_dtype=float_dtype, operator=operator)
         if not is_traced_value(operator):
-            object.__setattr__(runtime, "axial_operator_cache", cache)
+            runtime.axial_operator_cache = cache
         self._axial_jax = operator
         return operator
 

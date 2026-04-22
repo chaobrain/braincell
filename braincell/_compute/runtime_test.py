@@ -1146,3 +1146,35 @@ class FnFingerprintWarnsOnOpaqueClosureTest(unittest.TestCase):
             any(issubclass(w.category, RuntimeWarning) for w in captured),
             "expected RuntimeWarning for opaque closure cell",
         )
+
+
+class CellRuntimeStateIsMutableTest(unittest.TestCase):
+    """ARCH-07: CellRuntimeState is a mutable dataclass; callers must use plain setattr."""
+
+    def test_cell_runtime_state_is_not_frozen(self) -> None:
+        from braincell._compute.runtime import CellRuntimeState
+
+        self.assertFalse(
+            CellRuntimeState.__dataclass_params__.frozen,
+            msg="CellRuntimeState must remain a mutable @dataclass",
+        )
+
+    def test_no_object_setattr_on_runtime_in_hot_paths(self) -> None:
+        import pathlib
+
+        root = pathlib.Path(__file__).resolve().parent.parent
+        for rel in (
+            "_multi_compartment/cell.py",
+            "quad/_staggered.py",
+        ):
+            text = (root / rel).read_text()
+            self.assertNotIn(
+                "object.__setattr__(runtime",
+                text,
+                f"{rel} still uses object.__setattr__ on runtime",
+            )
+            self.assertNotIn(
+                "object.__setattr__(self._runtime",
+                text,
+                f"{rel} still uses object.__setattr__ on self._runtime",
+            )

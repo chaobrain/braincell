@@ -371,7 +371,7 @@ def _get_dhs_static_source(target, *, point_tree, scheduling) -> DHSStaticSource
         return source
     source = _build_dhs_static_source(target, point_tree=point_tree, scheduling=scheduling)
     if runtime is not None:
-        object.__setattr__(runtime, "dhs_static_source_np", source)
+        runtime.dhs_static_source_np = source
     return source
 
 
@@ -393,7 +393,7 @@ def _get_dhs_static_cache(target, source: DHSStaticSource) -> DHSStaticCache:
         return cache
     cache = _build_dhs_static_cache(source)
     if runtime is not None and not is_traced_value(cache.diag_ms_inv):
-        object.__setattr__(runtime, "dhs_static_cache", cache)
+        runtime.dhs_static_cache = cache
     return cache
 
 

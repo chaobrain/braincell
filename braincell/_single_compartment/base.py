@@ -231,7 +231,7 @@ class SingleCompartment(HHTypedNeuron):
                     f"Error in computing current for ion channel '{key}': \n"
                     f"{ch}\n"
                     f"Error: {e}"
-                )
+                ) from e
         self.V.derivative = I_ext / self.C
         for key, node in self.nodes(IonChannel, allowed_hierarchy=(1, 1)).items():
             if not isinstance(node, IndependentIntegration):

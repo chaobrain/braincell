@@ -459,6 +459,9 @@ class SingleCompartmentComputeDerivativeTest(unittest.TestCase):
             sc.compute_derivative(0.0 * u.nA / u.cm ** 2)
         self.assertIn("bad", str(ctx.exception))
         self.assertIn("intentional bad current", str(ctx.exception))
+        # Regression: HIGH-01 — preserve the original exception as __cause__.
+        self.assertIsInstance(ctx.exception.__cause__, RuntimeError)
+        self.assertIn("intentional bad current", str(ctx.exception.__cause__))
 
 
 # ---------------------------------------------------------------------------

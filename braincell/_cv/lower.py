@@ -747,19 +747,20 @@ def _coverage_fraction(
     morpho: Morphology,
     geo: _GeoCV,
     intervals: tuple[tuple[float, float], ...],
+    *,
+    frusta_builder=None,
 ) -> float:
     if geo.lateral_area_um2 <= EPS_AREA_UM2:
         return 0.0
     branch = morpho.branches[geo.branch_id]
+    build = frusta_builder if frusta_builder is not None else _build_frusta
     overlap = 0.0
     for left, right in intervals:
         start = max(geo.prox, float(left))
         end = min(geo.dist, float(right))
         if end - start <= EPS_PARAM:
             continue
-        overlap += _lateral_area_um2(
-            _build_frusta(branch, prox=start, dist=end)
-        )
+        overlap += _lateral_area_um2(build(branch, prox=start, dist=end))
     return max(0.0, min(1.0, overlap / geo.lateral_area_um2))
 
 
@@ -853,6 +854,16 @@ def _build_mech(
 ) -> list[_MechBucket]:
     buckets = [_init_bucket() for _ in geos]
 
+    frusta_cache: dict = {}
+
+    def _cached_frusta(branch, *, prox, dist):
+        key = (id(branch), round(float(prox), 9), round(float(dist), 9))
+        cached = frusta_cache.get(key)
+        if cached is None:
+            cached = _build_frusta(branch, prox=prox, dist=dist)
+            frusta_cache[key] = cached
+        return cached
+
     for rule in paint_rules:
         intervals_by_branch = cache.intervals(rule.region)
         mechanism = rule.mechanism
@@ -873,7 +884,10 @@ def _build_mech(
                     bucket.cable = mechanism
                     continue
 
-                fraction = _coverage_fraction(morpho, geo, intervals)
+                fraction = _coverage_fraction(
+                    morpho, geo, intervals,
+                    frusta_builder=_cached_frusta,
+                )
                 if fraction <= EPS_PARAM:
                     continue
                 _apply_density(

@@ -141,4 +141,8 @@ def _clamp_density(runtime: CellRuntimeState, *, t):
 
 
 def _is_python_zero(value) -> bool:
-    return isinstance(value, (int, float)) and value == 0
+    return (
+        isinstance(value, (int, float))
+        and not isinstance(value, bool)
+        and value == 0
+    )

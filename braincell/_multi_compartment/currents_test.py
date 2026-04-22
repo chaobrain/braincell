@@ -103,6 +103,23 @@ class TestNormalizeExtToPointDensity(unittest.TestCase):
             _normalize_ext_to_point_density(1.0 * u.mV, rt)
 
 
+class IsPythonZeroRejectsBoolTest(unittest.TestCase):
+    """LOW-08: ``_is_python_zero(False)`` must not short-circuit to zero."""
+
+    def test_false_is_not_python_zero(self) -> None:
+        from braincell._multi_compartment.currents import _is_python_zero
+        self.assertFalse(_is_python_zero(False))
+
+    def test_true_is_not_python_zero(self) -> None:
+        from braincell._multi_compartment.currents import _is_python_zero
+        self.assertFalse(_is_python_zero(True))
+
+    def test_zero_float_still_matches(self) -> None:
+        from braincell._multi_compartment.currents import _is_python_zero
+        self.assertTrue(_is_python_zero(0))
+        self.assertTrue(_is_python_zero(0.0))
+
+
 class TotalMembraneCurrentNarrowExceptTest(unittest.TestCase):
     """MED-04: channel errors outside the numeric set must not be swallowed."""
 

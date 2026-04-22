@@ -69,5 +69,19 @@ class TestBridge(unittest.TestCase):
         np.testing.assert_allclose(back.to_decimal(u.mV), cv_values.to_decimal(u.mV))
 
 
+class IsPythonZeroRejectsBoolTest(unittest.TestCase):
+    """LOW-08: ``is_python_zero(False)`` must not short-circuit to zero."""
+
+    def test_false_is_not_python_zero(self) -> None:
+        self.assertFalse(bridge.is_python_zero(False))
+
+    def test_true_is_not_python_zero(self) -> None:
+        self.assertFalse(bridge.is_python_zero(True))
+
+    def test_zero_float_still_matches(self) -> None:
+        self.assertTrue(bridge.is_python_zero(0))
+        self.assertTrue(bridge.is_python_zero(0.0))
+
+
 if __name__ == "__main__":
     unittest.main()

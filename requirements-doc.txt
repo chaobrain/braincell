@@ -5,7 +5,7 @@ networkx
 # document requirements
 pandoc
 Jinja2
-sphinx>=5
+sphinx>=9.0.4
 myst-nb
 sphinx_thebe
 sphinx-autodoc-typehints

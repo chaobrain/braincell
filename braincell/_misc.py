@@ -32,7 +32,7 @@ def _to_unit(param: object, name: str, unit: Any) -> np.ndarray:
     """Convert a quantity-like value to a NumPy array in the target unit."""
 
     try:
-       return np.asarray(param.to_decimal(unit))
+        return np.asarray(param.to_decimal(unit))
     except Exception as exc:
         raise TypeError(f"{name} must satisfy unit {unit}.") from exc
 

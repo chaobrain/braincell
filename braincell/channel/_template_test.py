@@ -11,7 +11,6 @@ from braincell._base import IonInfo
 from braincell.channel._template import Gate
 from braincell.channel._template import HH
 from braincell.channel._template import Markov
-from braincell.channel._template import Passive
 from braincell.channel._template import Transition
 from braincell.channel._template import ghk_flux
 from braincell.ion import Calcium
@@ -34,17 +33,6 @@ def _ca_info(size: int = 1) -> IonInfo:
         E=jnp.full((size,), 120.0) * u.mV,
         valence=2,
     )
-
-
-class _ExamplePassive(Passive):
-    root_type = Potassium
-
-    def __init__(self, size=1):
-        super().__init__(size=size, name=None)
-        self.g_max = braintools.init.param(0.1 * (u.mS / u.cm ** 2), self.varshape, allow_none=False)
-
-    def current(self, V, K: IonInfo):
-        return self.g_max * self.conductance_factor(V, K) * (K.E - V)
 
 
 class _ExampleHHInfTau(HH):
@@ -318,11 +306,6 @@ class _ExampleHHMissing(HH):
 
 
 class ChannelTemplateTest(unittest.TestCase):
-    def test_dynamics_classes_are_channel_subclasses(self) -> None:
-        self.assertTrue(issubclass(Passive, Channel))
-        self.assertTrue(issubclass(HH, Channel))
-        self.assertTrue(issubclass(Markov, Channel))
-
     def test_gate_validation(self) -> None:
         with self.assertRaises(ValueError):
             Gate("m", q10=3.0)
@@ -343,21 +326,6 @@ class ChannelTemplateTest(unittest.TestCase):
         ch = _ExampleHHInfTau(size=1)
         expected = 3.0 ** (((ch.temp - u.celsius2kelvin(22.0)) / u.kelvin) / 10.0)
         self.assertTrue(u.math.allclose(ch.gate_phi(type(ch).gates[0]), expected, atol=1e-6))
-
-    def test_passive_channel(self) -> None:
-        ch = _ExamplePassive(size=1)
-        V = jnp.array([-60.0]) * u.mV
-        K = _k_info()
-
-        ch.init_state(V, K)
-        ch.reset_state(V, K)
-        ch.compute_derivative(V, K)
-        current = ch.current(V, K)
-
-        expected = ch.g_max * (K.E - V)
-        unit = u.mS / u.cm ** 2 * u.mV
-        self.assertTrue(u.math.allclose(current.to_decimal(unit), expected.to_decimal(unit), atol=1e-6))
-        self.assertEqual(ch.conductance_factor(V, K), 1.0)
 
     def test_hh_inf_tau_channel(self) -> None:
         ch = _ExampleHHInfTau(size=1)

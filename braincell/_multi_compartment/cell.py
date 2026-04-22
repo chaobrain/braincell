@@ -19,8 +19,8 @@ The lifecycle has two phases:
 convenience. Subsequent ``run`` calls never re-initialize.
 """
 
+from typing import Callable, Optional
 from dataclasses import dataclass
-from typing import Callable
 
 import brainstate
 import braintools
@@ -30,23 +30,23 @@ import jax.numpy as jnp
 import numpy as np
 
 from braincell._base import HHTypedNeuron, IonChannel
-from braincell.compute._assignment_table import (
+from braincell._typing import Initializer
+from braincell._compute.table import (
     MechanismObjectCell,
     MechanismObjectTable,
     mechanism_cell_key,
 )
-from braincell.compute._point_tree import build_point_scheduling, build_point_tree
-from braincell.compute._runtime import (
+from braincell._compute.topology import build_point_scheduling, build_point_tree
+from braincell._compute.runtime import (
     CellRuntimeState,
+    _is_root_level_runtime_node,
     build_placeholder_ions,
     clone_morpho,
     cv_value_vector,
-    install_cell_runtime,
     mechanism_signature,
-    uninstall_cell_runtime,
 )
-from braincell.cv._cv import build_cvs
-from braincell.cv._lower import (
+from braincell._cv.base import build_cvs
+from braincell._cv.lower import (
     PaintRule,
     PlaceRule,
     default_paint_rules,
@@ -55,13 +55,12 @@ from braincell.cv._lower import (
     normalize_paint_rules,
     normalize_place_rule,
 )
-from braincell.cv._policy import CVPerBranch, CVPolicy
+from braincell._cv.policy import CVPerBranch, CVPolicy
 from braincell.filter import LocsetExpr, RegionExpr
 from braincell.morph.morphology import Morphology
 from braincell.quad import get_integrator
 from braincell.quad._staggered import build_cv_axial_operator
 from braincell.quad.protocol import DiffEqState, IndependentIntegration
-
 from . import bridge, currents, probes, run as run_module
 
 __all__ = ["Cell"]
@@ -97,7 +96,7 @@ class Cell(HHTypedNeuron):
     cv_policy : CVPolicy, optional
         Control-volume splitting policy; defaults to :class:`CVPerBranch`.
     V_th : Quantity
-        Spike-detection threshold (default ``-75 mV``).
+        Spike-detection threshold (default ``0. mV``).
     V_init : Quantity or Callable or None
         Initial voltage. ``None`` means "use per-CV resting potential".
     spk_fun : Callable
@@ -118,8 +117,8 @@ class Cell(HHTypedNeuron):
         morpho: Morphology,
         *,
         cv_policy: CVPolicy | None = None,
-        V_th=-75 * u.mV,
-        V_init=None,
+        V_th: u.Quantity = 0 * u.mV,
+        V_init: Optional[Initializer] = None,
         spk_fun: Callable = braintools.surrogate.ReluGrad(),
         solver: str | Callable = "staggered",
         name: str | None = None,
@@ -159,7 +158,6 @@ class Cell(HHTypedNeuron):
         self._runtime: CellRuntimeState | None = None
         self._point_tree = None
         self._axial_jax = None
-        self._runtime_installed_names: tuple[str, ...] = ()
 
         self._initialized = False
 
@@ -340,9 +338,23 @@ class Cell(HHTypedNeuron):
         self._point_tree = build_point_tree(morpho, cvs=cvs)
         self._runtime = CellRuntimeState.from_cell(self)
 
-        # Save scalar V_th declaration before install overwrites it.
+        # Save scalar V_th declaration before the vector overwrite below.
         self._V_th_declaration = self._V_th
-        self._runtime_installed_names = install_cell_runtime(self, self._runtime)
+
+        self._in_size = (self._runtime.n_cv,)
+        self._out_size = (self._runtime.n_cv,)
+
+        root_nodes = dict(self._runtime.ions)
+        for layout in self._runtime.layouts:
+            node = self._runtime.runtime_nodes.get(layout.id)
+            if node is None:
+                continue
+            if _is_root_level_runtime_node(layout.kind):
+                root_nodes[f"layout_{layout.id}"] = node
+
+        self.ion_channels = self._format_elements(IonChannel, **root_nodes)
+        self.C = cv_value_vector(self, attr_name="cm")
+        self.V_th = bridge.fill_like(self.varshape, self.V_th)
 
         v_initializer = (
             self._V_init if self._V_init is not None
@@ -387,10 +399,11 @@ class Cell(HHTypedNeuron):
         """
         self._raise_if_not_initialized("reset()")
 
-        uninstall_cell_runtime(self, self._runtime_installed_names)
-        self._runtime_installed_names = ()
+        for name in ("_in_size", "_out_size", "ion_channels", "C"):
+            if hasattr(self, name):
+                delattr(self, name)
 
-        # Restore scalar V_th (install overwrote it with a vector).
+        # Restore scalar V_th (init_state overwrote it with a vector).
         self._V_th = self._V_th_declaration
 
         if hasattr(self, "V"):

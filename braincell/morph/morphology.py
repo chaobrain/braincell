@@ -2052,3 +2052,26 @@ def _parse_attachment_key(key: object) -> tuple[float, float]:
     if parent_x not in (0, 0.0, 0.5, 1, 1.0):
         raise ValueError(f"parent_x must be 0, 0.5, or 1, got {parent_x!r}.")
     return parent_x, 0.0
+
+
+def clone_morpho(morpho: "Morphology") -> "Morphology":
+    """Return a structurally identical copy of ``morpho``.
+
+    Preserves branch identity, parent/child topology, and attachment
+    ratios. Used by :meth:`Cell.init_state` to freeze the declaration
+    tree without mutating user-supplied objects.
+    """
+    cloned = Morphology.from_root(morpho.root.branch, name=morpho.root.name)
+    for index in range(1, len(morpho.branches)):
+        branch = morpho.branch(index=index)
+        parent = branch.parent
+        if parent is None:
+            continue
+        cloned.attach(
+            parent=parent.name,
+            child_branch=branch.branch,
+            child_name=branch.name,
+            parent_x=float(branch.parent_x),
+            child_x=float(branch.child_x),
+        )
+    return cloned

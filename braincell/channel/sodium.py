@@ -278,6 +278,15 @@ class INa_Ba2002(INa_p3q_markov):
         self.T = braintools.init.param(T, self.varshape, allow_none=False)
         self.V_sh = braintools.init.param(V_sh, self.varshape, allow_none=False)
 
+    def _on_param_updated(self, var_name, new_value):
+        """Recompute the Q10 factor ``phi`` whenever ``T`` changes.
+
+        ``self.T`` is stored in Celsius; this mirrors the formula used
+        in :meth:`__init__`.
+        """
+        if var_name == "T":
+            self.phi = 3 ** ((new_value - 36) / 10)
+
     def f_p_alpha(self, V):
         V = (V - self.V_sh).to_decimal(u.mV)
         temp = V - 13.
@@ -429,12 +438,29 @@ class INa_HH1952(INa_p3q_markov):
         self,
         size: brainstate.typing.Size,
         g_max: Union[brainstate.typing.ArrayLike, Callable] = 120. * (u.mS / u.cm ** 2),
-        phi: Union[brainstate.typing.ArrayLike, Callable] = 1.,
+        phi: Optional[Union[brainstate.typing.ArrayLike, Callable]] = None,
+        T: Optional[brainstate.typing.ArrayLike] = None,
         V_sh: Union[brainstate.typing.ArrayLike, Callable] = -45. * u.mV,
         name: Optional[str] = None,
     ):
+        if T is not None:
+            T_c = u.kelvin2celsius(T)
+            phi = 3 ** ((T_c - 36) / 10) if phi is None else phi
+        else:
+            T_c = None
+            phi = 1. if phi is None else phi
         super().__init__(size, name=name, phi=phi, g_max=g_max)
         self.V_sh = braintools.init.param(V_sh, self.varshape, allow_none=False)
+        if T_c is not None:
+            self.T = braintools.init.param(T_c, self.varshape, allow_none=False)
+
+    def _on_param_updated(self, var_name, new_value):
+        """Recompute the Q10 factor ``phi`` when ``T`` changes.
+
+        ``self.T`` is stored in Celsius (mirrors :meth:`__init__`).
+        """
+        if var_name == "T":
+            self.phi = 3 ** ((new_value - 36) / 10)
 
     def f_p_alpha(self, V):
         temp = (V - self.V_sh).to_decimal(u.mV) - 5

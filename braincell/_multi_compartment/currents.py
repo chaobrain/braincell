@@ -18,7 +18,7 @@ import brainunit as u
 import jax.numpy as jnp
 
 from braincell._base import IonChannel
-from braincell.compute._runtime import CellRuntimeState
+from braincell._compute.runtime import CellRuntimeState
 from . import bridge
 
 if TYPE_CHECKING:

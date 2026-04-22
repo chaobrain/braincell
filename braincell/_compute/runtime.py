@@ -56,7 +56,9 @@ from .topology import PointTree
 
 __all__ = [
     "CellRuntimeState",
+    "ClampActiveTable",
     "MechanismLayout",
+    "build_clamp_active_table",
     "build_placeholder_ions",
     "clone_morpho",
     "cv_value_vector",

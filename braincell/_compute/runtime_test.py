@@ -1178,3 +1178,24 @@ class CellRuntimeStateIsMutableTest(unittest.TestCase):
                 text,
                 f"{rel} still uses object.__setattr__ on self._runtime",
             )
+
+
+class RuntimeModuleAllTest(unittest.TestCase):
+    """Pre-split contract: braincell._compute.runtime.__all__ pins public names."""
+
+    def test_all_contains_expected_names(self) -> None:
+        from braincell._compute import runtime as rt
+
+        expected = {
+            "MechanismLayout",
+            "ClampActiveTable",
+            "build_clamp_active_table",
+            "CellRuntimeState",
+            "build_placeholder_ions",
+            "clone_morpho",
+            "cv_value_vector",
+            "mechanism_signature",
+        }
+        actual = set(getattr(rt, "__all__", []))
+        missing = expected - actual
+        self.assertFalse(missing, msg=f"missing public symbols: {missing}")

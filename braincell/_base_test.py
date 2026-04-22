@@ -19,7 +19,7 @@ import brainstate
 import brainunit as u
 import jax.numpy as jnp
 
-from braincell import Channel, HHTypedNeuron, IonInfo, MixIons
+from braincell import Channel, HHTypedNeuron, IonChannel, IonInfo, MixIons
 from braincell.ion import CalciumFixed, PotassiumFixed, SodiumFixed
 
 
@@ -98,3 +98,27 @@ class IonCurrentExternalOnlyTest(unittest.TestCase):
         )
         V = jnp.zeros((1,)) * u.mV
         self.assertIsNone(na.current(V, include_external=False))
+
+
+class _FakeChannelLike(brainstate.nn.Module):
+    """Not a Channel subclass, but a graph Node with a compatible root_type.
+
+    Satisfies ``check_hierarchies`` (Node + ``issubclass(Ion_subclass, IonChannel)``
+    holds) yet is not a ``Channel`` — so ``_format_elements(Channel, ...)`` must
+    reject it.
+    """
+
+    root_type = IonChannel
+
+    def __init__(self, size=1):
+        super().__init__()
+        self.in_size = (size,)
+
+
+class IonAddChannelValidationTest(unittest.TestCase):
+    """Regression for HIGH-02: Ion.add must reject non-Channel objects."""
+
+    def test_add_rejects_non_channel_object_even_with_root_type(self) -> None:
+        na = SodiumFixed(size=1)
+        with self.assertRaises(TypeError):
+            na.add(fake=_FakeChannelLike())

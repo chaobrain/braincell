@@ -924,7 +924,7 @@ class Ion(IonChannel, Container):
         - New elements are formatted and added to the channels dictionary.
         """
         self.check_hierarchies(type(self), **elements)
-        self.channels.update(self._format_elements(object, **elements))
+        self.channels.update(self._format_elements(Channel, **elements))
 
 
 class MixIons(IonChannel, Container):

@@ -529,7 +529,7 @@ class CellRuntimeState:
         for layout in self.layouts:
             if layout.target != "point" or layout.point_index is None:
                 continue
-            if layout.kind not in {"CurrentClamp", "SineClamp", "FunctionClamp"}:
+            if layout.kind not in CLAMP_KINDS:
                 continue
             local_currents = _evaluate_clamp_layout(self, layout=layout, t=t)
             if len(local_currents) != len(layout.point_index):

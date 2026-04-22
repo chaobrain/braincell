@@ -1191,7 +1191,7 @@ class MixIons(IonChannel, Container):
             node.reset_state(V, *infos, batch_size)
 
     def update(self, V, *args, **kwargs):
-        for key, node in brainstate.graph.nodes(IonChannel, allowed_hierarchy=(1, 1)).items():
+        for key, node in brainstate.graph.nodes(self, Channel, allowed_hierarchy=(1, 1)).items():
             infos = tuple([self._get_ion(root).pack_info() for root in node.root_type.__args__])
             node.update(V, *infos)
 

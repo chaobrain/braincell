@@ -65,3 +65,36 @@ class MixIonsUpdateReceiverTest(unittest.TestCase):
         seen_V, seen_K, seen_Ca = rec.calls[0]
         self.assertIsInstance(seen_K, IonInfo)
         self.assertIsInstance(seen_Ca, IonInfo)
+
+
+class IonCurrentExternalOnlyTest(unittest.TestCase):
+    """Regression for CRIT-02: Ion.current crashed with empty nodes."""
+
+    def test_external_only_returns_sum_without_crashing(self) -> None:
+        na = SodiumFixed(size=1)
+
+        expected = 1.5 * u.nA / u.cm ** 2
+        na.register_external_current(
+            "probe",
+            lambda V, ion_info: u.math.broadcast_to(expected, V.shape),
+        )
+
+        V = jnp.zeros((1,)) * u.mV
+        out = na.current(V, include_external=True)
+
+        self.assertTrue(
+            u.math.allclose(
+                out.to_decimal(u.nA / u.cm ** 2),
+                expected.to_decimal(u.nA / u.cm ** 2),
+                atol=1e-9,
+            )
+        )
+
+    def test_external_only_without_request_returns_none(self) -> None:
+        na = SodiumFixed(size=1)
+        na.register_external_current(
+            "probe",
+            lambda V, ion_info: 1.0 * u.nA / u.cm ** 2,
+        )
+        V = jnp.zeros((1,)) * u.mV
+        self.assertIsNone(na.current(V, include_external=False))

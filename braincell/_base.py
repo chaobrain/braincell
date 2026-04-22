@@ -800,10 +800,11 @@ class Ion(IonChannel, Container):
                 node: Channel
                 new_current = node.current(V, ion_info)
                 current = new_current if current is None else (current + new_current)
-        if include_external:
+        if include_external and self._external_currents:
             for key, node in self._external_currents.items():
                 node: Callable
-                current = current + node(V, ion_info)
+                contrib = node(V, ion_info)
+                current = contrib if current is None else (current + contrib)
         return current
 
     def init_state(self, V, batch_size: int = None):

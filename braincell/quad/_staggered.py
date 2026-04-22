@@ -17,21 +17,20 @@
 
 Type responsibilities in this file:
 
-- ``u.Quantity`` stays at the solver boundary where physical units matter.
-  Examples: ``target.V.value``, CV capacitance, axial resistance, membrane
-  derivative linearization.
-- ``np.ndarray`` is only used for static topology metadata that is built once
-  from the point tree or inside ``ensure_compile_time_eval`` blocks.
-  Examples: row lookup tables, DHS edge ordering, parent lookup.
-- ``jnp.ndarray`` is used for the numerical hot path executed every step.
-  Examples: diagonal/off-diagonal coefficients, right-hand side vectors, and
-  the DHS forward/backward elimination kernels.
+- ``u.Quantity`` is retained in the numerical hot path when the value carries
+  physical meaning, such as membrane voltage or ``dt * conductance`` factors.
+- ``np.ndarray`` is used for static topology metadata and static float64 source
+  coefficients that are assembled once from the point tree.
+- ``jnp.ndarray`` mantissas are produced through ``brainstate.environ`` so the
+  JAX runtime follows the current precision without hard-coded ``float32`` /
+  ``float64`` annotations.
 """
 
 from dataclasses import dataclass
 
 import brainstate
 import brainunit as u
+import jax
 import jax.numpy as jnp
 import numpy as np
 
@@ -43,6 +42,12 @@ from .protocol import DiffEqModule
 __all__ = [
     'staggered_step',
 ]
+
+
+def _is_traced_value(value) -> bool:
+    if isinstance(value, u.Quantity):
+        value = u.get_mantissa(value)
+    return isinstance(value, jax.core.Tracer)
 
 
 @register_integrator(
@@ -142,30 +147,31 @@ def staggered_step(
 
 
 @dataclass(frozen=True)
-class DHSStaticCache:
+class DHSStaticSource:
     n_point: int
     dynamic_rows_np: np.ndarray
-    dynamic_rows_jnp: jnp.ndarray
-    diag_base_jnp: jnp.ndarray
-    diag_base_with_sentinel_jnp: jnp.ndarray
-    lowers_with_sentinel_jnp: jnp.ndarray
-    uppers_with_sentinel_jnp: jnp.ndarray
-    parent_lookup_jnp: jnp.ndarray
-    edges_jnp: jnp.ndarray
+    diag_ms_inv_np: np.ndarray
+    lowers_ms_inv_np: np.ndarray
+    uppers_ms_inv_np: np.ndarray
+    edges_np: np.ndarray
     level_offsets_np: np.ndarray
-    backsub_indices_jnp: jnp.ndarray
+    backsub_indices_np: np.ndarray
+
+
+@dataclass(frozen=True)
+class DHSStaticCache:
+    float_dtype: jnp.dtype
+    diag_ms_inv: object
+    lowers_ms_inv: object
+    uppers_ms_inv: object
 
 
 @dataclass(frozen=True)
 class DHSNumericState:
-    diags: jnp.ndarray
-    solves: jnp.ndarray
-    lowers: jnp.ndarray
-    uppers: jnp.ndarray
-    parent_lookup: jnp.ndarray
-    edges: jnp.ndarray
-    dynamic_rows: jnp.ndarray
-    n_point: int
+    diags: object
+    solves: object
+    lowers: object
+    uppers: object
 
 
 @register_integrator(
@@ -233,24 +239,20 @@ def dhs_voltage_step(target, t, dt, *args):
 
     Notes
     -----
-    The static topology metadata produced by ``_point_tree_linear_system``
-    (parent rows, level offsets, recursive-doubling jump table) is built
-    inside ``jax.ensure_compile_time_eval`` so it is hoisted out of the
-    ``jit`` cache. Boundary quantities (voltage, capacitance, conductance)
-    keep their physical units up to the kernel boundary, where they are
-    converted once to ``mV`` and ``ms``-based decimals before entering the
-    raw ``jnp`` kernels.
+    The static topology metadata produced by ``_build_dhs_static_source``
+    (row lookup tables, edge ordering, recursive-doubling jump table) is
+    assembled as NumPy ``float64`` / ``int32`` data and cached on the
+    runtime. Per-step numerical operands are then materialized into the
+    current JAX precision while keeping physical units on values such as
+    voltage and ``dt * conductance`` factors.
     """
     if not hasattr(target, "point_tree") or not hasattr(target, "point_scheduling"):
         raise TypeError(f"dhs_voltage_step(...) requires a point-tree aware target, got {type(target)}.")
 
     point_tree = target.point_tree()
     scheduling = target.point_scheduling(algorithm="dhs")
-    system = _point_tree_linear_system(target, point_tree=point_tree, scheduling=scheduling, dt=dt)
-    static_cache = _get_dhs_static_cache(target, system)
-
-    # Boundary quantities keep units. The hot path below converts them once to
-    # fixed numerical units before entering the JAX kernels.
+    static_source = _get_dhs_static_source(target, point_tree=point_tree, scheduling=scheduling)
+    static_cache = _get_dhs_static_cache(target, static_source)
     V_n = target.V.value
     linear, const = _linear_and_const_term(target, V_n, *args)
     numeric = _build_dhs_numeric_state(
@@ -258,6 +260,7 @@ def dhs_voltage_step(target, t, dt, *args):
         linear,
         const,
         dt=dt,
+        static_source=static_source,
         static_cache=static_cache,
     )
     diags, solves = comp_triang_raw(
@@ -265,64 +268,55 @@ def dhs_voltage_step(target, t, dt, *args):
         numeric.solves,
         numeric.lowers,
         numeric.uppers,
-        numeric.edges,
-        static_cache.level_offsets_np,
+        static_source.edges_np,
+        static_source.level_offsets_np,
     )
     solves = comp_backsub_raw(
         diags,
         solves,
         numeric.lowers,
-        static_cache.backsub_indices_jnp,
+        static_source.backsub_indices_np,
     )
     target.V.value = _restore_midpoint_voltage(
         solves,
-        dynamic_rows=numeric.dynamic_rows,
+        dynamic_rows=static_source.dynamic_rows_np,
         target_shape=target.V.value.shape,
     )
 
 
-def _point_tree_linear_system(target, *, point_tree, scheduling, dt) -> dict[str, object]:
-    """Build the static axial system from the point tree.
-
-    Returned arrays are static topology metadata:
-
-    - ``dynamic_rows``: midpoint row indices
-    - ``diag_base``: dimensionless diagonal coefficients ``dt * axial_diag``
-    - ``lowers``/``uppers``: dimensionless off-diagonal coefficients
-    - ``parent_lookup``/``edges``/``level_size``: integer scheduling metadata
-    """
+def _build_dhs_static_source(target, *, point_tree, scheduling) -> DHSStaticSource:
+    """Build the static NumPy DHS source data from the point tree."""
     n_point, dynamic_rows, axial_matrix = _build_point_tree_axial_matrix(
         target,
         point_tree=point_tree,
         point_id_to_row=scheduling.point_id_to_row,
     )
-    dt_ms = _scalar_decimal(dt, u.ms)
-
-    diag_base = dt_ms * np.diag(axial_matrix)
-    lowers = np.zeros((n_point,), dtype=float)
-    uppers = np.zeros((n_point,), dtype=float)
+    diag_ms_inv = np.asarray(np.diag(axial_matrix), dtype=np.float64)
+    lowers_ms_inv = np.zeros((n_point,), dtype=np.float64)
+    uppers_ms_inv = np.zeros((n_point,), dtype=np.float64)
     for row, parent_row in enumerate(scheduling.parent_rows.tolist()):
         if parent_row < 0:
             continue
-        lowers[row] = dt_ms * axial_matrix[row, parent_row]
-        uppers[row] = dt_ms * axial_matrix[parent_row, row]
+        lowers_ms_inv[row] = axial_matrix[row, parent_row]
+        uppers_ms_inv[row] = axial_matrix[parent_row, row]
 
     parent_lookup = np.empty((n_point + 1,), dtype=np.int32)
     spurious_row = n_point
     parent_lookup[:n_point] = np.where(scheduling.parent_rows >= 0, scheduling.parent_rows, spurious_row)
     parent_lookup[spurious_row] = spurious_row
     edges, level_size = _build_dhs_edge_order(scheduling)
-
-    return {
-        "n_point": n_point,
-        "dynamic_rows": dynamic_rows,
-        "diag_base": diag_base,
-        "lowers": lowers,
-        "uppers": uppers,
-        "edges": edges,
-        "level_size": level_size,
-        "parent_lookup": parent_lookup,
-    }
+    backsub_indices = _build_backsub_indices(parent_lookup, n_nodes=n_point)
+    level_offsets_np = np.cumsum(np.insert(level_size, 0, 0)).astype(np.int32, copy=False)
+    return DHSStaticSource(
+        n_point=n_point,
+        dynamic_rows_np=dynamic_rows,
+        diag_ms_inv_np=diag_ms_inv,
+        lowers_ms_inv_np=lowers_ms_inv,
+        uppers_ms_inv_np=uppers_ms_inv,
+        edges_np=edges,
+        level_offsets_np=level_offsets_np,
+        backsub_indices_np=backsub_indices,
+    )
 
 
 def _build_point_tree_axial_matrix(target, *, point_tree, point_id_to_row) -> tuple[int, np.ndarray, np.ndarray]:
@@ -332,7 +326,7 @@ def _build_point_tree_axial_matrix(target, *, point_tree, point_id_to_row) -> tu
     cv_row_by_cv = point_id_to_row[point_tree.cv_midpoint_point_id]
     dynamic_rows = np.asarray([int(cv_row_by_cv[cv_id]) for cv_id in range(len(target.cvs))], dtype=np.int32)
     row_capacitance = _row_capacitance_scale(target, dynamic_rows=dynamic_rows, n_point=n_point)
-    axial_matrix = np.zeros((n_point, n_point), dtype=float)
+    axial_matrix = np.zeros((n_point, n_point), dtype=np.float64)
 
     for edge in point_tree.edges:
         parent_row = int(point_id_to_row[edge.parent_point_id])
@@ -372,75 +366,76 @@ def build_cv_axial_operator(target, *, point_tree, scheduling) -> np.ndarray:
         algebraic_dynamic = axial_matrix[np.ix_(algebraic_rows, dynamic_rows)]
         algebraic_algebraic = axial_matrix[np.ix_(algebraic_rows, algebraic_rows)]
         reduced = dynamic_dynamic - dynamic_algebraic @ np.linalg.solve(algebraic_algebraic, algebraic_dynamic)
-    return np.asarray(reduced, dtype=float)
+    return np.asarray(reduced, dtype=np.float64)
 
 
-def _build_dhs_static_cache(system: dict[str, object]) -> DHSStaticCache:
-    n_point = int(system["n_point"])
-    dynamic_rows_np = np.asarray(system["dynamic_rows"], dtype=np.int32)
-    diag_base_jnp = jnp.asarray(system["diag_base"], dtype=jnp.float64)
-    level_size_np = np.asarray(system["level_size"], dtype=np.int32)
-    level_offsets_np = np.cumsum(np.insert(level_size_np, 0, 0)).astype(np.int32, copy=False)
-    parent_lookup_np = np.asarray(system["parent_lookup"], dtype=np.int32)
-    diag_base_with_sentinel_jnp = jnp.concatenate(
-        [diag_base_jnp, jnp.ones((1,), dtype=diag_base_jnp.dtype)],
-        axis=0,
-    )
-    lower_base = jnp.asarray(system["lowers"], dtype=jnp.float64)
-    upper_base = jnp.asarray(system["uppers"], dtype=jnp.float64)
+def _get_dhs_static_source(target, *, point_tree, scheduling) -> DHSStaticSource:
+    runtime = getattr(target, "_runtime", getattr(target, "_compiled_runtime", None))
+    source = getattr(runtime, "dhs_static_source_np", None)
+    if source is not None:
+        return source
+    source = _build_dhs_static_source(target, point_tree=point_tree, scheduling=scheduling)
+    if runtime is not None:
+        object.__setattr__(runtime, "dhs_static_source_np", source)
+    return source
+
+
+def _build_dhs_static_cache(source: DHSStaticSource) -> DHSStaticCache:
+    float_dtype = jnp.asarray(0.0).dtype
     return DHSStaticCache(
-        n_point=n_point,
-        dynamic_rows_np=dynamic_rows_np,
-        dynamic_rows_jnp=jnp.asarray(dynamic_rows_np),
-        diag_base_jnp=diag_base_jnp,
-        diag_base_with_sentinel_jnp=diag_base_with_sentinel_jnp,
-        lowers_with_sentinel_jnp=jnp.concatenate([lower_base, jnp.zeros((1,), dtype=lower_base.dtype)], axis=0),
-        uppers_with_sentinel_jnp=jnp.concatenate([upper_base, jnp.zeros((1,), dtype=upper_base.dtype)], axis=0),
-        parent_lookup_jnp=jnp.asarray(parent_lookup_np),
-        edges_jnp=jnp.asarray(system["edges"]),
-        level_offsets_np=level_offsets_np,
-        backsub_indices_jnp=jnp.asarray(_build_backsub_indices(parent_lookup_np, n_nodes=n_point)),
+        float_dtype=float_dtype,
+        diag_ms_inv=jnp.asarray(source.diag_ms_inv_np, dtype=brainstate.environ.dftype()) * (u.ms ** -1),
+        lowers_ms_inv=jnp.asarray(source.lowers_ms_inv_np, dtype=brainstate.environ.dftype()) * (u.ms ** -1),
+        uppers_ms_inv=jnp.asarray(source.uppers_ms_inv_np, dtype=brainstate.environ.dftype()) * (u.ms ** -1),
     )
 
 
-def _get_dhs_static_cache(target, system: dict[str, object]) -> DHSStaticCache:
-    runtime = getattr(target, "_compiled_runtime", None)
+def _get_dhs_static_cache(target, source: DHSStaticSource) -> DHSStaticCache:
+    runtime = getattr(target, "_runtime", getattr(target, "_compiled_runtime", None))
     cache = getattr(runtime, "dhs_static_cache", None)
-    if cache is not None:
+    float_dtype = jnp.asarray(0.0).dtype
+    if cache is not None and getattr(cache, "float_dtype", None) == float_dtype:
         return cache
-    return _build_dhs_static_cache(system)
+    cache = _build_dhs_static_cache(source)
+    if runtime is not None and not _is_traced_value(cache.diag_ms_inv):
+        object.__setattr__(runtime, "dhs_static_cache", cache)
+    return cache
 
 
-def _build_dhs_numeric_state(V_n, linear, const, *, dt, static_cache: DHSStaticCache) -> DHSNumericState:
+def _build_dhs_numeric_state(V_n, linear, const, *, dt, static_source: DHSStaticSource,
+                             static_cache: DHSStaticCache) -> DHSNumericState:
     V_n, linear, const = [x.reshape((-1, V_n.shape[-1])) for x in (V_n, linear, const)]
     batch_size = V_n.shape[0]
-    n_point = static_cache.n_point
+    n_point = static_source.n_point
 
-    rhs_midpoint_mv = _to_decimal(V_n + dt * const, u.mV)
-    linear_ms_inv = _to_decimal(linear, u.ms ** -1)
-    dt_ms = _scalar_decimal(dt, u.ms)
+    rhs_midpoint_mv = _to_jax_quantity(V_n + dt * const, u.mV)
+    linear_ms_inv = _to_jax_quantity(linear, u.ms ** -1)
+    dt_ms = _to_jax_quantity(dt, u.ms)
 
-    diags = jnp.broadcast_to(static_cache.diag_base_with_sentinel_jnp[None, :], (batch_size, n_point + 1))
-    diags = diags.at[:, static_cache.dynamic_rows_jnp].add(1.0 - dt_ms * linear_ms_inv)
+    diag_base = static_cache.diag_ms_inv * dt_ms
+    lower_base = static_cache.lowers_ms_inv * dt_ms
+    upper_base = static_cache.uppers_ms_inv * dt_ms
+    diag_base_mantissa = u.get_mantissa(diag_base)
+    diag_base_with_sentinel = jnp.concatenate([diag_base_mantissa, jnp.ones_like(diag_base_mantissa[:1])], axis=0) * u.UNITLESS
 
-    solves = jnp.zeros((batch_size, n_point + 1), dtype=rhs_midpoint_mv.dtype)
-    solves = solves.at[:, static_cache.dynamic_rows_jnp].set(rhs_midpoint_mv)
+    diags = u.math.broadcast_to(diag_base_with_sentinel[None, :], (batch_size, n_point + 1))
+    diag_update = jnp.ones_like(u.get_mantissa(linear_ms_inv)) * u.UNITLESS - dt_ms * linear_ms_inv
+    diags = diags.at[:, static_source.dynamic_rows_np].add(diag_update)
+
+    solves = u.Quantity(jnp.zeros((batch_size, n_point + 1), dtype=rhs_midpoint_mv.dtype), u.mV)
+    solves = solves.at[:, static_source.dynamic_rows_np].set(rhs_midpoint_mv)
 
     return DHSNumericState(
         diags=diags,
         solves=solves,
-        lowers=static_cache.lowers_with_sentinel_jnp,
-        uppers=static_cache.uppers_with_sentinel_jnp,
-        parent_lookup=static_cache.parent_lookup_jnp,
-        edges=static_cache.edges_jnp,
-        dynamic_rows=static_cache.dynamic_rows_jnp,
-        n_point=n_point,
+        lowers=jnp.concatenate([u.get_mantissa(lower_base), jnp.zeros_like(u.get_mantissa(lower_base[:1]))], axis=0) * u.UNITLESS,
+        uppers=jnp.concatenate([u.get_mantissa(upper_base), jnp.zeros_like(u.get_mantissa(upper_base[:1]))], axis=0) * u.UNITLESS,
     )
 
 
-def _restore_midpoint_voltage(solves: jnp.ndarray, *, dynamic_rows: jnp.ndarray,
+def _restore_midpoint_voltage(solves: object, *, dynamic_rows: np.ndarray,
                               target_shape: tuple[int, ...]) -> object:
-    return solves[:, dynamic_rows].reshape(target_shape) * u.mV
+    return solves[:, dynamic_rows].reshape(target_shape)
 
 
 def _edge_conductance(*, edge, cvs) -> object:
@@ -508,28 +503,30 @@ def _build_dhs_edge_order(scheduling) -> tuple[np.ndarray, np.ndarray]:
             level_size.append(len(level_edges))
 
     if edge_pairs:
-        return np.asarray(edge_pairs, dtype=np.int32), np.asarray(level_size, dtype=np.int32)
+        return np.asarray(edge_pairs, dtype=np.int32).reshape((-1, 2)), np.asarray(level_size, dtype=np.int32)
     return np.empty((0, 2), dtype=np.int32), np.empty((0,), dtype=np.int32)
 
 
 def _check_comp_triang(diags, solves, lowers, uppers, edges):
-    """Kernel contract check: only raw numerical arrays are allowed here."""
-    assert not isinstance(diags, u.Quantity)
-    assert not isinstance(solves, u.Quantity)
-    assert not isinstance(lowers, u.Quantity)
-    assert not isinstance(uppers, u.Quantity)
+    """Kernel contract check for the quantity-aware DHS forward pass."""
     assert not isinstance(edges, u.Quantity)
     assert diags.ndim == 2
     assert solves.ndim == 2
     assert lowers.ndim == 1
     assert uppers.ndim == 1
+    if isinstance(diags, u.Quantity):
+        assert u.get_unit(diags).is_unitless
+    if isinstance(lowers, u.Quantity):
+        assert u.get_unit(lowers).is_unitless
+    if isinstance(uppers, u.Quantity):
+        assert u.get_unit(uppers).is_unitless
     assert lowers.shape[0] == diags.shape[1]
     assert uppers.shape[0] == diags.shape[1]
     assert edges.ndim == 2 and edges.shape[1] == 2
 
 
 def comp_triang_raw(diags, solves, lowers, uppers, edges, level_offsets):
-    """DHS forward elimination on raw ``jnp.ndarray`` inputs."""
+    """DHS forward elimination on quantity-aware JAX inputs."""
     _check_comp_triang(diags, solves, lowers, uppers, edges)
     for i in range(level_offsets.shape[0] - 1):
         children = edges[level_offsets[i]:level_offsets[i + 1], 0]
@@ -546,14 +543,15 @@ def comp_triang_raw(diags, solves, lowers, uppers, edges, level_offsets):
 
 
 def _check_comp_backsub(diags, solves, lowers, backsub_indices):
-    """Kernel contract check: recursive doubling only accepts raw arrays."""
-    assert not isinstance(diags, u.Quantity)
-    assert not isinstance(solves, u.Quantity)
-    assert not isinstance(lowers, u.Quantity)
+    """Kernel contract check for quantity-aware recursive doubling."""
     assert not isinstance(backsub_indices, u.Quantity)
     assert diags.ndim == 2
     assert solves.ndim == 2
     assert lowers.ndim == 1
+    if isinstance(diags, u.Quantity):
+        assert u.get_unit(diags).is_unitless
+    if isinstance(lowers, u.Quantity):
+        assert u.get_unit(lowers).is_unitless
     assert diags.shape == solves.shape
     assert lowers.shape[0] == diags.shape[1]
     assert backsub_indices.ndim == 2
@@ -582,9 +580,10 @@ def comp_backsub_raw(
     lowers,
     backsub_indices,
 ):
-    """DHS recursive-doubling back substitution on raw ``jnp.ndarray`` inputs."""
+    """DHS recursive-doubling back substitution on quantity-aware inputs."""
     _check_comp_backsub(diags, solves, lowers, backsub_indices)
-    lowers = lowers.at[0].set(0.0)
+    zero = 0.0 * u.UNITLESS if isinstance(lowers, u.Quantity) else 0.0
+    lowers = lowers.at[0].set(zero)
     lower_effect = -lowers / diags
     solve_effect = solves / diags
 
@@ -619,9 +618,9 @@ def _linear_and_const_term(target, V_n, *args):
     return linear, const
 
 
-def _to_decimal(value: object, unit: object) -> jnp.ndarray:
-    """Convert a quantity-like value to a hot-path ``jnp.ndarray``."""
-    return jnp.asarray(value.to_decimal(unit), dtype=jnp.float64)
+def _to_jax_quantity(value: object, unit: object) -> u.Quantity:
+    """Convert a quantity-like value while preserving any existing JAX dtype."""
+    return u.Quantity(u.math.asarray(value.to_decimal(unit)), unit)
 
 
 def _scalar_decimal(value: object, unit: object) -> float:

@@ -1199,3 +1199,44 @@ class RuntimeModuleAllTest(unittest.TestCase):
         actual = set(getattr(rt, "__all__", []))
         missing = expected - actual
         self.assertFalse(missing, msg=f"missing public symbols: {missing}")
+
+
+class RuntimeSplitReexportTest(unittest.TestCase):
+    """ARCH-02: runtime.py partitions into layouts / state / ions / bindings."""
+
+    def test_mechanism_layout_lives_in_layouts(self) -> None:
+        from braincell._compute import layouts, runtime
+
+        self.assertIs(runtime.MechanismLayout, layouts.MechanismLayout)
+        self.assertIs(runtime.ClampActiveTable, layouts.ClampActiveTable)
+        self.assertIs(
+            runtime.build_clamp_active_table,
+            layouts.build_clamp_active_table,
+        )
+
+    def test_cell_runtime_state_lives_in_state(self) -> None:
+        from braincell._compute import runtime, state
+
+        self.assertIs(runtime.CellRuntimeState, state.CellRuntimeState)
+
+    def test_ion_helpers_live_in_ions(self) -> None:
+        from braincell._compute import ions, runtime
+
+        self.assertIs(runtime._build_runtime_ions, ions._build_runtime_ions)
+        self.assertIs(runtime._build_default_ions, ions._build_default_ions)
+
+    def test_binding_helpers_live_in_bindings(self) -> None:
+        from braincell._compute import bindings, runtime
+
+        self.assertIs(
+            runtime._resolve_channel_runtime_bindings,
+            bindings._resolve_channel_runtime_bindings,
+        )
+        self.assertIs(
+            runtime._instantiate_runtime_node,
+            bindings._instantiate_runtime_node,
+        )
+        self.assertIs(
+            runtime._BoundIonChannelRuntime,
+            bindings._BoundIonChannelRuntime,
+        )

@@ -29,7 +29,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
-from braincell._base import HHTypedNeuron, IonChannel
+from braincell._base import HHTypedNeuron, IonChannel, _cast_like
 from braincell._misc import is_traced_value
 from braincell._typing import Initializer
 from braincell._compute.table import (
@@ -71,14 +71,6 @@ __all__ = ["Cell"]
 class AxialOperatorCache:
     float_dtype: jnp.dtype
     operator: object
-
-
-def _cast_like(value, like):
-    dtype = jnp.asarray(u.get_magnitude(like)).dtype
-    if isinstance(value, u.Quantity):
-        unit = u.get_unit(value)
-        return jnp.asarray(value.to_decimal(unit), dtype=dtype) * unit
-    return jnp.asarray(value, dtype=dtype)
 
 
 class Cell(HHTypedNeuron):
@@ -597,17 +589,6 @@ class Cell(HHTypedNeuron):
         spk = self.get_spike(last_V, self.V.value)
         self.spike.value = spk
         return spk
-
-    # ------------------------------------------------------------------
-    # Spike (phase-agnostic; uses V_th + spk_fun only)
-
-    def get_spike(self, last_V, next_V):
-        denom = _cast_like(20.0 * u.mV, next_V)
-        V_th = _cast_like(self.V_th, next_V)
-        return (
-            self._spk_fun((next_V - V_th) / denom)
-            * self._spk_fun((V_th - last_V) / denom)
-        )
 
     def reset_state(self, batch_size=None) -> None:
         """Reseed ``V`` / ``spike`` / ``current_time`` without leaving INITIALIZED.

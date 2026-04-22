@@ -85,11 +85,14 @@ from typing import Optional, Dict, Sequence, Callable, NamedTuple, Tuple, Type, 
 
 import brainstate
 import brainpy
+import brainunit as u
+import jax.numpy as jnp
 import numpy as np
 from brainstate.mixin import _JointGenericAlias
 
 from .quad.protocol import DiffEqModule, IndependentIntegration
-from ._misc import set_module_as, Container, TreeNode
+from ._misc import cast_like as _cast_like, set_module_as, Container, TreeNode
+
 
 __all__ = [
     'HHTypedNeuron',
@@ -398,6 +401,21 @@ class HHTypedNeuron(brainpy.state.Dynamics, Container, DiffEqModule):
         """
         TreeNode.check_hierarchies(type(self), **elements)
         self.ion_channels.update(self._format_elements(IonChannel, **elements))
+
+    def get_spike(self, last_V, next_V):
+        """Surrogate-gradient spike indicator at the ``V_th`` crossing.
+
+        Uses ``self.V_th`` (threshold voltage) and ``self.spk_fun``
+        (surrogate-gradient callable) supplied by subclasses. The
+        product of rising- and falling-crossing terms produces a
+        non-zero value only when ``last_V < V_th <= next_V``.
+        """
+        denom = _cast_like(20.0 * u.mV, next_V)
+        V_th = _cast_like(self.V_th, next_V)
+        return (
+            self.spk_fun((next_V - V_th) / denom)
+            * self.spk_fun((V_th - last_V) / denom)
+        )
 
 
 class IonChannel(brainstate.graph.Node, TreeNode, DiffEqModule):

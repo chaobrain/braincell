@@ -24,6 +24,7 @@ from typing import Any
 
 import brainunit as u
 import jax
+import jax.numpy as jnp
 import numpy as np
 
 _BOUND_OPERATORS = ("ge", "gt", "le", "lt")
@@ -39,6 +40,19 @@ def is_traced_value(value) -> bool:
     if isinstance(value, u.Quantity):
         value = u.get_mantissa(value)
     return isinstance(value, jax.core.Tracer)
+
+
+def cast_like(value, like):
+    """Cast ``value`` to the dtype of ``like``, preserving any brainunit unit.
+
+    Shared helper used across single- and multi-compartment spike
+    detection and the Runge-Kutta integrators.
+    """
+    dtype = jnp.asarray(u.get_magnitude(like)).dtype
+    if isinstance(value, u.Quantity):
+        unit = u.get_unit(value)
+        return jnp.asarray(value.to_decimal(unit), dtype=dtype) * unit
+    return jnp.asarray(value, dtype=dtype)
 
 
 def _to_unit(param: object, name: str, unit: Any) -> np.ndarray:

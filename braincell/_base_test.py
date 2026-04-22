@@ -132,3 +132,30 @@ class MixIonsFactoryArityTest(unittest.TestCase):
         with self.assertRaises(AssertionError) as ctx:
             mix_ions(SodiumFixed(size=1))
         self.assertIn("mix_ions", str(ctx.exception))
+
+
+class HHTypedNeuronGetSpikeTest(unittest.TestCase):
+    """ARCH-04: get_spike and _cast_like live on the shared base."""
+
+    def test_get_spike_is_method_on_base(self) -> None:
+        from braincell._base import HHTypedNeuron
+        self.assertTrue(hasattr(HHTypedNeuron, "get_spike"))
+        self.assertTrue(callable(HHTypedNeuron.get_spike))
+
+    def test_cast_like_is_importable_from_base(self) -> None:
+        from braincell._base import _cast_like
+        self.assertTrue(callable(_cast_like))
+
+    def test_single_compartment_inherits_get_spike(self) -> None:
+        from braincell._base import HHTypedNeuron
+        from braincell._single_compartment.base import SingleCompartment
+
+        self.assertIs(
+            SingleCompartment.get_spike,
+            HHTypedNeuron.get_spike,
+            msg="SingleCompartment must not redefine get_spike after ARCH-04",
+        )
+
+        sc = SingleCompartment(size=1, V_th=0.0 * u.mV)
+        spk = sc.get_spike(jnp.array([-10.0]) * u.mV, jnp.array([10.0]) * u.mV)
+        self.assertGreater(float(spk[0]), 0.0)

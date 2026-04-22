@@ -30,6 +30,7 @@ import jax.numpy as jnp
 import numpy as np
 
 from braincell._base import HHTypedNeuron, IonChannel
+from braincell._misc import is_traced_value
 from braincell._typing import Initializer
 from braincell._compute.table import (
     MechanismObjectCell,
@@ -78,12 +79,6 @@ def _cast_like(value, like):
         unit = u.get_unit(value)
         return jnp.asarray(value.to_decimal(unit), dtype=dtype) * unit
     return jnp.asarray(value, dtype=dtype)
-
-
-def _is_traced_value(value) -> bool:
-    if isinstance(value, u.Quantity):
-        value = u.get_mantissa(value)
-    return isinstance(value, jax.core.Tracer)
 
 
 class Cell(HHTypedNeuron):
@@ -559,7 +554,7 @@ class Cell(HHTypedNeuron):
 
         operator = jnp.asarray(runtime.axial_operator_np, dtype=brainstate.environ.dftype()) * (u.ms ** -1)
         cache = AxialOperatorCache(float_dtype=float_dtype, operator=operator)
-        if not _is_traced_value(operator):
+        if not is_traced_value(operator):
             object.__setattr__(runtime, "axial_operator_cache", cache)
         self._axial_jax = operator
         return operator

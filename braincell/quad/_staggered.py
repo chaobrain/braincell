@@ -34,7 +34,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
-from braincell._misc import set_module_as
+from braincell._misc import is_traced_value, set_module_as
 from ._exp_euler import ind_exp_euler_step
 from ._registry import register_integrator
 from .protocol import DiffEqModule
@@ -42,12 +42,6 @@ from .protocol import DiffEqModule
 __all__ = [
     'staggered_step',
 ]
-
-
-def _is_traced_value(value) -> bool:
-    if isinstance(value, u.Quantity):
-        value = u.get_mantissa(value)
-    return isinstance(value, jax.core.Tracer)
 
 
 @register_integrator(
@@ -398,7 +392,7 @@ def _get_dhs_static_cache(target, source: DHSStaticSource) -> DHSStaticCache:
     if cache is not None and getattr(cache, "float_dtype", None) == float_dtype:
         return cache
     cache = _build_dhs_static_cache(source)
-    if runtime is not None and not _is_traced_value(cache.diag_ms_inv):
+    if runtime is not None and not is_traced_value(cache.diag_ms_inv):
         object.__setattr__(runtime, "dhs_static_cache", cache)
     return cache
 

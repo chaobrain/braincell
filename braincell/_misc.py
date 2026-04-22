@@ -23,9 +23,22 @@ import brainstate
 from typing import Any
 
 import brainunit as u
+import jax
 import numpy as np
 
 _BOUND_OPERATORS = ("ge", "gt", "le", "lt")
+
+
+def is_traced_value(value) -> bool:
+    """Return ``True`` when ``value`` is a live JAX tracer.
+
+    Unwraps a :class:`brainunit.Quantity` first so that a Quantity wrapping
+    a tracer is correctly identified as traced. Concrete numpy / JAX arrays
+    and plain Python numbers return ``False``.
+    """
+    if isinstance(value, u.Quantity):
+        value = u.get_mantissa(value)
+    return isinstance(value, jax.core.Tracer)
 
 
 def _to_unit(param: object, name: str, unit: Any) -> np.ndarray:

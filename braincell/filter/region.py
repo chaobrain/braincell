@@ -55,12 +55,18 @@ class RegionExpr(ABC):
     """Base class for lazy region selectors."""
 
     def __or__(self, other: "RegionExpr") -> "RegionExpr":
+        if not isinstance(other, RegionExpr):
+            return NotImplemented
         return RegionSetOp("union", (self, other))
 
     def __and__(self, other: "RegionExpr") -> "RegionExpr":
+        if not isinstance(other, RegionExpr):
+            return NotImplemented
         return RegionSetOp("intersection", (self, other))
 
     def __sub__(self, other: "RegionExpr") -> "RegionExpr":
+        if not isinstance(other, RegionExpr):
+            return NotImplemented
         return RegionSetOp("difference", (self, other))
 
     def complement(self) -> "RegionExpr":

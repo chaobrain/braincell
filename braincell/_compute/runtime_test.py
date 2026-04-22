@@ -1112,3 +1112,37 @@ class RaggedCurrentClampBufferTest(unittest.TestCase):
             mask_key = (layout.id, "_mask_durations")
             self.assertIn(mask_key, cell.runtime.state_buffers)
             self.assertEqual(cell.runtime.state_buffers[mask_key].shape, dur.mantissa.shape)
+
+
+class FnFingerprintWarnsOnOpaqueClosureTest(unittest.TestCase):
+    """MED-08: fingerprinting a lambda with opaque closure emits RuntimeWarning."""
+
+    def test_opaque_closure_emits_warning(self) -> None:
+        import warnings
+
+        from braincell._compute.runtime import _fn_fingerprint, _opaque_warned
+
+        class _Opaque:
+            __slots__ = ("x",)
+
+            def __init__(self) -> None:
+                self.x = object()
+
+        opaque = _Opaque()
+
+        def _make():
+            return lambda t: opaque
+
+        fn = _make()
+
+        # Drop any prior entry for this call-site so the test is independent
+        # of test ordering.
+        _opaque_warned.discard((fn.__code__.co_filename, fn.__code__.co_firstlineno))
+
+        with warnings.catch_warnings(record=True) as captured:
+            warnings.simplefilter("always")
+            _fn_fingerprint(fn)
+        self.assertTrue(
+            any(issubclass(w.category, RuntimeWarning) for w in captured),
+            "expected RuntimeWarning for opaque closure cell",
+        )

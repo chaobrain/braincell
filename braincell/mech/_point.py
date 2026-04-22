@@ -289,6 +289,13 @@ class FunctionClamp(Point):
     falls back to identity). Two :class:`FunctionClamp` instances built
     from two separate ``lambda`` definitions with identical bodies are
     considered distinct.
+
+    The runtime layer fingerprints ``fn`` by bytecode + closure cells so
+    structurally identical lambdas can merge into one layout. Closure
+    cells holding opaque, non-hashable objects fall back to ``id(value)``
+    and therefore defeat dedup. Such lambdas trigger a one-shot
+    :class:`RuntimeWarning` — hoist to module level with a named function
+    to recover dedup.
     """
 
     fn: Callable

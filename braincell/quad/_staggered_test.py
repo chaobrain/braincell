@@ -46,6 +46,30 @@ from braincell.quad._staggered import (
 )
 
 
+class StaggeredReadsRuntimeAttrDirectlyTest(unittest.TestCase):
+    """MED-07: _get_dhs_static_source / _get_dhs_static_cache must not probe _compiled_runtime."""
+
+    def test_compiled_runtime_fallback_is_not_consulted(self) -> None:
+        from braincell.quad._staggered import _get_dhs_static_source
+
+        class _TrapRuntime:
+            # If the fallback branch runs, this getattr trap fires.
+            dhs_static_source_np = None
+
+            def __getattribute__(self, name):
+                raise AssertionError(
+                    f"_compiled_runtime must not be read (got getattr {name!r})"
+                )
+
+        class _Target:
+            _compiled_runtime = _TrapRuntime()
+
+        # Missing ``_runtime`` must raise AttributeError outright — not quietly
+        # fall back to ``_compiled_runtime``.
+        with self.assertRaises(AttributeError):
+            _get_dhs_static_source(_Target(), point_tree=None, scheduling=None)
+
+
 class DhsVoltageGuardTest(unittest.TestCase):
 
     def test_requires_point_tree_attribute(self):

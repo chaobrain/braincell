@@ -371,7 +371,7 @@ def build_cv_axial_operator(target, *, point_tree, scheduling) -> np.ndarray:
 
 
 def _get_dhs_static_source(target, *, point_tree, scheduling) -> DHSStaticSource:
-    runtime = getattr(target, "_runtime", getattr(target, "_compiled_runtime", None))
+    runtime = target._runtime
     source = getattr(runtime, "dhs_static_source_np", None)
     if source is not None:
         return source
@@ -392,7 +392,7 @@ def _build_dhs_static_cache(source: DHSStaticSource) -> DHSStaticCache:
 
 
 def _get_dhs_static_cache(target, source: DHSStaticSource) -> DHSStaticCache:
-    runtime = getattr(target, "_runtime", getattr(target, "_compiled_runtime", None))
+    runtime = target._runtime
     cache = getattr(runtime, "dhs_static_cache", None)
     float_dtype = jnp.asarray(0.0).dtype
     if cache is not None and getattr(cache, "float_dtype", None) == float_dtype:

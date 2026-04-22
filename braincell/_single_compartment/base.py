@@ -226,7 +226,7 @@ class SingleCompartment(HHTypedNeuron):
         for key, ch in self.nodes(IonChannel, allowed_hierarchy=(1, 1)).items():
             try:
                 I_ext = I_ext + ch.current(self.V.value)
-            except Exception as e:
+            except (TypeError, ValueError, RuntimeError, ArithmeticError) as e:
                 raise ValueError(
                     f"Error in computing current for ion channel '{key}': \n"
                     f"{ch}\n"

@@ -463,6 +463,29 @@ class SingleCompartmentComputeDerivativeTest(unittest.TestCase):
         self.assertIsInstance(ctx.exception.__cause__, RuntimeError)
         self.assertIn("intentional bad current", str(ctx.exception.__cause__))
 
+    def test_non_numeric_exception_passes_through_unwrapped(self) -> None:
+        """MED-04: AttributeError from channel.current must not be rewritten as ValueError."""
+
+        class _AttrErrorChannel(Channel):
+            root_type = HHTypedNeuron
+
+            def __init__(self, size, name=None):
+                super().__init__(size=size, name=name)
+
+            def current(self, V):
+                raise AttributeError("lookup failed")
+
+            def init_state(self, V, batch_size=None):  # pragma: no cover
+                pass
+
+            def reset_state(self, V, batch_size=None):  # pragma: no cover
+                pass
+
+        sc = SingleCompartment(size=1, attr=_AttrErrorChannel(size=1))
+        sc.init_state()
+        with self.assertRaises(AttributeError):
+            sc.compute_derivative(0.0 * u.nA / u.cm ** 2)
+
 
 # ---------------------------------------------------------------------------
 # post_integral

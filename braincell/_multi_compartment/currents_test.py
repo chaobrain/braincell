@@ -103,5 +103,42 @@ class TestNormalizeExtToPointDensity(unittest.TestCase):
             _normalize_ext_to_point_density(1.0 * u.mV, rt)
 
 
+class TotalMembraneCurrentNarrowExceptTest(unittest.TestCase):
+    """MED-04: channel errors outside the numeric set must not be swallowed."""
+
+    def test_non_numeric_exception_passes_through(self) -> None:
+        import brainstate
+        from braincell import Branch, CVPerBranch, Cell, Morphology
+        from braincell._base import IonChannel
+        from braincell._multi_compartment.currents import total_membrane_current
+
+        soma = Branch.from_lengths(
+            lengths=[20.0] * u.um,
+            radii=[10.0, 10.0] * u.um,
+            type="soma",
+        )
+        cell = Cell(Morphology.from_root(soma, name="soma"), cv_policy=CVPerBranch())
+        cell.init_state()
+
+        channels = cell.nodes(IonChannel, allowed_hierarchy=(1, 1))
+        self.assertGreater(len(channels), 0)
+
+        first_channel = next(iter(channels.values()))
+
+        def boom(V):
+            raise AttributeError("lookup failed")
+
+        first_channel.current = boom  # type: ignore[assignment]
+
+        with brainstate.environ.context(t=0.0 * u.ms):
+            with self.assertRaises(AttributeError):
+                total_membrane_current(
+                    cell,
+                    V_cv=cell.V.value,
+                    I_ext=0.0,
+                    t=0.0 * u.ms,
+                )
+
+
 if __name__ == "__main__":
     unittest.main()

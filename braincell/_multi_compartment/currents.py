@@ -48,7 +48,7 @@ def total_membrane_current(
     for key, ch in host.nodes(IonChannel, allowed_hierarchy=(1, 1)).items():
         try:
             contrib = ch.current(point_V)
-        except Exception as exc:
+        except (TypeError, ValueError, RuntimeError, ArithmeticError) as exc:
             raise ValueError(
                 f"Error computing current for ion channel {key!r}:\n{ch}\nError: {exc}"
             ) from exc

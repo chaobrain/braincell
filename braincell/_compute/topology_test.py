@@ -24,6 +24,7 @@ from braincell._compute.topology import (
     _EPS_PARAM,
     _compute_peel_levels,
     _locate_branch_cv_by_x,
+    build_point_scheduling,
     build_point_tree,
 )
 from braincell._cv import CVPerBranch
@@ -162,6 +163,50 @@ class VocabularyLock(unittest.TestCase):
         seen = {cvp.position for point in tree.points for cvp in point.cv_points}
         self.assertTrue(seen.issubset({"prox", "mid", "dist"}))
         self.assertIn("mid", seen)
+
+
+class BuildPointSchedulingGroups(unittest.TestCase):
+    """Groups are level-partitioned: each row appears exactly once.
+
+    Regression for a bug where ``_build_groups`` sliced a flat ``order``
+    array without capping at the current level end, so group[i] contained
+    every row from level_starts[i] through the end of the array. DHS edge
+    building then emitted the same parent/child pairs many times per step
+    and the implicit-Euler voltage solve blew up (rest -65 mV drifted to
+    ~0 mV within a single step; no HH spike could form).
+    """
+
+    def _ctx(self):
+        morpho = _two_branch_morpho()
+        cvs = build_cvs(morpho, policy=CVPerBranch(cv_per_branch=2))
+        tree = build_point_tree(morpho, cvs=cvs)
+        return tree, build_point_scheduling(tree)
+
+    def test_group_sizes_sum_to_n_point(self) -> None:
+        tree, sched = self._ctx()
+        self.assertEqual(sum(len(g) for g in sched.groups), len(tree.points))
+
+    def test_each_row_appears_in_exactly_one_group(self) -> None:
+        tree, sched = self._ctx()
+        all_rows = [int(row) for g in sched.groups for row in g.tolist()]
+        self.assertEqual(sorted(all_rows), list(range(len(tree.points))))
+
+    def test_group_sizes_match_level_size(self) -> None:
+        _tree, sched = self._ctx()
+        self.assertEqual(
+            [len(g) for g in sched.groups],
+            list(sched.level_size.tolist()),
+        )
+
+    def test_edges_count_equals_tree_edges(self) -> None:
+        tree, sched = self._ctx()
+        expected = sum(1 for p in tree.points if int(tree.point_parent[p.id]) >= 0)
+        self.assertEqual(sched.edges.shape, (expected, 2))
+
+    def test_dhs_edges_are_unique(self) -> None:
+        _tree, sched = self._ctx()
+        seen = {(int(r), int(p)) for r, p in sched.edges.tolist()}
+        self.assertEqual(len(seen), sched.edges.shape[0])
 
 
 if __name__ == "__main__":

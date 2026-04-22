@@ -49,7 +49,6 @@ from ._cv import (
     DLambda,
     MaxCVLen,
 )
-from .io.neuromorpho import load_neuromorpho
 from .mech import (
     CableProperty,
     CurrentClamp,
@@ -68,6 +67,14 @@ from .morph.branch import (
 from .morph.morphology import (
     Morphology,
 )
+
+def __getattr__(name):
+    if name == "load_neuromorpho":
+        from .io.neuromorpho import load_neuromorpho as _load_neuromorpho
+        globals()[name] = _load_neuromorpho
+        return _load_neuromorpho
+    raise AttributeError(f"module 'braincell' has no attribute {name!r}")
+
 
 __all__ = [
     "__version__",

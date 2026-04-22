@@ -131,7 +131,9 @@ class IndExpEulerLinearTest(unittest.TestCase):
         class Plain(brainstate.nn.Module):
             pass
 
-        with self.assertRaises(AssertionError):
+        # HIGH-03: TypeError (not AssertionError) so ``python -O`` preserves
+        # the contract.
+        with self.assertRaises(TypeError):
             with brainstate.environ.context(t=0. * u.ms, dt=0.1 * u.ms):
                 ind_exp_euler_step(Plain())
 
@@ -140,9 +142,19 @@ class ExpEulerTypeGuardTest(unittest.TestCase):
     """``exp_euler_step`` requires an ``HHTypedNeuron`` target."""
 
     def test_rejects_minimal_diffeq_module(self):
-        with self.assertRaises(AssertionError):
+        # HIGH-03: TypeError (not AssertionError) so ``python -O`` preserves
+        # the contract.
+        with self.assertRaises(TypeError):
             with brainstate.environ.context(t=0. * u.ms, dt=0.1 * u.ms):
                 exp_euler_step(_LinearDecay())
+
+    def test_rejects_plain_object(self):
+        from braincell.quad import exp_euler_step
+
+        with brainstate.environ.context(t=0. * u.ms, dt=0.025 * u.ms):
+            with self.assertRaises(TypeError) as ctx:
+                exp_euler_step(object())
+        self.assertIn("HHTypedNeuron", str(ctx.exception))
 
 
 if __name__ == "__main__":

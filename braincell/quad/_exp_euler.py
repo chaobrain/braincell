@@ -185,10 +185,11 @@ def exp_euler_step(target: DiffEqModule, *args):
     from braincell._base import HHTypedNeuron
     from braincell._multi_compartment import Cell
     from braincell._single_compartment import SingleCompartment
-    assert isinstance(target, HHTypedNeuron), (
-        f"The target should be a {HHTypedNeuron.__name__}. "
-        f"But got {type(target)} instead."
-    )
+    if not isinstance(target, HHTypedNeuron):
+        raise TypeError(
+            f"The target should be a {HHTypedNeuron.__name__}. "
+            f"But got {type(target)} instead."
+        )
     t = brainstate.environ.get('t', getattr(target, 'current_time', 0.0 * u.ms))
     dt = brainstate.environ.get('dt')
 
@@ -314,10 +315,11 @@ def ind_exp_euler_step(target: DiffEqModule, *args, excluded_paths=()):
         ...         excluded_paths=[('V',)],
         ...     )                                           # doctest: +SKIP
     """
-    assert isinstance(target, DiffEqModule), (
-        f"The target should be a {DiffEqModule.__name__}. "
-        f"But got {type(target)} instead."
-    )
+    if not isinstance(target, DiffEqModule):
+        raise TypeError(
+            f"The target should be a {DiffEqModule.__name__}. "
+            f"But got {type(target)} instead."
+        )
     t = brainstate.environ.get('t', getattr(target, 'current_time', 0.0 * u.ms))
     dt = brainstate.environ.get('dt')
 

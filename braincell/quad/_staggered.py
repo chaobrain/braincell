@@ -132,10 +132,11 @@ def staggered_step(
         >>> with brainstate.environ.context(t=0. * u.ms, dt=0.025 * u.ms):
         ...     staggered_step(cell, input_current)        # doctest: +SKIP
     """
-    assert isinstance(target, DiffEqModule), (
-        f"The stagger integrator only support {DiffEqModule.__name__}, "
-        f"but we got {type(target)} instead."
-    )
+    if not isinstance(target, DiffEqModule):
+        raise TypeError(
+            f"The stagger integrator only support {DiffEqModule.__name__}, "
+            f"but we got {type(target)} instead."
+        )
     t = brainstate.environ.get('t', 0.0)
     dt = brainstate.environ.get('dt')
 

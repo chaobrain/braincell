@@ -164,14 +164,16 @@ class StaggeredStepGuardTest(unittest.TestCase):
         class Plain(brainstate.nn.Module):
             pass
 
-        with self.assertRaises(AssertionError):
+        # HIGH-03: TypeError (not AssertionError) so ``python -O`` preserves
+        # the contract.
+        with self.assertRaises(TypeError):
             staggered_step(Plain())
 
     def test_error_message_mentions_diffeq_module(self):
         class Plain(brainstate.nn.Module):
             pass
 
-        with self.assertRaises(AssertionError) as ctx:
+        with self.assertRaises(TypeError) as ctx:
             staggered_step(Plain())
         self.assertIn(DiffEqModule.__name__, str(ctx.exception))
 

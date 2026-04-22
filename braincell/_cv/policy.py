@@ -29,6 +29,10 @@ if TYPE_CHECKING:
 
 EPS_PARAM = 1e-9        # tolerance for normalized x in [0, 1]
 EPS_LEN_UM = 1e-6       # tolerance for physical μm lengths
+# d_lambda space-constant prefactor yielding μm from sqrt(cm·Ω·cm/(Hz·µF)).
+# The numerical value 1e5 = sqrt(1e-6 cm⁴/F) · (cm→µm conversion); see
+# Hines & Carnevale 2001 §5 / NEURON d_lambda derivation.
+_D_LAMBDA_UM_FACTOR = 1.0e5
 Bounds = tuple[tuple[float, float], ...]
 BoundsByBranch = tuple[Bounds, ...]
 _DEFAULT_D_LAMBDA_CABLE = CableProperty(
@@ -279,7 +283,9 @@ def _bounds_from_d_lambda(
     if np.any(diam_um <= 0.0):
         raise ValueError("DLambda requires strictly positive branch diameters.")
 
-    lambda_f_um = 1.0e5 * np.sqrt(diam_um / (4.0 * np.pi * frequency_hz * ra_ohm_cm * cm_uF_per_cm2))
+    lambda_f_um = _D_LAMBDA_UM_FACTOR * np.sqrt(
+        diam_um / (4.0 * np.pi * frequency_hz * ra_ohm_cm * cm_uF_per_cm2)
+    )
     electrotonic_length = float(np.sum(lengths_um / lambda_f_um))
     n_cv = int(np.ceil((electrotonic_length / d_lambda) - EPS_PARAM))
     n_cv = max(1, n_cv)

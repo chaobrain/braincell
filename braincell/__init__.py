@@ -49,7 +49,6 @@ from ._version import (
     __version__,
     __version_info__,
 )
-from .io.neuromorpho import load_neuromorpho
 from .mech import (
     CableProperty,
     CurrentClamp,
@@ -98,7 +97,6 @@ __all__ = [
     "Ion",
     "IonChannel",
     "IonInfo",
-    "load_neuromorpho",
     "MixIons",
     "MaxCVLen",
     "Morphology",

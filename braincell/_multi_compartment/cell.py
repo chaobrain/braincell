@@ -109,7 +109,7 @@ class Cell(HHTypedNeuron):
         solver: str | Callable = "staggered",
         name: str | None = None,
     ) -> None:
-        HHTypedNeuron.__init__(self, size=(1,), name=name, **build_placeholder_ions())
+        super().__init__(self, size=(1,), name=name, **build_placeholder_ions())
 
         if not isinstance(morpho, Morphology):
             raise TypeError(

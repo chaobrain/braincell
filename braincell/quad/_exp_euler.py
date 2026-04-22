@@ -68,24 +68,22 @@ def _exponential_euler(f, y0, t, dt, args=()):
     # reshape df from "[..., M]" to "[-1, M]"
     df = jnp.asarray(df, dtype=dtype).reshape((-1, df.shape[-1]))
 
-    # Compute exp(hA) and phi(hA)
-    n = y0.shape[-1]
-    I = jnp.eye(n, dtype=dtype)
-    updates = jax.vmap(
-        lambda A_, df_:
-        (
-            jnp.linalg.solve(
-                A_,
-                (
-                    power_iteration_expm(dt * A_, method='scipy')  # Matrix exponential
-                    - I
-                )
-            ) @ df_
-        )
-    )(A, df)
-    updates = updates.reshape(y0.shape)
+    # Stable phi_1(hA)·h·df via the augmented-matrix trick:
+    #   M = [[hA,  h·df],
+    #        [0 ,  0   ]]
+    # → expm(M) upper-right column gives phi_1(hA)·h·df with no inversion,
+    # so singular A (common for near-quiescent gating variables) no longer
+    # produces NaN.
+    n = A.shape[-1]
+    zero_row = jnp.zeros((1, n + 1), dtype=dtype)
 
-    # Compute the new state
+    def _one(A_, df_):
+        top = jnp.concatenate([dt * A_, (dt * df_)[:, None]], axis=1)
+        M = jnp.concatenate([top, zero_row], axis=0)
+        expM = power_iteration_expm(M, method='scipy')
+        return expM[:n, n]
+
+    updates = jax.vmap(_one)(A, df).reshape(y0.shape)
     y1 = y0 + updates
     return y1, aux
 

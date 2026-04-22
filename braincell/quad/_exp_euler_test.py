@@ -157,5 +157,22 @@ class ExpEulerTypeGuardTest(unittest.TestCase):
         self.assertIn("HHTypedNeuron", str(ctx.exception))
 
 
+class ExponentialEulerHandlesSingularJacobianTest(unittest.TestCase):
+    """MED-06: update must remain finite when A is singular."""
+
+    def test_update_finite_for_singular_A(self) -> None:
+        from braincell.quad._exp_euler import _exponential_euler
+
+        def f(t, y, *args):
+            # df = 0 and A = df/dy = 0 → singular.  Update must be zero,
+            # not NaN from solve(zeros, …).
+            return jnp.zeros_like(y), None
+
+        y0 = jnp.array([1.0, 2.0])
+        y1, _ = _exponential_euler(f, y0, t=jnp.asarray(0.0), dt=0.1 * u.ms)
+        self.assertTrue(bool(jnp.isfinite(y1).all()))
+        np.testing.assert_allclose(np.asarray(y1), np.asarray(y0), atol=1e-9)
+
+
 if __name__ == "__main__":
     unittest.main()

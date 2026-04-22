@@ -1300,7 +1300,7 @@ def mix_ions(*ions) -> MixIons:
     """
     for ion in ions:
         assert isinstance(ion, Ion), f'Must be instance of {Ion.__name__}. But got {type(ion)}'
-    assert len(ions) > 0, ''
+    assert len(ions) >= 2, f'mix_ions requires at least two ions, got {len(ions)}.'
     return MixIons(*ions)
 
 

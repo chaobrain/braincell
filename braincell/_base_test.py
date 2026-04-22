@@ -122,3 +122,13 @@ class IonAddChannelValidationTest(unittest.TestCase):
         na = SodiumFixed(size=1)
         with self.assertRaises(TypeError):
             na.add(fake=_FakeChannelLike())
+
+
+class MixIonsFactoryArityTest(unittest.TestCase):
+    """LOW-04: mix_ions must flag single-ion calls with its own message."""
+
+    def test_single_ion_raises_with_mix_ions_message(self) -> None:
+        from braincell import mix_ions
+        with self.assertRaises(AssertionError) as ctx:
+            mix_ions(SodiumFixed(size=1))
+        self.assertIn("mix_ions", str(ctx.exception))

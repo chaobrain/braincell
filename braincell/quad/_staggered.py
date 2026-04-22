@@ -510,20 +510,32 @@ def _build_dhs_edge_order(scheduling) -> tuple[np.ndarray, np.ndarray]:
 
 def _check_comp_triang(diags, solves, lowers, uppers, edges):
     """Kernel contract check for the quantity-aware DHS forward pass."""
-    assert not isinstance(edges, u.Quantity)
-    assert diags.ndim == 2
-    assert solves.ndim == 2
-    assert lowers.ndim == 1
-    assert uppers.ndim == 1
-    if isinstance(diags, u.Quantity):
-        assert u.get_unit(diags).is_unitless
-    if isinstance(lowers, u.Quantity):
-        assert u.get_unit(lowers).is_unitless
-    if isinstance(uppers, u.Quantity):
-        assert u.get_unit(uppers).is_unitless
-    assert lowers.shape[0] == diags.shape[1]
-    assert uppers.shape[0] == diags.shape[1]
-    assert edges.ndim == 2 and edges.shape[1] == 2
+    if isinstance(edges, u.Quantity):
+        raise ValueError("edges must be a plain array, not a Quantity")
+    if diags.ndim != 2:
+        raise ValueError(f"diags must be 2D, got ndim={diags.ndim}")
+    if solves.ndim != 2:
+        raise ValueError(f"solves must be 2D, got ndim={solves.ndim}")
+    if lowers.ndim != 1:
+        raise ValueError(f"lowers must be 1D, got ndim={lowers.ndim}")
+    if uppers.ndim != 1:
+        raise ValueError(f"uppers must be 1D, got ndim={uppers.ndim}")
+    if isinstance(diags, u.Quantity) and not u.get_unit(diags).is_unitless:
+        raise ValueError(f"diags must be unitless, got unit={u.get_unit(diags)}")
+    if isinstance(lowers, u.Quantity) and not u.get_unit(lowers).is_unitless:
+        raise ValueError(f"lowers must be unitless, got unit={u.get_unit(lowers)}")
+    if isinstance(uppers, u.Quantity) and not u.get_unit(uppers).is_unitless:
+        raise ValueError(f"uppers must be unitless, got unit={u.get_unit(uppers)}")
+    if lowers.shape[0] != diags.shape[1]:
+        raise ValueError(
+            f"lowers.shape[0]={lowers.shape[0]} must equal diags.shape[1]={diags.shape[1]}"
+        )
+    if uppers.shape[0] != diags.shape[1]:
+        raise ValueError(
+            f"uppers.shape[0]={uppers.shape[0]} must equal diags.shape[1]={diags.shape[1]}"
+        )
+    if edges.ndim != 2 or edges.shape[1] != 2:
+        raise ValueError(f"edges must have shape (_, 2), got {edges.shape}")
 
 
 def comp_triang_raw(diags, solves, lowers, uppers, edges, level_offsets):
@@ -545,18 +557,33 @@ def comp_triang_raw(diags, solves, lowers, uppers, edges, level_offsets):
 
 def _check_comp_backsub(diags, solves, lowers, backsub_indices):
     """Kernel contract check for quantity-aware recursive doubling."""
-    assert not isinstance(backsub_indices, u.Quantity)
-    assert diags.ndim == 2
-    assert solves.ndim == 2
-    assert lowers.ndim == 1
-    if isinstance(diags, u.Quantity):
-        assert u.get_unit(diags).is_unitless
-    if isinstance(lowers, u.Quantity):
-        assert u.get_unit(lowers).is_unitless
-    assert diags.shape == solves.shape
-    assert lowers.shape[0] == diags.shape[1]
-    assert backsub_indices.ndim == 2
-    assert backsub_indices.shape[1] == diags.shape[1]
+    if isinstance(backsub_indices, u.Quantity):
+        raise ValueError("backsub_indices must be a plain array, not a Quantity")
+    if diags.ndim != 2:
+        raise ValueError(f"diags must be 2D, got ndim={diags.ndim}")
+    if solves.ndim != 2:
+        raise ValueError(f"solves must be 2D, got ndim={solves.ndim}")
+    if lowers.ndim != 1:
+        raise ValueError(f"lowers must be 1D, got ndim={lowers.ndim}")
+    if isinstance(diags, u.Quantity) and not u.get_unit(diags).is_unitless:
+        raise ValueError(f"diags must be unitless, got unit={u.get_unit(diags)}")
+    if isinstance(lowers, u.Quantity) and not u.get_unit(lowers).is_unitless:
+        raise ValueError(f"lowers must be unitless, got unit={u.get_unit(lowers)}")
+    if diags.shape != solves.shape:
+        raise ValueError(
+            f"diags.shape={diags.shape} must equal solves.shape={solves.shape}"
+        )
+    if lowers.shape[0] != diags.shape[1]:
+        raise ValueError(
+            f"lowers.shape[0]={lowers.shape[0]} must equal diags.shape[1]={diags.shape[1]}"
+        )
+    if backsub_indices.ndim != 2:
+        raise ValueError(f"backsub_indices must be 2D, got ndim={backsub_indices.ndim}")
+    if backsub_indices.shape[1] != diags.shape[1]:
+        raise ValueError(
+            f"backsub_indices.shape[1]={backsub_indices.shape[1]} "
+            f"must equal diags.shape[1]={diags.shape[1]}"
+        )
 
 
 def _build_backsub_indices(parent_lookup: np.ndarray, *, n_nodes: int) -> np.ndarray:

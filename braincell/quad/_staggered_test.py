@@ -83,7 +83,8 @@ class CompTriangRawTest(unittest.TestCase):
 
     def test_kernel_contract_violation_on_wrong_rank(self):
         # ``diags`` must be 2D — passing a 1D array trips the contract check.
-        with self.assertRaises(AssertionError):
+        # HIGH-04: raises ValueError (not AssertionError) under ``python -O``.
+        with self.assertRaises(ValueError):
             comp_triang_raw(
                 jnp.array([1.0]),
                 jnp.array([[1.0]]),
@@ -113,7 +114,7 @@ class CompTriangRawTest(unittest.TestCase):
         uppers = u.Quantity(jnp.array([0.0]), u.UNITLESS)
         edges = jnp.empty((0, 2), dtype=jnp.int32)
         level_offsets = np.array([0], dtype=np.int32)
-        with self.assertRaises(AssertionError):
+        with self.assertRaises(ValueError):
             comp_triang_raw(diags, solves, lowers, uppers, edges, level_offsets)
 
 
@@ -124,7 +125,7 @@ class CompBacksubRawTest(unittest.TestCase):
         solves = jnp.array([[1.0, 1.0, 1.0]])  # mismatched second dim
         lowers = jnp.array([0.0, 0.0])
         backsub_indices = jnp.zeros((1, 2), dtype=jnp.int32)
-        with self.assertRaises(AssertionError):
+        with self.assertRaises(ValueError):
             comp_backsub_raw(diags, solves, lowers, backsub_indices)
 
     def test_accepts_quantity_solves(self):

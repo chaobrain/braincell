@@ -7,14 +7,15 @@
   },
   "defaults": {
     "channel_params": {
-      "g_max_S_cm2": 0.00008,
+      "g_max_S_cm2": 8e-05,
       "E_mV": -20.0
     }
   },
   "mapping": {
     "current": "ih",
     "impl_name": {
-      "common": "HCN2_MA20_GoC"
+      "neuron": "HCN2_MA20_GoC",
+      "braincell": "HCN2_MA2020_GoC"
     },
     "gate_names": {
       "common": [

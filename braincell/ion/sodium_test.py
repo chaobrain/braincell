@@ -21,8 +21,8 @@ import brainunit as u
 import jax.numpy as jnp
 
 from braincell._base import HHTypedNeuron, Ion, IonInfo
-from braincell.channel.sodium import INa_TM1991
-from braincell.ion._template import InitNernstIon
+from braincell.channel.sodium import Na_TM1991
+from braincell.ion._base import InitNernstIon
 from braincell.ion.sodium import Sodium, SodiumFixed, SodiumInitNernst
 
 
@@ -120,16 +120,16 @@ class SodiumFixedContainerTest(unittest.TestCase):
         self.assertEqual(na.external_currents, {})
 
     def test_channels_kwarg_is_attached(self) -> None:
-        na = SodiumFixed(size=1, INa=INa_TM1991(size=1))
+        na = SodiumFixed(size=1, INa=Na_TM1991(size=1))
         self.assertIn("INa", na.channels)
-        self.assertIsInstance(na.channels["INa"], INa_TM1991)
+        self.assertIsInstance(na.channels["INa"], Na_TM1991)
 
     def test_current_without_channels_returns_none(self) -> None:
         na = SodiumFixed(size=1)
         self.assertIsNone(na.current(_V([-60.0])))
 
     def test_current_with_channel_delegates_to_channel(self) -> None:
-        na = SodiumFixed(size=1, INa=INa_TM1991(size=1))
+        na = SodiumFixed(size=1, INa=Na_TM1991(size=1))
         V = _V([-60.0])
         na.init_state(V)
         na.reset_state(V)
@@ -150,7 +150,7 @@ class SodiumFixedContainerTest(unittest.TestCase):
             na.register_external_current("ext", fake)
 
     def test_current_with_include_external_adds_registered_fn(self) -> None:
-        na = SodiumFixed(size=1, INa=INa_TM1991(size=1))
+        na = SodiumFixed(size=1, INa=Na_TM1991(size=1))
         V = _V([-60.0])
         na.init_state(V)
         na.reset_state(V)
@@ -177,17 +177,17 @@ class SodiumFixedLifecycleTest(unittest.TestCase):
         na.init_state(V)
 
     def test_init_state_initialises_child_channel_gates(self) -> None:
-        na = SodiumFixed(size=1, INa=INa_TM1991(size=1))
+        na = SodiumFixed(size=1, INa=Na_TM1991(size=1))
         V = _V([-60.0])
         na.init_state(V)
         ch = na.channels["INa"]
         # After init_state the m/h gate states must exist and have the right
-        # shape (``INa_TM1991`` uses p (= m) and q (= h) attributes).
+        # shape (``Na_TM1991`` uses p (= m) and q (= h) attributes).
         self.assertEqual(ch.p.value.shape, (1,))
         self.assertEqual(ch.q.value.shape, (1,))
 
     def test_reset_state_is_idempotent(self) -> None:
-        na = SodiumFixed(size=1, INa=INa_TM1991(size=1))
+        na = SodiumFixed(size=1, INa=Na_TM1991(size=1))
         V = _V([-60.0])
         na.init_state(V)
         na.reset_state(V)
@@ -206,7 +206,7 @@ class SodiumFixedLifecycleTest(unittest.TestCase):
         )
 
     def test_compute_derivative_populates_child_derivatives(self) -> None:
-        na = SodiumFixed(size=1, INa=INa_TM1991(size=1))
+        na = SodiumFixed(size=1, INa=Na_TM1991(size=1))
         V = _V([-60.0])
         na.init_state(V)
         na.reset_state(V)

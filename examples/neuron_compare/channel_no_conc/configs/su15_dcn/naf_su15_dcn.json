@@ -7,13 +7,14 @@
   },
   "defaults": {
     "channel_params": {
-      "g_max_S_cm2": 0.00001
+      "g_max_S_cm2": 1e-05
     }
   },
   "mapping": {
     "current": "ina",
     "impl_name": {
-      "common": "NaF_SU15_DCN"
+      "neuron": "NaF_SU15_DCN",
+      "braincell": "NaF_SU2015_DCN"
     },
     "gate_names": {
       "common": [

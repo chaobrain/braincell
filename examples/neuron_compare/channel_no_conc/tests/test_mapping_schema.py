@@ -21,27 +21,27 @@ class MappingSchemaTest(unittest.TestCase):
         self.assertEqual(mapping_spec.current_source.ion_name, "k")
         self.assertEqual(mapping_spec.current_source.neuron_current_var, "ik")
         self.assertEqual(mapping_spec.neuron.mechanism_name, "Kv")
-        self.assertEqual(mapping_spec.braincell.class_name, "IK_Kv_test")
+        self.assertEqual(mapping_spec.braincell.class_name, "K_Kv_test")
         self.assertEqual(mapping_spec.gate_map[0].canonical_name, "n")
         self.assertEqual(mapping_spec.parameter_map["g_max_S_cm2"].braincell, "g_max")
         self.assertEqual(mapping_spec.parameter_map["g_max_S_cm2"].neuron, "gbar")
 
     def test_loads_mapping_with_common_impl_name_and_gate_names(self) -> None:
         payload = build_mapping_payload(
-            impl_name={"common": "Kv1p1_MA24_PC"},
+            impl_name={"common": "Kv1p1_MA2024_PC"},
             gate_names={"common": ["n"]},
         )
         mapping_spec = mapping_schema.MappingSpec.from_mapping(payload)
-        self.assertEqual(mapping_spec.neuron.mechanism_name, "Kv1p1_MA24_PC")
-        self.assertEqual(mapping_spec.braincell.class_name, "Kv1p1_MA24_PC")
+        self.assertEqual(mapping_spec.neuron.mechanism_name, "Kv1p1_MA2024_PC")
+        self.assertEqual(mapping_spec.braincell.class_name, "Kv1p1_MA2024_PC")
         self.assertEqual(mapping_spec.neuron.gate_names, ("n",))
         normalized = mapping_schema.normalize_mapping_payload(payload)
-        self.assertEqual(normalized["impl_name"], {"common": "Kv1p1_MA24_PC"})
+        self.assertEqual(normalized["impl_name"], {"common": "Kv1p1_MA2024_PC"})
         self.assertEqual(normalized["current"], "ik")
 
     def test_rejects_mixed_common_and_side_specific_impl_names(self) -> None:
         payload = build_mapping_payload(
-            impl_name={"common": "Kv", "neuron": "Kv", "braincell": "IK_Kv_test"},
+            impl_name={"common": "Kv", "neuron": "Kv", "braincell": "K_Kv_test"},
         )
         with self.assertRaisesRegex(ValueError, "cannot mix 'common'"):
             mapping_schema.MappingSpec.from_mapping(payload)
@@ -60,7 +60,7 @@ class MappingSchemaTest(unittest.TestCase):
     def test_loads_pure_channel_current_without_inferred_ion(self) -> None:
         payload = build_mapping_payload(
             current="ih",
-            impl_name={"common": "Ih_HM1992"},
+            impl_name={"common": "HCN_HM1992"},
             gate_names={"common": ["p"]},
             channel_params={
                 "g_max_S_cm2": {"neuron": "gbar", "braincell": "g_max"},

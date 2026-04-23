@@ -27,7 +27,7 @@ Layout = Literal["dense", "sparse"]
 
 from braincell import ion as runtime_ion
 from braincell._base import Channel, IonChannel
-from braincell.ion._template import DynamicNernstIon, FixedIon, InitNernstIon
+from braincell.ion._base import DynamicNernstIon, FixedIon, InitNernstIon
 from braincell.mech import (
     CurrentProbe,
     CurrentClamp,

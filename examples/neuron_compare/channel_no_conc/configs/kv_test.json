@@ -9,7 +9,7 @@
     "current": "ik",
     "impl_name": {
       "neuron": "Kv",
-      "braincell": "IK_Kv_test"
+      "braincell": "K_Kv_test"
     },
     "gate_names": {
       "common": [

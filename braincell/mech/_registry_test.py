@@ -166,7 +166,7 @@ class MechanismRegistryBasicsTest(
         reg = self.make_registry()
         reg.register(
             MechanismEntry(
-                category="channel", name="INa_HH1952", cls=_DummyChannel
+                category="channel", name="Na_HH1952", cls=_DummyChannel
             )
         )
         with self.assertRaises(KeyError) as ctx:
@@ -359,18 +359,18 @@ class BuiltinRegistrationTest(unittest.TestCase):
 
         self.assertIs(_REGISTRY.get("channel", "leaky"), channel.IL)
 
-    def test_channel_INa_HH1952_registered(self) -> None:
+    def test_channel_Na_HH1952_registered(self) -> None:
         import braincell.channel as channel
 
         self.assertIs(
-            _REGISTRY.get("channel", "INa_HH1952"), channel.INa_HH1952
+            _REGISTRY.get("channel", "Na_HH1952"), channel.Na_HH1952
         )
 
-    def test_channel_IK_HH1952_registered(self) -> None:
+    def test_channel_K_HH1952_registered(self) -> None:
         import braincell.channel as channel
 
         self.assertIs(
-            _REGISTRY.get("channel", "IK_HH1952"), channel.IK_HH1952
+            _REGISTRY.get("channel", "K_HH1952"), channel.K_HH1952
         )
 
     def test_ion_SodiumFixed_registered(self) -> None:

@@ -83,6 +83,7 @@ tpu = ["jax[tpu]"]
 # Visualization: 2D (matplotlib) + 3D (pyvista / plotly) backends
 vis = [
     "matplotlib",
+    "networkx",
     "pyvista",
     "plotly",
 ]
@@ -96,6 +97,7 @@ io = ["requests"]
 # Convenience aggregator: everything a user-facing install might need
 all = [
     "matplotlib",
+    "networkx",
     "pyvista",
     "plotly",
     "diffrax",
@@ -107,6 +109,7 @@ testing = [
     "pytest",
     "jax",
     "matplotlib",
+    "networkx",
     "pyvista",
     "plotly",
     "diffrax",

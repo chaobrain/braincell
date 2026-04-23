@@ -8,7 +8,8 @@
   "mapping": {
     "current": "ik",
     "impl_name": {
-      "common": "Kv3p4_MA24_PC"
+      "neuron": "Kv3p4_MA24_PC",
+      "braincell": "Kv3p4_MA2024_PC"
     },
     "gate_names": {
       "common": [

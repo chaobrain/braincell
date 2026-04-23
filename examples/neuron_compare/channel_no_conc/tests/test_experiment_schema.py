@@ -516,7 +516,7 @@ class ExperimentSchemaTest(unittest.TestCase):
     def test_pure_channel_case_does_not_require_ion_state(self) -> None:
         mapping = build_mapping_payload(
             current="ih",
-            impl_name={"common": "Ih_HM1992"},
+            impl_name={"common": "HCN_HM1992"},
             gate_names={"common": ["p"]},
             channel_params={
                 "g_max_S_cm2": {"neuron": "gbar", "braincell": "g_max"},
@@ -536,7 +536,7 @@ class ExperimentSchemaTest(unittest.TestCase):
     def test_pure_channel_case_allows_empty_channel_params(self) -> None:
         mapping = build_mapping_payload(
             current="ih",
-            impl_name={"common": "Ih_HM1992"},
+            impl_name={"common": "HCN_HM1992"},
             gate_names={"common": ["p"]},
             channel_params={
                 "g_max_S_cm2": {"neuron": "gbar", "braincell": "g_max"},
@@ -554,7 +554,7 @@ class ExperimentSchemaTest(unittest.TestCase):
     def test_pure_channel_case_rejects_ion_state(self) -> None:
         mapping = build_mapping_payload(
             current="ih",
-            impl_name={"common": "Ih_HM1992"},
+            impl_name={"common": "HCN_HM1992"},
             gate_names={"common": ["p"]},
             channel_params={
                 "g_max_S_cm2": {"neuron": "gbar", "braincell": "g_max"},

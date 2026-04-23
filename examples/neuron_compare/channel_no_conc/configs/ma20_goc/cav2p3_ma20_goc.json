@@ -13,7 +13,8 @@
   "mapping": {
     "current": "ica",
     "impl_name": {
-      "common": "Cav2p3_MA20_GoC"
+      "neuron": "Cav2p3_MA20_GoC",
+      "braincell": "Cav2p3_MA2020_GoC"
     },
     "gate_names": {
       "common": [

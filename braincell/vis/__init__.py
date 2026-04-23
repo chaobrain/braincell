@@ -36,6 +36,7 @@ from .morphometry import (
     plot_topology,
 )
 from .movie import plot_movie
+from .point_topology import plot_point_topology
 from .plot2d import plot2d
 from .plot3d import plot3d
 from .scene import OverlaySpec, ValueSpec
@@ -61,6 +62,7 @@ __all__ = [
     "plot_branch_order_histogram",
     "plot_dendrogram",
     "plot_movie",
+    "plot_point_topology",
     "plot_sholl",
     "plot_topology",
     "plot_traces",

@@ -36,7 +36,7 @@ def build_mapping_payload(
     }[current_kind]
     return {
         "current": current_var,
-        "impl_name": impl_name or {"neuron": "Kv", "braincell": "IK_Kv_test"},
+        "impl_name": impl_name or {"neuron": "Kv", "braincell": "K_Kv_test"},
         "gate_names": gate_names or {"common": ["n"]},
         "channel_params": channel_params or params or {
             "g_max_S_cm2": {"neuron": "gbar", "braincell": "g_max"},

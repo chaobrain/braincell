@@ -7,14 +7,15 @@
   },
   "defaults": {
     "channel_params": {
-      "g_max_S_cm2": 0.00001,
+      "g_max_S_cm2": 1e-05,
       "E_mV": -45.0
     }
   },
   "mapping": {
     "current": "ih",
     "impl_name": {
-      "common": "HCN_SU15_DCN"
+      "neuron": "HCN_SU15_DCN",
+      "braincell": "HCN_SU2015_DCN"
     },
     "gate_names": {
       "common": [

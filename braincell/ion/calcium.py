@@ -23,7 +23,7 @@ import brainunit as u
 
 from braincell._base import Ion, HHTypedNeuron
 from braincell.mech import register_ion
-from braincell.ion._template import DynamicNernstIon, FixedIon, InitNernstIon
+from braincell.ion._base import DynamicNernstIon, FixedIon, InitNernstIon
 
 __all__ = [
     'Calcium',

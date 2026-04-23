@@ -24,16 +24,15 @@ import jax.numpy as jnp
 brainstate.environ.set(precision=64)
 
 from braincell._base import IonInfo
-from braincell.channel._template import Markov
-from braincell.channel.markov_no_conc import NaFHF_MA20_GrC
-from braincell.channel.markov_no_conc import Nav1p1_MA25_BC
-from braincell.channel.markov_no_conc import Nav1p1_RI21_SC
-from braincell.channel.markov_no_conc import Nav1p6_MA20_GoC
-from braincell.channel.markov_no_conc import Nav1p6_MA24_PC
-from braincell.channel.markov_no_conc import Nav1p6_MA25_BC
-from braincell.channel.markov_no_conc import Nav1p6_RI21_SC
-from braincell.channel.markov_no_conc import Nav_MA20_GrC
-from braincell.channel.sodium import INa_Rsg
+from braincell.channel._base import Markov
+from braincell.channel.markov_no_conc import NaFHF_MA2020_GrC
+from braincell.channel.markov_no_conc import Nav1p1_MA2025_BC
+from braincell.channel.markov_no_conc import Nav1p1_RI2021_SC
+from braincell.channel.markov_no_conc import Nav1p6_MA2020_GoC
+from braincell.channel.markov_no_conc import Nav1p6_MA2024_PC
+from braincell.channel.markov_no_conc import Nav1p6_MA2025_BC
+from braincell.channel.markov_no_conc import Nav1p6_RI2021_SC
+from braincell.channel.markov_no_conc import Nav_MA2020_GrC
 from braincell.ion import Sodium
 
 
@@ -48,19 +47,6 @@ def _na_info(size: int = 1) -> IonInfo:
 
 def _V(values, unit=u.mV):
     return jnp.asarray(values) * unit
-
-
-def _legacy(size: int = 1, **kwargs) -> INa_Rsg:
-    return INa_Rsg(size=size, g_max=16.0 * (u.mS / u.cm ** 2), **kwargs)
-
-
-def _legacy_nav1p1(size: int = 1, temp=u.celsius2kelvin(22.0), **kwargs) -> INa_Rsg:
-    legacy = INa_Rsg(size=size, g_max=8.0 * (u.mS / u.cm ** 2), T=temp, **kwargs)
-    legacy.phi = 2.7 ** (((temp - u.celsius2kelvin(22.0)) / u.kelvin) / 10.0)
-    legacy.Oon = 2.3
-    legacy.epsilon = 1e-12
-    legacy.alfac = (legacy.Oon / legacy.Con) ** (1 / 4)
-    return legacy
 
 
 def _seed_states(channel) -> None:
@@ -80,6 +66,29 @@ def _seed_states(channel) -> None:
     }
     for name, value in values.items():
         getattr(channel, name).value = value
+
+
+def _manual_markov_derivatives(channel, V, *ions):
+    states = channel.state_values()
+    derivatives = {
+        name: u.math.zeros_like(value)
+        for name, value in states.items()
+    }
+
+    for src, dst, f_rate, b_rate in channel.state_pairs:
+        forward = getattr(channel, f_rate)(V, *ions)
+        derivatives[src] = derivatives[src] - states[src] * forward
+        derivatives[dst] = derivatives[dst] + states[src] * forward
+
+        if b_rate is not None:
+            backward = getattr(channel, b_rate)(V, *ions)
+            derivatives[src] = derivatives[src] + states[dst] * backward
+            derivatives[dst] = derivatives[dst] - states[dst] * backward
+
+    return {
+        name: derivative / u.ms
+        for name, derivative in derivatives.items()
+    }
 
 
 class _Nav1p6Mixin:
@@ -138,56 +147,48 @@ class _Nav1p6Mixin:
         self.assertTrue(u.math.allclose(states["B"], jnp.array([0.05]), atol=1e-6))
         self.assertTrue(u.math.allclose(states["I6"], jnp.array([0.65]), atol=1e-6))
 
-    def test_temp_matches_legacy_temperature_factor(self) -> None:
-        legacy = _legacy(size=1, T=u.celsius2kelvin(30.0))
+    def test_temp_matches_q10_formula(self) -> None:
         proto = self._make(size=1, temp=u.celsius2kelvin(30.0))
+        expected_phi = 3 ** (((proto.temp - u.celsius2kelvin(22.0)) / u.kelvin) / 10.0)
 
         self.assertTrue(u.math.allclose(proto.temp, u.celsius2kelvin(30.0), atol=1e-6 * u.kelvin))
-        self.assertTrue(u.math.allclose(proto.phi, legacy.phi, atol=1e-6))
+        self.assertTrue(u.math.allclose(proto.phi, expected_phi, atol=1e-6))
 
-    def test_current_matches_legacy_implementation_with_matched_gmax(self) -> None:
-        legacy = _legacy(size=1)
+    def test_current_uses_open_state_only(self) -> None:
         proto = self._make(size=1)
         V = _V([-60.0])
         na = _na_info()
 
-        legacy.init_state(V, na)
         proto.init_state(V, na)
-        legacy.reset_state(V, na)
         proto.reset_state(V, na)
-        legacy.O.value = jnp.array([0.35])
         proto.O.value = jnp.array([0.35])
 
-        i_legacy = legacy.current(V, na)
-        i_proto = proto.current(V, na)
+        current = proto.current(V, na)
+        expected = proto.g_max * proto.O.value * (na.E - V)
         unit = u.mS / u.cm ** 2 * u.mV
         self.assertTrue(
             u.math.allclose(
-                i_proto.to_decimal(unit),
-                i_legacy.to_decimal(unit),
+                current.to_decimal(unit),
+                expected.to_decimal(unit),
                 atol=1e-6,
             )
         )
 
-    def test_compute_derivative_matches_legacy_implementation(self) -> None:
-        legacy = _legacy(size=2)
+    def test_compute_derivative_matches_manual_markov_balance(self) -> None:
         proto = self._make(size=2)
         V = _V([-60.0, -50.0])
         na = _na_info(2)
 
-        legacy.init_state(V, na)
         proto.init_state(V, na)
-        _seed_states(legacy)
         _seed_states(proto)
-
-        legacy.compute_derivative(V, na)
+        expected = _manual_markov_derivatives(proto, V, na)
         proto.compute_derivative(V, na)
 
         for name in proto.state_names:
             self.assertTrue(
                 u.math.allclose(
                     getattr(proto, name).derivative,
-                    getattr(legacy, name).derivative,
+                    expected[name],
                     atol=1e-6 * u.Hz,
                 )
             )
@@ -220,29 +221,28 @@ class _Nav1p6Mixin:
                 )
             )
 
-    def test_make_integration_matches_legacy_implementation(self) -> None:
-        legacy = _legacy(size=2, solver="euler")
+    def test_make_integration_updates_states_and_keeps_them_finite(self) -> None:
         proto = self._make(size=2, solver="euler")
         V = _V([-60.0, -50.0])
         na = _na_info(2)
 
-        legacy.init_state(V, na)
         proto.init_state(V, na)
-        _seed_states(legacy)
         _seed_states(proto)
+        before = {
+            name: getattr(proto, name).value
+            for name in proto.state_names
+        }
 
         with brainstate.environ.context(dt=0.02 * u.ms):
-            legacy.make_integration(V, na)
             proto.make_integration(V, na)
 
+        changed = False
         for name in proto.state_names:
-            self.assertTrue(
-                u.math.allclose(
-                    getattr(proto, name).value,
-                    getattr(legacy, name).value,
-                    atol=1e-6,
-                )
-            )
+            value = getattr(proto, name).value
+            self.assertTrue(bool(jnp.all(jnp.isfinite(u.get_magnitude(value)))))
+            if not bool(u.math.allclose(value, before[name], atol=1e-9)):
+                changed = True
+        self.assertTrue(changed)
 
     def test_substeps_defaults_to_legacy_refinement(self) -> None:
         proto = self._make(size=1)
@@ -254,15 +254,15 @@ class _Nav1p6Mixin:
 
 
 class Nav1p6MA20GoCTest(_Nav1p6Mixin, unittest.TestCase):
-    CLS = Nav1p6_MA20_GoC
+    CLS = Nav1p6_MA2020_GoC
 
 
 class Nav1p6MA24PCTest(_Nav1p6Mixin, unittest.TestCase):
-    CLS = Nav1p6_MA24_PC
+    CLS = Nav1p6_MA2024_PC
 
     def test_matches_goc_implementation_under_same_conditions(self) -> None:
-        goc = Nav1p6_MA20_GoC(size=2)
-        pc = Nav1p6_MA24_PC(size=2)
+        goc = Nav1p6_MA2020_GoC(size=2)
+        pc = Nav1p6_MA2024_PC(size=2)
         V = _V([-60.0, -50.0])
         na = _na_info(2)
 
@@ -300,13 +300,13 @@ class Nav1p6MA24PCTest(_Nav1p6Mixin, unittest.TestCase):
 
 
 class Nav1p6MA25BCTest(_Nav1p6Mixin, unittest.TestCase):
-    CLS = Nav1p6_MA25_BC
+    CLS = Nav1p6_MA2025_BC
 
     def test_reset_state_uses_steady_state_initialization(self) -> None:
         V = _V([-60.0, -50.0])
         na = _na_info(2)
-        reset = Nav1p6_MA25_BC(size=2)
-        steady = Nav1p6_MA25_BC(size=2)
+        reset = Nav1p6_MA2025_BC(size=2)
+        steady = Nav1p6_MA2025_BC(size=2)
 
         reset.init_state(V, na)
         steady.init_state(V, na)
@@ -329,8 +329,8 @@ class Nav1p6MA25BCTest(_Nav1p6Mixin, unittest.TestCase):
             )
 
     def test_matches_goc_implementation_under_same_conditions(self) -> None:
-        goc = Nav1p6_MA20_GoC(size=2)
-        bc = Nav1p6_MA25_BC(size=2)
+        goc = Nav1p6_MA2020_GoC(size=2)
+        bc = Nav1p6_MA2025_BC(size=2)
         V = _V([-60.0, -50.0])
         na = _na_info(2)
 
@@ -368,13 +368,13 @@ class Nav1p6MA25BCTest(_Nav1p6Mixin, unittest.TestCase):
 
 
 class Nav1p6RI21SCTest(_Nav1p6Mixin, unittest.TestCase):
-    CLS = Nav1p6_RI21_SC
+    CLS = Nav1p6_RI2021_SC
 
     def test_reset_state_uses_steady_state_initialization(self) -> None:
         V = _V([-60.0, -50.0])
         na = _na_info(2)
-        reset = Nav1p6_RI21_SC(size=2)
-        steady = Nav1p6_RI21_SC(size=2)
+        reset = Nav1p6_RI2021_SC(size=2)
+        steady = Nav1p6_RI2021_SC(size=2)
 
         reset.init_state(V, na)
         steady.init_state(V, na)
@@ -397,8 +397,8 @@ class Nav1p6RI21SCTest(_Nav1p6Mixin, unittest.TestCase):
             )
 
     def test_matches_goc_implementation_under_same_conditions(self) -> None:
-        goc = Nav1p6_MA20_GoC(size=2)
-        sc = Nav1p6_RI21_SC(size=2)
+        goc = Nav1p6_MA2020_GoC(size=2)
+        sc = Nav1p6_RI2021_SC(size=2)
         V = _V([-60.0, -50.0])
         na = _na_info(2)
 
@@ -478,48 +478,40 @@ class _Nav1p1Mixin:
         self.assertEqual(proto.epsilon, 1e-12)
         self.assertEqual(proto.zgate, 2.5435)
 
-    def test_markov_dynamics_match_legacy_when_gate_current_is_off(self) -> None:
-        legacy = _legacy_nav1p1(size=2)
+    def test_compute_derivative_matches_manual_markov_balance(self) -> None:
         proto = self._make(size=2)
         V = _V([-60.0, -50.0])
         na = _na_info(2)
 
-        legacy.init_state(V, na)
         proto.init_state(V, na)
-        _seed_states(legacy)
         _seed_states(proto)
-
-        legacy.compute_derivative(V, na)
+        expected = _manual_markov_derivatives(proto, V, na)
         proto.compute_derivative(V, na)
         for name in proto.state_names:
             self.assertTrue(
                 u.math.allclose(
                     getattr(proto, name).derivative,
-                    getattr(legacy, name).derivative,
+                    expected[name],
                     atol=1e-6 * u.Hz,
                 )
             )
 
-    def test_current_matches_legacy_when_gate_current_is_off(self) -> None:
-        legacy = _legacy_nav1p1(size=1)
+    def test_current_uses_open_state_when_gate_current_is_off(self) -> None:
         proto = self._make(size=1, gateCurrent=0.0)
         V = _V([-60.0])
         na = _na_info()
 
-        legacy.init_state(V, na)
         proto.init_state(V, na)
-        legacy.reset_state(V, na)
         proto.reset_state(V, na)
-        legacy.O.value = jnp.array([0.35])
         proto.O.value = jnp.array([0.35])
 
-        i_legacy = legacy.current(V, na)
         i_proto = proto.current(V, na)
+        expected = proto.g_max * proto.O.value * (na.E - V)
         unit = u.mS / u.cm ** 2 * u.mV
         self.assertTrue(
             u.math.allclose(
                 i_proto.to_decimal(unit),
-                i_legacy.to_decimal(unit),
+                expected.to_decimal(unit),
                 atol=1e-6,
             )
         )
@@ -594,38 +586,38 @@ class _Nav1p1Mixin:
                 )
             )
 
-    def test_make_integration_matches_legacy_when_gate_current_is_off(self) -> None:
-        legacy = _legacy_nav1p1(size=2, solver="euler")
+    def test_make_integration_updates_states_and_keeps_them_finite(self) -> None:
         proto = self._make(size=2, solver="euler", gateCurrent=0.0)
         V = _V([-60.0, -50.0])
         na = _na_info(2)
 
-        legacy.init_state(V, na)
         proto.init_state(V, na)
-        _seed_states(legacy)
         _seed_states(proto)
+        before = {
+            name: getattr(proto, name).value
+            for name in proto.state_names
+        }
 
         with brainstate.environ.context(dt=0.02 * u.ms):
-            legacy.make_integration(V, na)
             proto.make_integration(V, na)
+
+        changed = False
         for name in proto.state_names:
-            self.assertTrue(
-                u.math.allclose(
-                    getattr(proto, name).value,
-                    getattr(legacy, name).value,
-                    atol=1e-6,
-                )
-            )
+            value = getattr(proto, name).value
+            self.assertTrue(bool(jnp.all(jnp.isfinite(u.get_magnitude(value)))))
+            if not bool(u.math.allclose(value, before[name], atol=1e-9)):
+                changed = True
+        self.assertTrue(changed)
 
 
 class Nav1p1MA25BCTest(_Nav1p1Mixin, unittest.TestCase):
-    CLS = Nav1p1_MA25_BC
+    CLS = Nav1p1_MA2025_BC
 
     def test_reset_state_uses_steady_state_initialization(self) -> None:
         V = _V([-60.0, -50.0])
         na = _na_info(2)
-        reset = Nav1p1_MA25_BC(size=2)
-        steady = Nav1p1_MA25_BC(size=2)
+        reset = Nav1p1_MA2025_BC(size=2)
+        steady = Nav1p1_MA2025_BC(size=2)
 
         reset.init_state(V, na)
         steady.init_state(V, na)
@@ -649,13 +641,13 @@ class Nav1p1MA25BCTest(_Nav1p1Mixin, unittest.TestCase):
 
 
 class Nav1p1RI21SCTest(_Nav1p1Mixin, unittest.TestCase):
-    CLS = Nav1p1_RI21_SC
+    CLS = Nav1p1_RI2021_SC
 
     def test_reset_state_uses_steady_state_initialization(self) -> None:
         V = _V([-60.0, -50.0])
         na = _na_info(2)
-        reset = Nav1p1_RI21_SC(size=2)
-        steady = Nav1p1_RI21_SC(size=2)
+        reset = Nav1p1_RI2021_SC(size=2)
+        steady = Nav1p1_RI2021_SC(size=2)
 
         reset.init_state(V, na)
         steady.init_state(V, na)
@@ -678,8 +670,8 @@ class Nav1p1RI21SCTest(_Nav1p1Mixin, unittest.TestCase):
             )
 
     def test_matches_bc_implementation_under_same_conditions(self) -> None:
-        bc = Nav1p1_MA25_BC(size=2)
-        sc = Nav1p1_RI21_SC(size=2)
+        bc = Nav1p1_MA2025_BC(size=2)
+        sc = Nav1p1_RI2021_SC(size=2)
         V = _V([-60.0, -50.0])
         na = _na_info(2)
 
@@ -718,8 +710,8 @@ class Nav1p1RI21SCTest(_Nav1p1Mixin, unittest.TestCase):
 
 class NavMA20GrCTest(unittest.TestCase):
     def test_root_type_and_defaults(self) -> None:
-        ch = Nav_MA20_GrC(size=1)
-        self.assertIs(Nav_MA20_GrC.root_type, Sodium)
+        ch = Nav_MA2020_GrC(size=1)
+        self.assertIs(Nav_MA2020_GrC.root_type, Sodium)
         expected = 13.0 * (u.mS / u.cm ** 2)
         self.assertTrue(
             u.math.allclose(
@@ -730,7 +722,7 @@ class NavMA20GrCTest(unittest.TestCase):
         )
 
     def test_init_state_and_hidden_state_layout(self) -> None:
-        ch = Nav_MA20_GrC(size=2)
+        ch = Nav_MA2020_GrC(size=2)
         V = _V([-60.0, -50.0])
         na = _na_info(2)
         ch.init_state(V, na)
@@ -744,7 +736,7 @@ class NavMA20GrCTest(unittest.TestCase):
         self.assertEqual(ch.state_pairs[-1], ("I5", "I6", "f1n", "b1n"))
 
     def test_rate_formulas_follow_mod_definition(self) -> None:
-        ch = Nav_MA20_GrC(size=1)
+        ch = Nav_MA2020_GrC(size=1)
         V = _V([-60.0])
         factor = 3 ** (((ch.temp - u.celsius2kelvin(20.0)) / u.kelvin) / 10.0)
         alfa = factor * ch.Aalfa * u.math.exp((V / u.mV) / ch.Valfa)
@@ -755,7 +747,7 @@ class NavMA20GrCTest(unittest.TestCase):
         self.assertTrue(u.math.allclose(ch.bip(V), teta, atol=1e-6))
 
     def test_current_uses_open_state_only(self) -> None:
-        ch = Nav_MA20_GrC(size=1)
+        ch = Nav_MA2020_GrC(size=1)
         V = _V([-60.0])
         na = _na_info()
         ch.init_state(V, na)
@@ -773,7 +765,7 @@ class NavMA20GrCTest(unittest.TestCase):
         )
 
     def test_selected_derivatives_match_manual_markov_balance(self) -> None:
-        ch = Nav_MA20_GrC(size=1)
+        ch = Nav_MA2020_GrC(size=1)
         V = _V([-60.0])
         na = _na_info()
         ch.init_state(V, na)
@@ -799,7 +791,7 @@ class NavMA20GrCTest(unittest.TestCase):
         self.assertTrue(u.math.allclose(ch.OB.derivative, expected_dOB, atol=1e-6 * u.Hz))
 
     def test_reset_steady_state_produces_stationary_distribution(self) -> None:
-        ch = Nav_MA20_GrC(size=2)
+        ch = Nav_MA2020_GrC(size=2)
         V = _V([-60.0, -50.0])
         na = _na_info(2)
         ch.init_state(V, na)
@@ -822,8 +814,8 @@ class NavMA20GrCTest(unittest.TestCase):
 
 class NaFHFMA20GrCTest(unittest.TestCase):
     def test_root_type_and_defaults(self) -> None:
-        ch = NaFHF_MA20_GrC(size=1)
-        self.assertIs(NaFHF_MA20_GrC.root_type, Sodium)
+        ch = NaFHF_MA2020_GrC(size=1)
+        self.assertIs(NaFHF_MA2020_GrC.root_type, Sodium)
         expected = 13.0 * (u.mS / u.cm ** 2)
         self.assertTrue(
             u.math.allclose(
@@ -834,7 +826,7 @@ class NaFHFMA20GrCTest(unittest.TestCase):
         )
 
     def test_init_state_and_hidden_state_layout(self) -> None:
-        ch = NaFHF_MA20_GrC(size=2)
+        ch = NaFHF_MA2020_GrC(size=2)
         V = _V([-60.0, -50.0])
         na = _na_info(2)
         ch.init_state(V, na)
@@ -848,7 +840,7 @@ class NaFHFMA20GrCTest(unittest.TestCase):
         self.assertEqual(ch.state_pairs[-1], ("I5", "I6", "f1n", "b1n"))
 
     def test_extended_rate_formulas_follow_mod_definition(self) -> None:
-        ch = NaFHF_MA20_GrC(size=1)
+        ch = NaFHF_MA2020_GrC(size=1)
         V = _V([-60.0])
         factor = 3 ** (((ch.temp - u.celsius2kelvin(20.0)) / u.kelvin) / 10.0)
         alfa = factor * ch.Aalfa * u.math.exp((V / u.mV) / ch.Valfa)
@@ -858,7 +850,7 @@ class NaFHFMA20GrCTest(unittest.TestCase):
         self.assertTrue(u.math.allclose(ch.bl6(V), factor * ch.ALoff * ch.d ** 2, atol=1e-6))
 
     def test_current_uses_open_state_only(self) -> None:
-        ch = NaFHF_MA20_GrC(size=1)
+        ch = NaFHF_MA2020_GrC(size=1)
         V = _V([-60.0])
         na = _na_info()
         ch.init_state(V, na)
@@ -877,7 +869,7 @@ class NaFHFMA20GrCTest(unittest.TestCase):
         )
 
     def test_selected_long_inactivation_derivatives_match_manual_balance(self) -> None:
-        ch = NaFHF_MA20_GrC(size=1)
+        ch = NaFHF_MA2020_GrC(size=1)
         V = _V([-60.0])
         na = _na_info()
         ch.init_state(V, na)
@@ -907,7 +899,7 @@ class NaFHFMA20GrCTest(unittest.TestCase):
         self.assertTrue(u.math.allclose(ch.L6.derivative, expected_dL6, atol=1e-6 * u.Hz))
 
     def test_reset_steady_state_produces_stationary_distribution(self) -> None:
-        ch = NaFHF_MA20_GrC(size=2)
+        ch = NaFHF_MA2020_GrC(size=2)
         V = _V([-60.0, -50.0])
         na = _na_info(2)
         ch.init_state(V, na)

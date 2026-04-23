@@ -31,7 +31,8 @@ def run_case(case: ChannelNoConcCase) -> dict[str, Any]:
     import braincell
     from braincell.filter import AllRegion, at
     from braincell.mech import CableProperty, Channel, CurrentProbe, MechanismProbe, StateProbe, get_registry
-    from braincell.morph import Branch, Morphology
+    from braincell.morph.branch import Branch
+    from braincell.morph.morphology import Morphology
 
     mapping_spec = case.mapping_spec
     channel_kwargs = _convert_channel_params_for_braincell(mapping_spec, case.channel_params)
@@ -51,10 +52,7 @@ def run_case(case: ChannelNoConcCase) -> dict[str, Any]:
     cell = braincell.Cell(
         morpho,
         cv_policy=braincell.CVPerBranch(),
-        V_initializer=braintools.init.Uniform(
-            float(case.simulation.v_init_mV) * u.mV,
-            float(case.simulation.v_init_mV) * u.mV,
-        ),
+        V_init=braintools.init.Constant(float(case.simulation.v_init_mV) * u.mV),
     )
 
     region = AllRegion()

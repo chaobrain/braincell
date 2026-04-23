@@ -42,9 +42,9 @@ import jax.numpy as jnp
 import braincell
 from braincell import Channel, HHTypedNeuron, SingleCompartment
 from braincell.channel import (
-    IK_HH1952,
+    K_HH1952,
     IL,
-    INa_HH1952,
+    Na_HH1952,
 )
 from braincell.ion import PotassiumFixed, SodiumFixed
 from braincell import DiffEqState
@@ -243,7 +243,7 @@ class SingleCompartmentLifecycleTest(unittest.TestCase):
     def test_init_state_forwards_to_child_channel_ion(self) -> None:
         sc = SingleCompartment(size=1)
         sc.na = SodiumFixed(size=1, E=50.0 * u.mV)
-        sc.na.add(INa=INa_HH1952(size=1))
+        sc.na.add(INa=Na_HH1952(size=1))
         sc.init_state()
         inchannel = sc.na.channels["INa"]
         self.assertEqual(inchannel.p.value.shape, (1,))
@@ -288,7 +288,7 @@ class SingleCompartmentLifecycleTest(unittest.TestCase):
             V_initializer=braintools.init.Constant(-65.0 * u.mV),
         )
         sc.na = SodiumFixed(size=1, E=50.0 * u.mV)
-        sc.na.add(INa=INa_HH1952(size=1))
+        sc.na.add(INa=Na_HH1952(size=1))
         sc.init_state()
         sc.reset_state()
 
@@ -316,7 +316,7 @@ class SingleCompartmentPreIntegralTest(unittest.TestCase):
     def test_pre_integral_forwards_to_ion_channel(self) -> None:
         sc = SingleCompartment(size=1)
         sc.na = SodiumFixed(size=1, E=50.0 * u.mV)
-        sc.na.add(INa=INa_HH1952(size=1))
+        sc.na.add(INa=Na_HH1952(size=1))
         sc.init_state()
         sc.reset_state()
 
@@ -440,9 +440,9 @@ class SingleCompartmentComputeDerivativeTest(unittest.TestCase):
     def test_ion_channel_derivatives_are_populated(self) -> None:
         sc = SingleCompartment(size=1)
         sc.na = SodiumFixed(size=1, E=50.0 * u.mV)
-        sc.na.add(INa=INa_HH1952(size=1))
+        sc.na.add(INa=Na_HH1952(size=1))
         sc.k = PotassiumFixed(size=1, E=-77.0 * u.mV)
-        sc.k.add(IK=IK_HH1952(size=1))
+        sc.k.add(IK=K_HH1952(size=1))
         sc.init_state()
         sc.reset_state()
         sc.compute_derivative(0.0 * u.nA / u.cm ** 2)
@@ -480,7 +480,7 @@ class SingleCompartmentPostIntegralTest(unittest.TestCase):
     def test_post_integral_forwards_to_ion_channel(self) -> None:
         sc = SingleCompartment(size=1)
         sc.na = SodiumFixed(size=1, E=50.0 * u.mV)
-        sc.na.add(INa=INa_HH1952(size=1))
+        sc.na.add(INa=Na_HH1952(size=1))
         sc.init_state()
         sc.reset_state()
 
@@ -612,9 +612,9 @@ class SingleCompartmentUpdateTest(unittest.TestCase):
         # without raising and produce a finite V.
         sc = SingleCompartment(size=1, solver="exp_euler")
         sc.na = SodiumFixed(size=1, E=50.0 * u.mV)
-        sc.na.add(INa=INa_HH1952(size=1))
+        sc.na.add(INa=Na_HH1952(size=1))
         sc.k = PotassiumFixed(size=1, E=-77.0 * u.mV)
-        sc.k.add(IK=IK_HH1952(size=1))
+        sc.k.add(IK=K_HH1952(size=1))
         sc.IL = IL(size=1, E=-54.387 * u.mV, g_max=0.03 * u.mS / u.cm ** 2)
         sc.init_state()
         sc.reset_state()

@@ -88,7 +88,7 @@ class BraincellRunnerTest(unittest.TestCase):
     def test_temperature_is_forwarded_to_temp_aware_channel(self) -> None:
         base = self._build_payload(stimulus={"kind": "dc", "delay_ms": 0.0, "dur_ms": 2.0, "amp_nA": 0.0})
         base["mapping"] = build_mapping_payload(
-            impl_name={"common": "Kir2p3_MA24_PC"},
+            impl_name={"common": "Kir2p3_MA2024_PC"},
             gate_names={"common": ["d"]},
         )
         base["channel_params"]["g_max_S_cm2"] = 0.0009
@@ -124,7 +124,7 @@ class BraincellRunnerTest(unittest.TestCase):
             identity={"mod_dir": MOD_VALIDATE_MOD_DIR},
             mapping=build_mapping_payload(
                 current="ih",
-                impl_name={"common": "Ih_HM1992"},
+                impl_name={"common": "HCN_HM1992"},
                 gate_names={"common": ["p"]},
                 channel_params={
                     "g_max_S_cm2": {"neuron": "gbar", "braincell": "g_max"},

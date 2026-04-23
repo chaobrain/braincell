@@ -21,8 +21,8 @@ import brainunit as u
 import jax.numpy as jnp
 
 from braincell._base import HHTypedNeuron, Ion, IonInfo
-from braincell.channel.potassium import IK_TM1991
-from braincell.ion._template import InitNernstIon
+from braincell.channel.potassium import K_TM1991
+from braincell.ion._base import InitNernstIon
 from braincell.ion.potassium import Potassium, PotassiumFixed, PotassiumInitNernst
 
 
@@ -119,16 +119,16 @@ class PotassiumFixedContainerTest(unittest.TestCase):
         self.assertEqual(k.external_currents, {})
 
     def test_channels_kwarg_is_attached(self) -> None:
-        k = PotassiumFixed(size=1, IK=IK_TM1991(size=1))
+        k = PotassiumFixed(size=1, IK=K_TM1991(size=1))
         self.assertIn("IK", k.channels)
-        self.assertIsInstance(k.channels["IK"], IK_TM1991)
+        self.assertIsInstance(k.channels["IK"], K_TM1991)
 
     def test_current_without_channels_returns_none(self) -> None:
         k = PotassiumFixed(size=1)
         self.assertIsNone(k.current(_V([-60.0])))
 
     def test_current_with_channel_delegates_to_channel(self) -> None:
-        k = PotassiumFixed(size=1, IK=IK_TM1991(size=1))
+        k = PotassiumFixed(size=1, IK=K_TM1991(size=1))
         V = _V([-60.0])
         k.init_state(V)
         k.reset_state(V)
@@ -147,7 +147,7 @@ class PotassiumFixedContainerTest(unittest.TestCase):
             k.register_external_current("ext", fake)
 
     def test_current_with_include_external_adds_registered_fn(self) -> None:
-        k = PotassiumFixed(size=1, IK=IK_TM1991(size=1))
+        k = PotassiumFixed(size=1, IK=K_TM1991(size=1))
         V = _V([-60.0])
         k.init_state(V)
         k.reset_state(V)
@@ -182,15 +182,15 @@ class PotassiumFixedLifecycleTest(unittest.TestCase):
         k.reset_state(_V([-60.0]))
 
     def test_init_state_initialises_child_channel_gate(self) -> None:
-        k = PotassiumFixed(size=1, IK=IK_TM1991(size=1))
+        k = PotassiumFixed(size=1, IK=K_TM1991(size=1))
         V = _V([-60.0])
         k.init_state(V)
         ch = k.channels["IK"]
-        # ``IK_TM1991`` uses a single ``p`` gate for the n^4 formula.
+        # ``K_TM1991`` uses a single ``p`` gate for the n^4 formula.
         self.assertEqual(ch.p.value.shape, (1,))
 
     def test_reset_state_forwards_to_child(self) -> None:
-        k = PotassiumFixed(size=1, IK=IK_TM1991(size=1))
+        k = PotassiumFixed(size=1, IK=K_TM1991(size=1))
         V = _V([-60.0])
         k.init_state(V)
         k.reset_state(V)
@@ -204,7 +204,7 @@ class PotassiumFixedLifecycleTest(unittest.TestCase):
         )
 
     def test_compute_derivative_populates_child_derivative(self) -> None:
-        k = PotassiumFixed(size=1, IK=IK_TM1991(size=1))
+        k = PotassiumFixed(size=1, IK=K_TM1991(size=1))
         V = _V([-60.0])
         k.init_state(V)
         k.reset_state(V)

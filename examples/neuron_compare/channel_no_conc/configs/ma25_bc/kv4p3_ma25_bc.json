@@ -13,7 +13,8 @@
   "mapping": {
     "current": "ik",
     "impl_name": {
-      "common": "Kv4p3_MA25_BC"
+      "neuron": "Kv4p3_MA25_BC",
+      "braincell": "Kv4p3_MA2025_BC"
     },
     "gate_names": {
       "common": [

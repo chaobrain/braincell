@@ -13,7 +13,8 @@
   "mapping": {
     "current": "ik",
     "impl_name": {
-      "common": "Kir2p3_RI21_SC"
+      "neuron": "Kir2p3_RI21_SC",
+      "braincell": "Kir2p3_RI2021_SC"
     },
     "gate_names": {
       "common": [

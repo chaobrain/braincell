@@ -216,7 +216,7 @@ class MergePaintRulesTest(unittest.TestCase):
     def test_density_different_classes_both_kept(self) -> None:
         d1 = Channel("IL", g_max=0.1 * (u.mS / u.cm ** 2), E=-70 * u.mV)
         d2 = Channel(
-            "INa_Ba2002", g_max=0.05 * (u.mS / u.cm ** 2), E=50 * u.mV
+            "Na_Ba2002", g_max=0.05 * (u.mS / u.cm ** 2), E=50 * u.mV
         )
         r1 = PaintRule(region=AllRegion(), mechanism=d1)
         r2 = PaintRule(region=AllRegion(), mechanism=d2)

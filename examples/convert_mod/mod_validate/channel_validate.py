@@ -96,7 +96,7 @@ def resolve_braincell_channel_class(channel_name: str):
         return getattr(braincell.channel, channel_name)
 
     alias_map = {
-        "Kv": "IK_Kv_test",
+        "Kv": "K_Kv_test",
     }
     if channel_name in alias_map and hasattr(braincell.channel, alias_map[channel_name]):
         return getattr(braincell.channel, alias_map[channel_name])
@@ -448,7 +448,7 @@ def main() -> None:
 
     channel_spec = {
         "mechanism": "Kv",
-        "channel_name": "IK_Kv_test",
+        "channel_name": "K_Kv_test",
         "params": {
             "gbar": 0.0,
             "v12": 25.0,

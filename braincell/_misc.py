@@ -23,16 +23,43 @@ import brainstate
 from typing import Any
 
 import brainunit as u
+import jax
+import jax.numpy as jnp
 import numpy as np
 
 _BOUND_OPERATORS = ("ge", "gt", "le", "lt")
+
+
+def is_traced_value(value) -> bool:
+    """Return ``True`` when ``value`` is a live JAX tracer.
+
+    Unwraps a :class:`brainunit.Quantity` first so that a Quantity wrapping
+    a tracer is correctly identified as traced. Concrete numpy / JAX arrays
+    and plain Python numbers return ``False``.
+    """
+    if isinstance(value, u.Quantity):
+        value = u.get_mantissa(value)
+    return isinstance(value, jax.core.Tracer)
+
+
+def cast_like(value, like):
+    """Cast ``value`` to the dtype of ``like``, preserving any brainunit unit.
+
+    Shared helper used across single- and multi-compartment spike
+    detection and the Runge-Kutta integrators.
+    """
+    dtype = jnp.asarray(u.get_magnitude(like)).dtype
+    if isinstance(value, u.Quantity):
+        unit = u.get_unit(value)
+        return jnp.asarray(value.to_decimal(unit), dtype=dtype) * unit
+    return jnp.asarray(value, dtype=dtype)
 
 
 def _to_unit(param: object, name: str, unit: Any) -> np.ndarray:
     """Convert a quantity-like value to a NumPy array in the target unit."""
 
     try:
-       return np.asarray(param.to_decimal(unit))
+        return np.asarray(param.to_decimal(unit))
     except Exception as exc:
         raise TypeError(f"{name} must satisfy unit {unit}.") from exc
 

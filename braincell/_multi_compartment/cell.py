@@ -29,7 +29,8 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
-from braincell._base import HHTypedNeuron, IonChannel
+from braincell._base import HHTypedNeuron, IonChannel, _cast_like
+from braincell._misc import is_traced_value
 from braincell._typing import Initializer
 from braincell._compute.table import (
     MechanismObjectCell,
@@ -78,20 +79,6 @@ class AxialOperatorCache:
     operator: object
 
 
-def _cast_like(value, like):
-    dtype = jnp.asarray(u.get_magnitude(like)).dtype
-    if isinstance(value, u.Quantity):
-        unit = u.get_unit(value)
-        return jnp.asarray(value.to_decimal(unit), dtype=dtype) * unit
-    return jnp.asarray(value, dtype=dtype)
-
-
-def _is_traced_value(value) -> bool:
-    if isinstance(value, u.Quantity):
-        value = u.get_mantissa(value)
-    return isinstance(value, jax.core.Tracer)
-
-
 class Cell(HHTypedNeuron):
     """Multi-compartment cell with explicit declaration / initialization phases.
 
@@ -129,7 +116,7 @@ class Cell(HHTypedNeuron):
         solver: str | Callable = "staggered",
         name: str | None = None,
     ) -> None:
-        HHTypedNeuron.__init__(self, size=(1,), name=name, **build_placeholder_ions())
+        HHTypedNeuron.__init__(self, size=(1,), name=name)
 
         if not isinstance(morpho, Morphology):
             raise TypeError(
@@ -374,15 +361,15 @@ class Cell(HHTypedNeuron):
         for channel in self.nodes(IonChannel, allowed_hierarchy=(1, 1)).values():
             channel.init_state(point_V, batch_size=batch_size)
 
-        object.__setattr__(self._runtime, "axial_operator_np", np.asarray(
+        self._runtime.axial_operator_np = np.asarray(
             build_cv_axial_operator(
                 self,
                 point_tree=self._point_tree,
                 scheduling=self._point_scheduling_unchecked(algorithm="dhs"),
             ),
             dtype=np.float64,
-        ))
-        object.__setattr__(self._runtime, "axial_operator_cache", None)
+        )
+        self._runtime.axial_operator_cache = None
         self._axial_jax = self._get_axial_operator()
 
         self._initialized = True
@@ -1647,8 +1634,8 @@ class Cell(HHTypedNeuron):
 
         operator = jnp.asarray(runtime.axial_operator_np, dtype=brainstate.environ.dftype()) * (u.ms ** -1)
         cache = AxialOperatorCache(float_dtype=float_dtype, operator=operator)
-        if not _is_traced_value(operator):
-            object.__setattr__(runtime, "axial_operator_cache", cache)
+        if not is_traced_value(operator):
+            runtime.axial_operator_cache = cache
         self._axial_jax = operator
         return operator
 
@@ -1690,17 +1677,6 @@ class Cell(HHTypedNeuron):
         spk = self.get_spike(last_V, self.V.value)
         self.spike.value = spk
         return spk
-
-    # ------------------------------------------------------------------
-    # Spike (phase-agnostic; uses V_th + spk_fun only)
-
-    def get_spike(self, last_V, next_V):
-        denom = _cast_like(20.0 * u.mV, next_V)
-        V_th = _cast_like(self.V_th, next_V)
-        return (
-            self._spk_fun((next_V - V_th) / denom)
-            * self._spk_fun((V_th - last_V) / denom)
-        )
 
     def reset_state(self, batch_size=None) -> None:
         """Reseed ``V`` / ``spike`` / ``current_time`` without leaving INITIALIZED.

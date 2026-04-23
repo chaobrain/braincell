@@ -693,7 +693,8 @@ def _build_groups(
     groups: list[np.ndarray] = []
     for a, b in zip(level_starts[:-1], level_starts[1:]):
         for chunk_start in range(a, b, max_group_size):
-            chunk_point_ids = order[chunk_start:chunk_start + max_group_size]
+            chunk_stop = min(b, chunk_start + max_group_size)
+            chunk_point_ids = order[chunk_start:chunk_stop]
             rows = point_id_to_row[chunk_point_ids]
             groups.append(np.asarray(rows, dtype=np.int32))
     return tuple(groups)

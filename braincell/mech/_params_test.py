@@ -16,6 +16,7 @@
 import unittest
 
 import brainunit as u
+import numpy as np
 
 from braincell.mech import Params
 
@@ -178,6 +179,19 @@ class ParamsErrorTest(unittest.TestCase):
     def test_bad_tuple_entry_raises(self) -> None:
         with self.assertRaises(TypeError):
             Params((("g_max",),))  # type: ignore[arg-type]
+
+
+class ParamsRejectsUnhashableValuesTest(unittest.TestCase):
+    """MED-01: array-valued params must fail at construction, not at eq/hash."""
+
+    def test_constructor_rejects_array_value(self) -> None:
+        with self.assertRaises(TypeError) as ctx:
+            Params(g=np.array([1.0, 2.0, 3.0]))
+        self.assertIn("hashable", str(ctx.exception).lower())
+
+    def test_constructor_accepts_scalar_quantity(self) -> None:
+        p = Params(g=0.1 * u.mS / u.cm ** 2)
+        self.assertEqual(p["g"], 0.1 * u.mS / u.cm ** 2)
 
 
 if __name__ == "__main__":

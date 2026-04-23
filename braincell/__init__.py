@@ -32,14 +32,6 @@ from ._base import (
     MixIons,
     mix_ions,
 )
-from ._multi_compartment import (
-    Cell,
-    RunResult,
-)
-from ._version import (
-    __version__,
-    __version_info__,
-)
 from ._cv import (
     CompositeByTypePolicy,
     CV,
@@ -49,7 +41,14 @@ from ._cv import (
     DLambda,
     MaxCVLen,
 )
-from .io.neuromorpho import load_neuromorpho
+from ._multi_compartment import (
+    Cell,
+    RunResult,
+)
+from ._version import (
+    __version__,
+    __version_info__,
+)
 from .mech import (
     CableProperty,
     CurrentClamp,
@@ -98,7 +97,6 @@ __all__ = [
     "Ion",
     "IonChannel",
     "IonInfo",
-    "load_neuromorpho",
     "MixIons",
     "MaxCVLen",
     "Morphology",

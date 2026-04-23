@@ -13,6 +13,24 @@
 # limitations under the License.
 # ==============================================================================
 
+"""Numerical integrators for BrainCell.
+
+Exposes :func:`get_integrator` plus every canonical solver name
+registered in :mod:`braincell.quad._registry`.
+
+.. note::
+
+    This ``__init__.py`` deliberately performs **side-effect imports** of
+    every ``_<backend>.py`` module. Each backend self-registers into the
+    integrator registry at import time via ``@register_integrator``. Do
+    not lazily defer these imports — unresolved solver names would
+    surface as ``ValueError: unknown integrator`` from
+    :func:`get_integrator` at first call instead of at import time. The
+    lazy-import pattern in :mod:`braincell.quad._diffrax` refers only to
+    the third-party ``diffrax`` dependency, not to the backend module
+    itself.
+"""
+
 from typing import Callable, Mapping
 
 # Importing the step modules below has the side effect of populating the

@@ -34,7 +34,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
-from braincell._misc import set_module_as
+from braincell._misc import is_traced_value, set_module_as
 from ._exp_euler import ind_exp_euler_step
 from ._registry import register_integrator
 from .protocol import DiffEqModule
@@ -42,12 +42,6 @@ from .protocol import DiffEqModule
 __all__ = [
     'staggered_step',
 ]
-
-
-def _is_traced_value(value) -> bool:
-    if isinstance(value, u.Quantity):
-        value = u.get_mantissa(value)
-    return isinstance(value, jax.core.Tracer)
 
 
 @register_integrator(
@@ -132,10 +126,11 @@ def staggered_step(
         >>> with brainstate.environ.context(t=0. * u.ms, dt=0.025 * u.ms):
         ...     staggered_step(cell, input_current)        # doctest: +SKIP
     """
-    assert isinstance(target, DiffEqModule), (
-        f"The stagger integrator only support {DiffEqModule.__name__}, "
-        f"but we got {type(target)} instead."
-    )
+    if not isinstance(target, DiffEqModule):
+        raise TypeError(
+            f"The stagger integrator only support {DiffEqModule.__name__}, "
+            f"but we got {type(target)} instead."
+        )
     t = brainstate.environ.get('t', 0.0)
     dt = brainstate.environ.get('dt')
 
@@ -370,13 +365,13 @@ def build_cv_axial_operator(target, *, point_tree, scheduling) -> np.ndarray:
 
 
 def _get_dhs_static_source(target, *, point_tree, scheduling) -> DHSStaticSource:
-    runtime = getattr(target, "_runtime", getattr(target, "_compiled_runtime", None))
+    runtime = target._runtime
     source = getattr(runtime, "dhs_static_source_np", None)
     if source is not None:
         return source
     source = _build_dhs_static_source(target, point_tree=point_tree, scheduling=scheduling)
     if runtime is not None:
-        object.__setattr__(runtime, "dhs_static_source_np", source)
+        runtime.dhs_static_source_np = source
     return source
 
 
@@ -391,14 +386,14 @@ def _build_dhs_static_cache(source: DHSStaticSource) -> DHSStaticCache:
 
 
 def _get_dhs_static_cache(target, source: DHSStaticSource) -> DHSStaticCache:
-    runtime = getattr(target, "_runtime", getattr(target, "_compiled_runtime", None))
+    runtime = target._runtime
     cache = getattr(runtime, "dhs_static_cache", None)
     float_dtype = jnp.asarray(0.0).dtype
     if cache is not None and getattr(cache, "float_dtype", None) == float_dtype:
         return cache
     cache = _build_dhs_static_cache(source)
-    if runtime is not None and not _is_traced_value(cache.diag_ms_inv):
-        object.__setattr__(runtime, "dhs_static_cache", cache)
+    if runtime is not None and not is_traced_value(cache.diag_ms_inv):
+        runtime.dhs_static_cache = cache
     return cache
 
 
@@ -509,20 +504,32 @@ def _build_dhs_edge_order(scheduling) -> tuple[np.ndarray, np.ndarray]:
 
 def _check_comp_triang(diags, solves, lowers, uppers, edges):
     """Kernel contract check for the quantity-aware DHS forward pass."""
-    assert not isinstance(edges, u.Quantity)
-    assert diags.ndim == 2
-    assert solves.ndim == 2
-    assert lowers.ndim == 1
-    assert uppers.ndim == 1
-    if isinstance(diags, u.Quantity):
-        assert u.get_unit(diags).is_unitless
-    if isinstance(lowers, u.Quantity):
-        assert u.get_unit(lowers).is_unitless
-    if isinstance(uppers, u.Quantity):
-        assert u.get_unit(uppers).is_unitless
-    assert lowers.shape[0] == diags.shape[1]
-    assert uppers.shape[0] == diags.shape[1]
-    assert edges.ndim == 2 and edges.shape[1] == 2
+    if isinstance(edges, u.Quantity):
+        raise ValueError("edges must be a plain array, not a Quantity")
+    if diags.ndim != 2:
+        raise ValueError(f"diags must be 2D, got ndim={diags.ndim}")
+    if solves.ndim != 2:
+        raise ValueError(f"solves must be 2D, got ndim={solves.ndim}")
+    if lowers.ndim != 1:
+        raise ValueError(f"lowers must be 1D, got ndim={lowers.ndim}")
+    if uppers.ndim != 1:
+        raise ValueError(f"uppers must be 1D, got ndim={uppers.ndim}")
+    if isinstance(diags, u.Quantity) and not u.get_unit(diags).is_unitless:
+        raise ValueError(f"diags must be unitless, got unit={u.get_unit(diags)}")
+    if isinstance(lowers, u.Quantity) and not u.get_unit(lowers).is_unitless:
+        raise ValueError(f"lowers must be unitless, got unit={u.get_unit(lowers)}")
+    if isinstance(uppers, u.Quantity) and not u.get_unit(uppers).is_unitless:
+        raise ValueError(f"uppers must be unitless, got unit={u.get_unit(uppers)}")
+    if lowers.shape[0] != diags.shape[1]:
+        raise ValueError(
+            f"lowers.shape[0]={lowers.shape[0]} must equal diags.shape[1]={diags.shape[1]}"
+        )
+    if uppers.shape[0] != diags.shape[1]:
+        raise ValueError(
+            f"uppers.shape[0]={uppers.shape[0]} must equal diags.shape[1]={diags.shape[1]}"
+        )
+    if edges.ndim != 2 or edges.shape[1] != 2:
+        raise ValueError(f"edges must have shape (_, 2), got {edges.shape}")
 
 
 def comp_triang_raw(diags, solves, lowers, uppers, edges, level_offsets):
@@ -544,18 +551,33 @@ def comp_triang_raw(diags, solves, lowers, uppers, edges, level_offsets):
 
 def _check_comp_backsub(diags, solves, lowers, backsub_indices):
     """Kernel contract check for quantity-aware recursive doubling."""
-    assert not isinstance(backsub_indices, u.Quantity)
-    assert diags.ndim == 2
-    assert solves.ndim == 2
-    assert lowers.ndim == 1
-    if isinstance(diags, u.Quantity):
-        assert u.get_unit(diags).is_unitless
-    if isinstance(lowers, u.Quantity):
-        assert u.get_unit(lowers).is_unitless
-    assert diags.shape == solves.shape
-    assert lowers.shape[0] == diags.shape[1]
-    assert backsub_indices.ndim == 2
-    assert backsub_indices.shape[1] == diags.shape[1]
+    if isinstance(backsub_indices, u.Quantity):
+        raise ValueError("backsub_indices must be a plain array, not a Quantity")
+    if diags.ndim != 2:
+        raise ValueError(f"diags must be 2D, got ndim={diags.ndim}")
+    if solves.ndim != 2:
+        raise ValueError(f"solves must be 2D, got ndim={solves.ndim}")
+    if lowers.ndim != 1:
+        raise ValueError(f"lowers must be 1D, got ndim={lowers.ndim}")
+    if isinstance(diags, u.Quantity) and not u.get_unit(diags).is_unitless:
+        raise ValueError(f"diags must be unitless, got unit={u.get_unit(diags)}")
+    if isinstance(lowers, u.Quantity) and not u.get_unit(lowers).is_unitless:
+        raise ValueError(f"lowers must be unitless, got unit={u.get_unit(lowers)}")
+    if diags.shape != solves.shape:
+        raise ValueError(
+            f"diags.shape={diags.shape} must equal solves.shape={solves.shape}"
+        )
+    if lowers.shape[0] != diags.shape[1]:
+        raise ValueError(
+            f"lowers.shape[0]={lowers.shape[0]} must equal diags.shape[1]={diags.shape[1]}"
+        )
+    if backsub_indices.ndim != 2:
+        raise ValueError(f"backsub_indices must be 2D, got ndim={backsub_indices.ndim}")
+    if backsub_indices.shape[1] != diags.shape[1]:
+        raise ValueError(
+            f"backsub_indices.shape[1]={backsub_indices.shape[1]} "
+            f"must equal diags.shape[1]={diags.shape[1]}"
+        )
 
 
 def _build_backsub_indices(parent_lookup: np.ndarray, *, n_nodes: int) -> np.ndarray:

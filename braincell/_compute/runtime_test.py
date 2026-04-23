@@ -1112,3 +1112,131 @@ class RaggedCurrentClampBufferTest(unittest.TestCase):
             mask_key = (layout.id, "_mask_durations")
             self.assertIn(mask_key, cell.runtime.state_buffers)
             self.assertEqual(cell.runtime.state_buffers[mask_key].shape, dur.mantissa.shape)
+
+
+class FnFingerprintWarnsOnOpaqueClosureTest(unittest.TestCase):
+    """MED-08: fingerprinting a lambda with opaque closure emits RuntimeWarning."""
+
+    def test_opaque_closure_emits_warning(self) -> None:
+        import warnings
+
+        from braincell._compute.runtime import _fn_fingerprint, _opaque_warned
+
+        class _Opaque:
+            __slots__ = ("x",)
+
+            def __init__(self) -> None:
+                self.x = object()
+
+        opaque = _Opaque()
+
+        def _make():
+            return lambda t: opaque
+
+        fn = _make()
+
+        # Drop any prior entry for this call-site so the test is independent
+        # of test ordering.
+        _opaque_warned.discard((fn.__code__.co_filename, fn.__code__.co_firstlineno))
+
+        with warnings.catch_warnings(record=True) as captured:
+            warnings.simplefilter("always")
+            _fn_fingerprint(fn)
+        self.assertTrue(
+            any(issubclass(w.category, RuntimeWarning) for w in captured),
+            "expected RuntimeWarning for opaque closure cell",
+        )
+
+
+class CellRuntimeStateIsMutableTest(unittest.TestCase):
+    """ARCH-07: CellRuntimeState is a mutable dataclass; callers must use plain setattr."""
+
+    def test_cell_runtime_state_is_not_frozen(self) -> None:
+        from braincell._compute.runtime import CellRuntimeState
+
+        self.assertFalse(
+            CellRuntimeState.__dataclass_params__.frozen,
+            msg="CellRuntimeState must remain a mutable @dataclass",
+        )
+
+    def test_no_object_setattr_on_runtime_in_hot_paths(self) -> None:
+        import pathlib
+
+        root = pathlib.Path(__file__).resolve().parent.parent
+        for rel in (
+            "_multi_compartment/cell.py",
+            "quad/_staggered.py",
+        ):
+            text = (root / rel).read_text()
+            self.assertNotIn(
+                "object.__setattr__(runtime",
+                text,
+                f"{rel} still uses object.__setattr__ on runtime",
+            )
+            self.assertNotIn(
+                "object.__setattr__(self._runtime",
+                text,
+                f"{rel} still uses object.__setattr__ on self._runtime",
+            )
+
+
+class RuntimeModuleAllTest(unittest.TestCase):
+    """Pre-split contract: braincell._compute.runtime.__all__ pins public names."""
+
+    def test_all_contains_expected_names(self) -> None:
+        from braincell._compute import runtime as rt
+
+        expected = {
+            "MechanismLayout",
+            "ClampActiveTable",
+            "build_clamp_active_table",
+            "CellRuntimeState",
+            "build_placeholder_ions",
+            "clone_morpho",
+            "cv_value_vector",
+            "mechanism_signature",
+        }
+        actual = set(getattr(rt, "__all__", []))
+        missing = expected - actual
+        self.assertFalse(missing, msg=f"missing public symbols: {missing}")
+
+
+class RuntimeSplitReexportTest(unittest.TestCase):
+    """ARCH-02: runtime.py partitions into layouts / state / ions / bindings."""
+
+    def test_mechanism_layout_lives_in_layouts(self) -> None:
+        from braincell._compute import layouts, runtime
+
+        self.assertIs(runtime.MechanismLayout, layouts.MechanismLayout)
+        self.assertIs(runtime.ClampActiveTable, layouts.ClampActiveTable)
+        self.assertIs(
+            runtime.build_clamp_active_table,
+            layouts.build_clamp_active_table,
+        )
+
+    def test_cell_runtime_state_lives_in_state(self) -> None:
+        from braincell._compute import runtime, state
+
+        self.assertIs(runtime.CellRuntimeState, state.CellRuntimeState)
+
+    def test_ion_helpers_live_in_ions(self) -> None:
+        from braincell._compute import ions, runtime
+
+        self.assertIs(runtime._build_runtime_ions, ions._build_runtime_ions)
+        self.assertIs(runtime._build_default_ions, ions._build_default_ions)
+
+    def test_binding_helpers_live_in_bindings(self) -> None:
+        from braincell._compute import bindings, runtime
+
+        self.assertIs(
+            runtime._resolve_channel_runtime_bindings,
+            bindings._resolve_channel_runtime_bindings,
+        )
+        self.assertIs(
+            runtime._instantiate_runtime_node,
+            bindings._instantiate_runtime_node,
+        )
+        self.assertIs(
+            runtime._BoundIonChannelRuntime,
+            bindings._BoundIonChannelRuntime,
+        )

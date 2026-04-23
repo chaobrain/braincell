@@ -184,5 +184,27 @@ class TestCellLifecycle(unittest.TestCase):
             self.assertIsNot(cache32, cache64)
 
 
+class CellDoesNotAllocatePlaceholderIonsEagerlyTest(unittest.TestCase):
+    """MED-09: Cell.__init__ must not allocate a throwaway ion container."""
+
+    def test_build_placeholder_ions_not_called_in_init(self) -> None:
+        from unittest.mock import patch
+
+        soma = Branch.from_lengths(
+            lengths=[20.0] * u.um,
+            radii=[10.0, 10.0] * u.um,
+            type="soma",
+        )
+        tree = Morphology.from_root(soma, name="soma")
+
+        with patch(
+            "braincell._multi_compartment.cell.build_placeholder_ions",
+            side_effect=AssertionError(
+                "placeholder must not be called at __init__"
+            ),
+        ):
+            _ = Cell(tree)
+
+
 if __name__ == "__main__":
     unittest.main()

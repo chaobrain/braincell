@@ -87,8 +87,12 @@ def matches_last_dim(value: object, size: int) -> bool:
 
 
 def is_python_zero(value: object) -> bool:
-    """True for a bare Python ``0`` / ``0.0``."""
-    return isinstance(value, (int, float)) and value == 0
+    """True for a bare Python ``0`` / ``0.0`` (not ``False``)."""
+    return (
+        isinstance(value, (int, float))
+        and not isinstance(value, bool)
+        and value == 0
+    )
 
 
 def scatter_cv_geometry(

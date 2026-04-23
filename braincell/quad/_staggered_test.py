@@ -46,6 +46,30 @@ from braincell.quad._staggered import (
 )
 
 
+class StaggeredReadsRuntimeAttrDirectlyTest(unittest.TestCase):
+    """MED-07: _get_dhs_static_source / _get_dhs_static_cache must not probe _compiled_runtime."""
+
+    def test_compiled_runtime_fallback_is_not_consulted(self) -> None:
+        from braincell.quad._staggered import _get_dhs_static_source
+
+        class _TrapRuntime:
+            # If the fallback branch runs, this getattr trap fires.
+            dhs_static_source_np = None
+
+            def __getattribute__(self, name):
+                raise AssertionError(
+                    f"_compiled_runtime must not be read (got getattr {name!r})"
+                )
+
+        class _Target:
+            _compiled_runtime = _TrapRuntime()
+
+        # Missing ``_runtime`` must raise AttributeError outright — not quietly
+        # fall back to ``_compiled_runtime``.
+        with self.assertRaises(AttributeError):
+            _get_dhs_static_source(_Target(), point_tree=None, scheduling=None)
+
+
 class DhsVoltageGuardTest(unittest.TestCase):
 
     def test_requires_point_tree_attribute(self):
@@ -83,7 +107,8 @@ class CompTriangRawTest(unittest.TestCase):
 
     def test_kernel_contract_violation_on_wrong_rank(self):
         # ``diags`` must be 2D — passing a 1D array trips the contract check.
-        with self.assertRaises(AssertionError):
+        # HIGH-04: raises ValueError (not AssertionError) under ``python -O``.
+        with self.assertRaises(ValueError):
             comp_triang_raw(
                 jnp.array([1.0]),
                 jnp.array([[1.0]]),
@@ -113,7 +138,7 @@ class CompTriangRawTest(unittest.TestCase):
         uppers = u.Quantity(jnp.array([0.0]), u.UNITLESS)
         edges = jnp.empty((0, 2), dtype=jnp.int32)
         level_offsets = np.array([0], dtype=np.int32)
-        with self.assertRaises(AssertionError):
+        with self.assertRaises(ValueError):
             comp_triang_raw(diags, solves, lowers, uppers, edges, level_offsets)
 
 
@@ -124,7 +149,7 @@ class CompBacksubRawTest(unittest.TestCase):
         solves = jnp.array([[1.0, 1.0, 1.0]])  # mismatched second dim
         lowers = jnp.array([0.0, 0.0])
         backsub_indices = jnp.zeros((1, 2), dtype=jnp.int32)
-        with self.assertRaises(AssertionError):
+        with self.assertRaises(ValueError):
             comp_backsub_raw(diags, solves, lowers, backsub_indices)
 
     def test_accepts_quantity_solves(self):
@@ -164,14 +189,16 @@ class StaggeredStepGuardTest(unittest.TestCase):
         class Plain(brainstate.nn.Module):
             pass
 
-        with self.assertRaises(AssertionError):
+        # HIGH-03: TypeError (not AssertionError) so ``python -O`` preserves
+        # the contract.
+        with self.assertRaises(TypeError):
             staggered_step(Plain())
 
     def test_error_message_mentions_diffeq_module(self):
         class Plain(brainstate.nn.Module):
             pass
 
-        with self.assertRaises(AssertionError) as ctx:
+        with self.assertRaises(TypeError) as ctx:
             staggered_step(Plain())
         self.assertIn(DiffEqModule.__name__, str(ctx.exception))
 

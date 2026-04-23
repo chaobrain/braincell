@@ -1,2 +1,2 @@
 case_id,group_id,status,stimulus_kind,morphology_kind,morphology_path,dt_ms,cv_per_branch,observable,n_samples,mae,rmse,max_abs,rel_mae_pct,error_message
-io_dc_smoke__000,io_dc_smoke,ok,dc_step,swc,/home/swl/braincell/examples/multi_compartment/morpho_files/io.swc,0.025,1,voltage,80,1.4113924072586503e+23,2.9325143015054974e+24,1.1887402854445318e+26,2.1754549612582143e+23,
+io_dc_smoke__000,io_dc_smoke,ok,dc_step,swc,/home/swl/braincell/examples/multi_compartment/morpho_files/io.swc,0.025,1,voltage,80,0.004620375543813818,0.00529389317896427,0.009704611176886146,0.0071216331106589825,

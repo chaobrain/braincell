@@ -21,7 +21,7 @@ import brainunit as u
 import jax
 import jax.numpy as jnp
 
-from braincell._misc import set_module_as
+from braincell._misc import cast_like as _cast_like, set_module_as
 from braincell._typing import T, DT
 from .protocol import DiffEqState, DiffEqModule
 from ._registry import register_integrator
@@ -74,14 +74,6 @@ class ButcherTableau:
 
 def _array_dtype(value) -> jnp.dtype:
     return jnp.asarray(u.get_magnitude(value)).dtype
-
-
-def _cast_like(value, like):
-    dtype = _array_dtype(like)
-    if isinstance(value, u.Quantity):
-        unit = u.get_unit(value)
-        return jnp.asarray(value.to_decimal(unit), dtype=dtype) * unit
-    return jnp.asarray(value, dtype=dtype)
 
 
 def _cast_scalar_like(value, like):

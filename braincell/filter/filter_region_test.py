@@ -188,6 +188,25 @@ class RegionSetOpTest(unittest.TestCase):
             RegionSetOp("union", (left,)).evaluate(tree)
 
 
+class RegionExprOperatorsRejectNonRegionTest(unittest.TestCase):
+    """MED-05: RegionExpr | int must raise TypeError, not build a broken op."""
+
+    def test_or_with_int_raises(self) -> None:
+        region = BranchSlice(branch_index=0, prox=0.0, dist=1.0)
+        with self.assertRaises(TypeError):
+            _ = region | 5
+
+    def test_and_with_str_raises(self) -> None:
+        region = BranchSlice(branch_index=0, prox=0.0, dist=1.0)
+        with self.assertRaises(TypeError):
+            _ = region & "foo"
+
+    def test_sub_with_list_raises(self) -> None:
+        region = BranchSlice(branch_index=0, prox=0.0, dist=1.0)
+        with self.assertRaises(TypeError):
+            _ = region - [1, 2, 3]
+
+
 class FilterModuleAllTest(unittest.TestCase):
     def test_region_module_declares_all(self) -> None:
         self.assertIn("RegionSetOp", region_mod.__all__)

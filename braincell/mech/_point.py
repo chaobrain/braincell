@@ -231,6 +231,41 @@ class SineClamp(Point):
     start: Any = 0.0 * u.ms
     duration: Any = 1.0 * u.ms
 
+    def __post_init__(self) -> None:
+        frequency = _coerce_scalar_quantity(
+            self.frequency, unit=u.Hz, field_name="SineClamp.frequency",
+        )
+        if float(frequency.to_decimal(u.Hz)) <= 0.0:
+            raise ValueError(
+                f"SineClamp.frequency must be > 0, got {self.frequency!r}."
+            )
+        duration = _coerce_scalar_quantity(
+            self.duration, unit=u.ms, field_name="SineClamp.duration",
+        )
+        if float(duration.to_decimal(u.ms)) <= 0.0:
+            raise ValueError(
+                f"SineClamp.duration must be > 0, got {self.duration!r}."
+            )
+        if not isinstance(self.phase, (int, float)) or isinstance(self.phase, bool):
+            raise TypeError(
+                f"SineClamp.phase must be a real number, "
+                f"got {type(self.phase).__name__!r}."
+            )
+        amplitude = _coerce_scalar_quantity(
+            self.amplitude, unit=u.nA, field_name="SineClamp.amplitude",
+        )
+        offset = _coerce_scalar_quantity(
+            self.offset, unit=u.nA, field_name="SineClamp.offset",
+        )
+        start = _coerce_scalar_quantity(
+            self.start, unit=u.ms, field_name="SineClamp.start",
+        )
+        object.__setattr__(self, "amplitude", amplitude)
+        object.__setattr__(self, "frequency", frequency)
+        object.__setattr__(self, "offset", offset)
+        object.__setattr__(self, "start", start)
+        object.__setattr__(self, "duration", duration)
+
 
 @dataclass(frozen=True)
 class FunctionClamp(Point):
@@ -254,11 +289,37 @@ class FunctionClamp(Point):
     falls back to identity). Two :class:`FunctionClamp` instances built
     from two separate ``lambda`` definitions with identical bodies are
     considered distinct.
+
+    The runtime layer fingerprints ``fn`` by bytecode + closure cells so
+    structurally identical lambdas can merge into one layout. Closure
+    cells holding opaque, non-hashable objects fall back to ``id(value)``
+    and therefore defeat dedup. Such lambdas trigger a one-shot
+    :class:`RuntimeWarning` — hoist to module level with a named function
+    to recover dedup.
     """
 
     fn: Callable
     start: Any = 0.0 * u.ms
     duration: Any = 1.0 * u.ms
+
+    def __post_init__(self) -> None:
+        if not callable(self.fn):
+            raise TypeError(
+                f"FunctionClamp.fn must be callable, "
+                f"got {type(self.fn).__name__!r}."
+            )
+        duration = _coerce_scalar_quantity(
+            self.duration, unit=u.ms, field_name="FunctionClamp.duration",
+        )
+        if float(duration.to_decimal(u.ms)) <= 0.0:
+            raise ValueError(
+                f"FunctionClamp.duration must be > 0, got {self.duration!r}."
+            )
+        start = _coerce_scalar_quantity(
+            self.start, unit=u.ms, field_name="FunctionClamp.start",
+        )
+        object.__setattr__(self, "start", start)
+        object.__setattr__(self, "duration", duration)
 
 
 # ---------------------------------------------------------------------------
@@ -339,6 +400,18 @@ class ProbeMechanism(Point):
     variable: str
     target: str | None = None
 
+    def __post_init__(self) -> None:
+        if not isinstance(self.variable, str) or not self.variable:
+            raise ValueError(
+                f"ProbeMechanism.variable must be a non-empty str, "
+                f"got {self.variable!r}."
+            )
+        if self.target is not None and not isinstance(self.target, str):
+            raise TypeError(
+                f"ProbeMechanism.target must be str or None, "
+                f"got {type(self.target).__name__!r}."
+            )
+
 
 @dataclass(frozen=True)
 class Synapse(Point):
@@ -401,7 +474,7 @@ class Synapse(Point):
 def _coerce_scalar_quantity(value: Any, *, unit: Any, field_name: str) -> Any:
     if not hasattr(value, "to_decimal"):
         raise TypeError(
-            f"CurrentClamp.{field_name} must be a Quantity, got {value!r}."
+            f"{field_name} must be a Quantity, got {value!r}."
         )
     return value.in_unit(unit)
 

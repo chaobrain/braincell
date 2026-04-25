@@ -9,7 +9,7 @@
       "cm_uF_cm2": 1.0
     },
     "simulation": {
-      "dt_ms": 0.025,
+      "dt_ms": 0.01,
       "duration_ms": 10.0,
       "v_init_mV": -65.0,
       "temperature_celsius": 25.0

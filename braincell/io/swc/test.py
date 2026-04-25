@@ -576,7 +576,7 @@ class SwcReaderTest(unittest.TestCase):
         self.assertNotAlmostEqual(dend_radii[0], 10.0)
         self.assertEqual(tree.edges[0].parent_x, 0.5)
 
-    def test_make_branch_reuses_same_xyz_attach_point_without_duplication(self) -> None:
+    def test_make_branch_inserts_same_xyz_attach_point_when_radius_differs(self) -> None:
         reader = SwcReader()
         nodes = {
             2: _SwcRow(
@@ -625,12 +625,15 @@ class SwcReaderTest(unittest.TestCase):
         dend_points = self._branch_points_um(dend)
         dend_radii = self._branch_point_radii_um(dend)
 
-        self.assertEqual(dend_points.shape, (2, 3))
+        self.assertEqual(dend_points.shape, (3, 3))
         self.assertTrue(np.allclose(dend_points[0], np.array([10.0, 0.0, 0.0])))
-        self.assertTrue(np.allclose(dend_points[1], np.array([20.0, 0.0, 0.0])))
+        self.assertTrue(np.allclose(dend_points[1], np.array([10.0, 0.0, 0.0])))
+        self.assertTrue(np.allclose(dend_points[2], np.array([20.0, 0.0, 0.0])))
         self.assertAlmostEqual(dend_radii[0], 4.0)
-        self.assertAlmostEqual(dend_radii[1], 1.0)
-        self.assertGreater(np.linalg.norm(dend_points[1] - dend_points[0]), 0.0)
+        self.assertAlmostEqual(dend_radii[1], 2.0)
+        self.assertAlmostEqual(dend_radii[2], 1.0)
+        self.assertAlmostEqual(float(dend.lengths[0].to_decimal(u.um)), 0.0)
+        self.assertGreater(np.linalg.norm(dend_points[2] - dend_points[1]), 0.0)
 
     def test_reader_merges_duplicate_xyzr_parent_child_nodes(self) -> None:
         path = self._write_swc(

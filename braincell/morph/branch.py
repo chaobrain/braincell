@@ -703,6 +703,9 @@ class Branch:
         *,
         layout: str | None = None,
         shape: str | None = None,
+        branch_type_colors: dict[str, object] | None = None,
+        branch_type_edge_colors_2d: dict[str, object] | None = None,
+        frustum_edge_linewidth_2d: float | None = None,
         backend: str | None = None,
         chooser=None,
         projection_plane: str = "xy",
@@ -723,6 +726,14 @@ class Branch:
             ``braincell.morph.vis.configure(...)``.
         shape : str or None
             2-D drawing shape: ``"line"`` or ``"frustum"``.
+        branch_type_colors : mapping or None
+            Per-branch-type colour overrides for this call only. These
+            colours drive both 2D line rendering and 2D frustum fills.
+        branch_type_edge_colors_2d : mapping or None
+            Per-branch-type frustum border colour overrides for this
+            call only.
+        frustum_edge_linewidth_2d : float or None
+            Frustum border linewidth override for this call only.
         backend : str or None
             Rendering backend name (e.g., ``"matplotlib"``).
             Auto-selected when *None*.
@@ -774,6 +785,9 @@ class Branch:
             morpho,
             layout=layout,
             shape=shape,
+            branch_type_colors=branch_type_colors,
+            branch_type_edge_colors_2d=branch_type_edge_colors_2d,
+            frustum_edge_linewidth_2d=frustum_edge_linewidth_2d,
             backend=backend,
             chooser=chooser,
             projection_plane=projection_plane,

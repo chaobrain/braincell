@@ -85,6 +85,15 @@ def _branch(lengths: list[float], radii: list[float], type: str = "dendrite") ->
     )
 
 
+def _jump_branch() -> Branch:
+    return Branch.from_lengths(
+        lengths=np.asarray([10.0, 20.0]) * u.um,
+        radii_proximal=np.asarray([2.0, 4.0]) * u.um,
+        radii_distal=np.asarray([1.0, 2.0]) * u.um,
+        type="dendrite",
+    )
+
+
 def _single_branch_morpho(type: str = "soma") -> Morphology:
     return Morphology.from_root(
         _branch([10.0], [2.0, 2.0], type=type),
@@ -293,6 +302,51 @@ class BuildFrustaTest(unittest.TestCase):
         self.assertEqual(len(frusta), 2)
         self.assertAlmostEqual(frusta[0].length_um, 4.0)
         self.assertAlmostEqual(frusta[1].length_um, 6.0)
+
+    def test_preserves_zero_length_jump_segment_for_radius_discontinuity(self) -> None:
+        branch = _jump_branch()
+        frusta = _build_frusta(branch, prox=0.0, dist=1.0)
+        self.assertEqual(len(frusta), 3)
+        self.assertAlmostEqual(frusta[0].length_um, 10.0)
+        self.assertAlmostEqual(frusta[1].length_um, 0.0)
+        self.assertAlmostEqual(frusta[2].length_um, 20.0)
+        self.assertAlmostEqual(frusta[1].r_prox_um, 1.0)
+        self.assertAlmostEqual(frusta[1].r_dist_um, 4.0)
+
+    def test_jump_branch_frusta_preserve_area_without_changing_axial_factor(self) -> None:
+        branch = _jump_branch()
+        frusta = _build_frusta(branch, prox=0.0, dist=1.0)
+
+        branch_area = float(branch.area.to_decimal(u.um ** 2))
+        self.assertAlmostEqual(_lateral_area_um2(frusta), branch_area, places=4)
+
+        lengths_um = np.asarray(branch.lengths.to_decimal(u.um), dtype=float)
+        radii_prox_um = np.asarray(branch.radii_proximal.to_decimal(u.um), dtype=float)
+        radii_dist_um = np.asarray(branch.radii_distal.to_decimal(u.um), dtype=float)
+        positive_mask = lengths_um > 1e-12
+        expected_axial_factor = float(
+            np.sum(
+                (lengths_um[positive_mask] * 1e-4)
+                / (np.pi * (radii_prox_um[positive_mask] * 1e-4) * (radii_dist_um[positive_mask] * 1e-4))
+            )
+        )
+        self.assertAlmostEqual(_axial_factor_per_cm(frusta), expected_axial_factor, places=9)
+
+    def test_shared_boundary_counts_jump_once(self) -> None:
+        branch = _jump_branch()
+        split_x = 10.0 / 30.0
+        left = _build_frusta(branch, prox=0.0, dist=split_x)
+        right = _build_frusta(branch, prox=split_x, dist=1.0)
+
+        self.assertEqual(len(left), 2)
+        self.assertEqual(len(right), 1)
+        self.assertAlmostEqual(left[-1].length_um, 0.0)
+        self.assertAlmostEqual(right[0].length_um, 20.0)
+        self.assertAlmostEqual(
+            _lateral_area_um2(left) + _lateral_area_um2(right),
+            float(branch.area.to_decimal(u.um ** 2)),
+            places=4,
+        )
 
     def test_rejects_reversed_bounds(self) -> None:
         branch = _branch([10.0], [2.0, 3.0])

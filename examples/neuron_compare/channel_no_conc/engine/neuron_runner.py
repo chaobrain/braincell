@@ -189,3 +189,4 @@ def _resolve_neuron_current_ref(segment, *, mech_obj=None, mechanism_name: str |
         f"tried segment refs {candidate_names!r}"
         + (" and mechanism ref " + f"'_ref_{current_var}'." if mech_obj is not None else ".")
     )
+

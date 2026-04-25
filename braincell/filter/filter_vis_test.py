@@ -272,6 +272,26 @@ class FilterVisTest(unittest.TestCase):
         )
         self.assertGreaterEqual(child_angles[1] - child_angles[0], 90.0 - 1e-6)
 
+    def test_morpho_vis2d_accepts_style_overrides(self) -> None:
+        soma = Branch.from_lengths(lengths=[20.0] * u.um, radii=[10.0, 10.0] * u.um, type="soma")
+        dend = Branch.from_lengths(lengths=[30.0] * u.um, radii=[2.0, 1.5] * u.um, type="apical_dendrite")
+        tree = Morphology.from_root(soma, name="soma")
+        tree.attach(parent="soma", child_branch=dend, child_name="dend", parent_x=1.0)
+
+        rendered = tree.vis2d(
+            shape="frustum",
+            branch_type_colors={"apical_dendrite": "#445566"},
+            branch_type_edge_colors_2d={"apical_dendrite": "#112233"},
+            frustum_edge_linewidth_2d=1.25,
+            chooser=BackendChooser(backends=(FakeBackend(),)),
+            backend="fake",
+        )
+
+        dend_polygons = [polygon for polygon in rendered.scene.polygons if polygon.branch_name == "dend"]
+        self.assertTrue(all(polygon.color_rgb == (68, 85, 102) for polygon in dend_polygons))
+        self.assertTrue(all(polygon.edge_color_rgb == (17, 34, 51) for polygon in dend_polygons))
+        self.assertTrue(all(abs(polygon.edge_linewidth - 1.25) < 1e-9 for polygon in dend_polygons))
+
     def test_branch_views_are_rejected_by_downstream_entrypoints(self) -> None:
         soma = Branch.from_lengths(lengths=[20.0] * u.um, radii=[10.0, 10.0] * u.um, type="soma")
         tree = Morphology.from_root(soma, name="soma")

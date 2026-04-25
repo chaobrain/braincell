@@ -47,6 +47,35 @@ def _simple_asc_payload(testcase: unittest.TestCase) -> dict:
     )
 
 
+def _synthetic_jump_swc_payload(
+    testcase: unittest.TestCase,
+    *,
+    repeated_point_radius: float,
+    case_id: str,
+) -> dict:
+    swc_path = fixtures.write_temp_swc(
+        testcase,
+        f"""
+        1 1 0 0 0 5 -1
+        2 1 5 0 0 5 1
+        3 3 5 0 0 1 2
+        4 3 15 0 0 1 3
+        5 3 15 0 0 {repeated_point_radius} 4
+        6 3 25 0 0 2 5
+        """,
+        filename=f"{case_id}.swc",
+    )
+    return fixtures.base_case_payload(
+        case_id=case_id,
+        morphology_kind="swc",
+        morphology_path=str(swc_path),
+        dt_ms=0.025,
+        duration_ms=2.0,
+        cv_per_branch=1,
+        stimulus=fixtures.dc_step_stimulus(delay_ms=0.5, dur_ms=1.0, amp_nA=0.05),
+    )
+
+
 def _manual_neuron_baseline(case) -> dict[str, np.ndarray | list[dict[str, object]]]:
     from neuron import h
 
@@ -182,15 +211,16 @@ class NeuronRunnerTest(unittest.TestCase):
         self.assertEqual(result["time_ms"].tolist(), [0.0, 0.025, 0.05, 0.075])
         self.assertEqual(result["voltage_mV"].shape[0], 4)
 
-    def test_neuron_runner_rejects_reserved_neuroml2_kind(self) -> None:
+    def test_neuron_runner_supports_inferred_swc_kind(self) -> None:
         case = case_schema.MultiCompartmentCableCase.from_dict(
-            fixtures.base_case_payload(
-                morphology_kind="neuroml2",
-                morphology_path="/tmp/sample.nml",
-            )
+            {
+                **fixtures.base_case_payload(),
+                "morphology": {"path": str(fixtures.IO_SWC)},
+            }
         )
-        with self.assertRaisesRegex(NotImplementedError, "neuroml2"):
-            neuron_runner.run_case(case)
+        result = neuron_runner.run_case(case)
+        self.assertEqual(case.morphology.kind, "swc")
+        self.assertEqual(result["voltage_mV"].shape[1], len(result["compartment_labels"]))
 
     def test_neuron_runner_matches_manual_fadvance_baseline_for_dc_step(self) -> None:
         case = case_schema.MultiCompartmentCableCase.from_dict(
@@ -225,22 +255,69 @@ class CompareRunnerTest(unittest.TestCase):
         self.assertEqual(result["case_id"], "smoke")
         self.assertIn("alignment", result)
         self.assertIn("metrics", result)
-        self.assertIn("overall", result["metrics"])
-        self.assertIn("per_compartment", result["metrics"])
+        self.assertIn("observables", result["metrics"])
+        self.assertIn("per_cv", result["metrics"])
         self.assertEqual(
             len(result["alignment"]["braincell_labels"]),
             len(result["alignment"]["neuron_labels"]),
         )
-        self.assertTrue(np.isfinite(result["metrics"]["overall"]["mae"]))
-        self.assertTrue(np.isfinite(result["metrics"]["overall"]["rmse"]))
-        self.assertTrue(np.isfinite(result["metrics"]["overall"]["max_abs"]))
+        per_cv_mae = [row["mae"] for row in result["metrics"]["per_cv"]]
+        self.assertAlmostEqual(
+            result["metrics"]["observables"]["voltage_midpoint_mean"]["mae"],
+            float(np.mean(per_cv_mae)),
+        )
+        self.assertTrue(np.isfinite(result["metrics"]["observables"]["voltage_midpoint_mean"]["mae"]))
+        self.assertTrue(np.isfinite(result["metrics"]["observables"]["voltage_midpoint_mean"]["rmse"]))
+        self.assertTrue(np.isfinite(result["metrics"]["observables"]["voltage_sum"]["max_abs"]))
 
     def test_compare_case_supports_asc_morphology(self) -> None:
         case = case_schema.MultiCompartmentCableCase.from_dict(_simple_asc_payload(self))
         result = compare_module.compare_case(case)
         self.assertEqual(result["case_id"], "smoke")
         self.assertGreater(len(result["alignment"]["branch_pairs"]), 0)
-        self.assertTrue(np.isfinite(result["metrics"]["overall"]["mae"]))
+        self.assertTrue(np.isfinite(result["metrics"]["observables"]["voltage_midpoint_mean"]["mae"]))
+
+    def test_compare_case_matches_neuron_for_zero_length_radius_jump_swc(self) -> None:
+        case = case_schema.MultiCompartmentCableCase.from_dict(
+            _synthetic_jump_swc_payload(
+                self,
+                repeated_point_radius=2.0,
+                case_id="jump_radius_step",
+            )
+        )
+        result = compare_module.compare_case(case)
+        self.assertLess(result["metrics"]["observables"]["voltage_midpoint_mean"]["max_abs"], 1e-6)
+        self.assertLess(result["metrics"]["observables"]["voltage_midpoint_mean"]["mae"], 1e-7)
+        self.assertLess(result["metrics"]["observables"]["voltage_sum"]["max_abs"], 1e-6)
+
+    def test_compare_case_stays_good_for_zero_length_without_radius_jump(self) -> None:
+        case = case_schema.MultiCompartmentCableCase.from_dict(
+            _synthetic_jump_swc_payload(
+                self,
+                repeated_point_radius=1.0,
+                case_id="no_jump_same_point",
+            )
+        )
+        result = compare_module.compare_case(case)
+        self.assertLess(result["metrics"]["observables"]["voltage_midpoint_mean"]["max_abs"], 1e-6)
+        self.assertLess(result["metrics"]["observables"]["voltage_midpoint_mean"]["mae"], 1e-7)
+        self.assertLess(result["metrics"]["observables"]["voltage_sum"]["max_abs"], 1e-6)
+
+    def test_compare_case_supports_real_bc_tree_with_unknown_swc_type(self) -> None:
+        case = case_schema.MultiCompartmentCableCase.from_dict(
+            fixtures.base_case_payload(
+                case_id="bc_real",
+                morphology_path=fixtures.BC_SWC,
+                dt_ms=0.025,
+                duration_ms=2.0,
+                cv_per_branch=1,
+                stimulus=fixtures.dc_step_stimulus(delay_ms=0.5, dur_ms=1.0, amp_nA=0.05),
+            )
+        )
+        result = compare_module.compare_case(case)
+        self.assertLess(result["metrics"]["observables"]["voltage_midpoint_mean"]["max_abs"], 1e-6)
+        self.assertLess(result["metrics"]["observables"]["voltage_midpoint_mean"]["mae"], 1e-7)
+        self.assertLess(result["metrics"]["observables"]["voltage_sum"]["max_abs"], 1e-6)
 
 
 if __name__ == "__main__":

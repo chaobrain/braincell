@@ -395,8 +395,8 @@ class Nav1p6_MA2020_GoC(Markov):
         temp: brainstate.typing.ArrayLike = u.celsius2kelvin(22.0),
         g_max: Union[brainstate.typing.ArrayLike, Callable] = 16.0 * (u.mS / u.cm ** 2),
         name: Optional[str] = None,
-        solver: str = "rk4",
-        substeps: int = 5,
+        solver: str = "backward_euler",
+        substeps: int = 1,
     ):
         super().__init__(size=size, name=name, solver=solver, substeps=substeps)
 

@@ -18,13 +18,15 @@ from dataclasses import dataclass, field
 from typing import Iterable, Iterator
 
 DEFAULT_BRANCH_TYPE_COLORS = {
-    "soma": (0, 0, 0),
-    "axon": (70, 130, 180),
-    "basal_dendrite": (178, 34, 34),
-    "apical_dendrite": (255, 127, 80),
-    "dendrite": (205, 92, 92),
-    "custom": (110, 110, 110),
+    "soma": (47, 49, 54),
+    "axon": (108, 142, 173),
+    "basal_dendrite": (190, 134, 111),
+    "apical_dendrite": (214, 173, 98),
+    "dendrite": (158, 170, 132),
+    "custom": (154, 164, 175),
 }
+DEFAULT_2D_EDGE_DARKEN_FACTOR = 0.72
+DEFAULT_2D_FRUSTUM_EDGE_LINEWIDTH = 0.9
 DEFAULT_HIGHLIGHT_COLOR = (255, 215, 0)  # gold — used for region overlays
 DEFAULT_MARKER_COLOR = (30, 144, 255)  # dodger blue — used for locset overlays
 
@@ -41,10 +43,11 @@ class VisDefaults:
     branch_type_colors: dict[str, tuple[int, int, int]] = field(
         default_factory=lambda: dict(DEFAULT_BRANCH_TYPE_COLORS)
     )
-    branch_type_colors_2d: dict[str, tuple[int, int, int]] | None = None
+    branch_type_edge_colors_2d: dict[str, tuple[int, int, int]] | None = None
     alpha_2d: float = 0.8
     alpha_2d_poly: float | None = None
     alpha_2d_line: float | None = None
+    frustum_edge_linewidth_2d: float = DEFAULT_2D_FRUSTUM_EDGE_LINEWIDTH
     alpha_3d_tube: float = 1.0
     highlight_color: tuple[int, int, int] = DEFAULT_HIGHLIGHT_COLOR
     highlight_alpha: float = 0.9
@@ -72,12 +75,13 @@ def configure(
     shape_2d_default: str | None = None,
     mode_3d_default: str | None = None,
     branch_type_colors: dict[str, object] | None = None,
-    branch_type_colors_2d: dict[str, object] | None = None,
+    branch_type_edge_colors_2d: dict[str, object] | None = None,
     replace_branch_type_colors: bool = False,
-    replace_branch_type_colors_2d: bool = False,
+    replace_branch_type_edge_colors_2d: bool = False,
     alpha_2d: float | None = None,
     alpha_2d_poly: float | None = None,
     alpha_2d_line: float | None = None,
+    frustum_edge_linewidth_2d: float | None = None,
     alpha_3d_tube: float | None = None,
     highlight_color: object | None = None,
     highlight_alpha: float | None = None,
@@ -110,23 +114,30 @@ def configure(
             merged = dict(updated.branch_type_colors)
             merged.update(normalized)
             updated.branch_type_colors = merged
-    if branch_type_colors_2d is not None:
-        normalized_2d = {
+    if branch_type_edge_colors_2d is not None:
+        normalized_edge_2d = {
             str(branch_type): _normalize_color(color)
-            for branch_type, color in branch_type_colors_2d.items()
+            for branch_type, color in branch_type_edge_colors_2d.items()
         }
-        if replace_branch_type_colors_2d or updated.branch_type_colors_2d is None:
-            updated.branch_type_colors_2d = normalized_2d
+        if replace_branch_type_edge_colors_2d or updated.branch_type_edge_colors_2d is None:
+            updated.branch_type_edge_colors_2d = normalized_edge_2d
         else:
-            merged_2d = dict(updated.branch_type_colors_2d)
-            merged_2d.update(normalized_2d)
-            updated.branch_type_colors_2d = merged_2d
+            merged_edge_2d = dict(updated.branch_type_edge_colors_2d)
+            merged_edge_2d.update(normalized_edge_2d)
+            updated.branch_type_edge_colors_2d = merged_edge_2d
     if alpha_2d is not None:
         updated.alpha_2d = _normalize_alpha(alpha_2d, label="alpha_2d")
     if alpha_2d_poly is not None:
         updated.alpha_2d_poly = _normalize_alpha(alpha_2d_poly, label="alpha_2d_poly")
     if alpha_2d_line is not None:
         updated.alpha_2d_line = _normalize_alpha(alpha_2d_line, label="alpha_2d_line")
+    if frustum_edge_linewidth_2d is not None:
+        value = float(frustum_edge_linewidth_2d)
+        if value < 0.0:
+            raise ValueError(
+                f"frustum_edge_linewidth_2d must be >= 0, got {frustum_edge_linewidth_2d!r}."
+            )
+        updated.frustum_edge_linewidth_2d = value
     if alpha_3d_tube is not None:
         updated.alpha_3d_tube = _normalize_alpha(alpha_3d_tube, label="alpha_3d_tube")
     if highlight_color is not None:
@@ -210,16 +221,18 @@ class PublicationTheme:
     Parameters
     ----------
     branch_type_colors : mapping
-        Branch-type colour overrides. Defaults to
+        Branch-type colour overrides shared by 2D and 3D. Defaults to
         :data:`PUBLICATION_BRANCH_TYPE_COLORS`.
-    branch_type_colors_2d : mapping or None
-        Optional 2D-only branch-type colour overrides. When ``None``,
-        the generic ``branch_type_colors`` palette is reused for 2D.
+    branch_type_edge_colors_2d : mapping or None
+        Optional 2D frustum border colour overrides. When ``None``,
+        border colours are derived automatically from the fill colours.
     rc_params : mapping
         Matplotlib ``rcParams`` applied inside the theme. Defaults to
         :data:`PUBLICATION_RC_PARAMS`.
     alpha_2d : float
         Shared 2D opacity used by both line and frustum rendering.
+    frustum_edge_linewidth_2d : float
+        Border linewidth used by 2D frustum rendering.
     alpha_3d_tube : float
         Tube alpha used by the 3D backend. Defaults to ``1.0``.
 
@@ -236,9 +249,10 @@ class PublicationTheme:
     branch_type_colors: dict[str, tuple[int, int, int]] = field(
         default_factory=lambda: dict(PUBLICATION_BRANCH_TYPE_COLORS)
     )
-    branch_type_colors_2d: dict[str, tuple[int, int, int]] | None = None
+    branch_type_edge_colors_2d: dict[str, tuple[int, int, int]] | None = None
     rc_params: dict[str, object] = field(default_factory=lambda: dict(PUBLICATION_RC_PARAMS))
     alpha_2d: float = 0.7
+    frustum_edge_linewidth_2d: float = DEFAULT_2D_FRUSTUM_EDGE_LINEWIDTH
     alpha_3d_tube: float = 1.0
 
 
@@ -284,12 +298,13 @@ def publication_theme(
     # Apply vis defaults.
     configure(
         branch_type_colors=dict(active.branch_type_colors),
-        branch_type_colors_2d=(
-            dict(active.branch_type_colors_2d)
-            if active.branch_type_colors_2d is not None
+        branch_type_edge_colors_2d=(
+            dict(active.branch_type_edge_colors_2d)
+            if active.branch_type_edge_colors_2d is not None
             else None
         ),
         alpha_2d=active.alpha_2d,
+        frustum_edge_linewidth_2d=active.frustum_edge_linewidth_2d,
         alpha_3d_tube=active.alpha_3d_tube,
     )
 
@@ -343,8 +358,8 @@ def theme(**overrides: object) -> Iterator[VisDefaults]:
 
     .. code-block:: python
 
-        >>> import braincell.vis as vis
-        >>> with vis.theme(branch_type_colors={"axon": "#ff0000"}):
+        >>> import braincell
+        >>> with braincell.vis.theme(branch_type_colors={"axon": "#ff0000"}):
         ...     morpho.vis2d()  # doctest: +SKIP
         >>> morpho.vis2d()       # doctest: +SKIP  — original colors restored
     """
@@ -378,15 +393,20 @@ def color_for_branch_type(branch_type: str) -> tuple[int, int, int]:
 
 
 def color_for_2d_branch_type(branch_type: str) -> tuple[int, int, int]:
-    if _VIS_DEFAULTS.branch_type_colors_2d is not None:
-        return _VIS_DEFAULTS.branch_type_colors_2d.get(
+    return color_for_branch_type(branch_type)
+
+
+def edge_color_for_2d_branch_type(branch_type: str) -> tuple[int, int, int]:
+    fill_color = color_for_2d_branch_type(branch_type)
+    if _VIS_DEFAULTS.branch_type_edge_colors_2d is not None:
+        return _VIS_DEFAULTS.branch_type_edge_colors_2d.get(
             branch_type,
-            _VIS_DEFAULTS.branch_type_colors_2d.get(
+            _VIS_DEFAULTS.branch_type_edge_colors_2d.get(
                 "custom",
-                color_for_branch_type(branch_type),
+                _darken_color(fill_color, factor=DEFAULT_2D_EDGE_DARKEN_FACTOR),
             ),
         )
-    return color_for_branch_type(branch_type)
+    return _darken_color(fill_color, factor=DEFAULT_2D_EDGE_DARKEN_FACTOR)
 
 
 def alpha_for_2d() -> float:
@@ -403,6 +423,10 @@ def alpha_for_2d_line() -> float:
     if _VIS_DEFAULTS.alpha_2d_line is not None:
         return _VIS_DEFAULTS.alpha_2d_line
     return _VIS_DEFAULTS.alpha_2d
+
+
+def frustum_edge_linewidth_2d() -> float:
+    return _VIS_DEFAULTS.frustum_edge_linewidth_2d
 
 
 def alpha_for_3d_tube() -> float:
@@ -435,14 +459,15 @@ def _copy_defaults(defaults: VisDefaults) -> VisDefaults:
         shape_2d_default=defaults.shape_2d_default,
         mode_3d_default=defaults.mode_3d_default,
         branch_type_colors=dict(defaults.branch_type_colors),
-        branch_type_colors_2d=(
-            dict(defaults.branch_type_colors_2d)
-            if defaults.branch_type_colors_2d is not None
+        branch_type_edge_colors_2d=(
+            dict(defaults.branch_type_edge_colors_2d)
+            if defaults.branch_type_edge_colors_2d is not None
             else None
         ),
         alpha_2d=defaults.alpha_2d,
         alpha_2d_poly=defaults.alpha_2d_poly,
         alpha_2d_line=defaults.alpha_2d_line,
+        frustum_edge_linewidth_2d=defaults.frustum_edge_linewidth_2d,
         alpha_3d_tube=defaults.alpha_3d_tube,
         highlight_color=defaults.highlight_color,
         highlight_alpha=defaults.highlight_alpha,
@@ -491,3 +516,10 @@ def _normalize_color(color: object) -> tuple[int, int, int]:
     if not all(0 <= channel <= 255 for channel in scaled):
         raise ValueError(f"RGB channels must be between 0 and 255, got {color!r}.")
     return scaled
+
+
+def _darken_color(color: tuple[int, int, int], *, factor: float) -> tuple[int, int, int]:
+    return tuple(
+        max(0, min(255, int(round(channel * factor))))
+        for channel in color
+    )

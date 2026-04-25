@@ -19,6 +19,14 @@ One entry point: :func:`lower`. All helpers in this module are pure
 functions operating on immutable or locally-scoped data. Internal
 types ``_Frustum``, ``_GeoCV``, ``_MechBucket`` never leave this
 module — the final ``tuple[CV, ...]`` is the only output.
+
+Geometry note
+-------------
+The morphology layer may encode radius discontinuities as zero-length jump
+segments. CV lowering must preserve those jumps for surface-area parity with
+NEURON while still discarding truly degenerate zero-length / same-radius
+pieces. If this behavior changes, re-check ``braincell/_cv/lower_test.py``,
+``braincell/io/swc/test.py``, and ``braincell/io/swc/README.md``.
 """
 
 from dataclasses import dataclass, replace
@@ -288,6 +296,28 @@ class _RegionCache:
 # =============================================================================
 
 
+def _owns_zero_length_jump(
+    *,
+    position_um: float,
+    start_um: float,
+    end_um: float,
+) -> bool:
+    """Return whether a zero-length jump belongs to ``[start_um, end_um]``.
+
+    Shared CV boundaries are owned by the left/distal interval, matching
+    ``_locate_cv_on_branch()``. The only exception is ``x=0``, which belongs
+    to the first interval.
+
+    This ownership rule is part of the compare contract: changing it will
+    double-count or drop branch-boundary jump area.
+    """
+    if position_um < start_um - EPS_LEN_UM or position_um > end_um + EPS_LEN_UM:
+        return False
+    if position_um <= start_um + EPS_LEN_UM:
+        return start_um <= EPS_LEN_UM
+    return position_um <= end_um + EPS_LEN_UM
+
+
 def _build_frusta(
     branch: Branch,
     *,
@@ -297,9 +327,10 @@ def _build_frusta(
     """Clip ``branch`` to normalized ``[prox, dist]`` and return frustum slices.
 
     Preserves segment breaks from the morphology, linearly interpolates radii
-    and 3D point geometry at clip boundaries, and drops zero-length interior
-    segments. Raises ``ValueError`` for invalid bounds, non-positive radii, or
-    branches of zero length.
+    and 3D point geometry at clip boundaries, retains zero-length jump
+    segments that encode radius discontinuities, and drops fully degenerate
+    zero-length segments. Raises ``ValueError`` for invalid bounds,
+    non-positive radii, or branches of zero length.
     """
     prox_f = float(prox)
     dist_f = float(dist)
@@ -347,6 +378,35 @@ def _build_frusta(
         seg_start_um = float(segment_starts_um[seg_idx])
         seg_end_um = float(segment_ends_um[seg_idx])
         if seg_length_um <= EPS_LEN_UM:
+            r_seg_prox = float(radii_prox_um[seg_idx])
+            r_seg_dist = float(radii_dist_um[seg_idx])
+            # Zero-length / same-radius pieces are pure duplicates and carry
+            # no geometric information. Zero-length / different-radius pieces
+            # are the morphology layer's canonical encoding for a radius jump
+            # and must survive into CV geometry.
+            if np.isclose(r_seg_prox, r_seg_dist):
+                continue
+            if not _owns_zero_length_jump(
+                position_um=seg_start_um,
+                start_um=start_um,
+                end_um=end_um,
+            ):
+                continue
+            x_jump = max(prox_f, min(dist_f, seg_start_um / total_length_um))
+            point_jump = None
+            if points_proximal is not None and points_distal is not None:
+                point_jump = points_distal[seg_idx]
+            frusta.append(
+                _Frustum(
+                    prox=float(x_jump),
+                    dist=float(x_jump),
+                    length_um=0.0,
+                    r_prox_um=r_seg_prox,
+                    r_dist_um=r_seg_dist,
+                    point_prox_um=point_jump,
+                    point_dist_um=point_jump,
+                )
+            )
             continue
 
         left_um = max(seg_start_um, start_um)

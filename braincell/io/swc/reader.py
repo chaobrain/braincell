@@ -14,6 +14,26 @@
 # ==============================================================================
 
 
+"""SWC reader with NEURON-oriented parity rules.
+
+This module does more than parse SWC into branches. Two invariants are easy to
+break during refactors:
+
+1. Branch-internal repeated xyz with different radii must survive as
+   zero-length jump segments because :class:`Branch` uses them to encode
+   radius discontinuities.
+2. Parent/child attachments in ``mode="neuron"`` must stay close to NEURON
+   ``Import3d_SWC_read`` semantics. Same-xyz attach points may still require
+   an explicit copied first point when the parent attach radius differs from
+   the child's first radius.
+
+If this behavior changes, re-check:
+- ``braincell/io/swc/test.py``
+- ``braincell/_cv/lower_test.py``
+- ``examples/neuron_compare/cable/tests/``
+- ``braincell/io/swc/README.md``
+"""
+
 from dataclasses import dataclass, field
 from os import PathLike
 from pathlib import Path
@@ -361,6 +381,9 @@ class SwcReader:
         radii = [row_radius(nodes[node_id]) for node_id in point_ids]
 
         if branch.attach is not None:
+            # ``attach`` geometry carries parent-side information at the branch
+            # boundary. Whether we splice that into the child branch is part
+            # of the geometry contract, not just parser cleanup.
             attach_point, attach_radius = self._attach_geometry(branch.attach, nodes)
             should_copy_attach = self._should_copy_attach_geometry(
                 parent_branch_type=parent_branch_type,
@@ -372,13 +395,20 @@ class SwcReader:
 
             attach_radius_for_child = float(attach_radius)
             if parent_branch_type == "soma":
+                # Mid-soma attachments in NEURON do not force the soma radius
+                # into the child cable. The child keeps its own first radius at
+                # the attach location.
                 attach_radius_for_child = float(radii[0])
 
+            same_xyz = np.allclose(points[0], attach_point)
+            same_radius = np.isclose(radii[0], attach_radius_for_child)
             if should_copy_attach:
-                points.insert(0, attach_point)
-                radii.insert(0, attach_radius_for_child)
-            elif np.allclose(points[0], attach_point):
-                radii[0] = attach_radius_for_child
+                # When the attach point already shares the same xyz, only
+                # duplicate it if the radius differs. That preserves a
+                # branch-boundary radius jump as a zero-length first segment.
+                if not same_xyz or not same_radius:
+                    points.insert(0, attach_point)
+                    radii.insert(0, attach_radius_for_child)
 
         return branch_class_for_type(branch.branch_type).from_points(
             points=np.array(points, dtype=float) * u.um,
@@ -394,10 +424,13 @@ class SwcReader:
         points: list[np.ndarray],
         attach_point: np.ndarray,
     ) -> bool:
-        if np.allclose(points[0], attach_point):
-            return False
+        # Keep this predicate narrow. Same-xyz handling is decided in
+        # ``_make_branch()`` because same-xyz + different-radius still needs a
+        # copied point to preserve a boundary jump for NEURON parity.
         if self.options.mode != "neuron" or parent_branch_type != "soma":
             return True
+        # Soma midpoint attachments are the one case where copying the parent
+        # point wholesale would distort the intended NEURON-style semantics.
         return len(point_ids) == 1 or attach.parent_x != 0.5
 
     def _attachment_x(

@@ -16,12 +16,16 @@
 
 import unittest
 
+import braincell
 import matplotlib as mpl
 
 from braincell.vis.config import (
     PUBLICATION_BRANCH_TYPE_COLORS,
     PUBLICATION_RC_PARAMS,
     PublicationTheme,
+    configure as configure_defaults,
+    edge_color_for_2d_branch_type,
+    frustum_edge_linewidth_2d,
     get_defaults,
     publication_theme,
     resolve_default_2d_layout,
@@ -100,6 +104,31 @@ class DefaultsTest(unittest.TestCase):
     def test_default_2d_layout_is_fan(self) -> None:
         self.assertEqual(get_defaults().layout_2d_default, "fan")
         self.assertEqual(resolve_default_2d_layout(None), "fan")
+
+    def test_braincell_top_level_exposes_vis_namespace(self) -> None:
+        self.assertTrue(hasattr(braincell, "vis"))
+        self.assertTrue(hasattr(braincell.vis, "theme"))
+
+    def test_default_2d_branch_palette_is_publication_friendly(self) -> None:
+        defaults = get_defaults()
+
+        self.assertEqual(defaults.branch_type_colors["soma"], (47, 49, 54))
+        self.assertEqual(defaults.branch_type_colors["apical_dendrite"], (214, 173, 98))
+        self.assertEqual(edge_color_for_2d_branch_type("soma"), (34, 35, 39))
+        self.assertAlmostEqual(frustum_edge_linewidth_2d(), 0.9)
+
+    def test_configure_merges_2d_edge_colours(self) -> None:
+        original = edge_color_for_2d_branch_type("soma")
+
+        configure_defaults(
+            branch_type_edge_colors_2d={"soma": "#123456"},
+            frustum_edge_linewidth_2d=1.75,
+        )
+
+        self.assertEqual(edge_color_for_2d_branch_type("soma"), (18, 52, 86))
+        self.assertEqual(edge_color_for_2d_branch_type("axon"), (78, 102, 125))
+        self.assertAlmostEqual(frustum_edge_linewidth_2d(), 1.75)
+        self.assertNotEqual(edge_color_for_2d_branch_type("soma"), original)
 
 
 if __name__ == "__main__":

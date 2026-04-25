@@ -26,6 +26,8 @@ from .config import (
     alpha_for_3d_tube as _alpha_for_3d_tube,
     color_for_2d_branch_type as _color_for_2d_branch_type,
     color_for_branch_type as _color_for_branch_type,
+    edge_color_for_2d_branch_type as _edge_color_for_2d_branch_type,
+    frustum_edge_linewidth_2d as _frustum_edge_linewidth_2d,
 )
 
 if TYPE_CHECKING:
@@ -120,6 +122,10 @@ def color_for_2d_branch_type(branch_type: str) -> tuple[int, int, int]:
     return _color_for_2d_branch_type(branch_type)
 
 
+def edge_color_for_2d_branch_type(branch_type: str) -> tuple[int, int, int]:
+    return _edge_color_for_2d_branch_type(branch_type)
+
+
 def alpha_for_2d() -> float:
     return _alpha_for_2d()
 
@@ -130,6 +136,10 @@ def alpha_for_2d_line() -> float:
 
 def alpha_for_2d_poly() -> float:
     return _alpha_for_2d_poly()
+
+
+def frustum_edge_linewidth_2d() -> float:
+    return _frustum_edge_linewidth_2d()
 
 
 def alpha_for_3d_tube() -> float:
@@ -269,6 +279,8 @@ class Polygon2D:
     branch_type: str
     points_um: np.ndarray
     color_rgb: tuple[int, int, int]
+    edge_color_rgb: tuple[int, int, int] | None = None
+    edge_linewidth: float = 1.0
     alpha: float = 1.0
     draw_order: int = 0
 
@@ -324,6 +336,8 @@ class PolygonValuesBatch2D:
     branch_type: str
     polygons_um: np.ndarray  # shape (n_segments, 4, 2)
     polygon_values: np.ndarray  # shape (n_segments,)
+    edge_color_rgb: tuple[int, int, int] | None = None
+    edge_linewidth: float = 0.0
     draw_order: int = 0
 
 

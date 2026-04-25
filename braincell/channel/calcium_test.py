@@ -20,15 +20,19 @@ import unittest
 import brainunit as u
 import jax.numpy as jnp
 
-from braincell._base import IonInfo
+from braincell._base import HHTypedNeuron, IonInfo
 from braincell.channel._base import HH, ghk_flux
 from braincell.channel.calcium import (
+    CaHVA_MA2020_GoC,
+    CaHVA_MA2020_GrC,
+    Ca_ZH2019_IO,
     CaHT_HM1992,
     CaHT_Re1993,
     CaL_IS2008,
     CaN_IS2008,
     CaT_HM1992,
     CaT_HP1992,
+    Cav2p3_MA2020_GoC,
     Cav1p2_MA2020,
     Cav1p3_MA2020,
     Cav3p1_MA2020,
@@ -36,7 +40,14 @@ from braincell.channel.calcium import (
 from braincell.ion import Calcium
 
 
-def _ca_info(size: int = 1, C: float = 1e-4, E_mV: float = 120.0) -> IonInfo:
+def _ca_info(
+    size: int = 1,
+    C: float = 1e-4,
+    E_mV: float = 120.0,
+    e_mV: float | None = None,
+) -> IonInfo:
+    if e_mV is not None:
+        E_mV = e_mV
     return IonInfo(
         Ci=jnp.full((size,), C) * u.mM,
         Co=jnp.full((size,), 2.0) * u.mM,
@@ -433,6 +444,184 @@ class Cav3p1_MA2020Test(unittest.TestCase):
             u.math.allclose(
                 current.to_decimal(u.mA / (u.cm ** 2)),
                 expected.to_decimal(u.mA / (u.cm ** 2)),
+                atol=1e-6,
+            )
+        )
+
+
+class CaHVAMA20GoCTest(unittest.TestCase):
+    def test_root_type_is_calcium(self) -> None:
+        self.assertIs(CaHVA_MA2020_GoC.root_type, Calcium)
+
+    def test_current_uses_ca_reversal(self) -> None:
+        ch = CaHVA_MA2020_GoC(size=1)
+        V = _V([-20.0])
+        ca = _ca_info(e_mV=100.0)
+        ch.init_state(V, ca)
+        ch.s.value = jnp.array([0.5])
+        ch.u.value = jnp.array([0.25])
+        i = ch.current(V, ca)
+        expected = ch.g_max * (ch.s.value ** 2) * ch.u.value * (ca.E - V)
+        self.assertTrue(
+            u.math.allclose(
+                i.to_decimal(_DENSITY_UNIT),
+                expected.to_decimal(_DENSITY_UNIT),
+                atol=1e-6,
+            )
+        )
+
+    def test_matches_template_formulas_at_same_reversal(self) -> None:
+        temp = u.celsius2kelvin(30.0)
+        proto = CaHVA_MA2020_GoC(size=1, temp=temp)
+        V = _V([-30.0])
+        ca = _ca_info()
+
+        proto.init_state(V, ca)
+        proto.reset_state(V, ca)
+        alpha_s = proto.f_s_alpha(V, ca)
+        beta_s = proto.f_s_beta(V, ca)
+        alpha_u = proto.f_u_alpha(V, ca)
+        beta_u = proto.f_u_beta(V, ca)
+        self.assertTrue(u.math.allclose(proto.s.value, alpha_s / (alpha_s + beta_s), atol=1e-6))
+        self.assertTrue(u.math.allclose(proto.u.value, alpha_u / (alpha_u + beta_u), atol=1e-6))
+
+        proto.s.value = jnp.array([0.2])
+        proto.u.value = jnp.array([0.6])
+        proto.compute_derivative(V, ca)
+        gates = {gate.name: gate for gate in proto._iter_gates()}
+        expected_s = proto.gate_phi(gates["s"]) * (alpha_s * (1.0 - proto.s.value) - beta_s * proto.s.value) / u.ms
+        expected_u = proto.gate_phi(gates["u"]) * (alpha_u * (1.0 - proto.u.value) - beta_u * proto.u.value) / u.ms
+        self.assertTrue(u.math.allclose(proto.s.derivative, expected_s, atol=1e-6 * u.Hz))
+        self.assertTrue(u.math.allclose(proto.u.derivative, expected_u, atol=1e-6 * u.Hz))
+
+        i_proto = proto.current(V, ca)
+        expected_current = proto.g_max * (proto.s.value ** 2) * proto.u.value * (ca.E - V)
+        self.assertTrue(
+            u.math.allclose(
+                i_proto.to_decimal(_DENSITY_UNIT),
+                expected_current.to_decimal(_DENSITY_UNIT),
+                atol=1e-6,
+            )
+        )
+
+
+class Cav2p3MA20GoCTest(unittest.TestCase):
+    def test_root_type_is_calcium(self) -> None:
+        self.assertIs(Cav2p3_MA2020_GoC.root_type, Calcium)
+
+    def test_reset_state_matches_inf_functions(self) -> None:
+        ch = Cav2p3_MA2020_GoC(size=1)
+        V = _V([-60.0])
+        ca = _ca_info(e_mV=140.0)
+        ch.init_state(V, ca)
+        ch.reset_state(V, ca)
+        self.assertTrue(u.math.allclose(ch.m.value, ch.f_m_inf(V, ca), atol=1e-6))
+        self.assertTrue(u.math.allclose(ch.h.value, ch.f_h_inf(V, ca), atol=1e-6))
+
+    def test_current_matches_linear_formula(self) -> None:
+        ch = Cav2p3_MA2020_GoC(size=1, g_max=0.1 * (u.mS / u.cm ** 2))
+        V = _V([-40.0])
+        ca = _ca_info(e_mV=140.0)
+        ch.init_state(V, ca)
+        ch.m.value = jnp.array([0.5])
+        ch.h.value = jnp.array([0.25])
+        i = ch.current(V, ca)
+        expected = ch.g_max * (ch.m.value ** 3) * ch.h.value * (ca.E - V)
+        self.assertTrue(
+            u.math.allclose(
+                i.to_decimal(_DENSITY_UNIT),
+                expected.to_decimal(_DENSITY_UNIT),
+                atol=1e-6,
+            )
+        )
+
+    def test_matches_template_formulas_at_same_reversal(self) -> None:
+        temp = u.celsius2kelvin(34.0)
+        proto = Cav2p3_MA2020_GoC(size=1, temp=temp)
+        V = _V([-40.0])
+        ca = _ca_info(e_mV=140.0)
+
+        proto.init_state(V, ca)
+        proto.reset_state(V, ca)
+        self.assertTrue(u.math.allclose(proto.m.value, proto.f_m_inf(V, ca), atol=1e-6))
+        self.assertTrue(u.math.allclose(proto.h.value, proto.f_h_inf(V, ca), atol=1e-6))
+
+        proto.m.value = jnp.array([0.3])
+        proto.h.value = jnp.array([0.7])
+        proto.compute_derivative(V, ca)
+        gates = {gate.name: gate for gate in proto._iter_gates()}
+        expected_m = proto.gate_phi(gates["m"]) * (proto.f_m_inf(V, ca) - proto.m.value) / proto.f_m_tau(V, ca) / u.ms
+        expected_h = proto.gate_phi(gates["h"]) * (proto.f_h_inf(V, ca) - proto.h.value) / proto.f_h_tau(V, ca) / u.ms
+        self.assertTrue(u.math.allclose(proto.m.derivative, expected_m, atol=1e-6 * u.Hz))
+        self.assertTrue(u.math.allclose(proto.h.derivative, expected_h, atol=1e-6 * u.Hz))
+
+        i_proto = proto.current(V, ca)
+        expected_current = proto.g_max * (proto.m.value ** 3) * proto.h.value * (ca.E - V)
+        self.assertTrue(
+            u.math.allclose(
+                i_proto.to_decimal(_DENSITY_UNIT),
+                expected_current.to_decimal(_DENSITY_UNIT),
+                atol=1e-6,
+            )
+        )
+
+
+class CaHVAMA20GrCTest(unittest.TestCase):
+    def test_root_type_is_calcium(self) -> None:
+        self.assertIs(CaHVA_MA2020_GrC.root_type, Calcium)
+
+    def test_matches_goc_variant(self) -> None:
+        temp = u.celsius2kelvin(30.0)
+        goc = CaHVA_MA2020_GoC(size=1, temp=temp)
+        grc = CaHVA_MA2020_GrC(size=1, temp=temp)
+        V = _V([-30.0])
+        ca = _ca_info()
+
+        goc.init_state(V, ca)
+        grc.init_state(V, ca)
+        goc.reset_state(V, ca)
+        grc.reset_state(V, ca)
+        self.assertTrue(u.math.allclose(grc.s.value, goc.s.value, atol=1e-6))
+        self.assertTrue(u.math.allclose(grc.u.value, goc.u.value, atol=1e-6))
+
+        goc.compute_derivative(V, ca)
+        grc.compute_derivative(V, ca)
+        self.assertTrue(u.math.allclose(grc.s.derivative, goc.s.derivative, atol=1e-6 * u.Hz))
+        self.assertTrue(u.math.allclose(grc.u.derivative, goc.u.derivative, atol=1e-6 * u.Hz))
+
+        i_goc = goc.current(V, ca)
+        i_grc = grc.current(V, ca)
+        self.assertTrue(
+            u.math.allclose(
+                i_grc.to_decimal(_DENSITY_UNIT),
+                i_goc.to_decimal(_DENSITY_UNIT),
+                atol=1e-6,
+            )
+        )
+
+
+class CaZH19IOTest(unittest.TestCase):
+    def test_root_type_is_hh_typed_neuron(self) -> None:
+        self.assertIs(Ca_ZH2019_IO.root_type, HHTypedNeuron)
+
+    def test_reset_state_matches_f_h_inf(self) -> None:
+        ch = Ca_ZH2019_IO(size=1)
+        V = _V([-70.0])
+        ch.init_state(V)
+        ch.reset_state(V)
+        self.assertTrue(u.math.allclose(ch.h.value, ch.f_h_inf(V), atol=1e-6))
+
+    def test_current_uses_instantaneous_m_and_stateful_h(self) -> None:
+        ch = Ca_ZH2019_IO(size=1, E=120.0 * u.mV, mMidV=-61.0 * u.mV)
+        V = _V([-50.0])
+        ch.init_state(V)
+        ch.h.value = jnp.array([0.25])
+        i = ch.current(V)
+        expected = ch.g_max * ch.f_m_inf(V) * ch.h.value * (ch.E - V)
+        self.assertTrue(
+            u.math.allclose(
+                i.to_decimal(_DENSITY_UNIT),
+                expected.to_decimal(_DENSITY_UNIT),
                 atol=1e-6,
             )
         )

@@ -13,7 +13,7 @@ class MultiCompartmentCableCaseSchemaTest(unittest.TestCase):
         payload = {
             "template_family": "multi_compartment_cable",
             "case_id": "dc_smoke",
-            "morphology": {"kind": "swc", "path": "/tmp/sample.swc"},
+            "morphology": {"path": "/tmp/sample.swc"},
             "simulation": {"dt_ms": 0.025, "duration_ms": 5.0, "v_init_mV": -65.0},
             "cable": {"ra_ohm_cm": 100.0, "cm_uF_cm2": 1.0},
             "cv_policy": {"kind": "CVPerBranch", "cv_per_branch": 3},
@@ -36,7 +36,7 @@ class MultiCompartmentCableCaseSchemaTest(unittest.TestCase):
         payload = {
             "template_family": "multi_compartment_cable",
             "case_id": "asc_smoke",
-            "morphology": {"kind": "asc", "path": "/tmp/sample.asc"},
+            "morphology": {"path": "/tmp/sample.asc"},
             "simulation": {"dt_ms": 0.025, "duration_ms": 5.0, "v_init_mV": -65.0},
             "cable": {"ra_ohm_cm": 100.0, "cm_uF_cm2": 1.0},
             "cv_policy": {"kind": "CVPerBranch", "cv_per_branch": 3},
@@ -52,11 +52,11 @@ class MultiCompartmentCableCaseSchemaTest(unittest.TestCase):
         case = case_schema.MultiCompartmentCableCase.from_dict(payload)
         self.assertEqual(case.morphology.kind, "asc")
 
-    def test_accepts_reserved_neuroml2_kind(self) -> None:
+    def test_rejects_unknown_morphology_suffix_when_kind_is_omitted(self) -> None:
         payload = {
             "template_family": "multi_compartment_cable",
-            "case_id": "neuroml2_placeholder",
-            "morphology": {"kind": "neuroml2", "path": "/tmp/sample.nml"},
+            "case_id": "unknown_kind",
+            "morphology": {"path": "/tmp/sample.nml"},
             "simulation": {"dt_ms": 0.025, "duration_ms": 5.0, "v_init_mV": -65.0},
             "cable": {"ra_ohm_cm": 100.0, "cm_uF_cm2": 1.0},
             "cv_policy": {"kind": "CVPerBranch", "cv_per_branch": 3},
@@ -69,8 +69,8 @@ class MultiCompartmentCableCaseSchemaTest(unittest.TestCase):
             },
         }
 
-        case = case_schema.MultiCompartmentCableCase.from_dict(payload)
-        self.assertEqual(case.morphology.kind, "neuroml2")
+        with self.assertRaisesRegex(ValueError, "morphology.kind"):
+            case_schema.MultiCompartmentCableCase.from_dict(payload)
 
     def test_accepts_legacy_swc_field_as_compatibility_path(self) -> None:
         payload = {

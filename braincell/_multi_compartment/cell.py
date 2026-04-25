@@ -1661,9 +1661,6 @@ class Cell(HHTypedNeuron):
 
     def update(self, I_ext=None):
         self._raise_if_not_initialized("update()")
-        point_V = self._cv_to_point(self.V.value)
-        for _, node in self.nodes(IonChannel, allowed_hierarchy=(1, 1)).items():
-            node.update(point_V)
 
         last_V = self.V.value
         if brainstate.environ.get("dt", None) is None:
@@ -1673,6 +1670,10 @@ class Cell(HHTypedNeuron):
             self.solver(self)
         else:
             self.solver(self, I_ext)
+
+        point_V = self._cv_to_point(self.V.value)
+        for _, node in self.nodes(IonChannel, allowed_hierarchy=(1, 1)).items():
+            node.update(point_V)
 
         spk = self.get_spike(last_V, self.V.value)
         self.spike.value = spk

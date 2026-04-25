@@ -186,6 +186,24 @@ class BraincellRunnerTest(unittest.TestCase):
         self.assertEqual(result["time_ms"].shape, result["current"]["ix"].shape)
         self.assertGreater(float(np.max(np.abs(result["current"]["ix"]))), 1e-6)
 
+    def test_repo_nav1p6_bc_smoke_case_runs(self) -> None:
+        config_path = CHANNEL_NO_CONC_ROOT / "configs" / "ma25_bc" / "nav1p6_ma25_bc.json"
+        template_path = CHANNEL_NO_CONC_ROOT / "templates" / "vinit_celsius.json"
+        config = experiment_schema.load_sweep_config(config_path, template_path)
+        case_payload = experiment_schema.expand_cases(config)[0]
+        case = experiment_schema.ChannelNoConcCase.from_dict(case_payload)
+
+        result = braincell_runner.run_case(case)
+
+        self.assertEqual(case.mapping_spec.current_source.neuron_current_var, "ina")
+        self.assertEqual(
+            tuple(result["gates"]),
+            ("C1", "C2", "C3", "C4", "C5", "I1", "I2", "I3", "I4", "I5", "O", "B"),
+        )
+        self.assertTrue(all(trace.shape == result["time_ms"].shape for trace in result["gates"].values()))
+        self.assertTrue(np.isfinite(result["current"]["ix"]).all())
+        self.assertGreaterEqual(float(np.max(np.abs(result["current"]["ix"]))), 0.0)
+
     def test_repo_hcn_dcn_smoke_case_runs(self) -> None:
         config_path = CHANNEL_NO_CONC_ROOT / "configs" / "su15_dcn" / "hcn_su15_dcn.json"
         template_path = CHANNEL_NO_CONC_ROOT / "templates" / "vinit_celsius.json"

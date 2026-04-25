@@ -16,6 +16,7 @@
 
 import unittest
 
+from braincell import vis as morpho_vis
 import brainunit as u
 import matplotlib.pyplot as plt
 import numpy as np
@@ -38,6 +39,10 @@ from braincell.vis.morphometry import (
 
 
 class PlotDendrogramTest(unittest.TestCase):
+    def setUp(self) -> None:
+        morpho_vis.reset_defaults()
+        self.addCleanup(morpho_vis.reset_defaults)
+
     def tearDown(self) -> None:
         plt.close("all")
 
@@ -58,8 +63,21 @@ class PlotDendrogramTest(unittest.TestCase):
         with self.assertRaisesRegex(TypeError, "expects Morphology"):
             plot_dendrogram("not-a-morphology")  # type: ignore[arg-type]
 
+    def test_dendrogram_uses_shared_branch_type_palette(self) -> None:
+        tree = make_two_dendrite_tree()
+        morpho_vis.configure_defaults(branch_type_colors={"apical_dendrite": "#445566"})
+
+        ax = plot_dendrogram(tree)
+
+        line_colors = [line.get_color() for line in ax.lines]
+        self.assertIn((68 / 255.0, 85 / 255.0, 102 / 255.0), line_colors)
+
 
 class PlotTopologyTest(unittest.TestCase):
+    def setUp(self) -> None:
+        morpho_vis.reset_defaults()
+        self.addCleanup(morpho_vis.reset_defaults)
+
     def tearDown(self) -> None:
         plt.close("all")
 
@@ -70,6 +88,15 @@ class PlotTopologyTest(unittest.TestCase):
         x_bounds = np.concatenate([line.get_xdata() for line in ax.lines])
         self.assertEqual(float(np.min(x_bounds)), 0.0)
         self.assertAlmostEqual(float(np.max(x_bounds)), 2.0)
+
+    def test_topology_uses_shared_branch_type_palette(self) -> None:
+        tree = make_root_split_tree()
+        morpho_vis.configure_defaults(branch_type_colors={"axon": "#334488"})
+
+        ax = plot_topology(tree)
+
+        line_colors = [line.get_color() for line in ax.lines]
+        self.assertIn((51 / 255.0, 68 / 255.0, 136 / 255.0), line_colors)
 
 
 class ShollAnalysisTest(unittest.TestCase):

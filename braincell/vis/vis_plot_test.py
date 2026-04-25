@@ -54,6 +54,9 @@ class VisPlotTest(unittest.TestCase):
         self.assertEqual(request.scene.layout, "fan")
         self.assertEqual(request.scene.shape, "frustum")
         self.assertEqual(request.scene.projection_plane, None)
+        self.assertTrue(all(polygon.edge_color_rgb is not None for polygon in request.scene.polygons))
+        self.assertTrue(all(polygon.edge_color_rgb != polygon.color_rgb for polygon in request.scene.polygons))
+        self.assertTrue(all(abs(polygon.edge_linewidth - 0.9) < 1e-9 for polygon in request.scene.polygons))
 
     def test_plot2d_line_shape_accepts_length_only_morphology(self) -> None:
         tree = make_length_only_tree()
@@ -147,8 +150,7 @@ class VisPlotTest(unittest.TestCase):
         morpho_vis.configure_defaults(
             layout_2d_default="stem",
             shape_2d_default="line",
-            branch_type_colors={"soma": "#000000"},
-            branch_type_colors_2d={"soma": "#123456"},
+            branch_type_colors={"soma": "#123456"},
             alpha_2d=0.25,
             alpha_3d_tube=0.4,
         )
@@ -161,13 +163,13 @@ class VisPlotTest(unittest.TestCase):
         self.assertEqual(request_2d.shape, "line")
         self.assertTrue(all(polyline.color_rgb == (18, 52, 86) for polyline in request_2d.scene.polylines))
         self.assertTrue(all(abs(polyline.alpha - 0.25) < 1e-9 for polyline in request_2d.scene.polylines))
-        self.assertEqual(request_3d.scene.batches[0].color_rgb, (0, 0, 0))
+        self.assertEqual(request_3d.scene.batches[0].color_rgb, (18, 52, 86))
         self.assertAlmostEqual(request_3d.scene.batches[0].opacity, 0.4)
 
     def test_theme_context_manager_restores_defaults_on_exit(self) -> None:
         backend = FakeBackend()
 
-        with morpho_vis.theme(branch_type_colors_2d={"soma": "#ff0000"}, alpha_2d=0.1):
+        with morpho_vis.theme(branch_type_colors={"soma": "#ff0000"}, alpha_2d=0.1):
             inside = plot2d(
                 make_point_tree(),
                 shape="line",
@@ -181,13 +183,14 @@ class VisPlotTest(unittest.TestCase):
             shape="line",
             chooser=BackendChooser(backends=(backend,)),
         )
-        # Soma default is black (0, 0, 0); alpha_2d_line defaults to 1.0.
-        self.assertEqual(after.scene.polylines[0].color_rgb, (0, 0, 0))
+        self.assertEqual(after.scene.polylines[0].color_rgb, (47, 49, 54))
         self.assertAlmostEqual(after.scene.polylines[0].alpha, 0.8)
 
     def test_global_2d_style_also_applies_to_frustum(self) -> None:
         morpho_vis.configure_defaults(
-            branch_type_colors_2d={"apical_dendrite": "#445566"},
+            branch_type_colors={"apical_dendrite": "#445566"},
+            branch_type_edge_colors_2d={"apical_dendrite": "#112233"},
+            frustum_edge_linewidth_2d=1.75,
             alpha_2d=0.6,
         )
         backend = FakeBackend()
@@ -200,7 +203,54 @@ class VisPlotTest(unittest.TestCase):
         )
 
         self.assertTrue(all(polygon.color_rgb == (68, 85, 102) for polygon in request.scene.polygons[1:]))
+        self.assertTrue(all(polygon.edge_color_rgb == (17, 34, 51) for polygon in request.scene.polygons[1:]))
+        self.assertTrue(all(abs(polygon.edge_linewidth - 1.75) < 1e-9 for polygon in request.scene.polygons))
         self.assertTrue(all(abs(polygon.alpha - 0.6) < 1e-9 for polygon in request.scene.polygons))
+
+    def test_plot2d_per_call_2d_style_overrides_do_not_leak(self) -> None:
+        backend = FakeBackend()
+
+        inside = plot2d(
+            make_length_only_tree(),
+            layout="stem",
+            shape="frustum",
+            branch_type_colors={"apical_dendrite": "#445566"},
+            branch_type_edge_colors_2d={"apical_dendrite": "#112233"},
+            frustum_edge_linewidth_2d=1.5,
+            chooser=BackendChooser(backends=(backend,)),
+        )
+
+        self.assertEqual(inside.scene.polygons[1].color_rgb, (68, 85, 102))
+        self.assertEqual(inside.scene.polygons[1].edge_color_rgb, (17, 34, 51))
+        self.assertAlmostEqual(inside.scene.polygons[1].edge_linewidth, 1.5)
+
+        after = plot2d(
+            make_length_only_tree(),
+            layout="stem",
+            shape="frustum",
+            chooser=BackendChooser(backends=(backend,)),
+        )
+
+        self.assertEqual(after.scene.polygons[1].color_rgb, (214, 173, 98))
+        self.assertEqual(after.scene.polygons[1].edge_color_rgb, (154, 125, 71))
+        self.assertAlmostEqual(after.scene.polygons[1].edge_linewidth, 0.9)
+
+    def test_plot2d_frustum_values_keep_edge_style_overrides(self) -> None:
+        backend = FakeBackend()
+
+        rendered = plot2d(
+            make_length_only_tree(),
+            layout="stem",
+            shape="frustum",
+            values=np.array([0.1, 0.9]),
+            branch_type_edge_colors_2d={"apical_dendrite": "#112233"},
+            frustum_edge_linewidth_2d=1.25,
+            chooser=BackendChooser(backends=(backend,)),
+        )
+
+        self.assertEqual(len(rendered.scene.polygon_value_batches), len(make_length_only_tree().branches))
+        self.assertEqual(rendered.scene.polygon_value_batches[1].edge_color_rgb, (17, 34, 51))
+        self.assertAlmostEqual(rendered.scene.polygon_value_batches[1].edge_linewidth, 1.25)
 
     def test_shape_specific_2d_alpha_overrides_shared_alpha(self) -> None:
         morpho_vis.configure_defaults(
@@ -226,7 +276,7 @@ class VisPlotTest(unittest.TestCase):
         self.assertTrue(all(abs(polyline.alpha - 0.2) < 1e-9 for polyline in line_request.scene.polylines))
         self.assertTrue(all(abs(polygon.alpha - 0.9) < 1e-9 for polygon in poly_request.scene.polygons))
 
-    def test_generic_branch_type_colors_remain_2d_fallback(self) -> None:
+    def test_generic_branch_type_colors_also_drive_2d_palette(self) -> None:
         morpho_vis.configure_defaults(branch_type_colors={"soma": "#abcdef"})
         backend = FakeBackend()
 
@@ -264,6 +314,36 @@ class VisPlotTest(unittest.TestCase):
         self.assertGreaterEqual(len(axes.patches), 1)
         self.assertGreater(float(np.diff(axes.get_xlim())[0]), 20.0)
         self.assertGreater(float(np.diff(axes.get_ylim())[0]), 10.0)
+
+    def test_matplotlib_backend_renders_frustum_value_edges(self) -> None:
+        tree = make_length_only_tree()
+        chooser = BackendChooser(backends=(MatplotlibBackend(),))
+
+        axes = plot2d(
+            tree,
+            layout="stem",
+            shape="frustum",
+            values=np.array([0.1, 0.9]),
+            show_colorbar=False,
+            branch_type_edge_colors_2d={"apical_dendrite": "#112233"},
+            frustum_edge_linewidth_2d=1.25,
+            backend="matplotlib",
+            chooser=chooser,
+        )
+
+        self.assertGreaterEqual(len(axes.collections), 1)
+        matches = []
+        for collection in axes.collections:
+            edgecolors = collection.get_edgecolors()
+            linewidths = collection.get_linewidths()
+            if edgecolors.size == 0 or linewidths.size == 0:
+                continue
+            matches.append(
+                np.allclose(edgecolors[0][:3], np.array([17, 34, 51]) / 255.0)
+                and np.allclose(linewidths, np.array([1.25]))
+            )
+
+        self.assertIn(True, matches)
 
     def test_compare_layouts_2d_renders_side_by_side_matplotlib_figure(self) -> None:
         tree = make_length_only_tree()

@@ -1,8 +1,0 @@
-{
-  "meta": {
-    "label": "Cable ASC demo"
-  },
-  "templates": [
-    "../scan_templates/asc_dc_smoke_v1.json"
-  ]
-}

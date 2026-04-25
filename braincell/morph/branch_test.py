@@ -491,6 +491,28 @@ class BranchTest(unittest.TestCase):
         self.assertEqual(request.shape, "frustum")
         self.assertGreater(len(request.scene.polygons), 0)
 
+    def test_vis2d_frustum_accepts_style_overrides(self) -> None:
+        branch = Branch.from_lengths(
+            lengths=[10.0, 15.0] * u.um,
+            radii=[2.0, 1.5, 1.0] * u.um,
+            type="dendrite",
+        )
+        backend = FakeBackend()
+
+        request = branch.vis2d(
+            layout="stem",
+            shape="frustum",
+            branch_type_colors={"dendrite": "#778899"},
+            branch_type_edge_colors_2d={"dendrite": "#112233"},
+            frustum_edge_linewidth_2d=1.4,
+            show=False,
+            chooser=BackendChooser(backends=(backend,)),
+        )
+
+        self.assertEqual(request.scene.polygons[0].color_rgb, (119, 136, 153))
+        self.assertEqual(request.scene.polygons[0].edge_color_rgb, (17, 34, 51))
+        self.assertAlmostEqual(request.scene.polygons[0].edge_linewidth, 1.4)
+
     def test_vis2d_line_shape(self) -> None:
         branch = Branch.from_lengths(
             lengths=[20.0] * u.um,

@@ -40,6 +40,8 @@ from .scene import (
     alpha_for_2d_line,
     alpha_for_2d_poly,
     color_for_2d_branch_type,
+    edge_color_for_2d_branch_type,
+    frustum_edge_linewidth_2d,
 )
 
 _PROJECTION_AXES = {
@@ -298,6 +300,9 @@ def build_scene2d_frustum(
     ):
         centerlines[branch_layout.branch_index] = _Centerline2D.from_layout(branch_layout)
         n_segments = len(branch_layout.segment_points_um) - 1
+        fill_color = color_for_2d_branch_type(branch_layout.branch_type)
+        edge_color = edge_color_for_2d_branch_type(branch_layout.branch_type)
+        edge_linewidth = frustum_edge_linewidth_2d()
 
         if per_branch_values is None:
             for segment_index in range(n_segments):
@@ -320,7 +325,9 @@ def build_scene2d_frustum(
                         branch_name=branch_layout.branch_name,
                         branch_type=branch_layout.branch_type,
                         points_um=polygon_points_um,
-                        color_rgb=color_for_2d_branch_type(branch_layout.branch_type),
+                        color_rgb=fill_color,
+                        edge_color_rgb=edge_color,
+                        edge_linewidth=edge_linewidth,
                         alpha=alpha_for_2d_poly(),
                         draw_order=draw_order,
                     )
@@ -351,6 +358,8 @@ def build_scene2d_frustum(
                         branch_type=branch_layout.branch_type,
                         polygons_um=polygons_um,
                         polygon_values=branch_values.segment_values,
+                        edge_color_rgb=edge_color,
+                        edge_linewidth=edge_linewidth,
                         draw_order=draw_order,
                     )
                 )

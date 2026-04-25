@@ -1,0 +1,16 @@
+{
+  "meta": {
+    "label": "Granule cell cable sweeps"
+  },
+  "defaults": {
+    "morphology": {
+      "path": "../../../multi_compartment/morpho_files/Cerebellum_morph/GrC.asc"
+    }
+  },
+  "templates": [
+    "../templates/ac.json",
+    "../templates/dc.json",
+    "../templates/vinit.json",
+    "../templates/cv.json"
+  ]
+}

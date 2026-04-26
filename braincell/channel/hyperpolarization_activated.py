@@ -19,25 +19,30 @@
 This module implements hyperpolarization-activated cation channel.
 """
 
-from typing import Union, Callable, Optional
+from typing import Callable, Optional, Union
 
 import brainstate
 import braintools
 import brainunit as u
 
-from braincell._base import Channel, HHTypedNeuron
+from braincell._base import HHTypedNeuron
+from braincell.channel._base import Gate, HH
 from braincell.mech import register_channel
-from braincell.quad.protocol import DiffEqState
 
 __all__ = [
-    'Ih_HM1992',
-    'Ih1_Ma2020',
-    'Ih2_Ma2020',
+    'HCN_HM1992',
+    'HCN1_MA2025_BC',
+    'HCN1_MA2024_PC',
+    'HCN1_RI2021_SC',
+    'HCN1_MA2020_GoC',
+    'HCN2_MA2020_GoC',
+    'HCN_SU2015_DCN',
+    'HCN_ZH2019_IO',
 ]
 
 
-@register_channel("Ih_HM1992")
-class Ih_HM1992(Channel):
+@register_channel("HCN_HM1992")
+class HCN_HM1992(HH):
     r"""
     The hyperpolarization-activated cation current model propsoed by (Huguenard & McCormick, 1992) [1]_.
 
@@ -61,8 +66,12 @@ class Ih_HM1992(Channel):
       The maximal conductance density (:math:`mS/cm^2`).
     E : float
       The reversal potential (mV).
-    phi : float
-      The temperature-dependent factor.
+    temp : float
+      Absolute temperature used by the template temperature interface.
+    q10 : float
+      Q10 scaling factor for gate kinetics.
+    temp_ref : float
+      Reference temperature for the Q10 formula.
 
     References
     ----------
@@ -74,39 +83,37 @@ class Ih_HM1992(Channel):
     __module__ = 'braincell.channel'
 
     root_type = HHTypedNeuron
+    gates = (
+        Gate("p", q10=lambda self: self.q10, temp_ref=lambda self: self.temp_ref),
+    )
 
     def __init__(
         self,
         size: brainstate.typing.Size,
         g_max: Union[brainstate.typing.ArrayLike, Callable] = 10. * (u.mS / u.cm ** 2),
         E: Union[brainstate.typing.ArrayLike, Callable] = 43. * u.mV,
-        phi: Union[brainstate.typing.ArrayLike, Callable] = 1.,
+        temp: brainstate.typing.ArrayLike = u.celsius2kelvin(36.0),
+        q10: Union[brainstate.typing.ArrayLike, Callable] = 1.0,
+        temp_ref: brainstate.typing.ArrayLike = u.celsius2kelvin(36.0),
         name: Optional[str] = None,
     ):
-        super().__init__(size=size, name=name, )
-
-        # parameters
-        self.phi = braintools.init.param(phi, self.varshape, allow_none=False)
+        super().__init__(size=size, name=name)
         self.g_max = braintools.init.param(g_max, self.varshape, allow_none=False)
         self.E = braintools.init.param(E, self.varshape, allow_none=False)
-
-    def init_state(self, V, batch_size=None):
-        self.p = DiffEqState(braintools.init.param(u.math.zeros, self.varshape, batch_size))
-
-    def reset_state(self, V, batch_size=None):
-        self.p.value = self.f_p_inf(V)
-
-    def compute_derivative(self, V):
-        self.p.derivative = self.phi * (self.f_p_inf(V) - self.p.value) / self.f_p_tau(V) / u.ms
+        self.temp = braintools.init.param(temp, self.varshape, allow_none=False)
+        self.q10 = braintools.init.param(q10, self.varshape, allow_none=False)
+        self.temp_ref = braintools.init.param(temp_ref, self.varshape, allow_none=False)
 
     def current(self, V):
-        return self.g_max * self.p.value * (self.E - V)
+        return self.g_max * self.conductance_factor(V) * (self.E - V)
 
-    def f_p_inf(self, V):
+    def f_p_inf(self, V, *unused):
+        _ = unused
         V = V.to_decimal(u.mV)
         return 1. / (1. + u.math.exp((V + 75.) / 5.5))
 
-    def f_p_tau(self, V):
+    def f_p_tau(self, V, *unused):
+        _ = unused
         V = V.to_decimal(u.mV)
         return 1. / (u.math.exp(-0.086 * V - 14.59) + u.math.exp(0.0701 * V - 1.87))
 
@@ -253,52 +260,191 @@ class Ih_HM1992(Channel):
 #     return (20. + 1000 / (u.math.exp((V + 71.5 - self.V_sh) / 14.2) +
 #                           u.math.exp(-(V + 89 - self.V_sh) / 11.6))) / self.phi
 
+@register_channel("HCN1_MA2025_BC")
+class HCN1_MA2025_BC(HH):
+    """Template-based import of ``HCN1_MA2025_BC.mod``."""
 
-@register_channel("Ih1_Ma2020")
-class Ih1_Ma2020(Channel):
-    r"""
-    TITLE Cerebellum Golgi Cell Model
-
-    COMMENT
-
-    Author:L. Forti & S. Solinas
-    Data from: Santoro et al. J Neurosci. 2000
-    Last revised: April 2006
-
-    From Golgi_hcn1 to HCN1
-
-    """
-    __module__ = 'braincell.channel'
-
+    __module__ = "braincell.channel"
     root_type = HHTypedNeuron
+    gates = (Gate("h", q10=3.0, temp_ref=u.celsius2kelvin(37.0)),)
 
     def __init__(
         self,
         size: brainstate.typing.Size,
-        g_max: Union[brainstate.typing.ArrayLike, Callable] = 5e-2 * (u.mS / u.cm ** 2),
-        E: Union[brainstate.typing.ArrayLike, Callable] = -20 * u.mV,
-        V_sh: Union[brainstate.typing.ArrayLike, Callable] = 0. * u.mV,
-        T_base_g: brainstate.typing.ArrayLike = 1.5,
-        T_base_channel: brainstate.typing.ArrayLike = 3.,
-        T: brainstate.typing.ArrayLike = u.celsius2kelvin(22),
+        g_max: Union[brainstate.typing.ArrayLike, Callable] = 0.1 * (u.mS / u.cm ** 2),
+        E: Union[brainstate.typing.ArrayLike, Callable] = -34.4 * u.mV,
+        temp: brainstate.typing.ArrayLike = u.celsius2kelvin(23.0),
         name: Optional[str] = None,
     ):
         super().__init__(size=size, name=name)
-
-        # parameters
-        T = u.kelvin2celsius(T)
         self.g_max = braintools.init.param(g_max, self.varshape, allow_none=False)
         self.E = braintools.init.param(E, self.varshape, allow_none=False)
-        self.T = braintools.init.param(T, self.varshape, allow_none=False)
-        self.T_base_g = braintools.init.param(T_base_g, self.varshape, allow_none=False)
-        self.T_base_channel = braintools.init.param(T_base_channel, self.varshape, allow_none=False)
-        self.phi_g = braintools.init.param(T_base_g ** ((T - 23) / 10), self.varshape, allow_none=False)
-        self.phi_channel = braintools.init.param(T_base_channel ** ((T - 23) / 10), self.varshape, allow_none=False)
-        self.V_sh = braintools.init.param(V_sh, self.varshape, allow_none=False)
+        self.temp = braintools.init.param(temp, self.varshape, allow_none=False)
+        self.ratetau = 1.0
+        self.ljp = 9.3 * u.mV
+        self.v_inf_half_noljp = -90.3 * u.mV
+        self.v_inf_k = 9.67 * u.mV
+        self.v_tau_const = 0.0018
+        self.v_tau_half1_noljp = -68.0 * u.mV
+        self.v_tau_half2_noljp = -68.0 * u.mV
+        self.v_tau_k1 = -22.0 * u.mV
+        self.v_tau_k2 = 7.14 * u.mV
 
+    def current(self, V):
+        return self.g_max * self.conductance_factor(V) * (self.E - V)
+
+    def f_h_inf(self, V, *unused):
+        V = V.to_decimal(u.mV)
+        v_half = (self.v_inf_half_noljp - self.ljp).to_decimal(u.mV)
+        v_k = self.v_inf_k.to_decimal(u.mV)
+        return 1.0 / (1.0 + u.math.exp((V - v_half) / v_k))
+
+    def f_h_tau(self, V, *unused):
+        V = V.to_decimal(u.mV)
+        v_half1 = (self.v_tau_half1_noljp - self.ljp).to_decimal(u.mV)
+        v_half2 = (self.v_tau_half2_noljp - self.ljp).to_decimal(u.mV)
+        v_k1 = self.v_tau_k1.to_decimal(u.mV)
+        v_k2 = self.v_tau_k2.to_decimal(u.mV)
+        return self.ratetau / (
+            self.v_tau_const
+            * (
+                u.math.exp((V - v_half1) / v_k1)
+                + u.math.exp((V - v_half2) / v_k2)
+            )
+        )
+
+@register_channel("HCN1_MA2024_PC")
+class HCN1_MA2024_PC(HH):
+    """Template-based import of ``HCN1_MA2024_PC.mod``."""
+
+    __module__ = "braincell.channel"
+    root_type = HHTypedNeuron
+    gates = (Gate("h", q10=3.0, temp_ref=u.celsius2kelvin(37.0)),)
+
+    def __init__(
+        self,
+        size: brainstate.typing.Size,
+        g_max: Union[brainstate.typing.ArrayLike, Callable] = 0.1 * (u.mS / u.cm ** 2),
+        E: Union[brainstate.typing.ArrayLike, Callable] = -34.4 * u.mV,
+        temp: brainstate.typing.ArrayLike = u.celsius2kelvin(23.0),
+        name: Optional[str] = None,
+    ):
+        super().__init__(size=size, name=name)
+        self.g_max = braintools.init.param(g_max, self.varshape, allow_none=False)
+        self.E = braintools.init.param(E, self.varshape, allow_none=False)
+        self.temp = braintools.init.param(temp, self.varshape, allow_none=False)
+        self.ratetau = 1.0
+        self.ljp = 9.3 * u.mV
+        self.v_inf_half_noljp = -90.3 * u.mV
+        self.v_inf_k = 9.67 * u.mV
+        self.v_tau_const = 0.0018
+        self.v_tau_half1_noljp = -68.0 * u.mV
+        self.v_tau_half2_noljp = -68.0 * u.mV
+        self.v_tau_k1 = -22.0 * u.mV
+        self.v_tau_k2 = 7.14 * u.mV
+
+    def current(self, V):
+        return self.g_max * self.conductance_factor(V) * (self.E - V)
+
+    def f_h_inf(self, V, *unused):
+        V = V.to_decimal(u.mV)
+        v_half = (self.v_inf_half_noljp - self.ljp).to_decimal(u.mV)
+        v_k = self.v_inf_k.to_decimal(u.mV)
+        return 1.0 / (1.0 + u.math.exp((V - v_half) / v_k))
+
+    def f_h_tau(self, V, *unused):
+        V = V.to_decimal(u.mV)
+        v_half1 = (self.v_tau_half1_noljp - self.ljp).to_decimal(u.mV)
+        v_half2 = (self.v_tau_half2_noljp - self.ljp).to_decimal(u.mV)
+        v_k1 = self.v_tau_k1.to_decimal(u.mV)
+        v_k2 = self.v_tau_k2.to_decimal(u.mV)
+        return self.ratetau / (
+            self.v_tau_const
+            * (
+                u.math.exp((V - v_half1) / v_k1)
+                + u.math.exp((V - v_half2) / v_k2)
+            )
+        )
+
+@register_channel("HCN1_RI2021_SC")
+class HCN1_RI2021_SC(HH):
+    """Template-based import of ``HCN1_RI2021_SC.mod``."""
+
+    __module__ = "braincell.channel"
+    root_type = HHTypedNeuron
+    gates = (Gate("h", q10=3.0, temp_ref=u.celsius2kelvin(37.0)),)
+
+    def __init__(
+        self,
+        size: brainstate.typing.Size,
+        g_max: Union[brainstate.typing.ArrayLike, Callable] = 0.1 * (u.mS / u.cm ** 2),
+        E: Union[brainstate.typing.ArrayLike, Callable] = -34.4 * u.mV,
+        temp: brainstate.typing.ArrayLike = u.celsius2kelvin(23.0),
+        name: Optional[str] = None,
+    ):
+        super().__init__(size=size, name=name)
+        self.g_max = braintools.init.param(g_max, self.varshape, allow_none=False)
+        self.E = braintools.init.param(E, self.varshape, allow_none=False)
+        self.temp = braintools.init.param(temp, self.varshape, allow_none=False)
+        self.ratetau = 1.0
+        self.ljp = 9.3 * u.mV
+        self.v_inf_half_noljp = -90.3 * u.mV
+        self.v_inf_k = 9.67 * u.mV
+        self.v_tau_const = 0.0018
+        self.v_tau_half1_noljp = -68.0 * u.mV
+        self.v_tau_half2_noljp = -68.0 * u.mV
+        self.v_tau_k1 = -22.0 * u.mV
+        self.v_tau_k2 = 7.14 * u.mV
+
+    def current(self, V):
+        return self.g_max * self.conductance_factor(V) * (self.E - V)
+
+    def f_h_inf(self, V, *unused):
+        V = V.to_decimal(u.mV)
+        v_half = (self.v_inf_half_noljp - self.ljp).to_decimal(u.mV)
+        v_k = self.v_inf_k.to_decimal(u.mV)
+        return 1.0 / (1.0 + u.math.exp((V - v_half) / v_k))
+
+    def f_h_tau(self, V, *unused):
+        V = V.to_decimal(u.mV)
+        v_half1 = (self.v_tau_half1_noljp - self.ljp).to_decimal(u.mV)
+        v_half2 = (self.v_tau_half2_noljp - self.ljp).to_decimal(u.mV)
+        v_k1 = self.v_tau_k1.to_decimal(u.mV)
+        v_k2 = self.v_tau_k2.to_decimal(u.mV)
+        return self.ratetau / (
+            self.v_tau_const
+            * (
+                u.math.exp((V - v_half1) / v_k1)
+                + u.math.exp((V - v_half2) / v_k2)
+            )
+        )
+
+@register_channel("HCN1_MA2020_GoC")
+class HCN1_MA2020_GoC(HH):
+    """Template-based import of ``HCN1_MA2020_GoC.mod``."""
+
+    __module__ = "braincell.channel"
+    root_type = HHTypedNeuron
+    gates = (
+        Gate("o_fast", q10=3.0, temp_ref=u.celsius2kelvin(23.0)),
+        Gate("o_slow", q10=3.0, temp_ref=u.celsius2kelvin(23.0)),
+    )
+
+    def __init__(
+        self,
+        size: brainstate.typing.Size,
+        g_max: Union[brainstate.typing.ArrayLike, Callable] = 0.05 * (u.mS / u.cm ** 2),
+        E: Union[brainstate.typing.ArrayLike, Callable] = -20.0 * u.mV,
+        temp: brainstate.typing.ArrayLike = u.celsius2kelvin(22.0),
+        name: Optional[str] = None,
+    ):
+        super().__init__(size=size, name=name)
+        self.g_max = braintools.init.param(g_max, self.varshape, allow_none=False)
+        self.E = braintools.init.param(E, self.varshape, allow_none=False)
+        self.temp = braintools.init.param(temp, self.varshape, allow_none=False)
+        self.Q10_diff = 1.5
         self.Ehalf = -72.49
         self.c = 0.11305
-
         self.rA = 0.002096
         self.rB = 0.97596
         self.tCf = 0.01371
@@ -308,83 +454,66 @@ class Ih1_Ma2020(Channel):
         self.tDs = -4.056
         self.tEs = 2.302585092
 
-    def init_state(self, V, batch_size=None):
-        self.p = DiffEqState(braintools.init.param(u.math.zeros, self.varshape, batch_size))
-        self.q = DiffEqState(braintools.init.param(u.math.zeros, self.varshape, batch_size))
-
-    def reset_state(self, V, batch_size=None):
-        self.p.value = self.f_p_inf(V)
-        self.q.value = self.f_q_inf(V)
-
-    def compute_derivative(self, V):
-        self.p.derivative = self.phi_channel * (self.f_p_inf(V) - self.p.value) / self.f_p_tau(V) / u.ms
-        self.q.derivative = self.phi_channel * (self.f_q_inf(V) - self.q.value) / self.f_q_tau(V) / u.ms
-
     def current(self, V):
-        return self.phi_g * self.g_max * (self.p.value + self.q.value) * (self.E - V)
+        o = self.o_fast.value + self.o_slow.value
+        return self._gbar_phi() * self.g_max * o * (self.E - V)
 
-    def f_p_inf(self, V):
-        V = (V - self.V_sh) / u.mV
-        return self.r(V) / (1 + u.math.exp((V - self.Ehalf) * self.c))
+    def _gbar_phi(self):
+        temp_ref = u.celsius2kelvin(23.0)
+        return self.Q10_diff ** (((self.temp - temp_ref) / u.kelvin) / 10.0)
 
-    def f_q_inf(self, V):
-        V = (V - self.V_sh) / u.mV
-        return (1 - self.r(V)) / (1 + u.math.exp((V - self.Ehalf) * self.c))
-
-    def f_p_tau(self, V):
-        V = (V - self.V_sh) / u.mV
-        return u.math.exp(((self.tCf * V) - self.tDf) * self.tEf)
-
-    def f_q_tau(self, V):
-        V = (V - self.V_sh) / u.mV
-        return u.math.exp(((self.tCs * V) - self.tDs) * self.tEs)
+    def o_inf(self, V):
+        V = V.to_decimal(u.mV)
+        return 1.0 / (1.0 + u.math.exp((V - self.Ehalf) * self.c))
 
     def r(self, V):
+        V = V.to_decimal(u.mV)
         return self.rA * V + self.rB
 
+    def f_o_fast_inf(self, V, *unused):
+        _ = unused
+        return self.r(V) * self.o_inf(V)
 
-@register_channel("Ih2_Ma2020")
-class Ih2_Ma2020(Channel):
-    r"""
-    TITLE Cerebellum Golgi Cell Model
+    def f_o_slow_inf(self, V, *unused):
+        _ = unused
+        return (1.0 - self.r(V)) * self.o_inf(V)
 
-    COMMENT
+    def f_o_fast_tau(self, V, *unused):
+        _ = unused
+        V = V.to_decimal(u.mV)
+        return u.math.exp(((self.tCf * V) - self.tDf) * self.tEf)
 
-    Author:L. Forti & S. Solinas
-    Data from: Santoro et al. J Neurosci. 2000
-    Last revised: April 2006
-    """
-    __module__ = 'braincell.channel'
+    def f_o_slow_tau(self, V, *unused):
+        _ = unused
+        V = V.to_decimal(u.mV)
+        return u.math.exp(((self.tCs * V) - self.tDs) * self.tEs)
 
+@register_channel("HCN2_MA2020_GoC")
+class HCN2_MA2020_GoC(HH):
+    """Template-based import of ``HCN2_MA2020_GoC.mod``."""
+
+    __module__ = "braincell.channel"
     root_type = HHTypedNeuron
+    gates = (
+        Gate("o_fast", q10=3.0, temp_ref=u.celsius2kelvin(23.0)),
+        Gate("o_slow", q10=3.0, temp_ref=u.celsius2kelvin(23.0)),
+    )
 
     def __init__(
         self,
         size: brainstate.typing.Size,
-        g_max: Union[brainstate.typing.ArrayLike, Callable] = 8e-2 * (u.mS / u.cm ** 2),
-        E: Union[brainstate.typing.ArrayLike, Callable] = -20 * u.mV,
-        V_sh: Union[brainstate.typing.ArrayLike, Callable] = 0. * u.mV,
-        T_base_g: brainstate.typing.ArrayLike = 1.5,
-        T_base_channel: brainstate.typing.ArrayLike = 3.,
-        T: brainstate.typing.ArrayLike = u.celsius2kelvin(22),
+        g_max: Union[brainstate.typing.ArrayLike, Callable] = 0.08 * (u.mS / u.cm ** 2),
+        E: Union[brainstate.typing.ArrayLike, Callable] = -20.0 * u.mV,
+        temp: brainstate.typing.ArrayLike = u.celsius2kelvin(22.0),
         name: Optional[str] = None,
     ):
         super().__init__(size=size, name=name)
-
-        # parameters
-        T = u.kelvin2celsius(T)
         self.g_max = braintools.init.param(g_max, self.varshape, allow_none=False)
         self.E = braintools.init.param(E, self.varshape, allow_none=False)
-        self.T = braintools.init.param(T, self.varshape, allow_none=False)
-        self.T_base_g = braintools.init.param(T_base_g, self.varshape, allow_none=False)
-        self.T_base_channel = braintools.init.param(T_base_channel, self.varshape, allow_none=False)
-        self.phi_g = braintools.init.param(T_base_g ** ((T - 23) / 10), self.varshape, allow_none=False)
-        self.phi_channel = braintools.init.param(T_base_channel ** ((T - 23) / 10), self.varshape, allow_none=False)
-        self.V_sh = braintools.init.param(V_sh, self.varshape, allow_none=False)
-
+        self.temp = braintools.init.param(temp, self.varshape, allow_none=False)
+        self.Q10_diff = 1.5
         self.Ehalf = -81.95
         self.c = 0.1661
-
         self.rA = -0.0227
         self.rB = -1.4694
         self.tCf = 0.0269
@@ -394,40 +523,110 @@ class Ih2_Ma2020(Channel):
         self.tDs = -5.2944
         self.tEs = 2.3026
 
-    def init_state(self, V, batch_size=None):
-        self.p = DiffEqState(braintools.init.param(u.math.zeros, self.varshape, batch_size))
-        self.q = DiffEqState(braintools.init.param(u.math.zeros, self.varshape, batch_size))
-
-    def reset_state(self, V, batch_size=None):
-        self.p.value = self.f_p_inf(V)
-        self.q.value = self.f_q_inf(V)
-
-    def compute_derivative(self, V):
-        self.p.derivative = self.phi_channel * (self.f_p_inf(V) - self.p.value) / self.f_p_tau(V) / u.ms
-        self.q.derivative = self.phi_channel * (self.f_q_inf(V) - self.q.value) / self.f_q_tau(V) / u.ms
-
     def current(self, V):
-        return self.phi_g * self.g_max * (self.p.value + self.q.value) * (self.E - V)
+        o = self.o_fast.value + self.o_slow.value
+        return self._gbar_phi() * self.g_max * o * (self.E - V)
 
-    def f_p_inf(self, V):
-        V = (V - self.V_sh) / u.mV
-        return self.r(V, self.rA, self.rB) / (1 + u.math.exp((V - self.Ehalf) * self.c))
+    def _gbar_phi(self):
+        temp_ref = u.celsius2kelvin(23.0)
+        return self.Q10_diff ** (((self.temp - temp_ref) / u.kelvin) / 10.0)
 
-    def f_q_inf(self, V):
-        V = (V - self.V_sh) / u.mV
-        return (1 - self.r(V, self.rA, self.rB)) / (1 + u.math.exp((V - self.Ehalf) * self.c))
+    def o_inf(self, V):
+        V = V.to_decimal(u.mV)
+        return 1.0 / (1.0 + u.math.exp((V - self.Ehalf) * self.c))
 
-    def f_p_tau(self, V):
-        V = (V - self.V_sh) / u.mV
+    def r(self, V):
+        V = V.to_decimal(u.mV)
+        return u.math.where(
+            V >= -64.70,
+            0.0,
+            u.math.where(
+                V <= -108.70,
+                1.0,
+                self.rA * V + self.rB,
+            ),
+        )
+
+    def f_o_fast_inf(self, V, *unused):
+        _ = unused
+        return self.r(V) * self.o_inf(V)
+
+    def f_o_slow_inf(self, V, *unused):
+        _ = unused
+        return (1.0 - self.r(V)) * self.o_inf(V)
+
+    def f_o_fast_tau(self, V, *unused):
+        _ = unused
+        V = V.to_decimal(u.mV)
         return u.math.exp(((self.tCf * V) - self.tDf) * self.tEf)
 
-    def f_q_tau(self, V):
-        V = (V - self.V_sh) / u.mV
+    def f_o_slow_tau(self, V, *unused):
+        _ = unused
+        V = V.to_decimal(u.mV)
         return u.math.exp(((self.tCs * V) - self.tDs) * self.tEs)
 
-    def r(self, V, r1, r2):
-        return u.math.where(V >= -64.70,
-                            0,
-                            u.math.where(V <= -108.70,
-                                         1,
-                                         r1 * V + r2))
+@register_channel("HCN_SU2015_DCN")
+class HCN_SU2015_DCN(HH):
+    """Template-based import of ``HCN_SU2015_DCN.mod``."""
+
+    __module__ = "braincell.channel"
+    root_type = HHTypedNeuron
+    gates = (Gate("m", power=2),)
+
+    def __init__(
+        self,
+        size: brainstate.typing.Size,
+        g_max: Union[brainstate.typing.ArrayLike, Callable] = 0.01 * (u.mS / u.cm ** 2),
+        E: Union[brainstate.typing.ArrayLike, Callable] = -45.0 * u.mV,
+        name: Optional[str] = None,
+    ):
+        super().__init__(size=size, name=name)
+        self.g_max = braintools.init.param(g_max, self.varshape, allow_none=False)
+        self.E = braintools.init.param(E, self.varshape, allow_none=False)
+        self.qdeltat = 1.0
+
+    def current(self, V):
+        return self.g_max * self.conductance_factor(V) * (self.E - V)
+
+    def f_m_inf(self, V, *unused):
+        V = V.to_decimal(u.mV)
+        return 1.0 / (1.0 + u.math.exp((V + 80.0) / 5.0))
+
+    def f_m_tau(self, V, *unused):
+        _ = (V, unused)
+        return 400.0 / self.qdeltat
+
+@register_channel("HCN_ZH2019_IO")
+class HCN_ZH2019_IO(HH):
+    """Template-based import of ``HCN_ZH2019_IO.mod``."""
+
+    __module__ = "braincell.channel"
+    root_type = HHTypedNeuron
+    gates = (Gate("q"),)
+
+    def __init__(
+        self,
+        size: brainstate.typing.Size,
+        g_max: Union[brainstate.typing.ArrayLike, Callable] = 0.15 * (u.mS / u.cm ** 2),
+        E: Union[brainstate.typing.ArrayLike, Callable] = -43.0 * u.mV,
+        name: Optional[str] = None,
+    ):
+        super().__init__(size=size, name=name)
+        self.g_max = braintools.init.param(g_max, self.varshape, allow_none=False)
+        self.E = braintools.init.param(E, self.varshape, allow_none=False)
+
+    def current(self, V):
+        return self.g_max * self.conductance_factor(V) * (self.E - V)
+
+    def f_q_inf(self, V, *unused):
+        _ = unused
+        V = V.to_decimal(u.mV)
+        return 1.0 / (1.0 + u.math.exp((V + 75.0) / 5.5))
+
+    def f_q_tau(self, V, *unused):
+        _ = unused
+        V = V.to_decimal(u.mV)
+        return 1.0 / (
+            u.math.exp(-0.086 * V - 14.6) + u.math.exp(0.07 * V - 1.87)
+        )
+

@@ -15,6 +15,7 @@
 
 
 import inspect
+import warnings
 from dataclasses import dataclass, fields, is_dataclass
 from typing import Literal
 
@@ -27,7 +28,7 @@ Layout = Literal["dense", "sparse"]
 
 from braincell import ion as runtime_ion
 from braincell._base import Channel, IonChannel
-from braincell.ion._template import DynamicNernstIon, FixedIon, InitNernstIon
+from braincell.ion._base import DynamicNernstIon, FixedIon, InitNernstIon
 from braincell.mech import (
     CurrentProbe,
     CurrentClamp,
@@ -55,7 +56,9 @@ from .topology import PointTree
 
 __all__ = [
     "CellRuntimeState",
+    "ClampActiveTable",
     "MechanismLayout",
+    "build_clamp_active_table",
     "build_placeholder_ions",
     "clone_morpho",
     "cv_value_vector",
@@ -528,7 +531,7 @@ class CellRuntimeState:
         for layout in self.layouts:
             if layout.target != "point" or layout.point_index is None:
                 continue
-            if layout.kind not in {"CurrentClamp", "SineClamp", "FunctionClamp"}:
+            if layout.kind not in CLAMP_KINDS:
                 continue
             local_currents = _evaluate_clamp_layout(self, layout=layout, t=t)
             if len(local_currents) != len(layout.point_index):
@@ -585,6 +588,9 @@ def mechanism_kind(mechanism: object) -> str:
     return type(mechanism).__name__
 
 
+_opaque_warned: set = set()
+
+
 def _fn_fingerprint(fn) -> tuple:
     """Produce a hashable fingerprint for a callable ``fn``.
 
@@ -592,10 +598,14 @@ def _fn_fingerprint(fn) -> tuple:
     and closure-cell contents) yield the same fingerprint, so two
     separately-constructed ``lambda`` objects can merge into one
     :class:`MechanismLayout` when used inside :class:`FunctionClamp`.
-    Non-hashable / opaque closure cells fall back to ``id(value)``.
+    Non-hashable / opaque closure cells fall back to ``id(value)``;
+    such lambdas will not dedup with textually identical siblings, so
+    a :class:`RuntimeWarning` is emitted once per call-site pointing
+    the user at the `hoist to module level` fix.
     """
     code = fn.__code__
     closure_cells: list[object] = []
+    opaque_hit = False
     for cell in (fn.__closure__ or ()):
         v = cell.cell_contents
         if hasattr(v, "to_decimal") and hasattr(v, "unit"):
@@ -604,6 +614,18 @@ def _fn_fingerprint(fn) -> tuple:
             closure_cells.append(("prim", v))
         else:
             closure_cells.append(("id", id(v)))
+            opaque_hit = True
+    if opaque_hit:
+        site = (code.co_filename, code.co_firstlineno)
+        if site not in _opaque_warned:
+            _opaque_warned.add(site)
+            warnings.warn(
+                f"FunctionClamp.fn at {site[0]}:{site[1]} has an opaque closure "
+                "cell; two textually identical lambdas will dedup as distinct. "
+                "Hoist to module level with a named function to recover dedup.",
+                RuntimeWarning,
+                stacklevel=2,
+            )
     return (code.co_code, code.co_consts, code.co_varnames, tuple(closure_cells))
 
 

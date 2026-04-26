@@ -216,7 +216,7 @@ class MergePaintRulesTest(unittest.TestCase):
     def test_density_different_classes_both_kept(self) -> None:
         d1 = Channel("IL", g_max=0.1 * (u.mS / u.cm ** 2), E=-70 * u.mV)
         d2 = Channel(
-            "INa_Ba2002", g_max=0.05 * (u.mS / u.cm ** 2), E=50 * u.mV
+            "Na_Ba2002", g_max=0.05 * (u.mS / u.cm ** 2), E=50 * u.mV
         )
         r1 = PaintRule(region=AllRegion(), mechanism=d1)
         r2 = PaintRule(region=AllRegion(), mechanism=d2)
@@ -673,6 +673,48 @@ class BuildMechTest(unittest.TestCase):
             paint_rules=(), place_rules=place, cache=cache,
         )
         self.assertEqual([len(b.points) for b in buckets], [1, 0])
+
+
+class BuildMechCachesFrustaTest(unittest.TestCase):
+    """MED-03: frusta for (branch, prox, dist) must be computed at most once per _build_mech call."""
+
+    def test_overlapping_rules_reuse_frusta(self) -> None:
+        from unittest.mock import patch
+
+        morpho = _single_branch_morpho()
+        # Four CVs so each rule visits four distinct (prox, dist) pairs.
+        geos, ids = _build_geo(
+            morpho,
+            (((0.0, 0.25), (0.25, 0.5), (0.5, 0.75), (0.75, 1.0)),),
+        )
+        ch1 = Channel("IL", g_max=0.1 * (u.mS / u.cm ** 2), E=-70 * u.mV)
+        ch2 = Channel("IL", g_max=0.2 * (u.mS / u.cm ** 2), E=-60 * u.mV)
+        paint = (
+            PaintRule(region=AllRegion(), mechanism=ch1),
+            PaintRule(region=AllRegion(), mechanism=ch2),
+        )
+        cache = _RegionCache(morpho)
+
+        calls: dict = {}
+        original = _build_frusta
+
+        def counting(branch, *, prox, dist):
+            key = (id(branch), round(float(prox), 9), round(float(dist), 9))
+            calls[key] = calls.get(key, 0) + 1
+            return original(branch, prox=prox, dist=dist)
+
+        with patch("braincell._cv.lower._build_frusta", new=counting):
+            _build_mech(
+                morpho, geos, ids,
+                paint_rules=paint, place_rules=(), cache=cache,
+            )
+
+        for key, count in calls.items():
+            self.assertEqual(
+                count, 1,
+                f"_build_frusta was called {count} times for key={key!r}; "
+                "expected 1 after caching.",
+            )
 
 
 class LowerSmokeTest(unittest.TestCase):

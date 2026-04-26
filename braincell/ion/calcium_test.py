@@ -23,7 +23,7 @@ import brainunit as u
 import jax.numpy as jnp
 
 from braincell._base import HHTypedNeuron, Ion, IonInfo
-from braincell.channel.calcium import ICaT_HM1992
+from braincell.channel.calcium import CaT_HM1992
 from braincell.ion.calcium import (
     Calcium,
     CalciumDetailed,
@@ -31,7 +31,7 @@ from braincell.ion.calcium import (
     CalciumFixed,
     CalciumInitNernst,
 )
-from braincell.ion._template import DynamicNernstIon, InitNernstIon
+from braincell.ion._base import DynamicNernstIon, InitNernstIon
 from braincell.quad.protocol import DiffEqState
 
 
@@ -98,16 +98,16 @@ class CalciumFixedContainerTest(unittest.TestCase):
         self.assertEqual(ca.external_currents, {})
 
     def test_channels_kwarg_is_attached(self) -> None:
-        ca = CalciumFixed(size=1, ICa=ICaT_HM1992(size=1))
+        ca = CalciumFixed(size=1, ICa=CaT_HM1992(size=1))
         self.assertIn("ICa", ca.channels)
-        self.assertIsInstance(ca.channels["ICa"], ICaT_HM1992)
+        self.assertIsInstance(ca.channels["ICa"], CaT_HM1992)
 
     def test_current_without_channels_returns_none(self) -> None:
         ca = CalciumFixed(size=1)
         self.assertIsNone(ca.current(_V([-60.0])))
 
     def test_current_with_channel_delegates_to_channel(self) -> None:
-        ca = CalciumFixed(size=1, ICa=ICaT_HM1992(size=1))
+        ca = CalciumFixed(size=1, ICa=CaT_HM1992(size=1))
         V = _V([-60.0])
         ca.init_state(V)
         ca.reset_state(V)
@@ -125,7 +125,7 @@ class CalciumFixedLifecycleTest(unittest.TestCase):
         ca.reset_state(V)
 
     def test_init_state_initialises_child_channel_gate(self) -> None:
-        ca = CalciumFixed(size=1, ICa=ICaT_HM1992(size=1))
+        ca = CalciumFixed(size=1, ICa=CaT_HM1992(size=1))
         V = _V([-60.0])
         ca.init_state(V)
         ch = ca.channels["ICa"]
@@ -133,7 +133,7 @@ class CalciumFixedLifecycleTest(unittest.TestCase):
         self.assertEqual(ch.q.value.shape, (1,))
 
     def test_reset_state_forwards_to_child(self) -> None:
-        ca = CalciumFixed(size=1, ICa=ICaT_HM1992(size=1))
+        ca = CalciumFixed(size=1, ICa=CaT_HM1992(size=1))
         V = _V([-60.0])
         ca.init_state(V)
         ca.reset_state(V)
@@ -287,7 +287,7 @@ class CalciumDetailedTest(unittest.TestCase):
         )
 
     def test_compute_derivative_forwards_to_child_channel(self) -> None:
-        cd = CalciumDetailed(size=1, ICa=ICaT_HM1992(size=1))
+        cd = CalciumDetailed(size=1, ICa=CaT_HM1992(size=1))
         V = _V([-60.0])
         cd.init_state(V)
         cd.reset_state(V)

@@ -20,7 +20,7 @@ import braintools
 import brainunit as u
 import jax.numpy as jnp
 
-from braincell._base import HHTypedNeuron, IonChannel
+from braincell._base import HHTypedNeuron, IonChannel, _cast_like
 from braincell._typing import Initializer
 from braincell.quad import get_integrator
 from braincell.quad.protocol import DiffEqState, IndependentIntegration
@@ -28,14 +28,6 @@ from braincell.quad.protocol import DiffEqState, IndependentIntegration
 __all__ = [
     'SingleCompartment',
 ]
-
-
-def _cast_like(value, like):
-    dtype = jnp.asarray(u.get_magnitude(like)).dtype
-    if isinstance(value, u.Quantity):
-        unit = u.get_unit(value)
-        return jnp.asarray(value.to_decimal(unit), dtype=dtype) * unit
-    return jnp.asarray(value, dtype=dtype)
 
 
 class SingleCompartment(HHTypedNeuron):
@@ -226,12 +218,12 @@ class SingleCompartment(HHTypedNeuron):
         for key, ch in self.nodes(IonChannel, allowed_hierarchy=(1, 1)).items():
             try:
                 I_ext = I_ext + ch.current(self.V.value)
-            except Exception as e:
+            except (TypeError, ValueError, RuntimeError, ArithmeticError) as e:
                 raise ValueError(
                     f"Error in computing current for ion channel '{key}': \n"
                     f"{ch}\n"
                     f"Error: {e}"
-                )
+                ) from e
         self.V.derivative = I_ext / self.C
         for key, node in self.nodes(IonChannel, allowed_hierarchy=(1, 1)).items():
             if not isinstance(node, IndependentIntegration):
@@ -281,32 +273,6 @@ class SingleCompartment(HHTypedNeuron):
         spk = self.get_spike(last_V, self.V.value)
         self.spike.value = spk
         return spk
-
-    def get_spike(self, last_V, next_V):
-        """
-        Determine if a spike has occurred.
-
-        This method checks if a spike has occurred by comparing the previous and
-        current membrane potentials against the threshold.
-
-        Parameters
-        ----------
-        last_V : array-like
-            The membrane potential at the previous time step.
-        next_V : array-like
-            The membrane potential at the current time step.
-
-        Returns
-        -------
-        spike : array-like
-            An array indicating whether a spike occurred (1) or not (0) for each neuron.
-        """
-        denom = _cast_like(20.0 * u.mV, next_V)
-        V_th = _cast_like(self.V_th, next_V)
-        return (
-            self.spk_fun((next_V - V_th) / denom) *
-            self.spk_fun((V_th - last_V) / denom)
-        )
 
     def soma_spike(self):
         denom = _cast_like(20.0 * u.mV, self.V.value)

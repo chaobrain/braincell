@@ -15,606 +15,807 @@
 # ==============================================================================
 
 
-"""
-This module implements voltage-dependent sodium channel.
+"""Voltage-dependent sodium channels built directly on HH templates."""
 
-"""
-
-from typing import Union, Callable, Optional
+from typing import Callable, Optional, Union
 
 import brainstate
 import braintools
 import brainunit as u
-import jax.tree
 
-from braincell._base import Channel, IonInfo
+from braincell._base import IonInfo
+from braincell.channel._base import Gate, HH, Markov
 from braincell.ion import Sodium
 from braincell.mech import register_channel
-from braincell.quad.protocol import DiffEqState, IndependentIntegration
+from braincell.quad.protocol import IndependentIntegration
 
 __all__ = [
-    'SodiumChannel',
-    'INa_p3q_markov',
-    'INa_Ba2002',
-    'INa_TM1991',
-    'INa_HH1952',
-    'INa_Rsg',
+    "Na_Ba2002",
+    "Na_TM1991",
+    "Na_HH1952",
+    "NaF_SU2015_DCN",
+    "NaP_SU2015_DCN",
+    "Na_ZH2019_IO",
+    "Nav1p6_MA2020_GoC",
+    "Nav1p6_MA2024_PC",
+    "Nav1p6_MA2025_BC",
+    "Nav1p6_RI2021_SC",
+    "Nav1p1_MA2025_BC",
+    "Nav1p1_RI2021_SC",
+    "Nav_MA2020_GrC",
+    "NaFHF_MA2020_GrC",
 ]
 
 
-class SodiumChannel(Channel):
-    """
-    Base class for sodium channel dynamics.
+def _x_over_one_minus_exp_neg_stable(x):
+    return u.math.where(
+        u.math.abs(x) < 1e-6,
+        1.0 + x / 2.0,
+        x / (1.0 - u.math.exp(-x)),
+    )
 
-    This class provides a template for implementing sodium channel models.
-    It defines methods that should be overridden by subclasses to implement
-    specific sodium channel behaviors.
-    """
 
-    __module__ = 'braincell.channel'
+@register_channel("Na_Ba2002")
+class Na_Ba2002(HH):
+    r"""Bazhenov 2002 sodium current with :math:`p^3 q` HH gating."""
 
+    __module__ = "braincell.channel"
     root_type = Sodium
-
-    def pre_integral(self, V, Na: IonInfo):
-        """
-        Perform any necessary operations before the integration step.
-
-        Parameters
-        ----------
-        V : ArrayLike
-            Membrane potential.
-        Na : IonInfo
-            Information about sodium ions.
-        """
-        pass
-
-    def post_integral(self, V, Na: IonInfo):
-        """
-        Perform any necessary operations after the integration step.
-
-        Parameters
-        ----------
-        V : ArrayLike
-            Membrane potential.
-        Na : IonInfo
-            Information about sodium ions.
-        """
-        pass
-
-    def compute_derivative(self, V, Na: IonInfo):
-        """
-        Compute the derivative of the channel state variables.
-
-        Parameters
-        ----------
-        V : ArrayLike
-            Membrane potential.
-        Na : IonInfo
-            Information about sodium ions.
-        """
-        pass
-
-    def current(self, V, Na: IonInfo):
-        """
-        Calculate the sodium current through the channel.
-
-        Parameters
-        ----------
-        V : ArrayLike
-            Membrane potential.
-        Na : IonInfo
-            Information about sodium ions.
-
-        Raises:
-        NotImplementedError: This method must be implemented by subclasses.
-        """
-        raise NotImplementedError
-
-    def init_state(self, V, Na: IonInfo, batch_size: int = None):
-        """
-        Initialize the state variables of the channel.
-
-        Parameters
-        ----------
-        V : ArrayLike
-            Membrane potential.
-        Na : IonInfo
-            Information about sodium ions.
-        batch_size : int, optional
-            Size of the batch for vectorized operations.
-        """
-        pass
-
-    def reset_state(self, V, Na: IonInfo, batch_size: int = None):
-        """
-        Reset the state variables of the channel.
-
-        Parameters
-        ----------
-        V : ArrayLike
-            Membrane potential.
-        Na : IonInfo
-            Information about sodium ions.
-        batch_size : int, optional
-            Size of the batch for vectorized operations.
-        """
-        pass
-
-
-@register_channel("INa_p3q_markov")
-class INa_p3q_markov(SodiumChannel):
-    r"""
-    The sodium current model of :math:`p^3q` current which described with first-order Markov chain.
-
-    The general model can be used to model the dynamics with:
-
-    .. math::
-
-      \begin{aligned}
-      I_{\mathrm{Na}} &= g_{\mathrm{max}} * p^3 * q \\
-      \frac{dp}{dt} &= \phi ( \alpha_p (1-p) - \beta_p p) \\
-      \frac{dq}{dt} & = \phi ( \alpha_q (1-h) - \beta_q h) \\
-      \end{aligned}
-
-    where :math:`\phi` is a temperature-dependent factor.
-
-    Parameters
-    ----------
-    g_max : float, ArrayType, Callable, Initializer
-      The maximal conductance density (:math:`mS/cm^2`).
-    phi : float, ArrayType, Callable, Initializer
-      The temperature-dependent factor.
-    name: str
-      The name of the object.
-
-    """
+    gates = (
+        Gate("p", power=3, q10=lambda self: self.q10, temp_ref=lambda self: self.temp_ref),
+        Gate("q", q10=lambda self: self.q10, temp_ref=lambda self: self.temp_ref),
+    )
 
     def __init__(
         self,
         size: brainstate.typing.Size,
-        g_max: Union[brainstate.typing.ArrayLike, Callable] = 90. * (u.mS / u.cm ** 2),
-        phi: Union[brainstate.typing.ArrayLike, Callable] = 1.,
+        g_max: Union[brainstate.typing.ArrayLike, Callable] = 90.0 * (u.mS / u.cm ** 2),
+        temp: brainstate.typing.ArrayLike = u.celsius2kelvin(36.0),
+        q10: Union[brainstate.typing.ArrayLike, Callable] = 3.0,
+        temp_ref: brainstate.typing.ArrayLike = u.celsius2kelvin(36.0),
+        V_sh: Union[brainstate.typing.ArrayLike, Callable] = -50.0 * u.mV,
         name: Optional[str] = None,
-    ):
-        super().__init__(size=size, name=name, )
-
-        # parameters
-        self.phi = braintools.init.param(phi, self.varshape, allow_none=False)
-        self.g_max = braintools.init.param(g_max, self.varshape, allow_none=False)
-
-    def init_state(self, V, Na: IonInfo, batch_size=None):
-        self.p = DiffEqState(braintools.init.param(u.math.zeros, self.varshape, batch_size))
-        self.q = DiffEqState(braintools.init.param(u.math.zeros, self.varshape, batch_size))
-
-    def reset_state(self, V, Na: IonInfo, batch_size=None):
-        alpha = self.f_p_alpha(V)
-        beta = self.f_p_beta(V)
-        self.p.value = alpha / (alpha + beta)
-        alpha = self.f_q_alpha(V)
-        beta = self.f_q_beta(V)
-        self.q.value = alpha / (alpha + beta)
-
-    def compute_derivative(self, V, Na: IonInfo):
-        p = self.p.value
-        q = self.q.value
-        self.p.derivative = self.phi * (self.f_p_alpha(V) * (1. - p) - self.f_p_beta(V) * p) / u.ms
-        self.q.derivative = self.phi * (self.f_q_alpha(V) * (1. - q) - self.f_q_beta(V) * q) / u.ms
-
-    def current(self, V, Na: IonInfo):
-        return self.g_max * self.p.value ** 3 * self.q.value * (Na.E - V)
-
-    def f_p_alpha(self, V):
-        raise NotImplementedError
-
-    def f_p_beta(self, V):
-        raise NotImplementedError
-
-    def f_q_alpha(self, V):
-        raise NotImplementedError
-
-    def f_q_beta(self, V):
-        raise NotImplementedError
-
-
-@register_channel("INa_Ba2002")
-class INa_Ba2002(INa_p3q_markov):
-    r"""
-    The sodium current model.
-
-    The sodium current model is adopted from (Bazhenov, et, al. 2002) [1]_.
-    It's dynamics is given by:
-
-    .. math::
-
-      \begin{aligned}
-      I_{\mathrm{Na}} &= g_{\mathrm{max}} * p^3 * q \\
-      \frac{dp}{dt} &= \phi ( \alpha_p (1-p) - \beta_p p) \\
-      \alpha_{p} &=\frac{0.32\left(V-V_{sh}-13\right)}{1-\exp \left(-\left(V-V_{sh}-13\right) / 4\right)} \\
-      \beta_{p} &=\frac{-0.28\left(V-V_{sh}-40\right)}{1-\exp \left(\left(V-V_{sh}-40\right) / 5\right)} \\
-      \frac{dq}{dt} & = \phi ( \alpha_q (1-h) - \beta_q h) \\
-      \alpha_q &=0.128 \exp \left(-\left(V-V_{sh}-17\right) / 18\right) \\
-      \beta_q &= \frac{4}{1+\exp \left(-\left(V-V_{sh}-40\right) / 5\right)}
-      \end{aligned}
-
-    where :math:`\phi` is a temperature-dependent factor, which is given by
-    :math:`\phi=3^{\frac{T-36}{10}}` (:math:`T` is the temperature in Celsius).
-
-    Parameters
-    ----------
-    g_max : float, ArrayType, Callable, Initializer
-      The maximal conductance density (:math:`mS/cm^2`).
-    T : float, ArrayType
-      The temperature (Celsius, :math:`^{\circ}C`).
-    V_sh : float, ArrayType, Callable, Initializer
-      The shift of the membrane potential to spike.
-
-    References
-    ----------
-
-    .. [1] Bazhenov, Maxim, et al. "Model of thalamocortical slow-wave sleep oscillations
-           and transitions to activated states." Journal of neuroscience 22.19 (2002): 8691-8704.
-
-    See Also
-    --------
-    INa_TM1991
-    """
-    __module__ = 'braincell.channel'
-
-    def __init__(
-        self,
-        size: brainstate.typing.Size,
-        T: brainstate.typing.ArrayLike = u.celsius2kelvin(36.),
-        g_max: Union[brainstate.typing.ArrayLike, Callable] = 90. * (u.mS / u.cm ** 2),
-        V_sh: Union[brainstate.typing.ArrayLike, Callable] = -50. * u.mV,
-        name: Optional[str] = None,
-    ):
-        T = u.kelvin2celsius(T)
-        super().__init__(
-            size,
-            name=name,
-            phi=3 ** ((T - 36) / 10),
-            g_max=g_max,
-        )
-        self.T = braintools.init.param(T, self.varshape, allow_none=False)
-        self.V_sh = braintools.init.param(V_sh, self.varshape, allow_none=False)
-
-    def _on_param_updated(self, var_name, new_value):
-        """Recompute the Q10 factor ``phi`` whenever ``T`` changes.
-
-        ``self.T`` is stored in Celsius; this mirrors the formula used
-        in :meth:`__init__`.
-        """
-        if var_name == "T":
-            self.phi = 3 ** ((new_value - 36) / 10)
-
-    def f_p_alpha(self, V):
-        V = (V - self.V_sh).to_decimal(u.mV)
-        temp = V - 13.
-        return 0.32 * temp / (1. - u.math.exp(-temp / 4.))
-
-    def f_p_beta(self, V):
-        V = (V - self.V_sh).to_decimal(u.mV)
-        temp = V - 40.
-        return -0.28 * temp / (1. - u.math.exp(temp / 5.))
-
-    def f_q_alpha(self, V):
-        V = (V - self.V_sh).to_decimal(u.mV)
-        return 0.128 * u.math.exp(-(V - 17.) / 18.)
-
-    def f_q_beta(self, V):
-        V = (V - self.V_sh).to_decimal(u.mV)
-        return 4. / (1. + u.math.exp(-(V - 40.) / 5.))
-
-
-@register_channel("INa_TM1991")
-class INa_TM1991(INa_p3q_markov):
-    r"""
-    The sodium current model described by (Traub and Miles, 1991) [1]_.
-
-    The dynamics of this sodium current model is given by:
-
-    .. math::
-
-       \begin{split}
-       \begin{aligned}
-          I_{\mathrm{Na}} &= g_{\mathrm{max}} m^3 h \\
-          \frac {dm} {dt} &= \phi(\alpha_m (1-x)  - \beta_m) \\
-          &\alpha_m(V) = 0.32 \frac{(13 - V + V_{sh})}{\exp((13 - V +V_{sh}) / 4) - 1.}  \\
-          &\beta_m(V) = 0.28 \frac{(V - V_{sh} - 40)}{(\exp((V - V_{sh} - 40) / 5) - 1)}  \\
-          \frac {dh} {dt} &= \phi(\alpha_h (1-x)  - \beta_h) \\
-          &\alpha_h(V) = 0.128 * \exp((17 - V + V_{sh}) / 18)  \\
-          &\beta_h(V) = 4. / (1 + \exp(-(V - V_{sh} - 40) / 5)) \\
-       \end{aligned}
-       \end{split}
-
-    where :math:`V_{sh}` is the membrane shift (default -63 mV), and
-    :math:`\phi` is the temperature-dependent factor (default 1.).
-
-    Parameters
-    ----------
-    size: int, tuple of int
-      The size of the simulation target.
-    name: str
-      The name of the object.
-    g_max : float, ArrayType, Callable, Initializer
-      The maximal conductance density (:math:`mS/cm^2`).
-    V_sh: float, ArrayType, Callable, Initializer
-      The membrane shift.
-
-    References
-    ----------
-    .. [1] Traub, Roger D., and Richard Miles. Neuronal networks of the hippocampus.
-           Vol. 777. Cambridge University Press, 1991.
-
-    See Also
-    --------
-    INa_Ba2002
-    """
-    __module__ = 'braincell.channel'
-
-    def __init__(
-        self,
-        size: brainstate.typing.Size,
-        g_max: Union[brainstate.typing.ArrayLike, Callable] = 120. * (u.mS / u.cm ** 2),
-        phi: Union[brainstate.typing.ArrayLike, Callable] = 1.,
-        V_sh: Union[brainstate.typing.ArrayLike, Callable] = -63. * u.mV,
-        name: Optional[str] = None,
-    ):
-        super().__init__(
-            size,
-            name=name,
-            phi=phi,
-            g_max=g_max,
-        )
-        self.V_sh = braintools.init.param(V_sh, self.varshape, allow_none=False)
-
-    def f_p_alpha(self, V):
-        V = (self.V_sh - V).to_decimal(u.mV)
-        temp = 13 + V
-        return 0.32 * 4 / u.math.exprel(temp / 4)
-
-    def f_p_beta(self, V):
-        V = (V - self.V_sh).to_decimal(u.mV)
-        temp = V - 40
-        return 0.28 * 5 / u.math.exprel(temp / 5)
-
-    def f_q_alpha(self, V):
-        V = (- V + self.V_sh).to_decimal(u.mV)
-        return 0.128 * u.math.exp((17 + V) / 18)
-
-    def f_q_beta(self, V):
-        V = (V - self.V_sh).to_decimal(u.mV)
-        return 4. / (1 + u.math.exp(-(V - 40) / 5))
-
-
-@register_channel("INa_HH1952")
-class INa_HH1952(INa_p3q_markov):
-    r"""
-    The sodium current model described by Hodgkin–Huxley model [1]_.
-
-    The dynamics of this sodium current model is given by:
-
-    .. math::
-
-       \begin{split}
-       \begin{aligned}
-          I_{\mathrm{Na}} &= g_{\mathrm{max}} m^3 h \\
-          \frac {dm} {dt} &= \phi (\alpha_m (1-x)  - \beta_m) \\
-          &\alpha_m(V) = \frac {0.1(V-V_{sh}-5)}{1-\exp(\frac{-(V -V_{sh} -5)} {10})}  \\
-          &\beta_m(V) = 4.0 \exp(\frac{-(V -V_{sh}+ 20)} {18})  \\
-          \frac {dh} {dt} &= \phi (\alpha_h (1-x)  - \beta_h) \\
-          &\alpha_h(V) = 0.07 \exp(\frac{-(V-V_{sh}+20)}{20})  \\
-          &\beta_h(V) = \frac 1 {1 + \exp(\frac{-(V -V_{sh}-10)} {10})} \\
-       \end{aligned}
-       \end{split}
-
-    where :math:`V_{sh}` is the membrane shift (default -45 mV), and
-    :math:`\phi` is the temperature-dependent factor (default 1.).
-
-    Parameters
-    ----------
-    size: int, tuple of int
-      The size of the simulation target.
-    name: str
-      The name of the object.
-    g_max : float, ArrayType, Callable, Initializer
-      The maximal conductance density (:math:`mS/cm^2`).
-    V_sh: float, ArrayType, Callable, Initializer
-      The membrane shift.
-
-    References
-    ----------
-    .. [1] Hodgkin, Alan L., and Andrew F. Huxley. "A quantitative description of
-           membrane current and its application to conduction and excitation in
-           nerve." The Journal of physiology 117.4 (1952): 500.
-
-    See Also
-    --------
-    IK_HH1952
-    """
-    __module__ = 'braincell.channel'
-
-    def __init__(
-        self,
-        size: brainstate.typing.Size,
-        g_max: Union[brainstate.typing.ArrayLike, Callable] = 120. * (u.mS / u.cm ** 2),
-        phi: Optional[Union[brainstate.typing.ArrayLike, Callable]] = None,
-        T: Optional[brainstate.typing.ArrayLike] = None,
-        V_sh: Union[brainstate.typing.ArrayLike, Callable] = -45. * u.mV,
-        name: Optional[str] = None,
-    ):
-        if T is not None:
-            T_c = u.kelvin2celsius(T)
-            phi = 3 ** ((T_c - 36) / 10) if phi is None else phi
-        else:
-            T_c = None
-            phi = 1. if phi is None else phi
-        super().__init__(size, name=name, phi=phi, g_max=g_max)
-        self.V_sh = braintools.init.param(V_sh, self.varshape, allow_none=False)
-        if T_c is not None:
-            self.T = braintools.init.param(T_c, self.varshape, allow_none=False)
-
-    def _on_param_updated(self, var_name, new_value):
-        """Recompute the Q10 factor ``phi`` when ``T`` changes.
-
-        ``self.T`` is stored in Celsius (mirrors :meth:`__init__`).
-        """
-        if var_name == "T":
-            self.phi = 3 ** ((new_value - 36) / 10)
-
-    def f_p_alpha(self, V):
-        temp = (V - self.V_sh).to_decimal(u.mV) - 5
-        return 1. / u.math.exprel(-temp / 10)
-
-    def f_p_beta(self, V):
-        V = (V - self.V_sh).to_decimal(u.mV)
-        return 4.0 * u.math.exp(-(V + 20) / 18)
-
-    def f_q_alpha(self, V):
-        V = (V - self.V_sh).to_decimal(u.mV)
-        return 0.07 * u.math.exp(-(V + 20) / 20.)
-
-    def f_q_beta(self, V):
-        V = (V - self.V_sh).to_decimal(u.mV)
-        return 1 / (1 + u.math.exp(-(V - 10) / 10))
-
-
-@register_channel("INa_Rsg")
-class INa_Rsg(SodiumChannel, IndependentIntegration):
-    __module__ = 'braincell.channel'
-
-    def __init__(
-        self,
-        size: brainstate.typing.Size,
-        T: brainstate.typing.ArrayLike = u.celsius2kelvin(22.),
-        g_max: Union[brainstate.typing.ArrayLike, Callable] = 15. * (u.mS / u.cm ** 2),
-        name: Optional[str] = None,
-        solver: str = 'rk4',
     ):
         super().__init__(size=size, name=name)
-        IndependentIntegration.__init__(self, solver=solver)
+        self.g_max = braintools.init.param(g_max, self.varshape, allow_none=False)
+        self.temp = braintools.init.param(temp, self.varshape, allow_none=False)
+        self.q10 = braintools.init.param(q10, self.varshape, allow_none=False)
+        self.temp_ref = braintools.init.param(temp_ref, self.varshape, allow_none=False)
+        self.V_sh = braintools.init.param(V_sh, self.varshape, allow_none=False)
 
-        T = u.kelvin2celsius(T)
-        self.phi = braintools.init.param(3 ** ((T - 22) / 10), self.varshape, allow_none=False)
+    def current(self, V, Na: IonInfo):
+        return self.g_max * self.conductance_factor(V, Na) * (Na.E - V)
+
+    def f_p_alpha(self, V, *unused):
+        temp = (V - self.V_sh).to_decimal(u.mV) - 13.0
+        return 0.32 * 4.0 / u.math.exprel(-temp / 4.0)
+
+    def f_p_beta(self, V, *unused):
+        temp = (V - self.V_sh).to_decimal(u.mV) - 40.0
+        return 0.28 * 5.0 / u.math.exprel(temp / 5.0)
+
+    def f_q_alpha(self, V, *unused):
+        temp = (V - self.V_sh).to_decimal(u.mV)
+        return 0.128 * u.math.exp(-(temp - 17.0) / 18.0)
+
+    def f_q_beta(self, V, *unused):
+        temp = (V - self.V_sh).to_decimal(u.mV)
+        return 4.0 / (1.0 + u.math.exp(-(temp - 40.0) / 5.0))
+
+
+@register_channel("Na_TM1991")
+class Na_TM1991(HH):
+    r"""Traub and Miles 1991 sodium current with :math:`p^3 q` HH gating."""
+
+    __module__ = "braincell.channel"
+    root_type = Sodium
+    gates = (
+        Gate("p", power=3, q10=lambda self: self.q10, temp_ref=lambda self: self.temp_ref),
+        Gate("q", q10=lambda self: self.q10, temp_ref=lambda self: self.temp_ref),
+    )
+
+    def __init__(
+        self,
+        size: brainstate.typing.Size,
+        g_max: Union[brainstate.typing.ArrayLike, Callable] = 120.0 * (u.mS / u.cm ** 2),
+        temp: brainstate.typing.ArrayLike = u.celsius2kelvin(36.0),
+        q10: Union[brainstate.typing.ArrayLike, Callable] = 1.0,
+        temp_ref: brainstate.typing.ArrayLike = u.celsius2kelvin(36.0),
+        V_sh: Union[brainstate.typing.ArrayLike, Callable] = -63.0 * u.mV,
+        name: Optional[str] = None,
+    ):
+        super().__init__(size=size, name=name)
+        self.g_max = braintools.init.param(g_max, self.varshape, allow_none=False)
+        self.temp = braintools.init.param(temp, self.varshape, allow_none=False)
+        self.q10 = braintools.init.param(q10, self.varshape, allow_none=False)
+        self.temp_ref = braintools.init.param(temp_ref, self.varshape, allow_none=False)
+        self.V_sh = braintools.init.param(V_sh, self.varshape, allow_none=False)
+
+    def current(self, V, Na: IonInfo):
+        return self.g_max * self.conductance_factor(V, Na) * (Na.E - V)
+
+    def f_p_alpha(self, V, *unused):
+        temp = (self.V_sh - V).to_decimal(u.mV)
+        return 0.32 * 4.0 / u.math.exprel((13.0 + temp) / 4.0)
+
+    def f_p_beta(self, V, *unused):
+        temp = (V - self.V_sh).to_decimal(u.mV) - 40.0
+        return 0.28 * 5.0 / u.math.exprel(temp / 5.0)
+
+    def f_q_alpha(self, V, *unused):
+        temp = (self.V_sh - V).to_decimal(u.mV)
+        return 0.128 * u.math.exp((17.0 + temp) / 18.0)
+
+    def f_q_beta(self, V, *unused):
+        temp = (V - self.V_sh).to_decimal(u.mV)
+        return 4.0 / (1.0 + u.math.exp(-(temp - 40.0) / 5.0))
+
+
+@register_channel("Na_HH1952")
+class Na_HH1952(HH):
+    r"""Hodgkin-Huxley 1952 sodium current with :math:`p^3 q` HH gating."""
+
+    __module__ = "braincell.channel"
+    root_type = Sodium
+    gates = (
+        Gate("p", power=3, q10=lambda self: self.q10, temp_ref=lambda self: self.temp_ref),
+        Gate("q", q10=lambda self: self.q10, temp_ref=lambda self: self.temp_ref),
+    )
+
+    def __init__(
+        self,
+        size: brainstate.typing.Size,
+        g_max: Union[brainstate.typing.ArrayLike, Callable] = 120.0 * (u.mS / u.cm ** 2),
+        temp: brainstate.typing.ArrayLike = u.celsius2kelvin(36.0),
+        q10: Union[brainstate.typing.ArrayLike, Callable] = 3.0,
+        temp_ref: brainstate.typing.ArrayLike = u.celsius2kelvin(36.0),
+        V_sh: Union[brainstate.typing.ArrayLike, Callable] = -45.0 * u.mV,
+        name: Optional[str] = None,
+    ):
+        super().__init__(size=size, name=name)
+        self.g_max = braintools.init.param(g_max, self.varshape, allow_none=False)
+        self.temp = braintools.init.param(temp, self.varshape, allow_none=False)
+        self.q10 = braintools.init.param(q10, self.varshape, allow_none=False)
+        self.temp_ref = braintools.init.param(temp_ref, self.varshape, allow_none=False)
+        self.V_sh = braintools.init.param(V_sh, self.varshape, allow_none=False)
+
+    def current(self, V, Na: IonInfo):
+        return self.g_max * self.conductance_factor(V, Na) * (Na.E - V)
+
+    def f_p_alpha(self, V, *unused):
+        temp = (V - self.V_sh).to_decimal(u.mV) - 5.0
+        return 1.0 / u.math.exprel(-temp / 10.0)
+
+    def f_p_beta(self, V, *unused):
+        temp = (V - self.V_sh).to_decimal(u.mV)
+        return 4.0 * u.math.exp(-(temp + 20.0) / 18.0)
+
+    def f_q_alpha(self, V, *unused):
+        temp = (V - self.V_sh).to_decimal(u.mV)
+        return 0.07 * u.math.exp(-(temp + 20.0) / 20.0)
+
+    def f_q_beta(self, V, *unused):
+        temp = (V - self.V_sh).to_decimal(u.mV)
+        return 1.0 / (1.0 + u.math.exp(-(temp - 10.0) / 10.0))
+
+@register_channel("NaF_SU2015_DCN")
+class NaF_SU2015_DCN(HH):
+    """Template-based import of ``NaF_SU2015_DCN.mod``."""
+
+    __module__ = "braincell.channel"
+    root_type = Sodium
+    gates = (
+        Gate("m", power=3),
+        Gate("h"),
+    )
+
+    def __init__(
+        self,
+        size: brainstate.typing.Size,
+        g_max: Union[brainstate.typing.ArrayLike, Callable] = 0.01 * (u.mS / u.cm ** 2),
+        name: Optional[str] = None,
+    ):
+        super().__init__(size=size, name=name)
+        self.g_max = braintools.init.param(g_max, self.varshape, allow_none=False)
+        self.qdeltat = 1.0
+
+    def current(self, V, Na: IonInfo, *unused):
+        return self.g_max * self.conductance_factor(V, Na) * (Na.E - V)
+
+    def f_m_inf(self, V, Na: IonInfo, *unused):
+        _ = (Na, unused)
+        V = V.to_decimal(u.mV)
+        return 1.0 / (1.0 + u.math.exp((V + 45.0) / -7.3))
+
+    def f_m_tau(self, V, Na: IonInfo, *unused):
+        _ = (Na, unused)
+        V = V.to_decimal(u.mV)
+        return (
+            5.83
+            / (
+                u.math.exp((V - 6.4) / -9.0)
+                + u.math.exp((V + 97.0) / 17.0)
+            )
+            + 0.025
+        ) / self.qdeltat
+
+    def f_h_inf(self, V, Na: IonInfo, *unused):
+        _ = (Na, unused)
+        V = V.to_decimal(u.mV)
+        return 1.0 / (1.0 + u.math.exp((V + 42.0) / 5.9))
+
+    def f_h_tau(self, V, Na: IonInfo, *unused):
+        _ = (Na, unused)
+        V = V.to_decimal(u.mV)
+        return (
+            16.67
+            / (
+                u.math.exp((V - 8.3) / -29.0)
+                + u.math.exp((V + 66.0) / 9.0)
+            )
+            + 0.2
+        ) / self.qdeltat
+
+@register_channel("NaP_SU2015_DCN")
+class NaP_SU2015_DCN(HH):
+    """Template-based import of ``NaP_SU2015_DCN.mod``."""
+
+    __module__ = "braincell.channel"
+    root_type = Sodium
+    gates = (
+        Gate("m", power=3),
+        Gate("h"),
+    )
+
+    def __init__(
+        self,
+        size: brainstate.typing.Size,
+        g_max: Union[brainstate.typing.ArrayLike, Callable] = 0.01 * (u.mS / u.cm ** 2),
+        name: Optional[str] = None,
+    ):
+        super().__init__(size=size, name=name)
+        self.g_max = braintools.init.param(g_max, self.varshape, allow_none=False)
+        self.qdeltat = 1.0
+
+    def current(self, V, Na: IonInfo, *unused):
+        return self.g_max * self.conductance_factor(V, Na) * (Na.E - V)
+
+    def f_m_inf(self, V, Na: IonInfo, *unused):
+        _ = (Na, unused)
+        V = V.to_decimal(u.mV)
+        return 1.0 / (1.0 + u.math.exp((V + 70.0) / -4.1))
+
+    def f_m_tau(self, V, Na: IonInfo, *unused):
+        _ = (V, Na, unused)
+        return 50.0 / self.qdeltat
+
+    def f_h_inf(self, V, Na: IonInfo, *unused):
+        _ = (Na, unused)
+        V = V.to_decimal(u.mV)
+        return 1.0 / (1.0 + u.math.exp((V + 80.0) / 4.0))
+
+    def f_h_tau(self, V, Na: IonInfo, *unused):
+        _ = (Na, unused)
+        V = V.to_decimal(u.mV)
+        return (1750.0 / (1.0 + u.math.exp((V + 65.0) / -8.0)) + 250.0) / self.qdeltat
+
+@register_channel("Na_ZH2019_IO")
+class Na_ZH2019_IO(HH):
+    """Template-based import of ``Na_ZH2019_IO.mod``."""
+
+    __module__ = "braincell.channel"
+    root_type = Sodium
+    gates = (
+        Gate("m", power=3),
+        Gate("h"),
+    )
+
+    def __init__(
+        self,
+        size: brainstate.typing.Size,
+        g_max: Union[brainstate.typing.ArrayLike, Callable] = 70.0 * (u.mS / u.cm ** 2),
+        name: Optional[str] = None,
+    ):
+        super().__init__(size=size, name=name)
+        self.g_max = braintools.init.param(g_max, self.varshape, allow_none=False)
+
+    def current(self, V, Na: IonInfo, *unused):
+        return self.g_max * self.conductance_factor(V, Na) * (Na.E - V)
+
+    def _m_alpha(self, V):
+        V = V.to_decimal(u.mV)
+        x = (V + 41.0) / 10.0
+        return _x_over_one_minus_exp_neg_stable(x)
+
+    def _m_beta(self, V):
+        V = V.to_decimal(u.mV)
+        return 9.0 * u.math.exp(-(V + 66.0) / 20.0)
+
+    def _h_alpha(self, V):
+        V = V.to_decimal(u.mV)
+        return 5.0 * u.math.exp(-(V + 60.0) / 15.0)
+
+    def _h_beta(self, V):
+        V = V.to_decimal(u.mV)
+        x = (V + 50.0) / 10.0
+        return 10.0 * _x_over_one_minus_exp_neg_stable(x)
+
+    def f_m_inf(self, V, Na: IonInfo, *unused):
+        _ = (Na, unused)
+        alpha = self._m_alpha(V)
+        beta = self._m_beta(V)
+        return alpha / (alpha + beta)
+
+    def f_m_tau(self, V, Na: IonInfo, *unused):
+        _ = (V, Na, unused)
+        return 0.001
+
+    def f_h_inf(self, V, Na: IonInfo, *unused):
+        _ = (Na, unused)
+        alpha = self._h_alpha(V)
+        beta = self._h_beta(V)
+        return alpha / (alpha + beta)
+
+    def f_h_tau(self, V, Na: IonInfo, *unused):
+        _ = (Na, unused)
+        alpha = self._h_alpha(V)
+        beta = self._h_beta(V)
+        return 250.0 / (alpha + beta)
+
+@register_channel("Nav1p6_MA2020_GoC")
+class Nav1p6_MA2020_GoC(Markov):
+    """Template-based import of ``Nav1p6_MA2020_GoC.mod``."""
+
+    __module__ = "braincell.channel"
+    root_type = Sodium
+
+    pairs = (
+        ("C1", "C2", "f01", "b01"),
+        ("C2", "C3", "f02", "b02"),
+        ("C3", "C4", "f03", "b03"),
+        ("C4", "C5", "f04", "b04"),
+        ("C1", "I1", "fi1", "bi1"),
+        ("I1", "I2", "f11", "b11"),
+        ("C2", "I2", "fi2", "bi2"),
+        ("I2", "I3", "f12", "b12"),
+        ("C3", "I3", "fi3", "bi3"),
+        ("I3", "I4", "f13", "b13"),
+        ("C4", "I4", "fi4", "bi4"),
+        ("I4", "I5", "f14", "b14"),
+        ("C5", "I5", "fi5", "bi5"),
+        ("C5", "O", "f0O", "b0O"),
+        ("O", "B", "fip", "bip"),
+        ("I5", "I6", "f1n", "b1n"),
+        ("O", "I6", "fin", "bin"),
+    )
+
+    def __init__(
+        self,
+        size: brainstate.typing.Size,
+        temp: brainstate.typing.ArrayLike = u.celsius2kelvin(22.0),
+        g_max: Union[brainstate.typing.ArrayLike, Callable] = 16.0 * (u.mS / u.cm ** 2),
+        name: Optional[str] = None,
+        solver: str = "rk4",
+        substeps: int = 5,
+    ):
+        super().__init__(size=size, name=name, solver=solver, substeps=substeps)
+
+        self.temp = braintools.init.param(temp, self.varshape, allow_none=False)
+        self.phi = 3 ** (((self.temp - u.celsius2kelvin(22.0)) / u.kelvin) / 10.0)
         self.g_max = braintools.init.param(g_max, self.varshape, allow_none=False)
 
         self.Con = 0.005
         self.Coff = 0.5
         self.Oon = 0.75
         self.Ooff = 0.005
-        self.alpha = 150.
-        self.beta = 3.
-        self.gamma = 150.
-        self.delta = 40.
+        self.alpha = 150.0
+        self.beta = 3.0
+        self.gamma = 150.0
+        self.delta = 40.0
         self.epsilon = 1.75
         self.zeta = 0.03
 
-        self.x1 = 20.
-        self.x2 = -20.
+        self.x1 = 20.0
+        self.x2 = -20.0
         self.x3 = 1e12
         self.x4 = -1e12
         self.x5 = 1e12
-        self.x6 = -25.
-        self.vshifta = 0.
-        self.vshifti = 0.
-        self.vshiftk = 0.
+        self.x6 = -25.0
+        self.vshifta = 0.0
+        self.vshifti = 0.0
+        self.vshiftk = 0.0
 
         self.alfac = (self.Oon / self.Con) ** (1 / 4)
         self.btfac = (self.Ooff / self.Coff) ** (1 / 4)
 
-    def make_integration(self, *args, **kwargs):
-        with brainstate.environ.context(dt=brainstate.environ.get_dt() / 5):
-            brainstate.transform.for_loop(lambda i: self.solver(self, *args, **kwargs), u.math.arange(5))
+    def current(self, V, Na: IonInfo):
+        return self.g_max * self.O.value * (Na.E - V)
 
-    def init_state(self, V, Na: IonInfo, batch_size=None):
-        state_names = ["C1", "C2", "C3", "C4", "C5", "I1", "I2", "I3", "I4", "I5", "O", "B", ]
-        for name in state_names:
-            state = DiffEqState(braintools.init.param(u.math.zeros, self.varshape, batch_size))
-            setattr(self, name, state)
+    f01 = lambda self, V, *unused: 4 * self.alpha * u.math.exp((V / u.mV) / self.x1) * self.phi
+    f02 = lambda self, V, *unused: 3 * self.alpha * u.math.exp((V / u.mV) / self.x1) * self.phi
+    f03 = lambda self, V, *unused: 2 * self.alpha * u.math.exp((V / u.mV) / self.x1) * self.phi
+    f04 = lambda self, V, *unused: 1 * self.alpha * u.math.exp((V / u.mV) / self.x1) * self.phi
+    f0O = lambda self, V, *unused: self.gamma * u.math.exp((V / u.mV) / self.x3) * self.phi
+    fip = lambda self, V, *unused: self.epsilon * u.math.exp((V / u.mV) / self.x5) * self.phi
+    f11 = lambda self, V, *unused: 4 * self.alpha * self.alfac * u.math.exp(
+        (V / u.mV + self.vshifti) / self.x1) * self.phi
+    f12 = lambda self, V, *unused: 3 * self.alpha * self.alfac * u.math.exp(
+        (V / u.mV + self.vshifti) / self.x1) * self.phi
+    f13 = lambda self, V, *unused: 2 * self.alpha * self.alfac * u.math.exp(
+        (V / u.mV + self.vshifti) / self.x1) * self.phi
+    f14 = lambda self, V, *unused: 1 * self.alpha * self.alfac * u.math.exp(
+        (V / u.mV + self.vshifti) / self.x1) * self.phi
+    f1n = lambda self, V, *unused: self.gamma * u.math.exp((V / u.mV) / self.x3) * self.phi
+    fi1 = lambda self, V, *unused: self.Con * self.phi
+    fi2 = lambda self, V, *unused: self.Con * self.alfac * self.phi
+    fi3 = lambda self, V, *unused: self.Con * self.alfac ** 2 * self.phi
+    fi4 = lambda self, V, *unused: self.Con * self.alfac ** 3 * self.phi
+    fi5 = lambda self, V, *unused: self.Con * self.alfac ** 4 * self.phi
+    fin = lambda self, V, *unused: self.Oon * self.phi
 
-        self.state_names = state_names
-        self.redundant_state = "I6"
+    b01 = lambda self, V, *unused: 1 * self.beta * u.math.exp(
+        (V / u.mV + self.vshifta) / (self.x2 + self.vshiftk)) * self.phi
+    b02 = lambda self, V, *unused: 2 * self.beta * u.math.exp(
+        (V / u.mV + self.vshifta) / (self.x2 + self.vshiftk)) * self.phi
+    b03 = lambda self, V, *unused: 3 * self.beta * u.math.exp(
+        (V / u.mV + self.vshifta) / (self.x2 + self.vshiftk)) * self.phi
+    b04 = lambda self, V, *unused: 4 * self.beta * u.math.exp(
+        (V / u.mV + self.vshifta) / (self.x2 + self.vshiftk)) * self.phi
+    b0O = lambda self, V, *unused: self.delta * u.math.exp(V / u.mV / self.x4) * self.phi
+    bip = lambda self, V, *unused: self.zeta * u.math.exp(V / u.mV / self.x6) * self.phi
+    b11 = lambda self, V, *unused: 1 * self.beta * self.btfac * u.math.exp(
+        (V / u.mV + self.vshifti) / self.x2) * self.phi
+    b12 = lambda self, V, *unused: 2 * self.beta * self.btfac * u.math.exp(
+        (V / u.mV + self.vshifti) / self.x2) * self.phi
+    b13 = lambda self, V, *unused: 3 * self.beta * self.btfac * u.math.exp(
+        (V / u.mV + self.vshifti) / self.x2) * self.phi
+    b14 = lambda self, V, *unused: 4 * self.beta * self.btfac * u.math.exp(
+        (V / u.mV + self.vshifti) / self.x2) * self.phi
+    b1n = lambda self, V, *unused: self.delta * u.math.exp(V / u.mV / self.x4) * self.phi
+    bi1 = lambda self, V, *unused: self.Coff * self.phi
+    bi2 = lambda self, V, *unused: self.Coff * self.btfac * self.phi
+    bi3 = lambda self, V, *unused: self.Coff * self.btfac ** 2 * self.phi
+    bi4 = lambda self, V, *unused: self.Coff * self.btfac ** 3 * self.phi
+    bi5 = lambda self, V, *unused: self.Coff * self.btfac ** 4 * self.phi
+    bin = lambda self, V, *unused: self.Ooff * self.phi
 
-        self.state_pairs = [
-            ("C1", "C2", "f01", "b01"),
-            ("C2", "C3", "f02", "b02"),
-            ("C3", "C4", "f03", "b03"),
-            ("C4", "C5", "f04", "b04"),
-            ("C5", "O", "f0O", "b0O"),
-            ("O", "B", "fip", "bip"),
-            ("O", "I6", "fin", "bin"),
-            ("I1", "I2", "f11", "b11"),
-            ("I2", "I3", "f12", "b12"),
-            ("I3", "I4", "f13", "b13"),
-            ("I4", "I5", "f14", "b14"),
-            ("I5", "I6", "f1n", "b1n"),
-            ("C1", "I1", "fi1", "bi1"),
-            ("C2", "I2", "fi2", "bi2"),
-            ("C3", "I3", "fi3", "bi3"),
-            ("C4", "I4", "fi4", "bi4"),
-            ("C5", "I5", "fi5", "bi5"),
-        ]
+@register_channel("Nav1p6_MA2024_PC")
+class Nav1p6_MA2024_PC(Nav1p6_MA2020_GoC):
+    """Template-based import of ``Nav1p6_MA2024_PC.mod``."""
 
-    def reset_state(self, V, Na: IonInfo, batch_size=None):
-        state_names = ["C1", "C2", "C3", "C4", "C5", "O", "B", "I1", "I2", "I3", "I4", "I5"]
-        for name in state_names:
-            state = DiffEqState(braintools.init.param(u.math.zeros, self.varshape, batch_size))
-            setattr(self, name, state)
+    __module__ = "braincell.channel"
 
-    def pre_integral(self, V, Na: IonInfo):
-        pass
+@register_channel("Nav1p6_MA2025_BC")
+class Nav1p6_MA2025_BC(Nav1p6_MA2020_GoC):
+    """Template-based import of ``Nav1p6_MA2025_BC.mod``."""
 
-    def compute_derivative(self, V, Na: IonInfo):
-        state_value = u.math.stack([getattr(self, name).value for name in self.state_names])
-        state_dict = {name: state_value[i] for i, name in enumerate(self.state_names)}
-        state_dict = jax.tree.map(lambda x: u.math.clip(x, 0., 1.), state_dict)
-        state_dict[self.redundant_state] = 1.0 - u.math.sum(state_value, axis=0)
+    __module__ = "braincell.channel"
 
-        derivative_dict = {name: u.math.zeros_like(st) for name, st in state_dict.items()}
-        for src, dst, f_rate, b_rate in self.state_pairs:
-            f = getattr(self, f_rate)(V)
-            b = getattr(self, b_rate)(V)
-            derivative_dict[src] += -state_dict[src] * f + state_dict[dst] * b
-            derivative_dict[dst] += state_dict[src] * f - state_dict[dst] * b
+    def reset_state(self, V, Na: IonInfo, batch_size: int = None):
+        self.reset_steady_state(V, Na, batch_size=batch_size)
 
-        for name in self.state_names:
-            getattr(self, name).derivative = derivative_dict[name] / u.ms
+@register_channel("Nav1p6_RI2021_SC")
+class Nav1p6_RI2021_SC(Nav1p6_MA2020_GoC):
+    """Template-based import of ``Nav1p6_RI2021_SC.mod``."""
+
+    __module__ = "braincell.channel"
+
+    def reset_state(self, V, Na: IonInfo, batch_size: int = None):
+        self.reset_steady_state(V, Na, batch_size=batch_size)
+
+@register_channel("Nav1p1_MA2025_BC")
+class Nav1p1_MA2025_BC(Nav1p6_MA2020_GoC):
+    """Template-based import of ``Nav1p1_MA2025_BC.mod``."""
+
+    __module__ = "braincell.channel"
+
+    def __init__(
+        self,
+        size: brainstate.typing.Size,
+        temp: brainstate.typing.ArrayLike = u.celsius2kelvin(22.0),
+        g_max: Union[brainstate.typing.ArrayLike, Callable] = 8.0 * (u.mS / u.cm ** 2),
+        gateCurrent: Union[brainstate.typing.ArrayLike, Callable] = 0.0,
+        name: Optional[str] = None,
+        solver: str = "rk4",
+        substeps: int = 5,
+    ):
+        super().__init__(
+            size=size,
+            temp=temp,
+            g_max=g_max,
+            name=name,
+            solver=solver,
+            substeps=substeps,
+        )
+        self.phi = 2.7 ** (((self.temp - u.celsius2kelvin(22.0)) / u.kelvin) / 10.0)
+        self.gateCurrent = braintools.init.param(
+            gateCurrent, self.varshape, allow_none=False
+        )
+        self.Oon = 2.3
+        self.epsilon = 1e-12
+        self.zgate = 2.5435
+        self.gunit = 15.0e-9 * u.mS
+        self.e0 = 1.60217646e-19 * u.coulomb
+        self.alfac = (self.Oon / self.Con) ** (1 / 4)
+
+    def reset_state(self, V, Na: IonInfo, batch_size: int = None):
+        self.reset_steady_state(V, Na, batch_size=batch_size)
+
+    def current(self, V, Na: IonInfo):
+        conductive = self.g_max * self.O.value * (Na.E - V)
+        gate_flip = (
+                        self.f01(V) * self.C1.value
+                        + (self.f02(V) - self.b01(V)) * self.C2.value
+                        + (self.f03(V) - self.b02(V)) * self.C3.value
+                        + (self.f04(V) - self.b03(V)) * self.C4.value
+                        - self.b04(V) * self.C5.value
+                        + self.f11(V) * self.I1.value
+                        + (self.f12(V) - self.b11(V)) * self.I2.value
+                        + (self.f13(V) - self.b12(V)) * self.I3.value
+                        + (self.f14(V) - self.b13(V)) * self.I4.value
+                        - self.b14(V) * self.I5.value
+                    ) / u.ms
+        nc = 1e12 * self.g_max / self.gunit
+        igate = nc * 1e6 * self.e0 * self.zgate * gate_flip
+        return conductive - u.math.where(self.gateCurrent != 0, igate, 0.0 * igate)
+
+@register_channel("Nav1p1_RI2021_SC")
+class Nav1p1_RI2021_SC(Nav1p1_MA2025_BC):
+    """Template-based import of ``Nav1p1_RI2021_SC.mod``."""
+
+    __module__ = "braincell.channel"
+
+    def reset_state(self, V, Na: IonInfo, batch_size: int = None):
+        self.reset_steady_state(V, Na, batch_size=batch_size)
+
+@register_channel("Nav_MA2020_GrC")
+class Nav_MA2020_GrC(Markov, IndependentIntegration):
+    """Template-based import of ``Nav_MA2020_GrC.mod``."""
+
+    __module__ = "braincell.channel"
+    root_type = Sodium
+
+    pairs = (
+        ("C1", "C2", "f01", "b01"),
+        ("C2", "C3", "f02", "b02"),
+        ("C3", "C4", "f03", "b03"),
+        ("C4", "C5", "f04", "b04"),
+        ("C5", "O", "f0O", "b0O"),
+        ("O", "OB", "fip", "bip"),
+        ("I1", "I2", "f11", "b11"),
+        ("I2", "I3", "f12", "b12"),
+        ("I3", "I4", "f13", "b13"),
+        ("I4", "I5", "f14", "b14"),
+        ("C1", "I1", "fi1", "bi1"),
+        ("C2", "I2", "fi2", "bi2"),
+        ("C3", "I3", "fi3", "bi3"),
+        ("C4", "I4", "fi4", "bi4"),
+        ("C5", "I5", "fi5", "bi5"),
+        ("O", "I6", "fin", "bin"),
+        ("I5", "I6", "f1n", "b1n"),
+    )
+
+    def __init__(
+        self,
+        size: brainstate.typing.Size,
+        temp: brainstate.typing.ArrayLike = u.celsius2kelvin(32.0),
+        g_max: Union[brainstate.typing.ArrayLike, Callable] = 13.0 * (u.mS / u.cm ** 2),
+        name: Optional[str] = None,
+        solver: str = "rk4",
+        substeps: int = 5,
+    ):
+        super().__init__(size=size, name=name, solver=solver, substeps=substeps)
+
+        self.temp = braintools.init.param(temp, self.varshape, allow_none=False)
+        self.g_max = braintools.init.param(g_max, self.varshape, allow_none=False)
+        self.phi = 3 ** (((self.temp - u.celsius2kelvin(20.0)) / u.kelvin) / 10.0)
+
+        self.Aalfa = 353.91
+        self.Valfa = 13.99
+        self.Abeta = 1.272
+        self.Vbeta = 13.99
+        self.Agamma = 150.0
+        self.Adelta = 40.0
+        self.Aepsilon = 1.75
+        self.Ateta = 0.0201
+        self.Vteta = 25.0
+        self.ACon = 0.005
+        self.ACoff = 0.5
+        self.AOon = 0.75
+        self.AOoff = 0.005
+        self.n1 = 5.422
+        self.n2 = 3.279
+        self.n3 = 1.83
+        self.n4 = 0.738
 
     def current(self, V, Na: IonInfo):
         return self.g_max * self.O.value * (Na.E - V)
 
-    f01 = lambda self, V: 4 * self.alpha * u.math.exp((V / u.mV) / self.x1) * self.phi
-    f02 = lambda self, V: 3 * self.alpha * u.math.exp((V / u.mV) / self.x1) * self.phi
-    f03 = lambda self, V: 2 * self.alpha * u.math.exp((V / u.mV) / self.x1) * self.phi
-    f04 = lambda self, V: 1 * self.alpha * u.math.exp((V / u.mV) / self.x1) * self.phi
-    f0O = lambda self, V: self.gamma * u.math.exp((V / u.mV) / self.x3) * self.phi
-    fip = lambda self, V: self.epsilon * u.math.exp((V / u.mV) / self.x5) * self.phi
-    f11 = lambda self, V: 4 * self.alpha * self.alfac * u.math.exp((V / u.mV + self.vshifti) / self.x1) * self.phi
-    f12 = lambda self, V: 3 * self.alpha * self.alfac * u.math.exp((V / u.mV + self.vshifti) / self.x1) * self.phi
-    f13 = lambda self, V: 2 * self.alpha * self.alfac * u.math.exp((V / u.mV + self.vshifti) / self.x1) * self.phi
-    f14 = lambda self, V: 1 * self.alpha * self.alfac * u.math.exp((V / u.mV + self.vshifti) / self.x1) * self.phi
-    f1n = lambda self, V: self.gamma * u.math.exp((V / u.mV) / self.x3) * self.phi
-    fi1 = lambda self, V: self.Con * self.phi
-    fi2 = lambda self, V: self.Con * self.alfac * self.phi
-    fi3 = lambda self, V: self.Con * self.alfac ** 2 * self.phi
-    fi4 = lambda self, V: self.Con * self.alfac ** 3 * self.phi
-    fi5 = lambda self, V: self.Con * self.alfac ** 4 * self.phi
-    fin = lambda self, V: self.Oon * self.phi
+    alfa = lambda self, V, *unused: self.phi * self.Aalfa * u.math.exp((V / u.mV) / self.Valfa)
+    beta = lambda self, V, *unused: self.phi * self.Abeta * u.math.exp(-(V / u.mV) / self.Vbeta)
+    teta = lambda self, V, *unused: self.phi * self.Ateta * u.math.exp(-(V / u.mV) / self.Vteta)
+    gamma = lambda self, V, *unused: self.phi * self.Agamma
+    delta = lambda self, V, *unused: self.phi * self.Adelta
+    epsilon = lambda self, V, *unused: self.phi * self.Aepsilon
+    Con = lambda self, V, *unused: self.phi * self.ACon
+    Coff = lambda self, V, *unused: self.phi * self.ACoff
+    Oon = lambda self, V, *unused: self.phi * self.AOon
+    Ooff = lambda self, V, *unused: self.phi * self.AOoff
+    a_factor = lambda self, V, *unused: (self.Oon(V) / self.Con(V)) ** 0.25
+    b_factor = lambda self, V, *unused: (self.Ooff(V) / self.Coff(V)) ** 0.25
 
-    b01 = lambda self, V: 1 * self.beta * u.math.exp((V / u.mV + self.vshifta) / (self.x2 + self.vshiftk)) * self.phi
-    b02 = lambda self, V: 2 * self.beta * u.math.exp((V / u.mV + self.vshifta) / (self.x2 + self.vshiftk)) * self.phi
-    b03 = lambda self, V: 3 * self.beta * u.math.exp((V / u.mV + self.vshifta) / (self.x2 + self.vshiftk)) * self.phi
-    b04 = lambda self, V: 4 * self.beta * u.math.exp((V / u.mV + self.vshifta) / (self.x2 + self.vshiftk)) * self.phi
-    b0O = lambda self, V: self.delta * u.math.exp(V / u.mV / self.x4) * self.phi
-    bip = lambda self, V: self.zeta * u.math.exp(V / u.mV / self.x6) * self.phi
-    b11 = lambda self, V: 1 * self.beta * self.btfac * u.math.exp((V / u.mV + self.vshifti) / self.x2) * self.phi
-    b12 = lambda self, V: 2 * self.beta * self.btfac * u.math.exp((V / u.mV + self.vshifti) / self.x2) * self.phi
-    b13 = lambda self, V: 3 * self.beta * self.btfac * u.math.exp((V / u.mV + self.vshifti) / self.x2) * self.phi
-    b14 = lambda self, V: 4 * self.beta * self.btfac * u.math.exp((V / u.mV + self.vshifti) / self.x2) * self.phi
-    b1n = lambda self, V: self.delta * u.math.exp(V / u.mV / self.x4) * self.phi
-    bi1 = lambda self, V: self.Coff * self.phi
-    bi2 = lambda self, V: self.Coff * self.btfac * self.phi
-    bi3 = lambda self, V: self.Coff * self.btfac ** 2 * self.phi
-    bi4 = lambda self, V: self.Coff * self.btfac ** 3 * self.phi
-    bi5 = lambda self, V: self.Coff * self.btfac ** 4 * self.phi
-    bin = lambda self, V: self.Ooff * self.phi
+    f01 = lambda self, V, *unused: self.n1 * self.alfa(V)
+    f02 = lambda self, V, *unused: self.n2 * self.alfa(V)
+    f03 = lambda self, V, *unused: self.n3 * self.alfa(V)
+    f04 = lambda self, V, *unused: self.n4 * self.alfa(V)
+    f0O = lambda self, V, *unused: self.gamma(V)
+    fip = lambda self, V, *unused: self.epsilon(V)
+    f11 = lambda self, V, *unused: self.n1 * self.alfa(V) * self.a_factor(V)
+    f12 = lambda self, V, *unused: self.n2 * self.alfa(V) * self.a_factor(V)
+    f13 = lambda self, V, *unused: self.n3 * self.alfa(V) * self.a_factor(V)
+    f14 = lambda self, V, *unused: self.n4 * self.alfa(V) * self.a_factor(V)
+    f1n = lambda self, V, *unused: self.gamma(V)
+    fi1 = lambda self, V, *unused: self.Con(V)
+    fi2 = lambda self, V, *unused: self.Con(V) * self.a_factor(V)
+    fi3 = lambda self, V, *unused: self.Con(V) * self.a_factor(V) ** 2
+    fi4 = lambda self, V, *unused: self.Con(V) * self.a_factor(V) ** 3
+    fi5 = lambda self, V, *unused: self.Con(V) * self.a_factor(V) ** 4
+    fin = lambda self, V, *unused: self.Oon(V)
+
+    b01 = lambda self, V, *unused: self.n4 * self.beta(V)
+    b02 = lambda self, V, *unused: self.n3 * self.beta(V)
+    b03 = lambda self, V, *unused: self.n2 * self.beta(V)
+    b04 = lambda self, V, *unused: self.n1 * self.beta(V)
+    b0O = lambda self, V, *unused: self.delta(V)
+    bip = lambda self, V, *unused: self.teta(V)
+    b11 = lambda self, V, *unused: self.n4 * self.beta(V) * self.b_factor(V)
+    b12 = lambda self, V, *unused: self.n3 * self.beta(V) * self.b_factor(V)
+    b13 = lambda self, V, *unused: self.n2 * self.beta(V) * self.b_factor(V)
+    b14 = lambda self, V, *unused: self.n1 * self.beta(V) * self.b_factor(V)
+    b1n = lambda self, V, *unused: self.delta(V)
+    bi1 = lambda self, V, *unused: self.Coff(V)
+    bi2 = lambda self, V, *unused: self.Coff(V) * self.b_factor(V)
+    bi3 = lambda self, V, *unused: self.Coff(V) * self.b_factor(V) ** 2
+    bi4 = lambda self, V, *unused: self.Coff(V) * self.b_factor(V) ** 3
+    bi5 = lambda self, V, *unused: self.Coff(V) * self.b_factor(V) ** 4
+    bin = lambda self, V, *unused: self.Ooff(V)
+
+@register_channel("NaFHF_MA2020_GrC")
+class NaFHF_MA2020_GrC(Markov, IndependentIntegration):
+    """Template-based import of ``NaFHF_MA2020_GrC.mod``."""
+
+    __module__ = "braincell.channel"
+    root_type = Sodium
+
+    pairs = (
+        ("C1", "C2", "f01", "b01"),
+        ("C2", "C3", "f02", "b02"),
+        ("C3", "C4", "f03", "b03"),
+        ("C4", "C5", "f04", "b04"),
+        ("C5", "O", "f0O", "b0O"),
+        ("O", "OB", "fip", "bip"),
+        ("I1", "I2", "f11", "b11"),
+        ("I2", "I3", "f12", "b12"),
+        ("I3", "I4", "f13", "b13"),
+        ("I4", "I5", "f14", "b14"),
+        ("L3", "L4", "f33", "b33"),
+        ("L4", "L5", "f34", "b34"),
+        ("L5", "L6", "f3n", "b3n"),
+        ("C1", "I1", "fi1", "bi1"),
+        ("C2", "I2", "fi2", "bi2"),
+        ("C3", "I3", "fi3", "bi3"),
+        ("C4", "I4", "fi4", "bi4"),
+        ("C5", "I5", "fi5", "bi5"),
+        ("C3", "L3", "fl3", "bl3"),
+        ("C4", "L4", "fl4", "bl4"),
+        ("C5", "L5", "fl5", "bl5"),
+        ("O", "L6", "fl6", "bl6"),
+        ("O", "I6", "fin", "bin"),
+        ("I5", "I6", "f1n", "b1n"),
+    )
+
+    def __init__(
+        self,
+        size: brainstate.typing.Size,
+        temp: brainstate.typing.ArrayLike = u.celsius2kelvin(32.0),
+        g_max: Union[brainstate.typing.ArrayLike, Callable] = 13.0 * (u.mS / u.cm ** 2),
+        name: Optional[str] = None,
+        solver: str = "rk4",
+        substeps: int = 5,
+    ):
+        super().__init__(size=size, name=name, solver=solver, substeps=substeps)
+
+        self.temp = braintools.init.param(temp, self.varshape, allow_none=False)
+        self.g_max = braintools.init.param(g_max, self.varshape, allow_none=False)
+        self.phi = 3 ** (((self.temp - u.celsius2kelvin(20.0)) / u.kelvin) / 10.0)
+
+        self.Aalfa = 353.91
+        self.Valfa = 13.99
+        self.Abeta = 1.272
+        self.Vbeta = 13.99
+        self.Agamma = 150.0
+        self.Adelta = 40.0
+        self.Aepsilon = 1.75
+        self.Ateta = 0.0201
+        self.Vteta = 25.0
+        self.ACon = 0.025
+        self.ACoff = 0.5
+        self.AOon = 0.75
+        self.AOoff = 0.002
+        self.n1 = 5.422
+        self.n2 = 3.279
+        self.n3 = 1.83
+        self.n4 = 0.738
+        self.ALon = 0.001
+        self.ALoff = 0.5
+        self.c = 20.0
+        self.d = 0.075
+
+    def current(self, V, Na: IonInfo):
+        return self.g_max * self.O.value * (Na.E - V)
+
+    alfa = lambda self, V, *unused: self.phi * self.Aalfa * u.math.exp((V / u.mV) / self.Valfa)
+    beta = lambda self, V, *unused: self.phi * self.Abeta * u.math.exp(-(V / u.mV) / self.Vbeta)
+    teta = lambda self, V, *unused: self.phi * self.Ateta * u.math.exp(-(V / u.mV) / self.Vteta)
+    gamma = lambda self, V, *unused: self.phi * self.Agamma
+    delta = lambda self, V, *unused: self.phi * self.Adelta
+    epsilon = lambda self, V, *unused: self.phi * self.Aepsilon
+    Con = lambda self, V, *unused: self.phi * self.ACon
+    Coff = lambda self, V, *unused: self.phi * self.ACoff
+    Oon = lambda self, V, *unused: self.phi * self.AOon
+    Ooff = lambda self, V, *unused: self.phi * self.AOoff
+    a_factor = lambda self, V, *unused: (self.Oon(V) / self.Con(V)) ** 0.25
+    b_factor = lambda self, V, *unused: (self.Ooff(V) / self.Coff(V)) ** 0.25
+    Lon = lambda self, V, *unused: self.phi * self.ALon
+    Loff = lambda self, V, *unused: self.phi * self.ALoff
+
+    f01 = lambda self, V, *unused: self.n1 * self.alfa(V)
+    f02 = lambda self, V, *unused: self.n2 * self.alfa(V)
+    f03 = lambda self, V, *unused: self.n3 * self.alfa(V)
+    f04 = lambda self, V, *unused: self.n4 * self.alfa(V)
+    f0O = lambda self, V, *unused: self.gamma(V)
+    fip = lambda self, V, *unused: self.epsilon(V)
+    f11 = lambda self, V, *unused: self.n1 * self.alfa(V) * self.a_factor(V)
+    f12 = lambda self, V, *unused: self.n2 * self.alfa(V) * self.a_factor(V)
+    f13 = lambda self, V, *unused: self.n3 * self.alfa(V) * self.a_factor(V)
+    f14 = lambda self, V, *unused: self.n4 * self.alfa(V) * self.a_factor(V)
+    f1n = lambda self, V, *unused: self.gamma(V)
+    f33 = lambda self, V, *unused: self.n3 * self.alfa(V) * self.c
+    f34 = lambda self, V, *unused: self.n4 * self.alfa(V) * self.c
+    f3n = lambda self, V, *unused: self.gamma(V)
+    fi1 = lambda self, V, *unused: self.Con(V)
+    fi2 = lambda self, V, *unused: self.Con(V) * self.a_factor(V)
+    fi3 = lambda self, V, *unused: self.Con(V) * self.a_factor(V) ** 2
+    fi4 = lambda self, V, *unused: self.Con(V) * self.a_factor(V) ** 3
+    fi5 = lambda self, V, *unused: self.Con(V) * self.a_factor(V) ** 4
+    fin = lambda self, V, *unused: self.Oon(V)
+    fl3 = lambda self, V, *unused: self.Lon(V)
+    fl4 = lambda self, V, *unused: self.Lon(V) * self.c
+    fl5 = lambda self, V, *unused: self.Lon(V) * self.c ** 2
+    fl6 = lambda self, V, *unused: self.Lon(V) * self.c ** 2
+
+    b01 = lambda self, V, *unused: self.n4 * self.beta(V)
+    b02 = lambda self, V, *unused: self.n3 * self.beta(V)
+    b03 = lambda self, V, *unused: self.n2 * self.beta(V)
+    b04 = lambda self, V, *unused: self.n1 * self.beta(V)
+    b0O = lambda self, V, *unused: self.delta(V)
+    bip = lambda self, V, *unused: self.teta(V)
+    b11 = lambda self, V, *unused: self.n4 * self.beta(V) * self.b_factor(V)
+    b12 = lambda self, V, *unused: self.n3 * self.beta(V) * self.b_factor(V)
+    b13 = lambda self, V, *unused: self.n2 * self.beta(V) * self.b_factor(V)
+    b14 = lambda self, V, *unused: self.n1 * self.beta(V) * self.b_factor(V)
+    b1n = lambda self, V, *unused: self.delta(V)
+    b33 = lambda self, V, *unused: self.n2 * self.alfa(V) * self.d
+    b34 = lambda self, V, *unused: self.n1 * self.alfa(V) * self.d
+    b3n = lambda self, V, *unused: self.delta(V)
+    bi1 = lambda self, V, *unused: self.Coff(V)
+    bi2 = lambda self, V, *unused: self.Coff(V) * self.b_factor(V)
+    bi3 = lambda self, V, *unused: self.Coff(V) * self.b_factor(V) ** 2
+    bi4 = lambda self, V, *unused: self.Coff(V) * self.b_factor(V) ** 3
+    bi5 = lambda self, V, *unused: self.Coff(V) * self.b_factor(V) ** 4
+    bin = lambda self, V, *unused: self.Ooff(V)
+    bl3 = lambda self, V, *unused: self.Loff(V)
+    bl4 = lambda self, V, *unused: self.Loff(V) * self.d
+    bl5 = lambda self, V, *unused: self.Loff(V) * self.d ** 2
+    bl6 = lambda self, V, *unused: self.Loff(V) * self.d ** 2
+

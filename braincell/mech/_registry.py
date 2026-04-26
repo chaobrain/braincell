@@ -16,7 +16,7 @@
 """Mechanism registry for :mod:`braincell.mech`.
 
 This module implements the single lookup table that maps a short string
-name like ``"IL"`` or ``"INa_HH1952"`` to a concrete runtime class in
+name like ``"IL"`` or ``"Na_HH1952"`` to a concrete runtime class in
 :mod:`braincell.channel`, :mod:`braincell.ion`, or
 :mod:`braincell.synapse`.
 
@@ -46,7 +46,7 @@ Examples
     True
     >>> reg.get("channel", "leaky") is channel.IL  # alias
     True
-    >>> "INa_HH1952" in reg.names("channel")
+    >>> "Na_HH1952" in reg.names("channel")
     True
 """
 

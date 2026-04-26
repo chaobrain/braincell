@@ -14,7 +14,8 @@
   "mapping": {
     "current": "ih",
     "impl_name": {
-      "common": "HCN1_RI21_SC"
+      "neuron": "HCN1_RI21_SC",
+      "braincell": "HCN1_RI2021_SC"
     },
     "gate_names": {
       "common": [

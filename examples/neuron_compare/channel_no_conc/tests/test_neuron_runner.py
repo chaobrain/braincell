@@ -112,14 +112,14 @@ class NeuronRunnerTest(unittest.TestCase):
 
     def test_resolve_neuron_current_ref_supports_segment_mechanism_suffixed_ref(self) -> None:
         class SegmentStub:
-            _ref_ih_HCN1_MA20_GoC = object()
+            _ref_ih_HCN1_MA2020_GoC = object()
 
         ref = neuron_runner._resolve_neuron_current_ref(
             SegmentStub(),
-            mechanism_name="HCN1_MA20_GoC",
+            mechanism_name="HCN1_MA2020_GoC",
             current_var="ih",
         )
-        self.assertIs(ref, SegmentStub._ref_ih_HCN1_MA20_GoC)
+        self.assertIs(ref, SegmentStub._ref_ih_HCN1_MA2020_GoC)
 
     def test_resolve_neuron_current_ref_supports_mechanism_local_ref(self) -> None:
         class SegmentStub:
@@ -131,7 +131,7 @@ class NeuronRunnerTest(unittest.TestCase):
         ref = neuron_runner._resolve_neuron_current_ref(
             SegmentStub(),
             mech_obj=MechanismStub(),
-            mechanism_name="HCN2_MA20_GoC",
+            mechanism_name="HCN2_MA2020_GoC",
             current_var="ih",
         )
         self.assertIs(ref, MechanismStub._ref_ih)

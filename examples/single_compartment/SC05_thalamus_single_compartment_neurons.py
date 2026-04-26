@@ -58,22 +58,28 @@ class HTC(ThalamusNeuron):
         self.area = 1e-3 / (2.9e-4 * u.cm ** 2)
 
         self.na = braincell.ion.SodiumFixed(size, E=50. * u.mV)
-        self.na.add(INa=braincell.channel.INa_Ba2002(size, V_sh=-30 * u.mV))
+        self.na.add(INa=braincell.channel.Na_Ba2002(size, V_sh=-30 * u.mV))
 
         self.k = braincell.ion.PotassiumFixed(size, E=-90. * u.mV)
-        self.k.add(IKL=braincell.channel.IK_Leak(size, g_max=gKL))
-        self.k.add(IDR=braincell.channel.IKDR_Ba2002(size, V_sh=-30. * u.mV, phi=0.25))
+        self.k.add(IKL=braincell.channel.K_Leak(size, g_max=gKL))
+        self.k.add(IDR=braincell.channel.KDR_Ba2002(
+            size,
+            V_sh=-30. * u.mV,
+            temp=u.celsius2kelvin(36.0),
+            q10=0.25,
+            temp_ref=u.celsius2kelvin(26.0),
+        ))
 
         self.ca = braincell.ion.CalciumDetailed(size, C_rest=5e-5 * u.mM, tau=10. * u.ms, d=0.5 * u.um)
-        self.ca.add(ICaL=braincell.channel.ICaL_IS2008(size, g_max=0.5 * (u.mS / u.cm ** 2)))
-        self.ca.add(ICaN=braincell.channel.ICaN_IS2008(size, g_max=0.5 * (u.mS / u.cm ** 2)))
-        self.ca.add(ICaT=braincell.channel.ICaT_HM1992(size, g_max=2.1 * (u.mS / u.cm ** 2)))
-        self.ca.add(ICaHT=braincell.channel.ICaHT_HM1992(size, g_max=3.0 * (u.mS / u.cm ** 2)))
+        self.ca.add(ICaL=braincell.channel.CaL_IS2008(size, g_max=0.5 * (u.mS / u.cm ** 2)))
+        self.ca.add(ICaN=braincell.channel.CaN_IS2008(size, g_max=0.5 * (u.mS / u.cm ** 2)))
+        self.ca.add(ICaT=braincell.channel.CaT_HM1992(size, g_max=2.1 * (u.mS / u.cm ** 2)))
+        self.ca.add(ICaHT=braincell.channel.CaHT_HM1992(size, g_max=3.0 * (u.mS / u.cm ** 2)))
 
         self.kca = braincell.MixIons(self.k, self.ca)
-        self.kca.add(IAHP=braincell.channel.IAHP_De1994(size, g_max=0.3 * (u.mS / u.cm ** 2)))
+        self.kca.add(IAHP=braincell.channel.AHP_De1994(size, g_max=0.3 * (u.mS / u.cm ** 2)))
 
-        self.Ih = braincell.channel.Ih_HM1992(size, g_max=0.01 * (u.mS / u.cm ** 2), E=-43 * u.mV)
+        self.Ih = braincell.channel.HCN_HM1992(size, g_max=0.01 * (u.mS / u.cm ** 2), E=-43 * u.mV)
         self.IL = braincell.channel.IL(size, g_max=0.0075 * (u.mS / u.cm ** 2), E=-70 * u.mV)
 
 
@@ -90,22 +96,28 @@ class RTC(ThalamusNeuron):
         self.area = 1e-3 / (2.9e-4 * u.cm ** 2)
 
         self.na = braincell.ion.SodiumFixed(size)
-        self.na.add(INa=braincell.channel.INa_Ba2002(size, V_sh=-40 * u.mV))
+        self.na.add(INa=braincell.channel.Na_Ba2002(size, V_sh=-40 * u.mV))
 
         self.k = braincell.ion.PotassiumFixed(size, E=-90. * u.mV)
-        self.k.add(IDR=braincell.channel.IKDR_Ba2002(size, V_sh=-40 * u.mV, phi=0.25))
-        self.k.add(IKL=braincell.channel.IK_Leak(size, g_max=gKL))
+        self.k.add(IDR=braincell.channel.KDR_Ba2002(
+            size,
+            V_sh=-40 * u.mV,
+            temp=u.celsius2kelvin(36.0),
+            q10=0.25,
+            temp_ref=u.celsius2kelvin(26.0),
+        ))
+        self.k.add(IKL=braincell.channel.K_Leak(size, g_max=gKL))
 
         self.ca = braincell.ion.CalciumDetailed(size, C_rest=5e-5 * u.mM, tau=10. * u.ms, d=0.5 * u.um)
-        self.ca.add(ICaL=braincell.channel.ICaL_IS2008(size, g_max=0.3 * (u.mS / u.cm ** 2)))
-        self.ca.add(ICaN=braincell.channel.ICaN_IS2008(size, g_max=0.6 * (u.mS / u.cm ** 2)))
-        self.ca.add(ICaT=braincell.channel.ICaT_HM1992(size, g_max=2.1 * (u.mS / u.cm ** 2)))
-        self.ca.add(ICaHT=braincell.channel.ICaHT_HM1992(size, g_max=0.6 * (u.mS / u.cm ** 2)))
+        self.ca.add(ICaL=braincell.channel.CaL_IS2008(size, g_max=0.3 * (u.mS / u.cm ** 2)))
+        self.ca.add(ICaN=braincell.channel.CaN_IS2008(size, g_max=0.6 * (u.mS / u.cm ** 2)))
+        self.ca.add(ICaT=braincell.channel.CaT_HM1992(size, g_max=2.1 * (u.mS / u.cm ** 2)))
+        self.ca.add(ICaHT=braincell.channel.CaHT_HM1992(size, g_max=0.6 * (u.mS / u.cm ** 2)))
 
         self.kca = braincell.MixIons(self.k, self.ca)
-        self.kca.add(IAHP=braincell.channel.IAHP_De1994(size, g_max=0.1 * (u.mS / u.cm ** 2)))
+        self.kca.add(IAHP=braincell.channel.AHP_De1994(size, g_max=0.1 * (u.mS / u.cm ** 2)))
 
-        self.Ih = braincell.channel.Ih_HM1992(size, g_max=0.01 * (u.mS / u.cm ** 2), E=-43 * u.mV)
+        self.Ih = braincell.channel.HCN_HM1992(size, g_max=0.01 * (u.mS / u.cm ** 2), E=-43 * u.mV)
         self.IL = braincell.channel.IL(size, g_max=0.0075 * (u.mS / u.cm ** 2), E=-70 * u.mV)
 
 
@@ -122,21 +134,27 @@ class IN(ThalamusNeuron):
         self.area = 1e-3 / (1.7e-4 * u.cm ** 2)
 
         self.na = braincell.ion.SodiumFixed(size)
-        self.na.add(INa=braincell.channel.INa_Ba2002(size, V_sh=-30 * u.mV))
+        self.na.add(INa=braincell.channel.Na_Ba2002(size, V_sh=-30 * u.mV))
 
         self.k = braincell.ion.PotassiumFixed(size, E=-90. * u.mV)
-        self.k.add(IDR=braincell.channel.IKDR_Ba2002(size, V_sh=-30 * u.mV, phi=0.25))
-        self.k.add(IKL=braincell.channel.IK_Leak(size, g_max=gKL))
+        self.k.add(IDR=braincell.channel.KDR_Ba2002(
+            size,
+            V_sh=-30 * u.mV,
+            temp=u.celsius2kelvin(36.0),
+            q10=0.25,
+            temp_ref=u.celsius2kelvin(26.0),
+        ))
+        self.k.add(IKL=braincell.channel.K_Leak(size, g_max=gKL))
 
         self.ca = braincell.ion.CalciumDetailed(size, C_rest=5e-5 * u.mM, tau=10. * u.ms, d=0.5 * u.um)
-        self.ca.add(ICaN=braincell.channel.ICaN_IS2008(size, g_max=0.1 * (u.mS / u.cm ** 2)))
-        self.ca.add(ICaHT=braincell.channel.ICaHT_HM1992(size, g_max=2.5 * (u.mS / u.cm ** 2)))
+        self.ca.add(ICaN=braincell.channel.CaN_IS2008(size, g_max=0.1 * (u.mS / u.cm ** 2)))
+        self.ca.add(ICaHT=braincell.channel.CaHT_HM1992(size, g_max=2.5 * (u.mS / u.cm ** 2)))
 
         self.kca = braincell.MixIons(self.k, self.ca)
-        self.kca.add(IAHP=braincell.channel.IAHP_De1994(size, g_max=0.2 * (u.mS / u.cm ** 2)))
+        self.kca.add(IAHP=braincell.channel.AHP_De1994(size, g_max=0.2 * (u.mS / u.cm ** 2)))
 
         self.IL = braincell.channel.IL(size, g_max=0.0075 * (u.mS / u.cm ** 2), E=-60 * u.mV)
-        self.Ih = braincell.channel.Ih_HM1992(size, g_max=0.05 * (u.mS / u.cm ** 2), E=-43 * u.mV)
+        self.Ih = braincell.channel.HCN_HM1992(size, g_max=0.05 * (u.mS / u.cm ** 2), E=-43 * u.mV)
 
 
 class TRN(ThalamusNeuron):
@@ -153,18 +171,18 @@ class TRN(ThalamusNeuron):
         self.area = 1e-3 / (1.43e-4 * u.cm ** 2)
 
         self.na = braincell.ion.SodiumFixed(size)
-        self.na.add(INa=braincell.channel.INa_Ba2002(size, V_sh=-40 * u.mV))
+        self.na.add(INa=braincell.channel.Na_Ba2002(size, V_sh=-40 * u.mV))
 
         self.k = braincell.ion.PotassiumFixed(size, E=-90. * u.mV)
-        self.k.add(IDR=braincell.channel.IKDR_Ba2002(size, V_sh=-40 * u.mV))
-        self.k.add(IKL=braincell.channel.IK_Leak(size, g_max=gKL))
+        self.k.add(IDR=braincell.channel.KDR_Ba2002(size, V_sh=-40 * u.mV))
+        self.k.add(IKL=braincell.channel.K_Leak(size, g_max=gKL))
 
         self.ca = braincell.ion.CalciumDetailed(size, C_rest=5e-5 * u.mM, tau=100. * u.ms, d=0.5 * u.um)
-        self.ca.add(ICaN=braincell.channel.ICaN_IS2008(size, g_max=0.2 * (u.mS / u.cm ** 2)))
-        self.ca.add(ICaT=braincell.channel.ICaT_HP1992(size, g_max=1.3 * (u.mS / u.cm ** 2)))
+        self.ca.add(ICaN=braincell.channel.CaN_IS2008(size, g_max=0.2 * (u.mS / u.cm ** 2)))
+        self.ca.add(ICaT=braincell.channel.CaT_HP1992(size, g_max=1.3 * (u.mS / u.cm ** 2)))
 
         self.kca = braincell.MixIons(self.k, self.ca)
-        self.kca.add(IAHP=braincell.channel.IAHP_De1994(size, g_max=0.2 * (u.mS / u.cm ** 2)))
+        self.kca.add(IAHP=braincell.channel.AHP_De1994(size, g_max=0.2 * (u.mS / u.cm ** 2)))
 
         # self.IL = braincell.channel.IL(size, g_max=0.01 * (u.mS / u.cm ** 2), E=-60 * u.mV)
         self.IL = braincell.channel.IL(size, g_max=gl * (u.mS / u.cm ** 2), E=-60 * u.mV)

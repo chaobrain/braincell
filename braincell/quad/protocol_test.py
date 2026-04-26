@@ -125,5 +125,24 @@ class IndependentIntegrationTest(unittest.TestCase):
         self.assertEqual(observed[0][1], ("extra-arg",))
 
 
+class IndependentIntegrationForwardsKwargsTest(unittest.TestCase):
+    """ARCH-09: ``__init__`` must cooperate with sibling mixins in the MRO."""
+
+    def test_kwargs_reach_sibling_mixin(self) -> None:
+        captured: dict = {}
+
+        class _CaptureMixin:
+            def __init__(self, *, marker, **kwargs):
+                captured["marker"] = marker
+                super().__init__(**kwargs)
+
+        class _Composed(IndependentIntegration, _CaptureMixin):
+            pass
+
+        _Composed(solver="exp_euler", marker="hit")
+
+        self.assertEqual(captured["marker"], "hit")
+
+
 if __name__ == "__main__":
     unittest.main()

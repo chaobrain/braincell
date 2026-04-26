@@ -106,6 +106,14 @@ class Params(Mapping[str, Any]):
                 merged[str(key)] = value
         for key, value in kwargs.items():
             merged[str(key)] = value
+        for key, value in merged.items():
+            try:
+                hash(value)
+            except TypeError as exc:
+                raise TypeError(
+                    f"Params value for {key!r} must be hashable "
+                    f"(arrays are rejected); got {type(value).__name__!r}."
+                ) from exc
         object.__setattr__(self, "_items", merged)
 
     # ------------------------------------------------------------------

@@ -4,8 +4,8 @@
 
 当前 `braincell/channel/` 和 `braincell/ion/` 已经有一套 template 化实现：
 
-- `channel/_template.py` 已支持 HH 与单 conserved pool 的 Markov channel。
-- `ion/_template.py` 已支持固定离子、初始化 Nernst 离子、以及单个动态 `Ci` 的 `DynamicNernstIon`。
+- `channel/_base.py` 已支持 HH 与单 conserved pool 的 Markov channel。
+- `ion/_base.py` 已支持固定离子、初始化 Nernst 离子、以及单个动态 `Ci` 的 `DynamicNernstIon`。
 
 但 `examples/neuron_compare/Cerebellum_mod` 里的钙 ion 机制不只是“再写一个 `CalciumDetailed` 变体”。它们分成两类：
 
@@ -18,7 +18,7 @@
 
 ### 1. channel.Markov 的能力边界
 
-`channel/_template.py` 中的 `Markov` 目前只覆盖：
+`channel/_base.py` 中的 `Markov` 目前只覆盖：
 
 - 一个 conserved pool
 - 一个 dependent/redundant state
@@ -28,7 +28,7 @@
 
 ### 2. ion.DynamicNernstIon 的能力边界
 
-`ion/_template.py` 中的 `DynamicNernstIon` 目前只覆盖：
+`ion/_base.py` 中的 `DynamicNernstIon` 目前只覆盖：
 
 - 一个动态 `Ci`
 - 从 `Ci` 动态计算 `E`

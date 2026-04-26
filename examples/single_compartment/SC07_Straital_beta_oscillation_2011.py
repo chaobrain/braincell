@@ -30,62 +30,82 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 import braincell
+from braincell.channel._base import Gate, HH
 
 brainstate.environ.set(dt=0.1 * u.ms)
 
 
-class NaChannel(braincell.channel.INa_p3q_markov):
-    def f_p_alpha(self, V):
+class NaChannel(HH):
+    root_type = braincell.ion.Sodium
+    gates = (Gate("p", power=3), Gate("q"))
+
+    def __init__(self, size, g_max=100. * (u.mS / u.cm ** 2), name=None):
+        super().__init__(size=size, name=name)
+        self.g_max = braintools.init.param(g_max, self.varshape, allow_none=False)
+
+    def current(self, V, Na: braincell.IonInfo):
+        return self.g_max * self.conductance_factor(V, Na) * (Na.E - V)
+
+    def f_p_alpha(self, V, *unused):
         return 0.32 * 4. / u.math.exprel(-(V / u.mV + 54.) / 4.)
 
-    def f_p_beta(self, V):
+    def f_p_beta(self, V, *unused):
         return 0.28 * 5. / u.math.exprel((V / u.mV + 27.) / 5.)
 
-    def f_q_alpha(self, V):
+    def f_q_alpha(self, V, *unused):
         return 0.128 * u.math.exp(-(V / u.mV + 50.) / 18.)
 
-    def f_q_beta(self, V):
+    def f_q_beta(self, V, *unused):
         return 4. / (1 + u.math.exp(-(V / u.mV + 27.) / 5.))
 
 
-class KChannel(braincell.channel.IK_p4_markov):
-    def f_p_alpha(self, V):
+class KChannel(HH):
+    root_type = braincell.ion.Potassium
+    gates = (Gate("p", power=4),)
+
+    def __init__(self, size, g_max=80. * (u.mS / u.cm ** 2), name=None):
+        super().__init__(size=size, name=name)
+        self.g_max = braintools.init.param(g_max, self.varshape, allow_none=False)
+
+    def current(self, V, K: braincell.IonInfo):
+        return self.g_max * self.conductance_factor(V, K) * (K.E - V)
+
+    def f_p_alpha(self, V, *unused):
         return 0.032 * 5. / u.math.exprel(-(V / u.mV + 52.) / 5.)
 
-    def f_p_beta(self, V):
+    def f_p_beta(self, V, *unused):
         return 0.5 * u.math.exp(-(V / u.mV + 57.) / 40.)
 
 
-class MChannel(braincell.channel.PotassiumChannel):
-    def __init__(self, size, g_max=1.3 * (u.mS / u.cm ** 2), E=-95. * u.mV, T=u.celsius2kelvin(37)):
-        super().__init__(size)
-        self.g_max = g_max
-        self.E = E
-        self.T = T
-        self.phi = 2.3 ** ((u.kelvin2celsius(T) - 23.) / 10)  # temperature scaling factor
+class MChannel(HH):
+    root_type = braincell.ion.Potassium
+    gates = (Gate("p", q10=lambda self: self.q10, temp_ref=lambda self: self.temp_ref),)
 
-    def f_p_alpha(self, V):
-        return self.phi * 1e-4 * 9 / u.math.exprel(-(V / u.mV + 30.) / 9.)
-
-    def f_p_beta(self, V):
-        return self.phi * 1e-4 * 9 / u.math.exp((V / u.mV + 30.) / 9.)
+    def __init__(
+        self,
+        size,
+        g_max=1.3 * (u.mS / u.cm ** 2),
+        E=-95. * u.mV,
+        temp=u.celsius2kelvin(37),
+        q10=2.3,
+        temp_ref=u.celsius2kelvin(23),
+        name=None,
+    ):
+        super().__init__(size=size, name=name)
+        self.g_max = braintools.init.param(g_max, self.varshape, allow_none=False)
+        self.E = braintools.init.param(E, self.varshape, allow_none=False)
+        self.temp = braintools.init.param(temp, self.varshape, allow_none=False)
+        self.q10 = braintools.init.param(q10, self.varshape, allow_none=False)
+        self.temp_ref = braintools.init.param(temp_ref, self.varshape, allow_none=False)
 
     def current(self, V, K: braincell.IonInfo):
-        return self.g_max * self.p.value * (K.E - V)
+        return self.g_max * self.conductance_factor(V, K) * (K.E - V)
 
-    def compute_derivative(self, V, K: braincell.IonInfo):
-        # Update the channel state based on the membrane potential V and time step dt
-        alpha = self.f_p_alpha(V)
-        beta = self.f_p_beta(V)
-        p_inf = alpha / (alpha + beta)
-        p_tau = 1. / (alpha + beta) * u.ms
-        self.p.derivative = (p_inf - self.p.value) / p_tau
+    def f_p_alpha(self, V, *unused):
+        return 1e-4 * 9 / u.math.exprel(-(V / u.mV + 30.) / 9.)
 
-    def init_state(self, V, K: braincell.IonInfo, *args, **kwargs):
-        alpha = self.f_p_alpha(V)
-        beta = self.f_p_beta(V)
-        p_inf = alpha / (alpha + beta)
-        self.p = braincell.DiffEqState(p_inf)
+    def f_p_beta(self, V, *unused):
+        return 1e-4 * 9 / u.math.exp((V / u.mV + 30.) / 9.)
 
 
 class GABAa(brainpy.state.Synapse):

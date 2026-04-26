@@ -37,10 +37,10 @@ class HH(braincell.SingleCompartment):
     def __init__(self, in_size):
         super().__init__(in_size, C=Cm, solver='ind_exp_euler')
         self.na = braincell.ion.SodiumFixed(in_size, E=50. * u.mV)
-        self.na.add(INa=braincell.channel.INa_TM1991(in_size, g_max=100. * u.mS / u.cm ** 2 * area, V_sh=-63. * u.mV))
+        self.na.add(INa=braincell.channel.Na_TM1991(in_size, g_max=100. * u.mS / u.cm ** 2 * area, V_sh=-63. * u.mV))
 
         self.k = braincell.ion.PotassiumFixed(in_size, E=-90 * u.mV)
-        self.k.add(IK=braincell.channel.IK_TM1991(in_size, g_max=30. * u.mS / u.cm ** 2 * area, V_sh=-63. * u.mV))
+        self.k.add(IK=braincell.channel.K_TM1991(in_size, g_max=30. * u.mS / u.cm ** 2 * area, V_sh=-63. * u.mV))
 
         self.IL = braincell.channel.IL(in_size, E=-60. * u.mV, g_max=5. * u.nS / u.cm ** 2 * area)
 

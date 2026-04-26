@@ -54,12 +54,12 @@ class DensityConstructionTest(unittest.TestCase):
         self.assertEqual(spec.coverage_area_fraction, 1.0)
 
     def test_channel_can_store_single_ion_selector(self) -> None:
-        spec = Channel("INa_HH1952", ion_name="na_main")
+        spec = Channel("Na_HH1952", ion_name="na_main")
         self.assertEqual(spec.ion_name, "na_main")
         self.assertIsNone(spec.ion_names)
 
     def test_channel_can_store_multi_ion_selectors(self) -> None:
-        spec = Channel("IKca1_1_Ma2020", ion_names={"k": "k_main", "ca": "ca_local"})
+        spec = Channel("Kca1p1_MA2020", ion_names={"k": "k_main", "ca": "ca_local"})
         self.assertIsNone(spec.ion_name)
         self.assertEqual(spec.ion_names, (("ca", "ca_local"), ("k", "k_main")))
 
@@ -109,19 +109,19 @@ class DensityValidationTest(unittest.TestCase):
 
     def test_channel_cannot_define_both_ion_name_and_ion_names(self) -> None:
         with self.assertRaises(ValueError):
-            Channel("IKca1_1_Ma2020", ion_name="ca_main", ion_names={"ca": "ca_main"})
+            Channel("Kca1p1_MA2020", ion_name="ca_main", ion_names={"ca": "ca_main"})
 
     def test_invalid_ion_name_rejected(self) -> None:
         with self.assertRaises(TypeError):
-            Channel("INa_HH1952", ion_name=42)  # type: ignore[arg-type]
+            Channel("Na_HH1952", ion_name=42)  # type: ignore[arg-type]
 
     def test_invalid_ion_names_mapping_rejected(self) -> None:
         with self.assertRaises(TypeError):
-            Channel("IKca1_1_Ma2020", ion_names="ca_main")  # type: ignore[arg-type]
+            Channel("Kca1p1_MA2020", ion_names="ca_main")  # type: ignore[arg-type]
         with self.assertRaises(TypeError):
-            Channel("IKca1_1_Ma2020", ion_names={"": "ca_main"})
+            Channel("Kca1p1_MA2020", ion_names={"": "ca_main"})
         with self.assertRaises(TypeError):
-            Channel("IKca1_1_Ma2020", ion_names={"ca": 1})  # type: ignore[arg-type]
+            Channel("Kca1p1_MA2020", ion_names={"ca": 1})  # type: ignore[arg-type]
 
 
 class DensityIdentityTest(unittest.TestCase):
@@ -131,9 +131,9 @@ class DensityIdentityTest(unittest.TestCase):
         self.assertEqual(spec.identity, ("IL", "IL"))
 
     def test_override_instance_name(self) -> None:
-        spec = Channel("INa_HH1952", name="na_main")
+        spec = Channel("Na_HH1952", name="na_main")
         self.assertEqual(spec.instance_name, "na_main")
-        self.assertEqual(spec.identity, ("na_main", "INa_HH1952"))
+        self.assertEqual(spec.identity, ("na_main", "Na_HH1952"))
 
 
 class DensityEqualityTest(unittest.TestCase):
@@ -149,8 +149,8 @@ class DensityEqualityTest(unittest.TestCase):
         self.assertNotEqual(a, b)
 
     def test_different_names_are_unequal(self) -> None:
-        a = Channel("INa_HH1952", name="na_main")
-        b = Channel("INa_HH1952", name="na_alt")
+        a = Channel("Na_HH1952", name="na_main")
+        b = Channel("Na_HH1952", name="na_alt")
         self.assertNotEqual(a, b)
 
     def test_channel_and_ion_are_unequal_even_with_same_fields(self) -> None:
@@ -159,8 +159,8 @@ class DensityEqualityTest(unittest.TestCase):
         self.assertNotEqual(c, i)
 
     def test_channel_ion_selectors_participate_in_equality(self) -> None:
-        a = Channel("INa_HH1952", ion_name="na_a")
-        b = Channel("INa_HH1952", ion_name="na_b")
+        a = Channel("Na_HH1952", ion_name="na_a")
+        b = Channel("Na_HH1952", ion_name="na_b")
         self.assertNotEqual(a, b)
 
     def test_can_use_as_dict_key(self) -> None:
@@ -210,7 +210,7 @@ class DensityImmutabilityTest(unittest.TestCase):
     def test_cannot_set_attributes(self) -> None:
         spec = Channel("IL")
         with self.assertRaises(AttributeError):
-            spec.class_name = "IK_HH1952"  # type: ignore[misc]
+            spec.class_name = "K_HH1952"  # type: ignore[misc]
 
     def test_cannot_delete_attributes(self) -> None:
         spec = Channel("IL")

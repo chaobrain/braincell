@@ -236,8 +236,8 @@ class CellRuntimeStateTest(unittest.TestCase):
         cell.place(
             at("soma", 0.5),
             braincell.mech.StateProbe(),
-            braincell.mech.MechanismProbe(mechanism="INa_HH1952", field="p"),
-            braincell.mech.CurrentProbe(ion="na", mechanism="INa_HH1952"),
+            braincell.mech.MechanismProbe(mechanism="Na_HH1952", field="p"),
+            braincell.mech.CurrentProbe(ion="na", mechanism="Na_HH1952"),
         )
 
         cell.init_state(); rcell = cell
@@ -253,7 +253,7 @@ class CellRuntimeStateTest(unittest.TestCase):
             resolved_names.append(declaration.name)
         self.assertEqual(
             sorted(resolved_names),
-            ["soma(0.5)_INa_HH1952_current", "soma(0.5)_INa_HH1952_p", "soma(0.5)_v"],
+            ["soma(0.5)_Na_HH1952_current", "soma(0.5)_Na_HH1952_p", "soma(0.5)_v"],
         )
 
     def test_sample_probe_reads_voltage_and_channel_gate_state(self) -> None:
@@ -261,16 +261,16 @@ class CellRuntimeStateTest(unittest.TestCase):
         cell.paint(
             BranchSlice(branch_index=[0, 1], prox=0.0, dist=1.0),
             braincell.mech.Channel(
-                "INa_HH1952",
+                "Na_HH1952",
                 g_max=12.0 * (u.mS / u.cm ** 2),
                 V_sh=-50.0 * u.mV,
-                T=u.celsius2kelvin(36.0),
+                temp=u.celsius2kelvin(36.0),
             ),
         )
         cell.place(
             at("soma", 0.5),
             braincell.mech.StateProbe(),
-            braincell.mech.MechanismProbe(mechanism="INa_HH1952", field="p"),
+            braincell.mech.MechanismProbe(mechanism="Na_HH1952", field="p"),
         )
         cell.init_state(); rcell = cell
 
@@ -282,15 +282,15 @@ class CellRuntimeStateTest(unittest.TestCase):
         node = rcell.get_runtime_node(channel_layout.id)
 
         self.assertEqual(samples["soma(0.5)_v"], rcell.V.value[0])
-        self.assertEqual(samples["soma(0.5)_INa_HH1952_p"], node.p.value[1])
-        self.assertEqual(rcell.sample_probe("soma(0.5)_INa_HH1952_p"), node.p.value[1])
+        self.assertEqual(samples["soma(0.5)_Na_HH1952_p"], node.p.value[1])
+        self.assertEqual(rcell.sample_probe("soma(0.5)_Na_HH1952_p"), node.p.value[1])
 
     def test_sample_probe_reads_mechanism_and_total_ion_current(self) -> None:
         cell = Cell(_build_tree())
         cell.paint(
             BranchSlice(branch_index=[0, 1], prox=0.0, dist=1.0),
             braincell.mech.Channel(
-                "IK_Kv_test",
+                "K_Kv_test",
                 g_max=0.1 * (u.mS / u.cm ** 2),
                 v12=25.0 * u.mV,
                 q=9.0,
@@ -298,19 +298,19 @@ class CellRuntimeStateTest(unittest.TestCase):
         )
         cell.place(
             at("soma", 0.5),
-            braincell.mech.CurrentProbe(ion="k", mechanism="IK_Kv_test"),
+            braincell.mech.CurrentProbe(ion="k", mechanism="K_Kv_test"),
             braincell.mech.CurrentProbe(ion="k"),
         )
         cell.init_state(); rcell = cell
 
         samples = rcell.sample_probes()
         ion = rcell.get_ion("k")
-        node = ion.channels["IK_Kv_test"]
+        node = ion.channels["K_Kv_test"]
         point_V = rcell._cv_to_point(rcell.V.value)
         expected_mechanism = node.current(point_V, ion.pack_info())[1]
         expected_total = ion.current(point_V, include_external=False)[1]
 
-        self.assertEqual(samples["soma(0.5)_IK_Kv_test_current"], expected_mechanism)
+        self.assertEqual(samples["soma(0.5)_K_Kv_test_current"], expected_mechanism)
         self.assertEqual(samples["soma(0.5)_k_current"], expected_total)
 
     def test_sample_probe_reads_pure_channel_current_without_ion_selector(self) -> None:
@@ -345,21 +345,21 @@ class CellRuntimeStateTest(unittest.TestCase):
         cell.paint(
             BranchSlice(branch_index=[0, 1], prox=0.0, dist=1.0),
             braincell.mech.Channel(
-                "INa_HH1952",
+                "Na_HH1952",
                 g_max=12.0 * (u.mS / u.cm ** 2),
                 V_sh=-50.0 * u.mV,
-                T=u.celsius2kelvin(36.0),
+                temp=u.celsius2kelvin(36.0),
             ),
         )
         cell.place(
             at("soma", 0.5),
-            braincell.mech.MechanismProbe(mechanism="INa_HH1952", field="g_max"),
+            braincell.mech.MechanismProbe(mechanism="Na_HH1952", field="g_max"),
             braincell.mech.MechanismProbe(mechanism="missing", field="p"),
         )
         cell.init_state(); rcell = cell
 
         with self.assertRaises(ValueError):
-            rcell.sample_probe("soma(0.5)_INa_HH1952_g_max")
+            rcell.sample_probe("soma(0.5)_Na_HH1952_g_max")
         with self.assertRaises(KeyError):
             rcell.sample_probe("soma(0.5)_missing_p")
 
@@ -368,16 +368,16 @@ class CellRuntimeStateTest(unittest.TestCase):
         cell.paint(
             BranchSlice(branch_index=[0, 1], prox=0.0, dist=1.0),
             braincell.mech.Channel(
-                "INa_HH1952",
+                "Na_HH1952",
                 g_max=12.0 * (u.mS / u.cm ** 2),
                 V_sh=-50.0 * u.mV,
-                T=u.celsius2kelvin(36.0),
+                temp=u.celsius2kelvin(36.0),
             ),
         )
         cell.place(
             at("soma", 0.5),
             braincell.mech.StateProbe(name="dup"),
-            braincell.mech.MechanismProbe(name="dup", mechanism="INa_HH1952", field="p"),
+            braincell.mech.MechanismProbe(name="dup", mechanism="Na_HH1952", field="p"),
         )
         cell.init_state(); rcell = cell
 
@@ -531,18 +531,18 @@ class CellRuntimeStateTest(unittest.TestCase):
         )
         cell.paint(
             BranchSlice(branch_index=0, prox=0.0, dist=1.0),
-            braincell.mech.Channel("INa_HH1952", g_max=12.0 * (u.mS / u.cm ** 2), ion_name="na_soma"),
+            braincell.mech.Channel("Na_HH1952", g_max=12.0 * (u.mS / u.cm ** 2), ion_name="na_soma"),
         )
 
         cell.init_state(); rcell = cell
 
-        channel_layout = next(layout for layout in rcell.layouts if layout.kind == "channel:INa_HH1952")
+        channel_layout = next(layout for layout in rcell.layouts if layout.kind == "channel:Na_HH1952")
         na_soma = rcell.get_ion("na_soma")
         na_dend = rcell.get_ion("na_dend")
         node = rcell.get_runtime_node(channel_layout.id)
 
-        self.assertIs(na_soma.channels["INa_HH1952"], node)
-        self.assertNotIn("INa_HH1952", na_dend.channels)
+        self.assertIs(na_soma.channels["Na_HH1952"], node)
+        self.assertNotIn("Na_HH1952", na_dend.channels)
         self.assertAlmostEqual(float(na_soma.E[1].to_decimal(u.mV)), 55.0, places=12)
         self.assertAlmostEqual(float(na_dend.E[3].to_decimal(u.mV)), 45.0, places=12)
 
@@ -558,7 +558,7 @@ class CellRuntimeStateTest(unittest.TestCase):
         )
         cell.paint(
             BranchSlice(branch_index=[0, 1], prox=0.0, dist=1.0),
-            braincell.mech.Channel("ICaT_HM1992"),
+            braincell.mech.Channel("CaT_HM1992"),
         )
 
         with self.assertRaises(ValueError) as ctx:
@@ -608,7 +608,7 @@ class CellRuntimeStateTest(unittest.TestCase):
         cell.paint(
             BranchSlice(branch_index=0, prox=0.0, dist=1.0),
             braincell.mech.Channel(
-                "ICaT_HM1992",
+                "CaT_HM1992",
                 ion_name="ca_dyn",
                 g_max=2.0 * (u.mS / u.cm ** 2),
             ),
@@ -662,21 +662,21 @@ class CellRuntimeStateTest(unittest.TestCase):
         )
         cell.paint(
             BranchSlice(branch_index=[0, 1], prox=0.0, dist=1.0),
-            braincell.mech.Channel("IKca3_1_Ma2020", ion_names={"ca": "ca_hva"}),
+            braincell.mech.Channel("Kca3p1_MA2020", ion_names={"ca": "ca_hva"}),
         )
 
         cell.init_state(); rcell = cell
 
-        layout = next(layout for layout in rcell.layouts if layout.kind == "channel:IKca3_1_Ma2020")
+        layout = next(layout for layout in rcell.layouts if layout.kind == "channel:Kca3p1_MA2020")
         runtime = rcell.runtime
         node = rcell.get_runtime_node(layout.id)
         k_main = rcell.get_ion("k_main")
         ca_hva = rcell.get_ion("ca_hva")
 
         self.assertEqual(runtime.current_owner_keys[layout.id], "k_main")
-        self.assertIn("IKca3_1_Ma2020", k_main.channels)
-        self.assertNotIn("IKca3_1_Ma2020", ca_hva.channels)
-        self.assertIsInstance(node, braincell.channel.IKca3_1_Ma2020)
+        self.assertIn("Kca3p1_MA2020", k_main.channels)
+        self.assertNotIn("Kca3p1_MA2020", ca_hva.channels)
+        self.assertIsInstance(node, braincell.channel.Kca3p1_MA2020)
 
     def test_mixed_ion_channel_probe_uses_bound_ions_and_owner_total_current(self) -> None:
         cell = Cell(_build_tree())
@@ -688,18 +688,18 @@ class CellRuntimeStateTest(unittest.TestCase):
         )
         cell.paint(
             BranchSlice(branch_index=[0, 1], prox=0.0, dist=1.0),
-            braincell.mech.Channel("IKca3_1_Ma2020", ion_names={"ca": "ca_hva"}),
+            braincell.mech.Channel("Kca3p1_MA2020", ion_names={"ca": "ca_hva"}),
         )
         cell.place(
             at("soma", 0.5),
-            braincell.mech.CurrentProbe(mechanism="IKca3_1_Ma2020"),
+            braincell.mech.CurrentProbe(mechanism="Kca3p1_MA2020"),
             braincell.mech.CurrentProbe(ion="k_main"),
         )
         cell.init_state(); rcell = cell
 
         samples = rcell.sample_probes()
         runtime = rcell.runtime
-        layout = next(layout for layout in rcell.layouts if layout.kind == "channel:IKca3_1_Ma2020")
+        layout = next(layout for layout in rcell.layouts if layout.kind == "channel:Kca3p1_MA2020")
         node = rcell.get_runtime_node(layout.id)
         point_V = rcell._cv_to_point(rcell.V.value)
         expected_mechanism = node.current(
@@ -710,7 +710,7 @@ class CellRuntimeStateTest(unittest.TestCase):
         expected_total = rcell.get_ion("k_main").current(point_V, include_external=False)[1]
 
         self.assertEqual(runtime.bound_ion_keys[layout.id], ("k_main", "ca_hva"))
-        self.assertEqual(samples["soma(0.5)_IKca3_1_Ma2020_current"], expected_mechanism)
+        self.assertEqual(samples["soma(0.5)_Kca3p1_MA2020_current"], expected_mechanism)
         self.assertEqual(samples["soma(0.5)_k_main_current"], expected_total)
 
     def test_channel_spec_ina_hh1952_builds_runtime_node_and_binds_to_na(self) -> None:
@@ -718,10 +718,10 @@ class CellRuntimeStateTest(unittest.TestCase):
         cell.paint(
             BranchSlice(branch_index=[0, 1], prox=0.0, dist=1.0),
             braincell.mech.Channel(
-                "INa_HH1952",
+                "Na_HH1952",
                 g_max=12.0 * (u.mS / u.cm ** 2),
                 V_sh=-50.0 * u.mV,
-                T=u.celsius2kelvin(36.0),
+                temp=u.celsius2kelvin(36.0),
             ),
         )
 
@@ -730,10 +730,10 @@ class CellRuntimeStateTest(unittest.TestCase):
         node = rcell.get_runtime_node(layout.id)
         na = rcell.get_ion("na")
 
-        self.assertIsInstance(node, braincell.channel.INa_HH1952)
+        self.assertIsInstance(node, braincell.channel.Na_HH1952)
         # Channels are now keyed on the declaration's instance name, which
         # defaults to the class name. Users can override with name=.
-        self.assertIs(na.channels["INa_HH1952"], node)
+        self.assertIs(na.channels["Na_HH1952"], node)
         self.assertAlmostEqual(float(node.g_max[1].to_decimal(u.mS / u.cm ** 2)), 12.0, places=12)
         self.assertAlmostEqual(float(node.g_max[0].to_decimal(u.mS / u.cm ** 2)), 0.0, places=12)
         self.assertAlmostEqual(float(node.V_sh[1].to_decimal(u.mV)), -50.0, places=12)
@@ -745,10 +745,10 @@ class CellRuntimeStateTest(unittest.TestCase):
         cell.paint(
             BranchSlice(branch_index=[0, 1], prox=0.0, dist=1.0),
             braincell.mech.Channel(
-                "INa_HH1952",
+                "Na_HH1952",
                 g_max=12.0 * (u.mS / u.cm ** 2),
                 V_sh=-50.0 * u.mV,
-                T=u.celsius2kelvin(36.0),
+                temp=u.celsius2kelvin(36.0),
             ),
         )
 
@@ -1112,3 +1112,131 @@ class RaggedCurrentClampBufferTest(unittest.TestCase):
             mask_key = (layout.id, "_mask_durations")
             self.assertIn(mask_key, cell.runtime.state_buffers)
             self.assertEqual(cell.runtime.state_buffers[mask_key].shape, dur.mantissa.shape)
+
+
+class FnFingerprintWarnsOnOpaqueClosureTest(unittest.TestCase):
+    """MED-08: fingerprinting a lambda with opaque closure emits RuntimeWarning."""
+
+    def test_opaque_closure_emits_warning(self) -> None:
+        import warnings
+
+        from braincell._compute.runtime import _fn_fingerprint, _opaque_warned
+
+        class _Opaque:
+            __slots__ = ("x",)
+
+            def __init__(self) -> None:
+                self.x = object()
+
+        opaque = _Opaque()
+
+        def _make():
+            return lambda t: opaque
+
+        fn = _make()
+
+        # Drop any prior entry for this call-site so the test is independent
+        # of test ordering.
+        _opaque_warned.discard((fn.__code__.co_filename, fn.__code__.co_firstlineno))
+
+        with warnings.catch_warnings(record=True) as captured:
+            warnings.simplefilter("always")
+            _fn_fingerprint(fn)
+        self.assertTrue(
+            any(issubclass(w.category, RuntimeWarning) for w in captured),
+            "expected RuntimeWarning for opaque closure cell",
+        )
+
+
+class CellRuntimeStateIsMutableTest(unittest.TestCase):
+    """ARCH-07: CellRuntimeState is a mutable dataclass; callers must use plain setattr."""
+
+    def test_cell_runtime_state_is_not_frozen(self) -> None:
+        from braincell._compute.runtime import CellRuntimeState
+
+        self.assertFalse(
+            CellRuntimeState.__dataclass_params__.frozen,
+            msg="CellRuntimeState must remain a mutable @dataclass",
+        )
+
+    def test_no_object_setattr_on_runtime_in_hot_paths(self) -> None:
+        import pathlib
+
+        root = pathlib.Path(__file__).resolve().parent.parent
+        for rel in (
+            "_multi_compartment/cell.py",
+            "quad/_staggered.py",
+        ):
+            text = (root / rel).read_text()
+            self.assertNotIn(
+                "object.__setattr__(runtime",
+                text,
+                f"{rel} still uses object.__setattr__ on runtime",
+            )
+            self.assertNotIn(
+                "object.__setattr__(self._runtime",
+                text,
+                f"{rel} still uses object.__setattr__ on self._runtime",
+            )
+
+
+class RuntimeModuleAllTest(unittest.TestCase):
+    """Pre-split contract: braincell._compute.runtime.__all__ pins public names."""
+
+    def test_all_contains_expected_names(self) -> None:
+        from braincell._compute import runtime as rt
+
+        expected = {
+            "MechanismLayout",
+            "ClampActiveTable",
+            "build_clamp_active_table",
+            "CellRuntimeState",
+            "build_placeholder_ions",
+            "clone_morpho",
+            "cv_value_vector",
+            "mechanism_signature",
+        }
+        actual = set(getattr(rt, "__all__", []))
+        missing = expected - actual
+        self.assertFalse(missing, msg=f"missing public symbols: {missing}")
+
+
+class RuntimeSplitReexportTest(unittest.TestCase):
+    """ARCH-02: runtime.py partitions into layouts / state / ions / bindings."""
+
+    def test_mechanism_layout_lives_in_layouts(self) -> None:
+        from braincell._compute import layouts, runtime
+
+        self.assertIs(runtime.MechanismLayout, layouts.MechanismLayout)
+        self.assertIs(runtime.ClampActiveTable, layouts.ClampActiveTable)
+        self.assertIs(
+            runtime.build_clamp_active_table,
+            layouts.build_clamp_active_table,
+        )
+
+    def test_cell_runtime_state_lives_in_state(self) -> None:
+        from braincell._compute import runtime, state
+
+        self.assertIs(runtime.CellRuntimeState, state.CellRuntimeState)
+
+    def test_ion_helpers_live_in_ions(self) -> None:
+        from braincell._compute import ions, runtime
+
+        self.assertIs(runtime._build_runtime_ions, ions._build_runtime_ions)
+        self.assertIs(runtime._build_default_ions, ions._build_default_ions)
+
+    def test_binding_helpers_live_in_bindings(self) -> None:
+        from braincell._compute import bindings, runtime
+
+        self.assertIs(
+            runtime._resolve_channel_runtime_bindings,
+            bindings._resolve_channel_runtime_bindings,
+        )
+        self.assertIs(
+            runtime._instantiate_runtime_node,
+            bindings._instantiate_runtime_node,
+        )
+        self.assertIs(
+            runtime._BoundIonChannelRuntime,
+            bindings._BoundIonChannelRuntime,
+        )

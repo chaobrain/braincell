@@ -33,13 +33,11 @@ from braincell.quad.protocol import DiffEqState
 
 __all__ = [
     'KCaChannel',
-    'IAHP_De1994',
-    'IKca3_1_Ma2020',
-    'IKca2_2_Ma2020',
-    'IKca1_1_Ma2020',
-
+    'AHP_De1994',
+    'Kca3p1_MA2020',
+    'Kca2p2_MA2020',
+    'Kca1p1_MA2020',
 ]
-
 
 class KCaChannel(Channel):
     """
@@ -159,8 +157,8 @@ class KCaChannel(Channel):
         pass
 
 
-@register_channel("IAHP_De1994")
-class IAHP_De1994(KCaChannel):
+@register_channel("AHP_De1994")
+class AHP_De1994(KCaChannel):
     r"""The calcium-dependent potassium current model proposed by (Destexhe, et al., 1994) [1]_.
 
     Both in vivo (Contreras et al. 1993; Mulle et al. 1986) and in
@@ -251,8 +249,8 @@ class IAHP_De1994(KCaChannel):
             assert self.p.value.shape[0] == batch_size
 
 
-@register_channel("IKca3_1_Ma2020")
-class IKca3_1_Ma2020(KCaChannel):
+@register_channel("Kca3p1_MA2020")
+class Kca3p1_MA2020(KCaChannel):
     r'''
       TITLE Calcium dependent potassium channel
     : Implemented in Rubin and Cleland (2006) J Neurophysiology
@@ -317,8 +315,8 @@ class IKca3_1_Ma2020(KCaChannel):
         self.p.derivative = self.phi * (self.p_inf(V, Ca) - self.p.value) / self.p_tau(V, Ca) / u.ms
 
 
-@register_channel("IKca2_2_Ma2020")
-class IKca2_2_Ma2020(KCaChannel):
+@register_channel("Kca2p2_MA2020")
+class Kca2p2_MA2020(KCaChannel):
     r'''
     TITLE SK2 multi-state model Cerebellum Golgi Cell Model
 
@@ -426,8 +424,8 @@ class IKca2_2_Ma2020(KCaChannel):
     dirc4_t = lambda self, Ca: self.dirc4 * self.phi
 
 
-@register_channel("IKca1_1_Ma2020")
-class IKca1_1_Ma2020(KCaChannel):
+@register_channel("Kca1p1_MA2020")
+class Kca1p1_MA2020(KCaChannel):
     r'''
     TITLE Large conductance Ca2+ activated K+ channel mslo
 

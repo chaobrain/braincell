@@ -18,7 +18,7 @@
 
 The default configuration currently targets the Kv channel:
 - NEURON side: `Kv` mechanism from compiled mod files.
-- braincell side: `braincell.channel.IK_Kv_test`.
+- braincell side: `braincell.channel.K_Kv_test`.
 
 The script sweeps over a Cartesian grid of simulation settings and reports
 per-case + aggregated errors for selected observables.
@@ -67,7 +67,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     },
     "braincell": {
         "solver": "rk4",
-        "channel_name": "IK_Kv_test",
+        "channel_name": "K_Kv_test",
         "leak": {
             "g_S_cm2": 1e-4,
             "e_mV": -65.0,
@@ -134,7 +134,7 @@ def resolve_braincell_channel_class(channel_name: str):
         return getattr(braincell.channel, channel_name)
 
     alias_map = {
-        "Kv": "IK_Kv_test",
+        "Kv": "K_Kv_test",
     }
     resolved = alias_map.get(channel_name, channel_name)
     if hasattr(braincell.channel, resolved):
@@ -225,7 +225,7 @@ def normalize_config_schema(cfg: Dict[str, Any]) -> Dict[str, Any]:
 
     if "channel_name" not in bcfg and "mechanism" in ncfg:
         alias_map = {
-            "Kv": "IK_Kv_test",
+            "Kv": "K_Kv_test",
         }
         bcfg["channel_name"] = alias_map.get(ncfg["mechanism"], ncfg["mechanism"])
 

@@ -132,6 +132,27 @@ class SineClampTest(unittest.TestCase):
         self.assertEqual(hash(a), hash(b))
 
 
+class SineClampValidatesInputsTest(unittest.TestCase):
+    """MED-02: SineClamp rejects non-positive frequency / duration."""
+
+    def test_zero_frequency_raises(self) -> None:
+        with self.assertRaises(ValueError):
+            SineClamp(amplitude=1.0 * u.nA, frequency=0.0 * u.Hz)
+
+    def test_negative_duration_raises(self) -> None:
+        with self.assertRaises(ValueError):
+            SineClamp(
+                amplitude=1.0 * u.nA, frequency=50.0 * u.Hz,
+                duration=-1.0 * u.ms,
+            )
+
+    def test_phase_must_be_real_number(self) -> None:
+        with self.assertRaises(TypeError):
+            SineClamp(
+                amplitude=1.0 * u.nA, frequency=50.0 * u.Hz, phase="hi",
+            )
+
+
 class FunctionClampTest(unittest.TestCase):
     def test_callable_stored(self) -> None:
         fn = lambda t: 0.1 * u.nA
@@ -143,6 +164,18 @@ class FunctionClampTest(unittest.TestCase):
         b = FunctionClamp(fn=lambda t: 0.1 * u.nA)
         # Identity-based equality since lambdas compare by is
         self.assertNotEqual(a, b)
+
+
+class FunctionClampValidatesInputsTest(unittest.TestCase):
+    """MED-02: FunctionClamp rejects non-callable fn / non-positive duration."""
+
+    def test_fn_must_be_callable(self) -> None:
+        with self.assertRaises(TypeError):
+            FunctionClamp(fn=None)
+
+    def test_zero_duration_raises(self) -> None:
+        with self.assertRaises(ValueError):
+            FunctionClamp(fn=lambda t: 0 * u.nA, duration=0 * u.ms)
 
 
 class StateProbeTest(unittest.TestCase):
@@ -174,15 +207,15 @@ class MechanismProbeTest(unittest.TestCase):
 
 class CurrentProbeTest(unittest.TestCase):
     def test_basic_construction_with_mechanism(self) -> None:
-        probe = CurrentProbe(ion="k", mechanism="IK_Kv_test")
+        probe = CurrentProbe(ion="k", mechanism="K_Kv_test")
         self.assertEqual(probe.ion, "k")
-        self.assertEqual(probe.mechanism, "IK_Kv_test")
+        self.assertEqual(probe.mechanism, "K_Kv_test")
         self.assertIsNone(probe.name)
 
     def test_basic_construction_with_mechanism_only(self) -> None:
-        probe = CurrentProbe(mechanism="Ih_HM1992")
+        probe = CurrentProbe(mechanism="HCN_HM1992")
         self.assertIsNone(probe.ion)
-        self.assertEqual(probe.mechanism, "Ih_HM1992")
+        self.assertEqual(probe.mechanism, "HCN_HM1992")
 
     def test_basic_construction_for_total_ion_current(self) -> None:
         probe = CurrentProbe(ion="k")
@@ -215,6 +248,14 @@ class ProbeMechanismTest(unittest.TestCase):
         b = ProbeMechanism(variable="v")
         self.assertEqual(a, b)
         self.assertEqual(hash(a), hash(b))
+
+
+class ProbeMechanismValidatesInputsTest(unittest.TestCase):
+    """MED-02: ProbeMechanism rejects empty variable name."""
+
+    def test_empty_variable_name_raises(self) -> None:
+        with self.assertRaises(ValueError):
+            ProbeMechanism(variable="")
 
 
 class SynapseTest(unittest.TestCase):

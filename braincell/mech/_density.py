@@ -288,7 +288,7 @@ class Channel(Density):
     ----------
     class_name : str or type
         Registry key for the target channel class (e.g. ``"IL"``,
-        ``"INa_HH1952"``, or ``"leaky"`` via an alias), or a class
+        ``"Na_HH1952"``, or ``"leaky"`` via an alias), or a class
         object such as ``braincell.channel.IL``.
     name : str or None
         Optional instance label. See

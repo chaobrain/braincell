@@ -23,7 +23,7 @@
   },
   "braincell": {
     "solver": "rk4",
-    "channel_name": "IK_Kv_test",
+    "channel_name": "K_Kv_test",
     "leak": {
       "g_S_cm2": 0.0001,
       "e_mV": -65.0

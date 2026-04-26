@@ -23,10 +23,10 @@ import jax.numpy as jnp
 
 from braincell._base import IonInfo
 from braincell.channel.potassium_calcium import (
-    IAHP_De1994,
-    IKca1_1_Ma2020,
-    IKca2_2_Ma2020,
-    IKca3_1_Ma2020,
+    AHP_De1994,
+    Kca1p1_MA2020,
+    Kca2p2_MA2020,
+    Kca3p1_MA2020,
     KCaChannel,
 )
 from braincell.ion import Calcium, Potassium
@@ -92,7 +92,7 @@ class KCaChannelBaseTest(unittest.TestCase):
 
 class IAHPDe1994Test(unittest.TestCase):
     def test_reset_state_matches_steady_state(self) -> None:
-        ch = IAHP_De1994(size=1)
+        ch = AHP_De1994(size=1)
         V = _V([-60.0])
         k = _k_info()
         ca = _ca_info(C=1e-3)
@@ -104,7 +104,7 @@ class IAHPDe1994Test(unittest.TestCase):
         self.assertTrue(u.math.allclose(ch.p.value, expected, atol=1e-6))
 
     def test_current_matches_p_squared_form(self) -> None:
-        ch = IAHP_De1994(size=1)
+        ch = AHP_De1994(size=1)
         V = _V([-60.0])
         k = _k_info()
         ca = _ca_info(C=1e-3)
@@ -121,7 +121,7 @@ class IAHPDe1994Test(unittest.TestCase):
         )
 
     def test_compute_derivative_uses_first_order_kinetics(self) -> None:
-        ch = IAHP_De1994(size=1)
+        ch = AHP_De1994(size=1)
         V = _V([-60.0])
         k = _k_info()
         ca = _ca_info(C=1e-3)
@@ -138,7 +138,7 @@ class IAHPDe1994Test(unittest.TestCase):
         # p_inf = alpha Ca^n / (alpha Ca^n + beta) is strictly increasing in Ca
         # for any positive n, so a higher calcium concentration must yield a
         # higher steady-state activation.
-        ch = IAHP_De1994(size=1)
+        ch = AHP_De1994(size=1)
         V = _V([-60.0])
         k = _k_info()
 
@@ -151,7 +151,7 @@ class IAHPDe1994Test(unittest.TestCase):
         self.assertGreater(p_high, p_low)
 
     def test_current_is_zero_when_p_zero(self) -> None:
-        ch = IAHP_De1994(size=1)
+        ch = AHP_De1994(size=1)
         V = _V([-60.0])
         k = _k_info()
         ca = _ca_info()
@@ -163,9 +163,9 @@ class IAHPDe1994Test(unittest.TestCase):
         )
 
 
-class IKca3_1_Ma2020Test(unittest.TestCase):
+class Kca3p1_MA2020Test(unittest.TestCase):
     def test_reset_state_matches_p_inf(self) -> None:
-        ch = IKca3_1_Ma2020(size=1)
+        ch = Kca3p1_MA2020(size=1)
         V = _V([-60.0])
         k = _k_info()
         ca = _ca_info(C=1e-3)
@@ -173,7 +173,7 @@ class IKca3_1_Ma2020Test(unittest.TestCase):
         self.assertTrue(u.math.allclose(ch.p.value, ch.p_inf(V, ca), atol=1e-6))
 
     def test_current_matches_g_times_p_times_drive(self) -> None:
-        ch = IKca3_1_Ma2020(size=1)
+        ch = Kca3p1_MA2020(size=1)
         V = _V([-60.0])
         k = _k_info()
         ca = _ca_info(C=1e-3)
@@ -190,7 +190,7 @@ class IKca3_1_Ma2020Test(unittest.TestCase):
         )
 
     def test_compute_derivative_runs(self) -> None:
-        ch = IKca3_1_Ma2020(size=1)
+        ch = Kca3p1_MA2020(size=1)
         V = _V([-60.0])
         k = _k_info()
         ca = _ca_info(C=1e-3)
@@ -201,7 +201,7 @@ class IKca3_1_Ma2020Test(unittest.TestCase):
         self.assertEqual(ch.p.derivative.shape, (1,))
 
 
-class IKca2_2_Ma2020Test(unittest.TestCase):
+class Kca2p2_MA2020Test(unittest.TestCase):
     """Smoke tests for the multi-state SK2 model.
 
     ``compute_derivative`` in the shipped implementation has a latent bug
@@ -211,7 +211,7 @@ class IKca2_2_Ma2020Test(unittest.TestCase):
     """
 
     def test_init_state_creates_all_six_microstates(self) -> None:
-        ch = IKca2_2_Ma2020(size=2)
+        ch = Kca2p2_MA2020(size=2)
         V = _V([-60.0, -50.0])
         k = _k_info(2)
         ca = _ca_info(2)
@@ -221,7 +221,7 @@ class IKca2_2_Ma2020Test(unittest.TestCase):
             self.assertEqual(state.value.shape, (2,))
 
     def test_states_normalize_to_one(self) -> None:
-        ch = IKca2_2_Ma2020(size=1)
+        ch = Kca2p2_MA2020(size=1)
         V = _V([-60.0])
         k = _k_info()
         ca = _ca_info()
@@ -239,7 +239,7 @@ class IKca2_2_Ma2020Test(unittest.TestCase):
         self.assertTrue(u.math.allclose(total, jnp.ones(1), atol=1e-6))
 
     def test_current_matches_open_states_times_drive(self) -> None:
-        ch = IKca2_2_Ma2020(size=1)
+        ch = Kca2p2_MA2020(size=1)
         V = _V([-60.0])
         k = _k_info()
         ca = _ca_info()
@@ -262,7 +262,7 @@ class IKca2_2_Ma2020Test(unittest.TestCase):
         )
 
 
-class IKca1_1_Ma2020Test(unittest.TestCase):
+class Kca1p1_MA2020Test(unittest.TestCase):
     """Smoke tests for the BK-type mSlo channel.
 
     ``compute_derivative`` has a latent bug (uses ``self.C1`` directly where
@@ -272,7 +272,7 @@ class IKca1_1_Ma2020Test(unittest.TestCase):
     """
 
     def test_init_state_creates_five_closed_and_five_open_states(self) -> None:
-        ch = IKca1_1_Ma2020(size=1)
+        ch = Kca1p1_MA2020(size=1)
         V = _V([-60.0])
         k = _k_info()
         ca = _ca_info()
@@ -282,7 +282,7 @@ class IKca1_1_Ma2020Test(unittest.TestCase):
             self.assertEqual(getattr(ch, f"O{i}").value.shape, (1,))
 
     def test_states_normalize_to_one(self) -> None:
-        ch = IKca1_1_Ma2020(size=1)
+        ch = Kca1p1_MA2020(size=1)
         V = _V([-60.0])
         k = _k_info()
         ca = _ca_info()
@@ -293,7 +293,7 @@ class IKca1_1_Ma2020Test(unittest.TestCase):
         self.assertTrue(u.math.allclose(total, jnp.ones(1), atol=1e-6))
 
     def test_current_sums_all_open_states(self) -> None:
-        ch = IKca1_1_Ma2020(size=1)
+        ch = Kca1p1_MA2020(size=1)
         V = _V([-60.0])
         k = _k_info()
         ca = _ca_info()

@@ -37,9 +37,15 @@
 
 不适合：
 
-- 依赖 `cai` / `nai` / `ki` 等浓度状态
-- mixed-ion / manual-structure 机制
+- 依赖 `cai` / `nai` / `ki` 等浓度状态，或需要显式比较这些浓度轨迹
+- 需要显式控制多个 ion 状态的 mixed-ion 机制
+- manual-structure 机制
 - 多 compartment cable
+
+例外说明：
+
+- 少数 mixed-ion channel 如果只需要默认固定 ion 占位、并且比较目标仍然只有 `v / ix / gates`，可以接进来
+- 例如 `Kca3p1_MA20_GoC`
 
 ## 2. 文件分工
 
@@ -705,11 +711,14 @@ HCN 就是这样。
 
 其中 `Nav1p6_MA25_BC` 虽然是 `Markov_no_conc`，但已经按 12 个独立状态接入。
 
-`ma20_goc/` 当前覆盖的是 GoC 里已经可直接从 `braincell.channel` 导入、并且适合走 `channel_no_conc` compare 的 9 个 channel：
+`ma20_goc/` 当前覆盖的是 GoC 里已经可直接从 `braincell.channel` 导入、并且适合走 `channel_no_conc` compare 的 12 个 channel：
 
 - `HCN1_MA20_GoC`
 - `HCN2_MA20_GoC`
 - `KM_MA20_GoC`
+- `Kca1p1_MA20_GoC`
+- `Kca2p2_MA20_GoC`
+- `Kca3p1_MA20_GoC`
 - `Kv1p1_MA20_GoC`
 - `Kv3p4_MA20_GoC`
 - `Kv4p3_MA20_GoC`
@@ -717,7 +726,7 @@ HCN 就是这样。
 - `Cav2p3_MA20_GoC`
 - `Nav1p6_MA20_GoC`
 
-这 9 个已经能直接写成 compare config。
+这 12 个已经能直接写成 compare config。
 
 其中 `Nav1p6_MA20_GoC` 虽然是 `Markov_no_conc`，但当前已经按 12 个独立状态接入：
 
@@ -727,6 +736,17 @@ HCN 就是这样。
 - `B`
 
 不比较冗余状态 `I6`。
+
+`Kca3p1_MA20_GoC` 虽然是 mixed-ion KCa，但当前可以在默认固定 `ca` 占位下进入 compare：
+
+- `mapping.current` 仍然写 `ik`
+- `ion_state` 只显式控制 `k` reversal
+- `ca` 侧不暴露浓度配置，也不比较浓度轨迹
+
+`Kca2p2_MA20_GoC` 和 `Kca1p1_MA20_GoC` 也是同类特例，但由于它们属于守恒约束的 Markov 模型，compare config 只比较独立状态：
+
+- `Kca2p2_MA20_GoC` 不比较冗余态 `c1 / C1`
+- `Kca1p1_MA20_GoC` 不比较冗余态 `C0`
 
 注意：
 
@@ -755,8 +775,7 @@ env PATH=/usr/bin:/bin:$PATH \
 GoC 其余机制不在这个目录的原因：
 
 - `CdpStC_MA20_GoC` 属于 `Ion_dyn`
-- `Cav1p2_MA20_GoC`、`Cav1p3_MA20_GoC`、`Cav3p1_MA20_GoC`、`Kca3p1_MA20_GoC` 属于 `HH_conc`
-- `Kca1p1_MA20_GoC`、`Kca2p2_MA20_GoC` 属于 `Markov_conc`
+- `Cav1p2_MA20_GoC`、`Cav1p3_MA20_GoC`、`Cav3p1_MA20_GoC` 属于 `HH_conc`
 
 `su15_dcn/` 当前覆盖的是 DCN 里已经可直接从 `braincell.channel` 导入、并且适合走 `channel_no_conc` compare 的 5 个 channel：
 

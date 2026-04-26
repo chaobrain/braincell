@@ -373,6 +373,59 @@ class ExperimentSchemaTest(unittest.TestCase):
         self.assertEqual(expanded[0]["channel_params"]["E_mV"], -20.0)
         self.assertEqual(expanded[0]["channel_params"]["g_max_S_cm2"], 0.00005)
 
+    def test_repo_kca3p1_goc_vinit_template_expands_expected_cases(self) -> None:
+        config_path = CHANNEL_NO_CONC_ROOT / "configs" / "ma20_goc" / "kca3p1_ma20_goc.json"
+        template_path = CHANNEL_NO_CONC_ROOT / "templates" / "vinit_celsius.json"
+
+        model_config = experiment_schema.load_model_config(config_path)
+        template = experiment_schema.load_scan_template(template_path)
+        config = experiment_schema.build_sweep_config(model_config, template)
+        expanded = experiment_schema.expand_cases(config)
+
+        self.assertEqual(config.mapping_spec.current_source.ion_name, "k")
+        self.assertEqual(config.mapping_spec.neuron.gate_names, ("Y",))
+        self.assertEqual(config.mapping_spec.braincell.gate_names, ("p",))
+        self.assertEqual(config.mapping_spec.parameter_map["g_max_S_cm2"].neuron, "gkbar")
+        self.assertEqual(len(expanded), 9)
+        self.assertEqual(expanded[0]["channel_params"]["g_max_S_cm2"], 0.12)
+        self.assertEqual(expanded[0]["ion_state"]["E_mV"], -80.0)
+
+    def test_repo_kca2p2_goc_vinit_template_expands_expected_cases(self) -> None:
+        config_path = CHANNEL_NO_CONC_ROOT / "configs" / "ma20_goc" / "kca2p2_ma20_goc.json"
+        template_path = CHANNEL_NO_CONC_ROOT / "templates" / "vinit_celsius.json"
+
+        model_config = experiment_schema.load_model_config(config_path)
+        template = experiment_schema.load_scan_template(template_path)
+        config = experiment_schema.build_sweep_config(model_config, template)
+        expanded = experiment_schema.expand_cases(config)
+
+        self.assertEqual(config.mapping_spec.current_source.ion_name, "k")
+        self.assertEqual(config.mapping_spec.neuron.gate_names, ("c2", "c3", "c4", "o1", "o2"))
+        self.assertEqual(config.mapping_spec.braincell.gate_names, ("C2", "C3", "C4", "O1", "O2"))
+        self.assertEqual(config.mapping_spec.parameter_map["g_max_S_cm2"].neuron, "gkbar")
+        self.assertEqual(len(expanded), 9)
+        self.assertEqual(expanded[0]["channel_params"]["g_max_S_cm2"], 0.038)
+        self.assertEqual(expanded[0]["ion_state"]["E_mV"], -80.0)
+
+    def test_repo_kca1p1_goc_vinit_template_expands_expected_cases(self) -> None:
+        config_path = CHANNEL_NO_CONC_ROOT / "configs" / "ma20_goc" / "kca1p1_ma20_goc.json"
+        template_path = CHANNEL_NO_CONC_ROOT / "templates" / "vinit_celsius.json"
+
+        model_config = experiment_schema.load_model_config(config_path)
+        template = experiment_schema.load_scan_template(template_path)
+        config = experiment_schema.build_sweep_config(model_config, template)
+        expanded = experiment_schema.expand_cases(config)
+
+        self.assertEqual(config.mapping_spec.current_source.ion_name, "k")
+        self.assertEqual(
+            config.mapping_spec.neuron.gate_names,
+            ("C1", "C2", "C3", "C4", "O0", "O1", "O2", "O3", "O4"),
+        )
+        self.assertEqual(config.mapping_spec.parameter_map["g_max_S_cm2"].neuron, "gbar")
+        self.assertEqual(len(expanded), 9)
+        self.assertEqual(expanded[0]["channel_params"]["g_max_S_cm2"], 0.01)
+        self.assertEqual(expanded[0]["ion_state"]["E_mV"], -80.0)
+
     def test_repo_cahva_goc_dc_template_expands_expected_cases(self) -> None:
         config_path = CHANNEL_NO_CONC_ROOT / "configs" / "ma20_goc" / "cahva_ma20_goc.json"
         template_path = CHANNEL_NO_CONC_ROOT / "templates" / "dc.json"

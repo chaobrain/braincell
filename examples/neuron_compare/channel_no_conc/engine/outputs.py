@@ -114,10 +114,27 @@ def aggregate_case_metrics(
 def save_case_plot(out_path: str | Path, result: dict[str, Any]) -> None:
     import matplotlib.pyplot as plt
 
+    gate_alignments = list(result.get("alignment", {}).get("gates", []))
+    if len(gate_alignments) == 0:
+        gate_alignments = [
+            {
+                "canonical_name": gate_name,
+                "braincell_gate": gate_name,
+                "neuron_gate": gate_name,
+            }
+            for gate_name in sorted(result["braincell"]["gates"])
+        ]
+
     observables = [
         ("voltage_mV", "Voltage (mV)"),
         ("current.ix", "Current ix"),
-        *[(f"gates.{gate_name}", f"Gate {gate_name}") for gate_name in sorted(result["braincell"]["gates"])],
+        *[
+            (
+                f"gates.{gate_alignment['canonical_name']}",
+                f"Gate {gate_alignment['canonical_name']}",
+            )
+            for gate_alignment in gate_alignments
+        ],
     ]
     fig, axes = plt.subplots(len(observables), 1, figsize=(10, 3.0 * len(observables)), sharex=True)
     if len(observables) == 1:
@@ -131,9 +148,13 @@ def save_case_plot(out_path: str | Path, result: dict[str, Any]) -> None:
             plot_time_ms, braincell_trace, neuron_trace = _aligned_current_view(result)
         else:
             plot_time_ms = result["time_ms"]
-            gate_name = observable.split(".", 1)[1]
-            braincell_trace = result["braincell"]["gates"][gate_name]
-            neuron_trace = result["neuron"]["gates"][gate_name]
+            canonical_name = observable.split(".", 1)[1]
+            gate_alignment = next(
+                item for item in gate_alignments
+                if str(item["canonical_name"]) == canonical_name
+            )
+            braincell_trace = result["braincell"]["gates"][str(gate_alignment["braincell_gate"])]
+            neuron_trace = result["neuron"]["gates"][str(gate_alignment["neuron_gate"])]
         axis.plot(plot_time_ms, neuron_trace, label="NEURON", linewidth=1.5)
         axis.plot(plot_time_ms, braincell_trace, label="braincell", linewidth=1.2, linestyle="--")
         axis.set_ylabel(label)

@@ -224,9 +224,9 @@ internal dependencies · status · open work**.
   morphology and points on it. The cell layer consumes these to map
   user intent onto control volumes.
 - **Key types**
-  - `RegionExpr` family: `BranchSlice`, type/name/branch_order /
-    parent_id / n_children predicates, `branch_range(...)` for
-    continuous-coordinate slicing, set operations
+  - `RegionExpr` family: `BranchSlice`, `branch_in(...)` predicates for
+    branch metadata / topology, `branch_range(...)` for scalar branch
+    properties and metrics, set operations
     (union / intersection / difference / complement).
   - `LocsetExpr` family: root, branch points, terminals, region-driven
     uniform sampling, region-driven random sampling.
@@ -235,9 +235,11 @@ internal dependencies · status · open work**.
 - **Status**
   - [x] BranchSlice, broadcasted inputs, set algebra.
   - [x] Discrete predicates (type / name / branch_order / parent_id /
-    n_children).
+    n_children / n_tapers / branch_id).
   - [x] Continuous `branch_range(...)` with both numeric and `Quantity`
     bounds.
+  - [x] Branch scalar metric filters: `length`, `mean_radius`, `area`,
+    `volume`.
   - [ ] **Radius-range filter** (e.g., `radius_range(0.5*u.um, 2*u.um)`).
   - [ ] **Path-distance filter** (graph distance from soma along the
     tree).

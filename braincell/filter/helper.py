@@ -24,6 +24,8 @@ from braincell.morph.morphology import Morphology
 Interval = tuple[int, float, float]
 Location = tuple[int, float]
 EPSILON = 1e-12
+_BRANCH_METRIC_PROPERTIES = {"length", "mean_radius", "area", "volume"}
+_UNSUPPORTED_BRANCH_METRIC_PROPERTIES = {"max_radius", "min_radius"}
 
 __all__ = [
     "EPSILON",
@@ -134,9 +136,9 @@ def _resolve_branch_property(morpho: Morphology, branch_index: int, property_nam
         return len(morpho.path_to_root(branch_index)) - 1
     if property_name == "n_tapers":
         return branch_view.n_segments
-    if property_name == "length":
-        return branch_view.length
-    if property_name in {"area", "volume", "max_radius", "min_radius"}:
+    if property_name in _BRANCH_METRIC_PROPERTIES:
+        return getattr(branch_view, property_name)
+    if property_name in _UNSUPPORTED_BRANCH_METRIC_PROPERTIES:
         raise ValueError(
             f"Branch property {property_name!r} is not supported in this version."
         )

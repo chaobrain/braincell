@@ -20,7 +20,7 @@
 - `tests/`: 当前实现专属测试。
 - `workflows/workflow.ipynb`: 单个 config 工作流。
 - `workflows/batch_workflow.ipynb`: 批量 many-config 工作流。
-- `results/`: 运行结果输出目录；默认写到 `results/sweeps/`、`results/config_runs/`、`results/batch_runs/`。
+- `results/`: 运行结果输出目录；当前 notebook 默认写到 `results/config_runs/` 和 `results/batch_runs/`。
 
 ## Config Contract
 

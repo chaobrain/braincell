@@ -7,7 +7,6 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
-import brainstate
 import brainunit as u
 import numpy as np
 
@@ -39,7 +38,6 @@ except ImportError:  # pragma: no cover
 
 
 def run_case(case: MultiCompartmentCableCase) -> dict[str, Any]:
-    brainstate.environ.set(precision=64)
     morpho = load_braincell_morphology(case)
     cell = Cell(
         morpho,

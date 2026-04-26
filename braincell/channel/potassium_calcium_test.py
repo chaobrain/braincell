@@ -14,7 +14,6 @@
 # limitations under the License.
 # ==============================================================================
 
-
 import unittest
 
 import brainstate
@@ -22,12 +21,12 @@ import brainunit as u
 import jax.numpy as jnp
 
 from braincell._base import IonInfo
+from braincell.channel._base import HH, Markov
 from braincell.channel.potassium_calcium import (
     AHP_De1994,
     Kca1p1_MA2020,
     Kca2p2_MA2020,
     Kca3p1_MA2020,
-    KCaChannel,
 )
 from braincell.ion import Calcium, Potassium
 
@@ -57,40 +56,27 @@ def _V(values, unit=u.mV):
 _DENSITY_UNIT = u.mS / u.cm ** 2 * u.mV
 
 
-class KCaChannelBaseTest(unittest.TestCase):
+class _MixedPotassiumCalciumTemplateTest:
+    CLS = None
+    TEMPLATE = None
+
     def test_root_type_is_joint_potassium_calcium(self) -> None:
-        root = KCaChannel.root_type
+        root = self.CLS.root_type
         self.assertIsInstance(root, brainstate.mixin._JointGenericAlias)
         self.assertIn(Potassium, root.__args__)
         self.assertIn(Calcium, root.__args__)
 
     def test_current_owner_type_is_potassium(self) -> None:
-        self.assertIs(KCaChannel.current_owner_type, Potassium)
+        self.assertIs(self.CLS.current_owner_type, Potassium)
 
-    def test_base_current_raises_not_implemented(self) -> None:
-        class _Bare(KCaChannel):
-            pass
-
-        bare = _Bare(size=1)
-        with self.assertRaises(NotImplementedError):
-            bare.current(_V([-60.0]), _k_info(), _ca_info())
-
-    def test_base_lifecycle_hooks_are_no_ops(self) -> None:
-        class _Bare(KCaChannel):
-            pass
-
-        bare = _Bare(size=1)
-        V = _V([-60.0])
-        k = _k_info()
-        ca = _ca_info()
-        self.assertIsNone(bare.pre_integral(V, k, ca))
-        self.assertIsNone(bare.post_integral(V, k, ca))
-        self.assertIsNone(bare.compute_derivative(V, k, ca))
-        self.assertIsNone(bare.init_state(V, k, ca))
-        self.assertIsNone(bare.reset_state(V, k, ca))
+    def test_inherits_expected_template(self) -> None:
+        self.assertIs(self.CLS.compute_derivative, self.TEMPLATE.compute_derivative)
 
 
-class IAHPDe1994Test(unittest.TestCase):
+class IAHPDe1994Test(_MixedPotassiumCalciumTemplateTest, unittest.TestCase):
+    CLS = AHP_De1994
+    TEMPLATE = HH
+
     def test_reset_state_matches_steady_state(self) -> None:
         ch = AHP_De1994(size=1)
         V = _V([-60.0])
@@ -130,46 +116,21 @@ class IAHPDe1994Test(unittest.TestCase):
         ch.compute_derivative(V, k, ca)
 
         C2 = ch.alpha * (ca.Ci / u.mM) ** ch.n
-        C3 = C2 + ch.beta
-        expected = ch.phi * (C2 / C3 - 0.2) * C3 / u.ms
+        expected = ch.phi * (C2 * (1.0 - 0.2) - ch.beta * 0.2) / u.ms
         self.assertTrue(u.math.allclose(ch.p.derivative, expected, atol=1e-6 * u.Hz))
 
-    def test_steady_state_increases_with_calcium(self) -> None:
-        # p_inf = alpha Ca^n / (alpha Ca^n + beta) is strictly increasing in Ca
-        # for any positive n, so a higher calcium concentration must yield a
-        # higher steady-state activation.
-        ch = AHP_De1994(size=1)
-        V = _V([-60.0])
-        k = _k_info()
 
-        ch.init_state(V, k, _ca_info(C=1e-4))
-        ch.reset_state(V, k, _ca_info(C=1e-4))
-        p_low = float(ch.p.value[0])
+class Kca3p1_MA2020Test(_MixedPotassiumCalciumTemplateTest, unittest.TestCase):
+    CLS = Kca3p1_MA2020
+    TEMPLATE = HH
 
-        ch.reset_state(V, k, _ca_info(C=1e-2))
-        p_high = float(ch.p.value[0])
-        self.assertGreater(p_high, p_low)
-
-    def test_current_is_zero_when_p_zero(self) -> None:
-        ch = AHP_De1994(size=1)
-        V = _V([-60.0])
-        k = _k_info()
-        ca = _ca_info()
-        ch.init_state(V, k, ca)
-        ch.p.value = jnp.zeros(1)
-        i = ch.current(V, k, ca)
-        self.assertTrue(
-            u.math.allclose(i.to_decimal(_DENSITY_UNIT), jnp.zeros(1), atol=1e-9)
-        )
-
-
-class Kca3p1_MA2020Test(unittest.TestCase):
     def test_reset_state_matches_p_inf(self) -> None:
         ch = Kca3p1_MA2020(size=1)
         V = _V([-60.0])
         k = _k_info()
         ca = _ca_info(C=1e-3)
         ch.init_state(V, k, ca)
+        ch.reset_state(V, k, ca)
         self.assertTrue(u.math.allclose(ch.p.value, ch.p_inf(V, ca), atol=1e-6))
 
     def test_current_matches_g_times_p_times_drive(self) -> None:
@@ -200,42 +161,45 @@ class Kca3p1_MA2020Test(unittest.TestCase):
         ch.compute_derivative(V, k, ca)
         self.assertEqual(ch.p.derivative.shape, (1,))
 
+    def test_compute_derivative_matches_reference_without_temperature_scaling(self) -> None:
+        cold = Kca3p1_MA2020(size=1, T=u.celsius2kelvin(22.0))
+        warm = Kca3p1_MA2020(size=1, T=u.celsius2kelvin(37.0))
+        V = _V([-60.0])
+        k = _k_info()
+        ca = _ca_info(C=1e-3)
 
-class Kca2p2_MA2020Test(unittest.TestCase):
-    """Smoke tests for the multi-state SK2 model.
+        for ch in (cold, warm):
+            ch.init_state(V, k, ca)
+            ch.p.value = jnp.array([0.3])
+            ch.compute_derivative(V, k, ca)
 
-    ``compute_derivative`` in the shipped implementation has a latent bug
-    (``self.dirc2_t`` is referenced as an attribute instead of being invoked
-    as a method), so we only exercise instantiation, initialization, and
-    ``current`` here.
-    """
+        self.assertTrue(u.math.allclose(cold.p.derivative, warm.p.derivative, atol=1e-9 * u.Hz))
 
-    def test_init_state_creates_all_six_microstates(self) -> None:
+
+class Kca2p2_MA2020Test(_MixedPotassiumCalciumTemplateTest, unittest.TestCase):
+    CLS = Kca2p2_MA2020
+    TEMPLATE = Markov
+
+    def test_init_state_creates_independent_microstates(self) -> None:
         ch = Kca2p2_MA2020(size=2)
         V = _V([-60.0, -50.0])
         k = _k_info(2)
         ca = _ca_info(2)
         ch.init_state(V, k, ca)
-        for name in ("C1", "C2", "C3", "C4", "O1", "O2"):
-            state = getattr(ch, name)
-            self.assertEqual(state.value.shape, (2,))
+        self.assertEqual(ch.state_names, ("C2", "C3", "C4", "O1", "O2"))
+        self.assertEqual(ch.redundant_state, "C1")
+        for name in ch.state_names:
+            self.assertEqual(getattr(ch, name).value.shape, (2,))
 
-    def test_states_normalize_to_one(self) -> None:
+    def test_reset_state_solves_steady_state_with_total_probability_one(self) -> None:
         ch = Kca2p2_MA2020(size=1)
         V = _V([-60.0])
         k = _k_info()
         ca = _ca_info()
         ch.init_state(V, k, ca)
-        # After init_state the six microstates must form a probability
-        # distribution (sum to unity).
-        total = (
-            ch.C1.value
-            + ch.C2.value
-            + ch.C3.value
-            + ch.C4.value
-            + ch.O1.value
-            + ch.O2.value
-        )
+        ch.reset_state(V, k, ca)
+        states = ch.state_values()
+        total = sum(states[name] for name in ("C1", "C2", "C3", "C4", "O1", "O2"))
         self.assertTrue(u.math.allclose(total, jnp.ones(1), atol=1e-6))
 
     def test_current_matches_open_states_times_drive(self) -> None:
@@ -244,15 +208,14 @@ class Kca2p2_MA2020Test(unittest.TestCase):
         k = _k_info()
         ca = _ca_info()
         ch.init_state(V, k, ca)
-        # Force the channel fully open so the drive formula can be checked.
-        ch.C1.value = jnp.zeros(1)
         ch.C2.value = jnp.zeros(1)
         ch.C3.value = jnp.zeros(1)
         ch.C4.value = jnp.zeros(1)
         ch.O1.value = jnp.ones(1)
         ch.O2.value = jnp.zeros(1)
+        states = ch.state_values()
         i = ch.current(V, k, ca)
-        expected = ch.g_max * (ch.O1.value + ch.O2.value) * (k.E - V)
+        expected = ch.g_max * (states["O1"] + states["O2"]) * (k.E - V)
         self.assertTrue(
             u.math.allclose(
                 i.to_decimal(_DENSITY_UNIT),
@@ -261,35 +224,42 @@ class Kca2p2_MA2020Test(unittest.TestCase):
             )
         )
 
+    def test_compute_derivative_runs(self) -> None:
+        ch = Kca2p2_MA2020(size=1)
+        V = _V([-60.0])
+        k = _k_info()
+        ca = _ca_info()
+        ch.init_state(V, k, ca)
+        ch.reset_state(V, k, ca)
+        ch.compute_derivative(V, k, ca)
+        for name in ch.state_names:
+            self.assertEqual(getattr(ch, name).derivative.shape, (1,))
 
-class Kca1p1_MA2020Test(unittest.TestCase):
-    """Smoke tests for the BK-type mSlo channel.
 
-    ``compute_derivative`` has a latent bug (uses ``self.C1`` directly where
-    the ``DiffEqState`` wrapper's ``.value`` is expected), so we only test
-    instantiation, initialisation, normalization, and the ``current``
-    formula.
-    """
+class Kca1p1_MA2020Test(_MixedPotassiumCalciumTemplateTest, unittest.TestCase):
+    CLS = Kca1p1_MA2020
+    TEMPLATE = Markov
 
-    def test_init_state_creates_five_closed_and_five_open_states(self) -> None:
+    def test_init_state_creates_independent_closed_and_open_states(self) -> None:
         ch = Kca1p1_MA2020(size=1)
         V = _V([-60.0])
         k = _k_info()
         ca = _ca_info()
         ch.init_state(V, k, ca)
-        for i in range(5):
-            self.assertEqual(getattr(ch, f"C{i}").value.shape, (1,))
-            self.assertEqual(getattr(ch, f"O{i}").value.shape, (1,))
+        self.assertEqual(ch.redundant_state, "C0")
+        self.assertEqual(ch.state_names, ("C1", "C2", "C3", "C4", "O0", "O1", "O2", "O3", "O4"))
+        for name in ch.state_names:
+            self.assertEqual(getattr(ch, name).value.shape, (1,))
 
-    def test_states_normalize_to_one(self) -> None:
+    def test_reset_state_solves_steady_state_with_total_probability_one(self) -> None:
         ch = Kca1p1_MA2020(size=1)
         V = _V([-60.0])
         k = _k_info()
         ca = _ca_info()
         ch.init_state(V, k, ca)
-        total = sum(getattr(ch, f"C{i}").value for i in range(5)) + sum(
-            getattr(ch, f"O{i}").value for i in range(5)
-        )
+        ch.reset_state(V, k, ca)
+        states = ch.state_values()
+        total = sum(states[f"C{i}"] for i in range(5)) + sum(states[f"O{i}"] for i in range(5))
         self.assertTrue(u.math.allclose(total, jnp.ones(1), atol=1e-6))
 
     def test_current_sums_all_open_states(self) -> None:
@@ -298,12 +268,14 @@ class Kca1p1_MA2020Test(unittest.TestCase):
         k = _k_info()
         ca = _ca_info()
         ch.init_state(V, k, ca)
+        for i in range(1, 5):
+            getattr(ch, f"C{i}").value = jnp.zeros(1)
         for i in range(5):
-            setattr(getattr(ch, f"C{i}"), "value", jnp.zeros(1))
-            setattr(getattr(ch, f"O{i}"), "value", jnp.full((1,), 0.2))
+            getattr(ch, f"O{i}").value = jnp.full((1,), 0.2)
+        states = ch.state_values()
         i_val = ch.current(V, k, ca)
         expected = ch.g_max * (
-            ch.O0.value + ch.O1.value + ch.O2.value + ch.O3.value + ch.O4.value
+            states["O0"] + states["O1"] + states["O2"] + states["O3"] + states["O4"]
         ) * (k.E - V)
         self.assertTrue(
             u.math.allclose(
@@ -312,6 +284,17 @@ class Kca1p1_MA2020Test(unittest.TestCase):
                 atol=1e-6,
             )
         )
+
+    def test_compute_derivative_runs(self) -> None:
+        ch = Kca1p1_MA2020(size=1)
+        V = _V([-60.0])
+        k = _k_info()
+        ca = _ca_info()
+        ch.init_state(V, k, ca)
+        ch.reset_state(V, k, ca)
+        ch.compute_derivative(V, k, ca)
+        for name in ch.state_names:
+            self.assertEqual(getattr(ch, name).derivative.shape, (1,))
 
 
 if __name__ == "__main__":

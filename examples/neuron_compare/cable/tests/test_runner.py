@@ -3,12 +3,14 @@
 import os
 import unittest
 
+import brainstate
 import numpy as np
 
 from ._helpers import TEMPLATES_ROOT, load_module
 
 
 os.environ.setdefault("JAX_PLATFORMS", "cpu")
+brainstate.environ.set(precision=64)
 
 
 case_schema = load_module(TEMPLATES_ROOT / "case_schema.py", "multi_compartment_cable_case_schema_runner")

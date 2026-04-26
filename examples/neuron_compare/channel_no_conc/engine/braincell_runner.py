@@ -101,14 +101,18 @@ def run_case(case: ChannelNoConcCase) -> dict[str, Any]:
         ion.E = float(case.ion_state.E_mV) * u.mV
     cell.reset_state()
 
+    dt = float(case.simulation.dt_ms) * u.ms
     result = cell.run(
-        dt=float(case.simulation.dt_ms) * u.ms,
+        dt=dt,
         duration=float(case.simulation.duration_ms) * u.ms,
     )
 
     current_probe_name = _resolve_current_probe_name(mapping_spec)
     return {
-        "time_ms": ensure_1d(result.time.to_decimal(u.ms), name="braincell.time_ms"),
+        # Cell.run() samples after each integration step while exposing the
+        # pre-step time grid. Shift by one dt so the exported traces align
+        # with NEURON's post-step samples.
+        "time_ms": ensure_1d((result.time + dt).to_decimal(u.ms), name="braincell.time_ms"),
         "voltage_mV": ensure_1d(result.traces["soma(0.5)_v"].to_decimal(u.mV), name="braincell.voltage_mV"),
         "current": {
             "ix": ensure_1d(

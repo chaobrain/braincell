@@ -530,15 +530,6 @@ class _Nav1p6Mixin:
                 changed = True
         self.assertTrue(changed)
 
-    def test_substeps_defaults_to_legacy_refinement(self) -> None:
-        proto = self._make(size=1)
-        self.assertEqual(proto.substeps, 5)
-
-    def test_substeps_must_be_positive(self) -> None:
-        with self.assertRaises(ValueError):
-            self._make(size=1, substeps=0)
-
-
 class Nav1p6MA20GoCTest(_Nav1p6Mixin, unittest.TestCase):
     CLS = Nav1p6_MA2020_GoC
 

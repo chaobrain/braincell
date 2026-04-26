@@ -46,6 +46,7 @@ jobs:
           python -m pip install --upgrade pip setuptools --no-cache-dir
           python -m pip install -r requirements-dev.txt --no-cache-dir
           python -m pip install neuron --no-cache-dir
+          python -m pip install pandas --no-cache-dir
           pip install . --no-cache-dir
       - name: Test Linux-only cable neuron_compare suite
         run: |

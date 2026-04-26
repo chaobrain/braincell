@@ -1377,6 +1377,8 @@ def _instantiate_runtime_node(
     )
     if len(params) > 0 and hasattr(next(iter(params.values())), "shape"):
         size = next(iter(params.values())).shape
+    elif layout.layout == "dense" and layout.point_mask is not None:
+        size = layout.point_mask.shape
     else:
         size = (layout.n_active,)
     node = runtime_cls(size=size, **params)

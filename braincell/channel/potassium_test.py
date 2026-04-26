@@ -28,11 +28,38 @@ from braincell.channel.potassium import (
     K_Kv_test,
     K_Leak,
     K_TM1991,
+    KM_MA2020_GoC,
+    KM_MA2020_GrC,
+    KM_RI2021_SC,
     KA1_HM1992,
     KA2_HM1992,
+    Kdr_ZH2019_IO,
     KK2A_HM1992,
     KK2B_HM1992,
     KNI_Ya1989,
+    Kir2p3_MA2020_GrC,
+    Kir2p3_MA2024_PC,
+    Kir2p3_MA2025_BC,
+    Kir2p3_RI2021_SC,
+    Kv1p1_MA2020_GoC,
+    Kv1p1_MA2020_GrC,
+    Kv1p1_MA2024_PC,
+    Kv1p1_MA2025_BC,
+    Kv1p1_RI2021_SC,
+    Kv2p2_0010_MA2020_GrC,
+    Kv3p4_MA2020_GoC,
+    Kv3p4_MA2020_GrC,
+    Kv3p4_MA2024_PC,
+    Kv3p4_MA2025_BC,
+    Kv3p4_RI2021_SC,
+    Kv4p3_MA2020_GoC,
+    Kv4p3_MA2020_GrC,
+    Kv4p3_MA2024_PC,
+    Kv4p3_MA2025_BC,
+    Kv4p3_RI2021_SC,
+    _linoid_stable,
+    fKdr_SU2015_DCN,
+    sKdr_SU2015_DCN,
 )
 from braincell.ion import Potassium
 
@@ -484,6 +511,963 @@ class K_Kv_testTest(unittest.TestCase):
                 atol=1e-6,
             )
         )
+
+
+class Kir2p3MA25BCTest(unittest.TestCase):
+    def test_root_type_is_potassium(self) -> None:
+        self.assertIs(Kir2p3_MA2025_BC.root_type, Potassium)
+
+    def test_reset_state_matches_alpha_beta_ratio(self) -> None:
+        ch = Kir2p3_MA2025_BC(size=1)
+        V = _V([-75.0])
+        k = _k_info()
+        ch.init_state(V, k)
+        ch.reset_state(V, k)
+        alpha = ch.f_d_alpha(V, k)
+        beta = ch.f_d_beta(V, k)
+        self.assertTrue(
+            u.math.allclose(ch.d.value, alpha / (alpha + beta), atol=1e-6)
+        )
+
+
+class Kv1p1MA25BCTest(unittest.TestCase):
+    def test_matches_template_formulas_without_gating_current(self) -> None:
+        temp = u.celsius2kelvin(22.0)
+        proto = Kv1p1_MA2025_BC(size=1, temp=temp, gateCurrent=0.0)
+        V = _V([-60.0])
+        k = _k_info()
+
+        proto.init_state(V, k)
+        proto.reset_state(V, k)
+        alpha = proto.f_n_alpha(V, k)
+        beta = proto.f_n_beta(V, k)
+        self.assertTrue(u.math.allclose(proto.n.value, alpha / (alpha + beta), atol=1e-6))
+
+        proto.compute_derivative(V, k)
+        phi = proto.gate_phi(proto._iter_gates()[0])
+        expected_derivative = phi * (alpha * (1.0 - proto.n.value) - beta * proto.n.value) / u.ms
+        self.assertTrue(
+            u.math.allclose(proto.n.derivative, expected_derivative, atol=1e-6 * u.Hz)
+        )
+
+        i_proto = proto.current(V, k)
+        expected_current = proto.g_max * proto.n.value ** 4 * (k.E - V)
+        self.assertTrue(
+            u.math.allclose(
+                i_proto.to_decimal(_DENSITY_UNIT),
+                expected_current.to_decimal(_DENSITY_UNIT),
+                atol=1e-6,
+            )
+        )
+
+    def test_gating_current_path_matches_manual_formula(self) -> None:
+        temp = u.celsius2kelvin(22.0)
+        proto = Kv1p1_MA2025_BC(size=1, temp=temp, gateCurrent=1.0)
+        V = _V([-50.0])
+        k = _k_info()
+
+        proto.init_state(V, k)
+        proto.reset_state(V, k)
+        proto.n.value = jnp.array([0.35])
+        alpha = proto.f_n_alpha(V, k)
+        beta = proto.f_n_beta(V, k)
+        phi = proto.gate_phi(proto._iter_gates()[0])
+        conductive = proto.g_max * proto.n.value ** 4 * (k.E - V)
+        ngate_flip = phi * (alpha * (1.0 - proto.n.value) - beta * proto.n.value) / u.ms
+        nc = 1e12 * proto.g_max / proto.gunit
+        igate = nc * 1e6 * proto.e0 * 4.0 * proto.zn * ngate_flip
+        expected_current = conductive - igate
+
+        i_proto = proto.current(V, k)
+        self.assertTrue(
+            u.math.allclose(
+                i_proto.to_decimal(_DENSITY_UNIT),
+                expected_current.to_decimal(_DENSITY_UNIT),
+                atol=1e-6,
+            )
+        )
+
+
+class Kv3p4MA25BCTest(unittest.TestCase):
+    def test_matches_template_state_derivative_and_current(self) -> None:
+        temp = u.celsius2kelvin(22.0)
+        proto = Kv3p4_MA2025_BC(size=1, temp=temp)
+        V = _V([-45.0])
+        k = _k_info()
+
+        proto.init_state(V, k)
+        proto.reset_state(V, k)
+        self.assertTrue(u.math.allclose(proto.m.value, proto.f_m_inf(V, k), atol=1e-6))
+        self.assertTrue(u.math.allclose(proto.h.value, proto.f_h_inf(V, k), atol=1e-6))
+
+        proto.m.value = jnp.array([0.2])
+        proto.h.value = jnp.array([0.7])
+        proto.compute_derivative(V, k)
+        gates = {gate.name: gate for gate in proto._iter_gates()}
+        expected_m = proto.gate_phi(gates["m"]) * (proto.f_m_inf(V, k) - proto.m.value) / proto.f_m_tau(V, k) / u.ms
+        expected_h = proto.gate_phi(gates["h"]) * (proto.f_h_inf(V, k) - proto.h.value) / proto.f_h_tau(V, k) / u.ms
+        self.assertTrue(
+            u.math.allclose(proto.m.derivative, expected_m, atol=1e-6 * u.Hz)
+        )
+        self.assertTrue(
+            u.math.allclose(proto.h.derivative, expected_h, atol=1e-6 * u.Hz)
+        )
+
+        i_proto = proto.current(V, k)
+        expected_current = proto.g_max * (proto.m.value ** 3) * proto.h.value * (k.E - V)
+        self.assertTrue(
+            u.math.allclose(
+                i_proto.to_decimal(_DENSITY_UNIT),
+                expected_current.to_decimal(_DENSITY_UNIT),
+                atol=1e-6,
+            )
+        )
+
+
+class Kv4p3MA25BCTest(unittest.TestCase):
+    def test_matches_template_state_derivative_and_current(self) -> None:
+        temp = u.celsius2kelvin(30.0)
+        proto = Kv4p3_MA2025_BC(size=1, temp=temp)
+        V = _V([-55.0])
+        k = _k_info()
+
+        proto.init_state(V, k)
+        proto.reset_state(V, k)
+        self.assertTrue(u.math.allclose(proto.a.value, proto.f_a_inf(V, k), atol=1e-6))
+        self.assertTrue(u.math.allclose(proto.b.value, proto.f_b_inf(V, k), atol=1e-6))
+
+        proto.a.value = jnp.array([0.2])
+        proto.b.value = jnp.array([0.7])
+        proto.compute_derivative(V, k)
+        gates = {gate.name: gate for gate in proto._iter_gates()}
+        expected_a = proto.gate_phi(gates["a"]) * (proto.f_a_inf(V, k) - proto.a.value) / proto.f_a_tau(V, k) / u.ms
+        expected_b = proto.gate_phi(gates["b"]) * (proto.f_b_inf(V, k) - proto.b.value) / proto.f_b_tau(V, k) / u.ms
+        self.assertTrue(
+            u.math.allclose(proto.a.derivative, expected_a, atol=1e-6 * u.Hz)
+        )
+        self.assertTrue(
+            u.math.allclose(proto.b.derivative, expected_b, atol=1e-6 * u.Hz)
+        )
+
+        i_proto = proto.current(V, k)
+        expected_current = proto.g_max * (proto.a.value ** 3) * proto.b.value * (k.E - V)
+        self.assertTrue(
+            u.math.allclose(
+                i_proto.to_decimal(_DENSITY_UNIT),
+                expected_current.to_decimal(_DENSITY_UNIT),
+                atol=1e-6,
+            )
+        )
+
+    def test_linoid_helper_uses_small_ratio_branch(self) -> None:
+        x = jnp.array([1.0e-8, 1.0])
+        y = jnp.array([1.0, 1.0])
+        result = _linoid_stable(x, y)
+        expected = jnp.array(
+            [
+                1.0 * (1.0 - 1.0e-8 / 2.0),
+                1.0 / (jnp.exp(1.0) - 1.0),
+            ]
+        )
+        self.assertTrue(bool(jnp.allclose(result, expected, atol=1e-6)))
+
+
+class Kir2p3MA24PCTest(unittest.TestCase):
+    def test_matches_bc_variant(self) -> None:
+        temp = u.celsius2kelvin(30.0)
+        bc = Kir2p3_MA2025_BC(size=1, temp=temp)
+        pc = Kir2p3_MA2024_PC(size=1, temp=temp)
+        V = _V([-75.0])
+        k = _k_info()
+
+        bc.init_state(V, k)
+        pc.init_state(V, k)
+        bc.reset_state(V, k)
+        pc.reset_state(V, k)
+        self.assertTrue(u.math.allclose(pc.d.value, bc.d.value, atol=1e-6))
+
+        bc.compute_derivative(V, k)
+        pc.compute_derivative(V, k)
+        self.assertTrue(u.math.allclose(pc.d.derivative, bc.d.derivative, atol=1e-6 * u.Hz))
+
+        i_bc = bc.current(V, k)
+        i_pc = pc.current(V, k)
+        self.assertTrue(
+            u.math.allclose(
+                i_pc.to_decimal(_DENSITY_UNIT),
+                i_bc.to_decimal(_DENSITY_UNIT),
+                atol=1e-6,
+            )
+        )
+
+
+class Kv1p1MA24PCTest(unittest.TestCase):
+    def test_matches_bc_variant_without_gating_current(self) -> None:
+        temp = u.celsius2kelvin(22.0)
+        bc = Kv1p1_MA2025_BC(size=1, temp=temp, gateCurrent=0.0)
+        pc = Kv1p1_MA2024_PC(size=1, temp=temp, gateCurrent=0.0)
+        V = _V([-60.0])
+        k = _k_info()
+
+        bc.init_state(V, k)
+        pc.init_state(V, k)
+        bc.reset_state(V, k)
+        pc.reset_state(V, k)
+        self.assertTrue(u.math.allclose(pc.n.value, bc.n.value, atol=1e-6))
+
+        bc.compute_derivative(V, k)
+        pc.compute_derivative(V, k)
+        self.assertTrue(u.math.allclose(pc.n.derivative, bc.n.derivative, atol=1e-6 * u.Hz))
+
+        i_bc = bc.current(V, k)
+        i_pc = pc.current(V, k)
+        self.assertTrue(
+            u.math.allclose(
+                i_pc.to_decimal(_DENSITY_UNIT),
+                i_bc.to_decimal(_DENSITY_UNIT),
+                atol=1e-6,
+            )
+        )
+
+    def test_matches_bc_variant_with_gating_current(self) -> None:
+        temp = u.celsius2kelvin(22.0)
+        bc = Kv1p1_MA2025_BC(size=1, temp=temp, gateCurrent=1.0)
+        pc = Kv1p1_MA2024_PC(size=1, temp=temp, gateCurrent=1.0)
+        V = _V([-50.0])
+        k = _k_info()
+
+        bc.init_state(V, k)
+        pc.init_state(V, k)
+        bc.reset_state(V, k)
+        pc.reset_state(V, k)
+
+        i_bc = bc.current(V, k)
+        i_pc = pc.current(V, k)
+        self.assertTrue(
+            u.math.allclose(
+                i_pc.to_decimal(_DENSITY_UNIT),
+                i_bc.to_decimal(_DENSITY_UNIT),
+                atol=1e-6,
+            )
+        )
+
+
+class Kv3p4MA24PCTest(unittest.TestCase):
+    def test_matches_bc_variant(self) -> None:
+        temp = u.celsius2kelvin(22.0)
+        bc = Kv3p4_MA2025_BC(size=1, temp=temp)
+        pc = Kv3p4_MA2024_PC(size=1, temp=temp)
+        V = _V([-45.0])
+        k = _k_info()
+
+        bc.init_state(V, k)
+        pc.init_state(V, k)
+        bc.reset_state(V, k)
+        pc.reset_state(V, k)
+        self.assertTrue(u.math.allclose(pc.m.value, bc.m.value, atol=1e-6))
+        self.assertTrue(u.math.allclose(pc.h.value, bc.h.value, atol=1e-6))
+
+        bc.compute_derivative(V, k)
+        pc.compute_derivative(V, k)
+        self.assertTrue(u.math.allclose(pc.m.derivative, bc.m.derivative, atol=1e-6 * u.Hz))
+        self.assertTrue(u.math.allclose(pc.h.derivative, bc.h.derivative, atol=1e-6 * u.Hz))
+
+        i_bc = bc.current(V, k)
+        i_pc = pc.current(V, k)
+        self.assertTrue(
+            u.math.allclose(
+                i_pc.to_decimal(_DENSITY_UNIT),
+                i_bc.to_decimal(_DENSITY_UNIT),
+                atol=1e-6,
+            )
+        )
+
+
+class Kv4p3MA24PCTest(unittest.TestCase):
+    def test_matches_bc_variant(self) -> None:
+        temp = u.celsius2kelvin(30.0)
+        bc = Kv4p3_MA2025_BC(size=1, temp=temp)
+        pc = Kv4p3_MA2024_PC(size=1, temp=temp)
+        V = _V([-55.0])
+        k = _k_info()
+
+        bc.init_state(V, k)
+        pc.init_state(V, k)
+        bc.reset_state(V, k)
+        pc.reset_state(V, k)
+        self.assertTrue(u.math.allclose(pc.a.value, bc.a.value, atol=1e-6))
+        self.assertTrue(u.math.allclose(pc.b.value, bc.b.value, atol=1e-6))
+
+        bc.compute_derivative(V, k)
+        pc.compute_derivative(V, k)
+        self.assertTrue(u.math.allclose(pc.a.derivative, bc.a.derivative, atol=1e-6 * u.Hz))
+        self.assertTrue(u.math.allclose(pc.b.derivative, bc.b.derivative, atol=1e-6 * u.Hz))
+
+        i_bc = bc.current(V, k)
+        i_pc = pc.current(V, k)
+        self.assertTrue(
+            u.math.allclose(
+                i_pc.to_decimal(_DENSITY_UNIT),
+                i_bc.to_decimal(_DENSITY_UNIT),
+                atol=1e-6,
+            )
+        )
+
+
+class KMRI21SCTest(unittest.TestCase):
+    def test_root_type_is_potassium(self) -> None:
+        self.assertIs(KM_RI2021_SC.root_type, Potassium)
+
+    def test_reset_state_matches_f_n_inf(self) -> None:
+        ch = KM_RI2021_SC(size=1)
+        V = _V([-60.0])
+        k = _k_info()
+        ch.init_state(V, k)
+        ch.reset_state(V, k)
+        self.assertTrue(u.math.allclose(ch.n.value, ch.f_n_inf(V, k), atol=1e-6))
+
+    def test_current_matches_linear_formula(self) -> None:
+        ch = KM_RI2021_SC(size=1)
+        V = _V([-60.0])
+        k = _k_info()
+        ch.init_state(V, k)
+        ch.reset_state(V, k)
+        i = ch.current(V, k)
+        expected = ch.g_max * ch.n.value * (k.E - V)
+        self.assertTrue(
+            u.math.allclose(
+                i.to_decimal(_DENSITY_UNIT),
+                expected.to_decimal(_DENSITY_UNIT),
+                atol=1e-6,
+            )
+        )
+
+    def test_matches_template_gate_dynamics(self) -> None:
+        temp = u.celsius2kelvin(30.0)
+        proto = KM_RI2021_SC(size=1, temp=temp)
+        V = _V([-60.0])
+        k = _k_info()
+
+        proto.init_state(V, k)
+        proto.reset_state(V, k)
+        self.assertTrue(u.math.allclose(proto.n.value, proto.f_n_inf(V, k), atol=1e-6))
+
+        proto.n.value = jnp.array([0.25])
+        proto.compute_derivative(V, k)
+        expected = (
+            proto.gate_phi(proto._iter_gates()[0])
+            * (proto.f_n_inf(V, k) - proto.n.value)
+            / proto.f_n_tau(V, k)
+            / u.ms
+        )
+        self.assertTrue(
+            u.math.allclose(proto.n.derivative, expected, atol=1e-6 * u.Hz)
+        )
+
+
+class Kir2p3RI21SCTest(unittest.TestCase):
+    def test_matches_bc_variant(self) -> None:
+        temp = u.celsius2kelvin(30.0)
+        bc = Kir2p3_MA2025_BC(size=1, temp=temp)
+        sc = Kir2p3_RI2021_SC(size=1, temp=temp)
+        V = _V([-75.0])
+        k = _k_info()
+
+        bc.init_state(V, k)
+        sc.init_state(V, k)
+        bc.reset_state(V, k)
+        sc.reset_state(V, k)
+        self.assertTrue(u.math.allclose(sc.d.value, bc.d.value, atol=1e-6))
+
+        bc.compute_derivative(V, k)
+        sc.compute_derivative(V, k)
+        self.assertTrue(u.math.allclose(sc.d.derivative, bc.d.derivative, atol=1e-6 * u.Hz))
+
+        i_bc = bc.current(V, k)
+        i_sc = sc.current(V, k)
+        self.assertTrue(
+            u.math.allclose(
+                i_sc.to_decimal(_DENSITY_UNIT),
+                i_bc.to_decimal(_DENSITY_UNIT),
+                atol=1e-6,
+            )
+        )
+
+
+class fKdrSU15DCNTest(unittest.TestCase):
+    def test_root_type_is_potassium(self) -> None:
+        self.assertIs(fKdr_SU2015_DCN.root_type, Potassium)
+
+    def test_reset_state_matches_f_m_inf(self) -> None:
+        ch = fKdr_SU2015_DCN(size=1)
+        V = _V([-60.0])
+        k = _k_info()
+        ch.init_state(V, k)
+        ch.reset_state(V, k)
+        self.assertTrue(u.math.allclose(ch.m.value, ch.f_m_inf(V, k), atol=1e-6))
+
+    def test_current_matches_linear_formula(self) -> None:
+        ch = fKdr_SU2015_DCN(size=1)
+        V = _V([-40.0])
+        k = _k_info()
+        ch.init_state(V, k)
+        ch.m.value = jnp.array([0.5])
+        i = ch.current(V, k)
+        expected = ch.g_max * (ch.m.value ** 4) * (k.E - V)
+        self.assertTrue(
+            u.math.allclose(
+                i.to_decimal(_DENSITY_UNIT),
+                expected.to_decimal(_DENSITY_UNIT),
+                atol=1e-6,
+            )
+        )
+
+    def test_tau_matches_mod_formula(self) -> None:
+        ch = fKdr_SU2015_DCN(size=1)
+        V = _V([-60.0])
+        k = _k_info()
+        v = V.to_decimal(u.mV)
+        expected = 13.9 / (jnp.exp((v + 40.0) / 12.0) + jnp.exp((v + 40.0) / -13.0)) + 0.1
+        self.assertTrue(u.math.allclose(ch.f_m_tau(V, k), expected, atol=1e-6))
+
+
+class sKdrSU15DCNTest(unittest.TestCase):
+    def test_root_type_is_potassium(self) -> None:
+        self.assertIs(sKdr_SU2015_DCN.root_type, Potassium)
+
+    def test_reset_state_matches_f_m_inf(self) -> None:
+        ch = sKdr_SU2015_DCN(size=1)
+        V = _V([-60.0])
+        k = _k_info()
+        ch.init_state(V, k)
+        ch.reset_state(V, k)
+        self.assertTrue(u.math.allclose(ch.m.value, ch.f_m_inf(V, k), atol=1e-6))
+
+    def test_current_matches_linear_formula(self) -> None:
+        ch = sKdr_SU2015_DCN(size=1)
+        V = _V([-40.0])
+        k = _k_info()
+        ch.init_state(V, k)
+        ch.m.value = jnp.array([0.5])
+        i = ch.current(V, k)
+        expected = ch.g_max * (ch.m.value ** 4) * (k.E - V)
+        self.assertTrue(
+            u.math.allclose(
+                i.to_decimal(_DENSITY_UNIT),
+                expected.to_decimal(_DENSITY_UNIT),
+                atol=1e-6,
+            )
+        )
+
+    def test_tau_matches_mod_formula_and_differs_from_fast_kdr(self) -> None:
+        slow = sKdr_SU2015_DCN(size=1)
+        fast = fKdr_SU2015_DCN(size=1)
+        V = _V([-60.0])
+        k = _k_info()
+        v = V.to_decimal(u.mV)
+        expected = 14.95 / (jnp.exp((v + 50.0) / 21.74) + jnp.exp((v + 50.0) / -13.91)) + 0.05
+        self.assertTrue(u.math.allclose(slow.f_m_tau(V, k), expected, atol=1e-6))
+        self.assertFalse(bool(jnp.allclose(slow.f_m_tau(V, k), fast.f_m_tau(V, k), atol=1e-6)))
+
+
+class KMMA20GoCTest(unittest.TestCase):
+    def test_matches_sc_variant(self) -> None:
+        temp = u.celsius2kelvin(30.0)
+        sc = KM_RI2021_SC(size=1, temp=temp)
+        goc = KM_MA2020_GoC(size=1, temp=temp)
+        V = _V([-60.0])
+        k = _k_info()
+
+        sc.init_state(V, k)
+        goc.init_state(V, k)
+        sc.reset_state(V, k)
+        goc.reset_state(V, k)
+        self.assertTrue(u.math.allclose(goc.n.value, sc.n.value, atol=1e-6))
+
+        sc.compute_derivative(V, k)
+        goc.compute_derivative(V, k)
+        self.assertTrue(u.math.allclose(goc.n.derivative, sc.n.derivative, atol=1e-6 * u.Hz))
+
+        i_sc = sc.current(V, k)
+        i_goc = goc.current(V, k)
+        self.assertTrue(
+            u.math.allclose(
+                i_goc.to_decimal(_DENSITY_UNIT),
+                i_sc.to_decimal(_DENSITY_UNIT),
+                atol=1e-6,
+            )
+        )
+
+
+class Kv1p1MA20GoCTest(unittest.TestCase):
+    def test_matches_sc_variant_without_gating_current(self) -> None:
+        temp = u.celsius2kelvin(22.0)
+        sc = Kv1p1_RI2021_SC(size=1, temp=temp, gateCurrent=0.0)
+        goc = Kv1p1_MA2020_GoC(size=1, temp=temp, gateCurrent=0.0)
+        V = _V([-60.0])
+        k = _k_info()
+
+        sc.init_state(V, k)
+        goc.init_state(V, k)
+        sc.reset_state(V, k)
+        goc.reset_state(V, k)
+        self.assertTrue(u.math.allclose(goc.n.value, sc.n.value, atol=1e-6))
+
+        sc.compute_derivative(V, k)
+        goc.compute_derivative(V, k)
+        self.assertTrue(u.math.allclose(goc.n.derivative, sc.n.derivative, atol=1e-6 * u.Hz))
+
+        i_sc = sc.current(V, k)
+        i_goc = goc.current(V, k)
+        self.assertTrue(
+            u.math.allclose(
+                i_goc.to_decimal(_DENSITY_UNIT),
+                i_sc.to_decimal(_DENSITY_UNIT),
+                atol=1e-6,
+            )
+        )
+
+    def test_matches_sc_variant_with_gating_current(self) -> None:
+        temp = u.celsius2kelvin(22.0)
+        sc = Kv1p1_RI2021_SC(size=1, temp=temp, gateCurrent=1.0)
+        goc = Kv1p1_MA2020_GoC(size=1, temp=temp, gateCurrent=1.0)
+        V = _V([-50.0])
+        k = _k_info()
+
+        sc.init_state(V, k)
+        goc.init_state(V, k)
+        sc.reset_state(V, k)
+        goc.reset_state(V, k)
+
+        i_sc = sc.current(V, k)
+        i_goc = goc.current(V, k)
+        self.assertTrue(
+            u.math.allclose(
+                i_goc.to_decimal(_DENSITY_UNIT),
+                i_sc.to_decimal(_DENSITY_UNIT),
+                atol=1e-6,
+            )
+        )
+
+
+class Kv3p4MA20GoCTest(unittest.TestCase):
+    def test_matches_sc_variant(self) -> None:
+        temp = u.celsius2kelvin(22.0)
+        sc = Kv3p4_RI2021_SC(size=1, temp=temp)
+        goc = Kv3p4_MA2020_GoC(size=1, temp=temp)
+        V = _V([-45.0])
+        k = _k_info()
+
+        sc.init_state(V, k)
+        goc.init_state(V, k)
+        sc.reset_state(V, k)
+        goc.reset_state(V, k)
+        self.assertTrue(u.math.allclose(goc.m.value, sc.m.value, atol=1e-6))
+        self.assertTrue(u.math.allclose(goc.h.value, sc.h.value, atol=1e-6))
+
+        sc.compute_derivative(V, k)
+        goc.compute_derivative(V, k)
+        self.assertTrue(u.math.allclose(goc.m.derivative, sc.m.derivative, atol=1e-6 * u.Hz))
+        self.assertTrue(u.math.allclose(goc.h.derivative, sc.h.derivative, atol=1e-6 * u.Hz))
+
+        i_sc = sc.current(V, k)
+        i_goc = goc.current(V, k)
+        self.assertTrue(
+            u.math.allclose(
+                i_goc.to_decimal(_DENSITY_UNIT),
+                i_sc.to_decimal(_DENSITY_UNIT),
+                atol=1e-6,
+            )
+        )
+
+
+class Kv4p3MA20GoCTest(unittest.TestCase):
+    def test_matches_sc_variant_at_default_temperature(self) -> None:
+        temp = u.celsius2kelvin(22.0)
+        sc = Kv4p3_RI2021_SC(size=1, temp=temp)
+        goc = Kv4p3_MA2020_GoC(size=1)
+        V = _V([-55.0])
+        k = _k_info()
+
+        sc.init_state(V, k)
+        goc.init_state(V, k)
+        sc.reset_state(V, k)
+        goc.reset_state(V, k)
+        self.assertTrue(u.math.allclose(goc.a.value, sc.a.value, atol=1e-6))
+        self.assertTrue(u.math.allclose(goc.b.value, sc.b.value, atol=1e-6))
+
+        sc.compute_derivative(V, k)
+        goc.compute_derivative(V, k)
+        self.assertTrue(u.math.allclose(goc.a.derivative, sc.a.derivative, atol=1e-6 * u.Hz))
+        self.assertTrue(u.math.allclose(goc.b.derivative, sc.b.derivative, atol=1e-6 * u.Hz))
+
+        i_sc = sc.current(V, k)
+        i_goc = goc.current(V, k)
+        self.assertTrue(
+            u.math.allclose(
+                i_goc.to_decimal(_DENSITY_UNIT),
+                i_sc.to_decimal(_DENSITY_UNIT),
+                atol=1e-6,
+            )
+        )
+
+
+class KMMA20GrCTest(unittest.TestCase):
+    def test_matches_goc_variant(self) -> None:
+        temp = u.celsius2kelvin(30.0)
+        goc = KM_MA2020_GoC(size=1, temp=temp)
+        grc = KM_MA2020_GrC(size=1, temp=temp)
+        V = _V([-60.0])
+        k = _k_info()
+
+        goc.init_state(V, k)
+        grc.init_state(V, k)
+        goc.reset_state(V, k)
+        grc.reset_state(V, k)
+        self.assertTrue(u.math.allclose(grc.n.value, goc.n.value, atol=1e-6))
+
+        goc.compute_derivative(V, k)
+        grc.compute_derivative(V, k)
+        self.assertTrue(u.math.allclose(grc.n.derivative, goc.n.derivative, atol=1e-6 * u.Hz))
+
+        i_goc = goc.current(V, k)
+        i_grc = grc.current(V, k)
+        self.assertTrue(
+            u.math.allclose(
+                i_grc.to_decimal(_DENSITY_UNIT),
+                i_goc.to_decimal(_DENSITY_UNIT),
+                atol=1e-6,
+            )
+        )
+
+
+class Kir2p3MA20GrCTest(unittest.TestCase):
+    def test_matches_sc_variant(self) -> None:
+        temp = u.celsius2kelvin(30.0)
+        sc = Kir2p3_RI2021_SC(size=1, temp=temp)
+        grc = Kir2p3_MA2020_GrC(size=1, temp=temp)
+        V = _V([-75.0])
+        k = _k_info()
+
+        sc.init_state(V, k)
+        grc.init_state(V, k)
+        sc.reset_state(V, k)
+        grc.reset_state(V, k)
+        self.assertTrue(u.math.allclose(grc.d.value, sc.d.value, atol=1e-6))
+
+        sc.compute_derivative(V, k)
+        grc.compute_derivative(V, k)
+        self.assertTrue(u.math.allclose(grc.d.derivative, sc.d.derivative, atol=1e-6 * u.Hz))
+
+        i_sc = sc.current(V, k)
+        i_grc = grc.current(V, k)
+        self.assertTrue(
+            u.math.allclose(
+                i_grc.to_decimal(_DENSITY_UNIT),
+                i_sc.to_decimal(_DENSITY_UNIT),
+                atol=1e-6,
+            )
+        )
+
+
+class Kv1p1MA20GrCTest(unittest.TestCase):
+    def test_matches_goc_variant_without_gating_current(self) -> None:
+        temp = u.celsius2kelvin(22.0)
+        goc = Kv1p1_MA2020_GoC(size=1, temp=temp, gateCurrent=0.0)
+        grc = Kv1p1_MA2020_GrC(size=1, temp=temp, gateCurrent=0.0)
+        V = _V([-60.0])
+        k = _k_info()
+
+        goc.init_state(V, k)
+        grc.init_state(V, k)
+        goc.reset_state(V, k)
+        grc.reset_state(V, k)
+        self.assertTrue(u.math.allclose(grc.n.value, goc.n.value, atol=1e-6))
+
+        goc.compute_derivative(V, k)
+        grc.compute_derivative(V, k)
+        self.assertTrue(u.math.allclose(grc.n.derivative, goc.n.derivative, atol=1e-6 * u.Hz))
+
+        i_goc = goc.current(V, k)
+        i_grc = grc.current(V, k)
+        self.assertTrue(
+            u.math.allclose(
+                i_grc.to_decimal(_DENSITY_UNIT),
+                i_goc.to_decimal(_DENSITY_UNIT),
+                atol=1e-6,
+            )
+        )
+
+    def test_matches_goc_variant_with_gating_current(self) -> None:
+        temp = u.celsius2kelvin(22.0)
+        goc = Kv1p1_MA2020_GoC(size=1, temp=temp, gateCurrent=1.0)
+        grc = Kv1p1_MA2020_GrC(size=1, temp=temp, gateCurrent=1.0)
+        V = _V([-50.0])
+        k = _k_info()
+
+        goc.init_state(V, k)
+        grc.init_state(V, k)
+        goc.reset_state(V, k)
+        grc.reset_state(V, k)
+
+        i_goc = goc.current(V, k)
+        i_grc = grc.current(V, k)
+        self.assertTrue(
+            u.math.allclose(
+                i_grc.to_decimal(_DENSITY_UNIT),
+                i_goc.to_decimal(_DENSITY_UNIT),
+                atol=1e-6,
+            )
+        )
+
+
+class Kv2p20010MA20GrCTest(unittest.TestCase):
+    def test_root_type_is_potassium(self) -> None:
+        self.assertIs(Kv2p2_0010_MA2020_GrC.root_type, Potassium)
+
+    def test_reset_state_matches_inf_functions(self) -> None:
+        ch = Kv2p2_0010_MA2020_GrC(size=1)
+        V = _V([-60.0])
+        k = _k_info()
+        ch.init_state(V, k)
+        ch.reset_state(V, k)
+        self.assertTrue(u.math.allclose(ch.m.value, ch.f_m_inf(V, k), atol=1e-6))
+        self.assertTrue(u.math.allclose(ch.h.value, ch.f_h_inf(V, k), atol=1e-6))
+
+    def test_current_matches_linear_formula(self) -> None:
+        ch = Kv2p2_0010_MA2020_GrC(size=1)
+        V = _V([-40.0])
+        k = _k_info()
+        ch.init_state(V, k)
+        ch.m.value = jnp.array([0.5])
+        ch.h.value = jnp.array([0.25])
+        i = ch.current(V, k)
+        expected = ch.g_max * ch.m.value * ch.h.value * (k.E - V)
+        self.assertTrue(
+            u.math.allclose(
+                i.to_decimal(_DENSITY_UNIT),
+                expected.to_decimal(_DENSITY_UNIT),
+                atol=1e-6,
+            )
+        )
+
+    def test_tau_matches_mod_formula(self) -> None:
+        ch = Kv2p2_0010_MA2020_GrC(size=1)
+        V = _V([-60.0])
+        k = _k_info()
+        v = V.to_decimal(u.mV)
+        expected_m_tau = 130.0 / (1.0 + jnp.exp((v + 46.56) / -44.14))
+        expected_h_tau = 10000.0 / (1.0 + jnp.exp((v + 46.56) / -44.14))
+        self.assertTrue(u.math.allclose(ch.f_m_tau(V, k), expected_m_tau, atol=1e-6))
+        self.assertTrue(u.math.allclose(ch.f_h_tau(V, k), expected_h_tau, atol=1e-6))
+
+
+class Kv3p4MA20GrCTest(unittest.TestCase):
+    def test_matches_goc_variant(self) -> None:
+        temp = u.celsius2kelvin(22.0)
+        goc = Kv3p4_MA2020_GoC(size=1, temp=temp)
+        grc = Kv3p4_MA2020_GrC(size=1, temp=temp)
+        V = _V([-45.0])
+        k = _k_info()
+
+        goc.init_state(V, k)
+        grc.init_state(V, k)
+        goc.reset_state(V, k)
+        grc.reset_state(V, k)
+        self.assertTrue(u.math.allclose(grc.m.value, goc.m.value, atol=1e-6))
+        self.assertTrue(u.math.allclose(grc.h.value, goc.h.value, atol=1e-6))
+
+        goc.compute_derivative(V, k)
+        grc.compute_derivative(V, k)
+        self.assertTrue(u.math.allclose(grc.m.derivative, goc.m.derivative, atol=1e-6 * u.Hz))
+        self.assertTrue(u.math.allclose(grc.h.derivative, goc.h.derivative, atol=1e-6 * u.Hz))
+
+        i_goc = goc.current(V, k)
+        i_grc = grc.current(V, k)
+        self.assertTrue(
+            u.math.allclose(
+                i_grc.to_decimal(_DENSITY_UNIT),
+                i_goc.to_decimal(_DENSITY_UNIT),
+                atol=1e-6,
+            )
+        )
+
+
+class Kv4p3MA20GrCTest(unittest.TestCase):
+    def test_matches_goc_variant_at_same_temperature(self) -> None:
+        temp = u.celsius2kelvin(30.0)
+        goc = Kv4p3_MA2020_GoC(size=1, temp=temp)
+        grc = Kv4p3_MA2020_GrC(size=1)
+        V = _V([-55.0])
+        k = _k_info()
+
+        goc.init_state(V, k)
+        grc.init_state(V, k)
+        goc.reset_state(V, k)
+        grc.reset_state(V, k)
+        self.assertTrue(u.math.allclose(grc.a.value, goc.a.value, atol=1e-6))
+        self.assertTrue(u.math.allclose(grc.b.value, goc.b.value, atol=1e-6))
+
+        goc.compute_derivative(V, k)
+        grc.compute_derivative(V, k)
+        self.assertTrue(u.math.allclose(grc.a.derivative, goc.a.derivative, atol=1e-6 * u.Hz))
+        self.assertTrue(u.math.allclose(grc.b.derivative, goc.b.derivative, atol=1e-6 * u.Hz))
+
+        i_goc = goc.current(V, k)
+        i_grc = grc.current(V, k)
+        self.assertTrue(
+            u.math.allclose(
+                i_grc.to_decimal(_DENSITY_UNIT),
+                i_goc.to_decimal(_DENSITY_UNIT),
+                atol=1e-6,
+            )
+        )
+
+
+class Kv1p1RI21SCTest(unittest.TestCase):
+    def test_matches_bc_variant_without_gating_current(self) -> None:
+        temp = u.celsius2kelvin(22.0)
+        bc = Kv1p1_MA2025_BC(size=1, temp=temp, gateCurrent=0.0)
+        sc = Kv1p1_RI2021_SC(size=1, temp=temp, gateCurrent=0.0)
+        V = _V([-60.0])
+        k = _k_info()
+
+        bc.init_state(V, k)
+        sc.init_state(V, k)
+        bc.reset_state(V, k)
+        sc.reset_state(V, k)
+        self.assertTrue(u.math.allclose(sc.n.value, bc.n.value, atol=1e-6))
+
+        bc.compute_derivative(V, k)
+        sc.compute_derivative(V, k)
+        self.assertTrue(u.math.allclose(sc.n.derivative, bc.n.derivative, atol=1e-6 * u.Hz))
+
+        i_bc = bc.current(V, k)
+        i_sc = sc.current(V, k)
+        self.assertTrue(
+            u.math.allclose(
+                i_sc.to_decimal(_DENSITY_UNIT),
+                i_bc.to_decimal(_DENSITY_UNIT),
+                atol=1e-6,
+            )
+        )
+
+    def test_matches_bc_variant_with_gating_current(self) -> None:
+        temp = u.celsius2kelvin(22.0)
+        bc = Kv1p1_MA2025_BC(size=1, temp=temp, gateCurrent=1.0)
+        sc = Kv1p1_RI2021_SC(size=1, temp=temp, gateCurrent=1.0)
+        V = _V([-50.0])
+        k = _k_info()
+
+        bc.init_state(V, k)
+        sc.init_state(V, k)
+        bc.reset_state(V, k)
+        sc.reset_state(V, k)
+
+        i_bc = bc.current(V, k)
+        i_sc = sc.current(V, k)
+        self.assertTrue(
+            u.math.allclose(
+                i_sc.to_decimal(_DENSITY_UNIT),
+                i_bc.to_decimal(_DENSITY_UNIT),
+                atol=1e-6,
+            )
+        )
+
+
+class Kv3p4RI21SCTest(unittest.TestCase):
+    def test_matches_bc_variant(self) -> None:
+        temp = u.celsius2kelvin(22.0)
+        bc = Kv3p4_MA2025_BC(size=1, temp=temp)
+        sc = Kv3p4_RI2021_SC(size=1, temp=temp)
+        V = _V([-45.0])
+        k = _k_info()
+
+        bc.init_state(V, k)
+        sc.init_state(V, k)
+        bc.reset_state(V, k)
+        sc.reset_state(V, k)
+        self.assertTrue(u.math.allclose(sc.m.value, bc.m.value, atol=1e-6))
+        self.assertTrue(u.math.allclose(sc.h.value, bc.h.value, atol=1e-6))
+
+        bc.compute_derivative(V, k)
+        sc.compute_derivative(V, k)
+        self.assertTrue(u.math.allclose(sc.m.derivative, bc.m.derivative, atol=1e-6 * u.Hz))
+        self.assertTrue(u.math.allclose(sc.h.derivative, bc.h.derivative, atol=1e-6 * u.Hz))
+
+        i_bc = bc.current(V, k)
+        i_sc = sc.current(V, k)
+        self.assertTrue(
+            u.math.allclose(
+                i_sc.to_decimal(_DENSITY_UNIT),
+                i_bc.to_decimal(_DENSITY_UNIT),
+                atol=1e-6,
+            )
+        )
+
+
+class Kv4p3RI21SCTest(unittest.TestCase):
+    def test_matches_bc_variant(self) -> None:
+        temp = u.celsius2kelvin(30.0)
+        bc = Kv4p3_MA2025_BC(size=1, temp=temp)
+        sc = Kv4p3_RI2021_SC(size=1, temp=temp)
+        V = _V([-55.0])
+        k = _k_info()
+
+        bc.init_state(V, k)
+        sc.init_state(V, k)
+        bc.reset_state(V, k)
+        sc.reset_state(V, k)
+        self.assertTrue(u.math.allclose(sc.a.value, bc.a.value, atol=1e-6))
+        self.assertTrue(u.math.allclose(sc.b.value, bc.b.value, atol=1e-6))
+
+        bc.compute_derivative(V, k)
+        sc.compute_derivative(V, k)
+        self.assertTrue(u.math.allclose(sc.a.derivative, bc.a.derivative, atol=1e-6 * u.Hz))
+        self.assertTrue(u.math.allclose(sc.b.derivative, bc.b.derivative, atol=1e-6 * u.Hz))
+
+        i_bc = bc.current(V, k)
+        i_sc = sc.current(V, k)
+        self.assertTrue(
+            u.math.allclose(
+                i_sc.to_decimal(_DENSITY_UNIT),
+                i_bc.to_decimal(_DENSITY_UNIT),
+                atol=1e-6,
+            )
+        )
+
+
+class KdrZH19IOTest(unittest.TestCase):
+    def test_root_type_is_potassium(self) -> None:
+        self.assertIs(Kdr_ZH2019_IO.root_type, Potassium)
+
+    def test_reset_state_matches_f_n_inf(self) -> None:
+        ch = Kdr_ZH2019_IO(size=1)
+        V = _V([-60.0])
+        k = _k_info()
+        ch.init_state(V, k)
+        ch.reset_state(V, k)
+        self.assertTrue(u.math.allclose(ch.n.value, ch.f_n_inf(V, k), atol=1e-6))
+
+    def test_current_matches_linear_formula(self) -> None:
+        ch = Kdr_ZH2019_IO(size=1)
+        V = _V([-40.0])
+        k = _k_info()
+        ch.init_state(V, k)
+        ch.n.value = jnp.array([0.5])
+        i = ch.current(V, k)
+        expected = ch.g_max * (ch.n.value ** 4) * (k.E - V)
+        self.assertTrue(
+            u.math.allclose(
+                i.to_decimal(_DENSITY_UNIT),
+                expected.to_decimal(_DENSITY_UNIT),
+                atol=1e-6,
+            )
+        )
+
+    def test_small_denominator_branch_is_stable(self) -> None:
+        ch = Kdr_ZH2019_IO(size=1)
+        self.assertTrue(u.math.allclose(ch._n_alpha(_V([-41.0])), jnp.array([10.0]), atol=1e-6))
 
 
 if __name__ == "__main__":

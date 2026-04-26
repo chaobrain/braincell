@@ -8,6 +8,7 @@ import unittest
 from unittest import mock
 
 import matplotlib
+import numpy as np
 
 from ._helpers import (
     CHANNEL_NO_CONC_ROOT,
@@ -115,7 +116,7 @@ class WorkflowInputTest(unittest.TestCase):
         records = workflow_api.discover_batch_configs(CHANNEL_NO_CONC_ROOT / "configs" / "ma25_bc")
 
         records_by_name = {record["config_name"]: record for record in records}
-        self.assertEqual(set(records_by_name), {"hcn1_ma25_bc", "kir2p3_ma25_bc", "kv1p1_ma25_bc", "kv3p4_ma25_bc", "kv4p3_ma25_bc"})
+        self.assertEqual(set(records_by_name), {"hcn1_ma25_bc", "nav1p6_ma25_bc", "kir2p3_ma25_bc", "kv1p1_ma25_bc", "kv3p4_ma25_bc", "kv4p3_ma25_bc"})
         self.assertIn("hcn1_ma25_bc", records_by_name)
         self.assertEqual(records_by_name["hcn1_ma25_bc"]["n_templates"], 3)
 
@@ -126,9 +127,13 @@ class WorkflowInputTest(unittest.TestCase):
         self.assertEqual(
             set(records_by_name),
             {
+                "nav1p6_ma20_goc",
                 "hcn1_ma20_goc",
                 "hcn2_ma20_goc",
                 "km_ma20_goc",
+                "kca1p1_ma20_goc",
+                "kca2p2_ma20_goc",
+                "kca3p1_ma20_goc",
                 "kv1p1_ma20_goc",
                 "kv3p4_ma20_goc",
                 "kv4p3_ma20_goc",
@@ -283,6 +288,7 @@ class WorkflowRunSmokeTest(unittest.TestCase):
             self.assertTrue((out_dir / "all_templates_observable_summary.png").exists())
             self.assertTrue((out_dir / "boxplot_by_template.png").exists())
             self.assertTrue((out_dir / "boxplot_by_observable_family.png").exists())
+
 
 
 class BatchWorkflowTest(WorkflowRunSmokeTest):

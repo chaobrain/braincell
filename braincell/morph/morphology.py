@@ -1211,6 +1211,9 @@ class Morphology:
         *,
         layout: str | None = None,
         shape: str | None = None,
+        branch_type_colors: dict[str, object] | None = None,
+        branch_type_edge_colors_2d: dict[str, object] | None = None,
+        frustum_edge_linewidth_2d: float | None = None,
         backend: str | None = None,
         region=None,
         locset=None,
@@ -1243,12 +1246,22 @@ class Morphology:
             use the schematic branch layout pipeline. When omitted, uses
             the global 2-D default configured via
             ``braincell.morph.vis.configure(...)``. The initial default
-            is ``"stem"``.
+            is ``"fan"``.
         shape : str or None
             2-D drawing shape: ``"line"`` or ``"frustum"``. When omitted,
             uses the global 2-D default configured via
             ``braincell.morph.vis.configure(...)``. The initial default
             is ``"frustum"``.
+        branch_type_colors : mapping or None
+            Per-branch-type colour overrides for this call only. These
+            colours drive 2D line rendering, 2D frustum fills, and the
+            shared branch-type theme used by 3D and topology plots.
+        branch_type_edge_colors_2d : mapping or None
+            Per-branch-type frustum border colour overrides for this
+            call only. These borders remain active even when ``values``
+            drives the frustum fill colours via a colormap.
+        frustum_edge_linewidth_2d : float or None
+            Frustum border linewidth override for this call only.
         backend : str or None
             Rendering backend name (e.g., ``"matplotlib"``).
             Auto-selected when *None*.
@@ -1331,6 +1344,9 @@ class Morphology:
             values=values,
             layout=layout,
             shape=shape,
+            branch_type_colors=branch_type_colors,
+            branch_type_edge_colors_2d=branch_type_edge_colors_2d,
+            frustum_edge_linewidth_2d=frustum_edge_linewidth_2d,
             backend=backend,
             chooser=chooser,
             ax=ax,

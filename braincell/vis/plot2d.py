@@ -14,8 +14,10 @@
 # ==============================================================================
 
 
+from contextlib import nullcontext
+
 from .backend import BackendChooser, validate_backend_for_scene
-from .config import resolve_default_2d_layout, resolve_default_2d_shape
+from .config import resolve_default_2d_layout, resolve_default_2d_shape, theme as vis_theme
 from .hooks import VisHooks
 from .layout import LayoutConfig
 from .scene import OverlaySpec, RenderRequest, ValueSpec
@@ -36,6 +38,9 @@ def plot2d(
     show_colorbar: bool = True,
     layout: str | None = None,
     shape: str | None = None,
+    branch_type_colors: dict[str, object] | None = None,
+    branch_type_edge_colors_2d: dict[str, object] | None = None,
+    frustum_edge_linewidth_2d: float | None = None,
     backend: str | None = None,
     chooser: BackendChooser | None = None,
     ax=None,
@@ -65,16 +70,22 @@ def plot2d(
         show_colorbar=show_colorbar,
     )
     overlay = OverlaySpec(region=region, locset=locset, values=values_spec)
-    scene = build_render_scene_2d(
-        morpho,
-        layout=resolved_layout,
-        shape=resolved_shape,
-        projection_plane=projection_plane,
-        min_branch_angle_deg=min_branch_angle_deg,
-        root_layout=root_layout,
-        overlay=overlay,
-        layout_config=layout_config,
+    style_overrides = _build_style_overrides(
+        branch_type_colors=branch_type_colors,
+        branch_type_edge_colors_2d=branch_type_edge_colors_2d,
+        frustum_edge_linewidth_2d=frustum_edge_linewidth_2d,
     )
+    with vis_theme(**style_overrides) if style_overrides else nullcontext():
+        scene = build_render_scene_2d(
+            morpho,
+            layout=resolved_layout,
+            shape=resolved_shape,
+            projection_plane=projection_plane,
+            min_branch_angle_deg=min_branch_angle_deg,
+            root_layout=root_layout,
+            overlay=overlay,
+            layout_config=layout_config,
+        )
     chooser = chooser or BackendChooser.default()
     backend_options: dict = {}
     if ax is not None:
@@ -99,6 +110,22 @@ def plot2d(
     backend_impl = chooser.pick(requested=backend, scene_kind="2d")
     validate_backend_for_scene(backend_impl, scene)
     return backend_impl.render(request)
+
+
+def _build_style_overrides(
+    *,
+    branch_type_colors: dict[str, object] | None,
+    branch_type_edge_colors_2d: dict[str, object] | None,
+    frustum_edge_linewidth_2d: float | None,
+) -> dict[str, object]:
+    overrides: dict[str, object] = {}
+    if branch_type_colors is not None:
+        overrides["branch_type_colors"] = dict(branch_type_colors)
+    if branch_type_edge_colors_2d is not None:
+        overrides["branch_type_edge_colors_2d"] = dict(branch_type_edge_colors_2d)
+    if frustum_edge_linewidth_2d is not None:
+        overrides["frustum_edge_linewidth_2d"] = frustum_edge_linewidth_2d
+    return overrides
 
 
 def _build_value_spec(

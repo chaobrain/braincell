@@ -185,13 +185,19 @@ def _draw_polyline(ax, polyline: Polyline2D) -> None:
 
 def _draw_polygon(ax, plt, polygon: Polygon2D) -> None:
     color = _rgb_to_float(polygon.color_rgb)
+    linewidth = max(float(polygon.edge_linewidth), 0.0)
+    edge_color = (
+        "none"
+        if linewidth <= 0.0
+        else _rgb_to_float(polygon.edge_color_rgb or polygon.color_rgb)
+    )
     patch = plt.Polygon(
         polygon.points_um,
         closed=True,
         facecolor=color,
-        edgecolor=color,
+        edgecolor=edge_color,
         alpha=polygon.alpha,
-        linewidth=1.0,
+        linewidth=linewidth,
         zorder=polygon.draw_order,
     )
     ax.add_patch(patch)
@@ -303,13 +309,19 @@ def _draw_value_polygons(
     if polygons_um.size == 0:
         return
     values = np.asarray(batch.polygon_values, dtype=float)
+    linewidth = max(float(batch.edge_linewidth), 0.0)
+    edge_color = (
+        "none"
+        if batch.edge_color_rgb is None or linewidth <= 0.0
+        else _rgb_to_float(batch.edge_color_rgb)
+    )
     pc = PolyCollection(
         list(polygons_um),
         array=values,
         cmap=cmap,
         norm=norm,
-        edgecolors="none",
-        linewidths=0.0,
+        edgecolors=edge_color,
+        linewidths=linewidth,
         zorder=batch.draw_order,
     )
     ax.add_collection(pc)

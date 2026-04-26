@@ -97,6 +97,34 @@ class BranchFilterTest(unittest.TestCase):
 
         self.assertEqual(in_length_window.intervals, ((0, 0.0, 1.0), (1, 0.0, 1.0), (3, 0.0, 1.0)))
 
+    def test_branch_filters_support_geometry_metric_properties(self) -> None:
+        tree = _build_tree()
+
+        by_mean_radius = branch_range(
+            "mean_radius",
+            (0.75 * u.um, 1.5 * u.um),
+            closed="both",
+        ).evaluate(tree)
+        by_area = branch_range(
+            "area",
+            (500.0 * (u.um ** 2), 800.0 * (u.um ** 2)),
+            closed="both",
+        ).evaluate(tree)
+        by_volume = branch_range(
+            "volume",
+            (None, 200.0 * (u.um ** 3)),
+            closed="right",
+        ).evaluate(tree)
+        by_exact_mean_radius = branch_in(
+            "mean_radius",
+            [10.0 * u.um, 1.5 * u.um],
+        ).evaluate(tree)
+
+        self.assertEqual(by_mean_radius.intervals, ((1, 0.0, 1.0), (3, 0.0, 1.0)))
+        self.assertEqual(by_area.intervals, ((1, 0.0, 1.0),))
+        self.assertEqual(by_volume.intervals, ((2, 0.0, 1.0), (3, 0.0, 1.0)))
+        self.assertEqual(by_exact_mean_radius.intervals, ((0, 0.0, 1.0), (1, 0.0, 1.0)))
+
     def test_helper_constructors_match_class_behavior(self) -> None:
         tree = _build_tree()
 
@@ -108,6 +136,14 @@ class BranchFilterTest(unittest.TestCase):
 
     def test_invalid_conditions_raise_clear_errors(self) -> None:
         tree = _build_tree()
+        multi_segment_tree = Morphology.from_root(
+            Branch.from_lengths(
+                lengths=[10.0, 20.0] * u.um,
+                radii=[2.0, 1.5, 1.0] * u.um,
+                type="dendrite",
+            ),
+            name="dend",
+        )
 
         with self.assertRaises(ValueError):
             BranchInFilter(property="missing_property", values=1).evaluate(tree)
@@ -120,6 +156,12 @@ class BranchFilterTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             BranchRangeFilter(property="branch_id", bounds=(2, 1), closed="both").evaluate(tree)
         with self.assertRaises(ValueError):
-            BranchRangeFilter(property="volume", bounds=(None, 100 * (u.um ** 3)), closed="right").evaluate(tree)
+            BranchRangeFilter(property="max_radius", bounds=(None, 2 * u.um), closed="right").evaluate(tree)
+        with self.assertRaises(TypeError):
+            BranchRangeFilter(
+                property="areas",
+                bounds=(None, 100 * (u.um ** 2)),
+                closed="right",
+            ).evaluate(multi_segment_tree)
         with self.assertRaises(TypeError):
             BranchRangeFilter(property="branch_id", bounds=(0, 1), unit=u.um, closed="both")

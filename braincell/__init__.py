@@ -67,6 +67,7 @@ from .morph.branch import (
 from .morph.morphology import (
     Morphology,
 )
+from . import vis
 
 __all__ = [
     "__version__",
@@ -110,4 +111,5 @@ __all__ = [
     "quad",
     "SineClamp",
     "synapse",
+    "vis",
 ]

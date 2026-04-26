@@ -30,11 +30,22 @@
 - 不涉及浓度动力学
 - 结果只比较 `voltage`、`current.ix`、`gates.*`
 
+这里的 `gates.*` 是统一结果名：
+
+- 对 HH channel，通常就是 activation / inactivation gate
+- 对 Markov no-conc channel，也可以是被显式比较的独立状态轨迹
+
 不适合：
 
-- 依赖 `cai` / `nai` / `ki` 等浓度状态
-- mixed-ion / manual-structure 机制
+- 依赖 `cai` / `nai` / `ki` 等浓度状态，或需要显式比较这些浓度轨迹
+- 需要显式控制多个 ion 状态的 mixed-ion 机制
+- manual-structure 机制
 - 多 compartment cable
+
+例外说明：
+
+- 少数 mixed-ion channel 如果只需要默认固定 ion 占位、并且比较目标仍然只有 `v / ix / gates`，可以接进来
+- 例如 `Kca3p1_MA20_GoC`
 
 ## 2. 文件分工
 
@@ -350,6 +361,21 @@ HCN 就是这样。
 规则：
 
 - 三个列表长度必须一致
+
+补充约定：
+
+- `gate_names` 只声明“要比较的可观测状态名”，不限制它必须是 HH gate
+- 对 Markov channel，推荐只列两侧都能直接采样的独立状态
+- 如果某个状态是通过概率守恒重建出来的冗余状态，就不要放进这里
+
+例如 `Nav1p6_MA20_GoC` 在这里比较的是：
+
+- `C1` 到 `C5`
+- `I1` 到 `I5`
+- `O`
+- `B`
+
+不包含冗余状态 `I6`。
 
 ## 10. `mapping.channel_params` 怎么写
 
@@ -667,9 +693,10 @@ HCN 就是这样。
 - `configs/ri21_sc/`
 - `configs/su15_dcn/`
 
-`ma25_bc/` 目前只放了 BC 里已经在 `braincell.channel.hh_no_conc` 导入完成、且属于 `HH_no_conc` 路线的 5 个 channel：
+`ma25_bc/` 目前放了 BC 里已经可直接从 `braincell.channel` 导入、且适合走 `channel_no_conc` compare 的 6 个 channel：
 
 - `HCN1_MA25_BC`
+- `Nav1p6_MA25_BC`
 - `Kir2p3_MA25_BC`
 - `Kv1p1_MA25_BC`
 - `Kv3p4_MA25_BC`
@@ -677,25 +704,49 @@ HCN 就是这样。
 
 为什么不是 BC 全部 15 个机制都在这里：
 
-- `Nav1p1_MA25_BC`、`Nav1p6_MA25_BC` 属于 `Markov_no_conc`
+- `Nav1p1_MA25_BC` 属于 `Markov_no_conc`
 - `CdpStC_MA25_BC` 属于 `Ion_dyn`
 - `Cav1p2_MA25_BC`、`Cav1p3_MA25_BC`、`Cav2p1_MA25_BC`、`Cav3p2_MA25_BC`、`Kca3p1_MA25_BC` 属于 `HH_conc`
 - `Kca1p1_MA25_BC`、`Kca2p2_MA25_BC` 属于 `Markov_conc`
 
-所以 `channel_no_conc` 这里只覆盖 BC 的 `hh_no_conc` 子集，不负责其余类别。
+其中 `Nav1p6_MA25_BC` 虽然是 `Markov_no_conc`，但已经按 12 个独立状态接入。
 
-`ma20_goc/` 当前覆盖的是 GoC 里已经在 `braincell.channel.hh_no_conc` 实现完成、并且适合走 `channel_no_conc` compare 的 8 个 channel：
+`ma20_goc/` 当前覆盖的是 GoC 里已经可直接从 `braincell.channel` 导入、并且适合走 `channel_no_conc` compare 的 12 个 channel：
 
 - `HCN1_MA20_GoC`
 - `HCN2_MA20_GoC`
 - `KM_MA20_GoC`
+- `Kca1p1_MA20_GoC`
+- `Kca2p2_MA20_GoC`
+- `Kca3p1_MA20_GoC`
 - `Kv1p1_MA20_GoC`
 - `Kv3p4_MA20_GoC`
 - `Kv4p3_MA20_GoC`
 - `CaHVA_MA20_GoC`
 - `Cav2p3_MA20_GoC`
+- `Nav1p6_MA20_GoC`
 
-这 8 个已经能直接写成 compare config。
+这 12 个已经能直接写成 compare config。
+
+其中 `Nav1p6_MA20_GoC` 虽然是 `Markov_no_conc`，但当前已经按 12 个独立状态接入：
+
+- `C1` 到 `C5`
+- `I1` 到 `I5`
+- `O`
+- `B`
+
+不比较冗余状态 `I6`。
+
+`Kca3p1_MA20_GoC` 虽然是 mixed-ion KCa，但当前可以在默认固定 `ca` 占位下进入 compare：
+
+- `mapping.current` 仍然写 `ik`
+- `ion_state` 只显式控制 `k` reversal
+- `ca` 侧不暴露浓度配置，也不比较浓度轨迹
+
+`Kca2p2_MA20_GoC` 和 `Kca1p1_MA20_GoC` 也是同类特例，但由于它们属于守恒约束的 Markov 模型，compare config 只比较独立状态：
+
+- `Kca2p2_MA20_GoC` 不比较冗余态 `c1 / C1`
+- `Kca1p1_MA20_GoC` 不比较冗余态 `C0`
 
 注意：
 
@@ -723,12 +774,10 @@ env PATH=/usr/bin:/bin:$PATH \
 
 GoC 其余机制不在这个目录的原因：
 
-- `Nav1p6_MA20_GoC` 属于 `Markov_no_conc`
 - `CdpStC_MA20_GoC` 属于 `Ion_dyn`
-- `Cav1p2_MA20_GoC`、`Cav1p3_MA20_GoC`、`Cav3p1_MA20_GoC`、`Kca3p1_MA20_GoC` 属于 `HH_conc`
-- `Kca1p1_MA20_GoC`、`Kca2p2_MA20_GoC` 属于 `Markov_conc`
+- `Cav1p2_MA20_GoC`、`Cav1p3_MA20_GoC`、`Cav3p1_MA20_GoC` 属于 `HH_conc`
 
-`su15_dcn/` 当前覆盖的是 DCN 里已经在 `braincell.channel.hh_no_conc` 实现完成、并且适合走 `channel_no_conc` compare 的 5 个 channel：
+`su15_dcn/` 当前覆盖的是 DCN 里已经可直接从 `braincell.channel` 导入、并且适合走 `channel_no_conc` compare 的 5 个 channel：
 
 - `HCN_SU15_DCN`
 - `NaF_SU15_DCN`
@@ -741,7 +790,7 @@ DCN 其余机制不在这个目录的原因：
 - `CaHVA_SU15_DCN`、`CaL_SU15_DCN`、`CaLVA_SU15_DCN`、`SK_SU15_DCN` 属于 `HH_conc`
 - `CdpHVA_SU15_DCN`、`CdpLVA_SU15_DCN` 属于 `Ion_dyn`
 
-`ri21_sc/` 当前覆盖的是 SC 里已经在 `braincell.channel.hh_no_conc` 实现完成、并且适合走 `channel_no_conc` compare 的 6 个 channel：
+`ri21_sc/` 当前覆盖的是 SC 里已经可直接从 `braincell.channel` 导入、并且适合走 `channel_no_conc` compare 的 6 个 channel：
 
 - `HCN1_RI21_SC`
 - `KM_RI21_SC`
@@ -757,7 +806,7 @@ SC 其余机制不在这个目录的原因：
 - `Cav2p1_RI21_SC`、`Cav3p2_RI21_SC`、`Cav3p3_RI21_SC` 属于 `HH_conc`
 - `Kca1p1_RI21_SC`、`Kca2p2_RI21_SC` 属于 `Markov_conc`
 
-`su15_dcn/` 当前覆盖的是 DCN 里已经在 `braincell.channel.hh_no_conc` 实现完成、并且适合走 `channel_no_conc` compare 的 5 个 channel：
+`su15_dcn/` 当前覆盖的是 DCN 里已经可直接从 `braincell.channel` 导入、并且适合走 `channel_no_conc` compare 的 5 个 channel：
 
 - `HCN_SU15_DCN`
 - `NaF_SU15_DCN`

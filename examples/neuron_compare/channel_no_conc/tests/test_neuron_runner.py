@@ -23,6 +23,7 @@ neuron_runner = load_module(
 
 class NeuronRunnerTest(unittest.TestCase):
     _GOC_LIBNRNMECH = CHANNEL_NO_CONC_ROOT / ".." / "Cerebellum_mod" / "GoC" / "channel" / "x86_64" / "libnrnmech.so"
+    _BC_LIBNRNMECH = CHANNEL_NO_CONC_ROOT / ".." / "Cerebellum_mod" / "BC" / "channel" / "x86_64" / "libnrnmech.so"
 
     def _build_payload(self, *, stimulus: dict | None = None) -> dict:
         return build_case_payload(
@@ -245,6 +246,78 @@ class NeuronRunnerTest(unittest.TestCase):
         self.assertEqual(sorted(result["gates"].keys()), ["o_fast", "o_slow"])
         self.assertEqual(result["time_ms"].shape, result["current"]["ix"].shape)
         self.assertGreater(float(np.max(np.abs(result["current"]["ix"]))), 1e-6)
+
+    def test_repo_kca3p1_goc_smoke_case_runs_with_ik_current(self) -> None:
+        if not self._GOC_LIBNRNMECH.resolve().exists():
+            self.skipTest("GoC NEURON mechanisms are not compiled into libnrnmech.so in the current environment.")
+        config_path = CHANNEL_NO_CONC_ROOT / "configs" / "ma20_goc" / "kca3p1_ma20_goc.json"
+        template_path = CHANNEL_NO_CONC_ROOT / "templates" / "vinit_celsius.json"
+        config = experiment_schema.load_sweep_config(config_path, template_path)
+        case_payload = experiment_schema.expand_cases(config)[4]
+        case = experiment_schema.ChannelNoConcCase.from_dict(case_payload)
+
+        result = neuron_runner.run_case(case)
+
+        self.assertEqual(case.mapping_spec.current_source.neuron_current_var, "ik")
+        self.assertEqual(sorted(result["gates"].keys()), ["Y"])
+        self.assertEqual(result["time_ms"].shape, result["current"]["ix"].shape)
+        self.assertTrue(np.isfinite(result["current"]["ix"]).all())
+        self.assertGreater(float(np.max(np.abs(result["current"]["ix"]))), 1e-6)
+
+    def test_repo_kca2p2_goc_smoke_case_runs_with_ik_current(self) -> None:
+        if not self._GOC_LIBNRNMECH.resolve().exists():
+            self.skipTest("GoC NEURON mechanisms are not compiled into libnrnmech.so in the current environment.")
+        config_path = CHANNEL_NO_CONC_ROOT / "configs" / "ma20_goc" / "kca2p2_ma20_goc.json"
+        template_path = CHANNEL_NO_CONC_ROOT / "templates" / "vinit_celsius.json"
+        config = experiment_schema.load_sweep_config(config_path, template_path)
+        case_payload = experiment_schema.expand_cases(config)[4]
+        case = experiment_schema.ChannelNoConcCase.from_dict(case_payload)
+
+        result = neuron_runner.run_case(case)
+
+        self.assertEqual(case.mapping_spec.current_source.neuron_current_var, "ik")
+        self.assertEqual(sorted(result["gates"].keys()), ["c2", "c3", "c4", "o1", "o2"])
+        self.assertEqual(result["time_ms"].shape, result["current"]["ix"].shape)
+        self.assertTrue(np.isfinite(result["current"]["ix"]).all())
+
+    def test_repo_kca1p1_goc_smoke_case_runs_with_ik_current(self) -> None:
+        if not self._GOC_LIBNRNMECH.resolve().exists():
+            self.skipTest("GoC NEURON mechanisms are not compiled into libnrnmech.so in the current environment.")
+        config_path = CHANNEL_NO_CONC_ROOT / "configs" / "ma20_goc" / "kca1p1_ma20_goc.json"
+        template_path = CHANNEL_NO_CONC_ROOT / "templates" / "vinit_celsius.json"
+        config = experiment_schema.load_sweep_config(config_path, template_path)
+        case_payload = experiment_schema.expand_cases(config)[4]
+        case = experiment_schema.ChannelNoConcCase.from_dict(case_payload)
+
+        result = neuron_runner.run_case(case)
+
+        self.assertEqual(case.mapping_spec.current_source.neuron_current_var, "ik")
+        self.assertEqual(
+            sorted(result["gates"].keys()),
+            ["C1", "C2", "C3", "C4", "O0", "O1", "O2", "O3", "O4"],
+        )
+        self.assertEqual(result["time_ms"].shape, result["current"]["ix"].shape)
+        self.assertTrue(np.isfinite(result["current"]["ix"]).all())
+
+    def test_repo_nav1p6_bc_smoke_case_runs_with_ina_current(self) -> None:
+        if not self._BC_LIBNRNMECH.resolve().exists():
+            self.skipTest("BC NEURON mechanisms are not compiled into libnrnmech.so in the current environment.")
+        config_path = CHANNEL_NO_CONC_ROOT / "configs" / "ma25_bc" / "nav1p6_ma25_bc.json"
+        template_path = CHANNEL_NO_CONC_ROOT / "templates" / "vinit_celsius.json"
+        config = experiment_schema.load_sweep_config(config_path, template_path)
+        case_payload = experiment_schema.expand_cases(config)[0]
+        case = experiment_schema.ChannelNoConcCase.from_dict(case_payload)
+
+        result = neuron_runner.run_case(case)
+
+        self.assertEqual(case.mapping_spec.current_source.neuron_current_var, "ina")
+        self.assertEqual(
+            tuple(result["gates"]),
+            ("C1", "C2", "C3", "C4", "C5", "I1", "I2", "I3", "I4", "I5", "O", "B"),
+        )
+        self.assertTrue(all(trace.shape == result["time_ms"].shape for trace in result["gates"].values()))
+        self.assertTrue(np.isfinite(result["current"]["ix"]).all())
+        self.assertGreaterEqual(float(np.max(np.abs(result["current"]["ix"]))), 0.0)
 
     def test_repo_hcn_dcn_smoke_case_runs_with_ih_current(self) -> None:
         config_path = CHANNEL_NO_CONC_ROOT / "configs" / "su15_dcn" / "hcn_su15_dcn.json"

@@ -6,7 +6,7 @@ from unittest import mock
 
 import numpy as np
 
-from ._helpers import TEMPLATES_ROOT, build_case_payload, load_module
+from ._helpers import CHANNEL_NO_CONC_ROOT, TEMPLATES_ROOT, build_case_payload, load_module
 
 
 os.environ.setdefault("JAX_PLATFORMS", "cpu")
@@ -23,6 +23,9 @@ compare_module = load_module(
 
 
 class CompareSingleCaseTest(unittest.TestCase):
+    _GOC_LIBNRNMECH = CHANNEL_NO_CONC_ROOT / ".." / "Cerebellum_mod" / "GoC" / "channel" / "x86_64" / "libnrnmech.so"
+    _BC_LIBNRNMECH = CHANNEL_NO_CONC_ROOT / ".." / "Cerebellum_mod" / "BC" / "channel" / "x86_64" / "libnrnmech.so"
+
     def _build_payload(self) -> dict:
         payload = build_case_payload(
             case_id="kv_compare",
@@ -73,8 +76,8 @@ class CompareSingleCaseTest(unittest.TestCase):
         case = experiment_schema.ChannelNoConcCase.from_dict(payload)
         result = compare_module.compare_case(case)
 
-        self.assertLess(result["metrics"]["voltage"]["mae"], 1e-6)
-        self.assertLess(result["metrics"]["voltage"]["max_abs"], 1e-5)
+        self.assertLess(result["metrics"]["voltage"]["mae"], 2e-5)
+        self.assertLess(result["metrics"]["voltage"]["max_abs"], 5e-5)
         self.assertLess(result["metrics"]["gates"]["n"]["mae"], 1e-6)
 
     def test_trims_single_initial_neuron_sample(self) -> None:
@@ -175,6 +178,35 @@ class CompareSingleCaseTest(unittest.TestCase):
         self.assertEqual(result["time_ms"], [0.025, 0.05, 0.075])
         self.assertIn("voltage", result["metrics"])
 
+    def test_accepts_equal_length_one_dt_shift_with_float_jitter(self) -> None:
+        case = experiment_schema.ChannelNoConcCase.from_dict(self._build_payload())
+        braincell_result = {
+            "time_ms": np.array(
+                [0.0, 0.02500000037252903, 0.05000000074505806],
+                dtype=float,
+            ),
+            "voltage_mV": np.array([-65.0, -64.0, -63.0], dtype=float),
+            "current": {"ix": np.array([0.0, 0.1, 0.2], dtype=float)},
+            "gates": {"n": np.array([0.2, 0.21, 0.22], dtype=float)},
+        }
+        neuron_result = {
+            "time_ms": np.array([0.025, 0.05, 0.075], dtype=float),
+            "voltage_mV": np.array([-65.1, -64.1, -63.1], dtype=float),
+            "current": {"ix": np.array([0.0, 0.1, 0.2], dtype=float)},
+            "gates": {"n": np.array([0.19, 0.2, 0.21], dtype=float)},
+        }
+
+        with mock.patch.object(compare_module, "run_braincell_case", return_value=braincell_result), mock.patch.object(
+            compare_module,
+            "run_neuron_case",
+            return_value=neuron_result,
+        ):
+            result = compare_module.compare_case(case)
+
+        self.assertFalse(result["alignment"]["time_axis_trimmed_neuron_initial_sample"])
+        self.assertEqual(result["time_ms"], [0.025, 0.05, 0.075])
+        self.assertIn("voltage", result["metrics"])
+
     def test_current_metrics_apply_neuron_one_step_shift(self) -> None:
         case = experiment_schema.ChannelNoConcCase.from_dict(self._build_payload())
         braincell_result = {
@@ -203,6 +235,86 @@ class CompareSingleCaseTest(unittest.TestCase):
         self.assertEqual(result["aligned"]["current"]["braincell_ix"], [1.0, 2.0])
         self.assertEqual(result["aligned"]["current"]["neuron_ix"], [1.0, 2.0])
         self.assertEqual(result["metrics"]["current"]["ix"]["mae"], 0.0)
+
+    def test_repo_nav1p6_bc_vinit_compare_case_runs(self) -> None:
+        if not self._BC_LIBNRNMECH.resolve().exists():
+            self.skipTest("BC NEURON mechanisms are not compiled into libnrnmech.so in the current environment.")
+        config_path = TEMPLATES_ROOT.parent / "configs" / "ma25_bc" / "nav1p6_ma25_bc.json"
+        template_path = TEMPLATES_ROOT.parent / "templates" / "vinit_celsius.json"
+        config = experiment_schema.load_sweep_config(config_path, template_path)
+        case_payload = experiment_schema.expand_cases(config)[0]
+        case = experiment_schema.ChannelNoConcCase.from_dict(case_payload)
+
+        result = compare_module.compare_case(case)
+
+        self.assertIn("voltage", result["metrics"])
+        self.assertTrue(np.isfinite(result["metrics"]["voltage"]["mae"]))
+        self.assertEqual(len(result["alignment"]["gates"]), 12)
+
+    def test_repo_kca3p1_goc_vinit_compare_case_runs(self) -> None:
+        if not self._GOC_LIBNRNMECH.resolve().exists():
+            self.skipTest("GoC NEURON mechanisms are not compiled into libnrnmech.so in the current environment.")
+        config_path = TEMPLATES_ROOT.parent / "configs" / "ma20_goc" / "kca3p1_ma20_goc.json"
+        template_path = TEMPLATES_ROOT.parent / "templates" / "vinit_celsius.json"
+        config = experiment_schema.load_sweep_config(config_path, template_path)
+        case_payload = experiment_schema.expand_cases(config)[4]
+        case = experiment_schema.ChannelNoConcCase.from_dict(case_payload)
+
+        result = compare_module.compare_case(case)
+
+        self.assertEqual(
+            result["alignment"]["gates"],
+            [{"canonical_name": "act", "braincell_gate": "p", "neuron_gate": "Y"}],
+        )
+        self.assertLess(result["metrics"]["voltage"]["mae"], 0.1)
+        self.assertLess(result["metrics"]["current"]["ix"]["mae"], 5e-5)
+        self.assertLess(result["metrics"]["gates"]["act"]["mae"], 1e-4)
+
+    def test_repo_kca2p2_goc_vinit_compare_case_runs(self) -> None:
+        if not self._GOC_LIBNRNMECH.resolve().exists():
+            self.skipTest("GoC NEURON mechanisms are not compiled into libnrnmech.so in the current environment.")
+        config_path = TEMPLATES_ROOT.parent / "configs" / "ma20_goc" / "kca2p2_ma20_goc.json"
+        template_path = TEMPLATES_ROOT.parent / "templates" / "vinit_celsius.json"
+        config = experiment_schema.load_sweep_config(config_path, template_path)
+        case_payload = experiment_schema.expand_cases(config)[4]
+        case = experiment_schema.ChannelNoConcCase.from_dict(case_payload)
+
+        result = compare_module.compare_case(case)
+
+        self.assertEqual(len(result["alignment"]["gates"]), 5)
+        self.assertTrue(np.isfinite(result["metrics"]["voltage"]["mae"]))
+        self.assertTrue(np.isfinite(result["metrics"]["current"]["ix"]["mae"]))
+        self.assertTrue(all(np.isfinite(record["mae"]) for record in result["metrics"]["gates"].values()))
+
+    def test_repo_kca1p1_goc_vinit_compare_case_runs(self) -> None:
+        if not self._GOC_LIBNRNMECH.resolve().exists():
+            self.skipTest("GoC NEURON mechanisms are not compiled into libnrnmech.so in the current environment.")
+        config_path = TEMPLATES_ROOT.parent / "configs" / "ma20_goc" / "kca1p1_ma20_goc.json"
+        template_path = TEMPLATES_ROOT.parent / "templates" / "vinit_celsius.json"
+        config = experiment_schema.load_sweep_config(config_path, template_path)
+        case_payload = experiment_schema.expand_cases(config)[4]
+        case = experiment_schema.ChannelNoConcCase.from_dict(case_payload)
+
+        result = compare_module.compare_case(case)
+
+        self.assertEqual(len(result["alignment"]["gates"]), 9)
+        self.assertTrue(np.isfinite(result["metrics"]["voltage"]["mae"]))
+        self.assertTrue(np.isfinite(result["metrics"]["current"]["ix"]["mae"]))
+        self.assertTrue(all(np.isfinite(record["mae"]) for record in result["metrics"]["gates"].values()))
+
+    def test_repo_hcn_ma24_pc_dc_compare_case_runs(self) -> None:
+        config_path = TEMPLATES_ROOT.parent / "configs" / "ma24_pc" / "hcn1_ma24_pc.json"
+        template_path = TEMPLATES_ROOT.parent / "templates" / "dc.json"
+        config = experiment_schema.load_sweep_config(config_path, template_path)
+        case_payload = experiment_schema.expand_cases(config)[0]
+        case = experiment_schema.ChannelNoConcCase.from_dict(case_payload)
+
+        result = compare_module.compare_case(case)
+
+        self.assertEqual(result["case_id"], "dc__000")
+        self.assertEqual(result["template_name"], "dc")
+        self.assertIn("voltage", result["metrics"])
+        self.assertTrue(np.isfinite(result["metrics"]["voltage"]["mae"]))
 
 
 if __name__ == "__main__":

@@ -13,6 +13,12 @@ fixtures = load_module(TEMPLATES_ROOT / "fixtures.py", "cable_mapping_fixtures")
 
 
 class MappingTest(unittest.TestCase):
+    def test_mapping_normalizes_neuron_extended_section_prefixes(self) -> None:
+        self.assertEqual(mapping._normalized_branch_type("apic"), "dend")
+        self.assertEqual(mapping._normalized_branch_type("dend_6"), "custom")
+        self.assertEqual(mapping._normalized_branch_type("minus_3"), "custom")
+        self.assertEqual(mapping._normalized_branch_type("custom"), "custom")
+
     def test_mapping_corrects_simple_axon_dend_order_difference(self) -> None:
         swc_path = fixtures.write_temp_swc(
             self,
@@ -137,6 +143,29 @@ class MappingTest(unittest.TestCase):
         }
         self.assertEqual(branch_pairs["soma"], "soma[0]")
         self.assertEqual(branch_pairs["dendrite_0"], "dend[0]")
+
+    def test_mapping_supports_real_bc_tree_with_unknown_swc_type(self) -> None:
+        payload = fixtures.base_case_payload(
+            morphology_path=fixtures.BC_SWC,
+            cv_per_branch=1,
+        )
+        case = case_schema.MultiCompartmentCableCase.from_dict(payload)
+        braincell_result = braincell_runner.run_case(case)
+        neuron_result = neuron_runner.run_case(case)
+        result = mapping.build_mapping(
+            case,
+            braincell_result=braincell_result,
+            neuron_result=neuron_result,
+        )
+
+        branch_pairs = {
+            pair["braincell_branch_name"]: pair
+            for pair in result.branch_pairs
+        }
+        self.assertIn("custom_0", branch_pairs)
+        self.assertEqual(branch_pairs["custom_0"]["neuron_section_name"], "dend_6[0]")
+        self.assertEqual(branch_pairs["custom_0"]["braincell_branch_type"], "custom")
+        self.assertEqual(branch_pairs["custom_0"]["neuron_section_type"], "dend_6")
 
 
 if __name__ == "__main__":

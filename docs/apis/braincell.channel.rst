@@ -86,7 +86,6 @@ Potassium Calcium Channels
    :nosignatures:
    :template: classtemplate.rst
 
-   KCaChannel
    IAHP_De1994
    IKca3_1_Ma2020
    IKca2_2_Ma2020

@@ -36,7 +36,11 @@ def compare_case(case: ChannelNoConcCase) -> dict[str, Any]:
         side="neuron",
         expected_gate_names=mapping_spec.neuron.gate_names,
     )
-    neuron_trimmed = _align_time_axes(braincell_result=braincell_result, neuron_result=neuron_result)
+    neuron_trimmed = _align_time_axes(
+        braincell_result=braincell_result,
+        neuron_result=neuron_result,
+        dt_ms=float(case.simulation.dt_ms),
+    )
     aligned_current = _align_current_traces(
         braincell_result=braincell_result,
         neuron_result=neuron_result,
@@ -143,14 +147,23 @@ def _normalize_runner_result(
     }
 
 
-def _align_time_axes(*, braincell_result: dict[str, Any], neuron_result: dict[str, Any]) -> bool:
+def _align_time_axes(
+    *,
+    braincell_result: dict[str, Any],
+    neuron_result: dict[str, Any],
+    dt_ms: float,
+) -> bool:
     braincell_time = braincell_result["time_ms"]
     neuron_time = neuron_result["time_ms"]
-    if braincell_time.shape == neuron_time.shape and np.allclose(braincell_time, neuron_time):
+    if _same_time_grid(braincell_time, neuron_time, dt_ms=dt_ms):
         return False
-    if braincell_time.shape == neuron_time.shape and _is_constant_step_shift(braincell_time, neuron_time):
+    if _is_constant_step_shift(braincell_time, neuron_time, dt_ms=dt_ms):
         return False
-    if neuron_time.shape[0] == braincell_time.shape[0] + 1 and np.allclose(neuron_time[1:], braincell_time):
+    if neuron_time.shape[0] == braincell_time.shape[0] + 1 and _same_time_grid(
+        neuron_time[1:],
+        braincell_time,
+        dt_ms=dt_ms,
+    ):
         _trim_initial_sample(neuron_result)
         return True
     raise ValueError("braincell and NEURON time axes do not match.")
@@ -163,15 +176,38 @@ def _trim_initial_sample(result: dict[str, Any]) -> None:
     result["gates"] = {gate_name: gate_trace[1:] for gate_name, gate_trace in result["gates"].items()}
 
 
-def _is_constant_step_shift(braincell_time: np.ndarray, neuron_time: np.ndarray) -> bool:
-    if braincell_time.shape[0] < 2:
+def _time_step_indices(time_ms: np.ndarray, *, dt_ms: float) -> np.ndarray | None:
+    if dt_ms <= 0.0:
+        raise ValueError(f"dt_ms must be > 0, got {dt_ms!r}.")
+    time_ms = np.asarray(time_ms, dtype=float)
+    rounded_steps = np.rint(time_ms / float(dt_ms))
+    grid_time_ms = rounded_steps * float(dt_ms)
+    abs_tol = max(1e-6, abs(float(dt_ms)) * 1e-4)
+    if not np.allclose(time_ms, grid_time_ms, rtol=0.0, atol=abs_tol):
+        return None
+    return rounded_steps.astype(np.int64)
+
+
+def _same_time_grid(braincell_time: np.ndarray, neuron_time: np.ndarray, *, dt_ms: float) -> bool:
+    if braincell_time.shape != neuron_time.shape:
         return False
-    braincell_dt = np.diff(braincell_time)
-    neuron_dt = np.diff(neuron_time)
-    if not np.allclose(braincell_dt, neuron_dt):
+    if np.allclose(braincell_time, neuron_time):
+        return True
+    braincell_steps = _time_step_indices(braincell_time, dt_ms=dt_ms)
+    neuron_steps = _time_step_indices(neuron_time, dt_ms=dt_ms)
+    if braincell_steps is None or neuron_steps is None:
         return False
-    offset = neuron_time - braincell_time
-    return np.allclose(offset, offset[0]) and np.isclose(offset[0], braincell_dt[0])
+    return np.array_equal(braincell_steps, neuron_steps)
+
+
+def _is_constant_step_shift(braincell_time: np.ndarray, neuron_time: np.ndarray, *, dt_ms: float) -> bool:
+    if braincell_time.shape != neuron_time.shape or braincell_time.shape[0] < 2:
+        return False
+    braincell_steps = _time_step_indices(braincell_time, dt_ms=dt_ms)
+    neuron_steps = _time_step_indices(neuron_time, dt_ms=dt_ms)
+    if braincell_steps is None or neuron_steps is None:
+        return False
+    return np.array_equal(neuron_steps, braincell_steps + 1)
 
 
 def _align_current_traces(*, braincell_result: dict[str, Any], neuron_result: dict[str, Any]) -> dict[str, Any]:

@@ -1,0 +1,44 @@
+{
+  "meta": {
+    "label": "GoC Kca1p1 MA20"
+  },
+  "identity": {
+    "mod_dir": "/home/swl/braincell/examples/neuron_compare/Cerebellum_mod/GoC/channel"
+  },
+  "defaults": {
+    "channel_params": {
+      "g_max_S_cm2": 0.01
+    }
+  },
+  "mapping": {
+    "current": "ik",
+    "impl_name": {
+      "neuron": "Kca1p1_MA20_GoC",
+      "braincell": "Kca1p1_MA2020"
+    },
+    "gate_names": {
+      "common": [
+        "C1",
+        "C2",
+        "C3",
+        "C4",
+        "O0",
+        "O1",
+        "O2",
+        "O3",
+        "O4"
+      ]
+    },
+    "channel_params": {
+      "g_max_S_cm2": {
+        "neuron": "gbar",
+        "braincell": "g_max"
+      }
+    }
+  },
+  "templates": [
+    "../../templates/vinit_celsius.json",
+    "../../templates/dc.json",
+    "../../templates/ac.json"
+  ]
+}

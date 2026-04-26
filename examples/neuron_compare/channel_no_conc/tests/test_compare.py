@@ -251,6 +251,57 @@ class CompareSingleCaseTest(unittest.TestCase):
         self.assertTrue(np.isfinite(result["metrics"]["voltage"]["mae"]))
         self.assertEqual(len(result["alignment"]["gates"]), 12)
 
+    def test_repo_kca3p1_goc_vinit_compare_case_runs(self) -> None:
+        if not self._GOC_LIBNRNMECH.resolve().exists():
+            self.skipTest("GoC NEURON mechanisms are not compiled into libnrnmech.so in the current environment.")
+        config_path = TEMPLATES_ROOT.parent / "configs" / "ma20_goc" / "kca3p1_ma20_goc.json"
+        template_path = TEMPLATES_ROOT.parent / "templates" / "vinit_celsius.json"
+        config = experiment_schema.load_sweep_config(config_path, template_path)
+        case_payload = experiment_schema.expand_cases(config)[4]
+        case = experiment_schema.ChannelNoConcCase.from_dict(case_payload)
+
+        result = compare_module.compare_case(case)
+
+        self.assertEqual(
+            result["alignment"]["gates"],
+            [{"canonical_name": "act", "braincell_gate": "p", "neuron_gate": "Y"}],
+        )
+        self.assertLess(result["metrics"]["voltage"]["mae"], 0.1)
+        self.assertLess(result["metrics"]["current"]["ix"]["mae"], 5e-5)
+        self.assertLess(result["metrics"]["gates"]["act"]["mae"], 1e-4)
+
+    def test_repo_kca2p2_goc_vinit_compare_case_runs(self) -> None:
+        if not self._GOC_LIBNRNMECH.resolve().exists():
+            self.skipTest("GoC NEURON mechanisms are not compiled into libnrnmech.so in the current environment.")
+        config_path = TEMPLATES_ROOT.parent / "configs" / "ma20_goc" / "kca2p2_ma20_goc.json"
+        template_path = TEMPLATES_ROOT.parent / "templates" / "vinit_celsius.json"
+        config = experiment_schema.load_sweep_config(config_path, template_path)
+        case_payload = experiment_schema.expand_cases(config)[4]
+        case = experiment_schema.ChannelNoConcCase.from_dict(case_payload)
+
+        result = compare_module.compare_case(case)
+
+        self.assertEqual(len(result["alignment"]["gates"]), 5)
+        self.assertTrue(np.isfinite(result["metrics"]["voltage"]["mae"]))
+        self.assertTrue(np.isfinite(result["metrics"]["current"]["ix"]["mae"]))
+        self.assertTrue(all(np.isfinite(record["mae"]) for record in result["metrics"]["gates"].values()))
+
+    def test_repo_kca1p1_goc_vinit_compare_case_runs(self) -> None:
+        if not self._GOC_LIBNRNMECH.resolve().exists():
+            self.skipTest("GoC NEURON mechanisms are not compiled into libnrnmech.so in the current environment.")
+        config_path = TEMPLATES_ROOT.parent / "configs" / "ma20_goc" / "kca1p1_ma20_goc.json"
+        template_path = TEMPLATES_ROOT.parent / "templates" / "vinit_celsius.json"
+        config = experiment_schema.load_sweep_config(config_path, template_path)
+        case_payload = experiment_schema.expand_cases(config)[4]
+        case = experiment_schema.ChannelNoConcCase.from_dict(case_payload)
+
+        result = compare_module.compare_case(case)
+
+        self.assertEqual(len(result["alignment"]["gates"]), 9)
+        self.assertTrue(np.isfinite(result["metrics"]["voltage"]["mae"]))
+        self.assertTrue(np.isfinite(result["metrics"]["current"]["ix"]["mae"]))
+        self.assertTrue(all(np.isfinite(record["mae"]) for record in result["metrics"]["gates"].values()))
+
     def test_repo_hcn_ma24_pc_dc_compare_case_runs(self) -> None:
         config_path = TEMPLATES_ROOT.parent / "configs" / "ma24_pc" / "hcn1_ma24_pc.json"
         template_path = TEMPLATES_ROOT.parent / "templates" / "dc.json"

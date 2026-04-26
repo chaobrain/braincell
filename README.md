@@ -79,7 +79,7 @@ Build a morphological neuron from an SWC file and paint ion channels onto it dec
 import braincell
 import braincell.mech as mech
 import brainunit as u
-from braincell.filter import region
+from braincell.filter import AllRegion, RootLocation, branch_in
 
 # Load morphology from SWC
 morpho = braincell.Morphology.from_swc("path/to/neuron.swc")
@@ -88,19 +88,22 @@ morpho = braincell.Morphology.from_swc("path/to/neuron.swc")
 cell = braincell.Cell(morpho)
 
 # Paint passive cable properties everywhere
-cell.paint(region.all(), mech.CableProperty(
-    cm=1.0 * u.uF / u.cm**2,
-    Ra=100.0 * u.ohm * u.cm,
-    Vm=-65.0 * u.mV,
+cell.paint(AllRegion(), mech.CableProperty(
+    resting_potential=-65.0 * u.mV,
+    membrane_capacitance=1.0 * u.uF / u.cm**2,
+    axial_resistivity=100.0 * u.ohm * u.cm,
 ))
 
 # Paint ion channels onto specific regions
-cell.paint(region.all(),      mech.Channel("IL",  g_max=0.0003 * u.S / u.cm**2, E=-70 * u.mV))
-cell.paint(region.soma(),     mech.Channel("INa_Ba2002", g_max=0.12 * u.S / u.cm**2))
-cell.paint(region.dendrite(), mech.Channel("ICaL_IS2008", g_max=0.002 * u.S / u.cm**2))
+cell.paint(AllRegion(), mech.Channel("IL", g_max=0.0003 * u.S / u.cm**2, E=-70 * u.mV))
+cell.paint(branch_in("type", "soma"), mech.Channel("INa_Ba2002", g_max=0.12 * u.S / u.cm**2))
+cell.paint(
+    branch_in("type", ("dendrite", "basal_dendrite", "apical_dendrite")),
+    mech.Channel("ICaL_IS2008", g_max=0.002 * u.S / u.cm**2),
+)
 
 # Inject current at the soma
-cell.place(region.soma(), mech.CurrentClamp.step(0.2 * u.nA, duration=50 * u.ms, delay=10 * u.ms))
+cell.place(RootLocation(0.5), mech.CurrentClamp.step(0.2 * u.nA, duration=50 * u.ms, delay=10 * u.ms))
 ```
 
 ### Morphology and visualization

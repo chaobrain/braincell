@@ -186,6 +186,52 @@ class BraincellRunnerTest(unittest.TestCase):
         self.assertEqual(result["time_ms"].shape, result["current"]["ix"].shape)
         self.assertGreater(float(np.max(np.abs(result["current"]["ix"]))), 1e-6)
 
+    def test_repo_kca3p1_goc_smoke_case_runs(self) -> None:
+        config_path = CHANNEL_NO_CONC_ROOT / "configs" / "ma20_goc" / "kca3p1_ma20_goc.json"
+        template_path = CHANNEL_NO_CONC_ROOT / "templates" / "vinit_celsius.json"
+        config = experiment_schema.load_sweep_config(config_path, template_path)
+        case_payload = experiment_schema.expand_cases(config)[4]
+        case = experiment_schema.ChannelNoConcCase.from_dict(case_payload)
+
+        result = braincell_runner.run_case(case)
+
+        self.assertEqual(case.mapping_spec.current_source.ion_name, "k")
+        self.assertEqual(sorted(result["gates"].keys()), ["p"])
+        self.assertEqual(result["time_ms"].shape, result["current"]["ix"].shape)
+        self.assertTrue(np.isfinite(result["current"]["ix"]).all())
+        self.assertGreater(float(np.max(np.abs(result["current"]["ix"]))), 1e-6)
+
+    def test_repo_kca2p2_goc_smoke_case_runs(self) -> None:
+        config_path = CHANNEL_NO_CONC_ROOT / "configs" / "ma20_goc" / "kca2p2_ma20_goc.json"
+        template_path = CHANNEL_NO_CONC_ROOT / "templates" / "vinit_celsius.json"
+        config = experiment_schema.load_sweep_config(config_path, template_path)
+        case_payload = experiment_schema.expand_cases(config)[4]
+        case = experiment_schema.ChannelNoConcCase.from_dict(case_payload)
+
+        result = braincell_runner.run_case(case)
+
+        self.assertEqual(case.mapping_spec.current_source.ion_name, "k")
+        self.assertEqual(sorted(result["gates"].keys()), ["C2", "C3", "C4", "O1", "O2"])
+        self.assertEqual(result["time_ms"].shape, result["current"]["ix"].shape)
+        self.assertTrue(np.isfinite(result["current"]["ix"]).all())
+
+    def test_repo_kca1p1_goc_smoke_case_runs(self) -> None:
+        config_path = CHANNEL_NO_CONC_ROOT / "configs" / "ma20_goc" / "kca1p1_ma20_goc.json"
+        template_path = CHANNEL_NO_CONC_ROOT / "templates" / "vinit_celsius.json"
+        config = experiment_schema.load_sweep_config(config_path, template_path)
+        case_payload = experiment_schema.expand_cases(config)[4]
+        case = experiment_schema.ChannelNoConcCase.from_dict(case_payload)
+
+        result = braincell_runner.run_case(case)
+
+        self.assertEqual(case.mapping_spec.current_source.ion_name, "k")
+        self.assertEqual(
+            sorted(result["gates"].keys()),
+            ["C1", "C2", "C3", "C4", "O0", "O1", "O2", "O3", "O4"],
+        )
+        self.assertEqual(result["time_ms"].shape, result["current"]["ix"].shape)
+        self.assertTrue(np.isfinite(result["current"]["ix"]).all())
+
     def test_repo_nav1p6_bc_smoke_case_runs(self) -> None:
         config_path = CHANNEL_NO_CONC_ROOT / "configs" / "ma25_bc" / "nav1p6_ma25_bc.json"
         template_path = CHANNEL_NO_CONC_ROOT / "templates" / "vinit_celsius.json"

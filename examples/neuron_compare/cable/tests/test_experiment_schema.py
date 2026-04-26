@@ -5,6 +5,8 @@ import tempfile
 import unittest
 
 from ._helpers import (
+    CABLE_ROOT,
+    MORPHO_FILES,
     TEMPLATES_ROOT,
     build_case_payload,
     build_model_config_payload,
@@ -256,8 +258,8 @@ class ExperimentSchemaTest(unittest.TestCase):
                 experiment_schema.load_model_config(config_path)
 
     def test_repo_dc_template_loads_as_amp_scan(self) -> None:
-        config_path = Path("/home/swl/braincell/examples/neuron_compare/cable/configs/IO.json")
-        template_path = Path("/home/swl/braincell/examples/neuron_compare/cable/templates/dc.json")
+        config_path = CABLE_ROOT / "configs" / "IO.json"
+        template_path = CABLE_ROOT / "templates" / "dc.json"
 
         config = experiment_schema.load_sweep_config(config_path, template_path)
         expanded = experiment_schema.expand_cases(config)
@@ -266,7 +268,7 @@ class ExperimentSchemaTest(unittest.TestCase):
         self.assertEqual(len(expanded), 3)
         self.assertEqual(
             expanded[0]["morphology"]["path"],
-            "/home/swl/braincell/examples/multi_compartment/morpho_files/Cerebellum_morph/IO.swc",
+            str((MORPHO_FILES / "Cerebellum_morph" / "IO.swc").resolve()),
         )
 
 

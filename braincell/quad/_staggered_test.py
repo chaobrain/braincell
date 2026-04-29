@@ -33,9 +33,11 @@ from braincell import (
     Branch,
     CVPerBranch,
     Cell,
+    CurrentClamp,
     DiffEqModule,
     Morphology,
 )
+from braincell.filter import RootLocation
 from braincell.quad import  get_registry, staggered_step
 from braincell.quad._staggered import (
     _build_backsub_indices,
@@ -67,26 +69,26 @@ class StaggeredReadsRuntimeAttrDirectlyTest(unittest.TestCase):
         # Missing ``_runtime`` must raise AttributeError outright — not quietly
         # fall back to ``_compiled_runtime``.
         with self.assertRaises(AttributeError):
-            _get_dhs_static_source(_Target(), point_tree=None, scheduling=None)
+            _get_dhs_static_source(_Target(), node_tree=None, scheduling=None)
 
 
 class DhsVoltageGuardTest(unittest.TestCase):
 
-    def test_requires_point_tree_attribute(self):
+    def test_requires_node_tree_attribute(self):
         class Plain(brainstate.nn.Module):
             pass
 
-        with self.assertRaisesRegex(TypeError, "point-tree aware"):
+        with self.assertRaisesRegex(TypeError, "node-tree aware"):
             dhs_voltage_step(Plain(), 0. * u.ms, 0.1 * u.ms)
 
-    def test_requires_both_point_tree_and_scheduling(self):
-        # An object with only ``point_tree`` is still rejected because the
+    def test_requires_both_node_tree_and_scheduling(self):
+        # An object with only ``node_tree`` is still rejected because the
         # scheduling helper is missing.
         class HalfTarget(brainstate.nn.Module):
-            def point_tree(self):  # pragma: no cover - never called
+            def node_tree(self):  # pragma: no cover - never called
                 return None
 
-        with self.assertRaisesRegex(TypeError, "point-tree aware"):
+        with self.assertRaisesRegex(TypeError, "node-tree aware"):
             dhs_voltage_step(HalfTarget(), 0. * u.ms, 0.1 * u.ms)
 
 
@@ -262,6 +264,26 @@ class DhsRuntimeCacheTest(unittest.TestCase):
         with brainstate.environ.context(precision=64):
             preserved = _to_jax_quantity(voltage32, u.mV)
             self.assertEqual(preserved.dtype, jnp.dtype(jnp.float32))
+
+
+class DhsEndpointClampTest(unittest.TestCase):
+
+    def test_root_endpoint_current_changes_midpoint_voltage(self):
+        soma = Branch.from_lengths(
+            lengths=[20.0] * u.um,
+            radii=[10.0, 10.0] * u.um,
+            type="soma",
+        )
+        cell = Cell(Morphology.from_root(soma, name="soma"), cv_policy=CVPerBranch())
+        cell.place(RootLocation(x=0.0), CurrentClamp.step(1.0 * u.nA, 1.0 * u.ms))
+        cell.init_state()
+
+        before = float(cell.V.value[0].to_decimal(u.mV))
+        with brainstate.environ.context(t=0.0 * u.ms, dt=0.05 * u.ms):
+            dhs_voltage_step(cell, 0.0 * u.ms, 0.05 * u.ms)
+        after = float(cell.V.value[0].to_decimal(u.mV))
+
+        self.assertGreater(after, before)
 
 
 if __name__ == "__main__":

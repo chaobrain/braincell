@@ -29,7 +29,7 @@ import brainunit as u
 from braincell import Branch, Morphology
 
 
-def make_point_tree() -> Morphology:
+def make_node_tree() -> Morphology:
     """A single-branch soma with explicit 3D points.
 
     Useful whenever a test needs a morphology that satisfies
@@ -124,7 +124,7 @@ def make_two_dendrite_tree() -> Morphology:
     return tree
 
 
-def make_projected_point_tree() -> Morphology:
+def make_projected_node_tree() -> Morphology:
     """Soma + apical dendrite with explicit 3D points.
 
     The dendrite has three points (so the projected 2D centerline has

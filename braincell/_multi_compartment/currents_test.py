@@ -16,13 +16,13 @@ from braincell._multi_compartment.currents import _normalize_ext_to_point_densit
 
 
 @dataclass
-class _StubPointTree:
-    cv_midpoint_point_id: np.ndarray
+class _StubNodeTree:
+    cv_to_mid_node_id: np.ndarray
 
 
 @dataclass
 class _StubRuntime:
-    point_tree: _StubPointTree
+    node_tree: _StubNodeTree
     n_point: int
     n_cv: int
     cv_area: object
@@ -31,7 +31,7 @@ class _StubRuntime:
 
 def _runtime(*, point_ids: list[int], n_point: int, cv_area_cm2: list[float]) -> _StubRuntime:
     return _StubRuntime(
-        point_tree=_StubPointTree(cv_midpoint_point_id=np.asarray(point_ids, dtype=np.int32)),
+        node_tree=_StubNodeTree(cv_to_mid_node_id=np.asarray(point_ids, dtype=np.int32)),
         n_point=n_point,
         n_cv=len(point_ids),
         cv_area=u.Quantity(jnp.asarray(cv_area_cm2, dtype=float), u.cm ** 2),
@@ -137,7 +137,7 @@ class TotalMembraneCurrentNarrowExceptTest(unittest.TestCase):
         cell = Cell(Morphology.from_root(soma, name="soma"), cv_policy=CVPerBranch())
         cell.init_state()
 
-        channels = cell.nodes(IonChannel, allowed_hierarchy=(1, 1))
+        channels = cell.runtime_objects(IonChannel, allowed_hierarchy=(1, 1))
         self.assertGreater(len(channels), 0)
 
         first_channel = next(iter(channels.values()))

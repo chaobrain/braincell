@@ -45,7 +45,7 @@ def total_membrane_current(
 
     I_point = I_point + _clamp_density(runtime, t=t)
 
-    for key, ch in host.nodes(IonChannel, allowed_hierarchy=(1, 1)).items():
+    for key, ch in host.runtime_objects(IonChannel, allowed_hierarchy=(1, 1)).items():
         try:
             contrib = ch.current(point_V)
         except (TypeError, ValueError, RuntimeError, ArithmeticError) as exc:

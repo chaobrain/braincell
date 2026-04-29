@@ -29,7 +29,7 @@ break during refactors:
 
 If this behavior changes, re-check:
 - ``braincell/io/swc/test.py``
-- ``braincell/_cv/lower_test.py``
+- ``braincell/_discretization/lower_test.py``
 - ``examples/neuron_compare/cable/tests/``
 - ``braincell/io/swc/README.md``
 """

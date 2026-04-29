@@ -41,7 +41,7 @@ class CellVisNodeTest(unittest.TestCase):
     def test_vis_node_region_maps_to_midpoint_point_ids(self) -> None:
         cell = Cell(_build_tree(), cv_policy=CVPerBranch())
         cell.init_state()
-        target_point_id = int(cell.point_tree().cv_midpoint_point_id[1])
+        target_point_id = int(cell.node_tree.cv_to_mid_node_id[1])
 
         with mock.patch("braincell.vis.point_topology.plot_point_topology", autospec=True) as mocked:
             mocked.return_value = plt.subplots()[1]
@@ -52,7 +52,7 @@ class CellVisNodeTest(unittest.TestCase):
     def test_vis_node_locset_maps_to_midpoint_point_ids(self) -> None:
         cell = Cell(_build_tree(), cv_policy=CVPerBranch())
         cell.init_state()
-        target_point_id = int(cell.point_tree().cv_midpoint_point_id[0])
+        target_point_id = int(cell.node_tree.cv_to_mid_node_id[0])
 
         with mock.patch("braincell.vis.point_topology.plot_point_topology", autospec=True) as mocked:
             mocked.return_value = plt.subplots()[1]
@@ -70,7 +70,7 @@ class CellVisNodeTest(unittest.TestCase):
         cell = Cell(_build_tree(), cv_policy=CVPerBranch())
         cell.init_state()
         cv_values = np.asarray([1.0, 2.0], dtype=float)
-        expected = cell._cv_to_node_values(cv_values)
+        expected = cell._discretization_to_node_values(cv_values)
 
         with mock.patch("braincell.vis.point_topology.plot_point_topology", autospec=True) as mocked:
             mocked.return_value = plt.subplots()[1]
@@ -84,7 +84,7 @@ class CellVisNodeTest(unittest.TestCase):
     def test_vis_node_value_V_uses_point_voltage(self) -> None:
         cell = Cell(_build_tree(), cv_policy=CVPerBranch())
         cell.init_state()
-        expected = cell._cv_to_node_values(cell.V.value)
+        expected = cell._discretization_to_node_values(cell.V.value)
 
         with mock.patch("braincell.vis.point_topology.plot_point_topology", autospec=True) as mocked:
             mocked.return_value = plt.subplots()[1]

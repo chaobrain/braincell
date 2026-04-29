@@ -25,7 +25,7 @@ from braincell.morph.branch import branch_class_for_type
 from braincell.morph.morphology import Morphology
 
 if TYPE_CHECKING:
-    from ._mech import PaintRule
+    from .mechanism import PaintRule
 
 EPS_PARAM = 1e-9        # tolerance for normalized x in [0, 1]
 EPS_LEN_UM = 1e-6       # tolerance for physical μm lengths

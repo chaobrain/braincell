@@ -13,20 +13,21 @@
 # limitations under the License.
 # ==============================================================================
 
-"""Control-volume (CV) layer: geometry, mechanism rules, and policies.
+"""Static declaration-time discretization layer."""
 
-The package resolves a :class:`braincell.morph.Morphology` together with a
-:class:`CVPolicy` and paint / place rules into an immutable
-``tuple[braincell.cv.CV, ...]`` via the internal ``build_cvs`` entry point.
-
-- :mod:`braincell.cv._policy` — CV discretization policies.
-- :mod:`braincell.cv._lower` — pure-functional lowering pipeline
-  (``lower``, rule dataclasses, merge helpers).
-- :mod:`braincell.cv._cv` — ``CV`` dataclass and the ``build_cvs`` entry.
-- :mod:`braincell.cv._debug` — helpers for reconstructing geometry from a CV.
-"""
-
-from .base import CV
+from .base import (
+    CV,
+    CVEdge,
+    CVPointMechanism,
+    CVTree,
+    Discretization,
+    Node,
+    NodeEdge,
+    NodeEdgeRole,
+    NodeRole,
+    NodeTree,
+    build_discretization,
+)
 from .policy import (
     CompositeByTypePolicy,
     CVPerBranch,
@@ -38,10 +39,20 @@ from .policy import (
 
 __all__ = [
     "CV",
+    "CVEdge",
+    "CVPointMechanism",
+    "CVTree",
     "CompositeByTypePolicy",
     "CVPerBranch",
     "CVPolicy",
     "CVPolicyByTypeRule",
     "DLambda",
+    "Discretization",
     "MaxCVLen",
+    "Node",
+    "NodeEdge",
+    "NodeEdgeRole",
+    "NodeRole",
+    "NodeTree",
+    "build_discretization",
 ]

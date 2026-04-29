@@ -32,7 +32,7 @@ from braincell.filter import (
 )
 
 
-def _build_branchpoint_tree() -> Morphology:
+def _build_branchpoint_morphology() -> Morphology:
     soma = Branch.from_lengths(lengths=[20.0] * u.um, radii=[10.0, 10.0] * u.um, type="soma")
     basal = Branch.from_lengths(lengths=[30.0] * u.um, radii=[2.0, 1.0] * u.um, type="basal_dendrite")
     axon = Branch.from_lengths(lengths=[10.0] * u.um, radii=[0.8, 0.5] * u.um, type="axon")
@@ -73,7 +73,7 @@ def _point_is_in_region(
 
 class BasicLocsetTest(unittest.TestCase):
     def test_at_location_accepts_branch_index_and_name(self) -> None:
-        tree = _build_branchpoint_tree()
+        tree = _build_branchpoint_morphology()
 
         by_index = at(0, 0.5).evaluate(tree)
         by_name = at("basal", 0.25).evaluate(tree)
@@ -87,7 +87,7 @@ class BasicLocsetTest(unittest.TestCase):
         self.assertEqual(explicit.display_names, ("axon(1)",))
 
     def test_at_location_rejects_invalid_branch_reference_and_x(self) -> None:
-        tree = _build_branchpoint_tree()
+        tree = _build_branchpoint_morphology()
 
         with self.assertRaises(KeyError):
             at("missing", 0.5).evaluate(tree)
@@ -101,7 +101,7 @@ class BasicLocsetTest(unittest.TestCase):
             at(0, 1.1).evaluate(tree)
 
     def test_branch_points_returns_parent_side_points_for_multifurcations(self) -> None:
-        tree = _build_branchpoint_tree()
+        tree = _build_branchpoint_morphology()
 
         locset = BranchPoints().evaluate(tree)
 
@@ -109,14 +109,14 @@ class BasicLocsetTest(unittest.TestCase):
         self.assertEqual(locset.display_names, ("soma(0.5)", "soma(1)"))
 
     def test_terminals_returns_leaf_branch_distal_points(self) -> None:
-        tree = _build_branchpoint_tree()
+        tree = _build_branchpoint_morphology()
 
         locset = Terminals().evaluate(tree)
 
         self.assertEqual(locset.points, ((2, 1.0), (3, 1.0), (4, 1.0)))
 
     def test_locset_boolean_ops_union_intersection_difference(self) -> None:
-        tree = _build_branchpoint_tree()
+        tree = _build_branchpoint_morphology()
 
         root_mid = RootLocation(x=0.5)
         terminals = Terminals()

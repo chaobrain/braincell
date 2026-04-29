@@ -62,7 +62,21 @@ class CVPolicy(ABC):
         *,
         paint_rules: tuple["PaintRule", ...] | None = None,
     ) -> BoundsByBranch:
-        """Return normalized CV intervals for each branch."""
+        """Return normalized CV intervals for each branch.
+
+        Parameters
+        ----------
+        morpho : Morphology
+            Morphology being discretized.
+        paint_rules : tuple of PaintRule or None, optional
+            Normalized paint declarations. Policies that depend on cable
+            properties, such as :class:`DLambda`, may inspect them.
+
+        Returns
+        -------
+        tuple of tuple of tuple of float
+            Branch-wise normalized ``(prox, dist)`` intervals.
+        """
 
 
 @dataclass(frozen=True)
@@ -82,6 +96,20 @@ class CVPerBranch(CVPolicy):
         *,
         paint_rules: tuple["PaintRule", ...] | None = None,
     ) -> BoundsByBranch:
+        """Return uniform branch-wise CV tilings.
+
+        Parameters
+        ----------
+        morpho : Morphology
+            Morphology being discretized.
+        paint_rules : tuple of PaintRule or None, optional
+            Unused for this policy.
+
+        Returns
+        -------
+        BoundsByBranch
+            Uniform normalized intervals for each branch.
+        """
         cv_per_branch = self.cv_per_branch
         if isinstance(cv_per_branch, bool) or not isinstance(cv_per_branch, int):
             raise TypeError(f"cv_per_branch must be integer, got {cv_per_branch!r}.")
@@ -115,6 +143,21 @@ class MaxCVLen(CVPolicy):
         *,
         paint_rules: tuple["PaintRule", ...] | None = None,
     ) -> BoundsByBranch:
+        """Return branch-wise CV bounds constrained by physical length.
+
+        Parameters
+        ----------
+        morpho : Morphology
+            Morphology being discretized.
+        paint_rules : tuple of PaintRule or None, optional
+            Unused for this policy.
+
+        Returns
+        -------
+        BoundsByBranch
+            Branch-wise normalized intervals whose physical lengths do
+            not exceed ``max_cv_len`` up to tolerance.
+        """
         max_cv_len = self.max_cv_len
         if not hasattr(max_cv_len, "to_decimal"):
             raise TypeError(f"max_cv_len must be a length Quantity, got {max_cv_len!r}.")
@@ -157,6 +200,21 @@ class DLambda(CVPolicy):
         *,
         paint_rules: tuple["PaintRule", ...] | None = None,
     ) -> BoundsByBranch:
+        """Return branch-wise CV bounds from electrotonic length.
+
+        Parameters
+        ----------
+        morpho : Morphology
+            Morphology being discretized.
+        paint_rules : tuple of PaintRule or None, optional
+            Paint declarations used to resolve branch-wise cable
+            properties.
+
+        Returns
+        -------
+        BoundsByBranch
+            Branch-wise normalized intervals sized by the d-lambda rule.
+        """
         d_lambda = float(self.d_lambda)
         if not np.isfinite(d_lambda) or d_lambda <= 0.0:
             raise ValueError(f"d_lambda must be > 0, got {self.d_lambda!r}.")
@@ -189,6 +247,16 @@ class DLambda(CVPolicy):
 
 @dataclass(frozen=True)
 class CVPolicyByTypeRule:
+    """One branch-type dispatch rule for :class:`CompositeByTypePolicy`.
+
+    Attributes
+    ----------
+    branch_types : tuple of str
+        Branch types matched by this rule.
+    policy : CVPolicy
+        Policy applied to matching branches.
+    """
+
     branch_types: tuple[str, ...]
     policy: CVPolicy
 
@@ -208,6 +276,16 @@ class CVPolicyByTypeRule:
 
 @dataclass(frozen=True)
 class CompositeByTypePolicy(CVPolicy):
+    """Dispatch different CV policies by morphology branch type.
+
+    Attributes
+    ----------
+    rules : tuple of CVPolicyByTypeRule
+        Type-dispatch rules checked in order.
+    default_policy : CVPolicy
+        Fallback policy used when no rule matches a branch.
+    """
+
     rules: tuple[CVPolicyByTypeRule, ...]
     default_policy: CVPolicy
 
@@ -228,6 +306,21 @@ class CompositeByTypePolicy(CVPolicy):
         *,
         paint_rules: tuple["PaintRule", ...] | None = None,
     ) -> BoundsByBranch:
+        """Return branch-wise bounds after type-based policy dispatch.
+
+        Parameters
+        ----------
+        morpho : Morphology
+            Morphology being discretized.
+        paint_rules : tuple of PaintRule or None, optional
+            Paint declarations forwarded to sub-policies.
+
+        Returns
+        -------
+        BoundsByBranch
+            Branch-wise normalized intervals assembled from the selected
+            sub-policy for each branch.
+        """
         effective_policies: list[CVPolicy] = [self.default_policy for _ in morpho.branches]
         for rule in self.rules:
             targets = set(rule.branch_types)

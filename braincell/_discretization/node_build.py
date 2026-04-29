@@ -13,7 +13,13 @@
 # limitations under the License.
 # ==============================================================================
 
-"""Node-space construction and lookup helpers."""
+"""Node-space construction and lookup helpers.
+
+This module owns the point-space view derived from the static CV list.
+It does not define new declaration-time records; instead it converts the
+already assembled CV view into a ``NodeTree`` suitable for scheduling,
+runtime lowering, and point-topology visualization.
+"""
 
 from dataclasses import dataclass
 
@@ -43,6 +49,8 @@ _POSITION_ORDER = {"prox": 0, "mid": 1, "dist": 2}
 
 @dataclass
 class _NodeDraft:
+    """Mutable draft used while collapsing CV-local roles into nodes."""
+
     id: int
     roles: set[tuple[int, str]]
 
@@ -52,7 +60,41 @@ def build_node_tree_from_cvs(
     *,
     cvs: tuple[CV, ...],
 ) -> NodeTree:
-    """Build the node-space graph implied by the current CV list."""
+    """Build the point-space node tree implied by a CV tuple.
+
+    Parameters
+    ----------
+    morpho : Morphology
+        Morphology whose branch attachments define the point-tree
+        topology.
+    cvs : tuple of CV
+        Flat CV tuple in stable id order.
+
+    Returns
+    -------
+    NodeTree
+        Point-space structural view derived from ``cvs``.
+
+    Raises
+    ------
+    TypeError
+        If ``morpho`` is not a :class:`Morphology`.
+    ValueError
+        If any branch has no CVs or if midpoint/endpoint nodes cannot be
+        assembled consistently.
+
+    Notes
+    -----
+    The current point tree materializes:
+
+    - one midpoint node per CV
+    - one root endpoint node
+    - one endpoint node per branch end
+
+    Internal CV boundaries do not receive standalone nodes; point
+    mechanisms that land exactly on such a boundary fall back to the
+    owning CV midpoint selected by the half-open CV tiling.
+    """
 
     if not isinstance(morpho, Morphology):
         raise TypeError(
@@ -259,7 +301,24 @@ def locate_node_on_branch(
     branch_id: int,
     x: float,
 ) -> int:
-    """Return the node id selected by a branch coordinate."""
+    """Return the node id selected by a branch coordinate.
+
+    Parameters
+    ----------
+    node_tree : NodeTree
+        Node tree defining midpoint and endpoint node ids.
+    cvs : tuple of CV
+        Source CV tuple used to resolve interior ownership.
+    branch_id : int
+        Branch id to query.
+    x : float
+        Normalized branch coordinate.
+
+    Returns
+    -------
+    int
+        Selected node id.
+    """
 
     cv_ids_by_branch = _group_cv_ids_by_branch(
         cvs=cvs,
@@ -351,7 +410,24 @@ def _locate_branch_cv_by_x(
     x: float,
     epsilon: float,
 ) -> int:
-    """Return the CV id whose normalized half-open interval contains ``x``."""
+    """Return the CV id whose normalized half-open interval contains ``x``.
+
+    Parameters
+    ----------
+    ids : tuple of int
+        Ordered CV ids on one branch.
+    cvs : tuple of CV
+        Source CV tuple indexed by CV id.
+    x : float
+        Normalized branch coordinate.
+    epsilon : float
+        Comparison tolerance.
+
+    Returns
+    -------
+    int
+        Owning CV id.
+    """
 
     if x <= 0.0 + epsilon:
         return ids[0]

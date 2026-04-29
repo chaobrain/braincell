@@ -13,7 +13,20 @@
 # limitations under the License.
 # ==============================================================================
 
-"""Static declaration-time discretization layer."""
+"""Static declaration-time discretization layer.
+
+This package holds the immutable, pre-runtime representation of a
+multi-compartment cell declaration:
+
+- policy resolution decides how many control volumes each branch gets
+- geometry assembly computes the physical CV facts
+- mechanism lowering attaches normalized declarations to those CVs
+- node construction derives the point-space structural view
+
+The top-level import surface intentionally stays small. Public callers
+should usually only need the frozen record types plus
+``build_discretization(...)`` and the policy classes.
+"""
 
 from .base import (
     CV,

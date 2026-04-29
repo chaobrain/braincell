@@ -13,7 +13,13 @@
 # limitations under the License.
 # ==============================================================================
 
-"""Geometry-only helpers for CV lowering."""
+"""Geometry helpers for static CV discretization.
+
+This module turns branch-wise normalized CV bounds into validated,
+geometry-rich CV fragments. The resulting objects are still declaration-
+time data: they carry geometric and topological facts, but no runtime
+state or instantiated mechanism objects.
+"""
 
 from dataclasses import dataclass
 
@@ -46,6 +52,28 @@ __all__ = [
 
 @dataclass(frozen=True)
 class _Frustum:
+    """One frustum-like geometry slice clipped from a branch segment.
+
+    Attributes
+    ----------
+    prox : float
+        Proximal normalized branch coordinate of this slice.
+    dist : float
+        Distal normalized branch coordinate of this slice.
+    length_um : float
+        Physical slice length in micrometers.
+    r_prox_um : float
+        Proximal radius in micrometers.
+    r_dist_um : float
+        Distal radius in micrometers.
+    point_prox_um : numpy.ndarray or None
+        Optional proximal 3-D point in micrometers, when source branch
+        coordinates are available.
+    point_dist_um : numpy.ndarray or None
+        Optional distal 3-D point in micrometers, when source branch
+        coordinates are available.
+    """
+
     prox: float
     dist: float
     length_um: float
@@ -57,6 +85,44 @@ class _Frustum:
 
 @dataclass(frozen=True)
 class _GeoCV:
+    """Geometry-first intermediate record for one control volume.
+
+    Attributes
+    ----------
+    id : int
+        Stable CV id.
+    branch_id : int
+        Owning morphology branch id.
+    branch_type : str
+        Owning branch type.
+    prox : float
+        Proximal normalized branch coordinate.
+    dist : float
+        Distal normalized branch coordinate.
+    midpoint : float
+        Midpoint coordinate in normalized branch coordinates.
+    parent_cv : int or None
+        Parent CV id, or ``None`` for the root CV.
+    children_cv : tuple of int
+        Child CV ids.
+    length_um : float
+        CV cable length in micrometers.
+    lateral_area_um2 : float
+        CV membrane lateral area in square micrometers.
+    axial_factor_total_per_cm : float
+        End-to-end axial-resistance geometric factor.
+    axial_factor_prox_per_cm : float
+        Geometric factor from midpoint to proximal side.
+    axial_factor_dist_per_cm : float
+        Geometric factor from midpoint to distal side.
+    r_prox_um : float
+        Proximal radius in micrometers.
+    r_mid_um : float
+        Midpoint radius in micrometers.
+    r_dist_um : float
+        Distal radius in micrometers.
+    """
+
     id: int
     branch_id: int
     branch_type: str
@@ -77,17 +143,50 @@ class _GeoCV:
 
 @dataclass(frozen=True)
 class CVGeometryResult:
-    """Validated CV geometry payload consumed by build and mechanism lowering."""
+    """Validated CV geometry payload consumed by build and mechanism lowering.
+
+    Attributes
+    ----------
+    geos : tuple of _GeoCV
+        Finalized geometry records in CV id order.
+    branch_to_cv_ids : tuple of tuple of int
+        For each morphology branch, the ordered CV ids that tile that
+        branch.
+    """
 
     geos: tuple[_GeoCV, ...]
     branch_to_cv_ids: tuple[tuple[int, ...], ...]
 
     def cv_ids(self, branch_id: int) -> tuple[int, ...]:
-        """Return CV ids on one morphology branch."""
+        """Return ordered CV ids on one morphology branch.
+
+        Parameters
+        ----------
+        branch_id : int
+            Morphology branch id.
+
+        Returns
+        -------
+        tuple of int
+            CV ids tiling that branch.
+        """
         return self.branch_to_cv_ids[int(branch_id)]
 
     def locate_cv(self, *, branch_id: int, x: float) -> int:
-        """Locate the CV that owns one normalized branch coordinate."""
+        """Locate the CV that owns one normalized branch coordinate.
+
+        Parameters
+        ----------
+        branch_id : int
+            Morphology branch id.
+        x : float
+            Normalized branch coordinate.
+
+        Returns
+        -------
+        int
+            Id of the owning CV.
+        """
         return locate_cv_on_branch(
             self.cv_ids(int(branch_id)),
             self.geos,
@@ -338,6 +437,21 @@ def _split_frusta(
 
 
 def validate_morphology(morpho: Morphology) -> None:
+    """Validate geometry preconditions required by CV discretization.
+
+    Parameters
+    ----------
+    morpho : Morphology
+        Morphology to validate.
+
+    Raises
+    ------
+    TypeError
+        If ``morpho`` is not a :class:`Morphology`.
+    ValueError
+        If any branch has non-positive total length or non-positive
+        radii.
+    """
     if not isinstance(morpho, Morphology):
         raise TypeError(f"Expected Morphology, got {type(morpho).__name__!s}.")
     for branch_id, branch in enumerate(morpho.branches):
@@ -360,6 +474,21 @@ def validate_bounds(
     bounds_by_branch: tuple[tuple[tuple[float, float], ...], ...],
     morpho: Morphology,
 ) -> None:
+    """Validate branch-wise CV bounds before geometry assembly.
+
+    Parameters
+    ----------
+    bounds_by_branch : tuple of tuple of tuple of float
+        Normalized ``(prox, dist)`` intervals for each branch.
+    morpho : Morphology
+        Morphology whose branches are being tiled.
+
+    Raises
+    ------
+    ValueError
+        If any branch has missing coverage, overlaps, gaps, invalid
+        interval ordering, or a branch-count mismatch.
+    """
     if len(bounds_by_branch) != len(morpho.branches):
         raise ValueError(
             f"CV bounds length {len(bounds_by_branch)} does not match "
@@ -402,6 +531,23 @@ def validate_connectivity(
     branch_to_cv_ids: tuple[tuple[int, ...], ...],
     morpho: Morphology,
 ) -> None:
+    """Validate parent/child connectivity for assembled geometry records.
+
+    Parameters
+    ----------
+    geos : tuple of _GeoCV
+        Geometry records to validate.
+    branch_to_cv_ids : tuple of tuple of int
+        Per-branch CV id tilings.
+    morpho : Morphology
+        Source morphology used to define root and branch attachments.
+
+    Raises
+    ------
+    ValueError
+        If CV ids are out of range, parent/child relations are
+        inconsistent, or a cycle is detected.
+    """
     n = len(geos)
     for geo in geos:
         if geo.parent_cv is not None and not (0 <= geo.parent_cv < n):
@@ -448,6 +594,27 @@ def locate_cv_on_branch(
     *,
     x: float,
 ) -> int:
+    """Return the CV id that owns one branch coordinate.
+
+    Parameters
+    ----------
+    ids : tuple of int
+        Ordered CV ids on one branch.
+    geos : sequence of _GeoCV
+        Geometry records indexed by CV id.
+    x : float
+        Normalized branch coordinate.
+
+    Returns
+    -------
+    int
+        Owning CV id.
+
+    Raises
+    ------
+    ValueError
+        If ``x`` falls in no CV interval.
+    """
     if x <= 0.0 + EPS_PARAM:
         return ids[0]
     if x >= 1.0 - EPS_PARAM:
@@ -470,6 +637,28 @@ def build_cv_geometry(
     morpho: Morphology,
     bounds_by_branch: tuple[tuple[tuple[float, float], ...], ...],
 ) -> CVGeometryResult:
+    """Build validated geometry records for all control volumes.
+
+    Parameters
+    ----------
+    morpho : Morphology
+        Morphology to discretize.
+    bounds_by_branch : tuple of tuple of tuple of float
+        Normalized ``(prox, dist)`` bounds for each branch.
+
+    Returns
+    -------
+    CVGeometryResult
+        Finalized geometry payload used by later mechanism and
+        discretization assembly stages.
+
+    Notes
+    -----
+    This function is the geometry-stage entry point. It validates the
+    morphology and bounds, clips branch segments into frusta, computes
+    per-CV geometric summaries, and resolves parent/child connectivity
+    across both intra-branch tilings and inter-branch attachments.
+    """
     validate_morphology(morpho)
     validate_bounds(bounds_by_branch, morpho)
 

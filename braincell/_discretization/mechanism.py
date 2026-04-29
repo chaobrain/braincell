@@ -13,7 +13,15 @@
 # limitations under the License.
 # ==============================================================================
 
-"""Declaration-rule and mechanism-lowering helpers for CV builds."""
+"""Declaration-rule normalization and CV mechanism lowering.
+
+This module owns the declaration-side mechanism pipeline:
+
+- normalize ``paint(...)`` and ``place(...)`` inputs into frozen rule
+  records
+- merge successive declarations with deterministic overwrite behavior
+- lower those declarations onto per-CV mechanism buckets
+"""
 
 from dataclasses import dataclass, field, replace
 from typing import Literal
@@ -61,7 +69,15 @@ _DEFAULT_CABLE = CableProperty(
 
 @dataclass(frozen=True)
 class PaintRule:
-    """Normalized ``Cell.paint(...)`` declaration."""
+    """Normalized ``Cell.paint(...)`` declaration.
+
+    Attributes
+    ----------
+    region : RegionExpr
+        Region expression being painted.
+    mechanism : CableProperty or Density
+        Mechanism declaration applied over that region.
+    """
 
     region: RegionExpr
     mechanism: CableProperty | Density
@@ -69,7 +85,17 @@ class PaintRule:
 
 @dataclass(frozen=True)
 class PlaceRule:
-    """Normalized ``Cell.place(...)`` declaration."""
+    """Normalized ``Cell.place(...)`` declaration.
+
+    Attributes
+    ----------
+    locset : LocsetExpr
+        Location expression being targeted.
+    mechanisms : tuple of Point
+        Point-mechanism declarations applied at each resolved location.
+    site : {"mid"}, optional
+        Reserved placement-site tag used by the current lowering model.
+    """
 
     locset: LocsetExpr
     mechanisms: tuple[Point, ...]
@@ -123,6 +149,14 @@ class _RegionCache:
 
 
 def default_paint_rules() -> tuple[PaintRule, ...]:
+    """Return the default global cable-property rule.
+
+    Returns
+    -------
+    tuple of PaintRule
+        One global rule applying the package default cable properties to
+        ``AllRegion()``.
+    """
     return (PaintRule(region=AllRegion(), mechanism=_DEFAULT_CABLE),)
 
 
@@ -130,6 +164,29 @@ def normalize_paint_rules(
     region: RegionExpr,
     mechanisms: tuple[object, ...],
 ) -> tuple[PaintRule, ...]:
+    """Normalize one ``Cell.paint(...)`` call into paint rules.
+
+    Parameters
+    ----------
+    region : RegionExpr
+        Region expression being painted.
+    mechanisms : tuple of object
+        Candidate mechanism declarations. Each item must be a
+        :class:`CableProperty` or :class:`Density`.
+
+    Returns
+    -------
+    tuple of PaintRule
+        One normalized rule per mechanism argument.
+
+    Raises
+    ------
+    TypeError
+        If ``region`` is not a region expression or if any mechanism is
+        not cable-like or density-like.
+    ValueError
+        If no mechanisms are supplied.
+    """
     if not isinstance(region, RegionExpr):
         raise TypeError(
             f"Cell.paint(...) expects RegionExpr, got {type(region).__name__!s}."
@@ -153,6 +210,28 @@ def normalize_place_rule(
     locset: LocsetExpr,
     mechanisms: tuple[object, ...],
 ) -> PlaceRule:
+    """Normalize one ``Cell.place(...)`` call into a place rule.
+
+    Parameters
+    ----------
+    locset : LocsetExpr
+        Location expression being targeted.
+    mechanisms : tuple of object
+        Candidate point-mechanism declarations.
+
+    Returns
+    -------
+    PlaceRule
+        Frozen normalized place rule.
+
+    Raises
+    ------
+    TypeError
+        If ``locset`` is not a locset expression or any mechanism is
+        not a point declaration.
+    ValueError
+        If no mechanisms are supplied.
+    """
     if not isinstance(locset, LocsetExpr):
         raise TypeError(
             f"Cell.place(...) expects LocsetExpr, got {type(locset).__name__!s}."
@@ -186,6 +265,21 @@ def merge_paint_rules(
     existing: tuple[PaintRule, ...],
     incoming: tuple[PaintRule, ...],
 ) -> tuple[PaintRule, ...]:
+    """Merge normalized paint rules with overwrite-on-identity semantics.
+
+    Parameters
+    ----------
+    existing : tuple of PaintRule
+        Existing accumulated paint rules.
+    incoming : tuple of PaintRule
+        Newly normalized paint rules.
+
+    Returns
+    -------
+    tuple of PaintRule
+        Merged rules where later declarations replace earlier rules with
+        the same effective paint identity.
+    """
     merged: list[PaintRule] = list(existing)
     for rule in incoming:
         new_key = _paint_key(rule)
@@ -198,6 +292,20 @@ def merge_place_rules(
     existing: tuple[PlaceRule, ...],
     incoming: tuple[PlaceRule, ...],
 ) -> tuple[PlaceRule, ...]:
+    """Merge normalized place rules without duplicating exact matches.
+
+    Parameters
+    ----------
+    existing : tuple of PlaceRule
+        Existing accumulated place rules.
+    incoming : tuple of PlaceRule
+        Newly normalized place rules.
+
+    Returns
+    -------
+    tuple of PlaceRule
+        Merged place-rule sequence.
+    """
     merged: list[PlaceRule] = list(existing)
     for rule in incoming:
         if rule in merged:
@@ -335,7 +443,31 @@ def build_cv_mechanisms(
     paint_rules: tuple[PaintRule, ...],
     place_rules: tuple[PlaceRule, ...],
 ) -> list[_MechBucket]:
-    """Lower declaration rules onto per-CV mechanism buckets."""
+    """Lower normalized declaration rules onto per-CV mechanism buckets.
+
+    Parameters
+    ----------
+    morpho : Morphology
+        Morphology whose filters and locsets are being evaluated.
+    geometry : CVGeometryResult
+        Geometry-stage payload defining the current CV tiling.
+    paint_rules : tuple of PaintRule
+        Normalized region-based declarations.
+    place_rules : tuple of PlaceRule
+        Normalized locset-based declarations.
+
+    Returns
+    -------
+    list of _MechBucket
+        One mutable bucket per CV, later consumed by the base
+        discretization assembly step.
+
+    Notes
+    -----
+    Density-like mechanisms are assigned by region overlap, cable
+    properties by midpoint ownership, and point mechanisms by resolved
+    locset ownership.
+    """
     geos = geometry.geos
     buckets = [_init_bucket() for _ in geos]
     cache = _RegionCache(morpho)

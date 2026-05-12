@@ -28,7 +28,7 @@ Layout = Literal["dense", "sparse"]
 
 from braincell import ion as runtime_ion
 from braincell._base import Channel, IonChannel
-from braincell.ion._base import DynamicNernstIon, FixedIon, InitNernstIon
+from braincell.ion._base import DynamicNernstIon, FixedIon, InitNernstIon, KineticIon
 from braincell.mech import (
     CurrentProbe,
     CurrentClamp,
@@ -1136,6 +1136,8 @@ def _runtime_ion_species_key(cls: type) -> str:
 
 
 def _runtime_ion_family(cls: type) -> str:
+    if issubclass(cls, KineticIon):
+        return "kinetic"
     if issubclass(cls, DynamicNernstIon):
         return "dynamic"
     if issubclass(cls, InitNernstIon):

@@ -30,6 +30,8 @@ import jax.numpy as jnp
 import numpy as np
 
 from braincell._base import HHTypedNeuron, IonChannel, _cast_like
+from braincell._base_channel import Channel as RuntimeChannel
+from braincell._base_ion import Ion as RuntimeIon
 from braincell._misc import is_traced_value
 from braincell._typing import Initializer
 from braincell._compute.table import (
@@ -66,8 +68,9 @@ from braincell.filter import LocsetExpr, LocsetMask, RegionExpr, RegionMask
 from braincell.filter.helper import normalize_region_intervals
 from braincell.morph.morphology import Morphology
 from braincell.quad import get_integrator
-from braincell.quad._staggered import build_cv_axial_operator
-from braincell.quad.protocol import DiffEqState, IndependentIntegration
+from braincell.quad._staggered import build_cv_axial_operator, dhs_voltage_step
+from braincell.quad._exp_euler import ind_exp_euler_step
+from braincell.quad.protocol import DiffEqModule, DiffEqState, IndependentIntegration
 from . import bridge, currents, probes, run as run_module
 
 __all__ = ["Cell"]
@@ -114,6 +117,7 @@ class Cell(HHTypedNeuron):
         V_init: Optional[Initializer] = None,
         spk_fun: Callable = braintools.surrogate.ReluGrad(),
         solver: str | Callable = "staggered",
+        update_policy: str = "legacy",
         name: str | None = None,
     ) -> None:
         HHTypedNeuron.__init__(self, size=(1,), name=name)
@@ -141,6 +145,7 @@ class Cell(HHTypedNeuron):
         self._spk_fun = spk_fun
         self._name = name
         self._solver_name, self._solver_fn = _resolve_solver(solver)
+        self._update_policy = _resolve_update_policy(update_policy)
 
         self._cvs_cache: tuple | None = None
         self._cvs_cache_key: object = None
@@ -246,6 +251,15 @@ class Cell(HHTypedNeuron):
     @property
     def name(self) -> str | None:
         return self._name
+
+    @property
+    def update_policy(self) -> str:
+        return self._update_policy
+
+    @update_policy.setter
+    def update_policy(self, value: str) -> None:
+        self._raise_if_initialized("assign update_policy")
+        self._update_policy = _resolve_update_policy(value)
 
     # ------------------------------------------------------------------
     # Declaration mutators
@@ -1666,18 +1680,149 @@ class Cell(HHTypedNeuron):
         if brainstate.environ.get("dt", None) is None:
             raise ValueError("Cell.update(...) requires brainstate.environ['dt'] to be set.")
 
-        if I_ext is None:
-            self.solver(self)
-        else:
-            self.solver(self, I_ext)
+        # ``legacy`` preserves the historical step ordering: run the cell
+        # solver first, then let ``node.update(...)`` trigger any
+        # independently-integrated submodules afterwards.
+        #
+        # ``family_phased`` uses an explicit NEURON-style family ordering:
+        # voltage first, then all channels, then all ions. In that mode
+        # ``IndependentIntegration`` only changes how a node advances within
+        # its own family phase; it does not change the family ordering.
+        if self._update_policy == "legacy":
+            if I_ext is None:
+                self.solver(self)
+            else:
+                self.solver(self, I_ext)
 
-        point_V = self._cv_to_point(self.V.value)
-        for _, node in self.nodes(IonChannel, allowed_hierarchy=(1, 1)).items():
-            node.update(point_V)
+            point_V = self._cv_to_point(self.V.value)
+            for _, node in self.nodes(IonChannel, allowed_hierarchy=(1, 1)).items():
+                node.update(point_V)
+        else:
+            self._update_family_phased(I_ext)
 
         spk = self.get_spike(last_V, self.V.value)
         self.spike.value = spk
         return spk
+
+    def _update_family_phased(self, I_ext=None):
+        """Run one family-phased update step.
+
+        Order:
+
+        1. Cache a step-start ion-current snapshot for current-driven ion
+           dynamics.
+        2. Advance voltage only, reusing the existing DHS voltage solve.
+        3. Advance every channel (root-level and ion-bound) before any ion
+           states.
+        4. Advance every ion state after channel states.
+
+        This avoids interleaving ion-bound channels with their owner ions in a
+        single step. Current-driven ions consume the cached step-start current
+        instead of re-evaluating a newer current after channel / voltage states
+        have already moved.
+        """
+        if self.solver_name != "staggered":
+            raise NotImplementedError(
+                "update_policy='family_phased' currently requires solver='staggered'."
+            )
+        point_V_before = self._cv_to_point(self.V.value)
+        self._cache_family_phased_currents(point_V_before)
+
+        t = self._resolve_t()
+        dt = brainstate.environ.get("dt")
+        ext = 0.0 if I_ext is None else I_ext
+        dhs_voltage_step(self, t, dt, ext)
+        self.V.value = self.sum_delta_inputs(init=self.V.value)
+
+        point_V_after = self._cv_to_point(self.V.value)
+        root_nodes = list(self.nodes(IonChannel, allowed_hierarchy=(1, 1)).values())
+        ion_nodes = [node for node in root_nodes if isinstance(node, RuntimeIon)]
+        root_channel_nodes = [node for node in root_nodes if isinstance(node, RuntimeChannel)]
+        regular_ions = [node for node in ion_nodes if not isinstance(node, IndependentIntegration)]
+        independent_ions = [node for node in ion_nodes if isinstance(node, IndependentIntegration)]
+        regular_channel_calls = [(node, None) for node in root_channel_nodes if not isinstance(node, IndependentIntegration)]
+        independent_channel_calls = [(node, None) for node in root_channel_nodes if isinstance(node, IndependentIntegration)]
+        # Lift ion-bound channels into the same global channel phase as
+        # root-level channels. This avoids channel/ion interleaving caused by
+        # the object tree shape (Cell -> Ion -> Channel).
+        for ion in ion_nodes:
+            regular_child_channels, independent_child_channels = _split_ion_channels(ion)
+            regular_channel_calls.extend((node, ion) for node in regular_child_channels)
+            independent_channel_calls.extend((node, ion) for node in independent_child_channels)
+
+        if regular_channel_calls:
+            active_states, passive_states = _collect_channel_phase_states(regular_channel_calls)
+            proxy = _PhaseTarget(
+                active_states=active_states,
+                passive_states=passive_states,
+                pre_fn=lambda calls=regular_channel_calls: [
+                    _channel_phase_call(node, "pre_integral", point_V_after, ion) for node, ion in calls
+                ],
+                compute_fn=lambda calls=regular_channel_calls: [
+                    _channel_phase_call(node, "compute_derivative", point_V_after, ion) for node, ion in calls
+                ],
+                post_fn=lambda calls=regular_channel_calls: [
+                    _channel_phase_call(node, "post_integral", point_V_after, ion) for node, ion in calls
+                ],
+            )
+            # ``active_states`` are the channel states integrated in this
+            # phase. ``passive_states`` are ion states such as ``Ci`` that
+            # channel derivatives may read, but which must stay frozen until
+            # the later ion phase.
+            if proxy.has_states:
+                ind_exp_euler_step(proxy, excluded_paths=proxy.excluded_paths)
+            else:
+                proxy.pre_integral()
+                proxy.compute_derivative()
+                proxy.post_integral()
+
+        for node, ion in independent_channel_calls:
+            if ion is None:
+                node.update(point_V_after)
+            else:
+                node.update(point_V_after, ion.pack_info())
+
+        # Ion phase advances only ion-owned species / concentration states.
+        # Regular child channels are intentionally not re-advanced here because
+        # they already ran in the channel phase above.
+        for ion in regular_ions:
+            ion_proxy = _PhaseTarget(
+                active_states=_collect_ion_diffeq_states(ion),
+                pre_fn=lambda ion=ion: ion._run_ion_hook("_ion_pre_integral_hook", point_V_after),
+                compute_fn=lambda ion=ion: ion._run_ion_hook("_ion_compute_derivative_hook", point_V_after),
+                post_fn=lambda ion=ion: ion._run_ion_hook("_ion_post_integral_hook", point_V_after),
+            )
+            if ion_proxy.has_states:
+                ind_exp_euler_step(ion_proxy, excluded_paths=ion_proxy.excluded_paths)
+            else:
+                ion._run_ion_hook("_ion_post_integral_hook", point_V_after)
+
+        # Independent ions still belong to the ion phase; they differ only in
+        # the solver/substep schedule used inside this phase.
+        for ion in independent_ions:
+            ion_proxy = _PhaseTarget(
+                active_states=_collect_ion_diffeq_states(ion),
+                pre_fn=lambda ion=ion: ion._run_ion_hook("_ion_pre_integral_hook", point_V_after),
+                compute_fn=lambda ion=ion: ion._run_ion_hook("_ion_compute_derivative_hook", point_V_after),
+                post_fn=lambda ion=ion: ion._run_ion_hook("_ion_post_integral_hook", point_V_after),
+            )
+            if ion_proxy.has_states:
+                _run_independent_phase_solver(ion, ion_proxy, point_V_after)
+            else:
+                ion._run_ion_hook("_ion_post_integral_hook", point_V_after)
+
+    def _cache_family_phased_currents(self, point_V):
+        runtime = self.runtime
+        for ion_name, ion in runtime.ions.items():
+            if getattr(type(ion), "uses_total_current", False):
+                # Cache a step-start current snapshot for ion dynamics only.
+                # The voltage phase still evaluates membrane current through the
+                # existing path; this cache merely prevents ion dynamics from
+                # re-reading a newer current after channel / voltage states have
+                # already advanced.
+                ion._cached_total_current = ion.current(point_V, include_external=True)
+                ion._cached_total_current_policy = self._update_policy
+                ion._cached_total_current_time = self._resolve_t()
 
     def reset_state(self, batch_size=None) -> None:
         """Reseed ``V`` / ``spike`` / ``current_time`` without leaving INITIALIZED.
@@ -1851,3 +1996,131 @@ def _resolve_solver(solver):
     raise TypeError(
         f"solver must be str or callable, got {type(solver).__name__!s}."
     )
+
+
+def _resolve_update_policy(value: str) -> str:
+    if not isinstance(value, str):
+        raise TypeError(
+            f"update_policy must be a string, got {type(value).__name__!s}."
+        )
+    if value not in {"legacy", "family_phased"}:
+        raise ValueError(
+            f"update_policy must be one of ('legacy', 'family_phased'), got {value!r}."
+        )
+    return value
+
+
+class _PhaseTarget(brainstate.nn.Module, DiffEqModule):
+    """Minimal solver target for one family phase.
+
+    ``active_states`` are the states this phase may integrate.
+    ``passive_states`` are visible to derivative evaluation but excluded from
+    integration so cross-family reads do not accidentally advance the wrong
+    states.
+    """
+
+    def __init__(
+        self,
+        *,
+        active_states: dict[str, DiffEqState],
+        pre_fn: Callable[[], None],
+        compute_fn: Callable[[], None],
+        post_fn: Callable[[], None],
+        passive_states: dict[str, DiffEqState] | None = None,
+    ):
+        super().__init__()
+        self._pre_fn = pre_fn
+        self._compute_fn = compute_fn
+        self._post_fn = post_fn
+        passive_states = {} if passive_states is None else passive_states
+        self.has_states = bool(active_states)
+        self.excluded_paths = tuple((name,) for name in passive_states.keys())
+        for name, state in active_states.items():
+            setattr(self, name, state)
+        for name, state in passive_states.items():
+            setattr(self, name, state)
+
+    def pre_integral(self, *args, **kwargs):
+        self._pre_fn()
+
+    def compute_derivative(self, *args, **kwargs):
+        self._compute_fn()
+
+    def post_integral(self, *args, **kwargs):
+        self._post_fn()
+
+
+def _collect_diffeq_states(nodes) -> dict[str, DiffEqState]:
+    states: dict[str, DiffEqState] = {}
+    seen: set[int] = set()
+    for node in nodes:
+        for _, state in brainstate.graph.states(node).items():
+            if not isinstance(state, DiffEqState):
+                continue
+            if id(state) in seen:
+                continue
+            seen.add(id(state))
+            states[f"s{len(states)}"] = state
+    return states
+
+
+def _collect_channel_phase_states(calls) -> tuple[dict[str, DiffEqState], dict[str, DiffEqState]]:
+    active: dict[str, DiffEqState] = {}
+    passive: dict[str, DiffEqState] = {}
+    seen_active: set[int] = set()
+    seen_passive: set[int] = set()
+    for node, ion in calls:
+        for _, state in brainstate.graph.states(node).items():
+            if not isinstance(state, DiffEqState) or id(state) in seen_active:
+                continue
+            seen_active.add(id(state))
+            active[f"a{len(active)}"] = state
+        if ion is None:
+            continue
+        # Channel derivatives may depend on ion states such as ``Ci``. Expose
+        # those states as passive reads so the solver can trace them without
+        # advancing them during the channel phase.
+        for _, state in brainstate.graph.states(ion).items():
+            if not isinstance(state, DiffEqState) or id(state) in seen_active or id(state) in seen_passive:
+                continue
+            seen_passive.add(id(state))
+            passive[f"p{len(passive)}"] = state
+    return active, passive
+
+
+def _collect_ion_diffeq_states(ion: RuntimeIon) -> dict[str, DiffEqState]:
+    states: dict[str, DiffEqState] = {}
+    for path, state in brainstate.graph.states(ion).items():
+        if len(path) != 1 or not isinstance(state, DiffEqState):
+            continue
+        states[str(path[0])] = state
+    return states
+
+
+def _split_ion_channels(ion: RuntimeIon):
+    regular = []
+    independent = []
+    for node in brainstate.graph.nodes(ion, RuntimeChannel, allowed_hierarchy=(1, 1)).values():
+        if isinstance(node, IndependentIntegration):
+            independent.append(node)
+        else:
+            regular.append(node)
+    return regular, independent
+
+
+def _run_independent_phase_solver(owner, proxy: _PhaseTarget, point_V):
+    substeps = int(getattr(owner, "substeps", 1))
+    if substeps < 1:
+        raise ValueError("substeps must be at least 1.")
+    with brainstate.environ.context(dt=brainstate.environ.get_dt() / substeps):
+        brainstate.transform.for_loop(
+            lambda i: owner.solver(proxy, point_V),
+            u.math.arange(substeps),
+        )
+
+
+def _channel_phase_call(node, method_name: str, point_V, ion: RuntimeIon | None):
+    method = getattr(node, method_name)
+    if ion is None:
+        return method(point_V)
+    return method(point_V, ion.pack_info())

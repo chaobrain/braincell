@@ -9,9 +9,16 @@ import jax.numpy as jnp
 from braincell._base import Channel
 from braincell._base import IonInfo
 from braincell.ion import Calcium
+from braincell.ion._base import Conserve
 from braincell.ion._base import DynamicNernstIon
+from braincell.ion._base import Factor
 from braincell.ion._base import FixedIon
 from braincell.ion._base import InitNernstIon
+from braincell.ion._base import KineticIon
+from braincell.ion._base import Reaction
+from braincell.ion._base import Source
+from braincell.ion._base import Species
+from braincell.quad.protocol import DiffEqState
 
 
 class _RecorderChannel(Channel):
@@ -103,6 +110,50 @@ class _DynamicNernstIonNoCurrent(Calcium, DynamicNernstIon):
         return -0.05 * Ci / u.ms
 
 
+class _SimpleKineticIon(Calcium, KineticIon):
+    default_Co = 2.0 * u.mM
+    default_valence = 2
+
+    factors = (
+        Factor("cyto", lambda self: self.cyt_volume),
+    )
+    species = (
+        Species("Ci", init=0.1 * u.mM, factor="cyto"),
+        Species("B", init=1.0 * u.mM, factor="cyto"),
+        Species("BC", init=0.0 * u.mM, factor="cyto"),
+    )
+    reactions = (
+        Reaction(
+            lhs={"Ci": 1, "B": 1},
+            rhs={"BC": 1},
+            forward=lambda self, V, x: self.kf * self.cyt_volume,
+            backward=lambda self, V, x: self.kb * self.cyt_volume,
+        ),
+    )
+    sources = ()
+    conserves = (
+        Conserve(
+            species=("B", "BC"),
+            algebraic="B",
+            total=lambda self, V, x: self.Btot * self.cyt_volume,
+        ),
+    )
+
+    def __init__(self, size=1):
+        super().__init__(size=size, name=None, probe=_RecorderChannel(size=size))
+        self._init_kinetic_ion(
+            Co=None,
+            temp=u.celsius2kelvin(36.0),
+            valence=None,
+            solver="euler",
+            substeps=2,
+        )
+        self.cyt_volume = braintools.init.param(3.0 * u.um ** 3, self.varshape, allow_none=False)
+        self.kf = braintools.init.param(2.0 / (u.mM * u.ms), self.varshape, allow_none=False)
+        self.kb = braintools.init.param(0.5 / u.ms, self.varshape, allow_none=False)
+        self.Btot = braintools.init.param(1.0 * u.mM, self.varshape, allow_none=False)
+
+
 class IonTemplateTest(unittest.TestCase):
     def test_constant_pack_info_and_child_derivative(self) -> None:
         ion = _ConstantIon(size=1)
@@ -176,6 +227,87 @@ class IonTemplateTest(unittest.TestCase):
         ion.compute_derivative(V)
 
         self.assertIsNone(ion.last_total_current)
+
+    def test_kinetic_ion_init_and_reset_write_back_algebraic_species(self) -> None:
+        ion = _SimpleKineticIon(size=1)
+        V = jnp.array([-65.0]) * u.mV
+
+        ion.init_state(V)
+        self.assertIsInstance(ion.Ci, DiffEqState)
+        self.assertIsInstance(ion.BC, DiffEqState)
+        self.assertFalse(isinstance(ion.B, DiffEqState))
+        self.assertTrue(u.math.allclose(ion.B, jnp.array([1.0]) * u.mM, atol=1e-12 * u.mM))
+
+        ion.BC.value = jnp.array([0.25]) * u.mM
+        ion.reset_state(V)
+        self.assertTrue(u.math.allclose(ion.B, jnp.array([1.0]) * u.mM, atol=1e-12 * u.mM))
+
+    def test_kinetic_ion_species_values_return_resolved_species(self) -> None:
+        ion = _SimpleKineticIon(size=1)
+        V = jnp.array([-65.0]) * u.mV
+
+        ion.init_state(V)
+        ion.BC.value = jnp.array([0.25]) * u.mM
+        ion.B = jnp.array([-999.0]) * u.mM
+        values = ion.species_values()
+
+        self.assertTrue(u.math.allclose(values["Ci"], ion.Ci.value, atol=1e-12 * u.mM))
+        self.assertTrue(u.math.allclose(values["BC"], ion.BC.value, atol=1e-12 * u.mM))
+        self.assertTrue(u.math.allclose(values["B"], jnp.array([0.75]) * u.mM, atol=1e-12 * u.mM))
+
+    def test_kinetic_ion_compute_derivative_resolves_algebraic_species_first(self) -> None:
+        ion = _SimpleKineticIon(size=1)
+        V = jnp.array([-65.0]) * u.mV
+
+        ion.init_state(V)
+        ion.Ci.value = jnp.array([0.2]) * u.mM
+        ion.BC.value = jnp.array([0.25]) * u.mM
+        ion.B = jnp.array([-999.0]) * u.mM
+        ion.compute_derivative(V)
+
+        expected_flux = ion.cyt_volume * (
+            ion.kf * (0.2 * u.mM) * (0.75 * u.mM) - ion.kb * (0.25 * u.mM)
+        )
+        expected_dCi = -expected_flux / ion.cyt_volume
+        expected_dBC = expected_flux / ion.cyt_volume
+        self.assertTrue(
+            u.math.allclose(
+                ion.Ci.derivative.to_decimal(u.mM / u.ms),
+                expected_dCi.to_decimal(u.mM / u.ms),
+                atol=1e-6,
+            )
+        )
+        self.assertTrue(
+            u.math.allclose(
+                ion.BC.derivative.to_decimal(u.mM / u.ms),
+                expected_dBC.to_decimal(u.mM / u.ms),
+                atol=1e-6,
+            )
+        )
+
+    def test_kinetic_ion_post_integral_refreshes_algebraic_species(self) -> None:
+        ion = _SimpleKineticIon(size=1)
+        V = jnp.array([-65.0]) * u.mV
+
+        ion.init_state(V)
+        ion.BC.value = jnp.array([0.4]) * u.mM
+        ion.B = jnp.array([9.9]) * u.mM
+        ion.post_integral(V)
+        self.assertTrue(u.math.allclose(ion.B, jnp.array([0.6]) * u.mM, atol=1e-12 * u.mM))
+
+    def test_kinetic_ion_pack_info_uses_Ci_species(self) -> None:
+        ion = _SimpleKineticIon(size=1)
+        V = jnp.array([-65.0]) * u.mV
+
+        ion.init_state(V)
+        ion.Ci.value = jnp.array([0.2]) * u.mM
+        info = ion.pack_info()
+
+        self.assertTrue(u.math.allclose(info.Ci, ion.Ci.value, atol=1e-12 * u.mM))
+        expected_E = (
+            u.gas_constant * ion.temp / (ion.valence * u.faraday_constant)
+        ) * u.math.log(ion.Co / ion.Ci.value)
+        self.assertTrue(u.math.allclose(info.E.to_decimal(u.mV), expected_E.to_decimal(u.mV), atol=1e-6))
 
 
 if __name__ == "__main__":

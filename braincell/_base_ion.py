@@ -114,6 +114,7 @@ class Ion(IonChannel, Container):
         Parameters:
             V (array-like): The membrane potential for all neurons/compartments.
         """
+        self._run_ion_hook("_ion_pre_integral_hook", V)
         nodes = brainstate.graph.nodes(self, Channel, allowed_hierarchy=(1, 1))
         for node in nodes.values():
             if not isinstance(node, IndependentIntegration):
@@ -150,6 +151,7 @@ class Ion(IonChannel, Container):
         for node in nodes.values():
             if not isinstance(node, IndependentIntegration):
                 node.post_integral(V, self.pack_info())
+        self._run_ion_hook("_ion_post_integral_hook", V)
 
     def current(self, V, include_external: bool = False):
         """
@@ -217,6 +219,9 @@ class Ion(IonChannel, Container):
             node.reset_state(V, ion_info, batch_size)
 
     def update(self, V, *args, **kwargs):
+        if isinstance(self, IndependentIntegration):
+            self.make_integration(V)
+            return
         ion_info = self.pack_info()
         for key, node in brainstate.graph.nodes(self, Channel, allowed_hierarchy=(1, 1)).items():
             node.update(V, ion_info)

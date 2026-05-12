@@ -340,7 +340,7 @@ class CellRuntimeStateTest(unittest.TestCase):
 
         self.assertEqual(samples["soma(0.5)_IL_current"], expected_current)
 
-    def test_sample_probe_rejects_non_state_field_and_unknown_mechanism(self) -> None:
+    def test_sample_probe_reads_plain_field_and_rejects_unknown_mechanism(self) -> None:
         cell = Cell(_build_tree())
         cell.paint(
             BranchSlice(branch_index=[0, 1], prox=0.0, dist=1.0),
@@ -358,8 +358,10 @@ class CellRuntimeStateTest(unittest.TestCase):
         )
         cell.init_state(); rcell = cell
 
-        with self.assertRaises(ValueError):
-            rcell.sample_probe("soma(0.5)_Na_HH1952_g_max")
+        self.assertEqual(
+            rcell.sample_probe("soma(0.5)_Na_HH1952_g_max"),
+            rcell.get_ion("na").channels["Na_HH1952"].g_max[1],
+        )
         with self.assertRaises(KeyError):
             rcell.sample_probe("soma(0.5)_missing_p")
 

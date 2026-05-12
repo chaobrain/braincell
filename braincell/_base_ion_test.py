@@ -6,6 +6,10 @@ remain re-exported through :mod:`braincell._base` for back-compat.
 
 import unittest
 
+import brainstate
+import brainunit as u
+import jax.numpy as jnp
+
 
 class BaseIonSplitTest(unittest.TestCase):
     def test_ion_lives_in_base_ion(self) -> None:
@@ -25,6 +29,34 @@ class BaseIonSplitTest(unittest.TestCase):
         from braincell._base_ion import Ion, MixIons
         self.assertTrue(issubclass(Ion, IonChannel))
         self.assertTrue(issubclass(MixIons, IonChannel))
+
+
+class IonIndependentIntegrationDispatchTest(unittest.TestCase):
+    def test_update_dispatches_to_make_integration_for_independent_ions(self) -> None:
+        from braincell.ion import Calcium
+        from braincell.quad.protocol import IndependentIntegration
+
+        class _IndependentIon(Calcium, IndependentIntegration):
+            def __init__(self):
+                Calcium.__init__(self, size=1, name=None)
+                IndependentIntegration.__init__(self, solver="euler")
+                self.Ci = 0.1 * u.mM
+                self.Co = 2.0 * u.mM
+                self.temp = u.celsius2kelvin(36.0)
+                self.valence = 2
+                self.calls = []
+
+            @property
+            def E(self):
+                return 120.0 * u.mV
+
+            def make_integration(self, *args, **kwargs):
+                self.calls.append((args, kwargs))
+
+        ion = _IndependentIon()
+        ion.update(jnp.array([-65.0]) * u.mV)
+
+        self.assertEqual(len(ion.calls), 1)
 
 
 if __name__ == "__main__":

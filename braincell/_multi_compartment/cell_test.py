@@ -2,7 +2,9 @@
 
 import unittest
 
+import braincell
 import brainstate
+import braintools
 import brainunit as u
 import jax.numpy as jnp
 import numpy as np
@@ -10,7 +12,11 @@ import numpy as np
 import braincell.mech as mech
 from braincell import Branch, CVPerBranch, Cell, CurrentClamp, Morphology
 from braincell.filter import AllRegion, RootLocation
+from braincell.mech import register_channel, register_ion
 from braincell.mech import StateProbe
+from braincell.ion import Calcium
+from braincell.ion._base import KineticIon, Species
+from braincell.quad.protocol import DiffEqState
 
 
 def _simple_cell() -> Cell:
@@ -204,6 +210,120 @@ class CellDoesNotAllocatePlaceholderIonsEagerlyTest(unittest.TestCase):
             ),
         ):
             _ = Cell(tree)
+
+
+_PHASE_LOG = []
+
+
+@register_channel("__phase_channel__")
+class _PhaseChannel(braincell.Channel):
+    root_type = Calcium
+
+    def __init__(self, size, name=None):
+        super().__init__(size=size, name=name)
+        self.p = DiffEqState(jnp.zeros(self.varshape))
+
+    def init_state(self, V, ion, batch_size=None):
+        _ = (V, ion, batch_size)
+
+    def reset_state(self, V, ion, batch_size=None):
+        _ = (V, ion, batch_size)
+        self.p.value = jnp.zeros(self.varshape)
+
+    def compute_derivative(self, V, ion):
+        self.p.derivative = u.math.zeros_like(self.p.value) / u.ms
+        _PHASE_LOG.append("channel_compute")
+
+    def current(self, V, ion):
+        _ = V
+        return ion.Ci * (u.nA / (u.cm ** 2) / u.mM)
+
+
+@register_ion("__phase_ion__")
+class _PhaseIon(Calcium, KineticIon):
+    uses_total_current = True
+    species = (
+        Species("Ci", init=1.0 * u.mM),
+    )
+
+    def __init__(self, size, name=None, **channels):
+        super().__init__(size=size, name=name, **channels)
+        self._init_kinetic_ion(
+            Co=2.0 * u.mM,
+            temp=u.celsius2kelvin(36.0),
+            valence=2,
+            solver="euler",
+            substeps=1,
+        )
+        self.seen_total_current = None
+
+    def _ion_compute_derivative_hook(self, V):
+        self.seen_total_current = self._cached_total_current
+        self.Ci.derivative = u.math.zeros_like(self.Ci.value) / u.ms
+        _PHASE_LOG.append("ion_compute")
+
+
+class TestCellFamilyPhasedUpdate(unittest.TestCase):
+    def setUp(self) -> None:
+        _PHASE_LOG.clear()
+
+    def _build_family_phased_cell(self) -> Cell:
+        cell = _simple_cell()
+        region = AllRegion()
+        from braincell import CableProperty
+
+        cell.paint(
+            region,
+            CableProperty(
+                resting_potential=-65.0 * u.mV,
+                membrane_capacitance=1.0 * u.uF / u.cm ** 2,
+                axial_resistivity=100.0 * u.ohm * u.cm,
+                temperature=u.celsius2kelvin(36.0),
+            ),
+        )
+        cell.paint(region, mech.Ion("__phase_ion__", name="ca_dyn"))
+        cell.paint(region, mech.Channel("__phase_channel__", ion_name="ca_dyn", name="ca_dep"))
+        return cell
+
+    def test_default_update_policy_is_legacy(self):
+        cell = _simple_cell()
+        self.assertEqual(cell.update_policy, "legacy")
+
+    def test_rejects_unknown_update_policy(self):
+        with self.assertRaises(ValueError):
+            Cell(_simple_cell().morpho, cv_policy=CVPerBranch(), update_policy="bad")
+
+    def test_family_phased_channel_runs_before_ion(self):
+        cell = self._build_family_phased_cell()
+        cell.update_policy = "family_phased"
+        cell.init_state()
+        ion = cell.get_ion("ca_dyn")
+        channel = ion.channels["ca_dep"]
+        ion.Ci.value = jnp.asarray([1.0]) * u.mM
+        with brainstate.environ.context(dt=0.1 * u.ms):
+            cell.update()
+
+        self.assertEqual(_PHASE_LOG, ["channel_compute", "ion_compute"])
+
+    def test_family_phased_ion_uses_cached_current(self):
+        cell = self._build_family_phased_cell()
+        cell.update_policy = "family_phased"
+        cell.init_state()
+        ion = cell.get_ion("ca_dyn")
+        channel = ion.channels["ca_dep"]
+        ion.Ci.value = jnp.asarray([1.0]) * u.mM
+        channel.p.value = jnp.asarray([999.0])
+        with brainstate.environ.context(dt=0.1 * u.ms):
+            cell.update()
+
+        expected = jnp.asarray([1.0]) * (u.nA / (u.cm ** 2))
+        self.assertTrue(
+            u.math.allclose(
+                ion.seen_total_current.to_decimal(u.nA / (u.cm ** 2)),
+                expected.to_decimal(u.nA / (u.cm ** 2)),
+                atol=1e-12,
+            )
+        )
 
 
 if __name__ == "__main__":

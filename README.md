@@ -165,4 +165,4 @@ The official documentation is hosted at: [https://brainx.chaobrain.com/braincell
 
 ## See also the ecosystem
 
-BrainCell is one part of our brain modeling ecosystem: https://brainmodeling.readthedocs.io/
+BrainCell is one part of our brain modeling ecosystem: https://brainx.chaobrain.com/

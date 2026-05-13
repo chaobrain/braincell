@@ -24,7 +24,7 @@ import numpy as np
 from braincell import Branch, Morphology
 from braincell.vis._testing import (
     make_length_only_tree,
-    make_projected_point_tree,
+    make_projected_node_tree,
     make_root_split_tree,
     make_two_dendrite_tree,
 )
@@ -110,8 +110,8 @@ class ShollAnalysisTest(unittest.TestCase):
         self.assertEqual(profile.radii_um.shape, profile.intersections.shape)
         self.assertTrue(np.all(profile.intersections >= 0))
 
-    def test_sholl_profile_on_point_tree(self) -> None:
-        tree = make_projected_point_tree()
+    def test_sholl_profile_on_node_tree(self) -> None:
+        tree = make_projected_node_tree()
         profile = compute_sholl_profile(tree, step_um=20.0)
         self.assertGreaterEqual(profile.radii_um.size, 1)
 

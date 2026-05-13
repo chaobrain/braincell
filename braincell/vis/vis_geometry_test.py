@@ -35,7 +35,7 @@ from braincell.vis.scene2d import build_render_scene_2d
 from braincell.vis.scene3d import build_render_scene_3d
 
 
-def _point_tree_with_same_lengths() -> Morphology:
+def _point_geometry_tree_with_same_lengths() -> Morphology:
     soma = Branch.from_points(
         points=[[0.0, 0.0, 0.0], [0.0, 20.0, 0.0]] * u.um,
         radii=[10.0, 10.0] * u.um,
@@ -298,15 +298,22 @@ class VisGeometryTest(unittest.TestCase):
 
     def test_tree_and_frustum_ignore_real_points_geometry(self) -> None:
         length_tree = make_length_only_tree()
-        point_tree = _point_tree_with_same_lengths()
+        point_geometry_tree = _point_geometry_tree_with_same_lengths()
 
         length_layouts = {layout.branch_name: layout for layout in build_layout_branches_2d(length_tree, mode="tree")}
-        point_layouts = {layout.branch_name: layout for layout in build_layout_branches_2d(point_tree, mode="tree")}
+        point_layouts = {
+            layout.branch_name: layout
+            for layout in build_layout_branches_2d(point_geometry_tree, mode="tree")
+        }
 
         self.assertTrue(np.allclose(length_layouts["dend"].segment_points_um, point_layouts["dend"].segment_points_um))
 
         length_scene = build_render_scene_2d(length_tree, layout="stem", shape="frustum")
-        point_scene = build_render_scene_2d(point_tree, layout="stem", shape="frustum")
+        point_scene = build_render_scene_2d(
+            point_geometry_tree,
+            layout="stem",
+            shape="frustum",
+        )
 
         self.assertEqual(len(length_scene.polygons), len(point_scene.polygons))
         for length_polygon, point_polygon in zip(length_scene.polygons, point_scene.polygons):

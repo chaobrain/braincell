@@ -13,14 +13,14 @@
 # limitations under the License.
 # ==============================================================================
 
-"""Voltage solver for the active point-tree runtime.
+"""Voltage solver for the active node-tree runtime.
 
 Type responsibilities in this file:
 
 - ``u.Quantity`` is retained in the numerical hot path when the value carries
   physical meaning, such as membrane voltage or ``dt * conductance`` factors.
 - ``np.ndarray`` is used for static topology metadata and static float64 source
-  coefficients that are assembled once from the point tree.
+  coefficients that are assembled once from the node tree.
 - ``jnp.ndarray`` mantissas are produced through ``brainstate.environ`` so the
   JAX runtime follows the current precision without hard-coded ``float32`` /
   ``float64`` annotations.
@@ -63,7 +63,7 @@ def staggered_step(
     time step ``dt``:
 
     1. The cable voltage is advanced with an implicit Euler step solved on
-       the point-tree by :func:`dhs_voltage_step` (the dendritic hierarchical
+       the node-tree by :func:`dhs_voltage_step` (the dendritic hierarchical
        solver, DHS). This is unconditionally stable for the linear axial
        block and lets ``dt`` exceed the explicit-stability limit.
     2. All remaining differential states (typically Hodgkin-Huxley gating
@@ -79,10 +79,10 @@ def staggered_step(
     Parameters
     ----------
     target : DiffEqModule
-        A multi-compartment cell exposing ``point_tree``,
-        ``point_scheduling``, and a voltage state ``V``. In practice this is
+        A multi-compartment cell exposing ``node_tree()``,
+        ``node_scheduling()``, and a voltage state ``V``. In practice this is
         a :class:`braincell.Cell` instance whose membrane state is laid
-        out on a point tree compatible with the DHS scheduler.
+        out on a node tree compatible with the DHS scheduler.
     *args
         Forwarded verbatim to :meth:`DiffEqModule.compute_derivative` and
         the underlying voltage and channel solvers (typically the input
@@ -99,7 +99,7 @@ def staggered_step(
     AssertionError
         If *target* is not a :class:`DiffEqModule`.
     TypeError
-        If *target* does not expose the point-tree machinery required by
+        If *target* does not expose the node-tree machinery required by
         :func:`dhs_voltage_step`.
 
     See Also
@@ -145,6 +145,9 @@ def staggered_step(
 class DHSStaticSource:
     n_point: int
     dynamic_rows_np: np.ndarray
+    dynamic_point_ids_np: np.ndarray
+    row_to_point_id_np: np.ndarray
+    row_capacitance_uF_np: np.ndarray
     diag_ms_inv_np: np.ndarray
     lowers_ms_inv_np: np.ndarray
     uppers_ms_inv_np: np.ndarray
@@ -180,7 +183,7 @@ def dhs_voltage_step(target, t, dt, *args):
 
     Solves the linearized cable equation on a multi-compartment cell using
     the **dendritic hierarchical solver** (DHS): the axial coupling matrix is
-    cast onto the point-tree representation of the morphology, the membrane
+    cast onto the node-tree representation of the morphology, the membrane
     derivative is linearized around the current voltage, and one implicit
     Euler update of the form
 
@@ -193,7 +196,7 @@ def dhs_voltage_step(target, t, dt, *args):
     kernels and run inside ``jit``/``vmap`` without dynamic shapes.
 
     The public cell voltage lives on CV midpoints with shape
-    ``[..., n_cv]``. DHS solves the linear system on point-tree rows with
+    ``[..., n_cv]``. DHS solves the linear system on node-tree rows with
     shape ``[batch, n_point]`` plus one sentinel row used by the recursive
     doubling back-substitution; the result is restored back to the original
     voltage shape on exit.
@@ -201,8 +204,8 @@ def dhs_voltage_step(target, t, dt, *args):
     Parameters
     ----------
     target : DiffEqModule
-        A point-tree aware cell that exposes ``point_tree()``,
-        ``point_scheduling("dhs")``, a voltage state ``V``, and a per-CV
+        A node-tree aware cell that exposes ``node_tree()``,
+        ``node_scheduling("dhs")``, a voltage state ``V``, and a per-CV
         capacitance/area description. In practice this is a
         :class:`braincell.Cell` instance.
     t : Quantity[time]
@@ -224,7 +227,7 @@ def dhs_voltage_step(target, t, dt, *args):
     Raises
     ------
     TypeError
-        If *target* does not expose the ``point_tree`` / ``point_scheduling``
+        If *target* does not expose the ``node_tree`` / ``node_scheduling``
         attributes required by the DHS solver.
 
     See Also
@@ -241,15 +244,16 @@ def dhs_voltage_step(target, t, dt, *args):
     current JAX precision while keeping physical units on values such as
     voltage and ``dt * conductance`` factors.
     """
-    if not hasattr(target, "point_tree") or not hasattr(target, "point_scheduling"):
-        raise TypeError(f"dhs_voltage_step(...) requires a point-tree aware target, got {type(target)}.")
+    if not hasattr(target, "node_tree") or not hasattr(target, "node_scheduling"):
+        raise TypeError(f"dhs_voltage_step(...) requires a node-tree aware target, got {type(target)}.")
 
-    point_tree = target.point_tree()
-    scheduling = target.point_scheduling(algorithm="dhs")
-    static_source = _get_dhs_static_source(target, point_tree=point_tree, scheduling=scheduling)
+    node_tree = target.node_tree
+    scheduling = target.node_scheduling(algorithm="dhs")
+    static_source = _get_dhs_static_source(target, node_tree=node_tree, scheduling=scheduling)
     static_cache = _get_dhs_static_cache(target, static_source)
     V_n = target.V.value
     linear, const = _linear_and_const_term(target, V_n, *args)
+    edge_point_current = _edge_point_current(target, t=t, static_source=static_source)
     numeric = _build_dhs_numeric_state(
         V_n,
         linear,
@@ -257,6 +261,7 @@ def dhs_voltage_step(target, t, dt, *args):
         dt=dt,
         static_source=static_source,
         static_cache=static_cache,
+        edge_point_current=edge_point_current,
     )
     diags, solves = comp_triang_raw(
         numeric.diags,
@@ -279,11 +284,11 @@ def dhs_voltage_step(target, t, dt, *args):
     )
 
 
-def _build_dhs_static_source(target, *, point_tree, scheduling) -> DHSStaticSource:
-    """Build the static NumPy DHS source data from the point tree."""
-    n_point, dynamic_rows, axial_matrix = _build_point_tree_axial_matrix(
+def _build_dhs_static_source(target, *, node_tree, scheduling) -> DHSStaticSource:
+    """Build the static NumPy DHS source data from the node tree."""
+    n_point, dynamic_rows, axial_matrix, row_capacitance = _build_node_tree_axial_matrix(
         target,
-        point_tree=point_tree,
+        node_tree=node_tree,
         point_id_to_row=scheduling.point_id_to_row,
     )
     diag_ms_inv = np.asarray(np.diag(axial_matrix), dtype=np.float64)
@@ -305,6 +310,9 @@ def _build_dhs_static_source(target, *, point_tree, scheduling) -> DHSStaticSour
     return DHSStaticSource(
         n_point=n_point,
         dynamic_rows_np=dynamic_rows,
+        dynamic_point_ids_np=np.asarray(node_tree.cv_to_mid_node_id, dtype=np.int32),
+        row_to_point_id_np=np.asarray(scheduling.row_to_point_id, dtype=np.int32),
+        row_capacitance_uF_np=row_capacitance,
         diag_ms_inv_np=diag_ms_inv,
         lowers_ms_inv_np=lowers_ms_inv,
         uppers_ms_inv_np=uppers_ms_inv,
@@ -314,18 +322,22 @@ def _build_dhs_static_source(target, *, point_tree, scheduling) -> DHSStaticSour
     )
 
 
-def _build_point_tree_axial_matrix(target, *, point_tree, point_id_to_row) -> tuple[int, np.ndarray, np.ndarray]:
-    """Assemble the mixed point-tree axial operator in ``ms^-1``."""
-    n_point = len(point_tree.points)
+def _build_node_tree_axial_matrix(target, *, node_tree, point_id_to_row) -> tuple[int, np.ndarray, np.ndarray, np.ndarray]:
+    """Assemble the mixed node-tree axial operator in ``ms^-1``."""
+    n_point = len(node_tree.nodes)
     point_id_to_row = np.asarray(point_id_to_row, dtype=np.int32)
-    cv_row_by_cv = point_id_to_row[point_tree.cv_midpoint_point_id]
+    cv_row_by_cv = point_id_to_row[node_tree.cv_to_mid_node_id]
     dynamic_rows = np.asarray([int(cv_row_by_cv[cv_id]) for cv_id in range(len(target.cvs))], dtype=np.int32)
     row_capacitance = _row_capacitance_scale(target, dynamic_rows=dynamic_rows, n_point=n_point)
+    row_capacitance_uF = np.asarray(
+        [_scalar_decimal(value, u.uF) for value in row_capacitance],
+        dtype=np.float64,
+    )
     axial_matrix = np.zeros((n_point, n_point), dtype=np.float64)
 
-    for edge in point_tree.edges:
-        parent_row = int(point_id_to_row[edge.parent_point_id])
-        child_row = int(point_id_to_row[edge.child_point_id])
+    for edge in node_tree.edges:
+        parent_row = int(point_id_to_row[edge.parent_node_id])
+        child_row = int(point_id_to_row[edge.child_node_id])
         conductance = _edge_conductance(edge=edge, cvs=target.cvs)
 
         # Dynamic rows use physical membrane capacitance. Algebraic boundary rows
@@ -338,14 +350,14 @@ def _build_point_tree_axial_matrix(target, *, point_tree, point_id_to_row) -> tu
         axial_matrix[parent_row, child_row] -= parent_coeff
         axial_matrix[child_row, child_row] += child_coeff
         axial_matrix[child_row, parent_row] -= child_coeff
-    return n_point, dynamic_rows, axial_matrix
+    return n_point, dynamic_rows, axial_matrix, row_capacitance_uF
 
 
-def build_cv_axial_operator(target, *, point_tree, scheduling) -> np.ndarray:
-    """Reduce the mixed point-tree axial system to a CV-midpoint operator."""
-    _, dynamic_rows, axial_matrix = _build_point_tree_axial_matrix(
+def build_cv_axial_operator(target, *, node_tree, scheduling) -> np.ndarray:
+    """Reduce the mixed node-tree axial system to a CV-midpoint operator."""
+    _, dynamic_rows, axial_matrix, _row_capacitance = _build_node_tree_axial_matrix(
         target,
-        point_tree=point_tree,
+        node_tree=node_tree,
         point_id_to_row=scheduling.point_id_to_row,
     )
     dynamic_rows = np.asarray(dynamic_rows, dtype=np.int32)
@@ -364,12 +376,12 @@ def build_cv_axial_operator(target, *, point_tree, scheduling) -> np.ndarray:
     return np.asarray(reduced, dtype=np.float64)
 
 
-def _get_dhs_static_source(target, *, point_tree, scheduling) -> DHSStaticSource:
+def _get_dhs_static_source(target, *, node_tree, scheduling) -> DHSStaticSource:
     runtime = target._runtime
     source = getattr(runtime, "dhs_static_source_np", None)
     if source is not None:
         return source
-    source = _build_dhs_static_source(target, point_tree=point_tree, scheduling=scheduling)
+    source = _build_dhs_static_source(target, node_tree=node_tree, scheduling=scheduling)
     if runtime is not None:
         runtime.dhs_static_source_np = source
     return source
@@ -398,7 +410,8 @@ def _get_dhs_static_cache(target, source: DHSStaticSource) -> DHSStaticCache:
 
 
 def _build_dhs_numeric_state(V_n, linear, const, *, dt, static_source: DHSStaticSource,
-                             static_cache: DHSStaticCache) -> DHSNumericState:
+                             static_cache: DHSStaticCache,
+                             edge_point_current=None) -> DHSNumericState:
     V_n, linear, const = [x.reshape((-1, V_n.shape[-1])) for x in (V_n, linear, const)]
     batch_size = V_n.shape[0]
     n_point = static_source.n_point
@@ -419,6 +432,13 @@ def _build_dhs_numeric_state(V_n, linear, const, *, dt, static_source: DHSStatic
 
     solves = u.Quantity(jnp.zeros((batch_size, n_point + 1), dtype=rhs_midpoint_mv.dtype), u.mV)
     solves = solves.at[:, static_source.dynamic_rows_np].set(rhs_midpoint_mv)
+    if edge_point_current is not None:
+        edge_rhs = _edge_current_voltage_delta(
+            edge_point_current,
+            dt=dt,
+            static_source=static_source,
+        )
+        solves = solves.at[:, :n_point].add(edge_rhs[None, :])
 
     return DHSNumericState(
         diags=diags,
@@ -428,19 +448,42 @@ def _build_dhs_numeric_state(V_n, linear, const, *, dt, static_source: DHSStatic
     )
 
 
+def _edge_point_current(target, *, t, static_source: DHSStaticSource):
+    """Return point clamp current with midpoint rows removed."""
+
+    runtime = getattr(target, "_runtime", None)
+    if runtime is None or not hasattr(runtime, "evaluate_point_clamps"):
+        return None
+    current = runtime.evaluate_point_clamps(t=t)
+    current_nA = u.math.asarray(current.to_decimal(u.nA))
+    current_nA = current_nA.at[static_source.dynamic_point_ids_np].set(0.0)
+    return u.Quantity(current_nA, u.nA)
+
+
+def _edge_current_voltage_delta(edge_point_current, *, dt, static_source: DHSStaticSource):
+    current_by_point = u.math.asarray(edge_point_current.to_decimal(u.nA))
+    current_by_row = current_by_point[static_source.row_to_point_id_np]
+    capacitance = jnp.asarray(
+        static_source.row_capacitance_uF_np,
+        dtype=brainstate.environ.dftype(),
+    ) * u.uF
+    rate = (u.Quantity(current_by_row, u.nA) / capacitance).in_unit(u.mV / u.ms)
+    return (dt * rate).in_unit(u.mV)
+
+
 def _restore_midpoint_voltage(solves: object, *, dynamic_rows: np.ndarray,
                               target_shape: tuple[int, ...]) -> object:
     return solves[:, dynamic_rows].reshape(target_shape)
 
 
 def _edge_conductance(*, edge, cvs) -> object:
-    """Sum all half-CV conductances attached to one point-tree edge."""
-    if len(edge.cv_edges) == 0:
+    """Sum all half-CV conductances attached to one node-tree edge."""
+    if len(edge.roles) == 0:
         raise ValueError(f"Point-tree edge {edge.id!r} has no CV edge roles.")
 
     resistances = []
     branch_ids = set()
-    for role in edge.cv_edges:
+    for role in edge.roles:
         cv = cvs[role.cv_id]
         branch_ids.add(int(cv.branch_id))
         resistance = cv.r_axial_prox if role.half == "prox" else cv.r_axial_dist

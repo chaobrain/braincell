@@ -13,11 +13,11 @@
 # limitations under the License.
 # ==============================================================================
 
-"""Point-tree topology plotting.
+"""Node-tree topology plotting.
 
-This module renders :class:`braincell._compute.topology.PointTree`
-instances as pure topology graphs: points become nodes, compute edges
-become graph edges, and 2-D coordinates come from a graph layout
+This module renders :class:`braincell._discretization.base.NodeTree`
+instances as pure topology graphs: nodes become points in the plot, node
+edges become graph edges, and 2-D coordinates come from a graph layout
 algorithm rather than morphology geometry.
 """
 
@@ -29,7 +29,7 @@ from typing import Any, Literal
 
 import numpy as np
 
-from braincell._compute.topology import PointTree
+from braincell._discretization.base import NodeTree
 
 ColorMode = Literal["solid", "depth", "values"]
 CoverageMode = Literal["fraction", "any", "all"]
@@ -80,7 +80,7 @@ _VALID_COVERAGE_MODES = {"fraction", "any", "all"}
 
 
 def plot_point_topology(
-    point_tree: PointTree,
+    node_tree: NodeTree,
     *,
     preset: str = "dendrotweaks",
     layout: str | None = None,
@@ -103,12 +103,12 @@ def plot_point_topology(
     root_color: str | None = None,
     ax=None,
 ) -> Any:
-    """Render a :class:`PointTree` as a topology-only graph.
+    """Render a :class:`NodeTree` as a topology-only graph.
 
     Parameters
     ----------
-    point_tree : PointTree
-        Execution-oriented point tree to render.
+    node_tree : NodeTree
+        Declaration-time node tree to render.
     preset : str, optional
         Name of the built-in style preset. Presets bundle default
         layout and colour settings.
@@ -165,9 +165,9 @@ def plot_point_topology(
     Raises
     ------
     TypeError
-        If ``point_tree`` is not a :class:`PointTree`.
+        If ``node_tree`` is not a :class:`NodeTree`.
     ValueError
-        If the point tree is empty, the layout is invalid, the layout
+        If the node tree is empty, the layout is invalid, the layout
         scale is invalid, or highlight mode is combined with value
         mode.
 
@@ -182,25 +182,25 @@ def plot_point_topology(
     --------
     Render with the default preset:
 
-    >>> ax = plot_point_topology(point_tree)  # doctest: +SKIP
+    >>> ax = plot_point_topology(node_tree)  # doctest: +SKIP
 
     Render with explicit value colouring:
 
     >>> ax = plot_point_topology(  # doctest: +SKIP
-    ...     point_tree,
+    ...     node_tree,
     ...     values=point_values,
     ...     cmap="plasma",
     ...     value_label="Voltage",
     ... )
     """
-    if not isinstance(point_tree, PointTree):
-        raise TypeError(f"plot_point_topology(...) expects PointTree, got {type(point_tree).__name__!s}.")
-    if len(point_tree.points) == 0:
-        raise ValueError("plot_point_topology(...) requires a non-empty PointTree.")
+    if not isinstance(node_tree, NodeTree):
+        raise TypeError(f"plot_point_topology(...) expects NodeTree, got {type(node_tree).__name__!s}.")
+    if len(node_tree.nodes) == 0:
+        raise ValueError("plot_point_topology(...) requires a non-empty NodeTree.")
     return _plot_discrete_topology_graph(
-        node_ids=tuple(point.id for point in point_tree.points),
-        edges=tuple((edge.parent_point_id, edge.child_point_id) for edge in point_tree.edges),
-        root_id=point_tree.root_point_id,
+        node_ids=tuple(node.id for node in node_tree.nodes),
+        edges=tuple((edge.parent_node_id, edge.child_node_id) for edge in node_tree.edges),
+        root_id=node_tree.root_node_id,
         preset=preset,
         layout=layout,
         layout_scale=layout_scale,
@@ -283,7 +283,7 @@ def _plot_discrete_topology_graph(
         node_ids=node_ids,
         layout=resolved_layout,
         layout_scale=resolved_layout_scale,
-        root_point_id=root_id,
+        root_node_id=root_id,
     )
     coordinates = np.asarray([positions[node_id] for node_id in node_ids], dtype=float)
     id_to_index = {node_id: index for index, node_id in enumerate(node_ids)}
@@ -504,11 +504,15 @@ def _resolve_layout_positions(
     node_ids: tuple[int, ...],
     layout: str,
     layout_scale: float,
-    root_point_id: int,
+    root_node_id: int,
 ) -> dict[int, np.ndarray]:
     if layout in _GRAPHVIZ_LAYOUTS:
         try:
-            positions = _graphviz_layout_positions(graph, prog=layout, root_point_id=root_point_id)
+            positions = _graphviz_layout_positions(
+                graph,
+                prog=layout,
+                root_node_id=root_node_id,
+            )
         except Exception as exc:
             warnings.warn(
                 f"Graphviz layout {layout!r} is unavailable ({exc}); falling back to 'kamada_kawai'.",
@@ -520,10 +524,10 @@ def _resolve_layout_positions(
     return _kamada_kawai_positions(graph, node_ids=node_ids, layout_scale=layout_scale)
 
 
-def _graphviz_layout_positions(graph, *, prog: str, root_point_id: int) -> dict[int, np.ndarray]:
+def _graphviz_layout_positions(graph, *, prog: str, root_node_id: int) -> dict[int, np.ndarray]:
     from networkx.drawing.nx_agraph import graphviz_layout
 
-    positions = graphviz_layout(graph, prog=prog, root=root_point_id)
+    positions = graphviz_layout(graph, prog=prog, root=root_node_id)
     return {
         node_id: np.asarray(position, dtype=float)
         for node_id, position in positions.items()

@@ -29,7 +29,7 @@ The library owns five concerns end-to-end:
 3. **Mechanism declaration** — paint cable properties, density mechanisms,
    and ion channels onto regions; place point mechanisms onto locsets.
 4. **Compilation** — lower the declaration into a `HHTypedNeuron` with
-   resolved ion species, channel state, and a DHS-ordered point tree.
+   resolved ion species, channel state, and a DHS-ordered node tree.
 5. **Numerical integration** — provide a registry of explicit, implicit,
    exponential, staggered, and diffrax-backed step functions, including a
    custom DHS voltage solver for branched cables.
@@ -66,7 +66,7 @@ if it returns, lives behind milestone M5 Phase 4).
                ▼                                     ▼
 ┌──────────────────────────────────────────────────────────────────────┐
 │   braincell.cv              │           braincell.compute            │
-│   CV · CVPolicy ·           │   PointTree · PointScheduling ·        │
+│   CV · CVPolicy ·           │   NodeTree · NodeScheduling ·        │
 │   PaintRule / PlaceRule     │   CellRuntimeState · assignment table  │
 ├─────────────────────────────┴────────────────────────────────────────┤
 │                braincell._multi_compartment (Cell)                   │
@@ -483,7 +483,7 @@ internal dependencies · status · open work**.
     - `run.py` — `rcell.run(dt=, duration=)` and the `RunResult`
       pytree-registered dataclass.
     - `*_test.py` — one co-located test per source module.
-  - `braincell/cv/_cv.py` — `CV` dataclass plus `assemble_cv` to
+  - `braincell/cv/_discretization.py` — `CV` dataclass plus `assemble_cv` to
     materialize the array-of-CVs view.
   - `braincell/cv/_geo.py` — `build_cv_geo` reduces a `Morphology` +
     `CVPolicy` into per-CV geometry (length, area, volume, axial
@@ -492,10 +492,11 @@ internal dependencies · status · open work**.
     normalization, `init_cv_mech`, paint/place application.
   - `braincell/cv/_policy.py` — `CVPolicy` ABC plus `CVPerBranch`,
     `MaxCVLen`, `DLambda`, `CVPolicyByTypeRule`, `CompositeByTypePolicy`.
-  - `braincell/compute/_point_tree.py` — `PointTree`, `CVPoint`,
-    `CVEdge`, `ComputePoint`, `ComputeEdge`, `PointScheduling`,
-    `build_point_tree`, `build_point_scheduling` (PointScheduling +
-    DHS grouping for vectorized parent traversal live here too).
+  - `braincell/_discretization/topology.py` — `NodeTree`, `Node`, `NodeEdge`,
+    `build_node_tree`, `locate_node_on_branch`.
+  - `braincell/_compute/scheduling.py` — `NodeScheduling`,
+    `build_node_scheduling` (DHS grouping for vectorized parent
+    traversal lives here too).
   - `braincell/compute/_assignment_table.py` — `MechanismObjectCell`,
     `MechanismObjectTable` keyed by `mechanism_cell_key`.
   - `braincell/compute/_runtime.py` — `CellRuntimeState`,
@@ -510,8 +511,8 @@ internal dependencies · status · open work**.
     geometry, axial-resistance partitioning across branch joints.
   - [x] Mechanism mapping: cable paint, density paint, point place
     lowered into per-CV records.
-  - [x] PointTree: compute points, compute edges, attachment handling.
-  - [x] Scheduling: `PointScheduling` + DHS grouping for the voltage
+  - [x] NodeTree: compute points, compute edges, attachment handling.
+  - [x] Scheduling: `NodeScheduling` + DHS grouping for the voltage
     solver.
   - [x] **Execution layer**: `cell.build()` lowers a declaration into
     a frozen `RunnableCell(HHTypedNeuron)` via
@@ -1056,8 +1057,8 @@ in-place "rebuild on next use".
 | Mechanisms | `Ion`, `Channel`, `IonChannel`, `MixIons` | hybrid (JAX state) | per-runnable | `RunnableCell` |
 | Discretization | `CV` | frozen | built at `cell.build()` | `Cell` (preview) / `RunnableCell` |
 | Discretization | `PaintRule`, `PlaceRule` | frozen | declaration | `Cell` |
-| Topology | `PointTree`, `CVPoint`, `CVEdge` | frozen | built at `cell.build()` | `RunnableCell` |
-| Scheduling | `PointScheduling` | frozen | built at `cell.build()` | `RunnableCell` |
+| Topology | `NodeTree`, `Node`, `NodeEdge` | frozen | built at `cell.build()` | `RunnableCell` |
+| Scheduling | `NodeScheduling` | frozen | built at `cell.build()` | `RunnableCell` |
 | Runtime | `CellRuntimeState`, `ClampActiveTable` | brainstate-managed | per-step | `RunnableCell` |
 | Numerics | `IntegratorEntry` | frozen | process lifetime | `IntegratorRegistry` |
 | Numerics | `DiffEqState`, `IndependentIntegration` | brainstate-managed | per-step | step function |
@@ -1102,7 +1103,7 @@ internal and may change without deprecation.
   `synapse.markov`.
 - **Cell layer**: `Cell`, `RunnableCell`, `RunResult`, `CV`, `CVPolicy`,
   `CVPerBranch`, `MaxCVLen`, `DLambda`, `CVPolicyByTypeRule`,
-  `CompositeByTypePolicy`, `PointTree`, `PointScheduling`.
+  `CompositeByTypePolicy`, `NodeTree`, `NodeScheduling`.
 - **Numerics layer**: `register_integrator`, `get_integrator`,
   `get_registry`, `IntegratorEntry`, `IntegratorRegistry`,
   `all_integrators`, every `*_step` function listed in
@@ -1168,7 +1169,7 @@ braincell.vis.plot2d(rcell, values=result.traces["soma(0.5)_v"][-1])
 
 `cell.build()` lowers the declaration into a frozen `RunnableCell` —
 all subsequent runtime inspection (`rcell.layouts`,
-`rcell.point_tree()`, `rcell.sample_probes()`, `rcell.current_time`,
+`rcell.node_tree()`, `rcell.sample_probes()`, `rcell.current_time`,
 `rcell.get_state(...)`) lives on the runnable, not on `Cell`.
 
 ### 7.4 Compare two morphologies visually

@@ -17,21 +17,21 @@ from braincell._multi_compartment import bridge
 
 
 @dataclass
-class _StubPointTree:
-    cv_midpoint_point_id: np.ndarray
+class _StubNodeTree:
+    cv_to_mid_node_id: np.ndarray
 
 
 @dataclass
 class _StubRuntime:
-    point_tree: _StubPointTree
+    node_tree: _StubNodeTree
     n_point: int
     n_cv: int
 
 
 def _runtime(point_ids: list[int], n_point: int) -> _StubRuntime:
     return _StubRuntime(
-        point_tree=_StubPointTree(
-            cv_midpoint_point_id=np.asarray(point_ids, dtype=np.int32),
+        node_tree=_StubNodeTree(
+            cv_to_mid_node_id=np.asarray(point_ids, dtype=np.int32),
         ),
         n_point=n_point,
         n_cv=len(point_ids),

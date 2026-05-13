@@ -9,7 +9,7 @@ parts of `braincell/io/swc/reader.py` that are easiest to break with
 If you change the behavior described here, at minimum re-run:
 
 - `braincell/io/swc/test.py`
-- `braincell/_cv/lower_test.py`
+- `braincell/_discretization/lower_test.py`
 - `examples/neuron_compare/cable/tests/test_mapping.py`
 - `examples/neuron_compare/cable/tests/test_runner.py`
 
@@ -191,7 +191,7 @@ collapsed. Radius jumps must be preserved.
 
 ### CV Lowering
 
-`braincell/_cv/lower.py` must preserve zero-length / different-radius segments.
+`braincell/_discretization/lower.py` must preserve zero-length / different-radius segments.
 It may only drop zero-length / same-radius pure duplicates.
 
 When a jump lies on a shared CV boundary, the current ownership rule is:
@@ -215,6 +215,6 @@ normalization must be revised too.
 ## Tests To Re-Run
 
 - `braincell/io/swc/test.py`
-- `braincell/_cv/lower_test.py`
+- `braincell/_discretization/lower_test.py`
 - `examples/neuron_compare/cable/tests/test_mapping.py`
 - `examples/neuron_compare/cable/tests/test_runner.py`

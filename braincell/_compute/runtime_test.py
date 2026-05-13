@@ -49,7 +49,7 @@ class CellRuntimeStateTest(unittest.TestCase):
         self.assertEqual(cell.n_cv, 2)
         cell.init_state(); rcell = cell
 
-        self.assertEqual(len(rcell.point_tree().points), 5)
+        self.assertEqual(len(rcell.node_tree.nodes), 5)
         self.assertEqual(len(rcell.layouts), 1)
         layout = rcell.layouts[0]
         self.assertEqual(layout.layout, "dense")
@@ -90,6 +90,25 @@ class CellRuntimeStateTest(unittest.TestCase):
         self.assertEqual(rcell.get_state(layout.id, "start")[0], 1.0 * u.ms)
         self.assertEqual(tuple(layout.id for layout in rcell.get_point_layouts(1)), (layout.id,))
         self.assertEqual(rcell.get_point_layouts(1), (layout,))
+
+    def test_point_mechanism_can_land_on_root_endpoint(self) -> None:
+        cell = Cell(_build_tree())
+        cell.place(
+            RootLocation(x=0.0),
+            CurrentClamp.step(0.1 * u.nA, 2.0 * u.ms, delay=1.0 * u.ms),
+        )
+
+        cell.init_state(); rcell = cell
+
+        root_node_id = rcell.node_tree.root_node_id
+        midpoint_id = int(rcell.node_tree.cv_to_mid_node_id[0])
+        layout = rcell.layouts[0]
+        self.assertEqual(layout.layout, "sparse")
+        self.assertEqual(layout.target, "point")
+        self.assertEqual(layout.point_index.tolist(), [root_node_id])
+        self.assertEqual(tuple(item.id for item in rcell.get_point_layouts(root_node_id)), (layout.id,))
+        self.assertEqual(tuple(item.id for item in rcell.get_point_layouts(midpoint_id)), ())
+        self.assertEqual(tuple(item.id for item in rcell.get_cv_layouts(0)), (layout.id,))
 
     def test_channel_spec_builds_dense_layout_with_global_shape(self) -> None:
         import braincell
@@ -226,7 +245,7 @@ class CellRuntimeStateTest(unittest.TestCase):
         current_early = runtime.evaluate_point_clamps(t=0.5 * u.ms)
         current_late = runtime.evaluate_point_clamps(t=2.5 * u.ms)
 
-        self.assertEqual(current_early.shape, (len(rcell.point_tree().points),))
+        self.assertEqual(current_early.shape, (len(rcell.node_tree.nodes),))
         self.assertAlmostEqual(float(current_early[1].to_decimal(u.nA)), 0.7, places=6)
         self.assertAlmostEqual(float(current_early[0].to_decimal(u.nA)), 0.0, places=6)
         self.assertAlmostEqual(float(current_late[1].to_decimal(u.nA)), 0.6, places=6)
@@ -306,7 +325,7 @@ class CellRuntimeStateTest(unittest.TestCase):
         samples = rcell.sample_probes()
         ion = rcell.get_ion("k")
         node = ion.channels["K_Kv_test"]
-        point_V = rcell._cv_to_point(rcell.V.value)
+        point_V = rcell._discretization_to_point(rcell.V.value)
         expected_mechanism = node.current(point_V, ion.pack_info())[1]
         expected_total = ion.current(point_V, include_external=False)[1]
 
@@ -335,7 +354,7 @@ class CellRuntimeStateTest(unittest.TestCase):
             if isinstance(rcell.runtime.get_layout_mechanism(layout.id), braincell.mech.Channel)
         )
         node = rcell.get_runtime_node(channel_layout.id)
-        point_V = rcell._cv_to_point(rcell.V.value)
+        point_V = rcell._discretization_to_point(rcell.V.value)
         expected_current = node.current(point_V)[1]
 
         self.assertEqual(samples["soma(0.5)_IL_current"], expected_current)
@@ -703,7 +722,7 @@ class CellRuntimeStateTest(unittest.TestCase):
         runtime = rcell.runtime
         layout = next(layout for layout in rcell.layouts if layout.kind == "channel:Kca3p1_MA2020")
         node = rcell.get_runtime_node(layout.id)
-        point_V = rcell._cv_to_point(rcell.V.value)
+        point_V = rcell._discretization_to_point(rcell.V.value)
         expected_mechanism = node.current(
             point_V,
             rcell.get_ion("k_main").pack_info(),
@@ -884,13 +903,13 @@ class _ClampStubCV:
 
 
 @_dataclass
-class _ClampStubPointTree:
-    cv_midpoint_point_id: np.ndarray
+class _ClampStubNodeTree:
+    cv_to_mid_node_id: np.ndarray
 
 
-def _clamp_point_tree(n_cv: int) -> _ClampStubPointTree:
-    return _ClampStubPointTree(
-        cv_midpoint_point_id=np.arange(n_cv, dtype=np.int32),
+def _clamp_node_tree(n_cv: int) -> _ClampStubNodeTree:
+    return _ClampStubNodeTree(
+        cv_to_mid_node_id=np.arange(n_cv, dtype=np.int32),
     )
 
 
@@ -911,7 +930,7 @@ class TestBuildClampActiveTable(unittest.TestCase):
         table = build_clamp_active_table(
             layouts=layouts,
             cvs=[_clamp_cv(0, 1e-6)],
-            point_tree=_clamp_point_tree(1),
+            node_tree=_clamp_node_tree(1),
             n_point=1,
         )
         self.assertIsNone(table)
@@ -927,7 +946,7 @@ class TestBuildClampActiveTable(unittest.TestCase):
         table = build_clamp_active_table(
             layouts=layouts,
             cvs=[_clamp_cv(0, 1e-6), _clamp_cv(1, 2e-6)],
-            point_tree=_clamp_point_tree(2),
+            node_tree=_clamp_node_tree(2),
             n_point=2,
         )
         self.assertIsInstance(table, ClampActiveTable)
@@ -955,7 +974,7 @@ class TestBuildClampActiveTable(unittest.TestCase):
         table = build_clamp_active_table(
             layouts=layouts,
             cvs=[_clamp_cv(i, 1e-6 * (i + 1)) for i in range(4)],
-            point_tree=_clamp_point_tree(4),
+            node_tree=_clamp_node_tree(4),
             n_point=4,
         )
         np.testing.assert_array_equal(
@@ -974,9 +993,25 @@ class TestBuildClampActiveTable(unittest.TestCase):
             build_clamp_active_table(
                 layouts=layouts,
                 cvs=[_clamp_cv(0, 0.0)],
-                point_tree=_clamp_point_tree(1),
+                node_tree=_clamp_node_tree(1),
                 n_point=1,
             )
+
+    def test_endpoint_clamp_is_excluded_from_area_table(self):
+        layouts = (
+            _ClampStubLayout(
+                target="point",
+                kind="CurrentClamp",
+                point_index=np.asarray([2], dtype=np.int32),
+            ),
+        )
+        table = build_clamp_active_table(
+            layouts=layouts,
+            cvs=[_clamp_cv(0, 1e-6)],
+            node_tree=_clamp_node_tree(1),
+            n_point=3,
+        )
+        self.assertIsNone(table)
 
     def test_non_clamp_point_layout_ignored(self):
         layouts = (
@@ -990,7 +1025,7 @@ class TestBuildClampActiveTable(unittest.TestCase):
             build_clamp_active_table(
                 layouts=layouts,
                 cvs=[_clamp_cv(0, 1e-6)],
-                point_tree=_clamp_point_tree(1),
+                node_tree=_clamp_node_tree(1),
                 n_point=1,
             )
         )

@@ -111,7 +111,7 @@ def _sample_state_probe_point(
 ) -> object:
     if declaration.field != "v":
         raise ValueError(f"Unsupported StateProbe field {declaration.field!r}.")
-    cv_id = _midpoint_cv_id(runtime, point_id=point_id)
+    cv_id = _representative_cv_id(runtime, point_id=point_id)
     return _select_last_axis(rcell.V.value, cv_id)
 
 
@@ -209,12 +209,22 @@ def _sample_current_probe_point(
 
 
 def _midpoint_cv_id(runtime: CellRuntimeState, *, point_id: int) -> int:
-    matches = np.flatnonzero(runtime.point_tree.cv_midpoint_point_id == int(point_id))
+    matches = np.flatnonzero(runtime.node_tree.cv_to_mid_node_id == int(point_id))
     if len(matches) != 1:
         raise ValueError(
             f"Point {point_id!r} is not a unique CV midpoint; got CV matches {matches.tolist()!r}."
         )
     return int(matches[0])
+
+
+def _representative_cv_id(runtime: CellRuntimeState, *, point_id: int) -> int:
+    matches = np.flatnonzero(runtime.node_tree.cv_to_mid_node_id == int(point_id))
+    if len(matches) == 1:
+        return int(matches[0])
+    roles = runtime.node_tree.nodes[int(point_id)].roles
+    if len(roles) == 0:
+        raise ValueError(f"Point {point_id!r} is not associated with any CV.")
+    return int(roles[0].cv_id)
 
 
 def _select_last_axis(value: object, index: int) -> object:

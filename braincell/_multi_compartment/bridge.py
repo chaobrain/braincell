@@ -135,7 +135,7 @@ def cv_to_point(values, runtime: "CellRuntimeState"):
     """Scatter a ``(..., n_cv)`` array onto CV midpoints in point space."""
     return scatter_midpoint_values(
         values=values,
-        point_ids=runtime.point_tree.cv_midpoint_point_id,
+        point_ids=runtime.node_tree.cv_to_mid_node_id,
         n_point=runtime.n_point,
     )
 
@@ -143,5 +143,5 @@ def cv_to_point(values, runtime: "CellRuntimeState"):
 def point_to_cv(values, runtime: "CellRuntimeState"):
     """Gather a ``(..., n_point)`` array at CV midpoints → ``(..., n_cv)``."""
     return gather_midpoint_values(
-        values, point_ids=runtime.point_tree.cv_midpoint_point_id
+        values, point_ids=runtime.node_tree.cv_to_mid_node_id
     )

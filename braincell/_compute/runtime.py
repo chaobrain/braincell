@@ -52,7 +52,7 @@ from braincell._multi_compartment.bridge import (
     quantity_vector,
     scatter_midpoint_values,
 )
-from .topology import PointTree
+from braincell._discretization.base import NodeTree
 
 __all__ = [
     "CellRuntimeState",
@@ -109,7 +109,7 @@ CLAMP_KINDS = frozenset({"CurrentClamp", "SineClamp", "FunctionClamp"})
 
 @dataclass(frozen=True)
 class ClampActiveTable:
-    """Active clamp points and their membrane areas.
+    """Active midpoint clamp points and their membrane areas.
 
     Building this once at compile time replaces the per-step filter
     walk the legacy ``Cell._point_clamp_input`` used, and lets
@@ -118,8 +118,8 @@ class ClampActiveTable:
     Attributes
     ----------
     ids : np.ndarray
-        ``(n_active,)`` ``int32`` sorted unique point ids that carry a
-        clamp layout.
+        ``(n_active,)`` ``int32`` sorted unique midpoint point ids that carry
+        a clamp layout.
     area : np.ndarray
         ``(n_active,)`` ``float64`` membrane area in ``cm^2`` at those
         points.
@@ -133,7 +133,7 @@ def build_clamp_active_table(
     *,
     layouts: "tuple[MechanismLayout, ...]",
     cvs,
-    point_tree: "PointTree",
+    node_tree: "NodeTree",
     n_point: int,
 ) -> ClampActiveTable | None:
     """Return a :class:`ClampActiveTable` or ``None`` if no clamps placed.
@@ -144,16 +144,18 @@ def build_clamp_active_table(
         All mechanism layouts from :class:`CellRuntimeState`.
     cvs : Sequence[CV]
         The cell's control volumes — source of per-CV membrane area.
-    point_tree : PointTree
-        Carries ``cv_midpoint_point_id`` for CV→point mapping.
+    node_tree : NodeTree
+        Carries ``cv_to_mid_node_id`` for CV→node mapping.
     n_point : int
-        Number of points in ``point_tree``.
+        Number of nodes in ``node_tree``.
 
     Raises
     ------
     ValueError
-        If any active clamp point has non-positive membrane area
-        (would produce NaN in ``I_total / area`` division).
+        If any active midpoint clamp point has non-positive membrane area
+        (would produce NaN in ``I_total / area`` division). Endpoint clamps
+        are intentionally excluded here because they are total point currents
+        consumed by the point-tree solver, not membrane current densities.
     """
     active: set[int] = set()
     for layout in layouts:
@@ -166,18 +168,23 @@ def build_clamp_active_table(
     if not active:
         return None
 
-    ids = np.asarray(sorted(active), dtype=np.int32)
-
     point_area = np.zeros((n_point,), dtype=float)
+    midpoint_ids: set[int] = set()
     for cv in cvs:
-        pid = int(point_tree.cv_midpoint_point_id[cv.id])
+        pid = int(node_tree.cv_to_mid_node_id[cv.id])
+        midpoint_ids.add(pid)
         point_area[pid] = float(np.asarray(cv.area.to_decimal(u.cm ** 2), dtype=float))
 
+    active_midpoints = sorted(pid for pid in active if pid in midpoint_ids)
+    if not active_midpoints:
+        return None
+
+    ids = np.asarray(active_midpoints, dtype=np.int32)
     area = point_area[ids]
     if np.any(area <= 0.0):
         bad = ids[area <= 0.0].tolist()
         raise ValueError(
-            "Point clamp active points must have positive membrane area; "
+            "Midpoint clamp active points must have positive membrane area; "
             f"got non-positive area at point ids {bad!r}."
         )
     return ClampActiveTable(ids=ids, area=area.astype(np.float64, copy=False))
@@ -212,7 +219,7 @@ class CellRuntimeState:
     between CV-space and point-space arrays, and expose runtime inspection APIs.
     """
 
-    point_tree: PointTree
+    node_tree: NodeTree
     n_point: int
     n_cv: int
     layouts: tuple[MechanismLayout, ...]
@@ -241,8 +248,8 @@ class CellRuntimeState:
         # Compile from immutable CV declarations into runtime layouts. Dense
         # layouts cover all points with masked storage, while sparse layouts keep
         # only the active point rows for point-only mechanisms such as clamps.
-        point_tree = cell.point_tree()
-        n_point = len(point_tree.points)
+        node_tree = cell.node_tree
+        n_point = len(node_tree.nodes)
         n_cv = len(cell.cvs)
 
         grouped: dict[tuple[object, ...], dict[str, object]] = {}
@@ -250,7 +257,7 @@ class CellRuntimeState:
         point_to_layout_sets: list[set[int]] = [set() for _ in range(n_point)]
         layout_id = 0
 
-        def register(*, mechanism: object, target: str, cv_id: int, point_id: int) -> None:
+        def register(*, mechanism: object, target: str, cv_ids: tuple[int, ...], point_id: int) -> None:
             nonlocal layout_id
             signature = (target,) + mechanism_signature(mechanism)
             entry = grouped.get(signature)
@@ -264,15 +271,30 @@ class CellRuntimeState:
                 }
                 grouped[signature] = entry
                 layout_id += 1
-            entry["cv_ids"].add(int(cv_id))
+            entry["cv_ids"].update(int(cv_id) for cv_id in cv_ids)
             entry["point_ids"].add(int(point_id))
 
         for cv in cell.cvs:
-            midpoint_point_id = int(point_tree.cv_midpoint_point_id[cv.id])
+            midpoint_point_id = int(node_tree.cv_to_mid_node_id[cv.id])
             for mechanism in cv.density_mech:
-                register(mechanism=mechanism, target="density", cv_id=cv.id, point_id=midpoint_point_id)
-            for mechanism in cv.point_mech:
-                register(mechanism=mechanism, target="point", cv_id=cv.id, point_id=midpoint_point_id)
+                register(mechanism=mechanism, target="density", cv_ids=(cv.id,), point_id=midpoint_point_id)
+
+        point_mech = tuple(node.point_mech for node in node_tree.nodes)
+        if any(point_mech):
+            for point_id, mechanisms in enumerate(point_mech):
+                source_cv_ids = _source_cv_ids_for_point(node_tree, point_id=int(point_id))
+                for mechanism in mechanisms:
+                    register(
+                        mechanism=mechanism,
+                        target="point",
+                        cv_ids=source_cv_ids,
+                        point_id=int(point_id),
+                    )
+        else:
+            for cv in cell.cvs:
+                midpoint_point_id = int(node_tree.cv_to_mid_node_id[cv.id])
+                for mechanism in cv.point_mech:
+                    register(mechanism=mechanism, target="point", cv_ids=(cv.id,), point_id=midpoint_point_id)
 
         layouts: list[MechanismLayout] = []
         state_shapes: dict[tuple[int, str], tuple[int, ...]] = {}
@@ -351,14 +373,14 @@ class CellRuntimeState:
         attach_runtime_ion_geometry(
             ions=ions,
             cvs=cell.cvs,
-            point_ids=point_tree.cv_midpoint_point_id,
+            point_ids=node_tree.cv_to_mid_node_id,
             n_point=n_point,
         )
 
         clamp_active_table = build_clamp_active_table(
             layouts=tuple(layouts),
             cvs=cell.cvs,
-            point_tree=point_tree,
+            node_tree=node_tree,
             n_point=n_point,
         )
 
@@ -369,7 +391,7 @@ class CellRuntimeState:
         cv_area = u.Quantity(cv_area_decimal, u.cm ** 2)
 
         return cls(
-            point_tree=point_tree,
+            node_tree=node_tree,
             n_point=n_point,
             n_cv=n_cv,
             layouts=tuple(layouts),
@@ -479,7 +501,7 @@ class CellRuntimeState:
     def get_cv_state(self, cv_id: int) -> dict[int, dict[str, object]]:
         if not (0 <= int(cv_id) < self.n_cv):
             raise IndexError(f"cv_id out of range: {cv_id!r}.")
-        point_id = int(self.point_tree.cv_midpoint_point_id[int(cv_id)])
+        point_id = int(self.node_tree.cv_to_mid_node_id[int(cv_id)])
         return self.get_point_state(point_id)
 
     def get_runtime_node(self, layout_id: int) -> object:
@@ -551,6 +573,14 @@ class CellRuntimeState:
 ## clone_morpho moved to braincell.morph.morphology
 ## scatter/gather/quantity/geometry helpers moved to
 ##   braincell._multi_compartment.bridge
+
+
+def _source_cv_ids_for_point(node_tree: NodeTree, *, point_id: int) -> tuple[int, ...]:
+    """Return CV ids whose local roles collapsed into ``point_id``."""
+
+    point = node_tree.nodes[int(point_id)]
+    cv_ids = sorted({int(role.cv_id) for role in point.roles})
+    return tuple(cv_ids)
 
 
 def choose_layout(*, target: Target) -> Layout:

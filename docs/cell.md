@@ -77,7 +77,7 @@
 机制容器：
 
 - `density_mech`（按机制类型索引）
-- `point_mech`（按位点存放，本规范只允许 `mid`）
+- `point_mech`（按位点存放，可落在 `mid` 或边界 node，并在 `CV` 上保留位置角色）
 
 ### `class CVPolicy`
 
@@ -109,7 +109,8 @@
 - `cell/cv_policy.py`：`CVPolicy` 基类和各类离散策略
 - `cell/cv_geo.py`：`CVGeo` + `CVFrustum`，负责离散、几何、拓扑映射
 - `cell/cv_mech.py`：内部规则与 CV 机制应用
-- `cell/point_tree.py`：`PointTree`、`PointScheduling` 与两者 builder
+- `_discretization/topology.py`：`NodeTree` 与 node graph builder
+- `_compute/scheduling.py`：`NodeScheduling` 与 scheduler builder
 - `cell/runtime.py`：内部编译 helper，负责 mechanism grouping、layout lowering、runtime node 与 state query
 
 ---
@@ -217,7 +218,7 @@
 - `staggered` 电压求解器的热路径已尽量改为 `jnp` / `u.math`，`numpy` 仅保留在静态拓扑与编译期数据整理中
 
 - 仅标记 `dirty`
-- 下次查询 `n_cv/cvs` 时重建前端离散结果
+- 下次查询 `n_discretization/cvs` 时重建前端离散结果
 - 下次 `init_state()` 时重新编译 runtime，并重建真实 state
 
 运行时约束：
@@ -255,13 +256,13 @@
 - `braincell.mech.Channel("IL")` 与 `braincell.mech.Channel("INa_HH1952")` 已能创建真实 runtime channel，并绑定到默认 `na/k/ca`
 - `Cell` 已可直接查询 `layouts/get_state/get_point_state/get_cv_state/get_runtime_node/get_ion`
 - `Cell.V` 的公开尺寸现在固定为 `n_cv`
-- runtime channel / ion 仍按 `point_tree` 的 `n_point = n_cv + n_branch + 1` 创建
-- `braincell.quad._voltage_solver.dhs_voltage_step()` 已改为从 `point_tree` 中的调度视图提取树结构
-- `Cell(solver="staggered")` 已可直接走新的 point-tree DHS 电压求解
+- runtime channel / ion 仍按 `node_tree` 的 `n_point = n_cv + n_branch + 1` 创建
+- `braincell.quad._voltage_solver.dhs_voltage_step()` 已改为从 `node_tree` 中的调度视图提取树结构
+- `Cell(solver="staggered")` 已可直接走新的 node-tree DHS 电压求解
 
 ### 当前约束
 
-- `density_mech` 当前仍先映射到 `cv_midpoint_point_id`
+- `density_mech` 当前仍先映射到 `cv_to_mid_node_id`
 - 默认离子先固定为全局 `na/k/ca`
 - `dense/sparse` 自动阈值切换接口已保留，但阈值策略尚未实装
 - solver 内部会把 `n_cv` 的 `V` scatter 到 `n_point`，只在 midpoint row 写入/读回
@@ -280,5 +281,5 @@
 
 ### 公开面收口
 
-- `braincell.cv`、`braincell.compute` 与顶层 `braincell` 只稳定导出：`Cell`、`CV`、`CVPolicy*`、`PointTree`、`PointScheduling`、`CellProfileReport`
+- `braincell.cv`、`braincell.compute` 与顶层 `braincell` 只稳定导出：`Cell`、`CV`、`CVPolicy*`、`NodeTree`、`NodeScheduling`、`CellProfileReport`
 - `PaintRule`、`PlaceRule`、`MechanismLayout`、`CellExecution` 不再作为稳定公开 API

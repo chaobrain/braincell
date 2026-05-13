@@ -32,14 +32,17 @@ from ._base import (
     MixIons,
     mix_ions,
 )
-from ._cv import (
+from ._discretization import (
     CompositeByTypePolicy,
     CV,
+    CVTree,
     CVPerBranch,
     CVPolicy,
     CVPolicyByTypeRule,
     DLambda,
     MaxCVLen,
+    Node,
+    NodeTree,
 )
 from ._multi_compartment import (
     Cell,
@@ -88,6 +91,7 @@ __all__ = [
     "CustomBranch",
     "CurrentClamp",
     "CV",
+    "CVTree",
     "CVPerBranch",
     "CVPolicy",
     "CVPolicyByTypeRule",
@@ -101,6 +105,8 @@ __all__ = [
     "MixIons",
     "MaxCVLen",
     "Morphology",
+    "Node",
+    "NodeTree",
     "RunResult",
     "SingleCompartment",
     "Soma",

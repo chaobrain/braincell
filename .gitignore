@@ -242,3 +242,8 @@ x86_64/
 /.claudegitignore
 /CLAUDE.md
 /AGENTS.md
+
+# brainx-sphinx-header build artifacts
+docs/_brand/
+docs/_static/css/brainx-header.css
+docs/_static/js/brainx-header.js

@@ -20,39 +20,47 @@ import numpy as np
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
-from braincell._cv.base import CV
-from braincell._cv.lower import (
-    PaintRule,
-    PlaceRule,
-    _apply_density,
-    _apply_place,
+from braincell._discretization.base import CV, build_discretization
+from braincell._discretization.node_build import (
+    _EPS_PARAM,
+    _locate_branch_cv_by_x,
+    build_node_tree_from_cvs as build_node_tree,
+    locate_node_on_branch,
+)
+from braincell._discretization.geometry import (
+    CVGeometryResult,
+    _Frustum,
+    _GeoCV,
     _axial_factor_per_cm,
     _boundary_radii_um,
     _build_frusta,
-    _build_geo,
-    _build_mech,
-    _coverage_fraction,
+    _lateral_area_um2,
+    _midpoint_radius_um,
+    _split_frusta,
+    build_cv_geometry,
+    locate_cv_on_branch as _locate_cv_on_branch,
+    validate_bounds as _validate_bounds,
+    validate_connectivity as _validate_connectivity,
+    validate_morphology as _validate_morpho,
+)
+from braincell._discretization.mechanism import (
+    PaintRule,
+    PlaceRule,
     _DEFAULT_CABLE,
-    _Frustum,
-    _GeoCV,
     _MechBucket,
     _RegionCache,
-    _lateral_area_um2,
-    _locate_cv_on_branch,
-    _midpoint_radius_um,
+    _apply_density,
+    _apply_place,
+    _coverage_fraction,
     _resolve_point_name,
-    _split_frusta,
-    _validate_bounds,
-    _validate_connectivity,
-    _validate_morpho,
+    build_cv_mechanisms,
     default_paint_rules,
-    lower,
     merge_paint_rules,
     merge_place_rules,
     normalize_paint_rules,
     normalize_place_rule,
 )
-from braincell._cv.policy import CVPerBranch, CVPolicy
+from braincell._discretization.policy import CVPerBranch, CVPolicy
 from braincell.filter import (
     AllRegion,
     AtLocation,
@@ -98,6 +106,42 @@ def _single_branch_morpho(type: str = "soma") -> Morphology:
     return Morphology.from_root(
         _branch([10.0], [2.0, 2.0], type=type),
         name=type,
+    )
+
+
+def _build_cvs(morpho, *, policy, paint_rules, place_rules):
+    return build_discretization(
+        morpho,
+        policy=policy,
+        paint_rules=paint_rules,
+        place_rules=place_rules,
+    ).cvs
+
+
+def _build_geo(morpho, bounds):
+    geometry = build_cv_geometry(morpho, bounds)
+    return geometry.geos, geometry.branch_to_cv_ids
+
+
+def _build_mech(
+    morpho,
+    geos,
+    branch_to_cv_ids,
+    *,
+    paint_rules,
+    place_rules,
+    cache=None,
+):
+    del cache
+    geometry = CVGeometryResult(
+        geos=tuple(geos),
+        branch_to_cv_ids=tuple(branch_to_cv_ids),
+    )
+    return build_cv_mechanisms(
+        morpho,
+        geometry,
+        paint_rules=paint_rules,
+        place_rules=place_rules,
     )
 
 
@@ -465,7 +509,7 @@ class BuildGeoTest(unittest.TestCase):
         morpho = _single_branch_morpho()
         geos, ids = _build_geo(morpho, (((0.0, 1.0),),))
         self.assertEqual(len(geos), 1)
-        self.assertEqual(ids, {0: (0,)})
+        self.assertEqual(ids, ((0,),))
         g = geos[0]
         self.assertEqual(g.id, 0)
         self.assertEqual(g.branch_id, 0)
@@ -604,9 +648,9 @@ class CoverageFractionTest(unittest.TestCase):
 
     def test_zero_overlap(self) -> None:
         morpho = _single_branch_morpho()
-        geos, _ = _build_geo(morpho, (((0.0, 0.5),),))  # Can't full because overlap expects
-        # Using a CV that spans [0, 0.5]; an interval at [0.6, 1.0] should produce 0.
-        # But _build_geo enforces cover all — use manual geo.
+        # Using a CV that spans [0, 0.5]; an interval at [0.6, 1.0] should
+        # produce 0. Geometry build now validates full branch coverage, so
+        # construct the partial geo manually.
         g = _GeoCV(
             id=0, branch_id=0, branch_type="soma",
             prox=0.0, dist=0.5, midpoint=0.25,
@@ -757,7 +801,7 @@ class BuildMechCachesFrustaTest(unittest.TestCase):
             calls[key] = calls.get(key, 0) + 1
             return original(branch, prox=prox, dist=dist)
 
-        with patch("braincell._cv.lower._build_frusta", new=counting):
+        with patch("braincell._discretization.mechanism._build_frusta", new=counting):
             _build_mech(
                 morpho, geos, ids,
                 paint_rules=paint, place_rules=(), cache=cache,
@@ -774,7 +818,7 @@ class BuildMechCachesFrustaTest(unittest.TestCase):
 class LowerSmokeTest(unittest.TestCase):
     def test_single_branch_default_cable(self) -> None:
         morpho = _single_branch_morpho()
-        cvs = lower(
+        cvs = _build_cvs(
             morpho,
             policy=CVPerBranch(cv_per_branch=2),
             paint_rules=default_paint_rules(),
@@ -795,7 +839,7 @@ class LowerSmokeTest(unittest.TestCase):
                 return (((0.0, 0.5),),)  # missing 0.5..1.0
 
         with self.assertRaises(ValueError):
-            lower(
+            _build_cvs(
                 morpho,
                 policy=BadPolicy(),
                 paint_rules=(),
@@ -805,7 +849,7 @@ class LowerSmokeTest(unittest.TestCase):
     def test_rejects_non_policy(self) -> None:
         morpho = _single_branch_morpho()
         with self.assertRaises(TypeError):
-            lower(
+            _build_cvs(
                 morpho,
                 policy="not a policy",  # type: ignore[arg-type]
                 paint_rules=(),
@@ -825,7 +869,7 @@ class LowerPropertyTest(unittest.TestCase):
         morpho = Morphology.from_root(
             _branch([30.0], [3.0, 3.0], type="soma"), name="soma",
         )
-        cvs = lower(
+        cvs = _build_cvs(
             morpho,
             policy=CVPerBranch(cv_per_branch=cv_count),
             paint_rules=default_paint_rules(),
@@ -856,7 +900,7 @@ class LowerPropertyTest(unittest.TestCase):
         dend = _branch([20.0], [2.0, 1.0], type="basal_dendrite")
         morpho = Morphology.from_root(soma, name="soma")
         morpho.soma.d = dend
-        cvs = lower(
+        cvs = _build_cvs(
             morpho,
             policy=CVPerBranch(cv_per_branch=cv_count),
             paint_rules=default_paint_rules(),

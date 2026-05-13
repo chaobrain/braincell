@@ -31,8 +31,8 @@ from braincell.vis.compare2d import compare_layouts_2d
 from braincell.vis._test_helper import FakeBackend
 from braincell.vis._testing import (
     make_length_only_tree,
-    make_point_tree,
-    make_projected_point_tree,
+    make_node_tree,
+    make_projected_node_tree,
     make_root_split_tree,
 )
 
@@ -43,7 +43,7 @@ class VisPlotTest(unittest.TestCase):
         self.addCleanup(morpho_vis.reset_defaults)
 
     def test_plot2d_defaults_to_fan_frustum(self) -> None:
-        tree = make_point_tree()
+        tree = make_node_tree()
         backend = FakeBackend()
 
         request = plot2d(tree, chooser=BackendChooser(backends=(backend,)))
@@ -97,25 +97,25 @@ class VisPlotTest(unittest.TestCase):
             plot3d(tree, chooser=BackendChooser(backends=(FakeBackend(),)))
 
     def test_plot2d_rejects_unknown_shape(self) -> None:
-        tree = make_point_tree()
+        tree = make_node_tree()
 
         with self.assertRaisesRegex(ValueError, "Unsupported 2D shape"):
             plot2d(tree, layout="stem", shape="layout", chooser=BackendChooser(backends=(FakeBackend(),)))
 
     def test_plot2d_projected_layout_rejects_frustum_shape(self) -> None:
-        tree = make_point_tree()
+        tree = make_node_tree()
 
         with self.assertRaisesRegex(ValueError, "layout='projected' only supports shape='line'"):
             plot2d(tree, layout="projected", shape="frustum", chooser=BackendChooser(backends=(FakeBackend(),)))
 
     def test_plot3d_rejects_unknown_mode(self) -> None:
-        tree = make_point_tree()
+        tree = make_node_tree()
 
         with self.assertRaisesRegex(ValueError, "Unsupported 3D mode"):
             plot3d(tree, mode="projected")
 
     def test_plot3d_accepts_skeleton_mode(self) -> None:
-        tree = make_point_tree()
+        tree = make_node_tree()
         backend = FakeBackend()
 
         request = plot3d(tree, mode="skeleton", chooser=BackendChooser(backends=(backend,)))
@@ -124,7 +124,7 @@ class VisPlotTest(unittest.TestCase):
         self.assertEqual(request.scene.mode, "skeleton")
 
     def test_plot2d_rejects_pyvista_backend(self) -> None:
-        tree = make_point_tree()
+        tree = make_node_tree()
 
         # Force PyVista to report as available so the dispatch reaches the
         # scene-kind validation step even when pyvista isn't installed.
@@ -133,13 +133,13 @@ class VisPlotTest(unittest.TestCase):
                 plot2d(tree, backend="pyvista")
 
     def test_plot3d_rejects_matplotlib_backend(self) -> None:
-        tree = make_point_tree()
+        tree = make_node_tree()
 
         with self.assertRaisesRegex(ValueError, "only supports 2D scenes"):
             plot3d(tree, backend="matplotlib")
 
     def test_matplotlib_backend_renders_projected_scene(self) -> None:
-        tree = make_point_tree()
+        tree = make_node_tree()
         chooser = BackendChooser(backends=(MatplotlibBackend(),))
 
         axes = plot2d(tree, layout="projected", shape="line", backend="matplotlib", chooser=chooser)
@@ -156,8 +156,8 @@ class VisPlotTest(unittest.TestCase):
         )
         backend = FakeBackend()
 
-        request_2d = plot2d(make_point_tree(), chooser=BackendChooser(backends=(backend,)))
-        request_3d = plot3d(make_point_tree(), chooser=BackendChooser(backends=(backend,)))
+        request_2d = plot2d(make_node_tree(), chooser=BackendChooser(backends=(backend,)))
+        request_3d = plot3d(make_node_tree(), chooser=BackendChooser(backends=(backend,)))
 
         self.assertEqual(request_2d.layout, "stem")
         self.assertEqual(request_2d.shape, "line")
@@ -171,7 +171,7 @@ class VisPlotTest(unittest.TestCase):
 
         with morpho_vis.theme(branch_type_colors={"soma": "#ff0000"}, alpha_2d=0.1):
             inside = plot2d(
-                make_point_tree(),
+                make_node_tree(),
                 shape="line",
                 chooser=BackendChooser(backends=(backend,)),
             )
@@ -179,7 +179,7 @@ class VisPlotTest(unittest.TestCase):
             self.assertAlmostEqual(inside.scene.polylines[0].alpha, 0.1)
 
         after = plot2d(
-            make_point_tree(),
+            make_node_tree(),
             shape="line",
             chooser=BackendChooser(backends=(backend,)),
         )
@@ -280,7 +280,7 @@ class VisPlotTest(unittest.TestCase):
         morpho_vis.configure_defaults(branch_type_colors={"soma": "#abcdef"})
         backend = FakeBackend()
 
-        request = plot2d(make_point_tree(), shape="line", chooser=BackendChooser(backends=(backend,)))
+        request = plot2d(make_node_tree(), shape="line", chooser=BackendChooser(backends=(backend,)))
         self.assertEqual(request.scene.polylines[0].color_rgb, (171, 205, 239))
 
     def test_theme_context_manager_restores_on_exception(self) -> None:
@@ -402,7 +402,7 @@ class VisOverlayTest(unittest.TestCase):
             self.assertEqual(marker.position_um.shape, (2,))
 
     def test_plot3d_with_region_overlay_emits_highlight_strokes(self) -> None:
-        tree = make_projected_point_tree()
+        tree = make_projected_node_tree()
         region = AllRegion().evaluate(tree)
         backend = FakeBackend()
 
@@ -414,7 +414,7 @@ class VisOverlayTest(unittest.TestCase):
             self.assertEqual(stroke.points_um.shape[1], 3)
 
     def test_plot3d_with_locset_overlay_emits_markers(self) -> None:
-        tree = make_projected_point_tree()
+        tree = make_projected_node_tree()
         locset = (BranchPoints() | Terminals()).evaluate(tree)
         backend = FakeBackend()
 
@@ -457,7 +457,7 @@ class VisOverlayTest(unittest.TestCase):
         self.assertEqual(len(rendered.scene.polygons), 0)
 
     def test_plot3d_per_branch_values_emit_value_batches(self) -> None:
-        tree = make_projected_point_tree()
+        tree = make_projected_node_tree()
         backend = FakeBackend()
 
         rendered = plot3d(

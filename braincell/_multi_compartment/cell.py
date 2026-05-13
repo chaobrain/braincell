@@ -2,7 +2,7 @@
 
 A ``Cell`` carries both the declaration (morphology, CV policy, paint /
 place rules, solver, spike config) and the runtime (``V`` / ``spike`` /
-``current_time`` brainstate states, point tree, axial operator,
+``current_time`` brainstate states, node tree, axial operator,
 installed channel / ion nodes).
 
 The lifecycle has two phases:
@@ -19,7 +19,7 @@ The lifecycle has two phases:
 convenience. Subsequent ``run`` calls never re-initialize.
 """
 
-from typing import Callable, Optional
+from typing import Callable, Mapping, Optional
 from dataclasses import dataclass
 
 import brainstate
@@ -37,12 +37,7 @@ from braincell._compute.table import (
     MechanismObjectTable,
     mechanism_cell_key,
 )
-from braincell._compute.topology import (
-    _EPS_PARAM,
-    _locate_branch_cv_by_x,
-    build_point_scheduling,
-    build_point_tree,
-)
+from braincell._compute.scheduling import build_node_scheduling
 from braincell._compute.runtime import (
     CellRuntimeState,
     _is_root_level_runtime_node,
@@ -51,8 +46,7 @@ from braincell._compute.runtime import (
     cv_value_vector,
     mechanism_signature,
 )
-from braincell._cv.base import build_cvs
-from braincell._cv.lower import (
+from braincell._discretization.mechanism import (
     PaintRule,
     PlaceRule,
     default_paint_rules,
@@ -61,7 +55,20 @@ from braincell._cv.lower import (
     normalize_paint_rules,
     normalize_place_rule,
 )
-from braincell._cv.policy import CVPerBranch, CVPolicy
+from braincell._discretization.policy import CVPerBranch, CVPolicy
+from braincell._discretization.base import (
+    CV,
+    CVTree,
+    Discretization,
+    Node,
+    NodeTree,
+    build_discretization,
+)
+from braincell._discretization.node_build import (
+    _EPS_PARAM,
+    _locate_branch_cv_by_x,
+    locate_node_on_branch,
+)
 from braincell.filter import LocsetExpr, LocsetMask, RegionExpr, RegionMask
 from braincell.filter.helper import normalize_region_intervals
 from braincell.morph.morphology import Morphology
@@ -77,6 +84,59 @@ __all__ = ["Cell"]
 class AxialOperatorCache:
     float_dtype: jnp.dtype
     operator: object
+
+
+@dataclass(frozen=True)
+class RuntimeIonBinding:
+    """One runtime ion seen through a CV or node inspection view."""
+
+    name: str
+    runtime: object
+    cell: "Cell"
+    cv_ids: tuple[int, ...] = ()
+    point_ids: tuple[int, ...] = ()
+
+    def get(self, field: str):
+        """Return one field projected into the local CV or node view."""
+        if not hasattr(self.runtime, field):
+            raise AttributeError(
+                f"Runtime ion {self.name!r} has no field {field!r}."
+            )
+        raw = getattr(self.runtime, field)
+        if self.cv_ids:
+            values = self.cell._coerce_named_vis_cv_values_object(raw)
+            return _select_local_values(values, ids=self.cv_ids)
+        if self.point_ids:
+            values = self.cell._coerce_runtime_point_values_object(raw)
+            return _select_local_values(values, ids=self.point_ids)
+        return raw
+
+    def __getattr__(self, field: str):
+        if field.startswith("_"):
+            raise AttributeError(field)
+        return self.get(field)
+
+
+@dataclass(frozen=True)
+class RuntimeCVView:
+    """Readonly runtime inspection view anchored at one static CV."""
+
+    id: int
+    declaration: CV
+    layout_ids: tuple[int, ...]
+    mid_node_id: int
+    ions: Mapping[str, RuntimeIonBinding]
+
+
+@dataclass(frozen=True)
+class RuntimeNodeView:
+    """Readonly runtime inspection view anchored at one static node."""
+
+    id: int
+    declaration: Node
+    layout_ids: tuple[int, ...]
+    source_cv_ids: tuple[int, ...]
+    ions: Mapping[str, RuntimeIonBinding]
 
 
 class Cell(HHTypedNeuron):
@@ -126,10 +186,10 @@ class Cell(HHTypedNeuron):
         self._declaration_morpho = morpho
         self._morpho = morpho
 
-        self._cv_policy: CVPolicy = CVPerBranch() if cv_policy is None else cv_policy
-        if not isinstance(self._cv_policy, CVPolicy):
+        self._discretization_policy: CVPolicy = CVPerBranch() if cv_policy is None else cv_policy
+        if not isinstance(self._discretization_policy, CVPolicy):
             raise TypeError(
-                f"cv_policy must be CVPolicy, got {type(self._cv_policy).__name__!s}."
+                f"cv_policy must be CVPolicy, got {type(self._discretization_policy).__name__!s}."
             )
 
         self._paint_rules: tuple[PaintRule, ...] = default_paint_rules()
@@ -142,14 +202,15 @@ class Cell(HHTypedNeuron):
         self._name = name
         self._solver_name, self._solver_fn = _resolve_solver(solver)
 
-        self._cvs_cache: tuple | None = None
-        self._cvs_cache_key: object = None
+        self._discretization_cache: Discretization | None = None
+        self._discretization_cache_key: object = None
 
         self._current_time_state = brainstate.ShortTermState(0.0 * u.ms)
-        self._point_scheduling_cache: dict[tuple[str, int], object] = {}
+        self._node_scheduling_cache: dict[tuple[str, int], object] = {}
 
         self._runtime: CellRuntimeState | None = None
-        self._point_tree = None
+        self._runtime_cvs_cache: tuple[RuntimeCVView, ...] | None = None
+        self._runtime_nodes_cache: tuple[RuntimeNodeView, ...] | None = None
         self._axial_jax = None
 
         self._initialized = False
@@ -179,7 +240,7 @@ class Cell(HHTypedNeuron):
 
     @property
     def cv_policy(self) -> CVPolicy:
-        return self._cv_policy
+        return self._discretization_policy
 
     @cv_policy.setter
     def cv_policy(self, value: CVPolicy) -> None:
@@ -188,8 +249,8 @@ class Cell(HHTypedNeuron):
             raise TypeError(
                 f"cv_policy must be CVPolicy, got {type(value).__name__!s}."
             )
-        self._cv_policy = value
-        self._cvs_cache = None
+        self._discretization_policy = value
+        self._invalidate_discretization_cache()
 
     @property
     def paint_rules(self) -> tuple[PaintRule, ...]:
@@ -257,7 +318,7 @@ class Cell(HHTypedNeuron):
             self._paint_rules,
             normalize_paint_rules(region, mechanisms),
         )
-        self._cvs_cache = None
+        self._invalidate_discretization_cache()
         return self
 
     def place(self, locset: LocsetExpr, *mechanisms) -> "Cell":
@@ -267,36 +328,64 @@ class Cell(HHTypedNeuron):
             self._place_rules,
             (normalize_place_rule(locset, mechanisms),),
         )
-        self._cvs_cache = None
+        self._invalidate_discretization_cache()
         return self
 
     # ------------------------------------------------------------------
-    # CV preview (valid in both phases)
+    # Static discretization (valid in both phases)
+
+    def _invalidate_discretization_cache(self) -> None:
+        self._discretization_cache = None
+        self._discretization_cache_key = None
+        self._runtime_cvs_cache = None
+        self._runtime_nodes_cache = None
+
+    def _discretization_key(self) -> tuple[object, ...]:
+        return (
+            id(self._morpho),
+            self._discretization_policy,
+            self._paint_rules,
+            self._place_rules,
+        )
+
+    @property
+    def _discretization(self) -> Discretization:
+        key = self._discretization_key()
+        if (
+            self._discretization_cache is not None
+            and self._discretization_cache_key == key
+        ):
+            return self._discretization_cache
+
+        discretization = build_discretization(
+            self._morpho,
+            policy=self._discretization_policy,
+            paint_rules=self._paint_rules,
+            place_rules=self._place_rules,
+        )
+        self._discretization_cache = discretization
+        self._discretization_cache_key = key
+        return discretization
 
     @property
     def n_cv(self) -> int:
         return len(self.cvs)
 
     @property
-    def cvs(self):
-        key = (
-            id(self._morpho),
-            self._cv_policy,
-            self._paint_rules,
-            self._place_rules,
-        )
-        if self._cvs_cache is not None and self._cvs_cache_key == key:
-            return self._cvs_cache
+    def cvs(self) -> tuple[CV, ...]:
+        return self._discretization.cvs
 
-        cvs = build_cvs(
-            self._morpho,
-            policy=self._cv_policy,
-            paint_rules=self._paint_rules,
-            place_rules=self._place_rules,
-        )
-        self._cvs_cache = cvs
-        self._cvs_cache_key = key
-        return cvs
+    @property
+    def nodes(self) -> tuple[Node, ...]:
+        return self._discretization.nodes
+
+    @property
+    def cv_tree(self) -> CVTree:
+        return self._discretization.cv_tree
+
+    @property
+    def node_tree(self) -> NodeTree:
+        return self._discretization.node_tree
 
     # ------------------------------------------------------------------
     # Phase transitions
@@ -312,23 +401,9 @@ class Cell(HHTypedNeuron):
         self._raise_if_initialized("init_state()")
 
         morpho = clone_morpho(self._morpho)
-        cvs = build_cvs(
-            morpho,
-            policy=self._cv_policy,
-            paint_rules=self._paint_rules,
-            place_rules=self._place_rules,
-        )
-
         self._morpho = morpho
-        self._cvs_cache = cvs
-        self._cvs_cache_key = (
-            id(self._morpho),
-            self._cv_policy,
-            self._paint_rules,
-            self._place_rules,
-        )
-
-        self._point_tree = build_point_tree(morpho, cvs=cvs)
+        self._invalidate_discretization_cache()
+        _ = self._discretization
         self._runtime = CellRuntimeState.from_cell(self)
 
         # Save scalar V_th declaration before the vector overwrite below.
@@ -358,21 +433,24 @@ class Cell(HHTypedNeuron):
         self._current_time_state.value = 0.0 * u.ms
 
         point_V = self._cv_to_point_unchecked(self.V.value)
-        for channel in self.nodes(IonChannel, allowed_hierarchy=(1, 1)).values():
+        for channel in self._runtime_objects_unchecked(
+            IonChannel, allowed_hierarchy=(1, 1)
+        ).values():
             channel.init_state(point_V, batch_size=batch_size)
 
         self._runtime.axial_operator_np = np.asarray(
             build_cv_axial_operator(
                 self,
-                point_tree=self._point_tree,
-                scheduling=self._point_scheduling_unchecked(algorithm="dhs"),
+                node_tree=self.node_tree,
+                scheduling=self._node_scheduling_unchecked(algorithm="dhs"),
             ),
             dtype=np.float64,
         )
         self._runtime.axial_operator_cache = None
         self._axial_jax = self._get_axial_operator()
-
         self._initialized = True
+        self._runtime_cvs_cache = self._build_runtime_cv_views()
+        self._runtime_nodes_cache = self._build_runtime_node_views()
 
     def reset(self) -> None:
         """Drop runtime and per-step state; return to DECLARING.
@@ -406,18 +484,18 @@ class Cell(HHTypedNeuron):
         self._current_time_state.value = 0.0 * u.ms
 
         self._runtime = None
-        self._point_tree = None
+        self._runtime_cvs_cache = None
+        self._runtime_nodes_cache = None
         self._axial_jax = None
-        self._point_scheduling_cache.clear()
+        self._node_scheduling_cache.clear()
 
         self._morpho = self._declaration_morpho
-        self._cvs_cache = None
-        self._cvs_cache_key = None
+        self._invalidate_discretization_cache()
 
         self._initialized = False
 
     # ------------------------------------------------------------------
-    # Topology (runtime-only)
+    # Static topology + runtime inspection views
 
     @property
     def runtime(self) -> CellRuntimeState:
@@ -441,10 +519,77 @@ class Cell(HHTypedNeuron):
     def n_compartment(self) -> int:
         return self.varshape[-1]
 
-    def point_tree(self):
-        if self._point_tree is None:
-            raise RuntimeError("point_tree() requires init_state() first.")
-        return self._point_tree
+    def runtime_objects(self, *args, **kwargs):
+        """Return runtime graph objects from the inherited container API."""
+        self._raise_if_not_initialized("runtime_objects()")
+        return self._runtime_objects_unchecked(*args, **kwargs)
+
+    def _runtime_objects_unchecked(self, *args, **kwargs):
+        """Return runtime graph objects without an initialization guard."""
+        return super().nodes(*args, **kwargs)
+
+    @property
+    def runtime_cvs(self) -> tuple[RuntimeCVView, ...]:
+        self._raise_if_not_initialized("runtime_cvs")
+        if self._runtime_cvs_cache is None:
+            self._runtime_cvs_cache = self._build_runtime_cv_views()
+        return self._runtime_cvs_cache
+
+    @property
+    def runtime_nodes(self) -> tuple[RuntimeNodeView, ...]:
+        self._raise_if_not_initialized("runtime_nodes")
+        if self._runtime_nodes_cache is None:
+            self._runtime_nodes_cache = self._build_runtime_node_views()
+        return self._runtime_nodes_cache
+
+    def _build_runtime_cv_views(self) -> tuple[RuntimeCVView, ...]:
+        runtime = self.runtime
+        node_tree = self.node_tree
+        return tuple(
+            RuntimeCVView(
+                id=int(cv.id),
+                declaration=cv,
+                layout_ids=tuple(
+                    int(layout.id) for layout in runtime.get_cv_layouts(int(cv.id))
+                ),
+                mid_node_id=int(node_tree.cv_to_mid_node_id[int(cv.id)]),
+                ions=self._build_local_ion_bindings(cv_ids=(int(cv.id),)),
+            )
+            for cv in self.cvs
+        )
+
+    def _build_runtime_node_views(self) -> tuple[RuntimeNodeView, ...]:
+        runtime = self.runtime
+        return tuple(
+            RuntimeNodeView(
+                id=int(node.id),
+                declaration=node,
+                layout_ids=tuple(
+                    int(layout.id) for layout in runtime.get_point_layouts(int(node.id))
+                ),
+                source_cv_ids=node.source_cv_ids,
+                ions=self._build_local_ion_bindings(point_ids=(int(node.id),)),
+            )
+            for node in self.nodes
+        )
+
+    def _build_local_ion_bindings(
+        self,
+        *,
+        cv_ids: tuple[int, ...] = (),
+        point_ids: tuple[int, ...] = (),
+    ) -> Mapping[str, RuntimeIonBinding]:
+        runtime = self.runtime
+        return {
+            name: RuntimeIonBinding(
+                name=name,
+                runtime=ion,
+                cell=self,
+                cv_ids=cv_ids,
+                point_ids=point_ids,
+            )
+            for name, ion in runtime.ions.items()
+        }
 
     def vis_topology(
         self,
@@ -644,9 +789,9 @@ class Cell(HHTypedNeuron):
         ax=None,
         show: bool = True,
     ) -> object:
-        """Visualize the runtime point tree with cell-aware inputs.
+        """Visualize the runtime node tree with cell-aware inputs.
 
-        ``Cell.vis_node(...)`` is the high-level point-tree entry point.
+        ``Cell.vis_node(...)`` is the high-level node-tree entry point.
         It resolves ``region`` / ``locset`` selections against the cell's
         morphology and CVs, maps those selections to runtime midpoint
         points, and can also colour points by runtime state such as
@@ -757,7 +902,7 @@ class Cell(HHTypedNeuron):
         from braincell.vis.point_topology import plot_point_topology
 
         rendered_ax = plot_point_topology(
-            self.point_tree(),
+            self.node_tree,
             preset=preset,
             layout=layout,
             layout_scale=layout_scale,
@@ -1038,23 +1183,23 @@ class Cell(HHTypedNeuron):
             plt.show()
         return rendered_ax
 
-    def point_scheduling(self, *, max_group_size: int = 32, algorithm: str = "dhs"):
-        self._raise_if_not_initialized("point_scheduling()")
-        return self._point_scheduling_unchecked(
+    def node_scheduling(self, *, max_group_size: int = 32, algorithm: str = "dhs"):
+        self._raise_if_not_initialized("node_scheduling()")
+        return self._node_scheduling_unchecked(
             max_group_size=max_group_size, algorithm=algorithm
         )
 
-    def _point_scheduling_unchecked(self, *, max_group_size: int = 32, algorithm: str = "dhs"):
+    def _node_scheduling_unchecked(self, *, max_group_size: int = 32, algorithm: str = "dhs"):
         key = (algorithm, int(max_group_size))
-        cached = self._point_scheduling_cache.get(key)
+        cached = self._node_scheduling_cache.get(key)
         if cached is not None:
             return cached
-        scheduling = build_point_scheduling(
-            self._point_tree,
+        scheduling = build_node_scheduling(
+            self.node_tree,
             max_group_size=max_group_size,
             algorithm=algorithm,
         )
-        self._point_scheduling_cache[key] = scheduling
+        self._node_scheduling_cache[key] = scheduling
         return scheduling
 
     # ------------------------------------------------------------------
@@ -1095,6 +1240,13 @@ class Cell(HHTypedNeuron):
     def _cv_to_point_unchecked(self, cv_values):
         return bridge.cv_to_point(cv_values, self._runtime)
 
+    # Internal aliases kept while older inspection helpers are still in use.
+    def _discretization_to_point(self, cv_values):
+        return self._cv_to_point(cv_values)
+
+    def _discretization_to_point_unchecked(self, cv_values):
+        return self._cv_to_point_unchecked(cv_values)
+
     def _point_to_cv(self, point_values):
         self._raise_if_not_initialized("_point_to_cv()")
         return bridge.point_to_cv(point_values, self._runtime)
@@ -1119,14 +1271,14 @@ class Cell(HHTypedNeuron):
         locset: LocsetExpr | LocsetMask | None,
     ) -> dict[int, float]:
         fractions: dict[int, float] = {}
-        point_tree = self.point_tree()
+        node_tree = self.node_tree
         if region is not None:
             for cv_id, fraction in self._cv_coverage_fractions(region).items():
-                point_id = int(point_tree.cv_midpoint_point_id[int(cv_id)])
+                point_id = int(node_tree.cv_to_mid_node_id[int(cv_id)])
                 fractions[point_id] = max(fractions.get(point_id, 0.0), float(fraction))
         if locset is not None:
             for cv_id in self._resolve_vis_locset_cv_ids(locset):
-                point_id = int(point_tree.cv_midpoint_point_id[int(cv_id)])
+                point_id = int(node_tree.cv_to_mid_node_id[int(cv_id)])
                 fractions[point_id] = max(fractions.get(point_id, 0.0), 1.0)
         return fractions
 
@@ -1148,7 +1300,7 @@ class Cell(HHTypedNeuron):
         branch_intervals = self._resolve_vis_region_intervals(region)
 
         point_ids: set[int] = set()
-        point_tree = self.point_tree()
+        node_tree = self.node_tree
         for cv in self.cvs:
             intervals = branch_intervals.get(int(cv.branch_id))
             if not intervals:
@@ -1157,7 +1309,7 @@ class Cell(HHTypedNeuron):
             for prox, dist in intervals:
                 lo, hi = (prox, dist) if prox <= dist else (dist, prox)
                 if lo <= midpoint <= hi:
-                    point_ids.add(int(point_tree.cv_midpoint_point_id[cv.id]))
+                    point_ids.add(int(node_tree.cv_to_mid_node_id[cv.id]))
                     break
         return point_ids
 
@@ -1229,10 +1381,27 @@ class Cell(HHTypedNeuron):
         return cv_ids
 
     def _locset_to_vis_node_ids(self, locset: LocsetExpr | LocsetMask) -> set[int]:
+        if isinstance(locset, LocsetExpr):
+            mask = locset.evaluate(self.morpho)
+        elif isinstance(locset, LocsetMask):
+            mask = locset
+        else:
+            raise TypeError(
+                f"Cell visualization expects LocsetExpr or LocsetMask, got {type(locset).__name__!s}."
+            )
         point_ids: set[int] = set()
-        point_tree = self.point_tree()
-        for cv_id in self._resolve_vis_locset_cv_ids(locset):
-            point_ids.add(int(point_tree.cv_midpoint_point_id[int(cv_id)]))
+        node_tree = self.node_tree
+        for branch_id, x in mask.points:
+            point_ids.add(
+                int(
+                    locate_node_on_branch(
+                        node_tree,
+                        cvs=self.cvs,
+                        branch_id=int(branch_id),
+                        x=float(x),
+                    )
+                )
+            )
         return point_ids
 
     def _resolve_vis_node_values(self, value) -> tuple[object, str | None]:
@@ -1315,6 +1484,45 @@ class Cell(HHTypedNeuron):
             return self._cv_to_node_values(raw)
         raise ValueError(
             f"Cell.vis_node(value=...) expects a point array of length {self.n_point} "
+            f"or a CV array of length {self.n_cv}, got length {raw.shape[0]}."
+        )
+
+    def _coerce_runtime_point_values_object(self, value):
+        """Coerce one runtime field into unmasked point-space values."""
+        if hasattr(value, "to_decimal") and hasattr(value, "unit"):
+            unit = value.unit
+            raw = np.asarray(value.to_decimal(unit), dtype=float)
+            if raw.ndim == 0:
+                return u.Quantity(
+                    np.full((self.n_point,), float(raw), dtype=float),
+                    unit,
+                )
+            if raw.ndim != 1:
+                raise ValueError(
+                    "Runtime point inspection only supports scalar or 1-D value arrays."
+                )
+            if raw.shape[0] == self.n_point:
+                return value
+            if raw.shape[0] == self.n_cv:
+                return self._cv_to_point(value)
+            raise ValueError(
+                f"Runtime point inspection expects a point array of length {self.n_point} "
+                f"or a CV array of length {self.n_cv}, got length {raw.shape[0]}."
+            )
+
+        raw = np.asarray(value, dtype=float)
+        if raw.ndim == 0:
+            return np.full((self.n_point,), float(raw), dtype=float)
+        if raw.ndim != 1:
+            raise ValueError(
+                "Runtime point inspection only supports scalar or 1-D value arrays."
+            )
+        if raw.shape[0] == self.n_point:
+            return raw
+        if raw.shape[0] == self.n_cv:
+            return self._cv_to_point(raw)
+        raise ValueError(
+            f"Runtime point inspection expects a point array of length {self.n_point} "
             f"or a CV array of length {self.n_cv}, got length {raw.shape[0]}."
         )
 
@@ -1412,25 +1620,28 @@ class Cell(HHTypedNeuron):
         )
 
     def _cv_to_node_values(self, cv_values):
-        point_tree = self.point_tree()
+        node_tree = self.node_tree
         if hasattr(cv_values, "to_decimal") and hasattr(cv_values, "unit"):
             unit = cv_values.unit
             raw = np.asarray(cv_values.to_decimal(unit), dtype=float).reshape(-1)
             if raw.shape != (self.n_cv,):
                 raise ValueError(f"_cv_to_node_values expects shape ({self.n_cv},), got {raw.shape!r}.")
             point_values = np.full((self.n_point,), np.nan, dtype=float)
-            point_values[np.asarray(point_tree.cv_midpoint_point_id, dtype=np.int32)] = raw
+            point_values[np.asarray(node_tree.cv_to_mid_node_id, dtype=np.int32)] = raw
             return u.Quantity(point_values, unit)
         raw = np.asarray(cv_values, dtype=float).reshape(-1)
         if raw.shape != (self.n_cv,):
             raise ValueError(f"_cv_to_node_values expects shape ({self.n_cv},), got {raw.shape!r}.")
         point_values = np.full((self.n_point,), np.nan, dtype=float)
-        point_values[np.asarray(point_tree.cv_midpoint_point_id, dtype=np.int32)] = raw
+        point_values[np.asarray(node_tree.cv_to_mid_node_id, dtype=np.int32)] = raw
         return point_values
 
+    def _discretization_to_node_values(self, cv_values):
+        return self._cv_to_node_values(cv_values)
+
     def _mask_non_midpoint_points(self, point_values):
-        point_tree = self.point_tree()
-        midpoint_ids = np.asarray(point_tree.cv_midpoint_point_id, dtype=np.int32)
+        node_tree = self.node_tree
+        midpoint_ids = np.asarray(node_tree.cv_to_mid_node_id, dtype=np.int32)
         midpoint_mask = np.zeros((self.n_point,), dtype=bool)
         midpoint_mask[midpoint_ids] = True
         if hasattr(point_values, "to_decimal") and hasattr(point_values, "unit"):
@@ -1528,7 +1739,7 @@ class Cell(HHTypedNeuron):
     def _layout_values_to_cv_space(self, layout, raw_values, *, field: str):
         n_cv = self.n_cv
         source_cv_ids = tuple(int(cv_id) for cv_id in layout.source_cv_ids)
-        midpoint_by_cv = {cv_id: int(self.point_tree().cv_midpoint_point_id[cv_id]) for cv_id in source_cv_ids}
+        midpoint_by_cv = {cv_id: int(self.node_tree.cv_to_mid_node_id[cv_id]) for cv_id in source_cv_ids}
         if hasattr(raw_values, "to_decimal") and hasattr(raw_values, "unit"):
             unit = raw_values.unit
             raw = np.asarray(raw_values.to_decimal(unit), dtype=float)
@@ -1601,7 +1812,7 @@ class Cell(HHTypedNeuron):
     def pre_integral(self, I_ext=0.0):
         self._raise_if_not_initialized("pre_integral()")
         point_V = self._cv_to_point(self.V.value)
-        for _, node in self.nodes(IonChannel, allowed_hierarchy=(1, 1)).items():
+        for _, node in self.runtime_objects(IonChannel, allowed_hierarchy=(1, 1)).items():
             if not isinstance(node, IndependentIntegration):
                 node.pre_integral(point_V)
 
@@ -1609,7 +1820,7 @@ class Cell(HHTypedNeuron):
         self._raise_if_not_initialized("compute_derivative()")
         self.V.derivative = self.compute_voltage_derivative(self.V.value, I_ext)
         point_V = self._cv_to_point(self.V.value)
-        for _, node in self.nodes(IonChannel, allowed_hierarchy=(1, 1)).items():
+        for _, node in self.runtime_objects(IonChannel, allowed_hierarchy=(1, 1)).items():
             if not isinstance(node, IndependentIntegration):
                 node.compute_derivative(point_V)
 
@@ -1655,7 +1866,7 @@ class Cell(HHTypedNeuron):
         self._raise_if_not_initialized("post_integral()")
         self.V.value = self.sum_delta_inputs(init=self.V.value)
         point_V = self._cv_to_point(self.V.value)
-        for _, node in self.nodes(IonChannel, allowed_hierarchy=(1, 1)).items():
+        for _, node in self.runtime_objects(IonChannel, allowed_hierarchy=(1, 1)).items():
             if not isinstance(node, IndependentIntegration):
                 node.post_integral(point_V)
 
@@ -1672,7 +1883,7 @@ class Cell(HHTypedNeuron):
             self.solver(self, I_ext)
 
         point_V = self._cv_to_point(self.V.value)
-        for _, node in self.nodes(IonChannel, allowed_hierarchy=(1, 1)).items():
+        for _, node in self.runtime_objects(IonChannel, allowed_hierarchy=(1, 1)).items():
             node.update(point_V)
 
         spk = self.get_spike(last_V, self.V.value)
@@ -1694,7 +1905,7 @@ class Cell(HHTypedNeuron):
         self.spike.value = self.get_spike(self.V.value, self.V.value)
         self._current_time_state.value = 0.0 * u.ms
         point_V = self._cv_to_point(self.V.value)
-        for channel in self.nodes(IonChannel, allowed_hierarchy=(1, 1)).values():
+        for channel in self.runtime_objects(IonChannel, allowed_hierarchy=(1, 1)).values():
             channel.reset_state(point_V, batch_size=batch_size)
 
     # ------------------------------------------------------------------
@@ -1760,8 +1971,8 @@ class Cell(HHTypedNeuron):
     def mech_table(self) -> MechanismObjectTable:
         self._raise_if_not_initialized("mech_table()")
         runtime = self._runtime
-        point_tree = self._point_tree
-        column_ids = tuple(range(len(point_tree.points)))
+        node_tree = self.node_tree
+        column_ids = tuple(range(len(node_tree.nodes)))
 
         row_keys: list[tuple[str, str]] = []
         row_labels: list[str] = []
@@ -1787,30 +1998,53 @@ class Cell(HHTypedNeuron):
             return row_index
 
         for cv in self.cvs:
-            midpoint_point_id = int(point_tree.cv_midpoint_point_id[cv.id])
-            for target_label, mech_list in (("density", cv.density_mech), ("point", cv.point_mech)):
-                for mechanism in mech_list:
-                    row_key = mechanism_cell_key(mechanism)
-                    row_index = ensure_row(mechanism)
-                    layout_id = layout_id_by_signature[
-                        (target_label,) + mechanism_signature(mechanism)
-                    ]
-                    pending_cells.append(
-                        (
-                            row_index,
-                            midpoint_point_id,
-                            MechanismObjectCell(
-                                runtime=runtime,
-                                layout_id=int(layout_id),
-                                class_name=row_key[0],
-                                instance_name=row_key[1],
-                                column_id=midpoint_point_id,
-                                domain="point",
-                                cv_id=None,
-                                point_id=midpoint_point_id,
-                            ),
-                        )
+            midpoint_point_id = int(node_tree.cv_to_mid_node_id[cv.id])
+            for mechanism in cv.density_mech:
+                row_key = mechanism_cell_key(mechanism)
+                row_index = ensure_row(mechanism)
+                layout_id = layout_id_by_signature[
+                    ("density",) + mechanism_signature(mechanism)
+                ]
+                pending_cells.append(
+                    (
+                        row_index,
+                        midpoint_point_id,
+                        MechanismObjectCell(
+                            runtime=runtime,
+                            layout_id=int(layout_id),
+                            class_name=row_key[0],
+                            instance_name=row_key[1],
+                            column_id=midpoint_point_id,
+                            domain="point",
+                            cv_id=None,
+                            point_id=midpoint_point_id,
+                        ),
                     )
+                )
+
+        for point_id, node in enumerate(node_tree.nodes):
+            for mechanism in node.point_mech:
+                row_key = mechanism_cell_key(mechanism)
+                row_index = ensure_row(mechanism)
+                layout_id = layout_id_by_signature[
+                    ("point",) + mechanism_signature(mechanism)
+                ]
+                pending_cells.append(
+                    (
+                        row_index,
+                        int(point_id),
+                        MechanismObjectCell(
+                            runtime=runtime,
+                            layout_id=int(layout_id),
+                            class_name=row_key[0],
+                            instance_name=row_key[1],
+                            column_id=int(point_id),
+                            domain="point",
+                            cv_id=None,
+                            point_id=int(point_id),
+                        ),
+                    )
+                )
 
         values = np.full((len(row_keys), len(column_ids)), None, dtype=object)
         for row_index, column_id, cell in pending_cells:
@@ -1841,6 +2075,13 @@ class Cell(HHTypedNeuron):
 
 # ----------------------------------------------------------------------
 # Helpers
+
+
+def _select_local_values(values, *, ids: tuple[int, ...]):
+    """Return one localized item or a small indexed slice from an array-like."""
+    if len(ids) == 1:
+        return values[int(ids[0])]
+    return values[list(int(idx) for idx in ids)]
 
 
 def _resolve_solver(solver):

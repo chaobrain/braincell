@@ -221,6 +221,10 @@ class Ion(IonChannel, Container):
     def update(self, V, *args, **kwargs):
         if isinstance(self, IndependentIntegration):
             self.make_integration(V)
+            ion_info = self.pack_info()
+            for key, node in brainstate.graph.nodes(self, Channel, allowed_hierarchy=(1, 1)).items():
+                if isinstance(node, IndependentIntegration):
+                    node.update(V, ion_info)
             return
         ion_info = self.pack_info()
         for key, node in brainstate.graph.nodes(self, Channel, allowed_hierarchy=(1, 1)).items():

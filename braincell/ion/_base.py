@@ -438,15 +438,12 @@ class KineticIon(IndependentIntegration):
         conserve = _Conserve(self, specs, species)
         total_current = None
         if type(self).uses_total_current:
-            # Current-driven kinetic ions resolve full species values from the
-            # current diffeq species, but they do not re-call ``current()``
-            # here. They instead consume the cached step-start current from
-            # the surrounding family-phased update path.
-            if not hasattr(self, "_cached_total_current"):
-                raise RuntimeError(
-                    f"{type(self).__name__} requires a cached total current before compute_derivative()."
-                )
-            total_current = self._cached_total_current
+            # Reuse a cached total current when a caller has precomputed one;
+            # otherwise fall back to the ion's current evaluation path.
+            if hasattr(self, "_cached_total_current"):
+                total_current = self._cached_total_current
+            else:
+                total_current = self.current(V, include_external=True)
         _Flux(self, specs, species).compute(V, conserve.resolve(V), total_current=total_current)
 
     def _ion_post_integral_hook(self, V):

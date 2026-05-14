@@ -6,8 +6,6 @@
 - Public kinetic pieces exist: `Factor`, `Species`, `Reaction`, `Source`, `Conserve`, `KineticIon`.
 - Runtime kinetic pieces exist: `_Specs`, `_Species`, `_Conserve`, `_Flux`.
 - `MechanismProbe` now supports plain-value ion/mechanism fields in addition to `brainstate.State` fields.
-- `Cell` now has `update_policy="legacy"` by default and a first `family_phased` path for `solver="staggered"`.
-- Current-driven ion dynamics can consume a step-start cached current snapshot instead of re-evaluating a newer current later in the step.
 
 ## Files changed
 
@@ -37,43 +35,17 @@
 
 - `KineticIon` supports diffeq/algebraic species, `Conserve`, factor-based visible/amount conversion, and resolved full species views.
 - `Ci` is a reserved species name and still feeds the standard `Ion.pack_info()` path.
-- Current-driven ion dynamics no longer need to re-evaluate current later in the step when the family-phased path is used.
-- `family_phased` ordering is currently:
-  - cache ion current
-  - voltage phase
-  - channel phase
-  - ion phase
-- `legacy` remains the default and unchanged path.
+- Current-driven ion dynamics can optionally reuse a precomputed total-current snapshot when one is provided by the caller.
 
 ## Scheduling semantics
 
-The current scheduling work is motivated by NEURON's fixed-step / staggered
-semantics: currents are evaluated from the old non-`V` state, voltage is
-advanced first, and non-`V` states are advanced afterwards. NEURON does not
-then keep alternating gate states and concentration states again inside the
-same step.
-
-The legacy BrainCell path does not make this family ordering explicit. The
-main solver advances the default path first, and `node.update(...)` then runs
-`IndependentIntegration` nodes afterwards. This can interleave channel and ion
-updates according to the object tree rather than mechanism family.
-
-That interleaving matters for concentration-dependent channels and
-current-driven ion dynamics. A later independent channel may otherwise read an
-already-updated `cai`, and a later independent ion may re-evaluate a newer
-current after gate / `E` / `V` have already changed.
-
-`update_policy` exists to make this scheduling choice explicit. `legacy`
-preserves the old behavior unchanged. `family_phased` enforces a family order:
-step-start ion current cache, then voltage, then all channels, then all ions.
-At the moment this policy is only implemented for `Cell` with
-`solver="staggered"`.
+The current scheduling work still follows the existing BrainCell update path:
+the cell solver advances the voltage step first, and `node.update(...)` then
+runs independently-integrated ion or channel nodes afterwards.
 
 ## What is still limited
 
-- `family_phased` is currently implemented only for `Cell` and only when `solver == "staggered"`.
-- `SingleCompartment` has not been migrated to the new update policy.
-- The current-cache semantics are step-start splitting semantics, not full stage-by-stage current consistency.
+- `SingleCompartment` still uses its own update path and has not been extended for the new kinetic-ion template work.
 - The new scheduling has only been validated with internal synthetic tests so far, not yet against a real NEURON ion-dynamics example.
 - The complex Cerebellum `KINETIC` ion mechanisms (`CdpStC`, `CdpCR`, `CdpCAM`) are not yet imported as concrete models.
 
@@ -89,7 +61,7 @@ These all passed after the current round of changes.
 
 ## Next step
 
-The first NEURON-aligned scheduling validation should use a simple current-driven ion-dynamics example, not a full reaction-network pool.
+The first external validation should use a simple current-driven ion-dynamics example, not a full reaction-network pool.
 
 Recommended first target:
 
@@ -97,13 +69,12 @@ Recommended first target:
 
 This should ideally be paired with the corresponding DCN calcium channel so the comparison exercises:
 
-- channel reads old concentration
-- ion dynamics reads step-start cached current
+- channel / ion coupling under the existing BrainCell update order
 
 Validation goal:
 
-- build one minimal NEURON-vs-BrainCell comparison case under the new `family_phased` policy
-- verify that scheduling-sensitive observables behave as intended before importing larger `KINETIC` ion mechanisms
+- build one minimal NEURON-vs-BrainCell comparison case
+- verify that scheduling-sensitive observables behave acceptably before importing larger `KINETIC` ion mechanisms
 
 If that DCN simple ion-dynamics comparison is sound, the next concrete import target should be the first complex reaction-network mechanism:
 

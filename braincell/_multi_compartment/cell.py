@@ -376,10 +376,6 @@ class Cell(HHTypedNeuron):
         return self._discretization.cvs
 
     @property
-    def nodes(self) -> tuple[Node, ...]:
-        return self._discretization.nodes
-
-    @property
     def cv_tree(self) -> CVTree:
         return self._discretization.cv_tree
 
@@ -570,7 +566,7 @@ class Cell(HHTypedNeuron):
                 source_cv_ids=node.source_cv_ids,
                 ions=self._build_local_ion_bindings(point_ids=(int(node.id),)),
             )
-            for node in self.nodes
+            for node in self.node_tree.nodes
         )
 
     def _build_local_ion_bindings(

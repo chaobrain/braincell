@@ -8,7 +8,7 @@ import jax.numpy as jnp
 import numpy as np
 
 import braincell.mech as mech
-from braincell import Branch, CVPerBranch, Cell, CurrentClamp, Morphology
+from braincell import Branch, CVPerBranch, Cell, CurrentClamp, IonChannel, Morphology
 from braincell.filter import AllRegion, RootLocation
 from braincell.mech import StateProbe
 
@@ -77,7 +77,7 @@ class TestCellLifecycle(unittest.TestCase):
         cell.init_state()
         self.assertTrue(cell._initialized)
         self.assertIsNotNone(cell._runtime)
-        self.assertGreater(len(cell.nodes), 0)
+        self.assertGreater(len(cell.node_tree.nodes), 0)
         self.assertGreater(len(cell.runtime_nodes), 0)
         self.assertGreater(len(cell.runtime_cvs), 0)
         self.assertIsNotNone(cell._axial_jax)
@@ -126,7 +126,7 @@ class TestCellLifecycle(unittest.TestCase):
         cell.reset()
         self.assertFalse(cell._initialized)
         self.assertIsNone(cell._runtime)
-        self.assertGreater(len(cell.nodes), 0)
+        self.assertGreater(len(cell.node_tree.nodes), 0)
         self.assertIsNone(cell._axial_jax)
         self.assertFalse(hasattr(cell, "V"))
         self.assertFalse(hasattr(cell, "spike"))
@@ -160,7 +160,6 @@ class TestCellLifecycle(unittest.TestCase):
     def test_static_topology_is_available_before_init(self):
         cell = _cell_with_probe()
         self.assertGreater(len(cell.cvs), 0)
-        self.assertGreater(len(cell.nodes), 0)
         self.assertGreater(len(cell.cv_tree.cvs), 0)
         self.assertGreater(len(cell.node_tree.nodes), 0)
 
@@ -170,9 +169,15 @@ class TestCellLifecycle(unittest.TestCase):
         runtime_cv = cell.runtime_cvs[0]
         runtime_node = cell.runtime_nodes[0]
         self.assertIs(runtime_cv.declaration, cell.cvs[0])
-        self.assertIs(runtime_node.declaration, cell.nodes[0])
+        self.assertIs(runtime_node.declaration, cell.node_tree.nodes[0])
         self.assertIn("na", runtime_cv.ions)
         self.assertIn("na", runtime_node.ions)
+
+    def test_nodes_query_api_is_restored_after_init(self):
+        cell = _cell_with_probe()
+        cell.init_state()
+        nodes = cell.nodes(IonChannel, allowed_hierarchy=(1, 1))
+        self.assertGreater(len(nodes), 0)
 
     def test_run_auto_inits_from_declaring(self):
         cell = _cell_with_probe()

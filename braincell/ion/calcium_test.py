@@ -932,7 +932,7 @@ class CdpStC_MA2020_GoCTest(unittest.TestCase):
         flux = ion.sources[0].flux(ion, _V([-60.0]), ion.species_values(), total_current=None)
         self.assertTrue(u.math.allclose(flux, jnp.array([0.0]) * u.mM * u.um ** 2 / u.ms, atol=1e-12 * u.mM * u.um ** 2 / u.ms))
 
-    def test_positive_inward_current_produces_negative_ci_source_flux(self) -> None:
+    def test_positive_inward_current_produces_positive_ci_source_flux(self) -> None:
         ion = self._make_ion()
         ion.init_state(_V([-60.0]))
         flux = ion.sources[0].flux(
@@ -941,7 +941,7 @@ class CdpStC_MA2020_GoCTest(unittest.TestCase):
             ion.species_values(),
             total_current=jnp.array([0.01]) * u.mA / (u.cm ** 2),
         )
-        self.assertLess(float(flux[0].to_decimal(u.mM * u.um ** 2 / u.ms)), 0.0)
+        self.assertGreater(float(flux[0].to_decimal(u.mM * u.um ** 2 / u.ms)), 0.0)
 
     def test_conserve_keeps_pump_plus_pumpca_equal_total_scaled_pool(self) -> None:
         ion = self._make_ion()
@@ -1177,7 +1177,7 @@ class CdpStC_NoCAM_MA2020_GoCTest(unittest.TestCase):
         flux = ion.sources[0].flux(ion, _V([-60.0]), ion.species_values(), total_current=None)
         self.assertTrue(u.math.allclose(flux, jnp.array([0.0]) * u.mM * u.um ** 2 / u.ms, atol=1e-12 * u.mM * u.um ** 2 / u.ms))
 
-    def test_positive_inward_current_produces_negative_ci_source_flux(self) -> None:
+    def test_positive_inward_current_produces_positive_ci_source_flux(self) -> None:
         ion = self._make_ion()
         ion.init_state(_V([-60.0]))
         flux = ion.sources[0].flux(
@@ -1186,7 +1186,7 @@ class CdpStC_NoCAM_MA2020_GoCTest(unittest.TestCase):
             ion.species_values(),
             total_current=jnp.array([0.01]) * u.mA / (u.cm ** 2),
         )
-        self.assertLess(float(flux[0].to_decimal(u.mM * u.um ** 2 / u.ms)), 0.0)
+        self.assertGreater(float(flux[0].to_decimal(u.mM * u.um ** 2 / u.ms)), 0.0)
 
     def test_conserve_keeps_pump_plus_pumpca_equal_total_scaled_pool(self) -> None:
         ion = self._make_ion()

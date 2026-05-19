@@ -1251,7 +1251,10 @@ class CdpStC_NoCAM_MA2020_GoC(Calcium, KineticIon):
     def _ci_source_flux(self, total_current):
         if total_current is None:
             return self.dsqvol * (0.0 * u.mM / u.ms)
-        return -(total_current * u.math.pi * self._require_diam_mid()) / (2.0 * u.faraday_constant)
+        # NEURON's raw GoC ``ica`` is efflux-positive, but BrainCell channel
+        # currents are inward-positive. A positive calcium current therefore
+        # increases the local calcium pool.
+        return (total_current * u.math.pi * self._require_diam_mid()) / (2.0 * u.faraday_constant)
 
     def _ion_init_state_hook(self, V, batch_size: int = None):
         self._require_diam_mid()
@@ -1685,7 +1688,10 @@ class CdpStC_MA2020_GoC(Calcium, KineticIon):
     def _ci_source_flux(self, total_current):
         if total_current is None:
             return self.dsqvol * (0.0 * u.mM / u.ms)
-        return -(total_current * u.math.pi * self._require_diam_mid()) / (2.0 * u.faraday_constant)
+        # NEURON's raw GoC ``ica`` is efflux-positive, but BrainCell channel
+        # currents are inward-positive. A positive calcium current therefore
+        # increases the local calcium pool.
+        return (total_current * u.math.pi * self._require_diam_mid()) / (2.0 * u.faraday_constant)
 
     def _ion_init_state_hook(self, V, batch_size: int = None):
         self._require_diam_mid()

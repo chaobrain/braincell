@@ -23,10 +23,10 @@ __all__ = [
 ]
 
 
-def ghk_flux(V, ci, co, z, T):
+def ghk_flux(V, ci, co, z, temp):
     """Unit-aware GHK flux helper with a small-zeta stable branch."""
 
-    zeta = (z * u.faraday_constant * V) / (u.gas_constant * T)
+    zeta = (z * u.faraday_constant * V) / (u.gas_constant * temp)
     exp_term = u.math.exp(-zeta)
     numerator = ci - co * exp_term
     small_branch = (z * u.faraday_constant) * numerator * (1 + zeta / 2)

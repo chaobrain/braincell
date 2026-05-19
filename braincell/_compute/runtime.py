@@ -1180,8 +1180,11 @@ def _runtime_ion_family(cls: type) -> str:
 def _supported_ion_runtime_params(cls: type) -> tuple[str, ...]:
     signature = inspect.signature(cls.__init__)
     supported: list[str] = []
+    excluded = {"solver", "substeps", "species_initializers"}
     for name, parameter in signature.parameters.items():
         if name in {"self", "size", "name"}:
+            continue
+        if name in excluded:
             continue
         if parameter.kind in (inspect.Parameter.VAR_POSITIONAL, inspect.Parameter.VAR_KEYWORD):
             continue

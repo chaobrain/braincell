@@ -207,6 +207,19 @@ class TestCellLifecycle(unittest.TestCase):
             self.assertEqual(operator64.dtype, jnp.dtype(jnp.float64))
             self.assertIsNot(cache32, cache64)
 
+    def test_scalar_v_init_broadcasts_to_voltage_shape(self):
+        cell = _simple_cell()
+        cell.V_init = -60.0 * u.mV
+        cell.init_state()
+        self.assertEqual(cell.V.value.shape, (cell.n_cv,))
+        self.assertTrue(u.math.allclose(cell.V.value, jnp.full((cell.n_cv,), -60.0) * u.mV, atol=1e-9 * u.mV))
+
+    def test_run_supports_scalar_v_init(self):
+        cell = _cell_with_probe()
+        cell.V_init = -60.0 * u.mV
+        result = cell.run(dt=0.1 * u.ms, duration=0.5 * u.ms)
+        self.assertIn("V_root", result.traces)
+
 
 class CellDoesNotAllocatePlaceholderIonsEagerlyTest(unittest.TestCase):
     """MED-09: Cell.__init__ must not allocate a throwaway ion container."""

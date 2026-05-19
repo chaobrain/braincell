@@ -23,6 +23,8 @@ import jax.numpy as jnp
 from braincell._base import HHTypedNeuron, IonInfo
 from braincell.channel._base import HH, ghk_flux
 from braincell.channel.calcium import (
+    CaHVA_SU2015_DCN,
+    CaLVA_SU2015_DCN,
     CaHVA_MA2020_GoC,
     CaHVA_MA2020_GrC,
     Ca_ZH2019_IO,
@@ -216,6 +218,149 @@ class CaHT_Re1993Test(_P2QHHMixin, unittest.TestCase):
 
 class CaL_IS2008Test(_P2QHHMixin, unittest.TestCase):
     CLS = CaL_IS2008
+
+
+class CaHVA_SU2015_DCNTest(unittest.TestCase):
+    def test_root_type_is_calcium(self) -> None:
+        self.assertIs(CaHVA_SU2015_DCN.root_type, Calcium)
+
+    def test_inherits_hh_template_directly(self) -> None:
+        self.assertTrue(issubclass(CaHVA_SU2015_DCN, HH))
+
+    def test_gate_definition_is_single_m_cubed(self) -> None:
+        ch = CaHVA_SU2015_DCN(size=1)
+        gates = ch._iter_gates()
+        self.assertEqual(tuple(gate.name for gate in gates), ("m",))
+        self.assertEqual(tuple(gate.power for gate in gates), (3,))
+
+    def test_default_parameters_are_stored(self) -> None:
+        ch = CaHVA_SU2015_DCN(size=1)
+        self.assertTrue(u.math.allclose(ch.perm, 7.5e-6 * (u.cm / u.second), atol=1e-12 * (u.cm / u.second)))
+        self.assertTrue(u.math.allclose(ch.temp, u.celsius2kelvin(36.0), atol=1e-6 * u.kelvin))
+        self.assertTrue(u.math.allclose(ch.qdeltat, jnp.ones(1), atol=1e-12))
+
+    def test_reset_state_sets_m_to_minf(self) -> None:
+        ch = CaHVA_SU2015_DCN(size=1)
+        V = _V([-60.0])
+        ca = _ca_info()
+        ch.init_state(V, ca)
+        ch.reset_state(V, ca)
+        self.assertTrue(u.math.allclose(ch.m.value, ch.f_m_inf(V, ca), atol=1e-6))
+
+    def test_compute_derivative_matches_inf_tau_form(self) -> None:
+        ch = CaHVA_SU2015_DCN(size=1, qdeltat=2.0)
+        V = _V([-60.0])
+        ca = _ca_info()
+        ch.init_state(V, ca)
+        ch.m.value = jnp.array([0.2])
+        ch.compute_derivative(V, ca)
+        gate = ch._iter_gates()[0]
+        expected = ch.gate_phi(gate) * (ch.f_m_inf(V, ca) - ch.m.value) / ch.f_m_tau(V, ca) / u.ms
+        self.assertTrue(u.math.allclose(ch.m.derivative, expected, atol=1e-6 * u.Hz))
+
+    def test_current_matches_mod_formula(self) -> None:
+        ch = CaHVA_SU2015_DCN(size=1)
+        V = _V([-60.0])
+        ca = _ca_info(C=1e-4)
+        ch.init_state(V, ca)
+        ch.m.value = jnp.array([0.5])
+        current = ch.current(V, ca)
+        v_mV = V.to_decimal(u.mV)
+        T = ch.temp.to_decimal(u.kelvin)
+        ci = ca.Ci.to_decimal(u.mM)
+        co = ca.Co.to_decimal(u.mM)
+        perm = ch.perm.to_decimal(u.cm / u.second)
+        A = u.math.exp(-23.20764929 * v_mV / T)
+        drive = (4.47814e6 * v_mV / T) * ((ci / 1000.0) - (co / 1000.0) * A) / (1.0 - A)
+        expected = -perm * ch.m.value ** 3 * drive
+        self.assertTrue(
+            u.math.allclose(
+                current.to_decimal(u.mA / (u.cm ** 2)),
+                expected,
+                atol=1e-6,
+            )
+        )
+
+
+class CaLVA_SU2015_DCNTest(unittest.TestCase):
+    def test_root_type_is_calcium(self) -> None:
+        self.assertIs(CaLVA_SU2015_DCN.root_type, Calcium)
+
+    def test_inherits_hh_template_directly(self) -> None:
+        self.assertTrue(issubclass(CaLVA_SU2015_DCN, HH))
+
+    def test_gate_definition_is_m_squared_h(self) -> None:
+        ch = CaLVA_SU2015_DCN(size=1)
+        gates = ch._iter_gates()
+        self.assertEqual(tuple(gate.name for gate in gates), ("m", "h"))
+        self.assertEqual(tuple(gate.power for gate in gates), (2, 1))
+
+    def test_default_parameters_are_stored(self) -> None:
+        ch = CaLVA_SU2015_DCN(size=1)
+        self.assertTrue(u.math.allclose(ch.perm, 1.0 * (u.cm / u.second), atol=1e-12 * (u.cm / u.second)))
+        self.assertTrue(u.math.allclose(ch.temp, u.celsius2kelvin(36.0), atol=1e-6 * u.kelvin))
+        self.assertTrue(u.math.allclose(ch.qdeltat, jnp.ones(1), atol=1e-12))
+
+    def test_reset_state_sets_m_and_h_to_inf_values(self) -> None:
+        ch = CaLVA_SU2015_DCN(size=1)
+        V = _V([-60.0])
+        ca = _ca_info()
+        ch.init_state(V, ca)
+        ch.reset_state(V, ca)
+        self.assertTrue(u.math.allclose(ch.m.value, ch.f_m_inf(V, ca), atol=1e-6))
+        self.assertTrue(u.math.allclose(ch.h.value, ch.f_h_inf(V, ca), atol=1e-6))
+
+    def test_compute_derivative_matches_inf_tau_form(self) -> None:
+        ch = CaLVA_SU2015_DCN(size=1, qdeltat=2.0)
+        V = _V([-60.0])
+        ca = _ca_info()
+        ch.init_state(V, ca)
+        ch.m.value = jnp.array([0.2])
+        ch.h.value = jnp.array([0.6])
+        ch.compute_derivative(V, ca)
+        gates = {gate.name: gate for gate in ch._iter_gates()}
+        expected_m = ch.gate_phi(gates["m"]) * (ch.f_m_inf(V, ca) - ch.m.value) / ch.f_m_tau(V, ca) / u.ms
+        expected_h = ch.gate_phi(gates["h"]) * (ch.f_h_inf(V, ca) - ch.h.value) / ch.f_h_tau(V, ca) / u.ms
+        self.assertTrue(u.math.allclose(ch.m.derivative, expected_m, atol=1e-6 * u.Hz))
+        self.assertTrue(u.math.allclose(ch.h.derivative, expected_h, atol=1e-6 * u.Hz))
+
+    def test_h_tau_uses_low_voltage_branch_below_threshold(self) -> None:
+        ch = CaLVA_SU2015_DCN(size=1)
+        low_v = _V([-90.0])
+        tau = ch.f_h_tau(low_v, _ca_info())
+        expected = 0.333 * u.math.exp((-90.0 + 466.0) / 66.0)
+        self.assertTrue(u.math.allclose(tau, jnp.array([expected]), atol=1e-6))
+
+    def test_h_tau_uses_high_voltage_branch_at_threshold_and_above(self) -> None:
+        ch = CaLVA_SU2015_DCN(size=1)
+        high_v = _V([-81.0])
+        tau = ch.f_h_tau(high_v, _ca_info())
+        expected = 0.333 * u.math.exp((-81.0 + 21.0) / -10.5) + 9.32
+        self.assertTrue(u.math.allclose(tau, jnp.array([expected]), atol=1e-6))
+
+    def test_current_matches_mod_formula(self) -> None:
+        ch = CaLVA_SU2015_DCN(size=1)
+        V = _V([-60.0])
+        ca = _ca_info(C=1e-4)
+        ch.init_state(V, ca)
+        ch.m.value = jnp.array([0.5])
+        ch.h.value = jnp.array([0.25])
+        current = ch.current(V, ca)
+        v_mV = V.to_decimal(u.mV)
+        T = ch.temp.to_decimal(u.kelvin)
+        ci = ca.Ci.to_decimal(u.mM)
+        co = ca.Co.to_decimal(u.mM)
+        perm = ch.perm.to_decimal(u.cm / u.second)
+        A = u.math.exp(-23.20764929 * v_mV / T)
+        drive = (4.47814e6 * v_mV / T) * ((ci / 1000.0) - (co / 1000.0) * A) / (1.0 - A)
+        expected = -perm * ch.m.value ** 2 * ch.h.value * drive
+        self.assertTrue(
+            u.math.allclose(
+                current.to_decimal(u.mA / (u.cm ** 2)),
+                expected,
+                atol=1e-6,
+            )
+        )
 
 
 class CaN_IS2008Test(unittest.TestCase):

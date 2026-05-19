@@ -16,6 +16,7 @@
 import unittest
 
 import brainunit as u
+import numpy as np
 
 import braincell
 from braincell import (
@@ -656,6 +657,648 @@ class CellRuntimeStateTest(unittest.TestCase):
         rcell.reset_state()
         self.assertAlmostEqual(float(ion.Ci.value[1].to_decimal(u.mM)), 7.0e-4, places=12)
 
+    def test_imported_cdp_ion_relaxes_without_channel_in_runtime(self) -> None:
+        cell = Cell(_build_tree())
+        cell.paint(
+            BranchSlice(branch_index=[0, 1], prox=0.0, dist=1.0),
+            braincell.mech.Ion(
+                "CdpHVA_SU2015_DCN",
+                name="ca_cdp",
+                tauCa=70.0 * u.ms,
+                caiBase=50e-6 * u.mM,
+                depth=0.2 * u.um,
+                Ci_initializer=80e-6 * u.mM,
+            ),
+        )
+
+        cell.init_state(); rcell = cell
+        ion = rcell.get_ion("ca_cdp")
+        self.assertAlmostEqual(float(ion.Ci.value[1].to_decimal(u.mM)), 80e-6, places=12)
+
+        rcell.compute_derivative()
+        expected = -(80e-6 - 50e-6) / 70.0
+        self.assertAlmostEqual(float(ion.Ci.derivative[1].to_decimal(u.mM / u.ms)), expected, places=12)
+
+    def test_imported_cdp_ion_and_cahva_channel_run_together(self) -> None:
+        cell = Cell(_build_tree())
+        region = BranchSlice(branch_index=[0, 1], prox=0.0, dist=1.0)
+        cell.paint(
+            region,
+            braincell.mech.Ion(
+                "CdpHVA_SU2015_DCN",
+                name="ca_cdp",
+                tauCa=70.0 * u.ms,
+                caiBase=50e-6 * u.mM,
+                depth=0.2 * u.um,
+                Ci_initializer=80e-6 * u.mM,
+            ),
+        )
+        cell.paint(
+            region,
+            braincell.mech.Channel(
+                "CaHVA_SU2015_DCN",
+                ion_name="ca_cdp",
+                perm=7.5e-6 * (u.cm / u.second),
+            ),
+        )
+        cell.place(
+            at("soma", 0.5),
+            braincell.mech.MechanismProbe(mechanism="ca_cdp", field="Ci"),
+            braincell.mech.MechanismProbe(mechanism="CaHVA_SU2015_DCN", field="m"),
+            braincell.mech.CurrentProbe(ion="ca_cdp", mechanism="CaHVA_SU2015_DCN"),
+        )
+
+        result = cell.run(dt=0.05 * u.ms, duration=1.0 * u.ms)
+        self.assertIn("soma(0.5)_ca_cdp_Ci", result.traces)
+        self.assertIn("soma(0.5)_CaHVA_SU2015_DCN_m", result.traces)
+        self.assertIn("soma(0.5)_CaHVA_SU2015_DCN_current", result.traces)
+
+    def test_imported_cdplva_ion_relaxes_without_channel_in_runtime(self) -> None:
+        cell = Cell(_build_tree())
+        cell.paint(
+            BranchSlice(branch_index=[0, 1], prox=0.0, dist=1.0),
+            braincell.mech.Ion(
+                "CdpLVA_SU2015_DCN",
+                name="ca_lva",
+                tauCal=70.0 * u.ms,
+                caliBase=50e-6 * u.mM,
+                depth=0.2 * u.um,
+                Ci_initializer=80e-6 * u.mM,
+            ),
+        )
+
+        cell.init_state(); rcell = cell
+        ion = rcell.get_ion("ca_lva")
+        self.assertAlmostEqual(float(ion.Ci.value[1].to_decimal(u.mM)), 80e-6, places=12)
+
+        rcell.compute_derivative()
+        expected = -(80e-6 - 50e-6) / 70.0
+        self.assertAlmostEqual(float(ion.Ci.derivative[1].to_decimal(u.mM / u.ms)), expected, places=12)
+
+    def test_imported_cdplva_ion_and_calva_channel_run_together(self) -> None:
+        cell = Cell(_build_tree())
+        region = BranchSlice(branch_index=[0, 1], prox=0.0, dist=1.0)
+        cell.paint(
+            region,
+            braincell.mech.Ion(
+                "CdpLVA_SU2015_DCN",
+                name="ca_lva",
+                tauCal=70.0 * u.ms,
+                caliBase=50e-6 * u.mM,
+                depth=0.2 * u.um,
+                Ci_initializer=80e-6 * u.mM,
+            ),
+        )
+        cell.paint(
+            region,
+            braincell.mech.Channel(
+                "CaLVA_SU2015_DCN",
+                ion_name="ca_lva",
+                perm=1.0 * (u.cm / u.second),
+            ),
+        )
+        cell.place(
+            at("soma", 0.5),
+            braincell.mech.MechanismProbe(mechanism="ca_lva", field="Ci"),
+            braincell.mech.MechanismProbe(mechanism="CaLVA_SU2015_DCN", field="m"),
+            braincell.mech.MechanismProbe(mechanism="CaLVA_SU2015_DCN", field="h"),
+            braincell.mech.CurrentProbe(ion="ca_lva", mechanism="CaLVA_SU2015_DCN"),
+        )
+
+        result = cell.run(dt=0.05 * u.ms, duration=1.0 * u.ms)
+        self.assertIn("soma(0.5)_ca_lva_Ci", result.traces)
+        self.assertIn("soma(0.5)_CaLVA_SU2015_DCN_m", result.traces)
+        self.assertIn("soma(0.5)_CaLVA_SU2015_DCN_h", result.traces)
+        self.assertIn("soma(0.5)_CaLVA_SU2015_DCN_current", result.traces)
+
+    def test_toy_kinetic_ion_runs_and_exposes_species_probes(self) -> None:
+        cell = Cell(_build_tree())
+        region = BranchSlice(branch_index=[0, 1], prox=0.0, dist=1.0)
+        cell.paint(
+            region,
+            braincell.mech.Ion(
+                "ToyCaBindingKinetic_SU2015_DCN",
+                name="ca_toy",
+                Ci_initializer=0.2 * u.mM,
+                BC_initializer=0.3 * u.mM,
+                Btot=1.0 * u.mM,
+            ),
+        )
+        cell.place(
+            at("soma", 0.5),
+            braincell.mech.MechanismProbe(mechanism="ca_toy", field="Ci"),
+            braincell.mech.MechanismProbe(mechanism="ca_toy", field="BC"),
+            braincell.mech.MechanismProbe(mechanism="ca_toy", field="B"),
+        )
+
+        result = cell.run(dt=0.05 * u.ms, duration=1.0 * u.ms)
+        self.assertIn("soma(0.5)_ca_toy_Ci", result.traces)
+        self.assertIn("soma(0.5)_ca_toy_BC", result.traces)
+        self.assertIn("soma(0.5)_ca_toy_B", result.traces)
+
+    def test_toy_kinetic_ion_reset_restores_custom_initializers(self) -> None:
+        cell = Cell(_build_tree())
+        cell.paint(
+            BranchSlice(branch_index=[0, 1], prox=0.0, dist=1.0),
+            braincell.mech.Ion(
+                "ToyCaBindingKinetic_SU2015_DCN",
+                name="ca_toy",
+                Ci_initializer=0.2 * u.mM,
+                BC_initializer=0.3 * u.mM,
+                Btot=1.0 * u.mM,
+            ),
+        )
+
+        cell.init_state(); rcell = cell
+        ion = rcell.get_ion("ca_toy")
+        self.assertAlmostEqual(float(ion.Ci.value[1].to_decimal(u.mM)), 0.2, places=12)
+        self.assertAlmostEqual(float(ion.BC.value[1].to_decimal(u.mM)), 0.3, places=12)
+        self.assertAlmostEqual(float(ion.B.value[1].to_decimal(u.mM)), 0.7, places=12)
+
+        ion.Ci.value = ion.Ci.value.at[1].set(0.9 * u.mM)
+        ion.BC.value = ion.BC.value.at[1].set(0.8 * u.mM)
+        rcell.reset_state()
+
+        self.assertAlmostEqual(float(ion.Ci.value[1].to_decimal(u.mM)), 0.2, places=12)
+        self.assertAlmostEqual(float(ion.BC.value[1].to_decimal(u.mM)), 0.3, places=12)
+        self.assertAlmostEqual(float(ion.B.value[1].to_decimal(u.mM)), 0.7, places=12)
+
+    def test_toy_source_kinetic_ion_runs_and_exposes_species_probes(self) -> None:
+        region = BranchSlice(branch_index=[0, 1], prox=0.0, dist=1.0)
+
+        def _run(ci_source):
+            cell = Cell(_build_tree())
+            cell.paint(
+                region,
+                braincell.mech.Ion(
+                    "ToyCaBindingSourceKinetic_SU2015_DCN",
+                    name="ca_toy_src",
+                    Ci_initializer=0.2 * u.mM,
+                    BC_initializer=0.3 * u.mM,
+                    Btot=1.0 * u.mM,
+                    ci_source=ci_source,
+                ),
+            )
+            cell.place(
+                at("soma", 0.5),
+                braincell.mech.MechanismProbe(mechanism="ca_toy_src", field="Ci"),
+                braincell.mech.MechanismProbe(mechanism="ca_toy_src", field="BC"),
+                braincell.mech.MechanismProbe(mechanism="ca_toy_src", field="B"),
+            )
+            return cell.run(dt=0.05 * u.ms, duration=1.0 * u.ms)
+
+        baseline = _run(0.0 * u.mM / u.ms)
+        result = _run(0.01 * u.mM / u.ms)
+        self.assertIn("soma(0.5)_ca_toy_src_Ci", result.traces)
+        self.assertIn("soma(0.5)_ca_toy_src_BC", result.traces)
+        self.assertIn("soma(0.5)_ca_toy_src_B", result.traces)
+
+        ci_baseline = baseline.traces["soma(0.5)_ca_toy_src_Ci"].to_decimal(u.mM)
+        ci = result.traces["soma(0.5)_ca_toy_src_Ci"].to_decimal(u.mM)
+        bc = result.traces["soma(0.5)_ca_toy_src_BC"].to_decimal(u.mM)
+        b = result.traces["soma(0.5)_ca_toy_src_B"].to_decimal(u.mM)
+        self.assertTrue(np.allclose(np.asarray(bc) + np.asarray(b), 1.0, atol=1e-9))
+        self.assertGreater(float(np.asarray(ci)[-1]), float(np.asarray(ci_baseline)[-1]))
+
+    def test_toy_ica_source_kinetic_ion_and_cahva_run_together(self) -> None:
+        region = BranchSlice(branch_index=[0, 1], prox=0.0, dist=1.0)
+
+        def _run_current_driven(kCa):
+            cell = Cell(_build_tree(), V_init=-60.0 * u.mV, solver="staggered")
+            cell.paint(
+                region,
+                braincell.mech.Ion(
+                    "ToyCaBindingIcaSourceKinetic_SU2015_DCN",
+                    name="ca_toy_ica",
+                    Ci_initializer=0.2 * u.mM,
+                    BC_initializer=0.3 * u.mM,
+                    Btot=1.0 * u.mM,
+                    kCa=kCa,
+                    depth=0.2 * u.um,
+                ),
+            )
+            cell.paint(
+                region,
+                braincell.mech.Channel(
+                    "CaHVA_SU2015_DCN",
+                    ion_name="ca_toy_ica",
+                    perm=7.5e-6 * (u.cm / u.second),
+                ),
+            )
+            cell.place(
+                at("soma", 0.5),
+                braincell.mech.CurrentClamp.step(0.05 * u.nA, 0.8 * u.ms, delay=0.1 * u.ms),
+                braincell.mech.MechanismProbe(mechanism="ca_toy_ica", field="Ci"),
+                braincell.mech.MechanismProbe(mechanism="ca_toy_ica", field="BC"),
+                braincell.mech.MechanismProbe(mechanism="ca_toy_ica", field="B"),
+                braincell.mech.MechanismProbe(mechanism="CaHVA_SU2015_DCN", field="m"),
+                braincell.mech.CurrentProbe(ion="ca_toy_ica", mechanism="CaHVA_SU2015_DCN"),
+            )
+            return cell.run(dt=0.05 * u.ms, duration=1.0 * u.ms)
+
+        result = _run_current_driven(3.45e-7 / u.coulomb)
+
+        self.assertIn("soma(0.5)_ca_toy_ica_Ci", result.traces)
+        self.assertIn("soma(0.5)_ca_toy_ica_BC", result.traces)
+        self.assertIn("soma(0.5)_ca_toy_ica_B", result.traces)
+        self.assertIn("soma(0.5)_CaHVA_SU2015_DCN_m", result.traces)
+        self.assertIn("soma(0.5)_CaHVA_SU2015_DCN_current", result.traces)
+
+        bc = np.asarray(result.traces["soma(0.5)_ca_toy_ica_BC"].to_decimal(u.mM))
+        b = np.asarray(result.traces["soma(0.5)_ca_toy_ica_B"].to_decimal(u.mM))
+        current = np.asarray(result.traces["soma(0.5)_CaHVA_SU2015_DCN_current"].to_decimal(u.mA / (u.cm ** 2)))
+
+        self.assertTrue(np.allclose(bc + b, 1.0, atol=1e-9))
+        self.assertGreater(float(np.max(np.abs(current))), 0.0)
+
+    def test_toy_factor_kinetic_ion_and_cahva_run_together(self) -> None:
+        cell = Cell(_build_tree(), V_init=-60.0 * u.mV, solver="staggered")
+        region = BranchSlice(branch_index=[0, 1], prox=0.0, dist=1.0)
+        cell.paint(
+            region,
+            braincell.mech.Ion(
+                "ToyCaPumpFactorKinetic_SU2015_DCN",
+                name="ca_toy_factor",
+                Ci_initializer=0.2 * u.mM,
+                PumpBound_initializer=0.3 * u.mM * u.um,
+                PumpTot=1.0 * u.mM * u.um,
+                kCa=3.45e-7 / u.coulomb,
+                depth=0.2 * u.um,
+            ),
+        )
+        cell.paint(
+            region,
+            braincell.mech.Channel(
+                "CaHVA_SU2015_DCN",
+                ion_name="ca_toy_factor",
+                perm=7.5e-6 * (u.cm / u.second),
+            ),
+        )
+        cell.place(
+            at("soma", 0.5),
+            braincell.mech.CurrentClamp.step(0.05 * u.nA, 0.8 * u.ms, delay=0.1 * u.ms),
+            braincell.mech.MechanismProbe(mechanism="ca_toy_factor", field="Ci"),
+            braincell.mech.MechanismProbe(mechanism="ca_toy_factor", field="PumpBound"),
+            braincell.mech.MechanismProbe(mechanism="ca_toy_factor", field="PumpFree"),
+            braincell.mech.MechanismProbe(mechanism="CaHVA_SU2015_DCN", field="m"),
+            braincell.mech.CurrentProbe(ion="ca_toy_factor", mechanism="CaHVA_SU2015_DCN"),
+        )
+
+        result = cell.run(dt=0.05 * u.ms, duration=1.0 * u.ms)
+        self.assertIn("soma(0.5)_ca_toy_factor_Ci", result.traces)
+        self.assertIn("soma(0.5)_ca_toy_factor_PumpBound", result.traces)
+        self.assertIn("soma(0.5)_ca_toy_factor_PumpFree", result.traces)
+        self.assertIn("soma(0.5)_CaHVA_SU2015_DCN_m", result.traces)
+        self.assertIn("soma(0.5)_CaHVA_SU2015_DCN_current", result.traces)
+
+        pump_bound = np.asarray(result.traces["soma(0.5)_ca_toy_factor_PumpBound"].to_decimal(u.mM * u.um))
+        pump_free = np.asarray(result.traces["soma(0.5)_ca_toy_factor_PumpFree"].to_decimal(u.mM * u.um))
+        current = np.asarray(result.traces["soma(0.5)_CaHVA_SU2015_DCN_current"].to_decimal(u.mA / (u.cm ** 2)))
+
+        self.assertTrue(np.allclose(pump_bound + pump_free, 1.0, atol=1e-9))
+        self.assertGreater(float(np.max(np.abs(current))), 0.0)
+
+    def test_toy_diam_factor_kinetic_ion_runs_and_exposes_geometry_factor_species(self) -> None:
+        cell = Cell(_build_tree(), solver="staggered")
+        region = BranchSlice(branch_index=[0, 1], prox=0.0, dist=1.0)
+        cell.paint(
+            region,
+            braincell.mech.Ion(
+                "ToyDiamFactorKinetic_SU2015_DCN",
+                name="ca_diam_factor",
+                Ci_initializer=0.2 * u.mM,
+                PumpBound_initializer=0.3 * u.mM * u.um,
+                PumpTot=1.0 * u.mM * u.um,
+            ),
+        )
+        cell.place(
+            at("soma", 0.5),
+            braincell.mech.MechanismProbe(mechanism="ca_diam_factor", field="Ci"),
+            braincell.mech.MechanismProbe(mechanism="ca_diam_factor", field="PumpBound"),
+            braincell.mech.MechanismProbe(mechanism="ca_diam_factor", field="PumpFree"),
+        )
+
+        cell.init_state(); rcell = cell
+        ion = rcell.get_ion("ca_diam_factor")
+
+        self.assertAlmostEqual(float(ion.diam_mid[1].to_decimal(u.um)), 20.0, places=12)
+        self.assertAlmostEqual(float(ion.PumpBound.value[1].to_decimal(u.mM * u.um)), 0.3, places=12)
+        self.assertAlmostEqual(float(ion.PumpFree.value[1].to_decimal(u.mM * u.um)), 0.7, places=6)
+
+        result = cell.run(dt=0.05 * u.ms, duration=1.0 * u.ms)
+        self.assertIn("soma(0.5)_ca_diam_factor_Ci", result.traces)
+        self.assertIn("soma(0.5)_ca_diam_factor_PumpBound", result.traces)
+        self.assertIn("soma(0.5)_ca_diam_factor_PumpFree", result.traces)
+
+    def test_toy_diam_factor_kinetic_ion_reset_restores_custom_initializers(self) -> None:
+        cell = Cell(_build_tree())
+        cell.paint(
+            BranchSlice(branch_index=[0, 1], prox=0.0, dist=1.0),
+            braincell.mech.Ion(
+                "ToyDiamFactorKinetic_SU2015_DCN",
+                name="ca_diam_factor",
+                Ci_initializer=0.2 * u.mM,
+                PumpBound_initializer=0.3 * u.mM * u.um,
+                PumpTot=1.0 * u.mM * u.um,
+            ),
+        )
+
+        cell.init_state(); rcell = cell
+        ion = rcell.get_ion("ca_diam_factor")
+        self.assertAlmostEqual(float(ion.Ci.value[1].to_decimal(u.mM)), 0.2, places=12)
+        self.assertAlmostEqual(float(ion.PumpBound.value[1].to_decimal(u.mM * u.um)), 0.3, places=12)
+        self.assertAlmostEqual(float(ion.PumpFree.value[1].to_decimal(u.mM * u.um)), 0.7, places=6)
+
+        ion.Ci.value = ion.Ci.value.at[1].set(0.9 * u.mM)
+        ion.PumpBound.value = ion.PumpBound.value.at[1].set(0.8 * u.mM * u.um)
+        rcell.reset_state()
+
+        self.assertAlmostEqual(float(ion.Ci.value[1].to_decimal(u.mM)), 0.2, places=12)
+        self.assertAlmostEqual(float(ion.PumpBound.value[1].to_decimal(u.mM * u.um)), 0.3, places=12)
+        self.assertAlmostEqual(float(ion.PumpFree.value[1].to_decimal(u.mM * u.um)), 0.7, places=6)
+
+    def test_cdpstc_goc_runs_and_exposes_species_and_geometry_probes(self) -> None:
+        cell = Cell(_build_tree(), solver="staggered")
+        region = BranchSlice(branch_index=[0, 1], prox=0.0, dist=1.0)
+        cell.paint(
+            region,
+            braincell.mech.Ion(
+                "CdpStC_MA2020_GoC",
+                name="ca_stc",
+            ),
+        )
+        cell.place(
+            at("soma", 0.5),
+            braincell.mech.MechanismProbe(mechanism="ca_stc", field="Ci"),
+            braincell.mech.MechanismProbe(mechanism="ca_stc", field="pump"),
+            braincell.mech.MechanismProbe(mechanism="ca_stc", field="pumpca"),
+            braincell.mech.MechanismProbe(mechanism="ca_stc", field="CAM0"),
+            braincell.mech.MechanismProbe(mechanism="ca_stc", field="CAM1C"),
+            braincell.mech.MechanismProbe(mechanism="ca_stc", field="CAM2C"),
+            braincell.mech.MechanismProbe(mechanism="ca_stc", field="CAM1N2C"),
+            braincell.mech.MechanismProbe(mechanism="ca_stc", field="CAM1N"),
+            braincell.mech.MechanismProbe(mechanism="ca_stc", field="CAM2N"),
+            braincell.mech.MechanismProbe(mechanism="ca_stc", field="CAM2N1C"),
+            braincell.mech.MechanismProbe(mechanism="ca_stc", field="CAM1C1N"),
+            braincell.mech.MechanismProbe(mechanism="ca_stc", field="CAM4"),
+            braincell.mech.MechanismProbe(mechanism="ca_stc", field="vrat"),
+            braincell.mech.MechanismProbe(mechanism="ca_stc", field="parea"),
+            braincell.mech.MechanismProbe(mechanism="ca_stc", field="dsq"),
+            braincell.mech.MechanismProbe(mechanism="ca_stc", field="dsqvol"),
+        )
+
+        cell.init_state(); rcell = cell
+        ion = rcell.get_ion("ca_stc")
+        self.assertAlmostEqual(float(ion.Ci.value[1].to_decimal(u.mM)), 45e-6, places=10)
+        self.assertAlmostEqual(float(ion.mg.value[1].to_decimal(u.mM)), 0.59, places=6)
+        self.assertAlmostEqual(float(ion.CAM0.value[1].to_decimal(u.mM)), 0.03, places=6)
+        self.assertAlmostEqual(float(ion.CAM1C.value[1].to_decimal(u.mM)), 0.0, places=15)
+        self.assertAlmostEqual(float(ion.CAM2C.value[1].to_decimal(u.mM)), 0.0, places=15)
+        self.assertAlmostEqual(float(ion.CAM1N2C.value[1].to_decimal(u.mM)), 0.0, places=15)
+        self.assertAlmostEqual(float(ion.CAM1N.value[1].to_decimal(u.mM)), 0.0, places=15)
+        self.assertAlmostEqual(float(ion.CAM2N.value[1].to_decimal(u.mM)), 0.0, places=15)
+        self.assertAlmostEqual(float(ion.CAM2N1C.value[1].to_decimal(u.mM)), 0.0, places=15)
+        self.assertAlmostEqual(float(ion.CAM1C1N.value[1].to_decimal(u.mM)), 0.0, places=15)
+        self.assertAlmostEqual(float(ion.CAM4.value[1].to_decimal(u.mM)), 0.0, places=15)
+        self.assertAlmostEqual(float(ion.pump.value[1].to_decimal(u.mol / u.cm ** 2)), 1e-9, places=15)
+        self.assertAlmostEqual(float(ion.pumpca.value[1].to_decimal(u.mol / u.cm ** 2)), 0.0, places=15)
+        self.assertAlmostEqual(float(ion.parea[1].to_decimal(u.um)), float(np.pi * 20.0), places=5)
+        self.assertAlmostEqual(float(ion.dsq[1].to_decimal(u.um ** 2)), 400.0, places=6)
+
+        result = cell.run(dt=0.05 * u.ms, duration=1.0 * u.ms)
+        for key in (
+            "soma(0.5)_ca_stc_Ci",
+            "soma(0.5)_ca_stc_pump",
+            "soma(0.5)_ca_stc_pumpca",
+            "soma(0.5)_ca_stc_CAM0",
+            "soma(0.5)_ca_stc_CAM1C",
+            "soma(0.5)_ca_stc_CAM2C",
+            "soma(0.5)_ca_stc_CAM1N2C",
+            "soma(0.5)_ca_stc_CAM1N",
+            "soma(0.5)_ca_stc_CAM2N",
+            "soma(0.5)_ca_stc_CAM2N1C",
+            "soma(0.5)_ca_stc_CAM1C1N",
+            "soma(0.5)_ca_stc_CAM4",
+            "soma(0.5)_ca_stc_vrat",
+            "soma(0.5)_ca_stc_parea",
+            "soma(0.5)_ca_stc_dsq",
+            "soma(0.5)_ca_stc_dsqvol",
+        ):
+            self.assertIn(key, result.traces)
+
+        tracked = {
+            "Ci": np.asarray(result.traces["soma(0.5)_ca_stc_Ci"].to_decimal(u.mM)),
+            "pump": np.asarray(result.traces["soma(0.5)_ca_stc_pump"].to_decimal(u.mol / u.cm ** 2)),
+            "pumpca": np.asarray(result.traces["soma(0.5)_ca_stc_pumpca"].to_decimal(u.mol / u.cm ** 2)),
+            "CAM0": np.asarray(result.traces["soma(0.5)_ca_stc_CAM0"].to_decimal(u.mM)),
+            "CAM1C": np.asarray(result.traces["soma(0.5)_ca_stc_CAM1C"].to_decimal(u.mM)),
+            "CAM1N": np.asarray(result.traces["soma(0.5)_ca_stc_CAM1N"].to_decimal(u.mM)),
+            "CAM2N": np.asarray(result.traces["soma(0.5)_ca_stc_CAM2N"].to_decimal(u.mM)),
+            "vrat": np.asarray(result.traces["soma(0.5)_ca_stc_vrat"]),
+            "parea": np.asarray(result.traces["soma(0.5)_ca_stc_parea"].to_decimal(u.um)),
+            "dsq": np.asarray(result.traces["soma(0.5)_ca_stc_dsq"].to_decimal(u.um ** 2)),
+            "dsqvol": np.asarray(result.traces["soma(0.5)_ca_stc_dsqvol"].to_decimal(u.um ** 2)),
+        }
+        for arr in tracked.values():
+            self.assertTrue(np.isfinite(arr).all())
+
+        pump = tracked["pump"]
+        pumpca = tracked["pumpca"]
+        total = pump + pumpca
+        self.assertTrue(np.allclose(total, total[0], atol=1e-18))
+        self.assertAlmostEqual(float(tracked["Ci"][-1]), 4.096707925782539e-05, delta=1e-9)
+        self.assertAlmostEqual(float(tracked["pump"][-1]), 9.999999717180685e-10, delta=1e-18)
+        self.assertLessEqual(abs(float(tracked["pumpca"][-1])), 1e-15)
+        self.assertAlmostEqual(float(tracked["CAM0"][-1]), 0.029932903407929307, delta=1e-9)
+        self.assertAlmostEqual(float(tracked["CAM1C"][-1]), 5.981674114812124e-06, delta=1e-10)
+        self.assertAlmostEqual(float(tracked["CAM1N"][-1]), 6.089851644030247e-05, delta=1e-9)
+        self.assertAlmostEqual(float(tracked["CAM2N"][-1]), 2.0599083597580873e-07, delta=1e-10)
+
+    def test_cdpstc_camonly_goc_runs_and_exposes_species_and_geometry_probes(self) -> None:
+        cell = Cell(_build_tree(), solver="staggered")
+        region = BranchSlice(branch_index=[0, 1], prox=0.0, dist=1.0)
+        cell.paint(
+            region,
+            braincell.mech.Ion(
+                "CdpStC_CAMOnly_MA2020_GoC",
+                name="ca_stc_camonly",
+            ),
+        )
+        cell.place(
+            at("soma", 0.5),
+            braincell.mech.MechanismProbe(mechanism="ca_stc_camonly", field="Ci"),
+            braincell.mech.MechanismProbe(mechanism="ca_stc_camonly", field="CAM0"),
+            braincell.mech.MechanismProbe(mechanism="ca_stc_camonly", field="CAM1C"),
+            braincell.mech.MechanismProbe(mechanism="ca_stc_camonly", field="CAM2C"),
+            braincell.mech.MechanismProbe(mechanism="ca_stc_camonly", field="CAM1N2C"),
+            braincell.mech.MechanismProbe(mechanism="ca_stc_camonly", field="CAM1N"),
+            braincell.mech.MechanismProbe(mechanism="ca_stc_camonly", field="CAM2N"),
+            braincell.mech.MechanismProbe(mechanism="ca_stc_camonly", field="CAM2N1C"),
+            braincell.mech.MechanismProbe(mechanism="ca_stc_camonly", field="CAM1C1N"),
+            braincell.mech.MechanismProbe(mechanism="ca_stc_camonly", field="CAM4"),
+            braincell.mech.MechanismProbe(mechanism="ca_stc_camonly", field="vrat"),
+            braincell.mech.MechanismProbe(mechanism="ca_stc_camonly", field="dsq"),
+            braincell.mech.MechanismProbe(mechanism="ca_stc_camonly", field="dsqvol"),
+        )
+
+        cell.init_state(); rcell = cell
+        ion = rcell.get_ion("ca_stc_camonly")
+        self.assertAlmostEqual(float(ion.Ci.value[1].to_decimal(u.mM)), 45e-6, places=10)
+        self.assertAlmostEqual(float(ion.CAM0.value[1].to_decimal(u.mM)), 0.03, places=6)
+        self.assertAlmostEqual(float(ion.CAM1C.value[1].to_decimal(u.mM)), 0.0, places=15)
+        self.assertAlmostEqual(float(ion.CAM1N.value[1].to_decimal(u.mM)), 0.0, places=15)
+        self.assertAlmostEqual(float(ion.dsq[1].to_decimal(u.um ** 2)), 400.0, places=6)
+
+        result = cell.run(dt=0.05 * u.ms, duration=0.2 * u.ms)
+        for key in (
+            "soma(0.5)_ca_stc_camonly_Ci",
+            "soma(0.5)_ca_stc_camonly_CAM0",
+            "soma(0.5)_ca_stc_camonly_CAM1C",
+            "soma(0.5)_ca_stc_camonly_CAM2C",
+            "soma(0.5)_ca_stc_camonly_CAM1N2C",
+            "soma(0.5)_ca_stc_camonly_CAM1N",
+            "soma(0.5)_ca_stc_camonly_CAM2N",
+            "soma(0.5)_ca_stc_camonly_CAM2N1C",
+            "soma(0.5)_ca_stc_camonly_CAM1C1N",
+            "soma(0.5)_ca_stc_camonly_CAM4",
+            "soma(0.5)_ca_stc_camonly_vrat",
+            "soma(0.5)_ca_stc_camonly_dsq",
+            "soma(0.5)_ca_stc_camonly_dsqvol",
+        ):
+            self.assertIn(key, result.traces)
+
+        tracked = {
+            "Ci": np.asarray(result.traces["soma(0.5)_ca_stc_camonly_Ci"].to_decimal(u.mM)),
+            "CAM0": np.asarray(result.traces["soma(0.5)_ca_stc_camonly_CAM0"].to_decimal(u.mM)),
+            "CAM1C": np.asarray(result.traces["soma(0.5)_ca_stc_camonly_CAM1C"].to_decimal(u.mM)),
+            "CAM1N": np.asarray(result.traces["soma(0.5)_ca_stc_camonly_CAM1N"].to_decimal(u.mM)),
+            "CAM2N": np.asarray(result.traces["soma(0.5)_ca_stc_camonly_CAM2N"].to_decimal(u.mM)),
+            "vrat": np.asarray(result.traces["soma(0.5)_ca_stc_camonly_vrat"]),
+            "dsq": np.asarray(result.traces["soma(0.5)_ca_stc_camonly_dsq"].to_decimal(u.um ** 2)),
+            "dsqvol": np.asarray(result.traces["soma(0.5)_ca_stc_camonly_dsqvol"].to_decimal(u.um ** 2)),
+        }
+        for arr in tracked.values():
+            self.assertTrue(np.isfinite(arr).all())
+
+    def test_cdpstc_nocam_goc_runs_and_exposes_species_and_geometry_probes(self) -> None:
+        cell = Cell(_build_tree(), solver="staggered")
+        region = BranchSlice(branch_index=[0, 1], prox=0.0, dist=1.0)
+        cell.paint(
+            region,
+            braincell.mech.Ion(
+                "CdpStC_NoCAM_MA2020_GoC",
+                name="ca_stc_nocam",
+            ),
+        )
+        cell.place(
+            at("soma", 0.5),
+            braincell.mech.MechanismProbe(mechanism="ca_stc_nocam", field="Ci"),
+            braincell.mech.MechanismProbe(mechanism="ca_stc_nocam", field="mg"),
+            braincell.mech.MechanismProbe(mechanism="ca_stc_nocam", field="Buff1"),
+            braincell.mech.MechanismProbe(mechanism="ca_stc_nocam", field="Buff1_ca"),
+            braincell.mech.MechanismProbe(mechanism="ca_stc_nocam", field="Buff2"),
+            braincell.mech.MechanismProbe(mechanism="ca_stc_nocam", field="Buff2_ca"),
+            braincell.mech.MechanismProbe(mechanism="ca_stc_nocam", field="BTC"),
+            braincell.mech.MechanismProbe(mechanism="ca_stc_nocam", field="BTC_ca"),
+            braincell.mech.MechanismProbe(mechanism="ca_stc_nocam", field="DMNPE"),
+            braincell.mech.MechanismProbe(mechanism="ca_stc_nocam", field="DMNPE_ca"),
+            braincell.mech.MechanismProbe(mechanism="ca_stc_nocam", field="PV"),
+            braincell.mech.MechanismProbe(mechanism="ca_stc_nocam", field="PV_ca"),
+            braincell.mech.MechanismProbe(mechanism="ca_stc_nocam", field="PV_mg"),
+            braincell.mech.MechanismProbe(mechanism="ca_stc_nocam", field="pump"),
+            braincell.mech.MechanismProbe(mechanism="ca_stc_nocam", field="pumpca"),
+            braincell.mech.MechanismProbe(mechanism="ca_stc_nocam", field="vrat"),
+            braincell.mech.MechanismProbe(mechanism="ca_stc_nocam", field="parea"),
+            braincell.mech.MechanismProbe(mechanism="ca_stc_nocam", field="dsq"),
+            braincell.mech.MechanismProbe(mechanism="ca_stc_nocam", field="dsqvol"),
+        )
+
+        cell.init_state(); rcell = cell
+        ion = rcell.get_ion("ca_stc_nocam")
+        self.assertAlmostEqual(float(ion.Ci.value[1].to_decimal(u.mM)), 45e-6, places=10)
+        self.assertAlmostEqual(float(ion.mg.value[1].to_decimal(u.mM)), 0.59, places=6)
+        self.assertAlmostEqual(float(ion.pump.value[1].to_decimal(u.mol / u.cm ** 2)), 1e-9, places=15)
+        self.assertAlmostEqual(float(ion.pumpca.value[1].to_decimal(u.mol / u.cm ** 2)), 0.0, places=15)
+        self.assertAlmostEqual(float(ion.parea[1].to_decimal(u.um)), float(np.pi * 20.0), places=5)
+        self.assertAlmostEqual(float(ion.dsq[1].to_decimal(u.um ** 2)), 400.0, places=6)
+
+        result = cell.run(dt=0.05 * u.ms, duration=1.0 * u.ms)
+        for key in (
+            "soma(0.5)_ca_stc_nocam_Ci",
+            "soma(0.5)_ca_stc_nocam_mg",
+            "soma(0.5)_ca_stc_nocam_Buff1",
+            "soma(0.5)_ca_stc_nocam_Buff1_ca",
+            "soma(0.5)_ca_stc_nocam_Buff2",
+            "soma(0.5)_ca_stc_nocam_Buff2_ca",
+            "soma(0.5)_ca_stc_nocam_BTC",
+            "soma(0.5)_ca_stc_nocam_BTC_ca",
+            "soma(0.5)_ca_stc_nocam_DMNPE",
+            "soma(0.5)_ca_stc_nocam_DMNPE_ca",
+            "soma(0.5)_ca_stc_nocam_PV",
+            "soma(0.5)_ca_stc_nocam_PV_ca",
+            "soma(0.5)_ca_stc_nocam_PV_mg",
+            "soma(0.5)_ca_stc_nocam_pump",
+            "soma(0.5)_ca_stc_nocam_pumpca",
+            "soma(0.5)_ca_stc_nocam_vrat",
+            "soma(0.5)_ca_stc_nocam_parea",
+            "soma(0.5)_ca_stc_nocam_dsq",
+            "soma(0.5)_ca_stc_nocam_dsqvol",
+        ):
+            self.assertIn(key, result.traces)
+
+        tracked = {
+            "Ci": np.asarray(result.traces["soma(0.5)_ca_stc_nocam_Ci"].to_decimal(u.mM)),
+            "mg": np.asarray(result.traces["soma(0.5)_ca_stc_nocam_mg"].to_decimal(u.mM)),
+            "Buff1": np.asarray(result.traces["soma(0.5)_ca_stc_nocam_Buff1"].to_decimal(u.mM)),
+            "Buff1_ca": np.asarray(result.traces["soma(0.5)_ca_stc_nocam_Buff1_ca"].to_decimal(u.mM)),
+            "Buff2": np.asarray(result.traces["soma(0.5)_ca_stc_nocam_Buff2"].to_decimal(u.mM)),
+            "Buff2_ca": np.asarray(result.traces["soma(0.5)_ca_stc_nocam_Buff2_ca"].to_decimal(u.mM)),
+            "BTC": np.asarray(result.traces["soma(0.5)_ca_stc_nocam_BTC"].to_decimal(u.mM)),
+            "BTC_ca": np.asarray(result.traces["soma(0.5)_ca_stc_nocam_BTC_ca"].to_decimal(u.mM)),
+            "DMNPE": np.asarray(result.traces["soma(0.5)_ca_stc_nocam_DMNPE"].to_decimal(u.mM)),
+            "DMNPE_ca": np.asarray(result.traces["soma(0.5)_ca_stc_nocam_DMNPE_ca"].to_decimal(u.mM)),
+            "PV": np.asarray(result.traces["soma(0.5)_ca_stc_nocam_PV"].to_decimal(u.mM)),
+            "PV_ca": np.asarray(result.traces["soma(0.5)_ca_stc_nocam_PV_ca"].to_decimal(u.mM)),
+            "PV_mg": np.asarray(result.traces["soma(0.5)_ca_stc_nocam_PV_mg"].to_decimal(u.mM)),
+            "pump": np.asarray(result.traces["soma(0.5)_ca_stc_nocam_pump"].to_decimal(u.mol / u.cm ** 2)),
+            "pumpca": np.asarray(result.traces["soma(0.5)_ca_stc_nocam_pumpca"].to_decimal(u.mol / u.cm ** 2)),
+            "vrat": np.asarray(result.traces["soma(0.5)_ca_stc_nocam_vrat"]),
+            "parea": np.asarray(result.traces["soma(0.5)_ca_stc_nocam_parea"].to_decimal(u.um)),
+            "dsq": np.asarray(result.traces["soma(0.5)_ca_stc_nocam_dsq"].to_decimal(u.um ** 2)),
+            "dsqvol": np.asarray(result.traces["soma(0.5)_ca_stc_nocam_dsqvol"].to_decimal(u.um ** 2)),
+        }
+        for arr in tracked.values():
+            self.assertTrue(np.isfinite(arr).all())
+
+        total = tracked["pump"] + tracked["pumpca"]
+        self.assertTrue(np.allclose(total, total[0], atol=1e-18))
+
+    def test_calva_channel_binds_only_to_explicit_lva_ion_when_multiple_calcium_ions_exist(self) -> None:
+        cell = Cell(_build_tree())
+        region = BranchSlice(branch_index=[0, 1], prox=0.0, dist=1.0)
+        cell.paint(
+            region,
+            braincell.mech.Ion("CdpHVA_SU2015_DCN", name="ca_hva", Ci_initializer=80e-6 * u.mM),
+            braincell.mech.Ion("CdpLVA_SU2015_DCN", name="ca_lva", Ci_initializer=60e-6 * u.mM),
+        )
+        cell.paint(
+            region,
+            braincell.mech.Channel("CaLVA_SU2015_DCN", ion_name="ca_lva"),
+        )
+
+        cell.init_state(); rcell = cell
+
+        channel_layout = next(layout for layout in rcell.layouts if layout.kind == "channel:CaLVA_SU2015_DCN")
+        ca_hva = rcell.get_ion("ca_hva")
+        ca_lva = rcell.get_ion("ca_lva")
+        node = rcell.get_runtime_node(channel_layout.id)
+
+        self.assertIs(ca_lva.channels["CaLVA_SU2015_DCN"], node)
+        self.assertNotIn("CaLVA_SU2015_DCN", ca_hva.channels)
+        self.assertEqual(rcell.runtime.bound_ion_keys[channel_layout.id], ("ca_lva",))
+        with self.assertRaises(ValueError):
+            rcell.get_ion("ca")
+
     def test_same_ion_instance_name_cannot_mix_different_classes(self) -> None:
         cell = Cell(_build_tree())
         cell.paint(
@@ -880,7 +1523,6 @@ class CellLifecycleInlineTest(unittest.TestCase):
 # ---------------------------------------------------------------------------
 
 from dataclasses import dataclass as _dataclass
-import numpy as np
 
 from braincell._compute.runtime import (
     CLAMP_KINDS,

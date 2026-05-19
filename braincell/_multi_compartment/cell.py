@@ -424,6 +424,8 @@ class Cell(HHTypedNeuron):
             self._V_init if self._V_init is not None
             else cv_value_vector(self, attr_name="v")
         )
+        if self._V_init is not None:
+            v_initializer = bridge.fill_like(self.varshape, v_initializer)
         self.V = DiffEqState(braintools.init.param(v_initializer, self.varshape, batch_size))
         self.spike = brainstate.ShortTermState(self.get_spike(self.V.value, self.V.value))
         self._current_time_state.value = 0.0 * u.ms
@@ -1897,6 +1899,8 @@ class Cell(HHTypedNeuron):
         v_init = self._V_init
         if v_init is None:
             v_init = cv_value_vector(self, attr_name="v")
+        else:
+            v_init = bridge.fill_like(self.varshape, v_init)
         self.V.value = braintools.init.param(v_init, self.varshape, batch_size)
         self.spike.value = self.get_spike(self.V.value, self.V.value)
         self._current_time_state.value = 0.0 * u.ms

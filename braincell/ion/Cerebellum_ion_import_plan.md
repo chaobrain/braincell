@@ -33,7 +33,7 @@
 
 ## What is now supported
 
-- `KineticIon` supports diffeq/algebraic species, `Conserve`, factor-based visible/amount conversion, and resolved full species views.
+- `KineticIon` supports diffeq/algebraic species, `Conserve`, factor-based visible/scaled conversion, and resolved full species views.
 - `Ci` is a reserved species name and still feeds the standard `Ion.pack_info()` path.
 - Current-driven ion dynamics can optionally reuse a precomputed total-current snapshot when one is provided by the caller.
 

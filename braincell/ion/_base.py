@@ -91,13 +91,14 @@ class Reaction:
         Right-hand stoichiometry. Keys are species names and values are
         positive integers.
     forward : callable
-        Callable ``forward(owner, V, species_values)`` returning the visible
-        reaction coefficient for the forward direction. After multiplication by
-        the left-hand visible species product, the resulting flux must have
-        ``amount / time`` units.
+        Callable ``forward(owner, V, species_values)`` returning the forward
+        reaction coefficient as a quantity or scalar. Runtime multiplies it by
+        the left-hand visible species product directly, preserving quantity
+        units.
     backward : callable or None, optional
         Optional callable for the reverse direction. ``None`` denotes a
-        single-direction reaction.
+        single-direction reaction. As with ``forward``, its returned value is
+        multiplied directly by the right-hand visible species product.
     """
 
     lhs: dict[str, int]
@@ -115,8 +116,9 @@ class Source:
     target : str
         Target diffeq species.
     flux : callable
-        Callable ``flux(owner, V, species_values)`` returning an
-        ``amount / time`` contribution to ``target``.
+        Callable ``flux(owner, V, species_values)`` returning a contribution to
+        the factor-scaled derivative of ``target``. When ``target`` has no
+        factor this reduces to the ordinary visible derivative.
     """
 
     target: str
@@ -135,7 +137,7 @@ class Conserve:
         The single algebraic species solved from the conservation law.
     total : callable
         Callable ``total(owner, V, species_values)`` returning the conserved
-        pool size in ``amount`` units.
+        pool size in factor-scaled units.
     """
 
     species: tuple[str, ...]
@@ -341,8 +343,10 @@ class KineticIon(IndependentIntegration):
     Notes
     -----
     Species live in visible units during integration. ``factor`` only mediates
-    temporary visible/amount conversion inside conservation and flux
-    calculations; species values are not stored in amount form.
+    temporary visible/scaled conversion inside conservation and derivative
+    mapping; species values are not stored in scaled form. Reaction laws remain
+    in the visible domain, matching NEURON's ``KINETIC``/``COMPARTMENT``
+    behavior.
     """
 
     factors: ClassVar[tuple[Factor, ...]] = ()
@@ -358,8 +362,9 @@ class KineticIon(IndependentIntegration):
         Co=None,
         temp=None,
         valence=None,
+        species_initializers: dict[str, Any] | None = None,
         solver: str = "rk4",
-        substeps: int = 1,
+        substeps: int = 5,
     ):
         """Initialize one declarative kinetic-ion instance.
 
@@ -395,6 +400,7 @@ class KineticIon(IndependentIntegration):
             allow_none=False,
         )
         self.temp = braintools.init.param(temp, self.varshape, allow_none=False)
+        self.species_initializers = dict(species_initializers or {})
 
     @property
     def E(self):
@@ -552,20 +558,26 @@ class _Species:
     def init(self, batch_size: int = None):
         """Materialize runtime species attributes from class declarations."""
         for spec in self.specs.species_by_name.values():
-            value = braintools.init.param(spec.init, self.owner.varshape, batch_size)
+            init = self.owner.species_initializers.get(spec.name, spec.init)
+            value = braintools.init.param(init, self.owner.varshape, batch_size)
             if spec.name in self.specs.diffeq_set:
                 setattr(self.owner, spec.name, DiffEqState(value))
             else:
-                setattr(self.owner, spec.name, value)
+                setattr(self.owner, spec.name, brainstate.HiddenState(value))
 
     def reset(self, batch_size: int = None):
         """Reset runtime species attributes back to their declared initializers."""
         for spec in self.specs.species_by_name.values():
-            value = braintools.init.param(spec.init, self.owner.varshape, batch_size)
+            init = self.owner.species_initializers.get(spec.name, spec.init)
+            value = braintools.init.param(init, self.owner.varshape, batch_size)
             if spec.name in self.specs.diffeq_set:
                 getattr(self.owner, spec.name).value = value
             else:
-                setattr(self.owner, spec.name, value)
+                raw = getattr(self.owner, spec.name)
+                if isinstance(raw, brainstate.State):
+                    raw.value = value
+                else:
+                    setattr(self.owner, spec.name, brainstate.HiddenState(value))
 
     def value(self, name: str):
         """Return one species' current visible value."""
@@ -576,22 +588,28 @@ class _Species:
         """Write one diffeq species derivative."""
         getattr(self.owner, name).derivative = value
 
-    def to_amount(self, name: str, value=None):
-        """Convert a visible species value to amount using its factor."""
+    def factor_value(self, name: str):
+        """Return one species' concrete factor value, defaulting to ``1``."""
+        spec = self.specs.species_by_name[name]
+        if spec.factor is None:
+            return 1.0
+        return self.specs.factors_by_name[spec.factor].value(self.owner)
+
+    def to_scaled(self, name: str, value=None):
+        """Convert a visible species value to its factor-scaled form."""
         if value is None:
             value = self.value(name)
         spec = self.specs.species_by_name[name]
         if spec.factor is None:
             return value
-        return self.specs.factors_by_name[spec.factor].value(self.owner) * value
+        return self.factor_value(name) * value
 
-    def from_amount(self, name: str, amount):
-        """Convert an amount back to the visible species domain."""
+    def from_scaled(self, name: str, scaled):
+        """Convert a factor-scaled value back to the visible domain."""
         spec = self.specs.species_by_name[name]
         if spec.factor is None:
-            return amount
-        return amount / self.specs.factors_by_name[spec.factor].value(self.owner)
-
+            return scaled
+        return scaled / self.factor_value(name)
 
 class _Conserve:
     """Resolve algebraic species from declared conservation relations."""
@@ -605,20 +623,24 @@ class _Conserve:
         """Return a full visible species map that satisfies all constraints."""
         values = {name: self.species.value(name) for name in self.specs.species_by_name}
         for conserve in self.specs.conserves:
-            total_amount = conserve.total(self.owner, V, values)
-            algebraic_amount = total_amount
+            total_scaled = conserve.total(self.owner, V, values)
+            algebraic_scaled = total_scaled
             for name in conserve.species:
                 if name == conserve.algebraic:
                     continue
-                algebraic_amount = algebraic_amount - self.species.to_amount(name, values[name])
-            values[conserve.algebraic] = self.species.from_amount(conserve.algebraic, algebraic_amount)
+                algebraic_scaled = algebraic_scaled - self.species.to_scaled(name, values[name])
+            values[conserve.algebraic] = self.species.from_scaled(conserve.algebraic, algebraic_scaled)
         return values
 
     def writeback(self, V=None):
         """Update cached algebraic species values on the owner object."""
         values = self.resolve(V)
         for name in self.specs.algebraic_names:
-            setattr(self.owner, name, values[name])
+            raw = getattr(self.owner, name)
+            if isinstance(raw, brainstate.State):
+                raw.value = values[name]
+            else:
+                setattr(self.owner, name, brainstate.HiddenState(values[name]))
 
 
 class _Flux:
@@ -630,20 +652,26 @@ class _Flux:
         self.species = species
 
     def compute(self, V, species_values: dict[str, Any], *, total_current=None) -> None:
-        """Accumulate amount-domain fluxes and write visible derivatives."""
-        amount_derivs = {
-            name: 0.0 * self.species.to_amount(name, species_values[name]) / u.ms
+        """Accumulate scaled-domain fluxes and write visible derivatives."""
+        scaled_derivs = {
+            name: 0.0 * self.species.to_scaled(name, species_values[name]) / u.ms
             for name in self.specs.diffeq_names
         }
 
         for reaction in self.specs.reactions:
             flux = self._reaction_flux(reaction, V, species_values)
             for name, stoich in reaction.lhs.items():
-                if name in amount_derivs:
-                    amount_derivs[name] = amount_derivs[name] - stoich * flux
+                if name in scaled_derivs:
+                    contrib = stoich * flux
+                    if hasattr(scaled_derivs[name], "unit") and hasattr(contrib, "in_unit"):
+                        contrib = contrib.in_unit(scaled_derivs[name].unit)
+                    scaled_derivs[name] = scaled_derivs[name] - contrib
             for name, stoich in reaction.rhs.items():
-                if name in amount_derivs:
-                    amount_derivs[name] = amount_derivs[name] + stoich * flux
+                if name in scaled_derivs:
+                    contrib = stoich * flux
+                    if hasattr(scaled_derivs[name], "unit") and hasattr(contrib, "in_unit"):
+                        contrib = contrib.in_unit(scaled_derivs[name].unit)
+                    scaled_derivs[name] = scaled_derivs[name] + contrib
 
         for source in self.specs.sources:
             try:
@@ -655,20 +683,22 @@ class _Flux:
                 )
             except TypeError:
                 contrib = source.flux(self.owner, V, species_values)
-            amount_derivs[source.target] = amount_derivs[source.target] + contrib
+            scaled_derivs[source.target] = scaled_derivs[source.target] + contrib
 
         for name in self.specs.diffeq_names:
-            self.species.set_derivative(name, self.species.from_amount(name, amount_derivs[name]))
+            self.species.set_derivative(name, self.species.from_scaled(name, scaled_derivs[name]))
 
     def _reaction_flux(self, reaction: Reaction, V, species_values: dict[str, Any]):
-        """Return the net amount flux for one reaction."""
+        """Return the net reaction flux with its native quantity units."""
         forward = reaction.forward(self.owner, V, species_values)
         for name, stoich in reaction.lhs.items():
-            forward = forward * (species_values[name] if stoich == 1 else species_values[name] ** stoich)
+            value = species_values[name]
+            forward = forward * (value if stoich == 1 else value ** stoich)
         if reaction.backward is None:
             return forward
 
         backward = reaction.backward(self.owner, V, species_values)
         for name, stoich in reaction.rhs.items():
-            backward = backward * (species_values[name] if stoich == 1 else species_values[name] ** stoich)
+            value = species_values[name]
+            backward = backward * (value if stoich == 1 else value ** stoich)
         return forward - backward

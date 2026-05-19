@@ -35,6 +35,8 @@ __all__ = [
     "CaHT_HM1992",
     "CaHT_Re1993",
     "CaL_IS2008",
+    "CaHVA_SU2015_DCN",
+    "CaLVA_SU2015_DCN",
     "Cav1p2_MA2020",
     "Cav1p3_MA2020",
     "Cav3p1_MA2020",
@@ -374,6 +376,124 @@ class CaL_IS2008(HH):
         _ = unused
         V = (V - self.V_sh).to_decimal(u.mV)
         return 300.0 + 100.0 / (u.math.exp((V + 40.0) / 9.5) + u.math.exp(-(V + 40.0) / 9.5))
+
+
+@register_channel("CaHVA_SU2015_DCN")
+class CaHVA_SU2015_DCN(HH):
+    """Template-based import of ``CaHVA_SU15_DCN.mod``."""
+
+    __module__ = "braincell.channel"
+    root_type = Calcium
+    gates = (Gate("m", power=3),)
+
+    def __init__(
+        self,
+        size: brainstate.typing.Size,
+        perm: Union[brainstate.typing.ArrayLike, Callable] = 7.5e-6 * (u.cm / u.second),
+        temp: brainstate.typing.ArrayLike = u.celsius2kelvin(36.0),
+        qdeltat: Union[brainstate.typing.ArrayLike, Callable] = 1.0,
+        name: Optional[str] = None,
+    ):
+        super().__init__(size=size, name=name)
+        self.perm = braintools.init.param(perm, self.varshape, allow_none=False)
+        self.temp = braintools.init.param(temp, self.varshape, allow_none=False)
+        self.qdeltat = braintools.init.param(qdeltat, self.varshape, allow_none=False)
+
+    def current(self, V, Ca: IonInfo, *unused):
+        _ = unused
+        v_mV = V.to_decimal(u.mV)
+        T = self.temp.to_decimal(u.kelvin)
+        ci = Ca.Ci.to_decimal(u.mM)
+        co = Ca.Co.to_decimal(u.mM)
+        perm = self.perm.to_decimal(u.cm / u.second)
+        A = u.math.exp(-23.20764929 * v_mV / T)
+        drive = (4.47814e6 * v_mV / T) * ((ci / 1000.0) - (co / 1000.0) * A) / (1.0 - A)
+        current_value = perm * self.m.value ** 3 * drive
+        # NEURON's raw ``ica`` is outward-positive, so inward calcium entry
+        # appears as a negative current. BrainCell channel currents use the
+        # repo-wide inward-positive convention, so imported mechanisms flip
+        # the sign here and comparisons should use ``-neuron_ica``.
+        return -current_value * (u.mA / (u.cm ** 2))
+
+    def f_m_inf(self, V, Ca: IonInfo, *unused):
+        _ = (Ca, unused)
+        V = V.to_decimal(u.mV)
+        return 1.0 / (1.0 + u.math.exp((V + 34.5) / -9.0))
+
+    def f_m_tau(self, V, Ca: IonInfo, *unused):
+        _ = (Ca, unused)
+        V = V.to_decimal(u.mV)
+        activation = 31.746 / (u.math.exp((V - 5.0) / -13.89) + 1.0)
+        correction = 3.97e-4 * (V + 8.9) / (u.math.exp((V + 8.9) / 5.0) - 1.0)
+        return 1.0 / (activation + correction) / self.qdeltat
+
+
+@register_channel("CaLVA_SU2015_DCN")
+class CaLVA_SU2015_DCN(HH):
+    """Template-based import of ``CaLVA_SU15_DCN.mod``."""
+
+    __module__ = "braincell.channel"
+    root_type = Calcium
+    gates = (
+        Gate("m", power=2),
+        Gate("h"),
+    )
+
+    def __init__(
+        self,
+        size: brainstate.typing.Size,
+        perm: Union[brainstate.typing.ArrayLike, Callable] = 1.0 * (u.cm / u.second),
+        temp: brainstate.typing.ArrayLike = u.celsius2kelvin(36.0),
+        qdeltat: Union[brainstate.typing.ArrayLike, Callable] = 1.0,
+        name: Optional[str] = None,
+    ):
+        super().__init__(size=size, name=name)
+        self.perm = braintools.init.param(perm, self.varshape, allow_none=False)
+        self.temp = braintools.init.param(temp, self.varshape, allow_none=False)
+        self.qdeltat = braintools.init.param(qdeltat, self.varshape, allow_none=False)
+
+    def current(self, V, Ca: IonInfo, *unused):
+        _ = unused
+        v_mV = V.to_decimal(u.mV)
+        T = self.temp.to_decimal(u.kelvin)
+        ci = Ca.Ci.to_decimal(u.mM)
+        co = Ca.Co.to_decimal(u.mM)
+        perm = self.perm.to_decimal(u.cm / u.second)
+        A = u.math.exp(-23.20764929 * v_mV / T)
+        drive = (4.47814e6 * v_mV / T) * ((ci / 1000.0) - (co / 1000.0) * A) / (1.0 - A)
+        current_value = perm * self.m.value ** 2 * self.h.value * drive
+        # NEURON's raw ``ical`` is outward-positive, so inward calcium entry
+        # appears as a negative current. BrainCell channel currents use the
+        # repo-wide inward-positive convention, so imported mechanisms flip
+        # the sign here and comparisons should use ``-neuron_ical``.
+        return -current_value * (u.mA / (u.cm ** 2))
+
+    def f_m_inf(self, V, Ca: IonInfo, *unused):
+        _ = (Ca, unused)
+        V = V.to_decimal(u.mV)
+        return 1.0 / (1.0 + u.math.exp((V + 56.0) / -6.2))
+
+    def f_m_tau(self, V, Ca: IonInfo, *unused):
+        _ = (Ca, unused)
+        V = V.to_decimal(u.mV)
+        return (
+            0.333 / (u.math.exp((V + 131.0) / -16.7) + u.math.exp((V + 15.8) / 18.2))
+            + 0.204
+        ) / self.qdeltat
+
+    def f_h_inf(self, V, Ca: IonInfo, *unused):
+        _ = (Ca, unused)
+        V = V.to_decimal(u.mV)
+        return 1.0 / (1.0 + u.math.exp((V + 80.0) / 4.0))
+
+    def f_h_tau(self, V, Ca: IonInfo, *unused):
+        _ = (Ca, unused)
+        V = V.to_decimal(u.mV)
+        return u.math.where(
+            V < -81.0,
+            0.333 * u.math.exp((V + 466.0) / 66.0),
+            0.333 * u.math.exp((V + 21.0) / -10.5) + 9.32,
+        ) / self.qdeltat
 
 
 @register_channel("Cav1p2_MA2020")
@@ -775,4 +895,3 @@ class Ca_ZH2019_IO(HH):
         return 40.0 + 30.0 * (
             1.0 / (1.0 + u.math.exp((V + 84.0) / 7.3))
         ) * u.math.exp((V + 160.0) / 30.0)
-

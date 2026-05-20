@@ -87,13 +87,11 @@ class CaN_IS2008(HH):
         modulation = Ca.Ci / (Ca.Ci + 0.2 * u.mM)
         return self.g_max * modulation * self.conductance_factor(V, Ca) * (self.E - V)
 
-    def f_p_inf(self, V, *unused):
-        _ = unused
+    def f_p_inf(self, V, Ca: IonInfo):
         V = V.to_decimal(u.mV)
         return 1.0 / (1.0 + u.math.exp(-(V + 43.0) / 5.2))
 
-    def f_p_tau(self, V, *unused):
-        _ = unused
+    def f_p_tau(self, V, Ca: IonInfo):
         V = V.to_decimal(u.mV)
         return 2.7 / (u.math.exp(-(V + 55.0) / 15.0) + u.math.exp((V + 55.0) / 15.0)) + 1.6
 
@@ -133,23 +131,19 @@ class CaT_HM1992(HH):
     def current(self, V, Ca: IonInfo):
         return self.g_max * self.conductance_factor(V, Ca) * (Ca.E - V)
 
-    def f_p_inf(self, V, *unused):
-        _ = unused
+    def f_p_inf(self, V, Ca: IonInfo):
         V = (V - self.V_sh).to_decimal(u.mV)
         return 1.0 / (1.0 + u.math.exp(-(V + 59.0) / 6.2))
 
-    def f_p_tau(self, V, *unused):
-        _ = unused
+    def f_p_tau(self, V, Ca: IonInfo):
         V = (V - self.V_sh).to_decimal(u.mV)
         return 1.0 / (u.math.exp(-(V + 132.0) / 16.7) + u.math.exp((V + 16.8) / 18.2)) + 0.612
 
-    def f_q_inf(self, V, *unused):
-        _ = unused
+    def f_q_inf(self, V, Ca: IonInfo):
         V = (V - self.V_sh).to_decimal(u.mV)
         return 1.0 / (1.0 + u.math.exp((V + 83.0) / 4.0))
 
-    def f_q_tau(self, V, *unused):
-        _ = unused
+    def f_q_tau(self, V, Ca: IonInfo):
         V = (V - self.V_sh).to_decimal(u.mV)
         return u.math.where(
             V >= -80.0,
@@ -193,23 +187,19 @@ class CaT_HP1992(HH):
     def current(self, V, Ca: IonInfo):
         return self.g_max * self.conductance_factor(V, Ca) * (Ca.E - V)
 
-    def f_p_inf(self, V, *unused):
-        _ = unused
+    def f_p_inf(self, V, Ca: IonInfo):
         V = (V - self.V_sh).to_decimal(u.mV)
         return 1.0 / (1.0 + u.math.exp(-(V + 52.0) / 7.4))
 
-    def f_p_tau(self, V, *unused):
-        _ = unused
+    def f_p_tau(self, V, Ca: IonInfo):
         V = (V - self.V_sh).to_decimal(u.mV)
         return 3.0 + 1.0 / (u.math.exp((V + 27.0) / 10.0) + u.math.exp(-(V + 102.0) / 15.0))
 
-    def f_q_inf(self, V, *unused):
-        _ = unused
+    def f_q_inf(self, V, Ca: IonInfo):
         V = (V - self.V_sh).to_decimal(u.mV)
         return 1.0 / (1.0 + u.math.exp((V + 80.0) / 5.0))
 
-    def f_q_tau(self, V, *unused):
-        _ = unused
+    def f_q_tau(self, V, Ca: IonInfo):
         V = (V - self.V_sh).to_decimal(u.mV)
         return 85.0 + 1.0 / (u.math.exp((V + 48.0) / 4.0) + u.math.exp(-(V + 407.0) / 50.0))
 
@@ -249,23 +239,19 @@ class CaHT_HM1992(HH):
     def current(self, V, Ca: IonInfo):
         return self.g_max * self.conductance_factor(V, Ca) * (Ca.E - V)
 
-    def f_p_inf(self, V, *unused):
-        _ = unused
+    def f_p_inf(self, V, Ca: IonInfo):
         V = (V - self.V_sh).to_decimal(u.mV)
         return 1.0 / (1.0 + u.math.exp(-(V + 59.0) / 6.2))
 
-    def f_p_tau(self, V, *unused):
-        _ = unused
+    def f_p_tau(self, V, Ca: IonInfo):
         V = (V - self.V_sh).to_decimal(u.mV)
         return 1.0 / (u.math.exp(-(V + 132.0) / 16.7) + u.math.exp((V + 16.8) / 18.2)) + 0.612
 
-    def f_q_inf(self, V, *unused):
-        _ = unused
+    def f_q_inf(self, V, Ca: IonInfo):
         V = (V - self.V_sh).to_decimal(u.mV)
         return 1.0 / (1.0 + u.math.exp((V + 83.0) / 4.0))
 
-    def f_q_tau(self, V, *unused):
-        _ = unused
+    def f_q_tau(self, V, Ca: IonInfo):
         V = (V - self.V_sh).to_decimal(u.mV)
         return u.math.where(
             V >= -80.0,
@@ -309,24 +295,20 @@ class CaHT_Re1993(HH):
     def current(self, V, Ca: IonInfo):
         return self.g_max * self.conductance_factor(V, Ca) * (Ca.E - V)
 
-    def f_p_alpha(self, V, *unused):
-        _ = unused
+    def f_p_alpha(self, V, Ca: IonInfo):
         temp = (-V + self.V_sh).to_decimal(u.mV)
         delta = -27.0 + temp
         return 0.055 * delta / (u.math.exp(delta / 3.8) - 1.0)
 
-    def f_p_beta(self, V, *unused):
-        _ = unused
+    def f_p_beta(self, V, Ca: IonInfo):
         temp = (-V + self.V_sh).to_decimal(u.mV)
         return 0.94 * u.math.exp((-75.0 + temp) / 17.0)
 
-    def f_q_alpha(self, V, *unused):
-        _ = unused
+    def f_q_alpha(self, V, Ca: IonInfo):
         temp = (-V + self.V_sh).to_decimal(u.mV)
         return 0.000457 * u.math.exp((-13.0 + temp) / 50.0)
 
-    def f_q_beta(self, V, *unused):
-        _ = unused
+    def f_q_beta(self, V, Ca: IonInfo):
         temp = (-V + self.V_sh).to_decimal(u.mV)
         return 0.0065 / (u.math.exp((-15.0 + temp) / 28.0) + 1.0)
 
@@ -366,23 +348,19 @@ class CaL_IS2008(HH):
     def current(self, V, Ca: IonInfo):
         return self.g_max * self.conductance_factor(V, Ca) * (Ca.E - V)
 
-    def f_p_inf(self, V, *unused):
-        _ = unused
+    def f_p_inf(self, V, Ca: IonInfo):
         V = (V - self.V_sh).to_decimal(u.mV)
         return 1.0 / (1.0 + u.math.exp(-(V + 10.0) / 4.0))
 
-    def f_p_tau(self, V, *unused):
-        _ = unused
+    def f_p_tau(self, V, Ca: IonInfo):
         V = (V - self.V_sh).to_decimal(u.mV)
         return 0.4 + 0.7 / (u.math.exp(-(V + 5.0) / 15.0) + u.math.exp((V + 5.0) / 15.0))
 
-    def f_q_inf(self, V, *unused):
-        _ = unused
+    def f_q_inf(self, V, Ca: IonInfo):
         V = (V - self.V_sh).to_decimal(u.mV)
         return 1.0 / (1.0 + u.math.exp((V + 25.0) / 2.0))
 
-    def f_q_tau(self, V, *unused):
-        _ = unused
+    def f_q_tau(self, V, Ca: IonInfo):
         V = (V - self.V_sh).to_decimal(u.mV)
         return 300.0 + 100.0 / (u.math.exp((V + 40.0) / 9.5) + u.math.exp(-(V + 40.0) / 9.5))
 
@@ -408,8 +386,7 @@ class CaHVA_SU2015_DCN(HH):
         self.temp = braintools.init.param(temp, self.varshape, allow_none=False)
         self.qdeltat = braintools.init.param(qdeltat, self.varshape, allow_none=False)
 
-    def current(self, V, Ca: IonInfo, *unused):
-        _ = unused
+    def current(self, V, Ca: IonInfo):
         v_mV = V.to_decimal(u.mV)
         T = self.temp.to_decimal(u.kelvin)
         ci = Ca.Ci.to_decimal(u.mM)
@@ -424,13 +401,11 @@ class CaHVA_SU2015_DCN(HH):
         # the sign here and comparisons should use ``-neuron_ica``.
         return -current_value * (u.mA / (u.cm ** 2))
 
-    def f_m_inf(self, V, Ca: IonInfo, *unused):
-        _ = (Ca, unused)
+    def f_m_inf(self, V, Ca: IonInfo):
         V = V.to_decimal(u.mV)
         return 1.0 / (1.0 + u.math.exp((V + 34.5) / -9.0))
 
-    def f_m_tau(self, V, Ca: IonInfo, *unused):
-        _ = (Ca, unused)
+    def f_m_tau(self, V, Ca: IonInfo):
         V = V.to_decimal(u.mV)
         activation = 31.746 / (u.math.exp((V - 5.0) / -13.89) + 1.0)
         correction = 3.97e-4 * (V + 8.9) / (u.math.exp((V + 8.9) / 5.0) - 1.0)
@@ -461,8 +436,7 @@ class CaLVA_SU2015_DCN(HH):
         self.temp = braintools.init.param(temp, self.varshape, allow_none=False)
         self.qdeltat = braintools.init.param(qdeltat, self.varshape, allow_none=False)
 
-    def current(self, V, Ca: IonInfo, *unused):
-        _ = unused
+    def current(self, V, Ca: IonInfo):
         v_mV = V.to_decimal(u.mV)
         T = self.temp.to_decimal(u.kelvin)
         ci = Ca.Ci.to_decimal(u.mM)
@@ -477,26 +451,22 @@ class CaLVA_SU2015_DCN(HH):
         # the sign here and comparisons should use ``-neuron_ical``.
         return -current_value * (u.mA / (u.cm ** 2))
 
-    def f_m_inf(self, V, Ca: IonInfo, *unused):
-        _ = (Ca, unused)
+    def f_m_inf(self, V, Ca: IonInfo):
         V = V.to_decimal(u.mV)
         return 1.0 / (1.0 + u.math.exp((V + 56.0) / -6.2))
 
-    def f_m_tau(self, V, Ca: IonInfo, *unused):
-        _ = (Ca, unused)
+    def f_m_tau(self, V, Ca: IonInfo):
         V = V.to_decimal(u.mV)
         return (
             0.333 / (u.math.exp((V + 131.0) / -16.7) + u.math.exp((V + 15.8) / 18.2))
             + 0.204
         ) / self.qdeltat
 
-    def f_h_inf(self, V, Ca: IonInfo, *unused):
-        _ = (Ca, unused)
+    def f_h_inf(self, V, Ca: IonInfo):
         V = V.to_decimal(u.mV)
         return 1.0 / (1.0 + u.math.exp((V + 80.0) / 4.0))
 
-    def f_h_tau(self, V, Ca: IonInfo, *unused):
-        _ = (Ca, unused)
+    def f_h_tau(self, V, Ca: IonInfo):
         V = V.to_decimal(u.mV)
         return u.math.where(
             V < -81.0,
@@ -539,33 +509,27 @@ class Cav1p2_MA2020_GoC(HH):
     def current(self, V, Ca: IonInfo):
         return self.g_max * self.conductance_factor(V, Ca) * (Ca.E - V)
 
-    def f_m_inf(self, V, Ca: IonInfo, *unused):
-        _ = (Ca, unused)
+    def f_m_inf(self, V, Ca: IonInfo):
         V = V.to_decimal(u.mV)
         return 1.0 / (1.0 + u.math.exp((V + 8.9) / -6.7))
 
-    def f_h_inf(self, V, Ca: IonInfo, *unused):
-        _ = (Ca, unused)
+    def f_h_inf(self, V, Ca: IonInfo):
         V = V.to_decimal(u.mV)
         return self.VDI / (1.0 + u.math.exp((V + 55.0) / 8.0)) + (1.0 - self.VDI)
 
-    def f_n_inf(self, V, Ca: IonInfo, *unused):
-        _ = (V, unused)
+    def f_n_inf(self, V, Ca: IonInfo):
         return self.kf / (self.kf + Ca.Ci / u.mM)
 
-    def f_m_tau(self, V, Ca: IonInfo, *unused):
-        _ = (Ca, unused)
+    def f_m_tau(self, V, Ca: IonInfo):
         V = V.to_decimal(u.mV)
         m_alpha = 39800.0 * (V + 8.124) / (u.math.exp((V + 8.124) / 9.005) - 1.0)
         m_beta = 990.0 * u.math.exp(V / 31.4)
         return 1.0 / (m_alpha + m_beta)
 
-    def f_h_tau(self, V, Ca: IonInfo, *unused):
-        _ = (V, Ca, unused)
+    def f_h_tau(self, V, Ca: IonInfo):
         return 44.3
 
-    def f_n_tau(self, V, Ca: IonInfo, *unused):
-        _ = (V, Ca, unused)
+    def f_n_tau(self, V, Ca: IonInfo):
         return 0.5
 
 
@@ -603,33 +567,27 @@ class Cav1p3_MA2020_GoC(HH):
     def current(self, V, Ca: IonInfo):
         return self.g_max * self.conductance_factor(V, Ca) * (Ca.E - V)
 
-    def f_m_inf(self, V, Ca: IonInfo, *unused):
-        _ = (Ca, unused)
+    def f_m_inf(self, V, Ca: IonInfo):
         V = V.to_decimal(u.mV)
         return 1.0 / (u.math.exp((V - (-40.0)) / -5.0) + 1.0)
 
-    def f_h_inf(self, V, Ca: IonInfo, *unused):
-        _ = (Ca, unused)
+    def f_h_inf(self, V, Ca: IonInfo):
         V = V.to_decimal(u.mV)
         return self.VDI / (u.math.exp((V - (-37.0)) / 5.0) + 1.0) + (1.0 - self.VDI)
 
-    def f_n_inf(self, V, Ca: IonInfo, *unused):
-        _ = (V, unused)
+    def f_n_inf(self, V, Ca: IonInfo):
         return self.kf / (self.kf + Ca.Ci / u.mM)
 
-    def f_m_tau(self, V, Ca: IonInfo, *unused):
-        _ = (Ca, unused)
+    def f_m_tau(self, V, Ca: IonInfo):
         V = V.to_decimal(u.mV)
         m_alpha = 39800.0 * 15.005 / u.math.exprel((V + 67.24) / 15.005)
         m_beta = 3500.0 * u.math.exp(V / 31.4)
         return 1.0 / (m_alpha + m_beta)
 
-    def f_h_tau(self, V, Ca: IonInfo, *unused):
-        _ = (V, Ca, unused)
+    def f_h_tau(self, V, Ca: IonInfo):
         return 44.3
 
-    def f_n_tau(self, V, Ca: IonInfo, *unused):
-        _ = (V, Ca, unused)
+    def f_n_tau(self, V, Ca: IonInfo):
         return 0.5
 
 
@@ -680,16 +638,13 @@ class Cav3p1_MA2020_GoC(HH):
         drive = ghk_flux(V=V, ci=Ca.Ci, co=Ca.Co, z=self.z, T=self.temp)
         return -self.g_max * self.conductance_factor(V, Ca) * drive
 
-    def f_p_inf(self, V, *unused):
-        _ = unused
+    def f_p_inf(self, V, Ca: IonInfo):
         return 1.0 / (1.0 + u.math.exp((V - self.v0_m_inf) / self.k_m_inf))
 
-    def f_q_inf(self, V, *unused):
-        _ = unused
+    def f_q_inf(self, V, Ca: IonInfo):
         return 1.0 / (1.0 + u.math.exp((V - self.v0_h_inf) / self.k_h_inf))
 
-    def f_p_tau(self, V, *unused):
-        _ = unused
+    def f_p_tau(self, V, Ca: IonInfo):
         return u.math.where(
             V <= -90.0 * u.mV,
             1.0,
@@ -701,8 +656,7 @@ class Cav3p1_MA2020_GoC(HH):
             ),
         )
 
-    def f_q_tau(self, V, *unused):
-        _ = unused
+    def f_q_tau(self, V, Ca: IonInfo):
         return self.C_tau_h + self.A_tau_h / u.math.exp((V - self.v0_tau_h1) / self.k_tau_h1)
 
 
@@ -740,8 +694,7 @@ class Cav2p1_RI2021_SC(HH):
     def _shifted_voltage(self, V):
         return V - self.V_sh
 
-    def current(self, V, Ca: IonInfo, *unused):
-        _ = unused
+    def current(self, V, Ca: IonInfo):
         drive = ghk_flux(
             V=self._shifted_voltage(V),
             ci=Ca.Ci,
@@ -751,13 +704,11 @@ class Cav2p1_RI2021_SC(HH):
         )
         return -self.g_max * self.conductance_factor(V, Ca) * drive
 
-    def f_m_inf(self, V, Ca: IonInfo, *unused):
-        _ = (Ca, unused)
+    def f_m_inf(self, V, Ca: IonInfo):
         V = self._shifted_voltage(V)
         return 1.0 / (1.0 + u.math.exp(-(V - self.vhalfm) / self.cvm))
 
-    def f_m_tau(self, V, Ca: IonInfo, *unused):
-        _ = (Ca, unused)
+    def f_m_tau(self, V, Ca: IonInfo):
         V = self._shifted_voltage(V).to_decimal(u.mV)
         return u.math.where(
             V >= -40.0,
@@ -825,29 +776,24 @@ class Cav3p2_RI2021_SC(HH):
     def _shifted_voltage(self, V):
         return V + self.V_sh
 
-    def current(self, V, Ca: IonInfo, *unused):
-        _ = unused
+    def current(self, V, Ca: IonInfo):
         return self.g_max * self.conductance_factor(V, Ca) * (Ca.E - V)
 
-    def f_m_inf(self, V, Ca: IonInfo, *unused):
-        _ = (Ca, unused)
+    def f_m_inf(self, V, Ca: IonInfo):
         V = self._shifted_voltage(V).to_decimal(u.mV)
         return 1.0 / (1.0 + u.math.exp(-(V + 54.8) / 7.4))
 
-    def f_h_inf(self, V, Ca: IonInfo, *unused):
-        _ = (Ca, unused)
+    def f_h_inf(self, V, Ca: IonInfo):
         V = self._shifted_voltage(V).to_decimal(u.mV)
         return 1.0 / (1.0 + u.math.exp((V + 85.5) / 7.18))
 
-    def f_m_tau(self, V, Ca: IonInfo, *unused):
-        _ = (Ca, unused)
+    def f_m_tau(self, V, Ca: IonInfo):
         V = self._shifted_voltage(V).to_decimal(u.mV)
         return 1.9 + 1.0 / (
             u.math.exp((V + 37.0) / 11.9) + u.math.exp(-(V + 131.6) / 21.0)
         )
 
-    def f_h_tau(self, V, Ca: IonInfo, *unused):
-        _ = (Ca, unused)
+    def f_h_tau(self, V, Ca: IonInfo):
         V = self._shifted_voltage(V).to_decimal(u.mV)
         # Source mod writes:
         #   tau_h = 13.7 + (1942 + exp(...)) / (1 + exp(...)) / phi_h
@@ -921,8 +867,7 @@ class Cav3p3_RI2021_SC(HH):
     def _shifted_voltage(self, V):
         return V - self.V_sh
 
-    def current(self, V, Ca: IonInfo, *unused):
-        _ = unused
+    def current(self, V, Ca: IonInfo):
         drive = ghk_flux(
             V=self._shifted_voltage(V),
             ci=Ca.Ci,
@@ -932,18 +877,15 @@ class Cav3p3_RI2021_SC(HH):
         )
         return -self.g_scale * self.perm * self.conductance_factor(V, Ca) * drive
 
-    def f_n_inf(self, V, Ca: IonInfo, *unused):
-        _ = (Ca, unused)
+    def f_n_inf(self, V, Ca: IonInfo):
         V = self._shifted_voltage(V)
         return 1.0 / (1.0 + u.math.exp(-(V - self.vhalfn) / self.kn))
 
-    def f_l_inf(self, V, Ca: IonInfo, *unused):
-        _ = (Ca, unused)
+    def f_l_inf(self, V, Ca: IonInfo):
         V = self._shifted_voltage(V)
         return 1.0 / (1.0 + u.math.exp(-(V - self.vhalfl) / self.kl))
 
-    def f_n_tau(self, V, Ca: IonInfo, *unused):
-        _ = (Ca, unused)
+    def f_n_tau(self, V, Ca: IonInfo):
         V = self._shifted_voltage(V).to_decimal(u.mV)
         return u.math.where(
             V > -60.0,
@@ -951,8 +893,7 @@ class Cav3p3_RI2021_SC(HH):
             0.875 * u.math.exp((V + 120.0) / 41.0),
         )
 
-    def f_l_tau(self, V, Ca: IonInfo, *unused):
-        _ = (Ca, unused)
+    def f_l_tau(self, V, Ca: IonInfo):
         V = self._shifted_voltage(V).to_decimal(u.mV)
         return u.math.where(
             V > -60.0,
@@ -1002,26 +943,22 @@ class CaHVA_MA2020_GoC(HH):
         self.Kbeta_u = 83.33
         self.V0beta_u = -48.0
 
-    def current(self, V, Ca: IonInfo, *unused):
+    def current(self, V, Ca: IonInfo):
         return self.g_max * self.conductance_factor(V, Ca) * (Ca.E - V)
 
-    def f_s_alpha(self, V, Ca: IonInfo, *unused):
-        _ = (Ca, unused)
+    def f_s_alpha(self, V, Ca: IonInfo):
         V = V.to_decimal(u.mV)
         return self.Aalpha_s * u.math.exp((V - self.V0alpha_s) / self.Kalpha_s)
 
-    def f_s_beta(self, V, Ca: IonInfo, *unused):
-        _ = (Ca, unused)
+    def f_s_beta(self, V, Ca: IonInfo):
         V = V.to_decimal(u.mV)
         return self.Abeta_s * u.math.exp((V - self.V0beta_s) / self.Kbeta_s)
 
-    def f_u_alpha(self, V, Ca: IonInfo, *unused):
-        _ = (Ca, unused)
+    def f_u_alpha(self, V, Ca: IonInfo):
         V = V.to_decimal(u.mV)
         return self.Aalpha_u * u.math.exp((V - self.V0alpha_u) / self.Kalpha_u)
 
-    def f_u_beta(self, V, Ca: IonInfo, *unused):
-        _ = (Ca, unused)
+    def f_u_beta(self, V, Ca: IonInfo):
         V = V.to_decimal(u.mV)
         return self.Abeta_u * u.math.exp((V - self.V0beta_u) / self.Kbeta_u)
 
@@ -1059,26 +996,22 @@ class CaHVA_MA2020_GrC(HH):
         self.Kbeta_u = 83.33
         self.V0beta_u = -48.0
 
-    def current(self, V, Ca: IonInfo, *unused):
+    def current(self, V, Ca: IonInfo):
         return self.g_max * self.conductance_factor(V, Ca) * (Ca.E - V)
 
-    def f_s_alpha(self, V, Ca: IonInfo, *unused):
-        _ = (Ca, unused)
+    def f_s_alpha(self, V, Ca: IonInfo):
         V = V.to_decimal(u.mV)
         return self.Aalpha_s * u.math.exp((V - self.V0alpha_s) / self.Kalpha_s)
 
-    def f_s_beta(self, V, Ca: IonInfo, *unused):
-        _ = (Ca, unused)
+    def f_s_beta(self, V, Ca: IonInfo):
         V = V.to_decimal(u.mV)
         return self.Abeta_s * u.math.exp((V - self.V0beta_s) / self.Kbeta_s)
 
-    def f_u_alpha(self, V, Ca: IonInfo, *unused):
-        _ = (Ca, unused)
+    def f_u_alpha(self, V, Ca: IonInfo):
         V = V.to_decimal(u.mV)
         return self.Aalpha_u * u.math.exp((V - self.V0alpha_u) / self.Kalpha_u)
 
-    def f_u_beta(self, V, Ca: IonInfo, *unused):
-        _ = (Ca, unused)
+    def f_u_beta(self, V, Ca: IonInfo):
         V = V.to_decimal(u.mV)
         return self.Abeta_u * u.math.exp((V - self.V0beta_u) / self.Kbeta_u)
 
@@ -1104,25 +1037,21 @@ class Cav2p3_MA2020_GoC(HH):
         self.g_max = braintools.init.param(g_max, self.varshape, allow_none=False)
         self.temp = braintools.init.param(temp, self.varshape, allow_none=False)
 
-    def current(self, V, Ca: IonInfo, *unused):
+    def current(self, V, Ca: IonInfo):
         return self.g_max * self.conductance_factor(V, Ca) * (Ca.E - V)
 
-    def f_m_inf(self, V, Ca: IonInfo, *unused):
-        _ = (Ca, unused)
+    def f_m_inf(self, V, Ca: IonInfo):
         V = V.to_decimal(u.mV)
         return 1.0 / (1.0 + u.math.exp((V + 48.5) / -3.0))
 
-    def f_h_inf(self, V, Ca: IonInfo, *unused):
-        _ = (Ca, unused)
+    def f_h_inf(self, V, Ca: IonInfo):
         V = V.to_decimal(u.mV)
         return 1.0 / (1.0 + u.math.exp((V + 53.0) / 1.0))
 
-    def f_m_tau(self, V, Ca: IonInfo, *unused):
-        _ = (V, Ca, unused)
+    def f_m_tau(self, V, Ca: IonInfo):
         return 50.0
 
-    def f_h_tau(self, V, Ca: IonInfo, *unused):
-        _ = (V, Ca, unused)
+    def f_h_tau(self, V, Ca: IonInfo):
         return 5.0
 
 @register_channel("Ca_ZH2019_IO")
@@ -1149,20 +1078,17 @@ class Ca_ZH2019_IO(HH):
     def current(self, V):
         return self.g_max * self.f_m_inf(V) * self.h.value * (self.E - V)
 
-    def f_m_inf(self, V, *unused):
-        _ = unused
+    def f_m_inf(self, V):
         V = V.to_decimal(u.mV)
         m_mid = self.mMidV.to_decimal(u.mV)
         term = 1.0 + u.math.exp((m_mid - V) / 4.2)
         return 1.0 / (term * term * term)
 
-    def f_h_inf(self, V, *unused):
-        _ = unused
+    def f_h_inf(self, V):
         V = V.to_decimal(u.mV)
         return 1.0 / (1.0 + u.math.exp((V + 85.5) / 8.6))
 
-    def f_h_tau(self, V, *unused):
-        _ = unused
+    def f_h_tau(self, V):
         V = V.to_decimal(u.mV)
         return 40.0 + 30.0 * (
             1.0 / (1.0 + u.math.exp((V + 84.0) / 7.3))

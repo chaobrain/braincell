@@ -137,17 +137,17 @@ class _P2QHHMixin:
         gates = {gate.name: gate for gate in ch._iter_gates()}
 
         if ch._gate_form(gates["p"]) == "inf_tau":
-            expected_p = ch.f_p_inf(V)
+            expected_p = ch.f_p_inf(V, ca)
         else:
-            alpha_p = ch.f_p_alpha(V)
-            beta_p = ch.f_p_beta(V)
+            alpha_p = ch.f_p_alpha(V, ca)
+            beta_p = ch.f_p_beta(V, ca)
             expected_p = alpha_p / (alpha_p + beta_p)
 
         if ch._gate_form(gates["q"]) == "inf_tau":
-            expected_q = ch.f_q_inf(V)
+            expected_q = ch.f_q_inf(V, ca)
         else:
-            alpha_q = ch.f_q_alpha(V)
-            beta_q = ch.f_q_beta(V)
+            alpha_q = ch.f_q_alpha(V, ca)
+            beta_q = ch.f_q_beta(V, ca)
             expected_q = alpha_q / (alpha_q + beta_q)
 
         self.assertTrue(u.math.allclose(ch.p.value, expected_p, atol=1e-6))
@@ -164,17 +164,17 @@ class _P2QHHMixin:
         gates = {gate.name: gate for gate in ch._iter_gates()}
 
         if ch._gate_form(gates["p"]) == "inf_tau":
-            exp_dp = ch.gate_phi(gates["p"]) * (ch.f_p_inf(V) - ch.p.value) / ch.f_p_tau(V) / u.ms
+            exp_dp = ch.gate_phi(gates["p"]) * (ch.f_p_inf(V, ca) - ch.p.value) / ch.f_p_tau(V, ca) / u.ms
         else:
-            alpha_p = ch.f_p_alpha(V)
-            beta_p = ch.f_p_beta(V)
+            alpha_p = ch.f_p_alpha(V, ca)
+            beta_p = ch.f_p_beta(V, ca)
             exp_dp = ch.gate_phi(gates["p"]) * (alpha_p * (1.0 - ch.p.value) - beta_p * ch.p.value) / u.ms
 
         if ch._gate_form(gates["q"]) == "inf_tau":
-            exp_dq = ch.gate_phi(gates["q"]) * (ch.f_q_inf(V) - ch.q.value) / ch.f_q_tau(V) / u.ms
+            exp_dq = ch.gate_phi(gates["q"]) * (ch.f_q_inf(V, ca) - ch.q.value) / ch.f_q_tau(V, ca) / u.ms
         else:
-            alpha_q = ch.f_q_alpha(V)
-            beta_q = ch.f_q_beta(V)
+            alpha_q = ch.f_q_alpha(V, ca)
+            beta_q = ch.f_q_beta(V, ca)
             exp_dq = ch.gate_phi(gates["q"]) * (alpha_q * (1.0 - ch.q.value) - beta_q * ch.q.value) / u.ms
 
         self.assertTrue(u.math.allclose(ch.p.derivative, exp_dp, atol=1e-6 * u.Hz))
@@ -400,7 +400,7 @@ class CaN_IS2008Test(unittest.TestCase):
         ca = _ca_info()
         ch.init_state(V, ca)
         ch.reset_state(V, ca)
-        self.assertTrue(u.math.allclose(ch.p.value, ch.f_p_inf(V), atol=1e-6))
+        self.assertTrue(u.math.allclose(ch.p.value, ch.f_p_inf(V, ca), atol=1e-6))
 
     def test_compute_derivative_matches_hh_inf_tau_form(self) -> None:
         ch = CaN_IS2008(
@@ -415,7 +415,7 @@ class CaN_IS2008Test(unittest.TestCase):
         ch.p.value = jnp.array([0.25])
         ch.compute_derivative(V, ca)
         phi = ch.gate_phi(ch._iter_gates()[0])
-        expected = phi * (ch.f_p_inf(V) - ch.p.value) / ch.f_p_tau(V) / u.ms
+        expected = phi * (ch.f_p_inf(V, ca) - ch.p.value) / ch.f_p_tau(V, ca) / u.ms
         self.assertTrue(u.math.allclose(ch.p.derivative, expected, atol=1e-6 * u.Hz))
 
     def test_current_depends_on_calcium_concentration(self) -> None:
@@ -562,8 +562,8 @@ class Cav3p1_MA2020_GoCTest(unittest.TestCase):
         ca = _ca_info()
         ch.init_state(V, ca)
         ch.reset_state(V, ca)
-        self.assertTrue(u.math.allclose(ch.p.value, ch.f_p_inf(V), atol=1e-6))
-        self.assertTrue(u.math.allclose(ch.q.value, ch.f_q_inf(V), atol=1e-6))
+        self.assertTrue(u.math.allclose(ch.p.value, ch.f_p_inf(V, ca), atol=1e-6))
+        self.assertTrue(u.math.allclose(ch.q.value, ch.f_q_inf(V, ca), atol=1e-6))
 
     def test_compute_derivative_matches_hh_inf_tau_form(self) -> None:
         ch = Cav3p1_MA2020_GoC(size=1)
@@ -574,8 +574,8 @@ class Cav3p1_MA2020_GoCTest(unittest.TestCase):
         ch.q.value = jnp.array([0.3])
         ch.compute_derivative(V, ca)
         gates = {gate.name: gate for gate in ch._iter_gates()}
-        exp_p = ch.gate_phi(gates["p"]) * (ch.f_p_inf(V) - ch.p.value) / ch.f_p_tau(V) / u.ms
-        exp_q = ch.gate_phi(gates["q"]) * (ch.f_q_inf(V) - ch.q.value) / ch.f_q_tau(V) / u.ms
+        exp_p = ch.gate_phi(gates["p"]) * (ch.f_p_inf(V, ca) - ch.p.value) / ch.f_p_tau(V, ca) / u.ms
+        exp_q = ch.gate_phi(gates["q"]) * (ch.f_q_inf(V, ca) - ch.q.value) / ch.f_q_tau(V, ca) / u.ms
         self.assertTrue(u.math.allclose(ch.p.derivative, exp_p, atol=1e-6 * u.Hz))
         self.assertTrue(u.math.allclose(ch.q.derivative, exp_q, atol=1e-6 * u.Hz))
 

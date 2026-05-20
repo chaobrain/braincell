@@ -120,10 +120,10 @@ class _HHNaMixin:
         ch.init_state(V, na)
         ch.reset_state(V, na)
 
-        alpha_p = ch.f_p_alpha(V)
-        beta_p = ch.f_p_beta(V)
-        alpha_q = ch.f_q_alpha(V)
-        beta_q = ch.f_q_beta(V)
+        alpha_p = ch.f_p_alpha(V, na)
+        beta_p = ch.f_p_beta(V, na)
+        alpha_q = ch.f_q_alpha(V, na)
+        beta_q = ch.f_q_beta(V, na)
         self.assertTrue(
             u.math.allclose(ch.p.value, alpha_p / (alpha_p + beta_p), atol=1e-6)
         )
@@ -143,10 +143,10 @@ class _HHNaMixin:
         ch.q.value = jnp.array([0.9])
         ch.compute_derivative(V, na)
 
-        alpha_p = ch.f_p_alpha(V)
-        beta_p = ch.f_p_beta(V)
-        alpha_q = ch.f_q_alpha(V)
-        beta_q = ch.f_q_beta(V)
+        alpha_p = ch.f_p_alpha(V, na)
+        beta_p = ch.f_p_beta(V, na)
+        alpha_q = ch.f_q_alpha(V, na)
+        beta_q = ch.f_q_beta(V, na)
         gates = {gate.name: gate for gate in ch._iter_gates()}
 
         expected_dp = (
@@ -203,11 +203,12 @@ class Na_Ba2002Test(_HHNaMixin, unittest.TestCase):
     def test_V_sh_shifts_rate_functions(self) -> None:
         ch_a = Na_Ba2002(size=1, V_sh=-50.0 * u.mV)
         ch_b = Na_Ba2002(size=1, V_sh=-60.0 * u.mV)
+        na = _na_info()
 
         V = _V([-55.0])
         V_shifted = _V([-45.0])
         self.assertTrue(
-            u.math.allclose(ch_a.f_p_alpha(V_shifted), ch_b.f_p_alpha(V), atol=1e-6)
+            u.math.allclose(ch_a.f_p_alpha(V_shifted, na), ch_b.f_p_alpha(V, na), atol=1e-6)
         )
 
 
@@ -363,12 +364,12 @@ def _manual_markov_derivatives(channel, V, *ions):
     }
 
     for src, dst, f_rate, b_rate in channel.state_pairs:
-        forward = getattr(channel, f_rate)(V, *ions)
+        forward = channel._call_rate(f_rate, V, *ions)
         derivatives[src] = derivatives[src] - states[src] * forward
         derivatives[dst] = derivatives[dst] + states[src] * forward
 
         if b_rate is not None:
-            backward = getattr(channel, b_rate)(V, *ions)
+            backward = channel._call_rate(b_rate, V, *ions)
             derivatives[src] = derivatives[src] + states[dst] * backward
             derivatives[dst] = derivatives[dst] - states[dst] * backward
 

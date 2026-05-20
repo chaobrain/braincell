@@ -119,13 +119,11 @@ class KDR_Ba2002(HH):
     def current(self, V, K: IonInfo):
         return self.g_max * self.conductance_factor(V, K) * (K.E - V)
 
-    def f_p_alpha(self, V, *unused):
-        _ = unused
+    def f_p_alpha(self, V, K: IonInfo):
         temp = (V - self.V_sh).to_decimal(u.mV) - 15.0
         return 0.032 * 5.0 / u.math.exprel(-temp / 5.0)
 
-    def f_p_beta(self, V, *unused):
-        _ = unused
+    def f_p_beta(self, V, K: IonInfo):
         temp = (V - self.V_sh).to_decimal(u.mV)
         return 0.5 * u.math.exp(-(temp - 10.0) / 40.0)
 
@@ -160,13 +158,11 @@ class K_TM1991(HH):
     def current(self, V, K: IonInfo):
         return self.g_max * self.conductance_factor(V, K) * (K.E - V)
 
-    def f_p_alpha(self, V, *unused):
-        _ = unused
+    def f_p_alpha(self, V, K: IonInfo):
         temp = 15.0 + (self.V_sh - V).to_decimal(u.mV)
         return 0.032 * 5.0 / u.math.exprel(temp / 5.0)
 
-    def f_p_beta(self, V, *unused):
-        _ = unused
+    def f_p_beta(self, V, K: IonInfo):
         temp = (self.V_sh - V).to_decimal(u.mV)
         return 0.5 * u.math.exp((10.0 + temp) / 40.0)
 
@@ -201,13 +197,11 @@ class K_HH1952(HH):
     def current(self, V, K: IonInfo):
         return self.g_max * self.conductance_factor(V, K) * (K.E - V)
 
-    def f_p_alpha(self, V, *unused):
-        _ = unused
+    def f_p_alpha(self, V, K: IonInfo):
         temp = -((V - self.V_sh).to_decimal(u.mV) + 10.0) / 10.0
         return 0.1 / u.math.exprel(temp)
 
-    def f_p_beta(self, V, *unused):
-        _ = unused
+    def f_p_beta(self, V, K: IonInfo):
         temp = (V - self.V_sh).to_decimal(u.mV)
         return 0.125 * u.math.exp(-(temp + 20.0) / 80.0)
 
@@ -247,26 +241,22 @@ class KA1_HM1992(HH):
     def current(self, V, K: IonInfo):
         return self.g_max * self.conductance_factor(V, K) * (K.E - V)
 
-    def f_p_inf(self, V, *unused):
-        _ = unused
+    def f_p_inf(self, V, K: IonInfo):
         temp = (V - self.V_sh).to_decimal(u.mV)
         return 1.0 / (1.0 + u.math.exp(-(temp + 60.0) / 8.5))
 
-    def f_p_tau(self, V, *unused):
-        _ = unused
+    def f_p_tau(self, V, K: IonInfo):
         temp = (V - self.V_sh).to_decimal(u.mV)
         return 1.0 / (
             u.math.exp((temp + 35.8) / 19.7)
             + u.math.exp(-(temp + 79.7) / 12.7)
         ) + 0.37
 
-    def f_q_inf(self, V, *unused):
-        _ = unused
+    def f_q_inf(self, V, K: IonInfo):
         temp = (V - self.V_sh).to_decimal(u.mV)
         return 1.0 / (1.0 + u.math.exp((temp + 78.0) / 6.0))
 
-    def f_q_tau(self, V, *unused):
-        _ = unused
+    def f_q_tau(self, V, K: IonInfo):
         temp = (V - self.V_sh).to_decimal(u.mV)
         return u.math.where(
             temp < -63.0,
@@ -313,26 +303,22 @@ class KA2_HM1992(HH):
     def current(self, V, K: IonInfo):
         return self.g_max * self.conductance_factor(V, K) * (K.E - V)
 
-    def f_p_inf(self, V, *unused):
-        _ = unused
+    def f_p_inf(self, V, K: IonInfo):
         temp = (V - self.V_sh).to_decimal(u.mV)
         return 1.0 / (1.0 + u.math.exp(-(temp + 36.0) / 20.0))
 
-    def f_p_tau(self, V, *unused):
-        _ = unused
+    def f_p_tau(self, V, K: IonInfo):
         temp = (V - self.V_sh).to_decimal(u.mV)
         return 1.0 / (
             u.math.exp((temp + 35.8) / 19.7)
             + u.math.exp(-(temp + 79.7) / 12.7)
         ) + 0.37
 
-    def f_q_inf(self, V, *unused):
-        _ = unused
+    def f_q_inf(self, V, K: IonInfo):
         temp = (V - self.V_sh).to_decimal(u.mV)
         return 1.0 / (1.0 + u.math.exp((temp + 78.0) / 6.0))
 
-    def f_q_tau(self, V, *unused):
-        _ = unused
+    def f_q_tau(self, V, K: IonInfo):
         temp = (V - self.V_sh).to_decimal(u.mV)
         return u.math.where(
             temp < -63.0,
@@ -379,26 +365,22 @@ class KK2A_HM1992(HH):
     def current(self, V, K: IonInfo):
         return self.g_max * self.conductance_factor(V, K) * (K.E - V)
 
-    def f_p_inf(self, V, *unused):
-        _ = unused
+    def f_p_inf(self, V, K: IonInfo):
         temp = (V - self.V_sh).to_decimal(u.mV)
         return 1.0 / (1.0 + u.math.exp(-(temp + 43.0) / 17.0))
 
-    def f_p_tau(self, V, *unused):
-        _ = unused
+    def f_p_tau(self, V, K: IonInfo):
         temp = (V - self.V_sh).to_decimal(u.mV)
         return 1.0 / (
             u.math.exp((temp - 81.0) / 25.6)
             + u.math.exp(-(temp + 132.0) / 18.0)
         ) + 9.9
 
-    def f_q_inf(self, V, *unused):
-        _ = unused
+    def f_q_inf(self, V, K: IonInfo):
         temp = (V - self.V_sh).to_decimal(u.mV)
         return 1.0 / (1.0 + u.math.exp((temp + 58.0) / 10.6))
 
-    def f_q_tau(self, V, *unused):
-        _ = unused
+    def f_q_tau(self, V, K: IonInfo):
         temp = (V - self.V_sh).to_decimal(u.mV)
         return 1.0 / (
             u.math.exp((temp - 1329.0) / 200.0)
@@ -441,26 +423,22 @@ class KK2B_HM1992(HH):
     def current(self, V, K: IonInfo):
         return self.g_max * self.conductance_factor(V, K) * (K.E - V)
 
-    def f_p_inf(self, V, *unused):
-        _ = unused
+    def f_p_inf(self, V, K: IonInfo):
         temp = (V - self.V_sh).to_decimal(u.mV)
         return 1.0 / (1.0 + u.math.exp(-(temp + 43.0) / 17.0))
 
-    def f_p_tau(self, V, *unused):
-        _ = unused
+    def f_p_tau(self, V, K: IonInfo):
         temp = (V - self.V_sh).to_decimal(u.mV)
         return 1.0 / (
             u.math.exp((temp - 81.0) / 25.6)
             + u.math.exp(-(temp + 132.0) / 18.0)
         ) + 9.9
 
-    def f_q_inf(self, V, *unused):
-        _ = unused
+    def f_q_inf(self, V, K: IonInfo):
         temp = (V - self.V_sh).to_decimal(u.mV)
         return 1.0 / (1.0 + u.math.exp((temp + 58.0) / 10.6))
 
-    def f_q_tau(self, V, *unused):
-        _ = unused
+    def f_q_tau(self, V, K: IonInfo):
         temp = (V - self.V_sh).to_decimal(u.mV)
         return u.math.where(
             temp < -70.0,
@@ -504,13 +482,11 @@ class KNI_Ya1989(HH):
     def current(self, V, K: IonInfo):
         return self.g_max * self.conductance_factor(V, K) * (K.E - V)
 
-    def f_p_inf(self, V, *unused):
-        _ = unused
+    def f_p_inf(self, V, K: IonInfo):
         temp = (V - self.V_sh).to_decimal(u.mV)
         return 1.0 / (1.0 + u.math.exp(-(temp + 35.0) / 10.0))
 
-    def f_p_tau(self, V, *unused):
-        _ = unused
+    def f_p_tau(self, V, K: IonInfo):
         temp = (V - self.V_sh).to_decimal(u.mV) + 35.0
         tau_max = self.tau_max.to_decimal(u.ms)
         return tau_max / (
@@ -541,7 +517,7 @@ class K_Leak(Channel):
         _ = (V, K, batch_size)
 
     def compute_derivative(self, V, K: IonInfo):
-        _ = (V, K)
+        pass
 
     def current(self, V, K: IonInfo):
         return self.g_max * (K.E - V)
@@ -581,15 +557,13 @@ class K_Kv_test(HH):
     def current(self, V, K: IonInfo):
         return self.g_max * self.conductance_factor(V, K) * (K.E - V)
 
-    def f_n_inf(self, V, *unused):
-        _ = unused
+    def f_n_inf(self, V, K: IonInfo):
         V = (V - self.V_sh) / u.mV
         q = self.q.to_decimal(u.mV) if hasattr(self.q, "to_decimal") else self.q
         v12 = self.v12.to_decimal(u.mV) if hasattr(self.v12, "to_decimal") else self.v12
         return 1.0 / (1.0 + u.math.exp(-(V - v12) / q))
 
-    def f_n_tau(self, V, *unused):
-        _ = unused
+    def f_n_tau(self, V, K: IonInfo):
         V = (V - self.V_sh).to_decimal(u.mV)
         Ra = self.Ra / (1 / u.mV / u.ms)
         Rb = self.Rb / (1 / u.mV / u.ms)
@@ -619,16 +593,14 @@ class fKdr_SU2015_DCN(HH):
         self.g_max = braintools.init.param(g_max, self.varshape, allow_none=False)
         self.qdeltat = 1.0
 
-    def current(self, V, K: IonInfo, *unused):
+    def current(self, V, K: IonInfo):
         return self.g_max * self.conductance_factor(V, K) * (K.E - V)
 
-    def f_m_inf(self, V, K: IonInfo, *unused):
-        _ = (K, unused)
+    def f_m_inf(self, V, K: IonInfo):
         V = V.to_decimal(u.mV)
         return 1.0 / (1.0 + u.math.exp((V + 40.0) / -7.8))
 
-    def f_m_tau(self, V, K: IonInfo, *unused):
-        _ = (K, unused)
+    def f_m_tau(self, V, K: IonInfo):
         V = V.to_decimal(u.mV)
         return (
             13.9
@@ -657,16 +629,14 @@ class sKdr_SU2015_DCN(HH):
         self.g_max = braintools.init.param(g_max, self.varshape, allow_none=False)
         self.qdeltat = 1.0
 
-    def current(self, V, K: IonInfo, *unused):
+    def current(self, V, K: IonInfo):
         return self.g_max * self.conductance_factor(V, K) * (K.E - V)
 
-    def f_m_inf(self, V, K: IonInfo, *unused):
-        _ = (K, unused)
+    def f_m_inf(self, V, K: IonInfo):
         V = V.to_decimal(u.mV)
         return 1.0 / (1.0 + u.math.exp((V + 50.0) / -9.1))
 
-    def f_m_tau(self, V, K: IonInfo, *unused):
-        _ = (K, unused)
+    def f_m_tau(self, V, K: IonInfo):
         V = V.to_decimal(u.mV)
         return (
             14.95
@@ -704,7 +674,7 @@ class KM_RI2021_SC(HH):
         self.V0_ninf = -35.0 * u.mV
         self.B_ninf = 6.0 * u.mV
 
-    def current(self, V, K: IonInfo, *unused):
+    def current(self, V, K: IonInfo):
         return self.g_max * self.conductance_factor(V, K) * (K.E - V)
 
     def _n_alpha(self, V):
@@ -719,15 +689,13 @@ class KM_RI2021_SC(HH):
             (V - self.V0beta_n.to_decimal(u.mV)) / self.Kbeta_n.to_decimal(u.mV)
         )
 
-    def f_n_inf(self, V, K: IonInfo, *unused):
-        _ = (K, unused)
+    def f_n_inf(self, V, K: IonInfo):
         V = V.to_decimal(u.mV)
         return 1.0 / (
             1.0 + u.math.exp(-(V - self.V0_ninf.to_decimal(u.mV)) / self.B_ninf.to_decimal(u.mV))
         )
 
-    def f_n_tau(self, V, K: IonInfo, *unused):
-        _ = (K, unused)
+    def f_n_tau(self, V, K: IonInfo):
         return 1.0 / (self._n_alpha(V) + self._n_beta(V))
 
 @register_channel("Kir2p3_MA2025_BC")
@@ -755,18 +723,16 @@ class Kir2p3_MA2025_BC(HH):
         self.Kbeta_d = 35.714 * u.mV
         self.V0beta_d = -83.94 * u.mV
 
-    def current(self, V, K: IonInfo, *unused):
+    def current(self, V, K: IonInfo):
         return self.g_max * self.conductance_factor(V, K) * (K.E - V)
 
-    def f_d_alpha(self, V, K: IonInfo, *unused):
-        _ = (K, unused)
+    def f_d_alpha(self, V, K: IonInfo):
         V = V.to_decimal(u.mV)
         return self.Aalpha_d * u.math.exp(
             (V - self.V0alpha_d.to_decimal(u.mV)) / self.Kalpha_d.to_decimal(u.mV)
         )
 
-    def f_d_beta(self, V, K: IonInfo, *unused):
-        _ = (K, unused)
+    def f_d_beta(self, V, K: IonInfo):
         V = V.to_decimal(u.mV)
         return self.Abeta_d * u.math.exp(
             (V - self.V0beta_d.to_decimal(u.mV)) / self.Kbeta_d.to_decimal(u.mV)
@@ -797,18 +763,16 @@ class Kir2p3_MA2024_PC(HH):
         self.Kbeta_d = 35.714 * u.mV
         self.V0beta_d = -83.94 * u.mV
 
-    def current(self, V, K: IonInfo, *unused):
+    def current(self, V, K: IonInfo):
         return self.g_max * self.conductance_factor(V, K) * (K.E - V)
 
-    def f_d_alpha(self, V, K: IonInfo, *unused):
-        _ = (K, unused)
+    def f_d_alpha(self, V, K: IonInfo):
         V = V.to_decimal(u.mV)
         return self.Aalpha_d * u.math.exp(
             (V - self.V0alpha_d.to_decimal(u.mV)) / self.Kalpha_d.to_decimal(u.mV)
         )
 
-    def f_d_beta(self, V, K: IonInfo, *unused):
-        _ = (K, unused)
+    def f_d_beta(self, V, K: IonInfo):
         V = V.to_decimal(u.mV)
         return self.Abeta_d * u.math.exp(
             (V - self.V0beta_d.to_decimal(u.mV)) / self.Kbeta_d.to_decimal(u.mV)
@@ -839,18 +803,16 @@ class Kir2p3_RI2021_SC(HH):
         self.Kbeta_d = 35.714 * u.mV
         self.V0beta_d = -83.94 * u.mV
 
-    def current(self, V, K: IonInfo, *unused):
+    def current(self, V, K: IonInfo):
         return self.g_max * self.conductance_factor(V, K) * (K.E - V)
 
-    def f_d_alpha(self, V, K: IonInfo, *unused):
-        _ = (K, unused)
+    def f_d_alpha(self, V, K: IonInfo):
         V = V.to_decimal(u.mV)
         return self.Aalpha_d * u.math.exp(
             (V - self.V0alpha_d.to_decimal(u.mV)) / self.Kalpha_d.to_decimal(u.mV)
         )
 
-    def f_d_beta(self, V, K: IonInfo, *unused):
-        _ = (K, unused)
+    def f_d_beta(self, V, K: IonInfo):
         V = V.to_decimal(u.mV)
         return self.Abeta_d * u.math.exp(
             (V - self.V0beta_d.to_decimal(u.mV)) / self.Kbeta_d.to_decimal(u.mV)
@@ -888,17 +850,15 @@ class Kv1p1_MA2025_BC(HH):
         self.zn = 2.7978
         self.e0 = 1.60217646e-19 * u.coulomb
 
-    def f_n_alpha(self, V, K: IonInfo, *unused):
-        _ = (K, unused)
+    def f_n_alpha(self, V, K: IonInfo):
         V = V.to_decimal(u.mV)
         return self.ca * u.math.exp(-(V + self.cva.to_decimal(u.mV)) / self.cka.to_decimal(u.mV))
 
-    def f_n_beta(self, V, K: IonInfo, *unused):
-        _ = (K, unused)
+    def f_n_beta(self, V, K: IonInfo):
         V = V.to_decimal(u.mV)
         return self.cb * u.math.exp(-(V + self.cvb.to_decimal(u.mV)) / self.ckb.to_decimal(u.mV))
 
-    def current(self, V, K: IonInfo, *unused):
+    def current(self, V, K: IonInfo):
         conductive = self.g_max * self.conductance_factor(V, K) * (K.E - V)
         phi = self.gate_phi(self._iter_gates()[0])
         n = self.n.value
@@ -941,17 +901,15 @@ class Kv1p1_MA2024_PC(HH):
         self.zn = 2.7978
         self.e0 = 1.60217646e-19 * u.coulomb
 
-    def f_n_alpha(self, V, K: IonInfo, *unused):
-        _ = (K, unused)
+    def f_n_alpha(self, V, K: IonInfo):
         V = V.to_decimal(u.mV)
         return self.ca * u.math.exp(-(V + self.cva.to_decimal(u.mV)) / self.cka.to_decimal(u.mV))
 
-    def f_n_beta(self, V, K: IonInfo, *unused):
-        _ = (K, unused)
+    def f_n_beta(self, V, K: IonInfo):
         V = V.to_decimal(u.mV)
         return self.cb * u.math.exp(-(V + self.cvb.to_decimal(u.mV)) / self.ckb.to_decimal(u.mV))
 
-    def current(self, V, K: IonInfo, *unused):
+    def current(self, V, K: IonInfo):
         conductive = self.g_max * self.conductance_factor(V, K) * (K.E - V)
         phi = self.gate_phi(self._iter_gates()[0])
         n = self.n.value
@@ -994,21 +952,19 @@ class Kv1p1_RI2021_SC(HH):
         self.zn = 2.7978
         self.e0 = 1.60217646e-19 * u.coulomb
 
-    def f_n_alpha(self, V, K: IonInfo, *unused):
-        _ = (K, unused)
+    def f_n_alpha(self, V, K: IonInfo):
         V = V.to_decimal(u.mV)
         return self.ca * u.math.exp(
             -(V + self.cva.to_decimal(u.mV)) / self.cka.to_decimal(u.mV)
         )
 
-    def f_n_beta(self, V, K: IonInfo, *unused):
-        _ = (K, unused)
+    def f_n_beta(self, V, K: IonInfo):
         V = V.to_decimal(u.mV)
         return self.cb * u.math.exp(
             -(V + self.cvb.to_decimal(u.mV)) / self.ckb.to_decimal(u.mV)
         )
 
-    def current(self, V, K: IonInfo, *unused):
+    def current(self, V, K: IonInfo):
         conductive = self.g_max * self.conductance_factor(V, K) * (K.E - V)
         phi = self.gate_phi(self._iter_gates()[0])
         n = self.n.value
@@ -1053,19 +1009,17 @@ class Kv3p4_MA2025_BC(HH):
         self.hivh = -5.802
         self.hik = 11.2
 
-    def current(self, V, K: IonInfo, *unused):
+    def current(self, V, K: IonInfo):
         return self.g_max * self.conductance_factor(V, K) * (K.E - V)
 
     def _shifted_voltage(self, V):
         return (V + self.junction_potential).to_decimal(u.mV)
 
-    def f_m_inf(self, V, K: IonInfo, *unused):
-        _ = (K, unused)
+    def f_m_inf(self, V, K: IonInfo):
         V = self._shifted_voltage(V)
         return 1.0 / (1.0 + u.math.exp(-(V - self.mivh) / self.mik))
 
-    def f_m_tau(self, V, K: IonInfo, *unused):
-        _ = (K, unused)
+    def f_m_tau(self, V, K: IonInfo):
         V = self._shifted_voltage(V)
         mtau_func = u.math.where(
             V < -35.0,
@@ -1079,13 +1033,11 @@ class Kv3p4_MA2025_BC(HH):
         )
         return 1000.0 * mtau_func
 
-    def f_h_inf(self, V, K: IonInfo, *unused):
-        _ = (K, unused)
+    def f_h_inf(self, V, K: IonInfo):
         V = self._shifted_voltage(V)
         return self.hiy0 + self.hiA / (1.0 + u.math.exp((V - self.hivh) / self.hik))
 
-    def f_h_tau(self, V, K: IonInfo, *unused):
-        _ = (K, unused)
+    def f_h_tau(self, V, K: IonInfo):
         V = self._shifted_voltage(V)
         htau_func = u.math.where(
             V > 0.0,
@@ -1128,19 +1080,17 @@ class Kv3p4_MA2024_PC(HH):
         self.hivh = -5.802
         self.hik = 11.2
 
-    def current(self, V, K: IonInfo, *unused):
+    def current(self, V, K: IonInfo):
         return self.g_max * self.conductance_factor(V, K) * (K.E - V)
 
     def _shifted_voltage(self, V):
         return (V + self.junction_potential).to_decimal(u.mV)
 
-    def f_m_inf(self, V, K: IonInfo, *unused):
-        _ = (K, unused)
+    def f_m_inf(self, V, K: IonInfo):
         V = self._shifted_voltage(V)
         return 1.0 / (1.0 + u.math.exp(-(V - self.mivh) / self.mik))
 
-    def f_m_tau(self, V, K: IonInfo, *unused):
-        _ = (K, unused)
+    def f_m_tau(self, V, K: IonInfo):
         V = self._shifted_voltage(V)
         mtau_func = u.math.where(
             V < -35.0,
@@ -1154,13 +1104,11 @@ class Kv3p4_MA2024_PC(HH):
         )
         return 1000.0 * mtau_func
 
-    def f_h_inf(self, V, K: IonInfo, *unused):
-        _ = (K, unused)
+    def f_h_inf(self, V, K: IonInfo):
         V = self._shifted_voltage(V)
         return self.hiy0 + self.hiA / (1.0 + u.math.exp((V - self.hivh) / self.hik))
 
-    def f_h_tau(self, V, K: IonInfo, *unused):
-        _ = (K, unused)
+    def f_h_tau(self, V, K: IonInfo):
         V = self._shifted_voltage(V)
         htau_func = u.math.where(
             V > 0.0,
@@ -1203,19 +1151,17 @@ class Kv3p4_RI2021_SC(HH):
         self.hivh = -5.802
         self.hik = 11.2
 
-    def current(self, V, K: IonInfo, *unused):
+    def current(self, V, K: IonInfo):
         return self.g_max * self.conductance_factor(V, K) * (K.E - V)
 
     def _shifted_voltage(self, V):
         return (V + self.junction_potential).to_decimal(u.mV)
 
-    def f_m_inf(self, V, K: IonInfo, *unused):
-        _ = (K, unused)
+    def f_m_inf(self, V, K: IonInfo):
         V = self._shifted_voltage(V)
         return 1.0 / (1.0 + u.math.exp(-(V - self.mivh) / self.mik))
 
-    def f_m_tau(self, V, K: IonInfo, *unused):
-        _ = (K, unused)
+    def f_m_tau(self, V, K: IonInfo):
         V = self._shifted_voltage(V)
         mtau_func = u.math.where(
             V < -35.0,
@@ -1229,13 +1175,11 @@ class Kv3p4_RI2021_SC(HH):
         )
         return 1000.0 * mtau_func
 
-    def f_h_inf(self, V, K: IonInfo, *unused):
-        _ = (K, unused)
+    def f_h_inf(self, V, K: IonInfo):
         V = self._shifted_voltage(V)
         return self.hiy0 + self.hiA / (1.0 + u.math.exp((V - self.hivh) / self.hik))
 
-    def f_h_tau(self, V, K: IonInfo, *unused):
-        _ = (K, unused)
+    def f_h_tau(self, V, K: IonInfo):
         V = self._shifted_voltage(V)
         htau_func = u.math.where(
             V > 0.0,
@@ -1282,52 +1226,46 @@ class Kv4p3_MA2025_BC(HH):
         self.V0_binf = -78.8 * u.mV
         self.K_binf = 8.4 * u.mV
 
-    def current(self, V, K: IonInfo, *unused):
+    def current(self, V, K: IonInfo):
         return self.g_max * self.conductance_factor(V, K) * (K.E - V)
 
-    def _a_alpha(self, V, K: IonInfo, *unused):
-        _ = (K, unused)
+    def _a_alpha(self, V, K: IonInfo):
         V = V.to_decimal(u.mV)
         return self.Aalpha_a * _sigm(V - self.V0alpha_a.to_decimal(u.mV), self.Kalpha_a)
 
-    def _a_beta(self, V, K: IonInfo, *unused):
-        _ = (K, unused)
+    def _a_beta(self, V, K: IonInfo):
         V = V.to_decimal(u.mV)
         return self.Abeta_a / u.math.exp(
             (V - self.V0beta_a.to_decimal(u.mV)) / self.Kbeta_a.to_decimal(u.mV)
         )
 
-    def _b_alpha(self, V, K: IonInfo, *unused):
-        _ = (K, unused)
+    def _b_alpha(self, V, K: IonInfo):
         V = V.to_decimal(u.mV)
         return self.Aalpha_b * _sigm(
             V - self.V0alpha_b.to_decimal(u.mV),
             self.Kalpha_b.to_decimal(u.mV),
         )
 
-    def _b_beta(self, V, K: IonInfo, *unused):
-        _ = (K, unused)
+    def _b_beta(self, V, K: IonInfo):
         V = V.to_decimal(u.mV)
         return self.Abeta_b * _sigm(
             V - self.V0beta_b.to_decimal(u.mV),
             self.Kbeta_b.to_decimal(u.mV),
         )
 
-    def f_a_inf(self, V, K: IonInfo, *unused):
-        _ = (K, unused)
+    def f_a_inf(self, V, K: IonInfo):
         V = V.to_decimal(u.mV)
         return 1.0 / (1.0 + u.math.exp((V - self.V0_ainf.to_decimal(u.mV)) / self.K_ainf.to_decimal(u.mV)))
 
-    def f_a_tau(self, V, K: IonInfo, *unused):
-        return 1.0 / (self._a_alpha(V, K, *unused) + self._a_beta(V, K, *unused))
+    def f_a_tau(self, V, K: IonInfo):
+        return 1.0 / (self._a_alpha(V, K) + self._a_beta(V, K))
 
-    def f_b_inf(self, V, K: IonInfo, *unused):
-        _ = (K, unused)
+    def f_b_inf(self, V, K: IonInfo):
         V = V.to_decimal(u.mV)
         return 1.0 / (1.0 + u.math.exp((V - self.V0_binf.to_decimal(u.mV)) / self.K_binf.to_decimal(u.mV)))
 
-    def f_b_tau(self, V, K: IonInfo, *unused):
-        return 1.0 / (self._b_alpha(V, K, *unused) + self._b_beta(V, K, *unused))
+    def f_b_tau(self, V, K: IonInfo):
+        return 1.0 / (self._b_alpha(V, K) + self._b_beta(V, K))
 
 @register_channel("Kv4p3_MA2024_PC")
 class Kv4p3_MA2024_PC(HH):
@@ -1367,52 +1305,46 @@ class Kv4p3_MA2024_PC(HH):
         self.V0_binf = -78.8 * u.mV
         self.K_binf = 8.4 * u.mV
 
-    def current(self, V, K: IonInfo, *unused):
+    def current(self, V, K: IonInfo):
         return self.g_max * self.conductance_factor(V, K) * (K.E - V)
 
-    def _a_alpha(self, V, K: IonInfo, *unused):
-        _ = (K, unused)
+    def _a_alpha(self, V, K: IonInfo):
         V = V.to_decimal(u.mV)
         return self.Aalpha_a * _sigm(V - self.V0alpha_a.to_decimal(u.mV), self.Kalpha_a)
 
-    def _a_beta(self, V, K: IonInfo, *unused):
-        _ = (K, unused)
+    def _a_beta(self, V, K: IonInfo):
         V = V.to_decimal(u.mV)
         return self.Abeta_a / u.math.exp(
             (V - self.V0beta_a.to_decimal(u.mV)) / self.Kbeta_a.to_decimal(u.mV)
         )
 
-    def _b_alpha(self, V, K: IonInfo, *unused):
-        _ = (K, unused)
+    def _b_alpha(self, V, K: IonInfo):
         V = V.to_decimal(u.mV)
         return self.Aalpha_b * _sigm(
             V - self.V0alpha_b.to_decimal(u.mV),
             self.Kalpha_b.to_decimal(u.mV),
         )
 
-    def _b_beta(self, V, K: IonInfo, *unused):
-        _ = (K, unused)
+    def _b_beta(self, V, K: IonInfo):
         V = V.to_decimal(u.mV)
         return self.Abeta_b * _sigm(
             V - self.V0beta_b.to_decimal(u.mV),
             self.Kbeta_b.to_decimal(u.mV),
         )
 
-    def f_a_inf(self, V, K: IonInfo, *unused):
-        _ = (K, unused)
+    def f_a_inf(self, V, K: IonInfo):
         V = V.to_decimal(u.mV)
         return 1.0 / (1.0 + u.math.exp((V - self.V0_ainf.to_decimal(u.mV)) / self.K_ainf.to_decimal(u.mV)))
 
-    def f_a_tau(self, V, K: IonInfo, *unused):
-        return 1.0 / (self._a_alpha(V, K, *unused) + self._a_beta(V, K, *unused))
+    def f_a_tau(self, V, K: IonInfo):
+        return 1.0 / (self._a_alpha(V, K) + self._a_beta(V, K))
 
-    def f_b_inf(self, V, K: IonInfo, *unused):
-        _ = (K, unused)
+    def f_b_inf(self, V, K: IonInfo):
         V = V.to_decimal(u.mV)
         return 1.0 / (1.0 + u.math.exp((V - self.V0_binf.to_decimal(u.mV)) / self.K_binf.to_decimal(u.mV)))
 
-    def f_b_tau(self, V, K: IonInfo, *unused):
-        return 1.0 / (self._b_alpha(V, K, *unused) + self._b_beta(V, K, *unused))
+    def f_b_tau(self, V, K: IonInfo):
+        return 1.0 / (self._b_alpha(V, K) + self._b_beta(V, K))
 
 @register_channel("Kv4p3_RI2021_SC")
 class Kv4p3_RI2021_SC(HH):
@@ -1452,58 +1384,52 @@ class Kv4p3_RI2021_SC(HH):
         self.V0_binf = -78.8 * u.mV
         self.K_binf = 8.4 * u.mV
 
-    def current(self, V, K: IonInfo, *unused):
+    def current(self, V, K: IonInfo):
         return self.g_max * self.conductance_factor(V, K) * (K.E - V)
 
-    def _a_alpha(self, V, K: IonInfo, *unused):
-        _ = (K, unused)
+    def _a_alpha(self, V, K: IonInfo):
         V = V.to_decimal(u.mV)
         return self.Aalpha_a * _sigm(
             V - self.V0alpha_a.to_decimal(u.mV), self.Kalpha_a.to_decimal(u.mV)
         )
 
-    def _a_beta(self, V, K: IonInfo, *unused):
-        _ = (K, unused)
+    def _a_beta(self, V, K: IonInfo):
         V = V.to_decimal(u.mV)
         return self.Abeta_a / u.math.exp(
             (V - self.V0beta_a.to_decimal(u.mV)) / self.Kbeta_a.to_decimal(u.mV)
         )
 
-    def _b_alpha(self, V, K: IonInfo, *unused):
-        _ = (K, unused)
+    def _b_alpha(self, V, K: IonInfo):
         V = V.to_decimal(u.mV)
         return self.Aalpha_b * _sigm(
             V - self.V0alpha_b.to_decimal(u.mV),
             self.Kalpha_b.to_decimal(u.mV),
         )
 
-    def _b_beta(self, V, K: IonInfo, *unused):
-        _ = (K, unused)
+    def _b_beta(self, V, K: IonInfo):
         V = V.to_decimal(u.mV)
         return self.Abeta_b * _sigm(
             V - self.V0beta_b.to_decimal(u.mV),
             self.Kbeta_b.to_decimal(u.mV),
         )
 
-    def f_a_inf(self, V, K: IonInfo, *unused):
-        _ = (K, unused)
+    def f_a_inf(self, V, K: IonInfo):
         V = V.to_decimal(u.mV)
         return 1.0 / (
             1.0 + u.math.exp((V - self.V0_ainf.to_decimal(u.mV)) / self.K_ainf.to_decimal(u.mV))
         )
 
-    def f_a_tau(self, V, K: IonInfo, *unused):
-        return 1.0 / (self._a_alpha(V, K, *unused) + self._a_beta(V, K, *unused))
+    def f_a_tau(self, V, K: IonInfo):
+        return 1.0 / (self._a_alpha(V, K) + self._a_beta(V, K))
 
-    def f_b_inf(self, V, K: IonInfo, *unused):
-        _ = (K, unused)
+    def f_b_inf(self, V, K: IonInfo):
         V = V.to_decimal(u.mV)
         return 1.0 / (
             1.0 + u.math.exp((V - self.V0_binf.to_decimal(u.mV)) / self.K_binf.to_decimal(u.mV))
         )
 
-    def f_b_tau(self, V, K: IonInfo, *unused):
-        return 1.0 / (self._b_alpha(V, K, *unused) + self._b_beta(V, K, *unused))
+    def f_b_tau(self, V, K: IonInfo):
+        return 1.0 / (self._b_alpha(V, K) + self._b_beta(V, K))
 
 @register_channel("KM_MA2020_GoC")
 class KM_MA2020_GoC(HH):
@@ -1532,7 +1458,7 @@ class KM_MA2020_GoC(HH):
         self.V0_ninf = -35.0 * u.mV
         self.B_ninf = 6.0 * u.mV
 
-    def current(self, V, K: IonInfo, *unused):
+    def current(self, V, K: IonInfo):
         return self.g_max * self.conductance_factor(V, K) * (K.E - V)
 
     def _n_alpha(self, V):
@@ -1547,15 +1473,13 @@ class KM_MA2020_GoC(HH):
             (V - self.V0beta_n.to_decimal(u.mV)) / self.Kbeta_n.to_decimal(u.mV)
         )
 
-    def f_n_inf(self, V, K: IonInfo, *unused):
-        _ = (K, unused)
+    def f_n_inf(self, V, K: IonInfo):
         V = V.to_decimal(u.mV)
         return 1.0 / (
             1.0 + u.math.exp(-(V - self.V0_ninf.to_decimal(u.mV)) / self.B_ninf.to_decimal(u.mV))
         )
 
-    def f_n_tau(self, V, K: IonInfo, *unused):
-        _ = (K, unused)
+    def f_n_tau(self, V, K: IonInfo):
         return 1.0 / (self._n_alpha(V) + self._n_beta(V))
 
 @register_channel("Kv1p1_MA2020_GoC")
@@ -1590,21 +1514,19 @@ class Kv1p1_MA2020_GoC(HH):
         self.zn = 2.7978
         self.e0 = 1.60217646e-19 * u.coulomb
 
-    def f_n_alpha(self, V, K: IonInfo, *unused):
-        _ = (K, unused)
+    def f_n_alpha(self, V, K: IonInfo):
         V = V.to_decimal(u.mV)
         return self.ca * u.math.exp(
             -(V + self.cva.to_decimal(u.mV)) / self.cka.to_decimal(u.mV)
         )
 
-    def f_n_beta(self, V, K: IonInfo, *unused):
-        _ = (K, unused)
+    def f_n_beta(self, V, K: IonInfo):
         V = V.to_decimal(u.mV)
         return self.cb * u.math.exp(
             -(V + self.cvb.to_decimal(u.mV)) / self.ckb.to_decimal(u.mV)
         )
 
-    def current(self, V, K: IonInfo, *unused):
+    def current(self, V, K: IonInfo):
         conductive = self.g_max * self.conductance_factor(V, K) * (K.E - V)
         phi = self.gate_phi(self._iter_gates()[0])
         n = self.n.value
@@ -1649,19 +1571,17 @@ class Kv3p4_MA2020_GoC(HH):
         self.hivh = -5.802
         self.hik = 11.2
 
-    def current(self, V, K: IonInfo, *unused):
+    def current(self, V, K: IonInfo):
         return self.g_max * self.conductance_factor(V, K) * (K.E - V)
 
     def _shifted_voltage(self, V):
         return (V + self.junction_potential).to_decimal(u.mV)
 
-    def f_m_inf(self, V, K: IonInfo, *unused):
-        _ = (K, unused)
+    def f_m_inf(self, V, K: IonInfo):
         V = self._shifted_voltage(V)
         return 1.0 / (1.0 + u.math.exp(-(V - self.mivh) / self.mik))
 
-    def f_m_tau(self, V, K: IonInfo, *unused):
-        _ = (K, unused)
+    def f_m_tau(self, V, K: IonInfo):
         V = self._shifted_voltage(V)
         mtau_func = u.math.where(
             V < -35.0,
@@ -1675,13 +1595,11 @@ class Kv3p4_MA2020_GoC(HH):
         )
         return 1000.0 * mtau_func
 
-    def f_h_inf(self, V, K: IonInfo, *unused):
-        _ = (K, unused)
+    def f_h_inf(self, V, K: IonInfo):
         V = self._shifted_voltage(V)
         return self.hiy0 + self.hiA / (1.0 + u.math.exp((V - self.hivh) / self.hik))
 
-    def f_h_tau(self, V, K: IonInfo, *unused):
-        _ = (K, unused)
+    def f_h_tau(self, V, K: IonInfo):
         V = self._shifted_voltage(V)
         htau_func = u.math.where(
             V > 0.0,
@@ -1728,58 +1646,52 @@ class Kv4p3_MA2020_GoC(HH):
         self.V0_binf = -78.8 * u.mV
         self.K_binf = 8.4 * u.mV
 
-    def current(self, V, K: IonInfo, *unused):
+    def current(self, V, K: IonInfo):
         return self.g_max * self.conductance_factor(V, K) * (K.E - V)
 
-    def _a_alpha(self, V, K: IonInfo, *unused):
-        _ = (K, unused)
+    def _a_alpha(self, V, K: IonInfo):
         V = V.to_decimal(u.mV)
         return self.Aalpha_a * _sigm(
             V - self.V0alpha_a.to_decimal(u.mV), self.Kalpha_a.to_decimal(u.mV)
         )
 
-    def _a_beta(self, V, K: IonInfo, *unused):
-        _ = (K, unused)
+    def _a_beta(self, V, K: IonInfo):
         V = V.to_decimal(u.mV)
         return self.Abeta_a / u.math.exp(
             (V - self.V0beta_a.to_decimal(u.mV)) / self.Kbeta_a.to_decimal(u.mV)
         )
 
-    def _b_alpha(self, V, K: IonInfo, *unused):
-        _ = (K, unused)
+    def _b_alpha(self, V, K: IonInfo):
         V = V.to_decimal(u.mV)
         return self.Aalpha_b * _sigm(
             V - self.V0alpha_b.to_decimal(u.mV),
             self.Kalpha_b.to_decimal(u.mV),
         )
 
-    def _b_beta(self, V, K: IonInfo, *unused):
-        _ = (K, unused)
+    def _b_beta(self, V, K: IonInfo):
         V = V.to_decimal(u.mV)
         return self.Abeta_b * _sigm(
             V - self.V0beta_b.to_decimal(u.mV),
             self.Kbeta_b.to_decimal(u.mV),
         )
 
-    def f_a_inf(self, V, K: IonInfo, *unused):
-        _ = (K, unused)
+    def f_a_inf(self, V, K: IonInfo):
         V = V.to_decimal(u.mV)
         return 1.0 / (
             1.0 + u.math.exp((V - self.V0_ainf.to_decimal(u.mV)) / self.K_ainf.to_decimal(u.mV))
         )
 
-    def f_a_tau(self, V, K: IonInfo, *unused):
-        return 1.0 / (self._a_alpha(V, K, *unused) + self._a_beta(V, K, *unused))
+    def f_a_tau(self, V, K: IonInfo):
+        return 1.0 / (self._a_alpha(V, K) + self._a_beta(V, K))
 
-    def f_b_inf(self, V, K: IonInfo, *unused):
-        _ = (K, unused)
+    def f_b_inf(self, V, K: IonInfo):
         V = V.to_decimal(u.mV)
         return 1.0 / (
             1.0 + u.math.exp((V - self.V0_binf.to_decimal(u.mV)) / self.K_binf.to_decimal(u.mV))
         )
 
-    def f_b_tau(self, V, K: IonInfo, *unused):
-        return 1.0 / (self._b_alpha(V, K, *unused) + self._b_beta(V, K, *unused))
+    def f_b_tau(self, V, K: IonInfo):
+        return 1.0 / (self._b_alpha(V, K) + self._b_beta(V, K))
 
 @register_channel("KM_MA2020_GrC")
 class KM_MA2020_GrC(HH):
@@ -1808,7 +1720,7 @@ class KM_MA2020_GrC(HH):
         self.V0_ninf = -35.0 * u.mV
         self.B_ninf = 6.0 * u.mV
 
-    def current(self, V, K: IonInfo, *unused):
+    def current(self, V, K: IonInfo):
         return self.g_max * self.conductance_factor(V, K) * (K.E - V)
 
     def _n_alpha(self, V):
@@ -1823,15 +1735,13 @@ class KM_MA2020_GrC(HH):
             (V - self.V0beta_n.to_decimal(u.mV)) / self.Kbeta_n.to_decimal(u.mV)
         )
 
-    def f_n_inf(self, V, K: IonInfo, *unused):
-        _ = (K, unused)
+    def f_n_inf(self, V, K: IonInfo):
         V = V.to_decimal(u.mV)
         return 1.0 / (
             1.0 + u.math.exp(-(V - self.V0_ninf.to_decimal(u.mV)) / self.B_ninf.to_decimal(u.mV))
         )
 
-    def f_n_tau(self, V, K: IonInfo, *unused):
-        _ = (K, unused)
+    def f_n_tau(self, V, K: IonInfo):
         return 1.0 / (self._n_alpha(V) + self._n_beta(V))
 
 @register_channel("Kir2p3_MA2020_GrC")
@@ -1859,18 +1769,16 @@ class Kir2p3_MA2020_GrC(HH):
         self.Kbeta_d = 35.714 * u.mV
         self.V0beta_d = -83.94 * u.mV
 
-    def current(self, V, K: IonInfo, *unused):
+    def current(self, V, K: IonInfo):
         return self.g_max * self.conductance_factor(V, K) * (K.E - V)
 
-    def f_d_alpha(self, V, K: IonInfo, *unused):
-        _ = (K, unused)
+    def f_d_alpha(self, V, K: IonInfo):
         V = V.to_decimal(u.mV)
         return self.Aalpha_d * u.math.exp(
             (V - self.V0alpha_d.to_decimal(u.mV)) / self.Kalpha_d.to_decimal(u.mV)
         )
 
-    def f_d_beta(self, V, K: IonInfo, *unused):
-        _ = (K, unused)
+    def f_d_beta(self, V, K: IonInfo):
         V = V.to_decimal(u.mV)
         return self.Abeta_d * u.math.exp(
             (V - self.V0beta_d.to_decimal(u.mV)) / self.Kbeta_d.to_decimal(u.mV)
@@ -1908,21 +1816,19 @@ class Kv1p1_MA2020_GrC(HH):
         self.zn = 2.7978
         self.e0 = 1.60217646e-19 * u.coulomb
 
-    def f_n_alpha(self, V, K: IonInfo, *unused):
-        _ = (K, unused)
+    def f_n_alpha(self, V, K: IonInfo):
         V = V.to_decimal(u.mV)
         return self.ca * u.math.exp(
             -(V + self.cva.to_decimal(u.mV)) / self.cka.to_decimal(u.mV)
         )
 
-    def f_n_beta(self, V, K: IonInfo, *unused):
-        _ = (K, unused)
+    def f_n_beta(self, V, K: IonInfo):
         V = V.to_decimal(u.mV)
         return self.cb * u.math.exp(
             -(V + self.cvb.to_decimal(u.mV)) / self.ckb.to_decimal(u.mV)
         )
 
-    def current(self, V, K: IonInfo, *unused):
+    def current(self, V, K: IonInfo):
         conductive = self.g_max * self.conductance_factor(V, K) * (K.E - V)
         phi = self.gate_phi(self._iter_gates()[0])
         n = self.n.value
@@ -1955,26 +1861,22 @@ class Kv2p2_0010_MA2020_GrC(HH):
         self.g_max = braintools.init.param(g_max, self.varshape, allow_none=False)
         self.BBiD = braintools.init.param(BBiD, self.varshape, allow_none=False)
 
-    def current(self, V, K: IonInfo, *unused):
+    def current(self, V, K: IonInfo):
         return self.g_max * self.conductance_factor(V, K) * (K.E - V)
 
-    def f_m_inf(self, V, K: IonInfo, *unused):
-        _ = (K, unused)
+    def f_m_inf(self, V, K: IonInfo):
         V = V.to_decimal(u.mV)
         return 1.0 / (1.0 + u.math.exp((V - 5.0) / -12.0))
 
-    def f_m_tau(self, V, K: IonInfo, *unused):
-        _ = (K, unused)
+    def f_m_tau(self, V, K: IonInfo):
         V = V.to_decimal(u.mV)
         return 130.0 / (1.0 + u.math.exp((V + 46.56) / -44.14))
 
-    def f_h_inf(self, V, K: IonInfo, *unused):
-        _ = (K, unused)
+    def f_h_inf(self, V, K: IonInfo):
         V = V.to_decimal(u.mV)
         return 1.0 / (1.0 + u.math.exp((V + 16.3) / 4.8))
 
-    def f_h_tau(self, V, K: IonInfo, *unused):
-        _ = (K, unused)
+    def f_h_tau(self, V, K: IonInfo):
         V = V.to_decimal(u.mV)
         return 10000.0 / (1.0 + u.math.exp((V + 46.56) / -44.14))
 
@@ -2012,19 +1914,17 @@ class Kv3p4_MA2020_GrC(HH):
         self.hivh = -5.802
         self.hik = 11.2
 
-    def current(self, V, K: IonInfo, *unused):
+    def current(self, V, K: IonInfo):
         return self.g_max * self.conductance_factor(V, K) * (K.E - V)
 
     def _shifted_voltage(self, V):
         return (V + self.junction_potential).to_decimal(u.mV)
 
-    def f_m_inf(self, V, K: IonInfo, *unused):
-        _ = (K, unused)
+    def f_m_inf(self, V, K: IonInfo):
         V = self._shifted_voltage(V)
         return 1.0 / (1.0 + u.math.exp(-(V - self.mivh) / self.mik))
 
-    def f_m_tau(self, V, K: IonInfo, *unused):
-        _ = (K, unused)
+    def f_m_tau(self, V, K: IonInfo):
         V = self._shifted_voltage(V)
         mtau_func = u.math.where(
             V < -35.0,
@@ -2038,13 +1938,11 @@ class Kv3p4_MA2020_GrC(HH):
         )
         return 1000.0 * mtau_func
 
-    def f_h_inf(self, V, K: IonInfo, *unused):
-        _ = (K, unused)
+    def f_h_inf(self, V, K: IonInfo):
         V = self._shifted_voltage(V)
         return self.hiy0 + self.hiA / (1.0 + u.math.exp((V - self.hivh) / self.hik))
 
-    def f_h_tau(self, V, K: IonInfo, *unused):
-        _ = (K, unused)
+    def f_h_tau(self, V, K: IonInfo):
         V = self._shifted_voltage(V)
         htau_func = u.math.where(
             V > 0.0,
@@ -2091,58 +1989,52 @@ class Kv4p3_MA2020_GrC(HH):
         self.V0_binf = -78.8 * u.mV
         self.K_binf = 8.4 * u.mV
 
-    def current(self, V, K: IonInfo, *unused):
+    def current(self, V, K: IonInfo):
         return self.g_max * self.conductance_factor(V, K) * (K.E - V)
 
-    def _a_alpha(self, V, K: IonInfo, *unused):
-        _ = (K, unused)
+    def _a_alpha(self, V, K: IonInfo):
         V = V.to_decimal(u.mV)
         return self.Aalpha_a * _sigm(
             V - self.V0alpha_a.to_decimal(u.mV), self.Kalpha_a.to_decimal(u.mV)
         )
 
-    def _a_beta(self, V, K: IonInfo, *unused):
-        _ = (K, unused)
+    def _a_beta(self, V, K: IonInfo):
         V = V.to_decimal(u.mV)
         return self.Abeta_a / u.math.exp(
             (V - self.V0beta_a.to_decimal(u.mV)) / self.Kbeta_a.to_decimal(u.mV)
         )
 
-    def _b_alpha(self, V, K: IonInfo, *unused):
-        _ = (K, unused)
+    def _b_alpha(self, V, K: IonInfo):
         V = V.to_decimal(u.mV)
         return self.Aalpha_b * _sigm(
             V - self.V0alpha_b.to_decimal(u.mV),
             self.Kalpha_b.to_decimal(u.mV),
         )
 
-    def _b_beta(self, V, K: IonInfo, *unused):
-        _ = (K, unused)
+    def _b_beta(self, V, K: IonInfo):
         V = V.to_decimal(u.mV)
         return self.Abeta_b * _sigm(
             V - self.V0beta_b.to_decimal(u.mV),
             self.Kbeta_b.to_decimal(u.mV),
         )
 
-    def f_a_inf(self, V, K: IonInfo, *unused):
-        _ = (K, unused)
+    def f_a_inf(self, V, K: IonInfo):
         V = V.to_decimal(u.mV)
         return 1.0 / (
             1.0 + u.math.exp((V - self.V0_ainf.to_decimal(u.mV)) / self.K_ainf.to_decimal(u.mV))
         )
 
-    def f_a_tau(self, V, K: IonInfo, *unused):
-        return 1.0 / (self._a_alpha(V, K, *unused) + self._a_beta(V, K, *unused))
+    def f_a_tau(self, V, K: IonInfo):
+        return 1.0 / (self._a_alpha(V, K) + self._a_beta(V, K))
 
-    def f_b_inf(self, V, K: IonInfo, *unused):
-        _ = (K, unused)
+    def f_b_inf(self, V, K: IonInfo):
         V = V.to_decimal(u.mV)
         return 1.0 / (
             1.0 + u.math.exp((V - self.V0_binf.to_decimal(u.mV)) / self.K_binf.to_decimal(u.mV))
         )
 
-    def f_b_tau(self, V, K: IonInfo, *unused):
-        return 1.0 / (self._b_alpha(V, K, *unused) + self._b_beta(V, K, *unused))
+    def f_b_tau(self, V, K: IonInfo):
+        return 1.0 / (self._b_alpha(V, K) + self._b_beta(V, K))
 
 @register_channel("Kdr_ZH2019_IO")
 class Kdr_ZH2019_IO(HH):
@@ -2161,7 +2053,7 @@ class Kdr_ZH2019_IO(HH):
         super().__init__(size=size, name=name)
         self.g_max = braintools.init.param(g_max, self.varshape, allow_none=False)
 
-    def current(self, V, K: IonInfo, *unused):
+    def current(self, V, K: IonInfo):
         return self.g_max * self.conductance_factor(V, K) * (K.E - V)
 
     def _n_alpha(self, V):
@@ -2173,15 +2065,12 @@ class Kdr_ZH2019_IO(HH):
         V = V.to_decimal(u.mV)
         return 12.5 * u.math.exp(-(V + 51.0) / 80.0)
 
-    def f_n_inf(self, V, K: IonInfo, *unused):
-        _ = (K, unused)
+    def f_n_inf(self, V, K: IonInfo):
         alpha = self._n_alpha(V)
         beta = self._n_beta(V)
         return alpha / (alpha + beta)
 
-    def f_n_tau(self, V, K: IonInfo, *unused):
-        _ = (K, unused)
+    def f_n_tau(self, V, K: IonInfo):
         alpha = self._n_alpha(V)
         beta = self._n_beta(V)
         return 10.0 / (alpha + beta)
-

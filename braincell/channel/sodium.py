@@ -86,19 +86,19 @@ class Na_Ba2002(HH):
     def current(self, V, Na: IonInfo):
         return self.g_max * self.conductance_factor(V, Na) * (Na.E - V)
 
-    def f_p_alpha(self, V, *unused):
+    def f_p_alpha(self, V, Na: IonInfo):
         temp = (V - self.V_sh).to_decimal(u.mV) - 13.0
         return 0.32 * 4.0 / u.math.exprel(-temp / 4.0)
 
-    def f_p_beta(self, V, *unused):
+    def f_p_beta(self, V, Na: IonInfo):
         temp = (V - self.V_sh).to_decimal(u.mV) - 40.0
         return 0.28 * 5.0 / u.math.exprel(temp / 5.0)
 
-    def f_q_alpha(self, V, *unused):
+    def f_q_alpha(self, V, Na: IonInfo):
         temp = (V - self.V_sh).to_decimal(u.mV)
         return 0.128 * u.math.exp(-(temp - 17.0) / 18.0)
 
-    def f_q_beta(self, V, *unused):
+    def f_q_beta(self, V, Na: IonInfo):
         temp = (V - self.V_sh).to_decimal(u.mV)
         return 4.0 / (1.0 + u.math.exp(-(temp - 40.0) / 5.0))
 
@@ -134,19 +134,19 @@ class Na_TM1991(HH):
     def current(self, V, Na: IonInfo):
         return self.g_max * self.conductance_factor(V, Na) * (Na.E - V)
 
-    def f_p_alpha(self, V, *unused):
+    def f_p_alpha(self, V, Na: IonInfo):
         temp = (self.V_sh - V).to_decimal(u.mV)
         return 0.32 * 4.0 / u.math.exprel((13.0 + temp) / 4.0)
 
-    def f_p_beta(self, V, *unused):
+    def f_p_beta(self, V, Na: IonInfo):
         temp = (V - self.V_sh).to_decimal(u.mV) - 40.0
         return 0.28 * 5.0 / u.math.exprel(temp / 5.0)
 
-    def f_q_alpha(self, V, *unused):
+    def f_q_alpha(self, V, Na: IonInfo):
         temp = (self.V_sh - V).to_decimal(u.mV)
         return 0.128 * u.math.exp((17.0 + temp) / 18.0)
 
-    def f_q_beta(self, V, *unused):
+    def f_q_beta(self, V, Na: IonInfo):
         temp = (V - self.V_sh).to_decimal(u.mV)
         return 4.0 / (1.0 + u.math.exp(-(temp - 40.0) / 5.0))
 
@@ -182,19 +182,19 @@ class Na_HH1952(HH):
     def current(self, V, Na: IonInfo):
         return self.g_max * self.conductance_factor(V, Na) * (Na.E - V)
 
-    def f_p_alpha(self, V, *unused):
+    def f_p_alpha(self, V, Na: IonInfo):
         temp = (V - self.V_sh).to_decimal(u.mV) - 5.0
         return 1.0 / u.math.exprel(-temp / 10.0)
 
-    def f_p_beta(self, V, *unused):
+    def f_p_beta(self, V, Na: IonInfo):
         temp = (V - self.V_sh).to_decimal(u.mV)
         return 4.0 * u.math.exp(-(temp + 20.0) / 18.0)
 
-    def f_q_alpha(self, V, *unused):
+    def f_q_alpha(self, V, Na: IonInfo):
         temp = (V - self.V_sh).to_decimal(u.mV)
         return 0.07 * u.math.exp(-(temp + 20.0) / 20.0)
 
-    def f_q_beta(self, V, *unused):
+    def f_q_beta(self, V, Na: IonInfo):
         temp = (V - self.V_sh).to_decimal(u.mV)
         return 1.0 / (1.0 + u.math.exp(-(temp - 10.0) / 10.0))
 
@@ -219,16 +219,14 @@ class NaF_SU2015_DCN(HH):
         self.g_max = braintools.init.param(g_max, self.varshape, allow_none=False)
         self.qdeltat = 1.0
 
-    def current(self, V, Na: IonInfo, *unused):
+    def current(self, V, Na: IonInfo):
         return self.g_max * self.conductance_factor(V, Na) * (Na.E - V)
 
-    def f_m_inf(self, V, Na: IonInfo, *unused):
-        _ = (Na, unused)
+    def f_m_inf(self, V, Na: IonInfo):
         V = V.to_decimal(u.mV)
         return 1.0 / (1.0 + u.math.exp((V + 45.0) / -7.3))
 
-    def f_m_tau(self, V, Na: IonInfo, *unused):
-        _ = (Na, unused)
+    def f_m_tau(self, V, Na: IonInfo):
         V = V.to_decimal(u.mV)
         return (
             5.83
@@ -239,13 +237,11 @@ class NaF_SU2015_DCN(HH):
             + 0.025
         ) / self.qdeltat
 
-    def f_h_inf(self, V, Na: IonInfo, *unused):
-        _ = (Na, unused)
+    def f_h_inf(self, V, Na: IonInfo):
         V = V.to_decimal(u.mV)
         return 1.0 / (1.0 + u.math.exp((V + 42.0) / 5.9))
 
-    def f_h_tau(self, V, Na: IonInfo, *unused):
-        _ = (Na, unused)
+    def f_h_tau(self, V, Na: IonInfo):
         V = V.to_decimal(u.mV)
         return (
             16.67
@@ -277,25 +273,21 @@ class NaP_SU2015_DCN(HH):
         self.g_max = braintools.init.param(g_max, self.varshape, allow_none=False)
         self.qdeltat = 1.0
 
-    def current(self, V, Na: IonInfo, *unused):
+    def current(self, V, Na: IonInfo):
         return self.g_max * self.conductance_factor(V, Na) * (Na.E - V)
 
-    def f_m_inf(self, V, Na: IonInfo, *unused):
-        _ = (Na, unused)
+    def f_m_inf(self, V, Na: IonInfo):
         V = V.to_decimal(u.mV)
         return 1.0 / (1.0 + u.math.exp((V + 70.0) / -4.1))
 
-    def f_m_tau(self, V, Na: IonInfo, *unused):
-        _ = (V, Na, unused)
+    def f_m_tau(self, V, Na: IonInfo):
         return 50.0 / self.qdeltat
 
-    def f_h_inf(self, V, Na: IonInfo, *unused):
-        _ = (Na, unused)
+    def f_h_inf(self, V, Na: IonInfo):
         V = V.to_decimal(u.mV)
         return 1.0 / (1.0 + u.math.exp((V + 80.0) / 4.0))
 
-    def f_h_tau(self, V, Na: IonInfo, *unused):
-        _ = (Na, unused)
+    def f_h_tau(self, V, Na: IonInfo):
         V = V.to_decimal(u.mV)
         return (1750.0 / (1.0 + u.math.exp((V + 65.0) / -8.0)) + 250.0) / self.qdeltat
 
@@ -319,7 +311,7 @@ class Na_ZH2019_IO(HH):
         super().__init__(size=size, name=name)
         self.g_max = braintools.init.param(g_max, self.varshape, allow_none=False)
 
-    def current(self, V, Na: IonInfo, *unused):
+    def current(self, V, Na: IonInfo):
         return self.g_max * self.conductance_factor(V, Na) * (Na.E - V)
 
     def _m_alpha(self, V):
@@ -340,24 +332,20 @@ class Na_ZH2019_IO(HH):
         x = (V + 50.0) / 10.0
         return 10.0 * _x_over_one_minus_exp_neg_stable(x)
 
-    def f_m_inf(self, V, Na: IonInfo, *unused):
-        _ = (Na, unused)
+    def f_m_inf(self, V, Na: IonInfo):
         alpha = self._m_alpha(V)
         beta = self._m_beta(V)
         return alpha / (alpha + beta)
 
-    def f_m_tau(self, V, Na: IonInfo, *unused):
-        _ = (V, Na, unused)
+    def f_m_tau(self, V, Na: IonInfo):
         return 0.001
 
-    def f_h_inf(self, V, Na: IonInfo, *unused):
-        _ = (Na, unused)
+    def f_h_inf(self, V, Na: IonInfo):
         alpha = self._h_alpha(V)
         beta = self._h_beta(V)
         return alpha / (alpha + beta)
 
-    def f_h_tau(self, V, Na: IonInfo, *unused):
-        _ = (Na, unused)
+    def f_h_tau(self, V, Na: IonInfo):
         alpha = self._h_alpha(V)
         beta = self._h_beta(V)
         return 250.0 / (alpha + beta)
@@ -431,53 +419,53 @@ class Nav1p6_MA2020_GoC(Markov):
     def current(self, V, Na: IonInfo):
         return self.g_max * self.O.value * (Na.E - V)
 
-    f01 = lambda self, V, *unused: 4 * self.alpha * u.math.exp((V / u.mV) / self.x1) * self.phi
-    f02 = lambda self, V, *unused: 3 * self.alpha * u.math.exp((V / u.mV) / self.x1) * self.phi
-    f03 = lambda self, V, *unused: 2 * self.alpha * u.math.exp((V / u.mV) / self.x1) * self.phi
-    f04 = lambda self, V, *unused: 1 * self.alpha * u.math.exp((V / u.mV) / self.x1) * self.phi
-    f0O = lambda self, V, *unused: self.gamma * u.math.exp((V / u.mV) / self.x3) * self.phi
-    fip = lambda self, V, *unused: self.epsilon * u.math.exp((V / u.mV) / self.x5) * self.phi
-    f11 = lambda self, V, *unused: 4 * self.alpha * self.alfac * u.math.exp(
+    f01 = lambda self, V: 4 * self.alpha * u.math.exp((V / u.mV) / self.x1) * self.phi
+    f02 = lambda self, V: 3 * self.alpha * u.math.exp((V / u.mV) / self.x1) * self.phi
+    f03 = lambda self, V: 2 * self.alpha * u.math.exp((V / u.mV) / self.x1) * self.phi
+    f04 = lambda self, V: 1 * self.alpha * u.math.exp((V / u.mV) / self.x1) * self.phi
+    f0O = lambda self, V: self.gamma * u.math.exp((V / u.mV) / self.x3) * self.phi
+    fip = lambda self, V: self.epsilon * u.math.exp((V / u.mV) / self.x5) * self.phi
+    f11 = lambda self, V: 4 * self.alpha * self.alfac * u.math.exp(
         (V / u.mV + self.vshifti) / self.x1) * self.phi
-    f12 = lambda self, V, *unused: 3 * self.alpha * self.alfac * u.math.exp(
+    f12 = lambda self, V: 3 * self.alpha * self.alfac * u.math.exp(
         (V / u.mV + self.vshifti) / self.x1) * self.phi
-    f13 = lambda self, V, *unused: 2 * self.alpha * self.alfac * u.math.exp(
+    f13 = lambda self, V: 2 * self.alpha * self.alfac * u.math.exp(
         (V / u.mV + self.vshifti) / self.x1) * self.phi
-    f14 = lambda self, V, *unused: 1 * self.alpha * self.alfac * u.math.exp(
+    f14 = lambda self, V: 1 * self.alpha * self.alfac * u.math.exp(
         (V / u.mV + self.vshifti) / self.x1) * self.phi
-    f1n = lambda self, V, *unused: self.gamma * u.math.exp((V / u.mV) / self.x3) * self.phi
-    fi1 = lambda self, V, *unused: self.Con * self.phi
-    fi2 = lambda self, V, *unused: self.Con * self.alfac * self.phi
-    fi3 = lambda self, V, *unused: self.Con * self.alfac ** 2 * self.phi
-    fi4 = lambda self, V, *unused: self.Con * self.alfac ** 3 * self.phi
-    fi5 = lambda self, V, *unused: self.Con * self.alfac ** 4 * self.phi
-    fin = lambda self, V, *unused: self.Oon * self.phi
+    f1n = lambda self, V: self.gamma * u.math.exp((V / u.mV) / self.x3) * self.phi
+    fi1 = lambda self, V: self.Con * self.phi
+    fi2 = lambda self, V: self.Con * self.alfac * self.phi
+    fi3 = lambda self, V: self.Con * self.alfac ** 2 * self.phi
+    fi4 = lambda self, V: self.Con * self.alfac ** 3 * self.phi
+    fi5 = lambda self, V: self.Con * self.alfac ** 4 * self.phi
+    fin = lambda self, V: self.Oon * self.phi
 
-    b01 = lambda self, V, *unused: 1 * self.beta * u.math.exp(
+    b01 = lambda self, V: 1 * self.beta * u.math.exp(
         (V / u.mV + self.vshifta) / (self.x2 + self.vshiftk)) * self.phi
-    b02 = lambda self, V, *unused: 2 * self.beta * u.math.exp(
+    b02 = lambda self, V: 2 * self.beta * u.math.exp(
         (V / u.mV + self.vshifta) / (self.x2 + self.vshiftk)) * self.phi
-    b03 = lambda self, V, *unused: 3 * self.beta * u.math.exp(
+    b03 = lambda self, V: 3 * self.beta * u.math.exp(
         (V / u.mV + self.vshifta) / (self.x2 + self.vshiftk)) * self.phi
-    b04 = lambda self, V, *unused: 4 * self.beta * u.math.exp(
+    b04 = lambda self, V: 4 * self.beta * u.math.exp(
         (V / u.mV + self.vshifta) / (self.x2 + self.vshiftk)) * self.phi
-    b0O = lambda self, V, *unused: self.delta * u.math.exp(V / u.mV / self.x4) * self.phi
-    bip = lambda self, V, *unused: self.zeta * u.math.exp(V / u.mV / self.x6) * self.phi
-    b11 = lambda self, V, *unused: 1 * self.beta * self.btfac * u.math.exp(
+    b0O = lambda self, V: self.delta * u.math.exp(V / u.mV / self.x4) * self.phi
+    bip = lambda self, V: self.zeta * u.math.exp(V / u.mV / self.x6) * self.phi
+    b11 = lambda self, V: 1 * self.beta * self.btfac * u.math.exp(
         (V / u.mV + self.vshifti) / self.x2) * self.phi
-    b12 = lambda self, V, *unused: 2 * self.beta * self.btfac * u.math.exp(
+    b12 = lambda self, V: 2 * self.beta * self.btfac * u.math.exp(
         (V / u.mV + self.vshifti) / self.x2) * self.phi
-    b13 = lambda self, V, *unused: 3 * self.beta * self.btfac * u.math.exp(
+    b13 = lambda self, V: 3 * self.beta * self.btfac * u.math.exp(
         (V / u.mV + self.vshifti) / self.x2) * self.phi
-    b14 = lambda self, V, *unused: 4 * self.beta * self.btfac * u.math.exp(
+    b14 = lambda self, V: 4 * self.beta * self.btfac * u.math.exp(
         (V / u.mV + self.vshifti) / self.x2) * self.phi
-    b1n = lambda self, V, *unused: self.delta * u.math.exp(V / u.mV / self.x4) * self.phi
-    bi1 = lambda self, V, *unused: self.Coff * self.phi
-    bi2 = lambda self, V, *unused: self.Coff * self.btfac * self.phi
-    bi3 = lambda self, V, *unused: self.Coff * self.btfac ** 2 * self.phi
-    bi4 = lambda self, V, *unused: self.Coff * self.btfac ** 3 * self.phi
-    bi5 = lambda self, V, *unused: self.Coff * self.btfac ** 4 * self.phi
-    bin = lambda self, V, *unused: self.Ooff * self.phi
+    b1n = lambda self, V: self.delta * u.math.exp(V / u.mV / self.x4) * self.phi
+    bi1 = lambda self, V: self.Coff * self.phi
+    bi2 = lambda self, V: self.Coff * self.btfac * self.phi
+    bi3 = lambda self, V: self.Coff * self.btfac ** 2 * self.phi
+    bi4 = lambda self, V: self.Coff * self.btfac ** 3 * self.phi
+    bi5 = lambda self, V: self.Coff * self.btfac ** 4 * self.phi
+    bin = lambda self, V: self.Ooff * self.phi
 
 @register_channel("Nav1p6_MA2024_PC")
 class Nav1p6_MA2024_PC(Nav1p6_MA2020_GoC):
@@ -631,54 +619,54 @@ class Nav_MA2020_GrC(Markov, IndependentIntegration):
     def current(self, V, Na: IonInfo):
         return self.g_max * self.O.value * (Na.E - V)
 
-    alfa = lambda self, V, *unused: self.phi * self.Aalfa * u.math.exp((V / u.mV) / self.Valfa)
-    beta = lambda self, V, *unused: self.phi * self.Abeta * u.math.exp(-(V / u.mV) / self.Vbeta)
-    teta = lambda self, V, *unused: self.phi * self.Ateta * u.math.exp(-(V / u.mV) / self.Vteta)
-    gamma = lambda self, V, *unused: self.phi * self.Agamma
-    delta = lambda self, V, *unused: self.phi * self.Adelta
-    epsilon = lambda self, V, *unused: self.phi * self.Aepsilon
-    Con = lambda self, V, *unused: self.phi * self.ACon
-    Coff = lambda self, V, *unused: self.phi * self.ACoff
-    Oon = lambda self, V, *unused: self.phi * self.AOon
-    Ooff = lambda self, V, *unused: self.phi * self.AOoff
-    a_factor = lambda self, V, *unused: (self.Oon(V) / self.Con(V)) ** 0.25
-    b_factor = lambda self, V, *unused: (self.Ooff(V) / self.Coff(V)) ** 0.25
+    alfa = lambda self, V: self.phi * self.Aalfa * u.math.exp((V / u.mV) / self.Valfa)
+    beta = lambda self, V: self.phi * self.Abeta * u.math.exp(-(V / u.mV) / self.Vbeta)
+    teta = lambda self, V: self.phi * self.Ateta * u.math.exp(-(V / u.mV) / self.Vteta)
+    gamma = lambda self, V: self.phi * self.Agamma
+    delta = lambda self, V: self.phi * self.Adelta
+    epsilon = lambda self, V: self.phi * self.Aepsilon
+    Con = lambda self, V: self.phi * self.ACon
+    Coff = lambda self, V: self.phi * self.ACoff
+    Oon = lambda self, V: self.phi * self.AOon
+    Ooff = lambda self, V: self.phi * self.AOoff
+    a_factor = lambda self, V: (self.Oon(V) / self.Con(V)) ** 0.25
+    b_factor = lambda self, V: (self.Ooff(V) / self.Coff(V)) ** 0.25
 
-    f01 = lambda self, V, *unused: self.n1 * self.alfa(V)
-    f02 = lambda self, V, *unused: self.n2 * self.alfa(V)
-    f03 = lambda self, V, *unused: self.n3 * self.alfa(V)
-    f04 = lambda self, V, *unused: self.n4 * self.alfa(V)
-    f0O = lambda self, V, *unused: self.gamma(V)
-    fip = lambda self, V, *unused: self.epsilon(V)
-    f11 = lambda self, V, *unused: self.n1 * self.alfa(V) * self.a_factor(V)
-    f12 = lambda self, V, *unused: self.n2 * self.alfa(V) * self.a_factor(V)
-    f13 = lambda self, V, *unused: self.n3 * self.alfa(V) * self.a_factor(V)
-    f14 = lambda self, V, *unused: self.n4 * self.alfa(V) * self.a_factor(V)
-    f1n = lambda self, V, *unused: self.gamma(V)
-    fi1 = lambda self, V, *unused: self.Con(V)
-    fi2 = lambda self, V, *unused: self.Con(V) * self.a_factor(V)
-    fi3 = lambda self, V, *unused: self.Con(V) * self.a_factor(V) ** 2
-    fi4 = lambda self, V, *unused: self.Con(V) * self.a_factor(V) ** 3
-    fi5 = lambda self, V, *unused: self.Con(V) * self.a_factor(V) ** 4
-    fin = lambda self, V, *unused: self.Oon(V)
+    f01 = lambda self, V: self.n1 * self.alfa(V)
+    f02 = lambda self, V: self.n2 * self.alfa(V)
+    f03 = lambda self, V: self.n3 * self.alfa(V)
+    f04 = lambda self, V: self.n4 * self.alfa(V)
+    f0O = lambda self, V: self.gamma(V)
+    fip = lambda self, V: self.epsilon(V)
+    f11 = lambda self, V: self.n1 * self.alfa(V) * self.a_factor(V)
+    f12 = lambda self, V: self.n2 * self.alfa(V) * self.a_factor(V)
+    f13 = lambda self, V: self.n3 * self.alfa(V) * self.a_factor(V)
+    f14 = lambda self, V: self.n4 * self.alfa(V) * self.a_factor(V)
+    f1n = lambda self, V: self.gamma(V)
+    fi1 = lambda self, V: self.Con(V)
+    fi2 = lambda self, V: self.Con(V) * self.a_factor(V)
+    fi3 = lambda self, V: self.Con(V) * self.a_factor(V) ** 2
+    fi4 = lambda self, V: self.Con(V) * self.a_factor(V) ** 3
+    fi5 = lambda self, V: self.Con(V) * self.a_factor(V) ** 4
+    fin = lambda self, V: self.Oon(V)
 
-    b01 = lambda self, V, *unused: self.n4 * self.beta(V)
-    b02 = lambda self, V, *unused: self.n3 * self.beta(V)
-    b03 = lambda self, V, *unused: self.n2 * self.beta(V)
-    b04 = lambda self, V, *unused: self.n1 * self.beta(V)
-    b0O = lambda self, V, *unused: self.delta(V)
-    bip = lambda self, V, *unused: self.teta(V)
-    b11 = lambda self, V, *unused: self.n4 * self.beta(V) * self.b_factor(V)
-    b12 = lambda self, V, *unused: self.n3 * self.beta(V) * self.b_factor(V)
-    b13 = lambda self, V, *unused: self.n2 * self.beta(V) * self.b_factor(V)
-    b14 = lambda self, V, *unused: self.n1 * self.beta(V) * self.b_factor(V)
-    b1n = lambda self, V, *unused: self.delta(V)
-    bi1 = lambda self, V, *unused: self.Coff(V)
-    bi2 = lambda self, V, *unused: self.Coff(V) * self.b_factor(V)
-    bi3 = lambda self, V, *unused: self.Coff(V) * self.b_factor(V) ** 2
-    bi4 = lambda self, V, *unused: self.Coff(V) * self.b_factor(V) ** 3
-    bi5 = lambda self, V, *unused: self.Coff(V) * self.b_factor(V) ** 4
-    bin = lambda self, V, *unused: self.Ooff(V)
+    b01 = lambda self, V: self.n4 * self.beta(V)
+    b02 = lambda self, V: self.n3 * self.beta(V)
+    b03 = lambda self, V: self.n2 * self.beta(V)
+    b04 = lambda self, V: self.n1 * self.beta(V)
+    b0O = lambda self, V: self.delta(V)
+    bip = lambda self, V: self.teta(V)
+    b11 = lambda self, V: self.n4 * self.beta(V) * self.b_factor(V)
+    b12 = lambda self, V: self.n3 * self.beta(V) * self.b_factor(V)
+    b13 = lambda self, V: self.n2 * self.beta(V) * self.b_factor(V)
+    b14 = lambda self, V: self.n1 * self.beta(V) * self.b_factor(V)
+    b1n = lambda self, V: self.delta(V)
+    bi1 = lambda self, V: self.Coff(V)
+    bi2 = lambda self, V: self.Coff(V) * self.b_factor(V)
+    bi3 = lambda self, V: self.Coff(V) * self.b_factor(V) ** 2
+    bi4 = lambda self, V: self.Coff(V) * self.b_factor(V) ** 3
+    bi5 = lambda self, V: self.Coff(V) * self.b_factor(V) ** 4
+    bin = lambda self, V: self.Ooff(V)
 
 @register_channel("NaFHF_MA2020_GrC")
 class NaFHF_MA2020_GrC(Markov, IndependentIntegration):
@@ -754,68 +742,68 @@ class NaFHF_MA2020_GrC(Markov, IndependentIntegration):
     def current(self, V, Na: IonInfo):
         return self.g_max * self.O.value * (Na.E - V)
 
-    alfa = lambda self, V, *unused: self.phi * self.Aalfa * u.math.exp((V / u.mV) / self.Valfa)
-    beta = lambda self, V, *unused: self.phi * self.Abeta * u.math.exp(-(V / u.mV) / self.Vbeta)
-    teta = lambda self, V, *unused: self.phi * self.Ateta * u.math.exp(-(V / u.mV) / self.Vteta)
-    gamma = lambda self, V, *unused: self.phi * self.Agamma
-    delta = lambda self, V, *unused: self.phi * self.Adelta
-    epsilon = lambda self, V, *unused: self.phi * self.Aepsilon
-    Con = lambda self, V, *unused: self.phi * self.ACon
-    Coff = lambda self, V, *unused: self.phi * self.ACoff
-    Oon = lambda self, V, *unused: self.phi * self.AOon
-    Ooff = lambda self, V, *unused: self.phi * self.AOoff
-    a_factor = lambda self, V, *unused: (self.Oon(V) / self.Con(V)) ** 0.25
-    b_factor = lambda self, V, *unused: (self.Ooff(V) / self.Coff(V)) ** 0.25
-    Lon = lambda self, V, *unused: self.phi * self.ALon
-    Loff = lambda self, V, *unused: self.phi * self.ALoff
+    alfa = lambda self, V: self.phi * self.Aalfa * u.math.exp((V / u.mV) / self.Valfa)
+    beta = lambda self, V: self.phi * self.Abeta * u.math.exp(-(V / u.mV) / self.Vbeta)
+    teta = lambda self, V: self.phi * self.Ateta * u.math.exp(-(V / u.mV) / self.Vteta)
+    gamma = lambda self, V: self.phi * self.Agamma
+    delta = lambda self, V: self.phi * self.Adelta
+    epsilon = lambda self, V: self.phi * self.Aepsilon
+    Con = lambda self, V: self.phi * self.ACon
+    Coff = lambda self, V: self.phi * self.ACoff
+    Oon = lambda self, V: self.phi * self.AOon
+    Ooff = lambda self, V: self.phi * self.AOoff
+    a_factor = lambda self, V: (self.Oon(V) / self.Con(V)) ** 0.25
+    b_factor = lambda self, V: (self.Ooff(V) / self.Coff(V)) ** 0.25
+    Lon = lambda self, V: self.phi * self.ALon
+    Loff = lambda self, V: self.phi * self.ALoff
 
-    f01 = lambda self, V, *unused: self.n1 * self.alfa(V)
-    f02 = lambda self, V, *unused: self.n2 * self.alfa(V)
-    f03 = lambda self, V, *unused: self.n3 * self.alfa(V)
-    f04 = lambda self, V, *unused: self.n4 * self.alfa(V)
-    f0O = lambda self, V, *unused: self.gamma(V)
-    fip = lambda self, V, *unused: self.epsilon(V)
-    f11 = lambda self, V, *unused: self.n1 * self.alfa(V) * self.a_factor(V)
-    f12 = lambda self, V, *unused: self.n2 * self.alfa(V) * self.a_factor(V)
-    f13 = lambda self, V, *unused: self.n3 * self.alfa(V) * self.a_factor(V)
-    f14 = lambda self, V, *unused: self.n4 * self.alfa(V) * self.a_factor(V)
-    f1n = lambda self, V, *unused: self.gamma(V)
-    f33 = lambda self, V, *unused: self.n3 * self.alfa(V) * self.c
-    f34 = lambda self, V, *unused: self.n4 * self.alfa(V) * self.c
-    f3n = lambda self, V, *unused: self.gamma(V)
-    fi1 = lambda self, V, *unused: self.Con(V)
-    fi2 = lambda self, V, *unused: self.Con(V) * self.a_factor(V)
-    fi3 = lambda self, V, *unused: self.Con(V) * self.a_factor(V) ** 2
-    fi4 = lambda self, V, *unused: self.Con(V) * self.a_factor(V) ** 3
-    fi5 = lambda self, V, *unused: self.Con(V) * self.a_factor(V) ** 4
-    fin = lambda self, V, *unused: self.Oon(V)
-    fl3 = lambda self, V, *unused: self.Lon(V)
-    fl4 = lambda self, V, *unused: self.Lon(V) * self.c
-    fl5 = lambda self, V, *unused: self.Lon(V) * self.c ** 2
-    fl6 = lambda self, V, *unused: self.Lon(V) * self.c ** 2
+    f01 = lambda self, V: self.n1 * self.alfa(V)
+    f02 = lambda self, V: self.n2 * self.alfa(V)
+    f03 = lambda self, V: self.n3 * self.alfa(V)
+    f04 = lambda self, V: self.n4 * self.alfa(V)
+    f0O = lambda self, V: self.gamma(V)
+    fip = lambda self, V: self.epsilon(V)
+    f11 = lambda self, V: self.n1 * self.alfa(V) * self.a_factor(V)
+    f12 = lambda self, V: self.n2 * self.alfa(V) * self.a_factor(V)
+    f13 = lambda self, V: self.n3 * self.alfa(V) * self.a_factor(V)
+    f14 = lambda self, V: self.n4 * self.alfa(V) * self.a_factor(V)
+    f1n = lambda self, V: self.gamma(V)
+    f33 = lambda self, V: self.n3 * self.alfa(V) * self.c
+    f34 = lambda self, V: self.n4 * self.alfa(V) * self.c
+    f3n = lambda self, V: self.gamma(V)
+    fi1 = lambda self, V: self.Con(V)
+    fi2 = lambda self, V: self.Con(V) * self.a_factor(V)
+    fi3 = lambda self, V: self.Con(V) * self.a_factor(V) ** 2
+    fi4 = lambda self, V: self.Con(V) * self.a_factor(V) ** 3
+    fi5 = lambda self, V: self.Con(V) * self.a_factor(V) ** 4
+    fin = lambda self, V: self.Oon(V)
+    fl3 = lambda self, V: self.Lon(V)
+    fl4 = lambda self, V: self.Lon(V) * self.c
+    fl5 = lambda self, V: self.Lon(V) * self.c ** 2
+    fl6 = lambda self, V: self.Lon(V) * self.c ** 2
 
-    b01 = lambda self, V, *unused: self.n4 * self.beta(V)
-    b02 = lambda self, V, *unused: self.n3 * self.beta(V)
-    b03 = lambda self, V, *unused: self.n2 * self.beta(V)
-    b04 = lambda self, V, *unused: self.n1 * self.beta(V)
-    b0O = lambda self, V, *unused: self.delta(V)
-    bip = lambda self, V, *unused: self.teta(V)
-    b11 = lambda self, V, *unused: self.n4 * self.beta(V) * self.b_factor(V)
-    b12 = lambda self, V, *unused: self.n3 * self.beta(V) * self.b_factor(V)
-    b13 = lambda self, V, *unused: self.n2 * self.beta(V) * self.b_factor(V)
-    b14 = lambda self, V, *unused: self.n1 * self.beta(V) * self.b_factor(V)
-    b1n = lambda self, V, *unused: self.delta(V)
-    b33 = lambda self, V, *unused: self.n2 * self.alfa(V) * self.d
-    b34 = lambda self, V, *unused: self.n1 * self.alfa(V) * self.d
-    b3n = lambda self, V, *unused: self.delta(V)
-    bi1 = lambda self, V, *unused: self.Coff(V)
-    bi2 = lambda self, V, *unused: self.Coff(V) * self.b_factor(V)
-    bi3 = lambda self, V, *unused: self.Coff(V) * self.b_factor(V) ** 2
-    bi4 = lambda self, V, *unused: self.Coff(V) * self.b_factor(V) ** 3
-    bi5 = lambda self, V, *unused: self.Coff(V) * self.b_factor(V) ** 4
-    bin = lambda self, V, *unused: self.Ooff(V)
-    bl3 = lambda self, V, *unused: self.Loff(V)
-    bl4 = lambda self, V, *unused: self.Loff(V) * self.d
-    bl5 = lambda self, V, *unused: self.Loff(V) * self.d ** 2
-    bl6 = lambda self, V, *unused: self.Loff(V) * self.d ** 2
+    b01 = lambda self, V: self.n4 * self.beta(V)
+    b02 = lambda self, V: self.n3 * self.beta(V)
+    b03 = lambda self, V: self.n2 * self.beta(V)
+    b04 = lambda self, V: self.n1 * self.beta(V)
+    b0O = lambda self, V: self.delta(V)
+    bip = lambda self, V: self.teta(V)
+    b11 = lambda self, V: self.n4 * self.beta(V) * self.b_factor(V)
+    b12 = lambda self, V: self.n3 * self.beta(V) * self.b_factor(V)
+    b13 = lambda self, V: self.n2 * self.beta(V) * self.b_factor(V)
+    b14 = lambda self, V: self.n1 * self.beta(V) * self.b_factor(V)
+    b1n = lambda self, V: self.delta(V)
+    b33 = lambda self, V: self.n2 * self.alfa(V) * self.d
+    b34 = lambda self, V: self.n1 * self.alfa(V) * self.d
+    b3n = lambda self, V: self.delta(V)
+    bi1 = lambda self, V: self.Coff(V)
+    bi2 = lambda self, V: self.Coff(V) * self.b_factor(V)
+    bi3 = lambda self, V: self.Coff(V) * self.b_factor(V) ** 2
+    bi4 = lambda self, V: self.Coff(V) * self.b_factor(V) ** 3
+    bi5 = lambda self, V: self.Coff(V) * self.b_factor(V) ** 4
+    bin = lambda self, V: self.Ooff(V)
+    bl3 = lambda self, V: self.Loff(V)
+    bl4 = lambda self, V: self.Loff(V) * self.d
+    bl5 = lambda self, V: self.Loff(V) * self.d ** 2
+    bl6 = lambda self, V: self.Loff(V) * self.d ** 2
 

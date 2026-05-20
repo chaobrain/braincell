@@ -2,6 +2,8 @@
 
 
 from dataclasses import dataclass
+from functools import lru_cache
+import inspect
 from typing import Any, Optional
 from typing import ClassVar
 
@@ -42,6 +44,23 @@ def ghk_flux(V, ci, co, z, temp=None, *, T=None):
 
 def _resolve_value(owner, value):
     return value(owner) if callable(value) else value
+
+
+@lru_cache(maxsize=None)
+def _rate_ion_count(owner_type: type, rate_name: str) -> int | None:
+    signature = inspect.signature(getattr(owner_type, rate_name))
+    params = tuple(signature.parameters.values())
+    positional = {
+        inspect.Parameter.POSITIONAL_ONLY,
+        inspect.Parameter.POSITIONAL_OR_KEYWORD,
+    }
+
+    for param in params:
+        if param.kind == inspect.Parameter.VAR_POSITIONAL:
+            return None
+
+    positional_count = sum(1 for param in params if param.kind in positional)
+    return max(0, positional_count - 2)
 
 
 @dataclass(frozen=True)
@@ -300,6 +319,17 @@ class Markov(Channel, IndependentIntegration):
         states[self._dependent_state_name()] = self._dependent_state_value(raw_states)
         return states
 
+    def _call_rate(self, rate_name: str, V, *ions):
+        ion_count = _rate_ion_count(type(self), rate_name)
+        if ion_count is None:
+            return getattr(self, rate_name)(V, *ions)
+        if ion_count > len(ions):
+            raise TypeError(
+                f"{type(self).__name__}.{rate_name} expects {ion_count} ion argument(s), "
+                f"got {len(ions)}."
+            )
+        return getattr(self, rate_name)(V, *ions[:ion_count])
+
     def pre_integral(self, V, *ions):
         _ = (V, ions)
 
@@ -362,9 +392,9 @@ class Markov(Channel, IndependentIntegration):
         conserve = _flatten_like(self._conserve_value(), "conserve")
         rates = []
         for pair in self._iter_pairs():
-            rates.append(_flatten_like(getattr(self, pair.forward)(V, *ions), pair.forward))
+            rates.append(_flatten_like(self._call_rate(pair.forward, V, *ions), pair.forward))
             if pair.backward is not None:
-                rates.append(_flatten_like(getattr(self, pair.backward)(V, *ions), pair.backward))
+                rates.append(_flatten_like(self._call_rate(pair.backward, V, *ions), pair.backward))
 
         dtype = jnp.result_type(template, conserve, *rates) if rates else jnp.result_type(template, conserve)
         conserve = conserve.astype(dtype)
@@ -373,11 +403,11 @@ class Markov(Channel, IndependentIntegration):
         for pair in self._iter_pairs():
             src = state_names.index(pair.src)
             dst = state_names.index(pair.dst)
-            forward = _flatten_like(getattr(self, pair.forward)(V, *ions), pair.forward).astype(dtype)
+            forward = _flatten_like(self._call_rate(pair.forward, V, *ions), pair.forward).astype(dtype)
             generator = generator.at[:, src, src].add(-forward)
             generator = generator.at[:, dst, src].add(forward)
             if pair.backward is not None:
-                backward = _flatten_like(getattr(self, pair.backward)(V, *ions), pair.backward).astype(dtype)
+                backward = _flatten_like(self._call_rate(pair.backward, V, *ions), pair.backward).astype(dtype)
                 generator = generator.at[:, src, dst].add(backward)
                 generator = generator.at[:, dst, dst].add(-backward)
 
@@ -424,12 +454,12 @@ class Markov(Channel, IndependentIntegration):
         derivatives = {name: self._state_zero() for name in states}
 
         for pair in self._iter_pairs():
-            forward = getattr(self, pair.forward)(V, *ions)
+            forward = self._call_rate(pair.forward, V, *ions)
             derivatives[pair.src] = derivatives[pair.src] - states[pair.src] * forward
             derivatives[pair.dst] = derivatives[pair.dst] + states[pair.src] * forward
 
             if pair.backward is not None:
-                backward = getattr(self, pair.backward)(V, *ions)
+                backward = self._call_rate(pair.backward, V, *ions)
                 derivatives[pair.src] = derivatives[pair.src] + states[pair.dst] * backward
                 derivatives[pair.dst] = derivatives[pair.dst] - states[pair.dst] * backward
 

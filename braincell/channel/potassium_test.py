@@ -134,8 +134,8 @@ class _P4HHMixin:
         k = _k_info()
         ch.init_state(V, k)
         ch.reset_state(V, k)
-        alpha = ch.f_p_alpha(V)
-        beta = ch.f_p_beta(V)
+        alpha = ch.f_p_alpha(V, k)
+        beta = ch.f_p_beta(V, k)
         self.assertTrue(
             u.math.allclose(ch.p.value, alpha / (alpha + beta), atol=1e-6)
         )
@@ -147,8 +147,8 @@ class _P4HHMixin:
         ch.init_state(V, k)
         ch.p.value = jnp.array([0.2])
         ch.compute_derivative(V, k)
-        alpha = ch.f_p_alpha(V)
-        beta = ch.f_p_beta(V)
+        alpha = ch.f_p_alpha(V, k)
+        beta = ch.f_p_beta(V, k)
         phi = ch.gate_phi(ch._iter_gates()[0])
         expected = phi * (alpha * (1.0 - ch.p.value) - beta * ch.p.value) / u.ms
         self.assertTrue(u.math.allclose(ch.p.derivative, expected, atol=1e-6 * u.Hz))
@@ -268,8 +268,8 @@ class _P4QHHMixin:
         k = _k_info()
         ch.init_state(V, k)
         ch.reset_state(V, k)
-        self.assertTrue(u.math.allclose(ch.p.value, ch.f_p_inf(V), atol=1e-6))
-        self.assertTrue(u.math.allclose(ch.q.value, ch.f_q_inf(V), atol=1e-6))
+        self.assertTrue(u.math.allclose(ch.p.value, ch.f_p_inf(V, k), atol=1e-6))
+        self.assertTrue(u.math.allclose(ch.q.value, ch.f_q_inf(V, k), atol=1e-6))
 
     def test_compute_derivative_matches_hh_inf_tau_form(self) -> None:
         ch = self._make(size=1)
@@ -280,8 +280,8 @@ class _P4QHHMixin:
         ch.q.value = jnp.array([0.5])
         ch.compute_derivative(V, k)
         gates = {gate.name: gate for gate in ch._iter_gates()}
-        exp_dp = ch.gate_phi(gates["p"]) * (ch.f_p_inf(V) - ch.p.value) / ch.f_p_tau(V) / u.ms
-        exp_dq = ch.gate_phi(gates["q"]) * (ch.f_q_inf(V) - ch.q.value) / ch.f_q_tau(V) / u.ms
+        exp_dp = ch.gate_phi(gates["p"]) * (ch.f_p_inf(V, k) - ch.p.value) / ch.f_p_tau(V, k) / u.ms
+        exp_dq = ch.gate_phi(gates["q"]) * (ch.f_q_inf(V, k) - ch.q.value) / ch.f_q_tau(V, k) / u.ms
         self.assertTrue(u.math.allclose(ch.p.derivative, exp_dp, atol=1e-6 * u.Hz))
         self.assertTrue(u.math.allclose(ch.q.derivative, exp_dq, atol=1e-6 * u.Hz))
 
@@ -350,8 +350,8 @@ class _PQHHMixin:
         k = _k_info()
         ch.init_state(V, k)
         ch.reset_state(V, k)
-        self.assertTrue(u.math.allclose(ch.p.value, ch.f_p_inf(V), atol=1e-6))
-        self.assertTrue(u.math.allclose(ch.q.value, ch.f_q_inf(V), atol=1e-6))
+        self.assertTrue(u.math.allclose(ch.p.value, ch.f_p_inf(V, k), atol=1e-6))
+        self.assertTrue(u.math.allclose(ch.q.value, ch.f_q_inf(V, k), atol=1e-6))
 
     def test_compute_derivative_matches_hh_inf_tau_form(self) -> None:
         ch = self._make(size=1)
@@ -362,8 +362,8 @@ class _PQHHMixin:
         ch.q.value = jnp.array([0.5])
         ch.compute_derivative(V, k)
         gates = {gate.name: gate for gate in ch._iter_gates()}
-        exp_dp = ch.gate_phi(gates["p"]) * (ch.f_p_inf(V) - ch.p.value) / ch.f_p_tau(V) / u.ms
-        exp_dq = ch.gate_phi(gates["q"]) * (ch.f_q_inf(V) - ch.q.value) / ch.f_q_tau(V) / u.ms
+        exp_dp = ch.gate_phi(gates["p"]) * (ch.f_p_inf(V, k) - ch.p.value) / ch.f_p_tau(V, k) / u.ms
+        exp_dq = ch.gate_phi(gates["q"]) * (ch.f_q_inf(V, k) - ch.q.value) / ch.f_q_tau(V, k) / u.ms
         self.assertTrue(u.math.allclose(ch.p.derivative, exp_dp, atol=1e-6 * u.Hz))
         self.assertTrue(u.math.allclose(ch.q.derivative, exp_dq, atol=1e-6 * u.Hz))
 
@@ -405,7 +405,7 @@ class KNI_Ya1989Test(unittest.TestCase):
         k = _k_info()
         ch.init_state(V, k)
         ch.reset_state(V, k)
-        self.assertTrue(u.math.allclose(ch.p.value, ch.f_p_inf(V), atol=1e-6))
+        self.assertTrue(u.math.allclose(ch.p.value, ch.f_p_inf(V, k), atol=1e-6))
 
     def test_compute_derivative_matches_hh_inf_tau_form(self) -> None:
         ch = KNI_Ya1989(
@@ -420,7 +420,7 @@ class KNI_Ya1989Test(unittest.TestCase):
         ch.p.value = jnp.array([0.2])
         ch.compute_derivative(V, k)
         phi = ch.gate_phi(ch._iter_gates()[0])
-        expected = phi * (ch.f_p_inf(V) - ch.p.value) / ch.f_p_tau(V) / u.ms
+        expected = phi * (ch.f_p_inf(V, k) - ch.p.value) / ch.f_p_tau(V, k) / u.ms
         self.assertTrue(u.math.allclose(ch.p.derivative, expected, atol=1e-6 * u.Hz))
 
     def test_current_matches_formula(self) -> None:
@@ -483,7 +483,7 @@ class K_Kv_testTest(unittest.TestCase):
         k = _k_info()
         ch.init_state(V, k)
         ch.reset_state(V, k)
-        self.assertTrue(u.math.allclose(ch.n.value, ch.f_n_inf(V), atol=1e-6))
+        self.assertTrue(u.math.allclose(ch.n.value, ch.f_n_inf(V, k), atol=1e-6))
 
     def test_compute_derivative_matches_hh_inf_tau_form(self) -> None:
         ch = K_Kv_test(size=1)
@@ -493,7 +493,7 @@ class K_Kv_testTest(unittest.TestCase):
         ch.n.value = jnp.array([0.25])
         ch.compute_derivative(V, k)
         phi = ch.gate_phi(ch._iter_gates()[0])
-        expected = phi * (ch.f_n_inf(V) - ch.n.value) / ch.f_n_tau(V) / u.ms
+        expected = phi * (ch.f_n_inf(V, k) - ch.n.value) / ch.f_n_tau(V, k) / u.ms
         self.assertTrue(u.math.allclose(ch.n.derivative, expected, atol=1e-6 * u.Hz))
 
     def test_current_matches_linear_gating(self) -> None:

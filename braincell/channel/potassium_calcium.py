@@ -75,11 +75,9 @@ class AHP_De1994(HH):
         return self.g_max * self.conductance_factor(V, K, Ca) * (K.E - V)
 
     def f_p_alpha(self, V, K: IonInfo, Ca: IonInfo):
-        _ = (V, K)
         return self.alpha * u.math.power(Ca.Ci / u.mM, self.n)
 
     def f_p_beta(self, V, K: IonInfo, Ca: IonInfo):
-        _ = (V, K, Ca)
         return self.beta
 
 
@@ -131,11 +129,9 @@ class Kca3p1_MA2020_GoC(HH):
         return u.math.where(Ca.Ci / u.mM < 0.01, concdep_1, concdep_2)
 
     def f_p_alpha(self, V, K: IonInfo, Ca: IonInfo):
-        _ = K
         return self.p_alpha(V, Ca)
 
     def f_p_beta(self, V, K: IonInfo, Ca: IonInfo):
-        _ = (V, K, Ca)
         return self.p_beta
 
 
@@ -196,43 +192,33 @@ class Kca2p2_MA2020_GoC(Markov):
         return self.g_max * (states["O1"] + states["O2"]) * (K.E - V)
 
     def dirc2_t_ca(self, V, K: IonInfo, Ca: IonInfo):
-        _ = (V, K)
         return self.dirc2 * self._phi() * (Ca.Ci / u.mM) / self.diff
 
     def dirc3_t_ca(self, V, K: IonInfo, Ca: IonInfo):
-        _ = (V, K)
         return self.dirc3 * self._phi() * (Ca.Ci / u.mM) / self.diff
 
     def dirc4_t_ca(self, V, K: IonInfo, Ca: IonInfo):
-        _ = (V, K)
         return self.dirc4 * self._phi() * (Ca.Ci / u.mM) / self.diff
 
     def invc1_t(self, V, K: IonInfo, Ca: IonInfo):
-        _ = (V, K, Ca)
         return self.invc1 * self._phi()
 
     def invc2_t(self, V, K: IonInfo, Ca: IonInfo):
-        _ = (V, K, Ca)
         return self.invc2 * self._phi()
 
     def invc3_t(self, V, K: IonInfo, Ca: IonInfo):
-        _ = (V, K, Ca)
         return self.invc3 * self._phi()
 
     def invo1_t(self, V, K: IonInfo, Ca: IonInfo):
-        _ = (V, K, Ca)
         return self.invo1 * self._phi()
 
     def invo2_t(self, V, K: IonInfo, Ca: IonInfo):
-        _ = (V, K, Ca)
         return self.invo2 * self._phi()
 
     def diro1_t(self, V, K: IonInfo, Ca: IonInfo):
-        _ = (V, K, Ca)
         return self.diro1 * self._phi()
 
     def diro2_t(self, V, K: IonInfo, Ca: IonInfo):
-        _ = (V, K, Ca)
         return self.diro2 * self._phi()
 
 
@@ -314,105 +300,79 @@ class Kca1p1_MA2020_GoC(Markov):
         ) * (K.E - V)
 
     def c01(self, V, K: IonInfo, Ca: IonInfo):
-        _ = (V, K)
         return 4 * (Ca.Ci / u.mM) * self.k1 * self.onoffrate * self._phi()
 
     def c12(self, V, K: IonInfo, Ca: IonInfo):
-        _ = (V, K)
         return 3 * (Ca.Ci / u.mM) * self.k1 * self.onoffrate * self._phi()
 
     def c23(self, V, K: IonInfo, Ca: IonInfo):
-        _ = (V, K)
         return 2 * (Ca.Ci / u.mM) * self.k1 * self.onoffrate * self._phi()
 
     def c34(self, V, K: IonInfo, Ca: IonInfo):
-        _ = (V, K)
         return 1 * (Ca.Ci / u.mM) * self.k1 * self.onoffrate * self._phi()
 
     def o01(self, V, K: IonInfo, Ca: IonInfo):
-        _ = (V, K)
         return 4 * (Ca.Ci / u.mM) * self.k1 * self.onoffrate * self._phi()
 
     def o12(self, V, K: IonInfo, Ca: IonInfo):
-        _ = (V, K)
         return 3 * (Ca.Ci / u.mM) * self.k1 * self.onoffrate * self._phi()
 
     def o23(self, V, K: IonInfo, Ca: IonInfo):
-        _ = (V, K)
         return 2 * (Ca.Ci / u.mM) * self.k1 * self.onoffrate * self._phi()
 
     def o34(self, V, K: IonInfo, Ca: IonInfo):
-        _ = (V, K)
         return 1 * (Ca.Ci / u.mM) * self.k1 * self.onoffrate * self._phi()
 
     def c10(self, V, K: IonInfo, Ca: IonInfo):
-        _ = (V, K, Ca)
         return 1 * self.Kc * self.k1 * self.onoffrate * self._phi()
 
     def c21(self, V, K: IonInfo, Ca: IonInfo):
-        _ = (V, K, Ca)
         return 2 * self.Kc * self.k1 * self.onoffrate * self._phi()
 
     def c32(self, V, K: IonInfo, Ca: IonInfo):
-        _ = (V, K, Ca)
         return 3 * self.Kc * self.k1 * self.onoffrate * self._phi()
 
     def c43(self, V, K: IonInfo, Ca: IonInfo):
-        _ = (V, K, Ca)
         return 4 * self.Kc * self.k1 * self.onoffrate * self._phi()
 
     def o10(self, V, K: IonInfo, Ca: IonInfo):
-        _ = (V, K, Ca)
         return 1 * self.Ko * self.k1 * self.onoffrate * self._phi()
 
     def o21(self, V, K: IonInfo, Ca: IonInfo):
-        _ = (V, K, Ca)
         return 2 * self.Ko * self.k1 * self.onoffrate * self._phi()
 
     def o32(self, V, K: IonInfo, Ca: IonInfo):
-        _ = (V, K, Ca)
         return 3 * self.Ko * self.k1 * self.onoffrate * self._phi()
 
     def o43(self, V, K: IonInfo, Ca: IonInfo):
-        _ = (V, K, Ca)
         return 4 * self.Ko * self.k1 * self.onoffrate * self._phi()
 
     def f0(self, V, K: IonInfo, Ca: IonInfo):
-        _ = (K, Ca)
         return self.pf0 * self._alpha_factor(V) * self._phi()
 
     def f1(self, V, K: IonInfo, Ca: IonInfo):
-        _ = (K, Ca)
         return self.pf1 * self._alpha_factor(V) * self._phi()
 
     def f2(self, V, K: IonInfo, Ca: IonInfo):
-        _ = (K, Ca)
         return self.pf2 * self._alpha_factor(V) * self._phi()
 
     def f3(self, V, K: IonInfo, Ca: IonInfo):
-        _ = (K, Ca)
         return self.pf3 * self._alpha_factor(V) * self._phi()
 
     def f4(self, V, K: IonInfo, Ca: IonInfo):
-        _ = (K, Ca)
         return self.pf4 * self._alpha_factor(V) * self._phi()
 
     def b0(self, V, K: IonInfo, Ca: IonInfo):
-        _ = (K, Ca)
         return self.pb0 * self._beta_factor(V) * self._phi()
 
     def b1(self, V, K: IonInfo, Ca: IonInfo):
-        _ = (K, Ca)
         return self.pb1 * self._beta_factor(V) * self._phi()
 
     def b2(self, V, K: IonInfo, Ca: IonInfo):
-        _ = (K, Ca)
         return self.pb2 * self._beta_factor(V) * self._phi()
 
     def b3(self, V, K: IonInfo, Ca: IonInfo):
-        _ = (K, Ca)
         return self.pb3 * self._beta_factor(V) * self._phi()
 
     def b4(self, V, K: IonInfo, Ca: IonInfo):
-        _ = (K, Ca)
         return self.pb4 * self._beta_factor(V) * self._phi()

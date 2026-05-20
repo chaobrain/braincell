@@ -238,6 +238,28 @@ class _ExampleMarkovTwoOpenStates(Markov):
         return self.g_max * (states["O1"] + states["O2"]) * (K.E - V)
 
 
+class _ExampleMarkovVoltageOnlyRates(Markov):
+    root_type = Potassium
+    pairs = (
+        Transition("C", "O", "open_rate", "close_rate"),
+    )
+    dependent_state = "C"
+
+    def __init__(self, size=1):
+        super().__init__(size=size, name=None)
+
+    def open_rate(self, V):
+        _ = V
+        return 0.2
+
+    def close_rate(self, V):
+        _ = V
+        return 0.1
+
+    def current(self, V, K: IonInfo):
+        return self.O.value * (K.E - V)
+
+
 class _ExampleHHMixed(HH):
     root_type = Potassium
     gates = (
@@ -572,6 +594,23 @@ class ChannelTemplateTest(unittest.TestCase):
                 atol=1e-6,
             )
         )
+
+    def test_markov_rate_dispatch_respects_declared_signature(self) -> None:
+        ch = _ExampleMarkovVoltageOnlyRates(size=1)
+        V = jnp.array([-65.0]) * u.mV
+        K = _k_info()
+
+        ch.init_state(V, K)
+        ch.O.value = jnp.array([0.25])
+        ch.compute_derivative(V, K)
+
+        states = ch.state_values()
+        expected_dO = (states["C"] * 0.2 - states["O"] * 0.1) / u.ms
+        self.assertTrue(u.math.allclose(ch.O.derivative, expected_dO, atol=1e-6 * u.Hz))
+
+        ch.reset_steady_state(V, K)
+        states = ch.state_values()
+        self.assertTrue(u.math.allclose(states["O"], jnp.array([2.0 / 3.0]), atol=1e-6))
 
     def test_ghk_flux_small_voltage_is_finite(self) -> None:
         value = ghk_flux(

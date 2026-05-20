@@ -275,7 +275,7 @@
 - 当前 `set_state(layout_id, var_name, value)` 会同步更新 bridge buffer 和已注册的 `IL` runtime node 参数
 - 已增加默认全局固定 ion 容器：`runtime.ions["na" | "k" | "ca"]`
 - 已打通 `Channel("INa_HH1952", ...) -> runtime.get_runtime_node(layout_id) -> runtime.get_ion("na").channels["INa"]`
-- 当前 `INa_HH1952` spec 里的 `T` 会在 runtime bridge 中转换成底层构造参数 `phi`
+- 当前 `INa_HH1952` spec 里的 `temp` 会在 runtime bridge 中转换成底层构造参数 `phi`
 - 当前仍只支持 dense runtime；`k/ca` 容器已创建但还未绑定新的真实 channel
 - 下一步优先做更多 ion-bound channel 映射，或者设计 `cell.ion[...]` / `cell.soma.channel[...]` 这种更直接的 facade
 

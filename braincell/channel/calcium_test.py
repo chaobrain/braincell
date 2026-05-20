@@ -275,12 +275,12 @@ class CaHVA_SU2015_DCNTest(unittest.TestCase):
         ch.m.value = jnp.array([0.5])
         current = ch.current(V, ca)
         v_mV = V.to_decimal(u.mV)
-        T = ch.temp.to_decimal(u.kelvin)
+        temp = ch.temp.to_decimal(u.kelvin)
         ci = ca.Ci.to_decimal(u.mM)
         co = ca.Co.to_decimal(u.mM)
         perm = ch.perm.to_decimal(u.cm / u.second)
-        A = u.math.exp(-23.20764929 * v_mV / T)
-        drive = (4.47814e6 * v_mV / T) * ((ci / 1000.0) - (co / 1000.0) * A) / (1.0 - A)
+        A = u.math.exp(-23.20764929 * v_mV / temp)
+        drive = (4.47814e6 * v_mV / temp) * ((ci / 1000.0) - (co / 1000.0) * A) / (1.0 - A)
         expected = -perm * ch.m.value ** 3 * drive
         self.assertTrue(
             u.math.allclose(
@@ -356,12 +356,12 @@ class CaLVA_SU2015_DCNTest(unittest.TestCase):
         ch.h.value = jnp.array([0.25])
         current = ch.current(V, ca)
         v_mV = V.to_decimal(u.mV)
-        T = ch.temp.to_decimal(u.kelvin)
+        temp = ch.temp.to_decimal(u.kelvin)
         ci = ca.Ci.to_decimal(u.mM)
         co = ca.Co.to_decimal(u.mM)
         perm = ch.perm.to_decimal(u.cm / u.second)
-        A = u.math.exp(-23.20764929 * v_mV / T)
-        drive = (4.47814e6 * v_mV / T) * ((ci / 1000.0) - (co / 1000.0) * A) / (1.0 - A)
+        A = u.math.exp(-23.20764929 * v_mV / temp)
+        drive = (4.47814e6 * v_mV / temp) * ((ci / 1000.0) - (co / 1000.0) * A) / (1.0 - A)
         expected = -perm * ch.m.value ** 2 * ch.h.value * drive
         self.assertTrue(
             u.math.allclose(
@@ -592,7 +592,7 @@ class Cav3p1_MA2020_GoCTest(unittest.TestCase):
             ci=ca.Ci,
             co=ca.Co,
             z=ch.z,
-            T=ch.temp,
+            temp=ch.temp,
         )
         self.assertTrue(
             u.math.allclose(

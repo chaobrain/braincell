@@ -25,15 +25,8 @@ __all__ = [
 ]
 
 
-def ghk_flux(V, ci, co, z, temp=None, *, T=None):
+def ghk_flux(V, ci, co, z, temp):
     """Unit-aware GHK flux helper with a small-zeta stable branch."""
-    if temp is None:
-        if T is None:
-            raise TypeError("ghk_flux() missing required temperature argument: 'temp'")
-        temp = T
-    elif T is not None:
-        raise TypeError("ghk_flux() got both 'temp' and 'T'; use only one.")
-
     zeta = (z * u.faraday_constant * V) / (u.gas_constant * temp)
     exp_term = u.math.exp(-zeta)
     numerator = ci - co * exp_term

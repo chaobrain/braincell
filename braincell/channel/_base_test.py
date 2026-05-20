@@ -121,7 +121,7 @@ class _ExampleGHK(HH):
         self.p_max = braintools.init.param(0.01 * (u.cm / u.second), self.varshape, allow_none=False)
         self.Co = 2.0 * u.mM
         self.valence = 2
-        self.T = u.celsius2kelvin(36.0)
+        self.temp = u.celsius2kelvin(36.0)
 
     def f_p_inf(self, V, Ca: IonInfo):
         _ = (V, Ca)
@@ -145,7 +145,7 @@ class _ExampleGHK(HH):
             ci=Ca.Ci,
             co=self.Co,
             z=self.valence,
-            T=self.T,
+            temp=self.temp,
         )
 
 
@@ -420,7 +420,7 @@ class ChannelTemplateTest(unittest.TestCase):
             ci=Ca.Ci,
             co=ch.Co,
             z=ch.valence,
-            T=ch.T,
+            temp=ch.temp,
         )
         unit = expected.unit
         self.assertTrue(u.math.allclose(current.to_decimal(unit), expected.to_decimal(unit), atol=1e-6))
@@ -618,35 +618,17 @@ class ChannelTemplateTest(unittest.TestCase):
             ci=jnp.array([2.0e-4]) * u.mM,
             co=2.0 * u.mM,
             z=2,
-            T=u.celsius2kelvin(36.0),
+            temp=u.celsius2kelvin(36.0),
         )
         self.assertEqual(value.shape, (1,))
 
-    def test_ghk_flux_accepts_temp_and_legacy_T_keyword(self) -> None:
-        kwargs = dict(
-            V=jnp.array([-40.0]) * u.mV,
-            ci=jnp.array([2.0e-4]) * u.mM,
-            co=2.0 * u.mM,
-            z=2,
-        )
-        temp_value = ghk_flux(**kwargs, temp=u.celsius2kelvin(36.0))
-        T_value = ghk_flux(**kwargs, T=u.celsius2kelvin(36.0))
-        self.assertTrue(
-            u.math.allclose(
-                temp_value.to_decimal(temp_value.unit),
-                T_value.to_decimal(temp_value.unit),
-                atol=1e-6,
-            )
-        )
-
-    def test_ghk_flux_rejects_two_temperature_keywords(self) -> None:
+    def test_ghk_flux_rejects_legacy_T_keyword(self) -> None:
         with self.assertRaises(TypeError):
             ghk_flux(
                 V=jnp.array([-40.0]) * u.mV,
                 ci=jnp.array([2.0e-4]) * u.mM,
                 co=2.0 * u.mM,
                 z=2,
-                temp=u.celsius2kelvin(36.0),
                 T=u.celsius2kelvin(36.0),
             )
 

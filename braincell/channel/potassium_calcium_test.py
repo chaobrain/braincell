@@ -162,8 +162,8 @@ class Kca3p1_MA2020_GoCTest(_MixedPotassiumCalciumTemplateTest, unittest.TestCas
         self.assertEqual(ch.p.derivative.shape, (1,))
 
     def test_compute_derivative_matches_reference_without_temperature_scaling(self) -> None:
-        cold = Kca3p1_MA2020_GoC(size=1, T=u.celsius2kelvin(22.0))
-        warm = Kca3p1_MA2020_GoC(size=1, T=u.celsius2kelvin(37.0))
+        cold = Kca3p1_MA2020_GoC(size=1, temp=u.celsius2kelvin(22.0))
+        warm = Kca3p1_MA2020_GoC(size=1, temp=u.celsius2kelvin(37.0))
         V = _V([-60.0])
         k = _k_info()
         ca = _ca_info(C=1e-3)
@@ -174,6 +174,12 @@ class Kca3p1_MA2020_GoCTest(_MixedPotassiumCalciumTemplateTest, unittest.TestCas
             ch.compute_derivative(V, k, ca)
 
         self.assertTrue(u.math.allclose(cold.p.derivative, warm.p.derivative, atol=1e-9 * u.Hz))
+
+    def test_rejects_legacy_temperature_keywords(self) -> None:
+        with self.assertRaises(TypeError):
+            Kca3p1_MA2020_GoC(size=1, T=u.celsius2kelvin(22.0))
+        with self.assertRaises(TypeError):
+            Kca3p1_MA2020_GoC(size=1, T_base=3.0)
 
 
 class Kca2p2_MA2020_GoCTest(_MixedPotassiumCalciumTemplateTest, unittest.TestCase):
@@ -235,6 +241,12 @@ class Kca2p2_MA2020_GoCTest(_MixedPotassiumCalciumTemplateTest, unittest.TestCas
         for name in ch.state_names:
             self.assertEqual(getattr(ch, name).derivative.shape, (1,))
 
+    def test_rejects_legacy_temperature_keywords(self) -> None:
+        with self.assertRaises(TypeError):
+            Kca2p2_MA2020_GoC(size=1, T=u.celsius2kelvin(22.0))
+        with self.assertRaises(TypeError):
+            Kca2p2_MA2020_GoC(size=1, T_base=3.0)
+
 
 class Kca1p1_MA2020_GoCTest(_MixedPotassiumCalciumTemplateTest, unittest.TestCase):
     CLS = Kca1p1_MA2020_GoC
@@ -295,6 +307,12 @@ class Kca1p1_MA2020_GoCTest(_MixedPotassiumCalciumTemplateTest, unittest.TestCas
         ch.compute_derivative(V, k, ca)
         for name in ch.state_names:
             self.assertEqual(getattr(ch, name).derivative.shape, (1,))
+
+    def test_rejects_legacy_temperature_keywords(self) -> None:
+        with self.assertRaises(TypeError):
+            Kca1p1_MA2020_GoC(size=1, T=u.celsius2kelvin(22.0))
+        with self.assertRaises(TypeError):
+            Kca1p1_MA2020_GoC(size=1, T_base=3.0)
 
 
 if __name__ == "__main__":

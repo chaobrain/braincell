@@ -161,7 +161,7 @@ class HCN_HM1992(HH):
 #      & m_{\infty} = 1/(1+\exp((V+75-V_{sh})/5.5)) \\
 #      & \tau_m = (5.3 + 267/(\exp((V+71.5-V_{sh})/14.2) + \exp(-(V+89-V_{sh})/11.6)))
 #
-#   and the temperature regulating factor :math:`\phi=2^{(T-24)/10}`.
+#   and the temperature regulating factor :math:`\phi=2^{(temp-24)/10}`.
 #
 #   References
 #   ----------
@@ -182,8 +182,8 @@ class HCN_HM1992(HH):
 #       g_max: Union[brainstate.typing.ArrayLike, Callable] = 0.02 * (u.mS / u.cm ** 2),
 #       g_inc: Union[brainstate.typing.ArrayLike, Callable] = 2.,
 #       Ca_half: Union[brainstate.typing.ArrayLike, Callable] = 2e-3,
-#       T: brainstate.typing.ArrayLike = 36.,
-#       T_base: brainstate.typing.ArrayLike = 3.,
+#       temp: brainstate.typing.ArrayLike = 36.,
+#       q10_base: brainstate.typing.ArrayLike = 3.,
 #       phi: Union[brainstate.typing.ArrayLike, Callable] = None,
 #       name: Optional[str] = None,
 #       mode: Optional[brainstate.mixin.Mode] = None,
@@ -195,10 +195,10 @@ class HCN_HM1992(HH):
 #     )
 #
 #     # parameters
-#     self.T = braintools.init.param(T, self.varshape, allow_none=False)
-#     self.T_base = braintools.init.param(T_base, self.varshape, allow_none=False)
+#     self.temp = braintools.init.param(temp, self.varshape, allow_none=False)
+#     self.q10_base = braintools.init.param(q10_base, self.varshape, allow_none=False)
 #     if phi is None:
-#       self.phi = self.T_base ** ((self.T - 24.) / 10)
+#       self.phi = self.q10_base ** ((self.temp - 24.) / 10)
 #     else:
 #       self.phi = braintools.init.param(phi, self.varshape, allow_none=False)
 #     self.E = braintools.init.param(E, self.varshape, allow_none=False)
@@ -616,4 +616,3 @@ class HCN_ZH2019_IO(HH):
         return 1.0 / (
             u.math.exp(-0.086 * V - 14.6) + u.math.exp(0.07 * V - 1.87)
         )
-

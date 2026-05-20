@@ -96,13 +96,13 @@ class Kca3p1_MA2020_GoC(HH):
         self,
         size: brainstate.typing.Size,
         g_max: Union[brainstate.typing.ArrayLike, Callable] = 120.0 * (u.mS / u.cm ** 2),
-        T_base: brainstate.typing.ArrayLike = 3.0,
-        T: brainstate.typing.ArrayLike = u.celsius2kelvin(22.0),
+        q10_base: brainstate.typing.ArrayLike = 3.0,
+        temp: brainstate.typing.ArrayLike = u.celsius2kelvin(22.0),
         name: Optional[str] = None,
     ):
         super().__init__(size=size, name=name)
-        self.temp = braintools.init.param(T, self.varshape, allow_none=False)
-        self.T_base = braintools.init.param(T_base, self.varshape, allow_none=False)
+        self.temp = braintools.init.param(temp, self.varshape, allow_none=False)
+        self.q10_base = braintools.init.param(q10_base, self.varshape, allow_none=False)
         self.g_max = braintools.init.param(g_max, self.varshape, allow_none=False)
         self.p_beta = 0.05
 
@@ -155,16 +155,16 @@ class Kca2p2_MA2020_GoC(Markov):
         self,
         size: brainstate.typing.Size,
         g_max: Union[brainstate.typing.ArrayLike, Callable] = 38.0 * (u.mS / u.cm ** 2),
-        T_base: brainstate.typing.ArrayLike = 3.0,
+        q10_base: brainstate.typing.ArrayLike = 3.0,
         diff: brainstate.typing.ArrayLike = 3.0,
-        T: brainstate.typing.ArrayLike = u.celsius2kelvin(22.0),
+        temp: brainstate.typing.ArrayLike = u.celsius2kelvin(22.0),
         name: Optional[str] = None,
         solver: str = "backward_euler",
         substeps: int = 1,
     ):
         super().__init__(size=size, name=name, solver=solver, substeps=substeps)
-        self.temp = braintools.init.param(T, self.varshape, allow_none=False)
-        self.T_base = braintools.init.param(T_base, self.varshape, allow_none=False)
+        self.temp = braintools.init.param(temp, self.varshape, allow_none=False)
+        self.q10_base = braintools.init.param(q10_base, self.varshape, allow_none=False)
         self.g_max = braintools.init.param(g_max, self.varshape, allow_none=False)
         self.diff = braintools.init.param(diff, self.varshape, allow_none=False)
 
@@ -182,7 +182,7 @@ class Kca2p2_MA2020_GoC(Markov):
         self.dirc4 = 80.0
 
     def _phi(self):
-        return _q10_factor(self.temp, self.T_base, ref_celsius=23.0)
+        return _q10_factor(self.temp, self.q10_base, ref_celsius=23.0)
 
     def reset_state(self, V, K: IonInfo, Ca: IonInfo, batch_size: int = None):
         self.reset_steady_state(V, K, Ca, batch_size=batch_size)
@@ -250,16 +250,16 @@ class Kca1p1_MA2020_GoC(Markov):
         self,
         size: brainstate.typing.Size,
         g_max: Union[brainstate.typing.ArrayLike, Callable] = 10.0 * (u.mS / u.cm ** 2),
-        T_base: brainstate.typing.ArrayLike = 3.0,
-        T: brainstate.typing.ArrayLike = u.celsius2kelvin(22.0),
+        q10_base: brainstate.typing.ArrayLike = 3.0,
+        temp: brainstate.typing.ArrayLike = u.celsius2kelvin(22.0),
         name: Optional[str] = None,
         solver: str = "backward_euler",
         substeps: int = 1,
     ):
         super().__init__(size=size, name=name, solver=solver, substeps=substeps)
         self.g_max = braintools.init.param(g_max, self.varshape, allow_none=False)
-        self.temp = braintools.init.param(T, self.varshape, allow_none=False)
-        self.T_base = braintools.init.param(T_base, self.varshape, allow_none=False)
+        self.temp = braintools.init.param(temp, self.varshape, allow_none=False)
+        self.q10_base = braintools.init.param(q10_base, self.varshape, allow_none=False)
 
         self.Qo = 0.73
         self.Qc = -0.67
@@ -282,7 +282,7 @@ class Kca1p1_MA2020_GoC(Markov):
         self.pb4 = 92e-3
 
     def _phi(self):
-        return _q10_factor(self.temp, self.T_base, ref_celsius=23.0)
+        return _q10_factor(self.temp, self.q10_base, ref_celsius=23.0)
 
     def _alpha_factor(self, V):
         return u.math.exp((self.Qo * u.faraday_constant * V) / (u.gas_constant * self.temp))

@@ -388,12 +388,12 @@ class CaHVA_SU2015_DCN(HH):
 
     def current(self, V, Ca: IonInfo):
         v_mV = V.to_decimal(u.mV)
-        T = self.temp.to_decimal(u.kelvin)
+        temp = self.temp.to_decimal(u.kelvin)
         ci = Ca.Ci.to_decimal(u.mM)
         co = Ca.Co.to_decimal(u.mM)
         perm = self.perm.to_decimal(u.cm / u.second)
-        A = u.math.exp(-23.20764929 * v_mV / T)
-        drive = (4.47814e6 * v_mV / T) * ((ci / 1000.0) - (co / 1000.0) * A) / (1.0 - A)
+        A = u.math.exp(-23.20764929 * v_mV / temp)
+        drive = (4.47814e6 * v_mV / temp) * ((ci / 1000.0) - (co / 1000.0) * A) / (1.0 - A)
         current_value = perm * self.m.value ** 3 * drive
         # NEURON's raw ``ica`` is outward-positive, so inward calcium entry
         # appears as a negative current. BrainCell channel currents use the
@@ -438,12 +438,12 @@ class CaLVA_SU2015_DCN(HH):
 
     def current(self, V, Ca: IonInfo):
         v_mV = V.to_decimal(u.mV)
-        T = self.temp.to_decimal(u.kelvin)
+        temp = self.temp.to_decimal(u.kelvin)
         ci = Ca.Ci.to_decimal(u.mM)
         co = Ca.Co.to_decimal(u.mM)
         perm = self.perm.to_decimal(u.cm / u.second)
-        A = u.math.exp(-23.20764929 * v_mV / T)
-        drive = (4.47814e6 * v_mV / T) * ((ci / 1000.0) - (co / 1000.0) * A) / (1.0 - A)
+        A = u.math.exp(-23.20764929 * v_mV / temp)
+        drive = (4.47814e6 * v_mV / temp) * ((ci / 1000.0) - (co / 1000.0) * A) / (1.0 - A)
         current_value = perm * self.m.value ** 2 * self.h.value * drive
         # NEURON's raw ``ical`` is outward-positive, so inward calcium entry
         # appears as a negative current. BrainCell channel currents use the
@@ -635,7 +635,7 @@ class Cav3p1_MA2020_GoC(HH):
         self.z = 2
 
     def current(self, V, Ca: IonInfo):
-        drive = ghk_flux(V=V, ci=Ca.Ci, co=Ca.Co, z=self.z, T=self.temp)
+        drive = ghk_flux(V=V, ci=Ca.Ci, co=Ca.Co, z=self.z, temp=self.temp)
         return -self.g_max * self.conductance_factor(V, Ca) * drive
 
     def f_p_inf(self, V, Ca: IonInfo):

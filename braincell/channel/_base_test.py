@@ -583,6 +583,34 @@ class ChannelTemplateTest(unittest.TestCase):
         )
         self.assertEqual(value.shape, (1,))
 
+    def test_ghk_flux_accepts_temp_and_legacy_T_keyword(self) -> None:
+        kwargs = dict(
+            V=jnp.array([-40.0]) * u.mV,
+            ci=jnp.array([2.0e-4]) * u.mM,
+            co=2.0 * u.mM,
+            z=2,
+        )
+        temp_value = ghk_flux(**kwargs, temp=u.celsius2kelvin(36.0))
+        T_value = ghk_flux(**kwargs, T=u.celsius2kelvin(36.0))
+        self.assertTrue(
+            u.math.allclose(
+                temp_value.to_decimal(temp_value.unit),
+                T_value.to_decimal(temp_value.unit),
+                atol=1e-6,
+            )
+        )
+
+    def test_ghk_flux_rejects_two_temperature_keywords(self) -> None:
+        with self.assertRaises(TypeError):
+            ghk_flux(
+                V=jnp.array([-40.0]) * u.mV,
+                ci=jnp.array([2.0e-4]) * u.mM,
+                co=2.0 * u.mM,
+                z=2,
+                temp=u.celsius2kelvin(36.0),
+                T=u.celsius2kelvin(36.0),
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

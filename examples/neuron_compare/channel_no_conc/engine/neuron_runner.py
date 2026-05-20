@@ -37,6 +37,7 @@ def run_case(case: ChannelNoConcCase) -> dict[str, Any]:
     h.celsius = float(case.simulation.temperature_celsius)
     h.v_init = float(case.simulation.v_init_mV)
     h.finitialize(h.v_init)
+    _initialize_neuron_ion_state(h=h, section=section, segment=segment, case=case, mapping_spec=mapping_spec)
     sample_times_ms = np.arange(0.0, float(case.simulation.duration_ms), float(case.simulation.dt_ms), dtype=float)
     if sample_times_ms.size == 0:
         raise ValueError("simulation.duration_ms must produce at least one sample.")
@@ -114,11 +115,12 @@ def _build_neuron_model(case: ChannelNoConcCase, *, mapping_spec: MappingSpec):
         ion_name = mapping_spec.current_source.ion_name
         if ion_name is None:
             raise ValueError("ion_state requires mapping.current to resolve to ik/ina/ica.")
-        setattr(
-            soma,
-            _resolve_neuron_erev_field(ion_name),
-            float(case.ion_state.E_mV),
-        )
+        if case.ion_state.has_reversal:
+            setattr(
+                soma,
+                _resolve_neuron_erev_field(ion_name),
+                float(case.ion_state.E_mV),
+            )
 
     for seg in soma:
         mech_obj = getattr(seg, mapping_spec.neuron.mechanism_name)
@@ -140,6 +142,27 @@ def _resolve_neuron_erev_field(ion_name: str) -> str:
         "na": "ena",
         "k": "ek",
         "ca": "eca",
+    }[ion_name]
+
+
+def _initialize_neuron_ion_state(*, h, section, segment, case: ChannelNoConcCase, mapping_spec: MappingSpec) -> None:
+    if case.ion_state is None:
+        return
+    ion_name = mapping_spec.current_source.ion_name
+    if ion_name is None:
+        raise ValueError("ion_state requires mapping.current to resolve to ik/ina/ica.")
+    if case.ion_state.has_concentrations:
+        ci_attr, co_attr = _resolve_neuron_concentration_fields(ion_name)
+        setattr(segment, ci_attr, float(case.ion_state.Ci_mM))
+        setattr(segment, co_attr, float(case.ion_state.Co_mM))
+        h.frecord_init()
+
+
+def _resolve_neuron_concentration_fields(ion_name: str) -> tuple[str, str]:
+    return {
+        "na": ("nai", "nao"),
+        "k": ("ki", "ko"),
+        "ca": ("cai", "cao"),
     }[ion_name]
 
 
@@ -189,4 +212,3 @@ def _resolve_neuron_current_ref(segment, *, mech_obj=None, mechanism_name: str |
         f"tried segment refs {candidate_names!r}"
         + (" and mechanism ref " + f"'_ref_{current_var}'." if mech_obj is not None else ".")
     )
-

@@ -12,7 +12,15 @@ from typing import Any, Mapping, Sequence
 _HERE = Path(__file__).resolve().parent
 _ROOT = _HERE.parent
 _ENGINE_ROOT = _ROOT / "engine"
-for candidate in (_HERE, _ROOT, _ENGINE_ROOT):
+_REPO_ROOT = next(
+    (
+        candidate
+        for candidate in (_ROOT, *_ROOT.parents)
+        if (candidate / "braincell").exists() and (candidate / "examples").exists()
+    ),
+    _ROOT,
+)
+for candidate in (_REPO_ROOT, _HERE, _ROOT, _ENGINE_ROOT):
     if str(candidate) not in sys.path:
         sys.path.insert(0, str(candidate))
 
@@ -723,6 +731,9 @@ def plot_observable_metric_boxplots(
     import numpy as np
 
     ok_df = summary_tables["ok_df"]
+    if "observable" in ok_df:
+        ok_df = ok_df.copy()
+        ok_df["observable"] = ok_df["observable"].astype(str)
     families = (
         ("voltage", "Voltage"),
         ("current.", "Current"),

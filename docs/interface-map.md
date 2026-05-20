@@ -413,7 +413,7 @@ metric 属性：
 - `sodium`：`Na_Ba2002`、`Na_TM1991`、`Na_HH1952`、`NaF_SU2015_DCN`、`NaP_SU2015_DCN`、`Na_ZH2019_IO`、`Nav1p6_MA2020_GoC`、`Nav1p6_MA2024_PC`、`Nav1p6_MA2025_BC`、`Nav1p6_RI2021_SC`、`Nav1p1_MA2025_BC`、`Nav1p1_RI2021_SC`、`Nav_MA2020_GrC`、`NaFHF_MA2020_GrC`
 - `potassium`：`KDR_Ba2002`、`K_TM1991`、`K_HH1952`、`KA1_HM1992`、`KA2_HM1992`、`KK2A_HM1992`、`KK2B_HM1992`、`KNI_Ya1989`、`K_Leak`、`KM_*`、`Kv*`、`Kir*`、`Kdr_ZH2019_IO` 等
 - `calcium`：`CaN_IS2008`、`CaT_HM1992`、`CaT_HP1992`、`CaHT_HM1992`、`CaHT_Re1993`、`CaL_IS2008`、`Cav*`、`CaHVA_*`、`Ca_ZH2019_IO`
-- `potassium_calcium`：`AHP_De1994`、`Kca3p1_MA2020`、`Kca2p2_MA2020`、`Kca1p1_MA2020`
+- `potassium_calcium`：`AHP_De1994`、`Kca3p1_MA2020_GoC`、`Kca2p2_MA2020_GoC`、`Kca1p1_MA2020_GoC`
 - `hyperpolarization_activated`：`HCN_HM1992`、`HCN1_*`、`HCN2_MA2020_GoC`、`HCN_SU2015_DCN`、`HCN_ZH2019_IO`
 - `channel._base`：`Gate`、`Transition`、`HH`、`Markov`、`ghk_flux`
 

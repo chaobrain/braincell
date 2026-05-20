@@ -12,7 +12,7 @@
       "dt_ms": 0.01,
       "duration_ms": 20.0,
       "v_init_mV": -65.0,
-      "temperature_celsius": 25.0
+      "temperature_celsius": 36.0
     },
     "stimulus": {
       "kind": "sine",

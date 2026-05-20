@@ -159,7 +159,17 @@ class WorkflowInputTest(unittest.TestCase):
         records_by_name = {record["config_name"]: record for record in records}
         self.assertEqual(
             set(records_by_name),
-            {"hcn1_ri21_sc", "km_ri21_sc", "kir2p3_ri21_sc", "kv1p1_ri21_sc", "kv3p4_ri21_sc", "kv4p3_ri21_sc"},
+            {
+                "cav2p1_ri21_sc",
+                "cav3p2_ri21_sc",
+                "cav3p3_ri21_sc",
+                "hcn1_ri21_sc",
+                "km_ri21_sc",
+                "kir2p3_ri21_sc",
+                "kv1p1_ri21_sc",
+                "kv3p4_ri21_sc",
+                "kv4p3_ri21_sc",
+            },
         )
         self.assertEqual(records_by_name["hcn1_ri21_sc"]["n_templates"], 3)
 

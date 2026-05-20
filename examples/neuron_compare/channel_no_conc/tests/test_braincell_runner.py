@@ -4,6 +4,7 @@ import json
 import os
 import unittest
 
+import brainunit as u
 import numpy as np
 
 from ._helpers import CHANNEL_NO_CONC_ROOT, MOD_VALIDATE_MOD_DIR, TEMPLATES_ROOT, build_case_payload, build_mapping_payload, load_module
@@ -116,6 +117,51 @@ class BraincellRunnerTest(unittest.TestCase):
             1e-3,
         )
 
+    def test_cm_per_second_channel_param_converts_to_brainunit_value(self) -> None:
+        mapping = build_mapping_payload(
+            current_kind="ca",
+            impl_name={"neuron": "Cav2p1_RI21_SC", "braincell": "Cav2p1_RI2021_SC"},
+            gate_names={"common": ["m"]},
+            channel_params={"g_max_cm_s": {"neuron": "pcabar", "braincell": "g_max"}},
+        )
+        kwargs = braincell_runner._convert_channel_params_for_braincell(
+            experiment_schema.MappingSpec.from_mapping(mapping),
+            {"g_max_cm_s": 2.2e-4},
+        )
+
+        self.assertEqual(set(kwargs), {"g_max"})
+        self.assertTrue(
+            u.math.allclose(
+                kwargs["g_max"].to_decimal(u.cm / u.second),
+                2.2e-4,
+                atol=1e-12,
+            )
+        )
+
+    def test_build_init_nernst_ion_uses_fixed_concentration_mode(self) -> None:
+        payload = self._build_payload(stimulus={"kind": "dc", "delay_ms": 0.0, "dur_ms": 2.0, "amp_nA": 0.0})
+        payload["ion_state"] = {"Ci_mM": 2.4e-4, "Co_mM": 2.0}
+        case = experiment_schema.ChannelNoConcCase.from_dict(payload)
+
+        ion_spec = braincell_runner._build_init_nernst_ion(ion_name="ca", case=case)
+
+        self.assertEqual(ion_spec.class_name, "CalciumInitNernst")
+        self.assertEqual(ion_spec.name, "ca")
+        self.assertTrue(
+            u.math.allclose(
+                ion_spec.params["Ci"].to_decimal(u.mM),
+                2.4e-4,
+                atol=1e-12,
+            )
+        )
+        self.assertTrue(
+            u.math.allclose(
+                ion_spec.params["Co"].to_decimal(u.mM),
+                2.0,
+                atol=1e-12,
+            )
+        )
+
     def test_pure_channel_current_uses_mechanism_probe_without_ion_state(self) -> None:
         payload = build_case_payload(
             case_id="ih_braincell",
@@ -190,7 +236,7 @@ class BraincellRunnerTest(unittest.TestCase):
         config_path = CHANNEL_NO_CONC_ROOT / "configs" / "ma20_goc" / "kca3p1_ma20_goc.json"
         template_path = CHANNEL_NO_CONC_ROOT / "templates" / "vinit_celsius.json"
         config = experiment_schema.load_sweep_config(config_path, template_path)
-        case_payload = experiment_schema.expand_cases(config)[4]
+        case_payload = experiment_schema.expand_cases(config)[-1]
         case = experiment_schema.ChannelNoConcCase.from_dict(case_payload)
 
         result = braincell_runner.run_case(case)
@@ -205,7 +251,7 @@ class BraincellRunnerTest(unittest.TestCase):
         config_path = CHANNEL_NO_CONC_ROOT / "configs" / "ma20_goc" / "kca2p2_ma20_goc.json"
         template_path = CHANNEL_NO_CONC_ROOT / "templates" / "vinit_celsius.json"
         config = experiment_schema.load_sweep_config(config_path, template_path)
-        case_payload = experiment_schema.expand_cases(config)[4]
+        case_payload = experiment_schema.expand_cases(config)[-1]
         case = experiment_schema.ChannelNoConcCase.from_dict(case_payload)
 
         result = braincell_runner.run_case(case)
@@ -219,7 +265,7 @@ class BraincellRunnerTest(unittest.TestCase):
         config_path = CHANNEL_NO_CONC_ROOT / "configs" / "ma20_goc" / "kca1p1_ma20_goc.json"
         template_path = CHANNEL_NO_CONC_ROOT / "templates" / "vinit_celsius.json"
         config = experiment_schema.load_sweep_config(config_path, template_path)
-        case_payload = experiment_schema.expand_cases(config)[4]
+        case_payload = experiment_schema.expand_cases(config)[-1]
         case = experiment_schema.ChannelNoConcCase.from_dict(case_payload)
 
         result = braincell_runner.run_case(case)
@@ -277,6 +323,54 @@ class BraincellRunnerTest(unittest.TestCase):
         self.assertEqual(sorted(result["gates"].keys()), ["h"])
         self.assertEqual(result["time_ms"].shape, result["current"]["ix"].shape)
         self.assertGreater(float(np.max(np.abs(result["current"]["ix"]))), 1e-6)
+
+    def test_repo_cav2p1_sc_smoke_case_runs(self) -> None:
+        config_path = CHANNEL_NO_CONC_ROOT / "configs" / "ri21_sc" / "cav2p1_ri21_sc.json"
+        template_path = CHANNEL_NO_CONC_ROOT / "templates" / "vinit_celsius.json"
+        config = experiment_schema.load_sweep_config(config_path, template_path)
+        case_payload = experiment_schema.expand_cases(config)[0]
+        case = experiment_schema.ChannelNoConcCase.from_dict(case_payload)
+
+        result = braincell_runner.run_case(case)
+
+        self.assertEqual(case.mapping_spec.current_source.ion_name, "ca")
+        self.assertEqual(case.ion_state.Ci_mM, 2.4e-4)
+        self.assertEqual(case.ion_state.Co_mM, 2.0)
+        self.assertEqual(sorted(result["gates"].keys()), ["m"])
+        self.assertEqual(result["time_ms"].shape, result["current"]["ix"].shape)
+        self.assertTrue(np.isfinite(result["current"]["ix"]).all())
+
+    def test_repo_cav3p2_sc_smoke_case_runs(self) -> None:
+        config_path = CHANNEL_NO_CONC_ROOT / "configs" / "ri21_sc" / "cav3p2_ri21_sc.json"
+        template_path = CHANNEL_NO_CONC_ROOT / "templates" / "vinit_celsius.json"
+        config = experiment_schema.load_sweep_config(config_path, template_path)
+        case_payload = experiment_schema.expand_cases(config)[0]
+        case = experiment_schema.ChannelNoConcCase.from_dict(case_payload)
+
+        result = braincell_runner.run_case(case)
+
+        self.assertEqual(case.mapping_spec.current_source.ion_name, "ca")
+        self.assertEqual(case.ion_state.Ci_mM, 2.4e-4)
+        self.assertEqual(case.ion_state.Co_mM, 2.0)
+        self.assertEqual(sorted(result["gates"].keys()), ["h", "m"])
+        self.assertEqual(result["time_ms"].shape, result["current"]["ix"].shape)
+        self.assertTrue(np.isfinite(result["current"]["ix"]).all())
+
+    def test_repo_cav3p3_sc_smoke_case_runs(self) -> None:
+        config_path = CHANNEL_NO_CONC_ROOT / "configs" / "ri21_sc" / "cav3p3_ri21_sc.json"
+        template_path = CHANNEL_NO_CONC_ROOT / "templates" / "vinit_celsius.json"
+        config = experiment_schema.load_sweep_config(config_path, template_path)
+        case_payload = experiment_schema.expand_cases(config)[0]
+        case = experiment_schema.ChannelNoConcCase.from_dict(case_payload)
+
+        result = braincell_runner.run_case(case)
+
+        self.assertEqual(case.mapping_spec.current_source.ion_name, "ca")
+        self.assertEqual(case.ion_state.Ci_mM, 2.4e-4)
+        self.assertEqual(case.ion_state.Co_mM, 2.0)
+        self.assertEqual(sorted(result["gates"].keys()), ["l", "n"])
+        self.assertEqual(result["time_ms"].shape, result["current"]["ix"].shape)
+        self.assertTrue(np.isfinite(result["current"]["ix"]).all())
 
     def test_repo_hcn_dcn_smoke_case_runs(self) -> None:
         config_path = CHANNEL_NO_CONC_ROOT / "configs" / "su15_dcn" / "hcn_su15_dcn.json"

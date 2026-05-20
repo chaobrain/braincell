@@ -14,7 +14,7 @@
     "current": "ik",
     "impl_name": {
       "neuron": "Kca2p2_MA20_GoC",
-      "braincell": "Kca2p2_MA2020"
+      "braincell": "Kca2p2_MA2020_GoC"
     },
     "gate_names": {
       "canonical": [

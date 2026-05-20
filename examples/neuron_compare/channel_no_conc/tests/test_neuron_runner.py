@@ -5,7 +5,7 @@ import unittest
 
 import numpy as np
 
-from ._helpers import CHANNEL_NO_CONC_ROOT, TEMPLATES_ROOT, build_case_payload, load_module
+from ._helpers import CHANNEL_NO_CONC_ROOT, TEMPLATES_ROOT, build_case_payload, build_mapping_payload, load_module
 
 
 os.environ.setdefault("JAX_PLATFORMS", "cpu")
@@ -137,6 +137,36 @@ class NeuronRunnerTest(unittest.TestCase):
         )
         self.assertIs(ref, MechanismStub._ref_ih)
 
+    def test_initialize_neuron_ion_state_sets_concentrations_and_calls_frecord_init(self) -> None:
+        class HStub:
+            def __init__(self):
+                self.called = 0
+
+            def frecord_init(self):
+                self.called += 1
+
+        class SegmentStub:
+            pass
+
+        payload = self._build_payload(stimulus={"kind": "dc", "delay_ms": 0.0, "dur_ms": 2.0, "amp_nA": 0.0})
+        payload["mapping"] = build_mapping_payload(current_kind="ca")
+        payload["ion_state"] = {"Ci_mM": 2.4e-4, "Co_mM": 2.0}
+        case = experiment_schema.ChannelNoConcCase.from_dict(payload)
+        h = HStub()
+        seg = SegmentStub()
+
+        neuron_runner._initialize_neuron_ion_state(
+            h=h,
+            section=None,
+            segment=seg,
+            case=case,
+            mapping_spec=case.mapping_spec,
+        )
+
+        self.assertEqual(seg.cai, 2.4e-4)
+        self.assertEqual(seg.cao, 2.0)
+        self.assertEqual(h.called, 1)
+
     def test_resolve_neuron_parameter_target_prefers_mechanism_when_only_mechanism_has_field(self) -> None:
         class SomaStub:
             pass
@@ -253,7 +283,7 @@ class NeuronRunnerTest(unittest.TestCase):
         config_path = CHANNEL_NO_CONC_ROOT / "configs" / "ma20_goc" / "kca3p1_ma20_goc.json"
         template_path = CHANNEL_NO_CONC_ROOT / "templates" / "vinit_celsius.json"
         config = experiment_schema.load_sweep_config(config_path, template_path)
-        case_payload = experiment_schema.expand_cases(config)[4]
+        case_payload = experiment_schema.expand_cases(config)[-1]
         case = experiment_schema.ChannelNoConcCase.from_dict(case_payload)
 
         result = neuron_runner.run_case(case)
@@ -270,7 +300,7 @@ class NeuronRunnerTest(unittest.TestCase):
         config_path = CHANNEL_NO_CONC_ROOT / "configs" / "ma20_goc" / "kca2p2_ma20_goc.json"
         template_path = CHANNEL_NO_CONC_ROOT / "templates" / "vinit_celsius.json"
         config = experiment_schema.load_sweep_config(config_path, template_path)
-        case_payload = experiment_schema.expand_cases(config)[4]
+        case_payload = experiment_schema.expand_cases(config)[-1]
         case = experiment_schema.ChannelNoConcCase.from_dict(case_payload)
 
         result = neuron_runner.run_case(case)
@@ -286,7 +316,7 @@ class NeuronRunnerTest(unittest.TestCase):
         config_path = CHANNEL_NO_CONC_ROOT / "configs" / "ma20_goc" / "kca1p1_ma20_goc.json"
         template_path = CHANNEL_NO_CONC_ROOT / "templates" / "vinit_celsius.json"
         config = experiment_schema.load_sweep_config(config_path, template_path)
-        case_payload = experiment_schema.expand_cases(config)[4]
+        case_payload = experiment_schema.expand_cases(config)[-1]
         case = experiment_schema.ChannelNoConcCase.from_dict(case_payload)
 
         result = neuron_runner.run_case(case)
@@ -346,6 +376,54 @@ class NeuronRunnerTest(unittest.TestCase):
         self.assertEqual(sorted(result["gates"].keys()), ["h"])
         self.assertEqual(result["time_ms"].shape, result["current"]["ix"].shape)
         self.assertGreater(float(np.max(np.abs(result["current"]["ix"]))), 1e-6)
+
+    def test_repo_cav2p1_sc_smoke_case_runs_with_ica_current(self) -> None:
+        config_path = CHANNEL_NO_CONC_ROOT / "configs" / "ri21_sc" / "cav2p1_ri21_sc.json"
+        template_path = CHANNEL_NO_CONC_ROOT / "templates" / "vinit_celsius.json"
+        config = experiment_schema.load_sweep_config(config_path, template_path)
+        case_payload = experiment_schema.expand_cases(config)[0]
+        case = experiment_schema.ChannelNoConcCase.from_dict(case_payload)
+
+        result = neuron_runner.run_case(case)
+
+        self.assertEqual(case.mapping_spec.current_source.neuron_current_var, "ica")
+        self.assertEqual(case.ion_state.Ci_mM, 2.4e-4)
+        self.assertEqual(case.ion_state.Co_mM, 2.0)
+        self.assertEqual(sorted(result["gates"].keys()), ["m"])
+        self.assertEqual(result["time_ms"].shape, result["current"]["ix"].shape)
+        self.assertTrue(np.isfinite(result["current"]["ix"]).all())
+
+    def test_repo_cav3p2_sc_smoke_case_runs_with_ica_current(self) -> None:
+        config_path = CHANNEL_NO_CONC_ROOT / "configs" / "ri21_sc" / "cav3p2_ri21_sc.json"
+        template_path = CHANNEL_NO_CONC_ROOT / "templates" / "vinit_celsius.json"
+        config = experiment_schema.load_sweep_config(config_path, template_path)
+        case_payload = experiment_schema.expand_cases(config)[0]
+        case = experiment_schema.ChannelNoConcCase.from_dict(case_payload)
+
+        result = neuron_runner.run_case(case)
+
+        self.assertEqual(case.mapping_spec.current_source.neuron_current_var, "ica")
+        self.assertEqual(case.ion_state.Ci_mM, 2.4e-4)
+        self.assertEqual(case.ion_state.Co_mM, 2.0)
+        self.assertEqual(sorted(result["gates"].keys()), ["h", "m"])
+        self.assertEqual(result["time_ms"].shape, result["current"]["ix"].shape)
+        self.assertTrue(np.isfinite(result["current"]["ix"]).all())
+
+    def test_repo_cav3p3_sc_smoke_case_runs_with_ica_current(self) -> None:
+        config_path = CHANNEL_NO_CONC_ROOT / "configs" / "ri21_sc" / "cav3p3_ri21_sc.json"
+        template_path = CHANNEL_NO_CONC_ROOT / "templates" / "vinit_celsius.json"
+        config = experiment_schema.load_sweep_config(config_path, template_path)
+        case_payload = experiment_schema.expand_cases(config)[0]
+        case = experiment_schema.ChannelNoConcCase.from_dict(case_payload)
+
+        result = neuron_runner.run_case(case)
+
+        self.assertEqual(case.mapping_spec.current_source.neuron_current_var, "ica")
+        self.assertEqual(case.ion_state.Ci_mM, 2.4e-4)
+        self.assertEqual(case.ion_state.Co_mM, 2.0)
+        self.assertEqual(sorted(result["gates"].keys()), ["l", "n"])
+        self.assertEqual(result["time_ms"].shape, result["current"]["ix"].shape)
+        self.assertTrue(np.isfinite(result["current"]["ix"]).all())
 
     def test_repo_hcn_dcn_smoke_case_runs_with_ih_current(self) -> None:
         config_path = CHANNEL_NO_CONC_ROOT / "configs" / "su15_dcn" / "hcn_su15_dcn.json"

@@ -292,6 +292,17 @@ HCN 的 `E_mV` 就应该写在这里：
 }
 ```
 
+或者：
+
+```json
+{
+  "ion_state": {
+    "Ci_mM": 0.00024,
+    "Co_mM": 2.0
+  }
+}
+```
+
 如果不写，会自动补默认值：
 
 - `na = 50 mV`
@@ -552,6 +563,11 @@ HCN 就是这样。
 
 只有在 `mapping.current` 自动识别到 `ik/ina/ica` 时才有意义。
 
+支持两种互斥模式：
+
+- 固定 reversal：`E_mV`
+- 固定浓度输入：`Ci_mM` + `Co_mM`
+
 #### `channel_params`
 
 只允许出现已经在 `mapping.channel_params` 里声明过的公共参数名。
@@ -622,6 +638,8 @@ HCN 就是这样。
 如果 `mapping.current` 自动识别到 `ik/ina/ica`，额外允许：
 
 - `ion_state.E_mV`
+- `ion_state.Ci_mM`
+- `ion_state.Co_mM`
 
 当 `stimulus.kind == "dc"`，额外允许：
 
@@ -790,8 +808,11 @@ DCN 其余机制不在这个目录的原因：
 - `CaHVA_SU15_DCN`、`CaL_SU15_DCN`、`CaLVA_SU15_DCN`、`SK_SU15_DCN` 属于 `HH_conc`
 - `CdpHVA_SU15_DCN`、`CdpLVA_SU15_DCN` 属于 `Ion_dyn`
 
-`ri21_sc/` 当前覆盖的是 SC 里已经可直接从 `braincell.channel` 导入、并且适合走 `channel_no_conc` compare 的 6 个 channel：
+`ri21_sc/` 当前覆盖的是 SC 里已经可直接从 `braincell.channel` 导入、并且适合走 `channel_no_conc` compare 的 9 个 channel：
 
+- `Cav2p1_RI21_SC`
+- `Cav3p2_RI21_SC`
+- `Cav3p3_RI21_SC`
 - `HCN1_RI21_SC`
 - `KM_RI21_SC`
 - `Kir2p3_RI21_SC`
@@ -803,7 +824,6 @@ SC 其余机制不在这个目录的原因：
 
 - `Nav1p1_RI21_SC`、`Nav1p6_RI21_SC` 属于 `Markov_no_conc`
 - `CdpStC_RI21_SC` 属于 `Ion_dyn`
-- `Cav2p1_RI21_SC`、`Cav3p2_RI21_SC`、`Cav3p3_RI21_SC` 属于 `HH_conc`
 - `Kca1p1_RI21_SC`、`Kca2p2_RI21_SC` 属于 `Markov_conc`
 
 `su15_dcn/` 当前覆盖的是 DCN 里已经可直接从 `braincell.channel` 导入、并且适合走 `channel_no_conc` compare 的 5 个 channel：

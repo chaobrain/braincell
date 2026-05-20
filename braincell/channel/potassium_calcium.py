@@ -30,9 +30,9 @@ from braincell.mech import register_channel
 
 __all__ = [
     "AHP_De1994",
-    "Kca3p1_MA2020",
-    "Kca2p2_MA2020",
-    "Kca1p1_MA2020",
+    "Kca3p1_MA2020_GoC",
+    "Kca2p2_MA2020_GoC",
+    "Kca1p1_MA2020_GoC",
 ]
 
 
@@ -83,8 +83,8 @@ class AHP_De1994(HH):
         return self.beta
 
 
-@register_channel("Kca3p1_MA2020")
-class Kca3p1_MA2020(HH):
+@register_channel("Kca3p1_MA2020_GoC")
+class Kca3p1_MA2020_GoC(HH):
     r"""Template-based import of ``Kca3p1_MA20_GoC.mod``."""
 
     __module__ = "braincell.channel"
@@ -139,8 +139,8 @@ class Kca3p1_MA2020(HH):
         return self.p_beta
 
 
-@register_channel("Kca2p2_MA2020")
-class Kca2p2_MA2020(Markov):
+@register_channel("Kca2p2_MA2020_GoC")
+class Kca2p2_MA2020_GoC(Markov):
     r"""Template-based import of ``Kca2p2_MA20_GoC.mod``."""
 
     __module__ = "braincell.channel"
@@ -236,8 +236,8 @@ class Kca2p2_MA2020(Markov):
         return self.diro2 * self._phi()
 
 
-@register_channel("Kca1p1_MA2020")
-class Kca1p1_MA2020(Markov):
+@register_channel("Kca1p1_MA2020_GoC")
+class Kca1p1_MA2020_GoC(Markov):
     r"""Template-based import of ``Kca1p1_MA20_GoC.mod``."""
 
     __module__ = "braincell.channel"

@@ -3,6 +3,7 @@
 import json
 import os
 from pathlib import Path
+import math
 import tempfile
 import unittest
 
@@ -28,6 +29,13 @@ experiment_schema = load_module(
 
 
 class ExperimentSchemaTest(unittest.TestCase):
+    def _repo_axis_size(self, template_path: Path) -> int:
+        template = experiment_schema.load_scan_template(template_path)
+        size = 1
+        for values in template.raw_sweep_axes.values():
+            size *= len(values)
+        return size
+
     def test_builds_minimal_case(self) -> None:
         case = experiment_schema.ChannelNoConcCase.from_dict(build_case_payload())
         self.assertAlmostEqual(case.morphology.radius_um, 50.0 / 3.141592653589793, places=12)
@@ -225,7 +233,7 @@ class ExperimentSchemaTest(unittest.TestCase):
         self.assertEqual(expanded[0]["channel_params"]["g_max_S_cm2"], 0.0)
 
     def test_repo_vinit_celsius_template_expands_expected_cases(self) -> None:
-        config_path = CHANNEL_NO_CONC_ROOT / "configs" / "kv_test.json"
+        config_path = CHANNEL_NO_CONC_ROOT / "configs" / "ma24_pc" / "kir2p3_ma24_pc.json"
         template_path = CHANNEL_NO_CONC_ROOT / "templates" / "vinit_celsius.json"
 
         model_config = experiment_schema.load_model_config(config_path)
@@ -234,16 +242,28 @@ class ExperimentSchemaTest(unittest.TestCase):
         expanded = experiment_schema.expand_cases(config)
 
         self.assertEqual(template.group_id, "vinit_celsius")
-        self.assertEqual(len(expanded), 9)
+        self.assertEqual(len(expanded), self._repo_axis_size(template_path))
         self.assertEqual(expanded[0]["stimulus"], {"kind": "dc", "delay_ms": 0.0, "dur_ms": 10.0, "amp_nA": 0.0})
-        self.assertEqual(expanded[0]["simulation"]["v_init_mV"], -80.0)
-        self.assertEqual(expanded[0]["simulation"]["temperature_celsius"], 22.0)
+        self.assertIn(
+            expanded[0]["simulation"]["v_init_mV"],
+            template.raw_sweep_axes["simulation.v_init_mV"],
+        )
+        self.assertIn(
+            expanded[0]["simulation"]["temperature_celsius"],
+            template.raw_sweep_axes["simulation.temperature_celsius"],
+        )
         self.assertEqual(expanded[0]["ion_state"]["E_mV"], -80.0)
-        self.assertEqual(expanded[-1]["simulation"]["v_init_mV"], -50.0)
-        self.assertEqual(expanded[-1]["simulation"]["temperature_celsius"], 37.0)
+        self.assertIn(
+            expanded[-1]["simulation"]["v_init_mV"],
+            template.raw_sweep_axes["simulation.v_init_mV"],
+        )
+        self.assertIn(
+            expanded[-1]["simulation"]["temperature_celsius"],
+            template.raw_sweep_axes["simulation.temperature_celsius"],
+        )
 
     def test_repo_dc_template_expands_expected_cases(self) -> None:
-        config_path = CHANNEL_NO_CONC_ROOT / "configs" / "kv_test.json"
+        config_path = CHANNEL_NO_CONC_ROOT / "configs" / "ma24_pc" / "kir2p3_ma24_pc.json"
         template_path = CHANNEL_NO_CONC_ROOT / "templates" / "dc.json"
 
         model_config = experiment_schema.load_model_config(config_path)
@@ -252,14 +272,14 @@ class ExperimentSchemaTest(unittest.TestCase):
         expanded = experiment_schema.expand_cases(config)
 
         self.assertEqual(template.group_id, "dc")
-        self.assertEqual(len(expanded), 3)
-        self.assertEqual([case["stimulus"]["amp_nA"] for case in expanded], [-0.05, 0.0, 0.05])
+        self.assertEqual(len(expanded), self._repo_axis_size(template_path))
+        self.assertEqual([case["stimulus"]["amp_nA"] for case in expanded], list(template.raw_sweep_axes["stimulus.amp_nA"]))
         self.assertEqual(expanded[0]["simulation"]["v_init_mV"], -65.0)
-        self.assertEqual(expanded[0]["simulation"]["temperature_celsius"], 25.0)
+        self.assertEqual(expanded[0]["simulation"]["temperature_celsius"], template.base["simulation"]["temperature_celsius"])
         self.assertEqual(expanded[0]["ion_state"]["E_mV"], -80.0)
 
     def test_repo_ac_template_expands_expected_cases(self) -> None:
-        config_path = CHANNEL_NO_CONC_ROOT / "configs" / "kv_test.json"
+        config_path = CHANNEL_NO_CONC_ROOT / "configs" / "ma24_pc" / "kir2p3_ma24_pc.json"
         template_path = CHANNEL_NO_CONC_ROOT / "templates" / "ac.json"
 
         model_config = experiment_schema.load_model_config(config_path)
@@ -268,7 +288,7 @@ class ExperimentSchemaTest(unittest.TestCase):
         expanded = experiment_schema.expand_cases(config)
 
         self.assertEqual(template.group_id, "ac")
-        self.assertEqual(len(expanded), 3)
+        self.assertEqual(len(expanded), self._repo_axis_size(template_path))
         self.assertEqual([case["stimulus"]["frequency_hz"] for case in expanded], [50.0, 100.0, 250.0])
         self.assertEqual(expanded[0]["stimulus"]["kind"], "sine")
         self.assertEqual(expanded[0]["stimulus"]["amplitude_nA"], 0.02)
@@ -284,12 +304,18 @@ class ExperimentSchemaTest(unittest.TestCase):
         expanded = experiment_schema.expand_cases(config)
 
         self.assertEqual(config.mapping_spec.current_source.neuron_current_var, "ih")
-        self.assertEqual(len(expanded), 9)
+        self.assertEqual(len(expanded), self._repo_axis_size(template_path))
         self.assertNotIn("ion_state", expanded[0])
         self.assertEqual(expanded[0]["channel_params"]["E_mV"], -34.4)
         self.assertEqual(expanded[0]["channel_params"]["g_max_S_cm2"], 0.0001)
-        self.assertEqual(expanded[0]["simulation"]["v_init_mV"], -80.0)
-        self.assertEqual(expanded[0]["simulation"]["temperature_celsius"], 22.0)
+        self.assertIn(
+            expanded[0]["simulation"]["v_init_mV"],
+            template.raw_sweep_axes["simulation.v_init_mV"],
+        )
+        self.assertIn(
+            expanded[0]["simulation"]["temperature_celsius"],
+            template.raw_sweep_axes["simulation.temperature_celsius"],
+        )
 
     def test_repo_kir2p3_dc_template_expands_expected_cases(self) -> None:
         config_path = CHANNEL_NO_CONC_ROOT / "configs" / "ma24_pc" / "kir2p3_ma24_pc.json"
@@ -303,8 +329,8 @@ class ExperimentSchemaTest(unittest.TestCase):
         self.assertEqual(template.group_id, "dc")
         self.assertEqual(config.mapping_spec.parameter_map["g_max_S_cm2"].neuron, "gkbar")
         self.assertEqual(config.mapping_spec.neuron.gate_names, ("d",))
-        self.assertEqual(len(expanded), 3)
-        self.assertEqual([case["stimulus"]["amp_nA"] for case in expanded], [-0.05, 0.0, 0.05])
+        self.assertEqual(len(expanded), self._repo_axis_size(template_path))
+        self.assertEqual([case["stimulus"]["amp_nA"] for case in expanded], list(template.raw_sweep_axes["stimulus.amp_nA"]))
         self.assertEqual(expanded[0]["ion_state"]["E_mV"], -80.0)
 
     def test_repo_hcn_bc_vinit_template_expands_pure_channel_case(self) -> None:
@@ -317,7 +343,7 @@ class ExperimentSchemaTest(unittest.TestCase):
         expanded = experiment_schema.expand_cases(config)
 
         self.assertEqual(config.mapping_spec.current_source.neuron_current_var, "ih")
-        self.assertEqual(len(expanded), 9)
+        self.assertEqual(len(expanded), self._repo_axis_size(template_path))
         self.assertNotIn("ion_state", expanded[0])
         self.assertEqual(expanded[0]["channel_params"]["E_mV"], -34.4)
         self.assertEqual(expanded[0]["channel_params"]["g_max_S_cm2"], 0.0001)
@@ -337,7 +363,7 @@ class ExperimentSchemaTest(unittest.TestCase):
             config.mapping_spec.neuron.gate_names,
             ("C1", "C2", "C3", "C4", "C5", "I1", "I2", "I3", "I4", "I5", "O", "B"),
         )
-        self.assertEqual(len(expanded), 9)
+        self.assertEqual(len(expanded), self._repo_axis_size(template_path))
         self.assertEqual(expanded[0]["channel_params"]["g_max_S_cm2"], 0.016)
         self.assertEqual(expanded[0]["ion_state"]["E_mV"], 50.0)
 
@@ -353,7 +379,7 @@ class ExperimentSchemaTest(unittest.TestCase):
         self.assertEqual(config.mapping_spec.current_source.ion_name, "k")
         self.assertEqual(config.mapping_spec.neuron.gate_names, ("n",))
         self.assertEqual(config.mapping_spec.parameter_map["g_max_S_cm2"].neuron, "gbar")
-        self.assertEqual(len(expanded), 3)
+        self.assertEqual(len(expanded), self._repo_axis_size(template_path))
         self.assertEqual(expanded[0]["channel_params"]["g_max_S_cm2"], 0.004)
         self.assertEqual(expanded[0]["ion_state"]["E_mV"], -80.0)
 
@@ -369,7 +395,7 @@ class ExperimentSchemaTest(unittest.TestCase):
         self.assertEqual(config.mapping_spec.current_source.neuron_current_var, "ih")
         self.assertIsNone(config.mapping_spec.current_source.ion_name)
         self.assertEqual(config.mapping_spec.neuron.gate_names, ("o_fast", "o_slow"))
-        self.assertEqual(len(expanded), 9)
+        self.assertEqual(len(expanded), self._repo_axis_size(template_path))
         self.assertEqual(expanded[0]["channel_params"]["E_mV"], -20.0)
         self.assertEqual(expanded[0]["channel_params"]["g_max_S_cm2"], 0.00005)
 
@@ -386,7 +412,7 @@ class ExperimentSchemaTest(unittest.TestCase):
         self.assertEqual(config.mapping_spec.neuron.gate_names, ("Y",))
         self.assertEqual(config.mapping_spec.braincell.gate_names, ("p",))
         self.assertEqual(config.mapping_spec.parameter_map["g_max_S_cm2"].neuron, "gkbar")
-        self.assertEqual(len(expanded), 9)
+        self.assertEqual(len(expanded), self._repo_axis_size(template_path))
         self.assertEqual(expanded[0]["channel_params"]["g_max_S_cm2"], 0.12)
         self.assertEqual(expanded[0]["ion_state"]["E_mV"], -80.0)
 
@@ -403,7 +429,7 @@ class ExperimentSchemaTest(unittest.TestCase):
         self.assertEqual(config.mapping_spec.neuron.gate_names, ("c2", "c3", "c4", "o1", "o2"))
         self.assertEqual(config.mapping_spec.braincell.gate_names, ("C2", "C3", "C4", "O1", "O2"))
         self.assertEqual(config.mapping_spec.parameter_map["g_max_S_cm2"].neuron, "gkbar")
-        self.assertEqual(len(expanded), 9)
+        self.assertEqual(len(expanded), self._repo_axis_size(template_path))
         self.assertEqual(expanded[0]["channel_params"]["g_max_S_cm2"], 0.038)
         self.assertEqual(expanded[0]["ion_state"]["E_mV"], -80.0)
 
@@ -422,7 +448,7 @@ class ExperimentSchemaTest(unittest.TestCase):
             ("C1", "C2", "C3", "C4", "O0", "O1", "O2", "O3", "O4"),
         )
         self.assertEqual(config.mapping_spec.parameter_map["g_max_S_cm2"].neuron, "gbar")
-        self.assertEqual(len(expanded), 9)
+        self.assertEqual(len(expanded), self._repo_axis_size(template_path))
         self.assertEqual(expanded[0]["channel_params"]["g_max_S_cm2"], 0.01)
         self.assertEqual(expanded[0]["ion_state"]["E_mV"], -80.0)
 
@@ -438,7 +464,7 @@ class ExperimentSchemaTest(unittest.TestCase):
         self.assertEqual(config.mapping_spec.current_source.ion_name, "ca")
         self.assertEqual(config.mapping_spec.neuron.gate_names, ("s", "u"))
         self.assertEqual(config.mapping_spec.parameter_map["g_max_S_cm2"].neuron, "gcabar")
-        self.assertEqual(len(expanded), 3)
+        self.assertEqual(len(expanded), self._repo_axis_size(template_path))
         self.assertEqual(expanded[0]["channel_params"]["g_max_S_cm2"], 0.00046)
         self.assertEqual(expanded[0]["ion_state"]["E_mV"], 120.0)
 
@@ -457,7 +483,7 @@ class ExperimentSchemaTest(unittest.TestCase):
             config.mapping_spec.neuron.gate_names,
             ("C1", "C2", "C3", "C4", "C5", "I1", "I2", "I3", "I4", "I5", "O", "B"),
         )
-        self.assertEqual(len(expanded), 9)
+        self.assertEqual(len(expanded), self._repo_axis_size(template_path))
         self.assertEqual(expanded[0]["channel_params"]["g_max_S_cm2"], 0.016)
         self.assertEqual(expanded[0]["ion_state"]["E_mV"], 50.0)
 
@@ -489,7 +515,7 @@ class ExperimentSchemaTest(unittest.TestCase):
         self.assertEqual(config.mapping_spec.current_source.ion_name, "na")
         self.assertEqual(config.mapping_spec.neuron.gate_names, ("m", "h"))
         self.assertEqual(config.mapping_spec.parameter_map["g_max_S_cm2"].neuron, "gbar")
-        self.assertEqual(len(expanded), 3)
+        self.assertEqual(len(expanded), self._repo_axis_size(template_path))
         self.assertEqual(expanded[0]["channel_params"]["g_max_S_cm2"], 0.00001)
         self.assertEqual(expanded[0]["ion_state"]["E_mV"], 50.0)
 
@@ -505,7 +531,7 @@ class ExperimentSchemaTest(unittest.TestCase):
         self.assertEqual(config.mapping_spec.current_source.neuron_current_var, "ih")
         self.assertIsNone(config.mapping_spec.current_source.ion_name)
         self.assertEqual(config.mapping_spec.neuron.gate_names, ("h",))
-        self.assertEqual(len(expanded), 9)
+        self.assertEqual(len(expanded), self._repo_axis_size(template_path))
         self.assertEqual(expanded[0]["channel_params"]["E_mV"], -34.4)
         self.assertEqual(expanded[0]["channel_params"]["g_max_S_cm2"], 0.0001)
 
@@ -521,9 +547,66 @@ class ExperimentSchemaTest(unittest.TestCase):
         self.assertEqual(config.mapping_spec.current_source.ion_name, "k")
         self.assertEqual(config.mapping_spec.neuron.gate_names, ("n",))
         self.assertEqual(config.mapping_spec.parameter_map["g_max_S_cm2"].neuron, "gkbar")
-        self.assertEqual(len(expanded), 3)
+        self.assertEqual(len(expanded), self._repo_axis_size(template_path))
         self.assertEqual(expanded[0]["channel_params"]["g_max_S_cm2"], 0.00025)
         self.assertEqual(expanded[0]["ion_state"]["E_mV"], -80.0)
+
+    def test_repo_cav2p1_sc_vinit_template_expands_expected_cases(self) -> None:
+        config_path = CHANNEL_NO_CONC_ROOT / "configs" / "ri21_sc" / "cav2p1_ri21_sc.json"
+        template_path = CHANNEL_NO_CONC_ROOT / "templates" / "vinit_celsius.json"
+
+        model_config = experiment_schema.load_model_config(config_path)
+        template = experiment_schema.load_scan_template(template_path)
+        config = experiment_schema.build_sweep_config(model_config, template)
+        expanded = experiment_schema.expand_cases(config)
+
+        self.assertEqual(config.mapping_spec.current_source.ion_name, "ca")
+        self.assertEqual(config.mapping_spec.neuron.gate_names, ("m",))
+        self.assertEqual(config.mapping_spec.parameter_map["g_max_cm_s"].neuron, "pcabar")
+        self.assertEqual(config.mapping_spec.parameter_map["g_max_cm_s"].braincell, "g_max")
+        self.assertEqual(len(expanded), self._repo_axis_size(template_path))
+        self.assertEqual(expanded[0]["channel_params"]["g_max_cm_s"], 0.00022)
+        self.assertEqual(expanded[0]["ion_state"]["Ci_mM"], 0.00024)
+        self.assertEqual(expanded[0]["ion_state"]["Co_mM"], 2.0)
+
+    def test_repo_cav3p2_sc_vinit_template_expands_expected_cases(self) -> None:
+        config_path = CHANNEL_NO_CONC_ROOT / "configs" / "ri21_sc" / "cav3p2_ri21_sc.json"
+        template_path = CHANNEL_NO_CONC_ROOT / "templates" / "vinit_celsius.json"
+
+        model_config = experiment_schema.load_model_config(config_path)
+        template = experiment_schema.load_scan_template(template_path)
+        config = experiment_schema.build_sweep_config(model_config, template)
+        expanded = experiment_schema.expand_cases(config)
+
+        self.assertEqual(config.mapping_spec.current_source.ion_name, "ca")
+        self.assertEqual(config.mapping_spec.neuron.gate_names, ("m", "h"))
+        self.assertEqual(config.mapping_spec.parameter_map["g_max_S_cm2"].neuron, "gcabar")
+        self.assertEqual(config.mapping_spec.parameter_map["g_max_S_cm2"].braincell, "g_max")
+        self.assertEqual(len(expanded), self._repo_axis_size(template_path))
+        self.assertEqual(expanded[0]["channel_params"]["g_max_S_cm2"], 0.0008)
+        self.assertEqual(expanded[0]["ion_state"]["Ci_mM"], 0.00024)
+        self.assertEqual(expanded[0]["ion_state"]["Co_mM"], 2.0)
+
+    def test_repo_cav3p3_sc_vinit_template_expands_expected_cases(self) -> None:
+        config_path = CHANNEL_NO_CONC_ROOT / "configs" / "ri21_sc" / "cav3p3_ri21_sc.json"
+        template_path = CHANNEL_NO_CONC_ROOT / "templates" / "vinit_celsius.json"
+
+        model_config = experiment_schema.load_model_config(config_path)
+        template = experiment_schema.load_scan_template(template_path)
+        config = experiment_schema.build_sweep_config(model_config, template)
+        expanded = experiment_schema.expand_cases(config)
+
+        self.assertEqual(config.mapping_spec.current_source.ion_name, "ca")
+        self.assertEqual(config.mapping_spec.neuron.gate_names, ("n", "l"))
+        self.assertEqual(config.mapping_spec.parameter_map["perm_cm_s"].neuron, "pcabar")
+        self.assertEqual(config.mapping_spec.parameter_map["perm_cm_s"].braincell, "perm")
+        self.assertEqual(config.mapping_spec.parameter_map["g_scale"].neuron, "gCav3_3bar")
+        self.assertEqual(config.mapping_spec.parameter_map["g_scale"].braincell, "g_scale")
+        self.assertEqual(len(expanded), self._repo_axis_size(template_path))
+        self.assertEqual(expanded[0]["channel_params"]["perm_cm_s"], 0.0001)
+        self.assertEqual(expanded[0]["channel_params"]["g_scale"], 0.00001)
+        self.assertEqual(expanded[0]["ion_state"]["Ci_mM"], 0.00024)
+        self.assertEqual(expanded[0]["ion_state"]["Co_mM"], 2.0)
 
     def test_repo_hcn_dcn_vinit_template_expands_expected_cases(self) -> None:
         config_path = CHANNEL_NO_CONC_ROOT / "configs" / "su15_dcn" / "hcn_su15_dcn.json"
@@ -537,7 +620,7 @@ class ExperimentSchemaTest(unittest.TestCase):
         self.assertEqual(config.mapping_spec.current_source.neuron_current_var, "ih")
         self.assertIsNone(config.mapping_spec.current_source.ion_name)
         self.assertEqual(config.mapping_spec.neuron.gate_names, ("m",))
-        self.assertEqual(len(expanded), 9)
+        self.assertEqual(len(expanded), self._repo_axis_size(template_path))
         self.assertEqual(expanded[0]["channel_params"]["E_mV"], -45.0)
         self.assertEqual(expanded[0]["channel_params"]["g_max_S_cm2"], 0.00001)
 
@@ -553,7 +636,7 @@ class ExperimentSchemaTest(unittest.TestCase):
         self.assertEqual(config.mapping_spec.current_source.ion_name, "na")
         self.assertEqual(config.mapping_spec.neuron.gate_names, ("m", "h"))
         self.assertEqual(config.mapping_spec.parameter_map["g_max_S_cm2"].neuron, "gbar")
-        self.assertEqual(len(expanded), 3)
+        self.assertEqual(len(expanded), self._repo_axis_size(template_path))
         self.assertEqual(expanded[0]["channel_params"]["g_max_S_cm2"], 0.00001)
         self.assertEqual(expanded[0]["ion_state"]["E_mV"], 50.0)
 
@@ -603,6 +686,33 @@ class ExperimentSchemaTest(unittest.TestCase):
 
         self.assertEqual(case.ion_state.E_mV, -80.0)
         self.assertEqual(normalized["ion_state"]["E_mV"], -80.0)
+
+    def test_ion_state_accepts_fixed_concentrations(self) -> None:
+        payload = build_case_payload()
+        payload["ion_state"] = {"Ci_mM": 2.4e-4, "Co_mM": 2.0}
+
+        case = experiment_schema.ChannelNoConcCase.from_dict(payload)
+        normalized = experiment_schema.case_to_payload(case)
+
+        self.assertIsNone(case.ion_state.E_mV)
+        self.assertEqual(case.ion_state.Ci_mM, 2.4e-4)
+        self.assertEqual(case.ion_state.Co_mM, 2.0)
+        self.assertEqual(normalized["ion_state"]["Ci_mM"], 2.4e-4)
+        self.assertEqual(normalized["ion_state"]["Co_mM"], 2.0)
+
+    def test_ion_state_rejects_mixed_reversal_and_concentration_modes(self) -> None:
+        payload = build_case_payload()
+        payload["ion_state"] = {"E_mV": 120.0, "Ci_mM": 2.4e-4, "Co_mM": 2.0}
+
+        with self.assertRaisesRegex(ValueError, "cannot mix"):
+            experiment_schema.ChannelNoConcCase.from_dict(payload)
+
+    def test_ion_state_rejects_partial_concentration_definition(self) -> None:
+        payload = build_case_payload()
+        payload["ion_state"] = {"Ci_mM": 2.4e-4}
+
+        with self.assertRaisesRegex(ValueError, "both Ci_mM and Co_mM"):
+            experiment_schema.ChannelNoConcCase.from_dict(payload)
 
     def test_pure_channel_case_does_not_require_ion_state(self) -> None:
         mapping = build_mapping_payload(

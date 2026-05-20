@@ -1326,21 +1326,21 @@ class CellRuntimeStateTest(unittest.TestCase):
         )
         cell.paint(
             BranchSlice(branch_index=[0, 1], prox=0.0, dist=1.0),
-            braincell.mech.Channel("Kca3p1_MA2020", ion_names={"ca": "ca_hva"}),
+            braincell.mech.Channel("Kca3p1_MA2020_GoC", ion_names={"ca": "ca_hva"}),
         )
 
         cell.init_state(); rcell = cell
 
-        layout = next(layout for layout in rcell.layouts if layout.kind == "channel:Kca3p1_MA2020")
+        layout = next(layout for layout in rcell.layouts if layout.kind == "channel:Kca3p1_MA2020_GoC")
         runtime = rcell.runtime
         node = rcell.get_runtime_node(layout.id)
         k_main = rcell.get_ion("k_main")
         ca_hva = rcell.get_ion("ca_hva")
 
         self.assertEqual(runtime.current_owner_keys[layout.id], "k_main")
-        self.assertIn("Kca3p1_MA2020", k_main.channels)
-        self.assertNotIn("Kca3p1_MA2020", ca_hva.channels)
-        self.assertIsInstance(node, braincell.channel.Kca3p1_MA2020)
+        self.assertIn("Kca3p1_MA2020_GoC", k_main.channels)
+        self.assertNotIn("Kca3p1_MA2020_GoC", ca_hva.channels)
+        self.assertIsInstance(node, braincell.channel.Kca3p1_MA2020_GoC)
 
     def test_mixed_ion_channel_probe_uses_bound_ions_and_owner_total_current(self) -> None:
         cell = Cell(_build_tree())
@@ -1352,18 +1352,18 @@ class CellRuntimeStateTest(unittest.TestCase):
         )
         cell.paint(
             BranchSlice(branch_index=[0, 1], prox=0.0, dist=1.0),
-            braincell.mech.Channel("Kca3p1_MA2020", ion_names={"ca": "ca_hva"}),
+            braincell.mech.Channel("Kca3p1_MA2020_GoC", ion_names={"ca": "ca_hva"}),
         )
         cell.place(
             at("soma", 0.5),
-            braincell.mech.CurrentProbe(mechanism="Kca3p1_MA2020"),
+            braincell.mech.CurrentProbe(mechanism="Kca3p1_MA2020_GoC"),
             braincell.mech.CurrentProbe(ion="k_main"),
         )
         cell.init_state(); rcell = cell
 
         samples = rcell.sample_probes()
         runtime = rcell.runtime
-        layout = next(layout for layout in rcell.layouts if layout.kind == "channel:Kca3p1_MA2020")
+        layout = next(layout for layout in rcell.layouts if layout.kind == "channel:Kca3p1_MA2020_GoC")
         node = rcell.get_runtime_node(layout.id)
         point_V = rcell._discretization_to_point(rcell.V.value)
         expected_mechanism = node.current(
@@ -1374,7 +1374,7 @@ class CellRuntimeStateTest(unittest.TestCase):
         expected_total = rcell.get_ion("k_main").current(point_V, include_external=False)[1]
 
         self.assertEqual(runtime.bound_ion_keys[layout.id], ("k_main", "ca_hva"))
-        self.assertEqual(samples["soma(0.5)_Kca3p1_MA2020_current"], expected_mechanism)
+        self.assertEqual(samples["soma(0.5)_Kca3p1_MA2020_GoC_current"], expected_mechanism)
         self.assertEqual(samples["soma(0.5)_k_main_current"], expected_total)
 
     def test_channel_spec_ina_hh1952_builds_runtime_node_and_binds_to_na(self) -> None:

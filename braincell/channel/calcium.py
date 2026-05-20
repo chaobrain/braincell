@@ -37,9 +37,18 @@ __all__ = [
     "CaL_IS2008",
     "CaHVA_SU2015_DCN",
     "CaLVA_SU2015_DCN",
-    "Cav1p2_MA2020",
-    "Cav1p3_MA2020",
-    "Cav3p1_MA2020",
+    "Cav1p2_MA2020_GoC",
+    "Cav1p3_MA2020_GoC",
+    "Cav3p1_MA2020_GoC",
+    "Cav3p1_MA2024_PC",
+    "Cav2p1_MA2025_BC",
+    "Cav2p1_MA2024_PC",
+    "Cav2p1_RI2021_SC",
+    "Cav3p2_MA2025_BC",
+    "Cav3p2_MA2024_PC",
+    "Cav3p2_RI2021_SC",
+    "Cav3p3_MA2024_PC",
+    "Cav3p3_RI2021_SC",
     "CaHVA_MA2020_GoC",
     "CaHVA_MA2020_GrC",
     "Cav2p3_MA2020_GoC",
@@ -496,8 +505,8 @@ class CaLVA_SU2015_DCN(HH):
         ) / self.qdeltat
 
 
-@register_channel("Cav1p2_MA2020")
-class Cav1p2_MA2020(HH):
+@register_channel("Cav1p2_MA2020_GoC")
+class Cav1p2_MA2020_GoC(HH):
     r"""Evans/Beining Cav1.2 calcium current with calcium-dependent inactivation."""
 
     __module__ = "braincell.channel"
@@ -560,8 +569,8 @@ class Cav1p2_MA2020(HH):
         return 0.5
 
 
-@register_channel("Cav1p3_MA2020")
-class Cav1p3_MA2020(HH):
+@register_channel("Cav1p3_MA2020_GoC")
+class Cav1p3_MA2020_GoC(HH):
     r"""Evans/Beining Cav1.3 calcium current with calcium-dependent inactivation."""
 
     __module__ = "braincell.channel"
@@ -624,8 +633,8 @@ class Cav1p3_MA2020(HH):
         return 0.5
 
 
-@register_channel("Cav3p1_MA2020")
-class Cav3p1_MA2020(HH):
+@register_channel("Cav3p1_MA2020_GoC")
+class Cav3p1_MA2020_GoC(HH):
     r"""Purkinje cell Cav3.1 low-threshold calcium current with GHK drive."""
 
     __module__ = "braincell.channel"
@@ -695,6 +704,269 @@ class Cav3p1_MA2020(HH):
     def f_q_tau(self, V, *unused):
         _ = unused
         return self.C_tau_h + self.A_tau_h / u.math.exp((V - self.v0_tau_h1) / self.k_tau_h1)
+
+
+@register_channel("Cav3p1_MA2024_PC")
+class Cav3p1_MA2024_PC(Cav3p1_MA2020_GoC):
+    """Template-based import of ``Cav3p1_MA2024_PC.mod``."""
+
+    __module__ = "braincell.channel"
+
+
+@register_channel("Cav2p1_RI2021_SC")
+class Cav2p1_RI2021_SC(HH):
+    """Template-based import of ``Cav2p1_RI21_SC.mod``."""
+
+    __module__ = "braincell.channel"
+    root_type = Calcium
+    gates = (Gate("m", power=3, q10=3.0, temp_ref=u.celsius2kelvin(23.0)),)
+
+    def __init__(
+        self,
+        size: brainstate.typing.Size,
+        g_max: Union[brainstate.typing.ArrayLike, Callable] = 2.2e-4 * (u.cm / u.second),
+        V_sh: Union[brainstate.typing.ArrayLike, Callable] = 0.0 * u.mV,
+        temp: brainstate.typing.ArrayLike = u.celsius2kelvin(23.0),
+        name: Optional[str] = None,
+    ):
+        super().__init__(size=size, name=name)
+        self.g_max = braintools.init.param(g_max, self.varshape, allow_none=False)
+        self.V_sh = braintools.init.param(V_sh, self.varshape, allow_none=False)
+        self.temp = braintools.init.param(temp, self.varshape, allow_none=False)
+        self.vhalfm = -29.458 * u.mV
+        self.cvm = 8.429 * u.mV
+        self.z = 2
+
+    def _shifted_voltage(self, V):
+        return V - self.V_sh
+
+    def current(self, V, Ca: IonInfo, *unused):
+        _ = unused
+        drive = ghk_flux(
+            V=self._shifted_voltage(V),
+            ci=Ca.Ci,
+            co=Ca.Co,
+            z=self.z,
+            temp=self.temp,
+        )
+        return -self.g_max * self.conductance_factor(V, Ca) * drive
+
+    def f_m_inf(self, V, Ca: IonInfo, *unused):
+        _ = (Ca, unused)
+        V = self._shifted_voltage(V)
+        return 1.0 / (1.0 + u.math.exp(-(V - self.vhalfm) / self.cvm))
+
+    def f_m_tau(self, V, Ca: IonInfo, *unused):
+        _ = (Ca, unused)
+        V = self._shifted_voltage(V).to_decimal(u.mV)
+        return u.math.where(
+            V >= -40.0,
+            0.2702 + 1.1622 * u.math.exp(-((V + 26.798) ** 2) / 164.19),
+            0.6923 * u.math.exp(V / 1089.372),
+        )
+
+
+@register_channel("Cav2p1_MA2025_BC")
+class Cav2p1_MA2025_BC(Cav2p1_RI2021_SC):
+    """Template-based import of ``Cav2p1_MA2025_BC.mod``."""
+
+    __module__ = "braincell.channel"
+
+
+@register_channel("Cav2p1_MA2024_PC")
+class Cav2p1_MA2024_PC(Cav2p1_RI2021_SC):
+    """Template-based import of ``Cav2p1_MA2024_PC.mod``."""
+
+    __module__ = "braincell.channel"
+
+
+@register_channel("Cav3p2_RI2021_SC")
+class Cav3p2_RI2021_SC(HH):
+    """Template-based import of ``Cav3p2_RI21_SC.mod``.
+
+    Notes
+    -----
+    This source mod is not especially clean as a reusable temperature- and
+    concentration-general mechanism:
+
+    - the original mod effectively bakes the gate-temperature conversion to
+      36 C into fixed phi factors derived from 24 C data;
+    - the compare path here uses fixed Ca concentrations to match the original
+      mod assumptions;
+    - ``tau_h`` is written in a special ``13.7 + term / phi_h`` form rather
+      than the usual ``tau / phi`` pattern used by most HH-style templates.
+
+    The implementation below intentionally preserves those quirks so the
+    BrainCell behavior matches NEURON for one-to-one comparison. Longer term
+    this channel should probably be rewritten into a more general form instead
+    of carrying over the source mod's baked-in assumptions.
+    """
+
+    __module__ = "braincell.channel"
+    root_type = Calcium
+    gates = (
+        Gate("m", power=2, phi=5.0 ** ((36.0 - 24.0) / 10.0)),
+        Gate("h"),
+    )
+
+    def __init__(
+        self,
+        size: brainstate.typing.Size,
+        g_max: Union[brainstate.typing.ArrayLike, Callable] = 8.0e-4 * (u.mS / u.cm ** 2),
+        V_sh: Union[brainstate.typing.ArrayLike, Callable] = 0.0 * u.mV,
+        temp: brainstate.typing.ArrayLike = u.celsius2kelvin(36.0),
+        name: Optional[str] = None,
+    ):
+        super().__init__(size=size, name=name)
+        self.g_max = braintools.init.param(g_max, self.varshape, allow_none=False)
+        self.V_sh = braintools.init.param(V_sh, self.varshape, allow_none=False)
+        self.temp = braintools.init.param(temp, self.varshape, allow_none=False)
+
+    def _shifted_voltage(self, V):
+        return V + self.V_sh
+
+    def current(self, V, Ca: IonInfo, *unused):
+        _ = unused
+        return self.g_max * self.conductance_factor(V, Ca) * (Ca.E - V)
+
+    def f_m_inf(self, V, Ca: IonInfo, *unused):
+        _ = (Ca, unused)
+        V = self._shifted_voltage(V).to_decimal(u.mV)
+        return 1.0 / (1.0 + u.math.exp(-(V + 54.8) / 7.4))
+
+    def f_h_inf(self, V, Ca: IonInfo, *unused):
+        _ = (Ca, unused)
+        V = self._shifted_voltage(V).to_decimal(u.mV)
+        return 1.0 / (1.0 + u.math.exp((V + 85.5) / 7.18))
+
+    def f_m_tau(self, V, Ca: IonInfo, *unused):
+        _ = (Ca, unused)
+        V = self._shifted_voltage(V).to_decimal(u.mV)
+        return 1.9 + 1.0 / (
+            u.math.exp((V + 37.0) / 11.9) + u.math.exp(-(V + 131.6) / 21.0)
+        )
+
+    def f_h_tau(self, V, Ca: IonInfo, *unused):
+        _ = (Ca, unused)
+        V = self._shifted_voltage(V).to_decimal(u.mV)
+        # Source mod writes:
+        #   tau_h = 13.7 + (1942 + exp(...)) / (1 + exp(...)) / phi_h
+        # which is not the usual "tau / phi" shape handled by HH.gate_phi().
+        # We therefore keep h-gate phi at 1 and encode the fixed 36C
+        # conversion directly in tau_h here.
+        phi_h = 3.0 ** ((36.0 - 24.0) / 10.0)
+        term = (1942.0 + u.math.exp((V + 164.0) / 9.2)) / (
+            1.0 + u.math.exp((V + 89.3) / 3.7)
+        )
+        return 13.7 + term / phi_h
+
+
+@register_channel("Cav3p2_MA2025_BC")
+class Cav3p2_MA2025_BC(Cav3p2_RI2021_SC):
+    """Template-based import of ``Cav3p2_MA2025_BC.mod``."""
+
+    __module__ = "braincell.channel"
+
+
+@register_channel("Cav3p2_MA2024_PC")
+class Cav3p2_MA2024_PC(Cav3p2_RI2021_SC):
+    """Template-based import of ``Cav3p2_MA2024_PC.mod``."""
+
+    __module__ = "braincell.channel"
+
+
+@register_channel("Cav3p3_RI2021_SC")
+class Cav3p3_RI2021_SC(HH):
+    """Template-based import of ``Cav3p3_RI21_SC.mod``.
+
+    Notes
+    -----
+    The source mod uses a somewhat inconsistent current-law scaling: it mixes
+    ``pcabar`` (documented like a permeability, ``cm/s``), ``gCav3_3bar``
+    (documented like ``S/cm^2``), and a hand-written GHK expression with its
+    own built-in unit conversion constants. To keep the BrainCell current law
+    dimensionally consistent while still matching NEURON numerically,
+    ``g_scale`` is treated here as a dimensionless empirical scale factor
+    rather than as a physical conductance density. ``perm`` remains the
+    permeability-like term.
+    """
+
+    __module__ = "braincell.channel"
+    root_type = Calcium
+    gates = (
+        Gate("n", power=2, q10=2.3, temp_ref=u.celsius2kelvin(28.0)),
+        Gate("l", q10=2.3, temp_ref=u.celsius2kelvin(28.0)),
+    )
+
+    def __init__(
+        self,
+        size: brainstate.typing.Size,
+        perm: Union[brainstate.typing.ArrayLike, Callable] = 1.0e-4 * (u.cm / u.second),
+        g_scale: Union[brainstate.typing.ArrayLike, Callable] = 1.0e-5,
+        temp: brainstate.typing.ArrayLike = u.celsius2kelvin(36.0),
+        V_sh: Union[brainstate.typing.ArrayLike, Callable] = 0.0 * u.mV,
+        name: Optional[str] = None,
+    ):
+        super().__init__(size=size, name=name)
+        self.perm = braintools.init.param(perm, self.varshape, allow_none=False)
+        self.g_scale = braintools.init.param(g_scale, self.varshape, allow_none=False)
+        self.temp = braintools.init.param(temp, self.varshape, allow_none=False)
+        self.V_sh = braintools.init.param(V_sh, self.varshape, allow_none=False)
+        self.vhalfn = -41.5 * u.mV
+        self.vhalfl = -69.8 * u.mV
+        self.kn = 6.2 * u.mV
+        self.kl = -6.1 * u.mV
+        self.z = 2
+
+    def _shifted_voltage(self, V):
+        return V - self.V_sh
+
+    def current(self, V, Ca: IonInfo, *unused):
+        _ = unused
+        drive = ghk_flux(
+            V=self._shifted_voltage(V),
+            ci=Ca.Ci,
+            co=Ca.Co,
+            z=self.z,
+            temp=self.temp,
+        )
+        return -self.g_scale * self.perm * self.conductance_factor(V, Ca) * drive
+
+    def f_n_inf(self, V, Ca: IonInfo, *unused):
+        _ = (Ca, unused)
+        V = self._shifted_voltage(V)
+        return 1.0 / (1.0 + u.math.exp(-(V - self.vhalfn) / self.kn))
+
+    def f_l_inf(self, V, Ca: IonInfo, *unused):
+        _ = (Ca, unused)
+        V = self._shifted_voltage(V)
+        return 1.0 / (1.0 + u.math.exp(-(V - self.vhalfl) / self.kl))
+
+    def f_n_tau(self, V, Ca: IonInfo, *unused):
+        _ = (Ca, unused)
+        V = self._shifted_voltage(V).to_decimal(u.mV)
+        return u.math.where(
+            V > -60.0,
+            7.2 + 0.02 * u.math.exp(-V / 14.7),
+            0.875 * u.math.exp((V + 120.0) / 41.0),
+        )
+
+    def f_l_tau(self, V, Ca: IonInfo, *unused):
+        _ = (Ca, unused)
+        V = self._shifted_voltage(V).to_decimal(u.mV)
+        return u.math.where(
+            V > -60.0,
+            79.5 + 2.0 * u.math.exp(-V / 9.3),
+            260.0,
+        )
+
+
+@register_channel("Cav3p3_MA2024_PC")
+class Cav3p3_MA2024_PC(Cav3p3_RI2021_SC):
+    """Template-based import of ``Cav3p3_MA2024_PC.mod``."""
+
+    __module__ = "braincell.channel"
+
 
 @register_channel("CaHVA_MA2020_GoC")
 class CaHVA_MA2020_GoC(HH):

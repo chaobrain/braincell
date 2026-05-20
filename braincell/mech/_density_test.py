@@ -59,7 +59,7 @@ class DensityConstructionTest(unittest.TestCase):
         self.assertIsNone(spec.ion_names)
 
     def test_channel_can_store_multi_ion_selectors(self) -> None:
-        spec = Channel("Kca1p1_MA2020", ion_names={"k": "k_main", "ca": "ca_local"})
+        spec = Channel("Kca1p1_MA2020_GoC", ion_names={"k": "k_main", "ca": "ca_local"})
         self.assertIsNone(spec.ion_name)
         self.assertEqual(spec.ion_names, (("ca", "ca_local"), ("k", "k_main")))
 
@@ -109,7 +109,7 @@ class DensityValidationTest(unittest.TestCase):
 
     def test_channel_cannot_define_both_ion_name_and_ion_names(self) -> None:
         with self.assertRaises(ValueError):
-            Channel("Kca1p1_MA2020", ion_name="ca_main", ion_names={"ca": "ca_main"})
+            Channel("Kca1p1_MA2020_GoC", ion_name="ca_main", ion_names={"ca": "ca_main"})
 
     def test_invalid_ion_name_rejected(self) -> None:
         with self.assertRaises(TypeError):
@@ -117,11 +117,11 @@ class DensityValidationTest(unittest.TestCase):
 
     def test_invalid_ion_names_mapping_rejected(self) -> None:
         with self.assertRaises(TypeError):
-            Channel("Kca1p1_MA2020", ion_names="ca_main")  # type: ignore[arg-type]
+            Channel("Kca1p1_MA2020_GoC", ion_names="ca_main")  # type: ignore[arg-type]
         with self.assertRaises(TypeError):
-            Channel("Kca1p1_MA2020", ion_names={"": "ca_main"})
+            Channel("Kca1p1_MA2020_GoC", ion_names={"": "ca_main"})
         with self.assertRaises(TypeError):
-            Channel("Kca1p1_MA2020", ion_names={"ca": 1})  # type: ignore[arg-type]
+            Channel("Kca1p1_MA2020_GoC", ion_names={"ca": 1})  # type: ignore[arg-type]
 
 
 class DensityIdentityTest(unittest.TestCase):

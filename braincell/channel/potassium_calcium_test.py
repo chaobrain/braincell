@@ -24,9 +24,9 @@ from braincell._base import IonInfo
 from braincell.channel._base import HH, Markov
 from braincell.channel.potassium_calcium import (
     AHP_De1994,
-    Kca1p1_MA2020,
-    Kca2p2_MA2020,
-    Kca3p1_MA2020,
+    Kca1p1_MA2020_GoC,
+    Kca2p2_MA2020_GoC,
+    Kca3p1_MA2020_GoC,
 )
 from braincell.ion import Calcium, Potassium
 
@@ -120,12 +120,12 @@ class IAHPDe1994Test(_MixedPotassiumCalciumTemplateTest, unittest.TestCase):
         self.assertTrue(u.math.allclose(ch.p.derivative, expected, atol=1e-6 * u.Hz))
 
 
-class Kca3p1_MA2020Test(_MixedPotassiumCalciumTemplateTest, unittest.TestCase):
-    CLS = Kca3p1_MA2020
+class Kca3p1_MA2020_GoCTest(_MixedPotassiumCalciumTemplateTest, unittest.TestCase):
+    CLS = Kca3p1_MA2020_GoC
     TEMPLATE = HH
 
     def test_reset_state_matches_p_inf(self) -> None:
-        ch = Kca3p1_MA2020(size=1)
+        ch = Kca3p1_MA2020_GoC(size=1)
         V = _V([-60.0])
         k = _k_info()
         ca = _ca_info(C=1e-3)
@@ -134,7 +134,7 @@ class Kca3p1_MA2020Test(_MixedPotassiumCalciumTemplateTest, unittest.TestCase):
         self.assertTrue(u.math.allclose(ch.p.value, ch.p_inf(V, ca), atol=1e-6))
 
     def test_current_matches_g_times_p_times_drive(self) -> None:
-        ch = Kca3p1_MA2020(size=1)
+        ch = Kca3p1_MA2020_GoC(size=1)
         V = _V([-60.0])
         k = _k_info()
         ca = _ca_info(C=1e-3)
@@ -151,7 +151,7 @@ class Kca3p1_MA2020Test(_MixedPotassiumCalciumTemplateTest, unittest.TestCase):
         )
 
     def test_compute_derivative_runs(self) -> None:
-        ch = Kca3p1_MA2020(size=1)
+        ch = Kca3p1_MA2020_GoC(size=1)
         V = _V([-60.0])
         k = _k_info()
         ca = _ca_info(C=1e-3)
@@ -162,8 +162,8 @@ class Kca3p1_MA2020Test(_MixedPotassiumCalciumTemplateTest, unittest.TestCase):
         self.assertEqual(ch.p.derivative.shape, (1,))
 
     def test_compute_derivative_matches_reference_without_temperature_scaling(self) -> None:
-        cold = Kca3p1_MA2020(size=1, T=u.celsius2kelvin(22.0))
-        warm = Kca3p1_MA2020(size=1, T=u.celsius2kelvin(37.0))
+        cold = Kca3p1_MA2020_GoC(size=1, T=u.celsius2kelvin(22.0))
+        warm = Kca3p1_MA2020_GoC(size=1, T=u.celsius2kelvin(37.0))
         V = _V([-60.0])
         k = _k_info()
         ca = _ca_info(C=1e-3)
@@ -176,12 +176,12 @@ class Kca3p1_MA2020Test(_MixedPotassiumCalciumTemplateTest, unittest.TestCase):
         self.assertTrue(u.math.allclose(cold.p.derivative, warm.p.derivative, atol=1e-9 * u.Hz))
 
 
-class Kca2p2_MA2020Test(_MixedPotassiumCalciumTemplateTest, unittest.TestCase):
-    CLS = Kca2p2_MA2020
+class Kca2p2_MA2020_GoCTest(_MixedPotassiumCalciumTemplateTest, unittest.TestCase):
+    CLS = Kca2p2_MA2020_GoC
     TEMPLATE = Markov
 
     def test_init_state_creates_independent_microstates(self) -> None:
-        ch = Kca2p2_MA2020(size=2)
+        ch = Kca2p2_MA2020_GoC(size=2)
         V = _V([-60.0, -50.0])
         k = _k_info(2)
         ca = _ca_info(2)
@@ -192,7 +192,7 @@ class Kca2p2_MA2020Test(_MixedPotassiumCalciumTemplateTest, unittest.TestCase):
             self.assertEqual(getattr(ch, name).value.shape, (2,))
 
     def test_reset_state_solves_steady_state_with_total_probability_one(self) -> None:
-        ch = Kca2p2_MA2020(size=1)
+        ch = Kca2p2_MA2020_GoC(size=1)
         V = _V([-60.0])
         k = _k_info()
         ca = _ca_info()
@@ -203,7 +203,7 @@ class Kca2p2_MA2020Test(_MixedPotassiumCalciumTemplateTest, unittest.TestCase):
         self.assertTrue(u.math.allclose(total, jnp.ones(1), atol=1e-6))
 
     def test_current_matches_open_states_times_drive(self) -> None:
-        ch = Kca2p2_MA2020(size=1)
+        ch = Kca2p2_MA2020_GoC(size=1)
         V = _V([-60.0])
         k = _k_info()
         ca = _ca_info()
@@ -225,7 +225,7 @@ class Kca2p2_MA2020Test(_MixedPotassiumCalciumTemplateTest, unittest.TestCase):
         )
 
     def test_compute_derivative_runs(self) -> None:
-        ch = Kca2p2_MA2020(size=1)
+        ch = Kca2p2_MA2020_GoC(size=1)
         V = _V([-60.0])
         k = _k_info()
         ca = _ca_info()
@@ -236,12 +236,12 @@ class Kca2p2_MA2020Test(_MixedPotassiumCalciumTemplateTest, unittest.TestCase):
             self.assertEqual(getattr(ch, name).derivative.shape, (1,))
 
 
-class Kca1p1_MA2020Test(_MixedPotassiumCalciumTemplateTest, unittest.TestCase):
-    CLS = Kca1p1_MA2020
+class Kca1p1_MA2020_GoCTest(_MixedPotassiumCalciumTemplateTest, unittest.TestCase):
+    CLS = Kca1p1_MA2020_GoC
     TEMPLATE = Markov
 
     def test_init_state_creates_independent_closed_and_open_states(self) -> None:
-        ch = Kca1p1_MA2020(size=1)
+        ch = Kca1p1_MA2020_GoC(size=1)
         V = _V([-60.0])
         k = _k_info()
         ca = _ca_info()
@@ -252,7 +252,7 @@ class Kca1p1_MA2020Test(_MixedPotassiumCalciumTemplateTest, unittest.TestCase):
             self.assertEqual(getattr(ch, name).value.shape, (1,))
 
     def test_reset_state_solves_steady_state_with_total_probability_one(self) -> None:
-        ch = Kca1p1_MA2020(size=1)
+        ch = Kca1p1_MA2020_GoC(size=1)
         V = _V([-60.0])
         k = _k_info()
         ca = _ca_info()
@@ -263,7 +263,7 @@ class Kca1p1_MA2020Test(_MixedPotassiumCalciumTemplateTest, unittest.TestCase):
         self.assertTrue(u.math.allclose(total, jnp.ones(1), atol=1e-6))
 
     def test_current_sums_all_open_states(self) -> None:
-        ch = Kca1p1_MA2020(size=1)
+        ch = Kca1p1_MA2020_GoC(size=1)
         V = _V([-60.0])
         k = _k_info()
         ca = _ca_info()
@@ -286,7 +286,7 @@ class Kca1p1_MA2020Test(_MixedPotassiumCalciumTemplateTest, unittest.TestCase):
         )
 
     def test_compute_derivative_runs(self) -> None:
-        ch = Kca1p1_MA2020(size=1)
+        ch = Kca1p1_MA2020_GoC(size=1)
         V = _V([-60.0])
         k = _k_info()
         ca = _ca_info()

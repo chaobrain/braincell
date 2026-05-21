@@ -1,0 +1,41 @@
+{
+  "meta": {
+    "label": "DCN CaLVA SU15"
+  },
+  "identity": {
+    "mod_dir": "../../../Cerebellum_mod/DCN/channel"
+  },
+  "defaults": {
+    "ion_state": {
+      "Ci_mM": 0.00024,
+      "Co_mM": 2.0
+    },
+    "channel_params": {
+      "perm_cm_s": 1.0
+    }
+  },
+  "mapping": {
+    "current": "ical",
+    "impl_name": {
+      "neuron": "CaLVA_SU15_DCN",
+      "braincell": "CaLVA_SU2015_DCN"
+    },
+    "gate_names": {
+      "common": [
+        "m",
+        "h"
+      ]
+    },
+    "channel_params": {
+      "perm_cm_s": {
+        "neuron": "perm",
+        "braincell": "perm"
+      }
+    }
+  },
+  "templates": [
+    "../../templates/vinit_celsius.json",
+    "../../templates/dc.json",
+    "../../templates/ac.json"
+  ]
+}

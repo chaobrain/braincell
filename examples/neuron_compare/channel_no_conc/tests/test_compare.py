@@ -257,18 +257,18 @@ class CompareSingleCaseTest(unittest.TestCase):
         config_path = TEMPLATES_ROOT.parent / "configs" / "ma20_goc" / "kca3p1_ma20_goc.json"
         template_path = TEMPLATES_ROOT.parent / "templates" / "vinit_celsius.json"
         config = experiment_schema.load_sweep_config(config_path, template_path)
-        case_payload = experiment_schema.expand_cases(config)[4]
+        case_payload = experiment_schema.expand_cases(config)[-1]
         case = experiment_schema.ChannelNoConcCase.from_dict(case_payload)
 
         result = compare_module.compare_case(case)
 
         self.assertEqual(
             result["alignment"]["gates"],
-            [{"canonical_name": "act", "braincell_gate": "p", "neuron_gate": "Y"}],
+            [{"canonical_name": "Y", "braincell_gate": "p", "neuron_gate": "Y"}],
         )
         self.assertLess(result["metrics"]["voltage"]["mae"], 0.1)
         self.assertLess(result["metrics"]["current"]["ix"]["mae"], 5e-5)
-        self.assertLess(result["metrics"]["gates"]["act"]["mae"], 1e-4)
+        self.assertLess(result["metrics"]["gates"]["Y"]["mae"], 1e-4)
 
     def test_repo_kca2p2_goc_vinit_compare_case_runs(self) -> None:
         if not self._GOC_LIBNRNMECH.resolve().exists():
@@ -276,7 +276,7 @@ class CompareSingleCaseTest(unittest.TestCase):
         config_path = TEMPLATES_ROOT.parent / "configs" / "ma20_goc" / "kca2p2_ma20_goc.json"
         template_path = TEMPLATES_ROOT.parent / "templates" / "vinit_celsius.json"
         config = experiment_schema.load_sweep_config(config_path, template_path)
-        case_payload = experiment_schema.expand_cases(config)[4]
+        case_payload = experiment_schema.expand_cases(config)[-1]
         case = experiment_schema.ChannelNoConcCase.from_dict(case_payload)
 
         result = compare_module.compare_case(case)
@@ -292,7 +292,7 @@ class CompareSingleCaseTest(unittest.TestCase):
         config_path = TEMPLATES_ROOT.parent / "configs" / "ma20_goc" / "kca1p1_ma20_goc.json"
         template_path = TEMPLATES_ROOT.parent / "templates" / "vinit_celsius.json"
         config = experiment_schema.load_sweep_config(config_path, template_path)
-        case_payload = experiment_schema.expand_cases(config)[4]
+        case_payload = experiment_schema.expand_cases(config)[-1]
         case = experiment_schema.ChannelNoConcCase.from_dict(case_payload)
 
         result = compare_module.compare_case(case)

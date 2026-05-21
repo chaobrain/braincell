@@ -167,6 +167,36 @@ class NeuronRunnerTest(unittest.TestCase):
         self.assertEqual(seg.cao, 2.0)
         self.assertEqual(h.called, 1)
 
+    def test_initialize_neuron_ion_state_supports_cal_concentration_fields(self) -> None:
+        class HStub:
+            def __init__(self):
+                self.called = 0
+
+            def frecord_init(self):
+                self.called += 1
+
+        class SegmentStub:
+            pass
+
+        payload = self._build_payload(stimulus={"kind": "dc", "delay_ms": 0.0, "dur_ms": 2.0, "amp_nA": 0.0})
+        payload["mapping"] = build_mapping_payload(current_kind="cal")
+        payload["ion_state"] = {"Ci_mM": 2.4e-4, "Co_mM": 2.0}
+        case = experiment_schema.ChannelNoConcCase.from_dict(payload)
+        h = HStub()
+        seg = SegmentStub()
+
+        neuron_runner._initialize_neuron_ion_state(
+            h=h,
+            section=None,
+            segment=seg,
+            case=case,
+            mapping_spec=case.mapping_spec,
+        )
+
+        self.assertEqual(seg.cali, 2.4e-4)
+        self.assertEqual(seg.calo, 2.0)
+        self.assertEqual(h.called, 1)
+
     def test_resolve_neuron_parameter_target_prefers_mechanism_when_only_mechanism_has_field(self) -> None:
         class SomaStub:
             pass

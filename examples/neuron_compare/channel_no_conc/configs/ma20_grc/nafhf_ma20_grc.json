@@ -1,0 +1,51 @@
+{
+  "meta": {
+    "label": "GrC NaFHF MA20"
+  },
+  "identity": {
+    "mod_dir": "../../../Cerebellum_mod/GrC/channel"
+  },
+  "defaults": {
+    "channel_params": {
+      "g_max_S_cm2": 0.013
+    }
+  },
+  "mapping": {
+    "current": "ina",
+    "impl_name": {
+      "neuron": "NaFHF_MA20_GrC",
+      "braincell": "NaFHF_MA2020_GrC"
+    },
+    "gate_names": {
+      "common": [
+        "C1",
+        "C2",
+        "C3",
+        "C4",
+        "C5",
+        "O",
+        "OB",
+        "I1",
+        "I2",
+        "I3",
+        "I4",
+        "I5",
+        "L3",
+        "L4",
+        "L5",
+        "L6"
+      ]
+    },
+    "channel_params": {
+      "g_max_S_cm2": {
+        "neuron": "gnabar",
+        "braincell": "g_max"
+      }
+    }
+  },
+  "templates": [
+    "../../templates/vinit_celsius.json",
+    "../../templates/dc.json",
+    "../../templates/ac.json"
+  ]
+}

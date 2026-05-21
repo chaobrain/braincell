@@ -150,7 +150,12 @@ class ModelConfig:
             config_name=config_path.stem,
             config_path=config_path,
             meta=_normalize_meta_payload(payload.get("meta"), name="meta"),
-            mod_dir=str(Path(require_str(identity.get("mod_dir"), name="identity.mod_dir")).expanduser()),
+            mod_dir=str(
+                _resolve_config_relative_path(
+                    require_str(identity.get("mod_dir"), name="identity.mod_dir"),
+                    config_path=config_path,
+                )
+            ),
             defaults=_normalize_defaults_payload(payload.get("defaults"), name="defaults"),
             mapping_payload=mapping_payload,
             mapping_spec=mapping_spec,
@@ -502,6 +507,13 @@ def _resolve_template_reference(*, template_path: str | Path, config_dir: Path) 
     if raw_path.is_absolute():
         return raw_path.resolve()
     return (config_dir / raw_path).resolve()
+
+
+def _resolve_config_relative_path(path_text: str, *, config_path: Path) -> Path:
+    raw_path = Path(path_text).expanduser()
+    if raw_path.is_absolute():
+        return raw_path.resolve()
+    return (config_path.parent / raw_path).resolve()
 
 
 def _allowed_sweep_paths(*, mapping_spec: MappingSpec, stimulus_kind: str) -> set[str]:

@@ -29,7 +29,11 @@ from braincell.channel.calcium import CaT_HM1992
 from braincell.ion.calcium import (
     CdpStC_CAMOnly_MA2020_GoC,
     CdpStC_NoCAM_MA2020_GoC,
+    CdpStC_MA2025_BC,
     CdpStC_MA2020_GoC,
+    CdpCAM_MA2024_PC,
+    CdpCR_MA2020_GrC,
+    CdpStC_RI2021_SC,
     CdpHVA_SU2015_DCN,
     CdpLVA_SU2015_DCN,
     Calcium,
@@ -44,6 +48,7 @@ from braincell.ion.calcium import (
     ToyCaBindingSourceKinetic_SU2015_DCN,
 )
 from braincell.ion._base import DynamicNernstIon, InitNernstIon, KineticIon
+from braincell.mech import get_registry
 from braincell.quad.protocol import DiffEqState
 
 
@@ -1257,6 +1262,404 @@ class CdpStC_NoCAM_MA2020_GoCTest(unittest.TestCase):
         self.assertTrue(np.allclose(totals, totals[0], atol=1e-18))
         self.assertLess(float(ion.Ci.value[0].to_decimal(u.mM)), 1e-3)
         self.assertLess(float(ion.pump.value[0].to_decimal(u.mol / u.cm ** 2)), 1e-8)
+
+
+class CdpStCInheritedCellVariantTest(unittest.TestCase):
+    VARIANTS = (
+        ("CdpStC_MA2025_BC", CdpStC_MA2025_BC),
+        ("CdpStC_RI2021_SC", CdpStC_RI2021_SC),
+    )
+
+    def _make_ion(self, cls):
+        ion = cls(size=1)
+        ion.diam_mid = jnp.asarray([20.0]) * u.um
+        return ion
+
+    def test_cell_specific_variants_are_registered_subclasses(self) -> None:
+        registry = get_registry()
+        for name, cls in self.VARIANTS:
+            with self.subTest(name=name):
+                self.assertTrue(issubclass(cls, CdpStC_NoCAM_MA2020_GoC))
+                self.assertIs(registry.get("ion", name), cls)
+                self.assertEqual(cls.__module__, "braincell.ion")
+
+    def test_variants_share_nocam_kinetic_definition(self) -> None:
+        for _, cls in self.VARIANTS:
+            with self.subTest(cls=cls.__name__):
+                self.assertIs(cls.species, CdpStC_NoCAM_MA2020_GoC.species)
+                self.assertIs(cls.reactions, CdpStC_NoCAM_MA2020_GoC.reactions)
+                self.assertIs(cls.sources, CdpStC_NoCAM_MA2020_GoC.sources)
+                self.assertIs(cls.conserves, CdpStC_NoCAM_MA2020_GoC.conserves)
+                self.assertEqual(cls._diffeq_species, CdpStC_NoCAM_MA2020_GoC._diffeq_species)
+                self.assertTrue(cls.uses_total_current)
+
+    def test_variants_match_nocam_state_derivative_and_source_flux(self) -> None:
+        V = _V([-60.0])
+        for _, cls in self.VARIANTS:
+            with self.subTest(cls=cls.__name__):
+                base = self._make_ion(CdpStC_NoCAM_MA2020_GoC)
+                variant = self._make_ion(cls)
+                base.init_state(V)
+                variant.init_state(V)
+
+                for name in ("Ci", "mg", "Buff2", "Buff2_ca", "PV", "PV_ca", "PV_mg", "pump", "pumpca"):
+                    self.assertTrue(
+                        u.math.allclose(
+                            getattr(variant, name).value,
+                            getattr(base, name).value,
+                            atol=1e-12 * getattr(base, name).value.unit,
+                        )
+                    )
+
+                base.Ci.value = jnp.array([0.2]) * u.mM
+                variant.Ci.value = jnp.array([0.2]) * u.mM
+                base.mg.value = jnp.array([1.0]) * u.mM
+                variant.mg.value = jnp.array([1.0]) * u.mM
+                base.PV.value = jnp.array([0.5]) * u.mM
+                variant.PV.value = jnp.array([0.5]) * u.mM
+                base.PV_mg.value = jnp.array([0.0]) * u.mM
+                variant.PV_mg.value = jnp.array([0.0]) * u.mM
+                base.compute_derivative(V)
+                variant.compute_derivative(V)
+
+                for name in ("Ci", "mg", "PV", "PV_mg", "pump"):
+                    self.assertTrue(
+                        u.math.allclose(
+                            getattr(variant, name).derivative,
+                            getattr(base, name).derivative,
+                            atol=1e-12 * getattr(base, name).derivative.unit,
+                        )
+                    )
+
+                current = jnp.array([0.01]) * u.mA / (u.cm ** 2)
+                flux_base = base.sources[0].flux(base, V, base.species_values(), total_current=current)
+                flux_variant = variant.sources[0].flux(variant, V, variant.species_values(), total_current=current)
+                self.assertTrue(u.math.allclose(flux_variant, flux_base, atol=1e-12 * flux_base.unit))
+
+
+class CdpCAM_MA2024_PCTest(unittest.TestCase):
+    """Imported PC calcium pool with active CB and CAM subnetworks."""
+
+    def _make_ion(self, **kwargs):
+        ion = CdpCAM_MA2024_PC(size=1, **kwargs)
+        ion.diam_mid = jnp.asarray([20.0]) * u.um
+        return ion
+
+    def test_is_registered_kinetic_calcium_ion(self) -> None:
+        self.assertTrue(issubclass(CdpCAM_MA2024_PC, Calcium))
+        self.assertTrue(issubclass(CdpCAM_MA2024_PC, KineticIon))
+        self.assertIs(get_registry().get("ion", "CdpCAM_MA2024_PC"), CdpCAM_MA2024_PC)
+        self.assertTrue(CdpCAM_MA2024_PC.uses_total_current)
+        self.assertEqual(len(CdpCAM_MA2024_PC.species), 28)
+        self.assertEqual(len(CdpCAM_MA2024_PC.reactions), 24)
+        self.assertEqual(len(CdpCAM_MA2024_PC.sources), 1)
+        self.assertEqual(len(CdpCAM_MA2024_PC.conserves), 1)
+
+    def test_pc_compartment_mapping_uses_cyto_for_cb_and_cam(self) -> None:
+        species = {spec.name: spec for spec in CdpCAM_MA2024_PC.species}
+        for name in ("CB", "CB_f_ca", "CB_ca_s", "CB_ca_ca", "CAM0", "CAM1C", "CAM1N", "CAM4"):
+            self.assertEqual(species[name].factor, "cyto")
+
+    def test_default_parameters(self) -> None:
+        ion = self._make_ion()
+        self.assertTrue(u.math.allclose(ion.temp, u.celsius2kelvin(25.0), atol=1e-6 * u.kelvin))
+        self.assertTrue(u.math.allclose(ion.CBnull, 0.16 * u.mM, atol=1e-12 * u.mM))
+        self.assertTrue(u.math.allclose(ion.nf1, 43.5 / (u.mM * u.ms), atol=1e-12 / (u.mM * u.ms)))
+        self.assertTrue(u.math.allclose(ion.ns2, 0.26e-2 / u.ms, atol=1e-12 / u.ms))
+        self.assertTrue(u.math.allclose(ion.CAM_start, 0.03 * u.mM, atol=1e-12 * u.mM))
+        self.assertFalse(hasattr(ion, "celsius"))
+        self.assertFalse(hasattr(ion, "Kd1C"))
+        self.assertFalse(hasattr(ion, "ica_pmp"))
+        self.assertFalse(hasattr(ion, "parea2"))
+
+    def test_init_state_matches_pc_mod_semantics(self) -> None:
+        ion = self._make_ion()
+        ion.init_state(_V([-60.0]))
+
+        self.assertIsInstance(ion.Ci, DiffEqState)
+        self.assertIsInstance(ion.CB, DiffEqState)
+        self.assertIsInstance(ion.CAM0, DiffEqState)
+        self.assertIsInstance(ion.pump, DiffEqState)
+        self.assertFalse(isinstance(ion.pumpca, DiffEqState))
+        self.assertTrue(u.math.allclose(ion.Ci.value, jnp.array([45e-6]) * u.mM, atol=1e-12 * u.mM))
+        self.assertTrue(u.math.allclose(ion.mg.value, jnp.array([0.59]) * u.mM, atol=1e-12 * u.mM))
+        self.assertTrue(u.math.allclose(ion.CB.value, ion._ss_cb_free(), atol=1e-12 * u.mM))
+        self.assertTrue(u.math.allclose(ion.CB_f_ca.value, ion._ss_cb_fast(), atol=1e-12 * u.mM))
+        self.assertTrue(u.math.allclose(ion.CB_ca_s.value, ion._ss_cb_slow(), atol=1e-12 * u.mM))
+        self.assertTrue(u.math.allclose(ion.CB_ca_ca.value, ion._ss_cb_ca(), atol=1e-12 * u.mM))
+        self.assertTrue(u.math.allclose(ion.PV.value, ion._ss_pv_free(), atol=1e-12 * u.mM))
+        self.assertTrue(u.math.allclose(ion.PV_ca.value, ion._ss_pv_ca(), atol=1e-12 * u.mM))
+        self.assertTrue(u.math.allclose(ion.PV_mg.value, ion._ss_pv_mg(), atol=1e-12 * u.mM))
+        self.assertTrue(u.math.allclose(ion.CAM0.value, jnp.array([0.03]) * u.mM, atol=1e-12 * u.mM))
+        for name in ("CAM1C", "CAM2C", "CAM1N2C", "CAM1N", "CAM2N", "CAM2N1C", "CAM1C1N", "CAM4"):
+            self.assertTrue(u.math.allclose(getattr(ion, name).value, jnp.array([0.0]) * u.mM, atol=1e-15 * u.mM))
+        self.assertTrue(u.math.allclose(ion.pump.value, jnp.array([1e-9]) * (u.mol / u.cm ** 2), atol=1e-18 * (u.mol / u.cm ** 2)))
+        self.assertTrue(u.math.allclose(ion.pumpca.value, jnp.array([0.0]) * (u.mol / u.cm ** 2), atol=1e-18 * (u.mol / u.cm ** 2)))
+
+    def test_species_initializer_rejects_algebraic_override(self) -> None:
+        with self.assertRaisesRegex(ValueError, "differential-species overrides"):
+            self._make_ion(species_initializers={"pumpca": 0.0 * (u.mol / u.cm ** 2)})
+
+    def test_positive_inward_current_produces_positive_ci_source_flux(self) -> None:
+        ion = self._make_ion()
+        ion.init_state(_V([-60.0]))
+        flux = ion.sources[0].flux(
+            ion,
+            _V([-60.0]),
+            ion.species_values(),
+            total_current=jnp.array([0.01]) * u.mA / (u.cm ** 2),
+        )
+        self.assertGreater(float(flux[0].to_decimal(u.mM * u.um ** 2 / u.ms)), 0.0)
+
+    def test_conserve_keeps_pump_plus_pumpca_equal_total_scaled_pool(self) -> None:
+        ion = self._make_ion()
+        ion.init_state(_V([-60.0]))
+        values = ion.species_values()
+        total = ion.TotalPump * ion.parea
+        combined = ion.pump.value * ion.parea + values["pumpca"] * ion.parea
+        self.assertTrue(
+            u.math.allclose(
+                combined.to_decimal(total.unit),
+                total.to_decimal(total.unit),
+                atol=1e-12,
+            )
+        )
+
+    def test_cb_fast_binding_consumes_cb_and_builds_cb_f_ca(self) -> None:
+        ion = self._make_ion()
+        ion.init_state(_V([-60.0]))
+        ion.Ci.value = jnp.array([0.2]) * u.mM
+        ion.CB.value = jnp.array([0.1]) * u.mM
+        ion.CB_f_ca.value = jnp.array([0.0]) * u.mM
+        ion.CB_ca_s.value = jnp.array([0.0]) * u.mM
+        ion.CB_ca_ca.value = jnp.array([0.0]) * u.mM
+        ion.compute_derivative(_V([-60.0]))
+        self.assertLess(float(ion.CB.derivative[0].to_decimal(u.mM / u.ms)), 0.0)
+        self.assertGreater(float(ion.CB_f_ca.derivative[0].to_decimal(u.mM / u.ms)), 0.0)
+
+    def test_cb_second_binding_builds_cb_ca_ca(self) -> None:
+        ion = self._make_ion()
+        ion.init_state(_V([-60.0]))
+        ion.Ci.value = jnp.array([0.2]) * u.mM
+        ion.CB.value = jnp.array([0.0]) * u.mM
+        ion.CB_f_ca.value = jnp.array([0.1]) * u.mM
+        ion.CB_ca_s.value = jnp.array([0.0]) * u.mM
+        ion.CB_ca_ca.value = jnp.array([0.0]) * u.mM
+        ion.compute_derivative(_V([-60.0]))
+        self.assertLess(float(ion.CB_f_ca.derivative[0].to_decimal(u.mM / u.ms)), 0.0)
+        self.assertGreater(float(ion.CB_ca_ca.derivative[0].to_decimal(u.mM / u.ms)), 0.0)
+
+    def test_cam_mixed_branch_builds_cam1c1n(self) -> None:
+        ion = self._make_ion()
+        ion.init_state(_V([-60.0]))
+        ion.Ci.value = jnp.array([0.2]) * u.mM
+        ion.CAM1N.value = jnp.array([0.1]) * u.mM
+        ion.CAM1C1N.value = jnp.array([0.0]) * u.mM
+        ion.compute_derivative(_V([-60.0]))
+        self.assertLess(float(ion.CAM1N.derivative[0].to_decimal(u.mM / u.ms)), 0.0)
+        self.assertGreater(float(ion.CAM1C1N.derivative[0].to_decimal(u.mM / u.ms)), 0.0)
+
+    def test_zero_ica_integration_stays_finite_and_conserves_pump_pool(self) -> None:
+        ion = self._make_ion()
+        V = _V([-60.0])
+        ion.init_state(V)
+
+        totals = []
+        with brainstate.environ.context(dt=0.05 * u.ms):
+            for _ in range(20):
+                ion.make_integration(V)
+                ion.post_integral(V)
+                values = ion.species_values()
+                totals.append(float((ion.pump.value[0] + values["pumpca"][0]).to_decimal(u.mol / u.cm ** 2)))
+
+        values = ion.species_values()
+        tracked = {
+            "Ci": np.asarray(ion.Ci.value.to_decimal(u.mM)),
+            "CB": np.asarray(ion.CB.value.to_decimal(u.mM)),
+            "CB_f_ca": np.asarray(ion.CB_f_ca.value.to_decimal(u.mM)),
+            "CB_ca_ca": np.asarray(ion.CB_ca_ca.value.to_decimal(u.mM)),
+            "CAM0": np.asarray(ion.CAM0.value.to_decimal(u.mM)),
+            "CAM1C": np.asarray(ion.CAM1C.value.to_decimal(u.mM)),
+            "CAM1N": np.asarray(ion.CAM1N.value.to_decimal(u.mM)),
+            "pump": np.asarray(ion.pump.value.to_decimal(u.mol / u.cm ** 2)),
+            "pumpca": np.asarray(values["pumpca"].to_decimal(u.mol / u.cm ** 2)),
+        }
+        for arr in tracked.values():
+            self.assertTrue(np.isfinite(arr).all())
+
+        self.assertTrue(np.allclose(totals, totals[0], atol=1e-18))
+        self.assertGreater(float(ion.CAM1N.value[0].to_decimal(u.mM)), 0.0)
+        self.assertGreater(float(ion.CAM1C.value[0].to_decimal(u.mM)), 0.0)
+        self.assertLess(float(ion.Ci.value[0].to_decimal(u.mM)), 1e-3)
+
+
+class CdpCR_MA2020_GrCTest(unittest.TestCase):
+    """Imported GrC calcium pool with Calretinin buffering."""
+
+    def _make_ion(self, **kwargs):
+        ion = CdpCR_MA2020_GrC(size=1, **kwargs)
+        ion.diam_mid = jnp.asarray([20.0]) * u.um
+        return ion
+
+    def test_is_registered_kinetic_calcium_ion(self) -> None:
+        self.assertTrue(issubclass(CdpCR_MA2020_GrC, Calcium))
+        self.assertTrue(issubclass(CdpCR_MA2020_GrC, KineticIon))
+        self.assertIs(get_registry().get("ion", "CdpCR_MA2020_GrC"), CdpCR_MA2020_GrC)
+        self.assertTrue(CdpCR_MA2020_GrC.uses_total_current)
+        self.assertEqual(len(CdpCR_MA2020_GrC.species), 22)
+        self.assertEqual(len(CdpCR_MA2020_GrC.reactions), 19)
+        self.assertEqual(len(CdpCR_MA2020_GrC.sources), 1)
+        self.assertEqual(len(CdpCR_MA2020_GrC.conserves), 1)
+
+    def test_cr_species_use_cytosolic_compartment(self) -> None:
+        species = {spec.name: spec for spec in CdpCR_MA2020_GrC.species}
+        for name in (
+            "CR",
+            "CR_1C_0N",
+            "CR_2C_0N",
+            "CR_2C_1N",
+            "CR_1C_1N",
+            "CR_0C_1N",
+            "CR_0C_2N",
+            "CR_1C_2N",
+            "CR_2C_2N",
+            "CR_1V",
+        ):
+            self.assertEqual(species[name].factor, "cyto")
+
+    def test_default_parameters(self) -> None:
+        ion = self._make_ion()
+        self.assertTrue(u.math.allclose(ion.temp, u.celsius2kelvin(25.0), atol=1e-6 * u.kelvin))
+        self.assertTrue(u.math.allclose(ion.CRnull, 0.9 * u.mM, atol=1e-12 * u.mM))
+        self.assertTrue(u.math.allclose(ion.nT1, 1.8 / (u.mM * u.ms), atol=1e-12 / (u.mM * u.ms)))
+        self.assertTrue(u.math.allclose(ion.nR1, 310.0 / (u.mM * u.ms), atol=1e-12 / (u.mM * u.ms)))
+        self.assertTrue(u.math.allclose(ion.nV2, 0.24 / u.ms, atol=1e-12 / u.ms))
+        self.assertFalse(hasattr(ion, "celsius"))
+        self.assertFalse(hasattr(ion, "ica_pmp"))
+        self.assertFalse(hasattr(ion, "parea2"))
+        self.assertFalse(hasattr(ion, "PVnull"))
+        self.assertFalse(hasattr(ion, "CBnull"))
+
+    def test_init_state_matches_mod_semantics(self) -> None:
+        ion = self._make_ion()
+        ion.init_state(_V([-60.0]))
+
+        self.assertIsInstance(ion.Ci, DiffEqState)
+        self.assertIsInstance(ion.CR, DiffEqState)
+        self.assertIsInstance(ion.pump, DiffEqState)
+        self.assertFalse(isinstance(ion.pumpca, DiffEqState))
+        self.assertTrue(u.math.allclose(ion.Ci.value, jnp.array([45e-6]) * u.mM, atol=1e-12 * u.mM))
+        self.assertTrue(u.math.allclose(ion.mg.value, jnp.array([0.59]) * u.mM, atol=1e-12 * u.mM))
+        self.assertTrue(u.math.allclose(ion.CR.value, jnp.array([0.9]) * u.mM, atol=1e-12 * u.mM))
+        for name in (
+            "CR_1C_0N",
+            "CR_2C_0N",
+            "CR_2C_1N",
+            "CR_1C_1N",
+            "CR_0C_1N",
+            "CR_0C_2N",
+            "CR_1C_2N",
+            "CR_2C_2N",
+            "CR_1V",
+        ):
+            self.assertTrue(u.math.allclose(getattr(ion, name).value, jnp.array([0.0]) * u.mM, atol=1e-15 * u.mM))
+        self.assertTrue(u.math.allclose(ion.pump.value, jnp.array([1e-9]) * (u.mol / u.cm ** 2), atol=1e-18 * (u.mol / u.cm ** 2)))
+        self.assertTrue(u.math.allclose(ion.pumpca.value, jnp.array([0.0]) * (u.mol / u.cm ** 2), atol=1e-18 * (u.mol / u.cm ** 2)))
+
+    def test_species_initializer_rejects_algebraic_override(self) -> None:
+        with self.assertRaisesRegex(ValueError, "differential-species overrides"):
+            self._make_ion(species_initializers={"pumpca": 0.0 * (u.mol / u.cm ** 2)})
+
+    def test_positive_inward_current_produces_positive_ci_source_flux(self) -> None:
+        ion = self._make_ion()
+        ion.init_state(_V([-60.0]))
+        flux = ion.sources[0].flux(
+            ion,
+            _V([-60.0]),
+            ion.species_values(),
+            total_current=jnp.array([0.01]) * u.mA / (u.cm ** 2),
+        )
+        self.assertGreater(float(flux[0].to_decimal(u.mM * u.um ** 2 / u.ms)), 0.0)
+
+    def test_conserve_keeps_pump_plus_pumpca_equal_total_scaled_pool(self) -> None:
+        ion = self._make_ion()
+        ion.init_state(_V([-60.0]))
+        values = ion.species_values()
+        total = ion.TotalPump * ion.parea
+        combined = ion.pump.value * ion.parea + values["pumpca"] * ion.parea
+        self.assertTrue(
+            u.math.allclose(
+                combined.to_decimal(total.unit),
+                total.to_decimal(total.unit),
+                atol=1e-12,
+            )
+        )
+
+    def test_cr_slow_branch_consumes_cr_and_builds_cr_1c_0n(self) -> None:
+        ion = self._make_ion()
+        ion.init_state(_V([-60.0]))
+        ion.Ci.value = jnp.array([0.2]) * u.mM
+        ion.CR.value = jnp.array([0.9]) * u.mM
+        ion.CR_1C_0N.value = jnp.array([0.0]) * u.mM
+        ion.CR_0C_1N.value = jnp.array([0.0]) * u.mM
+        ion.CR_1V.value = jnp.array([0.0]) * u.mM
+        ion.compute_derivative(_V([-60.0]))
+        self.assertLess(float(ion.CR.derivative[0].to_decimal(u.mM / u.ms)), 0.0)
+        self.assertGreater(float(ion.CR_1C_0N.derivative[0].to_decimal(u.mM / u.ms)), 0.0)
+
+    def test_cr_second_binding_builds_cr_2c_0n(self) -> None:
+        ion = self._make_ion()
+        ion.init_state(_V([-60.0]))
+        ion.Ci.value = jnp.array([0.2]) * u.mM
+        ion.CR.value = jnp.array([0.0]) * u.mM
+        ion.CR_1C_0N.value = jnp.array([0.1]) * u.mM
+        ion.CR_2C_0N.value = jnp.array([0.0]) * u.mM
+        ion.CR_1C_1N.value = jnp.array([0.0]) * u.mM
+        ion.compute_derivative(_V([-60.0]))
+        self.assertLess(float(ion.CR_1C_0N.derivative[0].to_decimal(u.mM / u.ms)), 0.0)
+        self.assertGreater(float(ion.CR_2C_0N.derivative[0].to_decimal(u.mM / u.ms)), 0.0)
+
+    def test_cr_mixed_branch_builds_cr_1c_1n(self) -> None:
+        ion = self._make_ion()
+        ion.init_state(_V([-60.0]))
+        ion.Ci.value = jnp.array([0.2]) * u.mM
+        ion.CR.value = jnp.array([0.0]) * u.mM
+        ion.CR_0C_1N.value = jnp.array([0.1]) * u.mM
+        ion.CR_1C_1N.value = jnp.array([0.0]) * u.mM
+        ion.compute_derivative(_V([-60.0]))
+        self.assertLess(float(ion.CR_0C_1N.derivative[0].to_decimal(u.mM / u.ms)), 0.0)
+        self.assertGreater(float(ion.CR_1C_1N.derivative[0].to_decimal(u.mM / u.ms)), 0.0)
+
+    def test_zero_ica_integration_stays_finite_and_conserves_pump_pool(self) -> None:
+        ion = self._make_ion()
+        V = _V([-60.0])
+        ion.init_state(V)
+
+        totals = []
+        with brainstate.environ.context(dt=0.05 * u.ms):
+            for _ in range(20):
+                ion.make_integration(V)
+                ion.post_integral(V)
+                values = ion.species_values()
+                totals.append(float((ion.pump.value[0] + values["pumpca"][0]).to_decimal(u.mol / u.cm ** 2)))
+
+        values = ion.species_values()
+        tracked = {
+            "Ci": np.asarray(ion.Ci.value.to_decimal(u.mM)),
+            "CR": np.asarray(ion.CR.value.to_decimal(u.mM)),
+            "CR_1C_0N": np.asarray(ion.CR_1C_0N.value.to_decimal(u.mM)),
+            "CR_0C_1N": np.asarray(ion.CR_0C_1N.value.to_decimal(u.mM)),
+            "CR_1V": np.asarray(ion.CR_1V.value.to_decimal(u.mM)),
+            "pump": np.asarray(ion.pump.value.to_decimal(u.mol / u.cm ** 2)),
+            "pumpca": np.asarray(values["pumpca"].to_decimal(u.mol / u.cm ** 2)),
+        }
+        for arr in tracked.values():
+            self.assertTrue(np.isfinite(arr).all())
+
+        self.assertTrue(np.allclose(totals, totals[0], atol=1e-18))
+        self.assertGreater(float(ion.CR_1C_0N.value[0].to_decimal(u.mM)), 0.0)
+        self.assertGreater(float(ion.CR_0C_1N.value[0].to_decimal(u.mM)), 0.0)
+        self.assertLess(float(ion.Ci.value[0].to_decimal(u.mM)), 1e-3)
 
 
 class CdpLVA_SU2015_DCNTest(unittest.TestCase):

@@ -48,6 +48,8 @@ __all__ = [
     "Kv1p1_MA2025_BC",
     "Kv1p1_MA2024_PC",
     "Kv1p1_RI2021_SC",
+    "Kv1p5_MA2024_PC",
+    "Kv3p3_MA2024_PC",
     "Kv3p4_MA2025_BC",
     "Kv3p4_MA2024_PC",
     "Kv3p4_RI2021_SC",
@@ -61,6 +63,7 @@ __all__ = [
     "KM_MA2020_GrC",
     "Kir2p3_MA2020_GrC",
     "Kv1p1_MA2020_GrC",
+    "Kv1p5_MA2020_GrC",
     "Kv2p2_0010_MA2020_GrC",
     "Kv3p4_MA2020_GrC",
     "Kv4p3_MA2020_GrC",
@@ -974,6 +977,144 @@ class Kv1p1_RI2021_SC(HH):
         nc = 1e12 * self.g_max / self.gunit
         igate = nc * 1e6 * self.e0 * 4.0 * self.zn * ngate_flip
         return conductive - u.math.where(self.gateCurrent != 0, igate, 0.0 * igate)
+
+
+@register_channel("Kv1p5_MA2024_PC")
+class Kv1p5_MA2024_PC(HH):
+    """Template-based import of the active K-current path in ``Kv1p5_MA24_PC.mod``."""
+
+    __module__ = "braincell.channel"
+    root_type = Potassium
+    gates = (
+        Gate("m", power=3),
+        Gate("n"),
+        Gate("u"),
+    )
+
+    def __init__(
+        self,
+        size: brainstate.typing.Size,
+        g_max: Union[brainstate.typing.ArrayLike, Callable] = 0.13195e-3 * (u.siemens / u.cm ** 2),
+        temp: brainstate.typing.ArrayLike = u.celsius2kelvin(37.0),
+        Tauact: Union[brainstate.typing.ArrayLike, Callable] = 1.0,
+        Tauinactf: Union[brainstate.typing.ArrayLike, Callable] = 1.0,
+        Tauinacts: Union[brainstate.typing.ArrayLike, Callable] = 1.0,
+        name: Optional[str] = None,
+    ):
+        super().__init__(size=size, name=name)
+        self.g_max = braintools.init.param(g_max, self.varshape, allow_none=False)
+        self.temp = braintools.init.param(temp, self.varshape, allow_none=False)
+        self.Tauact = braintools.init.param(Tauact, self.varshape, allow_none=False)
+        self.Tauinactf = braintools.init.param(Tauinactf, self.varshape, allow_none=False)
+        self.Tauinacts = braintools.init.param(Tauinacts, self.varshape, allow_none=False)
+
+    def current(self, V, K: IonInfo):
+        return self.g_max * self._voltage_factor(V) * self.conductance_factor(V, K) * (K.E - V)
+
+    def _q10(self):
+        return 2.2 ** (((self.temp - u.celsius2kelvin(37.0)) / u.kelvin) / 10.0)
+
+    def _voltage_factor(self, V):
+        V = V.to_decimal(u.mV)
+        return 0.1 + 1.0 / (1.0 + u.math.exp(-(V - 15.0) / 13.0))
+
+    def f_m_inf(self, V, K: IonInfo):
+        V = V.to_decimal(u.mV)
+        return 1.0 / (1.0 + u.math.exp(-(V + 30.3) / 9.6))
+
+    def f_m_tau(self, V, K: IonInfo):
+        V = V.to_decimal(u.mV)
+        alpha = self._q10() * 0.65 / (
+            u.math.exp(-(V + 10.0) / 8.5) + u.math.exp(-(V - 30.0) / 59.0)
+        )
+        beta = self._q10() * 0.65 / (2.5 + u.math.exp((V + 82.0) / 17.0))
+        return 1.0 / (alpha + beta) / 3.0 * self.Tauact
+
+    def f_n_inf(self, V, K: IonInfo):
+        V = V.to_decimal(u.mV)
+        return 0.25 + 1.0 / (1.35 + u.math.exp((V + 7.0) / 14.0))
+
+    def f_n_tau(self, V, K: IonInfo):
+        V = V.to_decimal(u.mV)
+        alpha = self._q10() * 0.001 / (2.4 + 10.9 * u.math.exp(-(V + 90.0) / 78.0))
+        beta = self._q10() * 0.001 * u.math.exp((V - 168.0) / 16.0)
+        return 1.0 / (alpha + beta) / 3.0 * self.Tauinactf
+
+    def f_u_inf(self, V, K: IonInfo):
+        V = V.to_decimal(u.mV)
+        return 0.1 + 1.0 / (1.1 + u.math.exp((V + 7.0) / 14.0))
+
+    def f_u_tau(self, V, K: IonInfo):
+        _ = (V, K)
+        return 6800.0 * self.Tauinacts
+
+
+@register_channel("Kv1p5_MA2020_GrC")
+class Kv1p5_MA2020_GrC(Kv1p5_MA2024_PC):
+    """Default ``ik`` path of ``Kv1p5_MA20_GrC.mod``.
+
+    The GrC mechanism also declares ``ino`` through ``gnonspec``, but
+    ``gnonspec`` defaults to zero in the source mod and is not exposed here.
+    """
+
+    __module__ = "braincell.channel"
+
+
+@register_channel("Kv3p3_MA2024_PC")
+class Kv3p3_MA2024_PC(HH):
+    """Template-based import of ``Kv3p3_MA24_PC.mod``."""
+
+    __module__ = "braincell.channel"
+    root_type = Potassium
+    gates = (Gate("n", power=4, q10=2.7, temp_ref=u.celsius2kelvin(22.0)),)
+
+    def __init__(
+        self,
+        size: brainstate.typing.Size,
+        g_max: Union[brainstate.typing.ArrayLike, Callable] = 0.005 * (u.siemens / u.cm ** 2),
+        temp: brainstate.typing.ArrayLike = u.celsius2kelvin(22.0),
+        gateCurrent: Union[brainstate.typing.ArrayLike, Callable] = 0.0,
+        name: Optional[str] = None,
+    ):
+        super().__init__(size=size, name=name)
+        self.g_max = braintools.init.param(g_max, self.varshape, allow_none=False)
+        self.temp = braintools.init.param(temp, self.varshape, allow_none=False)
+        self.gateCurrent = braintools.init.param(
+            gateCurrent, self.varshape, allow_none=False
+        )
+        self.gunit = 16.0e-9 * u.mS
+        self.ca = 0.22
+        self.cva = 16.0 * u.mV
+        self.cka = -26.5 * u.mV
+        self.cb = 0.22
+        self.cvb = 16.0 * u.mV
+        self.ckb = 26.5 * u.mV
+        self.zn = 1.9196
+        self.e0 = 1.60217646e-19 * u.coulomb
+
+    def f_n_alpha(self, V, K: IonInfo):
+        V = V.to_decimal(u.mV)
+        return self.ca * u.math.exp(
+            -(V + self.cva.to_decimal(u.mV)) / self.cka.to_decimal(u.mV)
+        )
+
+    def f_n_beta(self, V, K: IonInfo):
+        V = V.to_decimal(u.mV)
+        return self.cb * u.math.exp(
+            -(V + self.cvb.to_decimal(u.mV)) / self.ckb.to_decimal(u.mV)
+        )
+
+    def current(self, V, K: IonInfo):
+        conductive = self.g_max * self.conductance_factor(V, K) * (K.E - V)
+        phi = self.gate_phi(self._iter_gates()[0])
+        n = self.n.value
+        alpha = self.f_n_alpha(V, K)
+        beta = self.f_n_beta(V, K)
+        ngate_flip = phi * (alpha * (1.0 - n) - beta * n) / u.ms
+        nc = 1e12 * self.g_max / self.gunit
+        igate = nc * 1e6 * self.e0 * 4.0 * self.zn * ngate_flip
+        return conductive - u.math.where(self.gateCurrent != 0, igate, 0.0 * igate)
+
 
 @register_channel("Kv3p4_MA2025_BC")
 class Kv3p4_MA2025_BC(HH):

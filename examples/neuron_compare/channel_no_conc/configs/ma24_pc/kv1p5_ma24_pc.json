@@ -1,0 +1,38 @@
+{
+  "meta": {
+    "label": "PC Kv1p5 MA24"
+  },
+  "identity": {
+    "mod_dir": "../../../Cerebellum_mod/PC/channel"
+  },
+  "defaults": {
+    "channel_params": {
+      "g_max_S_cm2": 0.00013195
+    }
+  },
+  "mapping": {
+    "current": "ik",
+    "impl_name": {
+      "neuron": "Kv1p5_MA24_PC",
+      "braincell": "Kv1p5_MA2024_PC"
+    },
+    "gate_names": {
+      "common": [
+        "m",
+        "n",
+        "u"
+      ]
+    },
+    "channel_params": {
+      "g_max_S_cm2": {
+        "neuron": "gKur",
+        "braincell": "g_max"
+      }
+    }
+  },
+  "templates": [
+    "../../templates/vinit_celsius.json",
+    "../../templates/dc.json",
+    "../../templates/ac.json"
+  ]
+}

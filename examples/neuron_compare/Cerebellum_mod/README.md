@@ -15,8 +15,8 @@
 
 | Region | Count |
 |---|---:|
-| HH_no_conc | 40 |
-| Markov_no_conc | 9 |
+| HH_no_conc | 41 |
+| Markov_no_conc | 8 |
 | Ion_dyn | 7 |
 | HH_conc | 23 |
 | Markov_conc | 10 |
@@ -37,7 +37,7 @@
 
 | BC | DCN | GoC | GrC | IO | PC | SC |
 |---|---|---|---|---|---|---|
-| HCN1<br>Kir2.3<br>Kv1.1<br>Kv3.4<br>Kv4.3 | HCN<br>NaF<br>NaP<br>fKdr<br>sKdr | HCN1<br>HCN2<br>KM<br>Kv1.1<br>Kv3.4<br>Kv4.3<br>CaHVA<br>Cav2.3 | KM<br>Kir2.3<br>Kv1.1<br>Kv2.2_0010<br>Kv3.4<br>Kv4.3<br>CaHVA | HCN<br>Na<br>Kdr<br>Ca | HCN1<br>Kir2.3<br>Kv1.1<br>Kv3.4<br>Kv4.3 | HCN1<br>KM<br>Kir2.3<br>Kv1.1<br>Kv3.4<br>Kv4.3 |
+| HCN1<br>Kir2.3<br>Kv1.1<br>Kv3.4<br>Kv4.3 | HCN<br>NaF<br>NaP<br>fKdr<br>sKdr | HCN1<br>HCN2<br>KM<br>Kv1.1<br>Kv3.4<br>Kv4.3<br>CaHVA<br>Cav2.3 | KM<br>Kir2.3<br>Kv1.1<br>Kv2.2_0010<br>Kv3.4<br>Kv4.3<br>CaHVA | HCN<br>Na<br>Kdr<br>Ca | HCN1<br>Kir2.3<br>Kv1.1<br>Kv3.3<br>Kv3.4<br>Kv4.3 | HCN1<br>KM<br>Kir2.3<br>Kv1.1<br>Kv3.4<br>Kv4.3 |
 
 ## HH_no_conc template fit
 
@@ -102,6 +102,8 @@ Fit labels:
 | `HCN1_MA24_PC` | `hh_special_current` | `USEION h`; map to `HHTypedNeuron` + explicit `E_rev`; gate has `Q10`. |
 | `Kir2p3_MA24_PC` | `direct_hh` | `derivimplicit` in NEURON, but the gate ODE is still independent and can be written explicitly. |
 | `Kv1p1_MA24_PC` | `hh_special_current` | Extra `NONSPECIFIC_CURRENT i/igate`; keep the optional gating-current path. |
+| `Kv1p5_MA24_PC` | `direct_hh` | The PC file only enables `USEION k WRITE ik`; `ino` is calculated as a RANGE variable but its `USEION no WRITE ino` line is commented out. |
+| `Kv3p3_MA24_PC` | `hh_special_current` | The comment block says `KINETIC SCHEME: Hodgkin-Huxley (n^4)`; extra `NONSPECIFIC_CURRENT i/igate`; keep the optional gating-current path. |
 | `Kv3p4_MA24_PC` | `direct_hh` | Piecewise `if/else` tau functions; translate with `u.math.where`. |
 | `Kv4p3_MA24_PC` | `direct_hh` | Piecewise helper formulas; active branch uses `sigm`, and the unused `linoid` helper is only a stability reference. |
 
@@ -119,7 +121,7 @@ Fit labels:
 
 | BC | DCN | GoC | GrC | IO | PC | SC |
 |---|---|---|---|---|---|---|
-| Nav1.1<br>Nav1.6 | - | Nav1.6 | Nav<br>NaFHF | - | Nav1.6<br>Kv3.3 | Nav1.1<br>Nav1.6 |
+| Nav1.1<br>Nav1.6 | - | Nav1.6 | Nav<br>NaFHF | - | Nav1.6 | Nav1.1<br>Nav1.6 |
 
 ## Ion_dyn
 
@@ -127,18 +129,38 @@ Fit labels:
 |---|---|---|---|---|---|---|
 | CdpStC | CdpHVA<br>CdpLVA | CdpStC | CdpCR | - | CdpCAM | CdpStC |
 
+## Ion_dyn inherited variants
+
+| SUFFIX | Base implementation | Special notes |
+|---|---|---|
+| `CdpStC_MA25_BC` | `CdpStC_NoCAM_MA20_GoC` | Same pump, non-CAM buffer, and PV kinetic network; source CAM block is commented out. |
+| `CdpStC_RI21_SC` | `CdpStC_NoCAM_MA20_GoC` | Same pump, non-CAM buffer, and PV kinetic network; extra `cao` read is not used by the equations. |
+
+## Ion_dyn implementation notes
+
+| SUFFIX | Fit | Special notes |
+|---|---|---|
+| `CdpCAM_MA24_PC` | `manual_structure` | Similar to `CdpStC_MA20_GoC`, but enables the CB subnetwork and places both CB and CAM states in the cytosolic compartment. |
+| `CdpCR_MA20_GrC` | `manual_structure` | Similar Cdp pump/buffer scaffold, but replaces PV/CB/CAM with the GrC Calretinin network. |
+
 ## HH_conc
 
 | BC | DCN | GoC | GrC | IO | PC | SC |
 |---|---|---|---|---|---|---|
 | Kca3.1<br>Cav1.2<br>Cav1.3<br>Cav2.1<br>Cav3.2 | SK<br>CaHVA<br>CaL<br>CaLVA | Kca3.1<br>Cav1.2<br>Cav1.3<br>Cav3.1 | Kv1.5 | - | Kca3.1<br>Cav2.1<br>Cav3.1<br>Cav3.2<br>Cav3.3<br>Kv1.5 | Cav2.1<br>Cav3.2<br>Cav3.3 |
 
-## HH_conc reclassified manual_structure
+## HH_conc default ik conversion
 
 | SUFFIX | Fit | Special notes |
 |---|---|---|
-| `Kv1p5_MA20_GrC` | `manual_structure` | Reads `ki/ko/nai/nao` and writes `ino`; this is a mixed-ion current, not a plain single-ion HH channel. |
-| `Kv1p5_MA24_PC` | `manual_structure` | Current file comments out the extra ions, but the current law still depends on `nai/nao/ki/ko`; treat it as mixed-ion structure. |
+| `Kv1p5_MA20_GrC` | `default_ik_only` | The source mod enables `ino`, but `gnonspec` defaults to zero and no repo config sets it nonzero; BrainCell converts the default `ik` path and intentionally does not expose nonzero `ino`. |
+
+## HH_conc inherited variants
+
+| SUFFIX | Base implementation | Special notes |
+|---|---|---|
+| `Kca3p1_MA25_BC` | `Kca3p1_MA20_GoC` | Same core `Y/p` kinetics and `ik` path; BC-only `g_equiv = gkbar*Y` is a derived RANGE value and is not exposed as a BrainCell field. |
+| `Kca3p1_MA24_PC` | `Kca3p1_MA20_GoC` | Same core `Y/p` kinetics and `ik` path. |
 
 ## Markov_conc
 
@@ -150,8 +172,8 @@ Fit labels:
 ## total table
 | Model / Condition | BC (15) | DCN (11) | GoC (16) | GrC (13) | IO (4) | PC (16) | SC (14) |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| HH_no_conc (40) | HCN1, Kir2.3, Kv1.1, Kv3.4, Kv4.3 | HCN, NaF, NaP, fKdr, sKdr | HCN1, HCN2, KM, Kv1.1, Kv3.4, Kv4.3, CaHVA, Cav2.3 | KM, Kir2.3, Kv1.1, Kv2.2, Kv3.4, Kv4.3, CaHVA | HCN, Na, Kdr, Ca | HCN1, Kir2.3, Kv1.1, Kv3.4, Kv4.3 | HCN1, KM, Kir2.3, Kv1.1, Kv3.4, Kv4.3 |
-| Markov_no_conc (9) | Nav1.1, Nav1.6 | - | Nav1.6 | Nav, NaFHF | - | Nav1.6, Kv3.3 | Nav1.1, Nav1.6 |
+| HH_no_conc (41) | HCN1, Kir2.3, Kv1.1, Kv3.4, Kv4.3 | HCN, NaF, NaP, fKdr, sKdr | HCN1, HCN2, KM, Kv1.1, Kv3.4, Kv4.3, CaHVA, Cav2.3 | KM, Kir2.3, Kv1.1, Kv2.2, Kv3.4, Kv4.3, CaHVA | HCN, Na, Kdr, Ca | HCN1, Kir2.3, Kv1.1, Kv3.3, Kv3.4, Kv4.3 | HCN1, KM, Kir2.3, Kv1.1, Kv3.4, Kv4.3 |
+| Markov_no_conc (8) | Nav1.1, Nav1.6 | - | Nav1.6 | Nav, NaFHF | - | Nav1.6 | Nav1.1, Nav1.6 |
 | Ion_dyn (7) | CdpStC | CdpHVA,CdpLVA | CdpStC | CdpCR | - | CdpCAM | CdpStC |
 | HH_conc (23) | Kca3.1, Cav1.2, Cav1.3, Cav2.1, Cav3.2 | SK, CaHVA, CaL, CaLVA | Kca3.1, Cav1.2, Cav1.3, Cav3.1 | Kv1.5 | - | Kca3.1, Cav2.1, Cav3.1, Cav3.2, Cav3.3, Kv1.5 | Cav2.1, Cav3.2, Cav3.3 |
 | Markov_conc (10) | Kca1.1, Kca2.2 | - | Kca1.1, Kca2.2 | Kca1.1, Kca2.2 | - | Kca1.1, Kca2.2 | Kca1.1, Kca2.2 |

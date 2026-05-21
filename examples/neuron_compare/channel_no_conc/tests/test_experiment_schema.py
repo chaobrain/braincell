@@ -36,6 +36,40 @@ class ExperimentSchemaTest(unittest.TestCase):
             size *= len(values)
         return size
 
+    def test_repo_configs_cover_all_channel_mod_suffixes(self) -> None:
+        mod_root = CHANNEL_NO_CONC_ROOT.parent / "Cerebellum_mod"
+        config_root = CHANNEL_NO_CONC_ROOT / "configs"
+
+        mod_suffixes = set()
+        for mod_path in sorted(mod_root.glob("*/channel/*.mod")):
+            suffix = None
+            for line in mod_path.read_text(errors="ignore").splitlines():
+                stripped = line.strip()
+                if stripped.startswith("SUFFIX "):
+                    suffix = stripped.split(None, 1)[1].strip()
+                    break
+            self.assertIsNotNone(suffix, f"Could not resolve SUFFIX for {mod_path!s}")
+            mod_suffixes.add(suffix)
+
+        config_suffixes = set()
+        for config_path in sorted(config_root.glob("*/*.json")):
+            model_config = experiment_schema.load_model_config(config_path)
+            config_suffixes.add(model_config.mapping_spec.neuron.mechanism_name)
+
+        self.assertEqual(len(mod_suffixes), 82)
+        self.assertEqual(len(config_suffixes), 82)
+        self.assertEqual(config_suffixes, mod_suffixes)
+
+    def test_repo_all_configs_load_and_expand_templates(self) -> None:
+        config_root = CHANNEL_NO_CONC_ROOT / "configs"
+        for config_path in sorted(config_root.glob("*/*.json")):
+            model_config = experiment_schema.load_model_config(config_path)
+            self.assertTrue(Path(model_config.mod_dir).exists(), config_path)
+            for template_path in model_config.template_paths:
+                config = experiment_schema.load_sweep_config(config_path, template_path)
+                expanded = experiment_schema.expand_cases(config)
+                self.assertEqual(len(expanded), self._repo_axis_size(template_path), config_path)
+
     def test_builds_minimal_case(self) -> None:
         case = experiment_schema.ChannelNoConcCase.from_dict(build_case_payload())
         self.assertAlmostEqual(case.morphology.radius_um, 50.0 / 3.141592653589793, places=12)
@@ -83,6 +117,37 @@ class ExperimentSchemaTest(unittest.TestCase):
         self.assertEqual(model_config.template_paths, (template_path.resolve(),))
         self.assertEqual(model_config.mapping_spec.parameter_map["g_max_S_cm2"].neuron, "gbar")
         self.assertEqual(model_config.defaults, {})
+
+    def test_load_model_config_resolves_relative_mod_dir_from_config_dir(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            template_dir = root / "configs" / "templates"
+            mod_dir = root / "mods"
+            template_dir.mkdir(parents=True)
+            mod_dir.mkdir()
+            write_json(template_dir / "smoke.json", build_scan_template_payload())
+            config_path = write_json(
+                root / "configs" / "kv_test.json",
+                build_main_config_payload(
+                    ["templates/smoke.json"],
+                    identity={"mod_dir": "../mods"},
+                ),
+            )
+
+            model_config = experiment_schema.load_model_config(config_path)
+
+        self.assertEqual(Path(model_config.mod_dir), mod_dir.resolve())
+
+    def test_mapping_current_ical_uses_calcium_concentration_state(self) -> None:
+        payload = build_case_payload(mapping=build_mapping_payload(current_kind="cal"))
+        payload["ion_state"] = {"Ci_mM": 0.00024, "Co_mM": 2.0}
+
+        case = experiment_schema.ChannelNoConcCase.from_dict(payload)
+
+        self.assertEqual(case.mapping_spec.current_source.ion_name, "cal")
+        self.assertEqual(case.mapping_spec.current_source.neuron_current_var, "ical")
+        self.assertEqual(case.ion_state.Ci_mM, 0.00024)
+        self.assertEqual(case.ion_state.Co_mM, 2.0)
 
     def test_load_model_config_accepts_defaults_payload(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

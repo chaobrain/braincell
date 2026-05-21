@@ -1,0 +1,52 @@
+{
+  "meta": {
+    "label": "GoC Cav1p3 MA20"
+  },
+  "identity": {
+    "mod_dir": "../../../Cerebellum_mod/GoC/channel"
+  },
+  "defaults": {
+    "ion_state": {
+      "Ci_mM": 0.00024,
+      "Co_mM": 2.0
+    },
+    "channel_params": {
+      "g_max_S_cm2": 0.0
+    }
+  },
+  "mapping": {
+    "current": "ica",
+    "impl_name": {
+      "neuron": "Cav1p3_MA20_GoC",
+      "braincell": "Cav1p3_MA2020_GoC"
+    },
+    "gate_names": {
+      "canonical": [
+        "m",
+        "h",
+        "n"
+      ],
+      "neuron": [
+        "m",
+        "h",
+        "h2"
+      ],
+      "braincell": [
+        "m",
+        "h",
+        "n"
+      ]
+    },
+    "channel_params": {
+      "g_max_S_cm2": {
+        "neuron": "gbar",
+        "braincell": "g_max"
+      }
+    }
+  },
+  "templates": [
+    "../../templates/vinit_celsius.json",
+    "../../templates/dc.json",
+    "../../templates/ac.json"
+  ]
+}

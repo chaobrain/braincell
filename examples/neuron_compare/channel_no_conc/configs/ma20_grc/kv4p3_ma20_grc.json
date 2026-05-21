@@ -1,0 +1,37 @@
+{
+  "meta": {
+    "label": "GrC Kv4p3 MA20"
+  },
+  "identity": {
+    "mod_dir": "../../../Cerebellum_mod/GrC/channel"
+  },
+  "defaults": {
+    "channel_params": {
+      "g_max_S_cm2": 0.0032
+    }
+  },
+  "mapping": {
+    "current": "ik",
+    "impl_name": {
+      "neuron": "Kv4p3_MA20_GrC",
+      "braincell": "Kv4p3_MA2020_GrC"
+    },
+    "gate_names": {
+      "common": [
+        "a",
+        "b"
+      ]
+    },
+    "channel_params": {
+      "g_max_S_cm2": {
+        "neuron": "gkbar",
+        "braincell": "g_max"
+      }
+    }
+  },
+  "templates": [
+    "../../templates/vinit_celsius.json",
+    "../../templates/dc.json",
+    "../../templates/ac.json"
+  ]
+}

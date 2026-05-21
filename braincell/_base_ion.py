@@ -198,7 +198,7 @@ class Ion(IonChannel, Container):
         ion_info = self.pack_info()
         for node in nodes:
             node: Channel
-            node.init_state(V, ion_info, batch_size)
+            node.init_state(V, ion_info, batch_size=batch_size)
 
     def reset_state(self, V, batch_size: int = None):
         """
@@ -216,7 +216,7 @@ class Ion(IonChannel, Container):
         ion_info = self.pack_info()
         for node in nodes:
             node: Channel
-            node.reset_state(V, ion_info, batch_size)
+            node.reset_state(V, ion_info, batch_size=batch_size)
 
     def update(self, V, *args, **kwargs):
         if isinstance(self, IndependentIntegration):
@@ -399,13 +399,13 @@ class MixIons(IonChannel, Container):
         for node in nodes:
             node: Channel
             infos = tuple([self._get_ion(root).pack_info() for root in node.root_type.__args__])
-            node.init_state(V, *infos, batch_size)
+            node.init_state(V, *infos, batch_size=batch_size)
 
     def reset_state(self, V, batch_size=None):
         nodes = tuple(brainstate.graph.nodes(self, Channel, allowed_hierarchy=(1, 1)).values())
         for node in nodes:
             infos = tuple([self._get_ion(root).pack_info() for root in node.root_type.__args__])
-            node.reset_state(V, *infos, batch_size)
+            node.reset_state(V, *infos, batch_size=batch_size)
 
     def update(self, V, *args, **kwargs):
         for key, node in brainstate.graph.nodes(self, Channel, allowed_hierarchy=(1, 1)).items():

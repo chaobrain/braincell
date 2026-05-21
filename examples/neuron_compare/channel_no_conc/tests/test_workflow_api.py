@@ -108,7 +108,26 @@ class WorkflowInputTest(unittest.TestCase):
         records = workflow_api.discover_batch_configs(CHANNEL_NO_CONC_ROOT / "configs" / "ma24_pc")
 
         records_by_name = {record["config_name"]: record for record in records}
-        self.assertEqual(set(records_by_name), {"hcn1_ma24_pc", "kir2p3_ma24_pc", "kv1p1_ma24_pc", "kv3p4_ma24_pc", "kv4p3_ma24_pc"})
+        self.assertEqual(
+            set(records_by_name),
+            {
+                "cav2p1_ma24_pc",
+                "cav3p1_ma24_pc",
+                "cav3p2_ma24_pc",
+                "cav3p3_ma24_pc",
+                "hcn1_ma24_pc",
+                "kca1p1_ma24_pc",
+                "kca2p2_ma24_pc",
+                "kca3p1_ma24_pc",
+                "kir2p3_ma24_pc",
+                "kv1p1_ma24_pc",
+                "kv1p5_ma24_pc",
+                "kv3p3_ma24_pc",
+                "kv3p4_ma24_pc",
+                "kv4p3_ma24_pc",
+                "nav1p6_ma24_pc",
+            },
+        )
         self.assertIn("hcn1_ma24_pc", records_by_name)
         self.assertEqual(records_by_name["hcn1_ma24_pc"]["n_templates"], 3)
 
@@ -116,7 +135,25 @@ class WorkflowInputTest(unittest.TestCase):
         records = workflow_api.discover_batch_configs(CHANNEL_NO_CONC_ROOT / "configs" / "ma25_bc")
 
         records_by_name = {record["config_name"]: record for record in records}
-        self.assertEqual(set(records_by_name), {"hcn1_ma25_bc", "nav1p6_ma25_bc", "kir2p3_ma25_bc", "kv1p1_ma25_bc", "kv3p4_ma25_bc", "kv4p3_ma25_bc"})
+        self.assertEqual(
+            set(records_by_name),
+            {
+                "cav1p2_ma25_bc",
+                "cav1p3_ma25_bc",
+                "cav2p1_ma25_bc",
+                "cav3p2_ma25_bc",
+                "hcn1_ma25_bc",
+                "kca1p1_ma25_bc",
+                "kca2p2_ma25_bc",
+                "kca3p1_ma25_bc",
+                "kir2p3_ma25_bc",
+                "kv1p1_ma25_bc",
+                "kv3p4_ma25_bc",
+                "kv4p3_ma25_bc",
+                "nav1p1_ma25_bc",
+                "nav1p6_ma25_bc",
+            },
+        )
         self.assertIn("hcn1_ma25_bc", records_by_name)
         self.assertEqual(records_by_name["hcn1_ma25_bc"]["n_templates"], 3)
 
@@ -127,7 +164,10 @@ class WorkflowInputTest(unittest.TestCase):
         self.assertEqual(
             set(records_by_name),
             {
+                "cav1p2_ma20_goc",
+                "cav1p3_ma20_goc",
                 "nav1p6_ma20_goc",
+                "cav3p1_ma20_goc",
                 "hcn1_ma20_goc",
                 "hcn2_ma20_goc",
                 "km_ma20_goc",
@@ -149,7 +189,17 @@ class WorkflowInputTest(unittest.TestCase):
         records_by_name = {record["config_name"]: record for record in records}
         self.assertEqual(
             set(records_by_name),
-            {"hcn_su15_dcn", "naf_su15_dcn", "nap_su15_dcn", "fkdr_su15_dcn", "skdr_su15_dcn"},
+            {
+                "cahva_su15_dcn",
+                "calva_su15_dcn",
+                "hcn_su15_dcn",
+                "naf_su15_dcn",
+                "nap_su15_dcn",
+                "fkdr_su15_dcn",
+                "skdr_su15_dcn",
+                "sk_su15_dcn",
+                "cal_su15_dcn",
+            },
         )
         self.assertEqual(records_by_name["hcn_su15_dcn"]["n_templates"], 3)
 
@@ -164,11 +214,15 @@ class WorkflowInputTest(unittest.TestCase):
                 "cav3p2_ri21_sc",
                 "cav3p3_ri21_sc",
                 "hcn1_ri21_sc",
+                "kca1p1_ri21_sc",
+                "kca2p2_ri21_sc",
                 "km_ri21_sc",
                 "kir2p3_ri21_sc",
                 "kv1p1_ri21_sc",
                 "kv3p4_ri21_sc",
                 "kv4p3_ri21_sc",
+                "nav1p1_ri21_sc",
+                "nav1p6_ri21_sc",
             },
         )
         self.assertEqual(records_by_name["hcn1_ri21_sc"]["n_templates"], 3)
@@ -179,7 +233,17 @@ class WorkflowInputTest(unittest.TestCase):
         records_by_name = {record["config_name"]: record for record in records}
         self.assertEqual(
             set(records_by_name),
-            {"hcn_su15_dcn", "naf_su15_dcn", "nap_su15_dcn", "fkdr_su15_dcn", "skdr_su15_dcn"},
+            {
+                "cahva_su15_dcn",
+                "calva_su15_dcn",
+                "hcn_su15_dcn",
+                "naf_su15_dcn",
+                "nap_su15_dcn",
+                "fkdr_su15_dcn",
+                "skdr_su15_dcn",
+                "sk_su15_dcn",
+                "cal_su15_dcn",
+            },
         )
         self.assertEqual(records_by_name["hcn_su15_dcn"]["n_templates"], 3)
 

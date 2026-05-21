@@ -1,0 +1,37 @@
+{
+  "meta": {
+    "label": "IO Na ZH19"
+  },
+  "identity": {
+    "mod_dir": "../../../Cerebellum_mod/IO/channel"
+  },
+  "defaults": {
+    "channel_params": {
+      "g_max_mS_cm2": 70.0
+    }
+  },
+  "mapping": {
+    "current": "ina",
+    "impl_name": {
+      "neuron": "Na_ZH19_IO",
+      "braincell": "Na_ZH2019_IO"
+    },
+    "gate_names": {
+      "common": [
+        "m",
+        "h"
+      ]
+    },
+    "channel_params": {
+      "g_max_mS_cm2": {
+        "neuron": "gbar",
+        "braincell": "g_max"
+      }
+    }
+  },
+  "templates": [
+    "../../templates/vinit_celsius.json",
+    "../../templates/dc.json",
+    "../../templates/ac.json"
+  ]
+}

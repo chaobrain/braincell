@@ -3,7 +3,7 @@
     "label": "SC Cav3p3 RI21"
   },
   "identity": {
-    "mod_dir": "/home/swl/braincell/examples/neuron_compare/Cerebellum_mod/SC/channel"
+    "mod_dir": "../../../Cerebellum_mod/SC/channel"
   },
   "defaults": {
     "ion_state": {
@@ -12,7 +12,7 @@
     },
     "channel_params": {
       "perm_cm_s": 0.0001,
-      "g_scale": 0.00001
+      "g_scale": 1e-05
     }
   },
   "mapping": {

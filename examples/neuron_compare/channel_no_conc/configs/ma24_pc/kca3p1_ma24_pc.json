@@ -1,0 +1,42 @@
+{
+  "meta": {
+    "label": "PC Kca3p1 MA24"
+  },
+  "identity": {
+    "mod_dir": "../../../Cerebellum_mod/PC/channel"
+  },
+  "defaults": {
+    "channel_params": {
+      "g_max_S_cm2": 0.12
+    }
+  },
+  "mapping": {
+    "current": "ik",
+    "impl_name": {
+      "neuron": "Kca3p1_MA24_PC",
+      "braincell": "Kca3p1_MA2024_PC"
+    },
+    "gate_names": {
+      "canonical": [
+        "Y"
+      ],
+      "neuron": [
+        "Y"
+      ],
+      "braincell": [
+        "p"
+      ]
+    },
+    "channel_params": {
+      "g_max_S_cm2": {
+        "neuron": "gkbar",
+        "braincell": "g_max"
+      }
+    }
+  },
+  "templates": [
+    "../../templates/vinit_celsius.json",
+    "../../templates/dc.json",
+    "../../templates/ac.json"
+  ]
+}

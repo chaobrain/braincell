@@ -142,6 +142,7 @@ def _resolve_neuron_erev_field(ion_name: str) -> str:
         "na": "ena",
         "k": "ek",
         "ca": "eca",
+        "cal": "ecal",
     }[ion_name]
 
 
@@ -163,6 +164,7 @@ def _resolve_neuron_concentration_fields(ion_name: str) -> tuple[str, str]:
         "na": ("nai", "nao"),
         "k": ("ki", "ko"),
         "ca": ("cai", "cao"),
+        "cal": ("cali", "calo"),
     }[ion_name]
 
 

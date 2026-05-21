@@ -36,9 +36,12 @@ __all__ = [
     "CaHT_Re1993",
     "CaL_IS2008",
     "CaHVA_SU2015_DCN",
+    "CaL_SU2015_DCN",
     "CaLVA_SU2015_DCN",
     "Cav1p2_MA2020_GoC",
+    "Cav1p2_MA2025_BC",
     "Cav1p3_MA2020_GoC",
+    "Cav1p3_MA2025_BC",
     "Cav3p1_MA2020_GoC",
     "Cav3p1_MA2024_PC",
     "Cav2p1_MA2025_BC",
@@ -412,6 +415,75 @@ class CaHVA_SU2015_DCN(HH):
         return 1.0 / (activation + correction) / self.qdeltat
 
 
+@register_channel("CaL_SU2015_DCN")
+class CaL_SU2015_DCN(HH):
+    """Template-based import of ``CaL_SU15_DCN.mod``."""
+
+    __module__ = "braincell.channel"
+    root_type = HHTypedNeuron
+    gates = (
+        Gate("m", power=2),
+        Gate("h"),
+    )
+
+    def __init__(
+        self,
+        size: brainstate.typing.Size,
+        g_max: Union[brainstate.typing.ArrayLike, Callable] = 0.01 * (u.mS / u.cm ** 2),
+        E: Union[brainstate.typing.ArrayLike, Callable] = 139.0 * u.mV,
+        qdeltat: Union[brainstate.typing.ArrayLike, Callable] = 1.0,
+        name: Optional[str] = None,
+    ):
+        super().__init__(size=size, name=name)
+        self.g_max = braintools.init.param(g_max, self.varshape, allow_none=False)
+        self.E = braintools.init.param(E, self.varshape, allow_none=False)
+        self.qdeltat = braintools.init.param(qdeltat, self.varshape, allow_none=False)
+
+    def current(self, V):
+        return self.g_max * self.conductance_factor(V) * (self.E - V)
+
+    def f_m_inf(self, V):
+        return self._rate_table(V.to_decimal(u.mV))[0]
+
+    def f_m_tau(self, V):
+        return self._rate_table(V.to_decimal(u.mV))[1]
+
+    def f_h_inf(self, V):
+        return self._rate_table(V.to_decimal(u.mV))[2]
+
+    def f_h_tau(self, V):
+        return self._rate_table(V.to_decimal(u.mV))[3]
+
+    def _rate_table(self, V):
+        x = u.math.clip(V, -150.0, 100.0)
+        dx = 250.0 / 300.0
+        lower = -150.0 + u.math.floor((x + 150.0) / dx) * dx
+        lower = u.math.where(x >= 100.0, 100.0, lower)
+        upper = u.math.where(x >= 100.0, 100.0, lower + dx)
+        frac = u.math.where(upper > lower, (x - lower) / (upper - lower), 0.0)
+        minf = self._m_inf_formula(lower) + frac * (self._m_inf_formula(upper) - self._m_inf_formula(lower))
+        taum = self._m_tau_formula(lower) + frac * (self._m_tau_formula(upper) - self._m_tau_formula(lower))
+        hinf = self._h_inf_formula(lower) + frac * (self._h_inf_formula(upper) - self._h_inf_formula(lower))
+        tauh = self._h_tau_formula(lower) + frac * (self._h_tau_formula(upper) - self._h_tau_formula(lower))
+        return minf, taum / self.qdeltat, hinf, tauh / self.qdeltat
+
+    def _m_inf_formula(self, V):
+        return 1.0 / (1.0 + u.math.exp((V + 56.0) / -6.2))
+
+    def _m_tau_formula(self, V):
+        return 0.333 / (u.math.exp((V + 131.0) / -16.7) + u.math.exp((V + 15.8) / 18.2)) + 0.204
+
+    def _h_inf_formula(self, V):
+        return 1.0 / (1.0 + u.math.exp((V + 80.0) / 4.0))
+
+    def _h_tau_formula(self, V):
+        return u.math.where(
+            V < -81.0,
+            0.333 * u.math.exp((V + 466.0) / 66.0),
+            0.333 * u.math.exp((V + 21.0) / -10.5) + 9.32,
+        )
+
+
 @register_channel("CaLVA_SU2015_DCN")
 class CaLVA_SU2015_DCN(HH):
     """Template-based import of ``CaLVA_SU15_DCN.mod``."""
@@ -533,6 +605,13 @@ class Cav1p2_MA2020_GoC(HH):
         return 0.5
 
 
+@register_channel("Cav1p2_MA2025_BC")
+class Cav1p2_MA2025_BC(Cav1p2_MA2020_GoC):
+    r"""Template-based import of ``Cav1p2_MA25_BC.mod``."""
+
+    __module__ = "braincell.channel"
+
+
 @register_channel("Cav1p3_MA2020_GoC")
 class Cav1p3_MA2020_GoC(HH):
     r"""Evans/Beining Cav1.3 calcium current with calcium-dependent inactivation."""
@@ -589,6 +668,13 @@ class Cav1p3_MA2020_GoC(HH):
 
     def f_n_tau(self, V, Ca: IonInfo):
         return 0.5
+
+
+@register_channel("Cav1p3_MA2025_BC")
+class Cav1p3_MA2025_BC(Cav1p3_MA2020_GoC):
+    r"""Template-based import of ``Cav1p3_MA25_BC.mod``."""
+
+    __module__ = "braincell.channel"
 
 
 @register_channel("Cav3p1_MA2020_GoC")

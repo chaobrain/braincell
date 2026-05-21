@@ -30,9 +30,20 @@ from braincell.mech import register_channel
 
 __all__ = [
     "AHP_De1994",
+    "SK_SU2015_DCN",
     "Kca3p1_MA2020_GoC",
+    "Kca3p1_MA2025_BC",
+    "Kca3p1_MA2024_PC",
     "Kca2p2_MA2020_GoC",
+    "Kca2p2_MA2025_BC",
+    "Kca2p2_MA2020_GrC",
+    "Kca2p2_MA2024_PC",
+    "Kca2p2_RI2021_SC",
     "Kca1p1_MA2020_GoC",
+    "Kca1p1_MA2025_BC",
+    "Kca1p1_MA2020_GrC",
+    "Kca1p1_MA2024_PC",
+    "Kca1p1_RI2021_SC",
 ]
 
 
@@ -79,6 +90,58 @@ class AHP_De1994(HH):
 
     def f_p_beta(self, V, K: IonInfo, Ca: IonInfo):
         return self.beta
+
+
+@register_channel("SK_SU2015_DCN")
+class SK_SU2015_DCN(HH):
+    r"""Template-based import of ``SK_SU15_DCN.mod``."""
+
+    __module__ = "braincell.channel"
+    root_type = _KCA_ROOT_TYPE
+    current_owner_type = Potassium
+    gates = (
+        Gate("z"),
+    )
+
+    def __init__(
+        self,
+        size: brainstate.typing.Size,
+        g_max: Union[brainstate.typing.ArrayLike, Callable] = 0.01 * (u.mS / u.cm ** 2),
+        qdeltat: Union[brainstate.typing.ArrayLike, Callable] = 1.0,
+        name: Optional[str] = None,
+    ):
+        super().__init__(size=size, name=name)
+        self.g_max = braintools.init.param(g_max, self.varshape, allow_none=False)
+        self.qdeltat = braintools.init.param(qdeltat, self.varshape, allow_none=False)
+
+    def current(self, V, K: IonInfo, Ca: IonInfo):
+        return self.g_max * self.conductance_factor(V, K, Ca) * (K.E - V)
+
+    def f_z_inf(self, V, K: IonInfo, Ca: IonInfo):
+        _ = (V, K)
+        return self._rate_table(Ca.Ci.to_decimal(u.mM))[0]
+
+    def f_z_tau(self, V, K: IonInfo, Ca: IonInfo):
+        _ = (V, K)
+        return self._rate_table(Ca.Ci.to_decimal(u.mM))[1] / self.qdeltat
+
+    def _rate_table(self, cai):
+        x = u.math.clip(cai, 0.0, 0.01)
+        dx = 0.01 / 300.0
+        lower = u.math.floor(x / dx) * dx
+        lower = u.math.where(x >= 0.01, 0.01, lower)
+        upper = u.math.where(x >= 0.01, 0.01, lower + dx)
+        frac = u.math.where(upper > lower, (x - lower) / (upper - lower), 0.0)
+        zinf = self._z_inf_formula(lower) + frac * (self._z_inf_formula(upper) - self._z_inf_formula(lower))
+        tauz = self._z_tau_formula(lower) + frac * (self._z_tau_formula(upper) - self._z_tau_formula(lower))
+        return zinf, tauz
+
+    def _z_inf_formula(self, cai):
+        cai4 = cai ** 4
+        return cai4 / (cai4 + 8.1e-15)
+
+    def _z_tau_formula(self, cai):
+        return u.math.where(cai < 0.005, 1.0 - 186.67 * cai, 0.0667)
 
 
 @register_channel("Kca3p1_MA2020_GoC")
@@ -133,6 +196,20 @@ class Kca3p1_MA2020_GoC(HH):
 
     def f_p_beta(self, V, K: IonInfo, Ca: IonInfo):
         return self.p_beta
+
+
+@register_channel("Kca3p1_MA2025_BC")
+class Kca3p1_MA2025_BC(Kca3p1_MA2020_GoC):
+    """Thin variant of ``Kca3p1_MA25_BC.mod`` using GoC kinetics."""
+
+    __module__ = "braincell.channel"
+
+
+@register_channel("Kca3p1_MA2024_PC")
+class Kca3p1_MA2024_PC(Kca3p1_MA2020_GoC):
+    """Thin variant of ``Kca3p1_MA24_PC.mod`` using GoC kinetics."""
+
+    __module__ = "braincell.channel"
 
 
 @register_channel("Kca2p2_MA2020_GoC")
@@ -220,6 +297,34 @@ class Kca2p2_MA2020_GoC(Markov):
 
     def diro2_t(self, V, K: IonInfo, Ca: IonInfo):
         return self.diro2 * self._phi()
+
+
+@register_channel("Kca2p2_MA2025_BC")
+class Kca2p2_MA2025_BC(Kca2p2_MA2020_GoC):
+    r"""Template-based import of ``Kca2p2_MA25_BC.mod``."""
+
+    __module__ = "braincell.channel"
+
+
+@register_channel("Kca2p2_MA2020_GrC")
+class Kca2p2_MA2020_GrC(Kca2p2_MA2020_GoC):
+    r"""Template-based import of ``Kca2p2_MA20_GrC.mod``."""
+
+    __module__ = "braincell.channel"
+
+
+@register_channel("Kca2p2_MA2024_PC")
+class Kca2p2_MA2024_PC(Kca2p2_MA2020_GoC):
+    r"""Template-based import of ``Kca2p2_MA24_PC.mod``."""
+
+    __module__ = "braincell.channel"
+
+
+@register_channel("Kca2p2_RI2021_SC")
+class Kca2p2_RI2021_SC(Kca2p2_MA2020_GoC):
+    r"""Template-based import of ``Kca2p2_RI21_SC.mod``."""
+
+    __module__ = "braincell.channel"
 
 
 @register_channel("Kca1p1_MA2020_GoC")
@@ -376,3 +481,31 @@ class Kca1p1_MA2020_GoC(Markov):
 
     def b4(self, V, K: IonInfo, Ca: IonInfo):
         return self.pb4 * self._beta_factor(V) * self._phi()
+
+
+@register_channel("Kca1p1_MA2025_BC")
+class Kca1p1_MA2025_BC(Kca1p1_MA2020_GoC):
+    r"""Template-based import of ``Kca1p1_MA25_BC.mod``."""
+
+    __module__ = "braincell.channel"
+
+
+@register_channel("Kca1p1_MA2020_GrC")
+class Kca1p1_MA2020_GrC(Kca1p1_MA2020_GoC):
+    r"""Template-based import of ``Kca1p1_MA20_GrC.mod``."""
+
+    __module__ = "braincell.channel"
+
+
+@register_channel("Kca1p1_MA2024_PC")
+class Kca1p1_MA2024_PC(Kca1p1_MA2020_GoC):
+    r"""Template-based import of ``Kca1p1_MA24_PC.mod``."""
+
+    __module__ = "braincell.channel"
+
+
+@register_channel("Kca1p1_RI2021_SC")
+class Kca1p1_RI2021_SC(Kca1p1_MA2020_GoC):
+    r"""Template-based import of ``Kca1p1_RI21_SC.mod``."""
+
+    __module__ = "braincell.channel"

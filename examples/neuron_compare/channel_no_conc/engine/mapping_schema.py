@@ -274,6 +274,7 @@ def _infer_ion_name_from_current(current_var: str) -> str | None:
         "ina": "na",
         "ik": "k",
         "ica": "ca",
+        "ical": "cal",
     }.get(current_var)
 
 

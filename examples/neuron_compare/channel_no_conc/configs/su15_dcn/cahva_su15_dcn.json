@@ -1,0 +1,40 @@
+{
+  "meta": {
+    "label": "DCN CaHVA SU15"
+  },
+  "identity": {
+    "mod_dir": "../../../Cerebellum_mod/DCN/channel"
+  },
+  "defaults": {
+    "ion_state": {
+      "Ci_mM": 0.00024,
+      "Co_mM": 2.0
+    },
+    "channel_params": {
+      "perm_cm_s": 7.5e-06
+    }
+  },
+  "mapping": {
+    "current": "ica",
+    "impl_name": {
+      "neuron": "CaHVA_SU15_DCN",
+      "braincell": "CaHVA_SU2015_DCN"
+    },
+    "gate_names": {
+      "common": [
+        "m"
+      ]
+    },
+    "channel_params": {
+      "perm_cm_s": {
+        "neuron": "perm",
+        "braincell": "perm"
+      }
+    }
+  },
+  "templates": [
+    "../../templates/vinit_celsius.json",
+    "../../templates/dc.json",
+    "../../templates/ac.json"
+  ]
+}

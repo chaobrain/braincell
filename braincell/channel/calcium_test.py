@@ -24,6 +24,7 @@ from braincell._base import HHTypedNeuron, IonInfo
 from braincell.channel._base import HH, ghk_flux
 from braincell.channel.calcium import (
     CaHVA_SU2015_DCN,
+    CaL_SU2015_DCN,
     CaLVA_SU2015_DCN,
     CaHVA_MA2020_GoC,
     CaHVA_MA2020_GrC,
@@ -45,10 +46,13 @@ from braincell.channel.calcium import (
     Cav3p3_RI2021_SC,
     Cav2p3_MA2020_GoC,
     Cav1p2_MA2020_GoC,
+    Cav1p2_MA2025_BC,
     Cav1p3_MA2020_GoC,
+    Cav1p3_MA2025_BC,
     Cav3p1_MA2020_GoC,
 )
 from braincell.ion import Calcium
+from braincell.mech import get_registry
 
 
 def _ca_info(
@@ -286,6 +290,83 @@ class CaHVA_SU2015_DCNTest(unittest.TestCase):
             u.math.allclose(
                 current.to_decimal(u.mA / (u.cm ** 2)),
                 expected,
+                atol=1e-6,
+            )
+        )
+
+
+class CaL_SU2015_DCNTest(unittest.TestCase):
+    def test_root_type_is_hh_typed_neuron(self) -> None:
+        self.assertIs(CaL_SU2015_DCN.root_type, HHTypedNeuron)
+
+    def test_inherits_hh_template_directly(self) -> None:
+        self.assertTrue(issubclass(CaL_SU2015_DCN, HH))
+
+    def test_gate_definition_is_m_squared_h(self) -> None:
+        ch = CaL_SU2015_DCN(size=1)
+        gates = ch._iter_gates()
+        self.assertEqual(tuple(gate.name for gate in gates), ("m", "h"))
+        self.assertEqual(tuple(gate.power for gate in gates), (2, 1))
+
+    def test_default_parameters_are_stored(self) -> None:
+        ch = CaL_SU2015_DCN(size=1)
+        self.assertTrue(u.math.allclose(ch.g_max, 0.01 * (u.mS / u.cm ** 2), atol=1e-12 * (u.mS / u.cm ** 2)))
+        self.assertTrue(u.math.allclose(ch.E, 139.0 * u.mV, atol=1e-12 * u.mV))
+        self.assertTrue(u.math.allclose(ch.qdeltat, jnp.ones(1), atol=1e-12))
+
+    def test_reset_state_sets_m_and_h_to_inf_values(self) -> None:
+        ch = CaL_SU2015_DCN(size=1)
+        V = _V([-60.0])
+        ch.init_state(V)
+        ch.reset_state(V)
+        self.assertTrue(u.math.allclose(ch.m.value, ch.f_m_inf(V), atol=1e-6))
+        self.assertTrue(u.math.allclose(ch.h.value, ch.f_h_inf(V), atol=1e-6))
+
+    def test_rate_table_matches_neuron_table_interpolation(self) -> None:
+        ch = CaL_SU2015_DCN(size=3)
+        V = _V([-80.0, -60.0, -50.0])
+        expected_minf = jnp.asarray([0.020412827223409803, 0.3440807563946349, 0.7246691889182086])
+        expected_taum = jnp.asarray([4.553869064160897, 3.4557757506969895, 2.2781157681978534])
+        expected_hinf = jnp.asarray([0.5, 0.0066928509242848554, 0.0005527786369235996])
+        expected_tauh = jnp.asarray([101.10370992163146, 22.982746907943916, 14.591378866898495])
+
+        self.assertTrue(u.math.allclose(ch.f_m_inf(V), expected_minf, atol=1e-6))
+        self.assertTrue(u.math.allclose(ch.f_m_tau(V), expected_taum, atol=1e-6))
+        self.assertTrue(u.math.allclose(ch.f_h_inf(V), expected_hinf, atol=1e-6))
+        self.assertTrue(u.math.allclose(ch.f_h_tau(V), expected_tauh, atol=1e-6))
+
+    def test_qdeltat_scales_taus(self) -> None:
+        base = CaL_SU2015_DCN(size=1, qdeltat=1.0)
+        fast = CaL_SU2015_DCN(size=1, qdeltat=2.0)
+        V = _V([-60.0])
+        self.assertTrue(u.math.allclose(fast.f_m_tau(V), base.f_m_tau(V) / 2.0, atol=1e-6))
+        self.assertTrue(u.math.allclose(fast.f_h_tau(V), base.f_h_tau(V) / 2.0, atol=1e-6))
+
+    def test_compute_derivative_matches_inf_tau_form(self) -> None:
+        ch = CaL_SU2015_DCN(size=1, qdeltat=2.0)
+        V = _V([-60.0])
+        ch.init_state(V)
+        ch.m.value = jnp.array([0.2])
+        ch.h.value = jnp.array([0.6])
+        ch.compute_derivative(V)
+        gates = {gate.name: gate for gate in ch._iter_gates()}
+        expected_m = ch.gate_phi(gates["m"]) * (ch.f_m_inf(V) - ch.m.value) / ch.f_m_tau(V) / u.ms
+        expected_h = ch.gate_phi(gates["h"]) * (ch.f_h_inf(V) - ch.h.value) / ch.f_h_tau(V) / u.ms
+        self.assertTrue(u.math.allclose(ch.m.derivative, expected_m, atol=1e-6 * u.Hz))
+        self.assertTrue(u.math.allclose(ch.h.derivative, expected_h, atol=1e-6 * u.Hz))
+
+    def test_current_matches_fixed_carev_mod_formula_with_braincell_sign(self) -> None:
+        ch = CaL_SU2015_DCN(size=1)
+        V = _V([-60.0])
+        ch.init_state(V)
+        ch.m.value = jnp.array([0.5])
+        ch.h.value = jnp.array([0.25])
+        current = ch.current(V)
+        expected = ch.g_max * ch.m.value ** 2 * ch.h.value * (ch.E - V)
+        self.assertTrue(
+            u.math.allclose(
+                current.to_decimal(_DENSITY_UNIT),
+                expected.to_decimal(_DENSITY_UNIT),
                 atol=1e-6,
             )
         )
@@ -539,8 +620,24 @@ class Cav1p2_MA2020_GoCTest(_MHNHHMixin, unittest.TestCase):
     CLS = Cav1p2_MA2020_GoC
 
 
+class Cav1p2_MA2025_BCTest(_MHNHHMixin, unittest.TestCase):
+    CLS = Cav1p2_MA2025_BC
+
+    def test_inherits_goc_implementation(self) -> None:
+        self.assertTrue(issubclass(self.CLS, Cav1p2_MA2020_GoC))
+        self.assertIs(get_registry().get("channel", "Cav1p2_MA2025_BC"), self.CLS)
+
+
 class Cav1p3_MA2020_GoCTest(_MHNHHMixin, unittest.TestCase):
     CLS = Cav1p3_MA2020_GoC
+
+
+class Cav1p3_MA2025_BCTest(_MHNHHMixin, unittest.TestCase):
+    CLS = Cav1p3_MA2025_BC
+
+    def test_inherits_goc_implementation(self) -> None:
+        self.assertTrue(issubclass(self.CLS, Cav1p3_MA2020_GoC))
+        self.assertIs(get_registry().get("channel", "Cav1p3_MA2025_BC"), self.CLS)
 
 
 class Cav3p1_MA2020_GoCTest(unittest.TestCase):

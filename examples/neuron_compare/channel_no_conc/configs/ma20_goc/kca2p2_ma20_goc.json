@@ -3,7 +3,7 @@
     "label": "GoC Kca2p2 MA20"
   },
   "identity": {
-    "mod_dir": "/home/swl/braincell/examples/neuron_compare/Cerebellum_mod/GoC/channel"
+    "mod_dir": "../../../Cerebellum_mod/GoC/channel"
   },
   "defaults": {
     "channel_params": {

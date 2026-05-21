@@ -1,0 +1,47 @@
+{
+  "meta": {
+    "label": "IO HCN ZH19"
+  },
+  "identity": {
+    "mod_dir": "../../../Cerebellum_mod/IO/channel"
+  },
+  "defaults": {
+    "channel_params": {
+      "g_max_mS_cm2": 0.15,
+      "E_mV": -43.0
+    }
+  },
+  "mapping": {
+    "current": "ih",
+    "impl_name": {
+      "neuron": "HCN_ZH19_IO",
+      "braincell": "HCN_ZH2019_IO"
+    },
+    "gate_names": {
+      "canonical": [
+        "q"
+      ],
+      "neuron": [
+        "q"
+      ],
+      "braincell": [
+        "q"
+      ]
+    },
+    "channel_params": {
+      "g_max_mS_cm2": {
+        "neuron": "gbar",
+        "braincell": "g_max"
+      },
+      "E_mV": {
+        "neuron": "eh",
+        "braincell": "E"
+      }
+    }
+  },
+  "templates": [
+    "../../templates/vinit_celsius.json",
+    "../../templates/dc.json",
+    "../../templates/ac.json"
+  ]
+}

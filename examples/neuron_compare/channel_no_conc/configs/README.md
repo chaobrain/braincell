@@ -292,6 +292,17 @@ HCN 的 `E_mV` 就应该写在这里：
 }
 ```
 
+或者：
+
+```json
+{
+  "ion_state": {
+    "Ci_mM": 0.00024,
+    "Co_mM": 2.0
+  }
+}
+```
+
 如果不写，会自动补默认值：
 
 - `na = 50 mV`
@@ -552,6 +563,11 @@ HCN 就是这样。
 
 只有在 `mapping.current` 自动识别到 `ik/ina/ica` 时才有意义。
 
+支持两种互斥模式：
+
+- 固定 reversal：`E_mV`
+- 固定浓度输入：`Ci_mM` + `Co_mM`
+
 #### `channel_params`
 
 只允许出现已经在 `mapping.channel_params` 里声明过的公共参数名。
@@ -622,6 +638,8 @@ HCN 就是这样。
 如果 `mapping.current` 自动识别到 `ik/ina/ica`，额外允许：
 
 - `ion_state.E_mV`
+- `ion_state.Ci_mM`
+- `ion_state.Co_mM`
 
 当 `stimulus.kind == "dc"`，额外允许：
 
@@ -686,12 +704,32 @@ HCN 就是这样。
 
 当前已经整理好的 compare config 目录有：
 
+- `configs/ma20_grc/`
 - `configs/ma24_pc/`
 - `configs/ma25_bc/`
 - `configs/ma20_goc/`
 - `configs/su15_dcn/`
 - `configs/ri21_sc/`
 - `configs/su15_dcn/`
+
+`ma24_pc/` 目前放了 PC 里已经可直接从 `braincell.channel` 导入、且适合走 `channel_no_conc` compare 的 7 个 channel：
+
+- `HCN1_MA24_PC`
+- `Kir2p3_MA24_PC`
+- `Kv1p1_MA24_PC`
+- `Kv1p5_MA24_PC`
+- `Kv3p3_MA24_PC`
+- `Kv3p4_MA24_PC`
+- `Kv4p3_MA24_PC`
+
+其中 `Kv3p3_MA24_PC` 曾被误分到 `Markov_no_conc`，但 `.mod` 注释和方程都是 HH `n^4`，这里只按 `hh_special_current` 接入。
+
+PC 其余机制不在这个目录的原因：
+
+- `Nav1p6_MA24_PC` 属于 `Markov_no_conc`
+- `CdpCAM_MA24_PC` 属于 `Ion_dyn`
+- `Cav2p1_MA24_PC`、`Cav3p1_MA24_PC`、`Cav3p2_MA24_PC`、`Cav3p3_MA24_PC`、`Kca3p1_MA24_PC` 属于 `HH_conc`
+- `Kca1p1_MA24_PC`、`Kca2p2_MA24_PC` 属于 `Markov_conc`
 
 `ma25_bc/` 目前放了 BC 里已经可直接从 `braincell.channel` 导入、且适合走 `channel_no_conc` compare 的 6 个 channel：
 
@@ -710,6 +748,23 @@ HCN 就是这样。
 - `Kca1p1_MA25_BC`、`Kca2p2_MA25_BC` 属于 `Markov_conc`
 
 其中 `Nav1p6_MA25_BC` 虽然是 `Markov_no_conc`，但已经按 12 个独立状态接入。
+
+`ma20_grc/` 当前覆盖的是 GrC 里已经可直接从 `braincell.channel` 导入、并且适合走当前 compare 流程的 1 个 channel：
+
+- `Kv1p5_MA20_GrC`
+
+其中 `Kv1p5_MA20_GrC` 是一个默认参数特例：
+
+- NMODL 同时声明 `ik` 和 `ino`
+- `ino` 由 `gnonspec` 控制，但 `gnonspec` 默认是 `0`
+- 当前 BrainCell 实现只转换默认 `ik` path，不支持非零 `gnonspec / ino`
+
+GrC 其余机制不在这个目录的原因：
+
+- `Nav_MA20_GrC`、`NaFHF_MA20_GrC` 属于 `Markov_no_conc`
+- `CdpCR_MA20_GrC` 属于 `Ion_dyn`
+- `Kca1p1_MA20_GrC`、`Kca2p2_MA20_GrC` 属于 `Markov_conc`
+- 其他 GrC HH_no_conc / HH_conc channel 已在对应批次或通道测试中覆盖，后续可按需补 config
 
 `ma20_goc/` 当前覆盖的是 GoC 里已经可直接从 `braincell.channel` 导入、并且适合走 `channel_no_conc` compare 的 12 个 channel：
 
@@ -777,21 +832,38 @@ GoC 其余机制不在这个目录的原因：
 - `CdpStC_MA20_GoC` 属于 `Ion_dyn`
 - `Cav1p2_MA20_GoC`、`Cav1p3_MA20_GoC`、`Cav3p1_MA20_GoC` 属于 `HH_conc`
 
-`su15_dcn/` 当前覆盖的是 DCN 里已经可直接从 `braincell.channel` 导入、并且适合走 `channel_no_conc` compare 的 5 个 channel：
+`su15_dcn/` 当前覆盖的是 DCN 里已经可直接从 `braincell.channel` 导入、并且适合走当前 compare 流程的 7 个 channel：
 
 - `HCN_SU15_DCN`
 - `NaF_SU15_DCN`
 - `NaP_SU15_DCN`
 - `fKdr_SU15_DCN`
 - `sKdr_SU15_DCN`
+- `SK_SU15_DCN`
+- `CaL_SU15_DCN`
+
+其中 `SK_SU15_DCN` 是 KCa / `HH_conc` 特例：
+
+- `mapping.current` 仍然写 `ik`
+- BrainCell 实现绑定 `Potassium + Calcium`，并以 `Potassium` 作为 current owner
+- 当前 config 只固定 `k` reversal；`ca` 侧沿用两边默认 `cai`，不比较浓度轨迹
+
+`CaL_SU15_DCN` 也是 `HH_conc` 来源的特例，但 NMODL 使用自定义 `call` ion 并在 current 中固定 `carev = 139 mV`：
+
+- `mapping.current` 写 `icall`
+- BrainCell 实现用 `HHTypedNeuron` + 显式 `E = 139 mV`
+- compare 走 mechanism current probe，不绑定标准 `ca` ion
 
 DCN 其余机制不在这个目录的原因：
 
-- `CaHVA_SU15_DCN`、`CaL_SU15_DCN`、`CaLVA_SU15_DCN`、`SK_SU15_DCN` 属于 `HH_conc`
+- `CaHVA_SU15_DCN`、`CaLVA_SU15_DCN` 属于 `HH_conc`
 - `CdpHVA_SU15_DCN`、`CdpLVA_SU15_DCN` 属于 `Ion_dyn`
 
-`ri21_sc/` 当前覆盖的是 SC 里已经可直接从 `braincell.channel` 导入、并且适合走 `channel_no_conc` compare 的 6 个 channel：
+`ri21_sc/` 当前覆盖的是 SC 里已经可直接从 `braincell.channel` 导入、并且适合走 `channel_no_conc` compare 的 9 个 channel：
 
+- `Cav2p1_RI21_SC`
+- `Cav3p2_RI21_SC`
+- `Cav3p3_RI21_SC`
 - `HCN1_RI21_SC`
 - `KM_RI21_SC`
 - `Kir2p3_RI21_SC`
@@ -803,20 +875,33 @@ SC 其余机制不在这个目录的原因：
 
 - `Nav1p1_RI21_SC`、`Nav1p6_RI21_SC` 属于 `Markov_no_conc`
 - `CdpStC_RI21_SC` 属于 `Ion_dyn`
-- `Cav2p1_RI21_SC`、`Cav3p2_RI21_SC`、`Cav3p3_RI21_SC` 属于 `HH_conc`
 - `Kca1p1_RI21_SC`、`Kca2p2_RI21_SC` 属于 `Markov_conc`
 
-`su15_dcn/` 当前覆盖的是 DCN 里已经可直接从 `braincell.channel` 导入、并且适合走 `channel_no_conc` compare 的 5 个 channel：
+`su15_dcn/` 当前覆盖的是 DCN 里已经可直接从 `braincell.channel` 导入、并且适合走当前 compare 流程的 7 个 channel：
 
 - `HCN_SU15_DCN`
 - `NaF_SU15_DCN`
 - `NaP_SU15_DCN`
 - `fKdr_SU15_DCN`
 - `sKdr_SU15_DCN`
+- `SK_SU15_DCN`
+- `CaL_SU15_DCN`
+
+其中 `SK_SU15_DCN` 是 KCa / `HH_conc` 特例：
+
+- `mapping.current` 仍然写 `ik`
+- BrainCell 实现绑定 `Potassium + Calcium`，并以 `Potassium` 作为 current owner
+- 当前 config 只固定 `k` reversal；`ca` 侧沿用两边默认 `cai`，不比较浓度轨迹
+
+`CaL_SU15_DCN` 也是 `HH_conc` 来源的特例，但 NMODL 使用自定义 `call` ion 并在 current 中固定 `carev = 139 mV`：
+
+- `mapping.current` 写 `icall`
+- BrainCell 实现用 `HHTypedNeuron` + 显式 `E = 139 mV`
+- compare 走 mechanism current probe，不绑定标准 `ca` ion
 
 DCN 其余机制不在这个目录的原因：
 
-- `CaHVA_SU15_DCN`、`CaL_SU15_DCN`、`CaLVA_SU15_DCN`、`SK_SU15_DCN` 属于 `HH_conc`
+- `CaHVA_SU15_DCN`、`CaLVA_SU15_DCN` 属于 `HH_conc`
 - `CdpHVA_SU15_DCN`、`CdpLVA_SU15_DCN` 属于 `Ion_dyn`
 
 ## 17. 常见错误

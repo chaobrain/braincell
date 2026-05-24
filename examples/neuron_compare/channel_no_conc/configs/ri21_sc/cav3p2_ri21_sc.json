@@ -1,0 +1,41 @@
+{
+  "meta": {
+    "label": "SC Cav3p2 RI21"
+  },
+  "identity": {
+    "mod_dir": "../../../Cerebellum_mod/SC/channel"
+  },
+  "defaults": {
+    "ion_state": {
+      "Ci_mM": 0.00024,
+      "Co_mM": 2.0
+    },
+    "channel_params": {
+      "g_max_S_cm2": 0.0008
+    }
+  },
+  "mapping": {
+    "current": "ica",
+    "impl_name": {
+      "neuron": "Cav3p2_RI21_SC",
+      "braincell": "Cav3p2_RI2021_SC"
+    },
+    "gate_names": {
+      "common": [
+        "m",
+        "h"
+      ]
+    },
+    "channel_params": {
+      "g_max_S_cm2": {
+        "neuron": "gcabar",
+        "braincell": "g_max"
+      }
+    }
+  },
+  "templates": [
+    "../../templates/vinit_celsius.json",
+    "../../templates/dc.json",
+    "../../templates/ac.json"
+  ]
+}

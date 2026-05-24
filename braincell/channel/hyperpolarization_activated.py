@@ -107,13 +107,11 @@ class HCN_HM1992(HH):
     def current(self, V):
         return self.g_max * self.conductance_factor(V) * (self.E - V)
 
-    def f_p_inf(self, V, *unused):
-        _ = unused
+    def f_p_inf(self, V):
         V = V.to_decimal(u.mV)
         return 1. / (1. + u.math.exp((V + 75.) / 5.5))
 
-    def f_p_tau(self, V, *unused):
-        _ = unused
+    def f_p_tau(self, V):
         V = V.to_decimal(u.mV)
         return 1. / (u.math.exp(-0.086 * V - 14.59) + u.math.exp(0.0701 * V - 1.87))
 
@@ -163,7 +161,7 @@ class HCN_HM1992(HH):
 #      & m_{\infty} = 1/(1+\exp((V+75-V_{sh})/5.5)) \\
 #      & \tau_m = (5.3 + 267/(\exp((V+71.5-V_{sh})/14.2) + \exp(-(V+89-V_{sh})/11.6)))
 #
-#   and the temperature regulating factor :math:`\phi=2^{(T-24)/10}`.
+#   and the temperature regulating factor :math:`\phi=2^{(temp-24)/10}`.
 #
 #   References
 #   ----------
@@ -184,8 +182,8 @@ class HCN_HM1992(HH):
 #       g_max: Union[brainstate.typing.ArrayLike, Callable] = 0.02 * (u.mS / u.cm ** 2),
 #       g_inc: Union[brainstate.typing.ArrayLike, Callable] = 2.,
 #       Ca_half: Union[brainstate.typing.ArrayLike, Callable] = 2e-3,
-#       T: brainstate.typing.ArrayLike = 36.,
-#       T_base: brainstate.typing.ArrayLike = 3.,
+#       temp: brainstate.typing.ArrayLike = 36.,
+#       q10_base: brainstate.typing.ArrayLike = 3.,
 #       phi: Union[brainstate.typing.ArrayLike, Callable] = None,
 #       name: Optional[str] = None,
 #       mode: Optional[brainstate.mixin.Mode] = None,
@@ -197,10 +195,10 @@ class HCN_HM1992(HH):
 #     )
 #
 #     # parameters
-#     self.T = braintools.init.param(T, self.varshape, allow_none=False)
-#     self.T_base = braintools.init.param(T_base, self.varshape, allow_none=False)
+#     self.temp = braintools.init.param(temp, self.varshape, allow_none=False)
+#     self.q10_base = braintools.init.param(q10_base, self.varshape, allow_none=False)
 #     if phi is None:
-#       self.phi = self.T_base ** ((self.T - 24.) / 10)
+#       self.phi = self.q10_base ** ((self.temp - 24.) / 10)
 #     else:
 #       self.phi = braintools.init.param(phi, self.varshape, allow_none=False)
 #     self.E = braintools.init.param(E, self.varshape, allow_none=False)
@@ -293,13 +291,13 @@ class HCN1_MA2025_BC(HH):
     def current(self, V):
         return self.g_max * self.conductance_factor(V) * (self.E - V)
 
-    def f_h_inf(self, V, *unused):
+    def f_h_inf(self, V):
         V = V.to_decimal(u.mV)
         v_half = (self.v_inf_half_noljp - self.ljp).to_decimal(u.mV)
         v_k = self.v_inf_k.to_decimal(u.mV)
         return 1.0 / (1.0 + u.math.exp((V - v_half) / v_k))
 
-    def f_h_tau(self, V, *unused):
+    def f_h_tau(self, V):
         V = V.to_decimal(u.mV)
         v_half1 = (self.v_tau_half1_noljp - self.ljp).to_decimal(u.mV)
         v_half2 = (self.v_tau_half2_noljp - self.ljp).to_decimal(u.mV)
@@ -346,13 +344,13 @@ class HCN1_MA2024_PC(HH):
     def current(self, V):
         return self.g_max * self.conductance_factor(V) * (self.E - V)
 
-    def f_h_inf(self, V, *unused):
+    def f_h_inf(self, V):
         V = V.to_decimal(u.mV)
         v_half = (self.v_inf_half_noljp - self.ljp).to_decimal(u.mV)
         v_k = self.v_inf_k.to_decimal(u.mV)
         return 1.0 / (1.0 + u.math.exp((V - v_half) / v_k))
 
-    def f_h_tau(self, V, *unused):
+    def f_h_tau(self, V):
         V = V.to_decimal(u.mV)
         v_half1 = (self.v_tau_half1_noljp - self.ljp).to_decimal(u.mV)
         v_half2 = (self.v_tau_half2_noljp - self.ljp).to_decimal(u.mV)
@@ -399,13 +397,13 @@ class HCN1_RI2021_SC(HH):
     def current(self, V):
         return self.g_max * self.conductance_factor(V) * (self.E - V)
 
-    def f_h_inf(self, V, *unused):
+    def f_h_inf(self, V):
         V = V.to_decimal(u.mV)
         v_half = (self.v_inf_half_noljp - self.ljp).to_decimal(u.mV)
         v_k = self.v_inf_k.to_decimal(u.mV)
         return 1.0 / (1.0 + u.math.exp((V - v_half) / v_k))
 
-    def f_h_tau(self, V, *unused):
+    def f_h_tau(self, V):
         V = V.to_decimal(u.mV)
         v_half1 = (self.v_tau_half1_noljp - self.ljp).to_decimal(u.mV)
         v_half2 = (self.v_tau_half2_noljp - self.ljp).to_decimal(u.mV)
@@ -470,21 +468,17 @@ class HCN1_MA2020_GoC(HH):
         V = V.to_decimal(u.mV)
         return self.rA * V + self.rB
 
-    def f_o_fast_inf(self, V, *unused):
-        _ = unused
+    def f_o_fast_inf(self, V):
         return self.r(V) * self.o_inf(V)
 
-    def f_o_slow_inf(self, V, *unused):
-        _ = unused
+    def f_o_slow_inf(self, V):
         return (1.0 - self.r(V)) * self.o_inf(V)
 
-    def f_o_fast_tau(self, V, *unused):
-        _ = unused
+    def f_o_fast_tau(self, V):
         V = V.to_decimal(u.mV)
         return u.math.exp(((self.tCf * V) - self.tDf) * self.tEf)
 
-    def f_o_slow_tau(self, V, *unused):
-        _ = unused
+    def f_o_slow_tau(self, V):
         V = V.to_decimal(u.mV)
         return u.math.exp(((self.tCs * V) - self.tDs) * self.tEs)
 
@@ -547,21 +541,17 @@ class HCN2_MA2020_GoC(HH):
             ),
         )
 
-    def f_o_fast_inf(self, V, *unused):
-        _ = unused
+    def f_o_fast_inf(self, V):
         return self.r(V) * self.o_inf(V)
 
-    def f_o_slow_inf(self, V, *unused):
-        _ = unused
+    def f_o_slow_inf(self, V):
         return (1.0 - self.r(V)) * self.o_inf(V)
 
-    def f_o_fast_tau(self, V, *unused):
-        _ = unused
+    def f_o_fast_tau(self, V):
         V = V.to_decimal(u.mV)
         return u.math.exp(((self.tCf * V) - self.tDf) * self.tEf)
 
-    def f_o_slow_tau(self, V, *unused):
-        _ = unused
+    def f_o_slow_tau(self, V):
         V = V.to_decimal(u.mV)
         return u.math.exp(((self.tCs * V) - self.tDs) * self.tEs)
 
@@ -588,12 +578,11 @@ class HCN_SU2015_DCN(HH):
     def current(self, V):
         return self.g_max * self.conductance_factor(V) * (self.E - V)
 
-    def f_m_inf(self, V, *unused):
+    def f_m_inf(self, V):
         V = V.to_decimal(u.mV)
         return 1.0 / (1.0 + u.math.exp((V + 80.0) / 5.0))
 
-    def f_m_tau(self, V, *unused):
-        _ = (V, unused)
+    def f_m_tau(self, V):
         return 400.0 / self.qdeltat
 
 @register_channel("HCN_ZH2019_IO")
@@ -618,15 +607,12 @@ class HCN_ZH2019_IO(HH):
     def current(self, V):
         return self.g_max * self.conductance_factor(V) * (self.E - V)
 
-    def f_q_inf(self, V, *unused):
-        _ = unused
+    def f_q_inf(self, V):
         V = V.to_decimal(u.mV)
         return 1.0 / (1.0 + u.math.exp((V + 75.0) / 5.5))
 
-    def f_q_tau(self, V, *unused):
-        _ = unused
+    def f_q_tau(self, V):
         V = V.to_decimal(u.mV)
         return 1.0 / (
             u.math.exp(-0.086 * V - 14.6) + u.math.exp(0.07 * V - 1.87)
         )
-

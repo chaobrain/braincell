@@ -13,6 +13,7 @@ import jax.numpy as jnp
 import numpy as np
 
 from braincell._multi_compartment.probes import (
+    _probe_attr_value,
     _pack_probe_samples,
     _select_last_axis,
     sample_probe,
@@ -46,6 +47,22 @@ class TestPackProbeSamples(unittest.TestCase):
         out = _pack_probe_samples(samples)
         self.assertTrue(hasattr(out, "unit"))
         np.testing.assert_allclose(out.to_decimal(u.mV), [1.0, 2.0, 3.0])
+
+
+class TestProbeAttrValue(unittest.TestCase):
+    def test_state_field_returns_value(self):
+        class _Owner:
+            x = brainstate.ShortTermState(jnp.asarray([1.0, 2.0]))
+
+        out = _probe_attr_value(_Owner(), "x", probe_name="p")
+        np.testing.assert_allclose(np.asarray(out), [1.0, 2.0])
+
+    def test_plain_field_returns_raw_value(self):
+        class _Owner:
+            y = jnp.asarray([3.0, 4.0])
+
+        out = _probe_attr_value(_Owner(), "y", probe_name="p")
+        np.testing.assert_allclose(np.asarray(out), [3.0, 4.0])
 
 
 class TestPublicHelpersExist(unittest.TestCase):

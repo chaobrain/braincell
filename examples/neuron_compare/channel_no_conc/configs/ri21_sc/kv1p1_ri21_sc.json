@@ -3,7 +3,7 @@
     "label": "SC Kv1p1 RI21"
   },
   "identity": {
-    "mod_dir": "/home/swl/braincell/examples/neuron_compare/Cerebellum_mod/SC/channel"
+    "mod_dir": "../../../Cerebellum_mod/SC/channel"
   },
   "defaults": {
     "channel_params": {

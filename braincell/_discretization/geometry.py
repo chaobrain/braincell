@@ -119,6 +119,8 @@ class _GeoCV:
         Proximal radius in micrometers.
     r_mid_um : float
         Midpoint radius in micrometers.
+    diam_arc_mean_um : float
+        Arc-length-weighted mean diameter in micrometers.
     r_dist_um : float
         Distal radius in micrometers.
     """
@@ -138,6 +140,7 @@ class _GeoCV:
     axial_factor_dist_per_cm: float
     r_prox_um: float
     r_mid_um: float
+    diam_arc_mean_um: float
     r_dist_um: float
 
 
@@ -379,6 +382,17 @@ def _midpoint_radius_um(frusta: tuple[_Frustum, ...]) -> float:
             return piece.r_prox_um + (piece.r_dist_um - piece.r_prox_um) * ratio
         walked = next_walked
     return frusta[-1].r_dist_um
+
+
+def _arc_weighted_mean_diam_um(frusta: tuple[_Frustum, ...]) -> float:
+    """Return the arc-length-weighted mean diameter across ``frusta``."""
+    total_length_um = sum(piece.length_um for piece in frusta)
+    if total_length_um <= EPS_LEN_UM:
+        return frusta[0].r_prox_um + frusta[-1].r_dist_um
+    weighted = 0.0
+    for piece in frusta:
+        weighted += (piece.r_prox_um + piece.r_dist_um) * piece.length_um
+    return weighted / total_length_um
 
 
 def _split_frusta(
@@ -702,6 +716,7 @@ def build_cv_geometry(
                     axial_factor_dist_per_cm=factor_dist,
                     r_prox_um=r_prox,
                     r_mid_um=r_mid,
+                    diam_arc_mean_um=_arc_weighted_mean_diam_um(frusta),
                     r_dist_um=r_dist,
                 )
             )
@@ -745,6 +760,7 @@ def build_cv_geometry(
             axial_factor_dist_per_cm=geo.axial_factor_dist_per_cm,
             r_prox_um=geo.r_prox_um,
             r_mid_um=geo.r_mid_um,
+            diam_arc_mean_um=geo.diam_arc_mean_um,
             r_dist_um=geo.r_dist_um,
         )
         for geo in geos

@@ -119,11 +119,17 @@ class BranchFilterTest(unittest.TestCase):
             "mean_radius",
             [10.0 * u.um, 1.5 * u.um],
         ).evaluate(tree)
+        by_diam_arc_mean = branch_range(
+            "diam_arc_mean",
+            (1.5 * u.um, 3.0 * u.um),
+            closed="both",
+        ).evaluate(tree)
 
         self.assertEqual(by_mean_radius.intervals, ((1, 0.0, 1.0), (3, 0.0, 1.0)))
         self.assertEqual(by_area.intervals, ((1, 0.0, 1.0),))
         self.assertEqual(by_volume.intervals, ((2, 0.0, 1.0), (3, 0.0, 1.0)))
         self.assertEqual(by_exact_mean_radius.intervals, ((0, 0.0, 1.0), (1, 0.0, 1.0)))
+        self.assertEqual(by_diam_arc_mean.intervals, ((1, 0.0, 1.0), (3, 0.0, 1.0)))
 
     def test_helper_constructors_match_class_behavior(self) -> None:
         tree = _build_tree()

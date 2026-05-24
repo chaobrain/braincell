@@ -46,7 +46,10 @@ from braincell.channel.potassium import (
     Kv1p1_MA2024_PC,
     Kv1p1_MA2025_BC,
     Kv1p1_RI2021_SC,
+    Kv1p5_MA2020_GrC,
+    Kv1p5_MA2024_PC,
     Kv2p2_0010_MA2020_GrC,
+    Kv3p3_MA2024_PC,
     Kv3p4_MA2020_GoC,
     Kv3p4_MA2020_GrC,
     Kv3p4_MA2024_PC,
@@ -134,8 +137,8 @@ class _P4HHMixin:
         k = _k_info()
         ch.init_state(V, k)
         ch.reset_state(V, k)
-        alpha = ch.f_p_alpha(V)
-        beta = ch.f_p_beta(V)
+        alpha = ch.f_p_alpha(V, k)
+        beta = ch.f_p_beta(V, k)
         self.assertTrue(
             u.math.allclose(ch.p.value, alpha / (alpha + beta), atol=1e-6)
         )
@@ -147,8 +150,8 @@ class _P4HHMixin:
         ch.init_state(V, k)
         ch.p.value = jnp.array([0.2])
         ch.compute_derivative(V, k)
-        alpha = ch.f_p_alpha(V)
-        beta = ch.f_p_beta(V)
+        alpha = ch.f_p_alpha(V, k)
+        beta = ch.f_p_beta(V, k)
         phi = ch.gate_phi(ch._iter_gates()[0])
         expected = phi * (alpha * (1.0 - ch.p.value) - beta * ch.p.value) / u.ms
         self.assertTrue(u.math.allclose(ch.p.derivative, expected, atol=1e-6 * u.Hz))
@@ -268,8 +271,8 @@ class _P4QHHMixin:
         k = _k_info()
         ch.init_state(V, k)
         ch.reset_state(V, k)
-        self.assertTrue(u.math.allclose(ch.p.value, ch.f_p_inf(V), atol=1e-6))
-        self.assertTrue(u.math.allclose(ch.q.value, ch.f_q_inf(V), atol=1e-6))
+        self.assertTrue(u.math.allclose(ch.p.value, ch.f_p_inf(V, k), atol=1e-6))
+        self.assertTrue(u.math.allclose(ch.q.value, ch.f_q_inf(V, k), atol=1e-6))
 
     def test_compute_derivative_matches_hh_inf_tau_form(self) -> None:
         ch = self._make(size=1)
@@ -280,8 +283,8 @@ class _P4QHHMixin:
         ch.q.value = jnp.array([0.5])
         ch.compute_derivative(V, k)
         gates = {gate.name: gate for gate in ch._iter_gates()}
-        exp_dp = ch.gate_phi(gates["p"]) * (ch.f_p_inf(V) - ch.p.value) / ch.f_p_tau(V) / u.ms
-        exp_dq = ch.gate_phi(gates["q"]) * (ch.f_q_inf(V) - ch.q.value) / ch.f_q_tau(V) / u.ms
+        exp_dp = ch.gate_phi(gates["p"]) * (ch.f_p_inf(V, k) - ch.p.value) / ch.f_p_tau(V, k) / u.ms
+        exp_dq = ch.gate_phi(gates["q"]) * (ch.f_q_inf(V, k) - ch.q.value) / ch.f_q_tau(V, k) / u.ms
         self.assertTrue(u.math.allclose(ch.p.derivative, exp_dp, atol=1e-6 * u.Hz))
         self.assertTrue(u.math.allclose(ch.q.derivative, exp_dq, atol=1e-6 * u.Hz))
 
@@ -350,8 +353,8 @@ class _PQHHMixin:
         k = _k_info()
         ch.init_state(V, k)
         ch.reset_state(V, k)
-        self.assertTrue(u.math.allclose(ch.p.value, ch.f_p_inf(V), atol=1e-6))
-        self.assertTrue(u.math.allclose(ch.q.value, ch.f_q_inf(V), atol=1e-6))
+        self.assertTrue(u.math.allclose(ch.p.value, ch.f_p_inf(V, k), atol=1e-6))
+        self.assertTrue(u.math.allclose(ch.q.value, ch.f_q_inf(V, k), atol=1e-6))
 
     def test_compute_derivative_matches_hh_inf_tau_form(self) -> None:
         ch = self._make(size=1)
@@ -362,8 +365,8 @@ class _PQHHMixin:
         ch.q.value = jnp.array([0.5])
         ch.compute_derivative(V, k)
         gates = {gate.name: gate for gate in ch._iter_gates()}
-        exp_dp = ch.gate_phi(gates["p"]) * (ch.f_p_inf(V) - ch.p.value) / ch.f_p_tau(V) / u.ms
-        exp_dq = ch.gate_phi(gates["q"]) * (ch.f_q_inf(V) - ch.q.value) / ch.f_q_tau(V) / u.ms
+        exp_dp = ch.gate_phi(gates["p"]) * (ch.f_p_inf(V, k) - ch.p.value) / ch.f_p_tau(V, k) / u.ms
+        exp_dq = ch.gate_phi(gates["q"]) * (ch.f_q_inf(V, k) - ch.q.value) / ch.f_q_tau(V, k) / u.ms
         self.assertTrue(u.math.allclose(ch.p.derivative, exp_dp, atol=1e-6 * u.Hz))
         self.assertTrue(u.math.allclose(ch.q.derivative, exp_dq, atol=1e-6 * u.Hz))
 
@@ -405,7 +408,7 @@ class KNI_Ya1989Test(unittest.TestCase):
         k = _k_info()
         ch.init_state(V, k)
         ch.reset_state(V, k)
-        self.assertTrue(u.math.allclose(ch.p.value, ch.f_p_inf(V), atol=1e-6))
+        self.assertTrue(u.math.allclose(ch.p.value, ch.f_p_inf(V, k), atol=1e-6))
 
     def test_compute_derivative_matches_hh_inf_tau_form(self) -> None:
         ch = KNI_Ya1989(
@@ -420,7 +423,7 @@ class KNI_Ya1989Test(unittest.TestCase):
         ch.p.value = jnp.array([0.2])
         ch.compute_derivative(V, k)
         phi = ch.gate_phi(ch._iter_gates()[0])
-        expected = phi * (ch.f_p_inf(V) - ch.p.value) / ch.f_p_tau(V) / u.ms
+        expected = phi * (ch.f_p_inf(V, k) - ch.p.value) / ch.f_p_tau(V, k) / u.ms
         self.assertTrue(u.math.allclose(ch.p.derivative, expected, atol=1e-6 * u.Hz))
 
     def test_current_matches_formula(self) -> None:
@@ -483,7 +486,7 @@ class K_Kv_testTest(unittest.TestCase):
         k = _k_info()
         ch.init_state(V, k)
         ch.reset_state(V, k)
-        self.assertTrue(u.math.allclose(ch.n.value, ch.f_n_inf(V), atol=1e-6))
+        self.assertTrue(u.math.allclose(ch.n.value, ch.f_n_inf(V, k), atol=1e-6))
 
     def test_compute_derivative_matches_hh_inf_tau_form(self) -> None:
         ch = K_Kv_test(size=1)
@@ -493,7 +496,7 @@ class K_Kv_testTest(unittest.TestCase):
         ch.n.value = jnp.array([0.25])
         ch.compute_derivative(V, k)
         phi = ch.gate_phi(ch._iter_gates()[0])
-        expected = phi * (ch.f_n_inf(V) - ch.n.value) / ch.f_n_tau(V) / u.ms
+        expected = phi * (ch.f_n_inf(V, k) - ch.n.value) / ch.f_n_tau(V, k) / u.ms
         self.assertTrue(u.math.allclose(ch.n.derivative, expected, atol=1e-6 * u.Hz))
 
     def test_current_matches_linear_gating(self) -> None:
@@ -747,6 +750,190 @@ class Kv1p1MA24PCTest(unittest.TestCase):
             u.math.allclose(
                 i_pc.to_decimal(_DENSITY_UNIT),
                 i_bc.to_decimal(_DENSITY_UNIT),
+                atol=1e-6,
+            )
+        )
+
+
+class Kv1p5MA24PCTest(unittest.TestCase):
+    def test_root_type_is_potassium(self) -> None:
+        self.assertIs(Kv1p5_MA2024_PC.root_type, Potassium)
+
+    def test_declares_mod_gates_and_powers(self) -> None:
+        ch = Kv1p5_MA2024_PC(size=1)
+        gates = ch._iter_gates()
+        self.assertEqual([(gate.name, gate.power) for gate in gates], [("m", 3), ("n", 1), ("u", 1)])
+
+    def test_reset_state_matches_mod_steady_state(self) -> None:
+        ch = Kv1p5_MA2024_PC(size=1)
+        V = _V([-40.0])
+        k = _k_info()
+        v = V.to_decimal(u.mV)
+        ch.init_state(V, k)
+        ch.reset_state(V, k)
+
+        expected_m = 1.0 / (1.0 + jnp.exp(-(v + 30.3) / 9.6))
+        expected_n = 0.25 + 1.0 / (1.35 + jnp.exp((v + 7.0) / 14.0))
+        expected_u = 0.1 + 1.0 / (1.1 + jnp.exp((v + 7.0) / 14.0))
+
+        self.assertTrue(u.math.allclose(ch.m.value, expected_m, atol=1e-6))
+        self.assertTrue(u.math.allclose(ch.n.value, expected_n, atol=1e-6))
+        self.assertTrue(u.math.allclose(ch.u.value, expected_u, atol=1e-6))
+
+    def test_tau_matches_mod_rates_and_temperature_scaling(self) -> None:
+        ch = Kv1p5_MA2024_PC(size=1, temp=u.celsius2kelvin(47.0), Tauact=2.0, Tauinactf=3.0, Tauinacts=4.0)
+        V = _V([-35.0])
+        k = _k_info()
+        v = V.to_decimal(u.mV)
+        q10 = 2.2
+
+        m_alpha = q10 * 0.65 / (jnp.exp(-(v + 10.0) / 8.5) + jnp.exp(-(v - 30.0) / 59.0))
+        m_beta = q10 * 0.65 / (2.5 + jnp.exp((v + 82.0) / 17.0))
+        n_alpha = q10 * 0.001 / (2.4 + 10.9 * jnp.exp(-(v + 90.0) / 78.0))
+        n_beta = q10 * 0.001 * jnp.exp((v - 168.0) / 16.0)
+
+        self.assertTrue(u.math.allclose(ch.f_m_tau(V, k), 1.0 / (m_alpha + m_beta) / 3.0 * 2.0, atol=1e-6))
+        self.assertTrue(u.math.allclose(ch.f_n_tau(V, k), 1.0 / (n_alpha + n_beta) / 3.0 * 3.0, atol=1e-6))
+        self.assertTrue(u.math.allclose(ch.f_u_tau(V, k), jnp.full((1,), 6800.0 * 4.0), atol=1e-6))
+
+    def test_current_matches_enabled_ik_path_only(self) -> None:
+        ch = Kv1p5_MA2024_PC(size=1)
+        V = _V([-20.0])
+        k = _k_info()
+        ch.init_state(V, k)
+        ch.m.value = jnp.array([0.2])
+        ch.n.value = jnp.array([0.3])
+        ch.u.value = jnp.array([0.4])
+        v = V.to_decimal(u.mV)
+
+        voltage_factor = 0.1 + 1.0 / (1.0 + jnp.exp(-(v - 15.0) / 13.0))
+        expected = ch.g_max * voltage_factor * (0.2 ** 3) * 0.3 * 0.4 * (k.E - V)
+        current = ch.current(V, k)
+
+        self.assertTrue(
+            u.math.allclose(
+                current.to_decimal(_DENSITY_UNIT),
+                expected.to_decimal(_DENSITY_UNIT),
+                atol=1e-6,
+            )
+        )
+
+
+class Kv1p5MA20GrCTest(unittest.TestCase):
+    def test_inherits_pc_default_ik_path(self) -> None:
+        self.assertTrue(issubclass(Kv1p5_MA2020_GrC, Kv1p5_MA2024_PC))
+        self.assertIs(Kv1p5_MA2020_GrC.root_type, Potassium)
+
+    def test_matches_pc_variant_for_default_ik_path(self) -> None:
+        temp = u.celsius2kelvin(36.0)
+        pc = Kv1p5_MA2024_PC(size=1, temp=temp)
+        grc = Kv1p5_MA2020_GrC(size=1, temp=temp)
+        V = _V([-35.0])
+        k = _k_info()
+
+        pc.init_state(V, k)
+        grc.init_state(V, k)
+        pc.reset_state(V, k)
+        grc.reset_state(V, k)
+        self.assertTrue(u.math.allclose(grc.m.value, pc.m.value, atol=1e-6))
+        self.assertTrue(u.math.allclose(grc.n.value, pc.n.value, atol=1e-6))
+        self.assertTrue(u.math.allclose(grc.u.value, pc.u.value, atol=1e-6))
+
+        pc.compute_derivative(V, k)
+        grc.compute_derivative(V, k)
+        self.assertTrue(u.math.allclose(grc.m.derivative, pc.m.derivative, atol=1e-6 * u.Hz))
+        self.assertTrue(u.math.allclose(grc.n.derivative, pc.n.derivative, atol=1e-6 * u.Hz))
+        self.assertTrue(u.math.allclose(grc.u.derivative, pc.u.derivative, atol=1e-6 * u.Hz))
+
+        i_pc = pc.current(V, k)
+        i_grc = grc.current(V, k)
+        self.assertTrue(
+            u.math.allclose(
+                i_grc.to_decimal(_DENSITY_UNIT),
+                i_pc.to_decimal(_DENSITY_UNIT),
+                atol=1e-6,
+            )
+        )
+
+
+class Kv3p3MA24PCTest(unittest.TestCase):
+    def test_root_type_is_potassium(self) -> None:
+        self.assertIs(Kv3p3_MA2024_PC.root_type, Potassium)
+
+    def test_declares_hh_n4_gate(self) -> None:
+        ch = Kv3p3_MA2024_PC(size=1)
+        gates = ch._iter_gates()
+        self.assertEqual(len(gates), 1)
+        self.assertEqual(gates[0].name, "n")
+        self.assertEqual(gates[0].power, 4)
+
+    def test_reset_state_matches_mod_rate_ratio(self) -> None:
+        ch = Kv3p3_MA2024_PC(size=1)
+        V = _V([-30.0])
+        k = _k_info()
+        v = V.to_decimal(u.mV)
+        ch.init_state(V, k)
+        ch.reset_state(V, k)
+
+        alpha = 0.22 * jnp.exp(-(v + 16.0) / -26.5)
+        beta = 0.22 * jnp.exp(-(v + 16.0) / 26.5)
+
+        self.assertTrue(u.math.allclose(ch.n.value, alpha / (alpha + beta), atol=1e-6))
+
+    def test_derivative_uses_alpha_beta_and_temperature_scaling(self) -> None:
+        ch = Kv3p3_MA2024_PC(size=1, temp=u.celsius2kelvin(32.0))
+        V = _V([-20.0])
+        k = _k_info()
+        ch.init_state(V, k)
+        ch.n.value = jnp.array([0.35])
+
+        ch.compute_derivative(V, k)
+
+        alpha = ch.f_n_alpha(V, k)
+        beta = ch.f_n_beta(V, k)
+        phi = ch.gate_phi(ch._iter_gates()[0])
+        expected = phi * (alpha * (1.0 - ch.n.value) - beta * ch.n.value) / u.ms
+        self.assertTrue(u.math.allclose(ch.n.derivative, expected, atol=1e-6 * u.Hz))
+
+    def test_current_matches_default_ik_path(self) -> None:
+        ch = Kv3p3_MA2024_PC(size=1, gateCurrent=0.0)
+        V = _V([-20.0])
+        k = _k_info()
+        ch.init_state(V, k)
+        ch.n.value = jnp.array([0.4])
+
+        current = ch.current(V, k)
+        expected = ch.g_max * ch.n.value ** 4 * (k.E - V)
+
+        self.assertTrue(
+            u.math.allclose(
+                current.to_decimal(_DENSITY_UNIT),
+                expected.to_decimal(_DENSITY_UNIT),
+                atol=1e-6,
+            )
+        )
+
+    def test_gating_current_path_matches_mod_formula(self) -> None:
+        ch = Kv3p3_MA2024_PC(size=1, gateCurrent=1.0)
+        V = _V([-10.0])
+        k = _k_info()
+        ch.init_state(V, k)
+        ch.n.value = jnp.array([0.35])
+
+        alpha = ch.f_n_alpha(V, k)
+        beta = ch.f_n_beta(V, k)
+        phi = ch.gate_phi(ch._iter_gates()[0])
+        conductive = ch.g_max * ch.n.value ** 4 * (k.E - V)
+        ngate_flip = phi * (alpha * (1.0 - ch.n.value) - beta * ch.n.value) / u.ms
+        nc = 1e12 * ch.g_max / ch.gunit
+        igate = nc * 1e6 * ch.e0 * 4.0 * ch.zn * ngate_flip
+        expected = conductive - igate
+
+        current = ch.current(V, k)
+        self.assertTrue(
+            u.math.allclose(
+                current.to_decimal(_DENSITY_UNIT),
+                expected.to_decimal(_DENSITY_UNIT),
                 atol=1e-6,
             )
         )

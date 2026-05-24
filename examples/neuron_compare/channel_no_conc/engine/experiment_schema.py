@@ -91,11 +91,21 @@ StimulusSpec = DCStimulusSpec | SineStimulusSpec
 
 @dataclass(frozen=True)
 class IonStateSpec:
-    E_mV: float
+    E_mV: float | None = None
+    Ci_mM: float | None = None
+    Co_mM: float | None = None
 
     @property
-    def e_rev_mV(self) -> float:
+    def e_rev_mV(self) -> float | None:
         return self.E_mV
+
+    @property
+    def has_reversal(self) -> bool:
+        return self.E_mV is not None
+
+    @property
+    def has_concentrations(self) -> bool:
+        return self.Ci_mM is not None or self.Co_mM is not None
 
 
 @dataclass(frozen=True)
@@ -140,7 +150,12 @@ class ModelConfig:
             config_name=config_path.stem,
             config_path=config_path,
             meta=_normalize_meta_payload(payload.get("meta"), name="meta"),
-            mod_dir=str(Path(require_str(identity.get("mod_dir"), name="identity.mod_dir")).expanduser()),
+            mod_dir=str(
+                _resolve_config_relative_path(
+                    require_str(identity.get("mod_dir"), name="identity.mod_dir"),
+                    config_path=config_path,
+                )
+            ),
             defaults=_normalize_defaults_payload(payload.get("defaults"), name="defaults"),
             mapping_payload=mapping_payload,
             mapping_spec=mapping_spec,
@@ -453,7 +468,9 @@ def case_to_payload(case: ChannelNoConcCase) -> dict[str, Any]:
         **(
             {
                 "ion_state": {
-                    "E_mV": case.ion_state.E_mV,
+                    **({"E_mV": case.ion_state.E_mV} if case.ion_state.E_mV is not None else {}),
+                    **({"Ci_mM": case.ion_state.Ci_mM} if case.ion_state.Ci_mM is not None else {}),
+                    **({"Co_mM": case.ion_state.Co_mM} if case.ion_state.Co_mM is not None else {}),
                 },
             }
             if case.ion_state is not None
@@ -492,12 +509,20 @@ def _resolve_template_reference(*, template_path: str | Path, config_dir: Path) 
     return (config_dir / raw_path).resolve()
 
 
+def _resolve_config_relative_path(path_text: str, *, config_path: Path) -> Path:
+    raw_path = Path(path_text).expanduser()
+    if raw_path.is_absolute():
+        return raw_path.resolve()
+    return (config_path.parent / raw_path).resolve()
+
+
 def _allowed_sweep_paths(*, mapping_spec: MappingSpec, stimulus_kind: str) -> set[str]:
     allowed = {
         "simulation.dt_ms",
         "simulation.v_init_mV",
         "simulation.temperature_celsius",
         *(("ion_state.E_mV",) if mapping_spec.current_source.ion_name is not None else ()),
+        *(("ion_state.Ci_mM", "ion_state.Co_mM") if mapping_spec.current_source.ion_name is not None else ()),
         "leak.enabled",
         "leak.g_S_cm2",
         "leak.e_mV",
@@ -609,13 +634,32 @@ def _parse_ion_state(payload: Mapping[str, Any], *, mapping_spec: MappingSpec) -
         if ion_name is None:
             raise ValueError("mapping.current must resolve to ik/ina/ica for ion_state defaults.")
         return IonStateSpec(E_mV=_default_ion_reversal_mV(ion_name))
-    if "E_mV" in state_payload:
+    has_e = "E_mV" in state_payload or "e_rev_mV" in state_payload
+    has_ci = "Ci_mM" in state_payload
+    has_co = "Co_mM" in state_payload
+    has_conc = has_ci or has_co
+
+    if has_e and has_conc:
+        raise ValueError("ion_state cannot mix E_mV with Ci_mM/Co_mM.")
+    if has_ci != has_co:
+        raise ValueError("ion_state must define both Ci_mM and Co_mM together.")
+
+    if has_e:
+        if "E_mV" in state_payload:
+            return IonStateSpec(
+                E_mV=require_number(state_payload.get("E_mV"), name="ion_state.E_mV"),
+            )
         return IonStateSpec(
-            E_mV=require_number(state_payload.get("E_mV"), name="ion_state.E_mV"),
+            E_mV=require_number(state_payload.get("e_rev_mV"), name="channel_state.e_rev_mV"),
         )
-    return IonStateSpec(
-        E_mV=require_number(state_payload.get("e_rev_mV"), name="channel_state.e_rev_mV"),
-    )
+
+    if has_conc:
+        return IonStateSpec(
+            Ci_mM=require_number(state_payload.get("Ci_mM"), name="ion_state.Ci_mM"),
+            Co_mM=require_number(state_payload.get("Co_mM"), name="ion_state.Co_mM"),
+        )
+
+    raise ValueError("ion_state must define either E_mV or both Ci_mM and Co_mM.")
 
 
 def _default_ion_reversal_mV(ion_name: str) -> float:

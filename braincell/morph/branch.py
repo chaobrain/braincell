@@ -644,6 +644,21 @@ class Branch:
         return u.Quantity(np.sum(lengths_um * values_um) / total_length_um, u.um)
 
     @property
+    def diam_arc_mean(self) -> u.Quantity[u.um]:
+        """Return the arc-length-weighted mean diameter of this branch.
+
+        This is the branch-level diameter counterpart to :attr:`mean_radius`:
+        each segment contributes its average diameter ``r_proximal + r_distal``
+        weighted by segment arc length.
+
+        Returns
+        -------
+        Quantity[u.um]
+            Length-weighted average diameter.
+        """
+        return 2.0 * self.mean_radius
+
+    @property
     def areas(self) -> u.Quantity[u.um ** 2]:
         """Lateral surface area of each segment (frustum formula).
 

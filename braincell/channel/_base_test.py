@@ -121,7 +121,7 @@ class _ExampleGHK(HH):
         self.p_max = braintools.init.param(0.01 * (u.cm / u.second), self.varshape, allow_none=False)
         self.Co = 2.0 * u.mM
         self.valence = 2
-        self.T = u.celsius2kelvin(36.0)
+        self.temp = u.celsius2kelvin(36.0)
 
     def f_p_inf(self, V, Ca: IonInfo):
         _ = (V, Ca)
@@ -145,7 +145,7 @@ class _ExampleGHK(HH):
             ci=Ca.Ci,
             co=self.Co,
             z=self.valence,
-            T=self.T,
+            temp=self.temp,
         )
 
 
@@ -236,6 +236,28 @@ class _ExampleMarkovTwoOpenStates(Markov):
     def current(self, V, K: IonInfo):
         states = self.state_values()
         return self.g_max * (states["O1"] + states["O2"]) * (K.E - V)
+
+
+class _ExampleMarkovVoltageOnlyRates(Markov):
+    root_type = Potassium
+    pairs = (
+        Transition("C", "O", "open_rate", "close_rate"),
+    )
+    dependent_state = "C"
+
+    def __init__(self, size=1):
+        super().__init__(size=size, name=None)
+
+    def open_rate(self, V):
+        _ = V
+        return 0.2
+
+    def close_rate(self, V):
+        _ = V
+        return 0.1
+
+    def current(self, V, K: IonInfo):
+        return self.O.value * (K.E - V)
 
 
 class _ExampleHHMixed(HH):
@@ -398,7 +420,7 @@ class ChannelTemplateTest(unittest.TestCase):
             ci=Ca.Ci,
             co=ch.Co,
             z=ch.valence,
-            T=ch.T,
+            temp=ch.temp,
         )
         unit = expected.unit
         self.assertTrue(u.math.allclose(current.to_decimal(unit), expected.to_decimal(unit), atol=1e-6))
@@ -573,15 +595,42 @@ class ChannelTemplateTest(unittest.TestCase):
             )
         )
 
+    def test_markov_rate_dispatch_respects_declared_signature(self) -> None:
+        ch = _ExampleMarkovVoltageOnlyRates(size=1)
+        V = jnp.array([-65.0]) * u.mV
+        K = _k_info()
+
+        ch.init_state(V, K)
+        ch.O.value = jnp.array([0.25])
+        ch.compute_derivative(V, K)
+
+        states = ch.state_values()
+        expected_dO = (states["C"] * 0.2 - states["O"] * 0.1) / u.ms
+        self.assertTrue(u.math.allclose(ch.O.derivative, expected_dO, atol=1e-6 * u.Hz))
+
+        ch.reset_steady_state(V, K)
+        states = ch.state_values()
+        self.assertTrue(u.math.allclose(states["O"], jnp.array([2.0 / 3.0]), atol=1e-6))
+
     def test_ghk_flux_small_voltage_is_finite(self) -> None:
         value = ghk_flux(
             V=jnp.array([1e-9]) * u.mV,
             ci=jnp.array([2.0e-4]) * u.mM,
             co=2.0 * u.mM,
             z=2,
-            T=u.celsius2kelvin(36.0),
+            temp=u.celsius2kelvin(36.0),
         )
         self.assertEqual(value.shape, (1,))
+
+    def test_ghk_flux_rejects_legacy_T_keyword(self) -> None:
+        with self.assertRaises(TypeError):
+            ghk_flux(
+                V=jnp.array([-40.0]) * u.mV,
+                ci=jnp.array([2.0e-4]) * u.mM,
+                co=2.0 * u.mM,
+                z=2,
+                T=u.celsius2kelvin(36.0),
+            )
 
 
 if __name__ == "__main__":

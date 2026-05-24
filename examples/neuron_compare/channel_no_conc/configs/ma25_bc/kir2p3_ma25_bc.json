@@ -3,7 +3,7 @@
     "label": "BC Kir2p3 MA25"
   },
   "identity": {
-    "mod_dir": "/home/swl/braincell/examples/neuron_compare/Cerebellum_mod/BC/channel"
+    "mod_dir": "../../../Cerebellum_mod/BC/channel"
   },
   "defaults": {
     "channel_params": {

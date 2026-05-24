@@ -12,6 +12,33 @@
 
 ---
 
+## Current Local Progress Snapshot
+
+This working tree currently has the Cerebellum/PC comparison work in progress:
+
+- [x] **Cerebellum channel/ion imports and tests expanded.** The channel
+  catalogue now includes PC MA2024 channel variants and the calcium-ion
+  catalogue includes concrete Cerebellum kinetic-ion imports such as
+  `CdpStC_*`, `CdpCAM_MA2024_PC`, and `CdpCR_MA2020_GrC`, with co-located
+  unit tests and NEURON-comparison notebooks under `examples/neuron_compare`.
+- [x] **PC MA2024 assembly scaffold added.** `examples/neuron_compare/cell/pc_ma2024`
+  contains the simplified NEURON assembly, the matching BrainCell assembly,
+  shared parameter loading, debug variants, and `run.ipynb` for side-by-side
+  simulation.
+- [x] **NEURON-style ion-current snapshot mode added.** `Cell(...,
+  cache_ion_total_current=True)` caches the total ion current at the start of
+  the staggered step, before voltage or ion state advances, so current-driven
+  ion mechanisms can read the same precomputed current snapshot that
+  NEURON-style scheduling expects.
+- [x] **Frozen voltage channel variants added where needed.** Some PC calcium
+  channels now have `_Frozen` variants which stop differentiation through the
+  voltage used inside the current expression, matching the intended NEURON
+  semantics for those mechanisms during the comparison.
+- [x] **Two ion/channel update schedules are available.**
+  `ion_channel_update_order="family"` restores the NEURON-like family
+  ordering for ion/channel updates; `"integration"` keeps the previous
+  BrainCell integration-oriented ordering.
+
 ## 1. Mission and Scope
 
 BrainCell is a JAX-native library for **biologically detailed single-cell
@@ -527,6 +554,24 @@ internal dependencies · status · open work**.
     `sum_current_inputs(init=I_ext_density)` (bug #1) and
     `(n_point,)`-shaped total current in `nA` is rejected explicitly
     instead of producing NaN (bug #2).
+  - [x] **Ion/channel scheduling controls.** `Cell` now exposes
+    `cache_ion_total_current` and `ion_channel_update_order`. The
+    current-cache path snapshots per-ion total current at the start of
+    the staggered step, before voltage or ion state advances, which is
+    needed for NEURON-compatible current-driven calcium-pool
+    mechanisms. The update-order knob
+    supports `"family"` for NEURON-like ion-family ordering and
+    `"integration"` for the previous integration-grouped behavior.
+  - [x] **Same-name channels on different layouts are preserved.**
+    Runtime channel keys now distinguish layout instances, so painting
+    the same channel class/name onto disjoint regions (for example soma
+    and dendrite) no longer overwrites `Ion.channels`.
+  - [x] **PC MA2024 full-cell comparison scaffold.**
+    `examples/neuron_compare/cell/pc_ma2024` assembles a simplified
+    NEURON PC and a matching BrainCell PC from the same morphology and
+    parameter table. The NEURON side removes manually constructed axon
+    and spine sections so both sides follow the imported ASC/SWC
+    morphology semantics.
 - **Open risks**
   - The `Cell → RunnableCell` arrow is one-way; `RunnableCell` must
     never mutate or consult the originating `Cell`. Any future
@@ -574,6 +619,10 @@ internal dependencies · status · open work**.
     Euler, CN variants, splitting, exp-exp Euler.
   - [x] Exponential Euler (`exp_euler_step`, `ind_exp_euler_step`).
   - [x] Staggered solver (`staggered_step`).
+  - [x] The staggered full-cell path calls
+    `cache_ion_total_currents(...)` when the target supports it, so
+    NEURON-compatible ion-current snapshot semantics can be selected at
+    the `Cell` level without changing the integrator API.
   - [x] Diffrax bridge for explicit and implicit families with lazy
     import.
   - [x] DHS voltage solver (`dhs_voltage_step`).
@@ -797,6 +846,11 @@ internal dependencies · status · open work**.
     returning an `IonInfo(C, E)` tuple.
   - [x] `CalciumDetailed` / `CalciumFirstOrder` with Nernst reversal
     and full derivative wiring to child calcium channels.
+  - [x] `KineticIon`-based Cerebellum calcium-pool mechanisms imported
+    for the current comparison work, including `CdpStC_MA2020_GoC`,
+    `CdpStC_NoCAM_MA2020_GoC`, `CdpStC_CAMOnly_MA2020_GoC`,
+    `CdpStC_MA2025_BC`, `CdpStC_RI2021_SC`, `CdpCAM_MA2024_PC`, and
+    `CdpCR_MA2020_GrC`.
   - [x] Co-located unit tests (~75) covering defaults, custom
     parameters, callable broadcasts, `init_state` /
     `reset_state` / `compute_derivative`, `pack_info`,
@@ -833,6 +887,11 @@ internal dependencies · status · open work**.
     `@register_ion("SodiumFixed")` / `@register_ion("PotassiumFixed")`
     at import time, and `braincell.mech.Ion("CalciumFixed")` resolves
     through the registry described in §3.4.
+  - [x] **Current-driven ion dynamics can use cached ion current.**
+    Kinetic ions that consume total calcium current can receive the
+    runtime snapshot created by `cache_ion_total_current=True`, matching
+    the NEURON-style separation between channel-current evaluation and
+    ion-state integration.
   - [ ] **Consistent external-current registration** — audit that
     every dynamics class honours `include_external=True` in its
     `derivative` (the existing `CalciumDetailed.derivative` already
@@ -914,6 +973,12 @@ internal dependencies · status · open work**.
     through `get_registry()`. Abstract bases (`SodiumChannel`,
     `PotassiumChannel`, `CalciumChannel`, `LeakageChannel`,
     `KCaChannel`) are deliberately not decorated.
+  - [x] **PC MA2024 channel set imported.** Sodium, potassium,
+    calcium, calcium-activated potassium, and HCN PC variants have been
+    added and covered by targeted tests. The calcium channel set also
+    includes `_Frozen` variants for the NEURON-comparison path where the
+    current expression must treat voltage as fixed with respect to
+    differentiation.
   - [ ] **Parameter metadata** — each channel should declare the
     unit of every user-facing parameter (`g_max` in `S/cm²`, `E` in
     `mV`, time constants in `ms`, …) so that `Density.params`

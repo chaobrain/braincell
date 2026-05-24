@@ -1,0 +1,52 @@
+{
+  "meta": {
+    "label": "BC Cav1p2 MA25"
+  },
+  "identity": {
+    "mod_dir": "../../../Cerebellum_mod/BC/channel"
+  },
+  "defaults": {
+    "ion_state": {
+      "Ci_mM": 0.00024,
+      "Co_mM": 2.0
+    },
+    "channel_params": {
+      "g_max_S_cm2": 0.0
+    }
+  },
+  "mapping": {
+    "current": "ica",
+    "impl_name": {
+      "neuron": "Cav1p2_MA25_BC",
+      "braincell": "Cav1p2_MA2025_BC"
+    },
+    "gate_names": {
+      "canonical": [
+        "m",
+        "h",
+        "n"
+      ],
+      "neuron": [
+        "m",
+        "h",
+        "h2"
+      ],
+      "braincell": [
+        "m",
+        "h",
+        "n"
+      ]
+    },
+    "channel_params": {
+      "g_max_S_cm2": {
+        "neuron": "gbar",
+        "braincell": "g_max"
+      }
+    }
+  },
+  "templates": [
+    "../../templates/vinit_celsius.json",
+    "../../templates/dc.json",
+    "../../templates/ac.json"
+  ]
+}

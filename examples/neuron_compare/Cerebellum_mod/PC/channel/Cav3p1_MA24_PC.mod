@@ -18,8 +18,6 @@ Suffix from CaT3_1 to CaV3_1
 ENDCOMMENT
 
 
-INDEPENDENT {t FROM 0 TO 1 WITH 1 (ms)}
-
 NEURON {
         SUFFIX Cav3p1_MA24_PC
         USEION ca READ cai, cao WRITE ica VALENCE 2

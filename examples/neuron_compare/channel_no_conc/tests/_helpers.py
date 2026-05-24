@@ -33,6 +33,7 @@ def build_mapping_payload(
         "na": "ina",
         "k": "ik",
         "ca": "ica",
+        "cal": "ical",
     }[current_kind]
     return {
         "current": current_var,
@@ -72,7 +73,7 @@ def build_case_payload(
         "stimulus": stimulus or {"kind": "dc", "delay_ms": 0.0, "dur_ms": 2.0, "amp_nA": 0.2},
         **(
             {"ion_state": {"E_mV": -80.0}}
-            if (mapping or build_mapping_payload())["current"] in {"ina", "ik", "ica"}
+            if (mapping or build_mapping_payload())["current"] in {"ina", "ik", "ica", "ical"}
             else {}
         ),
         "channel_params": {"g_max_S_cm2": 0.0},

@@ -1,0 +1,52 @@
+{
+  "meta": {
+    "label": "IO Ca ZH19"
+  },
+  "identity": {
+    "mod_dir": "../../../Cerebellum_mod/IO/channel"
+  },
+  "defaults": {
+    "channel_params": {
+      "g_max_mS_cm2": 0.4,
+      "E_mV": 120.0,
+      "m_mid_mV": -61.0
+    }
+  },
+  "mapping": {
+    "current": "i",
+    "impl_name": {
+      "neuron": "Ca_ZH19_IO",
+      "braincell": "Ca_ZH2019_IO"
+    },
+    "gate_names": {
+      "canonical": [
+        "h"
+      ],
+      "neuron": [
+        "h"
+      ],
+      "braincell": [
+        "h"
+      ]
+    },
+    "channel_params": {
+      "g_max_mS_cm2": {
+        "neuron": "gbar",
+        "braincell": "g_max"
+      },
+      "E_mV": {
+        "neuron": "ecas",
+        "braincell": "E"
+      },
+      "m_mid_mV": {
+        "neuron": "mMidV",
+        "braincell": "mMidV"
+      }
+    }
+  },
+  "templates": [
+    "../../templates/vinit_celsius.json",
+    "../../templates/dc.json",
+    "../../templates/ac.json"
+  ]
+}

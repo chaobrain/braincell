@@ -30,9 +30,20 @@ from braincell.mech import register_channel
 
 __all__ = [
     "AHP_De1994",
-    "Kca3p1_MA2020",
-    "Kca2p2_MA2020",
-    "Kca1p1_MA2020",
+    "SK_SU2015_DCN",
+    "Kca3p1_MA2020_GoC",
+    "Kca3p1_MA2025_BC",
+    "Kca3p1_MA2024_PC",
+    "Kca2p2_MA2020_GoC",
+    "Kca2p2_MA2025_BC",
+    "Kca2p2_MA2020_GrC",
+    "Kca2p2_MA2024_PC",
+    "Kca2p2_RI2021_SC",
+    "Kca1p1_MA2020_GoC",
+    "Kca1p1_MA2025_BC",
+    "Kca1p1_MA2020_GrC",
+    "Kca1p1_MA2024_PC",
+    "Kca1p1_RI2021_SC",
 ]
 
 
@@ -75,16 +86,55 @@ class AHP_De1994(HH):
         return self.g_max * self.conductance_factor(V, K, Ca) * (K.E - V)
 
     def f_p_alpha(self, V, K: IonInfo, Ca: IonInfo):
-        _ = (V, K)
         return self.alpha * u.math.power(Ca.Ci / u.mM, self.n)
 
     def f_p_beta(self, V, K: IonInfo, Ca: IonInfo):
-        _ = (V, K, Ca)
         return self.beta
 
 
-@register_channel("Kca3p1_MA2020")
-class Kca3p1_MA2020(HH):
+@register_channel("SK_SU2015_DCN")
+class SK_SU2015_DCN(HH):
+    r"""Template-based import of ``SK_SU15_DCN.mod``."""
+
+    __module__ = "braincell.channel"
+    root_type = _KCA_ROOT_TYPE
+    current_owner_type = Potassium
+    gates = (
+        Gate("z"),
+    )
+
+    def __init__(
+        self,
+        size: brainstate.typing.Size,
+        g_max: Union[brainstate.typing.ArrayLike, Callable] = 0.01 * (u.mS / u.cm ** 2),
+        qdeltat: Union[brainstate.typing.ArrayLike, Callable] = 1.0,
+        name: Optional[str] = None,
+    ):
+        super().__init__(size=size, name=name)
+        self.g_max = braintools.init.param(g_max, self.varshape, allow_none=False)
+        self.qdeltat = braintools.init.param(qdeltat, self.varshape, allow_none=False)
+
+    def current(self, V, K: IonInfo, Ca: IonInfo):
+        return self.g_max * self.conductance_factor(V, K, Ca) * (K.E - V)
+
+    def f_z_inf(self, V, K: IonInfo, Ca: IonInfo):
+        _ = (V, K)
+        return self._z_inf_formula(Ca.Ci.to_decimal(u.mM))
+
+    def f_z_tau(self, V, K: IonInfo, Ca: IonInfo):
+        _ = (V, K)
+        return self._z_tau_formula(Ca.Ci.to_decimal(u.mM)) / self.qdeltat
+
+    def _z_inf_formula(self, cai):
+        cai4 = cai ** 4
+        return cai4 / (cai4 + 8.1e-15)
+
+    def _z_tau_formula(self, cai):
+        return u.math.where(cai < 0.005, 1.0 - 186.67 * cai, 0.0667)
+
+
+@register_channel("Kca3p1_MA2020_GoC")
+class Kca3p1_MA2020_GoC(HH):
     r"""Template-based import of ``Kca3p1_MA20_GoC.mod``."""
 
     __module__ = "braincell.channel"
@@ -98,13 +148,13 @@ class Kca3p1_MA2020(HH):
         self,
         size: brainstate.typing.Size,
         g_max: Union[brainstate.typing.ArrayLike, Callable] = 120.0 * (u.mS / u.cm ** 2),
-        T_base: brainstate.typing.ArrayLike = 3.0,
-        T: brainstate.typing.ArrayLike = u.celsius2kelvin(22.0),
+        q10_base: brainstate.typing.ArrayLike = 3.0,
+        temp: brainstate.typing.ArrayLike = u.celsius2kelvin(22.0),
         name: Optional[str] = None,
     ):
         super().__init__(size=size, name=name)
-        self.temp = braintools.init.param(T, self.varshape, allow_none=False)
-        self.T_base = braintools.init.param(T_base, self.varshape, allow_none=False)
+        self.temp = braintools.init.param(temp, self.varshape, allow_none=False)
+        self.q10_base = braintools.init.param(q10_base, self.varshape, allow_none=False)
         self.g_max = braintools.init.param(g_max, self.varshape, allow_none=False)
         self.p_beta = 0.05
 
@@ -131,16 +181,28 @@ class Kca3p1_MA2020(HH):
         return u.math.where(Ca.Ci / u.mM < 0.01, concdep_1, concdep_2)
 
     def f_p_alpha(self, V, K: IonInfo, Ca: IonInfo):
-        _ = K
         return self.p_alpha(V, Ca)
 
     def f_p_beta(self, V, K: IonInfo, Ca: IonInfo):
-        _ = (V, K, Ca)
         return self.p_beta
 
 
-@register_channel("Kca2p2_MA2020")
-class Kca2p2_MA2020(Markov):
+@register_channel("Kca3p1_MA2025_BC")
+class Kca3p1_MA2025_BC(Kca3p1_MA2020_GoC):
+    """Thin variant of ``Kca3p1_MA25_BC.mod`` using GoC kinetics."""
+
+    __module__ = "braincell.channel"
+
+
+@register_channel("Kca3p1_MA2024_PC")
+class Kca3p1_MA2024_PC(Kca3p1_MA2020_GoC):
+    """Thin variant of ``Kca3p1_MA24_PC.mod`` using GoC kinetics."""
+
+    __module__ = "braincell.channel"
+
+
+@register_channel("Kca2p2_MA2020_GoC")
+class Kca2p2_MA2020_GoC(Markov):
     r"""Template-based import of ``Kca2p2_MA20_GoC.mod``."""
 
     __module__ = "braincell.channel"
@@ -159,16 +221,16 @@ class Kca2p2_MA2020(Markov):
         self,
         size: brainstate.typing.Size,
         g_max: Union[brainstate.typing.ArrayLike, Callable] = 38.0 * (u.mS / u.cm ** 2),
-        T_base: brainstate.typing.ArrayLike = 3.0,
+        q10_base: brainstate.typing.ArrayLike = 3.0,
         diff: brainstate.typing.ArrayLike = 3.0,
-        T: brainstate.typing.ArrayLike = u.celsius2kelvin(22.0),
+        temp: brainstate.typing.ArrayLike = u.celsius2kelvin(22.0),
         name: Optional[str] = None,
         solver: str = "backward_euler",
         substeps: int = 1,
     ):
         super().__init__(size=size, name=name, solver=solver, substeps=substeps)
-        self.temp = braintools.init.param(T, self.varshape, allow_none=False)
-        self.T_base = braintools.init.param(T_base, self.varshape, allow_none=False)
+        self.temp = braintools.init.param(temp, self.varshape, allow_none=False)
+        self.q10_base = braintools.init.param(q10_base, self.varshape, allow_none=False)
         self.g_max = braintools.init.param(g_max, self.varshape, allow_none=False)
         self.diff = braintools.init.param(diff, self.varshape, allow_none=False)
 
@@ -186,7 +248,7 @@ class Kca2p2_MA2020(Markov):
         self.dirc4 = 80.0
 
     def _phi(self):
-        return _q10_factor(self.temp, self.T_base, ref_celsius=23.0)
+        return _q10_factor(self.temp, self.q10_base, ref_celsius=23.0)
 
     def reset_state(self, V, K: IonInfo, Ca: IonInfo, batch_size: int = None):
         self.reset_steady_state(V, K, Ca, batch_size=batch_size)
@@ -196,48 +258,66 @@ class Kca2p2_MA2020(Markov):
         return self.g_max * (states["O1"] + states["O2"]) * (K.E - V)
 
     def dirc2_t_ca(self, V, K: IonInfo, Ca: IonInfo):
-        _ = (V, K)
         return self.dirc2 * self._phi() * (Ca.Ci / u.mM) / self.diff
 
     def dirc3_t_ca(self, V, K: IonInfo, Ca: IonInfo):
-        _ = (V, K)
         return self.dirc3 * self._phi() * (Ca.Ci / u.mM) / self.diff
 
     def dirc4_t_ca(self, V, K: IonInfo, Ca: IonInfo):
-        _ = (V, K)
         return self.dirc4 * self._phi() * (Ca.Ci / u.mM) / self.diff
 
     def invc1_t(self, V, K: IonInfo, Ca: IonInfo):
-        _ = (V, K, Ca)
         return self.invc1 * self._phi()
 
     def invc2_t(self, V, K: IonInfo, Ca: IonInfo):
-        _ = (V, K, Ca)
         return self.invc2 * self._phi()
 
     def invc3_t(self, V, K: IonInfo, Ca: IonInfo):
-        _ = (V, K, Ca)
         return self.invc3 * self._phi()
 
     def invo1_t(self, V, K: IonInfo, Ca: IonInfo):
-        _ = (V, K, Ca)
         return self.invo1 * self._phi()
 
     def invo2_t(self, V, K: IonInfo, Ca: IonInfo):
-        _ = (V, K, Ca)
         return self.invo2 * self._phi()
 
     def diro1_t(self, V, K: IonInfo, Ca: IonInfo):
-        _ = (V, K, Ca)
         return self.diro1 * self._phi()
 
     def diro2_t(self, V, K: IonInfo, Ca: IonInfo):
-        _ = (V, K, Ca)
         return self.diro2 * self._phi()
 
 
-@register_channel("Kca1p1_MA2020")
-class Kca1p1_MA2020(Markov):
+@register_channel("Kca2p2_MA2025_BC")
+class Kca2p2_MA2025_BC(Kca2p2_MA2020_GoC):
+    r"""Template-based import of ``Kca2p2_MA25_BC.mod``."""
+
+    __module__ = "braincell.channel"
+
+
+@register_channel("Kca2p2_MA2020_GrC")
+class Kca2p2_MA2020_GrC(Kca2p2_MA2020_GoC):
+    r"""Template-based import of ``Kca2p2_MA20_GrC.mod``."""
+
+    __module__ = "braincell.channel"
+
+
+@register_channel("Kca2p2_MA2024_PC")
+class Kca2p2_MA2024_PC(Kca2p2_MA2020_GoC):
+    r"""Template-based import of ``Kca2p2_MA24_PC.mod``."""
+
+    __module__ = "braincell.channel"
+
+
+@register_channel("Kca2p2_RI2021_SC")
+class Kca2p2_RI2021_SC(Kca2p2_MA2020_GoC):
+    r"""Template-based import of ``Kca2p2_RI21_SC.mod``."""
+
+    __module__ = "braincell.channel"
+
+
+@register_channel("Kca1p1_MA2020_GoC")
+class Kca1p1_MA2020_GoC(Markov):
     r"""Template-based import of ``Kca1p1_MA20_GoC.mod``."""
 
     __module__ = "braincell.channel"
@@ -264,16 +344,16 @@ class Kca1p1_MA2020(Markov):
         self,
         size: brainstate.typing.Size,
         g_max: Union[brainstate.typing.ArrayLike, Callable] = 10.0 * (u.mS / u.cm ** 2),
-        T_base: brainstate.typing.ArrayLike = 3.0,
-        T: brainstate.typing.ArrayLike = u.celsius2kelvin(22.0),
+        q10_base: brainstate.typing.ArrayLike = 3.0,
+        temp: brainstate.typing.ArrayLike = u.celsius2kelvin(22.0),
         name: Optional[str] = None,
         solver: str = "backward_euler",
         substeps: int = 1,
     ):
         super().__init__(size=size, name=name, solver=solver, substeps=substeps)
         self.g_max = braintools.init.param(g_max, self.varshape, allow_none=False)
-        self.temp = braintools.init.param(T, self.varshape, allow_none=False)
-        self.T_base = braintools.init.param(T_base, self.varshape, allow_none=False)
+        self.temp = braintools.init.param(temp, self.varshape, allow_none=False)
+        self.q10_base = braintools.init.param(q10_base, self.varshape, allow_none=False)
 
         self.Qo = 0.73
         self.Qc = -0.67
@@ -296,7 +376,7 @@ class Kca1p1_MA2020(Markov):
         self.pb4 = 92e-3
 
     def _phi(self):
-        return _q10_factor(self.temp, self.T_base, ref_celsius=23.0)
+        return _q10_factor(self.temp, self.q10_base, ref_celsius=23.0)
 
     def _alpha_factor(self, V):
         return u.math.exp((self.Qo * u.faraday_constant * V) / (u.gas_constant * self.temp))
@@ -314,105 +394,107 @@ class Kca1p1_MA2020(Markov):
         ) * (K.E - V)
 
     def c01(self, V, K: IonInfo, Ca: IonInfo):
-        _ = (V, K)
         return 4 * (Ca.Ci / u.mM) * self.k1 * self.onoffrate * self._phi()
 
     def c12(self, V, K: IonInfo, Ca: IonInfo):
-        _ = (V, K)
         return 3 * (Ca.Ci / u.mM) * self.k1 * self.onoffrate * self._phi()
 
     def c23(self, V, K: IonInfo, Ca: IonInfo):
-        _ = (V, K)
         return 2 * (Ca.Ci / u.mM) * self.k1 * self.onoffrate * self._phi()
 
     def c34(self, V, K: IonInfo, Ca: IonInfo):
-        _ = (V, K)
         return 1 * (Ca.Ci / u.mM) * self.k1 * self.onoffrate * self._phi()
 
     def o01(self, V, K: IonInfo, Ca: IonInfo):
-        _ = (V, K)
         return 4 * (Ca.Ci / u.mM) * self.k1 * self.onoffrate * self._phi()
 
     def o12(self, V, K: IonInfo, Ca: IonInfo):
-        _ = (V, K)
         return 3 * (Ca.Ci / u.mM) * self.k1 * self.onoffrate * self._phi()
 
     def o23(self, V, K: IonInfo, Ca: IonInfo):
-        _ = (V, K)
         return 2 * (Ca.Ci / u.mM) * self.k1 * self.onoffrate * self._phi()
 
     def o34(self, V, K: IonInfo, Ca: IonInfo):
-        _ = (V, K)
         return 1 * (Ca.Ci / u.mM) * self.k1 * self.onoffrate * self._phi()
 
     def c10(self, V, K: IonInfo, Ca: IonInfo):
-        _ = (V, K, Ca)
         return 1 * self.Kc * self.k1 * self.onoffrate * self._phi()
 
     def c21(self, V, K: IonInfo, Ca: IonInfo):
-        _ = (V, K, Ca)
         return 2 * self.Kc * self.k1 * self.onoffrate * self._phi()
 
     def c32(self, V, K: IonInfo, Ca: IonInfo):
-        _ = (V, K, Ca)
         return 3 * self.Kc * self.k1 * self.onoffrate * self._phi()
 
     def c43(self, V, K: IonInfo, Ca: IonInfo):
-        _ = (V, K, Ca)
         return 4 * self.Kc * self.k1 * self.onoffrate * self._phi()
 
     def o10(self, V, K: IonInfo, Ca: IonInfo):
-        _ = (V, K, Ca)
         return 1 * self.Ko * self.k1 * self.onoffrate * self._phi()
 
     def o21(self, V, K: IonInfo, Ca: IonInfo):
-        _ = (V, K, Ca)
         return 2 * self.Ko * self.k1 * self.onoffrate * self._phi()
 
     def o32(self, V, K: IonInfo, Ca: IonInfo):
-        _ = (V, K, Ca)
         return 3 * self.Ko * self.k1 * self.onoffrate * self._phi()
 
     def o43(self, V, K: IonInfo, Ca: IonInfo):
-        _ = (V, K, Ca)
         return 4 * self.Ko * self.k1 * self.onoffrate * self._phi()
 
     def f0(self, V, K: IonInfo, Ca: IonInfo):
-        _ = (K, Ca)
         return self.pf0 * self._alpha_factor(V) * self._phi()
 
     def f1(self, V, K: IonInfo, Ca: IonInfo):
-        _ = (K, Ca)
         return self.pf1 * self._alpha_factor(V) * self._phi()
 
     def f2(self, V, K: IonInfo, Ca: IonInfo):
-        _ = (K, Ca)
         return self.pf2 * self._alpha_factor(V) * self._phi()
 
     def f3(self, V, K: IonInfo, Ca: IonInfo):
-        _ = (K, Ca)
         return self.pf3 * self._alpha_factor(V) * self._phi()
 
     def f4(self, V, K: IonInfo, Ca: IonInfo):
-        _ = (K, Ca)
         return self.pf4 * self._alpha_factor(V) * self._phi()
 
     def b0(self, V, K: IonInfo, Ca: IonInfo):
-        _ = (K, Ca)
         return self.pb0 * self._beta_factor(V) * self._phi()
 
     def b1(self, V, K: IonInfo, Ca: IonInfo):
-        _ = (K, Ca)
         return self.pb1 * self._beta_factor(V) * self._phi()
 
     def b2(self, V, K: IonInfo, Ca: IonInfo):
-        _ = (K, Ca)
         return self.pb2 * self._beta_factor(V) * self._phi()
 
     def b3(self, V, K: IonInfo, Ca: IonInfo):
-        _ = (K, Ca)
         return self.pb3 * self._beta_factor(V) * self._phi()
 
     def b4(self, V, K: IonInfo, Ca: IonInfo):
-        _ = (K, Ca)
         return self.pb4 * self._beta_factor(V) * self._phi()
+
+
+@register_channel("Kca1p1_MA2025_BC")
+class Kca1p1_MA2025_BC(Kca1p1_MA2020_GoC):
+    r"""Template-based import of ``Kca1p1_MA25_BC.mod``."""
+
+    __module__ = "braincell.channel"
+
+
+@register_channel("Kca1p1_MA2020_GrC")
+class Kca1p1_MA2020_GrC(Kca1p1_MA2020_GoC):
+    r"""Template-based import of ``Kca1p1_MA20_GrC.mod``."""
+
+    __module__ = "braincell.channel"
+
+
+@register_channel("Kca1p1_MA2024_PC")
+class Kca1p1_MA2024_PC(Kca1p1_MA2020_GoC):
+    r"""Template-based import of ``Kca1p1_MA24_PC.mod``."""
+
+    __module__ = "braincell.channel"
+
+
+@register_channel("Kca1p1_RI2021_SC")
+class Kca1p1_RI2021_SC(Kca1p1_MA2020_GoC):
+    r"""Template-based import of ``Kca1p1_RI21_SC.mod``."""
+
+    __module__ = "braincell.channel"

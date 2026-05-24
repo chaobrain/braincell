@@ -29,7 +29,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
-from braincell._base import HHTypedNeuron, IonChannel, _cast_like
+from braincell._base import Channel, HHTypedNeuron, Ion, IonChannel, MixIons, _cast_like
 from braincell._misc import is_traced_value
 from braincell._typing import Initializer
 from braincell._compute.table import (
@@ -72,7 +72,8 @@ from braincell._discretization.node_build import (
 from braincell.filter import LocsetExpr, LocsetMask, RegionExpr, RegionMask
 from braincell.filter.helper import normalize_region_intervals
 from braincell.morph.morphology import Morphology
-from braincell.quad import get_integrator
+from braincell.quad import get_integrator, ind_exp_euler_step
+from braincell.quad._exp_euler import _ind_exp_euler_step_selected
 from braincell.quad._staggered import build_cv_axial_operator
 from braincell.quad.protocol import DiffEqState, IndependentIntegration
 from . import bridge, currents, probes, run as run_module
@@ -156,6 +157,10 @@ class Cell(HHTypedNeuron):
         Surrogate-gradient spike function.
     solver : str or Callable
         Integrator name (registry lookup) or callable step function.
+    ion_channel_update_order : {"family", "integration"}
+        Post-voltage ion/channel scheduling. ``"family"`` updates all ions
+        before all channels; ``"integration"`` preserves the previous
+        IndependentIntegration-grouped scheduling.
     name : str, optional
         Cell name.
     """
@@ -174,6 +179,8 @@ class Cell(HHTypedNeuron):
         V_init: Optional[Initializer] = None,
         spk_fun: Callable = braintools.surrogate.ReluGrad(),
         solver: str | Callable = "staggered",
+        cache_ion_total_current: bool = True,
+        ion_channel_update_order: str = "family",
         name: str | None = None,
     ) -> None:
         HHTypedNeuron.__init__(self, size=(1,), name=name)
@@ -201,6 +208,10 @@ class Cell(HHTypedNeuron):
         self._spk_fun = spk_fun
         self._name = name
         self._solver_name, self._solver_fn = _resolve_solver(solver)
+        self.cache_ion_total_current = bool(cache_ion_total_current)
+        self.ion_channel_update_order = _validate_ion_channel_update_order(
+            ion_channel_update_order
+        )
 
         self._discretization_cache: Discretization | None = None
         self._discretization_cache_key: object = None
@@ -376,10 +387,6 @@ class Cell(HHTypedNeuron):
         return self._discretization.cvs
 
     @property
-    def nodes(self) -> tuple[Node, ...]:
-        return self._discretization.nodes
-
-    @property
     def cv_tree(self) -> CVTree:
         return self._discretization.cv_tree
 
@@ -428,6 +435,8 @@ class Cell(HHTypedNeuron):
             self._V_init if self._V_init is not None
             else cv_value_vector(self, attr_name="v")
         )
+        if self._V_init is not None:
+            v_initializer = bridge.fill_like(self.varshape, v_initializer)
         self.V = DiffEqState(braintools.init.param(v_initializer, self.varshape, batch_size))
         self.spike = brainstate.ShortTermState(self.get_spike(self.V.value, self.V.value))
         self._current_time_state.value = 0.0 * u.ms
@@ -570,7 +579,7 @@ class Cell(HHTypedNeuron):
                 source_cv_ids=node.source_cv_ids,
                 ions=self._build_local_ion_bindings(point_ids=(int(node.id),)),
             )
-            for node in self.nodes
+            for node in self.node_tree.nodes
         )
 
     def _build_local_ion_bindings(
@@ -1862,6 +1871,211 @@ class Cell(HHTypedNeuron):
             + self.compute_axial_derivative(V)
         )
 
+    def _top_level_ion_channel_nodes(self):
+        return tuple(self.nodes(IonChannel, allowed_hierarchy=(1, 1)).items())
+
+    def _family_ion_nodes(self):
+        return tuple(
+            (path, node)
+            for path, node in self._top_level_ion_channel_nodes()
+            if isinstance(node, Ion)
+        )
+
+    def _family_channel_nodes(self):
+        nodes = []
+        for path, node in self._top_level_ion_channel_nodes():
+            if isinstance(node, Ion):
+                for child_path, child in brainstate.graph.nodes(
+                    node,
+                    Channel,
+                    allowed_hierarchy=(1, 1),
+                ).items():
+                    nodes.append((path + child_path, child))
+            elif isinstance(node, MixIons):
+                for child_path, child in brainstate.graph.nodes(
+                    node,
+                    Channel,
+                    allowed_hierarchy=(1, 1),
+                ).items():
+                    nodes.append((path + child_path, child))
+            elif isinstance(node, Channel):
+                nodes.append((path, node))
+        return tuple(nodes)
+
+    def _integrate_selected_ion_channel_states(self, selected_paths, point_V, excluded_paths=()):
+        selected_paths = tuple(tuple(path) for path in selected_paths)
+        if not selected_paths:
+            return
+        excluded_paths = [("V",), *tuple(tuple(path) for path in excluded_paths)]
+
+        def _pre_integral():
+            for path, node in self._top_level_ion_channel_nodes():
+                if isinstance(node, Ion) and path in selected_paths:
+                    node._run_ion_hook("_ion_pre_integral_hook", point_V)
+                elif isinstance(node, Channel) and path in selected_paths:
+                    node.pre_integral(point_V)
+                elif isinstance(node, (Ion, MixIons)):
+                    self._run_selected_child_channel_hook(
+                        node,
+                        path,
+                        selected_paths,
+                        "pre_integral",
+                        point_V,
+                    )
+
+        def _compute_derivative():
+            for path, node in self._top_level_ion_channel_nodes():
+                if isinstance(node, Ion) and path in selected_paths:
+                    node._run_ion_hook("_ion_compute_derivative_hook", point_V)
+                elif isinstance(node, Channel) and path in selected_paths:
+                    node.compute_derivative(point_V)
+                elif isinstance(node, (Ion, MixIons)):
+                    self._run_selected_child_channel_hook(
+                        node,
+                        path,
+                        selected_paths,
+                        "compute_derivative",
+                        point_V,
+                    )
+
+        def _post_integral():
+            for path, node in self._top_level_ion_channel_nodes():
+                if isinstance(node, Ion) and path in selected_paths:
+                    node._run_ion_hook("_ion_post_integral_hook", point_V)
+                elif isinstance(node, Channel) and path in selected_paths:
+                    node.post_integral(point_V)
+                elif isinstance(node, (Ion, MixIons)):
+                    self._run_selected_child_channel_hook(
+                        node,
+                        path,
+                        selected_paths,
+                        "post_integral",
+                        point_V,
+                    )
+
+        _ind_exp_euler_step_selected(
+            self,
+            include_paths=selected_paths,
+            excluded_paths=excluded_paths,
+            pre_integral=_pre_integral,
+            compute_derivative=_compute_derivative,
+            post_integral=_post_integral,
+            allow_empty=True,
+        )
+
+    @staticmethod
+    def _run_selected_child_channel_hook(parent, parent_path, selected_paths, hook_name, point_V):
+        for child_path, child in brainstate.graph.nodes(
+            parent,
+            Channel,
+            allowed_hierarchy=(1, 1),
+        ).items():
+            full_path = parent_path + child_path
+            if full_path not in selected_paths:
+                continue
+            if isinstance(parent, Ion):
+                getattr(child, hook_name)(point_V, parent.pack_info())
+            else:
+                infos = tuple([
+                    parent._get_ion(root).pack_info()
+                    for root in child.root_type.__args__
+                ])
+                getattr(child, hook_name)(point_V, *infos)
+
+    def _update_ion_channels_by_integration(self, point_V):
+        ion_channel_nodes = self._top_level_ion_channel_nodes()
+        for _, node in ion_channel_nodes:
+            node.update(point_V)
+
+    def _update_ion_channel_families(self, point_V):
+        ion_nodes = self._family_ion_nodes()
+        channel_nodes = self._family_channel_nodes()
+        self._integrate_selected_ion_channel_states(
+            [path for path, node in ion_nodes if not isinstance(node, IndependentIntegration)],
+            point_V,
+            excluded_paths=[path for path, _ in channel_nodes],
+        )
+        for _, node in ion_nodes:
+            if isinstance(node, IndependentIntegration):
+                node._update_ion_state_only(point_V)
+        for path, node in channel_nodes:
+            if not self._is_independent_channel(node):
+                target, args = self._channel_integration_target_and_args(path, node, point_V)
+                ind_exp_euler_step(target, *args)
+        for path, node in channel_nodes:
+            if not self._is_independent_channel(node):
+                continue
+            target, args = self._channel_integration_target_and_args(path, node, point_V)
+            target.update(*args)
+
+    @staticmethod
+    def _is_independent_channel(node):
+        channel = getattr(node, "_channel", node)
+        return isinstance(channel, IndependentIntegration)
+
+    def _channel_integration_target_and_args(self, path, node, point_V):
+        if hasattr(node, "_channel") and hasattr(node, "_infos"):
+            return node._channel, (point_V, *node._infos())
+        return node, self._channel_update_args(path, node, point_V)
+
+    def _channel_update_args(self, path, node, point_V):
+        if len(path) >= 4 and path[-2] == "channels":
+            owner = self._node_at_path(path[:-2])
+            if isinstance(owner, Ion):
+                return point_V, owner.pack_info()
+            if isinstance(owner, MixIons):
+                infos = tuple([
+                    owner._get_ion(root).pack_info()
+                    for root in node.root_type.__args__
+                ])
+                return (point_V, *infos)
+        return (point_V,)
+
+    @staticmethod
+    def _node_at_path_from(root, path):
+        node = root
+        for part in path:
+            if isinstance(node, dict):
+                node = node[part]
+            else:
+                node = getattr(node, part)
+        return node
+
+    def _node_at_path(self, path):
+        return self._node_at_path_from(self, path)
+
+    def _staggered_integrate_ion_channel_families(self, *args):
+        if self.ion_channel_update_order != "family":
+            return False
+        if args:
+            # The family phase only needs the post-voltage point voltage; I_ext
+            # already participated in the voltage solve.
+            _ = args
+        self._update_ion_channel_families(self._cv_to_point(self.V.value))
+        self._ion_channel_family_phase_done = True
+        return True
+
+    def cache_ion_total_currents(self, V=None) -> None:
+        """Cache ion source currents before voltage advances in staggered mode."""
+        self._raise_if_not_initialized("cache_ion_total_currents()")
+        if not self.cache_ion_total_current:
+            return
+        point_V = self._cv_to_point(self.V.value if V is None else V)
+        for _, node in self.runtime_objects(IonChannel, allowed_hierarchy=(1, 1)).items():
+            if not getattr(type(node), "uses_total_current", False):
+                continue
+            try:
+                node._cached_total_current = node.current(point_V, include_external=True)
+            except TypeError:
+                node._cached_total_current = node.current(point_V)
+
+    def clear_ion_total_current_cache(self) -> None:
+        """Remove per-step ion source-current caches."""
+        self._raise_if_not_initialized("clear_ion_total_current_cache()")
+        for _, node in self.runtime_objects(IonChannel, allowed_hierarchy=(1, 1)).items():
+            if hasattr(node, "_cached_total_current"):
+                delattr(node, "_cached_total_current")
+
     def post_integral(self, I_ext=0.0):
         self._raise_if_not_initialized("post_integral()")
         self.V.value = self.sum_delta_inputs(init=self.V.value)
@@ -1874,6 +2088,7 @@ class Cell(HHTypedNeuron):
         self._raise_if_not_initialized("update()")
 
         last_V = self.V.value
+        self._ion_channel_family_phase_done = False
         if brainstate.environ.get("dt", None) is None:
             raise ValueError("Cell.update(...) requires brainstate.environ['dt'] to be set.")
 
@@ -1883,8 +2098,12 @@ class Cell(HHTypedNeuron):
             self.solver(self, I_ext)
 
         point_V = self._cv_to_point(self.V.value)
-        for _, node in self.runtime_objects(IonChannel, allowed_hierarchy=(1, 1)).items():
-            node.update(point_V)
+        if self.ion_channel_update_order == "integration":
+            self._update_ion_channels_by_integration(point_V)
+        elif not self._ion_channel_family_phase_done:
+            self._update_ion_channel_families(point_V)
+        self.clear_ion_total_current_cache()
+        self._ion_channel_family_phase_done = False
 
         spk = self.get_spike(last_V, self.V.value)
         self.spike.value = spk
@@ -1901,6 +2120,8 @@ class Cell(HHTypedNeuron):
         v_init = self._V_init
         if v_init is None:
             v_init = cv_value_vector(self, attr_name="v")
+        else:
+            v_init = bridge.fill_like(self.varshape, v_init)
         self.V.value = braintools.init.param(v_init, self.varshape, batch_size)
         self.spike.value = self.get_spike(self.V.value, self.V.value)
         self._current_time_state.value = 0.0 * u.ms
@@ -2092,3 +2313,14 @@ def _resolve_solver(solver):
     raise TypeError(
         f"solver must be str or callable, got {type(solver).__name__!s}."
     )
+
+
+def _validate_ion_channel_update_order(value: str) -> str:
+    # "family" is the ion-before-channel schedule; "integration" is the
+    # previous schedule grouped by IndependentIntegration at the top level.
+    if value not in {"family", "integration"}:
+        raise ValueError(
+            "ion_channel_update_order must be 'family' or 'integration', "
+            f"got {value!r}."
+        )
+    return value

@@ -29,14 +29,23 @@ def _array_dtype(value) -> jnp.dtype:
     return jnp.asarray(u.get_magnitude(value)).dtype
 
 
-def _filter_diffeq(independent_modules, path, value):
+def _has_path_prefix(path, prefixes):
+    for prefix in prefixes:
+        if path[:len(prefix)] == prefix:
+            return True
+    return False
+
+
+def _filter_diffeq(independent_modules, excluded_paths, path, value):
     for module_path in independent_modules.keys():
         if path[:len(module_path)] == module_path:
             return False
+    if _has_path_prefix(path, excluded_paths):
+        return False
     return isinstance(value, DiffEqState)
 
 
-def split_diffeq_states(module: DiffEqModule):
+def split_diffeq_states(module: DiffEqModule, *, excluded_paths=()):
     """
     Splits the states of a differential equation module into three categories:
     all states, states to be integrated (diffeq_states), and other states.
@@ -81,7 +90,11 @@ def split_diffeq_states(module: DiffEqModule):
     # exclude IndependentIntegration module
     independent_modules = brainstate.graph.nodes(module, IndependentIntegration, allowed_hierarchy=(1, 1000000000000))
     all_states = brainstate.graph.states(module)
-    diffeq_states, other_states = all_states.split(functools.partial(_filter_diffeq, independent_modules), ...)
+    excluded_paths = tuple(tuple(path) for path in excluded_paths)
+    diffeq_states, other_states = all_states.split(
+        functools.partial(_filter_diffeq, independent_modules, excluded_paths),
+        ...
+    )
     return all_states, diffeq_states, other_states
 
 
@@ -150,10 +163,11 @@ def _assign_arr_to_states(
 def _transform_diffeq_module_into_dimensionless_fn(
     target: DiffEqModule,
     dt: DT,
-    method: str = 'concat'
+    method: str = 'concat',
+    excluded_paths=(),
 ):
     assert method in ['concat', 'stack'], f'Unknown method: {method}'
-    all_states, diffeq_states, other_states = split_diffeq_states(target)
+    all_states, diffeq_states, other_states = split_diffeq_states(target, excluded_paths=excluded_paths)
     all_state_ids = {id(st) for st in all_states.values()}
 
     def vector_field(t, y_dimensionless, *args):
@@ -187,6 +201,7 @@ def apply_standard_solver_step(
     dt: DT,
     *args,
     merging: str = 'concat',
+    excluded_paths=(),
 ):
     """
     Apply a standard solver step to the given differential equation module.
@@ -230,7 +245,12 @@ def apply_standard_solver_step(
     # pre integral
     target.pre_integral(*args)
     dimensionless_fn, diffeq_states, other_states = (
-        _transform_diffeq_module_into_dimensionless_fn(target, dt=dt, method=merging)
+        _transform_diffeq_module_into_dimensionless_fn(
+            target,
+            dt=dt,
+            method=merging,
+            excluded_paths=excluded_paths,
+        )
     )
 
     # one-step integration

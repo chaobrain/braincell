@@ -134,20 +134,20 @@ def _sample_mechanism_probe_point(
         )
     if len(matched_layouts) == 1:
         node = runtime.get_runtime_node(matched_layouts[0].id)
-        raw = _probe_state_attr(
+        raw = _probe_attr_value(
             node, declaration.field, probe_name=_probe_name(declaration),
         )
-        return _select_last_axis(raw.value, point_id)
+        return _select_last_axis(raw, point_id)
 
     try:
         ion = runtime.get_ion(declaration.mechanism)
     except KeyError:
         ion = None
     if ion is not None:
-        raw = _probe_state_attr(
+        raw = _probe_attr_value(
             ion, declaration.field, probe_name=_probe_name(declaration),
         )
-        return _select_last_axis(raw.value, point_id)
+        return _select_last_axis(raw, point_id)
 
     raise KeyError(
         f"Probe {_probe_name(declaration)!r} could not find a mechanism or ion named "
@@ -235,17 +235,13 @@ def _select_last_axis(value: object, index: int) -> object:
     return value[..., int(index)]
 
 
-def _probe_state_attr(owner: object, field: str, *, probe_name: str) -> brainstate.State:
+def _probe_attr_value(owner: object, field: str, *, probe_name: str) -> object:
     if not hasattr(owner, field):
         raise KeyError(
             f"Probe {probe_name!r} field {field!r} was not found on {type(owner).__name__!s}."
         )
     raw = getattr(owner, field)
-    if not isinstance(raw, brainstate.State):
-        raise ValueError(
-            f"Probe {probe_name!r} field {field!r} on {type(owner).__name__!s} is not a runtime state."
-        )
-    return raw
+    return raw.value if isinstance(raw, brainstate.State) else raw
 
 
 def _probe_current_ion_info(

@@ -74,7 +74,7 @@ def _backward_euler(f, y0, t, dt, args=()):
     description="Backward (implicit) Euler method via local Jacobian linearization.",
 )
 @set_module_as('braincell.quad')
-def backward_euler_step(target: DiffEqModule, *args):
+def backward_euler_step(target: DiffEqModule, *args, excluded_paths=()):
     r"""Advance one step with the linearised backward (implicit) Euler method.
 
     Backward Euler discretises an ODE :math:`dy/dt = f(t, y)` as
@@ -155,5 +155,6 @@ def backward_euler_step(target: DiffEqModule, *args):
         t,
         dt,
         *args,
-        merging='stack'  # [n_neuron, n_state]
+        merging='stack',  # [n_neuron, n_state]
+        excluded_paths=excluded_paths,
     )

@@ -1,0 +1,36 @@
+{
+  "meta": {
+    "label": "IO Kdr ZH19"
+  },
+  "identity": {
+    "mod_dir": "../../../Cerebellum_mod/IO/channel"
+  },
+  "defaults": {
+    "channel_params": {
+      "g_max_mS_cm2": 18.0
+    }
+  },
+  "mapping": {
+    "current": "ik",
+    "impl_name": {
+      "neuron": "Kdr_ZH19_IO",
+      "braincell": "Kdr_ZH2019_IO"
+    },
+    "gate_names": {
+      "common": [
+        "n"
+      ]
+    },
+    "channel_params": {
+      "g_max_mS_cm2": {
+        "neuron": "gbar",
+        "braincell": "g_max"
+      }
+    }
+  },
+  "templates": [
+    "../../templates/vinit_celsius.json",
+    "../../templates/dc.json",
+    "../../templates/ac.json"
+  ]
+}

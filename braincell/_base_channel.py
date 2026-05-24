@@ -248,8 +248,8 @@ class IonChannel(brainstate.graph.Node, TreeNode, DiffEqModule):
         """Hook invoked after runtime state writes a parameter.
 
         Default: no-op. Subclasses override to recompute derived
-        values when a specific parameter changes (for example, HH1952
-        channels recompute ``phi`` when ``T`` changes).
+        values when a specific parameter changes (for example, channels
+        can recompute temperature-derived factors when ``temp`` changes).
 
         Parameters
         ----------

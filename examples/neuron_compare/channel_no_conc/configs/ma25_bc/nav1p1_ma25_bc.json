@@ -1,0 +1,47 @@
+{
+  "meta": {
+    "label": "BC Nav1p1 MA25"
+  },
+  "identity": {
+    "mod_dir": "../../../Cerebellum_mod/BC/channel"
+  },
+  "defaults": {
+    "channel_params": {
+      "g_max_S_cm2": 0.008
+    }
+  },
+  "mapping": {
+    "current": "ina",
+    "impl_name": {
+      "neuron": "Nav1p1_MA25_BC",
+      "braincell": "Nav1p1_MA2025_BC"
+    },
+    "gate_names": {
+      "common": [
+        "C1",
+        "C2",
+        "C3",
+        "C4",
+        "C5",
+        "I1",
+        "I2",
+        "I3",
+        "I4",
+        "I5",
+        "O",
+        "B"
+      ]
+    },
+    "channel_params": {
+      "g_max_S_cm2": {
+        "neuron": "gbar",
+        "braincell": "g_max"
+      }
+    }
+  },
+  "templates": [
+    "../../templates/vinit_celsius.json",
+    "../../templates/dc.json",
+    "../../templates/ac.json"
+  ]
+}

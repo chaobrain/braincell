@@ -1,0 +1,46 @@
+{
+  "meta": {
+    "label": "PC Cav3p3 MA24 Frozen"
+  },
+  "identity": {
+    "mod_dir": "../../../Cerebellum_mod/PC/channel"
+  },
+  "defaults": {
+    "ion_state": {
+      "Ci_mM": 0.00024,
+      "Co_mM": 2.0
+    },
+    "channel_params": {
+      "perm_cm_s": 0.0001,
+      "g_scale": 1e-05
+    }
+  },
+  "mapping": {
+    "current": "ica",
+    "impl_name": {
+      "neuron": "Cav3p3_MA24_PC",
+      "braincell": "Cav3p3_MA2024_PC_Frozen"
+    },
+    "gate_names": {
+      "common": [
+        "n",
+        "l"
+      ]
+    },
+    "channel_params": {
+      "perm_cm_s": {
+        "neuron": "pcabar",
+        "braincell": "perm"
+      },
+      "g_scale": {
+        "neuron": "gCav3_3bar",
+        "braincell": "g_scale"
+      }
+    }
+  },
+  "templates": [
+    "../../templates/vinit_celsius.json",
+    "../../templates/dc.json",
+    "../../templates/ac.json"
+  ]
+}

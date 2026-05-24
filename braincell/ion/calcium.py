@@ -23,7 +23,7 @@ import brainunit as u
 
 from braincell._base import Ion, HHTypedNeuron
 from braincell.mech import register_ion
-from braincell.ion._base import DynamicNernstIon, FixedIon, InitNernstIon
+from braincell.ion._base import Conserve, DynamicNernstIon, Factor, FixedIon, InitNernstIon, KineticIon, Reaction, Source, Species
 
 __all__ = [
     'Calcium',
@@ -31,6 +31,20 @@ __all__ = [
     'CalciumInitNernst',
     'CalciumDetailed',
     'CalciumFirstOrder',
+    'ToyCaBindingKinetic_SU2015_DCN',
+    'ToyCaBindingSourceKinetic_SU2015_DCN',
+    'ToyCaBindingIcaSourceKinetic_SU2015_DCN',
+    'ToyDiamFactorKinetic_SU2015_DCN',
+    'ToyCaPumpFactorKinetic_SU2015_DCN',
+    'CdpStC_CAMOnly_MA2020_GoC',
+    'CdpStC_NoCAM_MA2020_GoC',
+    'CdpStC_MA2025_BC',
+    'CdpStC_MA2020_GoC',
+    'CdpCAM_MA2024_PC',
+    'CdpCR_MA2020_GrC',
+    'CdpStC_RI2021_SC',
+    'CdpHVA_SU2015_DCN',
+    'CdpLVA_SU2015_DCN',
 ]
 
 
@@ -282,3 +296,2370 @@ class CalciumFirstOrder(Calcium, DynamicNernstIon):
         _ = V
         drive = u.math.maximum(self.alpha * total_current, 0. * u.mM)
         return drive - self.beta * Ci
+
+
+@register_ion("ToyCaBindingKinetic_SU2015_DCN")
+class ToyCaBindingKinetic_SU2015_DCN(Calcium, KineticIon):
+    r"""Minimal reversible calcium-binding toy for ``KineticIon`` validation.
+
+    The mechanism models one reversible buffering step:
+
+    .. math::
+
+       Ca_i + B \rightleftharpoons BC
+
+    with the conserved pool:
+
+    .. math::
+
+       B + BC = B_{tot}
+
+    ``B`` is solved algebraically from the conservation rule while ``Ci`` and
+    ``BC`` are integrated as differential species.
+    """
+
+    __module__ = "braincell.ion"
+
+    species = (
+        Species("Ci", init=0.10 * u.mM),
+        Species("B", init=1.00 * u.mM),
+        Species("BC", init=0.00 * u.mM),
+    )
+    reactions = (
+        Reaction(
+            lhs={"Ci": 1, "B": 1},
+            rhs={"BC": 1},
+            forward=lambda self, V, x: self.kf,
+            backward=lambda self, V, x: self.kb,
+        ),
+    )
+    sources = ()
+    conserves = (
+        Conserve(
+            species=("B", "BC"),
+            algebraic="B",
+            total=lambda self, V, x: self.Btot,
+        ),
+    )
+
+    def __init__(
+        self,
+        size: brainstate.typing.Size,
+        temp: Union[brainstate.typing.ArrayLike, Callable] = u.celsius2kelvin(36.0),
+        kf: Union[brainstate.typing.ArrayLike, Callable] = 2.0 / (u.mM * u.ms),
+        kb: Union[brainstate.typing.ArrayLike, Callable] = 0.5 / u.ms,
+        Btot: Union[brainstate.typing.ArrayLike, Callable] = 1.0 * u.mM,
+        Co: Union[brainstate.typing.ArrayLike, Callable, None] = None,
+        Ci_initializer: Union[brainstate.typing.ArrayLike, Callable] = 0.10 * u.mM,
+        BC_initializer: Union[brainstate.typing.ArrayLike, Callable] = 0.00 * u.mM,
+        solver: str = "rk4",
+        substeps: int = 5,
+        name: Optional[str] = None,
+        **channels
+    ):
+        super().__init__(size=size, name=name, **channels)
+        self._init_kinetic_ion(
+            Co=Co,
+            temp=temp,
+            valence=None,
+            species_initializers={
+                "Ci": Ci_initializer,
+                "BC": BC_initializer,
+            },
+            solver=solver,
+            substeps=substeps,
+        )
+        self.Ci_initializer = Ci_initializer
+        self.BC_initializer = BC_initializer
+        self.kf = braintools.init.param(kf, self.varshape, allow_none=False)
+        self.kb = braintools.init.param(kb, self.varshape, allow_none=False)
+        self.Btot = braintools.init.param(Btot, self.varshape, allow_none=False)
+
+
+@register_ion("ToyCaBindingSourceKinetic_SU2015_DCN")
+class ToyCaBindingSourceKinetic_SU2015_DCN(Calcium, KineticIon):
+    r"""Minimal reversible calcium-binding toy with a constant ``Ci`` source.
+
+    The mechanism keeps the same reversible binding network as
+    :class:`ToyCaBindingKinetic_SU2015_DCN`:
+
+    .. math::
+
+       Ca_i + B \rightleftharpoons BC
+
+    and adds one constant source term on ``Ci``:
+
+    .. math::
+
+       \frac{d Ca_i}{dt}\Big|_{\text{source}} = s_{Ca}
+    """
+
+    __module__ = "braincell.ion"
+
+    species = ToyCaBindingKinetic_SU2015_DCN.species
+    reactions = ToyCaBindingKinetic_SU2015_DCN.reactions
+    sources = (
+        Source(
+            target="Ci",
+            flux=lambda self, V, x: self.ci_source,
+        ),
+    )
+    conserves = ToyCaBindingKinetic_SU2015_DCN.conserves
+
+    def __init__(
+        self,
+        size: brainstate.typing.Size,
+        temp: Union[brainstate.typing.ArrayLike, Callable] = u.celsius2kelvin(36.0),
+        kf: Union[brainstate.typing.ArrayLike, Callable] = 2.0 / (u.mM * u.ms),
+        kb: Union[brainstate.typing.ArrayLike, Callable] = 0.5 / u.ms,
+        Btot: Union[brainstate.typing.ArrayLike, Callable] = 1.0 * u.mM,
+        ci_source: Union[brainstate.typing.ArrayLike, Callable] = 0.002 * u.mM / u.ms,
+        Co: Union[brainstate.typing.ArrayLike, Callable, None] = None,
+        Ci_initializer: Union[brainstate.typing.ArrayLike, Callable] = 0.10 * u.mM,
+        BC_initializer: Union[brainstate.typing.ArrayLike, Callable] = 0.00 * u.mM,
+        solver: str = "rk4",
+        substeps: int = 5,
+        name: Optional[str] = None,
+        **channels
+    ):
+        super().__init__(size=size, name=name, **channels)
+        self._init_kinetic_ion(
+            Co=Co,
+            temp=temp,
+            valence=None,
+            species_initializers={
+                "Ci": Ci_initializer,
+                "BC": BC_initializer,
+            },
+            solver=solver,
+            substeps=substeps,
+        )
+        self.Ci_initializer = Ci_initializer
+        self.BC_initializer = BC_initializer
+        self.kf = braintools.init.param(kf, self.varshape, allow_none=False)
+        self.kb = braintools.init.param(kb, self.varshape, allow_none=False)
+        self.Btot = braintools.init.param(Btot, self.varshape, allow_none=False)
+        self.ci_source = braintools.init.param(ci_source, self.varshape, allow_none=False)
+
+
+@register_ion("ToyCaBindingIcaSourceKinetic_SU2015_DCN")
+class ToyCaBindingIcaSourceKinetic_SU2015_DCN(Calcium, KineticIon):
+    r"""Minimal reversible calcium-binding toy with current-driven ``Ci`` source.
+
+    The mechanism keeps the same reversible binding network as the earlier
+    toy kinetic ions and drives ``Ci`` with inward-positive calcium current.
+    """
+
+    __module__ = "braincell.ion"
+    uses_total_current = True
+
+    species = ToyCaBindingKinetic_SU2015_DCN.species
+    reactions = ToyCaBindingKinetic_SU2015_DCN.reactions
+    sources = (
+        Source(
+            target="Ci",
+            flux=lambda self, V, x, total_current=None: (
+                braintools.init.param(0.0 * (u.mM / u.ms), self.varshape)
+                if total_current is None else
+                (
+                    self.kCa.to_decimal(self.kCa.unit)
+                    / self.depth.to_decimal(u.um)
+                    * total_current.to_decimal(u.mA / u.cm ** 2)
+                    * 1e4
+                ) * (u.mM / u.ms)
+            ),
+        ),
+    )
+    conserves = ToyCaBindingKinetic_SU2015_DCN.conserves
+
+    def __init__(
+        self,
+        size: brainstate.typing.Size,
+        temp: Union[brainstate.typing.ArrayLike, Callable] = u.celsius2kelvin(36.0),
+        kf: Union[brainstate.typing.ArrayLike, Callable] = 2.0 / (u.mM * u.ms),
+        kb: Union[brainstate.typing.ArrayLike, Callable] = 0.5 / u.ms,
+        Btot: Union[brainstate.typing.ArrayLike, Callable] = 1.0 * u.mM,
+        kCa: Union[brainstate.typing.ArrayLike, Callable] = 3.45e-7 / u.coulomb,
+        depth: Union[brainstate.typing.ArrayLike, Callable] = 0.2 * u.um,
+        Co: Union[brainstate.typing.ArrayLike, Callable, None] = None,
+        Ci_initializer: Union[brainstate.typing.ArrayLike, Callable] = 0.10 * u.mM,
+        BC_initializer: Union[brainstate.typing.ArrayLike, Callable] = 0.00 * u.mM,
+        solver: str = "rk4",
+        substeps: int = 5,
+        name: Optional[str] = None,
+        **channels
+    ):
+        super().__init__(size=size, name=name, **channels)
+        self._init_kinetic_ion(
+            Co=Co,
+            temp=temp,
+            valence=None,
+            species_initializers={
+                "Ci": Ci_initializer,
+                "BC": BC_initializer,
+            },
+            solver=solver,
+            substeps=substeps,
+        )
+        self.Ci_initializer = Ci_initializer
+        self.BC_initializer = BC_initializer
+        self.kf = braintools.init.param(kf, self.varshape, allow_none=False)
+        self.kb = braintools.init.param(kb, self.varshape, allow_none=False)
+        self.Btot = braintools.init.param(Btot, self.varshape, allow_none=False)
+        self.kCa = braintools.init.param(kCa, self.varshape, allow_none=False)
+        self.depth = braintools.init.param(depth, self.varshape, allow_none=False)
+
+
+@register_ion("ToyCaPumpFactorKinetic_SU2015_DCN")
+class ToyCaPumpFactorKinetic_SU2015_DCN(Calcium, KineticIon):
+    r"""Minimal factor-crossing toy with cytosolic and pump-area compartments.
+
+    ``Ci`` lives in a cytosolic volume factor while pump states live in an
+    area-like factor. The toy keeps the state count minimal while exercising
+    mixed-factor reaction, conservation, and current-driven source paths.
+    """
+
+    __module__ = "braincell.ion"
+    uses_total_current = True
+
+    factors = (
+        Factor("cyto", lambda self: self.cyt_volume),
+        Factor("pump_area", lambda self: self.pump_area),
+    )
+    species = (
+        Species("Ci", init=0.10 * u.mM, factor="cyto"),
+        Species("PumpFree", init=1.00 * u.mM * u.um, factor="pump_area"),
+        Species("PumpBound", init=0.00 * u.mM * u.um, factor="pump_area"),
+    )
+    reactions = (
+        Reaction(
+            lhs={"Ci": 1, "PumpFree": 1},
+            rhs={"PumpBound": 1},
+            forward=lambda self, V, x: self.kf * self.pump_area,
+            backward=lambda self, V, x: self.kb * self.pump_area,
+        ),
+        Reaction(
+            lhs={"PumpBound": 1},
+            rhs={"PumpFree": 1},
+            forward=lambda self, V, x: self.k_rel * self.pump_area,
+            backward=None,
+        ),
+    )
+    sources = (
+        Source(
+            target="Ci",
+            flux=lambda self, V, x, total_current=None: (
+                braintools.init.param(0.0 * (u.mM * u.um ** 3 / u.ms), self.varshape)
+                if total_current is None else
+                self.cyt_volume * (
+                    (
+                        self.kCa.to_decimal(self.kCa.unit)
+                        / self.depth.to_decimal(u.um)
+                        * total_current.to_decimal(u.mA / u.cm ** 2)
+                        * 1e4
+                    ) * (u.mM / u.ms)
+                )
+            ),
+        ),
+    )
+    conserves = (
+        Conserve(
+            species=("PumpFree", "PumpBound"),
+            algebraic="PumpFree",
+            total=lambda self, V, x: self.PumpTot * self.pump_area,
+        ),
+    )
+
+    def __init__(
+        self,
+        size: brainstate.typing.Size,
+        temp: Union[brainstate.typing.ArrayLike, Callable] = u.celsius2kelvin(36.0),
+        kf: Union[brainstate.typing.ArrayLike, Callable] = 2.0 / (u.mM * u.ms),
+        kb: Union[brainstate.typing.ArrayLike, Callable] = 0.5 / u.ms,
+        k_rel: Union[brainstate.typing.ArrayLike, Callable] = 0.05 / u.ms,
+        PumpTot: Union[brainstate.typing.ArrayLike, Callable] = 1.0 * u.mM * u.um,
+        kCa: Union[brainstate.typing.ArrayLike, Callable] = 3.45e-7 / u.coulomb,
+        depth: Union[brainstate.typing.ArrayLike, Callable] = 0.2 * u.um,
+        cyt_volume: Union[brainstate.typing.ArrayLike, Callable] = 3.0 * u.um ** 3,
+        pump_area: Union[brainstate.typing.ArrayLike, Callable] = 3.0 * u.um ** 2,
+        Co: Union[brainstate.typing.ArrayLike, Callable, None] = None,
+        Ci_initializer: Union[brainstate.typing.ArrayLike, Callable] = 0.10 * u.mM,
+        PumpBound_initializer: Union[brainstate.typing.ArrayLike, Callable] = 0.00 * u.mM * u.um,
+        solver: str = "rk4",
+        substeps: int = 5,
+        name: Optional[str] = None,
+        **channels
+    ):
+        super().__init__(size=size, name=name, **channels)
+        self._init_kinetic_ion(
+            Co=Co,
+            temp=temp,
+            valence=None,
+            species_initializers={
+                "Ci": Ci_initializer,
+                "PumpBound": PumpBound_initializer,
+            },
+            solver=solver,
+            substeps=substeps,
+        )
+        self.Ci_initializer = Ci_initializer
+        self.PumpBound_initializer = PumpBound_initializer
+        self.kf = braintools.init.param(kf, self.varshape, allow_none=False)
+        self.kb = braintools.init.param(kb, self.varshape, allow_none=False)
+        self.k_rel = braintools.init.param(k_rel, self.varshape, allow_none=False)
+        self.PumpTot = braintools.init.param(PumpTot, self.varshape, allow_none=False)
+        self.kCa = braintools.init.param(kCa, self.varshape, allow_none=False)
+        self.depth = braintools.init.param(depth, self.varshape, allow_none=False)
+        self.cyt_volume = braintools.init.param(cyt_volume, self.varshape, allow_none=False)
+        self.pump_area = braintools.init.param(pump_area, self.varshape, allow_none=False)
+
+
+@register_ion("ToyDiamFactorKinetic_SU2015_DCN")
+class ToyDiamFactorKinetic_SU2015_DCN(Calcium, KineticIon):
+    r"""Minimal geometry-factor toy with runtime-derived cytosolic strip factors.
+
+    ``Ci`` lives in a thin strip volume derived from the runtime midpoint
+    diameter, while ``PumpFree`` and ``PumpBound`` live on a line-like
+    membrane factor:
+
+    .. math::
+
+       cyto = \pi \cdot diam_{mid} \cdot depth
+
+       pump\_area = \pi \cdot diam_{mid}
+
+    The mechanism then exercises a reversible reaction
+
+    .. math::
+
+       Ca_i + PumpFree \rightleftharpoons PumpBound
+
+    together with the conserved pool
+
+    .. math::
+
+       PumpFree + PumpBound = PumpTot \cdot pump\_area
+    """
+
+    __module__ = "braincell.ion"
+
+    factors = (
+        Factor("cyto", lambda self: u.math.pi * self.diam_mid * self.depth),
+        Factor("pump_area", lambda self: u.math.pi * self.diam_mid),
+    )
+    species = (
+        Species("Ci", init=0.10 * u.mM, factor="cyto"),
+        Species("PumpFree", init=1.00 * u.mM * u.um, factor="pump_area"),
+        Species("PumpBound", init=0.00 * u.mM * u.um, factor="pump_area"),
+    )
+    reactions = (
+        Reaction(
+            lhs={"Ci": 1, "PumpFree": 1},
+            rhs={"PumpBound": 1},
+            forward=lambda self, V, x: self.kf * u.math.pi * self.diam_mid,
+            backward=lambda self, V, x: self.kb * u.math.pi * self.diam_mid,
+        ),
+    )
+    sources = ()
+    conserves = (
+        Conserve(
+            species=("PumpFree", "PumpBound"),
+            algebraic="PumpFree",
+            total=lambda self, V, x: self.PumpTot * u.math.pi * self.diam_mid,
+        ),
+    )
+
+    def __init__(
+        self,
+        size: brainstate.typing.Size,
+        temp: Union[brainstate.typing.ArrayLike, Callable] = u.celsius2kelvin(36.0),
+        kf: Union[brainstate.typing.ArrayLike, Callable] = 2.0 / (u.mM * u.ms),
+        kb: Union[brainstate.typing.ArrayLike, Callable] = 0.5 / u.ms,
+        PumpTot: Union[brainstate.typing.ArrayLike, Callable] = 1.0 * u.mM * u.um,
+        depth: Union[brainstate.typing.ArrayLike, Callable] = 1.0 * u.um,
+        Co: Union[brainstate.typing.ArrayLike, Callable, None] = None,
+        Ci_initializer: Union[brainstate.typing.ArrayLike, Callable] = 0.10 * u.mM,
+        PumpBound_initializer: Union[brainstate.typing.ArrayLike, Callable] = 0.00 * u.mM * u.um,
+        solver: str = "backward_euler",
+        substeps: int = 1,
+        name: Optional[str] = None,
+        **channels
+    ):
+        super().__init__(size=size, name=name, **channels)
+        self._init_kinetic_ion(
+            Co=Co,
+            temp=temp,
+            valence=None,
+            species_initializers={
+                "Ci": Ci_initializer,
+                "PumpBound": PumpBound_initializer,
+            },
+            solver=solver,
+            substeps=substeps,
+        )
+        self.Ci_initializer = Ci_initializer
+        self.PumpBound_initializer = PumpBound_initializer
+        self.kf = braintools.init.param(kf, self.varshape, allow_none=False)
+        self.kb = braintools.init.param(kb, self.varshape, allow_none=False)
+        self.PumpTot = braintools.init.param(PumpTot, self.varshape, allow_none=False)
+        self.depth = braintools.init.param(depth, self.varshape, allow_none=False)
+
+
+@register_ion("CdpStC_CAMOnly_MA2020_GoC")
+class CdpStC_CAMOnly_MA2020_GoC(Calcium, KineticIon):
+    r"""Template-based import of ``CdpStC_CAMOnly_MA20_GoC.mod``.
+
+    This variant keeps only the calmodulin subnetwork from the imported GoC
+    calcium pool so the CAM-specific semantics can be validated separately
+    from pump and non-CaM buffers.
+    """
+
+    __module__ = "braincell.ion"
+    uses_total_current = False
+
+    factors = (
+        Factor("cyto", lambda self: self.dsqvol),
+        # NEURON sparse treats the CAM rows differently from ``ca``: their
+        # reaction rates carry the same ``dsqvol`` unit bridge, but the CAM
+        # state rows are not multiplied by the cytosolic compartment factor
+        # again. We match that by giving CAM states a unit-compatible factor
+        # whose magnitude is 1 instead of ``dsqvol``.
+        Factor(
+            "cam_unit",
+            lambda self: u.math.ones_like(self.dsqvol.to_decimal(u.um ** 2)) * (u.um ** 2),
+        ),
+    )
+    species = (
+        Species("Ci", init=0.0 * u.mM, factor="cyto"),
+        Species("CAM0", init=0.0 * u.mM, factor="cam_unit"),
+        Species("CAM1C", init=0.0 * u.mM, factor="cam_unit"),
+        Species("CAM2C", init=0.0 * u.mM, factor="cam_unit"),
+        Species("CAM1N2C", init=0.0 * u.mM, factor="cam_unit"),
+        Species("CAM1N", init=0.0 * u.mM, factor="cam_unit"),
+        Species("CAM2N", init=0.0 * u.mM, factor="cam_unit"),
+        Species("CAM2N1C", init=0.0 * u.mM, factor="cam_unit"),
+        Species("CAM1C1N", init=0.0 * u.mM, factor="cam_unit"),
+        Species("CAM4", init=0.0 * u.mM, factor="cam_unit"),
+    )
+    reactions = (
+        Reaction(
+            lhs={"Ci": 1, "CAM0": 1},
+            rhs={"CAM1C": 1},
+            forward=lambda self, V, x: self.K1Con * self.dsqvol,
+            backward=lambda self, V, x: self.K1Coff * self.dsqvol,
+        ),
+        Reaction(
+            lhs={"Ci": 1, "CAM1C": 1},
+            rhs={"CAM2C": 1},
+            forward=lambda self, V, x: self.K2Con * self.dsqvol,
+            backward=lambda self, V, x: self.K2Coff * self.dsqvol,
+        ),
+        Reaction(
+            lhs={"Ci": 1, "CAM2C": 1},
+            rhs={"CAM1N2C": 1},
+            forward=lambda self, V, x: self.K1Non * self.dsqvol,
+            backward=lambda self, V, x: self.K1Noff * self.dsqvol,
+        ),
+        Reaction(
+            lhs={"Ci": 1, "CAM1N2C": 1},
+            rhs={"CAM4": 1},
+            forward=lambda self, V, x: self.K2Non * self.dsqvol,
+            backward=lambda self, V, x: self.K2Noff * self.dsqvol,
+        ),
+        Reaction(
+            lhs={"Ci": 1, "CAM0": 1},
+            rhs={"CAM1N": 1},
+            forward=lambda self, V, x: self.K1Non * self.dsqvol,
+            backward=lambda self, V, x: self.K1Noff * self.dsqvol,
+        ),
+        Reaction(
+            lhs={"Ci": 1, "CAM1N": 1},
+            rhs={"CAM2N": 1},
+            forward=lambda self, V, x: self.K2Non * self.dsqvol,
+            backward=lambda self, V, x: self.K2Noff * self.dsqvol,
+        ),
+        Reaction(
+            lhs={"Ci": 1, "CAM2N": 1},
+            rhs={"CAM2N1C": 1},
+            forward=lambda self, V, x: self.K1Con * self.dsqvol,
+            backward=lambda self, V, x: self.K1Coff * self.dsqvol,
+        ),
+        Reaction(
+            lhs={"Ci": 1, "CAM2N1C": 1},
+            rhs={"CAM4": 1},
+            forward=lambda self, V, x: self.K2Con * self.dsqvol,
+            backward=lambda self, V, x: self.K2Coff * self.dsqvol,
+        ),
+        Reaction(
+            lhs={"Ci": 1, "CAM1C": 1},
+            rhs={"CAM1C1N": 1},
+            forward=lambda self, V, x: self.K1Non * self.dsqvol,
+            backward=lambda self, V, x: self.K1Noff * self.dsqvol,
+        ),
+        Reaction(
+            lhs={"Ci": 1, "CAM1N": 1},
+            rhs={"CAM1C1N": 1},
+            forward=lambda self, V, x: self.K1Con * self.dsqvol,
+            backward=lambda self, V, x: self.K1Coff * self.dsqvol,
+        ),
+        Reaction(
+            lhs={"Ci": 1, "CAM1C1N": 1},
+            rhs={"CAM1N2C": 1},
+            forward=lambda self, V, x: self.K2Con * self.dsqvol,
+            backward=lambda self, V, x: self.K2Coff * self.dsqvol,
+        ),
+        Reaction(
+            lhs={"Ci": 1, "CAM1C1N": 1},
+            rhs={"CAM2N1C": 1},
+            forward=lambda self, V, x: self.K2Non * self.dsqvol,
+            backward=lambda self, V, x: self.K2Noff * self.dsqvol,
+        ),
+    )
+    sources = ()
+    conserves = ()
+
+    _diffeq_species = (
+        "Ci",
+        "CAM0",
+        "CAM1C",
+        "CAM2C",
+        "CAM1N2C",
+        "CAM1N",
+        "CAM2N",
+        "CAM2N1C",
+        "CAM1C1N",
+        "CAM4",
+    )
+
+    def __init__(
+        self,
+        size: brainstate.typing.Size,
+        temp: Union[brainstate.typing.ArrayLike, Callable] = u.celsius2kelvin(25.0),
+        Nannuli: Union[brainstate.typing.ArrayLike, Callable] = 10.9495,
+        cainull: Union[brainstate.typing.ArrayLike, Callable] = 45e-6 * u.mM,
+        CAM_start: Union[brainstate.typing.ArrayLike, Callable] = 0.03 * u.mM,
+        K1Coff: Union[brainstate.typing.ArrayLike, Callable] = 0.04 / u.ms,
+        K1Con: Union[brainstate.typing.ArrayLike, Callable] = 5.4 / (u.mM * u.ms),
+        K2Coff: Union[brainstate.typing.ArrayLike, Callable] = 0.00925 / u.ms,
+        K2Con: Union[brainstate.typing.ArrayLike, Callable] = 15.0 / (u.mM * u.ms),
+        K1Noff: Union[brainstate.typing.ArrayLike, Callable] = 2.5 / u.ms,
+        K1Non: Union[brainstate.typing.ArrayLike, Callable] = 142.5 / (u.mM * u.ms),
+        K2Noff: Union[brainstate.typing.ArrayLike, Callable] = 0.75 / u.ms,
+        K2Non: Union[brainstate.typing.ArrayLike, Callable] = 175.0 / (u.mM * u.ms),
+        Co: Union[brainstate.typing.ArrayLike, Callable, None] = None,
+        Ci_initializer: Union[brainstate.typing.ArrayLike, Callable, None] = None,
+        species_initializers: Optional[dict[str, object]] = None,
+        solver: str = "backward_euler",
+        substeps: int = 1,
+        name: Optional[str] = None,
+        **channels
+    ):
+        super().__init__(size=size, name=name, **channels)
+        self.Nannuli = braintools.init.param(Nannuli, self.varshape, allow_none=False)
+        self.cainull = braintools.init.param(cainull, self.varshape, allow_none=False)
+        self.CAM_start = braintools.init.param(CAM_start, self.varshape, allow_none=False)
+        self.K1Coff = braintools.init.param(K1Coff, self.varshape, allow_none=False)
+        self.K1Con = braintools.init.param(K1Con, self.varshape, allow_none=False)
+        self.K2Coff = braintools.init.param(K2Coff, self.varshape, allow_none=False)
+        self.K2Con = braintools.init.param(K2Con, self.varshape, allow_none=False)
+        self.K1Noff = braintools.init.param(K1Noff, self.varshape, allow_none=False)
+        self.K1Non = braintools.init.param(K1Non, self.varshape, allow_none=False)
+        self.K2Noff = braintools.init.param(K2Noff, self.varshape, allow_none=False)
+        self.K2Non = braintools.init.param(K2Non, self.varshape, allow_none=False)
+
+        initializers = self._resolve_species_initializers(
+            Ci_initializer=Ci_initializer,
+            species_initializers=species_initializers,
+        )
+        self.Ci_initializer = initializers["Ci"]
+        self.species_initializers = dict(initializers)
+        self._init_kinetic_ion(
+            Co=Co,
+            temp=temp,
+            valence=None,
+            species_initializers=initializers,
+            solver=solver,
+            substeps=substeps,
+        )
+
+    def _resolve_species_initializers(
+        self,
+        *,
+        Ci_initializer,
+        species_initializers,
+    ) -> dict[str, object]:
+        species_initializers = dict(species_initializers or {})
+        invalid = set(species_initializers).difference(self._diffeq_species)
+        if invalid:
+            invalid_names = ", ".join(sorted(invalid))
+            raise ValueError(
+                f"{type(self).__name__} only accepts differential-species overrides; got {invalid_names}."
+            )
+
+        defaults = {
+            "Ci": self.cainull if Ci_initializer is None else Ci_initializer,
+            "CAM0": self.CAM_start,
+            "CAM1C": 0.0 * u.mM,
+            "CAM2C": 0.0 * u.mM,
+            "CAM1N2C": 0.0 * u.mM,
+            "CAM1N": 0.0 * u.mM,
+            "CAM2N": 0.0 * u.mM,
+            "CAM2N1C": 0.0 * u.mM,
+            "CAM1C1N": 0.0 * u.mM,
+            "CAM4": 0.0 * u.mM,
+        }
+        defaults.update(species_initializers)
+        return {name: self._as_initializer(value) for name, value in defaults.items()}
+
+    def _as_initializer(self, value):
+        if callable(value):
+            return value
+        if isinstance(value, tuple):
+            resolved = []
+            for item in value:
+                if hasattr(item, "value"):
+                    resolved.append(item.value)
+                else:
+                    resolved.append(item)
+            first = resolved[0]
+            if hasattr(first, "unit"):
+                unit = first.unit
+                decimals = [u.Quantity(item).to_decimal(unit) for item in resolved]
+                return u.Quantity(u.math.asarray(decimals), unit)
+            return u.math.asarray(resolved)
+        return braintools.init.Constant(value)
+
+    def _require_diam_arc_mean(self):
+        if not hasattr(self, "diam_arc_mean"):
+            raise AttributeError(
+                f"{type(self).__name__} requires 'diam_arc_mean' before kinetic state initialization."
+            )
+        return self.diam_arc_mean
+
+    @property
+    def vrat(self):
+        dr2 = 0.25 / (self.Nannuli - 1.0)
+        return u.math.pi * (0.5 - (dr2 / 2.0)) * 2.0 * dr2
+
+    @property
+    def dsq(self):
+        diam_arc_mean = self._require_diam_arc_mean()
+        return diam_arc_mean * diam_arc_mean
+
+    @property
+    def dsqvol(self):
+        return self.dsq * self.vrat
+
+    def _ion_init_state_hook(self, V, batch_size: int = None):
+        self._require_diam_arc_mean()
+        KineticIon._ion_init_state_hook(self, V, batch_size=batch_size)
+
+    def _ion_reset_state_hook(self, V, batch_size: int = None):
+        self._require_diam_arc_mean()
+        KineticIon._ion_reset_state_hook(self, V, batch_size=batch_size)
+
+
+@register_ion("CdpStC_NoCAM_MA2020_GoC")
+class CdpStC_NoCAM_MA2020_GoC(Calcium, KineticIon):
+    r"""Template-based import of ``CdpStC_NoCAM_MA20_GoC.mod``.
+
+    This variant keeps the pump and non-calmodulin buffer subnetworks from the
+    imported GoC calcium pool while removing the CAM reactions entirely.
+    """
+
+    __module__ = "braincell.ion"
+    uses_total_current = True
+
+    factors = (
+        Factor("cyto", lambda self: self.dsqvol),
+        Factor("pump_area", lambda self: self.parea),
+    )
+    species = (
+        Species("Ci", init=0.0 * u.mM, factor="cyto"),
+        Species("mg", init=0.0 * u.mM, factor="cyto"),
+        Species("Buff1", init=0.0 * u.mM, factor="cyto"),
+        Species("Buff1_ca", init=0.0 * u.mM, factor="cyto"),
+        Species("Buff2", init=0.0 * u.mM, factor="cyto"),
+        Species("Buff2_ca", init=0.0 * u.mM, factor="cyto"),
+        Species("BTC", init=0.0 * u.mM, factor="cyto"),
+        Species("BTC_ca", init=0.0 * u.mM, factor="cyto"),
+        Species("DMNPE", init=0.0 * u.mM, factor="cyto"),
+        Species("DMNPE_ca", init=0.0 * u.mM, factor="cyto"),
+        Species("PV", init=0.0 * u.mM, factor="cyto"),
+        Species("PV_ca", init=0.0 * u.mM, factor="cyto"),
+        Species("PV_mg", init=0.0 * u.mM, factor="cyto"),
+        Species("pump", init=0.0 * (u.mol / u.cm ** 2), factor="pump_area"),
+        Species("pumpca", init=0.0 * (u.mol / u.cm ** 2), factor="pump_area"),
+    )
+    reactions = (
+        Reaction(
+            lhs={"pump": 1, "Ci": 1},
+            rhs={"pumpca": 1},
+            forward=lambda self, V, x: self.kpmp1 * self.parea,
+            backward=lambda self, V, x: self.kpmp2 * self.parea,
+        ),
+        Reaction(
+            lhs={"pumpca": 1},
+            rhs={"pump": 1},
+            forward=lambda self, V, x: self.kpmp3 * self.parea,
+            backward=None,
+        ),
+        Reaction(
+            lhs={"Ci": 1, "Buff1": 1},
+            rhs={"Buff1_ca": 1},
+            forward=lambda self, V, x: self.rf1 * self.dsqvol,
+            backward=lambda self, V, x: self.rf2 * self.dsqvol,
+        ),
+        Reaction(
+            lhs={"Ci": 1, "Buff2": 1},
+            rhs={"Buff2_ca": 1},
+            forward=lambda self, V, x: self.rf3 * self.dsqvol,
+            backward=lambda self, V, x: self.rf4 * self.dsqvol,
+        ),
+        Reaction(
+            lhs={"Ci": 1, "BTC": 1},
+            rhs={"BTC_ca": 1},
+            forward=lambda self, V, x: self.b1 * self.dsqvol,
+            backward=lambda self, V, x: self.b2 * self.dsqvol,
+        ),
+        Reaction(
+            lhs={"Ci": 1, "DMNPE": 1},
+            rhs={"DMNPE_ca": 1},
+            forward=lambda self, V, x: self.c1 * self.dsqvol,
+            backward=lambda self, V, x: self.c2 * self.dsqvol,
+        ),
+        Reaction(
+            lhs={"Ci": 1, "PV": 1},
+            rhs={"PV_ca": 1},
+            forward=lambda self, V, x: self.m1 * self.dsqvol,
+            backward=lambda self, V, x: self.m2 * self.dsqvol,
+        ),
+        Reaction(
+            lhs={"mg": 1, "PV": 1},
+            rhs={"PV_mg": 1},
+            forward=lambda self, V, x: self.p1 * self.dsqvol,
+            backward=lambda self, V, x: self.p2 * self.dsqvol,
+        ),
+    )
+    sources = (
+        Source(
+            target="Ci",
+            flux=lambda self, V, x, total_current=None: self._ci_source_flux(total_current),
+        ),
+    )
+    conserves = (
+        Conserve(
+            species=("pump", "pumpca"),
+            algebraic="pumpca",
+            total=lambda self, V, x: self.TotalPump * self.parea,
+        ),
+    )
+
+    _diffeq_species = (
+        "Ci",
+        "mg",
+        "Buff1",
+        "Buff1_ca",
+        "Buff2",
+        "Buff2_ca",
+        "BTC",
+        "BTC_ca",
+        "DMNPE",
+        "DMNPE_ca",
+        "PV",
+        "PV_ca",
+        "PV_mg",
+        "pump",
+    )
+
+    def __init__(
+        self,
+        size: brainstate.typing.Size,
+        temp: Union[brainstate.typing.ArrayLike, Callable] = u.celsius2kelvin(25.0),
+        Nannuli: Union[brainstate.typing.ArrayLike, Callable] = 10.9495,
+        cainull: Union[brainstate.typing.ArrayLike, Callable] = 45e-6 * u.mM,
+        mginull: Union[brainstate.typing.ArrayLike, Callable] = 0.59 * u.mM,
+        Buffnull1: Union[brainstate.typing.ArrayLike, Callable] = 0.0 * u.mM,
+        rf1: Union[brainstate.typing.ArrayLike, Callable] = 0.0134329 / (u.mM * u.ms),
+        rf2: Union[brainstate.typing.ArrayLike, Callable] = 0.0397469 / u.ms,
+        Buffnull2: Union[brainstate.typing.ArrayLike, Callable] = 60.9091 * u.mM,
+        rf3: Union[brainstate.typing.ArrayLike, Callable] = 0.1435 / (u.mM * u.ms),
+        rf4: Union[brainstate.typing.ArrayLike, Callable] = 0.0014 / u.ms,
+        BTCnull: Union[brainstate.typing.ArrayLike, Callable] = 0.0 * u.mM,
+        b1: Union[brainstate.typing.ArrayLike, Callable] = 5.33 / (u.mM * u.ms),
+        b2: Union[brainstate.typing.ArrayLike, Callable] = 0.08 / u.ms,
+        DMNPEnull: Union[brainstate.typing.ArrayLike, Callable] = 0.0 * u.mM,
+        c1: Union[brainstate.typing.ArrayLike, Callable] = 5.63 / (u.mM * u.ms),
+        c2: Union[brainstate.typing.ArrayLike, Callable] = 0.107e-3 / u.ms,
+        PVnull: Union[brainstate.typing.ArrayLike, Callable] = 0.08 * u.mM,
+        m1: Union[brainstate.typing.ArrayLike, Callable] = 1.07e2 / (u.mM * u.ms),
+        m2: Union[brainstate.typing.ArrayLike, Callable] = 9.5e-4 / u.ms,
+        p1: Union[brainstate.typing.ArrayLike, Callable] = 0.8 / (u.mM * u.ms),
+        p2: Union[brainstate.typing.ArrayLike, Callable] = 2.5e-2 / u.ms,
+        kpmp1: Union[brainstate.typing.ArrayLike, Callable] = 3e-3 / (u.mM * u.ms),
+        kpmp2: Union[brainstate.typing.ArrayLike, Callable] = 1.75e-5 / u.ms,
+        kpmp3: Union[brainstate.typing.ArrayLike, Callable] = 7.255e-5 / u.ms,
+        TotalPump: Union[brainstate.typing.ArrayLike, Callable] = 1e-9 * (u.mol / u.cm ** 2),
+        Co: Union[brainstate.typing.ArrayLike, Callable, None] = None,
+        Ci_initializer: Union[brainstate.typing.ArrayLike, Callable, None] = None,
+        species_initializers: Optional[dict[str, object]] = None,
+        solver: str = "backward_euler",
+        substeps: int = 1,
+        name: Optional[str] = None,
+        **channels
+    ):
+        super().__init__(size=size, name=name, **channels)
+        self.Nannuli = braintools.init.param(Nannuli, self.varshape, allow_none=False)
+        self.cainull = braintools.init.param(cainull, self.varshape, allow_none=False)
+        self.mginull = braintools.init.param(mginull, self.varshape, allow_none=False)
+        self.Buffnull1 = braintools.init.param(Buffnull1, self.varshape, allow_none=False)
+        self.rf1 = braintools.init.param(rf1, self.varshape, allow_none=False)
+        self.rf2 = braintools.init.param(rf2, self.varshape, allow_none=False)
+        self.Buffnull2 = braintools.init.param(Buffnull2, self.varshape, allow_none=False)
+        self.rf3 = braintools.init.param(rf3, self.varshape, allow_none=False)
+        self.rf4 = braintools.init.param(rf4, self.varshape, allow_none=False)
+        self.BTCnull = braintools.init.param(BTCnull, self.varshape, allow_none=False)
+        self.b1 = braintools.init.param(b1, self.varshape, allow_none=False)
+        self.b2 = braintools.init.param(b2, self.varshape, allow_none=False)
+        self.DMNPEnull = braintools.init.param(DMNPEnull, self.varshape, allow_none=False)
+        self.c1 = braintools.init.param(c1, self.varshape, allow_none=False)
+        self.c2 = braintools.init.param(c2, self.varshape, allow_none=False)
+        self.PVnull = braintools.init.param(PVnull, self.varshape, allow_none=False)
+        self.m1 = braintools.init.param(m1, self.varshape, allow_none=False)
+        self.m2 = braintools.init.param(m2, self.varshape, allow_none=False)
+        self.p1 = braintools.init.param(p1, self.varshape, allow_none=False)
+        self.p2 = braintools.init.param(p2, self.varshape, allow_none=False)
+        self.kpmp1 = braintools.init.param(kpmp1, self.varshape, allow_none=False)
+        self.kpmp2 = braintools.init.param(kpmp2, self.varshape, allow_none=False)
+        self.kpmp3 = braintools.init.param(kpmp3, self.varshape, allow_none=False)
+        self.TotalPump = braintools.init.param(TotalPump, self.varshape, allow_none=False)
+
+        initializers = self._resolve_species_initializers(
+            Ci_initializer=Ci_initializer,
+            species_initializers=species_initializers,
+        )
+        self.Ci_initializer = initializers["Ci"]
+        self.species_initializers = dict(initializers)
+        self._init_kinetic_ion(
+            Co=Co,
+            temp=temp,
+            valence=None,
+            species_initializers=initializers,
+            solver=solver,
+            substeps=substeps,
+        )
+
+    def _resolve_species_initializers(
+        self,
+        *,
+        Ci_initializer,
+        species_initializers,
+    ) -> dict[str, object]:
+        species_initializers = dict(species_initializers or {})
+        invalid = set(species_initializers).difference(self._diffeq_species)
+        if invalid:
+            invalid_names = ", ".join(sorted(invalid))
+            raise ValueError(
+                f"{type(self).__name__} only accepts differential-species overrides; got {invalid_names}."
+            )
+
+        defaults = {
+            "Ci": self.cainull if Ci_initializer is None else Ci_initializer,
+            "mg": self.mginull,
+            "Buff1": self._ss_buffer_free(self.Buffnull1, self.rf1, self.rf2, self.cainull),
+            "Buff1_ca": self._ss_buffer_bound(self.Buffnull1, self.rf1, self.rf2, self.cainull),
+            "Buff2": self._ss_buffer_free(self.Buffnull2, self.rf3, self.rf4, self.cainull),
+            "Buff2_ca": self._ss_buffer_bound(self.Buffnull2, self.rf3, self.rf4, self.cainull),
+            "BTC": self._ss_buffer_free(self.BTCnull, self.b1, self.b2, self.cainull),
+            "BTC_ca": self._ss_buffer_bound(self.BTCnull, self.b1, self.b2, self.cainull),
+            "DMNPE": self._ss_buffer_free(self.DMNPEnull, self.c1, self.c2, self.cainull),
+            "DMNPE_ca": self._ss_buffer_bound(self.DMNPEnull, self.c1, self.c2, self.cainull),
+            "PV": self._ss_pv_free(),
+            "PV_ca": self._ss_pv_ca(),
+            "PV_mg": self._ss_pv_mg(),
+            "pump": self.TotalPump,
+        }
+        defaults.update(species_initializers)
+        return {name: self._as_initializer(value) for name, value in defaults.items()}
+
+    def _as_initializer(self, value):
+        if callable(value):
+            return value
+        if isinstance(value, tuple):
+            resolved = []
+            for item in value:
+                if hasattr(item, "value"):
+                    resolved.append(item.value)
+                else:
+                    resolved.append(item)
+            first = resolved[0]
+            if hasattr(first, "unit"):
+                unit = first.unit
+                decimals = [u.Quantity(item).to_decimal(unit) for item in resolved]
+                return u.Quantity(u.math.asarray(decimals), unit)
+            return u.math.asarray(resolved)
+        return braintools.init.Constant(value)
+
+    def _ss_buffer_free(self, total, kon, koff, cai):
+        return total / (1.0 + (kon / koff) * cai)
+
+    def _ss_buffer_bound(self, total, kon, koff, cai):
+        return total / (1.0 + koff / (kon * cai))
+
+    def _kdc(self):
+        return (self.cainull * self.m1) / self.m2
+
+    def _kdm(self):
+        return (self.mginull * self.p1) / self.p2
+
+    def _ss_pv_free(self):
+        kdc = self._kdc()
+        kdm = self._kdm()
+        return self.PVnull / (1.0 + kdc + kdm)
+
+    def _ss_pv_ca(self):
+        kdc = self._kdc()
+        kdm = self._kdm()
+        return (self.PVnull * kdc) / (1.0 + kdc + kdm)
+
+    def _ss_pv_mg(self):
+        kdc = self._kdc()
+        kdm = self._kdm()
+        return (self.PVnull * kdm) / (1.0 + kdc + kdm)
+
+    def _require_diam_arc_mean(self):
+        if not hasattr(self, "diam_arc_mean"):
+            raise AttributeError(
+                f"{type(self).__name__} requires 'diam_arc_mean' before kinetic state initialization."
+            )
+        return self.diam_arc_mean
+
+    @property
+    def vrat(self):
+        dr2 = 0.25 / (self.Nannuli - 1.0)
+        return u.math.pi * (0.5 - (dr2 / 2.0)) * 2.0 * dr2
+
+    @property
+    def parea(self):
+        return u.math.pi * self._require_diam_arc_mean()
+
+    @property
+    def dsq(self):
+        diam_arc_mean = self._require_diam_arc_mean()
+        return diam_arc_mean * diam_arc_mean
+
+    @property
+    def dsqvol(self):
+        return self.dsq * self.vrat
+
+    def _ci_source_flux(self, total_current):
+        if total_current is None:
+            return self.dsqvol * (0.0 * u.mM / u.ms)
+        # NEURON's raw GoC ``ica`` is efflux-positive, but BrainCell channel
+        # currents are inward-positive. A positive calcium current therefore
+        # increases the local calcium pool.
+        return (total_current * u.math.pi * self._require_diam_arc_mean()) / (2.0 * u.faraday_constant)
+
+    def _ion_init_state_hook(self, V, batch_size: int = None):
+        self._require_diam_arc_mean()
+        KineticIon._ion_init_state_hook(self, V, batch_size=batch_size)
+
+    def _ion_reset_state_hook(self, V, batch_size: int = None):
+        self._require_diam_arc_mean()
+        KineticIon._ion_reset_state_hook(self, V, batch_size=batch_size)
+
+
+@register_ion("CdpStC_MA2025_BC")
+class CdpStC_MA2025_BC(CdpStC_NoCAM_MA2020_GoC):
+    r"""Thin variant for ``CdpStC_MA25_BC.mod``.
+
+    The BC source keeps the same pump, non-CAM buffer, and PV kinetic network
+    as :class:`CdpStC_NoCAM_MA2020_GoC`; the calmodulin block is commented out
+    in the source NMODL.
+    """
+
+    __module__ = "braincell.ion"
+
+
+@register_ion("CdpStC_RI2021_SC")
+class CdpStC_RI2021_SC(CdpStC_NoCAM_MA2020_GoC):
+    r"""Thin variant for ``CdpStC_RI21_SC.mod``.
+
+    The SC source keeps the same pump, non-CAM buffer, and PV kinetic network
+    as :class:`CdpStC_NoCAM_MA2020_GoC`; the extra ``cao`` read is not used by
+    the kinetic equations.
+    """
+
+    __module__ = "braincell.ion"
+
+
+@register_ion("CdpStC_MA2020_GoC")
+class CdpStC_MA2020_GoC(Calcium, KineticIon):
+    r"""Template-based import of ``CdpStC_MA20_GoC.mod``.
+
+    ``Ci`` corresponds to the NMODL calcium pool ``ca`` / ``cai``. The
+    reversible kinetic scheme is preserved as 20 explicit reactions, plus the
+    original current-driven source and the single pump conservation relation.
+    """
+
+    __module__ = "braincell.ion"
+    uses_total_current = True
+
+    # The imported NMODL uses ``COMPARTMENT (1e10)*parea`` because ``pump``
+    # and ``pumpca`` are stored visibly in ``mol/cm2`` and NEURON needs an
+    # explicit area conversion to reach amount space. BrainCell factors already
+    # provide that visible-to-amount mapping, so keeping the extra ``1e10``
+    # here would double-apply the pump compartment scaling.
+    factors = (
+        Factor("cyto", lambda self: self.dsqvol),
+        Factor("pump_area", lambda self: self.parea),
+        Factor(
+            "cam_unit",
+            lambda self: u.math.ones_like(self.dsqvol.to_decimal(u.um ** 2)) * (u.um ** 2),
+        ),
+    )
+    species = (
+        Species("Ci", init=0.0 * u.mM, factor="cyto"),
+        Species("mg", init=0.0 * u.mM, factor="cyto"),
+        Species("Buff1", init=0.0 * u.mM, factor="cyto"),
+        Species("Buff1_ca", init=0.0 * u.mM, factor="cyto"),
+        Species("Buff2", init=0.0 * u.mM, factor="cyto"),
+        Species("Buff2_ca", init=0.0 * u.mM, factor="cyto"),
+        Species("BTC", init=0.0 * u.mM, factor="cyto"),
+        Species("BTC_ca", init=0.0 * u.mM, factor="cyto"),
+        Species("DMNPE", init=0.0 * u.mM, factor="cyto"),
+        Species("DMNPE_ca", init=0.0 * u.mM, factor="cyto"),
+        Species("PV", init=0.0 * u.mM, factor="cyto"),
+        Species("PV_ca", init=0.0 * u.mM, factor="cyto"),
+        Species("PV_mg", init=0.0 * u.mM, factor="cyto"),
+        Species("CAM0", init=0.0 * u.mM, factor="cam_unit"),
+        Species("CAM1C", init=0.0 * u.mM, factor="cam_unit"),
+        Species("CAM2C", init=0.0 * u.mM, factor="cam_unit"),
+        Species("CAM1N2C", init=0.0 * u.mM, factor="cam_unit"),
+        Species("CAM1N", init=0.0 * u.mM, factor="cam_unit"),
+        Species("CAM2N", init=0.0 * u.mM, factor="cam_unit"),
+        Species("CAM2N1C", init=0.0 * u.mM, factor="cam_unit"),
+        Species("CAM1C1N", init=0.0 * u.mM, factor="cam_unit"),
+        Species("CAM4", init=0.0 * u.mM, factor="cam_unit"),
+        Species("pump", init=0.0 * (u.mol / u.cm ** 2), factor="pump_area"),
+        Species("pumpca", init=0.0 * (u.mol / u.cm ** 2), factor="pump_area"),
+    )
+    reactions = (
+        Reaction(
+            lhs={"pump": 1, "Ci": 1},
+            rhs={"pumpca": 1},
+            forward=lambda self, V, x: self.kpmp1 * self.parea,
+            backward=lambda self, V, x: self.kpmp2 * self.parea,
+        ),
+        Reaction(
+            lhs={"pumpca": 1},
+            rhs={"pump": 1},
+            forward=lambda self, V, x: self.kpmp3 * self.parea,
+            backward=None,
+        ),
+        Reaction(
+            lhs={"Ci": 1, "Buff1": 1},
+            rhs={"Buff1_ca": 1},
+            forward=lambda self, V, x: self.rf1 * self.dsqvol,
+            backward=lambda self, V, x: self.rf2 * self.dsqvol,
+        ),
+        Reaction(
+            lhs={"Ci": 1, "Buff2": 1},
+            rhs={"Buff2_ca": 1},
+            forward=lambda self, V, x: self.rf3 * self.dsqvol,
+            backward=lambda self, V, x: self.rf4 * self.dsqvol,
+        ),
+        Reaction(
+            lhs={"Ci": 1, "BTC": 1},
+            rhs={"BTC_ca": 1},
+            forward=lambda self, V, x: self.b1 * self.dsqvol,
+            backward=lambda self, V, x: self.b2 * self.dsqvol,
+        ),
+        Reaction(
+            lhs={"Ci": 1, "DMNPE": 1},
+            rhs={"DMNPE_ca": 1},
+            forward=lambda self, V, x: self.c1 * self.dsqvol,
+            backward=lambda self, V, x: self.c2 * self.dsqvol,
+        ),
+        Reaction(
+            lhs={"Ci": 1, "PV": 1},
+            rhs={"PV_ca": 1},
+            forward=lambda self, V, x: self.m1 * self.dsqvol,
+            backward=lambda self, V, x: self.m2 * self.dsqvol,
+        ),
+        Reaction(
+            lhs={"mg": 1, "PV": 1},
+            rhs={"PV_mg": 1},
+            forward=lambda self, V, x: self.p1 * self.dsqvol,
+            backward=lambda self, V, x: self.p2 * self.dsqvol,
+        ),
+        Reaction(
+            lhs={"Ci": 1, "CAM0": 1},
+            rhs={"CAM1C": 1},
+            forward=lambda self, V, x: self.K1Con * self.dsqvol,
+            backward=lambda self, V, x: self.K1Coff * self.dsqvol,
+        ),
+        Reaction(
+            lhs={"Ci": 1, "CAM1C": 1},
+            rhs={"CAM2C": 1},
+            forward=lambda self, V, x: self.K2Con * self.dsqvol,
+            backward=lambda self, V, x: self.K2Coff * self.dsqvol,
+        ),
+        Reaction(
+            lhs={"Ci": 1, "CAM2C": 1},
+            rhs={"CAM1N2C": 1},
+            forward=lambda self, V, x: self.K1Non * self.dsqvol,
+            backward=lambda self, V, x: self.K1Noff * self.dsqvol,
+        ),
+        Reaction(
+            lhs={"Ci": 1, "CAM1N2C": 1},
+            rhs={"CAM4": 1},
+            forward=lambda self, V, x: self.K2Non * self.dsqvol,
+            backward=lambda self, V, x: self.K2Noff * self.dsqvol,
+        ),
+        Reaction(
+            lhs={"Ci": 1, "CAM0": 1},
+            rhs={"CAM1N": 1},
+            forward=lambda self, V, x: self.K1Non * self.dsqvol,
+            backward=lambda self, V, x: self.K1Noff * self.dsqvol,
+        ),
+        Reaction(
+            lhs={"Ci": 1, "CAM1N": 1},
+            rhs={"CAM2N": 1},
+            forward=lambda self, V, x: self.K2Non * self.dsqvol,
+            backward=lambda self, V, x: self.K2Noff * self.dsqvol,
+        ),
+        Reaction(
+            lhs={"Ci": 1, "CAM2N": 1},
+            rhs={"CAM2N1C": 1},
+            forward=lambda self, V, x: self.K1Con * self.dsqvol,
+            backward=lambda self, V, x: self.K1Coff * self.dsqvol,
+        ),
+        Reaction(
+            lhs={"Ci": 1, "CAM2N1C": 1},
+            rhs={"CAM4": 1},
+            forward=lambda self, V, x: self.K2Con * self.dsqvol,
+            backward=lambda self, V, x: self.K2Coff * self.dsqvol,
+        ),
+        Reaction(
+            lhs={"Ci": 1, "CAM1C": 1},
+            rhs={"CAM1C1N": 1},
+            forward=lambda self, V, x: self.K1Non * self.dsqvol,
+            backward=lambda self, V, x: self.K1Noff * self.dsqvol,
+        ),
+        Reaction(
+            lhs={"Ci": 1, "CAM1N": 1},
+            rhs={"CAM1C1N": 1},
+            forward=lambda self, V, x: self.K1Con * self.dsqvol,
+            backward=lambda self, V, x: self.K1Coff * self.dsqvol,
+        ),
+        Reaction(
+            lhs={"Ci": 1, "CAM1C1N": 1},
+            rhs={"CAM1N2C": 1},
+            forward=lambda self, V, x: self.K2Con * self.dsqvol,
+            backward=lambda self, V, x: self.K2Coff * self.dsqvol,
+        ),
+        Reaction(
+            lhs={"Ci": 1, "CAM1C1N": 1},
+            rhs={"CAM2N1C": 1},
+            forward=lambda self, V, x: self.K2Non * self.dsqvol,
+            backward=lambda self, V, x: self.K2Noff * self.dsqvol,
+        ),
+    )
+    sources = (
+        Source(
+            target="Ci",
+            flux=lambda self, V, x, total_current=None: self._ci_source_flux(total_current),
+        ),
+    )
+    conserves = (
+        Conserve(
+            species=("pump", "pumpca"),
+            algebraic="pumpca",
+            total=lambda self, V, x: self.TotalPump * self.parea,
+        ),
+    )
+
+    _diffeq_species = (
+        "Ci",
+        "mg",
+        "Buff1",
+        "Buff1_ca",
+        "Buff2",
+        "Buff2_ca",
+        "BTC",
+        "BTC_ca",
+        "DMNPE",
+        "DMNPE_ca",
+        "PV",
+        "PV_ca",
+        "PV_mg",
+        "CAM0",
+        "CAM1C",
+        "CAM2C",
+        "CAM1N2C",
+        "CAM1N",
+        "CAM2N",
+        "CAM2N1C",
+        "CAM1C1N",
+        "CAM4",
+        "pump",
+    )
+
+    def __init__(
+        self,
+        size: brainstate.typing.Size,
+        temp: Union[brainstate.typing.ArrayLike, Callable] = u.celsius2kelvin(25.0),
+        Nannuli: Union[brainstate.typing.ArrayLike, Callable] = 10.9495,
+        cainull: Union[brainstate.typing.ArrayLike, Callable] = 45e-6 * u.mM,
+        mginull: Union[brainstate.typing.ArrayLike, Callable] = 0.59 * u.mM,
+        Buffnull1: Union[brainstate.typing.ArrayLike, Callable] = 0.0 * u.mM,
+        rf1: Union[brainstate.typing.ArrayLike, Callable] = 0.0134329 / (u.mM * u.ms),
+        rf2: Union[brainstate.typing.ArrayLike, Callable] = 0.0397469 / u.ms,
+        Buffnull2: Union[brainstate.typing.ArrayLike, Callable] = 60.9091 * u.mM,
+        rf3: Union[brainstate.typing.ArrayLike, Callable] = 0.1435 / (u.mM * u.ms),
+        rf4: Union[brainstate.typing.ArrayLike, Callable] = 0.0014 / u.ms,
+        BTCnull: Union[brainstate.typing.ArrayLike, Callable] = 0.0 * u.mM,
+        b1: Union[brainstate.typing.ArrayLike, Callable] = 5.33 / (u.mM * u.ms),
+        b2: Union[brainstate.typing.ArrayLike, Callable] = 0.08 / u.ms,
+        DMNPEnull: Union[brainstate.typing.ArrayLike, Callable] = 0.0 * u.mM,
+        c1: Union[brainstate.typing.ArrayLike, Callable] = 5.63 / (u.mM * u.ms),
+        c2: Union[brainstate.typing.ArrayLike, Callable] = 0.107e-3 / u.ms,
+        PVnull: Union[brainstate.typing.ArrayLike, Callable] = 0.08 * u.mM,
+        m1: Union[brainstate.typing.ArrayLike, Callable] = 1.07e2 / (u.mM * u.ms),
+        m2: Union[brainstate.typing.ArrayLike, Callable] = 9.5e-4 / u.ms,
+        p1: Union[brainstate.typing.ArrayLike, Callable] = 0.8 / (u.mM * u.ms),
+        p2: Union[brainstate.typing.ArrayLike, Callable] = 2.5e-2 / u.ms,
+        CAM_start: Union[brainstate.typing.ArrayLike, Callable] = 0.03 * u.mM,
+        K1Coff: Union[brainstate.typing.ArrayLike, Callable] = 0.04 / u.ms,
+        K1Con: Union[brainstate.typing.ArrayLike, Callable] = 5.4 / (u.mM * u.ms),
+        K2Coff: Union[brainstate.typing.ArrayLike, Callable] = 0.00925 / u.ms,
+        K2Con: Union[brainstate.typing.ArrayLike, Callable] = 15.0 / (u.mM * u.ms),
+        K1Noff: Union[brainstate.typing.ArrayLike, Callable] = 2.5 / u.ms,
+        K1Non: Union[brainstate.typing.ArrayLike, Callable] = 142.5 / (u.mM * u.ms),
+        K2Noff: Union[brainstate.typing.ArrayLike, Callable] = 0.75 / u.ms,
+        K2Non: Union[brainstate.typing.ArrayLike, Callable] = 175.0 / (u.mM * u.ms),
+        kpmp1: Union[brainstate.typing.ArrayLike, Callable] = 3e-3 / (u.mM * u.ms),
+        kpmp2: Union[brainstate.typing.ArrayLike, Callable] = 1.75e-5 / u.ms,
+        kpmp3: Union[brainstate.typing.ArrayLike, Callable] = 7.255e-5 / u.ms,
+        TotalPump: Union[brainstate.typing.ArrayLike, Callable] = 1e-9 * (u.mol / u.cm ** 2),
+        Co: Union[brainstate.typing.ArrayLike, Callable, None] = None,
+        Ci_initializer: Union[brainstate.typing.ArrayLike, Callable, None] = None,
+        species_initializers: Optional[dict[str, object]] = None,
+        solver: str = "backward_euler",
+        substeps: int = 1,
+        name: Optional[str] = None,
+        **channels
+    ):
+        super().__init__(size=size, name=name, **channels)
+        self.Nannuli = braintools.init.param(Nannuli, self.varshape, allow_none=False)
+        self.cainull = braintools.init.param(cainull, self.varshape, allow_none=False)
+        self.mginull = braintools.init.param(mginull, self.varshape, allow_none=False)
+        self.Buffnull1 = braintools.init.param(Buffnull1, self.varshape, allow_none=False)
+        self.rf1 = braintools.init.param(rf1, self.varshape, allow_none=False)
+        self.rf2 = braintools.init.param(rf2, self.varshape, allow_none=False)
+        self.Buffnull2 = braintools.init.param(Buffnull2, self.varshape, allow_none=False)
+        self.rf3 = braintools.init.param(rf3, self.varshape, allow_none=False)
+        self.rf4 = braintools.init.param(rf4, self.varshape, allow_none=False)
+        self.BTCnull = braintools.init.param(BTCnull, self.varshape, allow_none=False)
+        self.b1 = braintools.init.param(b1, self.varshape, allow_none=False)
+        self.b2 = braintools.init.param(b2, self.varshape, allow_none=False)
+        self.DMNPEnull = braintools.init.param(DMNPEnull, self.varshape, allow_none=False)
+        self.c1 = braintools.init.param(c1, self.varshape, allow_none=False)
+        self.c2 = braintools.init.param(c2, self.varshape, allow_none=False)
+        self.PVnull = braintools.init.param(PVnull, self.varshape, allow_none=False)
+        self.m1 = braintools.init.param(m1, self.varshape, allow_none=False)
+        self.m2 = braintools.init.param(m2, self.varshape, allow_none=False)
+        self.p1 = braintools.init.param(p1, self.varshape, allow_none=False)
+        self.p2 = braintools.init.param(p2, self.varshape, allow_none=False)
+        self.CAM_start = braintools.init.param(CAM_start, self.varshape, allow_none=False)
+        self.K1Coff = braintools.init.param(K1Coff, self.varshape, allow_none=False)
+        self.K1Con = braintools.init.param(K1Con, self.varshape, allow_none=False)
+        self.K2Coff = braintools.init.param(K2Coff, self.varshape, allow_none=False)
+        self.K2Con = braintools.init.param(K2Con, self.varshape, allow_none=False)
+        self.K1Noff = braintools.init.param(K1Noff, self.varshape, allow_none=False)
+        self.K1Non = braintools.init.param(K1Non, self.varshape, allow_none=False)
+        self.K2Noff = braintools.init.param(K2Noff, self.varshape, allow_none=False)
+        self.K2Non = braintools.init.param(K2Non, self.varshape, allow_none=False)
+        self.kpmp1 = braintools.init.param(kpmp1, self.varshape, allow_none=False)
+        self.kpmp2 = braintools.init.param(kpmp2, self.varshape, allow_none=False)
+        self.kpmp3 = braintools.init.param(kpmp3, self.varshape, allow_none=False)
+        self.TotalPump = braintools.init.param(TotalPump, self.varshape, allow_none=False)
+
+        initializers = self._resolve_species_initializers(
+            Ci_initializer=Ci_initializer,
+            species_initializers=species_initializers,
+        )
+        self.Ci_initializer = initializers["Ci"]
+        self.species_initializers = dict(initializers)
+        self._init_kinetic_ion(
+            Co=Co,
+            temp=temp,
+            valence=None,
+            species_initializers=initializers,
+            solver=solver,
+            substeps=substeps,
+        )
+
+    def _resolve_species_initializers(
+        self,
+        *,
+        Ci_initializer,
+        species_initializers,
+    ) -> dict[str, object]:
+        species_initializers = dict(species_initializers or {})
+        invalid = set(species_initializers).difference(self._diffeq_species)
+        if invalid:
+            invalid_names = ", ".join(sorted(invalid))
+            raise ValueError(
+                f"{type(self).__name__} only accepts differential-species overrides; got {invalid_names}."
+            )
+
+        defaults = {
+            "Ci": self.cainull if Ci_initializer is None else Ci_initializer,
+            "mg": self.mginull,
+            "Buff1": self._ss_buffer_free(self.Buffnull1, self.rf1, self.rf2, self.cainull),
+            "Buff1_ca": self._ss_buffer_bound(self.Buffnull1, self.rf1, self.rf2, self.cainull),
+            "Buff2": self._ss_buffer_free(self.Buffnull2, self.rf3, self.rf4, self.cainull),
+            "Buff2_ca": self._ss_buffer_bound(self.Buffnull2, self.rf3, self.rf4, self.cainull),
+            "BTC": self._ss_buffer_free(self.BTCnull, self.b1, self.b2, self.cainull),
+            "BTC_ca": self._ss_buffer_bound(self.BTCnull, self.b1, self.b2, self.cainull),
+            "DMNPE": self._ss_buffer_free(self.DMNPEnull, self.c1, self.c2, self.cainull),
+            "DMNPE_ca": self._ss_buffer_bound(self.DMNPEnull, self.c1, self.c2, self.cainull),
+            "PV": self._ss_pv_free(),
+            "PV_ca": self._ss_pv_ca(),
+            "PV_mg": self._ss_pv_mg(),
+            "CAM0": self.CAM_start,
+            "CAM1C": 0.0 * u.mM,
+            "CAM2C": 0.0 * u.mM,
+            "CAM1N2C": 0.0 * u.mM,
+            "CAM1N": 0.0 * u.mM,
+            "CAM2N": 0.0 * u.mM,
+            "CAM2N1C": 0.0 * u.mM,
+            "CAM1C1N": 0.0 * u.mM,
+            "CAM4": 0.0 * u.mM,
+            "pump": self.TotalPump,
+        }
+        defaults.update(species_initializers)
+        return {name: self._as_initializer(value) for name, value in defaults.items()}
+
+    def _as_initializer(self, value):
+        if callable(value):
+            return value
+        if isinstance(value, tuple):
+            resolved = []
+            for item in value:
+                if hasattr(item, "value"):
+                    resolved.append(item.value)
+                else:
+                    resolved.append(item)
+            first = resolved[0]
+            if hasattr(first, "unit"):
+                unit = first.unit
+                decimals = [u.Quantity(item).to_decimal(unit) for item in resolved]
+                return u.Quantity(u.math.asarray(decimals), unit)
+            return u.math.asarray(resolved)
+        return braintools.init.Constant(value)
+
+    def _ss_buffer_free(self, total, kon, koff, cai):
+        return total / (1.0 + (kon / koff) * cai)
+
+    def _ss_buffer_bound(self, total, kon, koff, cai):
+        return total / (1.0 + koff / (kon * cai))
+
+    def _kdc(self):
+        return (self.cainull * self.m1) / self.m2
+
+    def _kdm(self):
+        return (self.mginull * self.p1) / self.p2
+
+    def _ss_pv_free(self):
+        kdc = self._kdc()
+        kdm = self._kdm()
+        return self.PVnull / (1.0 + kdc + kdm)
+
+    def _ss_pv_ca(self):
+        kdc = self._kdc()
+        kdm = self._kdm()
+        return (self.PVnull * kdc) / (1.0 + kdc + kdm)
+
+    def _ss_pv_mg(self):
+        kdc = self._kdc()
+        kdm = self._kdm()
+        return (self.PVnull * kdm) / (1.0 + kdc + kdm)
+
+    def _require_diam_arc_mean(self):
+        if not hasattr(self, "diam_arc_mean"):
+            raise AttributeError(
+                f"{type(self).__name__} requires 'diam_arc_mean' before kinetic state initialization."
+            )
+        return self.diam_arc_mean
+
+    @property
+    def vrat(self):
+        dr2 = 0.25 / (self.Nannuli - 1.0)
+        return u.math.pi * (0.5 - (dr2 / 2.0)) * 2.0 * dr2
+
+    @property
+    def parea(self):
+        return u.math.pi * self._require_diam_arc_mean()
+
+    @property
+    def dsq(self):
+        diam_arc_mean = self._require_diam_arc_mean()
+        return diam_arc_mean * diam_arc_mean
+
+    @property
+    def dsqvol(self):
+        return self.dsq * self.vrat
+
+    def _ci_source_flux(self, total_current):
+        if total_current is None:
+            return self.dsqvol * (0.0 * u.mM / u.ms)
+        # NEURON's raw GoC ``ica`` is efflux-positive, but BrainCell channel
+        # currents are inward-positive. A positive calcium current therefore
+        # increases the local calcium pool.
+        return (total_current * u.math.pi * self._require_diam_arc_mean()) / (2.0 * u.faraday_constant)
+
+    def _ion_init_state_hook(self, V, batch_size: int = None):
+        self._require_diam_arc_mean()
+        KineticIon._ion_init_state_hook(self, V, batch_size=batch_size)
+
+    def _ion_reset_state_hook(self, V, batch_size: int = None):
+        self._require_diam_arc_mean()
+        KineticIon._ion_reset_state_hook(self, V, batch_size=batch_size)
+
+
+@register_ion("CdpCAM_MA2024_PC")
+class CdpCAM_MA2024_PC(Calcium, KineticIon):
+    r"""Template-based import of ``CdpCAM_MA24_PC.mod``.
+
+    This PC variant preserves the full pump, non-CAM buffer, Calbindin,
+    Parvalbumin, and Calmodulin kinetic network. Unlike the GoC CdpStC source,
+    the PC file includes CB and CAM species in the cytosolic compartment.
+    """
+
+    __module__ = "braincell.ion"
+    uses_total_current = True
+
+    factors = (
+        Factor("cyto", lambda self: self.dsqvol),
+        Factor("pump_area", lambda self: self.parea),
+    )
+    species = (
+        Species("Ci", init=0.0 * u.mM, factor="cyto"),
+        Species("mg", init=0.0 * u.mM, factor="cyto"),
+        Species("Buff1", init=0.0 * u.mM, factor="cyto"),
+        Species("Buff1_ca", init=0.0 * u.mM, factor="cyto"),
+        Species("Buff2", init=0.0 * u.mM, factor="cyto"),
+        Species("Buff2_ca", init=0.0 * u.mM, factor="cyto"),
+        Species("BTC", init=0.0 * u.mM, factor="cyto"),
+        Species("BTC_ca", init=0.0 * u.mM, factor="cyto"),
+        Species("DMNPE", init=0.0 * u.mM, factor="cyto"),
+        Species("DMNPE_ca", init=0.0 * u.mM, factor="cyto"),
+        Species("CB", init=0.0 * u.mM, factor="cyto"),
+        Species("CB_f_ca", init=0.0 * u.mM, factor="cyto"),
+        Species("CB_ca_s", init=0.0 * u.mM, factor="cyto"),
+        Species("CB_ca_ca", init=0.0 * u.mM, factor="cyto"),
+        Species("PV", init=0.0 * u.mM, factor="cyto"),
+        Species("PV_ca", init=0.0 * u.mM, factor="cyto"),
+        Species("PV_mg", init=0.0 * u.mM, factor="cyto"),
+        Species("CAM0", init=0.0 * u.mM, factor="cyto"),
+        Species("CAM1C", init=0.0 * u.mM, factor="cyto"),
+        Species("CAM2C", init=0.0 * u.mM, factor="cyto"),
+        Species("CAM1N2C", init=0.0 * u.mM, factor="cyto"),
+        Species("CAM1N", init=0.0 * u.mM, factor="cyto"),
+        Species("CAM2N", init=0.0 * u.mM, factor="cyto"),
+        Species("CAM2N1C", init=0.0 * u.mM, factor="cyto"),
+        Species("CAM1C1N", init=0.0 * u.mM, factor="cyto"),
+        Species("CAM4", init=0.0 * u.mM, factor="cyto"),
+        Species("pump", init=0.0 * (u.mol / u.cm ** 2), factor="pump_area"),
+        Species("pumpca", init=0.0 * (u.mol / u.cm ** 2), factor="pump_area"),
+    )
+    reactions = (
+        Reaction(
+            lhs={"pump": 1, "Ci": 1},
+            rhs={"pumpca": 1},
+            forward=lambda self, V, x: self.kpmp1 * self.parea,
+            backward=lambda self, V, x: self.kpmp2 * self.parea,
+        ),
+        Reaction(
+            lhs={"pumpca": 1},
+            rhs={"pump": 1},
+            forward=lambda self, V, x: self.kpmp3 * self.parea,
+            backward=None,
+        ),
+        Reaction(
+            lhs={"Ci": 1, "Buff1": 1},
+            rhs={"Buff1_ca": 1},
+            forward=lambda self, V, x: self.rf1 * self.dsqvol,
+            backward=lambda self, V, x: self.rf2 * self.dsqvol,
+        ),
+        Reaction(
+            lhs={"Ci": 1, "Buff2": 1},
+            rhs={"Buff2_ca": 1},
+            forward=lambda self, V, x: self.rf3 * self.dsqvol,
+            backward=lambda self, V, x: self.rf4 * self.dsqvol,
+        ),
+        Reaction(
+            lhs={"Ci": 1, "BTC": 1},
+            rhs={"BTC_ca": 1},
+            forward=lambda self, V, x: self.b1 * self.dsqvol,
+            backward=lambda self, V, x: self.b2 * self.dsqvol,
+        ),
+        Reaction(
+            lhs={"Ci": 1, "DMNPE": 1},
+            rhs={"DMNPE_ca": 1},
+            forward=lambda self, V, x: self.c1 * self.dsqvol,
+            backward=lambda self, V, x: self.c2 * self.dsqvol,
+        ),
+        Reaction(
+            lhs={"Ci": 1, "CB": 1},
+            rhs={"CB_ca_s": 1},
+            forward=lambda self, V, x: self.nf1 * self.dsqvol,
+            backward=lambda self, V, x: self.nf2 * self.dsqvol,
+        ),
+        Reaction(
+            lhs={"Ci": 1, "CB": 1},
+            rhs={"CB_f_ca": 1},
+            forward=lambda self, V, x: self.ns1 * self.dsqvol,
+            backward=lambda self, V, x: self.ns2 * self.dsqvol,
+        ),
+        Reaction(
+            lhs={"Ci": 1, "CB_f_ca": 1},
+            rhs={"CB_ca_ca": 1},
+            forward=lambda self, V, x: self.nf1 * self.dsqvol,
+            backward=lambda self, V, x: self.nf2 * self.dsqvol,
+        ),
+        Reaction(
+            lhs={"Ci": 1, "CB_ca_s": 1},
+            rhs={"CB_ca_ca": 1},
+            forward=lambda self, V, x: self.ns1 * self.dsqvol,
+            backward=lambda self, V, x: self.ns2 * self.dsqvol,
+        ),
+        Reaction(
+            lhs={"Ci": 1, "PV": 1},
+            rhs={"PV_ca": 1},
+            forward=lambda self, V, x: self.m1 * self.dsqvol,
+            backward=lambda self, V, x: self.m2 * self.dsqvol,
+        ),
+        Reaction(
+            lhs={"mg": 1, "PV": 1},
+            rhs={"PV_mg": 1},
+            forward=lambda self, V, x: self.p1 * self.dsqvol,
+            backward=lambda self, V, x: self.p2 * self.dsqvol,
+        ),
+        Reaction(
+            lhs={"Ci": 1, "CAM0": 1},
+            rhs={"CAM1C": 1},
+            forward=lambda self, V, x: self.K1Con * self.dsqvol,
+            backward=lambda self, V, x: self.K1Coff * self.dsqvol,
+        ),
+        Reaction(
+            lhs={"Ci": 1, "CAM1C": 1},
+            rhs={"CAM2C": 1},
+            forward=lambda self, V, x: self.K2Con * self.dsqvol,
+            backward=lambda self, V, x: self.K2Coff * self.dsqvol,
+        ),
+        Reaction(
+            lhs={"Ci": 1, "CAM2C": 1},
+            rhs={"CAM1N2C": 1},
+            forward=lambda self, V, x: self.K1Non * self.dsqvol,
+            backward=lambda self, V, x: self.K1Noff * self.dsqvol,
+        ),
+        Reaction(
+            lhs={"Ci": 1, "CAM1N2C": 1},
+            rhs={"CAM4": 1},
+            forward=lambda self, V, x: self.K2Non * self.dsqvol,
+            backward=lambda self, V, x: self.K2Noff * self.dsqvol,
+        ),
+        Reaction(
+            lhs={"Ci": 1, "CAM0": 1},
+            rhs={"CAM1N": 1},
+            forward=lambda self, V, x: self.K1Non * self.dsqvol,
+            backward=lambda self, V, x: self.K1Noff * self.dsqvol,
+        ),
+        Reaction(
+            lhs={"Ci": 1, "CAM1N": 1},
+            rhs={"CAM2N": 1},
+            forward=lambda self, V, x: self.K2Non * self.dsqvol,
+            backward=lambda self, V, x: self.K2Noff * self.dsqvol,
+        ),
+        Reaction(
+            lhs={"Ci": 1, "CAM2N": 1},
+            rhs={"CAM2N1C": 1},
+            forward=lambda self, V, x: self.K1Con * self.dsqvol,
+            backward=lambda self, V, x: self.K1Coff * self.dsqvol,
+        ),
+        Reaction(
+            lhs={"Ci": 1, "CAM2N1C": 1},
+            rhs={"CAM4": 1},
+            forward=lambda self, V, x: self.K2Con * self.dsqvol,
+            backward=lambda self, V, x: self.K2Coff * self.dsqvol,
+        ),
+        Reaction(
+            lhs={"Ci": 1, "CAM1C": 1},
+            rhs={"CAM1C1N": 1},
+            forward=lambda self, V, x: self.K1Non * self.dsqvol,
+            backward=lambda self, V, x: self.K1Noff * self.dsqvol,
+        ),
+        Reaction(
+            lhs={"Ci": 1, "CAM1N": 1},
+            rhs={"CAM1C1N": 1},
+            forward=lambda self, V, x: self.K1Con * self.dsqvol,
+            backward=lambda self, V, x: self.K1Coff * self.dsqvol,
+        ),
+        Reaction(
+            lhs={"Ci": 1, "CAM1C1N": 1},
+            rhs={"CAM1N2C": 1},
+            forward=lambda self, V, x: self.K2Con * self.dsqvol,
+            backward=lambda self, V, x: self.K2Coff * self.dsqvol,
+        ),
+        Reaction(
+            lhs={"Ci": 1, "CAM1C1N": 1},
+            rhs={"CAM2N1C": 1},
+            forward=lambda self, V, x: self.K2Non * self.dsqvol,
+            backward=lambda self, V, x: self.K2Noff * self.dsqvol,
+        ),
+    )
+    sources = CdpStC_MA2020_GoC.sources
+    conserves = CdpStC_MA2020_GoC.conserves
+
+    _diffeq_species = (
+        "Ci",
+        "mg",
+        "Buff1",
+        "Buff1_ca",
+        "Buff2",
+        "Buff2_ca",
+        "BTC",
+        "BTC_ca",
+        "DMNPE",
+        "DMNPE_ca",
+        "CB",
+        "CB_f_ca",
+        "CB_ca_s",
+        "CB_ca_ca",
+        "PV",
+        "PV_ca",
+        "PV_mg",
+        "CAM0",
+        "CAM1C",
+        "CAM2C",
+        "CAM1N2C",
+        "CAM1N",
+        "CAM2N",
+        "CAM2N1C",
+        "CAM1C1N",
+        "CAM4",
+        "pump",
+    )
+
+    def __init__(
+        self,
+        size: brainstate.typing.Size,
+        temp: Union[brainstate.typing.ArrayLike, Callable] = u.celsius2kelvin(25.0),
+        Nannuli: Union[brainstate.typing.ArrayLike, Callable] = 10.9495,
+        cainull: Union[brainstate.typing.ArrayLike, Callable] = 45e-6 * u.mM,
+        mginull: Union[brainstate.typing.ArrayLike, Callable] = 0.59 * u.mM,
+        Buffnull1: Union[brainstate.typing.ArrayLike, Callable] = 0.0 * u.mM,
+        rf1: Union[brainstate.typing.ArrayLike, Callable] = 0.0134329 / (u.mM * u.ms),
+        rf2: Union[brainstate.typing.ArrayLike, Callable] = 0.0397469 / u.ms,
+        Buffnull2: Union[brainstate.typing.ArrayLike, Callable] = 60.9091 * u.mM,
+        rf3: Union[brainstate.typing.ArrayLike, Callable] = 0.1435 / (u.mM * u.ms),
+        rf4: Union[brainstate.typing.ArrayLike, Callable] = 0.0014 / u.ms,
+        BTCnull: Union[brainstate.typing.ArrayLike, Callable] = 0.0 * u.mM,
+        b1: Union[brainstate.typing.ArrayLike, Callable] = 5.33 / (u.mM * u.ms),
+        b2: Union[brainstate.typing.ArrayLike, Callable] = 0.08 / u.ms,
+        DMNPEnull: Union[brainstate.typing.ArrayLike, Callable] = 0.0 * u.mM,
+        c1: Union[brainstate.typing.ArrayLike, Callable] = 5.63 / (u.mM * u.ms),
+        c2: Union[brainstate.typing.ArrayLike, Callable] = 0.107e-3 / u.ms,
+        CBnull: Union[brainstate.typing.ArrayLike, Callable] = 0.16 * u.mM,
+        nf1: Union[brainstate.typing.ArrayLike, Callable] = 43.5 / (u.mM * u.ms),
+        nf2: Union[brainstate.typing.ArrayLike, Callable] = 3.58e-2 / u.ms,
+        ns1: Union[brainstate.typing.ArrayLike, Callable] = 5.5 / (u.mM * u.ms),
+        ns2: Union[brainstate.typing.ArrayLike, Callable] = 0.26e-2 / u.ms,
+        PVnull: Union[brainstate.typing.ArrayLike, Callable] = 0.08 * u.mM,
+        m1: Union[brainstate.typing.ArrayLike, Callable] = 1.07e2 / (u.mM * u.ms),
+        m2: Union[brainstate.typing.ArrayLike, Callable] = 9.5e-4 / u.ms,
+        p1: Union[brainstate.typing.ArrayLike, Callable] = 0.8 / (u.mM * u.ms),
+        p2: Union[brainstate.typing.ArrayLike, Callable] = 2.5e-2 / u.ms,
+        CAM_start: Union[brainstate.typing.ArrayLike, Callable] = 0.03 * u.mM,
+        K1Coff: Union[brainstate.typing.ArrayLike, Callable] = 0.04 / u.ms,
+        K1Con: Union[brainstate.typing.ArrayLike, Callable] = 5.4 / (u.mM * u.ms),
+        K2Coff: Union[brainstate.typing.ArrayLike, Callable] = 0.00925 / u.ms,
+        K2Con: Union[brainstate.typing.ArrayLike, Callable] = 15.0 / (u.mM * u.ms),
+        K1Noff: Union[brainstate.typing.ArrayLike, Callable] = 2.5 / u.ms,
+        K1Non: Union[brainstate.typing.ArrayLike, Callable] = 142.5 / (u.mM * u.ms),
+        K2Noff: Union[brainstate.typing.ArrayLike, Callable] = 0.75 / u.ms,
+        K2Non: Union[brainstate.typing.ArrayLike, Callable] = 175.0 / (u.mM * u.ms),
+        kpmp1: Union[brainstate.typing.ArrayLike, Callable] = 3e-3 / (u.mM * u.ms),
+        kpmp2: Union[brainstate.typing.ArrayLike, Callable] = 1.75e-5 / u.ms,
+        kpmp3: Union[brainstate.typing.ArrayLike, Callable] = 7.255e-5 / u.ms,
+        TotalPump: Union[brainstate.typing.ArrayLike, Callable] = 1e-9 * (u.mol / u.cm ** 2),
+        Co: Union[brainstate.typing.ArrayLike, Callable, None] = None,
+        Ci_initializer: Union[brainstate.typing.ArrayLike, Callable, None] = None,
+        species_initializers: Optional[dict[str, object]] = None,
+        solver: str = "backward_euler",
+        substeps: int = 1,
+        name: Optional[str] = None,
+        **channels
+    ):
+        super().__init__(size=size, name=name, **channels)
+        self.Nannuli = braintools.init.param(Nannuli, self.varshape, allow_none=False)
+        self.cainull = braintools.init.param(cainull, self.varshape, allow_none=False)
+        self.mginull = braintools.init.param(mginull, self.varshape, allow_none=False)
+        self.Buffnull1 = braintools.init.param(Buffnull1, self.varshape, allow_none=False)
+        self.rf1 = braintools.init.param(rf1, self.varshape, allow_none=False)
+        self.rf2 = braintools.init.param(rf2, self.varshape, allow_none=False)
+        self.Buffnull2 = braintools.init.param(Buffnull2, self.varshape, allow_none=False)
+        self.rf3 = braintools.init.param(rf3, self.varshape, allow_none=False)
+        self.rf4 = braintools.init.param(rf4, self.varshape, allow_none=False)
+        self.BTCnull = braintools.init.param(BTCnull, self.varshape, allow_none=False)
+        self.b1 = braintools.init.param(b1, self.varshape, allow_none=False)
+        self.b2 = braintools.init.param(b2, self.varshape, allow_none=False)
+        self.DMNPEnull = braintools.init.param(DMNPEnull, self.varshape, allow_none=False)
+        self.c1 = braintools.init.param(c1, self.varshape, allow_none=False)
+        self.c2 = braintools.init.param(c2, self.varshape, allow_none=False)
+        self.CBnull = braintools.init.param(CBnull, self.varshape, allow_none=False)
+        self.nf1 = braintools.init.param(nf1, self.varshape, allow_none=False)
+        self.nf2 = braintools.init.param(nf2, self.varshape, allow_none=False)
+        self.ns1 = braintools.init.param(ns1, self.varshape, allow_none=False)
+        self.ns2 = braintools.init.param(ns2, self.varshape, allow_none=False)
+        self.PVnull = braintools.init.param(PVnull, self.varshape, allow_none=False)
+        self.m1 = braintools.init.param(m1, self.varshape, allow_none=False)
+        self.m2 = braintools.init.param(m2, self.varshape, allow_none=False)
+        self.p1 = braintools.init.param(p1, self.varshape, allow_none=False)
+        self.p2 = braintools.init.param(p2, self.varshape, allow_none=False)
+        self.CAM_start = braintools.init.param(CAM_start, self.varshape, allow_none=False)
+        self.K1Coff = braintools.init.param(K1Coff, self.varshape, allow_none=False)
+        self.K1Con = braintools.init.param(K1Con, self.varshape, allow_none=False)
+        self.K2Coff = braintools.init.param(K2Coff, self.varshape, allow_none=False)
+        self.K2Con = braintools.init.param(K2Con, self.varshape, allow_none=False)
+        self.K1Noff = braintools.init.param(K1Noff, self.varshape, allow_none=False)
+        self.K1Non = braintools.init.param(K1Non, self.varshape, allow_none=False)
+        self.K2Noff = braintools.init.param(K2Noff, self.varshape, allow_none=False)
+        self.K2Non = braintools.init.param(K2Non, self.varshape, allow_none=False)
+        self.kpmp1 = braintools.init.param(kpmp1, self.varshape, allow_none=False)
+        self.kpmp2 = braintools.init.param(kpmp2, self.varshape, allow_none=False)
+        self.kpmp3 = braintools.init.param(kpmp3, self.varshape, allow_none=False)
+        self.TotalPump = braintools.init.param(TotalPump, self.varshape, allow_none=False)
+
+        initializers = self._resolve_species_initializers(
+            Ci_initializer=Ci_initializer,
+            species_initializers=species_initializers,
+        )
+        self.Ci_initializer = initializers["Ci"]
+        self.species_initializers = dict(initializers)
+        self._init_kinetic_ion(
+            Co=Co,
+            temp=temp,
+            valence=None,
+            species_initializers=initializers,
+            solver=solver,
+            substeps=substeps,
+        )
+
+    def _resolve_species_initializers(
+        self,
+        *,
+        Ci_initializer,
+        species_initializers,
+    ) -> dict[str, object]:
+        species_initializers = dict(species_initializers or {})
+        invalid = set(species_initializers).difference(self._diffeq_species)
+        if invalid:
+            invalid_names = ", ".join(sorted(invalid))
+            raise ValueError(
+                f"{type(self).__name__} only accepts differential-species overrides; got {invalid_names}."
+            )
+
+        defaults = {
+            "Ci": self.cainull if Ci_initializer is None else Ci_initializer,
+            "mg": self.mginull,
+            "Buff1": self._ss_buffer_free(self.Buffnull1, self.rf1, self.rf2, self.cainull),
+            "Buff1_ca": self._ss_buffer_bound(self.Buffnull1, self.rf1, self.rf2, self.cainull),
+            "Buff2": self._ss_buffer_free(self.Buffnull2, self.rf3, self.rf4, self.cainull),
+            "Buff2_ca": self._ss_buffer_bound(self.Buffnull2, self.rf3, self.rf4, self.cainull),
+            "BTC": self._ss_buffer_free(self.BTCnull, self.b1, self.b2, self.cainull),
+            "BTC_ca": self._ss_buffer_bound(self.BTCnull, self.b1, self.b2, self.cainull),
+            "DMNPE": self._ss_buffer_free(self.DMNPEnull, self.c1, self.c2, self.cainull),
+            "DMNPE_ca": self._ss_buffer_bound(self.DMNPEnull, self.c1, self.c2, self.cainull),
+            "CB": self._ss_cb_free(),
+            "CB_f_ca": self._ss_cb_fast(),
+            "CB_ca_s": self._ss_cb_slow(),
+            "CB_ca_ca": self._ss_cb_ca(),
+            "PV": self._ss_pv_free(),
+            "PV_ca": self._ss_pv_ca(),
+            "PV_mg": self._ss_pv_mg(),
+            "CAM0": self.CAM_start,
+            "CAM1C": 0.0 * u.mM,
+            "CAM2C": 0.0 * u.mM,
+            "CAM1N2C": 0.0 * u.mM,
+            "CAM1N": 0.0 * u.mM,
+            "CAM2N": 0.0 * u.mM,
+            "CAM2N1C": 0.0 * u.mM,
+            "CAM1C1N": 0.0 * u.mM,
+            "CAM4": 0.0 * u.mM,
+            "pump": self.TotalPump,
+        }
+        defaults.update(species_initializers)
+        return {name: self._as_initializer(value) for name, value in defaults.items()}
+
+    def _as_initializer(self, value):
+        return CdpStC_MA2020_GoC._as_initializer(self, value)
+
+    def _ss_buffer_free(self, total, kon, koff, cai):
+        return total / (1.0 + (kon / koff) * cai)
+
+    def _ss_buffer_bound(self, total, kon, koff, cai):
+        return total / (1.0 + koff / (kon * cai))
+
+    def _kdf(self):
+        return (self.cainull * self.nf1) / self.nf2
+
+    def _kds(self):
+        return (self.cainull * self.ns1) / self.ns2
+
+    def _ss_cb_free(self):
+        kdf = self._kdf()
+        kds = self._kds()
+        return self.CBnull / (1.0 + kdf + kds + kdf * kds)
+
+    def _ss_cb_fast(self):
+        kdf = self._kdf()
+        kds = self._kds()
+        return (self.CBnull * kds) / (1.0 + kdf + kds + kdf * kds)
+
+    def _ss_cb_slow(self):
+        kdf = self._kdf()
+        kds = self._kds()
+        return (self.CBnull * kdf) / (1.0 + kdf + kds + kdf * kds)
+
+    def _ss_cb_ca(self):
+        kdf = self._kdf()
+        kds = self._kds()
+        return (self.CBnull * kdf * kds) / (1.0 + kdf + kds + kdf * kds)
+
+    def _kdc(self):
+        return (self.cainull * self.m1) / self.m2
+
+    def _kdm(self):
+        return (self.mginull * self.p1) / self.p2
+
+    def _ss_pv_free(self):
+        kdc = self._kdc()
+        kdm = self._kdm()
+        return self.PVnull / (1.0 + kdc + kdm)
+
+    def _ss_pv_ca(self):
+        kdc = self._kdc()
+        kdm = self._kdm()
+        return (self.PVnull * kdc) / (1.0 + kdc + kdm)
+
+    def _ss_pv_mg(self):
+        kdc = self._kdc()
+        kdm = self._kdm()
+        return (self.PVnull * kdm) / (1.0 + kdc + kdm)
+
+    def _require_diam_arc_mean(self):
+        return CdpStC_MA2020_GoC._require_diam_arc_mean(self)
+
+    @property
+    def vrat(self):
+        return CdpStC_MA2020_GoC.vrat.fget(self)
+
+    @property
+    def parea(self):
+        return CdpStC_MA2020_GoC.parea.fget(self)
+
+    @property
+    def dsq(self):
+        return CdpStC_MA2020_GoC.dsq.fget(self)
+
+    @property
+    def dsqvol(self):
+        return CdpStC_MA2020_GoC.dsqvol.fget(self)
+
+    def _ci_source_flux(self, total_current):
+        return CdpStC_MA2020_GoC._ci_source_flux(self, total_current)
+
+    def _ion_init_state_hook(self, V, batch_size: int = None):
+        self._require_diam_arc_mean()
+        KineticIon._ion_init_state_hook(self, V, batch_size=batch_size)
+
+    def _ion_reset_state_hook(self, V, batch_size: int = None):
+        self._require_diam_arc_mean()
+        KineticIon._ion_reset_state_hook(self, V, batch_size=batch_size)
+
+
+@register_ion("CdpCR_MA2020_GrC")
+class CdpCR_MA2020_GrC(Calcium, KineticIon):
+    r"""Template-based import of ``CdpCR_MA20_GrC.mod``.
+
+    This GrC variant keeps the pump, non-specific buffer, BTC, DMNPE, and
+    Calretinin kinetic network. The original NMODL removes PV and uses CR as
+    the endogenous calcium buffer.
+    """
+
+    __module__ = "braincell.ion"
+    uses_total_current = True
+
+    factors = (
+        Factor("cyto", lambda self: self.dsqvol),
+        Factor("pump_area", lambda self: self.parea),
+    )
+    species = (
+        Species("Ci", init=0.0 * u.mM, factor="cyto"),
+        Species("mg", init=0.0 * u.mM, factor="cyto"),
+        Species("Buff1", init=0.0 * u.mM, factor="cyto"),
+        Species("Buff1_ca", init=0.0 * u.mM, factor="cyto"),
+        Species("Buff2", init=0.0 * u.mM, factor="cyto"),
+        Species("Buff2_ca", init=0.0 * u.mM, factor="cyto"),
+        Species("BTC", init=0.0 * u.mM, factor="cyto"),
+        Species("BTC_ca", init=0.0 * u.mM, factor="cyto"),
+        Species("DMNPE", init=0.0 * u.mM, factor="cyto"),
+        Species("DMNPE_ca", init=0.0 * u.mM, factor="cyto"),
+        Species("CR", init=0.0 * u.mM, factor="cyto"),
+        Species("CR_1C_0N", init=0.0 * u.mM, factor="cyto"),
+        Species("CR_2C_0N", init=0.0 * u.mM, factor="cyto"),
+        Species("CR_2C_1N", init=0.0 * u.mM, factor="cyto"),
+        Species("CR_1C_1N", init=0.0 * u.mM, factor="cyto"),
+        Species("CR_0C_1N", init=0.0 * u.mM, factor="cyto"),
+        Species("CR_0C_2N", init=0.0 * u.mM, factor="cyto"),
+        Species("CR_1C_2N", init=0.0 * u.mM, factor="cyto"),
+        Species("CR_2C_2N", init=0.0 * u.mM, factor="cyto"),
+        Species("CR_1V", init=0.0 * u.mM, factor="cyto"),
+        Species("pump", init=0.0 * (u.mol / u.cm ** 2), factor="pump_area"),
+        Species("pumpca", init=0.0 * (u.mol / u.cm ** 2), factor="pump_area"),
+    )
+    reactions = (
+        Reaction(
+            lhs={"pump": 1, "Ci": 1},
+            rhs={"pumpca": 1},
+            forward=lambda self, V, x: self.kpmp1 * self.parea,
+            backward=lambda self, V, x: self.kpmp2 * self.parea,
+        ),
+        Reaction(
+            lhs={"pumpca": 1},
+            rhs={"pump": 1},
+            forward=lambda self, V, x: self.kpmp3 * self.parea,
+            backward=None,
+        ),
+        Reaction(
+            lhs={"Ci": 1, "Buff1": 1},
+            rhs={"Buff1_ca": 1},
+            forward=lambda self, V, x: self.rf1 * self.dsqvol,
+            backward=lambda self, V, x: self.rf2 * self.dsqvol,
+        ),
+        Reaction(
+            lhs={"Ci": 1, "Buff2": 1},
+            rhs={"Buff2_ca": 1},
+            forward=lambda self, V, x: self.rf3 * self.dsqvol,
+            backward=lambda self, V, x: self.rf4 * self.dsqvol,
+        ),
+        Reaction(
+            lhs={"Ci": 1, "BTC": 1},
+            rhs={"BTC_ca": 1},
+            forward=lambda self, V, x: self.b1 * self.dsqvol,
+            backward=lambda self, V, x: self.b2 * self.dsqvol,
+        ),
+        Reaction(
+            lhs={"Ci": 1, "DMNPE": 1},
+            rhs={"DMNPE_ca": 1},
+            forward=lambda self, V, x: self.c1 * self.dsqvol,
+            backward=lambda self, V, x: self.c2 * self.dsqvol,
+        ),
+        Reaction(
+            lhs={"Ci": 1, "CR": 1},
+            rhs={"CR_1C_0N": 1},
+            forward=lambda self, V, x: self.nT1 * self.dsqvol,
+            backward=lambda self, V, x: self.nT2 * self.dsqvol,
+        ),
+        Reaction(
+            lhs={"Ci": 1, "CR_1C_0N": 1},
+            rhs={"CR_2C_0N": 1},
+            forward=lambda self, V, x: self.nR1 * self.dsqvol,
+            backward=lambda self, V, x: self.nR2 * self.dsqvol,
+        ),
+        Reaction(
+            lhs={"Ci": 1, "CR_2C_0N": 1},
+            rhs={"CR_2C_1N": 1},
+            forward=lambda self, V, x: self.nT1 * self.dsqvol,
+            backward=lambda self, V, x: self.nT2 * self.dsqvol,
+        ),
+        Reaction(
+            lhs={"Ci": 1, "CR": 1},
+            rhs={"CR_0C_1N": 1},
+            forward=lambda self, V, x: self.nT1 * self.dsqvol,
+            backward=lambda self, V, x: self.nT2 * self.dsqvol,
+        ),
+        Reaction(
+            lhs={"Ci": 1, "CR_0C_1N": 1},
+            rhs={"CR_0C_2N": 1},
+            forward=lambda self, V, x: self.nR1 * self.dsqvol,
+            backward=lambda self, V, x: self.nR2 * self.dsqvol,
+        ),
+        Reaction(
+            lhs={"Ci": 1, "CR_0C_2N": 1},
+            rhs={"CR_1C_2N": 1},
+            forward=lambda self, V, x: self.nT1 * self.dsqvol,
+            backward=lambda self, V, x: self.nT2 * self.dsqvol,
+        ),
+        Reaction(
+            lhs={"Ci": 1, "CR_2C_1N": 1},
+            rhs={"CR_2C_2N": 1},
+            forward=lambda self, V, x: self.nR1 * self.dsqvol,
+            backward=lambda self, V, x: self.nR2 * self.dsqvol,
+        ),
+        Reaction(
+            lhs={"Ci": 1, "CR_1C_2N": 1},
+            rhs={"CR_2C_2N": 1},
+            forward=lambda self, V, x: self.nR1 * self.dsqvol,
+            backward=lambda self, V, x: self.nR2 * self.dsqvol,
+        ),
+        Reaction(
+            lhs={"Ci": 1, "CR_1C_0N": 1},
+            rhs={"CR_1C_1N": 1},
+            forward=lambda self, V, x: self.nT1 * self.dsqvol,
+            backward=lambda self, V, x: self.nT2 * self.dsqvol,
+        ),
+        Reaction(
+            lhs={"Ci": 1, "CR_0C_1N": 1},
+            rhs={"CR_1C_1N": 1},
+            forward=lambda self, V, x: self.nT1 * self.dsqvol,
+            backward=lambda self, V, x: self.nT2 * self.dsqvol,
+        ),
+        Reaction(
+            lhs={"Ci": 1, "CR_1C_1N": 1},
+            rhs={"CR_2C_1N": 1},
+            forward=lambda self, V, x: self.nR1 * self.dsqvol,
+            backward=lambda self, V, x: self.nR2 * self.dsqvol,
+        ),
+        Reaction(
+            lhs={"Ci": 1, "CR_1C_1N": 1},
+            rhs={"CR_1C_2N": 1},
+            forward=lambda self, V, x: self.nR1 * self.dsqvol,
+            backward=lambda self, V, x: self.nR2 * self.dsqvol,
+        ),
+        Reaction(
+            lhs={"Ci": 1, "CR": 1},
+            rhs={"CR_1V": 1},
+            forward=lambda self, V, x: self.nV1 * self.dsqvol,
+            backward=lambda self, V, x: self.nV2 * self.dsqvol,
+        ),
+    )
+    sources = CdpStC_MA2020_GoC.sources
+    conserves = CdpStC_MA2020_GoC.conserves
+
+    _diffeq_species = (
+        "Ci",
+        "mg",
+        "Buff1",
+        "Buff1_ca",
+        "Buff2",
+        "Buff2_ca",
+        "BTC",
+        "BTC_ca",
+        "DMNPE",
+        "DMNPE_ca",
+        "CR",
+        "CR_1C_0N",
+        "CR_2C_0N",
+        "CR_2C_1N",
+        "CR_1C_1N",
+        "CR_0C_1N",
+        "CR_0C_2N",
+        "CR_1C_2N",
+        "CR_2C_2N",
+        "CR_1V",
+        "pump",
+    )
+
+    def __init__(
+        self,
+        size: brainstate.typing.Size,
+        temp: Union[brainstate.typing.ArrayLike, Callable] = u.celsius2kelvin(25.0),
+        Nannuli: Union[brainstate.typing.ArrayLike, Callable] = 10.9495,
+        cainull: Union[brainstate.typing.ArrayLike, Callable] = 45e-6 * u.mM,
+        mginull: Union[brainstate.typing.ArrayLike, Callable] = 0.59 * u.mM,
+        Buffnull1: Union[brainstate.typing.ArrayLike, Callable] = 0.0 * u.mM,
+        rf1: Union[brainstate.typing.ArrayLike, Callable] = 0.0134329 / (u.mM * u.ms),
+        rf2: Union[brainstate.typing.ArrayLike, Callable] = 0.0397469 / u.ms,
+        Buffnull2: Union[brainstate.typing.ArrayLike, Callable] = 60.9091 * u.mM,
+        rf3: Union[brainstate.typing.ArrayLike, Callable] = 0.1435 / (u.mM * u.ms),
+        rf4: Union[brainstate.typing.ArrayLike, Callable] = 0.0014 / u.ms,
+        BTCnull: Union[brainstate.typing.ArrayLike, Callable] = 0.0 * u.mM,
+        b1: Union[brainstate.typing.ArrayLike, Callable] = 5.33 / (u.mM * u.ms),
+        b2: Union[brainstate.typing.ArrayLike, Callable] = 0.08 / u.ms,
+        DMNPEnull: Union[brainstate.typing.ArrayLike, Callable] = 0.0 * u.mM,
+        c1: Union[brainstate.typing.ArrayLike, Callable] = 5.63 / (u.mM * u.ms),
+        c2: Union[brainstate.typing.ArrayLike, Callable] = 0.107e-3 / u.ms,
+        CRnull: Union[brainstate.typing.ArrayLike, Callable] = 0.9 * u.mM,
+        nT1: Union[brainstate.typing.ArrayLike, Callable] = 1.8 / (u.mM * u.ms),
+        nT2: Union[brainstate.typing.ArrayLike, Callable] = 0.053 / u.ms,
+        nR1: Union[brainstate.typing.ArrayLike, Callable] = 310.0 / (u.mM * u.ms),
+        nR2: Union[brainstate.typing.ArrayLike, Callable] = 0.02 / u.ms,
+        nV1: Union[brainstate.typing.ArrayLike, Callable] = 7.3 / (u.mM * u.ms),
+        nV2: Union[brainstate.typing.ArrayLike, Callable] = 0.24 / u.ms,
+        kpmp1: Union[brainstate.typing.ArrayLike, Callable] = 3e-3 / (u.mM * u.ms),
+        kpmp2: Union[brainstate.typing.ArrayLike, Callable] = 1.75e-5 / u.ms,
+        kpmp3: Union[brainstate.typing.ArrayLike, Callable] = 7.255e-5 / u.ms,
+        TotalPump: Union[brainstate.typing.ArrayLike, Callable] = 1e-9 * (u.mol / u.cm ** 2),
+        Co: Union[brainstate.typing.ArrayLike, Callable, None] = None,
+        Ci_initializer: Union[brainstate.typing.ArrayLike, Callable, None] = None,
+        species_initializers: Optional[dict[str, object]] = None,
+        solver: str = "backward_euler",
+        substeps: int = 1,
+        name: Optional[str] = None,
+        **channels
+    ):
+        super().__init__(size=size, name=name, **channels)
+        self.Nannuli = braintools.init.param(Nannuli, self.varshape, allow_none=False)
+        self.cainull = braintools.init.param(cainull, self.varshape, allow_none=False)
+        self.mginull = braintools.init.param(mginull, self.varshape, allow_none=False)
+        self.Buffnull1 = braintools.init.param(Buffnull1, self.varshape, allow_none=False)
+        self.rf1 = braintools.init.param(rf1, self.varshape, allow_none=False)
+        self.rf2 = braintools.init.param(rf2, self.varshape, allow_none=False)
+        self.Buffnull2 = braintools.init.param(Buffnull2, self.varshape, allow_none=False)
+        self.rf3 = braintools.init.param(rf3, self.varshape, allow_none=False)
+        self.rf4 = braintools.init.param(rf4, self.varshape, allow_none=False)
+        self.BTCnull = braintools.init.param(BTCnull, self.varshape, allow_none=False)
+        self.b1 = braintools.init.param(b1, self.varshape, allow_none=False)
+        self.b2 = braintools.init.param(b2, self.varshape, allow_none=False)
+        self.DMNPEnull = braintools.init.param(DMNPEnull, self.varshape, allow_none=False)
+        self.c1 = braintools.init.param(c1, self.varshape, allow_none=False)
+        self.c2 = braintools.init.param(c2, self.varshape, allow_none=False)
+        self.CRnull = braintools.init.param(CRnull, self.varshape, allow_none=False)
+        self.nT1 = braintools.init.param(nT1, self.varshape, allow_none=False)
+        self.nT2 = braintools.init.param(nT2, self.varshape, allow_none=False)
+        self.nR1 = braintools.init.param(nR1, self.varshape, allow_none=False)
+        self.nR2 = braintools.init.param(nR2, self.varshape, allow_none=False)
+        self.nV1 = braintools.init.param(nV1, self.varshape, allow_none=False)
+        self.nV2 = braintools.init.param(nV2, self.varshape, allow_none=False)
+        self.kpmp1 = braintools.init.param(kpmp1, self.varshape, allow_none=False)
+        self.kpmp2 = braintools.init.param(kpmp2, self.varshape, allow_none=False)
+        self.kpmp3 = braintools.init.param(kpmp3, self.varshape, allow_none=False)
+        self.TotalPump = braintools.init.param(TotalPump, self.varshape, allow_none=False)
+
+        initializers = self._resolve_species_initializers(
+            Ci_initializer=Ci_initializer,
+            species_initializers=species_initializers,
+        )
+        self.Ci_initializer = initializers["Ci"]
+        self.species_initializers = dict(initializers)
+        self._init_kinetic_ion(
+            Co=Co,
+            temp=temp,
+            valence=None,
+            species_initializers=initializers,
+            solver=solver,
+            substeps=substeps,
+        )
+
+    def _resolve_species_initializers(
+        self,
+        *,
+        Ci_initializer,
+        species_initializers,
+    ) -> dict[str, object]:
+        species_initializers = dict(species_initializers or {})
+        invalid = set(species_initializers).difference(self._diffeq_species)
+        if invalid:
+            invalid_names = ", ".join(sorted(invalid))
+            raise ValueError(
+                f"{type(self).__name__} only accepts differential-species overrides; got {invalid_names}."
+            )
+
+        defaults = {
+            "Ci": self.cainull if Ci_initializer is None else Ci_initializer,
+            "mg": self.mginull,
+            "Buff1": self._ss_buffer_free(self.Buffnull1, self.rf1, self.rf2, self.cainull),
+            "Buff1_ca": self._ss_buffer_bound(self.Buffnull1, self.rf1, self.rf2, self.cainull),
+            "Buff2": self._ss_buffer_free(self.Buffnull2, self.rf3, self.rf4, self.cainull),
+            "Buff2_ca": self._ss_buffer_bound(self.Buffnull2, self.rf3, self.rf4, self.cainull),
+            "BTC": self._ss_buffer_free(self.BTCnull, self.b1, self.b2, self.cainull),
+            "BTC_ca": self._ss_buffer_bound(self.BTCnull, self.b1, self.b2, self.cainull),
+            "DMNPE": self._ss_buffer_free(self.DMNPEnull, self.c1, self.c2, self.cainull),
+            "DMNPE_ca": self._ss_buffer_bound(self.DMNPEnull, self.c1, self.c2, self.cainull),
+            "CR": self.CRnull,
+            "CR_1C_0N": 0.0 * u.mM,
+            "CR_2C_0N": 0.0 * u.mM,
+            "CR_2C_1N": 0.0 * u.mM,
+            "CR_1C_1N": 0.0 * u.mM,
+            "CR_0C_1N": 0.0 * u.mM,
+            "CR_0C_2N": 0.0 * u.mM,
+            "CR_1C_2N": 0.0 * u.mM,
+            "CR_2C_2N": 0.0 * u.mM,
+            "CR_1V": 0.0 * u.mM,
+            "pump": self.TotalPump,
+        }
+        defaults.update(species_initializers)
+        return {name: self._as_initializer(value) for name, value in defaults.items()}
+
+    def _as_initializer(self, value):
+        return CdpStC_MA2020_GoC._as_initializer(self, value)
+
+    def _ss_buffer_free(self, total, kon, koff, cai):
+        return total / (1.0 + (kon / koff) * cai)
+
+    def _ss_buffer_bound(self, total, kon, koff, cai):
+        return total / (1.0 + koff / (kon * cai))
+
+    def _require_diam_arc_mean(self):
+        return CdpStC_MA2020_GoC._require_diam_arc_mean(self)
+
+    @property
+    def vrat(self):
+        return CdpStC_MA2020_GoC.vrat.fget(self)
+
+    @property
+    def parea(self):
+        return CdpStC_MA2020_GoC.parea.fget(self)
+
+    @property
+    def dsq(self):
+        return CdpStC_MA2020_GoC.dsq.fget(self)
+
+    @property
+    def dsqvol(self):
+        return CdpStC_MA2020_GoC.dsqvol.fget(self)
+
+    def _ci_source_flux(self, total_current):
+        return CdpStC_MA2020_GoC._ci_source_flux(self, total_current)
+
+    def _ion_init_state_hook(self, V, batch_size: int = None):
+        self._require_diam_arc_mean()
+        KineticIon._ion_init_state_hook(self, V, batch_size=batch_size)
+
+    def _ion_reset_state_hook(self, V, batch_size: int = None):
+        self._require_diam_arc_mean()
+        KineticIon._ion_reset_state_hook(self, V, batch_size=batch_size)
+
+
+@register_ion("CdpHVA_SU2015_DCN")
+class CdpHVA_SU2015_DCN(Calcium, DynamicNernstIon):
+    r"""Template-based import of ``CdpHVA_SU15_DCN.mod``.
+
+    The imported NEURON mechanism evolves intracellular calcium via:
+
+    .. math::
+
+       cai' = -\frac{kCa}{depth} \cdot ica \cdot 10^4 - \frac{cai - caiBase}{tauCa}
+
+    In the first comparison notebook we only exercise the zero-``ica`` path,
+    which reduces to pure relaxation toward ``caiBase``.
+    """
+
+    __module__ = "braincell.ion"
+    uses_total_current = True
+
+    def __init__(
+        self,
+        size: brainstate.typing.Size,
+        temp: Union[brainstate.typing.ArrayLike, Callable] = u.celsius2kelvin(36.0),
+        kCa: Union[brainstate.typing.ArrayLike, Callable] = 3.45e-7 / u.coulomb,
+        tauCa: Union[brainstate.typing.ArrayLike, Callable] = 70.0 * u.ms,
+        caiBase: Union[brainstate.typing.ArrayLike, Callable] = 50e-6 * u.mM,
+        depth: Union[brainstate.typing.ArrayLike, Callable] = 0.2 * u.um,
+        Co: Union[brainstate.typing.ArrayLike, Callable, None] = None,
+        Ci_initializer: Union[brainstate.typing.ArrayLike, Callable, None] = None,
+        name: Optional[str] = None,
+        **channels
+    ):
+        super().__init__(size, name=name, **channels)
+        if Ci_initializer is None:
+            Ci_initializer = braintools.init.Constant(caiBase)
+        self._init_dynamic_nernst_ion(
+            Co=Co,
+            temp=temp,
+            valence=None,
+            Ci_initializer=Ci_initializer,
+        )
+
+        self.kCa = braintools.init.param(kCa, self.varshape, allow_none=False)
+        self.tauCa = braintools.init.param(tauCa, self.varshape, allow_none=False)
+        self.caiBase = braintools.init.param(caiBase, self.varshape, allow_none=False)
+        self.depth = braintools.init.param(depth, self.varshape, allow_none=False)
+
+    def derivative(self, Ci, V, total_current=None):
+        _ = V
+        if total_current is None:
+            total_current = braintools.init.param(0.0 * (u.mA / u.cm ** 2), self.varshape)
+        # The imported NMODL uses:
+        #   cai' = -(kCa / depth) * ica * 1e4 - (cai - caiBase) / tauCa
+        # where NEURON raw ``ica`` is negative for inward current. BrainCell
+        # channels follow the repo-wide inward-positive current convention, so
+        # the equivalent imported-ion drive here is positive in ``total_current``.
+        drive_value = (
+            self.kCa.to_decimal(self.kCa.unit)
+            / self.depth.to_decimal(u.um)
+            * total_current.to_decimal(u.mA / u.cm ** 2)
+            * 1e4
+        )
+        drive = drive_value * (u.mM / u.ms)
+        return drive - (Ci - self.caiBase) / self.tauCa
+
+
+@register_ion("CdpLVA_SU2015_DCN")
+class CdpLVA_SU2015_DCN(Calcium, DynamicNernstIon):
+    r"""Template-based import of ``CdpLVA_SU15_DCN.mod``.
+
+    The imported NEURON mechanism evolves intracellular calcium via:
+
+    .. math::
+
+       cali' = -\frac{kCal}{depth} \cdot ical \cdot 10^4 - \frac{cali - caliBase}{tauCal}
+
+    In BrainCell this pool is still exposed through the standard calcium
+    ``Ci/Co/E`` interface, with ``Ci`` corresponding to the NMODL ``cali``.
+    """
+
+    __module__ = "braincell.ion"
+    uses_total_current = True
+
+    def __init__(
+        self,
+        size: brainstate.typing.Size,
+        temp: Union[brainstate.typing.ArrayLike, Callable] = u.celsius2kelvin(36.0),
+        kCal: Union[brainstate.typing.ArrayLike, Callable] = 3.45e-7 / u.coulomb,
+        tauCal: Union[brainstate.typing.ArrayLike, Callable] = 70.0 * u.ms,
+        caliBase: Union[brainstate.typing.ArrayLike, Callable] = 50e-6 * u.mM,
+        depth: Union[brainstate.typing.ArrayLike, Callable] = 0.2 * u.um,
+        Co: Union[brainstate.typing.ArrayLike, Callable, None] = None,
+        Ci_initializer: Union[brainstate.typing.ArrayLike, Callable, None] = None,
+        name: Optional[str] = None,
+        **channels
+    ):
+        super().__init__(size, name=name, **channels)
+        if Ci_initializer is None:
+            Ci_initializer = braintools.init.Constant(caliBase)
+        self._init_dynamic_nernst_ion(
+            Co=Co,
+            temp=temp,
+            valence=None,
+            Ci_initializer=Ci_initializer,
+        )
+
+        self.kCal = braintools.init.param(kCal, self.varshape, allow_none=False)
+        self.tauCal = braintools.init.param(tauCal, self.varshape, allow_none=False)
+        self.caliBase = braintools.init.param(caliBase, self.varshape, allow_none=False)
+        self.depth = braintools.init.param(depth, self.varshape, allow_none=False)
+
+    def derivative(self, Ci, V, total_current=None):
+        _ = V
+        if total_current is None:
+            total_current = braintools.init.param(0.0 * (u.mA / u.cm ** 2), self.varshape)
+        # The imported NMODL uses:
+        #   cali' = -(kCal / depth) * ical * 1e4 - (cali - caliBase) / tauCal
+        # where NEURON raw ``ical`` is negative for inward current. BrainCell
+        # channel currents use the repo-wide inward-positive convention, so
+        # the equivalent imported-ion drive here is positive in ``total_current``.
+        drive_value = (
+            self.kCal.to_decimal(self.kCal.unit)
+            / self.depth.to_decimal(u.um)
+            * total_current.to_decimal(u.mA / u.cm ** 2)
+            * 1e4
+        )
+        drive = drive_value * (u.mM / u.ms)
+        return drive - (Ci - self.caliBase) / self.tauCal

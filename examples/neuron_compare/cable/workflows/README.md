@@ -35,7 +35,7 @@
   },
   "defaults": {
     "morphology": {
-      "path": "../../../multi_compartment/morpho_files/Cerebellum_morph/IO.swc"
+      "path": "../../Cerebellum_mod/IO/morphology/IO.swc"
     }
   },
   "templates": [
@@ -47,7 +47,7 @@
 }
 ```
 
-当前仓库内置的 config 对应 `Cerebellum_morph/` 下这 6 个 morphology：
+当前仓库内置的 config 对应 `Cerebellum_mod/<cell>/morphology/` 下这 6 个 morphology：
 
 - `BC.json`
 - `GoC.json`

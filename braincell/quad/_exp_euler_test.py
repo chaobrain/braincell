@@ -59,7 +59,11 @@ def compare(method):
         gold_vs = integrate('exp_euler', dt=dt)
         vs = integrate(method, dt=dt)
         norm.append(u.linalg.norm(gold_vs - vs))
-    return u.math.asarray(dts), u.math.asarray(norm)
+    # Strip units before returning so matplotlib can convert via np.asarray.
+    # Newer saiunit rejects np.asarray(dimensional_quantity).
+    dts_q = u.math.asarray(dts)
+    norm_q = u.math.asarray(norm)
+    return dts_q.mantissa, norm_q.mantissa
 
 
 class TestRungeKutta:

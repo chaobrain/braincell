@@ -31,9 +31,73 @@ a leak channel). Its two load-bearing properties are:
 """
 
 from collections.abc import Iterator, Mapping
+from dataclasses import fields, is_dataclass
 from typing import Any
 
-__all__ = ["Params"]
+import brainunit as u
+import numpy as np
+
+__all__ = ["Params", "quantity_hashable"]
+
+
+def _to_hashable(value: object) -> object:
+    """Convert ``value`` into a deterministic, hashable equivalent.
+
+    Used by :class:`Params` (and the runtime layout-dedup signatures)
+    because :class:`brainunit.Quantity` is not hashable on recent
+    ``saiunit`` releases (``Quantity.__hash__`` is set to ``None``).
+    Unwrap Quantity values into ``(payload, unit_str)`` tuples and
+    recurse through tuples, lists, dicts and dataclasses so that
+    equally-valued inputs still produce identical keys.
+
+    Raw arrays and other unhashable objects fall through unchanged and
+    will surface as ``TypeError`` when the caller hashes the result —
+    matching the previous "arrays are rejected" behavior.
+    """
+    if isinstance(value, u.Quantity):
+        mantissa = value.mantissa
+        if hasattr(mantissa, "shape") and getattr(mantissa, "shape", ()) != ():
+            try:
+                payload = tuple(np.asarray(mantissa).reshape(-1).tolist())
+            except Exception:
+                payload = id(mantissa)
+        else:
+            payload = float(np.asarray(mantissa))
+        return ("__Q__", payload, str(value.unit))
+    if isinstance(value, tuple):
+        return tuple(_to_hashable(v) for v in value)
+    if isinstance(value, list):
+        return ("__list__",) + tuple(_to_hashable(v) for v in value)
+    if isinstance(value, dict):
+        return ("__dict__",) + tuple(
+            (k, _to_hashable(v)) for k, v in sorted(value.items(), key=lambda kv: kv[0])
+        )
+    if is_dataclass(value) and not isinstance(value, type):
+        return (
+            type(value).__qualname__,
+            tuple(_to_hashable(getattr(value, f.name)) for f in fields(value)),
+        )
+    return value
+
+
+def _quantity_aware_hash(self: object) -> int:
+    return hash(_to_hashable(self))
+
+
+def quantity_hashable(cls: type) -> type:
+    """Class decorator: install a ``__hash__`` that handles Quantity fields.
+
+    Stack **after** ``@dataclass(frozen=True)``. Replaces the auto-generated
+    ``__hash__`` (which calls ``hash(self.field_tuple)`` and so trips on
+    unhashable :class:`brainunit.Quantity` fields) with one that routes
+    through :func:`_to_hashable`. Equal-valued instances continue to hash
+    equal; structural equality (``__eq__``) is left untouched.
+
+    Use on every frozen dataclass that may carry Quantity fields directly,
+    or that contains other dataclasses which do.
+    """
+    cls.__hash__ = _quantity_aware_hash  # type: ignore[assignment]
+    return cls
 
 
 class Params(Mapping[str, Any]):
@@ -108,7 +172,7 @@ class Params(Mapping[str, Any]):
             merged[str(key)] = value
         for key, value in merged.items():
             try:
-                hash(value)
+                hash(_to_hashable(value))
             except TypeError as exc:
                 raise TypeError(
                     f"Params value for {key!r} must be hashable "
@@ -180,7 +244,9 @@ class Params(Mapping[str, Any]):
 
     def __hash__(self) -> int:
         try:
-            return hash(frozenset(self._items.items()))
+            return hash(
+                frozenset((k, _to_hashable(v)) for k, v in self._items.items())
+            )
         except TypeError as exc:
             raise TypeError(
                 f"Params values must be hashable to hash the mapping; "

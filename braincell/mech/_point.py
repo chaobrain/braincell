@@ -43,7 +43,7 @@ from typing import Any, Callable
 import brainunit as u
 
 from ._base import Mechanism
-from ._params import Params
+from ._params import Params, quantity_hashable
 
 __all__ = [
     "Point",
@@ -79,6 +79,7 @@ class Point(Mechanism):
 # ---------------------------------------------------------------------------
 
 
+@quantity_hashable
 @dataclass(frozen=True)
 class CurrentClamp(Point):
     """Piecewise-constant current clamp.
@@ -203,6 +204,7 @@ class CurrentClamp(Point):
         )
 
 
+@quantity_hashable
 @dataclass(frozen=True)
 class SineClamp(Point):
     """Sinusoidal current clamp.
@@ -227,9 +229,9 @@ class SineClamp(Point):
     amplitude: Any
     frequency: Any
     phase: float = 0.0
-    offset: Any = 0.0 * u.nA
-    start: Any = 0.0 * u.ms
-    duration: Any = 1.0 * u.ms
+    offset: Any = field(default_factory=lambda: 0.0 * u.nA)
+    start: Any = field(default_factory=lambda: 0.0 * u.ms)
+    duration: Any = field(default_factory=lambda: 1.0 * u.ms)
 
     def __post_init__(self) -> None:
         frequency = _coerce_scalar_quantity(
@@ -267,6 +269,7 @@ class SineClamp(Point):
         object.__setattr__(self, "duration", duration)
 
 
+@quantity_hashable
 @dataclass(frozen=True)
 class FunctionClamp(Point):
     """Arbitrary-callable current clamp.
@@ -299,8 +302,8 @@ class FunctionClamp(Point):
     """
 
     fn: Callable
-    start: Any = 0.0 * u.ms
-    duration: Any = 1.0 * u.ms
+    start: Any = field(default_factory=lambda: 0.0 * u.ms)
+    duration: Any = field(default_factory=lambda: 1.0 * u.ms)
 
     def __post_init__(self) -> None:
         if not callable(self.fn):

@@ -28,6 +28,8 @@ from typing import Any
 import brainunit as u
 import numpy as np
 
+from ._params import quantity_hashable
+
 __all__ = ["CableProperty"]
 
 
@@ -35,6 +37,7 @@ def _default_temperature() -> Any:
     return u.celsius2kelvin(36.0)
 
 
+@quantity_hashable
 @dataclass(frozen=True)
 class CableProperty:
     """Passive cable properties of a region.

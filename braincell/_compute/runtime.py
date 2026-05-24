@@ -43,6 +43,7 @@ from braincell.mech import (
     Synapse,
     get_registry,
 )
+from braincell.mech._params import _to_hashable
 from braincell.ion import build_placeholder_ions
 from braincell.morph.morphology import Morphology, clone_morpho
 from braincell._multi_compartment.bridge import (
@@ -657,42 +658,6 @@ def _fn_fingerprint(fn) -> tuple:
                 stacklevel=2,
             )
     return (code.co_code, code.co_consts, code.co_varnames, tuple(closure_cells))
-
-
-def _to_hashable(value: object) -> object:
-    """Convert ``value`` into a deterministic, hashable equivalent.
-
-    Mechanism dataclasses contain :class:`brainunit.Quantity` fields, and
-    newer ``saiunit`` releases set ``Quantity.__hash__`` to ``None`` so the
-    dataclass-generated ``__hash__`` (which calls ``hash(self.field_tuple)``)
-    raises ``TypeError``. Unwrap Quantity values into ``(payload, unit_str)``
-    and recurse through tuples, lists, dicts and dataclasses so that
-    equally-valued mechanisms still produce identical keys.
-    """
-    if isinstance(value, u.Quantity):
-        mantissa = value.mantissa
-        if hasattr(mantissa, "shape") and getattr(mantissa, "shape", ()) != ():
-            try:
-                payload = tuple(np.asarray(mantissa).reshape(-1).tolist())
-            except Exception:
-                payload = id(mantissa)
-        else:
-            payload = float(np.asarray(mantissa))
-        return ("__Q__", payload, str(value.unit))
-    if isinstance(value, tuple):
-        return tuple(_to_hashable(v) for v in value)
-    if isinstance(value, list):
-        return ("__list__",) + tuple(_to_hashable(v) for v in value)
-    if isinstance(value, dict):
-        return ("__dict__",) + tuple(
-            (k, _to_hashable(v)) for k, v in sorted(value.items(), key=lambda kv: kv[0])
-        )
-    if is_dataclass(value) and not isinstance(value, type):
-        return (
-            type(value).__qualname__,
-            tuple(_to_hashable(getattr(value, f.name)) for f in fields(value)),
-        )
-    return value
 
 
 def mechanism_signature(mechanism: object) -> tuple[object, ...]:

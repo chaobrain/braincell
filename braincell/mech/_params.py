@@ -37,7 +37,7 @@ from typing import Any
 import brainunit as u
 import numpy as np
 
-__all__ = ["Params"]
+__all__ = ["Params", "quantity_hashable"]
 
 
 def _to_hashable(value: object) -> object:
@@ -78,6 +78,26 @@ def _to_hashable(value: object) -> object:
             tuple(_to_hashable(getattr(value, f.name)) for f in fields(value)),
         )
     return value
+
+
+def _quantity_aware_hash(self: object) -> int:
+    return hash(_to_hashable(self))
+
+
+def quantity_hashable(cls: type) -> type:
+    """Class decorator: install a ``__hash__`` that handles Quantity fields.
+
+    Stack **after** ``@dataclass(frozen=True)``. Replaces the auto-generated
+    ``__hash__`` (which calls ``hash(self.field_tuple)`` and so trips on
+    unhashable :class:`brainunit.Quantity` fields) with one that routes
+    through :func:`_to_hashable`. Equal-valued instances continue to hash
+    equal; structural equality (``__eq__``) is left untouched.
+
+    Use on every frozen dataclass that may carry Quantity fields directly,
+    or that contains other dataclasses which do.
+    """
+    cls.__hash__ = _quantity_aware_hash  # type: ignore[assignment]
+    return cls
 
 
 class Params(Mapping[str, Any]):

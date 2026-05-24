@@ -21,6 +21,7 @@ import brainunit as u
 import numpy as np
 
 from braincell.mech import CableProperty
+from braincell.mech._params import quantity_hashable
 from braincell.morph.branch import branch_class_for_type
 from braincell.morph.morphology import Morphology
 
@@ -125,6 +126,7 @@ class CVPerBranch(CVPolicy):
         )
 
 
+@quantity_hashable
 @dataclass(frozen=True)
 class MaxCVLen(CVPolicy):
     """Split branches so each CV stays below a target physical length.
@@ -174,6 +176,7 @@ class MaxCVLen(CVPolicy):
         )
 
 
+@quantity_hashable
 @dataclass(frozen=True)
 class DLambda(CVPolicy):
     """Splits each branch using the NEURON-style d_lambda discretization.
@@ -245,6 +248,7 @@ class DLambda(CVPolicy):
         )
 
 
+@quantity_hashable
 @dataclass(frozen=True)
 class CVPolicyByTypeRule:
     """One branch-type dispatch rule for :class:`CompositeByTypePolicy`.
@@ -274,6 +278,7 @@ class CVPolicyByTypeRule:
         object.__setattr__(self, "branch_types", tuple(normalized))
 
 
+@quantity_hashable
 @dataclass(frozen=True)
 class CompositeByTypePolicy(CVPolicy):
     """Dispatch different CV policies by morphology branch type.

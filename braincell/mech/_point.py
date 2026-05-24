@@ -43,7 +43,7 @@ from typing import Any, Callable
 import brainunit as u
 
 from ._base import Mechanism
-from ._params import Params
+from ._params import Params, quantity_hashable
 
 __all__ = [
     "Point",
@@ -79,6 +79,7 @@ class Point(Mechanism):
 # ---------------------------------------------------------------------------
 
 
+@quantity_hashable
 @dataclass(frozen=True)
 class CurrentClamp(Point):
     """Piecewise-constant current clamp.
@@ -203,6 +204,7 @@ class CurrentClamp(Point):
         )
 
 
+@quantity_hashable
 @dataclass(frozen=True)
 class SineClamp(Point):
     """Sinusoidal current clamp.
@@ -267,6 +269,7 @@ class SineClamp(Point):
         object.__setattr__(self, "duration", duration)
 
 
+@quantity_hashable
 @dataclass(frozen=True)
 class FunctionClamp(Point):
     """Arbitrary-callable current clamp.

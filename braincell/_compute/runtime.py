@@ -659,25 +659,61 @@ def _fn_fingerprint(fn) -> tuple:
     return (code.co_code, code.co_consts, code.co_varnames, tuple(closure_cells))
 
 
+def _to_hashable(value: object) -> object:
+    """Convert ``value`` into a deterministic, hashable equivalent.
+
+    Mechanism dataclasses contain :class:`brainunit.Quantity` fields, and
+    newer ``saiunit`` releases set ``Quantity.__hash__`` to ``None`` so the
+    dataclass-generated ``__hash__`` (which calls ``hash(self.field_tuple)``)
+    raises ``TypeError``. Unwrap Quantity values into ``(payload, unit_str)``
+    and recurse through tuples, lists, dicts and dataclasses so that
+    equally-valued mechanisms still produce identical keys.
+    """
+    if isinstance(value, u.Quantity):
+        mantissa = value.mantissa
+        if hasattr(mantissa, "shape") and getattr(mantissa, "shape", ()) != ():
+            try:
+                payload = tuple(np.asarray(mantissa).reshape(-1).tolist())
+            except Exception:
+                payload = id(mantissa)
+        else:
+            payload = float(np.asarray(mantissa))
+        return ("__Q__", payload, str(value.unit))
+    if isinstance(value, tuple):
+        return tuple(_to_hashable(v) for v in value)
+    if isinstance(value, list):
+        return ("__list__",) + tuple(_to_hashable(v) for v in value)
+    if isinstance(value, dict):
+        return ("__dict__",) + tuple(
+            (k, _to_hashable(v)) for k, v in sorted(value.items(), key=lambda kv: kv[0])
+        )
+    if is_dataclass(value) and not isinstance(value, type):
+        return (
+            type(value).__qualname__,
+            tuple(_to_hashable(getattr(value, f.name)) for f in fields(value)),
+        )
+    return value
+
+
 def mechanism_signature(mechanism: object) -> tuple[object, ...]:
     """Return a hashable signature used to group declarations.
 
     Most supported mechanism types are frozen dataclasses with
     structural equality, so the signature reduces to
-    ``(type_name, mechanism)``. :class:`FunctionClamp` is special-cased:
-    its ``fn`` field is compared by identity under the dataclass-
-    generated ``__eq__``, so we fingerprint the callable by bytecode +
-    normalized closure so structurally identical lambdas merge into
-    one layout.
+    ``(type_name, hashable_field_view)``. :class:`FunctionClamp` is
+    special-cased: its ``fn`` field is compared by identity under the
+    dataclass-generated ``__eq__``, so we fingerprint the callable by
+    bytecode + normalized closure so structurally identical lambdas merge
+    into one layout.
     """
     if isinstance(mechanism, FunctionClamp):
         return (
             "FunctionClamp",
             _fn_fingerprint(mechanism.fn),
-            mechanism.start,
-            mechanism.duration,
+            _to_hashable(mechanism.start),
+            _to_hashable(mechanism.duration),
         )
-    return (type(mechanism).__qualname__, mechanism)
+    return (type(mechanism).__qualname__, _to_hashable(mechanism))
 
 
 def _mechanism_var_names(mechanism: object) -> tuple[str, ...]:

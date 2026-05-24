@@ -115,6 +115,8 @@ class Ion(IonChannel, Container):
             V (array-like): The membrane potential for all neurons/compartments.
         """
         self._run_ion_hook("_ion_pre_integral_hook", V)
+        if getattr(self, "_ion_channel_update_phase", None) == "ion":
+            return
         nodes = brainstate.graph.nodes(self, Channel, allowed_hierarchy=(1, 1))
         for node in nodes.values():
             if not isinstance(node, IndependentIntegration):
@@ -132,9 +134,10 @@ class Ion(IonChannel, Container):
         nodes = tuple(brainstate.graph.nodes(self, Channel, allowed_hierarchy=(1, 1)).values())
         self.check_hierarchies(type(self), *nodes)
         ion_info = self.pack_info()
-        for node in nodes:
-            if not isinstance(node, IndependentIntegration):
-                node.compute_derivative(V, ion_info)
+        if getattr(self, "_ion_channel_update_phase", None) != "ion":
+            for node in nodes:
+                if not isinstance(node, IndependentIntegration):
+                    node.compute_derivative(V, ion_info)
         self._run_ion_hook("_ion_compute_derivative_hook", V)
 
     def post_integral(self, V):
@@ -147,10 +150,11 @@ class Ion(IonChannel, Container):
         Parameters:
             V (array-like): The membrane potential for all neurons/compartments.
         """
-        nodes = brainstate.graph.nodes(self, Channel, allowed_hierarchy=(1, 1))
-        for node in nodes.values():
-            if not isinstance(node, IndependentIntegration):
-                node.post_integral(V, self.pack_info())
+        if getattr(self, "_ion_channel_update_phase", None) != "ion":
+            nodes = brainstate.graph.nodes(self, Channel, allowed_hierarchy=(1, 1))
+            for node in nodes.values():
+                if not isinstance(node, IndependentIntegration):
+                    node.post_integral(V, self.pack_info())
         self._run_ion_hook("_ion_post_integral_hook", V)
 
     def current(self, V, include_external: bool = False):
@@ -220,15 +224,31 @@ class Ion(IonChannel, Container):
 
     def update(self, V, *args, **kwargs):
         if isinstance(self, IndependentIntegration):
+            from braincell.quad import ind_exp_euler_step
+
             self.make_integration(V)
             ion_info = self.pack_info()
             for key, node in brainstate.graph.nodes(self, Channel, allowed_hierarchy=(1, 1)).items():
                 if isinstance(node, IndependentIntegration):
                     node.update(V, ion_info)
+                else:
+                    ind_exp_euler_step(node, V, ion_info)
             return
         ion_info = self.pack_info()
         for key, node in brainstate.graph.nodes(self, Channel, allowed_hierarchy=(1, 1)).items():
             node.update(V, ion_info)
+
+    def _update_ion_state_only(self, V):
+        old_phase = getattr(self, "_ion_channel_update_phase", None)
+        self._ion_channel_update_phase = "ion"
+        try:
+            if isinstance(self, IndependentIntegration):
+                self.make_integration(V)
+        finally:
+            if old_phase is None:
+                delattr(self, "_ion_channel_update_phase")
+            else:
+                self._ion_channel_update_phase = old_phase
 
     def _run_ion_hook(self, name: str, *args, **kwargs):
         hook = getattr(self, name, None)

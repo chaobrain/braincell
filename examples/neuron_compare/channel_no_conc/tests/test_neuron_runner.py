@@ -37,11 +37,12 @@ class NeuronRunnerTest(unittest.TestCase):
         case = experiment_schema.ChannelNoConcCase.from_dict(self._build_payload())
         result = neuron_runner.run_case(case)
 
-        self.assertEqual(sorted(result.keys()), ["current", "gates", "time_ms", "voltage_mV"])
+        self.assertEqual(sorted(result.keys()), ["current", "gates", "ion_state", "time_ms", "voltage_mV"])
         self.assertEqual(sorted(result["gates"].keys()), ["n"])
         self.assertEqual(result["time_ms"].shape, result["voltage_mV"].shape)
         self.assertEqual(result["time_ms"].shape, result["current"]["ix"].shape)
         self.assertEqual(result["gates"]["n"].shape, result["time_ms"].shape)
+        self.assertEqual(result["ion_state"], {})
         self.assertEqual(len(result["time_ms"]), 80)
         self.assertAlmostEqual(result["time_ms"][0], 0.025, places=12)
         self.assertAlmostEqual(result["time_ms"][-1], 2.0, places=12)
@@ -420,7 +421,10 @@ class NeuronRunnerTest(unittest.TestCase):
         self.assertEqual(case.ion_state.Ci_mM, 2.4e-4)
         self.assertEqual(case.ion_state.Co_mM, 2.0)
         self.assertEqual(sorted(result["gates"].keys()), ["m"])
+        self.assertEqual(sorted(result["ion_state"].keys()), ["ci_mM", "co_mM", "eca_mV"])
         self.assertEqual(result["time_ms"].shape, result["current"]["ix"].shape)
+        for trace in result["ion_state"].values():
+            self.assertEqual(trace.shape, result["time_ms"].shape)
         self.assertTrue(np.isfinite(result["current"]["ix"]).all())
 
     def test_repo_cav3p2_sc_smoke_case_runs_with_ica_current(self) -> None:

@@ -134,8 +134,15 @@ def staggered_step(
     t = brainstate.environ.get('t', 0.0)
     dt = brainstate.environ.get('dt')
 
+    if hasattr(target, "cache_ion_total_currents"):
+        target.cache_ion_total_currents(target.V.value)
+
     # voltage integration
     dhs_voltage_step(target, t, dt, *args)
+
+    if hasattr(target, "_staggered_integrate_ion_channel_families"):
+        if target._staggered_integrate_ion_channel_families(*args):
+            return
 
     # ind_exp_euler for ion channels
     ind_exp_euler_step(target, *args, excluded_paths=[('V',)])

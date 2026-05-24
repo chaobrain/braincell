@@ -4,7 +4,7 @@
   },
   "defaults": {
     "morphology": {
-      "path": "../../../multi_compartment/morpho_files/Cerebellum_morph/PC.asc"
+      "path": "../../Cerebellum_mod/PC/morphology/PC.asc"
     }
   },
   "templates": [

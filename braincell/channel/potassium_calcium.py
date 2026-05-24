@@ -119,22 +119,11 @@ class SK_SU2015_DCN(HH):
 
     def f_z_inf(self, V, K: IonInfo, Ca: IonInfo):
         _ = (V, K)
-        return self._rate_table(Ca.Ci.to_decimal(u.mM))[0]
+        return self._z_inf_formula(Ca.Ci.to_decimal(u.mM))
 
     def f_z_tau(self, V, K: IonInfo, Ca: IonInfo):
         _ = (V, K)
-        return self._rate_table(Ca.Ci.to_decimal(u.mM))[1] / self.qdeltat
-
-    def _rate_table(self, cai):
-        x = u.math.clip(cai, 0.0, 0.01)
-        dx = 0.01 / 300.0
-        lower = u.math.floor(x / dx) * dx
-        lower = u.math.where(x >= 0.01, 0.01, lower)
-        upper = u.math.where(x >= 0.01, 0.01, lower + dx)
-        frac = u.math.where(upper > lower, (x - lower) / (upper - lower), 0.0)
-        zinf = self._z_inf_formula(lower) + frac * (self._z_inf_formula(upper) - self._z_inf_formula(lower))
-        tauz = self._z_tau_formula(lower) + frac * (self._z_tau_formula(upper) - self._z_tau_formula(lower))
-        return zinf, tauz
+        return self._z_tau_formula(Ca.Ci.to_decimal(u.mM)) / self.qdeltat
 
     def _z_inf_formula(self, cai):
         cai4 = cai ** 4

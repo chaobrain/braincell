@@ -836,6 +836,11 @@ class Morphology:
         return u.Quantity(np.sum(lengths_um * values_um) / total_length_um, u.um)
 
     @property
+    def diam_arc_mean(self) -> Quantity:
+        """Return the morphology-wide arc-length-weighted mean diameter."""
+        return 2.0 * self.mean_radius
+
+    @property
     def total_area(self) -> Quantity:
         lengths_um, r0_um, r1_um = self._all_segment_arrays_um()
         value = np.sum(np.pi * (r0_um + r1_um) * np.sqrt(lengths_um * lengths_um + (r1_um - r0_um) * (r1_um - r0_um)))

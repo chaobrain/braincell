@@ -116,10 +116,11 @@ def attach_runtime_ion_geometry(
     point_ids: np.ndarray,
     n_point: int,
 ) -> None:
-    """Assign length / area / diam_mid / radii to every runtime-ion container."""
+    """Assign length / area / diameters / radii to every runtime-ion container."""
     length = scatter_cv_geometry(cvs=cvs, attr_name="length", point_ids=point_ids, n_point=n_point)
     area = scatter_cv_geometry(cvs=cvs, attr_name="area", point_ids=point_ids, n_point=n_point)
     diam_mid = scatter_cv_geometry(cvs=cvs, attr_name="diam_mid", point_ids=point_ids, n_point=n_point)
+    diam_arc_mean = scatter_cv_geometry(cvs=cvs, attr_name="diam_arc_mean", point_ids=point_ids, n_point=n_point)
     radius_prox = scatter_cv_geometry(cvs=cvs, attr_name="radius_prox", point_ids=point_ids, n_point=n_point)
     radius_dist = scatter_cv_geometry(cvs=cvs, attr_name="radius_dist", point_ids=point_ids, n_point=n_point)
 
@@ -127,6 +128,7 @@ def attach_runtime_ion_geometry(
         setattr(ion, "length", length)
         setattr(ion, "area", area)
         setattr(ion, "diam_mid", diam_mid)
+        setattr(ion, "diam_arc_mean", diam_arc_mean)
         setattr(ion, "radius_prox", radius_prox)
         setattr(ion, "radius_dist", radius_dist)
 

@@ -8,9 +8,10 @@ import jax.numpy as jnp
 import numpy as np
 
 import braincell.mech as mech
-from braincell import Branch, CVPerBranch, Cell, CurrentClamp, IonChannel, Morphology
+from braincell import Branch, CVPerBranch, Cell, Channel, CurrentClamp, Ion, IonChannel, Morphology
 from braincell.filter import AllRegion, RootLocation
 from braincell.mech import StateProbe
+from braincell.quad import DiffEqState
 
 
 def _simple_cell() -> Cell:
@@ -38,6 +39,38 @@ class TestCellDeclaration(unittest.TestCase):
     def test_rejects_non_morphology(self):
         with self.assertRaises(TypeError):
             Cell("not-a-morpho")  # type: ignore[arg-type]
+
+    def test_rejects_unknown_ion_channel_update_order(self):
+        with self.assertRaisesRegex(ValueError, "ion_channel_update_order"):
+            Cell(
+                Morphology.from_root(
+                    Branch.from_lengths(
+                        lengths=[20.0] * u.um,
+                        radii=[10.0, 10.0] * u.um,
+                        type="soma",
+                    ),
+                    name="soma",
+                ),
+                ion_channel_update_order="legacy",
+            )
+
+    def test_accepts_family_and_integration_update_orders(self):
+        tree = Morphology.from_root(
+            Branch.from_lengths(
+                lengths=[20.0] * u.um,
+                radii=[10.0, 10.0] * u.um,
+                type="soma",
+            ),
+            name="soma",
+        )
+        self.assertEqual(
+            Cell(tree, ion_channel_update_order="family").ion_channel_update_order,
+            "family",
+        )
+        self.assertEqual(
+            Cell(tree, ion_channel_update_order="integration").ion_channel_update_order,
+            "integration",
+        )
 
     def test_cv_policy_mutation_invalidates_cache(self):
         cell = _simple_cell()
@@ -219,6 +252,135 @@ class TestCellLifecycle(unittest.TestCase):
         cell.V_init = -60.0 * u.mV
         result = cell.run(dt=0.1 * u.ms, duration=0.5 * u.ms)
         self.assertIn("V_root", result.traces)
+
+
+class CellIonChannelUpdateOrderTest(unittest.TestCase):
+    def test_update_uses_family_dispatch_when_staggered_solver_handles_it(self):
+        calls = []
+
+        def solver(target):
+            calls.append("solver")
+            target._ion_channel_family_phase_done = True
+
+        soma = Branch.from_lengths(
+            lengths=[20.0] * u.um,
+            radii=[10.0, 10.0] * u.um,
+            type="soma",
+        )
+        cell = Cell(
+            Morphology.from_root(soma, name="soma"),
+            cv_policy=CVPerBranch(),
+            solver=solver,
+        )
+        cell.init_state()
+
+        def family(point_V):
+            calls.append("family")
+
+        def integration(point_V):
+            calls.append("integration")
+
+        cell._update_ion_channel_families = family
+        cell._update_ion_channels_by_integration = integration
+
+        with brainstate.environ.context(t=0.0 * u.ms, dt=0.1 * u.ms):
+            cell.update()
+
+        self.assertEqual(calls, ["solver"])
+
+    def test_update_runs_family_dispatch_if_solver_did_not(self):
+        calls = []
+
+        def solver(target):
+            calls.append("solver")
+
+        soma = Branch.from_lengths(
+            lengths=[20.0] * u.um,
+            radii=[10.0, 10.0] * u.um,
+            type="soma",
+        )
+        cell = Cell(
+            Morphology.from_root(soma, name="soma"),
+            cv_policy=CVPerBranch(),
+            solver=solver,
+        )
+        cell.init_state()
+        cell._update_ion_channel_families = lambda point_V: calls.append("family")
+        cell._update_ion_channels_by_integration = lambda point_V: calls.append("integration")
+
+        with brainstate.environ.context(t=0.0 * u.ms, dt=0.1 * u.ms):
+            cell.update()
+
+        self.assertEqual(calls, ["solver", "family"])
+
+    def test_update_can_use_integration_order(self):
+        calls = []
+
+        def solver(target):
+            calls.append("solver")
+
+        soma = Branch.from_lengths(
+            lengths=[20.0] * u.um,
+            radii=[10.0, 10.0] * u.um,
+            type="soma",
+        )
+        cell = Cell(
+            Morphology.from_root(soma, name="soma"),
+            cv_policy=CVPerBranch(),
+            solver=solver,
+            ion_channel_update_order="integration",
+        )
+        cell.init_state()
+        cell._update_ion_channel_families = lambda point_V: calls.append("family")
+        cell._update_ion_channels_by_integration = lambda point_V: calls.append("integration")
+
+        with brainstate.environ.context(t=0.0 * u.ms, dt=0.1 * u.ms):
+            cell.update()
+
+        self.assertEqual(calls, ["solver", "integration"])
+
+    def test_family_phase_runs_ion_hooks_before_child_channel_hooks(self):
+        calls = []
+
+        class _Ion(Ion):
+            def __init__(self):
+                super().__init__(size=1, name=None)
+                self.Ci = DiffEqState(jnp.asarray([1.0]))
+                self.Co = jnp.asarray([2.0])
+                self.valence = 1
+
+            @property
+            def E(self):
+                return jnp.asarray([0.0])
+
+            def _ion_compute_derivative_hook(self, V):
+                calls.append("ion")
+                self.Ci.derivative = jnp.asarray([0.0]) / u.ms
+
+        class _Channel(Channel):
+            root_type = _Ion
+
+            def __init__(self):
+                super().__init__(size=1, name=None)
+                self.x = DiffEqState(jnp.asarray([1.0]))
+
+            def compute_derivative(self, V, ion):
+                calls.append("channel")
+                self.x.derivative = jnp.asarray([0.0]) / u.ms
+
+            def current(self, V, ion):
+                return 0.0
+
+        cell = _simple_cell()
+        ion = _Ion()
+        ion.add(ch=_Channel())
+        cell.init_state()
+        cell.ion_channels["test_ion"] = ion
+
+        with brainstate.environ.context(t=0.0 * u.ms, dt=0.1 * u.ms):
+            cell._staggered_integrate_ion_channel_families()
+
+        self.assertEqual(calls, ["ion", "channel"])
 
 
 class CellDoesNotAllocatePlaceholderIonsEagerlyTest(unittest.TestCase):

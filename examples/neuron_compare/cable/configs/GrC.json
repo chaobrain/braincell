@@ -4,7 +4,7 @@
   },
   "defaults": {
     "morphology": {
-      "path": "../../../multi_compartment/morpho_files/Cerebellum_morph/GrC.asc"
+      "path": "../../Cerebellum_mod/GrC/morphology/GrC.asc"
     }
   },
   "templates": [

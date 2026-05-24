@@ -54,6 +54,13 @@ def compare_case(case: ChannelNoConcCase) -> dict[str, Any]:
                 aligned_current["neuron_ix"],
             ),
         },
+        "ion_state": {
+            ion_name: metric_record_for_pair(
+                braincell_result["ion_state"][ion_name],
+                neuron_result["ion_state"][ion_name],
+            )
+            for ion_name in sorted(set(braincell_result["ion_state"]) & set(neuron_result["ion_state"]))
+        },
         "gates": {
             gate_pair.canonical_name: metric_record_for_pair(
                 braincell_result["gates"][gate_pair.braincell],
@@ -76,7 +83,15 @@ def compare_case(case: ChannelNoConcCase) -> dict[str, Any]:
                 "time_ms": aligned_current["time_ms"].tolist(),
                 "braincell_ix": aligned_current["braincell_ix"].tolist(),
                 "neuron_ix": aligned_current["neuron_ix"].tolist(),
-            }
+            },
+            "ion_state": {
+                ion_name: {
+                    "time_ms": neuron_result["time_ms"].tolist(),
+                    "braincell": braincell_result["ion_state"][ion_name].tolist(),
+                    "neuron": neuron_result["ion_state"][ion_name].tolist(),
+                }
+                for ion_name in sorted(set(braincell_result["ion_state"]) & set(neuron_result["ion_state"]))
+            },
         },
         "alignment": {
             "time_axis_trimmed_neuron_initial_sample": neuron_trimmed,
@@ -109,6 +124,13 @@ def _normalize_runner_result(
     if not isinstance(current_data, dict):
         raise ValueError(f"{side}.current must be a mapping.")
     current_ix = ensure_1d(current_data.get("ix"), name=f"{side}.current.ix")
+    ion_state_data = result.get("ion_state", {})
+    if not isinstance(ion_state_data, dict):
+        raise ValueError(f"{side}.ion_state must be a mapping.")
+    ion_state = {
+        str(name): ensure_1d(trace, name=f"{side}.ion_state.{name}")
+        for name, trace in ion_state_data.items()
+    }
     gates_data = result.get("gates")
     if not isinstance(gates_data, dict):
         raise ValueError(f"{side}.gates must be a mapping.")
@@ -132,6 +154,12 @@ def _normalize_runner_result(
             f"{side}.current.ix shape must match {side}.time_ms: "
             f"{current_ix.shape!r} vs {time_ms.shape!r}."
         )
+    for ion_name, ion_trace in ion_state.items():
+        if ion_trace.shape != time_ms.shape:
+            raise ValueError(
+                f"{side}.ion_state.{ion_name} shape must match {side}.time_ms: "
+                f"{ion_trace.shape!r} vs {time_ms.shape!r}."
+            )
     for gate_name, gate_trace in gates.items():
         if gate_trace.shape != time_ms.shape:
             raise ValueError(
@@ -143,6 +171,7 @@ def _normalize_runner_result(
         "time_ms": time_ms,
         "voltage_mV": voltage_mV,
         "current": {"ix": current_ix},
+        "ion_state": ion_state,
         "gates": gates,
     }
 
@@ -173,6 +202,10 @@ def _trim_initial_sample(result: dict[str, Any]) -> None:
     result["time_ms"] = result["time_ms"][1:]
     result["voltage_mV"] = result["voltage_mV"][1:]
     result["current"]["ix"] = result["current"]["ix"][1:]
+    result["ion_state"] = {
+        ion_name: ion_trace[1:]
+        for ion_name, ion_trace in result["ion_state"].items()
+    }
     result["gates"] = {gate_name: gate_trace[1:] for gate_name, gate_trace in result["gates"].items()}
 
 
@@ -240,5 +273,6 @@ def _serialize_runner_result(result: dict[str, Any]) -> dict[str, Any]:
     return {
         "voltage_mV": result["voltage_mV"].tolist(),
         "current": {"ix": result["current"]["ix"].tolist()},
+        "ion_state": {ion_name: ion_trace.tolist() for ion_name, ion_trace in result["ion_state"].items()},
         "gates": {gate_name: gate_trace.tolist() for gate_name, gate_trace in result["gates"].items()},
     }

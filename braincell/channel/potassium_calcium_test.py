@@ -156,45 +156,33 @@ class SK_SU2015_DCNTest(_MixedPotassiumCalciumTemplateTest, unittest.TestCase):
         ch.reset_state(V, k, ca)
         self.assertTrue(u.math.allclose(ch.z.value, ch.f_z_inf(V, k, ca), atol=1e-6))
 
-    def test_z_inf_matches_mod_table_interpolation(self) -> None:
+    def test_z_inf_uses_direct_formula(self) -> None:
         ch = SK_SU2015_DCN(size=3)
         V = _V([-60.0, -60.0, -60.0])
         k = _k_info(3)
         ca = IonInfo(
-            Ci=jnp.asarray([5e-5, 3e-4, 1e-3]) * u.mM,
+            Ci=jnp.asarray([5.5e-5, 3.2e-4, 1.01e-3]) * u.mM,
             Co=jnp.full((3,), 2.0) * u.mM,
             E=jnp.full((3,), 120.0) * u.mV,
             valence=2,
         )
 
-        expected = jnp.asarray(
-            [
-                0.0012925563241940586,
-                0.5000000000000003,
-                0.9919661920981747,
-            ]
-        )
-        self.assertTrue(u.math.allclose(ch.f_z_inf(V, k, ca), expected, atol=1e-7))
+        cai = ca.Ci.to_decimal(u.mM)
+        self.assertTrue(u.math.allclose(ch.f_z_inf(V, k, ca), ch._z_inf_formula(cai), atol=1e-12))
 
-    def test_z_tau_matches_mod_table_interpolation_and_qdeltat(self) -> None:
+    def test_z_tau_uses_direct_formula_and_qdeltat(self) -> None:
         ch = SK_SU2015_DCN(size=3, qdeltat=2.0)
         V = _V([-60.0, -60.0, -60.0])
         k = _k_info(3)
         ca = IonInfo(
-            Ci=jnp.asarray([5e-5, 0.004, 0.006]) * u.mM,
+            Ci=jnp.asarray([5.5e-5, 0.00401, 0.00601]) * u.mM,
             Co=jnp.full((3,), 2.0) * u.mM,
             E=jnp.full((3,), 120.0) * u.mV,
             valence=2,
         )
 
-        expected = jnp.asarray(
-            [
-                0.49533325,
-                0.12666000000000002,
-                0.03335,
-            ]
-        )
-        self.assertTrue(u.math.allclose(ch.f_z_tau(V, k, ca), expected, atol=1e-7))
+        cai = ca.Ci.to_decimal(u.mM)
+        self.assertTrue(u.math.allclose(ch.f_z_tau(V, k, ca), ch._z_tau_formula(cai) / ch.qdeltat, atol=1e-12))
 
     def test_z_helpers_match_mod_formulas_at_table_nodes(self) -> None:
         ch = SK_SU2015_DCN(size=1)

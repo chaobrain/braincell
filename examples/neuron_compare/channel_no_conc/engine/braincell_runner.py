@@ -4,10 +4,23 @@
 
 import inspect
 from pathlib import Path
+import sys
 from typing import Any
 
 import brainunit as u
 import numpy as np
+
+_HERE = Path(__file__).resolve().parent
+_REPO_ROOT = next(
+    (
+        candidate
+        for candidate in (_HERE, *_HERE.parents)
+        if (candidate / "braincell").exists() and (candidate / "examples").exists()
+    ),
+    _HERE,
+)
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
 
 try:
     from .experiment_schema import ChannelNoConcCase
@@ -26,7 +39,7 @@ except ImportError:  # pragma: no cover
     from stimulus import build_braincell_stimulus  # type: ignore
 
 
-def run_case(case: ChannelNoConcCase) -> dict[str, Any]:
+def run_case(case: ChannelNoConcCase, *, solver: str | None = None) -> dict[str, Any]:
     import braincell
     from braincell.filter import AllRegion, at
     from braincell.mech import CableProperty, Channel, CurrentProbe, Ion, MechanismProbe, StateProbe, get_registry
@@ -52,6 +65,7 @@ def run_case(case: ChannelNoConcCase) -> dict[str, Any]:
         morpho,
         cv_policy=braincell.CVPerBranch(),
         V_init=float(case.simulation.v_init_mV) * u.mV,
+        solver="staggered" if solver is None else solver,
     )
 
     region = AllRegion()
@@ -97,6 +111,18 @@ def run_case(case: ChannelNoConcCase) -> dict[str, Any]:
             for gate_name in mapping_spec.braincell.gate_names
         ),
     )
+    ion_probe_fields = _resolve_ion_probe_fields(mapping_spec)
+    if len(ion_probe_fields) > 0:
+        ion_name = mapping_spec.current_source.ion_name
+        if ion_name is None:
+            raise ValueError("ion probe fields require mapping.current to resolve to an ion.")
+        cell.place(
+            probe_loc,
+            *(
+                MechanismProbe(mechanism=ion_name, field=field)
+                for field in ion_probe_fields
+            ),
+        )
     cell.place(
         probe_loc,
         _build_current_probe(mapping_spec),
@@ -131,6 +157,10 @@ def run_case(case: ChannelNoConcCase) -> dict[str, Any]:
                 name="braincell.current.ix",
             ),
         },
+        "ion_state": _collect_braincell_ion_state_traces(
+            result=result,
+            mapping_spec=mapping_spec,
+        ),
         "gates": {
             gate_name: ensure_1d(
                 np.asarray(result.traces[f"soma(0.5)_{mapping_spec.braincell.class_name}_{gate_name}"]),
@@ -145,6 +175,37 @@ def _build_current_probe(mapping_spec: MappingSpec):
     from braincell.mech import CurrentProbe
 
     return CurrentProbe(mechanism=mapping_spec.braincell.class_name)
+
+
+def _resolve_ion_probe_fields(mapping_spec: MappingSpec) -> tuple[str, ...]:
+    ion_name = mapping_spec.current_source.ion_name
+    if ion_name not in {"ca", "cal"}:
+        return ()
+    return ("Ci", "Co", "E")
+
+
+def _collect_braincell_ion_state_traces(*, result, mapping_spec: MappingSpec) -> dict[str, np.ndarray]:
+    ion_name = mapping_spec.current_source.ion_name
+    if ion_name not in {"ca", "cal"}:
+        return {}
+    prefix = f"soma(0.5)_{ion_name}_"
+    field_units = {
+        "Ci": (u.mM, "braincell.ion_state.ci_mM"),
+        "Co": (u.mM, "braincell.ion_state.co_mM"),
+        "E": (u.mV, "braincell.ion_state.eca_mV"),
+    }
+    traces: dict[str, np.ndarray] = {}
+    for field_name, (unit, name) in field_units.items():
+        trace_name = prefix + field_name
+        if trace_name not in result.traces:
+            continue
+        values = result.traces[trace_name]
+        traces[{
+            "Ci": "ci_mM",
+            "Co": "co_mM",
+            "E": "eca_mV",
+        }[field_name]] = ensure_1d(values.to_decimal(unit), name=name)
+    return traces
 
 
 def _build_init_nernst_ion(*, ion_name: str, case: ChannelNoConcCase):

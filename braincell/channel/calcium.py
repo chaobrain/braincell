@@ -22,11 +22,19 @@ from typing import Callable, Optional, Union
 import brainstate
 import braintools
 import brainunit as u
+import jax
 
 from braincell._base import HHTypedNeuron, IonInfo
 from braincell.channel._base import Gate, HH, ghk_flux
 from braincell.ion import Calcium
 from braincell.mech import register_channel
+
+_CAV3P1_NMODL_FARADAY = 9.6485e4 * (u.coulomb / u.mol)
+_CAV3P1_NMODL_GAS_CONSTANT = 8.3145 * (u.joule / (u.kelvin * u.mol))
+_CAV3P1_NMODL_TEMP_OFFSET = 0.04 * u.kelvin
+_CAV3P3_NMODL_FARADAY = 96520.0 * (u.coulomb / u.mol)
+_CAV3P3_NMODL_GAS_CONSTANT = 8.3134 * (u.joule / (u.kelvin * u.mol))
+_CAV3P3_NMODL_TEMP_OFFSET = -0.01 * u.kelvin
 
 __all__ = [
     "CaN_IS2008",
@@ -44,19 +52,52 @@ __all__ = [
     "Cav1p3_MA2025_BC",
     "Cav3p1_MA2020_GoC",
     "Cav3p1_MA2024_PC",
+    "Cav3p1_MA2024_PC_Frozen",
+    "Cav3p1Test_PC24",
     "Cav2p1_MA2025_BC",
     "Cav2p1_MA2024_PC",
+    "Cav2p1_MA2024_PC_Frozen",
     "Cav2p1_RI2021_SC",
     "Cav3p2_MA2025_BC",
     "Cav3p2_MA2024_PC",
     "Cav3p2_RI2021_SC",
     "Cav3p3_MA2024_PC",
+    "Cav3p3_MA2024_PC_Frozen",
     "Cav3p3_RI2021_SC",
     "CaHVA_MA2020_GoC",
     "CaHVA_MA2020_GrC",
     "Cav2p3_MA2020_GoC",
     "Ca_ZH2019_IO",
 ]
+
+
+def _cav3p1_nmodl_ghk_flux(V, ci, co, z, temp):
+    """GHK helper matching the constants and Kelvin conversion in Cav3p1 NMODL."""
+    ghk_temp = temp + _CAV3P1_NMODL_TEMP_OFFSET
+    zeta = (z * _CAV3P1_NMODL_FARADAY * V) / (_CAV3P1_NMODL_GAS_CONSTANT * ghk_temp)
+    exp_term = u.math.exp(-zeta)
+    numerator = ci - co * exp_term
+    small_branch = (z * _CAV3P1_NMODL_FARADAY) * numerator * (1 + zeta / 2)
+    regular_branch = (z * zeta * _CAV3P1_NMODL_FARADAY) * numerator / (1 - exp_term)
+    return u.math.where(u.math.abs(1 - exp_term) < 1e-6, small_branch, regular_branch)
+
+
+def _cav3p3_nmodl_ghk_flux(V, ci, co, z, temp):
+    """GHK helper matching the constants and Kelvin conversion in Cav3p3 NMODL."""
+    ghk_temp = temp + _CAV3P3_NMODL_TEMP_OFFSET
+    w = (z * _CAV3P3_NMODL_FARADAY * V) / (_CAV3P3_NMODL_GAS_CONSTANT * ghk_temp)
+    exp_term = u.math.exp(w)
+    numerator = co - ci * exp_term
+    small_branch = -0.001 * z * _CAV3P3_NMODL_FARADAY * numerator * (1 - w / 2)
+    regular_branch = -0.001 * z * _CAV3P3_NMODL_FARADAY * numerator * w / (exp_term - 1)
+    return u.math.where(u.math.abs(exp_term - 1) < 1e-6, small_branch, regular_branch)
+
+
+def _freeze_quantity_gradient(value):
+    return u.Quantity(
+        jax.lax.stop_gradient(u.get_mantissa(value)),
+        u.get_unit(value),
+    )
 
 
 @register_channel("CaN_IS2008")
@@ -443,29 +484,16 @@ class CaL_SU2015_DCN(HH):
         return self.g_max * self.conductance_factor(V) * (self.E - V)
 
     def f_m_inf(self, V):
-        return self._rate_table(V.to_decimal(u.mV))[0]
+        return self._m_inf_formula(V.to_decimal(u.mV))
 
     def f_m_tau(self, V):
-        return self._rate_table(V.to_decimal(u.mV))[1]
+        return self._m_tau_formula(V.to_decimal(u.mV)) / self.qdeltat
 
     def f_h_inf(self, V):
-        return self._rate_table(V.to_decimal(u.mV))[2]
+        return self._h_inf_formula(V.to_decimal(u.mV))
 
     def f_h_tau(self, V):
-        return self._rate_table(V.to_decimal(u.mV))[3]
-
-    def _rate_table(self, V):
-        x = u.math.clip(V, -150.0, 100.0)
-        dx = 250.0 / 300.0
-        lower = -150.0 + u.math.floor((x + 150.0) / dx) * dx
-        lower = u.math.where(x >= 100.0, 100.0, lower)
-        upper = u.math.where(x >= 100.0, 100.0, lower + dx)
-        frac = u.math.where(upper > lower, (x - lower) / (upper - lower), 0.0)
-        minf = self._m_inf_formula(lower) + frac * (self._m_inf_formula(upper) - self._m_inf_formula(lower))
-        taum = self._m_tau_formula(lower) + frac * (self._m_tau_formula(upper) - self._m_tau_formula(lower))
-        hinf = self._h_inf_formula(lower) + frac * (self._h_inf_formula(upper) - self._h_inf_formula(lower))
-        tauh = self._h_tau_formula(lower) + frac * (self._h_tau_formula(upper) - self._h_tau_formula(lower))
-        return minf, taum / self.qdeltat, hinf, tauh / self.qdeltat
+        return self._h_tau_formula(V.to_decimal(u.mV)) / self.qdeltat
 
     def _m_inf_formula(self, V):
         return 1.0 / (1.0 + u.math.exp((V + 56.0) / -6.2))
@@ -679,13 +707,32 @@ class Cav1p3_MA2025_BC(Cav1p3_MA2020_GoC):
 
 @register_channel("Cav3p1_MA2020_GoC")
 class Cav3p1_MA2020_GoC(HH):
-    r"""Purkinje cell Cav3.1 low-threshold calcium current with GHK drive."""
+    r"""Purkinje cell Cav3.1 low-threshold calcium current with GHK drive.
+
+    Notes
+    -----
+    The source NMODL applies temperature scaling directly inside the tau
+    formulas instead of through a uniform gate-level ``phi`` factor:
+
+    - for ``p``/``m`` the ``v <= -90`` branch is hard-coded to ``1 ms`` and is
+      **not** divided by ``qt``;
+    - in the other branch the full ``C_tau_m + A_tau_m / (...)`` expression is
+      divided by ``qt``;
+    - for ``q``/``h`` the full ``C_tau_h + A_tau_h / exp(...)`` expression is
+      also divided by ``qt``.
+
+    That behavior does not match the generic ``HH`` gate temperature path,
+    where ``Gate(q10=..., temp_ref=...)`` would multiply the full derivative by
+    ``phi`` and therefore divide the whole tau by ``qt``. We intentionally keep
+    gate ``phi=1`` here and encode the source-mod temperature handling directly
+    in :meth:`f_p_tau` and :meth:`f_q_tau`.
+    """
 
     __module__ = "braincell.channel"
     root_type = Calcium
     gates = (
-        Gate("p", power=2, q10=lambda self: self.q10, temp_ref=lambda self: self.temp_ref),
-        Gate("q", q10=lambda self: self.q10, temp_ref=lambda self: self.temp_ref),
+        Gate("p", power=2),
+        Gate("q"),
     )
 
     def __init__(
@@ -721,7 +768,7 @@ class Cav3p1_MA2020_GoC(HH):
         self.z = 2
 
     def current(self, V, Ca: IonInfo):
-        drive = ghk_flux(V=V, ci=Ca.Ci, co=Ca.Co, z=self.z, temp=self.temp)
+        drive = _cav3p1_nmodl_ghk_flux(V=V, ci=Ca.Ci, co=Ca.Co, z=self.z, temp=self.temp)
         return -self.g_max * self.conductance_factor(V, Ca) * drive
 
     def f_p_inf(self, V, Ca: IonInfo):
@@ -731,19 +778,25 @@ class Cav3p1_MA2020_GoC(HH):
         return 1.0 / (1.0 + u.math.exp((V - self.v0_h_inf) / self.k_h_inf))
 
     def f_p_tau(self, V, Ca: IonInfo):
+        qt = self.q10 ** (((self.temp - self.temp_ref) / u.kelvin) / 10.0)
         return u.math.where(
             V <= -90.0 * u.mV,
             1.0,
-            self.C_tau_m
-            + self.A_tau_m
-            / (
-                u.math.exp((V - self.v0_tau_m1) / self.k_tau_m1)
-                + u.math.exp((V - self.v0_tau_m2) / self.k_tau_m2)
-            ),
+            (
+                self.C_tau_m
+                + (
+                    self.A_tau_m
+                    / (
+                        u.math.exp((V - self.v0_tau_m1) / self.k_tau_m1)
+                        + u.math.exp((V - self.v0_tau_m2) / self.k_tau_m2)
+                    )
+                )
+            ) / qt,
         )
 
     def f_q_tau(self, V, Ca: IonInfo):
-        return self.C_tau_h + self.A_tau_h / u.math.exp((V - self.v0_tau_h1) / self.k_tau_h1)
+        qt = self.q10 ** (((self.temp - self.temp_ref) / u.kelvin) / 10.0)
+        return (self.C_tau_h + self.A_tau_h / u.math.exp((V - self.v0_tau_h1) / self.k_tau_h1)) / qt
 
 
 @register_channel("Cav3p1_MA2024_PC")
@@ -751,6 +804,175 @@ class Cav3p1_MA2024_PC(Cav3p1_MA2020_GoC):
     """Template-based import of ``Cav3p1_MA2024_PC.mod``."""
 
     __module__ = "braincell.channel"
+
+
+@register_channel("Cav3p1_MA2024_PC_Frozen")
+class Cav3p1_MA2024_PC_Frozen(HH):
+    """Experimental Cav3.1 variant that freezes GHK voltage dependence in autodiff."""
+
+    __module__ = "braincell.channel"
+    root_type = Calcium
+    gates = (
+        Gate("p", power=2),
+        Gate("q"),
+    )
+
+    def __init__(
+        self,
+        size: brainstate.typing.Size,
+        g_max: Union[brainstate.typing.ArrayLike, Callable] = 2.5e-4 * (u.cm / u.second),
+        V_sh: Union[brainstate.typing.ArrayLike, Callable] = 0.0 * u.mV,
+        temp: brainstate.typing.ArrayLike = u.celsius2kelvin(22.0),
+        q10: Union[brainstate.typing.ArrayLike, Callable] = 3.0,
+        temp_ref: brainstate.typing.ArrayLike = u.celsius2kelvin(37.0),
+        name: Optional[str] = None,
+    ):
+        super().__init__(size=size, name=name)
+        self.g_max = braintools.init.param(g_max, self.varshape, allow_none=False)
+        self.V_sh = braintools.init.param(V_sh, self.varshape, allow_none=False)
+        self.temp = braintools.init.param(temp, self.varshape, allow_none=False)
+        self.q10 = braintools.init.param(q10, self.varshape, allow_none=False)
+        self.temp_ref = braintools.init.param(temp_ref, self.varshape, allow_none=False)
+        self.v0_m_inf = -52.0 * u.mV
+        self.v0_h_inf = -72.0 * u.mV
+        self.k_m_inf = -5.0 * u.mV
+        self.k_h_inf = 7.0 * u.mV
+        self.C_tau_m = 1.0
+        self.A_tau_m = 1.0
+        self.v0_tau_m1 = -40.0 * u.mV
+        self.v0_tau_m2 = -102.0 * u.mV
+        self.k_tau_m1 = 9.0 * u.mV
+        self.k_tau_m2 = -18.0 * u.mV
+        self.C_tau_h = 15.0
+        self.A_tau_h = 1.0
+        self.v0_tau_h1 = -32.0 * u.mV
+        self.k_tau_h1 = 7.0 * u.mV
+        self.z = 2
+
+    def current(self, V, Ca: IonInfo):
+        frozen_V = _freeze_quantity_gradient(V)
+        drive = _cav3p1_nmodl_ghk_flux(V=frozen_V, ci=Ca.Ci, co=Ca.Co, z=self.z, temp=self.temp)
+        return -self.g_max * self.conductance_factor(V, Ca) * drive
+
+    def f_p_inf(self, V, Ca: IonInfo):
+        return 1.0 / (1.0 + u.math.exp((V - self.v0_m_inf) / self.k_m_inf))
+
+    def f_q_inf(self, V, Ca: IonInfo):
+        return 1.0 / (1.0 + u.math.exp((V - self.v0_h_inf) / self.k_h_inf))
+
+    def f_p_tau(self, V, Ca: IonInfo):
+        qt = self.q10 ** (((self.temp - self.temp_ref) / u.kelvin) / 10.0)
+        return u.math.where(
+            V <= -90.0 * u.mV,
+            1.0,
+            (
+                self.C_tau_m
+                + (
+                    self.A_tau_m
+                    / (
+                        u.math.exp((V - self.v0_tau_m1) / self.k_tau_m1)
+                        + u.math.exp((V - self.v0_tau_m2) / self.k_tau_m2)
+                    )
+                )
+            ) / qt,
+        )
+
+    def f_q_tau(self, V, Ca: IonInfo):
+        qt = self.q10 ** (((self.temp - self.temp_ref) / u.kelvin) / 10.0)
+        return (self.C_tau_h + self.A_tau_h / u.math.exp((V - self.v0_tau_h1) / self.k_tau_h1)) / qt
+
+
+@register_channel("Cav3p1Test_PC24")
+class Cav3p1Test_PC24(HH):
+    r"""Template-based import of ``Cav3_1_test.mod``.
+
+    This PC24 test variant removes the GHK drive entirely and uses a direct
+    conductance-density style current law:
+
+    .. math::
+
+       I_{Ca} = g_{max} \, p^2 q
+
+    The source NMODL keeps the same steady-state and tau formulas as the
+    Cav3.1 template, including the gate-temperature handling encoded directly
+    in the tau expressions.
+    """
+
+    __module__ = "braincell.channel"
+    root_type = Calcium
+    gates = (
+        Gate("p", power=2),
+        Gate("q"),
+    )
+
+    def __init__(
+        self,
+        size: brainstate.typing.Size,
+        g_max: Union[brainstate.typing.ArrayLike, Callable] = 2.5e-4 * (u.siemens / u.cm ** 2),
+        temp: brainstate.typing.ArrayLike = u.celsius2kelvin(22.0),
+        q10: Union[brainstate.typing.ArrayLike, Callable] = 3.0,
+        temp_ref: brainstate.typing.ArrayLike = u.celsius2kelvin(37.0),
+        name: Optional[str] = None,
+    ):
+        super().__init__(size=size, name=name)
+        self.g_max = braintools.init.param(g_max, self.varshape, allow_none=False)
+        self.temp = braintools.init.param(temp, self.varshape, allow_none=False)
+        self.q10 = braintools.init.param(q10, self.varshape, allow_none=False)
+        self.temp_ref = braintools.init.param(temp_ref, self.varshape, allow_none=False)
+        self.v0_m_inf = -52.0 * u.mV
+        self.v0_h_inf = -72.0 * u.mV
+        self.k_m_inf = -5.0 * u.mV
+        self.k_h_inf = 7.0 * u.mV
+        self.C_tau_m = 1.0
+        self.A_tau_m = 1.0
+        self.v0_tau_m1 = -40.0 * u.mV
+        self.v0_tau_m2 = -102.0 * u.mV
+        self.k_tau_m1 = 9.0 * u.mV
+        self.k_tau_m2 = -18.0 * u.mV
+        self.C_tau_h = 15.0
+        self.A_tau_h = 1.0
+        self.v0_tau_h1 = -32.0 * u.mV
+        self.k_tau_h1 = 7.0 * u.mV
+
+    def current(self, V, Ca: IonInfo):
+        _ = (V, Ca)
+        # ``Cav3_1_test.mod`` drops both ``(v-eca)`` and GHK drive, so the raw
+        # NMODL right-hand side is numerically ``pcabar * p^2 * q`` despite the
+        # declared current unit. We multiply by ``1 mV`` here solely to lift the
+        # conductance-density-like quantity to a current-density unit that can
+        # flow through the standard BrainCell compare/runtime paths.
+        return -self.g_max * self.conductance_factor(V, Ca) * (1.0 * u.mV)
+
+    def f_p_inf(self, V, Ca: IonInfo):
+        _ = Ca
+        return 1.0 / (1.0 + u.math.exp((V - self.v0_m_inf) / self.k_m_inf))
+
+    def f_q_inf(self, V, Ca: IonInfo):
+        _ = Ca
+        return 1.0 / (1.0 + u.math.exp((V - self.v0_h_inf) / self.k_h_inf))
+
+    def f_p_tau(self, V, Ca: IonInfo):
+        _ = Ca
+        qt = self.q10 ** (((self.temp - self.temp_ref) / u.kelvin) / 10.0)
+        return u.math.where(
+            V <= -90.0 * u.mV,
+            1.0,
+            (
+                self.C_tau_m
+                + (
+                    self.A_tau_m
+                    / (
+                        u.math.exp((V - self.v0_tau_m1) / self.k_tau_m1)
+                        + u.math.exp((V - self.v0_tau_m2) / self.k_tau_m2)
+                    )
+                )
+            ) / qt,
+        )
+
+    def f_q_tau(self, V, Ca: IonInfo):
+        _ = Ca
+        qt = self.q10 ** (((self.temp - self.temp_ref) / u.kelvin) / 10.0)
+        return (self.C_tau_h + self.A_tau_h / u.math.exp((V - self.v0_tau_h1) / self.k_tau_h1)) / qt
 
 
 @register_channel("Cav2p1_RI2021_SC")
@@ -815,6 +1037,127 @@ class Cav2p1_MA2024_PC(Cav2p1_RI2021_SC):
     """Template-based import of ``Cav2p1_MA2024_PC.mod``."""
 
     __module__ = "braincell.channel"
+
+
+@register_channel("Cav2p1_MA2024_PC_Frozen")
+class Cav2p1_MA2024_PC_Frozen(HH):
+    """Experimental Cav2.1 variant that freezes GHK voltage dependence in autodiff."""
+
+    __module__ = "braincell.channel"
+    root_type = Calcium
+    gates = (Gate("m", power=3, q10=3.0, temp_ref=u.celsius2kelvin(23.0)),)
+
+    def __init__(
+        self,
+        size: brainstate.typing.Size,
+        g_max: Union[brainstate.typing.ArrayLike, Callable] = 2.2e-4 * (u.cm / u.second),
+        V_sh: Union[brainstate.typing.ArrayLike, Callable] = 0.0 * u.mV,
+        temp: brainstate.typing.ArrayLike = u.celsius2kelvin(23.0),
+        name: Optional[str] = None,
+    ):
+        super().__init__(size=size, name=name)
+        self.g_max = braintools.init.param(g_max, self.varshape, allow_none=False)
+        self.V_sh = braintools.init.param(V_sh, self.varshape, allow_none=False)
+        self.temp = braintools.init.param(temp, self.varshape, allow_none=False)
+        self.vhalfm = -29.458 * u.mV
+        self.cvm = 8.429 * u.mV
+        self.z = 2
+
+    def _shifted_voltage(self, V):
+        return V - self.V_sh
+
+    def current(self, V, Ca: IonInfo):
+        frozen_V = _freeze_quantity_gradient(V)
+        drive = _cav3p1_nmodl_ghk_flux(
+            V=self._shifted_voltage(frozen_V),
+            ci=Ca.Ci,
+            co=Ca.Co,
+            z=self.z,
+            temp=self.temp,
+        )
+        return -self.g_max * self.conductance_factor(V, Ca) * drive
+
+    def f_m_inf(self, V, Ca: IonInfo):
+        V = self._shifted_voltage(V)
+        return 1.0 / (1.0 + u.math.exp(-(V - self.vhalfm) / self.cvm))
+
+    def f_m_tau(self, V, Ca: IonInfo):
+        V = self._shifted_voltage(V).to_decimal(u.mV)
+        return u.math.where(
+            V >= -40.0,
+            0.2702 + 1.1622 * u.math.exp(-((V + 26.798) ** 2) / 164.19),
+            0.6923 * u.math.exp(V / 1089.372),
+        )
+
+
+@register_channel("Cav3p3_MA2024_PC_Frozen")
+class Cav3p3_MA2024_PC_Frozen(HH):
+    """Experimental Cav3.3 variant that freezes GHK voltage dependence in autodiff."""
+
+    __module__ = "braincell.channel"
+    root_type = Calcium
+    gates = (
+        Gate("n", power=2, q10=2.3, temp_ref=u.celsius2kelvin(28.0)),
+        Gate("l", q10=2.3, temp_ref=u.celsius2kelvin(28.0)),
+    )
+
+    def __init__(
+        self,
+        size: brainstate.typing.Size,
+        perm: Union[brainstate.typing.ArrayLike, Callable] = 1.0e-4 * (u.cm / u.second),
+        g_scale: Union[brainstate.typing.ArrayLike, Callable] = 1.0e-5,
+        temp: brainstate.typing.ArrayLike = u.celsius2kelvin(36.0),
+        V_sh: Union[brainstate.typing.ArrayLike, Callable] = 0.0 * u.mV,
+        name: Optional[str] = None,
+    ):
+        super().__init__(size=size, name=name)
+        self.perm = braintools.init.param(perm, self.varshape, allow_none=False)
+        self.g_scale = braintools.init.param(g_scale, self.varshape, allow_none=False)
+        self.temp = braintools.init.param(temp, self.varshape, allow_none=False)
+        self.V_sh = braintools.init.param(V_sh, self.varshape, allow_none=False)
+        self.vhalfn = -41.5 * u.mV
+        self.vhalfl = -69.8 * u.mV
+        self.kn = 6.2 * u.mV
+        self.kl = -6.1 * u.mV
+        self.z = 2
+
+    def _shifted_voltage(self, V):
+        return V - self.V_sh
+
+    def current(self, V, Ca: IonInfo):
+        frozen_V = _freeze_quantity_gradient(V)
+        drive = _cav3p3_nmodl_ghk_flux(
+            V=self._shifted_voltage(frozen_V),
+            ci=Ca.Ci,
+            co=Ca.Co,
+            z=self.z,
+            temp=self.temp,
+        )
+        return -self.g_scale * self.perm * self.conductance_factor(V, Ca) * drive
+
+    def f_n_inf(self, V, Ca: IonInfo):
+        V = self._shifted_voltage(V)
+        return 1.0 / (1.0 + u.math.exp(-(V - self.vhalfn) / self.kn))
+
+    def f_l_inf(self, V, Ca: IonInfo):
+        V = self._shifted_voltage(V)
+        return 1.0 / (1.0 + u.math.exp(-(V - self.vhalfl) / self.kl))
+
+    def f_n_tau(self, V, Ca: IonInfo):
+        V = self._shifted_voltage(V).to_decimal(u.mV)
+        return u.math.where(
+            V > -60.0,
+            7.2 + 0.02 * u.math.exp(-V / 14.7),
+            0.875 * u.math.exp((V + 120.0) / 41.0),
+        )
+
+    def f_l_tau(self, V, Ca: IonInfo):
+        V = self._shifted_voltage(V).to_decimal(u.mV)
+        return u.math.where(
+            V > -60.0,
+            79.5 + 2.0 * u.math.exp(-V / 9.3),
+            260.0,
+        )
 
 
 @register_channel("Cav3p2_RI2021_SC")

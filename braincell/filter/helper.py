@@ -24,7 +24,7 @@ from braincell.morph.morphology import Morphology
 Interval = tuple[int, float, float]
 Location = tuple[int, float]
 EPSILON = 1e-12
-_BRANCH_METRIC_PROPERTIES = {"length", "mean_radius", "area", "volume"}
+_BRANCH_METRIC_PROPERTIES = {"length", "mean_radius", "diam_arc_mean", "area", "volume"}
 _UNSUPPORTED_BRANCH_METRIC_PROPERTIES = {"max_radius", "min_radius"}
 
 __all__ = [

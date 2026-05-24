@@ -4,7 +4,7 @@
   },
   "defaults": {
     "morphology": {
-      "path": "../../../multi_compartment/morpho_files/Cerebellum_morph/GoC.asc"
+      "path": "../../Cerebellum_mod/GoC/morphology/GoC.asc"
     }
   },
   "templates": [

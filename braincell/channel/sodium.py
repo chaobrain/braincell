@@ -467,11 +467,17 @@ class Nav1p6_MA2020_GoC(Markov):
     bi5 = lambda self, V: self.Coff * self.btfac ** 4 * self.phi
     bin = lambda self, V: self.Ooff * self.phi
 
+    def reset_state(self, V, Na: IonInfo, batch_size: int = None):
+        self.reset_steady_state(V, Na, batch_size=batch_size)
+
 @register_channel("Nav1p6_MA2024_PC")
 class Nav1p6_MA2024_PC(Nav1p6_MA2020_GoC):
     """Template-based import of ``Nav1p6_MA2024_PC.mod``."""
 
     __module__ = "braincell.channel"
+
+    def reset_state(self, V, Na: IonInfo, batch_size: int = None):
+        self.reset_steady_state(V, Na, batch_size=batch_size)
 
 @register_channel("Nav1p6_MA2025_BC")
 class Nav1p6_MA2025_BC(Nav1p6_MA2020_GoC):
@@ -806,4 +812,3 @@ class NaFHF_MA2020_GrC(Markov, IndependentIntegration):
     bl4 = lambda self, V: self.Loff(V) * self.d
     bl5 = lambda self, V: self.Loff(V) * self.d ** 2
     bl6 = lambda self, V: self.Loff(V) * self.d ** 2
-

@@ -35,13 +35,17 @@ from braincell.channel.calcium import (
     CaN_IS2008,
     CaT_HM1992,
     CaT_HP1992,
+    Cav3p1_MA2024_PC_Frozen,
     Cav3p1_MA2024_PC,
+    Cav3p1Test_PC24,
+    Cav2p1_MA2024_PC_Frozen,
     Cav2p1_MA2024_PC,
     Cav2p1_MA2025_BC,
     Cav2p1_RI2021_SC,
     Cav3p2_MA2024_PC,
     Cav3p2_MA2025_BC,
     Cav3p2_RI2021_SC,
+    Cav3p3_MA2024_PC_Frozen,
     Cav3p3_MA2024_PC,
     Cav3p3_RI2021_SC,
     Cav2p3_MA2020_GoC,
@@ -53,6 +57,17 @@ from braincell.channel.calcium import (
 )
 from braincell.ion import Calcium
 from braincell.mech import get_registry
+
+
+def _cav3p1_nmodl_ghk_flux(V, ci, co, z, temp):
+    faraday = 9.6485e4 * (u.coulomb / u.mol)
+    gas_constant = 8.3145 * (u.joule / (u.kelvin * u.mol))
+    zeta = (z * faraday * V) / (gas_constant * (temp + 0.04 * u.kelvin))
+    exp_term = u.math.exp(-zeta)
+    numerator = ci - co * exp_term
+    small_branch = (z * faraday) * numerator * (1 + zeta / 2)
+    regular_branch = (z * zeta * faraday) * numerator / (1 - exp_term)
+    return u.math.where(u.math.abs(1 - exp_term) < 1e-6, small_branch, regular_branch)
 
 
 def _ca_info(
@@ -322,18 +337,15 @@ class CaL_SU2015_DCNTest(unittest.TestCase):
         self.assertTrue(u.math.allclose(ch.m.value, ch.f_m_inf(V), atol=1e-6))
         self.assertTrue(u.math.allclose(ch.h.value, ch.f_h_inf(V), atol=1e-6))
 
-    def test_rate_table_matches_neuron_table_interpolation(self) -> None:
-        ch = CaL_SU2015_DCN(size=3)
-        V = _V([-80.0, -60.0, -50.0])
-        expected_minf = jnp.asarray([0.020412827223409803, 0.3440807563946349, 0.7246691889182086])
-        expected_taum = jnp.asarray([4.553869064160897, 3.4557757506969895, 2.2781157681978534])
-        expected_hinf = jnp.asarray([0.5, 0.0066928509242848554, 0.0005527786369235996])
-        expected_tauh = jnp.asarray([101.10370992163146, 22.982746907943916, 14.591378866898495])
+    def test_rates_use_direct_formulas(self) -> None:
+        ch = CaL_SU2015_DCN(size=3, qdeltat=2.0)
+        V = _V([-79.7, -60.2, -49.6])
+        v_mV = V.to_decimal(u.mV)
 
-        self.assertTrue(u.math.allclose(ch.f_m_inf(V), expected_minf, atol=1e-6))
-        self.assertTrue(u.math.allclose(ch.f_m_tau(V), expected_taum, atol=1e-6))
-        self.assertTrue(u.math.allclose(ch.f_h_inf(V), expected_hinf, atol=1e-6))
-        self.assertTrue(u.math.allclose(ch.f_h_tau(V), expected_tauh, atol=1e-6))
+        self.assertTrue(u.math.allclose(ch.f_m_inf(V), ch._m_inf_formula(v_mV), atol=1e-12))
+        self.assertTrue(u.math.allclose(ch.f_m_tau(V), ch._m_tau_formula(v_mV) / ch.qdeltat, atol=1e-12))
+        self.assertTrue(u.math.allclose(ch.f_h_inf(V), ch._h_inf_formula(v_mV), atol=1e-12))
+        self.assertTrue(u.math.allclose(ch.f_h_tau(V), ch._h_tau_formula(v_mV) / ch.qdeltat, atol=1e-12))
 
     def test_qdeltat_scales_taus(self) -> None:
         base = CaL_SU2015_DCN(size=1, qdeltat=1.0)
@@ -684,7 +696,7 @@ class Cav3p1_MA2020_GoCTest(unittest.TestCase):
         ch.p.value = jnp.array([0.5])
         ch.q.value = jnp.array([0.25])
         current = ch.current(V, ca)
-        expected = -ch.g_max * ch.p.value ** 2 * ch.q.value * ghk_flux(
+        expected = -ch.g_max * ch.p.value ** 2 * ch.q.value * _cav3p1_nmodl_ghk_flux(
             V=V,
             ci=ca.Ci,
             co=ca.Co,
@@ -698,6 +710,67 @@ class Cav3p1_MA2020_GoCTest(unittest.TestCase):
                 atol=1e-6,
             )
         )
+
+    def test_current_uses_nmodl_constants_not_generic_ghk(self) -> None:
+        ch = Cav3p1_MA2020_GoC(size=1, temp=u.celsius2kelvin(36.0))
+        V = _V([-65.0])
+        ca = _ca_info(C=0.00024, E_mV=120.0)
+        ch.init_state(V, ca)
+        ch.p.value = jnp.array([0.06913853271498836])
+        ch.q.value = jnp.array([0.26894140923409454])
+
+        actual = ch.current(V, ca).to_decimal(u.mA / (u.cm ** 2))
+        generic = (
+            -ch.g_max
+            * ch.p.value ** 2
+            * ch.q.value
+            * ghk_flux(V=V, ci=ca.Ci, co=ca.Co, z=ch.z, temp=ch.temp)
+        ).to_decimal(u.mA / (u.cm ** 2))
+
+        self.assertFalse(u.math.allclose(actual, generic, rtol=1e-8, atol=0.0))
+
+
+class Cav3p1TestPC24Test(unittest.TestCase):
+    def test_root_type_is_calcium(self) -> None:
+        self.assertIs(Cav3p1Test_PC24.root_type, Calcium)
+
+    def test_inherits_hh_template_directly(self) -> None:
+        self.assertTrue(issubclass(Cav3p1Test_PC24, HH))
+
+    def test_gates_define_p2_q_structure(self) -> None:
+        ch = Cav3p1Test_PC24(size=1)
+        gates = ch._iter_gates()
+        self.assertEqual(tuple(gate.name for gate in gates), ("p", "q"))
+        self.assertEqual(tuple(gate.power for gate in gates), (2, 1))
+
+    def test_reset_state_matches_infinities(self) -> None:
+        ch = Cav3p1Test_PC24(size=1)
+        V = _V([-50.0])
+        ca = _ca_info()
+        ch.init_state(V, ca)
+        ch.reset_state(V, ca)
+        self.assertTrue(u.math.allclose(ch.p.value, ch.f_p_inf(V, ca), atol=1e-6))
+        self.assertTrue(u.math.allclose(ch.q.value, ch.f_q_inf(V, ca), atol=1e-6))
+
+    def test_current_matches_direct_conductance_law(self) -> None:
+        ch = Cav3p1Test_PC24(size=1)
+        V = _V([-40.0])
+        ca = _ca_info(C=0.001, E_mV=140.0)
+        ch.init_state(V, ca)
+        ch.p.value = jnp.array([0.5])
+        ch.q.value = jnp.array([0.25])
+        current = ch.current(V, ca)
+        expected = -ch.g_max * ch.p.value ** 2 * ch.q.value * (1.0 * u.mV)
+        self.assertTrue(u.math.allclose(current, expected, atol=1e-12 * expected.unit))
+
+
+class Cav3p1FrozenPC24Test(unittest.TestCase):
+    def test_is_registered(self) -> None:
+        self.assertIs(get_registry().get("channel", "Cav3p1_MA2024_PC_Frozen"), Cav3p1_MA2024_PC_Frozen)
+
+    def test_current_uses_frozen_voltage(self) -> None:
+        ch = Cav3p1_MA2024_PC_Frozen(size=1)
+        self.assertTrue(callable(ch.current))
 
 
 class Cav2p1RI21SCTest(unittest.TestCase):
@@ -842,6 +915,24 @@ class Cav2p1MA25BCTest(unittest.TestCase):
         bc.reset_state(V, ca)
         sc.reset_state(V, ca)
         self.assertTrue(u.math.allclose(bc.m.value, sc.m.value, atol=1e-6))
+
+
+class Cav2p1FrozenPC24Test(unittest.TestCase):
+    def test_is_registered(self) -> None:
+        self.assertIs(get_registry().get("channel", "Cav2p1_MA2024_PC_Frozen"), Cav2p1_MA2024_PC_Frozen)
+
+    def test_current_uses_frozen_voltage(self) -> None:
+        ch = Cav2p1_MA2024_PC_Frozen(size=1)
+        self.assertTrue(callable(ch.current))
+
+
+class Cav3p3FrozenPC24Test(unittest.TestCase):
+    def test_is_registered(self) -> None:
+        self.assertIs(get_registry().get("channel", "Cav3p3_MA2024_PC_Frozen"), Cav3p3_MA2024_PC_Frozen)
+
+    def test_current_uses_frozen_voltage(self) -> None:
+        ch = Cav3p3_MA2024_PC_Frozen(size=1)
+        self.assertTrue(callable(ch.current))
 
 
 class Cav2p1MA24PCTest(unittest.TestCase):

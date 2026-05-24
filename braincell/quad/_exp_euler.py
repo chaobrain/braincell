@@ -14,7 +14,7 @@
 # ==============================================================================
 
 import functools
-from typing import Dict
+from typing import Callable, Dict
 
 import brainstate
 import brainunit as u
@@ -313,6 +313,32 @@ def ind_exp_euler_step(target: DiffEqModule, *args, excluded_paths=()):
         ...         excluded_paths=[('V',)],
         ...     )                                           # doctest: +SKIP
     """
+    _ind_exp_euler_step_selected(
+        target,
+        *args,
+        excluded_paths=excluded_paths,
+        allow_empty=True,
+    )
+
+
+def _has_path_prefix(path, prefixes):
+    for prefix in prefixes:
+        if path[:len(prefix)] == prefix:
+            return True
+    return False
+
+
+def _ind_exp_euler_step_selected(
+    target: DiffEqModule,
+    *args,
+    include_paths=(),
+    excluded_paths=(),
+    pre_integral: Callable | None = None,
+    compute_derivative: Callable | None = None,
+    post_integral: Callable | None = None,
+    allow_empty: bool = False,
+):
+    """Internal selective variant used by family-phased cell scheduling."""
     if not isinstance(target, DiffEqModule):
         raise TypeError(
             f"The target should be a {DiffEqModule.__name__}. "
@@ -321,14 +347,32 @@ def ind_exp_euler_step(target: DiffEqModule, *args, excluded_paths=()):
     t = brainstate.environ.get('t', getattr(target, 'current_time', 0.0 * u.ms))
     dt = brainstate.environ.get('dt')
 
-    # Pre-integration hook (e.g., update gating variables)
-    target.pre_integral(*args)
-
     # Retrieve all states from the target module
-    all_states, diffeq_states, other_states = split_diffeq_states(target)
+    excluded_paths = tuple(tuple(path) for path in excluded_paths)
+    include_paths = tuple(tuple(path) for path in include_paths)
+    all_states, diffeq_states, other_states = split_diffeq_states(
+        target,
+        excluded_paths=excluded_paths,
+    )
+    if include_paths:
+        diffeq_states = {
+            key: state
+            for key, state in diffeq_states.items()
+            if _has_path_prefix(tuple(key), include_paths)
+        }
+    if len(diffeq_states) == 0:
+        if allow_empty:
+            return
+        raise AssertionError("No DiffEqState found in the target module.")
 
     # Collect all state object ids for trace validation
     all_state_ids = {id(st) for st in all_states.values()}
+    pre_integral = target.pre_integral if pre_integral is None else pre_integral
+    compute_derivative = target.compute_derivative if compute_derivative is None else compute_derivative
+    post_integral = target.post_integral if post_integral is None else post_integral
+
+    # Pre-integration hook (e.g., update gating variables)
+    pre_integral(*args)
 
     def vector_field(
         diffeq_state_key: Path,
@@ -372,7 +416,7 @@ def ind_exp_euler_step(target: DiffEqModule, *args, excluded_paths=()):
                 all_states[key].value = val
 
             # Compute derivatives for all states
-            target.compute_derivative(*args)
+            compute_derivative(*args)
 
             # Validate and retrieve the derivative for the current state
             _check_diffeq_state_derivative(all_states[diffeq_state_key], dt)  # THIS is important.
@@ -390,7 +434,6 @@ def ind_exp_euler_step(target: DiffEqModule, *args, excluded_paths=()):
     # Prepare dictionaries of current state values
     other_state_vals = {k: v.value for k, v in other_states.items()}
     diffeq_state_vals = {k: v.value for k, v in diffeq_states.items()}
-    assert len(diffeq_states) > 0, "No DiffEqState found in the target module."
 
     # data to capture the integrated values of DiffEqStates
     integrated_diffeq_state_vals = dict()
@@ -398,9 +441,6 @@ def ind_exp_euler_step(target: DiffEqModule, *args, excluded_paths=()):
     # Iterate over each DiffEqState and apply the exponential Euler update independently
     i = 0
     for key in diffeq_states.keys():
-        if key in excluded_paths:
-            continue
-
         # Compute the linearization (Jacobian), derivative, and auxiliary outputs
         linear, derivative, aux = brainstate.transform.vector_grad(
             functools.partial(vector_field, key),
@@ -431,9 +471,7 @@ def ind_exp_euler_step(target: DiffEqModule, *args, excluded_paths=()):
 
     # Assign the integrated values back to the corresponding DiffEqStates
     for k, st in diffeq_states.items():
-        if k in excluded_paths:
-            continue
         st.value = integrated_diffeq_state_vals[k]
 
     # Post-integration hook (e.g., apply constraints)
-    target.post_integral(*args)
+    post_integral(*args)

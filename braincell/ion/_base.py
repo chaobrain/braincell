@@ -363,8 +363,8 @@ class KineticIon(IndependentIntegration):
         temp=None,
         valence=None,
         species_initializers: dict[str, Any] | None = None,
-        solver: str = "rk4",
-        substeps: int = 5,
+        solver: str = "backward_euler",
+        substeps: int = 1,
     ):
         """Initialize one declarative kinetic-ion instance.
 
@@ -414,9 +414,17 @@ class KineticIon(IndependentIntegration):
         """Advance this ion with its own solver and substep schedule."""
         with brainstate.environ.context(dt=brainstate.environ.get_dt() / self.substeps):
             brainstate.transform.for_loop(
-                lambda i: self.solver(self, V),
+                lambda i: self._step_solver(V),
                 u.math.arange(self.substeps),
             )
+
+    def _step_solver(self, V):
+        try:
+            self.solver(self, V, excluded_paths=(("channels",),))
+        except TypeError as exc:
+            if "excluded_paths" not in str(exc):
+                raise
+            self.solver(self, V)
 
     def species_values(self):
         """Return the current full visible species view."""

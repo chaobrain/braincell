@@ -46,6 +46,7 @@ class CompareSingleCaseTest(unittest.TestCase):
         self.assertEqual(result["template_name"], "compare")
         self.assertIn("voltage", result["metrics"])
         self.assertIn("current", result["metrics"])
+        self.assertIn("ion_state", result["metrics"])
         self.assertIn("gates", result["metrics"])
         self.assertIn("ix", result["metrics"]["current"])
         self.assertIn("n", result["metrics"]["gates"])
@@ -58,6 +59,44 @@ class CompareSingleCaseTest(unittest.TestCase):
         self.assertAlmostEqual(result["time_ms"][0], case.simulation.dt_ms, places=12)
         self.assertEqual(len(result["time_ms"]), len(result["braincell"]["voltage_mV"]))
         self.assertEqual(len(result["time_ms"]), len(result["neuron"]["current"]["ix"]))
+
+    def test_compare_case_serializes_ion_state_metrics_when_present(self) -> None:
+        payload = self._build_payload()
+        payload["mapping"]["current"] = "ica"
+        case = experiment_schema.ChannelNoConcCase.from_dict(payload)
+        braincell_result = {
+            "time_ms": np.array([0.0, 0.025], dtype=float),
+            "voltage_mV": np.array([-65.0, -64.0], dtype=float),
+            "current": {"ix": np.array([0.0, 0.1], dtype=float)},
+            "ion_state": {
+                "ci_mM": np.array([2.4e-4, 2.5e-4], dtype=float),
+                "co_mM": np.array([2.0, 2.0], dtype=float),
+                "eca_mV": np.array([120.0, 119.0], dtype=float),
+            },
+            "gates": {"n": np.array([0.2, 0.21], dtype=float)},
+        }
+        neuron_result = {
+            "time_ms": np.array([0.0, 0.025], dtype=float),
+            "voltage_mV": np.array([-65.0, -64.1], dtype=float),
+            "current": {"ix": np.array([0.0, 0.1], dtype=float)},
+            "ion_state": {
+                "ci_mM": np.array([2.4e-4, 2.45e-4], dtype=float),
+                "co_mM": np.array([2.0, 2.0], dtype=float),
+                "eca_mV": np.array([120.0, 119.5], dtype=float),
+            },
+            "gates": {"n": np.array([0.2, 0.21], dtype=float)},
+        }
+
+        with mock.patch.object(compare_module, "run_braincell_case", return_value=braincell_result), mock.patch.object(
+            compare_module,
+            "run_neuron_case",
+            return_value=neuron_result,
+        ):
+            result = compare_module.compare_case(case)
+
+        self.assertEqual(sorted(result["braincell"]["ion_state"].keys()), ["ci_mM", "co_mM", "eca_mV"])
+        self.assertEqual(sorted(result["aligned"]["ion_state"].keys()), ["ci_mM", "co_mM", "eca_mV"])
+        self.assertTrue(np.isfinite(result["metrics"]["ion_state"]["ci_mM"]["mae"]))
 
     def test_sine_case_voltage_alignment_stays_within_small_error(self) -> None:
         payload = self._build_payload()
@@ -86,12 +125,14 @@ class CompareSingleCaseTest(unittest.TestCase):
             "time_ms": np.array([0.0, 0.025, 0.05], dtype=float),
             "voltage_mV": np.array([-65.0, -64.0, -63.0], dtype=float),
             "current": {"ix": np.array([0.0, 0.1, 0.2], dtype=float)},
+            "ion_state": {},
             "gates": {"n": np.array([0.2, 0.21, 0.22], dtype=float)},
         }
         neuron_result = {
             "time_ms": np.array([-0.025, 0.0, 0.025, 0.05], dtype=float),
             "voltage_mV": np.array([-65.5, -65.0, -64.0, -63.0], dtype=float),
             "current": {"ix": np.array([-0.1, 0.0, 0.1, 0.2], dtype=float)},
+            "ion_state": {},
             "gates": {"n": np.array([0.19, 0.2, 0.21, 0.22], dtype=float)},
         }
 
@@ -112,12 +153,14 @@ class CompareSingleCaseTest(unittest.TestCase):
             "time_ms": np.array([0.0, 0.025], dtype=float),
             "voltage_mV": np.array([-65.0, -64.0], dtype=float),
             "current": {"ix": np.array([0.0, 0.1], dtype=float)},
+            "ion_state": {},
             "gates": {"n": np.array([0.2, 0.21], dtype=float)},
         }
         neuron_result = {
             "time_ms": np.array([0.0, 0.025], dtype=float),
             "voltage_mV": np.array([-65.1, -64.1], dtype=float),
             "current": {"ix": np.array([0.0, 0.1], dtype=float)},
+            "ion_state": {},
             "gates": {"m": np.array([0.1, 0.11], dtype=float)},
         }
 
@@ -135,12 +178,14 @@ class CompareSingleCaseTest(unittest.TestCase):
             "time_ms": np.array([0.0, 0.025, 0.05], dtype=float),
             "voltage_mV": np.array([-65.0, -64.0, -63.0], dtype=float),
             "current": {"ix": np.array([0.0, 0.1, 0.2], dtype=float)},
+            "ion_state": {},
             "gates": {"n": np.array([0.2, 0.21, 0.22], dtype=float)},
         }
         neuron_result = {
             "time_ms": np.array([0.0, 0.03, 0.06], dtype=float),
             "voltage_mV": np.array([-65.1, -64.1, -63.1], dtype=float),
             "current": {"ix": np.array([0.0, 0.1, 0.2], dtype=float)},
+            "ion_state": {},
             "gates": {"n": np.array([0.19, 0.2, 0.21], dtype=float)},
         }
 
@@ -158,12 +203,14 @@ class CompareSingleCaseTest(unittest.TestCase):
             "time_ms": np.array([0.0, 0.025, 0.05], dtype=float),
             "voltage_mV": np.array([-65.0, -64.0, -63.0], dtype=float),
             "current": {"ix": np.array([0.0, 0.1, 0.2], dtype=float)},
+            "ion_state": {},
             "gates": {"n": np.array([0.2, 0.21, 0.22], dtype=float)},
         }
         neuron_result = {
             "time_ms": np.array([0.025, 0.05, 0.075], dtype=float),
             "voltage_mV": np.array([-65.1, -64.1, -63.1], dtype=float),
             "current": {"ix": np.array([0.0, 0.1, 0.2], dtype=float)},
+            "ion_state": {},
             "gates": {"n": np.array([0.19, 0.2, 0.21], dtype=float)},
         }
 
@@ -187,12 +234,14 @@ class CompareSingleCaseTest(unittest.TestCase):
             ),
             "voltage_mV": np.array([-65.0, -64.0, -63.0], dtype=float),
             "current": {"ix": np.array([0.0, 0.1, 0.2], dtype=float)},
+            "ion_state": {},
             "gates": {"n": np.array([0.2, 0.21, 0.22], dtype=float)},
         }
         neuron_result = {
             "time_ms": np.array([0.025, 0.05, 0.075], dtype=float),
             "voltage_mV": np.array([-65.1, -64.1, -63.1], dtype=float),
             "current": {"ix": np.array([0.0, 0.1, 0.2], dtype=float)},
+            "ion_state": {},
             "gates": {"n": np.array([0.19, 0.2, 0.21], dtype=float)},
         }
 
@@ -213,12 +262,14 @@ class CompareSingleCaseTest(unittest.TestCase):
             "time_ms": np.array([0.0, 0.025, 0.05], dtype=float),
             "voltage_mV": np.array([-65.0, -64.0, -63.0], dtype=float),
             "current": {"ix": np.array([1.0, 2.0, 3.0], dtype=float)},
+            "ion_state": {},
             "gates": {"n": np.array([0.2, 0.21, 0.22], dtype=float)},
         }
         neuron_result = {
             "time_ms": np.array([0.0, 0.025, 0.05], dtype=float),
             "voltage_mV": np.array([-65.0, -64.0, -63.0], dtype=float),
             "current": {"ix": np.array([0.0, 1.0, 2.0], dtype=float)},
+            "ion_state": {},
             "gates": {"n": np.array([0.2, 0.21, 0.22], dtype=float)},
         }
 

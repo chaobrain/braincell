@@ -70,6 +70,7 @@ def run_case(case: ChannelNoConcCase) -> dict[str, Any]:
         gate_name: h.Vector().record(getattr(mech_obj, f"_ref_{gate_name}"))
         for gate_name in mapping_spec.neuron.gate_names
     }
+    ion_state_vecs = _build_neuron_ion_state_recorders(segment=segment, mapping_spec=mapping_spec, h=h)
 
     try:
         h.tstop = float(case.simulation.duration_ms)
@@ -82,6 +83,10 @@ def run_case(case: ChannelNoConcCase) -> dict[str, Any]:
         "time_ms": ensure_1d(t_vec, name="neuron.time_ms")[1:],
         "voltage_mV": ensure_1d(v_vec, name="neuron.voltage_mV")[1:],
         "current": {"ix": -ensure_1d(current_vec, name="neuron.current.ix")[1:]},
+        "ion_state": {
+            key: ensure_1d(vec, name=f"neuron.ion_state.{key}")[1:]
+            for key, vec in ion_state_vecs.items()
+        },
         "gates": {
             gate_name: ensure_1d(gate_vec, name=f"neuron.gates.{gate_name}")[1:]
             for gate_name, gate_vec in gate_vecs.items()
@@ -166,6 +171,23 @@ def _resolve_neuron_concentration_fields(ion_name: str) -> tuple[str, str]:
         "ca": ("cai", "cao"),
         "cal": ("cali", "calo"),
     }[ion_name]
+
+
+def _build_neuron_ion_state_recorders(*, segment, mapping_spec: MappingSpec, h) -> dict[str, Any]:
+    ion_name = mapping_spec.current_source.ion_name
+    if ion_name not in {"ca", "cal"}:
+        return {}
+    ci_attr, co_attr = _resolve_neuron_concentration_fields(ion_name)
+    e_attr = _resolve_neuron_erev_field(ion_name)
+    field_names = {
+        "ci_mM": ci_attr,
+        "co_mM": co_attr,
+        "eca_mV": e_attr,
+    }
+    recorders: dict[str, Any] = {}
+    for key, attr_name in field_names.items():
+        recorders[key] = h.Vector().record(getattr(segment, f"_ref_{attr_name}"))
+    return recorders
 
 
 def _resolve_neuron_current_var(mapping_spec: MappingSpec) -> str:

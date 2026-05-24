@@ -1045,7 +1045,6 @@ class Kv1p5_MA2024_PC(HH):
         return 0.1 + 1.0 / (1.1 + u.math.exp((V + 7.0) / 14.0))
 
     def f_u_tau(self, V, K: IonInfo):
-        _ = (V, K)
         return 6800.0 * self.Tauinacts
 
 

@@ -929,12 +929,12 @@ class CdpStC_CAMOnly_MA2020_GoC(Calcium, KineticIon):
             return u.math.asarray(resolved)
         return braintools.init.Constant(value)
 
-    def _require_diam_mid(self):
-        if not hasattr(self, "diam_mid"):
+    def _require_diam_arc_mean(self):
+        if not hasattr(self, "diam_arc_mean"):
             raise AttributeError(
-                f"{type(self).__name__} requires 'diam_mid' before kinetic state initialization."
+                f"{type(self).__name__} requires 'diam_arc_mean' before kinetic state initialization."
             )
-        return self.diam_mid
+        return self.diam_arc_mean
 
     @property
     def vrat(self):
@@ -943,19 +943,19 @@ class CdpStC_CAMOnly_MA2020_GoC(Calcium, KineticIon):
 
     @property
     def dsq(self):
-        diam_mid = self._require_diam_mid()
-        return diam_mid * diam_mid
+        diam_arc_mean = self._require_diam_arc_mean()
+        return diam_arc_mean * diam_arc_mean
 
     @property
     def dsqvol(self):
         return self.dsq * self.vrat
 
     def _ion_init_state_hook(self, V, batch_size: int = None):
-        self._require_diam_mid()
+        self._require_diam_arc_mean()
         KineticIon._ion_init_state_hook(self, V, batch_size=batch_size)
 
     def _ion_reset_state_hook(self, V, batch_size: int = None):
-        self._require_diam_mid()
+        self._require_diam_arc_mean()
         KineticIon._ion_reset_state_hook(self, V, batch_size=batch_size)
 
 
@@ -1227,12 +1227,12 @@ class CdpStC_NoCAM_MA2020_GoC(Calcium, KineticIon):
         kdm = self._kdm()
         return (self.PVnull * kdm) / (1.0 + kdc + kdm)
 
-    def _require_diam_mid(self):
-        if not hasattr(self, "diam_mid"):
+    def _require_diam_arc_mean(self):
+        if not hasattr(self, "diam_arc_mean"):
             raise AttributeError(
-                f"{type(self).__name__} requires 'diam_mid' before kinetic state initialization."
+                f"{type(self).__name__} requires 'diam_arc_mean' before kinetic state initialization."
             )
-        return self.diam_mid
+        return self.diam_arc_mean
 
     @property
     def vrat(self):
@@ -1241,12 +1241,12 @@ class CdpStC_NoCAM_MA2020_GoC(Calcium, KineticIon):
 
     @property
     def parea(self):
-        return u.math.pi * self._require_diam_mid()
+        return u.math.pi * self._require_diam_arc_mean()
 
     @property
     def dsq(self):
-        diam_mid = self._require_diam_mid()
-        return diam_mid * diam_mid
+        diam_arc_mean = self._require_diam_arc_mean()
+        return diam_arc_mean * diam_arc_mean
 
     @property
     def dsqvol(self):
@@ -1258,14 +1258,14 @@ class CdpStC_NoCAM_MA2020_GoC(Calcium, KineticIon):
         # NEURON's raw GoC ``ica`` is efflux-positive, but BrainCell channel
         # currents are inward-positive. A positive calcium current therefore
         # increases the local calcium pool.
-        return (total_current * u.math.pi * self._require_diam_mid()) / (2.0 * u.faraday_constant)
+        return (total_current * u.math.pi * self._require_diam_arc_mean()) / (2.0 * u.faraday_constant)
 
     def _ion_init_state_hook(self, V, batch_size: int = None):
-        self._require_diam_mid()
+        self._require_diam_arc_mean()
         KineticIon._ion_init_state_hook(self, V, batch_size=batch_size)
 
     def _ion_reset_state_hook(self, V, batch_size: int = None):
-        self._require_diam_mid()
+        self._require_diam_arc_mean()
         KineticIon._ion_reset_state_hook(self, V, batch_size=batch_size)
 
 
@@ -1688,12 +1688,12 @@ class CdpStC_MA2020_GoC(Calcium, KineticIon):
         kdm = self._kdm()
         return (self.PVnull * kdm) / (1.0 + kdc + kdm)
 
-    def _require_diam_mid(self):
-        if not hasattr(self, "diam_mid"):
+    def _require_diam_arc_mean(self):
+        if not hasattr(self, "diam_arc_mean"):
             raise AttributeError(
-                f"{type(self).__name__} requires 'diam_mid' before kinetic state initialization."
+                f"{type(self).__name__} requires 'diam_arc_mean' before kinetic state initialization."
             )
-        return self.diam_mid
+        return self.diam_arc_mean
 
     @property
     def vrat(self):
@@ -1702,12 +1702,12 @@ class CdpStC_MA2020_GoC(Calcium, KineticIon):
 
     @property
     def parea(self):
-        return u.math.pi * self._require_diam_mid()
+        return u.math.pi * self._require_diam_arc_mean()
 
     @property
     def dsq(self):
-        diam_mid = self._require_diam_mid()
-        return diam_mid * diam_mid
+        diam_arc_mean = self._require_diam_arc_mean()
+        return diam_arc_mean * diam_arc_mean
 
     @property
     def dsqvol(self):
@@ -1719,14 +1719,14 @@ class CdpStC_MA2020_GoC(Calcium, KineticIon):
         # NEURON's raw GoC ``ica`` is efflux-positive, but BrainCell channel
         # currents are inward-positive. A positive calcium current therefore
         # increases the local calcium pool.
-        return (total_current * u.math.pi * self._require_diam_mid()) / (2.0 * u.faraday_constant)
+        return (total_current * u.math.pi * self._require_diam_arc_mean()) / (2.0 * u.faraday_constant)
 
     def _ion_init_state_hook(self, V, batch_size: int = None):
-        self._require_diam_mid()
+        self._require_diam_arc_mean()
         KineticIon._ion_init_state_hook(self, V, batch_size=batch_size)
 
     def _ion_reset_state_hook(self, V, batch_size: int = None):
-        self._require_diam_mid()
+        self._require_diam_arc_mean()
         KineticIon._ion_reset_state_hook(self, V, batch_size=batch_size)
 
 
@@ -2162,8 +2162,8 @@ class CdpCAM_MA2024_PC(Calcium, KineticIon):
         kdm = self._kdm()
         return (self.PVnull * kdm) / (1.0 + kdc + kdm)
 
-    def _require_diam_mid(self):
-        return CdpStC_MA2020_GoC._require_diam_mid(self)
+    def _require_diam_arc_mean(self):
+        return CdpStC_MA2020_GoC._require_diam_arc_mean(self)
 
     @property
     def vrat(self):
@@ -2185,11 +2185,11 @@ class CdpCAM_MA2024_PC(Calcium, KineticIon):
         return CdpStC_MA2020_GoC._ci_source_flux(self, total_current)
 
     def _ion_init_state_hook(self, V, batch_size: int = None):
-        self._require_diam_mid()
+        self._require_diam_arc_mean()
         KineticIon._ion_init_state_hook(self, V, batch_size=batch_size)
 
     def _ion_reset_state_hook(self, V, batch_size: int = None):
-        self._require_diam_mid()
+        self._require_diam_arc_mean()
         KineticIon._ion_reset_state_hook(self, V, batch_size=batch_size)
 
 
@@ -2506,8 +2506,8 @@ class CdpCR_MA2020_GrC(Calcium, KineticIon):
     def _ss_buffer_bound(self, total, kon, koff, cai):
         return total / (1.0 + koff / (kon * cai))
 
-    def _require_diam_mid(self):
-        return CdpStC_MA2020_GoC._require_diam_mid(self)
+    def _require_diam_arc_mean(self):
+        return CdpStC_MA2020_GoC._require_diam_arc_mean(self)
 
     @property
     def vrat(self):
@@ -2529,11 +2529,11 @@ class CdpCR_MA2020_GrC(Calcium, KineticIon):
         return CdpStC_MA2020_GoC._ci_source_flux(self, total_current)
 
     def _ion_init_state_hook(self, V, batch_size: int = None):
-        self._require_diam_mid()
+        self._require_diam_arc_mean()
         KineticIon._ion_init_state_hook(self, V, batch_size=batch_size)
 
     def _ion_reset_state_hook(self, V, batch_size: int = None):
-        self._require_diam_mid()
+        self._require_diam_arc_mean()
         KineticIon._ion_reset_state_hook(self, V, batch_size=batch_size)
 
 

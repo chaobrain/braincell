@@ -268,7 +268,7 @@ class ExperimentSchemaTest(unittest.TestCase):
         self.assertEqual(len(expanded), 3)
         self.assertEqual(
             expanded[0]["morphology"]["path"],
-            str((MORPHO_FILES / "Cerebellum_morph" / "IO.swc").resolve()),
+            str((CABLE_ROOT.parent / "Cerebellum_mod" / "IO" / "morphology" / "IO.swc").resolve()),
         )
 
 

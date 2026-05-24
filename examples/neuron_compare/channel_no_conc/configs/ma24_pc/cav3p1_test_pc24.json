@@ -1,0 +1,49 @@
+{
+  "meta": {
+    "label": "PC Cav3.1 Test PC24"
+  },
+  "identity": {
+    "mod_dir": "../../../Cerebellum_mod/PC/channel"
+  },
+  "defaults": {
+    "ion_state": {
+      "Ci_mM": 0.00024,
+      "Co_mM": 2.0
+    },
+    "channel_params": {
+      "g_max_S_cm2": 0.00025
+    }
+  },
+  "mapping": {
+    "current": "ica",
+    "impl_name": {
+      "neuron": "Cav3_1_test",
+      "braincell": "Cav3p1Test_PC24"
+    },
+    "gate_names": {
+      "canonical": [
+        "p",
+        "q"
+      ],
+      "neuron": [
+        "m",
+        "h"
+      ],
+      "braincell": [
+        "p",
+        "q"
+      ]
+    },
+    "channel_params": {
+      "g_max_S_cm2": {
+        "neuron": "pcabar",
+        "braincell": "g_max"
+      }
+    }
+  },
+  "templates": [
+    "../../templates/vinit_celsius.json",
+    "../../templates/dc.json",
+    "../../templates/ac.json"
+  ]
+}

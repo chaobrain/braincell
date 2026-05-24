@@ -33,6 +33,7 @@ class _StubCV:
     length: object
     area: object
     diam_mid: object
+    diam_arc_mean: object
     radius_prox: object
     radius_dist: object
 
@@ -83,6 +84,7 @@ class TestBridge(unittest.TestCase):
                 length=10.0 * u.um,
                 area=100.0 * u.um ** 2,
                 diam_mid=6.0 * u.um,
+                diam_arc_mean=5.5 * u.um,
                 radius_prox=3.5 * u.um,
                 radius_dist=2.5 * u.um,
             ),
@@ -90,6 +92,7 @@ class TestBridge(unittest.TestCase):
                 length=20.0 * u.um,
                 area=200.0 * u.um ** 2,
                 diam_mid=8.0 * u.um,
+                diam_arc_mean=7.0 * u.um,
                 radius_prox=4.5 * u.um,
                 radius_dist=3.5 * u.um,
             ),
@@ -117,6 +120,10 @@ class TestBridge(unittest.TestCase):
         np.testing.assert_allclose(
             ion.diam_mid.to_decimal(u.um),
             np.asarray([0.0, 6.0, 0.0, 8.0, 0.0]),
+        )
+        np.testing.assert_allclose(
+            ion.diam_arc_mean.to_decimal(u.um),
+            np.asarray([0.0, 5.5, 0.0, 7.0, 0.0]),
         )
         np.testing.assert_allclose(
             (u.math.pi * ion.diam_mid).to_decimal(u.um),

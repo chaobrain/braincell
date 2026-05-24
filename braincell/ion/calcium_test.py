@@ -874,6 +874,7 @@ class CdpStC_MA2020_GoCTest(unittest.TestCase):
     def _make_ion(self, **kwargs):
         ion = CdpStC_MA2020_GoC(size=1, **kwargs)
         ion.diam_mid = jnp.asarray([20.0]) * u.um
+        ion.diam_arc_mean = jnp.asarray([20.0]) * u.um
         return ion
 
     def test_is_subclass_of_calcium(self) -> None:
@@ -1055,6 +1056,7 @@ class CdpStC_CAMOnly_MA2020_GoCTest(unittest.TestCase):
     def _make_ion(self, **kwargs):
         ion = CdpStC_CAMOnly_MA2020_GoC(size=1, **kwargs)
         ion.diam_mid = jnp.asarray([20.0]) * u.um
+        ion.diam_arc_mean = jnp.asarray([20.0]) * u.um
         return ion
 
     def test_is_subclass_of_calcium(self) -> None:
@@ -1122,6 +1124,7 @@ class CdpStC_NoCAM_MA2020_GoCTest(unittest.TestCase):
     def _make_ion(self, **kwargs):
         ion = CdpStC_NoCAM_MA2020_GoC(size=1, **kwargs)
         ion.diam_mid = jnp.asarray([20.0]) * u.um
+        ion.diam_arc_mean = jnp.asarray([20.0]) * u.um
         return ion
 
     def test_is_subclass_of_calcium(self) -> None:
@@ -1273,6 +1276,7 @@ class CdpStCInheritedCellVariantTest(unittest.TestCase):
     def _make_ion(self, cls):
         ion = cls(size=1)
         ion.diam_mid = jnp.asarray([20.0]) * u.um
+        ion.diam_arc_mean = jnp.asarray([20.0]) * u.um
         return ion
 
     def test_cell_specific_variants_are_registered_subclasses(self) -> None:
@@ -1343,6 +1347,7 @@ class CdpCAM_MA2024_PCTest(unittest.TestCase):
     def _make_ion(self, **kwargs):
         ion = CdpCAM_MA2024_PC(size=1, **kwargs)
         ion.diam_mid = jnp.asarray([20.0]) * u.um
+        ion.diam_arc_mean = jnp.asarray([20.0]) * u.um
         return ion
 
     def test_is_registered_kinetic_calcium_ion(self) -> None:
@@ -1499,6 +1504,7 @@ class CdpCR_MA2020_GrCTest(unittest.TestCase):
     def _make_ion(self, **kwargs):
         ion = CdpCR_MA2020_GrC(size=1, **kwargs)
         ion.diam_mid = jnp.asarray([20.0]) * u.um
+        ion.diam_arc_mean = jnp.asarray([20.0]) * u.um
         return ion
 
     def test_is_registered_kinetic_calcium_ion(self) -> None:

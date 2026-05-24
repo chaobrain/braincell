@@ -36,11 +36,12 @@ class BraincellRunnerTest(unittest.TestCase):
         case = experiment_schema.ChannelNoConcCase.from_dict(self._build_payload())
         result = braincell_runner.run_case(case)
 
-        self.assertEqual(sorted(result.keys()), ["current", "gates", "time_ms", "voltage_mV"])
+        self.assertEqual(sorted(result.keys()), ["current", "gates", "ion_state", "time_ms", "voltage_mV"])
         self.assertEqual(sorted(result["gates"].keys()), ["n"])
         self.assertEqual(result["time_ms"].shape, result["voltage_mV"].shape)
         self.assertEqual(result["time_ms"].shape, result["current"]["ix"].shape)
         self.assertEqual(result["gates"]["n"].shape, result["time_ms"].shape)
+        self.assertEqual(result["ion_state"], {})
 
     def test_leak_enabled_does_not_break_output(self) -> None:
         payload = self._build_payload()
@@ -232,6 +233,7 @@ class BraincellRunnerTest(unittest.TestCase):
 
         self.assertIsNone(case.ion_state)
         self.assertEqual(sorted(result["gates"].keys()), ["h"])
+        self.assertEqual(result["ion_state"], {})
         self.assertEqual(result["time_ms"].shape, result["current"]["ix"].shape)
         self.assertGreater(float(np.max(np.abs(result["current"]["ix"]))), 1e-6)
 
@@ -246,6 +248,7 @@ class BraincellRunnerTest(unittest.TestCase):
 
         self.assertIsNone(case.ion_state)
         self.assertEqual(sorted(result["gates"].keys()), ["h"])
+        self.assertEqual(result["ion_state"], {})
         self.assertEqual(result["time_ms"].shape, result["current"]["ix"].shape)
         self.assertGreater(float(np.max(np.abs(result["current"]["ix"]))), 1e-6)
 
@@ -276,6 +279,20 @@ class BraincellRunnerTest(unittest.TestCase):
         self.assertEqual(sorted(result["gates"].keys()), ["m", "n", "u"])
         self.assertEqual(result["time_ms"].shape, result["current"]["ix"].shape)
         self.assertTrue(np.isfinite(result["current"]["ix"]).all())
+
+    def test_repo_cav2p1_pc_returns_ion_state_traces(self) -> None:
+        config_path = CHANNEL_NO_CONC_ROOT / "configs" / "ma24_pc" / "cav2p1_ma24_pc.json"
+        template_path = CHANNEL_NO_CONC_ROOT / "templates" / "vinit_celsius.json"
+        config = experiment_schema.load_sweep_config(config_path, template_path)
+        case_payload = experiment_schema.expand_cases(config)[0]
+        case = experiment_schema.ChannelNoConcCase.from_dict(case_payload)
+
+        result = braincell_runner.run_case(case)
+
+        self.assertEqual(sorted(result["gates"].keys()), ["m"])
+        self.assertEqual(sorted(result["ion_state"].keys()), ["ci_mM", "co_mM", "eca_mV"])
+        for trace in result["ion_state"].values():
+            self.assertEqual(trace.shape, result["time_ms"].shape)
 
     def test_repo_kv3p3_pc_smoke_case_runs(self) -> None:
         config_path = CHANNEL_NO_CONC_ROOT / "configs" / "ma24_pc" / "kv3p3_ma24_pc.json"

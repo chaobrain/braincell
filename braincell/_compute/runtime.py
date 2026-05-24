@@ -1426,8 +1426,8 @@ def _instantiate_runtime_node(
         ion_family_candidates=ion_family_candidates,
     )
     if current_owner_key is not None:
-        channel_key = mechanism.instance_name
         owner_ion = ions[current_owner_key]
+        channel_key = _unique_ion_channel_key(owner_ion, mechanism.instance_name, layout_id=layout.id)
         if len(bound_ions) == 1 and bound_ions[0][0] == current_owner_key:
             owner_ion.add(**{channel_key: node})
         else:
@@ -1438,6 +1438,21 @@ def _instantiate_runtime_node(
             )
             owner_ion.add(**{channel_key: wrapper})
     return node, tuple(ion_key for ion_key, _ in bound_ions), current_owner_key
+
+
+def _unique_ion_channel_key(owner_ion: object, instance_name: str, *, layout_id: int) -> str:
+    channels = getattr(owner_ion, "channels", None)
+    if not isinstance(channels, dict) or instance_name not in channels:
+        return instance_name
+
+    candidate = f"{instance_name}__layout_{int(layout_id)}"
+    if candidate not in channels:
+        return candidate
+
+    suffix = 2
+    while f"{candidate}_{suffix}" in channels:
+        suffix += 1
+    return f"{candidate}_{suffix}"
 
 
 def _resolve_channel_runtime_bindings(

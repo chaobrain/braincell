@@ -43,6 +43,7 @@ from braincell.mech import (
     Synapse,
     get_registry,
 )
+from braincell.mech._params import _to_hashable
 from braincell.ion import build_placeholder_ions
 from braincell.morph.morphology import Morphology, clone_morpho
 from braincell._multi_compartment.bridge import (
@@ -664,20 +665,20 @@ def mechanism_signature(mechanism: object) -> tuple[object, ...]:
 
     Most supported mechanism types are frozen dataclasses with
     structural equality, so the signature reduces to
-    ``(type_name, mechanism)``. :class:`FunctionClamp` is special-cased:
-    its ``fn`` field is compared by identity under the dataclass-
-    generated ``__eq__``, so we fingerprint the callable by bytecode +
-    normalized closure so structurally identical lambdas merge into
-    one layout.
+    ``(type_name, hashable_field_view)``. :class:`FunctionClamp` is
+    special-cased: its ``fn`` field is compared by identity under the
+    dataclass-generated ``__eq__``, so we fingerprint the callable by
+    bytecode + normalized closure so structurally identical lambdas merge
+    into one layout.
     """
     if isinstance(mechanism, FunctionClamp):
         return (
             "FunctionClamp",
             _fn_fingerprint(mechanism.fn),
-            mechanism.start,
-            mechanism.duration,
+            _to_hashable(mechanism.start),
+            _to_hashable(mechanism.duration),
         )
-    return (type(mechanism).__qualname__, mechanism)
+    return (type(mechanism).__qualname__, _to_hashable(mechanism))
 
 
 def _mechanism_var_names(mechanism: object) -> tuple[str, ...]:

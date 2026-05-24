@@ -3,7 +3,7 @@
 # Biologically Detailed Brain Cell Modeling in JAX
 
 <p align="center">
-  	<img alt="Header image of BrainCell." src="https://raw.githubusercontent.com/chaobrain/braincell/main/docs/_static/braincell.png" width=50%>
+  	<img alt="Header image of BrainCell." src="https://brainx.chaobrain.com/images/braincell.webp" width=50%>
 </p> 
 
 
@@ -159,7 +159,7 @@ If you are a Windows user and need a WSL-based development setup with `NEURON 8.
 
 ## Documentation
 
-The official documentation is hosted at: [https://brainx.chaobrain.com/braincell/](https://brainx.chaobrain.com/braincell/)
+The official documentation is hosted on Read the Docs: [https://brainx.chaobrain.com/braincell](https://brainx.chaobrain.com/braincell)
 
 
 

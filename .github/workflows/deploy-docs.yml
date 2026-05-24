@@ -1,8 +1,8 @@
 name: Deploy Docs
 
 on:
-  push:
-    branches: [main]
+  release:
+    types: [released]
   workflow_dispatch:
 
 permissions:
@@ -10,13 +10,13 @@ permissions:
 
 concurrency:
   group: deploy-docs-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 env:
   DEPLOY_PATH: /var/www/brainx.chaobrain.com.pkgs/braincell
 
 jobs:
-  build-deploy:
+  build:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -56,6 +56,16 @@ jobs:
           name: docs-html
           path: docs/_build/html/
           if-no-files-found: error
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download documentation artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: docs-html
+          path: docs/_build/html
 
       - name: Create release id
         id: release

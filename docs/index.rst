@@ -134,4 +134,4 @@ Here is an example to model a **single-compartment** thalamus neuron model:
 Ecosystem
 ---------
 
-BrainCell is one part of our `brain modeling ecosystem <https://brainx.chaobrain.com>`_.
+BrainCell is one part of our `brain modeling ecosystem <https://brainx.chaobrain.com/>`_.

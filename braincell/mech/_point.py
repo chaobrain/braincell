@@ -227,9 +227,9 @@ class SineClamp(Point):
     amplitude: Any
     frequency: Any
     phase: float = 0.0
-    offset: Any = 0.0 * u.nA
-    start: Any = 0.0 * u.ms
-    duration: Any = 1.0 * u.ms
+    offset: Any = field(default_factory=lambda: 0.0 * u.nA)
+    start: Any = field(default_factory=lambda: 0.0 * u.ms)
+    duration: Any = field(default_factory=lambda: 1.0 * u.ms)
 
     def __post_init__(self) -> None:
         frequency = _coerce_scalar_quantity(
@@ -299,8 +299,8 @@ class FunctionClamp(Point):
     """
 
     fn: Callable
-    start: Any = 0.0 * u.ms
-    duration: Any = 1.0 * u.ms
+    start: Any = field(default_factory=lambda: 0.0 * u.ms)
+    duration: Any = field(default_factory=lambda: 1.0 * u.ms)
 
     def __post_init__(self) -> None:
         if not callable(self.fn):

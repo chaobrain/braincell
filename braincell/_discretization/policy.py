@@ -14,7 +14,7 @@
 # ==============================================================================
 
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 import brainunit as u
@@ -191,7 +191,7 @@ class DLambda(CVPolicy):
     """
 
     d_lambda: float
-    frequency: u.Quantity[u.Hz] = 100.0 * u.Hz
+    frequency: u.Quantity[u.Hz] = field(default_factory=lambda: 100.0 * u.Hz)
     keep_odd: bool = True
 
     def resolve_cv_bounds(

@@ -11,7 +11,7 @@
 <p align="center">
 	<a href="https://pypi.org/project/braincell/"><img alt="Supported Python Version" src="https://img.shields.io/pypi/pyversions/braincell"></a>
 	<a href="https://github.com/chaobrain/braincell/blob/main/LICENSE"><img alt="LICENSE" src="https://img.shields.io/badge/License-Apache%202.0-blue.svg"></a>
-    <a href='https://braincell.readthedocs.io/?badge=latest'>
+    <a href='https://brainx.chaobrain.com/braincell/'>
         <img src='https://readthedocs.org/projects/braincell/badge/?version=latest' alt='Documentation Status' />
     </a>  	
     <a href="https://badge.fury.io/py/braincell"><img alt="PyPI version" src="https://badge.fury.io/py/braincell.svg"></a>
@@ -159,10 +159,10 @@ If you are a Windows user and need a WSL-based development setup with `NEURON 8.
 
 ## Documentation
 
-The official documentation is hosted on Read the Docs: [https://braincell.readthedocs.io](https://braincell.readthedocs.io)
+The official documentation is hosted on Read the Docs: [https://brainx.chaobrain.com/braincell](https://brainx.chaobrain.com/braincell)
 
 
 
 ## See also the ecosystem
 
-BrainCell is one part of our brain modeling ecosystem: https://brainmodeling.readthedocs.io/
+BrainCell is one part of our brain modeling ecosystem: https://brainx.chaobrain.com/

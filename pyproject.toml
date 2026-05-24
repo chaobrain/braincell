@@ -65,7 +65,7 @@ dynamic = ["version"]
 
 [project.urls]
 Homepage = "https://github.com/chaobrain/braincell"
-Documentation = "https://braincell.readthedocs.io/"
+Documentation = "https://brainx.chaobrain.com/braincell/"
 "Bug Tracker" = "https://github.com/chaobrain/braincell/issues"
 "Source Code" = "https://github.com/chaobrain/braincell"
 

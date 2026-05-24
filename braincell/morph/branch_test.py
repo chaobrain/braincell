@@ -161,8 +161,13 @@ class BranchTest(unittest.TestCase):
         self.assertAlmostEqual(float(branch.area.to_decimal(u.um ** 2)), expected_area, places=5)
         self.assertAlmostEqual(float(branch.volumes[0].to_decimal(u.um ** 3)), expected_volume, places=5)
         self.assertAlmostEqual(float(branch.volume.to_decimal(u.um ** 3)), expected_volume, places=5)
-        self.assertTrue(u.math.allclose(branch.area, u.math.sum(branch.areas)))
-        self.assertTrue(u.math.allclose(branch.volume, u.math.sum(branch.volumes)))
+        # Bypass u.math.sum: saiunit's wrapper forwards promote_integers= to
+        # numpy.sum, which numpy 2.x rejects. Sum on the mantissa and re-attach
+        # the unit instead.
+        areas = branch.areas
+        volumes = branch.volumes
+        self.assertTrue(u.math.allclose(branch.area, np.sum(areas.mantissa) * areas.unit))
+        self.assertTrue(u.math.allclose(branch.volume, np.sum(volumes.mantissa) * volumes.unit))
 
     def test_zero_length_segment_contributes_area_but_not_volume(self) -> None:
         branch = Branch(

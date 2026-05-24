@@ -547,7 +547,7 @@ class LocateCVOnBranchTest(unittest.TestCase):
             length_um=6.0, lateral_area_um2=1.0,
             axial_factor_total_per_cm=1.0,
             axial_factor_prox_per_cm=0.5, axial_factor_dist_per_cm=0.5,
-            r_prox_um=1.0, r_mid_um=1.0, r_dist_um=1.0,
+            r_prox_um=1.0, r_mid_um=1.0, diam_arc_mean_um=2.0, r_dist_um=1.0,
         )
         # x=0.9 and x=0.1 are out of [0.2, 0.8] — raise, not snap.
         with self.assertRaises(ValueError):
@@ -658,7 +658,7 @@ class CoverageFractionTest(unittest.TestCase):
             length_um=5.0, lateral_area_um2=10.0,
             axial_factor_total_per_cm=1.0,
             axial_factor_prox_per_cm=0.5, axial_factor_dist_per_cm=0.5,
-            r_prox_um=1.0, r_mid_um=1.0, r_dist_um=1.0,
+            r_prox_um=1.0, r_mid_um=1.0, diam_arc_mean_um=2.0, r_dist_um=1.0,
         )
         self.assertAlmostEqual(
             _coverage_fraction(morpho, g, ((0.6, 1.0),)),

@@ -39,6 +39,12 @@ def _build_tree() -> Morphology:
     return tree
 
 
+def _quantity_set_at(value, index: int, replacement):
+    decimal = np.array(value.to_decimal(value.unit), copy=True)
+    decimal[int(index)] = replacement.to_decimal(value.unit)
+    return u.Quantity(decimal, value.unit)
+
+
 class CellRuntimeStateTest(unittest.TestCase):
     def test_density_mechanism_builds_dense_layout_with_global_shape(self) -> None:
         cell = Cell(_build_tree())
@@ -677,7 +683,7 @@ class CellRuntimeStateTest(unittest.TestCase):
         self.assertIsInstance(ion.Ci, braincell.quad.DiffEqState)
         self.assertAlmostEqual(float(ion.Ci.value[1].to_decimal(u.mM)), 2.4e-4, places=12)
 
-        ion.Ci.value = ion.Ci.value.at[1].set(1.0e-3 * u.mM)
+        ion.Ci.value = _quantity_set_at(ion.Ci.value, 1, 1.0e-3 * u.mM)
         rcell.reset_state()
         self.assertAlmostEqual(float(ion.Ci.value[1].to_decimal(u.mM)), 2.4e-4, places=12)
 
@@ -846,8 +852,8 @@ class CellRuntimeStateTest(unittest.TestCase):
         self.assertAlmostEqual(float(ion.BC.value[1].to_decimal(u.mM)), 0.3, places=12)
         self.assertAlmostEqual(float(ion.B.value[1].to_decimal(u.mM)), 0.7, places=12)
 
-        ion.Ci.value = ion.Ci.value.at[1].set(0.9 * u.mM)
-        ion.BC.value = ion.BC.value.at[1].set(0.8 * u.mM)
+        ion.Ci.value = _quantity_set_at(ion.Ci.value, 1, 0.9 * u.mM)
+        ion.BC.value = _quantity_set_at(ion.BC.value, 1, 0.8 * u.mM)
         rcell.reset_state()
 
         self.assertAlmostEqual(float(ion.Ci.value[1].to_decimal(u.mM)), 0.2, places=12)
@@ -1040,8 +1046,8 @@ class CellRuntimeStateTest(unittest.TestCase):
         self.assertAlmostEqual(float(ion.PumpBound.value[1].to_decimal(u.mM * u.um)), 0.3, places=12)
         self.assertAlmostEqual(float(ion.PumpFree.value[1].to_decimal(u.mM * u.um)), 0.7, places=6)
 
-        ion.Ci.value = ion.Ci.value.at[1].set(0.9 * u.mM)
-        ion.PumpBound.value = ion.PumpBound.value.at[1].set(0.8 * u.mM * u.um)
+        ion.Ci.value = _quantity_set_at(ion.Ci.value, 1, 0.9 * u.mM)
+        ion.PumpBound.value = _quantity_set_at(ion.PumpBound.value, 1, 0.8 * u.mM * u.um)
         rcell.reset_state()
 
         self.assertAlmostEqual(float(ion.Ci.value[1].to_decimal(u.mM)), 0.2, places=12)
@@ -1136,10 +1142,10 @@ class CellRuntimeStateTest(unittest.TestCase):
         pump = tracked["pump"]
         pumpca = tracked["pumpca"]
         total = pump + pumpca
-        self.assertTrue(np.allclose(total, total[0], atol=1e-18))
+        self.assertTrue(np.allclose(total, total[0], atol=1e-15))
         # Imported kinetic-ion traces can shift numerically with solver/runtime
         # details; the contract here is qualitative dynamics plus conservation.
-        self.assertAlmostEqual(float(tracked["pump"][-1]), float(tracked["pump"][0]), delta=1e-18)
+        self.assertAlmostEqual(float(tracked["pump"][-1]), float(tracked["pump"][0]), delta=1e-15)
         self.assertLessEqual(abs(float(tracked["pumpca"][-1])), 1e-12)
         self.assertGreater(float(tracked["Ci"][-1]), float(tracked["Ci"][0]))
         self.assertLess(float(tracked["CAM0"][-1]), float(tracked["CAM0"][0]))

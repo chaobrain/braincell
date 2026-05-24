@@ -3,7 +3,7 @@
 # Biologically Detailed Brain Cell Modeling in JAX
 
 <p align="center">
-  	<img alt="Header image of BrainCell." src="https://raw.githubusercontent.com/chaobrain/braincell/main/docs/_static/braincell.png" width=50%>
+  	<img alt="Header image of BrainCell." src="https://brainx.chaobrain.com/images/braincell.webp" width=50%>
 </p> 
 
 

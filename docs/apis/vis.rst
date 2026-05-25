@@ -45,6 +45,7 @@ Morphometry and topology plots
 
     plot_dendrogram
     plot_topology
+    plot_point_topology
     plot_sholl
     plot_branch_order_histogram
 
@@ -118,3 +119,19 @@ Layout engine
 
     LayoutConfig
     LayoutCache
+
+
+Publication constants
+----------------------
+
+.. py:data:: PUBLICATION_BRANCH_TYPE_COLORS
+
+   Publication-ready branch-type colour palette (RGB tuples keyed by branch
+   type). High-contrast, print-friendly, and colour-blind safe; mirrors the
+   keys of the default palette so the two presets can be diffed side by side.
+
+.. py:data:: PUBLICATION_RC_PARAMS
+
+   Matplotlib ``rcParams`` applied when the publication theme is active.
+   Tuned for LaTeX-style output (serif font, thicker lines, no grid, tight
+   margins) and 300 dpi raster export.

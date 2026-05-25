@@ -9,7 +9,7 @@
 ``braincell.quad`` provides a mechanism to define coupled ordinary differential equations (ODEs)
 and solve them using various numerical integration methods.
 The integration methods are categorized into exponential integrators, Runge-Kutta methods,
-implicit methods, and Diffrax integrators.
+and implicit methods.
 
 
 Defining Coupled ODEs
@@ -25,25 +25,30 @@ Defining Coupled ODEs
     IndependentIntegration
 
 
-
-
-Overall Integration Interface
------------------------------
+Integrator Registry
+-------------------
 
 .. autosummary::
    :toctree: generated/
+   :nosignatures:
+   :template: classtemplate.rst
 
+    IntegratorEntry
+    IntegratorRegistry
     get_integrator
+    get_registry
+    register_integrator
+    all_integrators
 
 
 Exponential Integrators
 ------------------------
 
-
 .. autosummary::
    :toctree: generated/
 
     exp_euler_step
+    exp_exp_euler_step
     ind_exp_euler_step
 
 
@@ -52,7 +57,6 @@ Runge-Kutta Integrators
 
 .. autosummary::
    :toctree: generated/
-
 
     euler_step
     midpoint_step
@@ -67,29 +71,25 @@ Runge-Kutta Integrators
     ralston4_step
 
 
-Diffrax Explicit Integrators
------------------------------
+Implicit Integrators
+--------------------
 
 .. autosummary::
-   :toctree: generated
+   :toctree: generated/
 
-    diffrax_euler_step
-    diffrax_heun_step
-    diffrax_midpoint_step
-    diffrax_ralston_step
-    diffrax_bosh3_step
-    diffrax_tsit5_step
-    diffrax_dopri5_step
-    diffrax_dopri8_step
+    backward_euler_step
+    implicit_euler_step
+    implicit_exp_euler_step
+    implicit_rk4_step
 
 
-Diffrax Implicit Integrators
------------------------------
+Other Integrators
+-----------------
 
 .. autosummary::
-   :toctree: generated
+   :toctree: generated/
 
-    diffrax_bwd_euler_step
-    diffrax_kvaerno3_step
-    diffrax_kvaerno4_step
-    diffrax_kvaerno5_step
+    cn_exp_euler_step
+    cn_rk4_step
+    splitting_step
+    staggered_step

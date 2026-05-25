@@ -11,30 +11,20 @@ and manipulation of neuronal structures.
 
 
 
-Morphology Definition
----------------------
+Morphology Representation
+-------------------------
 
 .. autosummary::
    :toctree: generated/
    :nosignatures:
    :template: classtemplate.rst
 
-    Morphology
-    Section
-    Segment
-    CylinderSection
-    PointSection
+    MorphoBranch
+    MorphoEdge
+    MorphoMetric
 
 
+Helpers
+-------
 
-Morphology Loading
-------------------
-
-.. autosummary::
-   :toctree: generated/
-   :nosignatures:
-
-    from_asc
-    from_swc
-
-
+.. autofunction:: branch_class_for_type

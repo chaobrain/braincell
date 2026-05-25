@@ -10,7 +10,7 @@ Improve the presentation and content of `braincell`'s documentation:
 1. Stop "folding" tutorial sections away in the landing page — surface them as
    expanded, captioned link-lists instead of `:hidden:` toctrees.
 2. Remove the broken `advanced_tutorial/index` from `docs/index.rst` and
-   relocate its two orphaned notebooks into the single-compartment tutorials.
+   delete the `advanced_tutorial/` directory outright (no relocation).
 3. Upgrade the single-compartment example notebooks: rename to descriptive
    filenames, fix bugs, and add new examples.
 
@@ -36,9 +36,19 @@ section's internal pages, or any unrelated refactoring.
 
 ### Known bugs in examples (to fix, verified by execution)
 
-- Deprecated channel aliases used throughout (`INa_*`, `IK_*`); canonical names
-  are `Na_*` / `K_*` (deprecation aliases added in commit `d0a8882`). The
-  landing-page quickstart snippet in `index.rst` uses the same deprecated names.
+- Deprecated channel aliases used throughout (`INa_*`, `IK_*`, `ICa*_*`,
+  `IAHP_*`); these still resolve via `braincell.channel.__getattr__` but emit
+  `DeprecationWarning`. The full alias map is in `braincell/channel/__init__.py`
+  (`_DEPRECATED_ALIASES`); canonical = drop the leading `I`
+  (e.g. `INa_HH1952`→`Na_HH1952`, `ICaT_HM1992`→`CaT_HM1992`,
+  `IAHP_De1994`→`AHP_De1994`). The landing-page quickstart in `index.rst` uses
+  the same deprecated names.
+- **`Ih_HM1992` is broken**: it is NOT in the alias map and does not exist —
+  it raises `AttributeError`. Canonical class is `HCN_HM1992`
+  (signature `(size, g_max=..., E=..., ...)`, same call site works). Both
+  `sc05` (thalamic neurons) and the `index.rst` quickstart reference
+  `Ih_HM1992`, so both are currently broken and must be switched to
+  `HCN_HM1992`.
 - `sc03` uses `self.na.add_elem(...)` while every other example and the
   quickstart use `.add(...)`. Both methods exist; `.add()` is the convention.
 - `sc03` ends with a stray apologetic comment about a Jupyter interruption.
@@ -69,17 +79,16 @@ section's internal pages, or any unrelated refactoring.
 - Update the landing-page quickstart code snippet to use canonical
   (non-deprecated) channel names, so the first code a reader sees is current.
 
-### Part 2 — Relocate `advanced_tutorial/` content, delete the folder
+### Part 2 — Delete `advanced_tutorial/` outright
 
-- Move `differential_equation.ipynb` and `rationale.ipynb` into
-  `docs/single_compartment/tutorial/`.
-- Add both to the Tutorials toctree in `docs/single_compartment/index.rst`.
-- Cleanup is light: ensure a proper top-level heading and that each renders
-  correctly. Full multi-cell rewrites are out of scope (the "folded" concern was
-  the hidden toctrees, not single-cell notebooks). Expand a notebook only if a
-  section is clearly broken.
-- Delete `docs/advanced_tutorial/` (both notebooks, the broken `index.rst`, and
-  the now-empty folder).
+- Delete the entire `docs/advanced_tutorial/` directory: `differential_equation.ipynb`,
+  `rationale.ipynb`, and the broken `index.rst`.
+- No relocation. The `differential_equation` content (defining time-varying
+  `DiffEqState`s) is already covered by the Numerical Integration section
+  (`integration/diffeq.ipynb`); `rationale.ipynb` is a single orphaned
+  supplementary note. Removing them drops no uniquely-referenced material.
+- The only inbound reference is `docs/index.rst`'s "Advanced Tutorials" toctree,
+  which Part 1 removes.
 
 ### Part 3 — Examples: rename, fix bugs, add new
 
@@ -133,12 +142,10 @@ ei_network
 ## Affected files
 
 - `docs/index.rst` — unfold toctrees, drop advanced_tutorial, fix quickstart snippet.
-- `docs/single_compartment/index.rst` — add relocated tutorials, reorder examples.
+- `docs/single_compartment/index.rst` — reorder/rename examples toctree.
 - `docs/single_compartment/examples/index.rst` — new filenames + ordering.
 - `docs/single_compartment/examples/*.ipynb` — renames, bug fixes, 5 new notebooks.
-- `docs/single_compartment/tutorial/differential_equation.ipynb`,
-  `docs/single_compartment/tutorial/rationale.ipynb` — relocated.
-- `docs/advanced_tutorial/` — deleted.
+- `docs/advanced_tutorial/` — deleted entirely (both notebooks + `index.rst`).
 
 ## Verification
 
@@ -146,8 +153,8 @@ ei_network
   no deprecation warnings; commit cell outputs.
 - Build the docs (`make html` under `docs/`) and confirm: no broken toctree
   references (no `advanced_tutorial`), the three modeling/integration sections
-  render unfolded on the landing page, relocated tutorials appear under
-  single-compartment, and all renamed/new examples appear in order.
+  render unfolded on the landing page, and all renamed/new examples appear in
+  order.
 
 ## Risks
 

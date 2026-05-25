@@ -24,9 +24,8 @@ Reorganize `braincell` documentation and example assets along three axes:
 ```
 braincell/                          # source (unchanged except 4 hardcoded test paths)
 data/                               # NEW — repo-root data directory
-├── morphology/
-│   ├── generic/                    # ← examples/multi_compartment/morpho_files/*
-│   └── cerebellum/                 # ← examples/multi_compartment/morpho_files/Cerebellum_morph/
+├── morphology/                     # ← examples/multi_compartment/morpho_files/* (flattened in place)
+│   └── Cerebellum_morph/           # ← examples/multi_compartment/morpho_files/Cerebellum_morph/ (kept original name so existing tests' FIXTURE_DIR / "Cerebellum_morph" continues to resolve)
 ├── neuron_traces/                  # ← examples/single_compartment/neuron_data/
 ├── neuromorpho/                    # cache target referenced by neuromorpho.ipynb (empty initially; gitignored)
 └── vis_outputs/                    # ← examples/multi_compartment/data/plot/*.png
@@ -94,8 +93,8 @@ docs/advanced_tutorial/examples/sc05.ipynb     ← same
 docs/quickstart/                                    → docs/single_compartment/quickstart/
 docs/tutorial/                                      → docs/single_compartment/tutorial/
 docs/advanced_tutorial/                             → docs/single_compartment/advanced_tutorial/
-examples/multi_compartment/morpho_files/Cerebellum_morph/ → data/morphology/cerebellum/
-examples/multi_compartment/morpho_files/            → data/morphology/generic/   (after the Cerebellum subdir is hoisted out)
+examples/multi_compartment/morpho_files/            → data/morphology/
+  (preserving the nested Cerebellum_morph/ subdir verbatim)
 examples/multi_compartment/data/plot/               → data/vis_outputs/
 examples/single_compartment/neuron_data/            → data/neuron_traces/
 ```
@@ -235,7 +234,7 @@ No new helper API. Each consumer computes its own path to `data/`.
 
 ### `braincell/io/` tests (4 files)
 
-Each `parents[N]` currently resolves to repo-root. Since `data/` also lives at repo-root, the `parents` index is unchanged — only the tail (`examples/multi_compartment/morpho_files` → `data/morphology/generic`) flips.
+Each `parents[N]` currently resolves to repo-root. Since `data/` also lives at repo-root, the `parents` index is unchanged — only the tail (`examples/multi_compartment/morpho_files` → `data/morphology`) flips.
 
 | File | Line | Change |
 |---|---|---|
@@ -269,7 +268,7 @@ Then path literals are rewritten:
 | `morphology.ipynb` | `"./morpho_files/goc.asc"` | `str(DATA / "morphology" / "generic" / "goc.asc")` |
 | `filter.ipynb` | `repo_root / 'examples' / 'multi_compartment' / 'morpho_files'` | `DATA / "morphology" / "generic"` |
 | `cell.ipynb` (markdown + code) | `"./morpho_files/example_tree.swc"` | `DATA / "morphology" / "generic" / "example_tree.swc"` |
-| `vis.ipynb` | `"./morpho_files/Cerebellum_morph/GoC.asc"` | `DATA / "morphology" / "cerebellum" / "GoC.asc"` |
+| `vis.ipynb` | `"./morpho_files/Cerebellum_morph/GoC.asc"` | `DATA / "morphology" / "Cerebellum_morph" / "GoC.asc"` |
 
 ### `examples/multi_compartment/*.ipynb` (scratch notebooks)
 

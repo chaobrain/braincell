@@ -28,7 +28,7 @@ from braincell.vis.backend import BackendChooser
 from braincell.vis.backend_pyvista import PyVistaBackend
 
 
-FIXTURE_DIR = Path(__file__).resolve().parents[2] / "examples" / "multi_compartment" / "morpho_files"
+FIXTURE_DIR = Path(__file__).resolve().parents[2] / "data" / "morphology"
 VALID_SWC_FIXTURES = ("grc.swc", "io.swc")
 
 

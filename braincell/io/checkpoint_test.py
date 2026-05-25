@@ -44,7 +44,7 @@ from braincell.io import (
 from braincell.io import checkpoint as checkpoint_module
 
 
-FIXTURE_DIR = Path(__file__).resolve().parents[2] / "data" / "morphology" / "generic"
+FIXTURE_DIR = Path(__file__).resolve().parents[2] / "data" / "morphology"
 
 
 def _make_lengths_branch(*, type: str = "dendrite") -> Branch:

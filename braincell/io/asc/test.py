@@ -30,7 +30,7 @@ try:
 except Exception:  # pragma: no cover
     _NEURON_H = None
 
-FIXTURE_DIR = Path(__file__).resolve().parents[3] / "data" / "morphology" / "generic"
+FIXTURE_DIR = Path(__file__).resolve().parents[3] / "data" / "morphology"
 ALLOWED_TYPES = {
     "soma",
     "axon",

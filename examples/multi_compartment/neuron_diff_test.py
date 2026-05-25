@@ -256,7 +256,7 @@ class NeuronDiffTest(unittest.TestCase):
             _assert_zero_diff(self, comparison, metric_name)
 
     def test_compare_morphology_with_neuron_supports_real_asc_fixture(self) -> None:
-        path = Path(__file__).resolve().parent / "morpho_files" / "goc.asc"
+        path = Path(__file__).resolve().parents[2] / "data" / "morphology" / "goc.asc"
 
         comparison = compare_morphology_with_neuron(path)
 
@@ -266,7 +266,7 @@ class NeuronDiffTest(unittest.TestCase):
         self.assertTrue(comparison["diff"]["n_branches"]["available"])
 
     def test_compare_morphology_with_neuron_supports_real_sc_asc_fixture(self) -> None:
-        path = Path(__file__).resolve().parent / "morpho_files" / "Cerebellum_morph" / "SC.asc"
+        path = Path(__file__).resolve().parents[2] / "data" / "morphology" / "Cerebellum_morph" / "SC.asc"
 
         comparison = compare_morphology_with_neuron(path)
 
@@ -275,7 +275,7 @@ class NeuronDiffTest(unittest.TestCase):
             _assert_zero_diff(self, comparison, metric_name)
 
     def test_compare_morphology_with_neuron_supports_real_bc_asc_fixture(self) -> None:
-        path = Path(__file__).resolve().parent / "morpho_files" / "Cerebellum_morph" / "BC.asc"
+        path = Path(__file__).resolve().parents[2] / "data" / "morphology" / "Cerebellum_morph" / "BC.asc"
 
         comparison = compare_morphology_with_neuron(path)
 

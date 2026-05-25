@@ -82,38 +82,18 @@ Here is an example to model a **single-compartment** thalamus neuron model:
 
 
 .. toctree::
-   :maxdepth: 1
-   :caption: Quickstart
+   :maxdepth: 2
+   :caption: Single-Compartment Modeling
    :hidden:
 
-   quickstart/concepts-en.ipynb
-   quickstart/concepts-zh.ipynb
-
+   single_compartment/index
 
 .. toctree::
-   :maxdepth: 1
-   :caption: Tutorials
+   :maxdepth: 2
+   :caption: Multi-Compartment Modeling
    :hidden:
 
-   tutorial/channel-en.ipynb
-   tutorial/channel-zh.ipynb
-   tutorial/ion-en.ipynb
-   tutorial/ion-zh.ipynb
-   tutorial/cell-en.ipynb
-   tutorial/cell-zh.ipynb
-
-.. toctree::
-   :maxdepth: 1
-   :caption: Advanced Tutorials
-   :hidden:
-
-   advanced_tutorial/rationale-en.ipynb
-   advanced_tutorial/rationale-zh.ipynb
-   advanced_tutorial/differential_equation-en.ipynb
-   advanced_tutorial/differential_equation-zh.ipynb
-   advanced_tutorial/examples.rst
-   advanced_tutorial/more-en.ipynb
-   advanced_tutorial/more-zh.ipynb
+   multi_compartment/index
 
 .. toctree::
    :hidden:

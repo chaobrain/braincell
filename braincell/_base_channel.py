@@ -310,7 +310,8 @@ class Channel(IonChannel):
         Subclasses of Channel should implement specific methods like `current`,
         `compute_derivative`, etc., to define the behavior of the particular channel type.
 
-    Example::
+    Examples
+    --------
 
     .. code-block:: python
 

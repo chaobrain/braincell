@@ -165,6 +165,7 @@ examples/neuron_compare/channel_no_conc/artifacts/
 profile_default/
 ipython_config.py
 /docs/apis/changelog.md
+/agent.md/
 
 # pyenv
 #   For a library or package, you might want to ignore these files since the code is

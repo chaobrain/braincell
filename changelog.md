@@ -1,5 +1,11 @@
 # Release Notes
 
+
+## UNRELEASED
+
+
+
+
 ## Version 0.0.7
 
 This release focuses on structural refactoring to improve codebase organization, specifically grouping morphology and integrator components into dedicated sub-packages (`braincell.morph` and `braincell.quad`).

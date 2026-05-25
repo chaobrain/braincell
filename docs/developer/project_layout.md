@@ -75,4 +75,3 @@ discovers reliably in this repo. See {doc}`testing`.
 ## See also
 
 - {doc}`../concepts/architecture` — the conceptual layers this maps onto.
-- The repository's `CLAUDE.md` carries the authoritative, file-level layout.

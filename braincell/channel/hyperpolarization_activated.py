@@ -44,7 +44,7 @@ __all__ = [
 @register_channel("HCN_HM1992")
 class HCN_HM1992(HH):
     r"""
-    The hyperpolarization-activated cation current model propsoed by (Huguenard & McCormick, 1992) [1]_.
+    The hyperpolarization-activated cation current model propsoed by (Huguenard & McCormick, 1992).
 
     The hyperpolarization-activated cation current model is adopted from
     (Huguenard, et, al., 1992) [1]_. Its dynamics is given by:

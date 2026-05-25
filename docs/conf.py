@@ -145,3 +145,34 @@ nb_execution_timeout = 200
 autodoc_default_options = {
     'exclude-members': '....,default_rng',
 }
+
+# Render NumPy-doc "Attributes" sections as ``:ivar:`` fields rather than
+# standalone object descriptions, so they do not duplicate the members that
+# autodoc emits via ``:members:`` (avoids "duplicate object description").
+napoleon_use_ivar = True
+
+import re as _re
+
+_FIELD_LINE = _re.compile(r'^:[^:]+:')
+
+
+def _restore_field_list_blank_line(app, what, name, obj, options, lines):
+    """Reinsert the blank line dropped by sphinx_autodoc_typehints.
+
+    The extension injects ``:type ...:`` fields after napoleon has run but
+    drops the blank line napoleon placed before the following section, which
+    makes docutils emit "Field list ends without a blank line". Runs after
+    typehints (higher priority value) and adds the missing blank line back.
+    """
+    out = []
+    for i, line in enumerate(lines):
+        out.append(line)
+        if _FIELD_LINE.match(line):
+            nxt = lines[i + 1] if i + 1 < len(lines) else ''
+            if nxt and not nxt.startswith((' ', '\t', ':')):
+                out.append('')
+    lines[:] = out
+
+
+def setup(app):
+    app.connect('autodoc-process-docstring', _restore_field_list_blank_line, priority=900)

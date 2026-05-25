@@ -152,9 +152,6 @@ Alternatively, install `BrainX` to get `braincell` together with the rest of the
 pip install BrainX -U
 ```
 
-If you are a Windows user and need a WSL-based development setup with `NEURON 8.2.6` and `nrnivmodl`, see [develop_doc/windows_wsl_neuron_setup.md](develop_doc/windows_wsl_neuron_setup.md).
-
-
 
 ## Documentation
 

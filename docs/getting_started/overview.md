@@ -82,11 +82,11 @@ cell *is* one compartment.
 * - Run something immediately
   - {doc}`first_steps`
 * - Understand the vocabulary and design
-  - {doc}`../concepts/index`
+  - {doc}`../concepts/architecture`
 * - Build and simulate point neurons
-  - {doc}`../single_compartment/index`
+  - {doc}`../tutorials/index`
 * - Build morphological cells
-  - {doc}`../multi_compartment/index`
+  - {doc}`../tutorials/index`
 * - Pick or write a numerical solver
   - {doc}`../integration/index`
 * - Load a morphology from a file
@@ -96,5 +96,5 @@ cell *is* one compartment.
 * - Contribute or extend the library
   - {doc}`../developer/index`
 * - Diagnose an error
-  - {doc}`../troubleshooting`
+  - {doc}`../developer/troubleshooting`
 ```

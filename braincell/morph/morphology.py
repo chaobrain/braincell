@@ -352,7 +352,7 @@ class Morphology:
         cls,
         path,
         *,
-        options: 'SwcReadOptions' = None,
+        options=None,
         mode: str | None = None,
         return_report: bool = False,
     ):

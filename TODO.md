@@ -58,8 +58,8 @@ The library owns five concerns end-to-end:
 4. **Compilation** — lower the declaration into a `HHTypedNeuron` with
    resolved ion species, channel state, and a DHS-ordered node tree.
 5. **Numerical integration** — provide a registry of explicit, implicit,
-   exponential, staggered, and diffrax-backed step functions, including a
-   custom DHS voltage solver for branched cables.
+   exponential, and staggered step functions, including a custom DHS
+   voltage solver for branched cables.
 
 Out of scope (for this iteration): network simulation, plasticity learning
 rules, NEURON HOC compatibility, GUI tools, and stand-alone NMODL execution
@@ -103,8 +103,8 @@ if it returns, lives behind milestone M5 Phase 4).
                                ▼
 ┌──────────────────────────────────────────────────────────────────────┐
 │                        braincell.quad                                │
-│   IntegratorRegistry · explicit / implicit / exp_euler / staggered / │
-│   diffrax steps · dhs_voltage_step (branched-cable Hines solver)     │
+│   IntegratorRegistry · explicit / implicit / exp_euler / staggered   │
+│   steps · dhs_voltage_step (branched-cable Hines solver)             │
 └──────────────────────────────┬───────────────────────────────────────┘
                                │ DiffEqState
                                ▼
@@ -604,11 +604,6 @@ internal dependencies · status · open work**.
   - **Staggered**: `staggered_step` (DHS voltage solve +
     `ind_exp_euler` for ion-channel state, the workhorse for full
     cells).
-  - **Diffrax-backed**: `diffrax_euler/heun/midpoint/ralston/bosh3/
-    tsit5/dopri5/dopri8/bwd_euler/kvaerno{3,4,5}_step` — gated on
-    `importlib.util.find_spec('diffrax')` so the dependency is
-    optional. The actual `import diffrax` is deferred via PEP 562
-    `__getattr__` so importing `braincell.quad` is cheap.
   - **Voltage solvers**: `dhs_voltage_step` (DHS branched Hines),
     `dense_voltage_step`, `sparse_voltage_step`.
 - **Status**
@@ -623,12 +618,9 @@ internal dependencies · status · open work**.
     `cache_ion_total_currents(...)` when the target supports it, so
     NEURON-compatible ion-current snapshot semantics can be selected at
     the `Cell` level without changing the integrator API.
-  - [x] Diffrax bridge for explicit and implicit families with lazy
-    import.
   - [x] DHS voltage solver (`dhs_voltage_step`).
   - [ ] **Adaptive timestep wrapper** that produces a registered
-    integrator from any embedded RK pair (currently only available
-    via diffrax).
+    integrator from any embedded RK pair.
   - [x] **Convergence test matrix** — pytest-driven order-of-accuracy
     checks for every registered integrator on a small set of
     reference ODEs (passive cable, single HH spike, two-branch Y).
@@ -1258,15 +1250,13 @@ braincell.vis.compare2d(morpho_a, morpho_b, layout="frustum")
 | `brainpy` | >= 2.7.5 | brain dynamics library |
 | `numpy` | >= 1.15 | arrays |
 | `scipy` | recent | scientific helpers |
-| `diffrax` | optional | extra integrator family in `quad/_diffrax.py` |
 | `pyvista` | optional | 3D visualization backend |
 | `matplotlib` | optional | 2D visualization backend |
 | `NEURON` | dev only | reference comparator under `examples/multi_compartment/` |
 
 Optional dependencies must be **lazily imported** so the base install
-stays small. `quad/_diffrax.py` already follows this pattern via
-`importlib.util.find_spec` plus PEP 562 `__getattr__`; visualization
-backends should match it.
+stays small — use `importlib.util.find_spec` plus PEP 562
+`__getattr__` for the visualization backends.
 
 ---
 

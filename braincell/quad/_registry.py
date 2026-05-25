@@ -75,7 +75,7 @@ class IntegratorEntry:
     category : str
         Loose grouping for introspection and documentation. Common values
         used in-tree are ``"explicit"``, ``"implicit"``, ``"exponential"``,
-        ``"staggered"``, ``"diffrax"``, ``"voltage"``, and ``"general"``.
+        ``"staggered"``, ``"voltage"``, and ``"general"``.
     order : int or None
         Convergence order of the method, when applicable.
     description : str

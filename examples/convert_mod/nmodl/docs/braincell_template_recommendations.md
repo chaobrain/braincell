@@ -40,11 +40,12 @@ canonical_default
 
 ### Ion and base class
 
-The template normalizes a single `USEION` into:
+The template normalizes a single `USEION` into a `braincell.Channel` subclass with a
+`root_type` and an ion argument name:
 
-- `k -> PotassiumChannel / K`
-- `na -> SodiumChannel / Na`
-- `ca -> CalciumChannel / Ca`
+- `k -> root_type=braincell.ion.Potassium / K`
+- `na -> root_type=braincell.ion.Sodium / Na`
+- `ca -> root_type=braincell.ion.Calcium / Ca`
 
 ### Gate representation
 
@@ -102,6 +103,7 @@ Important fields:
 
 - `class_name`
 - `base_class_name`
+- `root_type`
 - `ion_name`
 - `ion_arg_name`
 - `g_max_param`

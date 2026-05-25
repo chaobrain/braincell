@@ -13,16 +13,19 @@ from .model import SemanticModuleIR
 ION_INFO_MAP = {
     "k": {
         "base_class_name": "PotassiumChannel",
+        "root_type": "braincell.ion.Potassium",
         "ion_arg_name": "K",
         "current_prefix": "IK",
     },
     "na": {
         "base_class_name": "SodiumChannel",
+        "root_type": "braincell.ion.Sodium",
         "ion_arg_name": "Na",
         "current_prefix": "INa",
     },
     "ca": {
         "base_class_name": "CalciumChannel",
+        "root_type": "braincell.ion.Calcium",
         "ion_arg_name": "Ca",
         "current_prefix": "ICa",
     },
@@ -215,6 +218,7 @@ def lower_density_channel_ir(semantic_ir: SemanticModuleIR) -> DensityChannelIR:
     g_max_source_name = None
     ion_name = useion.ion if useion else None
     base_class_name = ION_INFO_MAP.get(ion_name or "", {}).get("base_class_name", "Channel")
+    root_type = ION_INFO_MAP.get(ion_name or "", {}).get("root_type")
     ion_arg_name = ION_INFO_MAP.get(ion_name or "", {}).get("ion_arg_name", "Ion")
 
     if useion is not None:
@@ -333,6 +337,7 @@ def lower_density_channel_ir(semantic_ir: SemanticModuleIR) -> DensityChannelIR:
         registry_name=class_name,
         target_family=target_family,
         base_class_name=base_class_name,
+        root_type=root_type,
         ion_name=ion_name,
         ion_arg_name=ion_arg_name,
         supported=supported,

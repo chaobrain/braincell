@@ -195,6 +195,7 @@ class DensityChannelIR:
     registry_name: str
     target_family: str
     base_class_name: str
+    root_type: str | None
     ion_name: str | None
     ion_arg_name: str
     supported: bool

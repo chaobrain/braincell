@@ -66,7 +66,7 @@ Here is an example to model a **single-compartment** thalamus neuron model:
 
            self.k = braincell.ion.PotassiumFixed(size, E=-90. * u.mV)
            self.k.add(IKL=braincell.channel.K_Leak(size, g_max=0.01 * (u.mS / u.cm ** 2)))
-           self.k.add(IDR=braincell.channel.KDR_Ba2002(size, V_sh=-30. * u.mV))
+           self.k.add(IDR=braincell.channel.KDR_Ba2002(size, V_sh=-30. * u.mV, q10=2.0, temp=u.celsius2kelvin(16.)))
 
            self.ca = braincell.ion.CalciumDetailed(size, C_rest=5e-5 * u.mM, tau=10. * u.ms, d=0.5 * u.um)
            self.ca.add(ICaL=braincell.channel.CaL_IS2008(size, g_max=0.5 * (u.mS / u.cm ** 2)))

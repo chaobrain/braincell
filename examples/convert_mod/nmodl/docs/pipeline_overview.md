@@ -110,6 +110,7 @@ Step 2 先构建 `semantic_ir`，再构建 `target_ir`。
 - `target_family`
 - `class_name`
 - `base_class_name`
+- `root_type`
 - `g_max_param`
 - `gates`
 - `current_model`

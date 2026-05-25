@@ -2,15 +2,17 @@
 
 
 
+import braincell
 import braintools
 import brainunit as u
 
+from braincell._base import IonInfo
 from braincell.quad.protocol import DiffEqState
-from braincell.channel import {{context.base_class_name}}
 
 
-class {{ context.class_name }}({{ context.base_class_name }}):
+class {{ context.class_name }}(braincell.Channel):
     __module__ = "braincell.channel"
+    root_type = {{ context.root_type }}
 
     def __init__(
         self,

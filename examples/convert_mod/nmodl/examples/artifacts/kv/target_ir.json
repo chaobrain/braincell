@@ -6,6 +6,7 @@
   "registry_name": "IK_Kv",
   "target_family": "hh_ohmic_inf_tau",
   "base_class_name": "PotassiumChannel",
+  "root_type": "braincell.ion.Potassium",
   "ion_name": "k",
   "ion_arg_name": "K",
   "supported": true,

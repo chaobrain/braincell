@@ -1,10 +1,10 @@
 """Generated Braincell density channel from /home/swl/braincell/examples/convert_mod/nmodl/mod_files/kv.mod."""
 
+import braincell
 import braintools
 import brainunit as u
 
 from braincell._base import IonInfo
-from braincell.channel import PotassiumChannel
 from braincell.mech import get_registry
 from braincell.mech import register_channel
 from braincell.quad.protocol import DiffEqState
@@ -23,8 +23,9 @@ def _register_generated_channel(cls):
     return cls
 
 
-class IK_Kv(PotassiumChannel):
+class IK_Kv(braincell.Channel):
     __module__ = "braincell.channel"
+    root_type = braincell.ion.Potassium
 
     def __init__(
         self,

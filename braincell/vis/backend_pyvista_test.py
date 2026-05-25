@@ -62,6 +62,7 @@ class _FakePlotter:
         self._rendered = False
         self.pick_callback = None
         self.pick_enabled = False
+        self.export_html_calls = []
 
     def set_background(self, color) -> None:
         self.background = color
@@ -85,6 +86,10 @@ class _FakePlotter:
 
     def close(self) -> None:
         self.closed = True
+
+    def export_html(self, filename=None):
+        self.export_html_calls.append(filename)
+        return "<html><body>OfflineLocalView</body></html>"
 
     def enable_point_picking(self, *, callback, show_message=True, use_picker=True):
         self.pick_callback = callback
@@ -126,6 +131,12 @@ class _AlwaysFailPlotter(_FakePlotter):
     def show(self, **kwargs):
         self.show_calls.append(kwargs)
         raise RuntimeError(f"{kwargs['jupyter_backend']} boom")
+
+
+class _AlwaysFailIncludingExportPlotter(_AlwaysFailPlotter):
+    def export_html(self, filename=None):
+        self.export_html_calls.append(filename)
+        raise RuntimeError("html boom")
 
 
 def _request(*, notebook: bool | None = None, jupyter_backend: str | None = None, return_plotter: bool = False):
@@ -234,6 +245,17 @@ class PyVistaBackendTest(unittest.TestCase):
 
         self.assertEqual(viewer["viewer"]["jupyter_backend"], "client")
 
+    def test_render_exports_raw_iframe_for_html_backend(self) -> None:
+        fake_pv = _fake_pyvista(_FakePlotter)
+        backend = PyVistaBackend()
+
+        with mock.patch.dict("sys.modules", {"pyvista": fake_pv}):
+            viewer = backend.render(_request(notebook=True, jupyter_backend="html"))
+
+        self.assertIn("<iframe", viewer._repr_html_())
+        self.assertIn("OfflineLocalView", viewer._repr_html_())
+        self.assertEqual(repr(viewer), "<interactive PyVista scene>")
+
     def test_render_falls_back_from_client_to_html(self) -> None:
         fake_pv = _fake_pyvista(_ClientFailsPlotter)
         backend = PyVistaBackend()
@@ -242,7 +264,8 @@ class PyVistaBackendTest(unittest.TestCase):
             with mock.patch.dict(os.environ, {}, clear=True):
                 viewer = backend.render(_request(notebook=True))
 
-        self.assertEqual(viewer["viewer"]["jupyter_backend"], "html")
+        self.assertIn("<iframe", viewer._repr_html_())
+        self.assertIn("OfflineLocalView", viewer._repr_html_())
 
     def test_render_uses_trame_first_when_display_exists(self) -> None:
         fake_pv = _fake_pyvista(_FakePlotter)
@@ -276,7 +299,7 @@ class PyVistaBackendTest(unittest.TestCase):
         self.assertEqual(viewer["viewer"]["jupyter_backend"], "client")
 
     def test_render_reports_attempted_backends_on_failure(self) -> None:
-        fake_pv = _fake_pyvista(_AlwaysFailPlotter)
+        fake_pv = _fake_pyvista(_AlwaysFailIncludingExportPlotter)
         backend = PyVistaBackend()
 
         with mock.patch.dict("sys.modules", {"pyvista": fake_pv}):
@@ -298,7 +321,7 @@ class PyVistaBackendTest(unittest.TestCase):
 
         with mock.patch.dict("sys.modules", {"pyvista": fake_pv}):
             with self.assertRaisesRegex(RuntimeError, "PyVista returned no notebook viewer"):
-                backend.render(_request(notebook=True, jupyter_backend="html"))
+                backend.render(_request(notebook=True, jupyter_backend="trame"))
 
 
 class PyVistaPickMetadataTest(unittest.TestCase):

@@ -842,9 +842,15 @@ class Branch:
         chooser : BackendChooser or None
             Explicit backend chooser; overrides *backend* when given.
         notebook : bool or None
-            Enable notebook-specific rendering when *True*.
+            Enable notebook-specific rendering when *True*. Use this in
+            Jupyter notebooks or notebook-based docs so the 3-D scene is
+            embedded in the cell output; leave it false/omitted when you
+            want the raw backend plotter in a script.
         jupyter_backend : str or None
-            Jupyter backend name for notebook rendering.
+            Jupyter backend name for notebook rendering. Use ``"html"``
+            for static HTML docs and headless builds; use interactive
+            server/client backends only in a live Jupyter session
+            configured for them.
         return_plotter : bool
             If *True*, return the backend plotter object instead of
             displaying the figure.

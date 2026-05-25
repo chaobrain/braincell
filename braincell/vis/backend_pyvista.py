@@ -18,7 +18,9 @@
 import importlib.util
 import os
 import sys
+from contextlib import contextmanager, nullcontext
 from dataclasses import dataclass, field
+from html import escape
 from typing import Any
 
 import numpy as np
@@ -31,6 +33,24 @@ from .scene import RenderRequest, RenderScene3D, ValueBatch3D, ValueSpec
 # lookup table to a plotter. Downstream picking callbacks read it via
 # ``getattr(plotter, _BC_POINT_BRANCH_MAP, None)``.
 _BC_POINT_BRANCH_MAP = "_bc_point_branch_map"
+
+
+class PyVistaHTML:
+    """Notebook display wrapper for exported PyVista HTML."""
+
+    def __init__(self, html: str, *, height: int = 600) -> None:
+        srcdoc = escape(html, quote=True)
+        self.html = (
+            f'<iframe srcdoc="{srcdoc}" class="pyvista" '
+            f'style="width: 100%; height: {int(height)}px; border: 1px solid #ddd;" '
+            'loading="lazy"></iframe>'
+        )
+
+    def _repr_html_(self) -> str:
+        return self.html
+
+    def __repr__(self) -> str:
+        return "<interactive PyVista scene>"
 
 
 @dataclass(frozen=True)
@@ -64,7 +84,10 @@ class PyVistaBackend:
         jupyter_backend = backend_options.get("jupyter_backend")
         return_plotter = bool(backend_options.get("return_plotter", False))
 
-        plotter = pv.Plotter(**self.plotter_kwargs)
+        suppress_stderr = jupyter_backend == "html"
+        plotter_context = _suppress_stderr_fd() if suppress_stderr else nullcontext()
+        with plotter_context:
+            plotter = pv.Plotter(**self.plotter_kwargs)
         plotter.set_background(self.background)
         if self.show_axes:
             plotter.show_axes()
@@ -170,6 +193,14 @@ class PyVistaBackend:
         for candidate in _notebook_backends(jupyter_backend):
             _prepare_plotter_for_notebook(plotter)
             attempted.append(candidate)
+            if candidate == "html":
+                if return_plotter:
+                    return plotter
+                try:
+                    return _export_plotter_html(plotter)
+                except Exception as exc:
+                    failures.append((candidate, f"{type(exc).__name__}: {exc}"))
+                    continue
             try:
                 viewer = plotter.show(
                     jupyter_backend=candidate,
@@ -198,6 +229,30 @@ class PyVistaBackend:
             "Server/trame modes may also require a virtual framebuffer. "
             "You can still pass return_plotter=True to receive the raw Plotter."
         )
+
+
+def _export_plotter_html(plotter: Any) -> PyVistaHTML:
+    """Export a plotter as self-contained iframe HTML for static notebooks."""
+    with _suppress_stderr_fd():
+        exported = plotter.export_html(filename=None)
+    html = exported.getvalue() if hasattr(exported, "getvalue") else str(exported)
+    if hasattr(plotter, "close"):
+        plotter.close()
+    return PyVistaHTML(html)
+
+
+@contextmanager
+def _suppress_stderr_fd():
+    """Suppress native-library stderr while PyVista creates static HTML."""
+    stderr_fd = 2
+    saved_fd = os.dup(stderr_fd)
+    try:
+        with open(os.devnull, "w") as devnull:
+            os.dup2(devnull.fileno(), stderr_fd)
+            yield
+    finally:
+        os.dup2(saved_fd, stderr_fd)
+        os.close(saved_fd)
 
 
 def _rgb_to_float(rgb: tuple[int, int, int]) -> tuple[float, float, float]:

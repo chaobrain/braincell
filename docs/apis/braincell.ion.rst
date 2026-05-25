@@ -1,11 +1,11 @@
 ``braincell.ion`` module
 ========================
 
-.. currentmodule:: braincell.ion 
-.. automodule:: braincell.ion 
+.. currentmodule:: braincell.ion
+.. automodule:: braincell.ion
 
-Calcium Ions
-------------
+Calcium Ions & Dynamics
+-----------------------
 
 .. autosummary::
    :toctree: generated/
@@ -16,6 +16,21 @@ Calcium Ions
    CalciumFixed
    CalciumDetailed
    CalciumFirstOrder
+   CalciumInitNernst
+   CdpCAM_MA2024_PC
+   CdpCR_MA2020_GrC
+   CdpHVA_SU2015_DCN
+   CdpLVA_SU2015_DCN
+   CdpStC_MA2020_GoC
+   CdpStC_CAMOnly_MA2020_GoC
+   CdpStC_NoCAM_MA2020_GoC
+   CdpStC_MA2025_BC
+   CdpStC_RI2021_SC
+   ToyCaBindingKinetic_SU2015_DCN
+   ToyCaBindingSourceKinetic_SU2015_DCN
+   ToyCaBindingIcaSourceKinetic_SU2015_DCN
+   ToyCaPumpFactorKinetic_SU2015_DCN
+   ToyDiamFactorKinetic_SU2015_DCN
 
 
 Potassium Ions
@@ -28,6 +43,7 @@ Potassium Ions
 
    Potassium
    PotassiumFixed
+   PotassiumInitNernst
 
 
 Sodium Ions
@@ -40,5 +56,10 @@ Sodium Ions
 
    Sodium
    SodiumFixed
+   SodiumInitNernst
 
 
+Helpers
+-------
+
+.. autofunction:: build_placeholder_ions

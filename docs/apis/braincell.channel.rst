@@ -1,8 +1,8 @@
 ``braincell.channel`` module
 ============================
 
-.. currentmodule:: braincell.channel 
-.. automodule:: braincell.channel 
+.. currentmodule:: braincell.channel
+.. automodule:: braincell.channel
 
 Calcium Channels
 ----------------
@@ -12,31 +12,55 @@ Calcium Channels
    :nosignatures:
    :template: classtemplate.rst
 
-   CalciumChannel
-   ICaN_IS2008
-   ICaT_HM1992
-   ICaT_HP1992
-   ICaHT_HM1992
-   ICaHT_Re1993
-   ICaL_IS2008
-   ICav12_Ma2020
-   ICav13_Ma2020
-   ICav23_Ma2020
-   ICav31_Ma2020
-   ICaGrc_Ma2020
+   CaN_IS2008
+   CaL_IS2008
+   CaT_HM1992
+   CaT_HP1992
+   CaHT_HM1992
+   CaHT_Re1993
+   CaHVA_MA2020_GoC
+   CaHVA_MA2020_GrC
+   CaHVA_SU2015_DCN
+   CaLVA_SU2015_DCN
+   CaL_SU2015_DCN
+   Ca_ZH2019_IO
+   Cav1p2_MA2020_GoC
+   Cav1p2_MA2025_BC
+   Cav1p3_MA2020_GoC
+   Cav1p3_MA2025_BC
+   Cav2p1_MA2024_PC
+   Cav2p1_MA2024_PC_Frozen
+   Cav2p1_MA2025_BC
+   Cav2p1_RI2021_SC
+   Cav2p3_MA2020_GoC
+   Cav3p1_MA2020_GoC
+   Cav3p1_MA2024_PC
+   Cav3p1_MA2024_PC_Frozen
+   Cav3p1Test_PC24
+   Cav3p2_MA2024_PC
+   Cav3p2_MA2025_BC
+   Cav3p2_RI2021_SC
+   Cav3p3_MA2024_PC
+   Cav3p3_MA2024_PC_Frozen
+   Cav3p3_RI2021_SC
 
 
-Hypterpolarization-Activated Channels
--------------------------------------
+Hyperpolarization-Activated Channels
+------------------------------------
 
 .. autosummary::
    :toctree: generated/
    :nosignatures:
    :template: classtemplate.rst
 
-   Ih_HM1992
-   Ih1_Ma2020
-   Ih2_Ma2020
+   HCN_HM1992
+   HCN_SU2015_DCN
+   HCN_ZH2019_IO
+   HCN1_MA2020_GoC
+   HCN1_MA2024_PC
+   HCN1_MA2025_BC
+   HCN1_RI2021_SC
+   HCN2_MA2020_GoC
 
 
 Leakage Channels
@@ -59,26 +83,48 @@ Potassium Channels
    :nosignatures:
    :template: classtemplate.rst
 
-   PotassiumChannel
-   IK_p4_markov
-   IKDR_Ba2002
-   IK_TM1991
-   IK_HH1952
-   IKA_p4q_ss
-   IKA1_HM1992
-   IKA2_HM1992
-   IKK2_pq_ss
-   IKK2A_HM1992
-   IKK2B_HM1992
-   IKNI_Ya1989
-   IK_Leak
-   IKv11_Ak2007
-   IKv34_Ma2020
-   IKv43_Ma2020
-   IKM_Grc_Ma2020
+   K_HH1952
+   K_TM1991
+   K_Leak
+   K_Kv_test
+   KDR_Ba2002
+   Kdr_ZH2019_IO
+   KA1_HM1992
+   KA2_HM1992
+   KK2A_HM1992
+   KK2B_HM1992
+   KNI_Ya1989
+   KM_MA2020_GoC
+   KM_MA2020_GrC
+   KM_RI2021_SC
+   Kir2p3_MA2020_GrC
+   Kir2p3_MA2024_PC
+   Kir2p3_MA2025_BC
+   Kir2p3_RI2021_SC
+   Kv1p1_MA2020_GoC
+   Kv1p1_MA2020_GrC
+   Kv1p1_MA2024_PC
+   Kv1p1_MA2025_BC
+   Kv1p1_RI2021_SC
+   Kv1p5_MA2020_GrC
+   Kv1p5_MA2024_PC
+   Kv2p2_0010_MA2020_GrC
+   Kv3p3_MA2024_PC
+   Kv3p4_MA2020_GoC
+   Kv3p4_MA2020_GrC
+   Kv3p4_MA2024_PC
+   Kv3p4_MA2025_BC
+   Kv3p4_RI2021_SC
+   Kv4p3_MA2020_GoC
+   Kv4p3_MA2020_GrC
+   Kv4p3_MA2024_PC
+   Kv4p3_MA2025_BC
+   Kv4p3_RI2021_SC
+   fKdr_SU2015_DCN
+   sKdr_SU2015_DCN
 
 
-Potassium Calcium Channels
+Potassium-Calcium Channels
 --------------------------
 
 .. autosummary::
@@ -86,10 +132,21 @@ Potassium Calcium Channels
    :nosignatures:
    :template: classtemplate.rst
 
-   IAHP_De1994
-   IKca3_1_Ma2020
-   IKca2_2_Ma2020
-   IKca1_1_Ma2020
+   AHP_De1994
+   SK_SU2015_DCN
+   Kca1p1_MA2020_GoC
+   Kca1p1_MA2020_GrC
+   Kca1p1_MA2024_PC
+   Kca1p1_MA2025_BC
+   Kca1p1_RI2021_SC
+   Kca2p2_MA2020_GoC
+   Kca2p2_MA2020_GrC
+   Kca2p2_MA2024_PC
+   Kca2p2_MA2025_BC
+   Kca2p2_RI2021_SC
+   Kca3p1_MA2020_GoC
+   Kca3p1_MA2024_PC
+   Kca3p1_MA2025_BC
 
 
 Sodium Channels
@@ -100,11 +157,17 @@ Sodium Channels
    :nosignatures:
    :template: classtemplate.rst
 
-   SodiumChannel
-   INa_p3q_markov
-   INa_Ba2002
-   INa_TM1991
-   INa_HH1952
-   INa_Rsg
-
-
+   Na_HH1952
+   Na_TM1991
+   Na_Ba2002
+   Na_ZH2019_IO
+   NaF_SU2015_DCN
+   NaP_SU2015_DCN
+   NaFHF_MA2020_GrC
+   Nav_MA2020_GrC
+   Nav1p1_MA2025_BC
+   Nav1p1_RI2021_SC
+   Nav1p6_MA2020_GoC
+   Nav1p6_MA2024_PC
+   Nav1p6_MA2025_BC
+   Nav1p6_RI2021_SC

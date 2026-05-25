@@ -43,11 +43,6 @@ for source, dest in changelogs:
     os.remove(dest)
   shutil.copyfile(source, dest)
 
-import auto_generater
-
-auto_generater.main()
-
-
 
 # -- Project information -----------------------------------------------------
 

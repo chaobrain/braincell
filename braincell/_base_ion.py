@@ -46,33 +46,27 @@ class Ion(IonChannel, Container):
     and Container, allowing it to handle ion-specific behaviors and contain multiple
     channel instances.
 
-    Args:
-        size (brainstate.typing.Size): The size of the simulation target, typically
-            representing the number of neurons or compartments.
-        name (Optional[str]): The name of the Ion instance. Defaults to None.
-        **channels: Additional keyword arguments for specifying Channel instances
-            to be included in this Ion object.
-
-    Attributes:
-        channels (Dict[str, Channel]): A dictionary of Channel instances associated
-            with this ion.
-
     The Ion class serves as a crucial component in modeling the behavior of specific
     ion types within a neuron or neural network simulation. It manages the collective
     behavior of multiple ion channels of the same ion type and provides methods for
     initializing, updating, and querying the state of these channels throughout the
     simulation process.
 
-    Parameters:
-    -----------
+    Parameters
+    ----------
     size : brainstate.typing.Size
-        The size of the ion channel, typically representing the number of
+        The size of the simulation target, typically representing the number of
         neurons or compartments.
     name : Optional[str], default=None
         The name of the Ion instance. If not provided, the instance will be unnamed.
-    **channels
-        Additional keyword arguments for specifying Channel instances to be
-        included in this Ion object.
+    channels
+        Additional keyword arguments (``**channels``) specifying Channel instances
+        to be included in this Ion object.
+
+    Attributes
+    ----------
+    channels : Dict[str, Channel]
+        A dictionary of Channel instances associated with this ion.
     """
 
     __module__ = 'braincell'

@@ -19,14 +19,14 @@ It is built on `JAX <https://github.com/jax-ml/jax>`_ and
       Install ``braincell`` and simulate your first neuron in a few minutes.
 
    .. grid-item-card:: 💡 Concepts
-      :link: concepts/index
+      :link: concepts/architecture
       :link-type: doc
 
       The mental model behind cells, mechanisms, morphology, discretization,
       and integration.
 
    .. grid-item-card:: 🧪 Tutorials & Examples
-      :link: single_compartment/index
+      :link: tutorials/index
       :link-type: doc
 
       Step-by-step notebooks for single- and multi-compartment models.
@@ -132,25 +132,22 @@ and channels:
            self.IL = braincell.channel.IL(size, g_max=0.0075 * (u.mS / u.cm ** 2), E=-70 * u.mV)
 
 See :doc:`getting_started/first_steps` to run this model and plot a spike train,
-or :doc:`concepts/index` to understand each piece.
+or :doc:`concepts/architecture` to understand each piece.
 
 
 How this documentation is organized
 -----------------------------------
 
-Following the structure that works well for libraries like
-`Arbor <https://docs.arbor-sim.org>`_, the docs are layered by what you are
-trying to do:
+The docs are layered by what you are trying to do:
 
 - **Get Started** — install the package and run a first model. Start here if
   you are new.
 - **Concepts** — the design and vocabulary of ``braincell``: cells, mechanisms,
   morphology, discretization, and integration. Read this to build a mental
   model before diving deep.
-- **Modeling guides** — task-focused tutorials and runnable examples for
-  :doc:`single-compartment <single_compartment/index>` and
-  :doc:`multi-compartment <multi_compartment/index>` models, and for
-  :doc:`numerical integration <integration/index>`.
+- **Modeling guides** — task-focused :doc:`tutorials <tutorials/index>` and
+  runnable :doc:`examples <examples/index>` for single- and multi-compartment
+  models, and for :doc:`numerical integration <integration/index>`.
 - **File Formats & IO** — how to load and save morphologies.
 - **Developer Guide** — project layout, testing, and how to extend the library.
 - **API Reference** — the exhaustive, generated reference for every public
@@ -171,22 +168,24 @@ trying to do:
    :maxdepth: 2
    :caption: Concepts
 
-   concepts/index
+   concepts/architecture
+   concepts/units
+   concepts/cells
+   concepts/morphology
+   concepts/mechanisms
+   concepts/ions_channels
+   concepts/regions_locsets
+   concepts/discretization
+   concepts/integration
 
 .. toctree::
    :hidden:
    :maxdepth: 2
    :caption: Modeling Guides
 
-   single_compartment/index
-   multi_compartment/index
+   tutorials/index
+   examples/index
    integration/index
-
-.. toctree::
-   :hidden:
-   :maxdepth: 1
-   :caption: File Formats & IO
-
    file_formats/index
 
 .. toctree::
@@ -194,14 +193,18 @@ trying to do:
    :maxdepth: 1
    :caption: Developer Guide
 
-   developer/index
-   troubleshooting
+   developer/contributing
+   developer/project_layout
+   developer/testing
+   developer/extending
+   developer/troubleshooting
 
 .. toctree::
    :hidden:
    :maxdepth: 1
    :caption: API Reference
 
+   apis/changelog.md
    apis/braincell.rst
    apis/morphology.rst
    apis/braincell.ion.rst
@@ -212,7 +215,6 @@ trying to do:
    apis/io.rst
    apis/integration.rst
    apis/vis.rst
-   apis/changelog.md
 
 
 Ecosystem

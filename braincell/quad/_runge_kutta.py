@@ -552,7 +552,7 @@ def ralston2_step(
 
     Ralston's second-order method is the two-stage explicit Runge-Kutta
     scheme that minimises the leading-order truncation error coefficient
-    among second-order RK2 variants:
+    among second-order RK2 variants [1]_:
 
     .. math::
 
@@ -783,7 +783,7 @@ def ssprk3_step(
     r"""Advance one step with the Strong-Stability-Preserving RK3 method.
 
     The Shu-Osher third-order strong-stability-preserving Runge-Kutta
-    scheme (SSPRK3) is a convex combination of forward Euler steps:
+    scheme (SSPRK3) is a convex combination of forward Euler steps [1]_:
 
     .. math::
 
@@ -869,7 +869,7 @@ def ralston3_step(
 
     Ralston's three-stage third-order RK method is the third-order
     explicit Runge-Kutta scheme that minimises the leading-order
-    truncation error coefficient:
+    truncation error coefficient [1]_:
 
     .. math::
 
@@ -1032,7 +1032,7 @@ def ralston4_step(
 
     Ralston's four-stage fourth-order RK method uses non-rational
     coefficients chosen to minimise the leading-order truncation error
-    coefficient relative to classical RK4:
+    coefficient relative to classical RK4 [1]_:
 
     .. math::
 

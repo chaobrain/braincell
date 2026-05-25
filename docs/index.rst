@@ -110,8 +110,8 @@ Here is an example to model a **single-compartment** thalamus neuron model:
 
    apis/braincell.rst
    apis/morphology.rst
-   apis/braincell.neuron.rst
    apis/braincell.synapse.rst
+   apis/braincell.mech.rst
    apis/braincell.ion.rst
    apis/braincell.channel.rst
    apis/integration.rst

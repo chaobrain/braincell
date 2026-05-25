@@ -70,6 +70,20 @@ python -m pip install -r requirements-doc.txt
 python -m pip install -e .
 ```
 
+If you regenerate notebooks that contain interactive `vis3d(...)` output,
+also install the PyVista HTML export dependencies before running and saving
+those notebooks:
+
+```bash
+python -m pip install "braincell[vis]" ipywidgets trame trame-vtk trame-vuetify
+```
+
+For interactive authoring inside JupyterLab, install JupyterLab as well:
+
+```bash
+python -m pip install "jupyterlab>=3"
+```
+
 Then build the HTML docs:
 
 ```bash
@@ -84,7 +98,7 @@ cd docs
 .\make.bat html
 ```
 
-Documentation includes Markdown, reStructuredText, and notebooks. Notebook execution is disabled in the Sphinx configuration, so documentation changes should focus on content correctness and importability.
+Documentation includes Markdown, reStructuredText, and notebooks. Notebook execution is disabled in the Sphinx configuration, so documentation changes should focus on content correctness and importability. For static interactive PyVista output, use `vis3d(notebook=True, jupyter_backend="html")`; the PyVista backend exports raw iframe HTML for this backend so the published docs page does not need to load the Jupyter widget manager.
 
 ## Code style and contribution expectations
 

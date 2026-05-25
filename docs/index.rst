@@ -171,7 +171,15 @@ trying to do:
    :maxdepth: 2
    :caption: Concepts
 
-   concepts/index
+   concepts/architecture
+   concepts/units
+   concepts/cells
+   concepts/morphology
+   concepts/mechanisms
+   concepts/ions_channels
+   concepts/regions_locsets
+   concepts/discretization
+   concepts/integration
 
 .. toctree::
    :hidden:
@@ -181,12 +189,6 @@ trying to do:
    single_compartment/index
    multi_compartment/index
    integration/index
-
-.. toctree::
-   :hidden:
-   :maxdepth: 1
-   :caption: File Formats & IO
-
    file_formats/index
 
 .. toctree::

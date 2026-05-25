@@ -24,4 +24,13 @@ Tutorials and worked examples for single-compartment Hodgkin–Huxley neurons.
    advanced_tutorial/rationale
    advanced_tutorial/differential_equation
    advanced_tutorial/more
-   advanced_tutorial/examples
+
+
+.. toctree::
+   :maxdepth: 1
+   :caption: Examples
+
+   examples/sc02
+   examples/sc03
+   examples/sc04
+   examples/sc05

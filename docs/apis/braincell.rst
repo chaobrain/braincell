@@ -25,7 +25,7 @@ Base Class for Cell Modeling
 
     HHTypedNeuron
     SingleCompartment
-    MultiCompartment
+    Cell
 
 
 
@@ -42,4 +42,3 @@ Base Class for Ion Channels
     IonInfo
     MixIons
     Channel
-    Synapse

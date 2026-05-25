@@ -33,7 +33,7 @@ It is built on top of [JAX](https://github.com/jax-ml/jax) and [brainstate](http
 - **Morphology system** — `braincell.morph`: immutable `Branch` geometry, typed subclasses (`Soma`, `Dendrite`, `Axon`, `BasalDendrite`, `ApicalDendrite`), and the mutable `Morphology` tree.
 - **IO readers** — SWC, ASC, and NeuroML2 file readers; a full [NeuroMorpho.Org](https://neuromorpho.org) client with search, download, and local caching.
 - **Visualization** — `braincell.vis`: 2D tree layouts (matplotlib) and 3D rendering (PyVista / Plotly), color-by-values, morphometry plots, and movie export.
-- **Integrator registry** — `braincell.quad`: explicit (Euler, RK2/3/4), implicit, exponential-Euler, staggered cable solve, and diffrax-backed adaptive solvers, all selectable by name.
+- **Integrator registry** — `braincell.quad`: explicit (Euler, RK2/3/4), implicit, exponential-Euler, and staggered cable solve, all selectable by name.
 - **Declarative mechanisms** — `braincell.mech`: `Channel`, `Ion`, `CableProperty`, `CurrentClamp`, `Synapse`, `Junction` specs for the `Cell` frontend.
 - **CLI** — `braincell-neuromorpho` command for searching and downloading from NeuroMorpho.Org.
 
@@ -136,7 +136,6 @@ Optional dependency groups:
 |-------|-----------------|
 | `braincell[vis]` | matplotlib, pyvista, plotly (visualization backends) |
 | `braincell[io]` | requests (NeuroMorpho.Org client) |
-| `braincell[quad]` | diffrax (adaptive ODE solvers) |
 | `braincell[all]` | all of the above |
 | `braincell[cpu]` | jax[cpu] |
 | `braincell[cuda12]` | jax[cuda12] |

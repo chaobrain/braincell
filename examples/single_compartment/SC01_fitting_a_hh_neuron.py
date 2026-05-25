@@ -14,6 +14,7 @@
 # ==============================================================================
 
 
+from pathlib import Path
 from typing import Union, Callable
 
 import brainstate
@@ -29,8 +30,9 @@ import braincell
 brainstate.environ.set(dt=0.01 * u.ms)
 
 # Load Input and Output Data
-df_inp_traces = pd.read_csv('neuron_data/input_traces_hh.csv')
-df_out_traces = pd.read_csv('neuron_data/output_traces_hh.csv')
+DATA_DIR = Path(__file__).resolve().parents[2] / "data" / "neuron_traces"
+df_inp_traces = pd.read_csv(DATA_DIR / 'input_traces_hh.csv')
+df_out_traces = pd.read_csv(DATA_DIR / 'output_traces_hh.csv')
 
 area = 20000 * u.um ** 2  # neuronal area
 inp_traces = df_inp_traces.to_numpy()[:, 1:] * 1e9 * u.nA  # input currents

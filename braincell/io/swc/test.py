@@ -27,7 +27,7 @@ from braincell.io.swc import SwcReadOptions, SwcReader
 from braincell.io.swc.soma import is_contour_soma, is_special_three_point_soma
 from braincell.io.swc.types import _SwcAttach, _SwcBranch, _SwcRow
 
-FIXTURE_DIR = Path(__file__).resolve().parents[3] / "examples" / "multi_compartment" / "morpho_files"
+FIXTURE_DIR = Path(__file__).resolve().parents[3] / "data" / "morphology" / "generic"
 ALLOWED_TYPES = {
     "soma",
     "axon",

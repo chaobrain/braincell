@@ -7,7 +7,7 @@ import tempfile
 import textwrap
 
 
-MORPHO_FILES = Path(__file__).resolve().parents[3] / "multi_compartment" / "morpho_files"
+MORPHO_FILES = Path(__file__).resolve().parents[4] / "data" / "morphology" / "generic"
 UNBRANCHED_SOMA_SWC = str(MORPHO_FILES / "unbranched_soma.swc")
 BRANCHED_DEND_SWC = str(MORPHO_FILES / "branched_dend.swc")
 BRANCHED_SOMA_SWC = str(MORPHO_FILES / "branched_soma.swc")

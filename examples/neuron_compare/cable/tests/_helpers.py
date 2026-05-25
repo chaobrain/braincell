@@ -11,7 +11,7 @@ ENGINE_ROOT = CABLE_ROOT / "engine"
 TEMPLATES_ROOT = ENGINE_ROOT
 TEMPLATE_JSON_ROOT = CABLE_ROOT / "templates"
 WORKFLOWS_ROOT = CABLE_ROOT / "workflows"
-MORPHO_FILES = Path(__file__).resolve().parents[3] / "multi_compartment" / "morpho_files"
+MORPHO_FILES = Path(__file__).resolve().parents[4] / "data" / "morphology" / "generic"
 
 
 def load_module(path: Path, name: str):

@@ -104,6 +104,14 @@ Here is an example to model a **single-compartment** thalamus neuron model:
 
 
 .. toctree::
+   :maxdepth: 2
+   :caption: Numerical Integration
+   :hidden:
+
+   integration/index
+
+
+.. toctree::
    :hidden:
    :maxdepth: 2
    :caption: API Documentation

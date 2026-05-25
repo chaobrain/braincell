@@ -164,6 +164,7 @@ examples/neuron_compare/channel_no_conc/artifacts/
 # IPython
 profile_default/
 ipython_config.py
+/docs/apis/changelog.md
 
 # pyenv
 #   For a library or package, you might want to ignore these files since the code is
@@ -247,3 +248,5 @@ x86_64/
 docs/_brand/
 docs/_static/css/brainx-header.css
 docs/_static/js/brainx-header.js
+/docs/_static/css/brainx-footer.css
+/docs/_static/js/brainx-footer.js

@@ -112,8 +112,8 @@ cell.place(RootLocation(0.5), mech.CurrentClamp.step(0.2 * u.nA, duration=50 * u
 import braincell
 import braincell.vis as vis
 
-# Load from NeuroMorpho.Org (cached locally)
-morpho = braincell.load_neuromorpho("cnic_001")
+# Load from NeuroMorpho.Org by neuron id (downloaded and cached locally)
+morpho = braincell.Morphology.from_neuromorpho(12345)
 
 # 2-D layout plot
 vis.plot2d(morpho)

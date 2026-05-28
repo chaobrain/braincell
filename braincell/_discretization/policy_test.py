@@ -22,6 +22,7 @@ from braincell import (
     Branch,
     CompositeByTypePolicy,
     CVPerBranch,
+    CVPerBranchList,
     CVPolicy,
     CVPolicyByTypeRule,
     CableProperty,
@@ -92,6 +93,36 @@ class CVPolicyTest(unittest.TestCase):
         cell = Cell(tree, cv_policy=CVPerBranch(cv_per_branch=3))
         self.assertEqual(cell.n_cv, 9)
         self.assertEqual(_branch_cv_counts(cell), {0: 3, 1: 3, 2: 3})
+
+    def test_cv_per_branch_list_resolve_bounds_on_policy(self) -> None:
+        tree = _build_three_branch_tree()
+        policy = CVPerBranchList(cv_per_branch=(1, 3, 5))
+        self.assertEqual(
+            policy.resolve_cv_bounds(tree),
+            (
+                ((0.0, 1.0),),
+                ((0.0, 1.0 / 3.0), (1.0 / 3.0, 2.0 / 3.0), (2.0 / 3.0, 1.0)),
+                (
+                    (0.0, 0.2),
+                    (0.2, 0.4),
+                    (0.4, 0.6),
+                    (0.6, 0.8),
+                    (0.8, 1.0),
+                ),
+            ),
+        )
+        cell = Cell(tree, cv_policy=policy)
+        self.assertEqual(cell.n_cv, 9)
+        self.assertEqual(_branch_cv_counts(cell), {0: 1, 1: 3, 2: 5})
+
+    def test_cv_per_branch_list_validates_counts(self) -> None:
+        tree = _build_three_branch_tree()
+        with self.assertRaisesRegex(ValueError, "branch count"):
+            Cell(tree, cv_policy=CVPerBranchList(cv_per_branch=(1, 3)))
+        with self.assertRaises(TypeError):
+            Cell(tree, cv_policy=CVPerBranchList(cv_per_branch=(1, True, 3)))
+        with self.assertRaises(ValueError):
+            Cell(tree, cv_policy=CVPerBranchList(cv_per_branch=(1, 0, 3)))
 
     def test_max_cv_len_resolve_bounds_on_policy(self) -> None:
         tree = _build_two_branch_tree()
@@ -274,6 +305,7 @@ class CVPolicyTest(unittest.TestCase):
 
     def test_public_base_class_is_still_exported(self) -> None:
         self.assertTrue(issubclass(CVPerBranch, CVPolicy))
+        self.assertTrue(issubclass(CVPerBranchList, CVPolicy))
         self.assertTrue(issubclass(MaxCVLen, CVPolicy))
         self.assertTrue(issubclass(DLambda, CVPolicy))
         self.assertTrue(issubclass(CompositeByTypePolicy, CVPolicy))

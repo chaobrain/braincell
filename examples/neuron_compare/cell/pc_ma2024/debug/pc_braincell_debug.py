@@ -446,7 +446,7 @@ class PC:
             self.cell.paint(
                 soma,
                 mech.Channel(
-                    f"Cav3p3_MA2024_PC{frozen_suffix}",
+                    f"Cav3p3_MA2024_PC",
                     perm=self.params.cav33_soma_perm * (u.cm / u.second),
                     g_scale=self.params.cav33_g_scale,
                     ion_name="ca",
@@ -456,7 +456,7 @@ class PC:
             self.cell.paint(
                 dend,
                 mech.Channel(
-                    f"Cav3p3_MA2024_PC{frozen_suffix}",
+                    f"Cav3p3_MA2024_PC",
                     name="Cav3p3_dend_Frozen",
                     perm=self.params.cav33_dend_perm * (u.cm / u.second),
                     g_scale=self.params.cav33_g_scale,

@@ -79,7 +79,7 @@ INITIAL {
 } 
  
 BREAKPOINT { 
-	SOLVE states METHOD derivimplicit 
+	SOLVE states METHOD cnexp 
 	g = gcabar*s*s*u 
 	ica = g*(v - eca) 
 	alpha_s = alp_s(v)
@@ -129,4 +129,3 @@ PROCEDURE rate(v (mV)) {LOCAL a_s, b_s, a_u, b_u
 	u_inf = a_u/(a_u + b_u) 
 	tau_u = 1/(a_u + b_u) 
 }
-

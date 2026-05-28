@@ -51,6 +51,7 @@ __all__ = [
     "Cav1p3_MA2020_GoC",
     "Cav1p3_MA2025_BC",
     "Cav3p1_MA2020_GoC",
+    "Cav3p1_MA2020_GoC_Frozen",
     "Cav3p1_MA2024_PC",
     "Cav3p1_MA2024_PC_Frozen",
     "Cav3p1Test_PC24",
@@ -88,8 +89,8 @@ def _cav3p3_nmodl_ghk_flux(V, ci, co, z, temp):
     w = (z * _CAV3P3_NMODL_FARADAY * V) / (_CAV3P3_NMODL_GAS_CONSTANT * ghk_temp)
     exp_term = u.math.exp(w)
     numerator = co - ci * exp_term
-    small_branch = -0.001 * z * _CAV3P3_NMODL_FARADAY * numerator * (1 - w / 2)
-    regular_branch = -0.001 * z * _CAV3P3_NMODL_FARADAY * numerator * w / (exp_term - 1)
+    small_branch = - z * _CAV3P3_NMODL_FARADAY * numerator * (1 - w / 2)
+    regular_branch = - z * _CAV3P3_NMODL_FARADAY * numerator * w / (exp_term - 1)
     return u.math.where(u.math.abs(exp_term - 1) < 1e-6, small_branch, regular_branch)
 
 
@@ -806,6 +807,18 @@ class Cav3p1_MA2024_PC(Cav3p1_MA2020_GoC):
     __module__ = "braincell.channel"
 
 
+@register_channel("Cav3p1_MA2020_GoC_Frozen")
+class Cav3p1_MA2020_GoC_Frozen(Cav3p1_MA2020_GoC):
+    """GoC Cav3.1 variant that freezes GHK voltage dependence in autodiff."""
+
+    __module__ = "braincell.channel"
+
+    def current(self, V, Ca: IonInfo):
+        frozen_V = _freeze_quantity_gradient(V)
+        drive = _cav3p1_nmodl_ghk_flux(V=frozen_V, ci=Ca.Ci, co=Ca.Co, z=self.z, temp=self.temp)
+        return -self.g_max * self.conductance_factor(V, Ca) * drive
+
+
 @register_channel("Cav3p1_MA2024_PC_Frozen")
 class Cav3p1_MA2024_PC_Frozen(HH):
     """Experimental Cav3.1 variant that freezes GHK voltage dependence in autodiff."""
@@ -1297,7 +1310,7 @@ class Cav3p3_RI2021_SC(HH):
         return V - self.V_sh
 
     def current(self, V, Ca: IonInfo):
-        drive = ghk_flux(
+        drive = _cav3p3_nmodl_ghk_flux(
             V=self._shifted_voltage(V),
             ci=Ca.Ci,
             co=Ca.Co,
@@ -1360,7 +1373,7 @@ class CaHVA_MA2020_GoC(HH):
         self.g_max = braintools.init.param(g_max, self.varshape, allow_none=False)
         self.temp = braintools.init.param(temp, self.varshape, allow_none=False)
         self.Aalpha_s = 0.04944
-        self.Kalpha_s = 15.87301587302
+        self.Kalpha_s = 15.873#01587302
         self.V0alpha_s = -29.06
         self.Abeta_s = 0.08298
         self.Kbeta_s = -25.641
@@ -1375,20 +1388,24 @@ class CaHVA_MA2020_GoC(HH):
     def current(self, V, Ca: IonInfo):
         return self.g_max * self.conductance_factor(V, Ca) * (Ca.E - V)
 
-    def f_s_alpha(self, V, Ca: IonInfo):
+    def _table_voltage_mV(self, V):
         V = V.to_decimal(u.mV)
+        return u.math.where(V < -100.0, -100.0, u.math.where(V > 30.0, 30.0, V))
+
+    def f_s_alpha(self, V, Ca: IonInfo):
+        V = self._table_voltage_mV(V)
         return self.Aalpha_s * u.math.exp((V - self.V0alpha_s) / self.Kalpha_s)
 
     def f_s_beta(self, V, Ca: IonInfo):
-        V = V.to_decimal(u.mV)
+        V = self._table_voltage_mV(V)
         return self.Abeta_s * u.math.exp((V - self.V0beta_s) / self.Kbeta_s)
 
     def f_u_alpha(self, V, Ca: IonInfo):
-        V = V.to_decimal(u.mV)
+        V = self._table_voltage_mV(V)
         return self.Aalpha_u * u.math.exp((V - self.V0alpha_u) / self.Kalpha_u)
 
     def f_u_beta(self, V, Ca: IonInfo):
-        V = V.to_decimal(u.mV)
+        V = self._table_voltage_mV(V)
         return self.Abeta_u * u.math.exp((V - self.V0beta_u) / self.Kbeta_u)
 
 @register_channel("CaHVA_MA2020_GrC")
@@ -1413,7 +1430,7 @@ class CaHVA_MA2020_GrC(HH):
         self.g_max = braintools.init.param(g_max, self.varshape, allow_none=False)
         self.temp = braintools.init.param(temp, self.varshape, allow_none=False)
         self.Aalpha_s = 0.04944
-        self.Kalpha_s = 15.87301587302
+        self.Kalpha_s = 15.873#01587302
         self.V0alpha_s = -29.06
         self.Abeta_s = 0.08298
         self.Kbeta_s = -25.641

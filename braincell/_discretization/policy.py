@@ -118,12 +118,61 @@ class CVPerBranch(CVPolicy):
             raise ValueError(f"cv_per_branch must be > 0, got {cv_per_branch!r}.")
         n_per_branch = int(cv_per_branch)
         return tuple(
-            tuple(
-                (float(offset) / float(n_per_branch), float(offset + 1) / float(n_per_branch))
-                for offset in range(n_per_branch)
-            )
+            _uniform_bounds_for_count(n_per_branch)
             for _ in morpho.branches
         )
+
+
+@dataclass(frozen=True)
+class CVPerBranchList(CVPolicy):
+    """Assign an explicit CV count to each morphology branch.
+
+    ``cv_per_branch`` is ordered by ``morpho.branches``. This policy is useful
+    when matching an external discretization exactly, such as NEURON section
+    ``nseg`` values imported from a comparison model.
+    """
+
+    cv_per_branch: tuple[int, ...]
+
+    def __post_init__(self) -> None:
+        try:
+            counts = tuple(self.cv_per_branch)
+        except TypeError as exc:
+            raise TypeError("cv_per_branch must be an iterable of integers.") from exc
+        for index, count in enumerate(counts):
+            if isinstance(count, bool) or not isinstance(count, int):
+                raise TypeError(f"cv_per_branch[{index}] must be integer, got {count!r}.")
+            if count <= 0:
+                raise ValueError(f"cv_per_branch[{index}] must be > 0, got {count!r}.")
+        object.__setattr__(self, "cv_per_branch", counts)
+
+    def resolve_cv_bounds(
+        self,
+        morpho: Morphology,
+        *,
+        paint_rules: tuple["PaintRule", ...] | None = None,
+    ) -> BoundsByBranch:
+        """Return branch-wise CV bounds from explicit per-branch counts.
+
+        Parameters
+        ----------
+        morpho : Morphology
+            Morphology being discretized.
+        paint_rules : tuple of PaintRule or None, optional
+            Unused for this policy.
+
+        Returns
+        -------
+        BoundsByBranch
+            Uniform normalized intervals for each branch, using the matching
+            count from ``cv_per_branch``.
+        """
+        if len(self.cv_per_branch) != len(morpho.branches):
+            raise ValueError(
+                "cv_per_branch length must match morphology branch count: "
+                f"got {len(self.cv_per_branch)}, expected {len(morpho.branches)}."
+            )
+        return tuple(_uniform_bounds_for_count(count) for count in self.cv_per_branch)
 
 
 @quantity_hashable
@@ -351,6 +400,10 @@ def _bounds_from_max_len_um(branch, *, max_len_um: float, keep_odd: bool) -> Bou
     n_cv = int(np.ceil((branch_len_um / max_len_um) - EPS_PARAM))
     n_cv = max(1, n_cv)
     n_cv = _promote_to_odd(n_cv, keep_odd=keep_odd)
+    return _uniform_bounds_for_count(n_cv)
+
+
+def _uniform_bounds_for_count(n_cv: int) -> Bounds:
     return tuple(
         (float(offset) / float(n_cv), float(offset + 1) / float(n_cv))
         for offset in range(n_cv)

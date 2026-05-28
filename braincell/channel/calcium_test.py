@@ -38,6 +38,7 @@ from braincell.channel.calcium import (
     Cav3p1_MA2024_PC_Frozen,
     Cav3p1_MA2024_PC,
     Cav3p1Test_PC24,
+    Cav3p1_MA2020_GoC_Frozen,
     Cav2p1_MA2024_PC_Frozen,
     Cav2p1_MA2024_PC,
     Cav2p1_MA2025_BC,
@@ -764,6 +765,28 @@ class Cav3p1TestPC24Test(unittest.TestCase):
         self.assertTrue(u.math.allclose(current, expected, atol=1e-12 * expected.unit))
 
 
+class Cav3p1FrozenMA20GoCTest(unittest.TestCase):
+    def test_is_registered(self) -> None:
+        self.assertIs(get_registry().get("channel", "Cav3p1_MA2020_GoC_Frozen"), Cav3p1_MA2020_GoC_Frozen)
+
+    def test_current_matches_unfrozen_value(self) -> None:
+        V = _V([-48.0])
+        ca = _ca_info(size=1, C=2.4e-4, E_mV=137.0)
+        base = Cav3p1_MA2020_GoC(size=1, temp=u.celsius2kelvin(34.0))
+        frozen = Cav3p1_MA2020_GoC_Frozen(size=1, temp=u.celsius2kelvin(34.0))
+        base.init_state(V, ca)
+        frozen.init_state(V, ca)
+        base.reset_state(V, ca)
+        frozen.reset_state(V, ca)
+        self.assertTrue(
+            u.math.allclose(
+                frozen.current(V, ca).to_decimal(u.mA / (u.cm ** 2)),
+                base.current(V, ca).to_decimal(u.mA / (u.cm ** 2)),
+                atol=1e-6,
+            )
+        )
+
+
 class Cav3p1FrozenPC24Test(unittest.TestCase):
     def test_is_registered(self) -> None:
         self.assertIs(get_registry().get("channel", "Cav3p1_MA2024_PC_Frozen"), Cav3p1_MA2024_PC_Frozen)
@@ -1245,6 +1268,22 @@ class CaHVAMA20GoCTest(unittest.TestCase):
                 atol=1e-6,
             )
         )
+
+    def test_rates_use_neuron_table_voltage_bounds(self) -> None:
+        proto = CaHVA_MA2020_GoC(size=3)
+        ca = _ca_info(size=3)
+        V = _V([-120.0, -50.0, 60.0])
+        clamped_v = jnp.array([-100.0, -50.0, 30.0])
+
+        expected_alpha_s = proto.Aalpha_s * jnp.exp((clamped_v - proto.V0alpha_s) / proto.Kalpha_s)
+        expected_beta_s = proto.Abeta_s * jnp.exp((clamped_v - proto.V0beta_s) / proto.Kbeta_s)
+        expected_alpha_u = proto.Aalpha_u * jnp.exp((clamped_v - proto.V0alpha_u) / proto.Kalpha_u)
+        expected_beta_u = proto.Abeta_u * jnp.exp((clamped_v - proto.V0beta_u) / proto.Kbeta_u)
+
+        self.assertTrue(u.math.allclose(proto.f_s_alpha(V, ca), expected_alpha_s, atol=1e-12))
+        self.assertTrue(u.math.allclose(proto.f_s_beta(V, ca), expected_beta_s, atol=1e-12))
+        self.assertTrue(u.math.allclose(proto.f_u_alpha(V, ca), expected_alpha_u, atol=1e-12))
+        self.assertTrue(u.math.allclose(proto.f_u_beta(V, ca), expected_beta_u, atol=1e-12))
 
 
 class Cav2p3MA20GoCTest(unittest.TestCase):

@@ -14,6 +14,8 @@
 - BC 旧的 `../Cerebellum_mod/BC/channel/x86_64` 只包含 channel 编译产物，不包含 `CdpStC_MA25_BC`，不要作为 cell 对照默认库。
 - SC 的机制文件在 `../Cerebellum_mod/SC`，顶层 `x86_64/.libs/libnrnmech.so` 是 cell 对照默认库。
 - SC 的形态学文件在 `../Cerebellum_mod/SC/morphology/SC.asc`。
+- GrC 的机制文件在 `../Cerebellum_mod/GrC`，顶层 `x86_64/.libs/libnrnmech.so` 是 cell 对照默认库。
+- GrC 的形态学文件在 `../Cerebellum_mod/GrC/morphology/GrC.asc`。
 
 `pc_ma2024` 是当前正式 PC 对照文件夹：
 
@@ -62,6 +64,12 @@
   - 组装语义来自 `/home/swl/Cerebellum_circuit/SC2021/stellate.py`，参数来自 `/home/swl/Cerebellum_circuit/SC2021/SC_param.py`。
   - 形态默认使用 repo 内 `Cerebellum_mod/SC/morphology/SC.asc`。
   - 区域划分为 `soma`、`dendprox`、`denddist`、`axon_ais`、`axon_regular`；`dendprox` 使用源 NEURON 导入后的 canonical dend index。
+- `grc_ma2020/debug/`
+  - GrC ASC-only 调试版对照入口。
+  - 组装参数来自 `/home/swl/Cerebellum_circuit/GrC/GrC/Cereb_GrC_regular.py` 中当前未注释的 soma/dend 配置。
+  - 形态默认使用 repo 内 `Cerebellum_mod/GrC/morphology/GrC.asc`。
+  - 当前只导入 ASC 内的 `soma + dend`，不包含源脚本手动创建的 `hilock`、`ais`、`aa_*`，也不包含已注释的 `pf_*` 和 synapse。
+  - 同目录的 `run_full_debug.ipynb`、`grc_full_neuron_debug.py` 和 `grc_full_braincell_debug.py` 是完整手工形态对照入口：ASC `soma + dend` 加上 `hilock`、`ais`、`aa_*` 和两条 PF 链；仍不包含注释掉的 synapse/Syntype 部分。
 
 debug建议流程：
 

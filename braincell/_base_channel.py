@@ -26,7 +26,9 @@ re-exports in :mod:`braincell._base`.
 from typing import NamedTuple, Optional
 
 import brainstate
+import braintools
 import numpy as np
+import brainunit as u
 
 from ._misc import TreeNode
 from .quad.protocol import DiffEqModule, IndependentIntegration
@@ -240,7 +242,7 @@ class IonChannel(brainstate.graph.Node, TreeNode, DiffEqModule):
         """
         pass
 
-    def update(self, *args, **kwargs):
+    def ind_update(self, *args, **kwargs):
         if isinstance(self, IndependentIntegration):
             self.make_integration(*args, **kwargs)
 
@@ -330,4 +332,45 @@ class Channel(IonChannel):
 
 
 class Synapse(IonChannel):
+    """Base class for runtime point-synapse mechanisms.
+
+    Runtime synapses are point-local mechanisms that consume a local
+    presynaptic drive such as ``pre_spike`` and return a postsynaptic
+    current contribution via :meth:`current`.
+
+    Synapses follow the same integration lifecycle as channels, with one
+    extra presynaptic-drive buffer that is refreshed once per timestep.
+    Runtime code writes external drive into :attr:`pre_spike` before
+    :meth:`pre_integral`; subclasses can then consume it either as a
+    discontinuous jump in :meth:`pre_integral` or as a continuous input
+    term in :meth:`compute_derivative`.
+    """
     __module__ = 'braincell'
+
+    def init_state(self, V_post=None, batch_size=None):
+        _ = V_post
+        self._pre_spike_state = brainstate.ShortTermState(
+            _synapse_pre_drive_zero(self, batch_size=batch_size)
+        )
+
+    def reset_state(self, V_post=None, batch_size=None):
+        _ = V_post
+        self._pre_spike_state.value = _synapse_pre_drive_zero(self, batch_size=batch_size)
+
+    def bind_pre_spike(self, pre_spike):
+        self._pre_spike_state.value = pre_spike
+
+    def pre_drive(self):
+        return self._pre_spike_state.value
+
+    def apply_discrete_events(self, *args, **kwargs):
+        """Apply buffered presynaptic events before continuous dynamics."""
+        pass
+
+
+def _synapse_pre_drive_zero(synapse, *, batch_size=None):
+    value = braintools.init.param(u.math.zeros, synapse.varshape, batch_size)
+    weight = getattr(synapse, "weight", None)
+    if isinstance(weight, u.Quantity):
+        return value * weight.unit
+    return value

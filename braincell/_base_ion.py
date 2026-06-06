@@ -98,7 +98,7 @@ class Ion(IonChannel, Container):
         """
         return self._external_currents
 
-    def pre_integral(self, V):
+    def pre_integral(self, V, recursive_child: bool = True):
         """
         Perform pre-integration operations for all channels.
 
@@ -109,14 +109,14 @@ class Ion(IonChannel, Container):
             V (array-like): The membrane potential for all neurons/compartments.
         """
         self._run_ion_hook("_ion_pre_integral_hook", V)
-        if getattr(self, "_ion_channel_update_phase", None) == "ion":
+        if not recursive_child:
             return
         nodes = brainstate.graph.nodes(self, Channel, allowed_hierarchy=(1, 1))
         for node in nodes.values():
             if not isinstance(node, IndependentIntegration):
                 node.pre_integral(V, self.pack_info())
 
-    def compute_derivative(self, V):
+    def compute_derivative(self, V, recursive_child: bool = True):
         """
         Compute derivatives for all channels.
 
@@ -127,14 +127,14 @@ class Ion(IonChannel, Container):
         """
         nodes = tuple(brainstate.graph.nodes(self, Channel, allowed_hierarchy=(1, 1)).values())
         self.check_hierarchies(type(self), *nodes)
-        ion_info = self.pack_info()
-        if getattr(self, "_ion_channel_update_phase", None) != "ion":
+        if recursive_child:
+            ion_info = self.pack_info()
             for node in nodes:
                 if not isinstance(node, IndependentIntegration):
                     node.compute_derivative(V, ion_info)
         self._run_ion_hook("_ion_compute_derivative_hook", V)
 
-    def post_integral(self, V):
+    def post_integral(self, V, recursive_child: bool = True):
         """
         Perform post-integration operations for all channels.
 
@@ -144,7 +144,7 @@ class Ion(IonChannel, Container):
         Parameters:
             V (array-like): The membrane potential for all neurons/compartments.
         """
-        if getattr(self, "_ion_channel_update_phase", None) != "ion":
+        if recursive_child:
             nodes = brainstate.graph.nodes(self, Channel, allowed_hierarchy=(1, 1))
             for node in nodes.values():
                 if not isinstance(node, IndependentIntegration):
@@ -216,33 +216,16 @@ class Ion(IonChannel, Container):
             node: Channel
             node.reset_state(V, ion_info, batch_size=batch_size)
 
-    def update(self, V, *args, **kwargs):
+    def ind_update(self, V, *args, recursive_child: bool = True, **kwargs):
         if isinstance(self, IndependentIntegration):
-            from braincell.quad import ind_exp_euler_step
+            self.make_integration(V, recursive_child=recursive_child)
 
-            self.make_integration(V)
-            ion_info = self.pack_info()
-            for key, node in brainstate.graph.nodes(self, Channel, allowed_hierarchy=(1, 1)).items():
-                if isinstance(node, IndependentIntegration):
-                    node.update(V, ion_info)
-                else:
-                    ind_exp_euler_step(node, V, ion_info)
+        if not recursive_child:
             return
+
         ion_info = self.pack_info()
         for key, node in brainstate.graph.nodes(self, Channel, allowed_hierarchy=(1, 1)).items():
-            node.update(V, ion_info)
-
-    def _update_ion_state_only(self, V):
-        old_phase = getattr(self, "_ion_channel_update_phase", None)
-        self._ion_channel_update_phase = "ion"
-        try:
-            if isinstance(self, IndependentIntegration):
-                self.make_integration(V)
-        finally:
-            if old_phase is None:
-                delattr(self, "_ion_channel_update_phase")
-            else:
-                self._ion_channel_update_phase = old_phase
+            node.ind_update(V, ion_info)
 
     def _run_ion_hook(self, name: str, *args, **kwargs):
         hook = getattr(self, name, None)
@@ -421,10 +404,10 @@ class MixIons(IonChannel, Container):
             infos = tuple([self._get_ion(root).pack_info() for root in node.root_type.__args__])
             node.reset_state(V, *infos, batch_size=batch_size)
 
-    def update(self, V, *args, **kwargs):
+    def ind_update(self, V, *args, **kwargs):
         for key, node in brainstate.graph.nodes(self, Channel, allowed_hierarchy=(1, 1)).items():
             infos = tuple([self._get_ion(root).pack_info() for root in node.root_type.__args__])
-            node.update(V, *infos)
+            node.ind_update(V, *infos)
 
     def _check_hierarchy(self, ions, leaf):
         self._check_root(leaf)

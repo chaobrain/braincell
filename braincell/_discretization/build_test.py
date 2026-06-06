@@ -162,7 +162,7 @@ class PaintAndPlaceRuleTest(unittest.TestCase):
     def test_place_rule_default_site_is_mid(self) -> None:
         rule = PlaceRule(
             locset=AtLocation(branch=0, x=0.5),
-            mechanisms=(CurrentClamp.step(0.2 * u.nA, 10 * u.ms),),
+            mechanisms=(CurrentClamp(durations=10 * u.ms, amplitudes=0.2 * u.nA),),
         )
         self.assertEqual(rule.site, "mid")
 
@@ -197,7 +197,7 @@ class NormalizePaintRulesTest(unittest.TestCase):
         with self.assertRaises(TypeError):
             normalize_paint_rules(
                 AllRegion(),
-                (CurrentClamp.step(0.1 * u.nA, 10 * u.ms),),
+                (CurrentClamp(durations=10 * u.ms, amplitudes=0.1 * u.nA),),
             )
 
     def test_accepts_ion(self) -> None:
@@ -211,7 +211,7 @@ class NormalizePlaceRuleTest(unittest.TestCase):
         with self.assertRaises(TypeError):
             normalize_place_rule(
                 "not a locset",  # type: ignore[arg-type]
-                (CurrentClamp.step(0.1 * u.nA, 10 * u.ms),),
+                (CurrentClamp(durations=10 * u.ms, amplitudes=0.1 * u.nA),),
             )
 
     def test_rejects_empty_mechanisms(self) -> None:
@@ -226,7 +226,7 @@ class NormalizePlaceRuleTest(unittest.TestCase):
             )
 
     def test_returns_place_rule_with_site_mid(self) -> None:
-        clamp = CurrentClamp.step(0.1 * u.nA, 10 * u.ms)
+        clamp = CurrentClamp(durations=10 * u.ms, amplitudes=0.1 * u.nA)
         rule = normalize_place_rule(AtLocation(branch=0, x=0.5), (clamp,))
         self.assertEqual(rule.site, "mid")
         self.assertEqual(rule.mechanisms, (clamp,))
@@ -279,14 +279,14 @@ class MergePaintRulesTest(unittest.TestCase):
 
 class MergePlaceRulesTest(unittest.TestCase):
     def test_exact_duplicate_dropped(self) -> None:
-        clamp = CurrentClamp.step(0.1 * u.nA, 10 * u.ms)
+        clamp = CurrentClamp(durations=10 * u.ms, amplitudes=0.1 * u.nA)
         r = normalize_place_rule(AtLocation(branch=0, x=0.5), (clamp,))
         merged = merge_place_rules((r,), (r,))
         self.assertEqual(len(merged), 1)
 
     def test_different_clamps_both_kept(self) -> None:
-        c1 = CurrentClamp.step(0.1 * u.nA, 10 * u.ms)
-        c2 = CurrentClamp.step(0.2 * u.nA, 10 * u.ms)
+        c1 = CurrentClamp(durations=10 * u.ms, amplitudes=0.1 * u.nA)
+        c2 = CurrentClamp(durations=10 * u.ms, amplitudes=0.2 * u.nA)
         r1 = normalize_place_rule(AtLocation(branch=0, x=0.5), (c1,))
         r2 = normalize_place_rule(AtLocation(branch=0, x=0.5), (c2,))
         merged = merge_place_rules((r1,), (r2,))
@@ -712,7 +712,7 @@ class ResolvePointNameTest(unittest.TestCase):
         self.assertEqual(named.name, "my_probe")
 
     def test_clamp_untouched_when_no_auto_name(self) -> None:
-        clamp = CurrentClamp.step(0.1 * u.nA, 10 * u.ms)
+        clamp = CurrentClamp(durations=10 * u.ms, amplitudes=0.1 * u.nA)
         named = _resolve_point_name(clamp, display_name="loc_0")
         self.assertIs(named, clamp)
 
@@ -758,7 +758,7 @@ class BuildMechTest(unittest.TestCase):
     def test_place_clamp_attaches_to_one_cv(self) -> None:
         morpho = _single_branch_morpho()
         geos, ids = _build_geo(morpho, (((0.0, 0.5), (0.5, 1.0)),))
-        clamp = CurrentClamp.step(0.1 * u.nA, 10 * u.ms)
+        clamp = CurrentClamp(durations=10 * u.ms, amplitudes=0.1 * u.nA)
         place = (
             PlaceRule(
                 locset=AtLocation(branch=0, x=0.25),

@@ -55,11 +55,15 @@ def run(rcell: "Cell", *, dt, duration) -> RunResult:
                 "ensure duration > 0 and dt > 0."
             )
         times = start_t + relative_times
+        with brainstate.environ.context(t=start_t):
+            rcell._prepare_next_synapse_inputs()
 
         def _step(t):
             with brainstate.environ.context(t=t):
-                rcell.update()
+                rcell._begin_step()
+                rcell._update_dynamics()
                 snapshot = rcell.sample_probes()
+                rcell._prepare_next_synapse_inputs()
             return tuple(snapshot[name] for name in ordered_names)
 
         traces_over_time = brainstate.transform.for_loop(_step, times)

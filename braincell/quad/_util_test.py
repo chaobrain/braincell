@@ -75,11 +75,26 @@ class _IndepSub(brainstate.nn.Module, DiffEqModule, IndependentIntegration):
         self.y.derivative = -self.y.value / (5. * u.ms)
 
 
-class _OuterWithIndep(brainstate.nn.Module, DiffEqModule):
+class _DependentChild(brainstate.nn.Module, DiffEqModule):
     def __init__(self):
         super().__init__()
+        self.z = DiffEqState(jnp.ones(2, dtype=_FLOAT_DTYPE) * u.mV)
+
+    def compute_derivative(self, *args, **kwargs):
+        self.z.derivative = -self.z.value / (7. * u.ms)
+
+
+class _IndepSubWithDependentChild(_IndepSub):
+    def __init__(self):
+        super().__init__()
+        self.child = _DependentChild()
+
+
+class _OuterWithIndep(brainstate.nn.Module, DiffEqModule):
+    def __init__(self, sub=None):
+        super().__init__()
         self.x = DiffEqState(jnp.ones(2, dtype=_FLOAT_DTYPE) * u.mV)
-        self.sub = _IndepSub()
+        self.sub = _IndepSub() if sub is None else sub
 
     def compute_derivative(self, *args, **kwargs):
         self.x.derivative = -self.x.value / (10. * u.ms)
@@ -99,7 +114,7 @@ class SplitDiffEqStatesTest(unittest.TestCase):
         self.assertEqual(set(diffeq_st.keys()), {("x",)})
         self.assertEqual(set(other_st.keys()), {("aux",)})
 
-    def test_excludes_independent_submodules(self):
+    def test_excludes_states_directly_owned_by_independent_submodules(self):
         m = _OuterWithIndep()
         _, diffeq_st, _ = split_diffeq_states(m)
         # The outer ``x`` is integrated, but ``sub.y`` lives under an
@@ -107,6 +122,22 @@ class SplitDiffEqStatesTest(unittest.TestCase):
         diffeq_keys = set(diffeq_st.keys())
         self.assertIn(("x",), diffeq_keys)
         self.assertNotIn(("sub", "y"), diffeq_keys)
+
+    def test_keeps_dependent_child_state_under_independent_parent(self):
+        m = _OuterWithIndep(sub=_IndepSubWithDependentChild())
+        _, diffeq_st, _ = split_diffeq_states(m)
+        diffeq_keys = set(diffeq_st.keys())
+        self.assertIn(("x",), diffeq_keys)
+        self.assertNotIn(("sub", "y"), diffeq_keys)
+        self.assertIn(("sub", "child", "z"), diffeq_keys)
+
+    def test_excluded_paths_still_exclude_subtrees(self):
+        m = _OuterWithIndep(sub=_IndepSubWithDependentChild())
+        _, diffeq_st, _ = split_diffeq_states(m, excluded_paths=(("sub", "child"),))
+        diffeq_keys = set(diffeq_st.keys())
+        self.assertIn(("x",), diffeq_keys)
+        self.assertNotIn(("sub", "y"), diffeq_keys)
+        self.assertNotIn(("sub", "child", "z"), diffeq_keys)
 
 
 class ApplyStandardSolverStepTest(unittest.TestCase):

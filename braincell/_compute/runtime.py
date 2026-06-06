@@ -27,7 +27,7 @@ Target = Literal["density", "point"]
 Layout = Literal["dense", "sparse"]
 
 from braincell import ion as runtime_ion
-from braincell._base import Channel, IonChannel
+from braincell._base import Channel, IonChannel, Synapse as RuntimeSynapse
 from braincell.ion._base import DynamicNernstIon, FixedIon, InitNernstIon, KineticIon
 from braincell.mech import (
     CurrentProbe,
@@ -36,11 +36,12 @@ from braincell.mech import (
     FunctionClamp,
     Junction,
     MechanismProbe,
+    NetStim,
     Point,
     ProbeMechanism,
     SineClamp,
     StateProbe,
-    Synapse,
+    Synapse as SynapsePlacement,
     get_registry,
 )
 from braincell.mech._params import _to_hashable
@@ -106,6 +107,7 @@ class MechanismLayout:
 #: Clamp layout kinds that contribute point-space current via
 #: :meth:`CellRuntimeState.evaluate_point_clamps`.
 CLAMP_KINDS = frozenset({"CurrentClamp", "SineClamp", "FunctionClamp"})
+NETSTIM_KIND = "NetStim"
 
 
 @dataclass(frozen=True)
@@ -243,9 +245,29 @@ class CellRuntimeState:
     axial_operator_cache: object | None = None
     clamp_active_table: object | None = None
     cv_area: object | None = None  # (n_cv,) brainunit Quantity, cm^2
+    point_area: object | None = None  # (n_point,) brainunit Quantity, cm^2
+    pop_size: tuple[int, ...] = ()
 
     @classmethod
     def from_cell(cls, cell: "Cell") -> "CellRuntimeState":
+        """Lower one initialized ``Cell`` declaration into runtime state.
+
+        Parameters
+        ----------
+        cell : Cell
+            Source cell declaration.
+
+        Returns
+        -------
+        CellRuntimeState
+            Runtime layout/state bridge for the declaration.
+
+        Notes
+        -----
+        Dense layout buffers are allocated with shape
+        ``cell.pop_size + (n_point,)``; sparse point-layout buffers use
+        ``cell.pop_size + (n_active,)``.
+        """
         # Compile from immutable CV declarations into runtime layouts. Dense
         # layouts cover all points with masked storage, while sparse layouts keep
         # only the active point rows for point-only mechanisms such as clamps.
@@ -257,6 +279,7 @@ class CellRuntimeState:
         cv_to_layout_sets: list[set[int]] = [set() for _ in range(n_cv)]
         point_to_layout_sets: list[set[int]] = [set() for _ in range(n_point)]
         layout_id = 0
+        pop_size = tuple(cell.pop_size)
 
         def register(*, mechanism: object, target: str, cv_ids: tuple[int, ...], point_id: int) -> None:
             nonlocal layout_id
@@ -311,11 +334,11 @@ class CellRuntimeState:
                 point_mask = np.zeros(n_point, dtype=bool)
                 point_mask[point_ids] = True
                 point_index = point_ids
-                shape = (n_point,)
+                shape = pop_size + (n_point,)
             elif layout == "sparse":
                 point_mask = None
                 point_index = point_ids
-                shape = (len(point_ids),)
+                shape = pop_size + (len(point_ids),)
             else:  # pragma: no cover
                 raise ValueError(f"Unsupported layout {layout!r}.")
 
@@ -339,12 +362,21 @@ class CellRuntimeState:
                 cv_to_layout_sets[cv_id].add(layout_spec.id)
 
             for var_name in _mechanism_var_names(mechanism):
+                if isinstance(mechanism, CurrentClamp) and var_name == "delay":
+                    quantity = _allocate_current_clamp_delay_buffer(
+                        mechanism=mechanism,
+                        pop_size=pop_size,
+                        n_active=len(point_ids),
+                    )
+                    state_buffers[(layout_spec.id, var_name)] = quantity
+                    state_shapes[(layout_spec.id, var_name)] = quantity.mantissa.shape
+                    continue
                 if isinstance(mechanism, CurrentClamp) and var_name in ("durations", "amplitudes"):
-                    seq = mechanism.durations if var_name == "durations" else mechanism.amplitudes
-                    unit = u.ms if var_name == "durations" else u.nA
-                    quantity, mask = _allocate_clamp_ragged_buffer(
-                        per_point_sequences=[seq] * len(point_ids),
-                        unit=unit,
+                    quantity, mask = _allocate_current_clamp_buffer(
+                        mechanism=mechanism,
+                        var_name=var_name,
+                        pop_size=pop_size,
+                        n_active=len(point_ids),
                     )
                     state_buffers[(layout_spec.id, var_name)] = quantity
                     state_buffers[(layout_spec.id, f"_mask_{var_name}")] = mask
@@ -370,6 +402,7 @@ class CellRuntimeState:
             layouts=tuple(layouts),
             layout_mechanisms=layout_mechanisms,
             state_buffers=state_buffers,
+            pop_size=pop_size,
         )
         attach_runtime_ion_geometry(
             ions=ions,
@@ -390,6 +423,14 @@ class CellRuntimeState:
             dtype=float,
         )
         cv_area = u.Quantity(cv_area_decimal, u.cm ** 2)
+        point_area_decimal = np.zeros((n_point,), dtype=float)
+        for point in node_tree.nodes:
+            roles = tuple(point.roles)
+            if len(roles) == 0:
+                continue
+            cv_id = int(roles[0].cv_id)
+            point_area_decimal[int(point.id)] = cv_area_decimal[cv_id]
+        point_area = u.Quantity(point_area_decimal, u.cm ** 2)
 
         return cls(
             node_tree=node_tree,
@@ -398,7 +439,7 @@ class CellRuntimeState:
             layouts=tuple(layouts),
             point_to_layout_ids=tuple(tuple(sorted(ids)) for ids in point_to_layout_sets),
             cv_to_layout_ids=tuple(tuple(sorted(ids)) for ids in cv_to_layout_sets),
-            voltage_shape=(n_point,),
+            voltage_shape=pop_size + (n_point,),
             state_shapes=state_shapes,
             state_buffers=state_buffers,
             layout_mechanisms=layout_mechanisms,
@@ -415,6 +456,8 @@ class CellRuntimeState:
             axial_operator_cache=None,
             clamp_active_table=clamp_active_table,
             cv_area=cv_area,
+            point_area=point_area,
+            pop_size=pop_size,
         )
 
     def get_point_layouts(self, point_id: int) -> tuple[MechanismLayout, ...]:
@@ -517,6 +560,37 @@ class CellRuntimeState:
             raise KeyError(f"No declaration mechanism is registered for layout {layout_id!r}.")
         return self.layout_mechanisms[key]
 
+    def iter_synapse_layouts(self):
+        """Yield ``(layout, runtime_synapse)`` pairs for placed synapses."""
+        for layout in self.layouts:
+            declaration = self.layout_mechanisms[layout.id]
+            if not isinstance(declaration, SynapsePlacement):
+                continue
+            node = self.runtime_nodes.get(layout.id)
+            if isinstance(node, RuntimeSynapse):
+                yield layout, node
+
+    def evaluate_synapse_netstim_drive(self, layout: MechanismLayout, *, t) -> object:
+        """Return NetStim drive for one synapse layout, or zero if none applies."""
+        base = self.state_buffers[(int(layout.id), "pre_spike")]
+        if layout.point_index is None:
+            return u.math.zeros_like(base)
+
+        point_drive = self.evaluate_point_netstims(t=t)
+        has_netstim = self.point_has_netstim(layout.point_index)
+        return u.math.where(has_netstim, point_drive[..., layout.point_index], 0.0)
+
+    def point_has_netstim(self, point_index) -> np.ndarray:
+        """Return a boolean mask marking points with placed NetStim layouts."""
+        point_ids = np.asarray(point_index, dtype=np.int32)
+        return np.asarray(
+            [
+                any(layout.kind == NETSTIM_KIND for layout in self.get_point_layouts(int(point_id)))
+                for point_id in point_ids
+            ],
+            dtype=bool,
+        )
+
     def get_ion(self, name: str) -> object:
         return self.ions[self.resolve_ion_key(name)]
 
@@ -550,24 +624,28 @@ class CellRuntimeState:
         return _extract_point_value(layout, point_id=int(point_id), buffer=self.state_buffers[key])
 
     def evaluate_point_clamps(self, *, t) -> object:
-        point_current_decimal = u.math.zeros((self.n_point,), dtype=float)
+        point_current_decimal = u.math.zeros(self.pop_size + (self.n_point,), dtype=float)
         for layout in self.layouts:
             if layout.target != "point" or layout.point_index is None:
                 continue
             if layout.kind not in CLAMP_KINDS:
                 continue
             local_currents = _evaluate_clamp_layout(self, layout=layout, t=t)
-            if len(local_currents) != len(layout.point_index):
-                raise ValueError(
-                    f"Clamp layout {layout.id!r} produced {len(local_currents)!r} currents "
-                    f"for {len(layout.point_index)!r} active points."
-                )
-            # Clamp current is accumulated directly in point space so a placed
-            # mechanism only affects its target points instead of broadcasting to
-            # all CVs/points.
             local_current_decimal = _quantity_sequence_to_decimal_vector(local_currents, unit=u.nA)
-            point_current_decimal = point_current_decimal.at[layout.point_index].add(local_current_decimal)
+            point_current_decimal = point_current_decimal.at[..., layout.point_index].add(local_current_decimal)
         return u.Quantity(point_current_decimal, u.nA)
+
+    def evaluate_point_netstims(self, *, t) -> object:
+        """Return point-space `pre_spike` drive from placed `NetStim`s."""
+        point_drive = u.math.zeros(self.pop_size + (self.n_point,), dtype=float)
+        for layout in self.layouts:
+            if layout.target != "point" or layout.point_index is None:
+                continue
+            if layout.kind != NETSTIM_KIND:
+                continue
+            local_drive = _evaluate_netstim_layout(self, layout=layout, t=t)
+            point_drive = point_drive.at[..., layout.point_index].add(local_drive)
+        return point_drive
 
 
 ## build_placeholder_ions moved to braincell.ion
@@ -603,7 +681,7 @@ def mechanism_kind(mechanism: object) -> str:
     """
     if isinstance(mechanism, Density):
         return f"{mechanism.category}:{mechanism.class_name}"
-    if isinstance(mechanism, Synapse):
+    if isinstance(mechanism, SynapsePlacement):
         return f"synapse:{mechanism.synapse_type}"
     if isinstance(mechanism, StateProbe):
         return f"state_probe:{mechanism.field}:{mechanism.name}"
@@ -675,8 +753,6 @@ def mechanism_signature(mechanism: object) -> tuple[object, ...]:
         return (
             "FunctionClamp",
             _fn_fingerprint(mechanism.fn),
-            _to_hashable(mechanism.start),
-            _to_hashable(mechanism.duration),
         )
     return (type(mechanism).__qualname__, _to_hashable(mechanism))
 
@@ -692,18 +768,21 @@ def _mechanism_var_names(mechanism: object) -> tuple[str, ...]:
     """
     if isinstance(mechanism, Density):
         return tuple(mechanism.params.keys())
-    if isinstance(mechanism, Synapse):
+    if isinstance(mechanism, SynapsePlacement):
         names = tuple(mechanism.params.keys())
-        return names if names else ("g",)
+        base = names if names else ("g_max", "E_rev")
+        return ("pre_spike",) + tuple(base)
     if isinstance(mechanism, Junction):
         names = tuple(mechanism.params.keys())
         return names if names else ("conductance",)
     if isinstance(mechanism, CurrentClamp):
-        return ("start", "durations", "amplitudes")
+        return ("delay", "durations", "amplitudes")
+    if isinstance(mechanism, NetStim):
+        return ("start", "number", "interval", "noise", "weight")
     if isinstance(mechanism, SineClamp):
-        return ("amplitude", "frequency", "phase", "offset", "start", "duration")
+        return ("amplitude", "frequency", "phase", "offset", "delay", "duration")
     if isinstance(mechanism, FunctionClamp):
-        return ("fn", "start", "duration")
+        return ("fn",)
     if isinstance(mechanism, (StateProbe, MechanismProbe, CurrentProbe)):
         return ()
     if isinstance(mechanism, ProbeMechanism):
@@ -714,11 +793,17 @@ def _mechanism_var_names(mechanism: object) -> tuple[str, ...]:
 
 
 def _mechanism_var_value(mechanism: object, var_name: str) -> object:
+    if isinstance(mechanism, SynapsePlacement) and var_name == "pre_spike":
+        if "weight" in mechanism.params:
+            weight = mechanism.params["weight"]
+            if isinstance(weight, u.Quantity):
+                return 0.0 * weight.unit
+        return 0.0
     if isinstance(mechanism, Density):
         if var_name not in mechanism.params:
             raise KeyError(f"Mechanism has no parameter {var_name!r}.")
         return mechanism.params[var_name]
-    if isinstance(mechanism, (Synapse, Junction)):
+    if isinstance(mechanism, (SynapsePlacement, Junction)):
         if var_name in mechanism.params:
             return mechanism.params[var_name]
     if hasattr(mechanism, var_name):
@@ -732,6 +817,8 @@ def _allocate_clamp_ragged_buffer(
     *,
     per_point_sequences: list,
     unit,
+    pop_size: tuple[int, ...] = (),
+    n_active: int | None = None,
 ) -> tuple:
     """Pack ragged per-point sequences into ``(Quantity 2D, bool mask 2D)``.
 
@@ -742,14 +829,156 @@ def _allocate_clamp_ragged_buffer(
     if not per_point_sequences:
         raise ValueError("Ragged clamp buffer requires at least one sequence.")
     max_steps = max(len(seq) for seq in per_point_sequences)
-    n_active = len(per_point_sequences)
-    mantissa = np.zeros((n_active, max_steps), dtype=np.float64)
-    mask = np.zeros((n_active, max_steps), dtype=bool)
-    for i, seq in enumerate(per_point_sequences):
+    if n_active is None:
+        n_active = len(per_point_sequences)
+    n_pop = int(np.prod(pop_size, dtype=int)) if len(pop_size) > 0 else 1
+    if len(per_point_sequences) == n_active:
+        per_point_sequences = per_point_sequences * n_pop
+    if len(per_point_sequences) != n_pop * n_active:
+        raise ValueError(
+            "Ragged clamp buffer expected either one sequence per active point "
+            "or one sequence per population-active-point combination."
+        )
+    mantissa = np.zeros((n_pop, n_active, max_steps), dtype=np.float64)
+    mask = np.zeros((n_pop, n_active, max_steps), dtype=bool)
+    for flat_idx, seq in enumerate(per_point_sequences):
+        pop_idx = flat_idx // n_active
+        local_idx = flat_idx % n_active
         for j, item in enumerate(seq):
-            mantissa[i, j] = float(item.to_decimal(unit))
-            mask[i, j] = True
+            mantissa[pop_idx, local_idx, j] = float(item.to_decimal(unit))
+            mask[pop_idx, local_idx, j] = True
+    if len(pop_size) == 0:
+        mantissa = mantissa.reshape((n_active, max_steps))
+        mask = mask.reshape((n_active, max_steps))
+    else:
+        mantissa = mantissa.reshape(pop_size + (n_active, max_steps))
+        mask = mask.reshape(pop_size + (n_active, max_steps))
     return u.Quantity(mantissa, unit), mask
+
+
+def _allocate_clamp_sequence_buffer(
+    *,
+    value: object,
+    unit,
+    pop_size: tuple[int, ...],
+    n_active: int,
+) -> tuple[object, np.ndarray]:
+    """Pack a clamp value into ``target_shape + (n_step,)`` storage."""
+    target_prefix = pop_size + (n_active,)
+    decimals = np.asarray(value.to_decimal(unit), dtype=np.float64)
+
+    if decimals.shape == ():
+        mantissa = np.broadcast_to(decimals, target_prefix + (1,)).copy()
+    elif decimals.shape == target_prefix:
+        mantissa = decimals[..., None].copy()
+    elif decimals.shape == pop_size and n_active == 1:
+        mantissa = decimals[..., None, None].copy()
+    elif decimals.shape == (n_active,) and len(pop_size) == 0:
+        mantissa = decimals[..., None].copy()
+    elif len(decimals.shape) >= 1 and decimals.shape[:-1] == target_prefix:
+        mantissa = decimals.copy()
+    elif len(pop_size) > 0 and decimals.shape[:-1] == pop_size and n_active == 1:
+        mantissa = decimals[..., None, :].copy()
+    elif len(pop_size) == 0 and decimals.ndim == 1:
+        mantissa = np.broadcast_to(
+            decimals[None, :],
+            target_prefix + (decimals.shape[-1],),
+        ).copy()
+    else:
+        try:
+            mantissa = np.broadcast_to(decimals[..., None], target_prefix + (1,)).copy()
+        except ValueError as exc:
+            raise ValueError(
+                f"CurrentClamp value with shape {decimals.shape!r} cannot be broadcast "
+                f"to target shape {target_prefix!r} or target+step shape."
+            ) from exc
+
+    max_steps = int(mantissa.shape[-1])
+    mask = np.ones(target_prefix + (max_steps,), dtype=bool)
+    if len(pop_size) == 0:
+        mantissa = mantissa.reshape((n_active, max_steps))
+        mask = mask.reshape((n_active, max_steps))
+    return u.Quantity(mantissa, unit), mask
+
+
+def _allocate_current_clamp_buffer(
+    *,
+    mechanism: CurrentClamp,
+    var_name: str,
+    pop_size: tuple[int, ...],
+    n_active: int,
+) -> tuple[object, np.ndarray]:
+    target_prefix = pop_size + (n_active,)
+    durations_dec = np.asarray(mechanism.durations.to_decimal(u.ms), dtype=np.float64)
+    n_step = int(durations_dec.shape[-1]) if durations_dec.shape != () else 1
+
+    value = mechanism.durations if var_name == "durations" else mechanism.amplitudes
+    unit = u.ms if var_name == "durations" else u.nA
+    decimals = np.asarray(value.to_decimal(unit), dtype=np.float64)
+
+    if var_name == "durations" and durations_dec.shape != ():
+        return _pack_clamp_steps(decimals, unit=unit, target_prefix=target_prefix)
+    if var_name == "amplitudes" and n_step > 1:
+        return _pack_clamp_steps(decimals, unit=unit, target_prefix=target_prefix)
+    return _allocate_clamp_sequence_buffer(
+        value=value,
+        unit=unit,
+        pop_size=pop_size,
+        n_active=n_active,
+    )
+
+
+def _allocate_current_clamp_delay_buffer(
+    *,
+    mechanism: CurrentClamp,
+    pop_size: tuple[int, ...],
+    n_active: int,
+) -> object:
+    target_prefix = pop_size + (n_active,)
+    decimals = np.asarray(mechanism.delay.to_decimal(u.ms), dtype=np.float64)
+
+    if decimals.shape == ():
+        mantissa = np.broadcast_to(decimals, target_prefix).copy()
+    elif decimals.shape == target_prefix:
+        mantissa = decimals.copy()
+    elif decimals.shape == pop_size and n_active == 1:
+        mantissa = decimals[..., None].copy()
+    elif decimals.shape == (n_active,) and len(pop_size) == 0:
+        mantissa = decimals.copy()
+    else:
+        try:
+            mantissa = np.broadcast_to(decimals, target_prefix).copy()
+        except ValueError as exc:
+            raise ValueError(
+                f"CurrentClamp.delay with shape {decimals.shape!r} cannot be broadcast "
+                f"to target shape {target_prefix!r}."
+            ) from exc
+
+    return u.Quantity(mantissa, u.ms)
+
+
+def _pack_clamp_steps(decimals: np.ndarray, *, unit, target_prefix: tuple[int, ...]) -> tuple[object, np.ndarray]:
+    if decimals.shape == ():
+        step_values = np.broadcast_to(decimals, target_prefix + (1,)).copy()
+    elif decimals.ndim == 1:
+        step_values = np.broadcast_to(
+            decimals.reshape((1,) * len(target_prefix) + (decimals.shape[0],)),
+            target_prefix + (decimals.shape[0],),
+        ).copy()
+    elif decimals.shape[:-1] == target_prefix:
+        step_values = decimals.copy()
+    elif len(target_prefix) > 1 and decimals.shape[:-1] == target_prefix[:-1] and target_prefix[-1] == 1:
+        step_values = decimals[..., None, :].copy()
+    else:
+        try:
+            step_values = np.broadcast_to(decimals, target_prefix + (decimals.shape[-1],)).copy()
+        except ValueError as exc:
+            raise ValueError(
+                f"CurrentClamp step value with shape {decimals.shape!r} cannot be broadcast "
+                f"to target+step shape {target_prefix + (decimals.shape[-1],)!r}."
+            ) from exc
+    mask = np.ones(step_values.shape, dtype=bool)
+    return u.Quantity(step_values, unit), mask
 
 
 def _is_ragged_param(value: object) -> bool:
@@ -835,6 +1064,15 @@ def _write_state_buffer(layout: "MechanismLayout", buffer: object, value: object
                 )
             return u.Quantity(arr, target_unit)
 
+        arr = np.asarray(value, dtype=np.float64)
+        if arr.ndim == 0:
+            arr = np.broadcast_to(arr, target_shape).copy()
+        if arr.shape != target_shape:
+            raise ValueError(
+                f"State assignment shape mismatch: expected {target_shape!r}, got {arr.shape!r}."
+            )
+        return u.Quantity(arr, target_unit)
+
         raise TypeError(
             f"State buffer for layout {layout.id!r} expects a Quantity or sequence of Quantities, "
             f"got {type(value).__name__!r}."
@@ -863,12 +1101,28 @@ def _write_state_buffer(layout: "MechanismLayout", buffer: object, value: object
 
 
 def _extract_point_value(layout: MechanismLayout, *, point_id: int, buffer: object) -> object:
+    def _pick_ragged(index: int) -> object:
+        if isinstance(buffer, u.Quantity):
+            mantissa = np.asarray(buffer.mantissa)
+            if mantissa.ndim >= 2:
+                return tuple(
+                    u.Quantity(item, buffer.unit)
+                    for item in mantissa[..., index, :].reshape(-1)
+                ) if mantissa.ndim == 2 else u.Quantity(buffer.mantissa[..., index, :], buffer.unit)
+            return u.Quantity(buffer.mantissa[..., index], buffer.unit)
+        return None
+
     def _pick(index: int) -> object:
         if isinstance(buffer, u.Quantity):
-            return u.Quantity(buffer.mantissa[index], buffer.unit)
+            mantissa = np.asarray(buffer.mantissa)
+            if mantissa.ndim >= 2 and int(mantissa.shape[-1]) != layout.n_active:
+                ragged = _pick_ragged(index)
+                if ragged is not None:
+                    return ragged
+            return u.Quantity(buffer.mantissa[..., index], buffer.unit)
         if isinstance(buffer, tuple):
             return buffer[index]
-        return buffer[index]
+        return buffer[..., index]
 
     if layout.layout == "dense":
         return _pick(int(point_id))
@@ -881,61 +1135,121 @@ def _extract_point_value(layout: MechanismLayout, *, point_id: int, buffer: obje
 
 
 def _evaluate_clamp_layout(runtime: CellRuntimeState, *, layout: MechanismLayout, t) -> tuple[object, ...]:
+    """Evaluate one sparse clamp layout at time ``t``.
+
+    Parameters
+    ----------
+    runtime : CellRuntimeState
+        Runtime state object.
+    layout : MechanismLayout
+        Sparse point-layout to evaluate.
+    t : Quantity[time]
+        Absolute simulation time.
+
+    Returns
+    -------
+    tuple
+        One current contribution per active point. Each item may carry
+        population-shaped leading dimensions.
+    """
     if layout.layout != "sparse" or layout.point_index is None:
         raise ValueError(f"Clamp layout {layout.id!r} must be sparse with point_index.")
-    local_t = (t - _scalar_state_value(runtime, layout_id=layout.id, var_name="start")).in_unit(u.ms)
     out: list[object] = []
     for local_index in range(layout.n_active):
         if layout.kind == "CurrentClamp":
+            local_t = (t - _scalar_state_value(
+                runtime,
+                layout_id=layout.id,
+                var_name="delay",
+                local_index=local_index,
+            )).in_unit(u.ms)
             out.append(_eval_current_clamp(runtime, layout_id=layout.id, local_index=local_index, local_t=local_t))
             continue
         if layout.kind == "SineClamp":
+            local_t = (t - _scalar_state_value(runtime, layout_id=layout.id, var_name="delay")).in_unit(u.ms)
             out.append(_eval_sine_clamp(runtime, layout_id=layout.id, local_index=local_index, local_t=local_t))
             continue
         if layout.kind == "FunctionClamp":
-            out.append(_eval_function_clamp(runtime, layout_id=layout.id, local_index=local_index, local_t=local_t))
+            out.append(_eval_function_clamp(runtime, layout_id=layout.id, local_index=local_index, t=t))
             continue
         raise ValueError(f"Unsupported clamp layout kind {layout.kind!r}.")
     return tuple(out)
+
+
+def _evaluate_netstim_layout(runtime: CellRuntimeState, *, layout: MechanismLayout, t) -> object:
+    """Evaluate one sparse `NetStim` layout at time `t`.
+
+    Returns a point-local `pre_spike` drive with shape `(..., n_active)`.
+    """
+    if layout.layout != "sparse" or layout.point_index is None:
+        raise ValueError(f"NetStim layout {layout.id!r} must be sparse with point_index.")
+    start = _scalar_state_value(runtime, layout_id=layout.id, var_name="start")
+    interval = _scalar_state_value(runtime, layout_id=layout.id, var_name="interval")
+    number = _scalar_state_value(runtime, layout_id=layout.id, var_name="number")
+    noise = _scalar_state_value(runtime, layout_id=layout.id, var_name="noise")
+    weight = _scalar_state_value(runtime, layout_id=layout.id, var_name="weight")
+
+    if float(np.asarray(noise).reshape(())) != 0.0:
+        raise ValueError("NetStim.noise != 0.0 is not supported yet.")
+
+    local_t = (t - start).in_unit(u.ms) if hasattr(start, "in_unit") else (t - u.Quantity(start, u.ms)).in_unit(u.ms)
+    local_t_ms = u.math.asarray(local_t.to_decimal(u.ms))
+    interval_ms = u.math.asarray(interval.to_decimal(u.ms)) if hasattr(interval, "to_decimal") else u.math.asarray(interval)
+    number_arr = u.math.asarray(number)
+    weight_arr = u.math.asarray(weight)
+
+    if getattr(local_t_ms, "shape", ()) == ():
+        local_t_ms = u.math.broadcast_to(local_t_ms, weight_arr.shape)
+    if getattr(interval_ms, "shape", ()) == ():
+        interval_ms = u.math.broadcast_to(interval_ms, weight_arr.shape)
+    if getattr(number_arr, "shape", ()) == ():
+        number_arr = u.math.broadcast_to(number_arr, weight_arr.shape)
+
+    event_index = u.math.round(local_t_ms / interval_ms)
+    on_grid = u.math.abs(local_t_ms - (event_index * interval_ms)) <= 1e-9
+    fired = (local_t_ms >= 0.0) & on_grid & (event_index >= 0) & (event_index < number_arr)
+    return u.math.where(fired, weight_arr, 0.0)
 
 
 def _scalar_state_value(runtime: CellRuntimeState, *, layout_id: int, var_name: str, local_index: int = 0) -> object:
     buffer = runtime.state_buffers[(int(layout_id), str(var_name))]
     index = int(local_index)
     if isinstance(buffer, u.Quantity):
-        return u.Quantity(buffer.mantissa[index], buffer.unit)
+        return u.Quantity(buffer.mantissa[..., index], buffer.unit)
     if isinstance(buffer, tuple):
         return buffer[index]
-    return buffer.reshape((-1,))[index]
+    return buffer[..., index]
 
 
 def _quantity_sequence_to_decimal_vector(values: object, *, unit: object) -> object:
     if hasattr(values, "to_decimal"):
         return u.math.asarray(values.to_decimal(unit))
     decimals = [item.to_decimal(unit) for item in values]
-    return u.math.asarray(decimals)
+    return u.math.stack([u.math.asarray(item) for item in decimals], axis=-1)
 
 
 def _eval_current_clamp(runtime: CellRuntimeState, *, layout_id: int, local_index: int, local_t) -> object:
     """Evaluate a :class:`CurrentClamp` step protocol at a padded local row.
 
-    Uses the ``(n_active, max_steps)`` :class:`u.Quantity` buffer paired
-    with the bool ``_mask_durations`` buffer: padded slots are masked
-    out so they never contribute to the accumulated current.
+    Uses the padded ``durations`` / ``amplitudes`` state buffers paired
+    with the bool ``_mask_durations`` buffer. Population-leading axes
+    are preserved; only the final step axis is reduced.
     """
     durations_q = runtime.state_buffers[(int(layout_id), "durations")]
     amplitudes_q = runtime.state_buffers[(int(layout_id), "amplitudes")]
     mask = runtime.state_buffers[(int(layout_id), "_mask_durations")]
 
-    dur_row = jnp.asarray(durations_q.mantissa[int(local_index)])
-    amp_row = jnp.asarray(amplitudes_q.mantissa[int(local_index)])
-    mask_row = jnp.asarray(mask[int(local_index)])
+    dur_row = jnp.asarray(durations_q.mantissa[..., int(local_index), :])
+    amp_row = jnp.asarray(amplitudes_q.mantissa[..., int(local_index), :])
+    mask_row = jnp.asarray(mask[..., int(local_index), :])
 
     local_t_ms = local_t.to_decimal(u.ms)
-    ends = jnp.cumsum(dur_row)
+    if getattr(local_t_ms, "shape", ()) != ():
+        local_t_ms = u.math.expand_dims(local_t_ms, axis=-1)
+    ends = jnp.cumsum(dur_row, axis=-1)
     starts = ends - dur_row
     is_active = (local_t_ms >= 0.0) & (local_t_ms >= starts) & (local_t_ms < ends) & mask_row
-    current = jnp.sum(jnp.where(is_active, amp_row, 0.0))
+    current = jnp.sum(jnp.where(is_active, amp_row, 0.0), axis=-1)
     return u.Quantity(current, u.nA)
 
 
@@ -954,17 +1268,15 @@ def _eval_sine_clamp(runtime: CellRuntimeState, *, layout_id: int, local_index: 
     return u.Quantity(u.math.where(active, current_decimal, 0.0), u.nA)
 
 
-def _eval_function_clamp(runtime: CellRuntimeState, *, layout_id: int, local_index: int, local_t) -> object:
-    duration = _scalar_state_value(runtime, layout_id=layout_id, var_name="duration", local_index=local_index)
+def _eval_function_clamp(runtime: CellRuntimeState, *, layout_id: int, local_index: int, t) -> object:
     fn = _scalar_state_value(runtime, layout_id=layout_id, var_name="fn", local_index=local_index)
-    value = fn(local_t)
+    value = fn(t)
     if not hasattr(value, "to_decimal"):
         raise TypeError(f"FunctionClamp fn must return a current quantity, got {value!r}.")
     shape = getattr(value, "shape", ())
     if shape not in ((), None):
         raise ValueError(f"FunctionClamp fn must return a scalar current, got shape {shape!r}.")
-    active = u.math.logical_and(local_t.to_decimal(u.ms) >= 0.0, local_t < duration)
-    return u.Quantity(u.math.where(active, value.to_decimal(u.nA), 0.0), u.nA)
+    return value.in_unit(u.nA)
 
 
 def _build_runtime_nodes(
@@ -973,6 +1285,7 @@ def _build_runtime_nodes(
     layouts: tuple[MechanismLayout, ...],
     layout_mechanisms: dict[int, object],
     state_buffers: dict[tuple[int, str], np.ndarray],
+    pop_size: tuple[int, ...] = (),
 ) -> tuple[
     dict[str, object],
     dict[str, str],
@@ -993,6 +1306,7 @@ def _build_runtime_nodes(
         layouts=layouts,
         layout_mechanisms=layout_mechanisms,
         state_buffers=state_buffers,
+        pop_size=pop_size,
     )
     runtime_nodes: dict[int, object] = dict(ion_runtime_nodes)
     bound_ion_keys: dict[int, tuple[str, ...]] = {}
@@ -1020,6 +1334,7 @@ def _build_runtime_ions(
     layouts: tuple[MechanismLayout, ...],
     layout_mechanisms: dict[int, object],
     state_buffers: dict[tuple[int, str], np.ndarray],
+    pop_size: tuple[int, ...] = (),
 ) -> tuple[
     dict[str, object],
     dict[str, str],
@@ -1043,6 +1358,7 @@ def _build_runtime_ions(
             declarations=tuple(record["declarations"]),
             state_buffers=state_buffers,
             n_point=n_point,
+            pop_size=pop_size,
         )
         ions[instance_name] = runtime_ion
         ion_class_candidates.setdefault(record["runtime_cls"].__name__, []).append(instance_name)
@@ -1052,7 +1368,7 @@ def _build_runtime_ions(
     for family_key in ("na", "k", "ca"):
         if family_key in ion_family_candidates:
             continue
-        default_ion = _build_default_ions(n_point)[family_key]
+        default_ion = _build_default_ions(pop_size + (n_point,))[family_key]
         ions[family_key] = default_ion
         ion_family_candidates[family_key] = [family_key]
         ion_class_candidates.setdefault(type(default_ion).__name__, []).append(family_key)
@@ -1072,6 +1388,8 @@ def _build_runtime_ions(
 
 
 def _build_default_ions(n_point: int) -> dict[str, object]:
+    if isinstance(n_point, tuple):
+        return build_placeholder_ions(size=n_point)
     return build_placeholder_ions(size=(n_point,))
 
 
@@ -1201,8 +1519,10 @@ def _ion_runtime_attr_name(cls: type, param_name: str) -> str:
 
 def _normalize_ion_runtime_param_value(cls: type, param_name: str, value: object) -> object:
     if param_name == "Ci_initializer" and issubclass(cls, DynamicNernstIon):
+        if isinstance(value, u.Quantity):
+            return value
         inner = getattr(value, "value", None)
-        if hasattr(inner, "to_decimal"):
+        if isinstance(inner, u.Quantity):
             return inner
     return value
 
@@ -1215,6 +1535,7 @@ def _instantiate_runtime_ion_instance(
     declarations: tuple[Density, ...],
     state_buffers: dict,
     n_point: int,
+    pop_size: tuple[int, ...] = (),
 ) -> object:
     """Build one runtime ion instance from its sparse declaration layouts.
 
@@ -1236,7 +1557,8 @@ def _instantiate_runtime_ion_instance(
             f"{sorted(invalid)!r} on {runtime_cls.__name__!r}."
         )
 
-    baseline_ion = runtime_cls(size=(n_point,))
+    full_size = pop_size + (n_point,)
+    baseline_ion = runtime_cls(size=full_size)
     full_param_values: dict[str, object] = {}
     for param_name in supported_params:
         baseline_value = _normalize_ion_runtime_param_value(
@@ -1244,7 +1566,7 @@ def _instantiate_runtime_ion_instance(
             param_name,
             getattr(baseline_ion, _ion_runtime_attr_name(runtime_cls, param_name)),
         )
-        full_param_values[param_name] = _ion_param_broadcast(baseline_value, shape=(n_point,))
+        full_param_values[param_name] = _ion_param_broadcast(baseline_value, shape=full_size)
 
     for layout, declaration in zip(layouts, declarations):
         point_index = layout.point_index
@@ -1260,7 +1582,24 @@ def _instantiate_runtime_ion_instance(
                 point_index=point_index,
             )
 
-    return runtime_cls(size=(n_point,), name=instance_name, **full_param_values)
+    runtime_ion_instance = runtime_cls(size=full_size, name=instance_name, **full_param_values)
+    _restore_shaped_species_initializers(runtime_ion_instance, full_param_values)
+    return runtime_ion_instance
+
+
+def _restore_shaped_species_initializers(runtime_ion_instance: object, full_param_values: dict[str, object]) -> None:
+    if "Ci_initializer" not in full_param_values:
+        return
+    species_initializers = getattr(runtime_ion_instance, "species_initializers", None)
+    if not isinstance(species_initializers, dict) or "Ci" not in species_initializers:
+        return
+    shaped_ci = full_param_values["Ci_initializer"]
+    if not isinstance(shaped_ci, (u.Quantity, np.ndarray)):
+        cainull = getattr(runtime_ion_instance, "cainull", None)
+        if isinstance(cainull, (u.Quantity, np.ndarray)):
+            shaped_ci = cainull
+    runtime_ion_instance.Ci_initializer = shaped_ci
+    species_initializers["Ci"] = shaped_ci
 
 
 def _ion_param_broadcast(value: object, *, shape: tuple[int, ...]) -> object:
@@ -1317,25 +1656,53 @@ def _ion_param_scatter(
     if isinstance(target, u.Quantity) and isinstance(buffer, u.Quantity):
         target_unit = target.unit
         src_mantissa = np.asarray(buffer.mantissa, dtype=np.float64)
-        # Sparse buffer has shape (n_active,) matching point_index; dense has (n_point,).
-        src = src_mantissa if src_mantissa.shape == point_index.shape else src_mantissa[point_index]
+        target_mantissa = np.asarray(target.mantissa, dtype=np.float64)
+        # Sparse buffers end with n_active; dense buffers end with n_point.
+        # Any leading axes are homogeneous-population dimensions.
+        if src_mantissa.shape[-1:] == point_index.shape:
+            src = src_mantissa
+        else:
+            src = np.take(src_mantissa, point_index, axis=-1)
         incoming = np.asarray(
             u.Quantity(src, buffer.unit).to_decimal(target_unit), dtype=np.float64
         )
-        new_mantissa = np.asarray(target.mantissa, dtype=np.float64).copy()
-        new_mantissa[point_index] = incoming
+        new_mantissa = target_mantissa.copy()
+        np.put_along_axis(
+            new_mantissa,
+            np.reshape(point_index, (1,) * (new_mantissa.ndim - 1) + point_index.shape),
+            incoming,
+            axis=-1,
+        )
         return u.Quantity(new_mantissa, target_unit)
 
     if isinstance(target, tuple):
-        target_list = list(target)
-        for local_idx, global_idx in enumerate(point_index.tolist()):
-            if isinstance(buffer, u.Quantity):
-                target_list[int(global_idx)] = u.Quantity(buffer.mantissa[local_idx], buffer.unit)
-            elif isinstance(buffer, tuple):
-                target_list[int(global_idx)] = buffer[local_idx]
-            else:
-                target_list[int(global_idx)] = buffer[local_idx]
-        return tuple(target_list)
+        if isinstance(buffer, u.Quantity):
+            flat = [
+                u.Quantity(value, buffer.unit)
+                for value in np.asarray(buffer.mantissa, dtype=object).reshape(-1)
+            ]
+            src_arr = np.empty(len(flat), dtype=object)
+            for index, value in enumerate(flat):
+                src_arr[index] = value
+            src_arr = src_arr.reshape(buffer.mantissa.shape)
+        elif isinstance(buffer, tuple):
+            src_arr = np.asarray(buffer, dtype=object).reshape(np.asarray(buffer, dtype=object).shape)
+        else:
+            src_arr = np.asarray(buffer, dtype=object)
+        src_arr = src_arr if src_arr.shape[-1:] == point_index.shape else np.take(src_arr, point_index, axis=-1)
+        leading_shape = src_arr.shape[:-1]
+        leading_size = int(np.prod(leading_shape, dtype=int)) if leading_shape else 1
+        target_flat = np.empty(len(target), dtype=object)
+        for index, value in enumerate(target):
+            target_flat[index] = value
+        target_arr = target_flat.reshape(leading_shape + (len(target) // leading_size,))
+        np.put_along_axis(
+            target_arr,
+            np.reshape(point_index, (1,) * (target_arr.ndim - 1) + point_index.shape),
+            src_arr,
+            axis=-1,
+        )
+        return tuple(target_arr.reshape(-1).tolist())
 
     if isinstance(target, np.ndarray):
         new_target = target.copy()
@@ -1347,8 +1714,13 @@ def _ion_param_scatter(
             raise TypeError(
                 f"Cannot scatter non-array buffer into numpy target for ion param {param_name!r}."
             )
-        src = src if src.shape == point_index.shape else src[point_index]
-        new_target[point_index] = src
+        src = src if src.shape[-1:] == point_index.shape else np.take(src, point_index, axis=-1)
+        np.put_along_axis(
+            new_target,
+            np.reshape(point_index, (1,) * (new_target.ndim - 1) + point_index.shape),
+            src,
+            axis=-1,
+        )
         return new_target
 
     raise TypeError(
@@ -1384,8 +1756,8 @@ class _BoundIonChannelRuntime(Channel):
     def reset_state(self, V, *unused, batch_size=None):
         return self._channel.reset_state(V, *self._infos(), batch_size=batch_size)
 
-    def update(self, V, *unused):
-        return self._channel.update(V, *self._infos())
+    def ind_update(self, V, *unused):
+        return self._channel.ind_update(V, *self._infos())
 
     def current(self, V, *unused):
         return self._channel.current(V, *self._infos())
@@ -1400,6 +1772,23 @@ def _instantiate_runtime_node(
     ion_aliases: dict[str, str],
     ion_family_candidates: dict[str, tuple[str, ...]],
 ) -> tuple[object | None, tuple[str, ...], str | None]:
+    if isinstance(mechanism, SynapsePlacement):
+        runtime_cls = get_registry().get("synapse", mechanism.synapse_type)
+        params = {
+            var_name: _runtime_param_value(
+                layout=layout,
+                var_name=var_name,
+                state_buffers=state_buffers,
+            )
+            for var_name in mechanism.params.keys()
+        }
+        if len(params) > 0 and hasattr(next(iter(params.values())), "shape"):
+            size = next(iter(params.values())).shape
+        else:
+            size = state_buffers[(layout.id, "pre_spike")].shape
+        node = runtime_cls(size=size, name=mechanism.instance_name, **params)
+        return node, (), None
+
     if layout.target != "density" or layout.layout != "dense":
         return None, (), None
     if not isinstance(mechanism, Density):
@@ -1623,6 +2012,18 @@ def _runtime_param_value(
     return buffer
 
 
+def _iter_runtime_synapse_layouts(runtime: CellRuntimeState):
+    """Yield ``(layout, declaration, node)`` for placed runtime synapses."""
+    for layout in runtime.layouts:
+        declaration = runtime.layout_mechanisms[layout.id]
+        if not isinstance(declaration, SynapsePlacement):
+            continue
+        node = runtime.runtime_nodes.get(layout.id)
+        if node is None:
+            continue
+        yield layout, declaration, node
+
+
 def _sync_runtime_node_param(runtime: CellRuntimeState, *, layout_id: int, var_name: str) -> None:
     node = runtime.runtime_nodes.get(int(layout_id))
     if node is None:
@@ -1739,6 +2140,8 @@ def _is_root_level_runtime_node(kind: str) -> bool:
         mechanism registry — previously this was silently treated
         as "not root-level", hiding misspelled channel names.
     """
+    if kind.startswith("synapse:"):
+        return True
     if not kind.startswith("channel:"):
         return False
     class_name = kind.split(":", 1)[1]

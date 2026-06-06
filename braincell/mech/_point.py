@@ -41,6 +41,7 @@ from dataclasses import dataclass, field
 from typing import Any, Callable
 
 import brainunit as u
+import numpy as np
 
 from ._base import Mechanism
 from ._params import Params, quantity_hashable
@@ -49,6 +50,7 @@ __all__ = [
     "Point",
     "CurrentClamp",
     "FunctionClamp",
+    "NetStim",
     "StateProbe",
     "MechanismProbe",
     "CurrentProbe",
@@ -84,33 +86,26 @@ class Point(Mechanism):
 class CurrentClamp(Point):
     """Piecewise-constant current clamp.
 
-    The canonical form is a multi-segment step protocol. Users with a
-    simple single-step clamp can use :meth:`step` for a cleaner
-    constructor.
-
     Parameters
     ----------
-    start : Quantity[ms]
-        Absolute simulation time at which the first segment begins.
-    durations : tuple of Quantity[ms]
-        Duration of each segment in order. Must be non-empty and all
-        entries must be strictly positive.
-    amplitudes : tuple of Quantity[nA]
-        Amplitude held during each segment. Must have the same length
-        as ``durations``.
+    delay : Quantity[ms]
+        Absolute simulation time at which the first segment begins. May be a
+        scalar or broadcastable to the placed target shape.
+    durations : Quantity[ms] or sequence of Quantity[ms]
+        Single-segment duration or multi-segment durations.
+    amplitudes : Quantity[nA] or sequence of Quantity[nA]
+        Single-segment amplitude or multi-segment amplitudes.
+    target_index : array-like of int or None, optional
+        Reserved sparse target indices over the flattened placement target
+        axis. ``None`` keeps dense/broadcast semantics.
 
     Raises
     ------
     TypeError
-        If ``durations`` or ``amplitudes`` are not tuples of
-        quantities.
+        If ``delay``, ``durations`` or ``amplitudes`` are not quantities.
     ValueError
-        If the two sequences have different lengths, if either is
-        empty, or if any duration is non-positive.
-
-    See Also
-    --------
-    CurrentClamp.step : Single-step convenience constructor.
+        If any duration is non-positive, or if ``target_index`` is not a
+        one-dimensional non-negative integer array.
 
     Examples
     --------
@@ -119,89 +114,35 @@ class CurrentClamp(Point):
 
         >>> import brainunit as u
         >>> from braincell.mech import CurrentClamp
-        >>> # Single step, starting at t = 10 ms, 50 ms long
-        >>> cc = CurrentClamp.step(0.2 * u.nA, 50 * u.ms, delay=10 * u.ms)
-
-        >>> # Multi-step protocol: ramp up then hold
         >>> cc = CurrentClamp(
-        ...     start=0.0 * u.ms,
-        ...     durations=(20 * u.ms, 30 * u.ms, 50 * u.ms),
-        ...     amplitudes=(0.0 * u.nA, 0.1 * u.nA, 0.3 * u.nA),
+        ...     delay=10 * u.ms,
+        ...     durations=50 * u.ms,
+        ...     amplitudes=0.2 * u.nA,
         ... )
     """
 
-    start: Any
-    durations: tuple
-    amplitudes: tuple
+    delay: Any = field(default_factory=lambda: 0.0 * u.ms)
+    durations: Any = field(default_factory=lambda: 1.0 * u.ms)
+    amplitudes: Any = field(default_factory=lambda: 0.0 * u.nA)
+    target_index: Any = None
 
     def __post_init__(self) -> None:
-        durations = _normalize_quantity_tuple(
-            self.durations, unit=u.ms, field_name="durations"
+        delay = _coerce_quantity(
+            self.delay, unit=u.ms, field_name="CurrentClamp.delay"
         )
-        amplitudes = _normalize_quantity_tuple(
-            self.amplitudes, unit=u.nA, field_name="amplitudes"
+        durations = _coerce_quantity(
+            self.durations, unit=u.ms, field_name="CurrentClamp.durations"
         )
-        if len(durations) == 0:
-            raise ValueError("CurrentClamp.durations must be non-empty.")
-        if len(durations) != len(amplitudes):
-            raise ValueError(
-                f"CurrentClamp.durations and amplitudes must have the "
-                f"same length; got {len(durations)} and {len(amplitudes)}."
-            )
-        for item in durations:
-            if float(item.to_decimal(u.ms)) <= 0.0:
-                raise ValueError(
-                    f"CurrentClamp durations must be > 0, got {item!r}."
-                )
+        amplitudes = _coerce_quantity(
+            self.amplitudes, unit=u.nA, field_name="CurrentClamp.amplitudes"
+        )
+        _raise_if_nonpositive_duration(durations)
+        target_index = _normalize_target_index(self.target_index)
 
-        start = _coerce_scalar_quantity(
-            self.start, unit=u.ms, field_name="start"
-        )
-        object.__setattr__(self, "start", start)
+        object.__setattr__(self, "delay", delay)
         object.__setattr__(self, "durations", durations)
         object.__setattr__(self, "amplitudes", amplitudes)
-
-    @classmethod
-    def step(
-        cls,
-        amplitude: Any,
-        duration: Any,
-        *,
-        delay: Any = 0.0 * u.ms,
-    ) -> "CurrentClamp":
-        """Build a single-step clamp.
-
-        Parameters
-        ----------
-        amplitude : Quantity[nA]
-            Current held during the step.
-        duration : Quantity[ms]
-            Step duration.
-        delay : Quantity[ms]
-            Absolute start time; aliased to
-            :attr:`CurrentClamp.start`.
-
-        Returns
-        -------
-        CurrentClamp
-            A one-segment clamp.
-
-        Examples
-        --------
-
-        .. code-block:: python
-
-            >>> import brainunit as u
-            >>> from braincell.mech import CurrentClamp
-            >>> cc = CurrentClamp.step(0.2 * u.nA, 50 * u.ms, delay=10 * u.ms)
-            >>> cc.start.to_decimal(u.ms)
-            10.0
-        """
-        return cls(
-            start=delay,
-            durations=(duration,),
-            amplitudes=(amplitude,),
-        )
+        object.__setattr__(self, "target_index", target_index)
 
 
 @quantity_hashable
@@ -219,18 +160,18 @@ class SineClamp(Point):
         Phase offset in radians.
     offset : Quantity[nA]
         Constant offset added to the sine.
-    start : Quantity[ms]
+    delay : Quantity[ms]
         Absolute start time.
     duration : Quantity[ms]
         Length of the active window. The clamp returns zero before
-        ``start`` and after ``start + duration``.
+        ``delay`` and after ``delay + duration``.
     """
 
     amplitude: Any
     frequency: Any
     phase: float = 0.0
     offset: Any = field(default_factory=lambda: 0.0 * u.nA)
-    start: Any = field(default_factory=lambda: 0.0 * u.ms)
+    delay: Any = field(default_factory=lambda: 0.0 * u.ms)
     duration: Any = field(default_factory=lambda: 1.0 * u.ms)
 
     def __post_init__(self) -> None:
@@ -259,13 +200,13 @@ class SineClamp(Point):
         offset = _coerce_scalar_quantity(
             self.offset, unit=u.nA, field_name="SineClamp.offset",
         )
-        start = _coerce_scalar_quantity(
-            self.start, unit=u.ms, field_name="SineClamp.start",
+        delay = _coerce_scalar_quantity(
+            self.delay, unit=u.ms, field_name="SineClamp.delay",
         )
         object.__setattr__(self, "amplitude", amplitude)
         object.__setattr__(self, "frequency", frequency)
         object.__setattr__(self, "offset", offset)
-        object.__setattr__(self, "start", start)
+        object.__setattr__(self, "delay", delay)
         object.__setattr__(self, "duration", duration)
 
 
@@ -277,13 +218,9 @@ class FunctionClamp(Point):
     Parameters
     ----------
     fn : Callable
-        A function ``f(local_t) -> Quantity[nA]`` called each step with
-        the simulation time relative to ``start``.
-    start : Quantity[ms]
-        Absolute start time.
-    duration : Quantity[ms]
-        Length of the active window; outside this range ``current`` is
-        zero.
+        A function ``f(t) -> Quantity[nA]`` called each step with the
+        absolute simulation time. Use explicit conditions inside ``fn``
+        for windowed current injection.
 
     Notes
     -----
@@ -302,8 +239,6 @@ class FunctionClamp(Point):
     """
 
     fn: Callable
-    start: Any = field(default_factory=lambda: 0.0 * u.ms)
-    duration: Any = field(default_factory=lambda: 1.0 * u.ms)
 
     def __post_init__(self) -> None:
         if not callable(self.fn):
@@ -311,23 +246,74 @@ class FunctionClamp(Point):
                 f"FunctionClamp.fn must be callable, "
                 f"got {type(self.fn).__name__!r}."
             )
-        duration = _coerce_scalar_quantity(
-            self.duration, unit=u.ms, field_name="FunctionClamp.duration",
-        )
-        if float(duration.to_decimal(u.ms)) <= 0.0:
-            raise ValueError(
-                f"FunctionClamp.duration must be > 0, got {self.duration!r}."
-            )
+
+
+# ---------------------------------------------------------------------------
+# Point spike sources, observers & synapses
+# ---------------------------------------------------------------------------
+
+
+@quantity_hashable
+@dataclass(frozen=True)
+class NetStim(Point):
+    """Deterministic point spike source aligned with NEURON's `NetStim`.
+
+    Parameters
+    ----------
+    start : Quantity[ms]
+        Absolute time of the first spike.
+    number : int
+        Number of spikes to emit.
+    interval : Quantity[ms]
+        Spacing between spikes.
+    noise : float, optional
+        Randomness level. Only ``0.0`` is supported in v1.
+    weight : float, optional
+        Event amplitude written into downstream ``pre_spike`` buffers.
+    name : str or None, optional
+        Optional instance label.
+    """
+
+    start: Any
+    number: int
+    interval: Any
+    noise: float = 0.0
+    weight: float = 1.0
+    name: str | None = None
+
+    def __post_init__(self) -> None:
         start = _coerce_scalar_quantity(
-            self.start, unit=u.ms, field_name="FunctionClamp.start",
+            self.start, unit=u.ms, field_name="NetStim.start",
         )
+        interval = _coerce_scalar_quantity(
+            self.interval, unit=u.ms, field_name="NetStim.interval",
+        )
+        if float(interval.to_decimal(u.ms)) <= 0.0:
+            raise ValueError(
+                f"NetStim.interval must be > 0, got {self.interval!r}."
+            )
+        if not isinstance(self.number, int) or isinstance(self.number, bool):
+            raise TypeError(f"NetStim.number must be int, got {self.number!r}.")
+        if self.number < 0:
+            raise ValueError(f"NetStim.number must be >= 0, got {self.number!r}.")
+        if not isinstance(self.noise, (int, float)) or isinstance(self.noise, bool):
+            raise TypeError(f"NetStim.noise must be a real number, got {self.noise!r}.")
+        if float(self.noise) != 0.0:
+            raise ValueError(
+                f"NetStim.noise={self.noise!r} is not supported yet; use noise=0.0."
+            )
+        if not isinstance(self.weight, (int, float)) or isinstance(self.weight, bool):
+            raise TypeError(f"NetStim.weight must be a real number, got {self.weight!r}.")
+        if self.name is not None and (not isinstance(self.name, str) or not self.name):
+            raise ValueError(f"NetStim.name must be a non-empty string or None, got {self.name!r}.")
+
         object.__setattr__(self, "start", start)
-        object.__setattr__(self, "duration", duration)
+        object.__setattr__(self, "interval", interval)
 
-
-# ---------------------------------------------------------------------------
-# Observers & synapses
-# ---------------------------------------------------------------------------
+    @property
+    def instance_name(self) -> str:
+        """Display label for runtime layout and probe/debug views."""
+        return self.name if self.name is not None else "NetStim"
 
 
 @dataclass(frozen=True)
@@ -416,7 +402,6 @@ class ProbeMechanism(Point):
             )
 
 
-@dataclass(frozen=True)
 class Synapse(Point):
     """Registry-keyed synapse declaration.
 
@@ -425,10 +410,10 @@ class Synapse(Point):
     synapse_type : str
         Registry key for the target synapse class (e.g. ``"AMPA"``,
         ``"NMDA"``).
-    params : Params or Mapping
-        Synapse parameters.
     name : str or None
         Optional instance label.
+    **params
+        Synapse parameters.
 
     Examples
     --------
@@ -436,27 +421,49 @@ class Synapse(Point):
     .. code-block:: python
 
         >>> from braincell.mech import Synapse
-        >>> syn = Synapse(synapse_type="AMPA")
+        >>> syn = Synapse("AMPA")
         >>> syn.synapse_type
         'AMPA'
     """
 
-    synapse_type: str
-    params: Params = field(default_factory=Params)
-    name: str | None = None
+    __slots__ = ("synapse_type", "params", "name")
 
-    def __post_init__(self) -> None:
-        if not isinstance(self.synapse_type, str) or not self.synapse_type:
+    def __init__(
+        self,
+        synapse_type: str,
+        /,
+        *,
+        name: str | None = None,
+        **params: Any,
+    ) -> None:
+        if not isinstance(synapse_type, str) or not synapse_type:
             raise ValueError(
                 f"Synapse.synapse_type must be a non-empty string, "
-                f"got {self.synapse_type!r}."
+                f"got {synapse_type!r}."
             )
-        if self.name is not None and not isinstance(self.name, str):
+        if "params" in params:
+            raise TypeError(
+                "Synapse parameters must be passed as keyword arguments, "
+                "not as params={...}."
+            )
+        if name is not None and not isinstance(name, str):
             raise TypeError(
                 f"Synapse.name must be a string or None, "
-                f"got {type(self.name).__name__!r}."
+                f"got {type(name).__name__!r}."
             )
-        object.__setattr__(self, "params", Params.coerce(self.params))
+        object.__setattr__(self, "synapse_type", synapse_type)
+        object.__setattr__(self, "params", Params(params) if params else Params())
+        object.__setattr__(self, "name", name)
+
+    def __setattr__(self, name: str, value: Any) -> None:
+        raise AttributeError(
+            f"{type(self).__name__} is immutable; cannot set attribute {name!r}."
+        )
+
+    def __delattr__(self, name: str) -> None:
+        raise AttributeError(
+            f"{type(self).__name__} is immutable; cannot delete attribute {name!r}."
+        )
 
     @property
     def instance_name(self) -> str:
@@ -467,6 +474,24 @@ class Synapse(Point):
     def identity(self) -> tuple[str, str]:
         """Return ``(instance_name, synapse_type)`` for table views."""
         return (self.instance_name, self.synapse_type)
+
+    def __eq__(self, other: object) -> bool:
+        if type(self) is not type(other):
+            return NotImplemented
+        return (
+            self.synapse_type == other.synapse_type
+            and self.params == other.params
+            and self.name == other.name
+        )
+
+    def __hash__(self) -> int:
+        return hash((type(self).__name__, self.synapse_type, self.params, self.name))
+
+    def __repr__(self) -> str:
+        return (
+            f"Synapse(synapse_type={self.synapse_type!r}, "
+            f"params={self.params!r}, name={self.name!r})"
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -482,41 +507,43 @@ def _coerce_scalar_quantity(value: Any, *, unit: Any, field_name: str) -> Any:
     return value.in_unit(unit)
 
 
-def _normalize_quantity_tuple(
-    values: Any, *, unit: Any, field_name: str
-) -> tuple:
-    """Coerce ``values`` into a tuple of same-unit quantities.
-
-    Accepts either a single quantity (wrapped into a 1-tuple), a
-    tuple/list of quantities, or a vectorized quantity with a
-    non-scalar shape.
-    """
-    if values is None:
-        raise TypeError(f"CurrentClamp.{field_name} must not be None.")
-
-    # Already a tuple/list of quantities.
-    if isinstance(values, (list, tuple)):
-        normalized: list = []
-        for item in values:
-            if not hasattr(item, "to_decimal"):
-                raise TypeError(
-                    f"CurrentClamp.{field_name} entries must be "
-                    f"Quantities, got {item!r}."
-                )
-            normalized.append(item.in_unit(unit))
-        return tuple(normalized)
-
-    # Vectorized Quantity (shape != ()) → unpack to scalar quantities.
-    shape = getattr(values, "shape", ())
-    if hasattr(values, "to_decimal") and shape != ():
-        decimals = values.to_decimal(unit)
-        return tuple(item * unit for item in decimals.reshape((-1,)).tolist())
-
-    # Single scalar quantity → 1-tuple.
-    if hasattr(values, "to_decimal"):
-        return (values.in_unit(unit),)
+def _coerce_quantity(value: Any, *, unit: Any, field_name: str) -> Any:
+    if value is None:
+        raise TypeError(f"{field_name} must not be None.")
+    if hasattr(value, "to_decimal"):
+        return value.in_unit(unit)
+    if isinstance(value, (list, tuple)):
+        if len(value) == 0:
+            raise ValueError(f"{field_name} must be non-empty.")
+        if not all(hasattr(item, "to_decimal") for item in value):
+            raise TypeError(f"{field_name} entries must be Quantities.")
+        decimals = [item.to_decimal(unit) for item in value]
+        return u.Quantity(np.stack(decimals, axis=-1), unit)
 
     raise TypeError(
-        f"CurrentClamp.{field_name} must be a Quantity or sequence of "
-        f"Quantities, got {type(values).__name__!r}."
+        f"{field_name} must be a Quantity or sequence of Quantities, "
+        f"got {type(value).__name__!r}."
     )
+
+
+def _raise_if_nonpositive_duration(value: Any) -> None:
+    decimals = np.asarray(value.to_decimal(u.ms), dtype=float)
+    if decimals.size == 0:
+        raise ValueError("CurrentClamp.durations must be non-empty.")
+    if np.any(decimals <= 0.0):
+        raise ValueError(f"CurrentClamp.durations entries must be > 0, got {value!r}.")
+
+
+def _normalize_target_index(value: Any) -> Any:
+    if value is None:
+        return None
+    arr = np.asarray(value)
+    if arr.ndim != 1:
+        raise ValueError(
+            f"CurrentClamp.target_index must be one-dimensional, got shape {arr.shape!r}."
+        )
+    if not np.issubdtype(arr.dtype, np.integer):
+        raise TypeError("CurrentClamp.target_index entries must be integers.")
+    if np.any(arr < 0):
+        raise ValueError("CurrentClamp.target_index entries must be non-negative.")
+    return tuple(int(item) for item in arr.tolist())

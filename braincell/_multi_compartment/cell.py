@@ -29,7 +29,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
-from braincell._base import Channel, HHTypedNeuron, Ion, IonChannel, MixIons, _cast_like
+from braincell._base import Channel, HHTypedNeuron, Ion, IonChannel, MixIons, Synapse as RuntimeSynapse, _cast_like
 from braincell._misc import is_traced_value
 from braincell._typing import Initializer
 from braincell._compute.table import (
@@ -76,6 +76,7 @@ from braincell.quad import get_integrator, ind_exp_euler_step
 from braincell.quad._exp_euler import _ind_exp_euler_step_selected
 from braincell.quad._staggered import build_cv_axial_operator
 from braincell.quad.protocol import DiffEqState, IndependentIntegration
+from braincell.mech import Synapse as SynapsePlacement
 from . import bridge, currents, probes, run as run_module
 
 __all__ = ["Cell"]
@@ -174,6 +175,7 @@ class Cell(HHTypedNeuron):
         self,
         morpho: Morphology,
         *,
+        pop_size: brainstate.typing.Size = (),
         cv_policy: CVPolicy | None = None,
         V_th: u.Quantity = 0 * u.mV,
         V_init: Optional[Initializer] = None,
@@ -183,7 +185,38 @@ class Cell(HHTypedNeuron):
         ion_channel_update_order: str = "family",
         name: str | None = None,
     ) -> None:
-        HHTypedNeuron.__init__(self, size=(1,), name=name)
+        """Initialize a multi-compartment cell declaration.
+
+        Parameters
+        ----------
+        morpho : Morphology
+            Morphology tree shared by every homogeneous population
+            instance.
+        pop_size : int or tuple of int, optional
+            Optional homogeneous population shape. Runtime state is
+            expanded to ``pop_size + (n_cv,)`` and point-space arrays to
+            ``pop_size + (n_point,)``.
+        cv_policy : CVPolicy, optional
+            Control-volume splitting policy.
+        V_th : Quantity, optional
+            Spike threshold.
+        V_init : Initializer, optional
+            Initial membrane voltage. ``None`` uses the per-CV resting
+            potential.
+        spk_fun : Callable, optional
+            Surrogate-gradient spike function.
+        solver : str or callable, optional
+            Integrator name or concrete step function.
+        cache_ion_total_current : bool, optional
+            Whether to snapshot ion total current at step start for
+            NEURON-style schedules.
+        ion_channel_update_order : {"family", "integration"}, optional
+            Post-voltage ion/channel update order.
+        name : str, optional
+            Cell name.
+        """
+        normalized_pop_size = _normalize_pop_size(pop_size)
+        HHTypedNeuron.__init__(self, size=normalized_pop_size + (1,), name=name)
 
         if not isinstance(morpho, Morphology):
             raise TypeError(
@@ -192,6 +225,7 @@ class Cell(HHTypedNeuron):
 
         self._declaration_morpho = morpho
         self._morpho = morpho
+        self._pop_size = normalized_pop_size
 
         self._discretization_policy: CVPolicy = CVPerBranch() if cv_policy is None else cv_policy
         if not isinstance(self._discretization_policy, CVPolicy):
@@ -223,6 +257,7 @@ class Cell(HHTypedNeuron):
         self._runtime_cvs_cache: tuple[RuntimeCVView, ...] | None = None
         self._runtime_nodes_cache: tuple[RuntimeNodeView, ...] | None = None
         self._axial_jax = None
+        self._synapse_input_bindings: dict[str, list[tuple[object, object, object]]] = {}
 
         self._initialized = False
 
@@ -342,6 +377,30 @@ class Cell(HHTypedNeuron):
         self._invalidate_discretization_cache()
         return self
 
+    def bind_synapse_input(self, synapse: str, source, *, weight=1.0, transform=None) -> "Cell":
+        """Bind an external presynaptic drive source to a runtime synapse.
+
+        Parameters
+        ----------
+        synapse : str
+            Synapse instance name, matching ``braincell.mech.Synapse(name=...)``
+            or its default instance name.
+        source : array-like or callable
+            Presynaptic drive source. Callables are evaluated every step; this
+            supports bindings such as ``lambda: pre_cell.spike.value``.
+        weight : array-like, optional
+            Multiplicative weight applied to ``source``.
+        transform : callable, optional
+            Optional mapping called as ``transform(source_value)`` before
+            weighting, useful when the source shape does not directly broadcast
+            to the target synapse shape.
+        """
+        key = str(synapse)
+        self._synapse_input_bindings.setdefault(key, []).append(
+            (source, weight, transform)
+        )
+        return self
+
     # ------------------------------------------------------------------
     # Static discretization (valid in both phases)
 
@@ -416,8 +475,8 @@ class Cell(HHTypedNeuron):
         # Save scalar V_th declaration before the vector overwrite below.
         self._V_th_declaration = self._V_th
 
-        self._in_size = (self._runtime.n_cv,)
-        self._out_size = (self._runtime.n_cv,)
+        self._in_size = self.varshape
+        self._out_size = self.varshape
 
         root_nodes = dict(self._runtime.ions)
         for layout in self._runtime.layouts:
@@ -437,15 +496,18 @@ class Cell(HHTypedNeuron):
         )
         if self._V_init is not None:
             v_initializer = bridge.fill_like(self.varshape, v_initializer)
-        self.V = DiffEqState(braintools.init.param(v_initializer, self.varshape, batch_size))
+        v_value = braintools.init.param(v_initializer, self.varshape)
+        v_value = bridge.expand_with_batch_axis(v_value, batch_size, name="Cell.V")
+        self.V = DiffEqState(v_value)
         self.spike = brainstate.ShortTermState(self.get_spike(self.V.value, self.V.value))
         self._current_time_state.value = 0.0 * u.ms
 
         point_V = self._cv_to_point_unchecked(self.V.value)
-        for channel in self._runtime_objects_unchecked(
+        for path, channel in self._runtime_objects_unchecked(
             IonChannel, allowed_hierarchy=(1, 1)
-        ).values():
-            channel.init_state(point_V, batch_size=batch_size)
+        ).items():
+            args = self._runtime_node_phase_args(path, channel, point_V)
+            channel.init_state(*args, batch_size=batch_size)
 
         self._runtime.axial_operator_np = np.asarray(
             build_cv_axial_operator(
@@ -518,11 +580,11 @@ class Cell(HHTypedNeuron):
 
     @property
     def pop_size(self) -> tuple[int, ...]:
-        return ()
+        return self._pop_size
 
     @property
     def varshape(self) -> tuple[int, ...]:
-        return (self.n_cv,)
+        return self.pop_size + (self.n_cv,)
 
     @property
     def n_compartment(self) -> int:
@@ -1818,25 +1880,27 @@ class Cell(HHTypedNeuron):
         except KeyError:
             return self.current_time
 
-    def pre_integral(self, I_ext=0.0):
+    def pre_integral(self):
         self._raise_if_not_initialized("pre_integral()")
         point_V = self._cv_to_point(self.V.value)
-        for _, node in self.runtime_objects(IonChannel, allowed_hierarchy=(1, 1)).items():
+        for path, node in self.runtime_objects(IonChannel, allowed_hierarchy=(1, 1)).items():
             if not isinstance(node, IndependentIntegration):
-                node.pre_integral(point_V)
+                args = self._runtime_node_phase_args(path, node, point_V)
+                node.pre_integral(*args)
 
-    def compute_derivative(self, I_ext=0.0):
+    def compute_derivative(self):
         self._raise_if_not_initialized("compute_derivative()")
-        self.V.derivative = self.compute_voltage_derivative(self.V.value, I_ext)
+        self.V.derivative = self.compute_voltage_derivative(self.V.value)
         point_V = self._cv_to_point(self.V.value)
-        for _, node in self.runtime_objects(IonChannel, allowed_hierarchy=(1, 1)).items():
+        for path, node in self.runtime_objects(IonChannel, allowed_hierarchy=(1, 1)).items():
             if not isinstance(node, IndependentIntegration):
-                node.compute_derivative(point_V)
+                args = self._runtime_node_phase_args(path, node, point_V)
+                node.compute_derivative(*args)
 
-    def compute_membrane_derivative(self, V, I_ext=0.0):
+    def compute_membrane_derivative(self, V):
         self._raise_if_not_initialized("compute_membrane_derivative()")
         t = self._resolve_t()
-        I_total = currents.total_membrane_current(self, V_cv=V, I_ext=I_ext, t=t)
+        I_total = currents.total_membrane_current(self, V_cv=V, t=t)
         return I_total / self.C
 
     def _get_axial_operator(self):
@@ -1865,9 +1929,9 @@ class Cell(HHTypedNeuron):
         axial_operator = self._get_axial_operator()
         return -u.math.matmul(V_mv, axial_operator.T)
 
-    def compute_voltage_derivative(self, V, I_ext=0.0):
+    def compute_voltage_derivative(self, V):
         return (
-            self.compute_membrane_derivative(V, I_ext)
+            self.compute_membrane_derivative(V)
             + self.compute_axial_derivative(V)
         )
 
@@ -1911,10 +1975,10 @@ class Cell(HHTypedNeuron):
         def _pre_integral():
             for path, node in self._top_level_ion_channel_nodes():
                 if isinstance(node, Ion) and path in selected_paths:
-                    node._run_ion_hook("_ion_pre_integral_hook", point_V)
-                elif isinstance(node, Channel) and path in selected_paths:
+                    node.pre_integral(point_V, recursive_child=False)
+                if isinstance(node, Channel) and path in selected_paths:
                     node.pre_integral(point_V)
-                elif isinstance(node, (Ion, MixIons)):
+                if isinstance(node, (Ion, MixIons)):
                     self._run_selected_child_channel_hook(
                         node,
                         path,
@@ -1926,10 +1990,10 @@ class Cell(HHTypedNeuron):
         def _compute_derivative():
             for path, node in self._top_level_ion_channel_nodes():
                 if isinstance(node, Ion) and path in selected_paths:
-                    node._run_ion_hook("_ion_compute_derivative_hook", point_V)
-                elif isinstance(node, Channel) and path in selected_paths:
+                    node.compute_derivative(point_V, recursive_child=False)
+                if isinstance(node, Channel) and path in selected_paths:
                     node.compute_derivative(point_V)
-                elif isinstance(node, (Ion, MixIons)):
+                if isinstance(node, (Ion, MixIons)):
                     self._run_selected_child_channel_hook(
                         node,
                         path,
@@ -1941,10 +2005,10 @@ class Cell(HHTypedNeuron):
         def _post_integral():
             for path, node in self._top_level_ion_channel_nodes():
                 if isinstance(node, Ion) and path in selected_paths:
-                    node._run_ion_hook("_ion_post_integral_hook", point_V)
-                elif isinstance(node, Channel) and path in selected_paths:
+                    node.post_integral(point_V, recursive_child=False)
+                if isinstance(node, Channel) and path in selected_paths:
                     node.post_integral(point_V)
-                elif isinstance(node, (Ion, MixIons)):
+                if isinstance(node, (Ion, MixIons)):
                     self._run_selected_child_channel_hook(
                         node,
                         path,
@@ -1960,6 +2024,34 @@ class Cell(HHTypedNeuron):
             pre_integral=_pre_integral,
             compute_derivative=_compute_derivative,
             post_integral=_post_integral,
+            allow_empty=True,
+        )
+
+    def _integrate_selected_ion_self_states(
+        self,
+        ion_nodes,
+        selected_paths,
+        point_V,
+        excluded_paths,
+    ):
+        selected_paths = tuple(tuple(path) for path in selected_paths)
+        if not selected_paths:
+            return
+
+        selected_path_set = set(selected_paths)
+
+        def _run_phase(hook_name):
+            for path, ion in ion_nodes:
+                if path in selected_path_set:
+                    getattr(ion, hook_name)(point_V, recursive_child=False)
+
+        _ind_exp_euler_step_selected(
+            self,
+            include_paths=selected_paths,
+            excluded_paths=excluded_paths,
+            pre_integral=lambda: _run_phase("pre_integral"),
+            compute_derivative=lambda: _run_phase("compute_derivative"),
+            post_integral=lambda: _run_phase("post_integral"),
             allow_empty=True,
         )
 
@@ -1983,30 +2075,64 @@ class Cell(HHTypedNeuron):
                 getattr(child, hook_name)(point_V, *infos)
 
     def _update_ion_channels_by_integration(self, point_V):
-        ion_channel_nodes = self._top_level_ion_channel_nodes()
-        for _, node in ion_channel_nodes:
-            node.update(point_V)
+        for path, node in self._top_level_ion_channel_nodes():
+            if isinstance(node, IndependentIntegration):
+                continue
+            args = self._runtime_node_phase_args(path, node, point_V)
+            ind_exp_euler_step(node, *args)
+
+        for _, node in self._top_level_ion_channel_nodes():
+            node.ind_update(point_V)
 
     def _update_ion_channel_families(self, point_V):
         ion_nodes = self._family_ion_nodes()
         channel_nodes = self._family_channel_nodes()
-        self._integrate_selected_ion_channel_states(
-            [path for path, node in ion_nodes if not isinstance(node, IndependentIntegration)],
+
+        dependent_ion_paths = [
+            path
+            for path, node in ion_nodes
+            if not isinstance(node, IndependentIntegration)
+        ]
+        channel_paths = [path for path, _ in channel_nodes]
+
+        # Family mode splits ion self states from channel states. This phase
+        # advances dependent Ion states only; V and all channel states are
+        # excluded explicitly so no child channel is integrated through Ion
+        # recursion.
+        self._integrate_selected_ion_self_states(
+            ion_nodes,
+            dependent_ion_paths,
             point_V,
-            excluded_paths=[path for path, _ in channel_nodes],
+            excluded_paths=[("V",), *channel_paths],
         )
+
+        # Independent Ion states use their own updater, still without
+        # recursing into child channels.
         for _, node in ion_nodes:
             if isinstance(node, IndependentIntegration):
-                node._update_ion_state_only(point_V)
+                node.ind_update(point_V, recursive_child=False)
+
+        # Channel nodes include Ion child channels, MixIons child channels,
+        # and top-level channels. The owner path rebuilds the right ion args.
         for path, node in channel_nodes:
             if not self._is_independent_channel(node):
-                target, args = self._channel_integration_target_and_args(path, node, point_V)
+                target, args = self._channel_integration_target_and_args(
+                    path,
+                    node,
+                    point_V,
+                )
                 ind_exp_euler_step(target, *args)
+
+        # Independent channels finish through their own update rule.
         for path, node in channel_nodes:
             if not self._is_independent_channel(node):
                 continue
-            target, args = self._channel_integration_target_and_args(path, node, point_V)
-            target.update(*args)
+            target, args = self._channel_integration_target_and_args(
+                path,
+                node,
+                point_V,
+            )
+            target.ind_update(*args)
 
     @staticmethod
     def _is_independent_channel(node):
@@ -2031,6 +2157,15 @@ class Cell(HHTypedNeuron):
                 return (point_V, *infos)
         return (point_V,)
 
+    def _runtime_node_phase_args(self, path, node, point_V):
+        if isinstance(node, RuntimeSynapse):
+            layout_id = _layout_id_from_runtime_path(path)
+            layout = self._runtime.layouts[layout_id]
+            if layout.point_index is None:
+                raise ValueError(f"Synapse layout {layout.id!r} is missing point_index.")
+            return (point_V[..., layout.point_index],)
+        return self._channel_update_args(path, node, point_V)
+
     @staticmethod
     def _node_at_path_from(root, path):
         node = root
@@ -2043,17 +2178,6 @@ class Cell(HHTypedNeuron):
 
     def _node_at_path(self, path):
         return self._node_at_path_from(self, path)
-
-    def _staggered_integrate_ion_channel_families(self, *args):
-        if self.ion_channel_update_order != "family":
-            return False
-        if args:
-            # The family phase only needs the post-voltage point voltage; I_ext
-            # already participated in the voltage solve.
-            _ = args
-        self._update_ion_channel_families(self._cv_to_point(self.V.value))
-        self._ion_channel_family_phase_done = True
-        return True
 
     def cache_ion_total_currents(self, V=None) -> None:
         """Cache ion source currents before voltage advances in staggered mode."""
@@ -2076,38 +2200,110 @@ class Cell(HHTypedNeuron):
             if hasattr(node, "_cached_total_current"):
                 delattr(node, "_cached_total_current")
 
-    def post_integral(self, I_ext=0.0):
+    def post_integral(self):
         self._raise_if_not_initialized("post_integral()")
         self.V.value = self.sum_delta_inputs(init=self.V.value)
         point_V = self._cv_to_point(self.V.value)
-        for _, node in self.runtime_objects(IonChannel, allowed_hierarchy=(1, 1)).items():
+        for path, node in self.runtime_objects(IonChannel, allowed_hierarchy=(1, 1)).items():
             if not isinstance(node, IndependentIntegration):
-                node.post_integral(point_V)
+                args = self._runtime_node_phase_args(path, node, point_V)
+                node.post_integral(*args)
 
-    def update(self, I_ext=None):
+    def update(self):
         self._raise_if_not_initialized("update()")
+        self._begin_step()
+        spk = self._update_dynamics()
+        self._prepare_next_synapse_inputs()
+        return spk
+
+    def _begin_step(self):
+        self._raise_if_not_initialized("_begin_step()")
+        point_V = self._cv_to_point(self.V.value)
+        self._apply_runtime_synapse_events(point_V)
+
+    def _update_dynamics(self):
+        self._raise_if_not_initialized("_update_dynamics()")
 
         last_V = self.V.value
-        self._ion_channel_family_phase_done = False
         if brainstate.environ.get("dt", None) is None:
             raise ValueError("Cell.update(...) requires brainstate.environ['dt'] to be set.")
 
-        if I_ext is None:
-            self.solver(self)
-        else:
-            self.solver(self, I_ext)
+        self.solver(self)
 
-        point_V = self._cv_to_point(self.V.value)
-        if self.ion_channel_update_order == "integration":
-            self._update_ion_channels_by_integration(point_V)
-        elif not self._ion_channel_family_phase_done:
-            self._update_ion_channel_families(point_V)
         self.clear_ion_total_current_cache()
-        self._ion_channel_family_phase_done = False
 
         spk = self.get_spike(last_V, self.V.value)
         self.spike.value = spk
         return spk
+
+    def _prepare_next_synapse_inputs(self):
+        self._raise_if_not_initialized("_prepare_next_synapse_inputs()")
+        point_V = self._cv_to_point(self.V.value)
+        self._prepare_runtime_synapse_inputs(point_V)
+
+    def _apply_runtime_synapse_events(self, point_V):
+        self._raise_if_not_initialized("_apply_runtime_synapse_events()")
+        for layout, synapse in self._runtime.iter_synapse_layouts():
+            path = (f"layout_{layout.id}",)
+            args = self._runtime_node_phase_args(path, synapse, point_V)
+            synapse.apply_discrete_events(*args)
+
+    def _prepare_runtime_synapse_inputs(self, point_V):
+        """Bind this step's presynaptic drive to runtime synapses.
+
+        ``SynapsePlacement`` is the ``cell.place(...)`` declaration, while
+        ``RuntimeSynapse`` is the executable point mechanism. This method only
+        prepares discrete input; synapse dynamics are integrated later by the
+        active solver schedule.
+        """
+        _ = point_V
+        self._raise_if_not_initialized("_prepare_runtime_synapse_inputs()")
+        t = self._resolve_t()
+        for layout, synapse in self._runtime.iter_synapse_layouts():
+            declaration = self._runtime.get_layout_mechanism(layout.id)
+            total_drive = self._runtime.get_state(layout.id, "pre_spike")
+            netstim_drive = self._runtime.evaluate_synapse_netstim_drive(
+                layout,
+                t=t,
+            )
+            total_drive = total_drive + _coerce_drive_like(netstim_drive, total_drive)
+            total_drive = total_drive + self._evaluate_bound_synapse_inputs(
+                declaration,
+                total_drive,
+            )
+            synapse.bind_pre_spike(total_drive)
+
+    def _evaluate_bound_synapse_inputs(self, declaration, template):
+        instance_name = declaration.instance_name
+        bindings = self._synapse_input_bindings.get(instance_name, ())
+        drive = u.math.zeros_like(template)
+        for source, weight, transform in bindings:
+            value = source() if callable(source) else source
+            if transform is not None:
+                value = transform(value)
+            try:
+                contribution = value * weight
+                drive = drive + _coerce_drive_like(contribution, drive)
+            except ValueError as exc:
+                raise ValueError(
+                    f"Bound synapse input for {instance_name!r} cannot broadcast "
+                    f"from shape {getattr(value, 'shape', None)!r} to "
+                    f"{getattr(template, 'shape', None)!r}."
+                ) from exc
+        return drive
+
+    def _update_runtime_synapses(self, point_V):
+        """Advance all runtime synapses through their own integrators."""
+        self._prepare_runtime_synapse_inputs(point_V)
+        self._integrate_runtime_synapse_dynamics(point_V)
+
+    def _integrate_runtime_synapse_dynamics(self, point_V):
+        """Advance runtime synapse continuous dynamics without changing input."""
+        for path, node in self.runtime_objects(IonChannel, allowed_hierarchy=(1, 1)).items():
+            if not isinstance(node, RuntimeSynapse):
+                continue
+            args = self._runtime_node_phase_args(path, node, point_V)
+            ind_exp_euler_step(node, *args)
 
     def reset_state(self, batch_size=None) -> None:
         """Reseed ``V`` / ``spike`` / ``current_time`` without leaving INITIALIZED.
@@ -2122,12 +2318,14 @@ class Cell(HHTypedNeuron):
             v_init = cv_value_vector(self, attr_name="v")
         else:
             v_init = bridge.fill_like(self.varshape, v_init)
-        self.V.value = braintools.init.param(v_init, self.varshape, batch_size)
+        v_value = braintools.init.param(v_init, self.varshape)
+        self.V.value = bridge.expand_with_batch_axis(v_value, batch_size, name="Cell.V")
         self.spike.value = self.get_spike(self.V.value, self.V.value)
         self._current_time_state.value = 0.0 * u.ms
         point_V = self._cv_to_point(self.V.value)
-        for channel in self.runtime_objects(IonChannel, allowed_hierarchy=(1, 1)).values():
-            channel.reset_state(point_V, batch_size=batch_size)
+        for path, channel in self.runtime_objects(IonChannel, allowed_hierarchy=(1, 1)).items():
+            args = self._runtime_node_phase_args(path, channel, point_V)
+            channel.reset_state(*args, batch_size=batch_size)
 
     # ------------------------------------------------------------------
     # Inspection forwards (runtime-only)
@@ -2305,6 +2503,13 @@ def _select_local_values(values, *, ids: tuple[int, ...]):
     return values[list(int(idx) for idx in ids)]
 
 
+def _coerce_drive_like(value, template):
+    """Coerce dimensionless zero drives to a quantity template unit."""
+    if isinstance(template, u.Quantity) and not isinstance(value, u.Quantity):
+        return value * template.unit
+    return value
+
+
 def _resolve_solver(solver):
     if isinstance(solver, str):
         return solver, get_integrator(solver)
@@ -2312,6 +2517,60 @@ def _resolve_solver(solver):
         return getattr(solver, "__name__", type(solver).__name__), solver
     raise TypeError(
         f"solver must be str or callable, got {type(solver).__name__!s}."
+    )
+
+
+def _layout_id_from_runtime_path(path) -> int:
+    if len(path) == 0:
+        raise ValueError(f"Expected runtime layout path ending with 'layout_<id>', got {path!r}.")
+    last = path[-1]
+    if not isinstance(last, str) or not last.startswith("layout_"):
+        raise ValueError(f"Expected runtime layout path ending with 'layout_<id>', got {path!r}.")
+    return int(last.split("_", 1)[1])
+
+
+def _normalize_pop_size(pop_size) -> tuple[int, ...]:
+    """Normalize the public ``Cell(pop_size=...)`` argument.
+
+    Parameters
+    ----------
+    pop_size : int, sequence of int, or None
+        User-facing homogeneous population shape.
+
+    Returns
+    -------
+    tuple of int
+        Canonical population-shape tuple.
+
+    Raises
+    ------
+    TypeError
+        If ``pop_size`` is not an integer or sequence of integers.
+    ValueError
+        If any requested dimension is non-positive.
+    """
+    if pop_size in (None, ()):
+        return ()
+    if isinstance(pop_size, (int, np.integer)):
+        if int(pop_size) <= 0:
+            raise ValueError(f"pop_size must be > 0, got {pop_size!r}.")
+        return (int(pop_size),)
+    if isinstance(pop_size, (tuple, list)):
+        if len(pop_size) == 0:
+            return ()
+        normalized = []
+        for dim in pop_size:
+            if not isinstance(dim, (int, np.integer)):
+                raise TypeError(
+                    f"pop_size entries must be integers, got {type(dim).__name__!s}."
+                )
+            dim = int(dim)
+            if dim <= 0:
+                raise ValueError(f"pop_size entries must be > 0, got {pop_size!r}.")
+            normalized.append(dim)
+        return tuple(normalized)
+    raise TypeError(
+        f"pop_size must be int or tuple/list of int, got {type(pop_size).__name__!s}."
     )
 
 

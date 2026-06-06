@@ -93,7 +93,7 @@ class CVShapeTest(unittest.TestCase):
         )
 
     def test_discretization_places_root_endpoint_on_node_tree(self) -> None:
-        clamp = CurrentClamp.step(0.1 * u.nA, 1.0 * u.ms)
+        clamp = CurrentClamp(durations=1.0 * u.ms, amplitudes=0.1 * u.nA)
         tree = build_discretization(
             _morpho(),
             policy=CVPerBranch(cv_per_branch=1),
@@ -108,7 +108,7 @@ class CVShapeTest(unittest.TestCase):
         self.assertEqual(node_point_mech[midpoint_id], ())
 
     def test_discretization_places_interior_location_on_midpoint(self) -> None:
-        clamp = CurrentClamp.step(0.1 * u.nA, 1.0 * u.ms)
+        clamp = CurrentClamp(durations=1.0 * u.ms, amplitudes=0.1 * u.nA)
         tree = build_discretization(
             _morpho(),
             policy=CVPerBranch(cv_per_branch=1),
@@ -122,7 +122,7 @@ class CVShapeTest(unittest.TestCase):
         self.assertIs(node_point_mech[midpoint_id][0], clamp)
 
     def test_discretization_places_internal_cv_boundary_on_owning_midpoint(self) -> None:
-        clamp = CurrentClamp.step(0.1 * u.nA, 1.0 * u.ms)
+        clamp = CurrentClamp(durations=1.0 * u.ms, amplitudes=0.1 * u.nA)
         disc = build_discretization(
             _morpho(),
             policy=CVPerBranch(cv_per_branch=2),

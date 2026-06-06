@@ -37,9 +37,9 @@ def _has_path_prefix(path, prefixes):
 
 
 def _filter_diffeq(independent_modules, excluded_paths, path, value):
-    for module_path in independent_modules.keys():
-        if path[:len(module_path)] == module_path:
-            return False
+    direct_owner_path = path[:-1]
+    if direct_owner_path in independent_modules:
+        return False
     if _has_path_prefix(path, excluded_paths):
         return False
     return isinstance(value, DiffEqState)
@@ -78,8 +78,11 @@ def split_diffeq_states(module: DiffEqModule, *, excluded_paths=()):
 
     Notes
     -----
-    - States belonging to submodules of type :class:`IndependentIntegration` are excluded
-      from `diffeq_states` to allow for independent integration strategies.
+    - States directly owned by submodules of type
+      :class:`IndependentIntegration` are excluded from `diffeq_states` to
+      allow for independent integration strategies. Child modules remain
+      eligible unless they are independently integrated themselves or matched
+      by ``excluded_paths``.
     - The function relies on the module's state graph and a custom filter to
       distinguish between state types.
 
@@ -87,7 +90,7 @@ def split_diffeq_states(module: DiffEqModule, *, excluded_paths=()):
     --------
     >>> all_states, diffeq_states, other_states = split_diffeq_states(my_module)
     """
-    # exclude IndependentIntegration module
+    # Exclude states directly owned by IndependentIntegration modules.
     independent_modules = brainstate.graph.nodes(module, IndependentIntegration, allowed_hierarchy=(1, 1000000000000))
     all_states = brainstate.graph.states(module)
     excluded_paths = tuple(tuple(path) for path in excluded_paths)

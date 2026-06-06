@@ -24,7 +24,7 @@ from braincell.ion import CalciumFixed, PotassiumFixed, SodiumFixed
 
 
 class _RecordingKCaChannel(Channel):
-    """Records every call to ``update`` so the test can assert dispatch."""
+    """Records every call to ``ind_update`` so the test can assert dispatch."""
 
     root_type = brainstate.mixin.JointTypes[PotassiumFixed, CalciumFixed]
 
@@ -32,7 +32,7 @@ class _RecordingKCaChannel(Channel):
         super().__init__(size=size, name=name)
         self.calls = []
 
-    def update(self, V, K: IonInfo, Ca: IonInfo):
+    def ind_update(self, V, K: IonInfo, Ca: IonInfo):
         self.calls.append((V, K, Ca))
 
     def init_state(self, V, K, Ca, batch_size=None):  # pragma: no cover
@@ -48,10 +48,10 @@ class _RecordingKCaChannel(Channel):
         return 0.0 * u.nA / u.cm ** 2
 
 
-class MixIonsUpdateReceiverTest(unittest.TestCase):
-    """Regression for CRIT-01: MixIons.update iterated the wrong graph."""
+class MixIonsIndependentUpdateReceiverTest(unittest.TestCase):
+    """Regression for CRIT-01: MixIons.ind_update iterated the wrong graph."""
 
-    def test_update_reaches_child_channel(self) -> None:
+    def test_ind_update_reaches_child_channel(self) -> None:
         k = PotassiumFixed(size=1)
         ca = CalciumFixed(size=1)
         mix = MixIons(k, ca)
@@ -59,7 +59,7 @@ class MixIonsUpdateReceiverTest(unittest.TestCase):
         mix.add(kca=rec)
 
         V = jnp.zeros((1,)) * u.mV
-        mix.update(V)
+        mix.ind_update(V)
 
         self.assertEqual(len(rec.calls), 1, "child channel must see exactly one update")
         seen_V, seen_K, seen_Ca = rec.calls[0]

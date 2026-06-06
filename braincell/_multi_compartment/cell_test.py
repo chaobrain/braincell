@@ -93,7 +93,7 @@ class TestCellDeclaration(unittest.TestCase):
 
     def test_place_dedups_identical_rules(self):
         cell = _simple_cell()
-        clamp = CurrentClamp.step(0.1 * u.nA, 10 * u.ms, delay=1 * u.ms)
+        clamp = CurrentClamp(delay=1 * u.ms, durations=10 * u.ms, amplitudes=0.1 * u.nA)
         cell.place(RootLocation(0.0), clamp)
         cell.place(RootLocation(0.0), clamp)
         self.assertEqual(len(cell.place_rules), 1)
@@ -253,14 +253,36 @@ class TestCellLifecycle(unittest.TestCase):
         result = cell.run(dt=0.1 * u.ms, duration=0.5 * u.ms)
         self.assertIn("V_root", result.traces)
 
+    def test_pop_size_extends_voltage_shape(self):
+        cell = Cell(_simple_cell().morpho, cv_policy=CVPerBranch(), pop_size=(4, 4))
+        cell.V_init = -60.0 * u.mV
+        cell.init_state()
+        self.assertEqual(cell.pop_size, (4, 4))
+        self.assertEqual(cell.varshape, (4, 4, cell.n_cv))
+        self.assertEqual(cell.V.value.shape, (4, 4, cell.n_cv))
+
+    def test_pop_size_with_batch_size_keeps_batch_leading(self):
+        cell = Cell(_simple_cell().morpho, cv_policy=CVPerBranch(), pop_size=(2, 3))
+        cell.V_init = -60.0 * u.mV
+        cell.init_state(batch_size=5)
+        self.assertEqual(cell.V.value.shape, (5, 2, 3, cell.n_cv))
+
+    def test_bind_synapse_input_registers_source(self):
+        cell = _simple_cell()
+        source = lambda: jnp.asarray([1.0])
+
+        returned = cell.bind_synapse_input("ampa", source, weight=2.0)
+
+        self.assertIs(returned, cell)
+        self.assertEqual(len(cell._synapse_input_bindings["ampa"]), 1)
+
 
 class CellIonChannelUpdateOrderTest(unittest.TestCase):
-    def test_update_uses_family_dispatch_when_staggered_solver_handles_it(self):
+    def test_update_does_not_add_post_voltage_dispatch_for_custom_solver(self):
         calls = []
 
         def solver(target):
             calls.append("solver")
-            target._ion_channel_family_phase_done = True
 
         soma = Branch.from_lengths(
             lengths=[20.0] * u.um,
@@ -282,17 +304,21 @@ class CellIonChannelUpdateOrderTest(unittest.TestCase):
 
         cell._update_ion_channel_families = family
         cell._update_ion_channels_by_integration = integration
+        cell._update_runtime_synapses = lambda point_V: calls.append("synapse")
 
         with brainstate.environ.context(t=0.0 * u.ms, dt=0.1 * u.ms):
             cell.update()
 
         self.assertEqual(calls, ["solver"])
 
-    def test_update_runs_family_dispatch_if_solver_did_not(self):
+    def test_staggered_solver_runs_family_dispatch_after_synapse_dynamics(self):
         calls = []
 
         def solver(target):
             calls.append("solver")
+            point_V = target._cv_to_point(target.V.value)
+            target._integrate_runtime_synapse_dynamics(point_V)
+            target._update_ion_channel_families(point_V)
 
         soma = Branch.from_lengths(
             lengths=[20.0] * u.um,
@@ -307,17 +333,21 @@ class CellIonChannelUpdateOrderTest(unittest.TestCase):
         cell.init_state()
         cell._update_ion_channel_families = lambda point_V: calls.append("family")
         cell._update_ion_channels_by_integration = lambda point_V: calls.append("integration")
+        cell._update_runtime_synapses = lambda point_V: calls.append("synapse")
+        cell._integrate_runtime_synapse_dynamics = lambda point_V: calls.append("synapse_dynamics")
 
         with brainstate.environ.context(t=0.0 * u.ms, dt=0.1 * u.ms):
             cell.update()
 
-        self.assertEqual(calls, ["solver", "family"])
+        self.assertEqual(calls, ["solver", "synapse_dynamics", "family"])
 
-    def test_update_can_use_integration_order(self):
+    def test_staggered_solver_can_use_integration_order(self):
         calls = []
 
         def solver(target):
             calls.append("solver")
+            point_V = target._cv_to_point(target.V.value)
+            target._update_ion_channels_by_integration(point_V)
 
         soma = Branch.from_lengths(
             lengths=[20.0] * u.um,
@@ -333,11 +363,46 @@ class CellIonChannelUpdateOrderTest(unittest.TestCase):
         cell.init_state()
         cell._update_ion_channel_families = lambda point_V: calls.append("family")
         cell._update_ion_channels_by_integration = lambda point_V: calls.append("integration")
+        cell._update_runtime_synapses = lambda point_V: calls.append("synapse")
+        cell._prepare_runtime_synapse_inputs = lambda point_V: calls.append("prepare")
 
         with brainstate.environ.context(t=0.0 * u.ms, dt=0.1 * u.ms):
             cell.update()
 
-        self.assertEqual(calls, ["solver", "integration"])
+        self.assertEqual(calls, ["solver", "integration", "prepare"])
+
+    def test_integration_phase_integrates_dependent_runtime_synapse(self):
+        from unittest.mock import patch
+
+        from braincell._base import Synapse as RuntimeSynapse
+
+        calls = []
+
+        class _RuntimeSynapse(RuntimeSynapse):
+            def current(self, V_post):
+                return 0.0
+
+        cell = _simple_cell()
+        cell.init_state()
+        synapse = _RuntimeSynapse(size=1, name=None)
+
+        cell.runtime_objects = lambda *args, **kwargs: {("layout_0",): synapse}
+        cell._runtime_node_phase_args = lambda path, node, point_V: ("syn_arg",)
+        cell._top_level_ion_channel_nodes = lambda: ((("layout_0",), synapse),)
+        synapse.ind_update = lambda *args, **kwargs: calls.append(("ind", args))
+
+        def _step(target, *args):
+            calls.append(("dependent", target, args))
+
+        with patch("braincell._multi_compartment.cell.ind_exp_euler_step", _step):
+            point_V = cell._cv_to_point(cell.V.value)
+            cell._update_ion_channels_by_integration(point_V)
+
+        self.assertEqual(calls[0][0], "dependent")
+        self.assertIs(calls[0][1], synapse)
+        self.assertEqual(calls[0][2], ("syn_arg",))
+        self.assertEqual(calls[1][0], "ind")
+        self.assertEqual(len(calls[1][1]), 1)
 
     def test_family_phase_runs_ion_hooks_before_child_channel_hooks(self):
         calls = []
@@ -378,9 +443,60 @@ class CellIonChannelUpdateOrderTest(unittest.TestCase):
         cell.ion_channels["test_ion"] = ion
 
         with brainstate.environ.context(t=0.0 * u.ms, dt=0.1 * u.ms):
-            cell._staggered_integrate_ion_channel_families()
+            cell._update_ion_channel_families(cell._cv_to_point(cell.V.value))
 
         self.assertEqual(calls, ["ion", "channel"])
+
+    def test_family_phase_does_not_pass_recursive_child_to_channels(self):
+        channel_args = []
+
+        class _Ion(Ion):
+            def __init__(self):
+                super().__init__(size=1, name=None)
+                self.Ci = DiffEqState(jnp.asarray([1.0]))
+                self.Co = jnp.asarray([2.0])
+                self.valence = 1
+
+            @property
+            def E(self):
+                return jnp.asarray([0.0])
+
+            def _ion_compute_derivative_hook(self, V):
+                self.Ci.derivative = jnp.asarray([0.0]) / u.ms
+
+        class _Channel(Channel):
+            root_type = _Ion
+
+            def __init__(self):
+                super().__init__(size=1, name=None)
+                self.x = DiffEqState(jnp.asarray([1.0]))
+
+            def pre_integral(self, V, *ions):
+                channel_args.append(("pre", ions))
+
+            def compute_derivative(self, V, *ions):
+                channel_args.append(("compute", ions))
+                self.x.derivative = jnp.asarray([0.0]) / u.ms
+
+            def post_integral(self, V, *ions):
+                channel_args.append(("post", ions))
+
+            def current(self, V, ion):
+                return 0.0
+
+        cell = _simple_cell()
+        ion = _Ion()
+        ion.add(ch=_Channel())
+        cell.init_state()
+        cell.ion_channels["test_ion"] = ion
+
+        with brainstate.environ.context(t=0.0 * u.ms, dt=0.1 * u.ms):
+            cell._update_ion_channel_families(cell._cv_to_point(cell.V.value))
+
+        self.assertGreaterEqual(len(channel_args), 3)
+        for _, ions in channel_args:
+            self.assertEqual(len(ions), 1)
+            self.assertFalse(any(isinstance(arg, bool) for arg in ions))
 
 
 class CellDoesNotAllocatePlaceholderIonsEagerlyTest(unittest.TestCase):

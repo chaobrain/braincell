@@ -23,6 +23,7 @@ guard against misuse and verify the registry metadata.
 """
 
 import unittest
+from unittest.mock import patch
 
 import brainstate
 import brainunit as u
@@ -204,6 +205,50 @@ class StaggeredStepGuardTest(unittest.TestCase):
             staggered_step(Plain())
         self.assertIn(DiffEqModule.__name__, str(ctx.exception))
 
+    def test_family_schedule_integrates_synapses_then_family_after_voltage(self):
+        calls = []
+        soma = Branch.from_lengths(
+            lengths=[20.0] * u.um,
+            radii=[10.0, 10.0] * u.um,
+            type="soma",
+        )
+        cell = Cell(Morphology.from_root(soma, name="soma"), cv_policy=CVPerBranch())
+        cell.init_state()
+        cell._update_runtime_synapses = lambda point_V: calls.append("synapse")
+        cell._integrate_runtime_synapse_dynamics = lambda point_V: calls.append("synapse_dynamics")
+        cell._update_ion_channel_families = lambda point_V: calls.append("family")
+        cell._update_ion_channels_by_integration = lambda point_V: calls.append("integration")
+
+        with patch("braincell.quad._staggered.dhs_voltage_step", lambda *args: calls.append("voltage")):
+            with brainstate.environ.context(t=0.0 * u.ms, dt=0.1 * u.ms):
+                staggered_step(cell)
+
+        self.assertEqual(calls, ["voltage", "synapse_dynamics", "family"])
+
+    def test_integration_schedule_integrates_after_voltage_without_preparing_synapses(self):
+        calls = []
+        soma = Branch.from_lengths(
+            lengths=[20.0] * u.um,
+            radii=[10.0, 10.0] * u.um,
+            type="soma",
+        )
+        cell = Cell(
+            Morphology.from_root(soma, name="soma"),
+            cv_policy=CVPerBranch(),
+            ion_channel_update_order="integration",
+        )
+        cell.init_state()
+        cell._update_runtime_synapses = lambda point_V: calls.append("synapse")
+        cell._prepare_runtime_synapse_inputs = lambda point_V: calls.append("prepare")
+        cell._update_ion_channel_families = lambda point_V: calls.append("family")
+        cell._update_ion_channels_by_integration = lambda point_V: calls.append("integration")
+
+        with patch("braincell.quad._staggered.dhs_voltage_step", lambda *args: calls.append("voltage")):
+            with brainstate.environ.context(t=0.0 * u.ms, dt=0.1 * u.ms):
+                staggered_step(cell)
+
+        self.assertEqual(calls, ["voltage", "integration"])
+
 
 class StaggeredRegistryMetadataTest(unittest.TestCase):
 
@@ -275,7 +320,34 @@ class DhsEndpointClampTest(unittest.TestCase):
             type="soma",
         )
         cell = Cell(Morphology.from_root(soma, name="soma"), cv_policy=CVPerBranch())
-        cell.place(RootLocation(x=0.0), CurrentClamp.step(1.0 * u.nA, 1.0 * u.ms))
+        cell.place(RootLocation(x=0.0), CurrentClamp(durations=1.0 * u.ms, amplitudes=1.0 * u.nA))
+        cell.init_state()
+
+        before = float(cell.V.value[0].to_decimal(u.mV))
+        with brainstate.environ.context(t=0.0 * u.ms, dt=0.05 * u.ms):
+            dhs_voltage_step(cell, 0.0 * u.ms, 0.05 * u.ms)
+        after = float(cell.V.value[0].to_decimal(u.mV))
+
+        self.assertGreater(after, before)
+
+
+class DhsMultistepClampTest(unittest.TestCase):
+
+    def test_multistep_current_clamp_voltage_step_handles_zero_linearization(self):
+        soma = Branch.from_lengths(
+            lengths=[20.0] * u.um,
+            radii=[10.0, 10.0] * u.um,
+            type="soma",
+        )
+        cell = Cell(Morphology.from_root(soma, name="soma"), cv_policy=CVPerBranch())
+        cell.place(
+            RootLocation(x=0.0),
+            CurrentClamp(
+                delay=0.0 * u.ms,
+                durations=(0.5 * u.ms, 0.5 * u.ms),
+                amplitudes=(1.0 * u.nA, 0.0 * u.nA),
+            ),
+        )
         cell.init_state()
 
         before = float(cell.V.value[0].to_decimal(u.mV))

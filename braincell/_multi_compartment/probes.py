@@ -16,6 +16,7 @@ from braincell.mech import (
     Density,
     MechanismProbe,
     StateProbe,
+    Synapse,
 )
 from . import bridge
 
@@ -125,7 +126,10 @@ def _sample_mechanism_probe_point(
     matched_layouts = []
     for layout in runtime.get_point_layouts(point_id):
         mechanism = runtime.get_layout_mechanism(layout.id)
-        if isinstance(mechanism, Density) and mechanism.instance_name == declaration.mechanism:
+        if (
+            (isinstance(mechanism, Density) and mechanism.instance_name == declaration.mechanism)
+            or (isinstance(mechanism, Synapse) and mechanism.instance_name == declaration.mechanism)
+        ):
             matched_layouts.append(layout)
     if len(matched_layouts) > 1:
         raise ValueError(
@@ -167,7 +171,10 @@ def _sample_current_probe_point(
         matched_layouts = []
         for layout in runtime.get_point_layouts(point_id):
             mechanism = runtime.get_layout_mechanism(layout.id)
-            if isinstance(mechanism, Density) and mechanism.instance_name == declaration.mechanism:
+            if (
+                (isinstance(mechanism, Density) and mechanism.instance_name == declaration.mechanism)
+                or (isinstance(mechanism, Synapse) and mechanism.instance_name == declaration.mechanism)
+            ):
                 matched_layouts.append(layout)
         if len(matched_layouts) > 1:
             raise ValueError(

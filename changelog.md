@@ -3,6 +3,8 @@
 
 ## UNRELEASED
 
+- Removed the multi-compartment direct `Cell.update(I_ext)` injection path. Use placed point clamps such as `CurrentClamp(...)`, `SineClamp`, or `FunctionClamp` for multi-compartment external current.
+
 
 
 

@@ -1,12 +1,19 @@
-# PC Cell General
+# Cell comparison examples
 
-这个目录现在只保留一个通用版 Purkinje cell 对照入口。
+这个目录保存单细胞 `NEURON` / `braincell` 对照入口。
 
 相关资源位置：
 
 - `.mod` 机制文件和形态学文件统一放在 `../Cerebellum_mod` 下。
 - PC 的机制文件在 `../Cerebellum_mod/PC`。
 - PC 的形态学文件在 `../Cerebellum_mod/PC/morphology/PC.asc`。
+- GoC 的机制文件在 `../Cerebellum_mod/GoC`，顶层 `x86_64/.libs/libnrnmech.so` 是 cell 对照默认库。
+- GoC 的形态学文件在 `../Cerebellum_mod/GoC/morphology/GoC.asc`。
+- BC 的机制文件在 `../Cerebellum_mod/BC`，顶层 `x86_64/.libs/libnrnmech.so` 是 cell 对照默认库。
+- BC 的形态学文件在 `../Cerebellum_mod/BC/morphology/BC.asc`。
+- BC 旧的 `../Cerebellum_mod/BC/channel/x86_64` 只包含 channel 编译产物，不包含 `CdpStC_MA25_BC`，不要作为 cell 对照默认库。
+- SC 的机制文件在 `../Cerebellum_mod/SC`，顶层 `x86_64/.libs/libnrnmech.so` 是 cell 对照默认库。
+- SC 的形态学文件在 `../Cerebellum_mod/SC/morphology/SC.asc`。
 
 `pc_ma2024` 是当前正式 PC 对照文件夹：
 
@@ -43,6 +50,18 @@
   - 最小运行 notebook
 - `pc_ma2024/debug/run_debug.ipynb`
   - 薄 notebook：导入两个 cell、设置开关、添加刺激与 probe、运行和分析
+- `goc_ma2020/debug/`
+  - GoC 调试版对照入口。
+  - 参数来自 `/home/swl/Cerebellum_circuit/GoC/GoC/Optimization_result.txt`，形态默认使用 repo 内 `Cerebellum_mod/GoC/morphology/GoC.asc`。
+- `bc_ma2025/debug/`
+  - BC 调试版对照入口。
+  - 组装语义来自 `/home/swl/Cerebellum_circuit/BC2025/basket.py`，形态默认使用 repo 内 `Cerebellum_mod/BC/morphology/BC.asc`。
+  - 参数是 `basket.py` 中的硬编码区域参数，集中放在 `bc_parameters.py`。
+- `sc_ma2021/debug/`
+  - SC 调试版对照入口。
+  - 组装语义来自 `/home/swl/Cerebellum_circuit/SC2021/stellate.py`，参数来自 `/home/swl/Cerebellum_circuit/SC2021/SC_param.py`。
+  - 形态默认使用 repo 内 `Cerebellum_mod/SC/morphology/SC.asc`。
+  - 区域划分为 `soma`、`dendprox`、`denddist`、`axon_ais`、`axon_regular`；`dendprox` 使用源 NEURON 导入后的 canonical dend index。
 
 debug建议流程：
 

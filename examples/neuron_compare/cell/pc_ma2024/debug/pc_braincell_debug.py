@@ -49,6 +49,7 @@ class PC:
         config: PCConfig | None = None,
         *,
         frozen: bool = True,
+        ion_channel_update_order: str = "family",
     ):
         if params is None:
             raise ValueError("params is required.")
@@ -56,6 +57,7 @@ class PC:
         self.params = params
         self.config = config if config is not None else PCConfig()
         self.frozen = bool(frozen)
+        self.ion_channel_update_order = ion_channel_update_order
         self.morpho = None
         self.cell = None
         self.regions: dict[str, Any] = {}
@@ -71,7 +73,7 @@ class PC:
             V_init=self.config.v_init_mV * u.mV,
             solver="staggered",
             cache_ion_total_current=True,
-            ion_channel_update_order="family", #"family" or "integration"
+            ion_channel_update_order=self.ion_channel_update_order,
         )
         self._define_regions()
         self._paint_cable()

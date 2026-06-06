@@ -56,9 +56,11 @@ __all__ = [
     "Cav3p1_MA2024_PC_Frozen",
     "Cav3p1Test_PC24",
     "Cav2p1_MA2025_BC",
+    "Cav2p1_MA2025_BC_Frozen",
     "Cav2p1_MA2024_PC",
     "Cav2p1_MA2024_PC_Frozen",
     "Cav2p1_RI2021_SC",
+    "Cav2p1_RI2021_SC_Frozen",
     "Cav3p2_MA2025_BC",
     "Cav3p2_MA2024_PC",
     "Cav3p2_RI2021_SC",
@@ -591,7 +593,7 @@ class Cav1p2_MA2020_GoC(HH):
     def __init__(
         self,
         size: brainstate.typing.Size,
-        g_max: Union[brainstate.typing.ArrayLike, Callable] = 0.0 * (u.mS / u.cm ** 2),
+        g_max: Union[brainstate.typing.ArrayLike, Callable] = 0.0002 * (u.siemens / u.cm ** 2),
         V_sh: Union[brainstate.typing.ArrayLike, Callable] = 0.0 * u.mV,
         temp: brainstate.typing.ArrayLike = u.celsius2kelvin(22.0),
         q10: Union[brainstate.typing.ArrayLike, Callable] = 1.0,
@@ -656,7 +658,7 @@ class Cav1p3_MA2020_GoC(HH):
     def __init__(
         self,
         size: brainstate.typing.Size,
-        g_max: Union[brainstate.typing.ArrayLike, Callable] = 0.0 * (u.mS / u.cm ** 2),
+        g_max: Union[brainstate.typing.ArrayLike, Callable] = 0.000005 * (u.siemens / u.cm ** 2),
         V_sh: Union[brainstate.typing.ArrayLike, Callable] = 0.0 * u.mV,
         temp: brainstate.typing.ArrayLike = u.celsius2kelvin(22.0),
         q10: Union[brainstate.typing.ArrayLike, Callable] = 1.0,
@@ -1103,6 +1105,20 @@ class Cav2p1_MA2024_PC_Frozen(HH):
         )
 
 
+@register_channel("Cav2p1_RI2021_SC_Frozen")
+class Cav2p1_RI2021_SC_Frozen(Cav2p1_MA2024_PC_Frozen):
+    """SC Cav2.1 variant reusing the frozen-GHK PC24 implementation."""
+
+    __module__ = "braincell.channel"
+
+
+@register_channel("Cav2p1_MA2025_BC_Frozen")
+class Cav2p1_MA2025_BC_Frozen(Cav2p1_MA2024_PC_Frozen):
+    """BC Cav2.1 variant reusing the frozen-GHK PC24 implementation."""
+
+    __module__ = "braincell.channel"
+
+
 @register_channel("Cav3p3_MA2024_PC_Frozen")
 class Cav3p3_MA2024_PC_Frozen(HH):
     """Experimental Cav3.3 variant that freezes GHK voltage dependence in autodiff."""
@@ -1388,24 +1404,20 @@ class CaHVA_MA2020_GoC(HH):
     def current(self, V, Ca: IonInfo):
         return self.g_max * self.conductance_factor(V, Ca) * (Ca.E - V)
 
-    def _table_voltage_mV(self, V):
-        V = V.to_decimal(u.mV)
-        return u.math.where(V < -100.0, -100.0, u.math.where(V > 30.0, 30.0, V))
-
     def f_s_alpha(self, V, Ca: IonInfo):
-        V = self._table_voltage_mV(V)
+        V = V.to_decimal(u.mV)
         return self.Aalpha_s * u.math.exp((V - self.V0alpha_s) / self.Kalpha_s)
 
     def f_s_beta(self, V, Ca: IonInfo):
-        V = self._table_voltage_mV(V)
+        V = V.to_decimal(u.mV)
         return self.Abeta_s * u.math.exp((V - self.V0beta_s) / self.Kbeta_s)
 
     def f_u_alpha(self, V, Ca: IonInfo):
-        V = self._table_voltage_mV(V)
+        V = V.to_decimal(u.mV)
         return self.Aalpha_u * u.math.exp((V - self.V0alpha_u) / self.Kalpha_u)
 
     def f_u_beta(self, V, Ca: IonInfo):
-        V = self._table_voltage_mV(V)
+        V = V.to_decimal(u.mV)
         return self.Abeta_u * u.math.exp((V - self.V0beta_u) / self.Kbeta_u)
 
 @register_channel("CaHVA_MA2020_GrC")

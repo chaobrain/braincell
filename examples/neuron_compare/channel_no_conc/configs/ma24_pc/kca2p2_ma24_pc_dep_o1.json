@@ -1,45 +1,44 @@
 {
   "meta": {
-    "label": "BC Cav1p3 MA25"
+    "label": "PC Kca2p2 MA24 dep O1 experiment"
   },
   "identity": {
-    "mod_dir": "../../../Cerebellum_mod/BC/channel"
+    "mod_dir": "../../../Cerebellum_mod/PC/channel"
   },
   "defaults": {
-    "ion_state": {
-      "Ci_mM": 0.00024,
-      "Co_mM": 2.0
-    },
     "channel_params": {
-      "g_max_S_cm2": 0.000005
+      "g_max_S_cm2": 0.038
     }
   },
   "mapping": {
-    "current": "ica",
+    "current": "ik",
     "impl_name": {
-      "neuron": "Cav1p3_MA25_BC",
-      "braincell": "Cav1p3_MA2025_BC"
+      "neuron": "Kca2p2_MA24_PC",
+      "braincell": "Kca2p2_MA2024_PC"
     },
     "gate_names": {
       "canonical": [
-        "m",
-        "h",
-        "n"
+        "C2",
+        "C3",
+        "C4",
+        "O2"
       ],
       "neuron": [
-        "m",
-        "h",
-        "h2"
+        "c2",
+        "c3",
+        "c4",
+        "o2"
       ],
       "braincell": [
-        "m",
-        "h",
-        "n"
+        "C2",
+        "C3",
+        "C4",
+        "O2"
       ]
     },
     "channel_params": {
       "g_max_S_cm2": {
-        "neuron": "gbar",
+        "neuron": "gkbar",
         "braincell": "g_max"
       }
     }

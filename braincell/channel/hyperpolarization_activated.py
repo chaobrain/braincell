@@ -447,10 +447,10 @@ class HCN1_MA2020_GoC(HH):
         self.rB = 0.97596
         self.tCf = 0.01371
         self.tDf = -3.368
-        self.tEf = 2.302585092
+        self.tEf = 2.30259
         self.tCs = 0.01451
         self.tDs = -4.056
-        self.tEs = 2.302585092
+        self.tEs = 2.30259
 
     def current(self, V):
         o = self.o_fast.value + self.o_slow.value

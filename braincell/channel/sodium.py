@@ -510,8 +510,8 @@ class Nav1p1_MA2025_BC(Nav1p6_MA2020_GoC):
         g_max: Union[brainstate.typing.ArrayLike, Callable] = 8.0 * (u.mS / u.cm ** 2),
         gateCurrent: Union[brainstate.typing.ArrayLike, Callable] = 0.0,
         name: Optional[str] = None,
-        solver: str = "rk4",
-        substeps: int = 5,
+        solver: str = "backward_euler",
+        substeps: int = 1,
     ):
         super().__init__(
             size=size,

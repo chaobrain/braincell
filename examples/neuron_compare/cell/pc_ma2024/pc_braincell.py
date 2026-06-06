@@ -96,6 +96,8 @@ class PC:
         *,
         temperature_celsius: float = 36.0,
         v_init_mV: float = -65.0,
+        pop_size=(),
+        name: str | None = None,
     ):
         if params is None:
             raise ValueError("params is required.")
@@ -103,6 +105,8 @@ class PC:
         self.params = _braincell_params(params)
         self.temperature_celsius = float(temperature_celsius)
         self.v_init_mV = float(v_init_mV)
+        self.pop_size = pop_size
+        self.name = name
         self.morpho = None
         self.cell = None
         self.regions: dict[str, Any] = {}
@@ -121,9 +125,11 @@ class PC:
         #   sec.nseg = 1 + 2 * int(sec.L / CV_MAX_LEN_UM)
         self.cell = Cell(
             self.morpho,
+            pop_size=self.pop_size,
             cv_policy=MaxCVLen(CV_MAX_LEN_UM * u.um, keep_odd=True),
             V_init=self.v_init_mV * u.mV,
             solver="staggered",
+            name=self.name,
         )
         self._define_regions()
         self._paint_cable()

@@ -48,6 +48,9 @@ from ._multi_compartment import (
     Cell,
     RunResult,
 )
+from .network import (
+    Network,
+)
 from ._version import (
     __version__,
     __version_info__,
@@ -70,7 +73,7 @@ from .morph.branch import (
 from .morph.morphology import (
     Morphology,
 )
-from . import vis
+from . import network, vis
 
 __all__ = [
     "__version__",
@@ -105,6 +108,7 @@ __all__ = [
     "MixIons",
     "MaxCVLen",
     "Morphology",
+    "Network",
     "Node",
     "NodeTree",
     "RunResult",
@@ -114,6 +118,7 @@ __all__ = [
     "ion",
     "mix_ions",
     "mech",
+    "network",
     "quad",
     "SineClamp",
     "synapse",

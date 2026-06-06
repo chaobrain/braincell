@@ -11,6 +11,71 @@
 - `Markov_conc`: 以 `KINETIC` 为主，且显式依赖浓度变量。
 - 表格中展示名已经去掉作者年份与 cell 后缀，并把内部的 `p` 还原成 `.` 仅用于阅读；真实机制名以各 `.mod` 文件中的 `SUFFIX` 为准。
 
+## TABLE status summary
+
+本表仅覆盖 `channel/ion` 目录。`TABLE` 在 NEURON 中是有限范围插值表；输入超过 `FROM ... TO ...` 范围时会使用边界值，因此 `[-100,30]` 和浓度区间 `[0,0.01]` 这类表需要特别关注。状态栏含义：
+
+- `仍 TABLE`: 当前 `.mod` 里仍保留 `TABLE`。
+- `已连续化`: 当前工作区已移除 `TABLE`，改为每次按连续公式计算。
+- `[截断]`: 表范围外会边界钳制；对动作电位可能超过 `30 mV` 的电压表、或浓度可能越界的浓度表特别标注。
+
+| Mechanism | BC | DCN | GoC | GrC | PC | SC | Notes |
+|---|---|---|---|---|---|---|---|
+| `Kv4p3` | `已连续化`<br>原 `[-100,30] [截断]` |  | `已连续化`<br>原 `[-100,30] [截断]` | `已连续化`<br>原 `[-100,30] [截断]` | `已连续化`<br>原 `[-100,30] [截断]` | `已连续化`<br>原 `[-100,30] [截断]` | `a_inf/tau_a/b_inf/tau_b`; 同族参数还涉及 NMODL 默认值有效数字重写。 |
+| `Kir2p3` | `已连续化`<br>原 `[-100,100]` |  |  | `已连续化`<br>原 `[-100,100]` | `已连续化`<br>原 `[-100,100]` | `已连续化`<br>原 `[-100,100]` | `d_inf/tau_d`。 |
+| `Kca3p1` | `已连续化`<br>原 `V[-100,100]`<br>原 `cai[0,0.01] [截断]` |  | `已连续化`<br>原 `V[-100,100]`<br>原 `cai[0,0.01] [截断]` |  | `已连续化`<br>原 `V[-100,100]`<br>原 `cai[0,0.01] [截断]` |  | `Yvdep/Yconcdep`; 浓度表原先超过 `0.01 mM` 会边界钳制。 |
+| `KM` |  |  | `已连续化`<br>原 `[-100,30] [截断]` | `已连续化`<br>原 `[-100,30] [截断]` |  | `已连续化`<br>原 `[-100,30] [截断]` | `n_inf/tau_n`。 |
+| `CaHVA` |  | `已连续化`<br>原 `[-150,100]` | `已连续化`<br>原 `[-100,30] [截断]` | `已连续化`<br>原 `[-100,30] [截断]` |  |  | DCN 原有 `minf/taum` 表和 `DEPEND T` 表；GoC/GrC 为 `s_inf/tau_s/u_inf/tau_u`。 |
+| `HCN1` |  |  | `已连续化`<br>原 `[-100,30] [截断]` |  |  |  | `o_fast_inf/o_slow_inf/tau_f/tau_s`。 |
+| `HCN2` |  |  | `已连续化`<br>原 `[-100,30] [截断]` |  |  |  | `o_fast_inf/o_slow_inf/tau_f/tau_s`。 |
+| `Cav2p3` |  |  | `已连续化`<br>原 `[-100,100]` |  |  |  | Indexed `inf/tau` table. |
+| `CaLVA` |  | `已连续化`<br>原 `[-150,100]` |  |  |  |  | 原 `minf/taum/hinf/tauh` 表和 `DEPEND T` 表。 |
+| `CaL` |  | `已连续化`<br>原 `[-150,100]` |  |  |  |  | `minf/taum/hinf/tauh`。 |
+| `HCN` |  | `已连续化`<br>原 `[-150,100]` |  |  |  |  | `minf`。 |
+| `NaF` |  | `已连续化`<br>原 `[-150,100]` |  |  |  |  | `minf/taum/hinf/tauh`。 |
+| `NaP` |  | `已连续化`<br>原 `[-150,100]` |  |  |  |  | `minf/hinf/tauh`。 |
+| `SK` |  | `已连续化`<br>原 `[0,0.01] [截断]` |  |  |  |  | `zinf/tauz`; calcium concentration table. |
+| `fKdr` |  | `已连续化`<br>原 `[-150,100]` |  |  |  |  | `minf/taum`。 |
+| `sKdr` |  | `已连续化`<br>原 `[-150,100]` |  |  |  |  | `minf/taum`。 |
+
+`synapse/other` 不纳入上表；其中 NMDA `MgBlock TABLE [-120,30]` 等表仍存在，但属于突触机制，不计入当前 channel/ion 转换状态。
+
+## Integration method status
+
+本表仅记录当前工作区中 `channel/ion` 目录下已从 `derivimplicit` 替换为 `cnexp` 的 HH gate ODE。原本就是 `cnexp` 的机制不标为替换；Markov/KINETIC 的 `sparse` 机制不纳入本表。
+
+| Mechanism | BC | GoC | GrC | PC | SC | Notes |
+|---|---|---|---|---|---|---|
+| `CaHVA` |  |  | `derivimplicit -> cnexp` |  |  | GrC 替换；GoC 原本已是 `cnexp`，不计为替换。 |
+| `KM` |  | `derivimplicit -> cnexp` | `derivimplicit -> cnexp` |  | `derivimplicit -> cnexp` | 单 gate HH ODE。 |
+| `Kir2p3` | `derivimplicit -> cnexp` |  | `derivimplicit -> cnexp` | `derivimplicit -> cnexp` | `derivimplicit -> cnexp` | 单 gate HH ODE。 |
+| `Kv1p5` |  |  | `derivimplicit -> cnexp` | `derivimplicit -> cnexp` |  | 单 gate HH ODE。 |
+| `Kv4p3` | `derivimplicit -> cnexp` | `derivimplicit -> cnexp` | `derivimplicit -> cnexp` | `derivimplicit -> cnexp` | `derivimplicit -> cnexp` | `a/b` 两个独立 HH gates。 |
+
+## Rate update placement status
+
+本表记录当前工作区中 `SOLVE state/states METHOD cnexp` 相关 HH 机制的速率函数调用位置变更。`INITIAL` 中保留的初始化调用不计为变更；Markov/KINETIC 的 `sparse` 或 `seqinitial` 机制不纳入本表。
+
+| Mechanism | BC | GoC | IO | Old placement | New placement | Notes |
+|---|---|---|---|---|---|---|
+| `Cav1p2` | `已调整` | `已调整` |  | `BREAKPOINT: rates()` | `DERIVATIVE state: rates()` | `inf/tau` 在 `cnexp` 状态更新前刷新。 |
+| `Cav1p3` | `已调整` | `已调整` |  | `BREAKPOINT: rates()` | `DERIVATIVE state: rates()` | `inf/tau` 在 `cnexp` 状态更新前刷新。 |
+| `Ca` |  |  | `已调整` | `BREAKPOINT: rates(v)` | `DERIVATIVE states: rates(v)` | IO channel。 |
+| `HCN` |  |  | `已调整` | `BREAKPOINT: rates(v)` | `DERIVATIVE states: rates(v)` | IO channel。 |
+| `Kdr` |  |  | `已调整` | `BREAKPOINT: rates(v)` | `DERIVATIVE states: rates(v)` | IO channel。 |
+| `Na` |  |  | `已调整` | `BREAKPOINT: rates(v)` | `DERIVATIVE states: rates(v)` | IO channel。 |
+
+## NMODL numeric default precision
+
+NEURON/NMODL 生成的 C 代码会把部分 `PARAMETER`/global 默认值写成约 6 位有效数字。下表记录当前需要和 BrainCell 对齐的默认值；公式内部普通字面量如 IO 的 `41.000001`、DCN GHK 的 `23.20764929`、以及 `e0 = 1.60217646e-19` 保持原值，不属于这个默认值重写问题。
+
+| Mechanism | Cells | Names | MOD source | NEURON compiled | BrainCell status |
+|---|---|---|---|---|---|
+| `Kv4p3` | BC, GoC, GrC, PC, SC | `Kalpha_a`, `Kbeta_a`, `V0beta_a`, `V0alpha_b` | `-23.32708`, `19.47175`, `-18.27914`, `-111.33209` | `-23.3271`, `19.4718`, `-18.2791`, `-111.332` | `已对齐` |
+| `HCN1` | GoC | `tEf`, `tEs` | `2.302585092`, `2.302585092` | `2.30259`, `2.30259` | `已对齐` |
+| `CaHVA` | GoC, GrC | `Kalpha_s` | `15.87301587302` | `15.873` | `已对齐` |
+| `ToyDiamFactorKinetic` | DCN | `pump_area`, `cyto` | `62.83185307179586`, `62.83185307179586` | `62.8319`, `62.8319` | `例外`: BrainCell 使用运行时 `pi * diam_mid` / `pi * diam_mid * depth` 几何派生，不做常量替换。 |
+
 ## Region totals
 
 | Region | Count |

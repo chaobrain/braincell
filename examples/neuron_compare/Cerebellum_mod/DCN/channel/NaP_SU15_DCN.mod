@@ -54,7 +54,6 @@ DERIVATIVE states {
 }
 
 PROCEDURE rate(v(mV)) {
-	TABLE minf, hinf, tauh FROM -150 TO 100 WITH 300
 	minf = 1 / (1 + exp((v + 70) / -4.1))
     hinf = 1 / (1 + exp((v + 80) / 4))
 	tauh = (1750 / (1 + exp((v + 65) / -8))) + 250

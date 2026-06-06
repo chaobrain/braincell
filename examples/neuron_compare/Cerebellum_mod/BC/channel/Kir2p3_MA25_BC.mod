@@ -61,7 +61,7 @@ INITIAL {
 } 
  
 BREAKPOINT { 
-	SOLVE states METHOD derivimplicit
+	SOLVE states METHOD cnexp
 	g = gkbar*d   
 	ik = g*(v - ek) 
 	alpha_d = alp_d(v) 
@@ -84,12 +84,8 @@ FUNCTION bet_d(v(mV))(/ms) { LOCAL Q10
 } 
  
 PROCEDURE rate(v (mV)) {LOCAL a_d, b_d 
-	TABLE d_inf, tau_d  
-	DEPEND Aalpha_d, Kalpha_d, V0alpha_d, 
-	       Abeta_d, Kbeta_d, V0beta_d, celsius FROM -100 TO 100 WITH 200 
 	a_d = alp_d(v)  
 	b_d = bet_d(v) 
 	tau_d = 1/(a_d + b_d) 
 	d_inf = a_d/(a_d + b_d) 
 } 
-

@@ -39,13 +39,13 @@ INITIAL {
 }
 
 BREAKPOINT {
-	   rates(v)
 	   SOLVE states METHOD cnexp
 	   g = gbar *q
 	   ih = g * (v - eh)*(0.001) : 0.001 for converting mS to S
 }
 
 DERIVATIVE states {
+	   rates(v)
 	   q' = (qinf-q)/tauq
 }
 

@@ -56,7 +56,6 @@ DERIVATIVE states {
 } 
 
 PROCEDURE rate(cai(mM)) {
-	TABLE zinf, tauz FROM 0 TO 0.01 WITH 300
     zinf = cai*cai*cai*cai / (cai*cai*cai*cai + 8.1e-15) : 8.1e-15 is the result of (3e-4)^4
 
     if (cai < 0.005) {

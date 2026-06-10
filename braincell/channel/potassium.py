@@ -63,7 +63,6 @@ __all__ = [
     "KM_MA2020_GrC",
     "Kir2p3_MA2020_GrC",
     "Kv1p1_MA2020_GrC",
-    "Kv1p5_MA2020_GrC",
     "Kv2p2_0010_MA2020_GrC",
     "Kv3p4_MA2020_GrC",
     "Kv4p3_MA2020_GrC",
@@ -1046,17 +1045,6 @@ class Kv1p5_MA2024_PC(HH):
 
     def f_u_tau(self, V, K: IonInfo):
         return 6800.0 * self.Tauinacts
-
-
-@register_channel("Kv1p5_MA2020_GrC")
-class Kv1p5_MA2020_GrC(Kv1p5_MA2024_PC):
-    """Default ``ik`` path of ``Kv1p5_MA20_GrC.mod``.
-
-    The GrC mechanism also declares ``ino`` through ``gnonspec``, but
-    ``gnonspec`` defaults to zero in the source mod and is not exposed here.
-    """
-
-    __module__ = "braincell.channel"
 
 
 @register_channel("Kv3p3_MA2024_PC")

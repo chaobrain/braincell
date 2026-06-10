@@ -236,7 +236,7 @@ class CellRuntimeState:
     ion_family_candidates: dict[str, tuple[str, ...]]
     ion_class_candidates: dict[str, tuple[str, ...]]
     bound_ion_keys: dict[int, tuple[str, ...]]
-    current_owner_keys: dict[int, str | None]
+    current_owner_keys: dict[int, str | tuple[str, ...] | None]
     dhs_static_source_np: object | None = None
     dhs_static_cache: object | None = None
     axial_operator_np: np.ndarray | None = None
@@ -585,6 +585,25 @@ def _source_cv_ids_for_point(node_tree: NodeTree, *, point_id: int) -> tuple[int
 
 
 def choose_layout(*, target: Target) -> Layout:
+    """Choose the runtime storage layout for a mechanism target.
+
+    Parameters
+    ----------
+    target : {"point", "density"}
+        Mechanism target category. Point mechanisms are stored only at
+        explicitly selected points, while density mechanisms use dense
+        point-shaped state with an active-point mask.
+
+    Returns
+    -------
+    {"sparse", "dense"}
+        Runtime layout name used by mechanism lowering.
+
+    Raises
+    ------
+    ValueError
+        If ``target`` is not a supported mechanism target.
+    """
     if target == "point":
         return "sparse"
     if target == "density":
@@ -767,7 +786,12 @@ def _is_ragged_param(value: object) -> bool:
     return False
 
 
-def _allocate_state_buffer(mechanism: object, *, var_name: str, shape: tuple[int, ...]) -> object:
+def _allocate_state_buffer(
+    mechanism: object,
+    *,
+    var_name: str,
+    shape: tuple[int, ...],
+) -> object:
     """Allocate a state buffer for one mechanism parameter.
 
     Returns a :class:`u.Quantity` whose mantissa is a :class:`jnp.ndarray`
@@ -996,7 +1020,7 @@ def _build_runtime_nodes(
     )
     runtime_nodes: dict[int, object] = dict(ion_runtime_nodes)
     bound_ion_keys: dict[int, tuple[str, ...]] = {}
-    current_owner_keys: dict[int, str | None] = {}
+    current_owner_keys: dict[int, str | tuple[str, ...] | None] = {}
     for layout in layouts:
         mechanism = layout_mechanisms[layout.id]
         node, layout_bound_ion_keys, current_owner_key = _instantiate_runtime_node(
@@ -1163,6 +1187,8 @@ def _runtime_ion_species_key(cls: type) -> str:
         return "k"
     if issubclass(cls, runtime_ion.Calcium):
         return "ca"
+    if issubclass(cls, runtime_ion.NonSpecific):
+        return "no"
     raise ValueError(f"Unsupported ion runtime class {cls.__name__!r}: cannot infer species key.")
 
 
@@ -1391,6 +1417,215 @@ class _BoundIonChannelRuntime(Channel):
         return self._channel.current(V, *self._infos())
 
 
+class _BoundIonChannelCurrentComponentRuntime(Channel):
+    """Expose one component current of a bound mixed-ion channel.
+
+    Parameters
+    ----------
+    channel : object
+        Runtime channel instance that owns the actual gating state and
+        total membrane-current implementation.
+    bound_ions : tuple of object
+        Ion instances required by ``channel.root_type`` in call order.
+    owner_ion : object
+        Ion instance that owns this component-current wrapper.
+    component_key : str
+        Key read from ``channel.current_components(...)``.
+    owns_state : bool, optional
+        Whether this wrapper forwards lifecycle and integration hooks to
+        the wrapped channel. Exactly one wrapper should own state for a
+        multi-owner channel.
+
+    Notes
+    -----
+    Only one component wrapper should own state. Other wrappers are
+    current-only and let ``owner_ion.current(...)`` return the component
+    written to that ion without double-updating the shared gating state.
+    """
+
+    __module__ = "braincell._compute"
+
+    def __init__(
+        self,
+        channel: object,
+        *,
+        bound_ions: tuple[object, ...],
+        owner_ion: object,
+        component_key: str,
+        owns_state: bool = False,
+    ):
+        super().__init__(size=channel.size, name=getattr(channel, "name", None))
+        self._channel = channel
+        self._bound_ions = tuple(bound_ions)
+        self._component_key = component_key
+        self._owns_state = bool(owns_state)
+        self._skip_family_update = not self._owns_state
+        self.root_type = type(owner_ion)
+
+    def _infos(self):
+        """Return packed ion information for the wrapped channel.
+
+        Returns
+        -------
+        tuple
+            Packed ion information objects in the order expected by the
+            wrapped channel.
+        """
+        return tuple(ion.pack_info() for ion in self._bound_ions)
+
+    def pre_integral(self, V, *unused):
+        """Forward pre-integration from the state-owning wrapper.
+
+        Parameters
+        ----------
+        V : array-like
+            Membrane potential passed to the wrapped channel.
+        *unused
+            Ignored compatibility arguments supplied by ion containers.
+
+        Returns
+        -------
+        object or None
+            Return value of the wrapped channel's ``pre_integral`` when
+            this wrapper owns state; otherwise ``None``.
+        """
+        if self._owns_state:
+            return self._channel.pre_integral(V, *self._infos())
+        return None
+
+    def compute_derivative(self, V, *unused):
+        """Forward derivative computation from the state-owning wrapper.
+
+        Parameters
+        ----------
+        V : array-like
+            Membrane potential passed to the wrapped channel.
+        *unused
+            Ignored compatibility arguments supplied by ion containers.
+
+        Returns
+        -------
+        object or None
+            Return value of the wrapped channel's
+            ``compute_derivative`` when this wrapper owns state;
+            otherwise ``None``.
+        """
+        if self._owns_state:
+            return self._channel.compute_derivative(V, *self._infos())
+        return None
+
+    def post_integral(self, V, *unused):
+        """Forward post-integration from the state-owning wrapper.
+
+        Parameters
+        ----------
+        V : array-like
+            Membrane potential passed to the wrapped channel.
+        *unused
+            Ignored compatibility arguments supplied by ion containers.
+
+        Returns
+        -------
+        object or None
+            Return value of the wrapped channel's ``post_integral`` when
+            this wrapper owns state; otherwise ``None``.
+        """
+        if self._owns_state:
+            return self._channel.post_integral(V, *self._infos())
+        return None
+
+    def init_state(self, V, *unused, batch_size=None):
+        """Initialize shared channel state from the state-owning wrapper.
+
+        Parameters
+        ----------
+        V : array-like
+            Membrane potential passed to the wrapped channel.
+        *unused
+            Ignored compatibility arguments supplied by ion containers.
+        batch_size : int or None, optional
+            Optional batch size forwarded to the wrapped channel.
+
+        Returns
+        -------
+        object or None
+            Return value of the wrapped channel's ``init_state`` when
+            this wrapper owns state; otherwise ``None``.
+        """
+        if self._owns_state:
+            return self._channel.init_state(V, *self._infos(), batch_size=batch_size)
+        return None
+
+    def reset_state(self, V, *unused, batch_size=None):
+        """Reset shared channel state from the state-owning wrapper.
+
+        Parameters
+        ----------
+        V : array-like
+            Membrane potential passed to the wrapped channel.
+        *unused
+            Ignored compatibility arguments supplied by ion containers.
+        batch_size : int or None, optional
+            Optional batch size forwarded to the wrapped channel.
+
+        Returns
+        -------
+        object or None
+            Return value of the wrapped channel's ``reset_state`` when
+            this wrapper owns state; otherwise ``None``.
+        """
+        if self._owns_state:
+            return self._channel.reset_state(V, *self._infos(), batch_size=batch_size)
+        return None
+
+    def update(self, V, *unused):
+        """Update shared channel state from the state-owning wrapper.
+
+        Parameters
+        ----------
+        V : array-like
+            Membrane potential passed to the wrapped channel.
+        *unused
+            Ignored compatibility arguments supplied by ion containers.
+
+        Returns
+        -------
+        object or None
+            Return value of the wrapped channel's ``update`` when this
+            wrapper owns state; otherwise ``None``.
+        """
+        if self._owns_state:
+            return self._channel.update(V, *self._infos())
+        return None
+
+    def current(self, V, *unused):
+        """Return this owner ion's component current.
+
+        Parameters
+        ----------
+        V : array-like
+            Membrane potential passed to the wrapped channel.
+        *unused
+            Ignored compatibility arguments supplied by
+            :meth:`braincell.Ion.current`.
+
+        Returns
+        -------
+        array-like
+            Current density stored under ``component_key`` in
+            ``channel.current_components(...)``.
+
+        Raises
+        ------
+        AttributeError
+            If the wrapped channel does not implement
+            ``current_components(...)``.
+        KeyError
+            If ``component_key`` is not returned by the wrapped channel.
+        """
+        return self._channel.current_components(V, *self._infos())[self._component_key]
+
+
 def _instantiate_runtime_node(
     *,
     layout: MechanismLayout,
@@ -1399,7 +1634,7 @@ def _instantiate_runtime_node(
     ions: dict[str, object],
     ion_aliases: dict[str, str],
     ion_family_candidates: dict[str, tuple[str, ...]],
-) -> tuple[object | None, tuple[str, ...], str | None]:
+) -> tuple[object | None, tuple[str, ...], str | tuple[str, ...] | None]:
     if layout.target != "density" or layout.layout != "dense":
         return None, (), None
     if not isinstance(mechanism, Density):
@@ -1418,25 +1653,52 @@ def _instantiate_runtime_node(
     else:
         size = (layout.n_active,)
     node = runtime_cls(size=size, **params)
-    bound_ions, current_owner_key = _resolve_channel_runtime_bindings(
+    bound_ions, current_owner_specs = _resolve_channel_runtime_bindings(
         runtime_cls=runtime_cls,
         mechanism=mechanism,
         ions=ions,
         ion_aliases=ion_aliases,
         ion_family_candidates=ion_family_candidates,
     )
-    if current_owner_key is not None:
+    current_owner_keys = tuple(ion_key for _, ion_key in current_owner_specs)
+    if current_owner_specs:
+        if layout.layout == "dense" and layout.point_mask is not None:
+            setattr(node, "_point_mask", layout.point_mask)
+    state_owner_assigned = False
+    for component_key, current_owner_key in current_owner_specs:
         owner_ion = ions[current_owner_key]
         channel_key = _unique_ion_channel_key(owner_ion, mechanism.instance_name, layout_id=layout.id)
-        if len(bound_ions) == 1 and bound_ions[0][0] == current_owner_key:
+        if component_key is None and len(bound_ions) == 1 and bound_ions[0][0] == current_owner_key:
             owner_ion.add(**{channel_key: node})
-        else:
+        elif component_key is None:
             wrapper = _BoundIonChannelRuntime(
                 node,
                 bound_ions=tuple(ion for _, ion in bound_ions),
                 owner_ion=owner_ion,
             )
+            if layout.layout == "dense" and layout.point_mask is not None:
+                setattr(wrapper, "_point_mask", layout.point_mask)
             owner_ion.add(**{channel_key: wrapper})
+        else:
+            owns_state = not state_owner_assigned
+            wrapper = _BoundIonChannelCurrentComponentRuntime(
+                node,
+                bound_ions=tuple(ion for _, ion in bound_ions),
+                owner_ion=owner_ion,
+                component_key=component_key,
+                owns_state=owns_state,
+            )
+            state_owner_assigned = state_owner_assigned or owns_state
+            if layout.layout == "dense" and layout.point_mask is not None:
+                setattr(wrapper, "_point_mask", layout.point_mask)
+            owner_ion.add(**{channel_key: wrapper})
+    current_owner_key = (
+        None
+        if len(current_owner_keys) == 0
+        else current_owner_keys[0]
+        if len(current_owner_keys) == 1
+        else current_owner_keys
+    )
     return node, tuple(ion_key for ion_key, _ in bound_ions), current_owner_key
 
 
@@ -1462,14 +1724,59 @@ def _resolve_channel_runtime_bindings(
     ions: dict[str, object],
     ion_aliases: dict[str, str],
     ion_family_candidates: dict[str, tuple[str, ...]],
-) -> tuple[tuple[tuple[str, object], ...], str | None]:
+) -> tuple[tuple[tuple[str, object], ...], tuple[tuple[str | None, str], ...]]:
+    """Resolve channel ion dependencies and current owner bindings.
+
+    Parameters
+    ----------
+    runtime_cls : type
+        Concrete runtime channel class selected from the mechanism
+        registry.
+    mechanism : Density
+        Density mechanism declaration being lowered.
+    ions : dict of str to object
+        Runtime ion instances keyed by ion instance name.
+    ion_aliases : dict of str to str
+        Aliases that resolve user selectors to runtime ion keys.
+    ion_family_candidates : dict of str to tuple of str
+        Candidate ion instance names grouped by family key such as
+        ``"k"``, ``"na"``, ``"ca"``, or ``"no"``.
+
+    Returns
+    -------
+    bound_ions : tuple of tuple
+        ``(ion_key, ion_instance)`` pairs in the order required by the
+        channel's ``root_type``.
+    current_owner_specs : tuple of tuple
+        ``(component_key, ion_key)`` pairs. ``component_key is None``
+        denotes legacy single-owner behavior where owner current is the
+        channel's total ``current(...)`` return value. Non-``None`` keys
+        denote multi-owner component currents retrieved through
+        ``current_components(...)``.
+
+    Raises
+    ------
+    ValueError
+        If selectors do not match the channel arity or a mixed-ion
+        channel cannot resolve its declared current owners.
+    KeyError
+        If an explicit ion selector cannot be resolved.
+
+    Notes
+    -----
+    Existing mixed-ion channels declare ``current_owner_type`` and
+    therefore return exactly one legacy owner spec. Channels that write
+    more than one ion current may declare ``current_owner_types`` as a
+    mapping from component key to owner ion type; these channels must
+    implement ``current_components(...)`` on the channel class.
+    """
     family_slots = _channel_family_slots(runtime_cls)
     if len(family_slots) == 0:
         if getattr(mechanism, "ion_name", None) is not None or getattr(mechanism, "ion_names", None) is not None:
             raise ValueError(
                 f"Channel {mechanism.class_name!r} does not bind ions but ion selectors were provided."
             )
-        return (), None
+        return (), ()
 
     if len(family_slots) == 1:
         if getattr(mechanism, "ion_names", None) is not None:
@@ -1484,7 +1791,7 @@ def _resolve_channel_runtime_bindings(
             ion_aliases=ion_aliases,
             ion_family_candidates=ion_family_candidates,
         )
-        return ((ion_key, ions[ion_key]),), ion_key
+        return ((ion_key, ions[ion_key]),), ((None, ion_key),)
 
     if getattr(mechanism, "ion_name", None) is not None:
         raise ValueError(
@@ -1510,19 +1817,25 @@ def _resolve_channel_runtime_bindings(
         )
         bound_ions.append((ion_key, ions[ion_key]))
 
-    current_owner_family = _channel_current_owner_family(runtime_cls)
-    if current_owner_family is None:
+    owner_specs = _channel_current_owner_specs(runtime_cls)
+    if not owner_specs:
         raise ValueError(
             f"Mixed-ion channel class {runtime_cls.__name__!r} must define current_owner_type."
         )
-    owner_candidates = [ion_key for (family_key, _), (ion_key, _) in zip(family_slots, bound_ions) if
-                        family_key == current_owner_family]
-    if len(owner_candidates) != 1:
-        raise ValueError(
-            f"Mixed-ion channel class {runtime_cls.__name__!r} could not resolve a unique current owner for family "
-            f"{current_owner_family!r}."
-        )
-    return tuple(bound_ions), owner_candidates[0]
+    current_owner_specs: list[tuple[str | None, str]] = []
+    for component_key, current_owner_family in owner_specs:
+        owner_candidates = [
+            ion_key
+            for (family_key, _), (ion_key, _) in zip(family_slots, bound_ions)
+            if family_key == current_owner_family
+        ]
+        if len(owner_candidates) != 1:
+            raise ValueError(
+                f"Mixed-ion channel class {runtime_cls.__name__!r} could not resolve a unique current owner for family "
+                f"{current_owner_family!r}."
+            )
+        current_owner_specs.append((component_key, owner_candidates[0]))
+    return tuple(bound_ions), tuple(current_owner_specs)
 
 
 def _resolve_ion_instance_key(
@@ -1575,6 +1888,27 @@ def _channel_family_slots(cls: type) -> tuple[tuple[str, type], ...]:
 
 
 def _root_type_to_family(root_type: type) -> str | None:
+    """Return the runtime ion family key for an ion root type.
+
+    Parameters
+    ----------
+    root_type : type
+        Ion base class or subclass referenced by a channel
+        ``root_type`` declaration.
+
+    Returns
+    -------
+    str or None
+        Family key used by mechanism ``ion_name`` / ``ion_names``
+        selectors. Returns ``None`` when ``root_type`` is not a known
+        runtime ion family.
+
+    Notes
+    -----
+    ``"no"`` denotes the NEURON-style nonspecific current-owner
+    placeholder family. It is used for written currents such as
+    ``USEION no WRITE ino`` and does not imply concentration dynamics.
+    """
     try:
         if issubclass(root_type, runtime_ion.Sodium):
             return "na"
@@ -1582,21 +1916,85 @@ def _root_type_to_family(root_type: type) -> str | None:
             return "k"
         if issubclass(root_type, runtime_ion.Calcium):
             return "ca"
+        if issubclass(root_type, runtime_ion.NonSpecific):
+            return "no"
     except TypeError:
         return None
     return None
 
 
-def _channel_current_owner_family(cls: type) -> str | None:
+def _channel_current_owner_specs(cls: type) -> tuple[tuple[str | None, str], ...]:
+    """Return current-owner component specs for a channel class.
+
+    Parameters
+    ----------
+    cls : type
+        Runtime channel class.
+
+    Returns
+    -------
+    tuple of tuple
+        ``(component_key, family_key)`` pairs. ``component_key is None``
+        preserves the legacy single-owner path where the owner receives
+        ``current(...)``. A string component key requires the channel to
+        provide ``current_components(...)`` and lets the owner receive
+        only that component.
+
+    Notes
+    -----
+    For one-ion channels the sole ion family is always the current
+    owner. For mixed-ion channels, ``current_owner_type`` keeps existing
+    behavior, while ``current_owner_types`` enables mechanisms that
+    write more than one ion current, for example an NMODL mechanism with
+    both ``WRITE ik`` and ``WRITE ino``.
+    """
     family_slots = _channel_family_slots(cls)
     if len(family_slots) == 0:
-        return None
+        return ()
     if len(family_slots) == 1:
-        return family_slots[0][0]
+        return ((None, family_slots[0][0]),)
+    owner_types = getattr(cls, "current_owner_types", None)
+    if owner_types is not None:
+        specs = []
+        for component_key, owner_type in owner_types.items():
+            family = _root_type_to_family(owner_type)
+            if family is not None:
+                specs.append((component_key, family))
+        return tuple(specs)
     owner_type = getattr(cls, "current_owner_type", None)
     if owner_type is None:
+        return ()
+    family = _root_type_to_family(owner_type)
+    if family is None:
+        return ()
+    return ((None, family),)
+
+
+def _channel_current_owner_family(cls: type) -> str | None:
+    """Return the legacy single current-owner family for a channel class.
+
+    Parameters
+    ----------
+    cls : type
+        Runtime channel class.
+
+    Returns
+    -------
+    str or None
+        Family key when the channel has exactly one current owner.
+        Returns ``None`` for root-level channels and for multi-owner
+        channels declared with ``current_owner_types``.
+
+    Notes
+    -----
+    This helper exists for backwards-compatible call sites that only
+    need to distinguish root-level channels from ion-bound channels. New
+    binding code should use :func:`_channel_current_owner_specs`.
+    """
+    specs = _channel_current_owner_specs(cls)
+    if len(specs) != 1:
         return None
-    return _root_type_to_family(owner_type)
+    return specs[0][1]
 
 
 def _runtime_param_value(
@@ -1748,4 +2146,4 @@ def _is_root_level_runtime_node(kind: str) -> bool:
         raise ValueError(
             f"Unknown runtime channel class {class_name!r} for layout kind {kind!r}."
         ) from exc
-    return _channel_current_owner_family(cls) is None
+    return not _channel_current_owner_specs(cls)

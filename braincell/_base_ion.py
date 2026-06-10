@@ -28,6 +28,7 @@ re-export line.
 from typing import Callable, Dict, Hashable, Optional, Sequence, Tuple, Type
 
 import brainstate
+import brainunit as u
 from brainstate.mixin import _JointGenericAlias
 
 from ._base_channel import Channel, IonChannel, IonInfo
@@ -35,6 +36,145 @@ from ._misc import Container, set_module_as
 from .quad.protocol import IndependentIntegration
 
 __all__ = ["Ion", "MixIons", "mix_ions"]
+
+
+def _channel_current_owner_specs(node):
+    """Return current-owner specs declared by a channel.
+
+    Parameters
+    ----------
+    node : Channel
+        Channel instance whose current-owner declaration should be
+        interpreted.
+
+    Returns
+    -------
+    tuple of tuple
+        A tuple of ``(component_key, owner_type)`` pairs. A
+        ``component_key`` of ``None`` denotes the legacy single-owner
+        path where the owner current is the channel's ``current(...)``
+        return value. Non-``None`` keys denote component names resolved
+        through ``current_components(...)``.
+
+    Notes
+    -----
+    Existing channels normally declare ``current_owner_type`` and are
+    returned as a single legacy owner. Channels that write more than one
+    ion current may declare ``current_owner_types`` as a mapping from
+    component key to owner ion type. Those channels must also implement
+    ``current_components(...)``.
+    """
+    owners = getattr(node, "current_owner_types", None)
+    if owners is not None:
+        return tuple((key, owner_type) for key, owner_type in owners.items())
+    owner = getattr(node, "current_owner_type", None)
+    if owner is not None:
+        return ((None, owner),)
+    return ()
+
+
+def _channel_component_current(node, component_key, V, *infos):
+    """Return total or component current for one channel.
+
+    Parameters
+    ----------
+    node : Channel
+        Channel instance being evaluated.
+    component_key : str or None
+        Component key to read from ``node.current_components(...)``.
+        ``None`` selects the legacy total-current path and calls
+        ``node.current(...)`` directly.
+    V : array-like
+        Membrane potential passed to the channel.
+    *infos
+        Ion information objects passed to the channel.
+
+    Returns
+    -------
+    array-like
+        Current density returned by the channel for the requested owner.
+
+    Raises
+    ------
+    AttributeError
+        If ``component_key`` is not ``None`` and the channel does not
+        implement ``current_components(...)``.
+    KeyError
+        If the requested component key is absent from the returned
+        component mapping.
+
+    Notes
+    -----
+    ``current(...)`` remains the total membrane current API. Component
+    lookup is used only when a channel explicitly declares multiple
+    current owners through ``current_owner_types``.
+    """
+    if component_key is None:
+        return node.current(V, *infos)
+    components = node.current_components(V, *infos)
+    return components[component_key]
+
+
+def _mask_inactive_current(current, point_mask):
+    """Zero inactive points in a channel current.
+
+    Parameters
+    ----------
+    current : array-like
+        Current density returned by a channel. May be a
+        :class:`brainunit.Quantity`.
+    point_mask : array-like of bool
+        Boolean mask whose ``True`` entries mark active runtime points.
+
+    Returns
+    -------
+    array-like
+        Current with inactive points replaced by zero while preserving
+        units when ``current`` is a :class:`brainunit.Quantity`.
+
+    Notes
+    -----
+    Dense runtime layouts store full point-shaped state and use masks to
+    disable points outside the painted region. This helper keeps inactive
+    points from contributing to ion-current totals.
+    """
+    if isinstance(current, u.Quantity):
+        unit = current.unit
+        mantissa = u.math.asarray(current.to_decimal(unit))
+        return u.Quantity(u.math.where(point_mask, mantissa, 0.0), unit)
+    return u.math.where(point_mask, current, 0.0)
+
+
+def _safe_inactive_voltage(V, point_mask):
+    """Replace inactive-point voltages with a benign value.
+
+    Parameters
+    ----------
+    V : array-like
+        Membrane potential passed to a channel. May be a
+        :class:`brainunit.Quantity`.
+    point_mask : array-like of bool
+        Boolean mask whose ``True`` entries mark active runtime points.
+
+    Returns
+    -------
+    array-like
+        Voltage with inactive entries replaced by ``-65 mV`` while
+        preserving units when ``V`` is a :class:`brainunit.Quantity`.
+
+    Notes
+    -----
+    The returned value is used only to evaluate channel formulas at
+    inactive points before their current is masked to zero. It prevents
+    inactive points with arbitrary voltages from producing numerical
+    overflow in voltage-dependent rate expressions.
+    """
+    if isinstance(V, u.Quantity):
+        unit = V.unit
+        mantissa = u.math.asarray(V.to_decimal(unit))
+        safe = (-65.0 * u.mV).to_decimal(unit)
+        return u.Quantity(u.math.where(point_mask, mantissa, safe), unit)
+    return u.math.where(point_mask, V, -65.0)
 
 
 class Ion(IonChannel, Container):
@@ -171,7 +311,11 @@ class Ion(IonChannel, Container):
         if len(nodes) > 0:
             for node in nodes:
                 node: Channel
-                new_current = node.current(V, ion_info)
+                point_mask = getattr(node, "_point_mask", None)
+                node_V = _safe_inactive_voltage(V, point_mask) if point_mask is not None else V
+                new_current = node.current(node_V, ion_info)
+                if point_mask is not None:
+                    new_current = _mask_inactive_current(new_current, point_mask)
                 current = new_current if current is None else (current + new_current)
         if include_external and self._external_currents:
             for key, node in self._external_currents.items():
@@ -400,11 +544,12 @@ class MixIons(IonChannel, Container):
             current = None
             for node in nodes:
                 infos = tuple([self._get_ion(root).pack_info() for root in node.root_type.__args__])
-                current = (
-                    node.current(V, *infos)
-                    if current is None else
-                    (current + node.current(V, *infos))
-                )
+                point_mask = getattr(node, "_point_mask", None)
+                node_V = _safe_inactive_voltage(V, point_mask) if point_mask is not None else V
+                new_current = node.current(node_V, *infos)
+                if point_mask is not None:
+                    new_current = _mask_inactive_current(new_current, point_mask)
+                current = new_current if current is None else (current + new_current)
             return current
 
     def init_state(self, V, batch_size: int = None):
@@ -440,17 +585,48 @@ class MixIons(IonChannel, Container):
         self.channels.update(self._format_elements(Channel, **elements))
         for elem in tuple(elements.values()):
             elem: Channel
-            for ion_root in elem.root_type.__args__:
+            owner_specs = _channel_current_owner_specs(elem)
+            if not owner_specs:
+                owner_specs = tuple((None, ion_root) for ion_root in elem.root_type.__args__)
+            for component_key, ion_root in owner_specs:
                 ion = self._get_ion(ion_root)
-                ion.register_external_current(id(elem), self._get_ion_fun(ion, elem))
+                key = id(elem) if component_key is None else (id(elem), component_key)
+                ion.register_external_current(key, self._get_ion_fun(ion, elem, component_key=component_key))
 
-    def _get_ion_fun(self, ion: 'Ion', node: 'Channel'):
+    def _get_ion_fun(self, ion: 'Ion', node: 'Channel', *, component_key=None):
+        """Build an ion-external-current callback for a mixed channel.
+
+        Parameters
+        ----------
+        ion : Ion
+            Ion instance that owns the callback.
+        node : Channel
+            Mixed-ion channel instance whose current is being exposed
+            through the owner ion.
+        component_key : str or None, optional
+            Component key to retrieve from
+            ``node.current_components(...)``. ``None`` keeps the
+            legacy behavior and exposes ``node.current(...)``.
+
+        Returns
+        -------
+        callable
+            Function with signature ``fun(V, ion_info)`` suitable for
+            :meth:`Ion.register_external_current`.
+
+        Notes
+        -----
+        This wrapper is the compatibility boundary for multi-owner
+        currents. The membrane solver still calls ``node.current(...)``
+        once for total current, while owner ions may receive individual
+        components when ``component_key`` is set.
+        """
         def fun(V, ion_info):
             infos = tuple([
                 (ion_info if isinstance(ion, root) else self._get_ion(root).pack_info())
                 for root in node.root_type.__args__
             ])
-            return node.current(V, *infos)
+            return _channel_component_current(node, component_key, V, *infos)
 
         return fun
 

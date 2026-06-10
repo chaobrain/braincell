@@ -1890,6 +1890,8 @@ class Cell(HHTypedNeuron):
                     Channel,
                     allowed_hierarchy=(1, 1),
                 ).items():
+                    if getattr(child, "_skip_family_update", False):
+                        continue
                     nodes.append((path + child_path, child))
             elif isinstance(node, MixIons):
                 for child_path, child in brainstate.graph.nodes(
@@ -1897,6 +1899,8 @@ class Cell(HHTypedNeuron):
                     Channel,
                     allowed_hierarchy=(1, 1),
                 ).items():
+                    if getattr(child, "_skip_family_update", False):
+                        continue
                     nodes.append((path + child_path, child))
             elif isinstance(node, Channel):
                 nodes.append((path, node))

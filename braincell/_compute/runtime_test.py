@@ -15,10 +15,12 @@
 
 import unittest
 
+import brainstate
 import brainunit as u
 import numpy as np
 
 import braincell
+from braincell._base import Channel, IonInfo
 from braincell import (
     Branch,
     CVPerBranch,
@@ -29,6 +31,31 @@ from braincell import (
     SineClamp,
 )
 from braincell.filter import BranchSlice, RootLocation, at
+from braincell.ion import NonSpecific, Potassium
+from braincell.mech import register_channel
+
+
+@register_channel("_RuntimeTestTwoOwnerChannel")
+class _RuntimeTestTwoOwnerChannel(Channel):
+    """Small multi-owner channel used by runtime binding tests."""
+
+    __module__ = "braincell._compute.runtime_test"
+    root_type = brainstate.mixin.JointTypes[Potassium, NonSpecific]
+    current_owner_types = {"k": Potassium, "no": NonSpecific}
+
+    def __init__(self, size, name=None):
+        super().__init__(size=size, name=name)
+
+    def current(self, V, K: IonInfo, No: IonInfo):
+        parts = self.current_components(V, K, No)
+        return parts["k"] + parts["no"]
+
+    def current_components(self, V, K: IonInfo, No: IonInfo):
+        _ = (K, No)
+        return {
+            "k": 2.0 * u.math.ones_like(V.to_decimal(u.mV)) * (u.nA / u.cm ** 2),
+            "no": 3.0 * u.math.ones_like(V.to_decimal(u.mV)) * (u.nA / u.cm ** 2),
+        }
 
 
 def _build_tree() -> Morphology:
@@ -68,10 +95,34 @@ class CellRuntimeStateTest(unittest.TestCase):
         self.assertEqual(rcell.expected_state_shape(layout.id, "g_max"), (5,))
         self.assertEqual(rcell.voltage_shape, (5,))
         self.assertEqual(rcell.get_state(layout.id, "g_max").shape, (5,))
-        self.assertTrue(all(value == 4.0 * (u.mS / u.cm ** 2) for value in rcell.get_state(layout.id, "g_max")))
-        self.assertEqual(tuple(layout.id for layout in rcell.get_point_layouts(0)), ())
-        self.assertEqual(tuple(layout.id for layout in rcell.get_point_layouts(1)), (layout.id,))
-        self.assertEqual(tuple(layout.id for layout in rcell.get_point_layouts(3)), (layout.id,))
+        np.testing.assert_allclose(
+            np.asarray(rcell.get_state(layout.id, "g_max").to_decimal(u.mS / u.cm ** 2)),
+            [4.0, 4.0, 4.0, 4.0, 4.0],
+        )
+
+    def test_region_limited_density_current_is_masked_outside_active_points(self) -> None:
+        cell = Cell(_build_tree())
+        cell.paint(
+            BranchSlice(branch_index=0, prox=0.0, dist=1.0),
+            braincell.mech.Channel("IL", name="soma_leak", g_max=4.0 * (u.mS / u.cm ** 2), E=-68.0 * u.mV),
+        )
+        cell.paint(
+            BranchSlice(branch_index=1, prox=0.0, dist=1.0),
+            braincell.mech.Channel("IL", name="dend_leak", g_max=5.0 * (u.mS / u.cm ** 2), E=-67.0 * u.mV),
+        )
+
+        cell.init_state(); rcell = cell
+        point_v = rcell._cv_to_point(rcell.V.value)
+        soma_current = rcell.get_runtime_node(0).current(point_v)
+        dend_current = rcell.get_runtime_node(1).current(point_v)
+        np.testing.assert_allclose(
+            np.asarray(soma_current.to_decimal(u.nA / u.cm ** 2)),
+            [0.0, -12000.0, 0.0, 0.0, 0.0],
+        )
+        np.testing.assert_allclose(
+            np.asarray(dend_current.to_decimal(u.nA / u.cm ** 2)),
+            [0.0, 0.0, 0.0, -10000.0, 0.0],
+        )
 
     def test_point_mechanism_builds_sparse_layout_with_local_shape(self) -> None:
         cell = Cell(_build_tree())
@@ -1775,6 +1826,47 @@ class CellRuntimeStateTest(unittest.TestCase):
         self.assertEqual(runtime.bound_ion_keys[layout.id], ("k_main", "ca_hva"))
         self.assertEqual(samples["soma(0.5)_Kca3p1_MA2020_GoC_current"], expected_mechanism)
         self.assertEqual(samples["soma(0.5)_k_main_current"], expected_total)
+
+    def test_multi_owner_mixed_ion_channel_exposes_component_currents(self) -> None:
+        cell = Cell(_build_tree())
+        cell.paint(
+            BranchSlice(branch_index=[0, 1], prox=0.0, dist=1.0),
+            braincell.mech.Ion("PotassiumFixed", name="k_main", E=-88.0 * u.mV),
+            braincell.mech.Ion("NonSpecificFixed", name="no"),
+        )
+        cell.paint(
+            BranchSlice(branch_index=[0, 1], prox=0.0, dist=1.0),
+            braincell.mech.Channel("_RuntimeTestTwoOwnerChannel", ion_names={"k": "k_main", "no": "no"}),
+        )
+
+        cell.init_state(); rcell = cell
+
+        layout = next(layout for layout in rcell.layouts if layout.kind == "channel:_RuntimeTestTwoOwnerChannel")
+        point_V = rcell._discretization_to_point(rcell.V.value)
+        node = rcell.get_runtime_node(layout.id)
+        k_main = rcell.get_ion("k_main")
+        no = rcell.get_ion("no")
+        total = node.current(point_V, k_main.pack_info(), no.pack_info())
+        k_current = k_main.current(point_V, include_external=False)
+        no_current = no.current(point_V, include_external=False)
+
+        self.assertEqual(rcell.runtime.current_owner_keys[layout.id], ("k_main", "no"))
+        self.assertIn("_RuntimeTestTwoOwnerChannel", k_main.channels)
+        self.assertIn("_RuntimeTestTwoOwnerChannel", no.channels)
+        self.assertFalse(getattr(k_main.channels["_RuntimeTestTwoOwnerChannel"], "_skip_family_update", False))
+        self.assertTrue(getattr(no.channels["_RuntimeTestTwoOwnerChannel"], "_skip_family_update", False))
+        np.testing.assert_allclose(
+            np.asarray(k_current.to_decimal(u.nA / u.cm ** 2)),
+            [0.0, 2.0, 0.0, 2.0, 0.0],
+        )
+        np.testing.assert_allclose(
+            np.asarray(no_current.to_decimal(u.nA / u.cm ** 2)),
+            [0.0, 3.0, 0.0, 3.0, 0.0],
+        )
+        np.testing.assert_allclose(
+            np.asarray(total.to_decimal(u.nA / u.cm ** 2))[layout.point_index],
+            np.asarray((k_current + no_current).to_decimal(u.nA / u.cm ** 2))[layout.point_index],
+        )
 
     def test_family_order_integrates_mixed_ion_wrapper_channel_only(self) -> None:
         cell = Cell(_build_tree())

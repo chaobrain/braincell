@@ -8,7 +8,7 @@ import sys
 
 CHANNEL_NO_CONC_ROOT = Path(__file__).resolve().parents[1]
 TEMPLATES_ROOT = CHANNEL_NO_CONC_ROOT / "engine"
-MOD_VALIDATE_MOD_DIR = "/home/swl/braincell/examples/convert_mod/mod_validate/mods"
+MOD_VALIDATE_MOD_DIR = str(CHANNEL_NO_CONC_ROOT.parents[0] / "Cerebellum_mod" / "GrC" / "channel")
 
 
 def load_module(path: Path, name: str):
@@ -37,7 +37,7 @@ def build_mapping_payload(
     }[current_kind]
     return {
         "current": current_var,
-        "impl_name": impl_name or {"neuron": "Kv", "braincell": "K_Kv_test"},
+        "impl_name": impl_name or {"neuron": "Kv1p1_MA20_GrC", "braincell": "Kv1p1_MA2020_GrC"},
         "gate_names": gate_names or {"common": ["n"]},
         "channel_params": channel_params or params or {
             "g_max_S_cm2": {"neuron": "gbar", "braincell": "g_max"},
@@ -123,5 +123,10 @@ def build_main_config_payload(
 
 
 def write_json(path: Path, payload: dict) -> Path:
+    identity = payload.get("identity") if isinstance(payload, dict) else None
+    if isinstance(identity, dict):
+        mod_dir = identity.get("mod_dir")
+        if isinstance(mod_dir, str) and mod_dir and not Path(mod_dir).is_absolute():
+            (path.parent / mod_dir).mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload))
     return path

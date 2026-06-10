@@ -44,6 +44,7 @@ class WorkflowInputTest(unittest.TestCase):
                 root / "kv_test.json",
                 build_main_config_payload(["templates/smoke.json"]),
             )
+            expected_mod_dir = Path(MOD_VALIDATE_MOD_DIR).resolve()
 
             info = workflow_api.load_workflow_inputs(config_path, template_path)
 
@@ -53,7 +54,7 @@ class WorkflowInputTest(unittest.TestCase):
         self.assertEqual(info["group_id"], "smoke")
         self.assertEqual(info["n_expanded_cases"], 2)
         self.assertEqual(info["mapping"]["current"], "ik")
-        self.assertEqual(info["mod_dir"], Path(MOD_VALIDATE_MOD_DIR).resolve())
+        self.assertEqual(info["mod_dir"], expected_mod_dir)
 
     def test_load_config_workflow_inputs_reads_declared_templates_and_defaults(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -112,12 +113,18 @@ class WorkflowInputTest(unittest.TestCase):
             set(records_by_name),
             {
                 "cav2p1_ma24_pc",
+                "cav2p1_ma24_pc_frozen",
                 "cav3p1_ma24_pc",
+                "cav3p1_ma24_pc_frozen",
+                "cav3p1_test2_pc24",
+                "cav3p1_test_pc24",
                 "cav3p2_ma24_pc",
                 "cav3p3_ma24_pc",
+                "cav3p3_ma24_pc_frozen",
                 "hcn1_ma24_pc",
                 "kca1p1_ma24_pc",
                 "kca2p2_ma24_pc",
+                "kca2p2_ma24_pc_dep_o1",
                 "kca3p1_ma24_pc",
                 "kir2p3_ma24_pc",
                 "kv1p1_ma24_pc",

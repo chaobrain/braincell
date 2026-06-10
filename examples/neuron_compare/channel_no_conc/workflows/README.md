@@ -22,7 +22,7 @@
 
 `config` / `template` 的完整写法、`owner` 的用法、`defaults` 与 `base` 的合并顺序，都统一写在：
 
-- [configs/README.md](/home/swl/braincell/examples/neuron_compare/channel_no_conc/configs/README.md)
+- [configs/README.md](../configs/README.md)
 
 这里不再重复展开 schema 细节，避免出现两份不一致的说明。
 
@@ -44,8 +44,8 @@
 
 Notebook 入口：
 
-- 单 config run： [workflow.ipynb](/home/swl/braincell/examples/neuron_compare/channel_no_conc/workflows/workflow.ipynb)
-- 批量 many-config run： [batch_workflow.ipynb](/home/swl/braincell/examples/neuron_compare/channel_no_conc/workflows/batch_workflow.ipynb)
+- 单 config run： [workflow.ipynb](workflow.ipynb)
+- 批量 many-config run： [batch_workflow.ipynb](batch_workflow.ipynb)
 - 推荐批量目录：`CHANNEL_NO_CONC_ROOT / "configs" / "ma24_pc"`
 
 说明：

@@ -276,10 +276,23 @@ class GrCFull:
             raise RuntimeError("Cell must be created before painting ions.")
         toggles = self.config.toggles
         temp = u.celsius2kelvin(self.config.temperature_celsius)
-        if _needs_na(self.config):
-            self.cell.paint(AllRegion(), mech.Ion("SodiumFixed", name="na", E=NA_E_MV * u.mV))
+        if _needs_na(self.config) or toggles.kv1p5:
+            if toggles.kv1p5:
+                self.cell.paint(self.regions["soma"], mech.Ion("SodiumInitNernst", name="na", temp=temp))
+                if _needs_na(self.config):
+                    for region_name in ("hilock", "ais", "aa", "pf"):
+                        self.cell.paint(self.regions[region_name], mech.Ion("SodiumFixed", name="na_fixed", E=NA_E_MV * u.mV))
+            else:
+                self.cell.paint(AllRegion(), mech.Ion("SodiumFixed", name="na", E=NA_E_MV * u.mV))
         if _needs_k(self.config):
-            self.cell.paint(AllRegion(), mech.Ion("PotassiumFixed", name="k", E=K_E_MV * u.mV))
+            if toggles.kv1p5:
+                self.cell.paint(self.regions["soma"], mech.Ion("PotassiumInitNernst", name="k", temp=temp))
+                for region_name in ("dend", "hilock", "ais", "aa", "pf"):
+                    self.cell.paint(self.regions[region_name], mech.Ion("PotassiumFixed", name="k_fixed", E=K_E_MV * u.mV))
+            else:
+                self.cell.paint(AllRegion(), mech.Ion("PotassiumFixed", name="k", E=K_E_MV * u.mV))
+        if toggles.kv1p5:
+            self.cell.paint(AllRegion(), mech.Ion("NonSpecificFixed", name="no"))
         if toggles.cdp:
             self.cell.paint(
                 AllRegion(),
@@ -308,6 +321,12 @@ class GrCFull:
             raise RuntimeError("Cell must be created before painting channels.")
         t = self.config.toggles
         temp = u.celsius2kelvin(self.config.temperature_celsius)
+        dend_k = _k_ion_name(self.config, "dend")
+        hilock_k = _k_ion_name(self.config, "hilock")
+        ais_k = _k_ion_name(self.config, "ais")
+        aa_k = _k_ion_name(self.config, "aa")
+        pf_k = _k_ion_name(self.config, "pf")
+        axon_na = _na_ion_name(self.config, "ais")
         for region_name in FULL_REGION_LOGICAL_MECHANISMS:
             p = self.params.region(region_name)
             if t.leak and p.leak:
@@ -322,17 +341,17 @@ class GrCFull:
                 )
 
         if t.nav:
-            self._paint_region_channel("aa", "Nav_MA2020_GrC", "Nav_aa", self.params.aa.nav, "na", temp)
-            self._paint_region_channel("pf", "Nav_MA2020_GrC", "Nav_pf", self.params.pf.nav, "na", temp)
+            self._paint_region_channel("aa", "Nav_MA2020_GrC", "Nav_aa", self.params.aa.nav, axon_na, temp)
+            self._paint_region_channel("pf", "Nav_MA2020_GrC", "Nav_pf", self.params.pf.nav, axon_na, temp)
         if t.nafhhf:
-            self._paint_region_channel("hilock", "NaFHF_MA2020_GrC", "NaFHF_hilock", self.params.hilock.nafhhf, "na", temp)
-            self._paint_region_channel("ais", "NaFHF_MA2020_GrC", "NaFHF_ais", self.params.ais.nafhhf, "na", temp)
+            self._paint_region_channel("hilock", "NaFHF_MA2020_GrC", "NaFHF_hilock", self.params.hilock.nafhhf, axon_na, temp)
+            self._paint_region_channel("ais", "NaFHF_MA2020_GrC", "NaFHF_ais", self.params.ais.nafhhf, axon_na, temp)
         if t.kv3p4:
             self._paint_region_channel("soma", "Kv3p4_MA2020_GrC", "Kv3p4_soma", self.params.soma.kv3p4, "k", temp)
-            self._paint_region_channel("hilock", "Kv3p4_MA2020_GrC", "Kv3p4_hilock", self.params.hilock.kv3p4, "k", temp)
-            self._paint_region_channel("ais", "Kv3p4_MA2020_GrC", "Kv3p4_ais", self.params.ais.kv3p4, "k", temp)
-            self._paint_region_channel("aa", "Kv3p4_MA2020_GrC", "Kv3p4_aa", self.params.aa.kv3p4, "k", temp)
-            self._paint_region_channel("pf", "Kv3p4_MA2020_GrC", "Kv3p4_pf", self.params.pf.kv3p4, "k", temp)
+            self._paint_region_channel("hilock", "Kv3p4_MA2020_GrC", "Kv3p4_hilock", self.params.hilock.kv3p4, hilock_k, temp)
+            self._paint_region_channel("ais", "Kv3p4_MA2020_GrC", "Kv3p4_ais", self.params.ais.kv3p4, ais_k, temp)
+            self._paint_region_channel("aa", "Kv3p4_MA2020_GrC", "Kv3p4_aa", self.params.aa.kv3p4, aa_k, temp)
+            self._paint_region_channel("pf", "Kv3p4_MA2020_GrC", "Kv3p4_pf", self.params.pf.kv3p4, pf_k, temp)
         if t.kv4p3:
             self._paint_region_channel("soma", "Kv4p3_MA2020_GrC", "Kv4p3_soma", self.params.soma.kv4p3, "k", temp)
         if t.kir2p3:
@@ -346,9 +365,9 @@ class GrCFull:
             self._paint_region_channel("pf", "CaHVA_MA2020_GrC", "CaHVA_pf", self.params.pf.cahva, "ca", temp)
         if t.kv1p1:
             self._paint_region_channel("soma", "Kv1p1_MA2020_GrC", "Kv1p1_soma", self.params.soma.kv1p1, "k", temp)
-            self._paint_region_channel("dend", "Kv1p1_MA2020_GrC", "Kv1p1_dend", self.params.dend.kv1p1, "k", temp)
+            self._paint_region_channel("dend", "Kv1p1_MA2020_GrC", "Kv1p1_dend", self.params.dend.kv1p1, dend_k, temp)
         if t.kv1p5:
-            self._paint_region_channel("soma", "Kv1p5_MA2020_GrC", "Kv1p5_soma", self.params.soma.kv1p5, "k", temp)
+            self._paint_region_channel("soma", "Kv1p5_MA2020_GrC", "Kv1p5_soma", self.params.soma.kv1p5, {"k": "k", "na": "na", "no": "no"}, temp)
         if t.kv2p2:
             self._paint_region_channel(
                 "soma",
@@ -365,11 +384,11 @@ class GrCFull:
                 "Kca1p1_MA2020_GrC",
                 "Kca1p1_dend",
                 self.params.dend.kca1p1,
-                {"k": "k", "ca": "ca"},
+                {"k": dend_k, "ca": "ca"},
                 temp,
             )
         if t.km:
-            self._paint_region_channel("ais", "KM_MA2020_GrC", "KM_ais", self.params.ais.km, "k", temp)
+            self._paint_region_channel("ais", "KM_MA2020_GrC", "KM_ais", self.params.ais.km, ais_k, temp)
 
     def _paint_region_channel(
         self,
@@ -497,6 +516,14 @@ def _enabled_region_mechanisms(config: GrCFullConfig, region: str) -> set[str]:
 
 def _enabled_region_list(config: GrCFullConfig, region: str) -> list[str]:
     return [name for name in FULL_REGION_LOGICAL_MECHANISMS[region] if getattr(config.toggles, name)]
+
+
+def _k_ion_name(config: GrCFullConfig, region: str) -> str:
+    return "k" if region == "soma" or not config.toggles.kv1p5 else "k_fixed"
+
+
+def _na_ion_name(config: GrCFullConfig, region: str) -> str:
+    return "na" if region == "soma" or not config.toggles.kv1p5 else "na_fixed"
 
 
 def _mechanism_flag_row(enabled: set[str]) -> dict[str, bool]:

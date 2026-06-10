@@ -201,7 +201,14 @@ class GrC:
         toggles = self.config.toggles
         temp = u.celsius2kelvin(self.config.temperature_celsius)
         if _needs_k(self.config):
-            self.cell.paint(AllRegion(), mech.Ion("PotassiumFixed", name="k", E=K_E_MV * u.mV))
+            if toggles.kv1p5:
+                self.cell.paint(self.regions["soma"], mech.Ion("PotassiumInitNernst", name="k", temp=temp))
+                self.cell.paint(self.regions["dend"], mech.Ion("PotassiumFixed", name="k_fixed", E=K_E_MV * u.mV))
+            else:
+                self.cell.paint(AllRegion(), mech.Ion("PotassiumFixed", name="k", E=K_E_MV * u.mV))
+        if toggles.kv1p5:
+            self.cell.paint(self.regions["soma"], mech.Ion("SodiumInitNernst", name="na", temp=temp))
+            self.cell.paint(AllRegion(), mech.Ion("NonSpecificFixed", name="no"))
         if toggles.cdp:
             self.cell.paint(
                 AllRegion(),
@@ -230,6 +237,7 @@ class GrC:
             raise RuntimeError("Cell must be created before painting channels.")
         t = self.config.toggles
         temp = u.celsius2kelvin(self.config.temperature_celsius)
+        dend_k = _k_ion_name(self.config, "dend")
 
         for region_name in ALL_REGION_LOGICAL_MECHANISMS:
             p = self.params.region(region_name)
@@ -255,9 +263,9 @@ class GrC:
             self._paint_region_channel("dend", "CaHVA_MA2020_GrC", "CaHVA_dend", self.params.dend.cahva, "ca", temp)
         if t.kv1p1:
             self._paint_region_channel("soma", "Kv1p1_MA2020_GrC", "Kv1p1_soma", self.params.soma.kv1p1, "k", temp)
-            self._paint_region_channel("dend", "Kv1p1_MA2020_GrC", "Kv1p1_dend", self.params.dend.kv1p1, "k", temp)
+            self._paint_region_channel("dend", "Kv1p1_MA2020_GrC", "Kv1p1_dend", self.params.dend.kv1p1, dend_k, temp)
         if t.kv1p5:
-            self._paint_region_channel("soma", "Kv1p5_MA2020_GrC", "Kv1p5_soma", self.params.soma.kv1p5, "k", temp)
+            self._paint_region_channel("soma", "Kv1p5_MA2020_GrC", "Kv1p5_soma", self.params.soma.kv1p5, {"k": "k", "na": "na", "no": "no"}, temp)
         if t.kv2p2:
             self._paint_region_channel(
                 "soma",
@@ -274,7 +282,7 @@ class GrC:
                 "Kca1p1_MA2020_GrC",
                 "Kca1p1_dend",
                 self.params.dend.kca1p1,
-                {"k": "k", "ca": "ca"},
+                {"k": dend_k, "ca": "ca"},
                 temp,
             )
 
@@ -399,6 +407,10 @@ def _enabled_region_mechanisms(config: GrCConfig, region: str) -> set[str]:
 
 def _enabled_region_list(config: GrCConfig, region: str) -> list[str]:
     return [name for name in ALL_REGION_LOGICAL_MECHANISMS[region] if getattr(config.toggles, name)]
+
+
+def _k_ion_name(config: GrCConfig, region: str) -> str:
+    return "k" if region == "soma" or not config.toggles.kv1p5 else "k_fixed"
 
 
 def _mechanism_flag_row(enabled: set[str]) -> dict[str, bool]:

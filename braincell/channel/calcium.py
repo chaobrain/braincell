@@ -71,6 +71,7 @@ __all__ = [
     "CaHVA_MA2020_GrC",
     "Cav2p3_MA2020_GoC",
     "Ca_ZH2019_IO",
+    "Ca_ZH2019_IO_Frozen",
 ]
 
 
@@ -1514,7 +1515,32 @@ class Cav2p3_MA2020_GoC(HH):
 
 @register_channel("Ca_ZH2019_IO")
 class Ca_ZH2019_IO(HH):
-    """Template-based import of ``Ca_ZH2019_IO.mod``."""
+    """Template-based import of ``Ca_ZH2019_IO.mod``.
+
+    Parameters
+    ----------
+    size : brainstate.typing.Size
+        Channel state shape.
+    g_max : array-like or callable, optional
+        Maximum conductance density.
+    E : array-like or callable, optional
+        Calcium current reversal potential.
+    mMidV : array-like or callable, optional
+        Midpoint parameter used by the instantaneous activation curve.
+    freeze_m_inf : bool, optional
+        Whether to stop autodiff through the instantaneous activation
+        factor while preserving the forward current value.
+    name : str, optional
+        Optional module name.
+
+    Notes
+    -----
+    The source IO mechanism uses instantaneous activation and one
+    dynamic inactivation gate. Freezing ``m_inf`` is useful for
+    NEURON-style no-concentration channel comparisons where the forward
+    current should match while the local voltage Jacobian only includes
+    the driving-force term.
+    """
 
     __module__ = "braincell.channel"
     root_type = HHTypedNeuron
@@ -1526,15 +1552,20 @@ class Ca_ZH2019_IO(HH):
         g_max: Union[brainstate.typing.ArrayLike, Callable] = 0.4 * (u.mS / u.cm ** 2),
         E: Union[brainstate.typing.ArrayLike, Callable] = 120.0 * u.mV,
         mMidV: Union[brainstate.typing.ArrayLike, Callable] = -61.0 * u.mV,
+        freeze_m_inf: bool = True,
         name: Optional[str] = None,
     ):
         super().__init__(size=size, name=name)
         self.g_max = braintools.init.param(g_max, self.varshape, allow_none=False)
         self.E = braintools.init.param(E, self.varshape, allow_none=False)
         self.mMidV = braintools.init.param(mMidV, self.varshape, allow_none=False)
+        self.freeze_m_inf = bool(freeze_m_inf)
 
     def current(self, V):
-        return self.g_max * self.f_m_inf(V) * self.h.value * (self.E - V)
+        m_inf = self.f_m_inf(V)
+        if self.freeze_m_inf:
+            m_inf = jax.lax.stop_gradient(m_inf)
+        return self.g_max * m_inf * self.h.value * (self.E - V)
 
     def f_m_inf(self, V):
         V = V.to_decimal(u.mV)
@@ -1551,3 +1582,29 @@ class Ca_ZH2019_IO(HH):
         return 40.0 + 30.0 * (
             1.0 / (1.0 + u.math.exp((V + 84.0) / 7.3))
         ) * u.math.exp((V + 160.0) / 30.0)
+
+
+@register_channel("Ca_ZH2019_IO_Frozen")
+class Ca_ZH2019_IO_Frozen(Ca_ZH2019_IO):
+    """IO calcium variant with frozen instantaneous activation.
+
+    Parameters
+    ----------
+    *args
+        Positional arguments forwarded to :class:`Ca_ZH2019_IO`.
+    **kwargs
+        Keyword arguments forwarded to :class:`Ca_ZH2019_IO`.
+
+    Notes
+    -----
+    This registry alias always sets ``freeze_m_inf=True``. It keeps the
+    same forward current as :class:`Ca_ZH2019_IO` while forcing autodiff
+    to ignore the voltage derivative of the instantaneous activation
+    term.
+    """
+
+    __module__ = "braincell.channel"
+
+    def __init__(self, *args, **kwargs):
+        kwargs["freeze_m_inf"] = True
+        super().__init__(*args, **kwargs)

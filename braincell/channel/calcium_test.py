@@ -18,6 +18,7 @@
 import unittest
 
 import brainunit as u
+import jax
 import jax.numpy as jnp
 
 from braincell._base import HHTypedNeuron, IonInfo
@@ -29,6 +30,7 @@ from braincell.channel.calcium import (
     CaHVA_MA2020_GoC,
     CaHVA_MA2020_GrC,
     Ca_ZH2019_IO,
+    Ca_ZH2019_IO_Frozen,
     CaHT_HM1992,
     CaHT_Re1993,
     CaL_IS2008,
@@ -1424,6 +1426,78 @@ class CaZH19IOTest(unittest.TestCase):
                 atol=1e-6,
             )
         )
+
+    def test_default_freezes_instantaneous_activation_gradient(self) -> None:
+        ch = Ca_ZH2019_IO(size=1, E=120.0 * u.mV, mMidV=-61.0 * u.mV)
+        V0 = -50.0
+        V = _V([V0])
+        ch.init_state(V)
+        ch.h.value = jnp.array([0.25])
+
+        def current_decimal(v_mV):
+            return ch.current(jnp.asarray([v_mV]) * u.mV).to_decimal(_DENSITY_UNIT)[0]
+
+        actual = jax.grad(current_decimal)(V0)
+        expected = -(ch.g_max * ch.f_m_inf(V) * ch.h.value).to_decimal(u.mS / u.cm ** 2)[0]
+        self.assertTrue(u.math.allclose(actual, expected, atol=1e-6))
+
+    def test_freeze_m_inf_can_be_disabled(self) -> None:
+        ch = Ca_ZH2019_IO(
+            size=1,
+            E=120.0 * u.mV,
+            mMidV=-61.0 * u.mV,
+            freeze_m_inf=False,
+        )
+        V0 = -50.0
+        V = _V([V0])
+        ch.init_state(V)
+        ch.h.value = jnp.array([0.25])
+
+        def current_decimal(v_mV):
+            return ch.current(jnp.asarray([v_mV]) * u.mV).to_decimal(_DENSITY_UNIT)[0]
+
+        def unfrozen_expected_current(v_mV):
+            v = jnp.asarray([v_mV]) * u.mV
+            return (ch.g_max * ch.f_m_inf(v) * ch.h.value * (ch.E - v)).to_decimal(_DENSITY_UNIT)[0]
+
+        actual = jax.grad(current_decimal)(V0)
+        expected = jax.grad(unfrozen_expected_current)(V0)
+        frozen_slope = -(ch.g_max * ch.f_m_inf(V) * ch.h.value).to_decimal(u.mS / u.cm ** 2)[0]
+        self.assertTrue(u.math.allclose(actual, expected, atol=1e-6))
+        self.assertFalse(bool(u.math.allclose(actual, frozen_slope, atol=1e-6)))
+
+    def test_frozen_variant_is_registered(self) -> None:
+        self.assertIs(get_registry().get("channel", "Ca_ZH2019_IO_Frozen"), Ca_ZH2019_IO_Frozen)
+
+    def test_frozen_current_matches_unfrozen_value(self) -> None:
+        V = _V([-50.0])
+        base = Ca_ZH2019_IO(size=1, E=120.0 * u.mV, mMidV=-61.0 * u.mV, freeze_m_inf=False)
+        frozen = Ca_ZH2019_IO_Frozen(size=1, E=120.0 * u.mV, mMidV=-61.0 * u.mV)
+        base.init_state(V)
+        frozen.init_state(V)
+        base.h.value = jnp.array([0.25])
+        frozen.h.value = jnp.array([0.25])
+        self.assertTrue(
+            u.math.allclose(
+                frozen.current(V).to_decimal(_DENSITY_UNIT),
+                base.current(V).to_decimal(_DENSITY_UNIT),
+                atol=1e-6,
+            )
+        )
+
+    def test_frozen_variant_keeps_only_driving_force_slope(self) -> None:
+        ch = Ca_ZH2019_IO_Frozen(size=1, E=120.0 * u.mV, mMidV=-61.0 * u.mV)
+        V0 = -50.0
+        V = _V([V0])
+        ch.init_state(V)
+        ch.h.value = jnp.array([0.25])
+
+        def current_decimal(v_mV):
+            return ch.current(jnp.asarray([v_mV]) * u.mV).to_decimal(_DENSITY_UNIT)[0]
+
+        actual = jax.grad(current_decimal)(V0)
+        expected = -(ch.g_max * ch.f_m_inf(V) * ch.h.value).to_decimal(u.mS / u.cm ** 2)[0]
+        self.assertTrue(u.math.allclose(actual, expected, atol=1e-6))
 
 
 if __name__ == "__main__":

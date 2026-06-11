@@ -89,7 +89,7 @@
     "label": "PC HCN1 MA24"
   },
   "identity": {
-    "mod_dir": "/home/swl/braincell/examples/neuron_compare/Cerebellum_mod/PC/channel"
+    "mod_dir": "../../Cerebellum_mod/PC/channel"
   },
   "defaults": {
     "channel_params": {
@@ -660,9 +660,9 @@ HCN 就是这样。
 
 当前内置 3 个通用模板：
 
-- [vinit_celsius.json](/home/swl/braincell/examples/neuron_compare/channel_no_conc/templates/vinit_celsius.json)
-- [dc.json](/home/swl/braincell/examples/neuron_compare/channel_no_conc/templates/dc.json)
-- [ac.json](/home/swl/braincell/examples/neuron_compare/channel_no_conc/templates/ac.json)
+- [vinit_celsius.json](../templates/vinit_celsius.json)
+- [dc.json](../templates/dc.json)
+- [ac.json](../templates/ac.json)
 
 这些模板只负责公共实验条件。
 
@@ -679,7 +679,7 @@ HCN 就是这样。
 
 参考：
 
-- [kv_test.json](/home/swl/braincell/examples/neuron_compare/channel_no_conc/configs/kv_test.json)
+- [kv_test.json](kv_test.json)
 
 它展示了：
 
@@ -691,7 +691,7 @@ HCN 就是这样。
 
 参考：
 
-- [hcn1_ma24_pc.json](/home/swl/braincell/examples/neuron_compare/channel_no_conc/configs/ma24_pc/hcn1_ma24_pc.json)
+- [hcn1_ma24_pc.json](ma24_pc/hcn1_ma24_pc.json)
 
 它展示了：
 

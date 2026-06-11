@@ -44,6 +44,7 @@ from .base import (
 from .policy import (
     CompositeByTypePolicy,
     CVPerBranch,
+    CVPerBranchList,
     CVPolicy,
     CVPolicyByTypeRule,
     DLambda,
@@ -57,6 +58,7 @@ __all__ = [
     "CVTree",
     "CompositeByTypePolicy",
     "CVPerBranch",
+    "CVPerBranchList",
     "CVPolicy",
     "CVPolicyByTypeRule",
     "DLambda",

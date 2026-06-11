@@ -80,12 +80,10 @@ PROCEDURE rate(v(mV),cai(mM)) {
 }
 
 PROCEDURE vdep(v(mV)) {
-	TABLE Yvdep FROM -100 TO 100 WITH 100
 	Yvdep = exp((v*1(/mV)+70)/27)
 }
 
 PROCEDURE concdep(cai(mM)) {
-	TABLE Yconcdep FROM 0 TO 0.01 WITH 1000
 	if (cai < 0.01) {
 		Yconcdep = 500(/ms)*( 0.015-cai*1(/mM) )/( exp((0.015-cai*1(/mM))/0.0013) -1 )
 	} else {

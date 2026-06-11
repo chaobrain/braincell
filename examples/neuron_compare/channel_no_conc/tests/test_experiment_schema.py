@@ -9,6 +9,7 @@ import unittest
 
 from ._helpers import (
     CHANNEL_NO_CONC_ROOT,
+    MOD_VALIDATE_MOD_DIR,
     TEMPLATES_ROOT,
     build_case_payload,
     build_main_config_payload,
@@ -56,8 +57,8 @@ class ExperimentSchemaTest(unittest.TestCase):
             model_config = experiment_schema.load_model_config(config_path)
             config_suffixes.add(model_config.mapping_spec.neuron.mechanism_name)
 
-        self.assertEqual(len(mod_suffixes), 82)
-        self.assertEqual(len(config_suffixes), 82)
+        self.assertEqual(len(mod_suffixes), 84)
+        self.assertEqual(len(config_suffixes), 84)
         self.assertEqual(config_suffixes, mod_suffixes)
 
     def test_repo_all_configs_load_and_expand_templates(self) -> None:
@@ -192,12 +193,13 @@ class ExperimentSchemaTest(unittest.TestCase):
                 root / "kv_test.json",
                 build_main_config_payload(["templates/smoke.json"]),
             )
+            expected_mod_dir = Path(MOD_VALIDATE_MOD_DIR).resolve()
 
             config = experiment_schema.load_sweep_config(config_path, "templates/smoke.json")
 
         self.assertEqual(config.config_id, "kv_test__smoke")
         self.assertEqual(config.group.group_id, "smoke")
-        self.assertEqual(config.base_case["identity"]["mod_dir"], "/home/swl/braincell/examples/convert_mod/mod_validate/mods")
+        self.assertEqual(config.base_case["identity"]["mod_dir"], str(expected_mod_dir))
 
     def test_load_sweep_config_rejects_template_not_declared_in_main_config(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

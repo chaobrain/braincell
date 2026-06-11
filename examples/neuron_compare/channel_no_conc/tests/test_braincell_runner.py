@@ -318,6 +318,8 @@ class BraincellRunnerTest(unittest.TestCase):
         result = braincell_runner.run_case(case)
 
         self.assertEqual(case.mapping_spec.current_source.ion_name, "k")
+        self.assertEqual(case.ion_state.Ci_mM, 54.4)
+        self.assertEqual(case.ion_state.Co_mM, 2.5)
         self.assertEqual(sorted(result["gates"].keys()), ["m", "n", "u"])
         self.assertEqual(result["time_ms"].shape, result["current"]["ix"].shape)
         self.assertTrue(np.isfinite(result["current"]["ix"]).all())

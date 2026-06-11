@@ -27,6 +27,8 @@ from .potassium import *
 from .potassium import __all__ as potassium_all
 from .potassium_calcium import *
 from .potassium_calcium import __all__ as potassium_calcium_all
+from .potassium_sodium import *
+from .potassium_sodium import __all__ as potassium_sodium_all
 from .sodium import *
 from .sodium import __all__ as sodium_all
 
@@ -36,6 +38,7 @@ __all__ = (
     leaky_all +
     potassium_all +
     potassium_calcium_all +
+    potassium_sodium_all +
     sodium_all
 )
 
@@ -79,4 +82,3 @@ def __getattr__(name):
         )
         return globals()[new_name]
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
-

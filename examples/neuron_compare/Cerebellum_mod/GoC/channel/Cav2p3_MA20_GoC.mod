@@ -79,13 +79,11 @@ FUNCTION vartau(v (mV), i) (ms) {
 }	
 
 PROCEDURE mhn(v (mV)) {LOCAL a, b :rest = -70
-    TABLE inf, tau DEPEND celsius FROM -100 TO 100 WITH 200
   	FROM i=0 TO 1 {
 	      tau[i] = vartau(v,i)
 		    inf[i] = varss(v,i)
 	  }
 }
-
 
 
 

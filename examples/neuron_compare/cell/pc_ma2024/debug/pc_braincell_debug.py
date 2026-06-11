@@ -49,6 +49,7 @@ class PC:
         config: PCConfig | None = None,
         *,
         frozen: bool = True,
+        ion_channel_update_order: str = "family",
     ):
         if params is None:
             raise ValueError("params is required.")
@@ -56,6 +57,7 @@ class PC:
         self.params = params
         self.config = config if config is not None else PCConfig()
         self.frozen = bool(frozen)
+        self.ion_channel_update_order = ion_channel_update_order
         self.morpho = None
         self.cell = None
         self.regions: dict[str, Any] = {}
@@ -71,7 +73,7 @@ class PC:
             V_init=self.config.v_init_mV * u.mV,
             solver="staggered",
             cache_ion_total_current=True,
-            ion_channel_update_order="family", #"family" or "integration"
+            ion_channel_update_order=self.ion_channel_update_order,
         )
         self._define_regions()
         self._paint_cable()
@@ -446,7 +448,7 @@ class PC:
             self.cell.paint(
                 soma,
                 mech.Channel(
-                    f"Cav3p3_MA2024_PC{frozen_suffix}",
+                    f"Cav3p3_MA2024_PC",
                     perm=self.params.cav33_soma_perm * (u.cm / u.second),
                     g_scale=self.params.cav33_g_scale,
                     ion_name="ca",
@@ -456,7 +458,7 @@ class PC:
             self.cell.paint(
                 dend,
                 mech.Channel(
-                    f"Cav3p3_MA2024_PC{frozen_suffix}",
+                    f"Cav3p3_MA2024_PC",
                     name="Cav3p3_dend_Frozen",
                     perm=self.params.cav33_dend_perm * (u.cm / u.second),
                     g_scale=self.params.cav33_g_scale,

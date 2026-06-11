@@ -263,7 +263,7 @@ def _probe_current_ion_info(
 
     if layout_id is not None:
         owner_key = runtime.current_owner_keys.get(int(layout_id))
-        if owner_key is not None:
+        if isinstance(owner_key, str):
             return runtime.get_ion(owner_key).pack_info()
 
     mechanism_name = declaration.mechanism

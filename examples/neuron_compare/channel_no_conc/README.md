@@ -4,8 +4,8 @@
 
 主说明入口：
 
-- 配置编写总说明： [configs/README.md](/home/swl/braincell/examples/neuron_compare/channel_no_conc/configs/README.md)
-- workflow / notebook / 输出说明： [workflows/README.md](/home/swl/braincell/examples/neuron_compare/channel_no_conc/workflows/README.md)
+- 配置编写总说明： [configs/README.md](configs/README.md)
+- workflow / notebook / 输出说明： [workflows/README.md](workflows/README.md)
 
 当前正式输入与入口：
 

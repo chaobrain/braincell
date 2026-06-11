@@ -55,7 +55,7 @@ INITIAL {
 
 BREAKPOINT { LOCAL z
 	z = (R*(celsius+273.15))/F
-	SOLVE states METHOD derivimplicit
+	SOLVE states METHOD cnexp
 		ik = gKur*(0.1 + 1/(1 + exp(-(v - 15)/13)))*m*m*m*n*u*(v - ek)
 	ino=gnonspec*(0.1 + 1/(1 + exp(-(v - 15)/13)))*m*m*m*n*u*(v - z*log((nao+ko)/(nai+ki)))
 }

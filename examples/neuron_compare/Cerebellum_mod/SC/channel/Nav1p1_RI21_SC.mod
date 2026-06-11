@@ -164,7 +164,7 @@ INITIAL {
 	nc = (1e12) * gbar / gunit	
 	qt = q10^((celsius-22 (degC))/10 (degC))
 	rates(v)
- 	:SOLVE seqinitial
+ 	SOLVE activation STEADYSTATE sparse
 }
 
 KINETIC activation
@@ -254,7 +254,6 @@ FUNCTION gateFlip() (1/ms) {
 	gateFlip = f01 * C1 + (f02-b01) * C2 + (f03-b02) * C3 + (f04-b03) * C4 - b04 * C5
 	gateFlip = gateFlip + f11 * I1 + (f12-b11) * I2	+ (f13-b12) * I3 + (f14-b13) * I4 - b14 * I5
 }
-
 
 
 

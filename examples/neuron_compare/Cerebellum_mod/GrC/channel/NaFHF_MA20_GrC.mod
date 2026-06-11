@@ -95,23 +95,6 @@ STATE {
 
 
 INITIAL {
-	C1=1
-	C2=0
-	C3=0
-	C4=0
-	C5=0
-	O=0
-	OB=0
-	I1=0
-	I2=0
-	I3=0
-	I4=0
-	I5=0
-	I6=0
-	L3=0
-	L4=0
-	L5=0
-	L6=0
 	Q10 =3^((celsius-20(degC))/10 (degC))
 	gamma = Q10 * Agamma
 	delta = Q10 * Adelta
@@ -125,6 +108,7 @@ INITIAL {
 	Loff = Q10 * ALoff
 	a = (Oon/Con)^0.25
 	b = (Ooff/Coff)^0.25
+	SOLVE seqinitial
 
 }
 
@@ -172,16 +156,39 @@ KINETIC kstates {
 	: connette 1 riga con 2 riga
 	~ C1 <-> I1 (Con,Coff)
 	~ C2 <-> I2 (Con*a,Coff*b)
-	~ C3 <-> I3 (Con*a^2,Coff*b^2)
-	~ C4 <-> I4 (Con*a^3,Coff*b^3)
-	~ C5 <-> I5 (Con*a^4,Coff*b^4)
+	~ C3 <-> I3 (Con*a*a,Coff*b*b)
+	~ C4 <-> I4 (Con*a*a*a,Coff*b*b*b)
+	~ C5 <-> I5 (Con*a*a*a*a,Coff*b*b*b*b)
 	~  O <-> I6 (Oon,Ooff)
 	
 	: connette 1 riga con 3 riga
 	~ C3 <-> L3 (Lon,Loff)
 	~ C4 <-> L4 (Lon*c,Loff*d)
-	~ C5 <-> L5 (Lon*c^2,Loff*d^2)
-	~  O <-> L6 (Lon*c^2,Loff*d^2)
+	~ C5 <-> L5 (Lon*c*c,Loff*d*d)
+	~  O <-> L6 (Lon*c*c,Loff*d*d)
 	
 	CONSERVE C1+C2+C3+C4+C5+O+OB+I1+I2+I3+I4+I5+I6+L3+L4+L5+L6=1
+}
+
+LINEAR seqinitial {
+	~          I1*Coff + C2*n4*beta(v) - C1*(Con+n1*alfa(v)) = 0
+	~ C1*n1*alfa(v) + I2*Coff*b + C3*n3*beta(v) - C2*(n4*beta(v)+Con*a+n2*alfa(v)) = 0
+	~ C2*n2*alfa(v) + I3*Coff*b*b + C4*n2*beta(v) + L3*Loff - C3*(n3*beta(v)+Con*a*a+n3*alfa(v)+Lon) = 0
+	~ C3*n3*alfa(v) + I4*Coff*b*b*b + C5*n1*beta(v) + L4*Loff*d - C4*(n2*beta(v)+Con*a*a*a+n4*alfa(v)+Lon*c) = 0
+	~ C4*n4*alfa(v) + I5*Coff*b*b*b*b + O*delta + L5*Loff*d*d - C5*(n1*beta(v)+Con*a*a*a*a+gamma+Lon*c*c) = 0
+	~ C5*gamma + OB*teta(v) + I6*Ooff + L6*Loff*d*d - O*(delta+epsilon+Oon+Lon*c*c) = 0
+	~ O*epsilon - OB*teta(v) = 0
+
+	~          C1*Con + I2*n4*beta(v)*b - I1*(Coff+n1*alfa(v)*a) = 0
+	~ I1*n1*alfa(v)*a + C2*Con*a + I3*n3*beta(v)*b - I2*(n4*beta(v)*b+Coff*b+n2*alfa(v)*a) = 0
+	~ I2*n2*alfa(v)*a + C3*Con*a*a + I4*n2*beta(v)*b - I3*(n3*beta(v)*b+Coff*b*b+n3*alfa(v)*a) = 0
+	~ I3*n3*alfa(v)*a + C4*Con*a*a*a + I5*n1*beta(v)*b - I4*(n2*beta(v)*b+Coff*b*b*b+n4*alfa(v)*a) = 0
+	~ I4*n4*alfa(v)*a + C5*Con*a*a*a*a + I6*delta - I5*(n1*beta(v)*b+Coff*b*b*b*b+gamma) = 0
+
+	~          C3*Lon + L4*n2*alfa(v)*d - L3*(Loff+n3*alfa(v)*c) = 0
+	~ L3*n3*alfa(v)*c + C4*Lon*c + L5*n1*alfa(v)*d - L4*(n2*alfa(v)*d+Loff*d+n4*alfa(v)*c) = 0
+	~ L4*n4*alfa(v)*c + C5*Lon*c*c + L6*delta - L5*(n1*alfa(v)*d+Loff*d*d+gamma) = 0
+	~ L5*gamma + O*Lon*c*c - L6*(delta+Loff*d*d) = 0
+
+	~ C1+C2+C3+C4+C5+O+OB+I1+I2+I3+I4+I5+I6+L3+L4+L5+L6=1
 }

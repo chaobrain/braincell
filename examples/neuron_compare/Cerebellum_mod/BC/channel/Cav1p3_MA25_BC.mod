@@ -4,7 +4,6 @@
 NEURON {
 SUFFIX Cav1p3_MA25_BC
 	USEION ca READ cai, eca WRITE ica   :,cai,cao...., cai, cao
-	USEION lca WRITE ilca VALENCE 0
 	RANGE gbar, g
 	GLOBAL kf, h2Tau, VDI
 }
@@ -19,7 +18,6 @@ UNITS {
 }
 
 ASSIGNED {
-	ilca		(mA/cm2) : instantaneous calcium current of l-type calcium channel
 	v			(mV)
 	ica		(mA/cm2)
 	g		(S/cm2)
@@ -35,7 +33,7 @@ ASSIGNED {
 PARAMETER {
 	hTau 	= 44.3 (ms)
 	h2Tau = 0.5 (ms)
-	gbar = 0	(S/cm2)
+	gbar = 0.000005	(S/cm2)
 		vshift = 0 		(mV)
 		
 		:parameters for calcium-dep inactivation (CDI) 
@@ -55,15 +53,14 @@ INITIAL {
 }
 
 BREAKPOINT {
-	rates()
 	SOLVE state METHOD cnexp
 	g = gbar*m*h*h2 : h2 calcium dependent inactivation is taken from santhakumar 05.. tjos assumes instantaneous calcium inactivation
 	ica = (g)*(v - eca) : 
-	ilca = ica
 	
 }
 
 DERIVATIVE state {	: exact when v held constant integrates over dt step
+	rates()
 	m' = (mInf-m) / mTau
 	h' = (hInf-h) / hTau
 	h2' = (h2Inf-h2)/h2Tau
@@ -81,8 +78,6 @@ PROCEDURE rates(){
 		:h2 = caIn(cai)
 		h2Inf = kf/(kf+cai)
 }
-
-
 
 
 

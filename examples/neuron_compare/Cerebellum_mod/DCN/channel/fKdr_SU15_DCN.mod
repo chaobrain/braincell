@@ -48,7 +48,6 @@ DERIVATIVE states {
 }
 
 PROCEDURE rate(v(mV)) {
-	TABLE minf, taum FROM -150 TO 100 WITH 300
     minf = 1 / (1 + exp((v + 40) / -7.8))
     taum = 13.9 / (exp((v + 40) / 12) + exp((v + 40) / -13)) + 0.1
     taum = taum / qdeltat

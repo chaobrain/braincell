@@ -63,7 +63,6 @@ __all__ = [
     "KM_MA2020_GrC",
     "Kir2p3_MA2020_GrC",
     "Kv1p1_MA2020_GrC",
-    "Kv1p5_MA2020_GrC",
     "Kv2p2_0010_MA2020_GrC",
     "Kv3p4_MA2020_GrC",
     "Kv4p3_MA2020_GrC",
@@ -1048,17 +1047,6 @@ class Kv1p5_MA2024_PC(HH):
         return 6800.0 * self.Tauinacts
 
 
-@register_channel("Kv1p5_MA2020_GrC")
-class Kv1p5_MA2020_GrC(Kv1p5_MA2024_PC):
-    """Default ``ik`` path of ``Kv1p5_MA20_GrC.mod``.
-
-    The GrC mechanism also declares ``ino`` through ``gnonspec``, but
-    ``gnonspec`` defaults to zero in the source mod and is not exposed here.
-    """
-
-    __module__ = "braincell.channel"
-
-
 @register_channel("Kv3p3_MA2024_PC")
 class Kv3p3_MA2024_PC(HH):
     """Template-based import of ``Kv3p3_MA24_PC.mod``."""
@@ -1350,14 +1338,14 @@ class Kv4p3_MA2025_BC(HH):
         self.g_max = braintools.init.param(g_max, self.varshape, allow_none=False)
         self.temp = braintools.init.param(temp, self.varshape, allow_none=False)
         self.Aalpha_a = 0.8147
-        self.Kalpha_a = -23.32708
+        self.Kalpha_a = -23.3271
         self.V0alpha_a = -9.17203 * u.mV
         self.Abeta_a = 0.1655
-        self.Kbeta_a = 19.47175 * u.mV
-        self.V0beta_a = -18.27914 * u.mV
+        self.Kbeta_a = 19.4718 * u.mV
+        self.V0beta_a = -18.2791 * u.mV
         self.Aalpha_b = 0.0368
         self.Kalpha_b = 12.8433 * u.mV
-        self.V0alpha_b = -111.33209 * u.mV
+        self.V0alpha_b = -111.332 * u.mV
         self.Abeta_b = 0.0345
         self.Kbeta_b = -8.90123 * u.mV
         self.V0beta_b = -49.9537 * u.mV
@@ -1429,14 +1417,14 @@ class Kv4p3_MA2024_PC(HH):
         self.g_max = braintools.init.param(g_max, self.varshape, allow_none=False)
         self.temp = braintools.init.param(temp, self.varshape, allow_none=False)
         self.Aalpha_a = 0.8147
-        self.Kalpha_a = -23.32708
+        self.Kalpha_a = -23.3271
         self.V0alpha_a = -9.17203 * u.mV
         self.Abeta_a = 0.1655
-        self.Kbeta_a = 19.47175 * u.mV
-        self.V0beta_a = -18.27914 * u.mV
+        self.Kbeta_a = 19.4718 * u.mV
+        self.V0beta_a = -18.2791 * u.mV
         self.Aalpha_b = 0.0368
         self.Kalpha_b = 12.8433 * u.mV
-        self.V0alpha_b = -111.33209 * u.mV
+        self.V0alpha_b = -111.332 * u.mV
         self.Abeta_b = 0.0345
         self.Kbeta_b = -8.90123 * u.mV
         self.V0beta_b = -49.9537 * u.mV
@@ -1508,14 +1496,14 @@ class Kv4p3_RI2021_SC(HH):
         self.g_max = braintools.init.param(g_max, self.varshape, allow_none=False)
         self.temp = braintools.init.param(temp, self.varshape, allow_none=False)
         self.Aalpha_a = 0.8147
-        self.Kalpha_a = -23.32708 * u.mV
+        self.Kalpha_a = -23.3271 * u.mV
         self.V0alpha_a = -9.17203 * u.mV
         self.Abeta_a = 0.1655
-        self.Kbeta_a = 19.47175 * u.mV
-        self.V0beta_a = -18.27914 * u.mV
+        self.Kbeta_a = 19.4718 * u.mV
+        self.V0beta_a = -18.2791 * u.mV
         self.Aalpha_b = 0.0368
         self.Kalpha_b = 12.8433 * u.mV
-        self.V0alpha_b = -111.33209 * u.mV
+        self.V0alpha_b = -111.332 * u.mV
         self.Abeta_b = 0.0345
         self.Kbeta_b = -8.90123 * u.mV
         self.V0beta_b = -49.9537 * u.mV
@@ -1770,14 +1758,14 @@ class Kv4p3_MA2020_GoC(HH):
         self.g_max = braintools.init.param(g_max, self.varshape, allow_none=False)
         self.temp = braintools.init.param(temp, self.varshape, allow_none=False)
         self.Aalpha_a = 0.8147
-        self.Kalpha_a = -23.32708 * u.mV
+        self.Kalpha_a = -23.3271 * u.mV
         self.V0alpha_a = -9.17203 * u.mV
         self.Abeta_a = 0.1655
-        self.Kbeta_a = 19.47175 * u.mV
-        self.V0beta_a = -18.27914 * u.mV
+        self.Kbeta_a = 19.4718 * u.mV
+        self.V0beta_a = -18.2791 * u.mV
         self.Aalpha_b = 0.0368
         self.Kalpha_b = 12.8433 * u.mV
-        self.V0alpha_b = -111.33209 * u.mV
+        self.V0alpha_b = -111.332 * u.mV
         self.Abeta_b = 0.0345
         self.Kbeta_b = -8.90123 * u.mV
         self.V0beta_b = -49.9537 * u.mV
@@ -2113,14 +2101,14 @@ class Kv4p3_MA2020_GrC(HH):
         self.g_max = braintools.init.param(g_max, self.varshape, allow_none=False)
         self.temp = braintools.init.param(temp, self.varshape, allow_none=False)
         self.Aalpha_a = 0.8147
-        self.Kalpha_a = -23.32708 * u.mV
+        self.Kalpha_a = -23.3271 * u.mV
         self.V0alpha_a = -9.17203 * u.mV
         self.Abeta_a = 0.1655
-        self.Kbeta_a = 19.47175 * u.mV
-        self.V0beta_a = -18.27914 * u.mV
+        self.Kbeta_a = 19.4718 * u.mV
+        self.V0beta_a = -18.2791 * u.mV
         self.Aalpha_b = 0.0368
         self.Kalpha_b = 12.8433 * u.mV
-        self.V0alpha_b = -111.33209 * u.mV
+        self.V0alpha_b = -111.332 * u.mV
         self.Abeta_b = 0.0345
         self.Kbeta_b = -8.90123 * u.mV
         self.V0beta_b = -49.9537 * u.mV

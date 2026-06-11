@@ -24,6 +24,7 @@ from .runtime import (  # noqa: F401
     _BoundIonChannelRuntime,
     _build_runtime_nodes,
     _channel_current_owner_family,
+    _channel_current_owner_specs,
     _channel_family_slots,
     _instantiate_runtime_node,
     _is_root_level_runtime_node,

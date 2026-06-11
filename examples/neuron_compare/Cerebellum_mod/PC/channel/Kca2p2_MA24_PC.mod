@@ -94,7 +94,7 @@ BREAKPOINT{
 
 INITIAL{
 	rate(celsius)
-	SOLVE kin STEADYSTATE sparse
+	SOLVE seqinitial
 } 
 
 KINETIC kin{ 
@@ -106,6 +106,16 @@ KINETIC kin{
 	~c4<->o2 (diro2_t, invo2_t) 
 	CONSERVE c1+c2+c3+c4+o2+o1=1 
 } 
+
+LINEAR seqinitial {
+	rates(cai/diff)
+	~ c2*invc1_t - c1*dirc2_t_ca = 0
+	~ c1*dirc2_t_ca + c3*invc2_t - c2*(invc1_t + dirc3_t_ca) = 0
+	~ c2*dirc3_t_ca + c4*invc3_t + o1*invo1_t - c3*(invc2_t + dirc4_t_ca + diro1_t) = 0
+	~ c3*dirc4_t_ca + o2*invo2_t - c4*(invc3_t + diro2_t) = 0
+	~ c4*diro2_t - o2*invo2_t = 0
+	~ c1+c2+c3+c4+o2+o1 = 1
+}
 
 FUNCTION temper (Q10, celsius (degC)) {
 	temper = Q10^((celsius -23(degC)) / 10(degC)) 

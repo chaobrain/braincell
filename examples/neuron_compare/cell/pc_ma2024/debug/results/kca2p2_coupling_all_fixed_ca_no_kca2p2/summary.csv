@@ -1,0 +1,2 @@
+case,ion_channel_update_order,kca2p2,cdp,ca_channels,soma_max_abs_mV,soma_max_time_ms,soma_signed_delta_mV,compartment_max_abs_mV,compartment_max_time_ms,compartment_max_branch_index,compartment_max_local_index,compartment_max_branch_name,cai_max_abs,cai_max_time_ms,eca_max_abs,eca_max_time_ms
+all_fixed_ca_no_kca2p2_family,family,False,False,True,21.932282313829507,88.1,-21.932282313829507,21.932282313829507,88.1,0,0,soma,0.0,0.0,3.62349846103578,0.0

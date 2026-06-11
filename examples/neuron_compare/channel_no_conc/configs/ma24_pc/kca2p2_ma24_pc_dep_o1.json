@@ -1,0 +1,51 @@
+{
+  "meta": {
+    "label": "PC Kca2p2 MA24 dep O1 experiment"
+  },
+  "identity": {
+    "mod_dir": "../../../Cerebellum_mod/PC/channel"
+  },
+  "defaults": {
+    "channel_params": {
+      "g_max_S_cm2": 0.038
+    }
+  },
+  "mapping": {
+    "current": "ik",
+    "impl_name": {
+      "neuron": "Kca2p2_MA24_PC",
+      "braincell": "Kca2p2_MA2024_PC"
+    },
+    "gate_names": {
+      "canonical": [
+        "C2",
+        "C3",
+        "C4",
+        "O2"
+      ],
+      "neuron": [
+        "c2",
+        "c3",
+        "c4",
+        "o2"
+      ],
+      "braincell": [
+        "C2",
+        "C3",
+        "C4",
+        "O2"
+      ]
+    },
+    "channel_params": {
+      "g_max_S_cm2": {
+        "neuron": "gkbar",
+        "braincell": "g_max"
+      }
+    }
+  },
+  "templates": [
+    "../../templates/vinit_celsius.json",
+    "../../templates/dc.json",
+    "../../templates/ac.json"
+  ]
+}

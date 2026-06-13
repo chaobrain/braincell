@@ -712,13 +712,14 @@ def _linear_and_const_term(target, V_n, *args):
         )
     linear, derivative = linearizer(V_n, *args)
     linear_mantissa = u.get_mantissa(linear)
+    linear_unit = u.get_unit(derivative) / u.get_unit(V_n)
     if getattr(linear_mantissa, "dtype", None) == jax.dtypes.float0:
         linear = u.Quantity(
             jnp.zeros_like(u.get_mantissa(derivative)),
-            u.get_unit(derivative) / u.get_unit(V_n),
+            linear_unit,
         )
     else:
-        linear = u.Quantity(linear_mantissa, u.get_unit(derivative) / u.get_unit(linear))
+        linear = u.Quantity(linear_mantissa, linear_unit)
     const = derivative - V_n * linear
     return linear, const
 

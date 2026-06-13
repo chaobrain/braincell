@@ -42,6 +42,7 @@ from braincell.filter import RootLocation
 from braincell.quad import  get_registry, staggered_step
 from braincell.quad._staggered import (
     _build_backsub_indices,
+    _linear_and_const_term,
     _to_jax_quantity,
     comp_backsub_raw,
     comp_triang_raw,
@@ -91,6 +92,27 @@ class DhsVoltageGuardTest(unittest.TestCase):
 
         with self.assertRaisesRegex(TypeError, "node-tree aware"):
             dhs_voltage_step(HalfTarget(), 0. * u.ms, 0.1 * u.ms)
+
+
+class DhsLinearizationUnitTest(unittest.TestCase):
+
+    def test_linear_unit_uses_derivative_over_voltage_when_grad_is_unitless(self):
+        class Target:
+            def _voltage_linearizer(self):
+                def linearizer(V):
+                    linear = jnp.full(V.shape, -0.1)
+                    derivative = jnp.full(V.shape, 2.0) * (u.nA / u.uF)
+                    return linear, derivative
+
+                return linearizer
+
+        V_n = jnp.array([-65.0, -64.0]) * u.mV
+        linear, const = _linear_and_const_term(Target(), V_n)
+
+        expected_linear_unit = (u.nA / u.uF) / u.mV
+        np.testing.assert_allclose(np.asarray(linear.to_decimal(expected_linear_unit)), [-0.1, -0.1])
+        self.assertEqual(u.get_unit(const), u.get_unit(2.0 * u.nA / u.uF))
+        np.testing.assert_allclose(np.asarray((V_n * linear + const).to_decimal(u.nA / u.uF)), [2.0, 2.0])
 
 
 class CompTriangRawTest(unittest.TestCase):

@@ -58,9 +58,9 @@ from braincell._discretization.base import NodeTree
 
 __all__ = [
     "CellRuntimeState",
-    "ClampActiveTable",
+    "ClampRoutingTable",
     "MechanismLayout",
-    "build_clamp_active_table",
+    "build_clamp_routing_table",
     "build_placeholder_ions",
     "clone_morpho",
     "cv_value_vector",
@@ -111,35 +111,38 @@ NETSTIM_KIND = "NetStim"
 
 
 @dataclass(frozen=True)
-class ClampActiveTable:
-    """Active midpoint clamp points and their membrane areas.
+class ClampRoutingTable:
+    """Point-clamp routing metadata for membrane and boundary currents.
 
-    Building this once at compile time replaces the per-step filter
-    walk the legacy ``Cell._point_clamp_input`` used, and lets
-    ``currents._clamp_density`` run without iterating over layouts.
+    Point clamps can land either on CV midpoint nodes or on boundary nodes.
+    Midpoint clamps have a membrane area and are converted from total current
+    to current density before entering the membrane equation. Boundary clamps
+    do not have membrane area and are consumed as total point currents by the
+    node-tree voltage solver.
 
     Attributes
     ----------
-    ids : np.ndarray
-        ``(n_active,)`` ``int32`` sorted unique midpoint point ids that carry
-        a clamp layout.
-    area : np.ndarray
-        ``(n_active,)`` ``float64`` membrane area in ``cm^2`` at those
-        points.
+    midpoint_ids : np.ndarray
+        Sorted unique midpoint point ids that carry clamp layouts.
+    midpoint_area : np.ndarray
+        Membrane area in ``cm^2`` for ``midpoint_ids``.
+    boundary_ids : np.ndarray
+        Sorted unique non-midpoint point ids that carry clamp layouts.
     """
 
-    ids: np.ndarray
-    area: np.ndarray
+    midpoint_ids: np.ndarray
+    midpoint_area: np.ndarray
+    boundary_ids: np.ndarray
 
 
-def build_clamp_active_table(
+def build_clamp_routing_table(
     *,
     layouts: "tuple[MechanismLayout, ...]",
     cvs,
     node_tree: "NodeTree",
     n_point: int,
-) -> ClampActiveTable | None:
-    """Return a :class:`ClampActiveTable` or ``None`` if no clamps placed.
+) -> ClampRoutingTable | None:
+    """Return point-clamp routing metadata or ``None`` if no clamps exist.
 
     Parameters
     ----------
@@ -156,9 +159,7 @@ def build_clamp_active_table(
     ------
     ValueError
         If any active midpoint clamp point has non-positive membrane area
-        (would produce NaN in ``I_total / area`` division). Endpoint clamps
-        are intentionally excluded here because they are total point currents
-        consumed by the point-tree solver, not membrane current densities.
+        (would produce NaN in ``I_total / area`` division).
     """
     active: set[int] = set()
     for layout in layouts:
@@ -179,9 +180,6 @@ def build_clamp_active_table(
         point_area[pid] = float(np.asarray(cv.area.to_decimal(u.cm ** 2), dtype=float))
 
     active_midpoints = sorted(pid for pid in active if pid in midpoint_ids)
-    if not active_midpoints:
-        return None
-
     ids = np.asarray(active_midpoints, dtype=np.int32)
     area = point_area[ids]
     if np.any(area <= 0.0):
@@ -190,7 +188,15 @@ def build_clamp_active_table(
             "Midpoint clamp active points must have positive membrane area; "
             f"got non-positive area at point ids {bad!r}."
         )
-    return ClampActiveTable(ids=ids, area=area.astype(np.float64, copy=False))
+    boundary_ids = np.asarray(
+        sorted(pid for pid in active if pid not in midpoint_ids),
+        dtype=np.int32,
+    )
+    return ClampRoutingTable(
+        midpoint_ids=ids,
+        midpoint_area=area.astype(np.float64, copy=False),
+        boundary_ids=boundary_ids,
+    )
 
 
 @dataclass
@@ -243,7 +249,7 @@ class CellRuntimeState:
     dhs_static_cache: object | None = None
     axial_operator_np: np.ndarray | None = None
     axial_operator_cache: object | None = None
-    clamp_active_table: object | None = None
+    clamp_routing_table: object | None = None
     cv_area: object | None = None  # (n_cv,) brainunit Quantity, cm^2
     point_area: object | None = None  # (n_point,) brainunit Quantity, cm^2
     pop_size: tuple[int, ...] = ()
@@ -411,7 +417,7 @@ class CellRuntimeState:
             n_point=n_point,
         )
 
-        clamp_active_table = build_clamp_active_table(
+        clamp_routing_table = build_clamp_routing_table(
             layouts=tuple(layouts),
             cvs=cell.cvs,
             node_tree=node_tree,
@@ -454,7 +460,7 @@ class CellRuntimeState:
             dhs_static_cache=None,
             axial_operator_np=None,
             axial_operator_cache=None,
-            clamp_active_table=clamp_active_table,
+            clamp_routing_table=clamp_routing_table,
             cv_area=cv_area,
             point_area=point_area,
             pop_size=pop_size,
@@ -623,16 +629,52 @@ class CellRuntimeState:
         layout = self.layouts[int(layout_id)]
         return _extract_point_value(layout, point_id=int(point_id), buffer=self.state_buffers[key])
 
-    def evaluate_point_clamps(self, *, t) -> object:
+    def evaluate_point_clamps(self, *, t, point_ids=None) -> object:
+        """Evaluate clamp current on selected point-tree nodes.
+
+        Parameters
+        ----------
+        t : Quantity[time]
+            Absolute simulation time.
+        point_ids : array-like of int or None, optional
+            Optional point-id filter. When provided, only clamp layouts that
+            touch these point ids are evaluated and scattered.
+
+        Returns
+        -------
+        Quantity
+            Total clamp current in ``nA`` with full point-space shape
+            ``pop_size + (n_point,)``. Points outside ``point_ids`` are zero
+            when a filter is provided.
+        """
         point_current_decimal = u.math.zeros(self.pop_size + (self.n_point,), dtype=float)
+        point_filter = None if point_ids is None else set(int(pid) for pid in np.asarray(point_ids, dtype=np.int32).tolist())
         for layout in self.layouts:
             if layout.target != "point" or layout.point_index is None:
                 continue
             if layout.kind not in CLAMP_KINDS:
                 continue
-            local_currents = _evaluate_clamp_layout(self, layout=layout, t=t)
+            if point_filter is None:
+                local_indices = range(layout.n_active)
+                point_index = layout.point_index
+            else:
+                selected = [
+                    local_index
+                    for local_index, point_id in enumerate(layout.point_index.tolist())
+                    if int(point_id) in point_filter
+                ]
+                if not selected:
+                    continue
+                local_indices = selected
+                point_index = layout.point_index[np.asarray(selected, dtype=np.int32)]
+            local_currents = _evaluate_clamp_layout(
+                self,
+                layout=layout,
+                t=t,
+                local_indices=local_indices,
+            )
             local_current_decimal = _quantity_sequence_to_decimal_vector(local_currents, unit=u.nA)
-            point_current_decimal = point_current_decimal.at[..., layout.point_index].add(local_current_decimal)
+            point_current_decimal = point_current_decimal.at[..., point_index].add(local_current_decimal)
         return u.Quantity(point_current_decimal, u.nA)
 
     def evaluate_point_netstims(self, *, t) -> object:
@@ -1158,7 +1200,7 @@ def _extract_point_value(layout: MechanismLayout, *, point_id: int, buffer: obje
     return _pick(int(matches[0]))
 
 
-def _evaluate_clamp_layout(runtime: CellRuntimeState, *, layout: MechanismLayout, t) -> tuple[object, ...]:
+def _evaluate_clamp_layout(runtime: CellRuntimeState, *, layout: MechanismLayout, t, local_indices=None) -> tuple[object, ...]:
     """Evaluate one sparse clamp layout at time ``t``.
 
     Parameters
@@ -1169,6 +1211,9 @@ def _evaluate_clamp_layout(runtime: CellRuntimeState, *, layout: MechanismLayout
         Sparse point-layout to evaluate.
     t : Quantity[time]
         Absolute simulation time.
+    local_indices : iterable of int or None, optional
+        Optional local active-point indices to evaluate. ``None`` evaluates
+        every active point in ``layout``.
 
     Returns
     -------
@@ -1179,7 +1224,8 @@ def _evaluate_clamp_layout(runtime: CellRuntimeState, *, layout: MechanismLayout
     if layout.layout != "sparse" or layout.point_index is None:
         raise ValueError(f"Clamp layout {layout.id!r} must be sparse with point_index.")
     out: list[object] = []
-    for local_index in range(layout.n_active):
+    indices = range(layout.n_active) if local_indices is None else local_indices
+    for local_index in indices:
         if layout.kind == "CurrentClamp":
             local_t = (t - _scalar_state_value(
                 runtime,

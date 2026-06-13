@@ -4,7 +4,7 @@ Responsibilities:
 
 1. Seed point-space membrane current density with zeros.
 2. Add registered current-input callables via :meth:`sum_current_inputs`.
-3. Add clamp density from the precomputed :class:`ClampActiveTable`.
+3. Add clamp density from the precomputed clamp routing table.
 4. Iterate channel currents.
 5. Bridge point-space sum back to CV-space for the voltage update.
 """
@@ -105,8 +105,8 @@ def _synapse_contrib_to_point(runtime: CellRuntimeState, layout, syn, point_V):
 def _clamp_density(runtime: CellRuntimeState, *, t):
     """Return ``(..., n_point) nA/cm^2`` clamp current density.
 
-    Reads the pre-built :class:`ClampActiveTable`; no layout iteration
-    in the hot path.
+    Reads the pre-built midpoint entries from the clamp routing table; no
+    layout iteration is needed in the hot path.
 
     Parameters
     ----------
@@ -121,12 +121,12 @@ def _clamp_density(runtime: CellRuntimeState, *, t):
         Clamp current density in point space with shape
         ``runtime.pop_size + (runtime.n_point,)``.
     """
-    table = runtime.clamp_active_table
-    if table is None:
+    table = runtime.clamp_routing_table
+    if table is None or len(table.midpoint_ids) == 0:
         return u.Quantity(jnp.zeros(runtime.pop_size + (runtime.n_point,), dtype=float), _CURRENT_DENSITY)
 
-    currents_nA = runtime.evaluate_point_clamps(t=t).to_decimal(u.nA)
-    active_density = currents_nA[..., table.ids] / table.area
+    currents_nA = runtime.evaluate_point_clamps(t=t, point_ids=table.midpoint_ids).to_decimal(u.nA)
+    active_density = currents_nA[..., table.midpoint_ids] / table.midpoint_area
     density = jnp.zeros(runtime.pop_size + (runtime.n_point,), dtype=float)
-    density = density.at[..., table.ids].set(active_density)
+    density = density.at[..., table.midpoint_ids].set(active_density)
     return u.Quantity(density, _CURRENT_DENSITY)

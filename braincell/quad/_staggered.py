@@ -156,7 +156,6 @@ def staggered_step(
 class DHSStaticSource:
     n_point: int
     dynamic_rows_np: np.ndarray
-    dynamic_point_ids_np: np.ndarray
     row_to_point_id_np: np.ndarray
     row_capacitance_uF_np: np.ndarray
     diag_ms_inv_np: np.ndarray
@@ -321,7 +320,6 @@ def _build_dhs_static_source(target, *, node_tree, scheduling) -> DHSStaticSourc
     return DHSStaticSource(
         n_point=n_point,
         dynamic_rows_np=dynamic_rows,
-        dynamic_point_ids_np=np.asarray(node_tree.cv_to_mid_node_id, dtype=np.int32),
         row_to_point_id_np=np.asarray(scheduling.row_to_point_id, dtype=np.int32),
         row_capacitance_uF_np=row_capacitance,
         diag_ms_inv_np=diag_ms_inv,
@@ -484,15 +482,15 @@ def _build_dhs_numeric_state(V_n, linear, const, *, dt, static_source: DHSStatic
 
 
 def _edge_point_current(target, *, t, static_source: DHSStaticSource):
-    """Return point clamp current with midpoint rows removed."""
+    """Return boundary point-clamp current for the DHS point-tree RHS."""
 
     runtime = getattr(target, "_runtime", None)
     if runtime is None or not hasattr(runtime, "evaluate_point_clamps"):
         return None
-    current = runtime.evaluate_point_clamps(t=t)
-    current_nA = u.math.asarray(current.to_decimal(u.nA))
-    current_nA = current_nA.at[static_source.dynamic_point_ids_np].set(0.0)
-    return u.Quantity(current_nA, u.nA)
+    table = getattr(runtime, "clamp_routing_table", None)
+    if table is None or len(table.boundary_ids) == 0:
+        return None
+    return runtime.evaluate_point_clamps(t=t, point_ids=table.boundary_ids)
 
 
 def _edge_current_voltage_delta(edge_point_current, *, dt, static_source: DHSStaticSource):

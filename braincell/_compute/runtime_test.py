@@ -2039,6 +2039,39 @@ class EvaluatePointClampsJitTest(unittest.TestCase):
         self.assertAlmostEqual(float(out[0, point_id].to_decimal(u.nA)), 0.1, places=6)
         self.assertAlmostEqual(float(out[1, point_id].to_decimal(u.nA)), 0.2, places=6)
 
+    def test_evaluate_point_clamps_can_filter_midpoint_and_boundary_points(self) -> None:
+        cell = Cell(_build_tree())
+        cell.place(
+            RootLocation(x=0.0),
+            CurrentClamp(durations=1.0 * u.ms, amplitudes=0.1 * u.nA),
+        )
+        cell.place(
+            RootLocation(x=0.5),
+            CurrentClamp(durations=1.0 * u.ms, amplitudes=0.2 * u.nA),
+        )
+        cell.init_state()
+
+        runtime = cell.runtime
+        root_id = int(cell.node_tree.root_node_id)
+        midpoint_id = int(cell.node_tree.cv_to_mid_node_id[0])
+
+        all_current = runtime.evaluate_point_clamps(t=0.5 * u.ms).to_decimal(u.nA)
+        midpoint_current = runtime.evaluate_point_clamps(
+            t=0.5 * u.ms,
+            point_ids=np.asarray([midpoint_id], dtype=np.int32),
+        ).to_decimal(u.nA)
+        boundary_current = runtime.evaluate_point_clamps(
+            t=0.5 * u.ms,
+            point_ids=np.asarray([root_id], dtype=np.int32),
+        ).to_decimal(u.nA)
+
+        self.assertAlmostEqual(float(all_current[root_id]), 0.1, places=6)
+        self.assertAlmostEqual(float(all_current[midpoint_id]), 0.2, places=6)
+        self.assertAlmostEqual(float(midpoint_current[root_id]), 0.0, places=6)
+        self.assertAlmostEqual(float(midpoint_current[midpoint_id]), 0.2, places=6)
+        self.assertAlmostEqual(float(boundary_current[root_id]), 0.1, places=6)
+        self.assertAlmostEqual(float(boundary_current[midpoint_id]), 0.0, places=6)
+
 
 class DensityLayoutMaskingUnderJit(unittest.TestCase):
     """Task 19 (C5-adjacent): density mantissa is JAX-friendly, no object dtype."""
@@ -2471,15 +2504,15 @@ class PointSynapseRuntimeTest(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
-# ClampActiveTable tests (absorbed from former clamp_table_test.py)
+# ClampRoutingTable tests
 # ---------------------------------------------------------------------------
 
 from dataclasses import dataclass as _dataclass
 
 from braincell._compute.runtime import (
     CLAMP_KINDS,
-    ClampActiveTable,
-    build_clamp_active_table,
+    ClampRoutingTable,
+    build_clamp_routing_table,
 )
 
 
@@ -2511,7 +2544,7 @@ def _clamp_cv(cv_id: int, area_cm2: float) -> _ClampStubCV:
     return _ClampStubCV(id=cv_id, area=area_cm2 * u.cm ** 2)
 
 
-class TestBuildClampActiveTable(unittest.TestCase):
+class TestBuildClampRoutingTable(unittest.TestCase):
 
     def test_no_clamp_layouts_returns_none(self):
         layouts = (
@@ -2521,7 +2554,7 @@ class TestBuildClampActiveTable(unittest.TestCase):
                 point_index=np.asarray([0], dtype=np.int32),
             ),
         )
-        table = build_clamp_active_table(
+        table = build_clamp_routing_table(
             layouts=layouts,
             cvs=[_clamp_cv(0, 1e-6)],
             node_tree=_clamp_node_tree(1),
@@ -2529,7 +2562,7 @@ class TestBuildClampActiveTable(unittest.TestCase):
         )
         self.assertIsNone(table)
 
-    def test_current_clamp_builds_table(self):
+    def test_midpoint_current_clamp_builds_midpoint_route(self):
         layouts = (
             _ClampStubLayout(
                 target="point",
@@ -2537,15 +2570,16 @@ class TestBuildClampActiveTable(unittest.TestCase):
                 point_index=np.asarray([1], dtype=np.int32),
             ),
         )
-        table = build_clamp_active_table(
+        table = build_clamp_routing_table(
             layouts=layouts,
             cvs=[_clamp_cv(0, 1e-6), _clamp_cv(1, 2e-6)],
             node_tree=_clamp_node_tree(2),
             n_point=2,
         )
-        self.assertIsInstance(table, ClampActiveTable)
-        np.testing.assert_array_equal(table.ids, np.asarray([1], dtype=np.int32))
-        np.testing.assert_allclose(table.area, np.asarray([2e-6]))
+        self.assertIsInstance(table, ClampRoutingTable)
+        np.testing.assert_array_equal(table.midpoint_ids, np.asarray([1], dtype=np.int32))
+        np.testing.assert_allclose(table.midpoint_area, np.asarray([2e-6]))
+        np.testing.assert_array_equal(table.boundary_ids, np.asarray([], dtype=np.int32))
 
     def test_each_clamp_kind_is_recognized(self):
         self.assertEqual(
@@ -2565,14 +2599,14 @@ class TestBuildClampActiveTable(unittest.TestCase):
                 point_index=np.asarray([1, 2], dtype=np.int32),
             ),
         )
-        table = build_clamp_active_table(
+        table = build_clamp_routing_table(
             layouts=layouts,
             cvs=[_clamp_cv(i, 1e-6 * (i + 1)) for i in range(4)],
             node_tree=_clamp_node_tree(4),
             n_point=4,
         )
         np.testing.assert_array_equal(
-            table.ids, np.asarray([1, 2, 3], dtype=np.int32)
+            table.midpoint_ids, np.asarray([1, 2, 3], dtype=np.int32)
         )
 
     def test_zero_area_raises(self):
@@ -2584,14 +2618,14 @@ class TestBuildClampActiveTable(unittest.TestCase):
             ),
         )
         with self.assertRaises(ValueError):
-            build_clamp_active_table(
+            build_clamp_routing_table(
                 layouts=layouts,
                 cvs=[_clamp_cv(0, 0.0)],
                 node_tree=_clamp_node_tree(1),
                 n_point=1,
             )
 
-    def test_endpoint_clamp_is_excluded_from_area_table(self):
+    def test_endpoint_clamp_builds_boundary_route(self):
         layouts = (
             _ClampStubLayout(
                 target="point",
@@ -2599,13 +2633,39 @@ class TestBuildClampActiveTable(unittest.TestCase):
                 point_index=np.asarray([2], dtype=np.int32),
             ),
         )
-        table = build_clamp_active_table(
+        table = build_clamp_routing_table(
             layouts=layouts,
             cvs=[_clamp_cv(0, 1e-6)],
             node_tree=_clamp_node_tree(1),
             n_point=3,
         )
-        self.assertIsNone(table)
+        self.assertIsInstance(table, ClampRoutingTable)
+        np.testing.assert_array_equal(table.midpoint_ids, np.asarray([], dtype=np.int32))
+        np.testing.assert_array_equal(table.midpoint_area, np.asarray([], dtype=float))
+        np.testing.assert_array_equal(table.boundary_ids, np.asarray([2], dtype=np.int32))
+
+    def test_mixed_midpoint_and_endpoint_clamps_route_separately(self):
+        layouts = (
+            _ClampStubLayout(
+                target="point",
+                kind="CurrentClamp",
+                point_index=np.asarray([0, 3], dtype=np.int32),
+            ),
+            _ClampStubLayout(
+                target="point",
+                kind="SineClamp",
+                point_index=np.asarray([1, 4], dtype=np.int32),
+            ),
+        )
+        table = build_clamp_routing_table(
+            layouts=layouts,
+            cvs=[_clamp_cv(0, 1e-6), _clamp_cv(1, 2e-6)],
+            node_tree=_clamp_node_tree(2),
+            n_point=5,
+        )
+        np.testing.assert_array_equal(table.midpoint_ids, np.asarray([0, 1], dtype=np.int32))
+        np.testing.assert_allclose(table.midpoint_area, np.asarray([1e-6, 2e-6]))
+        np.testing.assert_array_equal(table.boundary_ids, np.asarray([3, 4], dtype=np.int32))
 
     def test_non_clamp_point_layout_ignored(self):
         layouts = (
@@ -2616,7 +2676,7 @@ class TestBuildClampActiveTable(unittest.TestCase):
             ),
         )
         self.assertIsNone(
-            build_clamp_active_table(
+            build_clamp_routing_table(
                 layouts=layouts,
                 cvs=[_clamp_cv(0, 1e-6)],
                 node_tree=_clamp_node_tree(1),
@@ -2847,8 +2907,8 @@ class RuntimeModuleAllTest(unittest.TestCase):
 
         expected = {
             "MechanismLayout",
-            "ClampActiveTable",
-            "build_clamp_active_table",
+            "ClampRoutingTable",
+            "build_clamp_routing_table",
             "CellRuntimeState",
             "build_placeholder_ions",
             "clone_morpho",
@@ -2867,10 +2927,10 @@ class RuntimeSplitReexportTest(unittest.TestCase):
         from braincell._compute import layouts, runtime
 
         self.assertIs(runtime.MechanismLayout, layouts.MechanismLayout)
-        self.assertIs(runtime.ClampActiveTable, layouts.ClampActiveTable)
+        self.assertIs(runtime.ClampRoutingTable, layouts.ClampRoutingTable)
         self.assertIs(
-            runtime.build_clamp_active_table,
-            layouts.build_clamp_active_table,
+            runtime.build_clamp_routing_table,
+            layouts.build_clamp_routing_table,
         )
 
     def test_cell_runtime_state_lives_in_state(self) -> None:

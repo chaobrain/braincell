@@ -331,6 +331,46 @@ class DhsEndpointClampTest(unittest.TestCase):
         self.assertGreater(after, before)
 
 
+class DhsMidpointClampPopulationTest(unittest.TestCase):
+
+    def _build_clamped_cell(self, *, pop_size=None):
+        soma = Branch.from_lengths(
+            lengths=[20.0] * u.um,
+            radii=[10.0, 10.0] * u.um,
+            type="soma",
+        )
+        kwargs = {} if pop_size is None else {"pop_size": pop_size}
+        cell = Cell(
+            Morphology.from_root(soma, name="soma"),
+            cv_policy=CVPerBranch(),
+            V_init=-65.0 * u.mV,
+            **kwargs,
+        )
+        cell.place(
+            RootLocation(x=0.5),
+            CurrentClamp(
+                delay=0.0 * u.ms,
+                durations=0.1 * u.ms,
+                amplitudes=1.0 * u.nA,
+            ),
+        )
+        cell.init_state()
+        cell.reset_state()
+        return cell
+
+    def test_midpoint_clamp_is_not_double_counted_with_population_axis(self):
+        scalar = self._build_clamped_cell()
+        population = self._build_clamped_cell(pop_size=(1,))
+
+        with brainstate.environ.context(t=0.0 * u.ms, dt=0.025 * u.ms):
+            dhs_voltage_step(scalar, 0.0 * u.ms, 0.025 * u.ms)
+            dhs_voltage_step(population, 0.0 * u.ms, 0.025 * u.ms)
+
+        scalar_v = np.asarray(scalar.V.value.to_decimal(u.mV), dtype=float)
+        population_v = np.asarray(population.V.value.to_decimal(u.mV), dtype=float)
+        np.testing.assert_allclose(population_v.reshape(-1), scalar_v.reshape(-1), rtol=1e-12, atol=1e-12)
+
+
 class DhsMultistepClampTest(unittest.TestCase):
 
     def test_multistep_current_clamp_voltage_step_handles_zero_linearization(self):

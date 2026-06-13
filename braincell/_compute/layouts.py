@@ -13,7 +13,7 @@
 # limitations under the License.
 # ==============================================================================
 
-"""Mechanism layouts + clamp active table.
+"""Mechanism layouts + clamp routing table.
 
 Part of the ARCH-02 logical partition of :mod:`braincell._compute.runtime`.
 Exposes the layout-family symbols (layout groupings, clamp evaluation,
@@ -28,7 +28,7 @@ the bodies without changing any call site that imports via
 
 from .runtime import (  # noqa: F401
     CLAMP_KINDS,
-    ClampActiveTable,
+    ClampRoutingTable,
     MechanismLayout,
     _allocate_clamp_ragged_buffer,
     _allocate_state_buffer,
@@ -45,7 +45,7 @@ from .runtime import (  # noqa: F401
     _quantity_sequence_to_decimal_vector,
     _scalar_state_value,
     _write_state_buffer,
-    build_clamp_active_table,
+    build_clamp_routing_table,
     choose_layout,
     mechanism_kind,
     mechanism_signature,
@@ -53,9 +53,9 @@ from .runtime import (  # noqa: F401
 
 __all__ = [
     "CLAMP_KINDS",
-    "ClampActiveTable",
+    "ClampRoutingTable",
     "MechanismLayout",
-    "build_clamp_active_table",
+    "build_clamp_routing_table",
     "choose_layout",
     "mechanism_kind",
     "mechanism_signature",

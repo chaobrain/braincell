@@ -7,13 +7,12 @@ from dataclasses import dataclass
 import brainunit as u
 import numpy as np
 
-from .connection import Connection
-from .population import Population
+from .core import Connection, Population
 
 
 @dataclass(frozen=True)
 class ConnectionBlock:
-    """Runtime-ready sparse edge block."""
+    """Runtime-ready sparse contact block."""
 
     pre_population: str
     post_population: str
@@ -33,11 +32,13 @@ def lower_connections(
     connections: tuple[Connection, ...],
     *,
     dt,
+    delay_quantization: str = "ceil",
 ) -> tuple[ConnectionBlock, ...]:
     """Validate public connections and return runtime blocks."""
     _validate_time_quantity(dt, name="dt")
+    delay_quantization = _normalize_delay_quantization(delay_quantization)
     return tuple(
-        _lower_connection(populations, connection, dt=dt)
+        _lower_connection(populations, connection, dt=dt, delay_quantization=delay_quantization)
         for connection in connections
     )
 
@@ -47,6 +48,7 @@ def _lower_connection(
     connection: Connection,
     *,
     dt,
+    delay_quantization: str,
 ) -> ConnectionBlock:
     if connection.pre_population not in populations:
         raise KeyError(f"Unknown pre_population {connection.pre_population!r}.")
@@ -60,7 +62,12 @@ def _lower_connection(
 
     layout_id, n_active, synapse_node = resolve_synapse_layout(post, connection.synapse)
     _validate_indices(connection.synapse_index, n_active, "synapse_index")
-    delay_steps = _expand_delay_steps(connection.delay, dt=dt, n_edge=connection.n_edge)
+    delay_steps = _expand_delay_steps(
+        connection.delay,
+        dt=dt,
+        n_contact=connection.n_contact,
+        quantization=delay_quantization,
+    )
     if connection.weight is None:
         weight = _default_edge_weight(
             synapse_node,
@@ -69,7 +76,7 @@ def _lower_connection(
             n_active=n_active,
         )
     else:
-        weight = _expand_weight(connection.weight, n_edge=connection.n_edge)
+        weight = _expand_weight(connection.weight, n_contact=connection.n_contact)
     return ConnectionBlock(
         pre_population=connection.pre_population,
         post_population=connection.post_population,
@@ -149,47 +156,81 @@ def _validate_indices(indices: np.ndarray, size: int, name: str) -> None:
         )
 
 
-def _expand_weight(weight, *, n_edge: int):
+def _expand_weight(weight, *, n_contact: int):
     if isinstance(weight, u.Quantity):
         decimal = np.asarray(weight.to_decimal(weight.unit))
         if decimal.shape == ():
-            return u.Quantity(np.broadcast_to(decimal, (n_edge,)).copy(), weight.unit)
-        if decimal.shape != (n_edge,):
+            return u.Quantity(np.broadcast_to(decimal, (n_contact,)).copy(), weight.unit)
+        if decimal.shape != (n_contact,):
             raise ValueError(
-                f"Connection weight must be scalar or shape {(n_edge,)!r}, "
+                f"Connection weight must be scalar or shape {(n_contact,)!r}, "
                 f"got {decimal.shape!r}."
             )
         return weight
 
     arr = np.asarray(weight)
     if arr.shape == ():
-        return np.broadcast_to(arr, (n_edge,)).copy()
-    if arr.shape != (n_edge,):
+        return np.broadcast_to(arr, (n_contact,)).copy()
+    if arr.shape != (n_contact,):
         raise ValueError(
-            f"Connection weight must be scalar or shape {(n_edge,)!r}, got {arr.shape!r}."
+            f"Connection weight must be scalar or shape {(n_contact,)!r}, got {arr.shape!r}."
         )
     return arr
 
 
-def _expand_delay_steps(delay, *, dt, n_edge: int) -> np.ndarray:
+def _expand_delay_steps(delay, *, dt, n_contact: int, quantization: str = "ceil") -> np.ndarray:
+    """Return fixed-step delay offsets for one connection table.
+
+    Parameters
+    ----------
+    delay : Quantity[time]
+        Scalar or per-edge delay.
+    dt : Quantity[time]
+        Fixed simulation step.
+    n_contact : int
+        Number of contacts.
+    quantization : {"ceil", "floor", "strict"}
+        Policy for delays that do not fall on the fixed-step grid.
+    """
     _validate_time_quantity(delay, name="delay")
+    quantization = _normalize_delay_quantization(quantization)
     delay_ms = np.asarray(delay.to_decimal(u.ms), dtype=float)
     if delay_ms.shape == ():
-        delay_ms = np.broadcast_to(delay_ms, (n_edge,)).copy()
-    if delay_ms.shape != (n_edge,):
+        delay_ms = np.broadcast_to(delay_ms, (n_contact,)).copy()
+    if delay_ms.shape != (n_contact,):
         raise ValueError(
-            f"Connection delay must be scalar or shape {(n_edge,)!r}, got {delay_ms.shape!r}."
+            f"Connection delay must be scalar or shape {(n_contact,)!r}, got {delay_ms.shape!r}."
         )
     if np.any(delay_ms < 0.0):
         raise ValueError("Connection delay must be >= 0.")
     dt_ms = float(np.asarray(dt.to_decimal(u.ms), dtype=float).reshape(()))
     raw_steps = delay_ms / dt_ms
-    rounded = np.rint(raw_steps).astype(np.int32)
-    if not np.allclose(raw_steps, rounded, rtol=1e-9, atol=1e-9):
+    if quantization == "strict":
+        rounded = np.rint(raw_steps).astype(np.int32)
+        if not np.allclose(raw_steps, rounded, rtol=1e-9, atol=1e-9):
+            raise ValueError(
+                "Connection delay must be an integer multiple of dt when "
+                "delay_quantization='strict'."
+            )
+        steps = rounded
+    elif quantization == "ceil":
+        steps = np.ceil(raw_steps - 1e-12).astype(np.int32)
+    elif quantization == "floor":
+        steps = np.floor(raw_steps + 1e-12).astype(np.int32)
+    else:  # pragma: no cover
         raise ValueError(
-            "Connection delay must be an integer multiple of dt in network v1."
+            "Connection delay_quantization must be 'ceil', 'floor', or 'strict'."
         )
-    return np.maximum(rounded, 1)
+    return np.maximum(steps, 1)
+
+
+def _normalize_delay_quantization(value: str) -> str:
+    if value not in ("ceil", "floor", "strict"):
+        raise ValueError(
+            "Network delay_quantization must be 'ceil', 'floor', or 'strict', "
+            f"got {value!r}."
+        )
+    return value
 
 
 def _validate_time_quantity(value, *, name: str) -> None:

@@ -205,6 +205,12 @@ def _expand_delay_steps(delay, *, dt, n_contact: int, quantization: str = "ceil"
         raise ValueError("Connection delay must be >= 0.")
     dt_ms = float(np.asarray(dt.to_decimal(u.ms), dtype=float).reshape(()))
     raw_steps = delay_ms / dt_ms
+    rounded_raw_steps = np.rint(raw_steps)
+    raw_steps = np.where(
+        np.isclose(raw_steps, rounded_raw_steps, rtol=1e-7, atol=1e-7),
+        rounded_raw_steps,
+        raw_steps,
+    )
     if quantization == "strict":
         rounded = np.rint(raw_steps).astype(np.int32)
         if not np.allclose(raw_steps, rounded, rtol=1e-9, atol=1e-9):

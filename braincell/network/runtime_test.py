@@ -518,7 +518,7 @@ class NetworkRuntimeTest(unittest.TestCase):
         g = np.asarray(result.traces["I"]["g"].to_decimal(u.uS))
         self.assertAlmostEqual(float(g[0, 1]), 0.0)
         self.assertAlmostEqual(float(g[1, 1]), 0.25, places=6)
-        self.assertAlmostEqual(float(g[2, 1]), 0.25, places=6)
+        self.assertAlmostEqual(float(g[2, 1]), 1.0, places=6)
         self.assertAlmostEqual(float(g[3, 1]), 1.0, places=6)
 
     def test_event_backend_auto_matches_scatter(self) -> None:

@@ -231,7 +231,7 @@ internal dependencies · status · open work**.
     handled minimally — see `io/asc/test.py` skips.
   - [ ] NeuroML2 import — reader stub exists; needs cell, segment-group,
     biophysics decoding and round-trip tests.
-  - [x] NEURON-based diff harness via `examples/multi_compartment/neuron_diff.py`.
+  - [x] NEURON-based diff harness via `examples/neuron_compare/morph/neuron_diff.py`.
   - [x] NeuroMorpho.Org integration: Tier 1 `load_neuromorpho` /
     `fetch_neuromorpho` one-liners, Tier 2 `NeuroMorphoClient` with
     typed `iter_search` / `download` / retries, Tier 3 `NeuroMorphoCache`

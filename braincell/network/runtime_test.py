@@ -509,7 +509,11 @@ class NetworkRuntimeTest(unittest.TestCase):
             )
         )
 
-        result = net.run(dt=0.1 * u.ms, duration=0.4 * u.ms)
+        result = net.run(
+            dt=0.1 * u.ms,
+            duration=0.4 * u.ms,
+            event_backend="scatter",
+        )
 
         g = np.asarray(result.traces["I"]["g"].to_decimal(u.uS))
         self.assertAlmostEqual(float(g[0, 1]), 0.0)

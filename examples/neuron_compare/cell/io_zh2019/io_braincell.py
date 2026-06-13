@@ -24,12 +24,16 @@ class IO:
         *,
         temperature_celsius: float = 36.0,
         v_init_mV: float = -65.0,
+        pop_size=(),
+        name: str | None = None,
     ):
         if params is None:
             raise ValueError("params is required.")
         self.params = params
         self.temperature_celsius = float(temperature_celsius)
         self.v_init_mV = float(v_init_mV)
+        self.pop_size = pop_size
+        self.name = name
         self.morph = None
         self.cell = None
         self.regions: dict[str, Any] = {}
@@ -38,9 +42,11 @@ class IO:
         self.morph = self._build_manual_morphology()
         self.cell = Cell(
             self.morph,
+            pop_size=self.pop_size,
             cv_policy=CVPerBranchList((int(self.params.soma.nseg),)),
             V_init=self.v_init_mV * u.mV,
             solver="staggered",
+            name=self.name,
         )
         self._define_regions()
         self._paint_cable()

@@ -18,6 +18,7 @@ from .parameters import (
     EXPECTED_DEND_COUNT,
     EXPECTED_REGION_COUNTS,
     EXPECTED_SOMA_COUNT,
+    SOURCE_MORPH_PATH,
     DcnTemplateParameters,
     load_dcn15_params,
 )
@@ -34,27 +35,35 @@ class DCN:
         native: DcnMorphology | None = None,
         params: DcnTemplateParameters | None = None,
         *,
+        source_hoc: Path | str | None = SOURCE_MORPH_PATH,
         temperature_celsius: float = 32.0,
         v_init_mV: float = -65.0,
+        pop_size=(),
+        name: str | None = None,
     ):
         self.native = native
+        self.source_hoc = source_hoc
         self.temperature_celsius = float(temperature_celsius)
         self.v_init_mV = float(v_init_mV)
         self.params = params if params is not None else load_dcn15_params(temperature_celsius=self.temperature_celsius)
+        self.pop_size = pop_size
+        self.name = name
         self.morpho = None
         self.cell = None
         self.regions: dict[str, Any] = {}
 
     def build(self) -> DCN:
-        self.native = load_dcn_morphology() if self.native is None else self.native
+        self.native = load_dcn_morphology(self.source_hoc) if self.native is None else self.native
         self.morpho = self.native.morpho
         self.cell = Cell(
             self.morpho,
+            pop_size=self.pop_size,
             cv_policy=CVPerBranchList(tuple(1 for _ in self.morpho.branches)),
             V_init=self.v_init_mV * u.mV,
             solver="staggered",
             cache_ion_total_current=True,
             ion_channel_update_order="family",
+            name=self.name,
         )
         self._define_regions()
         self._paint_cable()

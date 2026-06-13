@@ -39,6 +39,8 @@ class SC:
         *,
         temperature_celsius: float = 32.0,
         v_init_mV: float = -65.0,
+        pop_size=(),
+        name: str | None = None,
     ):
         if params is None:
             raise ValueError("params is required.")
@@ -46,6 +48,8 @@ class SC:
         self.params = params
         self.temperature_celsius = float(temperature_celsius)
         self.v_init_mV = float(v_init_mV)
+        self.pop_size = pop_size
+        self.name = name
         self.morpho = None
         self.cell = None
         self.regions: dict[str, Any] = {}
@@ -55,11 +59,13 @@ class SC:
         cv_counts = tuple(_sc21_cv_count(branch) for branch in self.morpho.branches)
         self.cell = Cell(
             self.morpho,
+            pop_size=self.pop_size,
             cv_policy=CVPerBranchList(cv_counts),
             V_init=self.v_init_mV * u.mV,
             solver="staggered",
             cache_ion_total_current=True,
             ion_channel_update_order="family",
+            name=self.name,
         )
         self._define_regions()
         self._paint_cable()

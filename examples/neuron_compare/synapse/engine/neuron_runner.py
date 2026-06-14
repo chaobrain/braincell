@@ -87,6 +87,9 @@ def run_neuron_synapse_case(
 
     time_ms = np.asarray(t_vec, dtype=float)[1:]
     voltage_mV = np.asarray(v_vec, dtype=float)[1:]
+    # NEURON point-process current recording can expose the step-start cached
+    # event-boundary current, while BrainCell comparison traces are sampled at
+    # step end. Keep this phase convention explicit for ExpSyn peak comparisons.
     current_nA = np.asarray(i_vec, dtype=float)[2:]
 
     target_len = min(len(time_ms), len(voltage_mV), len(current_nA))

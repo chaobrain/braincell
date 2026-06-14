@@ -2214,6 +2214,32 @@ class Cell(HHTypedNeuron):
                 node.post_integral(*args)
 
     def update(self):
+        """Advance the cell by one simulation step.
+
+        This method is the standalone cell-level step wrapper. It applies
+        already-prepared synaptic events, advances continuous membrane and
+        mechanism dynamics by one ``dt``, computes the spike output, and
+        prepares synaptic input for the next standalone step.
+
+        Returns
+        -------
+        object
+            Spike value produced by the transition from the previous membrane
+            voltage to the updated membrane voltage.
+
+        Notes
+        -----
+        The standalone update order is:
+
+        1. Apply prepared runtime synapse events.
+        2. Advance voltage and mechanism dynamics through ``self.solver``.
+        3. Detect and store the current spike.
+        4. Prepare ``pre_spike`` inputs for the next step.
+
+        In network execution, delayed event delivery is scheduled outside the
+        cell. ``Network.run(...)`` writes arrivals into runtime state buffers
+        before calling the corresponding internal cell phases.
+        """
         self._raise_if_not_initialized("update()")
         self._begin_step()
         spk = self._update_dynamics()
@@ -2221,11 +2247,46 @@ class Cell(HHTypedNeuron):
         return spk
 
     def _begin_step(self):
+        """Apply prepared discrete synaptic events at step start.
+
+        Notes
+        -----
+        The public membrane voltage is stored in CV space, while placed
+        runtime synapses live on morphology point layouts. This method first
+        projects ``V`` from CVs to points, then calls each runtime synapse's
+        ``apply_discrete_events`` hook.
+
+        This phase consumes synaptic input that has already been prepared or
+        delivered; it does not integrate continuous synapse dynamics.
+        """
         self._raise_if_not_initialized("_begin_step()")
         point_V = self._cv_to_point(self.V.value)
         self._apply_runtime_synapse_events(point_V)
 
     def _update_dynamics(self):
+        """Advance continuous cell dynamics and update spike state.
+
+        Returns
+        -------
+        object
+            Spike value computed from the transition between the old and new
+            membrane voltage.
+
+        Notes
+        -----
+        This method requires ``brainstate.environ['dt']`` to be set. The
+        selected solver is responsible for advancing membrane voltage and
+        mechanism states.
+
+        For the default ``"staggered"`` solver, the typical order is:
+
+        1. Cache ion total currents when enabled.
+        2. Advance membrane voltage with the DHS voltage solver.
+        3. Integrate runtime synapse continuous dynamics.
+        4. Update ion and channel states.
+        5. Clear temporary current caches.
+        6. Detect threshold crossing and write ``self.spike``.
+        """
         self._raise_if_not_initialized("_update_dynamics()")
 
         last_V = self.V.value
@@ -2241,11 +2302,36 @@ class Cell(HHTypedNeuron):
         return spk
 
     def _prepare_next_synapse_inputs(self):
+        """Prepare runtime synapse inputs for a later step.
+
+        Notes
+        -----
+        This method projects the updated CV voltage to point space and
+        rebuilds the runtime synapse ``pre_spike`` drive. In standalone
+        ``Cell.update()``, the prepared input is consumed by the next call to
+        ``update``.
+
+        In network execution, delayed arrivals are written by the network
+        delivery layer before this preparation phase.
+        """
         self._raise_if_not_initialized("_prepare_next_synapse_inputs()")
         point_V = self._cv_to_point(self.V.value)
         self._prepare_runtime_synapse_inputs(point_V)
 
     def _apply_runtime_synapse_events(self, point_V):
+        """Apply bound discrete events to all runtime synapses.
+
+        Parameters
+        ----------
+        point_V : Quantity
+            Membrane voltage projected onto morphology point layouts.
+
+        Notes
+        -----
+        Runtime synapses receive point-local voltage because placed synapse
+        mechanisms are indexed by point layout. The bound discrete event drive
+        should already be present on each synapse before this method is called.
+        """
         self._raise_if_not_initialized("_apply_runtime_synapse_events()")
         for layout, synapse in self._runtime.iter_synapse_layouts():
             path = (f"layout_{layout.id}",)
@@ -2255,10 +2341,29 @@ class Cell(HHTypedNeuron):
     def _prepare_runtime_synapse_inputs(self, point_V):
         """Bind this step's presynaptic drive to runtime synapses.
 
+        Parameters
+        ----------
+        point_V : Quantity
+            Membrane voltage projected onto morphology point layouts.
+
+        Notes
+        -----
         ``SynapsePlacement`` is the ``cell.place(...)`` declaration, while
         ``RuntimeSynapse`` is the executable point mechanism. This method only
         prepares discrete input; synapse dynamics are integrated later by the
         active solver schedule.
+
+        For each runtime synapse layout, the total discrete drive is assembled
+        from three sources:
+
+        1. ``state_buffers[(layout_id, "pre_spike")]``, which is also where
+           network delivery writes delayed events.
+        2. Time-dependent NetStim drive evaluated at the current simulation
+           time.
+        3. User-bound inputs registered with ``bind_synapse_input``.
+
+        The accumulated drive is bound to the runtime synapse with
+        ``synapse.bind_pre_spike``.
         """
         _ = point_V
         self._raise_if_not_initialized("_prepare_runtime_synapse_inputs()")
@@ -2297,12 +2402,35 @@ class Cell(HHTypedNeuron):
         return drive
 
     def _update_runtime_synapses(self, point_V):
-        """Advance all runtime synapses through their own integrators."""
+        """Advance runtime synapse dynamics.
+
+        Parameters
+        ----------
+        point_V : Quantity
+            Membrane voltage projected onto morphology point layouts.
+
+        Notes
+        -----
+        This helper refreshes discrete synaptic input and then integrates
+        runtime synapse continuous states. It is used by solver schedules that
+        update synapses as part of the post-voltage mechanism phase.
+        """
         self._prepare_runtime_synapse_inputs(point_V)
         self._integrate_runtime_synapse_dynamics(point_V)
 
     def _integrate_runtime_synapse_dynamics(self, point_V):
-        """Advance runtime synapse continuous dynamics without changing input."""
+        """Integrate continuous runtime synapse states.
+
+        Parameters
+        ----------
+        point_V : Quantity
+            Membrane voltage projected onto morphology point layouts.
+
+        Notes
+        -----
+        Only runtime synapse nodes are advanced here. Discrete ``pre_spike``
+        input should already have been bound before this method is called.
+        """
         for path, node in self.runtime_objects(IonChannel, allowed_hierarchy=(1, 1)).items():
             if not isinstance(node, RuntimeSynapse):
                 continue

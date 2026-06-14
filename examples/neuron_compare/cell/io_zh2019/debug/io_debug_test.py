@@ -93,7 +93,7 @@ class IOZH2019DebugBuildTest(unittest.TestCase):
 
             braincell_io.cell.place(
                 at("soma", 0.5),
-                mech.CurrentClamp.step(0.01 * u.nA, 2.0 * u.ms, delay=1.0 * u.ms),
+                mech.CurrentClamp(delay=1.0 * u.ms, durations=2.0 * u.ms, amplitudes=0.01 * u.nA),
             )
             braincell_io.cell.init_state()
             braincell_io.cell.reset_state()

@@ -202,7 +202,7 @@ def run_case(case_name: str, toggles: PCToggles, order: str, *, dt_ms: float, du
 
         braincell_pc.cell.place(
             at("soma", 0.5),
-            mech.CurrentClamp.step(AMP_NA * u.nA, STIM_DUR_MS * u.ms, delay=DELAY_MS * u.ms),
+            mech.CurrentClamp(delay=DELAY_MS * u.ms, durations=STIM_DUR_MS * u.ms, amplitudes=AMP_NA * u.nA),
         )
         braincell_pc.cell.init_state()
         braincell_pc.cell.reset_state()

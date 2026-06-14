@@ -16,6 +16,13 @@ from neuron_diff import (
 )
 
 
+def _repo_root() -> Path:
+    for candidate in Path(__file__).resolve().parents:
+        if (candidate / "braincell").exists() and (candidate / "examples").exists():
+            return candidate
+    raise RuntimeError("Could not locate the braincell repository root.")
+
+
 def _assert_zero_diff(testcase: unittest.TestCase, comparison: dict[str, object], metric_name: str) -> None:
     diff = comparison["diff"][metric_name]
     testcase.assertTrue(diff["available"], metric_name)
@@ -256,7 +263,7 @@ class NeuronDiffTest(unittest.TestCase):
             _assert_zero_diff(self, comparison, metric_name)
 
     def test_compare_morphology_with_neuron_supports_real_asc_fixture(self) -> None:
-        path = Path(__file__).resolve().parents[2] / "data" / "morphology" / "goc.asc"
+        path = _repo_root() / "data" / "morphology" / "goc.asc"
 
         comparison = compare_morphology_with_neuron(path)
 
@@ -266,7 +273,7 @@ class NeuronDiffTest(unittest.TestCase):
         self.assertTrue(comparison["diff"]["n_branches"]["available"])
 
     def test_compare_morphology_with_neuron_supports_real_sc_asc_fixture(self) -> None:
-        path = Path(__file__).resolve().parents[2] / "data" / "morphology" / "Cerebellum_morph" / "SC.asc"
+        path = _repo_root() / "data" / "morphology" / "Cerebellum_morph" / "SC.asc"
 
         comparison = compare_morphology_with_neuron(path)
 
@@ -275,7 +282,7 @@ class NeuronDiffTest(unittest.TestCase):
             _assert_zero_diff(self, comparison, metric_name)
 
     def test_compare_morphology_with_neuron_supports_real_bc_asc_fixture(self) -> None:
-        path = Path(__file__).resolve().parents[2] / "data" / "morphology" / "Cerebellum_morph" / "BC.asc"
+        path = _repo_root() / "data" / "morphology" / "Cerebellum_morph" / "BC.asc"
 
         comparison = compare_morphology_with_neuron(path)
 

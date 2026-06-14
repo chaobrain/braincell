@@ -11,7 +11,7 @@
       "Co_mM": 2.0
     },
     "channel_params": {
-      "g_max_S_cm2": 0.0
+      "g_max_S_cm2": 0.0002
     }
   },
   "mapping": {

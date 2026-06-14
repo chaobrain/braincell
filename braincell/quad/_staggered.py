@@ -35,7 +35,6 @@ import jax.numpy as jnp
 import numpy as np
 
 from braincell._misc import is_traced_value, set_module_as
-from ._exp_euler import ind_exp_euler_step
 from ._registry import register_integrator
 from .protocol import DiffEqModule
 
@@ -140,19 +139,23 @@ def staggered_step(
     # voltage integration
     dhs_voltage_step(target, t, dt, *args)
 
-    if hasattr(target, "_staggered_integrate_ion_channel_families"):
-        if target._staggered_integrate_ion_channel_families(*args):
-            return
-
-    # ind_exp_euler for ion channels
-    ind_exp_euler_step(target, *args, excluded_paths=[('V',)])
+    point_V = target._cv_to_point(target.V.value)
+    if target.ion_channel_update_order == "family":
+        target._integrate_runtime_synapse_dynamics(point_V)
+        target._update_ion_channel_families(point_V)
+    elif target.ion_channel_update_order == "integration":
+        target._update_ion_channels_by_integration(point_V)
+    else:
+        raise ValueError(
+            "ion_channel_update_order must be 'family' or 'integration', "
+            f"got {target.ion_channel_update_order!r}."
+        )
 
 
 @dataclass(frozen=True)
 class DHSStaticSource:
     n_point: int
     dynamic_rows_np: np.ndarray
-    dynamic_point_ids_np: np.ndarray
     row_to_point_id_np: np.ndarray
     row_capacitance_uF_np: np.ndarray
     diag_ms_inv_np: np.ndarray
@@ -317,7 +320,6 @@ def _build_dhs_static_source(target, *, node_tree, scheduling) -> DHSStaticSourc
     return DHSStaticSource(
         n_point=n_point,
         dynamic_rows_np=dynamic_rows,
-        dynamic_point_ids_np=np.asarray(node_tree.cv_to_mid_node_id, dtype=np.int32),
         row_to_point_id_np=np.asarray(scheduling.row_to_point_id, dtype=np.int32),
         row_capacitance_uF_np=row_capacitance,
         diag_ms_inv_np=diag_ms_inv,
@@ -419,6 +421,29 @@ def _get_dhs_static_cache(target, source: DHSStaticSource) -> DHSStaticCache:
 def _build_dhs_numeric_state(V_n, linear, const, *, dt, static_source: DHSStaticSource,
                              static_cache: DHSStaticCache,
                              edge_point_current=None) -> DHSNumericState:
+    """Assemble the numeric DHS solve state for one timestep.
+
+    Parameters
+    ----------
+    V_n, linear, const : object
+        Voltage, linear term, and constant term in CV space. Any
+        leading population/batch axes are flattened into one solve batch.
+    dt : Quantity[time]
+        Timestep.
+    static_source : DHSStaticSource
+        Static DHS topology metadata.
+    static_cache : DHSStaticCache
+        Precision-specific cached diagonal/off-diagonal factors.
+    edge_point_current : object, optional
+        Optional point-space clamp current with shape
+        ``(..., n_point)``. Leading axes are flattened alongside
+        ``V_n``.
+
+    Returns
+    -------
+    DHSNumericState
+        Numeric buffers ready for forward elimination and back-substitution.
+    """
     V_n, linear, const = [x.reshape((-1, V_n.shape[-1])) for x in (V_n, linear, const)]
     batch_size = V_n.shape[0]
     n_point = static_source.n_point
@@ -445,7 +470,8 @@ def _build_dhs_numeric_state(V_n, linear, const, *, dt, static_source: DHSStatic
             dt=dt,
             static_source=static_source,
         )
-        solves = solves.at[:, :n_point].add(edge_rhs[None, :])
+        edge_rhs = edge_rhs.reshape((batch_size, n_point))
+        solves = solves.at[:, :n_point].add(edge_rhs)
 
     return DHSNumericState(
         diags=diags,
@@ -456,20 +482,20 @@ def _build_dhs_numeric_state(V_n, linear, const, *, dt, static_source: DHSStatic
 
 
 def _edge_point_current(target, *, t, static_source: DHSStaticSource):
-    """Return point clamp current with midpoint rows removed."""
+    """Return boundary point-clamp current for the DHS point-tree RHS."""
 
     runtime = getattr(target, "_runtime", None)
     if runtime is None or not hasattr(runtime, "evaluate_point_clamps"):
         return None
-    current = runtime.evaluate_point_clamps(t=t)
-    current_nA = u.math.asarray(current.to_decimal(u.nA))
-    current_nA = current_nA.at[static_source.dynamic_point_ids_np].set(0.0)
-    return u.Quantity(current_nA, u.nA)
+    table = getattr(runtime, "clamp_routing_table", None)
+    if table is None or len(table.boundary_ids) == 0:
+        return None
+    return runtime.evaluate_point_clamps(t=t, point_ids=table.boundary_ids)
 
 
 def _edge_current_voltage_delta(edge_point_current, *, dt, static_source: DHSStaticSource):
     current_by_point = u.math.asarray(edge_point_current.to_decimal(u.nA))
-    current_by_row = current_by_point[static_source.row_to_point_id_np]
+    current_by_row = current_by_point[..., static_source.row_to_point_id_np]
     capacitance = jnp.asarray(
         static_source.row_capacitance_uF_np,
         dtype=brainstate.environ.dftype(),
@@ -685,7 +711,15 @@ def _linear_and_const_term(target, V_n, *args):
             unit_aware=False,
         )
     linear, derivative = linearizer(V_n, *args)
-    linear = u.Quantity(u.get_mantissa(linear), u.get_unit(derivative) / u.get_unit(linear))
+    linear_mantissa = u.get_mantissa(linear)
+    linear_unit = u.get_unit(derivative) / u.get_unit(V_n)
+    if getattr(linear_mantissa, "dtype", None) == jax.dtypes.float0:
+        linear = u.Quantity(
+            jnp.zeros_like(u.get_mantissa(derivative)),
+            linear_unit,
+        )
+    else:
+        linear = u.Quantity(linear_mantissa, linear_unit)
     const = derivative - V_n * linear
     return linear, const
 

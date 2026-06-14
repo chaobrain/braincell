@@ -265,7 +265,7 @@ class SingleCompartment(HHTypedNeuron):
         """
         # update nodes
         for key, node in self.nodes(IonChannel, allowed_hierarchy=(1, 1)).items():
-            node.update(self.V.value)
+            node.ind_update(self.V.value)
 
         # numerical integration
         last_V = self.V.value

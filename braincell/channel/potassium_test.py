@@ -46,7 +46,6 @@ from braincell.channel.potassium import (
     Kv1p1_MA2024_PC,
     Kv1p1_MA2025_BC,
     Kv1p1_RI2021_SC,
-    Kv1p5_MA2020_GrC,
     Kv1p5_MA2024_PC,
     Kv2p2_0010_MA2020_GrC,
     Kv3p3_MA2024_PC,
@@ -814,43 +813,6 @@ class Kv1p5MA24PCTest(unittest.TestCase):
             u.math.allclose(
                 current.to_decimal(_DENSITY_UNIT),
                 expected.to_decimal(_DENSITY_UNIT),
-                atol=1e-6,
-            )
-        )
-
-
-class Kv1p5MA20GrCTest(unittest.TestCase):
-    def test_inherits_pc_default_ik_path(self) -> None:
-        self.assertTrue(issubclass(Kv1p5_MA2020_GrC, Kv1p5_MA2024_PC))
-        self.assertIs(Kv1p5_MA2020_GrC.root_type, Potassium)
-
-    def test_matches_pc_variant_for_default_ik_path(self) -> None:
-        temp = u.celsius2kelvin(36.0)
-        pc = Kv1p5_MA2024_PC(size=1, temp=temp)
-        grc = Kv1p5_MA2020_GrC(size=1, temp=temp)
-        V = _V([-35.0])
-        k = _k_info()
-
-        pc.init_state(V, k)
-        grc.init_state(V, k)
-        pc.reset_state(V, k)
-        grc.reset_state(V, k)
-        self.assertTrue(u.math.allclose(grc.m.value, pc.m.value, atol=1e-6))
-        self.assertTrue(u.math.allclose(grc.n.value, pc.n.value, atol=1e-6))
-        self.assertTrue(u.math.allclose(grc.u.value, pc.u.value, atol=1e-6))
-
-        pc.compute_derivative(V, k)
-        grc.compute_derivative(V, k)
-        self.assertTrue(u.math.allclose(grc.m.derivative, pc.m.derivative, atol=1e-6 * u.Hz))
-        self.assertTrue(u.math.allclose(grc.n.derivative, pc.n.derivative, atol=1e-6 * u.Hz))
-        self.assertTrue(u.math.allclose(grc.u.derivative, pc.u.derivative, atol=1e-6 * u.Hz))
-
-        i_pc = pc.current(V, k)
-        i_grc = grc.current(V, k)
-        self.assertTrue(
-            u.math.allclose(
-                i_grc.to_decimal(_DENSITY_UNIT),
-                i_pc.to_decimal(_DENSITY_UNIT),
                 atol=1e-6,
             )
         )

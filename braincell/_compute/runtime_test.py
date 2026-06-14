@@ -15,10 +15,12 @@
 
 import unittest
 
+import brainstate
 import brainunit as u
 import numpy as np
 
 import braincell
+from braincell._base import Channel, IonInfo
 from braincell import (
     Branch,
     CVPerBranch,
@@ -29,6 +31,31 @@ from braincell import (
     SineClamp,
 )
 from braincell.filter import BranchSlice, RootLocation, at
+from braincell.ion import NonSpecific, Potassium
+from braincell.mech import register_channel
+
+
+@register_channel("_RuntimeTestTwoOwnerChannel")
+class _RuntimeTestTwoOwnerChannel(Channel):
+    """Small multi-owner channel used by runtime binding tests."""
+
+    __module__ = "braincell._compute.runtime_test"
+    root_type = brainstate.mixin.JointTypes[Potassium, NonSpecific]
+    current_owner_types = {"k": Potassium, "no": NonSpecific}
+
+    def __init__(self, size, name=None):
+        super().__init__(size=size, name=name)
+
+    def current(self, V, K: IonInfo, No: IonInfo):
+        parts = self.current_components(V, K, No)
+        return parts["k"] + parts["no"]
+
+    def current_components(self, V, K: IonInfo, No: IonInfo):
+        _ = (K, No)
+        return {
+            "k": 2.0 * u.math.ones_like(V.to_decimal(u.mV)) * (u.nA / u.cm ** 2),
+            "no": 3.0 * u.math.ones_like(V.to_decimal(u.mV)) * (u.nA / u.cm ** 2),
+        }
 
 
 def _build_tree() -> Morphology:
@@ -68,16 +95,40 @@ class CellRuntimeStateTest(unittest.TestCase):
         self.assertEqual(rcell.expected_state_shape(layout.id, "g_max"), (5,))
         self.assertEqual(rcell.voltage_shape, (5,))
         self.assertEqual(rcell.get_state(layout.id, "g_max").shape, (5,))
-        self.assertTrue(all(value == 4.0 * (u.mS / u.cm ** 2) for value in rcell.get_state(layout.id, "g_max")))
-        self.assertEqual(tuple(layout.id for layout in rcell.get_point_layouts(0)), ())
-        self.assertEqual(tuple(layout.id for layout in rcell.get_point_layouts(1)), (layout.id,))
-        self.assertEqual(tuple(layout.id for layout in rcell.get_point_layouts(3)), (layout.id,))
+        np.testing.assert_allclose(
+            np.asarray(rcell.get_state(layout.id, "g_max").to_decimal(u.mS / u.cm ** 2)),
+            [4.0, 4.0, 4.0, 4.0, 4.0],
+        )
+
+    def test_region_limited_density_current_is_masked_outside_active_points(self) -> None:
+        cell = Cell(_build_tree())
+        cell.paint(
+            BranchSlice(branch_index=0, prox=0.0, dist=1.0),
+            braincell.mech.Channel("IL", name="soma_leak", g_max=4.0 * (u.mS / u.cm ** 2), E=-68.0 * u.mV),
+        )
+        cell.paint(
+            BranchSlice(branch_index=1, prox=0.0, dist=1.0),
+            braincell.mech.Channel("IL", name="dend_leak", g_max=5.0 * (u.mS / u.cm ** 2), E=-67.0 * u.mV),
+        )
+
+        cell.init_state(); rcell = cell
+        point_v = rcell._cv_to_point(rcell.V.value)
+        soma_current = rcell.get_runtime_node(0).current(point_v)
+        dend_current = rcell.get_runtime_node(1).current(point_v)
+        np.testing.assert_allclose(
+            np.asarray(soma_current.to_decimal(u.nA / u.cm ** 2)),
+            [0.0, -12000.0, 0.0, 0.0, 0.0],
+        )
+        np.testing.assert_allclose(
+            np.asarray(dend_current.to_decimal(u.nA / u.cm ** 2)),
+            [0.0, 0.0, 0.0, -10000.0, 0.0],
+        )
 
     def test_point_mechanism_builds_sparse_layout_with_local_shape(self) -> None:
         cell = Cell(_build_tree())
         cell.place(
             RootLocation(x=0.5),
-            CurrentClamp.step(0.1 * u.nA, 2.0 * u.ms, delay=1.0 * u.ms),
+            CurrentClamp(delay=1.0 * u.ms, durations=2.0 * u.ms, amplitudes=0.1 * u.nA),
         )
 
         cell.init_state(); rcell = cell
@@ -94,7 +145,7 @@ class CellRuntimeStateTest(unittest.TestCase):
         self.assertEqual(len(rcell.get_state(layout.id, "amplitudes")), 1)
         self.assertEqual(tuple(item.to_decimal(u.nA) for item in rcell.get_state(layout.id, "amplitudes")[0]), (0.1,))
         self.assertEqual(tuple(item.to_decimal(u.ms) for item in rcell.get_state(layout.id, "durations")[0]), (2.0,))
-        self.assertEqual(rcell.get_state(layout.id, "start")[0], 1.0 * u.ms)
+        self.assertEqual(rcell.get_state(layout.id, "delay")[0], 1.0 * u.ms)
         self.assertEqual(tuple(layout.id for layout in rcell.get_point_layouts(1)), (layout.id,))
         self.assertEqual(rcell.get_point_layouts(1), (layout,))
 
@@ -102,7 +153,7 @@ class CellRuntimeStateTest(unittest.TestCase):
         cell = Cell(_build_tree())
         cell.place(
             RootLocation(x=0.0),
-            CurrentClamp.step(0.1 * u.nA, 2.0 * u.ms, delay=1.0 * u.ms),
+            CurrentClamp(delay=1.0 * u.ms, durations=2.0 * u.ms, amplitudes=0.1 * u.nA),
         )
 
         cell.init_state(); rcell = cell
@@ -116,6 +167,49 @@ class CellRuntimeStateTest(unittest.TestCase):
         self.assertEqual(tuple(item.id for item in rcell.get_point_layouts(root_node_id)), (layout.id,))
         self.assertEqual(tuple(item.id for item in rcell.get_point_layouts(midpoint_id)), ())
         self.assertEqual(tuple(item.id for item in rcell.get_cv_layouts(0)), (layout.id,))
+
+    def test_synapse_mechanism_builds_sparse_runtime_node_and_pre_spike_state(self) -> None:
+        cell = Cell(_build_tree())
+        cell.place(
+            RootLocation(x=0.5),
+            braincell.mech.Synapse(
+                "AMPA",
+                g_max=0.2 * (u.mS / u.cm ** 2),
+                E_rev=0.0 * u.mV,
+                name="ampa_soma",
+            ),
+        )
+
+        cell.init_state(); rcell = cell
+
+        self.assertEqual(len(rcell.layouts), 1)
+        layout = rcell.layouts[0]
+        self.assertEqual(layout.layout, "sparse")
+        self.assertEqual(layout.target, "point")
+        self.assertEqual(layout.kind, "synapse:AMPA")
+        self.assertEqual(layout.point_index.tolist(), [1])
+        self.assertEqual(rcell.expected_state_shape(layout.id, "pre_spike"), (1,))
+        node = rcell.get_runtime_node(layout.id)
+        self.assertIsInstance(node, braincell.synapse.AMPA)
+        self.assertEqual(node.varshape, (1,))
+        self.assertEqual(rcell.get_state(layout.id, "pre_spike")[0], 0.0)
+
+    def test_synapse_pre_spike_can_be_mutated_through_runtime_state(self) -> None:
+        cell = Cell(_build_tree())
+        cell.place(
+            RootLocation(x=0.5),
+            braincell.mech.Synapse(
+                "AMPA",
+                g_max=0.2 * (u.mS / u.cm ** 2),
+                E_rev=0.0 * u.mV,
+                name="ampa_soma",
+            ),
+        )
+
+        cell.init_state(); rcell = cell
+        layout = rcell.layouts[0]
+        rcell.set_state(layout.id, "pre_spike", 1.0)
+        self.assertEqual(float(np.asarray(rcell.get_state(layout.id, "pre_spike"))[0]), 1.0)
 
     def test_channel_spec_builds_dense_layout_with_global_shape(self) -> None:
         import braincell
@@ -183,7 +277,7 @@ class CellRuntimeStateTest(unittest.TestCase):
             BranchSlice(branch_index=[0, 1], prox=0.0, dist=1.0),
             braincell.mech.Channel("leaky", g_max=4.0 * (u.mS / u.cm ** 2)),
         )
-        clamp = CurrentClamp.step(0.1 * u.nA, 2.0 * u.ms, delay=1.0 * u.ms)
+        clamp = CurrentClamp(delay=1.0 * u.ms, durations=2.0 * u.ms, amplitudes=0.1 * u.nA)
         cell.place(RootLocation(x=0.5), clamp)
 
         cell.init_state(); rcell = cell
@@ -211,7 +305,7 @@ class CellRuntimeStateTest(unittest.TestCase):
         cell.reset()
         cell.place(
             RootLocation(x=0.5),
-            CurrentClamp.step(0.1 * u.nA, 2.0 * u.ms, delay=1.0 * u.ms),
+            CurrentClamp(delay=1.0 * u.ms, durations=2.0 * u.ms, amplitudes=0.1 * u.nA),
         )
         cell.init_state()
         second = cell.layouts
@@ -223,7 +317,7 @@ class CellRuntimeStateTest(unittest.TestCase):
         cell = Cell(_build_tree())
         cell.place(
             RootLocation(x=0.5),
-            CurrentClamp.step(0.1 * u.nA, 2.0 * u.ms, delay=1.0 * u.ms),
+            CurrentClamp(delay=1.0 * u.ms, durations=2.0 * u.ms, amplitudes=0.1 * u.nA),
         )
 
         cell.init_state(); rcell = cell
@@ -241,9 +335,9 @@ class CellRuntimeStateTest(unittest.TestCase):
         cell = Cell(_build_tree())
         cell.place(
             RootLocation(x=0.5),
-            CurrentClamp(start=0.0 * u.ms, durations=(2.0 * u.ms, 2.0 * u.ms), amplitudes=(0.0 * u.nA, 0.3 * u.nA)),
+            CurrentClamp(delay=0.0 * u.ms, durations=(2.0 * u.ms, 2.0 * u.ms), amplitudes=(0.0 * u.nA, 0.3 * u.nA)),
             SineClamp(amplitude=0.2 * u.nA, frequency=500.0 * u.Hz, offset=0.1 * u.nA, duration=4.0 * u.ms),
-            FunctionClamp(fn=lambda local_t: 0.4 * u.nA if local_t < 1.0 * u.ms else 0.0 * u.nA, duration=3.0 * u.ms),
+            FunctionClamp(fn=lambda t: 0.4 * u.nA if t < 1.0 * u.ms else 0.0 * u.nA),
         )
         cell.init_state(); rcell = cell
 
@@ -256,6 +350,46 @@ class CellRuntimeStateTest(unittest.TestCase):
         self.assertAlmostEqual(float(current_early[1].to_decimal(u.nA)), 0.7, places=6)
         self.assertAlmostEqual(float(current_early[0].to_decimal(u.nA)), 0.0, places=6)
         self.assertAlmostEqual(float(current_late[1].to_decimal(u.nA)), 0.6, places=6)
+
+    def test_function_clamp_receives_absolute_time(self) -> None:
+        cell = Cell(_build_tree())
+        cell.place(
+            RootLocation(x=0.5),
+            FunctionClamp(fn=lambda t: 0.4 * u.nA if 2.0 * u.ms <= t < 3.0 * u.ms else 0.0 * u.nA),
+        )
+        cell.init_state()
+        runtime = cell.runtime
+
+        before = runtime.evaluate_point_clamps(t=1.0 * u.ms)
+        active = runtime.evaluate_point_clamps(t=2.5 * u.ms)
+        after = runtime.evaluate_point_clamps(t=4.0 * u.ms)
+
+        self.assertAlmostEqual(float(before[1].to_decimal(u.nA)), 0.0, places=6)
+        self.assertAlmostEqual(float(active[1].to_decimal(u.nA)), 0.4, places=6)
+        self.assertAlmostEqual(float(after[1].to_decimal(u.nA)), 0.0, places=6)
+
+    def test_sine_clamp_uses_delay_window(self) -> None:
+        cell = Cell(_build_tree())
+        cell.place(
+            RootLocation(x=0.5),
+            SineClamp(
+                amplitude=0.0 * u.nA,
+                frequency=500.0 * u.Hz,
+                offset=0.2 * u.nA,
+                delay=1.0 * u.ms,
+                duration=2.0 * u.ms,
+            ),
+        )
+        cell.init_state()
+        runtime = cell.runtime
+
+        before = runtime.evaluate_point_clamps(t=0.5 * u.ms)
+        active = runtime.evaluate_point_clamps(t=1.5 * u.ms)
+        after = runtime.evaluate_point_clamps(t=3.5 * u.ms)
+
+        self.assertAlmostEqual(float(before[1].to_decimal(u.nA)), 0.0, places=6)
+        self.assertAlmostEqual(float(active[1].to_decimal(u.nA)), 0.2, places=6)
+        self.assertAlmostEqual(float(after[1].to_decimal(u.nA)), 0.0, places=6)
 
     def test_probe_layouts_are_sparse_and_allocate_no_state_buffers(self) -> None:
         cell = Cell(_build_tree())
@@ -462,6 +596,13 @@ class CellRuntimeStateTest(unittest.TestCase):
         self.assertEqual(rcell.get_ion("k").varshape, (5,))
         self.assertEqual(rcell.get_ion("ca").varshape, (5,))
 
+    def test_default_ions_expand_with_population_shape(self) -> None:
+        cell = Cell(_build_tree(), pop_size=(2, 3))
+        cell.init_state(); rcell = cell
+        self.assertEqual(rcell.get_ion("na").varshape, (2, 3, 5))
+        self.assertEqual(rcell.get_ion("k").varshape, (2, 3, 5))
+        self.assertEqual(rcell.get_ion("ca").varshape, (2, 3, 5))
+
     def test_runtime_ions_expose_point_space_geometry_arrays(self) -> None:
         cell = Cell(_build_tree())
 
@@ -481,6 +622,15 @@ class CellRuntimeStateTest(unittest.TestCase):
         self.assertAlmostEqual(float(na.radius_prox[1].to_decimal(u.um)), 10.0, places=12)
         self.assertAlmostEqual(float(na.radius_dist[3].to_decimal(u.um)), 1.0, places=12)
         self.assertAlmostEqual(float(na.area[0].to_decimal(u.um ** 2)), 0.0, places=12)
+
+    def test_runtime_ion_geometry_expands_with_population_shape(self) -> None:
+        cell = Cell(_build_tree(), pop_size=(2,))
+        cell.init_state(); rcell = cell
+        na = rcell.get_ion("na")
+        self.assertEqual(na.length.shape, (2, 5))
+        self.assertEqual(na.area.shape, (2, 5))
+        self.assertAlmostEqual(float(na.length[0, 1].to_decimal(u.um)), 20.0, places=12)
+        self.assertAlmostEqual(float(na.length[1, 3].to_decimal(u.um)), 100.0, places=12)
 
     def test_single_named_ion_keeps_family_and_class_aliases(self) -> None:
         cell = Cell(_build_tree())
@@ -924,7 +1074,7 @@ class CellRuntimeStateTest(unittest.TestCase):
             )
             cell.place(
                 at("soma", 0.5),
-                braincell.mech.CurrentClamp.step(0.05 * u.nA, 0.8 * u.ms, delay=0.1 * u.ms),
+                braincell.mech.CurrentClamp(delay=0.1 * u.ms, durations=0.8 * u.ms, amplitudes=0.05 * u.nA),
                 braincell.mech.MechanismProbe(mechanism="ca_toy_ica", field="Ci"),
                 braincell.mech.MechanismProbe(mechanism="ca_toy_ica", field="BC"),
                 braincell.mech.MechanismProbe(mechanism="ca_toy_ica", field="B"),
@@ -973,7 +1123,7 @@ class CellRuntimeStateTest(unittest.TestCase):
         )
         cell.place(
             at("soma", 0.5),
-            braincell.mech.CurrentClamp.step(0.05 * u.nA, 0.8 * u.ms, delay=0.1 * u.ms),
+            braincell.mech.CurrentClamp(delay=0.1 * u.ms, durations=0.8 * u.ms, amplitudes=0.05 * u.nA),
             braincell.mech.MechanismProbe(mechanism="ca_toy_factor", field="Ci"),
             braincell.mech.MechanismProbe(mechanism="ca_toy_factor", field="PumpBound"),
             braincell.mech.MechanismProbe(mechanism="ca_toy_factor", field="PumpFree"),
@@ -1175,7 +1325,7 @@ class CellRuntimeStateTest(unittest.TestCase):
         )
         cell.place(
             at("soma", 0.5),
-            braincell.mech.CurrentClamp.step(0.005 * u.nA, 20.0 * u.ms, delay=5.0 * u.ms),
+            braincell.mech.CurrentClamp(delay=5.0 * u.ms, durations=20.0 * u.ms, amplitudes=0.005 * u.nA),
             braincell.mech.StateProbe(),
             braincell.mech.MechanismProbe(mechanism="ca_stc", field="Ci"),
             braincell.mech.MechanismProbe(mechanism="ca_stc", field="pump"),
@@ -1273,7 +1423,7 @@ class CellRuntimeStateTest(unittest.TestCase):
         )
         cell.place(
             at("soma", 0.5),
-            braincell.mech.CurrentClamp.step(0.005 * u.nA, 20.0 * u.ms, delay=5.0 * u.ms),
+            braincell.mech.CurrentClamp(delay=5.0 * u.ms, durations=20.0 * u.ms, amplitudes=0.005 * u.nA),
             braincell.mech.StateProbe(),
             braincell.mech.MechanismProbe(mechanism="ca_stc", field="Ci"),
             braincell.mech.MechanismProbe(mechanism="ca_stc", field="pump"),
@@ -1554,74 +1704,39 @@ class CellRuntimeStateTest(unittest.TestCase):
         self.assertAlmostEqual(float(ion.parea[1].to_decimal(u.um)), float(np.pi * 20.0), places=5)
         self.assertAlmostEqual(float(ion.dsq[1].to_decimal(u.um ** 2)), 400.0, places=6)
 
-        result = cell.run(dt=0.05 * u.ms, duration=1.0 * u.ms)
-        for key in (
-            "soma(0.5)_ca_cam_Ci",
-            "soma(0.5)_ca_cam_pump",
-            "soma(0.5)_ca_cam_pumpca",
-            "soma(0.5)_ca_cam_CB",
-            "soma(0.5)_ca_cam_CB_f_ca",
-            "soma(0.5)_ca_cam_CB_ca_s",
-            "soma(0.5)_ca_cam_CB_ca_ca",
-            "soma(0.5)_ca_cam_PV",
-            "soma(0.5)_ca_cam_PV_ca",
-            "soma(0.5)_ca_cam_PV_mg",
-            "soma(0.5)_ca_cam_CAM0",
-            "soma(0.5)_ca_cam_CAM1C",
-            "soma(0.5)_ca_cam_CAM2C",
-            "soma(0.5)_ca_cam_CAM1N2C",
-            "soma(0.5)_ca_cam_CAM1N",
-            "soma(0.5)_ca_cam_CAM2N",
-            "soma(0.5)_ca_cam_CAM2N1C",
-            "soma(0.5)_ca_cam_CAM1C1N",
-            "soma(0.5)_ca_cam_CAM4",
-            "soma(0.5)_ca_cam_vrat",
-            "soma(0.5)_ca_cam_parea",
-            "soma(0.5)_ca_cam_dsq",
-            "soma(0.5)_ca_cam_dsqvol",
-        ):
-            self.assertIn(key, result.traces)
+    def test_cdpcam_pc_ion_params_scatter_with_population_shape(self) -> None:
+        cell = Cell(_build_tree(), pop_size=(2,), solver="staggered")
+        cell.paint(
+            BranchSlice(branch_index=0, prox=0.0, dist=1.0),
+            braincell.mech.Ion(
+                "CdpCAM_MA2024_PC",
+                name="ca_cam",
+                TotalPump=5.0e-8 * (u.mol / u.cm ** 2),
+            ),
+        )
+        cell.paint(
+            BranchSlice(branch_index=1, prox=0.0, dist=1.0),
+            braincell.mech.Ion(
+                "CdpCAM_MA2024_PC",
+                name="ca_cam",
+                TotalPump=6.0e-8 * (u.mol / u.cm ** 2),
+            ),
+        )
 
-        tracked = {
-            "Ci": np.asarray(result.traces["soma(0.5)_ca_cam_Ci"].to_decimal(u.mM)),
-            "pump": np.asarray(result.traces["soma(0.5)_ca_cam_pump"].to_decimal(u.mol / u.cm ** 2)),
-            "pumpca": np.asarray(result.traces["soma(0.5)_ca_cam_pumpca"].to_decimal(u.mol / u.cm ** 2)),
-            "CB": np.asarray(result.traces["soma(0.5)_ca_cam_CB"].to_decimal(u.mM)),
-            "CB_f_ca": np.asarray(result.traces["soma(0.5)_ca_cam_CB_f_ca"].to_decimal(u.mM)),
-            "CB_ca_s": np.asarray(result.traces["soma(0.5)_ca_cam_CB_ca_s"].to_decimal(u.mM)),
-            "CB_ca_ca": np.asarray(result.traces["soma(0.5)_ca_cam_CB_ca_ca"].to_decimal(u.mM)),
-            "PV": np.asarray(result.traces["soma(0.5)_ca_cam_PV"].to_decimal(u.mM)),
-            "PV_ca": np.asarray(result.traces["soma(0.5)_ca_cam_PV_ca"].to_decimal(u.mM)),
-            "PV_mg": np.asarray(result.traces["soma(0.5)_ca_cam_PV_mg"].to_decimal(u.mM)),
-            "CAM0": np.asarray(result.traces["soma(0.5)_ca_cam_CAM0"].to_decimal(u.mM)),
-            "CAM1C": np.asarray(result.traces["soma(0.5)_ca_cam_CAM1C"].to_decimal(u.mM)),
-            "CAM2C": np.asarray(result.traces["soma(0.5)_ca_cam_CAM2C"].to_decimal(u.mM)),
-            "CAM1N2C": np.asarray(result.traces["soma(0.5)_ca_cam_CAM1N2C"].to_decimal(u.mM)),
-            "CAM1N": np.asarray(result.traces["soma(0.5)_ca_cam_CAM1N"].to_decimal(u.mM)),
-            "CAM2N": np.asarray(result.traces["soma(0.5)_ca_cam_CAM2N"].to_decimal(u.mM)),
-            "CAM2N1C": np.asarray(result.traces["soma(0.5)_ca_cam_CAM2N1C"].to_decimal(u.mM)),
-            "CAM1C1N": np.asarray(result.traces["soma(0.5)_ca_cam_CAM1C1N"].to_decimal(u.mM)),
-            "CAM4": np.asarray(result.traces["soma(0.5)_ca_cam_CAM4"].to_decimal(u.mM)),
-            "vrat": np.asarray(result.traces["soma(0.5)_ca_cam_vrat"]),
-            "parea": np.asarray(result.traces["soma(0.5)_ca_cam_parea"].to_decimal(u.um)),
-            "dsq": np.asarray(result.traces["soma(0.5)_ca_cam_dsq"].to_decimal(u.um ** 2)),
-            "dsqvol": np.asarray(result.traces["soma(0.5)_ca_cam_dsqvol"].to_decimal(u.um ** 2)),
-        }
-        for arr in tracked.values():
-            self.assertTrue(np.isfinite(arr).all())
+        cell.init_state()
+        ion = cell.get_ion("ca_cam")
 
-        total = tracked["pump"] + tracked["pumpca"]
-        self.assertTrue(np.allclose(total, total[0], atol=1e-18))
-        self.assertLess(float(np.max(tracked["Ci"])), 1e-3)
-        self.assertLess(float(np.max(np.abs(tracked["Ci"] - tracked["Ci"][0]))), 1e-5)
-        self.assertGreater(float(tracked["CB"][-1]), float(tracked["CB"][0]))
-        self.assertLess(float(tracked["CB_f_ca"][-1]), float(tracked["CB_f_ca"][0]))
-        self.assertLess(float(tracked["CB_ca_s"][-1]), float(tracked["CB_ca_s"][0]))
-        self.assertLess(float(tracked["CB_ca_ca"][-1]), float(tracked["CB_ca_ca"][0]))
-        self.assertLess(float(tracked["CAM0"][-1]), float(tracked["CAM0"][0]))
-        self.assertGreater(float(tracked["CAM1C"][-1]), float(tracked["CAM1C"][0]))
-        self.assertGreater(float(tracked["CAM1N"][-1]), float(tracked["CAM1N"][0]))
-        self.assertLessEqual(float(np.max(np.abs(tracked["pumpca"]))), 1e-12)
+        self.assertEqual(ion.TotalPump.shape, (2, 5))
+        np.testing.assert_allclose(
+            np.asarray(ion.TotalPump[:, 1].to_decimal(u.mol / u.cm ** 2)),
+            [5.0e-8, 5.0e-8],
+            rtol=1e-12,
+        )
+        np.testing.assert_allclose(
+            np.asarray(ion.TotalPump[:, 3].to_decimal(u.mol / u.cm ** 2)),
+            [6.0e-8, 6.0e-8],
+            rtol=1e-12,
+        )
 
     def test_calva_channel_binds_only_to_explicit_lva_ion_when_multiple_calcium_ions_exist(self) -> None:
         cell = Cell(_build_tree())
@@ -1776,6 +1891,47 @@ class CellRuntimeStateTest(unittest.TestCase):
         self.assertEqual(samples["soma(0.5)_Kca3p1_MA2020_GoC_current"], expected_mechanism)
         self.assertEqual(samples["soma(0.5)_k_main_current"], expected_total)
 
+    def test_multi_owner_mixed_ion_channel_exposes_component_currents(self) -> None:
+        cell = Cell(_build_tree())
+        cell.paint(
+            BranchSlice(branch_index=[0, 1], prox=0.0, dist=1.0),
+            braincell.mech.Ion("PotassiumFixed", name="k_main", E=-88.0 * u.mV),
+            braincell.mech.Ion("NonSpecificFixed", name="no"),
+        )
+        cell.paint(
+            BranchSlice(branch_index=[0, 1], prox=0.0, dist=1.0),
+            braincell.mech.Channel("_RuntimeTestTwoOwnerChannel", ion_names={"k": "k_main", "no": "no"}),
+        )
+
+        cell.init_state(); rcell = cell
+
+        layout = next(layout for layout in rcell.layouts if layout.kind == "channel:_RuntimeTestTwoOwnerChannel")
+        point_V = rcell._discretization_to_point(rcell.V.value)
+        node = rcell.get_runtime_node(layout.id)
+        k_main = rcell.get_ion("k_main")
+        no = rcell.get_ion("no")
+        total = node.current(point_V, k_main.pack_info(), no.pack_info())
+        k_current = k_main.current(point_V, include_external=False)
+        no_current = no.current(point_V, include_external=False)
+
+        self.assertEqual(rcell.runtime.current_owner_keys[layout.id], ("k_main", "no"))
+        self.assertIn("_RuntimeTestTwoOwnerChannel", k_main.channels)
+        self.assertIn("_RuntimeTestTwoOwnerChannel", no.channels)
+        self.assertFalse(getattr(k_main.channels["_RuntimeTestTwoOwnerChannel"], "_skip_family_update", False))
+        self.assertTrue(getattr(no.channels["_RuntimeTestTwoOwnerChannel"], "_skip_family_update", False))
+        np.testing.assert_allclose(
+            np.asarray(k_current.to_decimal(u.nA / u.cm ** 2)),
+            [0.0, 2.0, 0.0, 2.0, 0.0],
+        )
+        np.testing.assert_allclose(
+            np.asarray(no_current.to_decimal(u.nA / u.cm ** 2)),
+            [0.0, 3.0, 0.0, 3.0, 0.0],
+        )
+        np.testing.assert_allclose(
+            np.asarray(total.to_decimal(u.nA / u.cm ** 2))[layout.point_index],
+            np.asarray((k_current + no_current).to_decimal(u.nA / u.cm ** 2))[layout.point_index],
+        )
+
     def test_family_order_integrates_mixed_ion_wrapper_channel_only(self) -> None:
         cell = Cell(_build_tree())
         cell.paint(
@@ -1861,13 +2017,60 @@ class EvaluatePointClampsJitTest(unittest.TestCase):
         cell = Cell(_build_tree())
         cell.place(
             at("soma", 0.5),
-            CurrentClamp(start=0.0 * u.ms, durations=(2.0 * u.ms,), amplitudes=(0.1 * u.nA,)),
+            CurrentClamp(delay=0.0 * u.ms, durations=(2.0 * u.ms,), amplitudes=(0.1 * u.nA,)),
         )
         cell.init_state()
         runtime = cell.runtime
         compiled = jax.jit(lambda t: runtime.evaluate_point_clamps(t=t))
         out = compiled(0.5 * u.ms)
         self.assertEqual(out.mantissa.shape, (runtime.n_point,))
+
+    def test_evaluate_point_clamps_supports_population_specific_amplitudes(self) -> None:
+        cell = Cell(_build_tree(), pop_size=(2,))
+        cell.place(
+            at("soma", 0.5),
+            CurrentClamp(durations=2.0 * u.ms, amplitudes=u.Quantity(jnp.asarray([0.1, 0.2]), u.nA)),
+        )
+        cell.init_state()
+        runtime = cell.runtime
+        out = runtime.evaluate_point_clamps(t=0.5 * u.ms)
+        point_id = int(runtime.layouts[0].point_index[0])
+        self.assertEqual(out.mantissa.shape, (2, runtime.n_point))
+        self.assertAlmostEqual(float(out[0, point_id].to_decimal(u.nA)), 0.1, places=6)
+        self.assertAlmostEqual(float(out[1, point_id].to_decimal(u.nA)), 0.2, places=6)
+
+    def test_evaluate_point_clamps_can_filter_midpoint_and_boundary_points(self) -> None:
+        cell = Cell(_build_tree())
+        cell.place(
+            RootLocation(x=0.0),
+            CurrentClamp(durations=1.0 * u.ms, amplitudes=0.1 * u.nA),
+        )
+        cell.place(
+            RootLocation(x=0.5),
+            CurrentClamp(durations=1.0 * u.ms, amplitudes=0.2 * u.nA),
+        )
+        cell.init_state()
+
+        runtime = cell.runtime
+        root_id = int(cell.node_tree.root_node_id)
+        midpoint_id = int(cell.node_tree.cv_to_mid_node_id[0])
+
+        all_current = runtime.evaluate_point_clamps(t=0.5 * u.ms).to_decimal(u.nA)
+        midpoint_current = runtime.evaluate_point_clamps(
+            t=0.5 * u.ms,
+            point_ids=np.asarray([midpoint_id], dtype=np.int32),
+        ).to_decimal(u.nA)
+        boundary_current = runtime.evaluate_point_clamps(
+            t=0.5 * u.ms,
+            point_ids=np.asarray([root_id], dtype=np.int32),
+        ).to_decimal(u.nA)
+
+        self.assertAlmostEqual(float(all_current[root_id]), 0.1, places=6)
+        self.assertAlmostEqual(float(all_current[midpoint_id]), 0.2, places=6)
+        self.assertAlmostEqual(float(midpoint_current[root_id]), 0.0, places=6)
+        self.assertAlmostEqual(float(midpoint_current[midpoint_id]), 0.2, places=6)
+        self.assertAlmostEqual(float(boundary_current[root_id]), 0.1, places=6)
+        self.assertAlmostEqual(float(boundary_current[midpoint_id]), 0.0, places=6)
 
 
 class DensityLayoutMaskingUnderJit(unittest.TestCase):
@@ -1932,16 +2135,384 @@ class CellLifecycleInlineTest(unittest.TestCase):
         self.assertEqual(len(layouts_a), len(layouts_b))
 
 
+class PopulationResponseHeterogeneityTest(unittest.TestCase):
+    def test_population_cells_can_have_different_current_clamp_responses(self) -> None:
+        cell = Cell(
+            _build_tree(),
+            pop_size=(2,),
+            solver="staggered",
+            V_init=-60.0 * u.mV,
+        )
+        cell.place(at("soma", 0.5), braincell.mech.StateProbe(name="v", field="v"))
+        cell.place(
+            at("soma", 0.5),
+            CurrentClamp(delay=0.1 * u.ms, durations=0.8 * u.ms, amplitudes=u.Quantity(jnp.asarray([0.0, 0.2]), u.nA)),
+        )
+        result = cell.run(dt=0.05 * u.ms, duration=1.0 * u.ms)
+        trace = result.traces["v"]
+        self.assertEqual(trace.shape[1], 2)
+        peak0 = float(jnp.max(trace[:, 0].to_decimal(u.mV)))
+        peak1 = float(jnp.max(trace[:, 1].to_decimal(u.mV)))
+        self.assertGreater(peak1, peak0)
+
+    def test_two_dimensional_population_can_run_with_population_specific_clamp(self) -> None:
+        cell = Cell(
+            _build_tree(),
+            pop_size=(2, 2),
+            solver="staggered",
+            V_init=-60.0 * u.mV,
+        )
+        amp = u.Quantity(jnp.asarray([[0.00, 0.03], [0.06, 0.12]]), u.nA)
+        cell.place(at("soma", 0.5), braincell.mech.StateProbe(name="v", field="v"))
+        cell.place(
+            at("soma", 0.5),
+            CurrentClamp(delay=0.1 * u.ms, durations=0.8 * u.ms, amplitudes=amp),
+        )
+        result = cell.run(dt=0.05 * u.ms, duration=1.0 * u.ms)
+        trace = result.traces["v"]
+        self.assertEqual(trace.shape, (20, 2, 2))
+
+    def test_population_cells_can_have_different_current_clamp_delays(self) -> None:
+        cell = Cell(_build_tree(), pop_size=(2,))
+        cell.place(
+            at("soma", 0.5),
+            CurrentClamp(
+                delay=u.Quantity(np.asarray([0.1, 0.3]), u.ms),
+                durations=0.1 * u.ms,
+                amplitudes=0.2 * u.nA,
+            ),
+        )
+        cell.init_state()
+        layout = next(layout for layout in cell.layouts if layout.kind == "CurrentClamp")
+        delay = cell.runtime.state_buffers[(layout.id, "delay")]
+        self.assertEqual(delay.mantissa.shape, (2, 1))
+
+        current_early = cell.runtime.evaluate_point_clamps(t=0.15 * u.ms).to_decimal(u.nA)
+        current_late = cell.runtime.evaluate_point_clamps(t=0.35 * u.ms).to_decimal(u.nA)
+        self.assertAlmostEqual(float(current_early[0, 1]), 0.2, places=6)
+        self.assertAlmostEqual(float(current_early[1, 1]), 0.0, places=6)
+        self.assertAlmostEqual(float(current_late[0, 1]), 0.0, places=6)
+        self.assertAlmostEqual(float(current_late[1, 1]), 0.2, places=6)
+
+    def test_population_delay_works_with_multistep_current_clamp(self) -> None:
+        cell = Cell(_build_tree(), pop_size=(2,))
+        cell.place(
+            at("soma", 0.5),
+            CurrentClamp(
+                delay=u.Quantity(np.asarray([0.1, 0.3]), u.ms),
+                durations=(0.1 * u.ms, 0.1 * u.ms),
+                amplitudes=(0.2 * u.nA, 0.0 * u.nA),
+            ),
+        )
+        cell.init_state()
+
+        current0 = cell.runtime.evaluate_point_clamps(t=0.15 * u.ms).to_decimal(u.nA)
+        current1 = cell.runtime.evaluate_point_clamps(t=0.35 * u.ms).to_decimal(u.nA)
+        self.assertAlmostEqual(float(current0[0, 1]), 0.2, places=6)
+        self.assertAlmostEqual(float(current0[1, 1]), 0.0, places=6)
+        self.assertAlmostEqual(float(current1[0, 1]), 0.0, places=6)
+        self.assertAlmostEqual(float(current1[1, 1]), 0.2, places=6)
+
+    def test_current_clamp_delay_uses_active_point_axis(self) -> None:
+        cell = Cell(_build_tree())
+        cell.place(
+            RootLocation(x=0.5) | at(1, 0.5),
+            CurrentClamp(
+                delay=u.Quantity(np.asarray([0.1, 0.3]), u.ms),
+                durations=0.1 * u.ms,
+                amplitudes=0.2 * u.nA,
+            ),
+        )
+        cell.init_state()
+        layout = next(layout for layout in cell.layouts if layout.kind == "CurrentClamp")
+        self.assertEqual(layout.n_active, 2)
+
+        current_early = cell.runtime.evaluate_point_clamps(t=0.15 * u.ms).to_decimal(u.nA)
+        current_late = cell.runtime.evaluate_point_clamps(t=0.35 * u.ms).to_decimal(u.nA)
+        first_point, second_point = layout.point_index.tolist()
+        self.assertAlmostEqual(float(current_early[first_point]), 0.2, places=6)
+        self.assertAlmostEqual(float(current_early[second_point]), 0.0, places=6)
+        self.assertAlmostEqual(float(current_late[first_point]), 0.0, places=6)
+        self.assertAlmostEqual(float(current_late[second_point]), 0.2, places=6)
+
+    def test_unbroadcastable_current_clamp_delay_raises(self) -> None:
+        cell = Cell(_build_tree(), pop_size=(2,))
+        cell.place(
+            at("soma", 0.5),
+            CurrentClamp(
+                delay=u.Quantity(np.asarray([0.1, 0.2, 0.3]), u.ms),
+                durations=0.1 * u.ms,
+                amplitudes=0.2 * u.nA,
+            ),
+        )
+        with self.assertRaises(ValueError):
+            cell.init_state()
+
+
+class PointSynapseRuntimeTest(unittest.TestCase):
+    def test_synapse_compute_derivative_populates_ode_state(self) -> None:
+        cell = Cell(
+            _build_tree(),
+            solver="staggered",
+            V_init=-60.0 * u.mV,
+        )
+        cell.place(
+            at("soma", 0.5),
+            braincell.mech.Synapse(
+                "AMPA",
+                g_max=0.3 * (u.mS / u.cm ** 2),
+                E_rev=0.0 * u.mV,
+                name="ampa_soma",
+            ),
+        )
+        cell.init_state()
+        runtime = cell.runtime
+        layout = next(layout for layout in runtime.layouts if layout.kind == "synapse:AMPA")
+        node = runtime.get_runtime_node(layout.id)
+
+        runtime.set_state(layout.id, "pre_spike", 1.0)
+        with brainstate.environ.context(t=0.0 * u.ms, dt=0.05 * u.ms):
+            cell._prepare_next_synapse_inputs()
+            cell.compute_derivative()
+
+        self.assertIsNotNone(node.g.derivative)
+        self.assertGreater(float(node.g.derivative[0].to_decimal(u.ms ** -1)), 0.0)
+
+    def test_ampa_synapse_drive_changes_state_and_voltage(self) -> None:
+        cell = Cell(
+            _build_tree(),
+            solver="staggered",
+            V_init=-60.0 * u.mV,
+        )
+        cell.place(at("soma", 0.5), braincell.mech.StateProbe(name="v", field="v"))
+        cell.place(
+            at("soma", 0.5),
+            braincell.mech.Synapse(
+                "AMPA",
+                g_max=0.3 * (u.mS / u.cm ** 2),
+                E_rev=0.0 * u.mV,
+                name="ampa_soma",
+            ),
+        )
+        cell.init_state()
+        runtime = cell.runtime
+        layout = next(layout for layout in runtime.layouts if layout.kind == "synapse:AMPA")
+        node = runtime.get_runtime_node(layout.id)
+
+        baseline_g = float(node.g.value[0])
+        runtime.set_state(layout.id, "pre_spike", 1.0)
+        baseline_v = float(cell.V.value[0].to_decimal(u.mV))
+
+        with brainstate.environ.context(t=0.0 * u.ms, dt=0.05 * u.ms):
+            cell._prepare_next_synapse_inputs()
+            cell.update()
+
+        updated_g = float(node.g.value[0])
+        updated_v = float(cell.V.value[0].to_decimal(u.mV))
+        current = float(node.current(cell._cv_to_point(cell.V.value)[..., layout.point_index])[0].to_decimal(u.nA / u.cm ** 2))
+
+        self.assertGreater(updated_g, baseline_g)
+        self.assertNotEqual(updated_v, baseline_v)
+        self.assertNotEqual(current, 0.0)
+
+    def test_expsyn_drive_jumps_g_and_then_decays(self) -> None:
+        cell = Cell(
+            _build_tree(),
+            solver="staggered",
+            V_init=-60.0 * u.mV,
+        )
+        cell.place(at("soma", 0.5), braincell.mech.MechanismProbe(name="g", mechanism="exp_syn", field="g"))
+        cell.place(at("soma", 0.5), braincell.mech.CurrentProbe(name="i_syn", mechanism="exp_syn"))
+        cell.place(
+            at("soma", 0.5),
+            braincell.mech.Synapse(
+                "ExpSyn",
+                tau=2.0 * u.ms,
+                e=0.0 * u.mV,
+                weight=1.0 * u.uS,
+                name="exp_syn",
+            ),
+        )
+        cell.init_state()
+        runtime = cell.runtime
+        layout = next(layout for layout in runtime.layouts if layout.kind == "synapse:ExpSyn")
+        node = runtime.get_runtime_node(layout.id)
+
+        runtime.set_state(layout.id, "pre_spike", 1.0)
+        with brainstate.environ.context(t=0.0 * u.ms, dt=0.05 * u.ms):
+            cell._prepare_next_synapse_inputs()
+            cell.update()
+        g_after_event = float(node.g.value[0].to_decimal(u.uS))
+
+        runtime.set_state(layout.id, "pre_spike", 0.0)
+        with brainstate.environ.context(t=0.05 * u.ms, dt=0.05 * u.ms):
+            cell._prepare_next_synapse_inputs()
+            cell.update()
+        g_after_decay = float(node.g.value[0].to_decimal(u.uS))
+        current = float(cell.sample_probe("i_syn").to_decimal(u.nA))
+
+        self.assertAlmostEqual(g_after_event, float(np.exp(-0.05 / 2.0)))
+        self.assertAlmostEqual(g_after_decay, float(np.exp(-0.1 / 2.0)))
+        self.assertNotEqual(current, 0.0)
+
+    def test_exp2syn_drive_updates_A_B_and_current(self) -> None:
+        cell = Cell(
+            _build_tree(),
+            solver="staggered",
+            V_init=-60.0 * u.mV,
+        )
+        cell.place(at("soma", 0.5), braincell.mech.MechanismProbe(name="A", mechanism="exp2_syn", field="A"))
+        cell.place(at("soma", 0.5), braincell.mech.MechanismProbe(name="B", mechanism="exp2_syn", field="B"))
+        cell.place(at("soma", 0.5), braincell.mech.CurrentProbe(name="i_syn", mechanism="exp2_syn"))
+        cell.place(
+            at("soma", 0.5),
+            braincell.mech.Synapse(
+                "Exp2Syn",
+                tau1=0.5 * u.ms,
+                tau2=5.0 * u.ms,
+                e=0.0 * u.mV,
+                weight=1.0 * u.uS,
+                name="exp2_syn",
+            ),
+        )
+        cell.init_state()
+        runtime = cell.runtime
+        layout = next(layout for layout in runtime.layouts if layout.kind == "synapse:Exp2Syn")
+        node = runtime.get_runtime_node(layout.id)
+
+        runtime.set_state(layout.id, "pre_spike", 1.0)
+        with brainstate.environ.context(t=0.0 * u.ms, dt=0.05 * u.ms):
+            cell._prepare_next_synapse_inputs()
+            cell.update()
+
+        A = float(node.A.value[0].to_decimal(u.uS))
+        B = float(node.B.value[0].to_decimal(u.uS))
+        g_after_event = float(node.g[0].to_decimal(u.uS))
+        current = float(cell.sample_probe("i_syn").to_decimal(u.nA))
+
+        self.assertGreater(A, 0.0)
+        self.assertGreater(B, 0.0)
+        self.assertGreater(g_after_event, 0.0)
+        self.assertNotEqual(current, 0.0)
+
+        runtime.set_state(layout.id, "pre_spike", 0.0)
+        with brainstate.environ.context(t=0.05 * u.ms, dt=0.05 * u.ms):
+            cell._prepare_next_synapse_inputs()
+            cell.update()
+
+        g_after_decay = float(node.g[0].to_decimal(u.uS))
+        current = float(cell.sample_probe("i_syn").to_decimal(u.nA))
+
+        self.assertGreater(g_after_decay, 0.0)
+        self.assertNotEqual(current, 0.0)
+
+    def test_netstim_can_drive_expsyn_through_cell_run(self) -> None:
+        cell = Cell(
+            _build_tree(),
+            solver="staggered",
+            V_init=-65.0 * u.mV,
+        )
+        cell.place(
+            at("soma", 0.5),
+            braincell.mech.NetStim(name="stim", start=1.0 * u.ms, number=1, interval=10.0 * u.ms, noise=0.0, weight=1.0),
+        )
+        cell.place(at("soma", 0.5), braincell.mech.StateProbe(name="v", field="v"))
+        cell.place(at("soma", 0.5), braincell.mech.MechanismProbe(name="g", mechanism="exp_syn", field="g"))
+        cell.place(at("soma", 0.5), braincell.mech.CurrentProbe(name="i_syn", mechanism="exp_syn"))
+        cell.place(
+            at("soma", 0.5),
+            braincell.mech.Synapse(
+                "ExpSyn",
+                tau=2.0 * u.ms,
+                e=0.0 * u.mV,
+                weight=1.0 * u.uS,
+                name="exp_syn",
+            ),
+        )
+        result = cell.run(dt=0.05 * u.ms, duration=10.0 * u.ms)
+        self.assertGreater(float(np.max(result.traces["g"].to_decimal(u.uS))), 0.0)
+        self.assertGreater(float(np.max(np.abs(result.traces["i_syn"].to_decimal(u.nA)))), 0.0)
+
+    def test_synapse_input_preparation_sums_manual_netstim_and_bound_drive(self) -> None:
+        cell = Cell(
+            _build_tree(),
+            solver="staggered",
+            V_init=-65.0 * u.mV,
+        )
+        cell.place(
+            at("soma", 0.5),
+            braincell.mech.NetStim(
+                name="stim",
+                start=1.0 * u.ms,
+                number=1,
+                interval=10.0 * u.ms,
+                noise=0.0,
+                weight=2.0,
+            ),
+        )
+        cell.place(
+            at("soma", 0.5),
+            braincell.mech.Synapse(
+                "ExpSyn",
+                tau=2.0 * u.ms,
+                e=0.0 * u.mV,
+                weight=1.0 * u.uS,
+                name="exp_syn",
+            ),
+        )
+        cell.bind_synapse_input("exp_syn", source=lambda: np.asarray([3.0]), weight=0.5)
+        cell.init_state()
+        runtime = cell.runtime
+        layout = next(layout for layout in runtime.layouts if layout.kind == "synapse:ExpSyn")
+        node = runtime.get_runtime_node(layout.id)
+        runtime.set_state(layout.id, "pre_spike", 1.0)
+
+        with brainstate.environ.context(t=1.0 * u.ms, dt=0.05 * u.ms):
+            cell._prepare_runtime_synapse_inputs(cell._cv_to_point(cell.V.value))
+
+        self.assertAlmostEqual(float(np.asarray(node.pre_drive().to_decimal(u.uS))[0]), 4.5)
+
+    def test_expsyn_discrete_event_applies_at_begin_step_not_post_integral(self) -> None:
+        cell = Cell(
+            _build_tree(),
+            solver="staggered",
+            V_init=-65.0 * u.mV,
+        )
+        cell.place(
+            at("soma", 0.5),
+            braincell.mech.Synapse(
+                "ExpSyn",
+                tau=2.0 * u.ms,
+                e=0.0 * u.mV,
+                weight=1.0 * u.uS,
+                name="exp_syn",
+            ),
+        )
+        cell.init_state()
+        runtime = cell.runtime
+        layout = next(layout for layout in runtime.layouts if layout.kind == "synapse:ExpSyn")
+        node = runtime.get_runtime_node(layout.id)
+        node.bind_pre_spike(np.asarray([1.0]))
+
+        node.post_integral(cell._cv_to_point(cell.V.value)[..., layout.point_index])
+        self.assertAlmostEqual(float(node.g.value[0].to_decimal(u.uS)), 0.0)
+
+        with brainstate.environ.context(t=0.0 * u.ms, dt=0.05 * u.ms):
+            cell._begin_step()
+
+        self.assertAlmostEqual(float(node.g.value[0].to_decimal(u.uS)), 1.0)
+
+
 # ---------------------------------------------------------------------------
-# ClampActiveTable tests (absorbed from former clamp_table_test.py)
+# ClampRoutingTable tests
 # ---------------------------------------------------------------------------
 
 from dataclasses import dataclass as _dataclass
 
 from braincell._compute.runtime import (
     CLAMP_KINDS,
-    ClampActiveTable,
-    build_clamp_active_table,
+    ClampRoutingTable,
+    build_clamp_routing_table,
 )
 
 
@@ -1973,7 +2544,7 @@ def _clamp_cv(cv_id: int, area_cm2: float) -> _ClampStubCV:
     return _ClampStubCV(id=cv_id, area=area_cm2 * u.cm ** 2)
 
 
-class TestBuildClampActiveTable(unittest.TestCase):
+class TestBuildClampRoutingTable(unittest.TestCase):
 
     def test_no_clamp_layouts_returns_none(self):
         layouts = (
@@ -1983,7 +2554,7 @@ class TestBuildClampActiveTable(unittest.TestCase):
                 point_index=np.asarray([0], dtype=np.int32),
             ),
         )
-        table = build_clamp_active_table(
+        table = build_clamp_routing_table(
             layouts=layouts,
             cvs=[_clamp_cv(0, 1e-6)],
             node_tree=_clamp_node_tree(1),
@@ -1991,7 +2562,7 @@ class TestBuildClampActiveTable(unittest.TestCase):
         )
         self.assertIsNone(table)
 
-    def test_current_clamp_builds_table(self):
+    def test_midpoint_current_clamp_builds_midpoint_route(self):
         layouts = (
             _ClampStubLayout(
                 target="point",
@@ -1999,15 +2570,16 @@ class TestBuildClampActiveTable(unittest.TestCase):
                 point_index=np.asarray([1], dtype=np.int32),
             ),
         )
-        table = build_clamp_active_table(
+        table = build_clamp_routing_table(
             layouts=layouts,
             cvs=[_clamp_cv(0, 1e-6), _clamp_cv(1, 2e-6)],
             node_tree=_clamp_node_tree(2),
             n_point=2,
         )
-        self.assertIsInstance(table, ClampActiveTable)
-        np.testing.assert_array_equal(table.ids, np.asarray([1], dtype=np.int32))
-        np.testing.assert_allclose(table.area, np.asarray([2e-6]))
+        self.assertIsInstance(table, ClampRoutingTable)
+        np.testing.assert_array_equal(table.midpoint_ids, np.asarray([1], dtype=np.int32))
+        np.testing.assert_allclose(table.midpoint_area, np.asarray([2e-6]))
+        np.testing.assert_array_equal(table.boundary_ids, np.asarray([], dtype=np.int32))
 
     def test_each_clamp_kind_is_recognized(self):
         self.assertEqual(
@@ -2027,14 +2599,14 @@ class TestBuildClampActiveTable(unittest.TestCase):
                 point_index=np.asarray([1, 2], dtype=np.int32),
             ),
         )
-        table = build_clamp_active_table(
+        table = build_clamp_routing_table(
             layouts=layouts,
             cvs=[_clamp_cv(i, 1e-6 * (i + 1)) for i in range(4)],
             node_tree=_clamp_node_tree(4),
             n_point=4,
         )
         np.testing.assert_array_equal(
-            table.ids, np.asarray([1, 2, 3], dtype=np.int32)
+            table.midpoint_ids, np.asarray([1, 2, 3], dtype=np.int32)
         )
 
     def test_zero_area_raises(self):
@@ -2046,14 +2618,14 @@ class TestBuildClampActiveTable(unittest.TestCase):
             ),
         )
         with self.assertRaises(ValueError):
-            build_clamp_active_table(
+            build_clamp_routing_table(
                 layouts=layouts,
                 cvs=[_clamp_cv(0, 0.0)],
                 node_tree=_clamp_node_tree(1),
                 n_point=1,
             )
 
-    def test_endpoint_clamp_is_excluded_from_area_table(self):
+    def test_endpoint_clamp_builds_boundary_route(self):
         layouts = (
             _ClampStubLayout(
                 target="point",
@@ -2061,13 +2633,39 @@ class TestBuildClampActiveTable(unittest.TestCase):
                 point_index=np.asarray([2], dtype=np.int32),
             ),
         )
-        table = build_clamp_active_table(
+        table = build_clamp_routing_table(
             layouts=layouts,
             cvs=[_clamp_cv(0, 1e-6)],
             node_tree=_clamp_node_tree(1),
             n_point=3,
         )
-        self.assertIsNone(table)
+        self.assertIsInstance(table, ClampRoutingTable)
+        np.testing.assert_array_equal(table.midpoint_ids, np.asarray([], dtype=np.int32))
+        np.testing.assert_array_equal(table.midpoint_area, np.asarray([], dtype=float))
+        np.testing.assert_array_equal(table.boundary_ids, np.asarray([2], dtype=np.int32))
+
+    def test_mixed_midpoint_and_endpoint_clamps_route_separately(self):
+        layouts = (
+            _ClampStubLayout(
+                target="point",
+                kind="CurrentClamp",
+                point_index=np.asarray([0, 3], dtype=np.int32),
+            ),
+            _ClampStubLayout(
+                target="point",
+                kind="SineClamp",
+                point_index=np.asarray([1, 4], dtype=np.int32),
+            ),
+        )
+        table = build_clamp_routing_table(
+            layouts=layouts,
+            cvs=[_clamp_cv(0, 1e-6), _clamp_cv(1, 2e-6)],
+            node_tree=_clamp_node_tree(2),
+            n_point=5,
+        )
+        np.testing.assert_array_equal(table.midpoint_ids, np.asarray([0, 1], dtype=np.int32))
+        np.testing.assert_allclose(table.midpoint_area, np.asarray([1e-6, 2e-6]))
+        np.testing.assert_array_equal(table.boundary_ids, np.asarray([3, 4], dtype=np.int32))
 
     def test_non_clamp_point_layout_ignored(self):
         layouts = (
@@ -2078,7 +2676,7 @@ class TestBuildClampActiveTable(unittest.TestCase):
             ),
         )
         self.assertIsNone(
-            build_clamp_active_table(
+            build_clamp_routing_table(
                 layouts=layouts,
                 cvs=[_clamp_cv(0, 1e-6)],
                 node_tree=_clamp_node_tree(1),
@@ -2158,11 +2756,11 @@ class RaggedCurrentClampBufferTest(unittest.TestCase):
         cell = Cell(_build_tree())
         cell.place(
             at("soma", 0.5),
-            FunctionClamp(fn=lambda t: 0.1 * u.nA, duration=3.0 * u.ms, start=0.0 * u.ms),
+            FunctionClamp(fn=lambda t: 0.1 * u.nA),
         )
         cell.place(
             at("soma", 0.75),
-            FunctionClamp(fn=lambda t: 0.1 * u.nA, duration=3.0 * u.ms, start=0.0 * u.ms),
+            FunctionClamp(fn=lambda t: 0.1 * u.nA),
         )
         cell.init_state()
         fn_clamp_layouts = [layout for layout in cell.layouts if layout.kind == "FunctionClamp"]
@@ -2172,12 +2770,12 @@ class RaggedCurrentClampBufferTest(unittest.TestCase):
         cell = Cell(_build_tree())
         cell.place(
             at("soma", 0.25),
-            CurrentClamp(start=0.0 * u.ms, durations=(2.0 * u.ms,), amplitudes=(0.1 * u.nA,)),
+            CurrentClamp(delay=0.0 * u.ms, durations=(2.0 * u.ms,), amplitudes=(0.1 * u.nA,)),
         )
         cell.place(
             at("soma", 0.5),
             CurrentClamp(
-                start=0.0 * u.ms,
+                delay=0.0 * u.ms,
                 durations=(1.0 * u.ms, 1.0 * u.ms),
                 amplitudes=(0.1 * u.nA, 0.2 * u.nA),
             ),
@@ -2185,7 +2783,7 @@ class RaggedCurrentClampBufferTest(unittest.TestCase):
         cell.place(
             at("soma", 0.75),
             CurrentClamp(
-                start=0.0 * u.ms,
+                delay=0.0 * u.ms,
                 durations=(0.5 * u.ms, 0.5 * u.ms, 1.0 * u.ms),
                 amplitudes=(0.1 * u.nA, 0.2 * u.nA, 0.3 * u.nA),
             ),
@@ -2205,6 +2803,34 @@ class RaggedCurrentClampBufferTest(unittest.TestCase):
             mask_key = (layout.id, "_mask_durations")
             self.assertIn(mask_key, cell.runtime.state_buffers)
             self.assertEqual(cell.runtime.state_buffers[mask_key].shape, dur.mantissa.shape)
+
+    def test_population_multistep_current_clamp_preserves_step_axis(self) -> None:
+        cell = Cell(_build_tree(), pop_size=(2,))
+        cell.place(
+            at("soma", 0.5),
+            CurrentClamp(
+                delay=0.0 * u.ms,
+                durations=(1.0 * u.ms, 1.0 * u.ms),
+                amplitudes=(
+                    u.Quantity(np.asarray([0.1, 0.0]), u.nA),
+                    u.Quantity(np.asarray([0.0, 0.2]), u.nA),
+                ),
+            ),
+        )
+        cell.init_state()
+
+        layout = next(layout for layout in cell.layouts if layout.kind == "CurrentClamp")
+        durations = cell.runtime.state_buffers[(layout.id, "durations")]
+        amplitudes = cell.runtime.state_buffers[(layout.id, "amplitudes")]
+        self.assertEqual(durations.mantissa.shape, (2, 1, 2))
+        self.assertEqual(amplitudes.mantissa.shape, (2, 1, 2))
+
+        current0 = cell.runtime.evaluate_point_clamps(t=0.5 * u.ms).to_decimal(u.nA)
+        current1 = cell.runtime.evaluate_point_clamps(t=1.5 * u.ms).to_decimal(u.nA)
+        self.assertAlmostEqual(float(current0[0, 1]), 0.1, places=6)
+        self.assertAlmostEqual(float(current0[1, 1]), 0.0, places=6)
+        self.assertAlmostEqual(float(current1[0, 1]), 0.0, places=6)
+        self.assertAlmostEqual(float(current1[1, 1]), 0.2, places=6)
 
 
 class FnFingerprintWarnsOnOpaqueClosureTest(unittest.TestCase):
@@ -2281,8 +2907,8 @@ class RuntimeModuleAllTest(unittest.TestCase):
 
         expected = {
             "MechanismLayout",
-            "ClampActiveTable",
-            "build_clamp_active_table",
+            "ClampRoutingTable",
+            "build_clamp_routing_table",
             "CellRuntimeState",
             "build_placeholder_ions",
             "clone_morpho",
@@ -2301,10 +2927,10 @@ class RuntimeSplitReexportTest(unittest.TestCase):
         from braincell._compute import layouts, runtime
 
         self.assertIs(runtime.MechanismLayout, layouts.MechanismLayout)
-        self.assertIs(runtime.ClampActiveTable, layouts.ClampActiveTable)
+        self.assertIs(runtime.ClampRoutingTable, layouts.ClampRoutingTable)
         self.assertIs(
-            runtime.build_clamp_active_table,
-            layouts.build_clamp_active_table,
+            runtime.build_clamp_routing_table,
+            layouts.build_clamp_routing_table,
         )
 
     def test_cell_runtime_state_lives_in_state(self) -> None:

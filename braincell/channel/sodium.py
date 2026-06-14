@@ -510,8 +510,8 @@ class Nav1p1_MA2025_BC(Nav1p6_MA2020_GoC):
         g_max: Union[brainstate.typing.ArrayLike, Callable] = 8.0 * (u.mS / u.cm ** 2),
         gateCurrent: Union[brainstate.typing.ArrayLike, Callable] = 0.0,
         name: Optional[str] = None,
-        solver: str = "rk4",
-        substeps: int = 5,
+        solver: str = "backward_euler",
+        substeps: int = 1,
     ):
         super().__init__(
             size=size,
@@ -595,8 +595,8 @@ class Nav_MA2020_GrC(Markov, IndependentIntegration):
         temp: brainstate.typing.ArrayLike = u.celsius2kelvin(32.0),
         g_max: Union[brainstate.typing.ArrayLike, Callable] = 13.0 * (u.mS / u.cm ** 2),
         name: Optional[str] = None,
-        solver: str = "rk4",
-        substeps: int = 5,
+        solver: str = "backward_euler",
+        substeps: int = 1,
     ):
         super().__init__(size=size, name=name, solver=solver, substeps=substeps)
 
@@ -624,6 +624,13 @@ class Nav_MA2020_GrC(Markov, IndependentIntegration):
 
     def current(self, V, Na: IonInfo):
         return self.g_max * self.O.value * (Na.E - V)
+
+    def init_state(self, V, Na: IonInfo, batch_size: int = None):
+        super().init_state(V, Na, batch_size=batch_size)
+        self.reset_steady_state(V, Na, batch_size=batch_size)
+
+    def reset_state(self, V, Na: IonInfo, batch_size: int = None):
+        self.reset_steady_state(V, Na, batch_size=batch_size)
 
     alfa = lambda self, V: self.phi * self.Aalfa * u.math.exp((V / u.mV) / self.Valfa)
     beta = lambda self, V: self.phi * self.Abeta * u.math.exp(-(V / u.mV) / self.Vbeta)
@@ -714,8 +721,8 @@ class NaFHF_MA2020_GrC(Markov, IndependentIntegration):
         temp: brainstate.typing.ArrayLike = u.celsius2kelvin(32.0),
         g_max: Union[brainstate.typing.ArrayLike, Callable] = 13.0 * (u.mS / u.cm ** 2),
         name: Optional[str] = None,
-        solver: str = "rk4",
-        substeps: int = 5,
+        solver: str = "backward_euler",
+        substeps: int = 1,
     ):
         super().__init__(size=size, name=name, solver=solver, substeps=substeps)
 
@@ -747,6 +754,13 @@ class NaFHF_MA2020_GrC(Markov, IndependentIntegration):
 
     def current(self, V, Na: IonInfo):
         return self.g_max * self.O.value * (Na.E - V)
+
+    def init_state(self, V, Na: IonInfo, batch_size: int = None):
+        super().init_state(V, Na, batch_size=batch_size)
+        self.reset_steady_state(V, Na, batch_size=batch_size)
+
+    def reset_state(self, V, Na: IonInfo, batch_size: int = None):
+        self.reset_steady_state(V, Na, batch_size=batch_size)
 
     alfa = lambda self, V: self.phi * self.Aalfa * u.math.exp((V / u.mV) / self.Valfa)
     beta = lambda self, V: self.phi * self.Abeta * u.math.exp(-(V / u.mV) / self.Vbeta)

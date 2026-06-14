@@ -410,21 +410,22 @@ class KineticIon(IndependentIntegration):
         valence = self.valence.value if isinstance(self.valence, brainstate.State) else self.valence
         return (u.gas_constant * temp / (valence * u.faraday_constant)) * u.math.log(Co / self.Ci.value)
 
-    def make_integration(self, V):
+    def make_integration(self, V, recursive_child: bool = True):
         """Advance this ion with its own solver and substep schedule."""
         with brainstate.environ.context(dt=brainstate.environ.get_dt() / self.substeps):
             brainstate.transform.for_loop(
-                lambda i: self._step_solver(V),
+                lambda i: self._step_solver(V, recursive_child),
                 u.math.arange(self.substeps),
             )
 
-    def _step_solver(self, V):
+    def _step_solver(self, V, recursive_child: bool = True):
+        args = (V,) if recursive_child else (V, recursive_child)
         try:
-            self.solver(self, V, excluded_paths=(("channels",),))
+            self.solver(self, *args, excluded_paths=(("channels",),))
         except TypeError as exc:
             if "excluded_paths" not in str(exc):
                 raise
-            self.solver(self, V)
+            self.solver(self, *args)
 
     def species_values(self):
         """Return the current full visible species view."""

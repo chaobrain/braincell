@@ -1,0 +1,74 @@
+{
+  "neuron_roundtrip": {
+    "hoc": {
+      "err": null,
+      "n3d_hist": {
+        "2": 517
+      },
+      "nsec": 517,
+      "section_names_first10": [
+        "soma",
+        "axHill",
+        "axIS[0]",
+        "axIS[1]",
+        "axIS[2]",
+        "axIS[3]",
+        "axIS[4]",
+        "axIS[5]",
+        "axIS[6]",
+        "axIS[7]"
+      ],
+      "total_length_um": 4851.2477333520665,
+      "total_n3d": 1034
+    },
+    "matches": {
+      "n3d_hist": true,
+      "nsec": true,
+      "total_length_um": true,
+      "total_n3d": true
+    },
+    "swc": {
+      "err": 1,
+      "n3d_hist": {
+        "2": 517
+      },
+      "nsec": 517,
+      "section_names_first10": [
+        "soma[0]",
+        "axon[0]",
+        "axon[1]",
+        "axon[2]",
+        "axon[3]",
+        "axon[4]",
+        "axon[5]",
+        "axon[6]",
+        "axon[7]",
+        "axon[8]"
+      ],
+      "total_length_um": 4851.247733352069,
+      "total_n3d": 1034
+    }
+  },
+  "source": {
+    "all_sections_have_two_pt3d": true,
+    "connects": 516,
+    "sections": 517,
+    "source_region_counts": {
+      "axHillock": 1,
+      "axIniSeg": 10,
+      "axNode": 20,
+      "distDend": 402,
+      "proxDend": 83,
+      "soma": 1
+    },
+    "swc_type_counts": {
+      "1": 1,
+      "2": 15,
+      "3": 236,
+      "4": 249,
+      "6": 16
+    },
+    "total_length_um": 4851.247756975878,
+    "total_pt3d": 1034
+  }
+}

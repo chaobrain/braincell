@@ -224,8 +224,8 @@ class Markov(Channel, IndependentIntegration):
         self,
         size: brainstate.typing.Size,
         name: Optional[str] = None,
-        solver: str = "rk4",
-        substeps: int = 5,
+        solver: str = "backward_euler",
+        substeps: int = 1,
     ):
         super().__init__(size=size, name=name)
         IndependentIntegration.__init__(self, solver=solver)

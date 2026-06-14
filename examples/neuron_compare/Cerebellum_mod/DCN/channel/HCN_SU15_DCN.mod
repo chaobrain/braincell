@@ -49,6 +49,5 @@ DERIVATIVE states {
 } 
 
 PROCEDURE rate(v(mV)) {
-	TABLE minf FROM -150 TO 100 WITH 300 
 	minf = 1 / (1 + exp((v + 80) / 5))
 }

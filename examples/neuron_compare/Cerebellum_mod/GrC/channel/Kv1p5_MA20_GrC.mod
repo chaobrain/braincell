@@ -55,15 +55,15 @@ INITIAL {
 
 BREAKPOINT { LOCAL z
 	z = (R*(celsius+273.15))/F
-	SOLVE states METHOD derivimplicit
-		ik = gKur*(0.1 + 1/(1 + exp(-(v - 15)/13)))*m*m*m*n*u*(v - ek)
+	SOLVE states METHOD cnexp
+	ik = gKur*(0.1 + 1/(1 + exp(-(v - 15)/13)))*m*m*m*n*u*(v - ek)
 	ino=gnonspec*(0.1 + 1/(1 + exp(-(v - 15)/13)))*m*m*m*n*u*(v - z*log((nao+ko)/(nai+ki)))
 }
 
 DERIVATIVE states {	: exact when v held constant
 	rates(v)
 	m' = (minf - m)/mtau
-        n' = (ninf - n)/ntau
+    n' = (ninf - n)/ntau
 	u' = (uinf - u)/utau
 }
 

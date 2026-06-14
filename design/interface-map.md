@@ -287,7 +287,7 @@ metric 属性：
 
 - `Point`
 - `CurrentClamp`
-- `CurrentClamp.step(amplitude, duration, delay=...)`
+- `CurrentClamp(delay=..., durations=duration, amplitudes=amplitude)`
 - `SineClamp`
 - `FunctionClamp`
 - `StateProbe`

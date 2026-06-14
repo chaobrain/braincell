@@ -60,6 +60,26 @@ def _V(values, unit=u.mV):
 _DENSITY_UNIT = u.mS / u.cm ** 2 * u.mV
 
 
+def _assert_markov_probability_total(testcase, channel, size: int) -> None:
+    states = channel.state_values()
+    total = None
+    for name in channel.state_names + (channel.redundant_state,):
+        total = states[name] if total is None else (total + states[name])
+    testcase.assertTrue(u.math.allclose(total, jnp.ones(size), atol=1e-6))
+
+
+def _assert_markov_stationary(testcase, channel, V, ion, size: int) -> None:
+    channel.compute_derivative(V, ion)
+    for name in channel.state_names:
+        testcase.assertTrue(
+            u.math.allclose(
+                getattr(channel, name).derivative,
+                jnp.zeros(size) / u.ms,
+                atol=1e-5 * u.Hz,
+            )
+        )
+
+
 class _HHNaMixin:
     CLS = None
 
@@ -1067,20 +1087,31 @@ class NavMA20GrCTest(unittest.TestCase):
         na = _na_info(2)
         ch.init_state(V, na)
         ch.reset_steady_state(V, na)
-        states = ch.state_values()
-        total = None
-        for name in ch.state_names + (ch.redundant_state,):
-            total = states[name] if total is None else (total + states[name])
-        self.assertTrue(u.math.allclose(total, jnp.ones(2), atol=1e-6))
-        ch.compute_derivative(V, na)
-        for name in ch.state_names:
-            self.assertTrue(
-                u.math.allclose(
-                    getattr(ch, name).derivative,
-                    jnp.zeros(2) / u.ms,
-                    atol=1e-5 * u.Hz,
-                )
-            )
+        _assert_markov_probability_total(self, ch, 2)
+        _assert_markov_stationary(self, ch, V, na, 2)
+
+    def test_init_state_uses_steady_state_initialization(self) -> None:
+        ch = Nav_MA2020_GrC(size=2)
+        V = _V([-60.0, -50.0])
+        na = _na_info(2)
+        ch.init_state(V, na)
+        _assert_markov_probability_total(self, ch, 2)
+        _assert_markov_stationary(self, ch, V, na, 2)
+
+    def test_reset_state_uses_steady_state_initialization(self) -> None:
+        reset = Nav_MA2020_GrC(size=2)
+        steady = Nav_MA2020_GrC(size=2)
+        V = _V([-60.0, -50.0])
+        na = _na_info(2)
+        reset.init_state(V, na)
+        steady.init_state(V, na)
+        reset.reset_state(V, na)
+        steady.reset_steady_state(V, na)
+        reset_states = reset.state_values()
+        steady_states = steady.state_values()
+        for name in reset.state_names + (reset.redundant_state,):
+            self.assertTrue(u.math.allclose(reset_states[name], steady_states[name], atol=1e-6))
+        _assert_markov_stationary(self, reset, V, na, 2)
 
 
 class NaFHFMA20GrCTest(unittest.TestCase):
@@ -1174,20 +1205,31 @@ class NaFHFMA20GrCTest(unittest.TestCase):
         na = _na_info(2)
         ch.init_state(V, na)
         ch.reset_steady_state(V, na)
-        states = ch.state_values()
-        total = None
-        for name in ch.state_names + (ch.redundant_state,):
-            total = states[name] if total is None else (total + states[name])
-        self.assertTrue(u.math.allclose(total, jnp.ones(2), atol=1e-6))
-        ch.compute_derivative(V, na)
-        for name in ch.state_names:
-            self.assertTrue(
-                u.math.allclose(
-                    getattr(ch, name).derivative,
-                    jnp.zeros(2) / u.ms,
-                    atol=1e-5 * u.Hz,
-                )
-            )
+        _assert_markov_probability_total(self, ch, 2)
+        _assert_markov_stationary(self, ch, V, na, 2)
+
+    def test_init_state_uses_steady_state_initialization(self) -> None:
+        ch = NaFHF_MA2020_GrC(size=2)
+        V = _V([-60.0, -50.0])
+        na = _na_info(2)
+        ch.init_state(V, na)
+        _assert_markov_probability_total(self, ch, 2)
+        _assert_markov_stationary(self, ch, V, na, 2)
+
+    def test_reset_state_uses_steady_state_initialization(self) -> None:
+        reset = NaFHF_MA2020_GrC(size=2)
+        steady = NaFHF_MA2020_GrC(size=2)
+        V = _V([-60.0, -50.0])
+        na = _na_info(2)
+        reset.init_state(V, na)
+        steady.init_state(V, na)
+        reset.reset_state(V, na)
+        steady.reset_steady_state(V, na)
+        reset_states = reset.state_values()
+        steady_states = steady.state_values()
+        for name in reset.state_names + (reset.redundant_state,):
+            self.assertTrue(u.math.allclose(reset_states[name], steady_states[name], atol=1e-6))
+        _assert_markov_stationary(self, reset, V, na, 2)
 
 
 if __name__ == "__main__":

@@ -59,14 +59,14 @@ def current_at_ms(stimulus: StimulusSpec, t_ms: float) -> float:
 def build_braincell_stimulus(stimulus: StimulusSpec):
     kind = getattr(stimulus, "kind", None)
     if kind == "dc_step":
-        return braincell.CurrentClamp.step(
-            stimulus.amp_nA * u.nA,
-            stimulus.dur_ms * u.ms,
+        return braincell.CurrentClamp(
             delay=stimulus.delay_ms * u.ms,
+            durations=stimulus.dur_ms * u.ms,
+            amplitudes=stimulus.amp_nA * u.nA,
         )
     if kind == "piecewise_step":
         return braincell.CurrentClamp(
-            start=stimulus.start_ms * u.ms,
+            delay=stimulus.start_ms * u.ms,
             durations=tuple(duration * u.ms for duration in stimulus.durations_ms),
             amplitudes=tuple(amplitude * u.nA for amplitude in stimulus.amplitudes_nA),
         )
@@ -76,7 +76,7 @@ def build_braincell_stimulus(stimulus: StimulusSpec):
             frequency=stimulus.frequency_hz * u.Hz,
             phase=stimulus.phase_rad,
             offset=stimulus.offset_nA * u.nA,
-            start=stimulus.start_ms * u.ms,
+            delay=stimulus.start_ms * u.ms,
             duration=stimulus.duration_ms * u.ms,
         )
     raise TypeError(f"Unsupported stimulus type {type(stimulus).__name__!s}.")

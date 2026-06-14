@@ -6,6 +6,10 @@
     "mod_dir": "../../../Cerebellum_mod/GrC/channel"
   },
   "defaults": {
+    "ion_state": {
+      "Ci_mM": 54.4,
+      "Co_mM": 2.5
+    },
     "channel_params": {
       "g_max_S_cm2": 0.00013195
     }

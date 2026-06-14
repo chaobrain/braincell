@@ -23,6 +23,7 @@ guard against misuse and verify the registry metadata.
 """
 
 import unittest
+from unittest.mock import patch
 
 import brainstate
 import brainunit as u
@@ -41,6 +42,7 @@ from braincell.filter import RootLocation
 from braincell.quad import  get_registry, staggered_step
 from braincell.quad._staggered import (
     _build_backsub_indices,
+    _linear_and_const_term,
     _to_jax_quantity,
     comp_backsub_raw,
     comp_triang_raw,
@@ -90,6 +92,27 @@ class DhsVoltageGuardTest(unittest.TestCase):
 
         with self.assertRaisesRegex(TypeError, "node-tree aware"):
             dhs_voltage_step(HalfTarget(), 0. * u.ms, 0.1 * u.ms)
+
+
+class DhsLinearizationUnitTest(unittest.TestCase):
+
+    def test_linear_unit_uses_derivative_over_voltage_when_grad_is_unitless(self):
+        class Target:
+            def _voltage_linearizer(self):
+                def linearizer(V):
+                    linear = jnp.full(V.shape, -0.1)
+                    derivative = jnp.full(V.shape, 2.0) * (u.nA / u.uF)
+                    return linear, derivative
+
+                return linearizer
+
+        V_n = jnp.array([-65.0, -64.0]) * u.mV
+        linear, const = _linear_and_const_term(Target(), V_n)
+
+        expected_linear_unit = (u.nA / u.uF) / u.mV
+        np.testing.assert_allclose(np.asarray(linear.to_decimal(expected_linear_unit)), [-0.1, -0.1])
+        self.assertEqual(u.get_unit(const), u.get_unit(2.0 * u.nA / u.uF))
+        np.testing.assert_allclose(np.asarray((V_n * linear + const).to_decimal(u.nA / u.uF)), [2.0, 2.0])
 
 
 class CompTriangRawTest(unittest.TestCase):
@@ -204,6 +227,50 @@ class StaggeredStepGuardTest(unittest.TestCase):
             staggered_step(Plain())
         self.assertIn(DiffEqModule.__name__, str(ctx.exception))
 
+    def test_family_schedule_integrates_synapses_then_family_after_voltage(self):
+        calls = []
+        soma = Branch.from_lengths(
+            lengths=[20.0] * u.um,
+            radii=[10.0, 10.0] * u.um,
+            type="soma",
+        )
+        cell = Cell(Morphology.from_root(soma, name="soma"), cv_policy=CVPerBranch())
+        cell.init_state()
+        cell._update_runtime_synapses = lambda point_V: calls.append("synapse")
+        cell._integrate_runtime_synapse_dynamics = lambda point_V: calls.append("synapse_dynamics")
+        cell._update_ion_channel_families = lambda point_V: calls.append("family")
+        cell._update_ion_channels_by_integration = lambda point_V: calls.append("integration")
+
+        with patch("braincell.quad._staggered.dhs_voltage_step", lambda *args: calls.append("voltage")):
+            with brainstate.environ.context(t=0.0 * u.ms, dt=0.1 * u.ms):
+                staggered_step(cell)
+
+        self.assertEqual(calls, ["voltage", "synapse_dynamics", "family"])
+
+    def test_integration_schedule_integrates_after_voltage_without_preparing_synapses(self):
+        calls = []
+        soma = Branch.from_lengths(
+            lengths=[20.0] * u.um,
+            radii=[10.0, 10.0] * u.um,
+            type="soma",
+        )
+        cell = Cell(
+            Morphology.from_root(soma, name="soma"),
+            cv_policy=CVPerBranch(),
+            ion_channel_update_order="integration",
+        )
+        cell.init_state()
+        cell._update_runtime_synapses = lambda point_V: calls.append("synapse")
+        cell._prepare_runtime_synapse_inputs = lambda point_V: calls.append("prepare")
+        cell._update_ion_channel_families = lambda point_V: calls.append("family")
+        cell._update_ion_channels_by_integration = lambda point_V: calls.append("integration")
+
+        with patch("braincell.quad._staggered.dhs_voltage_step", lambda *args: calls.append("voltage")):
+            with brainstate.environ.context(t=0.0 * u.ms, dt=0.1 * u.ms):
+                staggered_step(cell)
+
+        self.assertEqual(calls, ["voltage", "integration"])
+
 
 class StaggeredRegistryMetadataTest(unittest.TestCase):
 
@@ -275,7 +342,74 @@ class DhsEndpointClampTest(unittest.TestCase):
             type="soma",
         )
         cell = Cell(Morphology.from_root(soma, name="soma"), cv_policy=CVPerBranch())
-        cell.place(RootLocation(x=0.0), CurrentClamp.step(1.0 * u.nA, 1.0 * u.ms))
+        cell.place(RootLocation(x=0.0), CurrentClamp(durations=1.0 * u.ms, amplitudes=1.0 * u.nA))
+        cell.init_state()
+
+        before = float(cell.V.value[0].to_decimal(u.mV))
+        with brainstate.environ.context(t=0.0 * u.ms, dt=0.05 * u.ms):
+            dhs_voltage_step(cell, 0.0 * u.ms, 0.05 * u.ms)
+        after = float(cell.V.value[0].to_decimal(u.mV))
+
+        self.assertGreater(after, before)
+
+
+class DhsMidpointClampPopulationTest(unittest.TestCase):
+
+    def _build_clamped_cell(self, *, pop_size=None):
+        soma = Branch.from_lengths(
+            lengths=[20.0] * u.um,
+            radii=[10.0, 10.0] * u.um,
+            type="soma",
+        )
+        kwargs = {} if pop_size is None else {"pop_size": pop_size}
+        cell = Cell(
+            Morphology.from_root(soma, name="soma"),
+            cv_policy=CVPerBranch(),
+            V_init=-65.0 * u.mV,
+            **kwargs,
+        )
+        cell.place(
+            RootLocation(x=0.5),
+            CurrentClamp(
+                delay=0.0 * u.ms,
+                durations=0.1 * u.ms,
+                amplitudes=1.0 * u.nA,
+            ),
+        )
+        cell.init_state()
+        cell.reset_state()
+        return cell
+
+    def test_midpoint_clamp_is_not_double_counted_with_population_axis(self):
+        scalar = self._build_clamped_cell()
+        population = self._build_clamped_cell(pop_size=(1,))
+
+        with brainstate.environ.context(t=0.0 * u.ms, dt=0.025 * u.ms):
+            dhs_voltage_step(scalar, 0.0 * u.ms, 0.025 * u.ms)
+            dhs_voltage_step(population, 0.0 * u.ms, 0.025 * u.ms)
+
+        scalar_v = np.asarray(scalar.V.value.to_decimal(u.mV), dtype=float)
+        population_v = np.asarray(population.V.value.to_decimal(u.mV), dtype=float)
+        np.testing.assert_allclose(population_v.reshape(-1), scalar_v.reshape(-1), rtol=1e-12, atol=1e-12)
+
+
+class DhsMultistepClampTest(unittest.TestCase):
+
+    def test_multistep_current_clamp_voltage_step_handles_zero_linearization(self):
+        soma = Branch.from_lengths(
+            lengths=[20.0] * u.um,
+            radii=[10.0, 10.0] * u.um,
+            type="soma",
+        )
+        cell = Cell(Morphology.from_root(soma, name="soma"), cv_policy=CVPerBranch())
+        cell.place(
+            RootLocation(x=0.0),
+            CurrentClamp(
+                delay=0.0 * u.ms,
+                durations=(0.5 * u.ms, 0.5 * u.ms),
+                amplitudes=(1.0 * u.nA, 0.0 * u.nA),
+            ),
+        )
         cell.init_state()
 
         before = float(cell.V.value[0].to_decimal(u.mV))

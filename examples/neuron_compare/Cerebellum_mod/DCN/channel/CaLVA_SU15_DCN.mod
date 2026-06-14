@@ -73,7 +73,6 @@ DERIVATIVE states {
 } 
 
 PROCEDURE rate(v(mV)) {
-	TABLE minf, taum, hinf, tauh  FROM -150 TO 100 WITH 300 
 	minf = 1 / (1 + exp((v + 56) / -6.2))
 	taum = 0.333 / (exp((v + 131) / -16.7) + exp((v + 15.8) / 18.2)) + 0.204
     taum = taum / qdeltat
@@ -87,7 +86,6 @@ PROCEDURE rate(v(mV)) {
 }
 
 FUNCTION getGHKexp(v(mV)) {
-    TABLE DEPEND T FROM -150 TO 100 WITH 300 
     getGHKexp = exp(-23.20764929 * v / T): =the calculated values of
             : getGHKexp = exp((-z * F * (0.001) * v) / (R * T)).
 }

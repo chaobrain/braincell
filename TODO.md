@@ -38,6 +38,14 @@ This working tree currently has the Cerebellum/PC comparison work in progress:
   `ion_channel_update_order="family"` restores the NEURON-like family
   ordering for ion/channel updates; `"integration"` keeps the previous
   BrainCell integration-oriented ordering.
+- [x] **Homogeneous multi-compartment `Cell` populations now support
+  multi-dimensional `pop_size`.** `Cell(..., pop_size=(...))` now
+  expands runtime state to `pop_size + (n_cv,)`, point-space runtime
+  arrays to `pop_size + (n_point,)`, and supports population-specific
+  `CurrentClamp(...)` amplitudes such as `(2,)` or `(2, 2)`-shaped
+  current grids. Regression coverage includes `(2,)` and `(2, 2)`
+  populations, plus an example notebook at
+  `examples/multi_compartment/pop_size_demo.ipynb`.
 
 ## 1. Mission and Scope
 
@@ -223,7 +231,7 @@ internal dependencies · status · open work**.
     handled minimally — see `io/asc/test.py` skips.
   - [ ] NeuroML2 import — reader stub exists; needs cell, segment-group,
     biophysics decoding and round-trip tests.
-  - [x] NEURON-based diff harness via `examples/multi_compartment/neuron_diff.py`.
+  - [x] NEURON-based diff harness via `examples/neuron_compare/morph/neuron_diff.py`.
   - [x] NeuroMorpho.Org integration: Tier 1 `load_neuromorpho` /
     `fetch_neuromorpho` one-liners, Tier 2 `NeuroMorphoClient` with
     typed `iter_search` / `download` / retries, Tier 3 `NeuroMorphoCache`
@@ -340,7 +348,7 @@ internal dependencies · status · open work**.
     frozen-dataclass subclasses `CurrentClamp`, `SineClamp`,
     `FunctionClamp`, `ProbeMechanism`, and `Synapse`. `CurrentClamp`
     has one canonical form `(start, durations, amplitudes)` and a
-    `CurrentClamp.step(amplitude, duration, delay=...)` classmethod
+    `CurrentClamp(delay=..., durations=duration, amplitudes=amplitude)` classmethod
     shortcut. `Synapse` is itself a frozen dataclass
     (`synapse_type`, `params`, `name`); there is no separate factory
     function.
@@ -408,9 +416,9 @@ internal dependencies · status · open work**.
     `compute/_runtime._runtime_constructor_params` had to filter it
     back out is gone.
   - [x] **Unified `CurrentClamp`.** One canonical frozen-dataclass
-    form `(start, durations, amplitudes)`. The old
+    form `(delay, durations, amplitudes)`. The old
     `CurrentClamp(amplitude=, delay=, duration=)` compatibility form
-    is gone; use `CurrentClamp.step(amplitude, duration, delay=...)`.
+    is gone; use `CurrentClamp(delay=..., durations=duration, amplitudes=amplitude)`.
   - [x] **Consumer simplification.** `cv/_mech.py`,
     `compute/_runtime.py`, `compute/_assignment_table.py` have been
     rewritten against the new types. `mechanism_signature` collapses
@@ -549,11 +557,11 @@ internal dependencies · status · open work**.
     the axial operator, and wires `rcell.run(dt=, duration=)` on top
     of the `quad/` registry (default `staggered`). Trace recording
     uses `StateProbe` / `MechanismProbe` / `CurrentProbe` sampled via
-    `rcell.sample_probe(...)` / `rcell.sample_probes()`. Two bugs
-    fixed along the way: external current is now routed through
-    `sum_current_inputs(init=I_ext_density)` (bug #1) and
-    `(n_point,)`-shaped total current in `nA` is rejected explicitly
-    instead of producing NaN (bug #2).
+    `rcell.sample_probe(...)` / `rcell.sample_probes()`. Multi-compartment
+    external current is represented by placed point clamps
+    (`CurrentClamp`, `SineClamp`, or `FunctionClamp`) and converted from
+    total current to point current density through the runtime
+    `ClampActiveTable`.
   - [x] **Ion/channel scheduling controls.** `Cell` now exposes
     `cache_ion_total_current` and `ion_channel_update_order`. The
     current-cache path snapshots per-ion total current at the start of
@@ -1210,7 +1218,7 @@ cell.paint(soma_region, mech.Ion("SodiumFixed"))
 cell.paint(soma_region, mech.Channel(braincell.channel.INa_Ba2002, g_max=0.12 * u.S / u.cm ** 2))
 cell.place(
     braincell.LocsetExpr.root(),
-    mech.CurrentClamp.step(0.2 * u.nA, 50 * u.ms, delay=10 * u.ms),
+    mech.CurrentClamp(delay=10 * u.ms, durations=50 * u.ms, amplitudes=0.2 * u.nA),
 )
 cell.place(braincell.LocsetExpr.terminals(), mech.ProbeMechanism("v"))
 ```

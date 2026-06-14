@@ -454,8 +454,15 @@ def _ind_exp_euler_step_selected(
             other_state_vals,  # Other state values
         )
 
-        # Convert linearization to a unit-aware quantity
-        linear = u.Quantity(u.get_mantissa(linear), u.get_unit(derivative) / u.get_unit(linear))
+        # Convert df/dx back to a unit-aware quantity.  With
+        # ``unit_aware=False`` the gradient mantissa is returned without a
+        # reliable physical unit, so reconstruct it from the derivative and
+        # state units.  This keeps ``dt * linear`` dimensionless.
+        state_value = diffeq_state_vals[key]
+        linear = u.Quantity(
+            u.get_mantissa(linear),
+            u.get_unit(derivative) / u.get_unit(state_value),
+        )
 
         # Compute the exponential relative function phi(dt * linear)
         phi = u.math.exprel(dt * linear)

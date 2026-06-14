@@ -6,7 +6,7 @@ This file is intentionally structured to mirror ``pc_neuron.py``.  A useful way
 to read the translation is:
 
 - NEURON ``Import3d_*`` morphology loading -> ``Morphology.from_asc``.
-- NEURON ``sec.nseg = ...`` discretization -> ``MaxCVLen(..., keep_odd=True)``.
+- NEURON ``sec.nseg = ...`` discretization -> ``CVPerBranchList(...)``.
 - NEURON ``sec.Ra`` / ``sec.cm`` -> ``mech.CableProperty`` painted on regions.
 - NEURON ``insert pas`` -> ``mech.Channel("IL", ...)``.
 - NEURON ``insert X`` plus ``sec.gbar_X = value`` -> ``mech.Channel("X", ...)``.
@@ -26,35 +26,23 @@ line.
 
 import math
 from pathlib import Path
-from types import SimpleNamespace
 from typing import Any
 
 import brainunit as u
 import numpy as np
 from braincell import Cell, Morphology, mech
-from braincell._discretization.policy import MaxCVLen
+from braincell._discretization.policy import CVPerBranchList
 from braincell.filter import AllRegion, branch_in, branch_range
 
 from .parameters import (
-    CDP_PUMP_DEND,
-    CDP_PUMP_SOMA,
-    CV_MAX_LEN_UM,
     DEFAULT_MORPH_PATH,
-    H_E_MV,
-    K_E_MV,
-    LEAK_E_MV,
-    LEAK_G_DEND_MS_CM2,
-    LEAK_G_SOMA_MS_CM2,
-    NA_E_MV,
+    PCCableParameters,
     PCParameters,
-    RA_OHM_CM,
-    SOMA_CM_UF_CM2,
-    THICK_DEND_DIAM_UM,
-    NAV_DEND_DIAM_UM,
+    pc24_nseg_rule,
 )
 
 
-def pc24_dend_cm(diam_arc_mean_um: float) -> float:
+def pc24_dend_cm(diam_arc_mean_um: float, cable: PCCableParameters) -> float:
     """Match the dendritic ``sec.cm`` rule from ``pc_neuron.py``.
 
     In NEURON the dendrite loop does:
@@ -65,27 +53,9 @@ def pc24_dend_cm(diam_arc_mean_um: float) -> float:
     uses the branch arc-mean diameter for the same role.
     """
     diam = float(diam_arc_mean_um)
-    if diam >= THICK_DEND_DIAM_UM:
-        return SOMA_CM_UF_CM2
+    if diam >= cable.thick_dend_diam_um:
+        return cable.soma_cm_uF_cm2
     return 11.510294 * math.exp(-1.376463 * diam) + 2.120503
-
-
-def _braincell_params(params: PCParameters) -> SimpleNamespace:
-    # ``pc_neuron.py`` writes raw floats into NEURON mechanism fields.  BrainCell
-    # mechanism declarations should carry units, so this local view converts the
-    # same parameter object without mutating it.  This keeps one shared
-    # ``load_pc24_params()`` result usable by both backends.
-    converted = SimpleNamespace(**params.to_dict())
-    conductance = u.siemens / u.cm**2
-    permeability = u.cm / u.second
-
-    for name, value in params.to_dict().items():
-        if name.endswith("_perm"):
-            setattr(converted, name, value * permeability)
-        elif name.endswith(("_dend", "_soma")):
-            setattr(converted, name, value * conductance)
-
-    return converted
 
 
 class PC:
@@ -96,14 +66,18 @@ class PC:
         *,
         temperature_celsius: float = 36.0,
         v_init_mV: float = -65.0,
+        pop_size=(),
+        name: str | None = None,
     ):
         if params is None:
             raise ValueError("params is required.")
         self.morph_path = Path(morph_path)
-        self.params = _braincell_params(params)
+        self.params = params
         self.temperature_celsius = float(temperature_celsius)
         self.v_init_mV = float(v_init_mV)
-        self.morpho = None
+        self.pop_size = pop_size
+        self.name = name
+        self.morph = None
         self.cell = None
         self.regions: dict[str, Any] = {}
 
@@ -113,17 +87,21 @@ class PC:
         #   reader.input(...)
         #   h.Import3d_GUI(reader, 0).instantiate(self)
         # BrainCell path: read the same ASC morphology into a Morphology tree.
-        self.morpho = Morphology.from_asc(self.morph_path)
+        self.morph = Morphology.from_asc(self.morph_path)
+        cable = self.params.cable
+        cv_counts = tuple(_pc24_cv_count(branch, cable) for branch in self.morph.branches)
 
-        # ``MaxCVLen(..., keep_odd=True)`` is the BrainCell counterpart of the
-        # repeated NEURON rule:
+        # ``CVPerBranchList`` is the BrainCell counterpart of the repeated
+        # NEURON rule:
         #
         #   sec.nseg = 1 + 2 * int(sec.L / CV_MAX_LEN_UM)
         self.cell = Cell(
-            self.morpho,
-            cv_policy=MaxCVLen(CV_MAX_LEN_UM * u.um, keep_odd=True),
+            self.morph,
+            pop_size=self.pop_size,
+            cv_policy=CVPerBranchList(cv_counts),
             V_init=self.v_init_mV * u.mV,
             solver="staggered",
+            name=self.name,
         )
         self._define_regions()
         self._paint_cable()
@@ -135,6 +113,7 @@ class PC:
         # Regions replace NEURON's explicit section lists and ``if dend.diam``
         # branches.  The names are used only inside this file to keep the paint
         # blocks aligned with the original soma/dendrite code.
+        cable = self.params.cable
         dend_region = branch_in("type", "dendrite")
         self.regions = {
             "soma": branch_in("type", "soma"),
@@ -142,16 +121,18 @@ class PC:
             # NEURON:
             #   if dend.diam >= THICK_DEND_DIAM_UM:
             #       insert Kv1.1/Kv1.5/Kir/Cav3.1/Cav3.2/Kca3.1
-            "thick_dend": dend_region & branch_range("diam_arc_mean", (THICK_DEND_DIAM_UM * u.um, None), closed="left"),
+            "thick_dend": dend_region
+            & branch_range("diam_arc_mean", (cable.thick_dend_diam_um * u.um, None), closed="left"),
             # NEURON nested inside the thick-dendrite branch:
             #   if dend.diam >= NAV_DEND_DIAM_UM:
             #       insert Nav1.6
-            "nav_dend": dend_region & branch_range("diam_arc_mean", (NAV_DEND_DIAM_UM * u.um, None), closed="left"),
+            "nav_dend": dend_region & branch_range("diam_arc_mean", (cable.nav_dend_diam_um * u.um, None), closed="left"),
         }
 
     def _paint_cable(self) -> None:
-        if self.cell is None or self.morpho is None:
+        if self.cell is None or self.morph is None:
             raise RuntimeError("Cell must be created before painting cable properties.")
+        cable = self.params.cable
 
         # First paint a harmless global default.  The branch-specific cable
         # rules below overwrite it on every PC soma/dendrite branch, mirroring
@@ -160,9 +141,9 @@ class PC:
         self.cell.paint(
             AllRegion(),
             mech.CableProperty(
-                resting_potential=LEAK_E_MV * u.mV,
-                membrane_capacitance=2.0 * (u.uF / u.cm**2),
-                axial_resistivity=RA_OHM_CM * (u.ohm * u.cm),
+                resting_potential=cable.leak_e_mV * u.mV,
+                membrane_capacitance=cable.soma_cm_uF_cm2 * (u.uF / u.cm**2),
+                axial_resistivity=cable.ra_ohm_cm * (u.ohm * u.cm),
             ),
         )
 
@@ -177,21 +158,22 @@ class PC:
         # as one branch-level paint per morphology branch.  A future callable
         # CableProperty API could replace this loop with one expression over a
         # spatial context.
-        for branch in self.morpho.branches:
+        for branch in self.morph.branches:
             diam_um = branch.diam_arc_mean.to_decimal(u.um)
-            cm_value = 2.0 if branch.type == "soma" else pc24_dend_cm(diam_um)
+            cm_value = cable.soma_cm_uF_cm2 if branch.type == "soma" else pc24_dend_cm(diam_um, cable)
             self.cell.paint(
                 branch_in("name", branch.name),
                 mech.CableProperty(
-                    resting_potential=LEAK_E_MV * u.mV,
+                    resting_potential=cable.leak_e_mV * u.mV,
                     membrane_capacitance=cm_value * (u.uF / u.cm**2),
-                    axial_resistivity=RA_OHM_CM * (u.ohm * u.cm),
+                    axial_resistivity=cable.ra_ohm_cm * (u.ohm * u.cm),
                 ),
             )
 
     def _paint_ions(self) -> None:
         if self.cell is None:
             raise RuntimeError("Cell must be created before painting ions.")
+        ion = self.params.ion
         temp = u.celsius2kelvin(self.temperature_celsius)
 
         # NEURON stores Na/K reversal potentials directly on sections:
@@ -208,8 +190,8 @@ class PC:
         # BrainCell declares one fixed Na ion and one fixed K ion over the
         # whole cell.  Channels can omit ``ion_name`` because each family has a
         # single candidate ion here.
-        self.cell.paint(AllRegion(), mech.Ion("SodiumFixed", name="na", E=NA_E_MV * u.mV))
-        self.cell.paint(AllRegion(), mech.Ion("PotassiumFixed", name="k", E=K_E_MV * u.mV))
+        self.cell.paint(AllRegion(), mech.Ion("SodiumFixed", name="na", E=ion.na_e_mV * u.mV))
+        self.cell.paint(AllRegion(), mech.Ion("PotassiumFixed", name="k", E=ion.k_e_mV * u.mV))
 
         # NEURON inserts CdpCAM_MA24_PC on soma and dendrites, then sets eca and
         # a region-specific pump density:
@@ -234,7 +216,7 @@ class PC:
                 temp=temp,
                 Co=2.0 * u.mM,
                 Ci_initializer=45e-6 * u.mM,
-                TotalPump=CDP_PUMP_SOMA * (u.mol / u.cm**2),
+                TotalPump=ion.cdp_pump_soma * (u.mol / u.cm**2),
             ),
         )
         self.cell.paint(
@@ -245,13 +227,16 @@ class PC:
                 temp=temp,
                 Co=2.0 * u.mM,
                 Ci_initializer=45e-6 * u.mM,
-                TotalPump=CDP_PUMP_DEND * (u.mol / u.cm**2),
+                TotalPump=ion.cdp_pump_dend * (u.mol / u.cm**2),
             ),
         )
 
     def _paint_channels(self) -> None:
         if self.cell is None:
             raise RuntimeError("Cell must be created before painting channels.")
+        cable = self.params.cable
+        ion = self.params.ion
+        ch = self.params.channel
         temp = u.celsius2kelvin(self.temperature_celsius)
 
         # SOMA BLOCK
@@ -267,20 +252,25 @@ class PC:
         # BrainCell registry names, but the order follows ``pc_neuron.py``.
         self.cell.paint(
             self.regions["soma"],
-            mech.Channel("IL", g_max=LEAK_G_SOMA_MS_CM2 * (u.mS / u.cm**2), E=LEAK_E_MV * u.mV),
-            mech.Channel("Nav1p6_MA2024_PC", g_max=self.params.nav_soma, temp=temp),
-            mech.Channel("Kv1p1_MA2024_PC", g_max=self.params.kv1p1_soma, temp=temp),
-            mech.Channel("Kv1p5_MA2024_PC", g_max=self.params.kv1p5_soma, temp=temp),
-            mech.Channel("Kv3p4_MA2024_PC", g_max=self.params.kv3p4_soma, temp=temp),
-            mech.Channel("Kir2p3_MA2024_PC", g_max=self.params.kir2p3_soma, temp=temp),
-            mech.Channel("Kca1p1_MA2024_PC", g_max=self.params.kca1p1_soma, temp=temp),
-            mech.Channel("Kca2p2_MA2024_PC", g_max=self.params.kca2p2_soma, temp=temp),
-            mech.Channel("Kca3p1_MA2024_PC", g_max=self.params.kca3p1_soma, temp=temp),
-            mech.Channel("Cav2p1_MA2024_PC_Frozen", g_max=self.params.cav21_soma_perm, temp=temp),
-            mech.Channel("Cav3p1_MA2024_PC_Frozen", g_max=self.params.cav31_soma_perm, temp=temp),
-            mech.Channel("Cav3p2_MA2024_PC", g_max=self.params.cav32_soma, temp=temp),
-            mech.Channel("Cav3p3_MA2024_PC_Frozen", perm=self.params.cav33_soma_perm, g_scale=self.params.cav33_g_scale, temp=temp),
-            mech.Channel("HCN1_MA2024_PC", g_max=self.params.hcn1_soma, E=H_E_MV * u.mV, temp=temp),
+            mech.Channel("IL", g_max=cable.leak_g_soma_mS_cm2 * (u.mS / u.cm**2), E=cable.leak_e_mV * u.mV),
+            mech.Channel("Nav1p6_MA2024_PC", g_max=ch.soma.nav1p6 * (u.siemens / u.cm**2), temp=temp),
+            mech.Channel("Kv1p1_MA2024_PC", g_max=ch.soma.kv1p1 * (u.siemens / u.cm**2), temp=temp),
+            mech.Channel("Kv1p5_MA2024_PC", g_max=ch.soma.kv1p5 * (u.siemens / u.cm**2), temp=temp),
+            mech.Channel("Kv3p4_MA2024_PC", g_max=ch.soma.kv3p4 * (u.siemens / u.cm**2), temp=temp),
+            mech.Channel("Kir2p3_MA2024_PC", g_max=ch.soma.kir2p3 * (u.siemens / u.cm**2), temp=temp),
+            mech.Channel("Kca1p1_MA2024_PC", g_max=ch.soma.kca1p1 * (u.siemens / u.cm**2), temp=temp),
+            mech.Channel("Kca2p2_MA2024_PC", g_max=ch.soma.kca2p2 * (u.siemens / u.cm**2), temp=temp),
+            mech.Channel("Kca3p1_MA2024_PC", g_max=ch.soma.kca3p1 * (u.siemens / u.cm**2), temp=temp),
+            mech.Channel("Cav2p1_MA2024_PC_Frozen", g_max=ch.soma.cav2p1_perm * (u.cm / u.second), temp=temp),
+            mech.Channel("Cav3p1_MA2024_PC_Frozen", g_max=ch.soma.cav3p1_perm * (u.cm / u.second), temp=temp),
+            mech.Channel("Cav3p2_MA2024_PC", g_max=ch.soma.cav3p2 * (u.siemens / u.cm**2), temp=temp),
+            mech.Channel(
+                "Cav3p3_MA2024_PC_Frozen",
+                perm=ch.soma.cav3p3_perm * (u.cm / u.second),
+                g_scale=ch.cav3p3_g_scale,
+                temp=temp,
+            ),
+            mech.Channel("HCN1_MA2024_PC", g_max=ch.soma.hcn1 * (u.siemens / u.cm**2), E=ion.h_e_mV * u.mV, temp=temp),
         )
 
         # DENDRITE BASE BLOCK
@@ -290,14 +280,19 @@ class PC:
         # painted on every dendrite.
         self.cell.paint(
             self.regions["dend"],
-            mech.Channel("IL", g_max=LEAK_G_DEND_MS_CM2 * (u.mS / u.cm**2), E=LEAK_E_MV * u.mV),
-            mech.Channel("Kv3p3_MA2024_PC", g_max=self.params.kv3p3_dend, temp=temp),
-            mech.Channel("Kv4p3_MA2024_PC", g_max=self.params.kv4p3_dend, temp=temp),
-            mech.Channel("Kca1p1_MA2024_PC", g_max=self.params.kca1p1_dend, temp=temp),
-            mech.Channel("Kca2p2_MA2024_PC", g_max=self.params.kca2p2_dend, temp=temp),
-            mech.Channel("Cav2p1_MA2024_PC_Frozen", g_max=self.params.cav21_dend_perm, temp=temp),
-            mech.Channel("Cav3p3_MA2024_PC_Frozen", perm=self.params.cav33_dend_perm, g_scale=self.params.cav33_g_scale, temp=temp),
-            mech.Channel("HCN1_MA2024_PC", g_max=self.params.hcn1_dend, E=H_E_MV * u.mV, temp=temp),
+            mech.Channel("IL", g_max=cable.leak_g_dend_mS_cm2 * (u.mS / u.cm**2), E=cable.leak_e_mV * u.mV),
+            mech.Channel("Kv3p3_MA2024_PC", g_max=ch.dend.kv3p3 * (u.siemens / u.cm**2), temp=temp),
+            mech.Channel("Kv4p3_MA2024_PC", g_max=ch.dend.kv4p3 * (u.siemens / u.cm**2), temp=temp),
+            mech.Channel("Kca1p1_MA2024_PC", g_max=ch.dend.kca1p1 * (u.siemens / u.cm**2), temp=temp),
+            mech.Channel("Kca2p2_MA2024_PC", g_max=ch.dend.kca2p2 * (u.siemens / u.cm**2), temp=temp),
+            mech.Channel("Cav2p1_MA2024_PC_Frozen", g_max=ch.dend.cav2p1_perm * (u.cm / u.second), temp=temp),
+            mech.Channel(
+                "Cav3p3_MA2024_PC_Frozen",
+                perm=ch.dend.cav3p3_perm * (u.cm / u.second),
+                g_scale=ch.cav3p3_g_scale,
+                temp=temp,
+            ),
+            mech.Channel("HCN1_MA2024_PC", g_max=ch.dend.hcn1 * (u.siemens / u.cm**2), E=ion.h_e_mV * u.mV, temp=temp),
         )
 
         # THICK-DENDRITE BLOCK
@@ -312,12 +307,12 @@ class PC:
         # call handles only the extra thick-dendrite mechanisms.
         self.cell.paint(
             self.regions["thick_dend"],
-            mech.Channel("Kv1p1_MA2024_PC", g_max=self.params.kv1p1_dend, temp=temp),
-            mech.Channel("Kv1p5_MA2024_PC", g_max=self.params.kv1p5_dend, temp=temp),
-            mech.Channel("Kir2p3_MA2024_PC", g_max=self.params.kir2p3_dend, temp=temp),
-            mech.Channel("Kca3p1_MA2024_PC", g_max=self.params.kca3p1_dend, temp=temp),
-            mech.Channel("Cav3p1_MA2024_PC_Frozen", g_max=self.params.cav31_dend_perm, temp=temp),
-            mech.Channel("Cav3p2_MA2024_PC", g_max=self.params.cav32_dend, temp=temp),
+            mech.Channel("Kv1p1_MA2024_PC", g_max=ch.dend.kv1p1 * (u.siemens / u.cm**2), temp=temp),
+            mech.Channel("Kv1p5_MA2024_PC", g_max=ch.dend.kv1p5 * (u.siemens / u.cm**2), temp=temp),
+            mech.Channel("Kir2p3_MA2024_PC", g_max=ch.dend.kir2p3 * (u.siemens / u.cm**2), temp=temp),
+            mech.Channel("Kca3p1_MA2024_PC", g_max=ch.dend.kca3p1 * (u.siemens / u.cm**2), temp=temp),
+            mech.Channel("Cav3p1_MA2024_PC_Frozen", g_max=ch.dend.cav3p1_perm * (u.cm / u.second), temp=temp),
+            mech.Channel("Cav3p2_MA2024_PC", g_max=ch.dend.cav3p2 * (u.siemens / u.cm**2), temp=temp),
         )
 
         # NAV-DENDRITE BLOCK
@@ -332,5 +327,10 @@ class PC:
         # layouts from overwriting each other.
         self.cell.paint(
             self.regions["nav_dend"],
-            mech.Channel("Nav1p6_MA2024_PC", g_max=self.params.nav_dend, temp=temp),
+            mech.Channel("Nav1p6_MA2024_PC", g_max=ch.dend.nav1p6 * (u.siemens / u.cm**2), temp=temp),
         )
+
+
+def _pc24_cv_count(branch: Any, cable: PCCableParameters) -> int:
+    length_um = float(np.asarray(branch.length.to_decimal(u.um), dtype=float))
+    return pc24_nseg_rule(length_um, max_len_um=cable.cv_max_len_um)

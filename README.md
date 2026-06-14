@@ -103,7 +103,7 @@ cell.paint(
 )
 
 # Inject current at the soma
-cell.place(RootLocation(0.5), mech.CurrentClamp.step(0.2 * u.nA, duration=50 * u.ms, delay=10 * u.ms))
+cell.place(RootLocation(0.5), mech.CurrentClamp(delay=10 * u.ms, durations=50 * u.ms, amplitudes=0.2 * u.nA))
 ```
 
 ### Morphology and visualization

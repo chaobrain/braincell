@@ -123,9 +123,8 @@ BREAKPOINT {
 }
 
 INITIAL {
-:    rates(v, cai)
-:    SOLVE seqinitial
-    SOLVE activation STEADYSTATE sparse
+    rates(v, cai)
+    SOLVE seqinitial
 }
 
 KINETIC activation {
@@ -145,6 +144,20 @@ KINETIC activation {
     ~ C4 <-> O4      (f4 , b4)
 
 CONSERVE C0 + C1 + C2 + C3 + C4 + O0 + O1 + O2 + O3 + O4 = 1
+}
+
+LINEAR seqinitial {
+    rates(v, cai)
+    ~ C0*c01 + C2*c21 + O1*b1 - C1*(c10 + c12 + f1) = 0
+    ~ C1*c12 + C3*c32 + O2*b2 - C2*(c21 + c23 + f2) = 0
+    ~ C2*c23 + C4*c43 + O3*b3 - C3*(c32 + c34 + f3) = 0
+    ~ C3*c34 + O4*b4 - C4*(c43 + f4) = 0
+    ~ O1*o10 + C0*f0 - O0*(o01 + b0) = 0
+    ~ O0*o01 + O2*o21 + C1*f1 - O1*(o10 + o12 + b1) = 0
+    ~ O1*o12 + O3*o32 + C2*f2 - O2*(o21 + o23 + b2) = 0
+    ~ O2*o23 + O4*o43 + C3*f3 - O3*(o32 + o34 + b3) = 0
+    ~ O3*o34 + C4*f4 - O4*(o43 + b4) = 0
+    ~ C0 + C1 + C2 + C3 + C4 + O0 + O1 + O2 + O3 + O4 = 1
 }
 
 PROCEDURE rates(v(mV), ca (mM)) { 

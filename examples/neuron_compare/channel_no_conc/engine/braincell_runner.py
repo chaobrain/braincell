@@ -78,6 +78,10 @@ def run_case(case: ChannelNoConcCase, *, solver: str | None = None) -> dict[str,
             temperature=u.celsius2kelvin(float(case.simulation.temperature_celsius)),
         ),
     )
+    if _needs_kv1p5_grc_auxiliary_ions(mapping_spec):
+        cell.paint(region, Ion("SodiumFixed", name="na"))
+        cell.paint(region, Ion("NonSpecificFixed", name="no"))
+
     if case.ion_state is not None and case.ion_state.has_concentrations:
         ion_name = mapping_spec.current_source.ion_name
         if ion_name is None:
@@ -89,7 +93,8 @@ def run_case(case: ChannelNoConcCase, *, solver: str | None = None) -> dict[str,
                 case=case,
             ),
         )
-    cell.paint(region, Channel(mapping_spec.braincell.class_name, **channel_kwargs))
+    channel_binding_kwargs = _braincell_channel_binding_kwargs(mapping_spec)
+    cell.paint(region, Channel(mapping_spec.braincell.class_name, **channel_binding_kwargs, **channel_kwargs))
 
     if case.leak.enabled:
         cell.paint(
@@ -175,6 +180,57 @@ def _build_current_probe(mapping_spec: MappingSpec):
     from braincell.mech import CurrentProbe
 
     return CurrentProbe(mechanism=mapping_spec.braincell.class_name)
+
+
+def _needs_kv1p5_grc_auxiliary_ions(mapping_spec: MappingSpec) -> bool:
+    """Return whether the GrC Kv1.5 comparison needs read-only helper ions.
+
+    Parameters
+    ----------
+    mapping_spec : MappingSpec
+        Parsed single-channel comparison mapping.
+
+    Returns
+    -------
+    bool
+        ``True`` for ``Kv1p5_MA2020_GrC``.
+
+    Notes
+    -----
+    ``Kv1p5_MA2020_GrC`` now mirrors the NEURON source declaration
+    ``"USEION na READ nai,nao"`` and
+    ``"USEION no WRITE ino VALENCE 1"``. The channel-no-concentration
+    fixture still compares the default ``ik`` path with ``gnonspec=0``,
+    so these ions are helper bindings rather than extra comparison
+    state.
+    """
+    return mapping_spec.braincell.class_name == "Kv1p5_MA2020_GrC"
+
+
+def _braincell_channel_binding_kwargs(mapping_spec: MappingSpec) -> dict[str, object]:
+    """Return extra BrainCell channel binding keyword arguments.
+
+    Parameters
+    ----------
+    mapping_spec : MappingSpec
+        Parsed single-channel comparison mapping.
+
+    Returns
+    -------
+    dict
+        Extra keyword arguments passed to :class:`braincell.mech.Channel`.
+
+    Notes
+    -----
+    Most no-concentration comparison channels use default binding.
+    ``Kv1p5_MA2020_GrC`` is the special case because its NEURON source
+    reads sodium concentrations and writes both ``ik`` and ``ino``. The
+    explicit ``ion_names`` mapping keeps the default ``ik`` comparison
+    working while preserving the richer runtime channel signature.
+    """
+    if mapping_spec.braincell.class_name == "Kv1p5_MA2020_GrC":
+        return {"ion_names": {"k": "k", "na": "na", "no": "no"}}
+    return {}
 
 
 def _resolve_ion_probe_fields(mapping_spec: MappingSpec) -> tuple[str, ...]:

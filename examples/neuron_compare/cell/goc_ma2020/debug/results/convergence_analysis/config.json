@@ -1,0 +1,39 @@
+{
+  "amp_nA": 0.2,
+  "braincell_neuron_scope": "all",
+  "delay_ms": 5.0,
+  "dt_list_ms": [
+    0.1,
+    0.05,
+    0.025,
+    0.0125,
+    0.00625
+  ],
+  "duration_ms": 40.0,
+  "frozen_ghk": true,
+  "ref_dt_ms": 0.001,
+  "reference_scope": "soma",
+  "selected_compartments": [],
+  "smoke_mode": false,
+  "spike_threshold_mV": 0.0,
+  "stim_dur_ms": 30.0,
+  "temp_C": 30.0,
+  "toggles": {
+    "cahva": true,
+    "cav2p3": true,
+    "cav3p1": true,
+    "cdp": true,
+    "hcn1": true,
+    "hcn2": true,
+    "kca1p1": true,
+    "kca2p2": true,
+    "kca3p1": true,
+    "km": true,
+    "kv1p1": true,
+    "kv3p4": true,
+    "kv4p3": true,
+    "leak": true,
+    "nav": true
+  },
+  "v_init_mV": -65.0
+}

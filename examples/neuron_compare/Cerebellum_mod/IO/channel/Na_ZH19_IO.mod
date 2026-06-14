@@ -45,7 +45,6 @@ INITIAL {
 }
 
 BREAKPOINT {
-	   rates(v)
 	   SOLVE states METHOD cnexp
 	   g = gbar *m*m*m*h
 	   i = g * (v - ena)*(0.001)
@@ -53,6 +52,7 @@ BREAKPOINT {
 }
 
 DERIVATIVE states {
+	rates(v)
 	h' = (hinf -h)/tauh
     m' = (minf - m)/0.001
 }
@@ -78,4 +78,3 @@ PROCEDURE rates(v (mV)) {
 	  tauh=250/( a_h+b_h ) : was 170, 250
 	  UNITSON
 }
-

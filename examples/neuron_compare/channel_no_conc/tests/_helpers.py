@@ -123,5 +123,10 @@ def build_main_config_payload(
 
 
 def write_json(path: Path, payload: dict) -> Path:
+    identity = payload.get("identity") if isinstance(payload, dict) else None
+    if isinstance(identity, dict):
+        mod_dir = identity.get("mod_dir")
+        if isinstance(mod_dir, str) and mod_dir and not Path(mod_dir).is_absolute():
+            (path.parent / mod_dir).mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload))
     return path

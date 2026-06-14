@@ -115,7 +115,7 @@ def _newton_method(f, y0, t, dt, args=(), modified=False, tol=1e-5, max_iter=100
     else:
         n, result, _, df = jax.lax.while_loop(cond_fun, body_fun_modified, init_carry)
     '''
-    n, result, _ = jax.lax.while_loop(cond_fun, body_fun, init_carry)
+    n, result, _ = brainstate.transform.while_loop(cond_fun, body_fun, init_carry)
     aux = {}
     return result, aux
 
@@ -210,7 +210,7 @@ def _newton_method_manual_parallel(
     t = u.get_magnitude(t)
     init_guess = y0 + dt * f(t, y0, *args)[0]
     init_carry = (0, init_guess, True)
-    n, result, _ = jax.lax.while_loop(
+    n, result, _ = brainstate.transform.while_loop(
         cond_fun,
         body_fun,
         init_carry

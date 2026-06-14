@@ -38,10 +38,10 @@ def build_braincell_stimulus(stimulus: StimulusSpec):
 
     kind = getattr(stimulus, "kind", None)
     if kind == "dc":
-        return braincell.CurrentClamp.step(
-            stimulus.amp_nA * u.nA,
-            stimulus.dur_ms * u.ms,
+        return braincell.CurrentClamp(
             delay=stimulus.delay_ms * u.ms,
+            durations=stimulus.dur_ms * u.ms,
+            amplitudes=stimulus.amp_nA * u.nA,
         )
 
     if kind == "sine":
@@ -50,7 +50,7 @@ def build_braincell_stimulus(stimulus: StimulusSpec):
             frequency=stimulus.frequency_hz * u.Hz,
             phase=stimulus.phase_rad,
             offset=stimulus.offset_nA * u.nA,
-            start=stimulus.start_ms * u.ms,
+            delay=stimulus.start_ms * u.ms,
             duration=stimulus.duration_ms * u.ms,
         )
 

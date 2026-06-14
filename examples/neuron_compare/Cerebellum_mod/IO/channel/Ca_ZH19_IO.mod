@@ -46,7 +46,6 @@ INITIAL {
 }
 
 BREAKPOINT {
-	   rates(v)
 	   SOLVE states METHOD cnexp
 	   g = gbar *minf*h
 	   i = g * (v - ecas)*(0.001)
@@ -54,6 +53,7 @@ BREAKPOINT {
 }
 
 DERIVATIVE states {
+	   rates(v)
 	   h' = (hinf -h)/tauh
 }
 

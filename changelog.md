@@ -1,12 +1,111 @@
 # Release Notes
 
 
-## UNRELEASED
+## Version 0.1.0
 
-- Removed the multi-compartment direct `Cell.update(I_ext)` injection path. Use placed point clamps such as `CurrentClamp(...)`, `SineClamp`, or `FunctionClamp` for multi-compartment external current.
+This is a landmark release. BrainCell evolves from single-compartment
+Hodgkin–Huxley modeling into a complete **multi-compartment, morphologically
+detailed** neuron simulation framework in JAX. It introduces a morphology layer,
+a control-volume discretization engine with pluggable policies, a compute
+runtime, morphology IO (SWC / ASC / NeuroML2 / NeuroMorpho.Org), a declarative
+mechanism system, location/region selection filters, and a 2D/3D visualization
+stack.
 
+### New Features
 
+- **Multi-Compartment Morphological Modeling** (#69)
+  - New `Cell` declaration frontend and frozen `RunnableCell` runtime for
+    simulating branched morphologies.
+  - High-level `rcell.run(dt=, duration=)` driver returning a structured
+    `RunResult`.
 
+- **Morphology Layer** (#68, #69)
+  - Immutable `Branch` with typed subclasses (`Soma`, `Dendrite`, `Axon`,
+    `BasalDendrite`, `ApicalDendrite`, `CustomBranch`).
+  - Mutable `Morphology` tree with whole-morphology metric snapshots
+    (`MorphoMetric`).
+
+- **Control-Volume Discretization** (#72, #74, #88)
+  - Pure-functional CV layer with composable policies: `CVPerBranch`,
+    `DLambda`, `MaxCVLen`.
+  - Paint/place rule machinery for mapping mechanisms onto morphology by region.
+
+- **Compute Runtime** (#74, #88)
+  - Execution-graph lowering (`NodeTree`), scheduling, runtime-state
+    installation, and channel–ion binding resolution built on top of the
+    discretization layer.
+
+- **Declarative Mechanism System** (`braincell.mech`) (#69)
+  - Hashable, order-insensitive `Density` / `Point` declarations and a
+    mechanism registry (`@register_channel`, `@register_ion`,
+    `@register_synapse`).
+  - Point mechanisms: current/sine/function clamps, probes, synapses, and
+    gap junctions.
+
+- **Morphology IO** (`braincell.io`) (#68, #69)
+  - Readers for **SWC**, **ASC**, and **NeuroML2**.
+  - Three-tier **NeuroMorpho.Org** client with on-disk caching and a
+    `braincell-neuromorpho` CLI.
+
+- **Location/Region Filters** (`braincell.filter`) (#69)
+  - Locset and region selection expressions (`BranchPoints`, `Terminals`,
+    `UniformSamples`, `SubtreeRegion`, `BranchRangeFilter`, …) with selection
+    caching.
+
+- **Visualization Stack** (`braincell.vis`) (#80, #82, #102)
+  - 2D (matplotlib) and 3D (PyVista, Plotly) backends with a unified backend
+    chooser.
+  - 2D tree-layout engine, morphometry plots (dendrogram, Sholl, topology,
+    branch-order histogram), trace panels, movies, and morphology/value
+    comparators.
+
+- **Cerebellum Dynamics** (#93)
+  - Additional ion/channel dynamics and a Purkinje-cell MA2024 comparison
+    scaffold.
+
+### Breaking Changes
+
+- **Removed the direct external-current injection path** for multi-compartment
+  cells. The `Cell.update(I_ext)` path is gone; inject external current with
+  placed point clamps instead — `CurrentClamp(...)`, `SineClamp`, or
+  `FunctionClamp`.
+- **Renamed the discretization package** `_cv` → `_discretization`, and
+  `PointTree` → `NodeTree`, for clearer terminology (#88).
+
+### Changes & Improvements
+
+- Restructured the single-compartment module and import surface (#71).
+- Refreshed the channel/ion public API and added deprecation aliases for the
+  previous channel names (#97).
+- Hardened multi-compartment dtype boundaries and runtime caching, including
+  mixed-ion runtime fixes (#73, #82).
+- Rendered the PyVista HTML backend as a static iframe for reliable notebook
+  and docs embedding (#102).
+
+### Bug Fixes
+
+- Used `default_factory` for `brainunit.Quantity` dataclass field defaults to
+  avoid shared mutable defaults (#92).
+
+### Removed
+
+- Dropped the `diffrax` dependency from the `quad` integrator stack (#94).
+
+### Documentation
+
+- Rebuilt the documentation around a layered, Arbor-inspired architecture;
+  consolidated tutorials into runnable notebooks and expanded single-compartment
+  examples (#101, #103, #104, #105).
+- Added a top-level Numerical Integration tutorial and documented previously
+  missing public APIs (#98, #99).
+- Self-hosted the documentation at <https://brainx.chaobrain.com/braincell/>.
+
+### Packaging & Tooling
+
+- Marked the package as typed per **PEP 561** (added `py.typed`), so downstream
+  type checkers consume BrainCell's inline annotations.
+- Numerous CI workflow and dependency updates: deploy docs on release, GitHub
+  Actions version bumps, and `brainx-sphinx-header` upgrades.
 
 ## Version 0.0.7
 

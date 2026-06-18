@@ -21,6 +21,11 @@ exclude = [
 ]
 
 
+# PEP 561: ship inline type information to downstream type checkers.
+[tool.setuptools.package-data]
+braincell = ["py.typed"]
+
+
 [tool.setuptools.dynamic]
 version = { attr = "braincell._version.__version__" }
 

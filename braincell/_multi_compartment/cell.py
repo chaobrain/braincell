@@ -2293,12 +2293,15 @@ class Cell(HHTypedNeuron):
         if brainstate.environ.get("dt", None) is None:
             raise ValueError("Cell.update(...) requires brainstate.environ['dt'] to be set.")
 
-        self.solver(self)
+        with jax.named_scope("braincell:cell_update:solver"):
+            self.solver(self)
 
-        self.clear_ion_total_current_cache()
+        with jax.named_scope("braincell:cell_update:clear_ion_total_current_cache"):
+            self.clear_ion_total_current_cache()
 
-        spk = self.get_spike(last_V, self.V.value)
-        self.spike.value = spk
+        with jax.named_scope("braincell:cell_update:spike_update"):
+            spk = self.get_spike(last_V, self.V.value)
+            self.spike.value = spk
         return spk
 
     def _prepare_next_synapse_inputs(self):

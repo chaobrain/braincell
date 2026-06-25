@@ -134,17 +134,23 @@ def staggered_step(
     dt = brainstate.environ.get('dt')
 
     if hasattr(target, "cache_ion_total_currents"):
-        target.cache_ion_total_currents(target.V.value)
+        with jax.named_scope("braincell:staggered:cache_ion_total_currents"):
+            target.cache_ion_total_currents(target.V.value)
 
     # voltage integration
-    dhs_voltage_step(target, t, dt, *args)
+    with jax.named_scope("braincell:staggered:dhs_voltage_step"):
+        dhs_voltage_step(target, t, dt, *args)
 
-    point_V = target._cv_to_point(target.V.value)
+    with jax.named_scope("braincell:staggered:cv_to_point_after_voltage"):
+        point_V = target._cv_to_point(target.V.value)
     if target.ion_channel_update_order == "family":
-        target._integrate_runtime_synapse_dynamics(point_V)
-        target._update_ion_channel_families(point_V)
+        with jax.named_scope("braincell:staggered:synapse_dynamics"):
+            target._integrate_runtime_synapse_dynamics(point_V)
+        with jax.named_scope("braincell:staggered:ion_channel_update"):
+            target._update_ion_channel_families(point_V)
     elif target.ion_channel_update_order == "integration":
-        target._update_ion_channels_by_integration(point_V)
+        with jax.named_scope("braincell:staggered:ion_channel_update"):
+            target._update_ion_channels_by_integration(point_V)
     else:
         raise ValueError(
             "ion_channel_update_order must be 'family' or 'integration', "
@@ -262,36 +268,42 @@ def dhs_voltage_step(target, t, dt, *args):
     static_source = _get_dhs_static_source(target, node_tree=node_tree, scheduling=scheduling)
     static_cache = _get_dhs_static_cache(target, static_source)
     V_n = target.V.value
-    linear, const = _linear_and_const_term(target, V_n, *args)
-    edge_point_current = _edge_point_current(target, t=t, static_source=static_source)
-    numeric = _build_dhs_numeric_state(
-        V_n,
-        linear,
-        const,
-        dt=dt,
-        static_source=static_source,
-        static_cache=static_cache,
-        edge_point_current=edge_point_current,
-    )
-    diags, solves = comp_triang_raw(
-        numeric.diags,
-        numeric.solves,
-        numeric.lowers,
-        numeric.uppers,
-        static_source.edges_np,
-        static_source.level_offsets_np,
-    )
-    solves = comp_backsub_raw(
-        diags,
-        solves,
-        numeric.lowers,
-        static_source.backsub_indices_np,
-    )
-    target.V.value = _restore_midpoint_voltage(
-        solves,
-        dynamic_rows=static_source.dynamic_rows_np,
-        target_shape=target.V.value.shape,
-    )
+    with jax.named_scope("braincell:dhs:linearize_membrane_current"):
+        linear, const = _linear_and_const_term(target, V_n, *args)
+    with jax.named_scope("braincell:dhs:edge_current"):
+        edge_point_current = _edge_point_current(target, t=t, static_source=static_source)
+    with jax.named_scope("braincell:dhs:build_numeric_state"):
+        numeric = _build_dhs_numeric_state(
+            V_n,
+            linear,
+            const,
+            dt=dt,
+            static_source=static_source,
+            static_cache=static_cache,
+            edge_point_current=edge_point_current,
+        )
+    with jax.named_scope("braincell:dhs:forward_elimination"):
+        diags, solves = comp_triang_raw(
+            numeric.diags,
+            numeric.solves,
+            numeric.lowers,
+            numeric.uppers,
+            static_source.edges_np,
+            static_source.level_offsets_np,
+        )
+    with jax.named_scope("braincell:dhs:backsubstitution"):
+        solves = comp_backsub_raw(
+            diags,
+            solves,
+            numeric.lowers,
+            static_source.backsub_indices_np,
+        )
+    with jax.named_scope("braincell:dhs:restore_voltage"):
+        target.V.value = _restore_midpoint_voltage(
+            solves,
+            dynamic_rows=static_source.dynamic_rows_np,
+            target_shape=target.V.value.shape,
+        )
 
 
 def _build_dhs_static_source(target, *, node_tree, scheduling) -> DHSStaticSource:

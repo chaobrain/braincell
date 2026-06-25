@@ -52,6 +52,41 @@ python examples/profiling/profile_simulation.py \
   --trace-dir /tmp/braincell-trace
 ```
 
+For run-time attribution, open the generated Perfetto trace and search for
+`braincell:` scopes. The hot run path is annotated with nested scopes such as
+`braincell:cell_run:update_dynamics`, `braincell:staggered:dhs_voltage_step`,
+`braincell:dhs:forward_elimination`, and
+`braincell:membrane_current:channel_currents`.
+
+GPU run trace for a Purkinje cell population:
+
+```bash
+JAX_PLATFORMS=gpu python examples/profiling/profile_simulation.py \
+  --case neuron_compare_cell \
+  --cell pc_ma2024 \
+  --population-size 32 \
+  --duration-ms 10 \
+  --dt-ms 0.01 \
+  --warmup 1 \
+  --repeat 3 \
+  --trace-dir /tmp/braincell-trace-pc-pop32
+```
+
+GPU run trace for a small network subset:
+
+```bash
+JAX_PLATFORMS=gpu python examples/profiling/profile_simulation.py \
+  --case cerebellar_probability_network \
+  --scale tiny \
+  --populations GrC,GoC,PC \
+  --duration-ms 10 \
+  --dt-ms 0.01 \
+  --warmup 1 \
+  --repeat 3 \
+  --spike-recording population \
+  --trace-dir /tmp/braincell-trace-network
+```
+
 Use `--device-memory-profile` to save device memory snapshots after warmup and
 the final steady run:
 

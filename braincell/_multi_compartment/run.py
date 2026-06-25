@@ -60,10 +60,14 @@ def run(rcell: "Cell", *, dt, duration) -> RunResult:
 
         def _step(t):
             with brainstate.environ.context(t=t):
-                rcell._begin_step()
-                rcell._update_dynamics()
-                snapshot = rcell.sample_probes()
-                rcell._prepare_next_synapse_inputs()
+                with jax.named_scope("braincell:cell_run:begin_step"):
+                    rcell._begin_step()
+                with jax.named_scope("braincell:cell_run:update_dynamics"):
+                    rcell._update_dynamics()
+                with jax.named_scope("braincell:cell_run:sample_probes"):
+                    snapshot = rcell.sample_probes()
+                with jax.named_scope("braincell:cell_run:prepare_next_synapse_inputs"):
+                    rcell._prepare_next_synapse_inputs()
             return tuple(snapshot[name] for name in ordered_names)
 
         traces_over_time = brainstate.transform.for_loop(_step, times)

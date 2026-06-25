@@ -6,6 +6,7 @@ from dataclasses import dataclass
 
 import brainstate
 import brainunit as u
+import jax
 import numpy as np
 
 from braincell._multi_compartment.run import _validate_time_quantity
@@ -320,45 +321,54 @@ class Network:
         with brainstate.environ.context(dt=dt):
             def _step(t):
                 with brainstate.environ.context(t=t):
-                    write_arrivals(
-                        delivery_blocks,
-                        delivery_state,
-                        populations=self.populations,
-                    )
-                    for name in ordered_population_names:
-                        self.populations[name].cell._prepare_next_synapse_inputs()
-                    for name in ordered_population_names:
-                        self.populations[name].cell._begin_step()
-                    for name in ordered_population_names:
-                        cell = self.populations[name].cell
-                        cell._update_dynamics()
-                    snapshots = {
-                        name: self.populations[name].cell.sample_probes()
-                        for name in ordered_population_names
-                    }
-                    if spike_recording == "full":
-                        spikes = tuple(
-                            self.populations[name].cell.spike.value
-                            for name in ordered_population_names
+                    with jax.named_scope("braincell:network_run:write_arrivals"):
+                        write_arrivals(
+                            delivery_blocks,
+                            delivery_state,
+                            populations=self.populations,
                         )
-                    elif spike_recording == "population":
-                        spikes = tuple(
-                            population_spike(self.populations[name].cell.spike.value)
+                    with jax.named_scope("braincell:network_run:prepare_inputs"):
+                        for name in ordered_population_names:
+                            self.populations[name].cell._prepare_next_synapse_inputs()
+                    with jax.named_scope("braincell:network_run:begin_cells"):
+                        for name in ordered_population_names:
+                            self.populations[name].cell._begin_step()
+                    with jax.named_scope("braincell:network_run:update_cells"):
+                        for name in ordered_population_names:
+                            cell = self.populations[name].cell
+                            cell._update_dynamics()
+                    with jax.named_scope("braincell:network_run:sample_probes"):
+                        snapshots = {
+                            name: self.populations[name].cell.sample_probes()
                             for name in ordered_population_names
+                        }
+                    with jax.named_scope("braincell:network_run:record_spikes"):
+                        if spike_recording == "full":
+                            spikes = tuple(
+                                self.populations[name].cell.spike.value
+                                for name in ordered_population_names
+                            )
+                        elif spike_recording == "population":
+                            spikes = tuple(
+                                population_spike(self.populations[name].cell.spike.value)
+                                for name in ordered_population_names
+                            )
+                        else:
+                            spikes = ()
+                    with jax.named_scope("braincell:network_run:enqueue_events"):
+                        enqueue_future_events(
+                            delivery_blocks,
+                            delivery_state,
+                            populations=self.populations,
                         )
-                    else:
-                        spikes = ()
-                    enqueue_future_events(
-                        delivery_blocks,
-                        delivery_state,
-                        populations=self.populations,
-                    )
-                    advance_delivery_state(delivery_state)
-                    traces = tuple(
-                        snapshots[name][probe_name]
-                        for name in ordered_population_names
-                        for probe_name in probe_names[name]
-                    )
+                    with jax.named_scope("braincell:network_run:advance_delivery"):
+                        advance_delivery_state(delivery_state)
+                    with jax.named_scope("braincell:network_run:pack_traces"):
+                        traces = tuple(
+                            snapshots[name][probe_name]
+                            for name in ordered_population_names
+                            for probe_name in probe_names[name]
+                        )
                     return traces + spikes
 
             samples_over_time = brainstate.transform.for_loop(_step, times)

@@ -20,7 +20,7 @@ import braintools
 import brainunit as u
 import jax.numpy as jnp
 
-from braincell._base import HHTypedNeuron, IonChannel, _cast_like
+from braincell._base import HHTypedNeuron, IonChannel, _cast_like, _zero_spike_like
 from braincell._typing import Initializer
 from braincell.quad import get_integrator
 from braincell.quad.protocol import DiffEqState, IndependentIntegration
@@ -167,7 +167,7 @@ class SingleCompartment(HHTypedNeuron):
         None
         """
         self.V = DiffEqState(braintools.init.param(self.V_initializer, self.varshape, batch_size))
-        self.spike = brainstate.ShortTermState(self.get_spike(self.V.value, self.V.value))
+        self.spike = brainstate.ShortTermState(_zero_spike_like(self.V.value))
         super().init_state(batch_size)
 
     def reset_state(self, batch_size=None):
@@ -183,7 +183,7 @@ class SingleCompartment(HHTypedNeuron):
             The batch size for resetting. If None, no batch dimension is added.
         """
         self.V.value = braintools.init.param(self.V_initializer, self.varshape, batch_size)
-        self.spike.value = self.get_spike(self.V.value, self.V.value)
+        self.spike.value = _zero_spike_like(self.V.value)
         super().reset_state(batch_size)
 
     def pre_integral(self, I_ext=0. * u.nA / u.cm ** 2):

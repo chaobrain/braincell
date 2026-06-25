@@ -16,6 +16,7 @@
 import unittest
 
 import brainstate
+import braintools
 import brainunit as u
 import numpy as np
 
@@ -1735,6 +1736,49 @@ class CellRuntimeStateTest(unittest.TestCase):
         np.testing.assert_allclose(
             np.asarray(ion.TotalPump[:, 3].to_decimal(u.mol / u.cm ** 2)),
             [6.0e-8, 6.0e-8],
+            rtol=1e-12,
+        )
+
+    def test_constant_quantity_ci_initializer_stays_quantity_with_population_shape(self) -> None:
+        cell = Cell(_build_tree(), pop_size=(2,), solver="staggered")
+        cell.paint(
+            BranchSlice(branch_index=0, prox=0.0, dist=1.0),
+            braincell.mech.Ion(
+                "CdpCAM_MA2024_PC",
+                name="ca_cam",
+                Ci_initializer=braintools.init.Constant(0.2 * u.mM),
+            ),
+        )
+        cell.paint(
+            BranchSlice(branch_index=1, prox=0.0, dist=1.0),
+            braincell.mech.Ion(
+                "CdpCAM_MA2024_PC",
+                name="ca_cam",
+                Ci_initializer=0.3 * u.mM,
+            ),
+        )
+
+        cell.init_state()
+        ion = cell.get_ion("ca_cam")
+
+        self.assertIsInstance(ion.Ci_initializer, u.Quantity)
+        self.assertEqual(ion.Ci_initializer.shape, (2, 5))
+        np.testing.assert_allclose(
+            np.asarray(ion.Ci_initializer[:, 1].to_decimal(u.mM)),
+            [0.2, 0.2],
+            rtol=1e-12,
+        )
+        np.testing.assert_allclose(
+            np.asarray(ion.Ci_initializer[:, 3].to_decimal(u.mM)),
+            [0.3, 0.3],
+            rtol=1e-12,
+        )
+
+        ion.Ci.value = _quantity_set_at(ion.Ci.value, 1, 1.0 * u.mM)
+        cell.reset_state()
+        np.testing.assert_allclose(
+            np.asarray(ion.Ci.value[:, 1].to_decimal(u.mM)),
+            [0.2, 0.2],
             rtol=1e-12,
         )
 

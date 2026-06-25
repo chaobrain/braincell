@@ -109,6 +109,29 @@ __all__ = [
 ]
 
 
+def _zero_spike_like(V):
+    """Return a zero spike buffer matching a membrane-voltage value.
+
+    Parameters
+    ----------
+    V : array-like or Quantity
+        Membrane voltage value whose shape should be mirrored.
+
+    Returns
+    -------
+    array-like
+        Unitless zero-valued spike buffer with the same shape as ``V``.
+
+    Notes
+    -----
+    ``init_state`` and ``reset_state`` seed ``last_V`` and ``next_V`` with
+    the same value, so no threshold crossing can occur.  Building the zero
+    buffer directly avoids tracing the surrogate spike function during these
+    lifecycle phases.
+    """
+    return u.math.zeros_like(u.get_magnitude(V))
+
+
 class HHTypedNeuron(brainpy.state.Dynamics, Container, DiffEqModule):
     """
     The base class for the Hodgkin-Huxley typed neuronal membrane dynamics.

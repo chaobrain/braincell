@@ -29,7 +29,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
-from braincell._base import Channel, HHTypedNeuron, Ion, IonChannel, MixIons, Synapse as RuntimeSynapse, _cast_like
+from braincell._base import Channel, HHTypedNeuron, Ion, IonChannel, MixIons, Synapse as RuntimeSynapse, _cast_like, _zero_spike_like
 from braincell._misc import is_traced_value
 from braincell._typing import Initializer
 from braincell._compute.table import (
@@ -499,7 +499,7 @@ class Cell(HHTypedNeuron):
         v_value = braintools.init.param(v_initializer, self.varshape)
         v_value = bridge.expand_with_batch_axis(v_value, batch_size, name="Cell.V")
         self.V = DiffEqState(v_value)
-        self.spike = brainstate.ShortTermState(self.get_spike(self.V.value, self.V.value))
+        self.spike = brainstate.ShortTermState(_zero_spike_like(self.V.value))
         self._current_time_state.value = 0.0 * u.ms
 
         point_V = self._cv_to_point_unchecked(self.V.value)
@@ -2452,7 +2452,7 @@ class Cell(HHTypedNeuron):
             v_init = bridge.fill_like(self.varshape, v_init)
         v_value = braintools.init.param(v_init, self.varshape)
         self.V.value = bridge.expand_with_batch_axis(v_value, batch_size, name="Cell.V")
-        self.spike.value = self.get_spike(self.V.value, self.V.value)
+        self.spike.value = _zero_spike_like(self.V.value)
         self._current_time_state.value = 0.0 * u.ms
         point_V = self._cv_to_point(self.V.value)
         for path, channel in self.runtime_objects(IonChannel, allowed_hierarchy=(1, 1)).items():

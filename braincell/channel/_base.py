@@ -383,24 +383,31 @@ class Markov(Channel, IndependentIntegration):
             return array.reshape(flat_size)
 
         conserve = _flatten_like(self._conserve_value(), "conserve")
+        pair_rates = []
         rates = []
+        # Resolve each rate once; steady-state assembly reuses the arrays below.
         for pair in self._iter_pairs():
-            rates.append(_flatten_like(self._call_rate(pair.forward, V, *ions), pair.forward))
+            forward = _flatten_like(self._call_rate(pair.forward, V, *ions), pair.forward)
+            backward = None
             if pair.backward is not None:
-                rates.append(_flatten_like(self._call_rate(pair.backward, V, *ions), pair.backward))
+                backward = _flatten_like(self._call_rate(pair.backward, V, *ions), pair.backward)
+            pair_rates.append((pair, forward, backward))
+            rates.append(forward)
+            if backward is not None:
+                rates.append(backward)
 
         dtype = jnp.result_type(template, conserve, *rates) if rates else jnp.result_type(template, conserve)
         conserve = conserve.astype(dtype)
         generator = jnp.zeros((flat_size, len(state_names), len(state_names)), dtype=dtype)
 
-        for pair in self._iter_pairs():
+        for pair, forward, backward in pair_rates:
             src = state_names.index(pair.src)
             dst = state_names.index(pair.dst)
-            forward = _flatten_like(self._call_rate(pair.forward, V, *ions), pair.forward).astype(dtype)
+            forward = forward.astype(dtype)
             generator = generator.at[:, src, src].add(-forward)
             generator = generator.at[:, dst, src].add(forward)
-            if pair.backward is not None:
-                backward = _flatten_like(self._call_rate(pair.backward, V, *ions), pair.backward).astype(dtype)
+            if backward is not None:
+                backward = backward.astype(dtype)
                 generator = generator.at[:, src, dst].add(backward)
                 generator = generator.at[:, dst, dst].add(-backward)
 

@@ -19,6 +19,7 @@ import warnings
 from dataclasses import dataclass, fields, is_dataclass
 from typing import Literal
 
+import braintools
 import brainunit as u
 import jax.numpy as jnp
 import numpy as np
@@ -1057,6 +1058,32 @@ def _is_ragged_param(value: object) -> bool:
     return False
 
 
+def _constant_quantity_value(value: object) -> u.Quantity | None:
+    """Extract a Quantity from a deterministic constant initializer.
+
+    Parameters
+    ----------
+    value : object
+        Mechanism parameter or runtime ion constructor value.
+
+    Returns
+    -------
+    Quantity or None
+        The wrapped quantity when ``value`` is ``braintools.init.Constant``
+        over a :mod:`brainunit` quantity; otherwise ``None``.
+
+    Notes
+    -----
+    Runtime ion parameters use rectangular Quantity buffers for fast
+    broadcast/scatter.  Treating ``Constant(Quantity)`` as an opaque callable
+    would allocate a large Python object tuple, which is both slower and
+    unnecessary because the initializer is deterministic.
+    """
+    if isinstance(value, braintools.init.Constant) and isinstance(value.value, u.Quantity):
+        return value.value
+    return None
+
+
 def _allocate_state_buffer(
     mechanism: object,
     *,
@@ -1072,6 +1099,9 @@ def _allocate_state_buffer(
     Plain numeric values (no unit) become a :class:`jnp.ndarray`.
     """
     value = _mechanism_var_value(mechanism, var_name)
+    constant_quantity = _constant_quantity_value(value)
+    if constant_quantity is not None:
+        value = constant_quantity
 
     if _is_ragged_param(value):
         n = int(np.prod(shape, dtype=int)) if shape else 1
@@ -1093,6 +1123,10 @@ def _write_state_buffer(layout: "MechanismLayout", buffer: object, value: object
       scalar.
     - Plain ``jnp.ndarray`` buffer: broadcast scalar, validate shape.
     """
+    constant_quantity = _constant_quantity_value(value)
+    if constant_quantity is not None:
+        value = constant_quantity
+
     if isinstance(buffer, u.Quantity):
         target_shape = buffer.mantissa.shape
         target_unit = buffer.unit
@@ -1596,6 +1630,9 @@ def _normalize_ion_runtime_param_value(cls: type, param_name: str, value: object
         inner = getattr(value, "value", None)
         if isinstance(inner, u.Quantity):
             return inner
+    constant_quantity = _constant_quantity_value(value)
+    if constant_quantity is not None:
+        return constant_quantity
     return value
 
 

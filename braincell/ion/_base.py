@@ -355,6 +355,8 @@ class KineticIon(IndependentIntegration):
     sources: ClassVar[tuple[Source, ...]] = ()
     conserves: ClassVar[tuple[Conserve, ...]] = ()
     uses_total_current: ClassVar[bool] = False
+    default_solver: ClassVar[str] = "rk4"
+    default_substeps: ClassVar[int] = 5
 
     def _init_kinetic_ion(
         self,
@@ -363,8 +365,8 @@ class KineticIon(IndependentIntegration):
         temp=None,
         valence=None,
         species_initializers: dict[str, Any] | None = None,
-        solver: str = "backward_euler",
-        substeps: int = 1,
+        solver: str | None = None,
+        substeps: int | None = None,
     ):
         """Initialize one declarative kinetic-ion instance.
 
@@ -384,6 +386,10 @@ class KineticIon(IndependentIntegration):
         if temp is None:
             raise ValueError(f"{type(self).__name__} requires an explicit temperature value.")
 
+        if solver is None:
+            solver = type(self).default_solver
+        if substeps is None:
+            substeps = type(self).default_substeps
         IndependentIntegration.__init__(self, solver=solver)
         self.substeps = int(substeps)
         if self.substeps < 1:

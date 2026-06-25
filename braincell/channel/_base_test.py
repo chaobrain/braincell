@@ -158,8 +158,8 @@ class _ExampleMarkov(Markov):
     conserve = 1.0
     dependent_state = "C"
 
-    def __init__(self, size=1):
-        super().__init__(size=size, name=None)
+    def __init__(self, size=1, solver=None, substeps=None):
+        super().__init__(size=size, name=None, solver=solver, substeps=substeps)
         self.g_max = braintools.init.param(0.3 * (u.mS / u.cm ** 2), self.varshape, allow_none=False)
 
     def open_rate(self, V, K: IonInfo):
@@ -471,6 +471,13 @@ class ChannelTemplateTest(unittest.TestCase):
                 atol=1e-6,
             )
         )
+
+    def test_markov_uses_central_default_integration_schedule(self) -> None:
+        ch = _ExampleMarkov(size=1)
+        self.assertEqual(ch.substeps, 5)
+
+        override = _ExampleMarkov(size=1, solver="euler", substeps=2)
+        self.assertEqual(override.substeps, 2)
 
     def test_markov_defaults_dependent_state_to_last_discovered_name(self) -> None:
         ch = _ExampleMarkovImplicitDependent(size=1)

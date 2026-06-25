@@ -219,15 +219,21 @@ class Markov(Channel, IndependentIntegration):
     pairs: ClassVar[tuple[Transition | tuple[Any, ...], ...]] = ()
     conserve: ClassVar[Any] = 1.0
     dependent_state: ClassVar[str | None] = None
+    default_solver: ClassVar[str] = "rk4"
+    default_substeps: ClassVar[int] = 5
 
     def __init__(
         self,
         size: brainstate.typing.Size,
         name: Optional[str] = None,
-        solver: str = "backward_euler",
-        substeps: int = 1,
+        solver: str | None = None,
+        substeps: int | None = None,
     ):
         super().__init__(size=size, name=name)
+        if solver is None:
+            solver = type(self).default_solver
+        if substeps is None:
+            substeps = type(self).default_substeps
         IndependentIntegration.__init__(self, solver=solver)
 
         self.substeps = int(substeps)

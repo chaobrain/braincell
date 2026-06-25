@@ -1546,8 +1546,8 @@ class CdpStC_MA2020_GoC(Calcium, KineticIon):
         Co: Union[brainstate.typing.ArrayLike, Callable, None] = None,
         Ci_initializer: Union[brainstate.typing.ArrayLike, Callable, None] = None,
         species_initializers: Optional[dict[str, object]] = None,
-        solver: str = "backward_euler",
-        substeps: int = 1,
+        solver: str | None = None,
+        substeps: int | None = None,
         name: Optional[str] = None,
         **channels
     ):
@@ -2000,8 +2000,8 @@ class CdpCAM_MA2024_PC(Calcium, KineticIon):
         Co: Union[brainstate.typing.ArrayLike, Callable, None] = None,
         Ci_initializer: Union[brainstate.typing.ArrayLike, Callable, None] = None,
         species_initializers: Optional[dict[str, object]] = None,
-        solver: str = "backward_euler",
-        substeps: int = 1,
+        solver: str | None = None,
+        substeps: int | None = None,
         name: Optional[str] = None,
         **channels
     ):
@@ -2409,8 +2409,8 @@ class CdpCR_MA2020_GrC(Calcium, KineticIon):
         Co: Union[brainstate.typing.ArrayLike, Callable, None] = None,
         Ci_initializer: Union[brainstate.typing.ArrayLike, Callable, None] = None,
         species_initializers: Optional[dict[str, object]] = None,
-        solver: str = "backward_euler",
-        substeps: int = 1,
+        solver: str | None = None,
+        substeps: int | None = None,
         name: Optional[str] = None,
         **channels
     ):

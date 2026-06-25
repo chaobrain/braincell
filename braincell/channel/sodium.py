@@ -383,8 +383,8 @@ class Nav1p6_MA2020_GoC(Markov):
         temp: brainstate.typing.ArrayLike = u.celsius2kelvin(22.0),
         g_max: Union[brainstate.typing.ArrayLike, Callable] = 16.0 * (u.mS / u.cm ** 2),
         name: Optional[str] = None,
-        solver: str = "backward_euler",
-        substeps: int = 1,
+        solver: str | None = None,
+        substeps: int | None = None,
     ):
         super().__init__(size=size, name=name, solver=solver, substeps=substeps)
 
@@ -510,8 +510,8 @@ class Nav1p1_MA2025_BC(Nav1p6_MA2020_GoC):
         g_max: Union[brainstate.typing.ArrayLike, Callable] = 8.0 * (u.mS / u.cm ** 2),
         gateCurrent: Union[brainstate.typing.ArrayLike, Callable] = 0.0,
         name: Optional[str] = None,
-        solver: str = "backward_euler",
-        substeps: int = 1,
+        solver: str | None = None,
+        substeps: int | None = None,
     ):
         super().__init__(
             size=size,
@@ -595,8 +595,8 @@ class Nav_MA2020_GrC(Markov, IndependentIntegration):
         temp: brainstate.typing.ArrayLike = u.celsius2kelvin(32.0),
         g_max: Union[brainstate.typing.ArrayLike, Callable] = 13.0 * (u.mS / u.cm ** 2),
         name: Optional[str] = None,
-        solver: str = "backward_euler",
-        substeps: int = 1,
+        solver: str | None = None,
+        substeps: int | None = None,
     ):
         super().__init__(size=size, name=name, solver=solver, substeps=substeps)
 
@@ -721,8 +721,8 @@ class NaFHF_MA2020_GrC(Markov, IndependentIntegration):
         temp: brainstate.typing.ArrayLike = u.celsius2kelvin(32.0),
         g_max: Union[brainstate.typing.ArrayLike, Callable] = 13.0 * (u.mS / u.cm ** 2),
         name: Optional[str] = None,
-        solver: str = "backward_euler",
-        substeps: int = 1,
+        solver: str | None = None,
+        substeps: int | None = None,
     ):
         super().__init__(size=size, name=name, solver=solver, substeps=substeps)
 

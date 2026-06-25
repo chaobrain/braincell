@@ -154,21 +154,20 @@ class PC:
         #   if dend.diam >= THICK_DEND_DIAM_UM:
         #       dend.cm = SOMA_CM_UF_CM2
         #
-        # BrainCell currently paints scalar CableProperty values, so this stays
-        # as one branch-level paint per morphology branch.  A future callable
-        # CableProperty API could replace this loop with one expression over a
-        # spatial context.
-        for branch in self.morph.branches:
-            diam_um = branch.diam_arc_mean.to_decimal(u.um)
-            cm_value = cable.soma_cm_uF_cm2 if branch.type == "soma" else pc24_dend_cm(diam_um, cable)
-            self.cell.paint(
-                branch_in("name", branch.name),
-                mech.CableProperty(
-                    resting_potential=cable.leak_e_mV * u.mV,
-                    membrane_capacitance=cm_value * (u.uF / u.cm**2),
-                    axial_resistivity=cable.ra_ohm_cm * (u.ohm * u.cm),
+        # BrainCell evaluates callable cable fields after CV geometry is known,
+        # so the dendrite capacitance can depend on each CV's arc-mean diameter
+        # without one paint rule per morphology branch.
+        self.cell.paint(
+            self.regions["dend"],
+            mech.CableProperty(
+                resting_potential=cable.leak_e_mV * u.mV,
+                membrane_capacitance=lambda cv: (
+                    pc24_dend_cm(float(cv.diam_arc_mean.to_decimal(u.um)), cable)
+                    * (u.uF / u.cm**2)
                 ),
-            )
+                axial_resistivity=cable.ra_ohm_cm * (u.ohm * u.cm),
+            ),
+        )
 
     def _paint_ions(self) -> None:
         if self.cell is None:

@@ -755,6 +755,50 @@ class BuildMechTest(unittest.TestCase):
         self.assertEqual(buckets[0].cable.membrane_capacitance, 2.0 * (u.uF / u.cm ** 2))
         self.assertEqual(len(buckets[0].density_by_key), 1)
 
+    def test_callable_cable_field_resolves_from_cv_context(self) -> None:
+        morpho = _single_branch_morpho()
+        geos, ids = _build_geo(
+            morpho,
+            (((0.0, 0.5), (0.5, 1.0)),),
+        )
+        cable = CableProperty(
+            resting_potential=-65.0 * u.mV,
+            membrane_capacitance=lambda cv: (
+                (1.0 + float(cv.diam_arc_mean.to_decimal(u.um)))
+                * (u.uF / u.cm ** 2)
+            ),
+            axial_resistivity=100.0 * (u.ohm * u.cm),
+        )
+        buckets = _build_mech(
+            morpho,
+            geos,
+            ids,
+            paint_rules=(PaintRule(region=AllRegion(), mechanism=cable),),
+            place_rules=(),
+        )
+        values = [
+            float(bucket.cable.membrane_capacitance.to_decimal(u.uF / u.cm ** 2))
+            for bucket in buckets
+        ]
+        self.assertEqual(values, [5.0, 5.0])
+
+    def test_callable_cable_field_must_return_scalar_quantity(self) -> None:
+        morpho = _single_branch_morpho()
+        geos, ids = _build_geo(morpho, (((0.0, 1.0),),))
+        cable = CableProperty(
+            resting_potential=-65.0 * u.mV,
+            membrane_capacitance=lambda cv: 1.0,
+            axial_resistivity=100.0 * (u.ohm * u.cm),
+        )
+        with self.assertRaisesRegex(TypeError, "must return a Quantity"):
+            _build_mech(
+                morpho,
+                geos,
+                ids,
+                paint_rules=(PaintRule(region=AllRegion(), mechanism=cable),),
+                place_rules=(),
+            )
+
     def test_place_clamp_attaches_to_one_cv(self) -> None:
         morpho = _single_branch_morpho()
         geos, ids = _build_geo(morpho, (((0.0, 0.5), (0.5, 1.0)),))

@@ -50,9 +50,10 @@ class CableProperty:
         Specific membrane capacitance.
     axial_resistivity : Quantity[ohm * cm]
         Cytoplasmic axial resistivity.
-    temperature : Quantity[kelvin]
+    temperature : Quantity[kelvin] or callable
         Absolute temperature used for Q10 scaling in channel kinetics.
         Defaults to 36 °C (309.15 K).
+        A callable is evaluated later with the per-CV cable context.
 
     Raises
     ------
@@ -104,6 +105,8 @@ class CableProperty:
 
 
 def _coerce_temperature(value: Any, *, name: str) -> Any:
+    if callable(value):
+        return value
     if not hasattr(value, "to_decimal") or not callable(
         getattr(value, "to_decimal")
     ):

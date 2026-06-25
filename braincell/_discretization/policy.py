@@ -520,6 +520,13 @@ def _last_cable_covering(
 
 
 def _cable_signature(cable: CableProperty) -> tuple[float, float]:
+    if callable(cable.axial_resistivity) or callable(cable.membrane_capacitance):
+        raise TypeError(
+            "DLambda requires scalar CableProperty.axial_resistivity and "
+            "membrane_capacitance values; callable cable fields are only "
+            "supported after CV bounds are fixed. Use CVPerBranch, "
+            "CVPerBranchList, or scalar cable fields with DLambda."
+        )
     ra = float(np.asarray(cable.axial_resistivity.to_decimal(u.ohm * u.cm), dtype=float))
     cm = float(np.asarray(cable.membrane_capacitance.to_decimal(u.uF / u.cm ** 2), dtype=float))
     return (ra, cm)

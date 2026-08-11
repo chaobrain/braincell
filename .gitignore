@@ -235,6 +235,7 @@ cython_debug/
 /docs/apis/deprecated/generated/
 /docs/_static/braincell.psd
 /docs/_static/single_cell_frontend/
+/examples/multi_compartment/plot/
 
 x86_64/
 /.claude/

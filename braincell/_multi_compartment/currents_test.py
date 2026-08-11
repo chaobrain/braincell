@@ -64,6 +64,37 @@ class TotalMembraneCurrentClampTest(unittest.TestCase):
             expected,
         )
 
+    def test_point_core_gathers_to_public_cv_result(self) -> None:
+        import brainstate
+        from braincell._multi_compartment import bridge
+        from braincell._multi_compartment.currents import (
+            total_membrane_current,
+            total_membrane_current_point,
+        )
+
+        cell = _soma_cell()
+        with brainstate.environ.context(t=0.0 * u.ms):
+            point_current = total_membrane_current_point(
+                cell,
+                point_V=bridge.cv_to_point(cell.V.value, cell.runtime),
+                t=0.0 * u.ms,
+            )
+            cv_current = total_membrane_current(
+                cell,
+                V_cv=cell.V.value,
+                t=0.0 * u.ms,
+            )
+
+        np.testing.assert_allclose(
+            np.asarray(
+                bridge.point_to_cv(point_current, cell.runtime).to_decimal(
+                    u.nA / u.cm**2
+                )
+            ),
+            np.asarray(cv_current.to_decimal(u.nA / u.cm**2)),
+        )
+        self.assertEqual(int(cell.runtime.midpoint_mask_np.sum()), cell.n_cv)
+
 
 class TotalMembraneCurrentNarrowExceptTest(unittest.TestCase):
     """MED-04: channel errors outside the numeric set must not be swallowed."""

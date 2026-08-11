@@ -4,6 +4,7 @@ import unittest
 
 import brainstate
 import brainunit as u
+import jax
 import jax.numpy as jnp
 import numpy as np
 
@@ -95,6 +96,20 @@ class TestCellDeclaration(unittest.TestCase):
             Cell(tree, ion_channel_update_order="integration").ion_channel_update_order,
             "integration",
         )
+
+    def test_membrane_linearizer_defaults_to_point_and_validates(self):
+        cell = _simple_cell()
+        self.assertEqual(cell.membrane_linearizer, "point")
+        cell.membrane_linearizer = "generic"
+        self.assertEqual(cell.membrane_linearizer, "generic")
+        with self.assertRaisesRegex(ValueError, "membrane_linearizer"):
+            Cell(cell.morpho, membrane_linearizer="finite_difference")
+
+    def test_membrane_linearizer_is_frozen_after_initialization(self):
+        cell = _simple_cell()
+        cell.init_state()
+        with self.assertRaisesRegex(RuntimeError, "membrane_linearizer"):
+            cell.membrane_linearizer = "generic"
 
     def test_cv_policy_mutation_invalidates_cache(self):
         cell = _simple_cell()
@@ -299,6 +314,60 @@ class TestCellLifecycle(unittest.TestCase):
 
         self.assertIs(returned, cell)
         self.assertEqual(len(cell._synapse_input_bindings["ampa"]), 1)
+
+
+class CellMembraneLinearizerTest(unittest.TestCase):
+    @staticmethod
+    def _leak_cell(mode: str) -> Cell:
+        soma = Branch.from_lengths(
+            lengths=[20.0] * u.um,
+            radii=[10.0, 10.0] * u.um,
+            type="soma",
+        )
+        cell = Cell(
+            Morphology.from_root(soma, name="soma"),
+            cv_policy=CVPerBranch(),
+            V_init=-65.0 * u.mV,
+            membrane_linearizer=mode,
+        )
+        cell.paint(
+            AllRegion(),
+            mech.Channel(
+                "IL",
+                name="leak",
+                g_max=0.3 * (u.mS / u.cm**2),
+                E=-54.3 * u.mV,
+            ),
+        )
+        cell.init_state()
+        return cell
+
+    def test_point_matches_generic_values_and_higher_order_gradient(self):
+        results = {}
+        for mode in ("point", "generic"):
+            cell = self._leak_cell(mode)
+            voltage_unit = u.get_unit(cell.V.value)
+            with brainstate.environ.context(t=0.0 * u.ms):
+                linear, derivative = cell._voltage_linearizer()(cell.V.value)
+
+                def objective(voltage_mantissa):
+                    _, value = cell._voltage_linearizer()(
+                        u.Quantity(voltage_mantissa, voltage_unit)
+                    )
+                    return jnp.sum(u.get_mantissa(value))
+
+                gradient = jax.grad(objective)(u.get_mantissa(cell.V.value))
+            results[mode] = (linear, derivative, gradient)
+
+        point = results["point"]
+        generic = results["generic"]
+        for point_value, generic_value in zip(point, generic):
+            np.testing.assert_allclose(
+                np.asarray(u.get_mantissa(point_value)),
+                np.asarray(u.get_mantissa(generic_value)),
+                rtol=1e-6,
+                atol=1e-7,
+            )
 
 
 class CellIonChannelUpdateOrderTest(unittest.TestCase):

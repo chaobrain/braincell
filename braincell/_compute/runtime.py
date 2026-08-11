@@ -249,6 +249,7 @@ class CellRuntimeState:
     ion_class_candidates: dict[str, tuple[str, ...]]
     bound_ion_keys: dict[int, tuple[str, ...]]
     current_owner_keys: dict[int, str | tuple[str, ...] | None]
+    midpoint_mask_np: np.ndarray
     merged_channel_layout_groups: dict[int, tuple[int, ...]] | None = None
     dhs_static_source_np: object | None = None
     dhs_static_cache: object | None = None
@@ -462,6 +463,8 @@ class CellRuntimeState:
             cv_id = int(roles[0].cv_id)
             point_area_decimal[int(point.id)] = cv_area_decimal[cv_id]
         point_area = u.Quantity(point_area_decimal, u.cm ** 2)
+        midpoint_mask_np = np.zeros((n_point,), dtype=bool)
+        midpoint_mask_np[np.asarray(node_tree.cv_to_mid_node_id, dtype=np.int32)] = True
 
         runtime = cls(
             node_tree=node_tree,
@@ -481,6 +484,7 @@ class CellRuntimeState:
             ion_class_candidates=ion_class_candidates,
             bound_ion_keys=bound_ion_keys,
             current_owner_keys=current_owner_keys,
+            midpoint_mask_np=midpoint_mask_np,
             merged_channel_layout_groups=merged_channel_layout_groups,
             dhs_static_source_np=None,
             dhs_static_cache=None,

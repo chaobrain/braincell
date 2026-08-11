@@ -169,6 +169,10 @@ class Cell(HHTypedNeuron):
         Post-voltage ion/channel scheduling. ``"family"`` updates all ions
         before all channels; ``"integration"`` preserves the previous
         IndependentIntegration-grouped scheduling.
+    membrane_linearizer : {"point", "generic"}
+        Membrane-current linearization strategy. ``"point"`` differentiates
+        the point-local current kernel before gathering CV midpoints;
+        ``"generic"`` retains whole-CV automatic differentiation.
     name : str, optional
         Cell name.
     """
@@ -192,6 +196,7 @@ class Cell(HHTypedNeuron):
         substeps: int | None = None,
         cache_ion_total_current: bool = True,
         ion_channel_update_order: str = "family",
+        membrane_linearizer: str = "point",
         name: str | None = None,
     ) -> None:
         """Initialize a multi-compartment cell declaration.
@@ -227,6 +232,8 @@ class Cell(HHTypedNeuron):
             NEURON-style schedules.
         ion_channel_update_order : {"family", "integration"}, optional
             Post-voltage ion/channel update order.
+        membrane_linearizer : {"point", "generic"}, optional
+            Membrane-current linearization strategy.
         name : str, optional
             Cell name.
         """
@@ -265,6 +272,9 @@ class Cell(HHTypedNeuron):
         self.cache_ion_total_current = bool(cache_ion_total_current)
         self.ion_channel_update_order = _validate_ion_channel_update_order(
             ion_channel_update_order
+        )
+        self._membrane_linearizer = _validate_membrane_linearizer(
+            membrane_linearizer
         )
 
         self._discretization_cache: Discretization | None = None
@@ -375,6 +385,15 @@ class Cell(HHTypedNeuron):
     def substeps(self) -> int:
         """Return the effective Markov/kinetic-ion substep count."""
         return self._substeps
+
+    @property
+    def membrane_linearizer(self) -> str:
+        return self._membrane_linearizer
+
+    @membrane_linearizer.setter
+    def membrane_linearizer(self, value: str) -> None:
+        self._raise_if_initialized("assign membrane_linearizer")
+        self._membrane_linearizer = _validate_membrane_linearizer(value)
 
     @property
     def spk_fun(self):
@@ -1950,6 +1969,64 @@ class Cell(HHTypedNeuron):
         I_total = currents.total_membrane_current(self, V_cv=V, t=t)
         return I_total / self.C
 
+    def _voltage_linearizer(self):
+        """Return the configured voltage-only membrane linearizer."""
+        if self._membrane_linearizer == "generic":
+            membrane_derivative = jax.named_call(
+                self.compute_membrane_derivative,
+                name="braincell_dhs_compute_membrane_derivative",
+            )
+            return brainstate.transform.vector_grad(
+                membrane_derivative,
+                argnums=0,
+                return_value=True,
+                unit_aware=False,
+            )
+
+        runtime = self.runtime
+        midpoint_mask = jnp.asarray(runtime.midpoint_mask_np)
+
+        def linearize(V, *args):
+            # CV/point mappings stay outside the differentiated function, so
+            # reverse-mode AD never needs the large CV-to-point scatter-add.
+            point_V = bridge.cv_to_point(V, runtime)
+            point_C = bridge.cv_to_point(self.C, runtime)
+            capacitance_unit = u.get_unit(point_C)
+            safe_point_C = u.Quantity(
+                jnp.where(midpoint_mask, u.get_mantissa(point_C), 1.0),
+                capacitance_unit,
+            )
+
+            def point_membrane_derivative(candidate_point_V, *_args):
+                I_point = currents.total_membrane_current_point(
+                    self,
+                    point_V=candidate_point_V,
+                    t=self._resolve_t(),
+                )
+                derivative = I_point / safe_point_C
+                return u.Quantity(
+                    jnp.where(
+                        midpoint_mask,
+                        u.get_mantissa(derivative),
+                        0.0,
+                    ),
+                    u.get_unit(derivative),
+                )
+
+            point_linearizer = brainstate.transform.vector_grad(
+                point_membrane_derivative,
+                argnums=0,
+                return_value=True,
+                unit_aware=False,
+            )
+            point_linear, point_derivative = point_linearizer(point_V, *args)
+            return (
+                bridge.point_to_cv(point_linear, runtime),
+                bridge.point_to_cv(point_derivative, runtime),
+            )
+
+        return linearize
+
     def _get_axial_operator(self):
         runtime = self._runtime
         if runtime is None:
@@ -2784,6 +2861,15 @@ def _validate_ion_channel_update_order(value: str) -> str:
     if value not in {"family", "integration"}:
         raise ValueError(
             "ion_channel_update_order must be 'family' or 'integration', "
+            f"got {value!r}."
+        )
+    return value
+
+
+def _validate_membrane_linearizer(value: str) -> str:
+    if value not in {"point", "generic"}:
+        raise ValueError(
+            "membrane_linearizer must be 'point' or 'generic', "
             f"got {value!r}."
         )
     return value

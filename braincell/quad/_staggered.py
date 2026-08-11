@@ -716,8 +716,12 @@ def _linear_and_const_term(target, V_n, *args):
     if hasattr(target, "_voltage_linearizer"):
         linearizer = target._voltage_linearizer()
     else:
-        linearizer = brainstate.transform.vector_grad(
+        membrane_derivative = jax.named_call(
             target.compute_membrane_derivative,
+            name="braincell_dhs_compute_membrane_derivative",
+        )
+        linearizer = brainstate.transform.vector_grad(
+            membrane_derivative,
             argnums=0,
             return_value=True,
             unit_aware=False,

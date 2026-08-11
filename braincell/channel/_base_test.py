@@ -4,6 +4,7 @@ import unittest
 
 import braintools
 import brainunit as u
+import jax
 import jax.numpy as jnp
 
 from braincell._base import Channel
@@ -540,6 +541,30 @@ class ChannelTemplateTest(unittest.TestCase):
         ch.compute_derivative(V, K)
         self.assertTrue(u.math.allclose(ch.C.derivative, jnp.array([0.0]) / u.ms, atol=1e-6 * u.Hz))
         self.assertTrue(u.math.allclose(ch.O.derivative, jnp.array([0.0]) / u.ms, atol=1e-6 * u.Hz))
+
+    def test_markov_host_steady_state_matches_jax_solver(self) -> None:
+        ch = _ExampleMarkovTwoOpenStates(size=3)
+        V = jnp.full((3,), -65.0) * u.mV
+        K = _k_info(size=3)
+
+        ch.init_state(V, K)
+        host_states = ch._solve_steady_state_host(V, K)
+        jax_states = ch._solve_steady_state_jax(V, K)
+
+        self.assertEqual(host_states.keys(), jax_states.keys())
+        for name in host_states:
+            self.assertTrue(u.math.allclose(host_states[name], jax_states[name], atol=1e-6))
+
+    def test_markov_steady_state_uses_jax_fallback_when_traced(self) -> None:
+        ch = _ExampleMarkovTwoOpenStates(size=3)
+        V = jnp.full((3,), -65.0) * u.mV
+        K = _k_info(size=3)
+        ch.init_state(V, K)
+
+        solve_open = jax.jit(lambda voltage: ch._solve_steady_state(voltage, K)["O1"])
+        actual = solve_open(V)
+        expected = ch._solve_steady_state_jax(V, K)["O1"]
+        self.assertTrue(u.math.allclose(actual, expected, atol=1e-6))
 
     def test_markov_kinetic_states_clip_independent_states_for_dynamics(self) -> None:
         ch = _ExampleMarkov(size=1)

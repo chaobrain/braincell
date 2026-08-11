@@ -34,6 +34,7 @@ The tutorials fall into three groups:
    :caption: Morphology & Space
 
    morphology
+   single_cell_frontend
    filter
    mech
 

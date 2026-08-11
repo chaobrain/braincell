@@ -743,19 +743,69 @@ class CellRuntimeStateTest(unittest.TestCase):
         nodes = tuple(rcell.get_runtime_node(layout.id) for layout in layouts)
         na = rcell.get_ion("na")
         point_V = rcell._discretization_to_point(rcell.V.value)
-        expected = sum((node.current(point_V, na.pack_info()) for node in nodes[1:]), nodes[0].current(point_V, na.pack_info()))
+        expected = nodes[0].current(point_V, na.pack_info())
         total = na.current(point_V, include_external=False)
 
         self.assertEqual(len(layouts), 2)
-        self.assertEqual(len(na.channels), 2)
+        self.assertEqual(len(set(map(id, nodes))), 1)
+        self.assertEqual(len(na.channels), 1)
         self.assertIn("Na_HH1952", na.channels)
-        self.assertTrue(any(key.startswith("Na_HH1952__layout_") for key in na.channels if key != "Na_HH1952"))
+        self.assertNotIn("Na_HH1952__layout_1", na.channels)
+        self.assertAlmostEqual(float(nodes[0].g_max[1].to_decimal(u.mS / u.cm ** 2)), 12.0, places=12)
+        self.assertAlmostEqual(float(nodes[0].g_max[3].to_decimal(u.mS / u.cm ** 2)), 8.0, places=12)
         np.testing.assert_allclose(
             np.asarray(total.to_decimal(u.mA / (u.cm ** 2))),
             np.asarray(expected.to_decimal(u.mA / (u.cm ** 2))),
             rtol=1e-12,
             atol=1e-12,
         )
+
+    def test_same_named_overlapping_ion_channels_remain_distinct(self) -> None:
+        cell = Cell(_build_tree())
+        cell.paint(
+            BranchSlice(branch_index=[0, 1], prox=0.0, dist=1.0),
+            braincell.mech.Channel("Na_HH1952", g_max=12.0 * (u.mS / u.cm ** 2)),
+        )
+        cell.paint(
+            BranchSlice(branch_index=0, prox=0.0, dist=1.0),
+            braincell.mech.Channel("Na_HH1952", g_max=8.0 * (u.mS / u.cm ** 2)),
+        )
+
+        cell.init_state(); rcell = cell
+
+        layouts = tuple(layout for layout in rcell.layouts if layout.kind == "channel:Na_HH1952")
+        nodes = tuple(rcell.get_runtime_node(layout.id) for layout in layouts)
+        na = rcell.get_ion("na")
+
+        self.assertEqual(len(layouts), 2)
+        self.assertEqual(len(set(map(id, nodes))), 2)
+        self.assertEqual(len(na.channels), 2)
+        self.assertIn("Na_HH1952", na.channels)
+        self.assertTrue(any(key.startswith("Na_HH1952__layout_") for key in na.channels if key != "Na_HH1952"))
+
+    def test_set_state_syncs_merged_channel_param(self) -> None:
+        cell = Cell(_build_tree())
+        cell.paint(
+            BranchSlice(branch_index=0, prox=0.0, dist=1.0),
+            braincell.mech.Channel("Na_HH1952", g_max=12.0 * (u.mS / u.cm ** 2)),
+        )
+        cell.paint(
+            BranchSlice(branch_index=1, prox=0.0, dist=1.0),
+            braincell.mech.Channel("Na_HH1952", g_max=8.0 * (u.mS / u.cm ** 2)),
+        )
+
+        cell.init_state(); rcell = cell
+
+        layouts = tuple(layout for layout in rcell.layouts if layout.kind == "channel:Na_HH1952")
+        nodes = tuple(rcell.get_runtime_node(layout.id) for layout in layouts)
+        self.assertEqual(len(set(map(id, nodes))), 1)
+
+        rcell.set_state(layouts[0].id, "g_max", 5.0 * (u.mS / u.cm ** 2))
+
+        node = rcell.get_runtime_node(layouts[0].id)
+        self.assertAlmostEqual(float(node.g_max[1].to_decimal(u.mS / u.cm ** 2)), 5.0, places=12)
+        self.assertAlmostEqual(float(node.g_max[3].to_decimal(u.mS / u.cm ** 2)), 8.0, places=12)
+        self.assertAlmostEqual(float(node.g_max[0].to_decimal(u.mS / u.cm ** 2)), 0.0, places=12)
 
     def test_single_ion_channel_requires_selector_when_family_is_ambiguous(self) -> None:
         cell = Cell(_build_tree())
@@ -1883,17 +1933,17 @@ class CellRuntimeStateTest(unittest.TestCase):
         k_main = rcell.get_ion("k_main")
         ca_hva = rcell.get_ion("ca_hva")
         point_V = rcell._discretization_to_point(rcell.V.value)
-        expected = sum(
-            (node.current(point_V, k_main.pack_info(), ca_hva.pack_info()) for node in nodes[1:]),
-            nodes[0].current(point_V, k_main.pack_info(), ca_hva.pack_info()),
-        )
+        expected = nodes[0].current(point_V, k_main.pack_info(), ca_hva.pack_info())
         total = k_main.current(point_V, include_external=False)
 
         self.assertEqual(len(layouts), 2)
-        self.assertEqual(len(k_main.channels), 2)
+        self.assertEqual(len(set(map(id, nodes))), 1)
+        self.assertEqual(len(k_main.channels), 1)
         self.assertIn("Kca3p1_MA2020_GoC", k_main.channels)
-        self.assertTrue(any(key.startswith("Kca3p1_MA2020_GoC__layout_") for key in k_main.channels if key != "Kca3p1_MA2020_GoC"))
+        self.assertNotIn("Kca3p1_MA2020_GoC__layout_1", k_main.channels)
         self.assertEqual(ca_hva.channels, {})
+        self.assertAlmostEqual(float(nodes[0].g_max[1].to_decimal(u.mS / u.cm ** 2)), 100.0, places=12)
+        self.assertAlmostEqual(float(nodes[0].g_max[3].to_decimal(u.mS / u.cm ** 2)), 50.0, places=12)
         np.testing.assert_allclose(
             np.asarray(total.to_decimal(u.mA / (u.cm ** 2))),
             np.asarray(expected.to_decimal(u.mA / (u.cm ** 2))),

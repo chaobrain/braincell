@@ -249,6 +249,7 @@ class CellRuntimeState:
     ion_class_candidates: dict[str, tuple[str, ...]]
     bound_ion_keys: dict[int, tuple[str, ...]]
     current_owner_keys: dict[int, str | tuple[str, ...] | None]
+    merged_channel_layout_groups: dict[int, tuple[int, ...]] | None = None
     dhs_static_source_np: object | None = None
     dhs_static_cache: object | None = None
     axial_operator_np: np.ndarray | None = None
@@ -426,6 +427,7 @@ class CellRuntimeState:
             runtime_nodes,
             bound_ion_keys,
             current_owner_keys,
+            merged_channel_layout_groups,
         ) = _build_runtime_nodes(
             n_point=n_point,
             layouts=tuple(layouts),
@@ -479,6 +481,7 @@ class CellRuntimeState:
             ion_class_candidates=ion_class_candidates,
             bound_ion_keys=bound_ion_keys,
             current_owner_keys=current_owner_keys,
+            merged_channel_layout_groups=merged_channel_layout_groups,
             dhs_static_source_np=None,
             dhs_static_cache=None,
             axial_operator_np=None,
@@ -1589,6 +1592,7 @@ def _build_runtime_nodes(
     dict[int, object],
     dict[int, tuple[str, ...]],
     dict[int, str | None],
+    dict[int, tuple[int, ...]],
 ]:
     (
         ions,
@@ -1606,7 +1610,24 @@ def _build_runtime_nodes(
     runtime_nodes: dict[int, object] = dict(ion_runtime_nodes)
     bound_ion_keys: dict[int, tuple[str, ...]] = {}
     current_owner_keys: dict[int, str | tuple[str, ...] | None] = {}
+
+    merged_channel_layout_groups = _install_merged_channel_nodes(
+        n_point=n_point,
+        pop_size=pop_size,
+        layouts=layouts,
+        layout_mechanisms=layout_mechanisms,
+        state_buffers=state_buffers,
+        ions=ions,
+        ion_aliases=ion_aliases,
+        ion_family_candidates=ion_family_candidates,
+        runtime_nodes=runtime_nodes,
+        bound_ion_keys=bound_ion_keys,
+        current_owner_keys=current_owner_keys,
+    )
+
     for layout in layouts:
+        if layout.id in merged_channel_layout_groups:
+            continue
         mechanism = layout_mechanisms[layout.id]
         node, layout_bound_ion_keys, current_owner_key = _instantiate_runtime_node(
             layout=layout,
@@ -1620,7 +1641,16 @@ def _build_runtime_nodes(
             runtime_nodes[layout.id] = node
             bound_ion_keys[layout.id] = layout_bound_ion_keys
             current_owner_keys[layout.id] = current_owner_key
-    return ions, ion_aliases, ion_family_candidates, ion_class_candidates, runtime_nodes, bound_ion_keys, current_owner_keys
+    return (
+        ions,
+        ion_aliases,
+        ion_family_candidates,
+        ion_class_candidates,
+        runtime_nodes,
+        bound_ion_keys,
+        current_owner_keys,
+        merged_channel_layout_groups,
+    )
 
 
 def _build_runtime_ions(
@@ -2365,6 +2395,216 @@ def _instantiate_runtime_node(
     return node, tuple(ion_key for ion_key, _ in bound_ions), current_owner_key
 
 
+def _install_merged_channel_nodes(
+    *,
+    n_point: int,
+    pop_size: tuple[int, ...],
+    layouts: tuple[MechanismLayout, ...],
+    layout_mechanisms: dict[int, object],
+    state_buffers: dict[tuple[int, str], np.ndarray],
+    ions: dict[str, object],
+    ion_aliases: dict[str, str],
+    ion_family_candidates: dict[str, tuple[str, ...]],
+    runtime_nodes: dict[int, object],
+    bound_ion_keys: dict[int, tuple[str, ...]],
+    current_owner_keys: dict[int, str | tuple[str, ...] | None],
+) -> dict[int, tuple[int, ...]]:
+    groups: dict[tuple[object, ...], list[tuple[MechanismLayout, Density, type, tuple[tuple[str, object], ...], tuple[tuple[str | None, str], ...]]]] = {}
+    for layout in layouts:
+        mechanism = layout_mechanisms[layout.id]
+        if not _is_mergeable_channel_layout(layout, mechanism):
+            continue
+        runtime_cls = get_registry().get("channel", mechanism.class_name)
+        bound_ions, owner_specs = _resolve_channel_runtime_bindings(
+            runtime_cls=runtime_cls,
+            mechanism=mechanism,
+            ions=ions,
+            ion_aliases=ion_aliases,
+            ion_family_candidates=ion_family_candidates,
+        )
+        if len(owner_specs) != 1:
+            continue
+        key = (
+            runtime_cls,
+            mechanism.instance_name,
+            tuple(sorted(mechanism.params.keys())),
+            mechanism.solver,
+            mechanism.substeps,
+            tuple(ion_key for ion_key, _ in bound_ions),
+            owner_specs,
+        )
+        groups.setdefault(key, []).append((layout, mechanism, runtime_cls, bound_ions, owner_specs))
+
+    installed: dict[int, tuple[int, ...]] = {}
+    for items in groups.values():
+        merge_sets = _partition_non_overlapping_channel_layouts(items)
+        for merge_items in merge_sets:
+            if len(merge_items) < 2:
+                continue
+            layout_ids = tuple(layout.id for layout, *_ in merge_items)
+            layout0, mechanism0, runtime_cls, bound_ions, owner_specs = merge_items[0]
+            params = _merged_channel_constructor_params(
+                n_point=n_point,
+                pop_size=pop_size,
+                items=merge_items,
+                state_buffers=state_buffers,
+            )
+            size = pop_size + (n_point,)
+            node = runtime_cls(size=size, **params)
+            point_mask = np.zeros((n_point,), dtype=bool)
+            for layout, *_ in merge_items:
+                point_mask |= np.asarray(layout.point_mask, dtype=bool)
+            setattr(node, "_point_mask", point_mask)
+            executable = _owner_channel_executable(
+                node,
+                bound_ions=bound_ions,
+                owner_specs=owner_specs,
+                owner_ion=ions[owner_specs[0][1]],
+            )
+            if executable is not node:
+                setattr(executable, "_point_mask", point_mask)
+
+            owner_ion = ions[owner_specs[0][1]]
+            channel_key = _unique_ion_channel_key(owner_ion, mechanism0.instance_name, layout_id=layout0.id)
+            owner_ion.add(**{channel_key: executable})
+            current_owner_key = owner_specs[0][1]
+            layout_bound_ion_keys = tuple(ion_key for ion_key, _ in bound_ions)
+            for layout_id in layout_ids:
+                runtime_nodes[layout_id] = node
+                bound_ion_keys[layout_id] = layout_bound_ion_keys
+                current_owner_keys[layout_id] = current_owner_key
+                installed[layout_id] = layout_ids
+    return installed
+
+
+def _is_mergeable_channel_layout(layout: MechanismLayout, mechanism: object) -> bool:
+    return (
+        layout.target == "density"
+        and layout.layout == "dense"
+        and layout.point_mask is not None
+        and isinstance(mechanism, Density)
+        and mechanism.category == "channel"
+    )
+
+
+def _partition_non_overlapping_channel_layouts(items):
+    partitions = []
+    for item in items:
+        layout = item[0]
+        mask = np.asarray(layout.point_mask, dtype=bool)
+        placed = False
+        for partition in partitions:
+            used = partition["mask"]
+            if not np.any(used & mask):
+                partition["items"].append(item)
+                partition["mask"] = used | mask
+                placed = True
+                break
+        if not placed:
+            partitions.append({"items": [item], "mask": mask.copy()})
+    return [partition["items"] for partition in partitions]
+
+
+def _merged_channel_constructor_params(
+    *,
+    n_point: int,
+    pop_size: tuple[int, ...],
+    items,
+    state_buffers: dict[tuple[int, str], np.ndarray],
+) -> dict[str, object]:
+    all_param_names = []
+    for _layout, mechanism, *_ in items:
+        for name in mechanism.params.keys():
+            if name not in all_param_names:
+                all_param_names.append(name)
+
+    params = {}
+    full_shape = pop_size + (n_point,)
+    for var_name in all_param_names:
+        value_items = [
+            (layout, mechanism)
+            for layout, mechanism, *_ in items
+            if var_name in mechanism.params
+        ]
+        if not value_items:
+            continue
+        first_layout, _first_mechanism = value_items[0]
+        first_value = _runtime_param_value(
+            layout=first_layout,
+            var_name=var_name,
+            state_buffers=state_buffers,
+        )
+        merged = _initial_merged_channel_param(
+            var_name=var_name,
+            value=first_value,
+            full_shape=full_shape,
+        )
+        for layout, _mechanism in value_items:
+            value = _runtime_param_value(
+                layout=layout,
+                var_name=var_name,
+                state_buffers=state_buffers,
+            )
+            merged = _scatter_active_channel_param(
+                merged,
+                value,
+                point_mask=np.asarray(layout.point_mask, dtype=bool),
+                full_shape=full_shape,
+            )
+        params[var_name] = merged
+    return params
+
+
+def _initial_merged_channel_param(*, var_name: str, value: object, full_shape: tuple[int, ...]) -> object:
+    if isinstance(value, u.Quantity):
+        if var_name in _CONDUCTANCE_PARAM_NAMES:
+            return u.Quantity(np.zeros(full_shape, dtype=np.float64), value.unit)
+        mantissa = np.asarray(value.mantissa, dtype=np.float64)
+        if mantissa.shape == full_shape:
+            return u.Quantity(mantissa.copy(), value.unit)
+        return u.Quantity(np.broadcast_to(mantissa, full_shape).copy(), value.unit)
+
+    values = np.asarray(value)
+    if var_name in _CONDUCTANCE_PARAM_NAMES:
+        return np.zeros(full_shape, dtype=values.dtype)
+    if values.shape == full_shape:
+        return values.copy()
+    return np.broadcast_to(values, full_shape).copy()
+
+
+def _scatter_active_channel_param(target, value, *, point_mask: np.ndarray, full_shape: tuple[int, ...]):
+    if isinstance(value, u.Quantity):
+        unit = target.unit
+        values = np.asarray(value.to_decimal(unit), dtype=np.float64)
+        target_mantissa = np.asarray(target.mantissa, dtype=np.float64).copy()
+        target_mantissa[..., point_mask] = values[..., point_mask]
+        return u.Quantity(target_mantissa, unit)
+
+    values = np.asarray(value)
+    target_arr = np.asarray(target).copy()
+    target_arr[..., point_mask] = values[..., point_mask]
+    return target_arr
+
+
+def _owner_channel_executable(node, *, bound_ions, owner_specs, owner_ion):
+    component_key, owner_key = owner_specs[0]
+    if component_key is None and len(bound_ions) == 1 and bound_ions[0][0] == owner_key:
+        return node
+    if component_key is None:
+        return _BoundIonChannelRuntime(
+            node,
+            bound_ions=tuple(ion for _, ion in bound_ions),
+            owner_ion=owner_ion,
+        )
+    return _BoundIonChannelCurrentComponentRuntime(
+        node,
+        bound_ions=tuple(ion for _, ion in bound_ions),
+        owner_ion=owner_ion,
+        component_key=component_key,
+        owns_state=True,
+    )
+
+
 def _unique_ion_channel_key(owner_ion: object, instance_name: str, *, layout_id: int) -> str:
     channels = getattr(owner_ion, "channels", None)
     if not isinstance(channels, dict) or instance_name not in channels:
@@ -2660,6 +2900,9 @@ def _channel_current_owner_family(cls: type) -> str | None:
     return specs[0][1]
 
 
+_CONDUCTANCE_PARAM_NAMES = frozenset({"g_max", "g", "gbar", "conductance"})
+
+
 def _runtime_param_value(
     *,
     layout: MechanismLayout,
@@ -2676,7 +2919,7 @@ def _runtime_param_value(
     if (
         isinstance(buffer, u.Quantity)
         and layout.point_mask is not None
-        and var_name in {"g_max", "g", "gbar", "conductance"}
+        and var_name in _CONDUCTANCE_PARAM_NAMES
     ):
         mask_bool = np.asarray(layout.point_mask)
         masked_mantissa = np.where(mask_bool, np.asarray(buffer.mantissa), 0.0)
@@ -2705,6 +2948,19 @@ def _sync_runtime_node_param(runtime: CellRuntimeState, *, layout_id: int, var_n
     if kind.startswith("ion:"):
         _sync_runtime_ion(runtime, layout_id=int(layout_id))
         return
+    merged_groups = runtime.merged_channel_layout_groups or {}
+    merged_layout_ids = merged_groups.get(int(layout_id))
+    if merged_layout_ids is not None and kind.startswith("channel:"):
+        new_value = _merged_channel_param_value(
+            runtime,
+            layout_ids=merged_layout_ids,
+            var_name=str(var_name),
+        )
+        setattr(node, var_name, new_value)
+        hook = getattr(node, "_on_param_updated", None)
+        if callable(hook):
+            hook(var_name, new_value)
+        return
     new_value = _runtime_param_value(
         layout=layout,
         var_name=var_name,
@@ -2714,6 +2970,50 @@ def _sync_runtime_node_param(runtime: CellRuntimeState, *, layout_id: int, var_n
     hook = getattr(node, "_on_param_updated", None)
     if callable(hook):
         hook(var_name, new_value)
+
+
+def _merged_channel_param_value(
+    runtime: CellRuntimeState,
+    *,
+    layout_ids: tuple[int, ...],
+    var_name: str,
+) -> object:
+    items = [
+        (
+            runtime.layouts[int(layout_id)],
+            runtime.layout_mechanisms[int(layout_id)],
+        )
+        for layout_id in layout_ids
+        if (int(layout_id), str(var_name)) in runtime.state_buffers
+    ]
+    if not items:
+        raise KeyError(f"Unknown merged channel parameter {var_name!r} for layouts {layout_ids!r}.")
+
+    full_shape = runtime.pop_size + (runtime.n_point,)
+    first_layout, _first_mechanism = items[0]
+    first_value = _runtime_param_value(
+        layout=first_layout,
+        var_name=str(var_name),
+        state_buffers=runtime.state_buffers,
+    )
+    merged = _initial_merged_channel_param(
+        var_name=str(var_name),
+        value=first_value,
+        full_shape=full_shape,
+    )
+    for layout, _mechanism in items:
+        value = _runtime_param_value(
+            layout=layout,
+            var_name=str(var_name),
+            state_buffers=runtime.state_buffers,
+        )
+        merged = _scatter_active_channel_param(
+            merged,
+            value,
+            point_mask=np.asarray(layout.point_mask, dtype=bool),
+            full_shape=full_shape,
+        )
+    return merged
 
 
 def _sync_runtime_ion(runtime: CellRuntimeState, *, layout_id: int) -> None:

@@ -50,7 +50,11 @@ def main(argv: list[str] | None = None) -> int:
     memory_profiles: list[str] = []
     materialized = None
 
-    with _maybe_jax_trace(jax, args.trace_dir):
+    with _maybe_jax_trace(
+        jax,
+        args.trace_dir if args.trace_phase == "all" else None,
+        device_only=args.trace_device_only,
+    ):
         if hasattr(workload, "build_phases"):
             for phase_name, phase_fn in workload.build_phases():
                 _measure_phase(rows, phase_name, phase_fn)
@@ -77,16 +81,21 @@ def main(argv: list[str] | None = None) -> int:
                 )
 
         steady_results = []
-        for index in range(args.repeat):
-            workload.reset_for_run()
-            result = _measure_phase(
-                rows,
-                "steady_run",
-                workload.run,
-                block=workload.block,
-                iteration=index,
-            )
-            steady_results.append(result)
+        with _maybe_jax_trace(
+            jax,
+            args.trace_dir if args.trace_phase == "steady" else None,
+            device_only=args.trace_device_only,
+        ):
+            for index in range(args.repeat):
+                workload.reset_for_run()
+                result = _measure_phase(
+                    rows,
+                    "steady_run",
+                    workload.run,
+                    block=workload.block,
+                    iteration=index,
+                )
+                steady_results.append(result)
 
         if steady_results:
             materialized = _measure_phase(
@@ -139,7 +148,18 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
     parser.add_argument("--out", default=None)
     parser.add_argument("--trace-dir", default=None)
     parser.add_argument("--device-memory-profile", default=None)
-    parser.add_argument("--platform", choices=("auto", "cpu", "gpu", "tpu"), default="auto")
+    parser.add_argument("--platform", choices=("auto", "cpu", "gpu", "cuda", "tpu"), default="auto")
+    parser.add_argument(
+        "--trace-phase",
+        choices=("all", "steady"),
+        default="all",
+        help="Profiler trace coverage. 'steady' traces only JIT-warmed steady runs.",
+    )
+    parser.add_argument(
+        "--trace-device-only",
+        action="store_true",
+        help="Reduce Python trace noise and keep HLO/device metadata when tracing.",
+    )
 
     case_module = importlib.import_module(CASES[known.case])
     case_module.add_case_args(parser)
@@ -230,14 +250,32 @@ def _environment_metadata(jax) -> dict[str, Any]:
 
 
 @contextlib.contextmanager
-def _maybe_jax_trace(jax, trace_dir: str | None):
+def _maybe_jax_trace(jax, trace_dir: str | None, *, device_only: bool = False):
     if not trace_dir:
         yield
         return
     path = Path(trace_dir)
     path.mkdir(parents=True, exist_ok=True)
-    with jax.profiler.trace(str(path), create_perfetto_trace=True):
+    with jax.profiler.trace(
+        str(path),
+        create_perfetto_trace=True,
+        profiler_options=_profile_options(jax, device_only=device_only),
+    ):
         yield
+
+
+def _profile_options(jax, *, device_only: bool):
+    """Return JAX profiler options for the requested trace mode."""
+    if not device_only:
+        return None
+    options = jax.profiler.ProfileOptions()
+    if hasattr(options, "python_tracer_level"):
+        options.python_tracer_level = 0
+    if hasattr(options, "host_tracer_level"):
+        options.host_tracer_level = 2
+    if hasattr(options, "enable_hlo_proto"):
+        options.enable_hlo_proto = True
+    return options
 
 
 def _save_device_memory_profile(jax, base_path: str, *, label: str) -> str:

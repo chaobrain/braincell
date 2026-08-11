@@ -2209,14 +2209,24 @@ class Cell(HHTypedNeuron):
                 getattr(child, hook_name)(point_V, *infos)
 
     def _update_ion_channels_by_integration(self, point_V):
-        for path, node in self._top_level_ion_channel_nodes():
-            if isinstance(node, IndependentIntegration):
-                continue
-            args = self._runtime_node_phase_args(path, node, point_V)
-            ind_exp_euler_step(node, *args)
+        with jax.named_scope("braincell:ion_update:integration:dependent"):
+            for path, node in self._top_level_ion_channel_nodes():
+                if isinstance(node, IndependentIntegration):
+                    continue
+                args = self._runtime_node_phase_args(path, node, point_V)
+                with jax.named_scope(_scope_name("braincell:ion_update:node", path, node)):
+                    jax.named_call(
+                        ind_exp_euler_step,
+                        name=_call_name("braincell:ion_update:node_step", path, node),
+                    )(node, *args)
 
-        for _, node in self._top_level_ion_channel_nodes():
-            node.ind_update(point_V)
+        with jax.named_scope("braincell:ion_update:integration:independent"):
+            for path, node in self._top_level_ion_channel_nodes():
+                with jax.named_scope(_scope_name("braincell:ion_update:node", path, node)):
+                    jax.named_call(
+                        node.ind_update,
+                        name=_call_name("braincell:ion_update:node_ind_update", path, node),
+                    )(point_V)
 
     def _update_ion_channel_families(self, point_V):
         ion_nodes = self._family_ion_nodes()
@@ -2233,40 +2243,56 @@ class Cell(HHTypedNeuron):
         # advances dependent Ion states only; V and all channel states are
         # excluded explicitly so no child channel is integrated through Ion
         # recursion.
-        self._integrate_selected_ion_self_states(
-            ion_nodes,
-            dependent_ion_paths,
-            point_V,
-            excluded_paths=[("V",), *channel_paths],
-        )
+        with jax.named_scope("braincell:ion_update:family:dependent_ion_self"):
+            self._integrate_selected_ion_self_states(
+                ion_nodes,
+                dependent_ion_paths,
+                point_V,
+                excluded_paths=[("V",), *channel_paths],
+            )
 
         # Independent Ion states use their own updater, still without
         # recursing into child channels.
-        for _, node in ion_nodes:
-            if isinstance(node, IndependentIntegration):
-                node.ind_update(point_V, recursive_child=False)
+        with jax.named_scope("braincell:ion_update:family:independent_ion"):
+            for path, node in ion_nodes:
+                if isinstance(node, IndependentIntegration):
+                    with jax.named_scope(_scope_name("braincell:ion_update:ion", path, node)):
+                        jax.named_call(
+                            node.ind_update,
+                            name=_call_name("braincell:ion_update:ion_ind_update", path, node),
+                        )(point_V, recursive_child=False)
 
         # Channel nodes include Ion child channels, MixIons child channels,
         # and top-level channels. The owner path rebuilds the right ion args.
-        for path, node in channel_nodes:
-            if not self._is_independent_channel(node):
+        with jax.named_scope("braincell:ion_update:family:dependent_channel"):
+            for path, node in channel_nodes:
+                if not self._is_independent_channel(node):
+                    target, args = self._channel_integration_target_and_args(
+                        path,
+                        node,
+                        point_V,
+                    )
+                    with jax.named_scope(_scope_name("braincell:ion_update:channel", path, node)):
+                        jax.named_call(
+                            ind_exp_euler_step,
+                            name=_call_name("braincell:ion_update:channel_step", path, node),
+                        )(target, *args)
+
+        # Independent channels finish through their own update rule.
+        with jax.named_scope("braincell:ion_update:family:independent_channel"):
+            for path, node in channel_nodes:
+                if not self._is_independent_channel(node):
+                    continue
                 target, args = self._channel_integration_target_and_args(
                     path,
                     node,
                     point_V,
                 )
-                ind_exp_euler_step(target, *args)
-
-        # Independent channels finish through their own update rule.
-        for path, node in channel_nodes:
-            if not self._is_independent_channel(node):
-                continue
-            target, args = self._channel_integration_target_and_args(
-                path,
-                node,
-                point_V,
-            )
-            target.ind_update(*args)
+                with jax.named_scope(_scope_name("braincell:ion_update:channel", path, node)):
+                    jax.named_call(
+                        target.ind_update,
+                        name=_call_name("braincell:ion_update:channel_ind_update", path, node),
+                    )(*args)
 
     @staticmethod
     def _is_independent_channel(node):
@@ -2319,13 +2345,20 @@ class Cell(HHTypedNeuron):
         if not self.cache_ion_total_current:
             return
         point_V = self._cv_to_point(self.V.value if V is None else V)
-        for _, node in self.runtime_objects(IonChannel, allowed_hierarchy=(1, 1)).items():
+        for path, node in self.runtime_objects(IonChannel, allowed_hierarchy=(1, 1)).items():
             if not getattr(type(node), "uses_total_current", False):
                 continue
-            try:
-                node._cached_total_current = node.current(point_V, include_external=True)
-            except TypeError:
-                node._cached_total_current = node.current(point_V)
+            with jax.named_scope(_scope_name("braincell:ion_current_cache:node", path, node)):
+                try:
+                    node._cached_total_current = jax.named_call(
+                        node.current,
+                        name=_call_name("braincell:ion_current_cache:node_current", path, node),
+                    )(point_V, include_external=True)
+                except TypeError:
+                    node._cached_total_current = jax.named_call(
+                        node.current,
+                        name=_call_name("braincell:ion_current_cache:node_current", path, node),
+                    )(point_V)
 
     def clear_ion_total_current_cache(self) -> None:
         """Remove per-step ion source-current caches."""
@@ -2568,7 +2601,11 @@ class Cell(HHTypedNeuron):
             if not isinstance(node, RuntimeSynapse):
                 continue
             args = self._runtime_node_phase_args(path, node, point_V)
-            ind_exp_euler_step(node, *args)
+            with jax.named_scope(_scope_name("braincell:synapse_update:runtime", path, node)):
+                jax.named_call(
+                    ind_exp_euler_step,
+                    name=_call_name("braincell:synapse_update:runtime_step", path, node),
+                )(node, *args)
 
     def reset_state(self, batch_size=None) -> None:
         """Reseed ``V`` / ``spike`` / ``current_time`` without leaving INITIALIZED.
@@ -2814,6 +2851,20 @@ def _layout_id_from_runtime_path(path) -> int:
     if not isinstance(last, str) or not last.startswith("layout_"):
         raise ValueError(f"Expected runtime layout path ending with 'layout_<id>', got {path!r}.")
     return int(last.split("_", 1)[1])
+
+
+def _scope_name(prefix: str, path, node) -> str:
+    """Build a stable, profiler-safe internal JAX scope name."""
+    path_name = "_".join(str(part) for part in path) if path else "root"
+    class_name = type(getattr(node, "_channel", node)).__name__
+    raw = f"{prefix}:{path_name}:{class_name}"
+    cleaned = "".join(ch if ch.isalnum() or ch in ":_" else "_" for ch in raw)
+    return cleaned[:180]
+
+
+def _call_name(prefix: str, path, node) -> str:
+    """Build a profiler-safe ``jax.named_call`` name."""
+    return _scope_name(prefix, path, node).replace(":", "_")
 
 
 def _normalize_pop_size(pop_size) -> tuple[int, ...]:

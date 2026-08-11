@@ -27,6 +27,7 @@ Type responsibilities in this file:
 """
 
 from dataclasses import dataclass
+import os
 
 import brainstate
 import brainunit as u
@@ -269,11 +270,20 @@ def dhs_voltage_step(target, t, dt, *args):
     static_cache = _get_dhs_static_cache(target, static_source)
     V_n = target.V.value
     with jax.named_scope("braincell:dhs:linearize_membrane_current"):
-        linear, const = _linear_and_const_term(target, V_n, *args)
+        linear, const = jax.named_call(
+            _linear_and_const_term,
+            name="braincell:dhs:linearize_membrane_current_call",
+        )(target, V_n, *args)
     with jax.named_scope("braincell:dhs:edge_current"):
-        edge_point_current = _edge_point_current(target, t=t, static_source=static_source)
+        edge_point_current = jax.named_call(
+            _edge_point_current,
+            name="braincell:dhs:edge_current_call",
+        )(target, t=t, static_source=static_source)
     with jax.named_scope("braincell:dhs:build_numeric_state"):
-        numeric = _build_dhs_numeric_state(
+        numeric = jax.named_call(
+            _build_dhs_numeric_state,
+            name="braincell:dhs:build_numeric_state_call",
+        )(
             V_n,
             linear,
             const,
@@ -283,7 +293,10 @@ def dhs_voltage_step(target, t, dt, *args):
             edge_point_current=edge_point_current,
         )
     with jax.named_scope("braincell:dhs:forward_elimination"):
-        diags, solves = comp_triang_raw(
+        diags, solves = jax.named_call(
+            comp_triang_raw,
+            name="braincell:dhs:forward_elimination_call",
+        )(
             numeric.diags,
             numeric.solves,
             numeric.lowers,
@@ -292,14 +305,20 @@ def dhs_voltage_step(target, t, dt, *args):
             static_source.level_offsets_np,
         )
     with jax.named_scope("braincell:dhs:backsubstitution"):
-        solves = comp_backsub_raw(
+        solves = jax.named_call(
+            comp_backsub_raw,
+            name="braincell:dhs:backsubstitution_call",
+        )(
             diags,
             solves,
             numeric.lowers,
             static_source.backsub_indices_np,
         )
     with jax.named_scope("braincell:dhs:restore_voltage"):
-        target.V.value = _restore_midpoint_voltage(
+        target.V.value = jax.named_call(
+            _restore_midpoint_voltage,
+            name="braincell:dhs:restore_voltage_call",
+        )(
             solves,
             dynamic_rows=static_source.dynamic_rows_np,
             target_shape=target.V.value.shape,
@@ -623,6 +642,8 @@ def _check_comp_triang(diags, solves, lowers, uppers, edges):
 def comp_triang_raw(diags, solves, lowers, uppers, edges, level_offsets):
     """DHS forward elimination on quantity-aware JAX inputs."""
     _check_comp_triang(diags, solves, lowers, uppers, edges)
+    if _profile_dhs_levels_enabled():
+        return _comp_triang_raw_profiled(diags, solves, lowers, uppers, edges, level_offsets)
     for i in range(level_offsets.shape[0] - 1):
         children = edges[level_offsets[i]:level_offsets[i + 1], 0]
         parent = edges[level_offsets[i]:level_offsets[i + 1], 1]
@@ -634,6 +655,49 @@ def comp_triang_raw(diags, solves, lowers, uppers, edges, level_offsets):
         multiplier = upper_val / child_diag
         diags = diags.at[:, parent].add(-lower_val * multiplier)
         solves = solves.at[:, parent].add(-child_solve * multiplier)
+    return diags, solves
+
+
+def _profile_dhs_levels_enabled() -> bool:
+    """Return whether profiler-only DHS level scopes should be emitted."""
+    return os.environ.get("BRAINCELL_PROFILE_DHS_LEVELS") == "1"
+
+
+def _comp_triang_raw_profiled(diags, solves, lowers, uppers, edges, level_offsets):
+    """DHS forward elimination with profiler-visible level scopes."""
+    batch_size = int(diags.shape[0])
+    for i in range(level_offsets.shape[0] - 1):
+        start = int(level_offsets[i])
+        stop = int(level_offsets[i + 1])
+        edge_count = stop - start
+        scope = (
+            f"braincell:dhs:forward_level:"
+            f"i={i:03d}:edges={edge_count:06d}:batch={batch_size}"
+        )
+        level_edges = edges[start:stop]
+        with jax.named_scope(scope):
+            diags, solves = jax.named_call(_comp_triang_level, name=scope)(
+                diags,
+                solves,
+                lowers,
+                uppers,
+                level_edges,
+            )
+    return diags, solves
+
+
+def _comp_triang_level(diags, solves, lowers, uppers, level_edges):
+    """Apply one DHS forward elimination level."""
+    children = level_edges[:, 0]
+    parent = level_edges[:, 1]
+    lower_val = lowers[children]
+    upper_val = uppers[children]
+    child_diag = diags[:, children]
+    child_solve = solves[:, children]
+
+    multiplier = upper_val / child_diag
+    diags = diags.at[:, parent].add(-lower_val * multiplier)
+    solves = solves.at[:, parent].add(-child_solve * multiplier)
     return diags, solves
 
 

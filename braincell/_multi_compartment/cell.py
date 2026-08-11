@@ -282,6 +282,7 @@ class Cell(HHTypedNeuron):
 
         self._current_time_state = brainstate.ShortTermState(0.0 * u.ms)
         self._node_scheduling_cache: dict[tuple[str, int], object] = {}
+        self._run_loop_cache: dict[tuple[object, ...], object] = {}
 
         self._runtime: CellRuntimeState | None = None
         self._runtime_cvs_cache: tuple[RuntimeCVView, ...] | None = None
@@ -463,6 +464,7 @@ class Cell(HHTypedNeuron):
         self._discretization_cache_key = None
         self._runtime_cvs_cache = None
         self._runtime_nodes_cache = None
+        self._run_loop_cache.clear()
 
     def _discretization_key(self) -> tuple[object, ...]:
         return (
@@ -621,6 +623,7 @@ class Cell(HHTypedNeuron):
         self._runtime_nodes_cache = None
         self._axial_jax = None
         self._node_scheduling_cache.clear()
+        self._run_loop_cache.clear()
 
         self._morpho = self._declaration_morpho
         self._invalidate_discretization_cache()

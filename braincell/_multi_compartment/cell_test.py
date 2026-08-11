@@ -264,6 +264,37 @@ class TestCellLifecycle(unittest.TestCase):
         cell.run(dt=0.1 * u.ms, duration=0.5 * u.ms)
         self.assertIs(cell._runtime, first_runtime)
 
+    def test_run_loop_cache_reuses_matching_shape(self):
+        cell = _cell_with_probe()
+        cell.init_state()
+        cell.run(dt=0.1 * u.ms, duration=0.5 * u.ms)
+        self.assertEqual(len(cell._run_loop_cache), 1)
+        first_runner = next(iter(cell._run_loop_cache.values()))
+
+        cell.reset_state()
+        cell.run(dt=0.1 * u.ms, duration=0.5 * u.ms)
+
+        self.assertEqual(len(cell._run_loop_cache), 1)
+        self.assertIs(next(iter(cell._run_loop_cache.values())), first_runner)
+
+    def test_run_loop_cache_separates_step_count(self):
+        cell = _cell_with_probe()
+        cell.init_state()
+        cell.run(dt=0.1 * u.ms, duration=0.5 * u.ms)
+        cell.reset_state()
+        cell.run(dt=0.1 * u.ms, duration=0.4 * u.ms)
+        self.assertEqual(len(cell._run_loop_cache), 2)
+
+    def test_reset_clears_run_loop_cache(self):
+        cell = _cell_with_probe()
+        cell.init_state()
+        cell.run(dt=0.1 * u.ms, duration=0.5 * u.ms)
+        self.assertEqual(len(cell._run_loop_cache), 1)
+
+        cell.reset()
+
+        self.assertEqual(cell._run_loop_cache, {})
+
     def test_axial_operator_cache_tracks_precision(self):
         cell = _simple_cell()
         with brainstate.environ.context(precision=32):

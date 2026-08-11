@@ -77,7 +77,7 @@ from braincell.quad import get_integrator, ind_exp_euler_step
 from braincell.quad._exp_euler import _ind_exp_euler_step_selected
 from braincell.quad._staggered import build_cv_axial_operator
 from braincell.quad.protocol import DiffEqState, IndependentIntegration
-from braincell.mech import Synapse as SynapsePlacement
+from braincell.mech import CVContext, Synapse as SynapsePlacement
 from . import bridge, currents, probes, run as run_module
 
 __all__ = ["Cell"]
@@ -487,6 +487,18 @@ class Cell(HHTypedNeuron):
     @property
     def node_tree(self) -> NodeTree:
         return self._discretization.node_tree
+
+    @property
+    def cv_contexts(self) -> tuple[CVContext, ...]:
+        """Return read-only spatial contexts in stable CV order.
+
+        Returns
+        -------
+        tuple of CVContext
+            Geometry and path-distance metadata used to resolve callable
+            cable and density parameters.
+        """
+        return self._discretization.cv_contexts
 
     # ------------------------------------------------------------------
     # Phase transitions

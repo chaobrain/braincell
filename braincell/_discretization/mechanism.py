@@ -33,6 +33,7 @@ from braincell.filter import AllRegion, LocsetExpr, RegionExpr
 from braincell.filter.cache import SelectionCache
 from braincell.mech import (
     CableProperty,
+    CVContext,
     CurrentProbe,
     Density,
     MechanismProbe,
@@ -41,6 +42,7 @@ from braincell.mech import (
 )
 from braincell.morph.morphology import Morphology
 from .base import CVPointMechanism, Position
+from .context import build_cv_contexts
 from .geometry import (
     CVGeometryResult,
     EPS_AREA_UM2,
@@ -117,23 +119,6 @@ class _RegionCVCoverage:
 
     cable_contains_midpoint: tuple[bool, ...]
     density_fraction: tuple[float, ...]
-
-
-@dataclass(frozen=True)
-class CableEvalContext:
-    """Per-CV geometry context passed to callable cable fields."""
-
-    cv_id: int
-    branch_id: int
-    branch_type: str
-    prox: float
-    dist: float
-    midpoint: float
-    length: u.Quantity
-    area: u.Quantity
-    radius_mid: u.Quantity
-    diam_mid: u.Quantity
-    diam_arc_mean: u.Quantity
 
 
 class _RegionCache:
@@ -493,25 +478,10 @@ def _init_bucket() -> _MechBucket:
     )
 
 
-def _cable_context(geo: _GeoCV) -> CableEvalContext:
-    radius_mid = u.Quantity(geo.r_mid_um, u.um)
-    return CableEvalContext(
-        cv_id=int(geo.id),
-        branch_id=int(geo.branch_id),
-        branch_type=str(geo.branch_type),
-        prox=float(geo.prox),
-        dist=float(geo.dist),
-        midpoint=float(geo.midpoint),
-        length=u.Quantity(geo.length_um, u.um),
-        area=u.Quantity(geo.lateral_area_um2, u.um ** 2),
-        radius_mid=radius_mid,
-        diam_mid=2.0 * radius_mid,
-        diam_arc_mean=u.Quantity(geo.diam_arc_mean_um, u.um),
-    )
-
-
-def _resolve_cable_property(cable: CableProperty, geo: _GeoCV) -> CableProperty:
-    context = _cable_context(geo)
+def _resolve_cable_property(
+    cable: CableProperty,
+    context: CVContext,
+) -> CableProperty:
     return CableProperty(
         resting_potential=_resolve_cable_field(
             cable.resting_potential,
@@ -540,7 +510,7 @@ def _resolve_cable_property(cable: CableProperty, geo: _GeoCV) -> CableProperty:
     )
 
 
-def _resolve_cable_field(value, context: CableEvalContext, *, name: str, unit) -> u.Quantity:
+def _resolve_cable_field(value, context: CVContext, *, name: str, unit) -> u.Quantity:
     resolved = value(context) if callable(value) else value
     if not hasattr(resolved, "to_decimal") or not callable(getattr(resolved, "to_decimal")):
         raise TypeError(
@@ -569,6 +539,7 @@ def build_cv_mechanisms(
     *,
     paint_rules: tuple[PaintRule, ...],
     place_rules: tuple[PlaceRule, ...],
+    cv_contexts: tuple[CVContext, ...] | None = None,
 ) -> list[_MechBucket]:
     """Lower normalized declaration rules onto per-CV mechanism buckets.
 
@@ -582,6 +553,9 @@ def build_cv_mechanisms(
         Normalized region-based declarations.
     place_rules : tuple of PlaceRule
         Normalized locset-based declarations.
+    cv_contexts : tuple of CVContext or None, optional
+        Precomputed contexts for ``geometry``. When omitted they are built
+        from the supplied morphology and geometry.
 
     Returns
     -------
@@ -596,6 +570,13 @@ def build_cv_mechanisms(
     locset ownership.
     """
     geos = geometry.geos
+    if cv_contexts is None:
+        cv_contexts = build_cv_contexts(morpho, geos)
+    if len(cv_contexts) != len(geos):
+        raise ValueError(
+            "cv_contexts must contain exactly one context per geometry CV; "
+            f"got {len(cv_contexts)!r} contexts for {len(geos)!r} CVs."
+        )
     branches = morpho.branches
     buckets = [_init_bucket() for _ in geos]
     cache = _RegionCache(morpho)
@@ -630,7 +611,10 @@ def build_cv_mechanisms(
         if isinstance(mechanism, CableProperty):
             for cv_id, contains in enumerate(coverage.cable_contains_midpoint):
                 if contains:
-                    buckets[cv_id].cable = _resolve_cable_property(mechanism, geos[cv_id])
+                    buckets[cv_id].cable = _resolve_cable_property(
+                        mechanism,
+                        cv_contexts[cv_id],
+                    )
             continue
 
         for cv_id, fraction in enumerate(coverage.density_fraction):

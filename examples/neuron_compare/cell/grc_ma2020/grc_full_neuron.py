@@ -26,6 +26,7 @@ from .grc_full_parameters import (
     PF_SECTION_LEN_UM,
     RA_OHM_CM,
     grc20_nseg_rule,
+    is_nrnmech_loaded,
     mark_nrnmech_loaded,
 )
 
@@ -343,6 +344,15 @@ def _infer_section_prefix(section_name: str) -> str:
 
 
 def _load_nrnmech_once(path: Path) -> None:
-    if mark_nrnmech_loaded(path):
+    resolved = path.resolve()
+    if is_nrnmech_loaded(resolved):
         return
-    h.nrn_load_dll(str(path.resolve()))
+    if not resolved.is_file():
+        source_dir = resolved.parents[2]
+        raise FileNotFoundError(
+            f"GrC NEURON mechanism library not found: {resolved}. "
+            f"Compile it from {source_dir} with `nrnivmodl channel ion synapse`."
+        )
+    if not h.nrn_load_dll(str(resolved)):
+        raise RuntimeError(f"NEURON failed to load the GrC mechanism library: {resolved}")
+    mark_nrnmech_loaded(resolved)

@@ -84,9 +84,9 @@ def grc20_nseg_rule(length_um: float, *, max_len_um: float = CV_MAX_LEN_UM) -> i
 _LOADED_NRNMECH_PATHS: set[str] = set()
 
 
-def mark_nrnmech_loaded(path: Path) -> bool:
-    resolved = str(path.resolve())
-    if resolved in _LOADED_NRNMECH_PATHS:
-        return True
-    _LOADED_NRNMECH_PATHS.add(resolved)
-    return False
+def is_nrnmech_loaded(path: Path) -> bool:
+    return str(path.resolve()) in _LOADED_NRNMECH_PATHS
+
+
+def mark_nrnmech_loaded(path: Path) -> None:
+    _LOADED_NRNMECH_PATHS.add(str(path.resolve()))

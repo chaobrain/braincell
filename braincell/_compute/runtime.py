@@ -29,6 +29,7 @@ Layout = Literal["dense", "sparse"]
 
 from braincell import ion as runtime_ion
 from braincell._base import Channel, IonChannel, Synapse as RuntimeSynapse
+from braincell.channel._base import Markov
 from braincell.ion._base import DynamicNernstIon, FixedIon, InitNernstIon, KineticIon
 from braincell.mech import (
     CurrentProbe,
@@ -48,6 +49,7 @@ from braincell.mech import (
 from braincell.mech._params import _to_hashable
 from braincell.ion import build_placeholder_ions
 from braincell.morph.morphology import Morphology, clone_morpho
+from braincell.quad import get_integrator
 from braincell._multi_compartment.bridge import (
     attach_runtime_ion_geometry,
     cv_value_vector,
@@ -439,7 +441,7 @@ class CellRuntimeState:
             point_area_decimal[int(point.id)] = cv_area_decimal[cv_id]
         point_area = u.Quantity(point_area_decimal, u.cm ** 2)
 
-        return cls(
+        runtime = cls(
             node_tree=node_tree,
             n_point=n_point,
             n_cv=n_cv,
@@ -466,6 +468,12 @@ class CellRuntimeState:
             point_area=point_area,
             pop_size=pop_size,
         )
+        _configure_runtime_subsolvers(
+            runtime,
+            solver=cell.subsolver,
+            substeps=cell.substeps,
+        )
+        return runtime
 
     def get_point_layouts(self, point_id: int) -> tuple[MechanismLayout, ...]:
         if not (0 <= int(point_id) < self.n_point):
@@ -817,6 +825,73 @@ def mechanism_signature(mechanism: object) -> tuple[object, ...]:
             _fn_fingerprint(mechanism.fn),
         )
     return (type(mechanism).__qualname__, _to_hashable(mechanism))
+
+
+def _configure_runtime_subsolvers(
+    runtime: CellRuntimeState,
+    *,
+    solver,
+    substeps: int,
+) -> None:
+    """Apply declaration-local or Cell-wide independent schedules."""
+    fallback_solver = get_integrator(solver)
+    records: dict[int, dict[str, object]] = {}
+
+    for layout in runtime.layouts:
+        declaration = runtime.layout_mechanisms[layout.id]
+        if not isinstance(declaration, Density):
+            continue
+        node = runtime.runtime_nodes.get(layout.id)
+        supports_schedule = isinstance(node, (Markov, KineticIon))
+        has_override = declaration.solver is not None
+        if has_override and not supports_schedule:
+            raise ValueError(
+                f"{type(declaration).__name__} declaration "
+                f"{declaration.instance_name!r} sets solver/substeps, but "
+                f"runtime {type(node).__name__!r} is neither a Markov channel "
+                "nor a KineticIon."
+            )
+        if not supports_schedule:
+            continue
+
+        record = records.setdefault(
+            id(node),
+            {"node": node, "explicit": [], "declarations": []},
+        )
+        record["declarations"].append(declaration)
+        if has_override:
+            record["explicit"].append(
+                (
+                    get_integrator(declaration.solver),
+                    declaration.substeps,
+                    declaration,
+                )
+            )
+
+    for record in records.values():
+        explicit = record["explicit"]
+        if explicit:
+            selected_solver, selected_substeps, selected_declaration = explicit[0]
+            for candidate_solver, candidate_substeps, candidate_declaration in explicit[1:]:
+                if (
+                    candidate_solver is not selected_solver
+                    or candidate_substeps != selected_substeps
+                ):
+                    node = record["node"]
+                    raise ValueError(
+                        f"Runtime {type(node).__name__!r} receives conflicting "
+                        "solver/substeps overrides from declarations "
+                        f"{selected_declaration.instance_name!r} and "
+                        f"{candidate_declaration.instance_name!r}. Use distinct "
+                        "Ion names when different KineticIon schedules are required."
+                    )
+        else:
+            selected_solver = fallback_solver
+            selected_substeps = substeps
+
+        node = record["node"]
+        node.solver = selected_solver
+        node.substeps = selected_substeps
 
 
 def _mechanism_var_names(mechanism: object) -> tuple[str, ...]:

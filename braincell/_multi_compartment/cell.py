@@ -19,6 +19,7 @@ The lifecycle has two phases:
 convenience. Subsequent ``run`` calls never re-initialize.
 """
 
+import operator
 from typing import Callable, Mapping, Optional
 from dataclasses import dataclass
 
@@ -158,6 +159,12 @@ class Cell(HHTypedNeuron):
         Surrogate-gradient spike function.
     solver : str or Callable
         Integrator name (registry lookup) or callable step function.
+    subsolver : str or Callable or None
+        Integrator for Markov channels and kinetic ions. Together with
+        ``substeps=None``, ``None`` selects ``"backward_euler"``.
+    substeps : int or None
+        Number of subsolver steps per main cell step. Together with
+        ``subsolver=None``, ``None`` selects one step.
     ion_channel_update_order : {"family", "integration"}
         Post-voltage ion/channel scheduling. ``"family"`` updates all ions
         before all channels; ``"integration"`` preserves the previous
@@ -181,6 +188,8 @@ class Cell(HHTypedNeuron):
         V_init: Optional[Initializer] = None,
         spk_fun: Callable = braintools.surrogate.ReluGrad(),
         solver: str | Callable = "staggered",
+        subsolver: str | Callable | None = None,
+        substeps: int | None = None,
         cache_ion_total_current: bool = True,
         ion_channel_update_order: str = "family",
         name: str | None = None,
@@ -207,6 +216,12 @@ class Cell(HHTypedNeuron):
             Surrogate-gradient spike function.
         solver : str or callable, optional
             Integrator name or concrete step function.
+        subsolver : str or callable or None, optional
+            Shared integrator for Markov channels and kinetic ions. It must
+            be provided together with ``substeps``. When both are ``None``,
+            the effective schedule is ``backward_euler`` with one substep.
+        substeps : int or None, optional
+            Shared number of Markov/kinetic-ion steps per main cell step.
         cache_ion_total_current : bool, optional
             Whether to snapshot ion total current at step start for
             NEURON-style schedules.
@@ -242,6 +257,11 @@ class Cell(HHTypedNeuron):
         self._spk_fun = spk_fun
         self._name = name
         self._solver_name, self._solver_fn = _resolve_solver(solver)
+        (
+            self._subsolver_name,
+            self._subsolver_fn,
+            self._substeps,
+        ) = _resolve_subsolver_schedule(subsolver, substeps)
         self.cache_ion_total_current = bool(cache_ion_total_current)
         self.ion_channel_update_order = _validate_ion_channel_update_order(
             ion_channel_update_order
@@ -340,6 +360,21 @@ class Cell(HHTypedNeuron):
     @property
     def solver_name(self) -> str:
         return self._solver_name
+
+    @property
+    def subsolver(self):
+        """Return the effective Markov/kinetic-ion integrator callable."""
+        return self._subsolver_fn
+
+    @property
+    def subsolver_name(self) -> str:
+        """Return the effective Markov/kinetic-ion integrator name."""
+        return self._subsolver_name
+
+    @property
+    def substeps(self) -> int:
+        """Return the effective Markov/kinetic-ion substep count."""
+        return self._substeps
 
     @property
     def spk_fun(self):
@@ -2653,6 +2688,28 @@ def _resolve_solver(solver):
     raise TypeError(
         f"solver must be str or callable, got {type(solver).__name__!s}."
     )
+
+
+def _resolve_subsolver_schedule(subsolver, substeps):
+    if subsolver is None and substeps is None:
+        subsolver = "backward_euler"
+        substeps = 1
+    elif subsolver is None or substeps is None:
+        raise ValueError(
+            "subsolver and substeps must be provided together or both be None."
+        )
+    if isinstance(substeps, bool):
+        raise TypeError("substeps must be an integer, got bool.")
+    try:
+        normalized_substeps = operator.index(substeps)
+    except TypeError as exc:
+        raise TypeError(
+            f"substeps must be an integer, got {type(substeps).__name__!s}."
+        ) from exc
+    if normalized_substeps < 1:
+        raise ValueError(f"substeps must be at least 1, got {normalized_substeps!r}.")
+    solver_name, solver_fn = _resolve_solver(subsolver)
+    return solver_name, solver_fn, normalized_substeps
 
 
 def _layout_id_from_runtime_path(path) -> int:

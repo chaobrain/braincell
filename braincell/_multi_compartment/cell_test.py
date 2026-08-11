@@ -11,7 +11,7 @@ import braincell.mech as mech
 from braincell import Branch, CVPerBranch, Cell, Channel, CurrentClamp, Ion, IonChannel, Morphology
 from braincell.filter import AllRegion, RootLocation
 from braincell.mech import StateProbe
-from braincell.quad import DiffEqState
+from braincell.quad import DiffEqState, get_integrator
 
 
 def _simple_cell() -> Cell:
@@ -35,6 +35,30 @@ class TestCellDeclaration(unittest.TestCase):
         self.assertGreater(len(cell.paint_rules), 0)
         self.assertEqual(len(cell.place_rules), 0)
         self.assertFalse(cell._initialized)
+
+    def test_subsolver_defaults_to_backward_euler_once(self):
+        cell = _simple_cell()
+        self.assertEqual(cell.subsolver_name, "backward_euler")
+        self.assertIs(cell.subsolver, get_integrator("backward_euler"))
+        self.assertEqual(cell.substeps, 1)
+
+    def test_accepts_explicit_subsolver_schedule(self):
+        cell = Cell(_simple_cell().morpho, subsolver="rk4", substeps=3)
+        self.assertEqual(cell.subsolver_name, "rk4")
+        self.assertIs(cell.subsolver, get_integrator("rk4"))
+        self.assertEqual(cell.substeps, 3)
+
+    def test_subsolver_schedule_must_be_an_atomic_pair(self):
+        with self.assertRaisesRegex(ValueError, "provided together"):
+            Cell(_simple_cell().morpho, subsolver="rk4")
+        with self.assertRaisesRegex(ValueError, "provided together"):
+            Cell(_simple_cell().morpho, substeps=2)
+
+    def test_subsolver_schedule_validates_substeps(self):
+        with self.assertRaises(TypeError):
+            Cell(_simple_cell().morpho, subsolver="rk4", substeps=True)
+        with self.assertRaises(ValueError):
+            Cell(_simple_cell().morpho, subsolver="rk4", substeps=0)
 
     def test_rejects_non_morphology(self):
         with self.assertRaises(TypeError):

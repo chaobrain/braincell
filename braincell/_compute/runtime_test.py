@@ -34,6 +34,7 @@ from braincell import (
 from braincell.filter import BranchSlice, RootLocation, at
 from braincell.ion import NonSpecific, Potassium
 from braincell.mech import register_channel
+from braincell.quad import get_integrator
 
 
 @register_channel("_RuntimeTestTwoOwnerChannel")
@@ -2941,6 +2942,172 @@ class CellRuntimeStateIsMutableTest(unittest.TestCase):
                 text,
                 f"{rel} still uses object.__setattr__ on self._runtime",
             )
+
+
+class RuntimeSubsolverScheduleTest(unittest.TestCase):
+    def test_cell_schedule_applies_to_markov_channels_and_kinetic_ions(self) -> None:
+        cell = Cell(_build_tree(), subsolver="rk4", substeps=3)
+        region = BranchSlice(branch_index=[0, 1], prox=0.0, dist=1.0)
+        cell.paint(region, braincell.mech.Ion("SodiumFixed", name="na_main"))
+        cell.paint(
+            region,
+            braincell.mech.Channel(
+                "Nav1p6_MA2024_PC",
+                name="nav",
+                ion_name="na_main",
+            ),
+        )
+        cell.paint(
+            region,
+            braincell.mech.Ion(
+                "ToyCaBindingKinetic_SU2015_DCN",
+                name="ca_toy",
+            ),
+        )
+
+        cell.init_state()
+        markov = next(
+            cell.get_runtime_node(layout.id)
+            for layout in cell.layouts
+            if layout.kind == "channel:Nav1p6_MA2024_PC"
+        )
+        kinetic = cell.get_ion("ca_toy")
+        self.assertIs(markov.solver, get_integrator("rk4"))
+        self.assertEqual(markov.substeps, 3)
+        self.assertIs(kinetic.solver, get_integrator("rk4"))
+        self.assertEqual(kinetic.substeps, 3)
+
+    def test_local_override_has_priority_over_cell_schedule(self) -> None:
+        cell = Cell(_build_tree(), subsolver="euler", substeps=4)
+        region = BranchSlice(branch_index=[0, 1], prox=0.0, dist=1.0)
+        cell.paint(region, braincell.mech.Ion("SodiumFixed", name="na_main"))
+        cell.paint(
+            region,
+            braincell.mech.Channel(
+                "Nav1p6_MA2024_PC",
+                ion_name="na_main",
+                solver="rk4",
+                substeps=2,
+            ),
+        )
+        cell.paint(
+            region,
+            braincell.mech.Ion(
+                "ToyCaBindingKinetic_SU2015_DCN",
+                name="ca_toy",
+            ),
+        )
+
+        cell.init_state()
+        markov = next(
+            cell.get_runtime_node(layout.id)
+            for layout in cell.layouts
+            if layout.kind == "channel:Nav1p6_MA2024_PC"
+        )
+        kinetic = cell.get_ion("ca_toy")
+        self.assertIs(markov.solver, get_integrator("rk4"))
+        self.assertEqual(markov.substeps, 2)
+        self.assertIs(kinetic.solver, get_integrator("euler"))
+        self.assertEqual(kinetic.substeps, 4)
+
+    def test_one_kinetic_override_applies_to_the_shared_named_runtime(self) -> None:
+        cell = Cell(_build_tree(), subsolver="euler", substeps=4)
+        cell.paint(
+            BranchSlice(branch_index=0, prox=0.0, dist=1.0),
+            braincell.mech.Ion(
+                "ToyCaBindingKinetic_SU2015_DCN",
+                name="ca_toy",
+                solver="rk4",
+                substeps=2,
+            ),
+        )
+        cell.paint(
+            BranchSlice(branch_index=1, prox=0.0, dist=1.0),
+            braincell.mech.Ion(
+                "ToyCaBindingKinetic_SU2015_DCN",
+                name="ca_toy",
+            ),
+        )
+
+        cell.init_state()
+        kinetic = cell.get_ion("ca_toy")
+        self.assertIs(kinetic.solver, get_integrator("rk4"))
+        self.assertEqual(kinetic.substeps, 2)
+
+    def test_conflicting_shared_kinetic_overrides_are_rejected(self) -> None:
+        cell = Cell(_build_tree())
+        cell.paint(
+            BranchSlice(branch_index=0, prox=0.0, dist=1.0),
+            braincell.mech.Ion(
+                "ToyCaBindingKinetic_SU2015_DCN",
+                name="ca_toy",
+                solver="euler",
+                substeps=2,
+            ),
+        )
+        cell.paint(
+            BranchSlice(branch_index=1, prox=0.0, dist=1.0),
+            braincell.mech.Ion(
+                "ToyCaBindingKinetic_SU2015_DCN",
+                name="ca_toy",
+                solver="rk4",
+                substeps=2,
+            ),
+        )
+
+        with self.assertRaisesRegex(ValueError, "conflicting solver/substeps"):
+            cell.init_state()
+
+    def test_non_independent_density_override_is_rejected(self) -> None:
+        cell = Cell(_build_tree())
+        cell.paint(
+            BranchSlice(branch_index=0, prox=0.0, dist=1.0),
+            braincell.mech.Channel(
+                "IL",
+                solver="rk4",
+                substeps=2,
+                g_max=0.1 * u.mS / u.cm ** 2,
+                E=-70 * u.mV,
+            ),
+        )
+        with self.assertRaisesRegex(ValueError, "neither a Markov channel"):
+            cell.init_state()
+
+    def test_different_markov_overrides_are_not_merged(self) -> None:
+        cell = Cell(_build_tree())
+        region = BranchSlice(branch_index=[0, 1], prox=0.0, dist=1.0)
+        cell.paint(region, braincell.mech.Ion("SodiumFixed", name="na_main"))
+        cell.paint(
+            BranchSlice(branch_index=0, prox=0.0, dist=1.0),
+            braincell.mech.Channel(
+                "Nav1p6_MA2024_PC",
+                name="nav",
+                ion_name="na_main",
+                solver="euler",
+                substeps=2,
+            ),
+        )
+        cell.paint(
+            BranchSlice(branch_index=1, prox=0.0, dist=1.0),
+            braincell.mech.Channel(
+                "Nav1p6_MA2024_PC",
+                name="nav",
+                ion_name="na_main",
+                solver="rk4",
+                substeps=3,
+            ),
+        )
+
+        cell.init_state()
+        layouts = [
+            layout
+            for layout in cell.layouts
+            if layout.kind == "channel:Nav1p6_MA2024_PC"
+        ]
+        nodes = [cell.get_runtime_node(layout.id) for layout in layouts]
+        self.assertEqual(len(nodes), 2)
+        self.assertIsNot(nodes[0], nodes[1])
+        self.assertEqual({node.substeps for node in nodes}, {2, 3})
 
 
 class RuntimeModuleAllTest(unittest.TestCase):

@@ -219,8 +219,8 @@ class Markov(Channel, IndependentIntegration):
     pairs: ClassVar[tuple[Transition | tuple[Any, ...], ...]] = ()
     conserve: ClassVar[Any] = 1.0
     dependent_state: ClassVar[str | None] = None
-    default_solver: ClassVar[str] = "rk4"
-    default_substeps: ClassVar[int] = 5
+    default_solver: ClassVar[str] = "backward_euler"
+    default_substeps: ClassVar[int] = 1
 
     def __init__(
         self,

@@ -355,8 +355,8 @@ class KineticIon(IndependentIntegration):
     sources: ClassVar[tuple[Source, ...]] = ()
     conserves: ClassVar[tuple[Conserve, ...]] = ()
     uses_total_current: ClassVar[bool] = False
-    default_solver: ClassVar[str] = "rk4"
-    default_substeps: ClassVar[int] = 5
+    default_solver: ClassVar[str] = "backward_euler"
+    default_substeps: ClassVar[int] = 1
 
     def _init_kinetic_ion(
         self,

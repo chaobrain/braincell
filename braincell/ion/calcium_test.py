@@ -1379,7 +1379,7 @@ class CdpCAM_MA2024_PCTest(unittest.TestCase):
 
     def test_default_integration_schedule_comes_from_kinetic_parent(self) -> None:
         ion = self._make_ion()
-        self.assertEqual(ion.substeps, 5)
+        self.assertEqual(ion.substeps, 1)
 
         override = self._make_ion(solver="backward_euler", substeps=1)
         self.assertEqual(override.substeps, 1)

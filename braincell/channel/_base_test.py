@@ -15,6 +15,7 @@ from braincell.channel._base import Transition
 from braincell.channel._base import ghk_flux
 from braincell.ion import Calcium
 from braincell.ion import Potassium
+from braincell.quad import get_integrator
 
 
 def _k_info(size: int = 1) -> IonInfo:
@@ -474,9 +475,11 @@ class ChannelTemplateTest(unittest.TestCase):
 
     def test_markov_uses_central_default_integration_schedule(self) -> None:
         ch = _ExampleMarkov(size=1)
-        self.assertEqual(ch.substeps, 5)
+        self.assertIs(ch.solver, get_integrator("backward_euler"))
+        self.assertEqual(ch.substeps, 1)
 
         override = _ExampleMarkov(size=1, solver="euler", substeps=2)
+        self.assertIs(override.solver, get_integrator("euler"))
         self.assertEqual(override.substeps, 2)
 
     def test_markov_defaults_dependent_state_to_last_discovered_name(self) -> None:

@@ -19,6 +19,7 @@ from braincell.ion._base import KineticIon
 from braincell.ion._base import Reaction
 from braincell.ion._base import Source
 from braincell.ion._base import Species
+from braincell.quad import get_integrator
 from braincell.quad.protocol import DiffEqState
 
 
@@ -320,9 +321,11 @@ class IonTemplateTest(unittest.TestCase):
 
     def test_kinetic_ion_uses_central_default_integration_schedule(self) -> None:
         ion = _SimpleKineticIon(size=1, use_defaults=True)
-        self.assertEqual(ion.substeps, 5)
+        self.assertIs(ion.solver, get_integrator("backward_euler"))
+        self.assertEqual(ion.substeps, 1)
 
         override = _SimpleKineticIon(size=1)
+        self.assertIs(override.solver, get_integrator("euler"))
         self.assertEqual(override.substeps, 2)
 
     def test_kinetic_ion_species_values_return_resolved_species(self) -> None:

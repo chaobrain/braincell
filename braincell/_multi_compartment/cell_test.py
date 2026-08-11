@@ -152,7 +152,7 @@ class TestCellLifecycle(unittest.TestCase):
         self.assertGreater(len(cell.node_tree.nodes), 0)
         self.assertGreater(len(cell.runtime_nodes), 0)
         self.assertGreater(len(cell.runtime_cvs), 0)
-        self.assertIsNotNone(cell._axial_jax)
+        self.assertIsNone(cell._axial_jax)
         self.assertTrue(hasattr(cell, "V"))
         self.assertTrue(hasattr(cell, "spike"))
 
@@ -268,7 +268,13 @@ class TestCellLifecycle(unittest.TestCase):
         cell = _simple_cell()
         with brainstate.environ.context(precision=32):
             cell.init_state()
+            self.assertIsNone(cell.runtime.axial_operator_np)
+            self.assertIsNone(cell.runtime.axial_operator_cache)
+            self.assertIsNone(cell._axial_jax)
+
+            operator32 = cell._get_axial_operator()
             cache32 = cell.runtime.axial_operator_cache
+            self.assertEqual(operator32.dtype, jnp.dtype(jnp.float32))
             self.assertEqual(cell._axial_jax.dtype, jnp.dtype(jnp.float32))
             self.assertEqual(cell.runtime.axial_operator_np.dtype, np.float64)
             self.assertIsNotNone(cache32)
@@ -278,6 +284,17 @@ class TestCellLifecycle(unittest.TestCase):
             cache64 = cell.runtime.axial_operator_cache
             self.assertEqual(operator64.dtype, jnp.dtype(jnp.float64))
             self.assertIsNot(cache32, cache64)
+
+    def test_staggered_run_does_not_build_dense_axial_operator(self):
+        cell = _cell_with_probe()
+        cell.init_state()
+
+        cell.run(dt=0.1 * u.ms, duration=0.2 * u.ms)
+
+        self.assertIsNone(cell.runtime.axial_operator_np)
+        self.assertIsNone(cell.runtime.axial_operator_cache)
+        self.assertIsNone(cell._axial_jax)
+        self.assertIsNotNone(cell.runtime.dhs_static_source_np)
 
     def test_scalar_v_init_broadcasts_to_voltage_shape(self):
         cell = _simple_cell()

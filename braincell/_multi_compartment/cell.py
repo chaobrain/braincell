@@ -575,16 +575,12 @@ class Cell(HHTypedNeuron):
             args = self._runtime_node_phase_args(path, channel, point_V)
             channel.init_state(*args, batch_size=batch_size)
 
-        self._runtime.axial_operator_np = np.asarray(
-            build_cv_axial_operator(
-                self,
-                node_tree=self.node_tree,
-                scheduling=self._node_scheduling_unchecked(algorithm="dhs"),
-            ),
-            dtype=np.float64,
-        )
+        # Dense CV axial operators are only needed by derivative-based voltage
+        # solvers. The default DHS/staggered path builds its own static source,
+        # so defer this matrix until ``_get_axial_operator()`` is actually used.
+        self._runtime.axial_operator_np = None
         self._runtime.axial_operator_cache = None
-        self._axial_jax = self._get_axial_operator()
+        self._axial_jax = None
         self._initialized = True
         self._runtime_cvs_cache = self._build_runtime_cv_views()
         self._runtime_nodes_cache = self._build_runtime_node_views()
@@ -2038,7 +2034,14 @@ class Cell(HHTypedNeuron):
             return cache.operator
 
         if runtime.axial_operator_np is None:
-            raise ValueError("Cell runtime is missing axial_operator_np.")
+            runtime.axial_operator_np = np.asarray(
+                build_cv_axial_operator(
+                    self,
+                    node_tree=self.node_tree,
+                    scheduling=self._node_scheduling_unchecked(algorithm="dhs"),
+                ),
+                dtype=np.float64,
+            )
 
         operator = jnp.asarray(runtime.axial_operator_np, dtype=brainstate.environ.dftype()) * (u.ms ** -1)
         cache = AxialOperatorCache(float_dtype=float_dtype, operator=operator)

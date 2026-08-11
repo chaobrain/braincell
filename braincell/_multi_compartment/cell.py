@@ -1316,13 +1316,13 @@ class Cell(HHTypedNeuron):
             plt.show()
         return rendered_ax
 
-    def node_scheduling(self, *, max_group_size: int = 32, algorithm: str = "dhs"):
+    def node_scheduling(self, *, max_group_size: int = 256, algorithm: str = "dhs"):
         self._raise_if_not_initialized("node_scheduling()")
         return self._node_scheduling_unchecked(
             max_group_size=max_group_size, algorithm=algorithm
         )
 
-    def _node_scheduling_unchecked(self, *, max_group_size: int = 32, algorithm: str = "dhs"):
+    def _node_scheduling_unchecked(self, *, max_group_size: int = 256, algorithm: str = "dhs"):
         key = (algorithm, int(max_group_size))
         cached = self._node_scheduling_cache.get(key)
         if cached is not None:

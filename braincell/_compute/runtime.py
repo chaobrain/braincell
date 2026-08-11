@@ -32,6 +32,7 @@ from braincell._base import Channel, IonChannel, Synapse as RuntimeSynapse
 from braincell.channel._base import Markov
 from braincell.ion._base import DynamicNernstIon, FixedIon, InitNernstIon, KineticIon
 from braincell.mech import (
+    CVContext,
     CurrentProbe,
     CurrentClamp,
     Density,
@@ -283,6 +284,7 @@ class CellRuntimeState:
         node_tree = cell.node_tree
         n_point = len(node_tree.nodes)
         n_cv = len(cell.cvs)
+        cv_contexts = cell.cv_contexts
 
         grouped: dict[tuple[object, ...], dict[str, object]] = {}
         cv_to_layout_sets: list[set[int]] = [set() for _ in range(n_cv)]
@@ -392,11 +394,29 @@ class CellRuntimeState:
                     state_shapes[(layout_spec.id, var_name)] = quantity.mantissa.shape
                     continue
                 state_shapes[(layout_spec.id, var_name)] = shape
-                state_buffers[(layout_spec.id, var_name)] = _allocate_state_buffer(
-                    mechanism,
-                    var_name=var_name,
-                    shape=shape,
-                )
+                value = _mechanism_var_value(mechanism, var_name)
+                if (
+                    isinstance(mechanism, Density)
+                    and callable(value)
+                    and not isinstance(value, braintools.init.Initialization)
+                ):
+                    state_buffers[(layout_spec.id, var_name)] = (
+                        _allocate_spatial_density_buffer(
+                            mechanism=mechanism,
+                            var_name=var_name,
+                            value=value,
+                            layout=layout_spec,
+                            shape=shape,
+                            cv_contexts=cv_contexts,
+                            node_tree=node_tree,
+                        )
+                    )
+                else:
+                    state_buffers[(layout_spec.id, var_name)] = _allocate_state_buffer(
+                        mechanism,
+                        var_name=var_name,
+                        shape=shape,
+                    )
 
         (
             ions,
@@ -1157,6 +1177,102 @@ def _constant_quantity_value(value: object) -> u.Quantity | None:
     if isinstance(value, braintools.init.Constant) and isinstance(value.value, u.Quantity):
         return value.value
     return None
+
+
+def _allocate_spatial_density_buffer(
+    *,
+    mechanism: Density,
+    var_name: str,
+    value: object,
+    layout: MechanismLayout,
+    shape: tuple[int, ...],
+    cv_contexts: tuple[CVContext, ...],
+    node_tree: NodeTree,
+) -> object:
+    """Evaluate one callable density parameter at active CV midpoints.
+
+    The callable is evaluated once per source CV during ``init_state()``.
+    Results must all be scalar numeric values or mutually compatible scalar
+    :class:`brainunit.Quantity` values.
+    """
+    if layout.target != "density" or layout.layout != "dense":
+        raise ValueError(
+            "Callable density parameters currently require a dense density "
+            f"layout, got target={layout.target!r}, layout={layout.layout!r}."
+        )
+    if not callable(value):  # pragma: no cover - guarded by caller
+        raise TypeError(f"Spatial density parameter {var_name!r} is not callable.")
+
+    evaluated: list[tuple[int, int, object]] = []
+    for cv_id in layout.source_cv_ids:
+        context = cv_contexts[int(cv_id)]
+        point_id = int(node_tree.cv_to_mid_node_id[int(cv_id)])
+        try:
+            result = value(context)
+        except Exception as exc:
+            raise ValueError(
+                _spatial_density_error_prefix(mechanism, var_name, context)
+                + f" callable raised {type(exc).__name__}: {exc}"
+            ) from exc
+        evaluated.append((int(cv_id), point_id, result))
+
+    if len(evaluated) == 0:  # pragma: no cover - layouts always have a source CV
+        raise ValueError(
+            f"Callable density parameter {var_name!r} has no source CVs to evaluate."
+        )
+
+    first_result = evaluated[0][2]
+    quantity_result = isinstance(first_result, u.Quantity)
+    unit = first_result.unit if quantity_result else None
+    scalar_values: list[tuple[int, float]] = []
+
+    for cv_id, point_id, result in evaluated:
+        context = cv_contexts[cv_id]
+        if isinstance(result, u.Quantity) != quantity_result:
+            expected = "a Quantity" if quantity_result else "a unitless number"
+            raise TypeError(
+                _spatial_density_error_prefix(mechanism, var_name, context)
+                + f" returned {type(result).__name__}; expected {expected} "
+                "consistently across all CVs."
+            )
+        try:
+            raw = result.to_decimal(unit) if quantity_result else result
+            decimal = np.asarray(raw, dtype=np.float64)
+        except Exception as exc:
+            expected = (
+                f"a Quantity compatible with {unit!s}"
+                if quantity_result
+                else "a numeric scalar"
+            )
+            raise TypeError(
+                _spatial_density_error_prefix(mechanism, var_name, context)
+                + f" must return {expected}, got {result!r}."
+            ) from exc
+        if decimal.shape not in ((), (1,)):
+            raise TypeError(
+                _spatial_density_error_prefix(mechanism, var_name, context)
+                + f" must return a scalar, got shape {decimal.shape!r}."
+            )
+        scalar_values.append((point_id, float(decimal.reshape(()))))
+
+    mantissa = np.zeros(shape, dtype=np.float64)
+    for point_id, scalar in scalar_values:
+        mantissa[..., point_id] = scalar
+    if quantity_result:
+        return u.Quantity(mantissa, unit)
+    return mantissa
+
+
+def _spatial_density_error_prefix(
+    mechanism: Density,
+    var_name: str,
+    context: CVContext,
+) -> str:
+    return (
+        f"Spatial callable for {mechanism.category} {mechanism.class_name!r} "
+        f"parameter {var_name!r} at CV {context.cv_id!r} "
+        f"(branch {context.branch_id!r}, {context.branch_name!r})"
+    )
 
 
 def _allocate_state_buffer(

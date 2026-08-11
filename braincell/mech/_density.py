@@ -355,7 +355,9 @@ class Channel(Density):
     **params
         Channel parameters, passed as keyword arguments with
         ``brainunit`` quantity values (e.g. ``g_max=0.1 * u.mS /
-        u.cm ** 2``, ``E=-70 * u.mV``).
+        u.cm ** 2``, ``E=-70 * u.mV``). A parameter may also be a
+        callable accepting one :class:`braincell.mech.CVContext`; it is
+        resolved once per active CV during ``Cell.init_state()``.
 
     See Also
     --------
@@ -464,7 +466,9 @@ class Ion(Density):
     substeps : int or None
         Optional kinetic-ion substep count, paired with ``solver``.
     **params
-        Ion parameters, passed as keyword arguments.
+        Ion parameters, passed as keyword arguments. A parameter may also
+        be a callable accepting one :class:`braincell.mech.CVContext`; it is
+        resolved once per active CV during ``Cell.init_state()``.
 
     See Also
     --------

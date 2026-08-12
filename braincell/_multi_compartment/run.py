@@ -47,33 +47,81 @@ def run(rcell: "Cell", *, dt, duration) -> RunResult:
     ordered_names = tuple(sorted(initial_samples))
 
     with brainstate.environ.context(dt=dt):
-        start_t = rcell.current_time
         relative_times = u.math.arange(0.0 * u.ms, duration, brainstate.environ.get_dt())
         if int(relative_times.shape[0]) == 0:
             raise ValueError(
                 "Cell.run(...) produced no timesteps; "
                 "ensure duration > 0 and dt > 0."
             )
-        times = start_t + relative_times
-        with brainstate.environ.context(t=start_t):
-            rcell._prepare_next_synapse_inputs()
-
-        def _step(t):
-            with brainstate.environ.context(t=t):
-                rcell._begin_step()
-                rcell._update_dynamics()
-                snapshot = rcell.sample_probes()
-                rcell._prepare_next_synapse_inputs()
-            return tuple(snapshot[name] for name in ordered_names)
-
-        traces_over_time = brainstate.transform.for_loop(_step, times)
-        rcell._set_current_time(
-            start_t + int(times.shape[0]) * brainstate.environ.get_dt()
+        cached_run = _cached_run_loop(
+            rcell,
+            dt=dt,
+            n_steps=int(relative_times.shape[0]),
+            ordered_names=ordered_names,
         )
+        times, traces_over_time = cached_run(relative_times)
 
     traces_tuple = _normalize_run_traces(traces_over_time, n_traces=len(ordered_names))
     traces = {name: trace for name, trace in zip(ordered_names, traces_tuple)}
     return RunResult(time=times, traces=traces)
+
+
+def _cached_run_loop(rcell: "Cell", *, dt, n_steps: int, ordered_names: tuple[str, ...]):
+    """Return a persistent jitted loop for one run shape.
+
+    Notes
+    -----
+    ``brainstate.transform.for_loop`` builds a fresh ``scan`` when called
+    from a new Python closure. Caching the enclosing jitted function avoids
+    paying XLA compile time on repeated ``Cell.run`` calls with the same
+    timestep, step count, and probe layout.
+    """
+    cache = getattr(rcell, "_run_loop_cache", None)
+    if cache is None:
+        return _make_run_loop(rcell, dt=dt, ordered_names=ordered_names)
+
+    key = (
+        _time_quantity_cache_value(dt),
+        int(n_steps),
+        tuple(ordered_names),
+        int(brainstate.environ.get_precision()),
+    )
+    cached = cache.get(key)
+    if cached is None:
+        cached = _make_run_loop(rcell, dt=dt, ordered_names=ordered_names)
+        cache[key] = cached
+    return cached
+
+
+def _make_run_loop(rcell: "Cell", *, dt, ordered_names: tuple[str, ...]):
+    """Create the jitted stateful run loop for a fixed probe layout."""
+
+    def _run_loop(relative_times):
+        with brainstate.environ.context(dt=dt):
+            start_t = rcell.current_time
+            times = start_t + relative_times
+            with brainstate.environ.context(t=start_t):
+                rcell._prepare_next_synapse_inputs()
+
+            def _step(t):
+                with brainstate.environ.context(t=t):
+                    with jax.named_scope("braincell:cell_run:begin_step"):
+                        rcell._begin_step()
+                    with jax.named_scope("braincell:cell_run:update_dynamics"):
+                        rcell._update_dynamics()
+                    with jax.named_scope("braincell:cell_run:sample_probes"):
+                        snapshot = rcell.sample_probes()
+                    with jax.named_scope("braincell:cell_run:prepare_next_synapse_inputs"):
+                        rcell._prepare_next_synapse_inputs()
+                return tuple(snapshot[name] for name in ordered_names)
+
+            traces_over_time = brainstate.transform.for_loop(_step, times)
+            rcell._set_current_time(
+                start_t + int(times.shape[0]) * brainstate.environ.get_dt()
+            )
+        return times, traces_over_time
+
+    return brainstate.transform.jit(_run_loop)
 
 
 def _validate_time_quantity(value, *, name: str) -> None:
@@ -107,3 +155,8 @@ def _normalize_run_traces(values, *, n_traces: int) -> tuple:
             f"Cell.run(...) expected {n_traces} trace arrays, got {len(values)!r}."
         )
     return values
+
+
+def _time_quantity_cache_value(value) -> tuple[float, str]:
+    """Return a stable cache token for a scalar time quantity."""
+    return (float(np.asarray(value.to_decimal(u.ms), dtype=float).reshape(())), "ms")

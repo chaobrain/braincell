@@ -4,6 +4,7 @@ import unittest
 
 import brainstate
 import brainunit as u
+import jax
 import jax.numpy as jnp
 import numpy as np
 
@@ -11,7 +12,7 @@ import braincell.mech as mech
 from braincell import Branch, CVPerBranch, Cell, Channel, CurrentClamp, Ion, IonChannel, Morphology
 from braincell.filter import AllRegion, RootLocation
 from braincell.mech import StateProbe
-from braincell.quad import DiffEqState
+from braincell.quad import DiffEqState, get_integrator
 
 
 def _simple_cell() -> Cell:
@@ -35,6 +36,30 @@ class TestCellDeclaration(unittest.TestCase):
         self.assertGreater(len(cell.paint_rules), 0)
         self.assertEqual(len(cell.place_rules), 0)
         self.assertFalse(cell._initialized)
+
+    def test_subsolver_defaults_to_backward_euler_once(self):
+        cell = _simple_cell()
+        self.assertEqual(cell.subsolver_name, "backward_euler")
+        self.assertIs(cell.subsolver, get_integrator("backward_euler"))
+        self.assertEqual(cell.substeps, 1)
+
+    def test_accepts_explicit_subsolver_schedule(self):
+        cell = Cell(_simple_cell().morpho, subsolver="rk4", substeps=3)
+        self.assertEqual(cell.subsolver_name, "rk4")
+        self.assertIs(cell.subsolver, get_integrator("rk4"))
+        self.assertEqual(cell.substeps, 3)
+
+    def test_subsolver_schedule_must_be_an_atomic_pair(self):
+        with self.assertRaisesRegex(ValueError, "provided together"):
+            Cell(_simple_cell().morpho, subsolver="rk4")
+        with self.assertRaisesRegex(ValueError, "provided together"):
+            Cell(_simple_cell().morpho, substeps=2)
+
+    def test_subsolver_schedule_validates_substeps(self):
+        with self.assertRaises(TypeError):
+            Cell(_simple_cell().morpho, subsolver="rk4", substeps=True)
+        with self.assertRaises(ValueError):
+            Cell(_simple_cell().morpho, subsolver="rk4", substeps=0)
 
     def test_rejects_non_morphology(self):
         with self.assertRaises(TypeError):
@@ -71,6 +96,20 @@ class TestCellDeclaration(unittest.TestCase):
             Cell(tree, ion_channel_update_order="integration").ion_channel_update_order,
             "integration",
         )
+
+    def test_membrane_linearizer_defaults_to_point_and_validates(self):
+        cell = _simple_cell()
+        self.assertEqual(cell.membrane_linearizer, "point")
+        cell.membrane_linearizer = "generic"
+        self.assertEqual(cell.membrane_linearizer, "generic")
+        with self.assertRaisesRegex(ValueError, "membrane_linearizer"):
+            Cell(cell.morpho, membrane_linearizer="finite_difference")
+
+    def test_membrane_linearizer_is_frozen_after_initialization(self):
+        cell = _simple_cell()
+        cell.init_state()
+        with self.assertRaisesRegex(RuntimeError, "membrane_linearizer"):
+            cell.membrane_linearizer = "generic"
 
     def test_cv_policy_mutation_invalidates_cache(self):
         cell = _simple_cell()
@@ -113,7 +152,7 @@ class TestCellLifecycle(unittest.TestCase):
         self.assertGreater(len(cell.node_tree.nodes), 0)
         self.assertGreater(len(cell.runtime_nodes), 0)
         self.assertGreater(len(cell.runtime_cvs), 0)
-        self.assertIsNotNone(cell._axial_jax)
+        self.assertIsNone(cell._axial_jax)
         self.assertTrue(hasattr(cell, "V"))
         self.assertTrue(hasattr(cell, "spike"))
 
@@ -225,11 +264,48 @@ class TestCellLifecycle(unittest.TestCase):
         cell.run(dt=0.1 * u.ms, duration=0.5 * u.ms)
         self.assertIs(cell._runtime, first_runtime)
 
+    def test_run_loop_cache_reuses_matching_shape(self):
+        cell = _cell_with_probe()
+        cell.init_state()
+        cell.run(dt=0.1 * u.ms, duration=0.5 * u.ms)
+        self.assertEqual(len(cell._run_loop_cache), 1)
+        first_runner = next(iter(cell._run_loop_cache.values()))
+
+        cell.reset_state()
+        cell.run(dt=0.1 * u.ms, duration=0.5 * u.ms)
+
+        self.assertEqual(len(cell._run_loop_cache), 1)
+        self.assertIs(next(iter(cell._run_loop_cache.values())), first_runner)
+
+    def test_run_loop_cache_separates_step_count(self):
+        cell = _cell_with_probe()
+        cell.init_state()
+        cell.run(dt=0.1 * u.ms, duration=0.5 * u.ms)
+        cell.reset_state()
+        cell.run(dt=0.1 * u.ms, duration=0.4 * u.ms)
+        self.assertEqual(len(cell._run_loop_cache), 2)
+
+    def test_reset_clears_run_loop_cache(self):
+        cell = _cell_with_probe()
+        cell.init_state()
+        cell.run(dt=0.1 * u.ms, duration=0.5 * u.ms)
+        self.assertEqual(len(cell._run_loop_cache), 1)
+
+        cell.reset()
+
+        self.assertEqual(cell._run_loop_cache, {})
+
     def test_axial_operator_cache_tracks_precision(self):
         cell = _simple_cell()
         with brainstate.environ.context(precision=32):
             cell.init_state()
+            self.assertIsNone(cell.runtime.axial_operator_np)
+            self.assertIsNone(cell.runtime.axial_operator_cache)
+            self.assertIsNone(cell._axial_jax)
+
+            operator32 = cell._get_axial_operator()
             cache32 = cell.runtime.axial_operator_cache
+            self.assertEqual(operator32.dtype, jnp.dtype(jnp.float32))
             self.assertEqual(cell._axial_jax.dtype, jnp.dtype(jnp.float32))
             self.assertEqual(cell.runtime.axial_operator_np.dtype, np.float64)
             self.assertIsNotNone(cache32)
@@ -239,6 +315,17 @@ class TestCellLifecycle(unittest.TestCase):
             cache64 = cell.runtime.axial_operator_cache
             self.assertEqual(operator64.dtype, jnp.dtype(jnp.float64))
             self.assertIsNot(cache32, cache64)
+
+    def test_staggered_run_does_not_build_dense_axial_operator(self):
+        cell = _cell_with_probe()
+        cell.init_state()
+
+        cell.run(dt=0.1 * u.ms, duration=0.2 * u.ms)
+
+        self.assertIsNone(cell.runtime.axial_operator_np)
+        self.assertIsNone(cell.runtime.axial_operator_cache)
+        self.assertIsNone(cell._axial_jax)
+        self.assertIsNotNone(cell.runtime.dhs_static_source_np)
 
     def test_scalar_v_init_broadcasts_to_voltage_shape(self):
         cell = _simple_cell()
@@ -275,6 +362,60 @@ class TestCellLifecycle(unittest.TestCase):
 
         self.assertIs(returned, cell)
         self.assertEqual(len(cell._synapse_input_bindings["ampa"]), 1)
+
+
+class CellMembraneLinearizerTest(unittest.TestCase):
+    @staticmethod
+    def _leak_cell(mode: str) -> Cell:
+        soma = Branch.from_lengths(
+            lengths=[20.0] * u.um,
+            radii=[10.0, 10.0] * u.um,
+            type="soma",
+        )
+        cell = Cell(
+            Morphology.from_root(soma, name="soma"),
+            cv_policy=CVPerBranch(),
+            V_init=-65.0 * u.mV,
+            membrane_linearizer=mode,
+        )
+        cell.paint(
+            AllRegion(),
+            mech.Channel(
+                "IL",
+                name="leak",
+                g_max=0.3 * (u.mS / u.cm**2),
+                E=-54.3 * u.mV,
+            ),
+        )
+        cell.init_state()
+        return cell
+
+    def test_point_matches_generic_values_and_higher_order_gradient(self):
+        results = {}
+        for mode in ("point", "generic"):
+            cell = self._leak_cell(mode)
+            voltage_unit = u.get_unit(cell.V.value)
+            with brainstate.environ.context(t=0.0 * u.ms):
+                linear, derivative = cell._voltage_linearizer()(cell.V.value)
+
+                def objective(voltage_mantissa):
+                    _, value = cell._voltage_linearizer()(
+                        u.Quantity(voltage_mantissa, voltage_unit)
+                    )
+                    return jnp.sum(u.get_mantissa(value))
+
+                gradient = jax.grad(objective)(u.get_mantissa(cell.V.value))
+            results[mode] = (linear, derivative, gradient)
+
+        point = results["point"]
+        generic = results["generic"]
+        for point_value, generic_value in zip(point, generic):
+            np.testing.assert_allclose(
+                np.asarray(u.get_mantissa(point_value)),
+                np.asarray(u.get_mantissa(generic_value)),
+                rtol=1e-6,
+                atol=1e-7,
+            )
 
 
 class CellIonChannelUpdateOrderTest(unittest.TestCase):

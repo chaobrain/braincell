@@ -286,6 +286,16 @@ def scatter_cv_geometry(
     )
 
 
+_ION_GEOMETRY_ATTRS = (
+    "length",
+    "area",
+    "diam_mid",
+    "diam_arc_mean",
+    "radius_prox",
+    "radius_dist",
+)
+
+
 def attach_runtime_ion_geometry(
     *,
     ions: dict[str, object],
@@ -312,45 +322,28 @@ def attach_runtime_ion_geometry(
     to ``ion.varshape[:-1] + (n_point,)`` so homogeneous population
     ions receive the same geometry at every population index.
     """
+    point_geometry = {
+        attr_name: scatter_cv_geometry(
+            cvs=cvs,
+            attr_name=attr_name,
+            point_ids=point_ids,
+            n_point=n_point,
+        )
+        for attr_name in _ION_GEOMETRY_ATTRS
+    }
     for ion in ions.values():
         pop_size = tuple(getattr(ion, "varshape", ())[:-1])
         point_shape = pop_size + (n_point,)
-        length = broadcast_to_shape(
-            scatter_cv_geometry(cvs=cvs, attr_name="length", point_ids=point_ids, n_point=n_point),
-            point_shape,
-            name="ion.length",
-        )
-        area = broadcast_to_shape(
-            scatter_cv_geometry(cvs=cvs, attr_name="area", point_ids=point_ids, n_point=n_point),
-            point_shape,
-            name="ion.area",
-        )
-        diam_mid = broadcast_to_shape(
-            scatter_cv_geometry(cvs=cvs, attr_name="diam_mid", point_ids=point_ids, n_point=n_point),
-            point_shape,
-            name="ion.diam_mid",
-        )
-        diam_arc_mean = broadcast_to_shape(
-            scatter_cv_geometry(cvs=cvs, attr_name="diam_arc_mean", point_ids=point_ids, n_point=n_point),
-            point_shape,
-            name="ion.diam_arc_mean",
-        )
-        radius_prox = broadcast_to_shape(
-            scatter_cv_geometry(cvs=cvs, attr_name="radius_prox", point_ids=point_ids, n_point=n_point),
-            point_shape,
-            name="ion.radius_prox",
-        )
-        radius_dist = broadcast_to_shape(
-            scatter_cv_geometry(cvs=cvs, attr_name="radius_dist", point_ids=point_ids, n_point=n_point),
-            point_shape,
-            name="ion.radius_dist",
-        )
-        setattr(ion, "length", length)
-        setattr(ion, "area", area)
-        setattr(ion, "diam_mid", diam_mid)
-        setattr(ion, "diam_arc_mean", diam_arc_mean)
-        setattr(ion, "radius_prox", radius_prox)
-        setattr(ion, "radius_dist", radius_dist)
+        for attr_name, value in point_geometry.items():
+            setattr(
+                ion,
+                attr_name,
+                broadcast_to_shape(
+                    value,
+                    point_shape,
+                    name=f"ion.{attr_name}",
+                ),
+            )
 
 
 def cv_to_point(values, runtime: "CellRuntimeState"):

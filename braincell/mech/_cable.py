@@ -44,15 +44,18 @@ class CableProperty:
 
     Parameters
     ----------
-    resting_potential : Quantity[mV]
+    resting_potential : Quantity[mV] or callable
         Reference voltage used as the default voltage initializer.
-    membrane_capacitance : Quantity[uF / cm**2]
+        A callable receives the per-CV :class:`braincell.mech.CVContext`.
+    membrane_capacitance : Quantity[uF / cm**2] or callable
         Specific membrane capacitance.
-    axial_resistivity : Quantity[ohm * cm]
+    axial_resistivity : Quantity[ohm * cm] or callable
         Cytoplasmic axial resistivity.
-    temperature : Quantity[kelvin]
+    temperature : Quantity[kelvin] or callable
         Absolute temperature used for Q10 scaling in channel kinetics.
         Defaults to 36 °C (309.15 K).
+        A callable is evaluated later with the per-CV
+        :class:`braincell.mech.CVContext`.
 
     Raises
     ------
@@ -104,6 +107,8 @@ class CableProperty:
 
 
 def _coerce_temperature(value: Any, *, name: str) -> Any:
+    if callable(value):
+        return value
     if not hasattr(value, "to_decimal") or not callable(
         getattr(value, "to_decimal")
     ):

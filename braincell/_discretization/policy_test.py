@@ -240,6 +240,19 @@ class CVPolicyTest(unittest.TestCase):
                 ),
             ).cvs
 
+    def test_d_lambda_rejects_callable_ra_cm(self) -> None:
+        tree = _build_two_branch_tree()
+        cell = Cell(tree, cv_policy=DLambda(d_lambda=0.1))
+        with self.assertRaisesRegex(TypeError, "callable cable fields"):
+            cell.paint(
+                BranchSlice(branch_index=1, prox=0.0, dist=1.0),
+                CableProperty(
+                    resting_potential=-65.0 * u.mV,
+                    membrane_capacitance=lambda cv: 2.0 * (u.uF / u.cm ** 2),
+                    axial_resistivity=100.0 * (u.ohm * u.cm),
+                ),
+            ).cvs
+
     def test_d_lambda_ignores_resting_potential_and_temperature_conflicts(self) -> None:
         tree = _build_two_branch_tree()
         cell = Cell(tree, cv_policy=DLambda(d_lambda=0.1))

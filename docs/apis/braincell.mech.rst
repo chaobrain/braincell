@@ -48,6 +48,43 @@ Density Mechanisms
     Ion
 
 
+Spatial Parameters
+------------------
+
+Cable-property fields and density-mechanism parameters may be callables that
+accept a :class:`CVContext`. Cable-property callables are resolved during
+discretization; channel and ion callables are resolved once per active CV by
+``Cell.init_state()``. They are not called during every simulation step.
+
+.. code-block:: python
+
+    import brainunit as u
+    from braincell.filter import AllRegion
+    from braincell.mech import Channel
+
+    def na_gmax(context):
+        distance = context.path_distance_from_soma.to_decimal(u.um)
+        return (0.02 + 0.00008 * distance) * (u.mS / u.cm ** 2)
+
+    cell.paint(
+        AllRegion(),
+        Channel("Na_HH1952", name="na_distance", g_max=na_gmax),
+    )
+    cell.init_state()
+
+``path_distance_from_soma`` is zero for every soma CV and starts at zero at
+each first-order neurite attachment. ``path_distance_to_root`` retains the
+path through the root/soma branch. Callable results must be scalar and must
+use a consistent unit type across all selected CVs.
+
+.. autosummary::
+   :toctree: generated/
+   :nosignatures:
+   :template: classtemplate.rst
+
+    CVContext
+
+
 Point Mechanisms
 ----------------
 

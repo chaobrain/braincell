@@ -19,6 +19,7 @@ import warnings
 from dataclasses import dataclass, fields, is_dataclass
 from typing import Literal
 
+import braintools
 import brainunit as u
 import jax.numpy as jnp
 import numpy as np
@@ -28,8 +29,10 @@ Layout = Literal["dense", "sparse"]
 
 from braincell import ion as runtime_ion
 from braincell._base import Channel, IonChannel, Synapse as RuntimeSynapse
+from braincell.channel._base import Markov
 from braincell.ion._base import DynamicNernstIon, FixedIon, InitNernstIon, KineticIon
 from braincell.mech import (
+    CVContext,
     CurrentProbe,
     CurrentClamp,
     Density,
@@ -47,6 +50,7 @@ from braincell.mech import (
 from braincell.mech._params import _to_hashable
 from braincell.ion import build_placeholder_ions
 from braincell.morph.morphology import Morphology, clone_morpho
+from braincell.quad import get_integrator
 from braincell._multi_compartment.bridge import (
     attach_runtime_ion_geometry,
     cv_value_vector,
@@ -245,6 +249,8 @@ class CellRuntimeState:
     ion_class_candidates: dict[str, tuple[str, ...]]
     bound_ion_keys: dict[int, tuple[str, ...]]
     current_owner_keys: dict[int, str | tuple[str, ...] | None]
+    midpoint_mask_np: np.ndarray
+    merged_channel_layout_groups: dict[int, tuple[int, ...]] | None = None
     dhs_static_source_np: object | None = None
     dhs_static_cache: object | None = None
     axial_operator_np: np.ndarray | None = None
@@ -280,6 +286,7 @@ class CellRuntimeState:
         node_tree = cell.node_tree
         n_point = len(node_tree.nodes)
         n_cv = len(cell.cvs)
+        cv_contexts = cell.cv_contexts
 
         grouped: dict[tuple[object, ...], dict[str, object]] = {}
         cv_to_layout_sets: list[set[int]] = [set() for _ in range(n_cv)]
@@ -389,11 +396,29 @@ class CellRuntimeState:
                     state_shapes[(layout_spec.id, var_name)] = quantity.mantissa.shape
                     continue
                 state_shapes[(layout_spec.id, var_name)] = shape
-                state_buffers[(layout_spec.id, var_name)] = _allocate_state_buffer(
-                    mechanism,
-                    var_name=var_name,
-                    shape=shape,
-                )
+                value = _mechanism_var_value(mechanism, var_name)
+                if (
+                    isinstance(mechanism, Density)
+                    and callable(value)
+                    and not isinstance(value, braintools.init.Initialization)
+                ):
+                    state_buffers[(layout_spec.id, var_name)] = (
+                        _allocate_spatial_density_buffer(
+                            mechanism=mechanism,
+                            var_name=var_name,
+                            value=value,
+                            layout=layout_spec,
+                            shape=shape,
+                            cv_contexts=cv_contexts,
+                            node_tree=node_tree,
+                        )
+                    )
+                else:
+                    state_buffers[(layout_spec.id, var_name)] = _allocate_state_buffer(
+                        mechanism,
+                        var_name=var_name,
+                        shape=shape,
+                    )
 
         (
             ions,
@@ -403,6 +428,7 @@ class CellRuntimeState:
             runtime_nodes,
             bound_ion_keys,
             current_owner_keys,
+            merged_channel_layout_groups,
         ) = _build_runtime_nodes(
             n_point=n_point,
             layouts=tuple(layouts),
@@ -437,8 +463,10 @@ class CellRuntimeState:
             cv_id = int(roles[0].cv_id)
             point_area_decimal[int(point.id)] = cv_area_decimal[cv_id]
         point_area = u.Quantity(point_area_decimal, u.cm ** 2)
+        midpoint_mask_np = np.zeros((n_point,), dtype=bool)
+        midpoint_mask_np[np.asarray(node_tree.cv_to_mid_node_id, dtype=np.int32)] = True
 
-        return cls(
+        runtime = cls(
             node_tree=node_tree,
             n_point=n_point,
             n_cv=n_cv,
@@ -456,6 +484,8 @@ class CellRuntimeState:
             ion_class_candidates=ion_class_candidates,
             bound_ion_keys=bound_ion_keys,
             current_owner_keys=current_owner_keys,
+            midpoint_mask_np=midpoint_mask_np,
+            merged_channel_layout_groups=merged_channel_layout_groups,
             dhs_static_source_np=None,
             dhs_static_cache=None,
             axial_operator_np=None,
@@ -465,6 +495,12 @@ class CellRuntimeState:
             point_area=point_area,
             pop_size=pop_size,
         )
+        _configure_runtime_subsolvers(
+            runtime,
+            solver=cell.subsolver,
+            substeps=cell.substeps,
+        )
+        return runtime
 
     def get_point_layouts(self, point_id: int) -> tuple[MechanismLayout, ...]:
         if not (0 <= int(point_id) < self.n_point):
@@ -818,6 +854,73 @@ def mechanism_signature(mechanism: object) -> tuple[object, ...]:
     return (type(mechanism).__qualname__, _to_hashable(mechanism))
 
 
+def _configure_runtime_subsolvers(
+    runtime: CellRuntimeState,
+    *,
+    solver,
+    substeps: int,
+) -> None:
+    """Apply declaration-local or Cell-wide independent schedules."""
+    fallback_solver = get_integrator(solver)
+    records: dict[int, dict[str, object]] = {}
+
+    for layout in runtime.layouts:
+        declaration = runtime.layout_mechanisms[layout.id]
+        if not isinstance(declaration, Density):
+            continue
+        node = runtime.runtime_nodes.get(layout.id)
+        supports_schedule = isinstance(node, (Markov, KineticIon))
+        has_override = declaration.solver is not None
+        if has_override and not supports_schedule:
+            raise ValueError(
+                f"{type(declaration).__name__} declaration "
+                f"{declaration.instance_name!r} sets solver/substeps, but "
+                f"runtime {type(node).__name__!r} is neither a Markov channel "
+                "nor a KineticIon."
+            )
+        if not supports_schedule:
+            continue
+
+        record = records.setdefault(
+            id(node),
+            {"node": node, "explicit": [], "declarations": []},
+        )
+        record["declarations"].append(declaration)
+        if has_override:
+            record["explicit"].append(
+                (
+                    get_integrator(declaration.solver),
+                    declaration.substeps,
+                    declaration,
+                )
+            )
+
+    for record in records.values():
+        explicit = record["explicit"]
+        if explicit:
+            selected_solver, selected_substeps, selected_declaration = explicit[0]
+            for candidate_solver, candidate_substeps, candidate_declaration in explicit[1:]:
+                if (
+                    candidate_solver is not selected_solver
+                    or candidate_substeps != selected_substeps
+                ):
+                    node = record["node"]
+                    raise ValueError(
+                        f"Runtime {type(node).__name__!r} receives conflicting "
+                        "solver/substeps overrides from declarations "
+                        f"{selected_declaration.instance_name!r} and "
+                        f"{candidate_declaration.instance_name!r}. Use distinct "
+                        "Ion names when different KineticIon schedules are required."
+                    )
+        else:
+            selected_solver = fallback_solver
+            selected_substeps = substeps
+
+        node = record["node"]
+        node.solver = selected_solver
+        node.substeps = selected_substeps
+
+
 def _mechanism_var_names(mechanism: object) -> tuple[str, ...]:
     """Return the state-buffer variable names for a mechanism.
 
@@ -1057,6 +1160,128 @@ def _is_ragged_param(value: object) -> bool:
     return False
 
 
+def _constant_quantity_value(value: object) -> u.Quantity | None:
+    """Extract a Quantity from a deterministic constant initializer.
+
+    Parameters
+    ----------
+    value : object
+        Mechanism parameter or runtime ion constructor value.
+
+    Returns
+    -------
+    Quantity or None
+        The wrapped quantity when ``value`` is ``braintools.init.Constant``
+        over a :mod:`brainunit` quantity; otherwise ``None``.
+
+    Notes
+    -----
+    Runtime ion parameters use rectangular Quantity buffers for fast
+    broadcast/scatter.  Treating ``Constant(Quantity)`` as an opaque callable
+    would allocate a large Python object tuple, which is both slower and
+    unnecessary because the initializer is deterministic.
+    """
+    if isinstance(value, braintools.init.Constant) and isinstance(value.value, u.Quantity):
+        return value.value
+    return None
+
+
+def _allocate_spatial_density_buffer(
+    *,
+    mechanism: Density,
+    var_name: str,
+    value: object,
+    layout: MechanismLayout,
+    shape: tuple[int, ...],
+    cv_contexts: tuple[CVContext, ...],
+    node_tree: NodeTree,
+) -> object:
+    """Evaluate one callable density parameter at active CV midpoints.
+
+    The callable is evaluated once per source CV during ``init_state()``.
+    Results must all be scalar numeric values or mutually compatible scalar
+    :class:`brainunit.Quantity` values.
+    """
+    if layout.target != "density" or layout.layout != "dense":
+        raise ValueError(
+            "Callable density parameters currently require a dense density "
+            f"layout, got target={layout.target!r}, layout={layout.layout!r}."
+        )
+    if not callable(value):  # pragma: no cover - guarded by caller
+        raise TypeError(f"Spatial density parameter {var_name!r} is not callable.")
+
+    evaluated: list[tuple[int, int, object]] = []
+    for cv_id in layout.source_cv_ids:
+        context = cv_contexts[int(cv_id)]
+        point_id = int(node_tree.cv_to_mid_node_id[int(cv_id)])
+        try:
+            result = value(context)
+        except Exception as exc:
+            raise ValueError(
+                _spatial_density_error_prefix(mechanism, var_name, context)
+                + f" callable raised {type(exc).__name__}: {exc}"
+            ) from exc
+        evaluated.append((int(cv_id), point_id, result))
+
+    if len(evaluated) == 0:  # pragma: no cover - layouts always have a source CV
+        raise ValueError(
+            f"Callable density parameter {var_name!r} has no source CVs to evaluate."
+        )
+
+    first_result = evaluated[0][2]
+    quantity_result = isinstance(first_result, u.Quantity)
+    unit = first_result.unit if quantity_result else None
+    scalar_values: list[tuple[int, float]] = []
+
+    for cv_id, point_id, result in evaluated:
+        context = cv_contexts[cv_id]
+        if isinstance(result, u.Quantity) != quantity_result:
+            expected = "a Quantity" if quantity_result else "a unitless number"
+            raise TypeError(
+                _spatial_density_error_prefix(mechanism, var_name, context)
+                + f" returned {type(result).__name__}; expected {expected} "
+                "consistently across all CVs."
+            )
+        try:
+            raw = result.to_decimal(unit) if quantity_result else result
+            decimal = np.asarray(raw, dtype=np.float64)
+        except Exception as exc:
+            expected = (
+                f"a Quantity compatible with {unit!s}"
+                if quantity_result
+                else "a numeric scalar"
+            )
+            raise TypeError(
+                _spatial_density_error_prefix(mechanism, var_name, context)
+                + f" must return {expected}, got {result!r}."
+            ) from exc
+        if decimal.shape not in ((), (1,)):
+            raise TypeError(
+                _spatial_density_error_prefix(mechanism, var_name, context)
+                + f" must return a scalar, got shape {decimal.shape!r}."
+            )
+        scalar_values.append((point_id, float(decimal.reshape(()))))
+
+    mantissa = np.zeros(shape, dtype=np.float64)
+    for point_id, scalar in scalar_values:
+        mantissa[..., point_id] = scalar
+    if quantity_result:
+        return u.Quantity(mantissa, unit)
+    return mantissa
+
+
+def _spatial_density_error_prefix(
+    mechanism: Density,
+    var_name: str,
+    context: CVContext,
+) -> str:
+    return (
+        f"Spatial callable for {mechanism.category} {mechanism.class_name!r} "
+        f"parameter {var_name!r} at CV {context.cv_id!r} "
+        f"(branch {context.branch_id!r}, {context.branch_name!r})"
+    )
+
+
 def _allocate_state_buffer(
     mechanism: object,
     *,
@@ -1072,6 +1297,9 @@ def _allocate_state_buffer(
     Plain numeric values (no unit) become a :class:`jnp.ndarray`.
     """
     value = _mechanism_var_value(mechanism, var_name)
+    constant_quantity = _constant_quantity_value(value)
+    if constant_quantity is not None:
+        value = constant_quantity
 
     if _is_ragged_param(value):
         n = int(np.prod(shape, dtype=int)) if shape else 1
@@ -1093,6 +1321,10 @@ def _write_state_buffer(layout: "MechanismLayout", buffer: object, value: object
       scalar.
     - Plain ``jnp.ndarray`` buffer: broadcast scalar, validate shape.
     """
+    constant_quantity = _constant_quantity_value(value)
+    if constant_quantity is not None:
+        value = constant_quantity
+
     if isinstance(buffer, u.Quantity):
         target_shape = buffer.mantissa.shape
         target_unit = buffer.unit
@@ -1364,6 +1596,7 @@ def _build_runtime_nodes(
     dict[int, object],
     dict[int, tuple[str, ...]],
     dict[int, str | None],
+    dict[int, tuple[int, ...]],
 ]:
     (
         ions,
@@ -1381,7 +1614,24 @@ def _build_runtime_nodes(
     runtime_nodes: dict[int, object] = dict(ion_runtime_nodes)
     bound_ion_keys: dict[int, tuple[str, ...]] = {}
     current_owner_keys: dict[int, str | tuple[str, ...] | None] = {}
+
+    merged_channel_layout_groups = _install_merged_channel_nodes(
+        n_point=n_point,
+        pop_size=pop_size,
+        layouts=layouts,
+        layout_mechanisms=layout_mechanisms,
+        state_buffers=state_buffers,
+        ions=ions,
+        ion_aliases=ion_aliases,
+        ion_family_candidates=ion_family_candidates,
+        runtime_nodes=runtime_nodes,
+        bound_ion_keys=bound_ion_keys,
+        current_owner_keys=current_owner_keys,
+    )
+
     for layout in layouts:
+        if layout.id in merged_channel_layout_groups:
+            continue
         mechanism = layout_mechanisms[layout.id]
         node, layout_bound_ion_keys, current_owner_key = _instantiate_runtime_node(
             layout=layout,
@@ -1395,7 +1645,16 @@ def _build_runtime_nodes(
             runtime_nodes[layout.id] = node
             bound_ion_keys[layout.id] = layout_bound_ion_keys
             current_owner_keys[layout.id] = current_owner_key
-    return ions, ion_aliases, ion_family_candidates, ion_class_candidates, runtime_nodes, bound_ion_keys, current_owner_keys
+    return (
+        ions,
+        ion_aliases,
+        ion_family_candidates,
+        ion_class_candidates,
+        runtime_nodes,
+        bound_ion_keys,
+        current_owner_keys,
+        merged_channel_layout_groups,
+    )
 
 
 def _build_runtime_ions(
@@ -1596,6 +1855,9 @@ def _normalize_ion_runtime_param_value(cls: type, param_name: str, value: object
         inner = getattr(value, "value", None)
         if isinstance(inner, u.Quantity):
             return inner
+    constant_quantity = _constant_quantity_value(value)
+    if constant_quantity is not None:
+        return constant_quantity
     return value
 
 
@@ -2137,6 +2399,216 @@ def _instantiate_runtime_node(
     return node, tuple(ion_key for ion_key, _ in bound_ions), current_owner_key
 
 
+def _install_merged_channel_nodes(
+    *,
+    n_point: int,
+    pop_size: tuple[int, ...],
+    layouts: tuple[MechanismLayout, ...],
+    layout_mechanisms: dict[int, object],
+    state_buffers: dict[tuple[int, str], np.ndarray],
+    ions: dict[str, object],
+    ion_aliases: dict[str, str],
+    ion_family_candidates: dict[str, tuple[str, ...]],
+    runtime_nodes: dict[int, object],
+    bound_ion_keys: dict[int, tuple[str, ...]],
+    current_owner_keys: dict[int, str | tuple[str, ...] | None],
+) -> dict[int, tuple[int, ...]]:
+    groups: dict[tuple[object, ...], list[tuple[MechanismLayout, Density, type, tuple[tuple[str, object], ...], tuple[tuple[str | None, str], ...]]]] = {}
+    for layout in layouts:
+        mechanism = layout_mechanisms[layout.id]
+        if not _is_mergeable_channel_layout(layout, mechanism):
+            continue
+        runtime_cls = get_registry().get("channel", mechanism.class_name)
+        bound_ions, owner_specs = _resolve_channel_runtime_bindings(
+            runtime_cls=runtime_cls,
+            mechanism=mechanism,
+            ions=ions,
+            ion_aliases=ion_aliases,
+            ion_family_candidates=ion_family_candidates,
+        )
+        if len(owner_specs) != 1:
+            continue
+        key = (
+            runtime_cls,
+            mechanism.instance_name,
+            tuple(sorted(mechanism.params.keys())),
+            mechanism.solver,
+            mechanism.substeps,
+            tuple(ion_key for ion_key, _ in bound_ions),
+            owner_specs,
+        )
+        groups.setdefault(key, []).append((layout, mechanism, runtime_cls, bound_ions, owner_specs))
+
+    installed: dict[int, tuple[int, ...]] = {}
+    for items in groups.values():
+        merge_sets = _partition_non_overlapping_channel_layouts(items)
+        for merge_items in merge_sets:
+            if len(merge_items) < 2:
+                continue
+            layout_ids = tuple(layout.id for layout, *_ in merge_items)
+            layout0, mechanism0, runtime_cls, bound_ions, owner_specs = merge_items[0]
+            params = _merged_channel_constructor_params(
+                n_point=n_point,
+                pop_size=pop_size,
+                items=merge_items,
+                state_buffers=state_buffers,
+            )
+            size = pop_size + (n_point,)
+            node = runtime_cls(size=size, **params)
+            point_mask = np.zeros((n_point,), dtype=bool)
+            for layout, *_ in merge_items:
+                point_mask |= np.asarray(layout.point_mask, dtype=bool)
+            setattr(node, "_point_mask", point_mask)
+            executable = _owner_channel_executable(
+                node,
+                bound_ions=bound_ions,
+                owner_specs=owner_specs,
+                owner_ion=ions[owner_specs[0][1]],
+            )
+            if executable is not node:
+                setattr(executable, "_point_mask", point_mask)
+
+            owner_ion = ions[owner_specs[0][1]]
+            channel_key = _unique_ion_channel_key(owner_ion, mechanism0.instance_name, layout_id=layout0.id)
+            owner_ion.add(**{channel_key: executable})
+            current_owner_key = owner_specs[0][1]
+            layout_bound_ion_keys = tuple(ion_key for ion_key, _ in bound_ions)
+            for layout_id in layout_ids:
+                runtime_nodes[layout_id] = node
+                bound_ion_keys[layout_id] = layout_bound_ion_keys
+                current_owner_keys[layout_id] = current_owner_key
+                installed[layout_id] = layout_ids
+    return installed
+
+
+def _is_mergeable_channel_layout(layout: MechanismLayout, mechanism: object) -> bool:
+    return (
+        layout.target == "density"
+        and layout.layout == "dense"
+        and layout.point_mask is not None
+        and isinstance(mechanism, Density)
+        and mechanism.category == "channel"
+    )
+
+
+def _partition_non_overlapping_channel_layouts(items):
+    partitions = []
+    for item in items:
+        layout = item[0]
+        mask = np.asarray(layout.point_mask, dtype=bool)
+        placed = False
+        for partition in partitions:
+            used = partition["mask"]
+            if not np.any(used & mask):
+                partition["items"].append(item)
+                partition["mask"] = used | mask
+                placed = True
+                break
+        if not placed:
+            partitions.append({"items": [item], "mask": mask.copy()})
+    return [partition["items"] for partition in partitions]
+
+
+def _merged_channel_constructor_params(
+    *,
+    n_point: int,
+    pop_size: tuple[int, ...],
+    items,
+    state_buffers: dict[tuple[int, str], np.ndarray],
+) -> dict[str, object]:
+    all_param_names = []
+    for _layout, mechanism, *_ in items:
+        for name in mechanism.params.keys():
+            if name not in all_param_names:
+                all_param_names.append(name)
+
+    params = {}
+    full_shape = pop_size + (n_point,)
+    for var_name in all_param_names:
+        value_items = [
+            (layout, mechanism)
+            for layout, mechanism, *_ in items
+            if var_name in mechanism.params
+        ]
+        if not value_items:
+            continue
+        first_layout, _first_mechanism = value_items[0]
+        first_value = _runtime_param_value(
+            layout=first_layout,
+            var_name=var_name,
+            state_buffers=state_buffers,
+        )
+        merged = _initial_merged_channel_param(
+            var_name=var_name,
+            value=first_value,
+            full_shape=full_shape,
+        )
+        for layout, _mechanism in value_items:
+            value = _runtime_param_value(
+                layout=layout,
+                var_name=var_name,
+                state_buffers=state_buffers,
+            )
+            merged = _scatter_active_channel_param(
+                merged,
+                value,
+                point_mask=np.asarray(layout.point_mask, dtype=bool),
+                full_shape=full_shape,
+            )
+        params[var_name] = merged
+    return params
+
+
+def _initial_merged_channel_param(*, var_name: str, value: object, full_shape: tuple[int, ...]) -> object:
+    if isinstance(value, u.Quantity):
+        if var_name in _CONDUCTANCE_PARAM_NAMES:
+            return u.Quantity(np.zeros(full_shape, dtype=np.float64), value.unit)
+        mantissa = np.asarray(value.mantissa, dtype=np.float64)
+        if mantissa.shape == full_shape:
+            return u.Quantity(mantissa.copy(), value.unit)
+        return u.Quantity(np.broadcast_to(mantissa, full_shape).copy(), value.unit)
+
+    values = np.asarray(value)
+    if var_name in _CONDUCTANCE_PARAM_NAMES:
+        return np.zeros(full_shape, dtype=values.dtype)
+    if values.shape == full_shape:
+        return values.copy()
+    return np.broadcast_to(values, full_shape).copy()
+
+
+def _scatter_active_channel_param(target, value, *, point_mask: np.ndarray, full_shape: tuple[int, ...]):
+    if isinstance(value, u.Quantity):
+        unit = target.unit
+        values = np.asarray(value.to_decimal(unit), dtype=np.float64)
+        target_mantissa = np.asarray(target.mantissa, dtype=np.float64).copy()
+        target_mantissa[..., point_mask] = values[..., point_mask]
+        return u.Quantity(target_mantissa, unit)
+
+    values = np.asarray(value)
+    target_arr = np.asarray(target).copy()
+    target_arr[..., point_mask] = values[..., point_mask]
+    return target_arr
+
+
+def _owner_channel_executable(node, *, bound_ions, owner_specs, owner_ion):
+    component_key, owner_key = owner_specs[0]
+    if component_key is None and len(bound_ions) == 1 and bound_ions[0][0] == owner_key:
+        return node
+    if component_key is None:
+        return _BoundIonChannelRuntime(
+            node,
+            bound_ions=tuple(ion for _, ion in bound_ions),
+            owner_ion=owner_ion,
+        )
+    return _BoundIonChannelCurrentComponentRuntime(
+        node,
+        bound_ions=tuple(ion for _, ion in bound_ions),
+        owner_ion=owner_ion,
+        component_key=component_key,
+        owns_state=True,
+    )
+
+
 def _unique_ion_channel_key(owner_ion: object, instance_name: str, *, layout_id: int) -> str:
     channels = getattr(owner_ion, "channels", None)
     if not isinstance(channels, dict) or instance_name not in channels:
@@ -2432,6 +2904,9 @@ def _channel_current_owner_family(cls: type) -> str | None:
     return specs[0][1]
 
 
+_CONDUCTANCE_PARAM_NAMES = frozenset({"g_max", "g", "gbar", "conductance"})
+
+
 def _runtime_param_value(
     *,
     layout: MechanismLayout,
@@ -2448,7 +2923,7 @@ def _runtime_param_value(
     if (
         isinstance(buffer, u.Quantity)
         and layout.point_mask is not None
-        and var_name in {"g_max", "g", "gbar", "conductance"}
+        and var_name in _CONDUCTANCE_PARAM_NAMES
     ):
         mask_bool = np.asarray(layout.point_mask)
         masked_mantissa = np.where(mask_bool, np.asarray(buffer.mantissa), 0.0)
@@ -2477,6 +2952,19 @@ def _sync_runtime_node_param(runtime: CellRuntimeState, *, layout_id: int, var_n
     if kind.startswith("ion:"):
         _sync_runtime_ion(runtime, layout_id=int(layout_id))
         return
+    merged_groups = runtime.merged_channel_layout_groups or {}
+    merged_layout_ids = merged_groups.get(int(layout_id))
+    if merged_layout_ids is not None and kind.startswith("channel:"):
+        new_value = _merged_channel_param_value(
+            runtime,
+            layout_ids=merged_layout_ids,
+            var_name=str(var_name),
+        )
+        setattr(node, var_name, new_value)
+        hook = getattr(node, "_on_param_updated", None)
+        if callable(hook):
+            hook(var_name, new_value)
+        return
     new_value = _runtime_param_value(
         layout=layout,
         var_name=var_name,
@@ -2486,6 +2974,50 @@ def _sync_runtime_node_param(runtime: CellRuntimeState, *, layout_id: int, var_n
     hook = getattr(node, "_on_param_updated", None)
     if callable(hook):
         hook(var_name, new_value)
+
+
+def _merged_channel_param_value(
+    runtime: CellRuntimeState,
+    *,
+    layout_ids: tuple[int, ...],
+    var_name: str,
+) -> object:
+    items = [
+        (
+            runtime.layouts[int(layout_id)],
+            runtime.layout_mechanisms[int(layout_id)],
+        )
+        for layout_id in layout_ids
+        if (int(layout_id), str(var_name)) in runtime.state_buffers
+    ]
+    if not items:
+        raise KeyError(f"Unknown merged channel parameter {var_name!r} for layouts {layout_ids!r}.")
+
+    full_shape = runtime.pop_size + (runtime.n_point,)
+    first_layout, _first_mechanism = items[0]
+    first_value = _runtime_param_value(
+        layout=first_layout,
+        var_name=str(var_name),
+        state_buffers=runtime.state_buffers,
+    )
+    merged = _initial_merged_channel_param(
+        var_name=str(var_name),
+        value=first_value,
+        full_shape=full_shape,
+    )
+    for layout, _mechanism in items:
+        value = _runtime_param_value(
+            layout=layout,
+            var_name=str(var_name),
+            state_buffers=runtime.state_buffers,
+        )
+        merged = _scatter_active_channel_param(
+            merged,
+            value,
+            point_mask=np.asarray(layout.point_mask, dtype=bool),
+            full_shape=full_shape,
+        )
+    return merged
 
 
 def _sync_runtime_ion(runtime: CellRuntimeState, *, layout_id: int) -> None:

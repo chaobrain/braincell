@@ -27,6 +27,7 @@ Type responsibilities in this file:
 """
 
 from dataclasses import dataclass
+import os
 
 import brainstate
 import brainunit as u
@@ -134,17 +135,23 @@ def staggered_step(
     dt = brainstate.environ.get('dt')
 
     if hasattr(target, "cache_ion_total_currents"):
-        target.cache_ion_total_currents(target.V.value)
+        with jax.named_scope("braincell:staggered:cache_ion_total_currents"):
+            target.cache_ion_total_currents(target.V.value)
 
     # voltage integration
-    dhs_voltage_step(target, t, dt, *args)
+    with jax.named_scope("braincell:staggered:dhs_voltage_step"):
+        dhs_voltage_step(target, t, dt, *args)
 
-    point_V = target._cv_to_point(target.V.value)
+    with jax.named_scope("braincell:staggered:cv_to_point_after_voltage"):
+        point_V = target._cv_to_point(target.V.value)
     if target.ion_channel_update_order == "family":
-        target._integrate_runtime_synapse_dynamics(point_V)
-        target._update_ion_channel_families(point_V)
+        with jax.named_scope("braincell:staggered:synapse_dynamics"):
+            target._integrate_runtime_synapse_dynamics(point_V)
+        with jax.named_scope("braincell:staggered:ion_channel_update"):
+            target._update_ion_channel_families(point_V)
     elif target.ion_channel_update_order == "integration":
-        target._update_ion_channels_by_integration(point_V)
+        with jax.named_scope("braincell:staggered:ion_channel_update"):
+            target._update_ion_channels_by_integration(point_V)
     else:
         raise ValueError(
             "ion_channel_update_order must be 'family' or 'integration', "
@@ -262,36 +269,60 @@ def dhs_voltage_step(target, t, dt, *args):
     static_source = _get_dhs_static_source(target, node_tree=node_tree, scheduling=scheduling)
     static_cache = _get_dhs_static_cache(target, static_source)
     V_n = target.V.value
-    linear, const = _linear_and_const_term(target, V_n, *args)
-    edge_point_current = _edge_point_current(target, t=t, static_source=static_source)
-    numeric = _build_dhs_numeric_state(
-        V_n,
-        linear,
-        const,
-        dt=dt,
-        static_source=static_source,
-        static_cache=static_cache,
-        edge_point_current=edge_point_current,
-    )
-    diags, solves = comp_triang_raw(
-        numeric.diags,
-        numeric.solves,
-        numeric.lowers,
-        numeric.uppers,
-        static_source.edges_np,
-        static_source.level_offsets_np,
-    )
-    solves = comp_backsub_raw(
-        diags,
-        solves,
-        numeric.lowers,
-        static_source.backsub_indices_np,
-    )
-    target.V.value = _restore_midpoint_voltage(
-        solves,
-        dynamic_rows=static_source.dynamic_rows_np,
-        target_shape=target.V.value.shape,
-    )
+    with jax.named_scope("braincell:dhs:linearize_membrane_current"):
+        linear, const = jax.named_call(
+            _linear_and_const_term,
+            name="braincell:dhs:linearize_membrane_current_call",
+        )(target, V_n, *args)
+    with jax.named_scope("braincell:dhs:edge_current"):
+        edge_point_current = jax.named_call(
+            _edge_point_current,
+            name="braincell:dhs:edge_current_call",
+        )(target, t=t, static_source=static_source)
+    with jax.named_scope("braincell:dhs:build_numeric_state"):
+        numeric = jax.named_call(
+            _build_dhs_numeric_state,
+            name="braincell:dhs:build_numeric_state_call",
+        )(
+            V_n,
+            linear,
+            const,
+            dt=dt,
+            static_source=static_source,
+            static_cache=static_cache,
+            edge_point_current=edge_point_current,
+        )
+    with jax.named_scope("braincell:dhs:forward_elimination"):
+        diags, solves = jax.named_call(
+            comp_triang_raw,
+            name="braincell:dhs:forward_elimination_call",
+        )(
+            numeric.diags,
+            numeric.solves,
+            numeric.lowers,
+            numeric.uppers,
+            static_source.edges_np,
+            static_source.level_offsets_np,
+        )
+    with jax.named_scope("braincell:dhs:backsubstitution"):
+        solves = jax.named_call(
+            comp_backsub_raw,
+            name="braincell:dhs:backsubstitution_call",
+        )(
+            diags,
+            solves,
+            numeric.lowers,
+            static_source.backsub_indices_np,
+        )
+    with jax.named_scope("braincell:dhs:restore_voltage"):
+        target.V.value = jax.named_call(
+            _restore_midpoint_voltage,
+            name="braincell:dhs:restore_voltage_call",
+        )(
+            solves,
+            dynamic_rows=static_source.dynamic_rows_np,
+            target_shape=target.V.value.shape,
+        )
 
 
 def _build_dhs_static_source(target, *, node_tree, scheduling) -> DHSStaticSource:
@@ -611,6 +642,8 @@ def _check_comp_triang(diags, solves, lowers, uppers, edges):
 def comp_triang_raw(diags, solves, lowers, uppers, edges, level_offsets):
     """DHS forward elimination on quantity-aware JAX inputs."""
     _check_comp_triang(diags, solves, lowers, uppers, edges)
+    if _profile_dhs_levels_enabled():
+        return _comp_triang_raw_profiled(diags, solves, lowers, uppers, edges, level_offsets)
     for i in range(level_offsets.shape[0] - 1):
         children = edges[level_offsets[i]:level_offsets[i + 1], 0]
         parent = edges[level_offsets[i]:level_offsets[i + 1], 1]
@@ -622,6 +655,49 @@ def comp_triang_raw(diags, solves, lowers, uppers, edges, level_offsets):
         multiplier = upper_val / child_diag
         diags = diags.at[:, parent].add(-lower_val * multiplier)
         solves = solves.at[:, parent].add(-child_solve * multiplier)
+    return diags, solves
+
+
+def _profile_dhs_levels_enabled() -> bool:
+    """Return whether profiler-only DHS level scopes should be emitted."""
+    return os.environ.get("BRAINCELL_PROFILE_DHS_LEVELS") == "1"
+
+
+def _comp_triang_raw_profiled(diags, solves, lowers, uppers, edges, level_offsets):
+    """DHS forward elimination with profiler-visible level scopes."""
+    batch_size = int(diags.shape[0])
+    for i in range(level_offsets.shape[0] - 1):
+        start = int(level_offsets[i])
+        stop = int(level_offsets[i + 1])
+        edge_count = stop - start
+        scope = (
+            f"braincell:dhs:forward_level:"
+            f"i={i:03d}:edges={edge_count:06d}:batch={batch_size}"
+        )
+        level_edges = edges[start:stop]
+        with jax.named_scope(scope):
+            diags, solves = jax.named_call(_comp_triang_level, name=scope)(
+                diags,
+                solves,
+                lowers,
+                uppers,
+                level_edges,
+            )
+    return diags, solves
+
+
+def _comp_triang_level(diags, solves, lowers, uppers, level_edges):
+    """Apply one DHS forward elimination level."""
+    children = level_edges[:, 0]
+    parent = level_edges[:, 1]
+    lower_val = lowers[children]
+    upper_val = uppers[children]
+    child_diag = diags[:, children]
+    child_solve = solves[:, children]
+
+    multiplier = upper_val / child_diag
+    diags = diags.at[:, parent].add(-lower_val * multiplier)
+    solves = solves.at[:, parent].add(-child_solve * multiplier)
     return diags, solves
 
 
@@ -704,8 +780,12 @@ def _linear_and_const_term(target, V_n, *args):
     if hasattr(target, "_voltage_linearizer"):
         linearizer = target._voltage_linearizer()
     else:
-        linearizer = brainstate.transform.vector_grad(
+        membrane_derivative = jax.named_call(
             target.compute_membrane_derivative,
+            name="braincell_dhs_compute_membrane_derivative",
+        )
+        linearizer = brainstate.transform.vector_grad(
+            membrane_derivative,
             argnums=0,
             return_value=True,
             unit_aware=False,

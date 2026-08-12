@@ -38,7 +38,7 @@ import brainunit as u
 import numpy as np
 
 from braincell.filter import RegionMask
-from braincell.mech import Density, Point
+from braincell.mech import CVContext, Density, Point
 
 if TYPE_CHECKING:
     from braincell._discretization.mechanism import PaintRule, PlaceRule
@@ -389,6 +389,8 @@ class Discretization:
         Membrane-oriented CV tree.
     node_tree : NodeTree
         Point-space node tree derived from ``cv_tree``.
+    cv_contexts : tuple of CVContext
+        Read-only geometry and path-distance context for each CV.
 
     Notes
     -----
@@ -400,6 +402,7 @@ class Discretization:
 
     cv_tree: CVTree
     node_tree: NodeTree
+    cv_contexts: tuple[CVContext, ...]
 
     @property
     def cvs(self) -> tuple[CV, ...]:
@@ -459,13 +462,17 @@ def build_discretization(
     initialization paths should route through the resulting
     :class:`Discretization`.
     """
-    cv_tree, node_tree = _build_discretization_parts(
+    cv_tree, node_tree, cv_contexts = _build_discretization_parts(
         morpho,
         policy=policy,
         paint_rules=paint_rules,
         place_rules=place_rules,
     )
-    return Discretization(cv_tree=cv_tree, node_tree=node_tree)
+    return Discretization(
+        cv_tree=cv_tree,
+        node_tree=node_tree,
+        cv_contexts=cv_contexts,
+    )
 
 
 def _build_discretization_parts(
@@ -474,9 +481,10 @@ def _build_discretization_parts(
     policy: "CVPolicy",
     paint_rules: "tuple[PaintRule, ...]",
     place_rules: "tuple[PlaceRule, ...]",
-) -> tuple[CVTree, NodeTree]:
+) -> tuple[CVTree, NodeTree, tuple[CVContext, ...]]:
     """Assemble both static discretization views in one pass."""
     from .geometry import build_cv_geometry
+    from .context import build_cv_contexts
     from .mechanism import build_cv_mechanisms
     from .node_build import build_node_tree_from_cvs
     from .policy import CVPolicy
@@ -487,11 +495,13 @@ def _build_discretization_parts(
         )
     bounds = policy.resolve_cv_bounds(morpho, paint_rules=paint_rules)
     geometry = build_cv_geometry(morpho, bounds)
+    cv_contexts = build_cv_contexts(morpho, geometry.geos)
     buckets = build_cv_mechanisms(
         morpho,
         geometry,
         paint_rules=paint_rules,
         place_rules=place_rules,
+        cv_contexts=cv_contexts,
     )
     cvs = tuple(
         _assemble_cv(geo, bucket)
@@ -502,7 +512,7 @@ def _build_discretization_parts(
         branch_to_cv_ids=geometry.branch_to_cv_ids,
     )
     node_tree = build_node_tree_from_cvs(morpho, cvs=cv_tree.cvs)
-    return cv_tree, node_tree
+    return cv_tree, node_tree, cv_contexts
 
 
 def _build_cv_tree(

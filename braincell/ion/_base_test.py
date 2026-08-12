@@ -19,6 +19,7 @@ from braincell.ion._base import KineticIon
 from braincell.ion._base import Reaction
 from braincell.ion._base import Source
 from braincell.ion._base import Species
+from braincell.quad import get_integrator
 from braincell.quad.protocol import DiffEqState
 
 
@@ -140,15 +141,17 @@ class _SimpleKineticIon(Calcium, KineticIon):
         ),
     )
 
-    def __init__(self, size=1, species_initializers=None):
+    def __init__(self, size=1, species_initializers=None, use_defaults=False):
         super().__init__(size=size, name=None, probe=_RecorderChannel(size=size))
+        solver = None if use_defaults else "euler"
+        substeps = None if use_defaults else 2
         self._init_kinetic_ion(
             Co=None,
             temp=u.celsius2kelvin(36.0),
             valence=None,
             species_initializers=species_initializers,
-            solver="euler",
-            substeps=2,
+            solver=solver,
+            substeps=substeps,
         )
         self.cyt_volume = braintools.init.param(3.0 * u.um ** 3, self.varshape, allow_none=False)
         self.kf = braintools.init.param(2.0 / (u.mM * u.ms), self.varshape, allow_none=False)
@@ -315,6 +318,15 @@ class IonTemplateTest(unittest.TestCase):
         ion.BC.value = jnp.array([0.25]) * u.mM
         ion.reset_state(V)
         self.assertTrue(u.math.allclose(ion.B.value, jnp.array([1.0]) * u.mM, atol=1e-12 * u.mM))
+
+    def test_kinetic_ion_uses_central_default_integration_schedule(self) -> None:
+        ion = _SimpleKineticIon(size=1, use_defaults=True)
+        self.assertIs(ion.solver, get_integrator("backward_euler"))
+        self.assertEqual(ion.substeps, 1)
+
+        override = _SimpleKineticIon(size=1)
+        self.assertIs(override.solver, get_integrator("euler"))
+        self.assertEqual(override.substeps, 2)
 
     def test_kinetic_ion_species_values_return_resolved_species(self) -> None:
         ion = _SimpleKineticIon(size=1)

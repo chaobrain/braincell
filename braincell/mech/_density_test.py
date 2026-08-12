@@ -63,6 +63,13 @@ class DensityConstructionTest(unittest.TestCase):
         self.assertIsNone(spec.ion_name)
         self.assertEqual(spec.ion_names, (("ca", "ca_local"), ("k", "k_main")))
 
+    def test_integration_override_is_metadata_not_runtime_params(self) -> None:
+        spec = Channel("IL", solver="rk4", substeps=3, g_max=0.1 * u.mS / u.cm ** 2)
+        self.assertEqual(spec.solver, "rk4")
+        self.assertEqual(spec.substeps, 3)
+        self.assertNotIn("solver", spec.params)
+        self.assertNotIn("substeps", spec.params)
+
 
 class DensityClassArgumentTest(unittest.TestCase):
     def test_channel_accepts_type_argument(self) -> None:
@@ -123,6 +130,18 @@ class DensityValidationTest(unittest.TestCase):
         with self.assertRaises(TypeError):
             Channel("Kca1p1_MA2020_GoC", ion_names={"ca": 1})  # type: ignore[arg-type]
 
+    def test_integration_override_must_be_an_atomic_pair(self) -> None:
+        with self.assertRaisesRegex(ValueError, "provided together"):
+            Channel("IL", solver="rk4")
+        with self.assertRaisesRegex(ValueError, "provided together"):
+            Ion("SodiumFixed", substeps=2)
+
+    def test_integration_override_validates_substeps(self) -> None:
+        with self.assertRaises(TypeError):
+            Channel("IL", solver="rk4", substeps=True)
+        with self.assertRaises(ValueError):
+            Channel("IL", solver="rk4", substeps=0)
+
 
 class DensityIdentityTest(unittest.TestCase):
     def test_default_instance_name_is_class_name(self) -> None:
@@ -162,6 +181,14 @@ class DensityEqualityTest(unittest.TestCase):
         a = Channel("Na_HH1952", ion_name="na_a")
         b = Channel("Na_HH1952", ion_name="na_b")
         self.assertNotEqual(a, b)
+
+    def test_integration_override_participates_in_equality_and_hash(self) -> None:
+        a = Channel("IL", solver="rk4", substeps=2)
+        b = Channel("IL", solver="rk4", substeps=2)
+        inherited = Channel("IL")
+        self.assertEqual(a, b)
+        self.assertEqual(hash(a), hash(b))
+        self.assertNotEqual(a, inherited)
 
     def test_can_use_as_dict_key(self) -> None:
         a = Channel("IL", g_max=0.1 * (u.mS / u.cm ** 2), E=-70 * u.mV)
@@ -204,6 +231,16 @@ class DensityUpdatesTest(unittest.TestCase):
         updated = original.with_params(Ci=15.0 * u.mM)
         self.assertIsInstance(updated, Ion)
         self.assertEqual(updated.params["Ci"], 15.0 * u.mM)
+
+    def test_with_integration_sets_and_clears_override(self) -> None:
+        original = Channel("IL", name="leak")
+        updated = original.with_integration(solver="rk4", substeps=4)
+        inherited = updated.with_integration()
+        self.assertIsNone(original.solver)
+        self.assertEqual((updated.solver, updated.substeps), ("rk4", 4))
+        self.assertEqual((inherited.solver, inherited.substeps), (None, None))
+        self.assertEqual(updated.name, "leak")
+        self.assertIsInstance(updated, Channel)
 
 
 class DensityImmutabilityTest(unittest.TestCase):

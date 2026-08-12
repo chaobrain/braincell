@@ -27,11 +27,13 @@ from dataclasses import dataclass, field, replace
 from typing import Literal
 
 import brainunit as u
+import numpy as np
 
 from braincell.filter import AllRegion, LocsetExpr, RegionExpr
 from braincell.filter.cache import SelectionCache
 from braincell.mech import (
     CableProperty,
+    CVContext,
     CurrentProbe,
     Density,
     MechanismProbe,
@@ -40,6 +42,7 @@ from braincell.mech import (
 )
 from braincell.morph.morphology import Morphology
 from .base import CVPointMechanism, Position
+from .context import build_cv_contexts
 from .geometry import (
     CVGeometryResult,
     EPS_AREA_UM2,
@@ -108,6 +111,14 @@ class _MechBucket:
     density_by_key: dict[tuple[int, str, object], Density]
     points: list[Point]
     point_roles: list[CVPointMechanism] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class _RegionCVCoverage:
+    """Per-region coverage cache in CV order."""
+
+    cable_contains_midpoint: tuple[bool, ...]
+    density_fraction: tuple[float, ...]
 
 
 class _RegionCache:
@@ -331,11 +342,13 @@ def _coverage_fraction(
     geo: _GeoCV,
     intervals: tuple[tuple[float, float], ...],
     *,
+    branch=None,
     frusta_builder=None,
 ) -> float:
     if geo.lateral_area_um2 <= EPS_AREA_UM2:
         return 0.0
-    branch = morpho.branches[geo.branch_id]
+    if branch is None:
+        branch = morpho.branches[geo.branch_id]
     build = frusta_builder if frusta_builder is not None else _build_frusta
     overlap = 0.0
     for left, right in intervals:
@@ -345,6 +358,43 @@ def _coverage_fraction(
             continue
         overlap += _lateral_area_um2(build(branch, prox=start, dist=end))
     return max(0.0, min(1.0, overlap / geo.lateral_area_um2))
+
+
+def _region_cv_coverage(
+    intervals_by_branch: dict[int, tuple[tuple[float, float], ...]],
+    geometry: CVGeometryResult,
+    *,
+    morpho: Morphology,
+    branches,
+    frusta_builder,
+) -> _RegionCVCoverage:
+    cable_contains = [False] * len(geometry.geos)
+    density_fraction = [0.0] * len(geometry.geos)
+
+    for branch_id, cv_ids in enumerate(geometry.branch_to_cv_ids):
+        intervals = intervals_by_branch.get(branch_id, ())
+        if len(intervals) == 0:
+            continue
+        branch = branches[branch_id]
+        for cv_id in cv_ids:
+            geo = geometry.geos[cv_id]
+            cable_contains[cv_id] = _interval_contains(
+                intervals,
+                geo.midpoint,
+                epsilon=EPS_PARAM,
+            )
+            density_fraction[cv_id] = _coverage_fraction(
+                morpho,
+                geo,
+                intervals,
+                branch=branch,
+                frusta_builder=frusta_builder,
+            )
+
+    return _RegionCVCoverage(
+        cable_contains_midpoint=tuple(cable_contains),
+        density_fraction=tuple(density_fraction),
+    )
 
 
 def _apply_density(
@@ -428,6 +478,53 @@ def _init_bucket() -> _MechBucket:
     )
 
 
+def _resolve_cable_property(
+    cable: CableProperty,
+    context: CVContext,
+) -> CableProperty:
+    return CableProperty(
+        resting_potential=_resolve_cable_field(
+            cable.resting_potential,
+            context,
+            name="resting_potential",
+            unit=u.mV,
+        ),
+        membrane_capacitance=_resolve_cable_field(
+            cable.membrane_capacitance,
+            context,
+            name="membrane_capacitance",
+            unit=u.uF / u.cm ** 2,
+        ),
+        axial_resistivity=_resolve_cable_field(
+            cable.axial_resistivity,
+            context,
+            name="axial_resistivity",
+            unit=u.ohm * u.cm,
+        ),
+        temperature=_resolve_cable_field(
+            cable.temperature,
+            context,
+            name="temperature",
+            unit=u.kelvin,
+        ),
+    )
+
+
+def _resolve_cable_field(value, context: CVContext, *, name: str, unit) -> u.Quantity:
+    resolved = value(context) if callable(value) else value
+    if not hasattr(resolved, "to_decimal") or not callable(getattr(resolved, "to_decimal")):
+        raise TypeError(
+            f"CableProperty.{name} callable must return a Quantity, got {resolved!r}."
+        )
+    decimal = np.asarray(resolved.to_decimal(unit), dtype=float)
+    if decimal.shape not in ((), (1,)):
+        raise TypeError(
+            f"CableProperty.{name} must resolve to a scalar Quantity, "
+            f"got shape {decimal.shape!r}."
+        )
+    return u.Quantity(float(decimal.reshape(())), unit)
+
+
 def _position_for_geo(geo: _GeoCV, *, x: float) -> Position:
     if x <= geo.prox + EPS_PARAM:
         return "prox"
@@ -442,6 +539,7 @@ def build_cv_mechanisms(
     *,
     paint_rules: tuple[PaintRule, ...],
     place_rules: tuple[PlaceRule, ...],
+    cv_contexts: tuple[CVContext, ...] | None = None,
 ) -> list[_MechBucket]:
     """Lower normalized declaration rules onto per-CV mechanism buckets.
 
@@ -455,6 +553,9 @@ def build_cv_mechanisms(
         Normalized region-based declarations.
     place_rules : tuple of PlaceRule
         Normalized locset-based declarations.
+    cv_contexts : tuple of CVContext or None, optional
+        Precomputed contexts for ``geometry``. When omitted they are built
+        from the supplied morphology and geometry.
 
     Returns
     -------
@@ -469,6 +570,14 @@ def build_cv_mechanisms(
     locset ownership.
     """
     geos = geometry.geos
+    if cv_contexts is None:
+        cv_contexts = build_cv_contexts(morpho, geos)
+    if len(cv_contexts) != len(geos):
+        raise ValueError(
+            "cv_contexts must contain exactly one context per geometry CV; "
+            f"got {len(cv_contexts)!r} contexts for {len(geos)!r} CVs."
+        )
+    branches = morpho.branches
     buckets = [_init_bucket() for _ in geos]
     cache = _RegionCache(morpho)
 
@@ -482,42 +591,41 @@ def build_cv_mechanisms(
             frusta_cache[key] = cached
         return cached
 
+    coverage_cache: dict[int, _RegionCVCoverage] = {}
+
     for rule in paint_rules:
         intervals_by_branch = cache.intervals(rule.region)
         mechanism = rule.mechanism
+        region_key = id(rule.region)
+        coverage = coverage_cache.get(region_key)
+        if coverage is None:
+            coverage = _region_cv_coverage(
+                intervals_by_branch,
+                geometry,
+                morpho=morpho,
+                branches=branches,
+                frusta_builder=_cached_frusta,
+            )
+            coverage_cache[region_key] = coverage
 
-        for branch_id, cv_ids in enumerate(geometry.branch_to_cv_ids):
-            intervals = intervals_by_branch.get(branch_id, ())
-            if len(intervals) == 0:
+        if isinstance(mechanism, CableProperty):
+            for cv_id, contains in enumerate(coverage.cable_contains_midpoint):
+                if contains:
+                    buckets[cv_id].cable = _resolve_cable_property(
+                        mechanism,
+                        cv_contexts[cv_id],
+                    )
+            continue
+
+        for cv_id, fraction in enumerate(coverage.density_fraction):
+            if fraction <= EPS_PARAM:
                 continue
-            for cv_id in cv_ids:
-                geo = geos[cv_id]
-                bucket = buckets[cv_id]
-
-                if isinstance(mechanism, CableProperty):
-                    if not _interval_contains(
-                        intervals,
-                        geo.midpoint,
-                        epsilon=EPS_PARAM,
-                    ):
-                        continue
-                    bucket.cable = mechanism
-                    continue
-
-                fraction = _coverage_fraction(
-                    morpho,
-                    geo,
-                    intervals,
-                    frusta_builder=_cached_frusta,
-                )
-                if fraction <= EPS_PARAM:
-                    continue
-                _apply_density(
-                    bucket,
-                    mechanism,
-                    region_key=rule.region,
-                    fraction=fraction,
-                )
+            _apply_density(
+                buckets[cv_id],
+                mechanism,
+                region_key=rule.region,
+                fraction=fraction,
+            )
 
     seen_names: set[str] = set()
     for rule in place_rules:

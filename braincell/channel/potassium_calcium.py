@@ -225,8 +225,8 @@ class Kca2p2_MA2020_GoC(Markov):
         diff: brainstate.typing.ArrayLike = 3.0,
         temp: brainstate.typing.ArrayLike = u.celsius2kelvin(22.0),
         name: Optional[str] = None,
-        solver: str = "backward_euler",
-        substeps: int = 1,
+        solver: str | None = None,
+        substeps: int | None = None,
     ):
         super().__init__(size=size, name=name, solver=solver, substeps=substeps)
         self.temp = braintools.init.param(temp, self.varshape, allow_none=False)
@@ -347,8 +347,8 @@ class Kca1p1_MA2020_GoC(Markov):
         q10_base: brainstate.typing.ArrayLike = 3.0,
         temp: brainstate.typing.ArrayLike = u.celsius2kelvin(22.0),
         name: Optional[str] = None,
-        solver: str = "backward_euler",
-        substeps: int = 1,
+        solver: str | None = None,
+        substeps: int | None = None,
     ):
         super().__init__(size=size, name=name, solver=solver, substeps=substeps)
         self.g_max = braintools.init.param(g_max, self.varshape, allow_none=False)

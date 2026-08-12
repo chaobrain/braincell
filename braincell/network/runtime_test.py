@@ -411,6 +411,25 @@ class NetworkRuntimeTest(unittest.TestCase):
         self.assertEqual(len(net._run_setup_cache), 1)
         self.assertIs(next(iter(net._run_setup_cache.values())), first_setup)
 
+    def test_run_loop_cache_reuses_repeated_configuration(self) -> None:
+        pre = _spiking_cell()
+        post = _post_cell()
+        net = Network()
+        net.add_population("E", pre)
+        net.add_population("I", post)
+        net.add_connection(Connection("E", "I", [0], [1], "exp"))
+
+        net.run(dt=0.1 * u.ms, duration=0.2 * u.ms)
+        self.assertEqual(len(net._network_run_loop_cache), 1)
+        first_loop = next(iter(net._network_run_loop_cache.values()))
+
+        pre.reset_state()
+        post.reset_state()
+        net.run(dt=0.1 * u.ms, duration=0.2 * u.ms)
+
+        self.assertEqual(len(net._network_run_loop_cache), 1)
+        self.assertIs(next(iter(net._network_run_loop_cache.values())), first_loop)
+
     def test_run_setup_cache_is_cleared_on_topology_change(self) -> None:
         pre = _spiking_cell()
         post = _post_cell()
@@ -424,6 +443,7 @@ class NetworkRuntimeTest(unittest.TestCase):
         net.add_connection(Connection("E", "I", [1], [0], "exp"))
 
         self.assertEqual(len(net._run_setup_cache), 0)
+        self.assertEqual(len(net._network_run_loop_cache), 0)
 
     def test_same_population_recurrent_delivery_uses_next_step(self) -> None:
         cell = _post_cell(size=2)

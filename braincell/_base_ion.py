@@ -25,10 +25,12 @@ before executing its own bottom-of-file ``from ._base_ion import ...``
 re-export line.
 """
 
+import os
 from typing import Callable, Dict, Hashable, Optional, Sequence, Tuple, Type
 
 import brainstate
 import brainunit as u
+import jax
 from brainstate.mixin import _JointGenericAlias
 
 from ._base_channel import Channel, IonChannel, IonInfo
@@ -110,9 +112,42 @@ def _channel_component_current(node, component_key, V, *infos):
     current owners through ``current_owner_types``.
     """
     if component_key is None:
-        return node.current(V, *infos)
-    components = node.current_components(V, *infos)
+        return jax.named_call(
+            node.current,
+            name=_channel_call_name("braincell:ion_current:channel", node),
+        )(V, *infos)
+    components = jax.named_call(
+        node.current_components,
+        name=_channel_call_name("braincell:ion_current:components", node),
+    )(V, *infos)
     return components[component_key]
+
+
+def _channel_call_name(prefix: str, node) -> str:
+    """Build a profiler-safe ``jax.named_call`` name for an ion child channel."""
+    class_name = type(getattr(node, "_channel", node)).__name__
+    raw = f"{prefix}:{class_name}"
+    return "".join(ch if ch.isalnum() or ch in ":_" else "_" for ch in raw)[:180]
+
+
+def _external_current_call_name(prefix: str, key) -> str:
+    """Build a profiler-safe ``jax.named_call`` name for external ion current."""
+    raw = f"{prefix}:{key!s}"
+    return "".join(ch if ch.isalnum() or ch in ":_" else "_" for ch in raw)[:180]
+
+
+def _profile_barrier_current(current):
+    """Optionally split channel-current HLO for profiler attribution.
+
+    The barrier is disabled by default because it can inhibit XLA fusion. Set
+    ``BRAINCELL_PROFILE_SPLIT_CURRENTS=1`` when collecting profiler traces that
+    need per-channel current attribution.
+    """
+    if os.environ.get("BRAINCELL_PROFILE_SPLIT_CURRENTS") != "1":
+        return current
+    if hasattr(current, "unit"):
+        return u.Quantity(jax.lax.optimization_barrier(u.get_mantissa(current)), current.unit)
+    return jax.lax.optimization_barrier(current)
 
 
 def _mask_inactive_current(current, point_mask):
@@ -313,14 +348,22 @@ class Ion(IonChannel, Container):
                 node: Channel
                 point_mask = getattr(node, "_point_mask", None)
                 node_V = _safe_inactive_voltage(V, point_mask) if point_mask is not None else V
-                new_current = node.current(node_V, ion_info)
+                new_current = jax.named_call(
+                    node.current,
+                    name=_channel_call_name("braincell:ion_current:channel", node),
+                )(node_V, ion_info)
+                new_current = _profile_barrier_current(new_current)
                 if point_mask is not None:
                     new_current = _mask_inactive_current(new_current, point_mask)
                 current = new_current if current is None else (current + new_current)
         if include_external and self._external_currents:
             for key, node in self._external_currents.items():
                 node: Callable
-                contrib = node(V, ion_info)
+                contrib = jax.named_call(
+                    node,
+                    name=_external_current_call_name("braincell:ion_current:external", key),
+                )(V, ion_info)
+                contrib = _profile_barrier_current(contrib)
                 current = contrib if current is None else (current + contrib)
         return current
 
@@ -529,7 +572,11 @@ class MixIons(IonChannel, Container):
                 infos = tuple([self._get_ion(root).pack_info() for root in node.root_type.__args__])
                 point_mask = getattr(node, "_point_mask", None)
                 node_V = _safe_inactive_voltage(V, point_mask) if point_mask is not None else V
-                new_current = node.current(node_V, *infos)
+                new_current = jax.named_call(
+                    node.current,
+                    name=_channel_call_name("braincell:mix_ion_current:channel", node),
+                )(node_V, *infos)
+                new_current = _profile_barrier_current(new_current)
                 if point_mask is not None:
                     new_current = _mask_inactive_current(new_current, point_mask)
                 current = new_current if current is None else (current + new_current)

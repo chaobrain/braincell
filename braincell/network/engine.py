@@ -6,6 +6,7 @@ from dataclasses import dataclass
 
 import brainstate
 import brainunit as u
+import jax
 import numpy as np
 
 from braincell._multi_compartment.run import _validate_time_quantity
@@ -21,6 +22,7 @@ from .delivery import (
     normalize_event_backend,
     population_spike,
     resolve_event_backend,
+    zero_ring_buffer,
     write_arrivals,
 )
 from .lowering import lower_connections, resolve_synapse_layout
@@ -39,6 +41,14 @@ class _RunSetup:
     n_trace: int
 
 
+@dataclass(frozen=True)
+class _CachedRunLoop:
+    """Compiled network scan plus its reusable delivery buffers."""
+
+    runner: object
+    delivery_state: object
+
+
 class Network:
     """Named population network using existing ``Cell`` runtimes."""
 
@@ -53,10 +63,12 @@ class Network:
         self.projections = self.proj
         self._topology_version = 0
         self._run_setup_cache: dict[tuple, _RunSetup] = {}
+        self._network_run_loop_cache: dict[tuple, _CachedRunLoop] = {}
 
     def _mark_topology_changed(self) -> None:
         self._topology_version += 1
         self._run_setup_cache.clear()
+        self._network_run_loop_cache.clear()
 
     def __repr__(self) -> str:
         """Return a compact network summary."""
@@ -292,19 +304,18 @@ class Network:
 
         self.init_state()
 
+        setup_key = self._run_setup_cache_key(
+            dt=dt,
+            delay_quantization=delay_quantization,
+            event_backend=event_backend,
+            brainevent_backend=brainevent_backend,
+        )
         setup = self._run_setup(
             dt=dt,
             delay_quantization=delay_quantization,
             event_backend=event_backend,
             brainevent_backend=brainevent_backend,
         )
-        delivery_blocks = setup.delivery_blocks
-        delivery_state = create_delivery_state(
-            delivery_blocks,
-            populations=self.populations,
-            delivery_ops=setup.delivery_ops,
-        )
-
         ordered_population_names = setup.ordered_population_names
         start_t = self._common_start_time(ordered_population_names)
         relative_times = u.math.arange(0.0 * u.ms, duration, dt)
@@ -316,56 +327,19 @@ class Network:
         probe_names = setup.probe_names
         n_trace = setup.n_trace
         n_spike = 0 if spike_recording == "none" else len(ordered_population_names)
-
-        with brainstate.environ.context(dt=dt):
-            def _step(t):
-                with brainstate.environ.context(t=t):
-                    write_arrivals(
-                        delivery_blocks,
-                        delivery_state,
-                        populations=self.populations,
-                    )
-                    for name in ordered_population_names:
-                        self.populations[name].cell._prepare_next_synapse_inputs()
-                    for name in ordered_population_names:
-                        self.populations[name].cell._begin_step()
-                    for name in ordered_population_names:
-                        cell = self.populations[name].cell
-                        cell._update_dynamics()
-                    snapshots = {
-                        name: self.populations[name].cell.sample_probes()
-                        for name in ordered_population_names
-                    }
-                    if spike_recording == "full":
-                        spikes = tuple(
-                            self.populations[name].cell.spike.value
-                            for name in ordered_population_names
-                        )
-                    elif spike_recording == "population":
-                        spikes = tuple(
-                            population_spike(self.populations[name].cell.spike.value)
-                            for name in ordered_population_names
-                        )
-                    else:
-                        spikes = ()
-                    enqueue_future_events(
-                        delivery_blocks,
-                        delivery_state,
-                        populations=self.populations,
-                    )
-                    advance_delivery_state(delivery_state)
-                    traces = tuple(
-                        snapshots[name][probe_name]
-                        for name in ordered_population_names
-                        for probe_name in probe_names[name]
-                    )
-                    return traces + spikes
-
-            samples_over_time = brainstate.transform.for_loop(_step, times)
-
-        end_t = start_t + int(times.shape[0]) * dt
-        for population in self.populations.values():
-            population.cell._set_current_time(end_t)
+        cached_loop = self._network_run_loop(
+            setup=setup,
+            setup_key=setup_key,
+            dt=dt,
+            n_steps=int(relative_times.shape[0]),
+            spike_recording=spike_recording,
+        )
+        _reset_delivery_state(
+            cached_loop.delivery_state,
+            setup.delivery_blocks,
+            populations=self.populations,
+        )
+        times, samples_over_time = cached_loop.runner(start_t, relative_times)
 
         samples_tuple = _normalize_scan_samples(
             samples_over_time,
@@ -463,6 +437,117 @@ class Network:
             brainevent_backend,
         )
 
+    def _network_run_loop(
+        self,
+        *,
+        setup: _RunSetup,
+        setup_key: tuple,
+        dt,
+        n_steps: int,
+        spike_recording: str,
+    ) -> _CachedRunLoop:
+        key = (
+            setup_key,
+            int(n_steps),
+            spike_recording,
+            int(brainstate.environ.get_precision()),
+        )
+        cached = self._network_run_loop_cache.get(key)
+        if cached is None:
+            delivery_state = create_delivery_state(
+                setup.delivery_blocks,
+                populations=self.populations,
+                delivery_ops=setup.delivery_ops,
+            )
+            cached = _CachedRunLoop(
+                runner=self._make_network_run_loop(
+                    setup=setup,
+                    dt=dt,
+                    spike_recording=spike_recording,
+                    delivery_state=delivery_state,
+                ),
+                delivery_state=delivery_state,
+            )
+            self._network_run_loop_cache[key] = cached
+        return cached
+
+    def _make_network_run_loop(
+        self,
+        *,
+        setup: _RunSetup,
+        dt,
+        spike_recording: str,
+        delivery_state,
+    ):
+        """Create a persistent jitted scan for one network run shape."""
+        delivery_blocks = setup.delivery_blocks
+        ordered_population_names = setup.ordered_population_names
+        probe_names = setup.probe_names
+
+        def _run_loop(start_t, relative_times):
+            times = start_t + relative_times
+            with brainstate.environ.context(dt=dt):
+                def _step(t):
+                    with brainstate.environ.context(t=t):
+                        with jax.named_scope("braincell:network_run:write_arrivals"):
+                            write_arrivals(
+                                delivery_blocks,
+                                delivery_state,
+                                populations=self.populations,
+                            )
+                        with jax.named_scope("braincell:network_run:prepare_inputs"):
+                            for name in ordered_population_names:
+                                self.populations[name].cell._prepare_next_synapse_inputs()
+                        with jax.named_scope("braincell:network_run:begin_cells"):
+                            for name in ordered_population_names:
+                                self.populations[name].cell._begin_step()
+                        with jax.named_scope("braincell:network_run:update_cells"):
+                            for name in ordered_population_names:
+                                cell = self.populations[name].cell
+                                cell._update_dynamics()
+                        with jax.named_scope("braincell:network_run:sample_probes"):
+                            snapshots = {
+                                name: self.populations[name].cell.sample_probes()
+                                for name in ordered_population_names
+                            }
+                        with jax.named_scope("braincell:network_run:record_spikes"):
+                            if spike_recording == "full":
+                                spikes = tuple(
+                                    self.populations[name].cell.spike.value
+                                    for name in ordered_population_names
+                                )
+                            elif spike_recording == "population":
+                                spikes = tuple(
+                                    population_spike(self.populations[name].cell.spike.value)
+                                    for name in ordered_population_names
+                                )
+                            else:
+                                spikes = ()
+                        with jax.named_scope("braincell:network_run:enqueue_events"):
+                            enqueue_future_events(
+                                delivery_blocks,
+                                delivery_state,
+                                populations=self.populations,
+                            )
+                        with jax.named_scope("braincell:network_run:advance_delivery"):
+                            advance_delivery_state(delivery_state)
+                        with jax.named_scope("braincell:network_run:pack_traces"):
+                            traces = tuple(
+                                snapshots[name][probe_name]
+                                for name in ordered_population_names
+                                for probe_name in probe_names[name]
+                            )
+                        return traces + spikes
+
+                samples_over_time = brainstate.transform.for_loop(_step, times)
+
+            end_t = start_t + int(times.shape[0]) * dt
+            for population in self.populations.values():
+                population.cell._set_current_time(end_t)
+            return times, samples_over_time
+
+        return brainstate.transform.jit(_run_loop)
+
     def _common_start_time(self, names: tuple[str, ...]):
         first = self.populations[names[0]].cell.current_time
         for name in names[1:]:
@@ -523,3 +608,13 @@ def _normalize_scan_samples(values, *, n_samples: int) -> tuple:
             f"Network.run(...) expected {n_samples} scan outputs, got {len(values)!r}."
         )
     return values
+
+
+def _reset_delivery_state(state, blocks, *, populations: dict) -> None:
+    """Clear reusable per-run event queues before a compiled network scan."""
+    for index, block in enumerate(blocks):
+        state.ring_buffers[index].value = zero_ring_buffer(
+            block,
+            post_size=populations[block.source.post_population].size,
+        )
+        state.ring_cursors[index].value = np.asarray(0, dtype=np.int32)

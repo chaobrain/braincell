@@ -1377,6 +1377,13 @@ class CdpCAM_MA2024_PCTest(unittest.TestCase):
         self.assertFalse(hasattr(ion, "ica_pmp"))
         self.assertFalse(hasattr(ion, "parea2"))
 
+    def test_default_integration_schedule_comes_from_kinetic_parent(self) -> None:
+        ion = self._make_ion()
+        self.assertEqual(ion.substeps, 1)
+
+        override = self._make_ion(solver="backward_euler", substeps=1)
+        self.assertEqual(override.substeps, 1)
+
     def test_init_state_matches_pc_mod_semantics(self) -> None:
         ion = self._make_ion()
         ion.init_state(_V([-60.0]))

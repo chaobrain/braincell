@@ -51,6 +51,7 @@ braincell.synapse : Concrete synapse implementations.
 
 from ._base import Mechanism
 from ._cable import CableProperty
+from ._context import CVContext
 from ._density import Channel, Density, Ion
 from ._junction import Junction
 from ._params import Params
@@ -80,6 +81,7 @@ __all__ = [
     "Mechanism",
     # Cable properties
     "CableProperty",
+    "CVContext",
     # Density mechanisms
     "Channel",
     "Density",

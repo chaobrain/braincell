@@ -17,6 +17,7 @@ from .parameters import (
     SOURCE_GRC_DIR,
     SOURCE_MORPH_PATH,
     grc20_nseg_rule,
+    is_nrnmech_loaded,
     mark_nrnmech_loaded,
 )
 

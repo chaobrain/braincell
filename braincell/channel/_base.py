@@ -4,15 +4,18 @@
 from dataclasses import dataclass
 from functools import lru_cache
 import inspect
+import numpy as np
 from typing import Any, Optional
 from typing import ClassVar
 
 import brainstate
 import braintools
 import brainunit as u
+import jax
 import jax.numpy as jnp
 
 from braincell._base import Channel
+from braincell._misc import is_traced_value
 from braincell.quad.protocol import DiffEqState
 from braincell.quad.protocol import IndependentIntegration
 
@@ -219,15 +222,21 @@ class Markov(Channel, IndependentIntegration):
     pairs: ClassVar[tuple[Transition | tuple[Any, ...], ...]] = ()
     conserve: ClassVar[Any] = 1.0
     dependent_state: ClassVar[str | None] = None
+    default_solver: ClassVar[str] = "backward_euler"
+    default_substeps: ClassVar[int] = 1
 
     def __init__(
         self,
         size: brainstate.typing.Size,
         name: Optional[str] = None,
-        solver: str = "backward_euler",
-        substeps: int = 1,
+        solver: str | None = None,
+        substeps: int | None = None,
     ):
         super().__init__(size=size, name=name)
+        if solver is None:
+            solver = type(self).default_solver
+        if substeps is None:
+            substeps = type(self).default_substeps
         IndependentIntegration.__init__(self, solver=solver)
 
         self.substeps = int(substeps)
@@ -362,6 +371,22 @@ class Markov(Channel, IndependentIntegration):
                 assert value.shape[0] == batch_size
 
     def _solve_steady_state(self, V, *ions):
+        """Return Markov steady-state probabilities for reset-time initialization.
+
+        The host implementation avoids compiling a collection of small XLA
+        kernels during cold reset. Traced contexts keep the JAX implementation
+        so symbolic execution remains available where JAX requires it.
+        """
+        try:
+            return self._solve_steady_state_host(V, *ions)
+        except (
+            jax.errors.ConcretizationTypeError,
+            jax.errors.TracerArrayConversionError,
+        ):
+            return self._solve_steady_state_jax(V, *ions)
+
+    def _solve_steady_state_jax(self, V, *ions):
+        """Return Markov steady-state probabilities using JAX arrays."""
         state_names = self._state_names()
         dependent_index = state_names.index(self._dependent_state_name())
         template = jnp.asarray(u.get_magnitude(self._state_zero()))
@@ -378,29 +403,37 @@ class Markov(Channel, IndependentIntegration):
                         array = jnp.broadcast_to(array, template_shape)
                     except ValueError as err:
                         raise ValueError(
-                            f"{type(self).__name__}.{label} could not be broadcast to steady-state shape {template_shape}."
+                            f"{type(self).__name__}.{label} could not be broadcast "
+                            f"to steady-state shape {template_shape}."
                         ) from err
             return array.reshape(flat_size)
 
         conserve = _flatten_like(self._conserve_value(), "conserve")
+        pair_rates = []
         rates = []
+        # Resolve each rate once; steady-state assembly reuses the arrays below.
         for pair in self._iter_pairs():
-            rates.append(_flatten_like(self._call_rate(pair.forward, V, *ions), pair.forward))
+            forward = _flatten_like(self._call_rate(pair.forward, V, *ions), pair.forward)
+            backward = None
             if pair.backward is not None:
-                rates.append(_flatten_like(self._call_rate(pair.backward, V, *ions), pair.backward))
+                backward = _flatten_like(self._call_rate(pair.backward, V, *ions), pair.backward)
+            pair_rates.append((pair, forward, backward))
+            rates.append(forward)
+            if backward is not None:
+                rates.append(backward)
 
         dtype = jnp.result_type(template, conserve, *rates) if rates else jnp.result_type(template, conserve)
         conserve = conserve.astype(dtype)
         generator = jnp.zeros((flat_size, len(state_names), len(state_names)), dtype=dtype)
 
-        for pair in self._iter_pairs():
+        for pair, forward, backward in pair_rates:
             src = state_names.index(pair.src)
             dst = state_names.index(pair.dst)
-            forward = _flatten_like(self._call_rate(pair.forward, V, *ions), pair.forward).astype(dtype)
+            forward = forward.astype(dtype)
             generator = generator.at[:, src, src].add(-forward)
             generator = generator.at[:, dst, src].add(forward)
-            if pair.backward is not None:
-                backward = _flatten_like(self._call_rate(pair.backward, V, *ions), pair.backward).astype(dtype)
+            if backward is not None:
+                backward = backward.astype(dtype)
                 generator = generator.at[:, src, dst].add(backward)
                 generator = generator.at[:, dst, dst].add(-backward)
 
@@ -409,23 +442,112 @@ class Markov(Channel, IndependentIntegration):
         try:
             solution = jnp.linalg.solve(lhs, rhs[..., None]).squeeze(-1)
         except Exception as err:
-            raise ValueError(f"{type(self).__name__} steady-state linear system could not be solved.") from err
+            raise ValueError(
+                f"{type(self).__name__} steady-state linear system could not be solved."
+            ) from err
 
-        if not bool(jnp.all(jnp.isfinite(solution))):
-            raise ValueError(f"{type(self).__name__} steady-state solve returned non-finite values.")
+        traced = is_traced_value(solution)
+        if not traced:
+            if not bool(jnp.all(jnp.isfinite(solution))):
+                raise ValueError(f"{type(self).__name__} steady-state solve returned non-finite values.")
 
-        tol = 1e-7
-        if bool(jnp.any(solution < -tol)) or bool(jnp.any(solution > conserve[:, None] + tol)):
-            raise ValueError(f"{type(self).__name__} steady-state solve returned out-of-range probabilities.")
+            tol = 1e-7
+            if bool(jnp.any(solution < -tol)) or bool(jnp.any(solution > conserve[:, None] + tol)):
+                raise ValueError(f"{type(self).__name__} steady-state solve returned out-of-range probabilities.")
 
         solution = jnp.clip(solution, 0.0, None)
         totals = solution.sum(axis=1, keepdims=True)
-        if not bool(jnp.all(totals > 0.0)):
+        if not traced and not bool(jnp.all(totals > 0.0)):
             raise ValueError(f"{type(self).__name__} steady-state solve collapsed to zero probability mass.")
         solution = solution * (conserve[:, None] / totals)
 
         return {
             name: solution[:, index].reshape(template_shape)
+            for index, name in enumerate(state_names)
+        }
+
+    def _solve_steady_state_host(self, V, *ions):
+        """Return Markov steady-state probabilities using a host NumPy solve."""
+        state_names = self._state_names()
+        dependent_index = state_names.index(self._dependent_state_name())
+        template = jnp.asarray(u.get_magnitude(self._state_zero()))
+        template_shape = template.shape
+        flat_size = int(template.size)
+        template_host = np.asarray(jax.device_get(template))
+
+        def _flatten_like(value, label: str):
+            array = np.asarray(jax.device_get(u.get_magnitude(value)))
+            if array.shape != template_shape:
+                if array.size == 1:
+                    array = np.full(template_shape, array.reshape(()), dtype=array.dtype)
+                else:
+                    try:
+                        array = np.broadcast_to(array, template_shape)
+                    except ValueError as err:
+                        raise ValueError(
+                            f"{type(self).__name__}.{label} could not be broadcast "
+                            f"to steady-state shape {template_shape}."
+                        ) from err
+            return array.reshape(flat_size)
+
+        conserve = _flatten_like(self._conserve_value(), "conserve")
+        pair_rates = []
+        rates = []
+        # Resolve each rate once; steady-state assembly reuses the arrays below.
+        for pair in self._iter_pairs():
+            forward = _flatten_like(self._call_rate(pair.forward, V, *ions), pair.forward)
+            backward = None
+            if pair.backward is not None:
+                backward = _flatten_like(self._call_rate(pair.backward, V, *ions), pair.backward)
+            pair_rates.append((pair, forward, backward))
+            rates.append(forward)
+            if backward is not None:
+                rates.append(backward)
+
+        if rates:
+            dtype = np.dtype(jnp.result_type(template_host, conserve, *rates))
+        else:
+            dtype = np.dtype(jnp.result_type(template_host, conserve))
+        conserve = conserve.astype(dtype, copy=False)
+        generator = np.zeros((flat_size, len(state_names), len(state_names)), dtype=dtype)
+
+        for pair, forward, backward in pair_rates:
+            src = state_names.index(pair.src)
+            dst = state_names.index(pair.dst)
+            forward = forward.astype(dtype, copy=False)
+            generator[:, src, src] -= forward
+            generator[:, dst, src] += forward
+            if backward is not None:
+                backward = backward.astype(dtype, copy=False)
+                generator[:, src, dst] += backward
+                generator[:, dst, dst] -= backward
+
+        lhs = generator.copy()
+        lhs[:, dependent_index, :] = 1
+        rhs = np.zeros((flat_size, len(state_names)), dtype=dtype)
+        rhs[:, dependent_index] = conserve
+        try:
+            solution = np.linalg.solve(lhs, rhs[..., None]).squeeze(-1)
+        except Exception as err:
+            raise ValueError(
+                f"{type(self).__name__} steady-state linear system could not be solved."
+            ) from err
+
+        if not np.all(np.isfinite(solution)):
+            raise ValueError(f"{type(self).__name__} steady-state solve returned non-finite values.")
+
+        tol = 1e-7
+        if np.any(solution < -tol) or np.any(solution > conserve[:, None] + tol):
+            raise ValueError(f"{type(self).__name__} steady-state solve returned out-of-range probabilities.")
+
+        solution = np.clip(solution, 0.0, None)
+        totals = solution.sum(axis=1, keepdims=True)
+        if not np.all(totals > 0.0):
+            raise ValueError(f"{type(self).__name__} steady-state solve collapsed to zero probability mass.")
+        solution = solution * (conserve[:, None] / totals)
+
+        return {
+            name: jnp.asarray(solution[:, index].reshape(template_shape))
             for index, name in enumerate(state_names)
         }
 

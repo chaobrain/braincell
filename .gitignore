@@ -236,6 +236,7 @@ cython_debug/
 /docs/_static/braincell.psd
 /docs/_static/single_cell_frontend/
 /examples/multi_compartment/plot/
+/examples/neuron_compare/cell/pc_ma2024/debug/results/
 
 x86_64/
 /.claude/

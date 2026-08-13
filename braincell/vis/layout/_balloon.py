@@ -93,43 +93,52 @@ def _layout_children_balloon(
     is_root: bool,
     layout_config: LayoutConfig,
 ) -> None:
-    children = parent.children
-    if not children:
-        return
+    """Lay out every descendant of ``parent``.
 
-    angle_assignments = _assign_balloon_child_angles(
-        children,
-        leaf_counts=leaf_counts,
-        parent_angle_rad=parent_angle_rad,
-        min_branch_angle_rad=min_branch_angle_rad,
-        root_layout=root_layout,
-        is_root=is_root,
-        layout_config=layout_config,
-    )
-    parent_layout = layouts[parent.index]
-    for child in children:
-        attach_um, attach_tangent_um = sample_layout_branch(parent_layout, child.parent_x)
-        child_angle_rad = angle_assignments[child.index]
-        layouts[child.index] = _make_layout_branch(
-            child,
-            spec=layout_specs[child.index],
-            attach_um=attach_um,
-            attach_angle_rad=_vector_angle_rad(attach_tangent_um),
-            target_angle_rad=child_angle_rad,
-            child_x=float(child.child_x),
-            bend_fraction=layout_config.balloon_bend_fraction,
-        )
-        _layout_children_balloon(
-            child,
-            layout_specs=layout_specs,
+    The walk is an explicit stack rather than recursion: morphologies are
+    routinely deeper than the interpreter's frame limit (a reconstructed
+    dendrite can be a chain of thousands of branches), and one frame per
+    branch of depth raised ``RecursionError`` past roughly 400 branches.
+
+    A child's placement reads only its parent's finished layout and the
+    angle assignments computed once per parent, so placing a whole sibling
+    group before descending gives the same geometry the recursive walk
+    produced. Children are pushed in reverse so they are still visited
+    left to right.
+    """
+    # frame: (branch, angle inherited from that branch's placement, is_root)
+    stack: list[tuple[MorphoBranch, float, bool]] = [(parent, parent_angle_rad, is_root)]
+    while stack:
+        node, node_angle_rad, node_is_root = stack.pop()
+        children = node.children
+        if not children:
+            continue
+
+        angle_assignments = _assign_balloon_child_angles(
+            children,
             leaf_counts=leaf_counts,
-            layouts=layouts,
-            parent_angle_rad=child_angle_rad,
+            parent_angle_rad=node_angle_rad,
             min_branch_angle_rad=min_branch_angle_rad,
             root_layout=root_layout,
-            is_root=False,
+            is_root=node_is_root,
             layout_config=layout_config,
         )
+        node_layout = layouts[node.index]
+        frames: list[tuple[MorphoBranch, float, bool]] = []
+        for child in children:
+            attach_um, attach_tangent_um = sample_layout_branch(node_layout, child.parent_x)
+            child_angle_rad = angle_assignments[child.index]
+            layouts[child.index] = _make_layout_branch(
+                child,
+                spec=layout_specs[child.index],
+                attach_um=attach_um,
+                attach_angle_rad=_vector_angle_rad(attach_tangent_um),
+                target_angle_rad=child_angle_rad,
+                child_x=float(child.child_x),
+                bend_fraction=layout_config.balloon_bend_fraction,
+            )
+            frames.append((child, child_angle_rad, False))
+        stack.extend(reversed(frames))
 
 
 def _assign_balloon_child_angles(

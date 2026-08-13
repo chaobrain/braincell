@@ -41,6 +41,7 @@ import numpy as np
 
 from braincell.morph import MorphoBranch
 from braincell.morph.morphology import Morphology
+from braincell.vis._traversal import iter_bottom_up
 
 # ---------------------------------------------------------------------------
 # Shared angle / bend constants
@@ -129,32 +130,23 @@ def _normalize_min_branch_angle_rad(value: float | None) -> float:
 
 def _leaf_counts_by_branch(root: MorphoBranch) -> dict[int, int]:
     counts: dict[int, int] = {}
-
-    def visit(node: MorphoBranch) -> int:
+    for node in iter_bottom_up(root):
         if node.n_children == 0:
             counts[node.index] = 1
-            return 1
-        total = sum(visit(child) for child in node.children)
-        counts[node.index] = total
-        return total
-
-    visit(root)
+        else:
+            counts[node.index] = sum(counts[child.index] for child in node.children)
     return counts
 
 
 def _path_lengths_um_by_branch(root: MorphoBranch) -> dict[int, float]:
     path_lengths_um: dict[int, float] = {}
-
-    def visit(node: MorphoBranch) -> float:
+    for node in iter_bottom_up(root):
         branch_length_um = float(node.length.to_decimal(u.um))
         if node.n_children == 0:
             path_lengths_um[node.index] = branch_length_um
-            return branch_length_um
-        max_child_length_um = max(visit(child) for child in node.children)
-        path_lengths_um[node.index] = branch_length_um + max_child_length_um
-        return path_lengths_um[node.index]
-
-    visit(root)
+        else:
+            max_child_length_um = max(path_lengths_um[child.index] for child in node.children)
+            path_lengths_um[node.index] = branch_length_um + max_child_length_um
     return path_lengths_um
 
 

@@ -173,4 +173,10 @@ All public classes, methods, functions must use [NumPy-style docstrings](https:/
 - **Shared test helpers** not themselves tests go into private `_testing.py` (or similar leading-underscore name) inside same package, so pytest does not discover them as test modules. Example: `braincell/io/neuromorpho/_testing.py` provides `FakeResponse` / `FakeSession` doubles consumed by every `*_test.py` in that package.
 - JAX forced to CPU via `conftest.py` at project root (`JAX_PLATFORMS=cpu`)
 - Matplotlib headless via `MPLBACKEND=Agg` in `conftest.py`
-- Test morphology fixtures (SWC + ASC) live in `examples/multi_compartment/morpho_files/`; IO test files load them via `Path(__file__).resolve().parents[2] / "examples" / "multi_compartment" / "morpho_files"`
+- Test morphology fixtures (SWC + ASC) live in `data/morphology/` at the repository root. Resolve them relative to the test file, counting parents up to the root — `parents[2]` from a module one level deep (`braincell/io/checkpoint_test.py`, `braincell/vis/*_test.py`), `parents[3]` from two levels deep (`braincell/io/swc/swc_test.py`, `braincell/io/asc/asc_test.py`):
+
+    ```python
+    FIXTURE_DIR = Path(__file__).resolve().parents[3] / "data" / "morphology"
+    ```
+
+    `data/` is pruned from the source distribution by `MANIFEST.in`, so these tests only run from a repository checkout, never from an installed package. They have no skip guard and will error rather than skip if the fixtures are missing.

@@ -71,6 +71,26 @@ def _rate_ion_count(owner_type: type, rate_name: str) -> int | None:
     return count
 
 
+def _call_rate(owner, rate_name: str, V, *ions):
+    """Call a rate method with only the ion arguments it declares.
+
+    Shared by both templates. A rate or gate method on a multi-ion channel
+    often depends on a single ion: declaring ``f_m_inf(self, V, K)`` on a
+    ``JointTypes[Potassium, Sodium, NonSpecific]`` channel receives just
+    potassium, while a ``*args`` signature still receives every ion.
+
+    ``MixIons`` builds ion arguments in the declaration order of the joint
+    root type (``braincell/_base_ion.py``), so taking a prefix is well
+    defined.
+    """
+    ion_count = _rate_ion_count(type(owner), rate_name)
+    if ion_count is None:
+        return getattr(owner, rate_name)(V, *ions)
+    if ion_count > len(ions):
+        raise TypeError(f"{type(owner).__name__}.{rate_name} expects {ion_count} ion argument(s), got {len(ions)}.")
+    return getattr(owner, rate_name)(V, *ions[:ion_count])
+
+
 def _bind_state(owner, name: str, value, kind: str) -> None:
     """Attach a ``DiffEqState`` to ``owner`` without clobbering a parameter.
 
@@ -249,6 +269,9 @@ class HH(Channel):
     def _gate_form(self, gate: Gate) -> str:
         return type(self)._gate_forms[gate.name]
 
+    def _call_rate(self, rate_name: str, V, *ions):
+        return _call_rate(self, rate_name, V, *ions)
+
     def init_state(self, V, *ions, batch_size: int = None):
         _ = (V, ions)
         for gate in self._iter_gates():
@@ -271,12 +294,12 @@ class HH(Channel):
         for gate in self._iter_gates():
             form = self._gate_form(gate)
             if form == "inf_tau":
-                value = getattr(self, f"f_{gate.name}_inf")(V, *ions)
+                value = self._call_rate(f"f_{gate.name}_inf", V, *ions)
             else:
                 # Normalised so a mis-dimensioned rate is reported against its
                 # gate here too, not as a bare unit mismatch from the sum.
-                alpha = _as_rate(getattr(self, f"f_{gate.name}_alpha")(V, *ions), gate, "alpha")
-                beta = _as_rate(getattr(self, f"f_{gate.name}_beta")(V, *ions), gate, "beta")
+                alpha = _as_rate(self._call_rate(f"f_{gate.name}_alpha", V, *ions), gate, "alpha")
+                beta = _as_rate(self._call_rate(f"f_{gate.name}_beta", V, *ions), gate, "beta")
                 value = alpha / (alpha + beta)
             self._gate_state(gate).value = value
             if isinstance(batch_size, int):
@@ -288,12 +311,12 @@ class HH(Channel):
             phi = self.gate_phi(gate)
             form = self._gate_form(gate)
             if form == "inf_tau":
-                inf = getattr(self, f"f_{gate.name}_inf")(V, *ions)
-                tau = _as_time(getattr(self, f"f_{gate.name}_tau")(V, *ions), gate, "tau")
+                inf = self._call_rate(f"f_{gate.name}_inf", V, *ions)
+                tau = _as_time(self._call_rate(f"f_{gate.name}_tau", V, *ions), gate, "tau")
                 derivative = phi * (inf - value) / tau
             else:
-                alpha = _as_rate(getattr(self, f"f_{gate.name}_alpha")(V, *ions), gate, "alpha")
-                beta = _as_rate(getattr(self, f"f_{gate.name}_beta")(V, *ions), gate, "beta")
+                alpha = _as_rate(self._call_rate(f"f_{gate.name}_alpha", V, *ions), gate, "alpha")
+                beta = _as_rate(self._call_rate(f"f_{gate.name}_beta", V, *ions), gate, "beta")
                 derivative = phi * (alpha * (1.0 - value) - beta * value)
             self._gate_state(gate).derivative = derivative
 
@@ -437,12 +460,7 @@ class Markov(Channel, IndependentIntegration):
         return states
 
     def _call_rate(self, rate_name: str, V, *ions):
-        ion_count = _rate_ion_count(type(self), rate_name)
-        if ion_count is None:
-            return getattr(self, rate_name)(V, *ions)
-        if ion_count > len(ions):
-            raise TypeError(f"{type(self).__name__}.{rate_name} expects {ion_count} ion argument(s), got {len(ions)}.")
-        return getattr(self, rate_name)(V, *ions[:ion_count])
+        return _call_rate(self, rate_name, V, *ions)
 
     def pre_integral(self, V, *ions):
         _ = (V, ions)

@@ -571,6 +571,60 @@ class ChannelTemplateTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, r"Gate 'm': alpha must be dimensionless"):
             self._deriv_of(self._alpha_beta_cls("_AlphaBadDim", 0.4 * u.mV, 0.1))
 
+    # ------------------------------------------------------------------
+    # Gate ion-argument arity
+    # ------------------------------------------------------------------
+
+    def test_gate_method_receives_only_the_ions_it_declares(self) -> None:
+        seen = {}
+
+        def f_m_inf(self, V, K):
+            seen["inf"] = 1
+            return 0.5
+
+        def f_m_tau(self, V, K, Ca):
+            seen["tau"] = 2
+            return 1.0
+
+        cls = _make_hh("_Arity", {"gates": (Gate("m"),), "f_m_inf": f_m_inf, "f_m_tau": f_m_tau})
+        ch = cls(1)
+        V = jnp.array([-60.0]) * u.mV
+        ch.init_state(V, _k_info(), _ca_info())
+        ch.compute_derivative(V, _k_info(), _ca_info())
+        self.assertEqual(seen, {"inf": 1, "tau": 2})
+
+    def test_gate_method_with_varargs_receives_every_ion(self) -> None:
+        seen = {}
+
+        def f_m_inf(self, V, *ions):
+            seen["n"] = len(ions)
+            return 0.5
+
+        cls = _make_hh(
+            "_ArityVar",
+            {"gates": (Gate("m"),), "f_m_inf": f_m_inf, "f_m_tau": lambda self, V, *ions: 1.0},
+        )
+        ch = cls(1)
+        V = jnp.array([-60.0]) * u.mV
+        ch.init_state(V, _k_info(), _ca_info())
+        ch.compute_derivative(V, _k_info(), _ca_info())
+        self.assertEqual(seen["n"], 2)
+
+    def test_gate_method_demanding_more_ions_than_supplied_raises(self) -> None:
+        cls = _make_hh(
+            "_ArityTooMany",
+            {
+                "gates": (Gate("m"),),
+                "f_m_inf": lambda self, V, K, Ca: 0.5,
+                "f_m_tau": lambda self, V, K, Ca: 1.0,
+            },
+        )
+        ch = cls(1)
+        V = jnp.array([-60.0]) * u.mV
+        ch.init_state(V, _k_info())
+        with self.assertRaisesRegex(TypeError, "expects 2 ion argument"):
+            ch.compute_derivative(V, _k_info())
+
     def test_markov_pairs_are_resolved_once(self) -> None:
         cls = _make_markov(
             "_TuplePairs",

@@ -90,13 +90,36 @@ def _bind_state(owner, name: str, value, kind: str) -> None:
 
 @dataclass(frozen=True)
 class Gate:
-    """Metadata for one HH gate."""
+    """Metadata for one HH gate.
+
+    Parameters
+    ----------
+    name : str
+        Gate name. The state is stored under this attribute and the rate
+        methods are looked up as ``f_<name>_inf`` / ``f_<name>_tau`` or
+        ``f_<name>_alpha`` / ``f_<name>_beta``.
+    power : int
+        Exponent applied to the gate in :meth:`HH.conductance_factor`.
+    phi : optional
+        Explicit temperature factor. Mutually exclusive with ``q10``.
+    q10 : optional
+        Q10 coefficient, used together with ``temp_ref`` and ``self.temp``.
+    temp_ref : optional
+        Reference temperature for ``q10``.
+    time_unit : optional
+        Unit assumed when a rate method returns a bare (dimensionless)
+        value. ``f_<name>_tau`` returning ``5.0`` is read as ``5 * time_unit``
+        and ``f_<name>_alpha`` returning ``0.3`` as ``0.3 / time_unit``.
+        Rate methods that return a properly united quantity are used as-is
+        and ignore this field.
+    """
 
     name: str
     power: int = 1
     phi: Any | None = None
     q10: Any | None = None
     temp_ref: Any | None = None
+    time_unit: Any = u.ms
 
     def __post_init__(self):
         has_phi = self.phi is not None
@@ -107,6 +130,32 @@ class Gate:
             raise ValueError(f"Gate {self.name!r}: phi cannot be provided together with q10/temp_ref.")
         if has_q10 != has_temp_ref:
             raise ValueError(f"Gate {self.name!r}: q10 and temp_ref must be provided together.")
+        if u.get_dim(self.time_unit) != u.get_dim(u.ms):
+            raise ValueError(f"Gate {self.name!r}: time_unit must have a time dimension, got {self.time_unit!r}.")
+
+
+def _as_time(value, gate: Gate, label: str):
+    """Interpret a gate time constant, honouring an explicit unit if present."""
+    if u.get_dim(value) == u.DIMENSIONLESS:
+        return value * gate.time_unit
+    if u.get_dim(value) != u.get_dim(u.ms):
+        raise ValueError(
+            f"Gate {gate.name!r}: {label} must be dimensionless (read as {gate.time_unit!r}) "
+            f"or carry a time dimension, got dimension {u.get_dim(value)}."
+        )
+    return value
+
+
+def _as_rate(value, gate: Gate, label: str):
+    """Interpret a gate transition rate, honouring an explicit unit if present."""
+    if u.get_dim(value) == u.DIMENSIONLESS:
+        return value / gate.time_unit
+    if u.get_dim(value) != u.get_dim(1 / u.ms):
+        raise ValueError(
+            f"Gate {gate.name!r}: {label} must be dimensionless (read as 1/{gate.time_unit!r}) "
+            f"or carry an inverse-time dimension, got dimension {u.get_dim(value)}."
+        )
+    return value
 
 
 @dataclass(frozen=True)
@@ -224,8 +273,10 @@ class HH(Channel):
             if form == "inf_tau":
                 value = getattr(self, f"f_{gate.name}_inf")(V, *ions)
             else:
-                alpha = getattr(self, f"f_{gate.name}_alpha")(V, *ions)
-                beta = getattr(self, f"f_{gate.name}_beta")(V, *ions)
+                # Normalised so a mis-dimensioned rate is reported against its
+                # gate here too, not as a bare unit mismatch from the sum.
+                alpha = _as_rate(getattr(self, f"f_{gate.name}_alpha")(V, *ions), gate, "alpha")
+                beta = _as_rate(getattr(self, f"f_{gate.name}_beta")(V, *ions), gate, "beta")
                 value = alpha / (alpha + beta)
             self._gate_state(gate).value = value
             if isinstance(batch_size, int):
@@ -238,12 +289,12 @@ class HH(Channel):
             form = self._gate_form(gate)
             if form == "inf_tau":
                 inf = getattr(self, f"f_{gate.name}_inf")(V, *ions)
-                tau = getattr(self, f"f_{gate.name}_tau")(V, *ions)
-                derivative = phi * (inf - value) / tau / u.ms
+                tau = _as_time(getattr(self, f"f_{gate.name}_tau")(V, *ions), gate, "tau")
+                derivative = phi * (inf - value) / tau
             else:
-                alpha = getattr(self, f"f_{gate.name}_alpha")(V, *ions)
-                beta = getattr(self, f"f_{gate.name}_beta")(V, *ions)
-                derivative = phi * (alpha * (1.0 - value) - beta * value) / u.ms
+                alpha = _as_rate(getattr(self, f"f_{gate.name}_alpha")(V, *ions), gate, "alpha")
+                beta = _as_rate(getattr(self, f"f_{gate.name}_beta")(V, *ions), gate, "beta")
+                derivative = phi * (alpha * (1.0 - value) - beta * value)
             self._gate_state(gate).derivative = derivative
 
 

@@ -501,6 +501,76 @@ class ChannelTemplateTest(unittest.TestCase):
                 {"pairs": (Transition("A", "A", "fwd"),), "fwd": lambda self, V: 0.1},
             )
 
+    # ------------------------------------------------------------------
+    # Gate rate units
+    # ------------------------------------------------------------------
+
+    def _deriv_of(self, cls):
+        """Init, reset and differentiate a one-gate channel; return dm/dt."""
+        ch = cls(1)
+        V = jnp.array([-60.0]) * u.mV
+        K = _k_info()
+        ch.init_state(V, K)
+        ch.reset_state(V, K)
+        ch.compute_derivative(V, K)
+        return ch.m.derivative
+
+    def _inf_tau_cls(self, name, tau_value, **gate_kwargs):
+        return _make_hh(
+            name,
+            {
+                "gates": (Gate("m", **gate_kwargs),),
+                "f_m_inf": lambda self, V, K: 0.7,
+                "f_m_tau": lambda self, V, K: tau_value,
+            },
+        )
+
+    def _alpha_beta_cls(self, name, alpha, beta, **gate_kwargs):
+        return _make_hh(
+            name,
+            {
+                "gates": (Gate("m", **gate_kwargs),),
+                "f_m_alpha": lambda self, V, K: alpha,
+                "f_m_beta": lambda self, V, K: beta,
+            },
+        )
+
+    def test_bare_tau_is_read_as_milliseconds(self) -> None:
+        deriv = self._deriv_of(self._inf_tau_cls("_TauBare", 5.0))
+        self.assertTrue(u.math.allclose(deriv, (0.7 - 0.7) / 5.0 / u.ms, atol=1e-12 * u.Hz))
+        # dimension must be inverse time regardless of how tau was written
+        self.assertEqual(u.get_dim(deriv), u.get_dim(1 / u.ms))
+
+    def test_united_tau_matches_bare_tau(self) -> None:
+        bare = self._deriv_of(self._inf_tau_cls("_TauBare2", 5.0))
+        ms = self._deriv_of(self._inf_tau_cls("_TauMs", 5.0 * u.ms))
+        sec = self._deriv_of(self._inf_tau_cls("_TauSec", 0.005 * u.second))
+        self.assertTrue(u.math.allclose(bare, ms, atol=1e-12 * u.Hz))
+        self.assertTrue(u.math.allclose(bare, sec, atol=1e-12 * u.Hz))
+
+    def test_united_alpha_beta_matches_bare(self) -> None:
+        bare = self._deriv_of(self._alpha_beta_cls("_ABBare", 0.4, 0.1))
+        united = self._deriv_of(self._alpha_beta_cls("_ABUnited", 0.4 / u.ms, 0.1 / u.ms))
+        self.assertTrue(u.math.allclose(bare, united, atol=1e-12 * u.Hz))
+
+    def test_gate_time_unit_reinterprets_bare_values(self) -> None:
+        ms_gate = self._deriv_of(self._inf_tau_cls("_TauUnitMs", 5.0))
+        s_gate = self._deriv_of(self._inf_tau_cls("_TauUnitS", 5.0, time_unit=u.second))
+        # same bare tau, 1000x slower when read as seconds
+        self.assertTrue(u.math.allclose(ms_gate, s_gate * 1000.0, atol=1e-12 * u.Hz))
+
+    def test_gate_rejects_non_time_time_unit(self) -> None:
+        with self.assertRaisesRegex(ValueError, "time_unit must have a time dimension"):
+            Gate("m", time_unit=u.mV)
+
+    def test_tau_with_wrong_dimension_is_rejected(self) -> None:
+        with self.assertRaisesRegex(ValueError, r"Gate 'm': tau must be dimensionless"):
+            self._deriv_of(self._inf_tau_cls("_TauBadDim", 5.0 * u.mV))
+
+    def test_alpha_with_wrong_dimension_is_rejected(self) -> None:
+        with self.assertRaisesRegex(ValueError, r"Gate 'm': alpha must be dimensionless"):
+            self._deriv_of(self._alpha_beta_cls("_AlphaBadDim", 0.4 * u.mV, 0.1))
+
     def test_markov_pairs_are_resolved_once(self) -> None:
         cls = _make_markov(
             "_TuplePairs",

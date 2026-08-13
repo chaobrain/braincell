@@ -4,7 +4,7 @@ requires = [ "setuptools>=77.0.3" ]
 
 [project]
 name = "braincell"
-description = "Biologically Detailed Brain Cell Modeling in JAX"
+description = "Biologically Detailed Brain Cell Modeling in BrainX"
 readme = "README.md"
 keywords = [
   "brain modeling",

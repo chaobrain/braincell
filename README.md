@@ -1,6 +1,6 @@
 
 
-# Biologically Detailed Brain Cell Modeling in JAX
+# Biologically Detailed Brain Cell Modeling in BrainX
 
 <p align="center">
   	<img alt="Header image of BrainCell." src="https://brainx.chaobrain.com/images/braincell.webp" width=50%>

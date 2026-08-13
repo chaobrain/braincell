@@ -17,6 +17,7 @@ from braincell.channel._base import ghk_flux
 from braincell.ion import Calcium
 from braincell.ion import Potassium
 from braincell.quad import get_integrator
+from braincell.quad.protocol import DiffEqState
 
 
 def _k_info(size: int = 1) -> IonInfo:
@@ -295,40 +296,20 @@ class _ExampleHHMixed(HH):
         return self.g_max * self.conductance_factor(V, K) * (K.E - V)
 
 
-class _ExampleHHConflict(HH):
-    root_type = Potassium
-    gates = (Gate("x"),)
+def _make_hh(name: str, namespace: dict):
+    """Build an ``HH`` subclass at call time.
 
-    def __init__(self):
-        super().__init__(size=1, name=None)
-
-    def f_x_inf(self, V, K: IonInfo):
-        _ = (V, K)
-        return 0.1
-
-    def f_x_tau(self, V, K: IonInfo):
-        _ = (V, K)
-        return 1.0
-
-    def f_x_alpha(self, V, K: IonInfo):
-        _ = (V, K)
-        return 0.1
-
-    def f_x_beta(self, V, K: IonInfo):
-        _ = (V, K)
-        return 0.1
+    Definition-time validation lives in ``HH.__init_subclass__``, so an
+    invalid template cannot be written as a module-level ``class`` statement
+    in this file — it would abort collection. Tests that assert on rejection
+    therefore create the class inside the ``assertRaises`` block.
+    """
+    return type(name, (HH,), {"root_type": Potassium, **namespace})
 
 
-class _ExampleHHMissing(HH):
-    root_type = Potassium
-    gates = (Gate("x"),)
-
-    def __init__(self):
-        super().__init__(size=1, name=None)
-
-    def f_x_alpha(self, V, K: IonInfo):
-        _ = (V, K)
-        return 0.1
+def _make_markov(name: str, namespace: dict):
+    """Build a ``Markov`` subclass at call time. See :func:`_make_hh`."""
+    return type(name, (Markov,), {"root_type": Potassium, **namespace})
 
 
 class ChannelTemplateTest(unittest.TestCase):
@@ -401,14 +382,136 @@ class ChannelTemplateTest(unittest.TestCase):
         self.assertTrue(u.math.allclose(ch.h.derivative, expected_dh, atol=1e-6 * u.Hz))
 
     def test_hh_rejects_gate_with_both_forms(self) -> None:
-        ch = _ExampleHHConflict()
-        with self.assertRaises(ValueError):
-            ch.reset_state(jnp.array([-60.0]) * u.mV, _k_info())
+        with self.assertRaisesRegex(ValueError, "both inf/tau and alpha/beta"):
+            _make_hh(
+                "_Conflict",
+                {
+                    "gates": (Gate("x"),),
+                    "f_x_inf": lambda self, V, K: 0.1,
+                    "f_x_tau": lambda self, V, K: 1.0,
+                    "f_x_alpha": lambda self, V, K: 0.1,
+                    "f_x_beta": lambda self, V, K: 0.1,
+                },
+            )
 
     def test_hh_rejects_gate_with_incomplete_form(self) -> None:
-        ch = _ExampleHHMissing()
-        with self.assertRaises(ValueError):
-            ch.reset_state(jnp.array([-60.0]) * u.mV, _k_info())
+        with self.assertRaisesRegex(ValueError, "must define either"):
+            _make_hh("_Missing", {"gates": (Gate("x"),), "f_x_alpha": lambda self, V, K: 0.1})
+
+    def test_hh_rejects_misspelled_gate_method_at_definition_time(self) -> None:
+        # ``Gate("m")`` with methods written for ``n`` used to survive class
+        # creation and ``init_state``, failing only at ``reset_state``.
+        with self.assertRaisesRegex(ValueError, r"gate 'm' must define either"):
+            _make_hh(
+                "_Typo",
+                {
+                    "gates": (Gate("m", power=3),),
+                    "f_n_inf": lambda self, V, K: 0.5,
+                    "f_n_tau": lambda self, V, K: 1.0,
+                },
+            )
+
+    def test_hh_rejects_duplicate_gate_names(self) -> None:
+        with self.assertRaisesRegex(ValueError, "declared more than once"):
+            _make_hh(
+                "_Dup",
+                {
+                    "gates": (Gate("m"), Gate("m", power=2)),
+                    "f_m_inf": lambda self, V, K: 0.5,
+                    "f_m_tau": lambda self, V, K: 1.0,
+                },
+            )
+
+    def test_hh_rejects_non_identifier_gate_name(self) -> None:
+        with self.assertRaisesRegex(ValueError, "not a valid Python identifier"):
+            _make_hh("_BadName", {"gates": (Gate("m gate"),)})
+
+    def test_hh_allows_gateless_abstract_subclass(self) -> None:
+        # Abstract intermediates declare no gates and must stay definable.
+        cls = _make_hh("_Abstract", {})
+        self.assertEqual(cls._resolved_gates, ())
+        self.assertEqual(cls._gate_forms, {})
+
+    def test_hh_gates_are_resolved_once_into_gate_objects(self) -> None:
+        cls = _make_hh(
+            "_TupleGates",
+            {
+                "gates": (("m", 3), Gate("h")),
+                "f_m_inf": lambda self, V, K: 0.5,
+                "f_m_tau": lambda self, V, K: 1.0,
+                "f_h_alpha": lambda self, V, K: 0.2,
+                "f_h_beta": lambda self, V, K: 0.3,
+            },
+        )
+        self.assertEqual([g.name for g in cls._resolved_gates], ["m", "h"])
+        self.assertEqual(cls._resolved_gates[0].power, 3)
+        self.assertTrue(all(isinstance(g, Gate) for g in cls._resolved_gates))
+        self.assertEqual(cls._gate_forms, {"m": "inf_tau", "h": "alpha_beta"})
+
+    def test_init_state_rejects_gate_colliding_with_parameter(self) -> None:
+        # A gate named after a constructor parameter used to silently replace
+        # that parameter with a DiffEqState.
+        cls = _make_hh(
+            "_Collide",
+            {
+                "gates": (Gate("g_max", power=2),),
+                "f_g_max_inf": lambda self, V, K: 0.5,
+                "f_g_max_tau": lambda self, V, K: 1.0,
+            },
+        )
+        ch = cls(1)
+        ch.g_max = braintools.init.param(1.0 * (u.mS / u.cm**2), ch.varshape, allow_none=False)
+        with self.assertRaisesRegex(ValueError, r"gate 'g_max' collides"):
+            ch.init_state(jnp.array([-60.0]) * u.mV, _k_info())
+
+    def test_init_state_is_idempotent(self) -> None:
+        ch = _ExampleHHInfTau(size=1)
+        V = jnp.array([-60.0]) * u.mV
+        K = _k_info()
+        ch.init_state(V, K)
+        ch.init_state(V, K)  # re-initialisation replaces the existing DiffEqState
+        self.assertIsInstance(ch.m, DiffEqState)
+
+    def test_markov_rejects_unknown_dependent_state(self) -> None:
+        with self.assertRaisesRegex(ValueError, "is not one of the declared states"):
+            _make_markov(
+                "_BadDependent",
+                {
+                    "pairs": (Transition("A", "B", "fwd", "bwd"),),
+                    "dependent_state": "Z",
+                    "fwd": lambda self, V: 0.1,
+                    "bwd": lambda self, V: 0.2,
+                },
+            )
+
+    def test_markov_rejects_missing_rate_method(self) -> None:
+        with self.assertRaisesRegex(ValueError, "rate method 'bwd', which is not defined"):
+            _make_markov(
+                "_MissingRate",
+                {
+                    "pairs": (Transition("A", "B", "fwd", "bwd"),),
+                    "fwd": lambda self, V: 0.1,
+                },
+            )
+
+    def test_markov_rejects_single_state(self) -> None:
+        with self.assertRaisesRegex(ValueError, "at least two states"):
+            _make_markov(
+                "_OneState",
+                {"pairs": (Transition("A", "A", "fwd"),), "fwd": lambda self, V: 0.1},
+            )
+
+    def test_markov_pairs_are_resolved_once(self) -> None:
+        cls = _make_markov(
+            "_TuplePairs",
+            {
+                "pairs": (("A", "B", "fwd", "bwd"),),
+                "fwd": lambda self, V: 0.1,
+                "bwd": lambda self, V: 0.2,
+            },
+        )
+        self.assertTrue(all(isinstance(p, Transition) for p in cls._resolved_pairs))
+        self.assertEqual(cls._resolved_state_names, ("A", "B"))
 
     def test_ghk_channel_uses_p_max(self) -> None:
         ch = _ExampleGHK(size=1)

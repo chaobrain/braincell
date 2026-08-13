@@ -2,7 +2,6 @@
 
 
 from dataclasses import dataclass
-from functools import lru_cache
 import inspect
 import numpy as np
 from typing import Any, Optional
@@ -42,8 +41,19 @@ def _resolve_value(owner, value):
     return value(owner) if callable(value) else value
 
 
-@lru_cache(maxsize=None)
 def _rate_ion_count(owner_type: type, rate_name: str) -> int | None:
+    """Return how many ion arguments ``rate_name`` declares, or ``None`` for ``*args``.
+
+    Results are memoised on the owning class rather than in a module-level
+    cache, so a garbage-collected channel class takes its entry with it.
+    """
+    cache = owner_type.__dict__.get("_rate_ion_counts")
+    if cache is None:
+        cache = {}
+        setattr(owner_type, "_rate_ion_counts", cache)
+    if rate_name in cache:
+        return cache[rate_name]
+
     signature = inspect.signature(getattr(owner_type, rate_name))
     params = tuple(signature.parameters.values())
     positional = {
@@ -51,12 +61,31 @@ def _rate_ion_count(owner_type: type, rate_name: str) -> int | None:
         inspect.Parameter.POSITIONAL_OR_KEYWORD,
     }
 
-    for param in params:
-        if param.kind == inspect.Parameter.VAR_POSITIONAL:
-            return None
+    if any(param.kind == inspect.Parameter.VAR_POSITIONAL for param in params):
+        count = None
+    else:
+        positional_count = sum(1 for param in params if param.kind in positional)
+        count = max(0, positional_count - 2)
 
-    positional_count = sum(1 for param in params if param.kind in positional)
-    return max(0, positional_count - 2)
+    cache[rate_name] = count
+    return count
+
+
+def _bind_state(owner, name: str, value, kind: str) -> None:
+    """Attach a ``DiffEqState`` to ``owner`` without clobbering a parameter.
+
+    ``init_state`` assigns one state per gate / Markov state by name. Without
+    this guard a gate named after a constructor parameter silently replaces
+    that parameter, which is impossible to diagnose downstream. Re-running
+    ``init_state`` is legitimate, so an existing ``DiffEqState`` is replaced.
+    """
+    existing = getattr(owner, name, None)
+    if existing is not None and not isinstance(existing, DiffEqState):
+        raise ValueError(
+            f"{type(owner).__name__}: {kind} {name!r} collides with the existing attribute "
+            f"{name!r} of type {type(existing).__name__}. Rename the {kind} or the attribute."
+        )
+    setattr(owner, name, value)
 
 
 @dataclass(frozen=True)
@@ -100,15 +129,50 @@ class HH(Channel):
     """
 
     gates: ClassVar[tuple[Gate | tuple[Any, ...], ...]] = ()
+    _resolved_gates: ClassVar[tuple[Gate, ...]] = ()
+    _gate_forms: ClassVar[dict[str, str]] = {}
+
+    def __init_subclass__(cls, **kwargs):
+        """Resolve and validate ``gates`` once, when the subclass is created.
+
+        Every check here used to fire at ``reset_state`` time or not at all.
+        Classes declaring no gates are skipped so abstract intermediates
+        (``HH`` itself, ``OhmicHH``, family base classes) stay definable.
+        """
+        super().__init_subclass__(**kwargs)
+
+        resolved = tuple(gate if isinstance(gate, Gate) else Gate(*gate) for gate in cls.gates)
+        cls._resolved_gates = resolved
+        if not resolved:
+            cls._gate_forms = {}
+            return
+
+        seen: set[str] = set()
+        forms: dict[str, str] = {}
+        for gate in resolved:
+            if not gate.name.isidentifier():
+                raise ValueError(f"{cls.__name__}: gate name {gate.name!r} is not a valid Python identifier.")
+            if gate.name in seen:
+                raise ValueError(f"{cls.__name__}: gate {gate.name!r} is declared more than once.")
+            seen.add(gate.name)
+
+            has_inf_tau = hasattr(cls, f"f_{gate.name}_inf") and hasattr(cls, f"f_{gate.name}_tau")
+            has_alpha_beta = hasattr(cls, f"f_{gate.name}_alpha") and hasattr(cls, f"f_{gate.name}_beta")
+            if has_inf_tau and has_alpha_beta:
+                raise ValueError(f"{cls.__name__}: gate {gate.name!r} defines both inf/tau and alpha/beta forms; choose one.")
+            if has_inf_tau:
+                forms[gate.name] = "inf_tau"
+            elif has_alpha_beta:
+                forms[gate.name] = "alpha_beta"
+            else:
+                raise ValueError(
+                    f"{cls.__name__}: gate {gate.name!r} must define either "
+                    f"f_{gate.name}_inf + f_{gate.name}_tau or f_{gate.name}_alpha + f_{gate.name}_beta."
+                )
+        cls._gate_forms = forms
 
     def _iter_gates(self) -> tuple[Gate, ...]:
-        items = []
-        for gate in type(self).gates:
-            if isinstance(gate, Gate):
-                items.append(gate)
-            else:
-                items.append(Gate(*gate))
-        return tuple(items)
+        return type(self)._resolved_gates
 
     def _gate_state(self, gate: Gate) -> DiffEqState:
         return getattr(self, gate.name)
@@ -133,30 +197,17 @@ class HH(Channel):
             return q10 ** (((self.temp - temp_ref) / u.kelvin) / 10.0)
         return 1.0
 
-    def _has_inf_tau(self, gate: Gate) -> bool:
-        return hasattr(self, f"f_{gate.name}_inf") and hasattr(self, f"f_{gate.name}_tau")
-
-    def _has_alpha_beta(self, gate: Gate) -> bool:
-        return hasattr(self, f"f_{gate.name}_alpha") and hasattr(self, f"f_{gate.name}_beta")
-
     def _gate_form(self, gate: Gate) -> str:
-        has_inf_tau = self._has_inf_tau(gate)
-        has_alpha_beta = self._has_alpha_beta(gate)
-        if has_inf_tau and has_alpha_beta:
-            raise ValueError(f"Gate {gate.name!r} defines both inf/tau and alpha/beta forms; choose one.")
-        if has_inf_tau:
-            return "inf_tau"
-        if has_alpha_beta:
-            return "alpha_beta"
-        raise ValueError(f"Gate {gate.name!r} must define either inf/tau or alpha/beta methods.")
+        return type(self)._gate_forms[gate.name]
 
     def init_state(self, V, *ions, batch_size: int = None):
         _ = (V, ions)
         for gate in self._iter_gates():
-            setattr(
+            _bind_state(
                 self,
                 gate.name,
                 DiffEqState(braintools.init.param(u.math.zeros, self.varshape, batch_size)),
+                "gate",
             )
 
     def conductance_factor(self, V, *ions):
@@ -216,6 +267,50 @@ class Markov(Channel, IndependentIntegration):
     dependent_state: ClassVar[str | None] = None
     default_solver: ClassVar[str] = "backward_euler"
     default_substeps: ClassVar[int] = 1
+    _resolved_pairs: ClassVar[tuple[Transition, ...]] = ()
+    _resolved_state_names: ClassVar[tuple[str, ...]] = ()
+
+    def __init_subclass__(cls, **kwargs):
+        """Resolve and validate ``pairs`` once, when the subclass is created.
+
+        Classes declaring no transitions are skipped so abstract
+        intermediates stay definable.
+        """
+        super().__init_subclass__(**kwargs)
+
+        resolved = tuple(pair if isinstance(pair, Transition) else Transition(*pair) for pair in cls.pairs)
+        cls._resolved_pairs = resolved
+        if not resolved:
+            cls._resolved_state_names = ()
+            return
+
+        names: list[str] = []
+        seen: set[str] = set()
+        for pair in resolved:
+            for name in (pair.src, pair.dst):
+                if name not in seen:
+                    if not name.isidentifier():
+                        raise ValueError(f"{cls.__name__}: state name {name!r} is not a valid Python identifier.")
+                    names.append(name)
+                    seen.add(name)
+        if len(names) < 2:
+            raise ValueError(f"{cls.__name__}: Markov requires at least two states, got {names}.")
+        cls._resolved_state_names = tuple(names)
+
+        declared = cls.dependent_state
+        if declared is not None and declared not in seen:
+            raise ValueError(
+                f"{cls.__name__}: dependent_state {declared!r} is not one of the "
+                f"declared states {sorted(seen)}."
+            )
+
+        for pair in resolved:
+            for rate in (pair.forward, pair.backward):
+                if rate is not None and not hasattr(cls, rate):
+                    raise ValueError(
+                        f"{cls.__name__}: transition {pair.src!r} -> {pair.dst!r} references "
+                        f"rate method {rate!r}, which is not defined."
+                    )
 
     def __init__(
         self,
@@ -243,31 +338,16 @@ class Markov(Channel, IndependentIntegration):
             )
 
     def _iter_pairs(self) -> tuple[Transition, ...]:
-        items = []
-        for pair in type(self).pairs:
-            if isinstance(pair, Transition):
-                items.append(pair)
-            else:
-                items.append(Transition(*pair))
-        return tuple(items)
+        return type(self)._resolved_pairs
 
     def _state_names(self) -> tuple[str, ...]:
-        names: list[str] = []
-        seen: set[str] = set()
-        for pair in self._iter_pairs():
-            for name in (pair.src, pair.dst):
-                if name not in seen:
-                    names.append(name)
-                    seen.add(name)
-        return tuple(names)
+        return type(self)._resolved_state_names
 
     def _dependent_state_name(self) -> str:
         state_names = self._state_names()
         if len(state_names) < 2:
             raise ValueError("Markov requires at least two states.")
         if type(self).dependent_state is not None:
-            if type(self).dependent_state not in state_names:
-                raise ValueError(f"dependent_state {type(self).dependent_state!r} is not present in Markov states.")
             return type(self).dependent_state
         return state_names[-1]
 
@@ -334,10 +414,11 @@ class Markov(Channel, IndependentIntegration):
     def init_state(self, V, *ions, batch_size: int = None):
         _ = (V, ions)
         for name in self._independent_state_names():
-            setattr(
+            _bind_state(
                 self,
                 name,
                 DiffEqState(braintools.init.param(u.math.zeros, self.varshape, batch_size)),
+                "Markov state",
             )
 
     def reset_state(self, V, *ions, batch_size: int = None):

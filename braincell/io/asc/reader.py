@@ -645,8 +645,13 @@ class AscReader:
         if len(stack) == 1:
             points, radii, center = self._contour2centroid(stack[0])
         else:
+            # A CellBody stack whose z layers are duplicated or non-monotonic is
+            # malformed input, so _validate_soma_stack's ValueError propagates.
+            # It used to sit inside the try below, which meant every validation
+            # failure silently degraded the soma to its first contour and made
+            # the validation itself unreachable.
+            self._validate_soma_stack(stack, path=path)
             try:
-                self._validate_soma_stack(stack, path=path)
                 points, radii = self._contourstack2centroid(stack)
                 center = self._soma_stack_center(stack)
             except ValueError:
@@ -796,17 +801,26 @@ class AscReader:
         _, eigvecs = np.linalg.eigh(cov)
         major = eigvecs[:, 1]
         minor = eigvecs[:, 0]
-        neuron_major = self._neuron_major_xy_for_contour(contour)
-        if neuron_major is not None:
-            if float(np.dot(major, neuron_major)) < 0.0:
-                major = -major
-        else:
-            if major[np.argmax(np.abs(major))] < 0.0:
-                major = -major
-            first_projection = (np.array([contour[0].x, contour[0].y], dtype=float) - mean_xy) @ major
-            last_projection = (np.array([contour[-1].x, contour[-1].y], dtype=float) - mean_xy) @ major
-            if first_projection > 0.0 and last_projection < 0.0:
-                major = -major
+        # The sign of an eigenvector is arbitrary, so the major axis needs a
+        # deterministic orientation convention. Making the dominant component
+        # positive is sufficient to reproduce NEURON's pt3d ordering.
+        #
+        # Two earlier attempts at this are deliberately gone:
+        #
+        # 1. Aligning against NEURON's own eigenvector (via Import3d_Section).
+        #    That imported `neuron` at runtime from inside the reader -- NEURON
+        #    is a dev-only comparator, not a runtime dependency -- and it was
+        #    wrong anyway: NEURON reverses its raw eigenvector downstream, so
+        #    aligning to the raw vector inverts the result. GrC.asc came out
+        #    exactly reversed, point for point.
+        # 2. A follow-up heuristic that flipped the axis when the contour's
+        #    first point projected positive and its last projected negative.
+        #    On a closed contour those two points are adjacent, and when they
+        #    straddle the centre their projections are near-exact negatives
+        #    (GrC.asc: +0.18209 and -0.18209), so the test fires on numerical
+        #    noise rather than on traversal direction.
+        if major[np.argmax(np.abs(major))] < 0.0:
+            major = -major
         major = major / np.linalg.norm(major)
         minor = minor / np.linalg.norm(minor)
 
@@ -869,49 +883,6 @@ class AscReader:
         diam_interp[0] = 0.5 * (diam_interp[0] + diam_interp[1])
         diam_interp[-1] = 0.5 * (diam_interp[-1] + diam_interp[-2])
         return xy_interp, diam_interp
-
-    def _neuron_major_xy_for_contour(
-        self,
-        contour: tuple[_AscPoint, ...],
-    ) -> np.ndarray | None:
-        try:
-            from neuron import h
-        except ImportError:
-            return None
-
-        h.load_file("stdlib.hoc")
-        h.load_file("import3d.hoc")
-
-        helper = h.Import3d_Section(0, 1)
-        xv = h.Vector([float(point.x) for point in contour])
-        yv = h.Vector([float(point.y) for point in contour])
-        zv = h.Vector([float(point.z) for point in contour])
-        mean = helper.contourcenter(xv, yv, zv)
-
-        pts = h.Matrix(3, int(xv.size()))
-        row0 = xv.c()
-        row1 = yv.c()
-        row2 = zv.c()
-        row0.sub(mean.x[0])
-        row1.sub(mean.x[1])
-        row2.sub(mean.x[2])
-        pts.setrow(0, row0)
-        pts.setrow(1, row1)
-        pts.setrow(2, row2)
-
-        matrix = h.Matrix(3, 3)
-        for row in range(3):
-            for col in range(row, 3):
-                value = pts.getrow(row).mul(pts.getrow(col)).sum()
-                matrix.x[row][col] = value
-                matrix.x[col][row] = value
-
-        eigenvalues = matrix.symmeig(matrix)
-        major = matrix.getcol(int(eigenvalues.max_ind()))
-        major_xy = np.array([float(major.x[0]), float(major.x[1])], dtype=float)
-        if np.allclose(major_xy, 0.0):
-            return None
-        return major_xy / np.linalg.norm(major_xy)
 
     def _contour2centroid(
         self,

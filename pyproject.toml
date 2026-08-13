@@ -177,14 +177,17 @@ ini_options.norecursedirs = [
   "develop",
   "dist",
   "docs",
-  "examples",
   "legacy",
   "node_modules",
   "venv",
 ]
-# Every test module is a co-located `*_test.py` sibling of the code it
-# covers. The bare `test_*.py` prefix is deliberately NOT enabled.
-ini_options.python_files = [ "*_test.py" ]
+# Inside the `braincell` package every test module is a co-located
+# `*_test.py` sibling of the code it covers -- see AGENTS.md. pytest's default
+# `test_*.py` is kept enabled as well, because the out-of-package suite at
+# examples/neuron_compare/cable/tests/ uses that convention and is run
+# directly by CI. Note that a bare `test.py` matches neither pattern and is
+# silently skipped; that is what hid 72 SWC/ASC tests until they were renamed.
+ini_options.python_files = [ "*_test.py", "test_*.py" ]
 # python_classes is left at pytest's default (`Test*`) on purpose. Every real
 # test class here subclasses unittest.TestCase and is collected regardless of
 # the pattern; adding a `*Test` suffix pattern would wrongly collect mixin

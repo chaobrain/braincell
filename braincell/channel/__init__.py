@@ -17,6 +17,8 @@
 
 import warnings
 
+from ._base import *
+from ._base import __all__ as base_all
 from .calcium import *
 from .calcium import __all__ as calcium_all
 from .hyperpolarization_activated import *
@@ -33,7 +35,8 @@ from .sodium import *
 from .sodium import __all__ as sodium_all
 
 __all__ = (
-    calcium_all
+    base_all
+    + calcium_all
     + hyperpolarization_activated_all
     + leaky_all
     + potassium_all

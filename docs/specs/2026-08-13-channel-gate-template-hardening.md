@@ -84,6 +84,23 @@ A numeric-invariance harness records, for all 99 constructible gate-template cha
 voltages, plus a 20-step explicit-Euler trajectory. The baseline is captured before any edit and
 re-checked after every commit; all seven commits must report bit-for-bit equality.
 
-Alongside it: `pytest braincell/channel/` (615 cases), `pytest braincell/`,
-`dev/mod_validate/channel_validate_sweep_test.py`, the `SC07` example, `pre-commit run --all`, and
-the CI matrix (JAX 0.8.0 floor / 0.10.0 / latest).
+> **Harness pitfall, hit during implementation.** Running the harness as
+> `python /tmp/harness.py` puts `/tmp` on `sys.path`, not the working directory, so `import
+> braincell` resolved to an installed copy in `site-packages` and the comparison was vacuous — it
+> reported "identical" while never loading the edited tree. Always pin `PYTHONPATH` to the checkout
+> under test. This is recorded in `docs/design/channel-template-invariants.md` too.
+
+Results:
+
+| Check | Outcome |
+| --- | --- |
+| Numeric invariance, 99 channels | bit-for-bit identical after every commit |
+| `pytest braincell/channel/` | 651 passed (from 615; +36 new cases) |
+| `pytest braincell/` | 2178 passed, 19 skipped |
+| `dev/mod_validate/channel_validate_sweep_test.py` | 9 passed |
+| `pre-commit run --all-files` | passed |
+
+Line count across the catalogue: −226 / +128 from the `OhmicHH` migration, plus 177 lines deleted
+from `potassium_sodium.py`.
+
+Still outstanding: the CI matrix (JAX 0.8.0 floor / 0.10.0 / latest).

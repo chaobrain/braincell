@@ -85,7 +85,7 @@ from braincell.morph.morphology import Morphology
 from braincell.quad import get_integrator, ind_exp_euler_step
 from braincell.quad._exp_euler import _ind_exp_euler_step_selected
 from braincell.quad._staggered import build_cv_axial_operator
-from braincell.quad.protocol import DiffEqState, IndependentIntegration
+from braincell.quad.protocol import DiffEqGroupState, IndependentIntegration, grouped_states
 from braincell.mech import CVContext, Synapse as SynapsePlacement
 from . import bridge, currents, probes, run as run_module
 
@@ -556,14 +556,20 @@ class Cell(HHTypedNeuron):
             v_initializer = bridge.fill_like(self.varshape, v_initializer)
         v_value = braintools.init.param(v_initializer, self.varshape)
         v_value = bridge.expand_with_batch_axis(v_value, batch_size, name="Cell.V")
-        self.V = DiffEqState(v_value)
+        # A Cell is spatial: every hidden state's trailing axis enumerates
+        # compartments (V) or points (mechanism variables), so all of them
+        # are group states. Channel / ion / synapse code is shared with
+        # SingleCompartment, hence the scoped factory rather than a
+        # per-call-site class choice.
+        self.V = DiffEqGroupState(v_value)
         self.spike = brainstate.ShortTermState(_zero_spike_like(self.V.value))
         self._current_time_state.value = 0.0 * u.ms
 
         point_V = self._cv_to_point_unchecked(self.V.value)
-        for path, channel in self._runtime_objects_unchecked(IonChannel, allowed_hierarchy=(1, 1)).items():
-            args = self._runtime_node_phase_args(path, channel, point_V)
-            channel.init_state(*args, batch_size=batch_size)
+        with grouped_states(True):
+            for path, channel in self._runtime_objects_unchecked(IonChannel, allowed_hierarchy=(1, 1)).items():
+                args = self._runtime_node_phase_args(path, channel, point_V)
+                channel.init_state(*args, batch_size=batch_size)
 
         # Dense CV axial operators are only needed by derivative-based voltage
         # solvers. The default DHS/staggered path builds its own static source,
@@ -1805,9 +1811,7 @@ class Cell(HHTypedNeuron):
 
     def _layout_values_to_point_space(self, layout, raw_values, *, field: str):
         n_point = self.n_point
-        raw_values = _drop_population_axes(
-            raw_values, field=field, caller="Cell.vis_node", pop_size=self.pop_size
-        )
+        raw_values = _drop_population_axes(raw_values, field=field, caller="Cell.vis_node", pop_size=self.pop_size)
         if hasattr(raw_values, "to_decimal") and hasattr(raw_values, "unit"):
             unit = raw_values.unit
             raw = np.asarray(raw_values.to_decimal(unit), dtype=float)
@@ -1862,9 +1866,7 @@ class Cell(HHTypedNeuron):
 
     def _layout_values_to_cv_space(self, layout, raw_values, *, field: str):
         n_cv = self.n_cv
-        raw_values = _drop_population_axes(
-            raw_values, field=field, caller="Cell.vis_cv", pop_size=self.pop_size
-        )
+        raw_values = _drop_population_axes(raw_values, field=field, caller="Cell.vis_cv", pop_size=self.pop_size)
         source_cv_ids = tuple(int(cv_id) for cv_id in layout.source_cv_ids)
         midpoint_by_cv = {cv_id: int(self.node_tree.cv_to_mid_node_id[cv_id]) for cv_id in source_cv_ids}
         if hasattr(raw_values, "to_decimal") and hasattr(raw_values, "unit"):
@@ -2599,9 +2601,10 @@ class Cell(HHTypedNeuron):
         self.spike.value = _zero_spike_like(self.V.value)
         self._current_time_state.value = 0.0 * u.ms
         point_V = self._cv_to_point(self.V.value)
-        for path, channel in self.runtime_objects(IonChannel, allowed_hierarchy=(1, 1)).items():
-            args = self._runtime_node_phase_args(path, channel, point_V)
-            channel.reset_state(*args, batch_size=batch_size)
+        with grouped_states(True):
+            for path, channel in self.runtime_objects(IonChannel, allowed_hierarchy=(1, 1)).items():
+                args = self._runtime_node_phase_args(path, channel, point_V)
+                channel.reset_state(*args, batch_size=batch_size)
 
     # ------------------------------------------------------------------
     # Inspection forwards (runtime-only)

@@ -38,7 +38,7 @@ class DCN:
         source_hoc: Path | str | None = SOURCE_MORPH_PATH,
         temperature_celsius: float = 32.0,
         v_init_mV: float = -65.0,
-        pop_size=(),
+        pop_size=1,
         name: str | None = None,
     ):
         self.native = native

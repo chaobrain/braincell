@@ -13,15 +13,35 @@
 # limitations under the License.
 # ==============================================================================
 
-from typing import Callable
+"""The integration protocol shared by every BrainCell neuron model.
+
+Defines the state classes solvers consume (:class:`DiffEqState` and its
+grouped variant :class:`DiffEqGroupState`), the :class:`DiffEqModule`
+mixin that declares a module integrable, and the host-scoped factory that
+chooses between the grouped and non-grouped classes.
+
+Which class a hidden state gets is a per-host decision:
+:class:`braincell.SingleCompartment` has no spatial axis and uses plain
+hidden states, while :class:`braincell.Cell` groups its trailing
+compartment axis. See ``docs/specs/2026-08-13-cell-hidden-group-state.md``
+and ``docs/design/cell.md``.
+"""
+
+import contextlib
+import contextvars
+from typing import Callable, Iterator
 
 import brainstate
 from brainstate._state import record_state_value_write
 
 __all__ = [
     'DiffEqState',
+    'DiffEqGroupState',
     'DiffEqModule',
     'IndependentIntegration',
+    'grouped_states',
+    'diffeq_state',
+    'hidden_state',
 ]
 
 
@@ -152,6 +172,169 @@ class DiffEqState(brainstate.HiddenState):
             else:
                 return None
         return super().__pretty_repr_item__(k, v)
+
+
+class DiffEqGroupState(DiffEqState, brainstate.HiddenGroupState):
+    """A :class:`DiffEqState` whose trailing axis indexes independent states.
+
+    This is the state class used by every hidden variable owned by a
+    :class:`braincell.Cell`. A ``Cell`` is a *spatial* model: its runtime
+    arrays are shaped ``pop_size + (n_cv,)`` for voltage and
+    ``pop_size + (n_point,)`` for mechanism variables, so the trailing
+    axis enumerates compartments (or points) that evolve independently.
+    That is exactly the contract of
+    :class:`brainstate.HiddenGroupState` — ``varshape`` is everything but
+    the last axis and ``num_state`` is the last axis — which lets an
+    eligibility-trace learner treat one array as ``num_state`` separately
+    traced hidden units.
+
+    :class:`braincell.SingleCompartment` has no spatial axis, so it keeps
+    the plain :class:`DiffEqState`.
+
+    Because the class derives from :class:`DiffEqState`, every solver in
+    :mod:`braincell.quad` picks it up unchanged: state selection goes
+    through ``isinstance(value, DiffEqState)``, which stays ``True``.
+
+    Notes
+    -----
+    :class:`brainstate.HiddenGroupState` requires ``value.ndim >= 2``.
+    This is why :class:`braincell.Cell` makes its population axis
+    mandatory (``pop_size`` defaults to ``1`` and may not be empty) — the
+    validation is inherited unmodified rather than relaxed.
+
+    See Also
+    --------
+    DiffEqState : The non-grouped state used by ``SingleCompartment``.
+    diffeq_state : Host-scoped factory that picks between the two.
+
+    Examples
+    --------
+    .. code-block:: python
+
+        >>> import brainunit as u
+        >>> import numpy as np
+        >>> import braincell
+        >>> state = braincell.DiffEqGroupState(np.zeros((1, 4)) * u.mV)
+        >>> state.varshape
+        (1,)
+        >>> state.num_state
+        4
+        >>> isinstance(state, braincell.DiffEqState)
+        True
+    """
+
+    __module__ = 'braincell'
+
+
+_GROUPED_STATES = contextvars.ContextVar('braincell_grouped_states', default=False)
+
+
+@contextlib.contextmanager
+def grouped_states(enabled: bool = True) -> Iterator[bool]:
+    """Scope whether :func:`diffeq_state` / :func:`hidden_state` group.
+
+    Channel, ion, and synapse code is shared by
+    :class:`braincell.SingleCompartment` and :class:`braincell.Cell`, so
+    the correct hidden-state class cannot be chosen statically at the
+    creation site. Instead the *host* publishes its identity for the
+    duration of ``init_state`` / ``reset_state``, and the factories read
+    it from this context.
+
+    A :mod:`contextvars` variable — not a module-level global — is used so
+    that nesting, exceptions, and threads all restore the previous value
+    correctly.
+
+    Parameters
+    ----------
+    enabled : bool, default True
+        ``True`` inside a :class:`braincell.Cell`, ``False`` inside a
+        :class:`braincell.SingleCompartment`. Both hosts set it
+        explicitly, so a :class:`braincell.Network` holding a mix of the
+        two is correct regardless of construction order.
+
+    Yields
+    ------
+    bool
+        The value now in effect, for convenience.
+
+    See Also
+    --------
+    diffeq_state : Allocate an integrable hidden state under this scope.
+    hidden_state : Allocate a non-integrable hidden state under this scope.
+
+    Examples
+    --------
+    .. code-block:: python
+
+        >>> import brainunit as u
+        >>> import numpy as np
+        >>> import braincell
+        >>> with braincell.grouped_states(True):
+        ...     state = braincell.diffeq_state(np.zeros((1, 4)) * u.mV)
+        >>> type(state).__name__
+        'DiffEqGroupState'
+    """
+    token = _GROUPED_STATES.set(bool(enabled))
+    try:
+        yield bool(enabled)
+    finally:
+        _GROUPED_STATES.reset(token)
+
+
+def diffeq_state(value, **kwargs) -> DiffEqState:
+    """Allocate the integrable hidden state class the current host wants.
+
+    Parameters
+    ----------
+    value : ArrayLike
+        Initial value, normally a :class:`brainunit.Quantity`.
+    **kwargs
+        Forwarded to the state constructor.
+
+    Returns
+    -------
+    DiffEqState
+        A :class:`DiffEqGroupState` inside :func:`grouped_states`
+        (i.e. within a :class:`braincell.Cell`), otherwise a plain
+        :class:`DiffEqState`.
+
+    See Also
+    --------
+    grouped_states : Scope that selects the class.
+    hidden_state : The non-integrable counterpart.
+    """
+    cls = DiffEqGroupState if _GROUPED_STATES.get() else DiffEqState
+    return cls(value, **kwargs)
+
+
+def hidden_state(value, **kwargs) -> brainstate.HiddenState:
+    """Allocate the non-integrable hidden state class the host wants.
+
+    Used for hidden variables that are written algebraically rather than
+    integrated — for example an ion concentration held fixed, or a
+    species value recomputed from a conservation law.
+
+    Parameters
+    ----------
+    value : ArrayLike
+        Initial value, normally a :class:`brainunit.Quantity`.
+    **kwargs
+        Forwarded to the state constructor.
+
+    Returns
+    -------
+    brainstate.HiddenState
+        A :class:`brainstate.HiddenGroupState` inside
+        :func:`grouped_states` (i.e. within a :class:`braincell.Cell`),
+        otherwise a plain :class:`brainstate.HiddenState`.
+
+    See Also
+    --------
+    grouped_states : Scope that selects the class.
+    diffeq_state : The integrable counterpart.
+    """
+    cls = brainstate.HiddenGroupState if _GROUPED_STATES.get() else brainstate.HiddenState
+    return cls(value, **kwargs)
 
 
 class DiffEqModule(brainstate.mixin.Mixin):

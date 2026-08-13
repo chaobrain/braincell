@@ -18,9 +18,13 @@ from braincell._single_compartment import (
     SingleCompartment,
 )
 from braincell.quad.protocol import (
+    DiffEqGroupState,
     DiffEqModule,
     DiffEqState,
     IndependentIntegration,
+    diffeq_state,
+    grouped_states,
+    hidden_state,
 )
 from . import quad, mech, channel, synapse, ion
 from ._base import (
@@ -80,8 +84,12 @@ __all__ = [
     "__version__",
     "__version_info__",
     "DiffEqState",
+    "DiffEqGroupState",
     "DiffEqModule",
     "IndependentIntegration",
+    "grouped_states",
+    "diffeq_state",
+    "hidden_state",
     "ApicalDendrite",
     "Axon",
     "BasalDendrite",

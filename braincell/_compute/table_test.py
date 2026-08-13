@@ -40,7 +40,8 @@ class MechanismObjectCellAttrAccess(unittest.TestCase):
         table = cell.mech_table()
         mo = table.get(("IL", "IL"), column_id=1)
         self.assertIsNotNone(mo)
-        self.assertAlmostEqual(float(mo.g_max.to_decimal(u.mS / u.cm**2)), 4.0, places=12)
+        # ``g_max`` now holds one value per population member.
+        self.assertAlmostEqual(float(mo.g_max[0].to_decimal(u.mS / u.cm**2)), 4.0, places=12)
 
     def test_unknown_param_raises_attribute_error_with_candidates(self) -> None:
         cell = _simple_cell()

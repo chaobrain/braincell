@@ -26,7 +26,7 @@ from braincell.morph.branch import Branch
 from braincell.morph.morphology import Morphology
 
 
-def _cell(*, pop_size=()) -> Cell:
+def _cell(*, pop_size=1) -> Cell:
     soma = Branch.from_lengths(
         lengths=[20.0] * u.um,
         radii=[5.0, 5.0] * u.um,
@@ -96,8 +96,8 @@ class SpatialDensityParameterTest(unittest.TestCase):
 
         layout = next(layout for layout in cell.layouts if layout.kind == "ion:SodiumFixed")
         state = cell.get_state(layout.id, "E")
-        actual = state[cell.node_tree.cv_to_mid_node_id].to_decimal(u.mV)
-        np.testing.assert_allclose(actual, [50.0, 50.0, 47.5, 42.5])
+        actual = state[..., cell.node_tree.cv_to_mid_node_id].to_decimal(u.mV)
+        np.testing.assert_allclose(actual, [[50.0, 50.0, 47.5, 42.5]])
 
     def test_ion_callable_accepts_unitless_scalar(self) -> None:
         cell = _cell()
@@ -110,8 +110,8 @@ class SpatialDensityParameterTest(unittest.TestCase):
         layout = next(layout for layout in cell.layouts if layout.kind == "ion:SodiumFixed")
         state = cell.get_state(layout.id, "valence")
         np.testing.assert_allclose(
-            state[cell.node_tree.cv_to_mid_node_id],
-            np.ones(cell.n_cv),
+            state[..., cell.node_tree.cv_to_mid_node_id],
+            np.ones(cell.pop_size + (cell.n_cv,)),
         )
 
     def test_callable_rejects_non_scalar_result_with_cv_details(self) -> None:

@@ -18,6 +18,7 @@ from braincell._base import Channel
 from braincell._misc import is_traced_value
 from braincell.quad.protocol import DiffEqState
 from braincell.quad.protocol import IndependentIntegration
+from braincell.quad.protocol import diffeq_state
 
 __all__ = [
     "Gate",
@@ -156,7 +157,7 @@ class HH(Channel):
             setattr(
                 self,
                 gate.name,
-                DiffEqState(braintools.init.param(u.math.zeros, self.varshape, batch_size)),
+                diffeq_state(braintools.init.param(u.math.zeros, self.varshape, batch_size)),
             )
 
     def conductance_factor(self, V, *ions):
@@ -337,7 +338,7 @@ class Markov(Channel, IndependentIntegration):
             setattr(
                 self,
                 name,
-                DiffEqState(braintools.init.param(u.math.zeros, self.varshape, batch_size)),
+                diffeq_state(braintools.init.param(u.math.zeros, self.varshape, batch_size)),
             )
 
     def reset_state(self, V, *ions, batch_size: int = None):

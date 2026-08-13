@@ -1372,6 +1372,15 @@ def _write_state_buffer(layout: "MechanismLayout", buffer: object, value: object
 
 
 def _extract_point_value(layout: MechanismLayout, *, point_id: int, buffer: object) -> object:
+    # Length of the axis that indexes points/actives for this layout. Any
+    # leading axes are homogeneous-population dimensions, and a buffer whose
+    # trailing axis is *not* this length carries an extra per-point axis
+    # (the ragged ``durations`` / ``amplitudes`` step axis).
+    if layout.layout == "dense" and layout.point_mask is not None:
+        point_axis_len = int(np.asarray(layout.point_mask).shape[0])
+    else:
+        point_axis_len = int(layout.n_active)
+
     def _pick_ragged(index: int) -> object:
         if isinstance(buffer, u.Quantity):
             mantissa = np.asarray(buffer.mantissa)
@@ -1387,7 +1396,7 @@ def _extract_point_value(layout: MechanismLayout, *, point_id: int, buffer: obje
     def _pick(index: int) -> object:
         if isinstance(buffer, u.Quantity):
             mantissa = np.asarray(buffer.mantissa)
-            if mantissa.ndim >= 2 and int(mantissa.shape[-1]) != layout.n_active:
+            if mantissa.ndim >= 2 and int(mantissa.shape[-1]) != point_axis_len:
                 ragged = _pick_ragged(index)
                 if ragged is not None:
                     return ragged
@@ -1623,6 +1632,7 @@ def _build_runtime_nodes(
             ions=ions,
             ion_aliases=ion_aliases,
             ion_family_candidates=ion_family_candidates,
+            pop_size=pop_size,
         )
         if node is not None:
             runtime_nodes[layout.id] = node
@@ -2286,6 +2296,7 @@ def _instantiate_runtime_node(
     ions: dict[str, object],
     ion_aliases: dict[str, str],
     ion_family_candidates: dict[str, tuple[str, ...]],
+    pop_size: tuple[int, ...],
 ) -> tuple[object | None, tuple[str, ...], str | tuple[str, ...] | None]:
     if isinstance(mechanism, SynapsePlacement):
         runtime_cls = get_registry().get("synapse", mechanism.synapse_type)
@@ -2314,11 +2325,12 @@ def _instantiate_runtime_node(
     runtime_cls = get_registry().get("channel", mechanism.class_name)
     params = _runtime_constructor_params(layout=layout, mechanism=mechanism, state_buffers=state_buffers)
     if len(params) > 0 and hasattr(next(iter(params.values())), "shape"):
+        # Parameter buffers already carry the population axis.
         size = next(iter(params.values())).shape
     elif layout.layout == "dense" and layout.point_mask is not None:
-        size = layout.point_mask.shape
+        size = pop_size + layout.point_mask.shape
     else:
-        size = (layout.n_active,)
+        size = pop_size + (layout.n_active,)
     node = runtime_cls(size=size, **params)
     bound_ions, current_owner_specs = _resolve_channel_runtime_bindings(
         runtime_cls=runtime_cls,
@@ -2998,7 +3010,7 @@ def _sync_runtime_ion(runtime: CellRuntimeState, *, layout_id: int) -> None:
             param_name,
             getattr(ion, _ion_runtime_attr_name(ion_cls, param_name)),
         )
-        full_values[param_name] = _ion_param_broadcast(baseline, shape=(runtime.n_point,))
+        full_values[param_name] = _ion_param_broadcast(baseline, shape=runtime.pop_size + (runtime.n_point,))
 
     for candidate in runtime.layouts:
         candidate_mechanism = runtime.layout_mechanisms[candidate.id]

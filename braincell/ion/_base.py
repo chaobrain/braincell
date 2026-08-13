@@ -24,7 +24,8 @@ import braintools
 import brainunit as u
 
 from braincell.quad import get_integrator
-from braincell.quad.protocol import DiffEqState, IndependentIntegration
+from braincell.quad.protocol import IndependentIntegration
+from braincell.quad.protocol import diffeq_state, hidden_state
 
 __all__ = [
     "Factor",
@@ -292,7 +293,7 @@ class DynamicNernstIon(brainstate.mixin.Mixin):
     def _ion_init_state_hook(self, V, batch_size: int = None):
         """Create the runtime ``Ci`` state from the stored initializer."""
         _ = V
-        self.Ci = DiffEqState(
+        self.Ci = diffeq_state(
             braintools.init.param(self._Ci_initializer, self.varshape, batch_size),
         )
 
@@ -575,21 +576,40 @@ class _Species:
         self.owner = owner
         self.specs = specs
 
+    def _species_value(self, spec, batch_size: int = None):
+        """Materialize one species initializer at the owner's full state shape.
+
+        ``braintools.init.param`` passes a bare scalar through unbroadcast,
+        so a species declared as e.g. ``0.0 * u.mol / u.cm**2`` would start
+        rank-0 while every sibling species is shaped ``varshape``. That
+        shape is not stable: :meth:`_Conserve.writeback` later assigns the
+        per-point value, silently growing the state mid-simulation — which
+        breaks a ``jit``/``scan`` carry signature and, on a
+        :class:`braincell.Cell`, the grouped hidden-state rank contract.
+        Broadcasting here keeps one species set homogeneous from the start.
+        """
+        init = self.owner.species_initializers.get(spec.name, spec.init)
+        value = braintools.init.param(init, self.owner.varshape, batch_size)
+        target = tuple(self.owner.varshape)
+        if batch_size is not None:
+            target = (int(batch_size),) + target
+        if tuple(getattr(value, "shape", ())) == target:
+            return value
+        return u.math.broadcast_to(value, target)
+
     def init(self, batch_size: int = None):
         """Materialize runtime species attributes from class declarations."""
         for spec in self.specs.species_by_name.values():
-            init = self.owner.species_initializers.get(spec.name, spec.init)
-            value = braintools.init.param(init, self.owner.varshape, batch_size)
+            value = self._species_value(spec, batch_size)
             if spec.name in self.specs.diffeq_set:
-                setattr(self.owner, spec.name, DiffEqState(value))
+                setattr(self.owner, spec.name, diffeq_state(value))
             else:
-                setattr(self.owner, spec.name, brainstate.HiddenState(value))
+                setattr(self.owner, spec.name, hidden_state(value))
 
     def reset(self, batch_size: int = None):
         """Reset runtime species attributes back to their declared initializers."""
         for spec in self.specs.species_by_name.values():
-            init = self.owner.species_initializers.get(spec.name, spec.init)
-            value = braintools.init.param(init, self.owner.varshape, batch_size)
+            value = self._species_value(spec, batch_size)
             if spec.name in self.specs.diffeq_set:
                 getattr(self.owner, spec.name).value = value
             else:
@@ -597,7 +617,7 @@ class _Species:
                 if isinstance(raw, brainstate.State):
                     raw.value = value
                 else:
-                    setattr(self.owner, spec.name, brainstate.HiddenState(value))
+                    setattr(self.owner, spec.name, hidden_state(value))
 
     def value(self, name: str):
         """Return one species' current visible value."""
@@ -661,7 +681,7 @@ class _Conserve:
             if isinstance(raw, brainstate.State):
                 raw.value = values[name]
             else:
-                setattr(self.owner, name, brainstate.HiddenState(values[name]))
+                setattr(self.owner, name, hidden_state(values[name]))
 
 
 class _Flux:

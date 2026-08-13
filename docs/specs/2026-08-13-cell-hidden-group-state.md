@@ -217,12 +217,58 @@ converted for consistency; the tests assert it does not fire mid-run.
   rank-0 ≡ rank-1 numerically and is the anchor for this.
 * **Full suite** — `pytest braincell/` and `pre-commit run --all`.
 
+## Pre-existing bugs the mandatory axis exposed
+
+Making `pop_size` mandatory moved the population axis onto the *default*
+path, where four latent rank assumptions had never been exercised. All
+four were already wrong for an explicit `pop_size`; none are caused by
+this change, and each is fixed here.
+
+| # | Site | Bug |
+|---|---|---|
+| 1 | `_multi_compartment/cell.py`, six vis coercion helpers | `_layout_values_to_{point,cv}_space` rejected any field with rank > 1 ("only supports 1-D value fields"), so `Cell(pop_size=4).vis_cv(...)` already failed. Fixed with `_drop_population_axes`, which selects the single-member view and otherwise raises a message naming the offending field and `pop_size`. |
+| 2 | `_compute/runtime.py:3001` | `_sync_runtime_ion` broadcast an ion baseline onto a hardcoded `(n_point,)`. Line 2953 already used `runtime.pop_size + (runtime.n_point,)`; the two now agree. |
+| 3 | `_compute/runtime.py`, `_instantiate_runtime_node` | The dense-channel size fallback used `layout.point_mask.shape` without the population axis, so a channel whose parameters were all scalars got a rank-1 gate state. Under `jit`/`scan` this surfaced as a carry-signature mismatch (`float32[5]` vs `float32[1,5]`). `pop_size` is now threaded in. |
+| 4 | `ion/_base.py`, `_Species.init` / `reset` | `braintools.init.param` passes a bare scalar through unbroadcast, so a species declared as e.g. `0.0 * u.mol / u.cm**2` (`CdpCR_MA2020_GrC.pumpca`) started rank-0 while its siblings were `varshape`. `_Conserve.writeback` then assigned the per-point value, silently growing the state mid-simulation. `_species_value` now broadcasts at allocation. |
+
+A fifth site needed a genuine semantic fix rather than a missing axis:
+`_extract_point_value` classified any 2-D buffer as *ragged*
+(point × sub-values). With a population axis, 2-D is ambiguous — it can
+also be pop × point. The predicate now compares the trailing axis against
+the layout's own point-axis length (`point_mask.shape[0]` for dense,
+`n_active` for sparse) instead of relying on rank.
+
 ## Migration surface
 
 `Cell.V` and every `Cell` trace gain a leading length-1 axis by default.
-Affected: 13 test files that build a `Cell`, `docs/design/cell.md`, the
-`Cell(` call sites under `examples/`, and the notebooks under
-`docs/tutorials/` and `docs/examples/`.
+
+Handled:
+
+* 8 test files that build a `Cell` (`_compute/runtime_test.py`,
+  `_compute/spatial_params_test.py`, `_compute/table_test.py`,
+  `_multi_compartment/cell_test.py`,
+  `_multi_compartment/currents_test.py`, `network/runtime_test.py`,
+  `quad/_staggered_test.py`, plus the new tests above).
+* `docs/design/cell.md`.
+* The 8 `examples/neuron_compare/cell/*` builders that declared
+  `pop_size=()` as their default; each is now `pop_size=1`. Their debug
+  runners already `reshape(-1)` every trace, so nothing downstream moves.
+
+Reviewed, no change needed:
+
+* `docs/examples/` and `docs/getting_started/` notebooks — every
+  `.V.value` consumer there is a `SingleCompartment`, which is untouched.
+* `docs/tutorials/` and `docs/concepts/` notebooks — these build a `Cell`
+  and plot `run(...)` probe traces, which go from `(T,)` to `(T, 1)`.
+  Matplotlib renders that identically, so the notebooks stay correct;
+  they are not executed by the test suite.
+
+One test changed meaning rather than shape:
+`quad/_staggered_test.py::test_midpoint_clamp_is_not_double_counted_with_population_axis`
+compared `pop_size=()` against `pop_size=(1,)`. Both are `(1,)` now, so
+the assertion had become vacuous. It now compares the default against
+`pop_size=(3,)` and asserts every member reproduces the single-member
+trace — the same invariant, restated for a world without rank-0.
 
 ## Out of scope
 

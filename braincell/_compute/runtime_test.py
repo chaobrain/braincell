@@ -70,7 +70,7 @@ def _build_tree() -> Morphology:
 
 def _quantity_set_at(value, index: int, replacement):
     decimal = np.array(value.to_decimal(value.unit), copy=True)
-    decimal[int(index)] = replacement.to_decimal(value.unit)
+    decimal[..., int(index)] = replacement.to_decimal(value.unit)
     return u.Quantity(decimal, value.unit)
 
 
@@ -95,11 +95,11 @@ class CellRuntimeStateTest(unittest.TestCase):
         self.assertEqual(layout.n_active, 2)
         self.assertEqual(layout.source_cv_ids, (0, 1))
         self.assertEqual(layout.point_index.tolist(), [1, 3])
-        self.assertEqual(rcell.expected_state_shape(layout.id, "g_max"), (5,))
-        self.assertEqual(rcell.voltage_shape, (5,))
-        self.assertEqual(rcell.get_state(layout.id, "g_max").shape, (5,))
+        self.assertEqual(rcell.expected_state_shape(layout.id, "g_max"), (1, 5))
+        self.assertEqual(rcell.voltage_shape, (1, 5))
+        self.assertEqual(rcell.get_state(layout.id, "g_max").shape, (1, 5))
         np.testing.assert_allclose(
-            np.asarray(rcell.get_state(layout.id, "g_max").to_decimal(u.mS / u.cm**2)),
+            np.asarray(rcell.get_state(layout.id, "g_max").to_decimal(u.mS / u.cm**2))[0],
             [4.0, 4.0, 4.0, 4.0, 4.0],
         )
 
@@ -120,11 +120,11 @@ class CellRuntimeStateTest(unittest.TestCase):
         soma_current = rcell.get_runtime_node(0).current(point_v)
         dend_current = rcell.get_runtime_node(1).current(point_v)
         np.testing.assert_allclose(
-            np.asarray(soma_current.to_decimal(u.nA / u.cm**2)),
+            np.asarray(soma_current.to_decimal(u.nA / u.cm**2))[0],
             [0.0, -12000.0, 0.0, 0.0, 0.0],
         )
         np.testing.assert_allclose(
-            np.asarray(dend_current.to_decimal(u.nA / u.cm**2)),
+            np.asarray(dend_current.to_decimal(u.nA / u.cm**2))[0],
             [0.0, 0.0, 0.0, -10000.0, 0.0],
         )
 
@@ -146,7 +146,7 @@ class CellRuntimeStateTest(unittest.TestCase):
         self.assertEqual(layout.n_active, 1)
         self.assertEqual(layout.point_index.tolist(), [1])
         self.assertIsNone(layout.point_mask)
-        self.assertEqual(rcell.expected_state_shape(layout.id, "amplitudes"), (1, 1))
+        self.assertEqual(rcell.expected_state_shape(layout.id, "amplitudes"), (1, 1, 1))
         self.assertEqual(len(rcell.get_state(layout.id, "amplitudes")), 1)
         self.assertEqual(tuple(item.to_decimal(u.nA) for item in rcell.get_state(layout.id, "amplitudes")[0]), (0.1,))
         self.assertEqual(tuple(item.to_decimal(u.ms) for item in rcell.get_state(layout.id, "durations")[0]), (2.0,))
@@ -195,10 +195,10 @@ class CellRuntimeStateTest(unittest.TestCase):
         self.assertEqual(layout.target, "point")
         self.assertEqual(layout.kind, "synapse:AMPA")
         self.assertEqual(layout.point_index.tolist(), [1])
-        self.assertEqual(rcell.expected_state_shape(layout.id, "pre_spike"), (1,))
+        self.assertEqual(rcell.expected_state_shape(layout.id, "pre_spike"), (1, 1))
         node = rcell.get_runtime_node(layout.id)
         self.assertIsInstance(node, braincell.synapse.AMPA)
-        self.assertEqual(node.varshape, (1,))
+        self.assertEqual(node.varshape, (1, 1))
         self.assertEqual(rcell.get_state(layout.id, "pre_spike")[0], 0.0)
 
     def test_synapse_pre_spike_can_be_mutated_through_runtime_state(self) -> None:
@@ -217,7 +217,7 @@ class CellRuntimeStateTest(unittest.TestCase):
         rcell = cell
         layout = rcell.layouts[0]
         rcell.set_state(layout.id, "pre_spike", 1.0)
-        self.assertEqual(float(np.asarray(rcell.get_state(layout.id, "pre_spike"))[0]), 1.0)
+        self.assertEqual(float(np.asarray(rcell.get_state(layout.id, "pre_spike"))[0, 0]), 1.0)
 
     def test_channel_spec_builds_dense_layout_with_global_shape(self) -> None:
         import braincell
@@ -235,16 +235,16 @@ class CellRuntimeStateTest(unittest.TestCase):
         layout = rcell.layouts[0]
         self.assertEqual(layout.layout, "dense")
         self.assertEqual(layout.kind, "channel:IL")
-        self.assertEqual(rcell.expected_state_shape(layout.id, "g_max"), (5,))
-        self.assertEqual(rcell.expected_state_shape(layout.id, "E"), (5,))
-        self.assertEqual(rcell.get_point_state(1)[layout.id]["g_max"], 4.0 * (u.mS / u.cm**2))
-        self.assertEqual(rcell.get_point_state(3)[layout.id]["E"], -68.0 * u.mV)
+        self.assertEqual(rcell.expected_state_shape(layout.id, "g_max"), (1, 5))
+        self.assertEqual(rcell.expected_state_shape(layout.id, "E"), (1, 5))
+        self.assertEqual(rcell.get_point_state(1)[layout.id]["g_max"][0], 4.0 * (u.mS / u.cm**2))
+        self.assertEqual(rcell.get_point_state(3)[layout.id]["E"][0], -68.0 * u.mV)
         node = rcell.get_runtime_node(layout.id)
         self.assertIsInstance(node, braincell.channel.IL)
-        self.assertEqual(node.varshape, (5,))
-        self.assertAlmostEqual(float(node.g_max[1].to_decimal(u.mS / u.cm**2)), 4.0, places=12)
-        self.assertAlmostEqual(float(node.g_max[0].to_decimal(u.mS / u.cm**2)), 0.0, places=12)
-        self.assertAlmostEqual(float(node.E[1].to_decimal(u.mV)), -68.0, places=12)
+        self.assertEqual(node.varshape, (1, 5))
+        self.assertAlmostEqual(float(node.g_max[0, 1].to_decimal(u.mS / u.cm**2)), 4.0, places=12)
+        self.assertAlmostEqual(float(node.g_max[0, 0].to_decimal(u.mS / u.cm**2)), 0.0, places=12)
+        self.assertAlmostEqual(float(node.E[0, 1].to_decimal(u.mV)), -68.0, places=12)
 
     def test_named_channel_spec_merges_across_regions_when_identity_matches(self) -> None:
         import braincell
@@ -302,9 +302,9 @@ class CellRuntimeStateTest(unittest.TestCase):
         self.assertEqual(tuple(layout.id for layout in rcell.get_cv_layouts(0)), (dense.id, sparse.id))
         self.assertEqual(tuple(layout.id for layout in rcell.get_cv_layouts(1)), (dense.id,))
         point_state = rcell.get_point_state(1)
-        self.assertEqual(point_state[dense.id]["g_max"], 4.0 * (u.mS / u.cm**2))
-        self.assertEqual(tuple(item.to_decimal(u.nA) for item in point_state[sparse.id]["amplitudes"]), (0.1,))
-        self.assertEqual(rcell.get_cv_state(0)[dense.id]["g_max"], 4.0 * (u.mS / u.cm**2))
+        self.assertEqual(point_state[dense.id]["g_max"][0], 4.0 * (u.mS / u.cm**2))
+        self.assertEqual(tuple(item.to_decimal(u.nA) for item in point_state[sparse.id]["amplitudes"][0]), (0.1,))
+        self.assertEqual(rcell.get_cv_state(0)[dense.id]["g_max"][0], 4.0 * (u.mS / u.cm**2))
         self.assertEqual({name for name in ("na", "k", "ca")}, {"na", "k", "ca"})
 
     def test_rebuild_after_place_produces_new_runtime(self) -> None:
@@ -362,10 +362,10 @@ class CellRuntimeStateTest(unittest.TestCase):
         current_early = runtime.evaluate_point_clamps(t=0.5 * u.ms)
         current_late = runtime.evaluate_point_clamps(t=2.5 * u.ms)
 
-        self.assertEqual(current_early.shape, (len(rcell.node_tree.nodes),))
-        self.assertAlmostEqual(float(current_early[1].to_decimal(u.nA)), 0.7, places=6)
-        self.assertAlmostEqual(float(current_early[0].to_decimal(u.nA)), 0.0, places=6)
-        self.assertAlmostEqual(float(current_late[1].to_decimal(u.nA)), 0.6, places=6)
+        self.assertEqual(current_early.shape, (1, len(rcell.node_tree.nodes)))
+        self.assertAlmostEqual(float(current_early[0, 1].to_decimal(u.nA)), 0.7, places=6)
+        self.assertAlmostEqual(float(current_early[0, 0].to_decimal(u.nA)), 0.0, places=6)
+        self.assertAlmostEqual(float(current_late[0, 1].to_decimal(u.nA)), 0.6, places=6)
 
     def test_function_clamp_receives_absolute_time(self) -> None:
         cell = Cell(_build_tree())
@@ -380,9 +380,9 @@ class CellRuntimeStateTest(unittest.TestCase):
         active = runtime.evaluate_point_clamps(t=2.5 * u.ms)
         after = runtime.evaluate_point_clamps(t=4.0 * u.ms)
 
-        self.assertAlmostEqual(float(before[1].to_decimal(u.nA)), 0.0, places=6)
-        self.assertAlmostEqual(float(active[1].to_decimal(u.nA)), 0.4, places=6)
-        self.assertAlmostEqual(float(after[1].to_decimal(u.nA)), 0.0, places=6)
+        self.assertAlmostEqual(float(before[0, 1].to_decimal(u.nA)), 0.0, places=6)
+        self.assertAlmostEqual(float(active[0, 1].to_decimal(u.nA)), 0.4, places=6)
+        self.assertAlmostEqual(float(after[0, 1].to_decimal(u.nA)), 0.0, places=6)
 
     def test_sine_clamp_uses_delay_window(self) -> None:
         cell = Cell(_build_tree())
@@ -403,9 +403,9 @@ class CellRuntimeStateTest(unittest.TestCase):
         active = runtime.evaluate_point_clamps(t=1.5 * u.ms)
         after = runtime.evaluate_point_clamps(t=3.5 * u.ms)
 
-        self.assertAlmostEqual(float(before[1].to_decimal(u.nA)), 0.0, places=6)
-        self.assertAlmostEqual(float(active[1].to_decimal(u.nA)), 0.2, places=6)
-        self.assertAlmostEqual(float(after[1].to_decimal(u.nA)), 0.0, places=6)
+        self.assertAlmostEqual(float(before[0, 1].to_decimal(u.nA)), 0.0, places=6)
+        self.assertAlmostEqual(float(active[0, 1].to_decimal(u.nA)), 0.2, places=6)
+        self.assertAlmostEqual(float(after[0, 1].to_decimal(u.nA)), 0.0, places=6)
 
     def test_probe_layouts_are_sparse_and_allocate_no_state_buffers(self) -> None:
         cell = Cell(_build_tree())
@@ -460,9 +460,9 @@ class CellRuntimeStateTest(unittest.TestCase):
         )
         node = rcell.get_runtime_node(channel_layout.id)
 
-        self.assertEqual(samples["soma(0.5)_v"], rcell.V.value[0])
-        self.assertEqual(samples["soma(0.5)_Na_HH1952_p"], node.p.value[1])
-        self.assertEqual(rcell.sample_probe("soma(0.5)_Na_HH1952_p"), node.p.value[1])
+        self.assertEqual(samples["soma(0.5)_v"], rcell.V.value[..., 0])
+        self.assertEqual(samples["soma(0.5)_Na_HH1952_p"], node.p.value[..., 1])
+        self.assertEqual(rcell.sample_probe("soma(0.5)_Na_HH1952_p"), node.p.value[..., 1])
 
     def test_sample_probe_reads_mechanism_and_total_ion_current(self) -> None:
         cell = Cell(_build_tree())
@@ -487,8 +487,8 @@ class CellRuntimeStateTest(unittest.TestCase):
         ion = rcell.get_ion("k")
         node = ion.channels["K_Kv_test"]
         point_V = rcell._discretization_to_point(rcell.V.value)
-        expected_mechanism = node.current(point_V, ion.pack_info())[1]
-        expected_total = ion.current(point_V, include_external=False)[1]
+        expected_mechanism = node.current(point_V, ion.pack_info())[..., 1]
+        expected_total = ion.current(point_V, include_external=False)[..., 1]
 
         self.assertEqual(samples["soma(0.5)_K_Kv_test_current"], expected_mechanism)
         self.assertEqual(samples["soma(0.5)_k_current"], expected_total)
@@ -518,7 +518,7 @@ class CellRuntimeStateTest(unittest.TestCase):
         )
         node = rcell.get_runtime_node(channel_layout.id)
         point_V = rcell._discretization_to_point(rcell.V.value)
-        expected_current = node.current(point_V)[1]
+        expected_current = node.current(point_V)[..., 1]
 
         self.assertEqual(samples["soma(0.5)_IL_current"], expected_current)
 
@@ -543,7 +543,7 @@ class CellRuntimeStateTest(unittest.TestCase):
 
         self.assertEqual(
             rcell.sample_probe("soma(0.5)_Na_HH1952_g_max"),
-            rcell.get_ion("na").channels["Na_HH1952"].g_max[1],
+            rcell.get_ion("na").channels["Na_HH1952"].g_max[..., 1],
         )
         with self.assertRaises(KeyError):
             rcell.sample_probe("soma(0.5)_missing_p")
@@ -584,8 +584,8 @@ class CellRuntimeStateTest(unittest.TestCase):
         node = rcell.get_runtime_node(layout.id)
 
         self.assertIsInstance(node, braincell.channel.IL)
-        self.assertAlmostEqual(float(node.g_max[3].to_decimal(u.mS / u.cm**2)), 4.0, places=12)
-        self.assertAlmostEqual(float(node.g_max[2].to_decimal(u.mS / u.cm**2)), 0.0, places=12)
+        self.assertAlmostEqual(float(node.g_max[0, 3].to_decimal(u.mS / u.cm**2)), 4.0, places=12)
+        self.assertAlmostEqual(float(node.g_max[0, 2].to_decimal(u.mS / u.cm**2)), 0.0, places=12)
 
     def test_set_state_syncs_runtime_node_param(self) -> None:
         import braincell
@@ -603,8 +603,8 @@ class CellRuntimeStateTest(unittest.TestCase):
         rcell.set_state(layout.id, "g_max", 2.5 * (u.mS / u.cm**2))
         node = rcell.get_runtime_node(layout.id)
 
-        self.assertAlmostEqual(float(node.g_max[1].to_decimal(u.mS / u.cm**2)), 2.5, places=12)
-        self.assertAlmostEqual(float(node.g_max[0].to_decimal(u.mS / u.cm**2)), 0.0, places=12)
+        self.assertAlmostEqual(float(node.g_max[0, 1].to_decimal(u.mS / u.cm**2)), 2.5, places=12)
+        self.assertAlmostEqual(float(node.g_max[0, 0].to_decimal(u.mS / u.cm**2)), 0.0, places=12)
 
     def test_default_ions_are_available_with_global_shape(self) -> None:
         import braincell
@@ -617,9 +617,9 @@ class CellRuntimeStateTest(unittest.TestCase):
         self.assertIsInstance(rcell.get_ion("na"), braincell.ion.SodiumFixed)
         self.assertIsInstance(rcell.get_ion("k"), braincell.ion.PotassiumFixed)
         self.assertIsInstance(rcell.get_ion("ca"), braincell.ion.CalciumFixed)
-        self.assertEqual(rcell.get_ion("na").varshape, (5,))
-        self.assertEqual(rcell.get_ion("k").varshape, (5,))
-        self.assertEqual(rcell.get_ion("ca").varshape, (5,))
+        self.assertEqual(rcell.get_ion("na").varshape, (1, 5))
+        self.assertEqual(rcell.get_ion("k").varshape, (1, 5))
+        self.assertEqual(rcell.get_ion("ca").varshape, (1, 5))
 
     def test_default_ions_expand_with_population_shape(self) -> None:
         cell = Cell(_build_tree(), pop_size=(2, 3))
@@ -636,19 +636,19 @@ class CellRuntimeStateTest(unittest.TestCase):
         rcell = cell
 
         na = rcell.get_ion("na")
-        self.assertEqual(na.length.shape, (5,))
-        self.assertEqual(na.area.shape, (5,))
-        self.assertEqual(na.diam_mid.shape, (5,))
-        self.assertEqual(na.radius_prox.shape, (5,))
-        self.assertEqual(na.radius_dist.shape, (5,))
+        self.assertEqual(na.length.shape, (1, 5))
+        self.assertEqual(na.area.shape, (1, 5))
+        self.assertEqual(na.diam_mid.shape, (1, 5))
+        self.assertEqual(na.radius_prox.shape, (1, 5))
+        self.assertEqual(na.radius_dist.shape, (1, 5))
 
-        self.assertAlmostEqual(float(na.length[1].to_decimal(u.um)), 20.0, places=12)
-        self.assertAlmostEqual(float(na.length[3].to_decimal(u.um)), 100.0, places=12)
-        self.assertAlmostEqual(float(na.diam_mid[1].to_decimal(u.um)), 20.0, places=12)
-        self.assertAlmostEqual(float(na.diam_mid[3].to_decimal(u.um)), 3.0, places=12)
-        self.assertAlmostEqual(float(na.radius_prox[1].to_decimal(u.um)), 10.0, places=12)
-        self.assertAlmostEqual(float(na.radius_dist[3].to_decimal(u.um)), 1.0, places=12)
-        self.assertAlmostEqual(float(na.area[0].to_decimal(u.um**2)), 0.0, places=12)
+        self.assertAlmostEqual(float(na.length[0, 1].to_decimal(u.um)), 20.0, places=12)
+        self.assertAlmostEqual(float(na.length[0, 3].to_decimal(u.um)), 100.0, places=12)
+        self.assertAlmostEqual(float(na.diam_mid[0, 1].to_decimal(u.um)), 20.0, places=12)
+        self.assertAlmostEqual(float(na.diam_mid[0, 3].to_decimal(u.um)), 3.0, places=12)
+        self.assertAlmostEqual(float(na.radius_prox[0, 1].to_decimal(u.um)), 10.0, places=12)
+        self.assertAlmostEqual(float(na.radius_dist[0, 3].to_decimal(u.um)), 1.0, places=12)
+        self.assertAlmostEqual(float(na.area[0, 0].to_decimal(u.um**2)), 0.0, places=12)
 
     def test_runtime_ion_geometry_expands_with_population_shape(self) -> None:
         cell = Cell(_build_tree(), pop_size=(2,))
@@ -679,8 +679,8 @@ class CellRuntimeStateTest(unittest.TestCase):
         self.assertIs(rcell.get_ion("na_left"), na)
         self.assertIsInstance(na, braincell.ion.SodiumFixed)
         self.assertEqual(layout.point_index.tolist(), [1])
-        self.assertAlmostEqual(float(na.E[1].to_decimal(u.mV)), 55.0, places=12)
-        self.assertAlmostEqual(float(na.E[3].to_decimal(u.mV)), 50.0, places=12)
+        self.assertAlmostEqual(float(na.E[0, 1].to_decimal(u.mV)), 55.0, places=12)
+        self.assertAlmostEqual(float(na.E[0, 3].to_decimal(u.mV)), 50.0, places=12)
 
     def test_explicit_init_nernst_ion_replaces_default_species_container(self) -> None:
         cell = Cell(_build_tree())
@@ -703,10 +703,10 @@ class CellRuntimeStateTest(unittest.TestCase):
         self.assertIs(rcell.get_ion("SodiumInitNernst"), na)
         self.assertIs(rcell.get_ion("na_pool"), na)
         self.assertAlmostEqual(
-            float(na.temp[1].to_decimal(u.kelvin)), float(u.celsius2kelvin(30.0).to_decimal(u.kelvin)), places=12
+            float(na.temp[0, 1].to_decimal(u.kelvin)), float(u.celsius2kelvin(30.0).to_decimal(u.kelvin)), places=12
         )
-        self.assertAlmostEqual(float(na.Ci[1].to_decimal(u.mM)), 12.0, places=12)
-        self.assertAlmostEqual(float(na.Co[1].to_decimal(u.mM)), 145.0, places=12)
+        self.assertAlmostEqual(float(na.Ci[0, 1].to_decimal(u.mM)), 12.0, places=12)
+        self.assertAlmostEqual(float(na.Co[0, 1].to_decimal(u.mM)), 145.0, places=12)
 
     def test_multiple_named_ions_make_family_lookup_ambiguous(self) -> None:
         cell = Cell(_build_tree())
@@ -754,8 +754,8 @@ class CellRuntimeStateTest(unittest.TestCase):
 
         self.assertIs(na_soma.channels["Na_HH1952"], node)
         self.assertNotIn("Na_HH1952", na_dend.channels)
-        self.assertAlmostEqual(float(na_soma.E[1].to_decimal(u.mV)), 55.0, places=12)
-        self.assertAlmostEqual(float(na_dend.E[3].to_decimal(u.mV)), 45.0, places=12)
+        self.assertAlmostEqual(float(na_soma.E[0, 1].to_decimal(u.mV)), 55.0, places=12)
+        self.assertAlmostEqual(float(na_dend.E[0, 3].to_decimal(u.mV)), 45.0, places=12)
 
     def test_same_named_single_ion_channels_in_distinct_layouts_do_not_overwrite(self) -> None:
         cell = Cell(_build_tree())
@@ -783,8 +783,8 @@ class CellRuntimeStateTest(unittest.TestCase):
         self.assertEqual(len(na.channels), 1)
         self.assertIn("Na_HH1952", na.channels)
         self.assertNotIn("Na_HH1952__layout_1", na.channels)
-        self.assertAlmostEqual(float(nodes[0].g_max[1].to_decimal(u.mS / u.cm**2)), 12.0, places=12)
-        self.assertAlmostEqual(float(nodes[0].g_max[3].to_decimal(u.mS / u.cm**2)), 8.0, places=12)
+        self.assertAlmostEqual(float(nodes[0].g_max[0, 1].to_decimal(u.mS / u.cm**2)), 12.0, places=12)
+        self.assertAlmostEqual(float(nodes[0].g_max[0, 3].to_decimal(u.mS / u.cm**2)), 8.0, places=12)
         np.testing.assert_allclose(
             np.asarray(total.to_decimal(u.mA / (u.cm**2))),
             np.asarray(expected.to_decimal(u.mA / (u.cm**2))),
@@ -837,9 +837,9 @@ class CellRuntimeStateTest(unittest.TestCase):
         rcell.set_state(layouts[0].id, "g_max", 5.0 * (u.mS / u.cm**2))
 
         node = rcell.get_runtime_node(layouts[0].id)
-        self.assertAlmostEqual(float(node.g_max[1].to_decimal(u.mS / u.cm**2)), 5.0, places=12)
-        self.assertAlmostEqual(float(node.g_max[3].to_decimal(u.mS / u.cm**2)), 8.0, places=12)
-        self.assertAlmostEqual(float(node.g_max[0].to_decimal(u.mS / u.cm**2)), 0.0, places=12)
+        self.assertAlmostEqual(float(node.g_max[0, 1].to_decimal(u.mS / u.cm**2)), 5.0, places=12)
+        self.assertAlmostEqual(float(node.g_max[0, 3].to_decimal(u.mS / u.cm**2)), 8.0, places=12)
+        self.assertAlmostEqual(float(node.g_max[0, 0].to_decimal(u.mS / u.cm**2)), 0.0, places=12)
 
     def test_single_ion_channel_requires_selector_when_family_is_ambiguous(self) -> None:
         cell = Cell(_build_tree())
@@ -886,8 +886,8 @@ class CellRuntimeStateTest(unittest.TestCase):
         na_right = rcell.get_ion("na_right")
         rcell.set_state(layout.id, "E", 42.0 * u.mV)
 
-        self.assertAlmostEqual(float(na_left.E[1].to_decimal(u.mV)), 42.0, places=12)
-        self.assertAlmostEqual(float(na_right.E[3].to_decimal(u.mV)), 45.0, places=12)
+        self.assertAlmostEqual(float(na_left.E[0, 1].to_decimal(u.mV)), 42.0, places=12)
+        self.assertAlmostEqual(float(na_right.E[0, 3].to_decimal(u.mV)), 45.0, places=12)
 
     def test_dynamic_ion_lifecycle_runs_in_runtime(self) -> None:
         cell = Cell(_build_tree())
@@ -920,18 +920,18 @@ class CellRuntimeStateTest(unittest.TestCase):
         self.assertIs(rcell.get_ion("CalciumDetailed"), ion)
 
         self.assertIsInstance(ion.Ci, braincell.quad.DiffEqState)
-        self.assertAlmostEqual(float(ion.Ci.value[1].to_decimal(u.mM)), 2.4e-4, places=12)
+        self.assertAlmostEqual(float(ion.Ci.value[0, 1].to_decimal(u.mM)), 2.4e-4, places=12)
 
         ion.Ci.value = _quantity_set_at(ion.Ci.value, 1, 1.0e-3 * u.mM)
         rcell.reset_state()
-        self.assertAlmostEqual(float(ion.Ci.value[1].to_decimal(u.mM)), 2.4e-4, places=12)
+        self.assertAlmostEqual(float(ion.Ci.value[0, 1].to_decimal(u.mM)), 2.4e-4, places=12)
 
         rcell.compute_derivative()
-        self.assertEqual(ion.Ci.derivative.shape, (5,))
+        self.assertEqual(ion.Ci.derivative.shape, (1, 5))
 
         rcell.set_state(layout.id, "Ci_initializer", 7.0e-4 * u.mM)
         rcell.reset_state()
-        self.assertAlmostEqual(float(ion.Ci.value[1].to_decimal(u.mM)), 7.0e-4, places=12)
+        self.assertAlmostEqual(float(ion.Ci.value[0, 1].to_decimal(u.mM)), 7.0e-4, places=12)
 
     def test_imported_cdp_ion_relaxes_without_channel_in_runtime(self) -> None:
         cell = Cell(_build_tree())
@@ -950,11 +950,11 @@ class CellRuntimeStateTest(unittest.TestCase):
         cell.init_state()
         rcell = cell
         ion = rcell.get_ion("ca_cdp")
-        self.assertAlmostEqual(float(ion.Ci.value[1].to_decimal(u.mM)), 80e-6, places=12)
+        self.assertAlmostEqual(float(ion.Ci.value[0, 1].to_decimal(u.mM)), 80e-6, places=12)
 
         rcell.compute_derivative()
         expected = -(80e-6 - 50e-6) / 70.0
-        self.assertAlmostEqual(float(ion.Ci.derivative[1].to_decimal(u.mM / u.ms)), expected, places=12)
+        self.assertAlmostEqual(float(ion.Ci.derivative[0, 1].to_decimal(u.mM / u.ms)), expected, places=12)
 
     def test_imported_cdp_ion_and_cahva_channel_run_together(self) -> None:
         cell = Cell(_build_tree())
@@ -1007,11 +1007,11 @@ class CellRuntimeStateTest(unittest.TestCase):
         cell.init_state()
         rcell = cell
         ion = rcell.get_ion("ca_lva")
-        self.assertAlmostEqual(float(ion.Ci.value[1].to_decimal(u.mM)), 80e-6, places=12)
+        self.assertAlmostEqual(float(ion.Ci.value[0, 1].to_decimal(u.mM)), 80e-6, places=12)
 
         rcell.compute_derivative()
         expected = -(80e-6 - 50e-6) / 70.0
-        self.assertAlmostEqual(float(ion.Ci.derivative[1].to_decimal(u.mM / u.ms)), expected, places=12)
+        self.assertAlmostEqual(float(ion.Ci.derivative[0, 1].to_decimal(u.mM / u.ms)), expected, places=12)
 
     def test_imported_cdplva_ion_and_calva_channel_run_together(self) -> None:
         cell = Cell(_build_tree())
@@ -1090,17 +1090,17 @@ class CellRuntimeStateTest(unittest.TestCase):
         cell.init_state()
         rcell = cell
         ion = rcell.get_ion("ca_toy")
-        self.assertAlmostEqual(float(ion.Ci.value[1].to_decimal(u.mM)), 0.2, places=12)
-        self.assertAlmostEqual(float(ion.BC.value[1].to_decimal(u.mM)), 0.3, places=12)
-        self.assertAlmostEqual(float(ion.B.value[1].to_decimal(u.mM)), 0.7, places=12)
+        self.assertAlmostEqual(float(ion.Ci.value[0, 1].to_decimal(u.mM)), 0.2, places=12)
+        self.assertAlmostEqual(float(ion.BC.value[0, 1].to_decimal(u.mM)), 0.3, places=12)
+        self.assertAlmostEqual(float(ion.B.value[0, 1].to_decimal(u.mM)), 0.7, places=12)
 
         ion.Ci.value = _quantity_set_at(ion.Ci.value, 1, 0.9 * u.mM)
         ion.BC.value = _quantity_set_at(ion.BC.value, 1, 0.8 * u.mM)
         rcell.reset_state()
 
-        self.assertAlmostEqual(float(ion.Ci.value[1].to_decimal(u.mM)), 0.2, places=12)
-        self.assertAlmostEqual(float(ion.BC.value[1].to_decimal(u.mM)), 0.3, places=12)
-        self.assertAlmostEqual(float(ion.B.value[1].to_decimal(u.mM)), 0.7, places=12)
+        self.assertAlmostEqual(float(ion.Ci.value[0, 1].to_decimal(u.mM)), 0.2, places=12)
+        self.assertAlmostEqual(float(ion.BC.value[0, 1].to_decimal(u.mM)), 0.3, places=12)
+        self.assertAlmostEqual(float(ion.B.value[0, 1].to_decimal(u.mM)), 0.7, places=12)
 
     def test_toy_source_kinetic_ion_runs_and_exposes_species_probes(self) -> None:
         region = BranchSlice(branch_index=[0, 1], prox=0.0, dist=1.0)
@@ -1137,7 +1137,7 @@ class CellRuntimeStateTest(unittest.TestCase):
         bc = result.traces["soma(0.5)_ca_toy_src_BC"].to_decimal(u.mM)
         b = result.traces["soma(0.5)_ca_toy_src_B"].to_decimal(u.mM)
         self.assertTrue(np.allclose(np.asarray(bc) + np.asarray(b), 1.0, atol=1e-9))
-        self.assertGreater(float(np.asarray(ci)[-1]), float(np.asarray(ci_baseline)[-1]))
+        self.assertGreater(float(np.asarray(ci)[-1, 0]), float(np.asarray(ci_baseline)[-1, 0]))
 
     def test_toy_ica_source_kinetic_ion_and_cahva_run_together(self) -> None:
         region = BranchSlice(branch_index=[0, 1], prox=0.0, dist=1.0)
@@ -1261,9 +1261,9 @@ class CellRuntimeStateTest(unittest.TestCase):
         rcell = cell
         ion = rcell.get_ion("ca_diam_factor")
 
-        self.assertAlmostEqual(float(ion.diam_mid[1].to_decimal(u.um)), 20.0, places=12)
-        self.assertAlmostEqual(float(ion.PumpBound.value[1].to_decimal(u.mM * u.um)), 0.3, places=12)
-        self.assertAlmostEqual(float(ion.PumpFree.value[1].to_decimal(u.mM * u.um)), 0.7, places=6)
+        self.assertAlmostEqual(float(ion.diam_mid[0, 1].to_decimal(u.um)), 20.0, places=12)
+        self.assertAlmostEqual(float(ion.PumpBound.value[0, 1].to_decimal(u.mM * u.um)), 0.3, places=12)
+        self.assertAlmostEqual(float(ion.PumpFree.value[0, 1].to_decimal(u.mM * u.um)), 0.7, places=6)
 
         result = cell.run(dt=0.05 * u.ms, duration=1.0 * u.ms)
         self.assertIn("soma(0.5)_ca_diam_factor_Ci", result.traces)
@@ -1286,17 +1286,17 @@ class CellRuntimeStateTest(unittest.TestCase):
         cell.init_state()
         rcell = cell
         ion = rcell.get_ion("ca_diam_factor")
-        self.assertAlmostEqual(float(ion.Ci.value[1].to_decimal(u.mM)), 0.2, places=12)
-        self.assertAlmostEqual(float(ion.PumpBound.value[1].to_decimal(u.mM * u.um)), 0.3, places=12)
-        self.assertAlmostEqual(float(ion.PumpFree.value[1].to_decimal(u.mM * u.um)), 0.7, places=6)
+        self.assertAlmostEqual(float(ion.Ci.value[0, 1].to_decimal(u.mM)), 0.2, places=12)
+        self.assertAlmostEqual(float(ion.PumpBound.value[0, 1].to_decimal(u.mM * u.um)), 0.3, places=12)
+        self.assertAlmostEqual(float(ion.PumpFree.value[0, 1].to_decimal(u.mM * u.um)), 0.7, places=6)
 
         ion.Ci.value = _quantity_set_at(ion.Ci.value, 1, 0.9 * u.mM)
         ion.PumpBound.value = _quantity_set_at(ion.PumpBound.value, 1, 0.8 * u.mM * u.um)
         rcell.reset_state()
 
-        self.assertAlmostEqual(float(ion.Ci.value[1].to_decimal(u.mM)), 0.2, places=12)
-        self.assertAlmostEqual(float(ion.PumpBound.value[1].to_decimal(u.mM * u.um)), 0.3, places=12)
-        self.assertAlmostEqual(float(ion.PumpFree.value[1].to_decimal(u.mM * u.um)), 0.7, places=6)
+        self.assertAlmostEqual(float(ion.Ci.value[0, 1].to_decimal(u.mM)), 0.2, places=12)
+        self.assertAlmostEqual(float(ion.PumpBound.value[0, 1].to_decimal(u.mM * u.um)), 0.3, places=12)
+        self.assertAlmostEqual(float(ion.PumpFree.value[0, 1].to_decimal(u.mM * u.um)), 0.7, places=6)
 
     def test_cdpstc_goc_runs_and_exposes_species_and_geometry_probes(self) -> None:
         cell = Cell(_build_tree(), solver="staggered")
@@ -1331,21 +1331,21 @@ class CellRuntimeStateTest(unittest.TestCase):
         cell.init_state()
         rcell = cell
         ion = rcell.get_ion("ca_stc")
-        self.assertAlmostEqual(float(ion.Ci.value[1].to_decimal(u.mM)), 45e-6, places=10)
-        self.assertAlmostEqual(float(ion.mg.value[1].to_decimal(u.mM)), 0.59, places=6)
-        self.assertAlmostEqual(float(ion.CAM0.value[1].to_decimal(u.mM)), 0.03, places=6)
-        self.assertAlmostEqual(float(ion.CAM1C.value[1].to_decimal(u.mM)), 0.0, places=15)
-        self.assertAlmostEqual(float(ion.CAM2C.value[1].to_decimal(u.mM)), 0.0, places=15)
-        self.assertAlmostEqual(float(ion.CAM1N2C.value[1].to_decimal(u.mM)), 0.0, places=15)
-        self.assertAlmostEqual(float(ion.CAM1N.value[1].to_decimal(u.mM)), 0.0, places=15)
-        self.assertAlmostEqual(float(ion.CAM2N.value[1].to_decimal(u.mM)), 0.0, places=15)
-        self.assertAlmostEqual(float(ion.CAM2N1C.value[1].to_decimal(u.mM)), 0.0, places=15)
-        self.assertAlmostEqual(float(ion.CAM1C1N.value[1].to_decimal(u.mM)), 0.0, places=15)
-        self.assertAlmostEqual(float(ion.CAM4.value[1].to_decimal(u.mM)), 0.0, places=15)
-        self.assertAlmostEqual(float(ion.pump.value[1].to_decimal(u.mol / u.cm**2)), 1e-9, places=15)
-        self.assertAlmostEqual(float(ion.pumpca.value[1].to_decimal(u.mol / u.cm**2)), 0.0, places=15)
-        self.assertAlmostEqual(float(ion.parea[1].to_decimal(u.um)), float(np.pi * 20.0), places=5)
-        self.assertAlmostEqual(float(ion.dsq[1].to_decimal(u.um**2)), 400.0, places=6)
+        self.assertAlmostEqual(float(ion.Ci.value[0, 1].to_decimal(u.mM)), 45e-6, places=10)
+        self.assertAlmostEqual(float(ion.mg.value[0, 1].to_decimal(u.mM)), 0.59, places=6)
+        self.assertAlmostEqual(float(ion.CAM0.value[0, 1].to_decimal(u.mM)), 0.03, places=6)
+        self.assertAlmostEqual(float(ion.CAM1C.value[0, 1].to_decimal(u.mM)), 0.0, places=15)
+        self.assertAlmostEqual(float(ion.CAM2C.value[0, 1].to_decimal(u.mM)), 0.0, places=15)
+        self.assertAlmostEqual(float(ion.CAM1N2C.value[0, 1].to_decimal(u.mM)), 0.0, places=15)
+        self.assertAlmostEqual(float(ion.CAM1N.value[0, 1].to_decimal(u.mM)), 0.0, places=15)
+        self.assertAlmostEqual(float(ion.CAM2N.value[0, 1].to_decimal(u.mM)), 0.0, places=15)
+        self.assertAlmostEqual(float(ion.CAM2N1C.value[0, 1].to_decimal(u.mM)), 0.0, places=15)
+        self.assertAlmostEqual(float(ion.CAM1C1N.value[0, 1].to_decimal(u.mM)), 0.0, places=15)
+        self.assertAlmostEqual(float(ion.CAM4.value[0, 1].to_decimal(u.mM)), 0.0, places=15)
+        self.assertAlmostEqual(float(ion.pump.value[0, 1].to_decimal(u.mol / u.cm**2)), 1e-9, places=15)
+        self.assertAlmostEqual(float(ion.pumpca.value[0, 1].to_decimal(u.mol / u.cm**2)), 0.0, places=15)
+        self.assertAlmostEqual(float(ion.parea[0, 1].to_decimal(u.um)), float(np.pi * 20.0), places=5)
+        self.assertAlmostEqual(float(ion.dsq[0, 1].to_decimal(u.um**2)), 400.0, places=6)
 
         result = cell.run(dt=0.05 * u.ms, duration=1.0 * u.ms)
         for key in (
@@ -1390,13 +1390,13 @@ class CellRuntimeStateTest(unittest.TestCase):
         self.assertTrue(np.allclose(total, total[0], atol=1e-15))
         # Imported kinetic-ion traces can shift numerically with solver/runtime
         # details; the contract here is qualitative dynamics plus conservation.
-        self.assertAlmostEqual(float(tracked["pump"][-1]), float(tracked["pump"][0]), delta=1e-15)
-        self.assertLessEqual(abs(float(tracked["pumpca"][-1])), 1e-12)
-        self.assertGreater(float(tracked["Ci"][-1]), float(tracked["Ci"][0]))
-        self.assertLess(float(tracked["CAM0"][-1]), float(tracked["CAM0"][0]))
-        self.assertGreater(float(tracked["CAM1C"][-1]), float(tracked["CAM1C"][0]))
-        self.assertGreater(float(tracked["CAM1N"][-1]), float(tracked["CAM1N"][0]))
-        self.assertGreater(float(tracked["CAM2N"][-1]), float(tracked["CAM2N"][0]))
+        self.assertAlmostEqual(float(tracked["pump"][-1, 0]), float(tracked["pump"][0, 0]), delta=1e-15)
+        self.assertLessEqual(abs(float(tracked["pumpca"][-1, 0])), 1e-12)
+        self.assertGreater(float(tracked["Ci"][-1, 0]), float(tracked["Ci"][0, 0]))
+        self.assertLess(float(tracked["CAM0"][-1, 0]), float(tracked["CAM0"][0, 0]))
+        self.assertGreater(float(tracked["CAM1C"][-1, 0]), float(tracked["CAM1C"][0, 0]))
+        self.assertGreater(float(tracked["CAM1N"][-1, 0]), float(tracked["CAM1N"][0, 0]))
+        self.assertGreater(float(tracked["CAM2N"][-1, 0]), float(tracked["CAM2N"][0, 0]))
 
     def test_cdpstc_and_cav3p1_goc_run_together(self) -> None:
         cell = Cell(_build_tree(), solver="staggered", V_init=-60.0 * u.mV)
@@ -1487,12 +1487,12 @@ class CellRuntimeStateTest(unittest.TestCase):
         self.assertGreater(float(np.max(np.abs(tracked["current"]))), 0.0)
         self.assertTrue(np.all((tracked["p"] >= 0.0) & (tracked["p"] <= 1.0)))
         self.assertTrue(np.all((tracked["q"] >= 0.0) & (tracked["q"] <= 1.0)))
-        self.assertGreater(float(tracked["Ci"][-1]), float(tracked["Ci"][0]))
-        self.assertLess(float(tracked["CAM0"][-1]), float(tracked["CAM0"][0]))
-        self.assertGreater(float(tracked["CAM1C"][-1]), float(tracked["CAM1C"][0]))
-        self.assertGreater(float(tracked["CAM2C"][-1]), float(tracked["CAM2C"][0]))
-        self.assertGreater(float(tracked["CAM1N"][-1]), float(tracked["CAM1N"][0]))
-        self.assertGreater(float(tracked["CAM2N"][-1]), float(tracked["CAM2N"][0]))
+        self.assertGreater(float(tracked["Ci"][-1, 0]), float(tracked["Ci"][0, 0]))
+        self.assertLess(float(tracked["CAM0"][-1, 0]), float(tracked["CAM0"][0, 0]))
+        self.assertGreater(float(tracked["CAM1C"][-1, 0]), float(tracked["CAM1C"][0, 0]))
+        self.assertGreater(float(tracked["CAM2C"][-1, 0]), float(tracked["CAM2C"][0, 0]))
+        self.assertGreater(float(tracked["CAM1N"][-1, 0]), float(tracked["CAM1N"][0, 0]))
+        self.assertGreater(float(tracked["CAM2N"][-1, 0]), float(tracked["CAM2N"][0, 0]))
 
     def test_cdpstc_and_cav2p1_run_together(self) -> None:
         cell = Cell(_build_tree(), solver="staggered", V_init=-60.0 * u.mV)
@@ -1579,12 +1579,12 @@ class CellRuntimeStateTest(unittest.TestCase):
         self.assertTrue(np.allclose(total, total[0], atol=1e-18))
         self.assertGreater(float(np.max(np.abs(tracked["current"]))), 0.0)
         self.assertTrue(np.all((tracked["m"] >= 0.0) & (tracked["m"] <= 1.0)))
-        self.assertGreater(float(tracked["Ci"][-1]), float(tracked["Ci"][0]))
-        self.assertLess(float(tracked["CAM0"][-1]), float(tracked["CAM0"][0]))
-        self.assertGreater(float(tracked["CAM1C"][-1]), float(tracked["CAM1C"][0]))
-        self.assertGreater(float(tracked["CAM2C"][-1]), float(tracked["CAM2C"][0]))
-        self.assertGreater(float(tracked["CAM1N"][-1]), float(tracked["CAM1N"][0]))
-        self.assertGreater(float(tracked["CAM2N"][-1]), float(tracked["CAM2N"][0]))
+        self.assertGreater(float(tracked["Ci"][-1, 0]), float(tracked["Ci"][0, 0]))
+        self.assertLess(float(tracked["CAM0"][-1, 0]), float(tracked["CAM0"][0, 0]))
+        self.assertGreater(float(tracked["CAM1C"][-1, 0]), float(tracked["CAM1C"][0, 0]))
+        self.assertGreater(float(tracked["CAM2C"][-1, 0]), float(tracked["CAM2C"][0, 0]))
+        self.assertGreater(float(tracked["CAM1N"][-1, 0]), float(tracked["CAM1N"][0, 0]))
+        self.assertGreater(float(tracked["CAM2N"][-1, 0]), float(tracked["CAM2N"][0, 0]))
 
     def test_cdpstc_camonly_goc_runs_and_exposes_species_and_geometry_probes(self) -> None:
         cell = Cell(_build_tree(), solver="staggered")
@@ -1616,11 +1616,11 @@ class CellRuntimeStateTest(unittest.TestCase):
         cell.init_state()
         rcell = cell
         ion = rcell.get_ion("ca_stc_camonly")
-        self.assertAlmostEqual(float(ion.Ci.value[1].to_decimal(u.mM)), 45e-6, places=10)
-        self.assertAlmostEqual(float(ion.CAM0.value[1].to_decimal(u.mM)), 0.03, places=6)
-        self.assertAlmostEqual(float(ion.CAM1C.value[1].to_decimal(u.mM)), 0.0, places=15)
-        self.assertAlmostEqual(float(ion.CAM1N.value[1].to_decimal(u.mM)), 0.0, places=15)
-        self.assertAlmostEqual(float(ion.dsq[1].to_decimal(u.um**2)), 400.0, places=6)
+        self.assertAlmostEqual(float(ion.Ci.value[0, 1].to_decimal(u.mM)), 45e-6, places=10)
+        self.assertAlmostEqual(float(ion.CAM0.value[0, 1].to_decimal(u.mM)), 0.03, places=6)
+        self.assertAlmostEqual(float(ion.CAM1C.value[0, 1].to_decimal(u.mM)), 0.0, places=15)
+        self.assertAlmostEqual(float(ion.CAM1N.value[0, 1].to_decimal(u.mM)), 0.0, places=15)
+        self.assertAlmostEqual(float(ion.dsq[0, 1].to_decimal(u.um**2)), 400.0, places=6)
 
         result = cell.run(dt=0.05 * u.ms, duration=0.2 * u.ms)
         for key in (
@@ -1689,12 +1689,12 @@ class CellRuntimeStateTest(unittest.TestCase):
         cell.init_state()
         rcell = cell
         ion = rcell.get_ion("ca_stc_nocam")
-        self.assertAlmostEqual(float(ion.Ci.value[1].to_decimal(u.mM)), 45e-6, places=10)
-        self.assertAlmostEqual(float(ion.mg.value[1].to_decimal(u.mM)), 0.59, places=6)
-        self.assertAlmostEqual(float(ion.pump.value[1].to_decimal(u.mol / u.cm**2)), 1e-9, places=15)
-        self.assertAlmostEqual(float(ion.pumpca.value[1].to_decimal(u.mol / u.cm**2)), 0.0, places=15)
-        self.assertAlmostEqual(float(ion.parea[1].to_decimal(u.um)), float(np.pi * 20.0), places=5)
-        self.assertAlmostEqual(float(ion.dsq[1].to_decimal(u.um**2)), 400.0, places=6)
+        self.assertAlmostEqual(float(ion.Ci.value[0, 1].to_decimal(u.mM)), 45e-6, places=10)
+        self.assertAlmostEqual(float(ion.mg.value[0, 1].to_decimal(u.mM)), 0.59, places=6)
+        self.assertAlmostEqual(float(ion.pump.value[0, 1].to_decimal(u.mol / u.cm**2)), 1e-9, places=15)
+        self.assertAlmostEqual(float(ion.pumpca.value[0, 1].to_decimal(u.mol / u.cm**2)), 0.0, places=15)
+        self.assertAlmostEqual(float(ion.parea[0, 1].to_decimal(u.um)), float(np.pi * 20.0), places=5)
+        self.assertAlmostEqual(float(ion.dsq[0, 1].to_decimal(u.um**2)), 400.0, places=6)
 
         result = cell.run(dt=0.05 * u.ms, duration=1.0 * u.ms)
         for key in (
@@ -1787,16 +1787,16 @@ class CellRuntimeStateTest(unittest.TestCase):
         cell.init_state()
         rcell = cell
         ion = rcell.get_ion("ca_cam")
-        self.assertAlmostEqual(float(ion.Ci.value[1].to_decimal(u.mM)), 45e-6, places=10)
-        self.assertAlmostEqual(float(ion.CB.value[1].to_decimal(u.mM)), 0.13851901461878652, delta=1e-8)
-        self.assertAlmostEqual(float(ion.CB_f_ca.value[1].to_decimal(u.mM)), 0.013185944660826794, delta=1e-8)
-        self.assertAlmostEqual(float(ion.CB_ca_s.value[1].to_decimal(u.mM)), 0.007574049472521637, delta=1e-8)
-        self.assertAlmostEqual(float(ion.CB_ca_ca.value[1].to_decimal(u.mM)), 0.0007209912478650405, delta=1e-8)
-        self.assertAlmostEqual(float(ion.CAM0.value[1].to_decimal(u.mM)), 0.03, delta=1e-8)
-        self.assertAlmostEqual(float(ion.pump.value[1].to_decimal(u.mol / u.cm**2)), 1e-9, places=15)
-        self.assertAlmostEqual(float(ion.pumpca.value[1].to_decimal(u.mol / u.cm**2)), 0.0, places=15)
-        self.assertAlmostEqual(float(ion.parea[1].to_decimal(u.um)), float(np.pi * 20.0), places=5)
-        self.assertAlmostEqual(float(ion.dsq[1].to_decimal(u.um**2)), 400.0, places=6)
+        self.assertAlmostEqual(float(ion.Ci.value[0, 1].to_decimal(u.mM)), 45e-6, places=10)
+        self.assertAlmostEqual(float(ion.CB.value[0, 1].to_decimal(u.mM)), 0.13851901461878652, delta=1e-8)
+        self.assertAlmostEqual(float(ion.CB_f_ca.value[0, 1].to_decimal(u.mM)), 0.013185944660826794, delta=1e-8)
+        self.assertAlmostEqual(float(ion.CB_ca_s.value[0, 1].to_decimal(u.mM)), 0.007574049472521637, delta=1e-8)
+        self.assertAlmostEqual(float(ion.CB_ca_ca.value[0, 1].to_decimal(u.mM)), 0.0007209912478650405, delta=1e-8)
+        self.assertAlmostEqual(float(ion.CAM0.value[0, 1].to_decimal(u.mM)), 0.03, delta=1e-8)
+        self.assertAlmostEqual(float(ion.pump.value[0, 1].to_decimal(u.mol / u.cm**2)), 1e-9, places=15)
+        self.assertAlmostEqual(float(ion.pumpca.value[0, 1].to_decimal(u.mol / u.cm**2)), 0.0, places=15)
+        self.assertAlmostEqual(float(ion.parea[0, 1].to_decimal(u.um)), float(np.pi * 20.0), places=5)
+        self.assertAlmostEqual(float(ion.dsq[0, 1].to_decimal(u.um**2)), 400.0, places=6)
 
     def test_cdpcam_pc_ion_params_scatter_with_population_shape(self) -> None:
         cell = Cell(_build_tree(), pop_size=(2,), solver="staggered")
@@ -1988,8 +1988,8 @@ class CellRuntimeStateTest(unittest.TestCase):
         self.assertIn("Kca3p1_MA2020_GoC", k_main.channels)
         self.assertNotIn("Kca3p1_MA2020_GoC__layout_1", k_main.channels)
         self.assertEqual(ca_hva.channels, {})
-        self.assertAlmostEqual(float(nodes[0].g_max[1].to_decimal(u.mS / u.cm**2)), 100.0, places=12)
-        self.assertAlmostEqual(float(nodes[0].g_max[3].to_decimal(u.mS / u.cm**2)), 50.0, places=12)
+        self.assertAlmostEqual(float(nodes[0].g_max[0, 1].to_decimal(u.mS / u.cm**2)), 100.0, places=12)
+        self.assertAlmostEqual(float(nodes[0].g_max[0, 3].to_decimal(u.mS / u.cm**2)), 50.0, places=12)
         np.testing.assert_allclose(
             np.asarray(total.to_decimal(u.mA / (u.cm**2))),
             np.asarray(expected.to_decimal(u.mA / (u.cm**2))),
@@ -2026,8 +2026,8 @@ class CellRuntimeStateTest(unittest.TestCase):
             point_V,
             rcell.get_ion("k_main").pack_info(),
             rcell.get_ion("ca_hva").pack_info(),
-        )[1]
-        expected_total = rcell.get_ion("k_main").current(point_V, include_external=False)[1]
+        )[..., 1]
+        expected_total = rcell.get_ion("k_main").current(point_V, include_external=False)[..., 1]
 
         self.assertEqual(runtime.bound_ion_keys[layout.id], ("k_main", "ca_hva"))
         self.assertEqual(samples["soma(0.5)_Kca3p1_MA2020_GoC_current"], expected_mechanism)
@@ -2063,16 +2063,16 @@ class CellRuntimeStateTest(unittest.TestCase):
         self.assertFalse(getattr(k_main.channels["_RuntimeTestTwoOwnerChannel"], "_skip_family_update", False))
         self.assertTrue(getattr(no.channels["_RuntimeTestTwoOwnerChannel"], "_skip_family_update", False))
         np.testing.assert_allclose(
-            np.asarray(k_current.to_decimal(u.nA / u.cm**2)),
+            np.asarray(k_current.to_decimal(u.nA / u.cm**2))[0],
             [0.0, 2.0, 0.0, 2.0, 0.0],
         )
         np.testing.assert_allclose(
-            np.asarray(no_current.to_decimal(u.nA / u.cm**2)),
+            np.asarray(no_current.to_decimal(u.nA / u.cm**2))[0],
             [0.0, 3.0, 0.0, 3.0, 0.0],
         )
         np.testing.assert_allclose(
-            np.asarray(total.to_decimal(u.nA / u.cm**2))[layout.point_index],
-            np.asarray((k_current + no_current).to_decimal(u.nA / u.cm**2))[layout.point_index],
+            np.asarray(total.to_decimal(u.nA / u.cm**2))[..., layout.point_index],
+            np.asarray((k_current + no_current).to_decimal(u.nA / u.cm**2))[..., layout.point_index],
         )
 
     def test_family_order_integrates_mixed_ion_wrapper_channel_only(self) -> None:
@@ -2112,9 +2112,9 @@ class CellRuntimeStateTest(unittest.TestCase):
         # Channels are now keyed on the declaration's instance name, which
         # defaults to the class name. Users can override with name=.
         self.assertIs(na.channels["Na_HH1952"], node)
-        self.assertAlmostEqual(float(node.g_max[1].to_decimal(u.mS / u.cm**2)), 12.0, places=12)
-        self.assertAlmostEqual(float(node.g_max[0].to_decimal(u.mS / u.cm**2)), 0.0, places=12)
-        self.assertAlmostEqual(float(node.V_sh[1].to_decimal(u.mV)), -50.0, places=12)
+        self.assertAlmostEqual(float(node.g_max[0, 1].to_decimal(u.mS / u.cm**2)), 12.0, places=12)
+        self.assertAlmostEqual(float(node.g_max[0, 0].to_decimal(u.mS / u.cm**2)), 0.0, places=12)
+        self.assertAlmostEqual(float(node.V_sh[0, 1].to_decimal(u.mV)), -50.0, places=12)
 
     def test_set_state_syncs_runtime_node_param_for_ina_hh1952(self) -> None:
         import braincell
@@ -2137,9 +2137,9 @@ class CellRuntimeStateTest(unittest.TestCase):
         rcell.set_state(layout.id, "V_sh", -42.0 * u.mV)
         node = rcell.get_runtime_node(layout.id)
 
-        self.assertAlmostEqual(float(node.g_max[1].to_decimal(u.mS / u.cm**2)), 8.0, places=12)
-        self.assertAlmostEqual(float(node.g_max[0].to_decimal(u.mS / u.cm**2)), 0.0, places=12)
-        self.assertAlmostEqual(float(node.V_sh[1].to_decimal(u.mV)), -42.0, places=12)
+        self.assertAlmostEqual(float(node.g_max[0, 1].to_decimal(u.mS / u.cm**2)), 8.0, places=12)
+        self.assertAlmostEqual(float(node.g_max[0, 0].to_decimal(u.mS / u.cm**2)), 0.0, places=12)
+        self.assertAlmostEqual(float(node.V_sh[0, 1].to_decimal(u.mV)), -42.0, places=12)
 
     def test_unknown_channel_name_raises_key_error(self) -> None:
         cell = Cell(_build_tree())
@@ -2169,7 +2169,7 @@ class EvaluatePointClampsJitTest(unittest.TestCase):
         runtime = cell.runtime
         compiled = jax.jit(lambda t: runtime.evaluate_point_clamps(t=t))
         out = compiled(0.5 * u.ms)
-        self.assertEqual(out.mantissa.shape, (runtime.n_point,))
+        self.assertEqual(out.mantissa.shape, runtime.pop_size + (runtime.n_point,))
 
     def test_evaluate_point_clamps_supports_population_specific_amplitudes(self) -> None:
         cell = Cell(_build_tree(), pop_size=(2,))
@@ -2211,12 +2211,12 @@ class EvaluatePointClampsJitTest(unittest.TestCase):
             point_ids=np.asarray([root_id], dtype=np.int32),
         ).to_decimal(u.nA)
 
-        self.assertAlmostEqual(float(all_current[root_id]), 0.1, places=6)
-        self.assertAlmostEqual(float(all_current[midpoint_id]), 0.2, places=6)
-        self.assertAlmostEqual(float(midpoint_current[root_id]), 0.0, places=6)
-        self.assertAlmostEqual(float(midpoint_current[midpoint_id]), 0.2, places=6)
-        self.assertAlmostEqual(float(boundary_current[root_id]), 0.1, places=6)
-        self.assertAlmostEqual(float(boundary_current[midpoint_id]), 0.0, places=6)
+        self.assertAlmostEqual(float(all_current[0, root_id]), 0.1, places=6)
+        self.assertAlmostEqual(float(all_current[0, midpoint_id]), 0.2, places=6)
+        self.assertAlmostEqual(float(midpoint_current[0, root_id]), 0.0, places=6)
+        self.assertAlmostEqual(float(midpoint_current[0, midpoint_id]), 0.2, places=6)
+        self.assertAlmostEqual(float(boundary_current[0, root_id]), 0.1, places=6)
+        self.assertAlmostEqual(float(boundary_current[0, midpoint_id]), 0.0, places=6)
 
 
 class DensityLayoutMaskingUnderJit(unittest.TestCase):
@@ -2258,8 +2258,8 @@ class CellLifecycleInlineTest(unittest.TestCase):
         cell.init_state()
         for name in ("_in_size", "_out_size", "ion_channels", "C"):
             self.assertTrue(hasattr(cell, name), f"Cell should have {name} after init_state.")
-        self.assertEqual(cell._in_size, (cell.n_cv,))
-        self.assertEqual(cell._out_size, (cell.n_cv,))
+        self.assertEqual(cell._in_size, cell.pop_size + (cell.n_cv,))
+        self.assertEqual(cell._out_size, cell.pop_size + (cell.n_cv,))
 
     def test_reset_clears_runtime_attributes(self) -> None:
         cell = Cell(_build_tree())
@@ -2377,10 +2377,10 @@ class PopulationResponseHeterogeneityTest(unittest.TestCase):
         current_early = cell.runtime.evaluate_point_clamps(t=0.15 * u.ms).to_decimal(u.nA)
         current_late = cell.runtime.evaluate_point_clamps(t=0.35 * u.ms).to_decimal(u.nA)
         first_point, second_point = layout.point_index.tolist()
-        self.assertAlmostEqual(float(current_early[first_point]), 0.2, places=6)
-        self.assertAlmostEqual(float(current_early[second_point]), 0.0, places=6)
-        self.assertAlmostEqual(float(current_late[first_point]), 0.0, places=6)
-        self.assertAlmostEqual(float(current_late[second_point]), 0.2, places=6)
+        self.assertAlmostEqual(float(current_early[0, first_point]), 0.2, places=6)
+        self.assertAlmostEqual(float(current_early[0, second_point]), 0.0, places=6)
+        self.assertAlmostEqual(float(current_late[0, first_point]), 0.0, places=6)
+        self.assertAlmostEqual(float(current_late[0, second_point]), 0.2, places=6)
 
     def test_unbroadcastable_current_clamp_delay_raises(self) -> None:
         cell = Cell(_build_tree(), pop_size=(2,))
@@ -2423,7 +2423,7 @@ class PointSynapseRuntimeTest(unittest.TestCase):
             cell.compute_derivative()
 
         self.assertIsNotNone(node.g.derivative)
-        self.assertGreater(float(node.g.derivative[0].to_decimal(u.ms**-1)), 0.0)
+        self.assertGreater(float(node.g.derivative[0, 0].to_decimal(u.ms**-1)), 0.0)
 
     def test_ampa_synapse_drive_changes_state_and_voltage(self) -> None:
         cell = Cell(
@@ -2446,18 +2446,18 @@ class PointSynapseRuntimeTest(unittest.TestCase):
         layout = next(layout for layout in runtime.layouts if layout.kind == "synapse:AMPA")
         node = runtime.get_runtime_node(layout.id)
 
-        baseline_g = float(node.g.value[0])
+        baseline_g = float(node.g.value[0, 0])
         runtime.set_state(layout.id, "pre_spike", 1.0)
-        baseline_v = float(cell.V.value[0].to_decimal(u.mV))
+        baseline_v = float(cell.V.value[0, 0].to_decimal(u.mV))
 
         with brainstate.environ.context(t=0.0 * u.ms, dt=0.05 * u.ms):
             cell._prepare_next_synapse_inputs()
             cell.update()
 
-        updated_g = float(node.g.value[0])
-        updated_v = float(cell.V.value[0].to_decimal(u.mV))
+        updated_g = float(node.g.value[0, 0])
+        updated_v = float(cell.V.value[0, 0].to_decimal(u.mV))
         current = float(
-            node.current(cell._cv_to_point(cell.V.value)[..., layout.point_index])[0].to_decimal(u.nA / u.cm**2)
+            node.current(cell._cv_to_point(cell.V.value)[..., layout.point_index])[0, 0].to_decimal(u.nA / u.cm**2)
         )
 
         self.assertGreater(updated_g, baseline_g)
@@ -2491,14 +2491,14 @@ class PointSynapseRuntimeTest(unittest.TestCase):
         with brainstate.environ.context(t=0.0 * u.ms, dt=0.05 * u.ms):
             cell._prepare_next_synapse_inputs()
             cell.update()
-        g_after_event = float(node.g.value[0].to_decimal(u.uS))
+        g_after_event = float(node.g.value[0, 0].to_decimal(u.uS))
 
         runtime.set_state(layout.id, "pre_spike", 0.0)
         with brainstate.environ.context(t=0.05 * u.ms, dt=0.05 * u.ms):
             cell._prepare_next_synapse_inputs()
             cell.update()
-        g_after_decay = float(node.g.value[0].to_decimal(u.uS))
-        current = float(cell.sample_probe("i_syn").to_decimal(u.nA))
+        g_after_decay = float(node.g.value[0, 0].to_decimal(u.uS))
+        current = float(cell.sample_probe("i_syn").to_decimal(u.nA)[0])
 
         self.assertAlmostEqual(g_after_event, float(np.exp(-0.05 / 2.0)))
         self.assertAlmostEqual(g_after_decay, float(np.exp(-0.1 / 2.0)))
@@ -2534,10 +2534,10 @@ class PointSynapseRuntimeTest(unittest.TestCase):
             cell._prepare_next_synapse_inputs()
             cell.update()
 
-        A = float(node.A.value[0].to_decimal(u.uS))
-        B = float(node.B.value[0].to_decimal(u.uS))
-        g_after_event = float(node.g[0].to_decimal(u.uS))
-        current = float(cell.sample_probe("i_syn").to_decimal(u.nA))
+        A = float(node.A.value[0, 0].to_decimal(u.uS))
+        B = float(node.B.value[0, 0].to_decimal(u.uS))
+        g_after_event = float(node.g[0, 0].to_decimal(u.uS))
+        current = float(cell.sample_probe("i_syn").to_decimal(u.nA)[0])
 
         self.assertGreater(A, 0.0)
         self.assertGreater(B, 0.0)
@@ -2549,8 +2549,8 @@ class PointSynapseRuntimeTest(unittest.TestCase):
             cell._prepare_next_synapse_inputs()
             cell.update()
 
-        g_after_decay = float(node.g[0].to_decimal(u.uS))
-        current = float(cell.sample_probe("i_syn").to_decimal(u.nA))
+        g_after_decay = float(node.g[0, 0].to_decimal(u.uS))
+        current = float(cell.sample_probe("i_syn").to_decimal(u.nA)[0])
 
         self.assertGreater(g_after_decay, 0.0)
         self.assertNotEqual(current, 0.0)
@@ -2621,7 +2621,7 @@ class PointSynapseRuntimeTest(unittest.TestCase):
         with brainstate.environ.context(t=1.0 * u.ms, dt=0.05 * u.ms):
             cell._prepare_runtime_synapse_inputs(cell._cv_to_point(cell.V.value))
 
-        self.assertAlmostEqual(float(np.asarray(node.pre_drive().to_decimal(u.uS))[0]), 4.5)
+        self.assertAlmostEqual(float(np.asarray(node.pre_drive().to_decimal(u.uS))[0, 0]), 4.5)
 
     def test_expsyn_discrete_event_applies_at_begin_step_not_post_integral(self) -> None:
         cell = Cell(
@@ -2646,12 +2646,12 @@ class PointSynapseRuntimeTest(unittest.TestCase):
         node.bind_pre_spike(np.asarray([1.0]))
 
         node.post_integral(cell._cv_to_point(cell.V.value)[..., layout.point_index])
-        self.assertAlmostEqual(float(node.g.value[0].to_decimal(u.uS)), 0.0)
+        self.assertAlmostEqual(float(node.g.value[0, 0].to_decimal(u.uS)), 0.0)
 
         with brainstate.environ.context(t=0.0 * u.ms, dt=0.05 * u.ms):
             cell._begin_step()
 
-        self.assertAlmostEqual(float(node.g.value[0].to_decimal(u.uS)), 1.0)
+        self.assertAlmostEqual(float(node.g.value[0, 0].to_decimal(u.uS)), 1.0)
 
 
 # ---------------------------------------------------------------------------
@@ -2865,7 +2865,7 @@ class StateBufferStorageTest(unittest.TestCase):
         layout = cell.layouts[0]
         cell.runtime.set_state(layout.id, "g_max", 7.5 * (u.mS / u.cm**2))
         new = cell.runtime.get_state(layout.id, "g_max")
-        self.assertAlmostEqual(float(new[1].to_decimal(u.mS / u.cm**2)), 7.5, places=12)
+        self.assertAlmostEqual(float(new[0, 1].to_decimal(u.mS / u.cm**2)), 7.5, places=12)
 
     def test_set_state_shape_mismatch_raises(self) -> None:
         cell = Cell(_build_tree())
@@ -2941,7 +2941,7 @@ class RaggedCurrentClampBufferTest(unittest.TestCase):
             dur = cell.runtime.state_buffers[(layout.id, "durations")]
             amp = cell.runtime.state_buffers[(layout.id, "amplitudes")]
             self.assertTrue(hasattr(dur, "unit"))
-            self.assertEqual(dur.mantissa.ndim, 2)
+            self.assertEqual(dur.mantissa.ndim, 3)
             self.assertEqual(amp.mantissa.shape, dur.mantissa.shape)
             mask_key = (layout.id, "_mask_durations")
             self.assertIn(mask_key, cell.runtime.state_buffers)

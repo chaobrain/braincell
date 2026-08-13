@@ -47,9 +47,13 @@ from ._implicit import (
     splitting_step,
 )
 from .protocol import (
+    DiffEqGroupState,
     DiffEqModule,
     DiffEqState,
     IndependentIntegration,
+    diffeq_state,
+    grouped_states,
+    hidden_state,
 )
 from ._registry import (
     IntegratorEntry,
@@ -109,8 +113,12 @@ __all__ = [
     'exp_exp_euler_step',
     # protocol
     'DiffEqState',
+    'DiffEqGroupState',
     'DiffEqModule',
     'IndependentIntegration',
+    'grouped_states',
+    'diffeq_state',
+    'hidden_state',
 ]
 
 

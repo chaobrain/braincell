@@ -23,6 +23,7 @@ __all__ = [
     "Gate",
     "Transition",
     "HH",
+    "OhmicHH",
     "Markov",
     "ghk_flux",
 ]
@@ -347,6 +348,57 @@ class HH(Channel):
                 beta = _as_rate(self._call_rate(f"f_{gate.name}_beta", V, *ions), gate, "beta")
                 derivative = phi * (alpha * (1.0 - value) - beta * value)
             self._gate_state(gate).derivative = derivative
+
+
+class OhmicHH(HH):
+    r"""HH gating driven by an ohmic current, :math:`g \cdot \prod g_i^{p_i} \cdot (E - V)`.
+
+    Most voltage-gated channels in the catalogue share exactly this current
+    expression, so :class:`HH` covers only the gating and this subclass adds
+    the driving force. Channels whose current is not ohmic -- GHK flux and
+    permeability-scaled calcium channels -- inherit :class:`HH` directly and
+    implement :meth:`current` themselves.
+
+    Attributes
+    ----------
+    conductance_attr : str
+        Name of the attribute holding the maximal conductance. Override when
+        the parameter is not called ``g_max``.
+
+    See Also
+    --------
+    HH : Gating-only template, for channels with a non-ohmic current.
+
+    Examples
+    --------
+    .. code-block:: python
+
+        >>> import brainunit as u
+        >>> from braincell.channel import Gate, OhmicHH
+        >>> from braincell.ion import Sodium
+        >>> class MyNa(OhmicHH):
+        ...     root_type = Sodium
+        ...     gates = (Gate("m", power=3), Gate("h"))
+        ...     # no current() needed
+    """
+
+    __module__ = "braincell.channel"
+
+    conductance_attr: ClassVar[str] = "g_max"
+
+    def reversal_potential(self, V, *ions):
+        """Return the driving reversal potential.
+
+        Defaults to the reversal potential of the first ion, which for a
+        joint root type is the first entry of ``root_type.__args__``.
+        Override to read a fixed ``self.E`` or a non-leading ion.
+        """
+        _ = V
+        return ions[0].E
+
+    def current(self, V, *ions):
+        conductance = getattr(self, type(self).conductance_attr)
+        return conductance * self.conductance_factor(V, *ions) * (self.reversal_potential(V, *ions) - V)
 
 
 class Markov(Channel, IndependentIntegration):

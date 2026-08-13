@@ -13,6 +13,7 @@ from braincell._base import IonInfo
 from braincell.channel._base import Gate
 from braincell.channel._base import HH
 from braincell.channel._base import Markov
+from braincell.channel._base import OhmicHH
 from braincell.channel._base import Transition
 from braincell.channel._base import ghk_flux
 from braincell.ion import Calcium
@@ -770,6 +771,61 @@ class ChannelTemplateTest(unittest.TestCase):
             and cls.dependent_state is None
         ]
         self.assertEqual(implicit, [])
+
+    # ------------------------------------------------------------------
+    # OhmicHH
+    # ------------------------------------------------------------------
+
+    def _ohmic(self, name, **ns):
+        base = {
+            "root_type": Potassium,
+            "gates": (Gate("m", power=2),),
+            "f_m_inf": lambda self, V, K: 0.5,
+            "f_m_tau": lambda self, V, K: 1.0,
+        }
+        cls = type(name, (OhmicHH,), {**base, **ns})
+        ch = cls(1)
+        ch.g_max = braintools.init.param(0.5 * (u.mS / u.cm**2), ch.varshape, allow_none=False)
+        return ch
+
+    def test_ohmic_current_uses_first_ion_reversal(self) -> None:
+        ch = self._ohmic("_Ohmic")
+        V = jnp.array([-60.0]) * u.mV
+        K = _k_info()
+        ch.init_state(V, K)
+        ch.reset_state(V, K)
+        expected = ch.g_max * ch.conductance_factor(V, K) * (K.E - V)
+        self.assertTrue(u.math.allclose(ch.current(V, K), expected))
+
+    def test_ohmic_reversal_potential_can_be_overridden(self) -> None:
+        ch = self._ohmic("_OhmicFixed", reversal_potential=lambda self, V, *ions: self.E)
+        ch.E = jnp.array([-30.0]) * u.mV
+        V = jnp.array([-60.0]) * u.mV
+        K = _k_info()
+        ch.init_state(V, K)
+        ch.reset_state(V, K)
+        expected = ch.g_max * ch.conductance_factor(V, K) * (ch.E - V)
+        self.assertTrue(u.math.allclose(ch.current(V, K), expected))
+
+    def test_ohmic_conductance_attr_can_be_renamed(self) -> None:
+        ch = self._ohmic("_OhmicRenamed", conductance_attr="perm")
+        ch.perm = braintools.init.param(0.25 * (u.mS / u.cm**2), ch.varshape, allow_none=False)
+        V = jnp.array([-60.0]) * u.mV
+        K = _k_info()
+        ch.init_state(V, K)
+        ch.reset_state(V, K)
+        expected = ch.perm * ch.conductance_factor(V, K) * (K.E - V)
+        self.assertTrue(u.math.allclose(ch.current(V, K), expected))
+
+    def test_ohmic_reversal_reads_the_leading_ion_of_a_joint_root(self) -> None:
+        # AHP_De1994 and friends are rooted on JointTypes[Potassium, Calcium]
+        # and must draw E from potassium, the first declared ion.
+        ch = self._ohmic("_OhmicJoint")
+        V = jnp.array([-60.0]) * u.mV
+        K, Ca = _k_info(), _ca_info()
+        ch.init_state(V, K, Ca)
+        ch.reset_state(V, K, Ca)
+        self.assertTrue(u.math.allclose(ch.reversal_potential(V, K, Ca), K.E))
 
     def test_markov_pairs_are_resolved_once(self) -> None:
         cls = _make_markov(

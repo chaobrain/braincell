@@ -24,7 +24,7 @@ import brainunit as u
 import jax
 
 from braincell._base import IonInfo
-from braincell.channel._base import Gate, HH, Markov, Transition
+from braincell.channel._base import Gate, Markov, OhmicHH, Transition
 from braincell.ion import Calcium, Potassium
 from braincell.mech import register_channel
 
@@ -55,7 +55,7 @@ def _q10_factor(temp, q10, *, ref_celsius: float):
 
 
 @register_channel("AHP_De1994")
-class AHP_De1994(HH):
+class AHP_De1994(OhmicHH):
     r"""Destexhe 1994 calcium-dependent after-hyperpolarization current."""
 
     __module__ = "braincell.channel"
@@ -80,9 +80,6 @@ class AHP_De1994(HH):
         self.beta = braintools.init.param(beta, self.varshape, allow_none=False)
         self.phi = braintools.init.param(phi, self.varshape, allow_none=False)
 
-    def current(self, V, K: IonInfo, Ca: IonInfo):
-        return self.g_max * self.conductance_factor(V, K, Ca) * (K.E - V)
-
     def f_p_alpha(self, V, K: IonInfo, Ca: IonInfo):
         return self.alpha * u.math.power(Ca.Ci / u.mM, self.n)
 
@@ -91,7 +88,7 @@ class AHP_De1994(HH):
 
 
 @register_channel("SK_SU2015_DCN")
-class SK_SU2015_DCN(HH):
+class SK_SU2015_DCN(OhmicHH):
     r"""Template-based import of ``SK_SU15_DCN.mod``."""
 
     __module__ = "braincell.channel"
@@ -110,9 +107,6 @@ class SK_SU2015_DCN(HH):
         self.g_max = braintools.init.param(g_max, self.varshape, allow_none=False)
         self.qdeltat = braintools.init.param(qdeltat, self.varshape, allow_none=False)
 
-    def current(self, V, K: IonInfo, Ca: IonInfo):
-        return self.g_max * self.conductance_factor(V, K, Ca) * (K.E - V)
-
     def f_z_inf(self, V, K: IonInfo, Ca: IonInfo):
         _ = (V, K)
         return self._z_inf_formula(Ca.Ci.to_decimal(u.mM))
@@ -130,7 +124,7 @@ class SK_SU2015_DCN(HH):
 
 
 @register_channel("Kca3p1_MA2020_GoC")
-class Kca3p1_MA2020_GoC(HH):
+class Kca3p1_MA2020_GoC(OhmicHH):
     r"""Template-based import of ``Kca3p1_MA20_GoC.mod``."""
 
     __module__ = "braincell.channel"
@@ -151,9 +145,6 @@ class Kca3p1_MA2020_GoC(HH):
         self.q10_base = braintools.init.param(q10_base, self.varshape, allow_none=False)
         self.g_max = braintools.init.param(g_max, self.varshape, allow_none=False)
         self.p_beta = 0.05
-
-    def current(self, V, K: IonInfo, Ca: IonInfo):
-        return self.g_max * self.conductance_factor(V, K, Ca) * (K.E - V)
 
     def p_tau(self, V, Ca):
         return 1 / (self.p_alpha(V, Ca) + self.p_beta)

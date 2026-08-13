@@ -28,7 +28,7 @@ break during refactors:
    the child's first radius.
 
 If this behavior changes, re-check:
-- ``braincell/io/swc/test.py``
+- ``braincell/io/swc/swc_test.py``
 - ``braincell/_discretization/lower_test.py``
 - ``examples/neuron_compare/cable/tests/``
 - ``braincell/io/swc/README.md``
@@ -161,8 +161,9 @@ class SwcReader:
             root_side_child_ids: tuple[int, ...] = tuple()
 
             child_ids = children[current_id]
-            same_type_child_ids = [child_id for child_id in child_ids if
-                                   map_swc_type_code(nodes[child_id].type_code) == root_type]
+            same_type_child_ids = [
+                child_id for child_id in child_ids if map_swc_type_code(nodes[child_id].type_code) == root_type
+            ]
             if len(child_ids) != 1 and same_type_child_ids:
                 main_child_id = same_type_child_ids[0]
                 point_ids.append(main_child_id)
@@ -284,9 +285,7 @@ class SwcReader:
             if parent_branch_type == "soma":
                 child_ids = children[current_id]
                 same_type_child_ids = [
-                    child_id
-                    for child_id in child_ids
-                    if map_swc_type_code(nodes[child_id].type_code) == branch_type
+                    child_id for child_id in child_ids if map_swc_type_code(nodes[child_id].type_code) == branch_type
                 ]
                 if len(child_ids) != 1 and same_type_child_ids:
                     main_child_id = same_type_child_ids[0]
@@ -452,11 +451,10 @@ class SwcReader:
         try:
             attach_idx = parent_branch.point_ids.index(attach.node_id)
         except ValueError:
-            raise ValueError(
-                f"SWC attachment node {attach.node_id!r} not found in parent branch point IDs."
-            )
-        lengths = [np.linalg.norm(parent_points[index + 1] - parent_points[index]) for index in
-                   range(len(parent_points) - 1)]
+            raise ValueError(f"SWC attachment node {attach.node_id!r} not found in parent branch point IDs.")
+        lengths = [
+            np.linalg.norm(parent_points[index + 1] - parent_points[index]) for index in range(len(parent_points) - 1)
+        ]
         total = sum(lengths)
         if total <= 0.0:
             return 1.0
@@ -555,7 +553,8 @@ class SwcReader:
                 if map_swc_type_code(nodes[child_id].type_code) == "soma":
                     continue
                 child_tasks.append(
-                    (_SwcAttach(node_id=soma_id, parent_x=self._section_attach_x(soma_ids, soma_id)), child_id, 0))
+                    (_SwcAttach(node_id=soma_id, parent_x=self._section_attach_x(soma_ids, soma_id)), child_id, 0)
+                )
         return (
             _SwcBranch(
                 point_ids=soma_ids,

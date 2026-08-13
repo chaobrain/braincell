@@ -54,9 +54,7 @@ def compare_layouts_2d(
     else:
         render_axes = tuple(np.ravel(np.asarray(axes, dtype=object)))
         if len(render_axes) != len(layouts):
-            raise ValueError(
-                f"compare_layouts_2d(...) received {len(render_axes)} axes for {len(layouts)} layouts."
-            )
+            raise ValueError(f"compare_layouts_2d(...) received {len(render_axes)} axes for {len(layouts)} layouts.")
         fig = render_axes[0].figure
 
     chooser = chooser or BackendChooser.default()

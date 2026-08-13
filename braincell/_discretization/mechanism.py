@@ -65,7 +65,7 @@ __all__ = [
 
 _DEFAULT_CABLE = CableProperty(
     resting_potential=-65.0 * u.mV,
-    membrane_capacitance=1.0 * (u.uF / u.cm ** 2),
+    membrane_capacitance=1.0 * (u.uF / u.cm**2),
     axial_resistivity=100.0 * (u.ohm * u.cm),
 )
 
@@ -130,9 +130,7 @@ class _RegionCache:
         self._region_by_id: dict[int, dict[int, tuple[tuple[float, float], ...]]] = {}
         self._locset_by_id: dict[int, tuple[tuple[int, float, str], ...]] = {}
 
-    def intervals(
-        self, region: RegionExpr
-    ) -> dict[int, tuple[tuple[float, float], ...]]:
+    def intervals(self, region: RegionExpr) -> dict[int, tuple[tuple[float, float], ...]]:
         key = id(region)
         cached = self._region_by_id.get(key)
         if cached is not None:
@@ -152,8 +150,7 @@ class _RegionCache:
             return cached
         mask = locset.evaluate(self._morpho, cache=self._selection)
         result = tuple(
-            (int(point[0]), float(point[1]), str(name))
-            for point, name in zip(mask.points, mask.display_names)
+            (int(point[0]), float(point[1]), str(name)) for point, name in zip(mask.points, mask.display_names)
         )
         self._locset_by_id[key] = result
         return result
@@ -199,9 +196,7 @@ def normalize_paint_rules(
         If no mechanisms are supplied.
     """
     if not isinstance(region, RegionExpr):
-        raise TypeError(
-            f"Cell.paint(...) expects RegionExpr, got {type(region).__name__!s}."
-        )
+        raise TypeError(f"Cell.paint(...) expects RegionExpr, got {type(region).__name__!s}.")
     if len(mechanisms) == 0:
         raise ValueError("Cell.paint(...) expects at least one mechanism.")
 
@@ -244,19 +239,14 @@ def normalize_place_rule(
         If no mechanisms are supplied.
     """
     if not isinstance(locset, LocsetExpr):
-        raise TypeError(
-            f"Cell.place(...) expects LocsetExpr, got {type(locset).__name__!s}."
-        )
+        raise TypeError(f"Cell.place(...) expects LocsetExpr, got {type(locset).__name__!s}.")
     if len(mechanisms) == 0:
         raise ValueError("Cell.place(...) expects at least one point mechanism.")
 
     normalized: list[Point] = []
     for mechanism in mechanisms:
         if not isinstance(mechanism, Point):
-            raise TypeError(
-                "Cell.place(...) mechanisms must be Point instances, "
-                f"got {type(mechanism).__name__!s}."
-            )
+            raise TypeError(f"Cell.place(...) mechanisms must be Point instances, got {type(mechanism).__name__!s}.")
         normalized.append(mechanism)
     return PlaceRule(locset=locset, mechanisms=tuple(normalized), site="mid")
 
@@ -433,11 +423,7 @@ def _resolve_point_name(mechanism: Point, *, display_name: str) -> Point:
     if isinstance(mechanism, CurrentProbe):
         if mechanism.name is not None:
             return mechanism
-        suffix = (
-            f"{mechanism.mechanism}_current"
-            if mechanism.mechanism is not None
-            else f"{mechanism.ion}_current"
-        )
+        suffix = f"{mechanism.mechanism}_current" if mechanism.mechanism is not None else f"{mechanism.ion}_current"
         return replace(mechanism, name=f"{display_name}_{suffix}")
     return mechanism
 
@@ -451,10 +437,7 @@ def _apply_place(
     position: Position = "mid",
 ) -> Point:
     named = _resolve_point_name(mechanism, display_name=display_name)
-    auto_generated = (
-        getattr(mechanism, "name", None) is None
-        and getattr(named, "name", None) is not None
-    )
+    auto_generated = getattr(mechanism, "name", None) is None and getattr(named, "name", None) is not None
     if auto_generated:
         candidate_name = named.name
         if candidate_name in seen_names:
@@ -493,7 +476,7 @@ def _resolve_cable_property(
             cable.membrane_capacitance,
             context,
             name="membrane_capacitance",
-            unit=u.uF / u.cm ** 2,
+            unit=u.uF / u.cm**2,
         ),
         axial_resistivity=_resolve_cable_field(
             cable.axial_resistivity,
@@ -513,15 +496,10 @@ def _resolve_cable_property(
 def _resolve_cable_field(value, context: CVContext, *, name: str, unit) -> u.Quantity:
     resolved = value(context) if callable(value) else value
     if not hasattr(resolved, "to_decimal") or not callable(getattr(resolved, "to_decimal")):
-        raise TypeError(
-            f"CableProperty.{name} callable must return a Quantity, got {resolved!r}."
-        )
+        raise TypeError(f"CableProperty.{name} callable must return a Quantity, got {resolved!r}.")
     decimal = np.asarray(resolved.to_decimal(unit), dtype=float)
     if decimal.shape not in ((), (1,)):
-        raise TypeError(
-            f"CableProperty.{name} must resolve to a scalar Quantity, "
-            f"got shape {decimal.shape!r}."
-        )
+        raise TypeError(f"CableProperty.{name} must resolve to a scalar Quantity, got shape {decimal.shape!r}.")
     return u.Quantity(float(decimal.reshape(())), unit)
 
 

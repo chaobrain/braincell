@@ -19,6 +19,7 @@ class BaseChannelSplitTest(unittest.TestCase):
 
     def test_direct_import_still_works(self) -> None:
         from braincell._base import IonChannel, Channel, Synapse, IonInfo
+
         self.assertTrue(
             all(cls is not None for cls in (IonChannel, Channel, Synapse, IonInfo)),
         )

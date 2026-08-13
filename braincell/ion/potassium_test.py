@@ -52,9 +52,7 @@ class PotassiumFixedDefaultsTest(unittest.TestCase):
 
     def test_default_intracellular_and_extracellular_concentrations(self) -> None:
         k = PotassiumFixed(size=1)
-        self.assertTrue(
-            u.math.allclose(k.Ci, 54.4 * u.mM, atol=1e-9 * u.mM)
-        )
+        self.assertTrue(u.math.allclose(k.Ci, 54.4 * u.mM, atol=1e-9 * u.mM))
         self.assertTrue(u.math.allclose(k.Co, 2.5 * u.mM, atol=1e-9 * u.mM))
         self.assertTrue(u.math.allclose(k.valence, jnp.ones((1,)), atol=1e-9))
 
@@ -139,7 +137,7 @@ class PotassiumFixedContainerTest(unittest.TestCase):
         k = PotassiumFixed(size=1)
 
         def fake(V, info):
-            return jnp.array([1.0]) * u.uA / u.cm ** 2
+            return jnp.array([1.0]) * u.uA / u.cm**2
 
         k.register_external_current("ext", fake)
         self.assertIn("ext", k.external_currents)
@@ -152,14 +150,14 @@ class PotassiumFixedContainerTest(unittest.TestCase):
         k.init_state(V)
         k.reset_state(V)
         base = k.current(V)
-        delta = jnp.array([2.5]) * u.uA / u.cm ** 2
+        delta = jnp.array([2.5]) * u.uA / u.cm**2
 
         def external(V_local, info):
             return delta
 
         k.register_external_current("ext", external)
         total = k.current(V, include_external=True)
-        got = (total - base).to_decimal(u.uA / u.cm ** 2)
+        got = (total - base).to_decimal(u.uA / u.cm**2)
         self.assertTrue(u.math.allclose(got, jnp.array([2.5]), atol=1e-9))
 
 
@@ -199,9 +197,7 @@ class PotassiumFixedLifecycleTest(unittest.TestCase):
         # Mutate and reset again – should recover exactly the same state.
         k.channels["IK"].p.value = jnp.array([0.999])
         k.reset_state(V)
-        self.assertTrue(
-            u.math.allclose(k.channels["IK"].p.value, first, atol=1e-9)
-        )
+        self.assertTrue(u.math.allclose(k.channels["IK"].p.value, first, atol=1e-9))
 
     def test_compute_derivative_populates_child_derivative(self) -> None:
         k = PotassiumFixed(size=1, IK=K_TM1991(size=1))
@@ -223,10 +219,7 @@ class PotassiumInitNernstTest(unittest.TestCase):
 
         self.assertIsNone(k.E)
         k.init_state(V)
-        expected = (
-            u.gas_constant * k.temp / (k.valence * u.faraday_constant)
-            * u.math.log(k.Co / k.Ci)
-        )
+        expected = u.gas_constant * k.temp / (k.valence * u.faraday_constant) * u.math.log(k.Co / k.Ci)
         self.assertTrue(u.math.allclose(k.E.to_decimal(u.mV), expected.to_decimal(u.mV), atol=1e-6))
 
         first_E = k.E

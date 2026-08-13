@@ -96,14 +96,11 @@ from ._misc import cast_like as _cast_like, set_module_as, Container, TreeNode
 
 __all__ = [
     'HHTypedNeuron',
-
     'IonChannel',
-
     'Ion',
     'MixIons',
     'Channel',
     'Synapse',
-
     'mix_ions',
     'IonInfo',
 ]
@@ -157,15 +154,11 @@ class HHTypedNeuron(brainpy.state.Dynamics, Container, DiffEqModule):
     AssertionError
         If the size is less than 1-dimensional.
     """
+
     __module__ = 'braincell'
     _container_name = 'ion_channels'
 
-    def __init__(
-        self,
-        size: brainstate.typing.Size,
-        name: Optional[str] = None,
-        **ion_channels
-    ):
+    def __init__(self, size: brainstate.typing.Size, name: Optional[str] = None, **ion_channels):
         super().__init__(size, name=name)
 
         # attribute for ``Container``
@@ -435,10 +428,8 @@ class HHTypedNeuron(brainpy.state.Dynamics, Container, DiffEqModule):
         """
         denom = _cast_like(20.0 * u.mV, next_V)
         V_th = _cast_like(self.V_th, next_V)
-        return (
-            self.spk_fun((next_V - V_th) / denom)
-            * self.spk_fun((V_th - last_V) / denom)
-        )
+        return self.spk_fun((next_V - V_th) / denom) * self.spk_fun((V_th - last_V) / denom)
+
 
 # ---------------------------------------------------------------------------
 # Re-exports (ARCH-03). The ion-channel family lives in

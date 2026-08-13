@@ -30,7 +30,6 @@ can revive them without digging through git log. They are clearly
 quarantined in the "Unused legacy helpers" section below.
 """
 
-
 import brainunit as u
 import numpy as np
 
@@ -62,6 +61,7 @@ from ._geometry import (
 # ---------------------------------------------------------------------------
 # Live legacy layout (still reachable via root_layout='legacy')
 # ---------------------------------------------------------------------------
+
 
 def _build_layout_branches_legacy(
     morpho: Morphology,
@@ -153,6 +153,7 @@ def _layout_children_legacy(
 # corresponding feature. If you're adding code, prefer the stem /
 # balloon / radial families instead of calling into this section.
 
+
 def _assign_group_trunk_first_angles(
     children: tuple[MorphoBranch, ...],
     *,
@@ -238,9 +239,8 @@ def _make_layout_branch_to_y(
 
     raw_segment_points_um = np.zeros((len(spec.segment_lengths_um) + 1, 2), dtype=float)
     for segment_index in range(len(spec.segment_lengths_um)):
-        raw_segment_points_um[segment_index + 1] = (
-            raw_segment_points_um[segment_index]
-            + np.array([dx_segments_um[segment_index], dy_segments_um[segment_index]], dtype=float)
+        raw_segment_points_um[segment_index + 1] = raw_segment_points_um[segment_index] + np.array(
+            [dx_segments_um[segment_index], dy_segments_um[segment_index]], dtype=float
         )
 
     raw_layout = _layout_branch_from_points(branch, spec, raw_segment_points_um)
@@ -267,8 +267,7 @@ def _dendrogram_y_units_by_branch(
 ) -> tuple[dict[int, float], dict[int, float]]:
     ordered_leaves = _ordered_leaf_branches(root, root_layout=root_layout)
     leaf_positions = {
-        leaf.index: float(position - (len(ordered_leaves) - 1) / 2.0)
-        for position, leaf in enumerate(ordered_leaves)
+        leaf.index: float(position - (len(ordered_leaves) - 1) / 2.0) for position, leaf in enumerate(ordered_leaves)
     }
     branch_positions: dict[int, float] = {}
 

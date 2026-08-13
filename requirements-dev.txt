@@ -1,9 +1,3 @@
--r requirements.txt
-braintools
-matplotlib
-networkx
-hypothesis
-
-# test requirements
-pytest
-absl-py
+# Development / test dependencies are declared in pyproject.toml
+# ([project.optional-dependencies].testing). This file is a thin pointer.
+.[testing]

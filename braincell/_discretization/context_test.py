@@ -102,7 +102,7 @@ class CVContextTest(unittest.TestCase):
         def capacitance(context: CVContext):
             seen.append(context)
             distance = context.path_distance_from_soma.to_decimal(u.um)
-            return (1.0 + 0.001 * distance) * (u.uF / u.cm ** 2)
+            return (1.0 + 0.001 * distance) * (u.uF / u.cm**2)
 
         cell = Cell(_tree(), cv_policy=CVPerBranch(cv_per_branch=2))
         cell.paint(
@@ -114,16 +114,9 @@ class CVContextTest(unittest.TestCase):
             ),
         )
 
-        values = [
-            float(cv.cm.to_decimal(u.uF / u.cm ** 2))
-            for cv in cell.cvs
-        ]
+        values = [float(cv.cm.to_decimal(u.uF / u.cm**2)) for cv in cell.cvs]
         expected = [
-            1.0 + 0.001 * distance
-            for distance in _um(
-                context.path_distance_from_soma
-                for context in cell.cv_contexts
-            )
+            1.0 + 0.001 * distance for distance in _um(context.path_distance_from_soma for context in cell.cv_contexts)
         ]
         self.assertEqual(values, expected)
         self.assertEqual(len(seen), cell.n_cv)

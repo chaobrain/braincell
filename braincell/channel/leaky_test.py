@@ -65,33 +65,29 @@ class ILTest(unittest.TestCase):
         # Defaults: g_max = 0.1 mS/cm^2, E = -70 mV.
         self.assertTrue(
             u.math.allclose(
-                ch.g_max.to_decimal(u.mS / u.cm ** 2),
+                ch.g_max.to_decimal(u.mS / u.cm**2),
                 jnp.array([0.1]),
             )
         )
-        self.assertTrue(
-            u.math.allclose(ch.E.to_decimal(u.mV), jnp.array([-70.0]))
-        )
+        self.assertTrue(u.math.allclose(ch.E.to_decimal(u.mV), jnp.array([-70.0])))
 
     def test_custom_parameters_are_honoured(self) -> None:
         ch = IL(
             size=3,
-            g_max=0.25 * (u.mS / u.cm ** 2),
+            g_max=0.25 * (u.mS / u.cm**2),
             E=-55.0 * u.mV,
         )
         self.assertEqual(ch.varshape, (3,))
         self.assertTrue(
             u.math.allclose(
-                ch.g_max.to_decimal(u.mS / u.cm ** 2),
+                ch.g_max.to_decimal(u.mS / u.cm**2),
                 jnp.full((3,), 0.25),
             )
         )
-        self.assertTrue(
-            u.math.allclose(ch.E.to_decimal(u.mV), jnp.full((3,), -55.0))
-        )
+        self.assertTrue(u.math.allclose(ch.E.to_decimal(u.mV), jnp.full((3,), -55.0)))
 
     def test_current_follows_ohms_law(self) -> None:
-        g_max = 0.1 * (u.mS / u.cm ** 2)
+        g_max = 0.1 * (u.mS / u.cm**2)
         E = -70.0 * u.mV
         ch = IL(size=1, g_max=g_max, E=E)
 
@@ -100,27 +96,27 @@ class ILTest(unittest.TestCase):
 
         # I = g (E - V) = 0.1 mS/cm^2 * (-70 - (-60)) mV = -1 mS·mV/cm^2.
         expected = jnp.array([-1.0])
-        got = i.to_decimal(u.mS * u.mV / u.cm ** 2)
+        got = i.to_decimal(u.mS * u.mV / u.cm**2)
         self.assertTrue(u.math.allclose(got, expected, atol=1e-6))
 
     def test_current_is_zero_at_reversal_potential(self) -> None:
         E = -70.0 * u.mV
-        ch = IL(size=1, g_max=0.1 * (u.mS / u.cm ** 2), E=E)
+        ch = IL(size=1, g_max=0.1 * (u.mS / u.cm**2), E=E)
 
         i = ch.current(jnp.array([-70.0]) * u.mV)
         self.assertTrue(
             u.math.allclose(
-                i.to_decimal(u.mS * u.mV / u.cm ** 2),
+                i.to_decimal(u.mS * u.mV / u.cm**2),
                 jnp.array([0.0]),
                 atol=1e-9,
             )
         )
 
     def test_current_sign_flips_around_reversal_potential(self) -> None:
-        ch = IL(size=2, g_max=0.1 * (u.mS / u.cm ** 2), E=-70.0 * u.mV)
+        ch = IL(size=2, g_max=0.1 * (u.mS / u.cm**2), E=-70.0 * u.mV)
 
         V = jnp.array([-80.0, -60.0]) * u.mV  # below / above E
-        i = ch.current(V).to_decimal(u.mS * u.mV / u.cm ** 2)
+        i = ch.current(V).to_decimal(u.mS * u.mV / u.cm**2)
 
         # V < E ⇒ current positive (inward of the sign convention used here),
         # V > E ⇒ current negative. Exact signs: g*(E-V).
@@ -128,9 +124,9 @@ class ILTest(unittest.TestCase):
         self.assertLess(float(i[1]), 0.0)
 
     def test_current_vectorises_across_compartments(self) -> None:
-        ch = IL(size=4, g_max=0.1 * (u.mS / u.cm ** 2), E=-70.0 * u.mV)
+        ch = IL(size=4, g_max=0.1 * (u.mS / u.cm**2), E=-70.0 * u.mV)
         V = jnp.array([-80.0, -70.0, -60.0, -50.0]) * u.mV
-        i = ch.current(V).to_decimal(u.mS * u.mV / u.cm ** 2)
+        i = ch.current(V).to_decimal(u.mS * u.mV / u.cm**2)
         expected = 0.1 * (jnp.array([-70.0, -70.0, -70.0, -70.0]) - jnp.array([-80.0, -70.0, -60.0, -50.0]))
         self.assertTrue(u.math.allclose(i, expected, atol=1e-6))
 

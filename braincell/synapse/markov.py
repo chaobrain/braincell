@@ -41,9 +41,7 @@ def _decay_factor(dt, tau):
 
 def _syn_uS_state(shape, batch_size=None):
     """Allocate one synapse state with conductance unit ``uS``."""
-    return DiffEqState(
-        u.Quantity(braintools.init.param(u.math.zeros, shape, batch_size), u.uS)
-    )
+    return DiffEqState(u.Quantity(braintools.init.param(u.math.zeros, shape, batch_size), u.uS))
 
 
 def _syn_state(shape, batch_size=None):
@@ -98,9 +96,7 @@ class ExpSyn(Synapse):
 
     def reset_state(self, V_post=None, batch_size=None):
         super().reset_state(V_post=V_post, batch_size=batch_size)
-        self.g.value = u.Quantity(
-            braintools.init.param(u.math.zeros, self.varshape, batch_size), u.uS
-        )
+        self.g.value = u.Quantity(braintools.init.param(u.math.zeros, self.varshape, batch_size), u.uS)
 
     def pre_integral(self, V_post=None):
         _ = V_post
@@ -161,12 +157,8 @@ class Exp2Syn(Synapse):
 
     def _compute_factor(self):
         tau1_eff = self._effective_tau1()
-        tp = (tau1_eff * self.tau2) / (self.tau2 - tau1_eff) * u.math.log(
-            u.math.asarray(self.tau2 / tau1_eff)
-        )
-        factor = -u.math.exp(-(tp / tau1_eff)) + u.math.exp(
-            -(tp / self.tau2)
-        )
+        tp = (tau1_eff * self.tau2) / (self.tau2 - tau1_eff) * u.math.log(u.math.asarray(self.tau2 / tau1_eff))
+        factor = -u.math.exp(-(tp / tau1_eff)) + u.math.exp(-(tp / self.tau2))
         return 1.0 / factor
 
     def _on_param_updated(self, var_name: str, new_value) -> None:
@@ -184,12 +176,8 @@ class Exp2Syn(Synapse):
 
     def reset_state(self, V_post=None, batch_size=None):
         super().reset_state(V_post=V_post, batch_size=batch_size)
-        self.A.value = u.Quantity(
-            braintools.init.param(u.math.zeros, self.varshape, batch_size), u.uS
-        )
-        self.B.value = u.Quantity(
-            braintools.init.param(u.math.zeros, self.varshape, batch_size), u.uS
-        )
+        self.A.value = u.Quantity(braintools.init.param(u.math.zeros, self.varshape, batch_size), u.uS)
+        self.B.value = u.Quantity(braintools.init.param(u.math.zeros, self.varshape, batch_size), u.uS)
 
     def pre_integral(self, V_post=None):
         _ = V_post
@@ -242,7 +230,7 @@ class AMPA(Synapse):
         alpha: Union[brainstate.typing.ArrayLike, Callable] = 0.98 / u.ms,
         beta: Union[brainstate.typing.ArrayLike, Callable] = 0.18 / u.ms,
         T: Union[brainstate.typing.ArrayLike, Callable] = 0.5,
-        g_max: Union[brainstate.typing.ArrayLike, Callable] = 1.0 * (u.mS / u.cm ** 2),
+        g_max: Union[brainstate.typing.ArrayLike, Callable] = 1.0 * (u.mS / u.cm**2),
         E_rev: Union[brainstate.typing.ArrayLike, Callable] = 0.0 * u.mV,
         name: Optional[str] = None,
     ):
@@ -286,7 +274,7 @@ class GABAa(Synapse):
         alpha: Union[brainstate.typing.ArrayLike, Callable] = 0.53 / u.ms,
         beta: Union[brainstate.typing.ArrayLike, Callable] = 0.18 / u.ms,
         T: Union[brainstate.typing.ArrayLike, Callable] = 1.0,
-        g_max: Union[brainstate.typing.ArrayLike, Callable] = 1.0 * (u.mS / u.cm ** 2),
+        g_max: Union[brainstate.typing.ArrayLike, Callable] = 1.0 * (u.mS / u.cm**2),
         E_rev: Union[brainstate.typing.ArrayLike, Callable] = -70.0 * u.mV,
         name: Optional[str] = None,
     ):
@@ -327,12 +315,12 @@ class NMDA(Synapse):
     def __init__(
         self,
         size: brainstate.typing.Size,
-        alpha1: Union[brainstate.typing.ArrayLike, Callable] = 2. / u.ms,
+        alpha1: Union[brainstate.typing.ArrayLike, Callable] = 2.0 / u.ms,
         beta1: Union[brainstate.typing.ArrayLike, Callable] = 0.01 / u.ms,
-        alpha2: Union[brainstate.typing.ArrayLike, Callable] = 1. / u.ms,
+        alpha2: Union[brainstate.typing.ArrayLike, Callable] = 1.0 / u.ms,
         beta2: Union[brainstate.typing.ArrayLike, Callable] = 0.5 / u.ms,
         T: Union[brainstate.typing.ArrayLike, Callable] = 1.0,
-        g_max: Union[brainstate.typing.ArrayLike, Callable] = 1.0 * (u.mS / u.cm ** 2),
+        g_max: Union[brainstate.typing.ArrayLike, Callable] = 1.0 * (u.mS / u.cm**2),
         E_rev: Union[brainstate.typing.ArrayLike, Callable] = 0.0 * u.mV,
         name: Optional[str] = None,
     ):

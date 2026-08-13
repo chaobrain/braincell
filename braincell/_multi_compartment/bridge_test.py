@@ -82,7 +82,7 @@ class TestBridge(unittest.TestCase):
         cvs = (
             _StubCV(
                 length=10.0 * u.um,
-                area=100.0 * u.um ** 2,
+                area=100.0 * u.um**2,
                 diam_mid=6.0 * u.um,
                 diam_arc_mean=5.5 * u.um,
                 radius_prox=3.5 * u.um,
@@ -90,7 +90,7 @@ class TestBridge(unittest.TestCase):
             ),
             _StubCV(
                 length=20.0 * u.um,
-                area=200.0 * u.um ** 2,
+                area=200.0 * u.um**2,
                 diam_mid=8.0 * u.um,
                 diam_arc_mean=7.0 * u.um,
                 radius_prox=4.5 * u.um,
@@ -114,7 +114,7 @@ class TestBridge(unittest.TestCase):
             np.asarray([0.0, 10.0, 0.0, 20.0, 0.0]),
         )
         np.testing.assert_allclose(
-            ion.area.to_decimal(u.um ** 2),
+            ion.area.to_decimal(u.um**2),
             np.asarray([0.0, 100.0, 0.0, 200.0, 0.0]),
         )
         np.testing.assert_allclose(

@@ -95,7 +95,7 @@ def _V(values, unit=u.mV):
     return jnp.asarray(values) * unit
 
 
-_DENSITY_UNIT = u.mS / u.cm ** 2 * u.mV
+_DENSITY_UNIT = u.mS / u.cm**2 * u.mV
 
 
 class _P2QHHMixin:
@@ -137,12 +137,8 @@ class _P2QHHMixin:
             temp_ref_q=u.celsius2kelvin(24.0),
         )
         gates = {gate.name: gate for gate in ch._iter_gates()}
-        self.assertTrue(
-            u.math.allclose(ch.gate_phi(gates["p"]), 3.0 * jnp.ones(1), atol=1e-6)
-        )
-        self.assertTrue(
-            u.math.allclose(ch.gate_phi(gates["q"]), 2.0 * jnp.ones(1), atol=1e-6)
-        )
+        self.assertTrue(u.math.allclose(ch.gate_phi(gates["p"]), 3.0 * jnp.ones(1), atol=1e-6))
+        self.assertTrue(u.math.allclose(ch.gate_phi(gates["q"]), 2.0 * jnp.ones(1), atol=1e-6))
 
     def test_init_state_creates_p_and_q(self) -> None:
         ch = self._make(size=2)
@@ -211,7 +207,7 @@ class _P2QHHMixin:
         ch.init_state(V, ca)
         ch.reset_state(V, ca)
         current = ch.current(V, ca)
-        expected = ch.g_max * ch.p.value ** 2 * ch.q.value * (ca.E - V)
+        expected = ch.g_max * ch.p.value**2 * ch.q.value * (ca.E - V)
         self.assertTrue(
             u.math.allclose(
                 current.to_decimal(_DENSITY_UNIT),
@@ -228,9 +224,7 @@ class _P2QHHMixin:
         ch.p.value = jnp.zeros(1)
         ch.q.value = jnp.zeros(1)
         current = ch.current(V, ca)
-        self.assertTrue(
-            u.math.allclose(current.to_decimal(_DENSITY_UNIT), jnp.zeros(1), atol=1e-9)
-        )
+        self.assertTrue(u.math.allclose(current.to_decimal(_DENSITY_UNIT), jnp.zeros(1), atol=1e-9))
 
 
 class CaT_HM1992Test(_P2QHHMixin, unittest.TestCase):
@@ -305,10 +299,10 @@ class CaHVA_SU2015_DCNTest(unittest.TestCase):
         perm = ch.perm.to_decimal(u.cm / u.second)
         A = u.math.exp(-23.20764929 * v_mV / temp)
         drive = (4.47814e6 * v_mV / temp) * ((ci / 1000.0) - (co / 1000.0) * A) / (1.0 - A)
-        expected = -perm * ch.m.value ** 3 * drive
+        expected = -perm * ch.m.value**3 * drive
         self.assertTrue(
             u.math.allclose(
-                current.to_decimal(u.mA / (u.cm ** 2)),
+                current.to_decimal(u.mA / (u.cm**2)),
                 expected,
                 atol=1e-6,
             )
@@ -330,7 +324,7 @@ class CaL_SU2015_DCNTest(unittest.TestCase):
 
     def test_default_parameters_are_stored(self) -> None:
         ch = CaL_SU2015_DCN(size=1)
-        self.assertTrue(u.math.allclose(ch.g_max, 0.01 * (u.mS / u.cm ** 2), atol=1e-12 * (u.mS / u.cm ** 2)))
+        self.assertTrue(u.math.allclose(ch.g_max, 0.01 * (u.mS / u.cm**2), atol=1e-12 * (u.mS / u.cm**2)))
         self.assertTrue(u.math.allclose(ch.E, 139.0 * u.mV, atol=1e-12 * u.mV))
         self.assertTrue(u.math.allclose(ch.qdeltat, jnp.ones(1), atol=1e-12))
 
@@ -379,7 +373,7 @@ class CaL_SU2015_DCNTest(unittest.TestCase):
         ch.m.value = jnp.array([0.5])
         ch.h.value = jnp.array([0.25])
         current = ch.current(V)
-        expected = ch.g_max * ch.m.value ** 2 * ch.h.value * (ch.E - V)
+        expected = ch.g_max * ch.m.value**2 * ch.h.value * (ch.E - V)
         self.assertTrue(
             u.math.allclose(
                 current.to_decimal(_DENSITY_UNIT),
@@ -460,10 +454,10 @@ class CaLVA_SU2015_DCNTest(unittest.TestCase):
         perm = ch.perm.to_decimal(u.cm / u.second)
         A = u.math.exp(-23.20764929 * v_mV / temp)
         drive = (4.47814e6 * v_mV / temp) * ((ci / 1000.0) - (co / 1000.0) * A) / (1.0 - A)
-        expected = -perm * ch.m.value ** 2 * ch.h.value * drive
+        expected = -perm * ch.m.value**2 * ch.h.value * drive
         self.assertTrue(
             u.math.allclose(
-                current.to_decimal(u.mA / (u.cm ** 2)),
+                current.to_decimal(u.mA / (u.cm**2)),
                 expected,
                 atol=1e-6,
             )
@@ -530,7 +524,7 @@ class CaN_IS2008Test(unittest.TestCase):
         self.assertGreater(high_mag, low_mag)
 
     def test_current_matches_formula(self) -> None:
-        ch = CaN_IS2008(size=1, E=10.0 * u.mV, g_max=1.0 * (u.mS / u.cm ** 2))
+        ch = CaN_IS2008(size=1, E=10.0 * u.mV, g_max=1.0 * (u.mS / u.cm**2))
         V = _V([-60.0])
         ca = _ca_info(C=0.001)
         ch.init_state(V, ca)
@@ -701,17 +695,22 @@ class Cav3p1_MA2020_GoCTest(unittest.TestCase):
         ch.p.value = jnp.array([0.5])
         ch.q.value = jnp.array([0.25])
         current = ch.current(V, ca)
-        expected = -ch.g_max * ch.p.value ** 2 * ch.q.value * _cav3p1_nmodl_ghk_flux(
-            V=V,
-            ci=ca.Ci,
-            co=ca.Co,
-            z=ch.z,
-            temp=ch.temp,
+        expected = (
+            -ch.g_max
+            * ch.p.value**2
+            * ch.q.value
+            * _cav3p1_nmodl_ghk_flux(
+                V=V,
+                ci=ca.Ci,
+                co=ca.Co,
+                z=ch.z,
+                temp=ch.temp,
+            )
         )
         self.assertTrue(
             u.math.allclose(
-                current.to_decimal(u.mA / (u.cm ** 2)),
-                expected.to_decimal(u.mA / (u.cm ** 2)),
+                current.to_decimal(u.mA / (u.cm**2)),
+                expected.to_decimal(u.mA / (u.cm**2)),
                 atol=1e-6,
             )
         )
@@ -724,13 +723,10 @@ class Cav3p1_MA2020_GoCTest(unittest.TestCase):
         ch.p.value = jnp.array([0.06913853271498836])
         ch.q.value = jnp.array([0.26894140923409454])
 
-        actual = ch.current(V, ca).to_decimal(u.mA / (u.cm ** 2))
+        actual = ch.current(V, ca).to_decimal(u.mA / (u.cm**2))
         generic = (
-            -ch.g_max
-            * ch.p.value ** 2
-            * ch.q.value
-            * ghk_flux(V=V, ci=ca.Ci, co=ca.Co, z=ch.z, temp=ch.temp)
-        ).to_decimal(u.mA / (u.cm ** 2))
+            -ch.g_max * ch.p.value**2 * ch.q.value * ghk_flux(V=V, ci=ca.Ci, co=ca.Co, z=ch.z, temp=ch.temp)
+        ).to_decimal(u.mA / (u.cm**2))
 
         self.assertFalse(u.math.allclose(actual, generic, rtol=1e-8, atol=0.0))
 
@@ -765,7 +761,7 @@ class Cav3p1TestPC24Test(unittest.TestCase):
         ch.p.value = jnp.array([0.5])
         ch.q.value = jnp.array([0.25])
         current = ch.current(V, ca)
-        expected = -ch.g_max * ch.p.value ** 2 * ch.q.value * (1.0 * u.mV)
+        expected = -ch.g_max * ch.p.value**2 * ch.q.value * (1.0 * u.mV)
         self.assertTrue(u.math.allclose(current, expected, atol=1e-12 * expected.unit))
 
 
@@ -784,8 +780,8 @@ class Cav3p1FrozenMA20GoCTest(unittest.TestCase):
         frozen.reset_state(V, ca)
         self.assertTrue(
             u.math.allclose(
-                frozen.current(V, ca).to_decimal(u.mA / (u.cm ** 2)),
-                base.current(V, ca).to_decimal(u.mA / (u.cm ** 2)),
+                frozen.current(V, ca).to_decimal(u.mA / (u.cm**2)),
+                base.current(V, ca).to_decimal(u.mA / (u.cm**2)),
                 atol=1e-6,
             )
         )
@@ -824,9 +820,7 @@ class Cav2p1RI21SCTest(unittest.TestCase):
     def test_gate_phi_uses_default_ri2021_temperature_reference(self) -> None:
         ch = Cav2p1_RI2021_SC(size=1, temp=u.celsius2kelvin(33.0))
         gate = ch._iter_gates()[0]
-        self.assertTrue(
-            u.math.allclose(ch.gate_phi(gate), 3.0 * jnp.ones(1), atol=1e-6)
-        )
+        self.assertTrue(u.math.allclose(ch.gate_phi(gate), 3.0 * jnp.ones(1), atol=1e-6))
 
     def test_compute_derivative_matches_hh_inf_tau_form(self) -> None:
         ch = Cav2p1_RI2021_SC(size=1, temp=u.celsius2kelvin(33.0))
@@ -859,17 +853,21 @@ class Cav2p1RI21SCTest(unittest.TestCase):
         ch.init_state(V, ca)
         ch.m.value = jnp.array([0.5])
         current = ch.current(V, ca)
-        expected = -ch.g_max * ch.m.value ** 3 * ghk_flux(
-            V=V,
-            ci=ca.Ci,
-            co=ca.Co,
-            z=ch.z,
-            temp=ch.temp,
+        expected = (
+            -ch.g_max
+            * ch.m.value**3
+            * ghk_flux(
+                V=V,
+                ci=ca.Ci,
+                co=ca.Co,
+                z=ch.z,
+                temp=ch.temp,
+            )
         )
         self.assertTrue(
             u.math.allclose(
-                current.to_decimal(u.mA / (u.cm ** 2)),
-                expected.to_decimal(u.mA / (u.cm ** 2)),
+                current.to_decimal(u.mA / (u.cm**2)),
+                expected.to_decimal(u.mA / (u.cm**2)),
                 atol=1e-6,
             )
         )
@@ -883,19 +881,23 @@ class Cav2p1RI21SCTest(unittest.TestCase):
 
         shifted = V - 5.0 * u.mV
         expected_inf = 1.0 / (1.0 + u.math.exp(-(shifted - ch.vhalfm) / ch.cvm))
-        expected_current = -ch.g_max * ch.m.value ** 3 * ghk_flux(
-            V=shifted,
-            ci=ca.Ci,
-            co=ca.Co,
-            z=ch.z,
-            temp=ch.temp,
+        expected_current = (
+            -ch.g_max
+            * ch.m.value**3
+            * ghk_flux(
+                V=shifted,
+                ci=ca.Ci,
+                co=ca.Co,
+                z=ch.z,
+                temp=ch.temp,
+            )
         )
 
         self.assertTrue(u.math.allclose(ch.f_m_inf(V, ca), expected_inf, atol=1e-6))
         self.assertTrue(
             u.math.allclose(
-                ch.current(V, ca).to_decimal(u.mA / (u.cm ** 2)),
-                expected_current.to_decimal(u.mA / (u.cm ** 2)),
+                ch.current(V, ca).to_decimal(u.mA / (u.cm**2)),
+                expected_current.to_decimal(u.mA / (u.cm**2)),
                 atol=1e-6,
             )
         )
@@ -1056,7 +1058,7 @@ class Cav3p2RI21SCTest(unittest.TestCase):
         ch.m.value = jnp.array([0.5])
         ch.h.value = jnp.array([0.25])
         current = ch.current(V, ca)
-        expected = ch.g_max * ch.m.value ** 2 * ch.h.value * (ca.E - V)
+        expected = ch.g_max * ch.m.value**2 * ch.h.value * (ca.E - V)
         self.assertTrue(
             u.math.allclose(
                 current.to_decimal(_DENSITY_UNIT),
@@ -1071,7 +1073,7 @@ class Cav3p2RI21SCTest(unittest.TestCase):
         ca = _ca_info(E_mV=120.0)
         shifted = V + 5.0 * u.mV
         expected_m_inf = 1.0 / (1.0 + u.math.exp(-(shifted.to_decimal(u.mV) + 54.8) / 7.4))
-        expected_current = ch.g_max * 0.5 ** 2 * 0.25 * (ca.E - V)
+        expected_current = ch.g_max * 0.5**2 * 0.25 * (ca.E - V)
 
         ch.init_state(V, ca)
         ch.m.value = jnp.array([0.5])
@@ -1178,14 +1180,18 @@ class Cav3p3RI21SCTest(unittest.TestCase):
         V = _V([-59.0, -61.0])
         tau_n = ch.f_n_tau(V, ca)
         tau_l = ch.f_l_tau(V, ca)
-        expected_n = jnp.asarray([
-            7.2 + 0.02 * jnp.exp(59.0 / 14.7),
-            0.875 * jnp.exp((-61.0 + 120.0) / 41.0),
-        ])
-        expected_l = jnp.asarray([
-            79.5 + 2.0 * jnp.exp(59.0 / 9.3),
-            260.0,
-        ])
+        expected_n = jnp.asarray(
+            [
+                7.2 + 0.02 * jnp.exp(59.0 / 14.7),
+                0.875 * jnp.exp((-61.0 + 120.0) / 41.0),
+            ]
+        )
+        expected_l = jnp.asarray(
+            [
+                79.5 + 2.0 * jnp.exp(59.0 / 9.3),
+                260.0,
+            ]
+        )
         self.assertTrue(u.math.allclose(tau_n, expected_n, atol=1e-6))
         self.assertTrue(u.math.allclose(tau_l, expected_l, atol=1e-6))
 
@@ -1197,12 +1203,18 @@ class Cav3p3RI21SCTest(unittest.TestCase):
         ch.n.value = jnp.array([0.5])
         ch.l.value = jnp.array([0.25])
         current = ch.current(V, ca)
-        expected = -ch.g_scale * ch.perm * ch.n.value ** 2 * ch.l.value * ghk_flux(
-            V=V,
-            ci=ca.Ci,
-            co=ca.Co,
-            z=ch.z,
-            temp=ch.temp,
+        expected = (
+            -ch.g_scale
+            * ch.perm
+            * ch.n.value**2
+            * ch.l.value
+            * ghk_flux(
+                V=V,
+                ci=ca.Ci,
+                co=ca.Co,
+                z=ch.z,
+                temp=ch.temp,
+            )
         )
         self.assertTrue(
             u.math.allclose(
@@ -1246,7 +1258,7 @@ class CaHVAMA20GoCTest(unittest.TestCase):
         ch.s.value = jnp.array([0.5])
         ch.u.value = jnp.array([0.25])
         i = ch.current(V, ca)
-        expected = ch.g_max * (ch.s.value ** 2) * ch.u.value * (ca.E - V)
+        expected = ch.g_max * (ch.s.value**2) * ch.u.value * (ca.E - V)
         self.assertTrue(
             u.math.allclose(
                 i.to_decimal(_DENSITY_UNIT),
@@ -1280,7 +1292,7 @@ class CaHVAMA20GoCTest(unittest.TestCase):
         self.assertTrue(u.math.allclose(proto.u.derivative, expected_u, atol=1e-6 * u.Hz))
 
         i_proto = proto.current(V, ca)
-        expected_current = proto.g_max * (proto.s.value ** 2) * proto.u.value * (ca.E - V)
+        expected_current = proto.g_max * (proto.s.value**2) * proto.u.value * (ca.E - V)
         self.assertTrue(
             u.math.allclose(
                 i_proto.to_decimal(_DENSITY_UNIT),
@@ -1320,14 +1332,14 @@ class Cav2p3MA20GoCTest(unittest.TestCase):
         self.assertTrue(u.math.allclose(ch.h.value, ch.f_h_inf(V, ca), atol=1e-6))
 
     def test_current_matches_linear_formula(self) -> None:
-        ch = Cav2p3_MA2020_GoC(size=1, g_max=0.1 * (u.mS / u.cm ** 2))
+        ch = Cav2p3_MA2020_GoC(size=1, g_max=0.1 * (u.mS / u.cm**2))
         V = _V([-40.0])
         ca = _ca_info(e_mV=140.0)
         ch.init_state(V, ca)
         ch.m.value = jnp.array([0.5])
         ch.h.value = jnp.array([0.25])
         i = ch.current(V, ca)
-        expected = ch.g_max * (ch.m.value ** 3) * ch.h.value * (ca.E - V)
+        expected = ch.g_max * (ch.m.value**3) * ch.h.value * (ca.E - V)
         self.assertTrue(
             u.math.allclose(
                 i.to_decimal(_DENSITY_UNIT),
@@ -1357,7 +1369,7 @@ class Cav2p3MA20GoCTest(unittest.TestCase):
         self.assertTrue(u.math.allclose(proto.h.derivative, expected_h, atol=1e-6 * u.Hz))
 
         i_proto = proto.current(V, ca)
-        expected_current = proto.g_max * (proto.m.value ** 3) * proto.h.value * (ca.E - V)
+        expected_current = proto.g_max * (proto.m.value**3) * proto.h.value * (ca.E - V)
         self.assertTrue(
             u.math.allclose(
                 i_proto.to_decimal(_DENSITY_UNIT),
@@ -1438,7 +1450,7 @@ class CaZH19IOTest(unittest.TestCase):
             return ch.current(jnp.asarray([v_mV]) * u.mV).to_decimal(_DENSITY_UNIT)[0]
 
         actual = jax.grad(current_decimal)(V0)
-        expected = -(ch.g_max * ch.f_m_inf(V) * ch.h.value).to_decimal(u.mS / u.cm ** 2)[0]
+        expected = -(ch.g_max * ch.f_m_inf(V) * ch.h.value).to_decimal(u.mS / u.cm**2)[0]
         self.assertTrue(u.math.allclose(actual, expected, atol=1e-6))
 
     def test_freeze_m_inf_can_be_disabled(self) -> None:
@@ -1462,7 +1474,7 @@ class CaZH19IOTest(unittest.TestCase):
 
         actual = jax.grad(current_decimal)(V0)
         expected = jax.grad(unfrozen_expected_current)(V0)
-        frozen_slope = -(ch.g_max * ch.f_m_inf(V) * ch.h.value).to_decimal(u.mS / u.cm ** 2)[0]
+        frozen_slope = -(ch.g_max * ch.f_m_inf(V) * ch.h.value).to_decimal(u.mS / u.cm**2)[0]
         self.assertTrue(u.math.allclose(actual, expected, atol=1e-6))
         self.assertFalse(bool(u.math.allclose(actual, frozen_slope, atol=1e-6)))
 
@@ -1496,7 +1508,7 @@ class CaZH19IOTest(unittest.TestCase):
             return ch.current(jnp.asarray([v_mV]) * u.mV).to_decimal(_DENSITY_UNIT)[0]
 
         actual = jax.grad(current_decimal)(V0)
-        expected = -(ch.g_max * ch.f_m_inf(V) * ch.h.value).to_decimal(u.mS / u.cm ** 2)[0]
+        expected = -(ch.g_max * ch.f_m_inf(V) * ch.h.value).to_decimal(u.mS / u.cm**2)[0]
         self.assertTrue(u.math.allclose(actual, expected, atol=1e-6))
 
 

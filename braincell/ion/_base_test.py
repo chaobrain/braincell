@@ -116,9 +116,7 @@ class _SimpleKineticIon(Calcium, KineticIon):
     default_Co = 2.0 * u.mM
     default_valence = 2
 
-    factors = (
-        Factor("cyto", lambda self: self.cyt_volume),
-    )
+    factors = (Factor("cyto", lambda self: self.cyt_volume),)
     species = (
         Species("Ci", init=0.1 * u.mM, factor="cyto"),
         Species("B", init=1.0 * u.mM, factor="cyto"),
@@ -153,7 +151,7 @@ class _SimpleKineticIon(Calcium, KineticIon):
             solver=solver,
             substeps=substeps,
         )
-        self.cyt_volume = braintools.init.param(3.0 * u.um ** 3, self.varshape, allow_none=False)
+        self.cyt_volume = braintools.init.param(3.0 * u.um**3, self.varshape, allow_none=False)
         self.kf = braintools.init.param(2.0 / (u.mM * u.ms), self.varshape, allow_none=False)
         self.kb = braintools.init.param(0.5 / u.ms, self.varshape, allow_none=False)
         self.Btot = braintools.init.param(1.0 * u.mM, self.varshape, allow_none=False)
@@ -189,7 +187,7 @@ class _StoichKineticIon(Calcium, KineticIon):
             solver="euler",
             substeps=1,
         )
-        self.kf = braintools.init.param(2.0 / (u.mM ** 3 * u.ms), self.varshape, allow_none=False)
+        self.kf = braintools.init.param(2.0 / (u.mM**3 * u.ms), self.varshape, allow_none=False)
         self.kb = braintools.init.param(0.5 / u.ms, self.varshape, allow_none=False)
 
 
@@ -197,9 +195,7 @@ class _UnitMismatchKineticIon(Calcium, KineticIon):
     default_Co = 2.0 * u.mM
     default_valence = 2
 
-    factors = (
-        Factor("cyto", lambda self: self.cyt_volume),
-    )
+    factors = (Factor("cyto", lambda self: self.cyt_volume),)
     species = (
         Species("Ci", init=0.1 * u.mM, factor="cyto"),
         Species("B", init=1.0 * u.mM),
@@ -225,7 +221,7 @@ class _UnitMismatchKineticIon(Calcium, KineticIon):
             solver="euler",
             substeps=1,
         )
-        self.cyt_volume = braintools.init.param(3.0 * u.um ** 3, self.varshape, allow_none=False)
+        self.cyt_volume = braintools.init.param(3.0 * u.um**3, self.varshape, allow_none=False)
         self.kf = braintools.init.param(2.0 / (u.mM * u.ms), self.varshape, allow_none=False)
         self.kb = braintools.init.param(0.5 / u.ms, self.varshape, allow_none=False)
 
@@ -258,10 +254,7 @@ class IonTemplateTest(unittest.TestCase):
 
         ion.init_state(V)
         first_E = ion.E
-        expected = (
-            u.gas_constant * ion.temp / (ion.valence * u.faraday_constant)
-            * u.math.log(ion.Co / ion.Ci)
-        )
+        expected = u.gas_constant * ion.temp / (ion.valence * u.faraday_constant) * u.math.log(ion.Co / ion.Ci)
         self.assertTrue(u.math.allclose(first_E.to_decimal(u.mV), expected.to_decimal(u.mV), atol=1e-6))
 
         ion.Ci = braintools.init.param(1.0e-3 * u.mM, ion.varshape, allow_none=False)
@@ -351,7 +344,7 @@ class IonTemplateTest(unittest.TestCase):
         ion.B.value = jnp.array([-999.0]) * u.mM
         ion.compute_derivative(V)
 
-        expected_visible_flux = (2.0 * 0.2 * 0.75 - 0.5 * 0.25)
+        expected_visible_flux = 2.0 * 0.2 * 0.75 - 0.5 * 0.25
         self.assertTrue(
             u.math.allclose(
                 ion.Ci.derivative.to_decimal(u.mM / u.ms),
@@ -386,9 +379,9 @@ class IonTemplateTest(unittest.TestCase):
         info = ion.pack_info()
 
         self.assertTrue(u.math.allclose(info.Ci, ion.Ci.value, atol=1e-12 * u.mM))
-        expected_E = (
-            u.gas_constant * ion.temp / (ion.valence * u.faraday_constant)
-        ) * u.math.log(ion.Co / ion.Ci.value)
+        expected_E = (u.gas_constant * ion.temp / (ion.valence * u.faraday_constant)) * u.math.log(
+            ion.Co / ion.Ci.value
+        )
         self.assertTrue(u.math.allclose(info.E.to_decimal(u.mV), expected_E.to_decimal(u.mV), atol=1e-6))
 
     def test_kinetic_ion_species_initializers_override_declared_inits(self) -> None:
@@ -429,8 +422,8 @@ class IonTemplateTest(unittest.TestCase):
         self.assertTrue(u.math.allclose(ion.B.value, jnp.array([0.7]) * u.mM, atol=1e-12 * u.mM))
 
     def test_factor_crossing_amount_units_can_match_between_volume_and_area_species(self) -> None:
-        cyto_amount = (1.0 * u.mM) * (3.0 * u.um ** 3)
-        pump_amount = (1.0 * u.mM * u.um) * (3.0 * u.um ** 2)
+        cyto_amount = (1.0 * u.mM) * (3.0 * u.um**3)
+        pump_amount = (1.0 * u.mM * u.um) * (3.0 * u.um**2)
         converted = pump_amount.in_unit(cyto_amount.unit)
 
         self.assertTrue(u.math.allclose(converted, 3.0 * cyto_amount.unit, atol=1e-12 * cyto_amount.unit))
@@ -446,7 +439,7 @@ class IonTemplateTest(unittest.TestCase):
 
         ion.compute_derivative(V)
 
-        expected_flux = 2.0 * (2.0 ** 3) * 5.0 - 0.5 * 7.0
+        expected_flux = 2.0 * (2.0**3) * 5.0 - 0.5 * 7.0
         self.assertTrue(
             u.math.allclose(
                 ion.A.derivative.to_decimal(u.mM / u.ms),

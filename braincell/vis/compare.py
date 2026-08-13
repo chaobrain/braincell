@@ -188,9 +188,7 @@ def compare_values(
 
     resolved_titles = titles if titles is not None else tuple(f"panel {i}" for i in range(n_panels))
     if len(resolved_titles) != n_panels:
-        raise ValueError(
-            f"compare_values(...) received {len(resolved_titles)} titles for {n_panels} panels."
-        )
+        raise ValueError(f"compare_values(...) received {len(resolved_titles)} titles for {n_panels} panels.")
 
     for values, ax, title in zip(value_arrays, render_axes, resolved_titles):
         plot2d(

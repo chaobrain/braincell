@@ -138,9 +138,7 @@ def plot_movie(
 
     arr = _strip_units(values_over_time)
     if arr.ndim != 2:
-        raise ValueError(
-            f"plot_movie(...) expects a 2-D (T, N) values array, got shape {arr.shape!r}."
-        )
+        raise ValueError(f"plot_movie(...) expects a 2-D (T, N) values array, got shape {arr.shape!r}.")
     n_frames = arr.shape[0]
     if n_frames == 0:
         raise ValueError("plot_movie(...) requires at least one frame.")
@@ -184,9 +182,7 @@ def plot_movie(
             value_label=value_label,
             mode=mode,
         )
-    raise ValueError(
-        f"plot_movie(...) dimensionality must be '2d' or '3d', got {dimensionality!r}."
-    )
+    raise ValueError(f"plot_movie(...) dimensionality must be '2d' or '3d', got {dimensionality!r}.")
 
 
 def _strip_units(values) -> np.ndarray:
@@ -202,6 +198,7 @@ def _strip_units(values) -> np.ndarray:
 # ---------------------------------------------------------------------------
 # 2D movie
 # ---------------------------------------------------------------------------
+
 
 def _plot_movie_2d(
     morpho: Morphology,
@@ -250,8 +247,7 @@ def _plot_movie_2d(
     value_collections = [
         collection
         for collection in ax.collections
-        if isinstance(collection, (LineCollection, PolyCollection))
-        and collection.get_array() is not None
+        if isinstance(collection, (LineCollection, PolyCollection)) and collection.get_array() is not None
     ]
 
     # Resolve per-frame per-primitive value arrays once so update() is
@@ -318,6 +314,7 @@ def _save_animation_2d(animation, out: Path, *, fps: int) -> None:
 # 3D movie
 # ---------------------------------------------------------------------------
 
+
 def _plot_movie_3d(
     morpho: Morphology,
     values: np.ndarray,
@@ -362,9 +359,7 @@ def _plot_movie_3d(
         poly = pv.PolyData()
         poly.points = batch.points_um
         poly.lines = batch.lines
-        point_values = np.concatenate(
-            [initial_values[branch_idx].point_values for branch_idx in batch.branch_indices]
-        )
+        point_values = np.concatenate([initial_values[branch_idx].point_values for branch_idx in batch.branch_indices])
         poly.point_data["values"] = point_values
         plotter.add_mesh(
             poly,

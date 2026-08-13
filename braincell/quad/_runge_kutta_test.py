@@ -27,13 +27,13 @@ class HH(braincell.SingleCompartment):
     def __init__(self, size, solver='rk4'):
         super().__init__(size, solver=solver)
 
-        self.na = braincell.ion.SodiumFixed(size, E=50. * u.mV)
+        self.na = braincell.ion.SodiumFixed(size, E=50.0 * u.mV)
         self.na.add(INa=braincell.channel.Na_HH1952(size))
 
-        self.k = braincell.ion.PotassiumFixed(size, E=-77. * u.mV)
+        self.k = braincell.ion.PotassiumFixed(size, E=-77.0 * u.mV)
         self.k.add(IK=braincell.channel.K_HH1952(size))
 
-        self.IL = braincell.channel.IL(size, E=-54.387 * u.mV, g_max=0.03 * (u.mS / u.cm ** 2))
+        self.IL = braincell.channel.IL(size, E=-54.387 * u.mV, g_max=0.03 * (u.mS / u.cm**2))
 
 
 def integrate(method: str, dt=0.01 * u.ms):
@@ -43,11 +43,11 @@ def integrate(method: str, dt=0.01 * u.ms):
 
     def step_fun(t):
         with brainstate.environ.context(t=t):
-            spike = hh.update(10 * u.nA / u.cm ** 2)
+            spike = hh.update(10 * u.nA / u.cm**2)
         return hh.V.value
 
     with brainstate.environ.context(dt=dt):
-        times = u.math.arange(0. * u.ms, 10 * u.ms, brainstate.environ.get_dt())
+        times = u.math.arange(0.0 * u.ms, 10 * u.ms, brainstate.environ.get_dt())
         vs = brainstate.transform.for_loop(step_fun, times)
     return vs
 
@@ -152,7 +152,6 @@ from braincell import (
     DiffEqState,
 )
 from braincell.quad import (
-
     euler_step,
     heun2_step,
     heun3_step,
@@ -242,12 +241,8 @@ class RungeKuttaConvergenceTest(unittest.TestCase):
         target = math.exp(-1.0)
         for name, method, order in self.METHODS_AND_ORDERS:
             with self.subTest(method=name):
-                err_coarse = abs(
-                    self._final_value(method, dt_ms=0.4, n_steps=25) - target
-                )
-                err_fine = abs(
-                    self._final_value(method, dt_ms=0.1, n_steps=100) - target
-                )
+                err_coarse = abs(self._final_value(method, dt_ms=0.4, n_steps=25) - target)
+                err_fine = abs(self._final_value(method, dt_ms=0.1, n_steps=100) - target)
                 # Small noise margin so float32 round-off near the noise
                 # floor doesn't trip an otherwise consistent method.
                 self.assertLessEqual(err_fine, err_coarse + 1e-5)
@@ -257,9 +252,7 @@ class RungeKuttaConvergenceTest(unittest.TestCase):
         # only first- and second-order methods, where the error stays well
         # above the float32 noise floor for the step sizes considered.
         target = math.exp(-1.0)
-        order_methods = [
-            (name, m, o) for name, m, o in self.METHODS_AND_ORDERS if o <= 2
-        ]
+        order_methods = [(name, m, o) for name, m, o in self.METHODS_AND_ORDERS if o <= 2]
         for name, method, order in order_methods:
             with self.subTest(method=name, order=order):
                 err1 = abs(self._final_value(method, dt_ms=0.4, n_steps=25) - target)
@@ -273,7 +266,7 @@ class RungeKuttaConvergenceTest(unittest.TestCase):
 
     def test_pre_and_post_integral_called_once_per_step(self):
         m = _LinearDecay()
-        with brainstate.environ.context(t=0. * u.ms, dt=0.1 * u.ms):
+        with brainstate.environ.context(t=0.0 * u.ms, dt=0.1 * u.ms):
             rk4_step(m)
         self.assertEqual(m.pre_calls, 1)
         self.assertEqual(m.post_calls, 1)
@@ -281,7 +274,7 @@ class RungeKuttaConvergenceTest(unittest.TestCase):
     def test_aux_state_unchanged_after_step(self):
         m = _LinearDecay()
         before = np.array(m.aux.value)
-        with brainstate.environ.context(t=0. * u.ms, dt=0.1 * u.ms):
+        with brainstate.environ.context(t=0.0 * u.ms, dt=0.1 * u.ms):
             rk4_step(m)
         np.testing.assert_array_equal(m.aux.value, before)
 

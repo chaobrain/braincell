@@ -34,7 +34,6 @@ Nothing in this module mutates state; every function is a pure
 transformation over numpy arrays and float scalars.
 """
 
-
 import math
 
 import numpy as np
@@ -47,6 +46,7 @@ from ._common import LayoutBranch2D, _LayoutSpec2D
 # ---------------------------------------------------------------------------
 # Sampling along an existing layout branch
 # ---------------------------------------------------------------------------
+
 
 def point_on_layout_branch(layout: LayoutBranch2D, x: float) -> np.ndarray:
     point_um, _ = sample_layout_branch(layout, x)
@@ -78,6 +78,7 @@ def sample_layout_branch(layout: LayoutBranch2D, x: float) -> tuple[np.ndarray, 
 # ---------------------------------------------------------------------------
 # Layout branch construction
 # ---------------------------------------------------------------------------
+
 
 def _make_layout_branch(
     branch: MorphoBranch,
@@ -147,10 +148,9 @@ def _layout_branch_from_angles(
     cumulative_lengths_um = np.concatenate(([0.0], np.cumsum(spec.segment_lengths_um)))
     raw_segment_points_um = np.zeros((len(spec.segment_lengths_um) + 1, 2), dtype=float)
     for segment_index, segment_length_um in enumerate(spec.segment_lengths_um):
-        raw_segment_points_um[segment_index + 1] = (
-            raw_segment_points_um[segment_index]
-            + segment_directions_um[segment_index] * float(segment_length_um)
-        )
+        raw_segment_points_um[segment_index + 1] = raw_segment_points_um[segment_index] + segment_directions_um[
+            segment_index
+        ] * float(segment_length_um)
 
     raw_layout = LayoutBranch2D(
         branch_index=branch.index,
@@ -199,6 +199,7 @@ def _layout_branch_from_points(
 # ---------------------------------------------------------------------------
 # Angle interpolation helpers
 # ---------------------------------------------------------------------------
+
 
 def _smoothstep(values: np.ndarray) -> np.ndarray:
     values = np.asarray(values, dtype=float)

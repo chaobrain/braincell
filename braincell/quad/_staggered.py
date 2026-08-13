@@ -51,10 +51,7 @@ __all__ = [
     description="Staggered voltage / ion-channel splitting using DHS + ind_exp_euler.",
 )
 @set_module_as('braincell.quad')
-def staggered_step(
-    target: DiffEqModule,
-    *args
-):
+def staggered_step(target: DiffEqModule, *args):
     r"""Advance a multi-compartment cell by one *staggered* time step.
 
     The staggered (operator-splitting) scheme separates the membrane voltage
@@ -128,8 +125,7 @@ def staggered_step(
     """
     if not isinstance(target, DiffEqModule):
         raise TypeError(
-            f"The stagger integrator only support {DiffEqModule.__name__}, "
-            f"but we got {type(target)} instead."
+            f"The stagger integrator only support {DiffEqModule.__name__}, but we got {type(target)} instead."
         )
     t = brainstate.environ.get('t', 0.0)
     dt = brainstate.environ.get('dt')
@@ -154,8 +150,7 @@ def staggered_step(
             target._update_ion_channels_by_integration(point_V)
     else:
         raise ValueError(
-            "ion_channel_update_order must be 'family' or 'integration', "
-            f"got {target.ion_channel_update_order!r}."
+            f"ion_channel_update_order must be 'family' or 'integration', got {target.ion_channel_update_order!r}."
         )
 
 
@@ -362,7 +357,9 @@ def _build_dhs_static_source(target, *, node_tree, scheduling) -> DHSStaticSourc
     )
 
 
-def _build_node_tree_axial_matrix(target, *, node_tree, point_id_to_row) -> tuple[int, np.ndarray, np.ndarray, np.ndarray]:
+def _build_node_tree_axial_matrix(
+    target, *, node_tree, point_id_to_row
+) -> tuple[int, np.ndarray, np.ndarray, np.ndarray]:
     """Assemble the mixed node-tree axial operator in ``ms^-1``."""
     n_point = len(node_tree.nodes)
     point_id_to_row = np.asarray(point_id_to_row, dtype=np.int32)
@@ -383,8 +380,8 @@ def _build_node_tree_axial_matrix(target, *, node_tree, point_id_to_row) -> tupl
         # Dynamic rows use physical membrane capacitance. Algebraic boundary rows
         # use an arbitrary nonzero scale because the row is only used as a
         # constraint during static reduction.
-        parent_coeff = _scalar_decimal(conductance / row_capacitance[parent_row], u.ms ** -1)
-        child_coeff = _scalar_decimal(conductance / row_capacitance[child_row], u.ms ** -1)
+        parent_coeff = _scalar_decimal(conductance / row_capacitance[parent_row], u.ms**-1)
+        child_coeff = _scalar_decimal(conductance / row_capacitance[child_row], u.ms**-1)
 
         axial_matrix[parent_row, parent_row] += parent_coeff
         axial_matrix[parent_row, child_row] -= parent_coeff
@@ -431,9 +428,9 @@ def _build_dhs_static_cache(source: DHSStaticSource) -> DHSStaticCache:
     float_dtype = jnp.asarray(0.0).dtype
     return DHSStaticCache(
         float_dtype=float_dtype,
-        diag_ms_inv=jnp.asarray(source.diag_ms_inv_np, dtype=brainstate.environ.dftype()) * (u.ms ** -1),
-        lowers_ms_inv=jnp.asarray(source.lowers_ms_inv_np, dtype=brainstate.environ.dftype()) * (u.ms ** -1),
-        uppers_ms_inv=jnp.asarray(source.uppers_ms_inv_np, dtype=brainstate.environ.dftype()) * (u.ms ** -1),
+        diag_ms_inv=jnp.asarray(source.diag_ms_inv_np, dtype=brainstate.environ.dftype()) * (u.ms**-1),
+        lowers_ms_inv=jnp.asarray(source.lowers_ms_inv_np, dtype=brainstate.environ.dftype()) * (u.ms**-1),
+        uppers_ms_inv=jnp.asarray(source.uppers_ms_inv_np, dtype=brainstate.environ.dftype()) * (u.ms**-1),
     )
 
 
@@ -449,9 +446,9 @@ def _get_dhs_static_cache(target, source: DHSStaticSource) -> DHSStaticCache:
     return cache
 
 
-def _build_dhs_numeric_state(V_n, linear, const, *, dt, static_source: DHSStaticSource,
-                             static_cache: DHSStaticCache,
-                             edge_point_current=None) -> DHSNumericState:
+def _build_dhs_numeric_state(
+    V_n, linear, const, *, dt, static_source: DHSStaticSource, static_cache: DHSStaticCache, edge_point_current=None
+) -> DHSNumericState:
     """Assemble the numeric DHS solve state for one timestep.
 
     Parameters
@@ -480,14 +477,16 @@ def _build_dhs_numeric_state(V_n, linear, const, *, dt, static_source: DHSStatic
     n_point = static_source.n_point
 
     rhs_midpoint_mv = _to_jax_quantity(V_n + dt * const, u.mV)
-    linear_ms_inv = _to_jax_quantity(linear, u.ms ** -1)
+    linear_ms_inv = _to_jax_quantity(linear, u.ms**-1)
     dt_ms = _to_jax_quantity(dt, u.ms)
 
     diag_base = static_cache.diag_ms_inv * dt_ms
     lower_base = static_cache.lowers_ms_inv * dt_ms
     upper_base = static_cache.uppers_ms_inv * dt_ms
     diag_base_mantissa = u.get_mantissa(diag_base)
-    diag_base_with_sentinel = jnp.concatenate([diag_base_mantissa, jnp.ones_like(diag_base_mantissa[:1])], axis=0) * u.UNITLESS
+    diag_base_with_sentinel = (
+        jnp.concatenate([diag_base_mantissa, jnp.ones_like(diag_base_mantissa[:1])], axis=0) * u.UNITLESS
+    )
 
     diags = u.math.broadcast_to(diag_base_with_sentinel[None, :], (batch_size, n_point + 1))
     diag_update = jnp.ones_like(u.get_mantissa(linear_ms_inv)) * u.UNITLESS - dt_ms * linear_ms_inv
@@ -507,8 +506,10 @@ def _build_dhs_numeric_state(V_n, linear, const, *, dt, static_source: DHSStatic
     return DHSNumericState(
         diags=diags,
         solves=solves,
-        lowers=jnp.concatenate([u.get_mantissa(lower_base), jnp.zeros_like(u.get_mantissa(lower_base[:1]))], axis=0) * u.UNITLESS,
-        uppers=jnp.concatenate([u.get_mantissa(upper_base), jnp.zeros_like(u.get_mantissa(upper_base[:1]))], axis=0) * u.UNITLESS,
+        lowers=jnp.concatenate([u.get_mantissa(lower_base), jnp.zeros_like(u.get_mantissa(lower_base[:1]))], axis=0)
+        * u.UNITLESS,
+        uppers=jnp.concatenate([u.get_mantissa(upper_base), jnp.zeros_like(u.get_mantissa(upper_base[:1]))], axis=0)
+        * u.UNITLESS,
     )
 
 
@@ -527,16 +528,18 @@ def _edge_point_current(target, *, t, static_source: DHSStaticSource):
 def _edge_current_voltage_delta(edge_point_current, *, dt, static_source: DHSStaticSource):
     current_by_point = u.math.asarray(edge_point_current.to_decimal(u.nA))
     current_by_row = current_by_point[..., static_source.row_to_point_id_np]
-    capacitance = jnp.asarray(
-        static_source.row_capacitance_uF_np,
-        dtype=brainstate.environ.dftype(),
-    ) * u.uF
+    capacitance = (
+        jnp.asarray(
+            static_source.row_capacitance_uF_np,
+            dtype=brainstate.environ.dftype(),
+        )
+        * u.uF
+    )
     rate = (u.Quantity(current_by_row, u.nA) / capacitance).in_unit(u.mV / u.ms)
     return (dt * rate).in_unit(u.mV)
 
 
-def _restore_midpoint_voltage(solves: object, *, dynamic_rows: np.ndarray,
-                              target_shape: tuple[int, ...]) -> object:
+def _restore_midpoint_voltage(solves: object, *, dynamic_rows: np.ndarray, target_shape: tuple[int, ...]) -> object:
     return solves[:, dynamic_rows].reshape(target_shape)
 
 
@@ -628,13 +631,9 @@ def _check_comp_triang(diags, solves, lowers, uppers, edges):
     if isinstance(uppers, u.Quantity) and not u.get_unit(uppers).is_unitless:
         raise ValueError(f"uppers must be unitless, got unit={u.get_unit(uppers)}")
     if lowers.shape[0] != diags.shape[1]:
-        raise ValueError(
-            f"lowers.shape[0]={lowers.shape[0]} must equal diags.shape[1]={diags.shape[1]}"
-        )
+        raise ValueError(f"lowers.shape[0]={lowers.shape[0]} must equal diags.shape[1]={diags.shape[1]}")
     if uppers.shape[0] != diags.shape[1]:
-        raise ValueError(
-            f"uppers.shape[0]={uppers.shape[0]} must equal diags.shape[1]={diags.shape[1]}"
-        )
+        raise ValueError(f"uppers.shape[0]={uppers.shape[0]} must equal diags.shape[1]={diags.shape[1]}")
     if edges.ndim != 2 or edges.shape[1] != 2:
         raise ValueError(f"edges must have shape (_, 2), got {edges.shape}")
 
@@ -645,8 +644,8 @@ def comp_triang_raw(diags, solves, lowers, uppers, edges, level_offsets):
     if _profile_dhs_levels_enabled():
         return _comp_triang_raw_profiled(diags, solves, lowers, uppers, edges, level_offsets)
     for i in range(level_offsets.shape[0] - 1):
-        children = edges[level_offsets[i]:level_offsets[i + 1], 0]
-        parent = edges[level_offsets[i]:level_offsets[i + 1], 1]
+        children = edges[level_offsets[i] : level_offsets[i + 1], 0]
+        parent = edges[level_offsets[i] : level_offsets[i + 1], 1]
         lower_val = lowers[children]
         upper_val = uppers[children]
         child_diag = diags[:, children]
@@ -670,10 +669,7 @@ def _comp_triang_raw_profiled(diags, solves, lowers, uppers, edges, level_offset
         start = int(level_offsets[i])
         stop = int(level_offsets[i + 1])
         edge_count = stop - start
-        scope = (
-            f"braincell:dhs:forward_level:"
-            f"i={i:03d}:edges={edge_count:06d}:batch={batch_size}"
-        )
+        scope = f"braincell:dhs:forward_level:i={i:03d}:edges={edge_count:06d}:batch={batch_size}"
         level_edges = edges[start:stop]
         with jax.named_scope(scope):
             diags, solves = jax.named_call(_comp_triang_level, name=scope)(
@@ -716,19 +712,14 @@ def _check_comp_backsub(diags, solves, lowers, backsub_indices):
     if isinstance(lowers, u.Quantity) and not u.get_unit(lowers).is_unitless:
         raise ValueError(f"lowers must be unitless, got unit={u.get_unit(lowers)}")
     if diags.shape != solves.shape:
-        raise ValueError(
-            f"diags.shape={diags.shape} must equal solves.shape={solves.shape}"
-        )
+        raise ValueError(f"diags.shape={diags.shape} must equal solves.shape={solves.shape}")
     if lowers.shape[0] != diags.shape[1]:
-        raise ValueError(
-            f"lowers.shape[0]={lowers.shape[0]} must equal diags.shape[1]={diags.shape[1]}"
-        )
+        raise ValueError(f"lowers.shape[0]={lowers.shape[0]} must equal diags.shape[1]={diags.shape[1]}")
     if backsub_indices.ndim != 2:
         raise ValueError(f"backsub_indices must be 2D, got ndim={backsub_indices.ndim}")
     if backsub_indices.shape[1] != diags.shape[1]:
         raise ValueError(
-            f"backsub_indices.shape[1]={backsub_indices.shape[1]} "
-            f"must equal diags.shape[1]={diags.shape[1]}"
+            f"backsub_indices.shape[1]={backsub_indices.shape[1]} must equal diags.shape[1]={diags.shape[1]}"
         )
 
 

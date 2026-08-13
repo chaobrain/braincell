@@ -208,7 +208,7 @@ class MorphoMetric:
 
     def __str__(self) -> str:
         return (
-            f"{'-'*35}\n"
+            f"{'-' * 35}\n"
             f"{'n_branches':<16} | {self.n_branches}\n"
             f"{'n_stems':<16} | {self.n_stems}\n"
             f"{'n_bifurcations':<16} | {self.n_bifurcations}\n"
@@ -218,7 +218,7 @@ class MorphoMetric:
             f"{'total_area':<16} | {self._format_value(self.total_area)}\n"
             f"{'total_volume':<16} | {self._format_value(self.total_volume)}\n"
             f"{'max_path_dist':<16} | {self._format_value(self.max_path_distance)}\n"
-            f"{'-'*35}\n"
+            f"{'-' * 35}\n"
         )
 
 
@@ -844,13 +844,13 @@ class Morphology:
     def total_area(self) -> Quantity:
         lengths_um, r0_um, r1_um = self._all_segment_arrays_um()
         value = np.sum(np.pi * (r0_um + r1_um) * np.sqrt(lengths_um * lengths_um + (r1_um - r0_um) * (r1_um - r0_um)))
-        return u.Quantity(value, u.um ** 2)
+        return u.Quantity(value, u.um**2)
 
     @property
     def total_volume(self) -> Quantity:
         lengths_um, r0_um, r1_um = self._all_segment_arrays_um()
         value = np.sum(np.pi * lengths_um * (r0_um * r0_um + r0_um * r1_um + r1_um * r1_um) / 3.0)
-        return u.Quantity(value, u.um ** 3)
+        return u.Quantity(value, u.um**3)
 
     @property
     def n_branches(self) -> int:
@@ -971,10 +971,7 @@ class Morphology:
             *branch_index*.
         """
         node_id = self._node_id_from_index(branch_index)
-        return tuple(
-            self._branch_index(path_node_id)
-            for path_node_id in self._path_node_ids(node_id)
-        )
+        return tuple(self._branch_index(path_node_id) for path_node_id in self._path_node_ids(node_id))
 
     def path_length_to_root(self, branch_index: int) -> Quantity:
         """Return the path length from a branch to the root.
@@ -1409,10 +1406,7 @@ class Morphology:
         from braincell.filter import LocsetExpr, RegionExpr
 
         if not isinstance(expr, (RegionExpr, LocsetExpr)):
-            raise TypeError(
-                "Morpho.select(...) expects RegionExpr or LocsetExpr. "
-                f"Got {type(expr).__name__!s}."
-            )
+            raise TypeError(f"Morpho.select(...) expects RegionExpr or LocsetExpr. Got {type(expr).__name__!s}.")
         return expr.evaluate(self, cache=cache)
 
     def attach(
@@ -1525,19 +1519,19 @@ class Morphology:
     def __repr__(self) -> str:
         geo_status = "complete 3d points" if self.has_full_point_geometry else "incomplete 3d points"
         return f"Morpho(root={self.root.name!r}, n_branches={self.n_branches}, geometry = {geo_status})"
-    
+
     def __str__(self) -> str:
         """Return a formatted summary with key metrics."""
         geo_status = "complete 3d points" if self.has_full_point_geometry else "incomplete 3d points"
         return (
-            f"{'-'*35}\n"
+            f"{'-' * 35}\n"
             f"{'root':<12} | {self.root.name}\n"
             f"{'n_branches':<12} | {self.n_branches}\n"
             f"{'geometry':<12} | {geo_status}\n"
             f"{'length':<12} | {self.total_length:.2f}\n"
             f"{'area':<12} | {self.total_area:.2f}\n"
             f"{'volume':<12} | {self.total_volume:.2f}\n"
-            f"{'-'*35}\n"
+            f"{'-' * 35}\n"
         )
 
     def _ordered_node_ids(self) -> tuple[int, ...]:
@@ -1558,8 +1552,11 @@ class Morphology:
                 )
             )
         if order == "depth":
-            return tuple(sorted(ordered_ids,
-                                key=lambda node_id: (len(self._path_node_ids(node_id)), self._branch_index(node_id))))
+            return tuple(
+                sorted(
+                    ordered_ids, key=lambda node_id: (len(self._path_node_ids(node_id)), self._branch_index(node_id))
+                )
+            )
         raise ValueError(f"Unsupported branch order {order!r}.")
 
     @staticmethod
@@ -1714,9 +1711,7 @@ class Morphology:
         branch = self._normalize_child_branch(value)
         resolved_name = self._resolve_node_name(branch, explicit_name=child_name)
         if resolved_name in parent._children:
-            raise ValueError(
-                f"Parent branch {parent.name!r} already has a child named {resolved_name!r}."
-            )
+            raise ValueError(f"Parent branch {parent.name!r} already has a child named {resolved_name!r}.")
         self._validate_parent_x(parent, parent_x)
         self._validate_child_x(child_x)
         node_id = self._register_node(
@@ -2025,10 +2020,7 @@ class MorphoBranch:
         )
 
     def __repr__(self) -> str:
-        return (
-            f"MorphoBranch(name={self.name!r}, type={self.branch.type!r}, "
-            f"index={self.index!r})"
-        )
+        return f"MorphoBranch(name={self.name!r}, type={self.branch.type!r}, index={self.index!r})"
 
 
 class _MorphAttachPoint:
@@ -2055,9 +2047,9 @@ class _MorphAttachPoint:
 
     def __repr__(self) -> str:
         return (
-            f"_MorphAttachPoint(parent={self._parent.name!r}, "
-            f"parent_x={self._parent_x!r}, child_x={self._child_x!r})"
+            f"_MorphAttachPoint(parent={self._parent.name!r}, parent_x={self._parent_x!r}, child_x={self._child_x!r})"
         )
+
 
 def _parse_attachment_key(key: object) -> tuple[float, float]:
     if isinstance(key, bool):

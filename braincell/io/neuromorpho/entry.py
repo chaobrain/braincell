@@ -21,8 +21,6 @@ manage a cache by hand. For batch search, custom HTTP sessions, or
 explicit cache control, drop down to :class:`NeuroMorphoClient`.
 """
 
-
-
 from pathlib import Path
 from typing import TYPE_CHECKING
 

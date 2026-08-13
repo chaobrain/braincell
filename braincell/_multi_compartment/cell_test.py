@@ -120,11 +120,12 @@ class TestCellDeclaration(unittest.TestCase):
     def test_paint_returns_self_for_chaining(self):
         cell = _simple_cell()
         from braincell import CableProperty
+
         result = cell.paint(
             cell.paint_rules[0].region,
             CableProperty(
                 resting_potential=-70 * u.mV,
-                membrane_capacitance=1.0 * u.uF / u.cm ** 2,
+                membrane_capacitance=1.0 * u.uF / u.cm**2,
                 axial_resistivity=100.0 * u.ohm * u.cm,
             ),
         )
@@ -139,7 +140,6 @@ class TestCellDeclaration(unittest.TestCase):
 
 
 class TestCellLifecycle(unittest.TestCase):
-
     def test_declaration_phase_flag(self):
         cell = _cell_with_probe()
         self.assertFalse(cell._initialized)
@@ -166,7 +166,7 @@ class TestCellLifecycle(unittest.TestCase):
         cell = _cell_with_probe()
         cell.init_state()
         with self.assertRaisesRegex(RuntimeError, r"reset\(\)"):
-            cell.paint(AllRegion(), mech.Channel("IL", g_max=0.1 * u.mS / u.cm ** 2, E=-70 * u.mV))
+            cell.paint(AllRegion(), mech.Channel("IL", g_max=0.1 * u.mS / u.cm**2, E=-70 * u.mV))
 
     def test_place_after_init_raises(self):
         cell = _cell_with_probe()
@@ -204,7 +204,7 @@ class TestCellLifecycle(unittest.TestCase):
         self.assertFalse(hasattr(cell, "spike"))
 
         # Paint after reset works.
-        cell.paint(AllRegion(), mech.Channel("IL", g_max=0.1 * u.mS / u.cm ** 2, E=-70 * u.mV))
+        cell.paint(AllRegion(), mech.Channel("IL", g_max=0.1 * u.mS / u.cm**2, E=-70 * u.mV))
         cell.init_state()
         self.assertTrue(cell._initialized)
 
@@ -399,9 +399,7 @@ class CellMembraneLinearizerTest(unittest.TestCase):
                 linear, derivative = cell._voltage_linearizer()(cell.V.value)
 
                 def objective(voltage_mantissa):
-                    _, value = cell._voltage_linearizer()(
-                        u.Quantity(voltage_mantissa, voltage_unit)
-                    )
+                    _, value = cell._voltage_linearizer()(u.Quantity(voltage_mantissa, voltage_unit))
                     return jnp.sum(u.get_mantissa(value))
 
                 gradient = jax.grad(objective)(u.get_mantissa(cell.V.value))
@@ -655,9 +653,7 @@ class CellDoesNotAllocatePlaceholderIonsEagerlyTest(unittest.TestCase):
 
         with patch(
             "braincell._multi_compartment.cell.build_placeholder_ions",
-            side_effect=AssertionError(
-                "placeholder must not be called at __init__"
-            ),
+            side_effect=AssertionError("placeholder must not be called at __init__"),
         ):
             _ = Cell(tree)
 

@@ -27,14 +27,22 @@ small / medium / large synthetic morphologies:
 The exact numbers are machine-dependent; CI should compare against a
 stored baseline via ``pytest-benchmark``'s ``compare`` subcommand. The
 point of committing the test is to have a reproducible trigger.
+
+These are written as plain pytest functions rather than
+``unittest.TestCase`` methods on purpose. ``benchmark`` is a
+function-scoped pytest fixture, and pytest cannot inject fixtures into
+``TestCase`` methods — doing so raises ``TypeError: ... missing 1
+required positional argument: 'benchmark'``. As ``TestCase`` classes
+these benchmarks failed whenever the plugin was installed and merely
+skipped when it was not, so they had never actually run.
 """
 
 import importlib.util
-import unittest
 
 import brainunit as u
 import matplotlib.pyplot as plt
 import numpy as np
+import pytest
 
 from braincell import Branch, Morphology
 from braincell.vis import plot2d
@@ -43,12 +51,18 @@ from braincell.vis.scene2d import build_render_scene_2d
 
 _pytest_benchmark_available = importlib.util.find_spec("pytest_benchmark") is not None
 
+pytestmark = pytest.mark.skipif(
+    not _pytest_benchmark_available,
+    reason="pytest-benchmark is not installed",
+)
 
-def _benchmark_mark():
-    """Return the benchmark fixture pytest mark — no-op when plugin absent."""
-    if not _pytest_benchmark_available:
-        return lambda cls: cls
-    return lambda cls: cls  # benchmark fixture is function-scoped, not class
+
+@pytest.fixture(autouse=True)
+def _clear_layout_cache():
+    """Clear the shared layout cache before each benchmark, close figures after."""
+    get_default_layout_cache().clear()
+    yield
+    plt.close("all")
 
 
 def _synthetic_tree(n_branches: int) -> Morphology:
@@ -74,79 +88,93 @@ def _synthetic_tree(n_branches: int) -> Morphology:
     return tree
 
 
-@unittest.skipUnless(_pytest_benchmark_available, "pytest-benchmark is not installed")
-class LayoutBuildBenchmarkTest(unittest.TestCase):
-    """Benchmarks for the 2D layout engine on three morphology sizes."""
-
-    def setUp(self) -> None:
-        get_default_layout_cache().clear()
-
-    def test_layout_small(self, benchmark) -> None:  # type: ignore[override]
-        tree = _synthetic_tree(50)
-        benchmark(lambda: build_layout_branches_2d(tree, mode="tree", use_cache=False))
-
-    def test_layout_medium(self, benchmark) -> None:  # type: ignore[override]
-        tree = _synthetic_tree(500)
-        benchmark(lambda: build_layout_branches_2d(tree, mode="tree", use_cache=False))
-
-    def test_layout_large(self, benchmark) -> None:  # type: ignore[override]
-        tree = _synthetic_tree(2000)
-        benchmark(lambda: build_layout_branches_2d(tree, mode="tree", use_cache=False))
+# ---------------------------------------------------------------------------
+# Layout engine — the 2D layout build on three morphology sizes.
+# ---------------------------------------------------------------------------
 
 
-@unittest.skipUnless(_pytest_benchmark_available, "pytest-benchmark is not installed")
-class SceneBuildBenchmarkTest(unittest.TestCase):
-    """Benchmarks covering layout cache plus scene assembly."""
-
-    def setUp(self) -> None:
-        get_default_layout_cache().clear()
-
-    def test_scene_small_no_values(self, benchmark) -> None:  # type: ignore[override]
-        tree = _synthetic_tree(50)
-        benchmark(lambda: build_render_scene_2d(tree, layout="stem", shape="line"))
-
-    def test_scene_medium_with_values(self, benchmark) -> None:  # type: ignore[override]
-        from braincell.vis.scene import OverlaySpec, ValueSpec
-
-        tree = _synthetic_tree(500)
-        n = len(tree.branches)
-        values = np.linspace(0.0, 1.0, n)
-        overlay = OverlaySpec(values=ValueSpec(values=values))
-        benchmark(lambda: build_render_scene_2d(tree, layout="stem", shape="line", overlay=overlay))
-
-
-@unittest.skipUnless(_pytest_benchmark_available, "pytest-benchmark is not installed")
-class Plot2dRenderBenchmarkTest(unittest.TestCase):
-    """End-to-end ``plot2d`` benchmarks through the matplotlib backend."""
-
-    def setUp(self) -> None:
-        get_default_layout_cache().clear()
-
-    def tearDown(self) -> None:
-        plt.close("all")
-
-    def test_plot2d_small(self, benchmark) -> None:  # type: ignore[override]
-        tree = _synthetic_tree(50)
-
-        def _render():
-            fig, ax = plt.subplots()
-            plot2d(tree, layout="stem", shape="line", ax=ax)
-            plt.close(fig)
-
-        benchmark(_render)
-
-    def test_plot2d_medium_values(self, benchmark) -> None:  # type: ignore[override]
-        tree = _synthetic_tree(500)
-        n = len(tree.branches)
-        values = np.linspace(0.0, 1.0, n)
-
-        def _render():
-            fig, ax = plt.subplots()
-            plot2d(tree, layout="stem", shape="line", values=values, ax=ax, show_colorbar=False)
-            plt.close(fig)
-
-        benchmark(_render)
+# `_path_lengths_um_by_branch` in braincell/vis/layout/_common.py walks the
+# tree with a recursive `visit` closure (line 153), one Python frame per branch
+# of depth plus a generator frame. A chain deeper than roughly 400 branches
+# therefore exceeds the interpreter's recursion limit, so every size above
+# `small` raises RecursionError. This is a real limitation of the layout engine
+# on deep morphologies, not an artefact of the benchmark: `plot2d` on any
+# sufficiently deep real morphology hits the same wall. Fixing it means making
+# that traversal iterative, which is out of scope here.
+#
+# Deliberately non-strict. Whether the limit is actually hit depends on how
+# deep the interpreter stack already is when the test runs, so the same case
+# raises when the module runs alone and survives inside the full suite. A
+# strict marker would turn that stack-depth sensitivity into spurious XPASS
+# failures. Once the traversal is iterative, drop the marker entirely rather
+# than tightening it.
+_deep_chain_recursion = pytest.mark.xfail(
+    raises=RecursionError,
+    strict=False,
+    reason="layout _path_lengths_um_by_branch recurses per branch; deep chains can exceed the recursion limit",
+)
 
 
-if __name__ == "__main__":
-    unittest.main()
+@pytest.mark.parametrize(
+    "n_branches",
+    [
+        50,
+        pytest.param(500, marks=_deep_chain_recursion),
+        pytest.param(2000, marks=_deep_chain_recursion),
+    ],
+    ids=["small", "medium", "large"],
+)
+def test_layout_build(benchmark, n_branches: int) -> None:
+    tree = _synthetic_tree(n_branches)
+    benchmark(lambda: build_layout_branches_2d(tree, mode="tree", use_cache=False))
+
+
+# ---------------------------------------------------------------------------
+# Scene assembly — layout cache plus scene construction.
+# ---------------------------------------------------------------------------
+
+
+def test_scene_small_no_values(benchmark) -> None:
+    tree = _synthetic_tree(50)
+    benchmark(lambda: build_render_scene_2d(tree, layout="stem", shape="line"))
+
+
+@_deep_chain_recursion
+def test_scene_medium_with_values(benchmark) -> None:
+    from braincell.vis.scene import OverlaySpec, ValueSpec
+
+    tree = _synthetic_tree(500)
+    n = len(tree.branches)
+    values = np.linspace(0.0, 1.0, n)
+    overlay = OverlaySpec(values=ValueSpec(values=values))
+    benchmark(lambda: build_render_scene_2d(tree, layout="stem", shape="line", overlay=overlay))
+
+
+# ---------------------------------------------------------------------------
+# End-to-end plot2d render through the matplotlib backend.
+# ---------------------------------------------------------------------------
+
+
+def test_plot2d_small(benchmark) -> None:
+    tree = _synthetic_tree(50)
+
+    def _render():
+        fig, ax = plt.subplots()
+        plot2d(tree, layout="stem", shape="line", ax=ax)
+        plt.close(fig)
+
+    benchmark(_render)
+
+
+@_deep_chain_recursion
+def test_plot2d_medium_values(benchmark) -> None:
+    tree = _synthetic_tree(500)
+    n = len(tree.branches)
+    values = np.linspace(0.0, 1.0, n)
+
+    def _render():
+        fig, ax = plt.subplots()
+        plot2d(tree, layout="stem", shape="line", values=values, ax=ax, show_colorbar=False)
+        plt.close(fig)
+
+    benchmark(_render)

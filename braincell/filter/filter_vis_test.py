@@ -57,8 +57,9 @@ class FilterVisTest(unittest.TestCase):
         self.assertEqual(cell.n_cv, 2)
         self.assertEqual(backend.last_request.morpho.branch(name="soma").type, "soma")
         self.assertEqual(backend.last_request.dimensionality, "3d")
-        self.assertEqual({batch.branch_type for batch in backend.last_request.scene.batches},
-                         {"soma", "apical_dendrite"})
+        self.assertEqual(
+            {batch.branch_type for batch in backend.last_request.scene.batches}, {"soma", "apical_dendrite"}
+        )
 
     def test_broadcast_branch_slice_region_flows_into_plot(self) -> None:
         soma = Branch.from_points(
@@ -265,8 +266,12 @@ class FilterVisTest(unittest.TestCase):
         self.assertEqual(rendered.layout, "stem")
         self.assertEqual(rendered.shape, "line")
         child_angles = sorted(
-            np.degrees(np.arctan2(polyline.points_um[-1, 1] - polyline.points_um[0, 1],
-                                  polyline.points_um[-1, 0] - polyline.points_um[0, 0]))
+            np.degrees(
+                np.arctan2(
+                    polyline.points_um[-1, 1] - polyline.points_um[0, 1],
+                    polyline.points_um[-1, 0] - polyline.points_um[0, 0],
+                )
+            )
             for polyline in rendered.scene.polylines
             if polyline.branch_name in {"dend_a", "dend_b"}
         )

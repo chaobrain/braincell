@@ -92,8 +92,8 @@ def _cav3p3_nmodl_ghk_flux(V, ci, co, z, temp):
     w = (z * _CAV3P3_NMODL_FARADAY * V) / (_CAV3P3_NMODL_GAS_CONSTANT * ghk_temp)
     exp_term = u.math.exp(w)
     numerator = co - ci * exp_term
-    small_branch = - z * _CAV3P3_NMODL_FARADAY * numerator * (1 - w / 2)
-    regular_branch = - z * _CAV3P3_NMODL_FARADAY * numerator * w / (exp_term - 1)
+    small_branch = -z * _CAV3P3_NMODL_FARADAY * numerator * (1 - w / 2)
+    regular_branch = -z * _CAV3P3_NMODL_FARADAY * numerator * w / (exp_term - 1)
     return u.math.where(u.math.abs(exp_term - 1) < 1e-6, small_branch, regular_branch)
 
 
@@ -110,15 +110,13 @@ class CaN_IS2008(HH):
 
     __module__ = "braincell.channel"
     root_type = Calcium
-    gates = (
-        Gate("p", q10=lambda self: self.q10, temp_ref=lambda self: self.temp_ref),
-    )
+    gates = (Gate("p", q10=lambda self: self.q10, temp_ref=lambda self: self.temp_ref),)
 
     def __init__(
         self,
         size: brainstate.typing.Size,
         E: Union[brainstate.typing.ArrayLike, Callable] = 10.0 * u.mV,
-        g_max: Union[brainstate.typing.ArrayLike, Callable] = 1.0 * (u.mS / u.cm ** 2),
+        g_max: Union[brainstate.typing.ArrayLike, Callable] = 1.0 * (u.mS / u.cm**2),
         temp: brainstate.typing.ArrayLike = u.celsius2kelvin(36.0),
         q10: Union[brainstate.typing.ArrayLike, Callable] = 1.0,
         temp_ref: brainstate.typing.ArrayLike = u.celsius2kelvin(36.0),
@@ -158,7 +156,7 @@ class CaT_HM1992(HH):
     def __init__(
         self,
         size: brainstate.typing.Size,
-        g_max: Union[brainstate.typing.ArrayLike, Callable] = 2.0 * (u.mS / u.cm ** 2),
+        g_max: Union[brainstate.typing.ArrayLike, Callable] = 2.0 * (u.mS / u.cm**2),
         temp: brainstate.typing.ArrayLike = u.celsius2kelvin(36.0),
         q10_p: Union[brainstate.typing.ArrayLike, Callable] = 3.55,
         temp_ref_p: brainstate.typing.ArrayLike = u.celsius2kelvin(24.0),
@@ -214,7 +212,7 @@ class CaT_HP1992(HH):
     def __init__(
         self,
         size: brainstate.typing.Size,
-        g_max: Union[brainstate.typing.ArrayLike, Callable] = 1.75 * (u.mS / u.cm ** 2),
+        g_max: Union[brainstate.typing.ArrayLike, Callable] = 1.75 * (u.mS / u.cm**2),
         temp: brainstate.typing.ArrayLike = u.celsius2kelvin(36.0),
         q10_p: Union[brainstate.typing.ArrayLike, Callable] = 5.0,
         temp_ref_p: brainstate.typing.ArrayLike = u.celsius2kelvin(24.0),
@@ -266,7 +264,7 @@ class CaHT_HM1992(HH):
     def __init__(
         self,
         size: brainstate.typing.Size,
-        g_max: Union[brainstate.typing.ArrayLike, Callable] = 2.0 * (u.mS / u.cm ** 2),
+        g_max: Union[brainstate.typing.ArrayLike, Callable] = 2.0 * (u.mS / u.cm**2),
         temp: brainstate.typing.ArrayLike = u.celsius2kelvin(36.0),
         q10_p: Union[brainstate.typing.ArrayLike, Callable] = 3.55,
         temp_ref_p: brainstate.typing.ArrayLike = u.celsius2kelvin(24.0),
@@ -322,7 +320,7 @@ class CaHT_Re1993(HH):
     def __init__(
         self,
         size: brainstate.typing.Size,
-        g_max: Union[brainstate.typing.ArrayLike, Callable] = 1.0 * (u.mS / u.cm ** 2),
+        g_max: Union[brainstate.typing.ArrayLike, Callable] = 1.0 * (u.mS / u.cm**2),
         temp: brainstate.typing.ArrayLike = u.celsius2kelvin(36.0),
         q10_p: Union[brainstate.typing.ArrayLike, Callable] = 2.3,
         temp_ref_p: brainstate.typing.ArrayLike = u.celsius2kelvin(23.0),
@@ -375,7 +373,7 @@ class CaL_IS2008(HH):
     def __init__(
         self,
         size: brainstate.typing.Size,
-        g_max: Union[brainstate.typing.ArrayLike, Callable] = 1.0 * (u.mS / u.cm ** 2),
+        g_max: Union[brainstate.typing.ArrayLike, Callable] = 1.0 * (u.mS / u.cm**2),
         temp: Union[brainstate.typing.ArrayLike, Callable] = u.celsius2kelvin(36.0),
         q10_p: Union[brainstate.typing.ArrayLike, Callable] = 3.55,
         temp_ref_p: brainstate.typing.ArrayLike = u.celsius2kelvin(24.0),
@@ -442,12 +440,12 @@ class CaHVA_SU2015_DCN(HH):
         perm = self.perm.to_decimal(u.cm / u.second)
         A = u.math.exp(-23.20764929 * v_mV / temp)
         drive = (4.47814e6 * v_mV / temp) * ((ci / 1000.0) - (co / 1000.0) * A) / (1.0 - A)
-        current_value = perm * self.m.value ** 3 * drive
+        current_value = perm * self.m.value**3 * drive
         # NEURON's raw ``ica`` is outward-positive, so inward calcium entry
         # appears as a negative current. BrainCell channel currents use the
         # repo-wide inward-positive convention, so imported mechanisms flip
         # the sign here and comparisons should use ``-neuron_ica``.
-        return -current_value * (u.mA / (u.cm ** 2))
+        return -current_value * (u.mA / (u.cm**2))
 
     def f_m_inf(self, V, Ca: IonInfo):
         V = V.to_decimal(u.mV)
@@ -474,7 +472,7 @@ class CaL_SU2015_DCN(HH):
     def __init__(
         self,
         size: brainstate.typing.Size,
-        g_max: Union[brainstate.typing.ArrayLike, Callable] = 0.01 * (u.mS / u.cm ** 2),
+        g_max: Union[brainstate.typing.ArrayLike, Callable] = 0.01 * (u.mS / u.cm**2),
         E: Union[brainstate.typing.ArrayLike, Callable] = 139.0 * u.mV,
         qdeltat: Union[brainstate.typing.ArrayLike, Callable] = 1.0,
         name: Optional[str] = None,
@@ -548,12 +546,12 @@ class CaLVA_SU2015_DCN(HH):
         perm = self.perm.to_decimal(u.cm / u.second)
         A = u.math.exp(-23.20764929 * v_mV / temp)
         drive = (4.47814e6 * v_mV / temp) * ((ci / 1000.0) - (co / 1000.0) * A) / (1.0 - A)
-        current_value = perm * self.m.value ** 2 * self.h.value * drive
+        current_value = perm * self.m.value**2 * self.h.value * drive
         # NEURON's raw ``ical`` is outward-positive, so inward calcium entry
         # appears as a negative current. BrainCell channel currents use the
         # repo-wide inward-positive convention, so imported mechanisms flip
         # the sign here and comparisons should use ``-neuron_ical``.
-        return -current_value * (u.mA / (u.cm ** 2))
+        return -current_value * (u.mA / (u.cm**2))
 
     def f_m_inf(self, V, Ca: IonInfo):
         V = V.to_decimal(u.mV)
@@ -561,10 +559,7 @@ class CaLVA_SU2015_DCN(HH):
 
     def f_m_tau(self, V, Ca: IonInfo):
         V = V.to_decimal(u.mV)
-        return (
-            0.333 / (u.math.exp((V + 131.0) / -16.7) + u.math.exp((V + 15.8) / 18.2))
-            + 0.204
-        ) / self.qdeltat
+        return (0.333 / (u.math.exp((V + 131.0) / -16.7) + u.math.exp((V + 15.8) / 18.2)) + 0.204) / self.qdeltat
 
     def f_h_inf(self, V, Ca: IonInfo):
         V = V.to_decimal(u.mV)
@@ -572,11 +567,14 @@ class CaLVA_SU2015_DCN(HH):
 
     def f_h_tau(self, V, Ca: IonInfo):
         V = V.to_decimal(u.mV)
-        return u.math.where(
-            V < -81.0,
-            0.333 * u.math.exp((V + 466.0) / 66.0),
-            0.333 * u.math.exp((V + 21.0) / -10.5) + 9.32,
-        ) / self.qdeltat
+        return (
+            u.math.where(
+                V < -81.0,
+                0.333 * u.math.exp((V + 466.0) / 66.0),
+                0.333 * u.math.exp((V + 21.0) / -10.5) + 9.32,
+            )
+            / self.qdeltat
+        )
 
 
 @register_channel("Cav1p2_MA2020_GoC")
@@ -594,7 +592,7 @@ class Cav1p2_MA2020_GoC(HH):
     def __init__(
         self,
         size: brainstate.typing.Size,
-        g_max: Union[brainstate.typing.ArrayLike, Callable] = 0.0002 * (u.siemens / u.cm ** 2),
+        g_max: Union[brainstate.typing.ArrayLike, Callable] = 0.0002 * (u.siemens / u.cm**2),
         V_sh: Union[brainstate.typing.ArrayLike, Callable] = 0.0 * u.mV,
         temp: brainstate.typing.ArrayLike = u.celsius2kelvin(22.0),
         q10: Union[brainstate.typing.ArrayLike, Callable] = 1.0,
@@ -659,7 +657,7 @@ class Cav1p3_MA2020_GoC(HH):
     def __init__(
         self,
         size: brainstate.typing.Size,
-        g_max: Union[brainstate.typing.ArrayLike, Callable] = 0.000005 * (u.siemens / u.cm ** 2),
+        g_max: Union[brainstate.typing.ArrayLike, Callable] = 0.000005 * (u.siemens / u.cm**2),
         V_sh: Union[brainstate.typing.ArrayLike, Callable] = 0.0 * u.mV,
         temp: brainstate.typing.ArrayLike = u.celsius2kelvin(22.0),
         q10: Union[brainstate.typing.ArrayLike, Callable] = 1.0,
@@ -795,7 +793,8 @@ class Cav3p1_MA2020_GoC(HH):
                         + u.math.exp((V - self.v0_tau_m2) / self.k_tau_m2)
                     )
                 )
-            ) / qt,
+            )
+            / qt,
         )
 
     def f_q_tau(self, V, Ca: IonInfo):
@@ -890,7 +889,8 @@ class Cav3p1_MA2024_PC_Frozen(HH):
                         + u.math.exp((V - self.v0_tau_m2) / self.k_tau_m2)
                     )
                 )
-            ) / qt,
+            )
+            / qt,
         )
 
     def f_q_tau(self, V, Ca: IonInfo):
@@ -924,7 +924,7 @@ class Cav3p1Test_PC24(HH):
     def __init__(
         self,
         size: brainstate.typing.Size,
-        g_max: Union[brainstate.typing.ArrayLike, Callable] = 2.5e-4 * (u.siemens / u.cm ** 2),
+        g_max: Union[brainstate.typing.ArrayLike, Callable] = 2.5e-4 * (u.siemens / u.cm**2),
         temp: brainstate.typing.ArrayLike = u.celsius2kelvin(22.0),
         q10: Union[brainstate.typing.ArrayLike, Callable] = 3.0,
         temp_ref: brainstate.typing.ArrayLike = u.celsius2kelvin(37.0),
@@ -982,7 +982,8 @@ class Cav3p1Test_PC24(HH):
                         + u.math.exp((V - self.v0_tau_m2) / self.k_tau_m2)
                     )
                 )
-            ) / qt,
+            )
+            / qt,
         )
 
     def f_q_tau(self, V, Ca: IonInfo):
@@ -1222,7 +1223,7 @@ class Cav3p2_RI2021_SC(HH):
     def __init__(
         self,
         size: brainstate.typing.Size,
-        g_max: Union[brainstate.typing.ArrayLike, Callable] = 8.0e-4 * (u.mS / u.cm ** 2),
+        g_max: Union[brainstate.typing.ArrayLike, Callable] = 8.0e-4 * (u.mS / u.cm**2),
         V_sh: Union[brainstate.typing.ArrayLike, Callable] = 0.0 * u.mV,
         temp: brainstate.typing.ArrayLike = u.celsius2kelvin(36.0),
         name: Optional[str] = None,
@@ -1248,9 +1249,7 @@ class Cav3p2_RI2021_SC(HH):
 
     def f_m_tau(self, V, Ca: IonInfo):
         V = self._shifted_voltage(V).to_decimal(u.mV)
-        return 1.9 + 1.0 / (
-            u.math.exp((V + 37.0) / 11.9) + u.math.exp(-(V + 131.6) / 21.0)
-        )
+        return 1.9 + 1.0 / (u.math.exp((V + 37.0) / 11.9) + u.math.exp(-(V + 131.6) / 21.0))
 
     def f_h_tau(self, V, Ca: IonInfo):
         V = self._shifted_voltage(V).to_decimal(u.mV)
@@ -1260,9 +1259,7 @@ class Cav3p2_RI2021_SC(HH):
         # We therefore keep h-gate phi at 1 and encode the fixed 36C
         # conversion directly in tau_h here.
         phi_h = 3.0 ** ((36.0 - 24.0) / 10.0)
-        term = (1942.0 + u.math.exp((V + 164.0) / 9.2)) / (
-            1.0 + u.math.exp((V + 89.3) / 3.7)
-        )
+        term = (1942.0 + u.math.exp((V + 164.0) / 9.2)) / (1.0 + u.math.exp((V + 89.3) / 3.7))
         return 13.7 + term / phi_h
 
 
@@ -1382,7 +1379,7 @@ class CaHVA_MA2020_GoC(HH):
     def __init__(
         self,
         size: brainstate.typing.Size,
-        g_max: Union[brainstate.typing.ArrayLike, Callable] = 0.46 * (u.mS / u.cm ** 2),
+        g_max: Union[brainstate.typing.ArrayLike, Callable] = 0.46 * (u.mS / u.cm**2),
         temp: brainstate.typing.ArrayLike = u.celsius2kelvin(30.0),
         name: Optional[str] = None,
     ):
@@ -1390,7 +1387,7 @@ class CaHVA_MA2020_GoC(HH):
         self.g_max = braintools.init.param(g_max, self.varshape, allow_none=False)
         self.temp = braintools.init.param(temp, self.varshape, allow_none=False)
         self.Aalpha_s = 0.04944
-        self.Kalpha_s = 15.873#01587302
+        self.Kalpha_s = 15.873  # 01587302
         self.V0alpha_s = -29.06
         self.Abeta_s = 0.08298
         self.Kbeta_s = -25.641
@@ -1420,6 +1417,7 @@ class CaHVA_MA2020_GoC(HH):
     def f_u_beta(self, V, Ca: IonInfo):
         V = V.to_decimal(u.mV)
         return self.Abeta_u * u.math.exp((V - self.V0beta_u) / self.Kbeta_u)
+
 
 @register_channel("CaHVA_MA2020_GrC")
 class CaHVA_MA2020_GrC(HH):
@@ -1435,7 +1433,7 @@ class CaHVA_MA2020_GrC(HH):
     def __init__(
         self,
         size: brainstate.typing.Size,
-        g_max: Union[brainstate.typing.ArrayLike, Callable] = 0.46 * (u.mS / u.cm ** 2),
+        g_max: Union[brainstate.typing.ArrayLike, Callable] = 0.46 * (u.mS / u.cm**2),
         temp: brainstate.typing.ArrayLike = u.celsius2kelvin(30.0),
         name: Optional[str] = None,
     ):
@@ -1443,7 +1441,7 @@ class CaHVA_MA2020_GrC(HH):
         self.g_max = braintools.init.param(g_max, self.varshape, allow_none=False)
         self.temp = braintools.init.param(temp, self.varshape, allow_none=False)
         self.Aalpha_s = 0.04944
-        self.Kalpha_s = 15.873#01587302
+        self.Kalpha_s = 15.873  # 01587302
         self.V0alpha_s = -29.06
         self.Abeta_s = 0.08298
         self.Kbeta_s = -25.641
@@ -1474,6 +1472,7 @@ class CaHVA_MA2020_GrC(HH):
         V = V.to_decimal(u.mV)
         return self.Abeta_u * u.math.exp((V - self.V0beta_u) / self.Kbeta_u)
 
+
 @register_channel("Cav2p3_MA2020_GoC")
 class Cav2p3_MA2020_GoC(HH):
     """Template-based import of ``Cav2p3_MA2020_GoC.mod``."""
@@ -1488,7 +1487,7 @@ class Cav2p3_MA2020_GoC(HH):
     def __init__(
         self,
         size: brainstate.typing.Size,
-        g_max: Union[brainstate.typing.ArrayLike, Callable] = 0.0 * (u.mS / u.cm ** 2),
+        g_max: Union[brainstate.typing.ArrayLike, Callable] = 0.0 * (u.mS / u.cm**2),
         temp: brainstate.typing.ArrayLike = u.celsius2kelvin(34.0),
         name: Optional[str] = None,
     ):
@@ -1512,6 +1511,7 @@ class Cav2p3_MA2020_GoC(HH):
 
     def f_h_tau(self, V, Ca: IonInfo):
         return 5.0
+
 
 @register_channel("Ca_ZH2019_IO")
 class Ca_ZH2019_IO(HH):
@@ -1549,7 +1549,7 @@ class Ca_ZH2019_IO(HH):
     def __init__(
         self,
         size: brainstate.typing.Size,
-        g_max: Union[brainstate.typing.ArrayLike, Callable] = 0.4 * (u.mS / u.cm ** 2),
+        g_max: Union[brainstate.typing.ArrayLike, Callable] = 0.4 * (u.mS / u.cm**2),
         E: Union[brainstate.typing.ArrayLike, Callable] = 120.0 * u.mV,
         mMidV: Union[brainstate.typing.ArrayLike, Callable] = -61.0 * u.mV,
         freeze_m_inf: bool = True,
@@ -1579,9 +1579,7 @@ class Ca_ZH2019_IO(HH):
 
     def f_h_tau(self, V):
         V = V.to_decimal(u.mV)
-        return 40.0 + 30.0 * (
-            1.0 / (1.0 + u.math.exp((V + 84.0) / 7.3))
-        ) * u.math.exp((V + 160.0) / 30.0)
+        return 40.0 + 30.0 * (1.0 / (1.0 + u.math.exp((V + 84.0) / 7.3))) * u.math.exp((V + 160.0) / 30.0)
 
 
 @register_channel("Ca_ZH2019_IO_Frozen")

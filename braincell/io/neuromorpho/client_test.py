@@ -43,15 +43,17 @@ from braincell.io.neuromorpho._testing import (
 
 class NeuroMorphoClientSearchTest(unittest.TestCase):
     def test_search_passes_fq_inside_params(self) -> None:
-        session = FakeSession([
-            FakeResponse(
-                json_data={
-                    "_embedded": {"neuronResources": [sample_neuron_payload()]},
-                    "page": {"number": 2, "size": 5, "totalPages": 9, "totalElements": 42},
-                },
-                url="https://neuromorpho.org/api/neuron/select/?q=species:mouse&page=2",
-            )
-        ])
+        session = FakeSession(
+            [
+                FakeResponse(
+                    json_data={
+                        "_embedded": {"neuronResources": [sample_neuron_payload()]},
+                        "page": {"number": 2, "size": 5, "totalPages": 9, "totalElements": 42},
+                    },
+                    url="https://neuromorpho.org/api/neuron/select/?q=species:mouse&page=2",
+                )
+            ]
+        )
         client = NeuroMorphoClient(session=session, timeout=12)
 
         page = client.search(
@@ -71,58 +73,64 @@ class NeuroMorphoClientSearchTest(unittest.TestCase):
         self.assertEqual(kwargs["timeout"], 12)
 
     def test_search_accepts_query_object(self) -> None:
-        session = FakeSession([
-            FakeResponse(
-                json_data={
-                    "_embedded": {"neuronResources": []},
-                    "page": {"number": 0, "size": 20, "totalPages": 0, "totalElements": 0},
-                },
-            )
-        ])
+        session = FakeSession(
+            [
+                FakeResponse(
+                    json_data={
+                        "_embedded": {"neuronResources": []},
+                        "page": {"number": 0, "size": 20, "totalPages": 0, "totalElements": 0},
+                    },
+                )
+            ]
+        )
         client = NeuroMorphoClient(session=session)
         client.search(NeuroMorphoQuery(species="mouse", brain_region="cerebellum"))
         params = session.calls[0][1]["params"]
         self.assertEqual(params["q"], "species:mouse AND brain_region:cerebellum")
 
     def test_iter_search_paginates_until_exhausted(self) -> None:
-        session = FakeSession([
-            FakeResponse(
-                json_data={
-                    "_embedded": {"neuronResources": [sample_neuron_payload()]},
-                    "page": {"number": 0, "size": 1, "totalPages": 2, "totalElements": 2},
-                },
-            ),
-            FakeResponse(
-                json_data={
-                    "_embedded": {
-                        "neuronResources": [
-                            sample_neuron_payload(),  # duplicate, should be skipped
-                            sample_neuron_payload(neuron_id=10048, neuron_name="TypeA-11"),
-                        ]
+        session = FakeSession(
+            [
+                FakeResponse(
+                    json_data={
+                        "_embedded": {"neuronResources": [sample_neuron_payload()]},
+                        "page": {"number": 0, "size": 1, "totalPages": 2, "totalElements": 2},
                     },
-                    "page": {"number": 1, "size": 2, "totalPages": 2, "totalElements": 2},
-                },
-            ),
-        ])
+                ),
+                FakeResponse(
+                    json_data={
+                        "_embedded": {
+                            "neuronResources": [
+                                sample_neuron_payload(),  # duplicate, should be skipped
+                                sample_neuron_payload(neuron_id=10048, neuron_name="TypeA-11"),
+                            ]
+                        },
+                        "page": {"number": 1, "size": 2, "totalPages": 2, "totalElements": 2},
+                    },
+                ),
+            ]
+        )
         client = NeuroMorphoClient(session=session)
         ids = [n.neuron_id for n in client.iter_search("species:mouse", size=2)]
         self.assertEqual(ids, [10047, 10048])
 
     def test_iter_search_respects_limit(self) -> None:
-        session = FakeSession([
-            FakeResponse(
-                json_data={
-                    "_embedded": {
-                        "neuronResources": [
-                            sample_neuron_payload(),
-                            sample_neuron_payload(neuron_id=10048, neuron_name="TypeA-11"),
-                            sample_neuron_payload(neuron_id=10049, neuron_name="TypeA-12"),
-                        ]
+        session = FakeSession(
+            [
+                FakeResponse(
+                    json_data={
+                        "_embedded": {
+                            "neuronResources": [
+                                sample_neuron_payload(),
+                                sample_neuron_payload(neuron_id=10048, neuron_name="TypeA-11"),
+                                sample_neuron_payload(neuron_id=10049, neuron_name="TypeA-12"),
+                            ]
+                        },
+                        "page": {"number": 0, "size": 3, "totalPages": 5, "totalElements": 15},
                     },
-                    "page": {"number": 0, "size": 3, "totalPages": 5, "totalElements": 15},
-                },
-            ),
-        ])
+                ),
+            ]
+        )
         client = NeuroMorphoClient(session=session)
         result = list(client.iter_search("species:mouse", size=3, limit=2))
         self.assertEqual([n.neuron_id for n in result], [10047, 10048])
@@ -130,14 +138,16 @@ class NeuroMorphoClientSearchTest(unittest.TestCase):
         self.assertEqual(len(session.calls), 1)
 
     def test_iter_search_stops_on_empty_page(self) -> None:
-        session = FakeSession([
-            FakeResponse(
-                json_data={
-                    "_embedded": {"neuronResources": []},
-                    "page": {"number": 0, "size": 1, "totalPages": 0, "totalElements": 0},
-                },
-            ),
-        ])
+        session = FakeSession(
+            [
+                FakeResponse(
+                    json_data={
+                        "_embedded": {"neuronResources": []},
+                        "page": {"number": 0, "size": 1, "totalPages": 0, "totalElements": 0},
+                    },
+                ),
+            ]
+        )
         client = NeuroMorphoClient(session=session)
         self.assertEqual(list(client.iter_search("species:mouse")), [])
 
@@ -162,9 +172,11 @@ class NeuroMorphoClientNeuronTest(unittest.TestCase):
             client.get_neuron(999999)
 
     def test_get_measurement_returns_typed_object(self) -> None:
-        session = FakeSession([
-            FakeResponse(json_data={"n_stems": 1.0, "length": 10.0}),
-        ])
+        session = FakeSession(
+            [
+                FakeResponse(json_data={"n_stems": 1.0, "length": 10.0}),
+            ]
+        )
         client = NeuroMorphoClient(session=session)
         meas = client.get_measurement(10047)
         self.assertIsInstance(meas, NeuroMorphoMeasurement)
@@ -224,11 +236,13 @@ class NeuroMorphoClientNeuronTest(unittest.TestCase):
 class NeuroMorphoClientDownloadTest(unittest.TestCase):
     def test_download_writes_files_and_metadata(self) -> None:
         neuron = NeuroMorphoNeuron.from_payload(sample_neuron_payload())
-        session = FakeSession([
-            FakeResponse(json_data={"n_stems": 1.0, "n_branch": 2.0}),  # measurement
-            FakeResponse(content=[b"standard-swc"]),                    # standard download
-            FakeResponse(content=[b"original-data"]),                   # original download
-        ])
+        session = FakeSession(
+            [
+                FakeResponse(json_data={"n_stems": 1.0, "n_branch": 2.0}),  # measurement
+                FakeResponse(content=[b"standard-swc"]),  # standard download
+                FakeResponse(content=[b"original-data"]),  # original download
+            ]
+        )
         client = NeuroMorphoClient(session=session)
 
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -247,10 +261,12 @@ class NeuroMorphoClientDownloadTest(unittest.TestCase):
 
     def test_download_skips_original_when_format_missing(self) -> None:
         neuron = NeuroMorphoNeuron.from_payload(sample_neuron_payload(original_format=None))
-        session = FakeSession([
-            FakeResponse(json_data={"n_stems": 1.0}),     # measurement
-            FakeResponse(content=[b"standard-swc"]),      # standard
-        ])
+        session = FakeSession(
+            [
+                FakeResponse(json_data={"n_stems": 1.0}),  # measurement
+                FakeResponse(content=[b"standard-swc"]),  # standard
+            ]
+        )
         client = NeuroMorphoClient(session=session)
 
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -279,10 +295,12 @@ class NeuroMorphoClientDownloadTest(unittest.TestCase):
 
     def test_download_uses_client_cache_when_output_dir_omitted(self) -> None:
         neuron = NeuroMorphoNeuron.from_payload(sample_neuron_payload())
-        session = FakeSession([
-            FakeResponse(json_data={"n_stems": 1.0}),
-            FakeResponse(content=[b"standard"]),
-        ])
+        session = FakeSession(
+            [
+                FakeResponse(json_data={"n_stems": 1.0}),
+                FakeResponse(content=[b"standard"]),
+            ]
+        )
         with tempfile.TemporaryDirectory() as tmpdir:
             client = NeuroMorphoClient(session=session, cache_dir=tmpdir)
             record = client.download(neuron, mode="standard")

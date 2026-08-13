@@ -29,7 +29,6 @@ opts into the ``root_layout='legacy'`` path, since the stem family
 subsumes it and legacy is scheduled for removal in v0.1.0.
 """
 
-
 import warnings
 
 from braincell.morph.morphology import Morphology

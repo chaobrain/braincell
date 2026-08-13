@@ -107,12 +107,12 @@ class BranchFilterTest(unittest.TestCase):
         ).evaluate(tree)
         by_area = branch_range(
             "area",
-            (500.0 * (u.um ** 2), 800.0 * (u.um ** 2)),
+            (500.0 * (u.um**2), 800.0 * (u.um**2)),
             closed="both",
         ).evaluate(tree)
         by_volume = branch_range(
             "volume",
-            (None, 200.0 * (u.um ** 3)),
+            (None, 200.0 * (u.um**3)),
             closed="right",
         ).evaluate(tree)
         by_exact_mean_radius = branch_in(
@@ -166,7 +166,7 @@ class BranchFilterTest(unittest.TestCase):
         with self.assertRaises(TypeError):
             BranchRangeFilter(
                 property="areas",
-                bounds=(None, 100 * (u.um ** 2)),
+                bounds=(None, 100 * (u.um**2)),
                 closed="right",
             ).evaluate(multi_segment_tree)
         with self.assertRaises(TypeError):

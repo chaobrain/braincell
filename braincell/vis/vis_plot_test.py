@@ -93,7 +93,9 @@ class VisPlotTest(unittest.TestCase):
     def test_plot3d_requires_points_and_suggests_2d_fallbacks(self) -> None:
         tree = make_length_only_tree()
 
-        with self.assertRaisesRegex(ValueError, r"vis2d\(layout='stem', shape='line'\).+vis2d\(layout='stem', shape='frustum'\)"):
+        with self.assertRaisesRegex(
+            ValueError, r"vis2d\(layout='stem', shape='line'\).+vis2d\(layout='stem', shape='frustum'\)"
+        ):
             plot3d(tree, chooser=BackendChooser(backends=(FakeBackend(),)))
 
     def test_plot2d_rejects_unknown_shape(self) -> None:

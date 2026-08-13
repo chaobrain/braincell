@@ -28,7 +28,7 @@ def _simple_cell() -> Cell:
     cell = Cell(tree)
     cell.paint(
         BranchSlice(branch_index=0, prox=0.0, dist=1.0),
-        braincell.mech.Channel("IL", g_max=4.0 * (u.mS / u.cm ** 2), E=-68.0 * u.mV),
+        braincell.mech.Channel("IL", g_max=4.0 * (u.mS / u.cm**2), E=-68.0 * u.mV),
     )
     cell.init_state()
     return cell
@@ -40,7 +40,7 @@ class MechanismObjectCellAttrAccess(unittest.TestCase):
         table = cell.mech_table()
         mo = table.get(("IL", "IL"), column_id=1)
         self.assertIsNotNone(mo)
-        self.assertAlmostEqual(float(mo.g_max.to_decimal(u.mS / u.cm ** 2)), 4.0, places=12)
+        self.assertAlmostEqual(float(mo.g_max.to_decimal(u.mS / u.cm**2)), 4.0, places=12)
 
     def test_unknown_param_raises_attribute_error_with_candidates(self) -> None:
         cell = _simple_cell()

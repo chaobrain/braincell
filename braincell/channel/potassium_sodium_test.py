@@ -58,7 +58,7 @@ def _V(values, unit=u.mV):
     return jnp.asarray(values) * unit
 
 
-_DENSITY_UNIT = u.mS / u.cm ** 2 * u.mV
+_DENSITY_UNIT = u.mS / u.cm**2 * u.mV
 
 
 class Kv1p5MA20GrCTest(unittest.TestCase):
@@ -112,7 +112,7 @@ class Kv1p5MA20GrCTest(unittest.TestCase):
 
     def test_nonzero_gnonspec_contributes_nonspecific_component(self) -> None:
         temp = u.celsius2kelvin(25.0)
-        ch = Kv1p5_MA2020_GrC(size=1, temp=temp, gnonspec=0.2e-3 * (u.siemens / u.cm ** 2))
+        ch = Kv1p5_MA2020_GrC(size=1, temp=temp, gnonspec=0.2e-3 * (u.siemens / u.cm**2))
         V = _V([-20.0])
         k = _k_info()
         na = _na_info()
@@ -122,14 +122,9 @@ class Kv1p5MA20GrCTest(unittest.TestCase):
         ch.n.value = jnp.array([0.3])
         ch.u.value = jnp.array([0.4])
 
-        conductance_factor = (0.2 ** 3) * 0.3 * 0.4
+        conductance_factor = (0.2**3) * 0.3 * 0.4
         voltage_factor = ch._voltage_factor(V)
-        eno = (
-            u.gas_constant
-            * ch.temp
-            / u.faraday_constant
-            * u.math.log((na.Co + k.Co) / (na.Ci + k.Ci))
-        )
+        eno = u.gas_constant * ch.temp / u.faraday_constant * u.math.log((na.Co + k.Co) / (na.Ci + k.Ci))
         expected_no = ch.gnonspec * voltage_factor * conductance_factor * (eno - V)
         components = ch.current_components(V, k, na, no)
         total = ch.current(V, k, na, no)

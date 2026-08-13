@@ -30,7 +30,16 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
-from braincell._base import Channel, HHTypedNeuron, Ion, IonChannel, MixIons, Synapse as RuntimeSynapse, _cast_like, _zero_spike_like
+from braincell._base import (
+    Channel,
+    HHTypedNeuron,
+    Ion,
+    IonChannel,
+    MixIons,
+    Synapse as RuntimeSynapse,
+    _cast_like,
+    _zero_spike_like,
+)
 from braincell._misc import is_traced_value
 from braincell._typing import Initializer
 from braincell._compute.table import (
@@ -102,9 +111,7 @@ class RuntimeIonBinding:
     def get(self, field: str):
         """Return one field projected into the local CV or node view."""
         if not hasattr(self.runtime, field):
-            raise AttributeError(
-                f"Runtime ion {self.name!r} has no field {field!r}."
-            )
+            raise AttributeError(f"Runtime ion {self.name!r} has no field {field!r}.")
         raw = getattr(self.runtime, field)
         if self.cv_ids:
             values = self.cell._coerce_named_vis_cv_values_object(raw)
@@ -241,9 +248,7 @@ class Cell(HHTypedNeuron):
         HHTypedNeuron.__init__(self, size=normalized_pop_size + (1,), name=name)
 
         if not isinstance(morpho, Morphology):
-            raise TypeError(
-                f"Cell expects Morphology, got {type(morpho).__name__!s}."
-            )
+            raise TypeError(f"Cell expects Morphology, got {type(morpho).__name__!s}.")
 
         self._declaration_morpho = morpho
         self._morpho = morpho
@@ -251,9 +256,7 @@ class Cell(HHTypedNeuron):
 
         self._discretization_policy: CVPolicy = CVPerBranch() if cv_policy is None else cv_policy
         if not isinstance(self._discretization_policy, CVPolicy):
-            raise TypeError(
-                f"cv_policy must be CVPolicy, got {type(self._discretization_policy).__name__!s}."
-            )
+            raise TypeError(f"cv_policy must be CVPolicy, got {type(self._discretization_policy).__name__!s}.")
 
         self._paint_rules: tuple[PaintRule, ...] = default_paint_rules()
         self._place_rules: tuple[PlaceRule, ...] = ()
@@ -270,12 +273,8 @@ class Cell(HHTypedNeuron):
             self._substeps,
         ) = _resolve_subsolver_schedule(subsolver, substeps)
         self.cache_ion_total_current = bool(cache_ion_total_current)
-        self.ion_channel_update_order = _validate_ion_channel_update_order(
-            ion_channel_update_order
-        )
-        self._membrane_linearizer = _validate_membrane_linearizer(
-            membrane_linearizer
-        )
+        self.ion_channel_update_order = _validate_ion_channel_update_order(ion_channel_update_order)
+        self._membrane_linearizer = _validate_membrane_linearizer(membrane_linearizer)
 
         self._discretization_cache: Discretization | None = None
         self._discretization_cache_key: object = None
@@ -300,9 +299,7 @@ class Cell(HHTypedNeuron):
 
     def _raise_if_initialized(self, action: str) -> None:
         if self._initialized:
-            raise RuntimeError(
-                f"Cannot {action} after init_state(); call reset() first."
-            )
+            raise RuntimeError(f"Cannot {action} after init_state(); call reset() first.")
 
     def _raise_if_not_initialized(self, action: str) -> None:
         if not self._initialized:
@@ -323,9 +320,7 @@ class Cell(HHTypedNeuron):
     def cv_policy(self, value: CVPolicy) -> None:
         self._raise_if_initialized("assign cv_policy")
         if not isinstance(value, CVPolicy):
-            raise TypeError(
-                f"cv_policy must be CVPolicy, got {type(value).__name__!s}."
-            )
+            raise TypeError(f"cv_policy must be CVPolicy, got {type(value).__name__!s}.")
         self._discretization_policy = value
         self._invalidate_discretization_cache()
 
@@ -451,9 +446,7 @@ class Cell(HHTypedNeuron):
             to the target synapse shape.
         """
         key = str(synapse)
-        self._synapse_input_bindings.setdefault(key, []).append(
-            (source, weight, transform)
-        )
+        self._synapse_input_bindings.setdefault(key, []).append((source, weight, transform))
         return self
 
     # ------------------------------------------------------------------
@@ -477,10 +470,7 @@ class Cell(HHTypedNeuron):
     @property
     def _discretization(self) -> Discretization:
         key = self._discretization_key()
-        if (
-            self._discretization_cache is not None
-            and self._discretization_cache_key == key
-        ):
+        if self._discretization_cache is not None and self._discretization_cache_key == key:
             return self._discretization_cache
 
         discretization = build_discretization(
@@ -558,10 +548,7 @@ class Cell(HHTypedNeuron):
         self.C = cv_value_vector(self, attr_name="cm")
         self.V_th = bridge.fill_like(self.varshape, self.V_th)
 
-        v_initializer = (
-            self._V_init if self._V_init is not None
-            else cv_value_vector(self, attr_name="v")
-        )
+        v_initializer = self._V_init if self._V_init is not None else cv_value_vector(self, attr_name="v")
         if self._V_init is not None:
             v_initializer = bridge.fill_like(self.varshape, v_initializer)
         v_value = braintools.init.param(v_initializer, self.varshape)
@@ -571,9 +558,7 @@ class Cell(HHTypedNeuron):
         self._current_time_state.value = 0.0 * u.ms
 
         point_V = self._cv_to_point_unchecked(self.V.value)
-        for path, channel in self._runtime_objects_unchecked(
-            IonChannel, allowed_hierarchy=(1, 1)
-        ).items():
+        for path, channel in self._runtime_objects_unchecked(IonChannel, allowed_hierarchy=(1, 1)).items():
             args = self._runtime_node_phase_args(path, channel, point_V)
             channel.init_state(*args, batch_size=batch_size)
 
@@ -685,9 +670,7 @@ class Cell(HHTypedNeuron):
             RuntimeCVView(
                 id=int(cv.id),
                 declaration=cv,
-                layout_ids=tuple(
-                    int(layout.id) for layout in runtime.get_cv_layouts(int(cv.id))
-                ),
+                layout_ids=tuple(int(layout.id) for layout in runtime.get_cv_layouts(int(cv.id))),
                 mid_node_id=int(node_tree.cv_to_mid_node_id[int(cv.id)]),
                 ions=self._build_local_ion_bindings(cv_ids=(int(cv.id),)),
             )
@@ -700,9 +683,7 @@ class Cell(HHTypedNeuron):
             RuntimeNodeView(
                 id=int(node.id),
                 declaration=node,
-                layout_ids=tuple(
-                    int(layout.id) for layout in runtime.get_point_layouts(int(node.id))
-                ),
+                layout_ids=tuple(int(layout.id) for layout in runtime.get_point_layouts(int(node.id))),
                 source_cv_ids=node.source_cv_ids,
                 ions=self._build_local_ion_bindings(point_ids=(int(node.id),)),
             )
@@ -1321,9 +1302,7 @@ class Cell(HHTypedNeuron):
 
     def node_scheduling(self, *, max_group_size: int = 256, algorithm: str = "dhs"):
         self._raise_if_not_initialized("node_scheduling()")
-        return self._node_scheduling_unchecked(
-            max_group_size=max_group_size, algorithm=algorithm
-        )
+        return self._node_scheduling_unchecked(max_group_size=max_group_size, algorithm=algorithm)
 
     def _node_scheduling_unchecked(self, *, max_group_size: int = 256, algorithm: str = "dhs"):
         key = (algorithm, int(max_group_size))
@@ -1355,8 +1334,7 @@ class Cell(HHTypedNeuron):
     def __repr__(self) -> str:
         if self._initialized:
             return (
-                f"Cell(root={self._morpho.root.name!r}, "
-                f"n_cv={self.n_cv!r}, n_point={self.n_point!r}, initialized=True)"
+                f"Cell(root={self._morpho.root.name!r}, n_cv={self.n_cv!r}, n_point={self.n_point!r}, initialized=True)"
             )
         return (
             f"Cell(root={self._morpho.root.name!r}, "
@@ -1498,9 +1476,7 @@ class Cell(HHTypedNeuron):
         elif isinstance(locset, LocsetMask):
             mask = locset
         else:
-            raise TypeError(
-                f"Cell visualization expects LocsetExpr or LocsetMask, got {type(locset).__name__!s}."
-            )
+            raise TypeError(f"Cell visualization expects LocsetExpr or LocsetMask, got {type(locset).__name__!s}.")
 
         grouped: dict[int, list[int]] = {}
         for cv in self.cvs:
@@ -1522,9 +1498,7 @@ class Cell(HHTypedNeuron):
         elif isinstance(locset, LocsetMask):
             mask = locset
         else:
-            raise TypeError(
-                f"Cell visualization expects LocsetExpr or LocsetMask, got {type(locset).__name__!s}."
-            )
+            raise TypeError(f"Cell visualization expects LocsetExpr or LocsetMask, got {type(locset).__name__!s}.")
         point_ids: set[int] = set()
         node_tree = self.node_tree
         for branch_id, x in mask.points:
@@ -1634,9 +1608,7 @@ class Cell(HHTypedNeuron):
                     unit,
                 )
             if raw.ndim != 1:
-                raise ValueError(
-                    "Runtime point inspection only supports scalar or 1-D value arrays."
-                )
+                raise ValueError("Runtime point inspection only supports scalar or 1-D value arrays.")
             if raw.shape[0] == self.n_point:
                 return value
             if raw.shape[0] == self.n_cv:
@@ -1650,9 +1622,7 @@ class Cell(HHTypedNeuron):
         if raw.ndim == 0:
             return np.full((self.n_point,), float(raw), dtype=float)
         if raw.ndim != 1:
-            raise ValueError(
-                "Runtime point inspection only supports scalar or 1-D value arrays."
-            )
+            raise ValueError("Runtime point inspection only supports scalar or 1-D value arrays.")
         if raw.shape[0] == self.n_point:
             return raw
         if raw.shape[0] == self.n_cv:
@@ -1839,7 +1809,9 @@ class Cell(HHTypedNeuron):
             if array.shape[0] == n_point:
                 if layout.point_index is None:
                     raise ValueError(f"Layout {layout.id!r} has no point_index for field {field!r}.")
-                point_values[np.asarray(layout.point_index, dtype=np.int32)] = array[np.asarray(layout.point_index, dtype=np.int32)]
+                point_values[np.asarray(layout.point_index, dtype=np.int32)] = array[
+                    np.asarray(layout.point_index, dtype=np.int32)
+                ]
                 return u.Quantity(point_values, unit)
             if layout.point_index is None or array.shape[0] != len(layout.point_index):
                 raise ValueError(
@@ -1862,7 +1834,9 @@ class Cell(HHTypedNeuron):
         if array.shape[0] == n_point:
             if layout.point_index is None:
                 raise ValueError(f"Layout {layout.id!r} has no point_index for field {field!r}.")
-            point_values[np.asarray(layout.point_index, dtype=np.int32)] = array[np.asarray(layout.point_index, dtype=np.int32)]
+            point_values[np.asarray(layout.point_index, dtype=np.int32)] = array[
+                np.asarray(layout.point_index, dtype=np.int32)
+            ]
             return point_values
         if layout.point_index is None or array.shape[0] != len(layout.point_index):
             raise ValueError(
@@ -2046,7 +2020,7 @@ class Cell(HHTypedNeuron):
                 dtype=np.float64,
             )
 
-        operator = jnp.asarray(runtime.axial_operator_np, dtype=brainstate.environ.dftype()) * (u.ms ** -1)
+        operator = jnp.asarray(runtime.axial_operator_np, dtype=brainstate.environ.dftype()) * (u.ms**-1)
         cache = AxialOperatorCache(float_dtype=float_dtype, operator=operator)
         if not is_traced_value(operator):
             runtime.axial_operator_cache = cache
@@ -2060,20 +2034,13 @@ class Cell(HHTypedNeuron):
         return -u.math.matmul(V_mv, axial_operator.T)
 
     def compute_voltage_derivative(self, V):
-        return (
-            self.compute_membrane_derivative(V)
-            + self.compute_axial_derivative(V)
-        )
+        return self.compute_membrane_derivative(V) + self.compute_axial_derivative(V)
 
     def _top_level_ion_channel_nodes(self):
         return tuple(self.nodes(IonChannel, allowed_hierarchy=(1, 1)).items())
 
     def _family_ion_nodes(self):
-        return tuple(
-            (path, node)
-            for path, node in self._top_level_ion_channel_nodes()
-            if isinstance(node, Ion)
-        )
+        return tuple((path, node) for path, node in self._top_level_ion_channel_nodes() if isinstance(node, Ion))
 
     def _family_channel_nodes(self):
         nodes = []
@@ -2202,10 +2169,7 @@ class Cell(HHTypedNeuron):
             if isinstance(parent, Ion):
                 getattr(child, hook_name)(point_V, parent.pack_info())
             else:
-                infos = tuple([
-                    parent._get_ion(root).pack_info()
-                    for root in child.root_type.__args__
-                ])
+                infos = tuple([parent._get_ion(root).pack_info() for root in child.root_type.__args__])
                 getattr(child, hook_name)(point_V, *infos)
 
     def _update_ion_channels_by_integration(self, point_V):
@@ -2232,11 +2196,7 @@ class Cell(HHTypedNeuron):
         ion_nodes = self._family_ion_nodes()
         channel_nodes = self._family_channel_nodes()
 
-        dependent_ion_paths = [
-            path
-            for path, node in ion_nodes
-            if not isinstance(node, IndependentIntegration)
-        ]
+        dependent_ion_paths = [path for path, node in ion_nodes if not isinstance(node, IndependentIntegration)]
         channel_paths = [path for path, _ in channel_nodes]
 
         # Family mode splits ion self states from channel states. This phase
@@ -2310,10 +2270,7 @@ class Cell(HHTypedNeuron):
             if isinstance(owner, Ion):
                 return point_V, owner.pack_info()
             if isinstance(owner, MixIons):
-                infos = tuple([
-                    owner._get_ion(root).pack_info()
-                    for root in node.root_type.__args__
-                ])
+                infos = tuple([owner._get_ion(root).pack_info() for root in node.root_type.__args__])
                 return (point_V, *infos)
         return (point_V,)
 
@@ -2712,9 +2669,7 @@ class Cell(HHTypedNeuron):
             row_index = len(row_keys)
             row_keys.append(row_key)
             class_name, instance_name = row_key
-            row_labels.append(
-                class_name if class_name == instance_name else f"{instance_name}:{class_name}"
-            )
+            row_labels.append(class_name if class_name == instance_name else f"{instance_name}:{class_name}")
             row_index_by_key[row_key] = row_index
             return row_index
 
@@ -2723,9 +2678,7 @@ class Cell(HHTypedNeuron):
             for mechanism in cv.density_mech:
                 row_key = mechanism_cell_key(mechanism)
                 row_index = ensure_row(mechanism)
-                layout_id = layout_id_by_signature[
-                    ("density",) + mechanism_signature(mechanism)
-                ]
+                layout_id = layout_id_by_signature[("density",) + mechanism_signature(mechanism)]
                 pending_cells.append(
                     (
                         row_index,
@@ -2747,9 +2700,7 @@ class Cell(HHTypedNeuron):
             for mechanism in node.point_mech:
                 row_key = mechanism_cell_key(mechanism)
                 row_index = ensure_row(mechanism)
-                layout_id = layout_id_by_signature[
-                    ("point",) + mechanism_signature(mechanism)
-                ]
+                layout_id = layout_id_by_signature[("point",) + mechanism_signature(mechanism)]
                 pending_cells.append(
                     (
                         row_index,
@@ -2817,9 +2768,7 @@ def _resolve_solver(solver):
         return solver, get_integrator(solver)
     if callable(solver):
         return getattr(solver, "__name__", type(solver).__name__), solver
-    raise TypeError(
-        f"solver must be str or callable, got {type(solver).__name__!s}."
-    )
+    raise TypeError(f"solver must be str or callable, got {type(solver).__name__!s}.")
 
 
 def _resolve_subsolver_schedule(subsolver, substeps):
@@ -2827,17 +2776,13 @@ def _resolve_subsolver_schedule(subsolver, substeps):
         subsolver = "backward_euler"
         substeps = 1
     elif subsolver is None or substeps is None:
-        raise ValueError(
-            "subsolver and substeps must be provided together or both be None."
-        )
+        raise ValueError("subsolver and substeps must be provided together or both be None.")
     if isinstance(substeps, bool):
         raise TypeError("substeps must be an integer, got bool.")
     try:
         normalized_substeps = operator.index(substeps)
     except TypeError as exc:
-        raise TypeError(
-            f"substeps must be an integer, got {type(substeps).__name__!s}."
-        ) from exc
+        raise TypeError(f"substeps must be an integer, got {type(substeps).__name__!s}.") from exc
     if normalized_substeps < 1:
         raise ValueError(f"substeps must be at least 1, got {normalized_substeps!r}.")
     solver_name, solver_fn = _resolve_solver(subsolver)
@@ -2899,34 +2844,24 @@ def _normalize_pop_size(pop_size) -> tuple[int, ...]:
         normalized = []
         for dim in pop_size:
             if not isinstance(dim, (int, np.integer)):
-                raise TypeError(
-                    f"pop_size entries must be integers, got {type(dim).__name__!s}."
-                )
+                raise TypeError(f"pop_size entries must be integers, got {type(dim).__name__!s}.")
             dim = int(dim)
             if dim <= 0:
                 raise ValueError(f"pop_size entries must be > 0, got {pop_size!r}.")
             normalized.append(dim)
         return tuple(normalized)
-    raise TypeError(
-        f"pop_size must be int or tuple/list of int, got {type(pop_size).__name__!s}."
-    )
+    raise TypeError(f"pop_size must be int or tuple/list of int, got {type(pop_size).__name__!s}.")
 
 
 def _validate_ion_channel_update_order(value: str) -> str:
     # "family" is the ion-before-channel schedule; "integration" is the
     # previous schedule grouped by IndependentIntegration at the top level.
     if value not in {"family", "integration"}:
-        raise ValueError(
-            "ion_channel_update_order must be 'family' or 'integration', "
-            f"got {value!r}."
-        )
+        raise ValueError(f"ion_channel_update_order must be 'family' or 'integration', got {value!r}.")
     return value
 
 
 def _validate_membrane_linearizer(value: str) -> str:
     if value not in {"point", "generic"}:
-        raise ValueError(
-            "membrane_linearizer must be 'point' or 'generic', "
-            f"got {value!r}."
-        )
+        raise ValueError(f"membrane_linearizer must be 'point' or 'generic', got {value!r}.")
     return value

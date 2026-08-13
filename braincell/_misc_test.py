@@ -12,16 +12,19 @@ class IsTracedValueTest(unittest.TestCase):
 
     def test_import_site(self) -> None:
         from braincell._misc import is_traced_value
+
         self.assertTrue(callable(is_traced_value))
 
     def test_concrete_number_is_not_traced(self) -> None:
         from braincell._misc import is_traced_value
+
         self.assertFalse(is_traced_value(1.0))
         self.assertFalse(is_traced_value(jnp.asarray(1.0)))
         self.assertFalse(is_traced_value(jnp.asarray([1.0, 2.0]) * u.mV))
 
     def test_jax_tracer_is_traced(self) -> None:
         from braincell._misc import is_traced_value
+
         results = []
 
         def probe(x):

@@ -85,10 +85,12 @@ class NeuroMorphoCacheDiscoveryTest(unittest.TestCase):
             folder.mkdir(parents=True)
             (folder / "TypeA-10.CNG.swc").write_text("swc", encoding="utf-8")
             (folder / "metadata.json").write_text(
-                json.dumps({
-                    "neuron_name": "TypeA-10",
-                    "original_format": "TypeA-10.asc",
-                }),
+                json.dumps(
+                    {
+                        "neuron_name": "TypeA-10",
+                        "original_format": "TypeA-10.asc",
+                    }
+                ),
                 encoding="utf-8",
             )
             status = cache.status(10047)
@@ -119,11 +121,13 @@ class NeuroMorphoCacheReadTest(unittest.TestCase):
             folder = cache.root / "10047"
             folder.mkdir(parents=True)
             (folder / "metadata.json").write_text(
-                json.dumps({
-                    "neuron_id": 10047,
-                    "neuron_name": "TypeA-10",
-                    "measurement": {"neuron_id": 10047, "n_stems": 1.0, "length": 10.0},
-                }),
+                json.dumps(
+                    {
+                        "neuron_id": 10047,
+                        "neuron_name": "TypeA-10",
+                        "measurement": {"neuron_id": 10047, "n_stems": 1.0, "length": 10.0},
+                    }
+                ),
                 encoding="utf-8",
             )
             meas = cache.measurement(10047)
@@ -144,17 +148,19 @@ class NeuroMorphoCacheReadTest(unittest.TestCase):
             swc = folder / "TypeA-10.CNG.swc"
             swc.write_text("swc", encoding="utf-8")
             (folder / "metadata.json").write_text(
-                json.dumps({
-                    "neuron_id": 10047,
-                    "neuron_name": "TypeA-10",
-                    "download_items": [
-                        {
-                            "kind": "standard",
-                            "filename": "TypeA-10.CNG.swc",
-                            "path": str(swc),
-                        }
-                    ],
-                }),
+                json.dumps(
+                    {
+                        "neuron_id": 10047,
+                        "neuron_name": "TypeA-10",
+                        "download_items": [
+                            {
+                                "kind": "standard",
+                                "filename": "TypeA-10.CNG.swc",
+                                "path": str(swc),
+                            }
+                        ],
+                    }
+                ),
                 encoding="utf-8",
             )
             self.assertEqual(cache.standard_swc_path(10047), swc)

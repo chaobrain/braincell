@@ -135,12 +135,8 @@ class SwcReaderTest(unittest.TestCase):
             self._soma_row(3, 0.0, 5.0, radius=5.0, parent_id=1),
         )
 
-        self.assertFalse(
-            is_special_three_point_soma(rows, {1: [2, 3], 2: [4], 3: []})[0]
-        )
-        self.assertFalse(
-            is_special_three_point_soma(rows, {1: [2, 3], 2: [], 3: [4]})[0]
-        )
+        self.assertFalse(is_special_three_point_soma(rows, {1: [2, 3], 2: [4], 3: []})[0])
+        self.assertFalse(is_special_three_point_soma(rows, {1: [2, 3], 2: [], 3: [4]})[0])
 
     def test_reader_builds_compressed_tree_and_maps_known_types(self) -> None:
         path = self._write_swc(
@@ -570,7 +566,8 @@ class SwcReaderTest(unittest.TestCase):
         self.assertNotIn("semantics.contour", self._issue_codes(report))
         self.assertEqual(soma_points.shape, (4, 3))
         self.assertTrue(
-            np.allclose(soma_points, np.array([[0.0, 0.0, 0.0], [5.0, 1.0, 0.0], [0.0, 2.0, 0.0], [-5.0, 1.0, 0.0]])))
+            np.allclose(soma_points, np.array([[0.0, 0.0, 0.0], [5.0, 1.0, 0.0], [0.0, 2.0, 0.0], [-5.0, 1.0, 0.0]]))
+        )
         self.assertTrue(np.allclose(dend_points[0], np.array([5.0, 1.0, 0.0])))
         self.assertAlmostEqual(dend_radii[0], dend_radii[1])
         self.assertNotAlmostEqual(dend_radii[0], 10.0)

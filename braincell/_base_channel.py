@@ -104,20 +104,18 @@ class IonChannel(brainstate.graph.Node, TreeNode, DiffEqModule):
         # size
         if isinstance(size, (list, tuple)):
             if len(size) <= 0:
-                raise ValueError(f'size must be int, or a tuple/list of int. '
-                                 f'But we got {type(size)}')
+                raise ValueError(f'size must be int, or a tuple/list of int. But we got {type(size)}')
             if not isinstance(size[0], (int, np.integer)):
-                raise ValueError('size must be int, or a tuple/list of int.'
-                                 f'But we got {type(size)}')
+                raise ValueError(f'size must be int, or a tuple/list of int.But we got {type(size)}')
             size = tuple(size)
         elif isinstance(size, (int, np.integer)):
             size = (size,)
         else:
-            raise ValueError('size must be int, or a tuple/list of int.'
-                             f'But we got {type(size)}')
+            raise ValueError(f'size must be int, or a tuple/list of int.But we got {type(size)}')
         self.size = size
-        assert len(size) >= 1, ('The size of the dendritic dynamics should be at '
-                                'least 1D: (..., n_neuron, n_compartment).')
+        assert len(size) >= 1, (
+            'The size of the dendritic dynamics should be at least 1D: (..., n_neuron, n_compartment).'
+        )
         self.name = name
 
     @property
@@ -294,6 +292,7 @@ class IonInfo(NamedTuple):
         objects or scalars, allowing representation of these properties across
         multiple neurons or compartments simultaneously.
     """
+
     Ci: brainstate.typing.ArrayLike
     Co: brainstate.typing.ArrayLike
     E: brainstate.typing.ArrayLike
@@ -328,6 +327,7 @@ class Channel(IonChannel):
 
             # Implement other required methods
     """
+
     __module__ = 'braincell'
 
 
@@ -345,13 +345,12 @@ class Synapse(IonChannel):
     discontinuous jump in :meth:`pre_integral` or as a continuous input
     term in :meth:`compute_derivative`.
     """
+
     __module__ = 'braincell'
 
     def init_state(self, V_post=None, batch_size=None):
         _ = V_post
-        self._pre_spike_state = brainstate.ShortTermState(
-            _synapse_pre_drive_zero(self, batch_size=batch_size)
-        )
+        self._pre_spike_state = brainstate.ShortTermState(_synapse_pre_drive_zero(self, batch_size=batch_size))
 
     def reset_state(self, V_post=None, batch_size=None):
         _ = V_post

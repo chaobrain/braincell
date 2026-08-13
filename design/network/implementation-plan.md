@@ -1,6 +1,6 @@
 # BrainCell Network 分阶段实施计划
 
-本文给出 network 层的逐步落地路线。  
+本文给出 network 层的逐步落地路线。
 目标不是一次做完所有语义，而是先拿到一条可运行、可训练、可扩展的主线。
 
 ## 1. 总体原则
@@ -202,12 +202,12 @@
 
 ### 9.1 hard spike 带来的梯度不稳定
 
-根源通常不在 delay buffer，而在离散 threshold 本身。  
+根源通常不在 delay buffer，而在离散 threshold 本身。
 因此训练主线必须提前定义 surrogate / soft strategy。
 
 ### 9.2 scatter-heavy path 在部分硬件上的性能波动
 
-edge-wise `scatter_add` 很灵活，但在不同 accelerator 上性能可能差异较大。  
+edge-wise `scatter_add` 很灵活，但在不同 accelerator 上性能可能差异较大。
 因此需要尽早保留 benchmark 位点。
 
 ### 9.3 layout 决策会影响后续扩展
@@ -222,7 +222,7 @@ edge-wise `scatter_add` 很灵活，但在不同 accelerator 上性能可能差�
 
 ### 9.4 多隔室 population 的内存增长
 
-同构多隔室群体一旦 batch 化，状态量会迅速放大。  
+同构多隔室群体一旦 batch 化，状态量会迅速放大。
 因此应尽量先用小型 network 验证 correctness，再上更大规模 benchmark。
 
 ## 10. 推荐推进顺序

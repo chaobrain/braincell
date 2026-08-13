@@ -141,9 +141,7 @@ def _build_value_spec(
     """Normalize ``plot2d``/``plot3d`` value keywords into a :class:`ValueSpec`."""
     if values is None:
         if any(k is not None for k in (cmap, vmin, vmax, norm, value_label)):
-            raise ValueError(
-                "values=... is required when passing cmap/vmin/vmax/norm/value_label."
-            )
+            raise ValueError("values=... is required when passing cmap/vmin/vmax/norm/value_label.")
         return None
     if isinstance(values, ValueSpec):
         # Fold caller-supplied style kwargs on top of the spec. A kwarg

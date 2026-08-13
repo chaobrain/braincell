@@ -465,9 +465,7 @@ class NetworkRuntimeTest(unittest.TestCase):
         net = Network()
         net.add_population("E", pre)
         net.add_population("I", post)
-        net.add_connection(
-            Connection("E", "I", [0], [1], "exp", delay=0.2 * u.ms)
-        )
+        net.add_connection(Connection("E", "I", [0], [1], "exp", delay=0.2 * u.ms))
 
         result = net.run(dt=0.1 * u.ms, duration=0.4 * u.ms)
 
@@ -482,9 +480,7 @@ class NetworkRuntimeTest(unittest.TestCase):
         net = Network()
         net.add_population("E", pre)
         net.add_population("I", post)
-        net.add_connection(
-            Connection("E", "I", [0], [1], "exp", delay=0.15 * u.ms)
-        )
+        net.add_connection(Connection("E", "I", [0], [1], "exp", delay=0.15 * u.ms))
 
         result = net.run(dt=0.1 * u.ms, duration=0.4 * u.ms)
 
@@ -498,9 +494,7 @@ class NetworkRuntimeTest(unittest.TestCase):
         net = Network()
         net.add_population("E", pre)
         net.add_population("I", post)
-        net.add_connection(
-            Connection("E", "I", [0], [1], "exp", delay=0.15 * u.ms)
-        )
+        net.add_connection(Connection("E", "I", [0], [1], "exp", delay=0.15 * u.ms))
 
         result = net.run(
             dt=0.1 * u.ms,
@@ -836,7 +830,7 @@ class NetworkRuntimeTest(unittest.TestCase):
         np.testing.assert_array_equal(conns[0].post_index, [1, 1, 1, 1])
         np.testing.assert_allclose(conns[0].weight.to_decimal(u.uS), [0.1, 0.1, 0.2, 0.2])
         for start in (0, 2):
-            self.assertEqual(set(conns[0].synapse_index[start:start + 2].tolist()), {0, 1})
+            self.assertEqual(set(conns[0].synapse_index[start : start + 2].tolist()), {0, 1})
 
     def test_projection_by_post_without_replacement_requires_enough_targets(self) -> None:
         edges = EdgeSet("E_to_I", "E", "I", [0, 1, 0], [1, 1, 0])

@@ -60,6 +60,7 @@ class ShollProfile:
 # Dendrogram
 # ---------------------------------------------------------------------------
 
+
 def plot_dendrogram(
     morpho: Morphology,
     *,
@@ -157,6 +158,7 @@ def _assign_dendrogram_y(root: MorphoBranch) -> dict[int, float]:
 # Topology
 # ---------------------------------------------------------------------------
 
+
 def plot_topology(
     morpho: Morphology,
     *,
@@ -220,6 +222,7 @@ def _branch_depths(root: MorphoBranch) -> dict[int, int]:
 # ---------------------------------------------------------------------------
 # Sholl analysis
 # ---------------------------------------------------------------------------
+
 
 def compute_sholl_profile(
     morpho: Morphology,
@@ -349,6 +352,7 @@ def _resolve_center(morpho: Morphology, center_um: np.ndarray | None) -> np.ndar
 # ---------------------------------------------------------------------------
 # Branch-order histogram
 # ---------------------------------------------------------------------------
+
 
 def plot_branch_order_histogram(
     morpho: Morphology,

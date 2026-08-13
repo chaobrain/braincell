@@ -96,8 +96,7 @@ class Network:
         if self.edge_sets:
             for name, edge_set in self.edge_sets.items():
                 lines.append(
-                    f"    {name}: {edge_set.pre_population} -> "
-                    f"{edge_set.post_population}, n_edge={edge_set.n_edge}"
+                    f"    {name}: {edge_set.pre_population} -> {edge_set.post_population}, n_edge={edge_set.n_edge}"
                 )
         else:
             lines.append("    <none>")
@@ -105,10 +104,7 @@ class Network:
         lines.append("  projections:")
         if self.projections:
             for name, projection in self.projections.items():
-                lines.append(
-                    f"    {name}: edges={projection.edge_set_name!r}, "
-                    f"synapse={projection.synapse!r}"
-                )
+                lines.append(f"    {name}: edges={projection.edge_set_name!r}, synapse={projection.synapse!r}")
         else:
             lines.append("    <none>")
 
@@ -136,9 +132,7 @@ class Network:
     def add_connection(self, connection: Connection) -> Connection:
         """Add a sparse connection declaration and return it."""
         if not isinstance(connection, Connection):
-            raise TypeError(
-                f"Network.add_connection(...) expects Connection, got {type(connection).__name__!s}."
-            )
+            raise TypeError(f"Network.add_connection(...) expects Connection, got {type(connection).__name__!s}.")
         self.connections.append(connection)
         self._mark_topology_changed()
         return connection
@@ -193,9 +187,7 @@ class Network:
                 "or direct projection keyword arguments, not both."
             )
         if not isinstance(projection, Projection):
-            raise TypeError(
-                f"Network.add_projection(...) expects Projection, got {type(projection).__name__!s}."
-            )
+            raise TypeError(f"Network.add_projection(...) expects Projection, got {type(projection).__name__!s}.")
         if projection.name in self.proj:
             raise ValueError(f"Network already has a projection named {projection.name!r}.")
         self.proj[projection.name] = projection
@@ -320,9 +312,7 @@ class Network:
         start_t = self._common_start_time(ordered_population_names)
         relative_times = u.math.arange(0.0 * u.ms, duration, dt)
         if int(relative_times.shape[0]) == 0:
-            raise ValueError(
-                "Network.run(...) produced no timesteps; ensure duration > 0 and dt > 0."
-            )
+            raise ValueError("Network.run(...) produced no timesteps; ensure duration > 0 and dt > 0.")
         times = start_t + relative_times
         probe_names = setup.probe_names
         n_trace = setup.n_trace
@@ -357,10 +347,7 @@ class Network:
                 index += 1
         spikes = {}
         if spike_recording != "none":
-            spikes = {
-                name: spike_values[index]
-                for index, name in enumerate(ordered_population_names)
-            }
+            spikes = {name: spike_values[index] for index, name in enumerate(ordered_population_names)}
         return NetworkRunResult(time=times, traces=traces, spikes=spikes)
 
     def _run_setup(
@@ -401,8 +388,7 @@ class Network:
         )
         ordered_population_names = tuple(self.populations)
         probe_names = {
-            name: tuple(sorted(population.cell.sample_probes()))
-            for name, population in self.populations.items()
+            name: tuple(sorted(population.cell.sample_probes())) for name, population in self.populations.items()
         }
         setup = _RunSetup(
             delivery_blocks=delivery_blocks,
@@ -425,8 +411,7 @@ class Network:
     ) -> tuple:
         dt_ms = float(np.asarray(dt.to_decimal(u.ms), dtype=float).reshape(()))
         runtime_ids = tuple(
-            (name, id(population.cell.runtime), population.size)
-            for name, population in self.populations.items()
+            (name, id(population.cell.runtime), population.size) for name, population in self.populations.items()
         )
         return (
             self._topology_version,
@@ -487,6 +472,7 @@ class Network:
         def _run_loop(start_t, relative_times):
             times = start_t + relative_times
             with brainstate.environ.context(dt=dt):
+
                 def _step(t):
                     with brainstate.environ.context(t=t):
                         with jax.named_scope("braincell:network_run:write_arrivals"):
@@ -507,14 +493,12 @@ class Network:
                                 cell._update_dynamics()
                         with jax.named_scope("braincell:network_run:sample_probes"):
                             snapshots = {
-                                name: self.populations[name].cell.sample_probes()
-                                for name in ordered_population_names
+                                name: self.populations[name].cell.sample_probes() for name in ordered_population_names
                             }
                         with jax.named_scope("braincell:network_run:record_spikes"):
                             if spike_recording == "full":
                                 spikes = tuple(
-                                    self.populations[name].cell.spike.value
-                                    for name in ordered_population_names
+                                    self.populations[name].cell.spike.value for name in ordered_population_names
                                 )
                             elif spike_recording == "population":
                                 spikes = tuple(
@@ -564,9 +548,7 @@ class Network:
         for projection in self.proj.values():
             edge_name = projection.edge_set_name
             if edge_name not in self.edge_sets:
-                raise KeyError(
-                    f"Projection {projection.name!r} references unknown EdgeSet {edge_name!r}."
-                )
+                raise KeyError(f"Projection {projection.name!r} references unknown EdgeSet {edge_name!r}.")
             edge_set = self.edge_sets[edge_name]
             pool_size = None
             pool_name = projection.synapse
@@ -586,10 +568,7 @@ class Network:
 
 def _normalize_spike_recording(value: str) -> str:
     if value not in ("full", "population", "none"):
-        raise ValueError(
-            "Network spike_recording must be 'full', 'population', or 'none', "
-            f"got {value!r}."
-        )
+        raise ValueError(f"Network spike_recording must be 'full', 'population', or 'none', got {value!r}.")
     return value
 
 
@@ -599,14 +578,9 @@ def _normalize_scan_samples(values, *, n_samples: int) -> tuple:
     if n_samples == 1:
         return values if isinstance(values, tuple) else (values,)
     if not isinstance(values, tuple):
-        raise TypeError(
-            f"Network.run(...) expected {n_samples} scan outputs, "
-            f"got {type(values).__name__!s}."
-        )
+        raise TypeError(f"Network.run(...) expected {n_samples} scan outputs, got {type(values).__name__!s}.")
     if len(values) != n_samples:
-        raise ValueError(
-            f"Network.run(...) expected {n_samples} scan outputs, got {len(values)!r}."
-        )
+        raise ValueError(f"Network.run(...) expected {n_samples} scan outputs, got {len(values)!r}.")
     return values
 
 

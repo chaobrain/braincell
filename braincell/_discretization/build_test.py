@@ -80,7 +80,7 @@ from braincell.morph.morphology import Morphology
 def _cable(cm: float = 1.0, ra: float = 100.0, v: float = -65.0) -> CableProperty:
     return CableProperty(
         resting_potential=v * u.mV,
-        membrane_capacitance=cm * (u.uF / u.cm ** 2),
+        membrane_capacitance=cm * (u.uF / u.cm**2),
         axial_resistivity=ra * (u.ohm * u.cm),
     )
 
@@ -178,7 +178,7 @@ class NormalizePaintRulesTest(unittest.TestCase):
         with self.assertRaises(TypeError):
             normalize_paint_rules(
                 "not a region",  # type: ignore[arg-type]
-                (Channel("IL", g_max=0.1 * (u.mS / u.cm ** 2), E=-70 * u.mV),),
+                (Channel("IL", g_max=0.1 * (u.mS / u.cm**2), E=-70 * u.mV),),
             )
 
     def test_rejects_empty_mechanisms(self) -> None:
@@ -187,7 +187,7 @@ class NormalizePaintRulesTest(unittest.TestCase):
 
     def test_accepts_cable_and_density(self) -> None:
         cable = _cable()
-        ch = Channel("IL", g_max=0.1 * (u.mS / u.cm ** 2), E=-70 * u.mV)
+        ch = Channel("IL", g_max=0.1 * (u.mS / u.cm**2), E=-70 * u.mV)
         rules = normalize_paint_rules(AllRegion(), (cable, ch))
         self.assertEqual(len(rules), 2)
         self.assertIs(rules[0].mechanism, cable)
@@ -222,7 +222,7 @@ class NormalizePlaceRuleTest(unittest.TestCase):
         with self.assertRaises(TypeError):
             normalize_place_rule(
                 AtLocation(branch=0, x=0.5),
-                (Channel("IL", g_max=0.1 * (u.mS / u.cm ** 2), E=-70 * u.mV),),
+                (Channel("IL", g_max=0.1 * (u.mS / u.cm**2), E=-70 * u.mV),),
             )
 
     def test_returns_place_rule_with_site_mid(self) -> None:
@@ -250,8 +250,8 @@ class MergePaintRulesTest(unittest.TestCase):
         self.assertEqual(len(merged), 2)
 
     def test_density_same_region_same_name_replaces(self) -> None:
-        d1 = Channel("IL", g_max=0.1 * (u.mS / u.cm ** 2), E=-70 * u.mV)
-        d2 = Channel("IL", g_max=0.2 * (u.mS / u.cm ** 2), E=-70 * u.mV)
+        d1 = Channel("IL", g_max=0.1 * (u.mS / u.cm**2), E=-70 * u.mV)
+        d2 = Channel("IL", g_max=0.2 * (u.mS / u.cm**2), E=-70 * u.mV)
         r1 = PaintRule(region=AllRegion(), mechanism=d1)
         r2 = PaintRule(region=AllRegion(), mechanism=d2)
         merged = merge_paint_rules((r1,), (r2,))
@@ -259,18 +259,16 @@ class MergePaintRulesTest(unittest.TestCase):
         self.assertIs(merged[0].mechanism, d2)
 
     def test_density_same_class_different_names_kept(self) -> None:
-        d1 = Channel("IL", name="a", g_max=0.1 * (u.mS / u.cm ** 2), E=-70 * u.mV)
-        d2 = Channel("IL", name="b", g_max=0.2 * (u.mS / u.cm ** 2), E=-70 * u.mV)
+        d1 = Channel("IL", name="a", g_max=0.1 * (u.mS / u.cm**2), E=-70 * u.mV)
+        d2 = Channel("IL", name="b", g_max=0.2 * (u.mS / u.cm**2), E=-70 * u.mV)
         r1 = PaintRule(region=AllRegion(), mechanism=d1)
         r2 = PaintRule(region=AllRegion(), mechanism=d2)
         merged = merge_paint_rules((r1,), (r2,))
         self.assertEqual(len(merged), 2)
 
     def test_density_different_classes_both_kept(self) -> None:
-        d1 = Channel("IL", g_max=0.1 * (u.mS / u.cm ** 2), E=-70 * u.mV)
-        d2 = Channel(
-            "Na_Ba2002", g_max=0.05 * (u.mS / u.cm ** 2), E=50 * u.mV
-        )
+        d1 = Channel("IL", g_max=0.1 * (u.mS / u.cm**2), E=-70 * u.mV)
+        d2 = Channel("Na_Ba2002", g_max=0.05 * (u.mS / u.cm**2), E=50 * u.mV)
         r1 = PaintRule(region=AllRegion(), mechanism=d1)
         r2 = PaintRule(region=AllRegion(), mechanism=d2)
         merged = merge_paint_rules((r1,), (r2,))
@@ -361,7 +359,7 @@ class BuildFrustaTest(unittest.TestCase):
         branch = _jump_branch()
         frusta = _build_frusta(branch, prox=0.0, dist=1.0)
 
-        branch_area = float(branch.area.to_decimal(u.um ** 2))
+        branch_area = float(branch.area.to_decimal(u.um**2))
         self.assertAlmostEqual(_lateral_area_um2(frusta), branch_area, places=4)
 
         lengths_um = np.asarray(branch.lengths.to_decimal(u.um), dtype=float)
@@ -388,7 +386,7 @@ class BuildFrustaTest(unittest.TestCase):
         self.assertAlmostEqual(right[0].length_um, 20.0)
         self.assertAlmostEqual(
             _lateral_area_um2(left) + _lateral_area_um2(right),
-            float(branch.area.to_decimal(u.um ** 2)),
+            float(branch.area.to_decimal(u.um**2)),
             places=4,
         )
 
@@ -414,6 +412,7 @@ class BuildFrustaTest(unittest.TestCase):
         # ``_build_frusta`` also raises when handed a hand-assembled branch
         # with a non-positive radius — defense in depth.
         import brainstate
+
         brainstate.environ.set(precision=64)
         branch = Branch.from_lengths(
             lengths=np.asarray([10.0]) * u.um,
@@ -425,7 +424,8 @@ class BuildFrustaTest(unittest.TestCase):
         # upstream branch — validator should still reject.
         with self.assertRaises(ValueError):
             object.__setattr__(
-                branch, "radii_proximal",
+                branch,
+                "radii_proximal",
                 np.asarray([0.0]) * u.um,
             )
             _build_frusta(branch, prox=0.0, dist=1.0)
@@ -435,9 +435,13 @@ class FrustumScalarsTest(unittest.TestCase):
     def _single(self, length_um: float, r0: float, r1: float) -> tuple[_Frustum, ...]:
         return (
             _Frustum(
-                prox=0.0, dist=1.0, length_um=length_um,
-                r_prox_um=r0, r_dist_um=r1,
-                point_prox_um=None, point_dist_um=None,
+                prox=0.0,
+                dist=1.0,
+                length_um=length_um,
+                r_prox_um=r0,
+                r_dist_um=r1,
+                point_prox_um=None,
+                point_dist_um=None,
             ),
         )
 
@@ -476,9 +480,13 @@ class FrustumScalarsTest(unittest.TestCase):
 class SplitFrustaTest(unittest.TestCase):
     def test_split_at_midpoint(self) -> None:
         f = _Frustum(
-            prox=0.0, dist=1.0, length_um=10.0,
-            r_prox_um=2.0, r_dist_um=4.0,
-            point_prox_um=None, point_dist_um=None,
+            prox=0.0,
+            dist=1.0,
+            length_um=10.0,
+            r_prox_um=2.0,
+            r_dist_um=4.0,
+            point_prox_um=None,
+            point_dist_um=None,
         )
         left, right = _split_frusta((f,), x=0.5)
         self.assertEqual(len(left), 1)
@@ -490,9 +498,13 @@ class SplitFrustaTest(unittest.TestCase):
 
     def test_split_at_boundary_puts_all_on_one_side(self) -> None:
         f = _Frustum(
-            prox=0.0, dist=1.0, length_um=10.0,
-            r_prox_um=2.0, r_dist_um=4.0,
-            point_prox_um=None, point_dist_um=None,
+            prox=0.0,
+            dist=1.0,
+            length_um=10.0,
+            r_prox_um=2.0,
+            r_dist_um=4.0,
+            point_prox_um=None,
+            point_dist_um=None,
         )
         left, right = _split_frusta((f,), x=1.0)
         self.assertEqual(len(left), 1)
@@ -541,13 +553,23 @@ class BuildGeoTest(unittest.TestCase):
 class LocateCVOnBranchTest(unittest.TestCase):
     def test_raises_on_bad_bounds(self) -> None:
         g = _GeoCV(
-            id=0, branch_id=0, branch_type="soma",
-            prox=0.2, dist=0.8, midpoint=0.5,
-            parent_cv=None, children_cv=(),
-            length_um=6.0, lateral_area_um2=1.0,
+            id=0,
+            branch_id=0,
+            branch_type="soma",
+            prox=0.2,
+            dist=0.8,
+            midpoint=0.5,
+            parent_cv=None,
+            children_cv=(),
+            length_um=6.0,
+            lateral_area_um2=1.0,
             axial_factor_total_per_cm=1.0,
-            axial_factor_prox_per_cm=0.5, axial_factor_dist_per_cm=0.5,
-            r_prox_um=1.0, r_mid_um=1.0, diam_arc_mean_um=2.0, r_dist_um=1.0,
+            axial_factor_prox_per_cm=0.5,
+            axial_factor_dist_per_cm=0.5,
+            r_prox_um=1.0,
+            r_mid_um=1.0,
+            diam_arc_mean_um=2.0,
+            r_dist_um=1.0,
         )
         # x=0.9 and x=0.1 are out of [0.2, 0.8] — raise, not snap.
         with self.assertRaises(ValueError):
@@ -575,7 +597,9 @@ class ValidateMorphoTest(unittest.TestCase):
         # radius field after construction.
         soma = _branch([10.0], [2.0, 2.0], type="soma")
         object.__setattr__(
-            soma, "radii_proximal", np.asarray([0.0]) * u.um,
+            soma,
+            "radii_proximal",
+            np.asarray([0.0]) * u.um,
         )
         with self.assertRaises(ValueError):
             _validate_morpho(Morphology.from_root(soma, name="soma"))
@@ -652,13 +676,23 @@ class CoverageFractionTest(unittest.TestCase):
         # produce 0. Geometry build now validates full branch coverage, so
         # construct the partial geo manually.
         g = _GeoCV(
-            id=0, branch_id=0, branch_type="soma",
-            prox=0.0, dist=0.5, midpoint=0.25,
-            parent_cv=None, children_cv=(),
-            length_um=5.0, lateral_area_um2=10.0,
+            id=0,
+            branch_id=0,
+            branch_type="soma",
+            prox=0.0,
+            dist=0.5,
+            midpoint=0.25,
+            parent_cv=None,
+            children_cv=(),
+            length_um=5.0,
+            lateral_area_um2=10.0,
             axial_factor_total_per_cm=1.0,
-            axial_factor_prox_per_cm=0.5, axial_factor_dist_per_cm=0.5,
-            r_prox_um=1.0, r_mid_um=1.0, diam_arc_mean_um=2.0, r_dist_um=1.0,
+            axial_factor_prox_per_cm=0.5,
+            axial_factor_dist_per_cm=0.5,
+            r_prox_um=1.0,
+            r_mid_um=1.0,
+            diam_arc_mean_um=2.0,
+            r_dist_um=1.0,
         )
         self.assertAlmostEqual(
             _coverage_fraction(morpho, g, ((0.6, 1.0),)),
@@ -668,14 +702,14 @@ class CoverageFractionTest(unittest.TestCase):
 
 class ApplyDensityTest(unittest.TestCase):
     def test_channel_full_coverage_no_scaling(self) -> None:
-        ch = Channel("IL", g_max=0.1 * (u.mS / u.cm ** 2), E=-70 * u.mV)
+        ch = Channel("IL", g_max=0.1 * (u.mS / u.cm**2), E=-70 * u.mV)
         bucket = _MechBucket(cable=_DEFAULT_CABLE, density_by_key={}, points=[])
         _apply_density(bucket, ch, region_key=AllRegion(), fraction=1.0)
         stored = next(iter(bucket.density_by_key.values()))
         self.assertEqual(stored.coverage_area_fraction, 1.0)
 
     def test_channel_half_coverage_records_fraction(self) -> None:
-        ch = Channel("IL", g_max=0.1 * (u.mS / u.cm ** 2), E=-70 * u.mV)
+        ch = Channel("IL", g_max=0.1 * (u.mS / u.cm**2), E=-70 * u.mV)
         bucket = _MechBucket(cable=_DEFAULT_CABLE, density_by_key={}, points=[])
         _apply_density(bucket, ch, region_key=AllRegion(), fraction=0.5)
         stored = next(iter(bucket.density_by_key.values()))
@@ -689,15 +723,15 @@ class ApplyDensityTest(unittest.TestCase):
         self.assertEqual(stored.coverage_area_fraction, 1.0)
 
     def test_same_key_replaces(self) -> None:
-        c1 = Channel("IL", g_max=0.1 * (u.mS / u.cm ** 2), E=-70 * u.mV)
-        c2 = Channel("IL", g_max=0.2 * (u.mS / u.cm ** 2), E=-70 * u.mV)
+        c1 = Channel("IL", g_max=0.1 * (u.mS / u.cm**2), E=-70 * u.mV)
+        c2 = Channel("IL", g_max=0.2 * (u.mS / u.cm**2), E=-70 * u.mV)
         bucket = _MechBucket(cable=_DEFAULT_CABLE, density_by_key={}, points=[])
         region = AllRegion()
         _apply_density(bucket, c1, region_key=region, fraction=1.0)
         _apply_density(bucket, c2, region_key=region, fraction=1.0)
         self.assertEqual(len(bucket.density_by_key), 1)
         stored = next(iter(bucket.density_by_key.values()))
-        self.assertEqual(stored.params["g_max"], 0.2 * (u.mS / u.cm ** 2))
+        self.assertEqual(stored.params["g_max"], 0.2 * (u.mS / u.cm**2))
 
 
 class ResolvePointNameTest(unittest.TestCase):
@@ -741,18 +775,22 @@ class BuildMechTest(unittest.TestCase):
         morpho = _single_branch_morpho()
         geos, ids = _build_geo(morpho, (((0.0, 1.0),),))
         cable = _cable(cm=2.0)
-        ch = Channel("IL", g_max=0.1 * (u.mS / u.cm ** 2), E=-70 * u.mV)
+        ch = Channel("IL", g_max=0.1 * (u.mS / u.cm**2), E=-70 * u.mV)
         paint = (
             PaintRule(region=AllRegion(), mechanism=cable),
             PaintRule(region=AllRegion(), mechanism=ch),
         )
         cache = _RegionCache(morpho)
         buckets = _build_mech(
-            morpho, geos, ids,
-            paint_rules=paint, place_rules=(), cache=cache,
+            morpho,
+            geos,
+            ids,
+            paint_rules=paint,
+            place_rules=(),
+            cache=cache,
         )
         self.assertEqual(len(buckets), 1)
-        self.assertEqual(buckets[0].cable.membrane_capacitance, 2.0 * (u.uF / u.cm ** 2))
+        self.assertEqual(buckets[0].cable.membrane_capacitance, 2.0 * (u.uF / u.cm**2))
         self.assertEqual(len(buckets[0].density_by_key), 1)
 
     def test_callable_cable_field_resolves_from_cv_context(self) -> None:
@@ -763,10 +801,7 @@ class BuildMechTest(unittest.TestCase):
         )
         cable = CableProperty(
             resting_potential=-65.0 * u.mV,
-            membrane_capacitance=lambda cv: (
-                (1.0 + float(cv.diam_arc_mean.to_decimal(u.um)))
-                * (u.uF / u.cm ** 2)
-            ),
+            membrane_capacitance=lambda cv: (1.0 + float(cv.diam_arc_mean.to_decimal(u.um))) * (u.uF / u.cm**2),
             axial_resistivity=100.0 * (u.ohm * u.cm),
         )
         buckets = _build_mech(
@@ -776,10 +811,7 @@ class BuildMechTest(unittest.TestCase):
             paint_rules=(PaintRule(region=AllRegion(), mechanism=cable),),
             place_rules=(),
         )
-        values = [
-            float(bucket.cable.membrane_capacitance.to_decimal(u.uF / u.cm ** 2))
-            for bucket in buckets
-        ]
+        values = [float(bucket.cable.membrane_capacitance.to_decimal(u.uF / u.cm**2)) for bucket in buckets]
         self.assertEqual(values, [5.0, 5.0])
 
     def test_callable_cable_field_must_return_scalar_quantity(self) -> None:
@@ -811,8 +843,12 @@ class BuildMechTest(unittest.TestCase):
         )
         cache = _RegionCache(morpho)
         buckets = _build_mech(
-            morpho, geos, ids,
-            paint_rules=(), place_rules=place, cache=cache,
+            morpho,
+            geos,
+            ids,
+            paint_rules=(),
+            place_rules=place,
+            cache=cache,
         )
         self.assertEqual([len(b.points) for b in buckets], [1, 0])
 
@@ -829,8 +865,8 @@ class BuildMechCachesFrustaTest(unittest.TestCase):
             morpho,
             (((0.0, 0.25), (0.25, 0.5), (0.5, 0.75), (0.75, 1.0)),),
         )
-        ch1 = Channel("IL", g_max=0.1 * (u.mS / u.cm ** 2), E=-70 * u.mV)
-        ch2 = Channel("IL", g_max=0.2 * (u.mS / u.cm ** 2), E=-60 * u.mV)
+        ch1 = Channel("IL", g_max=0.1 * (u.mS / u.cm**2), E=-70 * u.mV)
+        ch2 = Channel("IL", g_max=0.2 * (u.mS / u.cm**2), E=-60 * u.mV)
         paint = (
             PaintRule(region=AllRegion(), mechanism=ch1),
             PaintRule(region=AllRegion(), mechanism=ch2),
@@ -847,15 +883,19 @@ class BuildMechCachesFrustaTest(unittest.TestCase):
 
         with patch("braincell._discretization.mechanism._build_frusta", new=counting):
             _build_mech(
-                morpho, geos, ids,
-                paint_rules=paint, place_rules=(), cache=cache,
+                morpho,
+                geos,
+                ids,
+                paint_rules=paint,
+                place_rules=(),
+                cache=cache,
             )
 
         for key, count in calls.items():
             self.assertEqual(
-                count, 1,
-                f"_build_frusta was called {count} times for key={key!r}; "
-                "expected 1 after caching.",
+                count,
+                1,
+                f"_build_frusta was called {count} times for key={key!r}; expected 1 after caching.",
             )
 
 
@@ -905,13 +945,14 @@ class LowerSmokeTest(unittest.TestCase):
 # Property-based invariants (skipped when hypothesis missing)
 # =============================================================================
 
-class LowerPropertyTest(unittest.TestCase):
 
+class LowerPropertyTest(unittest.TestCase):
     @given(cv_count=st.integers(min_value=1, max_value=8))
     @settings(max_examples=25, deadline=None)
     def test_cv_lengths_sum_to_branch_total(self, cv_count: int) -> None:
         morpho = Morphology.from_root(
-            _branch([30.0], [3.0, 3.0], type="soma"), name="soma",
+            _branch([30.0], [3.0, 3.0], type="soma"),
+            name="soma",
         )
         cvs = _build_cvs(
             morpho,
@@ -925,16 +966,20 @@ class LowerPropertyTest(unittest.TestCase):
     @given(cv_count=st.integers(min_value=1, max_value=8))
     @settings(max_examples=25, deadline=None)
     def test_coverage_fraction_of_all_region_is_one_per_cv(
-        self, cv_count: int,
+        self,
+        cv_count: int,
     ) -> None:
         morpho = Morphology.from_root(
-            _branch([20.0], [2.0, 2.0], type="soma"), name="soma",
+            _branch([20.0], [2.0, 2.0], type="soma"),
+            name="soma",
         )
         bounds = CVPerBranch(cv_per_branch=cv_count).resolve_cv_bounds(morpho)
         geos, _ = _build_geo(morpho, bounds)
         for g in geos:
             self.assertAlmostEqual(
-                _coverage_fraction(morpho, g, ((0.0, 1.0),)), 1.0, places=3,
+                _coverage_fraction(morpho, g, ((0.0, 1.0),)),
+                1.0,
+                places=3,
             )
 
     @given(cv_count=st.integers(min_value=1, max_value=6))

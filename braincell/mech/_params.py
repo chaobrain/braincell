@@ -69,9 +69,7 @@ def _to_hashable(value: object) -> object:
     if isinstance(value, list):
         return ("__list__",) + tuple(_to_hashable(v) for v in value)
     if isinstance(value, dict):
-        return ("__dict__",) + tuple(
-            (k, _to_hashable(v)) for k, v in sorted(value.items(), key=lambda kv: kv[0])
-        )
+        return ("__dict__",) + tuple((k, _to_hashable(v)) for k, v in sorted(value.items(), key=lambda kv: kv[0]))
     if is_dataclass(value) and not isinstance(value, type):
         return (
             type(value).__qualname__,
@@ -156,17 +154,13 @@ class Params(Mapping[str, Any]):
                 iterator = iter(data)  # type: ignore[arg-type]
             except TypeError as exc:
                 raise TypeError(
-                    f"Params() expected a Mapping or iterable of "
-                    f"(name, value) pairs, got {type(data).__name__!r}."
+                    f"Params() expected a Mapping or iterable of (name, value) pairs, got {type(data).__name__!r}."
                 ) from exc
             for pair in iterator:
                 try:
                     key, value = pair
                 except (TypeError, ValueError) as exc:
-                    raise TypeError(
-                        f"Params() entries must be (name, value) pairs, "
-                        f"got {pair!r}."
-                    ) from exc
+                    raise TypeError(f"Params() entries must be (name, value) pairs, got {pair!r}.") from exc
                 merged[str(key)] = value
         for key, value in kwargs.items():
             merged[str(key)] = value
@@ -175,8 +169,7 @@ class Params(Mapping[str, Any]):
                 hash(_to_hashable(value))
             except TypeError as exc:
                 raise TypeError(
-                    f"Params value for {key!r} must be hashable "
-                    f"(arrays are rejected); got {type(value).__name__!r}."
+                    f"Params value for {key!r} must be hashable (arrays are rejected); got {type(value).__name__!r}."
                 ) from exc
         object.__setattr__(self, "_items", merged)
 
@@ -216,14 +209,10 @@ class Params(Mapping[str, Any]):
     # ------------------------------------------------------------------
 
     def __setattr__(self, name: str, value: Any) -> None:
-        raise AttributeError(
-            f"Params is immutable; cannot set attribute {name!r}."
-        )
+        raise AttributeError(f"Params is immutable; cannot set attribute {name!r}.")
 
     def __delattr__(self, name: str) -> None:
-        raise AttributeError(
-            f"Params is immutable; cannot delete attribute {name!r}."
-        )
+        raise AttributeError(f"Params is immutable; cannot delete attribute {name!r}.")
 
     # ------------------------------------------------------------------
     # equality / hashing: order-insensitive (dict-like)
@@ -244,13 +233,10 @@ class Params(Mapping[str, Any]):
 
     def __hash__(self) -> int:
         try:
-            return hash(
-                frozenset((k, _to_hashable(v)) for k, v in self._items.items())
-            )
+            return hash(frozenset((k, _to_hashable(v)) for k, v in self._items.items()))
         except TypeError as exc:
             raise TypeError(
-                f"Params values must be hashable to hash the mapping; "
-                f"unhashable entry encountered ({exc})."
+                f"Params values must be hashable to hash the mapping; unhashable entry encountered ({exc})."
             ) from exc
 
     # ------------------------------------------------------------------
@@ -305,11 +291,7 @@ class Params(Mapping[str, Any]):
         if not keys:
             return self
         to_drop = {str(k) for k in keys}
-        remaining = {
-            key: value
-            for key, value in self._items.items()
-            if key not in to_drop
-        }
+        remaining = {key: value for key, value in self._items.items() if key not in to_drop}
         return Params(remaining)
 
     # ------------------------------------------------------------------

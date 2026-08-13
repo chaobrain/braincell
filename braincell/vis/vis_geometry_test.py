@@ -14,7 +14,6 @@
 # ==============================================================================
 
 
-
 import math
 import unittest
 import warnings
@@ -302,8 +301,7 @@ class VisGeometryTest(unittest.TestCase):
 
         length_layouts = {layout.branch_name: layout for layout in build_layout_branches_2d(length_tree, mode="tree")}
         point_layouts = {
-            layout.branch_name: layout
-            for layout in build_layout_branches_2d(point_geometry_tree, mode="tree")
+            layout.branch_name: layout for layout in build_layout_branches_2d(point_geometry_tree, mode="tree")
         }
 
         self.assertTrue(np.allclose(length_layouts["dend"].segment_points_um, point_layouts["dend"].segment_points_um))
@@ -322,22 +320,32 @@ class VisGeometryTest(unittest.TestCase):
     def test_balloon_layout_assigns_distinct_child_angles(self) -> None:
         tree = make_two_dendrite_tree()
 
-        layouts = {layout.branch_name: layout for layout in build_layout_branches_2d(tree, mode="tree", layout_family="balloon")}
-        dend_a_angle = math.degrees(math.atan2(layouts["dend_a"].end_direction_um[1], layouts["dend_a"].end_direction_um[0]))
-        dend_b_angle = math.degrees(math.atan2(layouts["dend_b"].end_direction_um[1], layouts["dend_b"].end_direction_um[0]))
+        layouts = {
+            layout.branch_name: layout
+            for layout in build_layout_branches_2d(tree, mode="tree", layout_family="balloon")
+        }
+        dend_a_angle = math.degrees(
+            math.atan2(layouts["dend_a"].end_direction_um[1], layouts["dend_a"].end_direction_um[0])
+        )
+        dend_b_angle = math.degrees(
+            math.atan2(layouts["dend_b"].end_direction_um[1], layouts["dend_b"].end_direction_um[0])
+        )
 
         self.assertNotAlmostEqual(dend_a_angle, dend_b_angle)
 
     def test_balloon_layout_straightens_after_initial_bend(self) -> None:
         soma = Branch.from_lengths(lengths=[20.0] * u.um, radii=[10.0, 10.0] * u.um, type="soma")
-        dend_a = Branch.from_lengths(lengths=[5.0, 5.0, 10.0] * u.um, radii=[2.0, 1.8, 1.4, 1.0] * u.um, type="apical_dendrite")
+        dend_a = Branch.from_lengths(
+            lengths=[5.0, 5.0, 10.0] * u.um, radii=[2.0, 1.8, 1.4, 1.0] * u.um, type="apical_dendrite"
+        )
         dend_b = Branch.from_lengths(lengths=[8.0] * u.um, radii=[1.5, 1.0] * u.um, type="basal_dendrite")
         tree = Morphology.from_root(soma, name="soma")
         tree.attach(parent="soma", child_branch=dend_a, child_name="dend_a", parent_x=1.0)
         tree.attach(parent="soma", child_branch=dend_b, child_name="dend_b", parent_x=1.0)
 
         layout = next(
-            layout for layout in build_layout_branches_2d(tree, mode="tree", layout_family="balloon")
+            layout
+            for layout in build_layout_branches_2d(tree, mode="tree", layout_family="balloon")
             if layout.branch_name == "dend_a"
         )
 
@@ -351,7 +359,9 @@ class VisGeometryTest(unittest.TestCase):
         for index in range(4):
             tree.attach(
                 parent="soma",
-                child_branch=Branch.from_lengths(lengths=[10.0, 6.0] * u.um, radii=[1.5, 1.0, 0.8] * u.um, type="basal_dendrite"),
+                child_branch=Branch.from_lengths(
+                    lengths=[10.0, 6.0] * u.um, radii=[1.5, 1.0, 0.8] * u.um, type="basal_dendrite"
+                ),
                 child_name=f"d{index}",
                 parent_x=1.0,
             )
@@ -363,8 +373,7 @@ class VisGeometryTest(unittest.TestCase):
         }
 
         quadrants = {
-            (np.sign(layout.end_direction_um[0]), np.sign(layout.end_direction_um[1]))
-            for layout in layouts.values()
+            (np.sign(layout.end_direction_um[0]), np.sign(layout.end_direction_um[1])) for layout in layouts.values()
         }
         self.assertGreaterEqual(len(quadrants), 3)
 

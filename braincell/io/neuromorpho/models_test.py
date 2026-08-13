@@ -93,11 +93,13 @@ class NeuroMorphoMeasurementTest(unittest.TestCase):
         self.assertIsNone(meas.get("length"))
 
     def test_as_dict_includes_promoted_and_extras(self) -> None:
-        meas = NeuroMorphoMeasurement.from_payload({
-            "neuron_id": 1,
-            "length": 10.0,
-            "rare": "value",
-        })
+        meas = NeuroMorphoMeasurement.from_payload(
+            {
+                "neuron_id": 1,
+                "length": 10.0,
+                "rare": "value",
+            }
+        )
         flat = meas.as_dict()
         self.assertEqual(flat["length"], 10.0)
         self.assertEqual(flat["rare"], "value")
@@ -118,11 +120,13 @@ class NeuroMorphoMeasurementTest(unittest.TestCase):
         self.assertEqual(meas.raw["soma_Surface"], 12.5)
 
     def test_int_fields_round_floats(self) -> None:
-        meas = NeuroMorphoMeasurement.from_payload({
-            "neuron_id": 1,
-            "n_stems": 2.7,
-            "n_branch": "5",
-        })
+        meas = NeuroMorphoMeasurement.from_payload(
+            {
+                "neuron_id": 1,
+                "n_stems": 2.7,
+                "n_branch": "5",
+            }
+        )
         self.assertEqual(meas.n_stems, 3)
         self.assertEqual(meas.n_branch, 5)
 

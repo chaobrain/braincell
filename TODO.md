@@ -1091,7 +1091,10 @@ in-place "rebuild on next use".
 ### 4.4 Testing
 
 - pytest with `unittest.TestCase`; tests live next to source as
-  `*_test.py` (exception: `io/swc/test.py`, `io/asc/test.py`).
+  `*_test.py`, with no exceptions. The former `io/swc/test.py` and
+  `io/asc/test.py` matched neither default pytest discovery pattern and
+  were silently never collected; they are now `io/swc/swc_test.py` and
+  `io/asc/asc_test.py`.
 - `conftest.py` forces `JAX_PLATFORMS=cpu` and `MPLBACKEND=Agg`.
 - IO test fixtures live in `examples/multi_compartment/morpho_files/`.
 - New code is expected to ship with co-located tests and to keep
@@ -1249,22 +1252,41 @@ braincell.vis.compare2d(morpho_a, morpho_b, layout="frustum")
 
 | Package | Floor | Role |
 |---|---|---|
-| `python` | 3.11 | language; tested 3.11–3.14 |
-| `jax` | recent | autodiff, vmap, jit, GPU/TPU |
+| `python` | 3.11 | language; classifiers claim 3.11–3.14 (see note) |
+| `jax` | recent | autodiff, vmap, jit, GPU/TPU — deliberately unpinned |
 | `brainunit` | >= 0.0.8 | units (mandatory at every API boundary) |
-| `brainstate` | >= 0.2.0 | stateful simulation framework |
+| `brainstate` | >= 0.2.9 | stateful simulation framework |
 | `brainevent` | >= 0.0.7 | sparse event / CSR ops |
 | `braintools` | >= 0.1.0 | brain modeling utilities |
 | `brainpy` | >= 2.7.5 | brain dynamics library |
-| `numpy` | >= 1.15 | arrays |
+| `numpy` | >= 2.0 | arrays |
 | `scipy` | recent | scientific helpers |
 | `pyvista` | optional | 3D visualization backend |
 | `matplotlib` | optional | 2D visualization backend |
 | `NEURON` | dev only | reference comparator under `examples/multi_compartment/` |
 
+This table and `[project].dependencies` in `pyproject.toml` are kept in
+sync; `pyproject.toml` is the machine-readable source of truth, and the
+`requirements*.txt` files are thin pointers to its extras.
+
+Two floors were reconciled when the table and the packaging metadata were
+merged. `brainstate` moved from `>= 0.2.0` to `>= 0.2.9`, the stricter of
+the two values that were previously in conflict, because that is what CI
+has actually been installing and testing. `numpy` moved from `>= 1.15` to
+`>= 2.0`; note that this is a support-policy decision rather than a
+technical requirement — no numpy-1.x-removed API is used anywhere in the
+package, so the floor reflects what is tested, not what is strictly
+needed.
+
 Optional dependencies must be **lazily imported** so the base install
 stays small — use `importlib.util.find_spec` plus PEP 562
 `__getattr__` for the visualization backends.
+
+> **Note — Python version coverage.** The `classifiers` list advertises
+> 3.11 through 3.14, but `CI.yml` and `CI-daily.yml` both run a
+> single-entry `python-version: ["3.13"]` matrix. Three of the four
+> advertised versions are therefore untested. Either widen the CI matrix
+> or narrow the classifiers.
 
 ---
 

@@ -38,8 +38,6 @@ The default file extension is ``.bcm`` ("BrainCell Morphology"). The save
 helpers append it automatically when the supplied path has no suffix.
 """
 
-
-
 import json
 import os
 import zipfile
@@ -145,9 +143,7 @@ def save_branch(branch: Branch, path: str | os.PathLike) -> Path:
     save_morpho : Persist a whole morphology tree.
     """
     if not isinstance(branch, Branch):
-        raise TypeError(
-            f"save_branch() expects a Branch instance, got {type(branch).__name__}."
-        )
+        raise TypeError(f"save_branch() expects a Branch instance, got {type(branch).__name__}.")
     arrays = _branch_arrays(branch)
     manifest = {
         "format": _FORMAT,
@@ -202,9 +198,7 @@ def load_branch(path: str | os.PathLike) -> Branch:
         )
     spec = manifest.get("branch")
     if not isinstance(spec, dict) or "type" not in spec:
-        raise CheckpointError(
-            f"{os.fspath(path)!s}: branch checkpoint manifest is missing the 'branch' section."
-        )
+        raise CheckpointError(f"{os.fspath(path)!s}: branch checkpoint manifest is missing the 'branch' section.")
     arrays = _collect_branch_arrays(
         payload,
         index=0,
@@ -242,9 +236,7 @@ def save_morpho(morpho: Morphology, path: str | os.PathLike) -> Path:
     save_branch : Persist a single branch.
     """
     if not isinstance(morpho, Morphology):
-        raise TypeError(
-            f"save_morpho() expects a Morpho instance, got {type(morpho).__name__}."
-        )
+        raise TypeError(f"save_morpho() expects a Morpho instance, got {type(morpho).__name__}.")
 
     branches_meta: list[dict[str, Any]] = []
     payload: dict[str, np.ndarray] = {}
@@ -323,28 +315,19 @@ def load_morpho(path: str | os.PathLike) -> Morphology:
 
     branch_specs = manifest.get("branches")
     if not isinstance(branch_specs, list) or not branch_specs:
-        raise CheckpointError(
-            f"{os.fspath(path)!s}: morph checkpoint has no branches."
-        )
+        raise CheckpointError(f"{os.fspath(path)!s}: morph checkpoint has no branches.")
 
     by_name: dict[str, dict[str, Any]] = {}
     for spec in branch_specs:
         if not isinstance(spec, dict) or "name" not in spec:
-            raise CheckpointError(
-                f"{os.fspath(path)!s}: malformed branch entry in manifest."
-            )
+            raise CheckpointError(f"{os.fspath(path)!s}: malformed branch entry in manifest.")
         if spec["name"] in by_name:
-            raise CheckpointError(
-                f"{os.fspath(path)!s}: duplicate branch name {spec['name']!r} in manifest."
-            )
+            raise CheckpointError(f"{os.fspath(path)!s}: duplicate branch name {spec['name']!r} in manifest.")
         by_name[spec["name"]] = spec
 
     root_specs = [spec for spec in branch_specs if spec.get("parent_name") is None]
     if len(root_specs) != 1:
-        raise CheckpointError(
-            f"{os.fspath(path)!s}: expected exactly one root branch, "
-            f"found {len(root_specs)}."
-        )
+        raise CheckpointError(f"{os.fspath(path)!s}: expected exactly one root branch, found {len(root_specs)}.")
     root_spec = root_specs[0]
     expected_root_name = manifest.get("root_name")
     if expected_root_name != root_spec["name"]:
@@ -368,9 +351,7 @@ def load_morpho(path: str | os.PathLike) -> Morphology:
             continue
         parent_name = spec.get("parent_name")
         if parent_name is None:
-            raise CheckpointError(
-                f"{os.fspath(path)!s}: multiple root branches detected at {spec['name']!r}."
-            )
+            raise CheckpointError(f"{os.fspath(path)!s}: multiple root branches detected at {spec['name']!r}.")
         if parent_name not in inserted:
             raise CheckpointError(
                 f"{os.fspath(path)!s}: branch {spec['name']!r} references parent "
@@ -410,8 +391,7 @@ def load_morpho(path: str | os.PathLike) -> Morphology:
                 morpho._type_name_counters[str(branch_type)] = int(count)
             except (TypeError, ValueError) as exc:
                 raise CheckpointError(
-                    f"{os.fspath(path)!s}: invalid type_name_counters entry "
-                    f"{branch_type!r}={count!r}."
+                    f"{os.fspath(path)!s}: invalid type_name_counters entry {branch_type!r}={count!r}."
                 ) from exc
 
     return morpho
@@ -466,9 +446,7 @@ def _read_npz(path: str | os.PathLike) -> tuple[dict[str, Any], dict[str, np.nda
         with np.load(p, allow_pickle=False) as data:
             keys = list(data.files)
             if "manifest" not in keys:
-                raise CheckpointError(
-                    f"{p!s}: not a braincell checkpoint (missing 'manifest' entry)."
-                )
+                raise CheckpointError(f"{p!s}: not a braincell checkpoint (missing 'manifest' entry).")
             manifest_array = np.asarray(data["manifest"])
             payload = {key: np.asarray(data[key]) for key in keys if key != "manifest"}
     except (zipfile.BadZipFile, OSError) as exc:
@@ -485,24 +463,17 @@ def _read_npz(path: str | os.PathLike) -> tuple[dict[str, Any], dict[str, np.nda
         raise CheckpointError(f"{p!s}: corrupt manifest: {exc}") from exc
 
     if not isinstance(manifest, dict):
-        raise CheckpointError(
-            f"{p!s}: manifest must be a JSON object, got {type(manifest).__name__}."
-        )
+        raise CheckpointError(f"{p!s}: manifest must be a JSON object, got {type(manifest).__name__}.")
     return manifest, payload
 
 
 def _check_format(manifest: dict[str, Any], *, source: str | os.PathLike) -> None:
     fmt = manifest.get("format")
     if fmt != _FORMAT:
-        raise CheckpointError(
-            f"{os.fspath(source)!s}: unrecognized checkpoint format {fmt!r}; "
-            f"expected {_FORMAT!r}."
-        )
+        raise CheckpointError(f"{os.fspath(source)!s}: unrecognized checkpoint format {fmt!r}; expected {_FORMAT!r}.")
     version = manifest.get("version")
     if not isinstance(version, int) or version < 1:
-        raise CheckpointError(
-            f"{os.fspath(source)!s}: invalid checkpoint version {version!r}."
-        )
+        raise CheckpointError(f"{os.fspath(source)!s}: invalid checkpoint version {version!r}.")
     if version > _CURRENT_VERSION:
         raise CheckpointVersionError(
             f"{os.fspath(source)!s}: checkpoint version {version} is newer than "
@@ -524,16 +495,12 @@ def _collect_branch_arrays(
     for key in required:
         full_key = base + key
         if full_key not in payload:
-            raise CheckpointError(
-                f"{os.fspath(source)!s}: missing required array {full_key!r}."
-            )
+            raise CheckpointError(f"{os.fspath(source)!s}: missing required array {full_key!r}.")
         arrays[key] = payload[full_key]
     if has_points:
         for key in ("points_proximal", "points_distal"):
             full_key = base + key
             if full_key not in payload:
-                raise CheckpointError(
-                    f"{os.fspath(source)!s}: missing required array {full_key!r}."
-                )
+                raise CheckpointError(f"{os.fspath(source)!s}: missing required array {full_key!r}.")
             arrays[key] = payload[full_key]
     return arrays

@@ -31,7 +31,7 @@ def _array_dtype(value) -> jnp.dtype:
 
 def _has_path_prefix(path, prefixes):
     for prefix in prefixes:
-        if path[:len(prefix)] == prefix:
+        if path[: len(prefix)] == prefix:
             return True
     return False
 
@@ -95,8 +95,7 @@ def split_diffeq_states(module: DiffEqModule, *, excluded_paths=()):
     all_states = brainstate.graph.states(module)
     excluded_paths = tuple(tuple(path) for path in excluded_paths)
     diffeq_states, other_states = all_states.split(
-        functools.partial(_filter_diffeq, independent_modules, excluded_paths),
-        ...
+        functools.partial(_filter_diffeq, independent_modules, excluded_paths), ...
     )
     return all_states, diffeq_states, other_states
 
@@ -154,7 +153,7 @@ def _assign_arr_to_states(
             vals_like_leaves.append(vals[..., index])
             index += 1
         elif method == 'concat':
-            vals_like_leaves.append(vals[..., index: index + leaf.shape[-1]])
+            vals_like_leaves.append(vals[..., index : index + leaf.shape[-1]])
             index += leaf.shape[-1]
         else:
             raise ValueError(f'Unknown method: {method}')
@@ -195,10 +194,7 @@ def _transform_diffeq_module_into_dimensionless_fn(
 
 
 def apply_standard_solver_step(
-    solver_step: Callable[
-        [VectorFiled, Y0, T, DT, Args],
-        Tuple[Y1, Aux]
-    ],
+    solver_step: Callable[[VectorFiled, Y0, T, DT, Args], Tuple[Y1, Aux]],
     target: DiffEqModule,
     t: T,
     dt: DT,
@@ -247,13 +243,11 @@ def apply_standard_solver_step(
 
     # pre integral
     target.pre_integral(*args)
-    dimensionless_fn, diffeq_states, other_states = (
-        _transform_diffeq_module_into_dimensionless_fn(
-            target,
-            dt=dt,
-            method=merging,
-            excluded_paths=excluded_paths,
-        )
+    dimensionless_fn, diffeq_states, other_states = _transform_diffeq_module_into_dimensionless_fn(
+        target,
+        dt=dt,
+        method=merging,
+        excluded_paths=excluded_paths,
     )
 
     # one-step integration

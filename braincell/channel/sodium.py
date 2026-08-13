@@ -69,7 +69,7 @@ class Na_Ba2002(HH):
     def __init__(
         self,
         size: brainstate.typing.Size,
-        g_max: Union[brainstate.typing.ArrayLike, Callable] = 90.0 * (u.mS / u.cm ** 2),
+        g_max: Union[brainstate.typing.ArrayLike, Callable] = 90.0 * (u.mS / u.cm**2),
         temp: brainstate.typing.ArrayLike = u.celsius2kelvin(36.0),
         q10: Union[brainstate.typing.ArrayLike, Callable] = 3.0,
         temp_ref: brainstate.typing.ArrayLike = u.celsius2kelvin(36.0),
@@ -117,7 +117,7 @@ class Na_TM1991(HH):
     def __init__(
         self,
         size: brainstate.typing.Size,
-        g_max: Union[brainstate.typing.ArrayLike, Callable] = 120.0 * (u.mS / u.cm ** 2),
+        g_max: Union[brainstate.typing.ArrayLike, Callable] = 120.0 * (u.mS / u.cm**2),
         temp: brainstate.typing.ArrayLike = u.celsius2kelvin(36.0),
         q10: Union[brainstate.typing.ArrayLike, Callable] = 1.0,
         temp_ref: brainstate.typing.ArrayLike = u.celsius2kelvin(36.0),
@@ -165,7 +165,7 @@ class Na_HH1952(HH):
     def __init__(
         self,
         size: brainstate.typing.Size,
-        g_max: Union[brainstate.typing.ArrayLike, Callable] = 120.0 * (u.mS / u.cm ** 2),
+        g_max: Union[brainstate.typing.ArrayLike, Callable] = 120.0 * (u.mS / u.cm**2),
         temp: brainstate.typing.ArrayLike = u.celsius2kelvin(36.0),
         q10: Union[brainstate.typing.ArrayLike, Callable] = 3.0,
         temp_ref: brainstate.typing.ArrayLike = u.celsius2kelvin(36.0),
@@ -198,6 +198,7 @@ class Na_HH1952(HH):
         temp = (V - self.V_sh).to_decimal(u.mV)
         return 1.0 / (1.0 + u.math.exp(-(temp - 10.0) / 10.0))
 
+
 @register_channel("NaF_SU2015_DCN")
 class NaF_SU2015_DCN(HH):
     """Template-based import of ``NaF_SU2015_DCN.mod``."""
@@ -212,7 +213,7 @@ class NaF_SU2015_DCN(HH):
     def __init__(
         self,
         size: brainstate.typing.Size,
-        g_max: Union[brainstate.typing.ArrayLike, Callable] = 0.01 * (u.mS / u.cm ** 2),
+        g_max: Union[brainstate.typing.ArrayLike, Callable] = 0.01 * (u.mS / u.cm**2),
         name: Optional[str] = None,
     ):
         super().__init__(size=size, name=name)
@@ -228,14 +229,7 @@ class NaF_SU2015_DCN(HH):
 
     def f_m_tau(self, V, Na: IonInfo):
         V = V.to_decimal(u.mV)
-        return (
-            5.83
-            / (
-                u.math.exp((V - 6.4) / -9.0)
-                + u.math.exp((V + 97.0) / 17.0)
-            )
-            + 0.025
-        ) / self.qdeltat
+        return (5.83 / (u.math.exp((V - 6.4) / -9.0) + u.math.exp((V + 97.0) / 17.0)) + 0.025) / self.qdeltat
 
     def f_h_inf(self, V, Na: IonInfo):
         V = V.to_decimal(u.mV)
@@ -243,14 +237,8 @@ class NaF_SU2015_DCN(HH):
 
     def f_h_tau(self, V, Na: IonInfo):
         V = V.to_decimal(u.mV)
-        return (
-            16.67
-            / (
-                u.math.exp((V - 8.3) / -29.0)
-                + u.math.exp((V + 66.0) / 9.0)
-            )
-            + 0.2
-        ) / self.qdeltat
+        return (16.67 / (u.math.exp((V - 8.3) / -29.0) + u.math.exp((V + 66.0) / 9.0)) + 0.2) / self.qdeltat
+
 
 @register_channel("NaP_SU2015_DCN")
 class NaP_SU2015_DCN(HH):
@@ -266,7 +254,7 @@ class NaP_SU2015_DCN(HH):
     def __init__(
         self,
         size: brainstate.typing.Size,
-        g_max: Union[brainstate.typing.ArrayLike, Callable] = 0.01 * (u.mS / u.cm ** 2),
+        g_max: Union[brainstate.typing.ArrayLike, Callable] = 0.01 * (u.mS / u.cm**2),
         name: Optional[str] = None,
     ):
         super().__init__(size=size, name=name)
@@ -291,6 +279,7 @@ class NaP_SU2015_DCN(HH):
         V = V.to_decimal(u.mV)
         return (1750.0 / (1.0 + u.math.exp((V + 65.0) / -8.0)) + 250.0) / self.qdeltat
 
+
 @register_channel("Na_ZH2019_IO")
 class Na_ZH2019_IO(HH):
     """Template-based import of ``Na_ZH2019_IO.mod``."""
@@ -305,7 +294,7 @@ class Na_ZH2019_IO(HH):
     def __init__(
         self,
         size: brainstate.typing.Size,
-        g_max: Union[brainstate.typing.ArrayLike, Callable] = 70.0 * (u.mS / u.cm ** 2),
+        g_max: Union[brainstate.typing.ArrayLike, Callable] = 70.0 * (u.mS / u.cm**2),
         name: Optional[str] = None,
     ):
         super().__init__(size=size, name=name)
@@ -350,6 +339,7 @@ class Na_ZH2019_IO(HH):
         beta = self._h_beta(V)
         return 250.0 / (alpha + beta)
 
+
 @register_channel("Nav1p6_MA2020_GoC")
 class Nav1p6_MA2020_GoC(Markov):
     """Template-based import of ``Nav1p6_MA2020_GoC.mod``."""
@@ -381,7 +371,7 @@ class Nav1p6_MA2020_GoC(Markov):
         self,
         size: brainstate.typing.Size,
         temp: brainstate.typing.ArrayLike = u.celsius2kelvin(22.0),
-        g_max: Union[brainstate.typing.ArrayLike, Callable] = 16.0 * (u.mS / u.cm ** 2),
+        g_max: Union[brainstate.typing.ArrayLike, Callable] = 16.0 * (u.mS / u.cm**2),
         name: Optional[str] = None,
         solver: str | None = None,
         substeps: int | None = None,
@@ -425,50 +415,39 @@ class Nav1p6_MA2020_GoC(Markov):
     f04 = lambda self, V: 1 * self.alpha * u.math.exp((V / u.mV) / self.x1) * self.phi
     f0O = lambda self, V: self.gamma * u.math.exp((V / u.mV) / self.x3) * self.phi
     fip = lambda self, V: self.epsilon * u.math.exp((V / u.mV) / self.x5) * self.phi
-    f11 = lambda self, V: 4 * self.alpha * self.alfac * u.math.exp(
-        (V / u.mV + self.vshifti) / self.x1) * self.phi
-    f12 = lambda self, V: 3 * self.alpha * self.alfac * u.math.exp(
-        (V / u.mV + self.vshifti) / self.x1) * self.phi
-    f13 = lambda self, V: 2 * self.alpha * self.alfac * u.math.exp(
-        (V / u.mV + self.vshifti) / self.x1) * self.phi
-    f14 = lambda self, V: 1 * self.alpha * self.alfac * u.math.exp(
-        (V / u.mV + self.vshifti) / self.x1) * self.phi
+    f11 = lambda self, V: 4 * self.alpha * self.alfac * u.math.exp((V / u.mV + self.vshifti) / self.x1) * self.phi
+    f12 = lambda self, V: 3 * self.alpha * self.alfac * u.math.exp((V / u.mV + self.vshifti) / self.x1) * self.phi
+    f13 = lambda self, V: 2 * self.alpha * self.alfac * u.math.exp((V / u.mV + self.vshifti) / self.x1) * self.phi
+    f14 = lambda self, V: 1 * self.alpha * self.alfac * u.math.exp((V / u.mV + self.vshifti) / self.x1) * self.phi
     f1n = lambda self, V: self.gamma * u.math.exp((V / u.mV) / self.x3) * self.phi
     fi1 = lambda self, V: self.Con * self.phi
     fi2 = lambda self, V: self.Con * self.alfac * self.phi
-    fi3 = lambda self, V: self.Con * self.alfac ** 2 * self.phi
-    fi4 = lambda self, V: self.Con * self.alfac ** 3 * self.phi
-    fi5 = lambda self, V: self.Con * self.alfac ** 4 * self.phi
+    fi3 = lambda self, V: self.Con * self.alfac**2 * self.phi
+    fi4 = lambda self, V: self.Con * self.alfac**3 * self.phi
+    fi5 = lambda self, V: self.Con * self.alfac**4 * self.phi
     fin = lambda self, V: self.Oon * self.phi
 
-    b01 = lambda self, V: 1 * self.beta * u.math.exp(
-        (V / u.mV + self.vshifta) / (self.x2 + self.vshiftk)) * self.phi
-    b02 = lambda self, V: 2 * self.beta * u.math.exp(
-        (V / u.mV + self.vshifta) / (self.x2 + self.vshiftk)) * self.phi
-    b03 = lambda self, V: 3 * self.beta * u.math.exp(
-        (V / u.mV + self.vshifta) / (self.x2 + self.vshiftk)) * self.phi
-    b04 = lambda self, V: 4 * self.beta * u.math.exp(
-        (V / u.mV + self.vshifta) / (self.x2 + self.vshiftk)) * self.phi
+    b01 = lambda self, V: 1 * self.beta * u.math.exp((V / u.mV + self.vshifta) / (self.x2 + self.vshiftk)) * self.phi
+    b02 = lambda self, V: 2 * self.beta * u.math.exp((V / u.mV + self.vshifta) / (self.x2 + self.vshiftk)) * self.phi
+    b03 = lambda self, V: 3 * self.beta * u.math.exp((V / u.mV + self.vshifta) / (self.x2 + self.vshiftk)) * self.phi
+    b04 = lambda self, V: 4 * self.beta * u.math.exp((V / u.mV + self.vshifta) / (self.x2 + self.vshiftk)) * self.phi
     b0O = lambda self, V: self.delta * u.math.exp(V / u.mV / self.x4) * self.phi
     bip = lambda self, V: self.zeta * u.math.exp(V / u.mV / self.x6) * self.phi
-    b11 = lambda self, V: 1 * self.beta * self.btfac * u.math.exp(
-        (V / u.mV + self.vshifti) / self.x2) * self.phi
-    b12 = lambda self, V: 2 * self.beta * self.btfac * u.math.exp(
-        (V / u.mV + self.vshifti) / self.x2) * self.phi
-    b13 = lambda self, V: 3 * self.beta * self.btfac * u.math.exp(
-        (V / u.mV + self.vshifti) / self.x2) * self.phi
-    b14 = lambda self, V: 4 * self.beta * self.btfac * u.math.exp(
-        (V / u.mV + self.vshifti) / self.x2) * self.phi
+    b11 = lambda self, V: 1 * self.beta * self.btfac * u.math.exp((V / u.mV + self.vshifti) / self.x2) * self.phi
+    b12 = lambda self, V: 2 * self.beta * self.btfac * u.math.exp((V / u.mV + self.vshifti) / self.x2) * self.phi
+    b13 = lambda self, V: 3 * self.beta * self.btfac * u.math.exp((V / u.mV + self.vshifti) / self.x2) * self.phi
+    b14 = lambda self, V: 4 * self.beta * self.btfac * u.math.exp((V / u.mV + self.vshifti) / self.x2) * self.phi
     b1n = lambda self, V: self.delta * u.math.exp(V / u.mV / self.x4) * self.phi
     bi1 = lambda self, V: self.Coff * self.phi
     bi2 = lambda self, V: self.Coff * self.btfac * self.phi
-    bi3 = lambda self, V: self.Coff * self.btfac ** 2 * self.phi
-    bi4 = lambda self, V: self.Coff * self.btfac ** 3 * self.phi
-    bi5 = lambda self, V: self.Coff * self.btfac ** 4 * self.phi
+    bi3 = lambda self, V: self.Coff * self.btfac**2 * self.phi
+    bi4 = lambda self, V: self.Coff * self.btfac**3 * self.phi
+    bi5 = lambda self, V: self.Coff * self.btfac**4 * self.phi
     bin = lambda self, V: self.Ooff * self.phi
 
     def reset_state(self, V, Na: IonInfo, batch_size: int = None):
         self.reset_steady_state(V, Na, batch_size=batch_size)
+
 
 @register_channel("Nav1p6_MA2024_PC")
 class Nav1p6_MA2024_PC(Nav1p6_MA2020_GoC):
@@ -479,6 +458,7 @@ class Nav1p6_MA2024_PC(Nav1p6_MA2020_GoC):
     def reset_state(self, V, Na: IonInfo, batch_size: int = None):
         self.reset_steady_state(V, Na, batch_size=batch_size)
 
+
 @register_channel("Nav1p6_MA2025_BC")
 class Nav1p6_MA2025_BC(Nav1p6_MA2020_GoC):
     """Template-based import of ``Nav1p6_MA2025_BC.mod``."""
@@ -488,6 +468,7 @@ class Nav1p6_MA2025_BC(Nav1p6_MA2020_GoC):
     def reset_state(self, V, Na: IonInfo, batch_size: int = None):
         self.reset_steady_state(V, Na, batch_size=batch_size)
 
+
 @register_channel("Nav1p6_RI2021_SC")
 class Nav1p6_RI2021_SC(Nav1p6_MA2020_GoC):
     """Template-based import of ``Nav1p6_RI2021_SC.mod``."""
@@ -496,6 +477,7 @@ class Nav1p6_RI2021_SC(Nav1p6_MA2020_GoC):
 
     def reset_state(self, V, Na: IonInfo, batch_size: int = None):
         self.reset_steady_state(V, Na, batch_size=batch_size)
+
 
 @register_channel("Nav1p1_MA2025_BC")
 class Nav1p1_MA2025_BC(Nav1p6_MA2020_GoC):
@@ -507,7 +489,7 @@ class Nav1p1_MA2025_BC(Nav1p6_MA2020_GoC):
         self,
         size: brainstate.typing.Size,
         temp: brainstate.typing.ArrayLike = u.celsius2kelvin(22.0),
-        g_max: Union[brainstate.typing.ArrayLike, Callable] = 8.0 * (u.mS / u.cm ** 2),
+        g_max: Union[brainstate.typing.ArrayLike, Callable] = 8.0 * (u.mS / u.cm**2),
         gateCurrent: Union[brainstate.typing.ArrayLike, Callable] = 0.0,
         name: Optional[str] = None,
         solver: str | None = None,
@@ -522,9 +504,7 @@ class Nav1p1_MA2025_BC(Nav1p6_MA2020_GoC):
             substeps=substeps,
         )
         self.phi = 2.7 ** (((self.temp - u.celsius2kelvin(22.0)) / u.kelvin) / 10.0)
-        self.gateCurrent = braintools.init.param(
-            gateCurrent, self.varshape, allow_none=False
-        )
+        self.gateCurrent = braintools.init.param(gateCurrent, self.varshape, allow_none=False)
         self.Oon = 2.3
         self.epsilon = 1e-12
         self.zgate = 2.5435
@@ -538,20 +518,21 @@ class Nav1p1_MA2025_BC(Nav1p6_MA2020_GoC):
     def current(self, V, Na: IonInfo):
         conductive = self.g_max * self.O.value * (Na.E - V)
         gate_flip = (
-                        self.f01(V) * self.C1.value
-                        + (self.f02(V) - self.b01(V)) * self.C2.value
-                        + (self.f03(V) - self.b02(V)) * self.C3.value
-                        + (self.f04(V) - self.b03(V)) * self.C4.value
-                        - self.b04(V) * self.C5.value
-                        + self.f11(V) * self.I1.value
-                        + (self.f12(V) - self.b11(V)) * self.I2.value
-                        + (self.f13(V) - self.b12(V)) * self.I3.value
-                        + (self.f14(V) - self.b13(V)) * self.I4.value
-                        - self.b14(V) * self.I5.value
-                    ) / u.ms
+            self.f01(V) * self.C1.value
+            + (self.f02(V) - self.b01(V)) * self.C2.value
+            + (self.f03(V) - self.b02(V)) * self.C3.value
+            + (self.f04(V) - self.b03(V)) * self.C4.value
+            - self.b04(V) * self.C5.value
+            + self.f11(V) * self.I1.value
+            + (self.f12(V) - self.b11(V)) * self.I2.value
+            + (self.f13(V) - self.b12(V)) * self.I3.value
+            + (self.f14(V) - self.b13(V)) * self.I4.value
+            - self.b14(V) * self.I5.value
+        ) / u.ms
         nc = 1e12 * self.g_max / self.gunit
         igate = nc * 1e6 * self.e0 * self.zgate * gate_flip
         return conductive - u.math.where(self.gateCurrent != 0, igate, 0.0 * igate)
+
 
 @register_channel("Nav1p1_RI2021_SC")
 class Nav1p1_RI2021_SC(Nav1p1_MA2025_BC):
@@ -561,6 +542,7 @@ class Nav1p1_RI2021_SC(Nav1p1_MA2025_BC):
 
     def reset_state(self, V, Na: IonInfo, batch_size: int = None):
         self.reset_steady_state(V, Na, batch_size=batch_size)
+
 
 @register_channel("Nav_MA2020_GrC")
 class Nav_MA2020_GrC(Markov, IndependentIntegration):
@@ -593,7 +575,7 @@ class Nav_MA2020_GrC(Markov, IndependentIntegration):
         self,
         size: brainstate.typing.Size,
         temp: brainstate.typing.ArrayLike = u.celsius2kelvin(32.0),
-        g_max: Union[brainstate.typing.ArrayLike, Callable] = 13.0 * (u.mS / u.cm ** 2),
+        g_max: Union[brainstate.typing.ArrayLike, Callable] = 13.0 * (u.mS / u.cm**2),
         name: Optional[str] = None,
         solver: str | None = None,
         substeps: int | None = None,
@@ -681,6 +663,7 @@ class Nav_MA2020_GrC(Markov, IndependentIntegration):
     bi5 = lambda self, V: self.Coff(V) * self.b_factor(V) ** 4
     bin = lambda self, V: self.Ooff(V)
 
+
 @register_channel("NaFHF_MA2020_GrC")
 class NaFHF_MA2020_GrC(Markov, IndependentIntegration):
     """Template-based import of ``NaFHF_MA2020_GrC.mod``."""
@@ -719,7 +702,7 @@ class NaFHF_MA2020_GrC(Markov, IndependentIntegration):
         self,
         size: brainstate.typing.Size,
         temp: brainstate.typing.ArrayLike = u.celsius2kelvin(32.0),
-        g_max: Union[brainstate.typing.ArrayLike, Callable] = 13.0 * (u.mS / u.cm ** 2),
+        g_max: Union[brainstate.typing.ArrayLike, Callable] = 13.0 * (u.mS / u.cm**2),
         name: Optional[str] = None,
         solver: str | None = None,
         substeps: int | None = None,
@@ -799,8 +782,8 @@ class NaFHF_MA2020_GrC(Markov, IndependentIntegration):
     fin = lambda self, V: self.Oon(V)
     fl3 = lambda self, V: self.Lon(V)
     fl4 = lambda self, V: self.Lon(V) * self.c
-    fl5 = lambda self, V: self.Lon(V) * self.c ** 2
-    fl6 = lambda self, V: self.Lon(V) * self.c ** 2
+    fl5 = lambda self, V: self.Lon(V) * self.c**2
+    fl6 = lambda self, V: self.Lon(V) * self.c**2
 
     b01 = lambda self, V: self.n4 * self.beta(V)
     b02 = lambda self, V: self.n3 * self.beta(V)
@@ -824,5 +807,5 @@ class NaFHF_MA2020_GrC(Markov, IndependentIntegration):
     bin = lambda self, V: self.Ooff(V)
     bl3 = lambda self, V: self.Loff(V)
     bl4 = lambda self, V: self.Loff(V) * self.d
-    bl5 = lambda self, V: self.Loff(V) * self.d ** 2
-    bl6 = lambda self, V: self.Loff(V) * self.d ** 2
+    bl5 = lambda self, V: self.Loff(V) * self.d**2
+    bl6 = lambda self, V: self.Loff(V) * self.d**2

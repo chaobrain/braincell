@@ -19,7 +19,6 @@ from .asc import (
     AscReader,
     AscReport,
     AscSpineRecord,
-
 )
 from .checkpoint import (
     CheckpointError,

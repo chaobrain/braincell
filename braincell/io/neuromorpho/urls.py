@@ -21,8 +21,6 @@ filesystem; the helpers just translate ``NeuroMorphoNeuron`` records
 into URLs, filenames, and download plans.
 """
 
-
-
 import re
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal
@@ -104,7 +102,7 @@ def coerce_https(url: str) -> str:
     """
 
     if url.startswith("http://"):
-        return "https://" + url[len("http://"):]
+        return "https://" + url[len("http://") :]
     return url
 
 
@@ -136,9 +134,7 @@ def build_standard_swc_url(neuron: "NeuroMorphoNeuron") -> str:
     """
 
     if not neuron.archive:
-        raise ValueError(
-            f"neuron_id={neuron.neuron_id} is missing archive metadata."
-        )
+        raise ValueError(f"neuron_id={neuron.neuron_id} is missing archive metadata.")
     archive = quote(neuron.archive.lower(), safe="")
     neuron_name = quote(neuron.neuron_name, safe="")
     return f"{FILE_BASE}/{archive}/CNG%20version/{neuron_name}.CNG.swc"
@@ -172,10 +168,7 @@ def infer_original_extension(neuron: "NeuroMorphoNeuron") -> str:
         raise ValueError("This neuron does not expose an original_format field.")
     suffix = Path(original_format).suffix
     if not suffix:
-        raise ValueError(
-            f"Cannot infer original file extension from "
-            f"original_format={original_format!r}."
-        )
+        raise ValueError(f"Cannot infer original file extension from original_format={original_format!r}.")
     return suffix
 
 
@@ -232,9 +225,7 @@ def build_measurement_url(neuron: "NeuroMorphoNeuron") -> str:
 
 def _validate_mode(mode: str) -> None:
     if mode not in _VALID_DOWNLOAD_MODES:
-        raise ValueError(
-            f"mode must be one of {sorted(_VALID_DOWNLOAD_MODES)}, got {mode!r}."
-        )
+        raise ValueError(f"mode must be one of {sorted(_VALID_DOWNLOAD_MODES)}, got {mode!r}.")
 
 
 def plan_neuron_files(

@@ -39,6 +39,7 @@ if TYPE_CHECKING:
 # Value spec — styling for color-by-values overlays (M6 Phase 3)
 # ---------------------------------------------------------------------------
 
+
 @dataclass(frozen=True)
 class ValueSpec:
     """Styling parameters for a color-by-values overlay.
@@ -92,6 +93,7 @@ class ValueSpec:
 # ---------------------------------------------------------------------------
 # Resolved per-branch value arrays
 # ---------------------------------------------------------------------------
+
 
 @dataclass(frozen=True)
 class BranchValues:
@@ -150,6 +152,7 @@ def alpha_for_3d_tube() -> float:
 # Overlay input spec (what the user passes to plot2d / plot3d)
 # ---------------------------------------------------------------------------
 
+
 @dataclass(frozen=True)
 class OverlaySpec:
     """User-facing overlay request passed through ``plot2d`` / ``plot3d``.
@@ -186,6 +189,7 @@ class OverlaySpec:
 # ---------------------------------------------------------------------------
 # 3D scene primitives
 # ---------------------------------------------------------------------------
+
 
 @dataclass(frozen=True)
 class BranchPolyline3D:
@@ -259,6 +263,7 @@ class Marker3D:
 # ---------------------------------------------------------------------------
 # 2D scene primitives
 # ---------------------------------------------------------------------------
+
 
 @dataclass(frozen=True)
 class Polyline2D:
@@ -371,6 +376,7 @@ class Marker2D:
 # Scene containers
 # ---------------------------------------------------------------------------
 
+
 @dataclass(frozen=True)
 class RenderScene3D:
     branches: tuple[BranchPolyline3D, ...]
@@ -402,6 +408,7 @@ class RenderScene2D:
 # ---------------------------------------------------------------------------
 # Render request — neutral schema with a backend_options escape hatch
 # ---------------------------------------------------------------------------
+
 
 @dataclass(frozen=True)
 class RenderRequest:

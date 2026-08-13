@@ -88,20 +88,21 @@ class SingleCompartment(HHTypedNeuron):
     -----
     This class is subclassed from :class:`braincell.HHTypedNeuron`.
     """
+
     __module__ = 'braincell'
 
     def __init__(
         self,
         size: brainstate.typing.Size,
-        length: Initializer = 10. * u.um,
-        radius: Initializer = 5. * u.um,
-        C: Initializer = 1. * u.uF / u.cm ** 2,
-        V_th: Initializer = 0. * u.mV,
-        V_initializer: Initializer = braintools.init.Uniform(-70 * u.mV, -60. * u.mV),
+        length: Initializer = 10.0 * u.um,
+        radius: Initializer = 5.0 * u.um,
+        C: Initializer = 1.0 * u.uF / u.cm**2,
+        V_th: Initializer = 0.0 * u.mV,
+        V_initializer: Initializer = braintools.init.Uniform(-70 * u.mV, -60.0 * u.mV),
         spk_fun: Callable = braintools.surrogate.ReluGrad(),
         solver: Union[str, Callable] = 'rk2',
         name: Optional[str] = None,
-        **ion_channels
+        **ion_channels,
     ):
         super().__init__(size, name=name, **ion_channels)
         assert self.n_compartment == 1, "SingleCompartment neuron should have only one compartment."
@@ -148,7 +149,7 @@ class SingleCompartment(HHTypedNeuron):
     @property
     def area(self):
         """Membrane area used to convert injected current into current density."""
-        return 2. * u.math.pi * self.radius * self.length
+        return 2.0 * u.math.pi * self.radius * self.length
 
     def init_state(self, batch_size=None):
         """
@@ -186,7 +187,7 @@ class SingleCompartment(HHTypedNeuron):
         self.spike.value = _zero_spike_like(self.V.value)
         super().reset_state(batch_size)
 
-    def pre_integral(self, I_ext=0. * u.nA / u.cm ** 2):
+    def pre_integral(self, I_ext=0.0 * u.nA / u.cm**2):
         """
         Perform pre-integration operations.
 
@@ -202,7 +203,7 @@ class SingleCompartment(HHTypedNeuron):
             if not isinstance(node, IndependentIntegration):
                 node.pre_integral(self.V.value)
 
-    def compute_derivative(self, I_ext=0. * u.nA / u.cm ** 2):
+    def compute_derivative(self, I_ext=0.0 * u.nA / u.cm**2):
         """
         Compute the derivative of the membrane potential.
 
@@ -219,17 +220,13 @@ class SingleCompartment(HHTypedNeuron):
             try:
                 I_ext = I_ext + ch.current(self.V.value)
             except (TypeError, ValueError, RuntimeError, ArithmeticError) as e:
-                raise ValueError(
-                    f"Error in computing current for ion channel '{key}': \n"
-                    f"{ch}\n"
-                    f"Error: {e}"
-                ) from e
+                raise ValueError(f"Error in computing current for ion channel '{key}': \n{ch}\nError: {e}") from e
         self.V.derivative = I_ext / self.C
         for key, node in self.nodes(IonChannel, allowed_hierarchy=(1, 1)).items():
             if not isinstance(node, IndependentIntegration):
                 node.compute_derivative(self.V.value)
 
-    def post_integral(self, I_ext=0. * u.nA / u.cm ** 2):
+    def post_integral(self, I_ext=0.0 * u.nA / u.cm**2):
         """
         Perform post-integration operations.
 
@@ -246,7 +243,7 @@ class SingleCompartment(HHTypedNeuron):
             if not isinstance(node, IndependentIntegration):
                 node.post_integral(self.V.value)
 
-    def update(self, I_ext=0. * u.nA / u.cm ** 2):
+    def update(self, I_ext=0.0 * u.nA / u.cm**2):
         """
         Update the neuron state and check for spikes.
 

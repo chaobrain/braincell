@@ -34,7 +34,6 @@ Sub-modules
 - ``_dispatch``   — ``build_layout_branches_2d`` dispatcher.
 """
 
-
 from ._cache import LayoutCache, get_default_layout_cache
 from ._common import LayoutBranch2D
 from ._config import DEFAULT_LAYOUT_CONFIG, LayoutConfig

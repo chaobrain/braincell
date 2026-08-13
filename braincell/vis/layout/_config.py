@@ -41,7 +41,6 @@ behaviour byte-for-byte.
 
 """
 
-
 import math
 from dataclasses import dataclass
 

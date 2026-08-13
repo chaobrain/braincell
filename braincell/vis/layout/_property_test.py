@@ -130,9 +130,9 @@ class LayoutFamilyPropertyTest(unittest.TestCase):
         # these properties don't care about the geometric quality of
         # the layout, so we can throw a lot of variance at them.
         _wide_child_spec_strategy = st.tuples(
-            st.integers(min_value=1, max_value=3),      # n_segments
-            st.floats(min_value=5.0, max_value=30.0),   # seg_len_um
-            st.floats(min_value=0.5, max_value=3.0),    # radius_um
+            st.integers(min_value=1, max_value=3),  # n_segments
+            st.floats(min_value=5.0, max_value=30.0),  # seg_len_um
+            st.floats(min_value=0.5, max_value=3.0),  # radius_um
         )
 
         # Tighter spec for intersection tests: single-segment children
@@ -141,9 +141,9 @@ class LayoutFamilyPropertyTest(unittest.TestCase):
         # must produce non-crossing layouts — anything else is a
         # real regression in the angle-assignment logic.
         _uniform_child_spec_strategy = st.tuples(
-            st.just(1),                                  # n_segments
-            st.floats(min_value=10.0, max_value=20.0),   # seg_len_um
-            st.just(1.0),                                # radius_um
+            st.just(1),  # n_segments
+            st.floats(min_value=10.0, max_value=20.0),  # seg_len_um
+            st.just(1.0),  # radius_um
         )
 
         @given(
@@ -153,10 +153,7 @@ class LayoutFamilyPropertyTest(unittest.TestCase):
         @settings(max_examples=40, deadline=None, suppress_health_check=[HealthCheck.too_slow])
         def test_layouts_preserve_branch_count_and_length(self, n_children, child_specs):
             tree = _build_random_tree(n_children=n_children, child_specs=child_specs)
-            expected_lengths = {
-                branch.index: float(sum(branch.lengths.to_decimal(u.um)))
-                for branch in tree.branches
-            }
+            expected_lengths = {branch.index: float(sum(branch.lengths.to_decimal(u.um))) for branch in tree.branches}
             for family in _LAYOUT_FAMILIES:
                 for mode in _MODES:
                     layouts = build_layout_branches_2d(

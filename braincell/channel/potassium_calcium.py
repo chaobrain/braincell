@@ -61,15 +61,13 @@ class AHP_De1994(HH):
     __module__ = "braincell.channel"
     root_type = _KCA_ROOT_TYPE
     current_owner_type = Potassium
-    gates = (
-        Gate("p", power=2, phi=lambda self: self.phi),
-    )
+    gates = (Gate("p", power=2, phi=lambda self: self.phi),)
 
     def __init__(
         self,
         size: brainstate.typing.Size,
         n: Union[brainstate.typing.ArrayLike, Callable] = 2,
-        g_max: Union[brainstate.typing.ArrayLike, Callable] = 10.0 * (u.mS / u.cm ** 2),
+        g_max: Union[brainstate.typing.ArrayLike, Callable] = 10.0 * (u.mS / u.cm**2),
         alpha: Union[brainstate.typing.ArrayLike, Callable] = 48.0,
         beta: Union[brainstate.typing.ArrayLike, Callable] = 0.09,
         phi: Union[brainstate.typing.ArrayLike, Callable] = 1.0,
@@ -99,14 +97,12 @@ class SK_SU2015_DCN(HH):
     __module__ = "braincell.channel"
     root_type = _KCA_ROOT_TYPE
     current_owner_type = Potassium
-    gates = (
-        Gate("z"),
-    )
+    gates = (Gate("z"),)
 
     def __init__(
         self,
         size: brainstate.typing.Size,
-        g_max: Union[brainstate.typing.ArrayLike, Callable] = 0.01 * (u.mS / u.cm ** 2),
+        g_max: Union[brainstate.typing.ArrayLike, Callable] = 0.01 * (u.mS / u.cm**2),
         qdeltat: Union[brainstate.typing.ArrayLike, Callable] = 1.0,
         name: Optional[str] = None,
     ):
@@ -126,7 +122,7 @@ class SK_SU2015_DCN(HH):
         return self._z_tau_formula(Ca.Ci.to_decimal(u.mM)) / self.qdeltat
 
     def _z_inf_formula(self, cai):
-        cai4 = cai ** 4
+        cai4 = cai**4
         return cai4 / (cai4 + 8.1e-15)
 
     def _z_tau_formula(self, cai):
@@ -140,14 +136,12 @@ class Kca3p1_MA2020_GoC(HH):
     __module__ = "braincell.channel"
     root_type = _KCA_ROOT_TYPE
     current_owner_type = Potassium
-    gates = (
-        Gate("p"),
-    )
+    gates = (Gate("p"),)
 
     def __init__(
         self,
         size: brainstate.typing.Size,
-        g_max: Union[brainstate.typing.ArrayLike, Callable] = 120.0 * (u.mS / u.cm ** 2),
+        g_max: Union[brainstate.typing.ArrayLike, Callable] = 120.0 * (u.mS / u.cm**2),
         q10_base: brainstate.typing.ArrayLike = 3.0,
         temp: brainstate.typing.ArrayLike = u.celsius2kelvin(22.0),
         name: Optional[str] = None,
@@ -220,7 +214,7 @@ class Kca2p2_MA2020_GoC(Markov):
     def __init__(
         self,
         size: brainstate.typing.Size,
-        g_max: Union[brainstate.typing.ArrayLike, Callable] = 38.0 * (u.mS / u.cm ** 2),
+        g_max: Union[brainstate.typing.ArrayLike, Callable] = 38.0 * (u.mS / u.cm**2),
         q10_base: brainstate.typing.ArrayLike = 3.0,
         diff: brainstate.typing.ArrayLike = 3.0,
         temp: brainstate.typing.ArrayLike = u.celsius2kelvin(22.0),
@@ -343,7 +337,7 @@ class Kca1p1_MA2020_GoC(Markov):
     def __init__(
         self,
         size: brainstate.typing.Size,
-        g_max: Union[brainstate.typing.ArrayLike, Callable] = 10.0 * (u.mS / u.cm ** 2),
+        g_max: Union[brainstate.typing.ArrayLike, Callable] = 10.0 * (u.mS / u.cm**2),
         q10_base: brainstate.typing.ArrayLike = 3.0,
         temp: brainstate.typing.ArrayLike = u.celsius2kelvin(22.0),
         name: Optional[str] = None,
@@ -389,9 +383,7 @@ class Kca1p1_MA2020_GoC(Markov):
 
     def current(self, V, K: IonInfo, Ca: IonInfo):
         states = self.state_values()
-        return self.g_max * (
-            states["O0"] + states["O1"] + states["O2"] + states["O3"] + states["O4"]
-        ) * (K.E - V)
+        return self.g_max * (states["O0"] + states["O1"] + states["O2"] + states["O3"] + states["O4"]) * (K.E - V)
 
     def c01(self, V, K: IonInfo, Ca: IonInfo):
         return 4 * (Ca.Ci / u.mM) * self.k1 * self.onoffrate * self._phi()

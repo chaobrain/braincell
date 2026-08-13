@@ -63,6 +63,7 @@ from ._config import DEFAULT_LAYOUT_CONFIG, LayoutConfig
 # Low-level geometric predicates
 # ---------------------------------------------------------------------------
 
+
 def _segments_share_endpoint(
     a0: np.ndarray,
     a1: np.ndarray,
@@ -139,6 +140,7 @@ def _pair_score(
 # ---------------------------------------------------------------------------
 # Spatial-hash index
 # ---------------------------------------------------------------------------
+
 
 class _SegmentSpatialHash:
     """Uniform-grid 2D spatial hash for layout segments.
@@ -236,6 +238,7 @@ def _build_collision_index(
 # ---------------------------------------------------------------------------
 # Public scoring API
 # ---------------------------------------------------------------------------
+
 
 def _layout_collision_score(
     candidate: LayoutBranch2D,

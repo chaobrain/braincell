@@ -43,6 +43,7 @@ class Potassium(Ion):
         This is an abstract base class and should be subclassed to create specific
         Potassium ion models with defined dynamics and properties.
     """
+
     __module__ = 'braincell.ion'
     ion_symbol = 'K'
     default_Ci = 54.4 * u.mM
@@ -57,17 +58,18 @@ class PotassiumFixed(Potassium, FixedIon):
     This calcium model has no dynamics. It holds fixed reversal
     potential :math:`E` and concentration :math:`C`.
     """
+
     __module__ = 'braincell.ion'
 
     def __init__(
         self,
         size: brainstate.typing.Size,
-        E: Union[brainstate.typing.ArrayLike, Callable, None] = -95. * u.mV,
+        E: Union[brainstate.typing.ArrayLike, Callable, None] = -95.0 * u.mV,
         Ci: Union[brainstate.typing.ArrayLike, Callable, None] = None,
         Co: Union[brainstate.typing.ArrayLike, Callable, None] = None,
         valence: Union[brainstate.typing.ArrayLike, Callable, None] = None,
         name: Optional[str] = None,
-        **channels
+        **channels,
     ):
         super().__init__(size, name=name, **channels)
         self._init_fixed_ion(Ci=Ci, Co=Co, E=E, valence=valence)
@@ -82,12 +84,12 @@ class PotassiumInitNernst(Potassium, InitNernstIon):
     def __init__(
         self,
         size: brainstate.typing.Size,
-        temp: Union[brainstate.typing.ArrayLike, Callable] = u.celsius2kelvin(36.),
+        temp: Union[brainstate.typing.ArrayLike, Callable] = u.celsius2kelvin(36.0),
         Ci: Union[brainstate.typing.ArrayLike, Callable, None] = None,
         Co: Union[brainstate.typing.ArrayLike, Callable, None] = None,
         valence: Union[brainstate.typing.ArrayLike, Callable, None] = None,
         name: Optional[str] = None,
-        **channels
+        **channels,
     ):
         super().__init__(size, name=name, **channels)
         self._init_nernst_ion(Ci=Ci, Co=Co, temp=temp, valence=valence)

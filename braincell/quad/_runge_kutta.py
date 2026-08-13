@@ -79,13 +79,8 @@ def _array_dtype(value) -> jnp.dtype:
 def _cast_scalar_like(value, like):
     return jnp.asarray(value, dtype=_array_dtype(like))
 
-def _rk_update(
-    coeff: Sequence,
-    st: brainstate.State,
-    y0: brainstate.typing.PyTree,
-    dt: DT,
-    *ks
-):
+
+def _rk_update(coeff: Sequence, st: brainstate.State, y0: brainstate.typing.PyTree, dt: DT, *ks):
     assert len(coeff) == len(ks), 'The number of coefficients must be equal to the number of ks.'
 
     def _step(y0_, *k_):
@@ -98,13 +93,7 @@ def _rk_update(
     st.value = jax.tree.map(_step, y0, *ks, is_leaf=u.math.is_quantity)
 
 
-def _general_rk_step(
-    tableau: ButcherTableau,
-    target: DiffEqModule,
-    t: T,
-    dt: DT,
-    *args
-):
+def _general_rk_step(tableau: ButcherTableau, target: DiffEqModule, t: T, dt: DT, *args):
     # before one-step integration
     target.pre_integral(*args)
 
@@ -138,9 +127,10 @@ def _general_rk_step(
 
     # intermediate steps
     for i in range(1, len(tableau.C)):
-        with brainstate.environ.context(
-            t=t_like + _cast_scalar_like(tableau.C[i], time_like) * dt_like
-        ), brainstate.check_state_value_tree():
+        with (
+            brainstate.environ.context(t=t_like + _cast_scalar_like(tableau.C[i], time_like) * dt_like),
+            brainstate.check_state_value_tree(),
+        ):
             for st, y0_, *ks_ in zip(states, y0, *ks):
                 _rk_update(tableau.A[i], st, y0_, dt, *ks_)
             target.compute_derivative(*args)
@@ -162,72 +152,54 @@ euler_tableau = ButcherTableau(
     C=(0.0,),
 )
 midpoint_tableau = ButcherTableau(
-    A=[(),
-       (0.5,)],
+    A=[(), (0.5,)],
     B=(0.0, 1.0),
     C=(0.0, 0.5),
 )
 rk2_tableau = ButcherTableau(
-    A=[(),
-       (2 / 3,)],
+    A=[(), (2 / 3,)],
     B=(1 / 4, 3 / 4),
     C=(0.0, 2 / 3),
 )
 heun2_tableau = ButcherTableau(
-    A=[(),
-       (1.,)],
+    A=[(), (1.0,)],
     B=[0.5, 0.5],
     C=[0, 1],
 )
 ralston2_tableau = ButcherTableau(
-    A=[(),
-       (2 / 3,)],
+    A=[(), (2 / 3,)],
     B=[0.25, 0.75],
     C=[0, 2 / 3],
 )
 rk3_tableau = ButcherTableau(
-    A=[(),
-       (0.5,),
-       (-1, 2)],
+    A=[(), (0.5,), (-1, 2)],
     B=[1 / 6, 2 / 3, 1 / 6],
     C=[0, 0.5, 1],
 )
 heun3_tableau = ButcherTableau(
-    A=[(),
-       (1 / 3,),
-       (0, 2 / 3)],
+    A=[(), (1 / 3,), (0, 2 / 3)],
     B=[0.25, 0, 0.75],
     C=[0, 1 / 3, 2 / 3],
 )
 ralston3_tableau = ButcherTableau(
-    A=[(),
-       (0.5,),
-       (0, 0.75)],
+    A=[(), (0.5,), (0, 0.75)],
     B=[2 / 9, 1 / 3, 4 / 9],
     C=[0, 0.5, 0.75],
 )
 ssprk3_tableau = ButcherTableau(
-    A=[(),
-       (1,),
-       (0.25, 0.25)],
+    A=[(), (1,), (0.25, 0.25)],
     B=[1 / 6, 1 / 6, 2 / 3],
     C=[0, 1, 0.5],
 )
 rk4_tableau = ButcherTableau(
-    A=[(),
-       (0.5,),
-       (0., 0.5),
-       (0., 0., 1)],
+    A=[(), (0.5,), (0.0, 0.5), (0.0, 0.0, 1)],
     B=[1 / 6, 1 / 3, 1 / 3, 1 / 6],
     C=[0, 0.5, 0.5, 1],
 )
 ralston4_tableau = ButcherTableau(
-    A=[(),
-       (.4,),
-       (.29697761, .15875964),
-       (.21810040, -3.05096516, 3.83286476)],
-    B=[.17476028, -.55148066, 1.20553560, .17118478],
-    C=[0, .4, .45573725, 1],
+    A=[(), (0.4,), (0.29697761, 0.15875964), (0.21810040, -3.05096516, 3.83286476)],
+    B=[0.17476028, -0.55148066, 1.20553560, 0.17118478],
+    C=[0, 0.4, 0.45573725, 1],
 )
 
 

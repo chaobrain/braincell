@@ -239,8 +239,12 @@ class LayoutConfigThreadingTest(unittest.TestCase):
                 layout_family="fan",
             )
         }
-        self.assertTrue(np.allclose(layouts["dend_a"].segment_directions_um[0], layouts["dend_a"].segment_directions_um[-1]))
-        self.assertTrue(np.allclose(layouts["dend_b"].segment_directions_um[0], layouts["dend_b"].segment_directions_um[-1]))
+        self.assertTrue(
+            np.allclose(layouts["dend_a"].segment_directions_um[0], layouts["dend_a"].segment_directions_um[-1])
+        )
+        self.assertTrue(
+            np.allclose(layouts["dend_b"].segment_directions_um[0], layouts["dend_b"].segment_directions_um[-1])
+        )
 
 
 if __name__ == "__main__":

@@ -88,10 +88,7 @@ def contour_equivalent_center_radius(rows: Iterable[_SwcRow]) -> tuple[np.ndarra
     soma_rows = tuple(rows)
     points = np.array([row_point(row) for row in soma_rows], dtype=float)
     center = points.mean(axis=0)
-    radius = max(
-        np.linalg.norm(point - center) + row_radius(row)
-        for point, row in zip(points, soma_rows)
-    )
+    radius = max(np.linalg.norm(point - center) + row_radius(row) for point, row in zip(points, soma_rows))
     return center, float(radius)
 
 

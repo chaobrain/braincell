@@ -65,7 +65,7 @@ def _V(values, unit=u.mV):
     return jnp.asarray(values) * unit
 
 
-_DENSITY_UNIT = u.mS / u.cm ** 2 * u.mV
+_DENSITY_UNIT = u.mS / u.cm**2 * u.mV
 
 
 class _MixedPotassiumCalciumTemplateTest:
@@ -109,7 +109,7 @@ class IAHPDe1994Test(_MixedPotassiumCalciumTemplateTest, unittest.TestCase):
         ch.init_state(V, k, ca)
         ch.reset_state(V, k, ca)
         i = ch.current(V, k, ca)
-        expected = ch.g_max * ch.p.value ** 2 * (k.E - V)
+        expected = ch.g_max * ch.p.value**2 * (k.E - V)
         self.assertTrue(
             u.math.allclose(
                 i.to_decimal(_DENSITY_UNIT),
@@ -144,7 +144,7 @@ class SK_SU2015_DCNTest(_MixedPotassiumCalciumTemplateTest, unittest.TestCase):
 
     def test_default_parameters_are_stored(self) -> None:
         ch = SK_SU2015_DCN(size=1)
-        self.assertTrue(u.math.allclose(ch.g_max, 0.01 * (u.mS / u.cm ** 2), atol=1e-12 * (u.mS / u.cm ** 2)))
+        self.assertTrue(u.math.allclose(ch.g_max, 0.01 * (u.mS / u.cm**2), atol=1e-12 * (u.mS / u.cm**2)))
         self.assertTrue(u.math.allclose(ch.qdeltat, jnp.ones(1), atol=1e-12))
 
     def test_reset_state_sets_z_to_zinf(self) -> None:
@@ -187,7 +187,7 @@ class SK_SU2015_DCNTest(_MixedPotassiumCalciumTemplateTest, unittest.TestCase):
     def test_z_helpers_match_mod_formulas_at_table_nodes(self) -> None:
         ch = SK_SU2015_DCN(size=1)
         cai = jnp.asarray([0.0003, 0.006])
-        z_expected = cai ** 4 / (cai ** 4 + 8.1e-15)
+        z_expected = cai**4 / (cai**4 + 8.1e-15)
         tau_expected = jnp.where(cai < 0.005, 1.0 - 186.67 * cai, 0.0667)
         self.assertTrue(u.math.allclose(ch._z_inf_formula(cai), z_expected, atol=1e-12))
         self.assertTrue(u.math.allclose(ch._z_tau_formula(cai), tau_expected, atol=1e-12))
@@ -438,9 +438,7 @@ class Kca1p1_MA2020_GoCTest(_MixedPotassiumCalciumTemplateTest, unittest.TestCas
             getattr(ch, f"O{i}").value = jnp.full((1,), 0.2)
         states = ch.state_values()
         i_val = ch.current(V, k, ca)
-        expected = ch.g_max * (
-            states["O0"] + states["O1"] + states["O2"] + states["O3"] + states["O4"]
-        ) * (k.E - V)
+        expected = ch.g_max * (states["O0"] + states["O1"] + states["O2"] + states["O3"] + states["O4"]) * (k.E - V)
         self.assertTrue(
             u.math.allclose(
                 i_val.to_decimal(_DENSITY_UNIT),
@@ -529,9 +527,9 @@ class KcaInheritedCellVariantTest(unittest.TestCase):
                     getattr(ch, f"O{i}").value = jnp.full((1,), 0.2)
                 current = ch.current(V, k, ca)
                 states = ch.state_values()
-                expected = ch.g_max * (
-                    states["O0"] + states["O1"] + states["O2"] + states["O3"] + states["O4"]
-                ) * (k.E - V)
+                expected = (
+                    ch.g_max * (states["O0"] + states["O1"] + states["O2"] + states["O3"] + states["O4"]) * (k.E - V)
+                )
                 self.assertTrue(
                     u.math.allclose(
                         current.to_decimal(_DENSITY_UNIT),

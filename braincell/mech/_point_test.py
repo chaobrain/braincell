@@ -89,9 +89,7 @@ class CurrentClampTest(unittest.TestCase):
 
     def test_empty_durations_raise(self) -> None:
         with self.assertRaises(ValueError):
-            CurrentClamp(
-                delay=0.0 * u.ms, durations=(), amplitudes=()
-            )
+            CurrentClamp(delay=0.0 * u.ms, durations=(), amplitudes=())
 
     def test_zero_duration_raises(self) -> None:
         with self.assertRaises(ValueError):
@@ -173,14 +171,17 @@ class SineClampValidatesInputsTest(unittest.TestCase):
     def test_negative_duration_raises(self) -> None:
         with self.assertRaises(ValueError):
             SineClamp(
-                amplitude=1.0 * u.nA, frequency=50.0 * u.Hz,
+                amplitude=1.0 * u.nA,
+                frequency=50.0 * u.Hz,
                 duration=-1.0 * u.ms,
             )
 
     def test_phase_must_be_real_number(self) -> None:
         with self.assertRaises(TypeError):
             SineClamp(
-                amplitude=1.0 * u.nA, frequency=50.0 * u.Hz, phase="hi",
+                amplitude=1.0 * u.nA,
+                frequency=50.0 * u.Hz,
+                phase="hi",
             )
 
 

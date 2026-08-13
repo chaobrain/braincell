@@ -105,8 +105,14 @@ class MechanismObjectCell:
 
     def __getattr__(self, name: str) -> object:
         if name.startswith("_") or name in {
-            "runtime", "layout_id", "class_name", "instance_name",
-            "column_id", "domain", "cv_id", "point_id",
+            "runtime",
+            "layout_id",
+            "class_name",
+            "instance_name",
+            "column_id",
+            "domain",
+            "cv_id",
+            "point_id",
         }:
             raise AttributeError(name)
         declaration = self.declaration
@@ -117,17 +123,14 @@ class MechanismObjectCell:
         if is_dataclass(declaration):
             candidates.update(f.name for f in fields(declaration))
         if node is not None and node is not declaration:
-            candidates.update(
-                attr_name for attr_name in dir(node) if not attr_name.startswith("_")
-            )
+            candidates.update(attr_name for attr_name in dir(node) if not attr_name.startswith("_"))
         if name in candidates:
             try:
                 return self.get_param(name)
             except AttributeError:
                 pass
         raise AttributeError(
-            f"Mechanism cell {self.row_label!r} has no attribute {name!r}. "
-            f"Known params: {sorted(candidates)!r}."
+            f"Mechanism cell {self.row_label!r} has no attribute {name!r}. Known params: {sorted(candidates)!r}."
         )
 
 
@@ -194,11 +197,7 @@ def mechanism_cell_key(mechanism: object) -> tuple[str, str]:
         return (mechanism.synapse_type, mechanism.instance_name)
     if isinstance(mechanism, ProbeMechanism):
         class_name = "ProbeMechanism"
-        instance_name = (
-            mechanism.variable
-            if mechanism.target is None
-            else f"{mechanism.variable}@{mechanism.target}"
-        )
+        instance_name = mechanism.variable if mechanism.target is None else f"{mechanism.variable}@{mechanism.target}"
         return (class_name, instance_name)
     if isinstance(mechanism, StateProbe):
         return ("StateProbe", mechanism.name if mechanism.name is not None else mechanism.field)
@@ -210,9 +209,9 @@ def mechanism_cell_key(mechanism: object) -> tuple[str, str]:
     if isinstance(mechanism, CurrentProbe):
         return (
             "CurrentProbe",
-            mechanism.name if mechanism.name is not None else (
-                f"{mechanism.mechanism}_current" if mechanism.mechanism is not None else f"{mechanism.ion}_current"
-            ),
+            mechanism.name
+            if mechanism.name is not None
+            else (f"{mechanism.mechanism}_current" if mechanism.mechanism is not None else f"{mechanism.ion}_current"),
         )
     if isinstance(mechanism, Point):
         class_name = type(mechanism).__name__

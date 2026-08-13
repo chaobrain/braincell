@@ -80,14 +80,11 @@ __all__ = [
     'IntegratorEntry',
     'IntegratorRegistry',
     'all_integrators',
-
     # implicit backward Euler
     'backward_euler_step',
-
     # exponential Euler
     'exp_euler_step',
     'ind_exp_euler_step',
-
     # runge-kutta methods
     'euler_step',
     'midpoint_step',
@@ -100,10 +97,8 @@ __all__ = [
     'ralston3_step',
     'rk4_step',
     'ralston4_step',
-
     # staggered
     'staggered_step',
-
     # implicit methods
     'implicit_euler_step',
     'splitting_step',
@@ -112,12 +107,10 @@ __all__ = [
     'cn_rk4_step',
     'cn_exp_euler_step',
     'exp_exp_euler_step',
-
     # protocol
     'DiffEqState',
     'DiffEqModule',
     'IndependentIntegration',
-
 ]
 
 
@@ -207,10 +200,5 @@ def get_integrator(method: str | Callable) -> Callable:
             suggestions = registry.suggest(method, n=1)
             hint = f" Did you mean {suggestions[0]!r}?" if suggestions else ""
             available = ", ".join(registry.names())
-            raise ValueError(
-                f"Unknown integrator {method!r}.{hint} "
-                f"Available: {available}."
-            )
-    raise TypeError(
-        f"Integrator method must be a string or callable, got {type(method).__name__}."
-    )
+            raise ValueError(f"Unknown integrator {method!r}.{hint} Available: {available}.")
+    raise TypeError(f"Integrator method must be a string or callable, got {type(method).__name__}.")

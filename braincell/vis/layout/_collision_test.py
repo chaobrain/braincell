@@ -271,10 +271,7 @@ class SpatialHashVsBruteForceTest(unittest.TestCase):
             LayoutConfig(collision_cell_size_um=20.0),
             LayoutConfig(collision_cell_size_um=100.0),
         )
-        scores = [
-            _layout_collision_score(candidate, existing, layout_config=config)
-            for config in configs
-        ]
+        scores = [_layout_collision_score(candidate, existing, layout_config=config) for config in configs]
         for score in scores[1:]:
             self.assertAlmostEqual(score, scores[0], places=6)
 
@@ -289,8 +286,8 @@ class BuildCollisionIndexTest(unittest.TestCase):
         # Two candidates scored against the same index must agree
         # with the brute-force reference.
         for candidate_points in [
-            [[5.0, 0.0], [5.0, 10.0]],    # crosses both
-            [[0.0, 5.0], [10.0, 5.0]],    # sits between them
+            [[5.0, 0.0], [5.0, 10.0]],  # crosses both
+            [[0.0, 5.0], [10.0, 5.0]],  # sits between them
             [[100.0, 0.0], [110.0, 0.0]],  # disjoint
         ]:
             candidate = _layout_from_points(candidate_points, index=99)

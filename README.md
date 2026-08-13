@@ -4,7 +4,7 @@
 
 <p align="center">
   	<img alt="Header image of BrainCell." src="https://brainx.chaobrain.com/images/braincell.webp" width=50%>
-</p> 
+</p>
 
 
 
@@ -13,7 +13,7 @@
 	<a href="https://github.com/chaobrain/braincell/blob/main/LICENSE"><img alt="LICENSE" src="https://img.shields.io/badge/License-Apache%202.0-blue.svg"></a>
     <a href='https://brainx.chaobrain.com/braincell/'>
         <img src='https://readthedocs.org/projects/braincell/badge/?version=latest' alt='Documentation Status' />
-    </a>  	
+    </a>
     <a href="https://badge.fury.io/py/braincell"><img alt="PyPI version" src="https://badge.fury.io/py/braincell.svg"></a>
     <a href="https://github.com/chaobrain/braincell/actions/workflows/CI.yml"><img alt="Continuous Integration" src="https://github.com/chaobrain/braincell/actions/workflows/CI.yml/badge.svg"></a>
     <a href="https://doi.org/10.5281/zenodo.14969987"><img src="https://zenodo.org/badge/825447742.svg" alt="DOI"></a>

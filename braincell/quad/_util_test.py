@@ -72,7 +72,7 @@ class _IndepSub(brainstate.nn.Module, DiffEqModule, IndependentIntegration):
         self.y = DiffEqState(jnp.ones(2, dtype=_FLOAT_DTYPE) * u.mV)
 
     def compute_derivative(self, *args, **kwargs):
-        self.y.derivative = -self.y.value / (5. * u.ms)
+        self.y.derivative = -self.y.value / (5.0 * u.ms)
 
 
 class _DependentChild(brainstate.nn.Module, DiffEqModule):
@@ -81,7 +81,7 @@ class _DependentChild(brainstate.nn.Module, DiffEqModule):
         self.z = DiffEqState(jnp.ones(2, dtype=_FLOAT_DTYPE) * u.mV)
 
     def compute_derivative(self, *args, **kwargs):
-        self.z.derivative = -self.z.value / (7. * u.ms)
+        self.z.derivative = -self.z.value / (7.0 * u.ms)
 
 
 class _IndepSubWithDependentChild(_IndepSub):
@@ -97,14 +97,13 @@ class _OuterWithIndep(brainstate.nn.Module, DiffEqModule):
         self.sub = _IndepSub() if sub is None else sub
 
     def compute_derivative(self, *args, **kwargs):
-        self.x.derivative = -self.x.value / (10. * u.ms)
+        self.x.derivative = -self.x.value / (10.0 * u.ms)
 
 
 # --------------------------------------------------------------------------- #
 # Tests
 # --------------------------------------------------------------------------- #
 class SplitDiffEqStatesTest(unittest.TestCase):
-
     def test_separates_diffeq_and_other_states(self):
         m = _LinearDecay()
         all_st, diffeq_st, other_st = split_diffeq_states(m)
@@ -141,7 +140,6 @@ class SplitDiffEqStatesTest(unittest.TestCase):
 
 
 class ApplyStandardSolverStepTest(unittest.TestCase):
-
     def test_passes_array_state_and_invokes_hooks(self):
         m = _LinearDecay()
 
@@ -154,8 +152,8 @@ class ApplyStandardSolverStepTest(unittest.TestCase):
             observed["fn"] = fn
             return y0, {}  # no-op solver: return inputs unchanged
 
-        with brainstate.environ.context(t=0. * u.ms, dt=0.1 * u.ms):
-            apply_standard_solver_step(fake_step, m, 0. * u.ms, 0.1 * u.ms)
+        with brainstate.environ.context(t=0.0 * u.ms, dt=0.1 * u.ms):
+            apply_standard_solver_step(fake_step, m, 0.0 * u.ms, 0.1 * u.ms)
 
         # The merged y0 has shape ``(*pop_shape, n_diffeq_state)``; with one
         # scalar state of shape (2,) and 'concat' merging it stays (2,).
@@ -166,7 +164,7 @@ class ApplyStandardSolverStepTest(unittest.TestCase):
 
     def test_rejects_non_diffeq_module(self):
         with self.assertRaises(AssertionError):
-            apply_standard_solver_step(lambda *a, **k: None, object(), 0., 0.1)
+            apply_standard_solver_step(lambda *a, **k: None, object(), 0.0, 0.1)
 
     def test_rejects_unknown_merging(self):
         m = _LinearDecay()
@@ -174,7 +172,7 @@ class ApplyStandardSolverStepTest(unittest.TestCase):
             apply_standard_solver_step(
                 lambda *a, **k: None,
                 m,
-                0. * u.ms,
+                0.0 * u.ms,
                 0.1 * u.ms,
                 merging="bogus",
             )
@@ -185,13 +183,12 @@ class ApplyStandardSolverStepTest(unittest.TestCase):
             apply_standard_solver_step(
                 "not callable",  # type: ignore[arg-type]
                 m,
-                0. * u.ms,
+                0.0 * u.ms,
                 0.1 * u.ms,
             )
 
 
 class JacrevLastDimTest(unittest.TestCase):
-
     def test_diagonal_linear_function(self):
         def f(y):
             return -2.0 * y

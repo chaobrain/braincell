@@ -67,8 +67,7 @@ class BuildRadial360Test(unittest.TestCase):
             if layout.branch_name.startswith("d")
         }
         quadrants = {
-            (np.sign(layout.end_direction_um[0]), np.sign(layout.end_direction_um[1]))
-            for layout in layouts.values()
+            (np.sign(layout.end_direction_um[0]), np.sign(layout.end_direction_um[1])) for layout in layouts.values()
         }
         self.assertGreaterEqual(len(quadrants), 3)
 

@@ -301,8 +301,7 @@ def _plot_discrete_topology_graph(
 
     if edges:
         segments = [
-            np.asarray([positions[parent_id], positions[child_id]], dtype=float)
-            for parent_id, child_id in edges
+            np.asarray([positions[parent_id], positions[child_id]], dtype=float) for parent_id, child_id in edges
         ]
         ax.add_collection(
             LineCollection(
@@ -351,11 +350,7 @@ def _plot_discrete_topology_graph(
             zorder=2,
         )
 
-        highlight_indices = [
-            id_to_index[point_id]
-            for point_id in resolved_highlight_ids
-            if point_id in id_to_index
-        ]
+        highlight_indices = [id_to_index[point_id] for point_id in resolved_highlight_ids if point_id in id_to_index]
         if len(highlight_indices) != len(resolved_highlight_ids):
             missing = sorted(point_id for point_id in resolved_highlight_ids if point_id not in id_to_index)
             raise ValueError(f"highlight_point_ids contains unknown point ids {missing!r}.")
@@ -528,10 +523,7 @@ def _graphviz_layout_positions(graph, *, prog: str, root_node_id: int) -> dict[i
     from networkx.drawing.nx_agraph import graphviz_layout
 
     positions = graphviz_layout(graph, prog=prog, root=root_node_id)
-    return {
-        node_id: np.asarray(position, dtype=float)
-        for node_id, position in positions.items()
-    }
+    return {node_id: np.asarray(position, dtype=float) for node_id, position in positions.items()}
 
 
 def _kamada_kawai_positions(
@@ -542,10 +534,7 @@ def _kamada_kawai_positions(
 ) -> dict[int, np.ndarray]:
     nx = _require_networkx()
     positions = nx.kamada_kawai_layout(graph, scale=layout_scale, center=(0.0, 0.0), dim=2)
-    return {
-        node_id: np.asarray(positions[node_id], dtype=float)
-        for node_id in node_ids
-    }
+    return {node_id: np.asarray(positions[node_id], dtype=float) for node_id in node_ids}
 
 
 def _scale_positions(
@@ -553,14 +542,8 @@ def _scale_positions(
     scale: float,
 ) -> dict[int, np.ndarray]:
     if abs(scale - 1.0) <= 1e-12:
-        return {
-            node_id: np.asarray(position, dtype=float)
-            for node_id, position in positions.items()
-        }
-    return {
-        node_id: np.asarray(position, dtype=float) * scale
-        for node_id, position in positions.items()
-    }
+        return {node_id: np.asarray(position, dtype=float) for node_id, position in positions.items()}
+    return {node_id: np.asarray(position, dtype=float) * scale for node_id, position in positions.items()}
 
 
 def _resolve_node_rgba(
@@ -581,12 +564,16 @@ def _resolve_node_rgba(
     import matplotlib.pyplot as plt
 
     if color_mode == "solid":
-        return _base_node_rgba(
-            node_ids=node_ids,
-            root_id=root_id,
-            node_color=node_color,
-            root_color=root_color,
-        ), None, None
+        return (
+            _base_node_rgba(
+                node_ids=node_ids,
+                root_id=root_id,
+                node_color=node_color,
+                root_color=root_color,
+            ),
+            None,
+            None,
+        )
 
     if color_mode == "depth":
         scalar_values = _graph_depths(node_ids=node_ids, edges=edges)
@@ -623,9 +610,7 @@ def _normalize_values_array(values, *, n_points: int) -> tuple[np.ndarray, str |
         raise ValueError(f"values must be 1-D, got shape {raw.shape!r}.")
     array = raw.reshape(-1)
     if array.shape != (n_points,):
-        raise ValueError(
-            f"values must have shape ({n_points},), got {array.shape!r}."
-        )
+        raise ValueError(f"values must have shape ({n_points},), got {array.shape!r}.")
     return array, unit_label
 
 

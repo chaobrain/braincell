@@ -78,8 +78,7 @@ class MatplotlibPickMetadataTest(unittest.TestCase):
         from matplotlib.collections import LineCollection
 
         line_collections = [
-            coll for coll in ax.collections
-            if isinstance(coll, LineCollection) and hasattr(coll, _BC_PICK_META)
+            coll for coll in ax.collections if isinstance(coll, LineCollection) and hasattr(coll, _BC_PICK_META)
         ]
         self.assertGreater(len(line_collections), 0)
         meta = getattr(line_collections[0], _BC_PICK_META)
@@ -101,10 +100,14 @@ class ResolvePickMetaTest(unittest.TestCase):
 
     def test_batched_artist_uses_event_ind(self) -> None:
         artist = SimpleNamespace()
-        setattr(artist, _BC_PICK_META, [
-            {"branch_index": 0, "branch_name": "a", "branch_type": "soma", "segment_index": 0},
-            {"branch_index": 0, "branch_name": "a", "branch_type": "soma", "segment_index": 1},
-        ])
+        setattr(
+            artist,
+            _BC_PICK_META,
+            [
+                {"branch_index": 0, "branch_name": "a", "branch_type": "soma", "segment_index": 0},
+                {"branch_index": 0, "branch_name": "a", "branch_type": "soma", "segment_index": 1},
+            ],
+        )
         event = SimpleNamespace(ind=[1])
         meta = _resolve_pick_meta(artist, event)
         self.assertEqual(meta["segment_index"], 1)

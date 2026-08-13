@@ -58,7 +58,7 @@
 - cell permutation / node reorder
 - 负载均衡
 
-因此，“不要求用户先建 population”并不等于“运行时逐对象低效地算”。  
+因此，“不要求用户先建 population”并不等于“运行时逐对象低效地算”。
 关键不在前端有没有 `population`，而在后端是否做 regroup / repack / reorder。
 
 ### 2.3 Synapse / spike delivery
@@ -77,7 +77,7 @@
 
 ### 2.4 Delay / parallelization
 
-`NEURON/CoreNEURON` 的 delay 表达天然来自 event queue 语义。  
+`NEURON/CoreNEURON` 的 delay 表达天然来自 event queue 语义。
 并行时，跨 rank 交换的是 spike，然后本地再按 `gid` / `NetCon` 分发为 target events。
 
 ### 2.5 对 BrainCell 的启示

@@ -100,8 +100,8 @@ class ParamsEqualityHashTest(unittest.TestCase):
         self.assertNotEqual(a, b)
 
     def test_equality_with_brainunit_quantities(self) -> None:
-        a = Params(g_max=0.1 * (u.mS / u.cm ** 2), E=-70 * u.mV)
-        b = Params(E=-70 * u.mV, g_max=0.1 * (u.mS / u.cm ** 2))
+        a = Params(g_max=0.1 * (u.mS / u.cm**2), E=-70 * u.mV)
+        b = Params(E=-70 * u.mV, g_max=0.1 * (u.mS / u.cm**2))
         self.assertEqual(a, b)
         self.assertEqual(hash(a), hash(b))
 
@@ -190,8 +190,8 @@ class ParamsRejectsUnhashableValuesTest(unittest.TestCase):
         self.assertIn("hashable", str(ctx.exception).lower())
 
     def test_constructor_accepts_scalar_quantity(self) -> None:
-        p = Params(g=0.1 * u.mS / u.cm ** 2)
-        self.assertEqual(p["g"], 0.1 * u.mS / u.cm ** 2)
+        p = Params(g=0.1 * u.mS / u.cm**2)
+        self.assertEqual(p["g"], 0.1 * u.mS / u.cm**2)
 
 
 if __name__ == "__main__":

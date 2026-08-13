@@ -57,6 +57,7 @@ def power_iteration_expm(A, num_steps=20, method='scipy'):
     else:
         raise ValueError('Unsupported method "{}"'.format(method))
 
+
 def _exponential_euler(f, y0, t, dt, args=()):
     dtype = y0.dtype
     dt = jnp.asarray(u.get_magnitude(dt), dtype=dtype)
@@ -183,11 +184,9 @@ def exp_euler_step(target: DiffEqModule, *args):
     from braincell._base import HHTypedNeuron
     from braincell._multi_compartment import Cell
     from braincell._single_compartment import SingleCompartment
+
     if not isinstance(target, HHTypedNeuron):
-        raise TypeError(
-            f"The target should be a {HHTypedNeuron.__name__}. "
-            f"But got {type(target)} instead."
-        )
+        raise TypeError(f"The target should be a {HHTypedNeuron.__name__}. But got {type(target)} instead.")
     t = brainstate.environ.get('t', getattr(target, 'current_time', 0.0 * u.ms))
     dt = brainstate.environ.get('dt')
 
@@ -198,7 +197,7 @@ def exp_euler_step(target: DiffEqModule, *args):
             t,
             dt,
             *args,
-            merging='stack'  # [n_neuron, n_state]
+            merging='stack',  # [n_neuron, n_state]
         )
 
     elif isinstance(target, Cell):
@@ -208,7 +207,7 @@ def exp_euler_step(target: DiffEqModule, *args):
             t,
             dt,
             *args,
-            merging='concat'  # [n_neuron, n_compartment * n_state]
+            merging='concat',  # [n_neuron, n_compartment * n_state]
         )
 
     else:
@@ -323,7 +322,7 @@ def ind_exp_euler_step(target: DiffEqModule, *args, excluded_paths=()):
 
 def _has_path_prefix(path, prefixes):
     for prefix in prefixes:
-        if path[:len(prefix)] == prefix:
+        if path[: len(prefix)] == prefix:
             return True
     return False
 
@@ -340,10 +339,7 @@ def _ind_exp_euler_step_selected(
 ):
     """Internal selective variant used by family-phased cell scheduling."""
     if not isinstance(target, DiffEqModule):
-        raise TypeError(
-            f"The target should be a {DiffEqModule.__name__}. "
-            f"But got {type(target)} instead."
-        )
+        raise TypeError(f"The target should be a {DiffEqModule.__name__}. But got {type(target)} instead.")
     t = brainstate.environ.get('t', getattr(target, 'current_time', 0.0 * u.ms))
     dt = brainstate.environ.get('dt')
 
@@ -356,9 +352,7 @@ def _ind_exp_euler_step_selected(
     )
     if include_paths:
         diffeq_states = {
-            key: state
-            for key, state in diffeq_states.items()
-            if _has_path_prefix(tuple(key), include_paths)
+            key: state for key, state in diffeq_states.items() if _has_path_prefix(tuple(key), include_paths)
         }
     if len(diffeq_states) == 0:
         if allow_empty:

@@ -11,7 +11,7 @@ Biologically detailed brain cell modeling in JAX.
 5. Every correction: reflect on the mistake, plan to avoid repeating it.
 6. All updates must be happened on the worktree branch, not main.
 7. Use `brainstate.random` instead of `jax.random` directly for all random number generation.
-8. Write spec and plan under `docs/specs` before implementation.
+8. Write spec and plan under `docs/specs` before implementation. Name each file with its date first: `YYYY-MM-DD-<slug>.md`.
 9. Tests should >90% coverage, but focus on meaningful tests that cover edge cases and critical paths, not just trivial lines.
 10. Co-locate tests with the code under test: each module `foo.py` has its tests in a sibling `foo_test.py` (suffix style — never a separate `tests/` directory, never the `test_*.py` prefix). See [Testing](#testing) for the full rule.
 11. **Never drive a model with a bare Python `for`/`while` loop when it runs repeatedly.** Python loops execute op-by-op (dispatch overhead, no fusion) and trace fresh each step; the `brainstate.transform` primitives lower the whole loop into one compiled XLA program, tracing the body only once. Pick by shape of the work:

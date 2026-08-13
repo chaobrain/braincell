@@ -84,7 +84,7 @@ class HCN_HM1992(HH):
     __module__ = 'braincell.channel'
 
     root_type = HHTypedNeuron
-    gates = (Gate("p", q10=lambda self: self.q10, temp_ref=lambda self: self.temp_ref),)
+    gates = (Gate("p", q10="q10", temp_ref="temp_ref"),)
 
     def __init__(
         self,

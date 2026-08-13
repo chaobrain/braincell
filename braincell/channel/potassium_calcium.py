@@ -61,7 +61,7 @@ class AHP_De1994(HH):
     __module__ = "braincell.channel"
     root_type = _KCA_ROOT_TYPE
     current_owner_type = Potassium
-    gates = (Gate("p", power=2, phi=lambda self: self.phi),)
+    gates = (Gate("p", power=2, phi="phi"),)
 
     def __init__(
         self,

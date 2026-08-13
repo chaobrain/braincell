@@ -62,8 +62,8 @@ class Na_Ba2002(HH):
     __module__ = "braincell.channel"
     root_type = Sodium
     gates = (
-        Gate("p", power=3, q10=lambda self: self.q10, temp_ref=lambda self: self.temp_ref),
-        Gate("q", q10=lambda self: self.q10, temp_ref=lambda self: self.temp_ref),
+        Gate("p", power=3, q10="q10", temp_ref="temp_ref"),
+        Gate("q", q10="q10", temp_ref="temp_ref"),
     )
 
     def __init__(
@@ -110,8 +110,8 @@ class Na_TM1991(HH):
     __module__ = "braincell.channel"
     root_type = Sodium
     gates = (
-        Gate("p", power=3, q10=lambda self: self.q10, temp_ref=lambda self: self.temp_ref),
-        Gate("q", q10=lambda self: self.q10, temp_ref=lambda self: self.temp_ref),
+        Gate("p", power=3, q10="q10", temp_ref="temp_ref"),
+        Gate("q", q10="q10", temp_ref="temp_ref"),
     )
 
     def __init__(
@@ -158,8 +158,8 @@ class Na_HH1952(HH):
     __module__ = "braincell.channel"
     root_type = Sodium
     gates = (
-        Gate("p", power=3, q10=lambda self: self.q10, temp_ref=lambda self: self.temp_ref),
-        Gate("q", q10=lambda self: self.q10, temp_ref=lambda self: self.temp_ref),
+        Gate("p", power=3, q10="q10", temp_ref="temp_ref"),
+        Gate("q", q10="q10", temp_ref="temp_ref"),
     )
 
     def __init__(

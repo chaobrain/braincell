@@ -97,7 +97,7 @@ class KDR_Ba2002(HH):
 
     __module__ = "braincell.channel"
     root_type = Potassium
-    gates = (Gate("p", power=4, q10=lambda self: self.q10, temp_ref=lambda self: self.temp_ref),)
+    gates = (Gate("p", power=4, q10="q10", temp_ref="temp_ref"),)
 
     def __init__(
         self,
@@ -134,7 +134,7 @@ class K_TM1991(HH):
 
     __module__ = "braincell.channel"
     root_type = Potassium
-    gates = (Gate("p", power=4, q10=lambda self: self.q10, temp_ref=lambda self: self.temp_ref),)
+    gates = (Gate("p", power=4, q10="q10", temp_ref="temp_ref"),)
 
     def __init__(
         self,
@@ -171,7 +171,7 @@ class K_HH1952(HH):
 
     __module__ = "braincell.channel"
     root_type = Potassium
-    gates = (Gate("p", power=4, q10=lambda self: self.q10, temp_ref=lambda self: self.temp_ref),)
+    gates = (Gate("p", power=4, q10="q10", temp_ref="temp_ref"),)
 
     def __init__(
         self,
@@ -209,8 +209,8 @@ class KA1_HM1992(HH):
     __module__ = "braincell.channel"
     root_type = Potassium
     gates = (
-        Gate("p", power=4, q10=lambda self: self.q10_p, temp_ref=lambda self: self.temp_ref_p),
-        Gate("q", q10=lambda self: self.q10_q, temp_ref=lambda self: self.temp_ref_q),
+        Gate("p", power=4, q10="q10_p", temp_ref="temp_ref_p"),
+        Gate("q", q10="q10_q", temp_ref="temp_ref_q"),
     )
 
     def __init__(
@@ -265,8 +265,8 @@ class KA2_HM1992(HH):
     __module__ = "braincell.channel"
     root_type = Potassium
     gates = (
-        Gate("p", power=4, q10=lambda self: self.q10_p, temp_ref=lambda self: self.temp_ref_p),
-        Gate("q", q10=lambda self: self.q10_q, temp_ref=lambda self: self.temp_ref_q),
+        Gate("p", power=4, q10="q10_p", temp_ref="temp_ref_p"),
+        Gate("q", q10="q10_q", temp_ref="temp_ref_q"),
     )
 
     def __init__(
@@ -321,8 +321,8 @@ class KK2A_HM1992(HH):
     __module__ = "braincell.channel"
     root_type = Potassium
     gates = (
-        Gate("p", q10=lambda self: self.q10_p, temp_ref=lambda self: self.temp_ref_p),
-        Gate("q", q10=lambda self: self.q10_q, temp_ref=lambda self: self.temp_ref_q),
+        Gate("p", q10="q10_p", temp_ref="temp_ref_p"),
+        Gate("q", q10="q10_q", temp_ref="temp_ref_q"),
     )
 
     def __init__(
@@ -373,8 +373,8 @@ class KK2B_HM1992(HH):
     __module__ = "braincell.channel"
     root_type = Potassium
     gates = (
-        Gate("p", q10=lambda self: self.q10_p, temp_ref=lambda self: self.temp_ref_p),
-        Gate("q", q10=lambda self: self.q10_q, temp_ref=lambda self: self.temp_ref_q),
+        Gate("p", q10="q10_p", temp_ref="temp_ref_p"),
+        Gate("q", q10="q10_q", temp_ref="temp_ref_q"),
     )
 
     def __init__(
@@ -428,7 +428,7 @@ class KNI_Ya1989(HH):
 
     __module__ = "braincell.channel"
     root_type = Potassium
-    gates = (Gate("p", q10=lambda self: self.q10, temp_ref=lambda self: self.temp_ref),)
+    gates = (Gate("p", q10="q10", temp_ref="temp_ref"),)
 
     def __init__(
         self,
@@ -495,7 +495,7 @@ class K_Leak(Channel):
 class K_Kv_test(HH):
     __module__ = "braincell.channel"
     root_type = Potassium
-    gates = (Gate("n", q10=lambda self: self.Q10_n, temp_ref=lambda self: self.temp_ref),)
+    gates = (Gate("n", q10="Q10_n", temp_ref="temp_ref"),)
 
     def __init__(
         self,

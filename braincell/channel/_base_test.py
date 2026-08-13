@@ -687,6 +687,44 @@ class ChannelTemplateTest(unittest.TestCase):
         finally:
             type(ch).clip_states = True
 
+    # ------------------------------------------------------------------
+    # Gate metadata binding
+    # ------------------------------------------------------------------
+
+    def _phi_of(self, name, **gate_kwargs):
+        cls = _make_hh(
+            name,
+            {
+                "gates": (Gate("m", **gate_kwargs),),
+                "f_m_inf": lambda self, V, K: 0.5,
+                "f_m_tau": lambda self, V, K: 1.0,
+                "__init__": lambda self, size=1: (
+                    HH.__init__(self, size=size, name=None),
+                    setattr(self, "q10", 3.0),
+                    setattr(self, "temp_ref", u.celsius2kelvin(22.0)),
+                    setattr(self, "temp", u.celsius2kelvin(32.0)),
+                    setattr(self, "phi_value", 2.5),
+                )[0],
+            },
+        )
+        return cls(1).gate_phi(cls._resolved_gates[0])
+
+    def test_string_reference_matches_lambda_reference(self) -> None:
+        by_string = self._phi_of("_PhiStr", q10="q10", temp_ref="temp_ref")
+        by_lambda = self._phi_of(
+            "_PhiLambda",
+            q10=lambda self: self.q10,
+            temp_ref=lambda self: self.temp_ref,
+        )
+        self.assertTrue(u.math.allclose(by_string, by_lambda, atol=1e-12))
+
+    def test_string_reference_resolves_explicit_phi(self) -> None:
+        self.assertEqual(self._phi_of("_PhiDirect", phi="phi_value"), 2.5)
+
+    def test_string_reference_to_missing_attribute_names_it(self) -> None:
+        with self.assertRaisesRegex(AttributeError, "references attribute 'nope'"):
+            self._phi_of("_PhiMissing", phi="nope")
+
     def test_markov_pairs_are_resolved_once(self) -> None:
         cls = _make_markov(
             "_TuplePairs",

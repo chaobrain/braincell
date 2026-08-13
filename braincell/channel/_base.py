@@ -38,6 +38,22 @@ def ghk_flux(V, ci, co, z, temp):
 
 
 def _resolve_value(owner, value):
+    """Resolve a piece of gate metadata against the owning channel instance.
+
+    Gate metadata is declared at class level but often refers to a
+    constructor parameter. A ``str`` names that attribute
+    (``q10="q10"``); a callable is applied to the instance
+    (``q10=lambda self: self.q10``), which predates the string form and
+    stays supported; anything else is a literal.
+    """
+    if isinstance(value, str):
+        try:
+            return getattr(owner, value)
+        except AttributeError:
+            raise AttributeError(
+                f"{type(owner).__name__}: gate metadata references attribute {value!r}, "
+                f"which the instance does not define."
+            ) from None
     return value(owner) if callable(value) else value
 
 

@@ -110,7 +110,7 @@ class CaN_IS2008(HH):
 
     __module__ = "braincell.channel"
     root_type = Calcium
-    gates = (Gate("p", q10=lambda self: self.q10, temp_ref=lambda self: self.temp_ref),)
+    gates = (Gate("p", q10="q10", temp_ref="temp_ref"),)
 
     def __init__(
         self,
@@ -149,8 +149,8 @@ class CaT_HM1992(HH):
     __module__ = "braincell.channel"
     root_type = Calcium
     gates = (
-        Gate("p", power=2, q10=lambda self: self.q10_p, temp_ref=lambda self: self.temp_ref_p),
-        Gate("q", q10=lambda self: self.q10_q, temp_ref=lambda self: self.temp_ref_q),
+        Gate("p", power=2, q10="q10_p", temp_ref="temp_ref_p"),
+        Gate("q", q10="q10_q", temp_ref="temp_ref_q"),
     )
 
     def __init__(
@@ -205,8 +205,8 @@ class CaT_HP1992(HH):
     __module__ = "braincell.channel"
     root_type = Calcium
     gates = (
-        Gate("p", power=2, q10=lambda self: self.q10_p, temp_ref=lambda self: self.temp_ref_p),
-        Gate("q", q10=lambda self: self.q10_q, temp_ref=lambda self: self.temp_ref_q),
+        Gate("p", power=2, q10="q10_p", temp_ref="temp_ref_p"),
+        Gate("q", q10="q10_q", temp_ref="temp_ref_q"),
     )
 
     def __init__(
@@ -257,8 +257,8 @@ class CaHT_HM1992(HH):
     __module__ = "braincell.channel"
     root_type = Calcium
     gates = (
-        Gate("p", power=2, q10=lambda self: self.q10_p, temp_ref=lambda self: self.temp_ref_p),
-        Gate("q", q10=lambda self: self.q10_q, temp_ref=lambda self: self.temp_ref_q),
+        Gate("p", power=2, q10="q10_p", temp_ref="temp_ref_p"),
+        Gate("q", q10="q10_q", temp_ref="temp_ref_q"),
     )
 
     def __init__(
@@ -313,8 +313,8 @@ class CaHT_Re1993(HH):
     __module__ = "braincell.channel"
     root_type = Calcium
     gates = (
-        Gate("p", power=2, q10=lambda self: self.q10_p, temp_ref=lambda self: self.temp_ref_p),
-        Gate("q", q10=lambda self: self.q10_q, temp_ref=lambda self: self.temp_ref_q),
+        Gate("p", power=2, q10="q10_p", temp_ref="temp_ref_p"),
+        Gate("q", q10="q10_q", temp_ref="temp_ref_q"),
     )
 
     def __init__(
@@ -366,8 +366,8 @@ class CaL_IS2008(HH):
     __module__ = "braincell.channel"
     root_type = Calcium
     gates = (
-        Gate("p", power=2, q10=lambda self: self.q10_p, temp_ref=lambda self: self.temp_ref_p),
-        Gate("q", q10=lambda self: self.q10_q, temp_ref=lambda self: self.temp_ref_q),
+        Gate("p", power=2, q10="q10_p", temp_ref="temp_ref_p"),
+        Gate("q", q10="q10_q", temp_ref="temp_ref_q"),
     )
 
     def __init__(
@@ -584,9 +584,9 @@ class Cav1p2_MA2020_GoC(HH):
     __module__ = "braincell.channel"
     root_type = Calcium
     gates = (
-        Gate("m", q10=lambda self: self.q10, temp_ref=lambda self: self.temp_ref),
-        Gate("h", q10=lambda self: self.q10, temp_ref=lambda self: self.temp_ref),
-        Gate("n", q10=lambda self: self.q10, temp_ref=lambda self: self.temp_ref),
+        Gate("m", q10="q10", temp_ref="temp_ref"),
+        Gate("h", q10="q10", temp_ref="temp_ref"),
+        Gate("n", q10="q10", temp_ref="temp_ref"),
     )
 
     def __init__(
@@ -649,9 +649,9 @@ class Cav1p3_MA2020_GoC(HH):
     __module__ = "braincell.channel"
     root_type = Calcium
     gates = (
-        Gate("m", q10=lambda self: self.q10, temp_ref=lambda self: self.temp_ref),
-        Gate("h", q10=lambda self: self.q10, temp_ref=lambda self: self.temp_ref),
-        Gate("n", q10=lambda self: self.q10, temp_ref=lambda self: self.temp_ref),
+        Gate("m", q10="q10", temp_ref="temp_ref"),
+        Gate("h", q10="q10", temp_ref="temp_ref"),
+        Gate("n", q10="q10", temp_ref="temp_ref"),
     )
 
     def __init__(

@@ -485,16 +485,26 @@ class _Specs:
         cached = cls._cache.get(ion_type)
         if cached is None:
             cached = cls(
-                factors=tuple(type_factor if isinstance(type_factor, Factor) else Factor(*type_factor)
-                              for type_factor in getattr(ion_type, "factors", ())),
-                species=tuple(type_species if isinstance(type_species, Species) else Species(*type_species)
-                              for type_species in getattr(ion_type, "species", ())),
-                reactions=tuple(type_reaction if isinstance(type_reaction, Reaction) else Reaction(*type_reaction)
-                                for type_reaction in getattr(ion_type, "reactions", ())),
-                sources=tuple(type_source if isinstance(type_source, Source) else Source(*type_source)
-                              for type_source in getattr(ion_type, "sources", ())),
-                conserves=tuple(type_conserve if isinstance(type_conserve, Conserve) else Conserve(*type_conserve)
-                                for type_conserve in getattr(ion_type, "conserves", ())),
+                factors=tuple(
+                    type_factor if isinstance(type_factor, Factor) else Factor(*type_factor)
+                    for type_factor in getattr(ion_type, "factors", ())
+                ),
+                species=tuple(
+                    type_species if isinstance(type_species, Species) else Species(*type_species)
+                    for type_species in getattr(ion_type, "species", ())
+                ),
+                reactions=tuple(
+                    type_reaction if isinstance(type_reaction, Reaction) else Reaction(*type_reaction)
+                    for type_reaction in getattr(ion_type, "reactions", ())
+                ),
+                sources=tuple(
+                    type_source if isinstance(type_source, Source) else Source(*type_source)
+                    for type_source in getattr(ion_type, "sources", ())
+                ),
+                conserves=tuple(
+                    type_conserve if isinstance(type_conserve, Conserve) else Conserve(*type_conserve)
+                    for type_conserve in getattr(ion_type, "conserves", ())
+                ),
             )
             cls._cache[ion_type] = cached
         return cached
@@ -510,10 +520,7 @@ class _Specs:
         algebraic_names = tuple(conserve.algebraic for conserve in self.conserves)
         self.algebraic_names = algebraic_names
         self.algebraic_set = set(algebraic_names)
-        self.diffeq_names = tuple(
-            spec.name for spec in species
-            if spec.name not in self.algebraic_set
-        )
+        self.diffeq_names = tuple(spec.name for spec in species if spec.name not in self.algebraic_set)
         self.diffeq_set = set(self.diffeq_names)
 
     def _validate(self, *, factors, species):
@@ -526,9 +533,7 @@ class _Specs:
 
         for spec in species:
             if spec.factor is not None and spec.factor not in self.factors_by_name:
-                raise ValueError(
-                    f"KineticIon species {spec.name!r} references unknown factor {spec.factor!r}."
-                )
+                raise ValueError(f"KineticIon species {spec.name!r} references unknown factor {spec.factor!r}.")
 
         algebraic_names = []
         for conserve in self.conserves:
@@ -626,6 +631,7 @@ class _Species:
             return scaled
         return scaled / self.factor_value(name)
 
+
 class _Conserve:
     """Resolve algebraic species from declared conservation relations."""
 
@@ -669,8 +675,7 @@ class _Flux:
     def compute(self, V, species_values: dict[str, Any], *, total_current=None) -> None:
         """Accumulate scaled-domain fluxes and write visible derivatives."""
         scaled_derivs = {
-            name: 0.0 * self.species.to_scaled(name, species_values[name]) / u.ms
-            for name in self.specs.diffeq_names
+            name: 0.0 * self.species.to_scaled(name, species_values[name]) / u.ms for name in self.specs.diffeq_names
         }
 
         for reaction in self.specs.reactions:
@@ -708,12 +713,12 @@ class _Flux:
         forward = reaction.forward(self.owner, V, species_values)
         for name, stoich in reaction.lhs.items():
             value = species_values[name]
-            forward = forward * (value if stoich == 1 else value ** stoich)
+            forward = forward * (value if stoich == 1 else value**stoich)
         if reaction.backward is None:
             return forward
 
         backward = reaction.backward(self.owner, V, species_values)
         for name, stoich in reaction.rhs.items():
             value = species_values[name]
-            backward = backward * (value if stoich == 1 else value ** stoich)
+            backward = backward * (value if stoich == 1 else value**stoich)
         return forward - backward

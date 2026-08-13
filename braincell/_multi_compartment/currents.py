@@ -25,7 +25,7 @@ if TYPE_CHECKING:
 
 __all__ = ["total_membrane_current", "total_membrane_current_point"]
 
-_CURRENT_DENSITY = u.nA / u.cm ** 2
+_CURRENT_DENSITY = u.nA / u.cm**2
 
 
 def total_membrane_current(
@@ -80,9 +80,7 @@ def total_membrane_current_point(
                         name=_call_name("braincell:membrane_current:channel_current", key, ch),
                     )(point_V)
                 except (TypeError, ValueError, RuntimeError, ArithmeticError) as exc:
-                    raise ValueError(
-                        f"Error computing current for ion channel {key!r}:\n{ch}\nError: {exc}"
-                    ) from exc
+                    raise ValueError(f"Error computing current for ion channel {key!r}:\n{ch}\nError: {exc}") from exc
                 if contrib is None:
                     continue
                 I_point = I_point + _profile_barrier_current(contrib)
@@ -129,9 +127,7 @@ def _synapse_contrib_to_point(runtime: CellRuntimeState, layout, syn, point_V):
             name=_call_name("braincell:membrane_current:synapse_current", (f"layout_{layout.id}",), syn),
         )(point_V[..., layout.point_index])
     except (TypeError, ValueError, RuntimeError, ArithmeticError) as exc:
-        raise ValueError(
-            f"Error computing current for synapse layout {layout.id!r}:\n{syn}\nError: {exc}"
-        ) from exc
+        raise ValueError(f"Error computing current for synapse layout {layout.id!r}:\n{syn}\nError: {exc}") from exc
     if contrib is None:
         return None
     if layout.point_index is None:

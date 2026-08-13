@@ -48,7 +48,8 @@ class BuildFanLayoutTest(unittest.TestCase):
             if layout.branch_name != "soma"
         }
         root_layout = next(
-            layout for layout in _build_layout_branches_fan(
+            layout
+            for layout in _build_layout_branches_fan(
                 tree,
                 layout_specs=_build_layout_specs(tree),
                 min_branch_angle_deg=25.0,

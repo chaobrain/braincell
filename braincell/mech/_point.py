@@ -127,15 +127,9 @@ class CurrentClamp(Point):
     target_index: Any = None
 
     def __post_init__(self) -> None:
-        delay = _coerce_quantity(
-            self.delay, unit=u.ms, field_name="CurrentClamp.delay"
-        )
-        durations = _coerce_quantity(
-            self.durations, unit=u.ms, field_name="CurrentClamp.durations"
-        )
-        amplitudes = _coerce_quantity(
-            self.amplitudes, unit=u.nA, field_name="CurrentClamp.amplitudes"
-        )
+        delay = _coerce_quantity(self.delay, unit=u.ms, field_name="CurrentClamp.delay")
+        durations = _coerce_quantity(self.durations, unit=u.ms, field_name="CurrentClamp.durations")
+        amplitudes = _coerce_quantity(self.amplitudes, unit=u.nA, field_name="CurrentClamp.amplitudes")
         _raise_if_nonpositive_duration(durations)
         target_index = _normalize_target_index(self.target_index)
 
@@ -176,32 +170,35 @@ class SineClamp(Point):
 
     def __post_init__(self) -> None:
         frequency = _coerce_scalar_quantity(
-            self.frequency, unit=u.Hz, field_name="SineClamp.frequency",
+            self.frequency,
+            unit=u.Hz,
+            field_name="SineClamp.frequency",
         )
         if float(frequency.to_decimal(u.Hz)) <= 0.0:
-            raise ValueError(
-                f"SineClamp.frequency must be > 0, got {self.frequency!r}."
-            )
+            raise ValueError(f"SineClamp.frequency must be > 0, got {self.frequency!r}.")
         duration = _coerce_scalar_quantity(
-            self.duration, unit=u.ms, field_name="SineClamp.duration",
+            self.duration,
+            unit=u.ms,
+            field_name="SineClamp.duration",
         )
         if float(duration.to_decimal(u.ms)) <= 0.0:
-            raise ValueError(
-                f"SineClamp.duration must be > 0, got {self.duration!r}."
-            )
+            raise ValueError(f"SineClamp.duration must be > 0, got {self.duration!r}.")
         if not isinstance(self.phase, (int, float)) or isinstance(self.phase, bool):
-            raise TypeError(
-                f"SineClamp.phase must be a real number, "
-                f"got {type(self.phase).__name__!r}."
-            )
+            raise TypeError(f"SineClamp.phase must be a real number, got {type(self.phase).__name__!r}.")
         amplitude = _coerce_scalar_quantity(
-            self.amplitude, unit=u.nA, field_name="SineClamp.amplitude",
+            self.amplitude,
+            unit=u.nA,
+            field_name="SineClamp.amplitude",
         )
         offset = _coerce_scalar_quantity(
-            self.offset, unit=u.nA, field_name="SineClamp.offset",
+            self.offset,
+            unit=u.nA,
+            field_name="SineClamp.offset",
         )
         delay = _coerce_scalar_quantity(
-            self.delay, unit=u.ms, field_name="SineClamp.delay",
+            self.delay,
+            unit=u.ms,
+            field_name="SineClamp.delay",
         )
         object.__setattr__(self, "amplitude", amplitude)
         object.__setattr__(self, "frequency", frequency)
@@ -242,10 +239,7 @@ class FunctionClamp(Point):
 
     def __post_init__(self) -> None:
         if not callable(self.fn):
-            raise TypeError(
-                f"FunctionClamp.fn must be callable, "
-                f"got {type(self.fn).__name__!r}."
-            )
+            raise TypeError(f"FunctionClamp.fn must be callable, got {type(self.fn).__name__!r}.")
 
 
 # ---------------------------------------------------------------------------
@@ -283,15 +277,17 @@ class NetStim(Point):
 
     def __post_init__(self) -> None:
         start = _coerce_scalar_quantity(
-            self.start, unit=u.ms, field_name="NetStim.start",
+            self.start,
+            unit=u.ms,
+            field_name="NetStim.start",
         )
         interval = _coerce_scalar_quantity(
-            self.interval, unit=u.ms, field_name="NetStim.interval",
+            self.interval,
+            unit=u.ms,
+            field_name="NetStim.interval",
         )
         if float(interval.to_decimal(u.ms)) <= 0.0:
-            raise ValueError(
-                f"NetStim.interval must be > 0, got {self.interval!r}."
-            )
+            raise ValueError(f"NetStim.interval must be > 0, got {self.interval!r}.")
         if not isinstance(self.number, int) or isinstance(self.number, bool):
             raise TypeError(f"NetStim.number must be int, got {self.number!r}.")
         if self.number < 0:
@@ -299,9 +295,7 @@ class NetStim(Point):
         if not isinstance(self.noise, (int, float)) or isinstance(self.noise, bool):
             raise TypeError(f"NetStim.noise must be a real number, got {self.noise!r}.")
         if float(self.noise) != 0.0:
-            raise ValueError(
-                f"NetStim.noise={self.noise!r} is not supported yet; use noise=0.0."
-            )
+            raise ValueError(f"NetStim.noise={self.noise!r} is not supported yet; use noise=0.0.")
         if not isinstance(self.weight, (int, float)) or isinstance(self.weight, bool):
             raise TypeError(f"NetStim.weight must be a real number, got {self.weight!r}.")
         if self.name is not None and (not isinstance(self.name, str) or not self.name):
@@ -346,9 +340,7 @@ class MechanismProbe(Point):
         for field_name in ("mechanism", "field"):
             value = getattr(self, field_name)
             if not isinstance(value, str) or not value:
-                raise ValueError(
-                    f"MechanismProbe.{field_name} must be a non-empty string, got {value!r}."
-                )
+                raise ValueError(f"MechanismProbe.{field_name} must be a non-empty string, got {value!r}.")
 
 
 @dataclass(frozen=True)
@@ -365,9 +357,7 @@ class CurrentProbe(Point):
         if self.ion is not None and (not isinstance(self.ion, str) or not self.ion):
             raise ValueError(f"CurrentProbe.ion must be a non-empty string or None, got {self.ion!r}.")
         if self.mechanism is not None and (not isinstance(self.mechanism, str) or not self.mechanism):
-            raise ValueError(
-                f"CurrentProbe.mechanism must be a non-empty string or None, got {self.mechanism!r}."
-            )
+            raise ValueError(f"CurrentProbe.mechanism must be a non-empty string or None, got {self.mechanism!r}.")
         if self.ion is None and self.mechanism is None:
             raise ValueError("CurrentProbe requires at least one of 'ion' or 'mechanism'.")
 
@@ -391,15 +381,9 @@ class ProbeMechanism(Point):
 
     def __post_init__(self) -> None:
         if not isinstance(self.variable, str) or not self.variable:
-            raise ValueError(
-                f"ProbeMechanism.variable must be a non-empty str, "
-                f"got {self.variable!r}."
-            )
+            raise ValueError(f"ProbeMechanism.variable must be a non-empty str, got {self.variable!r}.")
         if self.target is not None and not isinstance(self.target, str):
-            raise TypeError(
-                f"ProbeMechanism.target must be str or None, "
-                f"got {type(self.target).__name__!r}."
-            )
+            raise TypeError(f"ProbeMechanism.target must be str or None, got {type(self.target).__name__!r}.")
 
 
 class Synapse(Point):
@@ -437,33 +421,20 @@ class Synapse(Point):
         **params: Any,
     ) -> None:
         if not isinstance(synapse_type, str) or not synapse_type:
-            raise ValueError(
-                f"Synapse.synapse_type must be a non-empty string, "
-                f"got {synapse_type!r}."
-            )
+            raise ValueError(f"Synapse.synapse_type must be a non-empty string, got {synapse_type!r}.")
         if "params" in params:
-            raise TypeError(
-                "Synapse parameters must be passed as keyword arguments, "
-                "not as params={...}."
-            )
+            raise TypeError("Synapse parameters must be passed as keyword arguments, not as params={...}.")
         if name is not None and not isinstance(name, str):
-            raise TypeError(
-                f"Synapse.name must be a string or None, "
-                f"got {type(name).__name__!r}."
-            )
+            raise TypeError(f"Synapse.name must be a string or None, got {type(name).__name__!r}.")
         object.__setattr__(self, "synapse_type", synapse_type)
         object.__setattr__(self, "params", Params(params) if params else Params())
         object.__setattr__(self, "name", name)
 
     def __setattr__(self, name: str, value: Any) -> None:
-        raise AttributeError(
-            f"{type(self).__name__} is immutable; cannot set attribute {name!r}."
-        )
+        raise AttributeError(f"{type(self).__name__} is immutable; cannot set attribute {name!r}.")
 
     def __delattr__(self, name: str) -> None:
-        raise AttributeError(
-            f"{type(self).__name__} is immutable; cannot delete attribute {name!r}."
-        )
+        raise AttributeError(f"{type(self).__name__} is immutable; cannot delete attribute {name!r}.")
 
     @property
     def instance_name(self) -> str:
@@ -478,20 +449,13 @@ class Synapse(Point):
     def __eq__(self, other: object) -> bool:
         if type(self) is not type(other):
             return NotImplemented
-        return (
-            self.synapse_type == other.synapse_type
-            and self.params == other.params
-            and self.name == other.name
-        )
+        return self.synapse_type == other.synapse_type and self.params == other.params and self.name == other.name
 
     def __hash__(self) -> int:
         return hash((type(self).__name__, self.synapse_type, self.params, self.name))
 
     def __repr__(self) -> str:
-        return (
-            f"Synapse(synapse_type={self.synapse_type!r}, "
-            f"params={self.params!r}, name={self.name!r})"
-        )
+        return f"Synapse(synapse_type={self.synapse_type!r}, params={self.params!r}, name={self.name!r})"
 
 
 # ---------------------------------------------------------------------------
@@ -501,9 +465,7 @@ class Synapse(Point):
 
 def _coerce_scalar_quantity(value: Any, *, unit: Any, field_name: str) -> Any:
     if not hasattr(value, "to_decimal"):
-        raise TypeError(
-            f"{field_name} must be a Quantity, got {value!r}."
-        )
+        raise TypeError(f"{field_name} must be a Quantity, got {value!r}.")
     return value.in_unit(unit)
 
 
@@ -520,10 +482,7 @@ def _coerce_quantity(value: Any, *, unit: Any, field_name: str) -> Any:
         decimals = [item.to_decimal(unit) for item in value]
         return u.Quantity(np.stack(decimals, axis=-1), unit)
 
-    raise TypeError(
-        f"{field_name} must be a Quantity or sequence of Quantities, "
-        f"got {type(value).__name__!r}."
-    )
+    raise TypeError(f"{field_name} must be a Quantity or sequence of Quantities, got {type(value).__name__!r}.")
 
 
 def _raise_if_nonpositive_duration(value: Any) -> None:
@@ -539,9 +498,7 @@ def _normalize_target_index(value: Any) -> Any:
         return None
     arr = np.asarray(value)
     if arr.ndim != 1:
-        raise ValueError(
-            f"CurrentClamp.target_index must be one-dimensional, got shape {arr.shape!r}."
-        )
+        raise ValueError(f"CurrentClamp.target_index must be one-dimensional, got shape {arr.shape!r}.")
     if not np.issubdtype(arr.dtype, np.integer):
         raise TypeError("CurrentClamp.target_index entries must be integers.")
     if np.any(arr < 0):

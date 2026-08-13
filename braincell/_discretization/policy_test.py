@@ -212,7 +212,7 @@ class CVPolicyTest(unittest.TestCase):
             BranchSlice(branch_index=1, prox=0.0, dist=1.0),
             CableProperty(
                 resting_potential=-65.0 * u.mV,
-                membrane_capacitance=2.0 * (u.uF / u.cm ** 2),
+                membrane_capacitance=2.0 * (u.uF / u.cm**2),
                 axial_resistivity=200.0 * (u.ohm * u.cm),
             ),
         )
@@ -235,7 +235,7 @@ class CVPolicyTest(unittest.TestCase):
                 BranchSlice(branch_index=1, prox=0.0, dist=0.5),
                 CableProperty(
                     resting_potential=-65.0 * u.mV,
-                    membrane_capacitance=2.0 * (u.uF / u.cm ** 2),
+                    membrane_capacitance=2.0 * (u.uF / u.cm**2),
                     axial_resistivity=200.0 * (u.ohm * u.cm),
                 ),
             ).cvs
@@ -248,7 +248,7 @@ class CVPolicyTest(unittest.TestCase):
                 BranchSlice(branch_index=1, prox=0.0, dist=1.0),
                 CableProperty(
                     resting_potential=-65.0 * u.mV,
-                    membrane_capacitance=lambda cv: 2.0 * (u.uF / u.cm ** 2),
+                    membrane_capacitance=lambda cv: 2.0 * (u.uF / u.cm**2),
                     axial_resistivity=100.0 * (u.ohm * u.cm),
                 ),
             ).cvs
@@ -260,7 +260,7 @@ class CVPolicyTest(unittest.TestCase):
             BranchSlice(branch_index=1, prox=0.0, dist=0.5),
             CableProperty(
                 resting_potential=-55.0 * u.mV,
-                membrane_capacitance=1.0 * (u.uF / u.cm ** 2),
+                membrane_capacitance=1.0 * (u.uF / u.cm**2),
                 axial_resistivity=100.0 * (u.ohm * u.cm),
                 temperature=u.celsius2kelvin(30.0),
             ),
@@ -307,9 +307,7 @@ class CVPolicyTest(unittest.TestCase):
     def test_composite_by_type_policy_allows_d_lambda_subpolicy(self) -> None:
         tree = _build_mixed_type_tree()
         policy = CompositeByTypePolicy(
-            rules=(
-                CVPolicyByTypeRule(branch_types=("axon",), policy=DLambda(d_lambda=0.1, keep_odd=False)),
-            ),
+            rules=(CVPolicyByTypeRule(branch_types=("axon",), policy=DLambda(d_lambda=0.1, keep_odd=False)),),
             default_policy=CVPerBranch(cv_per_branch=1),
         )
         cell = Cell(tree, cv_policy=policy)

@@ -116,8 +116,7 @@ def configure(
             updated.branch_type_colors = merged
     if branch_type_edge_colors_2d is not None:
         normalized_edge_2d = {
-            str(branch_type): _normalize_color(color)
-            for branch_type, color in branch_type_edge_colors_2d.items()
+            str(branch_type): _normalize_color(color) for branch_type, color in branch_type_edge_colors_2d.items()
         }
         if replace_branch_type_edge_colors_2d or updated.branch_type_edge_colors_2d is None:
             updated.branch_type_edge_colors_2d = normalized_edge_2d
@@ -134,9 +133,7 @@ def configure(
     if frustum_edge_linewidth_2d is not None:
         value = float(frustum_edge_linewidth_2d)
         if value < 0.0:
-            raise ValueError(
-                f"frustum_edge_linewidth_2d must be >= 0, got {frustum_edge_linewidth_2d!r}."
-            )
+            raise ValueError(f"frustum_edge_linewidth_2d must be >= 0, got {frustum_edge_linewidth_2d!r}.")
         updated.frustum_edge_linewidth_2d = value
     if alpha_3d_tube is not None:
         updated.alpha_3d_tube = _normalize_alpha(alpha_3d_tube, label="alpha_3d_tube")
@@ -299,9 +296,7 @@ def publication_theme(
     configure(
         branch_type_colors=dict(active.branch_type_colors),
         branch_type_edge_colors_2d=(
-            dict(active.branch_type_edge_colors_2d)
-            if active.branch_type_edge_colors_2d is not None
-            else None
+            dict(active.branch_type_edge_colors_2d) if active.branch_type_edge_colors_2d is not None else None
         ),
         alpha_2d=active.alpha_2d,
         frustum_edge_linewidth_2d=active.frustum_edge_linewidth_2d,
@@ -460,9 +455,7 @@ def _copy_defaults(defaults: VisDefaults) -> VisDefaults:
         mode_3d_default=defaults.mode_3d_default,
         branch_type_colors=dict(defaults.branch_type_colors),
         branch_type_edge_colors_2d=(
-            dict(defaults.branch_type_edge_colors_2d)
-            if defaults.branch_type_edge_colors_2d is not None
-            else None
+            dict(defaults.branch_type_edge_colors_2d) if defaults.branch_type_edge_colors_2d is not None else None
         ),
         alpha_2d=defaults.alpha_2d,
         alpha_2d_poly=defaults.alpha_2d_poly,
@@ -499,7 +492,7 @@ def _normalize_color(color: object) -> tuple[int, int, int]:
         if len(text) != 6:
             raise ValueError(f"Hex colors must be in '#RRGGBB' format, got {color!r}.")
         try:
-            return tuple(int(text[index: index + 2], 16) for index in (0, 2, 4))  # type: ignore[return-value]
+            return tuple(int(text[index : index + 2], 16) for index in (0, 2, 4))  # type: ignore[return-value]
         except ValueError as exc:
             raise ValueError(f"Hex colors must be in '#RRGGBB' format, got {color!r}.") from exc
 
@@ -519,7 +512,4 @@ def _normalize_color(color: object) -> tuple[int, int, int]:
 
 
 def _darken_color(color: tuple[int, int, int], *, factor: float) -> tuple[int, int, int]:
-    return tuple(
-        max(0, min(255, int(round(channel * factor))))
-        for channel in color
-    )
+    return tuple(max(0, min(255, int(round(channel * factor)))) for channel in color)

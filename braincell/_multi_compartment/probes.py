@@ -32,15 +32,12 @@ def sample_probe(rcell: "Cell", name: str) -> object:
     matches: list[tuple[object, object]] = []
     for layout in runtime.layouts:
         declaration = runtime.get_layout_mechanism(layout.id)
-        if isinstance(declaration, (StateProbe, MechanismProbe, CurrentProbe)) \
-            and _probe_name(declaration) == name:
+        if isinstance(declaration, (StateProbe, MechanismProbe, CurrentProbe)) and _probe_name(declaration) == name:
             matches.append((layout, declaration))
     if len(matches) == 0:
         raise KeyError(f"No probe is registered with name {name!r}.")
     if len(matches) > 1:
-        raise ValueError(
-            f"Multiple probes share the same name {name!r}; probe names must be unique."
-        )
+        raise ValueError(f"Multiple probes share the same name {name!r}; probe names must be unique.")
     layout, declaration = matches[0]
     return _sample_probe_layout(rcell, runtime, layout=layout, declaration=declaration)
 
@@ -55,11 +52,12 @@ def sample_probes(rcell: "Cell") -> dict[str, object]:
             continue
         probe_name = _probe_name(declaration)
         if probe_name in sampled:
-            raise ValueError(
-                f"Multiple probes share the same name {probe_name!r}; probe names must be unique."
-            )
+            raise ValueError(f"Multiple probes share the same name {probe_name!r}; probe names must be unique.")
         sampled[probe_name] = _sample_probe_layout(
-            rcell, runtime, layout=layout, declaration=declaration,
+            rcell,
+            runtime,
+            layout=layout,
+            declaration=declaration,
         )
     return sampled
 
@@ -73,33 +71,38 @@ def _sample_probe_layout(
 ) -> object:
     point_ids = getattr(layout, "point_index", None)
     if point_ids is None:
-        raise ValueError(
-            f"Probe layout {getattr(layout, 'id', None)!r} is missing point_index."
-        )
+        raise ValueError(f"Probe layout {getattr(layout, 'id', None)!r} is missing point_index.")
     samples = []
     for point_id in point_ids.tolist():
         if isinstance(declaration, StateProbe):
             samples.append(
                 _sample_state_probe_point(
-                    rcell, runtime, declaration=declaration, point_id=int(point_id),
+                    rcell,
+                    runtime,
+                    declaration=declaration,
+                    point_id=int(point_id),
                 )
             )
         elif isinstance(declaration, MechanismProbe):
             samples.append(
                 _sample_mechanism_probe_point(
-                    rcell, runtime, declaration=declaration, point_id=int(point_id),
+                    rcell,
+                    runtime,
+                    declaration=declaration,
+                    point_id=int(point_id),
                 )
             )
         elif isinstance(declaration, CurrentProbe):
             samples.append(
                 _sample_current_probe_point(
-                    rcell, runtime, declaration=declaration, point_id=int(point_id),
+                    rcell,
+                    runtime,
+                    declaration=declaration,
+                    point_id=int(point_id),
                 )
             )
         else:  # pragma: no cover
-            raise TypeError(
-                f"Unsupported probe declaration type {type(declaration).__name__!s}."
-            )
+            raise TypeError(f"Unsupported probe declaration type {type(declaration).__name__!s}.")
     return _pack_probe_samples(samples)
 
 
@@ -126,9 +129,8 @@ def _sample_mechanism_probe_point(
     matched_layouts = []
     for layout in runtime.get_point_layouts(point_id):
         mechanism = runtime.get_layout_mechanism(layout.id)
-        if (
-            (isinstance(mechanism, Density) and mechanism.instance_name == declaration.mechanism)
-            or (isinstance(mechanism, Synapse) and mechanism.instance_name == declaration.mechanism)
+        if (isinstance(mechanism, Density) and mechanism.instance_name == declaration.mechanism) or (
+            isinstance(mechanism, Synapse) and mechanism.instance_name == declaration.mechanism
         ):
             matched_layouts.append(layout)
     if len(matched_layouts) > 1:
@@ -139,7 +141,9 @@ def _sample_mechanism_probe_point(
     if len(matched_layouts) == 1:
         node = runtime.get_runtime_node(matched_layouts[0].id)
         raw = _probe_attr_value(
-            node, declaration.field, probe_name=_probe_name(declaration),
+            node,
+            declaration.field,
+            probe_name=_probe_name(declaration),
         )
         return _select_last_axis(raw, point_id)
 
@@ -149,7 +153,9 @@ def _sample_mechanism_probe_point(
         ion = None
     if ion is not None:
         raw = _probe_attr_value(
-            ion, declaration.field, probe_name=_probe_name(declaration),
+            ion,
+            declaration.field,
+            probe_name=_probe_name(declaration),
         )
         return _select_last_axis(raw, point_id)
 
@@ -171,9 +177,8 @@ def _sample_current_probe_point(
         matched_layouts = []
         for layout in runtime.get_point_layouts(point_id):
             mechanism = runtime.get_layout_mechanism(layout.id)
-            if (
-                (isinstance(mechanism, Density) and mechanism.instance_name == declaration.mechanism)
-                or (isinstance(mechanism, Synapse) and mechanism.instance_name == declaration.mechanism)
+            if (isinstance(mechanism, Density) and mechanism.instance_name == declaration.mechanism) or (
+                isinstance(mechanism, Synapse) and mechanism.instance_name == declaration.mechanism
             ):
                 matched_layouts.append(layout)
         if len(matched_layouts) > 1:
@@ -202,14 +207,15 @@ def _sample_current_probe_point(
                 layout_id=layout_id,
             )
             current = _probe_current_value(
-                node, point_V, ion_info, probe_name=_probe_name(declaration),
+                node,
+                point_V,
+                ion_info,
+                probe_name=_probe_name(declaration),
             )
         return _select_last_axis(current, point_id)
 
     if declaration.ion is None:
-        raise ValueError(
-            f"Probe {_probe_name(declaration)!r} must define 'ion' when 'mechanism' is omitted."
-        )
+        raise ValueError(f"Probe {_probe_name(declaration)!r} must define 'ion' when 'mechanism' is omitted.")
     ion = runtime.get_ion(declaration.ion)
     current = ion.current(point_V, include_external=False)
     return _select_last_axis(current, point_id)
@@ -218,9 +224,7 @@ def _sample_current_probe_point(
 def _midpoint_cv_id(runtime: CellRuntimeState, *, point_id: int) -> int:
     matches = np.flatnonzero(runtime.node_tree.cv_to_mid_node_id == int(point_id))
     if len(matches) != 1:
-        raise ValueError(
-            f"Point {point_id!r} is not a unique CV midpoint; got CV matches {matches.tolist()!r}."
-        )
+        raise ValueError(f"Point {point_id!r} is not a unique CV midpoint; got CV matches {matches.tolist()!r}.")
     return int(matches[0])
 
 
@@ -244,9 +248,7 @@ def _select_last_axis(value: object, index: int) -> object:
 
 def _probe_attr_value(owner: object, field: str, *, probe_name: str) -> object:
     if not hasattr(owner, field):
-        raise KeyError(
-            f"Probe {probe_name!r} field {field!r} was not found on {type(owner).__name__!s}."
-        )
+        raise KeyError(f"Probe {probe_name!r} field {field!r} was not found on {type(owner).__name__!s}.")
     raw = getattr(owner, field)
     return raw.value if isinstance(raw, brainstate.State) else raw
 
@@ -285,9 +287,7 @@ def _probe_current_value(
     probe_name: str,
 ) -> object:
     if not hasattr(owner, "current"):
-        raise KeyError(
-            f"Probe {probe_name!r} target {type(owner).__name__!s} has no current(...) method."
-        )
+        raise KeyError(f"Probe {probe_name!r} target {type(owner).__name__!s} has no current(...) method.")
     if ion_info is None:
         return owner.current(point_V)
     try:
@@ -311,7 +311,5 @@ def _pack_probe_samples(samples: list[object]) -> object:
 
 def _probe_name(declaration: "StateProbe | MechanismProbe | CurrentProbe") -> str:
     if declaration.name is None:
-        raise ValueError(
-            f"Probe declaration {type(declaration).__name__!s} has no resolved name."
-        )
+        raise ValueError(f"Probe declaration {type(declaration).__name__!s} has no resolved name.")
     return declaration.name

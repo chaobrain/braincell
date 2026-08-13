@@ -19,8 +19,6 @@ Defines a small typed hierarchy so callers can ``except NeuroMorphoError``
 without importing ``requests.exceptions``.
 """
 
-
-
 __all__ = [
     "NeuroMorphoError",
     "NeuroMorphoHTTPError",

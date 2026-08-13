@@ -15,8 +15,6 @@
 
 """Typed query builder for NeuroMorpho.Org Solr search."""
 
-
-
 from dataclasses import dataclass, field
 from typing import Iterable
 

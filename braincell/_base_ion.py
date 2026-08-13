@@ -250,12 +250,7 @@ class Ion(IonChannel, Container):
     # root_type is assigned below after the import-cycle with HHTypedNeuron
     # is safe to resolve. See module docstring.
 
-    def __init__(
-        self,
-        size: brainstate.typing.Size,
-        name: Optional[str] = None,
-        **channels
-    ) -> None:
+    def __init__(self, size: brainstate.typing.Size, name: Optional[str] = None, **channels) -> None:
         super().__init__(size, name=name)
         self.channels: Dict[str, Channel] = dict()
         self.channels.update(self._format_elements(Channel, **channels))
@@ -515,6 +510,7 @@ class MixIons(IonChannel, Container):
         AssertionError: If fewer than two ions are provided, if any provided ion is not an Ion instance,
                         or if the sizes of all provided ions are not identical.
     """
+
     __module__ = 'braincell'
 
     # root_type assigned below after import-cycle is safe to resolve.
@@ -565,7 +561,7 @@ class MixIons(IonChannel, Container):
         nodes = tuple(brainstate.graph.nodes(self, Channel, allowed_hierarchy=(1, 1)).values())
 
         if len(nodes) == 0:
-            return 0.
+            return 0.0
         else:
             current = None
             for node in nodes:
@@ -651,11 +647,14 @@ class MixIons(IonChannel, Container):
         once for total current, while owner ions may receive individual
         components when ``component_key`` is set.
         """
+
         def fun(V, ion_info):
-            infos = tuple([
-                (ion_info if isinstance(ion, root) else self._get_ion(root).pack_info())
-                for root in node.root_type.__args__
-            ])
+            infos = tuple(
+                [
+                    (ion_info if isinstance(ion, root) else self._get_ion(root).pack_info())
+                    for root in node.root_type.__args__
+                ]
+            )
             return _channel_component_current(node, component_key, V, *infos)
 
         return fun

@@ -162,14 +162,10 @@ class MechanismRegistry:
             for alias in entry.aliases:
                 alias_key = (entry.category, alias)
                 if alias_key in self._entries:
-                    raise ValueError(
-                        f"Alias {entry.category!r}/{alias!r} collides "
-                        f"with existing canonical name."
-                    )
+                    raise ValueError(f"Alias {entry.category!r}/{alias!r} collides with existing canonical name.")
                 if alias_key in self._aliases:
                     raise ValueError(
-                        f"Alias {entry.category!r}/{alias!r} is already "
-                        f"registered for {self._aliases[alias_key]!r}."
+                        f"Alias {entry.category!r}/{alias!r} is already registered for {self._aliases[alias_key]!r}."
                     )
                 self._aliases[alias_key] = entry.name
                 installed_aliases.append(alias_key)
@@ -197,10 +193,7 @@ class MechanismRegistry:
         _check_category(category)
         key = (category, name)
         if key not in self._entries:
-            raise KeyError(
-                f"No canonical mechanism registered at "
-                f"{category!r}/{name!r}."
-            )
+            raise KeyError(f"No canonical mechanism registered at {category!r}/{name!r}.")
         entry = self._entries.pop(key)
         for alias in entry.aliases:
             self._aliases.pop((category, alias), None)
@@ -228,21 +221,12 @@ class MechanismRegistry:
         _check_category(category)
         target_key = (category, name)
         if target_key not in self._entries:
-            raise KeyError(
-                f"Cannot add alias {alias!r}: no canonical mechanism "
-                f"registered at {category!r}/{name!r}."
-            )
+            raise KeyError(f"Cannot add alias {alias!r}: no canonical mechanism registered at {category!r}/{name!r}.")
         alias_key = (category, alias)
         if alias_key in self._entries:
-            raise ValueError(
-                f"Alias {category!r}/{alias!r} collides with existing "
-                f"canonical name."
-            )
+            raise ValueError(f"Alias {category!r}/{alias!r} collides with existing canonical name.")
         if alias_key in self._aliases:
-            raise ValueError(
-                f"Alias {category!r}/{alias!r} is already registered "
-                f"for {self._aliases[alias_key]!r}."
-            )
+            raise ValueError(f"Alias {category!r}/{alias!r} is already registered for {self._aliases[alias_key]!r}.")
         self._aliases[alias_key] = name
 
     def clear(self) -> None:
@@ -339,16 +323,10 @@ class MechanismRegistry:
         """
         if category is not None:
             _check_category(category)
-            canonical = sorted(
-                entry.name
-                for (cat, _), entry in self._entries.items()
-                if cat == category
-            )
+            canonical = sorted(entry.name for (cat, _), entry in self._entries.items() if cat == category)
             if not include_aliases:
                 return tuple(canonical)
-            aliases = sorted(
-                alias for (cat, alias) in self._aliases if cat == category
-            )
+            aliases = sorted(alias for (cat, alias) in self._aliases if cat == category)
             return tuple(canonical + aliases)
 
         canonical = sorted(entry.name for entry in self._entries.values())
@@ -357,9 +335,7 @@ class MechanismRegistry:
         aliases = sorted(alias for (_, alias) in self._aliases)
         return tuple(canonical + aliases)
 
-    def items(
-        self, category: str | None = None
-    ) -> tuple[tuple[str, type], ...]:
+    def items(self, category: str | None = None) -> tuple[tuple[str, type], ...]:
         """Return ``(name, cls)`` pairs for all entries in a category.
 
         Parameters
@@ -375,15 +351,9 @@ class MechanismRegistry:
         """
         if category is not None:
             _check_category(category)
-            pairs = [
-                (entry.name, entry.cls)
-                for (cat, _), entry in self._entries.items()
-                if cat == category
-            ]
+            pairs = [(entry.name, entry.cls) for (cat, _), entry in self._entries.items() if cat == category]
         else:
-            pairs = [
-                (entry.name, entry.cls) for entry in self._entries.values()
-            ]
+            pairs = [(entry.name, entry.cls) for entry in self._entries.values()]
         pairs.sort(key=lambda item: item[0])
         return tuple(pairs)
 
@@ -392,10 +362,7 @@ class MechanismRegistry:
 
     def __repr__(self) -> str:
         total = len(self._entries)
-        counts = {
-            cat: sum(1 for (c, _) in self._entries if c == cat)
-            for cat in sorted(_VALID_CATEGORIES)
-        }
+        counts = {cat: sum(1 for (c, _) in self._entries if c == cat) for cat in sorted(_VALID_CATEGORIES)}
         summary = ", ".join(f"{cat}={count}" for cat, count in counts.items())
         return f"MechanismRegistry(total={total}, {summary})"
 
@@ -496,10 +463,7 @@ def _make_decorator(
 
 def _check_category(category: str) -> None:
     if category not in _VALID_CATEGORIES:
-        raise ValueError(
-            f"category must be one of {sorted(_VALID_CATEGORIES)!r}, "
-            f"got {category!r}."
-        )
+        raise ValueError(f"category must be one of {sorted(_VALID_CATEGORIES)!r}, got {category!r}.")
 
 
 def _missing_mechanism_message(

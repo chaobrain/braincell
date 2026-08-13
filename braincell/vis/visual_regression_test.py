@@ -51,6 +51,7 @@ else:  # pragma: no cover - skip path
 def _image_comparison(filename: str, *, tolerance: float = 25.0):
     """Decorator that adds ``@pytest.mark.mpl_image_compare`` when available."""
     if not _pytest_mpl_available:
+
         def _decorator(func):
             return func
 

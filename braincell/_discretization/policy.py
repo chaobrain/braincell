@@ -28,8 +28,8 @@ from braincell.morph.morphology import Morphology
 if TYPE_CHECKING:
     from .mechanism import PaintRule
 
-EPS_PARAM = 1e-9        # tolerance for normalized x in [0, 1]
-EPS_LEN_UM = 1e-6       # tolerance for physical μm lengths
+EPS_PARAM = 1e-9  # tolerance for normalized x in [0, 1]
+EPS_LEN_UM = 1e-6  # tolerance for physical μm lengths
 # d_lambda space-constant prefactor yielding μm from sqrt(cm·Ω·cm/(Hz·µF)).
 # The numerical value 1e5 = sqrt(1e-6 cm⁴/F) · (cm→µm conversion); see
 # Hines & Carnevale 2001 §5 / NEURON d_lambda derivation.
@@ -38,7 +38,7 @@ Bounds = tuple[tuple[float, float], ...]
 BoundsByBranch = tuple[Bounds, ...]
 _DEFAULT_D_LAMBDA_CABLE = CableProperty(
     resting_potential=-65.0 * u.mV,
-    membrane_capacitance=1.0 * (u.uF / u.cm ** 2),
+    membrane_capacitance=1.0 * (u.uF / u.cm**2),
     axial_resistivity=100.0 * (u.ohm * u.cm),
 )
 
@@ -117,10 +117,7 @@ class CVPerBranch(CVPolicy):
         if cv_per_branch <= 0:
             raise ValueError(f"cv_per_branch must be > 0, got {cv_per_branch!r}.")
         n_per_branch = int(cv_per_branch)
-        return tuple(
-            _uniform_bounds_for_count(n_per_branch)
-            for _ in morpho.branches
-        )
+        return tuple(_uniform_bounds_for_count(n_per_branch) for _ in morpho.branches)
 
 
 @dataclass(frozen=True)
@@ -220,8 +217,7 @@ class MaxCVLen(CVPolicy):
             raise ValueError(f"max_cv_len must be > 0, got {max_cv_len!r}.")
 
         return tuple(
-            _bounds_from_max_len_um(branch, max_len_um=max_len_um, keep_odd=self.keep_odd)
-            for branch in morpho.branches
+            _bounds_from_max_len_um(branch, max_len_um=max_len_um, keep_odd=self.keep_odd) for branch in morpho.branches
         )
 
 
@@ -346,13 +342,9 @@ class CompositeByTypePolicy(CVPolicy):
     def __post_init__(self) -> None:
         for rule in self.rules:
             if not isinstance(rule, CVPolicyByTypeRule):
-                raise TypeError(
-                    "CompositeByTypePolicy.rules must contain CVPolicyByTypeRule instances."
-                )
+                raise TypeError("CompositeByTypePolicy.rules must contain CVPolicyByTypeRule instances.")
         if not isinstance(self.default_policy, CVPolicy):
-            raise TypeError(
-                f"default_policy must be CVPolicy, got {type(self.default_policy).__name__!s}."
-            )
+            raise TypeError(f"default_policy must be CVPolicy, got {type(self.default_policy).__name__!s}.")
 
     def resolve_cv_bounds(
         self,
@@ -404,10 +396,7 @@ def _bounds_from_max_len_um(branch, *, max_len_um: float, keep_odd: bool) -> Bou
 
 
 def _uniform_bounds_for_count(n_cv: int) -> Bounds:
-    return tuple(
-        (float(offset) / float(n_cv), float(offset + 1) / float(n_cv))
-        for offset in range(n_cv)
-    )
+    return tuple((float(offset) / float(n_cv), float(offset + 1) / float(n_cv)) for offset in range(n_cv))
 
 
 def _promote_to_odd(n_cv: int, *, keep_odd: bool) -> int:
@@ -434,17 +423,12 @@ def _bounds_from_d_lambda(
     if np.any(diam_um <= 0.0):
         raise ValueError("DLambda requires strictly positive branch diameters.")
 
-    lambda_f_um = _D_LAMBDA_UM_FACTOR * np.sqrt(
-        diam_um / (4.0 * np.pi * frequency_hz * ra_ohm_cm * cm_uF_per_cm2)
-    )
+    lambda_f_um = _D_LAMBDA_UM_FACTOR * np.sqrt(diam_um / (4.0 * np.pi * frequency_hz * ra_ohm_cm * cm_uF_per_cm2))
     electrotonic_length = float(np.sum(lengths_um / lambda_f_um))
     n_cv = int(np.ceil((electrotonic_length / d_lambda) - EPS_PARAM))
     n_cv = max(1, n_cv)
     n_cv = _promote_to_odd(n_cv, keep_odd=keep_odd)
-    return tuple(
-        (float(offset) / float(n_cv), float(offset + 1) / float(n_cv))
-        for offset in range(n_cv)
-    )
+    return tuple((float(offset) / float(n_cv), float(offset + 1) / float(n_cv)) for offset in range(n_cv))
 
 
 def _resolve_branch_cable_properties(
@@ -528,12 +512,9 @@ def _cable_signature(cable: CableProperty) -> tuple[float, float]:
             "CVPerBranchList, or scalar cable fields with DLambda."
         )
     ra = float(np.asarray(cable.axial_resistivity.to_decimal(u.ohm * u.cm), dtype=float))
-    cm = float(np.asarray(cable.membrane_capacitance.to_decimal(u.uF / u.cm ** 2), dtype=float))
+    cm = float(np.asarray(cable.membrane_capacitance.to_decimal(u.uF / u.cm**2), dtype=float))
     return (ra, cm)
 
 
 def _same_cable_signature(lhs: tuple[float, float], rhs: tuple[float, float]) -> bool:
-    return bool(
-        np.isclose(lhs[0], rhs[0], atol=1e-9, rtol=1e-6)
-        and np.isclose(lhs[1], rhs[1], atol=1e-9, rtol=1e-6)
-    )
+    return bool(np.isclose(lhs[0], rhs[0], atol=1e-9, rtol=1e-6) and np.isclose(lhs[1], rhs[1], atol=1e-9, rtol=1e-6))

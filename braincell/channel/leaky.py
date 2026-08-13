@@ -39,6 +39,7 @@ class LeakageChannel(Channel):
     """
     Base class for leakage channel dynamics.
     """
+
     __module__ = 'braincell.channel'
 
     root_type = HHTypedNeuron
@@ -130,17 +131,21 @@ class IL(LeakageChannel):
     E : float
       The reversal potential.
     """
+
     __module__ = 'braincell.channel'
     root_type = HHTypedNeuron
 
     def __init__(
         self,
         size: Union[int, Sequence[int]],
-        g_max: Union[brainstate.typing.ArrayLike, Callable] = 0.1 * (u.mS / u.cm ** 2),
-        E: Union[brainstate.typing.ArrayLike, Callable] = -70. * u.mV,
+        g_max: Union[brainstate.typing.ArrayLike, Callable] = 0.1 * (u.mS / u.cm**2),
+        E: Union[brainstate.typing.ArrayLike, Callable] = -70.0 * u.mV,
         name: Optional[str] = None,
     ):
-        super().__init__(size=size, name=name, )
+        super().__init__(
+            size=size,
+            name=name,
+        )
 
         self.E = braintools.init.param(E, self.varshape, allow_none=False)
         self.g_max = braintools.init.param(g_max, self.varshape, allow_none=False)

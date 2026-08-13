@@ -20,8 +20,6 @@ For one-shot use cases, prefer the Tier-1 helpers in
 :mod:`braincell.io.neuromorpho.entry`.
 """
 
-
-
 import json
 from pathlib import Path
 from typing import Any, Iterator, Mapping
@@ -134,9 +132,7 @@ class NeuroMorphoClient:
         self.timeout = float(timeout)
         self.retries = int(retries)
         self.backoff_base = float(backoff_base)
-        self._cache: NeuroMorphoCache | None = (
-            NeuroMorphoCache(cache_dir) if cache_dir is not None else None
-        )
+        self._cache: NeuroMorphoCache | None = NeuroMorphoCache(cache_dir) if cache_dir is not None else None
 
     # ------------------------------------------------------------------
     # Cache
@@ -218,8 +214,7 @@ class NeuroMorphoClient:
 
         payload, url = self._get_json(f"{API_BASE}/neuron/select/", params=params)
         items = tuple(
-            NeuroMorphoNeuron.from_payload(item)
-            for item in payload.get("_embedded", {}).get("neuronResources", [])
+            NeuroMorphoNeuron.from_payload(item) for item in payload.get("_embedded", {}).get("neuronResources", [])
         )
         page_info = payload.get("page", {})
         return NeuroMorphoSearchPage(
@@ -338,18 +333,14 @@ class NeuroMorphoClient:
             url = f"{API_BASE}/morphometry/id/{neuron_id}"
         payload, _ = self._get_json(url)
         if not isinstance(payload, Mapping):
-            raise NeuroMorphoError(
-                f"Measurement endpoint {url} did not return a JSON object."
-            )
+            raise NeuroMorphoError(f"Measurement endpoint {url} did not return a JSON object.")
         if "neuron_id" not in payload:
             payload = dict(payload)
             payload["neuron_id"] = neuron_id
         try:
             return NeuroMorphoMeasurement.from_payload(payload)
         except ValueError as exc:
-            raise NeuroMorphoError(
-                f"Malformed measurement payload from {url}: {exc}"
-            ) from exc
+            raise NeuroMorphoError(f"Malformed measurement payload from {url}: {exc}") from exc
 
     def get_urls(self, neuron: NeuroMorphoNeuron) -> NeuroMorphoUrls:
         """Return the resolved URLs for *neuron*.
@@ -397,15 +388,9 @@ class NeuroMorphoClient:
                 metadata_exists=False,
                 standard_exists=False,
                 original_exists=False,
-                neuron_id=(
-                    neuron.neuron_id
-                    if isinstance(neuron, NeuroMorphoNeuron)
-                    else int(neuron)
-                ),
+                neuron_id=(neuron.neuron_id if isinstance(neuron, NeuroMorphoNeuron) else int(neuron)),
             )
-        neuron_id = (
-            neuron.neuron_id if isinstance(neuron, NeuroMorphoNeuron) else int(neuron)
-        )
+        neuron_id = neuron.neuron_id if isinstance(neuron, NeuroMorphoNeuron) else int(neuron)
         status = self._cache.status(neuron_id)
         if isinstance(neuron, NeuroMorphoNeuron):
             # Refine standard/original presence using the actual neuron name.
@@ -454,11 +439,7 @@ class NeuroMorphoClient:
         NeuroMorphoDetail
         """
 
-        resolved = (
-            neuron
-            if isinstance(neuron, NeuroMorphoNeuron)
-            else self.get_neuron(neuron)
-        )
+        resolved = neuron if isinstance(neuron, NeuroMorphoNeuron) else self.get_neuron(neuron)
         measurement = self.get_measurement(resolved) if include_measurement else None
         urls = self.get_urls(resolved)
         cache_status = self.get_cache_status(resolved)
@@ -535,18 +516,13 @@ class NeuroMorphoClient:
         if output_dir is None:
             if self._cache is None:
                 raise ValueError(
-                    "download() requires either an output_dir argument or a "
-                    "client constructed with cache_dir=..."
+                    "download() requires either an output_dir argument or a client constructed with cache_dir=..."
                 )
             cache_root = self._cache.root
         else:
             cache_root = Path(output_dir).expanduser()
 
-        resolved = (
-            neuron
-            if isinstance(neuron, NeuroMorphoNeuron)
-            else self.get_neuron(neuron)
-        )
+        resolved = neuron if isinstance(neuron, NeuroMorphoNeuron) else self.get_neuron(neuron)
 
         # Fetch measurement first so we fail fast on a network error before
         # touching the filesystem.
@@ -631,15 +607,11 @@ class NeuroMorphoClient:
                 timeout=max(self.timeout, 60.0),
             )
         except Exception as exc:  # noqa: BLE001
-            raise NeuroMorphoHTTPError(
-                f"GET {url} failed: {exc}", status=0, url=url
-            ) from exc
+            raise NeuroMorphoHTTPError(f"GET {url} failed: {exc}", status=0, url=url) from exc
         with response:
             status = int(getattr(response, "status_code", 0) or 0)
             if status >= 400:
-                raise NeuroMorphoHTTPError(
-                    f"GET {url} returned HTTP {status}", status=status, url=url
-                )
+                raise NeuroMorphoHTTPError(f"GET {url} returned HTTP {status}", status=status, url=url)
             tmp_path = path.with_suffix(path.suffix + ".tmp")
             try:
                 with tmp_path.open("wb") as file_obj:

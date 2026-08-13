@@ -35,7 +35,6 @@ Both share the same root-angle assignment, trunk-child selection, and
 sibling ordering helpers defined below.
 """
 
-
 import math
 from dataclasses import dataclass
 
@@ -79,6 +78,7 @@ class _StemAngleProfile:
 # ---------------------------------------------------------------------------
 # Entry points
 # ---------------------------------------------------------------------------
+
 
 def _build_layout_branches_stem_linear(
     morpho: Morphology,
@@ -162,6 +162,7 @@ def _build_layout_branches_stem(
 # Recursive child placement
 # ---------------------------------------------------------------------------
 
+
 def _layout_children_stem_linear(
     parent: MorphoBranch,
     *,
@@ -228,10 +229,10 @@ def _layout_children_stem_linear(
         layout_config=layout_config,
     )
 
-    side_children = [
-        child for child in children if child is not trunk_child
-    ]
-    side_children.sort(key=lambda child: (float(child.parent_x), -subtree_path_lengths_um[child.index], branch_order[child.index]))
+    side_children = [child for child in children if child is not trunk_child]
+    side_children.sort(
+        key=lambda child: (float(child.parent_x), -subtree_path_lengths_um[child.index], branch_order[child.index])
+    )
     for side_index, child in enumerate(side_children):
         attach_um, attach_tangent_um = sample_layout_branch(parent_layout, child.parent_x)
         attach_angle_rad = _vector_angle_rad(attach_tangent_um)
@@ -337,7 +338,9 @@ def _layout_children_stem(
     )
 
     side_children = [child for child in children if child is not trunk_child]
-    side_children.sort(key=lambda child: (float(child.parent_x), -subtree_path_lengths_um[child.index], branch_order[child.index]))
+    side_children.sort(
+        key=lambda child: (float(child.parent_x), -subtree_path_lengths_um[child.index], branch_order[child.index])
+    )
     base_side_sign = 1.0 if stem_depth % 2 == 0 else -1.0
     for side_index, child in enumerate(side_children):
         attach_um, attach_tangent_um = sample_layout_branch(parent_layout, child.parent_x)
@@ -376,6 +379,7 @@ def _layout_children_stem(
 # ---------------------------------------------------------------------------
 # Angle assignment
 # ---------------------------------------------------------------------------
+
 
 def _assign_root_stem_angles(
     children: tuple[MorphoBranch, ...],
@@ -439,7 +443,9 @@ def _assign_child_stem_angles(
         min_branch_angle_rad=min_branch_angle_rad,
     )
     side_children = [child for child in children if child is not trunk_child]
-    side_children.sort(key=lambda child: (float(child.parent_x), -subtree_path_lengths_um[child.index], branch_order[child.index]))
+    side_children.sort(
+        key=lambda child: (float(child.parent_x), -subtree_path_lengths_um[child.index], branch_order[child.index])
+    )
     base_offset_rad = max(min_branch_angle_rad, math.radians(48.0))
     step_rad = max(min_branch_angle_rad * 0.75, math.radians(14.0))
     stem_side = 1.0 if stem_depth % 2 == 0 else -1.0
@@ -453,6 +459,7 @@ def _assign_child_stem_angles(
 # ---------------------------------------------------------------------------
 # Candidate resolution (stem linear / frustum path)
 # ---------------------------------------------------------------------------
+
 
 def _resolve_side_stem_layout(
     child: MorphoBranch,
@@ -470,7 +477,10 @@ def _resolve_side_stem_layout(
     preferred_sign = 1.0 if side_index % 2 == 0 else -1.0
     if stem_depth % 2 == 1:
         preferred_sign *= -1.0
-    base_offset_rad = max(abs(_shortest_angle_delta_rad(base_target_angle_rad - attach_angle_rad)), max(min_branch_angle_rad, math.radians(42.0)))
+    base_offset_rad = max(
+        abs(_shortest_angle_delta_rad(base_target_angle_rad - attach_angle_rad)),
+        max(min_branch_angle_rad, math.radians(42.0)),
+    )
     candidate_signs = (preferred_sign, -preferred_sign)
     candidate_offsets_rad = (
         base_offset_rad,
@@ -515,6 +525,7 @@ def _resolve_side_stem_layout(
 # ---------------------------------------------------------------------------
 # Candidate resolution (stem tree / line path)
 # ---------------------------------------------------------------------------
+
 
 def _resolve_trunk_stem_tree_layout(
     child: MorphoBranch,
@@ -623,7 +634,9 @@ def _resolve_stem_tree_layout(
         if turn_span_rad > (math.pi / 2.0):
             total_score += overturn_weight * (turn_span_rad - math.pi / 2.0)
         if branch_role == "trunk":
-            total_score += trunk_tail_delta_weight * abs(_shortest_angle_delta_rad(profile.tail_angle_rad - attach_angle_rad))
+            total_score += trunk_tail_delta_weight * abs(
+                _shortest_angle_delta_rad(profile.tail_angle_rad - attach_angle_rad)
+            )
         else:
             target_opening_rad = max(abs(desired_tail_delta_rad), math.radians(55.0))
             if launch_delta_rad < target_opening_rad:
@@ -733,6 +746,7 @@ def _preferred_turn_sign(
 # Stem-specific segment angle interpolation and branch construction
 # ---------------------------------------------------------------------------
 
+
 def _make_stem_tree_branch(
     branch: MorphoBranch,
     *,
@@ -787,7 +801,9 @@ def _stem_segment_angles_rad(
             segment_angles_rad.append(tail_angle_rad)
             continue
         if mid_fraction <= 0.28:
-            segment_angles_rad.append(_blend_angle_rad(launch_angle_rad, settle_angle_rad, _smoothstep(mid_fraction / 0.28)))
+            segment_angles_rad.append(
+                _blend_angle_rad(launch_angle_rad, settle_angle_rad, _smoothstep(mid_fraction / 0.28))
+            )
             continue
         if mid_fraction <= 0.72:
             weight = _smoothstep((mid_fraction - 0.28) / 0.44)

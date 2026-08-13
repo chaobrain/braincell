@@ -82,9 +82,7 @@ def build_render_scene_3d(
             ]
         )
         if points_um.shape[0] != radii_um.shape[0]:
-            raise ValueError(
-                f"Branch {branch_view.name!r} produced mismatched point/radius arrays for 3D rendering."
-            )
+            raise ValueError(f"Branch {branch_view.name!r} produced mismatched point/radius arrays for 3D rendering.")
         branches.append(
             BranchPolyline3D(
                 branch_index=branch_index,
@@ -174,6 +172,7 @@ def build_render_scene_3d(
 # ---------------------------------------------------------------------------
 # Overlay resolution helpers
 # ---------------------------------------------------------------------------
+
 
 def _branch_cumulative_um(branch: BranchPolyline3D) -> np.ndarray:
     diffs = np.diff(branch.points_um, axis=0)

@@ -14,7 +14,6 @@
 # ==============================================================================
 
 
-
 import importlib.util
 import sys
 from dataclasses import dataclass
@@ -159,6 +158,7 @@ def _rgb_to_float(rgb: tuple[int, int, int]) -> tuple[float, float, float]:
 # cheap for tests and downstream tooling).
 # ---------------------------------------------------------------------------
 
+
 def _draw_polyline(ax, polyline: Polyline2D) -> None:
     color = _rgb_to_float(polyline.color_rgb)
     linewidth = max(float(np.mean(polyline.widths_um)), 0.5)
@@ -186,11 +186,7 @@ def _draw_polyline(ax, polyline: Polyline2D) -> None:
 def _draw_polygon(ax, plt, polygon: Polygon2D) -> None:
     color = _rgb_to_float(polygon.color_rgb)
     linewidth = max(float(polygon.edge_linewidth), 0.0)
-    edge_color = (
-        "none"
-        if linewidth <= 0.0
-        else _rgb_to_float(polygon.edge_color_rgb or polygon.color_rgb)
-    )
+    edge_color = "none" if linewidth <= 0.0 else _rgb_to_float(polygon.edge_color_rgb or polygon.color_rgb)
     patch = plt.Polygon(
         polygon.points_um,
         closed=True,
@@ -216,6 +212,7 @@ def _draw_polygon(ax, plt, polygon: Polygon2D) -> None:
 # ---------------------------------------------------------------------------
 # Color-by-values rendering
 # ---------------------------------------------------------------------------
+
 
 def _build_norm(scene: RenderScene2D, value_spec: ValueSpec | None):
     """Return a matplotlib Normalize covering every value-bearing primitive."""
@@ -310,11 +307,7 @@ def _draw_value_polygons(
         return
     values = np.asarray(batch.polygon_values, dtype=float)
     linewidth = max(float(batch.edge_linewidth), 0.0)
-    edge_color = (
-        "none"
-        if batch.edge_color_rgb is None or linewidth <= 0.0
-        else _rgb_to_float(batch.edge_color_rgb)
-    )
+    edge_color = "none" if batch.edge_color_rgb is None or linewidth <= 0.0 else _rgb_to_float(batch.edge_color_rgb)
     pc = PolyCollection(
         list(polygons_um),
         array=values,
@@ -355,6 +348,7 @@ def _draw_colorbar(fig, ax, *, value_spec: ValueSpec, norm, unit_label: str | No
 # ---------------------------------------------------------------------------
 # Overlays (highlight strokes, markers)
 # ---------------------------------------------------------------------------
+
 
 def _draw_highlight_stroke(ax, stroke: HighlightStroke2D) -> None:
     color = _rgb_to_float(stroke.color_rgb)
@@ -437,6 +431,7 @@ def _set_scene_limits(ax, scene: RenderScene2D) -> None:
 # ---------------------------------------------------------------------------
 # Interactive picking / hovering
 # ---------------------------------------------------------------------------
+
 
 def _resolve_pick_meta(artist, event) -> dict | None:
     """Return the pick-metadata dict for a picked artist + pick event.

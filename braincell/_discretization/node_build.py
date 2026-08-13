@@ -97,9 +97,7 @@ def build_node_tree_from_cvs(
     """
 
     if not isinstance(morpho, Morphology):
-        raise TypeError(
-            f"build_node_tree_from_cvs(...) expects Morphology, got {type(morpho).__name__!s}."
-        )
+        raise TypeError(f"build_node_tree_from_cvs(...) expects Morphology, got {type(morpho).__name__!s}.")
 
     cv_ids_by_branch = _group_cv_ids_by_branch(
         cvs=cvs,
@@ -163,11 +161,7 @@ def build_node_tree_from_cvs(
                 cvs=cvs,
             )
             attach_x = float(edge.child_x)
-            ordered_cv_ids = (
-                branch_cv_ids
-                if attach_x <= _EPS_PARAM
-                else tuple(reversed(branch_cv_ids))
-            )
+            ordered_cv_ids = branch_cv_ids if attach_x <= _EPS_PARAM else tuple(reversed(branch_cv_ids))
 
         first_cv_id = ordered_cv_ids[0]
         add_node_role(
@@ -191,11 +185,7 @@ def build_node_tree_from_cvs(
 
         for index, cv_id in enumerate(ordered_cv_ids):
             midpoint_node_id = int(cv_to_mid_node_id[cv_id])
-            parent_node_id = (
-                attachment_node_id
-                if index == 0
-                else int(cv_to_mid_node_id[ordered_cv_ids[index - 1]])
-            )
+            parent_node_id = attachment_node_id if index == 0 else int(cv_to_mid_node_id[ordered_cv_ids[index - 1]])
             child_node_id = (
                 terminal_node_id
                 if index == len(ordered_cv_ids) - 1

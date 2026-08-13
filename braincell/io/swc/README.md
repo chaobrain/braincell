@@ -8,7 +8,7 @@ parts of `braincell/io/swc/reader.py` that are easiest to break with
 
 If you change the behavior described here, at minimum re-run:
 
-- `braincell/io/swc/test.py`
+- `braincell/io/swc/swc_test.py`
 - `braincell/_discretization/lower_test.py`
 - `examples/neuron_compare/cable/tests/test_mapping.py`
 - `examples/neuron_compare/cable/tests/test_runner.py`
@@ -113,7 +113,7 @@ mainly soma-midpoint attach copying.
 - keep the same branch-boundary radius-jump rule once copying is allowed
 
 The tables below are summaries of current intent. The code and
-`braincell/io/swc/test.py` remain the source of truth.
+`braincell/io/swc/swc_test.py` remain the source of truth.
 
 ### NEURON-Oriented Normal Cases
 
@@ -214,7 +214,7 @@ normalization must be revised too.
 
 ## Tests To Re-Run
 
-- `braincell/io/swc/test.py`
+- `braincell/io/swc/swc_test.py`
 - `braincell/_discretization/lower_test.py`
 - `examples/neuron_compare/cable/tests/test_mapping.py`
 - `examples/neuron_compare/cable/tests/test_runner.py`

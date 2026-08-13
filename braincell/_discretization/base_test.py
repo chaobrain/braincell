@@ -98,9 +98,7 @@ class CVShapeTest(unittest.TestCase):
             _morpho(),
             policy=CVPerBranch(cv_per_branch=1),
             paint_rules=default_paint_rules(),
-            place_rules=(
-                PlaceRule(locset=RootLocation(x=0.0), mechanisms=(clamp,)),
-            ),
+            place_rules=(PlaceRule(locset=RootLocation(x=0.0), mechanisms=(clamp,)),),
         ).node_tree
         node_point_mech = tuple(node.point_mech for node in tree.nodes)
         self.assertIs(node_point_mech[tree.root_node_id][0], clamp)
@@ -113,9 +111,7 @@ class CVShapeTest(unittest.TestCase):
             _morpho(),
             policy=CVPerBranch(cv_per_branch=1),
             paint_rules=default_paint_rules(),
-            place_rules=(
-                PlaceRule(locset=RootLocation(x=0.5), mechanisms=(clamp,)),
-            ),
+            place_rules=(PlaceRule(locset=RootLocation(x=0.5), mechanisms=(clamp,)),),
         ).node_tree
         node_point_mech = tuple(node.point_mech for node in tree.nodes)
         midpoint_id = int(tree.cv_to_mid_node_id[0])
@@ -127,9 +123,7 @@ class CVShapeTest(unittest.TestCase):
             _morpho(),
             policy=CVPerBranch(cv_per_branch=2),
             paint_rules=default_paint_rules(),
-            place_rules=(
-                PlaceRule(locset=RootLocation(x=0.5), mechanisms=(clamp,)),
-            ),
+            place_rules=(PlaceRule(locset=RootLocation(x=0.5), mechanisms=(clamp,)),),
         )
         tree = disc.node_tree
         node_point_mech = tuple(node.point_mech for node in tree.nodes)

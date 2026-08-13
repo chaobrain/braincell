@@ -1,6 +1,6 @@
 # BrainCell Network 候选架构与推荐路线
 
-本文给出面向 BrainCell 的推荐设计，不做“方案并列而不决”。  
+本文给出面向 BrainCell 的推荐设计，不做“方案并列而不决”。
 默认前提是：
 
 - 第一阶段聚焦 **同构 `population`**

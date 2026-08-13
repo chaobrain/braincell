@@ -115,9 +115,7 @@ class EdgeMethod:
 
     def __post_init__(self) -> None:
         if not callable(self.builder):
-            raise TypeError(
-                f"EdgeMethod builder must be callable, got {type(self.builder).__name__!s}."
-            )
+            raise TypeError(f"EdgeMethod builder must be callable, got {type(self.builder).__name__!s}.")
 
     def __call__(self, *, n_pre: int, n_post: int):
         """Return sparse ``(pre_index, post_index)`` arrays."""
@@ -180,15 +178,12 @@ def _call_method(method: EdgeMethod | Callable, *, n_pre: int, n_post: int):
         result = method(n_pre=n_pre, n_post=n_post)
     else:
         raise TypeError(
-            "Network.add_edges(...) method must be an EdgeMethod or callable, "
-            f"got {type(method).__name__!s}."
+            f"Network.add_edges(...) method must be an EdgeMethod or callable, got {type(method).__name__!s}."
         )
     try:
         pre_index, post_index = result
     except (TypeError, ValueError) as exc:
-        raise ValueError(
-            "Edge method must return a pair ``(pre_index, post_index)``."
-        ) from exc
+        raise ValueError("Edge method must return a pair ``(pre_index, post_index)``.") from exc
     return pre_index, post_index
 
 
@@ -204,8 +199,7 @@ def _validate_index_bounds(indices: np.ndarray, size: int, name: str) -> None:
     max_index = int(np.max(indices))
     if min_index < 0 or max_index >= int(size):
         raise IndexError(
-            f"EdgeSet {name} out of range for population size {size!r}: "
-            f"min={min_index!r}, max={max_index!r}."
+            f"EdgeSet {name} out of range for population size {size!r}: min={min_index!r}, max={max_index!r}."
         )
 
 

@@ -33,19 +33,14 @@ from braincell.morph.morphology import Morphology
 
 
 def _two_branch_morpho() -> Morphology:
-    soma = Branch.from_lengths(
-        lengths=[20.0] * u.um, radii=[10.0, 10.0] * u.um, type="soma"
-    )
-    dend = Branch.from_lengths(
-        lengths=[100.0] * u.um, radii=[2.0, 1.0] * u.um, type="basal_dendrite"
-    )
+    soma = Branch.from_lengths(lengths=[20.0] * u.um, radii=[10.0, 10.0] * u.um, type="soma")
+    dend = Branch.from_lengths(lengths=[100.0] * u.um, radii=[2.0, 1.0] * u.um, type="basal_dendrite")
     tree = Morphology.from_root(soma, name="soma")
     tree.soma.dend = dend
     return tree
 
 
 class BuildNodeTreeEdgeHalves(unittest.TestCase):
-
     def test_intra_branch_edges_carry_both_halves(self) -> None:
         morpho = _two_branch_morpho()
         cvs = build_discretization(morpho, policy=CVPerBranch()).cvs
@@ -81,7 +76,6 @@ class BuildNodeTreeEdgeHalves(unittest.TestCase):
 
 
 class ComputePeelLevels(unittest.TestCase):
-
     def test_peel_levels_correct_when_child_id_less_than_parent_id(self) -> None:
         # Graph with root id > child ids: root=3, children=(0, 1); 0 -> 2.
         node_parent = np.asarray([3, 3, 0, -1], dtype=np.int32)
@@ -112,7 +106,6 @@ class ComputePeelLevels(unittest.TestCase):
 
 
 class _FakeCV:
-
     def __init__(self, id_: int, prox: float, dist: float) -> None:
         self.id = id_
         self.prox = prox
@@ -120,7 +113,6 @@ class _FakeCV:
 
 
 class LocateBranchCVByX(unittest.TestCase):
-
     def _cvs(self, tiles):
         return tuple(_FakeCV(i, p, d) for i, (p, d) in enumerate(tiles))
 
@@ -145,7 +137,6 @@ class LocateBranchCVByX(unittest.TestCase):
 
 
 class VocabularyLock(unittest.TestCase):
-
     def test_cvpoint_positions_are_three_letter_codes(self) -> None:
         morpho = _two_branch_morpho()
         cvs = build_discretization(morpho, policy=CVPerBranch()).cvs

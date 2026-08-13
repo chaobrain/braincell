@@ -22,11 +22,13 @@ class BaseIonSplitTest(unittest.TestCase):
 
     def test_direct_import_still_works(self) -> None:
         from braincell._base import Ion, MixIons, mix_ions
+
         self.assertTrue(callable(mix_ions))
 
     def test_ion_inherits_from_ion_channel(self) -> None:
         from braincell._base_channel import IonChannel
         from braincell._base_ion import Ion, MixIons
+
         self.assertTrue(issubclass(Ion, IonChannel))
         self.assertTrue(issubclass(MixIons, IonChannel))
 
@@ -58,7 +60,7 @@ class IonIndependentIntegrationDispatchTest(unittest.TestCase):
                 pass
 
             def current(self, V, ion):  # pragma: no cover
-                return 0.0 * u.nA / u.cm ** 2
+                return 0.0 * u.nA / u.cm**2
 
         class _IndependentIon(Calcium, IndependentIntegration):
             def __init__(self):
@@ -110,7 +112,7 @@ class IonIndependentIntegrationDispatchTest(unittest.TestCase):
                 pass
 
             def current(self, V, ion):  # pragma: no cover
-                return 0.0 * u.nA / u.cm ** 2
+                return 0.0 * u.nA / u.cm**2
 
         class _IndependentIon(Calcium, IndependentIntegration):
             def __init__(self):
@@ -156,7 +158,7 @@ class IonIndependentIntegrationDispatchTest(unittest.TestCase):
                 self.calls.append(("post", ion))
 
             def current(self, V, ion):  # pragma: no cover
-                return 0.0 * u.nA / u.cm ** 2
+                return 0.0 * u.nA / u.cm**2
 
         class _Ion(Calcium):
             def __init__(self):
@@ -207,7 +209,7 @@ class IonIndependentIntegrationDispatchTest(unittest.TestCase):
                 self.calls.append((args, kwargs))
 
             def current(self, V, ion):  # pragma: no cover
-                return 0.0 * u.nA / u.cm ** 2
+                return 0.0 * u.nA / u.cm**2
 
         class _IndependentIon(Calcium, IndependentIntegration):
             def __init__(self):

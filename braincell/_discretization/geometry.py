@@ -221,9 +221,7 @@ def _build_frusta(
     prox_f = float(prox)
     dist_f = float(dist)
     if not (0.0 - EPS_PARAM <= prox_f < dist_f - EPS_PARAM and dist_f <= 1.0 + EPS_PARAM):
-        raise ValueError(
-            f"CV bounds must satisfy 0 <= prox < dist <= 1, got {(prox, dist)!r}."
-        )
+        raise ValueError(f"CV bounds must satisfy 0 <= prox < dist <= 1, got {(prox, dist)!r}.")
     prox_f = max(0.0, min(1.0, prox_f))
     dist_f = max(0.0, min(1.0, dist_f))
 
@@ -232,26 +230,19 @@ def _build_frusta(
     radii_dist_um = np.asarray(branch.radii_distal.to_decimal(u.um), dtype=float)
 
     if np.any(radii_prox_um <= 0.0) or np.any(radii_dist_um <= 0.0):
-        raise ValueError(
-            f"All branch radii must be > 0 (branch type={branch.type!r})."
-        )
+        raise ValueError(f"All branch radii must be > 0 (branch type={branch.type!r}).")
 
     total_length_um = float(np.sum(lengths_um))
     if total_length_um <= EPS_LEN_UM:
         raise ValueError(
-            f"Branch total length must be > {EPS_LEN_UM} μm "
-            f"(got {total_length_um} μm, type={branch.type!r})."
+            f"Branch total length must be > {EPS_LEN_UM} μm (got {total_length_um} μm, type={branch.type!r})."
         )
 
     points_proximal = (
-        np.asarray(branch.points_proximal.to_decimal(u.um), dtype=float)
-        if branch.points_proximal is not None
-        else None
+        np.asarray(branch.points_proximal.to_decimal(u.um), dtype=float) if branch.points_proximal is not None else None
     )
     points_distal = (
-        np.asarray(branch.points_distal.to_decimal(u.um), dtype=float)
-        if branch.points_distal is not None
-        else None
+        np.asarray(branch.points_distal.to_decimal(u.um), dtype=float) if branch.points_distal is not None else None
     )
 
     start_um = prox_f * total_length_um
@@ -326,10 +317,7 @@ def _build_frusta(
         )
 
     if len(frusta) == 0:
-        raise ValueError(
-            f"CV [{prox}, {dist}] produced no frusta on branch of length "
-            f"{total_length_um} μm."
-        )
+        raise ValueError(f"CV [{prox}, {dist}] produced no frusta on branch of length {total_length_um} μm.")
     return tuple(frusta)
 
 
@@ -343,9 +331,7 @@ def _lateral_area_um2(frusta: tuple[_Frustum, ...]) -> float:
     total = 0.0
     pi = float(np.pi)
     for piece in frusta:
-        slant = float(
-            np.sqrt(piece.length_um ** 2 + (piece.r_dist_um - piece.r_prox_um) ** 2)
-        )
+        slant = float(np.sqrt(piece.length_um**2 + (piece.r_dist_um - piece.r_prox_um) ** 2))
         total += pi * (piece.r_prox_um + piece.r_dist_um) * slant
     return total
 
@@ -358,9 +344,7 @@ def _axial_factor_per_cm(frusta: tuple[_Frustum, ...]) -> float:
         r0_cm = piece.r_prox_um * 1e-4
         r1_cm = piece.r_dist_um * 1e-4
         if r0_cm <= 0.0 or r1_cm <= 0.0:
-            raise ValueError(
-                "Axial factor requires strictly positive radii; validation slipped."
-            )
+            raise ValueError("Axial factor requires strictly positive radii; validation slipped.")
         factor += length_cm / (pi * r0_cm * r1_cm)
     return factor
 
@@ -472,16 +456,12 @@ def validate_morphology(morpho: Morphology) -> None:
         lengths_um = np.asarray(branch.lengths.to_decimal(u.um), dtype=float)
         if float(np.sum(lengths_um)) <= EPS_LEN_UM:
             raise ValueError(
-                f"Branch {branch_id} (type={branch.type!r}) has total length "
-                f"<= {EPS_LEN_UM} μm; morphology rejected."
+                f"Branch {branch_id} (type={branch.type!r}) has total length <= {EPS_LEN_UM} μm; morphology rejected."
             )
         radii_prox = np.asarray(branch.radii_proximal.to_decimal(u.um), dtype=float)
         radii_dist = np.asarray(branch.radii_distal.to_decimal(u.um), dtype=float)
         if np.any(radii_prox <= 0.0) or np.any(radii_dist <= 0.0):
-            raise ValueError(
-                f"Branch {branch_id} (type={branch.type!r}) has non-positive "
-                "radii; morphology rejected."
-            )
+            raise ValueError(f"Branch {branch_id} (type={branch.type!r}) has non-positive radii; morphology rejected.")
 
 
 def validate_bounds(
@@ -505,8 +485,7 @@ def validate_bounds(
     """
     if len(bounds_by_branch) != len(morpho.branches):
         raise ValueError(
-            f"CV bounds length {len(bounds_by_branch)} does not match "
-            f"branch count {len(morpho.branches)}."
+            f"CV bounds length {len(bounds_by_branch)} does not match branch count {len(morpho.branches)}."
         )
     for branch_id, branch_bounds in enumerate(bounds_by_branch):
         if len(branch_bounds) == 0:
@@ -515,29 +494,21 @@ def validate_bounds(
         for i, (prox, dist) in enumerate(branch_bounds):
             prox_f = float(prox)
             dist_f = float(dist)
-            if not (
-                0.0 - EPS_PARAM <= prox_f < dist_f - EPS_PARAM
-                and dist_f <= 1.0 + EPS_PARAM
-            ):
+            if not (0.0 - EPS_PARAM <= prox_f < dist_f - EPS_PARAM and dist_f <= 1.0 + EPS_PARAM):
                 raise ValueError(
                     f"Branch {branch_id} CV {i} has invalid bounds "
                     f"(prox={prox_f}, dist={dist_f}); must satisfy "
                     "0 <= prox < dist <= 1."
                 )
             if i == 0 and abs(prox_f - 0.0) > EPS_PARAM:
-                raise ValueError(
-                    f"Branch {branch_id} first CV must start at 0.0, got {prox_f}."
-                )
+                raise ValueError(f"Branch {branch_id} first CV must start at 0.0, got {prox_f}.")
             if i > 0 and abs(prox_f - prev_dist) > EPS_PARAM:
                 raise ValueError(
-                    f"Branch {branch_id} CV {i} prox={prox_f} does not meet "
-                    f"previous dist={prev_dist} (overlap or gap)."
+                    f"Branch {branch_id} CV {i} prox={prox_f} does not meet previous dist={prev_dist} (overlap or gap)."
                 )
             prev_dist = dist_f
         if abs(prev_dist - 1.0) > EPS_PARAM:
-            raise ValueError(
-                f"Branch {branch_id} last CV must end at 1.0, got {prev_dist}."
-            )
+            raise ValueError(f"Branch {branch_id} last CV must end at 1.0, got {prev_dist}.")
 
 
 def validate_connectivity(
@@ -565,26 +536,20 @@ def validate_connectivity(
     n = len(geos)
     for geo in geos:
         if geo.parent_cv is not None and not (0 <= geo.parent_cv < n):
-            raise ValueError(
-                f"CV {geo.id} has out-of-range parent_cv {geo.parent_cv}."
-            )
+            raise ValueError(f"CV {geo.id} has out-of-range parent_cv {geo.parent_cv}.")
         for child in geo.children_cv:
             if not (0 <= child < n):
-                raise ValueError(
-                    f"CV {geo.id} has out-of-range child_cv {child}."
-                )
+                raise ValueError(f"CV {geo.id} has out-of-range child_cv {child}.")
     for branch_id, ids in enumerate(branch_to_cv_ids):
         for left_id, right_id in zip(ids[:-1], ids[1:]):
             if geos[right_id].parent_cv != left_id:
                 raise ValueError(
-                    f"CV {right_id} on branch {branch_id} expects parent "
-                    f"{left_id}, got {geos[right_id].parent_cv}."
+                    f"CV {right_id} on branch {branch_id} expects parent {left_id}, got {geos[right_id].parent_cv}."
                 )
     root_ids = branch_to_cv_ids[morpho.root.index]
     if geos[root_ids[0]].parent_cv is not None:
         raise ValueError(
-            f"Root-branch first CV {root_ids[0]} must have parent_cv=None, "
-            f"got {geos[root_ids[0]].parent_cv}."
+            f"Root-branch first CV {root_ids[0]} must have parent_cv=None, got {geos[root_ids[0]].parent_cv}."
         )
     visited: set[int] = set()
     for start in range(n):
@@ -642,8 +607,7 @@ def locate_cv_on_branch(
         if abs(x - geo.dist) <= EPS_PARAM:
             return cv_id
     raise ValueError(
-        f"x={x!r} not owned by any CV in branch; "
-        f"bounds are {[(geos[i].prox, geos[i].dist) for i in ids]!r}."
+        f"x={x!r} not owned by any CV in branch; bounds are {[(geos[i].prox, geos[i].dist) for i in ids]!r}."
     )
 
 

@@ -27,11 +27,13 @@ from braincell.io.neuromorpho.http import request_with_retry
 
 class RequestWithRetryTest(unittest.TestCase):
     def test_retries_on_transient_then_succeeds(self) -> None:
-        session = FakeSession([
-            FakeResponse(status_code=503),
-            FakeResponse(status_code=503),
-            FakeResponse(json_data={"ok": True}, status_code=200),
-        ])
+        session = FakeSession(
+            [
+                FakeResponse(status_code=503),
+                FakeResponse(status_code=503),
+                FakeResponse(json_data={"ok": True}, status_code=200),
+            ]
+        )
         sleeps: list[float] = []
         response = request_with_retry(
             session,
@@ -46,10 +48,12 @@ class RequestWithRetryTest(unittest.TestCase):
         self.assertEqual(len(sleeps), 2)
 
     def test_gives_up_after_attempts_exhausted(self) -> None:
-        session = FakeSession([
-            FakeResponse(status_code=503),
-            FakeResponse(status_code=503),
-        ])
+        session = FakeSession(
+            [
+                FakeResponse(status_code=503),
+                FakeResponse(status_code=503),
+            ]
+        )
         with self.assertRaises(NeuroMorphoHTTPError) as ctx:
             request_with_retry(
                 session,

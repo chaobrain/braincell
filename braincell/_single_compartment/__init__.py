@@ -16,6 +16,4 @@
 
 from .base import SingleCompartment
 
-__all__ = [
-    "SingleCompartment"
-]
+__all__ = ["SingleCompartment"]

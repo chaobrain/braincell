@@ -38,7 +38,7 @@ def _V(values, unit=u.mV):
     return jnp.asarray(values) * unit
 
 
-_DENSITY_UNIT = u.mS / u.cm ** 2 * u.mV
+_DENSITY_UNIT = u.mS / u.cm**2 * u.mV
 
 
 class IhHM1992Test(unittest.TestCase):
@@ -59,7 +59,7 @@ class IhHM1992Test(unittest.TestCase):
         ch = HCN_HM1992(size=2)
         self.assertTrue(
             u.math.allclose(
-                ch.g_max.to_decimal(u.mS / u.cm ** 2),
+                ch.g_max.to_decimal(u.mS / u.cm**2),
                 jnp.full((2,), 10.0),
             )
         )
@@ -87,9 +87,7 @@ class IhHM1992Test(unittest.TestCase):
             temp_ref=u.celsius2kelvin(36.0),
         )
         gate = ch._iter_gates()[0]
-        self.assertTrue(
-            u.math.allclose(ch.gate_phi(gate), 3.0 * jnp.ones(1), atol=1e-6)
-        )
+        self.assertTrue(u.math.allclose(ch.gate_phi(gate), 3.0 * jnp.ones(1), atol=1e-6))
 
     def test_reset_state_sets_p_to_steady_state(self) -> None:
         ch = HCN_HM1992(size=1)
@@ -118,13 +116,13 @@ class IhHM1992Test(unittest.TestCase):
         self.assertTrue(u.math.allclose(ch.p.derivative, expected, atol=1e-6 * u.Hz))
 
     def test_current_matches_formula(self) -> None:
-        ch = HCN_HM1992(size=1, g_max=5.0 * (u.mS / u.cm ** 2), E=-30.0 * u.mV)
+        ch = HCN_HM1992(size=1, g_max=5.0 * (u.mS / u.cm**2), E=-30.0 * u.mV)
         V = _V([-60.0])
         ch.init_state(V)
         ch.p.value = jnp.array([0.3])
         current = ch.current(V)
         expected = ch.g_max * ch.p.value * (ch.E - V)
-        unit = u.mS / u.cm ** 2 * u.mV
+        unit = u.mS / u.cm**2 * u.mV
         self.assertTrue(
             u.math.allclose(
                 current.to_decimal(unit),
@@ -141,7 +139,7 @@ class IhHM1992Test(unittest.TestCase):
         current = ch.current(V)
         self.assertTrue(
             u.math.allclose(
-                current.to_decimal(u.mS / u.cm ** 2 * u.mV),
+                current.to_decimal(u.mS / u.cm**2 * u.mV),
                 jnp.zeros(1),
                 atol=1e-9,
             )
@@ -298,7 +296,7 @@ class HCNSU15DCNTest(unittest.TestCase):
         ch.init_state(V)
         ch.m.value = jnp.array([0.25])
         i = ch.current(V)
-        expected = ch.g_max * (ch.m.value ** 2) * (ch.E - V)
+        expected = ch.g_max * (ch.m.value**2) * (ch.E - V)
         self.assertTrue(
             u.math.allclose(
                 i.to_decimal(_DENSITY_UNIT),

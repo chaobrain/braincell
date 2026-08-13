@@ -167,9 +167,7 @@ def build_scene2d_projected(
         next_draw_order=base_count,
     )
 
-    draw_order = tuple(
-        p.draw_order for p in polylines
-    ) + tuple(p.draw_order for p in polyline_values)
+    draw_order = tuple(p.draw_order for p in polylines) + tuple(p.draw_order for p in polyline_values)
     return RenderScene2D(
         polylines=tuple(polylines),
         polyline_values=tuple(polyline_values),
@@ -218,7 +216,7 @@ def build_scene2d_line(
                         branch_index=branch_layout.branch_index,
                         branch_name=branch_layout.branch_name,
                         branch_type=branch_layout.branch_type,
-                        points_um=branch_layout.segment_points_um[segment_index: segment_index + 2],
+                        points_um=branch_layout.segment_points_um[segment_index : segment_index + 2],
                         widths_um=np.array(
                             [
                                 2.0 * float(branch_layout.radii_proximal_um[segment_index]),
@@ -257,9 +255,7 @@ def build_scene2d_line(
         next_draw_order=draw_order,
     )
 
-    draw_order_tuple = tuple(p.draw_order for p in polylines) + tuple(
-        p.draw_order for p in polyline_values
-    )
+    draw_order_tuple = tuple(p.draw_order for p in polylines) + tuple(p.draw_order for p in polyline_values)
     return RenderScene2D(
         polylines=tuple(polylines),
         polyline_values=tuple(polyline_values),
@@ -371,9 +367,7 @@ def build_scene2d_frustum(
         next_draw_order=draw_order,
     )
 
-    draw_order_tuple = tuple(p.draw_order for p in polygons) + tuple(
-        b.draw_order for b in polygon_value_batches
-    )
+    draw_order_tuple = tuple(p.draw_order for p in polygons) + tuple(b.draw_order for b in polygon_value_batches)
     return RenderScene2D(
         polygons=tuple(polygons),
         polygon_value_batches=tuple(polygon_value_batches),
@@ -393,6 +387,7 @@ def build_projected_scene_2d(morpho: Morphology, *, projection_plane: str = "xy"
 # ---------------------------------------------------------------------------
 # Overlay resolution helpers
 # ---------------------------------------------------------------------------
+
 
 class _Centerline2D:
     """Per-branch 2D centerline used to resolve overlay (branch, x) coordinates.

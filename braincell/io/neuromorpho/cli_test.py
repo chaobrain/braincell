@@ -87,9 +87,7 @@ class CliShowTest(unittest.TestCase):
             neuron_id=10047,
         )
         meas = NeuroMorphoMeasurement.from_payload({"neuron_id": 10047, "n_stems": 1.0})
-        detail = NeuroMorphoDetail(
-            neuron=neuron, measurement=meas, urls=urls, cache_status=cache_status
-        )
+        detail = NeuroMorphoDetail(neuron=neuron, measurement=meas, urls=urls, cache_status=cache_status)
         with mock.patch("braincell.io.neuromorpho.cli.NeuroMorphoClient") as client_cls:
             client_cls.return_value.describe.return_value = detail
             stream = io.StringIO()
@@ -122,9 +120,7 @@ class CliDownloadTest(unittest.TestCase):
             client_cls.return_value.download.return_value = record
             stream = io.StringIO()
             with contextlib.redirect_stdout(stream):
-                exit_code = main([
-                    "download", "--id", "10047", "--output-dir", "/tmp/out", "--mode", "both"
-                ])
+                exit_code = main(["download", "--id", "10047", "--output-dir", "/tmp/out", "--mode", "both"])
         self.assertEqual(exit_code, 0)
         out = stream.getvalue()
         parsed = _parse_key_value_output(out)

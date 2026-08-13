@@ -33,13 +33,13 @@ from .sodium import *
 from .sodium import __all__ as sodium_all
 
 __all__ = (
-    calcium_all +
-    hyperpolarization_activated_all +
-    leaky_all +
-    potassium_all +
-    potassium_calcium_all +
-    potassium_sodium_all +
-    sodium_all
+    calcium_all
+    + hyperpolarization_activated_all
+    + leaky_all
+    + potassium_all
+    + potassium_calcium_all
+    + potassium_sodium_all
+    + sodium_all
 )
 
 
@@ -75,8 +75,7 @@ def __getattr__(name):
     if name in _DEPRECATED_ALIASES:
         new_name = _DEPRECATED_ALIASES[name]
         warnings.warn(
-            f"braincell.channel.{name} is deprecated and will be removed; "
-            f"use braincell.channel.{new_name} instead.",
+            f"braincell.channel.{name} is deprecated and will be removed; use braincell.channel.{new_name} instead.",
             DeprecationWarning,
             stacklevel=2,
         )

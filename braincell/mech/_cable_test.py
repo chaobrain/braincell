@@ -24,21 +24,17 @@ class CablePropertyTest(unittest.TestCase):
     def test_fields_round_trip(self) -> None:
         cp = CableProperty(
             resting_potential=-65.0 * u.mV,
-            membrane_capacitance=1.0 * (u.uF / u.cm ** 2),
+            membrane_capacitance=1.0 * (u.uF / u.cm**2),
             axial_resistivity=100.0 * (u.ohm * u.cm),
         )
         self.assertEqual(cp.resting_potential.to_decimal(u.mV), -65.0)
-        self.assertEqual(
-            cp.membrane_capacitance.to_decimal(u.uF / u.cm ** 2), 1.0
-        )
-        self.assertEqual(
-            cp.axial_resistivity.to_decimal(u.ohm * u.cm), 100.0
-        )
+        self.assertEqual(cp.membrane_capacitance.to_decimal(u.uF / u.cm**2), 1.0)
+        self.assertEqual(cp.axial_resistivity.to_decimal(u.ohm * u.cm), 100.0)
 
     def test_default_temperature_is_309_15K(self) -> None:
         cp = CableProperty(
             resting_potential=-65.0 * u.mV,
-            membrane_capacitance=1.0 * (u.uF / u.cm ** 2),
+            membrane_capacitance=1.0 * (u.uF / u.cm**2),
             axial_resistivity=100.0 * (u.ohm * u.cm),
         )
         self.assertAlmostEqual(
@@ -50,7 +46,7 @@ class CablePropertyTest(unittest.TestCase):
     def test_explicit_temperature(self) -> None:
         cp = CableProperty(
             resting_potential=-65.0 * u.mV,
-            membrane_capacitance=1.0 * (u.uF / u.cm ** 2),
+            membrane_capacitance=1.0 * (u.uF / u.cm**2),
             axial_resistivity=100.0 * (u.ohm * u.cm),
             temperature=u.celsius2kelvin(22.0),
         )
@@ -64,7 +60,7 @@ class CablePropertyTest(unittest.TestCase):
         with self.assertRaises(TypeError):
             CableProperty(
                 resting_potential=-65.0 * u.mV,
-                membrane_capacitance=1.0 * (u.uF / u.cm ** 2),
+                membrane_capacitance=1.0 * (u.uF / u.cm**2),
                 axial_resistivity=100.0 * (u.ohm * u.cm),
                 temperature=310.0,  # type: ignore[arg-type]
             )
@@ -75,7 +71,7 @@ class CablePropertyTest(unittest.TestCase):
         with self.assertRaises(TypeError):
             CableProperty(
                 resting_potential=-65.0 * u.mV,
-                membrane_capacitance=1.0 * (u.uF / u.cm ** 2),
+                membrane_capacitance=1.0 * (u.uF / u.cm**2),
                 axial_resistivity=100.0 * (u.ohm * u.cm),
                 temperature=np.array([310.0, 311.0]) * u.kelvin,
             )
@@ -83,7 +79,7 @@ class CablePropertyTest(unittest.TestCase):
     def test_with_updates_non_mutating(self) -> None:
         original = CableProperty(
             resting_potential=-65.0 * u.mV,
-            membrane_capacitance=1.0 * (u.uF / u.cm ** 2),
+            membrane_capacitance=1.0 * (u.uF / u.cm**2),
             axial_resistivity=100.0 * (u.ohm * u.cm),
         )
         updated = original.with_updates(resting_potential=-70.0 * u.mV)
@@ -93,12 +89,12 @@ class CablePropertyTest(unittest.TestCase):
     def test_equality_and_hash(self) -> None:
         a = CableProperty(
             resting_potential=-65.0 * u.mV,
-            membrane_capacitance=1.0 * (u.uF / u.cm ** 2),
+            membrane_capacitance=1.0 * (u.uF / u.cm**2),
             axial_resistivity=100.0 * (u.ohm * u.cm),
         )
         b = CableProperty(
             resting_potential=-65.0 * u.mV,
-            membrane_capacitance=1.0 * (u.uF / u.cm ** 2),
+            membrane_capacitance=1.0 * (u.uF / u.cm**2),
             axial_resistivity=100.0 * (u.ohm * u.cm),
         )
         self.assertEqual(a, b)

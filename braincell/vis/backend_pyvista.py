@@ -14,7 +14,6 @@
 # ==============================================================================
 
 
-
 import importlib.util
 import os
 import sys
@@ -147,9 +146,7 @@ class PyVistaBackend:
             poly = pv.PolyData()
             poly.points = stroke.points_um
             n_points = stroke.points_um.shape[0]
-            cell = np.concatenate(
-                [np.array([n_points], dtype=np.int64), np.arange(n_points, dtype=np.int64)]
-            )
+            cell = np.concatenate([np.array([n_points], dtype=np.int64), np.arange(n_points, dtype=np.int64)])
             poly.lines = cell
             color = _rgb_to_float(stroke.color_rgb)
             if mode == "skeleton":

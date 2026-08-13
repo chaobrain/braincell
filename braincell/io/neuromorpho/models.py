@@ -21,8 +21,6 @@ callers. The classes in this module are pure value objects: none of
 them perform I/O or HTTP requests.
 """
 
-
-
 import dataclasses
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -522,11 +520,7 @@ class NeuroMorphoMeasurement:
             raise ValueError("Measurement payload is missing 'neuron_id'.")
         consumed.add("neuron_id")
 
-        extras = {
-            key: value
-            for key, value in payload.items()
-            if key not in consumed
-        }
+        extras = {key: value for key, value in payload.items() if key not in consumed}
         return cls(
             neuron_id=int(neuron_id_raw),
             extras=MappingProxyType(extras),

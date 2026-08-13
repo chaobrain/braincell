@@ -102,9 +102,7 @@ def resolve_synapse_layout(population: Population, synapse: str) -> tuple[int, i
             continue
         matches.append((layout.id, int(layout.n_active), node))
     if not matches:
-        raise KeyError(
-            f"Population {population.name!r} has no placed synapse named {synapse!r}."
-        )
+        raise KeyError(f"Population {population.name!r} has no placed synapse named {synapse!r}.")
     if len(matches) > 1:
         raise ValueError(
             f"Population {population.name!r} has multiple synapse layouts named {synapse!r}; "
@@ -116,10 +114,7 @@ def resolve_synapse_layout(population: Population, synapse: str) -> tuple[int, i
 
 def _default_edge_weight(synapse_node, post_index: np.ndarray, synapse_index: np.ndarray, *, n_active: int):
     if not hasattr(synapse_node, "weight"):
-        raise ValueError(
-            "Connection weight is None, but the target synapse has no default "
-            "'weight' parameter."
-        )
+        raise ValueError("Connection weight is None, but the target synapse has no default 'weight' parameter.")
     weight = synapse_node.weight
     if isinstance(weight, u.Quantity):
         decimal = np.asarray(weight.to_decimal(weight.unit))
@@ -151,8 +146,7 @@ def _validate_indices(indices: np.ndarray, size: int, name: str) -> None:
     max_index = int(np.max(indices))
     if min_index < 0 or max_index >= int(size):
         raise IndexError(
-            f"Connection {name} out of range for population size {size!r}: "
-            f"min={min_index!r}, max={max_index!r}."
+            f"Connection {name} out of range for population size {size!r}: min={min_index!r}, max={max_index!r}."
         )
 
 
@@ -162,19 +156,14 @@ def _expand_weight(weight, *, n_contact: int):
         if decimal.shape == ():
             return u.Quantity(np.broadcast_to(decimal, (n_contact,)).copy(), weight.unit)
         if decimal.shape != (n_contact,):
-            raise ValueError(
-                f"Connection weight must be scalar or shape {(n_contact,)!r}, "
-                f"got {decimal.shape!r}."
-            )
+            raise ValueError(f"Connection weight must be scalar or shape {(n_contact,)!r}, got {decimal.shape!r}.")
         return weight
 
     arr = np.asarray(weight)
     if arr.shape == ():
         return np.broadcast_to(arr, (n_contact,)).copy()
     if arr.shape != (n_contact,):
-        raise ValueError(
-            f"Connection weight must be scalar or shape {(n_contact,)!r}, got {arr.shape!r}."
-        )
+        raise ValueError(f"Connection weight must be scalar or shape {(n_contact,)!r}, got {arr.shape!r}.")
     return arr
 
 
@@ -198,9 +187,7 @@ def _expand_delay_steps(delay, *, dt, n_contact: int, quantization: str = "ceil"
     if delay_ms.shape == ():
         delay_ms = np.broadcast_to(delay_ms, (n_contact,)).copy()
     if delay_ms.shape != (n_contact,):
-        raise ValueError(
-            f"Connection delay must be scalar or shape {(n_contact,)!r}, got {delay_ms.shape!r}."
-        )
+        raise ValueError(f"Connection delay must be scalar or shape {(n_contact,)!r}, got {delay_ms.shape!r}.")
     if np.any(delay_ms < 0.0):
         raise ValueError("Connection delay must be >= 0.")
     dt_ms = float(np.asarray(dt.to_decimal(u.ms), dtype=float).reshape(()))
@@ -214,28 +201,20 @@ def _expand_delay_steps(delay, *, dt, n_contact: int, quantization: str = "ceil"
     if quantization == "strict":
         rounded = np.rint(raw_steps).astype(np.int32)
         if not np.allclose(raw_steps, rounded, rtol=1e-9, atol=1e-9):
-            raise ValueError(
-                "Connection delay must be an integer multiple of dt when "
-                "delay_quantization='strict'."
-            )
+            raise ValueError("Connection delay must be an integer multiple of dt when delay_quantization='strict'.")
         steps = rounded
     elif quantization == "ceil":
         steps = np.ceil(raw_steps - 1e-12).astype(np.int32)
     elif quantization == "floor":
         steps = np.floor(raw_steps + 1e-12).astype(np.int32)
     else:  # pragma: no cover
-        raise ValueError(
-            "Connection delay_quantization must be 'ceil', 'floor', or 'strict'."
-        )
+        raise ValueError("Connection delay_quantization must be 'ceil', 'floor', or 'strict'.")
     return np.maximum(steps, 1)
 
 
 def _normalize_delay_quantization(value: str) -> str:
     if value not in ("ceil", "floor", "strict"):
-        raise ValueError(
-            "Network delay_quantization must be 'ceil', 'floor', or 'strict', "
-            f"got {value!r}."
-        )
+        raise ValueError(f"Network delay_quantization must be 'ceil', 'floor', or 'strict', got {value!r}.")
     return value
 
 

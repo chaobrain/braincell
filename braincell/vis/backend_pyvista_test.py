@@ -99,9 +99,7 @@ class _FakePlotter:
 class _NeedsRenderedPlotter(_FakePlotter):
     def show(self, **kwargs):
         if not self._rendered:
-            raise AttributeError(
-                "This plotter has not yet been set up and rendered with ``show()``."
-            )
+            raise AttributeError("This plotter has not yet been set up and rendered with ``show()``.")
         return super().show(**kwargs)
 
 

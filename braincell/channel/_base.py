@@ -75,13 +75,9 @@ class Gate:
         has_temp_ref = self.temp_ref is not None
 
         if has_phi and (has_q10 or has_temp_ref):
-            raise ValueError(
-                f"Gate {self.name!r}: phi cannot be provided together with q10/temp_ref."
-            )
+            raise ValueError(f"Gate {self.name!r}: phi cannot be provided together with q10/temp_ref.")
         if has_q10 != has_temp_ref:
-            raise ValueError(
-                f"Gate {self.name!r}: q10 and temp_ref must be provided together."
-            )
+            raise ValueError(f"Gate {self.name!r}: q10 and temp_ref must be provided together.")
 
 
 @dataclass(frozen=True)
@@ -147,16 +143,12 @@ class HH(Channel):
         has_inf_tau = self._has_inf_tau(gate)
         has_alpha_beta = self._has_alpha_beta(gate)
         if has_inf_tau and has_alpha_beta:
-            raise ValueError(
-                f"Gate {gate.name!r} defines both inf/tau and alpha/beta forms; choose one."
-            )
+            raise ValueError(f"Gate {gate.name!r} defines both inf/tau and alpha/beta forms; choose one.")
         if has_inf_tau:
             return "inf_tau"
         if has_alpha_beta:
             return "alpha_beta"
-        raise ValueError(
-            f"Gate {gate.name!r} must define either inf/tau or alpha/beta methods."
-        )
+        raise ValueError(f"Gate {gate.name!r} must define either inf/tau or alpha/beta methods.")
 
     def init_state(self, V, *ions, batch_size: int = None):
         _ = (V, ions)
@@ -172,7 +164,7 @@ class HH(Channel):
         product = 1.0
         for gate in self._iter_gates():
             value = self._gate_value(gate)
-            product = product * (value if gate.power == 1 else value ** gate.power)
+            product = product * (value if gate.power == 1 else value**gate.power)
         return product
 
     def reset_state(self, V, *ions, batch_size: int = None):
@@ -275,9 +267,7 @@ class Markov(Channel, IndependentIntegration):
             raise ValueError("Markov requires at least two states.")
         if type(self).dependent_state is not None:
             if type(self).dependent_state not in state_names:
-                raise ValueError(
-                    f"dependent_state {type(self).dependent_state!r} is not present in Markov states."
-                )
+                raise ValueError(f"dependent_state {type(self).dependent_state!r} is not present in Markov states.")
             return type(self).dependent_state
         return state_names[-1]
 
@@ -295,10 +285,7 @@ class Markov(Channel, IndependentIntegration):
         return _resolve_value(self, type(self).conserve)
 
     def _independent_state_values(self):
-        return {
-            name: getattr(self, name).value
-            for name in self._independent_state_names()
-        }
+        return {name: getattr(self, name).value for name in self._independent_state_names()}
 
     def _dependent_state_value(self, states):
         total = None
@@ -314,10 +301,7 @@ class Markov(Channel, IndependentIntegration):
 
     def _kinetic_state_values(self):
         raw_states = self._independent_state_values()
-        states = {
-            name: self._project_independent_state(name, value)
-            for name, value in raw_states.items()
-        }
+        states = {name: self._project_independent_state(name, value) for name, value in raw_states.items()}
         states[self._dependent_state_name()] = self._dependent_state_value(raw_states)
         return states
 
@@ -326,10 +310,7 @@ class Markov(Channel, IndependentIntegration):
         if ion_count is None:
             return getattr(self, rate_name)(V, *ions)
         if ion_count > len(ions):
-            raise TypeError(
-                f"{type(self).__name__}.{rate_name} expects {ion_count} ion argument(s), "
-                f"got {len(ions)}."
-            )
+            raise TypeError(f"{type(self).__name__}.{rate_name} expects {ion_count} ion argument(s), got {len(ions)}.")
         return getattr(self, rate_name)(V, *ions[:ion_count])
 
     def pre_integral(self, V, *ions):
@@ -348,10 +329,7 @@ class Markov(Channel, IndependentIntegration):
 
     @property
     def state_pairs(self) -> tuple[tuple[str, str, str, str | None], ...]:
-        return tuple(
-            (pair.src, pair.dst, pair.forward, pair.backward)
-            for pair in self._iter_pairs()
-        )
+        return tuple((pair.src, pair.dst, pair.forward, pair.backward) for pair in self._iter_pairs())
 
     def init_state(self, V, *ions, batch_size: int = None):
         _ = (V, ions)
@@ -442,9 +420,7 @@ class Markov(Channel, IndependentIntegration):
         try:
             solution = jnp.linalg.solve(lhs, rhs[..., None]).squeeze(-1)
         except Exception as err:
-            raise ValueError(
-                f"{type(self).__name__} steady-state linear system could not be solved."
-            ) from err
+            raise ValueError(f"{type(self).__name__} steady-state linear system could not be solved.") from err
 
         traced = is_traced_value(solution)
         if not traced:
@@ -461,10 +437,7 @@ class Markov(Channel, IndependentIntegration):
             raise ValueError(f"{type(self).__name__} steady-state solve collapsed to zero probability mass.")
         solution = solution * (conserve[:, None] / totals)
 
-        return {
-            name: solution[:, index].reshape(template_shape)
-            for index, name in enumerate(state_names)
-        }
+        return {name: solution[:, index].reshape(template_shape) for index, name in enumerate(state_names)}
 
     def _solve_steady_state_host(self, V, *ions):
         """Return Markov steady-state probabilities using a host NumPy solve."""
@@ -529,9 +502,7 @@ class Markov(Channel, IndependentIntegration):
         try:
             solution = np.linalg.solve(lhs, rhs[..., None]).squeeze(-1)
         except Exception as err:
-            raise ValueError(
-                f"{type(self).__name__} steady-state linear system could not be solved."
-            ) from err
+            raise ValueError(f"{type(self).__name__} steady-state linear system could not be solved.") from err
 
         if not np.all(np.isfinite(solution)):
             raise ValueError(f"{type(self).__name__} steady-state solve returned non-finite values.")
@@ -546,10 +517,7 @@ class Markov(Channel, IndependentIntegration):
             raise ValueError(f"{type(self).__name__} steady-state solve collapsed to zero probability mass.")
         solution = solution * (conserve[:, None] / totals)
 
-        return {
-            name: jnp.asarray(solution[:, index].reshape(template_shape))
-            for index, name in enumerate(state_names)
-        }
+        return {name: jnp.asarray(solution[:, index].reshape(template_shape)) for index, name in enumerate(state_names)}
 
     def reset_steady_state(self, V, *ions, batch_size: int = None):
         states = self._solve_steady_state(V, *ions)

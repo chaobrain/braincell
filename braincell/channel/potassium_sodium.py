@@ -96,8 +96,8 @@ class Kv1p5_MA2020_GrC(Kv1p5_MA2024_PC):
     def __init__(
         self,
         size: brainstate.typing.Size,
-        g_max: Union[brainstate.typing.ArrayLike, Callable] = 0.13195e-3 * (u.siemens / u.cm ** 2),
-        gnonspec: Union[brainstate.typing.ArrayLike, Callable] = 0.0 * (u.siemens / u.cm ** 2),
+        g_max: Union[brainstate.typing.ArrayLike, Callable] = 0.13195e-3 * (u.siemens / u.cm**2),
+        gnonspec: Union[brainstate.typing.ArrayLike, Callable] = 0.0 * (u.siemens / u.cm**2),
         temp: brainstate.typing.ArrayLike = u.celsius2kelvin(37.0),
         Tauact: Union[brainstate.typing.ArrayLike, Callable] = 1.0,
         Tauinactf: Union[brainstate.typing.ArrayLike, Callable] = 1.0,
@@ -186,15 +186,7 @@ class Kv1p5_MA2020_GrC(Kv1p5_MA2024_PC):
         ino = (
             self.gnonspec
             * conductance
-            * (
-                (
-                    u.gas_constant
-                    * self.temp
-                    / u.faraday_constant
-                    * u.math.log((Na.Co + K.Co) / (Na.Ci + K.Ci))
-                )
-                - V
-            )
+            * ((u.gas_constant * self.temp / u.faraday_constant * u.math.log((Na.Co + K.Co) / (Na.Ci + K.Ci))) - V)
         )
         return {"k": ik, "no": ino}
 

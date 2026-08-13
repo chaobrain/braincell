@@ -44,17 +44,13 @@ def build_cv_contexts(
         Contexts ordered by stable control-volume id.
     """
     if not isinstance(morpho, Morphology):
-        raise TypeError(
-            f"build_cv_contexts(...) expects Morphology, got {type(morpho).__name__!s}."
-        )
+        raise TypeError(f"build_cv_contexts(...) expects Morphology, got {type(morpho).__name__!s}.")
     if len(cvs) == 0:
         return ()
 
     n_branches = len(morpho.branches)
     branch_lengths_um = {
-        branch_id: float(
-            morpho.branch(index=branch_id).branch.length.to_decimal(u.um)
-        )
+        branch_id: float(morpho.branch(index=branch_id).branch.length.to_decimal(u.um))
         for branch_id in range(n_branches)
     }
     edge_by_child = {int(edge.child.index): edge for edge in morpho.edges}
@@ -74,24 +70,15 @@ def build_cv_contexts(
         try:
             edge = edge_by_child[branch_id]
         except KeyError as exc:
-            raise ValueError(
-                f"Non-root branch {branch_id!r} has no parent edge."
-            ) from exc
+            raise ValueError(f"Non-root branch {branch_id!r} has no parent edge.") from exc
 
         resolving.add(branch_id)
         parent_id = int(edge.parent.index)
         parent_root_base, parent_soma_base = resolve_branch_base(parent_id)
         entry_x[branch_id] = float(edge.child_x)
-        parent_step_um = (
-            abs(float(edge.parent_x) - entry_x[parent_id])
-            * branch_lengths_um[parent_id]
-        )
+        parent_step_um = abs(float(edge.parent_x) - entry_x[parent_id]) * branch_lengths_um[parent_id]
         branch_root_base = parent_root_base + parent_step_um
-        branch_soma_base = (
-            0.0
-            if str(edge.parent.type) == "soma"
-            else parent_soma_base + parent_step_um
-        )
+        branch_soma_base = 0.0 if str(edge.parent.type) == "soma" else parent_soma_base + parent_step_um
         root_base_um[branch_id] = branch_root_base
         soma_base_um[branch_id] = branch_soma_base
         resolving.remove(branch_id)
@@ -129,7 +116,7 @@ def build_cv_contexts(
             dist=float(getattr(source, "dist")),
             midpoint=midpoint,
             length=_source_quantity(source, "length", "length_um", u.um),
-            area=_source_quantity(source, "area", "lateral_area_um2", u.um ** 2),
+            area=_source_quantity(source, "area", "lateral_area_um2", u.um**2),
             radius_prox=_source_quantity(source, "radius_prox", "r_prox_um", u.um),
             radius_mid=radius_mid,
             radius_dist=_source_quantity(source, "radius_dist", "r_dist_um", u.um),

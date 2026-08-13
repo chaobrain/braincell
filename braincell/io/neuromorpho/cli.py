@@ -41,8 +41,6 @@ Subcommands:
 Pass ``--json`` to switch any subcommand to JSON output.
 """
 
-
-
 import argparse
 import json
 from dataclasses import asdict, is_dataclass
@@ -93,8 +91,7 @@ def _print_json(data: Any) -> None:
 def _format_search(page: NeuroMorphoSearchPage) -> str:
     lines: list[str] = []
     lines.append(
-        f"page={page.page} size={page.size} total_pages={page.total_pages} "
-        f"total_elements={page.total_elements}"
+        f"page={page.page} size={page.size} total_pages={page.total_pages} total_elements={page.total_elements}"
     )
     lines.append(f"query_url={page.query_url}")
     for index, item in enumerate(page.items, start=1):
@@ -125,9 +122,7 @@ def _format_detail(detail: NeuroMorphoDetail) -> str:
     ]
     if detail.measurement is not None:
         lines.append("measurement=")
-        lines.append(
-            json.dumps(detail.measurement.as_dict(), indent=2, sort_keys=True, default=_json_default)
-        )
+        lines.append(json.dumps(detail.measurement.as_dict(), indent=2, sort_keys=True, default=_json_default))
     return "\n".join(lines)
 
 
@@ -243,9 +238,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     download_parser = subparsers.add_parser("download", help="Download files for one neuron.")
     download_parser.add_argument("--id", type=int, required=True, dest="neuron_id")
     download_parser.add_argument("--output-dir", type=Path, required=True)
-    download_parser.add_argument(
-        "--mode", choices=("standard", "original", "both"), default="both"
-    )
+    download_parser.add_argument("--mode", choices=("standard", "original", "both"), default="both")
     download_parser.add_argument("--overwrite", action="store_true")
 
     fetch_parser = subparsers.add_parser(
@@ -253,9 +246,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
         help="Fetch one neuron into the cache (and optionally parse it).",
     )
     fetch_parser.add_argument("neuron_id", type=int)
-    fetch_parser.add_argument(
-        "--mode", choices=("standard", "original", "both"), default="standard"
-    )
+    fetch_parser.add_argument("--mode", choices=("standard", "original", "both"), default="standard")
     fetch_parser.add_argument("--overwrite", action="store_true")
     fetch_parser.add_argument(
         "--load",
@@ -271,19 +262,13 @@ def build_arg_parser() -> argparse.ArgumentParser:
 
     cache_sub.add_parser("list", help="List every cached neuron id.")
 
-    cache_info_parser = cache_sub.add_parser(
-        "info", help="Print the cache status of one neuron."
-    )
+    cache_info_parser = cache_sub.add_parser("info", help="Print the cache status of one neuron.")
     cache_info_parser.add_argument("neuron_id", type=int)
 
-    cache_rm_parser = cache_sub.add_parser(
-        "rm", help="Remove the cache folder of one neuron."
-    )
+    cache_rm_parser = cache_sub.add_parser("rm", help="Remove the cache folder of one neuron.")
     cache_rm_parser.add_argument("neuron_id", type=int)
 
-    cache_clear_parser = cache_sub.add_parser(
-        "clear", help="Remove every per-neuron folder under the cache root."
-    )
+    cache_clear_parser = cache_sub.add_parser("clear", help="Remove every per-neuron folder under the cache root.")
     cache_clear_parser.add_argument(
         "--yes",
         action="store_true",
@@ -397,18 +382,17 @@ def _cmd_fetch(args: argparse.Namespace) -> int:
             "n_points": int(sum(b.n_points for b in morph.branches)),
         }
     if args.as_json:
-        _print_json({
-            "record": record,
-            "loaded": summary.get("loaded"),
-        })
+        _print_json(
+            {
+                "record": record,
+                "loaded": summary.get("loaded"),
+            }
+        )
     else:
         print(_format_download(record))
         if "loaded" in summary:
             loaded = summary["loaded"]
-            print(
-                f"loaded OK: {loaded['n_branches']} branches, "
-                f"{loaded['n_points']} points"
-            )
+            print(f"loaded OK: {loaded['n_branches']} branches, {loaded['n_points']} points")
     return 0
 
 
@@ -417,11 +401,13 @@ def _cmd_urls(args: argparse.Namespace) -> int:
     neuron = client.get_neuron(args.neuron_id)
     urls = client.get_urls(neuron)
     if args.as_json:
-        _print_json({
-            "neuron_id": neuron.neuron_id,
-            "urls": asdict(urls),
-            "measurement": build_measurement_url(neuron),
-        })
+        _print_json(
+            {
+                "neuron_id": neuron.neuron_id,
+                "urls": asdict(urls),
+                "measurement": build_measurement_url(neuron),
+            }
+        )
     else:
         print(f"id={neuron.neuron_id}")
         print(f"standard_swc_url={urls.standard_swc}")

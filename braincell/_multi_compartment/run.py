@@ -49,10 +49,7 @@ def run(rcell: "Cell", *, dt, duration) -> RunResult:
     with brainstate.environ.context(dt=dt):
         relative_times = u.math.arange(0.0 * u.ms, duration, brainstate.environ.get_dt())
         if int(relative_times.shape[0]) == 0:
-            raise ValueError(
-                "Cell.run(...) produced no timesteps; "
-                "ensure duration > 0 and dt > 0."
-            )
+            raise ValueError("Cell.run(...) produced no timesteps; ensure duration > 0 and dt > 0.")
         cached_run = _cached_run_loop(
             rcell,
             dt=dt,
@@ -116,9 +113,7 @@ def _make_run_loop(rcell: "Cell", *, dt, ordered_names: tuple[str, ...]):
                 return tuple(snapshot[name] for name in ordered_names)
 
             traces_over_time = brainstate.transform.for_loop(_step, times)
-            rcell._set_current_time(
-                start_t + int(times.shape[0]) * brainstate.environ.get_dt()
-            )
+            rcell._set_current_time(start_t + int(times.shape[0]) * brainstate.environ.get_dt())
         return times, traces_over_time
 
     return brainstate.transform.jit(_run_loop)
@@ -127,18 +122,12 @@ def _make_run_loop(rcell: "Cell", *, dt, ordered_names: tuple[str, ...]):
 def _validate_time_quantity(value, *, name: str) -> None:
     """Require ``value`` to be a positive scalar time :class:`Quantity`."""
     if not hasattr(value, "to_decimal"):
-        raise TypeError(
-            f"Cell.run(...) {name} must be a time quantity, got {value!r}."
-        )
+        raise TypeError(f"Cell.run(...) {name} must be a time quantity, got {value!r}.")
     decimal = np.asarray(value.to_decimal(u.ms), dtype=float)
     if decimal.shape not in ((), (1,)):
-        raise ValueError(
-            f"Cell.run(...) {name} must be scalar, got shape {decimal.shape!r}."
-        )
+        raise ValueError(f"Cell.run(...) {name} must be scalar, got shape {decimal.shape!r}.")
     if float(decimal.reshape(())) <= 0.0:
-        raise ValueError(
-            f"Cell.run(...) {name} must be > 0, got {value!r}."
-        )
+        raise ValueError(f"Cell.run(...) {name} must be > 0, got {value!r}.")
 
 
 def _normalize_run_traces(values, *, n_traces: int) -> tuple:
@@ -146,14 +135,9 @@ def _normalize_run_traces(values, *, n_traces: int) -> tuple:
     if n_traces == 1:
         return values if isinstance(values, tuple) else (values,)
     if not isinstance(values, tuple):
-        raise TypeError(
-            f"Cell.run(...) expected {n_traces} trace arrays, "
-            f"got {type(values).__name__!s}."
-        )
+        raise TypeError(f"Cell.run(...) expected {n_traces} trace arrays, got {type(values).__name__!s}.")
     if len(values) != n_traces:
-        raise ValueError(
-            f"Cell.run(...) expected {n_traces} trace arrays, got {len(values)!r}."
-        )
+        raise ValueError(f"Cell.run(...) expected {n_traces} trace arrays, got {len(values)!r}.")
     return values
 
 

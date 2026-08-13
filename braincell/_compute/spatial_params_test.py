@@ -53,7 +53,7 @@ class SpatialDensityParameterTest(unittest.TestCase):
         def g_max(context: CVContext):
             seen.append(context)
             distance = context.path_distance_from_soma.to_decimal(u.um)
-            return (0.02 + 0.00008 * distance) * (u.mS / u.cm ** 2)
+            return (0.02 + 0.00008 * distance) * (u.mS / u.cm**2)
 
         cell = _cell(pop_size=(2,))
         cell.paint(
@@ -74,7 +74,7 @@ class SpatialDensityParameterTest(unittest.TestCase):
 
         state = cell.get_state(layouts[0].id, "g_max")
         midpoint_ids = cell.node_tree.cv_to_mid_node_id
-        actual = np.asarray(state[..., midpoint_ids].to_decimal(u.mS / u.cm ** 2))
+        actual = np.asarray(state[..., midpoint_ids].to_decimal(u.mS / u.cm**2))
         expected = np.asarray([0.02, 0.02, 0.022, 0.026])
         np.testing.assert_allclose(actual, np.broadcast_to(expected, (2, 4)))
         self.assertEqual(cell.expected_state_shape(layouts[0].id, "g_max"), (2, 7))
@@ -94,10 +94,7 @@ class SpatialDensityParameterTest(unittest.TestCase):
         )
         cell.init_state()
 
-        layout = next(
-            layout for layout in cell.layouts
-            if layout.kind == "ion:SodiumFixed"
-        )
+        layout = next(layout for layout in cell.layouts if layout.kind == "ion:SodiumFixed")
         state = cell.get_state(layout.id, "E")
         actual = state[cell.node_tree.cv_to_mid_node_id].to_decimal(u.mV)
         np.testing.assert_allclose(actual, [50.0, 50.0, 47.5, 42.5])
@@ -110,10 +107,7 @@ class SpatialDensityParameterTest(unittest.TestCase):
         )
         cell.init_state()
 
-        layout = next(
-            layout for layout in cell.layouts
-            if layout.kind == "ion:SodiumFixed"
-        )
+        layout = next(layout for layout in cell.layouts if layout.kind == "ion:SodiumFixed")
         state = cell.get_state(layout.id, "valence")
         np.testing.assert_allclose(
             state[cell.node_tree.cv_to_mid_node_id],
@@ -126,7 +120,7 @@ class SpatialDensityParameterTest(unittest.TestCase):
             AllRegion(),
             Channel(
                 "IL",
-                g_max=lambda context: [0.1, 0.2] * (u.mS / u.cm ** 2),
+                g_max=lambda context: [0.1, 0.2] * (u.mS / u.cm**2),
                 E=-70.0 * u.mV,
             ),
         )
@@ -139,7 +133,7 @@ class SpatialDensityParameterTest(unittest.TestCase):
     def test_callable_rejects_mixed_unitful_and_unitless_results(self) -> None:
         def mixed(context: CVContext):
             if context.branch_type == "soma":
-                return 0.02 * (u.mS / u.cm ** 2)
+                return 0.02 * (u.mS / u.cm**2)
             return 0.03
 
         cell = _cell()
@@ -156,7 +150,7 @@ class SpatialDensityParameterTest(unittest.TestCase):
     def test_callable_rejects_incompatible_quantity_units(self) -> None:
         def incompatible(context: CVContext):
             if context.branch_type == "soma":
-                return 0.02 * (u.mS / u.cm ** 2)
+                return 0.02 * (u.mS / u.cm**2)
             return -70.0 * u.mV
 
         cell = _cell()

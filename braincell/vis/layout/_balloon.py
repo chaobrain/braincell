@@ -21,7 +21,6 @@ so a subtree with more leaves occupies a wider angular slice. The name
 comes from the characteristic "puffing outwards" shape.
 """
 
-
 import numpy as np
 
 from braincell.morph import MorphoBranch

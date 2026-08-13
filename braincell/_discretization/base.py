@@ -364,10 +364,7 @@ class NodeTree:
     branch_endpoint_node_id: np.ndarray
 
     def __repr__(self) -> str:
-        return (
-            f"NodeTree(n_nodes={len(self.nodes)!r}, n_edges={len(self.edges)!r}, "
-            f"root_node_id={self.root_node_id!r})"
-        )
+        return f"NodeTree(n_nodes={len(self.nodes)!r}, n_edges={len(self.edges)!r}, root_node_id={self.root_node_id!r})"
 
     def __str__(self) -> str:
         return (
@@ -490,9 +487,7 @@ def _build_discretization_parts(
     from .policy import CVPolicy
 
     if not isinstance(policy, CVPolicy):
-        raise TypeError(
-            f"build_discretization(...) expects a CVPolicy, got {type(policy).__name__!s}."
-        )
+        raise TypeError(f"build_discretization(...) expects a CVPolicy, got {type(policy).__name__!s}.")
     bounds = policy.resolve_cv_bounds(morpho, paint_rules=paint_rules)
     geometry = build_cv_geometry(morpho, bounds)
     cv_contexts = build_cv_contexts(morpho, geometry.geos)
@@ -503,10 +498,7 @@ def _build_discretization_parts(
         place_rules=place_rules,
         cv_contexts=cv_contexts,
     )
-    cvs = tuple(
-        _assemble_cv(geo, bucket)
-        for geo, bucket in zip(geometry.geos, buckets)
-    )
+    cvs = tuple(_assemble_cv(geo, bucket) for geo, bucket in zip(geometry.geos, buckets))
     cv_tree = _build_cv_tree(
         cvs=cvs,
         branch_to_cv_ids=geometry.branch_to_cv_ids,
@@ -523,13 +515,9 @@ def _build_cv_tree(
     """Assemble graph metadata around an ordered CV tuple."""
     root_candidates = [cv.id for cv in cvs if cv.parent_cv is None]
     if len(root_candidates) != 1:
-        raise ValueError(
-            f"Expected exactly one root CV, got {root_candidates!r}."
-        )
+        raise ValueError(f"Expected exactly one root CV, got {root_candidates!r}.")
     edges = tuple(
-        CVEdge(parent_cv_id=int(cv.parent_cv), child_cv_id=int(cv.id))
-        for cv in cvs
-        if cv.parent_cv is not None
+        CVEdge(parent_cv_id=int(cv.parent_cv), child_cv_id=int(cv.id)) for cv in cvs if cv.parent_cv is not None
     )
     return CVTree(
         cvs=cvs,
@@ -553,7 +541,7 @@ def _assemble_cv(geo, bucket) -> CV:
         parent_cv=geo.parent_cv,
         children_cv=geo.children_cv,
         length=u.Quantity(geo.length_um, u.um),
-        area=u.Quantity(geo.lateral_area_um2, u.um ** 2),
+        area=u.Quantity(geo.lateral_area_um2, u.um**2),
         cm=cable.membrane_capacitance,
         ra=cable.axial_resistivity,
         v=cable.resting_potential,

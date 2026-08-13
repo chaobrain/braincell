@@ -33,9 +33,7 @@ __all__ = [
 ]
 
 
-def quantity_vector(
-    values: list[object], *, shape: tuple[int, ...] | None = None
-) -> object:
+def quantity_vector(values: list[object], *, shape: tuple[int, ...] | None = None) -> object:
     """Stack homogeneous scalar values into one array.
 
     Parameters
@@ -92,8 +90,7 @@ def broadcast_to_shape(value: object, shape: tuple[int, ...], *, name: str = "va
             out = u.math.broadcast_to(mantissa, shape)
         except Exception as exc:
             raise ValueError(
-                f"{name} with shape {getattr(mantissa, 'shape', None)!r} "
-                f"cannot be broadcast to target shape {shape!r}."
+                f"{name} with shape {getattr(mantissa, 'shape', None)!r} cannot be broadcast to target shape {shape!r}."
             ) from exc
         return u.Quantity(out, unit)
 
@@ -102,8 +99,7 @@ def broadcast_to_shape(value: object, shape: tuple[int, ...], *, name: str = "va
         return u.math.broadcast_to(array, shape)
     except Exception as exc:
         raise ValueError(
-            f"{name} with shape {getattr(array, 'shape', None)!r} "
-            f"cannot be broadcast to target shape {shape!r}."
+            f"{name} with shape {getattr(array, 'shape', None)!r} cannot be broadcast to target shape {shape!r}."
         ) from exc
 
 
@@ -188,9 +184,7 @@ def cv_value_vector(cell: "object", *, attr_name: str) -> object:
     )
 
 
-def scatter_midpoint_values(
-    *, values: object, point_ids: np.ndarray, n_point: int
-) -> object:
+def scatter_midpoint_values(*, values: object, point_ids: np.ndarray, n_point: int) -> object:
     """Scatter CV-midpoint values into point space.
 
     Parameters
@@ -248,11 +242,7 @@ def matches_last_dim(value: object, size: int) -> bool:
 
 def is_python_zero(value: object) -> bool:
     """True for a bare Python ``0`` / ``0.0`` (not ``False``)."""
-    return (
-        isinstance(value, (int, float))
-        and not isinstance(value, bool)
-        and value == 0
-    )
+    return isinstance(value, (int, float)) and not isinstance(value, bool) and value == 0
 
 
 def scatter_cv_geometry(
@@ -281,9 +271,7 @@ def scatter_cv_geometry(
         Point-space geometry value with shape ``(n_point,)``.
     """
     values = quantity_vector([getattr(cv, attr_name) for cv in cvs])
-    return scatter_midpoint_values(
-        values=values, point_ids=point_ids, n_point=n_point
-    )
+    return scatter_midpoint_values(values=values, point_ids=point_ids, n_point=n_point)
 
 
 _ION_GEOMETRY_ATTRS = (
@@ -357,6 +345,4 @@ def cv_to_point(values, runtime: "CellRuntimeState"):
 
 def point_to_cv(values, runtime: "CellRuntimeState"):
     """Gather a ``(..., n_point)`` array at CV midpoints → ``(..., n_cv)``."""
-    return gather_midpoint_values(
-        values, point_ids=runtime.node_tree.cv_to_mid_node_id
-    )
+    return gather_midpoint_values(values, point_ids=runtime.node_tree.cv_to_mid_node_id)

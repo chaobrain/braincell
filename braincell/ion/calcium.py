@@ -23,7 +23,17 @@ import brainunit as u
 
 from braincell._base import Ion, HHTypedNeuron
 from braincell.mech import register_ion
-from braincell.ion._base import Conserve, DynamicNernstIon, Factor, FixedIon, InitNernstIon, KineticIon, Reaction, Source, Species
+from braincell.ion._base import (
+    Conserve,
+    DynamicNernstIon,
+    Factor,
+    FixedIon,
+    InitNernstIon,
+    KineticIon,
+    Reaction,
+    Source,
+    Species,
+)
 
 __all__ = [
     'Calcium',
@@ -59,6 +69,7 @@ class Calcium(Ion):
         This is an abstract base class and should be subclassed to implement specific
         calcium ion models with their own dynamics and properties.
     """
+
     __module__ = 'braincell.ion'
 
     root_type = HHTypedNeuron
@@ -75,17 +86,18 @@ class CalciumFixed(Calcium, FixedIon):
     This calcium model has no dynamics. It holds fixed reversal
     potential :math:`E` and concentration :math:`C`.
     """
+
     __module__ = 'braincell.ion'
 
     def __init__(
         self,
         size: brainstate.typing.Size,
-        E: Union[brainstate.typing.ArrayLike, Callable, None] = 120. * u.mV,
+        E: Union[brainstate.typing.ArrayLike, Callable, None] = 120.0 * u.mV,
         Ci: Union[brainstate.typing.ArrayLike, Callable, None] = None,
         Co: Union[brainstate.typing.ArrayLike, Callable, None] = None,
         valence: Union[brainstate.typing.ArrayLike, Callable, None] = None,
         name: Optional[str] = None,
-        **channels
+        **channels,
     ):
         super().__init__(size, name=name, **channels)
         self._init_fixed_ion(Ci=Ci, Co=Co, E=E, valence=valence)
@@ -100,12 +112,12 @@ class CalciumInitNernst(Calcium, InitNernstIon):
     def __init__(
         self,
         size: brainstate.typing.Size,
-        temp: Union[brainstate.typing.ArrayLike, Callable] = u.celsius2kelvin(36.),
+        temp: Union[brainstate.typing.ArrayLike, Callable] = u.celsius2kelvin(36.0),
         Ci: Union[brainstate.typing.ArrayLike, Callable, None] = None,
         Co: Union[brainstate.typing.ArrayLike, Callable, None] = None,
         valence: Union[brainstate.typing.ArrayLike, Callable, None] = None,
         name: Optional[str] = None,
-        **channels
+        **channels,
     ):
         super().__init__(size, name=name, **channels)
         self._init_nernst_ion(Ci=Ci, Co=Co, temp=temp, valence=valence)
@@ -221,20 +233,21 @@ class CalciumDetailed(Calcium, DynamicNernstIon):
            no. 5 (1998): 2730-2748.
 
     """
+
     __module__ = 'braincell.ion'
     uses_total_current = True
 
     def __init__(
         self,
         size: brainstate.typing.Size,
-        temp: Union[brainstate.typing.ArrayLike, Callable] = u.celsius2kelvin(36.),
-        d: Union[brainstate.typing.ArrayLike, Callable] = 1. * u.um,
-        tau: Union[brainstate.typing.ArrayLike, Callable] = 5. * u.ms,
+        temp: Union[brainstate.typing.ArrayLike, Callable] = u.celsius2kelvin(36.0),
+        d: Union[brainstate.typing.ArrayLike, Callable] = 1.0 * u.um,
+        tau: Union[brainstate.typing.ArrayLike, Callable] = 5.0 * u.ms,
         C_rest: Union[brainstate.typing.ArrayLike, Callable] = 2.4e-4 * u.mM,
         Co: Union[brainstate.typing.ArrayLike, Callable, None] = None,
         Ci_initializer: Union[brainstate.typing.ArrayLike, Callable] = braintools.init.Constant(2.4e-4 * u.mM),
         name: Optional[str] = None,
-        **channels
+        **channels,
     ):
         super().__init__(size, name=name, **channels)
         self._init_dynamic_nernst_ion(
@@ -266,19 +279,20 @@ class CalciumFirstOrder(Calcium, DynamicNernstIon):
        Ca' = -\alpha I_{Ca} + -\beta Ca
 
     """
+
     __module__ = 'braincell.ion'
     uses_total_current = True
 
     def __init__(
         self,
         size: brainstate.typing.Size,
-        temp: Union[brainstate.typing.ArrayLike, Callable] = u.celsius2kelvin(36.),
+        temp: Union[brainstate.typing.ArrayLike, Callable] = u.celsius2kelvin(36.0),
         alpha: Union[brainstate.typing.ArrayLike, Callable] = 0.13,
         beta: Union[brainstate.typing.ArrayLike, Callable] = 0.075,
         Co: Union[brainstate.typing.ArrayLike, Callable, None] = None,
         Ci_initializer: Union[brainstate.typing.ArrayLike, Callable] = braintools.init.Constant(2.4e-4 * u.mM),
         name: Optional[str] = None,
-        **channels
+        **channels,
     ):
         super().__init__(size, name=name, **channels)
         self._init_dynamic_nernst_ion(
@@ -294,7 +308,7 @@ class CalciumFirstOrder(Calcium, DynamicNernstIon):
 
     def derivative(self, Ci, V, total_current=None):
         _ = V
-        drive = u.math.maximum(self.alpha * total_current, 0. * u.mM)
+        drive = u.math.maximum(self.alpha * total_current, 0.0 * u.mM)
         return drive - self.beta * Ci
 
 
@@ -355,7 +369,7 @@ class ToyCaBindingKinetic_SU2015_DCN(Calcium, KineticIon):
         solver: str = "rk4",
         substeps: int = 5,
         name: Optional[str] = None,
-        **channels
+        **channels,
     ):
         super().__init__(size=size, name=name, **channels)
         self._init_kinetic_ion(
@@ -420,7 +434,7 @@ class ToyCaBindingSourceKinetic_SU2015_DCN(Calcium, KineticIon):
         solver: str = "rk4",
         substeps: int = 5,
         name: Optional[str] = None,
-        **channels
+        **channels,
     ):
         super().__init__(size=size, name=name, **channels)
         self._init_kinetic_ion(
@@ -460,13 +474,14 @@ class ToyCaBindingIcaSourceKinetic_SU2015_DCN(Calcium, KineticIon):
             target="Ci",
             flux=lambda self, V, x, total_current=None: (
                 braintools.init.param(0.0 * (u.mM / u.ms), self.varshape)
-                if total_current is None else
-                (
+                if total_current is None
+                else (
                     self.kCa.to_decimal(self.kCa.unit)
                     / self.depth.to_decimal(u.um)
-                    * total_current.to_decimal(u.mA / u.cm ** 2)
+                    * total_current.to_decimal(u.mA / u.cm**2)
                     * 1e4
-                ) * (u.mM / u.ms)
+                )
+                * (u.mM / u.ms)
             ),
         ),
     )
@@ -487,7 +502,7 @@ class ToyCaBindingIcaSourceKinetic_SU2015_DCN(Calcium, KineticIon):
         solver: str = "rk4",
         substeps: int = 5,
         name: Optional[str] = None,
-        **channels
+        **channels,
     ):
         super().__init__(size=size, name=name, **channels)
         self._init_kinetic_ion(
@@ -549,15 +564,17 @@ class ToyCaPumpFactorKinetic_SU2015_DCN(Calcium, KineticIon):
         Source(
             target="Ci",
             flux=lambda self, V, x, total_current=None: (
-                braintools.init.param(0.0 * (u.mM * u.um ** 3 / u.ms), self.varshape)
-                if total_current is None else
-                self.cyt_volume * (
+                braintools.init.param(0.0 * (u.mM * u.um**3 / u.ms), self.varshape)
+                if total_current is None
+                else self.cyt_volume
+                * (
                     (
                         self.kCa.to_decimal(self.kCa.unit)
                         / self.depth.to_decimal(u.um)
-                        * total_current.to_decimal(u.mA / u.cm ** 2)
+                        * total_current.to_decimal(u.mA / u.cm**2)
                         * 1e4
-                    ) * (u.mM / u.ms)
+                    )
+                    * (u.mM / u.ms)
                 )
             ),
         ),
@@ -580,15 +597,15 @@ class ToyCaPumpFactorKinetic_SU2015_DCN(Calcium, KineticIon):
         PumpTot: Union[brainstate.typing.ArrayLike, Callable] = 1.0 * u.mM * u.um,
         kCa: Union[brainstate.typing.ArrayLike, Callable] = 3.45e-7 / u.coulomb,
         depth: Union[brainstate.typing.ArrayLike, Callable] = 0.2 * u.um,
-        cyt_volume: Union[brainstate.typing.ArrayLike, Callable] = 3.0 * u.um ** 3,
-        pump_area: Union[brainstate.typing.ArrayLike, Callable] = 3.0 * u.um ** 2,
+        cyt_volume: Union[brainstate.typing.ArrayLike, Callable] = 3.0 * u.um**3,
+        pump_area: Union[brainstate.typing.ArrayLike, Callable] = 3.0 * u.um**2,
         Co: Union[brainstate.typing.ArrayLike, Callable, None] = None,
         Ci_initializer: Union[brainstate.typing.ArrayLike, Callable] = 0.10 * u.mM,
         PumpBound_initializer: Union[brainstate.typing.ArrayLike, Callable] = 0.00 * u.mM * u.um,
         solver: str = "rk4",
         substeps: int = 5,
         name: Optional[str] = None,
-        **channels
+        **channels,
     ):
         super().__init__(size=size, name=name, **channels)
         self._init_kinetic_ion(
@@ -683,7 +700,7 @@ class ToyDiamFactorKinetic_SU2015_DCN(Calcium, KineticIon):
         solver: str = "backward_euler",
         substeps: int = 1,
         name: Optional[str] = None,
-        **channels
+        **channels,
     ):
         super().__init__(size=size, name=name, **channels)
         self._init_kinetic_ion(
@@ -726,7 +743,7 @@ class CdpStC_CAMOnly_MA2020_GoC(Calcium, KineticIon):
         # whose magnitude is 1 instead of ``dsqvol``.
         Factor(
             "cam_unit",
-            lambda self: u.math.ones_like(self.dsqvol.to_decimal(u.um ** 2)) * (u.um ** 2),
+            lambda self: u.math.ones_like(self.dsqvol.to_decimal(u.um**2)) * (u.um**2),
         ),
     )
     species = (
@@ -852,7 +869,7 @@ class CdpStC_CAMOnly_MA2020_GoC(Calcium, KineticIon):
         solver: str = "backward_euler",
         substeps: int = 1,
         name: Optional[str] = None,
-        **channels
+        **channels,
     ):
         super().__init__(size=size, name=name, **channels)
         self.Nannuli = braintools.init.param(Nannuli, self.varshape, allow_none=False)
@@ -892,9 +909,7 @@ class CdpStC_CAMOnly_MA2020_GoC(Calcium, KineticIon):
         invalid = set(species_initializers).difference(self._diffeq_species)
         if invalid:
             invalid_names = ", ".join(sorted(invalid))
-            raise ValueError(
-                f"{type(self).__name__} only accepts differential-species overrides; got {invalid_names}."
-            )
+            raise ValueError(f"{type(self).__name__} only accepts differential-species overrides; got {invalid_names}.")
 
         defaults = {
             "Ci": self.cainull if Ci_initializer is None else Ci_initializer,
@@ -931,9 +946,7 @@ class CdpStC_CAMOnly_MA2020_GoC(Calcium, KineticIon):
 
     def _require_diam_arc_mean(self):
         if not hasattr(self, "diam_arc_mean"):
-            raise AttributeError(
-                f"{type(self).__name__} requires 'diam_arc_mean' before kinetic state initialization."
-            )
+            raise AttributeError(f"{type(self).__name__} requires 'diam_arc_mean' before kinetic state initialization.")
         return self.diam_arc_mean
 
     @property
@@ -988,8 +1001,8 @@ class CdpStC_NoCAM_MA2020_GoC(Calcium, KineticIon):
         Species("PV", init=0.0 * u.mM, factor="cyto"),
         Species("PV_ca", init=0.0 * u.mM, factor="cyto"),
         Species("PV_mg", init=0.0 * u.mM, factor="cyto"),
-        Species("pump", init=0.0 * (u.mol / u.cm ** 2), factor="pump_area"),
-        Species("pumpca", init=0.0 * (u.mol / u.cm ** 2), factor="pump_area"),
+        Species("pump", init=0.0 * (u.mol / u.cm**2), factor="pump_area"),
+        Species("pumpca", init=0.0 * (u.mol / u.cm**2), factor="pump_area"),
     )
     reactions = (
         Reaction(
@@ -1099,14 +1112,14 @@ class CdpStC_NoCAM_MA2020_GoC(Calcium, KineticIon):
         kpmp1: Union[brainstate.typing.ArrayLike, Callable] = 3e-3 / (u.mM * u.ms),
         kpmp2: Union[brainstate.typing.ArrayLike, Callable] = 1.75e-5 / u.ms,
         kpmp3: Union[brainstate.typing.ArrayLike, Callable] = 7.255e-5 / u.ms,
-        TotalPump: Union[brainstate.typing.ArrayLike, Callable] = 1e-9 * (u.mol / u.cm ** 2),
+        TotalPump: Union[brainstate.typing.ArrayLike, Callable] = 1e-9 * (u.mol / u.cm**2),
         Co: Union[brainstate.typing.ArrayLike, Callable, None] = None,
         Ci_initializer: Union[brainstate.typing.ArrayLike, Callable, None] = None,
         species_initializers: Optional[dict[str, object]] = None,
         solver: str = "backward_euler",
         substeps: int = 1,
         name: Optional[str] = None,
-        **channels
+        **channels,
     ):
         super().__init__(size=size, name=name, **channels)
         self.Nannuli = braintools.init.param(Nannuli, self.varshape, allow_none=False)
@@ -1159,9 +1172,7 @@ class CdpStC_NoCAM_MA2020_GoC(Calcium, KineticIon):
         invalid = set(species_initializers).difference(self._diffeq_species)
         if invalid:
             invalid_names = ", ".join(sorted(invalid))
-            raise ValueError(
-                f"{type(self).__name__} only accepts differential-species overrides; got {invalid_names}."
-            )
+            raise ValueError(f"{type(self).__name__} only accepts differential-species overrides; got {invalid_names}.")
 
         defaults = {
             "Ci": self.cainull if Ci_initializer is None else Ci_initializer,
@@ -1229,9 +1240,7 @@ class CdpStC_NoCAM_MA2020_GoC(Calcium, KineticIon):
 
     def _require_diam_arc_mean(self):
         if not hasattr(self, "diam_arc_mean"):
-            raise AttributeError(
-                f"{type(self).__name__} requires 'diam_arc_mean' before kinetic state initialization."
-            )
+            raise AttributeError(f"{type(self).__name__} requires 'diam_arc_mean' before kinetic state initialization.")
         return self.diam_arc_mean
 
     @property
@@ -1315,7 +1324,7 @@ class CdpStC_MA2020_GoC(Calcium, KineticIon):
         Factor("pump_area", lambda self: self.parea),
         Factor(
             "cam_unit",
-            lambda self: u.math.ones_like(self.dsqvol.to_decimal(u.um ** 2)) * (u.um ** 2),
+            lambda self: u.math.ones_like(self.dsqvol.to_decimal(u.um**2)) * (u.um**2),
         ),
     )
     species = (
@@ -1341,8 +1350,8 @@ class CdpStC_MA2020_GoC(Calcium, KineticIon):
         Species("CAM2N1C", init=0.0 * u.mM, factor="cam_unit"),
         Species("CAM1C1N", init=0.0 * u.mM, factor="cam_unit"),
         Species("CAM4", init=0.0 * u.mM, factor="cam_unit"),
-        Species("pump", init=0.0 * (u.mol / u.cm ** 2), factor="pump_area"),
-        Species("pumpca", init=0.0 * (u.mol / u.cm ** 2), factor="pump_area"),
+        Species("pump", init=0.0 * (u.mol / u.cm**2), factor="pump_area"),
+        Species("pumpca", init=0.0 * (u.mol / u.cm**2), factor="pump_area"),
     )
     reactions = (
         Reaction(
@@ -1542,14 +1551,14 @@ class CdpStC_MA2020_GoC(Calcium, KineticIon):
         kpmp1: Union[brainstate.typing.ArrayLike, Callable] = 3e-3 / (u.mM * u.ms),
         kpmp2: Union[brainstate.typing.ArrayLike, Callable] = 1.75e-5 / u.ms,
         kpmp3: Union[brainstate.typing.ArrayLike, Callable] = 7.255e-5 / u.ms,
-        TotalPump: Union[brainstate.typing.ArrayLike, Callable] = 1e-9 * (u.mol / u.cm ** 2),
+        TotalPump: Union[brainstate.typing.ArrayLike, Callable] = 1e-9 * (u.mol / u.cm**2),
         Co: Union[brainstate.typing.ArrayLike, Callable, None] = None,
         Ci_initializer: Union[brainstate.typing.ArrayLike, Callable, None] = None,
         species_initializers: Optional[dict[str, object]] = None,
         solver: str | None = None,
         substeps: int | None = None,
         name: Optional[str] = None,
-        **channels
+        **channels,
     ):
         super().__init__(size=size, name=name, **channels)
         self.Nannuli = braintools.init.param(Nannuli, self.varshape, allow_none=False)
@@ -1611,9 +1620,7 @@ class CdpStC_MA2020_GoC(Calcium, KineticIon):
         invalid = set(species_initializers).difference(self._diffeq_species)
         if invalid:
             invalid_names = ", ".join(sorted(invalid))
-            raise ValueError(
-                f"{type(self).__name__} only accepts differential-species overrides; got {invalid_names}."
-            )
+            raise ValueError(f"{type(self).__name__} only accepts differential-species overrides; got {invalid_names}.")
 
         defaults = {
             "Ci": self.cainull if Ci_initializer is None else Ci_initializer,
@@ -1690,9 +1697,7 @@ class CdpStC_MA2020_GoC(Calcium, KineticIon):
 
     def _require_diam_arc_mean(self):
         if not hasattr(self, "diam_arc_mean"):
-            raise AttributeError(
-                f"{type(self).__name__} requires 'diam_arc_mean' before kinetic state initialization."
-            )
+            raise AttributeError(f"{type(self).__name__} requires 'diam_arc_mean' before kinetic state initialization.")
         return self.diam_arc_mean
 
     @property
@@ -1773,8 +1778,8 @@ class CdpCAM_MA2024_PC(Calcium, KineticIon):
         Species("CAM2N1C", init=0.0 * u.mM, factor="cyto"),
         Species("CAM1C1N", init=0.0 * u.mM, factor="cyto"),
         Species("CAM4", init=0.0 * u.mM, factor="cyto"),
-        Species("pump", init=0.0 * (u.mol / u.cm ** 2), factor="pump_area"),
-        Species("pumpca", init=0.0 * (u.mol / u.cm ** 2), factor="pump_area"),
+        Species("pump", init=0.0 * (u.mol / u.cm**2), factor="pump_area"),
+        Species("pumpca", init=0.0 * (u.mol / u.cm**2), factor="pump_area"),
     )
     reactions = (
         Reaction(
@@ -1996,14 +2001,14 @@ class CdpCAM_MA2024_PC(Calcium, KineticIon):
         kpmp1: Union[brainstate.typing.ArrayLike, Callable] = 3e-3 / (u.mM * u.ms),
         kpmp2: Union[brainstate.typing.ArrayLike, Callable] = 1.75e-5 / u.ms,
         kpmp3: Union[brainstate.typing.ArrayLike, Callable] = 7.255e-5 / u.ms,
-        TotalPump: Union[brainstate.typing.ArrayLike, Callable] = 1e-9 * (u.mol / u.cm ** 2),
+        TotalPump: Union[brainstate.typing.ArrayLike, Callable] = 1e-9 * (u.mol / u.cm**2),
         Co: Union[brainstate.typing.ArrayLike, Callable, None] = None,
         Ci_initializer: Union[brainstate.typing.ArrayLike, Callable, None] = None,
         species_initializers: Optional[dict[str, object]] = None,
         solver: str | None = None,
         substeps: int | None = None,
         name: Optional[str] = None,
-        **channels
+        **channels,
     ):
         super().__init__(size=size, name=name, **channels)
         self.Nannuli = braintools.init.param(Nannuli, self.varshape, allow_none=False)
@@ -2070,9 +2075,7 @@ class CdpCAM_MA2024_PC(Calcium, KineticIon):
         invalid = set(species_initializers).difference(self._diffeq_species)
         if invalid:
             invalid_names = ", ".join(sorted(invalid))
-            raise ValueError(
-                f"{type(self).__name__} only accepts differential-species overrides; got {invalid_names}."
-            )
+            raise ValueError(f"{type(self).__name__} only accepts differential-species overrides; got {invalid_names}.")
 
         defaults = {
             "Ci": self.cainull if Ci_initializer is None else Ci_initializer,
@@ -2230,8 +2233,8 @@ class CdpCR_MA2020_GrC(Calcium, KineticIon):
         Species("CR_1C_2N", init=0.0 * u.mM, factor="cyto"),
         Species("CR_2C_2N", init=0.0 * u.mM, factor="cyto"),
         Species("CR_1V", init=0.0 * u.mM, factor="cyto"),
-        Species("pump", init=0.0 * (u.mol / u.cm ** 2), factor="pump_area"),
-        Species("pumpca", init=0.0 * (u.mol / u.cm ** 2), factor="pump_area"),
+        Species("pump", init=0.0 * (u.mol / u.cm**2), factor="pump_area"),
+        Species("pumpca", init=0.0 * (u.mol / u.cm**2), factor="pump_area"),
     )
     reactions = (
         Reaction(
@@ -2405,14 +2408,14 @@ class CdpCR_MA2020_GrC(Calcium, KineticIon):
         kpmp1: Union[brainstate.typing.ArrayLike, Callable] = 3e-3 / (u.mM * u.ms),
         kpmp2: Union[brainstate.typing.ArrayLike, Callable] = 1.75e-5 / u.ms,
         kpmp3: Union[brainstate.typing.ArrayLike, Callable] = 7.255e-5 / u.ms,
-        TotalPump: Union[brainstate.typing.ArrayLike, Callable] = 1e-9 * (u.mol / u.cm ** 2),
+        TotalPump: Union[brainstate.typing.ArrayLike, Callable] = 1e-9 * (u.mol / u.cm**2),
         Co: Union[brainstate.typing.ArrayLike, Callable, None] = None,
         Ci_initializer: Union[brainstate.typing.ArrayLike, Callable, None] = None,
         species_initializers: Optional[dict[str, object]] = None,
         solver: str | None = None,
         substeps: int | None = None,
         name: Optional[str] = None,
-        **channels
+        **channels,
     ):
         super().__init__(size=size, name=name, **channels)
         self.Nannuli = braintools.init.param(Nannuli, self.varshape, allow_none=False)
@@ -2467,9 +2470,7 @@ class CdpCR_MA2020_GrC(Calcium, KineticIon):
         invalid = set(species_initializers).difference(self._diffeq_species)
         if invalid:
             invalid_names = ", ".join(sorted(invalid))
-            raise ValueError(
-                f"{type(self).__name__} only accepts differential-species overrides; got {invalid_names}."
-            )
+            raise ValueError(f"{type(self).__name__} only accepts differential-species overrides; got {invalid_names}.")
 
         defaults = {
             "Ci": self.cainull if Ci_initializer is None else Ci_initializer,
@@ -2565,7 +2566,7 @@ class CdpHVA_SU2015_DCN(Calcium, DynamicNernstIon):
         Co: Union[brainstate.typing.ArrayLike, Callable, None] = None,
         Ci_initializer: Union[brainstate.typing.ArrayLike, Callable, None] = None,
         name: Optional[str] = None,
-        **channels
+        **channels,
     ):
         super().__init__(size, name=name, **channels)
         if Ci_initializer is None:
@@ -2585,7 +2586,7 @@ class CdpHVA_SU2015_DCN(Calcium, DynamicNernstIon):
     def derivative(self, Ci, V, total_current=None):
         _ = V
         if total_current is None:
-            total_current = braintools.init.param(0.0 * (u.mA / u.cm ** 2), self.varshape)
+            total_current = braintools.init.param(0.0 * (u.mA / u.cm**2), self.varshape)
         # The imported NMODL uses:
         #   cai' = -(kCa / depth) * ica * 1e4 - (cai - caiBase) / tauCa
         # where NEURON raw ``ica`` is negative for inward current. BrainCell
@@ -2594,7 +2595,7 @@ class CdpHVA_SU2015_DCN(Calcium, DynamicNernstIon):
         drive_value = (
             self.kCa.to_decimal(self.kCa.unit)
             / self.depth.to_decimal(u.um)
-            * total_current.to_decimal(u.mA / u.cm ** 2)
+            * total_current.to_decimal(u.mA / u.cm**2)
             * 1e4
         )
         drive = drive_value * (u.mM / u.ms)
@@ -2629,7 +2630,7 @@ class CdpLVA_SU2015_DCN(Calcium, DynamicNernstIon):
         Co: Union[brainstate.typing.ArrayLike, Callable, None] = None,
         Ci_initializer: Union[brainstate.typing.ArrayLike, Callable, None] = None,
         name: Optional[str] = None,
-        **channels
+        **channels,
     ):
         super().__init__(size, name=name, **channels)
         if Ci_initializer is None:
@@ -2649,7 +2650,7 @@ class CdpLVA_SU2015_DCN(Calcium, DynamicNernstIon):
     def derivative(self, Ci, V, total_current=None):
         _ = V
         if total_current is None:
-            total_current = braintools.init.param(0.0 * (u.mA / u.cm ** 2), self.varshape)
+            total_current = braintools.init.param(0.0 * (u.mA / u.cm**2), self.varshape)
         # The imported NMODL uses:
         #   cali' = -(kCal / depth) * ical * 1e4 - (cali - caliBase) / tauCal
         # where NEURON raw ``ical`` is negative for inward current. BrainCell
@@ -2658,7 +2659,7 @@ class CdpLVA_SU2015_DCN(Calcium, DynamicNernstIon):
         drive_value = (
             self.kCal.to_decimal(self.kCal.unit)
             / self.depth.to_decimal(u.um)
-            * total_current.to_decimal(u.mA / u.cm ** 2)
+            * total_current.to_decimal(u.mA / u.cm**2)
             * 1e4
         )
         drive = drive_value * (u.mM / u.ms)

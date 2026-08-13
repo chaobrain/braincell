@@ -20,8 +20,6 @@ file downloads issue a single request without retries because resuming
 partial downloads is out of scope for this module.
 """
 
-
-
 import random
 import time
 from typing import Any, Callable
@@ -55,7 +53,7 @@ def _classify_exception(exc: BaseException) -> str:
 
 
 def _sleep_for_attempt(attempt: int, backoff_base: float, sleep: Callable[[float], None]) -> None:
-    delay = backoff_base * (2 ** attempt)
+    delay = backoff_base * (2**attempt)
     delay = min(delay, MAX_BACKOFF_SECONDS)
     delay += random.uniform(0.0, backoff_base)
     sleep(delay)

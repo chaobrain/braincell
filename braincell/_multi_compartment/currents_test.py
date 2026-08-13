@@ -38,7 +38,7 @@ class TotalMembraneCurrentClampTest(unittest.TestCase):
             )
 
         np.testing.assert_allclose(
-            np.asarray(current.to_decimal(u.nA / u.cm ** 2)),
+            np.asarray(current.to_decimal(u.nA / u.cm**2)),
             np.zeros(cell.runtime.n_cv),
         )
 
@@ -47,9 +47,7 @@ class TotalMembraneCurrentClampTest(unittest.TestCase):
         from braincell.mech import CurrentClamp
         from braincell._multi_compartment.currents import total_membrane_current
 
-        cell = _soma_cell(
-            clamp=CurrentClamp(delay=0.0 * u.ms, durations=1.0 * u.ms, amplitudes=0.2 * u.nA)
-        )
+        cell = _soma_cell(clamp=CurrentClamp(delay=0.0 * u.ms, durations=1.0 * u.ms, amplitudes=0.2 * u.nA))
 
         with brainstate.environ.context(t=0.0 * u.ms):
             current = total_membrane_current(
@@ -58,9 +56,9 @@ class TotalMembraneCurrentClampTest(unittest.TestCase):
                 t=0.0 * u.ms,
             )
 
-        expected = np.asarray((0.2 * u.nA / cell.runtime.cv_area).to_decimal(u.nA / u.cm ** 2))
+        expected = np.asarray((0.2 * u.nA / cell.runtime.cv_area).to_decimal(u.nA / u.cm**2))
         np.testing.assert_allclose(
-            np.asarray(current.to_decimal(u.nA / u.cm ** 2)),
+            np.asarray(current.to_decimal(u.nA / u.cm**2)),
             expected,
         )
 
@@ -86,11 +84,7 @@ class TotalMembraneCurrentClampTest(unittest.TestCase):
             )
 
         np.testing.assert_allclose(
-            np.asarray(
-                bridge.point_to_cv(point_current, cell.runtime).to_decimal(
-                    u.nA / u.cm**2
-                )
-            ),
+            np.asarray(bridge.point_to_cv(point_current, cell.runtime).to_decimal(u.nA / u.cm**2)),
             np.asarray(cv_current.to_decimal(u.nA / u.cm**2)),
         )
         self.assertEqual(int(cell.runtime.midpoint_mask_np.sum()), cell.n_cv)

@@ -96,10 +96,7 @@ class AtLocation(LocsetExpr):
         elif isinstance(self.branch, str):
             branch_view = morpho.branch(name=self.branch)
         else:
-            raise TypeError(
-                "AtLocation.branch expects int or str, "
-                f"got {type(self.branch).__name__!s}."
-            )
+            raise TypeError(f"AtLocation.branch expects int or str, got {type(self.branch).__name__!s}.")
         branch_id = branch_view.index
         points = helper.normalize_locset_points(((branch_id, self.x),))
         return LocsetMask(points=points, display_names=_display_names_for_points(morpho, points))
@@ -156,10 +153,7 @@ class UniformSamples(LocsetExpr):
         if not isinstance(morpho, Morphology):
             raise TypeError(f"UniformSamples expects Morpho, got {type(morpho).__name__!s}.")
         if not isinstance(self.region, RegionExpr):
-            raise TypeError(
-                "UniformSamples.region expects RegionExpr, "
-                f"got {type(self.region).__name__!s}."
-            )
+            raise TypeError(f"UniformSamples.region expects RegionExpr, got {type(self.region).__name__!s}.")
         mask = self.region.evaluate(morpho, cache=cache)
         points = helper.uniform_samples_from_region(
             morpho,
@@ -179,10 +173,7 @@ class RandomSamples(LocsetExpr):
         if not isinstance(morpho, Morphology):
             raise TypeError(f"RandomSamples expects Morpho, got {type(morpho).__name__!s}.")
         if not isinstance(self.region, RegionExpr):
-            raise TypeError(
-                "RandomSamples.region expects RegionExpr, "
-                f"got {type(self.region).__name__!s}."
-            )
+            raise TypeError(f"RandomSamples.region expects RegionExpr, got {type(self.region).__name__!s}.")
         mask = self.region.evaluate(morpho, cache=cache)
         points = helper.random_samples_from_region(
             morpho,

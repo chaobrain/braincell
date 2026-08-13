@@ -39,7 +39,7 @@ from braincell import (
     Morphology,
 )
 from braincell.filter import RootLocation
-from braincell.quad import  get_registry, staggered_step
+from braincell.quad import get_registry, staggered_step
 from braincell.quad._staggered import (
     _build_backsub_indices,
     _linear_and_const_term,
@@ -61,9 +61,7 @@ class StaggeredReadsRuntimeAttrDirectlyTest(unittest.TestCase):
             dhs_static_source_np = None
 
             def __getattribute__(self, name):
-                raise AssertionError(
-                    f"_compiled_runtime must not be read (got getattr {name!r})"
-                )
+                raise AssertionError(f"_compiled_runtime must not be read (got getattr {name!r})")
 
         class _Target:
             _compiled_runtime = _TrapRuntime()
@@ -75,13 +73,12 @@ class StaggeredReadsRuntimeAttrDirectlyTest(unittest.TestCase):
 
 
 class DhsVoltageGuardTest(unittest.TestCase):
-
     def test_requires_node_tree_attribute(self):
         class Plain(brainstate.nn.Module):
             pass
 
         with self.assertRaisesRegex(TypeError, "node-tree aware"):
-            dhs_voltage_step(Plain(), 0. * u.ms, 0.1 * u.ms)
+            dhs_voltage_step(Plain(), 0.0 * u.ms, 0.1 * u.ms)
 
     def test_requires_both_node_tree_and_scheduling(self):
         # An object with only ``node_tree`` is still rejected because the
@@ -91,11 +88,10 @@ class DhsVoltageGuardTest(unittest.TestCase):
                 return None
 
         with self.assertRaisesRegex(TypeError, "node-tree aware"):
-            dhs_voltage_step(HalfTarget(), 0. * u.ms, 0.1 * u.ms)
+            dhs_voltage_step(HalfTarget(), 0.0 * u.ms, 0.1 * u.ms)
 
 
 class DhsLinearizationUnitTest(unittest.TestCase):
-
     def test_linear_unit_uses_derivative_over_voltage_when_grad_is_unitless(self):
         class Target:
             def _voltage_linearizer(self):
@@ -116,7 +112,6 @@ class DhsLinearizationUnitTest(unittest.TestCase):
 
 
 class CompTriangRawTest(unittest.TestCase):
-
     def test_no_levels_is_identity(self):
         diags = jnp.array([[2.0, 3.0]])
         solves = jnp.array([[5.0, 7.0]])
@@ -124,9 +119,7 @@ class CompTriangRawTest(unittest.TestCase):
         uppers = jnp.array([0.0, 0.0])
         edges = jnp.empty((0, 2), dtype=jnp.int32)
         level_offsets = np.array([0], dtype=np.int32)
-        new_diags, new_solves = comp_triang_raw(
-            diags, solves, lowers, uppers, edges, level_offsets
-        )
+        new_diags, new_solves = comp_triang_raw(diags, solves, lowers, uppers, edges, level_offsets)
         np.testing.assert_array_equal(new_diags, diags)
         np.testing.assert_array_equal(new_solves, solves)
 
@@ -168,7 +161,6 @@ class CompTriangRawTest(unittest.TestCase):
 
 
 class CompBacksubRawTest(unittest.TestCase):
-
     def test_kernel_contract_violation_on_shape_mismatch(self):
         diags = jnp.array([[2.0, 3.0]])
         solves = jnp.array([[1.0, 1.0, 1.0]])  # mismatched second dim
@@ -188,7 +180,6 @@ class CompBacksubRawTest(unittest.TestCase):
 
 
 class BuildBacksubIndicesTest(unittest.TestCase):
-
     def test_root_only_tree(self):
         # A single node with sentinel parent: ancestor at any step is
         # the sentinel itself (index 1).
@@ -209,7 +200,6 @@ class BuildBacksubIndicesTest(unittest.TestCase):
 
 
 class StaggeredStepGuardTest(unittest.TestCase):
-
     def test_rejects_plain_module(self):
         class Plain(brainstate.nn.Module):
             pass
@@ -273,7 +263,6 @@ class StaggeredStepGuardTest(unittest.TestCase):
 
 
 class StaggeredRegistryMetadataTest(unittest.TestCase):
-
     def test_canonical_name_and_alias(self):
         registry = get_registry()
         self.assertIn("staggered", registry)
@@ -290,7 +279,6 @@ class StaggeredRegistryMetadataTest(unittest.TestCase):
 
 
 class DhsRuntimeCacheTest(unittest.TestCase):
-
     def _simple_cell(self):
         soma = Branch.from_lengths(
             lengths=[20.0] * u.um,
@@ -334,7 +322,6 @@ class DhsRuntimeCacheTest(unittest.TestCase):
 
 
 class DhsEndpointClampTest(unittest.TestCase):
-
     def test_root_endpoint_current_changes_midpoint_voltage(self):
         soma = Branch.from_lengths(
             lengths=[20.0] * u.um,
@@ -354,7 +341,6 @@ class DhsEndpointClampTest(unittest.TestCase):
 
 
 class DhsMidpointClampPopulationTest(unittest.TestCase):
-
     def _build_clamped_cell(self, *, pop_size=None):
         soma = Branch.from_lengths(
             lengths=[20.0] * u.um,
@@ -394,7 +380,6 @@ class DhsMidpointClampPopulationTest(unittest.TestCase):
 
 
 class DhsMultistepClampTest(unittest.TestCase):
-
     def test_multistep_current_clamp_voltage_step_handles_zero_linearization(self):
         soma = Branch.from_lengths(
             lengths=[20.0] * u.um,

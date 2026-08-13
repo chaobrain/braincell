@@ -182,8 +182,12 @@ class MorphoTest(unittest.TestCase):
         tree.soma.c = custom
 
         self.assertEqual(tuple(branch.name for branch in tree.branches), ("soma", "d", "a", "t", "c"))
-        self.assertEqual(tuple(branch.name for branch in tree.branch_by_order(order="default")), ("soma", "d", "a", "t", "c"))
-        self.assertEqual(tuple(branch.name for branch in tree.branch_by_order(order="type")), ("soma", "a", "d", "t", "c"))
+        self.assertEqual(
+            tuple(branch.name for branch in tree.branch_by_order(order="default")), ("soma", "d", "a", "t", "c")
+        )
+        self.assertEqual(
+            tuple(branch.name for branch in tree.branch_by_order(order="type")), ("soma", "a", "d", "t", "c")
+        )
         self.assertEqual(tree.branch(index=1).name, "d")
         self.assertEqual(tree.branch(index=1, order="type").name, "a")
         self.assertEqual(tree.branch(name="a").name, "a")
@@ -276,12 +280,12 @@ class MorphoTest(unittest.TestCase):
         self.assertAlmostEqual(tree.mean_radius.to_decimal(u.um), 314.0 / 110.0)
         self.assertEqual(tree.total_length.to_decimal(u.um), 110.0)
         self.assertAlmostEqual(
-            tree.total_area.to_decimal(u.um ** 2),
-            (soma.area + dend.area + tuft.area).to_decimal(u.um ** 2),
+            tree.total_area.to_decimal(u.um**2),
+            (soma.area + dend.area + tuft.area).to_decimal(u.um**2),
         )
         self.assertAlmostEqual(
-            tree.total_volume.to_decimal(u.um ** 3),
-            (soma.volume + dend.volume + tuft.volume).to_decimal(u.um ** 3),
+            tree.total_volume.to_decimal(u.um**3),
+            (soma.volume + dend.volume + tuft.volume).to_decimal(u.um**3),
         )
 
     def test_metric_returns_dataclass_snapshot_with_compact_str(self) -> None:
@@ -335,12 +339,15 @@ class MorphoTest(unittest.TestCase):
         self.assertIsNone(metric.z_range)
 
     def test_metric_exposes_coordinate_ranges_for_point_geometries(self) -> None:
-        soma = Branch.from_points(points=[(0.0, 0.0, 0.0), (0.0, 10.0, 0.0)] * u.um, radii=[10.0, 10.0] * u.um,
-                                  type="soma")
-        dend = Branch.from_points(points=[(0.0, 10.0, 0.0), (30.0, 5.0, -2.0)] * u.um, radii=[2.0, 1.0] * u.um,
-                                  type="basal_dendrite")
-        tuft = Branch.from_points(points=[(0.0, 10.0, 0.0), (-7.0, 4.0, 9.0)] * u.um, radii=[2.0, 1.0] * u.um,
-                                  type="apical_dendrite")
+        soma = Branch.from_points(
+            points=[(0.0, 0.0, 0.0), (0.0, 10.0, 0.0)] * u.um, radii=[10.0, 10.0] * u.um, type="soma"
+        )
+        dend = Branch.from_points(
+            points=[(0.0, 10.0, 0.0), (30.0, 5.0, -2.0)] * u.um, radii=[2.0, 1.0] * u.um, type="basal_dendrite"
+        )
+        tuft = Branch.from_points(
+            points=[(0.0, 10.0, 0.0), (-7.0, 4.0, 9.0)] * u.um, radii=[2.0, 1.0] * u.um, type="apical_dendrite"
+        )
 
         tree = Morphology.from_root(soma, name="soma")
         tree.soma.dend = dend
@@ -360,14 +367,18 @@ class MorphoTest(unittest.TestCase):
         self.assertEqual(metric.z_range, tree.z_range)
 
     def test_metric_exposes_neuromorpho_distance_metrics(self) -> None:
-        soma = Branch.from_points(points=[(0.0, 0.0, 0.0), (10.0, 0.0, 0.0)] * u.um, radii=[5.0, 5.0] * u.um,
-                                  type="soma")
-        main = Branch.from_points(points=[(5.0, 0.0, 0.0), (5.0, 10.0, 0.0)] * u.um, radii=[2.0, 1.5] * u.um,
-                                  type="basal_dendrite")
-        tuft = Branch.from_points(points=[(5.0, 10.0, 0.0), (5.0, 20.0, 0.0)] * u.um, radii=[1.5, 1.0] * u.um,
-                                  type="apical_dendrite")
-        side = Branch.from_points(points=[(10.0, 0.0, 0.0), (12.0, 0.0, 0.0)] * u.um, radii=[1.0, 0.8] * u.um,
-                                  type="axon")
+        soma = Branch.from_points(
+            points=[(0.0, 0.0, 0.0), (10.0, 0.0, 0.0)] * u.um, radii=[5.0, 5.0] * u.um, type="soma"
+        )
+        main = Branch.from_points(
+            points=[(5.0, 0.0, 0.0), (5.0, 10.0, 0.0)] * u.um, radii=[2.0, 1.5] * u.um, type="basal_dendrite"
+        )
+        tuft = Branch.from_points(
+            points=[(5.0, 10.0, 0.0), (5.0, 20.0, 0.0)] * u.um, radii=[1.5, 1.0] * u.um, type="apical_dendrite"
+        )
+        side = Branch.from_points(
+            points=[(10.0, 0.0, 0.0), (12.0, 0.0, 0.0)] * u.um, radii=[1.0, 0.8] * u.um, type="axon"
+        )
 
         tree = Morphology.from_root(soma, name="soma")
         tree.soma.attach(main, name="main", parent_x=0.5)
@@ -380,10 +391,12 @@ class MorphoTest(unittest.TestCase):
         self.assertAlmostEqual(tree.max_euclidean_distance_excluding_soma.to_decimal(u.um), 20.0)
 
     def test_excluding_soma_distances_remove_full_root_contribution_at_distal_attach(self) -> None:
-        soma = Branch.from_points(points=[(0.0, 0.0, 0.0), (10.0, 0.0, 0.0)] * u.um, radii=[5.0, 5.0] * u.um,
-                                  type="soma")
-        distal = Branch.from_points(points=[(10.0, 0.0, 0.0), (10.0, 16.0, 0.0)] * u.um, radii=[2.0, 1.0] * u.um,
-                                    type="basal_dendrite")
+        soma = Branch.from_points(
+            points=[(0.0, 0.0, 0.0), (10.0, 0.0, 0.0)] * u.um, radii=[5.0, 5.0] * u.um, type="soma"
+        )
+        distal = Branch.from_points(
+            points=[(10.0, 0.0, 0.0), (10.0, 16.0, 0.0)] * u.um, radii=[2.0, 1.0] * u.um, type="basal_dendrite"
+        )
 
         tree = Morphology.from_root(soma, name="soma")
         tree.soma.attach(distal, name="distal", parent_x=1.0)
@@ -394,12 +407,15 @@ class MorphoTest(unittest.TestCase):
         self.assertAlmostEqual(tree.max_euclidean_distance_excluding_soma.to_decimal(u.um), 16.0)
 
     def test_excluding_soma_distances_do_not_apply_global_half_soma_subtraction(self) -> None:
-        soma = Branch.from_points(points=[(0.0, 0.0, 0.0), (10.0, 0.0, 0.0)] * u.um, radii=[5.0, 5.0] * u.um,
-                                  type="soma")
-        midpoint = Branch.from_points(points=[(5.0, 0.0, 0.0), (5.0, 15.0, 0.0)] * u.um, radii=[2.0, 1.0] * u.um,
-                                      type="basal_dendrite")
-        distal = Branch.from_points(points=[(10.0, 0.0, 0.0), (10.0, 16.0, 0.0)] * u.um, radii=[2.0, 1.0] * u.um,
-                                    type="axon")
+        soma = Branch.from_points(
+            points=[(0.0, 0.0, 0.0), (10.0, 0.0, 0.0)] * u.um, radii=[5.0, 5.0] * u.um, type="soma"
+        )
+        midpoint = Branch.from_points(
+            points=[(5.0, 0.0, 0.0), (5.0, 15.0, 0.0)] * u.um, radii=[2.0, 1.0] * u.um, type="basal_dendrite"
+        )
+        distal = Branch.from_points(
+            points=[(10.0, 0.0, 0.0), (10.0, 16.0, 0.0)] * u.um, radii=[2.0, 1.0] * u.um, type="axon"
+        )
 
         tree = Morphology.from_root(soma, name="soma")
         tree.soma.attach(midpoint, name="midpoint", parent_x=0.5)
@@ -412,10 +428,12 @@ class MorphoTest(unittest.TestCase):
         self.assertAlmostEqual(tree.max_euclidean_distance_excluding_soma.to_decimal(u.um), 16.0)
 
     def test_excluding_soma_distances_match_existing_metrics_for_non_soma_root(self) -> None:
-        root = Branch.from_points(points=[(0.0, 0.0, 0.0), (12.0, 0.0, 0.0)] * u.um, radii=[2.0, 1.0] * u.um,
-                                  type="axon")
-        child = Branch.from_points(points=[(12.0, 0.0, 0.0), (12.0, 8.0, 0.0)] * u.um, radii=[1.0, 0.8] * u.um,
-                                   type="basal_dendrite")
+        root = Branch.from_points(
+            points=[(0.0, 0.0, 0.0), (12.0, 0.0, 0.0)] * u.um, radii=[2.0, 1.0] * u.um, type="axon"
+        )
+        child = Branch.from_points(
+            points=[(12.0, 0.0, 0.0), (12.0, 8.0, 0.0)] * u.um, radii=[1.0, 0.8] * u.um, type="basal_dendrite"
+        )
 
         tree = Morphology.from_root(root, name="axon")
         tree.axon.attach(child, name="child")
@@ -424,8 +442,9 @@ class MorphoTest(unittest.TestCase):
         self.assertEqual(tree.max_euclidean_distance_excluding_soma, tree.max_euclidean_distance)
 
     def test_excluding_soma_distances_return_zero_for_soma_only_tree(self) -> None:
-        soma = Branch.from_points(points=[(0.0, 0.0, 0.0), (10.0, 0.0, 0.0)] * u.um, radii=[5.0, 5.0] * u.um,
-                                  type="soma")
+        soma = Branch.from_points(
+            points=[(0.0, 0.0, 0.0), (10.0, 0.0, 0.0)] * u.um, radii=[5.0, 5.0] * u.um, type="soma"
+        )
 
         tree = Morphology.from_root(soma, name="soma")
 
@@ -433,7 +452,9 @@ class MorphoTest(unittest.TestCase):
         self.assertEqual(tree.max_euclidean_distance_excluding_soma.to_decimal(u.um), 0.0)
 
     def test_coordinate_range_metrics_require_full_point_geometry(self) -> None:
-        soma = Branch.from_points(points=[(0.0, 0.0, 0.0), (10.0, 0.0, 0.0)] * u.um, radii=[5.0, 5.0] * u.um, type="soma")
+        soma = Branch.from_points(
+            points=[(0.0, 0.0, 0.0), (10.0, 0.0, 0.0)] * u.um, radii=[5.0, 5.0] * u.um, type="soma"
+        )
         dend = Branch.from_lengths(lengths=[20.0] * u.um, radii=[1.0, 0.8] * u.um, type="basal_dendrite")
 
         tree = Morphology.from_root(soma, name="soma")
@@ -445,15 +466,21 @@ class MorphoTest(unittest.TestCase):
             _ = tree.x_range
 
     def test_max_euclidean_distance_requires_full_point_geometry(self) -> None:
-        soma = Branch.from_points(points=[(0.0, 0.0, 0.0), (10.0, 0.0, 0.0)] * u.um, radii=[5.0, 5.0] * u.um, type="soma")
+        soma = Branch.from_points(
+            points=[(0.0, 0.0, 0.0), (10.0, 0.0, 0.0)] * u.um, radii=[5.0, 5.0] * u.um, type="soma"
+        )
         dend = Branch.from_lengths(lengths=[20.0] * u.um, radii=[1.0, 0.8] * u.um, type="basal_dendrite")
 
         tree = Morphology.from_root(soma, name="soma")
         tree.soma.dend = dend
 
-        with self.assertRaisesRegex(ValueError, "Euclidean distance metrics require full point geometry on every branch"):
+        with self.assertRaisesRegex(
+            ValueError, "Euclidean distance metrics require full point geometry on every branch"
+        ):
             _ = tree.max_euclidean_distance
-        with self.assertRaisesRegex(ValueError, "Euclidean distance metrics require full point geometry on every branch"):
+        with self.assertRaisesRegex(
+            ValueError, "Euclidean distance metrics require full point geometry on every branch"
+        ):
             _ = tree.max_euclidean_distance_excluding_soma
 
     def test_foreign_missing_and_reserved_children_are_rejected(self) -> None:

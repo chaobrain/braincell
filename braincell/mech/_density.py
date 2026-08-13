@@ -136,22 +136,13 @@ class Density(Mechanism):
     ) -> None:
         cls = type(self)
         if cls is Density or not cls.category:
-            raise TypeError(
-                f"{cls.__name__} is an abstract base; instantiate "
-                f"Channel or Ion instead."
-            )
+            raise TypeError(f"{cls.__name__} is an abstract base; instantiate Channel or Ion instead.")
         resolved = _resolve_class_name(cls.category, class_name)
         if name is not None and not isinstance(name, str):
-            raise TypeError(
-                f"{cls.__name__}.name must be a string or None, "
-                f"got {type(name).__name__!r}."
-            )
+            raise TypeError(f"{cls.__name__}.name must be a string or None, got {type(name).__name__!r}.")
         coverage = float(coverage_area_fraction)
         if not (0.0 <= coverage <= 1.0):
-            raise ValueError(
-                f"{cls.__name__}.coverage_area_fraction must lie in "
-                f"[0, 1], got {coverage!r}."
-            )
+            raise ValueError(f"{cls.__name__}.coverage_area_fraction must lie in [0, 1], got {coverage!r}.")
         solver, substeps = _normalize_integration_override(
             solver,
             substeps,
@@ -169,16 +160,10 @@ class Density(Mechanism):
     # ------------------------------------------------------------------
 
     def __setattr__(self, name: str, value: Any) -> None:
-        raise AttributeError(
-            f"{type(self).__name__} is immutable; cannot set "
-            f"attribute {name!r}."
-        )
+        raise AttributeError(f"{type(self).__name__} is immutable; cannot set attribute {name!r}.")
 
     def __delattr__(self, name: str) -> None:
-        raise AttributeError(
-            f"{type(self).__name__} is immutable; cannot delete "
-            f"attribute {name!r}."
-        )
+        raise AttributeError(f"{type(self).__name__} is immutable; cannot delete attribute {name!r}.")
 
     # ------------------------------------------------------------------
     # accessors
@@ -315,16 +300,12 @@ class Density(Mechanism):
         """
         new = object.__new__(type(self))
         object.__setattr__(new, "class_name", updates.get("class_name", self.class_name))
-        object.__setattr__(
-            new, "params", Params.coerce(updates.get("params", self.params))
-        )
+        object.__setattr__(new, "params", Params.coerce(updates.get("params", self.params)))
         object.__setattr__(new, "name", updates.get("name", self.name))
         object.__setattr__(
             new,
             "coverage_area_fraction",
-            float(
-                updates.get("coverage_area_fraction", self.coverage_area_fraction)
-            ),
+            float(updates.get("coverage_area_fraction", self.coverage_area_fraction)),
         )
         object.__setattr__(new, "solver", updates.get("solver", self.solver))
         object.__setattr__(new, "substeps", updates.get("substeps", self.substeps))
@@ -408,9 +389,7 @@ class Channel(Density):
             substeps=substeps,
         )
         if ion_name is not None and (not isinstance(ion_name, str) or not ion_name):
-            raise TypeError(
-                f"Channel.ion_name must be a non-empty string or None, got {ion_name!r}."
-            )
+            raise TypeError(f"Channel.ion_name must be a non-empty string or None, got {ion_name!r}.")
         normalized_ion_names = _normalize_ion_names(ion_names)
         if ion_name is not None and normalized_ion_names is not None:
             raise ValueError("Channel cannot define both ion_name and ion_names.")
@@ -529,17 +508,11 @@ def _normalize_integration_override(
     owner: str,
 ) -> tuple[str | Callable | None, int | None]:
     if (solver is None) != (substeps is None):
-        raise ValueError(
-            f"{owner}.solver and {owner}.substeps must be provided together "
-            "or both be None."
-        )
+        raise ValueError(f"{owner}.solver and {owner}.substeps must be provided together or both be None.")
     if solver is None:
         return None, None
     if not isinstance(solver, str) and not callable(solver):
-        raise TypeError(
-            f"{owner}.solver must be a non-empty string, callable, or None, "
-            f"got {type(solver).__name__!r}."
-        )
+        raise TypeError(f"{owner}.solver must be a non-empty string, callable, or None, got {type(solver).__name__!r}.")
     if isinstance(solver, str) and not solver:
         raise ValueError(f"{owner}.solver must be a non-empty string.")
     try:
@@ -551,14 +524,9 @@ def _normalize_integration_override(
     try:
         normalized_substeps = operator.index(substeps)
     except TypeError as exc:
-        raise TypeError(
-            f"{owner}.substeps must be an integer, got "
-            f"{type(substeps).__name__!r}."
-        ) from exc
+        raise TypeError(f"{owner}.substeps must be an integer, got {type(substeps).__name__!r}.") from exc
     if normalized_substeps < 1:
-        raise ValueError(
-            f"{owner}.substeps must be at least 1, got {normalized_substeps!r}."
-        )
+        raise ValueError(f"{owner}.substeps must be at least 1, got {normalized_substeps!r}.")
     return solver, normalized_substeps
 
 
@@ -574,9 +542,7 @@ def _resolve_class_name(category: str, value: Any) -> str:
     """
     if isinstance(value, str):
         if not value:
-            raise ValueError(
-                "class_name must be a non-empty string."
-            )
+            raise ValueError("class_name must be a non-empty string.")
         return value
     if isinstance(value, type):
         # Local import to avoid a hard import cycle between _density
@@ -588,10 +554,7 @@ def _resolve_class_name(category: str, value: Any) -> str:
             if entry_cls is value:
                 return entry_name
         return value.__name__
-    raise TypeError(
-        f"class_name must be a string or class, got "
-        f"{type(value).__name__!r}."
-    )
+    raise TypeError(f"class_name must be a string or class, got {type(value).__name__!r}.")
 
 
 def _normalize_ion_names(value: Mapping[str, str] | None) -> tuple[tuple[str, str], ...] | None:

@@ -45,7 +45,7 @@ class _RecordingKCaChannel(Channel):
         pass
 
     def current(self, V, K, Ca):  # pragma: no cover
-        return 0.0 * u.nA / u.cm ** 2
+        return 0.0 * u.nA / u.cm**2
 
 
 class MixIonsIndependentUpdateReceiverTest(unittest.TestCase):
@@ -73,7 +73,7 @@ class IonCurrentExternalOnlyTest(unittest.TestCase):
     def test_external_only_returns_sum_without_crashing(self) -> None:
         na = SodiumFixed(size=1)
 
-        expected = 1.5 * u.nA / u.cm ** 2
+        expected = 1.5 * u.nA / u.cm**2
         na.register_external_current(
             "probe",
             lambda V, ion_info: u.math.broadcast_to(expected, V.shape),
@@ -84,8 +84,8 @@ class IonCurrentExternalOnlyTest(unittest.TestCase):
 
         self.assertTrue(
             u.math.allclose(
-                out.to_decimal(u.nA / u.cm ** 2),
-                expected.to_decimal(u.nA / u.cm ** 2),
+                out.to_decimal(u.nA / u.cm**2),
+                expected.to_decimal(u.nA / u.cm**2),
                 atol=1e-9,
             )
         )
@@ -94,7 +94,7 @@ class IonCurrentExternalOnlyTest(unittest.TestCase):
         na = SodiumFixed(size=1)
         na.register_external_current(
             "probe",
-            lambda V, ion_info: 1.0 * u.nA / u.cm ** 2,
+            lambda V, ion_info: 1.0 * u.nA / u.cm**2,
         )
         V = jnp.zeros((1,)) * u.mV
         self.assertIsNone(na.current(V, include_external=False))
@@ -129,6 +129,7 @@ class MixIonsFactoryArityTest(unittest.TestCase):
 
     def test_single_ion_raises_with_mix_ions_message(self) -> None:
         from braincell import mix_ions
+
         with self.assertRaises(AssertionError) as ctx:
             mix_ions(SodiumFixed(size=1))
         self.assertIn("mix_ions", str(ctx.exception))
@@ -139,11 +140,13 @@ class HHTypedNeuronGetSpikeTest(unittest.TestCase):
 
     def test_get_spike_is_method_on_base(self) -> None:
         from braincell._base import HHTypedNeuron
+
         self.assertTrue(hasattr(HHTypedNeuron, "get_spike"))
         self.assertTrue(callable(HHTypedNeuron.get_spike))
 
     def test_cast_like_is_importable_from_base(self) -> None:
         from braincell._base import _cast_like
+
         self.assertTrue(callable(_cast_like))
 
     def test_single_compartment_inherits_get_spike(self) -> None:

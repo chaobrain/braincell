@@ -103,7 +103,7 @@ class CellVisDiscreteTest(unittest.TestCase):
     def test_vis_cv_layout_id_lookup_works(self) -> None:
         cell = Cell(_build_tree(), cv_policy=CVPerBranch())
         full = BranchSlice(branch_index=[0, 1], prox=0.0, dist=1.0)
-        cell.paint(full, mech.Channel("IL", g_max=4.0 * (u.mS / u.cm ** 2), E=-68.0 * u.mV))
+        cell.paint(full, mech.Channel("IL", g_max=4.0 * (u.mS / u.cm**2), E=-68.0 * u.mV))
         cell.init_state()
         layout = cell.layouts[0]
 

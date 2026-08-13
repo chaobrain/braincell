@@ -164,10 +164,7 @@ def _layout_config_key(layout_config: LayoutConfig) -> Hashable:
     """
     import dataclasses
 
-    return tuple(
-        (field.name, getattr(layout_config, field.name))
-        for field in dataclasses.fields(layout_config)
-    )
+    return tuple((field.name, getattr(layout_config, field.name)) for field in dataclasses.fields(layout_config))
 
 
 # Module-level default cache used by the dispatcher. Tests can call

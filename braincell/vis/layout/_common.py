@@ -58,6 +58,7 @@ _DEFAULT_BEND_FRACTION = 0.4
 # Dataclasses shared across layout families
 # ---------------------------------------------------------------------------
 
+
 @dataclass(frozen=True)
 class _LayoutSpec2D:
     segment_lengths_um: np.ndarray
@@ -102,6 +103,7 @@ class LayoutBranch2D:
 # ---------------------------------------------------------------------------
 # Morphology → layout spec helpers
 # ---------------------------------------------------------------------------
+
 
 def _build_layout_specs(morpho: Morphology) -> dict[int, _LayoutSpec2D]:
     return {
@@ -160,6 +162,7 @@ def _path_lengths_um_by_branch(root: MorphoBranch) -> dict[int, float]:
 # Trunk / side child selection
 # ---------------------------------------------------------------------------
 
+
 def _pick_trunk_child(
     children: tuple[MorphoBranch, ...],
     *,
@@ -209,6 +212,7 @@ def _clamp_angle_to_root_group(angle_rad: float, *, group_name: str) -> float:
 # Weighted angular allocation
 # ---------------------------------------------------------------------------
 
+
 def _allocate_weighted_angles(
     children: tuple[MorphoBranch, ...],
     *,
@@ -240,8 +244,9 @@ def _weighted_child_intervals(
     child_intervals: list[tuple[MorphoBranch, tuple[float, float]]] = []
     for child_index, child in enumerate(children):
         weight = max(float(weights.get(child.index, 1.0)), 1e-6)
-        width_rad = available_span_rad * weight / total_weight if total_weight > 0.0 else available_span_rad / len(
-            children)
+        width_rad = (
+            available_span_rad * weight / total_weight if total_weight > 0.0 else available_span_rad / len(children)
+        )
         child_interval = (cursor_rad, cursor_rad + width_rad)
         child_intervals.append((child, child_interval))
         cursor_rad = child_interval[1]
@@ -259,6 +264,7 @@ def _weighted_child_intervals(
 # legacy layout, but the balloon family also relies on it. The helper
 # therefore lives in the shared module under its original name; the
 # behaviour is unchanged.
+
 
 def _allocate_child_regions_legacy(
     *,

@@ -23,8 +23,6 @@ loads cached neurons; :class:`NeuroMorphoCacheLayout` is the
 side-effect-free path builder used internally.
 """
 
-
-
 import json
 import shutil
 from dataclasses import dataclass
@@ -223,9 +221,7 @@ class NeuroMorphoCache:
                 if isinstance(fmt, str):
                     suffix = Path(fmt).suffix
                     if suffix:
-                        original_exists = self.layout.original_file_path(
-                            neuron_id, neuron_name, suffix
-                        ).exists()
+                        original_exists = self.layout.original_file_path(neuron_id, neuron_name, suffix).exists()
 
         if not standard_exists:
             standard_exists = any(folder.glob("*.CNG.swc"))
@@ -429,10 +425,7 @@ class NeuroMorphoCache:
 
         path = self.standard_swc_path(neuron_id)
         if path is None:
-            raise FileNotFoundError(
-                f"No cached standardized SWC found for neuron_id={neuron_id} "
-                f"under {self.root}"
-            )
+            raise FileNotFoundError(f"No cached standardized SWC found for neuron_id={neuron_id} under {self.root}")
         return Morphology.from_swc(path, mode=mode, return_report=return_report)
 
     # ------------------------------------------------------------------

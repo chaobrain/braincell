@@ -45,8 +45,6 @@ Typical usage::
         ...
 """
 
-
-
 import difflib
 import warnings
 from dataclasses import dataclass, field
@@ -177,23 +175,17 @@ class IntegratorRegistry:
         alias_tuple = tuple(aliases)
         for alias in alias_tuple:
             if not isinstance(alias, str) or not alias:
-                raise TypeError(
-                    f"Aliases for integrator {name!r} must be non-empty strings, got {alias!r}."
-                )
+                raise TypeError(f"Aliases for integrator {name!r} must be non-empty strings, got {alias!r}.")
 
         # Canonical-name collision check.
         if name in self._entries and not override:
             existing = self._entries[name]
             raise ValueError(
-                f"Integrator {name!r} is already registered by {existing.module!r}. "
-                f"Pass override=True to replace it."
+                f"Integrator {name!r} is already registered by {existing.module!r}. Pass override=True to replace it."
             )
         if name in self._aliases and self._aliases[name] != name:
             owner = self._aliases[name]
-            raise ValueError(
-                f"Cannot register integrator {name!r}: the name is already an alias "
-                f"for {owner!r}."
-            )
+            raise ValueError(f"Cannot register integrator {name!r}: the name is already an alias for {owner!r}.")
 
         # Alias collision check.
         for alias in alias_tuple:
@@ -205,15 +197,13 @@ class IntegratorRegistry:
             existing_owner = self._aliases.get(alias)
             if existing_owner is not None and existing_owner != name:
                 raise ValueError(
-                    f"Cannot register alias {alias!r} for {name!r}: it is already "
-                    f"an alias for {existing_owner!r}."
+                    f"Cannot register alias {alias!r} for {name!r}: it is already an alias for {existing_owner!r}."
                 )
 
         if override and name in self._entries:
             previous = self._entries[name]
             warnings.warn(
-                f"Overriding integrator {name!r} previously registered by "
-                f"{previous.module!r}.",
+                f"Overriding integrator {name!r} previously registered by {previous.module!r}.",
                 RuntimeWarning,
                 stacklevel=2,
             )

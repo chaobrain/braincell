@@ -181,7 +181,7 @@ def build_clamp_routing_table(
     for cv in cvs:
         pid = int(node_tree.cv_to_mid_node_id[cv.id])
         midpoint_ids.add(pid)
-        point_area[pid] = float(np.asarray(cv.area.to_decimal(u.cm ** 2), dtype=float))
+        point_area[pid] = float(np.asarray(cv.area.to_decimal(u.cm**2), dtype=float))
 
     active_midpoints = sorted(pid for pid in active if pid in midpoint_ids)
     ids = np.asarray(active_midpoints, dtype=np.int32)
@@ -402,16 +402,14 @@ class CellRuntimeState:
                     and callable(value)
                     and not isinstance(value, braintools.init.Initialization)
                 ):
-                    state_buffers[(layout_spec.id, var_name)] = (
-                        _allocate_spatial_density_buffer(
-                            mechanism=mechanism,
-                            var_name=var_name,
-                            value=value,
-                            layout=layout_spec,
-                            shape=shape,
-                            cv_contexts=cv_contexts,
-                            node_tree=node_tree,
-                        )
+                    state_buffers[(layout_spec.id, var_name)] = _allocate_spatial_density_buffer(
+                        mechanism=mechanism,
+                        var_name=var_name,
+                        value=value,
+                        layout=layout_spec,
+                        shape=shape,
+                        cv_contexts=cv_contexts,
+                        node_tree=node_tree,
                     )
                 else:
                     state_buffers[(layout_spec.id, var_name)] = _allocate_state_buffer(
@@ -451,10 +449,10 @@ class CellRuntimeState:
         )
 
         cv_area_decimal = np.asarray(
-            [float(np.asarray(cv.area.to_decimal(u.cm ** 2), dtype=float)) for cv in cell.cvs],
+            [float(np.asarray(cv.area.to_decimal(u.cm**2), dtype=float)) for cv in cell.cvs],
             dtype=float,
         )
-        cv_area = u.Quantity(cv_area_decimal, u.cm ** 2)
+        cv_area = u.Quantity(cv_area_decimal, u.cm**2)
         point_area_decimal = np.zeros((n_point,), dtype=float)
         for point in node_tree.nodes:
             roles = tuple(point.roles)
@@ -462,7 +460,7 @@ class CellRuntimeState:
                 continue
             cv_id = int(roles[0].cv_id)
             point_area_decimal[int(point.id)] = cv_area_decimal[cv_id]
-        point_area = u.Quantity(point_area_decimal, u.cm ** 2)
+        point_area = u.Quantity(point_area_decimal, u.cm**2)
         midpoint_mask_np = np.zeros((n_point,), dtype=bool)
         midpoint_mask_np[np.asarray(node_tree.cv_to_mid_node_id, dtype=np.int32)] = True
 
@@ -547,26 +545,21 @@ class CellRuntimeState:
                 else:
                     if n_active != 1:
                         raise ValueError(
-                            f"Flat sequence only valid for n_active=1 ragged clamp buffer; "
-                            f"got n_active={n_active}."
+                            f"Flat sequence only valid for n_active=1 ragged clamp buffer; got n_active={n_active}."
                         )
                     sequences = [list(value)]
                 if len(sequences) != n_active:
                     raise ValueError(
                         f"Ragged clamp buffer expected {n_active} per-point sequences; got {len(sequences)}."
                     )
-                new_q, new_mask = _allocate_clamp_ragged_buffer(
-                    per_point_sequences=sequences, unit=unit
-                )
+                new_q, new_mask = _allocate_clamp_ragged_buffer(per_point_sequences=sequences, unit=unit)
                 self.state_buffers[key] = new_q
                 self.state_buffers[mask_key] = new_mask
                 self.state_shapes[key] = new_q.mantissa.shape
                 _sync_runtime_node_param(self, layout_id=int(layout_id), var_name=str(var_name))
                 return
 
-        self.state_buffers[key] = _write_state_buffer(
-            layout, self.state_buffers[key], value
-        )
+        self.state_buffers[key] = _write_state_buffer(layout, self.state_buffers[key], value)
         _sync_runtime_node_param(self, layout_id=int(layout_id), var_name=str(var_name))
 
     def get_point_state(self, point_id: int) -> dict[int, dict[str, object]]:
@@ -684,7 +677,9 @@ class CellRuntimeState:
             when a filter is provided.
         """
         point_current_decimal = u.math.zeros(self.pop_size + (self.n_point,), dtype=float)
-        point_filter = None if point_ids is None else set(int(pid) for pid in np.asarray(point_ids, dtype=np.int32).tolist())
+        point_filter = (
+            None if point_ids is None else set(int(pid) for pid in np.asarray(point_ids, dtype=np.int32).tolist())
+        )
         for layout in self.layouts:
             if layout.target != "point" or layout.point_index is None:
                 continue
@@ -812,7 +807,7 @@ def _fn_fingerprint(fn) -> tuple:
     code = fn.__code__
     closure_cells: list[object] = []
     opaque_hit = False
-    for cell in (fn.__closure__ or ()):
+    for cell in fn.__closure__ or ():
         v = cell.cell_contents
         if hasattr(v, "to_decimal") and hasattr(v, "unit"):
             closure_cells.append(("quantity", float(v.to_decimal(v.unit)), str(v.unit)))
@@ -900,10 +895,7 @@ def _configure_runtime_subsolvers(
         if explicit:
             selected_solver, selected_substeps, selected_declaration = explicit[0]
             for candidate_solver, candidate_substeps, candidate_declaration in explicit[1:]:
-                if (
-                    candidate_solver is not selected_solver
-                    or candidate_substeps != selected_substeps
-                ):
+                if candidate_solver is not selected_solver or candidate_substeps != selected_substeps:
                     node = record["node"]
                     raise ValueError(
                         f"Runtime {type(node).__name__!r} receives conflicting "
@@ -972,9 +964,7 @@ def _mechanism_var_value(mechanism: object, var_name: str) -> object:
             return mechanism.params[var_name]
     if hasattr(mechanism, var_name):
         return getattr(mechanism, var_name)
-    raise KeyError(
-        f"Mechanism {type(mechanism).__name__} has no attribute {var_name!r}."
-    )
+    raise KeyError(f"Mechanism {type(mechanism).__name__} has no attribute {var_name!r}.")
 
 
 def _allocate_clamp_ragged_buffer(
@@ -1224,9 +1214,7 @@ def _allocate_spatial_density_buffer(
         evaluated.append((int(cv_id), point_id, result))
 
     if len(evaluated) == 0:  # pragma: no cover - layouts always have a source CV
-        raise ValueError(
-            f"Callable density parameter {var_name!r} has no source CVs to evaluate."
-        )
+        raise ValueError(f"Callable density parameter {var_name!r} has no source CVs to evaluate.")
 
     first_result = evaluated[0][2]
     quantity_result = isinstance(first_result, u.Quantity)
@@ -1246,11 +1234,7 @@ def _allocate_spatial_density_buffer(
             raw = result.to_decimal(unit) if quantity_result else result
             decimal = np.asarray(raw, dtype=np.float64)
         except Exception as exc:
-            expected = (
-                f"a Quantity compatible with {unit!s}"
-                if quantity_result
-                else "a numeric scalar"
-            )
+            expected = f"a Quantity compatible with {unit!s}" if quantity_result else "a numeric scalar"
             raise TypeError(
                 _spatial_density_error_prefix(mechanism, var_name, context)
                 + f" must return {expected}, got {result!r}."
@@ -1334,17 +1318,12 @@ def _write_state_buffer(layout: "MechanismLayout", buffer: object, value: object
             if mantissa.ndim == 0:
                 mantissa = np.broadcast_to(mantissa, target_shape).copy()
             if mantissa.shape != target_shape:
-                raise ValueError(
-                    f"State assignment shape mismatch: expected {target_shape!r}, got {mantissa.shape!r}."
-                )
+                raise ValueError(f"State assignment shape mismatch: expected {target_shape!r}, got {mantissa.shape!r}.")
             return u.Quantity(mantissa, target_unit)
 
         if isinstance(value, (list, tuple)):
             if len(target_shape) == 2 and value and isinstance(value[0], (list, tuple)):
-                rows = [
-                    [float(np.asarray(q.to_decimal(target_unit))) for q in row]
-                    for row in value
-                ]
+                rows = [[float(np.asarray(q.to_decimal(target_unit))) for q in row] for row in value]
                 arr = np.asarray(rows, dtype=np.float64)
             else:
                 decimals = [float(np.asarray(q.to_decimal(target_unit))) for q in value]
@@ -1357,18 +1336,14 @@ def _write_state_buffer(layout: "MechanismLayout", buffer: object, value: object
                 ):
                     arr = arr.reshape(target_shape)
             if arr.shape != target_shape:
-                raise ValueError(
-                    f"State assignment shape mismatch: expected {target_shape!r}, got {arr.shape!r}."
-                )
+                raise ValueError(f"State assignment shape mismatch: expected {target_shape!r}, got {arr.shape!r}.")
             return u.Quantity(arr, target_unit)
 
         arr = np.asarray(value, dtype=np.float64)
         if arr.ndim == 0:
             arr = np.broadcast_to(arr, target_shape).copy()
         if arr.shape != target_shape:
-            raise ValueError(
-                f"State assignment shape mismatch: expected {target_shape!r}, got {arr.shape!r}."
-            )
+            raise ValueError(f"State assignment shape mismatch: expected {target_shape!r}, got {arr.shape!r}.")
         return u.Quantity(arr, target_unit)
 
         raise TypeError(
@@ -1392,9 +1367,7 @@ def _write_state_buffer(layout: "MechanismLayout", buffer: object, value: object
     if arr.ndim == 0:
         arr = np.broadcast_to(arr, target_shape).copy()
     if arr.shape != target_shape:
-        raise ValueError(
-            f"State assignment shape mismatch: expected {target_shape!r}, got {arr.shape!r}."
-        )
+        raise ValueError(f"State assignment shape mismatch: expected {target_shape!r}, got {arr.shape!r}.")
     return arr
 
 
@@ -1403,10 +1376,11 @@ def _extract_point_value(layout: MechanismLayout, *, point_id: int, buffer: obje
         if isinstance(buffer, u.Quantity):
             mantissa = np.asarray(buffer.mantissa)
             if mantissa.ndim >= 2:
-                return tuple(
-                    u.Quantity(item, buffer.unit)
-                    for item in mantissa[..., index, :].reshape(-1)
-                ) if mantissa.ndim == 2 else u.Quantity(buffer.mantissa[..., index, :], buffer.unit)
+                return (
+                    tuple(u.Quantity(item, buffer.unit) for item in mantissa[..., index, :].reshape(-1))
+                    if mantissa.ndim == 2
+                    else u.Quantity(buffer.mantissa[..., index, :], buffer.unit)
+                )
             return u.Quantity(buffer.mantissa[..., index], buffer.unit)
         return None
 
@@ -1432,7 +1406,9 @@ def _extract_point_value(layout: MechanismLayout, *, point_id: int, buffer: obje
     return _pick(int(matches[0]))
 
 
-def _evaluate_clamp_layout(runtime: CellRuntimeState, *, layout: MechanismLayout, t, local_indices=None) -> tuple[object, ...]:
+def _evaluate_clamp_layout(
+    runtime: CellRuntimeState, *, layout: MechanismLayout, t, local_indices=None
+) -> tuple[object, ...]:
     """Evaluate one sparse clamp layout at time ``t``.
 
     Parameters
@@ -1459,12 +1435,15 @@ def _evaluate_clamp_layout(runtime: CellRuntimeState, *, layout: MechanismLayout
     indices = range(layout.n_active) if local_indices is None else local_indices
     for local_index in indices:
         if layout.kind == "CurrentClamp":
-            local_t = (t - _scalar_state_value(
-                runtime,
-                layout_id=layout.id,
-                var_name="delay",
-                local_index=local_index,
-            )).in_unit(u.ms)
+            local_t = (
+                t
+                - _scalar_state_value(
+                    runtime,
+                    layout_id=layout.id,
+                    var_name="delay",
+                    local_index=local_index,
+                )
+            ).in_unit(u.ms)
             out.append(_eval_current_clamp(runtime, layout_id=layout.id, local_index=local_index, local_t=local_t))
             continue
         if layout.kind == "SineClamp":
@@ -1496,7 +1475,9 @@ def _evaluate_netstim_layout(runtime: CellRuntimeState, *, layout: MechanismLayo
 
     local_t = (t - start).in_unit(u.ms) if hasattr(start, "in_unit") else (t - u.Quantity(start, u.ms)).in_unit(u.ms)
     local_t_ms = u.math.asarray(local_t.to_decimal(u.ms))
-    interval_ms = u.math.asarray(interval.to_decimal(u.ms)) if hasattr(interval, "to_decimal") else u.math.asarray(interval)
+    interval_ms = (
+        u.math.asarray(interval.to_decimal(u.ms)) if hasattr(interval, "to_decimal") else u.math.asarray(interval)
+    )
     number_arr = u.math.asarray(number)
     weight_arr = u.math.asarray(weight)
 
@@ -1557,10 +1538,12 @@ def _eval_current_clamp(runtime: CellRuntimeState, *, layout_id: int, local_inde
 
 def _eval_sine_clamp(runtime: CellRuntimeState, *, layout_id: int, local_index: int, local_t) -> object:
     duration = _scalar_state_value(runtime, layout_id=layout_id, var_name="duration", local_index=local_index)
-    amplitude_decimal = _scalar_state_value(runtime, layout_id=layout_id, var_name="amplitude",
-                                            local_index=local_index).to_decimal(u.nA)
-    offset_decimal = _scalar_state_value(runtime, layout_id=layout_id, var_name="offset",
-                                         local_index=local_index).to_decimal(u.nA)
+    amplitude_decimal = _scalar_state_value(
+        runtime, layout_id=layout_id, var_name="amplitude", local_index=local_index
+    ).to_decimal(u.nA)
+    offset_decimal = _scalar_state_value(
+        runtime, layout_id=layout_id, var_name="offset", local_index=local_index
+    ).to_decimal(u.nA)
     frequency = _scalar_state_value(runtime, layout_id=layout_id, var_name="frequency", local_index=local_index)
     phase = u.math.asarray(_scalar_state_value(runtime, layout_id=layout_id, var_name="phase", local_index=local_index))
     local_t_ms = local_t.to_decimal(u.ms)
@@ -1783,9 +1766,7 @@ def _build_ion_alias_map(
     def register(alias: str, canonical: str) -> None:
         existing = aliases.get(alias)
         if existing is not None and existing != canonical:
-            raise ValueError(
-                f"Ion alias {alias!r} conflicts between species {existing!r} and {canonical!r}."
-            )
+            raise ValueError(f"Ion alias {alias!r} conflicts between species {existing!r} and {canonical!r}.")
         aliases[alias] = canonical
 
     for instance_name in ions:
@@ -1951,9 +1932,7 @@ def _ion_param_broadcast(value: object, *, shape: tuple[int, ...]) -> object:
             return u.Quantity(mantissa.copy(), value.unit)
         if mantissa.ndim == 0 or mantissa.shape == ():
             return u.Quantity(np.full(shape, float(mantissa), dtype=np.float64), value.unit)
-        raise ValueError(
-            f"Cannot broadcast ion baseline value with shape {mantissa.shape!r} onto shape {shape!r}."
-        )
+        raise ValueError(f"Cannot broadcast ion baseline value with shape {mantissa.shape!r} onto shape {shape!r}.")
     # Plain numeric baseline (e.g., valence): broadcast as numpy array.
     if isinstance(value, (np.ndarray,)) or isinstance(value, (int, float)):
         arr = np.asarray(value)
@@ -1997,9 +1976,7 @@ def _ion_param_scatter(
             src = src_mantissa
         else:
             src = np.take(src_mantissa, point_index, axis=-1)
-        incoming = np.asarray(
-            u.Quantity(src, buffer.unit).to_decimal(target_unit), dtype=np.float64
-        )
+        incoming = np.asarray(u.Quantity(src, buffer.unit).to_decimal(target_unit), dtype=np.float64)
         new_mantissa = target_mantissa.copy()
         np.put_along_axis(
             new_mantissa,
@@ -2011,10 +1988,7 @@ def _ion_param_scatter(
 
     if isinstance(target, tuple):
         if isinstance(buffer, u.Quantity):
-            flat = [
-                u.Quantity(value, buffer.unit)
-                for value in np.asarray(buffer.mantissa, dtype=object).reshape(-1)
-            ]
+            flat = [u.Quantity(value, buffer.unit) for value in np.asarray(buffer.mantissa, dtype=object).reshape(-1)]
             src_arr = np.empty(len(flat), dtype=object)
             for index, value in enumerate(flat):
                 src_arr[index] = value
@@ -2045,9 +2019,7 @@ def _ion_param_scatter(
         elif isinstance(buffer, np.ndarray):
             src = buffer
         else:
-            raise TypeError(
-                f"Cannot scatter non-array buffer into numpy target for ion param {param_name!r}."
-            )
+            raise TypeError(f"Cannot scatter non-array buffer into numpy target for ion param {param_name!r}.")
         src = src if src.shape[-1:] == point_index.shape else np.take(src, point_index, axis=-1)
         np.put_along_axis(
             new_target,
@@ -2340,9 +2312,7 @@ def _instantiate_runtime_node(
         return None, (), None
 
     runtime_cls = get_registry().get("channel", mechanism.class_name)
-    params = _runtime_constructor_params(
-        layout=layout, mechanism=mechanism, state_buffers=state_buffers
-    )
+    params = _runtime_constructor_params(layout=layout, mechanism=mechanism, state_buffers=state_buffers)
     if len(params) > 0 and hasattr(next(iter(params.values())), "shape"):
         size = next(iter(params.values())).shape
     elif layout.layout == "dense" and layout.point_mask is not None:
@@ -2413,7 +2383,10 @@ def _install_merged_channel_nodes(
     bound_ion_keys: dict[int, tuple[str, ...]],
     current_owner_keys: dict[int, str | tuple[str, ...] | None],
 ) -> dict[int, tuple[int, ...]]:
-    groups: dict[tuple[object, ...], list[tuple[MechanismLayout, Density, type, tuple[tuple[str, object], ...], tuple[tuple[str | None, str], ...]]]] = {}
+    groups: dict[
+        tuple[object, ...],
+        list[tuple[MechanismLayout, Density, type, tuple[tuple[str, object], ...], tuple[tuple[str | None, str], ...]]],
+    ] = {}
     for layout in layouts:
         mechanism = layout_mechanisms[layout.id]
         if not _is_mergeable_channel_layout(layout, mechanism):
@@ -2525,11 +2498,7 @@ def _merged_channel_constructor_params(
     params = {}
     full_shape = pop_size + (n_point,)
     for var_name in all_param_names:
-        value_items = [
-            (layout, mechanism)
-            for layout, mechanism, *_ in items
-            if var_name in mechanism.params
-        ]
+        value_items = [(layout, mechanism) for layout, mechanism, *_ in items if var_name in mechanism.params]
         if not value_items:
             continue
         first_layout, _first_mechanism = value_items[0]
@@ -2680,16 +2649,12 @@ def _resolve_channel_runtime_bindings(
     family_slots = _channel_family_slots(runtime_cls)
     if len(family_slots) == 0:
         if getattr(mechanism, "ion_name", None) is not None or getattr(mechanism, "ion_names", None) is not None:
-            raise ValueError(
-                f"Channel {mechanism.class_name!r} does not bind ions but ion selectors were provided."
-            )
+            raise ValueError(f"Channel {mechanism.class_name!r} does not bind ions but ion selectors were provided.")
         return (), ()
 
     if len(family_slots) == 1:
         if getattr(mechanism, "ion_names", None) is not None:
-            raise ValueError(
-                f"Single-ion channel {mechanism.class_name!r} must use ion_name, not ion_names."
-            )
+            raise ValueError(f"Single-ion channel {mechanism.class_name!r} must use ion_name, not ion_names.")
         family_key = family_slots[0][0]
         ion_key = _resolve_ion_instance_key(
             family_key=family_key,
@@ -2701,9 +2666,7 @@ def _resolve_channel_runtime_bindings(
         return ((ion_key, ions[ion_key]),), ((None, ion_key),)
 
     if getattr(mechanism, "ion_name", None) is not None:
-        raise ValueError(
-            f"Mixed-ion channel {mechanism.class_name!r} must use ion_names, not ion_name."
-        )
+        raise ValueError(f"Mixed-ion channel {mechanism.class_name!r} must use ion_names, not ion_name.")
     selector_map = dict(getattr(mechanism, "ion_names", ()) or ())
     slot_keys = {family_key for family_key, _ in family_slots}
     unknown_selector_keys = set(selector_map.keys()) - slot_keys
@@ -2726,9 +2689,7 @@ def _resolve_channel_runtime_bindings(
 
     owner_specs = _channel_current_owner_specs(runtime_cls)
     if not owner_specs:
-        raise ValueError(
-            f"Mixed-ion channel class {runtime_cls.__name__!r} must define current_owner_type."
-        )
+        raise ValueError(f"Mixed-ion channel class {runtime_cls.__name__!r} must define current_owner_type.")
     current_owner_specs: list[tuple[str | None, str]] = []
     for component_key, current_owner_family in owner_specs:
         owner_candidates = [
@@ -2920,11 +2881,7 @@ def _runtime_param_value(
     JAX-traceable way via :func:`jnp.where`. Other buffers pass through.
     """
     buffer = state_buffers[(layout.id, var_name)]
-    if (
-        isinstance(buffer, u.Quantity)
-        and layout.point_mask is not None
-        and var_name in _CONDUCTANCE_PARAM_NAMES
-    ):
+    if isinstance(buffer, u.Quantity) and layout.point_mask is not None and var_name in _CONDUCTANCE_PARAM_NAMES:
         mask_bool = np.asarray(layout.point_mask)
         masked_mantissa = np.where(mask_bool, np.asarray(buffer.mantissa), 0.0)
         return u.Quantity(masked_mantissa, buffer.unit)
@@ -3037,7 +2994,8 @@ def _sync_runtime_ion(runtime: CellRuntimeState, *, layout_id: int) -> None:
     full_values: dict[str, object] = {}
     for param_name in supported_params:
         baseline = _normalize_ion_runtime_param_value(
-            ion_cls, param_name,
+            ion_cls,
+            param_name,
             getattr(ion, _ion_runtime_attr_name(ion_cls, param_name)),
         )
         full_values[param_name] = _ion_param_broadcast(baseline, shape=(runtime.n_point,))
@@ -3095,9 +3053,7 @@ def _runtime_constructor_params(
     if mechanism.category != "channel":
         return {}
     return {
-        var_name: _runtime_param_value(
-            layout=layout, var_name=var_name, state_buffers=state_buffers
-        )
+        var_name: _runtime_param_value(layout=layout, var_name=var_name, state_buffers=state_buffers)
         for var_name in mechanism.params.keys()
     }
 
@@ -3124,7 +3080,5 @@ def _is_root_level_runtime_node(kind: str) -> bool:
     try:
         cls = get_registry().get("channel", class_name)
     except KeyError as exc:
-        raise ValueError(
-            f"Unknown runtime channel class {class_name!r} for layout kind {kind!r}."
-        ) from exc
+        raise ValueError(f"Unknown runtime channel class {class_name!r} for layout kind {kind!r}.") from exc
     return not _channel_current_owner_specs(cls)

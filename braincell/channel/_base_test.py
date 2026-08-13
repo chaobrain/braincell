@@ -46,7 +46,7 @@ class _ExampleHHInfTau(HH):
 
     def __init__(self, size=1):
         super().__init__(size=size, name=None)
-        self.g_max = braintools.init.param(0.5 * (u.mS / u.cm ** 2), self.varshape, allow_none=False)
+        self.g_max = braintools.init.param(0.5 * (u.mS / u.cm**2), self.varshape, allow_none=False)
         self.V_sh = braintools.init.param(5.0 * u.mV, self.varshape, allow_none=False)
         self.temp = u.celsius2kelvin(32.0)
 
@@ -79,7 +79,7 @@ class _ExampleHHAlphaBeta(HH):
 
     def __init__(self, size=1):
         super().__init__(size=size, name=None)
-        self.g_max = braintools.init.param(0.2 * (u.mS / u.cm ** 2), self.varshape, allow_none=False)
+        self.g_max = braintools.init.param(0.2 * (u.mS / u.cm**2), self.varshape, allow_none=False)
         self.temp = u.celsius2kelvin(35.0)
 
     def f_n_alpha(self, V, K: IonInfo):
@@ -100,7 +100,7 @@ class _ExampleHHDefaultPhi(HH):
 
     def __init__(self, size=1):
         super().__init__(size=size, name=None)
-        self.g_max = braintools.init.param(0.2 * (u.mS / u.cm ** 2), self.varshape, allow_none=False)
+        self.g_max = braintools.init.param(0.2 * (u.mS / u.cm**2), self.varshape, allow_none=False)
 
     def f_p_inf(self, V, K: IonInfo):
         _ = (V, K)
@@ -142,12 +142,16 @@ class _ExampleGHK(HH):
         return 4.0
 
     def current(self, V, Ca: IonInfo):
-        return self.p_max * self.conductance_factor(V, Ca) * ghk_flux(
-            V=V,
-            ci=Ca.Ci,
-            co=self.Co,
-            z=self.valence,
-            temp=self.temp,
+        return (
+            self.p_max
+            * self.conductance_factor(V, Ca)
+            * ghk_flux(
+                V=V,
+                ci=Ca.Ci,
+                co=self.Co,
+                z=self.valence,
+                temp=self.temp,
+            )
         )
 
 
@@ -162,7 +166,7 @@ class _ExampleMarkov(Markov):
 
     def __init__(self, size=1, solver=None, substeps=None):
         super().__init__(size=size, name=None, solver=solver, substeps=substeps)
-        self.g_max = braintools.init.param(0.3 * (u.mS / u.cm ** 2), self.varshape, allow_none=False)
+        self.g_max = braintools.init.param(0.3 * (u.mS / u.cm**2), self.varshape, allow_none=False)
 
     def open_rate(self, V, K: IonInfo):
         _ = (V, K)
@@ -189,7 +193,7 @@ class _ExampleMarkovImplicitDependent(Markov):
 
     def __init__(self, size=1):
         super().__init__(size=size, name=None)
-        self.g_max = braintools.init.param(0.3 * (u.mS / u.cm ** 2), self.varshape, allow_none=False)
+        self.g_max = braintools.init.param(0.3 * (u.mS / u.cm**2), self.varshape, allow_none=False)
 
     def open_rate(self, V, K: IonInfo):
         _ = (V, K)
@@ -217,7 +221,7 @@ class _ExampleMarkovTwoOpenStates(Markov):
 
     def __init__(self, size=1):
         super().__init__(size=size, name=None)
-        self.g_max = braintools.init.param(0.2 * (u.mS / u.cm ** 2), self.varshape, allow_none=False)
+        self.g_max = braintools.init.param(0.2 * (u.mS / u.cm**2), self.varshape, allow_none=False)
 
     def open1_rate(self, V, K: IonInfo):
         _ = (V, K)
@@ -242,9 +246,7 @@ class _ExampleMarkovTwoOpenStates(Markov):
 
 class _ExampleMarkovVoltageOnlyRates(Markov):
     root_type = Potassium
-    pairs = (
-        Transition("C", "O", "open_rate", "close_rate"),
-    )
+    pairs = (Transition("C", "O", "open_rate", "close_rate"),)
     dependent_state = "C"
 
     def __init__(self, size=1):
@@ -271,7 +273,7 @@ class _ExampleHHMixed(HH):
 
     def __init__(self, size=1):
         super().__init__(size=size, name=None)
-        self.g_max = braintools.init.param(0.25 * (u.mS / u.cm ** 2), self.varshape, allow_none=False)
+        self.g_max = braintools.init.param(0.25 * (u.mS / u.cm**2), self.varshape, allow_none=False)
 
     def f_m_inf(self, V, K: IonInfo):
         _ = (V, K)
@@ -417,12 +419,17 @@ class ChannelTemplateTest(unittest.TestCase):
         ch.reset_state(V, Ca)
         current = ch.current(V, Ca)
 
-        expected = ch.p_max * ch.p.value ** 2 * ch.q.value * ghk_flux(
-            V=V,
-            ci=Ca.Ci,
-            co=ch.Co,
-            z=ch.valence,
-            temp=ch.temp,
+        expected = (
+            ch.p_max
+            * ch.p.value**2
+            * ch.q.value
+            * ghk_flux(
+                V=V,
+                ci=Ca.Ci,
+                co=ch.Co,
+                z=ch.valence,
+                temp=ch.temp,
+            )
         )
         unit = expected.unit
         self.assertTrue(u.math.allclose(current.to_decimal(unit), expected.to_decimal(unit), atol=1e-6))
@@ -465,7 +472,7 @@ class ChannelTemplateTest(unittest.TestCase):
 
         current = ch.current(V, K)
         expected_current = ch.g_max * (states["O"] + 0.5 * states["I"]) * (K.E - V)
-        unit = u.mS / u.cm ** 2 * u.mV
+        unit = u.mS / u.cm**2 * u.mV
         self.assertTrue(
             u.math.allclose(
                 current.to_decimal(unit),
@@ -621,7 +628,7 @@ class ChannelTemplateTest(unittest.TestCase):
 
         current = ch.current(V, K)
         expected_current = ch.g_max * (states["O1"] + states["O2"]) * (K.E - V)
-        unit = u.mS / u.cm ** 2 * u.mV
+        unit = u.mS / u.cm**2 * u.mV
         self.assertTrue(
             u.math.allclose(
                 current.to_decimal(unit),

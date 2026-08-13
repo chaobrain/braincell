@@ -49,14 +49,10 @@ class MechanismRegistryIsolationMixin:
         return MechanismRegistry()
 
 
-class MechanismRegistryBasicsTest(
-    MechanismRegistryIsolationMixin, unittest.TestCase
-):
+class MechanismRegistryBasicsTest(MechanismRegistryIsolationMixin, unittest.TestCase):
     def test_register_and_get(self) -> None:
         reg = self.make_registry()
-        reg.register(
-            MechanismEntry(category="channel", name="Foo", cls=_DummyChannel)
-        )
+        reg.register(MechanismEntry(category="channel", name="Foo", cls=_DummyChannel))
         self.assertIs(reg.get("channel", "Foo"), _DummyChannel)
 
     def test_register_and_entry(self) -> None:
@@ -73,9 +69,7 @@ class MechanismRegistryBasicsTest(
 
     def test_contains(self) -> None:
         reg = self.make_registry()
-        reg.register(
-            MechanismEntry(category="ion", name="Bar", cls=_DummyIon)
-        )
+        reg.register(MechanismEntry(category="ion", name="Bar", cls=_DummyIon))
         self.assertTrue(reg.contains("ion", "Bar"))
         self.assertFalse(reg.contains("ion", "Baz"))
         self.assertFalse(reg.contains("channel", "Bar"))
@@ -83,32 +77,20 @@ class MechanismRegistryBasicsTest(
     def test_len_and_repr(self) -> None:
         reg = self.make_registry()
         self.assertEqual(len(reg), 0)
-        reg.register(
-            MechanismEntry(category="channel", name="A", cls=_DummyChannel)
-        )
-        reg.register(
-            MechanismEntry(category="ion", name="B", cls=_DummyIon)
-        )
+        reg.register(MechanismEntry(category="channel", name="A", cls=_DummyChannel))
+        reg.register(MechanismEntry(category="ion", name="B", cls=_DummyIon))
         self.assertEqual(len(reg), 2)
         self.assertIn("total=2", repr(reg))
 
     def test_duplicate_canonical_raises(self) -> None:
         reg = self.make_registry()
-        reg.register(
-            MechanismEntry(category="channel", name="Foo", cls=_DummyChannel)
-        )
+        reg.register(MechanismEntry(category="channel", name="Foo", cls=_DummyChannel))
         with self.assertRaises(ValueError):
-            reg.register(
-                MechanismEntry(
-                    category="channel", name="Foo", cls=_DummyChannel
-                )
-            )
+            reg.register(MechanismEntry(category="channel", name="Foo", cls=_DummyChannel))
 
     def test_alias_collision_with_canonical(self) -> None:
         reg = self.make_registry()
-        reg.register(
-            MechanismEntry(category="channel", name="Foo", cls=_DummyChannel)
-        )
+        reg.register(MechanismEntry(category="channel", name="Foo", cls=_DummyChannel))
         with self.assertRaises(ValueError):
             reg.register(
                 MechanismEntry(
@@ -144,40 +126,26 @@ class MechanismRegistryBasicsTest(
 
     def test_categories_are_independent(self) -> None:
         reg = self.make_registry()
-        reg.register(
-            MechanismEntry(category="channel", name="X", cls=_DummyChannel)
-        )
-        reg.register(
-            MechanismEntry(category="ion", name="X", cls=_DummyIon)
-        )
+        reg.register(MechanismEntry(category="channel", name="X", cls=_DummyChannel))
+        reg.register(MechanismEntry(category="ion", name="X", cls=_DummyIon))
         self.assertIs(reg.get("channel", "X"), _DummyChannel)
         self.assertIs(reg.get("ion", "X"), _DummyIon)
 
     def test_invalid_category_raises(self) -> None:
         reg = self.make_registry()
         with self.assertRaises(ValueError):
-            reg.register(
-                MechanismEntry(
-                    category="whatever", name="X", cls=_DummyChannel
-                )
-            )
+            reg.register(MechanismEntry(category="whatever", name="X", cls=_DummyChannel))
 
     def test_unknown_get_raises_with_suggestion(self) -> None:
         reg = self.make_registry()
-        reg.register(
-            MechanismEntry(
-                category="channel", name="Na_HH1952", cls=_DummyChannel
-            )
-        )
+        reg.register(MechanismEntry(category="channel", name="Na_HH1952", cls=_DummyChannel))
         with self.assertRaises(KeyError) as ctx:
             reg.get("channel", "INa_HH1951")
         self.assertIn("INa_HH1951", str(ctx.exception))
         self.assertIn("Did you mean", str(ctx.exception))
 
 
-class MechanismRegistryAliasTest(
-    MechanismRegistryIsolationMixin, unittest.TestCase
-):
+class MechanismRegistryAliasTest(MechanismRegistryIsolationMixin, unittest.TestCase):
     def test_alias_resolves_to_same_class(self) -> None:
         reg = self.make_registry()
         reg.register(
@@ -193,9 +161,7 @@ class MechanismRegistryAliasTest(
 
     def test_add_alias_to_existing(self) -> None:
         reg = self.make_registry()
-        reg.register(
-            MechanismEntry(category="channel", name="IL", cls=_DummyChannel)
-        )
+        reg.register(MechanismEntry(category="channel", name="IL", cls=_DummyChannel))
         reg.add_alias(category="channel", alias="passive", name="IL")
         self.assertIs(reg.get("channel", "passive"), _DummyChannel)
 
@@ -206,17 +172,13 @@ class MechanismRegistryAliasTest(
 
     def test_add_alias_collision_raises(self) -> None:
         reg = self.make_registry()
-        reg.register(
-            MechanismEntry(category="channel", name="IL", cls=_DummyChannel)
-        )
+        reg.register(MechanismEntry(category="channel", name="IL", cls=_DummyChannel))
         reg.add_alias(category="channel", alias="leaky", name="IL")
         with self.assertRaises(ValueError):
             reg.add_alias(category="channel", alias="leaky", name="IL")
 
 
-class MechanismRegistryRemovalTest(
-    MechanismRegistryIsolationMixin, unittest.TestCase
-):
+class MechanismRegistryRemovalTest(MechanismRegistryIsolationMixin, unittest.TestCase):
     def test_unregister_removes_canonical_and_aliases(self) -> None:
         reg = self.make_registry()
         reg.register(
@@ -238,28 +200,18 @@ class MechanismRegistryRemovalTest(
 
     def test_clear_empties_registry(self) -> None:
         reg = self.make_registry()
-        reg.register(
-            MechanismEntry(category="channel", name="A", cls=_DummyChannel)
-        )
-        reg.register(
-            MechanismEntry(category="ion", name="B", cls=_DummyIon)
-        )
+        reg.register(MechanismEntry(category="channel", name="A", cls=_DummyChannel))
+        reg.register(MechanismEntry(category="ion", name="B", cls=_DummyIon))
         reg.clear()
         self.assertEqual(len(reg), 0)
         self.assertEqual(reg.names(), ())
 
 
-class MechanismRegistryListingTest(
-    MechanismRegistryIsolationMixin, unittest.TestCase
-):
+class MechanismRegistryListingTest(MechanismRegistryIsolationMixin, unittest.TestCase):
     def test_names_all(self) -> None:
         reg = self.make_registry()
-        reg.register(
-            MechanismEntry(category="channel", name="B", cls=_DummyChannel)
-        )
-        reg.register(
-            MechanismEntry(category="channel", name="A", cls=_DummyChannel)
-        )
+        reg.register(MechanismEntry(category="channel", name="B", cls=_DummyChannel))
+        reg.register(MechanismEntry(category="channel", name="A", cls=_DummyChannel))
         self.assertEqual(reg.names("channel"), ("A", "B"))
 
     def test_names_include_aliases(self) -> None:
@@ -278,23 +230,15 @@ class MechanismRegistryListingTest(
 
     def test_items_returns_pairs(self) -> None:
         reg = self.make_registry()
-        reg.register(
-            MechanismEntry(category="channel", name="A", cls=_DummyChannel)
-        )
-        reg.register(
-            MechanismEntry(category="ion", name="B", cls=_DummyIon)
-        )
+        reg.register(MechanismEntry(category="channel", name="A", cls=_DummyChannel))
+        reg.register(MechanismEntry(category="ion", name="B", cls=_DummyIon))
         pairs = reg.items("channel")
         self.assertEqual(pairs, (("A", _DummyChannel),))
 
     def test_items_across_categories(self) -> None:
         reg = self.make_registry()
-        reg.register(
-            MechanismEntry(category="channel", name="A", cls=_DummyChannel)
-        )
-        reg.register(
-            MechanismEntry(category="ion", name="B", cls=_DummyIon)
-        )
+        reg.register(MechanismEntry(category="channel", name="A", cls=_DummyChannel))
+        reg.register(MechanismEntry(category="ion", name="B", cls=_DummyIon))
         pairs = reg.items()
         self.assertEqual(len(pairs), 2)
 
@@ -362,16 +306,12 @@ class BuiltinRegistrationTest(unittest.TestCase):
     def test_channel_Na_HH1952_registered(self) -> None:
         import braincell.channel as channel
 
-        self.assertIs(
-            _REGISTRY.get("channel", "Na_HH1952"), channel.Na_HH1952
-        )
+        self.assertIs(_REGISTRY.get("channel", "Na_HH1952"), channel.Na_HH1952)
 
     def test_channel_K_HH1952_registered(self) -> None:
         import braincell.channel as channel
 
-        self.assertIs(
-            _REGISTRY.get("channel", "K_HH1952"), channel.K_HH1952
-        )
+        self.assertIs(_REGISTRY.get("channel", "K_HH1952"), channel.K_HH1952)
 
     def test_ion_SodiumFixed_registered(self) -> None:
         import braincell.ion as ion
@@ -381,9 +321,7 @@ class BuiltinRegistrationTest(unittest.TestCase):
     def test_ion_PotassiumFixed_registered(self) -> None:
         import braincell.ion as ion
 
-        self.assertIs(
-            _REGISTRY.get("ion", "PotassiumFixed"), ion.PotassiumFixed
-        )
+        self.assertIs(_REGISTRY.get("ion", "PotassiumFixed"), ion.PotassiumFixed)
 
     def test_ion_CalciumFixed_registered(self) -> None:
         import braincell.ion as ion

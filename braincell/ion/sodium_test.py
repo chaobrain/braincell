@@ -54,12 +54,8 @@ class SodiumFixedDefaultsTest(unittest.TestCase):
 
     def test_default_intracellular_concentration_is_10_mM(self) -> None:
         na = SodiumFixed(size=1)
-        self.assertTrue(
-            u.math.allclose(na.Ci, 10.0 * u.mM, atol=1e-9 * u.mM)
-        )
-        self.assertTrue(
-            u.math.allclose(na.Co, 140.0 * u.mM, atol=1e-9 * u.mM)
-        )
+        self.assertTrue(u.math.allclose(na.Ci, 10.0 * u.mM, atol=1e-9 * u.mM))
+        self.assertTrue(u.math.allclose(na.Co, 140.0 * u.mM, atol=1e-9 * u.mM))
         self.assertTrue(u.math.allclose(na.valence, jnp.ones((1,)), atol=1e-9))
 
     def test_varshape_matches_size(self) -> None:
@@ -83,15 +79,9 @@ class SodiumFixedDefaultsTest(unittest.TestCase):
         self.assertEqual(na.E.shape, (2,))
         self.assertEqual(na.Ci.shape, (2,))
         self.assertEqual(na.Co.shape, (2,))
-        self.assertTrue(
-            u.math.allclose(na.E, jnp.array([50.0, 40.0]) * u.mV, atol=1e-9 * u.mV)
-        )
-        self.assertTrue(
-            u.math.allclose(na.Ci, jnp.array([0.1, 0.2]) * u.mM, atol=1e-9 * u.mM)
-        )
-        self.assertTrue(
-            u.math.allclose(na.Co, jnp.array([140.0, 141.0]) * u.mM, atol=1e-9 * u.mM)
-        )
+        self.assertTrue(u.math.allclose(na.E, jnp.array([50.0, 40.0]) * u.mV, atol=1e-9 * u.mV))
+        self.assertTrue(u.math.allclose(na.Ci, jnp.array([0.1, 0.2]) * u.mM, atol=1e-9 * u.mM))
+        self.assertTrue(u.math.allclose(na.Co, jnp.array([140.0, 141.0]) * u.mM, atol=1e-9 * u.mM))
 
 
 class SodiumFixedPackInfoTest(unittest.TestCase):
@@ -142,7 +132,7 @@ class SodiumFixedContainerTest(unittest.TestCase):
         na = SodiumFixed(size=1)
 
         def fake(V, info):
-            return jnp.array([1.0]) * u.uA / u.cm ** 2
+            return jnp.array([1.0]) * u.uA / u.cm**2
 
         na.register_external_current("ext", fake)
         self.assertIn("ext", na.external_currents)
@@ -156,14 +146,14 @@ class SodiumFixedContainerTest(unittest.TestCase):
         na.reset_state(V)
         base = na.current(V)
 
-        delta = jnp.array([1.5]) * u.uA / u.cm ** 2
+        delta = jnp.array([1.5]) * u.uA / u.cm**2
 
         def external(V_local, info):
             return delta
 
         na.register_external_current("ext", external)
         total = na.current(V, include_external=True)
-        got = (total - base).to_decimal(u.uA / u.cm ** 2)
+        got = (total - base).to_decimal(u.uA / u.cm**2)
         self.assertTrue(u.math.allclose(got, jnp.array([1.5]), atol=1e-9))
 
 
@@ -198,12 +188,8 @@ class SodiumFixedLifecycleTest(unittest.TestCase):
         na.channels["INa"].p.value = jnp.array([0.999])
         na.channels["INa"].q.value = jnp.array([0.001])
         na.reset_state(V)
-        self.assertTrue(
-            u.math.allclose(na.channels["INa"].p.value, p_first, atol=1e-9)
-        )
-        self.assertTrue(
-            u.math.allclose(na.channels["INa"].q.value, q_first, atol=1e-9)
-        )
+        self.assertTrue(u.math.allclose(na.channels["INa"].p.value, p_first, atol=1e-9))
+        self.assertTrue(u.math.allclose(na.channels["INa"].q.value, q_first, atol=1e-9))
 
     def test_compute_derivative_populates_child_derivatives(self) -> None:
         na = SodiumFixed(size=1, INa=Na_TM1991(size=1))
@@ -229,10 +215,7 @@ class SodiumInitNernstTest(unittest.TestCase):
 
         self.assertIsNone(na.E)
         na.init_state(V)
-        expected = (
-            u.gas_constant * na.temp / (na.valence * u.faraday_constant)
-            * u.math.log(na.Co / na.Ci)
-        )
+        expected = u.gas_constant * na.temp / (na.valence * u.faraday_constant) * u.math.log(na.Co / na.Ci)
         self.assertTrue(u.math.allclose(na.E.to_decimal(u.mV), expected.to_decimal(u.mV), atol=1e-6))
 
         first_E = na.E

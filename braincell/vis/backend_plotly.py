@@ -173,9 +173,7 @@ def _add_branch_type_traces(fig: Any, go: Any, scene: RenderScene3D, *, line_wid
             n = int(batch.lines[i])
             indices = batch.lines[i + 1 : i + 1 + n]
             branch_name = (
-                batch.branch_names[branch_slot]
-                if branch_slot < len(batch.branch_names)
-                else batch.branch_type
+                batch.branch_names[branch_slot] if branch_slot < len(batch.branch_names) else batch.branch_type
             )
             for index in indices:
                 pt = batch.points_um[int(index)]
@@ -246,9 +244,7 @@ def _add_value_traces(
             n = int(batch.lines[i])
             indices = batch.lines[i + 1 : i + 1 + n]
             branch_name = (
-                batch.branch_names[branch_slot]
-                if branch_slot < len(batch.branch_names)
-                else batch.branch_type
+                batch.branch_names[branch_slot] if branch_slot < len(batch.branch_names) else batch.branch_type
             )
             for k, idx in enumerate(indices):
                 pt = batch.points_um[int(idx)]

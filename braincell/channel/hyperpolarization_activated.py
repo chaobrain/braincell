@@ -80,18 +80,17 @@ class HCN_HM1992(HH):
            of neurophysiology 68, no. 4 (1992): 1373-1383.
 
     """
+
     __module__ = 'braincell.channel'
 
     root_type = HHTypedNeuron
-    gates = (
-        Gate("p", q10=lambda self: self.q10, temp_ref=lambda self: self.temp_ref),
-    )
+    gates = (Gate("p", q10=lambda self: self.q10, temp_ref=lambda self: self.temp_ref),)
 
     def __init__(
         self,
         size: brainstate.typing.Size,
-        g_max: Union[brainstate.typing.ArrayLike, Callable] = 10. * (u.mS / u.cm ** 2),
-        E: Union[brainstate.typing.ArrayLike, Callable] = 43. * u.mV,
+        g_max: Union[brainstate.typing.ArrayLike, Callable] = 10.0 * (u.mS / u.cm**2),
+        E: Union[brainstate.typing.ArrayLike, Callable] = 43.0 * u.mV,
         temp: brainstate.typing.ArrayLike = u.celsius2kelvin(36.0),
         q10: Union[brainstate.typing.ArrayLike, Callable] = 1.0,
         temp_ref: brainstate.typing.ArrayLike = u.celsius2kelvin(36.0),
@@ -109,11 +108,11 @@ class HCN_HM1992(HH):
 
     def f_p_inf(self, V):
         V = V.to_decimal(u.mV)
-        return 1. / (1. + u.math.exp((V + 75.) / 5.5))
+        return 1.0 / (1.0 + u.math.exp((V + 75.0) / 5.5))
 
     def f_p_tau(self, V):
         V = V.to_decimal(u.mV)
-        return 1. / (u.math.exp(-0.086 * V - 14.59) + u.math.exp(0.0701 * V - 1.87))
+        return 1.0 / (u.math.exp(-0.086 * V - 14.59) + u.math.exp(0.0701 * V - 1.87))
 
 
 # class Ih_De1996(Channel):
@@ -258,6 +257,7 @@ class HCN_HM1992(HH):
 #     return (20. + 1000 / (u.math.exp((V + 71.5 - self.V_sh) / 14.2) +
 #                           u.math.exp(-(V + 89 - self.V_sh) / 11.6))) / self.phi
 
+
 @register_channel("HCN1_MA2025_BC")
 class HCN1_MA2025_BC(HH):
     """Template-based import of ``HCN1_MA2025_BC.mod``."""
@@ -269,7 +269,7 @@ class HCN1_MA2025_BC(HH):
     def __init__(
         self,
         size: brainstate.typing.Size,
-        g_max: Union[brainstate.typing.ArrayLike, Callable] = 0.1 * (u.mS / u.cm ** 2),
+        g_max: Union[brainstate.typing.ArrayLike, Callable] = 0.1 * (u.mS / u.cm**2),
         E: Union[brainstate.typing.ArrayLike, Callable] = -34.4 * u.mV,
         temp: brainstate.typing.ArrayLike = u.celsius2kelvin(23.0),
         name: Optional[str] = None,
@@ -303,13 +303,8 @@ class HCN1_MA2025_BC(HH):
         v_half2 = (self.v_tau_half2_noljp - self.ljp).to_decimal(u.mV)
         v_k1 = self.v_tau_k1.to_decimal(u.mV)
         v_k2 = self.v_tau_k2.to_decimal(u.mV)
-        return self.ratetau / (
-            self.v_tau_const
-            * (
-                u.math.exp((V - v_half1) / v_k1)
-                + u.math.exp((V - v_half2) / v_k2)
-            )
-        )
+        return self.ratetau / (self.v_tau_const * (u.math.exp((V - v_half1) / v_k1) + u.math.exp((V - v_half2) / v_k2)))
+
 
 @register_channel("HCN1_MA2024_PC")
 class HCN1_MA2024_PC(HH):
@@ -322,7 +317,7 @@ class HCN1_MA2024_PC(HH):
     def __init__(
         self,
         size: brainstate.typing.Size,
-        g_max: Union[brainstate.typing.ArrayLike, Callable] = 0.1 * (u.mS / u.cm ** 2),
+        g_max: Union[brainstate.typing.ArrayLike, Callable] = 0.1 * (u.mS / u.cm**2),
         E: Union[brainstate.typing.ArrayLike, Callable] = -34.4 * u.mV,
         temp: brainstate.typing.ArrayLike = u.celsius2kelvin(23.0),
         name: Optional[str] = None,
@@ -356,13 +351,8 @@ class HCN1_MA2024_PC(HH):
         v_half2 = (self.v_tau_half2_noljp - self.ljp).to_decimal(u.mV)
         v_k1 = self.v_tau_k1.to_decimal(u.mV)
         v_k2 = self.v_tau_k2.to_decimal(u.mV)
-        return self.ratetau / (
-            self.v_tau_const
-            * (
-                u.math.exp((V - v_half1) / v_k1)
-                + u.math.exp((V - v_half2) / v_k2)
-            )
-        )
+        return self.ratetau / (self.v_tau_const * (u.math.exp((V - v_half1) / v_k1) + u.math.exp((V - v_half2) / v_k2)))
+
 
 @register_channel("HCN1_RI2021_SC")
 class HCN1_RI2021_SC(HH):
@@ -375,7 +365,7 @@ class HCN1_RI2021_SC(HH):
     def __init__(
         self,
         size: brainstate.typing.Size,
-        g_max: Union[brainstate.typing.ArrayLike, Callable] = 0.1 * (u.mS / u.cm ** 2),
+        g_max: Union[brainstate.typing.ArrayLike, Callable] = 0.1 * (u.mS / u.cm**2),
         E: Union[brainstate.typing.ArrayLike, Callable] = -34.4 * u.mV,
         temp: brainstate.typing.ArrayLike = u.celsius2kelvin(23.0),
         name: Optional[str] = None,
@@ -409,13 +399,8 @@ class HCN1_RI2021_SC(HH):
         v_half2 = (self.v_tau_half2_noljp - self.ljp).to_decimal(u.mV)
         v_k1 = self.v_tau_k1.to_decimal(u.mV)
         v_k2 = self.v_tau_k2.to_decimal(u.mV)
-        return self.ratetau / (
-            self.v_tau_const
-            * (
-                u.math.exp((V - v_half1) / v_k1)
-                + u.math.exp((V - v_half2) / v_k2)
-            )
-        )
+        return self.ratetau / (self.v_tau_const * (u.math.exp((V - v_half1) / v_k1) + u.math.exp((V - v_half2) / v_k2)))
+
 
 @register_channel("HCN1_MA2020_GoC")
 class HCN1_MA2020_GoC(HH):
@@ -431,7 +416,7 @@ class HCN1_MA2020_GoC(HH):
     def __init__(
         self,
         size: brainstate.typing.Size,
-        g_max: Union[brainstate.typing.ArrayLike, Callable] = 0.05 * (u.mS / u.cm ** 2),
+        g_max: Union[brainstate.typing.ArrayLike, Callable] = 0.05 * (u.mS / u.cm**2),
         E: Union[brainstate.typing.ArrayLike, Callable] = -20.0 * u.mV,
         temp: brainstate.typing.ArrayLike = u.celsius2kelvin(22.0),
         name: Optional[str] = None,
@@ -482,6 +467,7 @@ class HCN1_MA2020_GoC(HH):
         V = V.to_decimal(u.mV)
         return u.math.exp(((self.tCs * V) - self.tDs) * self.tEs)
 
+
 @register_channel("HCN2_MA2020_GoC")
 class HCN2_MA2020_GoC(HH):
     """Template-based import of ``HCN2_MA2020_GoC.mod``."""
@@ -496,7 +482,7 @@ class HCN2_MA2020_GoC(HH):
     def __init__(
         self,
         size: brainstate.typing.Size,
-        g_max: Union[brainstate.typing.ArrayLike, Callable] = 0.08 * (u.mS / u.cm ** 2),
+        g_max: Union[brainstate.typing.ArrayLike, Callable] = 0.08 * (u.mS / u.cm**2),
         E: Union[brainstate.typing.ArrayLike, Callable] = -20.0 * u.mV,
         temp: brainstate.typing.ArrayLike = u.celsius2kelvin(22.0),
         name: Optional[str] = None,
@@ -555,6 +541,7 @@ class HCN2_MA2020_GoC(HH):
         V = V.to_decimal(u.mV)
         return u.math.exp(((self.tCs * V) - self.tDs) * self.tEs)
 
+
 @register_channel("HCN_SU2015_DCN")
 class HCN_SU2015_DCN(HH):
     """Template-based import of ``HCN_SU2015_DCN.mod``."""
@@ -566,7 +553,7 @@ class HCN_SU2015_DCN(HH):
     def __init__(
         self,
         size: brainstate.typing.Size,
-        g_max: Union[brainstate.typing.ArrayLike, Callable] = 0.01 * (u.mS / u.cm ** 2),
+        g_max: Union[brainstate.typing.ArrayLike, Callable] = 0.01 * (u.mS / u.cm**2),
         E: Union[brainstate.typing.ArrayLike, Callable] = -45.0 * u.mV,
         name: Optional[str] = None,
     ):
@@ -585,6 +572,7 @@ class HCN_SU2015_DCN(HH):
     def f_m_tau(self, V):
         return 400.0 / self.qdeltat
 
+
 @register_channel("HCN_ZH2019_IO")
 class HCN_ZH2019_IO(HH):
     """Template-based import of ``HCN_ZH2019_IO.mod``."""
@@ -596,7 +584,7 @@ class HCN_ZH2019_IO(HH):
     def __init__(
         self,
         size: brainstate.typing.Size,
-        g_max: Union[brainstate.typing.ArrayLike, Callable] = 0.15 * (u.mS / u.cm ** 2),
+        g_max: Union[brainstate.typing.ArrayLike, Callable] = 0.15 * (u.mS / u.cm**2),
         E: Union[brainstate.typing.ArrayLike, Callable] = -43.0 * u.mV,
         name: Optional[str] = None,
     ):
@@ -613,6 +601,4 @@ class HCN_ZH2019_IO(HH):
 
     def f_q_tau(self, V):
         V = V.to_decimal(u.mV)
-        return 1.0 / (
-            u.math.exp(-0.086 * V - 14.6) + u.math.exp(0.07 * V - 1.87)
-        )
+        return 1.0 / (u.math.exp(-0.086 * V - 14.6) + u.math.exp(0.07 * V - 1.87))

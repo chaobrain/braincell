@@ -142,15 +142,11 @@ def plot_traces(
 
     n_traces = values_raw.shape[1]
     if locset is not None and len(locset.points) != n_traces:
-        raise ValueError(
-            f"plot_traces(...) got {n_traces} traces but locset has {len(locset.points)} points."
-        )
+        raise ValueError(f"plot_traces(...) got {n_traces} traces but locset has {len(locset.points)} points.")
 
     label_list = list(labels) if labels is not None else [f"Loc {i}" for i in range(n_traces)]
     if len(label_list) != n_traces:
-        raise ValueError(
-            f"plot_traces(...) got {len(label_list)} labels for {n_traces} traces."
-        )
+        raise ValueError(f"plot_traces(...) got {len(label_list)} labels for {n_traces} traces.")
 
     if colors is None:
         colormap = plt.get_cmap(cmap)
@@ -158,9 +154,7 @@ def plot_traces(
     else:
         color_list = list(colors)
         if len(color_list) != n_traces:
-            raise ValueError(
-                f"plot_traces(...) got {len(color_list)} colors for {n_traces} traces."
-            )
+            raise ValueError(f"plot_traces(...) got {len(color_list)} colors for {n_traces} traces.")
 
     figsize = figsize or (10.0, max(2.0 * n_traces, 3.0))
     fig = plt.figure(figsize=figsize)

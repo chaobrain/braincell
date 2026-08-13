@@ -32,11 +32,9 @@ class RenderBackend(Protocol):
     name: str
     supported_scene_kinds: frozenset[str]
 
-    def available(self) -> bool:
-        ...
+    def available(self) -> bool: ...
 
-    def render(self, request: object) -> object:
-        ...
+    def render(self, request: object) -> object: ...
 
 
 def _backend_supports(backend: RenderBackend, scene_kind: str) -> bool:

@@ -280,8 +280,7 @@ def create_delivery_state(
     """
     if len(delivery_ops) != len(blocks):
         raise ValueError(
-            "delivery_ops must have the same length as delivery blocks; "
-            f"got {len(delivery_ops)!r} and {len(blocks)!r}."
+            f"delivery_ops must have the same length as delivery blocks; got {len(delivery_ops)!r} and {len(blocks)!r}."
         )
     ring_buffers = tuple(
         brainstate.ShortTermState(
@@ -292,10 +291,7 @@ def create_delivery_state(
         )
         for block in blocks
     )
-    ring_cursors = tuple(
-        brainstate.ShortTermState(jnp.asarray(0, dtype=jnp.int32))
-        for _ in blocks
-    )
+    ring_cursors = tuple(brainstate.ShortTermState(jnp.asarray(0, dtype=jnp.int32)) for _ in blocks)
     return DeliveryState(
         ring_buffers=ring_buffers,
         ring_cursors=ring_cursors,
@@ -333,10 +329,14 @@ def write_arrivals(
         cursor = state.ring_cursors[index].value
         arrival = state.ring_buffers[index].value[cursor]
         grouped[key] = arrival if key not in grouped else grouped[key] + arrival
-        state.ring_buffers[index].value = state.ring_buffers[index].value.at[cursor].set(
-            zero_arrival(
-                block.source,
-                post_size=populations[block.source.post_population].size,
+        state.ring_buffers[index].value = (
+            state.ring_buffers[index]
+            .value.at[cursor]
+            .set(
+                zero_arrival(
+                    block.source,
+                    post_size=populations[block.source.post_population].size,
+                )
             )
         )
     for (post_population, layout_id), arrival in grouped.items():
@@ -374,11 +374,11 @@ def enqueue_future_events(
         pre_spike = population_spike(pre_cell.spike.value)
         post_size = populations[block.source.post_population].size
         event = state.delivery_ops[index](pre_spike)
-        target_cursor = (
-            state.ring_cursors[index].value + int(block.delay_steps)
-        ) % state.ring_buffers[index].value.shape[0]
-        state.ring_buffers[index].value = state.ring_buffers[index].value.at[target_cursor].add(
-            event.reshape((post_size, block.source.n_active))
+        target_cursor = (state.ring_cursors[index].value + int(block.delay_steps)) % state.ring_buffers[
+            index
+        ].value.shape[0]
+        state.ring_buffers[index].value = (
+            state.ring_buffers[index].value.at[target_cursor].add(event.reshape((post_size, block.source.n_active)))
         )
 
 
@@ -412,10 +412,7 @@ def normalize_event_backend(value: str) -> str:
         If ``value`` is not a supported backend selector.
     """
     if value not in ("auto", "scatter", "brainevent"):
-        raise ValueError(
-            "Network event_backend must be 'auto', 'scatter', or 'brainevent', "
-            f"got {value!r}."
-        )
+        raise ValueError(f"Network event_backend must be 'auto', 'scatter', or 'brainevent', got {value!r}.")
     return value
 
 

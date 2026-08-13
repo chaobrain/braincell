@@ -130,7 +130,6 @@ def _newton_method_manual_parallel(
     tol=1e-5,
     max_iter=100,
     order=2,
-
 ):
     r"""
     Newton's method for solving the implicit equations arising from the Crank - Nicolson method for ordinary differential equations (ODEs).
@@ -190,10 +189,9 @@ def _newton_method_manual_parallel(
 
         # y1: [n_neuron * n_compartment, M]
         condition = u.math.alltrue(
-            jax.vmap(lambda A_, df_: u.math.logical_or(
-                u.math.linalg.norm(A_) < tol,
-                u.math.linalg.norm(df_) < tol
-            ))(A, df)
+            jax.vmap(lambda A_, df_: u.math.logical_or(u.math.linalg.norm(A_) < tol, u.math.linalg.norm(df_) < tol))(
+                A, df
+            )
         )
         solve = jax.vmap(lambda A_, df_: u.math.linalg.solve(A_, df_))(A, df)
         solve = solve.reshape(*shape)
@@ -210,11 +208,7 @@ def _newton_method_manual_parallel(
     t = u.get_magnitude(t)
     init_guess = y0 + dt * f(t, y0, *args)[0]
     init_carry = (0, init_guess, True)
-    n, result, _ = brainstate.transform.while_loop(
-        cond_fun,
-        body_fun,
-        init_carry
-    )
+    n, result, _ = brainstate.transform.while_loop(cond_fun, body_fun, init_carry)
     aux = {}
     return result, aux
 
@@ -298,7 +292,7 @@ def _crank_nicolson_for_axial_current(A, y0, dt):
         n = y0.shape[-1]
         I = u.math.eye(n)
         alpha = 1
-        lhs = (I - alpha * dt * A)
+        lhs = I - alpha * dt * A
         rhs = (I + (1 - alpha) * dt * A) @ y0
         y1 = u.math.linalg.solve(lhs, rhs)
 
@@ -323,12 +317,7 @@ def _crank_nicolson_for_axial_current(A, y0, dt):
     description="Implicit Euler via Newton iteration.",
 )
 @set_module_as('braincell.quad')
-def implicit_euler_step(
-    target: DiffEqModule,
-    t: T,
-    dt: DT,
-    *args
-):
+def implicit_euler_step(target: DiffEqModule, t: T, dt: DT, *args):
     r"""Advance one step with the implicit (backward) Euler method.
 
     Solves
@@ -376,9 +365,7 @@ def implicit_euler_step(
     cn_exp_euler_step : Crank-Nicolson cable solve combined with
         exponential Euler gating.
     """
-    apply_standard_solver_step(
-        _newton_method, target, t, dt, *args
-    )
+    apply_standard_solver_step(_newton_method, target, t, dt, *args)
 
 
 def construct_A(target):
@@ -519,12 +506,7 @@ def construct_lu_sparse(target):
     description="Operator-splitting solver pairing implicit axial currents with Newton-based gating updates.",
 )
 @set_module_as('braincell.quad')
-def splitting_step(
-    target: DiffEqModule,
-    t: T,
-    dt: DT,
-    *args
-):
+def splitting_step(target: DiffEqModule, t: T, dt: DT, *args):
     r"""Advance a multi-compartment cell with operator-splitting.
 
     Two complementary updates are applied within a single ``dt``:
@@ -627,12 +609,7 @@ def splitting_step(
     description="Crank-Nicolson axial currents combined with explicit RK4 gating updates.",
 )
 @set_module_as('braincell.quad')
-def cn_rk4_step(
-    target: DiffEqModule,
-    t: T,
-    dt: DT,
-    *args
-):
+def cn_rk4_step(target: DiffEqModule, t: T, dt: DT, *args):
     r"""Advance a cell with Crank-Nicolson voltage and explicit RK4 channels.
 
     Performs a two-stage operator-splitting update inside one ``dt``:
@@ -686,7 +663,12 @@ def cn_rk4_step(
         target.V.value = _crank_nicolson_for_axial_current(A_matrix, V_n, dt)
 
     with brainstate.environ.context(compute_axial_current=False):
-        rk4_step(target, t, dt, *args, )
+        rk4_step(
+            target,
+            t,
+            dt,
+            *args,
+        )
     for _ in range(len(target.pop_size)):
         integral = brainstate.transform.vmap2(solve_axial, in_states=target.states())
     integral()
@@ -698,12 +680,7 @@ def cn_rk4_step(
     description="Crank-Nicolson axial currents combined with exponential Euler gating updates.",
 )
 @set_module_as('braincell.quad')
-def cn_exp_euler_step(
-    target: DiffEqModule,
-    t: T,
-    dt: DT,
-    *args
-):
+def cn_exp_euler_step(target: DiffEqModule, t: T, dt: DT, *args):
     r"""Advance a cell with Crank-Nicolson voltage and exponential Euler channels.
 
     Operator-splitting update inside one ``dt``:
@@ -773,12 +750,7 @@ def cn_exp_euler_step(
     description="Implicit axial currents combined with explicit RK4 gating updates.",
 )
 @set_module_as('braincell.quad')
-def implicit_rk4_step(
-    target: DiffEqModule,
-    t: T,
-    dt: DT,
-    *args
-):
+def implicit_rk4_step(target: DiffEqModule, t: T, dt: DT, *args):
     r"""Advance a cell with implicit Euler voltage and explicit RK4 channels.
 
     Operator-splitting update inside one ``dt`` for a multi-compartment
@@ -830,7 +802,12 @@ def implicit_rk4_step(
 
     if isinstance(target, Cell):
         with brainstate.environ.context(compute_axial_current=False):
-            rk4_step(target, t, dt, *args, )
+            rk4_step(
+                target,
+                t,
+                dt,
+                *args,
+            )
 
         def solve_axial():
             V_n = target.V.value
@@ -851,12 +828,7 @@ def implicit_rk4_step(
     description="Implicit axial currents combined with exponential Euler gating updates.",
 )
 @set_module_as('braincell.quad')
-def implicit_exp_euler_step(
-    target: DiffEqModule,
-    t: T,
-    dt: DT,
-    *args
-):
+def implicit_exp_euler_step(target: DiffEqModule, t: T, dt: DT, *args):
     r"""Advance a cell with implicit Euler voltage and exponential Euler channels.
 
     Operator-splitting update inside one ``dt`` for a multi-compartment
@@ -905,7 +877,6 @@ def implicit_exp_euler_step(
     from braincell._multi_compartment import Cell
 
     if isinstance(target, Cell):
-
         with brainstate.environ.context(compute_axial_current=False):
             apply_standard_solver_step(_exponential_euler, target, t, dt, *args, merging='stack')
 
@@ -928,12 +899,7 @@ def implicit_exp_euler_step(
     description="Exponential axial integration paired with exponential Euler gating updates.",
 )
 @set_module_as('braincell.quad')
-def exp_exp_euler_step(
-    target: DiffEqModule,
-    t: T,
-    dt: DT,
-    *args
-):
+def exp_exp_euler_step(target: DiffEqModule, t: T, dt: DT, *args):
     r"""Advance a cell with exponential cable and exponential Euler channels.
 
     Operator-splitting update inside one ``dt`` for a multi-compartment
@@ -982,7 +948,6 @@ def exp_exp_euler_step(
     from braincell._multi_compartment import Cell
 
     if isinstance(target, Cell):
-
         with brainstate.environ.context(compute_axial_current=False):
             apply_standard_solver_step(_exponential_euler, target, t, dt, *args, merging='stack')
 

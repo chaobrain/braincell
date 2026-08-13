@@ -150,18 +150,13 @@ class ContactMethod:
 
     def __post_init__(self) -> None:
         if not callable(self.builder):
-            raise TypeError(
-                f"ContactMethod builder must be callable, got {type(self.builder).__name__!s}."
-            )
+            raise TypeError(f"ContactMethod builder must be callable, got {type(self.builder).__name__!s}.")
 
     def __call__(self, context: ProjectionEdgeContext) -> ContactTable:
         """Return a materialized contact table."""
         contacts = self.builder(context)
         if not isinstance(contacts, ContactTable):
-            raise TypeError(
-                "Projection contact method must return ContactTable, "
-                f"got {type(contacts).__name__!s}."
-            )
+            raise TypeError(f"Projection contact method must return ContactTable, got {type(contacts).__name__!s}.")
         return contacts
 
 
@@ -312,10 +307,7 @@ def _normalize_contact_method(value) -> ContactMethod:
         return value
     if callable(value):
         return ContactMethod(value)
-    raise TypeError(
-        "Projection method must be a ContactMethod or callable, "
-        f"got {type(value).__name__!s}."
-    )
+    raise TypeError(f"Projection method must be a ContactMethod or callable, got {type(value).__name__!s}.")
 
 
 def _validate_edge_index(edge_index: np.ndarray, edge_set: EdgeSet) -> None:
@@ -325,8 +317,7 @@ def _validate_edge_index(edge_index: np.ndarray, edge_set: EdgeSet) -> None:
     max_index = int(np.max(edge_index))
     if min_index < 0 or max_index >= edge_set.n_edge:
         raise IndexError(
-            f"Projection edge_index out of range for EdgeSet {edge_set.name!r}: "
-            f"min={min_index!r}, max={max_index!r}."
+            f"Projection edge_index out of range for EdgeSet {edge_set.name!r}: min={min_index!r}, max={max_index!r}."
         )
 
 
@@ -341,10 +332,7 @@ def _validate_index_bounds(indices: np.ndarray, size: int, name: str) -> None:
     min_index = int(np.min(indices))
     max_index = int(np.max(indices))
     if min_index < 0 or max_index >= int(size):
-        raise IndexError(
-            f"Projection {name} out of range for size {size!r}: "
-            f"min={min_index!r}, max={max_index!r}."
-        )
+        raise IndexError(f"Projection {name} out of range for size {size!r}: min={min_index!r}, max={max_index!r}.")
 
 
 def _resolve_contact_parameter(value, context: ProjectionContactContext, *, name: str):
@@ -384,10 +372,7 @@ def _normalize_number(value, context: ProjectionEdgeContext) -> np.ndarray:
     if arr.shape == ():
         arr = np.broadcast_to(arr, (context.n_edge,)).copy()
     if arr.shape != (context.n_edge,):
-        raise ValueError(
-            f"Projection number must be scalar or shape {(context.n_edge,)!r}, "
-            f"got {arr.shape!r}."
-        )
+        raise ValueError(f"Projection number must be scalar or shape {(context.n_edge,)!r}, got {arr.shape!r}.")
     if not np.issubdtype(arr.dtype, np.integer):
         raise TypeError(f"Projection number must contain integers, got {arr.dtype!r}.")
     arr = arr.astype(np.int32, copy=False)
@@ -448,9 +433,7 @@ def per_edge(number=1, *, replace: bool = True, seed: int | None = None) -> Cont
         if source_edge.size == 0:
             return ContactTable(source_edge, np.asarray([], dtype=np.int32))
         if not replace and np.any(counts > context.pool_size):
-            raise ValueError(
-                "per_edge(..., replace=False) requires every edge number <= pool_size."
-            )
+            raise ValueError("per_edge(..., replace=False) requires every edge number <= pool_size.")
         rng = np.random.default_rng(seed)
         selected = [
             rng.choice(context.pool_size, size=int(count), replace=replace)
@@ -523,8 +506,7 @@ def explicit_contacts(source_edge, synapse_index=0) -> ContactMethod:
             target = np.broadcast_to(target, source.shape).copy()
         if target.shape != source.shape:
             raise ValueError(
-                f"explicit_contacts synapse_index must be scalar or shape {source.shape!r}, "
-                f"got {target.shape!r}."
+                f"explicit_contacts synapse_index must be scalar or shape {source.shape!r}, got {target.shape!r}."
             )
         return ContactTable(source, target)
 

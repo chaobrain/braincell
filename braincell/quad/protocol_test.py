@@ -40,7 +40,6 @@ _FLOAT_DTYPE = jnp.asarray(0.0).dtype
 
 
 class DiffEqStateTest(unittest.TestCase):
-
     def test_initial_derivative_and_diffusion_are_none(self):
         st = DiffEqState(jnp.zeros(3))
         self.assertIsNone(st.derivative)
@@ -57,13 +56,10 @@ class DiffEqStateTest(unittest.TestCase):
     def test_state_value_roundtrip(self):
         v = jnp.arange(4, dtype=_FLOAT_DTYPE) * u.mV
         st = DiffEqState(v)
-        np.testing.assert_array_equal(
-            st.value.to_decimal(u.mV), np.arange(4)
-        )
+        np.testing.assert_array_equal(st.value.to_decimal(u.mV), np.arange(4))
 
 
 class DiffEqModuleTest(unittest.TestCase):
-
     def test_compute_derivative_must_be_overridden(self):
         class Bare(brainstate.nn.Module, DiffEqModule):
             pass
@@ -83,7 +79,6 @@ class DiffEqModuleTest(unittest.TestCase):
 
 
 class IndependentIntegrationTest(unittest.TestCase):
-
     def _make_sub(self, solver):
         class Sub(brainstate.nn.Module, DiffEqModule, IndependentIntegration):
             def __init__(self):
@@ -92,7 +87,7 @@ class IndependentIntegrationTest(unittest.TestCase):
                 self.y = DiffEqState(jnp.ones(2, dtype=_FLOAT_DTYPE) * u.mV)
 
             def compute_derivative(self, *args, **kwargs):
-                self.y.derivative = -self.y.value / (5. * u.ms)
+                self.y.derivative = -self.y.value / (5.0 * u.ms)
 
         return Sub()
 

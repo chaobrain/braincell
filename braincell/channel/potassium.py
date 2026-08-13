@@ -97,14 +97,12 @@ class KDR_Ba2002(HH):
 
     __module__ = "braincell.channel"
     root_type = Potassium
-    gates = (
-        Gate("p", power=4, q10=lambda self: self.q10, temp_ref=lambda self: self.temp_ref),
-    )
+    gates = (Gate("p", power=4, q10=lambda self: self.q10, temp_ref=lambda self: self.temp_ref),)
 
     def __init__(
         self,
         size: brainstate.typing.Size,
-        g_max: Union[brainstate.typing.ArrayLike, Callable] = 10.0 * (u.mS / u.cm ** 2),
+        g_max: Union[brainstate.typing.ArrayLike, Callable] = 10.0 * (u.mS / u.cm**2),
         temp: brainstate.typing.ArrayLike = u.celsius2kelvin(36.0),
         q10: Union[brainstate.typing.ArrayLike, Callable] = 3.0,
         temp_ref: brainstate.typing.ArrayLike = u.celsius2kelvin(36.0),
@@ -136,14 +134,12 @@ class K_TM1991(HH):
 
     __module__ = "braincell.channel"
     root_type = Potassium
-    gates = (
-        Gate("p", power=4, q10=lambda self: self.q10, temp_ref=lambda self: self.temp_ref),
-    )
+    gates = (Gate("p", power=4, q10=lambda self: self.q10, temp_ref=lambda self: self.temp_ref),)
 
     def __init__(
         self,
         size: brainstate.typing.Size,
-        g_max: Union[brainstate.typing.ArrayLike, Callable] = 10.0 * (u.mS / u.cm ** 2),
+        g_max: Union[brainstate.typing.ArrayLike, Callable] = 10.0 * (u.mS / u.cm**2),
         temp: brainstate.typing.ArrayLike = u.celsius2kelvin(36.0),
         q10: Union[brainstate.typing.ArrayLike, Callable] = 1.0,
         temp_ref: brainstate.typing.ArrayLike = u.celsius2kelvin(36.0),
@@ -175,14 +171,12 @@ class K_HH1952(HH):
 
     __module__ = "braincell.channel"
     root_type = Potassium
-    gates = (
-        Gate("p", power=4, q10=lambda self: self.q10, temp_ref=lambda self: self.temp_ref),
-    )
+    gates = (Gate("p", power=4, q10=lambda self: self.q10, temp_ref=lambda self: self.temp_ref),)
 
     def __init__(
         self,
         size: brainstate.typing.Size,
-        g_max: Union[brainstate.typing.ArrayLike, Callable] = 10.0 * (u.mS / u.cm ** 2),
+        g_max: Union[brainstate.typing.ArrayLike, Callable] = 10.0 * (u.mS / u.cm**2),
         temp: brainstate.typing.ArrayLike = u.celsius2kelvin(36.0),
         q10: Union[brainstate.typing.ArrayLike, Callable] = 3.0,
         temp_ref: brainstate.typing.ArrayLike = u.celsius2kelvin(36.0),
@@ -222,7 +216,7 @@ class KA1_HM1992(HH):
     def __init__(
         self,
         size: brainstate.typing.Size,
-        g_max: Union[brainstate.typing.ArrayLike, Callable] = 30.0 * (u.mS / u.cm ** 2),
+        g_max: Union[brainstate.typing.ArrayLike, Callable] = 30.0 * (u.mS / u.cm**2),
         temp: brainstate.typing.ArrayLike = u.celsius2kelvin(36.0),
         q10_p: Union[brainstate.typing.ArrayLike, Callable] = 1.0,
         temp_ref_p: brainstate.typing.ArrayLike = u.celsius2kelvin(36.0),
@@ -249,10 +243,7 @@ class KA1_HM1992(HH):
 
     def f_p_tau(self, V, K: IonInfo):
         temp = (V - self.V_sh).to_decimal(u.mV)
-        return 1.0 / (
-            u.math.exp((temp + 35.8) / 19.7)
-            + u.math.exp(-(temp + 79.7) / 12.7)
-        ) + 0.37
+        return 1.0 / (u.math.exp((temp + 35.8) / 19.7) + u.math.exp(-(temp + 79.7) / 12.7)) + 0.37
 
     def f_q_inf(self, V, K: IonInfo):
         temp = (V - self.V_sh).to_decimal(u.mV)
@@ -262,10 +253,7 @@ class KA1_HM1992(HH):
         temp = (V - self.V_sh).to_decimal(u.mV)
         return u.math.where(
             temp < -63.0,
-            1.0 / (
-                u.math.exp((temp + 46.0) / 5.0)
-                + u.math.exp(-(temp + 238.0) / 37.5)
-            ),
+            1.0 / (u.math.exp((temp + 46.0) / 5.0) + u.math.exp(-(temp + 238.0) / 37.5)),
             19.0,
         )
 
@@ -284,7 +272,7 @@ class KA2_HM1992(HH):
     def __init__(
         self,
         size: brainstate.typing.Size,
-        g_max: Union[brainstate.typing.ArrayLike, Callable] = 20.0 * (u.mS / u.cm ** 2),
+        g_max: Union[brainstate.typing.ArrayLike, Callable] = 20.0 * (u.mS / u.cm**2),
         temp: brainstate.typing.ArrayLike = u.celsius2kelvin(36.0),
         q10_p: Union[brainstate.typing.ArrayLike, Callable] = 1.0,
         temp_ref_p: brainstate.typing.ArrayLike = u.celsius2kelvin(36.0),
@@ -311,10 +299,7 @@ class KA2_HM1992(HH):
 
     def f_p_tau(self, V, K: IonInfo):
         temp = (V - self.V_sh).to_decimal(u.mV)
-        return 1.0 / (
-            u.math.exp((temp + 35.8) / 19.7)
-            + u.math.exp(-(temp + 79.7) / 12.7)
-        ) + 0.37
+        return 1.0 / (u.math.exp((temp + 35.8) / 19.7) + u.math.exp(-(temp + 79.7) / 12.7)) + 0.37
 
     def f_q_inf(self, V, K: IonInfo):
         temp = (V - self.V_sh).to_decimal(u.mV)
@@ -324,10 +309,7 @@ class KA2_HM1992(HH):
         temp = (V - self.V_sh).to_decimal(u.mV)
         return u.math.where(
             temp < -63.0,
-            1.0 / (
-                u.math.exp((temp + 46.0) / 5.0)
-                + u.math.exp(-(temp + 238.0) / 37.5)
-            ),
+            1.0 / (u.math.exp((temp + 46.0) / 5.0) + u.math.exp(-(temp + 238.0) / 37.5)),
             19.0,
         )
 
@@ -346,7 +328,7 @@ class KK2A_HM1992(HH):
     def __init__(
         self,
         size: brainstate.typing.Size,
-        g_max: Union[brainstate.typing.ArrayLike, Callable] = 10.0 * (u.mS / u.cm ** 2),
+        g_max: Union[brainstate.typing.ArrayLike, Callable] = 10.0 * (u.mS / u.cm**2),
         temp: brainstate.typing.ArrayLike = u.celsius2kelvin(36.0),
         q10_p: Union[brainstate.typing.ArrayLike, Callable] = 1.0,
         temp_ref_p: brainstate.typing.ArrayLike = u.celsius2kelvin(36.0),
@@ -373,10 +355,7 @@ class KK2A_HM1992(HH):
 
     def f_p_tau(self, V, K: IonInfo):
         temp = (V - self.V_sh).to_decimal(u.mV)
-        return 1.0 / (
-            u.math.exp((temp - 81.0) / 25.6)
-            + u.math.exp(-(temp + 132.0) / 18.0)
-        ) + 9.9
+        return 1.0 / (u.math.exp((temp - 81.0) / 25.6) + u.math.exp(-(temp + 132.0) / 18.0)) + 9.9
 
     def f_q_inf(self, V, K: IonInfo):
         temp = (V - self.V_sh).to_decimal(u.mV)
@@ -384,10 +363,7 @@ class KK2A_HM1992(HH):
 
     def f_q_tau(self, V, K: IonInfo):
         temp = (V - self.V_sh).to_decimal(u.mV)
-        return 1.0 / (
-            u.math.exp((temp - 1329.0) / 200.0)
-            + u.math.exp(-(temp + 130.0) / 7.1)
-        ) + 120.0
+        return 1.0 / (u.math.exp((temp - 1329.0) / 200.0) + u.math.exp(-(temp + 130.0) / 7.1)) + 120.0
 
 
 @register_channel("KK2B_HM1992")
@@ -404,7 +380,7 @@ class KK2B_HM1992(HH):
     def __init__(
         self,
         size: brainstate.typing.Size,
-        g_max: Union[brainstate.typing.ArrayLike, Callable] = 10.0 * (u.mS / u.cm ** 2),
+        g_max: Union[brainstate.typing.ArrayLike, Callable] = 10.0 * (u.mS / u.cm**2),
         temp: brainstate.typing.ArrayLike = u.celsius2kelvin(36.0),
         q10_p: Union[brainstate.typing.ArrayLike, Callable] = 1.0,
         temp_ref_p: brainstate.typing.ArrayLike = u.celsius2kelvin(36.0),
@@ -431,10 +407,7 @@ class KK2B_HM1992(HH):
 
     def f_p_tau(self, V, K: IonInfo):
         temp = (V - self.V_sh).to_decimal(u.mV)
-        return 1.0 / (
-            u.math.exp((temp - 81.0) / 25.6)
-            + u.math.exp(-(temp + 132.0) / 18.0)
-        ) + 9.9
+        return 1.0 / (u.math.exp((temp - 81.0) / 25.6) + u.math.exp(-(temp + 132.0) / 18.0)) + 9.9
 
     def f_q_inf(self, V, K: IonInfo):
         temp = (V - self.V_sh).to_decimal(u.mV)
@@ -444,10 +417,7 @@ class KK2B_HM1992(HH):
         temp = (V - self.V_sh).to_decimal(u.mV)
         return u.math.where(
             temp < -70.0,
-            1.0 / (
-                u.math.exp((temp - 1329.0) / 200.0)
-                + u.math.exp(-(temp + 130.0) / 7.1)
-            ),
+            1.0 / (u.math.exp((temp - 1329.0) / 200.0) + u.math.exp(-(temp + 130.0) / 7.1)),
             8.9,
         )
 
@@ -458,14 +428,12 @@ class KNI_Ya1989(HH):
 
     __module__ = "braincell.channel"
     root_type = Potassium
-    gates = (
-        Gate("p", q10=lambda self: self.q10, temp_ref=lambda self: self.temp_ref),
-    )
+    gates = (Gate("p", q10=lambda self: self.q10, temp_ref=lambda self: self.temp_ref),)
 
     def __init__(
         self,
         size: brainstate.typing.Size,
-        g_max: Union[brainstate.typing.ArrayLike, Callable] = 0.004 * (u.mS / u.cm ** 2),
+        g_max: Union[brainstate.typing.ArrayLike, Callable] = 0.004 * (u.mS / u.cm**2),
         temp: brainstate.typing.ArrayLike = u.celsius2kelvin(36.0),
         q10: Union[brainstate.typing.ArrayLike, Callable] = 1.0,
         temp_ref: brainstate.typing.ArrayLike = u.celsius2kelvin(36.0),
@@ -491,9 +459,7 @@ class KNI_Ya1989(HH):
     def f_p_tau(self, V, K: IonInfo):
         temp = (V - self.V_sh).to_decimal(u.mV) + 35.0
         tau_max = self.tau_max.to_decimal(u.ms)
-        return tau_max / (
-            3.3 * u.math.exp(temp / 20.0) + u.math.exp(-temp / 20.0)
-        )
+        return tau_max / (3.3 * u.math.exp(temp / 20.0) + u.math.exp(-temp / 20.0))
 
 
 @register_channel("K_Leak")
@@ -506,7 +472,7 @@ class K_Leak(Channel):
     def __init__(
         self,
         size: brainstate.typing.Size,
-        g_max: Union[brainstate.typing.ArrayLike, Callable] = 0.005 * (u.mS / u.cm ** 2),
+        g_max: Union[brainstate.typing.ArrayLike, Callable] = 0.005 * (u.mS / u.cm**2),
         name: Optional[str] = None,
     ):
         super().__init__(size=size, name=name)
@@ -529,14 +495,12 @@ class K_Leak(Channel):
 class K_Kv_test(HH):
     __module__ = "braincell.channel"
     root_type = Potassium
-    gates = (
-        Gate("n", q10=lambda self: self.Q10_n, temp_ref=lambda self: self.temp_ref),
-    )
+    gates = (Gate("n", q10=lambda self: self.Q10_n, temp_ref=lambda self: self.temp_ref),)
 
     def __init__(
         self,
         size: brainstate.typing.Size,
-        g_max: Union[brainstate.typing.ArrayLike, Callable] = 0.0 * (u.siemens / (u.cm ** 2)),
+        g_max: Union[brainstate.typing.ArrayLike, Callable] = 0.0 * (u.siemens / (u.cm**2)),
         V_sh: Union[brainstate.typing.ArrayLike, Callable] = 0.0 * u.mV,
         temp: brainstate.typing.ArrayLike = u.celsius2kelvin(25.0),
         Ra: Union[brainstate.typing.ArrayLike, Callable] = 0.02 * (1 / u.mV / u.ms),
@@ -571,11 +535,11 @@ class K_Kv_test(HH):
         Rb = self.Rb / (1 / u.mV / u.ms)
         q = self.q.to_decimal(u.mV) if hasattr(self.q, "to_decimal") else self.q
         v12 = self.v12.to_decimal(u.mV) if hasattr(self.v12, "to_decimal") else self.v12
-        denom = (
-            Ra * (V - v12) / (1.0 - u.math.exp(-(V - v12) / q))
-            + (-Rb) * (V - v12) / (1.0 - u.math.exp(-(V - v12) / (-q)))
+        denom = Ra * (V - v12) / (1.0 - u.math.exp(-(V - v12) / q)) + (-Rb) * (V - v12) / (
+            1.0 - u.math.exp(-(V - v12) / (-q))
         )
         return 1.0 / denom
+
 
 @register_channel("fKdr_SU2015_DCN")
 class fKdr_SU2015_DCN(HH):
@@ -588,7 +552,7 @@ class fKdr_SU2015_DCN(HH):
     def __init__(
         self,
         size: brainstate.typing.Size,
-        g_max: Union[brainstate.typing.ArrayLike, Callable] = 0.01 * (u.mS / u.cm ** 2),
+        g_max: Union[brainstate.typing.ArrayLike, Callable] = 0.01 * (u.mS / u.cm**2),
         name: Optional[str] = None,
     ):
         super().__init__(size=size, name=name)
@@ -604,14 +568,8 @@ class fKdr_SU2015_DCN(HH):
 
     def f_m_tau(self, V, K: IonInfo):
         V = V.to_decimal(u.mV)
-        return (
-            13.9
-            / (
-                u.math.exp((V + 40.0) / 12.0)
-                + u.math.exp((V + 40.0) / -13.0)
-            )
-            + 0.1
-        ) / self.qdeltat
+        return (13.9 / (u.math.exp((V + 40.0) / 12.0) + u.math.exp((V + 40.0) / -13.0)) + 0.1) / self.qdeltat
+
 
 @register_channel("sKdr_SU2015_DCN")
 class sKdr_SU2015_DCN(HH):
@@ -624,7 +582,7 @@ class sKdr_SU2015_DCN(HH):
     def __init__(
         self,
         size: brainstate.typing.Size,
-        g_max: Union[brainstate.typing.ArrayLike, Callable] = 0.01 * (u.mS / u.cm ** 2),
+        g_max: Union[brainstate.typing.ArrayLike, Callable] = 0.01 * (u.mS / u.cm**2),
         name: Optional[str] = None,
     ):
         super().__init__(size=size, name=name)
@@ -640,14 +598,8 @@ class sKdr_SU2015_DCN(HH):
 
     def f_m_tau(self, V, K: IonInfo):
         V = V.to_decimal(u.mV)
-        return (
-            14.95
-            / (
-                u.math.exp((V + 50.0) / 21.74)
-                + u.math.exp((V + 50.0) / -13.91)
-            )
-            + 0.05
-        ) / self.qdeltat
+        return (14.95 / (u.math.exp((V + 50.0) / 21.74) + u.math.exp((V + 50.0) / -13.91)) + 0.05) / self.qdeltat
+
 
 @register_channel("KM_RI2021_SC")
 class KM_RI2021_SC(HH):
@@ -660,7 +612,7 @@ class KM_RI2021_SC(HH):
     def __init__(
         self,
         size: brainstate.typing.Size,
-        g_max: Union[brainstate.typing.ArrayLike, Callable] = 0.25 * (u.mS / u.cm ** 2),
+        g_max: Union[brainstate.typing.ArrayLike, Callable] = 0.25 * (u.mS / u.cm**2),
         temp: brainstate.typing.ArrayLike = u.celsius2kelvin(30.0),
         name: Optional[str] = None,
     ):
@@ -681,24 +633,19 @@ class KM_RI2021_SC(HH):
 
     def _n_alpha(self, V):
         V = V.to_decimal(u.mV)
-        return self.Aalpha_n * u.math.exp(
-            (V - self.V0alpha_n.to_decimal(u.mV)) / self.Kalpha_n.to_decimal(u.mV)
-        )
+        return self.Aalpha_n * u.math.exp((V - self.V0alpha_n.to_decimal(u.mV)) / self.Kalpha_n.to_decimal(u.mV))
 
     def _n_beta(self, V):
         V = V.to_decimal(u.mV)
-        return self.Abeta_n * u.math.exp(
-            (V - self.V0beta_n.to_decimal(u.mV)) / self.Kbeta_n.to_decimal(u.mV)
-        )
+        return self.Abeta_n * u.math.exp((V - self.V0beta_n.to_decimal(u.mV)) / self.Kbeta_n.to_decimal(u.mV))
 
     def f_n_inf(self, V, K: IonInfo):
         V = V.to_decimal(u.mV)
-        return 1.0 / (
-            1.0 + u.math.exp(-(V - self.V0_ninf.to_decimal(u.mV)) / self.B_ninf.to_decimal(u.mV))
-        )
+        return 1.0 / (1.0 + u.math.exp(-(V - self.V0_ninf.to_decimal(u.mV)) / self.B_ninf.to_decimal(u.mV)))
 
     def f_n_tau(self, V, K: IonInfo):
         return 1.0 / (self._n_alpha(V) + self._n_beta(V))
+
 
 @register_channel("Kir2p3_MA2025_BC")
 class Kir2p3_MA2025_BC(HH):
@@ -711,7 +658,7 @@ class Kir2p3_MA2025_BC(HH):
     def __init__(
         self,
         size: brainstate.typing.Size,
-        g_max: Union[brainstate.typing.ArrayLike, Callable] = 0.9 * (u.mS / u.cm ** 2),
+        g_max: Union[brainstate.typing.ArrayLike, Callable] = 0.9 * (u.mS / u.cm**2),
         temp: brainstate.typing.ArrayLike = u.celsius2kelvin(30.0),
         name: Optional[str] = None,
     ):
@@ -730,15 +677,12 @@ class Kir2p3_MA2025_BC(HH):
 
     def f_d_alpha(self, V, K: IonInfo):
         V = V.to_decimal(u.mV)
-        return self.Aalpha_d * u.math.exp(
-            (V - self.V0alpha_d.to_decimal(u.mV)) / self.Kalpha_d.to_decimal(u.mV)
-        )
+        return self.Aalpha_d * u.math.exp((V - self.V0alpha_d.to_decimal(u.mV)) / self.Kalpha_d.to_decimal(u.mV))
 
     def f_d_beta(self, V, K: IonInfo):
         V = V.to_decimal(u.mV)
-        return self.Abeta_d * u.math.exp(
-            (V - self.V0beta_d.to_decimal(u.mV)) / self.Kbeta_d.to_decimal(u.mV)
-        )
+        return self.Abeta_d * u.math.exp((V - self.V0beta_d.to_decimal(u.mV)) / self.Kbeta_d.to_decimal(u.mV))
+
 
 @register_channel("Kir2p3_MA2024_PC")
 class Kir2p3_MA2024_PC(HH):
@@ -751,7 +695,7 @@ class Kir2p3_MA2024_PC(HH):
     def __init__(
         self,
         size: brainstate.typing.Size,
-        g_max: Union[brainstate.typing.ArrayLike, Callable] = 0.9 * (u.mS / u.cm ** 2),
+        g_max: Union[brainstate.typing.ArrayLike, Callable] = 0.9 * (u.mS / u.cm**2),
         temp: brainstate.typing.ArrayLike = u.celsius2kelvin(30.0),
         name: Optional[str] = None,
     ):
@@ -770,15 +714,12 @@ class Kir2p3_MA2024_PC(HH):
 
     def f_d_alpha(self, V, K: IonInfo):
         V = V.to_decimal(u.mV)
-        return self.Aalpha_d * u.math.exp(
-            (V - self.V0alpha_d.to_decimal(u.mV)) / self.Kalpha_d.to_decimal(u.mV)
-        )
+        return self.Aalpha_d * u.math.exp((V - self.V0alpha_d.to_decimal(u.mV)) / self.Kalpha_d.to_decimal(u.mV))
 
     def f_d_beta(self, V, K: IonInfo):
         V = V.to_decimal(u.mV)
-        return self.Abeta_d * u.math.exp(
-            (V - self.V0beta_d.to_decimal(u.mV)) / self.Kbeta_d.to_decimal(u.mV)
-        )
+        return self.Abeta_d * u.math.exp((V - self.V0beta_d.to_decimal(u.mV)) / self.Kbeta_d.to_decimal(u.mV))
+
 
 @register_channel("Kir2p3_RI2021_SC")
 class Kir2p3_RI2021_SC(HH):
@@ -791,7 +732,7 @@ class Kir2p3_RI2021_SC(HH):
     def __init__(
         self,
         size: brainstate.typing.Size,
-        g_max: Union[brainstate.typing.ArrayLike, Callable] = 0.9 * (u.mS / u.cm ** 2),
+        g_max: Union[brainstate.typing.ArrayLike, Callable] = 0.9 * (u.mS / u.cm**2),
         temp: brainstate.typing.ArrayLike = u.celsius2kelvin(30.0),
         name: Optional[str] = None,
     ):
@@ -810,15 +751,12 @@ class Kir2p3_RI2021_SC(HH):
 
     def f_d_alpha(self, V, K: IonInfo):
         V = V.to_decimal(u.mV)
-        return self.Aalpha_d * u.math.exp(
-            (V - self.V0alpha_d.to_decimal(u.mV)) / self.Kalpha_d.to_decimal(u.mV)
-        )
+        return self.Aalpha_d * u.math.exp((V - self.V0alpha_d.to_decimal(u.mV)) / self.Kalpha_d.to_decimal(u.mV))
 
     def f_d_beta(self, V, K: IonInfo):
         V = V.to_decimal(u.mV)
-        return self.Abeta_d * u.math.exp(
-            (V - self.V0beta_d.to_decimal(u.mV)) / self.Kbeta_d.to_decimal(u.mV)
-        )
+        return self.Abeta_d * u.math.exp((V - self.V0beta_d.to_decimal(u.mV)) / self.Kbeta_d.to_decimal(u.mV))
+
 
 @register_channel("Kv1p1_MA2025_BC")
 class Kv1p1_MA2025_BC(HH):
@@ -831,7 +769,7 @@ class Kv1p1_MA2025_BC(HH):
     def __init__(
         self,
         size: brainstate.typing.Size,
-        g_max: Union[brainstate.typing.ArrayLike, Callable] = 4.0 * (u.mS / u.cm ** 2),
+        g_max: Union[brainstate.typing.ArrayLike, Callable] = 4.0 * (u.mS / u.cm**2),
         temp: brainstate.typing.ArrayLike = u.celsius2kelvin(22.0),
         gateCurrent: Union[brainstate.typing.ArrayLike, Callable] = 0.0,
         name: Optional[str] = None,
@@ -839,9 +777,7 @@ class Kv1p1_MA2025_BC(HH):
         super().__init__(size=size, name=name)
         self.g_max = braintools.init.param(g_max, self.varshape, allow_none=False)
         self.temp = braintools.init.param(temp, self.varshape, allow_none=False)
-        self.gateCurrent = braintools.init.param(
-            gateCurrent, self.varshape, allow_none=False
-        )
+        self.gateCurrent = braintools.init.param(gateCurrent, self.varshape, allow_none=False)
         self.gunit = 16.0e-9 * u.mS
         self.ca = 0.12889
         self.cva = 45.0 * u.mV
@@ -870,6 +806,7 @@ class Kv1p1_MA2025_BC(HH):
         nc = 1e12 * self.g_max / self.gunit
         igate = nc * 1e6 * self.e0 * 4.0 * self.zn * ngate_flip
         return conductive - u.math.where(self.gateCurrent != 0, igate, 0.0 * igate)
+
 
 @register_channel("Kv1p1_MA2024_PC")
 class Kv1p1_MA2024_PC(HH):
@@ -882,7 +819,7 @@ class Kv1p1_MA2024_PC(HH):
     def __init__(
         self,
         size: brainstate.typing.Size,
-        g_max: Union[brainstate.typing.ArrayLike, Callable] = 4.0 * (u.mS / u.cm ** 2),
+        g_max: Union[brainstate.typing.ArrayLike, Callable] = 4.0 * (u.mS / u.cm**2),
         temp: brainstate.typing.ArrayLike = u.celsius2kelvin(22.0),
         gateCurrent: Union[brainstate.typing.ArrayLike, Callable] = 0.0,
         name: Optional[str] = None,
@@ -890,9 +827,7 @@ class Kv1p1_MA2024_PC(HH):
         super().__init__(size=size, name=name)
         self.g_max = braintools.init.param(g_max, self.varshape, allow_none=False)
         self.temp = braintools.init.param(temp, self.varshape, allow_none=False)
-        self.gateCurrent = braintools.init.param(
-            gateCurrent, self.varshape, allow_none=False
-        )
+        self.gateCurrent = braintools.init.param(gateCurrent, self.varshape, allow_none=False)
         self.gunit = 16.0e-9 * u.mS
         self.ca = 0.12889
         self.cva = 45.0 * u.mV
@@ -922,6 +857,7 @@ class Kv1p1_MA2024_PC(HH):
         igate = nc * 1e6 * self.e0 * 4.0 * self.zn * ngate_flip
         return conductive - u.math.where(self.gateCurrent != 0, igate, 0.0 * igate)
 
+
 @register_channel("Kv1p1_RI2021_SC")
 class Kv1p1_RI2021_SC(HH):
     """Template-based import of ``Kv1p1_RI2021_SC.mod``."""
@@ -933,7 +869,7 @@ class Kv1p1_RI2021_SC(HH):
     def __init__(
         self,
         size: brainstate.typing.Size,
-        g_max: Union[brainstate.typing.ArrayLike, Callable] = 4.0 * (u.mS / u.cm ** 2),
+        g_max: Union[brainstate.typing.ArrayLike, Callable] = 4.0 * (u.mS / u.cm**2),
         temp: brainstate.typing.ArrayLike = u.celsius2kelvin(22.0),
         gateCurrent: Union[brainstate.typing.ArrayLike, Callable] = 0.0,
         name: Optional[str] = None,
@@ -941,9 +877,7 @@ class Kv1p1_RI2021_SC(HH):
         super().__init__(size=size, name=name)
         self.g_max = braintools.init.param(g_max, self.varshape, allow_none=False)
         self.temp = braintools.init.param(temp, self.varshape, allow_none=False)
-        self.gateCurrent = braintools.init.param(
-            gateCurrent, self.varshape, allow_none=False
-        )
+        self.gateCurrent = braintools.init.param(gateCurrent, self.varshape, allow_none=False)
         self.gunit = 16.0e-9 * u.mS
         self.ca = 0.12889
         self.cva = 45.0 * u.mV
@@ -956,15 +890,11 @@ class Kv1p1_RI2021_SC(HH):
 
     def f_n_alpha(self, V, K: IonInfo):
         V = V.to_decimal(u.mV)
-        return self.ca * u.math.exp(
-            -(V + self.cva.to_decimal(u.mV)) / self.cka.to_decimal(u.mV)
-        )
+        return self.ca * u.math.exp(-(V + self.cva.to_decimal(u.mV)) / self.cka.to_decimal(u.mV))
 
     def f_n_beta(self, V, K: IonInfo):
         V = V.to_decimal(u.mV)
-        return self.cb * u.math.exp(
-            -(V + self.cvb.to_decimal(u.mV)) / self.ckb.to_decimal(u.mV)
-        )
+        return self.cb * u.math.exp(-(V + self.cvb.to_decimal(u.mV)) / self.ckb.to_decimal(u.mV))
 
     def current(self, V, K: IonInfo):
         conductive = self.g_max * self.conductance_factor(V, K) * (K.E - V)
@@ -993,7 +923,7 @@ class Kv1p5_MA2024_PC(HH):
     def __init__(
         self,
         size: brainstate.typing.Size,
-        g_max: Union[brainstate.typing.ArrayLike, Callable] = 0.13195e-3 * (u.siemens / u.cm ** 2),
+        g_max: Union[brainstate.typing.ArrayLike, Callable] = 0.13195e-3 * (u.siemens / u.cm**2),
         temp: brainstate.typing.ArrayLike = u.celsius2kelvin(37.0),
         Tauact: Union[brainstate.typing.ArrayLike, Callable] = 1.0,
         Tauinactf: Union[brainstate.typing.ArrayLike, Callable] = 1.0,
@@ -1023,9 +953,7 @@ class Kv1p5_MA2024_PC(HH):
 
     def f_m_tau(self, V, K: IonInfo):
         V = V.to_decimal(u.mV)
-        alpha = self._q10() * 0.65 / (
-            u.math.exp(-(V + 10.0) / 8.5) + u.math.exp(-(V - 30.0) / 59.0)
-        )
+        alpha = self._q10() * 0.65 / (u.math.exp(-(V + 10.0) / 8.5) + u.math.exp(-(V - 30.0) / 59.0))
         beta = self._q10() * 0.65 / (2.5 + u.math.exp((V + 82.0) / 17.0))
         return 1.0 / (alpha + beta) / 3.0 * self.Tauact
 
@@ -1058,7 +986,7 @@ class Kv3p3_MA2024_PC(HH):
     def __init__(
         self,
         size: brainstate.typing.Size,
-        g_max: Union[brainstate.typing.ArrayLike, Callable] = 0.005 * (u.siemens / u.cm ** 2),
+        g_max: Union[brainstate.typing.ArrayLike, Callable] = 0.005 * (u.siemens / u.cm**2),
         temp: brainstate.typing.ArrayLike = u.celsius2kelvin(22.0),
         gateCurrent: Union[brainstate.typing.ArrayLike, Callable] = 0.0,
         name: Optional[str] = None,
@@ -1066,9 +994,7 @@ class Kv3p3_MA2024_PC(HH):
         super().__init__(size=size, name=name)
         self.g_max = braintools.init.param(g_max, self.varshape, allow_none=False)
         self.temp = braintools.init.param(temp, self.varshape, allow_none=False)
-        self.gateCurrent = braintools.init.param(
-            gateCurrent, self.varshape, allow_none=False
-        )
+        self.gateCurrent = braintools.init.param(gateCurrent, self.varshape, allow_none=False)
         self.gunit = 16.0e-9 * u.mS
         self.ca = 0.22
         self.cva = 16.0 * u.mV
@@ -1081,15 +1007,11 @@ class Kv3p3_MA2024_PC(HH):
 
     def f_n_alpha(self, V, K: IonInfo):
         V = V.to_decimal(u.mV)
-        return self.ca * u.math.exp(
-            -(V + self.cva.to_decimal(u.mV)) / self.cka.to_decimal(u.mV)
-        )
+        return self.ca * u.math.exp(-(V + self.cva.to_decimal(u.mV)) / self.cka.to_decimal(u.mV))
 
     def f_n_beta(self, V, K: IonInfo):
         V = V.to_decimal(u.mV)
-        return self.cb * u.math.exp(
-            -(V + self.cvb.to_decimal(u.mV)) / self.ckb.to_decimal(u.mV)
-        )
+        return self.cb * u.math.exp(-(V + self.cvb.to_decimal(u.mV)) / self.ckb.to_decimal(u.mV))
 
     def current(self, V, K: IonInfo):
         conductive = self.g_max * self.conductance_factor(V, K) * (K.E - V)
@@ -1117,7 +1039,7 @@ class Kv3p4_MA2025_BC(HH):
     def __init__(
         self,
         size: brainstate.typing.Size,
-        g_max: Union[brainstate.typing.ArrayLike, Callable] = 4.0 * (u.mS / u.cm ** 2),
+        g_max: Union[brainstate.typing.ArrayLike, Callable] = 4.0 * (u.mS / u.cm**2),
         temp: brainstate.typing.ArrayLike = u.celsius2kelvin(22.0),
         name: Optional[str] = None,
     ):
@@ -1152,12 +1074,7 @@ class Kv3p4_MA2025_BC(HH):
         mtau_func = u.math.where(
             V < -35.0,
             (3.4225e-5 + 0.00498 * u.math.exp(V / 28.29)) * 3.0,
-            self.mty0
-            + 1.0
-            / (
-                u.math.exp((V + self.mtvh1) / self.mtk1)
-                + u.math.exp((V + self.mtvh2) / self.mtk2)
-            ),
+            self.mty0 + 1.0 / (u.math.exp((V + self.mtvh1) / self.mtk1) + u.math.exp((V + self.mtvh2) / self.mtk2)),
         )
         return 1000.0 * mtau_func
 
@@ -1170,9 +1087,10 @@ class Kv3p4_MA2025_BC(HH):
         htau_func = u.math.where(
             V > 0.0,
             0.0012 + 0.0023 * u.math.exp(-0.141 * V),
-            1.2202e-05 + 0.012 * u.math.exp(-((V + 56.3) / 49.6) ** 2),
+            1.2202e-05 + 0.012 * u.math.exp(-(((V + 56.3) / 49.6) ** 2)),
         )
         return 1000.0 * htau_func
+
 
 @register_channel("Kv3p4_MA2024_PC")
 class Kv3p4_MA2024_PC(HH):
@@ -1188,7 +1106,7 @@ class Kv3p4_MA2024_PC(HH):
     def __init__(
         self,
         size: brainstate.typing.Size,
-        g_max: Union[brainstate.typing.ArrayLike, Callable] = 4.0 * (u.mS / u.cm ** 2),
+        g_max: Union[brainstate.typing.ArrayLike, Callable] = 4.0 * (u.mS / u.cm**2),
         temp: brainstate.typing.ArrayLike = u.celsius2kelvin(22.0),
         name: Optional[str] = None,
     ):
@@ -1223,12 +1141,7 @@ class Kv3p4_MA2024_PC(HH):
         mtau_func = u.math.where(
             V < -35.0,
             (3.4225e-5 + 0.00498 * u.math.exp(V / 28.29)) * 3.0,
-            self.mty0
-            + 1.0
-            / (
-                u.math.exp((V + self.mtvh1) / self.mtk1)
-                + u.math.exp((V + self.mtvh2) / self.mtk2)
-            ),
+            self.mty0 + 1.0 / (u.math.exp((V + self.mtvh1) / self.mtk1) + u.math.exp((V + self.mtvh2) / self.mtk2)),
         )
         return 1000.0 * mtau_func
 
@@ -1241,9 +1154,10 @@ class Kv3p4_MA2024_PC(HH):
         htau_func = u.math.where(
             V > 0.0,
             0.0012 + 0.0023 * u.math.exp(-0.141 * V),
-            1.2202e-05 + 0.012 * u.math.exp(-((V + 56.3) / 49.6) ** 2),
+            1.2202e-05 + 0.012 * u.math.exp(-(((V + 56.3) / 49.6) ** 2)),
         )
         return 1000.0 * htau_func
+
 
 @register_channel("Kv3p4_RI2021_SC")
 class Kv3p4_RI2021_SC(HH):
@@ -1259,7 +1173,7 @@ class Kv3p4_RI2021_SC(HH):
     def __init__(
         self,
         size: brainstate.typing.Size,
-        g_max: Union[brainstate.typing.ArrayLike, Callable] = 4.0 * (u.mS / u.cm ** 2),
+        g_max: Union[brainstate.typing.ArrayLike, Callable] = 4.0 * (u.mS / u.cm**2),
         temp: brainstate.typing.ArrayLike = u.celsius2kelvin(22.0),
         name: Optional[str] = None,
     ):
@@ -1294,12 +1208,7 @@ class Kv3p4_RI2021_SC(HH):
         mtau_func = u.math.where(
             V < -35.0,
             (3.4225e-5 + 0.00498 * u.math.exp(V / 28.29)) * 3.0,
-            self.mty0
-            + 1.0
-            / (
-                u.math.exp((V + self.mtvh1) / self.mtk1)
-                + u.math.exp((V + self.mtvh2) / self.mtk2)
-            ),
+            self.mty0 + 1.0 / (u.math.exp((V + self.mtvh1) / self.mtk1) + u.math.exp((V + self.mtvh2) / self.mtk2)),
         )
         return 1000.0 * mtau_func
 
@@ -1312,9 +1221,10 @@ class Kv3p4_RI2021_SC(HH):
         htau_func = u.math.where(
             V > 0.0,
             0.0012 + 0.0023 * u.math.exp(-0.141 * V),
-            1.2202e-05 + 0.012 * u.math.exp(-((V + 56.3) / 49.6) ** 2),
+            1.2202e-05 + 0.012 * u.math.exp(-(((V + 56.3) / 49.6) ** 2)),
         )
         return 1000.0 * htau_func
+
 
 @register_channel("Kv4p3_MA2025_BC")
 class Kv4p3_MA2025_BC(HH):
@@ -1330,7 +1240,7 @@ class Kv4p3_MA2025_BC(HH):
     def __init__(
         self,
         size: brainstate.typing.Size,
-        g_max: Union[brainstate.typing.ArrayLike, Callable] = 3.2 * (u.mS / u.cm ** 2),
+        g_max: Union[brainstate.typing.ArrayLike, Callable] = 3.2 * (u.mS / u.cm**2),
         temp: brainstate.typing.ArrayLike = u.celsius2kelvin(30.0),
         name: Optional[str] = None,
     ):
@@ -1363,9 +1273,7 @@ class Kv4p3_MA2025_BC(HH):
 
     def _a_beta(self, V, K: IonInfo):
         V = V.to_decimal(u.mV)
-        return self.Abeta_a / u.math.exp(
-            (V - self.V0beta_a.to_decimal(u.mV)) / self.Kbeta_a.to_decimal(u.mV)
-        )
+        return self.Abeta_a / u.math.exp((V - self.V0beta_a.to_decimal(u.mV)) / self.Kbeta_a.to_decimal(u.mV))
 
     def _b_alpha(self, V, K: IonInfo):
         V = V.to_decimal(u.mV)
@@ -1394,6 +1302,7 @@ class Kv4p3_MA2025_BC(HH):
 
     def f_b_tau(self, V, K: IonInfo):
         return 1.0 / (self._b_alpha(V, K) + self._b_beta(V, K))
+
 
 @register_channel("Kv4p3_MA2024_PC")
 class Kv4p3_MA2024_PC(HH):
@@ -1409,7 +1318,7 @@ class Kv4p3_MA2024_PC(HH):
     def __init__(
         self,
         size: brainstate.typing.Size,
-        g_max: Union[brainstate.typing.ArrayLike, Callable] = 3.2 * (u.mS / u.cm ** 2),
+        g_max: Union[brainstate.typing.ArrayLike, Callable] = 3.2 * (u.mS / u.cm**2),
         temp: brainstate.typing.ArrayLike = u.celsius2kelvin(30.0),
         name: Optional[str] = None,
     ):
@@ -1442,9 +1351,7 @@ class Kv4p3_MA2024_PC(HH):
 
     def _a_beta(self, V, K: IonInfo):
         V = V.to_decimal(u.mV)
-        return self.Abeta_a / u.math.exp(
-            (V - self.V0beta_a.to_decimal(u.mV)) / self.Kbeta_a.to_decimal(u.mV)
-        )
+        return self.Abeta_a / u.math.exp((V - self.V0beta_a.to_decimal(u.mV)) / self.Kbeta_a.to_decimal(u.mV))
 
     def _b_alpha(self, V, K: IonInfo):
         V = V.to_decimal(u.mV)
@@ -1474,6 +1381,7 @@ class Kv4p3_MA2024_PC(HH):
     def f_b_tau(self, V, K: IonInfo):
         return 1.0 / (self._b_alpha(V, K) + self._b_beta(V, K))
 
+
 @register_channel("Kv4p3_RI2021_SC")
 class Kv4p3_RI2021_SC(HH):
     """Template-based import of ``Kv4p3_RI2021_SC.mod``."""
@@ -1488,7 +1396,7 @@ class Kv4p3_RI2021_SC(HH):
     def __init__(
         self,
         size: brainstate.typing.Size,
-        g_max: Union[brainstate.typing.ArrayLike, Callable] = 3.2 * (u.mS / u.cm ** 2),
+        g_max: Union[brainstate.typing.ArrayLike, Callable] = 3.2 * (u.mS / u.cm**2),
         temp: brainstate.typing.ArrayLike = u.celsius2kelvin(30.0),
         name: Optional[str] = None,
     ):
@@ -1517,15 +1425,11 @@ class Kv4p3_RI2021_SC(HH):
 
     def _a_alpha(self, V, K: IonInfo):
         V = V.to_decimal(u.mV)
-        return self.Aalpha_a * _sigm(
-            V - self.V0alpha_a.to_decimal(u.mV), self.Kalpha_a.to_decimal(u.mV)
-        )
+        return self.Aalpha_a * _sigm(V - self.V0alpha_a.to_decimal(u.mV), self.Kalpha_a.to_decimal(u.mV))
 
     def _a_beta(self, V, K: IonInfo):
         V = V.to_decimal(u.mV)
-        return self.Abeta_a / u.math.exp(
-            (V - self.V0beta_a.to_decimal(u.mV)) / self.Kbeta_a.to_decimal(u.mV)
-        )
+        return self.Abeta_a / u.math.exp((V - self.V0beta_a.to_decimal(u.mV)) / self.Kbeta_a.to_decimal(u.mV))
 
     def _b_alpha(self, V, K: IonInfo):
         V = V.to_decimal(u.mV)
@@ -1543,21 +1447,18 @@ class Kv4p3_RI2021_SC(HH):
 
     def f_a_inf(self, V, K: IonInfo):
         V = V.to_decimal(u.mV)
-        return 1.0 / (
-            1.0 + u.math.exp((V - self.V0_ainf.to_decimal(u.mV)) / self.K_ainf.to_decimal(u.mV))
-        )
+        return 1.0 / (1.0 + u.math.exp((V - self.V0_ainf.to_decimal(u.mV)) / self.K_ainf.to_decimal(u.mV)))
 
     def f_a_tau(self, V, K: IonInfo):
         return 1.0 / (self._a_alpha(V, K) + self._a_beta(V, K))
 
     def f_b_inf(self, V, K: IonInfo):
         V = V.to_decimal(u.mV)
-        return 1.0 / (
-            1.0 + u.math.exp((V - self.V0_binf.to_decimal(u.mV)) / self.K_binf.to_decimal(u.mV))
-        )
+        return 1.0 / (1.0 + u.math.exp((V - self.V0_binf.to_decimal(u.mV)) / self.K_binf.to_decimal(u.mV)))
 
     def f_b_tau(self, V, K: IonInfo):
         return 1.0 / (self._b_alpha(V, K) + self._b_beta(V, K))
+
 
 @register_channel("KM_MA2020_GoC")
 class KM_MA2020_GoC(HH):
@@ -1570,7 +1471,7 @@ class KM_MA2020_GoC(HH):
     def __init__(
         self,
         size: brainstate.typing.Size,
-        g_max: Union[brainstate.typing.ArrayLike, Callable] = 0.25 * (u.mS / u.cm ** 2),
+        g_max: Union[brainstate.typing.ArrayLike, Callable] = 0.25 * (u.mS / u.cm**2),
         temp: brainstate.typing.ArrayLike = u.celsius2kelvin(30.0),
         name: Optional[str] = None,
     ):
@@ -1591,24 +1492,19 @@ class KM_MA2020_GoC(HH):
 
     def _n_alpha(self, V):
         V = V.to_decimal(u.mV)
-        return self.Aalpha_n * u.math.exp(
-            (V - self.V0alpha_n.to_decimal(u.mV)) / self.Kalpha_n.to_decimal(u.mV)
-        )
+        return self.Aalpha_n * u.math.exp((V - self.V0alpha_n.to_decimal(u.mV)) / self.Kalpha_n.to_decimal(u.mV))
 
     def _n_beta(self, V):
         V = V.to_decimal(u.mV)
-        return self.Abeta_n * u.math.exp(
-            (V - self.V0beta_n.to_decimal(u.mV)) / self.Kbeta_n.to_decimal(u.mV)
-        )
+        return self.Abeta_n * u.math.exp((V - self.V0beta_n.to_decimal(u.mV)) / self.Kbeta_n.to_decimal(u.mV))
 
     def f_n_inf(self, V, K: IonInfo):
         V = V.to_decimal(u.mV)
-        return 1.0 / (
-            1.0 + u.math.exp(-(V - self.V0_ninf.to_decimal(u.mV)) / self.B_ninf.to_decimal(u.mV))
-        )
+        return 1.0 / (1.0 + u.math.exp(-(V - self.V0_ninf.to_decimal(u.mV)) / self.B_ninf.to_decimal(u.mV)))
 
     def f_n_tau(self, V, K: IonInfo):
         return 1.0 / (self._n_alpha(V) + self._n_beta(V))
+
 
 @register_channel("Kv1p1_MA2020_GoC")
 class Kv1p1_MA2020_GoC(HH):
@@ -1621,7 +1517,7 @@ class Kv1p1_MA2020_GoC(HH):
     def __init__(
         self,
         size: brainstate.typing.Size,
-        g_max: Union[brainstate.typing.ArrayLike, Callable] = 4.0 * (u.mS / u.cm ** 2),
+        g_max: Union[brainstate.typing.ArrayLike, Callable] = 4.0 * (u.mS / u.cm**2),
         temp: brainstate.typing.ArrayLike = u.celsius2kelvin(22.0),
         gateCurrent: Union[brainstate.typing.ArrayLike, Callable] = 0.0,
         name: Optional[str] = None,
@@ -1629,9 +1525,7 @@ class Kv1p1_MA2020_GoC(HH):
         super().__init__(size=size, name=name)
         self.g_max = braintools.init.param(g_max, self.varshape, allow_none=False)
         self.temp = braintools.init.param(temp, self.varshape, allow_none=False)
-        self.gateCurrent = braintools.init.param(
-            gateCurrent, self.varshape, allow_none=False
-        )
+        self.gateCurrent = braintools.init.param(gateCurrent, self.varshape, allow_none=False)
         self.gunit = 16.0e-9 * u.mS
         self.ca = 0.12889
         self.cva = 45.0 * u.mV
@@ -1644,15 +1538,11 @@ class Kv1p1_MA2020_GoC(HH):
 
     def f_n_alpha(self, V, K: IonInfo):
         V = V.to_decimal(u.mV)
-        return self.ca * u.math.exp(
-            -(V + self.cva.to_decimal(u.mV)) / self.cka.to_decimal(u.mV)
-        )
+        return self.ca * u.math.exp(-(V + self.cva.to_decimal(u.mV)) / self.cka.to_decimal(u.mV))
 
     def f_n_beta(self, V, K: IonInfo):
         V = V.to_decimal(u.mV)
-        return self.cb * u.math.exp(
-            -(V + self.cvb.to_decimal(u.mV)) / self.ckb.to_decimal(u.mV)
-        )
+        return self.cb * u.math.exp(-(V + self.cvb.to_decimal(u.mV)) / self.ckb.to_decimal(u.mV))
 
     def current(self, V, K: IonInfo):
         conductive = self.g_max * self.conductance_factor(V, K) * (K.E - V)
@@ -1664,6 +1554,7 @@ class Kv1p1_MA2020_GoC(HH):
         nc = 1e12 * self.g_max / self.gunit
         igate = nc * 1e6 * self.e0 * 4.0 * self.zn * ngate_flip
         return conductive - u.math.where(self.gateCurrent != 0, igate, 0.0 * igate)
+
 
 @register_channel("Kv3p4_MA2020_GoC")
 class Kv3p4_MA2020_GoC(HH):
@@ -1679,7 +1570,7 @@ class Kv3p4_MA2020_GoC(HH):
     def __init__(
         self,
         size: brainstate.typing.Size,
-        g_max: Union[brainstate.typing.ArrayLike, Callable] = 4.0 * (u.mS / u.cm ** 2),
+        g_max: Union[brainstate.typing.ArrayLike, Callable] = 4.0 * (u.mS / u.cm**2),
         temp: brainstate.typing.ArrayLike = u.celsius2kelvin(22.0),
         name: Optional[str] = None,
     ):
@@ -1714,12 +1605,7 @@ class Kv3p4_MA2020_GoC(HH):
         mtau_func = u.math.where(
             V < -35.0,
             (3.4225e-5 + 0.00498 * u.math.exp(V / 28.29)) * 3.0,
-            self.mty0
-            + 1.0
-            / (
-                u.math.exp((V + self.mtvh1) / self.mtk1)
-                + u.math.exp((V + self.mtvh2) / self.mtk2)
-            ),
+            self.mty0 + 1.0 / (u.math.exp((V + self.mtvh1) / self.mtk1) + u.math.exp((V + self.mtvh2) / self.mtk2)),
         )
         return 1000.0 * mtau_func
 
@@ -1732,9 +1618,10 @@ class Kv3p4_MA2020_GoC(HH):
         htau_func = u.math.where(
             V > 0.0,
             0.0012 + 0.0023 * u.math.exp(-0.141 * V),
-            1.2202e-05 + 0.012 * u.math.exp(-((V + 56.3) / 49.6) ** 2),
+            1.2202e-05 + 0.012 * u.math.exp(-(((V + 56.3) / 49.6) ** 2)),
         )
         return 1000.0 * htau_func
+
 
 @register_channel("Kv4p3_MA2020_GoC")
 class Kv4p3_MA2020_GoC(HH):
@@ -1750,7 +1637,7 @@ class Kv4p3_MA2020_GoC(HH):
     def __init__(
         self,
         size: brainstate.typing.Size,
-        g_max: Union[brainstate.typing.ArrayLike, Callable] = 3.2 * (u.mS / u.cm ** 2),
+        g_max: Union[brainstate.typing.ArrayLike, Callable] = 3.2 * (u.mS / u.cm**2),
         temp: brainstate.typing.ArrayLike = u.celsius2kelvin(22.0),
         name: Optional[str] = None,
     ):
@@ -1779,15 +1666,11 @@ class Kv4p3_MA2020_GoC(HH):
 
     def _a_alpha(self, V, K: IonInfo):
         V = V.to_decimal(u.mV)
-        return self.Aalpha_a * _sigm(
-            V - self.V0alpha_a.to_decimal(u.mV), self.Kalpha_a.to_decimal(u.mV)
-        )
+        return self.Aalpha_a * _sigm(V - self.V0alpha_a.to_decimal(u.mV), self.Kalpha_a.to_decimal(u.mV))
 
     def _a_beta(self, V, K: IonInfo):
         V = V.to_decimal(u.mV)
-        return self.Abeta_a / u.math.exp(
-            (V - self.V0beta_a.to_decimal(u.mV)) / self.Kbeta_a.to_decimal(u.mV)
-        )
+        return self.Abeta_a / u.math.exp((V - self.V0beta_a.to_decimal(u.mV)) / self.Kbeta_a.to_decimal(u.mV))
 
     def _b_alpha(self, V, K: IonInfo):
         V = V.to_decimal(u.mV)
@@ -1805,21 +1688,18 @@ class Kv4p3_MA2020_GoC(HH):
 
     def f_a_inf(self, V, K: IonInfo):
         V = V.to_decimal(u.mV)
-        return 1.0 / (
-            1.0 + u.math.exp((V - self.V0_ainf.to_decimal(u.mV)) / self.K_ainf.to_decimal(u.mV))
-        )
+        return 1.0 / (1.0 + u.math.exp((V - self.V0_ainf.to_decimal(u.mV)) / self.K_ainf.to_decimal(u.mV)))
 
     def f_a_tau(self, V, K: IonInfo):
         return 1.0 / (self._a_alpha(V, K) + self._a_beta(V, K))
 
     def f_b_inf(self, V, K: IonInfo):
         V = V.to_decimal(u.mV)
-        return 1.0 / (
-            1.0 + u.math.exp((V - self.V0_binf.to_decimal(u.mV)) / self.K_binf.to_decimal(u.mV))
-        )
+        return 1.0 / (1.0 + u.math.exp((V - self.V0_binf.to_decimal(u.mV)) / self.K_binf.to_decimal(u.mV)))
 
     def f_b_tau(self, V, K: IonInfo):
         return 1.0 / (self._b_alpha(V, K) + self._b_beta(V, K))
+
 
 @register_channel("KM_MA2020_GrC")
 class KM_MA2020_GrC(HH):
@@ -1832,7 +1712,7 @@ class KM_MA2020_GrC(HH):
     def __init__(
         self,
         size: brainstate.typing.Size,
-        g_max: Union[brainstate.typing.ArrayLike, Callable] = 0.25 * (u.mS / u.cm ** 2),
+        g_max: Union[brainstate.typing.ArrayLike, Callable] = 0.25 * (u.mS / u.cm**2),
         temp: brainstate.typing.ArrayLike = u.celsius2kelvin(30.0),
         name: Optional[str] = None,
     ):
@@ -1853,24 +1733,19 @@ class KM_MA2020_GrC(HH):
 
     def _n_alpha(self, V):
         V = V.to_decimal(u.mV)
-        return self.Aalpha_n * u.math.exp(
-            (V - self.V0alpha_n.to_decimal(u.mV)) / self.Kalpha_n.to_decimal(u.mV)
-        )
+        return self.Aalpha_n * u.math.exp((V - self.V0alpha_n.to_decimal(u.mV)) / self.Kalpha_n.to_decimal(u.mV))
 
     def _n_beta(self, V):
         V = V.to_decimal(u.mV)
-        return self.Abeta_n * u.math.exp(
-            (V - self.V0beta_n.to_decimal(u.mV)) / self.Kbeta_n.to_decimal(u.mV)
-        )
+        return self.Abeta_n * u.math.exp((V - self.V0beta_n.to_decimal(u.mV)) / self.Kbeta_n.to_decimal(u.mV))
 
     def f_n_inf(self, V, K: IonInfo):
         V = V.to_decimal(u.mV)
-        return 1.0 / (
-            1.0 + u.math.exp(-(V - self.V0_ninf.to_decimal(u.mV)) / self.B_ninf.to_decimal(u.mV))
-        )
+        return 1.0 / (1.0 + u.math.exp(-(V - self.V0_ninf.to_decimal(u.mV)) / self.B_ninf.to_decimal(u.mV)))
 
     def f_n_tau(self, V, K: IonInfo):
         return 1.0 / (self._n_alpha(V) + self._n_beta(V))
+
 
 @register_channel("Kir2p3_MA2020_GrC")
 class Kir2p3_MA2020_GrC(HH):
@@ -1883,7 +1758,7 @@ class Kir2p3_MA2020_GrC(HH):
     def __init__(
         self,
         size: brainstate.typing.Size,
-        g_max: Union[brainstate.typing.ArrayLike, Callable] = 0.9 * (u.mS / u.cm ** 2),
+        g_max: Union[brainstate.typing.ArrayLike, Callable] = 0.9 * (u.mS / u.cm**2),
         temp: brainstate.typing.ArrayLike = u.celsius2kelvin(30.0),
         name: Optional[str] = None,
     ):
@@ -1902,15 +1777,12 @@ class Kir2p3_MA2020_GrC(HH):
 
     def f_d_alpha(self, V, K: IonInfo):
         V = V.to_decimal(u.mV)
-        return self.Aalpha_d * u.math.exp(
-            (V - self.V0alpha_d.to_decimal(u.mV)) / self.Kalpha_d.to_decimal(u.mV)
-        )
+        return self.Aalpha_d * u.math.exp((V - self.V0alpha_d.to_decimal(u.mV)) / self.Kalpha_d.to_decimal(u.mV))
 
     def f_d_beta(self, V, K: IonInfo):
         V = V.to_decimal(u.mV)
-        return self.Abeta_d * u.math.exp(
-            (V - self.V0beta_d.to_decimal(u.mV)) / self.Kbeta_d.to_decimal(u.mV)
-        )
+        return self.Abeta_d * u.math.exp((V - self.V0beta_d.to_decimal(u.mV)) / self.Kbeta_d.to_decimal(u.mV))
+
 
 @register_channel("Kv1p1_MA2020_GrC")
 class Kv1p1_MA2020_GrC(HH):
@@ -1923,7 +1795,7 @@ class Kv1p1_MA2020_GrC(HH):
     def __init__(
         self,
         size: brainstate.typing.Size,
-        g_max: Union[brainstate.typing.ArrayLike, Callable] = 4.0 * (u.mS / u.cm ** 2),
+        g_max: Union[brainstate.typing.ArrayLike, Callable] = 4.0 * (u.mS / u.cm**2),
         temp: brainstate.typing.ArrayLike = u.celsius2kelvin(22.0),
         gateCurrent: Union[brainstate.typing.ArrayLike, Callable] = 0.0,
         name: Optional[str] = None,
@@ -1931,9 +1803,7 @@ class Kv1p1_MA2020_GrC(HH):
         super().__init__(size=size, name=name)
         self.g_max = braintools.init.param(g_max, self.varshape, allow_none=False)
         self.temp = braintools.init.param(temp, self.varshape, allow_none=False)
-        self.gateCurrent = braintools.init.param(
-            gateCurrent, self.varshape, allow_none=False
-        )
+        self.gateCurrent = braintools.init.param(gateCurrent, self.varshape, allow_none=False)
         self.gunit = 16.0e-9 * u.mS
         self.ca = 0.12889
         self.cva = 45.0 * u.mV
@@ -1946,15 +1816,11 @@ class Kv1p1_MA2020_GrC(HH):
 
     def f_n_alpha(self, V, K: IonInfo):
         V = V.to_decimal(u.mV)
-        return self.ca * u.math.exp(
-            -(V + self.cva.to_decimal(u.mV)) / self.cka.to_decimal(u.mV)
-        )
+        return self.ca * u.math.exp(-(V + self.cva.to_decimal(u.mV)) / self.cka.to_decimal(u.mV))
 
     def f_n_beta(self, V, K: IonInfo):
         V = V.to_decimal(u.mV)
-        return self.cb * u.math.exp(
-            -(V + self.cvb.to_decimal(u.mV)) / self.ckb.to_decimal(u.mV)
-        )
+        return self.cb * u.math.exp(-(V + self.cvb.to_decimal(u.mV)) / self.ckb.to_decimal(u.mV))
 
     def current(self, V, K: IonInfo):
         conductive = self.g_max * self.conductance_factor(V, K) * (K.E - V)
@@ -1966,6 +1832,7 @@ class Kv1p1_MA2020_GrC(HH):
         nc = 1e12 * self.g_max / self.gunit
         igate = nc * 1e6 * self.e0 * 4.0 * self.zn * ngate_flip
         return conductive - u.math.where(self.gateCurrent != 0, igate, 0.0 * igate)
+
 
 @register_channel("Kv2p2_0010_MA2020_GrC")
 class Kv2p2_0010_MA2020_GrC(HH):
@@ -1981,7 +1848,7 @@ class Kv2p2_0010_MA2020_GrC(HH):
     def __init__(
         self,
         size: brainstate.typing.Size,
-        g_max: Union[brainstate.typing.ArrayLike, Callable] = 0.01 * (u.mS / u.cm ** 2),
+        g_max: Union[brainstate.typing.ArrayLike, Callable] = 0.01 * (u.mS / u.cm**2),
         BBiD: Union[brainstate.typing.ArrayLike, Callable] = 10.0,
         name: Optional[str] = None,
     ):
@@ -2008,6 +1875,7 @@ class Kv2p2_0010_MA2020_GrC(HH):
         V = V.to_decimal(u.mV)
         return 10000.0 / (1.0 + u.math.exp((V + 46.56) / -44.14))
 
+
 @register_channel("Kv3p4_MA2020_GrC")
 class Kv3p4_MA2020_GrC(HH):
     """Template-based import of ``Kv3p4_MA2020_GrC.mod``."""
@@ -2022,7 +1890,7 @@ class Kv3p4_MA2020_GrC(HH):
     def __init__(
         self,
         size: brainstate.typing.Size,
-        g_max: Union[brainstate.typing.ArrayLike, Callable] = 4.0 * (u.mS / u.cm ** 2),
+        g_max: Union[brainstate.typing.ArrayLike, Callable] = 4.0 * (u.mS / u.cm**2),
         temp: brainstate.typing.ArrayLike = u.celsius2kelvin(22.0),
         name: Optional[str] = None,
     ):
@@ -2057,12 +1925,7 @@ class Kv3p4_MA2020_GrC(HH):
         mtau_func = u.math.where(
             V < -35.0,
             (3.4225e-5 + 0.00498 * u.math.exp(V / 28.29)) * 3.0,
-            self.mty0
-            + 1.0
-            / (
-                u.math.exp((V + self.mtvh1) / self.mtk1)
-                + u.math.exp((V + self.mtvh2) / self.mtk2)
-            ),
+            self.mty0 + 1.0 / (u.math.exp((V + self.mtvh1) / self.mtk1) + u.math.exp((V + self.mtvh2) / self.mtk2)),
         )
         return 1000.0 * mtau_func
 
@@ -2075,9 +1938,10 @@ class Kv3p4_MA2020_GrC(HH):
         htau_func = u.math.where(
             V > 0.0,
             0.0012 + 0.0023 * u.math.exp(-0.141 * V),
-            1.2202e-05 + 0.012 * u.math.exp(-((V + 56.3) / 49.6) ** 2),
+            1.2202e-05 + 0.012 * u.math.exp(-(((V + 56.3) / 49.6) ** 2)),
         )
         return 1000.0 * htau_func
+
 
 @register_channel("Kv4p3_MA2020_GrC")
 class Kv4p3_MA2020_GrC(HH):
@@ -2093,7 +1957,7 @@ class Kv4p3_MA2020_GrC(HH):
     def __init__(
         self,
         size: brainstate.typing.Size,
-        g_max: Union[brainstate.typing.ArrayLike, Callable] = 3.2 * (u.mS / u.cm ** 2),
+        g_max: Union[brainstate.typing.ArrayLike, Callable] = 3.2 * (u.mS / u.cm**2),
         temp: brainstate.typing.ArrayLike = u.celsius2kelvin(30.0),
         name: Optional[str] = None,
     ):
@@ -2122,15 +1986,11 @@ class Kv4p3_MA2020_GrC(HH):
 
     def _a_alpha(self, V, K: IonInfo):
         V = V.to_decimal(u.mV)
-        return self.Aalpha_a * _sigm(
-            V - self.V0alpha_a.to_decimal(u.mV), self.Kalpha_a.to_decimal(u.mV)
-        )
+        return self.Aalpha_a * _sigm(V - self.V0alpha_a.to_decimal(u.mV), self.Kalpha_a.to_decimal(u.mV))
 
     def _a_beta(self, V, K: IonInfo):
         V = V.to_decimal(u.mV)
-        return self.Abeta_a / u.math.exp(
-            (V - self.V0beta_a.to_decimal(u.mV)) / self.Kbeta_a.to_decimal(u.mV)
-        )
+        return self.Abeta_a / u.math.exp((V - self.V0beta_a.to_decimal(u.mV)) / self.Kbeta_a.to_decimal(u.mV))
 
     def _b_alpha(self, V, K: IonInfo):
         V = V.to_decimal(u.mV)
@@ -2148,21 +2008,18 @@ class Kv4p3_MA2020_GrC(HH):
 
     def f_a_inf(self, V, K: IonInfo):
         V = V.to_decimal(u.mV)
-        return 1.0 / (
-            1.0 + u.math.exp((V - self.V0_ainf.to_decimal(u.mV)) / self.K_ainf.to_decimal(u.mV))
-        )
+        return 1.0 / (1.0 + u.math.exp((V - self.V0_ainf.to_decimal(u.mV)) / self.K_ainf.to_decimal(u.mV)))
 
     def f_a_tau(self, V, K: IonInfo):
         return 1.0 / (self._a_alpha(V, K) + self._a_beta(V, K))
 
     def f_b_inf(self, V, K: IonInfo):
         V = V.to_decimal(u.mV)
-        return 1.0 / (
-            1.0 + u.math.exp((V - self.V0_binf.to_decimal(u.mV)) / self.K_binf.to_decimal(u.mV))
-        )
+        return 1.0 / (1.0 + u.math.exp((V - self.V0_binf.to_decimal(u.mV)) / self.K_binf.to_decimal(u.mV)))
 
     def f_b_tau(self, V, K: IonInfo):
         return 1.0 / (self._b_alpha(V, K) + self._b_beta(V, K))
+
 
 @register_channel("Kdr_ZH2019_IO")
 class Kdr_ZH2019_IO(HH):
@@ -2175,7 +2032,7 @@ class Kdr_ZH2019_IO(HH):
     def __init__(
         self,
         size: brainstate.typing.Size,
-        g_max: Union[brainstate.typing.ArrayLike, Callable] = 18.0 * (u.mS / u.cm ** 2),
+        g_max: Union[brainstate.typing.ArrayLike, Callable] = 18.0 * (u.mS / u.cm**2),
         name: Optional[str] = None,
     ):
         super().__init__(size=size, name=name)

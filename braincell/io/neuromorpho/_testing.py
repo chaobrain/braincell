@@ -36,13 +36,7 @@ __all__ = [
 #: Path to the minimal SWC fixture used by tests that need to actually
 #: parse a morphology. The fixture lives under ``data/morphology/generic/``,
 #: matching the convention used by every other reader test.
-FIXTURE_SWC = (
-    Path(__file__).resolve().parents[3]
-    / "data"
-    / "morphology"
-    / "generic"
-    / "three_points_soma.swc"
-)
+FIXTURE_SWC = Path(__file__).resolve().parents[3] / "data" / "morphology" / "generic" / "three_points_soma.swc"
 
 
 class FakeResponse:

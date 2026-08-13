@@ -21,7 +21,6 @@ morphologies where the stem layout would produce heavy occlusion in
 one half-plane.
 """
 
-
 import math
 
 import numpy as np
@@ -99,9 +98,13 @@ def _layout_children_radial_360(
         return
 
     if is_root:
-        child_intervals = _weighted_child_intervals(children, interval=interval, weights=leaf_counts, min_gap_rad=min_branch_angle_rad)
+        child_intervals = _weighted_child_intervals(
+            children, interval=interval, weights=leaf_counts, min_gap_rad=min_branch_angle_rad
+        )
     else:
-        child_intervals = _weighted_child_intervals(children, interval=interval, weights=leaf_counts, min_gap_rad=min_branch_angle_rad)
+        child_intervals = _weighted_child_intervals(
+            children, interval=interval, weights=leaf_counts, min_gap_rad=min_branch_angle_rad
+        )
 
     parent_layout = layouts[parent.index]
     for child, child_interval in child_intervals:

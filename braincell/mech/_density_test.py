@@ -23,7 +23,7 @@ from braincell.mech import Channel, Density, Ion, Params
 
 class DensityConstructionTest(unittest.TestCase):
     def test_channel_sets_category(self) -> None:
-        spec = Channel("IL", g_max=0.1 * (u.mS / u.cm ** 2), E=-70 * u.mV)
+        spec = Channel("IL", g_max=0.1 * (u.mS / u.cm**2), E=-70 * u.mV)
         self.assertEqual(spec.category, "channel")
         self.assertEqual(spec.class_name, "IL")
 
@@ -41,16 +41,16 @@ class DensityConstructionTest(unittest.TestCase):
         self.assertIsInstance(spec, Density)
 
     def test_params_are_Params(self) -> None:
-        spec = Channel("IL", g_max=0.1 * (u.mS / u.cm ** 2))
+        spec = Channel("IL", g_max=0.1 * (u.mS / u.cm**2))
         self.assertIsInstance(spec.params, Params)
-        self.assertEqual(spec.params["g_max"], 0.1 * (u.mS / u.cm ** 2))
+        self.assertEqual(spec.params["g_max"], 0.1 * (u.mS / u.cm**2))
 
     def test_default_params_is_empty(self) -> None:
         spec = Channel("IL")
         self.assertEqual(len(spec.params), 0)
 
     def test_default_coverage_is_one(self) -> None:
-        spec = Channel("IL", g_max=0.1 * (u.mS / u.cm ** 2))
+        spec = Channel("IL", g_max=0.1 * (u.mS / u.cm**2))
         self.assertEqual(spec.coverage_area_fraction, 1.0)
 
     def test_channel_can_store_single_ion_selector(self) -> None:
@@ -64,7 +64,7 @@ class DensityConstructionTest(unittest.TestCase):
         self.assertEqual(spec.ion_names, (("ca", "ca_local"), ("k", "k_main")))
 
     def test_integration_override_is_metadata_not_runtime_params(self) -> None:
-        spec = Channel("IL", solver="rk4", substeps=3, g_max=0.1 * u.mS / u.cm ** 2)
+        spec = Channel("IL", solver="rk4", substeps=3, g_max=0.1 * u.mS / u.cm**2)
         self.assertEqual(spec.solver, "rk4")
         self.assertEqual(spec.substeps, 3)
         self.assertNotIn("solver", spec.params)
@@ -73,9 +73,7 @@ class DensityConstructionTest(unittest.TestCase):
 
 class DensityClassArgumentTest(unittest.TestCase):
     def test_channel_accepts_type_argument(self) -> None:
-        spec = Channel(
-            braincell.channel.IL, g_max=0.1 * (u.mS / u.cm ** 2)
-        )
+        spec = Channel(braincell.channel.IL, g_max=0.1 * (u.mS / u.cm**2))
         self.assertEqual(spec.class_name, "IL")
         self.assertEqual(spec.category, "channel")
 
@@ -85,8 +83,8 @@ class DensityClassArgumentTest(unittest.TestCase):
         self.assertEqual(spec.category, "ion")
 
     def test_type_and_string_produce_equal_specs(self) -> None:
-        a = Channel("IL", g_max=0.1 * (u.mS / u.cm ** 2))
-        b = Channel(braincell.channel.IL, g_max=0.1 * (u.mS / u.cm ** 2))
+        a = Channel("IL", g_max=0.1 * (u.mS / u.cm**2))
+        b = Channel(braincell.channel.IL, g_max=0.1 * (u.mS / u.cm**2))
         self.assertEqual(a, b)
         self.assertEqual(hash(a), hash(b))
 
@@ -157,13 +155,13 @@ class DensityIdentityTest(unittest.TestCase):
 
 class DensityEqualityTest(unittest.TestCase):
     def test_keyword_order_insensitive_equality(self) -> None:
-        a = Channel("IL", g_max=0.1 * (u.mS / u.cm ** 2), E=-70 * u.mV)
-        b = Channel("IL", E=-70 * u.mV, g_max=0.1 * (u.mS / u.cm ** 2))
+        a = Channel("IL", g_max=0.1 * (u.mS / u.cm**2), E=-70 * u.mV)
+        b = Channel("IL", E=-70 * u.mV, g_max=0.1 * (u.mS / u.cm**2))
         self.assertEqual(a, b)
         self.assertEqual(hash(a), hash(b))
 
     def test_different_coverage_are_unequal(self) -> None:
-        a = Channel("IL", g_max=0.1 * (u.mS / u.cm ** 2))
+        a = Channel("IL", g_max=0.1 * (u.mS / u.cm**2))
         b = a.with_coverage(0.5)
         self.assertNotEqual(a, b)
 
@@ -191,29 +189,23 @@ class DensityEqualityTest(unittest.TestCase):
         self.assertNotEqual(a, inherited)
 
     def test_can_use_as_dict_key(self) -> None:
-        a = Channel("IL", g_max=0.1 * (u.mS / u.cm ** 2), E=-70 * u.mV)
-        b = Channel("IL", E=-70 * u.mV, g_max=0.1 * (u.mS / u.cm ** 2))
+        a = Channel("IL", g_max=0.1 * (u.mS / u.cm**2), E=-70 * u.mV)
+        b = Channel("IL", E=-70 * u.mV, g_max=0.1 * (u.mS / u.cm**2))
         bucket = {a: "one"}
         self.assertEqual(bucket[b], "one")
 
 
 class DensityUpdatesTest(unittest.TestCase):
     def test_with_params_non_mutating(self) -> None:
-        original = Channel("IL", g_max=0.1 * (u.mS / u.cm ** 2))
-        updated = original.with_params(
-            g_max=0.2 * (u.mS / u.cm ** 2), E=-70 * u.mV
-        )
-        self.assertEqual(
-            original.params["g_max"], 0.1 * (u.mS / u.cm ** 2)
-        )
-        self.assertEqual(
-            updated.params["g_max"], 0.2 * (u.mS / u.cm ** 2)
-        )
+        original = Channel("IL", g_max=0.1 * (u.mS / u.cm**2))
+        updated = original.with_params(g_max=0.2 * (u.mS / u.cm**2), E=-70 * u.mV)
+        self.assertEqual(original.params["g_max"], 0.1 * (u.mS / u.cm**2))
+        self.assertEqual(updated.params["g_max"], 0.2 * (u.mS / u.cm**2))
         self.assertEqual(updated.params["E"], -70 * u.mV)
         self.assertIsInstance(updated, Channel)
 
     def test_with_coverage_non_mutating(self) -> None:
-        original = Channel("IL", g_max=0.1 * (u.mS / u.cm ** 2))
+        original = Channel("IL", g_max=0.1 * (u.mS / u.cm**2))
         updated = original.with_coverage(0.5)
         self.assertEqual(original.coverage_area_fraction, 1.0)
         self.assertEqual(updated.coverage_area_fraction, 0.5)

@@ -109,17 +109,9 @@ class CableProperty:
 def _coerce_temperature(value: Any, *, name: str) -> Any:
     if callable(value):
         return value
-    if not hasattr(value, "to_decimal") or not callable(
-        getattr(value, "to_decimal")
-    ):
-        raise TypeError(
-            f"CableProperty.{name} must be a temperature Quantity, "
-            f"got {value!r}."
-        )
+    if not hasattr(value, "to_decimal") or not callable(getattr(value, "to_decimal")):
+        raise TypeError(f"CableProperty.{name} must be a temperature Quantity, got {value!r}.")
     decimal = np.asarray(value.to_decimal(u.kelvin), dtype=float)
     if decimal.ndim != 0:
-        raise TypeError(
-            f"CableProperty.{name} must be a scalar temperature "
-            f"Quantity, got shape {decimal.shape!r}."
-        )
+        raise TypeError(f"CableProperty.{name} must be a scalar temperature Quantity, got shape {decimal.shape!r}.")
     return u.Quantity(float(decimal), u.kelvin)

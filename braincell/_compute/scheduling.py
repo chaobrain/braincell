@@ -51,9 +51,7 @@ def build_node_scheduling(
     """Build an execution schedule from a node tree."""
 
     if not isinstance(node_tree, NodeTree):
-        raise TypeError(
-            f"build_node_scheduling(...) expects NodeTree, got {type(node_tree).__name__!s}."
-        )
+        raise TypeError(f"build_node_scheduling(...) expects NodeTree, got {type(node_tree).__name__!s}.")
     _validate_algorithm(algorithm)
     _validate_max_group_size(max_group_size)
 
@@ -91,15 +89,9 @@ def build_node_scheduling(
                 parent_row = int(parent_rows[row])
                 if parent_row >= 0:
                     edge_pairs.append([int(row), parent_row])
-        edges = (
-            np.asarray(edge_pairs, dtype=np.int32)
-            if edge_pairs
-            else np.empty((0, 2), dtype=np.int32)
-        )
+        edges = np.asarray(edge_pairs, dtype=np.int32) if edge_pairs else np.empty((0, 2), dtype=np.int32)
         level_size = np.asarray([len(group) for group in groups], dtype=np.int32)
-        level_start = np.concatenate(
-            [np.asarray([0], dtype=np.int32), np.cumsum(level_size, dtype=np.int32)]
-        )[:-1]
+        level_start = np.concatenate([np.asarray([0], dtype=np.int32), np.cumsum(level_size, dtype=np.int32)])[:-1]
 
     return NodeScheduling(
         algorithm=algorithm,
@@ -135,26 +127,16 @@ def _compute_peel_levels(
 
     if node_tree is not None:
         if node_parent is not None or node_children is not None:
-            raise TypeError(
-                "_compute_peel_levels: pass either node_tree or "
-                "(node_parent, node_children), not both."
-            )
+            raise TypeError("_compute_peel_levels: pass either node_tree or (node_parent, node_children), not both.")
         node_parent, node_children = _build_node_parent_children(node_tree)
     if node_parent is None or node_children is None:
-        raise TypeError(
-            "_compute_peel_levels: supply node_tree or both "
-            "node_parent and node_children."
-        )
+        raise TypeError("_compute_peel_levels: supply node_tree or both node_parent and node_children.")
 
     n_point = int(len(node_parent))
     levels = np.full(n_point, -1, dtype=np.int32)
-    remaining_children = np.asarray(
-        [len(children) for children in node_children], dtype=np.int32
-    )
+    remaining_children = np.asarray([len(children) for children in node_children], dtype=np.int32)
 
-    frontier: list[int] = [
-        pid for pid, count in enumerate(remaining_children.tolist()) if count == 0
-    ]
+    frontier: list[int] = [pid for pid, count in enumerate(remaining_children.tolist()) if count == 0]
     for pid in frontier:
         levels[pid] = 0
 
@@ -173,9 +155,7 @@ def _compute_peel_levels(
             frontier.append(parent)
 
     if (levels < 0).any():
-        raise ValueError(
-            "compute_peel_levels: cycle detected or node unreachable from any leaf."
-        )
+        raise ValueError("compute_peel_levels: cycle detected or node unreachable from any leaf.")
     return levels
 
 
@@ -242,9 +222,7 @@ def _build_node_parent_children(
         child_node_id = int(edge.child_node_id)
         parent_node_id = int(edge.parent_node_id)
         if int(node_parent[child_node_id]) != -1:
-            raise ValueError(
-                f"Node {child_node_id} already has parent {int(node_parent[child_node_id])}."
-            )
+            raise ValueError(f"Node {child_node_id} already has parent {int(node_parent[child_node_id])}.")
         node_parent[child_node_id] = parent_node_id
         node_children_lists[parent_node_id].append(child_node_id)
     node_children = tuple(tuple(children) for children in node_children_lists)

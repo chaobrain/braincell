@@ -38,7 +38,6 @@ raw floats and the unit string is reported back so the scene builder
 can forward it to the value spec's colour-bar label.
 """
 
-
 import numpy as np
 
 from braincell.morph.morphology import Morphology
@@ -147,7 +146,7 @@ def _expand_per_segment(
     per_branch: dict[int, BranchValues] = {}
     cursor = 0
     for branch_view, n_segments in zip(branches, segment_counts):
-        seg_slice = values[cursor: cursor + n_segments]
+        seg_slice = values[cursor : cursor + n_segments]
         cursor += n_segments
         # Promote per-segment scalars to per-point by taking segment-ends:
         # point[i] = mean(seg[i-1], seg[i]) for interior points, segment
@@ -177,7 +176,7 @@ def _expand_per_point(
     per_branch: dict[int, BranchValues] = {}
     cursor = 0
     for branch_view, n_points in zip(branches, point_counts):
-        point_values = np.asarray(values[cursor: cursor + n_points], dtype=float)
+        point_values = np.asarray(values[cursor : cursor + n_points], dtype=float)
         cursor += n_points
         per_branch[branch_view.index] = BranchValues(
             branch_index=branch_view.index,

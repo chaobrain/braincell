@@ -35,10 +35,10 @@ def test_deprecated_names_absent_from_all():
     "name",
     [
         "ICav12_Ma2020",  # ambiguous: split into region variants
-        "Ih_HM1992",      # ambiguous: renamed to HCN_HM1992 family
-        "INa_Rsg",        # removed, no successor
-        "INa_p3q_markov", # removed, no successor
-        "CalciumChannel", # removed base class
+        "Ih_HM1992",  # ambiguous: renamed to HCN_HM1992 family
+        "INa_Rsg",  # removed, no successor
+        "INa_p3q_markov",  # removed, no successor
+        "CalciumChannel",  # removed base class
         "DoesNotExist",
     ],
 )

@@ -70,9 +70,7 @@ def _broadcast_values(name: str, values: tuple[object, ...], size: int) -> tuple
         return values
     if len(values) == 1:
         return values * size
-    raise ValueError(
-        f"{name} has length {len(values)!r}, which cannot be broadcast to {size!r}."
-    )
+    raise ValueError(f"{name} has length {len(values)!r}, which cannot be broadcast to {size!r}.")
 
 
 def _coerce_property_name(property_name: object) -> str:
@@ -118,9 +116,7 @@ def _coerce_filterable_scalar(property_name: str, value: object) -> object:
         return int(value)
     if isinstance(value, Real):
         return float(value)
-    raise TypeError(
-        f"Property {property_name!r} is not scalar-filterable; got {type(value).__name__!s}."
-    )
+    raise TypeError(f"Property {property_name!r} is not scalar-filterable; got {type(value).__name__!s}.")
 
 
 def _resolve_branch_property(morpho: Morphology, branch_index: int, property_name: str) -> object:
@@ -139,9 +135,7 @@ def _resolve_branch_property(morpho: Morphology, branch_index: int, property_nam
     if property_name in _BRANCH_METRIC_PROPERTIES:
         return getattr(branch_view, property_name)
     if property_name in _UNSUPPORTED_BRANCH_METRIC_PROPERTIES:
-        raise ValueError(
-            f"Branch property {property_name!r} is not supported in this version."
-        )
+        raise ValueError(f"Branch property {property_name!r} is not supported in this version.")
     if hasattr(branch_view, property_name):
         return _coerce_filterable_scalar(property_name, getattr(branch_view, property_name))
     raise ValueError(f"Unknown branch property {property_name!r}.")
@@ -176,18 +170,14 @@ def _parse_bounds(bounds: object) -> tuple[object | None, object | None]:
         return u.Quantity(float(mantissa[0]), unit), u.Quantity(float(mantissa[1]), unit)
     if isinstance(bounds, (tuple, list)) and len(bounds) == 2:
         return bounds[0], bounds[1]
-    raise TypeError(
-        "bounds must be either (low, high) tuple/list or a 2-element quantity vector."
-    )
+    raise TypeError("bounds must be either (low, high) tuple/list or a 2-element quantity vector.")
 
 
 def _normalize_numeric_bound(bound: object | None, *, property_name: str) -> float | None:
     if bound is None:
         return None
     if _is_quantity(bound):
-        raise ValueError(
-            f"Property {property_name!r} is not quantity-valued; quantity bounds are not allowed."
-        )
+        raise ValueError(f"Property {property_name!r} is not quantity-valued; quantity bounds are not allowed.")
     if isinstance(bound, bool) or not isinstance(bound, Real):
         raise TypeError(f"{property_name} bounds must be numeric.")
     return float(bound)
@@ -202,9 +192,7 @@ def _normalize_quantity_bound(
     if bound is None:
         return None
     if not _is_quantity(bound):
-        raise ValueError(
-            f"Property {property_name!r} is quantity-valued; bounds must include units."
-        )
+        raise ValueError(f"Property {property_name!r} is quantity-valued; bounds must include units.")
     return _to_decimal_scalar(bound, unit=unit, name=property_name)
 
 
@@ -216,17 +204,13 @@ def _matches_range(value: object, *, low: object | None, high: object | None, cl
         high_value = _normalize_quantity_bound(high, property_name=property_name, unit=unit)
     else:
         if isinstance(value, bool) or not isinstance(value, Real):
-            raise TypeError(
-                f"Property {property_name!r} does not support numeric range filtering."
-            )
+            raise TypeError(f"Property {property_name!r} does not support numeric range filtering.")
         current = float(value)
         low_value = _normalize_numeric_bound(low, property_name=property_name)
         high_value = _normalize_numeric_bound(high, property_name=property_name)
 
     if low_value is not None and high_value is not None and low_value > high_value:
-        raise ValueError(
-            f"Lower bound must be <= upper bound for property {property_name!r}."
-        )
+        raise ValueError(f"Lower bound must be <= upper bound for property {property_name!r}.")
 
     if low_value is not None:
         if _left_closed(closed):
@@ -252,9 +236,7 @@ def _matches_in(value: object, *, candidates: tuple[object, ...], property_name:
             if _is_quantity(candidate):
                 normalized.add(_to_decimal_scalar(candidate, unit=unit, name=property_name))
             elif isinstance(candidate, bool) or not isinstance(candidate, Real):
-                raise TypeError(
-                    f"Property {property_name!r} is quantity-valued; candidates must be numeric/quantity."
-                )
+                raise TypeError(f"Property {property_name!r} is quantity-valued; candidates must be numeric/quantity.")
             else:
                 normalized.add(float(candidate))
         return current in normalized
@@ -285,8 +267,7 @@ def branch_slice_intervals(
         dist_value = _coerce_norm_coord("dist", raw_dist)
         if not (0.0 <= prox_value < dist_value <= 1.0):
             raise ValueError(
-                "BranchSlice expects 0.0 <= prox < dist <= 1.0, "
-                f"got prox={prox_value!r}, dist={dist_value!r}."
+                f"BranchSlice expects 0.0 <= prox < dist <= 1.0, got prox={prox_value!r}, dist={dist_value!r}."
             )
         intervals.append((idx, prox_value, dist_value))
     return tuple(intervals)
@@ -355,9 +336,7 @@ def normalize_region_intervals(
         prox = _clip_norm_x(float(raw_prox), epsilon=epsilon)
         dist = _clip_norm_x(float(raw_dist), epsilon=epsilon)
         if prox < 0.0 - epsilon or dist > 1.0 + epsilon:
-            raise ValueError(
-                f"Interval coordinates must be within [0, 1], got prox={prox!r}, dist={dist!r}."
-            )
+            raise ValueError(f"Interval coordinates must be within [0, 1], got prox={prox!r}, dist={dist!r}.")
         if dist - prox <= epsilon:
             continue
         grouped.setdefault(branch, []).append((prox, dist))

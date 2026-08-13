@@ -159,13 +159,74 @@ def _build_layout_branches_stem(
 
 
 # ---------------------------------------------------------------------------
-# Recursive child placement
+# Child placement
 # ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class _StemSideContext:
+    """Per-parent state needed to lay out that parent's side children.
+
+    Side children are laid out only after the trunk subtree has been fully
+    processed, so this context has to outlive the trunk descent. Everything
+    here is computed once, before any child is placed.
+    """
+
+    parent_layout: LayoutBranch2D
+    angle_assignments: dict[int, float]
+    side_children: tuple[MorphoBranch, ...]
+    stem_depth: int
 
 
 def _layout_children_stem_linear(
     parent: MorphoBranch,
     *,
+    layout_specs: dict[int, _LayoutSpec2D],
+    subtree_path_lengths_um: dict[int, float],
+    branch_order: dict[int, int],
+    layouts: dict[int, LayoutBranch2D],
+    min_branch_angle_rad: float,
+    root_layout: str,
+    stem_depth: int,
+    layout_config: LayoutConfig,
+) -> None:
+    """Lay out every descendant of ``parent`` for the frustum variant.
+
+    Iterative for the same reason as :func:`_layout_children_stem`, and with
+    the same ordering guarantees — see that function's notes.
+    """
+    stack: list[tuple] = [("expand", parent, stem_depth)]
+    while stack:
+        item = stack.pop()
+        if item[0] == "expand":
+            _expand_stem_linear_node(
+                item[1],
+                stack=stack,
+                layout_specs=layout_specs,
+                subtree_path_lengths_um=subtree_path_lengths_um,
+                branch_order=branch_order,
+                layouts=layouts,
+                min_branch_angle_rad=min_branch_angle_rad,
+                root_layout=root_layout,
+                stem_depth=item[2],
+                layout_config=layout_config,
+            )
+        else:
+            _place_stem_linear_side_child(
+                item[1],
+                side_index=item[2],
+                stack=stack,
+                layout_specs=layout_specs,
+                layouts=layouts,
+                min_branch_angle_rad=min_branch_angle_rad,
+                layout_config=layout_config,
+            )
+
+
+def _expand_stem_linear_node(
+    parent: MorphoBranch,
+    *,
+    stack: list[tuple],
     layout_specs: dict[int, _LayoutSpec2D],
     subtree_path_lengths_um: dict[int, float],
     branch_order: dict[int, int],
@@ -217,54 +278,120 @@ def _layout_children_stem_linear(
         child_x=float(trunk_child.child_x),
         bend_fraction=layout_config.default_bend_fraction,
     )
-    _layout_children_stem_linear(
-        trunk_child,
-        layout_specs=layout_specs,
-        subtree_path_lengths_um=subtree_path_lengths_um,
-        branch_order=branch_order,
-        layouts=layouts,
-        min_branch_angle_rad=min_branch_angle_rad,
-        root_layout=root_layout,
-        stem_depth=stem_depth,
-        layout_config=layout_config,
-    )
-
     side_children = [child for child in children if child is not trunk_child]
     side_children.sort(
         key=lambda child: (float(child.parent_x), -subtree_path_lengths_um[child.index], branch_order[child.index])
     )
-    for side_index, child in enumerate(side_children):
-        attach_um, attach_tangent_um = sample_layout_branch(parent_layout, child.parent_x)
-        attach_angle_rad = _vector_angle_rad(attach_tangent_um)
-        candidate_layout = _resolve_side_stem_layout(
-            child,
-            spec=layout_specs[child.index],
-            attach_um=attach_um,
-            attach_angle_rad=attach_angle_rad,
-            base_target_angle_rad=angle_assignments[child.index],
-            side_index=side_index,
-            stem_depth=stem_depth + 1,
-            min_branch_angle_rad=min_branch_angle_rad,
-            existing_layouts=tuple(layouts.values())[-48:],
-            layout_config=layout_config,
+
+    # Reverse execution order -- see _expand_stem_node.
+    if side_children:
+        context = _StemSideContext(
+            parent_layout=parent_layout,
+            angle_assignments=angle_assignments,
+            side_children=tuple(side_children),
+            stem_depth=stem_depth,
         )
-        layouts[child.index] = candidate_layout
-        _layout_children_stem_linear(
-            child,
-            layout_specs=layout_specs,
-            subtree_path_lengths_um=subtree_path_lengths_um,
-            branch_order=branch_order,
-            layouts=layouts,
-            min_branch_angle_rad=min_branch_angle_rad,
-            root_layout=root_layout,
-            stem_depth=stem_depth + 1,
-            layout_config=layout_config,
-        )
+        stack.append(("side", context, 0))
+    stack.append(("expand", trunk_child, stem_depth))
+
+
+def _place_stem_linear_side_child(
+    context: _StemSideContext,
+    *,
+    side_index: int,
+    stack: list[tuple],
+    layout_specs: dict[int, _LayoutSpec2D],
+    layouts: dict[int, LayoutBranch2D],
+    min_branch_angle_rad: float,
+    layout_config: LayoutConfig,
+) -> None:
+    child = context.side_children[side_index]
+    attach_um, attach_tangent_um = sample_layout_branch(context.parent_layout, child.parent_x)
+    layouts[child.index] = _resolve_side_stem_layout(
+        child,
+        spec=layout_specs[child.index],
+        attach_um=attach_um,
+        attach_angle_rad=_vector_angle_rad(attach_tangent_um),
+        base_target_angle_rad=context.angle_assignments[child.index],
+        side_index=side_index,
+        stem_depth=context.stem_depth + 1,
+        min_branch_angle_rad=min_branch_angle_rad,
+        existing_layouts=tuple(layouts.values())[-48:],
+        layout_config=layout_config,
+    )
+
+    if side_index + 1 < len(context.side_children):
+        stack.append(("side", context, side_index + 1))
+    stack.append(("expand", child, context.stem_depth + 1))
 
 
 def _layout_children_stem(
     parent: MorphoBranch,
     *,
+    layout_specs: dict[int, _LayoutSpec2D],
+    subtree_path_lengths_um: dict[int, float],
+    branch_order: dict[int, int],
+    layouts: dict[int, LayoutBranch2D],
+    min_branch_angle_rad: float,
+    root_layout: str,
+    stem_depth: int,
+    layout_config: LayoutConfig,
+) -> None:
+    """Lay out every descendant of ``parent``, writing into ``layouts``.
+
+    Notes
+    -----
+    This walk is iterative rather than recursive. Morphologies are often
+    deep rather than bushy — a reconstructed dendrite can be a chain of
+    thousands of branches — and one Python frame per branch of depth
+    overflowed the interpreter's recursion limit at roughly 400 branches.
+
+    The traversal order is load-bearing and is preserved exactly. For each
+    parent the trunk child is placed first and its whole subtree is
+    processed before any side child is placed, because each layout is
+    resolved against ``layouts`` as it fills (the collision window reads
+    the most recently inserted entries). Work items are therefore held on
+    an explicit LIFO stack and pushed in reverse execution order:
+
+    ``expand``
+        Lay out one node's children: place the trunk child, then schedule
+        the trunk descent and the first side child.
+    ``side``
+        Place one side child, then schedule its descent and the next
+        sibling.
+    """
+    stack: list[tuple] = [("expand", parent, stem_depth)]
+    while stack:
+        item = stack.pop()
+        if item[0] == "expand":
+            _expand_stem_node(
+                item[1],
+                stack=stack,
+                layout_specs=layout_specs,
+                subtree_path_lengths_um=subtree_path_lengths_um,
+                branch_order=branch_order,
+                layouts=layouts,
+                min_branch_angle_rad=min_branch_angle_rad,
+                root_layout=root_layout,
+                stem_depth=item[2],
+                layout_config=layout_config,
+            )
+        else:
+            _place_stem_side_child(
+                item[1],
+                side_index=item[2],
+                stack=stack,
+                layout_specs=layout_specs,
+                layouts=layouts,
+                min_branch_angle_rad=min_branch_angle_rad,
+                layout_config=layout_config,
+            )
+
+
+def _expand_stem_node(
+    parent: MorphoBranch,
+    *,
+    stack: list[tuple],
     layout_specs: dict[int, _LayoutSpec2D],
     subtree_path_lengths_um: dict[int, float],
     branch_order: dict[int, int],
@@ -325,55 +452,65 @@ def _layout_children_stem(
         existing_layouts=recent_layouts,
         layout_config=layout_config,
     )
-    _layout_children_stem(
-        trunk_child,
-        layout_specs=layout_specs,
-        subtree_path_lengths_um=subtree_path_lengths_um,
-        branch_order=branch_order,
-        layouts=layouts,
-        min_branch_angle_rad=min_branch_angle_rad,
-        root_layout=root_layout,
-        stem_depth=stem_depth,
-        layout_config=layout_config,
-    )
-
     side_children = [child for child in children if child is not trunk_child]
     side_children.sort(
         key=lambda child: (float(child.parent_x), -subtree_path_lengths_um[child.index], branch_order[child.index])
     )
+
+    # Pushed in reverse execution order: the trunk descent is popped first and
+    # completes in full -- along with everything it pushes -- before the first
+    # side child is placed, exactly as the recursive form did.
+    if side_children:
+        context = _StemSideContext(
+            parent_layout=parent_layout,
+            angle_assignments=angle_assignments,
+            side_children=tuple(side_children),
+            stem_depth=stem_depth,
+        )
+        stack.append(("side", context, 0))
+    stack.append(("expand", trunk_child, stem_depth))
+
+
+def _place_stem_side_child(
+    context: _StemSideContext,
+    *,
+    side_index: int,
+    stack: list[tuple],
+    layout_specs: dict[int, _LayoutSpec2D],
+    layouts: dict[int, LayoutBranch2D],
+    min_branch_angle_rad: float,
+    layout_config: LayoutConfig,
+) -> None:
+    child = context.side_children[side_index]
+    stem_depth = context.stem_depth
+    collision_window = layout_config.stem_collision_window
     base_side_sign = 1.0 if stem_depth % 2 == 0 else -1.0
-    for side_index, child in enumerate(side_children):
-        attach_um, attach_tangent_um = sample_layout_branch(parent_layout, child.parent_x)
-        attach_angle_rad = _vector_angle_rad(attach_tangent_um)
-        fallback_sign = base_side_sign if side_index % 2 == 0 else -base_side_sign
-        preferred_sign = _preferred_turn_sign(
-            attach_angle_rad=attach_angle_rad,
-            target_angle_rad=angle_assignments[child.index],
-            fallback_sign=fallback_sign,
-        )
-        candidate_layout = _resolve_side_stem_tree_layout(
-            child,
-            spec=layout_specs[child.index],
-            attach_um=attach_um,
-            attach_angle_rad=attach_angle_rad,
-            desired_tail_angle_rad=angle_assignments[child.index],
-            preferred_sign=preferred_sign,
-            min_branch_angle_rad=min_branch_angle_rad,
-            existing_layouts=tuple(layouts.values())[-collision_window:],
-            layout_config=layout_config,
-        )
-        layouts[child.index] = candidate_layout
-        _layout_children_stem(
-            child,
-            layout_specs=layout_specs,
-            subtree_path_lengths_um=subtree_path_lengths_um,
-            branch_order=branch_order,
-            layouts=layouts,
-            min_branch_angle_rad=min_branch_angle_rad,
-            root_layout=root_layout,
-            stem_depth=stem_depth + 1,
-            layout_config=layout_config,
-        )
+
+    attach_um, attach_tangent_um = sample_layout_branch(context.parent_layout, child.parent_x)
+    attach_angle_rad = _vector_angle_rad(attach_tangent_um)
+    fallback_sign = base_side_sign if side_index % 2 == 0 else -base_side_sign
+    preferred_sign = _preferred_turn_sign(
+        attach_angle_rad=attach_angle_rad,
+        target_angle_rad=context.angle_assignments[child.index],
+        fallback_sign=fallback_sign,
+    )
+    layouts[child.index] = _resolve_side_stem_tree_layout(
+        child,
+        spec=layout_specs[child.index],
+        attach_um=attach_um,
+        attach_angle_rad=attach_angle_rad,
+        desired_tail_angle_rad=context.angle_assignments[child.index],
+        preferred_sign=preferred_sign,
+        min_branch_angle_rad=min_branch_angle_rad,
+        existing_layouts=tuple(layouts.values())[-collision_window:],
+        layout_config=layout_config,
+    )
+
+    # Again reverse execution order: this child's subtree runs to completion
+    # before the next sibling is placed.
+    if side_index + 1 < len(context.side_children):
+        stack.append(("side", context, side_index + 1))
+    stack.append(("expand", child, stem_depth + 1))
 
 
 # ---------------------------------------------------------------------------

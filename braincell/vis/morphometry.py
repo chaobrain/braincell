@@ -40,6 +40,7 @@ import numpy as np
 
 from braincell.morph import MorphoBranch
 from braincell.morph.morphology import Morphology
+from ._traversal import iter_bottom_up, iter_depth_first
 from .config import color_for_branch_type
 
 
@@ -102,7 +103,12 @@ def plot_dendrogram(
 
     y_positions = _assign_dendrogram_y(morpho.root)
 
-    def _walk(node: MorphoBranch, x_start: float) -> None:
+    # Iterative walk: deep morphologies would otherwise exhaust the
+    # interpreter's frame budget long before the figure got large.
+    # Children are pushed in reverse so lines are still drawn top-down.
+    stack: list[tuple[MorphoBranch, float]] = [(morpho.root, 0.0)]
+    while stack:
+        node, x_start = stack.pop()
         length_um = float(node.length.to_decimal(u.um))
         y = y_positions[node.index]
         color = _rgb_to_float(color_for_branch_type(node.type)) if color_by_type else (0.0, 0.0, 0.0)
@@ -123,10 +129,8 @@ def plot_dendrogram(
                 color=color,
                 linewidth=linewidth * 0.75,
             )
-            for child in children:
-                _walk(child, x_start + length_um)
+            stack.extend((child, x_start + length_um) for child in reversed(children))
 
-    _walk(morpho.root, 0.0)
     ax.set_xlabel("path length from root [µm]")
     ax.set_yticks([])
     for spine in ("top", "right", "left"):
@@ -135,22 +139,27 @@ def plot_dendrogram(
 
 
 def _assign_dendrogram_y(root: MorphoBranch) -> dict[int, float]:
-    """Return per-branch y positions in a compact leaf-first layout."""
+    """Return per-branch y positions in a compact leaf-first layout.
+
+    Leaves are stacked one unit apart in depth-first order; every internal
+    branch centres on its outermost children. Both passes are iterative so
+    a deep chain cannot exhaust the interpreter's frame budget.
+    """
     positions: dict[int, float] = {}
-    cursor: list[float] = [0.0]
 
-    def _visit(node: MorphoBranch) -> float:
+    # Leaves first, in the depth-first order that fixes their stacking.
+    cursor = 0.0
+    for node in iter_depth_first(root):
         if node.n_children == 0:
-            y = cursor[0]
-            cursor[0] += 1.0
-            positions[node.index] = y
-            return y
-        child_ys = [_visit(child) for child in node.children]
-        y = 0.5 * (min(child_ys) + max(child_ys))
-        positions[node.index] = y
-        return y
+            positions[node.index] = cursor
+            cursor += 1.0
 
-    _visit(root)
+    # Then every internal branch, each after all of its children.
+    for node in iter_bottom_up(root):
+        if node.n_children == 0:
+            continue
+        child_ys = [positions[child.index] for child in node.children]
+        positions[node.index] = 0.5 * (min(child_ys) + max(child_ys))
     return positions
 
 
@@ -183,7 +192,8 @@ def plot_topology(
     y_positions = _assign_dendrogram_y(morpho.root)
     depths = _branch_depths(morpho.root)
 
-    def _walk(node: MorphoBranch) -> None:
+    # Depth-first, but iteratively -- see plot_dendrogram.
+    for node in iter_depth_first(morpho.root):
         y = y_positions[node.index]
         x = float(depths[node.index])
         color = _rgb_to_float(color_for_branch_type(node.type)) if color_by_type else (0.0, 0.0, 0.0)
@@ -196,10 +206,7 @@ def plot_topology(
                 color=color,
                 linewidth=1.0,
             )
-            for child in node.children:
-                _walk(child)
 
-    _walk(morpho.root)
     ax.set_xlabel("branch order")
     ax.set_yticks([])
     for spine in ("top", "right", "left"):
@@ -208,14 +215,13 @@ def plot_topology(
 
 
 def _branch_depths(root: MorphoBranch) -> dict[int, int]:
-    depths: dict[int, int] = {}
-
-    def _visit(node: MorphoBranch, depth: int) -> None:
-        depths[node.index] = depth
+    """Return the branch order (depth below ``root``) of every branch."""
+    depths: dict[int, int] = {root.index: 0}
+    # Parents come first in a depth-first walk, so each node's depth is
+    # already known by the time its children are visited.
+    for node in iter_depth_first(root):
         for child in node.children:
-            _visit(child, depth + 1)
-
-    _visit(root, 0)
+            depths[child.index] = depths[node.index] + 1
     return depths
 
 
@@ -320,22 +326,22 @@ def _euclidean_segment_distances(
 
 
 def _path_segment_distances(morpho: Morphology) -> tuple[np.ndarray, np.ndarray]:
-    cumulative: dict[int, float] = {morpho.root.index: 0.0}
+    root = morpho.root
+    cumulative: dict[int, float] = {root.index: 0.0}
     starts: list[float] = []
     ends: list[float] = []
 
-    def _visit(node: MorphoBranch, parent_end_um: float) -> None:
+    # Depth-first, but iteratively: a parent's cumulative path length is
+    # recorded before any of its children are reached, so each child can
+    # read it straight out of the dict instead of off the call stack.
+    for node in iter_depth_first(root):
+        running = 0.0 if node is root else cumulative[node.parent.index]
         lengths = np.asarray(node.lengths.to_decimal(u.um), dtype=float)
-        running = parent_end_um
         for seg_len in lengths:
             starts.append(running)
             running = running + float(seg_len)
             ends.append(running)
         cumulative[node.index] = running
-        for child in node.children:
-            _visit(child, cumulative[node.index])
-
-    _visit(morpho.root, 0.0)
     return np.asarray(starts, dtype=float), np.asarray(ends, dtype=float)
 
 

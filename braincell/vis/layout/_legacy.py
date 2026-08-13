@@ -109,37 +109,44 @@ def _layout_children_legacy(
     min_branch_angle_rad: float,
     layout_config: LayoutConfig,
 ) -> None:
-    children = parent.children
-    if not children:
-        return
+    """Lay out every descendant of ``parent``.
 
-    allocations = _allocate_child_regions_legacy(
-        children=children,
-        interval=interval,
-        leaf_counts=leaf_counts,
-        min_branch_angle_rad=min_branch_angle_rad,
-    )
-    parent_layout = layouts[parent.index]
-    for child, child_interval, child_angle in allocations:
-        attach_um, attach_tangent_um = sample_layout_branch(parent_layout, child.parent_x)
-        layouts[child.index] = _make_layout_branch(
-            child,
-            spec=layout_specs[child.index],
-            attach_um=attach_um,
-            attach_angle_rad=_vector_angle_rad(attach_tangent_um),
-            target_angle_rad=child_angle,
-            child_x=float(child.child_x),
-            bend_fraction=layout_config.default_bend_fraction,
-        )
-        _layout_children_legacy(
-            child,
-            layout_specs=layout_specs,
+    Iterative for the same reason as the other layout families: a branch
+    chain deeper than the interpreter's frame limit must not raise
+    ``RecursionError``. A child's region derives from its parent's finished
+    interval alone, so a sibling group can be placed before any of it is
+    descended into. Children are pushed in reverse to keep the
+    left-to-right visit order.
+    """
+    # frame: (branch, angular region allocated to it)
+    stack: list[tuple[MorphoBranch, tuple[float, float]]] = [(parent, interval)]
+    while stack:
+        node, node_interval = stack.pop()
+        children = node.children
+        if not children:
+            continue
+
+        allocations = _allocate_child_regions_legacy(
+            children=children,
+            interval=node_interval,
             leaf_counts=leaf_counts,
-            layouts=layouts,
-            interval=child_interval,
             min_branch_angle_rad=min_branch_angle_rad,
-            layout_config=layout_config,
         )
+        node_layout = layouts[node.index]
+        frames: list[tuple[MorphoBranch, tuple[float, float]]] = []
+        for child, child_interval, child_angle in allocations:
+            attach_um, attach_tangent_um = sample_layout_branch(node_layout, child.parent_x)
+            layouts[child.index] = _make_layout_branch(
+                child,
+                spec=layout_specs[child.index],
+                attach_um=attach_um,
+                attach_angle_rad=_vector_angle_rad(attach_tangent_um),
+                target_angle_rad=child_angle,
+                child_x=float(child.child_x),
+                bend_fraction=layout_config.default_bend_fraction,
+            )
+            frames.append((child, child_interval))
+        stack.extend(reversed(frames))
 
 
 # ---------------------------------------------------------------------------

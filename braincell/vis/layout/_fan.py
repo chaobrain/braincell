@@ -94,47 +94,53 @@ def _layout_children_fan(
     is_root: bool,
     layout_config: LayoutConfig,
 ) -> None:
-    children = parent.children
-    if not children:
-        return
+    """Lay out every descendant of ``parent``.
 
-    if is_root:
-        allocations = _allocate_root_fan_children(
-            children,
-            leaf_counts=leaf_counts,
-            min_branch_angle_rad=min_branch_angle_rad,
-            layout_config=layout_config,
-        )
-    else:
-        assert interval is not None
-        allocations = _allocate_fan_sector_children(
-            children=children,
-            interval=interval,
-            leaf_counts=leaf_counts,
-            min_branch_angle_rad=min_branch_angle_rad,
-        )
+    Iterative for the same reason as the other layout families: a branch
+    chain deeper than the interpreter's frame limit must not raise
+    ``RecursionError``. Each child's sector is allocated from its parent's
+    finished interval only, so a sibling group can be placed before any of
+    it is descended into. Children are pushed in reverse to keep the
+    left-to-right visit order.
+    """
+    # frame: (branch, angular interval allocated to it, is_root)
+    stack: list[tuple[MorphoBranch, tuple[float, float] | None, bool]] = [(parent, interval, is_root)]
+    while stack:
+        node, node_interval, node_is_root = stack.pop()
+        children = node.children
+        if not children:
+            continue
 
-    parent_layout = layouts[parent.index]
-    for child, child_interval, child_angle in allocations:
-        attach_um, attach_tangent_um = sample_layout_branch(parent_layout, child.parent_x)
-        _ = attach_tangent_um
-        layouts[child.index] = _make_straight_layout_branch(
-            child,
-            spec=layout_specs[child.index],
-            attach_um=attach_um,
-            target_angle_rad=child_angle,
-            child_x=float(child.child_x),
-        )
-        _layout_children_fan(
-            child,
-            layout_specs=layout_specs,
-            leaf_counts=leaf_counts,
-            layouts=layouts,
-            interval=child_interval,
-            min_branch_angle_rad=min_branch_angle_rad,
-            is_root=False,
-            layout_config=layout_config,
-        )
+        if node_is_root:
+            allocations = _allocate_root_fan_children(
+                children,
+                leaf_counts=leaf_counts,
+                min_branch_angle_rad=min_branch_angle_rad,
+                layout_config=layout_config,
+            )
+        else:
+            assert node_interval is not None
+            allocations = _allocate_fan_sector_children(
+                children=children,
+                interval=node_interval,
+                leaf_counts=leaf_counts,
+                min_branch_angle_rad=min_branch_angle_rad,
+            )
+
+        node_layout = layouts[node.index]
+        frames: list[tuple[MorphoBranch, tuple[float, float] | None, bool]] = []
+        for child, child_interval, child_angle in allocations:
+            attach_um, attach_tangent_um = sample_layout_branch(node_layout, child.parent_x)
+            _ = attach_tangent_um
+            layouts[child.index] = _make_straight_layout_branch(
+                child,
+                spec=layout_specs[child.index],
+                attach_um=attach_um,
+                target_angle_rad=child_angle,
+                child_x=float(child.child_x),
+            )
+            frames.append((child, child_interval, False))
+        stack.extend(reversed(frames))
 
 
 def _allocate_root_fan_children(

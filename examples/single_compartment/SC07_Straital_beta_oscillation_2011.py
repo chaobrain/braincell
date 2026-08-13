@@ -30,7 +30,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 import braincell
-from braincell.channel._base import Gate, HH
+from braincell.channel import Gate, HH
 
 brainstate.environ.set(dt=0.1 * u.ms)
 

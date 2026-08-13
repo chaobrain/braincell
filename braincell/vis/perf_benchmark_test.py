@@ -93,35 +93,15 @@ def _synthetic_tree(n_branches: int) -> Morphology:
 # ---------------------------------------------------------------------------
 
 
-# `_path_lengths_um_by_branch` in braincell/vis/layout/_common.py walks the
-# tree with a recursive `visit` closure (line 153), one Python frame per branch
-# of depth plus a generator frame. A chain deeper than roughly 400 branches
-# therefore exceeds the interpreter's recursion limit, so every size above
-# `small` raises RecursionError. This is a real limitation of the layout engine
-# on deep morphologies, not an artefact of the benchmark: `plot2d` on any
-# sufficiently deep real morphology hits the same wall. Fixing it means making
-# that traversal iterative, which is out of scope here.
-#
-# Deliberately non-strict. Whether the limit is actually hit depends on how
-# deep the interpreter stack already is when the test runs, so the same case
-# raises when the module runs alone and survives inside the full suite. A
-# strict marker would turn that stack-depth sensitivity into spurious XPASS
-# failures. Once the traversal is iterative, drop the marker entirely rather
-# than tightening it.
-_deep_chain_recursion = pytest.mark.xfail(
-    raises=RecursionError,
-    strict=False,
-    reason="layout _path_lengths_um_by_branch recurses per branch; deep chains can exceed the recursion limit",
-)
-
-
+# The medium / large sizes are chains deeper than CPython's recursion
+# limit. They used to be marked xfail(RecursionError) because every tree
+# walk in the layout engine recursed once per branch; the walks are
+# iterative now (see braincell/vis/_traversal.py), so these must simply
+# pass. braincell/vis/layout/_dispatch_test.py pins that behaviour for
+# runs where pytest-benchmark is absent.
 @pytest.mark.parametrize(
     "n_branches",
-    [
-        50,
-        pytest.param(500, marks=_deep_chain_recursion),
-        pytest.param(2000, marks=_deep_chain_recursion),
-    ],
+    [50, 500, 2000],
     ids=["small", "medium", "large"],
 )
 def test_layout_build(benchmark, n_branches: int) -> None:
@@ -139,7 +119,6 @@ def test_scene_small_no_values(benchmark) -> None:
     benchmark(lambda: build_render_scene_2d(tree, layout="stem", shape="line"))
 
 
-@_deep_chain_recursion
 def test_scene_medium_with_values(benchmark) -> None:
     from braincell.vis.scene import OverlaySpec, ValueSpec
 
@@ -166,7 +145,6 @@ def test_plot2d_small(benchmark) -> None:
     benchmark(_render)
 
 
-@_deep_chain_recursion
 def test_plot2d_medium_values(benchmark) -> None:
     tree = _synthetic_tree(500)
     n = len(tree.branches)

@@ -192,3 +192,45 @@ def make_fan_root_partition_tree() -> Morphology:
         parent_x=1.0,
     )
     return tree
+
+
+def make_deep_chain_tree(n_branches: int = 1200) -> Morphology:
+    """An unbranched chain of ``n_branches`` branches hanging off a soma.
+
+    Reconstructions of long, thin neurites routinely produce chains far
+    deeper than CPython's default recursion limit, so this fixture exists
+    to pin the tree walks in :mod:`braincell.vis` as iterative. The
+    default depth is comfortably past the ~400-branch point where the
+    old recursive walks raised ``RecursionError``, while staying small
+    enough to lay out in well under a second.
+
+    Parameters
+    ----------
+    n_branches : int
+        Total branch count, soma included. Must be at least 1.
+
+    Returns
+    -------
+    Morphology
+        A chain ``soma -> seg_0 -> seg_1 -> ...``, every dendrite branch
+        carrying two 15 µm / 10 µm segments.
+    """
+    if n_branches < 1:
+        raise ValueError(f"n_branches must be >= 1, got {n_branches!r}.")
+    soma = Branch.from_lengths(
+        lengths=[20.0] * u.um,
+        radii=[10.0, 10.0] * u.um,
+        type="soma",
+    )
+    tree = Morphology.from_root(soma, name="soma")
+    parent = "soma"
+    for index in range(n_branches - 1):
+        child = Branch.from_lengths(
+            lengths=[15.0, 10.0] * u.um,
+            radii=[2.0, 1.5, 1.0] * u.um,
+            type="apical_dendrite",
+        )
+        name = f"seg_{index}"
+        tree.attach(parent=parent, child_branch=child, child_name=name, parent_x=1.0)
+        parent = name
+    return tree

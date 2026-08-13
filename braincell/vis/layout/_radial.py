@@ -76,7 +76,6 @@ def _build_layout_branches_radial_360(
         layouts=layouts,
         interval=(-root_span / 2.0, root_span / 2.0),
         min_branch_angle_rad=min_branch_angle_rad,
-        is_root=True,
         layout_config=config,
     )
     return tuple(layouts[branch.index] for branch in morpho.branches)
@@ -90,46 +89,45 @@ def _layout_children_radial_360(
     layouts: dict[int, LayoutBranch2D],
     interval: tuple[float, float],
     min_branch_angle_rad: float,
-    is_root: bool,
     layout_config: LayoutConfig,
 ) -> None:
-    children = parent.children
-    if not children:
-        return
+    """Lay out every descendant of ``parent``.
 
-    if is_root:
-        child_intervals = _weighted_child_intervals(
-            children, interval=interval, weights=leaf_counts, min_gap_rad=min_branch_angle_rad
-        )
-    else:
-        child_intervals = _weighted_child_intervals(
-            children, interval=interval, weights=leaf_counts, min_gap_rad=min_branch_angle_rad
-        )
+    Iterative for the same reason as the other layout families: a branch
+    chain deeper than the interpreter's frame limit must not raise
+    ``RecursionError``. A child's wedge derives from its parent's finished
+    interval alone, so a sibling group can be placed before any of it is
+    descended into. Children are pushed in reverse to keep the
+    left-to-right visit order.
+    """
+    # frame: (branch, angular interval allocated to it)
+    stack: list[tuple[MorphoBranch, tuple[float, float]]] = [(parent, interval)]
+    while stack:
+        node, node_interval = stack.pop()
+        children = node.children
+        if not children:
+            continue
 
-    parent_layout = layouts[parent.index]
-    for child, child_interval in child_intervals:
-        attach_um, attach_tangent_um = sample_layout_branch(parent_layout, child.parent_x)
-        child_angle_rad = 0.5 * (child_interval[0] + child_interval[1])
-        layouts[child.index] = _make_layout_branch(
-            child,
-            spec=layout_specs[child.index],
-            attach_um=attach_um,
-            attach_angle_rad=_vector_angle_rad(attach_tangent_um),
-            target_angle_rad=child_angle_rad,
-            child_x=float(child.child_x),
-            bend_fraction=layout_config.radial_bend_fraction,
+        child_intervals = _weighted_child_intervals(
+            children, interval=node_interval, weights=leaf_counts, min_gap_rad=min_branch_angle_rad
         )
-        child_span_rad = min(
-            layout_config.radial_child_span_rad,
-            max(child_interval[1] - child_interval[0], _RADIAL_MIN_CHILD_SPAN_RAD),
-        )
-        _layout_children_radial_360(
-            child,
-            layout_specs=layout_specs,
-            leaf_counts=leaf_counts,
-            layouts=layouts,
-            interval=(child_angle_rad - child_span_rad / 2.0, child_angle_rad + child_span_rad / 2.0),
-            min_branch_angle_rad=min_branch_angle_rad,
-            is_root=False,
-            layout_config=layout_config,
-        )
+        node_layout = layouts[node.index]
+        frames: list[tuple[MorphoBranch, tuple[float, float]]] = []
+        for child, child_interval in child_intervals:
+            attach_um, attach_tangent_um = sample_layout_branch(node_layout, child.parent_x)
+            child_angle_rad = 0.5 * (child_interval[0] + child_interval[1])
+            layouts[child.index] = _make_layout_branch(
+                child,
+                spec=layout_specs[child.index],
+                attach_um=attach_um,
+                attach_angle_rad=_vector_angle_rad(attach_tangent_um),
+                target_angle_rad=child_angle_rad,
+                child_x=float(child.child_x),
+                bend_fraction=layout_config.radial_bend_fraction,
+            )
+            child_span_rad = min(
+                layout_config.radial_child_span_rad,
+                max(child_interval[1] - child_interval[0], _RADIAL_MIN_CHILD_SPAN_RAD),
+            )
+            frames.append((child, (child_angle_rad - child_span_rad / 2.0, child_angle_rad + child_span_rad / 2.0)))
+        stack.extend(reversed(frames))

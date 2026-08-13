@@ -14,10 +14,11 @@
 # ==============================================================================
 
 
+import sys
 import unittest
 import warnings
 
-from braincell.vis._testing import make_length_only_tree
+from braincell.vis._testing import make_deep_chain_tree, make_length_only_tree
 from braincell.vis.layout._dispatch import (
     _LAYOUT_FAMILY_ALIASES,
     _VALID_LAYOUT_FAMILIES,
@@ -117,6 +118,48 @@ class DispatchSmokeTest(unittest.TestCase):
         tree = make_length_only_tree()
         layouts = build_layout_branches_2d(tree, mode="frustum")
         self.assertEqual(len(layouts), len(tree.branches))
+
+
+class DeepMorphologyTest(unittest.TestCase):
+    """Every layout family must lay out chains deeper than the frame limit.
+
+    Reconstructions of long neurites are routinely thousands of branches
+    deep. Each family used to descend with one interpreter frame per
+    branch, so anything past a few hundred branches raised
+    ``RecursionError`` — see the builders in ``_stem`` / ``_balloon`` /
+    ``_fan`` / ``_radial`` / ``_legacy``, which all walk iteratively now.
+    """
+
+    # One entry per distinct builder reachable through the dispatcher.
+    COMBINATIONS = (
+        ("tree", "stem", "type_split"),
+        ("frustum", "stem", "type_split"),
+        ("tree", "balloon", "type_split"),
+        ("tree", "radial_360", "type_split"),
+        ("tree", "fan", "type_split"),
+        ("tree", "stem", "legacy"),
+    )
+
+    def test_every_family_handles_a_chain_deeper_than_the_recursion_limit(self) -> None:
+        n_branches = sys.getrecursionlimit() * 2
+        tree = make_deep_chain_tree(n_branches)
+
+        for mode, layout_family, root_layout in self.COMBINATIONS:
+            with self.subTest(mode=mode, layout_family=layout_family, root_layout=root_layout):
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore", DeprecationWarning)
+                    layouts = build_layout_branches_2d(
+                        tree,
+                        mode=mode,
+                        layout_family=layout_family,
+                        root_layout=root_layout,
+                        use_cache=False,
+                    )
+                self.assertEqual(len(layouts), n_branches)
+                # A branch left unplaced would surface as a KeyError while
+                # building the result tuple, so reaching here means every
+                # branch in the chain was visited.
+                self.assertEqual(layouts[0].branch_name, "soma")
 
 
 if __name__ == "__main__":

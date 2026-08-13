@@ -14,6 +14,7 @@
 # ==============================================================================
 
 
+import sys
 import unittest
 
 from braincell import vis as morpho_vis
@@ -23,6 +24,7 @@ import numpy as np
 
 from braincell import Branch, Morphology
 from braincell.vis._testing import (
+    make_deep_chain_tree,
     make_length_only_tree,
     make_projected_node_tree,
     make_root_split_tree,
@@ -152,6 +154,46 @@ class BranchOrderHistogramTest(unittest.TestCase):
         # Order-1 bar should be twice the height of order-0.
         heights = sorted(bar.get_height() for bar in bars)
         self.assertEqual(heights, [1, 2])
+
+
+class DeepMorphologyTest(unittest.TestCase):
+    """Morphometry views must survive chains deeper than the frame limit.
+
+    The dendrogram / topology walks and the Sholl path accumulator used
+    to recurse once per branch, so a long unbranched neurite raised
+    ``RecursionError`` well before the plot itself got interesting.
+    """
+
+    def tearDown(self) -> None:
+        plt.close("all")
+
+    def setUp(self) -> None:
+        self.n_branches = sys.getrecursionlimit() * 2
+        self.tree = make_deep_chain_tree(self.n_branches)
+
+    def test_dendrogram_handles_a_deep_chain(self) -> None:
+        ax = plot_dendrogram(self.tree)
+        # One horizontal stroke per branch, plus one child connector per
+        # branch that has children — every branch but the tip.
+        self.assertEqual(len(ax.lines), 2 * self.n_branches - 1)
+
+    def test_topology_handles_a_deep_chain(self) -> None:
+        ax = plot_topology(self.tree)
+        self.assertEqual(len(ax.lines), 2 * self.n_branches - 1)
+
+    def test_sholl_profile_handles_a_deep_chain(self) -> None:
+        profile = compute_sholl_profile(self.tree, step_um=100.0)
+        self.assertGreaterEqual(profile.radii_um.size, 1)
+        self.assertTrue(np.all(profile.intersections >= 0))
+
+    def test_branch_order_histogram_handles_a_deep_chain(self) -> None:
+        from matplotlib.patches import Rectangle
+
+        ax = plot_branch_order_histogram(self.tree)
+
+        bars = [patch for patch in ax.patches if isinstance(patch, Rectangle)]
+        # A chain has exactly one branch at every order.
+        self.assertEqual(len(bars), self.n_branches)
 
 
 if __name__ == "__main__":

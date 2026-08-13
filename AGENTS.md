@@ -1,6 +1,6 @@
 # BrainCell – Developer Guide
 
-Biologically detailed brain cell modeling in JAX.
+Biologically detailed brain cell modeling in BrainX.
 
 ## Working agreement
 

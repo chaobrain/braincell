@@ -31,7 +31,7 @@ If this behavior changes, re-check:
 - ``braincell/io/swc/swc_test.py``
 - ``braincell/_discretization/lower_test.py``
 - ``examples/neuron_compare/cable/tests/``
-- ``braincell/io/swc/README.md``
+- ``docs/design/io-swc-reader-invariants.md``
 """
 
 from dataclasses import dataclass, field

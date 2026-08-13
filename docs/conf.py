@@ -113,7 +113,11 @@ myst_enable_extensions = [
 # List of patterns, relative to source directory, that match files and
 # directories to ignore when looking for source files.
 # This pattern also affects html_static_path and html_extra_path.
-exclude_patterns = ['_build', 'Thumbs.db', '.DS_Store']
+# `design/` and `specs/` are maintainer notes, not part of the published
+# site. They live under docs/ so every piece of prose has one home, but
+# they are excluded here so Sphinx does not warn about documents missing
+# from a toctree.
+exclude_patterns = ['_build', 'Thumbs.db', '.DS_Store', 'design', 'specs']
 
 html_theme = "sphinx_book_theme"
 html_logo = "https://brainx.chaobrain.com/images/braincell.webp"

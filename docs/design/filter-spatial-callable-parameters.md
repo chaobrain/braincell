@@ -1,4 +1,4 @@
-# Filter TODO
+# Filter: spatially varying callable parameters
 
 ## Spatial callable parameters
 

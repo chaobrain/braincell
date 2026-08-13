@@ -28,10 +28,10 @@
 
 ### 产出
 
-- `design/network/README.md`
-- `design/network/platform-survey.md`
-- `design/network/braincell-network-design.md`
-- `design/network/implementation-plan.md`
+- `docs/design/network/design-overview.md`
+- `docs/design/network/platform-survey.md`
+- `docs/design/network/braincell-network-design.md`
+- `docs/design/network/implementation-plan.md`
 
 ### 完成标准
 

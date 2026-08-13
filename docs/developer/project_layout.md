@@ -65,6 +65,23 @@ page maps the package tree onto the {doc}`../concepts/architecture` layers.
   - 2-D / 3-D rendering, morphometry, export
 ```
 
+## Prose lives under `docs/`
+
+No `.md` file sits inside `braincell/`. Written material has two homes,
+neither of which is part of this published site:
+
+- `docs/specs/YYYY-MM-DD-<slug>.md` — the spec and plan for a single change,
+  written before the implementation. The date prefix keeps the directory in
+  chronological order.
+- `docs/design/<topic>.md` — durable design notes, invariants, and
+  architecture maps that outlive any one change. A topic that needs several
+  documents gets a subdirectory (`docs/design/network/`).
+
+Files are named for what they document rather than where the code lives, so
+`docs/design/io-swc-reader-invariants.md` rather than a `README.md` beside the
+reader. Code that depends on a note cites it by `docs/` path from the module
+docstring.
+
 ## Tests are co-located
 
 Test files live **next to the source** they cover and are named `*_test.py`

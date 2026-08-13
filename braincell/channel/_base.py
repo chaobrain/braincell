@@ -255,7 +255,9 @@ class HH(Channel):
             has_inf_tau = hasattr(cls, f"f_{gate.name}_inf") and hasattr(cls, f"f_{gate.name}_tau")
             has_alpha_beta = hasattr(cls, f"f_{gate.name}_alpha") and hasattr(cls, f"f_{gate.name}_beta")
             if has_inf_tau and has_alpha_beta:
-                raise ValueError(f"{cls.__name__}: gate {gate.name!r} defines both inf/tau and alpha/beta forms; choose one.")
+                raise ValueError(
+                    f"{cls.__name__}: gate {gate.name!r} defines both inf/tau and alpha/beta forms; choose one."
+                )
             if has_inf_tau:
                 forms[gate.name] = "inf_tau"
             elif has_alpha_beta:
@@ -462,8 +464,7 @@ class Markov(Channel, IndependentIntegration):
         declared = cls.dependent_state
         if declared is not None and declared not in seen:
             raise ValueError(
-                f"{cls.__name__}: dependent_state {declared!r} is not one of the "
-                f"declared states {sorted(seen)}."
+                f"{cls.__name__}: dependent_state {declared!r} is not one of the declared states {sorted(seen)}."
             )
 
         for pair in resolved:

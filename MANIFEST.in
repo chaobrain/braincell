@@ -1,0 +1,43 @@
+# Pin the source distribution contents explicitly.
+#
+# Without this file the sdist is whatever the build environment's file finders
+# decide to sweep up. braincell 0.1.0 shipped a 25 MB sdist because
+# build-system.requires still listed setuptools-scm, whose git file-finder pulls
+# in every tracked file -- examples/neuron_compare alone is 15 MB of benchmark
+# CSVs and notebooks. setuptools-scm is gone (#112), but nothing stops a future
+# build dependency from re-enabling VCS discovery, so state the intent here.
+#
+# See docs/specs/2026-08-13-release-publish-ci-fix.md.
+
+include LICENSE
+include README.md
+include pyproject.toml
+include braincell/py.typed
+
+# Development and documentation trees. None of these are referenced by any
+# module under braincell/.
+prune .claude
+prune .github
+prune data
+prune dev
+prune docs
+prune examples
+
+# Repository administration, not package content.
+exclude AGENTS.md
+exclude CLAUDE.md
+exclude CODE_OF_CONDUCT.md
+exclude CONTRIBUTING.md
+exclude SECURITY.md
+exclude TODO.md
+exclude changelog.md
+exclude conftest.py
+exclude requirements-dev.txt
+exclude requirements-doc.txt
+exclude requirements.txt
+exclude .pre-commit-config.yaml
+exclude .readthedocs.yml
+exclude .gitattributes
+
+global-exclude *.py[cod]
+global-exclude __pycache__

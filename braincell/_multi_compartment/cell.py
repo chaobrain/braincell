@@ -193,7 +193,7 @@ class Cell(HHTypedNeuron):
         self,
         morpho: Morphology,
         *,
-        pop_size: brainstate.typing.Size = (),
+        pop_size: brainstate.typing.Size = 1,
         cv_policy: CVPolicy | None = None,
         V_th: u.Quantity = 0 * u.mV,
         V_init: Optional[Initializer] = None,
@@ -214,9 +214,12 @@ class Cell(HHTypedNeuron):
             Morphology tree shared by every homogeneous population
             instance.
         pop_size : int or tuple of int, optional
-            Optional homogeneous population shape. Runtime state is
-            expanded to ``pop_size + (n_cv,)`` and point-space arrays to
-            ``pop_size + (n_point,)``.
+            Homogeneous population shape, defaulting to ``1``. Runtime
+            state is expanded to ``pop_size + (n_cv,)`` and point-space
+            arrays to ``pop_size + (n_point,)``. The population axis is
+            mandatory — an empty ``pop_size`` raises :class:`ValueError` —
+            because the trailing compartment axis is what makes every
+            ``Cell`` hidden state a :class:`brainstate.HiddenGroupState`.
         cv_policy : CVPolicy, optional
             Control-volume splitting policy.
         V_th : Quantity, optional
@@ -1514,11 +1517,15 @@ class Cell(HHTypedNeuron):
             )
         return point_ids
 
+    def _vis_cv_voltage(self):
+        """Return ``V`` as a plain ``(n_cv,)`` CV vector for visualization."""
+        return _drop_population_axes(self.V.value, field="V", caller="Cell.vis_cv", pop_size=self.pop_size)
+
     def _resolve_vis_node_values(self, value) -> tuple[object, str | None]:
         if isinstance(value, str):
             key = value.strip().lower()
             if key in {"v", "voltage"}:
-                return self._cv_to_node_values(self.V.value), "V"
+                return self._cv_to_node_values(self._vis_cv_voltage()), "V"
             raise ValueError(f"Unsupported Cell.vis_node value string {value!r}.")
 
         if isinstance(value, tuple) and len(value) == 3 and isinstance(value[0], str):
@@ -1544,7 +1551,7 @@ class Cell(HHTypedNeuron):
         if isinstance(value, str):
             key = value.strip().lower()
             if key in {"v", "voltage"}:
-                return self.V.value, "V"
+                return self._vis_cv_voltage(), "V"
             raise ValueError(f"Unsupported Cell.vis_cv value string {value!r}.")
 
         if isinstance(value, tuple) and len(value) == 3 and isinstance(value[0], str):
@@ -1567,6 +1574,7 @@ class Cell(HHTypedNeuron):
         return self._coerce_vis_cv_values_object(value), None
 
     def _coerce_vis_node_values_object(self, value):
+        value = _drop_population_axes(value, field="value", caller="Cell.vis_node", pop_size=self.pop_size)
         if hasattr(value, "to_decimal") and hasattr(value, "unit"):
             unit = value.unit
             raw = np.asarray(value.to_decimal(unit), dtype=float)
@@ -1633,6 +1641,7 @@ class Cell(HHTypedNeuron):
         )
 
     def _coerce_vis_cv_values_object(self, value):
+        value = _drop_population_axes(value, field="value", caller="Cell.vis_cv", pop_size=self.pop_size)
         if hasattr(value, "to_decimal") and hasattr(value, "unit"):
             unit = value.unit
             raw = np.asarray(value.to_decimal(unit), dtype=float)
@@ -1664,6 +1673,7 @@ class Cell(HHTypedNeuron):
         )
 
     def _coerce_named_vis_node_values_object(self, value):
+        value = _drop_population_axes(value, field="value", caller="Cell.vis_node", pop_size=self.pop_size)
         if hasattr(value, "to_decimal") and hasattr(value, "unit"):
             unit = value.unit
             raw = np.asarray(value.to_decimal(unit), dtype=float)
@@ -1689,6 +1699,7 @@ class Cell(HHTypedNeuron):
         raise ValueError("Cell.vis_node(...) cannot map the named value into point space.")
 
     def _coerce_named_vis_cv_values_object(self, value):
+        value = _drop_population_axes(value, field="value", caller="Cell.vis_cv", pop_size=self.pop_size)
         if hasattr(value, "to_decimal") and hasattr(value, "unit"):
             unit = value.unit
             raw = np.asarray(value.to_decimal(unit), dtype=float)
@@ -1794,6 +1805,9 @@ class Cell(HHTypedNeuron):
 
     def _layout_values_to_point_space(self, layout, raw_values, *, field: str):
         n_point = self.n_point
+        raw_values = _drop_population_axes(
+            raw_values, field=field, caller="Cell.vis_node", pop_size=self.pop_size
+        )
         if hasattr(raw_values, "to_decimal") and hasattr(raw_values, "unit"):
             unit = raw_values.unit
             raw = np.asarray(raw_values.to_decimal(unit), dtype=float)
@@ -1848,6 +1862,9 @@ class Cell(HHTypedNeuron):
 
     def _layout_values_to_cv_space(self, layout, raw_values, *, field: str):
         n_cv = self.n_cv
+        raw_values = _drop_population_axes(
+            raw_values, field=field, caller="Cell.vis_cv", pop_size=self.pop_size
+        )
         source_cv_ids = tuple(int(cv_id) for cv_id in layout.source_cv_ids)
         midpoint_by_cv = {cv_id: int(self.node_tree.cv_to_mid_node_id[cv_id]) for cv_id in source_cv_ids}
         if hasattr(raw_values, "to_decimal") and hasattr(raw_values, "unit"):
@@ -2812,35 +2829,107 @@ def _call_name(prefix: str, path, node) -> str:
     return _scope_name(prefix, path, node).replace(":", "_")
 
 
+def _drop_population_axes(values, *, field: str, caller: str, pop_size: tuple[int, ...]):
+    """Reduce a ``pop_size + (n,)`` field to the single-population ``(n,)`` view.
+
+    Visualization draws one morphology, so the leading population axes have
+    to be singleton before the spatial mapping helpers can interpret the
+    trailing axis. Collapsing them here keeps the default ``pop_size=1``
+    cell rendering exactly as a rank-0 population used to.
+
+    Parameters
+    ----------
+    values : array-like or Quantity
+        Field values shaped ``pop_size + (n,)``. Scalars and 1-D values pass
+        through untouched.
+    field : str
+        Field name, used only in the error message.
+    caller : str
+        Public entry point name, used only in the error message.
+    pop_size : tuple of int
+        Owning cell's population shape, used only in the error message.
+
+    Returns
+    -------
+    array-like or Quantity
+        ``values`` with every leading singleton axis removed.
+
+    Raises
+    ------
+    ValueError
+        If any leading population axis holds more than one member, because
+        there is then no single morphology to draw.
+    """
+    shape = getattr(values, "shape", None)
+    if shape is None or len(shape) < 2:
+        return values
+    leading = shape[:-1]
+    if any(int(dim) != 1 for dim in leading):
+        raise ValueError(
+            f"{caller}(...) draws a single morphology, but field {field!r} has "
+            f"population shape {tuple(int(d) for d in leading)!r} from "
+            f"pop_size={tuple(int(d) for d in pop_size)!r}. Select one population "
+            f"member before visualizing."
+        )
+    return values[(0,) * len(leading)]
+
+
+_RANK0_POP_SIZE_MESSAGE = (
+    "Cell requires a population axis, so pop_size must not be empty. "
+    "Use pop_size=1 for a single cell; runtime state is then shaped "
+    "pop_size + (n_cv,). The trailing compartment axis is what makes every "
+    "Cell hidden state a brainstate.HiddenGroupState, which requires rank >= 2."
+)
+
+
 def _normalize_pop_size(pop_size) -> tuple[int, ...]:
     """Normalize the public ``Cell(pop_size=...)`` argument.
+
+    A ``Cell`` always carries a population axis: the canonical shape has at
+    least one entry, so runtime state is at least two-dimensional
+    (``pop_size + (n_cv,)``). See ``docs/specs/2026-08-13-cell-hidden-group-state.md``
+    for why rank-0 populations are rejected.
 
     Parameters
     ----------
     pop_size : int, sequence of int, or None
-        User-facing homogeneous population shape.
+        User-facing homogeneous population shape. ``None`` means
+        "unspecified" and normalizes to ``(1,)``.
 
     Returns
     -------
     tuple of int
-        Canonical population-shape tuple.
+        Canonical population-shape tuple, never empty.
 
     Raises
     ------
     TypeError
         If ``pop_size`` is not an integer or sequence of integers.
     ValueError
-        If any requested dimension is non-positive.
+        If any requested dimension is non-positive, or if an explicitly
+        empty ``pop_size`` is given.
+
+    Examples
+    --------
+
+    .. code-block:: python
+
+        >>> _normalize_pop_size(None)
+        (1,)
+        >>> _normalize_pop_size(4)
+        (4,)
+        >>> _normalize_pop_size((2, 3))
+        (2, 3)
     """
-    if pop_size in (None, ()):
-        return ()
+    if pop_size is None:
+        return (1,)
     if isinstance(pop_size, (int, np.integer)):
         if int(pop_size) <= 0:
             raise ValueError(f"pop_size must be > 0, got {pop_size!r}.")
         return (int(pop_size),)
     if isinstance(pop_size, (tuple, list)):
         if len(pop_size) == 0:
-            return ()
+            raise ValueError(_RANK0_POP_SIZE_MESSAGE)
         normalized = []
         for dim in pop_size:
             if not isinstance(dim, (int, np.integer)):

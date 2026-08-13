@@ -331,8 +331,14 @@ class TestCellLifecycle(unittest.TestCase):
         cell = _simple_cell()
         cell.V_init = -60.0 * u.mV
         cell.init_state()
-        self.assertEqual(cell.V.value.shape, (cell.n_cv,))
-        self.assertTrue(u.math.allclose(cell.V.value, jnp.full((cell.n_cv,), -60.0) * u.mV, atol=1e-9 * u.mV))
+        self.assertEqual(cell.V.value.shape, cell.pop_size + (cell.n_cv,))
+        self.assertTrue(
+            u.math.allclose(
+                cell.V.value,
+                jnp.full(cell.pop_size + (cell.n_cv,), -60.0) * u.mV,
+                atol=1e-9 * u.mV,
+            )
+        )
 
     def test_run_supports_scalar_v_init(self):
         cell = _cell_with_probe()

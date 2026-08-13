@@ -332,10 +332,10 @@ class DhsEndpointClampTest(unittest.TestCase):
         cell.place(RootLocation(x=0.0), CurrentClamp(durations=1.0 * u.ms, amplitudes=1.0 * u.nA))
         cell.init_state()
 
-        before = float(cell.V.value[0].to_decimal(u.mV))
+        before = float(cell.V.value[0, 0].to_decimal(u.mV))
         with brainstate.environ.context(t=0.0 * u.ms, dt=0.05 * u.ms):
             dhs_voltage_step(cell, 0.0 * u.ms, 0.05 * u.ms)
-        after = float(cell.V.value[0].to_decimal(u.mV))
+        after = float(cell.V.value[0, 0].to_decimal(u.mV))
 
         self.assertGreater(after, before)
 
@@ -397,10 +397,10 @@ class DhsMultistepClampTest(unittest.TestCase):
         )
         cell.init_state()
 
-        before = float(cell.V.value[0].to_decimal(u.mV))
+        before = float(cell.V.value[0, 0].to_decimal(u.mV))
         with brainstate.environ.context(t=0.0 * u.ms, dt=0.05 * u.ms):
             dhs_voltage_step(cell, 0.0 * u.ms, 0.05 * u.ms)
-        after = float(cell.V.value[0].to_decimal(u.mV))
+        after = float(cell.V.value[0, 0].to_decimal(u.mV))
 
         self.assertGreater(after, before)
 

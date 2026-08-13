@@ -39,7 +39,7 @@ class TotalMembraneCurrentClampTest(unittest.TestCase):
 
         np.testing.assert_allclose(
             np.asarray(current.to_decimal(u.nA / u.cm**2)),
-            np.zeros(cell.runtime.n_cv),
+            np.zeros(cell.pop_size + (cell.runtime.n_cv,)),
         )
 
     def test_current_clamp_total_current_is_converted_to_density(self) -> None:
@@ -56,7 +56,10 @@ class TotalMembraneCurrentClampTest(unittest.TestCase):
                 t=0.0 * u.ms,
             )
 
-        expected = np.asarray((0.2 * u.nA / cell.runtime.cv_area).to_decimal(u.nA / u.cm**2))
+        expected = np.broadcast_to(
+            np.asarray((0.2 * u.nA / cell.runtime.cv_area).to_decimal(u.nA / u.cm**2)),
+            cell.pop_size + (cell.runtime.n_cv,),
+        )
         np.testing.assert_allclose(
             np.asarray(current.to_decimal(u.nA / u.cm**2)),
             expected,

@@ -366,6 +366,7 @@ class Nav1p6_MA2020_GoC(Markov):
         ("I5", "I6", "f1n", "b1n"),
         ("O", "I6", "fin", "bin"),
     )
+    dependent_state = "I6"
 
     def __init__(
         self,
@@ -570,6 +571,7 @@ class Nav_MA2020_GrC(Markov, IndependentIntegration):
         ("O", "I6", "fin", "bin"),
         ("I5", "I6", "f1n", "b1n"),
     )
+    dependent_state = "I6"
 
     def __init__(
         self,
@@ -697,6 +699,7 @@ class NaFHF_MA2020_GrC(Markov, IndependentIntegration):
         ("O", "I6", "fin", "bin"),
         ("I5", "I6", "f1n", "b1n"),
     )
+    dependent_state = "I6"
 
     def __init__(
         self,

@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 
 import unittest
+import warnings
 
 import braintools
 import brainunit as u
@@ -219,6 +220,7 @@ class _ExampleMarkovTwoOpenStates(Markov):
         Transition("C", "O1", "open1_rate", "close1_rate"),
         ("O1", "O2", "open2_rate", "close2_rate"),
     )
+    dependent_state = "O2"  # what the implicit scan resolved to; pinned so reordering cannot move it
 
     def __init__(self, size=1):
         super().__init__(size=size, name=None)
@@ -725,6 +727,50 @@ class ChannelTemplateTest(unittest.TestCase):
         with self.assertRaisesRegex(AttributeError, "references attribute 'nope'"):
             self._phi_of("_PhiMissing", phi="nope")
 
+    # ------------------------------------------------------------------
+    # Markov dependent state
+    # ------------------------------------------------------------------
+
+    def _three_state_markov(self, name, order, **kwargs):
+        rates = {f"r{i}": (lambda self, V: 0.1) for i in range(1, 5)}
+        return _make_markov(name, {"pairs": order, **rates, **kwargs})
+
+    def test_explicit_dependent_state_survives_pair_reordering(self) -> None:
+        forward = (Transition("A", "B", "r1", "r2"), Transition("B", "C", "r3", "r4"))
+        reordered = (Transition("B", "C", "r3", "r4"), Transition("A", "B", "r1", "r2"))
+
+        a = self._three_state_markov("_OrderA", forward, dependent_state="A")
+        b = self._three_state_markov("_OrderB", reordered, dependent_state="A")
+        self.assertEqual(a(1)._dependent_state_name(), "A")
+        self.assertEqual(b(1)._dependent_state_name(), "A")
+        # ... whereas the implicit fallback would have moved with the order
+        self.assertEqual(a._resolved_state_names[-1], "C")
+        self.assertEqual(b._resolved_state_names[-1], "A")
+
+    def test_implicit_dependent_state_warns(self) -> None:
+        cls = self._three_state_markov(
+            "_Implicit",
+            (Transition("A", "B", "r1", "r2"), Transition("B", "C", "r3", "r4")),
+        )
+        with self.assertWarnsRegex(DeprecationWarning, "does not declare `dependent_state`"):
+            self.assertEqual(cls(1)._dependent_state_name(), "C")
+
+    def test_shipped_markov_channels_declare_dependent_state(self) -> None:
+        # Regression lock: reordering `pairs` in any shipped channel must not
+        # be able to silently change which state is eliminated.
+        import braincell.channel as channel_pkg
+
+        implicit = [
+            name
+            for name in dir(channel_pkg)
+            if isinstance(cls := getattr(channel_pkg, name, None), type)
+            and issubclass(cls, Markov)
+            and cls is not Markov
+            and cls.pairs
+            and cls.dependent_state is None
+        ]
+        self.assertEqual(implicit, [])
+
     def test_markov_pairs_are_resolved_once(self) -> None:
         cls = _make_markov(
             "_TuplePairs",
@@ -822,16 +868,19 @@ class ChannelTemplateTest(unittest.TestCase):
         V = jnp.array([-65.0]) * u.mV
         K = _k_info()
 
-        ch.init_state(V, K)
-        self.assertEqual(ch.redundant_state, "I")
-        self.assertEqual(ch.state_names, ("C", "O"))
-        self.assertTrue(hasattr(ch, "C"))
-        self.assertTrue(hasattr(ch, "O"))
-        self.assertFalse(hasattr(ch, "I"))
+        with self.assertWarnsRegex(DeprecationWarning, "does not declare `dependent_state`"):
+            ch.init_state(V, K)
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", DeprecationWarning)
+            self.assertEqual(ch.redundant_state, "I")
+            self.assertEqual(ch.state_names, ("C", "O"))
+            self.assertTrue(hasattr(ch, "C"))
+            self.assertTrue(hasattr(ch, "O"))
+            self.assertFalse(hasattr(ch, "I"))
 
-        ch.C.value = jnp.array([0.3])
-        ch.O.value = jnp.array([0.2])
-        states = ch.state_values()
+            ch.C.value = jnp.array([0.3])
+            ch.O.value = jnp.array([0.2])
+            states = ch.state_values()
         self.assertTrue(u.math.allclose(states["I"], jnp.array([0.5]), atol=1e-6))
 
     def test_markov_pre_and_post_integral_are_no_ops(self) -> None:
@@ -864,15 +913,17 @@ class ChannelTemplateTest(unittest.TestCase):
         V = jnp.array([-65.0]) * u.mV
         K = _k_info()
 
-        ch.init_state(V, K)
-        ch.reset_steady_state(V, K)
-        states = ch.state_values()
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", DeprecationWarning)
+            ch.init_state(V, K)
+            ch.reset_steady_state(V, K)
+            states = ch.state_values()
 
-        total = states["C"] + states["O"] + states["I"]
-        self.assertTrue(u.math.allclose(total, jnp.array([1.0]), atol=1e-6))
-        self.assertTrue(u.math.allclose(states["I"], jnp.array([1.0]), atol=1e-6))
+            total = states["C"] + states["O"] + states["I"]
+            self.assertTrue(u.math.allclose(total, jnp.array([1.0]), atol=1e-6))
+            self.assertTrue(u.math.allclose(states["I"], jnp.array([1.0]), atol=1e-6))
 
-        ch.compute_derivative(V, K)
+            ch.compute_derivative(V, K)
         self.assertTrue(u.math.allclose(ch.C.derivative, jnp.array([0.0]) / u.ms, atol=1e-6 * u.Hz))
         self.assertTrue(u.math.allclose(ch.O.derivative, jnp.array([0.0]) / u.ms, atol=1e-6 * u.Hz))
 

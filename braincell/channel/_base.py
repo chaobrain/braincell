@@ -3,6 +3,7 @@
 
 from dataclasses import dataclass
 import inspect
+import warnings
 import numpy as np
 from typing import Any, Optional
 from typing import ClassVar
@@ -351,10 +352,12 @@ class HH(Channel):
 class Markov(Channel, IndependentIntegration):
     """Probability-state channel kinetics described by transition pairs.
 
-    ``pairs`` define one conserved probability pool. By default the dependent
-    state is the last state whose name is first discovered while scanning
-    ``pairs``. Override ``dependent_state`` when that order-based default is
-    not the intended hidden state.
+    ``pairs`` define one conserved probability pool. One state is eliminated
+    and reconstructed algebraically from the others; ``dependent_state``
+    names it. Declaring it is required in practice -- the fallback to "the
+    last state discovered while scanning ``pairs``" is order-dependent, so
+    reordering ``pairs`` would silently eliminate a different state, and it
+    now emits a ``DeprecationWarning``.
 
     ``state_values()`` returns the raw stored states plus the reconstructed
     dependent state. ``compute_derivative()`` uses ``_kinetic_state_values()``,
@@ -454,8 +457,18 @@ class Markov(Channel, IndependentIntegration):
         state_names = self._state_names()
         if len(state_names) < 2:
             raise ValueError("Markov requires at least two states.")
-        if type(self).dependent_state is not None:
-            return type(self).dependent_state
+        declared = type(self).dependent_state
+        if declared is not None:
+            return declared
+        warnings.warn(
+            f"{type(self).__name__} does not declare `dependent_state`, so it falls back to "
+            f"{state_names[-1]!r} -- the last state discovered while scanning `pairs`. Reordering "
+            f"`pairs` would silently eliminate a different state and change the conditioning of "
+            f"the steady-state solve. Set `dependent_state` explicitly; the implicit fallback "
+            f"will be removed.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         return state_names[-1]
 
     def _independent_state_names(self) -> tuple[str, ...]:

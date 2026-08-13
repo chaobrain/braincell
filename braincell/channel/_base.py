@@ -132,6 +132,14 @@ class Gate:
         and ``f_<name>_alpha`` returning ``0.3`` as ``0.3 / time_unit``.
         Rate methods that return a properly united quantity are used as-is
         and ignore this field.
+    clip : bool
+        Project the gate into ``[0, 1]`` when evaluating
+        :meth:`HH.conductance_factor`. Off by default: NEURON does not clip
+        HH gates either, so clipping would diverge from the reference
+        mechanisms this catalogue is validated against. Enable it per gate
+        when a solver is expected to overshoot and an odd ``power`` would
+        otherwise yield a negative conductance. The stored state is never
+        rewritten -- only the value used for the conductance product.
     """
 
     name: str
@@ -140,6 +148,7 @@ class Gate:
     q10: Any | None = None
     temp_ref: Any | None = None
     time_unit: Any = u.ms
+    clip: bool = False
 
     def __post_init__(self):
         has_phi = self.phi is not None
@@ -287,6 +296,8 @@ class HH(Channel):
         product = 1.0
         for gate in self._iter_gates():
             value = self._gate_value(gate)
+            if gate.clip:
+                value = u.math.clip(value, 0.0, 1.0)
             product = product * (value if gate.power == 1 else value**gate.power)
         return product
 
@@ -333,7 +344,8 @@ class Markov(Channel, IndependentIntegration):
     dependent state. ``compute_derivative()`` uses ``_kinetic_state_values()``,
     which clips each independent state to ``[0, 1]`` before evaluating the
     transition graph while still reconstructing the dependent state from the
-    raw stored sum.
+    raw stored sum. Clipping is governed by :attr:`clip_states` and projects
+    only the values fed to the kinetics; the stored states are untouched.
     """
 
     pairs: ClassVar[tuple[Transition | tuple[Any, ...], ...]] = ()
@@ -341,6 +353,11 @@ class Markov(Channel, IndependentIntegration):
     dependent_state: ClassVar[str | None] = None
     default_solver: ClassVar[str] = "backward_euler"
     default_substeps: ClassVar[int] = 1
+    #: Project independent states into ``[0, 1]`` before evaluating the
+    #: transition graph. On by default: a probability pool that leaves the
+    #: simplex makes the kinetics meaningless, whereas an HH gate merely
+    #: becomes inaccurate. See :attr:`Gate.clip` for the HH-side switch.
+    clip_states: ClassVar[bool] = True
     _resolved_pairs: ClassVar[tuple[Transition, ...]] = ()
     _resolved_state_names: ClassVar[tuple[str, ...]] = ()
 
@@ -451,6 +468,8 @@ class Markov(Channel, IndependentIntegration):
 
     def _project_independent_state(self, name: str, value):
         _ = name
+        if not type(self).clip_states:
+            return value
         return u.math.clip(value, 0.0, 1.0)
 
     def _kinetic_state_values(self):

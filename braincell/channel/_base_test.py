@@ -625,6 +625,68 @@ class ChannelTemplateTest(unittest.TestCase):
         with self.assertRaisesRegex(TypeError, "expects 2 ion argument"):
             ch.compute_derivative(V, _k_info())
 
+    # ------------------------------------------------------------------
+    # Gate / state clipping
+    # ------------------------------------------------------------------
+
+    def _one_gate(self, name, **gate_kwargs):
+        return _make_hh(
+            name,
+            {
+                "gates": (Gate("m", **gate_kwargs),),
+                "f_m_inf": lambda self, V, K: 0.5,
+                "f_m_tau": lambda self, V, K: 1.0,
+            },
+        )
+
+    def _factor_at(self, cls, gate_value):
+        ch = cls(1)
+        V = jnp.array([-60.0]) * u.mV
+        ch.init_state(V, _k_info())
+        ch.m.value = jnp.array([gate_value])
+        return ch.conductance_factor(V, _k_info())
+
+    def test_gates_are_not_clipped_by_default(self) -> None:
+        cls = self._one_gate("_NoClip", power=3)
+        self.assertTrue(u.math.allclose(self._factor_at(cls, 1.5), jnp.array([1.5**3])))
+        # odd power keeps the sign of an undershooting gate
+        self.assertTrue(u.math.allclose(self._factor_at(cls, -0.3), jnp.array([(-0.3) ** 3])))
+
+    def test_even_power_rectifies_a_negative_gate_when_unclipped(self) -> None:
+        cls = self._one_gate("_NoClipEven", power=2)
+        self.assertTrue(u.math.allclose(self._factor_at(cls, -0.3), jnp.array([0.09])))
+
+    def test_gate_clip_projects_into_unit_interval(self) -> None:
+        cls = self._one_gate("_Clip", power=3, clip=True)
+        self.assertTrue(u.math.allclose(self._factor_at(cls, 1.5), jnp.array([1.0])))
+        self.assertTrue(u.math.allclose(self._factor_at(cls, -0.3), jnp.array([0.0])))
+        # in-range values are untouched
+        self.assertTrue(u.math.allclose(self._factor_at(cls, 0.5), jnp.array([0.125])))
+
+    def test_gate_clip_does_not_rewrite_stored_state(self) -> None:
+        cls = self._one_gate("_ClipStore", power=1, clip=True)
+        ch = cls(1)
+        V = jnp.array([-60.0]) * u.mV
+        ch.init_state(V, _k_info())
+        ch.m.value = jnp.array([1.5])
+        ch.conductance_factor(V, _k_info())
+        self.assertTrue(u.math.allclose(ch.m.value, jnp.array([1.5])))
+
+    def test_markov_clip_states_defaults_on_and_can_be_disabled(self) -> None:
+        self.assertTrue(Markov.clip_states)
+        ch = _ExampleMarkov(size=1)
+        V = jnp.array([-60.0]) * u.mV
+        K = _k_info()
+        ch.init_state(V, K)
+        ch.O.value = jnp.array([1.4])
+        self.assertTrue(u.math.allclose(ch._kinetic_state_values()["O"], jnp.array([1.0])))
+
+        type(ch).clip_states = False
+        try:
+            self.assertTrue(u.math.allclose(ch._kinetic_state_values()["O"], jnp.array([1.4])))
+        finally:
+            type(ch).clip_states = True
+
     def test_markov_pairs_are_resolved_once(self) -> None:
         cls = _make_markov(
             "_TuplePairs",

@@ -5,16 +5,57 @@ import json
 from pathlib import Path
 import sys
 
+import brainstate
+
+# NEURON integrates in double precision, and these suites compare against it at
+# tolerances as tight as 2e-5 mV. Under the float32 default, rounding accumulates
+# through the capacitive voltage update -- roughly 0.03 mV of monotonic drift over
+# a 4 ms run, growing with step count -- which swamps those tolerances. Set it
+# here, in the module every test in this package imports, rather than relying on
+# `cable/tests/test_runner.py` having happened to set the same process-global
+# first: run this package alone and the comparison tests would otherwise fail.
+brainstate.environ.set(precision=64)
+
 
 CHANNEL_NO_CONC_ROOT = Path(__file__).resolve().parents[1]
 TEMPLATES_ROOT = CHANNEL_NO_CONC_ROOT / "engine"
-MOD_VALIDATE_MOD_DIR = "/home/swl/braincell/examples/convert_mod/mod_validate/mods"
+
+# Resolved from this file rather than hardcoded: `workflow_api.load_workflow_inputs`
+# raises FileNotFoundError when `identity.mod_dir` does not exist, so an absolute
+# path into one developer's home directory fails everywhere else.
+EXAMPLES_ROOT = Path(__file__).resolve().parents[3]
+MOD_VALIDATE_MOD_DIR = str(EXAMPLES_ROOT / "convert_mod" / "mod_validate" / "mods")
+
+_SUITES_ROOT = CHANNEL_NO_CONC_ROOT.parent
 
 
 def load_module(path: Path, name: str):
-    spec = importlib.util.spec_from_file_location(name, path)
-    module = importlib.util.module_from_spec(spec)
+    """Load a suite module under ``name`` with its real package attached.
+
+    The engine modules import their siblings relatively (``from .compare
+    import ...``) and fall back to bare absolute names on ImportError. Loading
+    them with no package makes the relative import fail every time, so the
+    fallback registers ``compare`` / ``experiment_schema`` / ``outputs`` as
+    top-level modules -- names the sibling ``cable`` suite also uses. Whichever
+    suite ran first then owned the name and the other imported the wrong file.
+
+    Loading under a dotted name inside ``channel_no_conc.<subpackage>`` lets the
+    relative imports resolve, so the fallback never runs and nothing lands in
+    ``sys.modules`` under an unqualified name. The package is taken from the
+    file's own directory, so this works for ``engine/`` and ``workflows/``
+    alike. The caller's ``name`` is kept as the leaf, so callers that load the
+    same file twice still get independent module objects and cannot leak state
+    into each other.
+    """
+    if str(_SUITES_ROOT) not in sys.path:
+        sys.path.insert(0, str(_SUITES_ROOT))
+
+    package = f"{CHANNEL_NO_CONC_ROOT.name}.{path.resolve().parent.name}"
+    qualified = f"{package}.{name}"
+    spec = importlib.util.spec_from_file_location(qualified, path)
     assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[qualified] = module
     sys.modules[name] = module
     spec.loader.exec_module(module)
     return module

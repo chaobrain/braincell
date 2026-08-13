@@ -10,7 +10,20 @@ CELL_DIR = Path(__file__).resolve().parent
 
 DEFAULT_OPTIMIZATION_PATH = CELL_DIR / "Optimization_result.txt"
 DEFAULT_MORPH_PATH = CELL_DIR.parent.parent / "Cerebellum_mod" / "GoC" / "morphology" / "GoC.asc"
-DEFAULT_NRNMECH_PATH = CELL_DIR.parent.parent / "Cerebellum_mod" / "GoC" / "x86_64" / ".libs" / "libnrnmech.so"
+
+
+def nrnmech_path(build_dir: Path) -> Path:
+    """Return the compiled mechanism library inside an ``nrnivmodl`` build dir.
+
+    NEURON <= 8 builds through libtool and emits ``x86_64/.libs/libnrnmech.so``;
+    NEURON >= 9 emits ``x86_64/libnrnmech.so``. Prefer whichever is present, and
+    fall back to the modern layout when nothing has been compiled yet.
+    """
+    legacy = build_dir / ".libs" / "libnrnmech.so"
+    return legacy if legacy.exists() else build_dir / "libnrnmech.so"
+
+
+DEFAULT_NRNMECH_PATH = nrnmech_path(CELL_DIR.parent.parent / "Cerebellum_mod" / "GoC" / "x86_64")
 
 RA_OHM_CM = 122.0
 LEAK_E_MV = -55.0

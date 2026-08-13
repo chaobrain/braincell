@@ -20,16 +20,30 @@ _REPO_ROOT = next(
     ),
     _ROOT,
 )
-for candidate in (_REPO_ROOT, _HERE, _ROOT, _ENGINE_ROOT):
+_SUITES_ROOT = _ROOT.parent
+for candidate in (_REPO_ROOT, _SUITES_ROOT):
     if str(candidate) not in sys.path:
         sys.path.insert(0, str(candidate))
 
 try:
-    import experiment_schema
-    import run as channel_run
-    from outputs import default_config_run_output_dir, default_sweep_output_dir
-except ImportError as exc:  # pragma: no cover
-    raise ImportError("Could not import channel_no_conc template modules for notebook workflow helpers.") from exc
+    from ..engine import experiment_schema
+    from ..engine import run as channel_run
+    from ..engine.outputs import default_config_run_output_dir, default_sweep_output_dir
+except ImportError:
+    # Imported as a top-level module rather than as
+    # ``channel_no_conc.workflows.workflow_api`` -- the notebooks in this
+    # directory put ``workflows/`` on sys.path and ``import workflow_api``, so
+    # there is no parent package for the relative form to resolve against.
+    # Fall back to the suite-qualified absolute path, never to bare
+    # ``experiment_schema`` / ``run`` / ``outputs``: the sibling ``cable`` suite
+    # ships modules under those same names, and whichever suite imported first
+    # would silently hand its engine to the other.
+    try:
+        from channel_no_conc.engine import experiment_schema
+        from channel_no_conc.engine import run as channel_run
+        from channel_no_conc.engine.outputs import default_config_run_output_dir, default_sweep_output_dir
+    except ImportError as exc:  # pragma: no cover
+        raise ImportError("Could not import channel_no_conc template modules for notebook workflow helpers.") from exc
 
 
 _BATCH_CONFIG_COLUMNS = (

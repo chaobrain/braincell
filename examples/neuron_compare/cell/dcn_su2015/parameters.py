@@ -11,8 +11,21 @@ SOURCE_DCN_DIR = Path("/home/swl/Cerebellum_circuit/DCN/DCN")
 SOURCE_TEMPLATE_PATH = SOURCE_DCN_DIR / "DCN_template_1.hoc"
 SOURCE_MORPH_PATH = SOURCE_DCN_DIR / "DCN_mor.hoc"
 
-DEFAULT_NRNMECH_PATH = (
-    REPO_ROOT / "examples" / "neuron_compare" / "Cerebellum_mod" / "DCN" / "x86_64" / ".libs" / "libnrnmech.so"
+
+
+def nrnmech_path(build_dir: Path) -> Path:
+    """Return the compiled mechanism library inside an ``nrnivmodl`` build dir.
+
+    NEURON <= 8 builds through libtool and emits ``x86_64/.libs/libnrnmech.so``;
+    NEURON >= 9 emits ``x86_64/libnrnmech.so``. Prefer whichever is present, and
+    fall back to the modern layout when nothing has been compiled yet.
+    """
+    legacy = build_dir / ".libs" / "libnrnmech.so"
+    return legacy if legacy.exists() else build_dir / "libnrnmech.so"
+
+
+DEFAULT_NRNMECH_PATH = nrnmech_path(
+    REPO_ROOT / "examples" / "neuron_compare" / "Cerebellum_mod" / "DCN" / "x86_64"
 )
 DEFAULT_NATIVE_DIR = REPO_ROOT / "examples" / "neuron_compare" / "Cerebellum_mod" / "DCN" / "morphology"
 

@@ -5,6 +5,14 @@ import json
 from pathlib import Path
 import sys
 
+import brainstate
+
+# See the sibling `channel_no_conc/tests/_helpers.py`: NEURON integrates in double
+# precision, so comparing against it under the float32 default lets rounding
+# accumulate into the voltage trace. `test_runner.py` already sets this, but
+# setting it here too means any single module in this package can be run on its own.
+brainstate.environ.set(precision=64)
+
 
 CABLE_ROOT = Path(__file__).resolve().parents[1]
 ENGINE_ROOT = CABLE_ROOT / "engine"
@@ -13,11 +21,27 @@ TEMPLATE_JSON_ROOT = CABLE_ROOT / "templates"
 WORKFLOWS_ROOT = CABLE_ROOT / "workflows"
 MORPHO_FILES = Path(__file__).resolve().parents[4] / "data" / "morphology"
 
+_SUITES_ROOT = CABLE_ROOT.parent
+
 
 def load_module(path: Path, name: str):
-    spec = importlib.util.spec_from_file_location(name, path)
-    module = importlib.util.module_from_spec(spec)
+    """Load a suite module under ``name`` with its real package attached.
+
+    See the sibling ``channel_no_conc/tests/_helpers.py`` for the full
+    rationale: loaded with no package, the engine modules' relative imports
+    fail, and their absolute fallback claims unqualified ``sys.modules`` names
+    that both suites share. The package is taken from the file's own directory,
+    so this works for ``engine/`` and ``workflows/`` alike.
+    """
+    if str(_SUITES_ROOT) not in sys.path:
+        sys.path.insert(0, str(_SUITES_ROOT))
+
+    package = f"{CABLE_ROOT.name}.{path.resolve().parent.name}"
+    qualified = f"{package}.{name}"
+    spec = importlib.util.spec_from_file_location(qualified, path)
     assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[qualified] = module
     sys.modules[name] = module
     spec.loader.exec_module(module)
     return module

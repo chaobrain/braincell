@@ -261,7 +261,7 @@
 - `Cell.V` 的公开尺寸现在固定为 `pop_size + (n_cv,)`；`pop_size` 默认 `(1,)` 且不允许为空
 - runtime channel / ion 仍按 `node_tree` 的 `n_point = n_cv + n_branch + 1` 创建，公开尺寸为 `pop_size + (n_point,)`
 - `Cell` 的全部 hidden state 都是 `brainstate.HiddenGroupState`（`V` 为 `braincell.DiffEqGroupState`），
-  尾轴即 compartment/point 轴；`SingleCompartment` 无空间轴，仍用普通 `DiffEqState`。
+  尾轴即 compartment/point 轴；`SingleCompartment` 无空间轴，仍用普通 `DiffEqSingleState`。
   参见 `docs/specs/2026-08-13-cell-hidden-group-state.md`
 - `braincell.quad._voltage_solver.dhs_voltage_step()` 已改为从 `node_tree` 中的调度视图提取树结构
 - `Cell(solver="staggered")` 已可直接走新的 node-tree DHS 电压求解

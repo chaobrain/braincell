@@ -37,7 +37,7 @@ dynamic = [ "version" ]
 # constrain which JAX backend build (CPU / CUDA / TPU) a user installs.
 dependencies = [
   "brainevent>=0.0.7",
-  "brainpy>=2.7.5",
+  "brainpy>=2.8.2",
   "brainstate>=0.2.9",
   "braintools>=0.1",
   "brainunit>=0.0.8",

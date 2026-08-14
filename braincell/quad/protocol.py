@@ -44,7 +44,7 @@ __all__ = [
     'DiffEqModule',
     'IndependentIntegration',
     'state_grouping',
-    'diffeq_state',
+    'state',
     'hidden_state',
 ]
 
@@ -67,7 +67,7 @@ class DiffEqState(brainstate.mixin.Mixin):
     :class:`brainstate.State`. It carries no storage and cannot be
     instantiated; ``DiffEqState(value)`` raises :exc:`TypeError`. Mixing
     it into something that is not a :class:`brainstate.State` yields an
-    object no solver will accept. Use :func:`diffeq_state` to allocate,
+    object no solver will accept. Use :func:`state` to allocate,
     or name :class:`DiffEqSingleState` / :class:`DiffEqGroupState`
     explicitly.
 
@@ -179,7 +179,7 @@ class DiffEqSingleState(DiffEqState, brainstate.HiddenState):
     See Also
     --------
     DiffEqGroupState : The grouped counterpart used by ``Cell``.
-    diffeq_state : Host-scoped factory that picks between the two.
+    state : Host-scoped factory that picks between the two.
 
     Examples
     --------
@@ -223,7 +223,7 @@ class DiffEqGroupState(DiffEqState, brainstate.HiddenGroupState):
     --------
     DiffEqSingleState : The ungrouped counterpart used by
         ``SingleCompartment``.
-    diffeq_state : Host-scoped factory that picks between the two.
+    state : Host-scoped factory that picks between the two.
 
     Examples
     --------
@@ -250,7 +250,7 @@ _STATE_GROUPING = contextvars.ContextVar('braincell_state_grouping', default=Fal
 @set_module_as('braincell')
 @contextlib.contextmanager
 def state_grouping(enabled: bool = True) -> Iterator[bool]:
-    """Scope whether :func:`diffeq_state` / :func:`hidden_state` group.
+    """Scope whether :func:`state` / :func:`hidden_state` group.
 
     Channel, ion, and synapse code is shared by
     :class:`braincell.SingleCompartment` and :class:`braincell.Cell`, so
@@ -278,7 +278,7 @@ def state_grouping(enabled: bool = True) -> Iterator[bool]:
 
     See Also
     --------
-    diffeq_state : Allocate an integrable hidden state under this scope.
+    state : Allocate an integrable hidden state under this scope.
     hidden_state : Allocate a non-integrable hidden state under this scope.
 
     Examples
@@ -289,8 +289,8 @@ def state_grouping(enabled: bool = True) -> Iterator[bool]:
         >>> import numpy as np
         >>> import braincell
         >>> with braincell.state_grouping(True):
-        ...     state = braincell.diffeq_state(np.zeros((1, 4)) * u.mV)
-        >>> type(state).__name__
+        ...     st = braincell.state(np.zeros((1, 4)) * u.mV)
+        >>> type(st).__name__
         'DiffEqGroupState'
     """
     token = _STATE_GROUPING.set(bool(enabled))
@@ -301,7 +301,7 @@ def state_grouping(enabled: bool = True) -> Iterator[bool]:
 
 
 @set_module_as('braincell')
-def diffeq_state(value, **kwargs) -> DiffEqState:
+def state(value, **kwargs) -> DiffEqState:
     """Allocate the integrable hidden state class the current host wants.
 
     Parameters
@@ -352,7 +352,7 @@ def hidden_state(value, **kwargs) -> brainstate.HiddenState:
     See Also
     --------
     state_grouping : Scope that selects the class.
-    diffeq_state : The integrable counterpart.
+    state : The integrable counterpart.
     """
     cls = brainstate.HiddenGroupState if _STATE_GROUPING.get() else brainstate.HiddenState
     return cls(value, **kwargs)

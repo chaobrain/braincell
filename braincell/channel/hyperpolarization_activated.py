@@ -232,9 +232,9 @@ class HCN_HM1992(OhmicHH):
 #     return self.g_max * (self.O.value + self.g_inc * self.OL.value) * (self.E - V)
 #
 #   def init_state(self, V, Ca, batch_size=None):
-#     self.O = diffeq_state(braintools.init.param(u.math.zeros, self.varshape, batch_size))
-#     self.OL = diffeq_state(braintools.init.param(u.math.zeros, self.varshape, batch_size))
-#     self.P1 = diffeq_state(braintools.init.param(u.math.zeros, self.varshape, batch_size))
+#     self.O = state(braintools.init.param(u.math.zeros, self.varshape, batch_size))
+#     self.OL = state(braintools.init.param(u.math.zeros, self.varshape, batch_size))
+#     self.P1 = state(braintools.init.param(u.math.zeros, self.varshape, batch_size))
 #
 #   def reset_state(self, V, Ca: IonInfo, batch_size=None):
 #     varshape = self.varshape if (batch_size is None) else ((batch_size,) + self.varshape)

@@ -23,7 +23,7 @@ import jax.numpy as jnp
 from braincell._base import HHTypedNeuron, IonChannel, _cast_like, _zero_spike_like
 from braincell._typing import Initializer
 from braincell.quad import get_integrator
-from braincell.quad.protocol import IndependentIntegration, diffeq_state, state_grouping
+from braincell.quad.protocol import IndependentIntegration, state, state_grouping
 
 __all__ = [
     'SingleCompartment',
@@ -172,7 +172,7 @@ class SingleCompartment(HHTypedNeuron):
         # left to the default so that a Network mixing SingleCompartment and
         # Cell is correct regardless of construction order.
         with state_grouping(False):
-            self.V = diffeq_state(braintools.init.param(self.V_initializer, self.varshape, batch_size))
+            self.V = state(braintools.init.param(self.V_initializer, self.varshape, batch_size))
             self.spike = brainstate.ShortTermState(_zero_spike_like(self.V.value))
             super().init_state(batch_size)
 

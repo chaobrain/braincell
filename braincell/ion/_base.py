@@ -25,7 +25,7 @@ import brainunit as u
 
 from braincell.quad import get_integrator
 from braincell.quad.protocol import IndependentIntegration
-from braincell.quad.protocol import diffeq_state, hidden_state
+from braincell.quad.protocol import state, hidden_state
 
 __all__ = [
     "Factor",
@@ -293,7 +293,7 @@ class DynamicNernstIon(brainstate.mixin.Mixin):
     def _ion_init_state_hook(self, V, batch_size: int = None):
         """Create the runtime ``Ci`` state from the stored initializer."""
         _ = V
-        self.Ci = diffeq_state(
+        self.Ci = state(
             braintools.init.param(self._Ci_initializer, self.varshape, batch_size),
         )
 
@@ -602,7 +602,7 @@ class _Species:
         for spec in self.specs.species_by_name.values():
             value = self._species_value(spec, batch_size)
             if spec.name in self.specs.diffeq_set:
-                setattr(self.owner, spec.name, diffeq_state(value))
+                setattr(self.owner, spec.name, state(value))
             else:
                 setattr(self.owner, spec.name, hidden_state(value))
 

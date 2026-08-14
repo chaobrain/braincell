@@ -39,7 +39,7 @@ from braincell.quad.protocol import (
     DiffEqState,
     DiffEqSingleState,
     IndependentIntegration,
-    diffeq_state,
+    state,
     state_grouping,
     hidden_state,
 )
@@ -204,12 +204,12 @@ class StateFactoryTest(unittest.TestCase):
     """``state_grouping`` scopes which hidden-state class gets allocated."""
 
     def test_default_scope_is_not_grouped(self):
-        self.assertIsInstance(diffeq_state(jnp.zeros(3) * u.mV), DiffEqSingleState)
+        self.assertIsInstance(state(jnp.zeros(3) * u.mV), DiffEqSingleState)
         self.assertNotIsInstance(hidden_state(jnp.zeros(3) * u.mV), brainstate.HiddenGroupState)
 
     def test_grouped_scope_selects_the_group_classes(self):
         with state_grouping(True):
-            self.assertIsInstance(diffeq_state(jnp.zeros((1, 3)) * u.mV), DiffEqGroupState)
+            self.assertIsInstance(state(jnp.zeros((1, 3)) * u.mV), DiffEqGroupState)
             # The algebraic counterpart uses the stock brainstate class, not a
             # braincell subclass, so nothing shadows the upstream name.
             algebraic = hidden_state(jnp.zeros((1, 3)) * u.mV)
@@ -217,24 +217,24 @@ class StateFactoryTest(unittest.TestCase):
 
     def test_scopes_nest_and_restore(self):
         with state_grouping(True):
-            self.assertIsInstance(diffeq_state(jnp.zeros((1, 3)) * u.mV), DiffEqGroupState)
+            self.assertIsInstance(state(jnp.zeros((1, 3)) * u.mV), DiffEqGroupState)
             with state_grouping(False):
-                self.assertIsInstance(diffeq_state(jnp.zeros(3) * u.mV), DiffEqSingleState)
-            self.assertIsInstance(diffeq_state(jnp.zeros((1, 3)) * u.mV), DiffEqGroupState)
-        self.assertIsInstance(diffeq_state(jnp.zeros(3) * u.mV), DiffEqSingleState)
+                self.assertIsInstance(state(jnp.zeros(3) * u.mV), DiffEqSingleState)
+            self.assertIsInstance(state(jnp.zeros((1, 3)) * u.mV), DiffEqGroupState)
+        self.assertIsInstance(state(jnp.zeros(3) * u.mV), DiffEqSingleState)
 
     def test_scope_is_restored_after_an_exception(self):
         with self.assertRaises(RuntimeError):
             with state_grouping(True):
                 raise RuntimeError("boom")
-        self.assertIsInstance(diffeq_state(jnp.zeros(3) * u.mV), DiffEqSingleState)
+        self.assertIsInstance(state(jnp.zeros(3) * u.mV), DiffEqSingleState)
 
     def test_scope_does_not_leak_across_threads(self):
         # A contextvars default is per-thread, unlike a bare module global.
         observed: list = []
 
         def worker():
-            observed.append(isinstance(diffeq_state(jnp.zeros(3) * u.mV), DiffEqGroupState))
+            observed.append(isinstance(state(jnp.zeros(3) * u.mV), DiffEqGroupState))
 
         with state_grouping(True):
             thread = threading.Thread(target=worker)
@@ -245,7 +245,7 @@ class StateFactoryTest(unittest.TestCase):
 
     def test_kwargs_are_forwarded_to_the_state_constructor(self):
         with state_grouping(True):
-            st = diffeq_state(jnp.zeros((1, 3)) * u.mV, name="grouped_v")
+            st = state(jnp.zeros((1, 3)) * u.mV, name="grouped_v")
         self.assertEqual(st.name, "grouped_v")
 
 

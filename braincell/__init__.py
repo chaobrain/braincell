@@ -23,7 +23,7 @@ from braincell.quad.protocol import (
     DiffEqSingleState,
     DiffEqState,
     IndependentIntegration,
-    diffeq_state,
+    state,
     hidden_state,
     state_grouping,
 )
@@ -90,7 +90,7 @@ __all__ = [
     "DiffEqGroupState",
     "DiffEqModule",
     "IndependentIntegration",
-    "diffeq_state",
+    "state",
     "hidden_state",
     "state_grouping",
     "ApicalDendrite",

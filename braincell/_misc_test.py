@@ -74,7 +74,7 @@ class SetModuleAsTest(unittest.TestCase):
                 self.assertEqual(fun.__module__, "braincell.quad")
                 self.assertEqual(fun.__name__, name)
 
-        for name in ("state_grouping", "diffeq_state", "hidden_state"):
+        for name in ("state_grouping", "state", "hidden_state"):
             with self.subTest(function=name):
                 fun = getattr(braincell, name)
                 self.assertEqual(fun.__module__, "braincell")

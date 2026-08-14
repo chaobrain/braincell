@@ -15,7 +15,7 @@ Biologically detailed brain cell modeling in BrainX.
     - `docs/specs/YYYY-MM-DD-<slug>.md` — the spec and plan for one change, written *before* implementation. The date prefix is the creation date, so the directory reads chronologically.
     - `docs/design/<topic>.md` — durable design notes, invariants, and architecture maps that outlive any single change. Group a multi-document topic in its own subdirectory (`docs/design/network/`).
 
-    Name a file for what it documents, not where the code happens to sit: `io-swc-reader-invariants.md`, never `README.md` or `notes.md`. Give it an `# H1` that matches. When code depends on a note, cite it by its `docs/` path from the module docstring so the reference survives a move.
+    Name a file for what it documents, not where the code happens to sit: `io-swc-reader-invariants.md`, never `README.md` or `notes.md`. Give it an `# H1` that matches.
 9. Tests should >90% coverage, but focus on meaningful tests that cover edge cases and critical paths, not just trivial lines.
 10. Co-locate tests with the code under test: each module `foo.py` has its tests in a sibling `foo_test.py` (suffix style — never a separate `tests/` directory, never the `test_*.py` prefix). See [Testing](#testing) for the full rule.
 11. **Never drive a model with a bare Python `for`/`while` loop when it runs repeatedly.** Python loops execute op-by-op (dispatch overhead, no fusion) and trace fresh each step; the `brainstate.transform` primitives lower the whole loop into one compiled XLA program, tracing the body only once. Pick by shape of the work:
@@ -168,8 +168,10 @@ All public classes, methods, functions must use [NumPy-style docstrings](https:/
 ## Testing
 
 - Framework: **pytest** with `unittest.TestCase`
-- Config: `pyproject.toml` → `[tool.pytest]` (`ini_options.testpaths = ["braincell"]`, `ini_options.python_files = ["*_test.py"]`). There is no `pytest.ini`.
-- **Test file naming — mandatory.** Every test module **must** be named `*_test.py` and **co-located** with source it covers (e.g. `braincell/io/neuromorpho/client.py` → `braincell/io/neuromorpho/client_test.py`). `python_files` is set to `*_test.py` **only**, so a misnamed module is silently never collected — this already cost the repo 72 uncollected SWC/ASC tests. Do **not** use bare `test.py`, `test_*.py`, or `tests/` subdirectories. When splitting large module across several files, give each file its own sibling `*_test.py`.
+- Config: `pyproject.toml` → `[tool.pytest]` (`ini_options.testpaths = ["braincell"]`, `ini_options.python_files = ["*_test.py", "test_*.py"]`). There is no `pytest.ini`.
+- **Test file naming — mandatory.** Every test module **must** be named `*_test.py` and **co-located** with source it covers (e.g. `braincell/io/neuromorpho/client.py` → `braincell/io/neuromorpho/client_test.py`). Do **not** use bare `test.py`, `test_*.py`, or `tests/` subdirectories. When splitting large module across several files, give each file its own sibling `*_test.py`.
+  - A bare `test.py` matches neither collection pattern and is silently never collected — this already cost the repo 72 uncollected SWC/ASC tests.
+  - `test_*.py` is enabled in `python_files` **only** for the out-of-package NEURON comparison suite at `examples/neuron_compare/cable/tests/`, which predates this rule and is run directly by CI. That exception is documented at the `python_files` entry in `pyproject.toml`; it is not licence to use the prefix, or a `tests/` directory, anywhere new.
 - **Shared test helpers** not themselves tests go into private `_testing.py` (or similar leading-underscore name) inside same package, so pytest does not discover them as test modules. Example: `braincell/io/neuromorpho/_testing.py` provides `FakeResponse` / `FakeSession` doubles consumed by every `*_test.py` in that package.
 - JAX forced to CPU via `conftest.py` at project root (`JAX_PLATFORMS=cpu`)
 - Matplotlib headless via `MPLBACKEND=Agg` in `conftest.py`

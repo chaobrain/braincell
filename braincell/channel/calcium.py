@@ -25,7 +25,7 @@ import brainunit as u
 import jax
 
 from braincell._base import HHTypedNeuron, IonInfo
-from braincell.channel._base import Gate, HH, ghk_flux
+from braincell.channel._base import Gate, HH, OhmicHH, ghk_flux
 from braincell.ion import Calcium
 from braincell.mech import register_channel
 
@@ -110,7 +110,7 @@ class CaN_IS2008(HH):
 
     __module__ = "braincell.channel"
     root_type = Calcium
-    gates = (Gate("p", q10=lambda self: self.q10, temp_ref=lambda self: self.temp_ref),)
+    gates = (Gate("p", q10="q10", temp_ref="temp_ref"),)
 
     def __init__(
         self,
@@ -143,14 +143,14 @@ class CaN_IS2008(HH):
 
 
 @register_channel("CaT_HM1992")
-class CaT_HM1992(HH):
+class CaT_HM1992(OhmicHH):
     r"""Huguenard & McCormick 1992 low-threshold T-type calcium current."""
 
     __module__ = "braincell.channel"
     root_type = Calcium
     gates = (
-        Gate("p", power=2, q10=lambda self: self.q10_p, temp_ref=lambda self: self.temp_ref_p),
-        Gate("q", q10=lambda self: self.q10_q, temp_ref=lambda self: self.temp_ref_q),
+        Gate("p", power=2, q10="q10_p", temp_ref="temp_ref_p"),
+        Gate("q", q10="q10_q", temp_ref="temp_ref_q"),
     )
 
     def __init__(
@@ -173,9 +173,6 @@ class CaT_HM1992(HH):
         self.q10_q = braintools.init.param(q10_q, self.varshape, allow_none=False)
         self.temp_ref_q = braintools.init.param(temp_ref_q, self.varshape, allow_none=False)
         self.V_sh = braintools.init.param(V_sh, self.varshape, allow_none=False)
-
-    def current(self, V, Ca: IonInfo):
-        return self.g_max * self.conductance_factor(V, Ca) * (Ca.E - V)
 
     def f_p_inf(self, V, Ca: IonInfo):
         V = (V - self.V_sh).to_decimal(u.mV)
@@ -199,14 +196,14 @@ class CaT_HM1992(HH):
 
 
 @register_channel("CaT_HP1992")
-class CaT_HP1992(HH):
+class CaT_HP1992(OhmicHH):
     r"""Huguenard & Prince 1992 T-type calcium current for reticular nucleus."""
 
     __module__ = "braincell.channel"
     root_type = Calcium
     gates = (
-        Gate("p", power=2, q10=lambda self: self.q10_p, temp_ref=lambda self: self.temp_ref_p),
-        Gate("q", q10=lambda self: self.q10_q, temp_ref=lambda self: self.temp_ref_q),
+        Gate("p", power=2, q10="q10_p", temp_ref="temp_ref_p"),
+        Gate("q", q10="q10_q", temp_ref="temp_ref_q"),
     )
 
     def __init__(
@@ -230,9 +227,6 @@ class CaT_HP1992(HH):
         self.temp_ref_q = braintools.init.param(temp_ref_q, self.varshape, allow_none=False)
         self.V_sh = braintools.init.param(V_sh, self.varshape, allow_none=False)
 
-    def current(self, V, Ca: IonInfo):
-        return self.g_max * self.conductance_factor(V, Ca) * (Ca.E - V)
-
     def f_p_inf(self, V, Ca: IonInfo):
         V = (V - self.V_sh).to_decimal(u.mV)
         return 1.0 / (1.0 + u.math.exp(-(V + 52.0) / 7.4))
@@ -251,14 +245,14 @@ class CaT_HP1992(HH):
 
 
 @register_channel("CaHT_HM1992")
-class CaHT_HM1992(HH):
+class CaHT_HM1992(OhmicHH):
     r"""Huguenard & McCormick 1992 high-threshold calcium current."""
 
     __module__ = "braincell.channel"
     root_type = Calcium
     gates = (
-        Gate("p", power=2, q10=lambda self: self.q10_p, temp_ref=lambda self: self.temp_ref_p),
-        Gate("q", q10=lambda self: self.q10_q, temp_ref=lambda self: self.temp_ref_q),
+        Gate("p", power=2, q10="q10_p", temp_ref="temp_ref_p"),
+        Gate("q", q10="q10_q", temp_ref="temp_ref_q"),
     )
 
     def __init__(
@@ -282,9 +276,6 @@ class CaHT_HM1992(HH):
         self.temp_ref_q = braintools.init.param(temp_ref_q, self.varshape, allow_none=False)
         self.V_sh = braintools.init.param(V_sh, self.varshape, allow_none=False)
 
-    def current(self, V, Ca: IonInfo):
-        return self.g_max * self.conductance_factor(V, Ca) * (Ca.E - V)
-
     def f_p_inf(self, V, Ca: IonInfo):
         V = (V - self.V_sh).to_decimal(u.mV)
         return 1.0 / (1.0 + u.math.exp(-(V + 59.0) / 6.2))
@@ -307,14 +298,14 @@ class CaHT_HM1992(HH):
 
 
 @register_channel("CaHT_Re1993")
-class CaHT_Re1993(HH):
+class CaHT_Re1993(OhmicHH):
     r"""Reuveni 1993 high-threshold calcium current."""
 
     __module__ = "braincell.channel"
     root_type = Calcium
     gates = (
-        Gate("p", power=2, q10=lambda self: self.q10_p, temp_ref=lambda self: self.temp_ref_p),
-        Gate("q", q10=lambda self: self.q10_q, temp_ref=lambda self: self.temp_ref_q),
+        Gate("p", power=2, q10="q10_p", temp_ref="temp_ref_p"),
+        Gate("q", q10="q10_q", temp_ref="temp_ref_q"),
     )
 
     def __init__(
@@ -338,9 +329,6 @@ class CaHT_Re1993(HH):
         self.temp_ref_q = braintools.init.param(temp_ref_q, self.varshape, allow_none=False)
         self.V_sh = braintools.init.param(V_sh, self.varshape, allow_none=False)
 
-    def current(self, V, Ca: IonInfo):
-        return self.g_max * self.conductance_factor(V, Ca) * (Ca.E - V)
-
     def f_p_alpha(self, V, Ca: IonInfo):
         temp = (-V + self.V_sh).to_decimal(u.mV)
         delta = -27.0 + temp
@@ -360,14 +348,14 @@ class CaHT_Re1993(HH):
 
 
 @register_channel("CaL_IS2008")
-class CaL_IS2008(HH):
+class CaL_IS2008(OhmicHH):
     r"""Inoue & Strowbridge 2008 L-type calcium current."""
 
     __module__ = "braincell.channel"
     root_type = Calcium
     gates = (
-        Gate("p", power=2, q10=lambda self: self.q10_p, temp_ref=lambda self: self.temp_ref_p),
-        Gate("q", q10=lambda self: self.q10_q, temp_ref=lambda self: self.temp_ref_q),
+        Gate("p", power=2, q10="q10_p", temp_ref="temp_ref_p"),
+        Gate("q", q10="q10_q", temp_ref="temp_ref_q"),
     )
 
     def __init__(
@@ -390,9 +378,6 @@ class CaL_IS2008(HH):
         self.q10_q = braintools.init.param(q10_q, self.varshape, allow_none=False)
         self.temp_ref_q = braintools.init.param(temp_ref_q, self.varshape, allow_none=False)
         self.V_sh = braintools.init.param(V_sh, self.varshape, allow_none=False)
-
-    def current(self, V, Ca: IonInfo):
-        return self.g_max * self.conductance_factor(V, Ca) * (Ca.E - V)
 
     def f_p_inf(self, V, Ca: IonInfo):
         V = (V - self.V_sh).to_decimal(u.mV)
@@ -459,7 +444,7 @@ class CaHVA_SU2015_DCN(HH):
 
 
 @register_channel("CaL_SU2015_DCN")
-class CaL_SU2015_DCN(HH):
+class CaL_SU2015_DCN(OhmicHH):
     """Template-based import of ``CaL_SU15_DCN.mod``."""
 
     __module__ = "braincell.channel"
@@ -482,8 +467,8 @@ class CaL_SU2015_DCN(HH):
         self.E = braintools.init.param(E, self.varshape, allow_none=False)
         self.qdeltat = braintools.init.param(qdeltat, self.varshape, allow_none=False)
 
-    def current(self, V):
-        return self.g_max * self.conductance_factor(V) * (self.E - V)
+    def reversal_potential(self, V, *ions):
+        return self.E
 
     def f_m_inf(self, V):
         return self._m_inf_formula(V.to_decimal(u.mV))
@@ -578,15 +563,15 @@ class CaLVA_SU2015_DCN(HH):
 
 
 @register_channel("Cav1p2_MA2020_GoC")
-class Cav1p2_MA2020_GoC(HH):
+class Cav1p2_MA2020_GoC(OhmicHH):
     r"""Evans/Beining Cav1.2 calcium current with calcium-dependent inactivation."""
 
     __module__ = "braincell.channel"
     root_type = Calcium
     gates = (
-        Gate("m", q10=lambda self: self.q10, temp_ref=lambda self: self.temp_ref),
-        Gate("h", q10=lambda self: self.q10, temp_ref=lambda self: self.temp_ref),
-        Gate("n", q10=lambda self: self.q10, temp_ref=lambda self: self.temp_ref),
+        Gate("m", q10="q10", temp_ref="temp_ref"),
+        Gate("h", q10="q10", temp_ref="temp_ref"),
+        Gate("n", q10="q10", temp_ref="temp_ref"),
     )
 
     def __init__(
@@ -607,9 +592,6 @@ class Cav1p2_MA2020_GoC(HH):
         self.temp_ref = braintools.init.param(temp_ref, self.varshape, allow_none=False)
         self.kf = 0.0005
         self.VDI = 0.17
-
-    def current(self, V, Ca: IonInfo):
-        return self.g_max * self.conductance_factor(V, Ca) * (Ca.E - V)
 
     def f_m_inf(self, V, Ca: IonInfo):
         V = V.to_decimal(u.mV)
@@ -643,15 +625,15 @@ class Cav1p2_MA2025_BC(Cav1p2_MA2020_GoC):
 
 
 @register_channel("Cav1p3_MA2020_GoC")
-class Cav1p3_MA2020_GoC(HH):
+class Cav1p3_MA2020_GoC(OhmicHH):
     r"""Evans/Beining Cav1.3 calcium current with calcium-dependent inactivation."""
 
     __module__ = "braincell.channel"
     root_type = Calcium
     gates = (
-        Gate("m", q10=lambda self: self.q10, temp_ref=lambda self: self.temp_ref),
-        Gate("h", q10=lambda self: self.q10, temp_ref=lambda self: self.temp_ref),
-        Gate("n", q10=lambda self: self.q10, temp_ref=lambda self: self.temp_ref),
+        Gate("m", q10="q10", temp_ref="temp_ref"),
+        Gate("h", q10="q10", temp_ref="temp_ref"),
+        Gate("n", q10="q10", temp_ref="temp_ref"),
     )
 
     def __init__(
@@ -672,9 +654,6 @@ class Cav1p3_MA2020_GoC(HH):
         self.temp_ref = braintools.init.param(temp_ref, self.varshape, allow_none=False)
         self.kf = 0.0005
         self.VDI = 1.0
-
-    def current(self, V, Ca: IonInfo):
-        return self.g_max * self.conductance_factor(V, Ca) * (Ca.E - V)
 
     def f_m_inf(self, V, Ca: IonInfo):
         V = V.to_decimal(u.mV)
@@ -1192,7 +1171,7 @@ class Cav3p3_MA2024_PC_Frozen(HH):
 
 
 @register_channel("Cav3p2_RI2021_SC")
-class Cav3p2_RI2021_SC(HH):
+class Cav3p2_RI2021_SC(OhmicHH):
     """Template-based import of ``Cav3p2_RI21_SC.mod``.
 
     Notes
@@ -1235,9 +1214,6 @@ class Cav3p2_RI2021_SC(HH):
 
     def _shifted_voltage(self, V):
         return V + self.V_sh
-
-    def current(self, V, Ca: IonInfo):
-        return self.g_max * self.conductance_factor(V, Ca) * (Ca.E - V)
 
     def f_m_inf(self, V, Ca: IonInfo):
         V = self._shifted_voltage(V).to_decimal(u.mV)
@@ -1366,7 +1342,7 @@ class Cav3p3_MA2024_PC(Cav3p3_RI2021_SC):
 
 
 @register_channel("CaHVA_MA2020_GoC")
-class CaHVA_MA2020_GoC(HH):
+class CaHVA_MA2020_GoC(OhmicHH):
     """Template-based import of ``CaHVA_MA2020_GoC.mod``."""
 
     __module__ = "braincell.channel"
@@ -1399,9 +1375,6 @@ class CaHVA_MA2020_GoC(HH):
         self.Kbeta_u = 83.33
         self.V0beta_u = -48.0
 
-    def current(self, V, Ca: IonInfo):
-        return self.g_max * self.conductance_factor(V, Ca) * (Ca.E - V)
-
     def f_s_alpha(self, V, Ca: IonInfo):
         V = V.to_decimal(u.mV)
         return self.Aalpha_s * u.math.exp((V - self.V0alpha_s) / self.Kalpha_s)
@@ -1420,7 +1393,7 @@ class CaHVA_MA2020_GoC(HH):
 
 
 @register_channel("CaHVA_MA2020_GrC")
-class CaHVA_MA2020_GrC(HH):
+class CaHVA_MA2020_GrC(OhmicHH):
     """Template-based import of ``CaHVA_MA2020_GrC.mod``."""
 
     __module__ = "braincell.channel"
@@ -1453,9 +1426,6 @@ class CaHVA_MA2020_GrC(HH):
         self.Kbeta_u = 83.33
         self.V0beta_u = -48.0
 
-    def current(self, V, Ca: IonInfo):
-        return self.g_max * self.conductance_factor(V, Ca) * (Ca.E - V)
-
     def f_s_alpha(self, V, Ca: IonInfo):
         V = V.to_decimal(u.mV)
         return self.Aalpha_s * u.math.exp((V - self.V0alpha_s) / self.Kalpha_s)
@@ -1474,7 +1444,7 @@ class CaHVA_MA2020_GrC(HH):
 
 
 @register_channel("Cav2p3_MA2020_GoC")
-class Cav2p3_MA2020_GoC(HH):
+class Cav2p3_MA2020_GoC(OhmicHH):
     """Template-based import of ``Cav2p3_MA2020_GoC.mod``."""
 
     __module__ = "braincell.channel"
@@ -1494,9 +1464,6 @@ class Cav2p3_MA2020_GoC(HH):
         super().__init__(size=size, name=name)
         self.g_max = braintools.init.param(g_max, self.varshape, allow_none=False)
         self.temp = braintools.init.param(temp, self.varshape, allow_none=False)
-
-    def current(self, V, Ca: IonInfo):
-        return self.g_max * self.conductance_factor(V, Ca) * (Ca.E - V)
 
     def f_m_inf(self, V, Ca: IonInfo):
         V = V.to_decimal(u.mV)

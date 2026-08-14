@@ -24,7 +24,7 @@ import braintools
 import brainunit as u
 
 from braincell._base import Channel, IonInfo
-from braincell.channel._base import Gate, HH
+from braincell.channel._base import Gate, HH, OhmicHH
 from braincell.ion import Potassium
 from braincell.mech import register_channel
 
@@ -92,12 +92,12 @@ def _x_over_one_minus_exp_neg_stable(x):
 
 
 @register_channel("KDR_Ba2002")
-class KDR_Ba2002(HH):
+class KDR_Ba2002(OhmicHH):
     r"""Bazhenov 2002 delayed-rectifier potassium current."""
 
     __module__ = "braincell.channel"
     root_type = Potassium
-    gates = (Gate("p", power=4, q10=lambda self: self.q10, temp_ref=lambda self: self.temp_ref),)
+    gates = (Gate("p", power=4, q10="q10", temp_ref="temp_ref"),)
 
     def __init__(
         self,
@@ -116,9 +116,6 @@ class KDR_Ba2002(HH):
         self.temp_ref = braintools.init.param(temp_ref, self.varshape, allow_none=False)
         self.V_sh = braintools.init.param(V_sh, self.varshape, allow_none=False)
 
-    def current(self, V, K: IonInfo):
-        return self.g_max * self.conductance_factor(V, K) * (K.E - V)
-
     def f_p_alpha(self, V, K: IonInfo):
         temp = (V - self.V_sh).to_decimal(u.mV) - 15.0
         return 0.032 * 5.0 / u.math.exprel(-temp / 5.0)
@@ -129,12 +126,12 @@ class KDR_Ba2002(HH):
 
 
 @register_channel("K_TM1991")
-class K_TM1991(HH):
+class K_TM1991(OhmicHH):
     r"""Traub and Miles 1991 delayed-rectifier potassium current."""
 
     __module__ = "braincell.channel"
     root_type = Potassium
-    gates = (Gate("p", power=4, q10=lambda self: self.q10, temp_ref=lambda self: self.temp_ref),)
+    gates = (Gate("p", power=4, q10="q10", temp_ref="temp_ref"),)
 
     def __init__(
         self,
@@ -153,9 +150,6 @@ class K_TM1991(HH):
         self.temp_ref = braintools.init.param(temp_ref, self.varshape, allow_none=False)
         self.V_sh = braintools.init.param(V_sh, self.varshape, allow_none=False)
 
-    def current(self, V, K: IonInfo):
-        return self.g_max * self.conductance_factor(V, K) * (K.E - V)
-
     def f_p_alpha(self, V, K: IonInfo):
         temp = 15.0 + (self.V_sh - V).to_decimal(u.mV)
         return 0.032 * 5.0 / u.math.exprel(temp / 5.0)
@@ -166,12 +160,12 @@ class K_TM1991(HH):
 
 
 @register_channel("K_HH1952")
-class K_HH1952(HH):
+class K_HH1952(OhmicHH):
     r"""Hodgkin-Huxley 1952 potassium current."""
 
     __module__ = "braincell.channel"
     root_type = Potassium
-    gates = (Gate("p", power=4, q10=lambda self: self.q10, temp_ref=lambda self: self.temp_ref),)
+    gates = (Gate("p", power=4, q10="q10", temp_ref="temp_ref"),)
 
     def __init__(
         self,
@@ -190,9 +184,6 @@ class K_HH1952(HH):
         self.temp_ref = braintools.init.param(temp_ref, self.varshape, allow_none=False)
         self.V_sh = braintools.init.param(V_sh, self.varshape, allow_none=False)
 
-    def current(self, V, K: IonInfo):
-        return self.g_max * self.conductance_factor(V, K) * (K.E - V)
-
     def f_p_alpha(self, V, K: IonInfo):
         temp = -((V - self.V_sh).to_decimal(u.mV) + 10.0) / 10.0
         return 0.1 / u.math.exprel(temp)
@@ -203,14 +194,14 @@ class K_HH1952(HH):
 
 
 @register_channel("KA1_HM1992")
-class KA1_HM1992(HH):
+class KA1_HM1992(OhmicHH):
     r"""Huguenard & McCormick 1992 IA1 potassium current."""
 
     __module__ = "braincell.channel"
     root_type = Potassium
     gates = (
-        Gate("p", power=4, q10=lambda self: self.q10_p, temp_ref=lambda self: self.temp_ref_p),
-        Gate("q", q10=lambda self: self.q10_q, temp_ref=lambda self: self.temp_ref_q),
+        Gate("p", power=4, q10="q10_p", temp_ref="temp_ref_p"),
+        Gate("q", q10="q10_q", temp_ref="temp_ref_q"),
     )
 
     def __init__(
@@ -234,9 +225,6 @@ class KA1_HM1992(HH):
         self.temp_ref_q = braintools.init.param(temp_ref_q, self.varshape, allow_none=False)
         self.V_sh = braintools.init.param(V_sh, self.varshape, allow_none=False)
 
-    def current(self, V, K: IonInfo):
-        return self.g_max * self.conductance_factor(V, K) * (K.E - V)
-
     def f_p_inf(self, V, K: IonInfo):
         temp = (V - self.V_sh).to_decimal(u.mV)
         return 1.0 / (1.0 + u.math.exp(-(temp + 60.0) / 8.5))
@@ -259,14 +247,14 @@ class KA1_HM1992(HH):
 
 
 @register_channel("KA2_HM1992")
-class KA2_HM1992(HH):
+class KA2_HM1992(OhmicHH):
     r"""Huguenard & McCormick 1992 IA2 potassium current."""
 
     __module__ = "braincell.channel"
     root_type = Potassium
     gates = (
-        Gate("p", power=4, q10=lambda self: self.q10_p, temp_ref=lambda self: self.temp_ref_p),
-        Gate("q", q10=lambda self: self.q10_q, temp_ref=lambda self: self.temp_ref_q),
+        Gate("p", power=4, q10="q10_p", temp_ref="temp_ref_p"),
+        Gate("q", q10="q10_q", temp_ref="temp_ref_q"),
     )
 
     def __init__(
@@ -290,9 +278,6 @@ class KA2_HM1992(HH):
         self.temp_ref_q = braintools.init.param(temp_ref_q, self.varshape, allow_none=False)
         self.V_sh = braintools.init.param(V_sh, self.varshape, allow_none=False)
 
-    def current(self, V, K: IonInfo):
-        return self.g_max * self.conductance_factor(V, K) * (K.E - V)
-
     def f_p_inf(self, V, K: IonInfo):
         temp = (V - self.V_sh).to_decimal(u.mV)
         return 1.0 / (1.0 + u.math.exp(-(temp + 36.0) / 20.0))
@@ -315,14 +300,14 @@ class KA2_HM1992(HH):
 
 
 @register_channel("KK2A_HM1992")
-class KK2A_HM1992(HH):
+class KK2A_HM1992(OhmicHH):
     r"""Huguenard & McCormick 1992 IK2a potassium current."""
 
     __module__ = "braincell.channel"
     root_type = Potassium
     gates = (
-        Gate("p", q10=lambda self: self.q10_p, temp_ref=lambda self: self.temp_ref_p),
-        Gate("q", q10=lambda self: self.q10_q, temp_ref=lambda self: self.temp_ref_q),
+        Gate("p", q10="q10_p", temp_ref="temp_ref_p"),
+        Gate("q", q10="q10_q", temp_ref="temp_ref_q"),
     )
 
     def __init__(
@@ -345,9 +330,6 @@ class KK2A_HM1992(HH):
         self.q10_q = braintools.init.param(q10_q, self.varshape, allow_none=False)
         self.temp_ref_q = braintools.init.param(temp_ref_q, self.varshape, allow_none=False)
         self.V_sh = braintools.init.param(V_sh, self.varshape, allow_none=False)
-
-    def current(self, V, K: IonInfo):
-        return self.g_max * self.conductance_factor(V, K) * (K.E - V)
 
     def f_p_inf(self, V, K: IonInfo):
         temp = (V - self.V_sh).to_decimal(u.mV)
@@ -367,14 +349,14 @@ class KK2A_HM1992(HH):
 
 
 @register_channel("KK2B_HM1992")
-class KK2B_HM1992(HH):
+class KK2B_HM1992(OhmicHH):
     r"""Huguenard & McCormick 1992 IK2b potassium current."""
 
     __module__ = "braincell.channel"
     root_type = Potassium
     gates = (
-        Gate("p", q10=lambda self: self.q10_p, temp_ref=lambda self: self.temp_ref_p),
-        Gate("q", q10=lambda self: self.q10_q, temp_ref=lambda self: self.temp_ref_q),
+        Gate("p", q10="q10_p", temp_ref="temp_ref_p"),
+        Gate("q", q10="q10_q", temp_ref="temp_ref_q"),
     )
 
     def __init__(
@@ -397,9 +379,6 @@ class KK2B_HM1992(HH):
         self.q10_q = braintools.init.param(q10_q, self.varshape, allow_none=False)
         self.temp_ref_q = braintools.init.param(temp_ref_q, self.varshape, allow_none=False)
         self.V_sh = braintools.init.param(V_sh, self.varshape, allow_none=False)
-
-    def current(self, V, K: IonInfo):
-        return self.g_max * self.conductance_factor(V, K) * (K.E - V)
 
     def f_p_inf(self, V, K: IonInfo):
         temp = (V - self.V_sh).to_decimal(u.mV)
@@ -423,12 +402,12 @@ class KK2B_HM1992(HH):
 
 
 @register_channel("KNI_Ya1989")
-class KNI_Ya1989(HH):
+class KNI_Ya1989(OhmicHH):
     r"""Yamada 1989 slow non-inactivating potassium current."""
 
     __module__ = "braincell.channel"
     root_type = Potassium
-    gates = (Gate("p", q10=lambda self: self.q10, temp_ref=lambda self: self.temp_ref),)
+    gates = (Gate("p", q10="q10", temp_ref="temp_ref"),)
 
     def __init__(
         self,
@@ -448,9 +427,6 @@ class KNI_Ya1989(HH):
         self.temp_ref = braintools.init.param(temp_ref, self.varshape, allow_none=False)
         self.tau_max = braintools.init.param(tau_max, self.varshape, allow_none=False)
         self.V_sh = braintools.init.param(V_sh, self.varshape, allow_none=False)
-
-    def current(self, V, K: IonInfo):
-        return self.g_max * self.conductance_factor(V, K) * (K.E - V)
 
     def f_p_inf(self, V, K: IonInfo):
         temp = (V - self.V_sh).to_decimal(u.mV)
@@ -492,10 +468,10 @@ class K_Leak(Channel):
 
 
 @register_channel("K_Kv_test")
-class K_Kv_test(HH):
+class K_Kv_test(OhmicHH):
     __module__ = "braincell.channel"
     root_type = Potassium
-    gates = (Gate("n", q10=lambda self: self.Q10_n, temp_ref=lambda self: self.temp_ref),)
+    gates = (Gate("n", q10="Q10_n", temp_ref="temp_ref"),)
 
     def __init__(
         self,
@@ -520,9 +496,6 @@ class K_Kv_test(HH):
         self.temp_ref = u.celsius2kelvin(23.0)
         self.Q10_n = 1.0
 
-    def current(self, V, K: IonInfo):
-        return self.g_max * self.conductance_factor(V, K) * (K.E - V)
-
     def f_n_inf(self, V, K: IonInfo):
         V = (V - self.V_sh) / u.mV
         q = self.q.to_decimal(u.mV) if hasattr(self.q, "to_decimal") else self.q
@@ -542,7 +515,7 @@ class K_Kv_test(HH):
 
 
 @register_channel("fKdr_SU2015_DCN")
-class fKdr_SU2015_DCN(HH):
+class fKdr_SU2015_DCN(OhmicHH):
     """Template-based import of ``fKdr_SU2015_DCN.mod``."""
 
     __module__ = "braincell.channel"
@@ -559,9 +532,6 @@ class fKdr_SU2015_DCN(HH):
         self.g_max = braintools.init.param(g_max, self.varshape, allow_none=False)
         self.qdeltat = 1.0
 
-    def current(self, V, K: IonInfo):
-        return self.g_max * self.conductance_factor(V, K) * (K.E - V)
-
     def f_m_inf(self, V, K: IonInfo):
         V = V.to_decimal(u.mV)
         return 1.0 / (1.0 + u.math.exp((V + 40.0) / -7.8))
@@ -572,7 +542,7 @@ class fKdr_SU2015_DCN(HH):
 
 
 @register_channel("sKdr_SU2015_DCN")
-class sKdr_SU2015_DCN(HH):
+class sKdr_SU2015_DCN(OhmicHH):
     """Template-based import of ``sKdr_SU2015_DCN.mod``."""
 
     __module__ = "braincell.channel"
@@ -589,9 +559,6 @@ class sKdr_SU2015_DCN(HH):
         self.g_max = braintools.init.param(g_max, self.varshape, allow_none=False)
         self.qdeltat = 1.0
 
-    def current(self, V, K: IonInfo):
-        return self.g_max * self.conductance_factor(V, K) * (K.E - V)
-
     def f_m_inf(self, V, K: IonInfo):
         V = V.to_decimal(u.mV)
         return 1.0 / (1.0 + u.math.exp((V + 50.0) / -9.1))
@@ -602,7 +569,7 @@ class sKdr_SU2015_DCN(HH):
 
 
 @register_channel("KM_RI2021_SC")
-class KM_RI2021_SC(HH):
+class KM_RI2021_SC(OhmicHH):
     """Template-based import of ``KM_RI2021_SC.mod``."""
 
     __module__ = "braincell.channel"
@@ -628,9 +595,6 @@ class KM_RI2021_SC(HH):
         self.V0_ninf = -35.0 * u.mV
         self.B_ninf = 6.0 * u.mV
 
-    def current(self, V, K: IonInfo):
-        return self.g_max * self.conductance_factor(V, K) * (K.E - V)
-
     def _n_alpha(self, V):
         V = V.to_decimal(u.mV)
         return self.Aalpha_n * u.math.exp((V - self.V0alpha_n.to_decimal(u.mV)) / self.Kalpha_n.to_decimal(u.mV))
@@ -648,7 +612,7 @@ class KM_RI2021_SC(HH):
 
 
 @register_channel("Kir2p3_MA2025_BC")
-class Kir2p3_MA2025_BC(HH):
+class Kir2p3_MA2025_BC(OhmicHH):
     """Template-based import of ``Kir2p3_MA2025_BC.mod``."""
 
     __module__ = "braincell.channel"
@@ -672,9 +636,6 @@ class Kir2p3_MA2025_BC(HH):
         self.Kbeta_d = 35.714 * u.mV
         self.V0beta_d = -83.94 * u.mV
 
-    def current(self, V, K: IonInfo):
-        return self.g_max * self.conductance_factor(V, K) * (K.E - V)
-
     def f_d_alpha(self, V, K: IonInfo):
         V = V.to_decimal(u.mV)
         return self.Aalpha_d * u.math.exp((V - self.V0alpha_d.to_decimal(u.mV)) / self.Kalpha_d.to_decimal(u.mV))
@@ -685,7 +646,7 @@ class Kir2p3_MA2025_BC(HH):
 
 
 @register_channel("Kir2p3_MA2024_PC")
-class Kir2p3_MA2024_PC(HH):
+class Kir2p3_MA2024_PC(OhmicHH):
     """Template-based import of ``Kir2p3_MA2024_PC.mod``."""
 
     __module__ = "braincell.channel"
@@ -709,9 +670,6 @@ class Kir2p3_MA2024_PC(HH):
         self.Kbeta_d = 35.714 * u.mV
         self.V0beta_d = -83.94 * u.mV
 
-    def current(self, V, K: IonInfo):
-        return self.g_max * self.conductance_factor(V, K) * (K.E - V)
-
     def f_d_alpha(self, V, K: IonInfo):
         V = V.to_decimal(u.mV)
         return self.Aalpha_d * u.math.exp((V - self.V0alpha_d.to_decimal(u.mV)) / self.Kalpha_d.to_decimal(u.mV))
@@ -722,7 +680,7 @@ class Kir2p3_MA2024_PC(HH):
 
 
 @register_channel("Kir2p3_RI2021_SC")
-class Kir2p3_RI2021_SC(HH):
+class Kir2p3_RI2021_SC(OhmicHH):
     """Template-based import of ``Kir2p3_RI2021_SC.mod``."""
 
     __module__ = "braincell.channel"
@@ -745,9 +703,6 @@ class Kir2p3_RI2021_SC(HH):
         self.Abeta_d = 0.16994
         self.Kbeta_d = 35.714 * u.mV
         self.V0beta_d = -83.94 * u.mV
-
-    def current(self, V, K: IonInfo):
-        return self.g_max * self.conductance_factor(V, K) * (K.E - V)
 
     def f_d_alpha(self, V, K: IonInfo):
         V = V.to_decimal(u.mV)
@@ -1026,7 +981,7 @@ class Kv3p3_MA2024_PC(HH):
 
 
 @register_channel("Kv3p4_MA2025_BC")
-class Kv3p4_MA2025_BC(HH):
+class Kv3p4_MA2025_BC(OhmicHH):
     """Template-based import of ``Kv3p4_MA2025_BC.mod``."""
 
     __module__ = "braincell.channel"
@@ -1059,9 +1014,6 @@ class Kv3p4_MA2025_BC(HH):
         self.hivh = -5.802
         self.hik = 11.2
 
-    def current(self, V, K: IonInfo):
-        return self.g_max * self.conductance_factor(V, K) * (K.E - V)
-
     def _shifted_voltage(self, V):
         return (V + self.junction_potential).to_decimal(u.mV)
 
@@ -1093,7 +1045,7 @@ class Kv3p4_MA2025_BC(HH):
 
 
 @register_channel("Kv3p4_MA2024_PC")
-class Kv3p4_MA2024_PC(HH):
+class Kv3p4_MA2024_PC(OhmicHH):
     """Template-based import of ``Kv3p4_MA2024_PC.mod``."""
 
     __module__ = "braincell.channel"
@@ -1126,9 +1078,6 @@ class Kv3p4_MA2024_PC(HH):
         self.hivh = -5.802
         self.hik = 11.2
 
-    def current(self, V, K: IonInfo):
-        return self.g_max * self.conductance_factor(V, K) * (K.E - V)
-
     def _shifted_voltage(self, V):
         return (V + self.junction_potential).to_decimal(u.mV)
 
@@ -1160,7 +1109,7 @@ class Kv3p4_MA2024_PC(HH):
 
 
 @register_channel("Kv3p4_RI2021_SC")
-class Kv3p4_RI2021_SC(HH):
+class Kv3p4_RI2021_SC(OhmicHH):
     """Template-based import of ``Kv3p4_RI2021_SC.mod``."""
 
     __module__ = "braincell.channel"
@@ -1193,9 +1142,6 @@ class Kv3p4_RI2021_SC(HH):
         self.hivh = -5.802
         self.hik = 11.2
 
-    def current(self, V, K: IonInfo):
-        return self.g_max * self.conductance_factor(V, K) * (K.E - V)
-
     def _shifted_voltage(self, V):
         return (V + self.junction_potential).to_decimal(u.mV)
 
@@ -1227,7 +1173,7 @@ class Kv3p4_RI2021_SC(HH):
 
 
 @register_channel("Kv4p3_MA2025_BC")
-class Kv4p3_MA2025_BC(HH):
+class Kv4p3_MA2025_BC(OhmicHH):
     """Template-based import of ``Kv4p3_MA2025_BC.mod``."""
 
     __module__ = "braincell.channel"
@@ -1263,9 +1209,6 @@ class Kv4p3_MA2025_BC(HH):
         self.K_ainf = -17.0 * u.mV
         self.V0_binf = -78.8 * u.mV
         self.K_binf = 8.4 * u.mV
-
-    def current(self, V, K: IonInfo):
-        return self.g_max * self.conductance_factor(V, K) * (K.E - V)
 
     def _a_alpha(self, V, K: IonInfo):
         V = V.to_decimal(u.mV)
@@ -1305,7 +1248,7 @@ class Kv4p3_MA2025_BC(HH):
 
 
 @register_channel("Kv4p3_MA2024_PC")
-class Kv4p3_MA2024_PC(HH):
+class Kv4p3_MA2024_PC(OhmicHH):
     """Template-based import of ``Kv4p3_MA2024_PC.mod``."""
 
     __module__ = "braincell.channel"
@@ -1341,9 +1284,6 @@ class Kv4p3_MA2024_PC(HH):
         self.K_ainf = -17.0 * u.mV
         self.V0_binf = -78.8 * u.mV
         self.K_binf = 8.4 * u.mV
-
-    def current(self, V, K: IonInfo):
-        return self.g_max * self.conductance_factor(V, K) * (K.E - V)
 
     def _a_alpha(self, V, K: IonInfo):
         V = V.to_decimal(u.mV)
@@ -1383,7 +1323,7 @@ class Kv4p3_MA2024_PC(HH):
 
 
 @register_channel("Kv4p3_RI2021_SC")
-class Kv4p3_RI2021_SC(HH):
+class Kv4p3_RI2021_SC(OhmicHH):
     """Template-based import of ``Kv4p3_RI2021_SC.mod``."""
 
     __module__ = "braincell.channel"
@@ -1419,9 +1359,6 @@ class Kv4p3_RI2021_SC(HH):
         self.K_ainf = -17.0 * u.mV
         self.V0_binf = -78.8 * u.mV
         self.K_binf = 8.4 * u.mV
-
-    def current(self, V, K: IonInfo):
-        return self.g_max * self.conductance_factor(V, K) * (K.E - V)
 
     def _a_alpha(self, V, K: IonInfo):
         V = V.to_decimal(u.mV)
@@ -1461,7 +1398,7 @@ class Kv4p3_RI2021_SC(HH):
 
 
 @register_channel("KM_MA2020_GoC")
-class KM_MA2020_GoC(HH):
+class KM_MA2020_GoC(OhmicHH):
     """Template-based import of ``KM_MA2020_GoC.mod``."""
 
     __module__ = "braincell.channel"
@@ -1486,9 +1423,6 @@ class KM_MA2020_GoC(HH):
         self.V0beta_n = -30.0 * u.mV
         self.V0_ninf = -35.0 * u.mV
         self.B_ninf = 6.0 * u.mV
-
-    def current(self, V, K: IonInfo):
-        return self.g_max * self.conductance_factor(V, K) * (K.E - V)
 
     def _n_alpha(self, V):
         V = V.to_decimal(u.mV)
@@ -1557,7 +1491,7 @@ class Kv1p1_MA2020_GoC(HH):
 
 
 @register_channel("Kv3p4_MA2020_GoC")
-class Kv3p4_MA2020_GoC(HH):
+class Kv3p4_MA2020_GoC(OhmicHH):
     """Template-based import of ``Kv3p4_MA2020_GoC.mod``."""
 
     __module__ = "braincell.channel"
@@ -1590,9 +1524,6 @@ class Kv3p4_MA2020_GoC(HH):
         self.hivh = -5.802
         self.hik = 11.2
 
-    def current(self, V, K: IonInfo):
-        return self.g_max * self.conductance_factor(V, K) * (K.E - V)
-
     def _shifted_voltage(self, V):
         return (V + self.junction_potential).to_decimal(u.mV)
 
@@ -1624,7 +1555,7 @@ class Kv3p4_MA2020_GoC(HH):
 
 
 @register_channel("Kv4p3_MA2020_GoC")
-class Kv4p3_MA2020_GoC(HH):
+class Kv4p3_MA2020_GoC(OhmicHH):
     """Template-based import of ``Kv4p3_MA2020_GoC.mod``."""
 
     __module__ = "braincell.channel"
@@ -1660,9 +1591,6 @@ class Kv4p3_MA2020_GoC(HH):
         self.K_ainf = -17.0 * u.mV
         self.V0_binf = -78.8 * u.mV
         self.K_binf = 8.4 * u.mV
-
-    def current(self, V, K: IonInfo):
-        return self.g_max * self.conductance_factor(V, K) * (K.E - V)
 
     def _a_alpha(self, V, K: IonInfo):
         V = V.to_decimal(u.mV)
@@ -1702,7 +1630,7 @@ class Kv4p3_MA2020_GoC(HH):
 
 
 @register_channel("KM_MA2020_GrC")
-class KM_MA2020_GrC(HH):
+class KM_MA2020_GrC(OhmicHH):
     """Template-based import of ``KM_MA2020_GrC.mod``."""
 
     __module__ = "braincell.channel"
@@ -1728,9 +1656,6 @@ class KM_MA2020_GrC(HH):
         self.V0_ninf = -35.0 * u.mV
         self.B_ninf = 6.0 * u.mV
 
-    def current(self, V, K: IonInfo):
-        return self.g_max * self.conductance_factor(V, K) * (K.E - V)
-
     def _n_alpha(self, V):
         V = V.to_decimal(u.mV)
         return self.Aalpha_n * u.math.exp((V - self.V0alpha_n.to_decimal(u.mV)) / self.Kalpha_n.to_decimal(u.mV))
@@ -1748,7 +1673,7 @@ class KM_MA2020_GrC(HH):
 
 
 @register_channel("Kir2p3_MA2020_GrC")
-class Kir2p3_MA2020_GrC(HH):
+class Kir2p3_MA2020_GrC(OhmicHH):
     """Template-based import of ``Kir2p3_MA2020_GrC.mod``."""
 
     __module__ = "braincell.channel"
@@ -1771,9 +1696,6 @@ class Kir2p3_MA2020_GrC(HH):
         self.Abeta_d = 0.16994
         self.Kbeta_d = 35.714 * u.mV
         self.V0beta_d = -83.94 * u.mV
-
-    def current(self, V, K: IonInfo):
-        return self.g_max * self.conductance_factor(V, K) * (K.E - V)
 
     def f_d_alpha(self, V, K: IonInfo):
         V = V.to_decimal(u.mV)
@@ -1835,7 +1757,7 @@ class Kv1p1_MA2020_GrC(HH):
 
 
 @register_channel("Kv2p2_0010_MA2020_GrC")
-class Kv2p2_0010_MA2020_GrC(HH):
+class Kv2p2_0010_MA2020_GrC(OhmicHH):
     """Template-based import of ``Kv2p2_0010_MA2020_GrC.mod``."""
 
     __module__ = "braincell.channel"
@@ -1856,9 +1778,6 @@ class Kv2p2_0010_MA2020_GrC(HH):
         self.g_max = braintools.init.param(g_max, self.varshape, allow_none=False)
         self.BBiD = braintools.init.param(BBiD, self.varshape, allow_none=False)
 
-    def current(self, V, K: IonInfo):
-        return self.g_max * self.conductance_factor(V, K) * (K.E - V)
-
     def f_m_inf(self, V, K: IonInfo):
         V = V.to_decimal(u.mV)
         return 1.0 / (1.0 + u.math.exp((V - 5.0) / -12.0))
@@ -1877,7 +1796,7 @@ class Kv2p2_0010_MA2020_GrC(HH):
 
 
 @register_channel("Kv3p4_MA2020_GrC")
-class Kv3p4_MA2020_GrC(HH):
+class Kv3p4_MA2020_GrC(OhmicHH):
     """Template-based import of ``Kv3p4_MA2020_GrC.mod``."""
 
     __module__ = "braincell.channel"
@@ -1910,9 +1829,6 @@ class Kv3p4_MA2020_GrC(HH):
         self.hivh = -5.802
         self.hik = 11.2
 
-    def current(self, V, K: IonInfo):
-        return self.g_max * self.conductance_factor(V, K) * (K.E - V)
-
     def _shifted_voltage(self, V):
         return (V + self.junction_potential).to_decimal(u.mV)
 
@@ -1944,7 +1860,7 @@ class Kv3p4_MA2020_GrC(HH):
 
 
 @register_channel("Kv4p3_MA2020_GrC")
-class Kv4p3_MA2020_GrC(HH):
+class Kv4p3_MA2020_GrC(OhmicHH):
     """Template-based import of ``Kv4p3_MA2020_GrC.mod``."""
 
     __module__ = "braincell.channel"
@@ -1980,9 +1896,6 @@ class Kv4p3_MA2020_GrC(HH):
         self.K_ainf = -17.0 * u.mV
         self.V0_binf = -78.8 * u.mV
         self.K_binf = 8.4 * u.mV
-
-    def current(self, V, K: IonInfo):
-        return self.g_max * self.conductance_factor(V, K) * (K.E - V)
 
     def _a_alpha(self, V, K: IonInfo):
         V = V.to_decimal(u.mV)
@@ -2022,7 +1935,7 @@ class Kv4p3_MA2020_GrC(HH):
 
 
 @register_channel("Kdr_ZH2019_IO")
-class Kdr_ZH2019_IO(HH):
+class Kdr_ZH2019_IO(OhmicHH):
     """Template-based import of ``Kdr_ZH2019_IO.mod``."""
 
     __module__ = "braincell.channel"
@@ -2037,9 +1950,6 @@ class Kdr_ZH2019_IO(HH):
     ):
         super().__init__(size=size, name=name)
         self.g_max = braintools.init.param(g_max, self.varshape, allow_none=False)
-
-    def current(self, V, K: IonInfo):
-        return self.g_max * self.conductance_factor(V, K) * (K.E - V)
 
     def _n_alpha(self, V):
         V = V.to_decimal(u.mV)

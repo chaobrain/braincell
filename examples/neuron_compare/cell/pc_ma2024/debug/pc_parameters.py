@@ -6,11 +6,14 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
+from examples.neuron_compare.cell._nrnmech import nrnmech_path
 
 CELL_DIR = Path(__file__).resolve().parent
 DEFAULT_POPULATION_PATH = CELL_DIR / "R_01_final_pop.txt"
 DEFAULT_MORPH_PATH = CELL_DIR.parent.parent.parent / "Cerebellum_mod" / "PC" / "morphology" / "PC.asc"
-DEFAULT_NRNMECH_PATH = CELL_DIR.parent.parent.parent / "Cerebellum_mod" / "PC" / "x86_64" / ".libs" / "libnrnmech.so"
+
+DEFAULT_NRNMECH_BUILD_DIR = CELL_DIR.parent.parent.parent / "Cerebellum_mod" / "PC" / "x86_64"
+DEFAULT_NRNMECH_PATH = nrnmech_path(DEFAULT_NRNMECH_BUILD_DIR)
 
 DEFAULT_INDIV = 138
 

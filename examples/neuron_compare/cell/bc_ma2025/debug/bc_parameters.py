@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, fields
 from pathlib import Path
 from typing import Any
+from examples.neuron_compare.cell._nrnmech import nrnmech_path
 
 CELL_DIR = Path(__file__).resolve().parent
 REPO_ROOT = CELL_DIR.parents[4]
@@ -11,9 +12,9 @@ SOURCE_BC_DIR = Path("/home/swl/Cerebellum_circuit/BC2025")
 SOURCE_MORPH_PATH = SOURCE_BC_DIR / "01bc.ASC"
 
 DEFAULT_MORPH_PATH = REPO_ROOT / "examples" / "neuron_compare" / "Cerebellum_mod" / "BC" / "morphology" / "BC.asc"
-DEFAULT_NRNMECH_PATH = (
-    REPO_ROOT / "examples" / "neuron_compare" / "Cerebellum_mod" / "BC" / "x86_64" / ".libs" / "libnrnmech.so"
-)
+
+DEFAULT_NRNMECH_BUILD_DIR = REPO_ROOT / "examples" / "neuron_compare" / "Cerebellum_mod" / "BC" / "x86_64"
+DEFAULT_NRNMECH_PATH = nrnmech_path(DEFAULT_NRNMECH_BUILD_DIR)
 
 RA_OHM_CM = 122.0
 LEAK_E_MV = -55.0

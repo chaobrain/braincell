@@ -42,7 +42,7 @@ dependencies = [
   "braintools>=0.1",
   "brainunit>=0.0.8",
   "jax",
-  "numpy>=2",
+  "numpy>=2.4.6",
   "scipy",
 ]
 # Convenience aggregator: everything a user-facing install might need

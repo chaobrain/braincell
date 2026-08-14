@@ -49,7 +49,7 @@ _base / _base_ion / _base_channel -> shared runtime base classes
 
 `braincell/__init__.py` 当前主要导出：
 
-- 基础协议/基类：`DiffEqState`、`DiffEqSingleState`、`DiffEqModule`、`IndependentIntegration`、`HHTypedNeuron`、`IonChannel`、`Ion`、`MixIons`、`Channel`、`IonInfo`、`mix_ions`
+- 基础协议/基类：`DiffEqState`、`DiffEqSingleState`、`DiffEqGroupState`、`DiffEqModule`、`IndependentIntegration`、`HHTypedNeuron`、`IonChannel`、`Ion`、`MixIons`、`Channel`、`IonInfo`、`mix_ions`
 - morphology：`Branch`、`Soma`、`Dendrite`、`Axon`、`BasalDendrite`、`ApicalDendrite`、`CustomBranch`、`Morphology`
 - multi-compartment：`Cell`、`RunResult`
 - single-compartment：`SingleCompartment`
@@ -474,7 +474,7 @@ metric 属性：
 - exponential：`exp_euler_step`、`ind_exp_euler_step`
 - implicit：`backward_euler_step`、`implicit_euler_step`、`splitting_step`、`implicit_rk4_step`、`implicit_exp_euler_step`、`cn_rk4_step`、`cn_exp_euler_step`、`exp_exp_euler_step`
 - cable-specific：`staggered_step`
-- protocol：`DiffEqState`、`DiffEqSingleState`、`DiffEqModule`、`IndependentIntegration`
+- protocol：`DiffEqState`、`DiffEqSingleState`、`DiffEqGroupState`、`DiffEqModule`、`IndependentIntegration`
 
 ## 13. Visualization 接口
 

@@ -22,10 +22,12 @@ declares a module integrable, and the host-scoped factory that chooses
 between the grouped and ungrouped classes.
 
 Which class a hidden state gets is a per-host decision:
-:class:`braincell.SingleCompartment` has no spatial axis and uses plain
-hidden states, while :class:`braincell.Cell` groups its trailing
-compartment axis. See ``docs/specs/2026-08-13-cell-hidden-group-state.md``
-and ``docs/design/cell.md``.
+:class:`braincell.SingleCompartment` has no spatial axis and uses
+:class:`DiffEqSingleState`, while :class:`braincell.Cell` groups its
+trailing compartment axis with :class:`DiffEqGroupState`. See
+``docs/specs/2026-08-13-cell-hidden-group-state.md``,
+``docs/specs/2026-08-14-diffeq-state-mixin-split.md``, and
+``docs/design/cell.md``.
 """
 
 import contextlib
@@ -188,10 +190,10 @@ class DiffEqSingleState(DiffEqState, brainstate.HiddenState):
         >>> import brainunit as u
         >>> import numpy as np
         >>> import braincell
-        >>> state = braincell.DiffEqSingleState(np.zeros(4) * u.mV)
-        >>> state.varshape
+        >>> st = braincell.DiffEqSingleState(np.zeros(4) * u.mV)
+        >>> st.varshape
         (4,)
-        >>> isinstance(state, braincell.DiffEqState)
+        >>> isinstance(st, braincell.DiffEqState)
         True
     """
 
@@ -232,12 +234,12 @@ class DiffEqGroupState(DiffEqState, brainstate.HiddenGroupState):
         >>> import brainunit as u
         >>> import numpy as np
         >>> import braincell
-        >>> state = braincell.DiffEqGroupState(np.zeros((1, 4)) * u.mV)
-        >>> state.varshape
+        >>> st = braincell.DiffEqGroupState(np.zeros((1, 4)) * u.mV)
+        >>> st.varshape
         (1,)
-        >>> state.num_state
+        >>> st.num_state
         4
-        >>> isinstance(state, braincell.DiffEqState)
+        >>> isinstance(st, braincell.DiffEqState)
         True
     """
 

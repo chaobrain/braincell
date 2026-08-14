@@ -38,7 +38,7 @@ dynamic = [ "version" ]
 dependencies = [
   "brainevent>=0.0.7",
   "brainpy>=2.7.5",
-  "brainstate>=0.2.9",
+  "brainstate>=0.5.3",
   "braintools>=0.1",
   "brainunit>=0.0.8",
   "jax",

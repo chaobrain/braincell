@@ -189,7 +189,7 @@ class DHSNumericState:
     category="voltage",
     description="Implicit-Euler dendritic hierarchical solver (DHS) voltage step.",
 )
-@set_module_as("braincell")
+@set_module_as("braincell.quad")
 def dhs_voltage_step(target, t, dt, *args):
     r"""Advance the membrane voltage by one implicit-Euler DHS step.
 

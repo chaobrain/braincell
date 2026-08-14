@@ -38,7 +38,7 @@ which is a :class:`brainstate.HiddenGroupState`.
 Channel, ion, and synapse code is shared by both hosts, so the class
 cannot be chosen at the creation site. Write ``diffeq_state(...)`` instead
 of ``DiffEqState(...)`` in a custom mechanism's ``init_state`` and the
-right class is selected for whichever host owns it. ``grouped_states`` is
+right class is selected for whichever host owns it. ``state_grouping`` is
 the host-side scope that makes that choice; only a model that is itself a
 host needs to call it.
 
@@ -48,7 +48,7 @@ host needs to call it.
 
     diffeq_state
     hidden_state
-    grouped_states
+    state_grouping
 
 
 Integrator Registry

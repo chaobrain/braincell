@@ -107,6 +107,24 @@ class MechanismLayout:
     source_cv_ids: tuple[int, ...]
     source_rule: str | None = None
 
+    @property
+    def point_axis_len(self) -> int:
+        """Length of the axis this layout's buffers index points along.
+
+        A dense layout stores every point of the cell and is indexed by
+        the full mask, while a sparse layout stores only its active points.
+        Buffer allocation and buffer interpretation must agree on which,
+        so both read it from here rather than repeating the decision.
+
+        Returns
+        -------
+        int
+            ``point_mask`` length when dense, otherwise ``n_active``.
+        """
+        if self.layout == "dense" and self.point_mask is not None:
+            return int(np.asarray(self.point_mask).shape[0])
+        return int(self.n_active)
+
 
 #: Clamp layout kinds that contribute point-space current via
 #: :meth:`CellRuntimeState.evaluate_point_clamps`.
@@ -1372,14 +1390,10 @@ def _write_state_buffer(layout: "MechanismLayout", buffer: object, value: object
 
 
 def _extract_point_value(layout: MechanismLayout, *, point_id: int, buffer: object) -> object:
-    # Length of the axis that indexes points/actives for this layout. Any
-    # leading axes are homogeneous-population dimensions, and a buffer whose
-    # trailing axis is *not* this length carries an extra per-point axis
-    # (the ragged ``durations`` / ``amplitudes`` step axis).
-    if layout.layout == "dense" and layout.point_mask is not None:
-        point_axis_len = int(np.asarray(layout.point_mask).shape[0])
-    else:
-        point_axis_len = int(layout.n_active)
+    # Any leading axes are homogeneous-population dimensions, so a buffer
+    # whose trailing axis is *not* the layout's point axis carries an extra
+    # per-point axis (the ragged ``durations`` / ``amplitudes`` step axis).
+    point_axis_len = layout.point_axis_len
 
     def _pick_ragged(index: int) -> object:
         if isinstance(buffer, u.Quantity):
@@ -2327,10 +2341,8 @@ def _instantiate_runtime_node(
     if len(params) > 0 and hasattr(next(iter(params.values())), "shape"):
         # Parameter buffers already carry the population axis.
         size = next(iter(params.values())).shape
-    elif layout.layout == "dense" and layout.point_mask is not None:
-        size = pop_size + layout.point_mask.shape
     else:
-        size = pop_size + (layout.n_active,)
+        size = pop_size + (layout.point_axis_len,)
     node = runtime_cls(size=size, **params)
     bound_ions, current_owner_specs = _resolve_channel_runtime_bindings(
         runtime_cls=runtime_cls,

@@ -837,13 +837,15 @@ class CellPopulationWideningIsNumericallyNeutralTest(unittest.TestCase):
     """Widening the population axis must not change the simulated trace."""
 
     @staticmethod
-    def _trace(pop_size, n_steps: int = 20):
+    def _trace(pop_size, n_steps: int = 20, *, on_init=None):
         cell = _hh_cell(pop_size, calcium=False)
         cell.place(
             RootLocation(x=0.5),
             CurrentClamp(delay=0.1 * u.ms, durations=1.0 * u.ms, amplitudes=0.5 * u.nA),
         )
         cell.init_state()
+        if on_init is not None:
+            on_init(cell)
 
         dt = 0.01 * u.ms
 
@@ -863,29 +865,56 @@ class CellPopulationWideningIsNumericallyNeutralTest(unittest.TestCase):
         plain pre-change classes — and requires bit-identical traces. This
         is what makes ``DiffEqGroupState`` safe to adopt: it changes which
         type wraps the array, never the array.
+
+        Each arm also asserts which classes it actually built. Without that
+        the test would still pass if the monkeypatch stopped applying — it
+        would then be comparing grouped against grouped, which proves
+        nothing.
         """
         import contextlib
 
         @contextlib.contextmanager
         def _ungrouped(_enabled=True):
-            from braincell.quad.protocol import grouped_states as real_scope
+            from braincell.quad.protocol import state_grouping as real_scope
 
             with real_scope(False) as value:
                 yield value
 
         def trace(*, grouped: bool):
-            if grouped:
-                return np.asarray(self._trace(1).to_decimal(u.mV), dtype=float)
-            saved = (cell_module.DiffEqGroupState, cell_module.grouped_states)
-            cell_module.DiffEqGroupState = DiffEqState
-            cell_module.grouped_states = _ungrouped
-            try:
-                return np.asarray(self._trace(1).to_decimal(u.mV), dtype=float)
-            finally:
-                cell_module.DiffEqGroupState, cell_module.grouped_states = saved
+            classes: list[type] = []
 
-        plain = trace(grouped=False)
-        grouped = trace(grouped=True)
+            def record(cell: Cell) -> None:
+                classes.extend(
+                    type(state)
+                    for state in brainstate.graph.states(cell).values()
+                    if isinstance(state, brainstate.HiddenState)
+                )
+
+            if grouped:
+                values = self._trace(1, on_init=record)
+            else:
+                saved = (cell_module.DiffEqGroupState, cell_module.state_grouping)
+                cell_module.DiffEqGroupState = DiffEqState
+                cell_module.state_grouping = _ungrouped
+                try:
+                    values = self._trace(1, on_init=record)
+                finally:
+                    cell_module.DiffEqGroupState, cell_module.state_grouping = saved
+            return np.asarray(values.to_decimal(u.mV), dtype=float), classes
+
+        plain, plain_classes = trace(grouped=False)
+        grouped, grouped_classes = trace(grouped=True)
+
+        # The two arms must have built the same *number* of hidden states
+        # out of genuinely different classes, or the comparison below is
+        # vacuous.
+        self.assertGreater(len(grouped_classes), 1)
+        self.assertEqual(len(plain_classes), len(grouped_classes))
+        for cls in grouped_classes:
+            self.assertTrue(issubclass(cls, brainstate.HiddenGroupState), cls)
+        for cls in plain_classes:
+            self.assertFalse(issubclass(cls, brainstate.HiddenGroupState), cls)
+
         self.assertTrue(np.all(np.isfinite(grouped)))
         np.testing.assert_array_equal(grouped, plain)
 
@@ -916,6 +945,61 @@ class CellPopulationWideningIsNumericallyNeutralTest(unittest.TestCase):
         self.assertTrue(np.all(np.isfinite(single)))
         for member in range(3):
             np.testing.assert_allclose(population[:, member], single[:, 0], rtol=1e-5, atol=1e-5)
+
+
+class CoercersAgreeAcrossStorageFlavoursTest(unittest.TestCase):
+    """United and unitless fields must coerce to the same numbers.
+
+    Each coercer used to spell its length rules out twice, once for a
+    ``Quantity`` and once for a bare array. They are now stated once and
+    the unit is split off by ``_split_unit``, so this pins the property
+    that made the duplication removable in the first place.
+    """
+
+    COERCERS = (
+        "_coerce_vis_node_values_object",
+        "_coerce_runtime_point_values_object",
+        "_coerce_vis_cv_values_object",
+        "_coerce_named_vis_node_values_object",
+        "_coerce_named_vis_cv_values_object",
+    )
+
+    def setUp(self) -> None:
+        self.cell = Cell(_soma_tree(), cv_policy=CVPerBranch(2))
+        self.cell.init_state()
+
+    def _cases(self):
+        # Scalar, point-length, and CV-length: the three shapes every
+        # coercer branches on.
+        return {
+            "scalar": 1.5,
+            "point": np.linspace(-70.0, -60.0, self.cell.n_point),
+            "cv": np.linspace(-70.0, -60.0, self.cell.n_cv),
+        }
+
+    def test_unit_carrying_and_bare_inputs_give_the_same_numbers(self) -> None:
+        for name in self.COERCERS:
+            coerce = getattr(self.cell, name)
+            for label, plain in self._cases().items():
+                with self.subTest(coercer=name, case=label):
+                    bare = coerce(plain)
+                    united = coerce(plain * u.mV)
+                    self.assertTrue(u.get_unit(united).has_same_dim(u.mV))
+                    np.testing.assert_allclose(
+                        np.asarray(u.get_mantissa(bare), dtype=float),
+                        np.asarray(united.to_decimal(u.mV), dtype=float),
+                    )
+
+    def test_a_length_that_is_neither_space_is_rejected_either_way(self) -> None:
+        bad = np.zeros(self.cell.n_point + self.cell.n_cv + 1)
+        for name in self.COERCERS:
+            coerce = getattr(self.cell, name)
+            with self.subTest(coercer=name, storage="bare"):
+                with self.assertRaises(ValueError):
+                    coerce(bad)
+            with self.subTest(coercer=name, storage="united"):
+                with self.assertRaises(ValueError):
+                    coerce(bad * u.mV)
 
 
 class MultiCompartmentAliasTest(unittest.TestCase):

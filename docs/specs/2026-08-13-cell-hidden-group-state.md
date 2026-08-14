@@ -27,7 +27,7 @@ wrong.
 
 ## Current state
 
-`braincell/quad/protocol.py:28` defines the one class both models share:
+`braincell/quad/protocol.py:26` defines the one class both models share:
 
 ```python
 class DiffEqState(brainstate.HiddenState): ...
@@ -159,10 +159,10 @@ Sites 1–9 need the host's identity without changing ~15 `init_state`
 signatures, so the host publishes it for the duration of the call:
 
 ```python
-_GROUPED = contextvars.ContextVar('braincell_grouped_states', default=False)
+_STATE_GROUPING = contextvars.ContextVar('braincell_state_grouping', default=False)
 
 @contextlib.contextmanager
-def grouped_states(enabled: bool = True): ...
+def state_grouping(enabled: bool = True): ...
 
 def diffeq_state(value) -> DiffEqState:              # DiffEqGroupState if grouped
 def hidden_state(value) -> brainstate.HiddenState:   # HiddenGroupState if grouped
@@ -172,11 +172,27 @@ def hidden_state(value) -> brainstate.HiddenState:   # HiddenGroupState if group
 restore correctly. Default `False` keeps a standalone
 `braincell.channel.*` built outside any host on today's behaviour.
 
+The scope is named `state_grouping`, not `grouped_states`: the two
+factories beside it are noun-phrase names that *return a state*, so a
+third noun-phrase name reads like a third factory returning a collection
+of states rather than like a mode being set for a block.
+
+**These three are exported publicly**, from both `braincell` and
+`braincell.quad`, and documented in `docs/apis/integration.rst`. That goes
+beyond what this section originally scoped — it described the factory as
+internal plumbing — so, deliberately: a mechanism defined *outside*
+braincell has the same problem sites 1–9 have, and without the factory it
+must hardcode a class and so be wrong for one of the two hosts. Exporting
+`state_grouping` too is the part that is arguable, since only a host calls
+it; it is exported because a third-party host (a new `HHTypedNeuron`
+subclass) is exactly the case the factory has to serve. The cost is a
+three-function API commitment.
+
 ### 4. Hosts opt in explicitly
 
-* `Cell.init_state` / `Cell.reset_state` → `grouped_states(True)`; site 11
+* `Cell.init_state` / `Cell.reset_state` → `state_grouping(True)`; site 11
   constructs `DiffEqGroupState` directly.
-* `SingleCompartment.init_state` / `reset_state` → `grouped_states(False)`;
+* `SingleCompartment.init_state` / `reset_state` → `state_grouping(False)`;
   site 10 stays `DiffEqState`. Setting it explicitly rather than relying
   on the default is what makes a `Network` holding both model types
   correct regardless of construction order.
@@ -192,7 +208,7 @@ initialization, but its allocation branch is dead in normal flow: the
 attribute is already a `State` because `_Species.init` ran first, so the
 step takes the `.value = …` path instead. The allocation branch is still
 reachable for a species that was never initialized, and there it must
-match whatever class its siblings got — which the `grouped_states` scope
+match whatever class its siblings got — which the `state_grouping` scope
 no longer answers, since it has exited by then. `_Species.algebraic_state`
 therefore reads the class off a live sibling rather than off the context
 var. Two tests pin this: one asserts a mid-step writeback leaves the state
@@ -223,7 +239,7 @@ and asserts the late allocation still matches its siblings' class.
   expressible in-tree (the old code is gone), so the invariant is pinned
   two ways instead, both in `_multi_compartment/cell_test.py`:
   * **Class-invariance** — run the same `Cell` twice, once normally and
-    once with `DiffEqGroupState` and `grouped_states` patched back to
+    once with `DiffEqGroupState` and `state_grouping` patched back to
     their plain equivalents, and assert the two traces are equal
     elementwise. The patched arm is verified to actually take effect (it
     produces plain `HiddenState`s where the real arm produces grouped
@@ -254,8 +270,24 @@ A fifth site needed a genuine semantic fix rather than a missing axis:
 `_extract_point_value` classified any 2-D buffer as *ragged*
 (point × sub-values). With a population axis, 2-D is ambiguous — it can
 also be pop × point. The predicate now compares the trailing axis against
-the layout's own point-axis length (`point_mask.shape[0]` for dense,
-`n_active` for sparse) instead of relying on rank.
+the layout's own point-axis length, exposed as
+`MechanismLayout.point_axis_len` so that buffer *allocation* and buffer
+*interpretation* read the dense/sparse decision from one place.
+
+A sixth bug is unrelated to the population axis and was found while
+reviewing this change: `braincell/_misc.py`'s `set_module_as` assigned its
+argument to `__name__` rather than `__module__`, so all 24 decorated
+functions reported `__name__ == 'braincell.quad'` while `__module__` still
+named the private module they are defined in. `set_module_as` now sets
+`__module__` and leaves `__name__` alone, which is what makes it usable
+for the three factory functions above (AGENTS.md's *Import style* rule
+asks for the decorator, and before the fix using it would have been
+strictly worse than assigning `__module__` by hand). Two consequences,
+both intended: `IntegratorEntry.module` now records the public
+`'braincell.quad'` path rather than a private submodule, which is what
+`register_integrator`'s docstring always said it was for; and
+`dhs_voltage_step`'s inconsistent `@set_module_as("braincell")` becomes
+`"braincell.quad"` like every other integrator.
 
 ## Migration surface
 
@@ -263,15 +295,18 @@ the layout's own point-axis length (`point_mask.shape[0]` for dense,
 
 Handled:
 
-* 8 test files that build a `Cell` (`_compute/runtime_test.py`,
+* 8 test files that build a `Cell`: `_compute/runtime_test.py`,
   `_compute/spatial_params_test.py`, `_compute/table_test.py`,
   `_multi_compartment/cell_test.py`,
+  `_multi_compartment/cell_vis_node_test.py`,
   `_multi_compartment/currents_test.py`, `network/runtime_test.py`,
-  `quad/_staggered_test.py`, plus the new tests above).
+  `quad/_staggered_test.py` — plus the new tests above.
 * `docs/design/cell.md`.
 * The 8 `examples/neuron_compare/cell/*` builders that declared
   `pop_size=()` as their default; each is now `pop_size=1`. Their debug
   runners already `reshape(-1)` every trace, so nothing downstream moves.
+* `examples/profiling/cases/neuron_compare_cell.py`, which built
+  `pop_size = ()` from its own CLI argument.
 
 Reviewed, no change needed:
 

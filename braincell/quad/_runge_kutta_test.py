@@ -203,8 +203,8 @@ def _drive(method, dt_ms=0.1, n_steps=100, x0=1.0, tau_ms=10.0):
 class RungeKuttaConvergenceTest(unittest.TestCase):
     """Verifies each RK step on a linear ODE with known analytical solution."""
 
-    # ``set_module_as`` rewrites ``__name__`` to ``"braincell"``, so we keep
-    # the canonical name alongside the function for nicer test labels.
+    # The short registry name, not ``func.__name__``, so a subTest label
+    # reads ``rk2`` rather than ``rk2_step``.
     METHODS_AND_ORDERS = [
         ('euler', euler_step, 1),
         ('midpoint', midpoint_step, 2),

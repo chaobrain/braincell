@@ -35,5 +35,51 @@ class IsTracedValueTest(unittest.TestCase):
         self.assertTrue(results[-1])
 
 
+class SetModuleAsTest(unittest.TestCase):
+    """``set_module_as`` re-homes ``__module__`` and leaves ``__name__``."""
+
+    def test_it_sets_module_and_preserves_name(self) -> None:
+        from braincell._misc import set_module_as
+
+        @set_module_as("braincell.quad")
+        def some_step():
+            pass
+
+        # The bug this guards: an earlier version assigned the path to
+        # ``__name__``, so every decorated function claimed to be called
+        # "braincell.quad" while ``__module__`` still pointed at the
+        # private module users are not meant to import from.
+        self.assertEqual(some_step.__module__, "braincell.quad")
+        self.assertEqual(some_step.__name__, "some_step")
+
+    def test_it_returns_the_same_object(self) -> None:
+        from braincell._misc import set_module_as
+
+        def some_step():
+            return 7
+
+        self.assertIs(set_module_as("braincell")(some_step), some_step)
+        self.assertEqual(some_step(), 7)
+
+    def test_every_decorated_public_function_is_re_homed(self) -> None:
+        # The decorator exists so the public API does not advertise private
+        # module paths; assert that for the exported functions it is applied
+        # to, rather than trusting the 24 individual call sites.
+        import braincell
+        import braincell.quad as quad
+
+        for name in ("exp_euler_step", "rk4_step", "staggered_step"):
+            with self.subTest(function=name):
+                fun = getattr(quad, name)
+                self.assertEqual(fun.__module__, "braincell.quad")
+                self.assertEqual(fun.__name__, name)
+
+        for name in ("state_grouping", "diffeq_state", "hidden_state"):
+            with self.subTest(function=name):
+                fun = getattr(braincell, name)
+                self.assertEqual(fun.__module__, "braincell")
+                self.assertEqual(fun.__name__, name)
+
+
 if __name__ == "__main__":
     unittest.main()

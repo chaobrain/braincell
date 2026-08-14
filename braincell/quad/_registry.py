@@ -83,8 +83,12 @@ class IntegratorEntry:
         If ``True``, looking up this entry by name emits a
         :class:`DeprecationWarning`.
     module : str
-        Fully-qualified module name where ``func`` is defined. Populated
-        automatically by :meth:`IntegratorRegistry.register`.
+        Module path ``func`` advertises through ``__module__``. Populated
+        automatically by :meth:`IntegratorRegistry.register`. For
+        BrainCell's own integrators this is the public export path
+        (``'braincell.quad'``) rather than the private submodule they are
+        defined in, because :func:`braincell._misc.set_module_as` is
+        applied first — see the note in :func:`register_integrator`.
     """
 
     name: str

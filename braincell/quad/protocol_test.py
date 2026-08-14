@@ -39,7 +39,7 @@ from braincell.quad.protocol import (
     DiffEqState,
     IndependentIntegration,
     diffeq_state,
-    grouped_states,
+    state_grouping,
     hidden_state,
 )
 
@@ -139,7 +139,7 @@ class DiffEqGroupStateTest(unittest.TestCase):
 
 
 class StateFactoryTest(unittest.TestCase):
-    """``grouped_states`` scopes which hidden-state class gets allocated."""
+    """``state_grouping`` scopes which hidden-state class gets allocated."""
 
     def test_default_scope_is_not_grouped(self):
         self.assertIsInstance(diffeq_state(jnp.zeros(3) * u.mV), DiffEqState)
@@ -147,7 +147,7 @@ class StateFactoryTest(unittest.TestCase):
         self.assertNotIsInstance(hidden_state(jnp.zeros(3) * u.mV), brainstate.HiddenGroupState)
 
     def test_grouped_scope_selects_the_group_classes(self):
-        with grouped_states(True):
+        with state_grouping(True):
             self.assertIsInstance(diffeq_state(jnp.zeros((1, 3)) * u.mV), DiffEqGroupState)
             # The algebraic counterpart uses the stock brainstate class, not a
             # braincell subclass, so nothing shadows the upstream name.
@@ -155,9 +155,9 @@ class StateFactoryTest(unittest.TestCase):
             self.assertIs(type(algebraic), brainstate.HiddenGroupState)
 
     def test_scopes_nest_and_restore(self):
-        with grouped_states(True):
+        with state_grouping(True):
             self.assertIsInstance(diffeq_state(jnp.zeros((1, 3)) * u.mV), DiffEqGroupState)
-            with grouped_states(False):
+            with state_grouping(False):
                 inner = diffeq_state(jnp.zeros(3) * u.mV)
                 self.assertNotIsInstance(inner, DiffEqGroupState)
             self.assertIsInstance(diffeq_state(jnp.zeros((1, 3)) * u.mV), DiffEqGroupState)
@@ -165,7 +165,7 @@ class StateFactoryTest(unittest.TestCase):
 
     def test_scope_is_restored_after_an_exception(self):
         with self.assertRaises(RuntimeError):
-            with grouped_states(True):
+            with state_grouping(True):
                 raise RuntimeError("boom")
         self.assertNotIsInstance(diffeq_state(jnp.zeros(3) * u.mV), DiffEqGroupState)
 
@@ -176,7 +176,7 @@ class StateFactoryTest(unittest.TestCase):
         def worker():
             observed.append(isinstance(diffeq_state(jnp.zeros(3) * u.mV), DiffEqGroupState))
 
-        with grouped_states(True):
+        with state_grouping(True):
             thread = threading.Thread(target=worker)
             thread.start()
             thread.join()
@@ -184,7 +184,7 @@ class StateFactoryTest(unittest.TestCase):
         self.assertEqual(observed, [False])
 
     def test_kwargs_are_forwarded_to_the_state_constructor(self):
-        with grouped_states(True):
+        with state_grouping(True):
             st = diffeq_state(jnp.zeros((1, 3)) * u.mV, name="grouped_v")
         self.assertEqual(st.name, "grouped_v")
 

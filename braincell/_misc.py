@@ -192,31 +192,51 @@ def deprecation_getattr(module, deprecations):
 
 
 def set_module_as(name: str):
+    """Return a decorator that re-homes a function onto a public module path.
+
+    BrainCell defines its public functions inside underscore-prefixed
+    private modules and re-exports them from a public package, so a
+    function's ``__module__`` points at the path users are not supposed to
+    import from. Applying this decorator restores the public path, which
+    is what :mod:`sphinx`, :func:`help`, :func:`repr`, and pickling all
+    read.
+
+    Parameters
+    ----------
+    name : str
+        Public module path to advertise, such as ``'braincell'`` or
+        ``'braincell.quad'``.
+
+    Returns
+    -------
+    Callable
+        A decorator that sets ``__module__`` on its argument and returns
+        it unchanged.
+
+    Notes
+    -----
+    Only ``__module__`` is touched. An earlier version assigned ``name``
+    to ``__name__`` instead, which left every decorated function claiming
+    to be called ``"braincell.quad"``; ``__name__`` is the function's own
+    name and is deliberately left alone.
+
+    Examples
+    --------
+    .. code-block:: python
+
+        >>> from braincell._misc import set_module_as
+        >>> @set_module_as('braincell.quad')
+        ... def euler_step():
+        ...     pass
+        >>> euler_step.__module__
+        'braincell.quad'
+        >>> euler_step.__name__
+        'euler_step'
     """
-    A decorator factory to set the `__name__` attribute of a module.
 
-    This function returns a decorator that, when applied to a module,
-    sets the module's `__name__` attribute to the specified name.
-
-    Args:
-        name (str): The new name to assign to the module's `__name__` attribute.
-
-    Returns:
-        Callable: A decorator that modifies the `__name__` attribute of the module.
-    """
-
-    def decorator(module):
-        """
-        Decorator to set the `__name__` attribute of the given module.
-
-        Args:
-            module: The module whose `__name__` attribute will be modified.
-
-        Returns:
-            The modified module with its `__name__` attribute updated.
-        """
-        module.__name__ = name
-        return module
+    def decorator(fun):
+        fun.__module__ = name
+        return fun
 
     return decorator
 

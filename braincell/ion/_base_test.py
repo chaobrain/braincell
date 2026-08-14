@@ -461,7 +461,7 @@ class ConserveWritebackStateClassTest(unittest.TestCase):
     """``_Conserve.writeback`` must not allocate a wrongly-classed state.
 
     ``writeback`` *does* run every simulation step, outside the
-    :func:`braincell.grouped_states` scope the host sets around
+    :func:`braincell.state_grouping` scope the host sets around
     ``init_state``. Its allocation branch is dead in normal flow because
     ``_Species.init`` ran first — these tests pin both halves of that, so
     a regression shows up as a failure rather than as a silently
@@ -501,6 +501,12 @@ class ConserveWritebackStateClassTest(unittest.TestCase):
             calls["allocated"] += 1
             return original_algebraic(self, value)
 
+        # Identity of every algebraic state before the step, so a
+        # reallocation is visible as a swapped object and not only as an
+        # extra ``algebraic_state`` call.
+        before = self._algebraic_states(cell)
+        self.assertGreater(len(before), 0, "expected at least one algebraic species")
+
         ionbase._Conserve.writeback = counting_writeback
         ionbase._Species.algebraic_state = counting_algebraic
         try:
@@ -513,10 +519,32 @@ class ConserveWritebackStateClassTest(unittest.TestCase):
         self.assertGreater(calls["writeback"], 0, "writeback should run during a step")
         self.assertEqual(calls["allocated"], 0, "writeback must not allocate mid-run")
 
+        after = self._algebraic_states(cell)
+        self.assertEqual(set(before), set(after))
+        for path, state in after.items():
+            with self.subTest(state=path):
+                self.assertIs(state, before[path], "writeback replaced the state object")
+                self.assertIsInstance(state, brainstate.HiddenGroupState)
+
+    @staticmethod
+    def _algebraic_states(cell) -> dict:
+        """Path → state for every algebraic species state in the cell."""
+        from braincell.ion import _base as ionbase
+
+        names = set()
+        for node in cell.nodes().values():
+            if isinstance(node, ionbase.KineticIon):
+                names.update(ionbase._Specs.for_type(type(node)).algebraic_names)
+        return {
+            ".".join(map(str, path)): state
+            for path, state in brainstate.graph.states(cell).items()
+            if path and str(path[-1]) in names
+        }
+
     def test_late_allocation_still_matches_its_siblings(self) -> None:
         # Force the dead branch: drop the algebraic species back to a bare
         # value so the next writeback has to re-allocate it. writeback runs
-        # outside any grouped_states scope, so an ambient-scope allocation
+        # outside any state_grouping scope, so an ambient-scope allocation
         # would hand back a plain HiddenState and break the Cell invariant.
         from braincell.ion import _base as ionbase
 
@@ -535,6 +563,30 @@ class ConserveWritebackStateClassTest(unittest.TestCase):
 
         restored = getattr(ion, name)
         self.assertIsInstance(restored, brainstate.HiddenGroupState)
+        self.assertEqual(restored.value.shape, state.value.shape)
+
+    def test_late_allocation_stays_plain_when_its_siblings_are_plain(self) -> None:
+        # The mirror of the test above. A sibling-derived class has to work
+        # in both directions, or "derive it from a sibling" is really just
+        # "always group", which would be wrong outside a Cell.
+        from braincell.ion import _base as ionbase
+
+        ion = _SimpleKineticIon(size=3)
+        ion.init_state(jnp.ones(3) * -65.0 * u.mV)
+        specs = ionbase._Specs.for_type(type(ion))
+        (name,) = specs.algebraic_names
+
+        state = getattr(ion, name)
+        self.assertIsInstance(state, brainstate.HiddenState)
+        self.assertNotIsInstance(state, brainstate.HiddenGroupState)
+        setattr(ion, name, state.value)
+
+        species = ionbase._Species(ion, specs)
+        ionbase._Conserve(ion, specs, species).writeback(jnp.ones(3) * -65.0 * u.mV)
+
+        restored = getattr(ion, name)
+        self.assertIsInstance(restored, brainstate.HiddenState)
+        self.assertNotIsInstance(restored, brainstate.HiddenGroupState)
         self.assertEqual(restored.value.shape, state.value.shape)
 
 

@@ -26,7 +26,7 @@
   spatial axis and keeps the plain `brainstate.HiddenState`.
   `DiffEqGroupState` derives from `DiffEqState`, so every solver selects
   it unchanged.
-- **`diffeq_state` / `hidden_state` / `grouped_states`** are exported for
+- **`diffeq_state` / `hidden_state` / `state_grouping`** are exported for
   custom mechanisms. Channel, ion, and synapse code is shared by both host
   models, so writing `diffeq_state(...)` instead of `DiffEqState(...)` in a
   custom `init_state` lets the right class be chosen per host.
@@ -47,6 +47,14 @@
   `CdpCR_MA2020_GrC.pumpca`) started rank-0 and was silently reshaped
   mid-simulation by the conservation write-back; it is now allocated at
   full shape.
+- `set_module_as` assigned the public module path to `__name__` instead of
+  `__module__`, so every function it decorated reported itself as being
+  called `"braincell.quad"` while still advertising the private module it
+  is defined in. Both are now correct: `braincell.quad.rk4_step.__name__`
+  is `'rk4_step'` and its `__module__` is `'braincell.quad'`. This also
+  changes `IntegratorEntry.module` from the private defining module to the
+  public export path, and makes `dhs_voltage_step` consistent with the
+  other integrators.
 
 
 ## Version 0.1.0

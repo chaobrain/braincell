@@ -52,8 +52,8 @@ from .protocol import (
     DiffEqState,
     IndependentIntegration,
     diffeq_state,
-    grouped_states,
     hidden_state,
+    state_grouping,
 )
 from ._registry import (
     IntegratorEntry,
@@ -116,9 +116,9 @@ __all__ = [
     'DiffEqGroupState',
     'DiffEqModule',
     'IndependentIntegration',
-    'grouped_states',
     'diffeq_state',
     'hidden_state',
+    'state_grouping',
 ]
 
 

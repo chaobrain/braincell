@@ -34,12 +34,14 @@ from typing import Callable, Iterator
 import brainstate
 from brainstate._state import record_state_value_write
 
+from braincell._misc import set_module_as
+
 __all__ = [
     'DiffEqState',
     'DiffEqGroupState',
     'DiffEqModule',
     'IndependentIntegration',
-    'grouped_states',
+    'state_grouping',
     'diffeq_state',
     'hidden_state',
 ]
@@ -226,11 +228,12 @@ class DiffEqGroupState(DiffEqState, brainstate.HiddenGroupState):
     __module__ = 'braincell'
 
 
-_GROUPED_STATES = contextvars.ContextVar('braincell_grouped_states', default=False)
+_STATE_GROUPING = contextvars.ContextVar('braincell_state_grouping', default=False)
 
 
+@set_module_as('braincell')
 @contextlib.contextmanager
-def grouped_states(enabled: bool = True) -> Iterator[bool]:
+def state_grouping(enabled: bool = True) -> Iterator[bool]:
     """Scope whether :func:`diffeq_state` / :func:`hidden_state` group.
 
     Channel, ion, and synapse code is shared by
@@ -269,21 +272,19 @@ def grouped_states(enabled: bool = True) -> Iterator[bool]:
         >>> import brainunit as u
         >>> import numpy as np
         >>> import braincell
-        >>> with braincell.grouped_states(True):
+        >>> with braincell.state_grouping(True):
         ...     state = braincell.diffeq_state(np.zeros((1, 4)) * u.mV)
         >>> type(state).__name__
         'DiffEqGroupState'
     """
-    token = _GROUPED_STATES.set(bool(enabled))
+    token = _STATE_GROUPING.set(bool(enabled))
     try:
         yield bool(enabled)
     finally:
-        _GROUPED_STATES.reset(token)
+        _STATE_GROUPING.reset(token)
 
 
-grouped_states.__module__ = 'braincell'
-
-
+@set_module_as('braincell')
 def diffeq_state(value, **kwargs) -> DiffEqState:
     """Allocate the integrable hidden state class the current host wants.
 
@@ -297,22 +298,20 @@ def diffeq_state(value, **kwargs) -> DiffEqState:
     Returns
     -------
     DiffEqState
-        A :class:`DiffEqGroupState` inside :func:`grouped_states`
+        A :class:`DiffEqGroupState` inside :func:`state_grouping`
         (i.e. within a :class:`braincell.Cell`), otherwise a plain
         :class:`DiffEqState`.
 
     See Also
     --------
-    grouped_states : Scope that selects the class.
+    state_grouping : Scope that selects the class.
     hidden_state : The non-integrable counterpart.
     """
-    cls = DiffEqGroupState if _GROUPED_STATES.get() else DiffEqState
+    cls = DiffEqGroupState if _STATE_GROUPING.get() else DiffEqState
     return cls(value, **kwargs)
 
 
-diffeq_state.__module__ = 'braincell'
-
-
+@set_module_as('braincell')
 def hidden_state(value, **kwargs) -> brainstate.HiddenState:
     """Allocate the non-integrable hidden state class the host wants.
 
@@ -331,19 +330,16 @@ def hidden_state(value, **kwargs) -> brainstate.HiddenState:
     -------
     brainstate.HiddenState
         A :class:`brainstate.HiddenGroupState` inside
-        :func:`grouped_states` (i.e. within a :class:`braincell.Cell`),
+        :func:`state_grouping` (i.e. within a :class:`braincell.Cell`),
         otherwise a plain :class:`brainstate.HiddenState`.
 
     See Also
     --------
-    grouped_states : Scope that selects the class.
+    state_grouping : Scope that selects the class.
     diffeq_state : The integrable counterpart.
     """
-    cls = brainstate.HiddenGroupState if _GROUPED_STATES.get() else brainstate.HiddenState
+    cls = brainstate.HiddenGroupState if _STATE_GROUPING.get() else brainstate.HiddenState
     return cls(value, **kwargs)
-
-
-hidden_state.__module__ = 'braincell'
 
 
 class DiffEqModule(brainstate.mixin.Mixin):

@@ -698,7 +698,7 @@ class SingleCompartmentHiddenStatesAreNotGroupedTest(unittest.TestCase):
         # A Network may hold both model types; SingleCompartment sets the
         # scope explicitly rather than relying on the default, so the order
         # of construction cannot matter.
-        with braincell.grouped_states(True):
+        with braincell.state_grouping(True):
             neuron = self._neuron()
             neuron.init_state()
         self._assert_none_grouped(neuron)

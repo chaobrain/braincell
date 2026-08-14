@@ -623,23 +623,23 @@ class _Species:
         """Allocate an algebraic species state matching its siblings' class.
 
         :meth:`_Conserve.writeback` runs during simulation, *outside* the
-        :func:`~braincell.grouped_states` scope the host establishes around
+        :func:`~braincell.state_grouping` scope the host establishes around
         ``init_state``. Reading the ambient scope there would silently
         produce a plain :class:`brainstate.HiddenState` on a
         :class:`braincell.Cell`, whose hidden states must all be grouped.
         Deriving the class from an already-allocated sibling species makes
         the decision independent of when the allocation happens.
 
-        Falls back to the scoped factory only when no sibling exists yet,
-        which is the genuine initialization path — and that one does run
-        inside the host's scope.
+        Falls back to the scoped factory only when no sibling has been
+        allocated yet, which is the genuine initialization path — and that
+        one does run inside the host's scope.
         """
-        grouped = any(
-            isinstance(getattr(self.owner, name, None), brainstate.HiddenGroupState)
-            for name in self.specs.species_by_name
-        )
-        if grouped:
-            return brainstate.HiddenGroupState(value)
+        for name in self.specs.species_by_name:
+            sibling = getattr(self.owner, name, None)
+            if isinstance(sibling, brainstate.HiddenState):
+                if isinstance(sibling, brainstate.HiddenGroupState):
+                    return brainstate.HiddenGroupState(value)
+                return brainstate.HiddenState(value)
         return hidden_state(value)
 
     def value(self, name: str):

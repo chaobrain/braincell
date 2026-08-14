@@ -138,13 +138,16 @@ class Gate:
         ``f_<name>_alpha`` / ``f_<name>_beta``.
     power : int
         Exponent applied to the gate in :meth:`HH.conductance_factor`.
-    phi : optional
-        Explicit temperature factor. Mutually exclusive with ``q10``.
-    q10 : optional
+    phi : float or str or callable, optional
+        Explicit temperature factor. Mutually exclusive with ``q10``. A
+        ``str`` names an instance attribute; see :func:`_resolve_value`.
+    q10 : float or str or callable, optional
         Q10 coefficient, used together with ``temp_ref`` and ``self.temp``.
-    temp_ref : optional
-        Reference temperature for ``q10``.
-    time_unit : optional
+        Resolved the same way as ``phi``.
+    temp_ref : Quantity or str or callable, optional
+        Reference temperature for ``q10``, as an absolute temperature.
+        Resolved the same way as ``phi``.
+    time_unit : Unit, default ``u.ms``
         Unit assumed when a rate method returns a bare (dimensionless)
         value. ``f_<name>_tau`` returning ``5.0`` is read as ``5 * time_unit``
         and ``f_<name>_alpha`` returning ``0.3`` as ``0.3 / time_unit``.
@@ -277,6 +280,10 @@ class HH(Channel):
     gates: ClassVar[tuple[Gate | tuple[Any, ...], ...]] = ()
     _resolved_gates: ClassVar[tuple[Gate, ...]] = ()
     _gate_forms: ClassVar[dict[str, str]] = {}
+    #: Populated lazily, per concrete class, by :func:`_rate_ion_count`.
+    #: Annotated but deliberately not assigned: a default here would be one
+    #: mutable dict shared by every subclass that never writes its own.
+    _rate_ion_counts: ClassVar[dict[str, int | None]]
 
     def __init_subclass__(cls, **kwargs):
         """Resolve and validate ``gates`` once, when the subclass is created.
@@ -441,8 +448,8 @@ class OhmicHH(HH):
         ...     def f_h_tau(self, V, Na):
         ...         return 2.0
 
-        The gates supply ``m ** 3 * h`` and :class:`OhmicHH` supplies
-        ``g_max * m ** 3 * h * (E - V)``, so no ``current`` method is needed.
+    The gates supply ``m ** 3 * h`` and :class:`OhmicHH` supplies
+    ``g_max * m ** 3 * h * (E - V)``, so no ``current`` method is needed.
     """
 
     __module__ = "braincell.channel"
@@ -525,6 +532,8 @@ class Markov(Channel, IndependentIntegration):
     clip_states: ClassVar[bool] = True
     _resolved_pairs: ClassVar[tuple[Transition, ...]] = ()
     _resolved_state_names: ClassVar[tuple[str, ...]] = ()
+    #: See :attr:`HH._rate_ion_counts` -- same lazy per-class cache.
+    _rate_ion_counts: ClassVar[dict[str, int | None]]
 
     def __init_subclass__(cls, **kwargs):
         """Resolve and validate ``pairs`` once, when the subclass is created.

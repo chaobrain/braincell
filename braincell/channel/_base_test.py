@@ -713,19 +713,20 @@ class ChannelTemplateTest(unittest.TestCase):
     # ------------------------------------------------------------------
 
     def _phi_of(self, name, **gate_kwargs):
+        def __init__(self, size=1):
+            HH.__init__(self, size=size, name=None)
+            self.q10 = 3.0
+            self.temp_ref = u.celsius2kelvin(22.0)
+            self.temp = u.celsius2kelvin(32.0)
+            self.phi_value = 2.5
+
         cls = _make_hh(
             name,
             {
                 "gates": (Gate("m", **gate_kwargs),),
                 "f_m_inf": lambda self, V, K: 0.5,
                 "f_m_tau": lambda self, V, K: 1.0,
-                "__init__": lambda self, size=1: (
-                    HH.__init__(self, size=size, name=None),
-                    setattr(self, "q10", 3.0),
-                    setattr(self, "temp_ref", u.celsius2kelvin(22.0)),
-                    setattr(self, "temp", u.celsius2kelvin(32.0)),
-                    setattr(self, "phi_value", 2.5),
-                )[0],
+                "__init__": __init__,
             },
         )
         return cls(1).gate_phi(cls._resolved_gates[0])

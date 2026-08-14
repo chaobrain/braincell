@@ -281,6 +281,9 @@ def grouped_states(enabled: bool = True) -> Iterator[bool]:
         _GROUPED_STATES.reset(token)
 
 
+grouped_states.__module__ = 'braincell'
+
+
 def diffeq_state(value, **kwargs) -> DiffEqState:
     """Allocate the integrable hidden state class the current host wants.
 
@@ -305,6 +308,9 @@ def diffeq_state(value, **kwargs) -> DiffEqState:
     """
     cls = DiffEqGroupState if _GROUPED_STATES.get() else DiffEqState
     return cls(value, **kwargs)
+
+
+diffeq_state.__module__ = 'braincell'
 
 
 def hidden_state(value, **kwargs) -> brainstate.HiddenState:
@@ -335,6 +341,9 @@ def hidden_state(value, **kwargs) -> brainstate.HiddenState:
     """
     cls = brainstate.HiddenGroupState if _GROUPED_STATES.get() else brainstate.HiddenState
     return cls(value, **kwargs)
+
+
+hidden_state.__module__ = 'braincell'
 
 
 class DiffEqModule(brainstate.mixin.Mixin):

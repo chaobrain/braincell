@@ -89,7 +89,7 @@ from braincell.quad.protocol import DiffEqGroupState, IndependentIntegration, gr
 from braincell.mech import CVContext, Synapse as SynapsePlacement
 from . import bridge, currents, probes, run as run_module
 
-__all__ = ["Cell"]
+__all__ = ["Cell", "MultiCompartment"]
 
 
 @dataclass(frozen=True)
@@ -1523,9 +1523,52 @@ class Cell(HHTypedNeuron):
             )
         return point_ids
 
+    def _single_population_view(self, values, *, field: str, caller: str):
+        """Reduce a ``pop_size + (n,)`` field to the single-member ``(n,)`` view.
+
+        Inspection and visualization both answer questions about *one*
+        morphology, so the leading population axes have to be singleton
+        before the spatial mapping helpers can interpret the trailing axis.
+        Collapsing them here keeps a default ``pop_size=1`` cell behaving
+        exactly as a rank-0 population used to.
+
+        Parameters
+        ----------
+        values : array-like or Quantity
+            Field values shaped ``pop_size + (n,)``. Scalars and 1-D values
+            pass through untouched.
+        field : str
+            Field name, used only in the error message.
+        caller : str
+            Entry point description, used only in the error message.
+
+        Returns
+        -------
+        array-like or Quantity
+            ``values`` with every leading singleton axis removed.
+
+        Raises
+        ------
+        ValueError
+            If any leading population axis holds more than one member, since
+            there is then no single morphology to answer for.
+        """
+        shape = getattr(values, "shape", None)
+        if shape is None or len(shape) < 2:
+            return values
+        leading = shape[:-1]
+        if any(int(dim) != 1 for dim in leading):
+            raise ValueError(
+                f"{caller} addresses a single morphology, but field {field!r} has "
+                f"population shape {tuple(int(d) for d in leading)!r} from "
+                f"pop_size={tuple(int(d) for d in self.pop_size)!r}. Index the "
+                f"population axis first."
+            )
+        return values[(0,) * len(leading)]
+
     def _vis_cv_voltage(self):
         """Return ``V`` as a plain ``(n_cv,)`` CV vector for visualization."""
-        return _drop_population_axes(self.V.value, field="V", caller="Cell.vis_cv", pop_size=self.pop_size)
+        return self._single_population_view(self.V.value, field="V", caller="Cell.vis_cv(...)")
 
     def _resolve_vis_node_values(self, value) -> tuple[object, str | None]:
         if isinstance(value, str):
@@ -1580,7 +1623,7 @@ class Cell(HHTypedNeuron):
         return self._coerce_vis_cv_values_object(value), None
 
     def _coerce_vis_node_values_object(self, value):
-        value = _drop_population_axes(value, field="value", caller="Cell.vis_node", pop_size=self.pop_size)
+        value = self._single_population_view(value, field="value", caller="Cell.vis_node(...)")
         if hasattr(value, "to_decimal") and hasattr(value, "unit"):
             unit = value.unit
             raw = np.asarray(value.to_decimal(unit), dtype=float)
@@ -1613,6 +1656,7 @@ class Cell(HHTypedNeuron):
 
     def _coerce_runtime_point_values_object(self, value):
         """Coerce one runtime field into unmasked point-space values."""
+        value = self._single_population_view(value, field="value", caller="Runtime point inspection")
         if hasattr(value, "to_decimal") and hasattr(value, "unit"):
             unit = value.unit
             raw = np.asarray(value.to_decimal(unit), dtype=float)
@@ -1647,7 +1691,7 @@ class Cell(HHTypedNeuron):
         )
 
     def _coerce_vis_cv_values_object(self, value):
-        value = _drop_population_axes(value, field="value", caller="Cell.vis_cv", pop_size=self.pop_size)
+        value = self._single_population_view(value, field="value", caller="Cell.vis_cv(...)")
         if hasattr(value, "to_decimal") and hasattr(value, "unit"):
             unit = value.unit
             raw = np.asarray(value.to_decimal(unit), dtype=float)
@@ -1679,7 +1723,7 @@ class Cell(HHTypedNeuron):
         )
 
     def _coerce_named_vis_node_values_object(self, value):
-        value = _drop_population_axes(value, field="value", caller="Cell.vis_node", pop_size=self.pop_size)
+        value = self._single_population_view(value, field="value", caller="Cell.vis_node(...)")
         if hasattr(value, "to_decimal") and hasattr(value, "unit"):
             unit = value.unit
             raw = np.asarray(value.to_decimal(unit), dtype=float)
@@ -1705,7 +1749,7 @@ class Cell(HHTypedNeuron):
         raise ValueError("Cell.vis_node(...) cannot map the named value into point space.")
 
     def _coerce_named_vis_cv_values_object(self, value):
-        value = _drop_population_axes(value, field="value", caller="Cell.vis_cv", pop_size=self.pop_size)
+        value = self._single_population_view(value, field="value", caller="Cell.vis_cv(...)")
         if hasattr(value, "to_decimal") and hasattr(value, "unit"):
             unit = value.unit
             raw = np.asarray(value.to_decimal(unit), dtype=float)
@@ -1811,7 +1855,7 @@ class Cell(HHTypedNeuron):
 
     def _layout_values_to_point_space(self, layout, raw_values, *, field: str):
         n_point = self.n_point
-        raw_values = _drop_population_axes(raw_values, field=field, caller="Cell.vis_node", pop_size=self.pop_size)
+        raw_values = self._single_population_view(raw_values, field=field, caller="Cell.vis_node(...)")
         if hasattr(raw_values, "to_decimal") and hasattr(raw_values, "unit"):
             unit = raw_values.unit
             raw = np.asarray(raw_values.to_decimal(unit), dtype=float)
@@ -1866,7 +1910,7 @@ class Cell(HHTypedNeuron):
 
     def _layout_values_to_cv_space(self, layout, raw_values, *, field: str):
         n_cv = self.n_cv
-        raw_values = _drop_population_axes(raw_values, field=field, caller="Cell.vis_cv", pop_size=self.pop_size)
+        raw_values = self._single_population_view(raw_values, field=field, caller="Cell.vis_cv(...)")
         source_cv_ids = tuple(int(cv_id) for cv_id in layout.source_cv_ids)
         midpoint_by_cv = {cv_id: int(self.node_tree.cv_to_mid_node_id[cv_id]) for cv_id in source_cv_ids}
         if hasattr(raw_values, "to_decimal") and hasattr(raw_values, "unit"):
@@ -2765,6 +2809,14 @@ class Cell(HHTypedNeuron):
         return run_module.run(self, dt=dt, duration=duration)
 
 
+#: Alias of :class:`Cell`, named for what the model is rather than for the
+#: shorthand. ``MultiCompartment is Cell`` — the two names are the same
+#: object, so ``isinstance``, subclassing, and pickling behave identically
+#: through either. Prefer it when the surrounding code also mentions
+#: :class:`~braincell.SingleCompartment` and the contrast matters.
+MultiCompartment = Cell
+
+
 # ----------------------------------------------------------------------
 # Helpers
 
@@ -2832,51 +2884,6 @@ def _call_name(prefix: str, path, node) -> str:
     return _scope_name(prefix, path, node).replace(":", "_")
 
 
-def _drop_population_axes(values, *, field: str, caller: str, pop_size: tuple[int, ...]):
-    """Reduce a ``pop_size + (n,)`` field to the single-population ``(n,)`` view.
-
-    Visualization draws one morphology, so the leading population axes have
-    to be singleton before the spatial mapping helpers can interpret the
-    trailing axis. Collapsing them here keeps the default ``pop_size=1``
-    cell rendering exactly as a rank-0 population used to.
-
-    Parameters
-    ----------
-    values : array-like or Quantity
-        Field values shaped ``pop_size + (n,)``. Scalars and 1-D values pass
-        through untouched.
-    field : str
-        Field name, used only in the error message.
-    caller : str
-        Public entry point name, used only in the error message.
-    pop_size : tuple of int
-        Owning cell's population shape, used only in the error message.
-
-    Returns
-    -------
-    array-like or Quantity
-        ``values`` with every leading singleton axis removed.
-
-    Raises
-    ------
-    ValueError
-        If any leading population axis holds more than one member, because
-        there is then no single morphology to draw.
-    """
-    shape = getattr(values, "shape", None)
-    if shape is None or len(shape) < 2:
-        return values
-    leading = shape[:-1]
-    if any(int(dim) != 1 for dim in leading):
-        raise ValueError(
-            f"{caller}(...) draws a single morphology, but field {field!r} has "
-            f"population shape {tuple(int(d) for d in leading)!r} from "
-            f"pop_size={tuple(int(d) for d in pop_size)!r}. Select one population "
-            f"member before visualizing."
-        )
-    return values[(0,) * len(leading)]
-
-
 _RANK0_POP_SIZE_MESSAGE = (
     "Cell requires a population axis, so pop_size must not be empty. "
     "Use pop_size=1 for a single cell; runtime state is then shaped "
@@ -2914,9 +2921,9 @@ def _normalize_pop_size(pop_size) -> tuple[int, ...]:
 
     Examples
     --------
-
     .. code-block:: python
 
+        >>> from braincell._multi_compartment.cell import _normalize_pop_size
         >>> _normalize_pop_size(None)
         (1,)
         >>> _normalize_pop_size(4)

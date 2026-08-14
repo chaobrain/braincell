@@ -1,6 +1,54 @@
 # Release Notes
 
 
+## Unreleased
+
+### Breaking Changes
+
+- **`Cell` now always carries a population axis.** `pop_size` defaults to
+  `1` and an explicitly empty `pop_size=()` raises `ValueError`. Runtime
+  state is therefore always at least two-dimensional: `Cell.V` is shaped
+  `pop_size + (n_cv,)` and point-space arrays `pop_size + (n_point,)`.
+  Code that relied on the old rank-0 default sees one extra leading axis
+  of length 1; `reshape(-1)` or indexing `[0]` recovers the previous view.
+
+### New Features
+
+- **`braincell.MultiCompartment` is a new alias of `braincell.Cell`.** The
+  same class object under a name that spells out what it models, which
+  reads better next to `braincell.SingleCompartment`. Nothing about `Cell`
+  changes; both names remain supported.
+- **Hidden-state classes now match their host model.** Every hidden state
+  owned by a `Cell` is a `brainstate.HiddenGroupState` — `Cell.V` is the
+  new `braincell.DiffEqGroupState` — so the trailing compartment/point
+  axis is exposed as a group of independently traced hidden states, which
+  is what eligibility-trace learning requires. `SingleCompartment` has no
+  spatial axis and keeps the plain `brainstate.HiddenState`.
+  `DiffEqGroupState` derives from `DiffEqState`, so every solver selects
+  it unchanged.
+- **`diffeq_state` / `hidden_state` / `grouped_states`** are exported for
+  custom mechanisms. Channel, ion, and synapse code is shared by both host
+  models, so writing `diffeq_state(...)` instead of `DiffEqState(...)` in a
+  custom `init_state` lets the right class be chosen per host.
+
+### Bug Fixes
+
+- `Cell.vis_cv(...)` / `Cell.vis_node(...)` and node-local runtime
+  inspection (`cell.runtime_nodes[i].ions[...]`) rejected any field with a
+  population axis, so they failed for every `pop_size` beyond the old
+  rank-0 default. They now collapse a single-member population and
+  otherwise raise naming the field and `pop_size`.
+- Ion baseline broadcasting in `_sync_runtime_ion` ignored the population
+  axis, disagreeing with the sibling code path.
+- Dense channel construction dropped the population axis when a channel's
+  parameters were all scalars, producing a rank-1 gate state that failed
+  as a `jit`/`scan` carry mismatch.
+- A kinetic-ion species declared with a scalar initializer (for example
+  `CdpCR_MA2020_GrC.pumpca`) started rank-0 and was silently reshaped
+  mid-simulation by the conservation write-back; it is now allocated at
+  full shape.
+
+
 ## Version 0.1.0
 
 This is a landmark release. BrainCell evolves from single-compartment

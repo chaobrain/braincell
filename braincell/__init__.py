@@ -51,6 +51,7 @@ from ._discretization import (
 )
 from ._multi_compartment import (
     Cell,
+    MultiCompartment,
     RunResult,
 )
 from .network import (
@@ -116,6 +117,7 @@ __all__ = [
     "MixIons",
     "MaxCVLen",
     "Morphology",
+    "MultiCompartment",
     "Network",
     "Node",
     "NodeTree",

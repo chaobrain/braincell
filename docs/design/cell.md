@@ -4,14 +4,17 @@
 
 `cell` 现在既做前端建模，也作为运行时主对象。
 
-- 入口固定为：`Cell(morpho, cv_policy=CVPerBranch())`
+- 入口固定为：`Cell(morpho, cv_policy=CVPerBranch())`；`braincell.MultiCompartment`
+  是 `Cell` 的别名（`MultiCompartment is Cell`），只是换一个更能说明模型类型的
+  名字，与下面「不暴露中间壳对象」并不冲突
 - 自动离散得到 `CV` 集合
 - 支持 `paint` / `place` 规则积累与查询
 - 支持懒重建（改了 `cv_policy`、`paint`、`place` 后置脏）
 
 本层明确不做：
 
-- 不单独再暴露 `MultiCompartment` / `CellExecution` 这类中间壳对象
+- 不单独再暴露 `CellExecution` 这类中间壳对象（`MultiCompartment` 只是 `Cell`
+  的别名，不是另一个对象）
 - 不要求用户手动再包装一层执行对象
 
 ---

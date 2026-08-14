@@ -233,7 +233,9 @@ class NeuronCompareCellWorkload:
             raise RuntimeError("load_params() must be called before model_build().")
         if self._model_cls is None:
             raise RuntimeError("import_model() must be called before model_build().")
-        pop_size = () if int(self.args.population_size) == 1 else (int(self.args.population_size),)
+        # A Cell always carries a population axis, so a single cell is
+        # ``pop_size=1`` rather than an empty (rank-0) population.
+        pop_size = (int(self.args.population_size),)
         kwargs = {
             "params": self._params,
             "temperature_celsius": self.temperature_celsius,

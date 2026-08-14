@@ -187,10 +187,17 @@ restore correctly. Default `False` keeps a standalone
 Mechanical substitution: `DiffEqState(x)` → `diffeq_state(x)`,
 `brainstate.HiddenState(x)` → `hidden_state(x)`.
 
-Site 7 (`_Conserve.writeback`) runs during simulation, not just
-initialization, and only allocates when the attribute is not yet a
-`State` — dead in normal flow because `_Species.init` ran first. It is
-converted for consistency; the tests assert it does not fire mid-run.
+Site 7 (`_Conserve.writeback`) runs on **every** step, not just at
+initialization, but its allocation branch is dead in normal flow: the
+attribute is already a `State` because `_Species.init` ran first, so the
+step takes the `.value = …` path instead. The allocation branch is still
+reachable for a species that was never initialized, and there it must
+match whatever class its siblings got — which the `grouped_states` scope
+no longer answers, since it has exited by then. `_Species.algebraic_state`
+therefore reads the class off a live sibling rather than off the context
+var. Two tests pin this: one asserts a mid-step writeback leaves the state
+object identical (no reallocation), the other deletes the attribute first
+and asserts the late allocation still matches its siblings' class.
 
 ## Tests
 
@@ -211,10 +218,22 @@ converted for consistency; the tests assert it does not fire mid-run.
   subtree is **not** a `HiddenGroupState`, at `batch_size=None` and
   `batch_size=8`.
 * **Numerical equivalence** — the state-class change is type-only and the
-  `pop_size` change only adds a length-1 axis, so a `Cell` simulation must
-  match the pre-change trace after `reshape(-1)`, and `SingleCompartment`
-  must match bit-for-bit. `quad/_staggered_test.py:371` already asserts
-  rank-0 ≡ rank-1 numerically and is the anchor for this.
+  `pop_size` change only adds a length-1 axis, so neither may move a
+  number. A test comparing against the *pre-change* trace is not
+  expressible in-tree (the old code is gone), so the invariant is pinned
+  two ways instead, both in `_multi_compartment/cell_test.py`:
+  * **Class-invariance** — run the same `Cell` twice, once normally and
+    once with `DiffEqGroupState` and `grouped_states` patched back to
+    their plain equivalents, and assert the two traces are equal
+    elementwise. The patched arm is verified to actually take effect (it
+    produces plain `HiddenState`s where the real arm produces grouped
+    ones), so this is a genuine before/after comparison of the type
+    change alone.
+  * **Axis-invariance** — assert every member of a `pop_size=(3,)`
+    population reproduces the default single-member trace, and that a
+    multi-axis `pop_size` steps and `jit`s. This is the restatement of
+    the old rank-0 ≡ rank-1 comparison; see *Migration surface* below for
+    why the original could no longer serve as the anchor.
 * **Full suite** — `pytest braincell/` and `pre-commit run --all`.
 
 ## Pre-existing bugs the mandatory axis exposed
@@ -226,7 +245,7 @@ this change, and each is fixed here.
 
 | # | Site | Bug |
 |---|---|---|
-| 1 | `_multi_compartment/cell.py`, six vis coercion helpers | `_layout_values_to_{point,cv}_space` rejected any field with rank > 1 ("only supports 1-D value fields"), so `Cell(pop_size=4).vis_cv(...)` already failed. Fixed with `_drop_population_axes`, which selects the single-member view and otherwise raises a message naming the offending field and `pop_size`. |
+| 1 | `_multi_compartment/cell.py`, the vis and runtime-inspection coercers | `_layout_values_to_{point,cv}_space` rejected any field with rank > 1 ("only supports 1-D value fields"), so `Cell(pop_size=4).vis_cv(...)` already failed — and so did the default `Cell(...)` once the axis became mandatory. **Partly fixed**: `Cell._single_population_view` collapses a single-member population, which restores the default path and every `pop_size=1` case. A genuine `pop_size > 1` still raises, but now with a message naming the field and `pop_size` and telling the caller to index the population axis first, instead of the misleading "only supports 1-D value fields". Rendering a multi-member population is a feature these single-morphology views never had; it is out of scope here. |
 | 2 | `_compute/runtime.py:3001` | `_sync_runtime_ion` broadcast an ion baseline onto a hardcoded `(n_point,)`. Line 2953 already used `runtime.pop_size + (runtime.n_point,)`; the two now agree. |
 | 3 | `_compute/runtime.py`, `_instantiate_runtime_node` | The dense-channel size fallback used `layout.point_mask.shape` without the population axis, so a channel whose parameters were all scalars got a rank-1 gate state. Under `jit`/`scan` this surfaced as a carry-signature mismatch (`float32[5]` vs `float32[1,5]`). `pop_size` is now threaded in. |
 | 4 | `ion/_base.py`, `_Species.init` / `reset` | `braintools.init.param` passes a bare scalar through unbroadcast, so a species declared as e.g. `0.0 * u.mol / u.cm**2` (`CdpCR_MA2020_GrC.pumpca`) started rank-0 while its siblings were `varshape`. `_Conserve.writeback` then assigned the per-point value, silently growing the state mid-simulation. `_species_value` now broadcasts at allocation. |

@@ -619,6 +619,29 @@ class _Species:
                 else:
                     setattr(self.owner, spec.name, hidden_state(value))
 
+    def algebraic_state(self, value):
+        """Allocate an algebraic species state matching its siblings' class.
+
+        :meth:`_Conserve.writeback` runs during simulation, *outside* the
+        :func:`~braincell.grouped_states` scope the host establishes around
+        ``init_state``. Reading the ambient scope there would silently
+        produce a plain :class:`brainstate.HiddenState` on a
+        :class:`braincell.Cell`, whose hidden states must all be grouped.
+        Deriving the class from an already-allocated sibling species makes
+        the decision independent of when the allocation happens.
+
+        Falls back to the scoped factory only when no sibling exists yet,
+        which is the genuine initialization path — and that one does run
+        inside the host's scope.
+        """
+        grouped = any(
+            isinstance(getattr(self.owner, name, None), brainstate.HiddenGroupState)
+            for name in self.specs.species_by_name
+        )
+        if grouped:
+            return brainstate.HiddenGroupState(value)
+        return hidden_state(value)
+
     def value(self, name: str):
         """Return one species' current visible value."""
         raw = getattr(self.owner, name)
@@ -674,14 +697,21 @@ class _Conserve:
         return values
 
     def writeback(self, V=None):
-        """Update cached algebraic species values on the owner object."""
+        """Update cached algebraic species values on the owner object.
+
+        Runs every simulation step, so the allocation branch below is dead
+        in normal flow — :meth:`_Species.init` has already turned every
+        species into a ``State``. It stays defensive rather than raising,
+        but routes through :meth:`_Species.algebraic_state` so that a late
+        allocation cannot silently pick the wrong hidden-state class.
+        """
         values = self.resolve(V)
         for name in self.specs.algebraic_names:
             raw = getattr(self.owner, name)
             if isinstance(raw, brainstate.State):
                 raw.value = values[name]
             else:
-                setattr(self.owner, name, hidden_state(values[name]))
+                setattr(self.owner, name, self.species.algebraic_state(values[name]))
 
 
 class _Flux:

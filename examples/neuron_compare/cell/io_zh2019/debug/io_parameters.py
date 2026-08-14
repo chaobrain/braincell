@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, fields
 from pathlib import Path
 from typing import Any
+from examples.neuron_compare.cell._nrnmech import nrnmech_path
 
 CELL_DIR = Path(__file__).resolve().parent
 IO_SOURCE_DIR = CELL_DIR.parent.parent.parent / "Cerebellum_mod" / "IO"
@@ -11,19 +12,8 @@ SOURCE_CHANNEL_DIR = IO_SOURCE_DIR / "channel"
 SOURCE_OTHER_DIR = IO_SOURCE_DIR / "other"
 SOURCE_SWC_PATH = IO_SOURCE_DIR / "morphology" / "IO.swc"
 
-
-def nrnmech_path(build_dir: Path) -> Path:
-    """Return the compiled mechanism library inside an ``nrnivmodl`` build dir.
-
-    NEURON <= 8 builds through libtool and emits ``x86_64/.libs/libnrnmech.so``;
-    NEURON >= 9 emits ``x86_64/libnrnmech.so``. Prefer whichever is present, and
-    fall back to the modern layout when nothing has been compiled yet.
-    """
-    legacy = build_dir / ".libs" / "libnrnmech.so"
-    return legacy if legacy.exists() else build_dir / "libnrnmech.so"
-
-
-DEFAULT_NRNMECH_PATH = nrnmech_path(IO_SOURCE_DIR / "x86_64")
+DEFAULT_NRNMECH_BUILD_DIR = IO_SOURCE_DIR / "x86_64"
+DEFAULT_NRNMECH_PATH = nrnmech_path(DEFAULT_NRNMECH_BUILD_DIR)
 
 SOMA_LENGTH_UM = 20.0
 SOMA_DIAM_UM = 20.0

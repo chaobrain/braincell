@@ -20,6 +20,7 @@ from .grc_full_parameters import (
 )
 from .grc_neuron_debug import GrC as NeuronGrC
 from .grc_parameters import (
+    DEFAULT_NRNMECH_BUILD_DIR,
     DEFAULT_NRNMECH_PATH,
     EXPECTED_AXON_COUNT,
     EXPECTED_DEND_COUNT,
@@ -32,10 +33,7 @@ from .grc_parameters import (
 
 class GrCModCompileLayoutTest(unittest.TestCase):
     def test_top_level_nrnmech_contains_grc_cell_mechanisms(self) -> None:
-        # The build dir is x86_64/ under both NEURON layouts; the library sits
-        # directly in it (NEURON >= 9) or in its .libs/ subdir (NEURON <= 8).
-        build_dir = next(p for p in DEFAULT_NRNMECH_PATH.parents if p.name == "x86_64")
-        mod_func = build_dir / "mod_func.cpp"
+        mod_func = DEFAULT_NRNMECH_BUILD_DIR / "mod_func.cpp"
         self.assertTrue(DEFAULT_NRNMECH_PATH.exists())
         self.assertTrue(mod_func.exists())
         text = mod_func.read_text()

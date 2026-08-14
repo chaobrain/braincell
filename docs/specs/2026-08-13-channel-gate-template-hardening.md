@@ -2,8 +2,8 @@
 
 ## Problem
 
-`braincell.channel` is unified on a declarative template layer: 93 `HH` subclasses declare
-`gates = (Gate(...), ...)` and 19 `Markov` subclasses declare `pairs = (Transition(...), ...)`,
+`braincell.channel` is unified on a declarative template layer: 92 `HH` subclasses declare
+`gates = (Gate(...), ...)` and 18 `Markov` subclasses declare `pairs = (Transition(...), ...)`,
 all sharing one lifecycle implementation in `braincell/channel/_base.py`. The abstraction is the
 right one, but it is a reflection-driven mini-DSL with no definition-time validation and several
 internal inconsistencies.
@@ -33,8 +33,11 @@ Five further inconsistencies:
 
 - Numeric output of all existing channels must be **bit-for-bit unchanged**. NEURON `.mod`
   comparison in `dev/mod_validate/` depends on it.
-- `HH` / `Markov` / `Gate` are subclassed only inside `braincell/channel/`, so the refactor surface
-  is closed.
+- `HH` / `Markov` / `Gate` are subclassed almost entirely inside `braincell/channel/`. Two places
+  outside it also subclass them and must be migrated with the catalogue:
+  `examples/single_compartment/SC07_Straital_beta_oscillation_2011.py` and
+  `docs/tutorials/channel.ipynb`. Being a public API, `Gate`'s existing callable metadata form has
+  to keep working regardless.
 - Existing public constructor signatures and channel class names must not change.
 
 ## Decisions
@@ -71,7 +74,7 @@ Seven independently revertable commits, each carrying its own tests:
 | --- | --- |
 | C1 | `__init_subclass__` validation for `HH`/`Markov`; cache resolved `gates`/`pairs`; name-collision guard in `init_state`; drop the class-holding `lru_cache` |
 | C2 | `Gate.time_unit`; dimension-dispatched `tau` / `alpha` / `beta`; derivative dimension assertion |
-| C3 | Route HH gate calls through `_call_rate`; delete the 177-line forwarding block in `potassium_sodium.py` |
+| C3 | Route HH gate calls through `_call_rate`; delete the 178-line forwarding block in `potassium_sodium.py` |
 | C4 | `Gate.clip`; `Markov.clip_states` |
 | C5 | String parameter references in `Gate`; migrate 75 lambdas |
 | C6 | Explicit `dependent_state` in `sodium.py`; deprecation warning on the implicit path |
@@ -79,7 +82,7 @@ Seven independently revertable commits, each carrying its own tests:
 
 ## Verification
 
-A numeric-invariance harness records, for all 99 constructible gate-template channels, the
+A numeric-invariance harness records, for every constructible gate-template channel, the
 `reset_state` values, per-state `compute_derivative` outputs and `current()` at seven clamp
 voltages, plus a 20-step explicit-Euler trajectory. The baseline is captured before any edit and
 re-checked after every commit; all seven commits must report bit-for-bit equality.
@@ -94,13 +97,36 @@ Results:
 
 | Check | Outcome |
 | --- | --- |
-| Numeric invariance, 99 channels | bit-for-bit identical after every commit |
+| Numeric invariance, 99 channels reached by the harness | bit-for-bit identical after every commit |
+| Independent re-check at review time, 111 channels | bit-for-bit identical |
 | `pytest braincell/channel/` | 651 passed (from 615; +36 new cases) |
 | `pytest braincell/` | 2178 passed, 19 skipped |
-| `dev/mod_validate/channel_validate_sweep_test.py` | 9 passed |
 | `pre-commit run --all-files` | passed |
 
-Line count across the catalogue: −226 / +128 from the `OhmicHH` migration, plus 177 lines deleted
+Line count across the catalogue: −226 / +128 from the `OhmicHH` migration, plus 178 lines deleted
 from `potassium_sodium.py`.
 
+The author's checkout also ran `dev/mod_validate/channel_validate_sweep_test.py` (9 passed) against
+NEURON `.mod` references. **That is not a reproducible gate:** `.gitignore:246` ignores `/dev/`, so
+the directory exists on no other machine and is absent from worktrees. The tracked NEURON harness is
+`examples/convert_mod/mod_validate/`; treat the `dev/` run as corroboration, not evidence.
+
 Still outstanding: the CI matrix (JAX 0.8.0 floor / 0.10.0 / latest).
+
+## Corrections found at review
+
+Three claims above were wrong as first written and are corrected in place: the catalogue holds 92
+`HH` and 18 `Markov` subclasses (not 93/19); `potassium_sodium.py` lost 178 lines (not 177); and the
+"closed refactor surface" constraint was false — `SC07` and `docs/tutorials/channel.ipynb` subclass
+`HH`/`Markov` outside `braincell/channel/`. The notebook's classes still pass definition-time
+validation, so they were left as-is; they hand-write an ohmic `current()` that `OhmicHH` would now
+supply, which is a docs-freshness item rather than a break.
+
+Two implementation gaps found at review and closed:
+
+- **C2's derivative dimension assertion had not been written.** `_as_time`/`_as_rate` checked only
+  the rate methods' returns. `phi` is read off the instance and checked nowhere, so a dimensioned
+  `phi` silently produced a `mV / ms` derivative. `_check_derivative` now runs on every gate.
+- **`OhmicHH.conductance_attr` was scope creep** beyond C7 and had no consumer in the catalogue. It
+  is removed; `current()` reads `self.g_max`, and a channel naming it differently overrides
+  `current()`.

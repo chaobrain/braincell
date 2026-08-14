@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, fields
 from pathlib import Path
 from typing import Any
+from examples.neuron_compare.cell._nrnmech import nrnmech_path
 
 CELL_DIR = Path(__file__).resolve().parent
 REPO_ROOT = CELL_DIR.parents[4]
@@ -12,21 +13,8 @@ SOURCE_MORPH_PATH = SOURCE_BC_DIR / "01bc.ASC"
 
 DEFAULT_MORPH_PATH = REPO_ROOT / "examples" / "neuron_compare" / "Cerebellum_mod" / "BC" / "morphology" / "BC.asc"
 
-
-def nrnmech_path(build_dir: Path) -> Path:
-    """Return the compiled mechanism library inside an ``nrnivmodl`` build dir.
-
-    NEURON <= 8 builds through libtool and emits ``x86_64/.libs/libnrnmech.so``;
-    NEURON >= 9 emits ``x86_64/libnrnmech.so``. Prefer whichever is present, and
-    fall back to the modern layout when nothing has been compiled yet.
-    """
-    legacy = build_dir / ".libs" / "libnrnmech.so"
-    return legacy if legacy.exists() else build_dir / "libnrnmech.so"
-
-
-DEFAULT_NRNMECH_PATH = nrnmech_path(
-    REPO_ROOT / "examples" / "neuron_compare" / "Cerebellum_mod" / "BC" / "x86_64"
-)
+DEFAULT_NRNMECH_BUILD_DIR = REPO_ROOT / "examples" / "neuron_compare" / "Cerebellum_mod" / "BC" / "x86_64"
+DEFAULT_NRNMECH_PATH = nrnmech_path(DEFAULT_NRNMECH_BUILD_DIR)
 
 RA_OHM_CM = 122.0
 LEAK_E_MV = -55.0

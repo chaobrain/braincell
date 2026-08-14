@@ -62,6 +62,12 @@ Anything else raises an error naming the gate and the rate. Prefer returning uni
 new channels; the bare form exists because the catalogue was written against NEURON `.mod` sources
 that are implicitly in milliseconds.
 
+Those two checks only police what the rate methods return. The derivative also picks up `phi`, which
+is read off the instance and is validated nowhere at construction, so it is checked at the point of
+use: every gate derivative must come out with an inverse-time dimension. Without that check a
+dimensioned `phi` — say `phi = 2 * u.mV` — yields a `mV / ms` derivative that the integrator carries
+without complaint.
+
 Markov transition rates are always bare and implicitly per-millisecond — `compute_derivative`
 divides by `u.ms` once at the end.
 

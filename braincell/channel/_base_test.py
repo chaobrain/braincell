@@ -508,9 +508,15 @@ class ChannelTemplateTest(unittest.TestCase):
     # Gate rate units
     # ------------------------------------------------------------------
 
-    def _deriv_of(self, cls):
-        """Init, reset and differentiate a one-gate channel; return dm/dt."""
+    def _deriv_of(self, cls, **attrs):
+        """Init, reset and differentiate a one-gate channel; return dm/dt.
+
+        Extra keywords are set on the instance before differentiating, for
+        gate metadata that resolves by attribute name (``phi``, ``q10``, ...).
+        """
         ch = cls(1)
+        for key, value in attrs.items():
+            setattr(ch, key, value)
         V = jnp.array([-60.0]) * u.mV
         K = _k_info()
         ch.init_state(V, K)
@@ -573,6 +579,18 @@ class ChannelTemplateTest(unittest.TestCase):
     def test_alpha_with_wrong_dimension_is_rejected(self) -> None:
         with self.assertRaisesRegex(ValueError, r"Gate 'm': alpha must be dimensionless"):
             self._deriv_of(self._alpha_beta_cls("_AlphaBadDim", 0.4 * u.mV, 0.1))
+
+    def test_dimensioned_phi_is_rejected_at_the_derivative(self) -> None:
+        # phi is read off the instance, so no constructor check sees it; without
+        # the derivative check a dimensioned phi silently yields mV/ms.
+        cls = self._inf_tau_cls("_PhiBadDim", 5.0, phi="phi")
+        with self.assertRaisesRegex(ValueError, r"Gate 'm': derivative must have an inverse-time dimension"):
+            self._deriv_of(cls, phi=2.0 * u.mV)
+
+    def test_dimensionless_phi_still_passes_the_derivative_check(self) -> None:
+        cls = self._inf_tau_cls("_PhiOkDim", 5.0, phi="phi")
+        deriv = self._deriv_of(cls, phi=2.0)
+        self.assertEqual(u.get_dim(deriv), u.get_dim(1 / u.ms))
 
     # ------------------------------------------------------------------
     # Gate ion-argument arity
@@ -807,8 +825,13 @@ class ChannelTemplateTest(unittest.TestCase):
         expected = ch.g_max * ch.conductance_factor(V, K) * (ch.E - V)
         self.assertTrue(u.math.allclose(ch.current(V, K), expected))
 
-    def test_ohmic_conductance_attr_can_be_renamed(self) -> None:
-        ch = self._ohmic("_OhmicRenamed", conductance_attr="perm")
+    def test_ohmic_current_can_be_overridden_for_a_renamed_conductance(self) -> None:
+        # OhmicHH reads self.g_max; a channel naming it differently overrides
+        # current() rather than reaching for a hook the catalogue never uses.
+        ch = self._ohmic(
+            "_OhmicRenamed",
+            current=lambda self, V, *ions: self.perm * self.conductance_factor(V, *ions) * (ions[0].E - V),
+        )
         ch.perm = braintools.init.param(0.25 * (u.mS / u.cm**2), ch.varshape, allow_none=False)
         V = jnp.array([-60.0]) * u.mV
         K = _k_info()

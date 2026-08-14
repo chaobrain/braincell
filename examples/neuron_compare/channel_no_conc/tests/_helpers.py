@@ -40,12 +40,13 @@ def load_module(path: Path, name: str):
     suite ran first then owned the name and the other imported the wrong file.
 
     Loading under a dotted name inside ``channel_no_conc.<subpackage>`` lets the
-    relative imports resolve, so the fallback never runs and nothing lands in
-    ``sys.modules`` under an unqualified name. The package is taken from the
-    file's own directory, so this works for ``engine/`` and ``workflows/``
-    alike. The caller's ``name`` is kept as the leaf, so callers that load the
-    same file twice still get independent module objects and cannot leak state
-    into each other.
+    relative imports resolve, so the fallback never runs and no *engine module
+    basename* is claimed. The module is also aliased under the caller's bare
+    ``name``, but those are suite-prefixed and unique, so they collide with
+    nothing. The package is taken from the file's own directory, so this works
+    for ``engine/`` and ``workflows/`` alike. The caller's ``name`` is kept as
+    the leaf, so callers that load the same file twice still get independent
+    module objects and cannot leak state into each other.
     """
     if str(_SUITES_ROOT) not in sys.path:
         sys.path.insert(0, str(_SUITES_ROOT))

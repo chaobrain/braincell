@@ -205,6 +205,25 @@ def _as_rate(value, gate: Gate, label: str):
     return value
 
 
+def _check_derivative(value, gate: Gate):
+    """Check that a gate derivative came out as an inverse time.
+
+    ``_as_time`` and ``_as_rate`` police what the rate methods return, but the
+    derivative also picks up ``phi``, which is read off the instance and is
+    never checked at construction. A dimensioned ``phi`` therefore contaminates
+    the derivative silently -- ``phi = 2 * u.mV`` yields ``mV / ms`` -- and the
+    integrator carries it without complaint. Catch it here, where the gate is
+    still known, rather than letting it surface as a bare unit mismatch far
+    downstream.
+    """
+    if u.get_dim(value) != u.get_dim(1 / u.ms):
+        raise ValueError(
+            f"Gate {gate.name!r}: derivative must have an inverse-time dimension, got "
+            f"dimension {u.get_dim(value)}. Check that phi/q10 are dimensionless."
+        )
+    return value
+
+
 @dataclass(frozen=True)
 class Transition:
     """One directed/reversible transition used by Markov channels."""
@@ -349,7 +368,7 @@ class HH(Channel):
                 alpha = _as_rate(self._call_rate(f"f_{gate.name}_alpha", V, *ions), gate, "alpha")
                 beta = _as_rate(self._call_rate(f"f_{gate.name}_beta", V, *ions), gate, "beta")
                 derivative = phi * (alpha * (1.0 - value) - beta * value)
-            self._gate_state(gate).derivative = derivative
+            self._gate_state(gate).derivative = _check_derivative(derivative, gate)
 
 
 class OhmicHH(HH):
@@ -361,11 +380,9 @@ class OhmicHH(HH):
     permeability-scaled calcium channels -- inherit :class:`HH` directly and
     implement :meth:`current` themselves.
 
-    Attributes
-    ----------
-    conductance_attr : str
-        Name of the attribute holding the maximal conductance. Override when
-        the parameter is not called ``g_max``.
+    The maximal conductance is read from ``self.g_max``. A channel that names
+    it differently, or that scales the driving force some other way, overrides
+    :meth:`current`.
 
     See Also
     --------
@@ -381,26 +398,63 @@ class OhmicHH(HH):
         >>> class MyNa(OhmicHH):
         ...     root_type = Sodium
         ...     gates = (Gate("m", power=3), Gate("h"))
-        ...     # no current() needed
+        ...     def __init__(self, size, g_max=10.0 * (u.mS / u.cm**2)):
+        ...         super().__init__(size=size)
+        ...         self.g_max = g_max
+        ...     def f_m_inf(self, V, Na):
+        ...         return 0.6
+        ...     def f_m_tau(self, V, Na):
+        ...         return 0.4
+        ...     def f_h_inf(self, V, Na):
+        ...         return 0.3
+        ...     def f_h_tau(self, V, Na):
+        ...         return 2.0
+
+        The gates supply ``m ** 3 * h`` and :class:`OhmicHH` supplies
+        ``g_max * m ** 3 * h * (E - V)``, so no ``current`` method is needed.
     """
 
     __module__ = "braincell.channel"
 
-    conductance_attr: ClassVar[str] = "g_max"
-
     def reversal_potential(self, V, *ions):
-        """Return the driving reversal potential.
+        """Return the reversal potential driving the current.
 
-        Defaults to the reversal potential of the first ion, which for a
-        joint root type is the first entry of ``root_type.__args__``.
-        Override to read a fixed ``self.E`` or a non-leading ion.
+        Parameters
+        ----------
+        V : ArrayLike
+            Membrane potential. Unused by the default implementation; present
+            so overrides can depend on it.
+        *ions : IonInfo
+            Ion states, in the declaration order of ``root_type``.
+
+        Returns
+        -------
+        ArrayLike
+            Reversal potential, as a voltage. Defaults to that of the first
+            ion, which for a joint root type is the first entry of
+            ``root_type.__args__``. Override to read a fixed ``self.E`` or a
+            non-leading ion.
         """
         _ = V
         return ions[0].E
 
     def current(self, V, *ions):
-        conductance = getattr(self, type(self).conductance_attr)
-        return conductance * self.conductance_factor(V, *ions) * (self.reversal_potential(V, *ions) - V)
+        """Return the ohmic current through the channel.
+
+        Parameters
+        ----------
+        V : ArrayLike
+            Membrane potential.
+        *ions : IonInfo
+            Ion states, in the declaration order of ``root_type``.
+
+        Returns
+        -------
+        ArrayLike
+            ``g_max * conductance_factor(V, *ions) * (E - V)``, where ``E``
+            comes from :meth:`reversal_potential`.
+        """
+        return self.g_max * self.conductance_factor(V, *ions) * (self.reversal_potential(V, *ions) - V)
 
 
 class Markov(Channel, IndependentIntegration):

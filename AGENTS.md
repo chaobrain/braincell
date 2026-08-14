@@ -15,7 +15,7 @@ Biologically detailed brain cell modeling in JAX.
     - `docs/specs/YYYY-MM-DD-<slug>.md` — the spec and plan for one change, written *before* implementation. The date prefix is the creation date, so the directory reads chronologically.
     - `docs/design/<topic>.md` — durable design notes, invariants, and architecture maps that outlive any single change. Group a multi-document topic in its own subdirectory (`docs/design/network/`).
 
-    Name a file for what it documents, not where the code happens to sit: `io-swc-reader-invariants.md`, never `README.md` or `notes.md`. Give it an `# H1` that matches. When code depends on a note, cite it by its `docs/` path from the module docstring so the reference survives a move.
+    Name a file for what it documents, not where the code happens to sit: `io-swc-reader-invariants.md`, never `README.md` or `notes.md`. Give it an `# H1` that matches.
 9. Tests should >90% coverage, but focus on meaningful tests that cover edge cases and critical paths, not just trivial lines.
 10. Co-locate tests with the code under test: each module `foo.py` has its tests in a sibling `foo_test.py` (suffix style — never a separate `tests/` directory, never the `test_*.py` prefix). See [Testing](#testing) for the full rule.
 11. **Never drive a model with a bare Python `for`/`while` loop when it runs repeatedly.** Python loops execute op-by-op (dispatch overhead, no fusion) and trace fresh each step; the `brainstate.transform` primitives lower the whole loop into one compiled XLA program, tracing the body only once. Pick by shape of the work:

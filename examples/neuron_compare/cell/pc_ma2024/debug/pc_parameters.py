@@ -6,24 +6,14 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
+from examples.neuron_compare.cell._nrnmech import nrnmech_path
 
 CELL_DIR = Path(__file__).resolve().parent
 DEFAULT_POPULATION_PATH = CELL_DIR / "R_01_final_pop.txt"
 DEFAULT_MORPH_PATH = CELL_DIR.parent.parent.parent / "Cerebellum_mod" / "PC" / "morphology" / "PC.asc"
 
-
-def nrnmech_path(build_dir: Path) -> Path:
-    """Return the compiled mechanism library inside an ``nrnivmodl`` build dir.
-
-    NEURON <= 8 builds through libtool and emits ``x86_64/.libs/libnrnmech.so``;
-    NEURON >= 9 emits ``x86_64/libnrnmech.so``. Prefer whichever is present, and
-    fall back to the modern layout when nothing has been compiled yet.
-    """
-    legacy = build_dir / ".libs" / "libnrnmech.so"
-    return legacy if legacy.exists() else build_dir / "libnrnmech.so"
-
-
-DEFAULT_NRNMECH_PATH = nrnmech_path(CELL_DIR.parent.parent.parent / "Cerebellum_mod" / "PC" / "x86_64")
+DEFAULT_NRNMECH_BUILD_DIR = CELL_DIR.parent.parent.parent / "Cerebellum_mod" / "PC" / "x86_64"
+DEFAULT_NRNMECH_PATH = nrnmech_path(DEFAULT_NRNMECH_BUILD_DIR)
 
 DEFAULT_INDIV = 138
 

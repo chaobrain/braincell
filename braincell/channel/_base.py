@@ -109,6 +109,26 @@ def _call_rate(owner, rate_name: str, V, *ions):
     return getattr(owner, rate_name)(V, *ions[:ion_count])
 
 
+def _resolve_declarations(raw, factory):
+    """Normalise a class-level declaration tuple into ``factory`` instances.
+
+    Both templates accept either the dataclass itself or the plain tuple of
+    its fields, so ``gates = (("m", 3),)`` and ``gates = (Gate("m", 3),)``
+    mean the same thing.
+    """
+    return tuple(item if isinstance(item, factory) else factory(*item) for item in raw)
+
+
+def _check_identifier(cls: type, name: str, kind: str) -> None:
+    """Reject a declared name that could not be bound as an attribute.
+
+    Gate and Markov state names become attributes on the instance, so a name
+    that is not an identifier fails much later and far less legibly.
+    """
+    if not name.isidentifier():
+        raise ValueError(f"{cls.__name__}: {kind} name {name!r} is not a valid Python identifier.")
+
+
 def _bind_state(owner, name: str, value, kind: str) -> None:
     """Attach a ``DiffEqState`` to ``owner`` without clobbering a parameter.
 
@@ -294,7 +314,7 @@ class HH(Channel):
         """
         super().__init_subclass__(**kwargs)
 
-        resolved = tuple(gate if isinstance(gate, Gate) else Gate(*gate) for gate in cls.gates)
+        resolved = _resolve_declarations(cls.gates, Gate)
         cls._resolved_gates = resolved
         if not resolved:
             cls._gate_forms = {}
@@ -303,8 +323,7 @@ class HH(Channel):
         seen: set[str] = set()
         forms: dict[str, str] = {}
         for gate in resolved:
-            if not gate.name.isidentifier():
-                raise ValueError(f"{cls.__name__}: gate name {gate.name!r} is not a valid Python identifier.")
+            _check_identifier(cls, gate.name, "gate")
             if gate.name in seen:
                 raise ValueError(f"{cls.__name__}: gate {gate.name!r} is declared more than once.")
             seen.add(gate.name)
@@ -543,7 +562,7 @@ class Markov(Channel, IndependentIntegration):
         """
         super().__init_subclass__(**kwargs)
 
-        resolved = tuple(pair if isinstance(pair, Transition) else Transition(*pair) for pair in cls.pairs)
+        resolved = _resolve_declarations(cls.pairs, Transition)
         cls._resolved_pairs = resolved
         if not resolved:
             cls._resolved_state_names = ()
@@ -554,8 +573,7 @@ class Markov(Channel, IndependentIntegration):
         for pair in resolved:
             for name in (pair.src, pair.dst):
                 if name not in seen:
-                    if not name.isidentifier():
-                        raise ValueError(f"{cls.__name__}: state name {name!r} is not a valid Python identifier.")
+                    _check_identifier(cls, name, "state")
                     names.append(name)
                     seen.add(name)
         if len(names) < 2:

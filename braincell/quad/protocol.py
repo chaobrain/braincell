@@ -15,10 +15,11 @@
 
 """The integration protocol shared by every BrainCell neuron model.
 
-Defines the state classes solvers consume (:class:`DiffEqState` and its
-grouped variant :class:`DiffEqGroupState`), the :class:`DiffEqModule`
-mixin that declares a module integrable, and the host-scoped factory that
-chooses between the grouped and non-grouped classes.
+Defines the state classes solvers consume — the :class:`DiffEqState`
+marker mixin and its two concrete carriers :class:`DiffEqSingleState`
+and :class:`DiffEqGroupState` — the :class:`DiffEqModule` mixin that
+declares a module integrable, and the host-scoped factory that chooses
+between the grouped and ungrouped classes.
 
 Which class a hidden state gets is a per-host decision:
 :class:`braincell.SingleCompartment` has no spatial axis and uses plain
@@ -38,6 +39,7 @@ from braincell._misc import set_module_as
 
 __all__ = [
     'DiffEqState',
+    'DiffEqSingleState',
     'DiffEqGroupState',
     'DiffEqModule',
     'IndependentIntegration',
@@ -47,13 +49,13 @@ __all__ = [
 ]
 
 
-class DiffEqState(brainstate.HiddenState):
-    """A :mod:`brainstate` state that participates in numerical integration.
+class DiffEqState(brainstate.mixin.Mixin):
+    """Marker mixin for a state that participates in numerical integration.
 
     A :class:`DiffEqState` is the unit of work consumed by every solver in
-    :mod:`braincell.quad`. It extends :class:`brainstate.HiddenState` with
-    two extra slots — ``derivative`` and ``diffusion`` — that the
-    surrounding solver writes during one ODE/SDE step:
+    :mod:`braincell.quad`. It contributes two slots — ``derivative`` and
+    ``diffusion`` — that the surrounding solver writes during one ODE/SDE
+    step:
 
     - ``derivative`` is the right-hand side :math:`f(t, y)` for an ODE
       :math:`\\dot y = f(t, y)`, or the *drift* term for an SDE
@@ -61,16 +63,19 @@ class DiffEqState(brainstate.HiddenState):
     - ``diffusion`` is the SDE noise coefficient :math:`g(t, y)`. It
       stays ``None`` for plain ODE systems.
 
-    Solver step functions (``*_step``) read the current ``value`` of every
-    :class:`DiffEqState` in a :class:`DiffEqModule`, call
-    :meth:`DiffEqModule.compute_derivative` to populate ``derivative``
-    (and optionally ``diffusion``), and then write the integrated result
-    back into ``value``.
+    This class is a :class:`brainstate.mixin.Mixin`, **not** a
+    :class:`brainstate.State`. It carries no storage and cannot be
+    instantiated; ``DiffEqState(value)`` raises :exc:`TypeError`. Mixing
+    it into something that is not a :class:`brainstate.State` yields an
+    object no solver will accept. Use :func:`diffeq_state` to allocate,
+    or name :class:`DiffEqSingleState` / :class:`DiffEqGroupState`
+    explicitly.
 
-    Both setters call :func:`brainstate._state.record_state_value_write`
-    so that any active state-trace stack picks up the assignment — the
-    Runge-Kutta and exponential-Euler drivers rely on this to discover
-    which states actually participate in the integration.
+    Separating the marker from the storage layout is what lets the two
+    concrete classes be siblings. Solver state selection goes through
+    ``isinstance(value, DiffEqState)``
+    (see :func:`braincell.quad._util.split_diffeq_states`), which stays
+    ``True`` for both.
 
     Attributes
     ----------
@@ -84,31 +89,19 @@ class DiffEqState(brainstate.HiddenState):
 
     See Also
     --------
-    DiffEqModule : Container that owns and updates :class:`DiffEqState`
-        instances.
-    IndependentIntegration : Mixin that excludes a submodule's states
-        from the main integrator.
+    DiffEqSingleState : Concrete ungrouped state, used by
+        ``SingleCompartment``.
+    DiffEqGroupState : Concrete grouped state, used by ``Cell``.
+    DiffEqModule : Container that owns and updates the states.
     """
 
     __module__ = 'braincell'
 
-    derivative: brainstate.typing.PyTree
-    diffusion: brainstate.typing.PyTree
-
-    def __init__(self, *args, **kwargs):
-        """
-        Initialize the DiffEqState.
-
-        Parameters
-        ----------
-        *args : Any
-            Variable length argument list to be passed to the parent class constructor.
-        **kwargs : Any
-            Arbitrary keyword arguments to be passed to the parent class constructor.
-        """
-        super().__init__(*args, **kwargs)
-        self._derivative = None
-        self._diffusion = None
+    #: Class-level defaults in place of ``__init__``: a brainstate
+    #: ``Mixin`` must not define one. The property setters below shadow
+    #: these per instance on first write.
+    _derivative = None
+    _diffusion = None
 
     @property
     def derivative(self):
@@ -176,8 +169,37 @@ class DiffEqState(brainstate.HiddenState):
         return super().__pretty_repr_item__(k, v)
 
 
+class DiffEqSingleState(DiffEqState, brainstate.HiddenState):
+    """An integrable hidden state with no trailing state axis.
+
+    This is the state class used by every hidden variable owned by a
+    :class:`braincell.SingleCompartment`, which has no spatial axis: one
+    value per element of ``varshape``, and nothing to group.
+
+    See Also
+    --------
+    DiffEqGroupState : The grouped counterpart used by ``Cell``.
+    diffeq_state : Host-scoped factory that picks between the two.
+
+    Examples
+    --------
+    .. code-block:: python
+
+        >>> import brainunit as u
+        >>> import numpy as np
+        >>> import braincell
+        >>> state = braincell.DiffEqSingleState(np.zeros(4) * u.mV)
+        >>> state.varshape
+        (4,)
+        >>> isinstance(state, braincell.DiffEqState)
+        True
+    """
+
+    __module__ = 'braincell'
+
+
 class DiffEqGroupState(DiffEqState, brainstate.HiddenGroupState):
-    """A :class:`DiffEqState` whose trailing axis indexes independent states.
+    """An integrable hidden state whose trailing axis indexes independent states.
 
     This is the state class used by every hidden variable owned by a
     :class:`braincell.Cell`. A ``Cell`` is a *spatial* model: its runtime
@@ -190,13 +212,6 @@ class DiffEqGroupState(DiffEqState, brainstate.HiddenGroupState):
     eligibility-trace learner treat one array as ``num_state`` separately
     traced hidden units.
 
-    :class:`braincell.SingleCompartment` has no spatial axis, so it keeps
-    the plain :class:`DiffEqState`.
-
-    Because the class derives from :class:`DiffEqState`, every solver in
-    :mod:`braincell.quad` picks it up unchanged: state selection goes
-    through ``isinstance(value, DiffEqState)``, which stays ``True``.
-
     Notes
     -----
     :class:`brainstate.HiddenGroupState` requires ``value.ndim >= 2``.
@@ -206,7 +221,8 @@ class DiffEqGroupState(DiffEqState, brainstate.HiddenGroupState):
 
     See Also
     --------
-    DiffEqState : The non-grouped state used by ``SingleCompartment``.
+    DiffEqSingleState : The ungrouped counterpart used by
+        ``SingleCompartment``.
     diffeq_state : Host-scoped factory that picks between the two.
 
     Examples
@@ -299,15 +315,15 @@ def diffeq_state(value, **kwargs) -> DiffEqState:
     -------
     DiffEqState
         A :class:`DiffEqGroupState` inside :func:`state_grouping`
-        (i.e. within a :class:`braincell.Cell`), otherwise a plain
-        :class:`DiffEqState`.
+        (i.e. within a :class:`braincell.Cell`), otherwise a
+        :class:`DiffEqSingleState`.
 
     See Also
     --------
     state_grouping : Scope that selects the class.
     hidden_state : The non-integrable counterpart.
     """
-    cls = DiffEqGroupState if _STATE_GROUPING.get() else DiffEqState
+    cls = DiffEqGroupState if _STATE_GROUPING.get() else DiffEqSingleState
     return cls(value, **kwargs)
 
 

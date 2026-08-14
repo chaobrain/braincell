@@ -37,6 +37,7 @@ from braincell.quad.protocol import (
     DiffEqGroupState,
     DiffEqModule,
     DiffEqState,
+    DiffEqSingleState,
     IndependentIntegration,
     diffeq_state,
     state_grouping,
@@ -46,14 +47,75 @@ from braincell.quad.protocol import (
 _FLOAT_DTYPE = jnp.asarray(0.0).dtype
 
 
-class DiffEqStateTest(unittest.TestCase):
+class DiffEqStateMixinTest(unittest.TestCase):
+    """``DiffEqState`` is the integrability marker, not a state class."""
+
+    def test_the_marker_is_not_instantiable(self):
+        with self.assertRaises(TypeError):
+            DiffEqState(jnp.zeros(3) * u.mV)
+
+    def test_the_marker_is_a_mixin_and_not_a_state(self):
+        self.assertTrue(issubclass(DiffEqState, brainstate.mixin.Mixin))
+        self.assertFalse(issubclass(DiffEqState, brainstate.State))
+
+    def test_both_concrete_classes_are_states_carrying_the_marker(self):
+        for cls in (DiffEqSingleState, DiffEqGroupState):
+            with self.subTest(cls=cls.__name__):
+                self.assertTrue(issubclass(cls, DiffEqState))
+                self.assertTrue(issubclass(cls, brainstate.State))
+
+    def test_the_concrete_classes_are_siblings_not_a_chain(self):
+        # The old hierarchy had DiffEqGroupState inherit DiffEqState, which
+        # placed the ungrouped class ahead of HiddenGroupState in the MRO
+        # so any method added to it would silently shadow the grouped one.
+        self.assertFalse(issubclass(DiffEqGroupState, DiffEqSingleState))
+        self.assertFalse(issubclass(DiffEqSingleState, DiffEqGroupState))
+
+    def test_the_marker_precedes_the_storage_class_in_both_mros(self):
+        for cls, storage in (
+            (DiffEqSingleState, "HiddenState"),
+            (DiffEqGroupState, "HiddenGroupState"),
+        ):
+            with self.subTest(cls=cls.__name__):
+                names = [c.__name__ for c in cls.__mro__]
+                self.assertLess(names.index("DiffEqState"), names.index(storage))
+
+    def test_derivative_defaults_do_not_leak_between_instances(self):
+        # ``_derivative``/``_diffusion`` are class attributes now that the
+        # mixin has no ``__init__``, so the setters must shadow them per
+        # instance rather than mutate the shared class attribute.
+        a = DiffEqSingleState(jnp.zeros(3) * u.mV)
+        b = DiffEqSingleState(jnp.zeros(3) * u.mV)
+        a.derivative = jnp.ones(3) * (u.mV / u.ms)
+        a.diffusion = jnp.ones(3) * (u.mV / u.ms)
+        self.assertIsNone(b.derivative)
+        self.assertIsNone(b.diffusion)
+        self.assertIsNone(DiffEqState._derivative)
+        self.assertIsNone(DiffEqState._diffusion)
+
+    def test_setters_still_record_a_state_write(self):
+        # The exponential-Euler and Runge-Kutta drivers discover which
+        # states participate by watching this trace.
+        st = DiffEqSingleState(jnp.zeros(3) * u.mV)
+        with brainstate.StateTraceStack() as trace:
+            st.derivative = jnp.ones(3) * (u.mV / u.ms)
+        self.assertTrue(any(s is st for s in trace.get_write_states()))
+
+    def test_repr_hides_derivative_until_it_is_written(self):
+        st = DiffEqSingleState(jnp.zeros(3) * u.mV)
+        self.assertNotIn("derivative", repr(st))
+        st.derivative = jnp.ones(3) * (u.mV / u.ms)
+        self.assertIn("derivative", repr(st))
+
+
+class DiffEqSingleStateTest(unittest.TestCase):
     def test_initial_derivative_and_diffusion_are_none(self):
-        st = DiffEqState(jnp.zeros(3))
+        st = DiffEqSingleState(jnp.zeros(3))
         self.assertIsNone(st.derivative)
         self.assertIsNone(st.diffusion)
 
     def test_set_derivative_and_diffusion(self):
-        st = DiffEqState(jnp.zeros(3))
+        st = DiffEqSingleState(jnp.zeros(3))
         d = jnp.ones(3)
         st.derivative = d
         st.diffusion = 2 * d
@@ -62,7 +124,7 @@ class DiffEqStateTest(unittest.TestCase):
 
     def test_state_value_roundtrip(self):
         v = jnp.arange(4, dtype=_FLOAT_DTYPE) * u.mV
-        st = DiffEqState(v)
+        st = DiffEqSingleState(v)
         np.testing.assert_array_equal(st.value.to_decimal(u.mV), np.arange(4))
 
 
@@ -142,8 +204,7 @@ class StateFactoryTest(unittest.TestCase):
     """``state_grouping`` scopes which hidden-state class gets allocated."""
 
     def test_default_scope_is_not_grouped(self):
-        self.assertIsInstance(diffeq_state(jnp.zeros(3) * u.mV), DiffEqState)
-        self.assertNotIsInstance(diffeq_state(jnp.zeros(3) * u.mV), DiffEqGroupState)
+        self.assertIsInstance(diffeq_state(jnp.zeros(3) * u.mV), DiffEqSingleState)
         self.assertNotIsInstance(hidden_state(jnp.zeros(3) * u.mV), brainstate.HiddenGroupState)
 
     def test_grouped_scope_selects_the_group_classes(self):
@@ -158,16 +219,15 @@ class StateFactoryTest(unittest.TestCase):
         with state_grouping(True):
             self.assertIsInstance(diffeq_state(jnp.zeros((1, 3)) * u.mV), DiffEqGroupState)
             with state_grouping(False):
-                inner = diffeq_state(jnp.zeros(3) * u.mV)
-                self.assertNotIsInstance(inner, DiffEqGroupState)
+                self.assertIsInstance(diffeq_state(jnp.zeros(3) * u.mV), DiffEqSingleState)
             self.assertIsInstance(diffeq_state(jnp.zeros((1, 3)) * u.mV), DiffEqGroupState)
-        self.assertNotIsInstance(diffeq_state(jnp.zeros(3) * u.mV), DiffEqGroupState)
+        self.assertIsInstance(diffeq_state(jnp.zeros(3) * u.mV), DiffEqSingleState)
 
     def test_scope_is_restored_after_an_exception(self):
         with self.assertRaises(RuntimeError):
             with state_grouping(True):
                 raise RuntimeError("boom")
-        self.assertNotIsInstance(diffeq_state(jnp.zeros(3) * u.mV), DiffEqGroupState)
+        self.assertIsInstance(diffeq_state(jnp.zeros(3) * u.mV), DiffEqSingleState)
 
     def test_scope_does_not_leak_across_threads(self):
         # A contextvars default is per-thread, unlike a bare module global.
@@ -214,7 +274,7 @@ class IndependentIntegrationTest(unittest.TestCase):
             def __init__(self):
                 IndependentIntegration.__init__(self, solver)
                 brainstate.nn.Module.__init__(self)
-                self.y = DiffEqState(jnp.ones(2, dtype=_FLOAT_DTYPE) * u.mV)
+                self.y = DiffEqSingleState(jnp.ones(2, dtype=_FLOAT_DTYPE) * u.mV)
 
             def compute_derivative(self, *args, **kwargs):
                 self.y.derivative = -self.y.value / (5.0 * u.ms)

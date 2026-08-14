@@ -46,7 +46,7 @@ from braincell.channel import (
     Na_HH1952,
 )
 from braincell.ion import PotassiumFixed, SodiumFixed
-from braincell import DiffEqState
+from braincell import DiffEqSingleState, DiffEqState
 from braincell.quad import rk2_step, rk4_step
 
 
@@ -692,7 +692,7 @@ class SingleCompartmentHiddenStatesAreNotGroupedTest(unittest.TestCase):
     def test_voltage_is_a_plain_diffeq_state(self) -> None:
         neuron = self._neuron()
         neuron.init_state()
-        self.assertIs(type(neuron.V), DiffEqState)
+        self.assertIs(type(neuron.V), DiffEqSingleState)
 
     def test_a_preceding_cell_does_not_leak_its_grouped_scope(self) -> None:
         # A Network may hold both model types; SingleCompartment sets the
@@ -702,7 +702,7 @@ class SingleCompartmentHiddenStatesAreNotGroupedTest(unittest.TestCase):
             neuron = self._neuron()
             neuron.init_state()
         self._assert_none_grouped(neuron)
-        self.assertIs(type(neuron.V), DiffEqState)
+        self.assertIs(type(neuron.V), DiffEqSingleState)
 
 
 if __name__ == "__main__":

@@ -14,7 +14,7 @@ from braincell import Branch, CVPerBranch, Cell, Channel, CurrentClamp, Ion, Ion
 from braincell._multi_compartment import cell as cell_module
 from braincell.filter import AllRegion, RootLocation
 from braincell.mech import StateProbe
-from braincell.quad import DiffEqState, get_integrator
+from braincell.quad import DiffEqSingleState, DiffEqState, get_integrator
 
 
 def _soma_tree() -> Morphology:
@@ -561,7 +561,7 @@ class CellIonChannelUpdateOrderTest(unittest.TestCase):
         class _Ion(Ion):
             def __init__(self):
                 super().__init__(size=1, name=None)
-                self.Ci = DiffEqState(jnp.asarray([1.0]))
+                self.Ci = DiffEqSingleState(jnp.asarray([1.0]))
                 self.Co = jnp.asarray([2.0])
                 self.valence = 1
 
@@ -578,7 +578,7 @@ class CellIonChannelUpdateOrderTest(unittest.TestCase):
 
             def __init__(self):
                 super().__init__(size=1, name=None)
-                self.x = DiffEqState(jnp.asarray([1.0]))
+                self.x = DiffEqSingleState(jnp.asarray([1.0]))
 
             def compute_derivative(self, V, ion):
                 calls.append("channel")
@@ -604,7 +604,7 @@ class CellIonChannelUpdateOrderTest(unittest.TestCase):
         class _Ion(Ion):
             def __init__(self):
                 super().__init__(size=1, name=None)
-                self.Ci = DiffEqState(jnp.asarray([1.0]))
+                self.Ci = DiffEqSingleState(jnp.asarray([1.0]))
                 self.Co = jnp.asarray([2.0])
                 self.valence = 1
 
@@ -620,7 +620,7 @@ class CellIonChannelUpdateOrderTest(unittest.TestCase):
 
             def __init__(self):
                 super().__init__(size=1, name=None)
-                self.x = DiffEqState(jnp.asarray([1.0]))
+                self.x = DiffEqSingleState(jnp.asarray([1.0]))
 
             def pre_integral(self, V, *ions):
                 channel_args.append(("pre", ions))
@@ -894,7 +894,7 @@ class CellPopulationWideningIsNumericallyNeutralTest(unittest.TestCase):
                 values = self._trace(1, on_init=record)
             else:
                 saved = (cell_module.DiffEqGroupState, cell_module.state_grouping)
-                cell_module.DiffEqGroupState = DiffEqState
+                cell_module.DiffEqGroupState = DiffEqSingleState
                 cell_module.state_grouping = _ungrouped
                 try:
                     values = self._trace(1, on_init=record)

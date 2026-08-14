@@ -28,7 +28,7 @@ import numpy as np
 
 from braincell import (
     DiffEqModule,
-    DiffEqState,
+    DiffEqSingleState,
     IndependentIntegration,
 )
 
@@ -49,7 +49,7 @@ class _LinearDecay(brainstate.nn.Module, DiffEqModule):
     def __init__(self, shape=(2,)):
         super().__init__()
         self.tau = 10.0 * u.ms
-        self.x = DiffEqState(jnp.ones(shape, dtype=_FLOAT_DTYPE) * u.mV)
+        self.x = DiffEqSingleState(jnp.ones(shape, dtype=_FLOAT_DTYPE) * u.mV)
         # A non-DiffEqState should be ignored by the integrator.
         self.aux = brainstate.ShortTermState(jnp.zeros(shape, dtype=_FLOAT_DTYPE))
         self.pre_calls = 0
@@ -69,7 +69,7 @@ class _IndepSub(brainstate.nn.Module, DiffEqModule, IndependentIntegration):
     def __init__(self):
         IndependentIntegration.__init__(self, "euler")
         brainstate.nn.Module.__init__(self)
-        self.y = DiffEqState(jnp.ones(2, dtype=_FLOAT_DTYPE) * u.mV)
+        self.y = DiffEqSingleState(jnp.ones(2, dtype=_FLOAT_DTYPE) * u.mV)
 
     def compute_derivative(self, *args, **kwargs):
         self.y.derivative = -self.y.value / (5.0 * u.ms)
@@ -78,7 +78,7 @@ class _IndepSub(brainstate.nn.Module, DiffEqModule, IndependentIntegration):
 class _DependentChild(brainstate.nn.Module, DiffEqModule):
     def __init__(self):
         super().__init__()
-        self.z = DiffEqState(jnp.ones(2, dtype=_FLOAT_DTYPE) * u.mV)
+        self.z = DiffEqSingleState(jnp.ones(2, dtype=_FLOAT_DTYPE) * u.mV)
 
     def compute_derivative(self, *args, **kwargs):
         self.z.derivative = -self.z.value / (7.0 * u.ms)
@@ -93,7 +93,7 @@ class _IndepSubWithDependentChild(_IndepSub):
 class _OuterWithIndep(brainstate.nn.Module, DiffEqModule):
     def __init__(self, sub=None):
         super().__init__()
-        self.x = DiffEqState(jnp.ones(2, dtype=_FLOAT_DTYPE) * u.mV)
+        self.x = DiffEqSingleState(jnp.ones(2, dtype=_FLOAT_DTYPE) * u.mV)
         self.sub = _IndepSub() if sub is None else sub
 
     def compute_derivative(self, *args, **kwargs):

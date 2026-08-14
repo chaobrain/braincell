@@ -20,6 +20,7 @@ from braincell._single_compartment import (
 from braincell.quad.protocol import (
     DiffEqGroupState,
     DiffEqModule,
+    DiffEqSingleState,
     DiffEqState,
     IndependentIntegration,
     diffeq_state,
@@ -85,6 +86,7 @@ __all__ = [
     "__version__",
     "__version_info__",
     "DiffEqState",
+    "DiffEqSingleState",
     "DiffEqGroupState",
     "DiffEqModule",
     "IndependentIntegration",

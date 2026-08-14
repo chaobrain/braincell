@@ -1,6 +1,66 @@
 # Release Notes
 
 
+## Unreleased
+
+Hardening of the declarative channel template layer that
+`braincell.channel` is built on. The catalogue's numeric output is
+unchanged: every one of these changes either adds a check that shipped
+channels already pass, or moves code they already shared.
+
+### New Features
+
+- **`OhmicHH`** — an `HH` subclass supplying the ohmic current
+  `g_max * conductance_factor(...) * (E - V)`. 63 channels that restated
+  it verbatim now inherit it; a channel driven by a fixed `self.E`
+  overrides `reversal_potential()` instead. GHK-flux and
+  permeability-scaled channels keep inheriting `HH` directly.
+- **`Gate.time_unit`** — the unit a bare `f_*_tau` / `f_*_alpha` /
+  `f_*_beta` return is read in, `u.ms` by default. Rate methods may now
+  return properly united quantities instead.
+- **`Gate.clip` / `Markov.clip_states`** — explicit, per-gate control of
+  whether a state is projected into `[0, 1]` at the point of use.
+  `Gate.clip` is off by default (NEURON does not clip HH gates);
+  `clip_states` is on, preserving existing `Markov` behaviour.
+- **String references in gate metadata** — `Gate(q10="q10")` resolves
+  the named attribute off the instance, replacing 75
+  `lambda self: self.q10` closures that were unpicklable and opaque to
+  tooling. The callable form still works.
+- `Gate`, `Transition`, `HH`, `OhmicHH`, `Markov` and `ghk_flux` are
+  exported from `braincell.channel`; they previously had to be imported
+  from the private `braincell.channel._base`.
+
+### Changes & Improvements
+
+- **Definition-time validation.** `HH` and `Markov` resolve and check
+  `gates` / `pairs` in `__init_subclass__`. A mistyped gate name, a
+  duplicate, a gate defining neither or both rate forms, a transition
+  naming a missing rate method, a `dependent_state` outside the state
+  set, and a Markov class with fewer than two states are now errors when
+  the class is created rather than at `reset_state()` or not at all.
+- **Unit checking on the derivative.** Gate and transition rates are
+  dimension-dispatched, and every state derivative is asserted to be an
+  inverse time before it reaches the integrator. A dimensioned `phi`
+  used to yield a `mV / ms` derivative silently.
+- HH gate methods receive only the ion arguments their signature
+  declares, matching what `Markov` already did. This removed 178 lines
+  of forwarding boilerplate from `potassium_sodium.py`.
+
+### Bug Fixes
+
+- `init_state()` refused nothing: a gate or Markov state whose name
+  matched a constructor parameter silently replaced that parameter with
+  a `DiffEqState`. It now raises, naming the collision.
+
+### Deprecations
+
+- `Markov` subclasses that do not declare `dependent_state` emit a
+  `DeprecationWarning`. The implicit fallback — "the last state
+  discovered while scanning `pairs`" — makes a reordering of `pairs`
+  silently change which state is eliminated, and will be removed. All
+  shipped channels now declare it explicitly.
+
+
 ## Version 0.1.0
 
 This is a landmark release. BrainCell evolves from single-compartment

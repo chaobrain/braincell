@@ -36,7 +36,7 @@ dynamic = [ "version" ]
 # TODO.md section 8 specifies "recent" for both, and braincell must not
 # constrain which JAX backend build (CPU / CUDA / TPU) a user installs.
 dependencies = [
-  "brainevent>=0.0.7",
+  "brainevent>=0.2.1",
   "brainpy>=2.7.5",
   "brainstate>=0.2.9",
   "braintools>=0.1",

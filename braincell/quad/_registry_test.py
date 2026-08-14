@@ -321,8 +321,11 @@ class RegistryMetadataTest(unittest.TestCase):
                 entry = registry.entry(name)
                 self.assertEqual(entry.category, category)
                 self.assertEqual(entry.order, order)
-                # The module field should point at a braincell.quad submodule.
-                self.assertTrue(entry.module.startswith("braincell.quad."))
+                # ``module`` is the *public* path the integrator is exported
+                # from, not the private submodule it happens to be defined
+                # in — ``register_integrator`` is applied outside
+                # ``set_module_as`` precisely so this records the former.
+                self.assertEqual(entry.module, "braincell.quad")
 
     def test_by_category_groups(self):
         registry = quad.get_registry()

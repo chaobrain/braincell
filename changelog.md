@@ -3,12 +3,38 @@
 
 ## Unreleased
 
-Hardening of the declarative channel template layer that
-`braincell.channel` is built on. The catalogue's numeric output is
-unchanged: every one of these changes either adds a check that shipped
-channels already pass, or moves code they already shared.
+### Breaking Changes
+
+- **`Cell` now always carries a population axis.** `pop_size` defaults to
+  `1` and an explicitly empty `pop_size=()` raises `ValueError`. Runtime
+  state is therefore always at least two-dimensional: `Cell.V` is shaped
+  `pop_size + (n_cv,)` and point-space arrays `pop_size + (n_point,)`.
+  Code that relied on the old rank-0 default sees one extra leading axis
+  of length 1; `reshape(-1)` or indexing `[0]` recovers the previous view.
 
 ### New Features
+
+- **`braincell.MultiCompartment` is a new alias of `braincell.Cell`.** The
+  same class object under a name that spells out what it models, which
+  reads better next to `braincell.SingleCompartment`. Nothing about `Cell`
+  changes; both names remain supported.
+- **Hidden-state classes now match their host model.** Every hidden state
+  owned by a `Cell` is a `brainstate.HiddenGroupState` — `Cell.V` is the
+  new `braincell.DiffEqGroupState` — so the trailing compartment/point
+  axis is exposed as a group of independently traced hidden states, which
+  is what eligibility-trace learning requires. `SingleCompartment` has no
+  spatial axis and keeps the plain `brainstate.HiddenState`.
+  `DiffEqGroupState` derives from `DiffEqState`, so every solver selects
+  it unchanged.
+- **`diffeq_state` / `hidden_state` / `state_grouping`** are exported for
+  custom mechanisms. Channel, ion, and synapse code is shared by both host
+  models, so writing `diffeq_state(...)` instead of `DiffEqState(...)` in a
+  custom `init_state` lets the right class be chosen per host.
+
+The remaining entries in this section harden the declarative channel
+template layer that `braincell.channel` is built on. The catalogue's
+numeric output is unchanged: each either adds a check that shipped
+channels already pass, or moves code they already shared.
 
 - **`OhmicHH`** — an `HH` subclass supplying the ohmic current
   `g_max * conductance_factor(...) * (E - V)`. 63 channels that restated
@@ -48,6 +74,28 @@ channels already pass, or moves code they already shared.
 
 ### Bug Fixes
 
+- `Cell.vis_cv(...)` / `Cell.vis_node(...)` and node-local runtime
+  inspection (`cell.runtime_nodes[i].ions[...]`) rejected any field with a
+  population axis, so they failed for every `pop_size` beyond the old
+  rank-0 default. They now collapse a single-member population and
+  otherwise raise naming the field and `pop_size`.
+- Ion baseline broadcasting in `_sync_runtime_ion` ignored the population
+  axis, disagreeing with the sibling code path.
+- Dense channel construction dropped the population axis when a channel's
+  parameters were all scalars, producing a rank-1 gate state that failed
+  as a `jit`/`scan` carry mismatch.
+- A kinetic-ion species declared with a scalar initializer (for example
+  `CdpCR_MA2020_GrC.pumpca`) started rank-0 and was silently reshaped
+  mid-simulation by the conservation write-back; it is now allocated at
+  full shape.
+- `set_module_as` assigned the public module path to `__name__` instead of
+  `__module__`, so every function it decorated reported itself as being
+  called `"braincell.quad"` while still advertising the private module it
+  is defined in. Both are now correct: `braincell.quad.rk4_step.__name__`
+  is `'rk4_step'` and its `__module__` is `'braincell.quad'`. This also
+  changes `IntegratorEntry.module` from the private defining module to the
+  public export path, and makes `dhs_voltage_step` consistent with the
+  other integrators.
 - `init_state()` refused nothing: a gate or Markov state whose name
   matched a constructor parameter silently replaced that parameter with
   a `DiffEqState`. It now raises, naming the collision.

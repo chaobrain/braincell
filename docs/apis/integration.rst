@@ -21,8 +21,34 @@ Defining Coupled ODEs
    :template: classtemplate.rst
 
     DiffEqState
+    DiffEqGroupState
     DiffEqModule
     IndependentIntegration
+
+
+Hidden-State Classes by Host
+----------------------------
+
+A :class:`~braincell.SingleCompartment` has no spatial axis, so its hidden
+states are plain :class:`DiffEqState` instances. A :class:`~braincell.Cell`
+is spatial — the trailing axis of every hidden state enumerates
+compartments or points — so its states are :class:`DiffEqGroupState`,
+which is a :class:`brainstate.HiddenGroupState`.
+
+Channel, ion, and synapse code is shared by both hosts, so the class
+cannot be chosen at the creation site. Write ``diffeq_state(...)`` instead
+of ``DiffEqState(...)`` in a custom mechanism's ``init_state`` and the
+right class is selected for whichever host owns it. ``state_grouping`` is
+the host-side scope that makes that choice; only a model that is itself a
+host needs to call it.
+
+.. autosummary::
+   :toctree: generated/
+   :nosignatures:
+
+    diffeq_state
+    hidden_state
+    state_grouping
 
 
 Integrator Registry

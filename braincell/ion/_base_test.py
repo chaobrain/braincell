@@ -457,5 +457,138 @@ class IonTemplateTest(unittest.TestCase):
             ion.compute_derivative(V)
 
 
+class ConserveWritebackStateClassTest(unittest.TestCase):
+    """``_Conserve.writeback`` must not allocate a wrongly-classed state.
+
+    ``writeback`` *does* run every simulation step, outside the
+    :func:`braincell.state_grouping` scope the host sets around
+    ``init_state``. Its allocation branch is dead in normal flow because
+    ``_Species.init`` ran first — these tests pin both halves of that, so
+    a regression shows up as a failure rather than as a silently
+    non-grouped state inside a ``Cell``.
+
+    See ``docs/specs/2026-08-13-cell-hidden-group-state.md``.
+    """
+
+    @staticmethod
+    def _kinetic_cell():
+        import braincell
+        from braincell import Branch, CVPerBranch, Cell, Morphology
+        from braincell.filter import AllRegion
+
+        soma = Branch.from_lengths(lengths=[20.0] * u.um, radii=[10.0, 10.0] * u.um, type="soma")
+        tree = Morphology.from_root(soma, name="soma")
+        cell = Cell(tree, cv_policy=CVPerBranch(cv_per_branch=2))
+        # CdpCR_MA2020_GrC declares algebraic species alongside diffeq ones,
+        # so it is the model that exercises the writeback path.
+        cell.paint(AllRegion(), braincell.mech.Ion("CdpCR_MA2020_GrC"))
+        cell.init_state()
+        return cell
+
+    def test_writeback_runs_mid_step_but_allocates_nothing(self) -> None:
+        from braincell.ion import _base as ionbase
+
+        cell = self._kinetic_cell()
+        calls = {"writeback": 0, "allocated": 0}
+        original_writeback = ionbase._Conserve.writeback
+        original_algebraic = ionbase._Species.algebraic_state
+
+        def counting_writeback(self, V=None):
+            calls["writeback"] += 1
+            return original_writeback(self, V)
+
+        def counting_algebraic(self, value):
+            calls["allocated"] += 1
+            return original_algebraic(self, value)
+
+        # Identity of every algebraic state before the step, so a
+        # reallocation is visible as a swapped object and not only as an
+        # extra ``algebraic_state`` call.
+        before = self._algebraic_states(cell)
+        self.assertGreater(len(before), 0, "expected at least one algebraic species")
+
+        ionbase._Conserve.writeback = counting_writeback
+        ionbase._Species.algebraic_state = counting_algebraic
+        try:
+            with brainstate.environ.context(t=0.0 * u.ms, dt=0.01 * u.ms):
+                cell.update()
+        finally:
+            ionbase._Conserve.writeback = original_writeback
+            ionbase._Species.algebraic_state = original_algebraic
+
+        self.assertGreater(calls["writeback"], 0, "writeback should run during a step")
+        self.assertEqual(calls["allocated"], 0, "writeback must not allocate mid-run")
+
+        after = self._algebraic_states(cell)
+        self.assertEqual(set(before), set(after))
+        for path, state in after.items():
+            with self.subTest(state=path):
+                self.assertIs(state, before[path], "writeback replaced the state object")
+                self.assertIsInstance(state, brainstate.HiddenGroupState)
+
+    @staticmethod
+    def _algebraic_states(cell) -> dict:
+        """Path → state for every algebraic species state in the cell."""
+        from braincell.ion import _base as ionbase
+
+        names = set()
+        for node in cell.nodes().values():
+            if isinstance(node, ionbase.KineticIon):
+                names.update(ionbase._Specs.for_type(type(node)).algebraic_names)
+        return {
+            ".".join(map(str, path)): state
+            for path, state in brainstate.graph.states(cell).items()
+            if path and str(path[-1]) in names
+        }
+
+    def test_late_allocation_still_matches_its_siblings(self) -> None:
+        # Force the dead branch: drop the algebraic species back to a bare
+        # value so the next writeback has to re-allocate it. writeback runs
+        # outside any state_grouping scope, so an ambient-scope allocation
+        # would hand back a plain HiddenState and break the Cell invariant.
+        from braincell.ion import _base as ionbase
+
+        cell = self._kinetic_cell()
+        ion = cell.get_ion("CdpCR_MA2020_GrC")
+        specs = ionbase._Specs.for_type(type(ion))
+        (name,) = specs.algebraic_names
+
+        state = getattr(ion, name)
+        self.assertIsInstance(state, brainstate.HiddenGroupState)
+        setattr(ion, name, state.value)
+        self.assertNotIsInstance(getattr(ion, name), brainstate.State)
+
+        species = ionbase._Species(ion, specs)
+        ionbase._Conserve(ion, specs, species).writeback(cell.V.value)
+
+        restored = getattr(ion, name)
+        self.assertIsInstance(restored, brainstate.HiddenGroupState)
+        self.assertEqual(restored.value.shape, state.value.shape)
+
+    def test_late_allocation_stays_plain_when_its_siblings_are_plain(self) -> None:
+        # The mirror of the test above. A sibling-derived class has to work
+        # in both directions, or "derive it from a sibling" is really just
+        # "always group", which would be wrong outside a Cell.
+        from braincell.ion import _base as ionbase
+
+        ion = _SimpleKineticIon(size=3)
+        ion.init_state(jnp.ones(3) * -65.0 * u.mV)
+        specs = ionbase._Specs.for_type(type(ion))
+        (name,) = specs.algebraic_names
+
+        state = getattr(ion, name)
+        self.assertIsInstance(state, brainstate.HiddenState)
+        self.assertNotIsInstance(state, brainstate.HiddenGroupState)
+        setattr(ion, name, state.value)
+
+        species = ionbase._Species(ion, specs)
+        ionbase._Conserve(ion, specs, species).writeback(jnp.ones(3) * -65.0 * u.mV)
+
+        restored = getattr(ion, name)
+        self.assertIsInstance(restored, brainstate.HiddenState)
+        self.assertNotIsInstance(restored, brainstate.HiddenGroupState)
+        self.assertEqual(restored.value.shape, state.value.shape)
+
+
 if __name__ == "__main__":
     unittest.main()

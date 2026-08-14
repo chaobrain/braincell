@@ -332,10 +332,10 @@ class DhsEndpointClampTest(unittest.TestCase):
         cell.place(RootLocation(x=0.0), CurrentClamp(durations=1.0 * u.ms, amplitudes=1.0 * u.nA))
         cell.init_state()
 
-        before = float(cell.V.value[0].to_decimal(u.mV))
+        before = float(cell.V.value[0, 0].to_decimal(u.mV))
         with brainstate.environ.context(t=0.0 * u.ms, dt=0.05 * u.ms):
             dhs_voltage_step(cell, 0.0 * u.ms, 0.05 * u.ms)
-        after = float(cell.V.value[0].to_decimal(u.mV))
+        after = float(cell.V.value[0, 0].to_decimal(u.mV))
 
         self.assertGreater(after, before)
 
@@ -367,16 +367,24 @@ class DhsMidpointClampPopulationTest(unittest.TestCase):
         return cell
 
     def test_midpoint_clamp_is_not_double_counted_with_population_axis(self):
-        scalar = self._build_clamped_cell()
-        population = self._build_clamped_cell(pop_size=(1,))
+        # A Cell always carries a population axis, so the invariant is that
+        # widening it changes nothing: a homogeneous population of N members
+        # must reproduce the single-member trace N times. A midpoint clamp
+        # applied once per population member instead of once per CV would
+        # break this.
+        single = self._build_clamped_cell()
+        population = self._build_clamped_cell(pop_size=(3,))
+        self.assertEqual(single.pop_size, (1,))
 
         with brainstate.environ.context(t=0.0 * u.ms, dt=0.025 * u.ms):
-            dhs_voltage_step(scalar, 0.0 * u.ms, 0.025 * u.ms)
+            dhs_voltage_step(single, 0.0 * u.ms, 0.025 * u.ms)
             dhs_voltage_step(population, 0.0 * u.ms, 0.025 * u.ms)
 
-        scalar_v = np.asarray(scalar.V.value.to_decimal(u.mV), dtype=float)
+        single_v = np.asarray(single.V.value.to_decimal(u.mV), dtype=float)
         population_v = np.asarray(population.V.value.to_decimal(u.mV), dtype=float)
-        np.testing.assert_allclose(population_v.reshape(-1), scalar_v.reshape(-1), rtol=1e-12, atol=1e-12)
+        self.assertEqual(population_v.shape, (3,) + single_v.shape[1:])
+        for member in range(3):
+            np.testing.assert_allclose(population_v[member], single_v[0], rtol=1e-12, atol=1e-12)
 
 
 class DhsMultistepClampTest(unittest.TestCase):
@@ -397,10 +405,10 @@ class DhsMultistepClampTest(unittest.TestCase):
         )
         cell.init_state()
 
-        before = float(cell.V.value[0].to_decimal(u.mV))
+        before = float(cell.V.value[0, 0].to_decimal(u.mV))
         with brainstate.environ.context(t=0.0 * u.ms, dt=0.05 * u.ms):
             dhs_voltage_step(cell, 0.0 * u.ms, 0.05 * u.ms)
-        after = float(cell.V.value[0].to_decimal(u.mV))
+        after = float(cell.V.value[0, 0].to_decimal(u.mV))
 
         self.assertGreater(after, before)
 

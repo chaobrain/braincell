@@ -39,13 +39,20 @@ This working tree currently has the Cerebellum/PC comparison work in progress:
   ordering for ion/channel updates; `"integration"` keeps the previous
   BrainCell integration-oriented ordering.
 - [x] **Homogeneous multi-compartment `Cell` populations now support
-  multi-dimensional `pop_size`.** `Cell(..., pop_size=(...))` now
-  expands runtime state to `pop_size + (n_cv,)`, point-space runtime
-  arrays to `pop_size + (n_point,)`, and supports population-specific
+  multi-dimensional `pop_size`.** `Cell(..., pop_size=(...))` expands
+  runtime state to `pop_size + (n_cv,)`, point-space runtime arrays to
+  `pop_size + (n_point,)`, and supports population-specific
   `CurrentClamp(...)` amplitudes such as `(2,)` or `(2, 2)`-shaped
   current grids. Regression coverage includes `(2,)` and `(2, 2)`
-  populations, plus an example notebook at
-  `examples/multi_compartment/pop_size_demo.ipynb`.
+  populations.
+- [x] **The population axis is mandatory.** `pop_size` defaults to `1`
+  and an explicitly empty `pop_size=()` is rejected, so every `Cell`
+  hidden state is at least two-dimensional and its trailing axis always
+  enumerates compartments or points. That invariant is what lets `Cell`
+  states be `brainstate.HiddenGroupState` (`Cell.V` is a
+  `braincell.DiffEqGroupState`) while `SingleCompartment`, which has no
+  spatial axis, keeps the plain `brainstate.HiddenState`. See
+  `docs/specs/2026-08-13-cell-hidden-group-state.md`.
 - [x] **The channel template layer validates at class-definition time.**
   `HH` and `Markov` resolve and check `gates` / `pairs` in
   `__init_subclass__`, so a mistyped gate name, a duplicate, a gate

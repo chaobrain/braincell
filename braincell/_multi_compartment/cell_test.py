@@ -8,20 +8,26 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
+import braincell
 import braincell.mech as mech
 from braincell import Branch, CVPerBranch, Cell, Channel, CurrentClamp, Ion, IonChannel, Morphology
+from braincell._multi_compartment import cell as cell_module
 from braincell.filter import AllRegion, RootLocation
 from braincell.mech import StateProbe
 from braincell.quad import DiffEqState, get_integrator
 
 
-def _simple_cell() -> Cell:
+def _soma_tree() -> Morphology:
     soma = Branch.from_lengths(
         lengths=[20.0] * u.um,
         radii=[10.0, 10.0] * u.um,
         type="soma",
     )
-    return Cell(Morphology.from_root(soma, name="soma"), cv_policy=CVPerBranch())
+    return Morphology.from_root(soma, name="soma")
+
+
+def _simple_cell() -> Cell:
+    return Cell(_soma_tree(), cv_policy=CVPerBranch())
 
 
 def _cell_with_probe() -> Cell:
@@ -331,8 +337,14 @@ class TestCellLifecycle(unittest.TestCase):
         cell = _simple_cell()
         cell.V_init = -60.0 * u.mV
         cell.init_state()
-        self.assertEqual(cell.V.value.shape, (cell.n_cv,))
-        self.assertTrue(u.math.allclose(cell.V.value, jnp.full((cell.n_cv,), -60.0) * u.mV, atol=1e-9 * u.mV))
+        self.assertEqual(cell.V.value.shape, cell.pop_size + (cell.n_cv,))
+        self.assertTrue(
+            u.math.allclose(
+                cell.V.value,
+                jnp.full(cell.pop_size + (cell.n_cv,), -60.0) * u.mV,
+                atol=1e-9 * u.mV,
+            )
+        )
 
     def test_run_supports_scalar_v_init(self):
         cell = _cell_with_probe()
@@ -656,6 +668,355 @@ class CellDoesNotAllocatePlaceholderIonsEagerlyTest(unittest.TestCase):
             side_effect=AssertionError("placeholder must not be called at __init__"),
         ):
             _ = Cell(tree)
+
+
+class CellPopulationAxisIsMandatoryTest(unittest.TestCase):
+    """``Cell`` always carries a population axis, so state is rank >= 2."""
+
+    def test_default_pop_size_is_one(self) -> None:
+        self.assertEqual(_simple_cell().pop_size, (1,))
+
+    def test_none_pop_size_means_unspecified_and_becomes_one(self) -> None:
+        cell = Cell(_soma_tree(), cv_policy=CVPerBranch(), pop_size=None)
+        self.assertEqual(cell.pop_size, (1,))
+
+    def test_scalar_and_tuple_pop_size_agree(self) -> None:
+        self.assertEqual(Cell(_soma_tree(), cv_policy=CVPerBranch(), pop_size=4).pop_size, (4,))
+        self.assertEqual(Cell(_soma_tree(), cv_policy=CVPerBranch(), pop_size=(2, 3)).pop_size, (2, 3))
+
+    def test_empty_pop_size_is_rejected(self) -> None:
+        for empty in ((), []):
+            with self.subTest(pop_size=empty):
+                with self.assertRaisesRegex(ValueError, "must not be empty"):
+                    Cell(_soma_tree(), cv_policy=CVPerBranch(), pop_size=empty)
+
+    def test_voltage_carries_the_population_axis(self) -> None:
+        for pop_size, expected in ((1, (1,)), (4, (4,)), ((2, 3), (2, 3))):
+            with self.subTest(pop_size=pop_size):
+                cell = Cell(_soma_tree(), cv_policy=CVPerBranch(), pop_size=pop_size)
+                cell.init_state()
+                self.assertEqual(tuple(cell.V.value.shape), expected + (cell.n_cv,))
+
+
+def _hh_cell(pop_size, *, calcium: bool = True) -> Cell:
+    """A Cell exercising gate channels, a kinetic ion, and a placed synapse.
+
+    ``calcium=False`` drops the bare ``CalciumDetailed`` ion, which has no
+    current source and therefore cannot be stepped; it is only there so the
+    kinetic-species allocation path is covered.
+    """
+    soma = Branch.from_lengths(lengths=[20.0] * u.um, radii=[10.0, 10.0] * u.um, type="soma")
+    dend = Branch.from_lengths(lengths=[100.0] * u.um, radii=[2.0, 1.0] * u.um, type="basal_dendrite")
+    tree = Morphology.from_root(soma, name="soma")
+    tree.soma.attach(dend, name="dend", parent_x=0.5)
+
+    cell = Cell(tree, pop_size=pop_size, cv_policy=CVPerBranch(cv_per_branch=2))
+    cell.paint(AllRegion(), mech.Channel("Na_HH1952", g_max=12.0 * (u.mS / u.cm**2)))
+    cell.paint(AllRegion(), mech.Channel("K_HH1952", g_max=3.6 * (u.mS / u.cm**2)))
+    cell.paint(AllRegion(), mech.Channel("IL", g_max=0.3 * (u.mS / u.cm**2), E=-54.0 * u.mV))
+    if calcium:
+        cell.paint(AllRegion(), mech.Ion("CalciumDetailed"))
+    cell.place(
+        RootLocation(x=0.5),
+        mech.Synapse("Exp2Syn", tau1=0.5 * u.ms, tau2=2.0 * u.ms, e=0.0 * u.mV, weight=1.0 * u.uS),
+    )
+    return cell
+
+
+class CellHiddenStatesAreGroupStatesTest(unittest.TestCase):
+    """Every ``Cell`` hidden state groups its trailing spatial axis.
+
+    See ``docs/specs/2026-08-13-cell-hidden-group-state.md``.
+    """
+
+    def _hidden_states(self, cell: Cell):
+        return [
+            (".".join(map(str, path)), state)
+            for path, state in brainstate.graph.states(cell).items()
+            if isinstance(state, brainstate.HiddenState)
+        ]
+
+    @staticmethod
+    def _expected_num_state(cell: Cell, name: str) -> int:
+        """The group-axis length the named state must have.
+
+        Each hidden state lives in exactly one space, so this pins the
+        expectation rather than accepting any of several lengths:
+
+        - ``V`` is CV space, so ``n_cv``.
+        - A painted density channel's gates are point space, so ``n_point``.
+        - A placed point mechanism (here, one synapse) spans only the sites
+          it was placed on, which is its layout's ``n_active``.
+        """
+        if name == "V":
+            return cell.n_cv
+        head, _, tail = name.partition("ion_channels.")
+        assert head == "", f"unexpected state path {name!r}"
+        first = tail.split(".")[0]
+        if first.startswith("layout_"):
+            layout_id = int(first.removeprefix("layout_"))
+            (layout,) = [item for item in cell.layouts if item.id == layout_id]
+            return int(layout.n_active)
+        return cell.n_point
+
+    def _assert_all_grouped(self, cell: Cell) -> None:
+        hidden = self._hidden_states(cell)
+        self.assertGreater(len(hidden), 1, "expected channel/ion/synapse states beyond V")
+        seen_spaces = set()
+        for name, state in hidden:
+            with self.subTest(state=name):
+                self.assertIsInstance(state, brainstate.HiddenGroupState)
+                # Everything but the trailing axis is population; the trailing
+                # axis is the group axis this state is indexed by.
+                self.assertEqual(state.varshape, cell.pop_size)
+                self.assertEqual(state.num_state, self._expected_num_state(cell, name))
+                seen_spaces.add(state.num_state)
+        # Guard the guard: if every state happened to share one length, the
+        # per-state expectation above would be much weaker than it looks.
+        self.assertIn(cell.n_cv, seen_spaces)
+        self.assertIn(cell.n_point, seen_spaces)
+
+    def test_every_hidden_state_is_grouped(self) -> None:
+        for pop_size in (1, 4):
+            with self.subTest(pop_size=pop_size):
+                cell = _hh_cell(pop_size)
+                cell.init_state()
+                self._assert_all_grouped(cell)
+
+    def test_still_grouped_after_reset_state(self) -> None:
+        cell = _hh_cell(4)
+        cell.init_state()
+        cell.reset_state()
+        self._assert_all_grouped(cell)
+
+    def test_voltage_is_a_diffeq_group_state(self) -> None:
+        from braincell.quad import DiffEqGroupState
+
+        cell = _hh_cell(1)
+        cell.init_state()
+        self.assertIsInstance(cell.V, DiffEqGroupState)
+        # Solvers still select it, because DiffEqGroupState is a DiffEqState.
+        self.assertIsInstance(cell.V, DiffEqState)
+        self.assertEqual(cell.V.num_state, cell.n_cv)
+
+
+class RuntimeInspectionCollapsesPopulationAxisTest(unittest.TestCase):
+    """Node- and CV-local inspection answer for one morphology.
+
+    Regression guard: the CV path collapsed the population axis but the
+    point path did not, so ``runtime_nodes[i].ions[...]`` raised on a
+    *default* ``Cell`` once the axis became mandatory. Reading a field —
+    not merely checking the key is present — is what catches this.
+    """
+
+    @staticmethod
+    def _cell(pop_size=1) -> Cell:
+        cell = Cell(_soma_tree(), cv_policy=CVPerBranch(), pop_size=pop_size)
+        cell.paint(AllRegion(), mech.Channel("Na_HH1952", g_max=12.0 * (u.mS / u.cm**2)))
+        cell.init_state()
+        return cell
+
+    def test_node_and_cv_views_read_ion_fields_on_a_default_cell(self) -> None:
+        cell = self._cell()
+        self.assertEqual(cell.pop_size, (1,))
+        for view in (cell.runtime_nodes[0], cell.runtime_cvs[0]):
+            with self.subTest(view=type(view).__name__):
+                length = view.ions["na"].length
+                self.assertEqual(u.get_unit(length).dim, u.um.dim)
+                self.assertEqual(np.ndim(u.get_mantissa(length)), 0)
+
+    def test_multi_member_population_is_refused_with_a_useful_message(self) -> None:
+        cell = self._cell(pop_size=4)
+        for view in (cell.runtime_nodes[0], cell.runtime_cvs[0]):
+            with self.subTest(view=type(view).__name__):
+                with self.assertRaisesRegex(ValueError, r"population shape \(4,\).*pop_size=\(4,\)"):
+                    _ = view.ions["na"].length
+
+
+class CellPopulationWideningIsNumericallyNeutralTest(unittest.TestCase):
+    """Widening the population axis must not change the simulated trace."""
+
+    @staticmethod
+    def _trace(pop_size, n_steps: int = 20, *, on_init=None):
+        cell = _hh_cell(pop_size, calcium=False)
+        cell.place(
+            RootLocation(x=0.5),
+            CurrentClamp(delay=0.1 * u.ms, durations=1.0 * u.ms, amplitudes=0.5 * u.nA),
+        )
+        cell.init_state()
+        if on_init is not None:
+            on_init(cell)
+
+        dt = 0.01 * u.ms
+
+        def step(i):
+            with brainstate.environ.context(t=i * dt, dt=dt):
+                cell.update()
+            return cell.V.value
+
+        with brainstate.environ.context(dt=dt):
+            return brainstate.transform.for_loop(step, jnp.arange(n_steps))
+
+    def test_grouped_state_classes_do_not_change_the_numbers(self) -> None:
+        """The state-class change must be type-only.
+
+        Runs the same model twice — once with the grouped classes a ``Cell``
+        normally allocates, once with every hidden state forced back to the
+        plain pre-change classes — and requires bit-identical traces. This
+        is what makes ``DiffEqGroupState`` safe to adopt: it changes which
+        type wraps the array, never the array.
+
+        Each arm also asserts which classes it actually built. Without that
+        the test would still pass if the monkeypatch stopped applying — it
+        would then be comparing grouped against grouped, which proves
+        nothing.
+        """
+        import contextlib
+
+        @contextlib.contextmanager
+        def _ungrouped(_enabled=True):
+            from braincell.quad.protocol import state_grouping as real_scope
+
+            with real_scope(False) as value:
+                yield value
+
+        def trace(*, grouped: bool):
+            classes: list[type] = []
+
+            def record(cell: Cell) -> None:
+                classes.extend(
+                    type(state)
+                    for state in brainstate.graph.states(cell).values()
+                    if isinstance(state, brainstate.HiddenState)
+                )
+
+            if grouped:
+                values = self._trace(1, on_init=record)
+            else:
+                saved = (cell_module.DiffEqGroupState, cell_module.state_grouping)
+                cell_module.DiffEqGroupState = DiffEqState
+                cell_module.state_grouping = _ungrouped
+                try:
+                    values = self._trace(1, on_init=record)
+                finally:
+                    cell_module.DiffEqGroupState, cell_module.state_grouping = saved
+            return np.asarray(values.to_decimal(u.mV), dtype=float), classes
+
+        plain, plain_classes = trace(grouped=False)
+        grouped, grouped_classes = trace(grouped=True)
+
+        # The two arms must have built the same *number* of hidden states
+        # out of genuinely different classes, or the comparison below is
+        # vacuous.
+        self.assertGreater(len(grouped_classes), 1)
+        self.assertEqual(len(plain_classes), len(grouped_classes))
+        for cls in grouped_classes:
+            self.assertTrue(issubclass(cls, brainstate.HiddenGroupState), cls)
+        for cls in plain_classes:
+            self.assertFalse(issubclass(cls, brainstate.HiddenGroupState), cls)
+
+        self.assertTrue(np.all(np.isfinite(grouped)))
+        np.testing.assert_array_equal(grouped, plain)
+
+    def test_multi_axis_population_steps_and_jits(self) -> None:
+        # ``pop_size`` may have more than one axis; only the trailing
+        # compartment axis is the group axis.
+        cell = _hh_cell((2, 3), calcium=False)
+        cell.init_state()
+        self.assertEqual(cell.V.varshape, (2, 3))
+        self.assertEqual(cell.V.num_state, cell.n_cv)
+
+        dt = 0.01 * u.ms
+
+        @brainstate.transform.jit
+        def step():
+            with brainstate.environ.context(t=0.0 * u.ms, dt=dt):
+                cell.update()
+            return cell.V.value
+
+        self.assertEqual(tuple(step().shape), (2, 3, cell.n_cv))
+
+    def test_three_members_reproduce_the_single_member_trace(self) -> None:
+        single = np.asarray(self._trace(1).to_decimal(u.mV), dtype=float)
+        population = np.asarray(self._trace(3).to_decimal(u.mV), dtype=float)
+
+        self.assertEqual(single.shape[1], 1)
+        self.assertEqual(population.shape, single.shape[:1] + (3,) + single.shape[2:])
+        self.assertTrue(np.all(np.isfinite(single)))
+        for member in range(3):
+            np.testing.assert_allclose(population[:, member], single[:, 0], rtol=1e-5, atol=1e-5)
+
+
+class CoercersAgreeAcrossStorageFlavoursTest(unittest.TestCase):
+    """United and unitless fields must coerce to the same numbers.
+
+    Each coercer used to spell its length rules out twice, once for a
+    ``Quantity`` and once for a bare array. They are now stated once and
+    the unit is split off by ``_split_unit``, so this pins the property
+    that made the duplication removable in the first place.
+    """
+
+    COERCERS = (
+        "_coerce_vis_node_values_object",
+        "_coerce_runtime_point_values_object",
+        "_coerce_vis_cv_values_object",
+        "_coerce_named_vis_node_values_object",
+        "_coerce_named_vis_cv_values_object",
+    )
+
+    def setUp(self) -> None:
+        self.cell = Cell(_soma_tree(), cv_policy=CVPerBranch(2))
+        self.cell.init_state()
+
+    def _cases(self):
+        # Scalar, point-length, and CV-length: the three shapes every
+        # coercer branches on.
+        return {
+            "scalar": 1.5,
+            "point": np.linspace(-70.0, -60.0, self.cell.n_point),
+            "cv": np.linspace(-70.0, -60.0, self.cell.n_cv),
+        }
+
+    def test_unit_carrying_and_bare_inputs_give_the_same_numbers(self) -> None:
+        for name in self.COERCERS:
+            coerce = getattr(self.cell, name)
+            for label, plain in self._cases().items():
+                with self.subTest(coercer=name, case=label):
+                    bare = coerce(plain)
+                    united = coerce(plain * u.mV)
+                    self.assertTrue(u.get_unit(united).has_same_dim(u.mV))
+                    np.testing.assert_allclose(
+                        np.asarray(u.get_mantissa(bare), dtype=float),
+                        np.asarray(united.to_decimal(u.mV), dtype=float),
+                    )
+
+    def test_a_length_that_is_neither_space_is_rejected_either_way(self) -> None:
+        bad = np.zeros(self.cell.n_point + self.cell.n_cv + 1)
+        for name in self.COERCERS:
+            coerce = getattr(self.cell, name)
+            with self.subTest(coercer=name, storage="bare"):
+                with self.assertRaises(ValueError):
+                    coerce(bad)
+            with self.subTest(coercer=name, storage="united"):
+                with self.assertRaises(ValueError):
+                    coerce(bad * u.mV)
+
+
+class MultiCompartmentAliasTest(unittest.TestCase):
+    """``MultiCompartment`` is a second name for ``Cell``, not a subclass."""
+
+    def test_alias_is_the_same_object_everywhere_it_is_exported(self) -> None:
+        # Identity, not equality: a subclass or wrapper would break
+        # ``isinstance`` checks written against the other name.
+        self.assertIs(braincell.MultiCompartment, braincell.Cell)
+        self.assertIs(cell_module.MultiCompartment, cell_module.Cell)
+        self.assertIn("MultiCompartment", braincell.__all__)
+        self.assertIn("MultiCompartment", cell_module.__all__)
+
+    def test_instances_built_through_the_alias_are_cells(self) -> None:
+        cell = braincell.MultiCompartment(_soma_tree())
+        self.assertIsInstance(cell, braincell.Cell)
+        self.assertEqual(cell.pop_size, (1,))
 
 
 if __name__ == "__main__":

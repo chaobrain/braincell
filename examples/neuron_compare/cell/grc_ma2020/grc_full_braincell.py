@@ -41,7 +41,7 @@ class GrCFull:
         *,
         temperature_celsius: float = 25.0,
         v_init_mV: float = -65.0,
-        pop_size=(),
+        pop_size=1,
         name: str | None = None,
     ):
         if params is None:

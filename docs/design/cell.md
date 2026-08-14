@@ -4,14 +4,17 @@
 
 `cell` 现在既做前端建模，也作为运行时主对象。
 
-- 入口固定为：`Cell(morpho, cv_policy=CVPerBranch())`
+- 入口固定为：`Cell(morpho, cv_policy=CVPerBranch())`；`braincell.MultiCompartment`
+  是 `Cell` 的别名（`MultiCompartment is Cell`），只是换一个更能说明模型类型的
+  名字，与下面「不暴露中间壳对象」并不冲突
 - 自动离散得到 `CV` 集合
 - 支持 `paint` / `place` 规则积累与查询
 - 支持懒重建（改了 `cv_policy`、`paint`、`place` 后置脏）
 
 本层明确不做：
 
-- 不单独再暴露 `MultiCompartment` / `CellExecution` 这类中间壳对象
+- 不单独再暴露 `CellExecution` 这类中间壳对象（`MultiCompartment` 只是 `Cell`
+  的别名，不是另一个对象）
 - 不要求用户手动再包装一层执行对象
 
 ---
@@ -255,8 +258,11 @@
 - `CellRuntimeState` 退化为内部编译缓存，不再作为公开主接口
 - `braincell.mech.Channel("IL")` 与 `braincell.mech.Channel("INa_HH1952")` 已能创建真实 runtime channel，并绑定到默认 `na/k/ca`
 - `Cell` 已可直接查询 `layouts/get_state/get_point_state/get_cv_state/get_runtime_node/get_ion`
-- `Cell.V` 的公开尺寸现在固定为 `n_cv`
-- runtime channel / ion 仍按 `node_tree` 的 `n_point = n_cv + n_branch + 1` 创建
+- `Cell.V` 的公开尺寸现在固定为 `pop_size + (n_cv,)`；`pop_size` 默认 `(1,)` 且不允许为空
+- runtime channel / ion 仍按 `node_tree` 的 `n_point = n_cv + n_branch + 1` 创建，公开尺寸为 `pop_size + (n_point,)`
+- `Cell` 的全部 hidden state 都是 `brainstate.HiddenGroupState`（`V` 为 `braincell.DiffEqGroupState`），
+  尾轴即 compartment/point 轴；`SingleCompartment` 无空间轴，仍用普通 `DiffEqState`。
+  参见 `docs/specs/2026-08-13-cell-hidden-group-state.md`
 - `braincell.quad._voltage_solver.dhs_voltage_step()` 已改为从 `node_tree` 中的调度视图提取树结构
 - `Cell(solver="staggered")` 已可直接走新的 node-tree DHS 电压求解
 

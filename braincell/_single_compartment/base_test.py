@@ -651,5 +651,59 @@ class SingleCompartmentSolverResolutionTest(unittest.TestCase):
             SingleCompartment(size=1, solver="not-a-real-integrator")
 
 
+class SingleCompartmentHiddenStatesAreNotGroupedTest(unittest.TestCase):
+    """A ``SingleCompartment`` has no spatial axis, so nothing is grouped.
+
+    The counterpart to ``CellHiddenStatesAreGroupStatesTest``. See
+    ``docs/specs/2026-08-13-cell-hidden-group-state.md``.
+    """
+
+    @staticmethod
+    def _neuron() -> SingleCompartment:
+        sc = SingleCompartment(5)
+        sc.add(
+            na=SodiumFixed(5, E=50.0 * u.mV),
+            k=PotassiumFixed(5, E=-77.0 * u.mV),
+        )
+        sc.na.add(ch=Na_HH1952(5))
+        sc.k.add(ch=K_HH1952(5))
+        return sc
+
+    def _assert_none_grouped(self, neuron: SingleCompartment) -> None:
+        hidden = [
+            (".".join(map(str, path)), state)
+            for path, state in brainstate.graph.states(neuron).items()
+            if isinstance(state, brainstate.HiddenState)
+        ]
+        self.assertGreater(len(hidden), 1, "expected channel states beyond V")
+        for name, state in hidden:
+            with self.subTest(state=name):
+                self.assertNotIsInstance(state, brainstate.HiddenGroupState)
+
+    def test_no_hidden_state_is_grouped(self) -> None:
+        for batch_size in (None, 8):
+            with self.subTest(batch_size=batch_size):
+                neuron = self._neuron()
+                neuron.init_state(batch_size)
+                self._assert_none_grouped(neuron)
+                neuron.reset_state(batch_size)
+                self._assert_none_grouped(neuron)
+
+    def test_voltage_is_a_plain_diffeq_state(self) -> None:
+        neuron = self._neuron()
+        neuron.init_state()
+        self.assertIs(type(neuron.V), DiffEqState)
+
+    def test_a_preceding_cell_does_not_leak_its_grouped_scope(self) -> None:
+        # A Network may hold both model types; SingleCompartment sets the
+        # scope explicitly rather than relying on the default, so the order
+        # of construction cannot matter.
+        with braincell.state_grouping(True):
+            neuron = self._neuron()
+            neuron.init_state()
+        self._assert_none_grouped(neuron)
+        self.assertIs(type(neuron.V), DiffEqState)
+
+
 if __name__ == "__main__":
     unittest.main()

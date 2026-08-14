@@ -24,7 +24,8 @@ import braintools
 import brainunit as u
 
 from braincell.quad import get_integrator
-from braincell.quad.protocol import DiffEqState, IndependentIntegration
+from braincell.quad.protocol import IndependentIntegration
+from braincell.quad.protocol import diffeq_state, hidden_state
 
 __all__ = [
     "Factor",
@@ -292,7 +293,7 @@ class DynamicNernstIon(brainstate.mixin.Mixin):
     def _ion_init_state_hook(self, V, batch_size: int = None):
         """Create the runtime ``Ci`` state from the stored initializer."""
         _ = V
-        self.Ci = DiffEqState(
+        self.Ci = diffeq_state(
             braintools.init.param(self._Ci_initializer, self.varshape, batch_size),
         )
 
@@ -575,21 +576,40 @@ class _Species:
         self.owner = owner
         self.specs = specs
 
+    def _species_value(self, spec, batch_size: int = None):
+        """Materialize one species initializer at the owner's full state shape.
+
+        ``braintools.init.param`` passes a bare scalar through unbroadcast,
+        so a species declared as e.g. ``0.0 * u.mol / u.cm**2`` would start
+        rank-0 while every sibling species is shaped ``varshape``. That
+        shape is not stable: :meth:`_Conserve.writeback` later assigns the
+        per-point value, silently growing the state mid-simulation — which
+        breaks a ``jit``/``scan`` carry signature and, on a
+        :class:`braincell.Cell`, the grouped hidden-state rank contract.
+        Broadcasting here keeps one species set homogeneous from the start.
+        """
+        init = self.owner.species_initializers.get(spec.name, spec.init)
+        value = braintools.init.param(init, self.owner.varshape, batch_size)
+        target = tuple(self.owner.varshape)
+        if batch_size is not None:
+            target = (int(batch_size),) + target
+        if tuple(getattr(value, "shape", ())) == target:
+            return value
+        return u.math.broadcast_to(value, target)
+
     def init(self, batch_size: int = None):
         """Materialize runtime species attributes from class declarations."""
         for spec in self.specs.species_by_name.values():
-            init = self.owner.species_initializers.get(spec.name, spec.init)
-            value = braintools.init.param(init, self.owner.varshape, batch_size)
+            value = self._species_value(spec, batch_size)
             if spec.name in self.specs.diffeq_set:
-                setattr(self.owner, spec.name, DiffEqState(value))
+                setattr(self.owner, spec.name, diffeq_state(value))
             else:
-                setattr(self.owner, spec.name, brainstate.HiddenState(value))
+                setattr(self.owner, spec.name, hidden_state(value))
 
     def reset(self, batch_size: int = None):
         """Reset runtime species attributes back to their declared initializers."""
         for spec in self.specs.species_by_name.values():
-            init = self.owner.species_initializers.get(spec.name, spec.init)
-            value = braintools.init.param(init, self.owner.varshape, batch_size)
+            value = self._species_value(spec, batch_size)
             if spec.name in self.specs.diffeq_set:
                 getattr(self.owner, spec.name).value = value
             else:
@@ -597,7 +617,30 @@ class _Species:
                 if isinstance(raw, brainstate.State):
                     raw.value = value
                 else:
-                    setattr(self.owner, spec.name, brainstate.HiddenState(value))
+                    setattr(self.owner, spec.name, hidden_state(value))
+
+    def algebraic_state(self, value):
+        """Allocate an algebraic species state matching its siblings' class.
+
+        :meth:`_Conserve.writeback` runs during simulation, *outside* the
+        :func:`~braincell.state_grouping` scope the host establishes around
+        ``init_state``. Reading the ambient scope there would silently
+        produce a plain :class:`brainstate.HiddenState` on a
+        :class:`braincell.Cell`, whose hidden states must all be grouped.
+        Deriving the class from an already-allocated sibling species makes
+        the decision independent of when the allocation happens.
+
+        Falls back to the scoped factory only when no sibling has been
+        allocated yet, which is the genuine initialization path — and that
+        one does run inside the host's scope.
+        """
+        for name in self.specs.species_by_name:
+            sibling = getattr(self.owner, name, None)
+            if isinstance(sibling, brainstate.HiddenState):
+                if isinstance(sibling, brainstate.HiddenGroupState):
+                    return brainstate.HiddenGroupState(value)
+                return brainstate.HiddenState(value)
+        return hidden_state(value)
 
     def value(self, name: str):
         """Return one species' current visible value."""
@@ -654,14 +697,21 @@ class _Conserve:
         return values
 
     def writeback(self, V=None):
-        """Update cached algebraic species values on the owner object."""
+        """Update cached algebraic species values on the owner object.
+
+        Runs every simulation step, so the allocation branch below is dead
+        in normal flow — :meth:`_Species.init` has already turned every
+        species into a ``State``. It stays defensive rather than raising,
+        but routes through :meth:`_Species.algebraic_state` so that a late
+        allocation cannot silently pick the wrong hidden-state class.
+        """
         values = self.resolve(V)
         for name in self.specs.algebraic_names:
             raw = getattr(self.owner, name)
             if isinstance(raw, brainstate.State):
                 raw.value = values[name]
             else:
-                setattr(self.owner, name, brainstate.HiddenState(values[name]))
+                setattr(self.owner, name, self.species.algebraic_state(values[name]))
 
 
 class _Flux:

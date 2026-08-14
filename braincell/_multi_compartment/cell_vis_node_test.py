@@ -162,5 +162,27 @@ class CellVisNodeTest(unittest.TestCase):
         self.assertIsInstance(ax, matplotlib.axes.Axes)
 
 
+class CellVisPopulationAxisTest(unittest.TestCase):
+    """Visualization draws one morphology, so it needs one population member."""
+
+    def tearDown(self) -> None:
+        plt.close("all")
+
+    def test_default_single_member_population_still_draws(self) -> None:
+        cell = Cell(_build_tree(), cv_policy=CVPerBranch())
+        cell.init_state()
+        self.assertEqual(cell.pop_size, (1,))
+        self.assertIsInstance(cell.vis_cv(value="V", show=False), matplotlib.axes.Axes)
+        self.assertIsInstance(cell.vis_node(value="V", show=False), matplotlib.axes.Axes)
+
+    def test_multi_member_population_is_refused_with_a_useful_message(self) -> None:
+        cell = Cell(_build_tree(), cv_policy=CVPerBranch(), pop_size=4)
+        cell.init_state()
+        for method in ("vis_cv", "vis_node"):
+            with self.subTest(method=method):
+                with self.assertRaisesRegex(ValueError, r"population shape \(4,\).*pop_size=\(4,\)"):
+                    getattr(cell, method)(value="V", show=False)
+
+
 if __name__ == "__main__":
     unittest.main()

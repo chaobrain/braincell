@@ -18,6 +18,7 @@ from braincell._base import Channel
 from braincell._misc import is_traced_value
 from braincell.quad.protocol import DiffEqState
 from braincell.quad.protocol import IndependentIntegration
+from braincell.quad.protocol import diffeq_state
 
 __all__ = [
     "Gate",
@@ -383,7 +384,7 @@ class HH(Channel):
             _bind_state(
                 self,
                 gate.name,
-                DiffEqState(braintools.init.param(u.math.zeros, self.varshape, batch_size)),
+                diffeq_state(braintools.init.param(u.math.zeros, self.varshape, batch_size)),
                 "gate",
             )
 
@@ -715,7 +716,7 @@ class Markov(Channel, IndependentIntegration):
             _bind_state(
                 self,
                 name,
-                DiffEqState(braintools.init.param(u.math.zeros, self.varshape, batch_size)),
+                diffeq_state(braintools.init.param(u.math.zeros, self.varshape, batch_size)),
                 "Markov state",
             )
 

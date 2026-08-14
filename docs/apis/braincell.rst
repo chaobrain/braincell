@@ -28,6 +28,11 @@ Base Class for Cell Modeling
     Cell
     RunResult
 
+``braincell.MultiCompartment`` is an alias of :class:`Cell` — the same
+class object under a name that spells out what it models. Use whichever
+reads better; ``MultiCompartment`` is usually clearer next to
+:class:`SingleCompartment`.
+
 
 
 Base Class for Ion Channels

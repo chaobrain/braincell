@@ -85,11 +85,11 @@ from braincell.morph.morphology import Morphology
 from braincell.quad import get_integrator, ind_exp_euler_step
 from braincell.quad._exp_euler import _ind_exp_euler_step_selected
 from braincell.quad._staggered import build_cv_axial_operator
-from braincell.quad.protocol import DiffEqState, IndependentIntegration
+from braincell.quad.protocol import DiffEqGroupState, IndependentIntegration, state_grouping
 from braincell.mech import CVContext, Synapse as SynapsePlacement
 from . import bridge, currents, probes, run as run_module
 
-__all__ = ["Cell"]
+__all__ = ["Cell", "MultiCompartment"]
 
 
 @dataclass(frozen=True)
@@ -193,7 +193,7 @@ class Cell(HHTypedNeuron):
         self,
         morpho: Morphology,
         *,
-        pop_size: brainstate.typing.Size = (),
+        pop_size: brainstate.typing.Size = 1,
         cv_policy: CVPolicy | None = None,
         V_th: u.Quantity = 0 * u.mV,
         V_init: Optional[Initializer] = None,
@@ -214,9 +214,12 @@ class Cell(HHTypedNeuron):
             Morphology tree shared by every homogeneous population
             instance.
         pop_size : int or tuple of int, optional
-            Optional homogeneous population shape. Runtime state is
-            expanded to ``pop_size + (n_cv,)`` and point-space arrays to
-            ``pop_size + (n_point,)``.
+            Homogeneous population shape, defaulting to ``1``. Runtime
+            state is expanded to ``pop_size + (n_cv,)`` and point-space
+            arrays to ``pop_size + (n_point,)``. The population axis is
+            mandatory — an empty ``pop_size`` raises :class:`ValueError` —
+            because the trailing compartment axis is what makes every
+            ``Cell`` hidden state a :class:`brainstate.HiddenGroupState`.
         cv_policy : CVPolicy, optional
             Control-volume splitting policy.
         V_th : Quantity, optional
@@ -553,14 +556,20 @@ class Cell(HHTypedNeuron):
             v_initializer = bridge.fill_like(self.varshape, v_initializer)
         v_value = braintools.init.param(v_initializer, self.varshape)
         v_value = bridge.expand_with_batch_axis(v_value, batch_size, name="Cell.V")
-        self.V = DiffEqState(v_value)
+        # A Cell is spatial: every hidden state's trailing axis enumerates
+        # compartments (V) or points (mechanism variables), so all of them
+        # are group states. Channel / ion / synapse code is shared with
+        # SingleCompartment, hence the scoped factory rather than a
+        # per-call-site class choice.
+        self.V = DiffEqGroupState(v_value)
         self.spike = brainstate.ShortTermState(_zero_spike_like(self.V.value))
         self._current_time_state.value = 0.0 * u.ms
 
         point_V = self._cv_to_point_unchecked(self.V.value)
-        for path, channel in self._runtime_objects_unchecked(IonChannel, allowed_hierarchy=(1, 1)).items():
-            args = self._runtime_node_phase_args(path, channel, point_V)
-            channel.init_state(*args, batch_size=batch_size)
+        with state_grouping(True):
+            for path, channel in self._runtime_objects_unchecked(IonChannel, allowed_hierarchy=(1, 1)).items():
+                args = self._runtime_node_phase_args(path, channel, point_V)
+                channel.init_state(*args, batch_size=batch_size)
 
         # Dense CV axial operators are only needed by derivative-based voltage
         # solvers. The default DHS/staggered path builds its own static source,
@@ -1514,11 +1523,60 @@ class Cell(HHTypedNeuron):
             )
         return point_ids
 
+    def _single_population_view(self, values, *, caller: str, field: str = "value"):
+        """Reduce a ``pop_size + (n,)`` field to the single-member ``(n,)`` view.
+
+        Inspection and visualization both answer questions about *one*
+        morphology, so the leading population axes have to be singleton
+        before the spatial mapping helpers can interpret the trailing axis.
+        Collapsing them here keeps a default ``pop_size=1`` cell behaving
+        exactly as a rank-0 population used to.
+
+        Parameters
+        ----------
+        values : array-like or Quantity
+            Field values shaped ``pop_size + (n,)``. Scalars and 1-D values
+            pass through untouched.
+        caller : str
+            Entry point description, used only in the error message.
+        field : str, default 'value'
+            Field name, used only in the error message. The default suits
+            the coercers, which are handed whatever the caller passed as
+            ``value=``; named-field callers pass the real name.
+
+        Returns
+        -------
+        array-like or Quantity
+            ``values`` with every leading singleton axis removed.
+
+        Raises
+        ------
+        ValueError
+            If any leading population axis holds more than one member, since
+            there is then no single morphology to answer for.
+        """
+        shape = getattr(values, "shape", None)
+        if shape is None or len(shape) < 2:
+            return values
+        leading = shape[:-1]
+        if any(int(dim) != 1 for dim in leading):
+            raise ValueError(
+                f"{caller} addresses a single morphology, but field {field!r} has "
+                f"population shape {tuple(int(d) for d in leading)!r} from "
+                f"pop_size={tuple(int(d) for d in self.pop_size)!r}. Index the "
+                f"population axis first."
+            )
+        return values[(0,) * len(leading)]
+
+    def _vis_cv_voltage(self):
+        """Return ``V`` as a plain ``(n_cv,)`` CV vector for visualization."""
+        return self._single_population_view(self.V.value, field="V", caller="Cell.vis_cv(...)")
+
     def _resolve_vis_node_values(self, value) -> tuple[object, str | None]:
         if isinstance(value, str):
             key = value.strip().lower()
             if key in {"v", "voltage"}:
-                return self._cv_to_node_values(self.V.value), "V"
+                return self._cv_to_node_values(self._vis_cv_voltage()), "V"
             raise ValueError(f"Unsupported Cell.vis_node value string {value!r}.")
 
         if isinstance(value, tuple) and len(value) == 3 and isinstance(value[0], str):
@@ -1544,7 +1602,7 @@ class Cell(HHTypedNeuron):
         if isinstance(value, str):
             key = value.strip().lower()
             if key in {"v", "voltage"}:
-                return self.V.value, "V"
+                return self._vis_cv_voltage(), "V"
             raise ValueError(f"Unsupported Cell.vis_cv value string {value!r}.")
 
         if isinstance(value, tuple) and len(value) == 3 and isinstance(value[0], str):
@@ -1567,31 +1625,16 @@ class Cell(HHTypedNeuron):
         return self._coerce_vis_cv_values_object(value), None
 
     def _coerce_vis_node_values_object(self, value):
-        if hasattr(value, "to_decimal") and hasattr(value, "unit"):
-            unit = value.unit
-            raw = np.asarray(value.to_decimal(unit), dtype=float)
-            if raw.ndim == 0:
-                return u.Quantity(np.full((self.n_point,), float(raw), dtype=float), unit)
-            if raw.ndim != 1:
-                raise ValueError("Cell.vis_node(...) only supports scalar or 1-D value arrays.")
-            if raw.shape[0] == self.n_point:
-                return value
-            if raw.shape[0] == self.n_cv:
-                return self._cv_to_node_values(value)
-            raise ValueError(
-                f"Cell.vis_node(value=...) expects a point array of length {self.n_point} "
-                f"or a CV array of length {self.n_cv}, got length {raw.shape[0]}."
-            )
-
-        raw = np.asarray(value, dtype=float)
+        """Coerce a caller-supplied field into unmasked point-space values."""
+        raw, original, rewrap = _split_unit(self._single_population_view(value, caller="Cell.vis_node(...)"))
         if raw.ndim == 0:
-            return np.full((self.n_point,), float(raw), dtype=float)
+            return rewrap(np.full((self.n_point,), float(raw), dtype=float))
         if raw.ndim != 1:
             raise ValueError("Cell.vis_node(...) only supports scalar or 1-D value arrays.")
         if raw.shape[0] == self.n_point:
-            return raw
+            return original
         if raw.shape[0] == self.n_cv:
-            return self._cv_to_node_values(raw)
+            return self._cv_to_node_values(original)
         raise ValueError(
             f"Cell.vis_node(value=...) expects a point array of length {self.n_point} "
             f"or a CV array of length {self.n_cv}, got length {raw.shape[0]}."
@@ -1599,118 +1642,65 @@ class Cell(HHTypedNeuron):
 
     def _coerce_runtime_point_values_object(self, value):
         """Coerce one runtime field into unmasked point-space values."""
-        if hasattr(value, "to_decimal") and hasattr(value, "unit"):
-            unit = value.unit
-            raw = np.asarray(value.to_decimal(unit), dtype=float)
-            if raw.ndim == 0:
-                return u.Quantity(
-                    np.full((self.n_point,), float(raw), dtype=float),
-                    unit,
-                )
-            if raw.ndim != 1:
-                raise ValueError("Runtime point inspection only supports scalar or 1-D value arrays.")
-            if raw.shape[0] == self.n_point:
-                return value
-            if raw.shape[0] == self.n_cv:
-                return self._cv_to_point(value)
-            raise ValueError(
-                f"Runtime point inspection expects a point array of length {self.n_point} "
-                f"or a CV array of length {self.n_cv}, got length {raw.shape[0]}."
-            )
-
-        raw = np.asarray(value, dtype=float)
+        raw, original, rewrap = _split_unit(self._single_population_view(value, caller="Runtime point inspection"))
         if raw.ndim == 0:
-            return np.full((self.n_point,), float(raw), dtype=float)
+            return rewrap(np.full((self.n_point,), float(raw), dtype=float))
         if raw.ndim != 1:
             raise ValueError("Runtime point inspection only supports scalar or 1-D value arrays.")
         if raw.shape[0] == self.n_point:
-            return raw
+            return original
         if raw.shape[0] == self.n_cv:
-            return self._cv_to_point(raw)
+            return self._cv_to_point(original)
         raise ValueError(
             f"Runtime point inspection expects a point array of length {self.n_point} "
             f"or a CV array of length {self.n_cv}, got length {raw.shape[0]}."
         )
 
     def _coerce_vis_cv_values_object(self, value):
-        if hasattr(value, "to_decimal") and hasattr(value, "unit"):
-            unit = value.unit
-            raw = np.asarray(value.to_decimal(unit), dtype=float)
-            if raw.ndim == 0:
-                return u.Quantity(np.full((self.n_cv,), float(raw), dtype=float), unit)
-            if raw.ndim != 1:
-                raise ValueError("Cell.vis_cv(...) only supports scalar or 1-D value arrays.")
-            if raw.shape[0] == self.n_cv:
-                return value
-            if raw.shape[0] == self.n_point:
-                return self._point_to_cv(value)
-            raise ValueError(
-                f"Cell.vis_cv(value=...) expects a CV array of length {self.n_cv} "
-                f"or a point array of length {self.n_point}, got length {raw.shape[0]}."
-            )
-
-        raw = np.asarray(value, dtype=float)
+        """Coerce a caller-supplied field into CV-space values."""
+        raw, original, rewrap = _split_unit(self._single_population_view(value, caller="Cell.vis_cv(...)"))
         if raw.ndim == 0:
-            return np.full((self.n_cv,), float(raw), dtype=float)
+            return rewrap(np.full((self.n_cv,), float(raw), dtype=float))
         if raw.ndim != 1:
             raise ValueError("Cell.vis_cv(...) only supports scalar or 1-D value arrays.")
         if raw.shape[0] == self.n_cv:
-            return raw
+            return original
         if raw.shape[0] == self.n_point:
-            return self._point_to_cv(raw)
+            return self._point_to_cv(original)
         raise ValueError(
             f"Cell.vis_cv(value=...) expects a CV array of length {self.n_cv} "
             f"or a point array of length {self.n_point}, got length {raw.shape[0]}."
         )
 
     def _coerce_named_vis_node_values_object(self, value):
-        if hasattr(value, "to_decimal") and hasattr(value, "unit"):
-            unit = value.unit
-            raw = np.asarray(value.to_decimal(unit), dtype=float)
-            if raw.ndim == 0:
-                return self._cv_to_node_values(u.Quantity(np.full((self.n_cv,), float(raw), dtype=float), unit))
-            if raw.ndim != 1:
-                raise ValueError("Cell.vis_node(...) only supports scalar or 1-D named value arrays.")
-            if raw.shape[0] == self.n_point:
-                return self._mask_non_midpoint_points(value)
-            if raw.shape[0] == self.n_cv:
-                return self._cv_to_node_values(value)
-            raise ValueError("Cell.vis_node(...) cannot map the named value into point space.")
+        """Coerce a *named* state/parameter field into point-space values.
 
-        raw = np.asarray(value, dtype=float)
+        A named field already in point space is masked down to midpoints,
+        which is the difference from :meth:`_coerce_vis_node_values_object`:
+        a named value is defined per CV, so only the midpoint carries it.
+        """
+        raw, original, rewrap = _split_unit(self._single_population_view(value, caller="Cell.vis_node(...)"))
         if raw.ndim == 0:
-            return self._cv_to_node_values(np.full((self.n_cv,), float(raw), dtype=float))
+            return self._cv_to_node_values(rewrap(np.full((self.n_cv,), float(raw), dtype=float)))
         if raw.ndim != 1:
             raise ValueError("Cell.vis_node(...) only supports scalar or 1-D named value arrays.")
         if raw.shape[0] == self.n_point:
-            return self._mask_non_midpoint_points(raw)
+            return self._mask_non_midpoint_points(original)
         if raw.shape[0] == self.n_cv:
-            return self._cv_to_node_values(raw)
+            return self._cv_to_node_values(original)
         raise ValueError("Cell.vis_node(...) cannot map the named value into point space.")
 
     def _coerce_named_vis_cv_values_object(self, value):
-        if hasattr(value, "to_decimal") and hasattr(value, "unit"):
-            unit = value.unit
-            raw = np.asarray(value.to_decimal(unit), dtype=float)
-            if raw.ndim == 0:
-                return u.Quantity(np.full((self.n_cv,), float(raw), dtype=float), unit)
-            if raw.ndim != 1:
-                raise ValueError("Cell.vis_cv(...) only supports scalar or 1-D named value arrays.")
-            if raw.shape[0] == self.n_cv:
-                return value
-            if raw.shape[0] == self.n_point:
-                return self._point_to_cv(self._mask_non_midpoint_points(value))
-            raise ValueError("Cell.vis_cv(...) cannot map the named value into CV space.")
-
-        raw = np.asarray(value, dtype=float)
+        """Coerce a *named* state/parameter field into CV-space values."""
+        raw, original, rewrap = _split_unit(self._single_population_view(value, caller="Cell.vis_cv(...)"))
         if raw.ndim == 0:
-            return np.full((self.n_cv,), float(raw), dtype=float)
+            return rewrap(np.full((self.n_cv,), float(raw), dtype=float))
         if raw.ndim != 1:
             raise ValueError("Cell.vis_cv(...) only supports scalar or 1-D named value arrays.")
         if raw.shape[0] == self.n_cv:
-            return raw
+            return original
         if raw.shape[0] == self.n_point:
-            return self._point_to_cv(self._mask_non_midpoint_points(raw))
+            return self._point_to_cv(self._mask_non_midpoint_points(original))
         raise ValueError("Cell.vis_cv(...) cannot map the named value into CV space.")
 
     def _resolve_unique_layout_by_kind(self, kind: str):
@@ -1794,6 +1784,7 @@ class Cell(HHTypedNeuron):
 
     def _layout_values_to_point_space(self, layout, raw_values, *, field: str):
         n_point = self.n_point
+        raw_values = self._single_population_view(raw_values, field=field, caller="Cell.vis_node(...)")
         if hasattr(raw_values, "to_decimal") and hasattr(raw_values, "unit"):
             unit = raw_values.unit
             raw = np.asarray(raw_values.to_decimal(unit), dtype=float)
@@ -1848,6 +1839,7 @@ class Cell(HHTypedNeuron):
 
     def _layout_values_to_cv_space(self, layout, raw_values, *, field: str):
         n_cv = self.n_cv
+        raw_values = self._single_population_view(raw_values, field=field, caller="Cell.vis_cv(...)")
         source_cv_ids = tuple(int(cv_id) for cv_id in layout.source_cv_ids)
         midpoint_by_cv = {cv_id: int(self.node_tree.cv_to_mid_node_id[cv_id]) for cv_id in source_cv_ids}
         if hasattr(raw_values, "to_decimal") and hasattr(raw_values, "unit"):
@@ -2582,9 +2574,10 @@ class Cell(HHTypedNeuron):
         self.spike.value = _zero_spike_like(self.V.value)
         self._current_time_state.value = 0.0 * u.ms
         point_V = self._cv_to_point(self.V.value)
-        for path, channel in self.runtime_objects(IonChannel, allowed_hierarchy=(1, 1)).items():
-            args = self._runtime_node_phase_args(path, channel, point_V)
-            channel.reset_state(*args, batch_size=batch_size)
+        with state_grouping(True):
+            for path, channel in self.runtime_objects(IonChannel, allowed_hierarchy=(1, 1)).items():
+                args = self._runtime_node_phase_args(path, channel, point_V)
+                channel.reset_state(*args, batch_size=batch_size)
 
     # ------------------------------------------------------------------
     # Inspection forwards (runtime-only)
@@ -2745,8 +2738,50 @@ class Cell(HHTypedNeuron):
         return run_module.run(self, dt=dt, duration=duration)
 
 
+#: Alias of :class:`Cell`, named for what the model is rather than for the
+#: shorthand. ``MultiCompartment is Cell`` — the two names are the same
+#: object, so ``isinstance``, subclassing, and pickling behave identically
+#: through either. Prefer it when the surrounding code also mentions
+#: :class:`~braincell.SingleCompartment` and the contrast matters.
+MultiCompartment = Cell
+
+
 # ----------------------------------------------------------------------
 # Helpers
+
+
+def _split_unit(value):
+    """Separate a possibly-united field into the parts a coercer needs.
+
+    Every ``Cell`` inspection coercer decides what a field means purely
+    from its length, then either returns it untouched or maps it between
+    point and CV space. Only two steps care about units: reading the
+    length needs a bare mantissa, and synthesizing an array from a scalar
+    needs the unit put back. Splitting those out here lets each coercer
+    state its length rules once instead of once per storage flavour.
+
+    Parameters
+    ----------
+    value : array-like or Quantity
+        A field taken from a runtime buffer or supplied by a caller.
+
+    Returns
+    -------
+    mantissa : numpy.ndarray
+        Unitless values, for shape and length tests.
+    original : array-like or Quantity
+        ``value`` itself when it carried a unit, else ``mantissa``. This is
+        what to return or hand to a spatial mapper, so the unit survives.
+    rewrap : Callable[[numpy.ndarray], object]
+        Puts the unit back on a freshly built array; identity when there
+        was no unit.
+    """
+    if hasattr(value, "to_decimal") and hasattr(value, "unit"):
+        unit = value.unit
+        mantissa = np.asarray(value.to_decimal(unit), dtype=float)
+        return mantissa, value, lambda array: u.Quantity(array, unit)
+    mantissa = np.asarray(value, dtype=float)
+    return mantissa, mantissa, lambda array: array
 
 
 def _select_local_values(values, *, ids: tuple[int, ...]):
@@ -2812,35 +2847,62 @@ def _call_name(prefix: str, path, node) -> str:
     return _scope_name(prefix, path, node).replace(":", "_")
 
 
+_RANK0_POP_SIZE_MESSAGE = (
+    "Cell requires a population axis, so pop_size must not be empty. "
+    "Use pop_size=1 for a single cell; runtime state is then shaped "
+    "pop_size + (n_cv,). The trailing compartment axis is what makes every "
+    "Cell hidden state a brainstate.HiddenGroupState, which requires rank >= 2."
+)
+
+
 def _normalize_pop_size(pop_size) -> tuple[int, ...]:
     """Normalize the public ``Cell(pop_size=...)`` argument.
+
+    A ``Cell`` always carries a population axis: the canonical shape has at
+    least one entry, so runtime state is at least two-dimensional
+    (``pop_size + (n_cv,)``). See ``docs/specs/2026-08-13-cell-hidden-group-state.md``
+    for why rank-0 populations are rejected.
 
     Parameters
     ----------
     pop_size : int, sequence of int, or None
-        User-facing homogeneous population shape.
+        User-facing homogeneous population shape. ``None`` means
+        "unspecified" and normalizes to ``(1,)``.
 
     Returns
     -------
     tuple of int
-        Canonical population-shape tuple.
+        Canonical population-shape tuple, never empty.
 
     Raises
     ------
     TypeError
         If ``pop_size`` is not an integer or sequence of integers.
     ValueError
-        If any requested dimension is non-positive.
+        If any requested dimension is non-positive, or if an explicitly
+        empty ``pop_size`` is given.
+
+    Examples
+    --------
+    .. code-block:: python
+
+        >>> from braincell._multi_compartment.cell import _normalize_pop_size
+        >>> _normalize_pop_size(None)
+        (1,)
+        >>> _normalize_pop_size(4)
+        (4,)
+        >>> _normalize_pop_size((2, 3))
+        (2, 3)
     """
-    if pop_size in (None, ()):
-        return ()
+    if pop_size is None:
+        return (1,)
     if isinstance(pop_size, (int, np.integer)):
         if int(pop_size) <= 0:
             raise ValueError(f"pop_size must be > 0, got {pop_size!r}.")
         return (int(pop_size),)
     if isinstance(pop_size, (tuple, list)):
         if len(pop_size) == 0:
-            return ()
+            raise ValueError(_RANK0_POP_SIZE_MESSAGE)
         normalized = []
         for dim in pop_size:
             if not isinstance(dim, (int, np.integer)):

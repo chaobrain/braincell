@@ -117,9 +117,16 @@ class PopulationTest(unittest.TestCase):
         pop = Population("E", _spiking_cell(size=3))
         self.assertEqual(pop.size, 3)
 
-    def test_population_rejects_missing_pop_size(self) -> None:
-        with self.assertRaisesRegex(ValueError, "one-dimensional"):
-            Population("one", Cell(_build_tree(), cv_policy=CVPerBranch()))
+    def test_population_accepts_default_single_cell_pop_size(self) -> None:
+        # A Cell now always carries a population axis, so the default is the
+        # one-dimensional ``(1,)`` that Population requires.
+        pop = Population("one", Cell(_build_tree(), cv_policy=CVPerBranch()))
+        self.assertEqual(pop.size, 1)
+
+    def test_cell_rejects_rank_zero_pop_size(self) -> None:
+        # The guard that used to live in Population now lives in Cell itself.
+        with self.assertRaisesRegex(ValueError, "must not be empty"):
+            Cell(_build_tree(), cv_policy=CVPerBranch(), pop_size=())
 
     def test_population_rejects_multi_dimensional_pop_size(self) -> None:
         with self.assertRaisesRegex(ValueError, "one-dimensional"):

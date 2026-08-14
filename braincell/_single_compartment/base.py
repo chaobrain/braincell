@@ -23,7 +23,7 @@ import jax.numpy as jnp
 from braincell._base import HHTypedNeuron, IonChannel, _cast_like, _zero_spike_like
 from braincell._typing import Initializer
 from braincell.quad import get_integrator
-from braincell.quad.protocol import DiffEqState, IndependentIntegration
+from braincell.quad.protocol import DiffEqState, IndependentIntegration, state_grouping
 
 __all__ = [
     'SingleCompartment',
@@ -167,9 +167,14 @@ class SingleCompartment(HHTypedNeuron):
         -------
         None
         """
+        # A SingleCompartment has no spatial axis, so its hidden states are
+        # plain (non-grouped) states. The scope is set explicitly rather than
+        # left to the default so that a Network mixing SingleCompartment and
+        # Cell is correct regardless of construction order.
         self.V = DiffEqState(braintools.init.param(self.V_initializer, self.varshape, batch_size))
         self.spike = brainstate.ShortTermState(_zero_spike_like(self.V.value))
-        super().init_state(batch_size)
+        with state_grouping(False):
+            super().init_state(batch_size)
 
     def reset_state(self, batch_size=None):
         """
@@ -185,7 +190,8 @@ class SingleCompartment(HHTypedNeuron):
         """
         self.V.value = braintools.init.param(self.V_initializer, self.varshape, batch_size)
         self.spike.value = _zero_spike_like(self.V.value)
-        super().reset_state(batch_size)
+        with state_grouping(False):
+            super().reset_state(batch_size)
 
     def pre_integral(self, I_ext=0.0 * u.nA / u.cm**2):
         """

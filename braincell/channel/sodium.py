@@ -24,7 +24,7 @@ import braintools
 import brainunit as u
 
 from braincell._base import IonInfo
-from braincell.channel._base import Gate, HH, Markov
+from braincell.channel._base import Gate, HH, Markov, OhmicHH
 from braincell.ion import Sodium
 from braincell.mech import register_channel
 from braincell.quad.protocol import IndependentIntegration
@@ -56,14 +56,14 @@ def _x_over_one_minus_exp_neg_stable(x):
 
 
 @register_channel("Na_Ba2002")
-class Na_Ba2002(HH):
+class Na_Ba2002(OhmicHH):
     r"""Bazhenov 2002 sodium current with :math:`p^3 q` HH gating."""
 
     __module__ = "braincell.channel"
     root_type = Sodium
     gates = (
-        Gate("p", power=3, q10=lambda self: self.q10, temp_ref=lambda self: self.temp_ref),
-        Gate("q", q10=lambda self: self.q10, temp_ref=lambda self: self.temp_ref),
+        Gate("p", power=3, q10="q10", temp_ref="temp_ref"),
+        Gate("q", q10="q10", temp_ref="temp_ref"),
     )
 
     def __init__(
@@ -83,9 +83,6 @@ class Na_Ba2002(HH):
         self.temp_ref = braintools.init.param(temp_ref, self.varshape, allow_none=False)
         self.V_sh = braintools.init.param(V_sh, self.varshape, allow_none=False)
 
-    def current(self, V, Na: IonInfo):
-        return self.g_max * self.conductance_factor(V, Na) * (Na.E - V)
-
     def f_p_alpha(self, V, Na: IonInfo):
         temp = (V - self.V_sh).to_decimal(u.mV) - 13.0
         return 0.32 * 4.0 / u.math.exprel(-temp / 4.0)
@@ -104,14 +101,14 @@ class Na_Ba2002(HH):
 
 
 @register_channel("Na_TM1991")
-class Na_TM1991(HH):
+class Na_TM1991(OhmicHH):
     r"""Traub and Miles 1991 sodium current with :math:`p^3 q` HH gating."""
 
     __module__ = "braincell.channel"
     root_type = Sodium
     gates = (
-        Gate("p", power=3, q10=lambda self: self.q10, temp_ref=lambda self: self.temp_ref),
-        Gate("q", q10=lambda self: self.q10, temp_ref=lambda self: self.temp_ref),
+        Gate("p", power=3, q10="q10", temp_ref="temp_ref"),
+        Gate("q", q10="q10", temp_ref="temp_ref"),
     )
 
     def __init__(
@@ -131,9 +128,6 @@ class Na_TM1991(HH):
         self.temp_ref = braintools.init.param(temp_ref, self.varshape, allow_none=False)
         self.V_sh = braintools.init.param(V_sh, self.varshape, allow_none=False)
 
-    def current(self, V, Na: IonInfo):
-        return self.g_max * self.conductance_factor(V, Na) * (Na.E - V)
-
     def f_p_alpha(self, V, Na: IonInfo):
         temp = (self.V_sh - V).to_decimal(u.mV)
         return 0.32 * 4.0 / u.math.exprel((13.0 + temp) / 4.0)
@@ -152,14 +146,14 @@ class Na_TM1991(HH):
 
 
 @register_channel("Na_HH1952")
-class Na_HH1952(HH):
+class Na_HH1952(OhmicHH):
     r"""Hodgkin-Huxley 1952 sodium current with :math:`p^3 q` HH gating."""
 
     __module__ = "braincell.channel"
     root_type = Sodium
     gates = (
-        Gate("p", power=3, q10=lambda self: self.q10, temp_ref=lambda self: self.temp_ref),
-        Gate("q", q10=lambda self: self.q10, temp_ref=lambda self: self.temp_ref),
+        Gate("p", power=3, q10="q10", temp_ref="temp_ref"),
+        Gate("q", q10="q10", temp_ref="temp_ref"),
     )
 
     def __init__(
@@ -179,9 +173,6 @@ class Na_HH1952(HH):
         self.temp_ref = braintools.init.param(temp_ref, self.varshape, allow_none=False)
         self.V_sh = braintools.init.param(V_sh, self.varshape, allow_none=False)
 
-    def current(self, V, Na: IonInfo):
-        return self.g_max * self.conductance_factor(V, Na) * (Na.E - V)
-
     def f_p_alpha(self, V, Na: IonInfo):
         temp = (V - self.V_sh).to_decimal(u.mV) - 5.0
         return 1.0 / u.math.exprel(-temp / 10.0)
@@ -200,7 +191,7 @@ class Na_HH1952(HH):
 
 
 @register_channel("NaF_SU2015_DCN")
-class NaF_SU2015_DCN(HH):
+class NaF_SU2015_DCN(OhmicHH):
     """Template-based import of ``NaF_SU2015_DCN.mod``."""
 
     __module__ = "braincell.channel"
@@ -220,9 +211,6 @@ class NaF_SU2015_DCN(HH):
         self.g_max = braintools.init.param(g_max, self.varshape, allow_none=False)
         self.qdeltat = 1.0
 
-    def current(self, V, Na: IonInfo):
-        return self.g_max * self.conductance_factor(V, Na) * (Na.E - V)
-
     def f_m_inf(self, V, Na: IonInfo):
         V = V.to_decimal(u.mV)
         return 1.0 / (1.0 + u.math.exp((V + 45.0) / -7.3))
@@ -241,7 +229,7 @@ class NaF_SU2015_DCN(HH):
 
 
 @register_channel("NaP_SU2015_DCN")
-class NaP_SU2015_DCN(HH):
+class NaP_SU2015_DCN(OhmicHH):
     """Template-based import of ``NaP_SU2015_DCN.mod``."""
 
     __module__ = "braincell.channel"
@@ -261,9 +249,6 @@ class NaP_SU2015_DCN(HH):
         self.g_max = braintools.init.param(g_max, self.varshape, allow_none=False)
         self.qdeltat = 1.0
 
-    def current(self, V, Na: IonInfo):
-        return self.g_max * self.conductance_factor(V, Na) * (Na.E - V)
-
     def f_m_inf(self, V, Na: IonInfo):
         V = V.to_decimal(u.mV)
         return 1.0 / (1.0 + u.math.exp((V + 70.0) / -4.1))
@@ -281,7 +266,7 @@ class NaP_SU2015_DCN(HH):
 
 
 @register_channel("Na_ZH2019_IO")
-class Na_ZH2019_IO(HH):
+class Na_ZH2019_IO(OhmicHH):
     """Template-based import of ``Na_ZH2019_IO.mod``."""
 
     __module__ = "braincell.channel"
@@ -299,9 +284,6 @@ class Na_ZH2019_IO(HH):
     ):
         super().__init__(size=size, name=name)
         self.g_max = braintools.init.param(g_max, self.varshape, allow_none=False)
-
-    def current(self, V, Na: IonInfo):
-        return self.g_max * self.conductance_factor(V, Na) * (Na.E - V)
 
     def _m_alpha(self, V):
         V = V.to_decimal(u.mV)
@@ -366,6 +348,7 @@ class Nav1p6_MA2020_GoC(Markov):
         ("I5", "I6", "f1n", "b1n"),
         ("O", "I6", "fin", "bin"),
     )
+    dependent_state = "I6"
 
     def __init__(
         self,
@@ -570,6 +553,7 @@ class Nav_MA2020_GrC(Markov, IndependentIntegration):
         ("O", "I6", "fin", "bin"),
         ("I5", "I6", "f1n", "b1n"),
     )
+    dependent_state = "I6"
 
     def __init__(
         self,
@@ -697,6 +681,7 @@ class NaFHF_MA2020_GrC(Markov, IndependentIntegration):
         ("O", "I6", "fin", "bin"),
         ("I5", "I6", "f1n", "b1n"),
     )
+    dependent_state = "I6"
 
     def __init__(
         self,

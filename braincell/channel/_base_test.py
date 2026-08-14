@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 
 import unittest
+import warnings
 
 import braintools
 import brainunit as u
@@ -12,11 +13,13 @@ from braincell._base import IonInfo
 from braincell.channel._base import Gate
 from braincell.channel._base import HH
 from braincell.channel._base import Markov
+from braincell.channel._base import OhmicHH
 from braincell.channel._base import Transition
 from braincell.channel._base import ghk_flux
 from braincell.ion import Calcium
 from braincell.ion import Potassium
 from braincell.quad import get_integrator
+from braincell.quad.protocol import DiffEqState
 
 
 def _k_info(size: int = 1) -> IonInfo:
@@ -218,6 +221,7 @@ class _ExampleMarkovTwoOpenStates(Markov):
         Transition("C", "O1", "open1_rate", "close1_rate"),
         ("O1", "O2", "open2_rate", "close2_rate"),
     )
+    dependent_state = "O2"  # what the implicit scan resolved to; pinned so reordering cannot move it
 
     def __init__(self, size=1):
         super().__init__(size=size, name=None)
@@ -295,40 +299,20 @@ class _ExampleHHMixed(HH):
         return self.g_max * self.conductance_factor(V, K) * (K.E - V)
 
 
-class _ExampleHHConflict(HH):
-    root_type = Potassium
-    gates = (Gate("x"),)
+def _make_hh(name: str, namespace: dict):
+    """Build an ``HH`` subclass at call time.
 
-    def __init__(self):
-        super().__init__(size=1, name=None)
-
-    def f_x_inf(self, V, K: IonInfo):
-        _ = (V, K)
-        return 0.1
-
-    def f_x_tau(self, V, K: IonInfo):
-        _ = (V, K)
-        return 1.0
-
-    def f_x_alpha(self, V, K: IonInfo):
-        _ = (V, K)
-        return 0.1
-
-    def f_x_beta(self, V, K: IonInfo):
-        _ = (V, K)
-        return 0.1
+    Definition-time validation lives in ``HH.__init_subclass__``, so an
+    invalid template cannot be written as a module-level ``class`` statement
+    in this file — it would abort collection. Tests that assert on rejection
+    therefore create the class inside the ``assertRaises`` block.
+    """
+    return type(name, (HH,), {"root_type": Potassium, **namespace})
 
 
-class _ExampleHHMissing(HH):
-    root_type = Potassium
-    gates = (Gate("x"),)
-
-    def __init__(self):
-        super().__init__(size=1, name=None)
-
-    def f_x_alpha(self, V, K: IonInfo):
-        _ = (V, K)
-        return 0.1
+def _make_markov(name: str, namespace: dict):
+    """Build a ``Markov`` subclass at call time. See :func:`_make_hh`."""
+    return type(name, (Markov,), {"root_type": Potassium, **namespace})
 
 
 class ChannelTemplateTest(unittest.TestCase):
@@ -401,14 +385,551 @@ class ChannelTemplateTest(unittest.TestCase):
         self.assertTrue(u.math.allclose(ch.h.derivative, expected_dh, atol=1e-6 * u.Hz))
 
     def test_hh_rejects_gate_with_both_forms(self) -> None:
-        ch = _ExampleHHConflict()
-        with self.assertRaises(ValueError):
-            ch.reset_state(jnp.array([-60.0]) * u.mV, _k_info())
+        with self.assertRaisesRegex(ValueError, "both inf/tau and alpha/beta"):
+            _make_hh(
+                "_Conflict",
+                {
+                    "gates": (Gate("x"),),
+                    "f_x_inf": lambda self, V, K: 0.1,
+                    "f_x_tau": lambda self, V, K: 1.0,
+                    "f_x_alpha": lambda self, V, K: 0.1,
+                    "f_x_beta": lambda self, V, K: 0.1,
+                },
+            )
 
     def test_hh_rejects_gate_with_incomplete_form(self) -> None:
-        ch = _ExampleHHMissing()
-        with self.assertRaises(ValueError):
-            ch.reset_state(jnp.array([-60.0]) * u.mV, _k_info())
+        with self.assertRaisesRegex(ValueError, "must define either"):
+            _make_hh("_Missing", {"gates": (Gate("x"),), "f_x_alpha": lambda self, V, K: 0.1})
+
+    def test_hh_rejects_misspelled_gate_method_at_definition_time(self) -> None:
+        # ``Gate("m")`` with methods written for ``n`` used to survive class
+        # creation and ``init_state``, failing only at ``reset_state``.
+        with self.assertRaisesRegex(ValueError, r"gate 'm' must define either"):
+            _make_hh(
+                "_Typo",
+                {
+                    "gates": (Gate("m", power=3),),
+                    "f_n_inf": lambda self, V, K: 0.5,
+                    "f_n_tau": lambda self, V, K: 1.0,
+                },
+            )
+
+    def test_hh_rejects_duplicate_gate_names(self) -> None:
+        with self.assertRaisesRegex(ValueError, "declared more than once"):
+            _make_hh(
+                "_Dup",
+                {
+                    "gates": (Gate("m"), Gate("m", power=2)),
+                    "f_m_inf": lambda self, V, K: 0.5,
+                    "f_m_tau": lambda self, V, K: 1.0,
+                },
+            )
+
+    def test_hh_rejects_non_identifier_gate_name(self) -> None:
+        with self.assertRaisesRegex(ValueError, "not a valid Python identifier"):
+            _make_hh("_BadName", {"gates": (Gate("m gate"),)})
+
+    def test_hh_allows_gateless_abstract_subclass(self) -> None:
+        # Abstract intermediates declare no gates and must stay definable.
+        cls = _make_hh("_Abstract", {})
+        self.assertEqual(cls._resolved_gates, ())
+        self.assertEqual(cls._gate_forms, {})
+
+    def test_hh_gates_are_resolved_once_into_gate_objects(self) -> None:
+        cls = _make_hh(
+            "_TupleGates",
+            {
+                "gates": (("m", 3), Gate("h")),
+                "f_m_inf": lambda self, V, K: 0.5,
+                "f_m_tau": lambda self, V, K: 1.0,
+                "f_h_alpha": lambda self, V, K: 0.2,
+                "f_h_beta": lambda self, V, K: 0.3,
+            },
+        )
+        self.assertEqual([g.name for g in cls._resolved_gates], ["m", "h"])
+        self.assertEqual(cls._resolved_gates[0].power, 3)
+        self.assertTrue(all(isinstance(g, Gate) for g in cls._resolved_gates))
+        self.assertEqual(cls._gate_forms, {"m": "inf_tau", "h": "alpha_beta"})
+
+    def test_init_state_rejects_gate_colliding_with_parameter(self) -> None:
+        # A gate named after a constructor parameter used to silently replace
+        # that parameter with a DiffEqState.
+        cls = _make_hh(
+            "_Collide",
+            {
+                "gates": (Gate("g_max", power=2),),
+                "f_g_max_inf": lambda self, V, K: 0.5,
+                "f_g_max_tau": lambda self, V, K: 1.0,
+            },
+        )
+        ch = cls(1)
+        ch.g_max = braintools.init.param(1.0 * (u.mS / u.cm**2), ch.varshape, allow_none=False)
+        with self.assertRaisesRegex(ValueError, r"gate 'g_max' collides"):
+            ch.init_state(jnp.array([-60.0]) * u.mV, _k_info())
+
+    def test_init_state_is_idempotent(self) -> None:
+        ch = _ExampleHHInfTau(size=1)
+        V = jnp.array([-60.0]) * u.mV
+        K = _k_info()
+        ch.init_state(V, K)
+        ch.init_state(V, K)  # re-initialisation replaces the existing DiffEqState
+        self.assertIsInstance(ch.m, DiffEqState)
+
+    def test_markov_rejects_unknown_dependent_state(self) -> None:
+        with self.assertRaisesRegex(ValueError, "is not one of the declared states"):
+            _make_markov(
+                "_BadDependent",
+                {
+                    "pairs": (Transition("A", "B", "fwd", "bwd"),),
+                    "dependent_state": "Z",
+                    "fwd": lambda self, V: 0.1,
+                    "bwd": lambda self, V: 0.2,
+                },
+            )
+
+    def test_markov_rejects_missing_rate_method(self) -> None:
+        with self.assertRaisesRegex(ValueError, "rate method 'bwd', which is not defined"):
+            _make_markov(
+                "_MissingRate",
+                {
+                    "pairs": (Transition("A", "B", "fwd", "bwd"),),
+                    "fwd": lambda self, V: 0.1,
+                },
+            )
+
+    def test_markov_rejects_single_state(self) -> None:
+        with self.assertRaisesRegex(ValueError, "at least two states"):
+            _make_markov(
+                "_OneState",
+                {"pairs": (Transition("A", "A", "fwd"),), "fwd": lambda self, V: 0.1},
+            )
+
+    # ------------------------------------------------------------------
+    # Gate rate units
+    # ------------------------------------------------------------------
+
+    def _deriv_of(self, cls, **attrs):
+        """Init, reset and differentiate a one-gate channel; return dm/dt.
+
+        Extra keywords are set on the instance before differentiating, for
+        gate metadata that resolves by attribute name (``phi``, ``q10``, ...).
+        """
+        ch = cls(1)
+        for key, value in attrs.items():
+            setattr(ch, key, value)
+        V = jnp.array([-60.0]) * u.mV
+        K = _k_info()
+        ch.init_state(V, K)
+        ch.reset_state(V, K)
+        ch.compute_derivative(V, K)
+        return ch.m.derivative
+
+    def _inf_tau_cls(self, name, tau_value, **gate_kwargs):
+        return _make_hh(
+            name,
+            {
+                "gates": (Gate("m", **gate_kwargs),),
+                "f_m_inf": lambda self, V, K: 0.7,
+                "f_m_tau": lambda self, V, K: tau_value,
+            },
+        )
+
+    def _alpha_beta_cls(self, name, alpha, beta, **gate_kwargs):
+        return _make_hh(
+            name,
+            {
+                "gates": (Gate("m", **gate_kwargs),),
+                "f_m_alpha": lambda self, V, K: alpha,
+                "f_m_beta": lambda self, V, K: beta,
+            },
+        )
+
+    def test_bare_tau_is_read_as_milliseconds(self) -> None:
+        deriv = self._deriv_of(self._inf_tau_cls("_TauBare", 5.0))
+        self.assertTrue(u.math.allclose(deriv, (0.7 - 0.7) / 5.0 / u.ms, atol=1e-12 * u.Hz))
+        # dimension must be inverse time regardless of how tau was written
+        self.assertEqual(u.get_dim(deriv), u.get_dim(1 / u.ms))
+
+    def test_united_tau_matches_bare_tau(self) -> None:
+        bare = self._deriv_of(self._inf_tau_cls("_TauBare2", 5.0))
+        ms = self._deriv_of(self._inf_tau_cls("_TauMs", 5.0 * u.ms))
+        sec = self._deriv_of(self._inf_tau_cls("_TauSec", 0.005 * u.second))
+        self.assertTrue(u.math.allclose(bare, ms, atol=1e-12 * u.Hz))
+        self.assertTrue(u.math.allclose(bare, sec, atol=1e-12 * u.Hz))
+
+    def test_united_alpha_beta_matches_bare(self) -> None:
+        bare = self._deriv_of(self._alpha_beta_cls("_ABBare", 0.4, 0.1))
+        united = self._deriv_of(self._alpha_beta_cls("_ABUnited", 0.4 / u.ms, 0.1 / u.ms))
+        self.assertTrue(u.math.allclose(bare, united, atol=1e-12 * u.Hz))
+
+    def test_gate_time_unit_reinterprets_bare_values(self) -> None:
+        ms_gate = self._deriv_of(self._inf_tau_cls("_TauUnitMs", 5.0))
+        s_gate = self._deriv_of(self._inf_tau_cls("_TauUnitS", 5.0, time_unit=u.second))
+        # same bare tau, 1000x slower when read as seconds
+        self.assertTrue(u.math.allclose(ms_gate, s_gate * 1000.0, atol=1e-12 * u.Hz))
+
+    def test_gate_rejects_non_time_time_unit(self) -> None:
+        with self.assertRaisesRegex(ValueError, "time_unit must have a time dimension"):
+            Gate("m", time_unit=u.mV)
+
+    def test_tau_with_wrong_dimension_is_rejected(self) -> None:
+        with self.assertRaisesRegex(ValueError, r"Gate 'm': tau must be dimensionless"):
+            self._deriv_of(self._inf_tau_cls("_TauBadDim", 5.0 * u.mV))
+
+    def test_alpha_with_wrong_dimension_is_rejected(self) -> None:
+        with self.assertRaisesRegex(ValueError, r"Gate 'm': alpha must be dimensionless"):
+            self._deriv_of(self._alpha_beta_cls("_AlphaBadDim", 0.4 * u.mV, 0.1))
+
+    def test_dimensioned_phi_is_rejected_at_the_derivative(self) -> None:
+        # phi is read off the instance, so no constructor check sees it; without
+        # the derivative check a dimensioned phi silently yields mV/ms.
+        cls = self._inf_tau_cls("_PhiBadDim", 5.0, phi="phi")
+        with self.assertRaisesRegex(ValueError, r"Gate 'm': derivative must have an inverse-time dimension"):
+            self._deriv_of(cls, phi=2.0 * u.mV)
+
+    def test_dimensionless_phi_still_passes_the_derivative_check(self) -> None:
+        cls = self._inf_tau_cls("_PhiOkDim", 5.0, phi="phi")
+        deriv = self._deriv_of(cls, phi=2.0)
+        self.assertEqual(u.get_dim(deriv), u.get_dim(1 / u.ms))
+
+    # ------------------------------------------------------------------
+    # Gate ion-argument arity
+    # ------------------------------------------------------------------
+
+    def test_gate_method_receives_only_the_ions_it_declares(self) -> None:
+        seen = {}
+
+        def f_m_inf(self, V, K):
+            seen["inf"] = 1
+            return 0.5
+
+        def f_m_tau(self, V, K, Ca):
+            seen["tau"] = 2
+            return 1.0
+
+        cls = _make_hh("_Arity", {"gates": (Gate("m"),), "f_m_inf": f_m_inf, "f_m_tau": f_m_tau})
+        ch = cls(1)
+        V = jnp.array([-60.0]) * u.mV
+        ch.init_state(V, _k_info(), _ca_info())
+        ch.compute_derivative(V, _k_info(), _ca_info())
+        self.assertEqual(seen, {"inf": 1, "tau": 2})
+
+    def test_gate_method_with_varargs_receives_every_ion(self) -> None:
+        seen = {}
+
+        def f_m_inf(self, V, *ions):
+            seen["n"] = len(ions)
+            return 0.5
+
+        cls = _make_hh(
+            "_ArityVar",
+            {"gates": (Gate("m"),), "f_m_inf": f_m_inf, "f_m_tau": lambda self, V, *ions: 1.0},
+        )
+        ch = cls(1)
+        V = jnp.array([-60.0]) * u.mV
+        ch.init_state(V, _k_info(), _ca_info())
+        ch.compute_derivative(V, _k_info(), _ca_info())
+        self.assertEqual(seen["n"], 2)
+
+    def test_gate_method_demanding_more_ions_than_supplied_raises(self) -> None:
+        cls = _make_hh(
+            "_ArityTooMany",
+            {
+                "gates": (Gate("m"),),
+                "f_m_inf": lambda self, V, K, Ca: 0.5,
+                "f_m_tau": lambda self, V, K, Ca: 1.0,
+            },
+        )
+        ch = cls(1)
+        V = jnp.array([-60.0]) * u.mV
+        ch.init_state(V, _k_info())
+        with self.assertRaisesRegex(TypeError, "expects 2 ion argument"):
+            ch.compute_derivative(V, _k_info())
+
+    # ------------------------------------------------------------------
+    # Gate / state clipping
+    # ------------------------------------------------------------------
+
+    def _one_gate(self, name, **gate_kwargs):
+        return _make_hh(
+            name,
+            {
+                "gates": (Gate("m", **gate_kwargs),),
+                "f_m_inf": lambda self, V, K: 0.5,
+                "f_m_tau": lambda self, V, K: 1.0,
+            },
+        )
+
+    def _factor_at(self, cls, gate_value):
+        ch = cls(1)
+        V = jnp.array([-60.0]) * u.mV
+        ch.init_state(V, _k_info())
+        ch.m.value = jnp.array([gate_value])
+        return ch.conductance_factor(V, _k_info())
+
+    def test_gates_are_not_clipped_by_default(self) -> None:
+        cls = self._one_gate("_NoClip", power=3)
+        self.assertTrue(u.math.allclose(self._factor_at(cls, 1.5), jnp.array([1.5**3])))
+        # odd power keeps the sign of an undershooting gate
+        self.assertTrue(u.math.allclose(self._factor_at(cls, -0.3), jnp.array([(-0.3) ** 3])))
+
+    def test_even_power_rectifies_a_negative_gate_when_unclipped(self) -> None:
+        cls = self._one_gate("_NoClipEven", power=2)
+        self.assertTrue(u.math.allclose(self._factor_at(cls, -0.3), jnp.array([0.09])))
+
+    def test_gate_clip_projects_into_unit_interval(self) -> None:
+        cls = self._one_gate("_Clip", power=3, clip=True)
+        self.assertTrue(u.math.allclose(self._factor_at(cls, 1.5), jnp.array([1.0])))
+        self.assertTrue(u.math.allclose(self._factor_at(cls, -0.3), jnp.array([0.0])))
+        # in-range values are untouched
+        self.assertTrue(u.math.allclose(self._factor_at(cls, 0.5), jnp.array([0.125])))
+
+    def test_gate_clip_does_not_rewrite_stored_state(self) -> None:
+        cls = self._one_gate("_ClipStore", power=1, clip=True)
+        ch = cls(1)
+        V = jnp.array([-60.0]) * u.mV
+        ch.init_state(V, _k_info())
+        ch.m.value = jnp.array([1.5])
+        ch.conductance_factor(V, _k_info())
+        self.assertTrue(u.math.allclose(ch.m.value, jnp.array([1.5])))
+
+    def test_markov_clip_states_defaults_on_and_can_be_disabled(self) -> None:
+        self.assertTrue(Markov.clip_states)
+        ch = _ExampleMarkov(size=1)
+        V = jnp.array([-60.0]) * u.mV
+        K = _k_info()
+        ch.init_state(V, K)
+        ch.O.value = jnp.array([1.4])
+        self.assertTrue(u.math.allclose(ch._kinetic_state_values()["O"], jnp.array([1.0])))
+
+        type(ch).clip_states = False
+        try:
+            self.assertTrue(u.math.allclose(ch._kinetic_state_values()["O"], jnp.array([1.4])))
+        finally:
+            type(ch).clip_states = True
+
+    # ------------------------------------------------------------------
+    # Gate metadata binding
+    # ------------------------------------------------------------------
+
+    def _phi_of(self, name, **gate_kwargs):
+        def __init__(self, size=1):
+            HH.__init__(self, size=size, name=None)
+            self.q10 = 3.0
+            self.temp_ref = u.celsius2kelvin(22.0)
+            self.temp = u.celsius2kelvin(32.0)
+            self.phi_value = 2.5
+
+        cls = _make_hh(
+            name,
+            {
+                "gates": (Gate("m", **gate_kwargs),),
+                "f_m_inf": lambda self, V, K: 0.5,
+                "f_m_tau": lambda self, V, K: 1.0,
+                "__init__": __init__,
+            },
+        )
+        return cls(1).gate_phi(cls._resolved_gates[0])
+
+    def test_string_reference_matches_lambda_reference(self) -> None:
+        by_string = self._phi_of("_PhiStr", q10="q10", temp_ref="temp_ref")
+        by_lambda = self._phi_of(
+            "_PhiLambda",
+            q10=lambda self: self.q10,
+            temp_ref=lambda self: self.temp_ref,
+        )
+        self.assertTrue(u.math.allclose(by_string, by_lambda, atol=1e-12))
+
+    def test_string_reference_resolves_explicit_phi(self) -> None:
+        self.assertEqual(self._phi_of("_PhiDirect", phi="phi_value"), 2.5)
+
+    def test_string_reference_to_missing_attribute_names_it(self) -> None:
+        with self.assertRaisesRegex(AttributeError, "references attribute 'nope'"):
+            self._phi_of("_PhiMissing", phi="nope")
+
+    # ------------------------------------------------------------------
+    # Markov rate units
+    # ------------------------------------------------------------------
+
+    def _two_state_markov(self, name, fwd, bwd=lambda self, V: 0.2, **kwargs):
+        return _make_markov(
+            name,
+            {
+                "pairs": (Transition("A", "B", "fwd", "bwd"),),
+                "dependent_state": "B",
+                "fwd": fwd,
+                "bwd": bwd,
+                **kwargs,
+            },
+        )
+
+    def _markov_deriv_of(self, cls, **attrs):
+        """Init, reset and differentiate a two-state Markov; return dA/dt."""
+        ch = cls(1)
+        for key, value in attrs.items():
+            setattr(ch, key, value)
+        V = jnp.array([-60.0]) * u.mV
+        K = _k_info()
+        ch.init_state(V, K)
+        ch.reset_state(V, K)
+        ch.compute_derivative(V, K)
+        return ch.A.derivative
+
+    def test_markov_bare_rate_is_read_as_per_millisecond(self) -> None:
+        deriv = self._markov_deriv_of(self._two_state_markov("_MkBare", lambda self, V: 0.1))
+        self.assertEqual(u.get_dim(deriv), u.get_dim(1 / u.ms))
+
+    def test_markov_united_rate_matches_the_bare_form(self) -> None:
+        bare = self._markov_deriv_of(self._two_state_markov("_MkB2", lambda self, V: 0.1))
+        united = self._markov_deriv_of(self._two_state_markov("_MkU2", lambda self, V: 0.1 / u.ms))
+        self.assertTrue(u.math.allclose(bare, united, atol=1e-12 / u.ms))
+
+    def test_markov_united_rate_in_seconds_matches_the_bare_form(self) -> None:
+        bare = self._markov_deriv_of(self._two_state_markov("_MkB3", lambda self, V: 0.1))
+        united = self._markov_deriv_of(self._two_state_markov("_MkU3", lambda self, V: 100.0 / u.second))
+        self.assertTrue(u.math.allclose(bare, united, atol=1e-12 / u.ms))
+
+    def test_markov_rejects_a_mis_dimensioned_rate_and_names_it(self) -> None:
+        # A dimensioned phi reaches the derivative through the rate lambda, and
+        # the trailing `/ u.ms` used to apply blind: the result was mV/ms.
+        cls = self._two_state_markov("_MkBadDim", lambda self, V: self.phi * 0.1)
+        with self.assertRaisesRegex(ValueError, r"_MkBadDim\.fwd must be dimensionless"):
+            self._markov_deriv_of(cls, phi=2.0 * u.mV)
+
+    def test_markov_steady_state_solve_rejects_a_mis_dimensioned_rate(self) -> None:
+        # The solvers strip units with `get_magnitude`, so without the check
+        # they would have silently solved the wrong generator matrix.
+        cls = self._two_state_markov("_MkBadSS", lambda self, V: self.phi * 0.1)
+        ch = cls(1)
+        ch.phi = 2.0 * u.mV
+        V = jnp.array([-60.0]) * u.mV
+        K = _k_info()
+        ch.init_state(V, K)
+        with self.assertRaisesRegex(ValueError, r"_MkBadSS\.fwd must be dimensionless"):
+            ch.reset_steady_state(V, K)
+
+    def test_markov_dimensioned_conserve_is_caught_at_the_derivative(self) -> None:
+        # `conserve` bypasses the per-rate check: it reaches the states, not
+        # the rates. The derivative assertion is what catches it.
+        cls = self._two_state_markov("_MkBadConserve", lambda self, V: 0.1, conserve=1.0 * u.mV)
+        with self.assertRaisesRegex(ValueError, r"state 'A': derivative must have an inverse-time dimension"):
+            self._markov_deriv_of(cls)
+
+    # ------------------------------------------------------------------
+    # Markov dependent state
+    # ------------------------------------------------------------------
+
+    def _three_state_markov(self, name, order, **kwargs):
+        rates = {f"r{i}": (lambda self, V: 0.1) for i in range(1, 5)}
+        return _make_markov(name, {"pairs": order, **rates, **kwargs})
+
+    def test_explicit_dependent_state_survives_pair_reordering(self) -> None:
+        forward = (Transition("A", "B", "r1", "r2"), Transition("B", "C", "r3", "r4"))
+        reordered = (Transition("B", "C", "r3", "r4"), Transition("A", "B", "r1", "r2"))
+
+        a = self._three_state_markov("_OrderA", forward, dependent_state="A")
+        b = self._three_state_markov("_OrderB", reordered, dependent_state="A")
+        self.assertEqual(a(1)._dependent_state_name(), "A")
+        self.assertEqual(b(1)._dependent_state_name(), "A")
+        # ... whereas the implicit fallback would have moved with the order
+        self.assertEqual(a._resolved_state_names[-1], "C")
+        self.assertEqual(b._resolved_state_names[-1], "A")
+
+    def test_implicit_dependent_state_warns(self) -> None:
+        cls = self._three_state_markov(
+            "_Implicit",
+            (Transition("A", "B", "r1", "r2"), Transition("B", "C", "r3", "r4")),
+        )
+        with self.assertWarnsRegex(DeprecationWarning, "does not declare `dependent_state`"):
+            self.assertEqual(cls(1)._dependent_state_name(), "C")
+
+    def test_shipped_markov_channels_declare_dependent_state(self) -> None:
+        # Regression lock: reordering `pairs` in any shipped channel must not
+        # be able to silently change which state is eliminated.
+        import braincell.channel as channel_pkg
+
+        implicit = [
+            name
+            for name in dir(channel_pkg)
+            if isinstance(cls := getattr(channel_pkg, name, None), type)
+            and issubclass(cls, Markov)
+            and cls is not Markov
+            and cls.pairs
+            and cls.dependent_state is None
+        ]
+        self.assertEqual(implicit, [])
+
+    # ------------------------------------------------------------------
+    # OhmicHH
+    # ------------------------------------------------------------------
+
+    def _ohmic(self, name, **ns):
+        base = {
+            "root_type": Potassium,
+            "gates": (Gate("m", power=2),),
+            "f_m_inf": lambda self, V, K: 0.5,
+            "f_m_tau": lambda self, V, K: 1.0,
+        }
+        cls = type(name, (OhmicHH,), {**base, **ns})
+        ch = cls(1)
+        ch.g_max = braintools.init.param(0.5 * (u.mS / u.cm**2), ch.varshape, allow_none=False)
+        return ch
+
+    def test_ohmic_current_uses_first_ion_reversal(self) -> None:
+        ch = self._ohmic("_Ohmic")
+        V = jnp.array([-60.0]) * u.mV
+        K = _k_info()
+        ch.init_state(V, K)
+        ch.reset_state(V, K)
+        expected = ch.g_max * ch.conductance_factor(V, K) * (K.E - V)
+        self.assertTrue(u.math.allclose(ch.current(V, K), expected))
+
+    def test_ohmic_reversal_potential_can_be_overridden(self) -> None:
+        ch = self._ohmic("_OhmicFixed", reversal_potential=lambda self, V, *ions: self.E)
+        ch.E = jnp.array([-30.0]) * u.mV
+        V = jnp.array([-60.0]) * u.mV
+        K = _k_info()
+        ch.init_state(V, K)
+        ch.reset_state(V, K)
+        expected = ch.g_max * ch.conductance_factor(V, K) * (ch.E - V)
+        self.assertTrue(u.math.allclose(ch.current(V, K), expected))
+
+    def test_ohmic_current_can_be_overridden_for_a_renamed_conductance(self) -> None:
+        # OhmicHH reads self.g_max; a channel naming it differently overrides
+        # current() rather than reaching for a hook the catalogue never uses.
+        ch = self._ohmic(
+            "_OhmicRenamed",
+            current=lambda self, V, *ions: self.perm * self.conductance_factor(V, *ions) * (ions[0].E - V),
+        )
+        ch.perm = braintools.init.param(0.25 * (u.mS / u.cm**2), ch.varshape, allow_none=False)
+        V = jnp.array([-60.0]) * u.mV
+        K = _k_info()
+        ch.init_state(V, K)
+        ch.reset_state(V, K)
+        expected = ch.perm * ch.conductance_factor(V, K) * (K.E - V)
+        self.assertTrue(u.math.allclose(ch.current(V, K), expected))
+
+    def test_ohmic_reversal_reads_the_leading_ion_of_a_joint_root(self) -> None:
+        # AHP_De1994 and friends are rooted on JointTypes[Potassium, Calcium]
+        # and must draw E from potassium, the first declared ion.
+        ch = self._ohmic("_OhmicJoint")
+        V = jnp.array([-60.0]) * u.mV
+        K, Ca = _k_info(), _ca_info()
+        ch.init_state(V, K, Ca)
+        ch.reset_state(V, K, Ca)
+        self.assertTrue(u.math.allclose(ch.reversal_potential(V, K, Ca), K.E))
+
+    def test_markov_pairs_are_resolved_once(self) -> None:
+        cls = _make_markov(
+            "_TuplePairs",
+            {
+                "pairs": (("A", "B", "fwd", "bwd"),),
+                "fwd": lambda self, V: 0.1,
+                "bwd": lambda self, V: 0.2,
+            },
+        )
+        self.assertTrue(all(isinstance(p, Transition) for p in cls._resolved_pairs))
+        self.assertEqual(cls._resolved_state_names, ("A", "B"))
 
     def test_ghk_channel_uses_p_max(self) -> None:
         ch = _ExampleGHK(size=1)
@@ -495,16 +1016,19 @@ class ChannelTemplateTest(unittest.TestCase):
         V = jnp.array([-65.0]) * u.mV
         K = _k_info()
 
-        ch.init_state(V, K)
-        self.assertEqual(ch.redundant_state, "I")
-        self.assertEqual(ch.state_names, ("C", "O"))
-        self.assertTrue(hasattr(ch, "C"))
-        self.assertTrue(hasattr(ch, "O"))
-        self.assertFalse(hasattr(ch, "I"))
+        with self.assertWarnsRegex(DeprecationWarning, "does not declare `dependent_state`"):
+            ch.init_state(V, K)
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", DeprecationWarning)
+            self.assertEqual(ch.redundant_state, "I")
+            self.assertEqual(ch.state_names, ("C", "O"))
+            self.assertTrue(hasattr(ch, "C"))
+            self.assertTrue(hasattr(ch, "O"))
+            self.assertFalse(hasattr(ch, "I"))
 
-        ch.C.value = jnp.array([0.3])
-        ch.O.value = jnp.array([0.2])
-        states = ch.state_values()
+            ch.C.value = jnp.array([0.3])
+            ch.O.value = jnp.array([0.2])
+            states = ch.state_values()
         self.assertTrue(u.math.allclose(states["I"], jnp.array([0.5]), atol=1e-6))
 
     def test_markov_pre_and_post_integral_are_no_ops(self) -> None:
@@ -537,15 +1061,17 @@ class ChannelTemplateTest(unittest.TestCase):
         V = jnp.array([-65.0]) * u.mV
         K = _k_info()
 
-        ch.init_state(V, K)
-        ch.reset_steady_state(V, K)
-        states = ch.state_values()
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", DeprecationWarning)
+            ch.init_state(V, K)
+            ch.reset_steady_state(V, K)
+            states = ch.state_values()
 
-        total = states["C"] + states["O"] + states["I"]
-        self.assertTrue(u.math.allclose(total, jnp.array([1.0]), atol=1e-6))
-        self.assertTrue(u.math.allclose(states["I"], jnp.array([1.0]), atol=1e-6))
+            total = states["C"] + states["O"] + states["I"]
+            self.assertTrue(u.math.allclose(total, jnp.array([1.0]), atol=1e-6))
+            self.assertTrue(u.math.allclose(states["I"], jnp.array([1.0]), atol=1e-6))
 
-        ch.compute_derivative(V, K)
+            ch.compute_derivative(V, K)
         self.assertTrue(u.math.allclose(ch.C.derivative, jnp.array([0.0]) / u.ms, atol=1e-6 * u.Hz))
         self.assertTrue(u.math.allclose(ch.O.derivative, jnp.array([0.0]) / u.ms, atol=1e-6 * u.Hz))
 

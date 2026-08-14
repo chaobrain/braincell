@@ -4,6 +4,7 @@ import unittest
 
 from .sc_braincell_debug import SC as BrainCellSC
 from .sc_parameters import (
+    DEFAULT_NRNMECH_BUILD_DIR,
     DEFAULT_NRNMECH_PATH,
     EXPECTED_AXON_COUNT,
     EXPECTED_DEND_COUNT,
@@ -34,7 +35,7 @@ class SCRegionMapTest(unittest.TestCase):
 
 class SCModCompileLayoutTest(unittest.TestCase):
     def test_top_level_nrnmech_contains_cdp(self) -> None:
-        mod_func = DEFAULT_NRNMECH_PATH.parents[1] / "mod_func.cpp"
+        mod_func = DEFAULT_NRNMECH_BUILD_DIR / "mod_func.cpp"
         self.assertTrue(DEFAULT_NRNMECH_PATH.exists())
         self.assertTrue(mod_func.exists())
         text = mod_func.read_text()

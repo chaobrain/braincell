@@ -53,6 +53,36 @@ This working tree currently has the Cerebellum/PC comparison work in progress:
   `braincell.DiffEqGroupState`) while `SingleCompartment`, which has no
   spatial axis, keeps the plain `brainstate.HiddenState`. See
   `docs/specs/2026-08-13-cell-hidden-group-state.md`.
+- [x] **The channel template layer validates at class-definition time.**
+  `HH` and `Markov` resolve and check `gates` / `pairs` in
+  `__init_subclass__`, so a mistyped gate name, a duplicate, a gate
+  defining neither (or both) rate forms, a transition naming a missing
+  rate method, and a `dependent_state` outside the state set are all
+  rejected when the class is created rather than at `reset_state()`.
+  `init_state` refuses to bind a gate over a non-`DiffEqState`
+  attribute, which used to silently replace a constructor parameter.
+- [x] **Gate and transition rates carry real units.** `Gate.time_unit`
+  (default `u.ms`) says what a bare `f_*_tau` / `f_*_alpha` / `f_*_beta`
+  return means; a united return is used as given and a wrong dimension
+  is rejected against the gate by name. Markov transition rates accept
+  the same two forms against a fixed `u.ms`. Every state derivative is
+  asserted to be an inverse time before it reaches the integrator,
+  which is what catches a dimensioned `phi`.
+- [x] **`OhmicHH` carries the ohmic driving force.** 63 channels that
+  restated `g_max * conductance_factor(...) * (E - V)` verbatim now
+  inherit it; a channel reading a fixed `self.E` overrides
+  `reversal_potential()`. GHK-flux and permeability-scaled channels
+  keep inheriting `HH` and writing their own `current()`.
+- [x] **Gate metadata binds by attribute name.** `Gate(q10="q10")`
+  replaces the 75 `lambda self: self.q10` closures, which were
+  unpicklable and invisible to tooling. The callable form still works.
+- [~] **Gate/state clipping is an explicit policy.** `Gate.clip`
+  defaults to `False` (NEURON does not clip HH gates, and the catalogue
+  is validated against those mechanisms); `Markov.clip_states` defaults
+  to `True`. Both project only the value fed to the conductance product
+  or the kinetics, never the stored state. Remaining gap: the implicit
+  `dependent_state` fallback still exists behind a `DeprecationWarning`
+  and is slated for removal.
 
 ## 1. Mission and Scope
 

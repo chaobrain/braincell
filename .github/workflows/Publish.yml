@@ -53,10 +53,15 @@ jobs:
       - name: Install build dependencies
         run: |
           python -m pip install --upgrade pip
-          python -m pip install build
+          python -m pip install build twine
 
       - name: Build package
         run: python -m build
+
+      - name: Check distribution metadata
+        # Catch unrenderable READMEs and malformed metadata here, before the
+        # upload job ever contacts PyPI.
+        run: python -m twine check --strict dist/*
 
       - name: Store distribution packages
         uses: actions/upload-artifact@v7
@@ -80,3 +85,14 @@ jobs:
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           password: ${{ secrets.PYPI_API_TOKEN }}
+          # Make re-runs idempotent. Without this, re-running a partially failed
+          # release job -- or dispatching manually after a release already
+          # uploaded -- dies with "400 File already exists". Manual dispatch is
+          # the recovery path that actually shipped v0.1.0 after the release run
+          # failed, so it has to stay usable.
+          skip-existing: true
+          # An explicit password disables Trusted Publishing, which in turn makes
+          # the action's default `attestations: true` a no-op that only emits a
+          # warning. Say so rather than carrying the noise.
+          attestations: false
+          verbose: true

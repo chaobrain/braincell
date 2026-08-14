@@ -26,7 +26,7 @@ import braintools
 import brainunit as u
 
 from braincell._base import HHTypedNeuron
-from braincell.channel._base import Gate, HH
+from braincell.channel._base import Gate, HH, OhmicHH
 from braincell.mech import register_channel
 
 __all__ = [
@@ -42,7 +42,7 @@ __all__ = [
 
 
 @register_channel("HCN_HM1992")
-class HCN_HM1992(HH):
+class HCN_HM1992(OhmicHH):
     r"""
     The hyperpolarization-activated cation current model propsoed by (Huguenard & McCormick, 1992).
 
@@ -84,7 +84,7 @@ class HCN_HM1992(HH):
     __module__ = 'braincell.channel'
 
     root_type = HHTypedNeuron
-    gates = (Gate("p", q10=lambda self: self.q10, temp_ref=lambda self: self.temp_ref),)
+    gates = (Gate("p", q10="q10", temp_ref="temp_ref"),)
 
     def __init__(
         self,
@@ -103,8 +103,8 @@ class HCN_HM1992(HH):
         self.q10 = braintools.init.param(q10, self.varshape, allow_none=False)
         self.temp_ref = braintools.init.param(temp_ref, self.varshape, allow_none=False)
 
-    def current(self, V):
-        return self.g_max * self.conductance_factor(V) * (self.E - V)
+    def reversal_potential(self, V, *ions):
+        return self.E
 
     def f_p_inf(self, V):
         V = V.to_decimal(u.mV)
@@ -259,7 +259,7 @@ class HCN_HM1992(HH):
 
 
 @register_channel("HCN1_MA2025_BC")
-class HCN1_MA2025_BC(HH):
+class HCN1_MA2025_BC(OhmicHH):
     """Template-based import of ``HCN1_MA2025_BC.mod``."""
 
     __module__ = "braincell.channel"
@@ -288,8 +288,8 @@ class HCN1_MA2025_BC(HH):
         self.v_tau_k1 = -22.0 * u.mV
         self.v_tau_k2 = 7.14 * u.mV
 
-    def current(self, V):
-        return self.g_max * self.conductance_factor(V) * (self.E - V)
+    def reversal_potential(self, V, *ions):
+        return self.E
 
     def f_h_inf(self, V):
         V = V.to_decimal(u.mV)
@@ -307,7 +307,7 @@ class HCN1_MA2025_BC(HH):
 
 
 @register_channel("HCN1_MA2024_PC")
-class HCN1_MA2024_PC(HH):
+class HCN1_MA2024_PC(OhmicHH):
     """Template-based import of ``HCN1_MA2024_PC.mod``."""
 
     __module__ = "braincell.channel"
@@ -336,8 +336,8 @@ class HCN1_MA2024_PC(HH):
         self.v_tau_k1 = -22.0 * u.mV
         self.v_tau_k2 = 7.14 * u.mV
 
-    def current(self, V):
-        return self.g_max * self.conductance_factor(V) * (self.E - V)
+    def reversal_potential(self, V, *ions):
+        return self.E
 
     def f_h_inf(self, V):
         V = V.to_decimal(u.mV)
@@ -355,7 +355,7 @@ class HCN1_MA2024_PC(HH):
 
 
 @register_channel("HCN1_RI2021_SC")
-class HCN1_RI2021_SC(HH):
+class HCN1_RI2021_SC(OhmicHH):
     """Template-based import of ``HCN1_RI2021_SC.mod``."""
 
     __module__ = "braincell.channel"
@@ -384,8 +384,8 @@ class HCN1_RI2021_SC(HH):
         self.v_tau_k1 = -22.0 * u.mV
         self.v_tau_k2 = 7.14 * u.mV
 
-    def current(self, V):
-        return self.g_max * self.conductance_factor(V) * (self.E - V)
+    def reversal_potential(self, V, *ions):
+        return self.E
 
     def f_h_inf(self, V):
         V = V.to_decimal(u.mV)
@@ -543,7 +543,7 @@ class HCN2_MA2020_GoC(HH):
 
 
 @register_channel("HCN_SU2015_DCN")
-class HCN_SU2015_DCN(HH):
+class HCN_SU2015_DCN(OhmicHH):
     """Template-based import of ``HCN_SU2015_DCN.mod``."""
 
     __module__ = "braincell.channel"
@@ -562,8 +562,8 @@ class HCN_SU2015_DCN(HH):
         self.E = braintools.init.param(E, self.varshape, allow_none=False)
         self.qdeltat = 1.0
 
-    def current(self, V):
-        return self.g_max * self.conductance_factor(V) * (self.E - V)
+    def reversal_potential(self, V, *ions):
+        return self.E
 
     def f_m_inf(self, V):
         V = V.to_decimal(u.mV)
@@ -574,7 +574,7 @@ class HCN_SU2015_DCN(HH):
 
 
 @register_channel("HCN_ZH2019_IO")
-class HCN_ZH2019_IO(HH):
+class HCN_ZH2019_IO(OhmicHH):
     """Template-based import of ``HCN_ZH2019_IO.mod``."""
 
     __module__ = "braincell.channel"
@@ -592,8 +592,8 @@ class HCN_ZH2019_IO(HH):
         self.g_max = braintools.init.param(g_max, self.varshape, allow_none=False)
         self.E = braintools.init.param(E, self.varshape, allow_none=False)
 
-    def current(self, V):
-        return self.g_max * self.conductance_factor(V) * (self.E - V)
+    def reversal_potential(self, V, *ions):
+        return self.E
 
     def f_q_inf(self, V):
         V = V.to_decimal(u.mV)

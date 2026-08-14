@@ -1,23 +1,27 @@
 
 
-import importlib.util
 import json
 from pathlib import Path
-import sys
+
+from examples.neuron_compare._suite_loader import load_suite_module
+from examples.neuron_compare._suite_loader import use_double_precision
+
+use_double_precision()
 
 
 CHANNEL_NO_CONC_ROOT = Path(__file__).resolve().parents[1]
 TEMPLATES_ROOT = CHANNEL_NO_CONC_ROOT / "engine"
-MOD_VALIDATE_MOD_DIR = "/home/swl/braincell/examples/convert_mod/mod_validate/mods"
+
+# Resolved from this file rather than hardcoded: `workflow_api.load_workflow_inputs`
+# raises FileNotFoundError when `identity.mod_dir` does not exist, so an absolute
+# path into one developer's home directory fails everywhere else.
+EXAMPLES_ROOT = Path(__file__).resolve().parents[3]
+MOD_VALIDATE_MOD_DIR = str(EXAMPLES_ROOT / "convert_mod" / "mod_validate" / "mods")
 
 
 def load_module(path: Path, name: str):
-    spec = importlib.util.spec_from_file_location(name, path)
-    module = importlib.util.module_from_spec(spec)
-    assert spec is not None and spec.loader is not None
-    sys.modules[name] = module
-    spec.loader.exec_module(module)
-    return module
+    """Load a ``channel_no_conc`` module by path. See :func:`load_suite_module`."""
+    return load_suite_module(CHANNEL_NO_CONC_ROOT, path, name)
 
 
 def build_mapping_payload(

@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
+from examples.neuron_compare.cell._nrnmech import nrnmech_path
 
 CELL_DIR = Path(__file__).resolve().parent
 REPO_ROOT = CELL_DIR.parents[4]
@@ -12,9 +13,9 @@ REPO_ROOT = CELL_DIR.parents[4]
 SOURCE_GOC_DIR = Path("/home/swl/Cerebellum_circuit/GoC/GoC")
 SOURCE_MORPH_PATH = SOURCE_GOC_DIR / "pair-140514-C2-1_split_1.asc"
 SOURCE_OPTIMIZATION_PATH = SOURCE_GOC_DIR / "Optimization_result.txt"
-SOURCE_NRNMECH_PATH = (
-    REPO_ROOT / "examples" / "neuron_compare" / "Cerebellum_mod" / "GoC" / "x86_64" / ".libs" / "libnrnmech.so"
-)
+
+SOURCE_NRNMECH_BUILD_DIR = REPO_ROOT / "examples" / "neuron_compare" / "Cerebellum_mod" / "GoC" / "x86_64"
+SOURCE_NRNMECH_PATH = nrnmech_path(SOURCE_NRNMECH_BUILD_DIR)
 
 DEFAULT_MORPH_PATH = REPO_ROOT / "examples" / "neuron_compare" / "Cerebellum_mod" / "GoC" / "morphology" / "GoC.asc"
 

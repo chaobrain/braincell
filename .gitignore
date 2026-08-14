@@ -246,6 +246,9 @@ x86_64/
 /dev/
 /.claudegitignore
 
+# Regenerated braincell.vis renders, not source
+/data/vis_outputs/
+
 # brainx-sphinx-header build artifacts
 docs/_brand/
 docs/_static/css/brainx-header.css

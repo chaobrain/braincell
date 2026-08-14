@@ -787,6 +787,9 @@ BREAKING: DiffEqState(value) now raises TypeError."
 - Modify: `braincell/quad/protocol.py` (7 sites), `braincell/quad/__init__.py` (2),
   `braincell/__init__.py` (2), `braincell/channel/_base.py` (3),
   `braincell/ion/_base.py` (3), `braincell/synapse/markov.py` (3)
+- Modify (sites introduced by Task 1, not present before this branch):
+  `braincell/_single_compartment/base.py` (2),
+  `braincell/channel/hyperpolarization_activated.py` (3, commented-out)
 - Test: `braincell/quad/protocol_test.py` (11),
   `braincell/quad/_util_test.py` (1), `braincell/_misc_test.py:77` (1)
 
@@ -829,11 +832,25 @@ sed -i 's/\bdiffeq_state\b/state/g' \
   braincell/quad/__init__.py \
   braincell/__init__.py \
   braincell/channel/_base.py \
+  braincell/channel/hyperpolarization_activated.py \
   braincell/ion/_base.py \
   braincell/synapse/markov.py \
+  braincell/_single_compartment/base.py \
   braincell/quad/protocol_test.py \
   braincell/quad/_util_test.py
 ```
+
+The last two library files are on this list **because of Task 1**:
+Step 7 of that task rewrites `_single_compartment/base.py` to call the
+factory and updates the commented-out block in
+`hyperpolarization_activated.py`. Neither contained `diffeq_state`
+before this branch.
+
+Note the trailing `\b` is load-bearing and sufficient. It correctly skips
+`diffeq_states`, `split_diffeq_states`, `_check_diffeq_state_derivative`,
+`diffeq_state_key`, `diffeq_state_val`, and test method names like
+`test_init_state_creates_diffeq_state_V` — in every one of those the next
+character is a word character (`s` or `_`), so `\b` does not match.
 
 - [ ] **Step 4: Verify no collateral damage**
 

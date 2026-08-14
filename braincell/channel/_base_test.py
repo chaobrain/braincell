@@ -747,6 +747,74 @@ class ChannelTemplateTest(unittest.TestCase):
             self._phi_of("_PhiMissing", phi="nope")
 
     # ------------------------------------------------------------------
+    # Markov rate units
+    # ------------------------------------------------------------------
+
+    def _two_state_markov(self, name, fwd, bwd=lambda self, V: 0.2, **kwargs):
+        return _make_markov(
+            name,
+            {
+                "pairs": (Transition("A", "B", "fwd", "bwd"),),
+                "dependent_state": "B",
+                "fwd": fwd,
+                "bwd": bwd,
+                **kwargs,
+            },
+        )
+
+    def _markov_deriv_of(self, cls, **attrs):
+        """Init, reset and differentiate a two-state Markov; return dA/dt."""
+        ch = cls(1)
+        for key, value in attrs.items():
+            setattr(ch, key, value)
+        V = jnp.array([-60.0]) * u.mV
+        K = _k_info()
+        ch.init_state(V, K)
+        ch.reset_state(V, K)
+        ch.compute_derivative(V, K)
+        return ch.A.derivative
+
+    def test_markov_bare_rate_is_read_as_per_millisecond(self) -> None:
+        deriv = self._markov_deriv_of(self._two_state_markov("_MkBare", lambda self, V: 0.1))
+        self.assertEqual(u.get_dim(deriv), u.get_dim(1 / u.ms))
+
+    def test_markov_united_rate_matches_the_bare_form(self) -> None:
+        bare = self._markov_deriv_of(self._two_state_markov("_MkB2", lambda self, V: 0.1))
+        united = self._markov_deriv_of(self._two_state_markov("_MkU2", lambda self, V: 0.1 / u.ms))
+        self.assertTrue(u.math.allclose(bare, united, atol=1e-12 / u.ms))
+
+    def test_markov_united_rate_in_seconds_matches_the_bare_form(self) -> None:
+        bare = self._markov_deriv_of(self._two_state_markov("_MkB3", lambda self, V: 0.1))
+        united = self._markov_deriv_of(self._two_state_markov("_MkU3", lambda self, V: 100.0 / u.second))
+        self.assertTrue(u.math.allclose(bare, united, atol=1e-12 / u.ms))
+
+    def test_markov_rejects_a_mis_dimensioned_rate_and_names_it(self) -> None:
+        # A dimensioned phi reaches the derivative through the rate lambda, and
+        # the trailing `/ u.ms` used to apply blind: the result was mV/ms.
+        cls = self._two_state_markov("_MkBadDim", lambda self, V: self.phi * 0.1)
+        with self.assertRaisesRegex(ValueError, r"_MkBadDim\.fwd must be dimensionless"):
+            self._markov_deriv_of(cls, phi=2.0 * u.mV)
+
+    def test_markov_steady_state_solve_rejects_a_mis_dimensioned_rate(self) -> None:
+        # The solvers strip units with `get_magnitude`, so without the check
+        # they would have silently solved the wrong generator matrix.
+        cls = self._two_state_markov("_MkBadSS", lambda self, V: self.phi * 0.1)
+        ch = cls(1)
+        ch.phi = 2.0 * u.mV
+        V = jnp.array([-60.0]) * u.mV
+        K = _k_info()
+        ch.init_state(V, K)
+        with self.assertRaisesRegex(ValueError, r"_MkBadSS\.fwd must be dimensionless"):
+            ch.reset_steady_state(V, K)
+
+    def test_markov_dimensioned_conserve_is_caught_at_the_derivative(self) -> None:
+        # `conserve` bypasses the per-rate check: it reaches the states, not
+        # the rates. The derivative assertion is what catches it.
+        cls = self._two_state_markov("_MkBadConserve", lambda self, V: 0.1, conserve=1.0 * u.mV)
+        with self.assertRaisesRegex(ValueError, r"state 'A': derivative must have an inverse-time dimension"):
+            self._markov_deriv_of(cls)
+
+    # ------------------------------------------------------------------
     # Markov dependent state
     # ------------------------------------------------------------------
 

@@ -181,44 +181,75 @@ class Gate:
             raise ValueError(f"Gate {self.name!r}: time_unit must have a time dimension, got {self.time_unit!r}.")
 
 
-def _as_time(value, gate: Gate, label: str):
-    """Interpret a gate time constant, honouring an explicit unit if present."""
+def _as_gate_quantity(value, gate: Gate, label: str, *, inverse: bool):
+    """Interpret one gate rate return value against the gate's ``time_unit``.
+
+    The two forms differ only in which side of the unit the value lands on:
+    a time constant is read as ``value * time_unit``, a transition rate as
+    ``value / time_unit``. A value that already carries a unit is checked
+    against the expected dimension and passed through untouched.
+    """
+    expected = 1 / gate.time_unit if inverse else gate.time_unit
     if u.get_dim(value) == u.DIMENSIONLESS:
-        return value * gate.time_unit
-    if u.get_dim(value) != u.get_dim(u.ms):
+        return value / gate.time_unit if inverse else value * gate.time_unit
+    if u.get_dim(value) != u.get_dim(expected):
         raise ValueError(
-            f"Gate {gate.name!r}: {label} must be dimensionless (read as {gate.time_unit!r}) "
-            f"or carry a time dimension, got dimension {u.get_dim(value)}."
+            f"Gate {gate.name!r}: {label} must be dimensionless (read as "
+            f"{'1/' if inverse else ''}{gate.time_unit!r}) or carry "
+            f"{'an inverse-time' if inverse else 'a time'} dimension, "
+            f"got dimension {u.get_dim(value)}."
         )
     return value
+
+
+def _as_time(value, gate: Gate, label: str):
+    """Interpret a gate time constant, honouring an explicit unit if present."""
+    return _as_gate_quantity(value, gate, label, inverse=False)
 
 
 def _as_rate(value, gate: Gate, label: str):
     """Interpret a gate transition rate, honouring an explicit unit if present."""
-    if u.get_dim(value) == u.DIMENSIONLESS:
-        return value / gate.time_unit
-    if u.get_dim(value) != u.get_dim(1 / u.ms):
+    return _as_gate_quantity(value, gate, label, inverse=True)
+
+
+def _as_markov_rate(value, owner_type: type, rate_name: str):
+    """Normalise a Markov transition rate to a bare per-millisecond value.
+
+    Markov rates are conventionally bare and implicitly per-millisecond:
+    ``compute_derivative`` divides the accumulated derivative by ``u.ms`` once
+    at the end, and the steady-state solvers strip units with
+    ``u.get_magnitude``. Both of those are applied blind, so whatever a rate
+    drags in survives them -- a rate built from a dimensioned ``phi`` used to
+    yield a ``mV / ms`` derivative, and a silently unit-stripped generator
+    matrix. Check here, where the offending rate method can still be named.
+    """
+    dim = u.get_dim(value)
+    if dim == u.DIMENSIONLESS:
+        return value
+    if dim != u.get_dim(1 / u.ms):
         raise ValueError(
-            f"Gate {gate.name!r}: {label} must be dimensionless (read as 1/{gate.time_unit!r}) "
-            f"or carry an inverse-time dimension, got dimension {u.get_dim(value)}."
+            f"{owner_type.__name__}.{rate_name} must be dimensionless (read as 1/ms) or carry "
+            f"an inverse-time dimension, got dimension {dim}. Check that phi/q10 are dimensionless."
         )
-    return value
+    # `u.ms ** -1` rather than `1 / u.ms`: the former is a Unit, which is what
+    # `to_decimal` accepts; the latter is a Quantity and raises.
+    return value.to_decimal(u.ms**-1)
 
 
-def _check_derivative(value, gate: Gate):
-    """Check that a gate derivative came out as an inverse time.
+def _check_derivative(value, label: str):
+    """Check that a state derivative came out as an inverse time.
 
-    ``_as_time`` and ``_as_rate`` police what the rate methods return, but the
-    derivative also picks up ``phi``, which is read off the instance and is
-    never checked at construction. A dimensioned ``phi`` therefore contaminates
-    the derivative silently -- ``phi = 2 * u.mV`` yields ``mV / ms`` -- and the
-    integrator carries it without complaint. Catch it here, where the gate is
-    still known, rather than letting it surface as a bare unit mismatch far
-    downstream.
+    The per-rate checks police what the rate methods return, but the
+    derivative also picks up ``phi`` and ``conserve``, which are read off the
+    instance and are never checked at construction. A dimensioned ``phi``
+    therefore contaminates the derivative silently -- ``phi = 2 * u.mV``
+    yields ``mV / ms`` -- and the integrator carries it without complaint.
+    Catch it here, where the gate or state is still known, rather than letting
+    it surface as a bare unit mismatch far downstream.
     """
     if u.get_dim(value) != u.get_dim(1 / u.ms):
         raise ValueError(
-            f"Gate {gate.name!r}: derivative must have an inverse-time dimension, got "
+            f"{label}: derivative must have an inverse-time dimension, got "
             f"dimension {u.get_dim(value)}. Check that phi/q10 are dimensionless."
         )
     return value
@@ -368,7 +399,7 @@ class HH(Channel):
                 alpha = _as_rate(self._call_rate(f"f_{gate.name}_alpha", V, *ions), gate, "alpha")
                 beta = _as_rate(self._call_rate(f"f_{gate.name}_beta", V, *ions), gate, "beta")
                 derivative = phi * (alpha * (1.0 - value) - beta * value)
-            self._gate_state(gate).derivative = _check_derivative(derivative, gate)
+            self._gate_state(gate).derivative = _check_derivative(derivative, f"Gate {gate.name!r}")
 
 
 class OhmicHH(HH):
@@ -473,6 +504,13 @@ class Markov(Channel, IndependentIntegration):
     transition graph while still reconstructing the dependent state from the
     raw stored sum. Clipping is governed by :attr:`clip_states` and projects
     only the values fed to the kinetics; the stored states are untouched.
+
+    Transition rates may return either a bare value, read as
+    per-millisecond, or a properly united inverse time; anything else is
+    rejected against the rate method's own name. This mirrors
+    :attr:`Gate.time_unit` on the HH side, except that the unit is fixed at
+    ``u.ms`` rather than declared per transition -- the catalogue's Markov
+    channels all come from NEURON ``.mod`` sources written in milliseconds.
     """
 
     pairs: ClassVar[tuple[Transition | tuple[Any, ...], ...]] = ()
@@ -617,6 +655,15 @@ class Markov(Channel, IndependentIntegration):
     def _call_rate(self, rate_name: str, V, *ions):
         return _call_rate(self, rate_name, V, *ions)
 
+    def _transition_rate(self, rate_name: str, V, *ions):
+        """Call one transition rate and normalise it to a bare per-ms value.
+
+        Every consumer of a transition rate goes through here -- the
+        derivative and both steady-state solvers -- so the dimension check
+        cannot be bypassed by adding a fourth.
+        """
+        return _as_markov_rate(self._call_rate(rate_name, V, *ions), type(self), rate_name)
+
     def pre_integral(self, V, *ions):
         _ = (V, ions)
 
@@ -696,10 +743,10 @@ class Markov(Channel, IndependentIntegration):
         rates = []
         # Resolve each rate once; steady-state assembly reuses the arrays below.
         for pair in self._iter_pairs():
-            forward = _flatten_like(self._call_rate(pair.forward, V, *ions), pair.forward)
+            forward = _flatten_like(self._transition_rate(pair.forward, V, *ions), pair.forward)
             backward = None
             if pair.backward is not None:
-                backward = _flatten_like(self._call_rate(pair.backward, V, *ions), pair.backward)
+                backward = _flatten_like(self._transition_rate(pair.backward, V, *ions), pair.backward)
             pair_rates.append((pair, forward, backward))
             rates.append(forward)
             if backward is not None:
@@ -773,10 +820,10 @@ class Markov(Channel, IndependentIntegration):
         rates = []
         # Resolve each rate once; steady-state assembly reuses the arrays below.
         for pair in self._iter_pairs():
-            forward = _flatten_like(self._call_rate(pair.forward, V, *ions), pair.forward)
+            forward = _flatten_like(self._transition_rate(pair.forward, V, *ions), pair.forward)
             backward = None
             if pair.backward is not None:
-                backward = _flatten_like(self._call_rate(pair.backward, V, *ions), pair.backward)
+                backward = _flatten_like(self._transition_rate(pair.backward, V, *ions), pair.backward)
             pair_rates.append((pair, forward, backward))
             rates.append(forward)
             if backward is not None:
@@ -842,14 +889,20 @@ class Markov(Channel, IndependentIntegration):
         derivatives = {name: self._state_zero() for name in states}
 
         for pair in self._iter_pairs():
-            forward = self._call_rate(pair.forward, V, *ions)
+            forward = self._transition_rate(pair.forward, V, *ions)
             derivatives[pair.src] = derivatives[pair.src] - states[pair.src] * forward
             derivatives[pair.dst] = derivatives[pair.dst] + states[pair.src] * forward
 
             if pair.backward is not None:
-                backward = self._call_rate(pair.backward, V, *ions)
+                backward = self._transition_rate(pair.backward, V, *ions)
                 derivatives[pair.src] = derivatives[pair.src] + states[pair.dst] * backward
                 derivatives[pair.dst] = derivatives[pair.dst] - states[pair.dst] * backward
 
         for name in self._independent_state_names():
-            getattr(self, name).derivative = derivatives[name] / u.ms
+            # The rates are normalised to bare per-ms values, so the single
+            # division below is what gives the derivative its unit. `conserve`
+            # still reaches the states unchecked, hence the assertion.
+            derivative = derivatives[name] / u.ms
+            getattr(self, name).derivative = _check_derivative(
+                derivative, f"{type(self).__name__} state {name!r}"
+            )

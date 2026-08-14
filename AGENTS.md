@@ -168,8 +168,10 @@ All public classes, methods, functions must use [NumPy-style docstrings](https:/
 ## Testing
 
 - Framework: **pytest** with `unittest.TestCase`
-- Config: `pyproject.toml` → `[tool.pytest]` (`ini_options.testpaths = ["braincell"]`, `ini_options.python_files = ["*_test.py"]`). There is no `pytest.ini`.
-- **Test file naming — mandatory.** Every test module **must** be named `*_test.py` and **co-located** with source it covers (e.g. `braincell/io/neuromorpho/client.py` → `braincell/io/neuromorpho/client_test.py`). `python_files` is set to `*_test.py` **only**, so a misnamed module is silently never collected — this already cost the repo 72 uncollected SWC/ASC tests. Do **not** use bare `test.py`, `test_*.py`, or `tests/` subdirectories. When splitting large module across several files, give each file its own sibling `*_test.py`.
+- Config: `pyproject.toml` → `[tool.pytest]` (`ini_options.testpaths = ["braincell"]`, `ini_options.python_files = ["*_test.py", "test_*.py"]`). There is no `pytest.ini`.
+- **Test file naming — mandatory.** Every test module **must** be named `*_test.py` and **co-located** with source it covers (e.g. `braincell/io/neuromorpho/client.py` → `braincell/io/neuromorpho/client_test.py`). Do **not** use bare `test.py`, `test_*.py`, or `tests/` subdirectories. When splitting large module across several files, give each file its own sibling `*_test.py`.
+  - A bare `test.py` matches neither collection pattern and is silently never collected — this already cost the repo 72 uncollected SWC/ASC tests.
+  - `test_*.py` is enabled in `python_files` **only** for the out-of-package NEURON comparison suite at `examples/neuron_compare/cable/tests/`, which predates this rule and is run directly by CI. That exception is documented at the `python_files` entry in `pyproject.toml`; it is not licence to use the prefix, or a `tests/` directory, anywhere new.
 - **Shared test helpers** not themselves tests go into private `_testing.py` (or similar leading-underscore name) inside same package, so pytest does not discover them as test modules. Example: `braincell/io/neuromorpho/_testing.py` provides `FakeResponse` / `FakeSession` doubles consumed by every `*_test.py` in that package.
 - JAX forced to CPU via `conftest.py` at project root (`JAX_PLATFORMS=cpu`)
 - Matplotlib headless via `MPLBACKEND=Agg` in `conftest.py`

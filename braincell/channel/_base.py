@@ -930,6 +930,4 @@ class Markov(Channel, IndependentIntegration):
             # division below is what gives the derivative its unit. `conserve`
             # still reaches the states unchecked, hence the assertion.
             derivative = derivatives[name] / u.ms
-            getattr(self, name).derivative = _check_derivative(
-                derivative, f"{type(self).__name__} state {name!r}"
-            )
+            getattr(self, name).derivative = _check_derivative(derivative, f"{type(self).__name__} state {name!r}")

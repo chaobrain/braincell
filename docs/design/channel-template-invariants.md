@@ -62,14 +62,22 @@ Anything else raises an error naming the gate and the rate. Prefer returning uni
 new channels; the bare form exists because the catalogue was written against NEURON `.mod` sources
 that are implicitly in milliseconds.
 
-Those two checks only police what the rate methods return. The derivative also picks up `phi`, which
-is read off the instance and is validated nowhere at construction, so it is checked at the point of
-use: every gate derivative must come out with an inverse-time dimension. Without that check a
-dimensioned `phi` — say `phi = 2 * u.mV` — yields a `mV / ms` derivative that the integrator carries
-without complaint.
+Markov transition rates take the same two forms against a fixed `u.ms` rather than a declared
+per-transition unit: bare means per-millisecond, and a united inverse time is accepted and converted.
+The unit is fixed because every Markov channel in the catalogue was transcribed from a NEURON `.mod`
+source written in milliseconds, and none has wanted otherwise.
 
-Markov transition rates are always bare and implicitly per-millisecond — `compute_derivative`
-divides by `u.ms` once at the end.
+Those checks only police what the rate methods return. Two things reach the derivative without
+passing through them — `phi`, read off the instance inside a rate expression, and `conserve`, which
+reaches the Markov states rather than the rates. Neither is validated at construction, so the
+derivative itself is checked at the point of use: every gate and state derivative must come out with
+an inverse-time dimension. Without that check a dimensioned `phi` — say `phi = 2 * u.mV` — yields a
+`mV / ms` derivative that the integrator carries without complaint.
+
+Every consumer of a Markov rate goes through `Markov._transition_rate`: the derivative and both
+steady-state solvers. That matters because the solvers strip units with `u.get_magnitude`, so a
+dimensioned rate would otherwise have been silently flattened into the generator matrix — a wrong
+answer rather than an error.
 
 ## Gate metadata binds by name
 
@@ -92,6 +100,16 @@ kinetics meaningless, whereas an out-of-range HH gate is merely inaccurate.
 
 Both project only the value fed to the conductance product or the kinetics. Stored state is never
 rewritten.
+
+The two are not symmetric in *what* they project, and deliberately so. `Markov.clip_states` clips
+the values fed to the kinetics, because a probability pool outside the simplex makes the transition
+graph meaningless — the derivative computed from it is not a slower correction, it is nonsense.
+`Gate.clip` clips only the conductance product and leaves `compute_derivative` reading the raw
+state, because for an HH gate the out-of-range value is exactly what the derivative needs: with
+`dx/dt = (x_inf - x)/tau`, feeding it a clipped `x` weakens the restoring term that pulls the gate
+back into range, and a state that is stored unclipped but differentiated clipped can sit outside
+`[0, 1]` indefinitely. Clipping the conductance is a rendering decision; clipping the kinetics is a
+dynamics decision, and only the Markov pool needs the latter.
 
 ## `dependent_state` is effectively required
 

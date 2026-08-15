@@ -799,7 +799,7 @@ class Nav1p6_MA2020_GoC(Markov):
 
     Notes
     -----
-    Ported from ``Nav1p6_MA2020_GoC.mod``. All of ``Con``, ``Coff``,
+    Ported from ``Nav1p6_MA20_GoC.mod``. All of ``Con``, ``Coff``,
     ``Oon``, ``Ooff``, ``alpha``, ``beta``, ``gamma``, ``delta``,
     ``epsilon``, ``zeta``, ``x1``-``x6``, ``vshifta``, ``vshifti``,
     ``vshiftk``, ``alfac`` and ``btfac`` are fixed internal constants
@@ -978,7 +978,7 @@ class Nav1p6_MA2024_PC(Nav1p6_MA2020_GoC):
 
     Notes
     -----
-    Ported from ``Nav1p6_MA2024_PC.mod``. This class does not override
+    Ported from ``Nav1p6_MA24_PC.mod``. This class does not override
     ``__init__``: the constructor, the transition-rate lambdas, the
     fixed kinetic constants and :meth:`current` are all inherited
     unchanged from :class:`Nav1p6_MA2020_GoC`. Only the
@@ -1062,7 +1062,7 @@ class Nav1p6_MA2025_BC(Nav1p6_MA2020_GoC):
 
     Notes
     -----
-    Ported from ``Nav1p6_MA2025_BC.mod``. This class does not override
+    Ported from ``Nav1p6_MA25_BC.mod``. This class does not override
     ``__init__``: the constructor, the transition-rate lambdas, the
     fixed kinetic constants and :meth:`current` are all inherited
     unchanged from :class:`Nav1p6_MA2020_GoC`. Only the
@@ -1143,7 +1143,7 @@ class Nav1p6_RI2021_SC(Nav1p6_MA2020_GoC):
 
     Notes
     -----
-    Ported from ``Nav1p6_RI2021_SC.mod``. This class does not override
+    Ported from ``Nav1p6_RI21_SC.mod``. This class does not override
     ``__init__``: the constructor, the transition-rate lambdas, the
     fixed kinetic constants and :meth:`current` are all inherited
     unchanged from :class:`Nav1p6_MA2020_GoC`. Only the
@@ -1264,7 +1264,7 @@ class Nav1p1_MA2025_BC(Nav1p6_MA2020_GoC):
 
     Notes
     -----
-    Ported from ``Nav1p1_MA2025_BC.mod``, whose own header describes
+    Ported from ``Nav1p1_MA25_BC.mod``, whose own header describes
     the mechanism as "derived from the Narsg channel of Khaliq et al.,
     J. Neurosci. 23(2003)4899" -- i.e. via :class:`Nav1p6_MA2020_GoC`'s
     origin, not an independently republished scheme.
@@ -1386,7 +1386,7 @@ class Nav1p1_RI2021_SC(Nav1p1_MA2025_BC):
 
     Notes
     -----
-    Ported from ``Nav1p1_RI2021_SC.mod``. This class does not override
+    Ported from ``Nav1p1_RI21_SC.mod``. This class does not override
     ``__init__``: the constructor signature, the 13-state kinetics,
     the :math:`\phi` temperature scaling, the ``Oon``/``epsilon``/
     ``zgate``/``gunit``/``e0`` constants and the gating-current term
@@ -1505,7 +1505,7 @@ class Nav_MA2020_GrC(Markov, IndependentIntegration):
 
     Notes
     -----
-    Ported from ``Nav_MA2020_GrC.mod``, whose header attributes the
+    Ported from ``Nav_MA20_GrC.mod``, whose header attributes the
     scheme to "Raman 13 state model. Adapted from Magistretti et al,
     2006." This class does not subclass :class:`Nav1p6_MA2020_GoC`;
     it is an independent implementation with its own ``__init__`` and
@@ -1731,9 +1731,9 @@ class NaFHF_MA2020_GrC(Markov, IndependentIntegration):
 
     Notes
     -----
-    Ported from ``NaFHF_MA2020_GrC.mod``. Its own ``COMMENT`` block is
+    Ported from ``NaFHF_MA20_GrC.mod``. Its own ``COMMENT`` block is
     empty, which is not a provenance gap: it inherits
-    ``Nav_MA2020_GrC.mod``'s "Based on Raman 13 state model. Adapted
+    ``Nav_MA20_GrC.mod``'s "Based on Raman 13 state model. Adapted
     from Magistretti et al, 2006." attribution, per the bibliography.
 
     This class ships ``ACon = 0.025`` and ``AOoff = 0.002`` -- unlike

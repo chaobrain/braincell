@@ -197,7 +197,7 @@ whoever wrote the mechanism's equations. So a cerebellar docstring's
 
 **"Two" is the minimum, not the norm.** Of the 58 mapping rows in this
 file, only **12 carry a single origin** (giving a two-entry
-docstring). **35 carry two origins** (three entries) and **11 carry
+docstring). **32 carry two origins** (three entries) and **14 carry
 three** (four entries). So 46 of 58 rows -- the clear majority --
 need more than the two-entry shape, and a reader who skims this
 section and writes two entries everywhere will truncate most of them.
@@ -1390,7 +1390,7 @@ is written out symbol by symbol.
 | 18 | `braincell/ion/calcium.py::Calcium` | Species container. Holds `default_Co = 2.0 mM`, `default_valence = 2`. |
 | 19 | `braincell/ion/calcium.py::CalciumFixed` | Container + `FixedIon`. |
 | 20 | `braincell/ion/calcium.py::CalciumInitNernst` | Container + `InitNernstIon`. |
-| 21 | `braincell/ion/calcium.py::CalciumFirstOrder` | `Ca' = -alpha*I_Ca - beta*Ca` with `alpha = 0.13`, `beta = 0.075`. Generic first-order form; no paper identified. See below. |
+| 21 | `braincell/ion/calcium.py::CalciumFirstOrder` | `Ca' = max(alpha*I_Ca, 0) - beta*Ca` with `alpha = 0.13`, `beta = 0.075`. Generic first-order form; no paper identified. See below. |
 | 22 | `braincell/ion/nonspecific.py::NonSpecific` | Container. `default_Ci = default_Co = 1.0 mM`, `valence = 1` -- placeholders, not measurements. |
 | 23 | `braincell/ion/nonspecific.py::NonSpecificFixed` | Container + `FixedIon`. |
 | 24 | `braincell/ion/potassium.py::Potassium` | Container. `default_Ci = 54.4 mM`, `default_Co = 2.5 mM`. |

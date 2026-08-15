@@ -2250,7 +2250,7 @@ class Cav3p1_MA2024_PC(Cav3p1_MA2020_GoC):
     Notes
     -----
     Ported from ``PC/channel/Cav3p1_MA24_PC.mod``. An earlier revision
-    of this docstring named the source file ``Cav3p1_MA2024_PC.mod``,
+    of this docstring named the source file ``Cav3p1_MA24_PC.mod``,
     which does not exist; the shipped file uses the two-digit year
     code, and that is corrected here. That file is identical to
     ``GoC/channel/Cav3p1_MA20_GoC.mod`` except for its ``SUFFIX`` line
@@ -4380,7 +4380,7 @@ class CaHVA_MA2020_GoC(OhmicHH):
     -----
     Ported from ``GoC/channel/CaHVA_MA20_GoC.mod``. An earlier
     revision of this docstring named the source file
-    ``CaHVA_MA2020_GoC.mod``, which does not exist; the shipped file
+    ``CaHVA_MA20_GoC.mod``, which does not exist; the shipped file
     uses the two-digit year code, and that is corrected here. The
     file's ``TITLE`` reads "Cerebellum Granule Cell Model" and its
     ``COMMENT`` credits "E.D'Angelo, T.Nieus, A. Fontana" -- both
@@ -4546,7 +4546,7 @@ class CaHVA_MA2020_GrC(OhmicHH):
     -----
     Ported from ``GrC/channel/CaHVA_MA20_GrC.mod``. An earlier
     revision of this docstring named the source file
-    ``CaHVA_MA2020_GrC.mod``, which does not exist; the shipped file
+    ``CaHVA_MA20_GrC.mod``, which does not exist; the shipped file
     uses the two-digit year code, and that is corrected here. That
     file and ``GoC/channel/CaHVA_MA20_GoC.mod`` are identical apart
     from the ``SUFFIX`` line, which is why the two BrainCell classes

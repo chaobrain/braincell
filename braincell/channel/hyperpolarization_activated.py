@@ -280,7 +280,7 @@ class HCN1_MA2025_BC(OhmicHH):
     r"""HCN1 h-current imported for the cerebellar basket cell model.
 
     Ports the single ``h`` gate NEURON mechanism
-    ``HCN1_MA2025_BC.mod`` used in the basket-cell deposit of
+    ``HCN1_MA25_BC.mod`` used in the basket-cell deposit of
     (Masoli et al., 2025) [3]_. The Boltzmann activation curve and
     biexponential time constant are the same functional forms used
     across the ``HCN1_MA2024_PC`` / ``HCN1_RI2021_SC`` siblings; only
@@ -328,16 +328,16 @@ class HCN1_MA2025_BC(OhmicHH):
 
     Notes
     -----
-    Ported from ``HCN1_MA2025_BC.mod``. This class overrides
+    Ported from ``HCN1_MA25_BC.mod``. This class overrides
     :meth:`reversal_potential` to return ``self.E`` instead of an
     ion's reversal potential.
 
     ``HCN1_MA25_BC.mod`` inherits its comment verbatim from the
     ``HCN1_MA24_PC.mod`` Purkinje-cell port, including the note
-    "We call it HCN1 as PC express only HCN1", whose origin is the
-    subunit-identity paper [2]_ -- a claim about Purkinje cells, not
-    this basket-cell channel, and not repeated here as though it
-    were. The default ``temp = 23`` degrees
+    "We call it HCN1 as PC express only HCN1 Santoro et al. 2000",
+    whose origin is the subunit-identity paper [2]_ -- a claim about
+    Purkinje cells, not this basket-cell channel, and not repeated
+    here as though it were. The default ``temp = 23`` degrees
     Celsius is likewise carried over unchanged: Angelo et al. (2007)
     [1]_ did not report a recording temperature, so 23 degrees
     Celsius is the porter's assumption, not a value from that paper.
@@ -412,7 +412,7 @@ class HCN1_MA2024_PC(OhmicHH):
     r"""HCN1 h-current imported for the human Purkinje cell model.
 
     Ports the single ``h`` gate NEURON mechanism
-    ``HCN1_MA2024_PC.mod`` used in the Purkinje-cell deposit of
+    ``HCN1_MA24_PC.mod`` used in the Purkinje-cell deposit of
     (Masoli et al., 2024) [3]_. The Boltzmann activation curve and
     biexponential time constant are the same functional forms used
     across the ``HCN1_MA2025_BC`` / ``HCN1_RI2021_SC`` siblings; only
@@ -460,7 +460,7 @@ class HCN1_MA2024_PC(OhmicHH):
 
     Notes
     -----
-    Ported from ``HCN1_MA2024_PC.mod``. This class overrides
+    Ported from ``HCN1_MA24_PC.mod``. This class overrides
     :meth:`reversal_potential` to return ``self.E`` instead of an
     ion's reversal potential.
 
@@ -544,7 +544,7 @@ class HCN1_RI2021_SC(OhmicHH):
     r"""HCN1 h-current imported for the cerebellar stellate cell model.
 
     Ports the single ``h`` gate NEURON mechanism
-    ``HCN1_RI2021_SC.mod`` used in the stellate-cell deposit of
+    ``HCN1_RI21_SC.mod`` used in the stellate-cell deposit of
     (Rizza et al., 2021) [3]_. The Boltzmann activation curve and
     biexponential time constant are the same functional forms used
     across the ``HCN1_MA2025_BC`` / ``HCN1_MA2024_PC`` siblings; only
@@ -592,7 +592,7 @@ class HCN1_RI2021_SC(OhmicHH):
 
     Notes
     -----
-    Ported from ``HCN1_RI2021_SC.mod``. This class overrides
+    Ported from ``HCN1_RI21_SC.mod``. This class overrides
     :meth:`reversal_potential` to return ``self.E`` instead of an
     ion's reversal potential.
 
@@ -675,7 +675,7 @@ class HCN1_RI2021_SC(OhmicHH):
 class HCN1_MA2020_GoC(HH):
     r"""HCN1 fast/slow h-current imported for the Golgi cell model.
 
-    Ports the two-gate NEURON mechanism ``HCN1_MA2020_GoC.mod`` used
+    Ports the two-gate NEURON mechanism ``HCN1_MA20_GoC.mod`` used
     in the Golgi-cell deposit of (Masoli et al., 2020) [3]_. Two
     independent open-state gates, ``o_fast`` and ``o_slow``, share
     one Boltzmann steady state split by a linear mixing fraction
@@ -734,7 +734,7 @@ class HCN1_MA2020_GoC(HH):
 
     Notes
     -----
-    Ported from ``HCN1_MA2020_GoC.mod``. The former NEURON ``TABLE``
+    Ported from ``HCN1_MA20_GoC.mod``. The former NEURON ``TABLE``
     tabulated ``o_fast_inf``, ``o_slow_inf``, ``tau_f`` and ``tau_s``
     over ``[-100, 30] mV`` and clamped outside that range; BrainCell
     evaluates the continuous formulas above at every call instead, so
@@ -838,7 +838,7 @@ class HCN1_MA2020_GoC(HH):
 class HCN2_MA2020_GoC(HH):
     r"""HCN2 fast/slow h-current imported for the Golgi cell model.
 
-    Ports the two-gate NEURON mechanism ``HCN2_MA2020_GoC.mod`` used
+    Ports the two-gate NEURON mechanism ``HCN2_MA20_GoC.mod`` used
     in the Golgi-cell deposit of (Masoli et al., 2020) [3]_. Two
     independent open-state gates, ``o_fast`` and ``o_slow``, share
     one Boltzmann steady state split by a mixing fraction ``r(V)``
@@ -900,7 +900,7 @@ class HCN2_MA2020_GoC(HH):
 
     Notes
     -----
-    Ported from ``HCN2_MA2020_GoC.mod``. The former NEURON ``TABLE``
+    Ported from ``HCN2_MA20_GoC.mod``. The former NEURON ``TABLE``
     tabulated ``o_fast_inf``, ``o_slow_inf``, ``tau_f`` and ``tau_s``
     over ``[-100, 30] mV`` and clamped outside that range; BrainCell
     evaluates the continuous formulas above at every call instead, so
@@ -1011,7 +1011,7 @@ class HCN_SU2015_DCN(OhmicHH):
     r"""H-current imported for the deep cerebellar nucleus (DCN) model.
 
     Ports the single ``m`` gate (power 2) NEURON mechanism
-    ``HCN_SU2015_DCN.mod`` used in the deep-cerebellar-nucleus
+    ``HCN_SU15_DCN.mod`` used in the deep-cerebellar-nucleus
     deposit of (Sudhakar et al., 2015) [2]_.
 
     .. math::
@@ -1044,7 +1044,7 @@ class HCN_SU2015_DCN(OhmicHH):
     gate carries no ``q10``/``phi``, so :meth:`HH.gate_phi` resolves
     to the default ``1.0``.
 
-    Ported from ``HCN_SU2015_DCN.mod``. Its kinetics belong to the
+    Ported from ``HCN_SU15_DCN.mod``. Its kinetics belong to the
     deep cerebellar nucleus model of Steuber et al. (2011) [1]_,
     translated from GENESIS to NEURON by Luthman et al. (2011), and
     used in Sudhakar et al. (2015) [2]_. ``HCN`` is one of only four

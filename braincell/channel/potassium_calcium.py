@@ -149,10 +149,9 @@ class AHP_De1994(OhmicHH):
 
     References
     ----------
-    .. [1] Destexhe, A., Contreras, D., Sejnowski, T. J., & Steriade,
-           M. (1994). A model of spindle rhythmicity in the isolated
-           thalamic reticular nucleus. Journal of Neurophysiology,
-           72(2), 803-818.
+    .. [1] Destexhe, A., Contreras, D., Sejnowski, T. J., & Steriade, M.
+           (1994). A model of spindle rhythmicity in the isolated thalamic
+           reticular nucleus. Journal of Neurophysiology, 72(2), 803-818.
            doi:10.1152/jn.1994.72.2.803
     """
 

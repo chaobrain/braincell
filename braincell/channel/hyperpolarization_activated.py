@@ -43,42 +43,59 @@ __all__ = [
 
 @register_channel("HCN_HM1992")
 class HCN_HM1992(OhmicHH):
-    r"""
-    The hyperpolarization-activated cation current model propsoed by (Huguenard & McCormick, 1992).
+    r"""Hyperpolarization-activated current of Huguenard & McCormick (1992).
 
-    The hyperpolarization-activated cation current model is adopted from
-    (Huguenard, et, al., 1992) [1]_. Its dynamics is given by:
+    Reproduces the thalamic relay-neuron :math:`I_h` model of
+    (Huguenard & McCormick, 1992) [1]_: a single Boltzmann-gated pore
+    driven by an ohmic force against a fixed reversal potential.
+    Dynamics:
 
     .. math::
 
         \begin{aligned}
-        I_h &= g_{\mathrm{max}} p \\
+        I_h &= g_{\mathrm{max}} \, p \, (E - V) \\
         \frac{dp}{dt} &= \phi \frac{p_{\infty} - p}{\tau_p} \\
-        p_{\infty} &=\frac{1}{1+\exp ((V+75) / 5.5)} \\
-        \tau_{p} &=\frac{1}{\exp (-0.086 V-14.59)+\exp (0.0701 V-1.87)}
+        p_{\infty} &= \frac{1}{1 + \exp((V + 75) / 5.5)} \\
+        \tau_p &= \frac{1}{\exp(-0.086 V - 14.59) +
+                  \exp(0.0701 V - 1.87)}
         \end{aligned}
 
-    where :math:`\phi=1` is a temperature-dependent factor.
+    where :math:`\phi = q_{10}^{(T - T_{\mathrm{ref}}) / 10}` and the
+    default ``q10 = 1.0`` makes :math:`\phi \equiv 1` for any ``temp``.
 
     Parameters
     ----------
-    g_max : float
-      The maximal conductance density (:math:`mS/cm^2`).
-    E : float
-      The reversal potential (mV).
-    temp : float
-      Absolute temperature used by the template temperature interface.
-    q10 : float
-      Q10 scaling factor for gate kinetics.
-    temp_ref : float
-      Reference temperature for the Q10 formula.
+    size : brainstate.typing.Size
+        Channel state shape.
+    g_max : array-like or callable, optional
+        Maximal conductance density, default ``10.0 mS/cm2``.
+    E : array-like or callable, optional
+        Reversal potential, default ``43.0 mV``.
+    temp : array-like, optional
+        Absolute temperature driving the Q10 factor, default 36
+        degrees Celsius.
+    q10 : array-like or callable, optional
+        Q10 scaling factor for the ``p`` gate, default ``1.0``.
+    temp_ref : array-like, optional
+        Reference temperature for the Q10 formula, default 36
+        degrees Celsius.
+    name : str, optional
+        Optional channel name.
+
+    Notes
+    -----
+    This class overrides :meth:`reversal_potential` to return
+    ``self.E`` instead of an ion's reversal potential, so the current
+    is driven against the fixed ``E`` parameter, not an ion state --
+    the correct closed form is ``g_max * p * (E - V)``, not
+    ``g_max * p`` alone.
 
     References
     ----------
-    .. [1] Huguenard, John R., and David A. McCormick. "Simulation of the currents
-           involved in rhythmic oscillations in thalamic relay neuron." Journal
-           of neurophysiology 68, no. 4 (1992): 1373-1383.
-
+    .. [1] Huguenard, J. R., & McCormick, D. A. (1992). Simulation of
+           the currents involved in rhythmic oscillations in thalamic
+           relay neurons. Journal of Neurophysiology, 68(4), 1373-1383.
+           doi:10.1152/jn.1992.68.4.1373
     """
 
     __module__ = 'braincell.channel'
@@ -260,7 +277,91 @@ class HCN_HM1992(OhmicHH):
 
 @register_channel("HCN1_MA2025_BC")
 class HCN1_MA2025_BC(OhmicHH):
-    """Template-based import of ``HCN1_MA2025_BC.mod``."""
+    r"""HCN1 h-current imported for the cerebellar basket cell model.
+
+    Ports the single ``h`` gate NEURON mechanism
+    ``HCN1_MA2025_BC.mod`` used in the basket-cell deposit of
+    (Masoli et al., 2025) [3]_. The Boltzmann activation curve and
+    biexponential time constant are the same functional forms used
+    across the ``HCN1_MA2024_PC`` / ``HCN1_RI2021_SC`` siblings; only
+    the model citation differs.
+
+    .. math::
+
+        \begin{aligned}
+        h_\infty &= \frac{1}{1 + \exp\left(\dfrac{V - V_{1/2}}
+                    {k}\right)} \\
+        \tau_h &= \frac{\mathrm{ratetau}}{c \left[
+                   \exp\left(\dfrac{V - V_{\tau 1}}{k_1}\right) +
+                   \exp\left(\dfrac{V - V_{\tau 2}}{k_2}\right)
+                   \right]}
+        \end{aligned}
+
+    where :math:`V_{1/2} = V_{\infty,\mathrm{noljp}} - V_{\mathrm{ljp}}
+    = -99.6\ \mathrm{mV}`, :math:`k = 9.67\ \mathrm{mV}`,
+    :math:`V_{\tau 1} = V_{\tau 2} = V_{\tau,\mathrm{noljp}} -
+    V_{\mathrm{ljp}} = -77.3\ \mathrm{mV}`, :math:`k_1 = -22.0\
+    \mathrm{mV}`, :math:`k_2 = 7.14\ \mathrm{mV}`, :math:`c =
+    0.0018\ \mathrm{ms^{-1}}`, and :math:`\mathrm{ratetau} = 1.0`.
+    These six constants and ``ratetau`` are fixed internal values set
+    in ``__init__``; they are not exposed as parameters.
+
+    Parameters
+    ----------
+    size : brainstate.typing.Size
+        Channel state shape.
+    g_max : array-like or callable, optional
+        Maximal conductance density, default ``0.1 mS/cm2``.
+    E : array-like or callable, optional
+        Reversal potential, default ``-34.4 mV``.
+    temp : array-like, optional
+        Absolute temperature driving the ``h`` gate's Q10 factor
+        (``q10=3.0``, ``temp_ref=37`` degrees Celsius), default 23
+        degrees Celsius.
+    name : str, optional
+        Optional channel name.
+
+    See Also
+    --------
+    HCN1_MA2024_PC : Same kinetics ported for a Purkinje-cell model.
+    HCN1_RI2021_SC : Same kinetics ported for a stellate-cell model.
+
+    Notes
+    -----
+    Ported from ``HCN1_MA2025_BC.mod``. This class overrides
+    :meth:`reversal_potential` to return ``self.E`` instead of an
+    ion's reversal potential.
+
+    ``HCN1_MA25_BC.mod`` inherits its comment verbatim from the
+    ``HCN1_MA24_PC.mod`` Purkinje-cell port, including the note
+    "We call it HCN1 as PC express only HCN1" -- a claim about
+    Purkinje cells, not this basket-cell channel, and not repeated
+    here as though it were. The default ``temp = 23`` degrees
+    Celsius is likewise carried over unchanged: Angelo et al. (2007)
+    [1]_ did not report a recording temperature, so 23 degrees
+    Celsius is the porter's assumption, not a value from that paper.
+
+    References
+    ----------
+    .. [1] Angelo, K., London, M., Christensen, S. R., & Hausser, M.
+           (2007). Local and global effects of Ih distribution in
+           dendrites of mammalian neurons. The Journal of
+           Neuroscience, 27(32), 8643-8653.
+           doi:10.1523/JNEUROSCI.5284-06.2007
+    .. [2] Santoro, B., Chen, S., Luthi, A., Pavlidis, P.,
+           Shumyatsky, G. P., Tibbs, G. R., & Siegelbaum, S. A.
+           (2000). Molecular and functional heterogeneity of
+           hyperpolarization-activated pacemaker channels in the
+           mouse CNS. Journal of Neuroscience, 20(14), 5264-5275.
+           doi:10.1523/JNEUROSCI.20-14-05264.2000
+    .. [3] Masoli, S., Sanchez-Ponce, D., Vrieler, N., Abu-Haya, K.,
+           Lerner, V., Shahar, T., Nedelescu, H., Rizza, M. F.,
+           Benavides-Piccione, R., DeFelipe, J., Yarom, Y., Munoz,
+           A., & D'Angelo, E. (2025). Cerebellar basket cell
+           filtering of Purkinje cell responses elicited by low
+           frequency parallel fibre transmission. Scientific
+           Reports, 15(1), 25192. doi:10.1038/s41598-025-09964-2
+    """
 
     __module__ = "braincell.channel"
     root_type = HHTypedNeuron
@@ -308,7 +409,91 @@ class HCN1_MA2025_BC(OhmicHH):
 
 @register_channel("HCN1_MA2024_PC")
 class HCN1_MA2024_PC(OhmicHH):
-    """Template-based import of ``HCN1_MA2024_PC.mod``."""
+    r"""HCN1 h-current imported for the human Purkinje cell model.
+
+    Ports the single ``h`` gate NEURON mechanism
+    ``HCN1_MA2024_PC.mod`` used in the Purkinje-cell deposit of
+    (Masoli et al., 2024) [3]_. The Boltzmann activation curve and
+    biexponential time constant are the same functional forms used
+    across the ``HCN1_MA2025_BC`` / ``HCN1_RI2021_SC`` siblings; only
+    the model citation differs.
+
+    .. math::
+
+        \begin{aligned}
+        h_\infty &= \frac{1}{1 + \exp\left(\dfrac{V - V_{1/2}}
+                    {k}\right)} \\
+        \tau_h &= \frac{\mathrm{ratetau}}{c \left[
+                   \exp\left(\dfrac{V - V_{\tau 1}}{k_1}\right) +
+                   \exp\left(\dfrac{V - V_{\tau 2}}{k_2}\right)
+                   \right]}
+        \end{aligned}
+
+    where :math:`V_{1/2} = V_{\infty,\mathrm{noljp}} - V_{\mathrm{ljp}}
+    = -99.6\ \mathrm{mV}`, :math:`k = 9.67\ \mathrm{mV}`,
+    :math:`V_{\tau 1} = V_{\tau 2} = V_{\tau,\mathrm{noljp}} -
+    V_{\mathrm{ljp}} = -77.3\ \mathrm{mV}`, :math:`k_1 = -22.0\
+    \mathrm{mV}`, :math:`k_2 = 7.14\ \mathrm{mV}`, :math:`c =
+    0.0018\ \mathrm{ms^{-1}}`, and :math:`\mathrm{ratetau} = 1.0`.
+    These six constants and ``ratetau`` are fixed internal values set
+    in ``__init__``; they are not exposed as parameters.
+
+    Parameters
+    ----------
+    size : brainstate.typing.Size
+        Channel state shape.
+    g_max : array-like or callable, optional
+        Maximal conductance density, default ``0.1 mS/cm2``.
+    E : array-like or callable, optional
+        Reversal potential, default ``-34.4 mV``.
+    temp : array-like, optional
+        Absolute temperature driving the ``h`` gate's Q10 factor
+        (``q10=3.0``, ``temp_ref=37`` degrees Celsius), default 23
+        degrees Celsius.
+    name : str, optional
+        Optional channel name.
+
+    See Also
+    --------
+    HCN1_MA2025_BC : Same kinetics ported for a basket-cell model.
+    HCN1_RI2021_SC : Same kinetics ported for a stellate-cell model.
+
+    Notes
+    -----
+    Ported from ``HCN1_MA2024_PC.mod``. This class overrides
+    :meth:`reversal_potential` to return ``self.E`` instead of an
+    ion's reversal potential.
+
+    ``HCN1_MA24_PC.mod`` carries the comment "We call it HCN1 as PC
+    express only HCN1 Santoro et al. 2000" -- correctly describing
+    this Purkinje-cell channel, and the origin of that "PC" claim is
+    the subunit-identity paper [2]_, not the kinetics paper [1]_. The
+    default ``temp = 23`` degrees Celsius is carried over unchanged
+    from the ``.mod`` file: Angelo et al. (2007) [1]_ did not report
+    a recording temperature, so 23 degrees Celsius is the porter's
+    assumption, not a value from that paper.
+
+    References
+    ----------
+    .. [1] Angelo, K., London, M., Christensen, S. R., & Hausser, M.
+           (2007). Local and global effects of Ih distribution in
+           dendrites of mammalian neurons. The Journal of
+           Neuroscience, 27(32), 8643-8653.
+           doi:10.1523/JNEUROSCI.5284-06.2007
+    .. [2] Santoro, B., Chen, S., Luthi, A., Pavlidis, P.,
+           Shumyatsky, G. P., Tibbs, G. R., & Siegelbaum, S. A.
+           (2000). Molecular and functional heterogeneity of
+           hyperpolarization-activated pacemaker channels in the
+           mouse CNS. The Journal of Neuroscience, 20(14), 5264-5275.
+           doi:10.1523/JNEUROSCI.20-14-05264.2000
+    .. [3] Masoli, S., Sanchez-Ponce, D., Vrieler, N., Abu-Haya, K.,
+           Lerner, V., Shahar, T., Nedelescu, H., Rizza, M. F.,
+           Benavides-Piccione, R., DeFelipe, J., Yarom, Y., Munoz,
+           A., & D'Angelo, E. (2024). Human Purkinje cells outperform
+           mouse Purkinje cells in dendritic complexity and
+           computational capacity. Communications Biology, 7(1), 5.
+           doi:10.1038/s42003-023-05689-y
+    """
 
     __module__ = "braincell.channel"
     root_type = HHTypedNeuron
@@ -356,7 +541,89 @@ class HCN1_MA2024_PC(OhmicHH):
 
 @register_channel("HCN1_RI2021_SC")
 class HCN1_RI2021_SC(OhmicHH):
-    """Template-based import of ``HCN1_RI2021_SC.mod``."""
+    r"""HCN1 h-current imported for the cerebellar stellate cell model.
+
+    Ports the single ``h`` gate NEURON mechanism
+    ``HCN1_RI2021_SC.mod`` used in the stellate-cell deposit of
+    (Rizza et al., 2021) [3]_. The Boltzmann activation curve and
+    biexponential time constant are the same functional forms used
+    across the ``HCN1_MA2025_BC`` / ``HCN1_MA2024_PC`` siblings; only
+    the model citation differs.
+
+    .. math::
+
+        \begin{aligned}
+        h_\infty &= \frac{1}{1 + \exp\left(\dfrac{V - V_{1/2}}
+                    {k}\right)} \\
+        \tau_h &= \frac{\mathrm{ratetau}}{c \left[
+                   \exp\left(\dfrac{V - V_{\tau 1}}{k_1}\right) +
+                   \exp\left(\dfrac{V - V_{\tau 2}}{k_2}\right)
+                   \right]}
+        \end{aligned}
+
+    where :math:`V_{1/2} = V_{\infty,\mathrm{noljp}} - V_{\mathrm{ljp}}
+    = -99.6\ \mathrm{mV}`, :math:`k = 9.67\ \mathrm{mV}`,
+    :math:`V_{\tau 1} = V_{\tau 2} = V_{\tau,\mathrm{noljp}} -
+    V_{\mathrm{ljp}} = -77.3\ \mathrm{mV}`, :math:`k_1 = -22.0\
+    \mathrm{mV}`, :math:`k_2 = 7.14\ \mathrm{mV}`, :math:`c =
+    0.0018\ \mathrm{ms^{-1}}`, and :math:`\mathrm{ratetau} = 1.0`.
+    These six constants and ``ratetau`` are fixed internal values set
+    in ``__init__``; they are not exposed as parameters.
+
+    Parameters
+    ----------
+    size : brainstate.typing.Size
+        Channel state shape.
+    g_max : array-like or callable, optional
+        Maximal conductance density, default ``0.1 mS/cm2``.
+    E : array-like or callable, optional
+        Reversal potential, default ``-34.4 mV``.
+    temp : array-like, optional
+        Absolute temperature driving the ``h`` gate's Q10 factor
+        (``q10=3.0``, ``temp_ref=37`` degrees Celsius), default 23
+        degrees Celsius.
+    name : str, optional
+        Optional channel name.
+
+    See Also
+    --------
+    HCN1_MA2025_BC : Same kinetics ported for a basket-cell model.
+    HCN1_MA2024_PC : Same kinetics ported for a Purkinje-cell model.
+
+    Notes
+    -----
+    Ported from ``HCN1_RI2021_SC.mod``. This class overrides
+    :meth:`reversal_potential` to return ``self.E`` instead of an
+    ion's reversal potential.
+
+    ``HCN1_RI21_SC.mod`` carries the same inherited comment as the
+    basket-cell port, "We call it HCN1 as PC express only HCN1
+    Santoro et al. 2000" -- a claim about Purkinje cells, not this
+    stellate-cell channel, and not repeated here as though it were.
+    The default ``temp = 23`` degrees Celsius is carried over
+    unchanged from the ``.mod`` file: Angelo et al. (2007) [1]_ did
+    not report a recording temperature, so 23 degrees Celsius is the
+    porter's assumption, not a value from that paper.
+
+    References
+    ----------
+    .. [1] Angelo, K., London, M., Christensen, S. R., & Hausser, M.
+           (2007). Local and global effects of Ih distribution in
+           dendrites of mammalian neurons. The Journal of
+           Neuroscience, 27(32), 8643-8653.
+           doi:10.1523/JNEUROSCI.5284-06.2007
+    .. [2] Santoro, B., Chen, S., Luthi, A., Pavlidis, P.,
+           Shumyatsky, G. P., Tibbs, G. R., & Siegelbaum, S. A.
+           (2000). Molecular and functional heterogeneity of
+           hyperpolarization-activated pacemaker channels in the
+           mouse CNS. The Journal of Neuroscience, 20(14), 5264-5275.
+           doi:10.1523/JNEUROSCI.20-14-05264.2000
+    .. [3] Rizza, M. F., Locatelli, F., Masoli, S., Sanchez-Ponce, D.,
+           Munoz, A., Prestori, F., & D'Angelo, E. (2021). Stellate
+           cell computational modeling predicts signal filtering in
+           the molecular layer circuit of cerebellum. Scientific
+           Reports, 11(1), 3873. doi:10.1038/s41598-021-83209-w
+    """
 
     __module__ = "braincell.channel"
     root_type = HHTypedNeuron
@@ -404,7 +671,104 @@ class HCN1_RI2021_SC(OhmicHH):
 
 @register_channel("HCN1_MA2020_GoC")
 class HCN1_MA2020_GoC(HH):
-    """Template-based import of ``HCN1_MA2020_GoC.mod``."""
+    r"""HCN1 fast/slow h-current imported for the Golgi cell model.
+
+    Ports the two-gate NEURON mechanism ``HCN1_MA2020_GoC.mod`` used
+    in the Golgi-cell deposit of (Masoli et al., 2020) [3]_. Two
+    independent open-state gates, ``o_fast`` and ``o_slow``, share
+    one Boltzmann steady state split by a linear mixing fraction
+    ``r(V)``:
+
+    .. math::
+
+        \begin{aligned}
+        I_h &= \phi_Q \, g_{\mathrm{max}} \,
+               (o_{\mathrm{fast}} + o_{\mathrm{slow}}) \, (E - V) \\
+        o_\infty(V) &= \frac{1}{1 + \exp((V - E_{1/2}) \, c)} \\
+        r(V) &= r_A V + r_B \\
+        o_{\mathrm{fast},\infty} &= r(V) \, o_\infty(V) \\
+        o_{\mathrm{slow},\infty} &= (1 - r(V)) \, o_\infty(V) \\
+        \tau_{\mathrm{fast}} &= \exp((t_{Cf} V - t_{Df}) \, t_{Ef}) \\
+        \tau_{\mathrm{slow}} &= \exp((t_{Cs} V - t_{Ds}) \, t_{Es})
+        \end{aligned}
+
+    with :math:`\phi_Q = Q_{10}^{(T - 23^{\circ}\mathrm{C}) / 10}`,
+    :math:`E_{1/2} = -72.49\ \mathrm{mV}`,
+    :math:`c = 0.11305\ \mathrm{mV^{-1}}`,
+    :math:`r_A = 0.002096\ \mathrm{mV^{-1}}`, :math:`r_B = 0.97596`,
+    :math:`t_{Cf} = 0.01371\ \mathrm{mV^{-1}}`, :math:`t_{Df} =
+    -3.368`, :math:`t_{Ef} = 2.30259`, :math:`t_{Cs} =
+    0.01451\ \mathrm{mV^{-1}}`, :math:`t_{Ds} = -4.056`,
+    :math:`t_{Es} = 2.30259`, and :math:`Q_{10} = 1.5`. ``r(V)`` is
+    not clamped for this isoform, unlike ``HCN2_MA2020_GoC``. Both
+    gates additionally carry ``q10=3.0``, ``temp_ref=23`` degrees
+    Celsius on their own state relaxation, independent of the
+    :math:`\phi_Q` conductance prefactor above. All eleven constants
+    are fixed internal values set in ``__init__``; they are not
+    exposed as parameters.
+
+    This class subclasses :class:`HH` directly, not
+    :class:`OhmicHH`, because :meth:`current` sums two gate values
+    before applying the driving force rather than taking a single
+    ``power``-weighted product.
+
+    Parameters
+    ----------
+    size : brainstate.typing.Size
+        Channel state shape.
+    g_max : array-like or callable, optional
+        Maximal conductance density, default ``0.05 mS/cm2``.
+    E : array-like or callable, optional
+        Reversal potential, default ``-20.0 mV``.
+    temp : array-like, optional
+        Absolute temperature driving both the gate Q10 factors and
+        :math:`\phi_Q`, default 22 degrees Celsius.
+    name : str, optional
+        Optional channel name.
+
+    See Also
+    --------
+    HCN2_MA2020_GoC : Companion isoform with a clamped ``r(V)``.
+
+    Notes
+    -----
+    Ported from ``HCN1_MA2020_GoC.mod``. The former NEURON ``TABLE``
+    tabulated ``o_fast_inf``, ``o_slow_inf``, ``tau_f`` and ``tau_s``
+    over ``[-100, 30] mV`` and clamped outside that range; BrainCell
+    evaluates the continuous formulas above at every call instead, so
+    values outside ``[-100, 30] mV`` are expected to diverge from the
+    original NEURON boundary-clamped output.
+
+    ``.mod`` writes the time-constant exponent constants ``tEf`` and
+    ``tEs`` as ``2.302585092``; NEURON's compiled default rounds this
+    to ``2.30259``, and BrainCell follows the compiled value rather
+    than the ``.mod`` source text.
+
+    ``HCN1_MA20_GoC.mod`` credits its kinetics data to "Santoro et
+    al. J Neurosci. 2000" [2]_; the Boltzmann/exponential functional
+    forms trace to the cerebellar Golgi cell model of Solinas et al.
+    (2007) [1]_.
+
+    References
+    ----------
+    .. [1] Solinas, S., Forti, L., Cesana, E., Mapelli, J., De
+           Schutter, E., & D'Angelo, E. (2007). Computational
+           reconstruction of pacemaking and intrinsic
+           electroresponsiveness in cerebellar Golgi cells. Frontiers
+           in Cellular Neuroscience, 1, 2.
+           doi:10.3389/neuro.03.002.2007
+    .. [2] Santoro, B., Chen, S., Luthi, A., Pavlidis, P.,
+           Shumyatsky, G. P., Tibbs, G. R., & Siegelbaum, S. A.
+           (2000). Molecular and functional heterogeneity of
+           hyperpolarization-activated pacemaker channels in the
+           mouse CNS. The Journal of Neuroscience, 20(14), 5264-5275.
+           doi:10.1523/JNEUROSCI.20-14-05264.2000
+    .. [3] Masoli, S., Ottaviani, A., Casali, S., & D'Angelo, E.
+           (2020). Cerebellar Golgi cell models predict dendritic
+           processing and mechanisms of synaptic plasticity. PLOS
+           Computational Biology, 16(12), e1007937.
+           doi:10.1371/journal.pcbi.1007937
+    """
 
     __module__ = "braincell.channel"
     root_type = HHTypedNeuron
@@ -470,7 +834,105 @@ class HCN1_MA2020_GoC(HH):
 
 @register_channel("HCN2_MA2020_GoC")
 class HCN2_MA2020_GoC(HH):
-    """Template-based import of ``HCN2_MA2020_GoC.mod``."""
+    r"""HCN2 fast/slow h-current imported for the Golgi cell model.
+
+    Ports the two-gate NEURON mechanism ``HCN2_MA2020_GoC.mod`` used
+    in the Golgi-cell deposit of (Masoli et al., 2020) [3]_. Two
+    independent open-state gates, ``o_fast`` and ``o_slow``, share
+    one Boltzmann steady state split by a mixing fraction ``r(V)``
+    that is linear only inside a clamped voltage window:
+
+    .. math::
+
+        \begin{aligned}
+        I_h &= \phi_Q \, g_{\mathrm{max}} \,
+               (o_{\mathrm{fast}} + o_{\mathrm{slow}}) \, (E - V) \\
+        o_\infty(V) &= \frac{1}{1 + \exp((V - E_{1/2}) \, c)} \\
+        r(V) &= \begin{cases}
+                  0 & V \geq -64.70\ \mathrm{mV} \\
+                  1 & V \leq -108.70\ \mathrm{mV} \\
+                  r_A V + r_B & \text{otherwise}
+                \end{cases} \\
+        o_{\mathrm{fast},\infty} &= r(V) \, o_\infty(V) \\
+        o_{\mathrm{slow},\infty} &= (1 - r(V)) \, o_\infty(V) \\
+        \tau_{\mathrm{fast}} &= \exp((t_{Cf} V - t_{Df}) \, t_{Ef}) \\
+        \tau_{\mathrm{slow}} &= \exp((t_{Cs} V - t_{Ds}) \, t_{Es})
+        \end{aligned}
+
+    with :math:`\phi_Q = Q_{10}^{(T - 23^{\circ}\mathrm{C}) / 10}`,
+    :math:`E_{1/2} = -81.95\ \mathrm{mV}`,
+    :math:`c = 0.1661\ \mathrm{mV^{-1}}`,
+    :math:`r_A = -0.0227\ \mathrm{mV^{-1}}`, :math:`r_B = -1.4694`,
+    :math:`t_{Cf} = 0.0269\ \mathrm{mV^{-1}}`, :math:`t_{Df} =
+    -5.6111`, :math:`t_{Ef} = 2.3026`, :math:`t_{Cs} =
+    0.0152\ \mathrm{mV^{-1}}`, :math:`t_{Ds} = -5.2944`,
+    :math:`t_{Es} = 2.3026`, and :math:`Q_{10} = 1.5`. Both gates
+    additionally carry ``q10=3.0``, ``temp_ref=23`` degrees Celsius
+    on their own state relaxation, independent of the
+    :math:`\phi_Q` conductance prefactor above. All eleven constants
+    are fixed internal values set in ``__init__``; they are not
+    exposed as parameters.
+
+    This class subclasses :class:`HH` directly, not
+    :class:`OhmicHH`, because :meth:`current` sums two gate values
+    before applying the driving force rather than taking a single
+    ``power``-weighted product.
+
+    Parameters
+    ----------
+    size : brainstate.typing.Size
+        Channel state shape.
+    g_max : array-like or callable, optional
+        Maximal conductance density, default ``0.08 mS/cm2``.
+    E : array-like or callable, optional
+        Reversal potential, default ``-20.0 mV``.
+    temp : array-like, optional
+        Absolute temperature driving both the gate Q10 factors and
+        :math:`\phi_Q`, default 22 degrees Celsius.
+    name : str, optional
+        Optional channel name.
+
+    See Also
+    --------
+    HCN1_MA2020_GoC : Companion isoform with an unclamped ``r(V)``.
+
+    Notes
+    -----
+    Ported from ``HCN2_MA2020_GoC.mod``. The former NEURON ``TABLE``
+    tabulated ``o_fast_inf``, ``o_slow_inf``, ``tau_f`` and ``tau_s``
+    over ``[-100, 30] mV`` and clamped outside that range; BrainCell
+    evaluates the continuous formulas above at every call instead, so
+    values outside ``[-100, 30] mV`` are expected to diverge from the
+    original NEURON boundary-clamped output. The explicit ``r(V)``
+    clamp to ``{0, 1}`` above ``-64.70 mV`` / below ``-108.70 mV`` is
+    reproduced directly in :meth:`r`, independent of the removed
+    ``TABLE`` boundary clamp.
+
+    ``HCN2_MA20_GoC.mod`` credits its kinetics data to "Santoro et
+    al. J Neurosci. 2000" [2]_; the Boltzmann/exponential functional
+    forms trace to the cerebellar Golgi cell model of Solinas et al.
+    (2007) [1]_.
+
+    References
+    ----------
+    .. [1] Solinas, S., Forti, L., Cesana, E., Mapelli, J., De
+           Schutter, E., & D'Angelo, E. (2007). Computational
+           reconstruction of pacemaking and intrinsic
+           electroresponsiveness in cerebellar Golgi cells. Frontiers
+           in Cellular Neuroscience, 1, 2.
+           doi:10.3389/neuro.03.002.2007
+    .. [2] Santoro, B., Chen, S., Luthi, A., Pavlidis, P.,
+           Shumyatsky, G. P., Tibbs, G. R., & Siegelbaum, S. A.
+           (2000). Molecular and functional heterogeneity of
+           hyperpolarization-activated pacemaker channels in the
+           mouse CNS. The Journal of Neuroscience, 20(14), 5264-5275.
+           doi:10.1523/JNEUROSCI.20-14-05264.2000
+    .. [3] Masoli, S., Ottaviani, A., Casali, S., & D'Angelo, E.
+           (2020). Cerebellar Golgi cell models predict dendritic
+           processing and mechanisms of synaptic plasticity. PLOS
+           Computational Biology, 16(12), e1007937.
+           doi:10.1371/journal.pcbi.1007937
+    """
 
     __module__ = "braincell.channel"
     root_type = HHTypedNeuron
@@ -544,7 +1006,74 @@ class HCN2_MA2020_GoC(HH):
 
 @register_channel("HCN_SU2015_DCN")
 class HCN_SU2015_DCN(OhmicHH):
-    """Template-based import of ``HCN_SU2015_DCN.mod``."""
+    r"""H-current imported for the deep cerebellar nucleus (DCN) model.
+
+    Ports the single ``m`` gate (power 2) NEURON mechanism
+    ``HCN_SU2015_DCN.mod`` used in the deep-cerebellar-nucleus
+    deposit of (Sudhakar et al., 2015) [2]_.
+
+    .. math::
+
+        \begin{aligned}
+        I_h &= g_{\mathrm{max}} \, m^2 \, (E - V) \\
+        m_\infty &= \frac{1}{1 + \exp((V + 80) / 5)} \\
+        \tau_m &= \frac{400}{\mathrm{qdeltat}}
+        \end{aligned}
+
+    :math:`\tau_m` is a voltage-independent constant, not a function
+    of :math:`V`; ``qdeltat`` is a fixed internal value (default
+    ``1.0``) set in ``__init__`` and is not exposed as a parameter.
+
+    Parameters
+    ----------
+    size : brainstate.typing.Size
+        Channel state shape.
+    g_max : array-like or callable, optional
+        Maximal conductance density, default ``0.01 mS/cm2``.
+    E : array-like or callable, optional
+        Reversal potential, default ``-45.0 mV``.
+    name : str, optional
+        Optional channel name.
+
+    Notes
+    -----
+    This class overrides :meth:`reversal_potential` to return
+    ``self.E`` instead of an ion's reversal potential. The ``m``
+    gate carries no ``q10``/``phi``, so :meth:`HH.gate_phi` resolves
+    to the default ``1.0``.
+
+    Ported from ``HCN_SU2015_DCN.mod``. Its kinetics belong to the
+    deep cerebellar nucleus model of Steuber et al. (2011) [1]_,
+    translated from GENESIS to NEURON by Luthman et al. (2011), and
+    used in Sudhakar et al. (2015) [2]_. ``HCN`` is one of only four
+    mechanism names (with ``CaLVA``, ``NaP`` and ``SK``) that occur
+    as strings in the text of [2]_; the paper does not, however,
+    print the Boltzmann or time constants above for any mechanism --
+    those are established only by direct comparison against the
+    ``.mod`` source, not by a per-mechanism statement in either
+    paper.
+
+    :meth:`f_m_tau` returns the constant ``400.0 / qdeltat`` (400 ms
+    by default), a genuine, finite, voltage-independent time
+    constant -- the gate is **not** instantaneous. The former NEURON
+    ``TABLE`` directive tabulated only ``minf`` over ``[-150, 100]
+    mV``; ``taum`` was never tabulated because it does not depend on
+    voltage, not because it is zero or absent.
+
+    References
+    ----------
+    .. [1] Steuber, V., Schultheiss, N. W., Silver, R. A., De
+           Schutter, E., & Jaeger, D. (2011). Determinants of
+           synaptic integration and heterogeneity in rebound firing
+           explored with data-driven models of deep cerebellar
+           nucleus cells. Journal of Computational Neuroscience,
+           30(3), 633-658. doi:10.1007/s10827-010-0282-z
+    .. [2] Sudhakar, S. K., Torben-Nielsen, B., & De Schutter, E.
+           (2015). Cerebellar nuclear neurons use time and rate
+           coding to transmit Purkinje neuron pauses. PLOS
+           Computational Biology, 11(12), e1004641.
+           doi:10.1371/journal.pcbi.1004641
+    """
 
     __module__ = "braincell.channel"
     root_type = HHTypedNeuron
@@ -575,7 +1104,85 @@ class HCN_SU2015_DCN(OhmicHH):
 
 @register_channel("HCN_ZH2019_IO")
 class HCN_ZH2019_IO(OhmicHH):
-    """Template-based import of ``HCN_ZH2019_IO.mod``."""
+    r"""Inferior olive somatic h-current, imported from ``HCN_ZH19_IO.mod``.
+
+    A single-gate hyperpolarization-activated current for the
+    single-compartment inferior olive somatic model of Zhang &
+    Santaniello (2019) [2]_. The gating kinetics originate in the
+    inferior olive compartmental model of Schweighofer, Doya, & Kawato
+    (1999) [1]_ and reached this class through the NEURON port of
+    Torben-Nielsen, Segev, & Yarom (2012) (see Notes).
+
+    Parameters
+    ----------
+    size : brainstate.typing.Size
+        Channel state shape.
+    g_max : array-like or callable, optional
+        Maximum conductance, default ``0.15 mS/cm2``.
+    E : array-like or callable, optional
+        Fixed reversal potential used in place of an ion-derived
+        driving force, default ``-43.0 mV``.
+    name : str, optional
+        Optional module name.
+
+    Notes
+    -----
+    The current is
+
+    .. math::
+
+        I_h = g_{max} \, q \, (E - V)
+
+    with the single gate ``q`` following
+
+    .. math::
+
+        q_\infty(V) = \frac{1}{1 + \exp\left(\dfrac{V + 75\
+        \text{mV}}{5.5\ \text{mV}}\right)}
+
+    .. math::
+
+        \tau_q(V) = \frac{1}{\exp(-0.086\,V/\text{mV} - 14.6)
+        + \exp(0.07\,V/\text{mV} - 1.87)}\ \text{ms}
+
+    ``q`` carries no ``phi``/``q10`` in its :class:`~braincell.channel._base.Gate`
+    declaration, so :meth:`~braincell.channel._base.HH.gate_phi` resolves
+    to the default ``1.0`` and neither rate method is temperature-scaled.
+
+    This mechanism is ported from ``IO/channel/HCN_ZH19_IO.mod``, whose
+    header credits "Somatic h channel from Schweighofer et al., 1999"
+    and porter "Xu Zhang @ UConn, 6-22-2018". The inferior olive neurons
+    modelled by Zhang & Santaniello (2019) [2]_ are **single-compartment**
+    (``nseg = 1``); this class must not be described as part of a
+    multi-compartment inferior olive mechanism.
+
+    In the source `.mod` file the kinetics originate with Schweighofer,
+    Doya, & Kawato (1999) [1]_ and reached ``HCN_ZH19_IO.mod`` through
+    the intermediate NEURON port of Torben-Nielsen, Segev, & Yarom
+    (2012), credited in the header as "B. Torben-Nielsen @ HUJI" on the
+    sibling `Na`/`Kdr`/`Ca` files of the same deposit.
+
+    **Import deviation.** In the upstream `.mod` file the ``rates(v)``
+    call that refreshes ``q_inf``/``tau_q`` lives inside ``BREAKPOINT``;
+    in this deposit's ``HCN_ZH19_IO.mod`` it was relocated into
+    ``DERIVATIVE states``, so the rates are refreshed *before* the
+    ``cnexp`` state update rather than after it. This is a semantic
+    change, not a cosmetic one -- the only other difference from the
+    upstream file is the ``SUFFIX`` rename, and the ``COMMENT`` header
+    is otherwise untouched.
+
+    References
+    ----------
+    .. [1] Schweighofer, N., Doya, K., & Kawato, M. (1999).
+           Electrophysiological properties of inferior olive neurons: A
+           compartmental model. Journal of Neurophysiology, 82(2),
+           804-817. doi:10.1152/jn.1999.82.2.804
+    .. [2] Zhang, X., & Santaniello, S. (2019). Role of cerebellar
+           GABAergic dysfunctions in the origins of essential tremor.
+           Proceedings of the National Academy of Sciences of the
+           United States of America, 116(27), 13592-13601.
+           doi:10.1073/pnas.1817689116
+    """
 
     __module__ = "braincell.channel"
     root_type = HHTypedNeuron

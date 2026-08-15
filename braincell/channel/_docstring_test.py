@@ -7,6 +7,7 @@ from braincell.channel import (
     _base,
     hyperpolarization_activated,
     leaky,
+    potassium_calcium,
     potassium_sodium,
     sodium,
 )
@@ -17,6 +18,7 @@ _COVERED_MODULES = (
     _base,
     hyperpolarization_activated,
     leaky,
+    potassium_calcium,
     potassium_sodium,
     sodium,
 )

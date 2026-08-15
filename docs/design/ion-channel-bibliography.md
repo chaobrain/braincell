@@ -1913,6 +1913,13 @@ Transcribed from `examples/neuron_compare/Cerebellum_mod/README.md`
 update placement status", "NMODL numeric default precision"). Put
 these in the docstring `Notes` section; do not re-read that file.
 
+**These deviations are already applied to the `.mod` files in this
+repository.** The README's status column reads `已连续化` ("now
+continuous") with the former range under `原` ("formerly"), so opening
+a shipped `.mod` file shows `cnexp` and no `TABLE`. That is the
+deviation having been made, not evidence against it. Do not read the
+shipped file as refuting a row below.
+
 **`TABLE` removed, replaced by per-call evaluation of the continuous
 formula.** The former interpolation range is given because NEURON
 clamps to the boundary value outside it, so any recorded BrainCell/
@@ -2209,6 +2216,13 @@ that key is already verified in this file and must be cited from the
 ### Import deviations
 
 Transcribed from `examples/neuron_compare/Cerebellum_mod/README.md`.
+
+**These deviations are already applied to the `.mod` files in this
+repository.** The README's status column reads `已连续化` ("now
+continuous") with the former range under `原` ("formerly"), so opening
+a shipped `.mod` file shows `cnexp` and no `TABLE`. That is the
+deviation having been made, not evidence against it. Do not read the
+shipped file as refuting a row below.
 
 **`TABLE` removed, replaced by per-call evaluation.**
 
@@ -2546,6 +2560,13 @@ attributions` item 9.
 
 Transcribed from `examples/neuron_compare/Cerebellum_mod/README.md`.
 
+**These deviations are already applied to the `.mod` files in this
+repository.** The README's status column reads `已连续化` ("now
+continuous") with the former range under `原` ("formerly"), so opening
+a shipped `.mod` file shows `cnexp` and no `TABLE`. That is the
+deviation having been made, not evidence against it. Do not read the
+shipped file as refuting a row below.
+
 **`TABLE` removed, replaced by per-call evaluation.** The DCN files
 used a wider voltage window than the other cell types, so boundary
 clamping was much less likely to bite; the concentration table in
@@ -2805,6 +2826,13 @@ the same non-CAM pump/PV network as `CdpStC_RI2021_SC`.
 
 Transcribed from `examples/neuron_compare/Cerebellum_mod/README.md`.
 
+**These deviations are already applied to the `.mod` files in this
+repository.** The README's status column reads `已连续化` ("now
+continuous") with the former range under `原` ("formerly"), so opening
+a shipped `.mod` file shows `cnexp` and no `TABLE`. That is the
+deviation having been made, not evidence against it. Do not read the
+shipped file as refuting a row below.
+
 **`TABLE` removed, replaced by per-call evaluation.**
 
 | Symbol | Former `TABLE` range | Tabulated |
@@ -3061,6 +3089,13 @@ that `SC` has no `Kca3p1` mechanism, unlike `BC`, `GoC` and `PC`.
 ### Import deviations
 
 Transcribed from `examples/neuron_compare/Cerebellum_mod/README.md`.
+
+**These deviations are already applied to the `.mod` files in this
+repository.** The README's status column reads `已连续化` ("now
+continuous") with the former range under `原` ("formerly"), so opening
+a shipped `.mod` file shows `cnexp` and no `TABLE`. That is the
+deviation having been made, not evidence against it. Do not read the
+shipped file as refuting a row below.
 
 **`TABLE` removed, replaced by per-call evaluation.**
 
@@ -3396,6 +3431,13 @@ imply the mod file's branch was reproduced.
 ### Import deviations
 
 Transcribed from `examples/neuron_compare/Cerebellum_mod/README.md`.
+
+**These deviations are already applied to the `.mod` files in this
+repository.** The README's status column reads `已连续化` ("now
+continuous") with the former range under `原` ("formerly"), so opening
+a shipped `.mod` file shows `cnexp` and no `TABLE`. That is the
+deviation having been made, not evidence against it. Do not read the
+shipped file as refuting a row below.
 
 **`TABLE` removed.** None. No `IO` mechanism used a `TABLE`.
 

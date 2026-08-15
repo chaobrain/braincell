@@ -1008,9 +1008,15 @@ git commit -m "Verify cerebellar model citations and mod-file provenance"
 **Interfaces:**
 - Produces: `braincell._testing.public_symbols(module)`,
   `own_docstring(obj) -> str | None`, `sections(doc) -> dict[str, str]`,
-  `has_citation(doc) -> bool`. Each guard module exposes a `_COVERED_MODULES`
+  `has_citation(doc) -> bool`, and the `DocstringConformanceTests` mixin
+  carrying the four assertions. Each guard module exposes a `_COVERED_MODULES`
   tuple that Tasks 5–17 extend by exactly one entry, and a
   `_NO_PRIMARY_SOURCE` frozenset.
+
+The assertions live in the shared mixin rather than being copied into both
+guard modules. Each package's `*_test.py` stays co-located per AGENTS.md rule 10
+but contains only its coverage tuple, its allowlist, and the class that binds
+them to the mixin.
 
 - [ ] **Step 1: Write the shared helper**
 
@@ -1061,6 +1067,59 @@ def has_citation(doc: str) -> bool:
     """True when ``doc`` has a References section holding a ``.. [n]`` entry."""
     body = sections(doc).get("References")
     return bool(body) and bool(_CITATION.search(body))
+
+
+class DocstringConformanceTests:
+    """Assertions shared by the per-package docstring guards.
+
+    Mix into a :class:`unittest.TestCase` subclass that sets
+    ``covered_modules`` and ``no_primary_source``. This class is deliberately
+    not a ``TestCase`` itself, so it is never collected on its own.
+    """
+
+    covered_modules: tuple[ModuleType, ...] = ()
+    no_primary_source: frozenset[str] = frozenset()
+
+    def _symbols(self):
+        for module in self.covered_modules:
+            for name, obj in public_symbols(module):
+                yield module.__name__, name, obj
+
+    def test_every_public_symbol_defines_its_own_docstring(self):
+        missing = [
+            f"{mod}.{name}"
+            for mod, name, obj in self._symbols()
+            if own_docstring(obj) is None
+        ]
+        self.assertEqual(missing, [], f"undocumented public symbols: {missing}")
+
+    def test_summary_is_a_single_sentence_line(self):
+        bad = []
+        for mod, name, obj in self._symbols():
+            doc = own_docstring(obj)
+            if doc is None:
+                continue
+            summary = doc.splitlines()[0].strip()
+            if not summary.endswith("."):
+                bad.append(f"{mod}.{name}: {summary!r}")
+        self.assertEqual(bad, [], f"summary must be one sentence ending in '.': {bad}")
+
+    def test_every_public_symbol_cites_a_reference(self):
+        uncited = []
+        for mod, name, obj in self._symbols():
+            if name in self.no_primary_source:
+                continue
+            doc = own_docstring(obj)
+            if doc is None or not has_citation(doc):
+                uncited.append(f"{mod}.{name}")
+        self.assertEqual(uncited, [], f"missing References with '.. [n]': {uncited}")
+
+    def test_no_primary_source_allowlist_has_no_dead_entries(self):
+        if not self.covered_modules:
+            self.skipTest("no modules covered yet")
+        live = {name for _, name, _ in self._symbols()}
+        dead = sorted(n for n in self.no_primary_source if n not in live)
+        self.assertEqual(dead, [], f"allowlist names no longer public: {dead}")
 ```
 
 - [ ] **Step 2: Write the channel guard with an empty coverage tuple**
@@ -1072,10 +1131,10 @@ Create `braincell/channel/_docstring_test.py`:
 
 import unittest
 
-from braincell import _testing
+from braincell._testing import DocstringConformanceTests
 
-# Extended by one module per docstring task. A module is listed only once its
-# every public symbol satisfies the assertions below.
+# Extended by one module per docstring task. A module is listed only once
+# every one of its public symbols satisfies the shared assertions.
 _COVERED_MODULES = ()
 
 # Public symbols with no primary literature source. Membership must be a
@@ -1084,49 +1143,9 @@ _COVERED_MODULES = ()
 _NO_PRIMARY_SOURCE = frozenset()
 
 
-class ChannelDocstringTest(unittest.TestCase):
-
-    def _symbols(self):
-        for module in _COVERED_MODULES:
-            for name, obj in _testing.public_symbols(module):
-                yield module.__name__, name, obj
-
-    def test_every_public_symbol_defines_its_own_docstring(self):
-        missing = [
-            f"{mod}.{name}"
-            for mod, name, obj in self._symbols()
-            if _testing.own_docstring(obj) is None
-        ]
-        self.assertEqual(missing, [], f"undocumented public symbols: {missing}")
-
-    def test_summary_is_a_single_sentence_line(self):
-        bad = []
-        for mod, name, obj in self._symbols():
-            doc = _testing.own_docstring(obj)
-            if doc is None:
-                continue
-            summary = doc.splitlines()[0].strip()
-            if not summary.endswith("."):
-                bad.append(f"{mod}.{name}: {summary!r}")
-        self.assertEqual(bad, [], f"summary must be one sentence ending in '.': {bad}")
-
-    def test_every_public_symbol_cites_a_reference(self):
-        uncited = []
-        for mod, name, obj in self._symbols():
-            if name in _NO_PRIMARY_SOURCE:
-                continue
-            doc = _testing.own_docstring(obj)
-            if doc is None or not _testing.has_citation(doc):
-                uncited.append(f"{mod}.{name}")
-        self.assertEqual(uncited, [], f"missing References with '.. [n]': {uncited}")
-
-    def test_no_primary_source_allowlist_has_no_dead_entries(self):
-        live = {name for _, name, _ in self._symbols()}
-        covered_names = {m.__name__ for m in _COVERED_MODULES}
-        if not covered_names:
-            return
-        dead = sorted(n for n in _NO_PRIMARY_SOURCE if n not in live)
-        self.assertEqual(dead, [], f"allowlist names no longer public: {dead}")
+class ChannelDocstringTest(DocstringConformanceTests, unittest.TestCase):
+    covered_modules = _COVERED_MODULES
+    no_primary_source = _NO_PRIMARY_SOURCE
 
 
 if __name__ == "__main__":
@@ -1135,10 +1154,11 @@ if __name__ == "__main__":
 
 - [ ] **Step 3: Write the ion guard**
 
-Create `braincell/ion/_docstring_test.py` with identical content, changing the
-module docstring to name `braincell.ion` and the class to `IonDocstringTest`.
-Both files are deliberately parallel; the shared logic already lives in
-`braincell/_testing.py`.
+Create `braincell/ion/_docstring_test.py` with the same shape: module docstring
+naming `braincell.ion`, its own `_COVERED_MODULES` and `_NO_PRIMARY_SOURCE`, and
+`class IonDocstringTest(DocstringConformanceTests, unittest.TestCase)` binding
+them. Only the coverage data differs between the two files; the assertions are
+inherited from the mixin.
 
 - [ ] **Step 4: Verify both modules collect and pass vacuously**
 
@@ -1146,9 +1166,11 @@ Both files are deliberately parallel; the shared logic already lives in
 pytest braincell/channel/_docstring_test.py braincell/ion/_docstring_test.py -v
 ```
 
-Expected: 8 tests PASS (4 per module). A result of "no tests ran" means the
-filename or class name is wrong — fix before continuing, since a guard that
-collects nothing is the exact failure AGENTS.md rule 10 exists to prevent.
+Expected: 8 tests collected (4 per module) — 6 pass vacuously against the empty
+coverage tuple and 2 skip with "no modules covered yet". A result of "no tests
+ran" means the filename or class name is wrong; fix it before continuing, since
+a guard that collects nothing is the exact failure AGENTS.md rule 10 exists to
+prevent. Also confirm `DocstringConformanceTests` is not itself collected.
 
 - [ ] **Step 5: Commit**
 

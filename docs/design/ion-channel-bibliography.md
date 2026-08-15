@@ -208,15 +208,28 @@ Two failure modes, both bugs:
   symbols, origin and model never coincide, so treat a single-entry
   cerebellar `References` block as a bug unless the mapping table says
   otherwise.
-- **Two entries where a three-origin row requires four.** The eleven
-  three-origin rows are the `Kca3p1` family (`O-RC2006`, `O-BB1993`,
-  `O-DV2000`), the `Kv3p4`/`Kv3p3` family (`O-RB2001`, `O-KH2003`,
-  `O-AK2006`) and the `Cav3p1`/`Cav3p2`/`Cav3p3` family (`O-AN2012`,
-  `O-SC2003`, `O-MD1999`), each recurring across several keys.
-  Dropping one of the three because "two-level" was read as a literal
-  cap is the same class of bug as dropping the model paper, and it is
-  easier to make. **Count the labels in the row; the entry count is
-  labels + 1.**
+- **Two entries where a three-origin row requires four.** Eleven rows
+  name three origins as `O-` keys: the `Kca3p1` family (`O-RC2006`,
+  `O-BB1993`, `O-DV2000`, 3 rows), the `Nav1p6` family (`O-RB2001`
+  kinetics, `O-KH2003`, `O-AK2006`, 4 rows) and the calcium
+  buffer/pump family -- `CdpStC*`, `CdpCR*`, `CdpCAM*` -- (`O-AN2012`
+  model, `O-SC2003` buffers, `O-MD1999` pump tuning, 4 rows). Three
+  further rows reach three sources without three `O-` keys: the
+  `Cav3p2_*` rows spell their first source as prose (Huguenard &
+  McCormick 1992, see the `HM1992` Verified record) alongside
+  `O-VI2005` and `O-CO1989`, so they need four entries as well.
+  Fourteen rows in total, not eleven -- do not audit this by grepping
+  for three `O-` keys. Dropping one of the three because "two-level"
+  was read as a literal cap is the same class of bug as dropping the
+  model paper, and it is easier to make. **Count the sources in the
+  row, however they are spelled; the entry count is sources + 1.**
+
+  The `Kv3p4_*` rows carry a single origin (`O-KH2003`) and
+  `Kv3p3_MA2024_PC` carries two (`O-MT2007` fits, `O-AK2009` model);
+  an earlier revision of this paragraph mislabelled the `Nav1p6`
+  triple as a "`Kv3p4`/`Kv3p3` family" and the `Cdp*` triple as a
+  "`Cav3p1`/`Cav3p2`/`Cav3p3` family". The per-key mapping tables
+  were correct throughout and remain authoritative.
 
 Renumber only the bracket digits when a docstring needs a different
 order; never retype the entry text.

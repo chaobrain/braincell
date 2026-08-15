@@ -2765,7 +2765,145 @@ class Cav3p1Test_PC24(HH):
 
 @register_channel("Cav2p1_RI2021_SC")
 class Cav2p1_RI2021_SC(HH):
-    """Template-based import of ``Cav2p1_RI21_SC.mod``."""
+    r"""Stellate cell Cav2.1 P-type calcium current with GHK drive.
+
+    The Cav2.1 (P-type) calcium current of the cerebellar stellate
+    cell model of (Rizza et al., 2021) [3]_. Its kinetics were built
+    from dissociated Purkinje neuron recordings reported by (Swensen
+    & Bean, 2005) [1]_ and published as part of the Purkinje-cell
+    calcium-buffering model of (Anwar, Hong & De Schutter, 2012)
+    [2]_. Gating is :math:`m^3` with a single activation state,
+    driven by a constant-field (GHK) calcium flux rather than an
+    ohmic term:
+
+    .. math::
+
+        \begin{aligned}
+        I_{Ca} &= -P \, m^3 \,
+                  \Phi(V', [Ca]_i, [Ca]_o, z{=}2, T) \\
+        m_\infty &= \frac{1}{1 + \exp(-(V' - v_{1/2}) / k)} \\
+        \tau_m &= \frac{1}{\phi_m} \begin{cases}
+                  0.2702 + 1.1622\, e^{-(V' + 26.798)^2 / 164.19}
+                  & V' \geq -40 \\
+                  0.6923\, e^{V' / 1089.372} & V' < -40
+                  \end{cases} \\
+        \phi_m &= 3^{(T - 23\,^\circ\mathrm{C}) / 10}
+        \end{aligned}
+
+    where :math:`V' = V - V_{sh}`, :math:`v_{1/2} = -29.458` mV,
+    :math:`k = 8.429` mV, :math:`P` is the calcium permeability and
+    :math:`\Phi` is :func:`~braincell.channel._base.ghk_flux`. The
+    :math:`\tau_m` branch reads :math:`V'` in millivolts and returns
+    milliseconds; its branch point is inclusive at exactly
+    :math:`-40` mV. :math:`\phi_m` is supplied by the ``Gate``
+    declaration, which divides :math:`\tau_m` by it.
+
+    Parameters
+    ----------
+    size : brainstate.typing.Size
+        Channel state shape.
+    g_max : array-like or callable, optional
+        Calcium permeability :math:`P` entering the GHK flux -- the
+        mod file's ``pcabar`` -- despite the ``g_max`` name and
+        conductance-like spelling. Defaults to ``2.2e-4 cm/s`` (see
+        Notes).
+    V_sh : array-like or callable, optional
+        Voltage shift subtracted from :math:`V` before every rate
+        and before the GHK term; the mod file's ``vshift``. Defaults
+        to ``0.0 mV``.
+    temp : array-like, optional
+        Absolute temperature. Enters both :math:`\phi_m` and the GHK
+        flux. Defaults to 23 degrees Celsius, at which
+        :math:`\phi_m = 1`.
+    name : str, optional
+        Optional channel name.
+
+    See Also
+    --------
+    Cav2p1_MA2024_PC : The same mechanism re-imported for the human
+        Purkinje cell model; identical kinetics, different model
+        citation.
+    Cav2p1_MA2025_BC : The same mechanism re-imported for the basket
+        cell model; identical kinetics, different model citation.
+    Cav2p1_RI2021_SC_Frozen : Stellate-cell variant with the GHK
+        term's voltage dependence removed from the autodiff graph.
+        It is **not** a subclass of this class, and it is not
+        numerically identical to it (see its Notes).
+    braincell.channel._base.ghk_flux : Shared GHK flux helper called
+        by :meth:`current`; the constant-field derivation lives
+        there and is not restated here.
+
+    Notes
+    -----
+    Ported from ``SC/channel/Cav2p1_RI21_SC.mod``, whose ``COMMENT``
+    records that the mechanism was "Constructed from the recording
+    data provided by Bruce Bean" and cites (Swensen & Bean, 2005)
+    for those recordings. The same file also records the rename
+    "Suffix from newCaP to Cav2_1".
+
+    Two corrections to the mod header's own model-reference line,
+    "Anwar H, Hong S, De Schutter E (2010) ... in Purkinje cell":
+    the citable record is 2012 -- 2010 is the online-first date,
+    which is also why the DOI carries ``-010-`` -- and the published
+    title ends "Purkinje **cells**", plural. Entry [2]_ below is the
+    corrected form. The header's "Written by Sungho Hong" line names
+    the mechanism's author and is deliberately not turned into a
+    citation.
+
+    ``current()`` evaluates ``-g_max * m^3 * drive`` with ``drive``
+    from :func:`~braincell.channel._base.ghk_flux`, so ``g_max``
+    occupies that function's permeability slot :math:`P_s` and is a
+    permeability in ``cm/s``, not a conductance density. The
+    negation matches BrainCell's repo-wide inward-positive
+    convention against NEURON's outward-positive ``ica``.
+
+    **The shared helper's physical constants are not the mod
+    file's.** :func:`~braincell.channel._base.ghk_flux` uses the
+    CODATA Faraday and gas constants and the temperature exactly as
+    passed, whereas this mod file declares ``F = 9.6485e4``,
+    ``R = 8.3145`` and a ``kelvinfkt`` conversion of
+    ``273.19 + celsius``. The resulting flux differs by of order
+    :math:`10^{-4}` in relative terms. The frozen variants of this
+    mechanism route through a helper that does carry the mod file's
+    constants; see :class:`Cav2p1_MA2024_PC_Frozen`.
+
+    The mod file's ``vhalfh = -11.039 (mV)`` and
+    ``cvh = 16.098 (mV)`` are declared but never used -- the
+    mechanism has no inactivation state -- and BrainCell drops them.
+
+    The mod file computes ``taum = taumfkt(v - vshift) / qt`` with
+    ``qt = q10^((celsius - 23)/10)`` and ``q10 = 3``. That is
+    exactly the generic gate temperature path, in which
+    ``Gate(q10=..., temp_ref=...)`` divides the whole tau by the
+    factor, so the Q10 is declared on the gate here rather than
+    written into :meth:`f_m_tau`.
+
+    The ``RI2021`` import-deviations tables list no ``TABLE``
+    removal, no ``derivimplicit`` -> ``cnexp`` substitution and no
+    rate-refresh relocation for this mechanism.
+
+    ``g_max``'s default is the ``pcabar`` of the cell-model deposit
+    this mechanism was imported from -- a value tuned for that
+    model, not a permeability reported by either origin paper.
+
+    References
+    ----------
+    .. [1] Swensen, A. M., & Bean, B. P. (2005). Robustness of burst
+           firing in dissociated Purkinje neurons with acute or
+           long-term reductions in sodium conductance. The Journal
+           of Neuroscience, 25(14), 3509-3520.
+           doi:10.1523/JNEUROSCI.3929-04.2005
+    .. [2] Anwar, H., Hong, S., & De Schutter, E. (2012). Controlling
+           Ca2+-activated K+ channels with models of Ca2+ buffering
+           in Purkinje cells. The Cerebellum, 11(3), 681-693.
+           doi:10.1007/s12311-010-0224-3
+    .. [3] Rizza, M. F., Locatelli, F., Masoli, S., Sanchez-Ponce, D.,
+           Munoz, A., Prestori, F., & D'Angelo, E. (2021). Stellate
+           cell computational modeling predicts signal filtering in
+           the molecular layer circuit of cerebellum. Scientific
+           Reports, 11(1), 3873.
+           doi:10.1038/s41598-021-83209-w
+    """
 
     __module__ = "braincell.channel"
     root_type = Calcium
@@ -2815,21 +2953,285 @@ class Cav2p1_RI2021_SC(HH):
 
 @register_channel("Cav2p1_MA2025_BC")
 class Cav2p1_MA2025_BC(Cav2p1_RI2021_SC):
-    """Template-based import of ``Cav2p1_MA2025_BC.mod``."""
+    r"""Basket cell Cav2.1 P-type calcium current with GHK drive.
+
+    The same :math:`m^3` Cav2.1 kinetics and GHK current law
+    documented in :class:`Cav2p1_RI2021_SC`, reused unchanged for
+    the cerebellar basket cell model of (Masoli et al., 2025) [3]_.
+    The kinetics remain those built from the dissociated Purkinje
+    neuron recordings of (Swensen & Bean, 2005) [1]_ and published
+    in (Anwar, Hong & De Schutter, 2012) [2]_.
+
+    Parameters
+    ----------
+    size : brainstate.typing.Size
+        Channel state shape.
+    g_max : array-like or callable, optional
+        Calcium permeability entering the GHK flux (the mod file's
+        ``pcabar``), default ``2.2e-4 cm/s``. Inherited from
+        :class:`Cav2p1_RI2021_SC`.
+    V_sh : array-like or callable, optional
+        Voltage shift, the mod file's ``vshift``, default
+        ``0.0 mV``. Inherited from :class:`Cav2p1_RI2021_SC`.
+    temp : array-like, optional
+        Absolute temperature entering both the gate's Q10 factor and
+        the GHK flux, default 23 degrees Celsius. Inherited from
+        :class:`Cav2p1_RI2021_SC`.
+    name : str, optional
+        Optional channel name.
+
+    See Also
+    --------
+    Cav2p1_RI2021_SC : The base class; the full equation set, the
+        permeability discrepancy and the mod header corrections are
+        documented there.
+    Cav2p1_MA2024_PC : The same mechanism imported for the human
+        Purkinje cell model.
+    Cav2p1_MA2025_BC_Frozen : Basket-cell variant with the GHK
+        term's voltage dependence removed from the autodiff graph.
+        It is **not** a subclass of this class (see its Notes).
+
+    Notes
+    -----
+    Ported from ``BC/channel/Cav2p1_MA25_BC.mod``, which is
+    byte-identical to ``SC/channel/Cav2p1_RI21_SC.mod`` except for
+    its ``SUFFIX`` line. Accordingly this class overrides nothing:
+    the constructor, the gate declaration, the named parameter block
+    and ``current`` are all inherited from
+    :class:`Cav2p1_RI2021_SC`. Only the ``register_channel`` key and
+    this docstring's model citation differ. Per the bibliography's
+    attribution scan, this subclass contributes no rate-function
+    code of its own; its zero literal overlap in that scan is an
+    artefact of the constants living in the base class.
+
+    The ``MA2025`` import-deviations tables list no ``TABLE``
+    removal, no ``derivimplicit`` -> ``cnexp`` substitution and no
+    rate-refresh relocation for ``Cav2p1``.
+
+    References
+    ----------
+    .. [1] Swensen, A. M., & Bean, B. P. (2005). Robustness of burst
+           firing in dissociated Purkinje neurons with acute or
+           long-term reductions in sodium conductance. The Journal
+           of Neuroscience, 25(14), 3509-3520.
+           doi:10.1523/JNEUROSCI.3929-04.2005
+    .. [2] Anwar, H., Hong, S., & De Schutter, E. (2012). Controlling
+           Ca2+-activated K+ channels with models of Ca2+ buffering
+           in Purkinje cells. The Cerebellum, 11(3), 681-693.
+           doi:10.1007/s12311-010-0224-3
+    .. [3] Masoli, S., Rizza, M. F., Soda, T., Sanchez-Ponce, D.,
+           Munoz, A., Prestori, F., & D'Angelo, E. (2025).
+           Cerebellar basket cell filtering of Purkinje cell
+           responses elicited by low frequency parallel fibre
+           transmission. Scientific Reports, 15(1), 25192.
+           doi:10.1038/s41598-025-09964-2
+    """
 
     __module__ = "braincell.channel"
 
 
 @register_channel("Cav2p1_MA2024_PC")
 class Cav2p1_MA2024_PC(Cav2p1_RI2021_SC):
-    """Template-based import of ``Cav2p1_MA2024_PC.mod``."""
+    r"""Purkinje cell Cav2.1 P-type calcium current, GHK drive.
+
+    The same :math:`m^3` Cav2.1 kinetics and GHK current law
+    documented in :class:`Cav2p1_RI2021_SC`, reused unchanged for
+    the human Purkinje cell model of (Masoli et al., 2024) [3]_. The
+    kinetics remain those built from the dissociated Purkinje neuron
+    recordings of (Swensen & Bean, 2005) [1]_ and published in
+    (Anwar, Hong & De Schutter, 2012) [2]_.
+
+    Parameters
+    ----------
+    size : brainstate.typing.Size
+        Channel state shape.
+    g_max : array-like or callable, optional
+        Calcium permeability entering the GHK flux (the mod file's
+        ``pcabar``), default ``2.2e-4 cm/s``. Inherited from
+        :class:`Cav2p1_RI2021_SC`.
+    V_sh : array-like or callable, optional
+        Voltage shift, the mod file's ``vshift``, default
+        ``0.0 mV``. Inherited from :class:`Cav2p1_RI2021_SC`.
+    temp : array-like, optional
+        Absolute temperature entering both the gate's Q10 factor and
+        the GHK flux, default 23 degrees Celsius. Inherited from
+        :class:`Cav2p1_RI2021_SC`.
+    name : str, optional
+        Optional channel name.
+
+    See Also
+    --------
+    Cav2p1_RI2021_SC : The base class; the full equation set, the
+        permeability discrepancy and the mod header corrections are
+        documented there.
+    Cav2p1_MA2025_BC : The same mechanism imported for the basket
+        cell model.
+    Cav2p1_MA2024_PC_Frozen : Purkinje-cell variant with the GHK
+        term's voltage dependence removed from the autodiff graph.
+        It is **not** a subclass of this class, and it is not
+        numerically identical to it (see its Notes).
+
+    Notes
+    -----
+    Ported from ``PC/channel/Cav2p1_MA24_PC.mod``, which is
+    identical to ``SC/channel/Cav2p1_RI21_SC.mod`` apart from its
+    ``SUFFIX`` line and the BrainCell-local ``g_equiv`` diagnostic
+    the stellate copy carries. Accordingly this class overrides
+    nothing: the constructor, the gate declaration, the named
+    parameter block and ``current`` are all inherited from
+    :class:`Cav2p1_RI2021_SC`. Only the ``register_channel`` key and
+    this docstring's model citation differ. Per the bibliography's
+    attribution scan, this subclass contributes no rate-function
+    code of its own; its zero literal overlap in that scan is an
+    artefact of the constants living in the base class.
+
+    The ``MA2024`` import-deviations tables list no ``TABLE``
+    removal, no ``derivimplicit`` -> ``cnexp`` substitution and no
+    rate-refresh relocation for ``Cav2p1``.
+
+    References
+    ----------
+    .. [1] Swensen, A. M., & Bean, B. P. (2005). Robustness of burst
+           firing in dissociated Purkinje neurons with acute or
+           long-term reductions in sodium conductance. The Journal
+           of Neuroscience, 25(14), 3509-3520.
+           doi:10.1523/JNEUROSCI.3929-04.2005
+    .. [2] Anwar, H., Hong, S., & De Schutter, E. (2012). Controlling
+           Ca2+-activated K+ channels with models of Ca2+ buffering
+           in Purkinje cells. The Cerebellum, 11(3), 681-693.
+           doi:10.1007/s12311-010-0224-3
+    .. [3] Masoli, S., Sanchez-Ponce, D., Vrieler, N., Abu-Haya, K.,
+           Lerner, V., Shahar, T., Nedelescu, H., Rizza, M. F.,
+           Benavides-Piccione, R., DeFelipe, J., Yarom, Y., Munoz,
+           A., & D'Angelo, E. (2024). Human Purkinje cells outperform
+           mouse Purkinje cells in dendritic complexity and
+           computational capacity. Communications Biology, 7(1), 5.
+           doi:10.1038/s42003-023-05689-y
+    """
 
     __module__ = "braincell.channel"
 
 
 @register_channel("Cav2p1_MA2024_PC_Frozen")
 class Cav2p1_MA2024_PC_Frozen(HH):
-    """Experimental Cav2.1 variant that freezes GHK voltage dependence in autodiff."""
+    r"""Purkinje cell Cav2.1 with the GHK drive frozen for autodiff.
+
+    A standalone Purkinje-cell Cav2.1 mechanism that stops the
+    gradient through the membrane potential where it enters the
+    constant-field (GHK) flux term. Its kinetics and its named
+    parameter block are those of :class:`Cav2p1_RI2021_SC`, and its
+    attribution is that of :class:`Cav2p1_MA2024_PC`: the Cav2.1
+    kinetics built from the dissociated Purkinje neuron recordings
+    of (Swensen & Bean, 2005) [1]_ and published in (Anwar, Hong &
+    De Schutter, 2012) [2]_, imported for the human Purkinje cell
+    model of (Masoli et al., 2024) [3]_. It inherits none of that
+    code, and its forward current is **not** identical to the
+    unfrozen class's -- see Notes.
+
+    Parameters
+    ----------
+    size : brainstate.typing.Size
+        Channel state shape.
+    g_max : array-like or callable, optional
+        Calcium permeability entering the GHK flux (the mod file's
+        ``pcabar``), despite the ``g_max`` name. Defaults to
+        ``2.2e-4 cm/s``.
+    V_sh : array-like or callable, optional
+        Voltage shift subtracted from :math:`V` before every rate
+        and before the GHK term; the mod file's ``vshift``. Defaults
+        to ``0.0 mV``.
+    temp : array-like, optional
+        Absolute temperature. Enters both the gate's Q10 factor and
+        the GHK flux. Defaults to 23 degrees Celsius.
+    name : str, optional
+        Optional channel name.
+
+    See Also
+    --------
+    Cav2p1_MA2024_PC : The unfrozen Purkinje-cell import of the same
+        mechanism. This class is **not** derived from it.
+    Cav2p1_RI2021_SC : Where the equation set, the permeability
+        discrepancy and the mod header corrections are documented in
+        full.
+    Cav2p1_RI2021_SC_Frozen : Stellate-cell frozen variant, which
+        *is* a subclass of this class and overrides nothing.
+    Cav2p1_MA2025_BC_Frozen : Basket-cell frozen variant, likewise a
+        subclass of this class overriding nothing.
+
+    Notes
+    -----
+    **This class is not a subclass of the unfrozen Purkinje-cell
+    import.** It derives from
+    :class:`~braincell.channel._base.HH` directly and re-declares
+    everything: ``root_type``, the gate, the whole constructor and
+    parameter block, ``f_m_inf``, ``f_m_tau`` and ``current``. A
+    change to :class:`Cav2p1_RI2021_SC` therefore does not propagate
+    here. The two Cav2.1 frozen siblings,
+    :class:`Cav2p1_RI2021_SC_Frozen` and
+    :class:`Cav2p1_MA2025_BC_Frozen`, are subclasses of *this* class
+    and add nothing but a registry key.
+
+    "Frozen" describes the gradient path, not the channel states.
+    The ``m`` gate keeps integrating exactly as in the unfrozen
+    class -- nothing stops evolving. :meth:`current` passes the
+    membrane potential through the module-level
+    ``_freeze_quantity_gradient``, which rebuilds the quantity from
+    :func:`jax.lax.stop_gradient` applied to its mantissa, before
+    handing it to the GHK helper. The unfrozen ``V`` still reaches
+    :meth:`~braincell.channel._base.HH.conductance_factor`, but that
+    method ignores its voltage argument and reads only the gate
+    states, so the distinction affects neither value nor gradient
+    there.
+
+    **The freezing is not the only difference from the unfrozen
+    class.** :meth:`current` here calls the module-level
+    ``_cav3p1_nmodl_ghk_flux`` helper, whereas
+    :class:`Cav2p1_RI2021_SC` calls the shared
+    :func:`~braincell.channel._base.ghk_flux`. The two helpers use
+    different physical constants: the shared one uses CODATA values
+    and the temperature as passed, while the NMODL helper uses
+    ``F = 9.6485e4 C/mol``, ``R = 8.3145 J/(K mol)`` and a
+    ``273.19 + celsius`` Kelvin conversion carried as
+    ``_CAV3P1_NMODL_TEMP_OFFSET``. Those are exactly the constants
+    ``Cav2p1_MA24_PC.mod`` itself declares, so the helper's
+    ``_cav3p1_`` name -- inherited from the Cav3.1 import, whose mod
+    file declares the same values -- understates its applicability
+    here. The consequence is that this class's forward current
+    differs from :class:`Cav2p1_MA2024_PC`'s by of order
+    :math:`10^{-4}` in relative terms, and that this class is the
+    closer of the two to the mod file. Nothing in the mod file
+    corresponds to the freezing itself: it is a BrainCell autodiff
+    facility with no NMODL counterpart, so it is not an import
+    deviation and changes nothing a NEURON comparison would observe.
+
+    As in :class:`Cav2p1_RI2021_SC`, ``g_max`` is a permeability in
+    ``cm/s`` rather than a conductance density, the mod file's
+    unused ``vhalfh``/``cvh`` are dropped, the Q10 is declared on
+    the ``Gate`` because the mod file divides the whole tau by it,
+    and ``current()`` negates NEURON's outward-positive ``ica`` to
+    match BrainCell's inward-positive convention. The permeability
+    default is the deposit's tuned ``pcabar``, not a value reported
+    by either origin paper.
+
+    References
+    ----------
+    .. [1] Swensen, A. M., & Bean, B. P. (2005). Robustness of burst
+           firing in dissociated Purkinje neurons with acute or
+           long-term reductions in sodium conductance. The Journal
+           of Neuroscience, 25(14), 3509-3520.
+           doi:10.1523/JNEUROSCI.3929-04.2005
+    .. [2] Anwar, H., Hong, S., & De Schutter, E. (2012). Controlling
+           Ca2+-activated K+ channels with models of Ca2+ buffering
+           in Purkinje cells. The Cerebellum, 11(3), 681-693.
+           doi:10.1007/s12311-010-0224-3
+    .. [3] Masoli, S., Sanchez-Ponce, D., Vrieler, N., Abu-Haya, K.,
+           Lerner, V., Shahar, T., Nedelescu, H., Rizza, M. F.,
+           Benavides-Piccione, R., DeFelipe, J., Yarom, Y., Munoz,
+           A., & D'Angelo, E. (2024). Human Purkinje cells outperform
+           mouse Purkinje cells in dendritic complexity and
+           computational capacity. Communications Biology, 7(1), 5.
+           doi:10.1038/s42003-023-05689-y
+    """
 
     __module__ = "braincell.channel"
     root_type = Calcium
@@ -2880,21 +3282,289 @@ class Cav2p1_MA2024_PC_Frozen(HH):
 
 @register_channel("Cav2p1_RI2021_SC_Frozen")
 class Cav2p1_RI2021_SC_Frozen(Cav2p1_MA2024_PC_Frozen):
-    """SC Cav2.1 variant reusing the frozen-GHK PC24 implementation."""
+    r"""Stellate cell Cav2.1 with the GHK drive frozen for autodiff.
+
+    The stellate-cell registration of the frozen-GHK Cav2.1
+    mechanism implemented by :class:`Cav2p1_MA2024_PC_Frozen`. The
+    kinetics are those built from the dissociated Purkinje neuron
+    recordings of (Swensen & Bean, 2005) [1]_ and published in
+    (Anwar, Hong & De Schutter, 2012) [2]_, imported here for the
+    cerebellar stellate cell model of (Rizza et al., 2021) [3]_.
+
+    Parameters
+    ----------
+    size : brainstate.typing.Size
+        Channel state shape.
+    g_max : array-like or callable, optional
+        Calcium permeability entering the GHK flux (the mod file's
+        ``pcabar``), default ``2.2e-4 cm/s``. Inherited from
+        :class:`Cav2p1_MA2024_PC_Frozen`.
+    V_sh : array-like or callable, optional
+        Voltage shift, the mod file's ``vshift``, default
+        ``0.0 mV``. Inherited from
+        :class:`Cav2p1_MA2024_PC_Frozen`.
+    temp : array-like, optional
+        Absolute temperature entering both the gate's Q10 factor and
+        the GHK flux, default 23 degrees Celsius. Inherited from
+        :class:`Cav2p1_MA2024_PC_Frozen`.
+    name : str, optional
+        Optional channel name.
+
+    See Also
+    --------
+    Cav2p1_MA2024_PC_Frozen : The base class; the freezing
+        mechanism, the GHK helper's constants and the difference
+        from the unfrozen classes are documented there.
+    Cav2p1_RI2021_SC : The unfrozen stellate-cell import of the same
+        mechanism. This class is **not** derived from it, and is not
+        numerically identical to it.
+
+    Notes
+    -----
+    **The cell-type suffix in this class's name describes its model
+    citation, not its implementation.** The class body is empty
+    apart from ``__module__``: every gate, constant, rate function
+    and the ``current`` method come from
+    :class:`Cav2p1_MA2024_PC_Frozen`, the Purkinje-cell frozen
+    variant. That is sound because ``SC/channel/Cav2p1_RI21_SC.mod``
+    and ``PC/channel/Cav2p1_MA24_PC.mod`` are identical apart from
+    their ``SUFFIX`` lines and a ``g_equiv`` diagnostic, but it does
+    mean the stellate-cell class inherits from a Purkinje-cell one
+    rather than from :class:`Cav2p1_RI2021_SC`. Per the
+    bibliography's attribution scan this subclass contributes no
+    rate-function code of its own; its zero literal overlap in that
+    scan is an artefact of the constants living in the base class.
+
+    Everything in :class:`Cav2p1_MA2024_PC_Frozen`'s Notes applies
+    unchanged and is not repeated here: no channel state stops
+    evolving, the freezing affects reverse-mode gradients only, and
+    the frozen path uses the NMODL-constant GHK helper rather than
+    the shared :func:`~braincell.channel._base.ghk_flux`, so the
+    forward current differs slightly from
+    :class:`Cav2p1_RI2021_SC`'s.
+
+    The ``RI2021`` import-deviations tables list no ``TABLE``
+    removal, no ``derivimplicit`` -> ``cnexp`` substitution and no
+    rate-refresh relocation for ``Cav2p1``.
+
+    References
+    ----------
+    .. [1] Swensen, A. M., & Bean, B. P. (2005). Robustness of burst
+           firing in dissociated Purkinje neurons with acute or
+           long-term reductions in sodium conductance. The Journal
+           of Neuroscience, 25(14), 3509-3520.
+           doi:10.1523/JNEUROSCI.3929-04.2005
+    .. [2] Anwar, H., Hong, S., & De Schutter, E. (2012). Controlling
+           Ca2+-activated K+ channels with models of Ca2+ buffering
+           in Purkinje cells. The Cerebellum, 11(3), 681-693.
+           doi:10.1007/s12311-010-0224-3
+    .. [3] Rizza, M. F., Locatelli, F., Masoli, S., Sanchez-Ponce, D.,
+           Munoz, A., Prestori, F., & D'Angelo, E. (2021). Stellate
+           cell computational modeling predicts signal filtering in
+           the molecular layer circuit of cerebellum. Scientific
+           Reports, 11(1), 3873.
+           doi:10.1038/s41598-021-83209-w
+    """
 
     __module__ = "braincell.channel"
 
 
 @register_channel("Cav2p1_MA2025_BC_Frozen")
 class Cav2p1_MA2025_BC_Frozen(Cav2p1_MA2024_PC_Frozen):
-    """BC Cav2.1 variant reusing the frozen-GHK PC24 implementation."""
+    r"""Basket cell Cav2.1 with the GHK drive frozen for autodiff.
+
+    The basket-cell registration of the frozen-GHK Cav2.1 mechanism
+    implemented by :class:`Cav2p1_MA2024_PC_Frozen`. The kinetics
+    are those built from the dissociated Purkinje neuron recordings
+    of (Swensen & Bean, 2005) [1]_ and published in (Anwar, Hong &
+    De Schutter, 2012) [2]_, imported here for the cerebellar basket
+    cell model of (Masoli et al., 2025) [3]_.
+
+    Parameters
+    ----------
+    size : brainstate.typing.Size
+        Channel state shape.
+    g_max : array-like or callable, optional
+        Calcium permeability entering the GHK flux (the mod file's
+        ``pcabar``), default ``2.2e-4 cm/s``. Inherited from
+        :class:`Cav2p1_MA2024_PC_Frozen`.
+    V_sh : array-like or callable, optional
+        Voltage shift, the mod file's ``vshift``, default
+        ``0.0 mV``. Inherited from
+        :class:`Cav2p1_MA2024_PC_Frozen`.
+    temp : array-like, optional
+        Absolute temperature entering both the gate's Q10 factor and
+        the GHK flux, default 23 degrees Celsius. Inherited from
+        :class:`Cav2p1_MA2024_PC_Frozen`.
+    name : str, optional
+        Optional channel name.
+
+    See Also
+    --------
+    Cav2p1_MA2024_PC_Frozen : The base class; the freezing
+        mechanism, the GHK helper's constants and the difference
+        from the unfrozen classes are documented there.
+    Cav2p1_MA2025_BC : The unfrozen basket-cell import of the same
+        mechanism. This class is **not** derived from it, and is not
+        numerically identical to it.
+
+    Notes
+    -----
+    **The cell-type suffix in this class's name describes its model
+    citation, not its implementation.** The class body is empty
+    apart from ``__module__``: every gate, constant, rate function
+    and the ``current`` method come from
+    :class:`Cav2p1_MA2024_PC_Frozen`, the Purkinje-cell frozen
+    variant. That is sound because ``BC/channel/Cav2p1_MA25_BC.mod``
+    and ``PC/channel/Cav2p1_MA24_PC.mod`` are identical apart from
+    their ``SUFFIX`` lines, but it does mean the basket-cell class
+    inherits from a Purkinje-cell one rather than from
+    :class:`Cav2p1_MA2025_BC`. Per the bibliography's attribution
+    scan this subclass contributes no rate-function code of its own;
+    its zero literal overlap in that scan is an artefact of the
+    constants living in the base class.
+
+    Everything in :class:`Cav2p1_MA2024_PC_Frozen`'s Notes applies
+    unchanged and is not repeated here: no channel state stops
+    evolving, the freezing affects reverse-mode gradients only, and
+    the frozen path uses the NMODL-constant GHK helper rather than
+    the shared :func:`~braincell.channel._base.ghk_flux`, so the
+    forward current differs slightly from
+    :class:`Cav2p1_MA2025_BC`'s.
+
+    The ``MA2025`` import-deviations tables list no ``TABLE``
+    removal, no ``derivimplicit`` -> ``cnexp`` substitution and no
+    rate-refresh relocation for ``Cav2p1``.
+
+    References
+    ----------
+    .. [1] Swensen, A. M., & Bean, B. P. (2005). Robustness of burst
+           firing in dissociated Purkinje neurons with acute or
+           long-term reductions in sodium conductance. The Journal
+           of Neuroscience, 25(14), 3509-3520.
+           doi:10.1523/JNEUROSCI.3929-04.2005
+    .. [2] Anwar, H., Hong, S., & De Schutter, E. (2012). Controlling
+           Ca2+-activated K+ channels with models of Ca2+ buffering
+           in Purkinje cells. The Cerebellum, 11(3), 681-693.
+           doi:10.1007/s12311-010-0224-3
+    .. [3] Masoli, S., Rizza, M. F., Soda, T., Sanchez-Ponce, D.,
+           Munoz, A., Prestori, F., & D'Angelo, E. (2025).
+           Cerebellar basket cell filtering of Purkinje cell
+           responses elicited by low frequency parallel fibre
+           transmission. Scientific Reports, 15(1), 25192.
+           doi:10.1038/s41598-025-09964-2
+    """
 
     __module__ = "braincell.channel"
 
 
 @register_channel("Cav3p3_MA2024_PC_Frozen")
 class Cav3p3_MA2024_PC_Frozen(HH):
-    """Experimental Cav3.3 variant that freezes GHK voltage dependence in autodiff."""
+    r"""Purkinje cell Cav3.3 with the GHK drive frozen for autodiff.
+
+    A standalone Purkinje-cell Cav3.3 mechanism that stops the
+    gradient through the membrane potential where it enters the
+    constant-field (GHK) flux term. Its kinetics, its named
+    parameter block and its forward current are numerically
+    identical to :class:`Cav3p3_MA2024_PC`'s, and its attribution is
+    the same: the Cav3.3 kinetics of the CA3 hippocampal pyramidal
+    neuron model of (Xu & Clancy, 2008) [1]_, imported for the human
+    Purkinje cell model of (Masoli et al., 2024) [2]_. It inherits
+    none of that code -- see Notes.
+
+    Parameters
+    ----------
+    size : brainstate.typing.Size
+        Channel state shape.
+    perm : array-like or callable, optional
+        Calcium permeability entering the GHK flux, the mod file's
+        ``pcabar``. Defaults to ``1.0e-4 cm/s``.
+    g_scale : array-like or callable, optional
+        Dimensionless empirical scale factor multiplying the flux,
+        carrying the numeric value of the mod file's
+        ``gCav3_3bar``. Defaults to ``1.0e-5``.
+    temp : array-like, optional
+        Absolute temperature. Enters both the gates' Q10 factor and
+        the GHK flux. Defaults to 36 degrees Celsius.
+    V_sh : array-like or callable, optional
+        Voltage shift subtracted from :math:`V` before every rate
+        and before the GHK term. Defaults to ``0.0 mV``. The mod
+        file declares no corresponding parameter.
+    name : str, optional
+        Optional channel name.
+
+    See Also
+    --------
+    Cav3p3_MA2024_PC : The unfrozen Purkinje-cell import of the same
+        mechanism. This class is **not** derived from it.
+    Cav3p3_RI2021_SC : Where the equation set, the GHK helper's
+        constants and the current-law scaling caveat are documented
+        in full.
+    Cav2p1_MA2024_PC_Frozen : The module's other standalone frozen
+        variant, which additionally swaps GHK helpers and so is
+        *not* numerically identical to its unfrozen counterpart.
+
+    Notes
+    -----
+    **This class is not a subclass of the unfrozen Purkinje-cell
+    import, and the module's frozen variants are not all built the
+    same way.** :class:`Cav3p3_MA2024_PC` derives from
+    :class:`Cav3p3_RI2021_SC`; this class derives from
+    :class:`~braincell.channel._base.HH` directly and re-declares
+    everything: ``root_type``, both gates, the whole constructor and
+    parameter block, ``f_n_inf``, ``f_l_inf``, ``f_n_tau``,
+    ``f_l_tau`` and ``current``. The two therefore compute the same
+    forward numbers while sharing no code, and a change to
+    :class:`Cav3p3_RI2021_SC` propagates to one and not the other.
+
+    "Frozen" describes the gradient path, not the forward numerics
+    and not the channel states. Both gates keep integrating normally
+    -- nothing stops evolving. :meth:`current` passes the membrane
+    potential through the module-level
+    ``_freeze_quantity_gradient``, which rebuilds the quantity from
+    :func:`jax.lax.stop_gradient` applied to its mantissa, before
+    handing it to the GHK helper. The unfrozen ``V`` still reaches
+    :meth:`~braincell.channel._base.HH.conductance_factor`, but that
+    method ignores its voltage argument and reads only the gate
+    states, so the distinction affects neither value nor gradient
+    there. **Unlike** :class:`Cav2p1_MA2024_PC_Frozen`, this class
+    calls the same ``_cav3p3_nmodl_ghk_flux`` helper its unfrozen
+    counterpart calls, so freezing is the only difference between
+    the two and the forward current is unchanged.
+
+    The kinetics are those of ``PC/channel/Cav3p3_MA24_PC.mod``,
+    which is identical to ``SC/channel/Cav3p3_RI21_SC.mod`` apart
+    from its ``SUFFIX`` line and a ``g_equiv`` diagnostic. No mod
+    file ships a frozen-gradient variant: freezing is a BrainCell
+    autodiff facility with no counterpart in NMODL, so it is not an
+    import deviation and changes nothing a NEURON comparison would
+    observe.
+
+    As in :class:`Cav3p3_RI2021_SC`, the mod file's current-law
+    scaling is not dimensionally self-consistent and ``g_scale`` is
+    therefore dimensionless, the GHK helper carries the mod file's
+    own ``F``/``R`` constants and its ``celsius + 273.14`` Kelvin
+    conversion plus a small-argument series branch the mod file
+    lacks, ``V_sh`` has no counterpart in the mod file, the Q10 is
+    declared on the ``Gate`` objects, and ``current()`` negates
+    NEURON's outward-positive ``ica``. The ``perm`` and ``g_scale``
+    defaults are the deposit's tuned values, not values reported by
+    the origin paper.
+
+    References
+    ----------
+    .. [1] Xu, J., & Clancy, C. E. (2008). Ionic mechanisms of
+           endogenous bursting in CA3 hippocampal pyramidal neurons:
+           A model study. PLoS ONE, 3(4), e2056.
+           doi:10.1371/journal.pone.0002056
+    .. [2] Masoli, S., Sanchez-Ponce, D., Vrieler, N., Abu-Haya, K.,
+           Lerner, V., Shahar, T., Nedelescu, H., Rizza, M. F.,
+           Benavides-Piccione, R., DeFelipe, J., Yarom, Y., Munoz,
+           A., & D'Angelo, E. (2024). Human Purkinje cells outperform
+           mouse Purkinje cells in dendritic complexity and
+           computational capacity. Communications Biology, 7(1), 5.
+           doi:10.1038/s42003-023-05689-y
+    """
 
     __module__ = "braincell.channel"
     root_type = Calcium
@@ -2964,24 +3634,178 @@ class Cav3p3_MA2024_PC_Frozen(HH):
 
 @register_channel("Cav3p2_RI2021_SC")
 class Cav3p2_RI2021_SC(OhmicHH):
-    """Template-based import of ``Cav3p2_RI21_SC.mod``.
+    r"""Stellate cell Cav3.2 low-threshold T-type calcium current.
+
+    The Cav3.2 (T-type, alpha1H) low-threshold calcium current of
+    the cerebellar stellate cell model of (Rizza et al., 2021) [4]_.
+    It is Destexhe's 1992 NEURON implementation of the
+    low-threshold calcium current of (Huguenard & McCormick, 1992)
+    [1]_, with the biophysical properties refitted to recordings of
+    human recombinant Cav3.2 channels in HEK-293 cells by (Vitko et
+    al., 2005) [2]_ and transformed from those 23-25 degrees Celsius
+    data to 36 degrees Celsius using Q10 factors credited to
+    (Coulter, Huguenard & Prince, 1989) [3]_ (see Notes). Gating is
+    :math:`m^2 h` with an ohmic driving force:
+
+    .. math::
+
+        \begin{aligned}
+        I_{Ca} &= g_{max} \, m^2 h \, (E_{Ca} - V) \\
+        m_\infty &= \frac{1}{1 + \exp(-(V' + 54.8) / 7.4)} \\
+        h_\infty &= \frac{1}{1 + \exp((V' + 85.5) / 7.18)} \\
+        \tau_m &= \frac{1}{\phi_m}\left(1.9 +
+                  \frac{1}{e^{(V' + 37)/11.9}
+                  + e^{-(V' + 131.6)/21}}\right) \\
+        \tau_h &= 13.7 + \frac{1}{\phi_h}
+                  \cdot \frac{1942 + e^{(V' + 164)/9.2}}
+                  {1 + e^{(V' + 89.3)/3.7}} \\
+        \phi_m &= 5^{(36 - 24)/10}, \quad
+        \phi_h = 3^{(36 - 24)/10}
+        \end{aligned}
+
+    where :math:`V' = V + V_{sh}` read in millivolts and the time
+    constants are in milliseconds. :math:`\phi_m` is supplied by the
+    ``m`` gate's fixed ``phi``, while :math:`\phi_h` is written
+    directly into :meth:`f_h_tau` and the ``h`` gate's ``phi`` is
+    left at 1 -- because the additive ``13.7`` sits outside the
+    division and so does not fit the template's uniform
+    ``tau / phi`` shape. Both factors are constants, not functions
+    of ``temp``; see Notes.
+
+    Parameters
+    ----------
+    size : brainstate.typing.Size
+        Channel state shape.
+    g_max : array-like or callable, optional
+        Maximal conductance density. Defaults to
+        ``8.0e-4 mS/cm2``, which is **not** the mod file's
+        ``gcabar`` converted (see Notes).
+    V_sh : array-like or callable, optional
+        Voltage shift added to :math:`V` before every rate, the mod
+        file's ``shift``. Defaults to ``0.0 mV``.
+    temp : array-like, optional
+        Absolute temperature. Accepted and stored, but read by no
+        method of this class (see Notes). Defaults to 36 degrees
+        Celsius.
+    name : str, optional
+        Optional channel name.
+
+    See Also
+    --------
+    Cav3p2_MA2024_PC : The same mechanism re-imported for the human
+        Purkinje cell model; identical kinetics, different model
+        citation.
+    Cav3p2_MA2025_BC : The same mechanism re-imported for the basket
+        cell model; identical kinetics, different model citation.
+    CaT_HM1992 : The other import in this module tracing to
+        (Huguenard & McCormick, 1992), by way of a different
+        Destexhe implementation and with different constants.
+    braincell.channel._base.OhmicHH : Template supplying the ohmic
+        driving force used above.
 
     Notes
     -----
-    This source mod is not especially clean as a reusable temperature- and
-    concentration-general mechanism:
+    Ported from ``SC/channel/Cav3p2_RI21_SC.mod``, whose header
+    reads "Model of Huguenard & McCormick, J Neurophysiol 68:
+    1373-1383, 1992", "Written by Alain Destexhe, Salk Institute,
+    Sept 18, 1992" and "Biophysical properties of the T current were
+    from recordings of human recombinant Cav3.2 T-channel in HEK-293
+    cells -- see Vitko et al." It also records the rename "Suffix
+    from CaT3_2 to Cav3_2". The Destexhe authorship line names the
+    mechanism's implementer and is deliberately not turned into a
+    citation; entry [1]_ is the paper his implementation models.
+    Note that the Boltzmann and tau constants above are the Vitko
+    refit, not the numbers of the original 1992 parameterisation.
 
-    - the original mod effectively bakes the gate-temperature conversion to
-      36 C into fixed phi factors derived from 24 C data;
-    - the compare path here uses fixed Ca concentrations to match the original
-      mod assumptions;
-    - ``tau_h`` is written in a special ``13.7 + term / phi_h`` form rather
-      than the usual ``tau / phi`` pattern used by most HH-style templates.
+    **What the Q10 citation does and does not support.** The mod
+    file's ``INITIAL`` block comments the 24-to-36 degrees Celsius
+    transformation as "assuming Q10 of 5 and 3 for m and h (as in
+    Coulter et al., J Physiol 414: 587, 1989)". Entry [3]_ is a
+    Q10 source only: it reports that the low-threshold current's
+    kinetic properties were temperature sensitive with Q10 values
+    greater than 2.5, and does **not** print the specific 5 and 3
+    used here. That split is Destexhe's parameterisation derived
+    from those data, and this docstring does not present [3]_ as a
+    source of kinetics.
 
-    The implementation below intentionally preserves those quirks so the
-    BrainCell behavior matches NEURON for one-to-one comparison. Longer term
-    this channel should probably be rewritten into a more general form instead
-    of carrying over the source mod's baked-in assumptions.
+    **The temperature conversion is baked in, and ``temp`` is
+    dead.** The mod file computes ``phi_m = 5^(12/10)`` and
+    ``phi_h = 3^(12/10)`` once, from the fixed literals 36 and 24
+    rather than from NEURON's ``celsius``. BrainCell reproduces that
+    exactly: the ``m`` gate carries ``phi=5.0 ** ((36.0 - 24.0) /
+    10.0)`` and :meth:`f_h_tau` recomputes the matching ``phi_h``
+    inline. Consequently the ``temp`` constructor parameter is
+    stored on the instance and never read -- neither gate declares a
+    ``q10``, and this mechanism has no GHK term for ``temp`` to
+    enter. Changing ``temp`` changes nothing.
+
+    **``g_max``'s default does not match the mod file.** The mod
+    file declares ``gcabar = .0008 (mho/cm2)``, i.e. 0.8 mS/cm2;
+    this class defaults to ``8.0e-4 mS/cm2``, the same numeric
+    literal carrying the millisiemens unit, which is a thousand
+    times smaller. Sibling imports in this module resolve the same
+    ``mho/cm2`` declaration the other way -- ``CaHVA_MA2020_GoC``
+    turns ``0.00046 mho/cm2`` into ``0.46 mS/cm2``, and
+    ``Cav1p2_MA2020_GoC`` keeps ``0.0002 S/cm2`` outright. The
+    divergence is recorded here rather than corrected: this is a
+    documentation-only description of the shipped default. It is
+    invisible to the NEURON comparison suite, which always passes
+    ``g_max`` explicitly in ``S/cm2``. Note also that even a
+    correctly converted default would be the cell-model deposit's
+    tuned ``gcabar``, not a conductance reported by any of the
+    origin papers.
+
+    **The mod file's fixed calcium concentrations are not read
+    here.** It declares ``cai = 2.4e-4 (mM)`` and ``cao = 2 (mM)``,
+    computes its own reversal potential from them by the Nernst
+    equation, and notes that ``cai`` was "adjusted for eca=120 mV".
+    :class:`~braincell.channel._base.OhmicHH` instead takes
+    :math:`E_{Ca}` from the attached
+    :class:`~braincell.ion.Calcium` ion object, so the comparison
+    path has to pin those concentrations externally to reproduce the
+    mod file's driving force.
+
+    Taken together -- the hard-coded 36 degrees Celsius conversion,
+    the externally pinned concentrations and the irregular
+    ``tau_h`` shape -- this mod file is not a clean reusable
+    temperature- and concentration-general mechanism. The
+    implementation here preserves its quirks deliberately, so that
+    BrainCell matches NEURON one for one; a more general rewrite
+    would have to break that correspondence.
+
+    NEURON's raw ``ica`` here is ``gcabar * m*m*h * (v - carev)``,
+    i.e. outward-positive;
+    :class:`~braincell.channel._base.OhmicHH` computes
+    ``g_max * m^2 h * (E - V)``, the same current under BrainCell's
+    repo-wide inward-positive convention.
+
+    The ``RI2021`` import-deviations tables list no ``TABLE``
+    removal, no ``derivimplicit`` -> ``cnexp`` substitution and no
+    rate-refresh relocation for this mechanism.
+
+    References
+    ----------
+    .. [1] Huguenard, J. R., & McCormick, D. A. (1992). Simulation of
+           the currents involved in rhythmic oscillations in thalamic
+           relay neurons. Journal of Neurophysiology, 68(4), 1373-1383.
+           doi:10.1152/jn.1992.68.4.1373
+    .. [2] Vitko, I., Chen, Y., Arias, J. M., Shen, Y., Wu, X.-R., &
+           Perez-Reyes, E. (2005). Functional characterization and
+           neuronal modeling of the effects of childhood absence
+           epilepsy variants of CACNA1H, a T-type calcium channel.
+           The Journal of Neuroscience, 25(19), 4844-4855.
+           doi:10.1523/JNEUROSCI.0847-05.2005
+    .. [3] Coulter, D. A., Huguenard, J. R., & Prince, D. A. (1989).
+           Calcium currents in rat thalamocortical relay neurones:
+           kinetic properties of the transient, low-threshold
+           current. The Journal of Physiology, 414(1), 587-604.
+           doi:10.1113/jphysiol.1989.sp017705
+    .. [4] Rizza, M. F., Locatelli, F., Masoli, S., Sanchez-Ponce, D.,
+           Munoz, A., Prestori, F., & D'Angelo, E. (2021). Stellate
+           cell computational modeling predicts signal filtering in
+           the molecular layer circuit of cerebellum. Scientific
+           Reports, 11(1), 3873.
+           doi:10.1038/s41598-021-83209-w
     """
 
     __module__ = "braincell.channel"
@@ -3033,32 +3857,335 @@ class Cav3p2_RI2021_SC(OhmicHH):
 
 @register_channel("Cav3p2_MA2025_BC")
 class Cav3p2_MA2025_BC(Cav3p2_RI2021_SC):
-    """Template-based import of ``Cav3p2_MA2025_BC.mod``."""
+    r"""Basket cell Cav3.2 low-threshold T-type calcium current.
+
+    The same :math:`m^2 h` Cav3.2 kinetics and ohmic current law
+    documented in :class:`Cav3p2_RI2021_SC`, reused unchanged for
+    the cerebellar basket cell model of (Masoli et al., 2025) [4]_.
+    The kinetics remain Destexhe's 1992 implementation of the
+    low-threshold current of (Huguenard & McCormick, 1992) [1]_,
+    refitted to the human recombinant Cav3.2 recordings of (Vitko et
+    al., 2005) [2]_ and transformed to 36 degrees Celsius with Q10
+    factors credited to (Coulter, Huguenard & Prince, 1989) [3]_.
+
+    Parameters
+    ----------
+    size : brainstate.typing.Size
+        Channel state shape.
+    g_max : array-like or callable, optional
+        Maximal conductance density, default ``8.0e-4 mS/cm2``,
+        which is not the mod file's ``gcabar`` converted (see
+        :class:`Cav3p2_RI2021_SC` Notes). Inherited from
+        :class:`Cav3p2_RI2021_SC`.
+    V_sh : array-like or callable, optional
+        Voltage shift, the mod file's ``shift``, default
+        ``0.0 mV``. Inherited from :class:`Cav3p2_RI2021_SC`.
+    temp : array-like, optional
+        Accepted but read by no method of this class (see
+        :class:`Cav3p2_RI2021_SC` Notes). Default 36 degrees
+        Celsius. Inherited from :class:`Cav3p2_RI2021_SC`.
+    name : str, optional
+        Optional channel name.
+
+    See Also
+    --------
+    Cav3p2_RI2021_SC : The base class; the full equation set, the
+        baked-in temperature conversion, the dead ``temp``
+        parameter and the ``g_max`` default divergence are
+        documented there.
+    Cav3p2_MA2024_PC : The same mechanism imported for the human
+        Purkinje cell model.
+
+    Notes
+    -----
+    Ported from ``BC/channel/Cav3p2_MA25_BC.mod``, which is
+    byte-identical to ``SC/channel/Cav3p2_RI21_SC.mod`` except for
+    its ``SUFFIX`` line. Accordingly this class overrides nothing:
+    the constructor, both gate declarations and the four rate
+    methods are all inherited from :class:`Cav3p2_RI2021_SC`. Only
+    the ``register_channel`` key and this docstring's model citation
+    differ. Per the bibliography's attribution scan, this subclass
+    contributes no rate-function code of its own; its zero literal
+    overlap in that scan is an artefact of the constants living in
+    the base class.
+
+    The ``MA2025`` import-deviations tables list no ``TABLE``
+    removal, no ``derivimplicit`` -> ``cnexp`` substitution and no
+    rate-refresh relocation for ``Cav3p2``.
+
+    References
+    ----------
+    .. [1] Huguenard, J. R., & McCormick, D. A. (1992). Simulation of
+           the currents involved in rhythmic oscillations in thalamic
+           relay neurons. Journal of Neurophysiology, 68(4), 1373-1383.
+           doi:10.1152/jn.1992.68.4.1373
+    .. [2] Vitko, I., Chen, Y., Arias, J. M., Shen, Y., Wu, X.-R., &
+           Perez-Reyes, E. (2005). Functional characterization and
+           neuronal modeling of the effects of childhood absence
+           epilepsy variants of CACNA1H, a T-type calcium channel.
+           The Journal of Neuroscience, 25(19), 4844-4855.
+           doi:10.1523/JNEUROSCI.0847-05.2005
+    .. [3] Coulter, D. A., Huguenard, J. R., & Prince, D. A. (1989).
+           Calcium currents in rat thalamocortical relay neurones:
+           kinetic properties of the transient, low-threshold
+           current. The Journal of Physiology, 414(1), 587-604.
+           doi:10.1113/jphysiol.1989.sp017705
+    .. [4] Masoli, S., Rizza, M. F., Soda, T., Sanchez-Ponce, D.,
+           Munoz, A., Prestori, F., & D'Angelo, E. (2025).
+           Cerebellar basket cell filtering of Purkinje cell
+           responses elicited by low frequency parallel fibre
+           transmission. Scientific Reports, 15(1), 25192.
+           doi:10.1038/s41598-025-09964-2
+    """
 
     __module__ = "braincell.channel"
 
 
 @register_channel("Cav3p2_MA2024_PC")
 class Cav3p2_MA2024_PC(Cav3p2_RI2021_SC):
-    """Template-based import of ``Cav3p2_MA2024_PC.mod``."""
+    r"""Purkinje cell Cav3.2 low-threshold T-type calcium current.
+
+    The same :math:`m^2 h` Cav3.2 kinetics and ohmic current law
+    documented in :class:`Cav3p2_RI2021_SC`, reused unchanged for
+    the human Purkinje cell model of (Masoli et al., 2024) [4]_. The
+    kinetics remain Destexhe's 1992 implementation of the
+    low-threshold current of (Huguenard & McCormick, 1992) [1]_,
+    refitted to the human recombinant Cav3.2 recordings of (Vitko et
+    al., 2005) [2]_ and transformed to 36 degrees Celsius with Q10
+    factors credited to (Coulter, Huguenard & Prince, 1989) [3]_.
+
+    Parameters
+    ----------
+    size : brainstate.typing.Size
+        Channel state shape.
+    g_max : array-like or callable, optional
+        Maximal conductance density, default ``8.0e-4 mS/cm2``,
+        which is not the mod file's ``gcabar`` converted (see
+        :class:`Cav3p2_RI2021_SC` Notes). Inherited from
+        :class:`Cav3p2_RI2021_SC`.
+    V_sh : array-like or callable, optional
+        Voltage shift, the mod file's ``shift``, default
+        ``0.0 mV``. Inherited from :class:`Cav3p2_RI2021_SC`.
+    temp : array-like, optional
+        Accepted but read by no method of this class (see
+        :class:`Cav3p2_RI2021_SC` Notes). Default 36 degrees
+        Celsius. Inherited from :class:`Cav3p2_RI2021_SC`.
+    name : str, optional
+        Optional channel name.
+
+    See Also
+    --------
+    Cav3p2_RI2021_SC : The base class; the full equation set, the
+        baked-in temperature conversion, the dead ``temp``
+        parameter and the ``g_max`` default divergence are
+        documented there.
+    Cav3p2_MA2025_BC : The same mechanism imported for the basket
+        cell model.
+
+    Notes
+    -----
+    Ported from ``PC/channel/Cav3p2_MA24_PC.mod``, which is
+    identical to ``SC/channel/Cav3p2_RI21_SC.mod`` apart from its
+    ``SUFFIX`` line and the BrainCell-local ``g_equiv`` diagnostic
+    the stellate copy carries. Accordingly this class overrides
+    nothing: the constructor, both gate declarations and the four
+    rate methods are all inherited from
+    :class:`Cav3p2_RI2021_SC`. Only the ``register_channel`` key and
+    this docstring's model citation differ. Per the bibliography's
+    attribution scan, this subclass contributes no rate-function
+    code of its own; its zero literal overlap in that scan is an
+    artefact of the constants living in the base class.
+
+    The ``MA2024`` import-deviations tables list no ``TABLE``
+    removal, no ``derivimplicit`` -> ``cnexp`` substitution and no
+    rate-refresh relocation for ``Cav3p2``.
+
+    References
+    ----------
+    .. [1] Huguenard, J. R., & McCormick, D. A. (1992). Simulation of
+           the currents involved in rhythmic oscillations in thalamic
+           relay neurons. Journal of Neurophysiology, 68(4), 1373-1383.
+           doi:10.1152/jn.1992.68.4.1373
+    .. [2] Vitko, I., Chen, Y., Arias, J. M., Shen, Y., Wu, X.-R., &
+           Perez-Reyes, E. (2005). Functional characterization and
+           neuronal modeling of the effects of childhood absence
+           epilepsy variants of CACNA1H, a T-type calcium channel.
+           The Journal of Neuroscience, 25(19), 4844-4855.
+           doi:10.1523/JNEUROSCI.0847-05.2005
+    .. [3] Coulter, D. A., Huguenard, J. R., & Prince, D. A. (1989).
+           Calcium currents in rat thalamocortical relay neurones:
+           kinetic properties of the transient, low-threshold
+           current. The Journal of Physiology, 414(1), 587-604.
+           doi:10.1113/jphysiol.1989.sp017705
+    .. [4] Masoli, S., Sanchez-Ponce, D., Vrieler, N., Abu-Haya, K.,
+           Lerner, V., Shahar, T., Nedelescu, H., Rizza, M. F.,
+           Benavides-Piccione, R., DeFelipe, J., Yarom, Y., Munoz,
+           A., & D'Angelo, E. (2024). Human Purkinje cells outperform
+           mouse Purkinje cells in dendritic complexity and
+           computational capacity. Communications Biology, 7(1), 5.
+           doi:10.1038/s42003-023-05689-y
+    """
 
     __module__ = "braincell.channel"
 
 
 @register_channel("Cav3p3_RI2021_SC")
 class Cav3p3_RI2021_SC(HH):
-    """Template-based import of ``Cav3p3_RI21_SC.mod``.
+    r"""Stellate cell Cav3.3 low-threshold calcium current, GHK drive.
+
+    The Cav3.3 (T-type, alpha1I) low-threshold calcium current of
+    the cerebellar stellate cell model of (Rizza et al., 2021) [2]_.
+    Its kinetics are those of the CA3 hippocampal pyramidal neuron
+    model of (Xu & Clancy, 2008) [1]_, reused unchanged for the
+    stellate cell. Gating is :math:`n^2 l`, driven by a
+    hand-written constant-field (GHK) calcium flux rather than an
+    ohmic term:
+
+    .. math::
+
+        \begin{aligned}
+        I_{Ca} &= -s \, P \, n^2 l \,
+                  \Phi(V', [Ca]_i, [Ca]_o, z{=}2, T) \\
+        n_\infty &= \frac{1}{1 + \exp(-(V' - v_{1/2,n}) / k_n)} \\
+        l_\infty &= \frac{1}{1 + \exp(-(V' - v_{1/2,l}) / k_l)} \\
+        \tau_n &= \frac{1}{\phi} \begin{cases}
+                  7.2 + 0.02\, e^{-V' / 14.7} & V' > -60 \\
+                  0.875\, e^{(V' + 120) / 41} & V' \leq -60
+                  \end{cases} \\
+        \tau_l &= \frac{1}{\phi} \begin{cases}
+                  79.5 + 2\, e^{-V' / 9.3} & V' > -60 \\
+                  260 & V' \leq -60
+                  \end{cases} \\
+        \phi &= 2.3^{(T - 28\,^\circ\mathrm{C}) / 10}
+        \end{aligned}
+
+    where :math:`V' = V - V_{sh}`, :math:`v_{1/2,n} = -41.5` mV,
+    :math:`k_n = 6.2` mV, :math:`v_{1/2,l} = -69.8` mV,
+    :math:`k_l = -6.1` mV, :math:`s` is ``g_scale``, :math:`P` is
+    ``perm`` and :math:`\Phi` is the module-level
+    ``_cav3p3_nmodl_ghk_flux`` helper (see Notes). The tau branches
+    read :math:`V'` in millivolts and return milliseconds; both are
+    exclusive at exactly :math:`-60` mV, and neither is continuous
+    across that point -- at :math:`V' = -60` mV the upper branches
+    give about 8.4 ms and 1347 ms against the lower branches' 3.8 ms
+    and 260 ms. That discontinuity is the mod file's, reproduced
+    rather than smoothed. :math:`\phi` is supplied by the ``Gate``
+    declarations, which divide each tau by it.
+
+    Parameters
+    ----------
+    size : brainstate.typing.Size
+        Channel state shape.
+    perm : array-like or callable, optional
+        Calcium permeability :math:`P` entering the GHK flux, the
+        mod file's ``pcabar``. Defaults to ``1.0e-4 cm/s`` (see
+        Notes).
+    g_scale : array-like or callable, optional
+        Dimensionless empirical scale factor multiplying the flux,
+        carrying the numeric value of the mod file's
+        ``gCav3_3bar``. Defaults to ``1.0e-5`` (see Notes).
+    temp : array-like, optional
+        Absolute temperature. Enters both :math:`\phi` and the GHK
+        flux. Defaults to 36 degrees Celsius.
+    V_sh : array-like or callable, optional
+        Voltage shift subtracted from :math:`V` before every rate
+        and before the GHK term. Defaults to ``0.0 mV``. The mod
+        file declares no corresponding parameter (see Notes).
+    name : str, optional
+        Optional channel name.
+
+    See Also
+    --------
+    Cav3p3_MA2024_PC : The same mechanism re-imported for the human
+        Purkinje cell model; identical kinetics, different model
+        citation.
+    Cav3p3_MA2024_PC_Frozen : Purkinje-cell variant with the GHK
+        term's voltage dependence removed from the autodiff graph.
+        It is **not** a subclass of this class (see its Notes).
+    braincell.channel._base.ghk_flux : The shared GHK helper, which
+        this class does **not** call (see Notes).
 
     Notes
     -----
-    The source mod uses a somewhat inconsistent current-law scaling: it mixes
-    ``pcabar`` (documented like a permeability, ``cm/s``), ``gCav3_3bar``
-    (documented like ``S/cm^2``), and a hand-written GHK expression with its
-    own built-in unit conversion constants. To keep the BrainCell current law
-    dimensionally consistent while still matching NEURON numerically,
-    ``g_scale`` is treated here as a dimensionless empirical scale factor
-    rather than as a physical conductance density. ``perm`` remains the
+    Ported from ``SC/channel/Cav3p3_RI21_SC.mod``, whose ``TITLE``
+    reads "CaV 3.3 CA3 hippocampal neuron" and whose ``COMMENT``
+    records "Created by jun xu @ Clancy Lab of Cornell University
+    Medical College" and cites (Xu & Clancy, 2008). The "CA3
+    hippocampal neuron" of the title is upstream provenance: this
+    class is the stellate cell port, used in the model cited as
+    [2]_.
+
+    **The mod file's current-law scaling is not dimensionally
+    self-consistent, and BrainCell's parameter units follow from
+    that.** The file mixes ``pcabar`` (declared like a permeability,
+    ``cm/s``), ``gCav3_3bar`` (declared like a conductance density,
+    ``S/cm2``) and a hand-written GHK expression carrying its own
+    built-in unit conversion constants, then multiplies all three
+    together. To keep the BrainCell current law dimensionally
+    consistent while still matching NEURON numerically, ``g_scale``
+    is treated here as a dimensionless empirical scale factor rather
+    than as a physical conductance density; ``perm`` remains the
     permeability-like term.
+
+    ``current()`` evaluates the constant-field equation through the
+    module-level ``_cav3p3_nmodl_ghk_flux`` helper rather than
+    :func:`~braincell.channel._base.ghk_flux`, so that it reproduces
+    this mod file's own constants exactly: ``F = 96520 C/mol``,
+    ``R = 8.3134 J/(K mol)`` and the mod file's
+    ``T = celsius + 273.14`` conversion, whose 0.01 K offset from
+    :func:`brainunit.celsius2kelvin` is carried as
+    ``_CAV3P3_NMODL_TEMP_OFFSET``. The helper writes the flux as
+    :math:`-zF(c_o - c_i e^{w}) w / (e^{w} - 1)` with
+    :math:`w = zFV'/(RT)`, matching the mod file line for line, and
+    adds one thing the mod file has no counterpart for: a
+    small-:math:`w` series branch
+    :math:`-zF(c_o - c_i e^{w})(1 - w/2)`, taken when
+    :math:`|e^{w} - 1| < 10^{-6}`, which avoids the division by
+    zero the mod file's expression has at :math:`V' = 0`.
+    ``current()`` negates the result to match BrainCell's repo-wide
+    inward-positive convention against NEURON's outward-positive
+    ``ica``.
+
+    ``V_sh`` has no counterpart in the mod file at all; it is a
+    BrainCell extension. Unlike the ``V_sh`` of the Cav3.1 classes
+    in this module it *is* read -- by all four rate methods and by
+    :meth:`current` -- but its ``0.0 mV`` default leaves the
+    mechanism at the mod file's behaviour.
+
+    The mod file applies its temperature factor as
+    ``tau = tau / qt`` with ``qt = q10^((celsius - 28)/10)`` and
+    ``q10 = 2.3``. That is exactly the generic gate temperature
+    path, so the Q10 is declared on the ``Gate`` objects here rather
+    than written into :meth:`f_n_tau` and :meth:`f_l_tau`. The mod
+    file reads NEURON's global ``celsius`` where this class reads
+    its own ``temp`` parameter, which defaults to 36 degrees
+    Celsius.
+
+    The mod file writes ``vhalfn``, ``vhalfl``, ``kn`` and ``kl`` as
+    bare numbers with a ``:mv`` comment rather than as united
+    quantities; BrainCell attaches ``u.mV`` to all four.
+
+    The ``RI2021`` import-deviations tables list no ``TABLE``
+    removal, no ``derivimplicit`` -> ``cnexp`` substitution and no
+    rate-refresh relocation for this mechanism.
+
+    ``perm`` and ``g_scale`` default to the ``pcabar`` and
+    ``gCav3_3bar`` of the cell-model deposit this mechanism was
+    imported from -- values tuned for that model, not values
+    reported by the origin paper.
+
+    References
+    ----------
+    .. [1] Xu, J., & Clancy, C. E. (2008). Ionic mechanisms of
+           endogenous bursting in CA3 hippocampal pyramidal neurons:
+           A model study. PLoS ONE, 3(4), e2056.
+           doi:10.1371/journal.pone.0002056
+    .. [2] Rizza, M. F., Locatelli, F., Masoli, S., Sanchez-Ponce, D.,
+           Munoz, A., Prestori, F., & D'Angelo, E. (2021). Stellate
+           cell computational modeling predicts signal filtering in
+           the molecular layer circuit of cerebellum. Scientific
+           Reports, 11(1), 3873.
+           doi:10.1038/s41598-021-83209-w
     """
 
     __module__ = "braincell.channel"
@@ -3128,7 +4255,76 @@ class Cav3p3_RI2021_SC(HH):
 
 @register_channel("Cav3p3_MA2024_PC")
 class Cav3p3_MA2024_PC(Cav3p3_RI2021_SC):
-    """Template-based import of ``Cav3p3_MA2024_PC.mod``."""
+    r"""Purkinje cell Cav3.3 low-threshold calcium current, GHK drive.
+
+    The same :math:`n^2 l` Cav3.3 kinetics and hand-written GHK
+    current law documented in :class:`Cav3p3_RI2021_SC`, reused
+    unchanged for the human Purkinje cell model of (Masoli et al.,
+    2024) [2]_. The kinetics remain those of the CA3 hippocampal
+    pyramidal neuron model of (Xu & Clancy, 2008) [1]_.
+
+    Parameters
+    ----------
+    size : brainstate.typing.Size
+        Channel state shape.
+    perm : array-like or callable, optional
+        Calcium permeability entering the GHK flux (the mod file's
+        ``pcabar``), default ``1.0e-4 cm/s``. Inherited from
+        :class:`Cav3p3_RI2021_SC`.
+    g_scale : array-like or callable, optional
+        Dimensionless scale factor carrying the numeric value of the
+        mod file's ``gCav3_3bar``, default ``1.0e-5``. Inherited
+        from :class:`Cav3p3_RI2021_SC`.
+    temp : array-like, optional
+        Absolute temperature entering both the gates' Q10 factor and
+        the GHK flux, default 36 degrees Celsius. Inherited from
+        :class:`Cav3p3_RI2021_SC`.
+    V_sh : array-like or callable, optional
+        Voltage shift with no counterpart in the mod file, default
+        ``0.0 mV``. Inherited from :class:`Cav3p3_RI2021_SC`.
+    name : str, optional
+        Optional channel name.
+
+    See Also
+    --------
+    Cav3p3_RI2021_SC : The base class; the full equation set, the
+        GHK helper's constants and the current-law scaling caveat
+        are documented there.
+    Cav3p3_MA2024_PC_Frozen : Purkinje-cell variant with the GHK
+        term's voltage dependence removed from the autodiff graph.
+        It is **not** a subclass of this class (see its Notes).
+
+    Notes
+    -----
+    Ported from ``PC/channel/Cav3p3_MA24_PC.mod``, which is
+    identical to ``SC/channel/Cav3p3_RI21_SC.mod`` apart from its
+    ``SUFFIX`` line and the BrainCell-local ``g_equiv`` diagnostic
+    the stellate copy carries. Accordingly this class overrides
+    nothing: the constructor, both gate declarations, the named
+    parameter block, the four rate methods and ``current`` are all
+    inherited from :class:`Cav3p3_RI2021_SC`. Only the
+    ``register_channel`` key and this docstring's model citation
+    differ. Per the bibliography's attribution scan, this subclass
+    contributes no rate-function code of its own.
+
+    The ``MA2024`` import-deviations tables list no ``TABLE``
+    removal, no ``derivimplicit`` -> ``cnexp`` substitution and no
+    rate-refresh relocation for ``Cav3p3``.
+
+    References
+    ----------
+    .. [1] Xu, J., & Clancy, C. E. (2008). Ionic mechanisms of
+           endogenous bursting in CA3 hippocampal pyramidal neurons:
+           A model study. PLoS ONE, 3(4), e2056.
+           doi:10.1371/journal.pone.0002056
+    .. [2] Masoli, S., Sanchez-Ponce, D., Vrieler, N., Abu-Haya, K.,
+           Lerner, V., Shahar, T., Nedelescu, H., Rizza, M. F.,
+           Benavides-Piccione, R., DeFelipe, J., Yarom, Y., Munoz,
+           A., & D'Angelo, E. (2024). Human Purkinje cells outperform
+           mouse Purkinje cells in dendritic complexity and
+           computational capacity. Communications Biology, 7(1), 5.
+           doi:10.1038/s42003-023-05689-y
+    """
 
     __module__ = "braincell.channel"
 
@@ -3474,7 +4670,135 @@ class CaHVA_MA2020_GrC(OhmicHH):
 
 @register_channel("Cav2p3_MA2020_GoC")
 class Cav2p3_MA2020_GoC(OhmicHH):
-    """Template-based import of ``Cav2p3_MA2020_GoC.mod``."""
+    r"""Golgi cell Cav2.3 R-type, medium-threshold calcium current.
+
+    The Cav2.3 (R-type) medium-threshold calcium current of the
+    cerebellar Golgi cell model of (Masoli et al., 2020) [3]_. Its
+    kinetics are those of the ``car`` mechanism of the CA1 pyramidal
+    cell model of (Poirazi, Brannon & Mel, 2003) [1]_ [2]_, reused
+    unchanged for the Golgi cell. Gating is :math:`m^3 h` with
+    voltage-independent time constants and an ohmic driving force:
+
+    .. math::
+
+        \begin{aligned}
+        I_{Ca} &= g_{max} \, m^3 h \, (E_{Ca} - V) \\
+        m_\infty &= \frac{1}{1 + \exp((V' + 48.5) / -3)} \\
+        h_\infty &= \frac{1}{1 + \exp((V' + 53) / 1)} \\
+        \tau_m &= 50 \ \mathrm{ms}, \quad \tau_h = 5 \ \mathrm{ms}
+        \end{aligned}
+
+    where :math:`V' = V / \mathrm{mV}`. Neither gate declares a Q10
+    or a ``phi``, so no temperature factor is applied to either time
+    constant.
+
+    Parameters
+    ----------
+    size : brainstate.typing.Size
+        Channel state shape.
+    g_max : array-like or callable, optional
+        Maximal conductance density. Defaults to ``0.0 mS/cm2``,
+        matching the mod file's ``gcabar = 0 (mho/cm2)``, so the
+        mechanism contributes no current until a cell model sets it
+        (see Notes).
+    temp : array-like, optional
+        Absolute temperature. Accepted and stored, but read by no
+        method of this class (see Notes). Defaults to 34 degrees
+        Celsius, matching the mod file's ``celsius = 34``.
+    name : str, optional
+        Optional channel name.
+
+    See Also
+    --------
+    CaHVA_MA2020_GoC : The Golgi cell model's other
+        high-voltage-activated calcium current, from a different
+        origin.
+    braincell.channel._base.OhmicHH : Template supplying the ohmic
+        driving force used above.
+
+    Notes
+    -----
+    Ported from ``GoC/channel/Cav2p3_MA20_GoC.mod``, whose ``TITLE``
+    reads "Ca R-type channel with medium threshold for activation"
+    and whose header records that the mechanism is "used in distal
+    dendritic regions, together with calH.mod", that it "uses
+    channel conductance (not permeability)", that it was "written by
+    Yiota Poirazi on 11/13/00" and that BrainCell renamed it "From
+    car to Cav2_3". The Poirazi credit is unusual among these
+    cerebellar imports in naming an author of the origin papers
+    rather than an unrelated porter, but it is still not turned into
+    a citation on its own: entries [1]_ and [2]_ below are the
+    published records. The upstream ``car.mod`` and its sibling
+    ``calH.mod`` are both files of ModelDB accession 20212, the
+    shared CA1 pyramidal model deposit serving the two companion
+    papers; because the mechanism belongs to that shared biophysics
+    and cannot be assigned to one paper, both are cited.
+
+    **Import deviation -- interpolation table removed.** The
+    original ``TABLE`` directive tabulated the indexed ``inf`` and
+    ``tau`` arrays over ``[-100, 100]`` mV; NEURON clamped to the
+    boundary value outside that range, so any BrainCell/NEURON
+    divergence outside that window is expected. BrainCell evaluates
+    the formulas per call instead.
+
+    **The indexed rate structure was split into named methods.** The
+    mod file stores its steady states and time constants in
+    ``inf[2]`` and ``tau[2]``, filled by a ``FROM i=0 TO 1`` loop
+    over the helpers ``varss(v, i)`` and ``vartau(v, i)``. Index 0
+    is activation and index 1 is inactivation, per the mod file's
+    own trailing comments and its ``INITIAL`` block, which assigns
+    ``m = inf[0]`` and ``h = inf[1]``. BrainCell therefore maps
+    index 0 onto :meth:`f_m_inf` / :meth:`f_m_tau` -- the
+    ``(v + 48.5) / -3`` curve with ``tau = 50`` -- and index 1 onto
+    :meth:`f_h_inf` / :meth:`f_h_tau` -- the ``(v + 53) / 1`` curve
+    with ``tau = 5``. Both branch values were read back against the
+    mod file's ``if (i==0)`` / ``else if (i==1)`` arms.
+
+    **The default conductance is genuinely zero.** The mod file's
+    ``gcabar = 0 (mho/cm2)`` is commented "initialized conductance":
+    the deposit expects the cell-setup code to assign a density per
+    region, and BrainCell carries the same zero. This is not a
+    missing value or a failed unit conversion.
+
+    ``temp`` is accepted, stored on the instance and never read.
+    Neither ``Gate`` carries a ``q10`` or a ``phi``, and this
+    mechanism has no GHK term, so nothing in the class consumes a
+    temperature. The mod file likewise declares ``celsius = 34``
+    without using it in any rate expression.
+
+    The mod file's ``eca = 140 (mV)`` is not read by this class: the
+    reversal potential is supplied by the attached
+    :class:`~braincell.ion.Calcium` ion object. Its ``gmax``
+    running-maximum diagnostic, updated in ``BREAKPOINT`` by
+    ``if (g > gmax) { gmax = g }``, is a monitoring variable that
+    never feeds the current, and BrainCell drops it.
+
+    NEURON's raw ``ica`` here is ``g * (v - eca)``, i.e.
+    outward-positive; :class:`~braincell.channel._base.OhmicHH`
+    computes ``g_max * m^3 h * (E - V)``, the same current under
+    BrainCell's repo-wide inward-positive convention.
+
+    The mod file is already ``cnexp`` upstream, so no
+    ``derivimplicit`` -> ``cnexp`` substitution was made for it, and
+    the ``MA2020`` tables record no rate-refresh relocation and no
+    NMODL default-precision rewrite for this mechanism.
+
+    References
+    ----------
+    .. [1] Poirazi, P., Brannon, T., & Mel, B. W. (2003). Arithmetic
+           of subthreshold synaptic summation in a model CA1
+           pyramidal cell. Neuron, 37(6), 977-987.
+           doi:10.1016/S0896-6273(03)00148-X
+    .. [2] Poirazi, P., Brannon, T., & Mel, B. W. (2003). Pyramidal
+           neuron as two-layer neural network. Neuron, 37(6),
+           989-999.
+           doi:10.1016/S0896-6273(03)00149-1
+    .. [3] Masoli, S., Ottaviani, A., Casali, S., & D'Angelo, E.
+           (2020). Cerebellar Golgi cell models predict dendritic
+           processing and mechanisms of synaptic plasticity. PLOS
+           Computational Biology, 16(12), e1007937.
+           doi:10.1371/journal.pcbi.1007937
+    """
 
     __module__ = "braincell.channel"
     root_type = Calcium

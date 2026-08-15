@@ -5,6 +5,7 @@ import unittest
 from braincell._testing import DocstringConformanceTests
 from braincell.channel import (
     _base,
+    calcium,
     hyperpolarization_activated,
     leaky,
     potassium_calcium,
@@ -16,6 +17,7 @@ from braincell.channel import (
 # every one of its public symbols satisfies the shared assertions.
 _COVERED_MODULES = (
     _base,
+    calcium,
     hyperpolarization_activated,
     leaky,
     potassium_calcium,
@@ -34,6 +36,8 @@ _NO_PRIMARY_SOURCE = frozenset({
     "HH",
     "OhmicHH",
     "Markov",
+    "CaN_IS2008",
+    "CaL_IS2008",
 })
 
 

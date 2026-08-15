@@ -15,6 +15,22 @@ verification steps (Tasks 2 and 3).
   citation-key fragment embedded in its name (`[A-Za-z]{2}(?:19|20)\d{2}` or
   `[A-Z]{2}\d{2}`, e.g. `HM1992`, `MA2020`, `PC24`). Symbols whose name
   carries no such fragment are bucketed as `NO_KEY`.
+- **Scope exclusion: package `__init__.py` files.** Step 1 scanned the
+  *module* files `braincell/channel/*.py` and `braincell/ion/*.py`.
+  Symbols defined in `braincell/channel/__init__.py` and
+  `braincell/ion/__init__.py` are **outside this project's scope** and
+  are deliberately absent from this file. Exactly one public symbol
+  falls in that gap today:
+  **`braincell/ion/__init__.py::build_placeholder_ions`**, which is in
+  that module's `__all__` and is documented with an
+  `.. autofunction::` directive in `docs/apis/braincell.ion.rst`. It
+  is therefore a 156th public symbol by any whole-package count.
+  **This is an exclusion, not an omission.** The figure **155** used
+  throughout this file -- including in `## Unresolved attributions`
+  item 11 and by any coverage check built from it -- counts module
+  files only and does not include it. A later task that widens scope
+  to `__init__.py` should add it deliberately and restate the count;
+  until then, nobody should read 155 versus 156 as a missing record.
 - **Step 2 (provenance harvest).** Every `.mod` file under
   `examples/neuron_compare/Cerebellum_mod/*/{channel,ion}/` was scanned for
   its `TITLE`/`COMMENT`/`Author`/`Ref`/`revis`/4-digit-year lines (first 25
@@ -59,22 +75,29 @@ name alone; read the harvested header text.
   verified. Because the key names a *porter*, not an author, Task 3
   also verified 38 **origin-of-kinetics** papers, collected in
   `## Origin-of-kinetics records` below. **99 of the 104 symbols need
-  a two-level citation**; the other 5 (the `SU2015` `Toy*` family) get
-  no citation at all because they are BrainCell's own test fixtures.
+  a two-or-more-level citation** -- most of them more than two
+  entries, not exactly two; see `## How to assemble a
+  two-or-more-level citation`. The other 5 (the `SU2015` `Toy*`
+  family) get no citation at all because they are BrainCell's own
+  test fixtures.
 - Task 3 follow-up (2026-08-15) closed the `NO_KEY` bucket, which had
   been assigned to no task. Three of its 32 symbols carry a real
   primary source and are now verified -- `ghk_flux` (Goldman 1943 /
   Hodgkin & Katz 1949), `KineticIon` (Hines & Carnevale 2000 / The
-  NEURON book 2006) and `CalciumDetailed` (Destexhe 1993 / Bazhenov
-  1998, whose deferred attribution checks are closed at the same
-  time). The other **29 are recorded, symbol by symbol, as having no
+  NEURON book 2006) and `CalciumDetailed` (Destexhe 1994 / Bazhenov
+  1998, plus Destexhe 1993 for its expository prose only; the
+  deferred attribution checks are closed at the same time). The
+  other **29 are recorded, symbol by symbol, as having no
   primary literature source** and are expected to ship without a
   `References` section; that list is in the bucket's
   `### Symbols with no primary literature source` block and is the
   source of truth for any later allowlist.
 - **The symbol count, reconciled.** `__all__` across
   `braincell/channel/*.py` and `braincell/ion/*.py` holds **155**
-  public symbols: 154 classes and one function (`ghk_flux`). They
+  public symbols: 154 classes and one function (`ghk_flux`). The
+  package `__init__.py` files are out of scope and their symbols are
+  excluded -- see the scope exclusion under `## How this file was
+  built`, which names the one symbol affected. They
   split as **32 `NO_KEY` + 123 keyed**, and the keyed half splits as
   **19 across Task 2's nine keys + 104 across Task 3's seven**. Every
   per-key heading in this file already carries the right number and
@@ -150,30 +173,53 @@ Entries are written in the reST form that goes straight into a NumPy-doc
   numbered item in `## Unresolved attributions` that carries the
   evidence.
 
-## How to assemble a two-level citation
+## How to assemble a two-or-more-level citation
 
 Established by Task 3 for the cerebellar half of this file. **This is
 not a second citation format** -- the `.. [N]` entries below are
-written in exactly the house style above. What is new is only *which
-two* entries a docstring needs.
+written in exactly the house style above. What is new is only *which*
+entries a docstring needs, and *how many*.
 
 A cerebellar key names the group that assembled the multi-compartment
 cell model BrainCell imported the mechanism from. It almost never names
 whoever wrote the mechanism's equations. So a cerebellar docstring's
-`References` section normally takes two entries, in this order:
+`References` section takes **two or more** entries, in this order:
 
-- `.. [1]` -- the **origin of the kinetics**: the paper the mechanism's
-  equations actually come from. Copy it verbatim from
-  `## Origin-of-kinetics records` below, using the label given in the
-  key's `### Attribution` mapping table.
-- `.. [2]` -- the **model BrainCell imported from**: the key's own
-  paper. Copy it verbatim from that key's `### Verified record`.
+- `.. [1]` (and `.. [2]`, `.. [3]` where the mapping row lists more
+  than one) -- the **origin of the kinetics**: the paper or papers the
+  mechanism's equations actually come from. Copy each verbatim from
+  `## Origin-of-kinetics records` below, using the label(s) given in
+  the key's `### Attribution` mapping table, **in the order the row
+  lists them**.
+- the **last** entry -- the **model BrainCell imported from**: the
+  key's own paper. Copy it verbatim from that key's
+  `### Verified record`.
+
+**"Two" is the minimum, not the norm.** Of the 58 mapping rows in this
+file, only **12 carry a single origin** (giving a two-entry
+docstring). **35 carry two origins** (three entries) and **11 carry
+three** (four entries). So 46 of 58 rows -- the clear majority --
+need more than the two-entry shape, and a reader who skims this
+section and writes two entries everywhere will truncate most of them.
+
+Two failure modes, both bugs:
+
+- **One entry where two are required.** Across all 104 cerebellar
+  symbols, origin and model never coincide, so treat a single-entry
+  cerebellar `References` block as a bug unless the mapping table says
+  otherwise.
+- **Two entries where a three-origin row requires four.** The eleven
+  three-origin rows are the `Kca3p1` family (`O-RC2006`, `O-BB1993`,
+  `O-DV2000`), the `Kv3p4`/`Kv3p3` family (`O-RB2001`, `O-KH2003`,
+  `O-AK2006`) and the `Cav3p1`/`Cav3p2`/`Cav3p3` family (`O-AN2012`,
+  `O-SC2003`, `O-MD1999`), each recurring across several keys.
+  Dropping one of the three because "two-level" was read as a literal
+  cap is the same class of bug as dropping the model paper, and it is
+  easier to make. **Count the labels in the row; the entry count is
+  labels + 1.**
 
 Renumber only the bracket digits when a docstring needs a different
-order; never retype the entry text. Where origin and model genuinely
-coincide, one entry is correct -- but across all 104 cerebellar
-symbols this never happens, so treat a single-entry cerebellar
-`References` block as a bug unless the mapping table says otherwise.
+order; never retype the entry text.
 
 **One deliberate exception to the 79-column rule.** The per-key
 mapping tables and `### Import deviations` tables are Markdown table
@@ -187,9 +233,16 @@ docstrings. No table row is ever copied into a docstring.
 
 ## Origin-of-kinetics records
 
-Thirty-eight papers, each the source of the equations in one or more
-cerebellar mechanisms. Each carries a stable label (`O-XXNNNN`) used by
-the per-key `### Attribution` mapping tables. **Labels are internal to
+Thirty-eight papers. **Thirty-six of them are the source of the
+equations in one or more cerebellar mechanisms**; the remaining two --
+`O-FO2006` and `O-SO2007b` -- are verified records that no mapping
+table assigns to any symbol, and each is marked
+**VERIFIED BUT UNASSIGNED** at its own heading below. Do not read
+either as a gap in the mapping tables: they were verified because the
+harvest surfaced them, and they are recorded so that a later task
+neither re-verifies them nor assumes an assignment that was never
+established. Each carries a stable label (`O-XXNNNN`) used by the
+per-key `### Attribution` mapping tables. **Labels are internal to
 this file and must never appear in a docstring** -- copy the `.. [N]`
 entry text, not the label.
 
@@ -241,6 +294,13 @@ The publisher's site also advertises a legacy slash-form DOI
 
 ### O-SO2007b -- cerebellar Golgi cell model, part II
 
+**VERIFIED BUT UNASSIGNED.** No mapping table row cites this label and
+no symbol takes it. The record below is correct and re-usable, but
+nothing in this file establishes which mechanism, if any, draws its
+equations from part II rather than part I (`O-SO2007a`, which *is*
+assigned, to the `HCN1`/`HCN2` and `Kca2p2` rows). A module task must
+not reach for this entry on the strength of the label's existence.
+
 .. [1] Solinas, S., Forti, L., Cesana, E., Mapelli, J., De Schutter,
        E., & D'Angelo, E. (2007). Fast-reset of pacemaking and
        theta-frequency resonance patterns in cerebellar Golgi cells:
@@ -266,6 +326,22 @@ first two authors into one contributor (`given: "Lia Forti", family:
 "Elisabetta Cesana"`), yielding three authors. PubMed is authoritative
 and gives the four above, in that order. PubMed prints the issue as
 "Pt 3"; Crossref as "3", which is used.
+
+**VERIFIED BUT UNASSIGNED.** No mapping table row cites this label and
+no symbol takes it. The lead that produced it is real but stops short
+of an assignment: `GoC/channel/HCN1_MA20_GoC.mod` and
+`HCN2_MA20_GoC.mod` carry `Author:L. Forti & S. Solinas` and
+`Last revised: April 2006`, and Lia Forti is the first author here.
+That places the mod files' author and this paper in the same year and
+the same subject, which is why the record was verified. It does
+**not** show that the HCN rate expressions were taken from this paper:
+those files' own header credits their data to `Santoro et al. J
+Neurosci. 2000` (`O-SA2000`), and the `HCN1`/`HCN2` mapping row
+already assigns `O-SO2007a` for the kinetics and `O-SA2000` for the
+data on the strength of direct constant comparison. This is an
+experimental paper, not a modelling one, so a kinetics assignment
+would need equation-level evidence that was not found. **Do not add it
+to the `HCN1`/`HCN2` row without that evidence.**
 
 ### O-SA2000 -- HCN subunit data
 
@@ -951,39 +1027,94 @@ itself returned HTTP 403, so the chapter page range rests on the
 Crossref chapter deposit.
 
 **Why the 1997 paper is not the citation here, and would be wrong.**
-The obvious candidate -- Hines & Carnevale (1997), "The NEURON
+The obvious candidate is Hines & Carnevale (1997), "The NEURON
 simulation environment", Neural Computation 9(6), 1179-1209,
-doi:10.1162/neco.1997.9.6.1179 -- contains **zero** occurrences of
-`KINETIC`, `COMPARTMENT` or `CONSERVE` in the authors' own extended
-preprint, and says so in as many words: "An extensive discussion of
-NMODL is beyond the scope of this article." The 2000 paper opens by
-drawing exactly that boundary against its predecessor. Citing the 1997
-paper for `KINETIC`/`COMPARTMENT` points the reader at a paper that
-disclaims the topic. It remains the right citation for NEURON the
-simulator in general; it is the wrong one for this class. Also ruled
-out, by full-text search returning zero hits for all three keywords:
-Hines & Carnevale (2001) in *The Neuroscientist*, and Awile et al.
-(2022), doi:10.3389/fninf.2022.884046, which covers the build system
-and transpiler rather than language semantics.
+doi:10.1162/neco.1997.9.6.1179. Three independent findings rule it
+out, all from a full-text search of the authors' own extended preprint
+(re-run 2026-08-15):
 
-**N-CAD -- `braincell/ion/calcium.py::CalciumDetailed`.** Two entries.
-These supersede the two that the source tree already carries at
-`braincell/ion/calcium.py:227-233`; the existing pair has a title
-error and no DOIs. See `## Corrections to pre-existing in-code
-citations` items 1 and 2, whose *record* checks these confirm
-independently, and whose deferred *attribution* checks are closed
-below.
+1. **It contains no NMODL block keyword of any kind.** Not just
+   `KINETIC`, `COMPARTMENT` and `CONSERVE`: the count is **zero** for
+   every one of `SOLVE`, `BREAKPOINT`, `DERIVATIVE`, `PARAMETER`,
+   `SUFFIX`, `USEION`, `NONLINEAR`, `LINEAR` and `PROCEDURE` as well.
+   The paper does not exhibit the language it would be cited for.
+2. **It contains no `.mod` listing.** The string `.mod` occurs zero
+   times; there is no mechanism source anywhere in the paper.
+3. **It explicitly forward-references its successor.** Verbatim: *"In
+   a future publication we will examine how the NMODL translator is
+   used to define new membrane channels and calculate ionic
+   concentration changes."* The 2000 paper is that future publication.
 
-.. [1] Destexhe, A., Babloyantz, A., & Sejnowski, T. J. (1993). Ionic
-       mechanisms for intrinsic slow oscillations in thalamic relay
-       neurons. Biophysical Journal, 65(4), 1538-1552.
-       doi:10.1016/S0006-3495(93)81190-1
+The paper also says as much in passing -- *"An extensive discussion of
+NMODL is beyond the scope of this article, but its major advantages
+can be listed succinctly."* -- but finding 3 is the decisive one,
+because it names the successor rather than merely declining the topic.
+Citing the 1997 paper for `KINETIC`/`COMPARTMENT` points the reader at
+a paper that defers the subject to another. It remains the right
+citation for NEURON the simulator in general; it is the wrong one for
+this class.
+
+**A precision the earlier revision got wrong.** The keyword counts
+above are for the **uppercase NMODL block keywords** as they appear in
+mechanism source. Lowercase prose *does* discuss the concept: the
+phrase "kinetic schemes" occurs three times in the 1997 preprint
+(e.g. "allows the expression of models in terms of kinetic schemes",
+"Mechanisms described by kinetic schemes are written with a syntax in
+which the reactions are clearly apparent"). A claim of "zero
+occurrences of `KINETIC`" is therefore only true case-sensitively, and
+must be stated that way. **The verdict is unaffected** -- naming the
+concept in one clause is not documenting the language construct -- but
+a case-insensitive re-audit would otherwise appear to refute this
+block.
+
+Also ruled out, by full-text search returning zero hits for the
+uppercase keywords: Hines & Carnevale (2001) in *The Neuroscientist*,
+and Awile et al. (2022), doi:10.3389/fninf.2022.884046, which covers
+the build system and transpiler rather than language semantics.
+
+**N-CAD -- `braincell/ion/calcium.py::CalciumDetailed`.** Three
+entries, ordered by the file's own `.. [1]` = origin-of-kinetics /
+`.. [2]` = model-imported-from rule (see `## How to assemble a
+two-or-more-level citation`). Entries [2] and [3] supersede the two that the
+source tree already carries at `braincell/ion/calcium.py:227-233`; the
+existing pair has a title error and no DOIs. See `## Corrections to
+pre-existing in-code citations` items 1 and 2, whose *record* checks
+these confirm independently, and whose deferred *attribution* checks
+are closed below.
+
+.. [1] Destexhe, A., Contreras, D., Sejnowski, T. J., & Steriade, M.
+       (1994). A model of spindle rhythmicity in the isolated thalamic
+       reticular nucleus. Journal of Neurophysiology, 72(2), 803-818.
+       doi:10.1152/jn.1994.72.2.803
 
 .. [2] Bazhenov, M., Timofeev, I., Steriade, M., & Sejnowski, T. J.
        (1998). Cellular and network models for intrathalamic
        augmenting responses during 10-Hz stimulation. Journal of
        Neurophysiology, 79(5), 2730-2748.
        doi:10.1152/jn.1998.79.5.2730
+
+.. [3] Destexhe, A., Babloyantz, A., & Sejnowski, T. J. (1993). Ionic
+       mechanisms for intrinsic slow oscillations in thalamic relay
+       neurons. Biophysical Journal, 65(4), 1538-1552.
+       doi:10.1016/S0006-3495(93)81190-1
+
+**Why entry [1] exists: Bazhenov is not the origin of this model.**
+An earlier revision of this block treated Bazhenov et al. (1998) as
+the origin of the first-order calcium model and gave `CalciumDetailed`
+only a two-entry block that did not follow this file's `[1]` = origin
+/ `[2]` = model rule. Bazhenov's own Appendix credits it: equation
+(A5) is introduced with the words "the Ca 2+ dynamics is described by
+a simple first-order model (Destexhe et al. 1994a)", and the paper's
+reference list resolves `1994a` to "DESTEXHE, A., CONTRERAS, D.,
+SEJNOWSKI, T. J., AND STERIADE, M. A model of spindle rhythmicity in
+the isolated thalamic reticular nucleus. J. Neurophysiol. 72:
+803-818, 1994a." Read directly from the author-hosted PDF of the
+Bazhenov paper, 2026-08-15. That is **the same paper already verified
+in this file under the `De1994` key** (`## De1994`, PMID 7527077); the
+entry above is copied verbatim from that key's `### Verified record`
+and is not a fresh citation. Entry [2] remains the right *model*
+citation -- it is the deposit BrainCell's parameter defaults come
+from, and it is what the class's existing docstring names.
 
 Destexhe: PMID 8274647, PMCID PMC1225880. Re-confirmed here by direct
 `efetch db=pubmed`, which returns the title ending in "thalamic relay
@@ -1122,14 +1253,22 @@ drive = u.math.maximum(drive, u.math.zeros_like(drive))
 return drive + (self.C_rest - Ci) / self.tau
 ```
 
-*Entry [2], Bazhenov et al. 1998: attribution PASSED.* That expression
-is term for term the first-order model the docstring's own section 2
-attributes to Bazhenov -- influx `I_Ca/(zFd)` with `z = 2` hard-coded
-as the literal `2`, plus relaxation `([Ca]_rest - [Ca])/tau`. The
-constructor exposes exactly and only that model's three parameters:
-`d`, `tau`, `C_rest`.
+*Entries [1] and [2], Destexhe et al. 1994 / Bazhenov et al. 1998:
+attribution PASSED.* That expression is term for term the first-order
+model the docstring's own section 2 attributes to Bazhenov -- influx
+`I_Ca/(zFd)` with `z = 2` hard-coded as the literal `2`, plus
+relaxation `([Ca]_rest - [Ca])/tau`. The constructor exposes exactly
+and only that model's three parameters: `d`, `tau`, `C_rest`. Entry
+[1] is the model's origin and entry [2] the deposit the defaults come
+from; a module task should carry both, in that order. One shape
+difference worth knowing and not worth flagging as a divergence:
+Bazhenov writes the influx term with a single lumped constant,
+`A = 5.18e-5 mM cm2/(ms uA)`, where BrainCell (like the docstring's
+own section 2) writes it out as `1/(zFd)`. The two are the same term
+parameterised differently, which is why `d` is a BrainCell parameter
+and not a Bazhenov one.
 
-*Entry [1], Destexhe et al. 1993: the paper is correctly identified
+*Entry [3], Destexhe et al. 1993: the paper is correctly identified
 and correctly recorded, but the class does not implement it.* The
 docstring's section 1 sets out the ATP-driven pump, its kinetic scheme
 `Ca_i + P <-> CaP -> P + Ca_o`, and its Michaelis-Menten reduction
@@ -1143,23 +1282,52 @@ assumption that the abstract's "included Ca2+ diffusion" was
 "consistent with the Michaelis-Menten Ca pump the class implements";
 **that assumption is wrong and is corrected here.**
 
-The consequence for the module task is narrow and specific: keep both
-entries only for as long as the docstring keeps its expository section
-1. `.. [1]` is a correct citation *for the text it supports*. It must
-not be presented as the source of `CalciumDetailed.derivative`, and if
-the docstring is ever trimmed to what the class computes, `.. [1]`
-goes with the prose it belongs to and Bazhenov becomes the sole
-reference.
+The consequence for the module task is narrow and specific: keep
+entry `.. [3]` only for as long as the docstring keeps its expository
+section 1. `.. [3]` is a correct citation *for the text it supports*.
+It must not be presented as the source of
+`CalciumDetailed.derivative`, and if the docstring is ever trimmed to
+what the class computes, `.. [3]` goes with the prose it belongs to
+and entries [1] and [2] -- Destexhe et al. 1994 and Bazhenov et al.
+1998 -- become the whole reference block.
 
 *Parameter caveats, none of them citation errors.* `d = 1.0 um` and
 the `Calcium` base's `default_Co = 2.0 mM` and `default_valence = 2`
-match the docstring's stated values. `C_rest` defaults to
-`2.4e-4 mM`, i.e. 0.24 uM, where the docstring's section 2 reports
-Bazhenov's resting concentration as 0.05 uM -- a factor of about five,
-and a default divergence that must be described as BrainCell's choice
-rather than the paper's value. `tau` defaults to `5.0 ms`; the paper's
-own value was not independently confirmed (see item 14 below). The
-docstring quotes `F = 96489 C/mol` and `R = 8.31441 J/(mol K)` from
+match the docstring's stated values.
+
+**`C_rest` and `tau` are Bazhenov's own values, and the docstring's
+"0.05 uM" is the error.** An earlier revision of this block had this
+exactly backwards -- it recorded `C_rest = 2.4e-4 mM` as "BrainCell's
+choice rather than the paper's value" and `tau = 5.0 ms` as
+unconfirmed. Both statements were false, and shipping either into a
+docstring would have published a false claim about the paper.
+Bazhenov et al. (1998), Appendix, equation (A5) reads verbatim:
+
+```
+For both the RE and TC cells, the Ca 2+ dynamics is described
+by a simple first-order model (Destexhe et al. 1994a)
+  d[Ca]/dt = -A I_T - ([Ca] - [Ca]_inf)/tau            (A5)
+where [Ca]_inf = 2.4e-4 mM is equilibrium Ca 2+ concentration,
+A = 5.18e-5 mM cm2/(ms uA) and tau = 5 ms.
+```
+
+Read from the author-hosted PDF of the paper, 2026-08-15. The code at
+`braincell/ion/calcium.py:245-246` defaults `tau = 5.0 * u.ms` and
+`C_rest = 2.4e-4 * u.mM` (and `Ci_initializer` to the same
+`2.4e-4 mM`). **Both are verbatim the paper's values and may be
+presented as such.** Neither is a divergence and neither needs a
+caveat.
+
+*What the module task must fix instead.* The error is in the existing
+docstring **prose**, not in the defaults. `braincell/ion/calcium.py:193`
+states the resting concentration as `.05 uM`, which is neither the
+paper's `2.4e-4 mM` (= 0.24 uM) nor the code's default. That number is
+wrong and must be **corrected to 2.4e-4 mM (0.24 uM), or removed**, by
+whichever module task rewrites this docstring. Do not preserve it, and
+do not "reconcile" it by relabelling the correct defaults as
+BrainCell's own -- that is the inversion this paragraph replaces.
+
+The docstring quotes `F = 96489 C/mol` and `R = 8.31441 J/(mol K)` from
 the paper while the code uses `u.faraday_constant` and, through
 `DynamicNernstIon`, `u.gas_constant` -- the CODATA values. The default
 temperature `u.celsius2kelvin(36.0)` is 309.15 K, matching the
@@ -1528,6 +1696,36 @@ repository-tooling artifact, not a scientific author).
 
 ### Verified record
 
+> ## !!! STOP -- `[1]` AND `[2]` DO NOT MEAN WHAT THEY MEAN ELSEWHERE
+>
+> **In this `MA2020` block only, `.. [1]` = the Golgi paper and
+> `.. [2]` = the granule paper. They are two alternatives, and a
+> given symbol takes exactly ONE of them.**
+>
+> Everywhere else in this file -- and in every docstring produced
+> from it -- `.. [1]` means *origin of the kinetics* and `.. [2]`
+> means *the model BrainCell imported from*, and a docstring carries
+> **both**.
+>
+> **Never copy this block's `[1]` and `[2]` into a docstring as a
+> pair.** Doing so would cite the granule-cell paper on a Golgi-cell
+> class, or vice versa, and would drop the origin entry entirely.
+>
+> The correct docstring shape for an `MA2020` symbol is: the
+> origin entry or entries from the mapping table as `.. [1]`
+> (`.. [2]`, `.. [3]` ...), then **whichever one** of the two papers
+> below matches the symbol's cell-type suffix as the final entry,
+> renumbered.
+>
+> - `*_MA2020_GoC` -> the Golgi paper (labelled `[1]` below)
+> - `*_MA2020_GrC` -> the granule paper (labelled `[2]` below)
+>
+> **This hazard is live across all 32 `MA2020` symbols.** It is the
+> only place in this file where the bracket digits carry a local
+> meaning, and the two labels are not distinguishable by eye once
+> copied out of context. Re-read this box before touching any
+> `MA2020` docstring.
+
 Confirmed 2026-08-15 against PubMed (`efetch`, `db=pubmed`), the
 Crossref REST API, the PMC article HTML for each paper, and the ModelDB
 REST API for the accessions. **`MA2020` requires two papers, not one.**
@@ -1603,8 +1801,18 @@ subclasses whose constants live in a base class (e.g.
 `Kca1p1_MA2020_GrC(Kca1p1_MA2020_GoC)`); this was confirmed by reading
 each `class` line and is a scan artefact, not a mismatch.
 
-**Mapping table.** `.. [1]` is the origin record; `.. [2]` is the
-`MA2020` model paper above ([1] for `GoC`, [2] for `GrC`).
+**Mapping table.** The `Origin` column gives the origin record(s),
+which become `.. [1]` (and `.. [2]`, `.. [3]` where the row lists
+more than one). The **final** entry is the `MA2020` model paper.
+
+> **Reminder -- the labels above are local.** The model entry is
+> **one** of the two papers in the `### Verified record` block, not
+> both: the Golgi paper (labelled `[1]` there) for every `*_GoC`
+> symbol, the granule paper (labelled `[2]` there) for every `*_GrC`
+> symbol. In the finished docstring it is renumbered to whatever
+> follows the origin entries. Copying "`[1]` and `[2]`" out of that
+> block as a pair is the specific mistake this warning exists to
+> prevent.
 
 | Symbols | Origin `.. [1]` |
 |---|---|
@@ -2173,6 +2381,18 @@ Availability statement gives.
 PMID 26630202, PMCID PMC4668013, fully open access. `e1004641` is the
 article number and occupies the page slot.
 
+**Title case: down-cased deliberately -- do not "fix" it back.**
+*PLOS Computational Biology* prints this title in title case, and both
+Crossref and PubMed return it that way: "Cerebellar Nuclear Neurons
+Use Time and Rate Coding to Transmit Purkinje Neuron Pauses". The
+entry above is in sentence case because that is the house rule (see
+`## Citation house style`, "Title: sentence case"), under which
+down-casing a title-case journal is the normal operation, not an
+exception. "Cerebellar" and "Purkinje" are kept capitalised as a
+sentence opener and a proper noun respectively. **The wording is
+untouched.** Anyone re-auditing this record against Crossref will see
+a case mismatch; it is intentional and is not a transcription error.
+
 **Author-list correction to the Task 1 brief.** The hypothesised
 "Sudhakar, Hong, Raikov, ... De Schutter" is a *different* paper --
 Sudhakar, Hong, Raikov, Publio, Lang, Close, Guo, Negrello & De
@@ -2184,10 +2404,17 @@ paper has three authors.
 
 **The origin of the DCN kinetics is Steuber et al. (2011), reached
 through Luthman et al. (2011).** Task 1 recorded this bucket as having
-no in-repo provenance; that was an artefact of its 25-line harvest
-window. Every shipped DCN `.mod` file carries "Translated from GENESIS
-by Johannes Luthman and Volker Steuber." inside its `COMMENT` block.
-Three steps, each verified:
+no in-repo provenance; that was an artefact of its harvest pattern,
+which matched on `Author`/`Ref`-style keywords and so never saw a
+credit phrased as free text (see `## Unresolved attributions` item 8).
+**9 of the 11 shipped DCN `.mod` files carry "Translated from GENESIS
+by Johannes Luthman and Volker Steuber." inside their `COMMENT`
+block** -- every `DCN/channel/` file except `CaLVA_SU15_DCN.mod`, plus
+`DCN/ion/CdpHVA_SU15_DCN.mod`. The two that do not,
+`CaLVA_SU15_DCN.mod` and `CdpLVA_SU15_DCN.mod`, carry a `COMMENT`
+about their shared GHK coupling and name no author at all; they are
+part of the same deposit and the chain below is unaffected by their
+silence. Three steps, each verified:
 
 1. **O-ST2011** is the original GENESIS DCN model (ModelDB 136175) and
    the origin of the channel kinetics. `SU2015`'s own Methods cite it
@@ -2491,9 +2718,22 @@ allowed for that possibility; the paper is peer-reviewed and appeared
 PMID 40652073, PMCID PMC12255734, fully open access. `25192` is the
 article number and occupies the page slot; *Scientific Reports*
 assigns every article of a volume-year to issue 1, so `15(1)` is
-nominal. Keep the British spelling **"fibre"** as published. As in the
-`MA2024` record, "Sanchez-Ponce" and "Munoz" are published here
-without accents in both PubMed and Crossref.
+nominal. Keep the British spelling **"fibre"** as published.
+
+**Name-form note, corrected.** An earlier revision of this record
+claimed that, as in `MA2024`, both "Sanchez-Ponce" and "Munoz" are
+published here without accents. That is **half wrong**, and the wrong
+half is the fourth author. Re-checked 2026-08-15 against both sources:
+Crossref returns `family: "Sánchez-Ponce"` and PubMed's `efetch`
+returns `<LastName>S&#xe1;nchez-Ponce</LastName>` -- i.e. **this paper
+prints Sánchez-Ponce with the accent.** Only the fifth author, Munoz,
+is unaccented here (both sources agree). The `.. [1]` entry above uses
+the ASCII form for both, deliberately and for the same reason as
+`Lüthi`, `Knöpfel`, `Häusser` and `Schürmann` elsewhere in this file:
+the entry text is kept ASCII. **The ASCII "Sanchez-Ponce" above is a
+transliteration, not a reproduction of the publisher's form.** If the
+docstring pipeline is UTF-8-safe, write "Sánchez-Ponce, D." here and
+leave "Munoz, A." plain.
 
 ### Attribution
 
@@ -2726,11 +2966,29 @@ article number and occupies the page slot; `11(1)` is nominal.
 
 **Name-form note.** In *this* paper the fourth and fifth authors are
 published **with** accents -- Sánchez-Ponce and Muñoz -- in both
-PubMed and Crossref, whereas the same two appear unaccented in the
-`MA2024` and `MA2025` records. The ASCII forms are used above for
-consistency with the rest of this file; if the docstring pipeline is
-UTF-8-safe, prefer the accented forms here and the plain forms there,
-because that is how each publisher printed them.
+PubMed and Crossref. The ASCII forms are used above for consistency
+with the rest of this file; if the docstring pipeline is UTF-8-safe,
+prefer the accented forms here.
+
+**The cross-record picture, corrected.** An earlier revision of this
+note told later tasks that "the same two appear unaccented in the
+`MA2024` and `MA2025` records" and to prefer the plain forms there.
+That is wrong for `MA2025`. All three were re-checked against Crossref
+and PubMed on 2026-08-15 and they genuinely differ paper by paper:
+
+| Record | Fourth/second author | Muñoz |
+|---|---|---|
+| `RI2021` (this record) | **Sánchez-Ponce** (accented) | **Muñoz** (accented) |
+| `MA2025` | **Sánchez-Ponce** (accented) | Munoz (plain) |
+| `MA2024` | Sanchez-Ponce (plain) | Munoz (plain) |
+
+So only `MA2024` prints both plain. Every `.. [N]` entry in this file
+uses the ASCII form throughout, so no entry text changes; what changes
+is the instruction to a UTF-8-safe pipeline. **Sánchez-Ponce takes the
+accent in `RI2021` *and* `MA2025`, and only Muñoz varies between
+`RI2021` and the other two.** The inter-paper inconsistency is real
+and each record reproduces its own publisher's form -- see also the
+`MA2024` name-form note, which is correct as written.
 
 **ModelDB provenance quirk, recorded rather than smoothed over.**
 Accession **2018019**. The 2021 paper itself gives no accession -- it
@@ -3858,10 +4116,17 @@ findings below are for whichever module task rewrites those docstrings.
    1).~~ **CLOSED: PASSED.** The Task 3 follow-up compared the paper's
    first-order model against `CalciumDetailed.derivative` term by
    term; they agree, and this entry -- not item 1's -- is the source of
-   what the class computes. Two default divergences are recorded as
-   caveats in that block (`C_rest` 0.24 uM against the docstring's
-   stated 0.05 uM; `maximum(drive, 0)` rectification present in neither
-   paper). Note that this same paper is where Bazhenov et al. (2002)
+   what the class computes. **Its parameter defaults are not
+   divergences.** `C_rest = 2.4e-4 mM` and `tau = 5.0 ms` are verbatim
+   the values in the paper's equation (A5), read from the paper itself;
+   the "0.05 uM" in the *existing docstring prose* at
+   `braincell/ion/calcium.py:193` is the error and must be corrected or
+   removed. The one real BrainCell addition is the `maximum(drive, 0)`
+   rectification, which is in neither paper. A further correction
+   applies here too: Bazhenov's (A5) credits the model to Destexhe et
+   al. (1994a), so the block now carries that paper as `.. [1]`. All of
+   this is set out in the `NO_KEY` `### Attribution` block. Note that
+   this same paper is where Bazhenov et al. (2002)
    says its INa/IK rate expressions live -- see the `Ba2002`
    attribution block.
 
@@ -3879,7 +4144,7 @@ Items below need explicit attention in Task 2/3 beyond the default
 literature search, because Step 1/Step 2 of this harvest could not
 resolve them cleanly:
 
-1. ~~**`CdpStC_NoCAM_MA2020_GoC`**~~ — **CLOSED by Task 3
+1. ~~**`CdpStC_NoCAM_MA2020_GoC`**~~ -- **CLOSED by Task 3
    (2026-08-15).** The absent `CdpStC_NoCAM_MA20_GoC.mod` is not a
    missing file: the class is a BrainCell-factored base, and its
    literal set matches `BC/ion/CdpStC_MA25_BC.mod` and
@@ -3890,14 +4155,18 @@ resolve them cleanly:
    detail and the resulting citation are in the `MA2020`
    `### Attribution` block, Caveat 3.
 
-2. ~~**`SU2015` bucket (all 16 symbols)**~~ — **CLOSED by Task 3
+2. ~~**`SU2015` bucket (all 16 symbols)**~~ -- **CLOSED by Task 3
    (2026-08-15), and the premise of the item was wrong twice.** The
    count is 17 `.mod` files (9 in `DCN/channel/`, 8 in `DCN/ion/`), not
-   11; and they are not attribution-free. Every shipped DCN mechanism
-   carries "Translated from GENESIS by Johannes Luthman and Volker
-   Steuber." inside its `COMMENT` block, below Task 1's 25-line harvest
-   window. That resolves the bucket to Steuber et al. (2011) via
-   Luthman et al. (2011). See the `SU2015` `### Verified record` and
+   11; and they are not attribution-free. **9 of the 11 shipped DCN
+   mechanisms** carry "Translated from GENESIS by Johannes Luthman and
+   Volker Steuber." inside their `COMMENT` block, phrased so that Task
+   1's `Author`/`Ref` keyword pattern never matched it;
+   `CaLVA_SU15_DCN.mod` and `CdpLVA_SU15_DCN.mod` are the two without
+   it, and their absence does not change the outcome (item 8 below has
+   the file-by-file count). That resolves the bucket to Steuber et al.
+   (2011) via Luthman et al. (2011). See the `SU2015`
+   `### Verified record` and
    `### Attribution` blocks. A residual, narrower gap remains and is
    recorded as item 9 below.
 
@@ -3912,7 +4181,7 @@ resolve them cleanly:
    Hodgkin & Huxley 1952 — but that identification is Task 2's job to
    make and verify, not this task's).
 
-4. ~~**Unclaimed `.mod` file**~~ — **CLOSED by Task 3 (2026-08-15).**
+4. ~~**Unclaimed `.mod` file**~~ -- **CLOSED by Task 3 (2026-08-15).**
    `.../DCN/ion/ToyStoich3ABtoCKinetic_SU15_DCN.mod` was intentionally
    left unported. Its own `COMMENT` says it "exists to validate
    higher-order stoichiometry handling in the BrainCell `KineticIon`
@@ -3938,10 +4207,11 @@ resolve them cleanly:
    author-line files: it holds for every one of the 104 cerebellar
    symbols. Not a single mechanism in any of the seven keys originates
    with the group the key names. That is why `## Origin-of-kinetics
-   records` exists and why 99 of the 104 symbols take a two-level
-   citation. The five exceptions take no citation at all, and they are
-   exceptions in the opposite direction: BrainCell's own `Toy*` test
-   fixtures, which originate with no publication whatsoever.
+   records` exists and why 99 of the 104 symbols take a
+   two-or-more-level citation. The five exceptions take no citation
+   at all, and they are exceptions in the opposite direction:
+   BrainCell's own `Toy*` test fixtures, which originate with no
+   publication whatsoever.
 
 6. **`IS2008` (both symbols: `CaN_IS2008`, `CaL_IS2008`)** -- *record
    resolves; attribution NOT CONFIRMED. Do not cite yet.*
@@ -4132,16 +4402,45 @@ resolve them cleanly:
    If a genuine high-threshold thalamic Ca current is wanted, the
    provenance of the +25 mV shift needs to be traced separately.
 
-8. **Task 1's harvest window hid provenance in five places.** Step 2
-   read only the first 25 lines of each `.mod` file. Five real
-   attribution leads sit below that line and were therefore recorded
-   in this file as absent. All five are now resolved, but the pattern
-   matters for anyone re-auditing: **a "no provenance found" note in a
-   `### Provenance evidence` block is evidence about the harvest, not
-   about the file.**
+8. **Task 1's harvest missed provenance in five places, and the cause
+   was the keyword pattern, not the line window.** Five real
+   attribution leads were recorded in this file as absent. All five
+   are now resolved, but the pattern matters for anyone re-auditing:
+   **a "no provenance found" note in a `### Provenance evidence`
+   block is evidence about the harvest, not about the file.**
 
-   - All 11 shipped `DCN` mechanisms: "Translated from GENESIS by
+   **Corrected diagnosis.** An earlier revision of this item blamed
+   Step 2's "25-line harvest window". That explanation does not
+   survive its own examples: four of the five leads listed below sit
+   at lines 1-2, 3-8, 5-6 and 10-14 of their files -- well inside a
+   25-line window, and in two cases on the very first lines. Only the
+   `Cav3p2_*` lead (line ~85) was actually out of range.
+
+   The real cause is the **keyword pattern**. Step 2 harvested only
+   lines matching `TITLE`/`COMMENT`/`Author`/`Ref`/`revis`/4-digit
+   year. Every missed lead is phrased so that none of those tokens
+   appears on the line carrying the credit:
+
+   - "Translated from GENESIS by Johannes Luthman and Volker
+     Steuber." -- names the translators with no `Author`/`Ref` token.
+   - ": HH TEA-sensitive Purkinje potassium current" /
+     ": Created 8/5/02 - nwg" -- a two-digit year, not four.
+   - ": written by Yiota Poirazi on 11/13/00 poirazi@LNC.usc.edu" --
+     "written by", not `Author`; again a two-digit year.
+
+   A `COMMENT` block's *opening* line matches the pattern and so was
+   captured, while the attribution text **inside** the block did not
+   and was dropped -- which is why several files were recorded as
+   "`TITLE`-only" or "empty `COMMENT`" despite carrying a credit two
+   lines further down. **Widening the line window alone would not
+   have found four of these five.** A re-audit should harvest whole
+   `COMMENT` blocks verbatim and match on free text ("written by",
+   "translated from", "based on", "adapted from", "from ... et al.",
+   two-digit dates), not on a fixed keyword list.
+
+   - 9 of the 11 shipped `DCN` mechanisms: "Translated from GENESIS by
      Johannes Luthman and Volker Steuber." -> O-ST2011 / O-LU2011.
+     (Not all 11 -- see the count note below.)
    - `Kca2p2_*.mod` (all five cell types): a full citation to
      "Sergio M. Solinas, Lia Forti, Elisabetta Cesana, Jonathan
      Mapelli, Erik De Schutter and Egidio D`Angelo (2008) /
@@ -4158,6 +4457,23 @@ resolve them cleanly:
      ": From car to Cav2_3" -> O-PO2003a.
    - `Cav3p2_*.mod`: ": (as in Coulter et al., J Physiol 414: 587,
      1989)" at line ~85 -> O-CO1989.
+
+   **Count note: 9 of the 11, not all 11.** The Luthman/Steuber
+   translation line was re-checked file by file on 2026-08-15
+   (`grep -rl Luthman DCN/`). Of the 11 real (non-`Toy*`) DCN
+   mechanisms it appears in 9: all eight `DCN/channel/` files other
+   than `CaLVA_SU15_DCN.mod`, plus `DCN/ion/CdpHVA_SU15_DCN.mod`.
+   **`CaLVA_SU15_DCN.mod` and `CdpLVA_SU15_DCN.mod` do not carry it.**
+   Both instead open with a `COMMENT` describing the GHK coupling
+   between the two of them ("This mechanism and the other calcium
+   channel (CaHVA.mod) are the only channel mechanisms of the DCN
+   model that use the GHK mechanism...") and name no author. **The
+   conclusion is unaffected**: the two files are part of the same
+   deposit as the other nine, the pair is internally cross-referenced
+   by that `COMMENT`, and the O-ST2011 / O-LU2011 chain established in
+   the `SU2015` `### Attribution` block rests on the deposit, not on a
+   per-file header. It is recorded only so that a re-audit grepping
+   for "Luthman" does not read two misses as a discrepancy.
 
    `NaFHF_MA20_GrC.mod`'s empty `COMMENT` is a genuine absence, but it
    is not a gap: the file is `Nav_MA20_GrC.mod`'s 13-state scheme with
@@ -4222,6 +4538,19 @@ resolve them cleanly:
     `__all__`, and none is listed twice. **155 is therefore the figure
     a coverage check should use**, and 123 the keyed figure.
 
+    **What 155 excludes, stated so the number is unambiguous.** The
+    parse above reads the *module* files under `braincell/channel/`
+    and `braincell/ion/` and does not read either package's
+    `__init__.py`. One public symbol lives only there --
+    `braincell/ion/__init__.py::build_placeholder_ions`, present in
+    that module's `__all__` and documented with `.. autofunction::` in
+    `docs/apis/braincell.ion.rst`. A whole-package count would
+    therefore return 156, not 155. That symbol is **out of scope by
+    the project's own definition** (see the scope exclusion under
+    `## How this file was built`) and its absence from this file is
+    not a gap. Do not "fix" the count to 156 without also widening the
+    scope and adding a record for it.
+
     *Is `ghk_flux` counted consistently? Yes, and it is the only case
     that could go either way.* It is a module-level **function**; the
     other 154 entries are classes. It is exported in
@@ -4273,10 +4602,7 @@ resolve them cleanly:
     0.1 um used by the widely circulated `cad.mod` implementation of
     it; (c) the individual values of the pump rate constants `c1`,
     `c2`, `c3`, which the paper gives only through the lumped
-    `K_T` and `K_d`. Independently, the value of `tau` in Bazhenov et
-    al. (1998) was not confirmed against the paper, so BrainCell's
-    `tau = 5.0 ms` default is recorded as a default, not as the
-    paper's value. **None of these affects any verdict** -- the
+    `K_T` and `K_d`. **None of these affects any verdict** -- the
     `CalciumDetailed` finding rests on the implementation containing
     no pump term at all, which is settled from the code. They are
     recorded so nobody re-derives them.
@@ -4304,3 +4630,36 @@ resolve them cleanly:
     source for either, it is an addition to the allowlist's
     exceptions, not a contradiction of a verified record -- no
     `.. [N]` entry was written for either.
+
+    **UNVERIFIED LEAD for `CalciumFirstOrder`, to be checked before
+    shipping.** One candidate was *not* pursued and should be, because
+    it is the best-known source of a bare `Ca' = -alpha*I_Ca -
+    beta*Ca` with numeric `alpha`/`beta` and no shell-depth term:
+
+    ```
+    Pinsky, P. F., & Rinzel, J. (1994). Intrinsic and network
+    rhythmogenesis in a reduced Traub model for CA3 neurons. Journal
+    of Computational Neuroscience, 1(1-2), 39-60.
+    ```
+
+    **This is a lead, not a verified record.** The bibliographic
+    fields above were read from Crossref (doi:10.1007/BF00962717) and
+    are given only so the paper can be found; **the attribution was
+    not checked at all.** Specifically, nobody has confirmed that the
+    paper's calcium equation prints `alpha = 0.13` and `beta = 0.075`,
+    or that its calcium variable is scaled the way
+    `CalciumFirstOrder`'s is. Do **not** cite it, do not copy the
+    block above into a `.. [N]` entry, and do not treat its presence
+    here as weakening the no-source determination, which stands until
+    the check is done.
+
+    *What closing it would take.* Read the paper's model equations,
+    compare the two constants and the sign convention against
+    `braincell/ion/calcium.py::CalciumFirstOrder.derivative`, and be
+    aware that the reduced-Traub calcium variable is conventionally
+    dimensionless -- if BrainCell's is in `mM`, the constants will not
+    match numerically even if the model is the right one, and that
+    mismatch would need explaining rather than waving through. If the
+    check passes, this becomes a verified record and the symbol leaves
+    the no-source list; if it fails, strike this lead so nobody
+    re-derives it.

@@ -387,7 +387,15 @@ class DynamicNernstIon(brainstate.mixin.Mixin):
             \log\!\left(\frac{C_o}{C_i}\right)
 
     so ``E`` always reflects the live ``Ci`` state rather than a value
-    cached at the last lifecycle hook. :meth:`derivative` itself raises
+    cached at the last lifecycle hook.
+
+    As with the sibling mixins, ``Co`` and ``valence`` fall back to
+    ``type(self).default_Co`` and ``type(self).default_valence`` when
+    left as ``None``. ``Ci_initializer`` falls back the same way, to
+    ``type(self).default_Ci`` -- so omitting it does not leave ``Ci``
+    unset, it seeds the dynamic state from the species' fixed default.
+
+    :meth:`derivative` itself raises
     :class:`NotImplementedError` on this mixin; a concrete subclass
     must override it to return ``dCi/dt`` for its own dynamic ion
     model.

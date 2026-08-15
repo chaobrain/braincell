@@ -1291,9 +1291,11 @@ every module:
 pytest braincell/channel/_docstring_test.py braincell/channel/potassium_sodium_test.py -v
 ```
 
-Expected: all PASS. Modules without a sibling `*_test.py`
-(`channel/leaky.py`, `channel/potassium_sodium.py`, `ion/nonspecific.py`) run the
-guard plus `pytest braincell/channel/` for that package.
+Expected: all PASS. Confirm the sibling test path with `ls` before running —
+`channel/leaky.py` and `channel/potassium_sodium.py` both do have one, contrary
+to an earlier draft of this line. `ion/nonspecific.py` is the only module in the
+sequence with no sibling `*_test.py`; there, run the guard plus
+`pytest braincell/ion/` for the package instead.
 
 - [ ] **Step 5: Commit**
 

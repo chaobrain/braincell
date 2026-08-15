@@ -161,7 +161,7 @@ class PotassiumFixed(Potassium, FixedIon):
 
 @register_ion("PotassiumInitNernst")
 class PotassiumInitNernst(Potassium, InitNernstIon):
-    r"""Fixed ``Ci``/``Co`` potassium model with ``E`` initialized from Nernst.
+    r"""Fixed ``Ci``/``Co`` potassium model with Nernst-initialized ``E``.
 
     Parameters
     ----------
@@ -200,7 +200,8 @@ class PotassiumInitNernst(Potassium, InitNernstIon):
 
     See Also
     --------
-    Potassium : Base potassium ion family this class fixes.
+    Potassium : Base potassium ion family this class computes a
+        reversal potential for.
     PotassiumFixed : Sibling potassium model with a fixed reversal
         potential instead of a Nernst-computed one.
 

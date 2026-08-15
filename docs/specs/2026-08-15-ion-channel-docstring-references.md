@@ -973,7 +973,7 @@ Cell-type mapping is fixed by `examples/neuron_compare/Cerebellum_mod/README.md`
 | `ZH2019` | inferior olive (IO) | Zang et al. (2019) |
 | `PC24` | Purkinje, one symbol | same as `MA2024` |
 
-**Verification outcome — three of these hypotheses were wrong.** Recorded here
+**Verification outcome — four of these hypotheses were wrong.** Recorded here
 so the refuted guesses are not mistaken for findings; the authoritative records
 are in `docs/design/ion-channel-bibliography.md`.
 
@@ -1230,26 +1230,42 @@ modules, `braincell/ion/_docstring_test.py` for ion modules).
 
 - [ ] **Step 1: Extend coverage and the allowlist**
 
-Add the module to the import list and to `_COVERED_MODULES`, and add that row's
-allowlist additions to `_NO_PRIMARY_SOURCE`. For Task 5 that is:
+Both `_COVERED_MODULES` and `_NO_PRIMARY_SOURCE` are **cumulative**: append this
+task's module and allowlist entries to whatever earlier tasks already put there.
+Never replace either collection with a fresh literal — that silently drops a
+completed module out of coverage. For Task 5, with Task 6 (`leaky`) already
+landed, that is:
 
 ```python
-from braincell.channel import potassium_sodium
+from braincell.channel import leaky, potassium_sodium
 
-_COVERED_MODULES = (potassium_sodium,)
+_COVERED_MODULES = (leaky, potassium_sodium)
 
-_NO_PRIMARY_SOURCE = frozenset()
+# potassium_sodium adds no allowlist entries; leaky's stay.
+_NO_PRIMARY_SOURCE = frozenset({
+    "LeakageChannel",
+    "IL",
+})
 ```
 
-- [ ] **Step 2: Run the guard and watch it fail**
+- [ ] **Step 2: Run the guard and record what it does**
 
 ```bash
 pytest braincell/channel/_docstring_test.py -v
 ```
 
-Expected: FAIL on `test_every_public_symbol_cites_a_reference` listing that
-module's uncited symbols. If it passes, the module was already compliant — verify
-that is genuinely true before moving on.
+For a module with **keyed symbols** (any symbol needing a citation), expect
+FAIL on `test_every_public_symbol_cites_a_reference` listing that module's
+uncited symbols.
+
+For a module whose symbols are **all allowlisted** the run legitimately passes
+here, and that is not evidence the docstrings are adequate. The guard checks
+only four things — own docstring present, summary ends in a period, citation
+present unless allowlisted, allowlist not dead — so a one-line docstring
+satisfies it. Task 6 hit exactly this: both `leaky` symbols passed all four
+assertions before any documentation work. Record the actual result and
+continue to Step 3 regardless; the guard is a floor, not the acceptance
+criterion. Section completeness is the task reviewer's job.
 
 - [ ] **Step 3: Write the docstrings**
 

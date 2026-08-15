@@ -3361,11 +3361,28 @@ somatic Na parameterisation, matching `Na_ZH19_IO.mod` term for term.
 BrainCell and so is absent from the class, as expected.
 
 **Caveat for the module task -- a real numerical deviation, not a
-citation issue.** `Na_ZH19_IO.mod` and `Kdr_ZH19_IO.mod` guard the
-removable singularities in `alpha_m` and `beta_h` with explicit
-`if (fabs(v + 41.0) < 1e-6)` / `if (fabs(v + 50.0) < 1e-6)` branches
-that substitute the perturbed literals `41.000001` and `50.000001`.
-BrainCell replaces both with a numerically stable
+citation issue.** `Na_ZH19_IO.mod` and `Kdr_ZH19_IO.mod` each guard a
+removable singularity with an explicit
+`if (fabs(v + X) < 1e-6) { ... } else { ... }` branch whose taken side
+substitutes a perturbed offset literal. **The three guards are not
+identical**, and an earlier revision of this paragraph merged them --
+corrected here after Task 17a's review, from the sources line by line:
+
+| File | Function | Guard | Perturbed literal | Line |
+|---|---|---|---|---|
+| `Na_ZH19_IO.mod` | `a_m` | `fabs(v+41.0) < 1e-6` | `41.000001` | 64 |
+| `Na_ZH19_IO.mod` | `b_h` | `fabs(v+50.0) < 1e-6` | `50.000001` | 73 |
+| `Kdr_ZH19_IO.mod` | `a_n` | `fabs(v+41.0) < 1e-6` | `41.00001` | 59 |
+
+Two things to carry into a docstring. First, `Kdr`'s guarded function
+is `a_n`, not `alpha_m` or `beta_h`, and its perturbation is `41.00001`
+-- one fewer zero than `Na`'s `41.000001`. A docstring must use its own
+mechanism's literal. Second, `Kdr`'s perturbation (1e-5) is ten times
+*larger* than the guard window (1e-6) that selects it, so on the taken
+branch the substituted offset always lands outside the interval the
+branch was testing for; `Na`'s two guards are matched to their windows.
+
+BrainCell replaces all three with a numerically stable
 `x/(1 - exp(-x))` helper (`_x_over_one_minus_exp_neg_stable` in
 `braincell/channel/sodium.py`), so the perturbed literals do not
 appear in the class. The README explicitly excludes those literals

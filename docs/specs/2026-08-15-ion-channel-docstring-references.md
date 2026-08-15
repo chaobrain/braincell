@@ -973,6 +973,28 @@ Cell-type mapping is fixed by `examples/neuron_compare/Cerebellum_mod/README.md`
 | `ZH2019` | inferior olive (IO) | Zang et al. (2019) |
 | `PC24` | Purkinje, one symbol | same as `MA2024` |
 
+**Verification outcome — three of these hypotheses were wrong.** Recorded here
+so the refuted guesses are not mistaken for findings; the authoritative records
+are in `docs/design/ion-channel-bibliography.md`.
+
+- `ZH2019` is **Zhang & Santaniello**, PNAS 116(27), 13592-13601 — not Zang &
+  De Schutter. ModelDB accession 257028 names "Xu Zhang" as submitter, matching
+  the porter credit in the `.mod` headers.
+- `RI2021` is Rizza et al., **Scientific Reports** 11(1), 3873 — not
+  Communications Biology.
+- `SU2015` is Sudhakar, **Torben-Nielsen & De Schutter**, PLOS Computational
+  Biology 11(12), e1004641. The author list guessed above belongs to a
+  different, 2017 paper.
+- `MA2020` needs **two** papers, not one: PLOS Computational Biology 16(12),
+  e1007937 for the Golgi cell and Communications Biology 3(1), 222 for the
+  granule cell. No single paper covers both cell types.
+
+Step 0's `.mod` harvest also needs a wider window than the first pass used.
+Reading only the first 25 lines, and grepping only for keywords like `Author:`
+or `Ref:`, missed the DCN attribution "Translated from GENESIS by Johannes
+Luthman and Volker Steuber" — which contains none of those keywords and is the
+evidence that resolved `SU2015`.
+
 - [ ] **Step 2: Resolve every origin-of-kinetics reference**
 
 For each `.mod` header from Task 1 Step 2 that names an author other than the

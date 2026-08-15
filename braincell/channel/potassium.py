@@ -93,7 +93,96 @@ def _x_over_one_minus_exp_neg_stable(x):
 
 @register_channel("KDR_Ba2002")
 class KDR_Ba2002(OhmicHH):
-    r"""Bazhenov 2002 delayed-rectifier potassium current."""
+    r"""Bazhenov 2002 delayed-rectifier potassium current.
+
+    The fast delayed-rectifier potassium current :math:`I_K` of the
+    thalamocortical sleep-oscillation model of (Bazhenov et al., 2002)
+    [1]_, with :math:`p^4` HH gating and an ohmic driving force:
+
+    .. math::
+
+        \begin{aligned}
+        \alpha_p &= \frac{0.032 \times 5}
+                    {\mathrm{exprel}(-(V' - 15) / 5)} \\
+        \beta_p &= 0.5 \exp(-(V' - 10) / 40)
+        \end{aligned}
+
+    where :math:`V' = (V - V_{sh}) / \mathrm{mV}`,
+    :math:`\mathrm{exprel}(x) = (e^{x} - 1)/x`, and both rates are in
+    :math:`\mathrm{ms}^{-1}`. Away from :math:`V' = 15` the activation
+    rate is exactly the linoid
+    :math:`0.032 (15 - V') / (\exp((15 - V')/5) - 1)`; ``exprel`` is
+    used only to remove that expression's removable singularity, where
+    the code returns :math:`0.16\ \mathrm{ms}^{-1}` rather than
+    ``0/0``. The gate integrates
+    :math:`\dot{p} = \phi (\alpha_p (1 - p) - \beta_p p)` with
+    :math:`\phi` from :meth:`~braincell.channel._base.HH.gate_phi`.
+
+    Parameters
+    ----------
+    size : brainstate.typing.Size
+        Channel state shape.
+    g_max : array-like or callable, optional
+        Maximal conductance density. Defaults to ``10.0 mS/cm2``.
+    temp : array-like, optional
+        Absolute temperature driving the Q10 factor, default 36
+        degrees Celsius.
+    q10 : array-like or callable, optional
+        Q10 scaling factor for the activation gate, default ``3.0``.
+    temp_ref : array-like, optional
+        Reference temperature for ``q10``, default 36 degrees Celsius.
+    V_sh : array-like or callable, optional
+        Threshold shift applied to both rates, default ``-50.0 mV``
+        (see Notes).
+    name : str, optional
+        Optional channel name.
+
+    See Also
+    --------
+    K_TM1991 : The same two rate functions with different ``V_sh`` and
+        ``q10`` defaults (see Notes).
+    K_HH1952 : Classical squid-axon delayed rectifier, also :math:`p^4`
+        but with a different rate parameterisation.
+
+    Notes
+    -----
+    The rate functions above are algebraically identical to
+    :class:`K_TM1991`'s -- the Traub & Miles (1991) :math:`\alpha_n` /
+    :math:`\beta_n` pair, written here in the mirrored sign convention.
+    Expanding both classes term by term gives the same two
+    expressions, so the kinetics are not restated separately in
+    :class:`K_TM1991`. The two classes differ only in their shipped
+    defaults: ``V_sh = -50.0 mV`` and ``q10 = 3.0`` here against
+    ``-60.0 mV`` and ``1.0`` there. Their ``g_max`` defaults are the
+    same, ``10.0 mS/cm2``.
+
+    That default matches the value the paper's "Intrinsic currents:
+    thalamus" section gives for thalamocortical relay cells,
+    ``g_K = 10 mS/cm^2``, which is a stronger fingerprint for this
+    attribution than the rate equations alone. The same section states
+    that the model uses "a fast potassium current, I_K (Traub and
+    Miles, 1991)", so the authors themselves attribute these kinetics
+    to that book.
+
+    **The 2002 paper does not print these rate expressions.** It
+    defers them to Bazhenov, Timofeev, Steriade & Sejnowski (1998),
+    J Neurophysiol 79(5), 2730-2748. This docstring therefore records
+    only that the current is the one *used in* Bazhenov et al. (2002)
+    [1]_; in particular the ``V_sh = -50.0 mV`` shift could not be
+    traced to any equation printed in that paper.
+
+    With the shipped defaults ``temp`` equals ``temp_ref``, so the Q10
+    factor is unity and ``q10 = 3.0`` bites only when ``temp`` is
+    changed.
+
+    References
+    ----------
+    .. [1] Bazhenov, M., Timofeev, I., Steriade, M., & Sejnowski, T. J.
+           (2002). Model of thalamocortical slow-wave sleep
+           oscillations and transitions to activated states. The
+           Journal of Neuroscience, 22(19), 8691-8704.
+           doi:10.1523/JNEUROSCI.22-19-08691.2002
+    """
 
     __module__ = "braincell.channel"
     root_type = Potassium
@@ -127,7 +216,96 @@ class KDR_Ba2002(OhmicHH):
 
 @register_channel("K_TM1991")
 class K_TM1991(OhmicHH):
-    r"""Traub and Miles 1991 delayed-rectifier potassium current."""
+    r"""Traub and Miles 1991 delayed-rectifier potassium current.
+
+    The delayed-rectifier potassium current of the hippocampal
+    pyramidal cell model of (Traub & Miles, 1991) [1]_, with
+    :math:`p^4` HH gating and an ohmic driving force:
+
+    .. math::
+
+        \begin{aligned}
+        \alpha_p &= \frac{0.032 \times 5}
+                    {\mathrm{exprel}((15 - V') / 5)} \\
+        \beta_p &= 0.5 \exp((10 - V') / 40)
+        \end{aligned}
+
+    where :math:`V' = (V - V_{sh}) / \mathrm{mV}`,
+    :math:`\mathrm{exprel}(x) = (e^{x} - 1)/x`, and both rates are in
+    :math:`\mathrm{ms}^{-1}`. Away from :math:`V' = 15` the activation
+    rate is exactly the published linoid
+    :math:`0.032 (15 - V') / (\exp((15 - V')/5) - 1)`; ``exprel`` is
+    used only to remove that expression's removable singularity, where
+    the code returns :math:`0.16\ \mathrm{ms}^{-1}` rather than
+    ``0/0``. The gate integrates
+    :math:`\dot{p} = \phi (\alpha_p (1 - p) - \beta_p p)` with
+    :math:`\phi` from :meth:`~braincell.channel._base.HH.gate_phi`.
+
+    Parameters
+    ----------
+    size : brainstate.typing.Size
+        Channel state shape.
+    g_max : array-like or callable, optional
+        Maximal conductance density. Defaults to ``10.0 mS/cm2``.
+    temp : array-like, optional
+        Absolute temperature driving the Q10 factor, default 36
+        degrees Celsius.
+    q10 : array-like or callable, optional
+        Q10 scaling factor for the activation gate, default ``1.0``,
+        i.e. no temperature correction at any temperature (see Notes).
+    temp_ref : array-like, optional
+        Reference temperature for ``q10``, default 36 degrees Celsius.
+    V_sh : array-like or callable, optional
+        Threshold shift applied to both rates, default ``-60.0 mV``
+        -- **not** ``-63.0 mV`` (see Notes).
+    name : str, optional
+        Optional channel name.
+
+    See Also
+    --------
+    KDR_Ba2002 : The same two rate functions with ``V_sh = -50.0 mV``
+        and ``q10 = 3.0``, as used by Bazhenov et al. (2002).
+    braincell.channel.sodium.Na_TM1991 : Sodium counterpart from the
+        same source mechanism, which ships ``V_sh = -63.0 mV``.
+
+    Notes
+    -----
+    Compared against ``HH2.mod`` from ModelDB accession 3670,
+    Destexhe's NEURON implementation, whose header reads "Equations
+    modified by Traub, for Hippocampal Pyramidal cells, in: Traub &
+    Miles, Neuronal Networks of the Hippocampus, Cambridge, 1991".
+    With ``v2 = v - vtraub`` in the mod file and
+    :math:`V' = (V - V_{sh})/\mathrm{mV}` here, the two rate functions
+    above and the :math:`p^4` gating match the mod file term for term.
+
+    **The shift default is -60 mV, and the two BrainCell ``TM1991``
+    classes do not agree with each other.**
+    :class:`braincell.channel.sodium.Na_TM1991` ships
+    ``V_sh = -63.0 mV`` while this class ships ``-60.0 mV``, although
+    both derive from the same mechanism; the 3 mV divergence is a
+    BrainCell choice, not something inherited from the source. Any
+    sentence about "the Traub & Miles -63 mV shift" is wrong for this
+    class. ``HH2.mod``'s own ``PARAMETER`` block ships a third value,
+    ``vtraub = -55 mV``; the rate equations are unaffected either way,
+    since the shift enters only through ``v2``/:math:`V'`.
+
+    The ``g_max`` default coincides with ``HH2.mod``'s
+    ``gkbar = 0.01 mho/cm^2`` (= ``10 mS/cm2``), but it is documented
+    here as a BrainCell default rather than as a value printed in the
+    book.
+
+    ``HH2.mod`` applies ``tadj = 3^((celsius - 36)/10)``, which is
+    unity at 36 degrees Celsius; the shipped ``q10 = 1.0`` with
+    ``temp_ref`` at 36 degrees Celsius agrees there, but stays unity at
+    every other temperature as well, so raising ``temp`` does not speed
+    this gate unless ``q10`` is also changed.
+
+    References
+    ----------
+    .. [1] Traub, R. D., & Miles, R. (1991). Neuronal networks of the
+           hippocampus. Cambridge University Press.
+           doi:10.1017/CBO9780511895401
+    """
 
     __module__ = "braincell.channel"
     root_type = Potassium
@@ -161,7 +339,92 @@ class K_TM1991(OhmicHH):
 
 @register_channel("K_HH1952")
 class K_HH1952(OhmicHH):
-    r"""Hodgkin-Huxley 1952 potassium current."""
+    r"""Hodgkin-Huxley 1952 delayed-rectifier potassium current.
+
+    The squid giant axon potassium current :math:`I_K` of (Hodgkin &
+    Huxley, 1952) [1]_, with :math:`p^4` HH gating and an ohmic
+    driving force:
+
+    .. math::
+
+        \begin{aligned}
+        \alpha_p &= \frac{0.1}{\mathrm{exprel}(-(V' + 10) / 10)} \\
+        \beta_p &= 0.125 \exp(-(V' + 20) / 80)
+        \end{aligned}
+
+    where :math:`V' = (V - V_{sh}) / \mathrm{mV}`,
+    :math:`\mathrm{exprel}(x) = (e^{x} - 1)/x`, and both rates are in
+    :math:`\mathrm{ms}^{-1}`. Away from :math:`V' = -10` the
+    activation rate is exactly
+    :math:`0.01 (V' + 10) / (1 - \exp(-(V' + 10)/10))`; ``exprel``
+    only removes that expression's removable singularity, where the
+    code returns :math:`0.1\ \mathrm{ms}^{-1}` rather than ``0/0``.
+    The gate integrates
+    :math:`\dot{p} = \phi (\alpha_p (1 - p) - \beta_p p)` with
+    :math:`\phi` from :meth:`~braincell.channel._base.HH.gate_phi`.
+
+    With the default ``V_sh = -45.0 mV`` -- which places rest at
+    -65 mV in the modern absolute-potential convention -- these expand
+    to the published rates
+    :math:`\alpha_n = 0.01 (V + 55)/(1 - \exp(-(V + 55)/10))` and
+    :math:`\beta_n = 0.125 \exp(-(V + 65)/80)`, with :math:`n^4`
+    gating.
+
+    Parameters
+    ----------
+    size : brainstate.typing.Size
+        Channel state shape.
+    g_max : array-like or callable, optional
+        Maximal conductance density. Defaults to ``10.0 mS/cm2``,
+        which is **not** Hodgkin & Huxley's own value (see Notes).
+    temp : array-like, optional
+        Absolute temperature driving the Q10 factor, default 36
+        degrees Celsius.
+    q10 : array-like or callable, optional
+        Q10 scaling factor for the activation gate, default ``3.0``.
+    temp_ref : array-like, optional
+        Reference temperature for ``q10``, default 36 degrees Celsius
+        (see Notes).
+    V_sh : array-like or callable, optional
+        Threshold shift applied to both rates, default ``-45.0 mV``.
+    name : str, optional
+        Optional channel name.
+
+    See Also
+    --------
+    braincell.channel.sodium.Na_HH1952 : Sodium counterpart of the
+        same model, whose ``g_max`` default does match the paper.
+    K_TM1991 : Traub & Miles reparameterisation of the same
+        :math:`p^4` delayed rectifier.
+
+    Notes
+    -----
+    Every rate constant was expanded by hand and compared with the
+    classical Hodgkin-Huxley rate equations; the implementation
+    reproduces them exactly. ``exprel`` changes no value: it removes
+    the removable singularity at the linoid's midpoint only.
+
+    **The default conductance is not the paper's.** Hodgkin & Huxley
+    give :math:`\bar{g}_K = 36\ \mathrm{mS/cm^2}`; this class ships
+    ``10.0 mS/cm2``. Document it as a BrainCell default, not as the
+    published value.
+
+    **The default temperature is not the paper's either.** The rates
+    above were measured at 6.3 degrees Celsius, whereas ``temp`` and
+    ``temp_ref`` both default to 36 degrees Celsius, which makes the
+    Q10 correction a no-op as shipped. ``q10 = 3.0`` is Hodgkin &
+    Huxley's own factor-of-three-per-ten-degrees, but the shipped
+    defaults do not reproduce the paper's 6.3 degrees Celsius
+    behaviour.
+
+    References
+    ----------
+    .. [1] Hodgkin, A. L., & Huxley, A. F. (1952). A quantitative
+           description of membrane current and its application to
+           conduction and excitation in nerve. The Journal of
+           Physiology, 117(4), 500-544.
+           doi:10.1113/jphysiol.1952.sp004764
+    """
 
     __module__ = "braincell.channel"
     root_type = Potassium
@@ -195,7 +458,108 @@ class K_HH1952(OhmicHH):
 
 @register_channel("KA1_HM1992")
 class KA1_HM1992(OhmicHH):
-    r"""Huguenard & McCormick 1992 IA1 potassium current."""
+    r"""Huguenard & McCormick 1992 A-type potassium current (IA1).
+
+    The first of the two components into which (Huguenard &
+    McCormick, 1992) [1]_ splits the rapidly inactivating transient
+    potassium current :math:`I_A` of thalamic relay neurons, with
+    :math:`p^4 q` HH gating and an ohmic driving force:
+
+    .. math::
+
+        \begin{aligned}
+        p_\infty &= \frac{1}{1 + \exp(-(V' + 60) / 8.5)} \\
+        \tau_p &= \frac{1}
+                  {\exp((V' + 35.8) / 19.7) + \exp(-(V' + 79.7) / 12.7)}
+                  + 0.37 \\
+        q_\infty &= \frac{1}{1 + \exp((V' + 78) / 6)} \\
+        \tau_q &= \begin{cases}
+                  \left[\exp((V' + 46) / 5)
+                  + \exp(-(V' + 238) / 37.5)\right]^{-1} & V' < -63 \\
+                  19 & V' \geq -63
+                  \end{cases}
+        \end{aligned}
+
+    where :math:`V' = (V - V_{sh}) / \mathrm{mV}` and the time
+    constants are in milliseconds, further scaled per gate by
+    :meth:`~braincell.channel._base.HH.gate_phi`.
+
+    Parameters
+    ----------
+    size : brainstate.typing.Size
+        Channel state shape.
+    g_max : array-like or callable, optional
+        Maximal conductance density. Defaults to ``30.0 mS/cm2``
+        (see Notes).
+    temp : array-like, optional
+        Absolute temperature driving the Q10 factors, default 36
+        degrees Celsius.
+    q10_p : array-like or callable, optional
+        Q10 scaling factor for the activation gate, default ``1.0``.
+    temp_ref_p : array-like, optional
+        Reference temperature for ``q10_p``, default 36 degrees
+        Celsius.
+    q10_q : array-like or callable, optional
+        Q10 scaling factor for the inactivation gate, default ``1.0``.
+    temp_ref_q : array-like, optional
+        Reference temperature for ``q10_q``, default 36 degrees
+        Celsius.
+    V_sh : array-like or callable, optional
+        Threshold shift applied to both gates' rates, default
+        ``0.0 mV``.
+    name : str, optional
+        Optional channel name.
+
+    See Also
+    --------
+    KA2_HM1992 : The other :math:`I_A` component of the same model;
+        it differs from this class only in ``p_inf`` and ``g_max``
+        (see Notes).
+    KK2A_HM1992 : Slowly inactivating :math:`I_{K2}` component of the
+        same model.
+    KK2B_HM1992 : The other :math:`I_{K2}` component.
+
+    Notes
+    -----
+    The paper's published abstract enumerates exactly four currents,
+    which map onto BrainCell as: :math:`I_T` ->
+    :class:`~braincell.channel.CaT_HM1992`; :math:`I_A` ->
+    :class:`KA1_HM1992` / :class:`KA2_HM1992`; :math:`I_{K2}` ->
+    :class:`KK2A_HM1992` / :class:`KK2B_HM1992`; and :math:`I_h` ->
+    :class:`~braincell.channel.HCN_HM1992`.
+
+    **One divergence between the shipped pair and the paper's own
+    description, recorded rather than corrected.** The abstract says
+    :math:`I_A` "was modeled by assuming two components with different
+    time constants of inactivation". In BrainCell the two components'
+    inactivation is *identical*: :class:`KA1_HM1992` and
+    :class:`KA2_HM1992` carry the same ``q_inf``, the same piecewise
+    ``tau_q`` and even the same ``tau_p``, and differ only in the
+    activation midpoint and slope (-60 / 8.5 here, -36 / 20 there)
+    and in the default conductance (30 against 20 mS/cm2). The
+    :math:`I_{K2}` pair does differ in inactivation, as the paper
+    describes for that current.
+
+    The ``tau_q`` branches do not meet: at :math:`V' = -63` the lower
+    branch evaluates to about 23.4 ms while the class returns the
+    constant 19 ms. The discontinuity is in the source
+    parameterisation, not introduced here; the code applies the
+    expression strictly below -63 and the constant at and above it.
+
+    Both Q10 factors default to ``1.0``, so with the shipped defaults
+    neither gate is temperature-scaled at any temperature; each gate
+    has its own ``q10``/``temp_ref`` pair and is scaled independently.
+    The ``g_max`` default is a BrainCell value: the attribution for
+    this key was established from the paper's current inventory, not
+    by comparing conductance densities.
+
+    References
+    ----------
+    .. [1] Huguenard, J. R., & McCormick, D. A. (1992). Simulation of
+           the currents involved in rhythmic oscillations in thalamic
+           relay neurons. Journal of Neurophysiology, 68(4), 1373-1383.
+           doi:10.1152/jn.1992.68.4.1373
+    """
 
     __module__ = "braincell.channel"
     root_type = Potassium
@@ -248,7 +612,105 @@ class KA1_HM1992(OhmicHH):
 
 @register_channel("KA2_HM1992")
 class KA2_HM1992(OhmicHH):
-    r"""Huguenard & McCormick 1992 IA2 potassium current."""
+    r"""Huguenard & McCormick 1992 A-type potassium current (IA2).
+
+    The second of the two components into which (Huguenard &
+    McCormick, 1992) [1]_ splits the rapidly inactivating transient
+    potassium current :math:`I_A` of thalamic relay neurons, with
+    :math:`p^4 q` HH gating and an ohmic driving force:
+
+    .. math::
+
+        \begin{aligned}
+        p_\infty &= \frac{1}{1 + \exp(-(V' + 36) / 20)} \\
+        \tau_p &= \frac{1}
+                  {\exp((V' + 35.8) / 19.7) + \exp(-(V' + 79.7) / 12.7)}
+                  + 0.37 \\
+        q_\infty &= \frac{1}{1 + \exp((V' + 78) / 6)} \\
+        \tau_q &= \begin{cases}
+                  \left[\exp((V' + 46) / 5)
+                  + \exp(-(V' + 238) / 37.5)\right]^{-1} & V' < -63 \\
+                  19 & V' \geq -63
+                  \end{cases}
+        \end{aligned}
+
+    where :math:`V' = (V - V_{sh}) / \mathrm{mV}` and the time
+    constants are in milliseconds, further scaled per gate by
+    :meth:`~braincell.channel._base.HH.gate_phi`. Only
+    :math:`p_\infty` differs from :class:`KA1_HM1992`: its activation
+    curve is 24 mV more depolarized and considerably shallower.
+
+    Parameters
+    ----------
+    size : brainstate.typing.Size
+        Channel state shape.
+    g_max : array-like or callable, optional
+        Maximal conductance density. Defaults to ``20.0 mS/cm2``
+        (see Notes).
+    temp : array-like, optional
+        Absolute temperature driving the Q10 factors, default 36
+        degrees Celsius.
+    q10_p : array-like or callable, optional
+        Q10 scaling factor for the activation gate, default ``1.0``.
+    temp_ref_p : array-like, optional
+        Reference temperature for ``q10_p``, default 36 degrees
+        Celsius.
+    q10_q : array-like or callable, optional
+        Q10 scaling factor for the inactivation gate, default ``1.0``.
+    temp_ref_q : array-like, optional
+        Reference temperature for ``q10_q``, default 36 degrees
+        Celsius.
+    V_sh : array-like or callable, optional
+        Threshold shift applied to both gates' rates, default
+        ``0.0 mV``.
+    name : str, optional
+        Optional channel name.
+
+    See Also
+    --------
+    KA1_HM1992 : The other :math:`I_A` component of the same model,
+        with a lower activation midpoint and a steeper slope.
+    KK2A_HM1992 : Slowly inactivating :math:`I_{K2}` component of the
+        same model.
+    KK2B_HM1992 : The other :math:`I_{K2}` component.
+
+    Notes
+    -----
+    The paper's published abstract enumerates exactly four currents,
+    which map onto BrainCell as: :math:`I_T` ->
+    :class:`~braincell.channel.CaT_HM1992`; :math:`I_A` ->
+    :class:`KA1_HM1992` / :class:`KA2_HM1992`; :math:`I_{K2}` ->
+    :class:`KK2A_HM1992` / :class:`KK2B_HM1992`; and :math:`I_h` ->
+    :class:`~braincell.channel.HCN_HM1992`.
+
+    **One divergence between the shipped pair and the paper's own
+    description, recorded rather than corrected.** The abstract says
+    :math:`I_A` "was modeled by assuming two components with different
+    time constants of inactivation". In BrainCell the two components'
+    inactivation is *identical*: this class and :class:`KA1_HM1992`
+    carry the same ``q_inf``, the same piecewise ``tau_q`` and even
+    the same ``tau_p``, and differ only in the activation midpoint and
+    slope and in the default conductance. The :math:`I_{K2}` pair does
+    differ in inactivation, as the paper describes for that current.
+
+    The ``tau_q`` branches do not meet: at :math:`V' = -63` the lower
+    branch evaluates to about 23.4 ms while the class returns the
+    constant 19 ms. The discontinuity is in the source
+    parameterisation, not introduced here.
+
+    Both Q10 factors default to ``1.0``, so with the shipped defaults
+    neither gate is temperature-scaled at any temperature. The
+    ``g_max`` default is a BrainCell value: the attribution for this
+    key was established from the paper's current inventory, not by
+    comparing conductance densities.
+
+    References
+    ----------
+    .. [1] Huguenard, J. R., & McCormick, D. A. (1992). Simulation of
+           the currents involved in rhythmic oscillations in thalamic
+           relay neurons. Journal of Neurophysiology, 68(4), 1373-1383.
+           doi:10.1152/jn.1992.68.4.1373
+    """
 
     __module__ = "braincell.channel"
     root_type = Potassium
@@ -301,7 +763,92 @@ class KA2_HM1992(OhmicHH):
 
 @register_channel("KK2A_HM1992")
 class KK2A_HM1992(OhmicHH):
-    r"""Huguenard & McCormick 1992 IK2a potassium current."""
+    r"""Huguenard & McCormick 1992 slow potassium current (IK2a).
+
+    The first of the two components into which (Huguenard &
+    McCormick, 1992) [1]_ splits the slowly inactivating potassium
+    current :math:`I_{K2}` of thalamic relay neurons, with :math:`p q`
+    HH gating (both gates to the first power) and an ohmic driving
+    force:
+
+    .. math::
+
+        \begin{aligned}
+        p_\infty &= \frac{1}{1 + \exp(-(V' + 43) / 17)} \\
+        \tau_p &= \frac{1}
+                  {\exp((V' - 81) / 25.6) + \exp(-(V' + 132) / 18)}
+                  + 9.9 \\
+        q_\infty &= \frac{1}{1 + \exp((V' + 58) / 10.6)} \\
+        \tau_q &= \frac{1}
+                  {\exp((V' - 1329) / 200) + \exp(-(V' + 130) / 7.1)}
+                  + 120
+        \end{aligned}
+
+    where :math:`V' = (V - V_{sh}) / \mathrm{mV}` and the time
+    constants are in milliseconds, further scaled per gate by
+    :meth:`~braincell.channel._base.HH.gate_phi`.
+
+    Parameters
+    ----------
+    size : brainstate.typing.Size
+        Channel state shape.
+    g_max : array-like or callable, optional
+        Maximal conductance density. Defaults to ``10.0 mS/cm2``
+        (see Notes).
+    temp : array-like, optional
+        Absolute temperature driving the Q10 factors, default 36
+        degrees Celsius.
+    q10_p : array-like or callable, optional
+        Q10 scaling factor for the activation gate, default ``1.0``.
+    temp_ref_p : array-like, optional
+        Reference temperature for ``q10_p``, default 36 degrees
+        Celsius.
+    q10_q : array-like or callable, optional
+        Q10 scaling factor for the inactivation gate, default ``1.0``.
+    temp_ref_q : array-like, optional
+        Reference temperature for ``q10_q``, default 36 degrees
+        Celsius.
+    V_sh : array-like or callable, optional
+        Threshold shift applied to both gates' rates, default
+        ``0.0 mV``.
+    name : str, optional
+        Optional channel name.
+
+    See Also
+    --------
+    KK2B_HM1992 : The other :math:`I_{K2}` component of the same
+        model; it shares every rate function except ``tau_q``.
+    KA1_HM1992 : Transient :math:`I_A` component of the same model.
+    KA2_HM1992 : The other :math:`I_A` component.
+
+    Notes
+    -----
+    The paper's published abstract enumerates exactly four currents,
+    which map onto BrainCell as: :math:`I_T` ->
+    :class:`~braincell.channel.CaT_HM1992`; :math:`I_A` ->
+    :class:`KA1_HM1992` / :class:`KA2_HM1992`; :math:`I_{K2}` ->
+    :class:`KK2A_HM1992` / :class:`KK2B_HM1992`; and :math:`I_h` ->
+    :class:`~braincell.channel.HCN_HM1992`. The abstract states that
+    :math:`I_{K2}` "was also modeled by assuming two components", and
+    this pair does implement that split in the inactivation time
+    constant: ``tau_q`` here is the continuous expression above, while
+    :class:`KK2B_HM1992` evaluates the same bracket only below
+    :math:`V' = -70` and returns a constant 8.9 ms above it.
+
+    Both Q10 factors default to ``1.0``, so with the shipped defaults
+    neither gate is temperature-scaled at any temperature; each gate
+    has its own ``q10``/``temp_ref`` pair and is scaled independently.
+    The ``g_max`` default is a BrainCell value: the attribution for
+    this key was established from the paper's current inventory, not
+    by comparing conductance densities.
+
+    References
+    ----------
+    .. [1] Huguenard, J. R., & McCormick, D. A. (1992). Simulation of
+           the currents involved in rhythmic oscillations in thalamic
+           relay neurons. Journal of Neurophysiology, 68(4), 1373-1383.
+           doi:10.1152/jn.1992.68.4.1373
+    """
 
     __module__ = "braincell.channel"
     root_type = Potassium
@@ -350,7 +897,100 @@ class KK2A_HM1992(OhmicHH):
 
 @register_channel("KK2B_HM1992")
 class KK2B_HM1992(OhmicHH):
-    r"""Huguenard & McCormick 1992 IK2b potassium current."""
+    r"""Huguenard & McCormick 1992 slow potassium current (IK2b).
+
+    The second of the two components into which (Huguenard &
+    McCormick, 1992) [1]_ splits the slowly inactivating potassium
+    current :math:`I_{K2}` of thalamic relay neurons, with :math:`p q`
+    HH gating (both gates to the first power) and an ohmic driving
+    force:
+
+    .. math::
+
+        \begin{aligned}
+        p_\infty &= \frac{1}{1 + \exp(-(V' + 43) / 17)} \\
+        \tau_p &= \frac{1}
+                  {\exp((V' - 81) / 25.6) + \exp(-(V' + 132) / 18)}
+                  + 9.9 \\
+        q_\infty &= \frac{1}{1 + \exp((V' + 58) / 10.6)} \\
+        \tau_q &= \begin{cases}
+                  \left[\exp((V' - 1329) / 200)
+                  + \exp(-(V' + 130) / 7.1)\right]^{-1} & V' < -70 \\
+                  8.9 & V' \geq -70
+                  \end{cases}
+        \end{aligned}
+
+    where :math:`V' = (V - V_{sh}) / \mathrm{mV}` and the time
+    constants are in milliseconds, further scaled per gate by
+    :meth:`~braincell.channel._base.HH.gate_phi`. Only :math:`\tau_q`
+    differs from :class:`KK2A_HM1992`, which uses the same bracket at
+    every voltage and adds a constant 120 ms to it.
+
+    Parameters
+    ----------
+    size : brainstate.typing.Size
+        Channel state shape.
+    g_max : array-like or callable, optional
+        Maximal conductance density. Defaults to ``10.0 mS/cm2``
+        (see Notes).
+    temp : array-like, optional
+        Absolute temperature driving the Q10 factors, default 36
+        degrees Celsius.
+    q10_p : array-like or callable, optional
+        Q10 scaling factor for the activation gate, default ``1.0``.
+    temp_ref_p : array-like, optional
+        Reference temperature for ``q10_p``, default 36 degrees
+        Celsius.
+    q10_q : array-like or callable, optional
+        Q10 scaling factor for the inactivation gate, default ``1.0``.
+    temp_ref_q : array-like, optional
+        Reference temperature for ``q10_q``, default 36 degrees
+        Celsius.
+    V_sh : array-like or callable, optional
+        Threshold shift applied to both gates' rates, default
+        ``0.0 mV``.
+    name : str, optional
+        Optional channel name.
+
+    See Also
+    --------
+    KK2A_HM1992 : The other :math:`I_{K2}` component of the same
+        model; it shares every rate function except ``tau_q``.
+    KA1_HM1992 : Transient :math:`I_A` component of the same model.
+    KA2_HM1992 : The other :math:`I_A` component.
+
+    Notes
+    -----
+    The paper's published abstract enumerates exactly four currents,
+    which map onto BrainCell as: :math:`I_T` ->
+    :class:`~braincell.channel.CaT_HM1992`; :math:`I_A` ->
+    :class:`KA1_HM1992` / :class:`KA2_HM1992`; :math:`I_{K2}` ->
+    :class:`KK2A_HM1992` / :class:`KK2B_HM1992`; and :math:`I_h` ->
+    :class:`~braincell.channel.HCN_HM1992`. The abstract states that
+    :math:`I_{K2}` "was also modeled by assuming two components", and
+    the inactivation time constant is where this pair differs.
+
+    **The two ``tau_q`` branches are far apart at the switch.** Just
+    below :math:`V' = -70` the expression evaluates to roughly 885 ms,
+    while at and above -70 the class returns 8.9 ms -- a jump of two
+    orders of magnitude at a single point. This is the shipped
+    parameterisation, transcribed here rather than smoothed; the code
+    applies the expression strictly below -70 and the constant at and
+    above it.
+
+    Both Q10 factors default to ``1.0``, so with the shipped defaults
+    neither gate is temperature-scaled at any temperature. The
+    ``g_max`` default is a BrainCell value: the attribution for this
+    key was established from the paper's current inventory, not by
+    comparing conductance densities.
+
+    References
+    ----------
+    .. [1] Huguenard, J. R., & McCormick, D. A. (1992). Simulation of
+           the currents involved in rhythmic oscillations in thalamic
+           relay neurons. Journal of Neurophysiology, 68(4), 1373-1383.
+           doi:10.1152/jn.1992.68.4.1373
+    """
 
     __module__ = "braincell.channel"
     root_type = Potassium
@@ -403,7 +1043,92 @@ class KK2B_HM1992(OhmicHH):
 
 @register_channel("KNI_Ya1989")
 class KNI_Ya1989(OhmicHH):
-    r"""Yamada 1989 slow non-inactivating potassium current."""
+    r"""Yamada 1989 slow non-inactivating potassium current.
+
+    The muscarine-sensitive M current :math:`I_M` of (Yamada, Koch, &
+    Adams, 1989) [1]_ -- a slow, non-inactivating potassium current
+    with a single activation gate to the first power and an ohmic
+    driving force:
+
+    .. math::
+
+        \begin{aligned}
+        p_\infty &= \frac{1}{1 + \exp(-(V' + 35) / 10)} \\
+        \tau_p &= \frac{\tau_{max}}
+                  {3.3 \exp((V' + 35) / 20) + \exp(-(V' + 35) / 20)}
+        \end{aligned}
+
+    where :math:`V' = (V - V_{sh}) / \mathrm{mV}` and
+    :math:`\tau_{max}` is the ``tau_max`` parameter read in
+    milliseconds. :math:`\tau_p` is further scaled by
+    :meth:`~braincell.channel._base.HH.gate_phi`. There is no
+    inactivation gate: the conductance is :math:`g_{max} p`.
+
+    Parameters
+    ----------
+    size : brainstate.typing.Size
+        Channel state shape.
+    g_max : array-like or callable, optional
+        Maximal conductance density. Defaults to ``0.004 mS/cm2``
+        (see Notes).
+    temp : array-like, optional
+        Absolute temperature driving the Q10 factor, default 36
+        degrees Celsius.
+    q10 : array-like or callable, optional
+        Q10 scaling factor for the activation gate, default ``1.0``,
+        i.e. no temperature correction (see Notes).
+    temp_ref : array-like, optional
+        Reference temperature for ``q10``, default 36 degrees Celsius.
+    tau_max : array-like or callable, optional
+        Peak time constant scaling :math:`\tau_p`. Defaults to
+        ``4000.0 ms`` (see Notes).
+    V_sh : array-like or callable, optional
+        Threshold shift applied to both rates, default ``0.0 mV``.
+    name : str, optional
+        Optional channel name.
+
+    See Also
+    --------
+    KK2A_HM1992 : Slowly inactivating thalamic potassium current, for
+        contrast: this class does not inactivate at all.
+
+    Notes
+    -----
+    Compared against ``IM.mod`` from ModelDB accession 3817, whose
+    header reads "Model taken from Yamada, W.M., Koch, C. and Adams,
+    P.R. Multiple channels and calcium dynamics. In: Methods in
+    Neuronal Modeling, edited by C. Koch and I. Segev, MIT press,
+    1989, p 97-134." The mod file computes exactly the two functions
+    above and a single, non-inactivating, linear-in-:math:`m`
+    potassium conductance; this class implements them with one
+    :class:`~braincell.channel._base.Gate` of power 1. The current is
+    the M current of the bullfrog sympathetic ganglion B-type cell,
+    which is the chapter's subject.
+
+    **Two shipped defaults diverge from that reference
+    implementation.** ``IM.mod`` ships ``taumax = 1000 ms`` and
+    ``gkbar = 1e-6 mho/cm^2`` (= ``0.001 mS/cm2``), whereas this class
+    defaults to ``tau_max = 4000.0 ms`` and
+    ``g_max = 0.004 mS/cm2``. Both are BrainCell defaults and neither
+    is a value from the chapter.
+
+    **The temperature handling diverges too.** ``IM.mod`` assumes
+    Q10 = 2.3 referenced to 36 degrees Celsius; this class defaults to
+    ``q10 = 1.0``, so as shipped there is no temperature correction at
+    any temperature.
+
+    Sources disagree on the chapter's final page: the machine-readable
+    bibliographic record gives 97-133, used in the entry below, while
+    ``IM.mod``'s header gives 97-134. The discrepancy is recorded
+    rather than adjudicated.
+
+    References
+    ----------
+    .. [1] Yamada, W. M., Koch, C., & Adams, P. R. (1989). Multiple
+           channels and calcium dynamics. In C. Koch & I. Segev
+           (Eds.), Methods in neuronal modeling: From synapses to
+           networks (pp. 97-133). MIT Press.
+    """
 
     __module__ = "braincell.channel"
     root_type = Potassium
@@ -440,7 +1165,50 @@ class KNI_Ya1989(OhmicHH):
 
 @register_channel("K_Leak")
 class K_Leak(Channel):
-    """Potassium leak current."""
+    r"""Potassium leak current.
+
+    A voltage-independent, always-open potassium conductance:
+
+    .. math::
+
+        I = g_{max} \, (E_K - V)
+
+    Unlike :class:`~braincell.channel.IL`, the reversal potential is
+    not a parameter of this class -- it is taken from the potassium
+    ion object this channel is attached to, so ``E_K`` follows whatever
+    the ion computes (fixed, Nernst, or concentration-driven). There
+    are no gating variables and no state to integrate:
+    :meth:`init_state`, :meth:`reset_state` and
+    :meth:`compute_derivative` are all no-ops.
+
+    Parameters
+    ----------
+    size : brainstate.typing.Size
+        Channel state shape.
+    g_max : array-like or callable, optional
+        Leak conductance density. Defaults to ``0.005 mS/cm2``.
+    name : str, optional
+        Optional channel name.
+
+    See Also
+    --------
+    braincell.channel.IL : Ion-independent leak with its own fixed
+        reversal potential parameter.
+    braincell.ion.Potassium : Ion object supplying ``E_K``.
+
+    Notes
+    -----
+    This class has **no primary literature source**, and that is a
+    determination rather than an omission: the current law is
+    textbook Ohm's law and the ``0.005 mS/cm2`` default is a
+    conventional placeholder that any caller overrides. No source
+    model was identified for it, so the class deliberately ships
+    without a ``References`` section.
+
+    ``root_type`` is :class:`~braincell.ion.Potassium`, so the channel
+    must be attached to a potassium ion; the ion, not the channel,
+    owns the driving force.
+    """
 
     __module__ = "braincell.channel"
     root_type = Potassium
@@ -469,6 +1237,94 @@ class K_Leak(Channel):
 
 @register_channel("K_Kv_test")
 class K_Kv_test(OhmicHH):
+    r"""Scratch Kv fixture built on the generic vtrap rate form.
+
+    A single-gate potassium channel whose activation uses the generic
+    NEURON ``vtrap`` alpha/beta idiom, with the Boltzmann midpoint,
+    slope and the two rate scales exposed as parameters:
+
+    .. math::
+
+        \begin{aligned}
+        n_\infty &= \frac{1}{1 + \exp(-(V' - v_{12}) / q)} \\
+        \alpha_n &= \frac{R_a (V' - v_{12})}
+                    {1 - \exp(-(V' - v_{12}) / q)} \\
+        \beta_n &= \frac{R_b (V' - v_{12})}
+                   {\exp((V' - v_{12}) / q) - 1} \\
+        \tau_n &= \frac{1}{\alpha_n + \beta_n}
+        \end{aligned}
+
+    where :math:`V' = (V - V_{sh}) / \mathrm{mV}` and :math:`v_{12}`
+    and :math:`q` are read in millivolts. The gate is declared in the
+    ``inf``/``tau`` form, so :math:`\alpha_n` and :math:`\beta_n`
+    above are assembled inside :meth:`f_n_tau` rather than exposed as
+    rate methods; the code writes :math:`\beta_n` equivalently as
+    :math:`-R_b (V' - v_{12}) / (1 - \exp((V' - v_{12}) / q))`.
+
+    **This class is a fixture, not a model of a published
+    mechanism** -- see Notes before using it for anything but
+    exercising the template layer.
+
+    Parameters
+    ----------
+    size : brainstate.typing.Size
+        Channel state shape.
+    g_max : array-like or callable, optional
+        Maximal conductance density. Defaults to ``0.0 S/cm2``, i.e.
+        an instance carries no current until it is set.
+    V_sh : array-like or callable, optional
+        Threshold shift applied to the rates, default ``0.0 mV``.
+    temp : array-like, optional
+        Absolute temperature, default 25 degrees Celsius. Inert as
+        shipped (see Notes).
+    Ra : array-like or callable, optional
+        Forward rate scale. Defaults to ``0.02 / (mV ms)``.
+    Rb : array-like or callable, optional
+        Backward rate scale. Defaults to ``0.006 / (mV ms)``.
+    q : array-like or callable, optional
+        Slope factor of the activation curve. Defaults to ``9.0 mV``.
+    v12 : array-like or callable, optional
+        Half-activation voltage. Defaults to ``25.0 mV``.
+    name : str, optional
+        Optional channel name.
+
+    See Also
+    --------
+    K_HH1952 : Delayed rectifier with a verified literature source,
+        for a channel of this shape that is a model of something.
+
+    Notes
+    -----
+    This class has **no primary literature source**, and that is a
+    determination rather than an omission -- though a weaker one than
+    for the other citation-free symbols in this package. Three things
+    mark it as a scratch or template fixture: its name, its zero
+    default conductance, and its unit Q10. Its rate form is the
+    generic ``vtrap`` alpha/beta idiom that recurs across dozens of
+    unrelated NEURON ``kv.mod`` files and identifies no particular
+    one. **No specific source was pursued**, which is not the same as
+    establishing that none exists; if a later task identifies one,
+    that is an addition rather than a contradiction of anything
+    recorded here. The class therefore ships without a ``References``
+    section.
+
+    ``temp_ref`` (23 degrees Celsius) and ``Q10_n`` (``1.0``) are
+    assigned in :meth:`__init__` as fixed attributes rather than
+    exposed as constructor parameters. ``temp`` enters the gate only
+    through :math:`Q_{10}^{(T - T_{ref})/10}`, and with a unit
+    ``Q10_n`` that factor is 1 at every temperature, so changing
+    ``temp`` has no effect on this channel.
+
+    **Numerical caveat.** Unlike the sibling classes in this module,
+    which route their linoids through ``exprel`` or an explicit
+    ``where`` guard, :meth:`f_n_tau` evaluates the two quotients
+    directly. At exactly :math:`V' = v_{12}` both are ``0/0`` and the
+    method returns ``nan``, although the limit is finite --
+    :math:`1 / (q (R_a + R_b))`, about 4.3 ms with the shipped
+    defaults. Away from that single point the expression is
+    well-behaved.
+    """
+
     __module__ = "braincell.channel"
     root_type = Potassium
     gates = (Gate("n", q10="Q10_n", temp_ref="temp_ref"),)
@@ -516,7 +1372,91 @@ class K_Kv_test(OhmicHH):
 
 @register_channel("fKdr_SU2015_DCN")
 class fKdr_SU2015_DCN(OhmicHH):
-    """Template-based import of ``fKdr_SU2015_DCN.mod``."""
+    r"""Fast delayed rectifier of the DCN model (Sudhakar 2015).
+
+    The fast delayed-rectifier potassium current of the deep
+    cerebellar nucleus (DCN) neuron model used by (Sudhakar et al.,
+    2015) [2]_, with :math:`m^4` HH gating and an ohmic driving force:
+
+    .. math::
+
+        \begin{aligned}
+        m_\infty &= \frac{1}{1 + \exp((V + 40) / -7.8)} \\
+        \tau_m &= \left(\frac{13.9}
+                  {\exp((V + 40) / 12) + \exp((V + 40) / -13)}
+                  + 0.1\right) \Big/ q_{\Delta t}
+        \end{aligned}
+
+    where :math:`V` is in millivolts -- this class applies no voltage
+    shift -- and :math:`\tau_m` is in milliseconds. The reversal
+    potential comes from the potassium ion object, not from the class.
+
+    Parameters
+    ----------
+    size : brainstate.typing.Size
+        Channel state shape.
+    g_max : array-like or callable, optional
+        Maximal conductance density. Defaults to ``0.01 mS/cm2``,
+        which is exactly the source mechanism's
+        ``gbar = 1e-5 siemens/cm2``.
+    name : str, optional
+        Optional channel name.
+
+    See Also
+    --------
+    sKdr_SU2015_DCN : Slow delayed rectifier of the same DCN model,
+        with the same gating shape and slower, more depolarized
+        kinetics.
+    braincell.channel.NaF_SU2015_DCN : Fast sodium current of the same
+        model.
+
+    Notes
+    -----
+    Ported from ``DCN/channel/fKdr_SU15_DCN.mod``, whose ``COMMENT``
+    reads "Translated from GENESIS by Johannes Luthman and Volker
+    Steuber." Accordingly, the kinetics originate in the GENESIS deep
+    cerebellar nucleus model of Steuber, Schultheiss, Silver, De
+    Schutter & Jaeger (2011) [1]_, were translated from GENESIS to
+    NEURON by Luthman, Hoebeek, Maex, Davey, Adams, De Zeeuw &
+    Steuber (2011), and were used in that translated form by Sudhakar
+    et al. (2015) [2]_. The 2011 translation paper is named in this
+    prose only, per house style, and not as a numbered reference.
+
+    **What this docstring does not claim.** No paper in that chain
+    was shown to print the Boltzmann and time-constant constants
+    above; the code-side check ran from the ``.mod`` file to this
+    class only. The string "fKdr" does not occur anywhere in the
+    Sudhakar et al. (2015) text, so this records that the mechanism is
+    part of the model published as [2]_, not that the paper names or
+    describes it.
+
+    ``qdeltat`` is set to ``1.0`` in :meth:`__init__` as a fixed
+    attribute rather than exposed as a constructor parameter; it
+    mirrors the mod file's ``GLOBAL qdeltat`` and divides
+    :math:`\tau_m` as shown.
+
+    **Import deviation.** The original mechanism's NMODL ``TABLE``
+    over ``[-150, 100] mV``, covering ``minf`` and ``taum``, is not
+    reproduced: both expressions are evaluated per call. NEURON
+    clamped tabulated values to the boundary outside that window, so
+    any BrainCell-versus-NEURON divergence below -150 mV or above
+    100 mV is expected rather than a port error.
+
+    References
+    ----------
+    .. [1] Steuber, V., Schultheiss, N. W., Silver, R. A., De
+           Schutter, E., & Jaeger, D. (2011). Determinants of
+           synaptic integration and heterogeneity in rebound firing
+           explored with data-driven models of deep cerebellar
+           nucleus cells. Journal of Computational Neuroscience,
+           30(3), 633-658.
+           doi:10.1007/s10827-010-0282-z
+    .. [2] Sudhakar, S. K., Torben-Nielsen, B., & De Schutter, E.
+           (2015). Cerebellar nuclear neurons use time and rate
+           coding to transmit Purkinje neuron pauses. PLOS
+           Computational Biology, 11(12), e1004641.
+           doi:10.1371/journal.pcbi.1004641
+    """
 
     __module__ = "braincell.channel"
     root_type = Potassium
@@ -543,7 +1483,92 @@ class fKdr_SU2015_DCN(OhmicHH):
 
 @register_channel("sKdr_SU2015_DCN")
 class sKdr_SU2015_DCN(OhmicHH):
-    """Template-based import of ``sKdr_SU2015_DCN.mod``."""
+    r"""Slow delayed rectifier of the DCN model (Sudhakar 2015).
+
+    The slow delayed-rectifier potassium current of the deep
+    cerebellar nucleus (DCN) neuron model used by (Sudhakar et al.,
+    2015) [2]_, with :math:`m^4` HH gating and an ohmic driving force:
+
+    .. math::
+
+        \begin{aligned}
+        m_\infty &= \frac{1}{1 + \exp((V + 50) / -9.1)} \\
+        \tau_m &= \left(\frac{14.95}
+                  {\exp((V + 50) / 21.74) + \exp((V + 50) / -13.91)}
+                  + 0.05\right) \Big/ q_{\Delta t}
+        \end{aligned}
+
+    where :math:`V` is in millivolts -- this class applies no voltage
+    shift -- and :math:`\tau_m` is in milliseconds. The reversal
+    potential comes from the potassium ion object, not from the class.
+    Compared with :class:`fKdr_SU2015_DCN`, activation is 10 mV more
+    hyperpolarized and shallower.
+
+    Parameters
+    ----------
+    size : brainstate.typing.Size
+        Channel state shape.
+    g_max : array-like or callable, optional
+        Maximal conductance density. Defaults to ``0.01 mS/cm2``,
+        which is exactly the source mechanism's
+        ``gbar = 1e-5 siemens/cm2``.
+    name : str, optional
+        Optional channel name.
+
+    See Also
+    --------
+    fKdr_SU2015_DCN : Fast delayed rectifier of the same DCN model,
+        with the same gating shape.
+    braincell.channel.NaF_SU2015_DCN : Fast sodium current of the same
+        model.
+
+    Notes
+    -----
+    Ported from ``DCN/channel/sKdr_SU15_DCN.mod``, whose ``COMMENT``
+    reads "Translated from GENESIS by Johannes Luthman and Volker
+    Steuber." Accordingly, the kinetics originate in the GENESIS deep
+    cerebellar nucleus model of Steuber, Schultheiss, Silver, De
+    Schutter & Jaeger (2011) [1]_, were translated from GENESIS to
+    NEURON by Luthman, Hoebeek, Maex, Davey, Adams, De Zeeuw &
+    Steuber (2011), and were used in that translated form by Sudhakar
+    et al. (2015) [2]_. The 2011 translation paper is named in this
+    prose only, per house style, and not as a numbered reference.
+
+    **What this docstring does not claim.** No paper in that chain
+    was shown to print the Boltzmann and time-constant constants
+    above; the code-side check ran from the ``.mod`` file to this
+    class only. The string "sKdr" does not occur anywhere in the
+    Sudhakar et al. (2015) text, so this records that the mechanism is
+    part of the model published as [2]_, not that the paper names or
+    describes it.
+
+    ``qdeltat`` is set to ``1.0`` in :meth:`__init__` as a fixed
+    attribute rather than exposed as a constructor parameter; it
+    mirrors the mod file's ``GLOBAL qdeltat`` and divides
+    :math:`\tau_m` as shown.
+
+    **Import deviation.** The original mechanism's NMODL ``TABLE``
+    over ``[-150, 100] mV``, covering ``minf`` and ``taum``, is not
+    reproduced: both expressions are evaluated per call. NEURON
+    clamped tabulated values to the boundary outside that window, so
+    any BrainCell-versus-NEURON divergence below -150 mV or above
+    100 mV is expected rather than a port error.
+
+    References
+    ----------
+    .. [1] Steuber, V., Schultheiss, N. W., Silver, R. A., De
+           Schutter, E., & Jaeger, D. (2011). Determinants of
+           synaptic integration and heterogeneity in rebound firing
+           explored with data-driven models of deep cerebellar
+           nucleus cells. Journal of Computational Neuroscience,
+           30(3), 633-658.
+           doi:10.1007/s10827-010-0282-z
+    .. [2] Sudhakar, S. K., Torben-Nielsen, B., & De Schutter, E.
+           (2015). Cerebellar nuclear neurons use time and rate
+           coding to transmit Purkinje neuron pauses. PLOS
+           Computational Biology, 11(12), e1004641.
+           doi:10.1371/journal.pcbi.1004641
+    """
 
     __module__ = "braincell.channel"
     root_type = Potassium
@@ -1936,7 +2961,109 @@ class Kv4p3_MA2020_GrC(OhmicHH):
 
 @register_channel("Kdr_ZH2019_IO")
 class Kdr_ZH2019_IO(OhmicHH):
-    """Template-based import of ``Kdr_ZH2019_IO.mod``."""
+    r"""Delayed rectifier of the inferior-olive model (Zhang 2019).
+
+    The somatic delayed-rectifier potassium current of the
+    single-compartment inferior olive (IO) neurons in the
+    essential-tremor cortico-cerebello-thalamo-cortical loop model of
+    (Zhang & Santaniello, 2019) [2]_, with :math:`n^4` HH gating and
+    an ohmic driving force:
+
+    .. math::
+
+        \begin{aligned}
+        \alpha_n &= 10 \, S\!\left(\frac{V + 41}{10}\right),
+                    \quad S(x) = \frac{x}{1 - \exp(-x)} \\
+        \beta_n &= 12.5 \exp(-(V + 51) / 80) \\
+        n_\infty &= \frac{\alpha_n}{\alpha_n + \beta_n}, \qquad
+        \tau_n = \frac{10}{\alpha_n + \beta_n}
+        \end{aligned}
+
+    where :math:`V` is in millivolts -- this class applies no voltage
+    shift -- the rates are in :math:`\mathrm{ms}^{-1}` and
+    :math:`\tau_n` is in milliseconds. Expanding :math:`S` gives the
+    familiar linoid
+    :math:`\alpha_n = (V + 41)/(1 - \exp(-(V + 41)/10))` everywhere
+    except at its singular point (see Notes). The reversal potential
+    comes from the potassium ion object, not from the class.
+
+    Parameters
+    ----------
+    size : brainstate.typing.Size
+        Channel state shape.
+    g_max : array-like or callable, optional
+        Maximal conductance density. Defaults to ``18.0 mS/cm2``,
+        exactly the source mechanism's ``gbar``.
+    name : str, optional
+        Optional channel name.
+
+    See Also
+    --------
+    braincell.channel.Na_ZH2019_IO : Sodium current of the same
+        inferior-olive import family and the same bibliographic
+        origin.
+    braincell.channel.hyperpolarization_activated.HCN_ZH2019_IO :
+        H current of the same family.
+
+    Notes
+    -----
+    Ported from ``IO/channel/Kdr_ZH19_IO.mod``, whose header reads
+    "K_dr channel from Schweighofer et al 1999. The referred model is
+    an inferior olive neuron" with porter credit "B. Torben-Nielsen @
+    HUJI, 21-10-2010". The kinetics therefore originate with
+    Schweighofer, Doya, & Kawato (1999) [1]_ and reached this class
+    through the NEURON port of Torben-Nielsen, Segev, & Yarom (2012),
+    which Zhang & Santaniello (2019) [2]_ reused without further
+    modification credit. The 2012 port paper is named in this prose
+    only, per house style, and not as a numbered reference.
+
+    The inferior olive neurons in both of those models are
+    **single-compartment** (``nseg = 1``); the multi-compartment part
+    of that lineage is a separate Purkinje-cell population. This class
+    must not be described as part of a multi-compartment inferior
+    olive mechanism.
+
+    **Singularity guard: the mod file's branch is not reproduced.**
+    ``Kdr_ZH19_IO.mod`` guards the removable singularity of
+    :math:`\alpha_n` with ``if (fabs(v + 41.0) < 1e-6)`` and, inside
+    that branch, substitutes the perturbed literal ``41.00001``.
+    BrainCell instead routes the expression through the stable helper
+    :math:`S(x) = x/(1 - \exp(-x))`, which returns :math:`1 + x/2`
+    when ``abs(x) < 1e-6``. Because the guard now applies to the
+    scaled argument :math:`x = (V + 41)/10`, it triggers for
+    ``abs(V + 41) < 1e-5 mV`` and yields
+    :math:`\alpha_n \approx 10\ \mathrm{ms}^{-1}` there. The
+    substitution is exact away from the singular point and
+    better-behaved at it, but it is a BrainCell choice: the import
+    README explicitly excludes those in-formula literals from its
+    NMODL default-precision rewrites.
+
+    **Import deviation.** As for every mechanism of this ``ZH19``/IO
+    family, the ``rates(v)`` call moved from the NMODL ``BREAKPOINT``
+    into ``DERIVATIVE states``, so ``ninf``/``taun`` are refreshed
+    before the ``cnexp`` state update rather than after it. That is a
+    semantic change, not a cosmetic one.
+
+    Two further details of the source, recorded so they are not
+    mistaken for port errors: the mod file's ``ek = -75 mV``
+    ``PARAMETER`` is absent here because the reversal potential is
+    supplied by the ion object, and its ``taun`` numerator carries the
+    upstream comment ": was 5", i.e. the factor 10 above replaced an
+    earlier 5 before this port.
+
+    References
+    ----------
+    .. [1] Schweighofer, N., Doya, K., & Kawato, M. (1999).
+           Electrophysiological properties of inferior olive neurons: A
+           compartmental model. Journal of Neurophysiology, 82(2),
+           804-817.
+           doi:10.1152/jn.1999.82.2.804
+    .. [2] Zhang, X., & Santaniello, S. (2019). Role of cerebellar
+           GABAergic dysfunctions in the origins of essential tremor.
+           Proceedings of the National Academy of Sciences of the
+           United States of America, 116(27), 13592-13601.
+           doi:10.1073/pnas.1817689116
+    """
 
     __module__ = "braincell.channel"
     root_type = Potassium

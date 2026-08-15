@@ -49,9 +49,10 @@ from ._implicit import (
 from .protocol import (
     DiffEqGroupState,
     DiffEqModule,
+    DiffEqSingleState,
     DiffEqState,
     IndependentIntegration,
-    diffeq_state,
+    state,
     hidden_state,
     state_grouping,
 )
@@ -113,10 +114,11 @@ __all__ = [
     'exp_exp_euler_step',
     # protocol
     'DiffEqState',
+    'DiffEqSingleState',
     'DiffEqGroupState',
     'DiffEqModule',
     'IndependentIntegration',
-    'diffeq_state',
+    'state',
     'hidden_state',
     'state_grouping',
 ]

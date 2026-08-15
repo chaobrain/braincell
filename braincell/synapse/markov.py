@@ -23,7 +23,7 @@ import brainunit as u
 
 from braincell._base import HHTypedNeuron, Synapse
 from braincell.mech import register_synapse
-from braincell.quad.protocol import diffeq_state
+from braincell.quad.protocol import state
 
 __all__ = [
     'ExpSyn',
@@ -41,12 +41,12 @@ def _decay_factor(dt, tau):
 
 def _syn_uS_state(shape, batch_size=None):
     """Allocate one synapse state with conductance unit ``uS``."""
-    return diffeq_state(u.Quantity(braintools.init.param(u.math.zeros, shape, batch_size), u.uS))
+    return state(u.Quantity(braintools.init.param(u.math.zeros, shape, batch_size), u.uS))
 
 
 def _syn_state(shape, batch_size=None):
     """Allocate one dimensionless synapse ODE state."""
-    return diffeq_state(braintools.init.param(u.math.zeros, shape, batch_size))
+    return state(braintools.init.param(u.math.zeros, shape, batch_size))
 
 
 def _event_payload(pre_drive, default_weight):

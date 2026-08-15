@@ -11,6 +11,25 @@
   `pop_size + (n_cv,)` and point-space arrays `pop_size + (n_point,)`.
   Code that relied on the old rank-0 default sees one extra leading axis
   of length 1; `reshape(-1)` or indexing `[0]` recovers the previous view.
+- `DiffEqState` is now a marker mixin rather than a concrete state class.
+  `DiffEqState(value)` raises `TypeError`. The two concrete classes are
+  `DiffEqSingleState` (over `brainstate.HiddenState`, used by
+  `SingleCompartment`) and `DiffEqGroupState` (over
+  `brainstate.HiddenGroupState`, used by `Cell`). Every
+  `isinstance(x, DiffEqState)` check keeps working unchanged.
+- `braincell.diffeq_state` is renamed to `braincell.state`. No alias is
+  provided.
+
+  ```python
+  # before
+  self.m = braincell.DiffEqState(init)
+
+  # after (preferred — picks the right class for the host)
+  self.m = braincell.state(init)
+
+  # after (explicit)
+  self.m = braincell.DiffEqSingleState(init)
+  ```
 
 ### New Features
 
@@ -23,13 +42,14 @@
   new `braincell.DiffEqGroupState` — so the trailing compartment/point
   axis is exposed as a group of independently traced hidden states, which
   is what eligibility-trace learning requires. `SingleCompartment` has no
-  spatial axis and keeps the plain `brainstate.HiddenState`.
-  `DiffEqGroupState` derives from `DiffEqState`, so every solver selects
-  it unchanged.
-- **`diffeq_state` / `hidden_state` / `state_grouping`** are exported for
+  spatial axis and uses `DiffEqSingleState`, which is itself a
+  `brainstate.HiddenState`. `DiffEqGroupState` derives from `DiffEqState`,
+  so every solver selects it unchanged.
+- **`state` / `hidden_state` / `state_grouping`** are exported for
   custom mechanisms. Channel, ion, and synapse code is shared by both host
-  models, so writing `diffeq_state(...)` instead of `DiffEqState(...)` in a
-  custom `init_state` lets the right class be chosen per host.
+  models, so the right class cannot be chosen at the creation site.
+  `DiffEqState(...)` now raises `TypeError`; write `state(...)` in a
+  custom `init_state` instead, and the right class is chosen per host.
 
 The remaining entries in this section harden the declarative channel
 template layer that `braincell.channel` is built on. The catalogue's

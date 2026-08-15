@@ -7,7 +7,7 @@ import brainunit as u
 from braincell._base import IonInfo
 from braincell.mech import get_registry
 from braincell.mech import register_channel
-from braincell.quad.protocol import DiffEqState
+from braincell.quad.protocol import state
 
 
 def _to_decimal_if_possible(value, unit):
@@ -57,7 +57,7 @@ class {{ context.class_name }}(braincell.Channel):
 
     def init_state(self, V, {{ context.ion_arg_name }}: IonInfo, batch_size=None):
 {% for gate in context.gates %}
-        self.{{ gate.safe_name }} = DiffEqState(
+        self.{{ gate.safe_name }} = state(
             braintools.init.param(u.math.zeros, self.varshape, batch_size)
         )
 {% endfor %}

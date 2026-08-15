@@ -7,7 +7,7 @@ import brainunit as u
 from braincell._base import IonInfo
 from braincell.mech import get_registry
 from braincell.mech import register_channel
-from braincell.quad.protocol import DiffEqState
+from braincell.quad.protocol import state
 
 
 def _to_decimal_if_possible(value, unit):
@@ -56,7 +56,7 @@ class IK_Kv(braincell.Channel):
         return Q10 ** (((self.temp - self.temp_ref) / u.kelvin) / 10.0)
 
     def init_state(self, V, K: IonInfo, batch_size=None):
-        self.n = DiffEqState(
+        self.n = state(
             braintools.init.param(u.math.zeros, self.varshape, batch_size)
         )
 

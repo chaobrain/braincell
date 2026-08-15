@@ -92,7 +92,7 @@ class IonIndependentIntegrationDispatchTest(unittest.TestCase):
     def test_ind_update_skips_dependent_child_channel_under_independent_ion(self) -> None:
         from braincell.ion import Calcium
         from braincell._base import Channel
-        from braincell.quad.protocol import DiffEqState
+        from braincell.quad.protocol import DiffEqSingleState
         from braincell.quad.protocol import IndependentIntegration
 
         class _DependentChildChannel(Channel):
@@ -100,7 +100,7 @@ class IonIndependentIntegrationDispatchTest(unittest.TestCase):
 
             def __init__(self, size=1):
                 super().__init__(size=size, name=None)
-                self.x = DiffEqState(jnp.asarray([1.0]))
+                self.x = DiffEqSingleState(jnp.asarray([1.0]))
 
             def init_state(self, V, ion, batch_size=None):  # pragma: no cover
                 pass

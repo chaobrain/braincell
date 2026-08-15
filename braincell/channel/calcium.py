@@ -106,7 +106,7 @@ def _freeze_quantity_gradient(value):
 
 @register_channel("CaN_IS2008")
 class CaN_IS2008(HH):
-    r"""Inoue & Strowbridge 2008 calcium-activated nonselective cation current.
+    r"""Inoue & Strowbridge 2008 Ca-activated nonselective cation current.
 
     A calcium- and voltage-dependent non-selective cation current
     (:math:`I_{CAN}`) gated by a single activation variable and scaled

@@ -449,15 +449,16 @@ class NaF_SU2015_DCN(OhmicHH):
     References
     ----------
     .. [1] Steuber, V., Schultheiss, N. W., Silver, R. A., De
-           Schutter, E., & Jaeger, D. (2011). Determinants of synaptic
-           integration and heterogeneity in rebound firing explored
-           with data-driven models of deep cerebellar nucleus cells.
-           Journal of Computational Neuroscience, 30(3), 633-658.
+           Schutter, E., & Jaeger, D. (2011). Determinants of
+           synaptic integration and heterogeneity in rebound firing
+           explored with data-driven models of deep cerebellar
+           nucleus cells. Journal of Computational Neuroscience,
+           30(3), 633-658.
            doi:10.1007/s10827-010-0282-z
     .. [2] Sudhakar, S. K., Torben-Nielsen, B., & De Schutter, E.
-           (2015). Cerebellar nuclear neurons use time and rate coding
-           to transmit Purkinje neuron pauses. PLOS Computational
-           Biology, 11(12), e1004641.
+           (2015). Cerebellar nuclear neurons use time and rate
+           coding to transmit Purkinje neuron pauses. PLOS
+           Computational Biology, 11(12), e1004641.
            doi:10.1371/journal.pcbi.1004641
     """
 
@@ -547,15 +548,16 @@ class NaP_SU2015_DCN(OhmicHH):
     References
     ----------
     .. [1] Steuber, V., Schultheiss, N. W., Silver, R. A., De
-           Schutter, E., & Jaeger, D. (2011). Determinants of synaptic
-           integration and heterogeneity in rebound firing explored
-           with data-driven models of deep cerebellar nucleus cells.
-           Journal of Computational Neuroscience, 30(3), 633-658.
+           Schutter, E., & Jaeger, D. (2011). Determinants of
+           synaptic integration and heterogeneity in rebound firing
+           explored with data-driven models of deep cerebellar
+           nucleus cells. Journal of Computational Neuroscience,
+           30(3), 633-658.
            doi:10.1007/s10827-010-0282-z
     .. [2] Sudhakar, S. K., Torben-Nielsen, B., & De Schutter, E.
-           (2015). Cerebellar nuclear neurons use time and rate coding
-           to transmit Purkinje neuron pauses. PLOS Computational
-           Biology, 11(12), e1004641.
+           (2015). Cerebellar nuclear neurons use time and rate
+           coding to transmit Purkinje neuron pauses. PLOS
+           Computational Biology, 11(12), e1004641.
            doi:10.1371/journal.pcbi.1004641
     """
 
@@ -657,8 +659,8 @@ class Na_ZH2019_IO(OhmicHH):
     References
     ----------
     .. [1] Schweighofer, N., Doya, K., & Kawato, M. (1999).
-           Electrophysiological properties of inferior olive neurons:
-           A compartmental model. Journal of Neurophysiology, 82(2),
+           Electrophysiological properties of inferior olive neurons: A
+           compartmental model. Journal of Neurophysiology, 82(2),
            804-817.
            doi:10.1152/jn.1999.82.2.804
     .. [2] Zhang, X., & Santaniello, S. (2019). Role of cerebellar
@@ -1005,8 +1007,8 @@ class Nav1p6_MA2024_PC(Nav1p6_MA2020_GoC):
            doi:10.1523/JNEUROSCI.5204-05.2006
     .. [4] Masoli, S., Sanchez-Ponce, D., Vrieler, N., Abu-Haya, K.,
            Lerner, V., Shahar, T., Nedelescu, H., Rizza, M. F.,
-           Benavides-Piccione, R., DeFelipe, J., Yarom, Y., Munoz, A.,
-           & D'Angelo, E. (2024). Human Purkinje cells outperform
+           Benavides-Piccione, R., DeFelipe, J., Yarom, Y., Munoz,
+           A., & D'Angelo, E. (2024). Human Purkinje cells outperform
            mouse Purkinje cells in dendritic complexity and
            computational capacity. Communications Biology, 7(1), 5.
            doi:10.1038/s42003-023-05689-y
@@ -1085,10 +1087,10 @@ class Nav1p6_MA2025_BC(Nav1p6_MA2020_GoC):
            Journal of Neuroscience, 26(17), 4602-4612.
            doi:10.1523/JNEUROSCI.5204-05.2006
     .. [4] Masoli, S., Rizza, M. F., Soda, T., Sanchez-Ponce, D.,
-           Munoz, A., Prestori, F., & D'Angelo, E. (2025). Cerebellar
-           basket cell filtering of Purkinje cell responses elicited
-           by low frequency parallel fibre transmission. Scientific
-           Reports, 15(1), 25192.
+           Munoz, A., Prestori, F., & D'Angelo, E. (2025).
+           Cerebellar basket cell filtering of Purkinje cell
+           responses elicited by low frequency parallel fibre
+           transmission. Scientific Reports, 15(1), 25192.
            doi:10.1038/s41598-025-09964-2
     """
 
@@ -1283,10 +1285,10 @@ class Nav1p1_MA2025_BC(Nav1p6_MA2020_GoC):
            3959-3976.
            doi:10.1016/j.bpj.2009.02.046
     .. [3] Masoli, S., Rizza, M. F., Soda, T., Sanchez-Ponce, D.,
-           Munoz, A., Prestori, F., & D'Angelo, E. (2025). Cerebellar
-           basket cell filtering of Purkinje cell responses elicited
-           by low frequency parallel fibre transmission. Scientific
-           Reports, 15(1), 25192.
+           Munoz, A., Prestori, F., & D'Angelo, E. (2025).
+           Cerebellar basket cell filtering of Purkinje cell
+           responses elicited by low frequency parallel fibre
+           transmission. Scientific Reports, 15(1), 25192.
            doi:10.1038/s41598-025-09964-2
     """
 
@@ -1535,9 +1537,9 @@ class Nav_MA2020_GrC(Markov, IndependentIntegration):
            doi:10.1016/S0006-3495(01)76052-3
     .. [3] Masoli, S., Tognolina, M., Laforenza, U., Moccia, F., &
            D'Angelo, E. (2020). Parameter tuning differentiates
-           granule cell subtypes enriching transmission properties at
-           the cerebellum input stage. Communications Biology, 3(1),
-           222.
+           granule cell subtypes enriching transmission properties
+           at the cerebellum input stage. Communications Biology,
+           3(1), 222.
            doi:10.1038/s42003-020-0953-x
     """
 
@@ -1754,9 +1756,9 @@ class NaFHF_MA2020_GrC(Markov, IndependentIntegration):
            doi:10.1016/S0006-3495(01)76052-3
     .. [3] Masoli, S., Tognolina, M., Laforenza, U., Moccia, F., &
            D'Angelo, E. (2020). Parameter tuning differentiates
-           granule cell subtypes enriching transmission properties at
-           the cerebellum input stage. Communications Biology, 3(1),
-           222.
+           granule cell subtypes enriching transmission properties
+           at the cerebellum input stage. Communications Biology,
+           3(1), 222.
            doi:10.1038/s42003-020-0953-x
     """
 

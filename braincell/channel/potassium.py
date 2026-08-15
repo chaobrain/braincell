@@ -5951,9 +5951,10 @@ class Kv3p4_MA2020_GrC(OhmicHH):
            study. The Journal of Neuroscience, 23(12), 4899-4912.
            doi:10.1523/JNEUROSCI.23-12-04899.2003
     .. [2] Masoli, S., Tognolina, M., Laforenza, U., Moccia, F., &
-           D'Angelo, E. (2020). Parameter tuning differentiates granule
-           cell subtypes enriching transmission properties at the
-           cerebellum input stage. Communications Biology, 3(1), 222.
+           D'Angelo, E. (2020). Parameter tuning differentiates
+           granule cell subtypes enriching transmission properties
+           at the cerebellum input stage. Communications Biology,
+           3(1), 222.
            doi:10.1038/s42003-020-0953-x
     """
 
@@ -6156,9 +6157,10 @@ class Kv4p3_MA2020_GrC(OhmicHH):
            21(3), 759-770.
            doi:10.1523/JNEUROSCI.21-03-00759.2001
     .. [2] Masoli, S., Tognolina, M., Laforenza, U., Moccia, F., &
-           D'Angelo, E. (2020). Parameter tuning differentiates granule
-           cell subtypes enriching transmission properties at the
-           cerebellum input stage. Communications Biology, 3(1), 222.
+           D'Angelo, E. (2020). Parameter tuning differentiates
+           granule cell subtypes enriching transmission properties
+           at the cerebellum input stage. Communications Biology,
+           3(1), 222.
            doi:10.1038/s42003-020-0953-x
     """
 

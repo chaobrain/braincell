@@ -1581,8 +1581,8 @@ class CdpStC_CAMOnly_MA2020_GoC(Calcium, KineticIon):
     References
     ----------
     .. [1] Anwar, H., Hong, S., & De Schutter, E. (2012). Controlling
-           Ca2+-activated K+ channels with models of Ca2+ buffering in
-           Purkinje cells. The Cerebellum, 11(3), 681-693.
+           Ca2+-activated K+ channels with models of Ca2+ buffering
+           in Purkinje cells. The Cerebellum, 11(3), 681-693.
            doi:10.1007/s12311-010-0224-3
     .. [2] Schmidt, H., Stiefel, K. M., Racay, P., Schwaller, B., &
            Eilers, J. (2003). Mutational analysis of dendritic Ca2+
@@ -2014,8 +2014,8 @@ class CdpStC_NoCAM_MA2020_GoC(Calcium, KineticIon):
     References
     ----------
     .. [1] Anwar, H., Hong, S., & De Schutter, E. (2012). Controlling
-           Ca2+-activated K+ channels with models of Ca2+ buffering in
-           Purkinje cells. The Cerebellum, 11(3), 681-693.
+           Ca2+-activated K+ channels with models of Ca2+ buffering
+           in Purkinje cells. The Cerebellum, 11(3), 681-693.
            doi:10.1007/s12311-010-0224-3
     .. [2] Schmidt, H., Stiefel, K. M., Racay, P., Schwaller, B., &
            Eilers, J. (2003). Mutational analysis of dendritic Ca2+
@@ -2374,8 +2374,8 @@ class CdpStC_MA2025_BC(CdpStC_NoCAM_MA2020_GoC):
     References
     ----------
     .. [1] Anwar, H., Hong, S., & De Schutter, E. (2012). Controlling
-           Ca2+-activated K+ channels with models of Ca2+ buffering in
-           Purkinje cells. The Cerebellum, 11(3), 681-693.
+           Ca2+-activated K+ channels with models of Ca2+ buffering
+           in Purkinje cells. The Cerebellum, 11(3), 681-693.
            doi:10.1007/s12311-010-0224-3
     .. [2] Schmidt, H., Stiefel, K. M., Racay, P., Schwaller, B., &
            Eilers, J. (2003). Mutational analysis of dendritic Ca2+
@@ -2388,10 +2388,10 @@ class CdpStC_MA2025_BC(CdpStC_NoCAM_MA2020_GoC):
            Neuron, 24(4), 989-1002.
            doi:10.1016/S0896-6273(00)81045-4
     .. [4] Masoli, S., Rizza, M. F., Soda, T., Sanchez-Ponce, D.,
-           Munoz, A., Prestori, F., & D'Angelo, E. (2025). Cerebellar
-           basket cell filtering of Purkinje cell responses elicited
-           by low frequency parallel fibre transmission. Scientific
-           Reports, 15(1), 25192.
+           Munoz, A., Prestori, F., & D'Angelo, E. (2025).
+           Cerebellar basket cell filtering of Purkinje cell
+           responses elicited by low frequency parallel fibre
+           transmission. Scientific Reports, 15(1), 25192.
            doi:10.1038/s41598-025-09964-2
     """
 
@@ -2439,8 +2439,8 @@ class CdpStC_RI2021_SC(CdpStC_NoCAM_MA2020_GoC):
     References
     ----------
     .. [1] Anwar, H., Hong, S., & De Schutter, E. (2012). Controlling
-           Ca2+-activated K+ channels with models of Ca2+ buffering in
-           Purkinje cells. The Cerebellum, 11(3), 681-693.
+           Ca2+-activated K+ channels with models of Ca2+ buffering
+           in Purkinje cells. The Cerebellum, 11(3), 681-693.
            doi:10.1007/s12311-010-0224-3
     .. [2] Schmidt, H., Stiefel, K. M., Racay, P., Schwaller, B., &
            Eilers, J. (2003). Mutational analysis of dendritic Ca2+
@@ -2656,8 +2656,8 @@ class CdpStC_MA2020_GoC(Calcium, KineticIon):
     References
     ----------
     .. [1] Anwar, H., Hong, S., & De Schutter, E. (2012). Controlling
-           Ca2+-activated K+ channels with models of Ca2+ buffering in
-           Purkinje cells. The Cerebellum, 11(3), 681-693.
+           Ca2+-activated K+ channels with models of Ca2+ buffering
+           in Purkinje cells. The Cerebellum, 11(3), 681-693.
            doi:10.1007/s12311-010-0224-3
     .. [2] Schmidt, H., Stiefel, K. M., Racay, P., Schwaller, B., &
            Eilers, J. (2003). Mutational analysis of dendritic Ca2+
@@ -3301,8 +3301,8 @@ class CdpCAM_MA2024_PC(Calcium, KineticIon):
     References
     ----------
     .. [1] Anwar, H., Hong, S., & De Schutter, E. (2012). Controlling
-           Ca2+-activated K+ channels with models of Ca2+ buffering in
-           Purkinje cells. The Cerebellum, 11(3), 681-693.
+           Ca2+-activated K+ channels with models of Ca2+ buffering
+           in Purkinje cells. The Cerebellum, 11(3), 681-693.
            doi:10.1007/s12311-010-0224-3
     .. [2] Schmidt, H., Stiefel, K. M., Racay, P., Schwaller, B., &
            Eilers, J. (2003). Mutational analysis of dendritic Ca2+
@@ -3316,8 +3316,8 @@ class CdpCAM_MA2024_PC(Calcium, KineticIon):
            doi:10.1016/S0896-6273(00)81045-4
     .. [4] Masoli, S., Sanchez-Ponce, D., Vrieler, N., Abu-Haya, K.,
            Lerner, V., Shahar, T., Nedelescu, H., Rizza, M. F.,
-           Benavides-Piccione, R., DeFelipe, J., Yarom, Y., Munoz, A.,
-           & D'Angelo, E. (2024). Human Purkinje cells outperform
+           Benavides-Piccione, R., DeFelipe, J., Yarom, Y., Munoz,
+           A., & D'Angelo, E. (2024). Human Purkinje cells outperform
            mouse Purkinje cells in dendritic complexity and
            computational capacity. Communications Biology, 7(1), 5.
            doi:10.1038/s42003-023-05689-y
@@ -3952,8 +3952,8 @@ class CdpCR_MA2020_GrC(Calcium, KineticIon):
     References
     ----------
     .. [1] Anwar, H., Hong, S., & De Schutter, E. (2012). Controlling
-           Ca2+-activated K+ channels with models of Ca2+ buffering in
-           Purkinje cells. The Cerebellum, 11(3), 681-693.
+           Ca2+-activated K+ channels with models of Ca2+ buffering
+           in Purkinje cells. The Cerebellum, 11(3), 681-693.
            doi:10.1007/s12311-010-0224-3
     .. [2] Schmidt, H., Stiefel, K. M., Racay, P., Schwaller, B., &
            Eilers, J. (2003). Mutational analysis of dendritic Ca2+
@@ -4411,10 +4411,11 @@ class CdpHVA_SU2015_DCN(Calcium, DynamicNernstIon):
     References
     ----------
     .. [1] Steuber, V., Schultheiss, N. W., Silver, R. A., De
-           Schutter, E., & Jaeger, D. (2011). Determinants of synaptic
-           integration and heterogeneity in rebound firing explored
-           with data-driven models of deep cerebellar nucleus cells.
-           Journal of Computational Neuroscience, 30(3), 633-658.
+           Schutter, E., & Jaeger, D. (2011). Determinants of
+           synaptic integration and heterogeneity in rebound firing
+           explored with data-driven models of deep cerebellar
+           nucleus cells. Journal of Computational Neuroscience,
+           30(3), 633-658.
            doi:10.1007/s10827-010-0282-z
     .. [2] Sudhakar, S. K., Torben-Nielsen, B., & De Schutter, E.
            (2015). Cerebellar nuclear neurons use time and rate
@@ -4583,10 +4584,11 @@ class CdpLVA_SU2015_DCN(Calcium, DynamicNernstIon):
     References
     ----------
     .. [1] Steuber, V., Schultheiss, N. W., Silver, R. A., De
-           Schutter, E., & Jaeger, D. (2011). Determinants of synaptic
-           integration and heterogeneity in rebound firing explored
-           with data-driven models of deep cerebellar nucleus cells.
-           Journal of Computational Neuroscience, 30(3), 633-658.
+           Schutter, E., & Jaeger, D. (2011). Determinants of
+           synaptic integration and heterogeneity in rebound firing
+           explored with data-driven models of deep cerebellar
+           nucleus cells. Journal of Computational Neuroscience,
+           30(3), 633-658.
            doi:10.1007/s10827-010-0282-z
     .. [2] Sudhakar, S. K., Torben-Nielsen, B., & De Schutter, E.
            (2015). Cerebellar nuclear neurons use time and rate

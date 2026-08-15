@@ -145,9 +145,10 @@ class Kv1p5_MA2020_GrC(Kv1p5_MA2024_PC):
            H1717-H1725.
            doi:10.1152/ajpheart.1998.275.5.H1717
     .. [2] Masoli, S., Tognolina, M., Laforenza, U., Moccia, F., &
-           D'Angelo, E. (2020). Parameter tuning differentiates granule
-           cell subtypes enriching transmission properties at the
-           cerebellum input stage. Communications Biology, 3(1), 222.
+           D'Angelo, E. (2020). Parameter tuning differentiates
+           granule cell subtypes enriching transmission properties
+           at the cerebellum input stage. Communications Biology,
+           3(1), 222.
            doi:10.1038/s42003-020-0953-x
     """
 

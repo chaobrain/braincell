@@ -61,7 +61,28 @@ name alone; read the harvested header text.
   `## Origin-of-kinetics records` below. **99 of the 104 symbols need
   a two-level citation**; the other 5 (the `SU2015` `Toy*` family) get
   no citation at all because they are BrainCell's own test fixtures.
-  `NO_KEY` remains open.
+- Task 3 follow-up (2026-08-15) closed the `NO_KEY` bucket, which had
+  been assigned to no task. Three of its 32 symbols carry a real
+  primary source and are now verified -- `ghk_flux` (Goldman 1943 /
+  Hodgkin & Katz 1949), `KineticIon` (Hines & Carnevale 2000 / The
+  NEURON book 2006) and `CalciumDetailed` (Destexhe 1993 / Bazhenov
+  1998, whose deferred attribution checks are closed at the same
+  time). The other **29 are recorded, symbol by symbol, as having no
+  primary literature source** and are expected to ship without a
+  `References` section; that list is in the bucket's
+  `### Symbols with no primary literature source` block and is the
+  source of truth for any later allowlist.
+- **The symbol count, reconciled.** `__all__` across
+  `braincell/channel/*.py` and `braincell/ion/*.py` holds **155**
+  public symbols: 154 classes and one function (`ghk_flux`). They
+  split as **32 `NO_KEY` + 123 keyed**, and the keyed half splits as
+  **19 across Task 2's nine keys + 104 across Task 3's seven**. Every
+  per-key heading in this file already carries the right number and
+  they sum to 155 with no symbol listed twice and none missing -- this
+  was checked mechanically, by parsing `__all__` and diffing it
+  against this file's own bullet lists. The plan's figures of 103 and
+  122 are each one short of 104 and 123; see `## Unresolved
+  attributions` item 11.
 - Nothing in this file's `### Provenance evidence` blocks is a citation.
   It is raw, unedited text copied from `.mod` file headers (typos,
   inconsistent spacing, and missing apostrophes preserved verbatim) plus
@@ -832,13 +853,402 @@ math should cite the standard HH (1952) formalism or the relevant ion
 model paper only where the *implementation* (not the class scaffolding)
 draws on it.
 
+> **Correction (Task 3 follow-up, 2026-08-15).** "Nothing further to
+> verify for most of these" is right about 29 of the 32 symbols and
+> wrong about three. `ghk_flux` implements a named published equation,
+> `KineticIon` reproduces a documented NEURON language feature by name,
+> and `CalciumDetailed` already ships a `References` section in the
+> source tree. Those three are verified below. The remaining 29 are
+> confirmed as having no primary literature source, and that
+> confirmation is now written out symbol by symbol rather than left
+> implicit -- see `### Symbols with no primary literature source`.
+
 ### Verified record
 
-_TODO (Task 3): not yet verified._
+**Three of the 32 symbols carry a real primary source; 29 do not.**
+The three are verified here. The 29 are enumerated, with reasons, in
+`### Symbols with no primary literature source` below -- that list is
+the complete determination, not a summary of one, and a later task
+builds its allowlist from it.
+
+All records below were confirmed 2026-08-15 against at least two
+independent sources: the Crossref REST API, NCBI E-utilities
+(`efetch`, `db=pubmed` and `db=pmc`), Europe PMC, dblp, Semantic
+Scholar, OpenLibrary, and -- where a rendered publisher page was
+unreachable -- the publisher-deposited JATS XML or the authors' own
+extended preprints. Sources are named per record.
+
+**N-GHK -- `braincell/channel/_base.py::ghk_flux`.** Two entries, in
+this order:
+
+.. [1] Goldman, D. E. (1943). Potential, impedance, and rectification
+       in membranes. The Journal of General Physiology, 27(1), 37-60.
+       doi:10.1085/jgp.27.1.37
+
+.. [2] Hodgkin, A. L., & Katz, B. (1949). The effect of sodium ions on
+       the electrical activity of the giant axon of the squid. The
+       Journal of Physiology, 108(1), 37-77.
+       doi:10.1113/jphysiol.1949.sp004310
+
+Goldman: PMID 19873371, PMCID PMC2142582; Crossref, PubMed, Europe PMC
+and the RUPress JATS deposit all agree on 27(1), 37-60. **The printed
+title is set in full capitals** (`POTENTIAL, IMPEDANCE, AND
+RECTIFICATION IN MEMBRANES`) -- that is the journal's 1943 house style
+for every article, so down-casing it to sentence case is the house
+rule's normal operation, not a silent edit to a publisher's wording.
+
+Hodgkin & Katz: PMID 18128147, PMCID PMC1392331. **One source
+disagreement, resolved.** PubMed and Europe PMC print "... electrical
+activity of giant axon of the squid", dropping the definite article;
+Crossref and the Physiological Society's own JATS deposit both print
+"... of **the** giant axon of the squid". Two publisher-sourced
+records outweigh one cataloguer-sourced one, so "the giant axon" is
+used above. The article is free-to-read but not open access, and its
+PMC deposit is a scanned PDF with no text layer.
+
+**Ordering is not cosmetic here.** Goldman 1943 and Hodgkin & Katz
+1949 are the two halves of the name "GHK", but they are the primary
+sources for two *different* equations, and `ghk_flux` computes only
+one of them -- see the attribution check below. Goldman is the primary
+source for the constant-field current/flux equation and therefore
+takes `.. [1]`. A docstring that cites Hodgkin & Katz alone, or that
+puts it first, is citing the constant-field *voltage* equation, which
+this function does not compute.
+
+**N-NRN -- `braincell/ion/_base.py::KineticIon`.** Two entries:
+
+.. [1] Hines, M. L., & Carnevale, N. T. (2000). Expanding NEURON's
+       repertoire of mechanisms with NMODL. Neural Computation, 12(5),
+       995-1007.
+       doi:10.1162/089976600300015475
+
+.. [2] Carnevale, N. T., & Hines, M. L. (2006). The NEURON book.
+       Cambridge University Press.
+       doi:10.1017/CBO9780511541612
+
+Hines & Carnevale 2000: PMID 10905805, MIT Press, ISSN 0899-7667.
+Confirmed against Crossref, PubMed, dblp, Semantic Scholar, the
+official NEURON "Publications about NEURON" list and the authors' own
+Yale page -- six sources, all agreeing on 12(5), 995-1007. **One
+disagreement, resolved.** The authors' extended preprint
+(`nmodl400.pdf`) carries "Neural Computation 12:839-851, 2000" on its
+own cover page; that is a stale pre-publication estimate contradicted
+by all six sources above, and third-party summaries still propagate
+it. Use 995-1007. The published title is set in title case by MIT
+Press (`Expanding NEURON's Repertoire of Mechanisms with NMODL`);
+down-casing to sentence case is the house rule, and `NEURON` and
+`NMODL` are preserved as capitalised acronyms.
+
+The NEURON book: ISBN-13 9780521843218 (hardback, ISBN-10
+0521843219), 9780521115636 (paperback), 9780511541612 (online); 478
+pages; LCCN 2006277066. Per the house style, the ISBN is recorded here
+and not in the `.. [N]` entry, and no place of publication is given.
+Chapter 9, "How to expand NEURON's library of mechanisms", pp.
+207-264, is the relevant chapter (chapter DOI
+10.1017/CBO9780511541612.010). Confirmed against Crossref (book record
+plus all sixteen chapter records) and OpenLibrary. Cambridge Core
+itself returned HTTP 403, so the chapter page range rests on the
+Crossref chapter deposit.
+
+**Why the 1997 paper is not the citation here, and would be wrong.**
+The obvious candidate -- Hines & Carnevale (1997), "The NEURON
+simulation environment", Neural Computation 9(6), 1179-1209,
+doi:10.1162/neco.1997.9.6.1179 -- contains **zero** occurrences of
+`KINETIC`, `COMPARTMENT` or `CONSERVE` in the authors' own extended
+preprint, and says so in as many words: "An extensive discussion of
+NMODL is beyond the scope of this article." The 2000 paper opens by
+drawing exactly that boundary against its predecessor. Citing the 1997
+paper for `KINETIC`/`COMPARTMENT` points the reader at a paper that
+disclaims the topic. It remains the right citation for NEURON the
+simulator in general; it is the wrong one for this class. Also ruled
+out, by full-text search returning zero hits for all three keywords:
+Hines & Carnevale (2001) in *The Neuroscientist*, and Awile et al.
+(2022), doi:10.3389/fninf.2022.884046, which covers the build system
+and transpiler rather than language semantics.
+
+**N-CAD -- `braincell/ion/calcium.py::CalciumDetailed`.** Two entries.
+These supersede the two that the source tree already carries at
+`braincell/ion/calcium.py:227-233`; the existing pair has a title
+error and no DOIs. See `## Corrections to pre-existing in-code
+citations` items 1 and 2, whose *record* checks these confirm
+independently, and whose deferred *attribution* checks are closed
+below.
+
+.. [1] Destexhe, A., Babloyantz, A., & Sejnowski, T. J. (1993). Ionic
+       mechanisms for intrinsic slow oscillations in thalamic relay
+       neurons. Biophysical Journal, 65(4), 1538-1552.
+       doi:10.1016/S0006-3495(93)81190-1
+
+.. [2] Bazhenov, M., Timofeev, I., Steriade, M., & Sejnowski, T. J.
+       (1998). Cellular and network models for intrathalamic
+       augmenting responses during 10-Hz stimulation. Journal of
+       Neurophysiology, 79(5), 2730-2748.
+       doi:10.1152/jn.1998.79.5.2730
+
+Destexhe: PMID 8274647, PMCID PMC1225880. Re-confirmed here by direct
+`efetch db=pubmed`, which returns the title ending in "thalamic relay
+**neurons**" -- plural, as Task 2 found; the in-code entry's "neuron"
+is wrong. Bazhenov: PMID 9582241; the same `efetch` call returns
+79(5), 2730-2748, and the publisher-typeset PDF's embedded metadata
+(`Subject: J. Neurophysiol. 79: 2730-2748, 1998`) independently
+confirms the same range across 19 pages. Both records agree with the
+corrected forms Task 2 published, from a separate query.
+
+**Caveat on open-access status, for anyone re-auditing.** OpenAlex,
+Unpaywall and Semantic Scholar all report the Bazhenov paper as closed
+with zero open-access locations, while an author-hosted copy is in
+fact reachable. That is a simultaneous false negative in three
+aggregators; do not use them to decide whether a reference here is
+obtainable. The companion paper -- Bazhenov, Timofeev, Steriade &
+Sejnowski (1998), "Computational models of thalamocortical augmenting
+responses", *The Journal of Neuroscience* 18(16), 6444-6465, PMID
+9698334 -- *is* in PMC as PMC6793176, if a docstring ever needs it.
 
 ### Attribution
 
-_TODO (Task 3): not yet filled in._
+**Attribution check: PASSED for `ghk_flux` and `KineticIon`. PASSED
+with a correction for `CalciumDetailed`, whose two entries are both
+verified but are not both descriptions of what the class computes.**
+
+**`ghk_flux` -- checked against the implementation, not the name.**
+Code read: `braincell/channel/_base.py:33-40`. The function is five
+lines and computes, with `zeta = z*F*V/(R*T)`:
+
+```
+regular_branch = z * zeta * F * (ci - co*exp(-zeta)) / (1 - exp(-zeta))
+```
+
+Substituting `zeta` gives `z^2 F^2 V / (R T) * (ci - co e^{-zeta}) /
+(1 - e^{-zeta})`, which is the Goldman constant-field **current**
+equation divided through by the permeability. The permeability is
+supplied by the caller: `braincell/channel/calcium.py:1002-1013`
+(`Cav2p1_RI2021_SC.current`) returns `-g_max * conductance_factor(V,
+Ca) * drive`, so `g_max` occupies the `P_s` slot. The function takes
+`V` as an *input* and returns a flux; the constant-field **voltage**
+equation takes concentrations and permeabilities and returns a
+potential. The two cannot be confused once the signature is read, and
+this is the check the coordinator asked for: **`ghk_flux` computes the
+flux/current equation, so Goldman 1943 is its primary source.**
+
+That Goldman 1943 is the source of the current equation is verified
+from the paper's own OCR'd full text in the PMC deposit, which gives
+it as equation (11), `J_i = (u_i F / a) dV (n_i^0 e^{-z_i theta dV} -
+n_i)/(e^{-z_i theta dV} - 1)`, generalised at equation (17). That
+Hodgkin & Katz 1949 is the source of the voltage equation is verified
+from a peer-reviewed secondary source rather than the primary text,
+which is not retrievable: Alvarez, R., & Latorre, R. (2017), "The
+enduring legacy of the 'constant-field equation' in membrane ion
+transport", *The Journal of General Physiology* 149(10), 911,
+PMC5688357. **Recorded as a limitation:** the Hodgkin & Katz half of
+this attribution rests on that review, not on the 1949 paper's text.
+The review is a JGP centenary tribute written about the Goldman paper
+by domain experts, and it cross-checks against the primary Goldman
+text (its claim that the voltage equation is "formally equivalent to
+Eq. 18 in Goldman's 1943 paper" matches Goldman's equation (18) as
+read directly), so the limitation is narrow. It is nevertheless not a
+primary-source confirmation and must not be presented as one.
+
+*Caveat, and it belongs in the docstring.* The `small_branch` return
+value, `z*F*(ci - co*e^{-zeta})*(1 + zeta/2)`, is **not** from either
+paper. It is the first-order Taylor truncation of `zeta/(1 -
+e^{-zeta}) = 1 + zeta/2 + zeta^2/12 + ...`, selected by
+`where(|1 - exp(-zeta)| <= 1e-6, ...)` to keep the removable
+singularity at `V = 0` finite and differentiable under JAX. It is a
+BrainCell numerical-stability addition. The same applies to the two
+private variants in `braincell/channel/calcium.py:78-96`,
+`_cav3p1_nmodl_ghk_flux` and `_cav3p3_nmodl_ghk_flux`, which differ
+from the public helper only in substituting the Faraday, gas-constant
+and Kelvin-offset literals that the corresponding NMODL sources use in
+place of the `brainunit` constants; their expansions
+(`1 + zeta/2` and `1 - w/2` respectively) were both checked and are
+correct to first order. Those two are private and not in `__all__`, so
+they need no `References` section of their own.
+
+**`KineticIon` -- checked against the NMODL constructs it names.**
+Code read: `braincell/ion/_base.py:335-351` (the class and its
+`Notes`, which state the semantics "matching NEURON's
+``KINETIC``/``COMPARTMENT`` behavior") and `43-147` (the five frozen
+declaration dataclasses it consumes). The mapping is one-for-one, and
+each element was matched against verbatim text in the 2000 paper's
+extended preprint and in the public draft of NEURON Book chapter 9:
+
+| BrainCell declaration | NMODL construct | Evidence |
+|---|---|---|
+| `Reaction(lhs, rhs, forward, backward)` | `~ A + B <-> C (kf, kb)` | "The first character of a reaction statement is the tilde `~`"; worked example `~ cai + pump <-> capump (k1,k2)` |
+| `Factor(name, value)` + `Species(..., factor=)` | `COMPARTMENT vol {states}` | "where the STATEs named in the braces have the same compartment volume given by the volume expression after the COMPARTMENT keyword. The volume merely multiplies the dSTATE/dt left hand side" |
+| `Conserve(species, algebraic, total)` | `CONSERVE` | "the user is allowed to explicitly specify conservation equations with the CONSERVE statement" |
+| `Species(name, init, factor)` | `STATE` | kinetic-scheme unknowns: "The NMODL translator converts the kinetic scheme into a family of ODEs whose unknowns are the STATEs" |
+
+The `COMPARTMENT` semantics quoted above is exactly what
+`KineticIon`'s `Notes` describes: the factor multiplies the derivative
+side only, which is why the class stores species in visible units and
+converts only temporarily inside conservation and derivative mapping.
+Corroboration that this is still current NEURON semantics and not a
+2000-vintage description: the live official NMODL language reference
+at `nrn.readthedocs.io` carries the `COMPARTMENT` and `CONSERVE`
+paragraphs **word for word** identical to the 2000 text. *Caveat:*
+that documentation page carries no citation of its own -- zero
+occurrences of "Hines", "Carnevale" or "Neural Comput" -- so it
+corroborates the semantics, not the attribution.
+
+Two limitations, both recorded rather than papered over. First, the
+published 13-page article could not be read (MIT Press and the ACM
+Digital Library both returned HTTP 403); the `KINETIC`/`COMPARTMENT`
+text was verified in the authors' own much longer extended preprint of
+it, and the published abstract calls itself "a summary". That is why
+the book is cited alongside as `.. [2]` rather than optionally: NEURON
+Book chapter 9 was verified directly from the authors' public draft
+and carries the same `COMPARTMENT` passage and the same worked
+examples, including `COMPARTMENT (1e10)*parea {pump pumpca}` -- the
+very idiom `braincell/ion/calcium.py:1317-1318` describes when
+explaining an imported mechanism. Second, do not quote a numbered
+section such as "9.10.1" from the book; the draft uses example
+numbering and Cambridge Core was unreachable.
+
+*Scope caveat.* This reference belongs on `KineticIon`, the template
+that implements the semantics. The five declaration dataclasses are
+inert records with no behaviour, so they ship without a `References`
+section and point at `KineticIon` through `See Also` instead. That is
+a judgement call, not a finding -- flagged as item 15 below.
+
+**`CalciumDetailed` -- the correction.** Code read:
+`braincell/ion/calcium.py:127-269` (the 106-line docstring, the
+constructor and `derivative`) and `61-81` (the `Calcium` base). The
+class's entire dynamics is four lines:
+
+```
+drive = total_current / (2 * u.faraday_constant * self.d)
+drive = u.math.maximum(drive, u.math.zeros_like(drive))
+return drive + (self.C_rest - Ci) / self.tau
+```
+
+*Entry [2], Bazhenov et al. 1998: attribution PASSED.* That expression
+is term for term the first-order model the docstring's own section 2
+attributes to Bazhenov -- influx `I_Ca/(zFd)` with `z = 2` hard-coded
+as the literal `2`, plus relaxation `([Ca]_rest - [Ca])/tau`. The
+constructor exposes exactly and only that model's three parameters:
+`d`, `tau`, `C_rest`.
+
+*Entry [1], Destexhe et al. 1993: the paper is correctly identified
+and correctly recorded, but the class does not implement it.* The
+docstring's section 1 sets out the ATP-driven pump, its kinetic scheme
+`Ca_i + P <-> CaP -> P + Ca_o`, and its Michaelis-Menten reduction
+`d[Ca]_i/dt = -K_T [Ca]_i/([Ca]_i + K_d)` with `K_T = 1e-4 mM/ms` and
+`K_d = 1e-4 mM`. **None of it is implemented.** A grep of the whole
+module for `K_T`, `Kd`, `1e-4` and `Michaelis` returns exactly one hit
+-- the word "Michaelis-Menten" in that docstring's prose. There is no
+saturating term anywhere in `derivative`, and no pump parameter in the
+constructor. Task 2 deferred this check and, in doing so, recorded the
+assumption that the abstract's "included Ca2+ diffusion" was
+"consistent with the Michaelis-Menten Ca pump the class implements";
+**that assumption is wrong and is corrected here.**
+
+The consequence for the module task is narrow and specific: keep both
+entries only for as long as the docstring keeps its expository section
+1. `.. [1]` is a correct citation *for the text it supports*. It must
+not be presented as the source of `CalciumDetailed.derivative`, and if
+the docstring is ever trimmed to what the class computes, `.. [1]`
+goes with the prose it belongs to and Bazhenov becomes the sole
+reference.
+
+*Parameter caveats, none of them citation errors.* `d = 1.0 um` and
+the `Calcium` base's `default_Co = 2.0 mM` and `default_valence = 2`
+match the docstring's stated values. `C_rest` defaults to
+`2.4e-4 mM`, i.e. 0.24 uM, where the docstring's section 2 reports
+Bazhenov's resting concentration as 0.05 uM -- a factor of about five,
+and a default divergence that must be described as BrainCell's choice
+rather than the paper's value. `tau` defaults to `5.0 ms`; the paper's
+own value was not independently confirmed (see item 14 below). The
+docstring quotes `F = 96489 C/mol` and `R = 8.31441 J/(mol K)` from
+the paper while the code uses `u.faraday_constant` and, through
+`DynamicNernstIon`, `u.gas_constant` -- the CODATA values. The default
+temperature `u.celsius2kelvin(36.0)` is 309.15 K, matching the
+docstring. Finally, `maximum(drive, 0)` rectifies the influx term so
+that only inward calcium current raises `Ci`; no such clamp appears in
+either paper, and it is a BrainCell addition on the same footing as
+the `ghk_flux` small-`zeta` branch.
+
+*What was not closed on the paper side.* Three items about the
+Destexhe paper's own numbers were sought and not resolved: an apparent
+factor-of-100 inconsistency between `k = 0.1` and `k = 10` in its
+equation (7); a disagreement between the 1 um shell depth stated in
+the paper and the 0.1 um used by the widely circulated `cad.mod`
+implementation of it; and the absence of individual values for the
+rate constants `c1`, `c2`, `c3`, which the paper gives only through
+the lumped `K_T` and `K_d`. **None of the three affects the verdict**,
+which rests on the implementation containing no pump at all, but they
+are recorded as item 14 below so nobody re-derives them.
+
+### Symbols with no primary literature source
+
+**The remaining 29 symbols have no primary literature source and are
+expected to ship without a `References` section.** This is a
+determination, not an omission: each was inspected and the reason is
+given. A later task builds its allowlist from exactly this list, so it
+is written out symbol by symbol.
+
+| # | Symbol | Why no reference |
+|---|---|---|
+| 1 | `braincell/channel/_base.py::Gate` | Declaration dataclass for one HH gate (name, power, q10, temp_ref). No equations, no constants. |
+| 2 | `braincell/channel/_base.py::Transition` | Declaration dataclass for one Markov transition. Same. |
+| 3 | `braincell/channel/_base.py::HH` | Generic gate-template base. Carries no rate expressions and no parameters; subclasses supply both. |
+| 4 | `braincell/channel/_base.py::OhmicHH` | `HH` plus the ohmic current law `g_max * f * (E - V)`. Textbook, parameterless. |
+| 5 | `braincell/channel/_base.py::Markov` | Generic state-transition template. No scheme of its own. |
+| 6 | `braincell/channel/leaky.py::LeakageChannel` | Abstract base; every method is `pass` or `NotImplementedError`. |
+| 7 | `braincell/channel/leaky.py::IL` | `g_max * (E - V)` with conventional defaults `0.1 mS/cm2`, `-70 mV`. No source model. |
+| 8 | `braincell/channel/potassium.py::K_Leak` | Same, `0.005 mS/cm2`, reversal taken from the ion object. |
+| 9 | `braincell/channel/potassium.py::K_Kv_test` | Scratch/template fixture: `g_max` defaults to zero, `Q10_n` to 1.0. See the caveat below. |
+| 10 | `braincell/ion/_base.py::Factor` | Frozen declaration dataclass. See `KineticIon`. |
+| 11 | `braincell/ion/_base.py::Species` | Frozen declaration dataclass. See `KineticIon`. |
+| 12 | `braincell/ion/_base.py::Reaction` | Frozen declaration dataclass. See `KineticIon`. |
+| 13 | `braincell/ion/_base.py::Source` | Frozen declaration dataclass. See `KineticIon`. |
+| 14 | `braincell/ion/_base.py::Conserve` | Frozen declaration dataclass. See `KineticIon`. |
+| 15 | `braincell/ion/_base.py::FixedIon` | Mixin: stores `Ci`/`Co`/`E` as constants. No model. |
+| 16 | `braincell/ion/_base.py::InitNernstIon` | Mixin: computes `E` once from the Nernst equation. See the Nernst note below. |
+| 17 | `braincell/ion/_base.py::DynamicNernstIon` | Mixin: recomputes `E` from a dynamic `Ci`. Same note. |
+| 18 | `braincell/ion/calcium.py::Calcium` | Species container. Holds `default_Co = 2.0 mM`, `default_valence = 2`. |
+| 19 | `braincell/ion/calcium.py::CalciumFixed` | Container + `FixedIon`. |
+| 20 | `braincell/ion/calcium.py::CalciumInitNernst` | Container + `InitNernstIon`. |
+| 21 | `braincell/ion/calcium.py::CalciumFirstOrder` | `Ca' = -alpha*I_Ca - beta*Ca` with `alpha = 0.13`, `beta = 0.075`. Generic first-order form; no paper identified. See below. |
+| 22 | `braincell/ion/nonspecific.py::NonSpecific` | Container. `default_Ci = default_Co = 1.0 mM`, `valence = 1` -- placeholders, not measurements. |
+| 23 | `braincell/ion/nonspecific.py::NonSpecificFixed` | Container + `FixedIon`. |
+| 24 | `braincell/ion/potassium.py::Potassium` | Container. `default_Ci = 54.4 mM`, `default_Co = 2.5 mM`. |
+| 25 | `braincell/ion/potassium.py::PotassiumFixed` | Container + `FixedIon`. |
+| 26 | `braincell/ion/potassium.py::PotassiumInitNernst` | Container + `InitNernstIon`. |
+| 27 | `braincell/ion/sodium.py::Sodium` | Container. `default_Ci = 10.0 mM`, `default_Co = 140.0 mM`. |
+| 28 | `braincell/ion/sodium.py::SodiumFixed` | Container + `FixedIon`. |
+| 29 | `braincell/ion/sodium.py::SodiumInitNernst` | Container + `InitNernstIon`. |
+
+Four notes, so that the list is unambiguous rather than merely short:
+
+1. **`HH` and `OhmicHH` do not take `HH1952`.** The temptation is
+   obvious and should be resisted. These are parameterless templates,
+   not the squid-axon model; the squid-axon model is already covered
+   by the `HH1952` key, which owns `K_HH1952` and `Na_HH1952`. A
+   module task may name the Hodgkin-Huxley formalism in `Notes` prose,
+   but the `References` section stays absent.
+2. **The Nernst equation is not cited.** `InitNernstIon`,
+   `DynamicNernstIon` and `KineticIon.E` all evaluate
+   `E = (RT/zF) ln(Co/Ci)`. It is a nineteenth-century textbook
+   result; house policy for textbook results is no citation, and
+   applying it here keeps `KineticIon`'s `References` section about
+   the NMODL semantics that are actually distinctive.
+3. **The default concentrations are conventions, not data.** `54.4 /
+   2.5 mM` for potassium, `10 / 140 mM` for sodium and `2.0 mM`
+   external calcium are the values conventional in this literature
+   -- potassium's pair yields `E_K` near -82 mV at 36 C -- but no
+   single paper is their source, and they are constructor defaults
+   that any caller overrides. Recorded explicitly so that no later
+   task asserts a source for them.
+4. **Two symbols are judgement calls rather than clean determinations,
+   and are flagged as such.** `K_Kv_test`'s rate form,
+   `Ra*(V - V12)/(1 - exp(-(V - V12)/q))`, is the generic `vtrap`
+   alpha/beta idiom that recurs across dozens of unrelated NEURON
+   `kv.mod` files; its name, its zero default conductance and its unit
+   `Q10` mark it as a fixture, and no specific source was pursued.
+   `CalciumFirstOrder`'s `alpha = 0.13`, `beta = 0.075` are likewise
+   not traceable to a paper from the code alone. Both are recorded as
+   no-source; see item 16 below.
 
 ---
 
@@ -3408,11 +3818,22 @@ findings below are for whichever module task rewrites those docstrings.
           doi:10.1016/S0006-3495(93)81190-1
    ```
 
-   *Attribution check: not performed here.* `CalciumDetailed` is in the
-   `NO_KEY` bucket, which Task 3 owns. The abstract does confirm the
-   paper's model "included Ca2+ diffusion", which is consistent with the
-   Michaelis-Menten Ca pump the class implements, but the pump constants
-   were not compared. Task 3 must finish this.
+   ~~*Attribution check: not performed here.* `CalciumDetailed` is in
+   the `NO_KEY` bucket, which Task 3 owns. The abstract does confirm
+   the paper's model "included Ca2+ diffusion", which is consistent
+   with the Michaelis-Menten Ca pump the class implements, but the pump
+   constants were not compared. Task 3 must finish this.~~
+
+   **CLOSED, and the deferred assumption was wrong.** The Task 3
+   follow-up performed the check; see `## NO_KEY` -> `### Attribution`
+   -> **`CalciumDetailed` -- the correction**. `CalciumDetailed` does
+   **not** implement a Michaelis-Menten Ca pump. Its `derivative` is
+   the Bazhenov first-order model of item 2 below and nothing else;
+   the pump appears only in the docstring's expository prose. The
+   record check above stands unchanged and was re-confirmed
+   independently. The corrected entry is correct **for the text it
+   supports**, and must not be presented as the source of
+   `CalciumDetailed.derivative`.
 
 2. **`braincell/ion/calcium.py:230-233`** (in `CalciumDetailed`) --
    "Bazhenov, Maxim, Igor Timofeev, Mircea Steriade, and Terrence J.
@@ -3433,9 +3854,16 @@ findings below are for whichever module task rewrites those docstrings.
           doi:10.1152/jn.1998.79.5.2730
    ```
 
-   *Attribution check: not performed here* (same reason as item 1). Note
-   that this same paper is where Bazhenov et al. (2002) says its INa/IK
-   rate expressions live -- see the `Ba2002` attribution block.
+   ~~*Attribution check: not performed here* (same reason as item
+   1).~~ **CLOSED: PASSED.** The Task 3 follow-up compared the paper's
+   first-order model against `CalciumDetailed.derivative` term by
+   term; they agree, and this entry -- not item 1's -- is the source of
+   what the class computes. Two default divergences are recorded as
+   caveats in that block (`C_rest` 0.24 uM against the docstring's
+   stated 0.05 uM; `maximum(drive, 0)` rectification present in neither
+   paper). Note that this same paper is where Bazhenov et al. (2002)
+   says its INa/IK rate expressions live -- see the `Ba2002`
+   attribution block.
 
 3. **`braincell/channel/hyperpolarization_activated.py:78-80`** (in
    `HCN_HM1992`) -- same singular/plural title error ("thalamic relay
@@ -3772,27 +4200,107 @@ resolve them cleanly:
     only any claim about which accession the files were downloaded
     from, which no docstring should make.
 
-11. **Symbol count: 104, not 103.** The Task 3 brief and the project
-    plan both say the seven cerebellar keys cover 103 public symbols.
-    Counting `__all__` across `braincell/channel/*.py` and
-    `braincell/ion/*.py` gives 155 public symbols in total, of which
-    `MA2020` 32 + `MA2024` 19 + `MA2025` 16 + `RI2021` 15 + `SU2015`
-    16 + `ZH2019` 5 + `PC24` 1 = **104**. The per-key counts in this
-    file's own section headings are correct and sum to 104; the 103 is
-    an arithmetic slip upstream. Note also that the `*Test` classes
-    visible in the source (`Cav1p2_MA2020_GoCTest`,
-    `CaHVA_SU2015_DCNTest`, and about twenty others) are **not** in
-    any `__all__` and are correctly excluded from the 155. There are 24
-    of them across the six affected modules, one per templated
-    mechanism family.
+11. **Symbol count: 104, not 103; 123 keyed, not 122. RESOLVED --
+    recorded here as the reconciliation, not as an open question.**
+    The Task 3 brief and the project plan say the seven cerebellar
+    keys cover 103 public symbols and that the keyed total is 122.
+    Both are one short. The figures were re-derived mechanically, by
+    parsing `__all__` out of every module under
+    `braincell/channel/` and `braincell/ion/` with `ast` and diffing
+    the result against this file's own `### Symbols` bullet lists:
 
-12. **`NO_KEY` (32 symbols) is still open and belongs to no task yet.**
-    Its `### Verified record` and `### Attribution` blocks are still
-    marked `_TODO (Task 3)`, but the Task 3 brief scopes that task to
-    the seven cerebellar keys only and Task 3 did not touch `NO_KEY`.
-    The marker is therefore stale, not an omission. Two sub-items
-    inherited from Task 2 sit inside it and must be picked up by
-    whichever task claims it: the `CalciumDetailed` pump constants
-    (see `## Corrections to pre-existing in-code citations`, items 1
-    and 2, where the record checks passed but the attribution checks
-    were explicitly not performed).
+    | Bucket | Symbols |
+    |---|---|
+    | Task 2's nine keys (`HM1992` 7, `IS2008` 2, `Ba2002` 2, `TM1991` 2, `HH1952` 2, `HP1992` 1, `Re1993` 1, `Ya1989` 1, `De1994` 1) | 19 |
+    | Task 3's seven keys (`MA2020` 32, `MA2024` 19, `MA2025` 16, `RI2021` 15, `SU2015` 16, `ZH2019` 5, `PC24` 1) | 104 |
+    | **Keyed subtotal** | **123** |
+    | `NO_KEY` | 32 |
+    | **Total** | **155** |
+
+    The diff is empty in both directions: no symbol is in `__all__`
+    but missing from this file, none is listed here but absent from
+    `__all__`, and none is listed twice. **155 is therefore the figure
+    a coverage check should use**, and 123 the keyed figure.
+
+    *Is `ghk_flux` counted consistently? Yes, and it is the only case
+    that could go either way.* It is a module-level **function**; the
+    other 154 entries are classes. It is exported in
+    `braincell/channel/_base.py::__all__` exactly like the classes,
+    it is listed in the `NO_KEY` bucket above, and it is one of the
+    155. Nothing in this file counts symbols by "classes only". The
+    likeliest origin of the upstream 103/122 is a key-extraction
+    pattern requiring a four-digit year, which `PC24` does not match;
+    that would drop `Cav3p1Test_PC24` from the keyed side and give
+    exactly 103 and 122.
+
+    Note also that the `*Test` classes visible in the source
+    (`Cav1p2_MA2020_GoCTest`, `CaHVA_SU2015_DCNTest`, and others) are
+    **not** in any `__all__` and are correctly excluded from the 155.
+    There are 24 of them across the six affected modules, one per
+    templated mechanism family.
+
+12. ~~**`NO_KEY` (32 symbols) is still open and belongs to no task
+    yet.** Its `### Verified record` and `### Attribution` blocks are
+    still marked `_TODO (Task 3)`, but the Task 3 brief scopes that
+    task to the seven cerebellar keys only and Task 3 did not touch
+    `NO_KEY`. The marker is therefore stale, not an omission.~~
+    **CLOSED** by the Task 3 follow-up. The stale markers are gone,
+    three symbols are verified, 29 are recorded as having no primary
+    literature source, and the two `CalciumDetailed` sub-items
+    inherited from Task 2 are closed in
+    `## Corrections to pre-existing in-code citations` items 1 and 2
+    -- item 1 with a correction, because the assumption Task 2
+    recorded while deferring it turned out to be false.
+
+13. **The Hodgkin & Katz 1949 attribution rests on a secondary
+    source.** The record is verified from publisher-deposited metadata
+    (Crossref and the Physiological Society's JATS), but the paper's
+    *text* is not retrievable: it is free-to-read rather than open
+    access, and its PMC deposit is a scan with no text layer. That
+    Hodgkin & Katz derive the constant-field **voltage** equation --
+    the fact that establishes which of the two GHK papers `ghk_flux`
+    should cite first -- is confirmed from Alvarez & Latorre (2017),
+    a peer-reviewed JGP centenary review, and not from the 1949 paper
+    itself. The Goldman half *is* primary-verified from the OCR'd PMC
+    full text. Anyone able to reach the 1949 text should confirm and
+    strike this item.
+
+14. **Three numbers inside Destexhe et al. (1993) were not resolved.**
+    Sought while checking `CalciumDetailed` and not closed: (a) an
+    apparent factor-of-100 inconsistency between `k = 0.1` and
+    `k = 10` in the paper's equation (7); (b) a disagreement between
+    the 1 um submembrane shell depth stated in the paper and the
+    0.1 um used by the widely circulated `cad.mod` implementation of
+    it; (c) the individual values of the pump rate constants `c1`,
+    `c2`, `c3`, which the paper gives only through the lumped
+    `K_T` and `K_d`. Independently, the value of `tau` in Bazhenov et
+    al. (1998) was not confirmed against the paper, so BrainCell's
+    `tau = 5.0 ms` default is recorded as a default, not as the
+    paper's value. **None of these affects any verdict** -- the
+    `CalciumDetailed` finding rests on the implementation containing
+    no pump term at all, which is settled from the code. They are
+    recorded so nobody re-derives them.
+
+15. **Where the NEURON reference sits is a judgement call.**
+    `Factor`, `Species`, `Reaction`, `Source` and `Conserve` are the
+    surface that maps onto `COMPARTMENT`, `STATE`, `~ A <-> B (kf,
+    kb)` and `CONSERVE`, so an argument exists for citing Hines &
+    Carnevale on each of them. The determination taken here is that
+    the reference belongs on `KineticIon`, which implements the
+    semantics, and that the five dataclasses -- inert frozen records
+    with no behaviour -- ship without a `References` section and point
+    at `KineticIon` through `See Also`. A later task may revisit this;
+    it should do so deliberately, not by accident.
+
+16. **Two no-source determinations are weaker than the other 27.**
+    `K_Kv_test` uses the generic `vtrap` alpha/beta idiom found in
+    dozens of unrelated NEURON `kv.mod` files, and
+    `CalciumFirstOrder` hard-codes `alpha = 0.13`, `beta = 0.075`.
+    Neither is traceable to a paper from the code alone, and neither
+    was pursued further: `K_Kv_test` is marked a fixture by its name,
+    its zero default conductance and its unit `Q10`, and
+    `CalciumFirstOrder` states no more than the generic first-order
+    form. Both are recorded as no-source. If a later task finds a
+    source for either, it is an addition to the allowlist's
+    exceptions, not a contradiction of a verified record -- no
+    `.. [N]` entry was written for either.

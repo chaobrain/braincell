@@ -2935,7 +2935,147 @@ class Kv1p5_MA2024_PC(HH):
 
 @register_channel("Kv3p3_MA2024_PC")
 class Kv3p3_MA2024_PC(HH):
-    """Template-based import of ``Kv3p3_MA24_PC.mod``."""
+    r"""Kv3.3 high-threshold potassium current of the Purkinje model.
+
+    Fast-activating, non-inactivating high-threshold potassium
+    current imported from the human Purkinje cell model of Masoli
+    et al. (2024) [3]_. Gating is a single ``n`` gate of power 4 in
+    alpha/beta form:
+
+    .. math::
+
+        \begin{aligned}
+        \alpha_n &= 0.22 \, \exp((V + 16) / 26.5) \\
+        \beta_n &= 0.22 \, \exp(-(V + 16) / 26.5)
+        \end{aligned}
+
+    where :math:`V` is in millivolts and the rates are per
+    millisecond. Because the two prefactors are equal,
+    :math:`n_\infty = \alpha_n / (\alpha_n + \beta_n)` is exactly 0.5
+    at -16 mV, and the :math:`n^4` conductance reaches half its
+    maximum near +6.1 mV -- the high activation threshold the source
+    mechanism's ``TITLE`` line describes.
+
+    Parameters
+    ----------
+    size : brainstate.typing.Size
+        Channel state shape.
+    g_max : array-like or callable, optional
+        Maximal conductance density. Defaults to ``0.005 S/cm2``,
+        equivalently ``5.0 mS/cm2``, which is exactly the source
+        mechanism's ``gbar = 0.005 S/cm2``. Most channels in this
+        module spell their default in ``mS/cm2``; this one keeps the
+        ``.mod`` file's own ``S/cm2``, so read the number with care.
+    temp : array-like, optional
+        Absolute temperature driving the gate's q10 factor, default
+        22 degrees Celsius. This equals the gate's reference
+        temperature, so the default temperature factor is exactly 1.
+    gateCurrent : array-like or callable, optional
+        Gating-current switch, default ``0.0`` (dimensionless, off).
+        Any non-zero value enables the gating-current term described
+        below.
+    name : str, optional
+        Optional channel name.
+
+    See Also
+    --------
+    Kv1p1_MA2024_PC : Kv1.1 current of the same model, sharing this
+        class's gating-current construction.
+    Kv3p4_MA2024_PC : The other Kv3-family current of the same model.
+
+    Notes
+    -----
+    Ported from ``PC/channel/Kv3p3_MA24_PC.mod``. No other cell type
+    in this repository imports this mechanism, so unlike most
+    channels in this module it has no sibling ports.
+
+    **Why this class overrides** ``current``. The mechanism emits an
+    optional Kv gating current alongside the ionic current, so
+    :class:`OhmicHH` is not enough. :meth:`current` returns
+
+    .. math::
+
+        g_{\max} \, n^4 \, (E_K - V) - I_{\text{gate}}
+
+    with
+
+    .. math::
+
+        I_{\text{gate}} = n_c \cdot 10^{6} \cdot e_0 \cdot 4 \, z_n
+        \cdot \frac{\mathrm{d}n}{\mathrm{d}t}, \qquad
+        n_c = 10^{12} \, \frac{g_{\max}}{g_{\text{unit}}}
+
+    where :math:`g_{\text{unit}} = 16` pS is the unitary channel
+    conductance, :math:`z_n = 1.9196` the n-gate valence,
+    :math:`e_0 = 1.60217646 \times 10^{-19}` C the elementary charge
+    and :math:`\mathrm{d}n/\mathrm{d}t` the same
+    :math:`\phi(\alpha_n (1 - n) - \beta_n n)` the gate integrates.
+    NEURON emits this term as a separate ``NONSPECIFIC_CURRENT``;
+    BrainCell folds it into the single ``current()`` return, and the
+    subtraction reflects the package's inward-positive sign
+    convention against NMODL's outward-positive one. The term is
+    selected with ``u.math.where`` rather than a Python branch, so
+    ``gateCurrent`` may be an array and the choice stays traceable.
+    The construction is the one :class:`Kv1p1_MA2024_PC` uses; only
+    :math:`z_n` and the rate constants differ.
+
+    **Where the q10 factor is applied.** The gate declares
+    ``q10 = 2.7`` at a reference of 22 degrees Celsius, so
+    :meth:`HH.compute_derivative` scales the rate balance by
+    :math:`\phi = 2.7^{(T - 22)/10}`. The ``.mod`` file instead
+    multiplies ``qt`` into ``alpha`` and ``beta``, which divides its
+    ``taun`` by the same factor. The two forms are algebraically
+    identical.
+
+    **Provenance.** The ``.mod`` header states that the six rate
+    parameters were obtained by least-squares fits to
+    :math:`G/G_{\max}(V)` and :math:`\tau_n(V)` data recorded from
+    rat cerebellar Purkinje neurons by Martina et al. (2007) [1]_,
+    and names the RIKEN implementation published by Akemann et al.
+    (2009) [2]_ as its model reference. The Purkinje-cell paper [3]_
+    names the model this parameterisation was imported from, not the
+    origin of the equations.
+
+    Two header transcription errors are worth knowing about, and
+    neither is reproduced above. The header prints the Martina page
+    range as "563-671"; the published range is 563-571, with a stray
+    unbalanced parenthesis before it. And the mechanism itself is
+    named for the Kv3 family as a whole -- its ``TITLE`` reads
+    "Voltage-gated potassium channel from Kv3 subunits" -- with the
+    specific ".3" arriving only through the ported file's own
+    ``: Suffix from Kv3 to Kv3_3`` rename line, not from either
+    origin paper.
+
+    **Conductance default.** ``0.005 S/cm2`` is the deposit's tuned
+    value, carried across from the ``.mod`` file. It is not a value
+    printed in any of the cited papers.
+
+    **Import deviations: none.** This mechanism carries no NMODL
+    ``TABLE`` and was already integrated with ``cnexp`` upstream, so
+    neither the table-removal nor the ``derivimplicit`` substitution
+    recorded for other channels in this model applies here.
+
+    References
+    ----------
+    .. [1] Martina, M., Metz, A. E., & Bean, B. P. (2007).
+           Voltage-dependent potassium currents during fast spikes of
+           rat cerebellar Purkinje neurons: inhibition by BDS-I
+           toxin. Journal of Neurophysiology, 97(1), 563-571.
+           doi:10.1152/jn.00269.2006
+    .. [2] Akemann, W., Lundby, A., Mutoh, H., & Knopfel, T. (2009).
+           Effect of voltage sensitive fluorescent proteins on
+           neuronal excitability. Biophysical Journal, 96(10),
+           3959-3976.
+           doi:10.1016/j.bpj.2009.02.046
+    .. [3] Masoli, S., Sanchez-Ponce, D., Vrieler, N., Abu-Haya, K.,
+           Lerner, V., Shahar, T., Nedelescu, H., Rizza, M. F.,
+           Benavides-Piccione, R., DeFelipe, J., Yarom, Y., Munoz,
+           A., & D'Angelo, E. (2024). Human Purkinje cells outperform
+           mouse Purkinje cells in dendritic complexity and
+           computational capacity. Communications Biology, 7(1), 5.
+           doi:10.1038/s42003-023-05689-y
+    """
+
 
     __module__ = "braincell.channel"
     root_type = Potassium
@@ -2985,7 +3125,160 @@ class Kv3p3_MA2024_PC(HH):
 
 @register_channel("Kv3p4_MA2025_BC")
 class Kv3p4_MA2025_BC(OhmicHH):
-    """Template-based import of ``Kv3p4_MA2025_BC.mod``."""
+    r"""Fast TEA-sensitive potassium current of the basket cell model.
+
+    High-threshold, fast-activating and only partially inactivating
+    potassium current, imported from the
+    cerebellar basket cell model of Masoli et al. (2025) [2]_.
+
+    Gating is an ``m`` gate of power 3 and an ``h`` gate of power 1,
+    both written in steady-state/time-constant form and both
+    evaluated at a junction-potential-corrected voltage
+    :math:`V' = V + 11`:
+
+    .. math::
+
+        \begin{aligned}
+        m_\infty &= \frac{1}{1 + \exp(-(V' + 24) / 15.4)} \\
+        h_\infty &= 0.31
+          + \frac{0.69}{1 + \exp((V' + 5.802) / 11.2)}
+        \end{aligned}
+
+    where :math:`V'` is in millivolts. Inactivation is only partial:
+    :math:`h_\infty` decays to a floor of 0.31 rather than to zero,
+    so about 31 per cent of the conductance survives a maintained
+    depolarisation. Both time constants are piecewise, in
+    milliseconds:
+
+    .. math::
+
+        \tau_m = 10^3 \times \begin{cases}
+        3 \, (3.4225 \times 10^{-5}
+          + 0.00498 \, e^{V' / 28.29}), & V' < -35 \\
+        1.2851 \times 10^{-4} + \dfrac{1}{e^{(V' + 100.7)/12.9}
+          + e^{(V' - 56)/(-23.1)}}, & V' \ge -35
+        \end{cases}
+
+    .. math::
+
+        \tau_h = 10^3 \times \begin{cases}
+        0.0012 + 0.0023 \, e^{-0.141 \, V'}, & V' > 0 \\
+        1.2202 \times 10^{-5}
+          + 0.012 \, e^{-((V' + 56.3)/49.6)^2}, & V' \le 0
+        \end{cases}
+
+    Each ladder is selected with ``u.math.where`` on the predicates
+    ``V' < -35`` and ``V' > 0``, so the boundary value itself falls
+    to the second line in both.
+
+    Parameters
+    ----------
+    size : brainstate.typing.Size
+        Channel state shape.
+    g_max : array-like or callable, optional
+        Maximal conductance density. Defaults to ``4.0 mS/cm2``,
+        which is exactly the source mechanism's
+        ``gkbar = 0.004 mho/cm2``.
+    temp : array-like, optional
+        Absolute temperature driving both gates' q10 factor, default
+        22 degrees Celsius. See the temperature note below: this
+        default is BrainCell's own, not a value the source mechanism
+        states.
+    name : str, optional
+        Optional channel name.
+
+    See Also
+    --------
+    Kv3p4_MA2020_GoC : Golgi-cell port of the same mechanism.
+    Kv3p4_MA2020_GrC : Granule-cell port of the same mechanism.
+    Kv3p4_MA2024_PC : Purkinje-cell port of the same mechanism.
+    Kv3p4_RI2021_SC : Stellate-cell port of the same mechanism.
+
+    Notes
+    -----
+    Ported from ``BC/channel/Kv3p4_MA25_BC.mod``. All five cell-type
+    ports of this mechanism carry the same equations and the same
+    constants, and so do the five BrainCell classes: everything above
+    is shared verbatim with :class:`Kv3p4_MA2020_GoC`,
+    :class:`Kv3p4_MA2020_GrC`, :class:`Kv3p4_MA2024_PC` and
+    :class:`Kv3p4_RI2021_SC`. What differs is only the deposit each
+    was imported from, and therefore the model paper cited below.
+
+    The ``BC`` file additionally declares a ``g_equiv`` RANGE variable
+    and assigns ``g_equiv = gkbar * m^3 * h`` in its ``BREAKPOINT``.
+    That is a diagnostic output for the NEURON comparison harness
+    rather than part of the dynamics, and BrainCell does not port it.
+
+    **Where the q10 factor is applied.** Both gates declare
+    ``q10 = 3.0`` at a reference of 37 degrees Celsius, so
+    :meth:`HH.compute_derivative` scales each
+    :math:`(x_\infty - x)/\tau_x` term by
+    :math:`\phi = 3^{(T - 37)/10}`. The ``.mod`` file instead
+    divides its ``mtau`` and ``htau`` by the same factor. The two
+    forms are algebraically identical, but it means :meth:`f_m_tau`
+    and :meth:`f_h_tau` return q10-free time constants rather than
+    the mechanism's ``mtau`` and ``htau``.
+
+    **The default temperature is BrainCell's, not the mechanism's.**
+    Unlike most channels in this module, this ``.mod`` file never
+    declares a ``celsius`` value; it reads NEURON's global instead.
+    The ``temp`` default of 22 degrees Celsius is therefore a
+    BrainCell choice, and because it sits 15 degrees below the
+    gates' reference it makes the default temperature factor
+    :math:`\phi \approx 0.192` -- gating roughly 5.2 times slower
+    than at 37 degrees Celsius. Callers reproducing a published
+    simulation should set ``temp`` explicitly.
+
+    **Provenance, and a name the sources do not support.** These files
+    are ModelDB accession 48332's ``kpkj.mod`` renamed. The header
+    lines ": HH TEA-sensitive Purkinje potassium current" and
+    ": Created 8/5/02 - nwg" are the deposit's own, "nwg" being
+    Nathan W. Gouwens, second author of Khaliq et al. (2003) [1]_, and
+    the parameters ``mivh = -24 mV``, ``mik = 15.4`` and
+    ``hiy0 = 0.31`` reproduce that paper's Table 1 row for the current
+    it calls **K fast**. The trailing ``: Suffix from kpkj to Kv3_4``
+    line is a BrainCell-local addition and is not in the deposit. The
+    model paper [2]_ names the deposit this parameterisation was
+    imported from, not the origin of the equations.
+
+    That rename line is the whole basis of the ``Kv3p4`` name, and
+    it does not survive contact with the source. Khaliq et al. call
+    this current K fast throughout and never name a Kv subunit; the
+    strings "Kv3.4", "Kv3.3" and "Kv3.1" appear nowhere in the
+    paper, and its only mention of Kv3 at all is one Discussion
+    sentence observing that the positive activation range is typical
+    of the Kv3 family. **The class name therefore asserts a subunit
+    identity the cited literature does not establish.** Under this
+    project's mismatch policy the name is documented rather than
+    changed: read ``Kv3p4`` as a label for the TEA-sensitive fast K
+    current of Khaliq et al. (2003), which those authors associate
+    with the Kv3 family, and not as a claim about Kv3.4.
+
+    **Conductance default.** ``4.0 mS/cm2`` is the deposit's tuned
+    value, carried across from the ``.mod`` file. It is not a value
+    printed in either cited paper.
+
+    **Import deviations: none.** This mechanism carries no NMODL
+    ``TABLE`` and was already integrated with ``cnexp`` upstream, so
+    neither the table-removal nor the ``derivimplicit`` substitution
+    recorded for other channels in this model applies here. Do not
+    assume it shares the deviations of its ``Kv4p3`` neighbour,
+    which has three.
+
+    References
+    ----------
+    .. [1] Khaliq, Z. M., Gouwens, N. W., & Raman, I. M. (2003). The
+           contribution of resurgent sodium current to high-frequency
+           firing in Purkinje neurons: an experimental and modeling
+           study. The Journal of Neuroscience, 23(12), 4899-4912.
+           doi:10.1523/JNEUROSCI.23-12-04899.2003
+    .. [2] Masoli, S., Rizza, M. F., Soda, T., Sanchez-Ponce, D.,
+           Munoz, A., Prestori, F., & D'Angelo, E. (2025).
+           Cerebellar basket cell filtering of Purkinje cell
+           responses elicited by low frequency parallel fibre
+           transmission. Scientific Reports, 15(1), 25192.
+           doi:10.1038/s41598-025-09964-2
+    """
 
     __module__ = "braincell.channel"
     root_type = Potassium
@@ -3049,7 +3342,156 @@ class Kv3p4_MA2025_BC(OhmicHH):
 
 @register_channel("Kv3p4_MA2024_PC")
 class Kv3p4_MA2024_PC(OhmicHH):
-    """Template-based import of ``Kv3p4_MA2024_PC.mod``."""
+    r"""Fast TEA-sensitive potassium current of the Purkinje cell model.
+
+    High-threshold, fast-activating and only partially inactivating
+    potassium current, imported from the
+    human Purkinje cell model of Masoli et al. (2024) [2]_.
+
+    Gating is an ``m`` gate of power 3 and an ``h`` gate of power 1,
+    both written in steady-state/time-constant form and both
+    evaluated at a junction-potential-corrected voltage
+    :math:`V' = V + 11`:
+
+    .. math::
+
+        \begin{aligned}
+        m_\infty &= \frac{1}{1 + \exp(-(V' + 24) / 15.4)} \\
+        h_\infty &= 0.31
+          + \frac{0.69}{1 + \exp((V' + 5.802) / 11.2)}
+        \end{aligned}
+
+    where :math:`V'` is in millivolts. Inactivation is only partial:
+    :math:`h_\infty` decays to a floor of 0.31 rather than to zero,
+    so about 31 per cent of the conductance survives a maintained
+    depolarisation. Both time constants are piecewise, in
+    milliseconds:
+
+    .. math::
+
+        \tau_m = 10^3 \times \begin{cases}
+        3 \, (3.4225 \times 10^{-5}
+          + 0.00498 \, e^{V' / 28.29}), & V' < -35 \\
+        1.2851 \times 10^{-4} + \dfrac{1}{e^{(V' + 100.7)/12.9}
+          + e^{(V' - 56)/(-23.1)}}, & V' \ge -35
+        \end{cases}
+
+    .. math::
+
+        \tau_h = 10^3 \times \begin{cases}
+        0.0012 + 0.0023 \, e^{-0.141 \, V'}, & V' > 0 \\
+        1.2202 \times 10^{-5}
+          + 0.012 \, e^{-((V' + 56.3)/49.6)^2}, & V' \le 0
+        \end{cases}
+
+    Each ladder is selected with ``u.math.where`` on the predicates
+    ``V' < -35`` and ``V' > 0``, so the boundary value itself falls
+    to the second line in both.
+
+    Parameters
+    ----------
+    size : brainstate.typing.Size
+        Channel state shape.
+    g_max : array-like or callable, optional
+        Maximal conductance density. Defaults to ``4.0 mS/cm2``,
+        which is exactly the source mechanism's
+        ``gkbar = 0.004 mho/cm2``.
+    temp : array-like, optional
+        Absolute temperature driving both gates' q10 factor, default
+        22 degrees Celsius. See the temperature note below: this
+        default is BrainCell's own, not a value the source mechanism
+        states.
+    name : str, optional
+        Optional channel name.
+
+    See Also
+    --------
+    Kv3p4_MA2020_GoC : Golgi-cell port of the same mechanism.
+    Kv3p4_MA2020_GrC : Granule-cell port of the same mechanism.
+    Kv3p4_MA2025_BC : Basket-cell port of the same mechanism.
+    Kv3p4_RI2021_SC : Stellate-cell port of the same mechanism.
+
+    Notes
+    -----
+    Ported from ``PC/channel/Kv3p4_MA24_PC.mod``. All five cell-type
+    ports of this mechanism carry the same equations and the same
+    constants, and so do the five BrainCell classes: everything above
+    is shared verbatim with :class:`Kv3p4_MA2020_GoC`,
+    :class:`Kv3p4_MA2020_GrC`, :class:`Kv3p4_MA2025_BC` and
+    :class:`Kv3p4_RI2021_SC`. What differs is only the deposit each
+    was imported from, and therefore the model paper cited below.
+
+    **Where the q10 factor is applied.** Both gates declare
+    ``q10 = 3.0`` at a reference of 37 degrees Celsius, so
+    :meth:`HH.compute_derivative` scales each
+    :math:`(x_\infty - x)/\tau_x` term by
+    :math:`\phi = 3^{(T - 37)/10}`. The ``.mod`` file instead
+    divides its ``mtau`` and ``htau`` by the same factor. The two
+    forms are algebraically identical, but it means :meth:`f_m_tau`
+    and :meth:`f_h_tau` return q10-free time constants rather than
+    the mechanism's ``mtau`` and ``htau``.
+
+    **The default temperature is BrainCell's, not the mechanism's.**
+    Unlike most channels in this module, this ``.mod`` file never
+    declares a ``celsius`` value; it reads NEURON's global instead.
+    The ``temp`` default of 22 degrees Celsius is therefore a
+    BrainCell choice, and because it sits 15 degrees below the
+    gates' reference it makes the default temperature factor
+    :math:`\phi \approx 0.192` -- gating roughly 5.2 times slower
+    than at 37 degrees Celsius. Callers reproducing a published
+    simulation should set ``temp`` explicitly.
+
+    **Provenance, and a name the sources do not support.** These files
+    are ModelDB accession 48332's ``kpkj.mod`` renamed. The header
+    lines ": HH TEA-sensitive Purkinje potassium current" and
+    ": Created 8/5/02 - nwg" are the deposit's own, "nwg" being
+    Nathan W. Gouwens, second author of Khaliq et al. (2003) [1]_, and
+    the parameters ``mivh = -24 mV``, ``mik = 15.4`` and
+    ``hiy0 = 0.31`` reproduce that paper's Table 1 row for the current
+    it calls **K fast**. The trailing ``: Suffix from kpkj to Kv3_4``
+    line is a BrainCell-local addition and is not in the deposit. The
+    model paper [2]_ names the deposit this parameterisation was
+    imported from, not the origin of the equations.
+
+    That rename line is the whole basis of the ``Kv3p4`` name, and
+    it does not survive contact with the source. Khaliq et al. call
+    this current K fast throughout and never name a Kv subunit; the
+    strings "Kv3.4", "Kv3.3" and "Kv3.1" appear nowhere in the
+    paper, and its only mention of Kv3 at all is one Discussion
+    sentence observing that the positive activation range is typical
+    of the Kv3 family. **The class name therefore asserts a subunit
+    identity the cited literature does not establish.** Under this
+    project's mismatch policy the name is documented rather than
+    changed: read ``Kv3p4`` as a label for the TEA-sensitive fast K
+    current of Khaliq et al. (2003), which those authors associate
+    with the Kv3 family, and not as a claim about Kv3.4.
+
+    **Conductance default.** ``4.0 mS/cm2`` is the deposit's tuned
+    value, carried across from the ``.mod`` file. It is not a value
+    printed in either cited paper.
+
+    **Import deviations: none.** This mechanism carries no NMODL
+    ``TABLE`` and was already integrated with ``cnexp`` upstream, so
+    neither the table-removal nor the ``derivimplicit`` substitution
+    recorded for other channels in this model applies here. Do not
+    assume it shares the deviations of its ``Kv4p3`` neighbour,
+    which has three.
+
+    References
+    ----------
+    .. [1] Khaliq, Z. M., Gouwens, N. W., & Raman, I. M. (2003). The
+           contribution of resurgent sodium current to high-frequency
+           firing in Purkinje neurons: an experimental and modeling
+           study. The Journal of Neuroscience, 23(12), 4899-4912.
+           doi:10.1523/JNEUROSCI.23-12-04899.2003
+    .. [2] Masoli, S., Sanchez-Ponce, D., Vrieler, N., Abu-Haya, K.,
+           Lerner, V., Shahar, T., Nedelescu, H., Rizza, M. F.,
+           Benavides-Piccione, R., DeFelipe, J., Yarom, Y., Munoz,
+           A., & D'Angelo, E. (2024). Human Purkinje cells outperform
+           mouse Purkinje cells in dendritic complexity and
+           computational capacity. Communications Biology, 7(1), 5.
+           doi:10.1038/s42003-023-05689-y
+    """
 
     __module__ = "braincell.channel"
     root_type = Potassium
@@ -3113,7 +3555,160 @@ class Kv3p4_MA2024_PC(OhmicHH):
 
 @register_channel("Kv3p4_RI2021_SC")
 class Kv3p4_RI2021_SC(OhmicHH):
-    """Template-based import of ``Kv3p4_RI2021_SC.mod``."""
+    r"""Fast TEA-sensitive potassium current of the stellate cell model.
+
+    High-threshold, fast-activating and only partially inactivating
+    potassium current, imported from the
+    cerebellar stellate cell model of Rizza et al. (2021) [2]_.
+
+    Gating is an ``m`` gate of power 3 and an ``h`` gate of power 1,
+    both written in steady-state/time-constant form and both
+    evaluated at a junction-potential-corrected voltage
+    :math:`V' = V + 11`:
+
+    .. math::
+
+        \begin{aligned}
+        m_\infty &= \frac{1}{1 + \exp(-(V' + 24) / 15.4)} \\
+        h_\infty &= 0.31
+          + \frac{0.69}{1 + \exp((V' + 5.802) / 11.2)}
+        \end{aligned}
+
+    where :math:`V'` is in millivolts. Inactivation is only partial:
+    :math:`h_\infty` decays to a floor of 0.31 rather than to zero,
+    so about 31 per cent of the conductance survives a maintained
+    depolarisation. Both time constants are piecewise, in
+    milliseconds:
+
+    .. math::
+
+        \tau_m = 10^3 \times \begin{cases}
+        3 \, (3.4225 \times 10^{-5}
+          + 0.00498 \, e^{V' / 28.29}), & V' < -35 \\
+        1.2851 \times 10^{-4} + \dfrac{1}{e^{(V' + 100.7)/12.9}
+          + e^{(V' - 56)/(-23.1)}}, & V' \ge -35
+        \end{cases}
+
+    .. math::
+
+        \tau_h = 10^3 \times \begin{cases}
+        0.0012 + 0.0023 \, e^{-0.141 \, V'}, & V' > 0 \\
+        1.2202 \times 10^{-5}
+          + 0.012 \, e^{-((V' + 56.3)/49.6)^2}, & V' \le 0
+        \end{cases}
+
+    Each ladder is selected with ``u.math.where`` on the predicates
+    ``V' < -35`` and ``V' > 0``, so the boundary value itself falls
+    to the second line in both.
+
+    Parameters
+    ----------
+    size : brainstate.typing.Size
+        Channel state shape.
+    g_max : array-like or callable, optional
+        Maximal conductance density. Defaults to ``4.0 mS/cm2``,
+        which is exactly the source mechanism's
+        ``gkbar = 0.004 mho/cm2``.
+    temp : array-like, optional
+        Absolute temperature driving both gates' q10 factor, default
+        22 degrees Celsius. See the temperature note below: this
+        default is BrainCell's own, not a value the source mechanism
+        states.
+    name : str, optional
+        Optional channel name.
+
+    See Also
+    --------
+    Kv3p4_MA2020_GoC : Golgi-cell port of the same mechanism.
+    Kv3p4_MA2020_GrC : Granule-cell port of the same mechanism.
+    Kv3p4_MA2024_PC : Purkinje-cell port of the same mechanism.
+    Kv3p4_MA2025_BC : Basket-cell port of the same mechanism.
+
+    Notes
+    -----
+    Ported from ``SC/channel/Kv3p4_RI21_SC.mod``. All five cell-type
+    ports of this mechanism carry the same equations and the same
+    constants, and so do the five BrainCell classes: everything above
+    is shared verbatim with :class:`Kv3p4_MA2020_GoC`,
+    :class:`Kv3p4_MA2020_GrC`, :class:`Kv3p4_MA2024_PC` and
+    :class:`Kv3p4_MA2025_BC`. What differs is only the deposit each
+    was imported from, and therefore the model paper cited below.
+
+    The ``SC`` file additionally declares a ``g_equiv`` RANGE variable
+    and assigns ``g_equiv = gkbar * m^3 * h`` in its ``BREAKPOINT``.
+    That is a diagnostic output for the NEURON comparison harness
+    rather than part of the dynamics, and BrainCell does not port it.
+
+    **Where the q10 factor is applied.** Both gates declare
+    ``q10 = 3.0`` at a reference of 37 degrees Celsius, so
+    :meth:`HH.compute_derivative` scales each
+    :math:`(x_\infty - x)/\tau_x` term by
+    :math:`\phi = 3^{(T - 37)/10}`. The ``.mod`` file instead
+    divides its ``mtau`` and ``htau`` by the same factor. The two
+    forms are algebraically identical, but it means :meth:`f_m_tau`
+    and :meth:`f_h_tau` return q10-free time constants rather than
+    the mechanism's ``mtau`` and ``htau``.
+
+    **The default temperature is BrainCell's, not the mechanism's.**
+    Unlike most channels in this module, this ``.mod`` file never
+    declares a ``celsius`` value; it reads NEURON's global instead.
+    The ``temp`` default of 22 degrees Celsius is therefore a
+    BrainCell choice, and because it sits 15 degrees below the
+    gates' reference it makes the default temperature factor
+    :math:`\phi \approx 0.192` -- gating roughly 5.2 times slower
+    than at 37 degrees Celsius. Callers reproducing a published
+    simulation should set ``temp`` explicitly.
+
+    **Provenance, and a name the sources do not support.** These files
+    are ModelDB accession 48332's ``kpkj.mod`` renamed. The header
+    lines ": HH TEA-sensitive Purkinje potassium current" and
+    ": Created 8/5/02 - nwg" are the deposit's own, "nwg" being
+    Nathan W. Gouwens, second author of Khaliq et al. (2003) [1]_, and
+    the parameters ``mivh = -24 mV``, ``mik = 15.4`` and
+    ``hiy0 = 0.31`` reproduce that paper's Table 1 row for the current
+    it calls **K fast**. The trailing ``: Suffix from kpkj to Kv3_4``
+    line is a BrainCell-local addition and is not in the deposit. The
+    model paper [2]_ names the deposit this parameterisation was
+    imported from, not the origin of the equations.
+
+    That rename line is the whole basis of the ``Kv3p4`` name, and
+    it does not survive contact with the source. Khaliq et al. call
+    this current K fast throughout and never name a Kv subunit; the
+    strings "Kv3.4", "Kv3.3" and "Kv3.1" appear nowhere in the
+    paper, and its only mention of Kv3 at all is one Discussion
+    sentence observing that the positive activation range is typical
+    of the Kv3 family. **The class name therefore asserts a subunit
+    identity the cited literature does not establish.** Under this
+    project's mismatch policy the name is documented rather than
+    changed: read ``Kv3p4`` as a label for the TEA-sensitive fast K
+    current of Khaliq et al. (2003), which those authors associate
+    with the Kv3 family, and not as a claim about Kv3.4.
+
+    **Conductance default.** ``4.0 mS/cm2`` is the deposit's tuned
+    value, carried across from the ``.mod`` file. It is not a value
+    printed in either cited paper.
+
+    **Import deviations: none.** This mechanism carries no NMODL
+    ``TABLE`` and was already integrated with ``cnexp`` upstream, so
+    neither the table-removal nor the ``derivimplicit`` substitution
+    recorded for other channels in this model applies here. Do not
+    assume it shares the deviations of its ``Kv4p3`` neighbour,
+    which has three.
+
+    References
+    ----------
+    .. [1] Khaliq, Z. M., Gouwens, N. W., & Raman, I. M. (2003). The
+           contribution of resurgent sodium current to high-frequency
+           firing in Purkinje neurons: an experimental and modeling
+           study. The Journal of Neuroscience, 23(12), 4899-4912.
+           doi:10.1523/JNEUROSCI.23-12-04899.2003
+    .. [2] Rizza, M. F., Locatelli, F., Masoli, S., Sanchez-Ponce, D.,
+           Munoz, A., Prestori, F., & D'Angelo, E. (2021). Stellate
+           cell computational modeling predicts signal filtering in
+           the molecular layer circuit of cerebellum. Scientific
+           Reports, 11(1), 3873.
+           doi:10.1038/s41598-021-83209-w
+    """
 
     __module__ = "braincell.channel"
     root_type = Potassium
@@ -3177,7 +3772,147 @@ class Kv3p4_RI2021_SC(OhmicHH):
 
 @register_channel("Kv4p3_MA2025_BC")
 class Kv4p3_MA2025_BC(OhmicHH):
-    """Template-based import of ``Kv4p3_MA2025_BC.mod``."""
+    r"""A-type transient potassium current of the basket cell model.
+
+    Fast-inactivating A-type potassium current, imported from the
+    cerebellar basket cell model of Masoli et al. (2025) [2]_.
+
+    Gating is an ``a`` gate of power 3 and a ``b`` gate of power 1,
+    each with an explicit Boltzmann steady state and a time constant
+    built from an alpha/beta pair:
+
+    .. math::
+
+        \begin{aligned}
+        a_\infty &= \frac{1}{1 + \exp((V + 38) / (-17))} \\
+        b_\infty &= \frac{1}{1 + \exp((V + 78.8) / 8.4)} \\
+        \tau_a &= \frac{1}{\alpha_a + \beta_a}, \qquad
+        \tau_b = \frac{1}{\alpha_b + \beta_b}
+        \end{aligned}
+
+    with, writing :math:`\sigma(x, y) = 1 / (e^{x/y} + 1)` for the
+    module-level ``_sigm`` helper,
+
+    .. math::
+
+        \begin{aligned}
+        \alpha_a &= 0.8147 \, \sigma(V + 9.17203,\ -23.3271) \\
+        \beta_a &= 0.1655 \big/ e^{(V + 18.2791) / 19.4718} \\
+        \alpha_b &= 0.0368 \, \sigma(V + 111.332,\ 12.8433) \\
+        \beta_b &= 0.0345 \, \sigma(V + 49.9537,\ -8.90123)
+        \end{aligned}
+
+    where :math:`V` is in millivolts, the rates are per millisecond
+    and the time constants are in milliseconds. This class applies
+    no voltage shift, and the reversal potential comes from the
+    potassium ion object rather than from the class.
+
+    Parameters
+    ----------
+    size : brainstate.typing.Size
+        Channel state shape.
+    g_max : array-like or callable, optional
+        Maximal conductance density. Defaults to ``3.2 mS/cm2``,
+        which is exactly the source mechanism's
+        ``gkbar = 0.0032 mho/cm2``.
+    temp : array-like, optional
+        Absolute temperature driving both gates' q10 factor, default
+        30 degrees Celsius. This matches the ``celsius = 30 (degC)``
+        written in the source mechanism's ``PARAMETER`` block.
+    name : str, optional
+        Optional channel name.
+
+    See Also
+    --------
+    Kv4p3_MA2020_GoC : Golgi-cell port of the same mechanism.
+    Kv4p3_MA2020_GrC : Granule-cell port of the same mechanism.
+    Kv4p3_MA2024_PC : Purkinje-cell port of the same mechanism.
+    Kv4p3_RI2021_SC : Stellate-cell port of the same mechanism.
+
+    Notes
+    -----
+    Ported from ``BC/channel/Kv4p3_MA25_BC.mod``. The five cell-type
+    ports of this mechanism are byte-identical apart from their
+    ``SUFFIX`` line and their ``celsius`` default, and the five
+    BrainCell classes carry the same rate constants: every equation
+    above is shared verbatim with :class:`Kv4p3_MA2020_GoC`,
+    :class:`Kv4p3_MA2020_GrC`, :class:`Kv4p3_MA2024_PC` and
+    :class:`Kv4p3_RI2021_SC`. What differs is the default ``temp``,
+    the deposit each was imported from, and therefore the model paper
+    cited below.
+
+    ``Kalpha_a`` is stored here as a bare float and passed straight to
+    ``_sigm``, whereas :class:`Kv4p3_MA2020_GoC`,
+    :class:`Kv4p3_MA2020_GrC` and :class:`Kv4p3_RI2021_SC` attach
+    ``u.mV`` to it and convert with ``.to_decimal(u.mV)`` at use. The
+    arithmetic is identical -- both forms divide a millivolt
+    difference by -23.3271 -- but the inconsistency is real, and on
+    this documentation-only branch it is recorded rather than fixed.
+
+    **Where the q10 factor is applied.** Both gates declare
+    ``q10 = 3.0`` at a reference of 25.5 degrees Celsius, so
+    :meth:`HH.compute_derivative` scales each
+    :math:`(x_\infty - x)/\tau_x` term by
+    :math:`\phi = 3^{(T - 25.5)/10}` (about 1.64 at the default
+    30 degrees Celsius). The ``.mod`` file instead multiplies
+    the same ``Q10`` into ``alp_a``, ``bet_a``, ``alp_b`` and
+    ``bet_b``, which divides its ``tau_a`` and ``tau_b`` by that
+    factor. The two forms are algebraically identical, but it means
+    :meth:`f_a_tau` and :meth:`f_b_tau` return q10-free time
+    constants rather than the mechanism's ``tau_a`` and ``tau_b``.
+
+    **Provenance, and what the header does not establish.** The
+    ``.mod`` header carries
+    ``Author: E.D'Angelo, T.Nieus, A. Fontana``. That credit line is
+    copy-pasted verbatim across every cell-type port of this
+    mechanism, and it names authors 1, 2 and 7 of an eight-author
+    paper, so it is not treated as a citation here. The kinetics
+    originate in the cerebellar granule cell model of D'Angelo et al.
+    (2001) [1]_; the model paper [2]_ names the deposit this
+    parameterisation was imported from, not the origin of the
+    equations. The commented-out alternatives that remain in the
+    ``.mod`` file -- ``linoid`` forms of each rate, and a
+    "Bardoni Belluzzi" steady-state block -- are never evaluated by
+    the mechanism and are not reproduced here.
+
+    **Conductance default.** ``3.2 mS/cm2`` is the deposit's tuned
+    value, carried across from the ``.mod`` file. It is not a value
+    printed in either cited paper.
+
+    **Import deviations.** Three, all recorded against this symbol.
+    First, the original mechanism's NMODL ``TABLE`` over
+    ``[-100, 30] mV``, covering ``a_inf``, ``tau_a``, ``b_inf`` and
+    ``tau_b``, is not reproduced: all four expressions are evaluated
+    per call. NEURON clamped tabulated values to the boundary
+    outside that window, so any BrainCell-versus-NEURON divergence
+    below -100 mV or above 30 mV is expected rather than a port
+    error. Second, the integration method was changed from
+    ``derivimplicit`` to ``cnexp``; the two gate ODEs are
+    independent, so the substitution is exact. Third, four
+    parameters are carried at NEURON's compiled six-significant-
+    figure precision rather than at the ``.mod`` source text's:
+    ``Kalpha_a`` ``-23.32708`` becomes ``-23.3271``, ``Kbeta_a``
+    ``19.47175`` becomes ``19.4718``, ``V0beta_a`` ``-18.27914``
+    becomes ``-18.2791`` and ``V0alpha_b`` ``-111.33209`` becomes
+    ``-111.332``. That rewrite reaches those four parameters only;
+    ordinary in-formula literals keep their source values.
+
+    References
+    ----------
+    .. [1] D'Angelo, E., Nieus, T., Maffei, A., Armano, S., Rossi, P.,
+           Taglietti, V., Fontana, A., & Naldi, G. (2001).
+           Theta-frequency bursting and resonance in cerebellar
+           granule cells: experimental evidence and modeling of a
+           slow K+-dependent mechanism. The Journal of Neuroscience,
+           21(3), 759-770.
+           doi:10.1523/JNEUROSCI.21-03-00759.2001
+    .. [2] Masoli, S., Rizza, M. F., Soda, T., Sanchez-Ponce, D.,
+           Munoz, A., Prestori, F., & D'Angelo, E. (2025).
+           Cerebellar basket cell filtering of Purkinje cell
+           responses elicited by low frequency parallel fibre
+           transmission. Scientific Reports, 15(1), 25192.
+           doi:10.1038/s41598-025-09964-2
+    """
 
     __module__ = "braincell.channel"
     root_type = Potassium
@@ -3252,7 +3987,148 @@ class Kv4p3_MA2025_BC(OhmicHH):
 
 @register_channel("Kv4p3_MA2024_PC")
 class Kv4p3_MA2024_PC(OhmicHH):
-    """Template-based import of ``Kv4p3_MA2024_PC.mod``."""
+    r"""A-type transient potassium current of the Purkinje cell model.
+
+    Fast-inactivating A-type potassium current, imported from the
+    human Purkinje cell model of Masoli et al. (2024) [2]_.
+
+    Gating is an ``a`` gate of power 3 and a ``b`` gate of power 1,
+    each with an explicit Boltzmann steady state and a time constant
+    built from an alpha/beta pair:
+
+    .. math::
+
+        \begin{aligned}
+        a_\infty &= \frac{1}{1 + \exp((V + 38) / (-17))} \\
+        b_\infty &= \frac{1}{1 + \exp((V + 78.8) / 8.4)} \\
+        \tau_a &= \frac{1}{\alpha_a + \beta_a}, \qquad
+        \tau_b = \frac{1}{\alpha_b + \beta_b}
+        \end{aligned}
+
+    with, writing :math:`\sigma(x, y) = 1 / (e^{x/y} + 1)` for the
+    module-level ``_sigm`` helper,
+
+    .. math::
+
+        \begin{aligned}
+        \alpha_a &= 0.8147 \, \sigma(V + 9.17203,\ -23.3271) \\
+        \beta_a &= 0.1655 \big/ e^{(V + 18.2791) / 19.4718} \\
+        \alpha_b &= 0.0368 \, \sigma(V + 111.332,\ 12.8433) \\
+        \beta_b &= 0.0345 \, \sigma(V + 49.9537,\ -8.90123)
+        \end{aligned}
+
+    where :math:`V` is in millivolts, the rates are per millisecond
+    and the time constants are in milliseconds. This class applies
+    no voltage shift, and the reversal potential comes from the
+    potassium ion object rather than from the class.
+
+    Parameters
+    ----------
+    size : brainstate.typing.Size
+        Channel state shape.
+    g_max : array-like or callable, optional
+        Maximal conductance density. Defaults to ``3.2 mS/cm2``,
+        which is exactly the source mechanism's
+        ``gkbar = 0.0032 mho/cm2``.
+    temp : array-like, optional
+        Absolute temperature driving both gates' q10 factor, default
+        30 degrees Celsius. This matches the ``celsius = 30 (degC)``
+        written in the source mechanism's ``PARAMETER`` block.
+    name : str, optional
+        Optional channel name.
+
+    See Also
+    --------
+    Kv4p3_MA2020_GoC : Golgi-cell port of the same mechanism.
+    Kv4p3_MA2020_GrC : Granule-cell port of the same mechanism.
+    Kv4p3_MA2025_BC : Basket-cell port of the same mechanism.
+    Kv4p3_RI2021_SC : Stellate-cell port of the same mechanism.
+
+    Notes
+    -----
+    Ported from ``PC/channel/Kv4p3_MA24_PC.mod``. The five cell-type
+    ports of this mechanism are byte-identical apart from their
+    ``SUFFIX`` line and their ``celsius`` default, and the five
+    BrainCell classes carry the same rate constants: every equation
+    above is shared verbatim with :class:`Kv4p3_MA2020_GoC`,
+    :class:`Kv4p3_MA2020_GrC`, :class:`Kv4p3_MA2025_BC` and
+    :class:`Kv4p3_RI2021_SC`. What differs is the default ``temp``,
+    the deposit each was imported from, and therefore the model paper
+    cited below.
+
+    ``Kalpha_a`` is stored here as a bare float and passed straight to
+    ``_sigm``, whereas :class:`Kv4p3_MA2020_GoC`,
+    :class:`Kv4p3_MA2020_GrC` and :class:`Kv4p3_RI2021_SC` attach
+    ``u.mV`` to it and convert with ``.to_decimal(u.mV)`` at use. The
+    arithmetic is identical -- both forms divide a millivolt
+    difference by -23.3271 -- but the inconsistency is real, and on
+    this documentation-only branch it is recorded rather than fixed.
+
+    **Where the q10 factor is applied.** Both gates declare
+    ``q10 = 3.0`` at a reference of 25.5 degrees Celsius, so
+    :meth:`HH.compute_derivative` scales each
+    :math:`(x_\infty - x)/\tau_x` term by
+    :math:`\phi = 3^{(T - 25.5)/10}` (about 1.64 at the default
+    30 degrees Celsius). The ``.mod`` file instead multiplies
+    the same ``Q10`` into ``alp_a``, ``bet_a``, ``alp_b`` and
+    ``bet_b``, which divides its ``tau_a`` and ``tau_b`` by that
+    factor. The two forms are algebraically identical, but it means
+    :meth:`f_a_tau` and :meth:`f_b_tau` return q10-free time
+    constants rather than the mechanism's ``tau_a`` and ``tau_b``.
+
+    **Provenance, and what the header does not establish.** The
+    ``.mod`` header carries
+    ``Author: E.D'Angelo, T.Nieus, A. Fontana``. That credit line is
+    copy-pasted verbatim across every cell-type port of this
+    mechanism, and it names authors 1, 2 and 7 of an eight-author
+    paper, so it is not treated as a citation here. The kinetics
+    originate in the cerebellar granule cell model of D'Angelo et al.
+    (2001) [1]_; the model paper [2]_ names the deposit this
+    parameterisation was imported from, not the origin of the
+    equations. The commented-out alternatives that remain in the
+    ``.mod`` file -- ``linoid`` forms of each rate, and a
+    "Bardoni Belluzzi" steady-state block -- are never evaluated by
+    the mechanism and are not reproduced here.
+
+    **Conductance default.** ``3.2 mS/cm2`` is the deposit's tuned
+    value, carried across from the ``.mod`` file. It is not a value
+    printed in either cited paper.
+
+    **Import deviations.** Three, all recorded against this symbol.
+    First, the original mechanism's NMODL ``TABLE`` over
+    ``[-100, 30] mV``, covering ``a_inf``, ``tau_a``, ``b_inf`` and
+    ``tau_b``, is not reproduced: all four expressions are evaluated
+    per call. NEURON clamped tabulated values to the boundary
+    outside that window, so any BrainCell-versus-NEURON divergence
+    below -100 mV or above 30 mV is expected rather than a port
+    error. Second, the integration method was changed from
+    ``derivimplicit`` to ``cnexp``; the two gate ODEs are
+    independent, so the substitution is exact. Third, four
+    parameters are carried at NEURON's compiled six-significant-
+    figure precision rather than at the ``.mod`` source text's:
+    ``Kalpha_a`` ``-23.32708`` becomes ``-23.3271``, ``Kbeta_a``
+    ``19.47175`` becomes ``19.4718``, ``V0beta_a`` ``-18.27914``
+    becomes ``-18.2791`` and ``V0alpha_b`` ``-111.33209`` becomes
+    ``-111.332``. That rewrite reaches those four parameters only;
+    ordinary in-formula literals keep their source values.
+
+    References
+    ----------
+    .. [1] D'Angelo, E., Nieus, T., Maffei, A., Armano, S., Rossi, P.,
+           Taglietti, V., Fontana, A., & Naldi, G. (2001).
+           Theta-frequency bursting and resonance in cerebellar
+           granule cells: experimental evidence and modeling of a
+           slow K+-dependent mechanism. The Journal of Neuroscience,
+           21(3), 759-770.
+           doi:10.1523/JNEUROSCI.21-03-00759.2001
+    .. [2] Masoli, S., Sanchez-Ponce, D., Vrieler, N., Abu-Haya, K.,
+           Lerner, V., Shahar, T., Nedelescu, H., Rizza, M. F.,
+           Benavides-Piccione, R., DeFelipe, J., Yarom, Y., Munoz,
+           A., & D'Angelo, E. (2024). Human Purkinje cells outperform
+           mouse Purkinje cells in dendritic complexity and
+           computational capacity. Communications Biology, 7(1), 5.
+           doi:10.1038/s42003-023-05689-y
+    """
 
     __module__ = "braincell.channel"
     root_type = Potassium
@@ -3327,7 +4203,147 @@ class Kv4p3_MA2024_PC(OhmicHH):
 
 @register_channel("Kv4p3_RI2021_SC")
 class Kv4p3_RI2021_SC(OhmicHH):
-    """Template-based import of ``Kv4p3_RI2021_SC.mod``."""
+    r"""A-type transient potassium current of the stellate cell model.
+
+    Fast-inactivating A-type potassium current, imported from the
+    cerebellar stellate cell model of Rizza et al. (2021) [2]_.
+
+    Gating is an ``a`` gate of power 3 and a ``b`` gate of power 1,
+    each with an explicit Boltzmann steady state and a time constant
+    built from an alpha/beta pair:
+
+    .. math::
+
+        \begin{aligned}
+        a_\infty &= \frac{1}{1 + \exp((V + 38) / (-17))} \\
+        b_\infty &= \frac{1}{1 + \exp((V + 78.8) / 8.4)} \\
+        \tau_a &= \frac{1}{\alpha_a + \beta_a}, \qquad
+        \tau_b = \frac{1}{\alpha_b + \beta_b}
+        \end{aligned}
+
+    with, writing :math:`\sigma(x, y) = 1 / (e^{x/y} + 1)` for the
+    module-level ``_sigm`` helper,
+
+    .. math::
+
+        \begin{aligned}
+        \alpha_a &= 0.8147 \, \sigma(V + 9.17203,\ -23.3271) \\
+        \beta_a &= 0.1655 \big/ e^{(V + 18.2791) / 19.4718} \\
+        \alpha_b &= 0.0368 \, \sigma(V + 111.332,\ 12.8433) \\
+        \beta_b &= 0.0345 \, \sigma(V + 49.9537,\ -8.90123)
+        \end{aligned}
+
+    where :math:`V` is in millivolts, the rates are per millisecond
+    and the time constants are in milliseconds. This class applies
+    no voltage shift, and the reversal potential comes from the
+    potassium ion object rather than from the class.
+
+    Parameters
+    ----------
+    size : brainstate.typing.Size
+        Channel state shape.
+    g_max : array-like or callable, optional
+        Maximal conductance density. Defaults to ``3.2 mS/cm2``,
+        which is exactly the source mechanism's
+        ``gkbar = 0.0032 mho/cm2``.
+    temp : array-like, optional
+        Absolute temperature driving both gates' q10 factor, default
+        30 degrees Celsius. This matches the ``celsius = 30 (degC)``
+        written in the source mechanism's ``PARAMETER`` block.
+    name : str, optional
+        Optional channel name.
+
+    See Also
+    --------
+    Kv4p3_MA2020_GoC : Golgi-cell port of the same mechanism.
+    Kv4p3_MA2020_GrC : Granule-cell port of the same mechanism.
+    Kv4p3_MA2024_PC : Purkinje-cell port of the same mechanism.
+    Kv4p3_MA2025_BC : Basket-cell port of the same mechanism.
+
+    Notes
+    -----
+    Ported from ``SC/channel/Kv4p3_RI21_SC.mod``. The five cell-type
+    ports of this mechanism are byte-identical apart from their
+    ``SUFFIX`` line and their ``celsius`` default, and the five
+    BrainCell classes carry the same rate constants: every equation
+    above is shared verbatim with :class:`Kv4p3_MA2020_GoC`,
+    :class:`Kv4p3_MA2020_GrC`, :class:`Kv4p3_MA2024_PC` and
+    :class:`Kv4p3_MA2025_BC`. What differs is the default ``temp``,
+    the deposit each was imported from, and therefore the model paper
+    cited below.
+
+    ``Kalpha_a`` is stored here as ``-23.3271 * u.mV`` and converted
+    with ``.to_decimal(u.mV)`` at use, whereas
+    :class:`Kv4p3_MA2024_PC` and :class:`Kv4p3_MA2025_BC` store the
+    same number as a bare float and pass it straight to ``_sigm``. The
+    arithmetic is identical -- both forms divide a millivolt
+    difference by -23.3271 -- but the inconsistency is real, and on
+    this documentation-only branch it is recorded rather than fixed.
+
+    **Where the q10 factor is applied.** Both gates declare
+    ``q10 = 3.0`` at a reference of 25.5 degrees Celsius, so
+    :meth:`HH.compute_derivative` scales each
+    :math:`(x_\infty - x)/\tau_x` term by
+    :math:`\phi = 3^{(T - 25.5)/10}` (about 1.64 at the default
+    30 degrees Celsius). The ``.mod`` file instead multiplies
+    the same ``Q10`` into ``alp_a``, ``bet_a``, ``alp_b`` and
+    ``bet_b``, which divides its ``tau_a`` and ``tau_b`` by that
+    factor. The two forms are algebraically identical, but it means
+    :meth:`f_a_tau` and :meth:`f_b_tau` return q10-free time
+    constants rather than the mechanism's ``tau_a`` and ``tau_b``.
+
+    **Provenance, and what the header does not establish.** The
+    ``.mod`` header carries
+    ``Author: E.D'Angelo, T.Nieus, A. Fontana``. That credit line is
+    copy-pasted verbatim across every cell-type port of this
+    mechanism, and it names authors 1, 2 and 7 of an eight-author
+    paper, so it is not treated as a citation here. The kinetics
+    originate in the cerebellar granule cell model of D'Angelo et al.
+    (2001) [1]_; the model paper [2]_ names the deposit this
+    parameterisation was imported from, not the origin of the
+    equations. The commented-out alternatives that remain in the
+    ``.mod`` file -- ``linoid`` forms of each rate, and a
+    "Bardoni Belluzzi" steady-state block -- are never evaluated by
+    the mechanism and are not reproduced here.
+
+    **Conductance default.** ``3.2 mS/cm2`` is the deposit's tuned
+    value, carried across from the ``.mod`` file. It is not a value
+    printed in either cited paper.
+
+    **Import deviations.** Three, all recorded against this symbol.
+    First, the original mechanism's NMODL ``TABLE`` over
+    ``[-100, 30] mV``, covering ``a_inf``, ``tau_a``, ``b_inf`` and
+    ``tau_b``, is not reproduced: all four expressions are evaluated
+    per call. NEURON clamped tabulated values to the boundary
+    outside that window, so any BrainCell-versus-NEURON divergence
+    below -100 mV or above 30 mV is expected rather than a port
+    error. Second, the integration method was changed from
+    ``derivimplicit`` to ``cnexp``; the two gate ODEs are
+    independent, so the substitution is exact. Third, four
+    parameters are carried at NEURON's compiled six-significant-
+    figure precision rather than at the ``.mod`` source text's:
+    ``Kalpha_a`` ``-23.32708`` becomes ``-23.3271``, ``Kbeta_a``
+    ``19.47175`` becomes ``19.4718``, ``V0beta_a`` ``-18.27914``
+    becomes ``-18.2791`` and ``V0alpha_b`` ``-111.33209`` becomes
+    ``-111.332``. That rewrite reaches those four parameters only;
+    ordinary in-formula literals keep their source values.
+
+    References
+    ----------
+    .. [1] D'Angelo, E., Nieus, T., Maffei, A., Armano, S., Rossi, P.,
+           Taglietti, V., Fontana, A., & Naldi, G. (2001).
+           Theta-frequency bursting and resonance in cerebellar
+           granule cells: experimental evidence and modeling of a
+           slow K+-dependent mechanism. The Journal of Neuroscience,
+           21(3), 759-770.
+           doi:10.1523/JNEUROSCI.21-03-00759.2001
+    .. [2] Rizza, M. F., Locatelli, F., Masoli, S., Sanchez-Ponce, D.,
+           Munoz, A., Prestori, F., & D'Angelo, E. (2021). Stellate
+           cell computational modeling predicts signal filtering in
+           the molecular layer circuit of cerebellum. Scientific
+           Reports, 11(1), 3873.
+           doi:10.1038/s41598-021-83209-w
+    """
 
     __module__ = "braincell.channel"
     root_type = Potassium
@@ -3733,7 +4749,157 @@ class Kv1p1_MA2020_GoC(HH):
 
 @register_channel("Kv3p4_MA2020_GoC")
 class Kv3p4_MA2020_GoC(OhmicHH):
-    """Template-based import of ``Kv3p4_MA2020_GoC.mod``."""
+    r"""Fast TEA-sensitive potassium current of the Golgi cell model.
+
+    High-threshold, fast-activating and only partially inactivating
+    potassium current, imported from the
+    cerebellar Golgi cell model of Masoli et al. (2020) [2]_.
+
+    Gating is an ``m`` gate of power 3 and an ``h`` gate of power 1,
+    both written in steady-state/time-constant form and both
+    evaluated at a junction-potential-corrected voltage
+    :math:`V' = V + 11`:
+
+    .. math::
+
+        \begin{aligned}
+        m_\infty &= \frac{1}{1 + \exp(-(V' + 24) / 15.4)} \\
+        h_\infty &= 0.31
+          + \frac{0.69}{1 + \exp((V' + 5.802) / 11.2)}
+        \end{aligned}
+
+    where :math:`V'` is in millivolts. Inactivation is only partial:
+    :math:`h_\infty` decays to a floor of 0.31 rather than to zero,
+    so about 31 per cent of the conductance survives a maintained
+    depolarisation. Both time constants are piecewise, in
+    milliseconds:
+
+    .. math::
+
+        \tau_m = 10^3 \times \begin{cases}
+        3 \, (3.4225 \times 10^{-5}
+          + 0.00498 \, e^{V' / 28.29}), & V' < -35 \\
+        1.2851 \times 10^{-4} + \dfrac{1}{e^{(V' + 100.7)/12.9}
+          + e^{(V' - 56)/(-23.1)}}, & V' \ge -35
+        \end{cases}
+
+    .. math::
+
+        \tau_h = 10^3 \times \begin{cases}
+        0.0012 + 0.0023 \, e^{-0.141 \, V'}, & V' > 0 \\
+        1.2202 \times 10^{-5}
+          + 0.012 \, e^{-((V' + 56.3)/49.6)^2}, & V' \le 0
+        \end{cases}
+
+    Each ladder is selected with ``u.math.where`` on the predicates
+    ``V' < -35`` and ``V' > 0``, so the boundary value itself falls
+    to the second line in both.
+
+    Parameters
+    ----------
+    size : brainstate.typing.Size
+        Channel state shape.
+    g_max : array-like or callable, optional
+        Maximal conductance density. Defaults to ``4.0 mS/cm2``,
+        which is exactly the source mechanism's
+        ``gkbar = 0.004 mho/cm2``.
+    temp : array-like, optional
+        Absolute temperature driving both gates' q10 factor, default
+        22 degrees Celsius. See the temperature note below: this
+        default is BrainCell's own, not a value the source mechanism
+        states.
+    name : str, optional
+        Optional channel name.
+
+    See Also
+    --------
+    Kv3p4_MA2020_GrC : Granule-cell port of the same mechanism.
+    Kv3p4_MA2024_PC : Purkinje-cell port of the same mechanism.
+    Kv3p4_MA2025_BC : Basket-cell port of the same mechanism.
+    Kv3p4_RI2021_SC : Stellate-cell port of the same mechanism.
+
+    Notes
+    -----
+    Ported from ``GoC/channel/Kv3p4_MA20_GoC.mod``. All five cell-type
+    ports of this mechanism carry the same equations and the same
+    constants, and so do the five BrainCell classes: everything above
+    is shared verbatim with :class:`Kv3p4_MA2020_GrC`,
+    :class:`Kv3p4_MA2024_PC`, :class:`Kv3p4_MA2025_BC` and
+    :class:`Kv3p4_RI2021_SC`. What differs is only the deposit each
+    was imported from, and therefore the model paper cited below.
+    Reference [2]_ is the Golgi-cell paper specifically -- the
+    companion granule-cell paper of the same year belongs to
+    :class:`Kv3p4_MA2020_GrC`, not to this class.
+
+    **Where the q10 factor is applied.** Both gates declare
+    ``q10 = 3.0`` at a reference of 37 degrees Celsius, so
+    :meth:`HH.compute_derivative` scales each
+    :math:`(x_\infty - x)/\tau_x` term by
+    :math:`\phi = 3^{(T - 37)/10}`. The ``.mod`` file instead
+    divides its ``mtau`` and ``htau`` by the same factor. The two
+    forms are algebraically identical, but it means :meth:`f_m_tau`
+    and :meth:`f_h_tau` return q10-free time constants rather than
+    the mechanism's ``mtau`` and ``htau``.
+
+    **The default temperature is BrainCell's, not the mechanism's.**
+    Unlike most channels in this module, this ``.mod`` file never
+    declares a ``celsius`` value; it reads NEURON's global instead.
+    The ``temp`` default of 22 degrees Celsius is therefore a
+    BrainCell choice, and because it sits 15 degrees below the
+    gates' reference it makes the default temperature factor
+    :math:`\phi \approx 0.192` -- gating roughly 5.2 times slower
+    than at 37 degrees Celsius. Callers reproducing a published
+    simulation should set ``temp`` explicitly.
+
+    **Provenance, and a name the sources do not support.** These files
+    are ModelDB accession 48332's ``kpkj.mod`` renamed. The header
+    lines ": HH TEA-sensitive Purkinje potassium current" and
+    ": Created 8/5/02 - nwg" are the deposit's own, "nwg" being
+    Nathan W. Gouwens, second author of Khaliq et al. (2003) [1]_, and
+    the parameters ``mivh = -24 mV``, ``mik = 15.4`` and
+    ``hiy0 = 0.31`` reproduce that paper's Table 1 row for the current
+    it calls **K fast**. The trailing ``: Suffix from kpkj to Kv3_4``
+    line is a BrainCell-local addition and is not in the deposit. The
+    model paper [2]_ names the deposit this parameterisation was
+    imported from, not the origin of the equations.
+
+    That rename line is the whole basis of the ``Kv3p4`` name, and
+    it does not survive contact with the source. Khaliq et al. call
+    this current K fast throughout and never name a Kv subunit; the
+    strings "Kv3.4", "Kv3.3" and "Kv3.1" appear nowhere in the
+    paper, and its only mention of Kv3 at all is one Discussion
+    sentence observing that the positive activation range is typical
+    of the Kv3 family. **The class name therefore asserts a subunit
+    identity the cited literature does not establish.** Under this
+    project's mismatch policy the name is documented rather than
+    changed: read ``Kv3p4`` as a label for the TEA-sensitive fast K
+    current of Khaliq et al. (2003), which those authors associate
+    with the Kv3 family, and not as a claim about Kv3.4.
+
+    **Conductance default.** ``4.0 mS/cm2`` is the deposit's tuned
+    value, carried across from the ``.mod`` file. It is not a value
+    printed in either cited paper.
+
+    **Import deviations: none.** This mechanism carries no NMODL
+    ``TABLE`` and was already integrated with ``cnexp`` upstream, so
+    neither the table-removal nor the ``derivimplicit`` substitution
+    recorded for other channels in this model applies here. Do not
+    assume it shares the deviations of its ``Kv4p3`` neighbour,
+    which has three.
+
+    References
+    ----------
+    .. [1] Khaliq, Z. M., Gouwens, N. W., & Raman, I. M. (2003). The
+           contribution of resurgent sodium current to high-frequency
+           firing in Purkinje neurons: an experimental and modeling
+           study. The Journal of Neuroscience, 23(12), 4899-4912.
+           doi:10.1523/JNEUROSCI.23-12-04899.2003
+    .. [2] Masoli, S., Ottaviani, A., Casali, S., & D'Angelo, E.
+           (2020). Cerebellar Golgi cell models predict dendritic
+           processing and mechanisms of synaptic plasticity. PLOS
+           Computational Biology, 16(12), e1007937.
+           doi:10.1371/journal.pcbi.1007937
+    """
 
     __module__ = "braincell.channel"
     root_type = Potassium
@@ -3797,7 +4963,150 @@ class Kv3p4_MA2020_GoC(OhmicHH):
 
 @register_channel("Kv4p3_MA2020_GoC")
 class Kv4p3_MA2020_GoC(OhmicHH):
-    """Template-based import of ``Kv4p3_MA2020_GoC.mod``."""
+    r"""A-type transient potassium current of the Golgi cell model.
+
+    Fast-inactivating A-type potassium current, imported from the
+    cerebellar Golgi cell model of Masoli et al. (2020) [2]_.
+
+    Gating is an ``a`` gate of power 3 and a ``b`` gate of power 1,
+    each with an explicit Boltzmann steady state and a time constant
+    built from an alpha/beta pair:
+
+    .. math::
+
+        \begin{aligned}
+        a_\infty &= \frac{1}{1 + \exp((V + 38) / (-17))} \\
+        b_\infty &= \frac{1}{1 + \exp((V + 78.8) / 8.4)} \\
+        \tau_a &= \frac{1}{\alpha_a + \beta_a}, \qquad
+        \tau_b = \frac{1}{\alpha_b + \beta_b}
+        \end{aligned}
+
+    with, writing :math:`\sigma(x, y) = 1 / (e^{x/y} + 1)` for the
+    module-level ``_sigm`` helper,
+
+    .. math::
+
+        \begin{aligned}
+        \alpha_a &= 0.8147 \, \sigma(V + 9.17203,\ -23.3271) \\
+        \beta_a &= 0.1655 \big/ e^{(V + 18.2791) / 19.4718} \\
+        \alpha_b &= 0.0368 \, \sigma(V + 111.332,\ 12.8433) \\
+        \beta_b &= 0.0345 \, \sigma(V + 49.9537,\ -8.90123)
+        \end{aligned}
+
+    where :math:`V` is in millivolts, the rates are per millisecond
+    and the time constants are in milliseconds. This class applies
+    no voltage shift, and the reversal potential comes from the
+    potassium ion object rather than from the class.
+
+    Parameters
+    ----------
+    size : brainstate.typing.Size
+        Channel state shape.
+    g_max : array-like or callable, optional
+        Maximal conductance density. Defaults to ``3.2 mS/cm2``,
+        which is exactly the source mechanism's
+        ``gkbar = 0.0032 mho/cm2``.
+    temp : array-like, optional
+        Absolute temperature driving both gates' q10 factor, default
+        22 degrees Celsius. This matches the ``celsius = 22 (degC)``
+        written in the source mechanism's ``PARAMETER`` block -- the
+        one line that distinguishes it from the other four ports,
+        which all write 30.
+    name : str, optional
+        Optional channel name.
+
+    See Also
+    --------
+    Kv4p3_MA2020_GrC : Granule-cell port of the same mechanism.
+    Kv4p3_MA2024_PC : Purkinje-cell port of the same mechanism.
+    Kv4p3_MA2025_BC : Basket-cell port of the same mechanism.
+    Kv4p3_RI2021_SC : Stellate-cell port of the same mechanism.
+
+    Notes
+    -----
+    Ported from ``GoC/channel/Kv4p3_MA20_GoC.mod``. The five cell-type
+    ports of this mechanism are byte-identical apart from their
+    ``SUFFIX`` line and their ``celsius`` default, and the five
+    BrainCell classes carry the same rate constants: every equation
+    above is shared verbatim with :class:`Kv4p3_MA2020_GrC`,
+    :class:`Kv4p3_MA2024_PC`, :class:`Kv4p3_MA2025_BC` and
+    :class:`Kv4p3_RI2021_SC`. What differs is the default ``temp``,
+    the deposit each was imported from, and therefore the model paper
+    cited below. Reference [2]_ is the Golgi-cell paper specifically
+    -- the companion granule-cell paper of the same year belongs to
+    :class:`Kv4p3_MA2020_GrC`, not to this class.
+
+    ``Kalpha_a`` is stored here as ``-23.3271 * u.mV`` and converted
+    with ``.to_decimal(u.mV)`` at use, whereas
+    :class:`Kv4p3_MA2024_PC` and :class:`Kv4p3_MA2025_BC` store the
+    same number as a bare float and pass it straight to ``_sigm``. The
+    arithmetic is identical -- both forms divide a millivolt
+    difference by -23.3271 -- but the inconsistency is real, and on
+    this documentation-only branch it is recorded rather than fixed.
+
+    **Where the q10 factor is applied.** Both gates declare
+    ``q10 = 3.0`` at a reference of 25.5 degrees Celsius, so
+    :meth:`HH.compute_derivative` scales each
+    :math:`(x_\infty - x)/\tau_x` term by
+    :math:`\phi = 3^{(T - 25.5)/10}` (about 0.681 at the default
+    22 degrees Celsius). The ``.mod`` file instead multiplies
+    the same ``Q10`` into ``alp_a``, ``bet_a``, ``alp_b`` and
+    ``bet_b``, which divides its ``tau_a`` and ``tau_b`` by that
+    factor. The two forms are algebraically identical, but it means
+    :meth:`f_a_tau` and :meth:`f_b_tau` return q10-free time
+    constants rather than the mechanism's ``tau_a`` and ``tau_b``.
+
+    **Provenance, and what the header does not establish.** The
+    ``.mod`` header carries
+    ``Author: E.D'Angelo, T.Nieus, A. Fontana``. That credit line is
+    copy-pasted verbatim across every cell-type port of this
+    mechanism, and it names authors 1, 2 and 7 of an eight-author
+    paper, so it is not treated as a citation here. The kinetics
+    originate in the cerebellar granule cell model of D'Angelo et al.
+    (2001) [1]_; the model paper [2]_ names the deposit this
+    parameterisation was imported from, not the origin of the
+    equations. The commented-out alternatives that remain in the
+    ``.mod`` file -- ``linoid`` forms of each rate, and a
+    "Bardoni Belluzzi" steady-state block -- are never evaluated by
+    the mechanism and are not reproduced here.
+
+    **Conductance default.** ``3.2 mS/cm2`` is the deposit's tuned
+    value, carried across from the ``.mod`` file. It is not a value
+    printed in either cited paper.
+
+    **Import deviations.** Three, all recorded against this symbol.
+    First, the original mechanism's NMODL ``TABLE`` over
+    ``[-100, 30] mV``, covering ``a_inf``, ``tau_a``, ``b_inf`` and
+    ``tau_b``, is not reproduced: all four expressions are evaluated
+    per call. NEURON clamped tabulated values to the boundary
+    outside that window, so any BrainCell-versus-NEURON divergence
+    below -100 mV or above 30 mV is expected rather than a port
+    error. Second, the integration method was changed from
+    ``derivimplicit`` to ``cnexp``; the two gate ODEs are
+    independent, so the substitution is exact. Third, four
+    parameters are carried at NEURON's compiled six-significant-
+    figure precision rather than at the ``.mod`` source text's:
+    ``Kalpha_a`` ``-23.32708`` becomes ``-23.3271``, ``Kbeta_a``
+    ``19.47175`` becomes ``19.4718``, ``V0beta_a`` ``-18.27914``
+    becomes ``-18.2791`` and ``V0alpha_b`` ``-111.33209`` becomes
+    ``-111.332``. That rewrite reaches those four parameters only;
+    ordinary in-formula literals keep their source values.
+
+    References
+    ----------
+    .. [1] D'Angelo, E., Nieus, T., Maffei, A., Armano, S., Rossi, P.,
+           Taglietti, V., Fontana, A., & Naldi, G. (2001).
+           Theta-frequency bursting and resonance in cerebellar
+           granule cells: experimental evidence and modeling of a
+           slow K+-dependent mechanism. The Journal of Neuroscience,
+           21(3), 759-770.
+           doi:10.1523/JNEUROSCI.21-03-00759.2001
+    .. [2] Masoli, S., Ottaviani, A., Casali, S., & D'Angelo, E.
+           (2020). Cerebellar Golgi cell models predict dendritic
+           processing and mechanisms of synaptic plasticity. PLOS
+           Computational Biology, 16(12), e1007937.
+           doi:10.1371/journal.pcbi.1007937
+    """
 
     __module__ = "braincell.channel"
     root_type = Potassium
@@ -4496,7 +5805,157 @@ class Kv2p2_0010_MA2020_GrC(OhmicHH):
 
 @register_channel("Kv3p4_MA2020_GrC")
 class Kv3p4_MA2020_GrC(OhmicHH):
-    """Template-based import of ``Kv3p4_MA2020_GrC.mod``."""
+    r"""Fast TEA-sensitive potassium current of the granule cell model.
+
+    High-threshold, fast-activating and only partially inactivating
+    potassium current, imported from the
+    cerebellar granule cell model of Masoli et al. (2020) [2]_.
+
+    Gating is an ``m`` gate of power 3 and an ``h`` gate of power 1,
+    both written in steady-state/time-constant form and both
+    evaluated at a junction-potential-corrected voltage
+    :math:`V' = V + 11`:
+
+    .. math::
+
+        \begin{aligned}
+        m_\infty &= \frac{1}{1 + \exp(-(V' + 24) / 15.4)} \\
+        h_\infty &= 0.31
+          + \frac{0.69}{1 + \exp((V' + 5.802) / 11.2)}
+        \end{aligned}
+
+    where :math:`V'` is in millivolts. Inactivation is only partial:
+    :math:`h_\infty` decays to a floor of 0.31 rather than to zero,
+    so about 31 per cent of the conductance survives a maintained
+    depolarisation. Both time constants are piecewise, in
+    milliseconds:
+
+    .. math::
+
+        \tau_m = 10^3 \times \begin{cases}
+        3 \, (3.4225 \times 10^{-5}
+          + 0.00498 \, e^{V' / 28.29}), & V' < -35 \\
+        1.2851 \times 10^{-4} + \dfrac{1}{e^{(V' + 100.7)/12.9}
+          + e^{(V' - 56)/(-23.1)}}, & V' \ge -35
+        \end{cases}
+
+    .. math::
+
+        \tau_h = 10^3 \times \begin{cases}
+        0.0012 + 0.0023 \, e^{-0.141 \, V'}, & V' > 0 \\
+        1.2202 \times 10^{-5}
+          + 0.012 \, e^{-((V' + 56.3)/49.6)^2}, & V' \le 0
+        \end{cases}
+
+    Each ladder is selected with ``u.math.where`` on the predicates
+    ``V' < -35`` and ``V' > 0``, so the boundary value itself falls
+    to the second line in both.
+
+    Parameters
+    ----------
+    size : brainstate.typing.Size
+        Channel state shape.
+    g_max : array-like or callable, optional
+        Maximal conductance density. Defaults to ``4.0 mS/cm2``,
+        which is exactly the source mechanism's
+        ``gkbar = 0.004 mho/cm2``.
+    temp : array-like, optional
+        Absolute temperature driving both gates' q10 factor, default
+        22 degrees Celsius. See the temperature note below: this
+        default is BrainCell's own, not a value the source mechanism
+        states.
+    name : str, optional
+        Optional channel name.
+
+    See Also
+    --------
+    Kv3p4_MA2020_GoC : Golgi-cell port of the same mechanism.
+    Kv3p4_MA2024_PC : Purkinje-cell port of the same mechanism.
+    Kv3p4_MA2025_BC : Basket-cell port of the same mechanism.
+    Kv3p4_RI2021_SC : Stellate-cell port of the same mechanism.
+
+    Notes
+    -----
+    Ported from ``GrC/channel/Kv3p4_MA20_GrC.mod``. All five cell-type
+    ports of this mechanism carry the same equations and the same
+    constants, and so do the five BrainCell classes: everything above
+    is shared verbatim with :class:`Kv3p4_MA2020_GoC`,
+    :class:`Kv3p4_MA2024_PC`, :class:`Kv3p4_MA2025_BC` and
+    :class:`Kv3p4_RI2021_SC`. What differs is only the deposit each
+    was imported from, and therefore the model paper cited below.
+    Reference [2]_ is the granule-cell paper specifically -- the
+    companion Golgi-cell paper of the same year belongs to
+    :class:`Kv3p4_MA2020_GoC`, not to this class.
+
+    **Where the q10 factor is applied.** Both gates declare
+    ``q10 = 3.0`` at a reference of 37 degrees Celsius, so
+    :meth:`HH.compute_derivative` scales each
+    :math:`(x_\infty - x)/\tau_x` term by
+    :math:`\phi = 3^{(T - 37)/10}`. The ``.mod`` file instead
+    divides its ``mtau`` and ``htau`` by the same factor. The two
+    forms are algebraically identical, but it means :meth:`f_m_tau`
+    and :meth:`f_h_tau` return q10-free time constants rather than
+    the mechanism's ``mtau`` and ``htau``.
+
+    **The default temperature is BrainCell's, not the mechanism's.**
+    Unlike most channels in this module, this ``.mod`` file never
+    declares a ``celsius`` value; it reads NEURON's global instead.
+    The ``temp`` default of 22 degrees Celsius is therefore a
+    BrainCell choice, and because it sits 15 degrees below the
+    gates' reference it makes the default temperature factor
+    :math:`\phi \approx 0.192` -- gating roughly 5.2 times slower
+    than at 37 degrees Celsius. Callers reproducing a published
+    simulation should set ``temp`` explicitly.
+
+    **Provenance, and a name the sources do not support.** These files
+    are ModelDB accession 48332's ``kpkj.mod`` renamed. The header
+    lines ": HH TEA-sensitive Purkinje potassium current" and
+    ": Created 8/5/02 - nwg" are the deposit's own, "nwg" being
+    Nathan W. Gouwens, second author of Khaliq et al. (2003) [1]_, and
+    the parameters ``mivh = -24 mV``, ``mik = 15.4`` and
+    ``hiy0 = 0.31`` reproduce that paper's Table 1 row for the current
+    it calls **K fast**. The trailing ``: Suffix from kpkj to Kv3_4``
+    line is a BrainCell-local addition and is not in the deposit. The
+    model paper [2]_ names the deposit this parameterisation was
+    imported from, not the origin of the equations.
+
+    That rename line is the whole basis of the ``Kv3p4`` name, and
+    it does not survive contact with the source. Khaliq et al. call
+    this current K fast throughout and never name a Kv subunit; the
+    strings "Kv3.4", "Kv3.3" and "Kv3.1" appear nowhere in the
+    paper, and its only mention of Kv3 at all is one Discussion
+    sentence observing that the positive activation range is typical
+    of the Kv3 family. **The class name therefore asserts a subunit
+    identity the cited literature does not establish.** Under this
+    project's mismatch policy the name is documented rather than
+    changed: read ``Kv3p4`` as a label for the TEA-sensitive fast K
+    current of Khaliq et al. (2003), which those authors associate
+    with the Kv3 family, and not as a claim about Kv3.4.
+
+    **Conductance default.** ``4.0 mS/cm2`` is the deposit's tuned
+    value, carried across from the ``.mod`` file. It is not a value
+    printed in either cited paper.
+
+    **Import deviations: none.** This mechanism carries no NMODL
+    ``TABLE`` and was already integrated with ``cnexp`` upstream, so
+    neither the table-removal nor the ``derivimplicit`` substitution
+    recorded for other channels in this model applies here. Do not
+    assume it shares the deviations of its ``Kv4p3`` neighbour,
+    which has three.
+
+    References
+    ----------
+    .. [1] Khaliq, Z. M., Gouwens, N. W., & Raman, I. M. (2003). The
+           contribution of resurgent sodium current to high-frequency
+           firing in Purkinje neurons: an experimental and modeling
+           study. The Journal of Neuroscience, 23(12), 4899-4912.
+           doi:10.1523/JNEUROSCI.23-12-04899.2003
+    .. [2] Masoli, S., Tognolina, M., Laforenza, U., Moccia, F., &
+           D'Angelo, E. (2020). Parameter tuning differentiates granule
+           cell subtypes enriching transmission properties at the
+           cerebellum input stage. Communications Biology, 3(1), 222.
+           doi:10.1038/s42003-020-0953-x
+    """
 
     __module__ = "braincell.channel"
     root_type = Potassium
@@ -4560,7 +6019,148 @@ class Kv3p4_MA2020_GrC(OhmicHH):
 
 @register_channel("Kv4p3_MA2020_GrC")
 class Kv4p3_MA2020_GrC(OhmicHH):
-    """Template-based import of ``Kv4p3_MA2020_GrC.mod``."""
+    r"""A-type transient potassium current of the granule cell model.
+
+    Fast-inactivating A-type potassium current, imported from the
+    cerebellar granule cell model of Masoli et al. (2020) [2]_.
+
+    Gating is an ``a`` gate of power 3 and a ``b`` gate of power 1,
+    each with an explicit Boltzmann steady state and a time constant
+    built from an alpha/beta pair:
+
+    .. math::
+
+        \begin{aligned}
+        a_\infty &= \frac{1}{1 + \exp((V + 38) / (-17))} \\
+        b_\infty &= \frac{1}{1 + \exp((V + 78.8) / 8.4)} \\
+        \tau_a &= \frac{1}{\alpha_a + \beta_a}, \qquad
+        \tau_b = \frac{1}{\alpha_b + \beta_b}
+        \end{aligned}
+
+    with, writing :math:`\sigma(x, y) = 1 / (e^{x/y} + 1)` for the
+    module-level ``_sigm`` helper,
+
+    .. math::
+
+        \begin{aligned}
+        \alpha_a &= 0.8147 \, \sigma(V + 9.17203,\ -23.3271) \\
+        \beta_a &= 0.1655 \big/ e^{(V + 18.2791) / 19.4718} \\
+        \alpha_b &= 0.0368 \, \sigma(V + 111.332,\ 12.8433) \\
+        \beta_b &= 0.0345 \, \sigma(V + 49.9537,\ -8.90123)
+        \end{aligned}
+
+    where :math:`V` is in millivolts, the rates are per millisecond
+    and the time constants are in milliseconds. This class applies
+    no voltage shift, and the reversal potential comes from the
+    potassium ion object rather than from the class.
+
+    Parameters
+    ----------
+    size : brainstate.typing.Size
+        Channel state shape.
+    g_max : array-like or callable, optional
+        Maximal conductance density. Defaults to ``3.2 mS/cm2``,
+        which is exactly the source mechanism's
+        ``gkbar = 0.0032 mho/cm2``.
+    temp : array-like, optional
+        Absolute temperature driving both gates' q10 factor, default
+        30 degrees Celsius. This matches the ``celsius = 30 (degC)``
+        written in the source mechanism's ``PARAMETER`` block.
+    name : str, optional
+        Optional channel name.
+
+    See Also
+    --------
+    Kv4p3_MA2020_GoC : Golgi-cell port of the same mechanism.
+    Kv4p3_MA2024_PC : Purkinje-cell port of the same mechanism.
+    Kv4p3_MA2025_BC : Basket-cell port of the same mechanism.
+    Kv4p3_RI2021_SC : Stellate-cell port of the same mechanism.
+
+    Notes
+    -----
+    Ported from ``GrC/channel/Kv4p3_MA20_GrC.mod``. The five cell-type
+    ports of this mechanism are byte-identical apart from their
+    ``SUFFIX`` line and their ``celsius`` default, and the five
+    BrainCell classes carry the same rate constants: every equation
+    above is shared verbatim with :class:`Kv4p3_MA2020_GoC`,
+    :class:`Kv4p3_MA2024_PC`, :class:`Kv4p3_MA2025_BC` and
+    :class:`Kv4p3_RI2021_SC`. What differs is the default ``temp``,
+    the deposit each was imported from, and therefore the model paper
+    cited below. Reference [2]_ is the granule-cell paper specifically
+    -- the companion Golgi-cell paper of the same year belongs to
+    :class:`Kv4p3_MA2020_GoC`, not to this class.
+
+    ``Kalpha_a`` is stored here as ``-23.3271 * u.mV`` and converted
+    with ``.to_decimal(u.mV)`` at use, whereas
+    :class:`Kv4p3_MA2024_PC` and :class:`Kv4p3_MA2025_BC` store the
+    same number as a bare float and pass it straight to ``_sigm``. The
+    arithmetic is identical -- both forms divide a millivolt
+    difference by -23.3271 -- but the inconsistency is real, and on
+    this documentation-only branch it is recorded rather than fixed.
+
+    **Where the q10 factor is applied.** Both gates declare
+    ``q10 = 3.0`` at a reference of 25.5 degrees Celsius, so
+    :meth:`HH.compute_derivative` scales each
+    :math:`(x_\infty - x)/\tau_x` term by
+    :math:`\phi = 3^{(T - 25.5)/10}` (about 1.64 at the default
+    30 degrees Celsius). The ``.mod`` file instead multiplies
+    the same ``Q10`` into ``alp_a``, ``bet_a``, ``alp_b`` and
+    ``bet_b``, which divides its ``tau_a`` and ``tau_b`` by that
+    factor. The two forms are algebraically identical, but it means
+    :meth:`f_a_tau` and :meth:`f_b_tau` return q10-free time
+    constants rather than the mechanism's ``tau_a`` and ``tau_b``.
+
+    **Provenance, and what the header does not establish.** The
+    ``.mod`` header carries
+    ``Author: E.D'Angelo, T.Nieus, A. Fontana``. That credit line is
+    copy-pasted verbatim across every cell-type port of this
+    mechanism, and it names authors 1, 2 and 7 of an eight-author
+    paper, so it is not treated as a citation here. The kinetics
+    originate in the cerebellar granule cell model of D'Angelo et al.
+    (2001) [1]_; the model paper [2]_ names the deposit this
+    parameterisation was imported from, not the origin of the
+    equations. The commented-out alternatives that remain in the
+    ``.mod`` file -- ``linoid`` forms of each rate, and a
+    "Bardoni Belluzzi" steady-state block -- are never evaluated by
+    the mechanism and are not reproduced here.
+
+    **Conductance default.** ``3.2 mS/cm2`` is the deposit's tuned
+    value, carried across from the ``.mod`` file. It is not a value
+    printed in either cited paper.
+
+    **Import deviations.** Three, all recorded against this symbol.
+    First, the original mechanism's NMODL ``TABLE`` over
+    ``[-100, 30] mV``, covering ``a_inf``, ``tau_a``, ``b_inf`` and
+    ``tau_b``, is not reproduced: all four expressions are evaluated
+    per call. NEURON clamped tabulated values to the boundary
+    outside that window, so any BrainCell-versus-NEURON divergence
+    below -100 mV or above 30 mV is expected rather than a port
+    error. Second, the integration method was changed from
+    ``derivimplicit`` to ``cnexp``; the two gate ODEs are
+    independent, so the substitution is exact. Third, four
+    parameters are carried at NEURON's compiled six-significant-
+    figure precision rather than at the ``.mod`` source text's:
+    ``Kalpha_a`` ``-23.32708`` becomes ``-23.3271``, ``Kbeta_a``
+    ``19.47175`` becomes ``19.4718``, ``V0beta_a`` ``-18.27914``
+    becomes ``-18.2791`` and ``V0alpha_b`` ``-111.33209`` becomes
+    ``-111.332``. That rewrite reaches those four parameters only;
+    ordinary in-formula literals keep their source values.
+
+    References
+    ----------
+    .. [1] D'Angelo, E., Nieus, T., Maffei, A., Armano, S., Rossi, P.,
+           Taglietti, V., Fontana, A., & Naldi, G. (2001).
+           Theta-frequency bursting and resonance in cerebellar
+           granule cells: experimental evidence and modeling of a
+           slow K+-dependent mechanism. The Journal of Neuroscience,
+           21(3), 759-770.
+           doi:10.1523/JNEUROSCI.21-03-00759.2001
+    .. [2] Masoli, S., Tognolina, M., Laforenza, U., Moccia, F., &
+           D'Angelo, E. (2020). Parameter tuning differentiates granule
+           cell subtypes enriching transmission properties at the
+           cerebellum input stage. Communications Biology, 3(1), 222.
+           doi:10.1038/s42003-020-0953-x
+    """
 
     __module__ = "braincell.channel"
     root_type = Potassium

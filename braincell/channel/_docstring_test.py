@@ -8,6 +8,7 @@ from braincell.channel import (
     calcium,
     hyperpolarization_activated,
     leaky,
+    potassium,
     potassium_calcium,
     potassium_sodium,
     sodium,
@@ -20,6 +21,7 @@ _COVERED_MODULES = (
     calcium,
     hyperpolarization_activated,
     leaky,
+    potassium,
     potassium_calcium,
     potassium_sodium,
     sodium,
@@ -38,6 +40,8 @@ _NO_PRIMARY_SOURCE = frozenset({
     "Markov",
     "CaN_IS2008",
     "CaL_IS2008",
+    "K_Leak",
+    "K_Kv_test",
 })
 
 

@@ -284,7 +284,7 @@ class CalciumInitNernst(Calcium, InitNernstIon):
 
 @register_ion("CalciumDetailed")
 class CalciumDetailed(Calcium, DynamicNernstIon):
-    r"""Dynamic calcium concentration model with Nernst-computed reversal potential.
+    r"""Dynamic calcium concentration with a Nernst-computed reversal.
 
     :meth:`derivative` implements only the first-order relaxation
     model of section 2 below. Section 1 reproduces, for background
@@ -341,8 +341,9 @@ class CalciumDetailed(Calcium, DynamicNernstIon):
     with the total concentration of :math:`P` and :math:`K_{d}=c_{2} / c_{1}=10^{-4}\, \mathrm{mM}`
     is the dissociation constant, which can be interpreted here as the value of
     :math:`[Ca]_{i}` at which the pump is half activated (if :math:`[Ca]_{i} \ll K_{d}`
-    then the efflux is negligible). None of this pump exists in :meth:`derivative`
-    below -- no saturating term and no pump parameter appear anywhere in this class.
+    then the efflux is negligible). None of this pump exists in
+    :meth:`derivative` below -- no saturating term and no pump parameter
+    appears anywhere in this class.
 
     **2. The implemented model: a simple first-order relaxation**
 
@@ -1455,7 +1456,7 @@ class ToyDiamFactorKinetic_SU2015_DCN(Calcium, KineticIon):
 
 @register_ion("CdpStC_CAMOnly_MA2020_GoC")
 class CdpStC_CAMOnly_MA2020_GoC(Calcium, KineticIon):
-    r"""Import of the calmodulin-only branch of ``CdpStC_CAMOnly_MA20_GoC.mod``.
+    r"""Import of the calmodulin-only ``CdpStC_CAMOnly_MA20_GoC.mod``.
 
     Isolates the calmodulin (CaM) subnetwork of the imported Golgi-cell
     calcium pool so its binding kinetics can be validated independently
@@ -2390,7 +2391,8 @@ class CdpStC_MA2025_BC(CdpStC_NoCAM_MA2020_GoC):
            Munoz, A., Prestori, F., & D'Angelo, E. (2025). Cerebellar
            basket cell filtering of Purkinje cell responses elicited
            by low frequency parallel fibre transmission. Scientific
-           Reports, 15(1), 25192. doi:10.1038/s41598-025-09964-2
+           Reports, 15(1), 25192.
+           doi:10.1038/s41598-025-09964-2
     """
 
     __module__ = "braincell.ion"
@@ -2454,7 +2456,8 @@ class CdpStC_RI2021_SC(CdpStC_NoCAM_MA2020_GoC):
            Munoz, A., Prestori, F., & D'Angelo, E. (2021). Stellate
            cell computational modeling predicts signal filtering in
            the molecular layer circuit of cerebellum. Scientific
-           Reports, 11(1), 3873. doi:10.1038/s41598-021-83209-w
+           Reports, 11(1), 3873.
+           doi:10.1038/s41598-021-83209-w
     """
 
     __module__ = "braincell.ion"
@@ -3966,7 +3969,8 @@ class CdpCR_MA2020_GrC(Calcium, KineticIon):
            D'Angelo, E. (2020). Parameter tuning differentiates
            granule cell subtypes enriching transmission properties
            at the cerebellum input stage. Communications Biology,
-           3(1), 222. doi:10.1038/s42003-020-0953-x
+           3(1), 222.
+           doi:10.1038/s42003-020-0953-x
     """
 
     __module__ = "braincell.ion"

@@ -106,7 +106,83 @@ def _freeze_quantity_gradient(value):
 
 @register_channel("CaN_IS2008")
 class CaN_IS2008(HH):
-    r"""Inoue & Strowbridge 2008 calcium-activated non-selective cation current."""
+    r"""Inoue & Strowbridge 2008 calcium-activated non-selective cation current.
+
+    A calcium- and voltage-dependent non-selective cation current
+    (:math:`I_{CAN}`) gated by a single activation variable and scaled
+    by a saturating calcium-modulation factor:
+
+    .. math::
+
+        \begin{aligned}
+        I_{CAN} &= \bar g \cdot M([Ca]_i) \cdot p \cdot (E - V) \\
+        M([Ca]_i) &= \frac{[Ca]_i}{[Ca]_i + 0.2\ \mathrm{mM}} \\
+        p_\infty &= \frac{1}{1 + \exp(-(V + 43) / 5.2)} \\
+        \tau_p &= \frac{2.7}{\exp(-(V + 55) / 15) + \exp((V + 55) / 15)}
+                  + 1.6
+        \end{aligned}
+
+    where :math:`V` is read in millivolts, :math:`[Ca]_i` is the
+    intracellular calcium concentration, and :math:`p` relaxes toward
+    :math:`p_\infty` with time constant :math:`\tau_p` (in
+    milliseconds) scaled by
+    :meth:`~braincell.channel._base.HH.gate_phi`.
+
+    Parameters
+    ----------
+    size : brainstate.typing.Size
+        Channel state shape.
+    E : array-like or callable, optional
+        Reversal potential. Defaults to ``10.0 mV``.
+    g_max : array-like or callable, optional
+        Maximal conductance density. Defaults to ``1.0 mS/cm2``.
+    temp : array-like, optional
+        Absolute temperature driving the Q10 factor, default 36
+        degrees Celsius.
+    q10 : array-like or callable, optional
+        Q10 scaling factor for the activation gate, default ``1.0``
+        (no temperature scaling at the reference temperature).
+    temp_ref : array-like, optional
+        Reference temperature for the Q10 formula, default 36
+        degrees Celsius.
+    name : str, optional
+        Optional channel name.
+
+    See Also
+    --------
+    CaL_IS2008 : Sibling channel from the same source paper, whose
+        L-type attribution is contradicted by the paper's own text
+        (see its Notes).
+
+    Notes
+    -----
+    Ported verbatim from BrainPy's ``ICaN_IS2008``
+    (``brainpy/dyn/channels/calcium.py``): every rate constant and
+    the ``M([Ca]_i)`` modulation term match exactly. BrainPy in turn
+    attributes the current to two sources, only one of which is
+    Inoue & Strowbridge (2008): the
+    ``M([Ca]_i) = [Ca]_i / ([Ca]_i + 0.2 mM)`` modulation is the
+    calcium-activated non-selective cation form used by Destexhe,
+    Contreras, Steriade, Sejnowski & Huguenard (1994), while the
+    voltage dependence of ``p`` is attributed to Inoue & Strowbridge
+    (2008).
+
+    Inoue, T., & Strowbridge, B. W. (2008) models a calcium- and
+    voltage-dependent nonselective cation current
+    (:math:`I_{CAN}`) in an olfactory bulb granule-cell model, where
+    it generates the calcium-dependent afterdepolarization central to
+    the paper's thesis about persistent activity -- this substantially
+    supports the attribution of this class to that paper. However,
+    the paper's Methods defer the gating constants to supplementary
+    materials that are not included with the PMC-deposited author
+    manuscript and were not otherwise obtainable, and no ModelDB
+    deposit exists for this paper. **No published source has been
+    read that prints the** ``p_inf``/``tau_p`` **constants above**, so
+    this docstring ships no ``References`` section: the current is
+    documented as a ported implementation of substantially supported
+    but not fully confirmed provenance, not as a transcription of a
+    specific paper's printed equations.
+    """
 
     __module__ = "braincell.channel"
     root_type = Calcium
@@ -144,7 +220,109 @@ class CaN_IS2008(HH):
 
 @register_channel("CaT_HM1992")
 class CaT_HM1992(OhmicHH):
-    r"""Huguenard & McCormick 1992 low-threshold T-type calcium current."""
+    r"""Huguenard & McCormick 1992 low-threshold T-type calcium current.
+
+    The thalamic relay-neuron low-threshold (T-type) calcium current
+    :math:`I_T` of (Huguenard & McCormick, 1992) [1]_, with
+    :math:`p^2 q` HH gating and an ohmic driving force:
+
+    .. math::
+
+        \begin{aligned}
+        p_\infty &= \frac{1}{1 + \exp(-(V' + 59) / 6.2)} \\
+        \tau_p &= \frac{1}
+                  {\exp(-(V' + 132) / 16.7) + \exp((V' + 16.8) / 18.2)}
+                  + 0.612 \\
+        q_\infty &= \frac{1}{1 + \exp((V' + 83) / 4)} \\
+        \tau_q &= \begin{cases}
+                  \exp((V' + 467) / 66.6) & V' < -80 \\
+                  \exp(-(V' + 22) / 10.5) + 28 & V' \geq -80
+                  \end{cases}
+        \end{aligned}
+
+    where :math:`V' = (V - V_{sh}) / \mathrm{mV}` and
+    :math:`\tau_p`/:math:`\tau_q` (in milliseconds) are further scaled
+    by :meth:`~braincell.channel._base.HH.gate_phi`.
+
+    Parameters
+    ----------
+    size : brainstate.typing.Size
+        Channel state shape.
+    g_max : array-like or callable, optional
+        Maximal conductance density. Defaults to ``2.0 mS/cm2``.
+    temp : array-like, optional
+        Absolute temperature driving the Q10 factors, default 36
+        degrees Celsius.
+    q10_p : array-like or callable, optional
+        Q10 scaling factor for the activation gate, default
+        ``3.55``. This value could not be traced to the paper or to
+        any reference NEURON implementation; treat it as a
+        BrainCell/BrainPy default (see Notes).
+    temp_ref_p : array-like, optional
+        Reference temperature for ``q10_p``, default 24 degrees
+        Celsius.
+    q10_q : array-like or callable, optional
+        Q10 scaling factor for the inactivation gate, default
+        ``3.0``.
+    temp_ref_q : array-like, optional
+        Reference temperature for ``q10_q``, default 24 degrees
+        Celsius.
+    V_sh : array-like or callable, optional
+        Threshold shift applied to both gates' rates, default
+        ``-3.0 mV`` (see Notes).
+    name : str, optional
+        Optional channel name.
+
+    See Also
+    --------
+    CaHT_HM1992 : Same gating functions with ``V_sh`` moved to
+        ``+25.0 mV``, relabelled as a high-threshold current; that
+        relabelling has no source in this paper (see its Notes).
+    CaT_HP1992 : Independently sourced T-type current for reticular
+        nucleus neurons, with the same ``p^2 q`` gating shape but a
+        different Boltzmann parameterisation.
+
+    Notes
+    -----
+    Compared against ``ITGHK.mod`` (ModelDB accession 279),
+    Destexhe's NEURON implementation of this paper, headed "Model of
+    Huguenard & McCormick, J Neurophysiol 68: 1373-1383, 1992". The
+    mod file's own ``shift = 2 mV`` (screening charge at 2 mM
+    external calcium) is folded into this class's Boltzmann
+    midpoints only -- 57 to 59 in ``p_inf``, 81 to 83 in ``q_inf`` --
+    **not** into the time-constant expressions: ``tau_p`` carries the
+    mod file's bare 132/16.8 and ``tau_q`` its bare 467/22 with the
+    branch at :math:`V' = -80`, i.e. exactly ``ITGHK.mod``'s numbers
+    read at ``shift = 0``, not at its own shipped ``shift = 2 mV``.
+    So the equations above match ``ITGHK.mod``'s ``tau_p``, piecewise
+    ``tau_q`` and ``p^2 q`` gating exactly against a ``shift = 0``
+    reading, while the steady-state midpoints match the mod file
+    *with* the 2 mV shift folded in. Do not describe this class as
+    reproducing the mod file "with the 2 mV screening-charge shift
+    folded in" everywhere -- that is true of the midpoints and false
+    of the time constants.
+
+    A second, unrelated mod file, ``IT.mod`` (ModelDB accession
+    3817), is *not* a source for any constant here despite modelling
+    the same paper's data: its header reads "Model **based on the
+    data of** Huguenard & McCormick... **and** Huguenard & Prince...",
+    it shares only ``m_inf``/``h_inf`` with ``ITGHK.mod``, has no
+    real ``tau_m`` (activation is taken at steady state), and its
+    piecewise ``tau_h`` is commented out in favour of a different
+    bi-exponential fit.
+
+    This class applies a further ``V_sh = -3.0 mV`` on top of the
+    already-folded 2 mV shift, so the shipped defaults sit 3 mV from
+    ``ITGHK.mod``'s own defaults. This is a documented free
+    parameter, not a citation error.
+
+    References
+    ----------
+    .. [1] Huguenard, J. R., & McCormick, D. A. (1992). Simulation of
+           the currents involved in rhythmic oscillations in thalamic
+           relay neurons. Journal of Neurophysiology, 68(4), 1373-1383.
+           doi:10.1152/jn.1992.68.4.1373
+    """
 
     __module__ = "braincell.channel"
     root_type = Calcium
@@ -197,7 +375,92 @@ class CaT_HM1992(OhmicHH):
 
 @register_channel("CaT_HP1992")
 class CaT_HP1992(OhmicHH):
-    r"""Huguenard & Prince 1992 T-type calcium current for reticular nucleus."""
+    r"""Huguenard & Prince 1992 T-type calcium current for reticular nucleus.
+
+    The slowly inactivating transient (T-type) calcium current
+    :math:`I_{Ts}` recorded in rat thalamic reticular nucleus (nRt)
+    neurons by (Huguenard & Prince, 1992) [1]_, with :math:`p^2 q` HH
+    gating and an ohmic driving force:
+
+    .. math::
+
+        \begin{aligned}
+        p_\infty &= \frac{1}{1 + \exp(-(V' + 52) / 7.4)} \\
+        \tau_p &= 3 + \frac{1}
+                  {\exp((V' + 27) / 10) + \exp(-(V' + 102) / 15)} \\
+        q_\infty &= \frac{1}{1 + \exp((V' + 80) / 5)} \\
+        \tau_q &= 85 + \frac{1}
+                  {\exp((V' + 48) / 4) + \exp(-(V' + 407) / 50)}
+        \end{aligned}
+
+    where :math:`V' = (V - V_{sh}) / \mathrm{mV}` and
+    :math:`\tau_p`/:math:`\tau_q` (in milliseconds) are further scaled
+    by :meth:`~braincell.channel._base.HH.gate_phi`.
+
+    Parameters
+    ----------
+    size : brainstate.typing.Size
+        Channel state shape.
+    g_max : array-like or callable, optional
+        Maximal conductance density. Defaults to ``1.75 mS/cm2``.
+    temp : array-like, optional
+        Absolute temperature driving the Q10 factors, default 36
+        degrees Celsius.
+    q10_p : array-like or callable, optional
+        Q10 scaling factor for the activation gate, default ``5.0``.
+    temp_ref_p : array-like, optional
+        Reference temperature for ``q10_p``, default 24 degrees
+        Celsius.
+    q10_q : array-like or callable, optional
+        Q10 scaling factor for the inactivation gate, default
+        ``3.0``.
+    temp_ref_q : array-like, optional
+        Reference temperature for ``q10_q``, default 24 degrees
+        Celsius.
+    V_sh : array-like or callable, optional
+        Threshold shift applied to both gates' rates, default
+        ``-3.0 mV`` (see Notes).
+    name : str, optional
+        Optional channel name.
+
+    See Also
+    --------
+    CaT_HM1992 : Independently sourced low-threshold T-type current
+        for thalamic relay neurons, with the same ``p^2 q`` gating
+        shape but a different Boltzmann parameterisation.
+
+    Notes
+    -----
+    Compared against ``IT2.mod`` (ModelDB accession 3670), whose
+    header reads: "The kinetics is described by standard equations
+    (NOT GHK) using a m2h format, according to the voltage-clamp data
+    (whole cell patch clamp) of Huguenard & Prince, J Neurosci. 12:
+    3804-3817, 1992", with "Q10 changed to 5 and 3". Unlike
+    :class:`CaT_HM1992`, the mod file's ``shift = 2 mV`` (screening
+    charge for external calcium = 2 mM) is folded into **every**
+    constant here -- both the Boltzmann midpoints and the
+    time-constant offsets -- so all six mod-file numbers (50, 78, 25,
+    100, 46, 405) shift uniformly to the 52, 80, 27, 102, 48, 407
+    used above. ``q10_p = 5.0`` and ``q10_q = 3.0`` at
+    ``temp_ref = 24 degC`` match the mod file's
+    ``phi_m = 5^((celsius-24)/10)`` and ``phi_h = 3^((celsius-24)/10)``
+    exactly.
+
+    This class applies a further ``V_sh = -3.0 mV`` on top of the
+    already-folded 2 mV shift, so the shipped defaults sit 3 mV
+    depolarized relative to ``IT2.mod``'s own defaults. This is a
+    documented free parameter, not a citation error.
+    ``g_max = 1.75 mS/cm2`` matches ``IT2.mod``'s
+    ``gcabar = 0.00175 mho/cm2``.
+
+    References
+    ----------
+    .. [1] Huguenard, J. R., & Prince, D. A. (1992). A novel T-type
+           current underlies prolonged Ca2+-dependent burst firing in
+           GABAergic neurons of rat thalamic reticular nucleus. The
+           Journal of Neuroscience, 12(10), 3804-3817.
+           doi:10.1523/JNEUROSCI.12-10-03804.1992
+    """
 
     __module__ = "braincell.channel"
     root_type = Calcium
@@ -246,7 +509,110 @@ class CaT_HP1992(OhmicHH):
 
 @register_channel("CaHT_HM1992")
 class CaHT_HM1992(OhmicHH):
-    r"""Huguenard & McCormick 1992 high-threshold calcium current."""
+    r"""Depolarized-shift variant of the Huguenard & McCormick 1992 T current.
+
+    :math:`p^2 q` HH gating with an ohmic driving force, using the
+    same rate functions as :class:`CaT_HM1992` but with the threshold
+    shift moved from ``-3.0 mV`` to ``+25.0 mV`` (see Notes for why
+    this is not a citation for a genuine high-threshold current):
+
+    .. math::
+
+        \begin{aligned}
+        p_\infty &= \frac{1}{1 + \exp(-(V' + 59) / 6.2)} \\
+        \tau_p &= \frac{1}
+                  {\exp(-(V' + 132) / 16.7) + \exp((V' + 16.8) / 18.2)}
+                  + 0.612 \\
+        q_\infty &= \frac{1}{1 + \exp((V' + 83) / 4)} \\
+        \tau_q &= \begin{cases}
+                  \exp((V' + 467) / 66.6) & V' < -80 \\
+                  \exp(-(V' + 22) / 10.5) + 28 & V' \geq -80
+                  \end{cases}
+        \end{aligned}
+
+    where :math:`V' = (V - V_{sh}) / \mathrm{mV}` and
+    :math:`\tau_p`/:math:`\tau_q` (in milliseconds) are further scaled
+    by :meth:`~braincell.channel._base.HH.gate_phi`.
+
+    Parameters
+    ----------
+    size : brainstate.typing.Size
+        Channel state shape.
+    g_max : array-like or callable, optional
+        Maximal conductance density. Defaults to ``2.0 mS/cm2``.
+    temp : array-like, optional
+        Absolute temperature driving the Q10 factors, default 36
+        degrees Celsius.
+    q10_p : array-like or callable, optional
+        Q10 scaling factor for the activation gate, default
+        ``3.55``, inherited unchanged from :class:`CaT_HM1992` (see
+        that class's Notes on this value's provenance).
+    temp_ref_p : array-like, optional
+        Reference temperature for ``q10_p``, default 24 degrees
+        Celsius.
+    q10_q : array-like or callable, optional
+        Q10 scaling factor for the inactivation gate, default
+        ``3.0``.
+    temp_ref_q : array-like, optional
+        Reference temperature for ``q10_q``, default 24 degrees
+        Celsius.
+    V_sh : array-like or callable, optional
+        Threshold shift applied to both gates' rates, default
+        ``+25.0 mV`` -- see Notes; this is the only numeric
+        difference from :class:`CaT_HM1992`.
+    name : str, optional
+        Optional channel name.
+
+    See Also
+    --------
+    CaT_HM1992 : The unshifted low-threshold T current this class is
+        character-for-character derived from (``V_sh = -3.0 mV``);
+        see its Notes for how the source paper's 2 mV screening
+        shift is folded into these same rate functions.
+    CaHT_Re1993 : Independently sourced high-threshold calcium
+        current with a genuine high-voltage-activated attribution.
+
+    Notes
+    -----
+    **This class does not implement a current described in
+    (Huguenard & McCormick, 1992) [1]_.** That paper models exactly
+    four currents -- a *low*-threshold T-type calcium current, two
+    potassium currents and a hyperpolarization-activated current --
+    and contains no high-threshold or high-voltage-activated calcium
+    current at all. Reading the code confirms this class's rate
+    functions are character-for-character identical to
+    :class:`CaT_HM1992`'s (same 59, 6.2, 0.612, 132, 16.7, 16.8,
+    18.2, 83, 4.0, 467, 66.6, 22, 10.5, 28 constants, the same
+    :math:`V' = -80` branch point, the same ``p^2 q`` gating and the
+    same ``q10_p = 3.55`` / ``q10_q = 3.0`` at 24 degC defaults). The
+    only difference is ``V_sh``: ``+25.0 mV`` here versus ``-3.0 mV``
+    in :class:`CaT_HM1992`. This class is the paper's low-threshold T
+    current translated 28 mV depolarized and relabelled
+    "high-threshold" -- a BrainCell/BrainPy-derived variant, not a
+    current the cited paper reports. The ``+25 mV`` shift itself has
+    no traceable source in the paper.
+
+    The citation below is included because it correctly identifies
+    the origin of the *gating kinetics* (they are exactly Huguenard &
+    McCormick's T-current rate functions -- see :class:`CaT_HM1992`
+    for the full derivation and the 2 mV screening-shift caveat that
+    also applies here), not because the paper describes a
+    high-threshold current under this name. A genuine high-threshold
+    thalamic calcium current, :math:`I_L`, is described in the
+    companion paper McCormick, D. A., & Huguenard, J. R. (1992), "A
+    model of the electrophysiological properties of thalamocortical
+    relay neurons", Journal of Neurophysiology, 68(4), 1384-1400,
+    doi:10.1152/jn.1992.68.4.1384 -- but this class's gating functions
+    do not match that current's kinetics either, so that paper is
+    named here only as a lead for future re-derivation, not cited.
+
+    References
+    ----------
+    .. [1] Huguenard, J. R., & McCormick, D. A. (1992). Simulation of
+           the currents involved in rhythmic oscillations in thalamic
+           relay neurons. Journal of Neurophysiology, 68(4), 1373-1383.
+           doi:10.1152/jn.1992.68.4.1373
+    """
 
     __module__ = "braincell.channel"
     root_type = Calcium
@@ -299,7 +665,80 @@ class CaHT_HM1992(OhmicHH):
 
 @register_channel("CaHT_Re1993")
 class CaHT_Re1993(OhmicHH):
-    r"""Reuveni 1993 high-threshold calcium current."""
+    r"""Reuveni 1993 high-threshold calcium current.
+
+    The high-voltage-activated (HVA) calcium current underlying the
+    calcium plateau spike in neocortical pyramidal cells, from
+    (Reuveni et al., 1993) [1]_, with :math:`p^2 q` HH gating (an
+    :math:`m^2 h` scheme in the source mod file's naming) and an
+    ohmic driving force:
+
+    .. math::
+
+        \begin{aligned}
+        \alpha_p &= \frac{0.055 (V'' - 27)}{\exp((V'' - 27) / 3.8) - 1} \\
+        \beta_p &= 0.94 \exp((V'' - 75) / 17) \\
+        \alpha_q &= 0.000457 \exp((V'' - 13) / 50) \\
+        \beta_q &= \frac{0.0065}{\exp((V'' - 15) / 28) + 1}
+        \end{aligned}
+
+    where :math:`V'' = (V_{sh} - V) / \mathrm{mV}` is the negated-
+    voltage form the source mod file uses inline, so with the default
+    ``V_sh = 0.0 mV`` this reduces to :math:`V'' = -V / \mathrm{mV}`.
+
+    Parameters
+    ----------
+    size : brainstate.typing.Size
+        Channel state shape.
+    g_max : array-like or callable, optional
+        Maximal conductance density. Defaults to ``1.0 mS/cm2``.
+    temp : array-like, optional
+        Absolute temperature driving the Q10 factors, default 36
+        degrees Celsius.
+    q10_p : array-like or callable, optional
+        Q10 scaling factor for the activation gate, default ``2.3``.
+    temp_ref_p : array-like, optional
+        Reference temperature for ``q10_p``, default 23 degrees
+        Celsius.
+    q10_q : array-like or callable, optional
+        Q10 scaling factor for the inactivation gate, default
+        ``2.3``.
+    temp_ref_q : array-like, optional
+        Reference temperature for ``q10_q``, default 23 degrees
+        Celsius.
+    V_sh : array-like or callable, optional
+        Threshold shift entering the negated-voltage form above,
+        default ``0.0 mV``.
+    name : str, optional
+        Optional channel name.
+
+    See Also
+    --------
+    CaHT_HM1992 : Nominally also a high-threshold current, but
+        actually a relabelled low-threshold T current with no
+        genuine high-threshold attribution (see its Notes).
+
+    Notes
+    -----
+    Compared against ``ca.mod`` (ModelDB accession 2488), headed "HVA
+    Ca current / Based on Reuveni, Friedman, Amitai and Gutnick
+    (1993) / J. Neurosci. 13:4609-4621" (implementation by Zach
+    Mainen, Salk Institute, 1994). Every rate constant above matches
+    the mod file's ``alpha_m``/``beta_m``/``alpha_h``/``beta_h``
+    term for term, and the temperature parameters match exactly:
+    ``ca.mod`` uses ``temp = 23 degC, q10 = 2.3``; this class
+    defaults to ``q10_p = q10_q = 2.3`` at ``temp_ref = 23 degC``.
+    Gating is :math:`m^2 h` in both.
+
+    References
+    ----------
+    .. [1] Reuveni, I., Friedman, A., Amitai, Y., & Gutnick, M. J.
+           (1993). Stepwise repolarization from Ca2+ plateaus in
+           neocortical pyramidal cells: evidence for nonhomogeneous
+           distribution of HVA Ca2+ channels in dendrites. The
+           Journal of Neuroscience, 13(11), 4609-4621.
+           doi:10.1523/JNEUROSCI.13-11-04609.1993
+    """
 
     __module__ = "braincell.channel"
     root_type = Calcium
@@ -349,7 +788,92 @@ class CaHT_Re1993(OhmicHH):
 
 @register_channel("CaL_IS2008")
 class CaL_IS2008(OhmicHH):
-    r"""Inoue & Strowbridge 2008 L-type calcium current."""
+    r"""Inoue & Strowbridge 2008 L-type calcium current.
+
+    A voltage-gated calcium current with :math:`p^2 q` HH gating and
+    an ohmic driving force:
+
+    .. math::
+
+        \begin{aligned}
+        p_\infty &= \frac{1}{1 + \exp(-(V' + 10) / 4)} \\
+        \tau_p &= 0.4 + \frac{0.7}
+                  {\exp(-(V' + 5) / 15) + \exp((V' + 5) / 15)} \\
+        q_\infty &= \frac{1}{1 + \exp((V' + 25) / 2)} \\
+        \tau_q &= 300 + \frac{100}
+                  {\exp((V' + 40) / 9.5) + \exp(-(V' + 40) / 9.5)}
+        \end{aligned}
+
+    where :math:`V' = (V - V_{sh}) / \mathrm{mV}`, gating is
+    :math:`p^2 q`, and :math:`\tau_p`/:math:`\tau_q` (in milliseconds)
+    are further scaled by
+    :meth:`~braincell.channel._base.HH.gate_phi`.
+
+    Parameters
+    ----------
+    size : brainstate.typing.Size
+        Channel state shape.
+    g_max : array-like or callable, optional
+        Maximal conductance density. Defaults to ``1.0 mS/cm2``.
+    temp : array-like or callable, optional
+        Absolute temperature driving the Q10 factors, default 36
+        degrees Celsius.
+    q10_p : array-like or callable, optional
+        Q10 scaling factor for the activation gate, default ``3.55``.
+    temp_ref_p : array-like, optional
+        Reference temperature for ``q10_p``, default 24 degrees
+        Celsius.
+    q10_q : array-like or callable, optional
+        Q10 scaling factor for the inactivation gate, default
+        ``3.0``.
+    temp_ref_q : array-like, optional
+        Reference temperature for ``q10_q``, default 24 degrees
+        Celsius.
+    V_sh : array-like or callable, optional
+        Threshold shift applied to both gates' rates, default
+        ``0.0 mV``.
+    name : str, optional
+        Optional channel name.
+
+    See Also
+    --------
+    CaN_IS2008 : Sibling channel from the same source paper, whose
+        calcium-activated non-selective cation attribution is
+        substantially, though not fully, supported (see its Notes).
+
+    Notes
+    -----
+    Ported verbatim from BrainPy's ``ICaL_IS2008``
+    (``brainpy/dyn/channels/calcium.py``): every rate constant and
+    the ``p^2 q`` gating scheme match exactly, and BrainPy attributes
+    this current to Inoue & Strowbridge (2008) alone.
+
+    **This attribution is contradicted by the cited paper's own
+    text.** Inoue, T., & Strowbridge, B. W. (2008) models exactly two
+    voltage-gated calcium currents in its olfactory bulb granule-cell
+    simulations: "a low-threshold (T-type) Ca current, and a
+    high-threshold (P/N-type) Ca current." The strings "L-type",
+    "L type" and "ICaL" do not occur anywhere in the article text --
+    the paper has **no L-type calcium current** for this class to be
+    a port of. Two further, independent signs point the same way:
+    this class's ``q10_p = 3.55`` / ``q10_q = 3.0`` at 24 degrees
+    Celsius defaults are byte-identical to :class:`CaT_HM1992`'s
+    temperature defaults (24 degC is the Huguenard & McCormick
+    reference temperature, not an olfactory-bulb one), and no ModelDB
+    deposit exists for this paper to compare constants against. The
+    paper's Methods also defer whatever gating constants it does
+    report to supplementary materials not included with the
+    PMC-deposited author manuscript, so even the P/N-type or T-type
+    currents it does contain cannot be checked against this class
+    from the text alone.
+
+    Because of this, either this class implements the paper's
+    high-threshold P/N-type current under the wrong name, or its true
+    source is a different paper entirely; both possibilities remain
+    open. This docstring ships no ``References`` section: printing a
+    confident citation to Inoue & Strowbridge (2008) for an *L-type*
+    current would misattribute a current that paper does not contain.
+    """
 
     __module__ = "braincell.channel"
     root_type = Calcium
@@ -398,7 +922,102 @@ class CaL_IS2008(OhmicHH):
 
 @register_channel("CaHVA_SU2015_DCN")
 class CaHVA_SU2015_DCN(HH):
-    """Template-based import of ``CaHVA_SU15_DCN.mod``."""
+    r"""High-voltage-activated calcium current of the DCN model (Sudhakar et al., 2015).
+
+    A GHK-driven calcium current with a single :math:`m^3` activation
+    gate, used for the deep cerebellar nucleus (DCN) neuron model of
+    (Sudhakar et al., 2015) [2]_:
+
+    .. math::
+
+        \begin{aligned}
+        I_{CaHVA} &= -P \cdot m^3 \cdot \Phi(V, [Ca]_i, [Ca]_o, T) \\
+        m_\infty &= \frac{1}{1 + \exp(-(V + 34.5) / -9.0)} \\
+        \tau_m &= \frac{1}{\dfrac{31.746}{\exp((V - 5) / -13.89) + 1}
+                  + \dfrac{3.97 \times 10^{-4} (V + 8.9)}
+                  {\exp((V + 8.9) / 5) - 1}} \Big/ q_{\Delta t}
+        \end{aligned}
+
+    where :math:`\Phi` is the constant-field GHK flux (see
+    :func:`~braincell.channel._base.ghk_flux`) evaluated with this
+    class's own inline Faraday/gas-constant literals rather than the
+    shared helper (see Notes), and :math:`P` is the permeability
+    parameter.
+
+    Parameters
+    ----------
+    size : brainstate.typing.Size
+        Channel state shape.
+    perm : array-like or callable, optional
+        Permeability entering the GHK flux term. Defaults to
+        ``7.5e-6 cm/s``.
+    temp : array-like, optional
+        Absolute temperature entering the GHK flux term and the
+        activation time constant. Defaults to 36 degrees Celsius.
+    qdeltat : array-like or callable, optional
+        Divisor applied to :math:`\tau_m`; a NEURON-style ``Q10``-free
+        rate scale, not a :class:`~braincell.channel._base.Gate`
+        ``phi`` factor. Defaults to ``1.0``.
+    name : str, optional
+        Optional channel name.
+
+    See Also
+    --------
+    CaLVA_SU2015_DCN : Sibling DCN calcium current using the same
+        inline GHK constants and permeability parameterisation, with
+        low-voltage-activated (:math:`m^2 h`) gating instead.
+    CaL_SU2015_DCN : Sibling DCN calcium current with the same
+        low-voltage-activated gating shape as
+        :class:`CaLVA_SU2015_DCN`, but driven ohmically against a
+        fixed reversal potential rather than through GHK.
+    braincell.channel._base.ghk_flux : Shared GHK flux helper; this
+        class does not call it directly (see Notes).
+
+    Notes
+    -----
+    Ported from ``DCN/channel/CaHVA_SU15_DCN.mod``, whose ``TITLE``
+    reads "High voltage activated calcium current (CaHVA) of deep
+    cerebellar nucleus (DCN) neuron". The origin of the DCN kinetics
+    is the GENESIS model of Steuber, Schultheiss, Silver, De Schutter
+    & Jaeger (2011) [1]_, translated from GENESIS to NEURON by
+    Luthman, Hoebeek, Maex, Davey, Adams, De Zeeuw & Steuber (2011)
+    and reused, without modification credit, in Sudhakar et al.
+    (2015) [2]_. The string "CaHVA" does not occur in the Sudhakar et
+    al. (2015) article text; this docstring records only that the
+    mechanism is part of the model published as [2]_, not that the
+    paper names or describes it, and it does not claim that either
+    paper prints the ``m_inf``/``tau_m`` constants above.
+
+    ``current()`` evaluates the GHK constant-field equation inline
+    with the mod file's own hard-coded literals
+    (``4.47814e6``, ``-23.20764929``) rather than calling
+    :func:`~braincell.channel._base.ghk_flux`, matching the pattern
+    used by the module-level ``_cav3p1_nmodl_ghk_flux`` /
+    ``_cav3p3_nmodl_ghk_flux`` helpers elsewhere in this file.
+    NEURON's raw ``ica`` for this mechanism is outward-positive; the
+    sign is flipped in ``current()`` to match BrainCell's repo-wide
+    inward-positive convention.
+
+    The original mechanism's ``TABLE`` directive tabulated ``minf``
+    and ``taum`` over ``[-150, 100] mV`` (plus a ``DEPEND T`` table);
+    BrainCell removes the table and evaluates both expressions
+    per-call instead.
+
+    References
+    ----------
+    .. [1] Steuber, V., Schultheiss, N. W., Silver, R. A., De
+           Schutter, E., & Jaeger, D. (2011). Determinants of
+           synaptic integration and heterogeneity in rebound firing
+           explored with data-driven models of deep cerebellar
+           nucleus cells. Journal of Computational Neuroscience,
+           30(3), 633-658.
+           doi:10.1007/s10827-010-0282-z
+    .. [2] Sudhakar, S. K., Torben-Nielsen, B., & De Schutter, E.
+           (2015). Cerebellar nuclear neurons use time and rate
+           coding to transmit Purkinje neuron pauses. PLOS
+           Computational Biology, 11(12), e1004641.
+           doi:10.1371/journal.pcbi.1004641
+    """
 
     __module__ = "braincell.channel"
     root_type = Calcium
@@ -445,7 +1064,106 @@ class CaHVA_SU2015_DCN(HH):
 
 @register_channel("CaL_SU2015_DCN")
 class CaL_SU2015_DCN(OhmicHH):
-    """Template-based import of ``CaL_SU15_DCN.mod``."""
+    r"""Low-voltage-activated calcium current of the DCN model (Sudhakar et al., 2015).
+
+    An ohmically-driven calcium current with :math:`m^2 h` HH gating
+    against a fixed reversal potential, used for the deep cerebellar
+    nucleus (DCN) neuron model of (Sudhakar et al., 2015) [2]_:
+
+    .. math::
+
+        \begin{aligned}
+        I_{CaL} &= g_{\mathrm{max}} \, m^2 h \, (E - V) \\
+        m_\infty &= \frac{1}{1 + \exp(-(V + 56) / -6.2)} \\
+        \tau_m &= \left(\frac{0.333}
+                  {\exp((V + 131) / -16.7) + \exp((V + 15.8) / 18.2)}
+                  + 0.204\right) \Big/ q_{\Delta t} \\
+        h_\infty &= \frac{1}{1 + \exp((V + 80) / 4)} \\
+        \tau_h &= \frac{1}{q_{\Delta t}} \times \begin{cases}
+                  0.333 \exp((V + 466) / 66) & V < -81 \\
+                  0.333 \exp((V + 21) / -10.5) + 9.32 & V \geq -81
+                  \end{cases}
+        \end{aligned}
+
+    Parameters
+    ----------
+    size : brainstate.typing.Size
+        Channel state shape.
+    g_max : array-like or callable, optional
+        Maximal conductance density. Defaults to ``0.01 mS/cm2``.
+    E : array-like or callable, optional
+        Fixed reversal potential used in place of an ion-derived
+        value (see Notes). Defaults to ``139.0 mV``.
+    qdeltat : array-like or callable, optional
+        Divisor applied to :math:`\tau_m` and :math:`\tau_h`; a
+        NEURON-style ``Q10``-free rate scale, not a
+        :class:`~braincell.channel._base.Gate` ``phi`` factor.
+        Defaults to ``1.0``.
+    name : str, optional
+        Optional channel name.
+
+    See Also
+    --------
+    CaLVA_SU2015_DCN : Sibling DCN calcium current with the same
+        :math:`m^2 h` gating shape and identical rate constants (see
+        Notes), driven through GHK against ion concentrations rather
+        than ohmically against a fixed ``E``.
+    CaHVA_SU2015_DCN : Sibling DCN calcium current with
+        high-voltage-activated (:math:`m^3`) gating instead.
+
+    Notes
+    -----
+    Ported from ``DCN/channel/CaL_SU15_DCN.mod``. **Its own ``TITLE``
+    reads "LVA calcium current (CaLVA) of deep cerebellar nucleus
+    (DCN) neuron"** -- i.e. the mod file named ``CaL_SU15_DCN.mod``
+    describes itself as an LVA / "CaLVA" current, not an L-type
+    current, despite the ``CaL`` symbol name. This class's rate
+    functions are in fact algebraically identical to
+    :class:`CaLVA_SU2015_DCN`'s: both use
+    ``m_inf = 1/(1 + exp((V+56)/-6.2))`` and the same
+    :math:`\tau_m`/:math:`h_\infty`/:math:`\tau_h` expressions above.
+    The only structural difference between the two classes is the
+    current law -- this class overrides
+    :meth:`~braincell.channel._base.OhmicHH.reversal_potential` to
+    return the fixed ``E`` parameter and derives its driving force
+    ohmically, while :class:`CaLVA_SU2015_DCN` derives its driving
+    force from a GHK flux against explicit ion concentrations. The
+    default ``E = 139.0 mV`` was not independently verified against
+    the mod file's own ``PARAMETER`` block for this task; it is
+    documented here as a shipped BrainCell default, not attributed to
+    a specific value printed in Sudhakar et al. (2015) [2]_.
+
+    The origin of the DCN kinetics is the GENESIS model of Steuber,
+    Schultheiss, Silver, De Schutter & Jaeger (2011) [1]_, translated
+    from GENESIS to NEURON by Luthman, Hoebeek, Maex, Davey, Adams,
+    De Zeeuw & Steuber (2011) and reused, without modification
+    credit, in Sudhakar et al. (2015) [2]_. The string "CaL" does not
+    occur in the Sudhakar et al. (2015) article text; this docstring
+    records only that the mechanism is part of the model published as
+    [2]_, not that the paper names or describes it, and it does not
+    claim that either paper prints the constants above.
+
+    The original mechanism's ``TABLE`` directive tabulated ``minf``,
+    ``taum``, ``hinf`` and ``tauh`` over ``[-150, 100] mV`` (with no
+    ``DEPEND T`` table, unlike :class:`CaHVA_SU2015_DCN` and
+    :class:`CaLVA_SU2015_DCN`); BrainCell removes the table and
+    evaluates all four expressions per-call instead.
+
+    References
+    ----------
+    .. [1] Steuber, V., Schultheiss, N. W., Silver, R. A., De
+           Schutter, E., & Jaeger, D. (2011). Determinants of
+           synaptic integration and heterogeneity in rebound firing
+           explored with data-driven models of deep cerebellar
+           nucleus cells. Journal of Computational Neuroscience,
+           30(3), 633-658.
+           doi:10.1007/s10827-010-0282-z
+    .. [2] Sudhakar, S. K., Torben-Nielsen, B., & De Schutter, E.
+           (2015). Cerebellar nuclear neurons use time and rate
+           coding to transmit Purkinje neuron pauses. PLOS
+           Computational Biology, 11(12), e1004641.
+           doi:10.1371/journal.pcbi.1004641
+    """
 
     __module__ = "braincell.channel"
     root_type = HHTypedNeuron
@@ -501,7 +1219,131 @@ class CaL_SU2015_DCN(OhmicHH):
 
 @register_channel("CaLVA_SU2015_DCN")
 class CaLVA_SU2015_DCN(HH):
-    """Template-based import of ``CaLVA_SU15_DCN.mod``."""
+    r"""Low-voltage-activated calcium current of the DCN model (Sudhakar et al., 2015).
+
+    A GHK-driven calcium current with :math:`m^2 h` gating, used for
+    the deep cerebellar nucleus (DCN) neuron model of (Sudhakar et
+    al., 2015) [2]_:
+
+    .. math::
+
+        \begin{aligned}
+        I_{CaLVA} &= -P \cdot m^2 h \cdot \Phi(V, [Ca]_i, [Ca]_o, T) \\
+        m_\infty &= \frac{1}{1 + \exp(-(V + 56) / -6.2)} \\
+        \tau_m &= \left(\frac{0.333}
+                  {\exp((V + 131) / -16.7) + \exp((V + 15.8) / 18.2)}
+                  + 0.204\right) \Big/ q_{\Delta t} \\
+        h_\infty &= \frac{1}{1 + \exp((V + 80) / 4)} \\
+        \tau_h &= \frac{1}{q_{\Delta t}} \times \begin{cases}
+                  0.333 \exp((V + 466) / 66) & V < -81 \\
+                  0.333 \exp((V + 21) / -10.5) + 9.32 & V \geq -81
+                  \end{cases}
+        \end{aligned}
+
+    where :math:`\Phi` is the constant-field GHK flux (see
+    :func:`~braincell.channel._base.ghk_flux`) evaluated with this
+    class's own inline Faraday/gas-constant literals rather than the
+    shared helper (see Notes), and :math:`P` is the permeability
+    parameter.
+
+    Parameters
+    ----------
+    size : brainstate.typing.Size
+        Channel state shape.
+    perm : array-like or callable, optional
+        Permeability entering the GHK flux term. Defaults to
+        ``1.0 cm/s``.
+    temp : array-like, optional
+        Absolute temperature entering the GHK flux term and the
+        activation/inactivation time constants. Defaults to 36
+        degrees Celsius.
+    qdeltat : array-like or callable, optional
+        Divisor applied to :math:`\tau_m` and :math:`\tau_h`; a
+        NEURON-style ``Q10``-free rate scale, not a
+        :class:`~braincell.channel._base.Gate` ``phi`` factor.
+        Defaults to ``1.0``.
+    name : str, optional
+        Optional channel name.
+
+    See Also
+    --------
+    CaL_SU2015_DCN : Sibling DCN calcium current with the same
+        :math:`m^2 h` gating shape and identical rate constants (see
+        Notes), driven ohmically against a fixed reversal potential
+        rather than through GHK.
+    CaHVA_SU2015_DCN : Sibling DCN calcium current with
+        high-voltage-activated (:math:`m^3`) gating instead.
+    braincell.ion.CdpLVA_SU2015_DCN : Dedicated LVA-current-driven
+        calcium pool BrainCell ships for this current; see Notes for
+        how it relates to :attr:`root_type`.
+    braincell.channel._base.ghk_flux : Shared GHK flux helper; this
+        class does not call it directly (see Notes).
+
+    Notes
+    -----
+    Ported from ``DCN/channel/CaLVA_SU15_DCN.mod``, whose ``TITLE``
+    reads "Low voltage activated calcium current (CaLVA) of deep
+    cerebellar nucleus (DCN) neuron". This class's rate functions are
+    algebraically identical to :class:`CaL_SU2015_DCN`'s, whose own
+    mod file (``CaL_SU15_DCN.mod``) is *also* titled "LVA calcium
+    current (CaLVA) of deep cerebellar nucleus (DCN) neuron" despite
+    its different ``CaL`` symbol name -- the two BrainCell classes
+    are the same LVA current family exposed through two different
+    current laws (see :class:`CaL_SU2015_DCN`'s Notes).
+
+    ``root_type`` here is the generic :class:`~braincell.ion.Calcium`
+    base, identical to :class:`CaHVA_SU2015_DCN`'s -- nothing in this
+    channel class itself restricts it to a particular ion pool.
+    BrainCell separately ships
+    :class:`~braincell.ion.CdpLVA_SU2015_DCN`, a dedicated
+    LVA-current-driven calcium pool mirroring the imported NMODL's
+    separate ``cali``/``cal`` pool (as opposed to
+    ``CdpHVA_SU2015_DCN``'s ``cai``, which the original NEURON
+    mechanism used to let the LVA and HVA currents drive
+    independently trackable calcium pools). Preserving that
+    separation in a BrainCell model is a compositional choice made
+    when attaching this channel to a specific ion instance, not a
+    guarantee enforced by this class's ``root_type``.
+
+    ``current()`` evaluates the GHK constant-field equation inline
+    with the mod file's own hard-coded literals
+    (``4.47814e6``, ``-23.20764929``) rather than calling
+    :func:`~braincell.channel._base.ghk_flux`, matching the pattern
+    used by the module-level ``_cav3p1_nmodl_ghk_flux`` /
+    ``_cav3p3_nmodl_ghk_flux`` helpers elsewhere in this file.
+    NEURON's raw ``ical`` for this mechanism is outward-positive; the
+    sign is flipped in ``current()`` to match BrainCell's repo-wide
+    inward-positive convention.
+
+    The origin of the DCN kinetics is the GENESIS model of Steuber,
+    Schultheiss, Silver, De Schutter & Jaeger (2011) [1]_, translated
+    from GENESIS to NEURON by Luthman, Hoebeek, Maex, Davey, Adams,
+    De Zeeuw & Steuber (2011) and reused, without modification
+    credit, in Sudhakar et al. (2015) [2]_. The string "CaLVA" does
+    occur in the Sudhakar et al. (2015) article text, but this
+    docstring does not claim that either paper prints the
+    ``m_inf``/``tau_m``/``h_inf``/``tau_h`` constants above.
+
+    The original mechanism's ``TABLE`` directive tabulated ``minf``,
+    ``taum``, ``hinf`` and ``tauh`` over ``[-150, 100] mV`` (plus a
+    ``DEPEND T`` table); BrainCell removes the table and evaluates
+    all four expressions per-call instead.
+
+    References
+    ----------
+    .. [1] Steuber, V., Schultheiss, N. W., Silver, R. A., De
+           Schutter, E., & Jaeger, D. (2011). Determinants of
+           synaptic integration and heterogeneity in rebound firing
+           explored with data-driven models of deep cerebellar
+           nucleus cells. Journal of Computational Neuroscience,
+           30(3), 633-658.
+           doi:10.1007/s10827-010-0282-z
+    .. [2] Sudhakar, S. K., Torben-Nielsen, B., & De Schutter, E.
+           (2015). Cerebellar nuclear neurons use time and rate
+           coding to transmit Purkinje neuron pauses. PLOS
+           Computational Biology, 11(12), e1004641.
+           doi:10.1371/journal.pcbi.1004641
+    """
 
     __module__ = "braincell.channel"
     root_type = Calcium
@@ -1482,31 +2324,106 @@ class Cav2p3_MA2020_GoC(OhmicHH):
 
 @register_channel("Ca_ZH2019_IO")
 class Ca_ZH2019_IO(HH):
-    """Template-based import of ``Ca_ZH2019_IO.mod``.
+    r"""Somatic calcium current of the inferior-olive model (Zhang & Santaniello, 2019).
+
+    A fixed-reversal-potential calcium current with an instantaneous,
+    non-stateful cubic activation and one dynamic inactivation gate,
+    used for the single-compartment inferior-olive neuron model of
+    (Zhang & Santaniello, 2019) [2]_:
+
+    .. math::
+
+        \begin{aligned}
+        I_{Ca} &= g_{max} \cdot m_\infty \cdot h \cdot (E - V) \\
+        m_\infty &= \left(\frac{1}{1 + \exp((V_{mid} - V) / 4.2)}\right)^3 \\
+        h_\infty &= \frac{1}{1 + \exp((V + 85.5) / 8.6)} \\
+        \tau_h &= 40 + 30 \cdot \frac{1}{1 + \exp((V + 84) / 7.3)}
+                  \cdot \exp\!\left(\frac{V + 160}{30}\right)
+        \end{aligned}
+
+    Only :math:`h` is an integrated :class:`~braincell.channel._base.Gate`
+    state (``gates = (Gate("h"),)``); :math:`m_\infty` is recomputed
+    from :math:`V` on every call to :meth:`current` rather than tracked
+    as a channel state (see Notes).
 
     Parameters
     ----------
     size : brainstate.typing.Size
         Channel state shape.
     g_max : array-like or callable, optional
-        Maximum conductance density.
+        Maximum conductance density. Defaults to ``0.4 mS/cm**2``.
     E : array-like or callable, optional
-        Calcium current reversal potential.
+        Fixed calcium current reversal potential (this class does not
+        derive :math:`E` from an ion concentration). Defaults to
+        ``120.0 mV``.
     mMidV : array-like or callable, optional
-        Midpoint parameter used by the instantaneous activation curve.
+        Midpoint voltage of the instantaneous activation curve.
+        Defaults to ``-61.0 mV``.
     freeze_m_inf : bool, optional
-        Whether to stop autodiff through the instantaneous activation
-        factor while preserving the forward current value.
+        If ``True`` (the default), block autodiff through the
+        instantaneous activation factor with
+        :func:`jax.lax.stop_gradient` while leaving the forward
+        current value unchanged; see Notes.
     name : str, optional
-        Optional module name.
+        Optional channel name.
+
+    See Also
+    --------
+    Ca_ZH2019_IO_Frozen : Registry alias that forces
+        ``freeze_m_inf=True`` unconditionally.
+    braincell.channel.hyperpolarization_activated.HCN_ZH2019_IO :
+        Sibling inferior-olive current from the same import family
+        (different bibliography origin; see Notes).
 
     Notes
     -----
-    The source IO mechanism uses instantaneous activation and one
-    dynamic inactivation gate. Freezing ``m_inf`` is useful for
-    NEURON-style no-concentration channel comparisons where the forward
-    current should match while the local voltage Jacobian only includes
-    the driving-force term.
+    Ported from ``IO/channel/Ca_ZH19_IO.mod``, whose header credits
+    "Ca channel from Manor (Rinzel, Segev, Yarom) 1997" and porter
+    "B. Torben-Nielsen @ HUJI, 7-10-2010" -- i.e. the kinetics
+    originate with Manor, Rinzel, Segev & Yarom (1997) [1]_ and were
+    ported to NEURON by Torben-Nielsen, Segev & Yarom (2012), whose
+    inferior-olive model in turn was reused, without further
+    modification credit, by Zhang & Santaniello (2019) [2]_. The 2012
+    port paper is cited here only in this prose, per house style, not
+    as a numbered reference.
+
+    The inferior-olive neurons in both the Torben-Nielsen et al.
+    (2012) and Zhang & Santaniello (2019) models are
+    single-compartment (``nseg = 1``); the multi-compartment part of
+    that lineage is a separate Purkinje-cell population, not the
+    inferior olive. This docstring does not describe this mechanism
+    as multi-compartment.
+
+    In the imported ``.mod`` file, the shared ``rates(v)`` helper that
+    recomputes ``minf``/``hinf``/``htau`` was called from
+    ``BREAKPOINT`` in the original NEURON mechanism; BrainCell's port
+    (like the rest of this ``ZH19``/``IO`` import family) evaluates
+    the equivalent expressions from ``DERIVATIVE``-time state updates
+    instead, so ``m_inf``/``h_inf``/``tau_h`` are refreshed before,
+    rather than after, the state integration step within a given call.
+
+    ``m`` carries no persistent state and is not part of ``gates``:
+    :meth:`current` calls :meth:`f_m_inf` fresh on every evaluation,
+    so nothing "evolves" over time for the activation term -- it is a
+    purely algebraic function of the instantaneous voltage. Setting
+    ``freeze_m_inf=True`` (the default) wraps that same forward value
+    in :func:`jax.lax.stop_gradient`; it changes only which terms
+    appear in gradients taken through this channel, never the forward
+    current or the value of ``m_inf`` itself.
+
+    References
+    ----------
+    .. [1] Manor, Y., Rinzel, J., Segev, I., & Yarom, Y. (1997).
+           Low-amplitude oscillations in the inferior olive: A model
+           based on electrical coupling of neurons with heterogeneous
+           channel densities. Journal of Neurophysiology, 77(5),
+           2736-2752.
+           doi:10.1152/jn.1997.77.5.2736
+    .. [2] Zhang, X., & Santaniello, S. (2019). Role of cerebellar
+           GABAergic dysfunctions in the origins of essential tremor.
+           Proceedings of the National Academy of Sciences of the
+           United States of America, 116(27), 13592-13601.
+           doi:10.1073/pnas.1817689116
     """
 
     __module__ = "braincell.channel"
@@ -1551,21 +2468,66 @@ class Ca_ZH2019_IO(HH):
 
 @register_channel("Ca_ZH2019_IO_Frozen")
 class Ca_ZH2019_IO_Frozen(Ca_ZH2019_IO):
-    """IO calcium variant with frozen instantaneous activation.
+    r""":class:`Ca_ZH2019_IO` with ``freeze_m_inf`` pinned unconditionally to ``True``.
+
+    A registry-only subclass of :class:`Ca_ZH2019_IO` that always
+    stops autodiff through the instantaneous activation factor,
+    regardless of what a caller passes for ``freeze_m_inf``.
 
     Parameters
     ----------
     *args
         Positional arguments forwarded to :class:`Ca_ZH2019_IO`.
     **kwargs
-        Keyword arguments forwarded to :class:`Ca_ZH2019_IO`.
+        Keyword arguments forwarded to :class:`Ca_ZH2019_IO`; any
+        ``freeze_m_inf`` entry is overwritten with ``True`` before the
+        parent constructor runs (see Notes).
+
+    See Also
+    --------
+    Ca_ZH2019_IO : Base class; already defaults to
+        ``freeze_m_inf=True`` (see Notes for what this subclass adds
+        on top of that default).
 
     Notes
     -----
-    This registry alias always sets ``freeze_m_inf=True``. It keeps the
-    same forward current as :class:`Ca_ZH2019_IO` while forcing autodiff
-    to ignore the voltage derivative of the instantaneous activation
-    term.
+    "Frozen" describes the gradient path through the instantaneous
+    activation term, not the forward numerics: :class:`Ca_ZH2019_IO`
+    already defaults to ``freeze_m_inf=True``, so this subclass does
+    not change the default forward current or default gradient
+    behaviour by itself. What it changes is *configurability* --
+    ``__init__`` here unconditionally sets
+    ``kwargs["freeze_m_inf"] = True`` before delegating to
+    :class:`Ca_ZH2019_IO`, so a caller cannot recover the unfrozen
+    (full-gradient) behaviour by passing ``freeze_m_inf=False`` to
+    this class, whereas it can to the base class. No channel state
+    stops evolving: ``m`` was never a stateful
+    :class:`~braincell.channel._base.Gate` in the base class either
+    (only ``h`` is), and :func:`jax.lax.stop_gradient` affects only
+    backward-mode differentiation, never the forward value computed
+    by :meth:`~Ca_ZH2019_IO.f_m_inf`.
+
+    Provenance, the single-compartment caveat, and the
+    ``rates``-relocation import deviation are identical to
+    :class:`Ca_ZH2019_IO`'s and are not repeated here; see that
+    class's Notes. Per the bibliography's attribution scan, this
+    subclass contributes no rate-function code of its own -- it
+    inherits every kinetic equation unchanged from
+    :class:`Ca_ZH2019_IO`.
+
+    References
+    ----------
+    .. [1] Manor, Y., Rinzel, J., Segev, I., & Yarom, Y. (1997).
+           Low-amplitude oscillations in the inferior olive: A model
+           based on electrical coupling of neurons with heterogeneous
+           channel densities. Journal of Neurophysiology, 77(5),
+           2736-2752.
+           doi:10.1152/jn.1997.77.5.2736
+    .. [2] Zhang, X., & Santaniello, S. (2019). Role of cerebellar
+           GABAergic dysfunctions in the origins of essential tremor.
+           Proceedings of the National Academy of Sciences of the
+           United States of America, 116(27), 13592-13601.
+           doi:10.1073/pnas.1817689116
     """
 
     __module__ = "braincell.channel"

@@ -1847,8 +1847,15 @@ more than one). The **final** entry is the `MA2020` model paper.
   and `dirc2 = 200`, `dirc3 = 160`, `dirc4 = 80` /ms-mM
   (Ca-dependent), plus `diff = 3`.
 - `Nav_MA2020_GrC` and `NaFHF_MA2020_GrC` are the same 13-state
-  Raman-style Markov scheme with `ACon = 0.025`, `ACoff = 0.5`,
-  `AOon = 0.75`, `AOoff = 0.002` /ms and the derived
+  Raman-style Markov scheme. **Correction (Task 13):** an earlier
+  revision of this bullet gave one shared constant set for both. That
+  is wrong. `ACon` and `AOoff` differ between them, verified by
+  reading both constructors:
+  `NaFHF_MA2020_GrC` ships `ACon = 0.025` and `AOoff = 0.002`
+  (`braincell/channel/sodium.py:1818,1821`), while `Nav_MA2020_GrC`
+  ships `ACon = 0.005` and `AOoff = 0.005`
+  (`braincell/channel/sodium.py:1592,1595`). `ACoff = 0.5` and
+  `AOon = 0.75` /ms are shared, as are the derived
   `a = (Oon/Con)^0.25`, `b = (Ooff/Coff)^0.25`. `NaFHF` adds the
   `Lon`/`Loff` blocked-state ladder (`L3..L6`) on top of the same
   `C1..C5`/`I1..I6`/`O` topology -- it is the same mechanism with the

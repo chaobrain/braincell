@@ -3,15 +3,19 @@
 import unittest
 
 from braincell._testing import DocstringConformanceTests
+from braincell.ion import nonspecific
 
 # Extended by one module per docstring task. A module is listed only once
 # every one of its public symbols satisfies the shared assertions.
-_COVERED_MODULES = ()
+_COVERED_MODULES = (nonspecific,)
 
 # Public symbols with no primary literature source. Membership must be a
 # deliberate decision: a new ion that lands undocumented fails instead of
 # silently inheriting an exemption.
-_NO_PRIMARY_SOURCE = frozenset()
+_NO_PRIMARY_SOURCE = frozenset({
+    "NonSpecific",
+    "NonSpecificFixed",
+})
 
 
 class IonDocstringTest(DocstringConformanceTests, unittest.TestCase):

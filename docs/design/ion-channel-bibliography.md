@@ -2503,7 +2503,14 @@ files, for example:
 - `sKdr_SU2015_DCN`: `m_inf = 1/(1 + exp((V+50)/-9.1))`,
   `tau_m = 14.95/(exp((V+50)/21.74) + exp((V+50)/-13.91)) + 0.05`,
   gating `m^4`.
-- `HCN_SU2015_DCN`: `m_inf = 1/(1 + exp((V+80)/5))`, no tau.
+- `HCN_SU2015_DCN`: `m_inf = 1/(1 + exp((V+80)/5))`, and a **constant**
+  `tau_m = 400/qdeltat` ms. Earlier drafts of this line read "no tau",
+  meaning only that no *voltage-dependent* tau expression appears (the
+  `.mod` file's `TABLE` directive tabulates `minf` alone, because
+  `taum` does not depend on `V`). That wording misled a module task
+  into briefing the gate as instantaneous, which it is not:
+  `braincell/channel/hyperpolarization_activated.py::HCN_SU2015_DCN.f_m_tau`
+  returns a real, finite `400.0 / self.qdeltat`.
 - `SK_SU2015_DCN`: `z_inf = cai^4/(cai^4 + 8.1e-15)` (i.e. a Hill
   coefficient of 4 at `[Ca] = 3e-4 mM`), with the piecewise
   `tau_z = 1 - 186.67 cai` below `cai = 0.005 mM` and `0.0667` above.

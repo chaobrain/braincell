@@ -3076,7 +3076,6 @@ class Kv3p3_MA2024_PC(HH):
            doi:10.1038/s42003-023-05689-y
     """
 
-
     __module__ = "braincell.channel"
     root_type = Potassium
     gates = (Gate("n", power=4, q10=2.7, temp_ref=u.celsius2kelvin(22.0)),)

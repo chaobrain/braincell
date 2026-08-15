@@ -12,33 +12,35 @@ _COVERED_MODULES = (_base, calcium, nonspecific, potassium, sodium)
 # Public symbols with no primary literature source. Membership must be a
 # deliberate decision: a new ion that lands undocumented fails instead of
 # silently inheriting an exemption.
-_NO_PRIMARY_SOURCE = frozenset({
-    "NonSpecific",
-    "NonSpecificFixed",
-    "Potassium",
-    "PotassiumFixed",
-    "PotassiumInitNernst",
-    "Sodium",
-    "SodiumFixed",
-    "SodiumInitNernst",
-    "Factor",
-    "Species",
-    "Reaction",
-    "Source",
-    "Conserve",
-    "FixedIon",
-    "InitNernstIon",
-    "DynamicNernstIon",
-    "Calcium",
-    "CalciumFixed",
-    "CalciumInitNernst",
-    "CalciumFirstOrder",
-    "ToyCaBindingKinetic_SU2015_DCN",
-    "ToyCaBindingSourceKinetic_SU2015_DCN",
-    "ToyCaBindingIcaSourceKinetic_SU2015_DCN",
-    "ToyDiamFactorKinetic_SU2015_DCN",
-    "ToyCaPumpFactorKinetic_SU2015_DCN",
-})
+_NO_PRIMARY_SOURCE = frozenset(
+    {
+        "NonSpecific",
+        "NonSpecificFixed",
+        "Potassium",
+        "PotassiumFixed",
+        "PotassiumInitNernst",
+        "Sodium",
+        "SodiumFixed",
+        "SodiumInitNernst",
+        "Factor",
+        "Species",
+        "Reaction",
+        "Source",
+        "Conserve",
+        "FixedIon",
+        "InitNernstIon",
+        "DynamicNernstIon",
+        "Calcium",
+        "CalciumFixed",
+        "CalciumInitNernst",
+        "CalciumFirstOrder",
+        "ToyCaBindingKinetic_SU2015_DCN",
+        "ToyCaBindingSourceKinetic_SU2015_DCN",
+        "ToyCaBindingIcaSourceKinetic_SU2015_DCN",
+        "ToyDiamFactorKinetic_SU2015_DCN",
+        "ToyCaPumpFactorKinetic_SU2015_DCN",
+    }
+)
 
 
 class IonDocstringTest(DocstringConformanceTests, unittest.TestCase):

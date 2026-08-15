@@ -30,19 +30,21 @@ _COVERED_MODULES = (
 # Public symbols with no primary literature source. Membership must be a
 # deliberate decision: a new channel that lands undocumented fails instead of
 # silently inheriting an exemption.
-_NO_PRIMARY_SOURCE = frozenset({
-    "LeakageChannel",
-    "IL",
-    "Gate",
-    "Transition",
-    "HH",
-    "OhmicHH",
-    "Markov",
-    "CaN_IS2008",
-    "CaL_IS2008",
-    "K_Leak",
-    "K_Kv_test",
-})
+_NO_PRIMARY_SOURCE = frozenset(
+    {
+        "LeakageChannel",
+        "IL",
+        "Gate",
+        "Transition",
+        "HH",
+        "OhmicHH",
+        "Markov",
+        "CaN_IS2008",
+        "CaL_IS2008",
+        "K_Leak",
+        "K_Kv_test",
+    }
+)
 
 
 class ChannelDocstringTest(DocstringConformanceTests, unittest.TestCase):

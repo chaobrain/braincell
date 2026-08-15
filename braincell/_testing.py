@@ -34,7 +34,7 @@ def sections(doc: str) -> dict[str, str]:
     matches = list(_SECTION.finditer(doc))
     for i, match in enumerate(matches):
         end = matches[i + 1].start() if i + 1 < len(matches) else len(doc)
-        found[match.group("title").rstrip()] = doc[match.end():end]
+        found[match.group("title").rstrip()] = doc[match.end() : end]
     return found
 
 
@@ -61,11 +61,7 @@ class DocstringConformanceTests:
                 yield module.__name__, name, obj
 
     def test_every_public_symbol_defines_its_own_docstring(self):
-        missing = [
-            f"{mod}.{name}"
-            for mod, name, obj in self._symbols()
-            if own_docstring(obj) is None
-        ]
+        missing = [f"{mod}.{name}" for mod, name, obj in self._symbols() if own_docstring(obj) is None]
         self.assertEqual(missing, [], f"undocumented public symbols: {missing}")
 
     def test_summary_is_a_single_sentence_line(self):

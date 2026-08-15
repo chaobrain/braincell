@@ -541,9 +541,11 @@ class KineticIon(IndependentIntegration):
     ----------
     .. [1] Hines, M. L., & Carnevale, N. T. (2000). Expanding NEURON's
            repertoire of mechanisms with NMODL. Neural Computation,
-           12(5), 995-1007. doi:10.1162/089976600300015475
+           12(5), 995-1007.
+           doi:10.1162/089976600300015475
     .. [2] Carnevale, N. T., & Hines, M. L. (2006). The NEURON book.
-           Cambridge University Press. doi:10.1017/CBO9780511541612
+           Cambridge University Press.
+           doi:10.1017/CBO9780511541612
 
     Attributes
     ----------

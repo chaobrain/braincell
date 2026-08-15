@@ -354,13 +354,12 @@ class HCN1_MA2025_BC(OhmicHH):
            hyperpolarization-activated pacemaker channels in the
            mouse CNS. The Journal of Neuroscience, 20(14), 5264-5275.
            doi:10.1523/JNEUROSCI.20-14-05264.2000
-    .. [3] Masoli, S., Sanchez-Ponce, D., Vrieler, N., Abu-Haya, K.,
-           Lerner, V., Shahar, T., Nedelescu, H., Rizza, M. F.,
-           Benavides-Piccione, R., DeFelipe, J., Yarom, Y., Munoz,
-           A., & D'Angelo, E. (2025). Cerebellar basket cell
-           filtering of Purkinje cell responses elicited by low
-           frequency parallel fibre transmission. Scientific
-           Reports, 15(1), 25192. doi:10.1038/s41598-025-09964-2
+    .. [3] Masoli, S., Rizza, M. F., Soda, T., Sanchez-Ponce, D.,
+           Munoz, A., Prestori, F., & D'Angelo, E. (2025).
+           Cerebellar basket cell filtering of Purkinje cell
+           responses elicited by low frequency parallel fibre
+           transmission. Scientific Reports, 15(1), 25192.
+           doi:10.1038/s41598-025-09964-2
     """
 
     __module__ = "braincell.channel"
@@ -622,7 +621,8 @@ class HCN1_RI2021_SC(OhmicHH):
            Munoz, A., Prestori, F., & D'Angelo, E. (2021). Stellate
            cell computational modeling predicts signal filtering in
            the molecular layer circuit of cerebellum. Scientific
-           Reports, 11(1), 3873. doi:10.1038/s41598-021-83209-w
+           Reports, 11(1), 3873.
+           doi:10.1038/s41598-021-83209-w
     """
 
     __module__ = "braincell.channel"
@@ -1067,7 +1067,8 @@ class HCN_SU2015_DCN(OhmicHH):
            synaptic integration and heterogeneity in rebound firing
            explored with data-driven models of deep cerebellar
            nucleus cells. Journal of Computational Neuroscience,
-           30(3), 633-658. doi:10.1007/s10827-010-0282-z
+           30(3), 633-658.
+           doi:10.1007/s10827-010-0282-z
     .. [2] Sudhakar, S. K., Torben-Nielsen, B., & De Schutter, E.
            (2015). Cerebellar nuclear neurons use time and rate
            coding to transmit Purkinje neuron pauses. PLOS
@@ -1177,7 +1178,8 @@ class HCN_ZH2019_IO(OhmicHH):
     .. [1] Schweighofer, N., Doya, K., & Kawato, M. (1999).
            Electrophysiological properties of inferior olive neurons: A
            compartmental model. Journal of Neurophysiology, 82(2),
-           804-817. doi:10.1152/jn.1999.82.2.804
+           804-817.
+           doi:10.1152/jn.1999.82.2.804
     .. [2] Zhang, X., & Santaniello, S. (2019). Role of cerebellar
            GABAergic dysfunctions in the origins of essential tremor.
            Proceedings of the National Academy of Sciences of the

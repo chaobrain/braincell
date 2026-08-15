@@ -96,7 +96,8 @@ def ghk_flux(V, ci, co, z, temp):
     ----------
     .. [1] Goldman, D. E. (1943). Potential, impedance, and
            rectification in membranes. The Journal of General
-           Physiology, 27(1), 37-60. doi:10.1085/jgp.27.1.37
+           Physiology, 27(1), 37-60.
+           doi:10.1085/jgp.27.1.37
     .. [2] Hodgkin, A. L., & Katz, B. (1949). The effect of sodium ions
            on the electrical activity of the giant axon of the squid.
            The Journal of Physiology, 108(1), 37-77.

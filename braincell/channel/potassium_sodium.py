@@ -142,7 +142,8 @@ class Kv1p5_MA2020_GrC(Kv1p5_MA2024_PC):
            delayed rectifier current inactivation in human atrial
            myocytes: properties and consequences. American Journal of
            Physiology-Heart and Circulatory Physiology, 275(5),
-           H1717-H1725. doi:10.1152/ajpheart.1998.275.5.H1717
+           H1717-H1725.
+           doi:10.1152/ajpheart.1998.275.5.H1717
     .. [2] Masoli, S., Tognolina, M., Laforenza, U., Moccia, F., &
            D'Angelo, E. (2020). Parameter tuning differentiates granule
            cell subtypes enriching transmission properties at the

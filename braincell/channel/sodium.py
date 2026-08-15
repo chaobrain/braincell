@@ -57,7 +57,77 @@ def _x_over_one_minus_exp_neg_stable(x):
 
 @register_channel("Na_Ba2002")
 class Na_Ba2002(OhmicHH):
-    r"""Bazhenov 2002 sodium current with :math:`p^3 q` HH gating."""
+    r"""Bazhenov 2002 sodium current with :math:`p^3 q` HH gating.
+
+    The thalamocortical-cell fast sodium current used in the slow-wave
+    sleep oscillation model of (Bazhenov et al., 2002) [1]_, with the
+    mirrored-sign Traub-Miles rate forms (see Notes):
+
+    .. math::
+
+        \begin{aligned}
+        \alpha_p &= \frac{0.32 \times 4}
+                    {\operatorname{exprel}(-(V' - 13) / 4)} \\
+        \beta_p &= \frac{0.28 \times 5}
+                   {\operatorname{exprel}((V' - 40) / 5)} \\
+        \alpha_q &= 0.128 \exp(-(V' - 17) / 18) \\
+        \beta_q &= \frac{4}{1 + \exp(-(V' - 40) / 5)}
+        \end{aligned}
+
+    where :math:`V' = (V - V_{sh}) / \mathrm{mV}` and
+    :math:`\operatorname{exprel}(x) = (\exp(x) - 1) / x`, used only to
+    remove the removable singularity at each Boltzmann midpoint; it
+    does not change the function value. Gating is :math:`p^3 q`.
+
+    Parameters
+    ----------
+    size : brainstate.typing.Size
+        Channel state shape.
+    g_max : array-like or callable, optional
+        Maximal conductance density, default ``90.0 mS/cm2`` --
+        matches the TC-cell value reported in (Bazhenov et al., 2002)
+        [1]_.
+    temp : array-like, optional
+        Absolute temperature driving the Q10 factor, default 36
+        degrees Celsius.
+    q10 : array-like or callable, optional
+        Q10 scaling factor for both gates, default ``3.0``.
+    temp_ref : array-like, optional
+        Reference temperature for the Q10 formula, default 36
+        degrees Celsius.
+    V_sh : array-like or callable, optional
+        Threshold shift applied to both gates' rates, default
+        ``-50.0 mV``.
+    name : str, optional
+        Optional channel name.
+
+    See Also
+    --------
+    Na_TM1991 : Same Traub-Miles rate functions with ``V_sh = -63 mV``
+        and ``q10 = 1.0`` instead.
+
+    Notes
+    -----
+    Algebraically these are the same Traub & Miles (1991) rate
+    functions used by :class:`Na_TM1991`, written with the sign of
+    ``V - V_sh`` mirrored; the only numeric differences are this
+    class's ``V_sh = -50.0 mV`` in place of ``Na_TM1991``'s
+    ``-63.0 mV``, and ``q10 = 3.0`` in place of ``1.0``. (Bazhenov et
+    al., 2002) [1]_ attribute the current's kinetics to Traub & Miles
+    (1991) but do **not** print the alpha/beta expressions themselves
+    -- the paper's Methods defer them to Bazhenov et al. (1998). This
+    docstring's equations are transcribed from this class's own rate
+    methods, confirmed algebraically equivalent to the Traub-Miles
+    forms, not copied from the 2002 paper's text.
+
+    References
+    ----------
+    .. [1] Bazhenov, M., Timofeev, I., Steriade, M., & Sejnowski, T. J.
+           (2002). Model of thalamocortical slow-wave sleep
+           oscillations and transitions to activated states. The
+           Journal of Neuroscience, 22(19), 8691-8704.
+           doi:10.1523/JNEUROSCI.22-19-08691.2002
+    """
 
     __module__ = "braincell.channel"
     root_type = Sodium
@@ -102,7 +172,81 @@ class Na_Ba2002(OhmicHH):
 
 @register_channel("Na_TM1991")
 class Na_TM1991(OhmicHH):
-    r"""Traub and Miles 1991 sodium current with :math:`p^3 q` HH gating."""
+    r"""Traub and Miles 1991 sodium current with :math:`p^3 q` HH gating.
+
+    The hippocampal pyramidal-cell fast sodium current from the
+    Traub & Miles (1991) [1]_ reduced model, as packaged in the
+    NEURON ``HH2.mod`` mechanism:
+
+    .. math::
+
+        \begin{aligned}
+        \alpha_p &= \frac{0.32 \times 4}
+                    {\operatorname{exprel}(-(V' - 13) / 4)} \\
+        \beta_p &= \frac{0.28 \times 5}
+                   {\operatorname{exprel}((V' - 40) / 5)} \\
+        \alpha_q &= 0.128 \exp(-(V' - 17) / 18) \\
+        \beta_q &= \frac{4}{1 + \exp(-(V' - 40) / 5)}
+        \end{aligned}
+
+    where :math:`V' = (V - V_{sh}) / \mathrm{mV}` and
+    :math:`\operatorname{exprel}(x) = (\exp(x) - 1) / x` removes the
+    removable singularity at each Boltzmann midpoint without changing
+    the function value. Gating is :math:`p^3 q`.
+
+    Parameters
+    ----------
+    size : brainstate.typing.Size
+        Channel state shape.
+    g_max : array-like or callable, optional
+        Maximal conductance density, default ``120.0 mS/cm2``. This
+        value is a BrainCell default, not a Traub & Miles (1991)
+        [1]_ figure -- ``HH2.mod`` itself ships ``gnabar = 0.1
+        mho/cm2`` (100 mS/cm2).
+    temp : array-like, optional
+        Absolute temperature driving the Q10 factor, default 36
+        degrees Celsius.
+    q10 : array-like or callable, optional
+        Q10 scaling factor for both gates, default ``1.0`` (no
+        temperature scaling at the reference temperature).
+    temp_ref : array-like, optional
+        Reference temperature for the Q10 formula, default 36
+        degrees Celsius.
+    V_sh : array-like or callable, optional
+        Threshold shift applied to both gates' rates, default
+        ``-63.0 mV``.
+    name : str, optional
+        Optional channel name.
+
+    See Also
+    --------
+    Na_Ba2002 : Same Traub-Miles rate functions with ``V_sh = -50 mV``
+        and ``q10 = 3.0`` instead.
+
+    Notes
+    -----
+    Ported from ``HH2.mod``. Algebraically these are the same rate
+    functions used by :class:`Na_Ba2002`; the only numeric
+    differences are this class's ``V_sh = -63.0 mV`` in place of
+    ``Na_Ba2002``'s ``-50.0 mV``, and ``q10 = 1.0`` in place of
+    ``3.0``.
+
+    The ``-63.0 mV`` default is the value Destexhe's network ``.hoc``
+    files assign to ``vtraub`` for this current, and it is the offset
+    associated with the Traub-Miles hippocampal pyramidal cell that
+    this class is named for. It is **not** ``HH2.mod``'s own default,
+    which is ``-55 mV``. This class's potassium sibling,
+    :class:`K_TM1991`, ships a different default shift
+    (``-60.0 mV``) from the same ``.mod`` file; the two classes do
+    **not** share a shift, and neither should be read as implying a
+    single canonical Traub-Miles offset.
+
+    References
+    ----------
+    .. [1] Traub, R. D., & Miles, R. (1991). Neuronal networks of the
+           hippocampus. Cambridge University Press.
+           doi:10.1017/CBO9780511895401
+    """
 
     __module__ = "braincell.channel"
     root_type = Sodium
@@ -147,7 +291,71 @@ class Na_TM1991(OhmicHH):
 
 @register_channel("Na_HH1952")
 class Na_HH1952(OhmicHH):
-    r"""Hodgkin-Huxley 1952 sodium current with :math:`p^3 q` HH gating."""
+    r"""Hodgkin-Huxley 1952 sodium current with :math:`p^3 q` HH gating.
+
+    The original squid giant axon fast sodium current of
+    (Hodgkin & Huxley, 1952) [1]_:
+
+    .. math::
+
+        \begin{aligned}
+        \alpha_p &= \frac{1}{\operatorname{exprel}(-(V' - 5) / 10)} \\
+        \beta_p &= 4 \exp(-(V' + 20) / 18) \\
+        \alpha_q &= 0.07 \exp(-(V' + 20) / 20) \\
+        \beta_q &= \frac{1}{1 + \exp(-(V' - 10) / 10)}
+        \end{aligned}
+
+    where :math:`V' = (V - V_{sh}) / \mathrm{mV}` and
+    :math:`\operatorname{exprel}(x) = (\exp(x) - 1) / x` removes the
+    removable singularity at the Boltzmann midpoint without changing
+    the function value. With the default ``V_sh = -45 mV`` (so
+    ``V' = (V/mV) + 45``, placing rest at -65 mV in the modern
+    absolute-potential convention), these expand to exactly the
+    published forms
+    :math:`\alpha_m = 0.1 (V+40) / (1 - \exp(-(V+40)/10))`,
+    :math:`\beta_m = 4 \exp(-(V+65)/18)`,
+    :math:`\alpha_h = 0.07 \exp(-(V+65)/20)`,
+    :math:`\beta_h = 1 / (1 + \exp(-(V+35)/10))`. Gating is
+    :math:`p^3 q`.
+
+    Parameters
+    ----------
+    size : brainstate.typing.Size
+        Channel state shape.
+    g_max : array-like or callable, optional
+        Maximal conductance density, default ``120.0 mS/cm2`` --
+        matches (Hodgkin & Huxley, 1952) [1]_'s :math:`g_{Na}`.
+    temp : array-like, optional
+        Absolute temperature driving the Q10 factor, default 36
+        degrees Celsius.
+    q10 : array-like or callable, optional
+        Q10 scaling factor for both gates, default ``3.0`` -- the
+        paper's own factor-of-3-per-10-degree-Celsius correction.
+    temp_ref : array-like, optional
+        Reference temperature for the Q10 formula, default 36
+        degrees Celsius.
+    V_sh : array-like or callable, optional
+        Threshold shift applied to both gates' rates, default
+        ``-45.0 mV``.
+    name : str, optional
+        Optional channel name.
+
+    Notes
+    -----
+    (Hodgkin & Huxley, 1952) [1]_ measured these rates at 6.3 degrees
+    Celsius, not this class's ``temp_ref = 36`` degrees Celsius
+    default. Because ``temp`` and ``temp_ref`` are equal by default,
+    the Q10 correction is a no-op at construction time; the defaults
+    do **not** reproduce the original 6.3-degree-Celsius kinetics.
+
+    References
+    ----------
+    .. [1] Hodgkin, A. L., & Huxley, A. F. (1952). A quantitative
+           description of membrane current and its application to
+           conduction and excitation in nerve. The Journal of
+           Physiology, 117(4), 500-544.
+           doi:10.1113/jphysiol.1952.sp004764
+    """
 
     __module__ = "braincell.channel"
     root_type = Sodium
@@ -192,7 +400,66 @@ class Na_HH1952(OhmicHH):
 
 @register_channel("NaF_SU2015_DCN")
 class NaF_SU2015_DCN(OhmicHH):
-    """Template-based import of ``NaF_SU2015_DCN.mod``."""
+    r"""Fast sodium current of the deep cerebellar nuclei model.
+
+    Deep cerebellar nucleus (DCN) fast sodium current, part of the
+    model published as (Sudhakar et al., 2015) [2]_:
+
+    .. math::
+
+        \begin{aligned}
+        m_\infty &= \frac{1}{1 + \exp((V + 45) / -7.3)} \\
+        \tau_m &= \left[\frac{5.83}{\exp((V - 6.4)/-9)
+                   + \exp((V + 97)/17)} + 0.025\right] / q \\
+        h_\infty &= \frac{1}{1 + \exp((V + 42) / 5.9)} \\
+        \tau_h &= \left[\frac{16.67}{\exp((V - 8.3)/-29)
+                   + \exp((V + 66)/9)} + 0.2\right] / q
+        \end{aligned}
+
+    with :math:`V` in mV and :math:`q` = ``qdeltat``. Gating is
+    :math:`m^3 h`.
+
+    Parameters
+    ----------
+    size : brainstate.typing.Size
+        Channel state shape.
+    g_max : array-like or callable, optional
+        Maximal conductance density, default ``0.01 mS/cm2``.
+    name : str, optional
+        Optional channel name.
+
+    Notes
+    -----
+    Ported from ``NaF_SU15_DCN.mod``. The mechanism name ``NaF`` does
+    not appear anywhere in the text of (Sudhakar et al., 2015) [2]_;
+    this docstring says only that the mechanism is part of the
+    published model, not that the paper names or describes it.
+
+    Kinetics originate in the GENESIS deep cerebellar nucleus model of
+    Steuber et al. (2011) [1]_, translated to NEURON by Luthman et al.
+    (2011), and reused by (Sudhakar et al., 2015) [2]_, which cites
+    only the GENESIS model and not the NEURON translation.
+
+    The former NEURON ``TABLE`` tabulated ``minf``, ``taum``, ``hinf``
+    and ``tauh`` over ``[-150, 100] mV`` and clamped outside that
+    range; BrainCell evaluates the continuous formulas above at every
+    call instead, so values outside ``[-150, 100] mV`` are expected to
+    diverge from the original NEURON boundary-clamped output.
+
+    References
+    ----------
+    .. [1] Steuber, V., Schultheiss, N. W., Silver, R. A., De
+           Schutter, E., & Jaeger, D. (2011). Determinants of synaptic
+           integration and heterogeneity in rebound firing explored
+           with data-driven models of deep cerebellar nucleus cells.
+           Journal of Computational Neuroscience, 30(3), 633-658.
+           doi:10.1007/s10827-010-0282-z
+    .. [2] Sudhakar, S. K., Torben-Nielsen, B., & De Schutter, E.
+           (2015). Cerebellar nuclear neurons use time and rate coding
+           to transmit Purkinje neuron pauses. PLOS Computational
+           Biology, 11(12), e1004641.
+           doi:10.1371/journal.pcbi.1004641
+    """
 
     __module__ = "braincell.channel"
     root_type = Sodium
@@ -230,7 +497,67 @@ class NaF_SU2015_DCN(OhmicHH):
 
 @register_channel("NaP_SU2015_DCN")
 class NaP_SU2015_DCN(OhmicHH):
-    """Template-based import of ``NaP_SU2015_DCN.mod``."""
+    r"""Persistent sodium current of the deep cerebellar nuclei model.
+
+    Deep cerebellar nucleus (DCN) persistent sodium current, part of
+    the model published as (Sudhakar et al., 2015) [2]_:
+
+    .. math::
+
+        \begin{aligned}
+        m_\infty &= \frac{1}{1 + \exp((V + 70) / -4.1)} \\
+        \tau_m &= 50 / q \\
+        h_\infty &= \frac{1}{1 + \exp((V + 80) / 4)} \\
+        \tau_h &= \left[\frac{1750}{1 + \exp((V + 65)/-8)}
+                   + 250\right] / q
+        \end{aligned}
+
+    with :math:`V` in mV and :math:`q` = ``qdeltat``; :math:`\tau_m`
+    is a bare constant with no voltage dependence. Gating is
+    :math:`m^3 h`.
+
+    Parameters
+    ----------
+    size : brainstate.typing.Size
+        Channel state shape.
+    g_max : array-like or callable, optional
+        Maximal conductance density, default ``0.01 mS/cm2``.
+    name : str, optional
+        Optional channel name.
+
+    Notes
+    -----
+    Ported from ``NaP_SU15_DCN.mod``. ``NaP`` is one of only four
+    mechanism names (with ``CaLVA``, ``HCN`` and ``SK``) that actually
+    occur in the text of (Sudhakar et al., 2015) [2]_; even so, the
+    paper does not print these Boltzmann constants.
+
+    Kinetics originate in the GENESIS deep cerebellar nucleus model of
+    Steuber et al. (2011) [1]_, translated to NEURON by Luthman et al.
+    (2011), and reused by (Sudhakar et al., 2015) [2]_, which cites
+    only the GENESIS model and not the NEURON translation.
+
+    The former NEURON ``TABLE`` tabulated ``minf``, ``hinf`` and
+    ``tauh`` (but not ``taum``, which does not depend on voltage) over
+    ``[-150, 100] mV`` and clamped outside that range; BrainCell
+    evaluates the continuous formulas above at every call instead, so
+    values outside ``[-150, 100] mV`` are expected to diverge from the
+    original NEURON boundary-clamped output.
+
+    References
+    ----------
+    .. [1] Steuber, V., Schultheiss, N. W., Silver, R. A., De
+           Schutter, E., & Jaeger, D. (2011). Determinants of synaptic
+           integration and heterogeneity in rebound firing explored
+           with data-driven models of deep cerebellar nucleus cells.
+           Journal of Computational Neuroscience, 30(3), 633-658.
+           doi:10.1007/s10827-010-0282-z
+    .. [2] Sudhakar, S. K., Torben-Nielsen, B., & De Schutter, E.
+           (2015). Cerebellar nuclear neurons use time and rate coding
+           to transmit Purkinje neuron pauses. PLOS Computational
+           Biology, 11(12), e1004641.
+           doi:10.1371/journal.pcbi.1004641
+    """
 
     __module__ = "braincell.channel"
     root_type = Sodium
@@ -267,7 +594,79 @@ class NaP_SU2015_DCN(OhmicHH):
 
 @register_channel("Na_ZH2019_IO")
 class Na_ZH2019_IO(OhmicHH):
-    """Template-based import of ``Na_ZH2019_IO.mod``."""
+    r"""Inferior olive somatic sodium current, Schweighofer kinetics.
+
+    Inferior olive (IO) somatic fast sodium current from the
+    essential-tremor cortico-cerebello-thalamo-cortical loop model of
+    (Zhang & Santaniello, 2019) [2]_:
+
+    .. math::
+
+        \begin{aligned}
+        \alpha_m &= x/(1 - \exp(-x)),\ x = (V + 41) / 10 \\
+        \beta_m &= 9 \exp(-(V + 66) / 20) \\
+        \alpha_h &= 5 \exp(-(V + 60) / 15) \\
+        \beta_h &= 10 y/(1 - \exp(-y)),\ y = (V + 50) / 10
+        \end{aligned}
+
+    with :math:`V` in mV,
+    :math:`m_\infty = \alpha_m / (\alpha_m + \beta_m)`,
+    :math:`\tau_m = 0.001` ms (effectively instantaneous),
+    :math:`h_\infty = \alpha_h / (\alpha_h + \beta_h)`,
+    :math:`\tau_h = 250 / (\alpha_h + \beta_h)`. Gating is
+    :math:`m^3 h`. Both :math:`x/(1-\exp(-x))` terms are evaluated by
+    the module-level helper ``_x_over_one_minus_exp_neg_stable``,
+    which substitutes the Taylor form ``1 + x/2`` for
+    ``|x| < 1e-6`` and the closed form otherwise -- this is the
+    numerically stable replacement for the removable singularity at
+    :math:`x = 0`, not the naive textbook fraction.
+
+    Parameters
+    ----------
+    size : brainstate.typing.Size
+        Channel state shape.
+    g_max : array-like or callable, optional
+        Maximal conductance density, default ``70.0 mS/cm2``.
+    name : str, optional
+        Optional channel name.
+
+    Notes
+    -----
+    Ported from ``Na_ZH19_IO.mod``. Kinetics originate in the
+    single-compartment inferior olive model of Schweighofer, Doya &
+    Kawato (1999) [1]_, reaching this class through the NEURON port of
+    Torben-Nielsen, Segev & Yarom (2012), and reused by (Zhang &
+    Santaniello, 2019) [2]_.
+
+    ``Na_ZH19_IO.mod`` guards the removable singularities in
+    ``alpha_m`` and ``beta_h`` with an explicit
+    ``if (fabs(v + 41.0) < 1e-6)`` / ``if (fabs(v + 50.0) < 1e-6)``
+    branch that substitutes the perturbed literal ``41.000001`` /
+    ``50.000001``. BrainCell replaces both branches with
+    ``_x_over_one_minus_exp_neg_stable`` instead of reproducing the
+    perturbed-literal branch; this is exact away from the singularity
+    and better-behaved at it, but it is a BrainCell substitution, not
+    a reproduction of the ``.mod`` file's own guard.
+
+    The upstream ``rates(v)`` call was relocated from ``BREAKPOINT``
+    into ``DERIVATIVE states``, so ``m``/``h`` steady states and time
+    constants are refreshed before the ``cnexp`` state update rather
+    than after it -- a semantic change carried over from the source
+    ``.mod`` file, not introduced by this port.
+
+    References
+    ----------
+    .. [1] Schweighofer, N., Doya, K., & Kawato, M. (1999).
+           Electrophysiological properties of inferior olive neurons:
+           A compartmental model. Journal of Neurophysiology, 82(2),
+           804-817.
+           doi:10.1152/jn.1999.82.2.804
+    .. [2] Zhang, X., & Santaniello, S. (2019). Role of cerebellar
+           GABAergic dysfunctions in the origins of essential tremor.
+           Proceedings of the National Academy of Sciences of the
+           United States of America, 116(27), 13592-13601.
+           doi:10.1073/pnas.1817689116
+    """
 
     __module__ = "braincell.channel"
     root_type = Sodium
@@ -324,7 +723,113 @@ class Na_ZH2019_IO(OhmicHH):
 
 @register_channel("Nav1p6_MA2020_GoC")
 class Nav1p6_MA2020_GoC(Markov):
-    """Template-based import of ``Nav1p6_MA2020_GoC.mod``."""
+    r"""Resurgent Nav1.6 sodium current, Golgi-cell parameterisation.
+
+    The 13-state Raman & Bean [1]_ / Khaliq et al. [2]_ resurgent
+    sodium Markov scheme, as parameterised for the Golgi cell model of
+    (Masoli et al., 2020) [4]_. Five closed states ``C1``-``C5`` form
+    an activation ladder that opens into ``O``; ``O`` can additionally
+    transition into a blocked state ``B`` (the resurgent-current
+    mechanism) or into a deep-inactivated state ``I6``; each closed
+    state ``Cn`` has a matching inactivated state ``In``
+    (``n = 1..5``), themselves connected in the same ladder topology
+    as the closed states and converging on ``I6`` from ``I5``.
+    ``I6`` is eliminated algebraically (``dependent_state``).
+
+    .. math::
+
+        \begin{aligned}
+        f_{0,n} &= (5-n)\,\alpha \exp(V'/x_1)\,\phi,
+                   &\quad b_{0,n} &= n\,\beta
+                   \exp((V' + v_a)/(x_2 + v_k))\,\phi \\
+        f_{0O} &= \gamma \exp(V'/x_3)\,\phi,
+                  &\quad b_{0O} &= \delta \exp(V'/x_4)\,\phi \\
+        f_{ip} &= \epsilon \exp(V'/x_5)\,\phi,
+                  &\quad b_{ip} &= \zeta \exp(V'/x_6)\,\phi \\
+        f_{1,n} &= (5-n)\,\alpha\,a \exp((V' + v_i)/x_1)\,\phi,
+                   &\quad b_{1,n} &= n\,\beta\,b
+                   \exp((V' + v_i)/x_2)\,\phi \\
+        f_{1n} &= \gamma \exp(V'/x_3)\,\phi,
+                  &\quad b_{1n} &= \delta \exp(V'/x_4)\,\phi \\
+        f_{i,n} &= C_{on}\,a^{\,n-1}\,\phi,
+                   &\quad b_{i,n} &= C_{off}\,b^{\,n-1}\,\phi \\
+        f_{in} &= O_{on}\,\phi, &\quad b_{in} &= O_{off}\,\phi
+        \end{aligned}
+
+    for :math:`n = 1..4` (:math:`f_{0,n}`/:math:`b_{0,n}`,
+    :math:`f_{1,n}`/:math:`b_{1,n}`) and :math:`n = 1..5`
+    (:math:`f_{i,n}`/:math:`b_{i,n}`), where :math:`V' = V/\mathrm{mV}`,
+    :math:`a` = ``alfac`` :math:`= (O_{on}/C_{on})^{1/4}`, :math:`b` =
+    ``btfac`` :math:`= (O_{off}/C_{off})^{1/4}`, and
+    :math:`\phi = 3^{(T - 22)/10}` with :math:`T` in degrees Celsius.
+    The current is :math:`g_{max} \cdot O \cdot (E_{Na} - V)`, taken
+    directly from the open-state occupancy rather than a
+    ``power``-weighted gate product.
+
+    Parameters
+    ----------
+    size : brainstate.typing.Size
+        Channel state shape.
+    temp : array-like, optional
+        Absolute temperature driving the :math:`\phi` factor, default
+        22 degrees Celsius (the reference temperature itself, so
+        :math:`\phi = 1`).
+    g_max : array-like or callable, optional
+        Maximal conductance density, default ``16.0 mS/cm2``.
+    name : str, optional
+        Optional channel name.
+    solver : str, optional
+        Override for :class:`Markov`'s default ODE solver.
+    substeps : int, optional
+        Override for :class:`Markov`'s default substep count.
+
+    See Also
+    --------
+    Nav1p6_MA2024_PC : Same scheme and constants, Purkinje-cell model
+        citation.
+    Nav1p6_MA2025_BC : Same scheme and constants, basket-cell model
+        citation.
+    Nav1p6_RI2021_SC : Same scheme and constants, stellate-cell model
+        citation.
+    Nav1p1_MA2025_BC : Same 13-state topology with an independently
+        overridden constant set for the non-resurgent Nav1.1 variant.
+
+    Notes
+    -----
+    Ported from ``Nav1p6_MA2020_GoC.mod``. All of ``Con``, ``Coff``,
+    ``Oon``, ``Ooff``, ``alpha``, ``beta``, ``gamma``, ``delta``,
+    ``epsilon``, ``zeta``, ``x1``-``x6``, ``vshifta``, ``vshifti``,
+    ``vshiftk``, ``alfac`` and ``btfac`` are fixed internal constants
+    set in ``__init__`` and are not exposed as ``__init__`` parameters.
+
+    No import deviation (``TABLE`` removal, ``derivimplicit`` ->
+    ``cnexp`` substitution, rate-refresh relocation, or NMODL
+    default-precision rewrite) is recorded for this mechanism in the
+    bibliography's ``MA2020`` import-deviations tables.
+
+    References
+    ----------
+    .. [1] Raman, I. M., & Bean, B. P. (2001). Inactivation and
+           recovery of sodium currents in cerebellar Purkinje neurons:
+           evidence for two mechanisms. Biophysical Journal, 80(2),
+           729-737.
+           doi:10.1016/S0006-3495(01)76052-3
+    .. [2] Khaliq, Z. M., Gouwens, N. W., & Raman, I. M. (2003). The
+           contribution of resurgent sodium current to high-frequency
+           firing in Purkinje neurons: an experimental and modeling
+           study. The Journal of Neuroscience, 23(12), 4899-4912.
+           doi:10.1523/JNEUROSCI.23-12-04899.2003
+    .. [3] Akemann, W., & Knopfel, T. (2006). Interaction of Kv3
+           potassium channels and resurgent sodium current influences
+           the rate of spontaneous firing of Purkinje neurons. The
+           Journal of Neuroscience, 26(17), 4602-4612.
+           doi:10.1523/JNEUROSCI.5204-05.2006
+    .. [4] Masoli, S., Ottaviani, A., Casali, S., & D'Angelo, E.
+           (2020). Cerebellar Golgi cell models predict dendritic
+           processing and mechanisms of synaptic plasticity. PLOS
+           Computational Biology, 16(12), e1007937.
+           doi:10.1371/journal.pcbi.1007937
+    """
 
     __module__ = "braincell.channel"
     root_type = Sodium
@@ -434,7 +939,78 @@ class Nav1p6_MA2020_GoC(Markov):
 
 @register_channel("Nav1p6_MA2024_PC")
 class Nav1p6_MA2024_PC(Nav1p6_MA2020_GoC):
-    """Template-based import of ``Nav1p6_MA2024_PC.mod``."""
+    r"""Resurgent Nav1.6 sodium current, Purkinje-cell parameterisation.
+
+    The same 13-state Raman & Bean [1]_ / Khaliq et al. [2]_ resurgent
+    sodium Markov scheme documented in :class:`Nav1p6_MA2020_GoC`,
+    reused unchanged for the human Purkinje-cell model of
+    (Masoli et al., 2024) [4]_.
+
+    Parameters
+    ----------
+    size : brainstate.typing.Size
+        Channel state shape.
+    temp : array-like, optional
+        Absolute temperature driving the :math:`\phi` factor, default
+        22 degrees Celsius. Inherited from :class:`Nav1p6_MA2020_GoC`.
+    g_max : array-like or callable, optional
+        Maximal conductance density, default ``16.0 mS/cm2``.
+        Inherited from :class:`Nav1p6_MA2020_GoC`.
+    name : str, optional
+        Optional channel name.
+    solver : str, optional
+        Override for :class:`Markov`'s default ODE solver.
+    substeps : int, optional
+        Override for :class:`Markov`'s default substep count.
+
+    See Also
+    --------
+    Nav1p6_MA2020_GoC : The base class; full equations, state
+        topology and constant values are documented there.
+    Nav1p6_MA2025_BC : Same scheme and constants, basket-cell model
+        citation.
+    Nav1p6_RI2021_SC : Same scheme and constants, stellate-cell model
+        citation.
+
+    Notes
+    -----
+    Ported from ``Nav1p6_MA2024_PC.mod``. This class does not override
+    ``__init__``: the constructor, the transition-rate lambdas, the
+    fixed kinetic constants and :meth:`current` are all inherited
+    unchanged from :class:`Nav1p6_MA2020_GoC`. Only the
+    ``register_channel`` key and this docstring's model citation
+    differ -- the ``.mod`` file this class ports from parameterises
+    the identical mechanism for a different cell type, not a
+    different kinetic scheme.
+
+    No import deviation is recorded for this mechanism in the
+    bibliography's ``MA2024`` import-deviations tables.
+
+    References
+    ----------
+    .. [1] Raman, I. M., & Bean, B. P. (2001). Inactivation and
+           recovery of sodium currents in cerebellar Purkinje neurons:
+           evidence for two mechanisms. Biophysical Journal, 80(2),
+           729-737.
+           doi:10.1016/S0006-3495(01)76052-3
+    .. [2] Khaliq, Z. M., Gouwens, N. W., & Raman, I. M. (2003). The
+           contribution of resurgent sodium current to high-frequency
+           firing in Purkinje neurons: an experimental and modeling
+           study. The Journal of Neuroscience, 23(12), 4899-4912.
+           doi:10.1523/JNEUROSCI.23-12-04899.2003
+    .. [3] Akemann, W., & Knopfel, T. (2006). Interaction of Kv3
+           potassium channels and resurgent sodium current influences
+           the rate of spontaneous firing of Purkinje neurons. The
+           Journal of Neuroscience, 26(17), 4602-4612.
+           doi:10.1523/JNEUROSCI.5204-05.2006
+    .. [4] Masoli, S., Sanchez-Ponce, D., Vrieler, N., Abu-Haya, K.,
+           Lerner, V., Shahar, T., Nedelescu, H., Rizza, M. F.,
+           Benavides-Piccione, R., DeFelipe, J., Yarom, Y., Munoz, A.,
+           & D'Angelo, E. (2024). Human Purkinje cells outperform
+           mouse Purkinje cells in dendritic complexity and
+           computational capacity. Communications Biology, 7(1), 5.
+           doi:10.1038/s42003-023-05689-y
+    """
 
     __module__ = "braincell.channel"
 
@@ -444,7 +1020,77 @@ class Nav1p6_MA2024_PC(Nav1p6_MA2020_GoC):
 
 @register_channel("Nav1p6_MA2025_BC")
 class Nav1p6_MA2025_BC(Nav1p6_MA2020_GoC):
-    """Template-based import of ``Nav1p6_MA2025_BC.mod``."""
+    r"""Resurgent Nav1.6 sodium current, basket-cell parameterisation.
+
+    The same 13-state Raman & Bean [1]_ / Khaliq et al. [2]_ resurgent
+    sodium Markov scheme documented in :class:`Nav1p6_MA2020_GoC`,
+    reused unchanged for the basket-cell model of
+    (Masoli et al., 2025) [4]_.
+
+    Parameters
+    ----------
+    size : brainstate.typing.Size
+        Channel state shape.
+    temp : array-like, optional
+        Absolute temperature driving the :math:`\phi` factor, default
+        22 degrees Celsius. Inherited from :class:`Nav1p6_MA2020_GoC`.
+    g_max : array-like or callable, optional
+        Maximal conductance density, default ``16.0 mS/cm2``.
+        Inherited from :class:`Nav1p6_MA2020_GoC`.
+    name : str, optional
+        Optional channel name.
+    solver : str, optional
+        Override for :class:`Markov`'s default ODE solver.
+    substeps : int, optional
+        Override for :class:`Markov`'s default substep count.
+
+    See Also
+    --------
+    Nav1p6_MA2020_GoC : The base class; full equations, state
+        topology and constant values are documented there.
+    Nav1p6_MA2024_PC : Same scheme and constants, Purkinje-cell model
+        citation.
+    Nav1p6_RI2021_SC : Same scheme and constants, stellate-cell model
+        citation.
+    Nav1p1_MA2025_BC : Non-resurgent Nav1.1 sibling for the same
+        basket-cell model, with its own overridden constants.
+
+    Notes
+    -----
+    Ported from ``Nav1p6_MA2025_BC.mod``. This class does not override
+    ``__init__``: the constructor, the transition-rate lambdas, the
+    fixed kinetic constants and :meth:`current` are all inherited
+    unchanged from :class:`Nav1p6_MA2020_GoC`. Only the
+    ``register_channel`` key and this docstring's model citation
+    differ.
+
+    No import deviation is recorded for this mechanism in the
+    bibliography's ``MA2025`` import-deviations tables.
+
+    References
+    ----------
+    .. [1] Raman, I. M., & Bean, B. P. (2001). Inactivation and
+           recovery of sodium currents in cerebellar Purkinje neurons:
+           evidence for two mechanisms. Biophysical Journal, 80(2),
+           729-737.
+           doi:10.1016/S0006-3495(01)76052-3
+    .. [2] Khaliq, Z. M., Gouwens, N. W., & Raman, I. M. (2003). The
+           contribution of resurgent sodium current to high-frequency
+           firing in Purkinje neurons: an experimental and modeling
+           study. The Journal of Neuroscience, 23(12), 4899-4912.
+           doi:10.1523/JNEUROSCI.23-12-04899.2003
+    .. [3] Akemann, W., & Knopfel, T. (2006). Interaction of Kv3
+           potassium channels and resurgent sodium current influences
+           the rate of spontaneous firing of Purkinje neurons. The
+           Journal of Neuroscience, 26(17), 4602-4612.
+           doi:10.1523/JNEUROSCI.5204-05.2006
+    .. [4] Masoli, S., Rizza, M. F., Soda, T., Sanchez-Ponce, D.,
+           Munoz, A., Prestori, F., & D'Angelo, E. (2025). Cerebellar
+           basket cell filtering of Purkinje cell responses elicited
+           by low frequency parallel fibre transmission. Scientific
+           Reports, 15(1), 25192.
+           doi:10.1038/s41598-025-09964-2
+    """
 
     __module__ = "braincell.channel"
 
@@ -454,7 +1100,77 @@ class Nav1p6_MA2025_BC(Nav1p6_MA2020_GoC):
 
 @register_channel("Nav1p6_RI2021_SC")
 class Nav1p6_RI2021_SC(Nav1p6_MA2020_GoC):
-    """Template-based import of ``Nav1p6_RI2021_SC.mod``."""
+    r"""Resurgent Nav1.6 sodium current, stellate-cell parameterisation.
+
+    The same 13-state Raman & Bean [1]_ / Khaliq et al. [2]_ resurgent
+    sodium Markov scheme documented in :class:`Nav1p6_MA2020_GoC`,
+    reused unchanged for the stellate-cell model of
+    (Rizza et al., 2021) [4]_.
+
+    Parameters
+    ----------
+    size : brainstate.typing.Size
+        Channel state shape.
+    temp : array-like, optional
+        Absolute temperature driving the :math:`\phi` factor, default
+        22 degrees Celsius. Inherited from :class:`Nav1p6_MA2020_GoC`.
+    g_max : array-like or callable, optional
+        Maximal conductance density, default ``16.0 mS/cm2``.
+        Inherited from :class:`Nav1p6_MA2020_GoC`.
+    name : str, optional
+        Optional channel name.
+    solver : str, optional
+        Override for :class:`Markov`'s default ODE solver.
+    substeps : int, optional
+        Override for :class:`Markov`'s default substep count.
+
+    See Also
+    --------
+    Nav1p6_MA2020_GoC : The base class; full equations, state
+        topology and constant values are documented there.
+    Nav1p6_MA2024_PC : Same scheme and constants, Purkinje-cell model
+        citation.
+    Nav1p6_MA2025_BC : Same scheme and constants, basket-cell model
+        citation.
+    Nav1p1_RI2021_SC : Non-resurgent Nav1.1 sibling for the same
+        stellate-cell model.
+
+    Notes
+    -----
+    Ported from ``Nav1p6_RI2021_SC.mod``. This class does not override
+    ``__init__``: the constructor, the transition-rate lambdas, the
+    fixed kinetic constants and :meth:`current` are all inherited
+    unchanged from :class:`Nav1p6_MA2020_GoC`. Only the
+    ``register_channel`` key and this docstring's model citation
+    differ.
+
+    No import deviation is recorded for this mechanism in the
+    bibliography's ``RI2021`` import-deviations tables.
+
+    References
+    ----------
+    .. [1] Raman, I. M., & Bean, B. P. (2001). Inactivation and
+           recovery of sodium currents in cerebellar Purkinje neurons:
+           evidence for two mechanisms. Biophysical Journal, 80(2),
+           729-737.
+           doi:10.1016/S0006-3495(01)76052-3
+    .. [2] Khaliq, Z. M., Gouwens, N. W., & Raman, I. M. (2003). The
+           contribution of resurgent sodium current to high-frequency
+           firing in Purkinje neurons: an experimental and modeling
+           study. The Journal of Neuroscience, 23(12), 4899-4912.
+           doi:10.1523/JNEUROSCI.23-12-04899.2003
+    .. [3] Akemann, W., & Knopfel, T. (2006). Interaction of Kv3
+           potassium channels and resurgent sodium current influences
+           the rate of spontaneous firing of Purkinje neurons. The
+           Journal of Neuroscience, 26(17), 4602-4612.
+           doi:10.1523/JNEUROSCI.5204-05.2006
+    .. [4] Rizza, M. F., Locatelli, F., Masoli, S., Sanchez-Ponce, D.,
+           Munoz, A., Prestori, F., & D'Angelo, E. (2021). Stellate
+           cell computational modeling predicts signal filtering in
+           the molecular layer circuit of cerebellum. Scientific
+           Reports, 11(1), 3873.
+           doi:10.1038/s41598-021-83209-w
+    """
 
     __module__ = "braincell.channel"
 
@@ -464,7 +1180,115 @@ class Nav1p6_RI2021_SC(Nav1p6_MA2020_GoC):
 
 @register_channel("Nav1p1_MA2025_BC")
 class Nav1p1_MA2025_BC(Nav1p6_MA2020_GoC):
-    """Template-based import of ``Nav1p1_MA2025_BC.mod``."""
+    r"""Non-resurgent Nav1.1 sodium current, basket-cell parameterisation.
+
+    The non-resurgent ``Narsg`` sodium current derived from the
+    Khaliq et al. (2003) [1]_ resurgent-current model and used for
+    Kv3/Nav1.1 excitability studies by Akemann, Lundby, Mutoh &
+    Knopfel (2009) [2]_, reparameterised for the basket-cell model of
+    (Masoli et al., 2025) [3]_.
+
+    This class inherits the 13-state Markov ``pairs`` topology, the
+    transition-rate lambdas and the :math:`\phi` temperature-scaling
+    formula from :class:`Nav1p6_MA2020_GoC` (see that class for the
+    full state diagram and rate equations), but overrides three of
+    the fixed kinetic constants and recomputes :math:`\phi` with a
+    different base:
+
+    .. math::
+
+        \phi = 2.7^{(T - 22)/10}, \quad
+        O_{on} = 2.3\ \mathrm{ms^{-1}}, \quad
+        \epsilon = 10^{-12}\ \mathrm{ms^{-1}}, \quad
+        a = \left(\frac{O_{on}}{C_{on}}\right)^{1/4}
+
+    with :math:`C_{on}` unchanged from :class:`Nav1p6_MA2020_GoC`'s
+    ``0.005``, so ``alfac`` is recomputed to a different value than
+    the base class's. :meth:`current` adds an optional gating-current
+    correction on top of the inherited ionic current:
+
+    .. math::
+
+        \begin{aligned}
+        I &= g_{max}\, O\, (E_{Na} - V) - \mathbb{1}[\text{gateCurrent}
+             \neq 0]\, I_{gate} \\
+        I_{gate} &= n_c \times 10^6\, e_0\, z_{gate}\,
+                     \dot{q} \\
+        \dot{q} &= f_{01} C_1 + (f_{02}{-}b_{01}) C_2
+                    + (f_{03}{-}b_{02}) C_3
+                    + (f_{04}{-}b_{03}) C_4 - b_{04} C_5 \\
+                 &\ + f_{11} I_1 + (f_{12}{-}b_{11}) I_2
+                    + (f_{13}{-}b_{12}) I_3
+                    + (f_{14}{-}b_{13}) I_4 - b_{14} I_5 \\
+        n_c &= 10^{12}\, g_{max} / g_{unit}
+        \end{aligned}
+
+    where :math:`\dot{q}` is the net probability flux through the
+    activation/inactivation ladders (excluding ``O``, ``B`` and
+    ``I6``), :math:`n_c` estimates the channel count from ``g_max``
+    and a fixed unitary conductance ``gunit``, and :math:`e_0` is the
+    elementary charge.
+
+    Parameters
+    ----------
+    size : brainstate.typing.Size
+        Channel state shape.
+    temp : array-like, optional
+        Absolute temperature driving the :math:`\phi` factor, default
+        22 degrees Celsius.
+    g_max : array-like or callable, optional
+        Maximal conductance density, default ``8.0 mS/cm2`` (half
+        :class:`Nav1p6_MA2020_GoC`'s default).
+    gateCurrent : array-like or callable, optional
+        Enables the gating-current correction in :meth:`current` when
+        nonzero, default ``0.0`` (disabled).
+    name : str, optional
+        Optional channel name.
+    solver : str, optional
+        Override for :class:`Markov`'s default ODE solver.
+    substeps : int, optional
+        Override for :class:`Markov`'s default substep count.
+
+    See Also
+    --------
+    Nav1p1_RI2021_SC : Same scheme and constants, stellate-cell model
+        citation.
+    Nav1p6_MA2025_BC : Resurgent Nav1.6 sibling for the same
+        basket-cell model, with its own (unoverridden) constants.
+
+    Notes
+    -----
+    Ported from ``Nav1p1_MA2025_BC.mod``, whose own header describes
+    the mechanism as "derived from the Narsg channel of Khaliq et al.,
+    J. Neurosci. 23(2003)4899" -- i.e. via :class:`Nav1p6_MA2020_GoC`'s
+    origin, not an independently republished scheme.
+
+    ``zgate = 2.5435``, ``gunit = 15e-9 mS`` and
+    ``e0 = 1.60217646e-19 C`` are fixed internal constants set in
+    ``__init__`` and are not exposed as ``__init__`` parameters.
+
+    No import deviation is recorded for this mechanism in the
+    bibliography's ``MA2025`` import-deviations tables.
+
+    References
+    ----------
+    .. [1] Khaliq, Z. M., Gouwens, N. W., & Raman, I. M. (2003). The
+           contribution of resurgent sodium current to high-frequency
+           firing in Purkinje neurons: an experimental and modeling
+           study. The Journal of Neuroscience, 23(12), 4899-4912.
+           doi:10.1523/JNEUROSCI.23-12-04899.2003
+    .. [2] Akemann, W., Lundby, A., Mutoh, H., & Knopfel, T. (2009).
+           Effect of voltage sensitive fluorescent proteins on
+           neuronal excitability. Biophysical Journal, 96(10),
+           3959-3976.
+           doi:10.1016/j.bpj.2009.02.046
+    .. [3] Masoli, S., Rizza, M. F., Soda, T., Sanchez-Ponce, D.,
+           Munoz, A., Prestori, F., & D'Angelo, E. (2025). Cerebellar
+           basket cell filtering of Purkinje cell responses elicited
+           by low frequency parallel fibre transmission. Scientific
+           Reports, 15(1), 25192.
+           doi:10.1038/s41598-025-09964-2
+    """
 
     __module__ = "braincell.channel"
 
@@ -519,7 +1343,73 @@ class Nav1p1_MA2025_BC(Nav1p6_MA2020_GoC):
 
 @register_channel("Nav1p1_RI2021_SC")
 class Nav1p1_RI2021_SC(Nav1p1_MA2025_BC):
-    """Template-based import of ``Nav1p1_RI2021_SC.mod``."""
+    r"""Non-resurgent Nav1.1 sodium current, stellate-cell parameterisation.
+
+    The same non-resurgent ``Narsg`` sodium current documented on
+    :class:`Nav1p1_MA2025_BC` -- derived from the Khaliq et al. (2003)
+    [1]_ resurgent-current model and used for Kv3/Nav1.1 excitability
+    studies by Akemann, Lundby, Mutoh & Knopfel (2009) [2]_ -- imported
+    here for the stellate-cell model of Rizza et al. (2021) [3]_.
+
+    Parameters
+    ----------
+    size : brainstate.typing.Size
+        Channel state shape.
+    temp : array-like, optional
+        Absolute temperature driving the :math:`\phi` factor, default
+        22 degrees Celsius.
+    g_max : array-like or callable, optional
+        Maximal conductance density, default ``8.0 mS/cm2``.
+    gateCurrent : array-like or callable, optional
+        Enables the gating-current correction in :meth:`current` when
+        nonzero, default ``0.0`` (disabled).
+    name : str, optional
+        Optional channel name.
+    solver : str, optional
+        Override for :class:`Markov`'s default ODE solver.
+    substeps : int, optional
+        Override for :class:`Markov`'s default substep count.
+
+    See Also
+    --------
+    Nav1p1_MA2025_BC : Same 13-state scheme and overridden constants,
+        basket-cell model citation; the full kinetics, :math:`\phi`
+        formula and gating-current formula are documented there.
+    Nav1p6_RI2021_SC : Resurgent Nav1.6 sibling for the same
+        stellate-cell model.
+
+    Notes
+    -----
+    Ported from ``Nav1p1_RI2021_SC.mod``. This class does not override
+    ``__init__``: the constructor signature, the 13-state kinetics,
+    the :math:`\phi` temperature scaling, the ``Oon``/``epsilon``/
+    ``zgate``/``gunit``/``e0`` constants and the gating-current term
+    in :meth:`current` are all inherited unchanged from
+    :class:`Nav1p1_MA2025_BC`; only the citation and registration key
+    differ.
+
+    No import deviation is recorded for this mechanism in the
+    bibliography's ``RI2021`` import-deviations tables.
+
+    References
+    ----------
+    .. [1] Khaliq, Z. M., Gouwens, N. W., & Raman, I. M. (2003). The
+           contribution of resurgent sodium current to high-frequency
+           firing in Purkinje neurons: an experimental and modeling
+           study. The Journal of Neuroscience, 23(12), 4899-4912.
+           doi:10.1523/JNEUROSCI.23-12-04899.2003
+    .. [2] Akemann, W., Lundby, A., Mutoh, H., & Knopfel, T. (2009).
+           Effect of voltage sensitive fluorescent proteins on
+           neuronal excitability. Biophysical Journal, 96(10),
+           3959-3976.
+           doi:10.1016/j.bpj.2009.02.046
+    .. [3] Rizza, M. F., Locatelli, F., Masoli, S., Sanchez-Ponce, D.,
+           Munoz, A., Prestori, F., & D'Angelo, E. (2021). Stellate
+           cell computational modeling predicts signal filtering in
+           the molecular layer circuit of cerebellum. Scientific
+           Reports, 11(1), 3873.
+           doi:10.1038/s41598-021-83209-w
+    """
 
     __module__ = "braincell.channel"
 
@@ -529,7 +1419,127 @@ class Nav1p1_RI2021_SC(Nav1p1_MA2025_BC):
 
 @register_channel("Nav_MA2020_GrC")
 class Nav_MA2020_GrC(Markov, IndependentIntegration):
-    """Template-based import of ``Nav_MA2020_GrC.mod``."""
+    r"""Resurgent Nav sodium current, granule-cell parameterisation.
+
+    A 13-state Raman & Bean (2001) [2]_-style resurgent sodium Markov
+    scheme, refitted to the transient/persistent/resurgent granule-cell
+    recordings and kinetic scheme of Magistretti et al. (2006) [1]_ and
+    imported here for the granule-cell model of (Masoli et al., 2020)
+    [3]_. Five closed states ``C1``-``C5`` form an activation ladder
+    mirrored by five inactivated states ``I1``-``I5``; ``C5`` opens
+    into ``O``, which can transition into a blocked state ``OB`` or
+    into the shared deep-inactivated state ``I6`` (also reachable from
+    ``I5``); ``I6`` is algebraically eliminated as ``dependent_state``.
+
+    All transition rates share one temperature factor and a small set
+    of voltage-dependent and constant primitives:
+
+    .. math::
+
+        \begin{aligned}
+        \phi &= 3^{(T - 20)/10} \\
+        \alpha(V) &= \phi\, A_\alpha\, e^{V/V_\alpha}, \quad
+        \beta(V) = \phi\, A_\beta\, e^{-V/V_\beta}, \quad
+        \theta(V) = \phi\, A_\theta\, e^{-V/V_\theta} \\
+        \gamma &= \phi A_\gamma, \quad \delta = \phi A_\delta, \quad
+        \varepsilon = \phi A_\varepsilon \\
+        C_{on} &= \phi A_{Con}, \quad C_{off} = \phi A_{Coff}, \quad
+        O_{on} = \phi A_{Oon}, \quad O_{off} = \phi A_{Ooff} \\
+        a &= (O_{on}/C_{on})^{1/4}, \quad b = (O_{off}/C_{off})^{1/4}
+        \end{aligned}
+
+    with :math:`V` in mV (unitless argument to the exponentials) and
+    :math:`T` the temperature in degrees Celsius. The closed and
+    inactivated ladders share the same scaling weights
+    :math:`n_1{=}5.422,\ n_2{=}3.279,\ n_3{=}1.83,\ n_4{=}0.738`:
+
+    .. math::
+
+        \begin{aligned}
+        f_{0k} &= n_k\, \alpha(V), &
+        b_{0k} &= n_{5-k}\, \beta(V), & k&=1,\dots,4 \\
+        f_{1k} &= n_k\, \alpha(V)\, a, &
+        b_{1k} &= n_{5-k}\, \beta(V)\, b, & k&=1,\dots,4 \\
+        f_{ik} &= C_{on}\, a^{\,k-1}, &
+        b_{ik} &= C_{off}\, b^{\,k-1}, & k&=1,\dots,5 \\
+        f_{0O} &= \gamma, & b_{0O} &= \delta \\
+        f_{ip} &= \varepsilon, & b_{ip} &= \theta \\
+        f_{1n} &= \gamma, & b_{1n} &= \delta \\
+        f_{in} &= O_{on}, & b_{in} &= O_{off}
+        \end{aligned}
+
+    where subscript ``0k``/``1k`` index the ``Ck<->Ck+1``/
+    ``Ik<->Ik+1`` ladder steps, ``ik`` the ``Ck<->Ik`` cross-links,
+    ``0O`` the ``C5<->O`` opening step, ``ip`` the ``O<->OB`` blocking
+    step, and ``1n``/``in`` the ``I5<->I6``/``O<->I6`` deep-inactivation
+    links.
+
+    Parameters
+    ----------
+    size : brainstate.typing.Size
+        Channel state shape.
+    temp : array-like, optional
+        Absolute temperature driving :math:`\phi`, default 32 degrees
+        Celsius.
+    g_max : array-like or callable, optional
+        Maximal conductance density, default ``13.0 mS/cm2``.
+    name : str, optional
+        Optional channel name.
+    solver : str, optional
+        Override for :class:`Markov`'s default ODE solver.
+    substeps : int, optional
+        Override for :class:`Markov`'s default substep count.
+
+    See Also
+    --------
+    NaFHF_MA2020_GrC : Same 13-state scheme with an additional
+        slow-blocked branch (``L3``-``L6``) enabled.
+    Nav1p6_MA2020_GoC : Same general resurgent-Markov family, fitted
+        instead to Purkinje-cell kinetics with its own constants.
+
+    Notes
+    -----
+    Ported from ``Nav_MA2020_GrC.mod``, whose header attributes the
+    scheme to "Raman 13 state model. Adapted from Magistretti et al,
+    2006." This class does not subclass :class:`Nav1p6_MA2020_GoC`;
+    it is an independent implementation with its own ``__init__`` and
+    rate constants. :math:`\phi` is referenced to 20 degrees Celsius
+    here, unlike the Nav1.6/Nav1.1 Golgi/Purkinje/basket/stellate
+    family, which references 22 degrees Celsius.
+
+    **Discrepancy between code and bibliography record.** This class
+    ships ``ACon = 0.005`` and ``AOoff = 0.005``. The bibliography's
+    cross-checked fingerprint for the ``MA2020`` granule sodium pair
+    states that ``Nav_MA2020_GrC`` and ``NaFHF_MA2020_GrC`` share
+    ``ACon = 0.025`` and ``AOoff = 0.002`` -- those values are correct
+    for :class:`NaFHF_MA2020_GrC` (confirmed against its own code) but
+    not for this class. The values documented above are read directly
+    from this class's ``__init__`` and are the ones in effect at
+    runtime.
+
+    No import deviation is recorded for this mechanism in the
+    bibliography's ``MA2020`` import-deviations tables.
+
+    References
+    ----------
+    .. [1] Magistretti, J., Castelli, L., Forti, L., & D'Angelo, E.
+           (2006). Kinetic and functional analysis of transient,
+           persistent and resurgent sodium currents in rat cerebellar
+           granule cells in situ: an electrophysiological and
+           modelling study. The Journal of Physiology, 573(1), 83-106.
+           doi:10.1113/jphysiol.2006.106682
+    .. [2] Raman, I. M., & Bean, B. P. (2001). Inactivation and
+           recovery of sodium currents in cerebellar Purkinje neurons:
+           evidence for two mechanisms. Biophysical Journal, 80(2),
+           729-737.
+           doi:10.1016/S0006-3495(01)76052-3
+    .. [3] Masoli, S., Tognolina, M., Laforenza, U., Moccia, F., &
+           D'Angelo, E. (2020). Parameter tuning differentiates
+           granule cell subtypes enriching transmission properties at
+           the cerebellum input stage. Communications Biology, 3(1),
+           222.
+           doi:10.1038/s42003-020-0953-x
+    """
 
     __module__ = "braincell.channel"
     root_type = Sodium
@@ -650,7 +1660,105 @@ class Nav_MA2020_GrC(Markov, IndependentIntegration):
 
 @register_channel("NaFHF_MA2020_GrC")
 class NaFHF_MA2020_GrC(Markov, IndependentIntegration):
-    """Template-based import of ``NaFHF_MA2020_GrC.mod``."""
+    r"""Resurgent Nav sodium current with slow block, granule-cell model.
+
+    The same 13-state Raman & Bean (2001) [2]_-style resurgent sodium
+    Markov scheme documented on :class:`Nav_MA2020_GrC` -- fitted to
+    the granule-cell kinetics of Magistretti et al. (2006) [1]_ and
+    imported for the granule-cell model of (Masoli et al., 2020) [3]_
+    -- extended with a second, slower blocked-state ladder
+    ``L3``-``L6`` branching off ``C3``, ``C4``, ``C5`` and ``O``. It
+    is the same mechanism as :class:`Nav_MA2020_GrC` with this
+    slow-blocked branch enabled, not an independently derived model.
+
+    The shared primitives (:math:`\phi`, :math:`\alpha`, :math:`\beta`,
+    :math:`\theta`, :math:`\gamma`, :math:`\delta`, :math:`\varepsilon`,
+    :math:`C_{on}`, :math:`C_{off}`, :math:`O_{on}`, :math:`O_{off}`,
+    :math:`a`, :math:`b`) and the ``C1``-``C5``/``I1``-``I5``/``O``/
+    ``OB``/``I6`` transition-rate formulas are exactly as given on
+    :class:`Nav_MA2020_GrC`. The added ``L3``-``L6`` branch uses two
+    further constant rate factors :math:`L_{on} = \phi A_{Lon}` and
+    :math:`L_{off} = \phi A_{Loff}` and fixed scale factors
+    :math:`c = 20.0`, :math:`d = 0.075`:
+
+    .. math::
+
+        \begin{aligned}
+        f_{33} &= n_3\, \alpha(V)\, c, &
+        b_{33} &= n_2\, \alpha(V)\, d \\
+        f_{34} &= n_4\, \alpha(V)\, c, &
+        b_{34} &= n_1\, \alpha(V)\, d \\
+        f_{3n} &= \gamma, & b_{3n} &= \delta \\
+        f_{l3} &= L_{on}, & b_{l3} &= L_{off} \\
+        f_{l4} &= L_{on}\, c, & b_{l4} &= L_{off}\, d \\
+        f_{l5} &= L_{on}\, c^2, & b_{l5} &= L_{off}\, d^2 \\
+        f_{l6} &= L_{on}\, c^2, & b_{l6} &= L_{off}\, d^2
+        \end{aligned}
+
+    where ``f33``/``b33`` and ``f34``/``b34`` are the ``C3<->C4``/
+    ``C4<->C5`` steps of the ``L``-branch's own closed-ladder mirror
+    (``L3``/``L4``/``L5`` gate through the same alfa/beta primitives
+    as ``C3``-``C5`` but scaled by ``c``/``d``), ``f3n``/``b3n`` is the
+    ``L5<->L6`` step, and ``fl3``-``fl6``/``bl3``-``bl6`` are the
+    ``C3<->L3``, ``C4<->L4``, ``C5<->L5`` and ``O<->L6`` cross-links.
+
+    Parameters
+    ----------
+    size : brainstate.typing.Size
+        Channel state shape.
+    temp : array-like, optional
+        Absolute temperature driving :math:`\phi`, default 32 degrees
+        Celsius.
+    g_max : array-like or callable, optional
+        Maximal conductance density, default ``13.0 mS/cm2``.
+    name : str, optional
+        Optional channel name.
+    solver : str, optional
+        Override for :class:`Markov`'s default ODE solver.
+    substeps : int, optional
+        Override for :class:`Markov`'s default substep count.
+
+    See Also
+    --------
+    Nav_MA2020_GrC : Same scheme without the slow-blocked branch; the
+        shared primitives and ladder formulas are documented there.
+
+    Notes
+    -----
+    Ported from ``NaFHF_MA2020_GrC.mod``. Its own ``COMMENT`` block is
+    empty, which is not a provenance gap: it inherits
+    ``Nav_MA2020_GrC.mod``'s "Based on Raman 13 state model. Adapted
+    from Magistretti et al, 2006." attribution, per the bibliography.
+
+    This class ships ``ACon = 0.025`` and ``AOoff = 0.002`` -- unlike
+    :class:`Nav_MA2020_GrC`, these values match the bibliography's
+    cross-checked fingerprint for the ``MA2020`` granule sodium pair
+    exactly. See :class:`Nav_MA2020_GrC`'s Notes for the discrepancy
+    recorded against its own ``ACon``/``AOoff`` values.
+
+    No import deviation is recorded for this mechanism in the
+    bibliography's ``MA2020`` import-deviations tables.
+
+    References
+    ----------
+    .. [1] Magistretti, J., Castelli, L., Forti, L., & D'Angelo, E.
+           (2006). Kinetic and functional analysis of transient,
+           persistent and resurgent sodium currents in rat cerebellar
+           granule cells in situ: an electrophysiological and
+           modelling study. The Journal of Physiology, 573(1), 83-106.
+           doi:10.1113/jphysiol.2006.106682
+    .. [2] Raman, I. M., & Bean, B. P. (2001). Inactivation and
+           recovery of sodium currents in cerebellar Purkinje neurons:
+           evidence for two mechanisms. Biophysical Journal, 80(2),
+           729-737.
+           doi:10.1016/S0006-3495(01)76052-3
+    .. [3] Masoli, S., Tognolina, M., Laforenza, U., Moccia, F., &
+           D'Angelo, E. (2020). Parameter tuning differentiates
+           granule cell subtypes enriching transmission properties at
+           the cerebellum input stage. Communications Biology, 3(1),
+           222.
+           doi:10.1038/s42003-020-0953-x
+    """
 
     __module__ = "braincell.channel"
     root_type = Sodium

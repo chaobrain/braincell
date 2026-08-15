@@ -85,6 +85,13 @@ def ghk_flux(V, ci, co, z, temp):
     ``abs(1 - exp(-zeta)) <= 1e-6``, which both avoids the division and
     stays numerically well conditioned near that singularity.
 
+    Goldman (1943) and Hodgkin & Katz (1949) are together the origin of
+    the name "GHK", but they are the primary sources for two different
+    equations. This function computes the constant-field flux/current
+    equation, whose primary source is Goldman (1943) -- hence ``.. [1]``
+    first. It does not compute the constant-field voltage equation, for
+    which Hodgkin & Katz (1949) is the primary source.
+
     References
     ----------
     .. [1] Goldman, D. E. (1943). Potential, impedance, and
@@ -94,13 +101,6 @@ def ghk_flux(V, ci, co, z, temp):
            on the electrical activity of the giant axon of the squid.
            The Journal of Physiology, 108(1), 37-77.
            doi:10.1113/jphysiol.1949.sp004310
-
-    Goldman (1943) and Hodgkin & Katz (1949) are together the origin of
-    the name "GHK", but they are the primary sources for two different
-    equations. This function computes the constant-field flux/current
-    equation, whose primary source is Goldman (1943) -- hence ``.. [1]``
-    first. It does not compute the constant-field voltage equation, for
-    which Hodgkin & Katz (1949) is the primary source.
     """
     zeta = (z * u.faraday_constant * V) / (u.gas_constant * temp)
     exp_term = u.math.exp(-zeta)
@@ -411,6 +411,12 @@ class HH(Channel):
     (GHK flux, permeability-scaled calcium channels) subclass ``HH``
     directly and implement :meth:`current` themselves.
 
+    See Also
+    --------
+    OhmicHH : Adds an ohmic driving force on top of this gating template.
+    Gate : Per-gate metadata consumed by ``gates``.
+    Markov : Sibling template for probability-state (non-HH) kinetics.
+
     Notes
     -----
     ``__init_subclass__`` resolves and validates ``gates`` once, when the
@@ -418,12 +424,6 @@ class HH(Channel):
     subclass that declares no gates -- ``HH`` itself, ``OhmicHH``, or any
     other abstract intermediate -- is skipped by this validation, so such
     classes stay definable without a concrete gate set.
-
-    See Also
-    --------
-    OhmicHH : Adds an ohmic driving force on top of this gating template.
-    Gate : Per-gate metadata consumed by ``gates``.
-    Markov : Sibling template for probability-state (non-HH) kinetics.
 
     Attributes
     ----------
@@ -705,7 +705,7 @@ class Markov(Channel, IndependentIntegration):
     default_substeps : int, default 1
         Number of solver substeps per outer integration step, used when
         the constructor's ``substeps`` argument is not supplied.
-    clip_states : bool
+    clip_states : bool, default True
         Project each independent state into ``[0, 1]`` before evaluating
         the transition graph, so a probability pool that has drifted off
         the simplex still yields meaningful kinetics; the stored states

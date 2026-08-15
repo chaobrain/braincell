@@ -352,7 +352,7 @@ class HCN1_MA2025_BC(OhmicHH):
            Shumyatsky, G. P., Tibbs, G. R., & Siegelbaum, S. A.
            (2000). Molecular and functional heterogeneity of
            hyperpolarization-activated pacemaker channels in the
-           mouse CNS. Journal of Neuroscience, 20(14), 5264-5275.
+           mouse CNS. The Journal of Neuroscience, 20(14), 5264-5275.
            doi:10.1523/JNEUROSCI.20-14-05264.2000
     .. [3] Masoli, S., Sanchez-Ponce, D., Vrieler, N., Abu-Haya, K.,
            Lerner, V., Shahar, T., Nedelescu, H., Rizza, M. F.,
@@ -1123,7 +1123,7 @@ class HCN_ZH2019_IO(OhmicHH):
         Fixed reversal potential used in place of an ion-derived
         driving force, default ``-43.0 mV``.
     name : str, optional
-        Optional module name.
+        Optional channel name.
 
     Notes
     -----
@@ -1145,7 +1145,8 @@ class HCN_ZH2019_IO(OhmicHH):
         \tau_q(V) = \frac{1}{\exp(-0.086\,V/\text{mV} - 14.6)
         + \exp(0.07\,V/\text{mV} - 1.87)}\ \text{ms}
 
-    ``q`` carries no ``phi``/``q10`` in its :class:`~braincell.channel._base.Gate`
+    ``q`` carries no ``phi``/``q10`` in its
+    :class:`~braincell.channel._base.Gate`
     declaration, so :meth:`~braincell.channel._base.HH.gate_phi` resolves
     to the default ``1.0`` and neither rate method is temperature-scaled.
 

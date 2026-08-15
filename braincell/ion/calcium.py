@@ -1455,11 +1455,149 @@ class ToyDiamFactorKinetic_SU2015_DCN(Calcium, KineticIon):
 
 @register_ion("CdpStC_CAMOnly_MA2020_GoC")
 class CdpStC_CAMOnly_MA2020_GoC(Calcium, KineticIon):
-    r"""Template-based import of ``CdpStC_CAMOnly_MA20_GoC.mod``.
+    r"""Import of the calmodulin-only branch of ``CdpStC_CAMOnly_MA20_GoC.mod``.
 
-    This variant keeps only the calmodulin subnetwork from the imported GoC
-    calcium pool so the CAM-specific semantics can be validated separately
-    from pump and non-CaM buffers.
+    Isolates the calmodulin (CaM) subnetwork of the imported Golgi-cell
+    calcium pool so its binding kinetics can be validated independently
+    of the pump and non-CaM buffers that :class:`CdpStC_MA2020_GoC` also
+    tracks. The scheme is a two-lobe CaM binding model: an independent
+    C-lobe and N-lobe, each with two sequential, reversible
+    calcium-binding steps, reaching the fully-loaded ``CAM4`` state
+    through four distinct binding orders.
+
+    Parameters
+    ----------
+    size : brainstate.typing.Size
+        The size of the simulation target, typically the number of
+        neurons or compartments. Forwarded unchanged to
+        :class:`Calcium`.
+    temp : array-like or callable, optional
+        Absolute temperature used by the Nernst equation in
+        :attr:`~braincell.ion._base.KineticIon.E`. Defaults to 25
+        degrees Celsius, converted to kelvin via ``u.celsius2kelvin``
+        before being stored.
+    Nannuli : array-like or callable, optional
+        Radial-shell count inherited from the NEURON multi-shell
+        diffusion template. BrainCell tracks a single well-mixed
+        ``Ci`` pool, so ``Nannuli`` only shapes the effective volume
+        fraction returned by :attr:`vrat` (``dr2 = 0.25 /
+        (Nannuli - 1)``); no shell diffusion is performed. Defaults
+        to ``10.9495``.
+    cainull : array-like or callable, optional
+        Baseline/initial free calcium concentration ``Ci``. Defaults
+        to ``45e-6 mM``.
+    CAM_start : array-like or callable, optional
+        Initial concentration of apo-calmodulin, ``CAM0``. Defaults
+        to ``0.03 mM``.
+    K1Coff, K1Con : array-like or callable, optional
+        Backward and forward rate constants of the first C-lobe
+        binding step. Default ``0.04 /ms`` and ``5.4 /(mM*ms)``.
+    K2Coff, K2Con : array-like or callable, optional
+        Backward and forward rate constants of the second C-lobe
+        binding step. Default ``0.00925 /ms`` and ``15.0 /(mM*ms)``.
+    K1Noff, K1Non : array-like or callable, optional
+        Backward and forward rate constants of the first N-lobe
+        binding step. Default ``2.5 /ms`` and ``142.5 /(mM*ms)``.
+    K2Noff, K2Non : array-like or callable, optional
+        Backward and forward rate constants of the second N-lobe
+        binding step. Default ``0.75 /ms`` and ``175.0 /(mM*ms)``.
+    Co : array-like or callable or None, optional
+        Extracellular calcium concentration. Defaults to ``None``,
+        which falls back to :attr:`Calcium.default_Co` inside
+        :meth:`KineticIon._init_kinetic_ion`.
+    Ci_initializer : array-like or callable or None, optional
+        Initializer for the ``Ci`` species. Defaults to ``None``,
+        which falls back to ``cainull``.
+    species_initializers : dict or None, optional
+        Per-species initializer overrides, keyed by one of this
+        class's ten differential species (``Ci``, ``CAM0``,
+        ``CAM1C``, ``CAM2C``, ``CAM1N2C``, ``CAM1N``, ``CAM2N``,
+        ``CAM2N1C``, ``CAM1C1N``, ``CAM4``). Defaults to ``None``
+        (no overrides).
+    solver : str, optional
+        Integrator name used for the reaction network. Defaults to
+        ``"backward_euler"``, matching
+        :attr:`~braincell.ion._base.KineticIon.default_solver`.
+    substeps : int, optional
+        Number of solver substeps run inside one parent update.
+        Defaults to ``1``, matching
+        :attr:`~braincell.ion._base.KineticIon.default_substeps`.
+    name : str or None, optional
+        Runtime ion instance name. Defaults to ``None``.
+    **channels
+        Channel instances to attach to this ion, forwarded unchanged
+        to :class:`Calcium`.
+
+    Raises
+    ------
+    ValueError
+        If ``species_initializers`` names a species outside the ten
+        listed above, or if ``temp`` is explicitly passed as
+        ``None``, or ``substeps`` is less than ``1`` (the latter two
+        raised by :meth:`KineticIon._init_kinetic_ion`).
+    AttributeError
+        Raised during state initialization or reset if this ion's
+        compartment geometry (``diam_arc_mean``) has not been
+        attached yet.
+
+    See Also
+    --------
+    Calcium : Base calcium ion family this class attaches the
+        reaction network to.
+    CdpStC_NoCAM_MA2020_GoC : Sibling decomposition keeping the pump
+        and non-CaM buffers while dropping this class's CaM network.
+    CdpStC_MA2020_GoC : The undivided mechanism, combining this CaM
+        network with the pump and non-CaM buffers.
+    braincell.ion._base.KineticIon : Template this class instantiates;
+        documents the NMODL-style semantics shared by all ``Cdp*``
+        mechanisms.
+
+    Notes
+    -----
+    Ported from ``GoC/ion/CdpStC_CAMOnly_MA20_GoC.mod``.
+    ``uses_total_current = False`` and ``sources = ()``: this pool has
+    no calcium influx or pump of its own, so ``Ci`` is consumed by the
+    twelve CaM reactions above and never resupplied. It is meant to be
+    exercised in isolation, matching the ``.mod`` file's role of
+    validating the CaM subnetwork rather than serving as a standalone
+    physiological pool.
+
+    The ``cam_unit`` factor scales the nine CaM-state species by a
+    unit-magnitude, ``um**2``-dimensioned array rather than by
+    :attr:`dsqvol` again: the imported NMODL ``COMPARTMENT`` scaling
+    applies once, to the shared cytosolic volume that ``Ci`` occupies,
+    and must not be applied a second time to each CaM row.
+
+    ``CdpStC_NoCAM_MA2020_GoC`` hardcodes ``solver="backward_euler"``
+    and ``substeps=1`` as literal defaults, as this class does,
+    whereas :class:`CdpStC_MA2020_GoC` instead defaults both to
+    ``None`` and lets :meth:`KineticIon._init_kinetic_ion` fall back
+    to the same class-level
+    :attr:`~braincell.ion._base.KineticIon.default_solver` and
+    :attr:`~braincell.ion._base.KineticIon.default_substeps`; the
+    observable defaults are identical either way.
+
+    References
+    ----------
+    .. [1] Anwar, H., Hong, S., & De Schutter, E. (2012). Controlling
+           Ca2+-activated K+ channels with models of Ca2+ buffering in
+           Purkinje cells. The Cerebellum, 11(3), 681-693.
+           doi:10.1007/s12311-010-0224-3
+    .. [2] Schmidt, H., Stiefel, K. M., Racay, P., Schwaller, B., &
+           Eilers, J. (2003). Mutational analysis of dendritic Ca2+
+           kinetics in rodent Purkinje cells: role of parvalbumin and
+           calbindin D28k. The Journal of Physiology, 551(1), 13-32.
+           doi:10.1113/jphysiol.2002.035824
+    .. [3] Maeda, H., Ellis-Davies, G. C. R., Ito, K., Miyashita, Y.,
+           & Kasai, H. (1999). Supralinear Ca2+ signaling by
+           cooperative and mobile Ca2+ buffering in Purkinje neurons.
+           Neuron, 24(4), 989-1002.
+           doi:10.1016/S0896-6273(00)81045-4
+    .. [4] Masoli, S., Ottaviani, A., Casali, S., & D'Angelo, E.
+           (2020). Cerebellar Golgi cell models predict dendritic
+           processing and mechanisms of synaptic plasticity. PLOS
+           Computational Biology, 16(12), e1007937.
+           doi:10.1371/journal.pcbi.1007937
     """
 
     __module__ = "braincell.ion"
@@ -1705,10 +1843,194 @@ class CdpStC_CAMOnly_MA2020_GoC(Calcium, KineticIon):
 
 @register_ion("CdpStC_NoCAM_MA2020_GoC")
 class CdpStC_NoCAM_MA2020_GoC(Calcium, KineticIon):
-    r"""Template-based import of ``CdpStC_NoCAM_MA20_GoC.mod``.
+    r"""BrainCell-factored calcium pool: pump, non-CaM buffers, no CaM.
 
-    This variant keeps the pump and non-calmodulin buffer subnetworks from the
-    imported GoC calcium pool while removing the CAM reactions entirely.
+    Keeps the pump and non-calmodulin buffer subnetworks of the
+    imported Golgi-cell ``CdpStC`` calcium pool while dropping the
+    calmodulin (CaM) reactions of :class:`CdpStC_CAMOnly_MA2020_GoC`
+    entirely. Unlike its sibling classes, this one is not itself a
+    direct port of a ``.mod`` file: no
+    ``CdpStC_NoCAM_MA20_GoC.mod`` exists in the imported source tree.
+    It is a BrainCell-factored base whose literal parameter set
+    matches ``BC/ion/CdpStC_MA25_BC.mod`` and
+    ``SC/ion/CdpStC_RI21_SC.mod`` -- both of which are exactly this
+    GoC ``CdpStC`` mechanism with the CaM subnetwork commented out --
+    so it exists to be shared by :class:`CdpStC_MA2025_BC` and
+    :class:`CdpStC_RI2021_SC` rather than to stand for a distinct
+    published mechanism. The CAM reactions were removed, not
+    replaced by different kinetics.
+
+    Parameters
+    ----------
+    size : brainstate.typing.Size
+        The size of the simulation target, typically the number of
+        neurons or compartments. Forwarded unchanged to
+        :class:`Calcium`.
+    temp : array-like or callable, optional
+        Absolute temperature used by the Nernst equation in
+        :attr:`~braincell.ion._base.KineticIon.E`. Defaults to 25
+        degrees Celsius, converted to kelvin via ``u.celsius2kelvin``
+        before being stored.
+    Nannuli : array-like or callable, optional
+        Radial-shell count inherited from the NEURON multi-shell
+        diffusion template; only shapes the single effective volume
+        fraction :attr:`vrat`. Defaults to ``10.9495``.
+    cainull : array-like or callable, optional
+        Baseline/initial free calcium concentration ``Ci``. Defaults
+        to ``45e-6 mM``.
+    mginull : array-like or callable, optional
+        Baseline/initial magnesium concentration ``mg``. Defaults to
+        ``0.59 mM``.
+    Buffnull1 : array-like or callable, optional
+        Total concentration of the first generic buffer, ``Buff1 +
+        Buff1_ca``. Defaults to ``0.0 mM``.
+    rf1, rf2 : array-like or callable, optional
+        Forward and backward rate constants of the ``Buff1``
+        binding step. Default ``0.0134329 /(mM*ms)`` and
+        ``0.0397469 /ms``.
+    Buffnull2 : array-like or callable, optional
+        Total concentration of the second generic buffer, ``Buff2 +
+        Buff2_ca``. Defaults to ``60.9091 mM``.
+    rf3, rf4 : array-like or callable, optional
+        Forward and backward rate constants of the ``Buff2``
+        binding step. Default ``0.1435 /(mM*ms)`` and ``0.0014 /ms``.
+    BTCnull : array-like or callable, optional
+        Total concentration of the BTC indicator dye buffer, ``BTC +
+        BTC_ca``. Defaults to ``0.0 mM``.
+    b1, b2 : array-like or callable, optional
+        Forward and backward rate constants of the ``BTC`` binding
+        step. Default ``5.33 /(mM*ms)`` and ``0.08 /ms``.
+    DMNPEnull : array-like or callable, optional
+        Total concentration of the caged-calcium buffer DMNPE,
+        ``DMNPE + DMNPE_ca``. Defaults to ``0.0 mM``.
+    c1, c2 : array-like or callable, optional
+        Forward and backward rate constants of the ``DMNPE`` binding
+        step. Default ``5.63 /(mM*ms)`` and ``0.107e-3 /ms``.
+    PVnull : array-like or callable, optional
+        Total concentration of parvalbumin, ``PV + PV_ca + PV_mg``.
+        Defaults to ``0.08 mM``.
+    m1, m2 : array-like or callable, optional
+        Forward and backward rate constants of the ``PV`` calcium
+        binding step. Default ``1.07e2 /(mM*ms)`` and
+        ``9.5e-4 /ms``.
+    p1, p2 : array-like or callable, optional
+        Forward and backward rate constants of the ``PV``
+        magnesium binding step. Default ``0.8 /(mM*ms)`` and
+        ``2.5e-2 /ms``.
+    kpmp1, kpmp2 : array-like or callable, optional
+        Forward and backward rate constants of the ``pump + Ci ->
+        pumpca`` binding step. Default ``3e-3 /(mM*ms)`` and
+        ``1.75e-5 /ms``.
+    kpmp3 : array-like or callable, optional
+        Rate constant of the irreversible extrusion step,
+        ``pumpca -> pump``. Defaults to ``7.255e-5 /ms``.
+    TotalPump : array-like or callable, optional
+        Areal pump-site density; the conserved sum of ``pump +
+        pumpca`` per unit membrane area. Defaults to
+        ``1e-9 mol/cm2``.
+    Co : array-like or callable or None, optional
+        Extracellular calcium concentration. Defaults to ``None``,
+        which falls back to :attr:`Calcium.default_Co` inside
+        :meth:`KineticIon._init_kinetic_ion`.
+    Ci_initializer : array-like or callable or None, optional
+        Initializer for the ``Ci`` species. Defaults to ``None``,
+        which falls back to ``cainull``.
+    species_initializers : dict or None, optional
+        Per-species initializer overrides, keyed by one of this
+        class's fourteen differential species (``Ci``, ``mg``,
+        ``Buff1``, ``Buff1_ca``, ``Buff2``, ``Buff2_ca``, ``BTC``,
+        ``BTC_ca``, ``DMNPE``, ``DMNPE_ca``, ``PV``, ``PV_ca``,
+        ``PV_mg``, ``pump``). Defaults to ``None`` (no overrides);
+        unset buffer/PV species default to their steady-state
+        occupancy at ``cainull``/``mginull``, and ``pump`` defaults
+        to ``TotalPump``.
+    solver : str, optional
+        Integrator name used for the reaction network. Defaults to
+        ``"backward_euler"``, matching
+        :attr:`~braincell.ion._base.KineticIon.default_solver`.
+    substeps : int, optional
+        Number of solver substeps run inside one parent update.
+        Defaults to ``1``, matching
+        :attr:`~braincell.ion._base.KineticIon.default_substeps`.
+    name : str or None, optional
+        Runtime ion instance name. Defaults to ``None``.
+    **channels
+        Channel instances to attach to this ion, forwarded unchanged
+        to :class:`Calcium`.
+
+    Raises
+    ------
+    ValueError
+        If ``species_initializers`` names a species outside the
+        fourteen listed above, or if ``temp`` is explicitly passed
+        as ``None``, or ``substeps`` is less than ``1`` (the latter
+        two raised by :meth:`KineticIon._init_kinetic_ion`).
+    AttributeError
+        Raised during state initialization or reset, or from
+        :attr:`parea`/:attr:`dsq`, if this ion's compartment geometry
+        (``diam_arc_mean``) has not been attached yet.
+
+    See Also
+    --------
+    Calcium : Base calcium ion family this class attaches the
+        reaction network to.
+    CdpStC_CAMOnly_MA2020_GoC : Sibling decomposition keeping only
+        the CaM network this class omits.
+    CdpStC_MA2020_GoC : The undivided mechanism, combining this
+        pump/buffer network with the CaM network.
+    CdpStC_MA2025_BC : Thin basket-cell subclass reusing this class's
+        network unchanged.
+    CdpStC_RI2021_SC : Thin stellate-cell subclass reusing this
+        class's network unchanged.
+    braincell.ion._base.KineticIon : Template this class instantiates;
+        documents the NMODL-style semantics shared by all ``Cdp*``
+        mechanisms.
+
+    Notes
+    -----
+    This class has no source ``.mod`` file of its own; see the
+    extended summary. ``uses_total_current = True`` and one
+    :class:`~braincell.ion._base.Source` drives ``Ci`` from the
+    channel current supplied at each step:
+    ``_ci_source_flux`` returns zero when no current is supplied, and
+    otherwise ``total_current * pi * diam_arc_mean / (2 *
+    faraday_constant)``. NEURON's raw GoC ``ica`` is efflux-positive,
+    but BrainCell channel currents follow the repo-wide inward-positive
+    convention, so a positive ``total_current`` here increases ``Ci``.
+
+    One :class:`~braincell.ion._base.Conserve` constrains ``pump +
+    pumpca = TotalPump * parea``, with ``pumpca`` recovered
+    algebraically rather than integrated; ``pump`` is the only pump
+    state among the fourteen differential species.
+
+    Buffer- and PV-bound species initialize at the equilibrium
+    occupancy implied by their dissociation constants and
+    ``cainull``/``mginull`` (see ``_ss_buffer_free``,
+    ``_ss_buffer_bound``, ``_ss_pv_free``, ``_ss_pv_ca``,
+    ``_ss_pv_mg``), not at zero, so steady state is reached without a
+    long settling transient.
+
+    References
+    ----------
+    .. [1] Anwar, H., Hong, S., & De Schutter, E. (2012). Controlling
+           Ca2+-activated K+ channels with models of Ca2+ buffering in
+           Purkinje cells. The Cerebellum, 11(3), 681-693.
+           doi:10.1007/s12311-010-0224-3
+    .. [2] Schmidt, H., Stiefel, K. M., Racay, P., Schwaller, B., &
+           Eilers, J. (2003). Mutational analysis of dendritic Ca2+
+           kinetics in rodent Purkinje cells: role of parvalbumin and
+           calbindin D28k. The Journal of Physiology, 551(1), 13-32.
+           doi:10.1113/jphysiol.2002.035824
+    .. [3] Maeda, H., Ellis-Davies, G. C. R., Ito, K., Miyashita, Y.,
+           & Kasai, H. (1999). Supralinear Ca2+ signaling by
+           cooperative and mobile Ca2+ buffering in Purkinje neurons.
+           Neuron, 24(4), 989-1002.
+           doi:10.1016/S0896-6273(00)81045-4
+    .. [4] Masoli, S., Ottaviani, A., Casali, S., & D'Angelo, E.
+           (2020). Cerebellar Golgi cell models predict dendritic
+           processing and mechanisms of synaptic plasticity. PLOS
+           Computational Biology, 16(12), e1007937.
+           doi:10.1371/journal.pcbi.1007937
     """
 
     __module__ = "braincell.ion"
@@ -2011,11 +2333,64 @@ class CdpStC_NoCAM_MA2020_GoC(Calcium, KineticIon):
 
 @register_ion("CdpStC_MA2025_BC")
 class CdpStC_MA2025_BC(CdpStC_NoCAM_MA2020_GoC):
-    r"""Thin variant for ``CdpStC_MA25_BC.mod``.
+    r"""Calcium pool for the basket cell, no calmodulin buffering.
 
-    The BC source keeps the same pump, non-CAM buffer, and PV kinetic network
-    as :class:`CdpStC_NoCAM_MA2020_GoC`; the calmodulin block is commented out
-    in the source NMODL.
+    The same pump/non-CaM-buffer/parvalbumin kinetic network
+    documented in :class:`CdpStC_NoCAM_MA2020_GoC`, reused unchanged
+    for the cerebellar basket cell model of Masoli et al. (2025)
+    [4]_.
+
+    Parameters
+    ----------
+    size : brainstate.typing.Size
+        Ion state shape. Inherited from :class:`CdpStC_NoCAM_MA2020_GoC`.
+    temp, Nannuli, cainull, mginull, Buffnull1, rf1, rf2, Buffnull2,
+    rf3, rf4, BTCnull, b1, b2, DMNPEnull, c1, c2, PVnull, m1, m2, p1,
+    p2, kpmp1, kpmp2, kpmp3, TotalPump, Co, Ci_initializer,
+    species_initializers, solver, substeps, name, **channels
+        Identical in meaning and default to
+        :class:`CdpStC_NoCAM_MA2020_GoC`; not restated here.
+
+    See Also
+    --------
+    CdpStC_NoCAM_MA2020_GoC : The base class; full network,
+        parameters and equilibrium initializers are documented
+        there.
+    CdpStC_RI2021_SC : Same kinetics, stellate-cell model citation.
+
+    Notes
+    -----
+    Ported from ``BC/ion/CdpStC_MA25_BC.mod``. This class does not
+    override ``__init__``: the reaction network, the source and the
+    conservation relation are all inherited unchanged from
+    :class:`CdpStC_NoCAM_MA2020_GoC`. Only the ``register_ion`` key
+    and this docstring's model citation differ -- the ``.mod`` file
+    this class ports from is the same GoC ``CdpStC`` mechanism with
+    its calmodulin block commented out, per the imported README's
+    "Ion_dyn inherited variants" table, not a distinct kinetic
+    scheme.
+
+    References
+    ----------
+    .. [1] Anwar, H., Hong, S., & De Schutter, E. (2012). Controlling
+           Ca2+-activated K+ channels with models of Ca2+ buffering in
+           Purkinje cells. The Cerebellum, 11(3), 681-693.
+           doi:10.1007/s12311-010-0224-3
+    .. [2] Schmidt, H., Stiefel, K. M., Racay, P., Schwaller, B., &
+           Eilers, J. (2003). Mutational analysis of dendritic Ca2+
+           kinetics in rodent Purkinje cells: role of parvalbumin and
+           calbindin D28k. The Journal of Physiology, 551(1), 13-32.
+           doi:10.1113/jphysiol.2002.035824
+    .. [3] Maeda, H., Ellis-Davies, G. C. R., Ito, K., Miyashita, Y.,
+           & Kasai, H. (1999). Supralinear Ca2+ signaling by
+           cooperative and mobile Ca2+ buffering in Purkinje neurons.
+           Neuron, 24(4), 989-1002.
+           doi:10.1016/S0896-6273(00)81045-4
+    .. [4] Masoli, S., Rizza, M. F., Soda, T., Sanchez-Ponce, D.,
+           Munoz, A., Prestori, F., & D'Angelo, E. (2025). Cerebellar
+           basket cell filtering of Purkinje cell responses elicited
+           by low frequency parallel fibre transmission. Scientific
+           Reports, 15(1), 25192. doi:10.1038/s41598-025-09964-2
     """
 
     __module__ = "braincell.ion"
@@ -2023,11 +2398,63 @@ class CdpStC_MA2025_BC(CdpStC_NoCAM_MA2020_GoC):
 
 @register_ion("CdpStC_RI2021_SC")
 class CdpStC_RI2021_SC(CdpStC_NoCAM_MA2020_GoC):
-    r"""Thin variant for ``CdpStC_RI21_SC.mod``.
+    r"""Calcium pool for the stellate cell, no calmodulin buffering.
 
-    The SC source keeps the same pump, non-CAM buffer, and PV kinetic network
-    as :class:`CdpStC_NoCAM_MA2020_GoC`; the extra ``cao`` read is not used by
-    the kinetic equations.
+    The same pump/non-CaM-buffer/parvalbumin kinetic network
+    documented in :class:`CdpStC_NoCAM_MA2020_GoC`, reused unchanged
+    for the cerebellar stellate cell model of Rizza et al. (2021)
+    [4]_.
+
+    Parameters
+    ----------
+    size : brainstate.typing.Size
+        Ion state shape. Inherited from :class:`CdpStC_NoCAM_MA2020_GoC`.
+    temp, Nannuli, cainull, mginull, Buffnull1, rf1, rf2, Buffnull2,
+    rf3, rf4, BTCnull, b1, b2, DMNPEnull, c1, c2, PVnull, m1, m2, p1,
+    p2, kpmp1, kpmp2, kpmp3, TotalPump, Co, Ci_initializer,
+    species_initializers, solver, substeps, name, **channels
+        Identical in meaning and default to
+        :class:`CdpStC_NoCAM_MA2020_GoC`; not restated here.
+
+    See Also
+    --------
+    CdpStC_NoCAM_MA2020_GoC : The base class; full network,
+        parameters and equilibrium initializers are documented
+        there.
+    CdpStC_MA2025_BC : Same kinetics, basket-cell model citation.
+
+    Notes
+    -----
+    Ported from ``SC/ion/CdpStC_RI21_SC.mod``. This class does not
+    override ``__init__``: the reaction network, the source and the
+    conservation relation are all inherited unchanged from
+    :class:`CdpStC_NoCAM_MA2020_GoC`. Only the ``register_ion`` key
+    and this docstring's model citation differ. The source ``.mod``
+    file also reads an extracellular calcium variable ``cao`` that
+    its kinetic equations never use; BrainCell drops that unused
+    read rather than reproducing it.
+
+    References
+    ----------
+    .. [1] Anwar, H., Hong, S., & De Schutter, E. (2012). Controlling
+           Ca2+-activated K+ channels with models of Ca2+ buffering in
+           Purkinje cells. The Cerebellum, 11(3), 681-693.
+           doi:10.1007/s12311-010-0224-3
+    .. [2] Schmidt, H., Stiefel, K. M., Racay, P., Schwaller, B., &
+           Eilers, J. (2003). Mutational analysis of dendritic Ca2+
+           kinetics in rodent Purkinje cells: role of parvalbumin and
+           calbindin D28k. The Journal of Physiology, 551(1), 13-32.
+           doi:10.1113/jphysiol.2002.035824
+    .. [3] Maeda, H., Ellis-Davies, G. C. R., Ito, K., Miyashita, Y.,
+           & Kasai, H. (1999). Supralinear Ca2+ signaling by
+           cooperative and mobile Ca2+ buffering in Purkinje neurons.
+           Neuron, 24(4), 989-1002.
+           doi:10.1016/S0896-6273(00)81045-4
+    .. [4] Rizza, M. F., Locatelli, F., Masoli, S., Sanchez-Ponce, D.,
+           Munoz, A., Prestori, F., & D'Angelo, E. (2021). Stellate
+           cell computational modeling predicts signal filtering in
+           the molecular layer circuit of cerebellum. Scientific
+           Reports, 11(1), 3873. doi:10.1038/s41598-021-83209-w
     """
 
     __module__ = "braincell.ion"
@@ -2035,11 +2462,215 @@ class CdpStC_RI2021_SC(CdpStC_NoCAM_MA2020_GoC):
 
 @register_ion("CdpStC_MA2020_GoC")
 class CdpStC_MA2020_GoC(Calcium, KineticIon):
-    r"""Template-based import of ``CdpStC_MA20_GoC.mod``.
+    r"""Golgi-cell calcium pool: pump, generic buffers, PV, and CaM.
 
-    ``Ci`` corresponds to the NMODL calcium pool ``ca`` / ``cai``. The
-    reversible kinetic scheme is preserved as 20 explicit reactions, plus the
-    original current-driven source and the single pump conservation relation.
+    Undivided import of the Golgi-cell ``CdpStC`` calcium pool:
+    ``Ci`` (the NMODL ``ca``/``cai`` pool) is buffered by two generic
+    first-order buffers, the indicator dyes BTC and DMNPE, and
+    parvalbumin (PV), extruded by a membrane pump, and additionally
+    binds calmodulin (CaM) through the same four-site cooperative
+    scheme documented in :class:`CdpStC_CAMOnly_MA2020_GoC`. This is
+    the combination that :class:`CdpStC_CAMOnly_MA2020_GoC` (CaM
+    branch only) and :class:`CdpStC_NoCAM_MA2020_GoC` (pump/buffer/PV
+    branch only) each keep half of.
+
+    Parameters
+    ----------
+    size : brainstate.typing.Size
+        The size of the simulation target, typically the number of
+        neurons or compartments. Forwarded unchanged to
+        :class:`Calcium`.
+    temp : array-like or callable, optional
+        Absolute temperature used by the Nernst equation in
+        :attr:`~braincell.ion._base.KineticIon.E`. Defaults to 25
+        degrees Celsius, converted to kelvin via ``u.celsius2kelvin``
+        before being stored.
+    Nannuli : array-like or callable, optional
+        Radial-shell count inherited from the NEURON multi-shell
+        diffusion template; only shapes the single effective volume
+        fraction :attr:`vrat`. Defaults to ``10.9495``.
+    cainull : array-like or callable, optional
+        Baseline/initial free calcium concentration ``Ci``. Defaults
+        to ``45e-6 mM``.
+    mginull : array-like or callable, optional
+        Baseline/initial magnesium concentration ``mg``. Defaults to
+        ``0.59 mM``.
+    Buffnull1 : array-like or callable, optional
+        Total concentration of the first generic buffer, ``Buff1 +
+        Buff1_ca``. Defaults to ``0.0 mM``.
+    rf1, rf2 : array-like or callable, optional
+        Forward and backward rate constants of the ``Buff1``
+        binding step. Default ``0.0134329 /(mM*ms)`` and
+        ``0.0397469 /ms``.
+    Buffnull2 : array-like or callable, optional
+        Total concentration of the second generic buffer, ``Buff2 +
+        Buff2_ca``. Defaults to ``60.9091 mM``.
+    rf3, rf4 : array-like or callable, optional
+        Forward and backward rate constants of the ``Buff2``
+        binding step. Default ``0.1435 /(mM*ms)`` and ``0.0014 /ms``.
+    BTCnull : array-like or callable, optional
+        Total concentration of the BTC indicator dye buffer, ``BTC +
+        BTC_ca``. Defaults to ``0.0 mM``.
+    b1, b2 : array-like or callable, optional
+        Forward and backward rate constants of the ``BTC`` binding
+        step. Default ``5.33 /(mM*ms)`` and ``0.08 /ms``.
+    DMNPEnull : array-like or callable, optional
+        Total concentration of the caged-calcium buffer DMNPE,
+        ``DMNPE + DMNPE_ca``. Defaults to ``0.0 mM``.
+    c1, c2 : array-like or callable, optional
+        Forward and backward rate constants of the ``DMNPE`` binding
+        step. Default ``5.63 /(mM*ms)`` and ``0.107e-3 /ms``.
+    PVnull : array-like or callable, optional
+        Total concentration of parvalbumin, ``PV + PV_ca + PV_mg``.
+        Defaults to ``0.08 mM``.
+    m1, m2 : array-like or callable, optional
+        Forward and backward rate constants of the ``PV`` calcium
+        binding step. Default ``1.07e2 /(mM*ms)`` and
+        ``9.5e-4 /ms``.
+    p1, p2 : array-like or callable, optional
+        Forward and backward rate constants of the ``PV``
+        magnesium binding step. Default ``0.8 /(mM*ms)`` and
+        ``2.5e-2 /ms``.
+    CAM_start : array-like or callable, optional
+        Baseline/initial concentration of unbound calmodulin,
+        ``CAM0``. Defaults to ``0.03 mM``.
+    K1Coff, K1Con : array-like or callable, optional
+        Backward and forward rate constants of the first C-lobe
+        calcium-binding step. Default ``0.04 /ms`` and
+        ``5.4 /(mM*ms)``.
+    K2Coff, K2Con : array-like or callable, optional
+        Backward and forward rate constants of the second C-lobe
+        calcium-binding step. Default ``0.00925 /ms`` and
+        ``15.0 /(mM*ms)``.
+    K1Noff, K1Non : array-like or callable, optional
+        Backward and forward rate constants of the first N-lobe
+        calcium-binding step. Default ``2.5 /ms`` and
+        ``142.5 /(mM*ms)``.
+    K2Noff, K2Non : array-like or callable, optional
+        Backward and forward rate constants of the second N-lobe
+        calcium-binding step. Default ``0.75 /ms`` and
+        ``175.0 /(mM*ms)``.
+    kpmp1, kpmp2 : array-like or callable, optional
+        Forward and backward rate constants of the ``pump + Ci ->
+        pumpca`` binding step. Default ``3e-3 /(mM*ms)`` and
+        ``1.75e-5 /ms``.
+    kpmp3 : array-like or callable, optional
+        Rate constant of the irreversible extrusion step,
+        ``pumpca -> pump``. Defaults to ``7.255e-5 /ms``.
+    TotalPump : array-like or callable, optional
+        Areal pump-site density; the conserved sum of ``pump +
+        pumpca`` per unit membrane area. Defaults to
+        ``1e-9 mol/cm2``.
+    Co : array-like or callable or None, optional
+        Extracellular calcium concentration. Defaults to ``None``,
+        which falls back to :attr:`Calcium.default_Co` inside
+        :meth:`KineticIon._init_kinetic_ion`.
+    Ci_initializer : array-like or callable or None, optional
+        Initializer for the ``Ci`` species. Defaults to ``None``,
+        which falls back to ``cainull``.
+    species_initializers : dict or None, optional
+        Per-species initializer overrides, keyed by one of this
+        class's twenty-three differential species (the fourteen of
+        :class:`CdpStC_NoCAM_MA2020_GoC` plus the nine CaM species
+        ``CAM0``, ``CAM1C``, ``CAM2C``, ``CAM1N2C``, ``CAM1N``,
+        ``CAM2N``, ``CAM2N1C``, ``CAM1C1N``, ``CAM4``). Defaults to
+        ``None`` (no overrides); unset buffer/PV species default to
+        their steady-state occupancy at ``cainull``/``mginull``,
+        ``pump`` defaults to ``TotalPump``, ``CAM0`` defaults to
+        ``CAM_start``, and every other CaM species defaults to
+        ``0.0 mM``.
+    solver : str or None, optional
+        Integrator name used for the reaction network. Defaults to
+        ``None``, which falls back to
+        :attr:`~braincell.ion._base.KineticIon.default_solver`
+        (``"backward_euler"``).
+    substeps : int or None, optional
+        Number of solver substeps run inside one parent update.
+        Defaults to ``None``, which falls back to
+        :attr:`~braincell.ion._base.KineticIon.default_substeps`
+        (``1``).
+    name : str or None, optional
+        Runtime ion instance name. Defaults to ``None``.
+    **channels
+        Channel instances to attach to this ion, forwarded unchanged
+        to :class:`Calcium`.
+
+    Raises
+    ------
+    ValueError
+        If ``species_initializers`` names a species outside the
+        twenty-three listed above, or if ``temp`` is explicitly
+        passed as ``None``, or ``substeps`` is less than ``1`` (the
+        latter two raised by :meth:`KineticIon._init_kinetic_ion`).
+    AttributeError
+        Raised during state initialization or reset, or from
+        :attr:`parea`/:attr:`dsq`, if this ion's compartment geometry
+        (``diam_arc_mean``) has not been attached yet.
+
+    See Also
+    --------
+    Calcium : Base calcium ion family this class attaches the
+        reaction network to.
+    CdpStC_CAMOnly_MA2020_GoC : Sibling decomposition keeping only
+        the CaM network this class also includes.
+    CdpStC_NoCAM_MA2020_GoC : Sibling decomposition keeping only the
+        pump/buffer/PV network this class also includes.
+    CdpCAM_MA2024_PC : Purkinje-cell mechanism reusing this class's
+        pump/buffer network unchanged and adding Calbindin.
+    CdpCR_MA2020_GrC : Granule-cell mechanism reusing this class's
+        pump/buffer network unchanged and substituting Calretinin
+        for parvalbumin.
+    braincell.ion._base.KineticIon : Template this class instantiates;
+        documents the NMODL-style semantics shared by all ``Cdp*``
+        mechanisms.
+
+    Notes
+    -----
+    Ported from ``GoC/ion/CdpStC_MA20_GoC.mod``. ``uses_total_current
+    = True`` and one :class:`~braincell.ion._base.Source` drives
+    ``Ci`` from the channel current supplied at each step:
+    ``_ci_source_flux`` returns zero when no current is supplied, and
+    otherwise ``total_current * pi * diam_arc_mean / (2 *
+    faraday_constant)``. NEURON's raw GoC ``ica`` is efflux-positive,
+    but BrainCell channel currents follow the repo-wide inward-positive
+    convention, so a positive ``total_current`` here increases ``Ci``.
+
+    One :class:`~braincell.ion._base.Conserve` constrains ``pump +
+    pumpca = TotalPump * parea``, with ``pumpca`` recovered
+    algebraically rather than integrated; ``pump`` is the only pump
+    state among the twenty-three differential species.
+
+    Twenty reactions couple the twenty-four species: the two pump
+    steps and the six buffer/PV steps described in
+    :class:`CdpStC_NoCAM_MA2020_GoC`, plus twelve reactions forming
+    the same two-lobe cooperative calmodulin scheme described in
+    :class:`CdpStC_CAMOnly_MA2020_GoC` (``CAM0`` through ``CAM4``,
+    reached via either the C-lobe-first or N-lobe-first binding
+    order). Buffer- and PV-bound species initialize at the
+    equilibrium occupancy implied by their dissociation constants and
+    ``cainull``/``mginull``, not at zero.
+
+    References
+    ----------
+    .. [1] Anwar, H., Hong, S., & De Schutter, E. (2012). Controlling
+           Ca2+-activated K+ channels with models of Ca2+ buffering in
+           Purkinje cells. The Cerebellum, 11(3), 681-693.
+           doi:10.1007/s12311-010-0224-3
+    .. [2] Schmidt, H., Stiefel, K. M., Racay, P., Schwaller, B., &
+           Eilers, J. (2003). Mutational analysis of dendritic Ca2+
+           kinetics in rodent Purkinje cells: role of parvalbumin and
+           calbindin D28k. The Journal of Physiology, 551(1), 13-32.
+           doi:10.1113/jphysiol.2002.035824
+    .. [3] Maeda, H., Ellis-Davies, G. C. R., Ito, K., Miyashita, Y.,
+           & Kasai, H. (1999). Supralinear Ca2+ signaling by
+           cooperative and mobile Ca2+ buffering in Purkinje neurons.
+           Neuron, 24(4), 989-1002.
+           doi:10.1016/S0896-6273(00)81045-4
+    .. [4] Masoli, S., Ottaviani, A., Casali, S., & D'Angelo, E.
+           (2020). Cerebellar Golgi cell models predict dendritic
+           processing and mechanisms of synaptic plasticity. PLOS
+           Computational Biology, 16(12), e1007937.
+           doi:10.1371/journal.pcbi.1007937
     """
 
     __module__ = "braincell.ion"
@@ -2468,11 +3099,225 @@ class CdpStC_MA2020_GoC(Calcium, KineticIon):
 
 @register_ion("CdpCAM_MA2024_PC")
 class CdpCAM_MA2024_PC(Calcium, KineticIon):
-    r"""Template-based import of ``CdpCAM_MA24_PC.mod``.
+    r"""Purkinje-cell calcium pool: pump, buffers, Calbindin, PV, CaM.
 
-    This PC variant preserves the full pump, non-CAM buffer, Calbindin,
-    Parvalbumin, and Calmodulin kinetic network. Unlike the GoC CdpStC source,
-    the PC file includes CB and CAM species in the cytosolic compartment.
+    Extends the Golgi-cell pump/generic-buffer/parvalbumin/calmodulin
+    network of :class:`CdpStC_MA2020_GoC` with a four-state Calbindin
+    D-28k (CB) cooperative binding scheme. This is the same
+    ``CdpStC`` scaffold with the CB subnetwork enabled and both CB
+    and CaM species placed in the cytosolic compartment, per the
+    imported source tree's "Ion_dyn implementation notes"; the pump,
+    generic-buffer, PV and CaM reactions are otherwise unchanged from
+    :class:`CdpStC_MA2020_GoC`.
+
+    Parameters
+    ----------
+    size : brainstate.typing.Size
+        The size of the simulation target, typically the number of
+        neurons or compartments. Forwarded unchanged to
+        :class:`Calcium`.
+    temp : array-like or callable, optional
+        Absolute temperature used by the Nernst equation in
+        :attr:`~braincell.ion._base.KineticIon.E`. Defaults to 25
+        degrees Celsius, converted to kelvin via ``u.celsius2kelvin``
+        before being stored.
+    Nannuli : array-like or callable, optional
+        Radial-shell count inherited from the NEURON multi-shell
+        diffusion template; only shapes the single effective volume
+        fraction :attr:`vrat`. Defaults to ``10.9495``.
+    cainull : array-like or callable, optional
+        Baseline/initial free calcium concentration ``Ci``. Defaults
+        to ``45e-6 mM``.
+    mginull : array-like or callable, optional
+        Baseline/initial magnesium concentration ``mg``. Defaults to
+        ``0.59 mM``.
+    Buffnull1 : array-like or callable, optional
+        Total concentration of the first generic buffer, ``Buff1 +
+        Buff1_ca``. Defaults to ``0.0 mM``.
+    rf1, rf2 : array-like or callable, optional
+        Forward and backward rate constants of the ``Buff1``
+        binding step. Default ``0.0134329 /(mM*ms)`` and
+        ``0.0397469 /ms``.
+    Buffnull2 : array-like or callable, optional
+        Total concentration of the second generic buffer, ``Buff2 +
+        Buff2_ca``. Defaults to ``60.9091 mM``.
+    rf3, rf4 : array-like or callable, optional
+        Forward and backward rate constants of the ``Buff2``
+        binding step. Default ``0.1435 /(mM*ms)`` and ``0.0014 /ms``.
+    BTCnull : array-like or callable, optional
+        Total concentration of the BTC indicator dye buffer, ``BTC +
+        BTC_ca``. Defaults to ``0.0 mM``.
+    b1, b2 : array-like or callable, optional
+        Forward and backward rate constants of the ``BTC`` binding
+        step. Default ``5.33 /(mM*ms)`` and ``0.08 /ms``.
+    DMNPEnull : array-like or callable, optional
+        Total concentration of the caged-calcium buffer DMNPE,
+        ``DMNPE + DMNPE_ca``. Defaults to ``0.0 mM``.
+    c1, c2 : array-like or callable, optional
+        Forward and backward rate constants of the ``DMNPE`` binding
+        step. Default ``5.63 /(mM*ms)`` and ``0.107e-3 /ms``.
+    CBnull : array-like or callable, optional
+        Total concentration of Calbindin D-28k, ``CB + CB_f_ca +
+        CB_ca_s + CB_ca_ca``. Defaults to ``0.16 mM``.
+    nf1, nf2 : array-like or callable, optional
+        Forward and backward rate constants of Calbindin's fast
+        binding sites (used for both the ``CB -> CB_ca_s`` and
+        ``CB_f_ca -> CB_ca_ca`` steps). Default ``43.5 /(mM*ms)``
+        and ``3.58e-2 /ms``.
+    ns1, ns2 : array-like or callable, optional
+        Forward and backward rate constants of Calbindin's slow
+        binding sites (used for both the ``CB -> CB_f_ca`` and
+        ``CB_ca_s -> CB_ca_ca`` steps). Default ``5.5 /(mM*ms)``
+        and ``0.26e-2 /ms``.
+    PVnull : array-like or callable, optional
+        Total concentration of parvalbumin, ``PV + PV_ca + PV_mg``.
+        Defaults to ``0.08 mM``.
+    m1, m2 : array-like or callable, optional
+        Forward and backward rate constants of the ``PV`` calcium
+        binding step. Default ``1.07e2 /(mM*ms)`` and
+        ``9.5e-4 /ms``.
+    p1, p2 : array-like or callable, optional
+        Forward and backward rate constants of the ``PV``
+        magnesium binding step. Default ``0.8 /(mM*ms)`` and
+        ``2.5e-2 /ms``.
+    CAM_start : array-like or callable, optional
+        Baseline/initial concentration of unbound calmodulin,
+        ``CAM0``. Defaults to ``0.03 mM``.
+    K1Coff, K1Con : array-like or callable, optional
+        Backward and forward rate constants of the first C-lobe
+        calcium-binding step. Default ``0.04 /ms`` and
+        ``5.4 /(mM*ms)``.
+    K2Coff, K2Con : array-like or callable, optional
+        Backward and forward rate constants of the second C-lobe
+        calcium-binding step. Default ``0.00925 /ms`` and
+        ``15.0 /(mM*ms)``.
+    K1Noff, K1Non : array-like or callable, optional
+        Backward and forward rate constants of the first N-lobe
+        calcium-binding step. Default ``2.5 /ms`` and
+        ``142.5 /(mM*ms)``.
+    K2Noff, K2Non : array-like or callable, optional
+        Backward and forward rate constants of the second N-lobe
+        calcium-binding step. Default ``0.75 /ms`` and
+        ``175.0 /(mM*ms)``.
+    kpmp1, kpmp2 : array-like or callable, optional
+        Forward and backward rate constants of the ``pump + Ci ->
+        pumpca`` binding step. Default ``3e-3 /(mM*ms)`` and
+        ``1.75e-5 /ms``.
+    kpmp3 : array-like or callable, optional
+        Rate constant of the irreversible extrusion step,
+        ``pumpca -> pump``. Defaults to ``7.255e-5 /ms``.
+    TotalPump : array-like or callable, optional
+        Areal pump-site density; the conserved sum of ``pump +
+        pumpca`` per unit membrane area. Defaults to
+        ``1e-9 mol/cm2``.
+    Co : array-like or callable or None, optional
+        Extracellular calcium concentration. Defaults to ``None``,
+        which falls back to :attr:`Calcium.default_Co` inside
+        :meth:`KineticIon._init_kinetic_ion`.
+    Ci_initializer : array-like or callable or None, optional
+        Initializer for the ``Ci`` species. Defaults to ``None``,
+        which falls back to ``cainull``.
+    species_initializers : dict or None, optional
+        Per-species initializer overrides, keyed by one of this
+        class's twenty-seven differential species: the fourteen of
+        :class:`CdpStC_NoCAM_MA2020_GoC`, the four Calbindin species
+        (``CB``, ``CB_f_ca``, ``CB_ca_s``, ``CB_ca_ca``), and the
+        nine CaM species (``CAM0``, ``CAM1C``, ``CAM2C``,
+        ``CAM1N2C``, ``CAM1N``, ``CAM2N``, ``CAM2N1C``, ``CAM1C1N``,
+        ``CAM4``). Defaults to ``None`` (no overrides); unset
+        buffer/Calbindin/PV species default to their steady-state
+        occupancy at ``cainull``/``mginull``, ``pump`` defaults to
+        ``TotalPump``, ``CAM0`` defaults to ``CAM_start``, and every
+        other CaM species defaults to ``0.0 mM``.
+    solver : str or None, optional
+        Integrator name used for the reaction network. Defaults to
+        ``None``, which falls back to
+        :attr:`~braincell.ion._base.KineticIon.default_solver`
+        (``"backward_euler"``).
+    substeps : int or None, optional
+        Number of solver substeps run inside one parent update.
+        Defaults to ``None``, which falls back to
+        :attr:`~braincell.ion._base.KineticIon.default_substeps`
+        (``1``).
+    name : str or None, optional
+        Runtime ion instance name. Defaults to ``None``.
+    **channels
+        Channel instances to attach to this ion, forwarded unchanged
+        to :class:`Calcium`.
+
+    Raises
+    ------
+    ValueError
+        If ``species_initializers`` names a species outside the
+        twenty-seven listed above, or if ``temp`` is explicitly
+        passed as ``None``, or ``substeps`` is less than ``1`` (the
+        latter two raised by :meth:`KineticIon._init_kinetic_ion`).
+    AttributeError
+        Raised during state initialization or reset, or from
+        :attr:`parea`/:attr:`dsq`, if this ion's compartment geometry
+        (``diam_arc_mean``) has not been attached yet.
+
+    See Also
+    --------
+    Calcium : Base calcium ion family this class attaches the
+        reaction network to.
+    CdpStC_MA2020_GoC : Golgi-cell mechanism supplying the pump,
+        generic-buffer, PV and CaM reactions this class reuses
+        (``sources`` and ``conserves`` are the same tuple objects,
+        and several helper methods delegate to it directly).
+    CdpCR_MA2020_GrC : Sibling Purkinje-network variant that
+        substitutes Calretinin for Calbindin.
+    braincell.ion._base.KineticIon : Template this class instantiates;
+        documents the NMODL-style semantics shared by all ``Cdp*``
+        mechanisms.
+
+    Notes
+    -----
+    Ported from ``PC/ion/CdpCAM_MA24_PC.mod``. ``uses_total_current =
+    True``; ``sources`` and ``conserves`` are the exact tuple objects
+    defined on :class:`CdpStC_MA2020_GoC` (same ``Ci``-driving
+    :class:`~braincell.ion._base.Source` and same ``pump + pumpca =
+    TotalPump * parea`` :class:`~braincell.ion._base.Conserve`), and
+    several geometry/current helpers (:attr:`vrat`, :attr:`parea`,
+    :attr:`dsq`, :attr:`dsqvol`, ``_require_diam_arc_mean``,
+    ``_ci_source_flux``, ``_as_initializer``) explicitly delegate to
+    :class:`CdpStC_MA2020_GoC` rather than redefining the same logic.
+
+    Twenty-four reactions couple the twenty-eight species: the two
+    pump steps and four of the six buffer/PV steps from
+    :class:`CdpStC_NoCAM_MA2020_GoC` (``Buff1``, ``Buff2``, ``BTC``,
+    ``DMNPE``; PV keeps only its two binding steps, unaffected by
+    Calbindin), four Calbindin reactions forming its two-site
+    fast/slow cooperative scheme (``CB -> CB_ca_s`` via the fast
+    rates ``nf1``/``nf2``, ``CB -> CB_f_ca`` via the slow rates
+    ``ns1``/``ns2``, then both intermediates converging on
+    ``CB_ca_ca`` via the complementary rate pair), and the same
+    twelve calmodulin reactions documented in
+    :class:`CdpStC_CAMOnly_MA2020_GoC`.
+
+    References
+    ----------
+    .. [1] Anwar, H., Hong, S., & De Schutter, E. (2012). Controlling
+           Ca2+-activated K+ channels with models of Ca2+ buffering in
+           Purkinje cells. The Cerebellum, 11(3), 681-693.
+           doi:10.1007/s12311-010-0224-3
+    .. [2] Schmidt, H., Stiefel, K. M., Racay, P., Schwaller, B., &
+           Eilers, J. (2003). Mutational analysis of dendritic Ca2+
+           kinetics in rodent Purkinje cells: role of parvalbumin and
+           calbindin D28k. The Journal of Physiology, 551(1), 13-32.
+           doi:10.1113/jphysiol.2002.035824
+    .. [3] Maeda, H., Ellis-Davies, G. C. R., Ito, K., Miyashita, Y.,
+           & Kasai, H. (1999). Supralinear Ca2+ signaling by
+           cooperative and mobile Ca2+ buffering in Purkinje neurons.
+           Neuron, 24(4), 989-1002.
+           doi:10.1016/S0896-6273(00)81045-4
+    .. [4] Masoli, S., Sanchez-Ponce, D., Vrieler, N., Abu-Haya, K.,
+           Lerner, V., Shahar, T., Nedelescu, H., Rizza, M. F.,
+           Benavides-Piccione, R., DeFelipe, J., Yarom, Y., Munoz, A.,
+           & D'Angelo, E. (2024). Human Purkinje cells outperform
+           mouse Purkinje cells in dendritic complexity and
+           computational capacity. Communications Biology, 7(1), 5.
+           doi:10.1038/s42003-023-05689-y
     """
 
     __module__ = "braincell.ion"
@@ -2929,11 +3774,199 @@ class CdpCAM_MA2024_PC(Calcium, KineticIon):
 
 @register_ion("CdpCR_MA2020_GrC")
 class CdpCR_MA2020_GrC(Calcium, KineticIon):
-    r"""Template-based import of ``CdpCR_MA20_GrC.mod``.
+    r"""Granule-cell calcium pool: pump, generic buffers, Calretinin.
 
-    This GrC variant keeps the pump, non-specific buffer, BTC, DMNPE, and
-    Calretinin kinetic network. The original NMODL removes PV and uses CR as
-    the endogenous calcium buffer.
+    Reuses the pump and generic-buffer (``Buff1``, ``Buff2``, BTC,
+    DMNPE) network of :class:`CdpStC_MA2020_GoC`, but replaces its
+    parvalbumin and calmodulin branches with a two-site-per-lobe
+    cooperative Calretinin (CR) binding scheme plus one separate,
+    uncoupled "vestigial" CR site. Parvalbumin is absent from this
+    mechanism; Calretinin is the endogenous calcium buffer.
+
+    Parameters
+    ----------
+    size : brainstate.typing.Size
+        The size of the simulation target, typically the number of
+        neurons or compartments. Forwarded unchanged to
+        :class:`Calcium`.
+    temp : array-like or callable, optional
+        Absolute temperature used by the Nernst equation in
+        :attr:`~braincell.ion._base.KineticIon.E`. Defaults to 25
+        degrees Celsius, converted to kelvin via ``u.celsius2kelvin``
+        before being stored.
+    Nannuli : array-like or callable, optional
+        Radial-shell count inherited from the NEURON multi-shell
+        diffusion template; only shapes the single effective volume
+        fraction :attr:`vrat`. Defaults to ``10.9495``.
+    cainull : array-like or callable, optional
+        Baseline/initial free calcium concentration ``Ci``. Defaults
+        to ``45e-6 mM``.
+    mginull : array-like or callable, optional
+        Baseline/initial magnesium concentration ``mg``. Defaults to
+        ``0.59 mM``.
+    Buffnull1 : array-like or callable, optional
+        Total concentration of the first generic buffer, ``Buff1 +
+        Buff1_ca``. Defaults to ``0.0 mM``.
+    rf1, rf2 : array-like or callable, optional
+        Forward and backward rate constants of the ``Buff1``
+        binding step. Default ``0.0134329 /(mM*ms)`` and
+        ``0.0397469 /ms``.
+    Buffnull2 : array-like or callable, optional
+        Total concentration of the second generic buffer, ``Buff2 +
+        Buff2_ca``. Defaults to ``60.9091 mM``.
+    rf3, rf4 : array-like or callable, optional
+        Forward and backward rate constants of the ``Buff2``
+        binding step. Default ``0.1435 /(mM*ms)`` and ``0.0014 /ms``.
+    BTCnull : array-like or callable, optional
+        Total concentration of the BTC indicator dye buffer, ``BTC +
+        BTC_ca``. Defaults to ``0.0 mM``.
+    b1, b2 : array-like or callable, optional
+        Forward and backward rate constants of the ``BTC`` binding
+        step. Default ``5.33 /(mM*ms)`` and ``0.08 /ms``.
+    DMNPEnull : array-like or callable, optional
+        Total concentration of the caged-calcium buffer DMNPE,
+        ``DMNPE + DMNPE_ca``. Defaults to ``0.0 mM``.
+    c1, c2 : array-like or callable, optional
+        Forward and backward rate constants of the ``DMNPE`` binding
+        step. Default ``5.63 /(mM*ms)`` and ``0.107e-3 /ms``.
+    CRnull : array-like or callable, optional
+        Total concentration of unbound Calretinin, the initializer
+        for ``CR``. Defaults to ``0.9 mM``.
+    nT1, nT2 : array-like or callable, optional
+        Forward and backward rate constants of a Calretinin site's
+        *first* calcium-binding step, on either lobe. Default
+        ``1.8 /(mM*ms)`` and ``0.053 /ms``.
+    nR1, nR2 : array-like or callable, optional
+        Forward and backward rate constants of a Calretinin site's
+        *second*, cooperative calcium-binding step, on either lobe.
+        Default ``310.0 /(mM*ms)`` and ``0.02 /ms``.
+    nV1, nV2 : array-like or callable, optional
+        Forward and backward rate constants of the separate
+        vestigial Calretinin site, ``CR -> CR_1V``. Default
+        ``7.3 /(mM*ms)`` and ``0.24 /ms``.
+    kpmp1, kpmp2 : array-like or callable, optional
+        Forward and backward rate constants of the ``pump + Ci ->
+        pumpca`` binding step. Default ``3e-3 /(mM*ms)`` and
+        ``1.75e-5 /ms``.
+    kpmp3 : array-like or callable, optional
+        Rate constant of the irreversible extrusion step,
+        ``pumpca -> pump``. Defaults to ``7.255e-5 /ms``.
+    TotalPump : array-like or callable, optional
+        Areal pump-site density; the conserved sum of ``pump +
+        pumpca`` per unit membrane area. Defaults to
+        ``1e-9 mol/cm2``.
+    Co : array-like or callable or None, optional
+        Extracellular calcium concentration. Defaults to ``None``,
+        which falls back to :attr:`Calcium.default_Co` inside
+        :meth:`KineticIon._init_kinetic_ion`.
+    Ci_initializer : array-like or callable or None, optional
+        Initializer for the ``Ci`` species. Defaults to ``None``,
+        which falls back to ``cainull``.
+    species_initializers : dict or None, optional
+        Per-species initializer overrides, keyed by one of this
+        class's twenty-one differential species: ``Ci``, ``mg``,
+        the four generic-buffer species (``Buff1``, ``Buff1_ca``,
+        ``Buff2``, ``Buff2_ca``), the BTC and DMNPE pairs, the ten
+        Calretinin species (``CR``, ``CR_1C_0N``, ``CR_2C_0N``,
+        ``CR_2C_1N``, ``CR_1C_1N``, ``CR_0C_1N``, ``CR_0C_2N``,
+        ``CR_1C_2N``, ``CR_2C_2N``, ``CR_1V``), and ``pump``.
+        Defaults to ``None`` (no overrides); unset generic-buffer
+        species default to their steady-state occupancy at
+        ``cainull``, ``CR`` defaults to ``CRnull``, every other
+        Calretinin species defaults to ``0.0 mM``, and ``pump``
+        defaults to ``TotalPump``.
+    solver : str or None, optional
+        Integrator name used for the reaction network. Defaults to
+        ``None``, which falls back to
+        :attr:`~braincell.ion._base.KineticIon.default_solver`
+        (``"backward_euler"``).
+    substeps : int or None, optional
+        Number of solver substeps run inside one parent update.
+        Defaults to ``None``, which falls back to
+        :attr:`~braincell.ion._base.KineticIon.default_substeps`
+        (``1``).
+    name : str or None, optional
+        Runtime ion instance name. Defaults to ``None``.
+    **channels
+        Channel instances to attach to this ion, forwarded unchanged
+        to :class:`Calcium`.
+
+    Raises
+    ------
+    ValueError
+        If ``species_initializers`` names a species outside the
+        twenty-one listed above, or if ``temp`` is explicitly passed
+        as ``None``, or ``substeps`` is less than ``1`` (the latter
+        two raised by :meth:`KineticIon._init_kinetic_ion`).
+    AttributeError
+        Raised during state initialization or reset, or from
+        :attr:`parea`/:attr:`dsq`, if this ion's compartment geometry
+        (``diam_arc_mean``) has not been attached yet.
+
+    See Also
+    --------
+    Calcium : Base calcium ion family this class attaches the
+        reaction network to.
+    CdpStC_MA2020_GoC : Golgi-cell mechanism supplying the pump and
+        generic-buffer reactions this class reuses (``sources`` and
+        ``conserves`` are the same tuple objects, and several helper
+        methods delegate to it directly).
+    CdpCAM_MA2024_PC : Sibling Purkinje-network variant built on the
+        same base but adding Calbindin instead of Calretinin.
+    braincell.ion._base.KineticIon : Template this class instantiates;
+        documents the NMODL-style semantics shared by all ``Cdp*``
+        mechanisms.
+
+    Notes
+    -----
+    Ported from ``GrC/ion/CdpCR_MA20_GrC.mod``. ``uses_total_current
+    = True``; ``sources`` and ``conserves`` are the exact tuple
+    objects defined on :class:`CdpStC_MA2020_GoC` (same
+    ``Ci``-driving :class:`~braincell.ion._base.Source` and same
+    ``pump + pumpca = TotalPump * parea``
+    :class:`~braincell.ion._base.Conserve`), and several
+    geometry/current helpers (:attr:`vrat`, :attr:`parea`,
+    :attr:`dsq`, :attr:`dsqvol`, ``_require_diam_arc_mean``,
+    ``_ci_source_flux``, ``_as_initializer``) explicitly delegate to
+    :class:`CdpStC_MA2020_GoC` rather than redefining the same logic.
+
+    Nineteen reactions couple the twenty-two species: the two pump
+    steps, four generic-buffer steps (``Buff1``, ``Buff2``, ``BTC``,
+    ``DMNPE``; unlike :class:`CdpStC_MA2020_GoC` there is no PV
+    branch here), thirteen Calretinin reactions, and no calmodulin
+    branch at all. The thirteen Calretinin reactions form a
+    two-site-per-lobe cooperative lattice: nine states index how many
+    of Calretinin's two "C-lobe" sites (0, 1 or 2) and two "N-lobe"
+    sites (0, 1 or 2) are calcium-bound (``CR`` is the (0, 0) state,
+    ``CR_2C_2N`` the fully bound state), every *first*-site binding
+    step on either lobe uses the ``nT1``/``nT2`` rate pair, and every
+    *second*, cooperative-site binding step uses the faster
+    ``nR1``/``nR2`` pair. A tenth, separate Calretinin species,
+    ``CR_1V``, binds calcium directly from ``CR`` via its own
+    ``nV1``/``nV2`` rate pair and does not couple further into the
+    nine-state lattice.
+
+    References
+    ----------
+    .. [1] Anwar, H., Hong, S., & De Schutter, E. (2012). Controlling
+           Ca2+-activated K+ channels with models of Ca2+ buffering in
+           Purkinje cells. The Cerebellum, 11(3), 681-693.
+           doi:10.1007/s12311-010-0224-3
+    .. [2] Schmidt, H., Stiefel, K. M., Racay, P., Schwaller, B., &
+           Eilers, J. (2003). Mutational analysis of dendritic Ca2+
+           kinetics in rodent Purkinje cells: role of parvalbumin and
+           calbindin D28k. The Journal of Physiology, 551(1), 13-32.
+           doi:10.1113/jphysiol.2002.035824
+    .. [3] Maeda, H., Ellis-Davies, G. C. R., Ito, K., Miyashita, Y.,
+           & Kasai, H. (1999). Supralinear Ca2+ signaling by
+           cooperative and mobile Ca2+ buffering in Purkinje neurons.
+           Neuron, 24(4), 989-1002.
+           doi:10.1016/S0896-6273(00)81045-4
+    .. [4] Masoli, S., Tognolina, M., Laforenza, U., Moccia, F., &
+           D'Angelo, E. (2020). Parameter tuning differentiates
+           granule cell subtypes enriching transmission properties
+           at the cerebellum input stage. Communications Biology,
+           3(1), 222. doi:10.1038/s42003-020-0953-x
     """
 
     __module__ = "braincell.ion"
@@ -3271,16 +4304,119 @@ class CdpCR_MA2020_GrC(Calcium, KineticIon):
 
 @register_ion("CdpHVA_SU2015_DCN")
 class CdpHVA_SU2015_DCN(Calcium, DynamicNernstIon):
-    r"""Template-based import of ``CdpHVA_SU15_DCN.mod``.
+    r"""HVA-current-driven calcium pool for the deep cerebellar nuclei.
 
-    The imported NEURON mechanism evolves intracellular calcium via:
+    First-order relaxation model for the calcium pool associated
+    with high-voltage-activated (HVA) calcium channels in deep
+    cerebellar nucleus (DCN) neurons: the current drive from attached
+    HVA channels pushes ``Ci`` away from a fixed baseline, and a
+    single time constant relaxes it back.
+
+    Parameters
+    ----------
+    size : brainstate.typing.Size
+        The size of the simulation target, typically the number of
+        neurons or compartments. Forwarded unchanged to
+        :class:`Calcium`.
+    temp : array-like or callable, optional
+        Absolute temperature used by the Nernst equation in
+        :attr:`~braincell.ion._base.DynamicNernstIon.E`. Defaults to
+        36 degrees Celsius, converted to kelvin via
+        ``u.celsius2kelvin`` before being stored.
+    kCa : array-like or callable, optional
+        Current-to-concentration scale factor in :meth:`derivative`.
+        Defaults to ``3.45e-7 /coulomb``.
+    tauCa : array-like or callable, optional
+        Relaxation time constant toward ``caiBase`` in
+        :meth:`derivative`. Defaults to ``70.0 ms``.
+    caiBase : array-like or callable, optional
+        Baseline calcium concentration that ``Ci`` relaxes toward,
+        and the default value of ``Ci_initializer`` when none is
+        given. Defaults to ``50e-6 mM``.
+    depth : array-like or callable, optional
+        Shell depth dividing the current-drive term in
+        :meth:`derivative`. Defaults to ``0.2 um``.
+    Co : array-like or callable or None, optional
+        Extracellular calcium concentration. Defaults to ``None``,
+        which falls back to :attr:`Calcium.default_Co` inside
+        :meth:`DynamicNernstIon._init_dynamic_nernst_ion`.
+    Ci_initializer : array-like or callable or None, optional
+        Initializer for the dynamic ``Ci`` state. Defaults to
+        ``None``, which falls back to a constant initializer at
+        ``caiBase``.
+    name : str or None, optional
+        Runtime ion instance name. Defaults to ``None``.
+    **channels
+        Channel instances to attach to this ion, forwarded unchanged
+        to :class:`Calcium`.
+
+    Raises
+    ------
+    ValueError
+        If ``temp`` is explicitly passed as ``None``.
+        :meth:`DynamicNernstIon._init_dynamic_nernst_ion` requires an
+        explicit temperature and does not fall back to a class
+        default.
+
+    See Also
+    --------
+    Calcium : Base calcium ion family this class computes a reversal
+        potential for.
+    CdpLVA_SU2015_DCN : Sibling DCN calcium pool with an identical
+        relaxation model driven by low-voltage-activated current.
+    braincell.ion._base.DynamicNernstIon : Mixin this class builds
+        on; documents the ``Ci``/``Co``/``E`` interface shared by
+        all dynamic calcium ions.
+
+    Notes
+    -----
+    This class subclasses :class:`~braincell.ion._base.DynamicNernstIon`,
+    not :class:`~braincell.ion._base.KineticIon`: it defines a single
+    :meth:`derivative` method rather than declarative
+    ``Factor``/``Species``/``Reaction`` tuples, unlike the other
+    ``Cdp*`` mechanisms in this module.
+
+    Ported from ``DCN/ion/CdpHVA_SU15_DCN.mod``. :meth:`derivative`
+    implements
 
     .. math::
 
-       cai' = -\frac{kCa}{depth} \cdot ica \cdot 10^4 - \frac{cai - caiBase}{tauCa}
+        \frac{dCi}{dt} = -\frac{kCa}{depth} \cdot I_{total} \cdot 10^4
+        - \frac{Ci - caiBase}{tauCa}
 
-    In the first comparison notebook we only exercise the zero-``ica`` path,
-    which reduces to pure relaxation toward ``caiBase``.
+    NEURON's raw ``ica`` is efflux-positive; BrainCell channel
+    currents follow the repo-wide inward-positive convention, so the
+    sign of the current-drive term is flipped relative to the
+    original NMODL expression to keep a positive ``total_current``
+    increasing ``Ci``. When no channels are attached,
+    ``total_current`` defaults to zero and :meth:`derivative` reduces
+    to pure relaxation toward ``caiBase``. The current-drive term is
+    computed from unitless decimals (via ``to_decimal``) rather than
+    through ``brainunit`` dimensional arithmetic, matching the
+    imported NMODL's ``* 1e4`` unit-conversion literal rather than
+    deriving it dimensionally.
+
+    The kinetic constants (``kCa``, ``tauCa``, ``caiBase``, ``depth``)
+    are DCN-model parameters; no paper's text can be cited as
+    printing this specific relaxation-model form. The kinetics trace
+    to the deep cerebellar nucleus model of Steuber et al. (2011)
+    [1]_, translated from GENESIS to NEURON by Luthman et al. (2011)
+    and used in the NEURON DCN model of Sudhakar et al. (2015) [2]_,
+    from which this mechanism is imported.
+
+    References
+    ----------
+    .. [1] Steuber, V., Schultheiss, N. W., Silver, R. A., De
+           Schutter, E., & Jaeger, D. (2011). Determinants of synaptic
+           integration and heterogeneity in rebound firing explored
+           with data-driven models of deep cerebellar nucleus cells.
+           Journal of Computational Neuroscience, 30(3), 633-658.
+           doi:10.1007/s10827-010-0282-z
+    .. [2] Sudhakar, S. K., Torben-Nielsen, B., & De Schutter, E.
+           (2015). Cerebellar nuclear neurons use time and rate
+           coding to transmit Purkinje neuron pauses. PLOS
+           Computational Biology, 11(12), e1004641.
+           doi:10.1371/journal.pcbi.1004641
     """
 
     __module__ = "braincell.ion"
@@ -3335,16 +4471,124 @@ class CdpHVA_SU2015_DCN(Calcium, DynamicNernstIon):
 
 @register_ion("CdpLVA_SU2015_DCN")
 class CdpLVA_SU2015_DCN(Calcium, DynamicNernstIon):
-    r"""Template-based import of ``CdpLVA_SU15_DCN.mod``.
+    r"""LVA-current-driven calcium pool for the deep cerebellar nuclei.
 
-    The imported NEURON mechanism evolves intracellular calcium via:
+    First-order relaxation model for the calcium pool associated
+    with low-voltage-activated (LVA) calcium channels in deep
+    cerebellar nucleus (DCN) neurons: the current drive from attached
+    LVA channels pushes ``Ci`` away from a fixed baseline, and a
+    single time constant relaxes it back. Structurally identical to
+    :class:`CdpHVA_SU2015_DCN`; only the parameter names differ,
+    matching the imported NMODL's separate ``cali``/``cal`` pool.
+
+    Parameters
+    ----------
+    size : brainstate.typing.Size
+        The size of the simulation target, typically the number of
+        neurons or compartments. Forwarded unchanged to
+        :class:`Calcium`.
+    temp : array-like or callable, optional
+        Absolute temperature used by the Nernst equation in
+        :attr:`~braincell.ion._base.DynamicNernstIon.E`. Defaults to
+        36 degrees Celsius, converted to kelvin via
+        ``u.celsius2kelvin`` before being stored.
+    kCal : array-like or callable, optional
+        Current-to-concentration scale factor in :meth:`derivative`.
+        Defaults to ``3.45e-7 /coulomb``.
+    tauCal : array-like or callable, optional
+        Relaxation time constant toward ``caliBase`` in
+        :meth:`derivative`. Defaults to ``70.0 ms``.
+    caliBase : array-like or callable, optional
+        Baseline calcium concentration that ``Ci`` relaxes toward,
+        and the default value of ``Ci_initializer`` when none is
+        given. Defaults to ``50e-6 mM``.
+    depth : array-like or callable, optional
+        Shell depth dividing the current-drive term in
+        :meth:`derivative`. Defaults to ``0.2 um``.
+    Co : array-like or callable or None, optional
+        Extracellular calcium concentration. Defaults to ``None``,
+        which falls back to :attr:`Calcium.default_Co` inside
+        :meth:`DynamicNernstIon._init_dynamic_nernst_ion`.
+    Ci_initializer : array-like or callable or None, optional
+        Initializer for the dynamic ``Ci`` state. Defaults to
+        ``None``, which falls back to a constant initializer at
+        ``caliBase``.
+    name : str or None, optional
+        Runtime ion instance name. Defaults to ``None``.
+    **channels
+        Channel instances to attach to this ion, forwarded unchanged
+        to :class:`Calcium`.
+
+    Raises
+    ------
+    ValueError
+        If ``temp`` is explicitly passed as ``None``.
+        :meth:`DynamicNernstIon._init_dynamic_nernst_ion` requires an
+        explicit temperature and does not fall back to a class
+        default.
+
+    See Also
+    --------
+    Calcium : Base calcium ion family this class computes a reversal
+        potential for.
+    CdpHVA_SU2015_DCN : Sibling DCN calcium pool with an identical
+        relaxation model driven by high-voltage-activated current.
+    braincell.ion._base.DynamicNernstIon : Mixin this class builds
+        on; documents the ``Ci``/``Co``/``E`` interface shared by
+        all dynamic calcium ions.
+
+    Notes
+    -----
+    This class subclasses :class:`~braincell.ion._base.DynamicNernstIon`,
+    not :class:`~braincell.ion._base.KineticIon`: it defines a single
+    :meth:`derivative` method rather than declarative
+    ``Factor``/``Species``/``Reaction`` tuples, unlike the other
+    ``Cdp*`` mechanisms in this module. ``Ci`` here corresponds to
+    the NMODL ``cali`` pool (as opposed to ``CdpHVA_SU2015_DCN``'s
+    ``cai``), exposed through the same standard ``Ci``/``Co``/``E``
+    interface.
+
+    Ported from ``DCN/ion/CdpLVA_SU15_DCN.mod``. :meth:`derivative`
+    implements
 
     .. math::
 
-       cali' = -\frac{kCal}{depth} \cdot ical \cdot 10^4 - \frac{cali - caliBase}{tauCal}
+        \frac{dCi}{dt} = -\frac{kCal}{depth} \cdot I_{total} \cdot 10^4
+        - \frac{Ci - caliBase}{tauCal}
 
-    In BrainCell this pool is still exposed through the standard calcium
-    ``Ci/Co/E`` interface, with ``Ci`` corresponding to the NMODL ``cali``.
+    NEURON's raw ``ical`` is efflux-positive; BrainCell channel
+    currents follow the repo-wide inward-positive convention, so the
+    sign of the current-drive term is flipped relative to the
+    original NMODL expression to keep a positive ``total_current``
+    increasing ``Ci``. When no channels are attached,
+    ``total_current`` defaults to zero and :meth:`derivative` reduces
+    to pure relaxation toward ``caliBase``. The current-drive term is
+    computed from unitless decimals (via ``to_decimal``) rather than
+    through ``brainunit`` dimensional arithmetic, matching the
+    imported NMODL's ``* 1e4`` unit-conversion literal rather than
+    deriving it dimensionally.
+
+    The kinetic constants (``kCal``, ``tauCal``, ``caliBase``,
+    ``depth``) are DCN-model parameters; no paper's text can be cited
+    as printing this specific relaxation-model form. The kinetics
+    trace to the deep cerebellar nucleus model of Steuber et al.
+    (2011) [1]_, translated from GENESIS to NEURON by Luthman et al.
+    (2011) and used in the NEURON DCN model of Sudhakar et al. (2015)
+    [2]_, from which this mechanism is imported.
+
+    References
+    ----------
+    .. [1] Steuber, V., Schultheiss, N. W., Silver, R. A., De
+           Schutter, E., & Jaeger, D. (2011). Determinants of synaptic
+           integration and heterogeneity in rebound firing explored
+           with data-driven models of deep cerebellar nucleus cells.
+           Journal of Computational Neuroscience, 30(3), 633-658.
+           doi:10.1007/s10827-010-0282-z
+    .. [2] Sudhakar, S. K., Torben-Nielsen, B., & De Schutter, E.
+           (2015). Cerebellar nuclear neurons use time and rate
+           coding to transmit Purkinje neuron pauses. PLOS
+           Computational Biology, 11(12), e1004641.
+           doi:10.1371/journal.pcbi.1004641
     """
 
     __module__ = "braincell.ion"

@@ -3,11 +3,11 @@
 import unittest
 
 from braincell._testing import DocstringConformanceTests
-from braincell.ion import _base, nonspecific, potassium, sodium
+from braincell.ion import _base, calcium, nonspecific, potassium, sodium
 
 # Extended by one module per docstring task. A module is listed only once
 # every one of its public symbols satisfies the shared assertions.
-_COVERED_MODULES = (_base, nonspecific, potassium, sodium)
+_COVERED_MODULES = (_base, calcium, nonspecific, potassium, sodium)
 
 # Public symbols with no primary literature source. Membership must be a
 # deliberate decision: a new ion that lands undocumented fails instead of
@@ -29,6 +29,15 @@ _NO_PRIMARY_SOURCE = frozenset({
     "FixedIon",
     "InitNernstIon",
     "DynamicNernstIon",
+    "Calcium",
+    "CalciumFixed",
+    "CalciumInitNernst",
+    "CalciumFirstOrder",
+    "ToyCaBindingKinetic_SU2015_DCN",
+    "ToyCaBindingSourceKinetic_SU2015_DCN",
+    "ToyCaBindingIcaSourceKinetic_SU2015_DCN",
+    "ToyDiamFactorKinetic_SU2015_DCN",
+    "ToyCaPumpFactorKinetic_SU2015_DCN",
 })
 
 

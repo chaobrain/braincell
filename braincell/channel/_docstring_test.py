@@ -3,11 +3,11 @@
 import unittest
 
 from braincell._testing import DocstringConformanceTests
-from braincell.channel import leaky
+from braincell.channel import leaky, potassium_sodium
 
 # Extended by one module per docstring task. A module is listed only once
 # every one of its public symbols satisfies the shared assertions.
-_COVERED_MODULES = (leaky,)
+_COVERED_MODULES = (leaky, potassium_sodium)
 
 # Public symbols with no primary literature source. Membership must be a
 # deliberate decision: a new channel that lands undocumented fails instead of

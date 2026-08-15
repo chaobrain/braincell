@@ -75,9 +75,11 @@ Entries are written in the reST form that goes straight into a NumPy-doc
 - Title: sentence case, ending in a period. Most of the journals cited
   here (The Journal of Neuroscience, Journal of Neurophysiology) print
   their titles in title case, so down-casing is the normal operation,
-  not an exception -- all eight Task 2 entries do it. Preserve proper
-  nouns, species names, ion and chemical symbols (Ca2+, K+, GABAergic)
-  and capitalised acronyms as published. What must never change is the
+  not an exception -- five of the eight Task 2 entries required it;
+  ``HH1952``, ``Re1993`` and ``De1994`` arrived from Crossref already
+  in sentence case and needed none. Preserve proper nouns, species
+  names, ion and chemical symbols (Ca2+, K+, GABAergic) and
+  capitalised acronyms as published. What must never change is the
   *wording*: do not silently correct a publisher's singular/plural,
   spelling or hyphenation oddity -- reproduce it verbatim and record
   the discrepancy in the surrounding prose.
@@ -163,11 +165,11 @@ draws on it.
 
 ### Verified record
 
-_TODO (Task 2 / Task 3): not yet verified._
+_TODO (Task 3): not yet verified._
 
 ### Attribution
 
-_TODO (Task 2 / Task 3): not yet filled in._
+_TODO (Task 3): not yet filled in._
 
 ---
 
@@ -1116,8 +1118,7 @@ presented the two mod files as interchangeable. They are not:
 
 - Its header reads "Model based **on the data of** Huguenard &
   McCormick, J Neurophysiol 68: 1373-1383, 1992 **and Huguenard &
-  Prince, J Neurosci. 12: 3804-3817, 1992**" -- not "Model of", and
-  it draws on two papers, not one.
+  Prince, J Neurosci. 12: 3804-3817, 1992**" -- not "Model of".
 - It shares only ``m_inf`` and ``h_inf`` with ``ITGHK.mod``.
 - It has **no ``tau_m`` at all**. Activation is taken at steady state
   ("activation considered at steady-state"); ``tau_m`` appears in the
@@ -1311,7 +1312,11 @@ Two independent confirmations:
 Algebraically, ``KDR_Ba2002`` and ``Na_Ba2002`` are the same
 Traub-Miles rate functions as ``K_TM1991`` / ``Na_TM1991`` (see the
 ``TM1991`` attribution block) written in the mirrored sign convention,
-with ``V_sh = -50 mV`` instead of -63 mV and ``q10 = 3`` instead of 1.
+both shipping ``V_sh = -50 mV`` and ``q10 = 3`` instead of 1. The -50
+mV value replaces -63 mV for the sodium pair only (``Na_Ba2002`` vs.
+``Na_TM1991``); the potassium pair's own ``TM1991`` counterpart,
+``K_TM1991``, ships -60 mV, not -63 mV -- see the ``TM1991``
+attribution block below for the verified values.
 
 **Caveat for the module task:** the paper does *not* print the rate
 equations. It defers them: "The expressions for voltage- and
@@ -1381,15 +1386,29 @@ BrainCell, all six rate functions match term for term:
 An earlier revision of this block said the mod file and BrainCell share
 a -63 mV default. They do not. ``HH2.mod``'s own ``PARAMETER`` block
 ships ``vtraub = -55 (mV)`` (re-read from the ModelDB 3670 GitHub
-mirror, 2026-08-15). BrainCell's ``V_sh = -63 mV``
-(``braincell/channel/sodium.py:121``, and the matching default in
-``potassium.py``) is nevertheless the correct value to ship: -63 mV is
-what Destexhe's network ``.hoc`` code assigns to ``vtraub`` when it
+mirror, 2026-08-15).
+
+**MODULE-TASK WARNING -- BrainCell's two ``TM1991`` classes do not
+even agree with each other.** There is no "matching default in
+potassium.py"; an earlier revision of this block wrongly claimed one.
+Verified 2026-08-15 by reading both constructors directly:
+``Na_TM1991`` ships ``V_sh = -63 mV``
+(``braincell/channel/sodium.py:121``); ``K_TM1991`` ships
+``V_sh = -60 mV`` (``braincell/channel/potassium.py:143``), not
+-63 mV. Both classes derive from the same ``HH2.mod`` mechanism (see
+"Attribution check" above), so this 3 mV divergence is a BrainCell
+choice, not something inherited from the source. **Any docstring
+sentence about "the Traub & Miles -63 mV shift" is wrong for
+``K_TM1991``** -- write ``K_TM1991``'s default as -60 mV, and
+``Na_TM1991``'s as -63 mV.
+
+-63 mV is nevertheless the correct value to ship for ``Na_TM1991``: it
+is what Destexhe's network ``.hoc`` code assigns to ``vtraub`` when it
 uses this mechanism, and it is the offset associated with the
 Traub-Miles hippocampal pyramidal cell. Only the mod file's *own*
-default differs; the six rate equations above are confirmed to match
-term for term either way, since the shift enters only through
-``v2``/``V'``.
+default (-55 mV) differs from BrainCell's sodium value; the six rate
+equations above are confirmed to match term for term either way, since
+the shift enters only through ``v2``/``V'``.
 
 Gating m^3 h and n^4 also match. The mod file's ``tadj = 3^((celsius -
 36)/10)`` corresponds to BrainCell's ``q10 = 1.0`` at ``temp_ref = 36

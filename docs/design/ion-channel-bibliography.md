@@ -44,9 +44,16 @@ name alone; read the harvested header text.
 
 ## Status of this file
 
-- `### Verified record` and `### Attribution` blocks are intentionally
-  **empty** in this task. They are filled in by Task 2 (classical/thalamic
-  keys) and Task 3 (cerebellar-model keys) after literature verification.
+- `### Verified record` and `### Attribution` blocks are filled in
+  progressively. Task 2 (2026-08-15) completed the nine
+  classical/thalamic keys -- `HH1952`, `TM1991`, `Ba2002`, `HM1992`,
+  `Ya1989`, `Re1993`, `HP1992`, `De1994` and `IS2008`. Eight of them
+  carry a published `.. [N]` entry; `IS2008` is recorded as NOT FILLED
+  because its attribution did not close (see `## Unresolved
+  attributions` item 6), and one symbol of the otherwise-verified
+  `HM1992` key is carved out the same way (item 7). Every remaining
+  key still shows `_TODO (Task 3)` and is owned by Task 3
+  (cerebellar-model keys).
 - Nothing in this file's `### Provenance evidence` blocks is a citation.
   It is raw, unedited text copied from `.mod` file headers (typos,
   inconsistent spacing, and missing apostrophes preserved verbatim) plus
@@ -65,9 +72,15 @@ Entries are written in the reST form that goes straight into a NumPy-doc
 - Authors: `Surname, A. B., & Surname, C. D.` -- initials with periods
   and spaces, `&` before the last author, all authors listed in full
   (no `et al.`), then `(YEAR).`
-- Title: sentence case exactly as published, ending in a period. Do not
-  "fix" the publisher's capitalisation, and do not silently correct a
-  singular/plural mismatch without noting it.
+- Title: sentence case, ending in a period. Most of the journals cited
+  here (The Journal of Neuroscience, Journal of Neurophysiology) print
+  their titles in title case, so down-casing is the normal operation,
+  not an exception -- all eight Task 2 entries do it. Preserve proper
+  nouns, species names, ion and chemical symbols (Ca2+, K+, GABAergic)
+  and capitalised acronyms as published. What must never change is the
+  *wording*: do not silently correct a publisher's singular/plural,
+  spelling or hyphenation oddity -- reproduce it verbatim and record
+  the discrepancy in the surrounding prose.
 - Journal articles: `Journal Name, VOL(ISSUE), FIRST-LAST.` with the
   journal spelled out in title case and no italics markup. Page ranges
   use an ASCII hyphen, never an en dash.
@@ -1083,19 +1096,55 @@ onto the BrainCell symbols as:
   ``:352``)
 - Ih  -> ``HCN_HM1992`` (``hyperpolarization_activated.py:45``)
 
-Constants were cross-checked against Destexhe's NEURON implementations
-of this paper: ``IT.mod`` (ModelDB 3817) and ``ITGHK.mod`` (ModelDB
-279), both headed "Model of Huguenard & McCormick, J Neurophysiol 68:
-1373-1383, 1992". Those files use
-``m_inf = 1/(1 + exp(-(v + shift + 57)/6.2))``,
-``h_inf = 1/(1 + exp((v + shift + 81)/4))``,
-``tau_m = 0.612 + 1/(exp(-(v+132)/16.7) + exp((v+16.8)/18.2))``, and a
-piecewise ``tau_h`` of ``exp((v+467)/66.6)`` below -80 mV and
-``28 + exp(-(v+22)/10.5)`` above, with ``shift = 2 mV`` (screening
-charge at 2 mM external Ca). BrainCell's ``CaT_HM1992`` carries 59 and
-83 as the Boltzmann midpoints -- i.e. the mod-file values with the 2 mV
-shift already folded in -- and reproduces ``tau_m``, the piecewise
-``tau_h``, and the ``p^2 q`` gating exactly. ``HCN_HM1992``'s
+Constants were cross-checked against ``ITGHK.mod`` (ModelDB 279),
+Destexhe's NEURON implementation of this paper, headed "Model of
+Huguenard & McCormick, J Neurophysiol 68: 1373-1383, 1992".
+**Every equation quoted in this paragraph comes from ``ITGHK.mod``
+alone** (re-read from the ModelDB GitHub mirror, 2026-08-15). It uses
+``m_inf = 1/(1 + exp(-(v+shift+actshift+57)/6.2))``,
+``h_inf = 1/(1 + exp((v+shift+81)/4))``,
+``tau_m = (0.612 + 1/(exp(-(v+shift+actshift+132)/16.7)
++ exp((v+shift+actshift+16.8)/18.2)))/phi_m``, and a piecewise
+``tau_h`` branching on ``(v+shift) < -80``:
+``exp((v+shift+467)/66.6)/phi_h`` below the branch and
+``(28 + exp(-(v+shift+22)/10.5))/phi_h`` above it. ``shift = 2 mV``
+(screening charge at 2 mM external Ca); ``actshift`` defaults to 0.
+
+**``IT.mod`` (ModelDB 3817) is a different model and is NOT a source
+for any constant above.** An earlier revision of this block wrongly
+presented the two mod files as interchangeable. They are not:
+
+- Its header reads "Model based **on the data of** Huguenard &
+  McCormick, J Neurophysiol 68: 1373-1383, 1992 **and Huguenard &
+  Prince, J Neurosci. 12: 3804-3817, 1992**" -- not "Model of", and
+  it draws on two papers, not one.
+- It shares only ``m_inf`` and ``h_inf`` with ``ITGHK.mod``.
+- It has **no ``tau_m`` at all**. Activation is taken at steady state
+  ("activation considered at steady-state"); ``tau_m`` appears in the
+  ``ASSIGNED`` block annotated "dummy variable for compatibility" and
+  is never assigned a value.
+- Its piecewise ``tau_h`` is **commented out**, replaced by the
+  bi-exponential fit ``30.8 + (211.4 + exp((Vm+113.2)/5))/(1 +
+  exp((Vm+84)/3.2))``.
+- It carries a single ``q10 = 3``, applied to inactivation only.
+
+**How the 2 mV shift is actually applied -- read this before writing
+the ``CaT_HM1992`` docstring.** ``CaT_HM1992``
+(``braincell/channel/calcium.py:177-195``) folds the shift into the
+Boltzmann midpoints **only**: 57 -> 59 in ``f_p_inf``, 81 -> 83 in
+``f_q_inf``. The time constants do **not** fold it in. ``f_p_tau``
+carries bare 132 and 16.8, and ``f_q_tau`` carries bare 467 and 22
+with the branch at ``V >= -80`` -- i.e. exactly ``ITGHK.mod``'s
+numbers read at ``shift = 0``, not at its shipped ``shift = 2 mV``.
+
+So the correct claim is: ``CaT_HM1992`` reproduces ``ITGHK.mod``'s
+``tau_m``, its piecewise ``tau_h`` and its ``p^2 q`` gating exactly
+**against a shift = 0 reading of the mod file**, while its
+steady-state midpoints match the mod file **with the 2 mV shift folded
+in**. Against the shipped ``shift = 2 mV`` the two taus sit 2 mV away
+from the mod file. A docstring must **not** describe the kinetics as
+those of the mod file "with the 2 mV screening-charge shift folded
+in": that is true of the midpoints and false of the taus. ``HCN_HM1992``'s
 ``p_inf = 1/(1 + exp((V+75)/5.5))`` and
 ``tau_p = 1/(exp(-0.086 V - 14.59) + exp(0.0701 V - 1.87))`` are the
 standard published Ih parameterisation and are already documented in
@@ -1234,7 +1283,8 @@ below.
 .. [1] Bazhenov, M., Timofeev, I., Steriade, M., & Sejnowski, T. J.
        (2002). Model of thalamocortical slow-wave sleep oscillations and
        transitions to activated states. The Journal of Neuroscience,
-       22(19), 8691-8704. doi:10.1523/JNEUROSCI.22-19-08691.2002
+       22(19), 8691-8704.
+       doi:10.1523/JNEUROSCI.22-19-08691.2002
 
 ### Attribution
 
@@ -1318,8 +1368,7 @@ modified by Traub, for Hippocampal Pyramidal cells, in: Traub & Miles,
 Neuronal Networks of the Hippocampus, Cambridge, 1991".
 
 With ``v2 = v - vtraub`` in the mod file and ``V' = V - V_sh`` in
-BrainCell (both defaulting to a -63 mV shift), all six rate functions
-match term for term:
+BrainCell, all six rate functions match term for term:
 
 - alpha_m = 0.32 (13 - V') / (exp((13 - V')/4) - 1)
 - beta_m  = 0.28 (V' - 40) / (exp((V' - 40)/5) - 1)
@@ -1327,6 +1376,20 @@ match term for term:
 - beta_h  = 4 / (1 + exp(-(V' - 40)/5))
 - alpha_n = 0.032 (15 - V') / (exp((15 - V')/5) - 1)
 - beta_n  = 0.5 exp((10 - V')/40)
+
+**Shift defaults differ -- do not write "both defaulting to -63 mV".**
+An earlier revision of this block said the mod file and BrainCell share
+a -63 mV default. They do not. ``HH2.mod``'s own ``PARAMETER`` block
+ships ``vtraub = -55 (mV)`` (re-read from the ModelDB 3670 GitHub
+mirror, 2026-08-15). BrainCell's ``V_sh = -63 mV``
+(``braincell/channel/sodium.py:121``, and the matching default in
+``potassium.py``) is nevertheless the correct value to ship: -63 mV is
+what Destexhe's network ``.hoc`` code assigns to ``vtraub`` when it
+uses this mechanism, and it is the offset associated with the
+Traub-Miles hippocampal pyramidal cell. Only the mod file's *own*
+default differs; the six rate equations above are confirmed to match
+term for term either way, since the shift enters only through
+``v2``/``V'``.
 
 Gating m^3 h and n^4 also match. The mod file's ``tadj = 3^((celsius -
 36)/10)`` corresponds to BrainCell's ``q10 = 1.0`` at ``temp_ref = 36
@@ -1488,7 +1551,8 @@ PMCID PMC6576337.
        Stepwise repolarization from Ca2+ plateaus in neocortical
        pyramidal cells: evidence for nonhomogeneous distribution of HVA
        Ca2+ channels in dendrites. The Journal of Neuroscience, 13(11),
-       4609-4621. doi:10.1523/JNEUROSCI.13-11-04609.1993
+       4609-4621.
+       doi:10.1523/JNEUROSCI.13-11-04609.1993
 
 ### Attribution
 
@@ -1695,14 +1759,36 @@ exactly, and the ``p^2`` gating, the ``n = 2`` exponent, and the pure
 Ca dependence all match.
 
 **Discrepancy found -- flag for the module task.** BrainCell defaults
-to ``beta = 0.09 ms^-1``; the reference implementation and the paper's
-own reported value are ``beta = 0.03 ms^-1`` (a factor of 3). This is
-inherited from BrainPy, whose ``IAHP_De1994v2`` docstring itself states
-"The values n=2, alpha=48 ms^-1 mM^-2 and beta=0.03 ms^-1 yielded AHPs
-very similar to those RE cells recorded in vivo and in vitro" while its
-constructor still defaults ``beta = 0.09``. The docstring must not
-claim that ``beta = 0.09`` is the published value; either state 0.03 as
-the paper's value and 0.09 as the BrainCell default, or raise the
+to ``beta = 0.09 ms^-1`` (confirmed by reading
+``braincell/channel/potassium_calcium.py:72``). The reference value is
+``beta = 0.03 ms^-1``, a factor of 3 lower.
+
+**Where the 0.03 comes from -- state this precisely.** An earlier
+revision of this block called 0.03 "the paper's own reported value".
+That overstates the evidence: the 1994 paper is paywalled and was
+**not** read; only the PubMed abstract was retrieved. The 0.03 rests
+on two secondary sources that agree with each other:
+
+1. ``IAHP.mod``'s ``PARAMETER`` block, which ships ``beta = 0.03
+   (1/ms)``. This is the authors' own NEURON implementation, and the
+   value was confirmed identical in two independent ModelDB
+   accessions (3670 and 3808).
+2. BrainPy's ``IAHP_De1994v2`` docstring, which *quotes* the paper as
+   saying "The values n=2, alpha=48 ms^-1 mM^-2 and beta=0.03 ms^-1
+   yielded AHPs very similar to those RE cells recorded in vivo and in
+   vitro" -- while its own constructor nonetheless defaults
+   ``beta = 0.09``, which is where BrainCell inherited 0.09 from.
+
+So write "the value used by the authors' reference implementation, and
+quoted from the paper by BrainPy" -- not "the paper's own reported
+value". Checking that quotation against the published text is still
+open.
+
+Unaffected by this: the ``alpha = 48`` derivation above, which is
+computed directly from ``IAHP.mod``'s own ``beta`` and ``cac`` and
+which BrainCell's default reproduces exactly. In no case may a
+docstring present ``beta = 0.09`` as the published value; state 0.03
+as the reference value and 0.09 as the BrainCell default, or raise the
 mismatch as a separate issue.
 
 ---
@@ -1843,26 +1929,74 @@ resolve them cleanly:
    PMID 17959743, PMCID PMC6086124, epub 24 Oct 2007. That record check
    passes cleanly.
 
-   **Why the attribution still fails.** The paper's Methods could not be
-   read, so it was not possible to confirm that it contains the two
-   currents these symbols implement:
+   **CORRECTION: the full text IS readable.** An earlier revision of
+   this item claimed the Methods section was unreadable and rested the
+   whole "not confirmed" verdict on that. The claim was false, and the
+   readable text changes the evidence for both symbols.
 
-   - The full text is *not* open access. `oa.fcgi` returns
-     `idIsNotOpenAccess` for PMC6086124; the Europe PMC `fullTextXML`
-     endpoint 404s; the PMC PDF endpoint is behind a proof-of-work
-     challenge; and `journals.physiology.org` returns 403.
-   - No ModelDB deposit for this paper was found (ModelDB's API returns
-     nothing for "Strowbridge", and a targeted web search surfaced no
-     accession), so there is no reference `.mod` implementation to
-     compare constants against -- unlike every other key in this task.
-   - The published **abstract** is consistent with, but does not
-     establish, the attribution. It confirms a computational model of
-     olfactory bulb granule cells and says persistent activity "results
-     from interactions between calcium-dependent afterdepolarizations
-     and low-threshold Ca spikes in granule cells". A Ca-dependent ADP
-     is the usual signature of an I_CAN, and "Ca spikes" implies a Ca
-     current, so both classes are *plausible*. Plausible is not
-     confirmed.
+   *The access route that works.* Fetch the PMC article **HTML** at
+   `https://pmc.ncbi.nlm.nih.gov/articles/PMC6086124/` with an
+   ordinary browser user-agent. It returns HTTP 200 and serves the
+   complete author manuscript (re-confirmed 2026-08-15).
+
+   *Why the OA APIs mislead -- generalise this.* The deposit is an
+   NIHPA author manuscript: made freely **readable** under the NIH
+   Public Access Policy, but not open-access **licensed**. The
+   machine-readable OA surfaces key off the licence, not the
+   readability, so every one of them reports absence: `oa.fcgi`
+   returns `idIsNotOpenAccess` (re-confirmed 2026-08-15), Europe PMC's
+   `fullTextXML` 404s (re-confirmed), the PMC PDF endpoint sits behind
+   a proof-of-work challenge, and `journals.physiology.org` returns
+   403. **A negative from `oa.fcgi` or `fullTextXML` is not evidence
+   that a paper cannot be read.** Always retry the PMC article HTML
+   before recording any PMC-hosted paper as inaccessible.
+
+   *What the Methods actually say.* The "Computer simulations" section
+   states verbatim:
+
+   ```
+   We employed a set of five purely voltage-dependent currents in our
+   granule cell model [fast Na current, delayed rectifier K current,
+   transient (A-type) K current, low-threshold (T-type) Ca current,
+   and high-threshold (P/N-type) Ca current] and one calcium-dependent
+   current (calcium- and voltage-dependent nonselective cation
+   current).
+   ```
+
+   **`CaN_IS2008` -- attribution now substantially supported.** The
+   calcium- and voltage-dependent nonselective cation current (I_CAN)
+   is present, named explicitly, and central to the paper's thesis:
+   it is the current that generates the calcium-dependent
+   afterdepolarization underlying the persistent activity the paper is
+   about. This lifts the attribution from "plausible" to substantially
+   supported.
+
+   **`CaL_IS2008` -- positive evidence of MISATTRIBUTION.** The paper
+   contains **no L-type calcium current**. Its only two calcium
+   currents are a low-threshold T-type and a high-threshold
+   **P/N-type**. The strings "L-type", "L type" and "ICaL" do not
+   occur anywhere in the article text. This is the same evidential
+   status as `CaHT_HM1992` in item 7 -- not an absence of evidence,
+   but positive evidence that the symbol does not correspond to any
+   current the cited paper models. Either `CaL_IS2008` is meant to be
+   this paper's high-threshold current, in which case it is a P/N-type
+   and the symbol name is wrong, or it is a genuine L-type current and
+   its source is a different paper entirely.
+
+   **Both symbols still ship no citation. The conservative outcome is
+   unchanged; only the evidence behind it changed.** Reading the
+   Methods does not close either attribution, because the Methods do
+   not print the gating constants. They say only: "Detailed
+   information about these models is described in the supplementary
+   materials section." That supplement was **not** deposited with the
+   PMC author manuscript, so the eight constants listed below still
+   cannot be checked against the source.
+
+   Also still true, and still an obstacle: no ModelDB deposit for this
+   paper was found (ModelDB's API returns nothing for "Strowbridge",
+   and a targeted web search surfaced no accession), so there is no
+   reference `.mod` implementation to compare constants against --
+   unlike every other key in this task.
 
    **Positive evidence that these are ports, not original work.** The
    two BrainCell classes are verbatim ports of BrainPy's
@@ -1892,13 +2026,20 @@ resolve them cleanly:
      -- byte-identical to `CaT_HM1992`'s temperature defaults, and 24
      degC is the Huguenard reference temperature, not an olfactory bulb
      one. These read as inherited `p^2 q` template defaults rather than
-     values from an Inoue & Strowbridge table.
+     values from an Inoue & Strowbridge table. This now compounds with
+     the absence of any L-type current in the paper, above: two
+     independent signs pointing the same way.
 
-   **What would close this.** Read the Methods/Appendix of
-   doi:10.1152/jn.00526.2007 (institutional access, or the print issue)
-   and check for the eight constants listed above. Until then, the two
-   docstrings should either omit a `References` section or state the
-   attribution as unverified; they must not print a confident citation.
+   **What would close this.** The Methods are readable but defer the
+   constants, so the remaining artefact is the **supplementary
+   materials** of doi:10.1152/jn.00526.2007, which are not deposited
+   with the PMC author manuscript. Obtain them from the publisher
+   (institutional access) or the print issue and check the eight
+   constants listed above. For `CaL_IS2008`, also settle whether the
+   symbol is a mislabelled P/N-type or belongs to a different paper.
+   Until then the two docstrings must either omit a `References`
+   section or state the attribution as unverified; neither may print a
+   confident citation.
 
 7. **`CaHT_HM1992`** (`braincell/channel/calcium.py:248`) --
    *attribution FAILED; the record for the `HM1992` key itself is fine.*
@@ -1922,6 +2063,29 @@ resolve them cleanly:
 
    This is inherited from BrainPy's `ICaHT_HM1992`, which has the same
    shape and the same citation.
+
+   **Lead for whoever traces this further: the companion paper.** A
+   high-threshold thalamic Ca2+ current *does* exist in the immediately
+   adjacent article -- McCormick, D. A., & Huguenard, J. R. (1992),
+   "A model of the electrophysiological properties of thalamocortical
+   relay neurons", J Neurophysiol 68(4), 1384-1400,
+   doi:10.1152/jn.1992.68.4.1384, PMID 1331356. This is the same paper
+   the `HM1992` Verified record block warns not to confuse with the
+   cited one (note the reversed author order and the adjacent page
+   range). Its abstract, retrieved via E-utilities 2026-08-15,
+   enumerates the model's currents as "a fast and transient Na+
+   current, INa; a persistent, depolarization-activated Na+ current,
+   INap; a low-threshold Ca2+ current, I(T); a **high-threshold Ca2+
+   current, IL**; a Ca(2+)-activated K+ current, IC; ...". So the
+   obvious hypothesis is that `CaHT_HM1992` was meant to be that IL.
+
+   **But the code refutes even that.** `CaHT_HM1992` is not IL: it is
+   `CaT_HM1992`'s gating functions verbatim with `V_sh` moved from
+   -3 mV to +25 mV, as established above. A translated T current is
+   not the companion paper's IL, which has its own kinetics. Cite the
+   companion paper only if a future task actually re-derives the class
+   against IL's published parameters; do not swap one unverified
+   citation for another.
 
    **Consequence for the module task.** Do not give `CaHT_HM1992` a bare
    `.. [1] Huguenard & McCormick (1992)` reference implying the paper

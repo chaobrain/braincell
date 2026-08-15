@@ -106,7 +106,7 @@ def _freeze_quantity_gradient(value):
 
 @register_channel("CaN_IS2008")
 class CaN_IS2008(HH):
-    r"""Inoue & Strowbridge 2008 calcium-activated non-selective cation current.
+    r"""Inoue & Strowbridge 2008 calcium-activated nonselective cation current.
 
     A calcium- and voltage-dependent non-selective cation current
     (:math:`I_{CAN}`) gated by a single activation variable and scaled
@@ -922,11 +922,11 @@ class CaL_IS2008(OhmicHH):
 
 @register_channel("CaHVA_SU2015_DCN")
 class CaHVA_SU2015_DCN(HH):
-    r"""High-voltage-activated calcium current of the DCN model (Sudhakar et al., 2015).
+    r"""HVA calcium current of the DCN model (Sudhakar 2015).
 
-    A GHK-driven calcium current with a single :math:`m^3` activation
-    gate, used for the deep cerebellar nucleus (DCN) neuron model of
-    (Sudhakar et al., 2015) [2]_:
+    A GHK-driven, high-voltage-activated (HVA) calcium current with a
+    single :math:`m^3` activation gate, used for the deep cerebellar
+    nucleus (DCN) neuron model of (Sudhakar et al., 2015) [2]_:
 
     .. math::
 
@@ -1064,7 +1064,7 @@ class CaHVA_SU2015_DCN(HH):
 
 @register_channel("CaL_SU2015_DCN")
 class CaL_SU2015_DCN(OhmicHH):
-    r"""Low-voltage-activated calcium current of the DCN model (Sudhakar et al., 2015).
+    r"""Ohmic-drive LVA calcium current of the DCN model (Sudhakar 2015).
 
     An ohmically-driven calcium current with :math:`m^2 h` HH gating
     against a fixed reversal potential, used for the deep cerebellar
@@ -1219,11 +1219,11 @@ class CaL_SU2015_DCN(OhmicHH):
 
 @register_channel("CaLVA_SU2015_DCN")
 class CaLVA_SU2015_DCN(HH):
-    r"""Low-voltage-activated calcium current of the DCN model (Sudhakar et al., 2015).
+    r"""GHK-drive LVA calcium current of the DCN model (Sudhakar 2015).
 
-    A GHK-driven calcium current with :math:`m^2 h` gating, used for
-    the deep cerebellar nucleus (DCN) neuron model of (Sudhakar et
-    al., 2015) [2]_:
+    A GHK-driven, low-voltage-activated (LVA) calcium current with
+    :math:`m^2 h` gating, used for the deep cerebellar nucleus (DCN)
+    neuron model of (Sudhakar et al., 2015) [2]_:
 
     .. math::
 
@@ -2324,7 +2324,7 @@ class Cav2p3_MA2020_GoC(OhmicHH):
 
 @register_channel("Ca_ZH2019_IO")
 class Ca_ZH2019_IO(HH):
-    r"""Somatic calcium current of the inferior-olive model (Zhang & Santaniello, 2019).
+    r"""Somatic calcium current of the inferior-olive model (Zhang 2019).
 
     A fixed-reversal-potential calcium current with an instantaneous,
     non-stateful cubic activation and one dynamic inactivation gate,
@@ -2468,7 +2468,7 @@ class Ca_ZH2019_IO(HH):
 
 @register_channel("Ca_ZH2019_IO_Frozen")
 class Ca_ZH2019_IO_Frozen(Ca_ZH2019_IO):
-    r""":class:`Ca_ZH2019_IO` with ``freeze_m_inf`` pinned unconditionally to ``True``.
+    r""":class:`Ca_ZH2019_IO` with ``freeze_m_inf`` pinned to ``True``.
 
     A registry-only subclass of :class:`Ca_ZH2019_IO` that always
     stops autodiff through the instantaneous activation factor,

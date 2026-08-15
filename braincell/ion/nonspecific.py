@@ -119,6 +119,14 @@ class NonSpecificFixed(NonSpecific, FixedIon):
     **channels
         Optional channels added directly to the placeholder ion.
 
+    Raises
+    ------
+    ValueError
+        If ``E`` is explicitly passed as ``None``.
+        :meth:`FixedIon._init_fixed_ion` requires an explicit fixed
+        reversal potential and does not fall back to a class default
+        for ``E``.
+
     See Also
     --------
     NonSpecific : Base placeholder ion family this class fixes.

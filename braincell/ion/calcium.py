@@ -59,15 +59,58 @@ __all__ = [
 
 
 class Calcium(Ion):
-    """
-    Base class for modeling Calcium ion.
+    """Base class for modeling the calcium ion species.
 
-    This class serves as the foundation for all calcium ion models in the braincell library.
-    It inherits from the Ion class and sets the root_type to HHTypedNeuron.
+    ``Calcium`` collects the physiological defaults shared by every
+    concrete calcium ion model in BrainCell and provides the
+    ``Ion``/``IonChannel`` container interface calcium channels
+    attach to. It carries no dynamics of its own.
 
-    Note:
-        This is an abstract base class and should be subclassed to implement specific
-        calcium ion models with their own dynamics and properties.
+    Parameters
+    ----------
+    size : brainstate.typing.Size
+        The size of the simulation target, typically the number of
+        neurons or compartments. Forwarded unchanged to :class:`Ion`.
+    name : str or None, optional
+        Runtime instance name. Defaults to ``None``, in which case the
+        instance is unnamed. Forwarded unchanged to :class:`Ion`.
+    **channels
+        Channel instances to attach to this ion, forwarded unchanged to
+        :class:`Ion`.
+
+    See Also
+    --------
+    CalciumFixed : Fixed-parameter calcium ion built on this base.
+    CalciumInitNernst : Calcium ion with ``E`` initialized from the
+        Nernst equation.
+    CalciumDetailed : Dynamic calcium ion with a first-order
+        concentration model and Nernst-computed ``E``.
+    CalciumFirstOrder : Sibling dynamic calcium ion with a different
+        first-order form.
+
+    Notes
+    -----
+    This is an abstract base class and must be subclassed (for
+    example by :class:`CalciumFixed` or :class:`CalciumDetailed`) to
+    obtain a concrete calcium ion model with defined reversal-
+    potential dynamics. ``default_Ci``, ``default_Co``, and
+    ``default_valence`` below are values conventional in the
+    calcium-modeling literature, not measurements reported by a
+    single paper; no citation is asserted for them.
+
+    Attributes
+    ----------
+    root_type : type
+        Root container type this ion attaches to. Set to
+        :class:`~braincell._base.HHTypedNeuron`.
+    ion_symbol : str
+        Symbol used for runtime family lookup. Set to ``'Ca'``.
+    default_Ci : brainunit.Quantity
+        Default intracellular calcium concentration, ``5e-5 mM``.
+    default_Co : brainunit.Quantity
+        Default extracellular calcium concentration, ``2.0 mM``.
+    default_valence : int
+        Default ionic valence, ``2``.
     """
 
     __module__ = 'braincell.ion'
@@ -81,10 +124,59 @@ class Calcium(Ion):
 
 @register_ion("CalciumFixed")
 class CalciumFixed(Calcium, FixedIon):
-    """Fixed Calcium dynamics.
+    r"""Fixed calcium dynamics.
 
-    This calcium model has no dynamics. It holds fixed reversal
-    potential :math:`E` and concentration :math:`C`.
+    This calcium model has no dynamics. It holds a fixed reversal
+    potential :math:`E` and fixed concentrations :math:`C_i`/:math:`C_o`.
+
+    Parameters
+    ----------
+    size : brainstate.typing.Size
+        The size of the simulation target, typically the number of
+        neurons or compartments. Forwarded unchanged to :class:`Calcium`.
+    E : array-like or callable or None, optional
+        Fixed reversal potential. Defaults to ``+120 mV``. Passing
+        ``None`` explicitly raises :class:`ValueError`; there is no
+        class-default fallback for this argument.
+    Ci : array-like or callable or None, optional
+        Intracellular calcium concentration. Defaults to ``None``,
+        which falls back to :attr:`Calcium.default_Ci` inside
+        :meth:`FixedIon._init_fixed_ion`.
+    Co : array-like or callable or None, optional
+        Extracellular calcium concentration. Defaults to ``None``,
+        which falls back to :attr:`Calcium.default_Co` inside
+        :meth:`FixedIon._init_fixed_ion`.
+    valence : array-like or callable or None, optional
+        Ionic valence. Defaults to ``None``, which falls back to
+        :attr:`Calcium.default_valence` inside
+        :meth:`FixedIon._init_fixed_ion`.
+    name : str or None, optional
+        Runtime ion instance name. Defaults to ``None``.
+    **channels
+        Channel instances to attach to this ion, forwarded unchanged to
+        :class:`Calcium`.
+
+    Raises
+    ------
+    ValueError
+        If ``E`` is explicitly passed as ``None``.
+        :meth:`FixedIon._init_fixed_ion` requires an explicit fixed
+        reversal potential and does not fall back to a class default
+        for ``E``.
+
+    See Also
+    --------
+    Calcium : Base calcium ion family this class fixes.
+    CalciumInitNernst : Sibling calcium model whose ``E`` is computed
+        from the Nernst equation instead of fixed.
+
+    Notes
+    -----
+    With the shipped class defaults (``Co = 2.0 mM``, ``Ci = 5e-5
+    mM``, ``valence = 2``) at 36 degrees Celsius, the Nernst equation
+    gives ``E = +141.15 mV``. ``CalciumFixed`` instead defaults ``E``
+    to ``+120 mV``, so the two sibling classes disagree by about
+    21 mV when both are constructed with no arguments.
     """
 
     __module__ = 'braincell.ion'
@@ -105,7 +197,74 @@ class CalciumFixed(Calcium, FixedIon):
 
 @register_ion("CalciumInitNernst")
 class CalciumInitNernst(Calcium, InitNernstIon):
-    """Fixed ``Ci/Co`` calcium model with ``E`` initialized from Nernst."""
+    r"""Fixed ``Ci``/``Co`` calcium model with ``E`` initialized from Nernst.
+
+    Parameters
+    ----------
+    size : brainstate.typing.Size
+        The size of the simulation target, typically the number of
+        neurons or compartments. Forwarded unchanged to :class:`Calcium`.
+    temp : array-like or callable, optional
+        Absolute temperature used by the Nernst equation. Defaults to
+        36 degrees Celsius, converted to kelvin via
+        ``u.celsius2kelvin`` before being stored.
+    Ci : array-like or callable or None, optional
+        Intracellular calcium concentration. Defaults to ``None``,
+        which falls back to :attr:`Calcium.default_Ci` inside
+        :meth:`InitNernstIon._init_nernst_ion`.
+    Co : array-like or callable or None, optional
+        Extracellular calcium concentration. Defaults to ``None``,
+        which falls back to :attr:`Calcium.default_Co` inside
+        :meth:`InitNernstIon._init_nernst_ion`.
+    valence : array-like or callable or None, optional
+        Ionic valence. Defaults to ``None``, which falls back to
+        :attr:`Calcium.default_valence` inside
+        :meth:`InitNernstIon._init_nernst_ion`.
+    name : str or None, optional
+        Runtime ion instance name. Defaults to ``None``.
+    **channels
+        Channel instances to attach to this ion, forwarded unchanged to
+        :class:`Calcium`.
+
+    Raises
+    ------
+    ValueError
+        If ``temp`` is explicitly passed as ``None``.
+        :meth:`InitNernstIon._init_nernst_ion` requires an explicit
+        temperature and does not fall back to a class default.
+
+    See Also
+    --------
+    Calcium : Base calcium ion family this class computes a reversal
+        potential for.
+    CalciumFixed : Sibling calcium model with a fixed reversal
+        potential instead of a Nernst-computed one.
+
+    Notes
+    -----
+    ``E`` is not computed at construction time. ``_init_nernst_ion``
+    sets ``self.E = None`` immediately, and the actual reversal
+    potential is filled in only later by
+    ``InitNernstIon._update_reversal``, which fires from the
+    ``_ion_init_state_hook`` and ``_ion_reset_state_hook`` lifecycle
+    hooks. Between construction and the first state initialization or
+    reset, ``E`` is ``None``.
+
+    The stored formula, transcribed as ``_update_reversal`` writes it,
+    is the Nernst equation
+
+    .. math::
+
+        E = \frac{R \cdot \mathrm{temp}}{\mathrm{valence} \cdot F}
+            \log\!\left(\frac{C_o}{C_i}\right)
+
+    where :math:`R` is the gas constant and :math:`F` is the Faraday
+    constant. The argument to the logarithm is :math:`C_o / C_i`
+    (extracellular over intracellular), and ``valence`` divides inside
+    the prefactor rather than appearing as a separate multiplicative
+    term. House policy treats the Nernst equation as a textbook
+    result, so it is named here without a citation.
+    """
 
     __module__ = 'braincell.ion'
 
@@ -125,11 +284,19 @@ class CalciumInitNernst(Calcium, InitNernstIon):
 
 @register_ion("CalciumDetailed")
 class CalciumDetailed(Calcium, DynamicNernstIon):
-    r"""Dynamical Calcium model proposed.
+    r"""Dynamic calcium concentration model with Nernst-computed reversal potential.
 
-    **1. The dynamics of intracellular** :math:`Ca^{2+}`
+    :meth:`derivative` implements only the first-order relaxation
+    model of section 2 below. Section 1 reproduces, for background
+    only, the fuller ATP-pump model this family of models is drawn
+    from: **the pump kinetics in section 1 are NOT implemented by
+    this class.** ``derivative`` is three lines long and contains no
+    Michaelis-Menten term and no pump parameter.
 
-    The dynamics of intracellular :math:`Ca^{2+}` were determined by two contributions [1]_ :
+    **1. Background: the dynamics of intracellular** :math:`Ca^{2+}`
+    **(not implemented)**
+
+    The dynamics of intracellular :math:`Ca^{2+}` were determined by two contributions [3]_ :
 
     *(i) Influx of* :math:`Ca^{2+}` *due to Calcium currents*
 
@@ -174,12 +341,14 @@ class CalciumDetailed(Calcium, DynamicNernstIon):
     with the total concentration of :math:`P` and :math:`K_{d}=c_{2} / c_{1}=10^{-4}\, \mathrm{mM}`
     is the dissociation constant, which can be interpreted here as the value of
     :math:`[Ca]_{i}` at which the pump is half activated (if :math:`[Ca]_{i} \ll K_{d}`
-    then the efflux is negligible).
+    then the efflux is negligible). None of this pump exists in :meth:`derivative`
+    below -- no saturating term and no pump parameter appear anywhere in this class.
 
-    **2.A simple first-order model**
+    **2. The implemented model: a simple first-order relaxation**
 
-    While, in (Bazhenov, et al., 1998) [2]_, the :math:`Ca^{2+}` dynamics is
-    described by a simple first-order model,
+    What :meth:`derivative` actually computes is the first-order model of
+    (Bazhenov, et al., 1998) [2]_, which that paper's own Appendix credits
+    to (Destexhe et al., 1994) [1]_:
 
     .. math::
 
@@ -187,10 +356,13 @@ class CalciumDetailed(Calcium, DynamicNernstIon):
 
     where :math:`I_{Ca}` is the summation of all :math:`Ca ^{2+}` currents, :math:`d`
     is the thickness of the perimembrane "shell" in which calcium is able to affect
-    membrane properties :math:`(1.\, \mathrm{\mu M})`, :math:`z=2` is the valence of the
+    membrane properties :math:`(1.\, \mathrm{\mu m})`, :math:`z=2` is the valence of the
     :math:`Ca ^{2+}` ion, :math:`F` is the Faraday constant, and :math:`\tau_{C a}` is
     the :math:`Ca ^{2+}` removal rate. The resting :math:`Ca ^{2+}` concentration was
-    set to be :math:`\left[ Ca ^{2+}\right]_{\text {rest}}=.05\, \mathrm{\mu M}` .
+    set to be :math:`\left[ Ca ^{2+}\right]_{\text {rest}}=2.4\times 10^{-4}\, \mathrm{mM}`
+    (:math:`0.24\, \mathrm{\mu M}`), matching the default ``C_rest`` below exactly.
+    BrainCell additionally clamps the influx term at zero before adding it (see
+    Notes), which neither paper does.
 
     **3. The reversal potential**
 
@@ -208,30 +380,91 @@ class CalciumDetailed(Calcium, DynamicNernstIon):
 
     Parameters
     ----------
-    d : float
-      The thickness of the peri-membrane "shell".
-    F : float
-      The Faraday constant. (:math:`C*mmol^{-1}`)
-    tau : float
-      The time constant of the :math:`Ca ^{2+}` removal rate. (ms)
-    C_rest : float
-      The resting :math:`Ca ^{2+}` concentration.
-    Co : float
-      The :math:`Ca ^{2+}` concentration outside of the membrane.
-    R : float
-      The gas constant. (:math:` J*mol^{-1}*K^{-1}`)
+    size : brainstate.typing.Size
+        The size of the simulation target, typically the number of
+        neurons or compartments. Forwarded unchanged to :class:`Calcium`.
+    temp : array-like or callable, optional
+        Absolute temperature used by the Nernst equation in
+        :attr:`~braincell.ion._base.DynamicNernstIon.E`. Defaults to
+        36 degrees Celsius, converted to kelvin via
+        ``u.celsius2kelvin`` before being stored.
+    d : array-like or callable, optional
+        Thickness :math:`d` of the peri-membrane calcium shell.
+        Defaults to ``1.0 um``.
+    tau : array-like or callable, optional
+        Time constant :math:`\tau_{Ca}` of the calcium removal rate.
+        Defaults to ``5.0 ms``.
+    C_rest : array-like or callable, optional
+        Resting intracellular calcium concentration
+        :math:`[Ca^{2+}]_{rest}` that ``Ci`` relaxes toward. Defaults
+        to ``2.4e-4 mM`` (``0.24 uM``).
+    Co : array-like or callable or None, optional
+        Extracellular calcium concentration. Defaults to ``None``,
+        which falls back to :attr:`Calcium.default_Co` inside
+        :meth:`DynamicNernstIon._init_dynamic_nernst_ion`.
+    Ci_initializer : array-like or callable, optional
+        Initializer for the dynamic ``Ci`` state. Defaults to a
+        constant ``2.4e-4 mM`` initializer, matching ``C_rest``.
+    name : str or None, optional
+        Runtime ion instance name. Defaults to ``None``.
+    **channels
+        Channel instances to attach to this ion, forwarded unchanged to
+        :class:`Calcium`.
+
+    Raises
+    ------
+    ValueError
+        If ``temp`` is explicitly passed as ``None``.
+        :meth:`DynamicNernstIon._init_dynamic_nernst_ion` requires an
+        explicit temperature and does not fall back to a class
+        default.
+
+    See Also
+    --------
+    Calcium : Base calcium ion family this class computes a reversal
+        potential for.
+    CalciumFirstOrder : Sibling dynamic calcium ion with a different
+        first-order form.
+
+    Notes
+    -----
+    ``derivative`` rectifies the influx term with
+    ``u.math.maximum(drive, 0)`` so that only inward calcium current
+    raises ``Ci``; no such clamp appears in either Destexhe et al.
+    (1994) [1]_ or Bazhenov et al. (1998) [2]_, and it is a BrainCell
+    addition.
+
+    Bazhenov's Appendix writes the influx term with one lumped
+    constant, :math:`A = 5.18 \times 10^{-5}\, \mathrm{mM\, cm^2 /
+    (ms\, \mu A)}`. BrainCell instead writes it out as
+    :math:`1/(zFd)`, with :math:`z=2` hard-coded and ``d`` exposed as
+    a constructor parameter. The two are the same term parameterized
+    differently, not a divergence -- it is why ``d`` is a BrainCell
+    parameter and not one of Bazhenov's.
+
+    Section 1's Faraday and gas constants, :math:`F = 96489\,
+    \mathrm{C/mol}` and :math:`R = 8.31441\, \mathrm{J/(mol\, K)}`,
+    are the paper's own literal values, quoted above for reference
+    only. The code instead uses the CODATA constants
+    ``u.faraday_constant`` and ``u.gas_constant`` (via
+    :attr:`~braincell.ion._base.DynamicNernstIon.E`), neither of
+    which is a constructor parameter.
 
     References
     ----------
-
-    .. [1] Destexhe, Alain, Agnessa Babloyantz, and Terrence J. Sejnowski.
-           "Ionic mechanisms for intrinsic slow oscillations in thalamic
-           relay neuron." Biophysical journal 65, no. 4 (1993): 1538-1552.
-    .. [2] Bazhenov, Maxim, Igor Timofeev, Mircea Steriade, and Terrence J.
-           Sejnowski. "Cellular and network models for intrathalamic augmenting
-           responses during 10-Hz stimulation." Journal of neurophysiology 79,
-           no. 5 (1998): 2730-2748.
-
+    .. [1] Destexhe, A., Contreras, D., Sejnowski, T. J., & Steriade, M.
+           (1994). A model of spindle rhythmicity in the isolated thalamic
+           reticular nucleus. Journal of Neurophysiology, 72(2), 803-818.
+           doi:10.1152/jn.1994.72.2.803
+    .. [2] Bazhenov, M., Timofeev, I., Steriade, M., & Sejnowski, T. J.
+           (1998). Cellular and network models for intrathalamic
+           augmenting responses during 10-Hz stimulation. Journal of
+           Neurophysiology, 79(5), 2730-2748.
+           doi:10.1152/jn.1998.79.5.2730
+    .. [3] Destexhe, A., Babloyantz, A., & Sejnowski, T. J. (1993). Ionic
+           mechanisms for intrinsic slow oscillations in thalamic relay
+           neurons. Biophysical Journal, 65(4), 1538-1552.
+           doi:10.1016/S0006-3495(93)81190-1
     """
 
     __module__ = 'braincell.ion'
@@ -271,13 +504,86 @@ class CalciumDetailed(Calcium, DynamicNernstIon):
 
 @register_ion("CalciumFirstOrder")
 class CalciumFirstOrder(Calcium, DynamicNernstIon):
-    r"""
-    The first-order calcium concentration model.
+    r"""First-order calcium concentration model with rectified current drive.
+
+    Parameters
+    ----------
+    size : brainstate.typing.Size
+        The size of the simulation target, typically the number of
+        neurons or compartments. Forwarded unchanged to :class:`Calcium`.
+    temp : array-like or callable, optional
+        Absolute temperature used by the Nernst equation in
+        :attr:`~braincell.ion._base.DynamicNernstIon.E`. Defaults to
+        36 degrees Celsius, converted to kelvin via
+        ``u.celsius2kelvin`` before being stored.
+    alpha : array-like or callable, optional
+        Scale factor applied to the rectified current-drive term in
+        :meth:`derivative`. Defaults to ``0.13`` (a bare, unitless
+        number).
+    beta : array-like or callable, optional
+        First-order decay rate applied to ``Ci`` in :meth:`derivative`.
+        Defaults to ``0.075`` (a bare, unitless number).
+    Co : array-like or callable or None, optional
+        Extracellular calcium concentration. Defaults to ``None``,
+        which falls back to :attr:`Calcium.default_Co` inside
+        :meth:`DynamicNernstIon._init_dynamic_nernst_ion`.
+    Ci_initializer : array-like or callable, optional
+        Initializer for the dynamic ``Ci`` state. Defaults to a
+        constant ``2.4e-4 mM`` initializer.
+    name : str or None, optional
+        Runtime ion instance name. Defaults to ``None``.
+    **channels
+        Channel instances to attach to this ion, forwarded unchanged to
+        :class:`Calcium`.
+
+    Raises
+    ------
+    ValueError
+        If ``temp`` is explicitly passed as ``None``.
+        :meth:`DynamicNernstIon._init_dynamic_nernst_ion` requires an
+        explicit temperature and does not fall back to a class
+        default.
+
+    See Also
+    --------
+    Calcium : Base calcium ion family this class computes a reversal
+        potential for.
+    CalciumDetailed : Sibling dynamic calcium ion with a first-order
+        relaxation model driven by a unit-converted current term.
+
+    Notes
+    -----
+    :meth:`derivative` computes
 
     .. math::
 
-       Ca' = -\alpha I_{Ca} + -\beta Ca
+        \frac{dCi}{dt} = \max(\alpha \cdot I_{Ca},\ 0) - \beta \cdot Ci
 
+    i.e. a *rectified*, positively-scaled current drive minus a
+    first-order decay -- not a symmetric ``-alpha*I_Ca - beta*Ca``
+    form. ``alpha`` and ``beta`` are generic first-order-model
+    coefficients with no identified literature source; they are not
+    traceable to a specific paper from the code alone, so none is
+    cited here.
+
+    ``alpha`` and ``beta`` are stored as bare, unitless numbers, while
+    ``total_current`` (the calcium current summed over attached
+    channels) carries current-density units such as
+    :math:`\mathrm{\mu A/cm^2}`. Because :meth:`derivative` compares
+    ``self.alpha * total_current`` directly against ``0.0 * u.mM`` in
+    ``u.math.maximum``, calling ``derivative`` with any real,
+    unit-typed ``total_current`` raises
+    ``brainunit.UnitMismatchError``; calling it with no channels
+    attached instead raises ``TypeError``, because ``current()``
+    returns ``None`` rather than a zero quantity when there are no
+    channels to sum. Unlike :class:`CalciumDetailed`, which divides
+    its current term by :math:`2Fd` before clamping (so the clamped
+    quantity and the zero it is compared against share the same
+    derived unit), this class performs no such conversion, so
+    ``derivative`` is not currently callable with a real
+    ``total_current`` in either configuration. This is an existing
+    implementation defect, not a documentation issue; it is recorded
+    here rather than fixed, since this change is documentation-only.
     """
 
     __module__ = 'braincell.ion'
@@ -316,7 +622,10 @@ class CalciumFirstOrder(Calcium, DynamicNernstIon):
 class ToyCaBindingKinetic_SU2015_DCN(Calcium, KineticIon):
     r"""Minimal reversible calcium-binding toy for ``KineticIon`` validation.
 
-    The mechanism models one reversible buffering step:
+    This is a BrainCell import-path validation fixture, not a model of
+    a published mechanism -- the ``SU2015_DCN`` suffix follows
+    BrainCell's naming convention only. The mechanism models one
+    reversible buffering step:
 
     .. math::
 
@@ -330,6 +639,72 @@ class ToyCaBindingKinetic_SU2015_DCN(Calcium, KineticIon):
 
     ``B`` is solved algebraically from the conservation rule while ``Ci`` and
     ``BC`` are integrated as differential species.
+
+    Parameters
+    ----------
+    size : brainstate.typing.Size
+        The size of the simulation target, typically the number of
+        neurons or compartments. Forwarded unchanged to :class:`Calcium`.
+    temp : array-like or callable, optional
+        Absolute temperature used by the Nernst equation in
+        :attr:`~braincell.ion._base.KineticIon.E`. Defaults to 36
+        degrees Celsius, converted to kelvin via ``u.celsius2kelvin``
+        before being stored.
+    kf : array-like or callable, optional
+        Forward rate constant of the ``Ci + B -> BC`` reaction.
+        Defaults to ``2.0 / (mM * ms)``.
+    kb : array-like or callable, optional
+        Backward rate constant of the ``BC -> Ci + B`` reaction.
+        Defaults to ``0.5 / ms``.
+    Btot : array-like or callable, optional
+        Total conserved concentration of ``B + BC``. Defaults to
+        ``1.0 mM``.
+    Co : array-like or callable or None, optional
+        Extracellular calcium concentration. Defaults to ``None``,
+        which falls back to :attr:`Calcium.default_Co` inside
+        :meth:`KineticIon._init_kinetic_ion`.
+    Ci_initializer : array-like or callable, optional
+        Initializer for the ``Ci`` species. Defaults to ``0.10 mM``.
+    BC_initializer : array-like or callable, optional
+        Initializer for the ``BC`` species. Defaults to ``0.00 mM``.
+    solver : str, optional
+        Integrator name used for the reaction network. Defaults to
+        ``"rk4"``.
+    substeps : int, optional
+        Number of solver substeps run inside one parent update.
+        Defaults to ``5``.
+    name : str or None, optional
+        Runtime ion instance name. Defaults to ``None``.
+    **channels
+        Channel instances to attach to this ion, forwarded unchanged to
+        :class:`Calcium`.
+
+    Raises
+    ------
+    ValueError
+        If ``temp`` is explicitly passed as ``None``, or if
+        ``substeps`` is less than ``1``. Both come from
+        :meth:`KineticIon._init_kinetic_ion`.
+
+    See Also
+    --------
+    Calcium : Base calcium ion family this class attaches the
+        reaction network to.
+    ToyCaBindingSourceKinetic_SU2015_DCN : Same reaction network plus
+        a constant source on ``Ci``.
+    ToyCaBindingIcaSourceKinetic_SU2015_DCN : Same reaction network
+        plus a current-driven source on ``Ci``.
+    braincell.ion._base.KineticIon : Template this class instantiates;
+        documents the NMODL-style semantics shared by all five toy
+        fixtures.
+
+    Notes
+    -----
+    ``B`` is not a differential species: it is declared in
+    :attr:`species` for readability, but :attr:`conserves` marks it as
+    the ``algebraic`` member of the ``B + BC = Btot`` conservation
+    relation, so its value is recovered from ``BC`` rather than
+    integrated.
     """
 
     __module__ = "braincell.ion"
@@ -394,8 +769,10 @@ class ToyCaBindingKinetic_SU2015_DCN(Calcium, KineticIon):
 class ToyCaBindingSourceKinetic_SU2015_DCN(Calcium, KineticIon):
     r"""Minimal reversible calcium-binding toy with a constant ``Ci`` source.
 
-    The mechanism keeps the same reversible binding network as
-    :class:`ToyCaBindingKinetic_SU2015_DCN`:
+    This is a BrainCell import-path validation fixture, not a model of
+    a published mechanism -- the ``SU2015_DCN`` suffix follows
+    BrainCell's naming convention only. The mechanism keeps the same
+    reversible binding network as :class:`ToyCaBindingKinetic_SU2015_DCN`:
 
     .. math::
 
@@ -406,6 +783,74 @@ class ToyCaBindingSourceKinetic_SU2015_DCN(Calcium, KineticIon):
     .. math::
 
        \frac{d Ca_i}{dt}\Big|_{\text{source}} = s_{Ca}
+
+    Parameters
+    ----------
+    size : brainstate.typing.Size
+        The size of the simulation target, typically the number of
+        neurons or compartments. Forwarded unchanged to :class:`Calcium`.
+    temp : array-like or callable, optional
+        Absolute temperature used by the Nernst equation in
+        :attr:`~braincell.ion._base.KineticIon.E`. Defaults to 36
+        degrees Celsius, converted to kelvin via ``u.celsius2kelvin``
+        before being stored.
+    kf : array-like or callable, optional
+        Forward rate constant of the ``Ci + B -> BC`` reaction.
+        Defaults to ``2.0 / (mM * ms)``.
+    kb : array-like or callable, optional
+        Backward rate constant of the ``BC -> Ci + B`` reaction.
+        Defaults to ``0.5 / ms``.
+    Btot : array-like or callable, optional
+        Total conserved concentration of ``B + BC``. Defaults to
+        ``1.0 mM``.
+    ci_source : array-like or callable, optional
+        Constant source rate :math:`s_{Ca}` added to ``dCi/dt``.
+        Defaults to ``0.002 mM / ms``.
+    Co : array-like or callable or None, optional
+        Extracellular calcium concentration. Defaults to ``None``,
+        which falls back to :attr:`Calcium.default_Co` inside
+        :meth:`KineticIon._init_kinetic_ion`.
+    Ci_initializer : array-like or callable, optional
+        Initializer for the ``Ci`` species. Defaults to ``0.10 mM``.
+    BC_initializer : array-like or callable, optional
+        Initializer for the ``BC`` species. Defaults to ``0.00 mM``.
+    solver : str, optional
+        Integrator name used for the reaction network. Defaults to
+        ``"rk4"``.
+    substeps : int, optional
+        Number of solver substeps run inside one parent update.
+        Defaults to ``5``.
+    name : str or None, optional
+        Runtime ion instance name. Defaults to ``None``.
+    **channels
+        Channel instances to attach to this ion, forwarded unchanged to
+        :class:`Calcium`.
+
+    Raises
+    ------
+    ValueError
+        If ``temp`` is explicitly passed as ``None``, or if
+        ``substeps`` is less than ``1``. Both come from
+        :meth:`KineticIon._init_kinetic_ion`.
+
+    See Also
+    --------
+    Calcium : Base calcium ion family this class attaches the
+        reaction network to.
+    ToyCaBindingKinetic_SU2015_DCN : Same reaction network without the
+        constant source.
+    ToyCaBindingIcaSourceKinetic_SU2015_DCN : Sibling fixture whose
+        source is driven by current instead of a constant rate.
+    braincell.ion._base.KineticIon : Template this class instantiates;
+        documents the NMODL-style semantics shared by all five toy
+        fixtures.
+
+    Notes
+    -----
+    ``B`` is not a differential species: :attr:`conserves` marks it as
+    the ``algebraic`` member of the ``B + BC = Btot`` conservation
+    relation, so its value is recovered from ``BC`` rather than
+    integrated, exactly as in :class:`ToyCaBindingKinetic_SU2015_DCN`.
     """
 
     __module__ = "braincell.ion"
@@ -460,8 +905,88 @@ class ToyCaBindingSourceKinetic_SU2015_DCN(Calcium, KineticIon):
 class ToyCaBindingIcaSourceKinetic_SU2015_DCN(Calcium, KineticIon):
     r"""Minimal reversible calcium-binding toy with current-driven ``Ci`` source.
 
-    The mechanism keeps the same reversible binding network as the earlier
-    toy kinetic ions and drives ``Ci`` with inward-positive calcium current.
+    This is a BrainCell import-path validation fixture, not a model of
+    a published mechanism -- the ``SU2015_DCN`` suffix follows
+    BrainCell's naming convention only. The mechanism keeps the same
+    reversible binding network as the earlier toy kinetic ions and
+    drives ``Ci`` with inward-positive calcium current.
+
+    Parameters
+    ----------
+    size : brainstate.typing.Size
+        The size of the simulation target, typically the number of
+        neurons or compartments. Forwarded unchanged to :class:`Calcium`.
+    temp : array-like or callable, optional
+        Absolute temperature used by the Nernst equation in
+        :attr:`~braincell.ion._base.KineticIon.E`. Defaults to 36
+        degrees Celsius, converted to kelvin via ``u.celsius2kelvin``
+        before being stored.
+    kf : array-like or callable, optional
+        Forward rate constant of the ``Ci + B -> BC`` reaction.
+        Defaults to ``2.0 / (mM * ms)``.
+    kb : array-like or callable, optional
+        Backward rate constant of the ``BC -> Ci + B`` reaction.
+        Defaults to ``0.5 / ms``.
+    Btot : array-like or callable, optional
+        Total conserved concentration of ``B + BC``. Defaults to
+        ``1.0 mM``.
+    kCa : array-like or callable, optional
+        Current-to-flux scale factor used by the ``Ci`` source.
+        Defaults to ``3.45e-7 / coulomb``.
+    depth : array-like or callable, optional
+        Shell depth used by the ``Ci`` source's unit conversion.
+        Defaults to ``0.2 um``.
+    Co : array-like or callable or None, optional
+        Extracellular calcium concentration. Defaults to ``None``,
+        which falls back to :attr:`Calcium.default_Co` inside
+        :meth:`KineticIon._init_kinetic_ion`.
+    Ci_initializer : array-like or callable, optional
+        Initializer for the ``Ci`` species. Defaults to ``0.10 mM``.
+    BC_initializer : array-like or callable, optional
+        Initializer for the ``BC`` species. Defaults to ``0.00 mM``.
+    solver : str, optional
+        Integrator name used for the reaction network. Defaults to
+        ``"rk4"``.
+    substeps : int, optional
+        Number of solver substeps run inside one parent update.
+        Defaults to ``5``.
+    name : str or None, optional
+        Runtime ion instance name. Defaults to ``None``.
+    **channels
+        Channel instances to attach to this ion, forwarded unchanged to
+        :class:`Calcium`.
+
+    Raises
+    ------
+    ValueError
+        If ``temp`` is explicitly passed as ``None``, or if
+        ``substeps`` is less than ``1``. Both come from
+        :meth:`KineticIon._init_kinetic_ion`.
+
+    See Also
+    --------
+    Calcium : Base calcium ion family this class attaches the
+        reaction network to.
+    ToyCaBindingKinetic_SU2015_DCN : Same reaction network without any
+        source term.
+    ToyCaBindingSourceKinetic_SU2015_DCN : Sibling fixture with a
+        constant, rather than current-driven, source.
+    braincell.ion._base.KineticIon : Template this class instantiates;
+        documents the NMODL-style semantics shared by all five toy
+        fixtures.
+
+    Notes
+    -----
+    The ``Ci`` source evaluates to zero when ``total_current`` is
+    ``None`` (no channels attached), and otherwise to
+    ``(kCa / depth) * total_current * 1e4``, with ``total_current``
+    read in ``mA/cm**2`` and the ``1e4`` factor converting that
+    current density into the ``mM/ms`` units the source needs -- the
+    standard cross-sectional-area conversion used across BrainCell's
+    current-driven calcium sources. This class sets
+    ``uses_total_current = True``, so :meth:`KineticIon`'s derivative
+    hook always supplies a real ``total_current`` once at least one
+    channel is attached, unlike :class:`CalciumFirstOrder`.
     """
 
     __module__ = "braincell.ion"
@@ -529,9 +1054,114 @@ class ToyCaBindingIcaSourceKinetic_SU2015_DCN(Calcium, KineticIon):
 class ToyCaPumpFactorKinetic_SU2015_DCN(Calcium, KineticIon):
     r"""Minimal factor-crossing toy with cytosolic and pump-area compartments.
 
-    ``Ci`` lives in a cytosolic volume factor while pump states live in an
-    area-like factor. The toy keeps the state count minimal while exercising
-    mixed-factor reaction, conservation, and current-driven source paths.
+    This is a BrainCell import-path validation fixture, not a model of
+    a published mechanism -- the ``SU2015_DCN`` suffix follows
+    BrainCell's naming convention only. ``Ci`` lives in a cytosolic
+    volume factor while pump states live in an area-like factor. The
+    toy keeps the state count minimal while exercising mixed-factor
+    reaction, conservation, and current-driven source paths, plus an
+    irreversible (one-way) release reaction.
+
+    Parameters
+    ----------
+    size : brainstate.typing.Size
+        The size of the simulation target, typically the number of
+        neurons or compartments. Forwarded unchanged to :class:`Calcium`.
+    temp : array-like or callable, optional
+        Absolute temperature used by the Nernst equation in
+        :attr:`~braincell.ion._base.KineticIon.E`. Defaults to 36
+        degrees Celsius, converted to kelvin via ``u.celsius2kelvin``
+        before being stored.
+    kf : array-like or callable, optional
+        Forward rate constant of the ``Ci + PumpFree -> PumpBound``
+        binding reaction. Defaults to ``2.0 / (mM * ms)``.
+    kb : array-like or callable, optional
+        Backward rate constant of the ``PumpBound -> Ci + PumpFree``
+        unbinding reaction. Defaults to ``0.5 / ms``.
+    k_rel : array-like or callable, optional
+        Rate constant of the irreversible ``PumpBound -> PumpFree``
+        release reaction (no back-reaction; ``backward=None``).
+        Defaults to ``0.05 / ms``.
+    PumpTot : array-like or callable, optional
+        Per-area total pump concentration used by the conserved pool
+        ``PumpFree + PumpBound = PumpTot * pump_area``. Defaults to
+        ``1.0 mM * um``.
+    kCa : array-like or callable, optional
+        Current-to-flux scale factor used by the ``Ci`` source.
+        Defaults to ``3.45e-7 / coulomb``.
+    depth : array-like or callable, optional
+        Shell depth used by the ``Ci`` source's unit conversion.
+        Defaults to ``0.2 um``.
+    cyt_volume : array-like or callable, optional
+        Constant cytosolic volume backing the ``cyto`` factor that
+        ``Ci`` lives in. Defaults to ``3.0 um**3``. Unlike
+        :class:`ToyDiamFactorKinetic_SU2015_DCN`, this value is a
+        plain constructor constant, not derived from compartment
+        geometry.
+    pump_area : array-like or callable, optional
+        Constant membrane area backing the ``pump_area`` factor that
+        ``PumpFree``/``PumpBound`` live in. Defaults to ``3.0 um**2``.
+        Also a plain constructor constant, not geometry-derived.
+    Co : array-like or callable or None, optional
+        Extracellular calcium concentration. Defaults to ``None``,
+        which falls back to :attr:`Calcium.default_Co` inside
+        :meth:`KineticIon._init_kinetic_ion`.
+    Ci_initializer : array-like or callable, optional
+        Initializer for the ``Ci`` species. Defaults to ``0.10 mM``.
+    PumpBound_initializer : array-like or callable, optional
+        Initializer for the ``PumpBound`` species. Defaults to
+        ``0.00 mM * um``.
+    solver : str, optional
+        Integrator name used for the reaction network. Defaults to
+        ``"rk4"``.
+    substeps : int, optional
+        Number of solver substeps run inside one parent update.
+        Defaults to ``5``.
+    name : str or None, optional
+        Runtime ion instance name. Defaults to ``None``.
+    **channels
+        Channel instances to attach to this ion, forwarded unchanged to
+        :class:`Calcium`.
+
+    Raises
+    ------
+    ValueError
+        If ``temp`` is explicitly passed as ``None``, or if
+        ``substeps`` is less than ``1``. Both come from
+        :meth:`KineticIon._init_kinetic_ion`.
+
+    See Also
+    --------
+    Calcium : Base calcium ion family this class attaches the
+        reaction network to.
+    ToyCaBindingIcaSourceKinetic_SU2015_DCN : Sibling fixture with the
+        same current-driven ``Ci`` source but a single, non-factor
+        binding partner.
+    ToyDiamFactorKinetic_SU2015_DCN : Sibling fixture whose factors
+        are derived from runtime compartment geometry instead of
+        fixed constructor constants.
+    braincell.ion._base.KineticIon : Template this class instantiates;
+        documents the NMODL-style semantics shared by all five toy
+        fixtures, including the ``Factor`` mechanism.
+
+    Notes
+    -----
+    ``PumpFree`` is the algebraic member of the conserved pool
+    ``PumpFree + PumpBound = PumpTot * pump_area``; it is recovered
+    from ``PumpBound`` by subtraction rather than integrated directly.
+    The second reaction, ``PumpBound -> PumpFree``, has
+    ``backward=None`` and is therefore irreversible: it drains
+    ``PumpBound`` at rate ``k_rel * pump_area`` with no corresponding
+    forward-binding contribution of its own.
+
+    The ``Ci`` source evaluates to zero when ``total_current`` is
+    ``None`` (no channels attached), and otherwise to
+    ``cyt_volume * (kCa / depth) * total_current * 1e4``, with
+    ``total_current`` read in ``mA/cm**2``. This mirrors
+    :class:`ToyCaBindingIcaSourceKinetic_SU2015_DCN`'s source formula,
+    additionally scaled by ``cyt_volume`` because ``Ci`` here lives in
+    a volume factor rather than being unfactored. This class sets
+    ``uses_total_current = True``.
     """
 
     __module__ = "braincell.ion"
@@ -635,9 +1265,11 @@ class ToyCaPumpFactorKinetic_SU2015_DCN(Calcium, KineticIon):
 class ToyDiamFactorKinetic_SU2015_DCN(Calcium, KineticIon):
     r"""Minimal geometry-factor toy with runtime-derived cytosolic strip factors.
 
-    ``Ci`` lives in a thin strip volume derived from the runtime midpoint
-    diameter, while ``PumpFree`` and ``PumpBound`` live on a line-like
-    membrane factor:
+    This is a BrainCell import-path validation fixture, not a model of
+    a published mechanism -- the ``SU2015_DCN`` suffix follows
+    BrainCell's naming convention only. ``Ci`` lives in a thin strip
+    volume derived from the runtime midpoint diameter, while
+    ``PumpFree`` and ``PumpBound`` live on a line-like membrane factor:
 
     .. math::
 
@@ -656,6 +1288,105 @@ class ToyDiamFactorKinetic_SU2015_DCN(Calcium, KineticIon):
     .. math::
 
        PumpFree + PumpBound = PumpTot \cdot pump\_area
+
+    Parameters
+    ----------
+    size : brainstate.typing.Size
+        The size of the simulation target, typically the number of
+        neurons or compartments. Forwarded unchanged to :class:`Calcium`.
+    temp : array-like or callable, optional
+        Absolute temperature used by the Nernst equation in
+        :attr:`~braincell.ion._base.KineticIon.E`. Defaults to 36
+        degrees Celsius, converted to kelvin via ``u.celsius2kelvin``
+        before being stored.
+    kf : array-like or callable, optional
+        Forward rate constant of the ``Ci + PumpFree -> PumpBound``
+        reaction, applied per unit ``pi * diam_mid``. Defaults to
+        ``2.0 / (mM * ms)``.
+    kb : array-like or callable, optional
+        Backward rate constant of the ``PumpBound -> Ci + PumpFree``
+        reaction, applied per unit ``pi * diam_mid``. Defaults to
+        ``0.5 / ms``.
+    PumpTot : array-like or callable, optional
+        Per-area total pump concentration used by the conserved pool
+        ``PumpFree + PumpBound = PumpTot * pi * diam_mid``. Defaults
+        to ``1.0 mM * um``.
+    depth : array-like or callable, optional
+        Strip depth multiplying ``pi * diam_mid`` to form the
+        ``cyto`` factor that ``Ci`` lives in. Defaults to ``1.0 um``,
+        which differs from every other toy fixture in this module
+        (they default ``depth`` to ``0.2 um``).
+    Co : array-like or callable or None, optional
+        Extracellular calcium concentration. Defaults to ``None``,
+        which falls back to :attr:`Calcium.default_Co` inside
+        :meth:`KineticIon._init_kinetic_ion`.
+    Ci_initializer : array-like or callable, optional
+        Initializer for the ``Ci`` species. Defaults to ``0.10 mM``.
+    PumpBound_initializer : array-like or callable, optional
+        Initializer for the ``PumpBound`` species. Defaults to
+        ``0.00 mM * um``.
+    solver : str, optional
+        Integrator name used for the reaction network. Defaults to
+        ``"backward_euler"``, unlike every other toy fixture in this
+        module (they default to ``"rk4"``).
+    substeps : int, optional
+        Number of solver substeps run inside one parent update.
+        Defaults to ``1``, unlike every other toy fixture in this
+        module (they default to ``5``).
+    name : str or None, optional
+        Runtime ion instance name. Defaults to ``None``.
+    **channels
+        Channel instances to attach to this ion, forwarded unchanged to
+        :class:`Calcium`.
+
+    Raises
+    ------
+    ValueError
+        If ``temp`` is explicitly passed as ``None``, or if
+        ``substeps`` is less than ``1``. Both come from
+        :meth:`KineticIon._init_kinetic_ion`.
+
+    See Also
+    --------
+    Calcium : Base calcium ion family this class attaches the
+        reaction network to.
+    ToyCaPumpFactorKinetic_SU2015_DCN : Sibling fixture with the same
+        binding/pump topology, but whose ``cyto``/``pump_area``
+        factors are fixed constructor constants instead of
+        geometry-derived quantities.
+    braincell.ion._base.KineticIon : Template this class instantiates;
+        documents the NMODL-style semantics shared by all five toy
+        fixtures, including the ``Factor`` mechanism.
+
+    Notes
+    -----
+    ``diam_mid`` is **not** a constructor parameter of this class. It
+    is a compartment-geometry attribute injected at runtime onto every
+    ion instance from the enclosing compartment's context (see
+    ``braincell.mech._context``, populated from
+    ``braincell._discretization``), documented there as the diameter
+    at the control-volume midpoint. The ``cyto`` and ``pump_area``
+    factors, and the reaction/conservation coefficients above, read
+    ``self.diam_mid`` directly and so are only well-defined once this
+    ion is attached to a compartment that supplies that context.
+
+    This class has no ``sources``: ``Ci`` is driven only by the
+    binding reaction, with no current-driven or constant influx term.
+
+    ``PumpFree`` is the algebraic member of the conserved pool; it is
+    recovered from ``PumpBound`` by subtraction rather than integrated
+    directly.
+
+    The corresponding ``.mod`` fixture's ``pump_area``/``cyto``
+    constants are compiled by NEURON to the fixed decimal
+    ``62.8319``, a rounding of the exact value
+    ``pi * diam_mid * depth`` (``62.83185307179586`` for the
+    fixture's reference geometry) would produce. BrainCell does not
+    substitute that compiled decimal: both factors are recomputed at
+    runtime from ``self.diam_mid``, so results track the live geometry
+    exactly rather than reproducing NEURON's rounded constant. No
+    other toy or ``Cdp*`` mechanism in this module carries this
+    exception.
     """
 
     __module__ = "braincell.ion"

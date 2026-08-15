@@ -52,6 +52,12 @@ class Factor:
         Callable ``value(owner)`` returning the factor for the concrete ion
         instance. This factor is treated as constant during one integration
         step.
+
+    See Also
+    --------
+    Species : May reference this factor by name via its ``factor`` field.
+    KineticIon : Template that consumes ``Factor`` entries through its
+        ``factors`` class variable.
     """
 
     name: str
@@ -72,6 +78,15 @@ class Species:
     factor : str or None, optional
         Optional :class:`Factor` name used for visible/amount conversion.
         ``None`` denotes identity conversion.
+
+    See Also
+    --------
+    Factor : Optional conversion factor referenced by name via ``factor``.
+    Reaction : References species by name in ``lhs``/``rhs``.
+    Source : References one species by name via ``target``.
+    Conserve : References species by name via ``species``/``algebraic``.
+    KineticIon : Template that consumes ``Species`` entries through its
+        ``species`` class variable.
     """
 
     name: str
@@ -100,6 +115,12 @@ class Reaction:
         Optional callable for the reverse direction. ``None`` denotes a
         single-direction reaction. As with ``forward``, its returned value is
         multiplied directly by the right-hand visible species product.
+
+    See Also
+    --------
+    Species : Declares the species named in ``lhs``/``rhs``.
+    KineticIon : Template that consumes ``Reaction`` entries through its
+        ``reactions`` class variable.
     """
 
     lhs: dict[str, int]
@@ -120,6 +141,12 @@ class Source:
         Callable ``flux(owner, V, species_values)`` returning a contribution to
         the factor-scaled derivative of ``target``. When ``target`` has no
         factor this reduces to the ordinary visible derivative.
+
+    See Also
+    --------
+    Species : Declares the species named by ``target``.
+    KineticIon : Template that consumes ``Source`` entries through its
+        ``sources`` class variable.
     """
 
     target: str
@@ -139,6 +166,12 @@ class Conserve:
     total : callable
         Callable ``total(owner, V, species_values)`` returning the conserved
         pool size in factor-scaled units.
+
+    See Also
+    --------
+    Species : Declares the species named in ``species``/``algebraic``.
+    KineticIon : Template that consumes ``Conserve`` entries through its
+        ``conserves`` class variable.
     """
 
     species: tuple[str, ...]
@@ -147,7 +180,31 @@ class Conserve:
 
 
 class FixedIon(brainstate.mixin.Mixin):
-    """Helper mixin for ions with fixed ``Ci/Co/E`` state."""
+    """Mixin for ions with a fixed ``Ci``/``Co``/``E`` triple.
+
+    A concrete ion subclass calls :meth:`_init_fixed_ion` from its own
+    ``__init__`` to materialize ``Ci``, ``Co``, ``E``, and ``valence`` as
+    plain (non-state) attributes; none of the four evolve during
+    simulation. ``Ci``, ``Co``, and ``valence`` each fall back to the
+    class-level ``default_Ci``, ``default_Co``, and ``default_valence``
+    (resolved via ``type(self)``, so a subclass's own overrides win)
+    when passed ``None``. ``E`` has no such fallback and must be
+    supplied explicitly.
+
+    Raises
+    ------
+    ValueError
+        If :meth:`_init_fixed_ion` is called with ``E`` left as
+        ``None``.
+
+    See Also
+    --------
+    InitNernstIon : Sibling mixin with fixed ``Ci``/``Co`` but a stored
+        reversal potential computed once from the Nernst equation
+        instead of supplied directly.
+    DynamicNernstIon : Sibling mixin with a dynamic ``Ci`` state and a
+        reversal potential recomputed from Nernst on every read.
+    """
 
     def _init_fixed_ion(self, *, Ci=None, Co=None, E=None, valence=None):
         """Materialize one fixed ion payload onto ``self``.
@@ -188,7 +245,50 @@ class FixedIon(brainstate.mixin.Mixin):
 
 
 class InitNernstIon(brainstate.mixin.Mixin):
-    """Helper mixin for ions with fixed ``Ci/Co`` and stored Nernst ``E``."""
+    r"""Mixin for ions with fixed ``Ci``/``Co`` and a stored Nernst ``E``.
+
+    A concrete ion subclass calls :meth:`_init_nernst_ion` from its own
+    ``__init__`` to materialize ``Ci``, ``Co``, ``valence``, and
+    ``temp`` as plain (non-state) attributes, exactly as
+    :class:`FixedIon` does for its own three. ``E`` is not stored
+    directly at construction time; see Notes.
+
+    Raises
+    ------
+    ValueError
+        If :meth:`_init_nernst_ion` is called with ``temp`` left as
+        ``None``.
+
+    See Also
+    --------
+    FixedIon : Sibling mixin with a fixed reversal potential supplied
+        directly instead of computed from Nernst.
+    DynamicNernstIon : Sibling mixin with a dynamic ``Ci`` state and a
+        reversal potential recomputed from Nernst on every read, rather
+        than stored once.
+
+    Notes
+    -----
+    ``_init_nernst_ion`` sets ``self.E = None`` immediately, and
+    :meth:`_update_reversal` fills it in only later, from the
+    ``_ion_init_state_hook`` and ``_ion_reset_state_hook`` lifecycle
+    hooks. Between construction and the first state initialization or
+    reset, ``E`` is ``None``.
+
+    The stored formula, transcribed as ``_update_reversal`` writes it,
+    is
+
+    .. math::
+
+        E = \frac{R \cdot \mathrm{temp}}{\mathrm{valence} \cdot F}
+            \log\!\left(\frac{C_o}{C_i}\right)
+
+    where :math:`R` is the gas constant and :math:`F` is the Faraday
+    constant. The argument to the logarithm is :math:`C_o / C_i`
+    (extracellular over intracellular), and ``valence`` divides inside
+    the prefactor rather than appearing as a separate multiplicative
+    term.
+    """
 
     def _init_nernst_ion(self, *, Ci=None, Co=None, temp=None, valence=None):
         """Initialize fixed concentrations and stored-Nernst parameters.
@@ -245,7 +345,63 @@ class InitNernstIon(brainstate.mixin.Mixin):
 
 
 class DynamicNernstIon(brainstate.mixin.Mixin):
-    """Helper mixin for ions with dynamic ``Ci`` and computed Nernst ``E``."""
+    r"""Mixin for ions with a dynamic ``Ci`` state and Nernst-computed ``E``.
+
+    Unlike :class:`FixedIon` and :class:`InitNernstIon`, a concrete ion
+    subclass built on this mixin takes a ``Ci_initializer`` instead of a
+    fixed ``Ci`` value: :meth:`_init_dynamic_nernst_ion` materializes
+    ``Co``, ``valence``, and ``temp`` as plain (non-state) attributes and
+    only *remembers* the initializer, in ``self._Ci_initializer``. The
+    runtime ``Ci`` :class:`~brainstate.State` itself is created later, by
+    :meth:`_ion_init_state_hook`, and refreshed by
+    :meth:`_ion_reset_state_hook`; its time derivative is written by
+    :meth:`_ion_compute_derivative_hook`, which delegates to the
+    subclass's own :meth:`derivative`.
+
+    Raises
+    ------
+    ValueError
+        If :meth:`_init_dynamic_nernst_ion` is called with ``temp`` left
+        as ``None`` -- the same failure mode as
+        :meth:`InitNernstIon._init_nernst_ion`, not
+        :meth:`FixedIon._init_fixed_ion`, which instead requires an
+        explicit ``E``.
+
+    See Also
+    --------
+    FixedIon : Sibling mixin with a fixed reversal potential and no
+        dynamic state.
+    InitNernstIon : Sibling mixin with fixed ``Ci``/``Co`` and a
+        reversal potential computed once and cached, rather than
+        recomputed on every read.
+
+    Notes
+    -----
+    ``E`` is a property, not a stored attribute: every read recomputes
+    it from the current ``Ci``, ``Co``, ``temp``, and ``valence`` via the
+    same Nernst formula as :class:`InitNernstIon`,
+
+    .. math::
+
+        E = \frac{R \cdot \mathrm{temp}}{\mathrm{valence} \cdot F}
+            \log\!\left(\frac{C_o}{C_i}\right)
+
+    so ``E`` always reflects the live ``Ci`` state rather than a value
+    cached at the last lifecycle hook. :meth:`derivative` itself raises
+    :class:`NotImplementedError` on this mixin; a concrete subclass
+    must override it to return ``dCi/dt`` for its own dynamic ion
+    model.
+
+    Attributes
+    ----------
+    uses_total_current : bool, default False
+        When ``True``, :meth:`_ion_compute_derivative_hook` precomputes
+        the aggregate ion current -- reusing a step-start cached value
+        on ``self._cached_total_current`` when present, otherwise
+        evaluating ``self.current(V, include_external=True)`` -- and
+        passes it to ``derivative(..., total_current=...)``. When
+        ``False`` (the default), ``total_current`` is always ``None``.
+    """
 
     #: When true, the template precomputes the aggregate ion current and passes
     #: it to ``derivative(..., total_current=...)``.
@@ -341,6 +497,24 @@ class KineticIon(IndependentIntegration):
     intracellular concentration; ``Co``, ``temp``, and ``valence`` remain
     ion-level fields.
 
+    Raises
+    ------
+    ValueError
+        If :meth:`_init_kinetic_ion` is called with ``temp`` left as
+        ``None``, or with ``substeps`` (after falling back to
+        :attr:`default_substeps` when not supplied) less than ``1``.
+
+    See Also
+    --------
+    Factor : Declares one conversion factor consumed via :attr:`factors`.
+    Species : Declares one reaction-network species consumed via
+        :attr:`species`.
+    Reaction : Declares one mass-action reaction consumed via
+        :attr:`reactions`.
+    Source : Declares one source term consumed via :attr:`sources`.
+    Conserve : Declares one algebraic conservation relation consumed via
+        :attr:`conserves`.
+
     Notes
     -----
     Species live in visible units during integration. ``factor`` only mediates
@@ -348,6 +522,46 @@ class KineticIon(IndependentIntegration):
     mapping; species values are not stored in scaled form. Reaction laws remain
     in the visible domain, matching NEURON's ``KINETIC``/``COMPARTMENT``
     behavior.
+
+    The NMODL semantics this template reproduces -- ``KINETIC`` reaction
+    statements, ``COMPARTMENT`` volume/factor scaling, and the
+    ``CONSERVE`` statement for algebraic species -- are documented by
+    ``.. [1]``, the primary source for NMODL itself. ``.. [2]`` is the
+    reference text for the surrounding NEURON mechanism model.
+
+    References
+    ----------
+    .. [1] Hines, M. L., & Carnevale, N. T. (2000). Expanding NEURON's
+           repertoire of mechanisms with NMODL. Neural Computation,
+           12(5), 995-1007. doi:10.1162/089976600300015475
+    .. [2] Carnevale, N. T., & Hines, M. L. (2006). The NEURON book.
+           Cambridge University Press. doi:10.1017/CBO9780511541612
+
+    Attributes
+    ----------
+    factors : tuple of Factor, default ()
+        Conversion factors available to :attr:`species`, by name.
+    species : tuple of Species, default ()
+        The reaction-network species table. Must contain exactly one
+        entry named ``"Ci"``.
+    reactions : tuple of Reaction, default ()
+        Mass-action reactions among the declared species.
+    sources : tuple of Source, default ()
+        Source terms contributing directly to a diffeq species'
+        derivative.
+    conserves : tuple of Conserve, default ()
+        Algebraic conservation relations resolving one species per
+        entry from the others in its pool.
+    uses_total_current : bool, default False
+        When ``True``, the template precomputes the aggregate ion
+        current and passes it to ``derivative(..., total_current=...)``.
+    default_solver : str, default "backward_euler"
+        Solver name used when :meth:`_init_kinetic_ion` is not passed an
+        explicit ``solver``.
+    default_substeps : int, default 1
+        Number of substeps run inside one parent update, used when
+        :meth:`_init_kinetic_ion` is not passed an explicit
+        ``substeps``.
     """
 
     factors: ClassVar[tuple[Factor, ...]] = ()

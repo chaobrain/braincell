@@ -297,7 +297,7 @@ class SK_SU2015_DCN(OhmicHH):
 
 @register_channel("Kca3p1_MA2020_GoC")
 class Kca3p1_MA2020_GoC(OhmicHH):
-    r"""Kca3.1 (intermediate-conductance) calcium-activated K current, Golgi cell.
+    r"""Kca3.1 (IK) calcium-activated K current, Golgi cell.
 
     Template-based import of ``Kca3p1_MA20_GoC.mod``, part of the
     cerebellar Golgi cell model of (Masoli et al., 2020) [4]_. A
@@ -600,7 +600,7 @@ class Kca3p1_MA2024_PC(Kca3p1_MA2020_GoC):
 
 @register_channel("Kca2p2_MA2020_GoC")
 class Kca2p2_MA2020_GoC(Markov):
-    r"""Kca2.2 (SK2) small-conductance calcium-activated K current, Golgi cell.
+    r"""Kca2.2 (SK2) calcium-activated K current, Golgi cell.
 
     Template-based import of ``Kca2p2_MA20_GoC.mod``, part of the
     cerebellar Golgi cell model of (Masoli et al., 2020) [3]_, with
@@ -785,7 +785,7 @@ class Kca2p2_MA2020_GoC(Markov):
 
 @register_channel("Kca2p2_MA2025_BC")
 class Kca2p2_MA2025_BC(Kca2p2_MA2020_GoC):
-    r"""Kca2.2 (SK2) calcium-activated K current, basket-cell parameterisation.
+    r"""Kca2.2 calcium-activated K current, basket-cell parameterisation.
 
     The same seven-state Kca2.2 Markov scheme documented in
     :class:`Kca2p2_MA2020_GoC`, reused unchanged for the cerebellar
@@ -857,7 +857,7 @@ class Kca2p2_MA2025_BC(Kca2p2_MA2020_GoC):
 
 @register_channel("Kca2p2_MA2020_GrC")
 class Kca2p2_MA2020_GrC(Kca2p2_MA2020_GoC):
-    r"""Kca2.2 (SK2) calcium-activated K current, granule-cell parameterisation.
+    r"""Kca2.2 calcium-activated K current, granule-cell parameterisation.
 
     The same seven-state Kca2.2 Markov scheme documented in
     :class:`Kca2p2_MA2020_GoC`, reused unchanged for the cerebellar
@@ -928,7 +928,8 @@ class Kca2p2_MA2020_GrC(Kca2p2_MA2020_GoC):
            D'Angelo, E. (2020). Parameter tuning differentiates
            granule cell subtypes enriching transmission properties
            at the cerebellum input stage. Communications Biology,
-           3(1), 222. doi:10.1038/s42003-020-0953-x
+           3(1), 222.
+           doi:10.1038/s42003-020-0953-x
     """
 
     __module__ = "braincell.channel"
@@ -936,7 +937,7 @@ class Kca2p2_MA2020_GrC(Kca2p2_MA2020_GoC):
 
 @register_channel("Kca2p2_MA2024_PC")
 class Kca2p2_MA2024_PC(Kca2p2_MA2020_GoC):
-    r"""Kca2.2 (SK2) calcium-activated K current, Purkinje-cell parameterisation.
+    r"""Kca2.2 calcium-activated K current, Purkinje-cell parameterisation.
 
     The same seven-state Kca2.2 Markov scheme documented in
     :class:`Kca2p2_MA2020_GoC`, reused unchanged for the human
@@ -1009,7 +1010,7 @@ class Kca2p2_MA2024_PC(Kca2p2_MA2020_GoC):
 
 @register_channel("Kca2p2_RI2021_SC")
 class Kca2p2_RI2021_SC(Kca2p2_MA2020_GoC):
-    r"""Kca2.2 (SK2) calcium-activated K current, stellate-cell parameterisation.
+    r"""Kca2.2 calcium-activated K current, stellate-cell parameterisation.
 
     The same seven-state Kca2.2 Markov scheme documented in
     :class:`Kca2p2_MA2020_GoC`, reused unchanged for the cerebellar
@@ -1072,7 +1073,8 @@ class Kca2p2_RI2021_SC(Kca2p2_MA2020_GoC):
            Munoz, A., Prestori, F., & D'Angelo, E. (2021). Stellate
            cell computational modeling predicts signal filtering in
            the molecular layer circuit of cerebellum. Scientific
-           Reports, 11(1), 3873. doi:10.1038/s41598-021-83209-w
+           Reports, 11(1), 3873.
+           doi:10.1038/s41598-021-83209-w
     """
 
     __module__ = "braincell.channel"
@@ -1080,7 +1082,7 @@ class Kca2p2_RI2021_SC(Kca2p2_MA2020_GoC):
 
 @register_channel("Kca1p1_MA2020_GoC")
 class Kca1p1_MA2020_GoC(Markov):
-    r"""Kca1.1 (BK/mslo) large-conductance calcium- and voltage-activated K current, Golgi cell.
+    r"""Kca1.1 (BK/mslo) Ca- and voltage-activated K current, Golgi cell.
 
     Template-based import of ``Kca1p1_MA20_GoC.mod``, part of the
     cerebellar Golgi cell model of (Masoli et al., 2020) [3]_, with
@@ -1098,9 +1100,9 @@ class Kca1p1_MA2020_GoC(Markov):
         \begin{aligned}
         I &= g_{\mathrm{max}} \, (O_0 + O_1 + O_2 + O_3 + O_4) \,
              (E_K - V) \\
-        C_i \underset{i K_c k_1}{\overset{(4-i)[\mathrm{Ca}]_i k_1}{
+        C_i \underset{(i+1) K_c k_1}{\overset{(4-i)[\mathrm{Ca}]_i k_1}{
             \rightleftharpoons}} C_{i+1}, &\qquad
-        O_i \underset{i K_o k_1}{\overset{(4-i)[\mathrm{Ca}]_i k_1}{
+        O_i \underset{(i+1) K_o k_1}{\overset{(4-i)[\mathrm{Ca}]_i k_1}{
             \rightleftharpoons}} O_{i+1}, \qquad i = 0,\dots,3 \\
         C_i \underset{\mathrm{pb}_i \, \beta(V)}{\overset{
             \mathrm{pf}_i \, \alpha(V)}{\rightleftharpoons}} O_i,
@@ -1110,8 +1112,11 @@ class Kca1p1_MA2020_GoC(Markov):
         \end{aligned}
 
     where :math:`[\mathrm{Ca}]_i` is expressed in mM, :math:`k_1`,
-    :math:`K_c`, :math:`K_o` are fixed rate/dissociation constants,
-    every rate additionally carries the multiplicative factor
+    :math:`K_c`, :math:`K_o` are fixed rate/dissociation constants;
+    each unbinding step is standard mass-action, so its rate scales
+    with the number of calcium ions bound in the state being left,
+    i.e. :math:`(i+1)` for the departure from :math:`C_{i+1}` or
+    :math:`O_{i+1}`. Every rate additionally carries the multiplicative factor
     :math:`\phi = q_{10}^{(T - 296.15\,\mathrm{K}) / 10}`
     (:math:`23\,^{\circ}\mathrm{C}` reference), :math:`F` is the
     Faraday constant, :math:`R` the gas constant, and :math:`Q_o`,
@@ -1331,7 +1336,7 @@ class Kca1p1_MA2020_GoC(Markov):
 
 @register_channel("Kca1p1_MA2025_BC")
 class Kca1p1_MA2025_BC(Kca1p1_MA2020_GoC):
-    r"""Kca1.1 (BK/mslo) calcium- and voltage-activated K current, basket-cell parameterisation.
+    r"""Kca1.1 Ca- and voltage-activated K current, basket-cell variant.
 
     The same ten-state Kca1.1 Markov scheme documented in
     :class:`Kca1p1_MA2020_GoC`, reused unchanged for the cerebellar
@@ -1397,7 +1402,7 @@ class Kca1p1_MA2025_BC(Kca1p1_MA2020_GoC):
 
 @register_channel("Kca1p1_MA2020_GrC")
 class Kca1p1_MA2020_GrC(Kca1p1_MA2020_GoC):
-    r"""Kca1.1 (BK/mslo) calcium- and voltage-activated K current, granule-cell parameterisation.
+    r"""Kca1.1 Ca- and voltage-activated K current, granule-cell variant.
 
     The same ten-state Kca1.1 Markov scheme documented in
     :class:`Kca1p1_MA2020_GoC`, reused unchanged for the cerebellar
@@ -1462,7 +1467,8 @@ class Kca1p1_MA2020_GrC(Kca1p1_MA2020_GoC):
            D'Angelo, E. (2020). Parameter tuning differentiates
            granule cell subtypes enriching transmission properties
            at the cerebellum input stage. Communications Biology,
-           3(1), 222. doi:10.1038/s42003-020-0953-x
+           3(1), 222.
+           doi:10.1038/s42003-020-0953-x
     """
 
     __module__ = "braincell.channel"
@@ -1470,7 +1476,7 @@ class Kca1p1_MA2020_GrC(Kca1p1_MA2020_GoC):
 
 @register_channel("Kca1p1_MA2024_PC")
 class Kca1p1_MA2024_PC(Kca1p1_MA2020_GoC):
-    r"""Kca1.1 (BK/mslo) calcium- and voltage-activated K current, Purkinje-cell parameterisation.
+    r"""Kca1.1 Ca- and voltage-activated K current, Purkinje-cell variant.
 
     The same ten-state Kca1.1 Markov scheme documented in
     :class:`Kca1p1_MA2020_GoC`, reused unchanged for the human
@@ -1537,7 +1543,7 @@ class Kca1p1_MA2024_PC(Kca1p1_MA2020_GoC):
 
 @register_channel("Kca1p1_RI2021_SC")
 class Kca1p1_RI2021_SC(Kca1p1_MA2020_GoC):
-    r"""Kca1.1 (BK/mslo) calcium- and voltage-activated K current, stellate-cell parameterisation.
+    r"""Kca1.1 Ca- and voltage-activated K current, stellate-cell variant.
 
     The same ten-state Kca1.1 Markov scheme documented in
     :class:`Kca1p1_MA2020_GoC`, reused unchanged for the cerebellar
@@ -1594,7 +1600,8 @@ class Kca1p1_RI2021_SC(Kca1p1_MA2020_GoC):
            Munoz, A., Prestori, F., & D'Angelo, E. (2021). Stellate
            cell computational modeling predicts signal filtering in
            the molecular layer circuit of cerebellum. Scientific
-           Reports, 11(1), 3873. doi:10.1038/s41598-021-83209-w
+           Reports, 11(1), 3873.
+           doi:10.1038/s41598-021-83209-w
     """
 
     __module__ = "braincell.channel"

@@ -534,8 +534,8 @@ class KineticIon(IndependentIntegration):
     The NMODL semantics this template reproduces -- ``KINETIC`` reaction
     statements, ``COMPARTMENT`` volume/factor scaling, and the
     ``CONSERVE`` statement for algebraic species -- are documented by
-    ``.. [1]``, the primary source for NMODL itself. ``.. [2]`` is the
-    reference text for the surrounding NEURON mechanism model.
+    [1]_, the primary source for NMODL itself. [2]_ is the reference
+    text for the surrounding NEURON mechanism model.
 
     References
     ----------

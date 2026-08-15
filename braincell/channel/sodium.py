@@ -728,7 +728,8 @@ class Nav1p6_MA2020_GoC(Markov):
     r"""Resurgent Nav1.6 sodium current, Golgi-cell parameterisation.
 
     The 13-state Raman & Bean [1]_ / Khaliq et al. [2]_ resurgent
-    sodium Markov scheme, as parameterised for the Golgi cell model of
+    sodium Markov scheme, as implemented by Akemann & Knopfel (2006)
+    [3]_ and parameterised for the Golgi cell model of
     (Masoli et al., 2020) [4]_. Five closed states ``C1``-``C5`` form
     an activation ladder that opens into ``O``; ``O`` can additionally
     transition into a blocked state ``B`` (the resurgent-current
@@ -944,8 +945,9 @@ class Nav1p6_MA2024_PC(Nav1p6_MA2020_GoC):
     r"""Resurgent Nav1.6 sodium current, Purkinje-cell parameterisation.
 
     The same 13-state Raman & Bean [1]_ / Khaliq et al. [2]_ resurgent
-    sodium Markov scheme documented in :class:`Nav1p6_MA2020_GoC`,
-    reused unchanged for the human Purkinje-cell model of
+    sodium Markov scheme documented in :class:`Nav1p6_MA2020_GoC`, as
+    implemented by Akemann & Knopfel (2006) [3]_ and reused unchanged
+    for the human Purkinje-cell model of
     (Masoli et al., 2024) [4]_.
 
     Parameters
@@ -1025,8 +1027,9 @@ class Nav1p6_MA2025_BC(Nav1p6_MA2020_GoC):
     r"""Resurgent Nav1.6 sodium current, basket-cell parameterisation.
 
     The same 13-state Raman & Bean [1]_ / Khaliq et al. [2]_ resurgent
-    sodium Markov scheme documented in :class:`Nav1p6_MA2020_GoC`,
-    reused unchanged for the basket-cell model of
+    sodium Markov scheme documented in :class:`Nav1p6_MA2020_GoC`, as
+    implemented by Akemann & Knopfel (2006) [3]_ and reused unchanged
+    for the basket-cell model of
     (Masoli et al., 2025) [4]_.
 
     Parameters
@@ -1105,8 +1108,9 @@ class Nav1p6_RI2021_SC(Nav1p6_MA2020_GoC):
     r"""Resurgent Nav1.6 sodium current, stellate-cell parameterisation.
 
     The same 13-state Raman & Bean [1]_ / Khaliq et al. [2]_ resurgent
-    sodium Markov scheme documented in :class:`Nav1p6_MA2020_GoC`,
-    reused unchanged for the stellate-cell model of
+    sodium Markov scheme documented in :class:`Nav1p6_MA2020_GoC`, as
+    implemented by Akemann & Knopfel (2006) [3]_ and reused unchanged
+    for the stellate-cell model of
     (Rizza et al., 2021) [4]_.
 
     Parameters

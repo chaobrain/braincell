@@ -334,9 +334,10 @@ class HCN1_MA2025_BC(OhmicHH):
 
     ``HCN1_MA25_BC.mod`` inherits its comment verbatim from the
     ``HCN1_MA24_PC.mod`` Purkinje-cell port, including the note
-    "We call it HCN1 as PC express only HCN1" -- a claim about
-    Purkinje cells, not this basket-cell channel, and not repeated
-    here as though it were. The default ``temp = 23`` degrees
+    "We call it HCN1 as PC express only HCN1", whose origin is the
+    subunit-identity paper [2]_ -- a claim about Purkinje cells, not
+    this basket-cell channel, and not repeated here as though it
+    were. The default ``temp = 23`` degrees
     Celsius is likewise carried over unchanged: Angelo et al. (2007)
     [1]_ did not report a recording temperature, so 23 degrees
     Celsius is the porter's assumption, not a value from that paper.
@@ -597,8 +598,9 @@ class HCN1_RI2021_SC(OhmicHH):
 
     ``HCN1_RI21_SC.mod`` carries the same inherited comment as the
     basket-cell port, "We call it HCN1 as PC express only HCN1
-    Santoro et al. 2000" -- a claim about Purkinje cells, not this
-    stellate-cell channel, and not repeated here as though it were.
+    Santoro et al. 2000" [2]_ -- a claim about Purkinje cells, not
+    this stellate-cell channel, and not repeated here as though it
+    were.
     The default ``temp = 23`` degrees Celsius is carried over
     unchanged from the ``.mod`` file: Angelo et al. (2007) [1]_ did
     not report a recording temperature, so 23 degrees Celsius is the

@@ -1555,7 +1555,13 @@ class CdpStC_CAMOnly_MA2020_GoC(Calcium, KineticIon):
 
     Notes
     -----
-    Ported from ``GoC/ion/CdpStC_CAMOnly_MA20_GoC.mod``.
+    Ported from ``GoC/ion/CdpStC_CAMOnly_MA20_GoC.mod``, part of the
+    cerebellar Golgi cell model of (Masoli et al., 2020) [4]_. That
+    file carries a title only, no credit block; the CaM subnetwork it
+    isolates belongs to the ``CdpStC`` mechanism of Anwar, Hong & De
+    Schutter [1]_, whose extended buffer parameters come from Schmidt
+    et al. (2003) [2]_ and whose pump rate was tuned to data from
+    Maeda et al. (1999) [3]_.
     ``uses_total_current = False`` and ``sources = ()``: this pool has
     no calcium influx or pump of its own, so ``Ci`` is consumed by the
     twelve CaM reactions above and never resupplied. It is meant to be
@@ -1990,7 +1996,12 @@ class CdpStC_NoCAM_MA2020_GoC(Calcium, KineticIon):
     Notes
     -----
     This class has no source ``.mod`` file of its own; see the
-    extended summary. ``uses_total_current = True`` and one
+    extended summary. Its credits are those of the GoC ``CdpStC``
+    mechanism it factors, part of the cerebellar Golgi cell model of
+    (Masoli et al., 2020) [4]_: Anwar, Hong & De Schutter [1]_ as the
+    reference for the mechanism, the extended buffer parameters from
+    Schmidt et al. (2003) [2]_, and the pump rate tuned to data from
+    Maeda et al. (1999) [3]_. ``uses_total_current = True`` and one
     :class:`~braincell.ion._base.Source` drives ``Ci`` from the
     channel current supplied at each step:
     ``_ci_source_flux`` returns zero when no current is supplied, and
@@ -2345,9 +2356,15 @@ class CdpStC_MA2025_BC(CdpStC_NoCAM_MA2020_GoC):
     ----------
     size : brainstate.typing.Size
         Ion state shape. Inherited from :class:`CdpStC_NoCAM_MA2020_GoC`.
-    temp, Nannuli, cainull, mginull, Buffnull1, rf1, rf2, Buffnull2,
-    rf3, rf4, BTCnull, b1, b2, DMNPEnull, c1, c2, PVnull, m1, m2, p1,
-    p2, kpmp1, kpmp2, kpmp3, TotalPump, Co, Ci_initializer,
+    temp, Nannuli, cainull, mginull, Buffnull1, rf1, rf2, Buffnull2
+        Identical in meaning and default to
+        :class:`CdpStC_NoCAM_MA2020_GoC`; not restated here.
+    rf3, rf4, BTCnull, b1, b2, DMNPEnull, c1, c2, PVnull, m1, m2
+        Identical in meaning and default to
+        :class:`CdpStC_NoCAM_MA2020_GoC`; not restated here.
+    p1, p2, kpmp1, kpmp2, kpmp3, TotalPump, Co, Ci_initializer
+        Identical in meaning and default to
+        :class:`CdpStC_NoCAM_MA2020_GoC`; not restated here.
     species_initializers, solver, substeps, name, **channels
         Identical in meaning and default to
         :class:`CdpStC_NoCAM_MA2020_GoC`; not restated here.
@@ -2361,7 +2378,11 @@ class CdpStC_MA2025_BC(CdpStC_NoCAM_MA2020_GoC):
 
     Notes
     -----
-    Ported from ``BC/ion/CdpStC_MA25_BC.mod``. This class does not
+    Ported from ``BC/ion/CdpStC_MA25_BC.mod``, whose header names
+    Anwar, Hong & De Schutter [1]_ as the reference for the
+    mechanism, credits the extended buffer parameters to Schmidt
+    et al. (2003) [2]_, and records the pump rate as tuned to data
+    from Maeda et al. (1999) [3]_. This class does not
     override ``__init__``: the reaction network, the source and the
     conservation relation are all inherited unchanged from
     :class:`CdpStC_NoCAM_MA2020_GoC`. Only the ``register_ion`` key
@@ -2411,9 +2432,15 @@ class CdpStC_RI2021_SC(CdpStC_NoCAM_MA2020_GoC):
     ----------
     size : brainstate.typing.Size
         Ion state shape. Inherited from :class:`CdpStC_NoCAM_MA2020_GoC`.
-    temp, Nannuli, cainull, mginull, Buffnull1, rf1, rf2, Buffnull2,
-    rf3, rf4, BTCnull, b1, b2, DMNPEnull, c1, c2, PVnull, m1, m2, p1,
-    p2, kpmp1, kpmp2, kpmp3, TotalPump, Co, Ci_initializer,
+    temp, Nannuli, cainull, mginull, Buffnull1, rf1, rf2, Buffnull2
+        Identical in meaning and default to
+        :class:`CdpStC_NoCAM_MA2020_GoC`; not restated here.
+    rf3, rf4, BTCnull, b1, b2, DMNPEnull, c1, c2, PVnull, m1, m2
+        Identical in meaning and default to
+        :class:`CdpStC_NoCAM_MA2020_GoC`; not restated here.
+    p1, p2, kpmp1, kpmp2, kpmp3, TotalPump, Co, Ci_initializer
+        Identical in meaning and default to
+        :class:`CdpStC_NoCAM_MA2020_GoC`; not restated here.
     species_initializers, solver, substeps, name, **channels
         Identical in meaning and default to
         :class:`CdpStC_NoCAM_MA2020_GoC`; not restated here.
@@ -2427,7 +2454,11 @@ class CdpStC_RI2021_SC(CdpStC_NoCAM_MA2020_GoC):
 
     Notes
     -----
-    Ported from ``SC/ion/CdpStC_RI21_SC.mod``. This class does not
+    Ported from ``SC/ion/CdpStC_RI21_SC.mod``, whose header names
+    Anwar, Hong & De Schutter [1]_ as the reference for the
+    mechanism, credits the extended buffer parameters to Schmidt
+    et al. (2003) [2]_, and records the pump rate as tuned to data
+    from Maeda et al. (1999) [3]_. This class does not
     override ``__init__``: the reaction network, the source and the
     conservation relation are all inherited unchanged from
     :class:`CdpStC_NoCAM_MA2020_GoC`. Only the ``register_ion`` key
@@ -2629,7 +2660,12 @@ class CdpStC_MA2020_GoC(Calcium, KineticIon):
 
     Notes
     -----
-    Ported from ``GoC/ion/CdpStC_MA20_GoC.mod``. ``uses_total_current
+    Ported from ``GoC/ion/CdpStC_MA20_GoC.mod``, part of the
+    cerebellar Golgi cell model of (Masoli et al., 2020) [4]_; its
+    header names Anwar, Hong & De Schutter [1]_ as the reference for
+    the mechanism, credits the extended buffer parameters to Schmidt
+    et al. (2003) [2]_, and records the pump rate as tuned to data
+    from Maeda et al. (1999) [3]_. ``uses_total_current
     = True`` and one :class:`~braincell.ion._base.Source` drives
     ``Ci`` from the channel current supplied at each step:
     ``_ci_source_flux`` returns zero when no current is supplied, and
@@ -3276,7 +3312,12 @@ class CdpCAM_MA2024_PC(Calcium, KineticIon):
 
     Notes
     -----
-    Ported from ``PC/ion/CdpCAM_MA24_PC.mod``. ``uses_total_current =
+    Ported from ``PC/ion/CdpCAM_MA24_PC.mod``, part of the human
+    Purkinje cell model of (Masoli et al., 2024) [4]_; its header
+    names Anwar, Hong & De Schutter [1]_ as the reference for the
+    mechanism, credits the extended buffer parameters to Schmidt
+    et al. (2003) [2]_, and records the pump rate as tuned to data
+    from Maeda et al. (1999) [3]_. ``uses_total_current =
     True``; ``sources`` and ``conserves`` are the exact tuple objects
     defined on :class:`CdpStC_MA2020_GoC` (same ``Ci``-driving
     :class:`~braincell.ion._base.Source` and same ``pump + pumpca =
@@ -3922,7 +3963,12 @@ class CdpCR_MA2020_GrC(Calcium, KineticIon):
 
     Notes
     -----
-    Ported from ``GrC/ion/CdpCR_MA20_GrC.mod``. ``uses_total_current
+    Ported from ``GrC/ion/CdpCR_MA20_GrC.mod``, part of the granule
+    cell subtype model of (Masoli et al., 2020) [4]_; its header
+    names Anwar, Hong & De Schutter [1]_ as the reference for the
+    mechanism, credits the extended buffer parameters to Schmidt
+    et al. (2003) [2]_, and records the pump rate as tuned to data
+    from Maeda et al. (1999) [3]_. ``uses_total_current
     = True``; ``sources`` and ``conserves`` are the exact tuple
     objects defined on :class:`CdpStC_MA2020_GoC` (same
     ``Ci``-driving :class:`~braincell.ion._base.Source` and same

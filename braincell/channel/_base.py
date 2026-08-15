@@ -85,12 +85,13 @@ def ghk_flux(V, ci, co, z, temp):
     ``abs(1 - exp(-zeta)) <= 1e-6``, which both avoids the division and
     stays numerically well conditioned near that singularity.
 
-    Goldman (1943) and Hodgkin & Katz (1949) are together the origin of
-    the name "GHK", but they are the primary sources for two different
-    equations. This function computes the constant-field flux/current
-    equation, whose primary source is Goldman (1943) -- hence ``.. [1]``
-    first. It does not compute the constant-field voltage equation, for
-    which Hodgkin & Katz (1949) is the primary source.
+    Goldman (1943) [1]_ and Hodgkin & Katz (1949) [2]_ are together the
+    origin of the name "GHK", but they are the primary sources for two
+    different equations. This function computes the constant-field
+    flux/current equation, whose primary source is Goldman (1943) --
+    hence ``.. [1]`` first. It does not compute the constant-field
+    voltage equation, for which Hodgkin & Katz (1949) is the primary
+    source.
 
     References
     ----------

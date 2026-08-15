@@ -575,7 +575,7 @@ class CaHT_HM1992(OhmicHH):
     Notes
     -----
     **This class does not implement a current described in
-    (Huguenard & McCormick, 1992) [1]_.** That paper models exactly
+    (Huguenard & McCormick, 1992).** That paper [1]_ models exactly
     four currents -- a *low*-threshold T-type calcium current, two
     potassium currents and a hyperpolarization-activated current --
     and contains no high-threshold or high-voltage-activated calcium
@@ -5024,7 +5024,9 @@ class Ca_ZH2019_IO_Frozen(Ca_ZH2019_IO):
     class's Notes. Per the bibliography's attribution scan, this
     subclass contributes no rate-function code of its own -- it
     inherits every kinetic equation unchanged from
-    :class:`Ca_ZH2019_IO`.
+    :class:`Ca_ZH2019_IO`, that is from Manor, Rinzel, Segev &
+    Yarom (1997) [1]_ as imported by Zhang & Santaniello
+    (2019) [2]_.
 
     References
     ----------

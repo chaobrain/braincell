@@ -157,7 +157,16 @@ napoleon_use_ivar = True
 
 import re as _re
 
-_FIELD_LINE = _re.compile(r'^:[^:]+:')
+# A field-list line such as ``:param foo: text`` or ``:rtype: int``.
+# The negative lookahead excludes interpreted-text *roles* -- a wrapped
+# prose or math line may legitimately begin with ``:class:`X``` or
+# ``:math:`y```, and treating one as a field line injects a blank line
+# into the middle of a paragraph. That tears the paragraph in two and,
+# when the split falls inside an inline literal or an inline role that
+# spans the line break, makes docutils emit "Inline literal/interpreted
+# text start-string without end-string". A role is always followed
+# immediately by a backtick; a real field line never is.
+_FIELD_LINE = _re.compile(r'^:[^:]+:(?!`)')
 
 
 def _restore_field_list_blank_line(app, what, name, obj, options, lines):

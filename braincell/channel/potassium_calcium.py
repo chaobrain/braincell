@@ -349,7 +349,10 @@ class Kca3p1_MA2020_GoC(OhmicHH):
 
     Notes
     -----
-    Ported from ``Kca3p1_MA20_GoC.mod``.
+    Ported from ``Kca3p1_MA20_GoC.mod``, whose header credits the
+    implementation to Rubin & Cleland (2006) [1]_, the parameters to
+    Bhalla & Bower (1993) [2]_, and the mod file itself to Andrew
+    Davison [3]_.
 
     **``q10_base`` and ``temp`` are accepted but never read.** Both
     are stored on ``self`` in ``__init__`` but no method in this
@@ -479,7 +482,11 @@ class Kca3p1_MA2025_BC(Kca3p1_MA2020_GoC):
 
     Notes
     -----
-    Ported from ``Kca3p1_MA25_BC.mod``. This class does not override
+    Ported from ``Kca3p1_MA25_BC.mod``, whose header carries the same
+    credits as the Golgi-cell file: the implementation to Rubin &
+    Cleland (2006) [1]_, the parameters to Bhalla & Bower (1993)
+    [2]_, and the mod file itself to Andrew Davison [3]_.
+    This class does not override
     ``__init__``: the constructor, the rate methods and the fixed
     ``p_beta = 0.05`` constant are all inherited unchanged from
     :class:`Kca3p1_MA2020_GoC`. Only the ``register_channel`` key and
@@ -556,7 +563,11 @@ class Kca3p1_MA2024_PC(Kca3p1_MA2020_GoC):
 
     Notes
     -----
-    Ported from ``Kca3p1_MA24_PC.mod``. This class does not override
+    Ported from ``Kca3p1_MA24_PC.mod``, whose header carries the same
+    credits as the Golgi-cell file: the implementation to Rubin &
+    Cleland (2006) [1]_, the parameters to Bhalla & Bower (1993)
+    [2]_, and the mod file itself to Andrew Davison [3]_.
+    This class does not override
     ``__init__``: the constructor, the rate methods and the fixed
     ``p_beta = 0.05`` constant are all inherited unchanged from
     :class:`Kca3p1_MA2020_GoC`. Only the ``register_channel`` key and
@@ -787,8 +798,11 @@ class Kca2p2_MA2025_BC(Kca2p2_MA2020_GoC):
     r"""Kca2.2 calcium-activated K current, basket-cell parameterisation.
 
     The same seven-state Kca2.2 Markov scheme documented in
-    :class:`Kca2p2_MA2020_GoC`, reused unchanged for the cerebellar
-    basket cell model of (Masoli et al., 2025) [3]_.
+    :class:`Kca2p2_MA2020_GoC` -- kinetics from the recombinant
+    SK-channel gating scheme of (Hirschberg et al., 1998) [1]_ as
+    implemented by (Solinas et al., 2007) [2]_ -- reused unchanged
+    for the cerebellar basket cell model of
+    (Masoli et al., 2025) [3]_.
 
     Parameters
     ----------
@@ -859,8 +873,11 @@ class Kca2p2_MA2020_GrC(Kca2p2_MA2020_GoC):
     r"""Kca2.2 calcium-activated K current, granule-cell parameterisation.
 
     The same seven-state Kca2.2 Markov scheme documented in
-    :class:`Kca2p2_MA2020_GoC`, reused unchanged for the cerebellar
-    granule cell subtype model of (Masoli et al., 2020) [3]_. This
+    :class:`Kca2p2_MA2020_GoC` -- kinetics from the recombinant
+    SK-channel gating scheme of (Hirschberg et al., 1998) [1]_ as
+    implemented by (Solinas et al., 2007) [2]_ -- reused unchanged
+    for the cerebellar granule cell subtype model of
+    (Masoli et al., 2020) [3]_. This
     class is a Python subclass of :class:`Kca2p2_MA2020_GoC`, but
     that inheritance relationship is purely a code-reuse device: the
     kinetics and model citation below belong to the granule cell
@@ -939,8 +956,11 @@ class Kca2p2_MA2024_PC(Kca2p2_MA2020_GoC):
     r"""Kca2.2 calcium-activated K current, Purkinje-cell parameterisation.
 
     The same seven-state Kca2.2 Markov scheme documented in
-    :class:`Kca2p2_MA2020_GoC`, reused unchanged for the human
-    Purkinje cell model of (Masoli et al., 2024) [3]_.
+    :class:`Kca2p2_MA2020_GoC` -- kinetics from the recombinant
+    SK-channel gating scheme of (Hirschberg et al., 1998) [1]_ as
+    implemented by (Solinas et al., 2007) [2]_ -- reused unchanged
+    for the human Purkinje cell model of
+    (Masoli et al., 2024) [3]_.
 
     Parameters
     ----------
@@ -1012,8 +1032,11 @@ class Kca2p2_RI2021_SC(Kca2p2_MA2020_GoC):
     r"""Kca2.2 calcium-activated K current, stellate-cell parameterisation.
 
     The same seven-state Kca2.2 Markov scheme documented in
-    :class:`Kca2p2_MA2020_GoC`, reused unchanged for the cerebellar
-    stellate cell model of (Rizza et al., 2021) [3]_.
+    :class:`Kca2p2_MA2020_GoC` -- kinetics from the recombinant
+    SK-channel gating scheme of (Hirschberg et al., 1998) [1]_ as
+    implemented by (Solinas et al., 2007) [2]_ -- reused unchanged
+    for the cerebellar stellate cell model of
+    (Rizza et al., 2021) [3]_.
 
     Parameters
     ----------
@@ -1338,8 +1361,11 @@ class Kca1p1_MA2025_BC(Kca1p1_MA2020_GoC):
     r"""Kca1.1 Ca- and voltage-activated K current, basket-cell variant.
 
     The same ten-state Kca1.1 Markov scheme documented in
-    :class:`Kca1p1_MA2020_GoC`, reused unchanged for the cerebellar
-    basket cell model of (Masoli et al., 2025) [3]_.
+    :class:`Kca1p1_MA2020_GoC` -- parameters from the allosteric
+    BK-channel gating scheme of (Cox, Cui, & Aldrich, 1997) [1]_ as
+    adapted by (Anwar, Hong, & De Schutter, 2012) [2]_ -- reused
+    unchanged for the cerebellar basket cell model of
+    (Masoli et al., 2025) [3]_.
 
     Parameters
     ----------
@@ -1404,8 +1430,11 @@ class Kca1p1_MA2020_GrC(Kca1p1_MA2020_GoC):
     r"""Kca1.1 Ca- and voltage-activated K current, granule-cell variant.
 
     The same ten-state Kca1.1 Markov scheme documented in
-    :class:`Kca1p1_MA2020_GoC`, reused unchanged for the cerebellar
-    granule cell subtype model of (Masoli et al., 2020) [3]_. This
+    :class:`Kca1p1_MA2020_GoC` -- parameters from the allosteric
+    BK-channel gating scheme of (Cox, Cui, & Aldrich, 1997) [1]_ as
+    adapted by (Anwar, Hong, & De Schutter, 2012) [2]_ -- reused
+    unchanged for the cerebellar granule cell subtype model of
+    (Masoli et al., 2020) [3]_. This
     class is a Python subclass of :class:`Kca1p1_MA2020_GoC`, but
     that inheritance relationship is purely a code-reuse device: the
     kinetics and model citation below belong to the granule cell
@@ -1478,8 +1507,11 @@ class Kca1p1_MA2024_PC(Kca1p1_MA2020_GoC):
     r"""Kca1.1 Ca- and voltage-activated K current, Purkinje-cell variant.
 
     The same ten-state Kca1.1 Markov scheme documented in
-    :class:`Kca1p1_MA2020_GoC`, reused unchanged for the human
-    Purkinje cell model of (Masoli et al., 2024) [3]_.
+    :class:`Kca1p1_MA2020_GoC` -- parameters from the allosteric
+    BK-channel gating scheme of (Cox, Cui, & Aldrich, 1997) [1]_ as
+    adapted by (Anwar, Hong, & De Schutter, 2012) [2]_ -- reused
+    unchanged for the human Purkinje cell model of
+    (Masoli et al., 2024) [3]_.
 
     Parameters
     ----------
@@ -1545,8 +1577,11 @@ class Kca1p1_RI2021_SC(Kca1p1_MA2020_GoC):
     r"""Kca1.1 Ca- and voltage-activated K current, stellate-cell variant.
 
     The same ten-state Kca1.1 Markov scheme documented in
-    :class:`Kca1p1_MA2020_GoC`, reused unchanged for the cerebellar
-    stellate cell model of (Rizza et al., 2021) [3]_.
+    :class:`Kca1p1_MA2020_GoC` -- parameters from the allosteric
+    BK-channel gating scheme of (Cox, Cui, & Aldrich, 1997) [1]_ as
+    adapted by (Anwar, Hong, & De Schutter, 2012) [2]_ -- reused
+    unchanged for the cerebellar stellate cell model of
+    (Rizza et al., 2021) [3]_.
 
     Parameters
     ----------

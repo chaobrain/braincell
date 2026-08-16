@@ -36,8 +36,28 @@ __all__ = [
 
 
 class LeakageChannel(Channel):
-    """
-    Base class for leakage channel dynamics.
+    """Base class for leakage channel dynamics.
+
+    A leak conductance is voltage-independent: it has no gating variables
+    and no state to integrate, so every lifecycle hook below is a no-op
+    (or, for :meth:`current`, an obligation for the subclass to fill in).
+    Subclass this directly to model a passive, always-open conductance
+    such as the resting leak of a compartment. Use an ion-specific
+    channel template instead -- :class:`~braincell.channel._base.HH` or
+    :class:`~braincell.channel._base.Markov` -- when the conductance
+    depends on voltage, time, or an ion concentration.
+
+    See Also
+    --------
+    IL : Concrete leak channel with a fixed conductance and reversal
+        potential.
+
+    Notes
+    -----
+    ``root_type`` is :class:`~braincell._base.HHTypedNeuron`: instances
+    are attached to a Hodgkin-Huxley-typed neuron, not to an ion. There
+    is no equation here -- :meth:`current` raises ``NotImplementedError``
+    and must be implemented by a subclass such as :class:`IL`.
     """
 
     __module__ = 'braincell.channel'
@@ -122,14 +142,40 @@ class LeakageChannel(Channel):
 
 @register_channel("IL", aliases=("leaky",))
 class IL(LeakageChannel):
-    """The leakage channel current.
+    r"""The leakage channel current.
+
+    A generic, fixed-conductance leak: :attr:`g_max` and :attr:`E` are
+    constants set at construction and never change with voltage, time,
+    or concentration. Use it for the passive resting leak of a
+    compartment, or as a placeholder before an ion-specific channel is
+    modeled.
 
     Parameters
     ----------
-    g_max : float
-      The leakage conductance.
-    E : float
-      The reversal potential.
+    size : int or sequence of int
+        Shape of the simulation target this channel is attached to.
+    g_max : ArrayLike or Callable, optional
+        Leakage conductance density. Default is ``0.1 mS/cm2``.
+    E : ArrayLike or Callable, optional
+        Leak reversal potential. Default is ``-70.0 mV``.
+    name : str, optional
+        Instance name. Default is ``None``, in which case a name is
+        auto-generated.
+
+    See Also
+    --------
+    LeakageChannel : Abstract base this class implements.
+
+    Notes
+    -----
+    The current follows Ohm's law with a constant driving force:
+
+    .. math::
+
+        I = g_{max} \cdot (E - V)
+
+    Registered with :func:`~braincell.mech.register_channel` under the
+    name ``"IL"``, with ``"leaky"`` as an alias.
     """
 
     __module__ = 'braincell.channel'

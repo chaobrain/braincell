@@ -31,7 +31,79 @@ __all__ = [
 
 
 def ghk_flux(V, ci, co, z, temp):
-    """Unit-aware GHK flux helper with a small-zeta stable branch."""
+    r"""Compute the Goldman-Hodgkin-Katz constant-field flux, per permeability.
+
+    Evaluates the constant-field (GHK) electrodiffusion equation for a
+    single permeant ion species, returning the flux divided through by the
+    membrane permeability. Channels in the catalogue that use GHK-style
+    currents (calcium channels, most notably) multiply this result by
+    their own ``g_max``, which occupies the permeability slot ``P_s``
+    that a textbook GHK flux equation would otherwise carry explicitly.
+
+    Parameters
+    ----------
+    V : ArrayLike
+        Membrane potential, as a voltage (for example ``u.mV``).
+    ci : ArrayLike
+        Intracellular concentration of the permeant ion, as a molar
+        concentration (for example ``u.mM``).
+    co : ArrayLike
+        Extracellular concentration of the permeant ion, as a molar
+        concentration (for example ``u.mM``).
+    z : ArrayLike
+        Valence of the permeant ion. Dimensionless.
+    temp : ArrayLike
+        Absolute temperature, as a temperature (for example ``u.kelvin``).
+
+    Returns
+    -------
+    ArrayLike
+        The constant-field flux, divided through by the permeability
+        ``P_s`` that a caller is expected to supply separately (typically
+        as ``g_max``). Not yet a current or a conductance on its own.
+
+    Notes
+    -----
+    Let ``zeta = z * F * V / (R * T)``, with ``F`` the Faraday constant and
+    ``R`` the gas constant. The function evaluates
+
+    .. math::
+
+        \text{regular\_branch} = \frac{z \zeta F
+        (c_i - c_o e^{-\zeta})}{1 - e^{-\zeta}}
+
+    which is undefined at ``zeta = 0`` because ``1 - exp(-zeta)`` vanishes
+    there and the branch divides by it. To keep the function stable as
+    ``zeta -> 0``, a second, algebraically equivalent branch
+
+    .. math::
+
+        \text{small\_branch} = z F (c_i - c_o e^{-\zeta})
+        \left(1 + \frac{\zeta}{2}\right)
+
+    is selected instead via ``u.math.where`` whenever
+    ``abs(1 - exp(-zeta)) <= 1e-6``, which both avoids the division and
+    stays numerically well conditioned near that singularity.
+
+    Goldman (1943) [1]_ and Hodgkin & Katz (1949) [2]_ are together the
+    origin of the name "GHK", but they are the primary sources for two
+    different equations. This function computes the constant-field
+    flux/current equation, whose primary source is Goldman (1943) --
+    hence ``.. [1]`` first. It does not compute the constant-field
+    voltage equation, for which Hodgkin & Katz (1949) is the primary
+    source.
+
+    References
+    ----------
+    .. [1] Goldman, D. E. (1943). Potential, impedance, and
+           rectification in membranes. The Journal of General
+           Physiology, 27(1), 37-60.
+           doi:10.1085/jgp.27.1.37
+    .. [2] Hodgkin, A. L., & Katz, B. (1949). The effect of sodium ions
+           on the electrical activity of the giant axon of the squid.
+           The Journal of Physiology, 108(1), 37-77.
+           doi:10.1113/jphysiol.1949.sp004310
+    """
     zeta = (z * u.faraday_constant * V) / (u.gas_constant * temp)
     exp_term = u.math.exp(-zeta)
     numerator = ci - co * exp_term
@@ -182,6 +254,13 @@ class Gate:
         when a solver is expected to overshoot and an odd ``power`` would
         otherwise yield a negative conductance. The stored state is never
         rewritten -- only the value used for the conductance product.
+
+    Raises
+    ------
+    ValueError
+        If ``phi`` is provided together with ``q10`` or ``temp_ref``, if
+        ``q10`` and ``temp_ref`` are not both provided together, or if
+        ``time_unit`` does not have a time dimension.
     """
 
     name: str
@@ -281,7 +360,35 @@ def _check_derivative(value, label: str):
 
 @dataclass(frozen=True)
 class Transition:
-    """One directed/reversible transition used by Markov channels."""
+    """One directed or reversible transition used by Markov channels.
+
+    A ``Transition`` names two states and the rate method(s) that move
+    probability between them; it does not itself hold rates or values.
+    :class:`Markov` consumes a tuple of these under ``pairs`` and builds
+    the generator matrix for the whole state graph from them.
+
+    Parameters
+    ----------
+    src : str
+        Name of the source state.
+    dst : str
+        Name of the destination state.
+    forward : str
+        Name of the rate method that governs the ``src -> dst`` direction.
+        Looked up on the owning channel and called the same way as any
+        other rate method.
+    backward : str or None, default None
+        Name of the rate method that governs the ``dst -> src`` direction.
+        When ``None``, the transition is directed: probability only flows
+        ``src -> dst`` and no reverse rate is looked up or evaluated, so
+        the pair contributes nothing to the ``dst -> src`` entry of the
+        generator matrix. Supplying a name makes the transition
+        reversible, with independent forward and backward rates.
+
+    See Also
+    --------
+    Markov : Consumes a tuple of ``Transition`` under ``pairs``.
+    """
 
     src: str
     dst: str
@@ -296,6 +403,44 @@ class HH(Channel):
 
     - ``f_<g>_inf`` and ``f_<g>_tau``
     - ``f_<g>_alpha`` and ``f_<g>_beta``
+
+    ``HH`` is the gating-only half of the template layer: it declares
+    ``gates``, resolves and validates them once at subclass-creation time,
+    and implements state initialisation, the conductance product, and the
+    Hodgkin-Huxley derivative from whichever form each gate declares. It
+    does not implement a current -- :class:`OhmicHH` adds the ohmic driving
+    force for the common case, while channels with a non-ohmic current
+    (GHK flux, permeability-scaled calcium channels) subclass ``HH``
+    directly and implement :meth:`current` themselves.
+
+    See Also
+    --------
+    OhmicHH : Adds an ohmic driving force on top of this gating template.
+    Gate : Per-gate metadata consumed by ``gates``.
+    Markov : Sibling template for probability-state (non-HH) kinetics.
+
+    Notes
+    -----
+    ``__init_subclass__`` resolves and validates ``gates`` once, when the
+    subclass is created, rather than lazily at ``reset_state`` time. A
+    subclass that declares no gates -- ``HH`` itself, ``OhmicHH``, or any
+    other abstract intermediate -- is skipped by this validation, so such
+    classes stay definable without a concrete gate set.
+
+    Attributes
+    ----------
+    gates : tuple of Gate or tuple
+        Class-level declaration of the gates a subclass defines. Each
+        entry is either a :class:`Gate` or the plain tuple of its fields.
+        Set by the subclass; read by ``__init_subclass__``.
+    _resolved_gates : tuple of Gate
+        ``gates`` normalised to :class:`Gate` instances. Derived by
+        ``__init_subclass__``; a subclass never sets this directly, but
+        :meth:`_iter_gates` and every gate-driven method read it.
+    _gate_forms : dict of str to str
+        Maps each gate name to ``"inf_tau"`` or ``"alpha_beta"``, the form
+        detected for it. Derived alongside ``_resolved_gates`` and read by
+        :meth:`_gate_form` to route state init, reset, and the derivative.
     """
 
     gates: ClassVar[tuple[Gate | tuple[Any, ...], ...]] = ()
@@ -538,6 +683,38 @@ class Markov(Channel, IndependentIntegration):
     :attr:`Gate.time_unit` on the HH side, except that the unit is fixed at
     ``u.ms`` rather than declared per transition -- the catalogue's Markov
     channels all come from NEURON ``.mod`` sources written in milliseconds.
+
+    Attributes
+    ----------
+    pairs : tuple of Transition or tuple
+        Class-level declaration of the transition graph. Each entry is
+        either a :class:`Transition` or the plain tuple of its fields;
+        both forms are normalised by ``__init_subclass__``.
+    conserve : Any, default 1.0
+        Total probability mass the declared states must sum to. Resolved
+        per instance the same way as :class:`Gate` metadata -- a ``str``
+        names an instance attribute, a callable is applied to the
+        instance, anything else is a literal.
+    dependent_state : str or None, default None
+        Name of the state eliminated from the independent set and
+        reconstructed as ``conserve`` minus the others. Declaring it
+        explicitly is effectively required: the ``None`` fallback resolves
+        to "the last state discovered while scanning ``pairs``", which is
+        order-dependent, and doing so emits a ``DeprecationWarning``.
+    default_solver : str, default "backward_euler"
+        Solver name used by :class:`IndependentIntegration` when the
+        constructor's ``solver`` argument is not supplied.
+    default_substeps : int, default 1
+        Number of solver substeps per outer integration step, used when
+        the constructor's ``substeps`` argument is not supplied.
+    clip_states : bool, default True
+        Project each independent state into ``[0, 1]`` before evaluating
+        the transition graph, so a probability pool that has drifted off
+        the simplex still yields meaningful kinetics; the stored states
+        themselves are left untouched. On by default, unlike
+        :attr:`Gate.clip` on the HH side, because an out-of-simplex
+        probability pool corrupts the kinetics, whereas an unclipped HH
+        gate is merely inaccurate.
     """
 
     pairs: ClassVar[tuple[Transition | tuple[Any, ...], ...]] = ()

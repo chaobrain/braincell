@@ -39,12 +39,38 @@ class NonSpecific(Ion):
     ordinary ionic currents while preserving the usual ion/current
     container interfaces.
 
+    Parameters
+    ----------
+    size : brainstate.typing.Size
+        The size of the simulation target, typically the number of
+        neurons or compartments. Forwarded unchanged to :class:`Ion`.
+    name : str or None, optional
+        Runtime instance name. Defaults to ``None``, in which case the
+        instance is unnamed. Forwarded unchanged to :class:`Ion`.
+    **channels
+        Channel instances to attach to this placeholder ion, forwarded
+        unchanged to :class:`Ion`.
+
+    See Also
+    --------
+    NonSpecificFixed : Fixed-parameter placeholder ion built on this
+        base.
+    braincell.channel.Kv1p5_MA2020_GrC : Shipped channel that declares a
+        nonspecific current owner via ``current_owner_types``.
+
     Notes
     -----
     This class does not represent a real chemical species and does not
     define concentration dynamics. It is intended for mechanisms such as
     NEURON ``USEION no WRITE ino`` declarations, where ``no`` is a
     current owner name rather than a physiologically conserved ion pool.
+
+    ``default_Ci``, ``default_Co``, and ``default_valence`` are arbitrary
+    placeholder values, chosen only so that the ordinary ``Ion``
+    interfaces (concentration lookups, Nernst-derived reversal
+    potentials, etc.) resolve without error. They are not measured or
+    physiological values, and no Nernst potential computed from them is
+    biologically meaningful.
 
     Attributes
     ----------
@@ -77,18 +103,33 @@ class NonSpecificFixed(NonSpecific, FixedIon):
         Fixed reversal potential used only by channels that choose to
         read ``No.E``. Defaults to ``0 mV``.
     Ci : array-like or callable or None, optional
-        Placeholder intracellular concentration. Defaults to
-        :attr:`NonSpecific.default_Ci`.
+        Placeholder intracellular concentration. Defaults to ``None``,
+        which falls back to :attr:`NonSpecific.default_Ci` inside
+        :meth:`FixedIon._init_fixed_ion`.
     Co : array-like or callable or None, optional
-        Placeholder extracellular concentration. Defaults to
-        :attr:`NonSpecific.default_Co`.
+        Placeholder extracellular concentration. Defaults to ``None``,
+        which falls back to :attr:`NonSpecific.default_Co` inside
+        :meth:`FixedIon._init_fixed_ion`.
     valence : array-like or callable or None, optional
-        Placeholder valence. Defaults to
-        :attr:`NonSpecific.default_valence`.
+        Placeholder valence. Defaults to ``None``, which falls back to
+        :attr:`NonSpecific.default_valence` inside
+        :meth:`FixedIon._init_fixed_ion`.
     name : str or None, optional
         Runtime ion instance name.
     **channels
         Optional channels added directly to the placeholder ion.
+
+    Raises
+    ------
+    ValueError
+        If ``E`` is explicitly passed as ``None``.
+        :meth:`FixedIon._init_fixed_ion` requires an explicit fixed
+        reversal potential and does not fall back to a class default
+        for ``E``.
+
+    See Also
+    --------
+    NonSpecific : Base placeholder ion family this class fixes.
 
     Notes
     -----

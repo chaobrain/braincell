@@ -35,7 +35,7 @@ __all__ = [
 
 @register_channel("Kv1p5_MA2020_GrC")
 class Kv1p5_MA2020_GrC(Kv1p5_MA2024_PC):
-    """Granule-cell Kv1.5 channel with two current owners.
+    r"""Granule-cell Kv1.5 channel with two current owners.
 
     This channel imports the two-current form of the NEURON mechanism
     ``Kv1p5_MA20_GrC.mod``. The relevant source lines are quoted here
@@ -53,22 +53,30 @@ class Kv1p5_MA2020_GrC(Kv1p5_MA2024_PC):
     size : brainstate.typing.Size
         Channel state shape.
     g_max : array-like or callable, optional
-        Maximum potassium conductance. This is the BrainCell name for
-        the NEURON ``gKur`` parameter.
+        Maximum potassium conductance, default ``0.13195e-3 S/cm2``.
+        This is the BrainCell name for the NEURON ``gKur`` parameter.
     gnonspec : array-like or callable, optional
         Maximum nonspecific cation conductance for the ``ino``
-        component.
+        component, default ``0.0 S/cm2``.
     temp : array-like, optional
         Absolute temperature used by the q10 and nonspecific reversal
-        expressions.
+        expressions, default 37 degrees Celsius.
     Tauact : array-like or callable, optional
-        Activation time-scale multiplier.
+        Activation time-scale multiplier, default ``1.0``
+        (dimensionless).
     Tauinactf : array-like or callable, optional
-        Fast inactivation time-scale multiplier.
+        Fast inactivation time-scale multiplier, default ``1.0``
+        (dimensionless).
     Tauinacts : array-like or callable, optional
-        Slow inactivation time-scale multiplier.
+        Slow inactivation time-scale multiplier, default ``1.0``
+        (dimensionless).
     name : str, optional
         Optional module name.
+
+    See Also
+    --------
+    Kv1p5_MA2024_PC : Purkinje-cell parent class that supplies the
+        inherited gate kinetics.
 
     Notes
     -----
@@ -80,15 +88,68 @@ class Kv1p5_MA2020_GrC(Kv1p5_MA2024_PC):
     placeholder ion that receives the nonspecific current contribution.
 
     The inherited Kv1.5 gate kinetics are potassium kinetics and are
-    reused verbatim. Gate methods declare only the ion arguments they
-    read, so the inherited ``f_m_inf(self, V, K)`` and friends bind to
-    potassium alone even though this channel is rooted on three ions.
+    reused verbatim from :class:`Kv1p5_MA2024_PC`. Gate methods declare
+    only the ion arguments they read, so the inherited
+    ``f_m_inf(self, V, K)`` and friends bind to potassium alone even
+    though this channel is rooted on three ions. The parent declares
+    three gates -- ``m`` (power 3), ``n`` (power 1) and ``u`` (power
+    1) -- so the shared gate product used by both current components
+    is
+
+    .. math::
+
+        m^3 \, n \, u
+
+    and both components are further scaled by the shared voltage
+    factor computed in ``_voltage_factor``:
+
+    .. math::
+
+        0.1 + \frac{1}{1 + \exp\left(-\dfrac{V - 15\ \text{mV}}
+        {13\ \text{mV}}\right)}
+
+    Temperature scaling is *not* attached through the gate objects:
+    the parent's ``gates`` tuple sets neither ``phi`` nor ``q10``, so
+    :meth:`HH.gate_phi` resolves to the default ``1.0`` for ``m``,
+    ``n`` and ``u`` alike. Instead the parent's own ``_q10`` method
+    computes ``2.2 ** ((temp_K - 310.15) / 10)`` (``310.15 K`` is 37
+    degrees Celsius) and multiplies it into the ``alpha``/``beta``
+    rates used inside ``f_m_tau`` and ``f_n_tau`` only; ``f_u_tau``
+    returns the constant ``6800 * Tauinacts`` and receives no q10
+    scaling at all. This is the mechanism's own code path, not a
+    general BrainCell convention, and it is reproduced here rather
+    than any closed-form temperature dependence printed in the cited
+    papers.
 
     BrainCell channel currents use the package convention
     ``conductance * (E - V)``. The quoted NEURON source assigns
     ``(v - E)`` currents, so this implementation uses the sign
     convention already used by the surrounding BrainCell channel
     catalogue.
+
+    This mechanism is a **cardiac** IKur channel, not a cerebellar
+    one: the ``.mod`` file ``Kv1p5_MA20_GrC.mod`` carries the ``TITLE``
+    "Cardiac IKur current & nonspec cation current with identical
+    kinetics", and its kinetics were fitted to human atrial myocyte
+    recordings by Feng et al. (1998) [1]_, not to any cerebellar
+    recording. The granule-cell citation [2]_ names the model
+    BrainCell imported this parameterisation from -- the ``MA2020``
+    granule-cell deposit -- not the origin of the kinetics.
+
+    References
+    ----------
+    .. [1] Feng, J., Xu, D., Wang, Z., & Nattel, S. (1998). Ultrarapid
+           delayed rectifier current inactivation in human atrial
+           myocytes: properties and consequences. American Journal of
+           Physiology-Heart and Circulatory Physiology, 275(5),
+           H1717-H1725.
+           doi:10.1152/ajpheart.1998.275.5.H1717
+    .. [2] Masoli, S., Tognolina, M., Laforenza, U., Moccia, F., &
+           D'Angelo, E. (2020). Parameter tuning differentiates
+           granule cell subtypes enriching transmission properties
+           at the cerebellum input stage. Communications Biology,
+           3(1), 222.
+           doi:10.1038/s42003-020-0953-x
     """
 
     __module__ = "braincell.channel"

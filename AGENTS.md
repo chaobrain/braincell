@@ -26,6 +26,7 @@ Biologically detailed brain cell modeling in BrainX.
 
     Compose them freely (e.g. `jit` an outer driver that calls a `for_loop`/`scan`). Reach for the checkpointed variants only when reverse-mode gradients through a long simulation would otherwise exhaust memory — otherwise prefer plain `for_loop`/`scan`.
 12. Maintain compatibility with JAX versions >= 0.8.0 — `0.8.0` is the floor pinned by the `jax-version` matrix in `.github/workflows/CI-daily.yml`, which also runs latest. Prefer feature/shape detection over hard version checks.
+13. **Every tracked `.py` file opens with the Apache-2.0 license header — add it when you create the file.** It goes at the very top, above the module docstring, below only a shebang or PEP 263 encoding line. See [License header](#license-header) for the verbatim block.
 
 
 ## Quick Reference
@@ -58,6 +59,35 @@ Domain packages that are part of the public surface (`channel`, `filter`,
 no underscore. This is deliberate and matches the rest of the codebase.
 
 ## Critical Conventions
+
+### License header
+
+`braincell` is Apache-2.0 (`LICENSE`, `license = "Apache-2.0"` in `pyproject.toml`). **Every tracked `.py` file carries the notice below** — package modules, co-located `*_test.py` files, everything under `examples/`, `conftest.py`, `docs/conf.py`, and the Jinja templates that render to Python (so generated channels inherit it). Untracked scratch under `dev/` is exempt only because it is gitignored; give it the header too if it is ever promoted into the repository. Paste the block verbatim; the rule line is `#`, a space, then exactly 78 `=`:
+
+```python
+# Copyright 2026 BrainX Ecosystem Limited. All Rights Reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ==============================================================================
+```
+
+Placement rules:
+
+- **Year is the year the file is created**, not the year it is edited. Never renumber an existing header — a 2024 file stays 2024.
+- **The header comes first**, then one blank line, then the module docstring or the first import.
+- **Only two things may sit above it**: a `#!` shebang (must be line 1) and a PEP 263 encoding line (must be line 1 or 2). Nothing else — not a docstring, not an import, not a comment.
+- **Copy the notice, do not reword it.** The `Copyright` year is the only field that varies.
+- **Jinja templates under `examples/convert_mod/nmodl/templates/` are an exception to the year rule.** Their header is literal text that Jinja copies into every rendered channel, so the year is fixed at the template's own creation year rather than the generated file's. Leave it alone; generated output under `artifacts/` inherits whatever the template says.
 
 ### Units are mandatory
 

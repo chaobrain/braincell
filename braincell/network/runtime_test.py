@@ -19,8 +19,12 @@ from braincell.network import (
     per_edge,
     pairs,
     probability,
+    random_locations,
     lower_connections,
+    synapse_pool,
 )
+from braincell.network.delivery import source_spike
+from braincell.network.lowering import resolve_source_cv, resolve_synapse_layout
 
 
 def _build_tree() -> Morphology:
@@ -54,6 +58,10 @@ def _step_up_solver(cell):
 
 def _step_down_solver(cell):
     cell.V.value = cell.V.value - 1.0 * u.mV
+
+
+def _dendrite_only_step_up_solver(cell):
+    cell.V.value = cell.V.value + np.asarray([0.0, 40.0]) * u.mV
 
 
 def _spiking_cell(size: int = 2) -> Cell:
@@ -112,6 +120,47 @@ def _post_cell_with_synapse_pool(size: int = 2) -> Cell:
     return cell
 
 
+def _post_cell_with_colocated_synapse_pool(size: int = 2) -> Cell:
+    cell = Cell(
+        _build_tree(),
+        cv_policy=CVPerBranch(),
+        pop_size=(size,),
+        V_init=-65.0 * u.mV,
+        solver=_step_down_solver,
+    )
+    synapse = braincell.mech.Synapse(
+        "ExpSyn",
+        tau=2.0 * u.ms,
+        e=0.0 * u.mV,
+        weight=1.0 * u.uS,
+        name="exp",
+    )
+    cell.place(at("soma", 0.31), synapse)
+    cell.place(at("soma", 0.39), synapse)
+    return cell
+
+
+def _post_cell_with_packed_synapse_pool(size: int = 4) -> Cell:
+    cell = Cell(
+        _build_two_point_tree(),
+        cv_policy=CVPerBranch(),
+        pop_size=(size,),
+        V_init=-65.0 * u.mV,
+        solver=_step_down_solver,
+    )
+    synapse = braincell.mech.Synapse(
+        "ExpSyn",
+        tau=2.0 * u.ms,
+        e=0.0 * u.mV,
+        weight=1.0 * u.uS,
+        name="packed_exp",
+    )
+    cell[1].place(at("soma", 0.5), synapse)
+    cell[1].place(at("dend", 0.5), synapse)
+    cell[3].place(at("dend", 0.5), synapse)
+    return cell
+
+
 class PopulationTest(unittest.TestCase):
     def test_population_accepts_one_dimensional_cell_pop_size(self) -> None:
         pop = Population("E", _spiking_cell(size=3))
@@ -127,6 +176,49 @@ class PopulationTest(unittest.TestCase):
 
 
 class LoweringTest(unittest.TestCase):
+    def test_source_location_resolves_to_owning_cv(self) -> None:
+        cell = Cell(
+            _build_two_point_tree(),
+            cv_policy=CVPerBranch(),
+            pop_size=(2,),
+        )
+
+        self.assertEqual(resolve_source_cv(cell, RootLocation(0.5)), 0)
+        self.assertEqual(resolve_source_cv(cell, at("dend", 0.5)), 1)
+
+    def test_source_at_internal_cv_boundary_uses_canonical_owner(self) -> None:
+        cell = Cell(
+            _build_tree(),
+            cv_policy=CVPerBranch(cv_per_branch=2),
+            pop_size=(2,),
+        )
+
+        self.assertEqual(resolve_source_cv(cell, RootLocation(0.5)), 1)
+
+    def test_source_location_must_resolve_to_exactly_one_point(self) -> None:
+        cell = Cell(
+            _build_two_point_tree(),
+            cv_policy=CVPerBranch(),
+            pop_size=(2,),
+        )
+
+        with self.assertRaisesRegex(ValueError, "exactly one"):
+            resolve_source_cv(cell, at("soma", 0.5) | at("dend", 0.5))
+
+    def test_packed_synapse_target_must_belong_to_contact_post(self) -> None:
+        pre = _spiking_cell(size=4)
+        post = _post_cell_with_packed_synapse_pool()
+        pre.init_state()
+        post.init_state()
+        populations = {"E": Population("E", pre), "I": Population("I", post)}
+        valid = Connection("E", "I", [0, 1], [1, 3], "packed_exp", synapse_index=[0, 2])
+        block = lower_connections(populations, (valid,), dt=0.1 * u.ms)[0]
+        self.assertTrue(block.packed)
+
+        invalid = Connection("E", "I", [0], [3], "packed_exp", synapse_index=[0])
+        with self.assertRaisesRegex(ValueError, "different post cell"):
+            lower_connections(populations, (invalid,), dt=0.1 * u.ms)
+
     def test_lowering_validates_unknown_population(self) -> None:
         post = _post_cell()
         post.init_state()
@@ -244,6 +336,229 @@ class LoweringTest(unittest.TestCase):
 
 
 class NetworkRuntimeTest(unittest.TestCase):
+    def test_connections_from_same_population_use_independent_sources(self) -> None:
+        pre = Cell(
+            _build_two_point_tree(),
+            cv_policy=CVPerBranch(),
+            pop_size=(2,),
+            V_init=-10.0 * u.mV,
+            V_th=0.0 * u.mV,
+            solver=_dendrite_only_step_up_solver,
+        )
+        post = _post_cell()
+        net = Network()
+        net.add_population("E", pre)
+        net.add_population("I", post)
+        net.add_connection(
+            Connection(
+                "E",
+                "I",
+                [0],
+                [1],
+                "exp",
+                weight=1.0 * u.uS,
+                source=RootLocation(0.5),
+            )
+        )
+        net.add_connection(
+            Connection(
+                "E",
+                "I",
+                [0],
+                [1],
+                "exp",
+                weight=2.0 * u.uS,
+                source=at("dend", 0.5),
+            )
+        )
+
+        result = net.run(
+            dt=0.1 * u.ms,
+            duration=0.3 * u.ms,
+            spike_recording="population",
+        )
+
+        g = np.asarray(result.traces["I"]["g"].to_decimal(u.uS))
+        self.assertAlmostEqual(float(g[1, 1]), 2.0)
+        self.assertEqual(int(np.asarray(result.spikes["E"]).sum()), 0)
+
+    def test_build_creates_heterogeneous_synapse_pool_for_four_by_four_network(self) -> None:
+        pre = _spiking_cell(size=4)
+        post = Cell(
+            _build_two_point_tree(),
+            cv_policy=CVPerBranch(),
+            pop_size=(4,),
+            V_init=-65.0 * u.mV,
+            solver=_step_down_solver,
+        )
+        synapse = braincell.mech.Synapse(
+            "ExpSyn",
+            tau=2.0 * u.ms,
+            e=0.0 * u.mV,
+            weight=1.0 * u.uS,
+            name="auto_exp",
+        )
+        net = Network()
+        net.add_population("E", pre)
+        net.add_population("I", post)
+        net.add_edges(name="E_to_I", pre="E", post="I", method=all_pairs())
+        net.add_projection(
+            name="auto",
+            edges="E_to_I",
+            synapse=synapse,
+            pool=synapse_pool(
+                number=np.asarray([1, 2, 3, 1], dtype=np.int32),
+                placement=random_locations(seed=3),
+            ),
+            method=per_edge(number=1, replace=True, seed=4),
+        )
+
+        self.assertIs(net.build(), net)
+        self.assertIs(net.build(), net)
+        table = net.synapse_instance_tables["auto"]
+        contacts = net.contact_tables["auto"]
+        connection = net.projection_connections["auto"][0]
+
+        self.assertEqual(table.n_instance, 7)
+        np.testing.assert_array_equal(np.bincount(table.post_index, minlength=4), [1, 2, 3, 1])
+        self.assertEqual(contacts.n_contact, 16)
+        np.testing.assert_array_equal(
+            table.post_index[contacts.synapse_index],
+            connection.post_index,
+        )
+        self.assertFalse(post._initialized)
+
+        net.init_state()
+        layout_id, pool_size, _ = resolve_synapse_layout(net.populations["I"], "auto_exp")
+        layout = next(
+            layout for layout, _ in post.runtime.iter_synapse_layouts()
+            if layout.id == layout_id
+        )
+        self.assertEqual(pool_size, 7)
+        self.assertTrue(layout.is_packed)
+        np.testing.assert_array_equal(layout.population_index, table.post_index)
+
+    def test_automatic_pool_allows_contacts_to_share_one_owned_instance(self) -> None:
+        pre = _spiking_cell(size=4)
+        post = Cell(
+            _build_tree(),
+            cv_policy=CVPerBranch(),
+            pop_size=(4,),
+            V_init=-65.0 * u.mV,
+            solver=_step_down_solver,
+        )
+        net = Network()
+        net.add_population("E", pre)
+        net.add_population("I", post)
+        net.add_edges(name="E_to_I", pre="E", post="I", method=all_pairs())
+        net.add_projection(
+            name="shared",
+            edges="E_to_I",
+            synapse=braincell.mech.Synapse("ExpSyn", name="shared_exp"),
+            pool=synapse_pool(number=1, placement=random_locations(seed=1)),
+            method=per_edge(number=1, replace=True, seed=2),
+        )
+
+        net.build()
+        table = net.synapse_instance_tables["shared"]
+        connection = net.projection_connections["shared"][0]
+
+        self.assertEqual(table.n_instance, 4)
+        for post_index in range(4):
+            targets = connection.synapse_index[connection.post_index == post_index]
+            self.assertEqual(np.unique(targets).shape, (1,))
+            self.assertEqual(table.post_index[int(targets[0])], post_index)
+
+    def test_automatic_pool_requires_only_its_post_cell_to_be_uninitialized(self) -> None:
+        pre = _spiking_cell(size=2)
+        post = Cell(
+            _build_tree(),
+            cv_policy=CVPerBranch(),
+            pop_size=(2,),
+            V_init=-65.0 * u.mV,
+            solver=_step_down_solver,
+        )
+        pre.init_state()
+        net = Network()
+        net.add_population("E", pre)
+        net.add_population("I", post)
+        net.add_edges(name="E_to_I", pre="E", post="I", method=pairs([(0, 1)]))
+        net.add_projection(
+            name="auto",
+            edges="E_to_I",
+            synapse=braincell.mech.Synapse("ExpSyn", name="auto_exp"),
+            pool=synapse_pool(number=1),
+        )
+
+        net.build()
+        self.assertTrue(pre._initialized)
+        self.assertFalse(post._initialized)
+
+    def test_automatic_pool_count_callable_receives_active_post_indegree(self) -> None:
+        pre = _spiking_cell(size=4)
+        post = Cell(
+            _build_tree(),
+            cv_policy=CVPerBranch(),
+            pop_size=(4,),
+            V_init=-65.0 * u.mV,
+            solver=_step_down_solver,
+        )
+        seen = {}
+
+        def count_from_indegree(context):
+            seen["active"] = context.active_post_index.copy()
+            seen["indegree"] = context.indegree.copy()
+            return context.indegree[context.active_post_index]
+
+        net = Network()
+        net.add_population("E", pre)
+        net.add_population("I", post)
+        net.add_edges(
+            name="E_to_I",
+            pre="E",
+            post="I",
+            method=pairs([(0, 1), (2, 1), (3, 3)]),
+        )
+        net.add_projection(
+            name="callable_pool",
+            edges="E_to_I",
+            synapse=braincell.mech.Synapse("ExpSyn", name="callable_exp"),
+            pool=synapse_pool(number=count_from_indegree),
+        )
+
+        net.build()
+
+        np.testing.assert_array_equal(seen["active"], [1, 3])
+        np.testing.assert_array_equal(seen["indegree"], [0, 2, 0, 1])
+        table = net.synapse_instance_tables["callable_pool"]
+        np.testing.assert_array_equal(table.post_index, [1, 1, 3])
+
+    def test_build_rejects_custom_contact_target_owned_by_another_post(self) -> None:
+        pre = _spiking_cell(size=2)
+        post = Cell(
+            _build_tree(),
+            cv_policy=CVPerBranch(),
+            pop_size=(2,),
+            V_init=-65.0 * u.mV,
+            solver=_step_down_solver,
+        )
+        net = Network()
+        net.add_population("E", pre)
+        net.add_population("I", post)
+        net.add_edges(name="E_to_I", pre="E", post="I", method=pairs([(0, 0), (1, 1)]))
+        net.add_projection(
+            name="bad_owner",
+            edges="E_to_I",
+            synapse=braincell.mech.Synapse("ExpSyn", name="bad_exp"),
+            pool=synapse_pool(number=1),
+            method=braincell.network.explicit_contacts(
+                source_edge=[0, 1], synapse_index=[0, 0]
+            ),
+        )
+
+        with self.assertRaisesRegex(ValueError, "different post cell"):
+            net.build()
+
     def test_init_state_initializes_population_cells_and_is_idempotent(self) -> None:
         pre = _spiking_cell()
         post = _post_cell()
@@ -316,12 +631,22 @@ class NetworkRuntimeTest(unittest.TestCase):
         )
 
     def test_population_spike_reduces_multicompartment_spike_to_cell_level_events(self) -> None:
-        cell = _spiking_cell(size=2)
         spike = np.asarray([[False, True, False], [False, False, False]])
 
         reduced = braincell.network.delivery.population_spike(spike)
 
         np.testing.assert_array_equal(np.asarray(reduced), [True, False])
+
+    def test_source_spike_reads_only_selected_cv(self) -> None:
+        spike = np.asarray(
+            [
+                [False, True, False],
+                [True, False, True],
+            ]
+        )
+
+        np.testing.assert_array_equal(source_spike(spike, 0), [False, True])
+        np.testing.assert_array_equal(source_spike(spike, 1), [True, False])
 
     def test_cross_population_delivery_arrives_on_next_step(self) -> None:
         pre = _spiking_cell()
@@ -855,6 +1180,24 @@ class NetworkRuntimeTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "total contacts per post"):
             too_small.to_connections(edges, pool_size=3)
 
+    def test_by_post_pool_counts_colocated_synapse_placements(self) -> None:
+        post = _post_cell_with_colocated_synapse_pool()
+        post.init_state()
+        layout = next(layout for layout, _ in post.runtime.iter_synapse_layouts())
+        self.assertEqual(layout.n_active, 2)
+        self.assertEqual(layout.point_index.tolist(), [1, 1])
+        self.assertEqual(layout.placement_index.tolist(), [0, 1])
+
+        edges = EdgeSet("E_to_I", "E", "I", [0, 1], [1, 1])
+        projection = Projection(
+            name="E_to_I_exp",
+            edges="E_to_I",
+            synapse="exp",
+            method=by_post(replace=False, seed=1),
+        )
+        connections = projection.to_connections(edges, pool_size=layout.n_active)
+        self.assertEqual(set(connections[0].synapse_index.tolist()), {0, 1})
+
     def test_projection_accepts_callable_number_and_weight_rules(self) -> None:
         edges = EdgeSet("E_to_I", "E", "I", [0, 1, 2, 3], [0, 0, 1, 1])
 
@@ -926,6 +1269,32 @@ class NetworkRuntimeTest(unittest.TestCase):
         g = np.asarray(node.g.value.to_decimal(u.uS))
         self.assertEqual(g.shape, (2, 2))
         np.testing.assert_allclose(g[1], [1.0, 1.0], rtol=1e-6)
+
+    def test_network_accumulates_multiple_contacts_into_one_packed_synapse(self) -> None:
+        pre = _spiking_cell(size=4)
+        post = _post_cell_with_packed_synapse_pool()
+        net = Network()
+        net.add_population("E", pre)
+        net.add_population("I", post)
+        net.add_connection(
+            Connection(
+                "E",
+                "I",
+                pre_index=[0, 1, 2],
+                post_index=[1, 1, 3],
+                synapse="packed_exp",
+                synapse_index=[0, 0, 2],
+                weight=[0.25, 0.75, 0.5] * u.uS,
+            )
+        )
+
+        net.run(dt=0.1 * u.ms, duration=0.2 * u.ms, spike_recording="none")
+
+        layout, node = next(post.runtime.iter_synapse_layouts())
+        self.assertTrue(layout.is_packed)
+        g = np.asarray(node.g.value.to_decimal(u.uS))
+        self.assertEqual(g.shape, (3,))
+        np.testing.assert_allclose(g, [1.0, 0.0, 0.5], rtol=1e-6)
 
 
 if __name__ == "__main__":

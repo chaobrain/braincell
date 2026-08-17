@@ -7,6 +7,9 @@ from dataclasses import dataclass
 import brainunit as u
 import numpy as np
 
+from braincell._discretization.base import locate_cv_on_branch
+from braincell.filter import LocsetExpr
+
 from .core import Connection, Population
 
 
@@ -25,6 +28,8 @@ class ConnectionBlock:
     weight: object
     delay_steps: np.ndarray
     buffer_size: int
+    source_cv_id: int
+    packed: bool = False
 
 
 def lower_connections(
@@ -61,7 +66,18 @@ def _lower_connection(
     _validate_indices(connection.post_index, post.size, "post_index")
 
     layout_id, n_active, synapse_node = resolve_synapse_layout(post, connection.synapse)
+    layout = post.cell.runtime.layouts[layout_id]
     _validate_indices(connection.synapse_index, n_active, "synapse_index")
+    if layout.population_index is not None:
+        owners = layout.population_index[connection.synapse_index]
+        if not np.array_equal(owners, connection.post_index):
+            bad = np.nonzero(owners != connection.post_index)[0]
+            index = int(bad[0])
+            raise ValueError(
+                "Packed synapse target belongs to a different post cell; "
+                f"contact={index!r}, post_index={int(connection.post_index[index])!r}, "
+                f"synapse_owner={int(owners[index])!r}."
+            )
     delay_steps = _expand_delay_steps(
         connection.delay,
         dt=dt,
@@ -77,6 +93,7 @@ def _lower_connection(
         )
     else:
         weight = _expand_weight(connection.weight, n_contact=connection.n_contact)
+    source_cv_id = resolve_source_cv(pre.cell, connection.source)
     return ConnectionBlock(
         pre_population=connection.pre_population,
         post_population=connection.post_population,
@@ -89,6 +106,31 @@ def _lower_connection(
         weight=weight,
         delay_steps=delay_steps,
         buffer_size=int(np.max(delay_steps, initial=1)) + 1,
+        source_cv_id=source_cv_id,
+        packed=layout.population_index is not None,
+    )
+
+
+def resolve_source_cv(cell, source: LocsetExpr) -> int:
+    """Resolve a single continuous presynaptic location to its owning CV."""
+    if not isinstance(source, LocsetExpr):
+        raise TypeError(
+            "Connection source must be a LocsetExpr resolving to one location, "
+            f"got {type(source).__name__!s}."
+        )
+    mask = source.evaluate(cell.morpho)
+    if len(mask) != 1:
+        raise ValueError(
+            "Connection source must resolve to exactly one presynaptic location; "
+            f"got {len(mask)!r}."
+        )
+    branch_id = int(mask.branch_id[0])
+    branch_x = float(mask.branch_x[0])
+    ids = cell.cv_tree.branch_to_cv_ids[int(branch_id)]
+    return locate_cv_on_branch(
+        ids,
+        cell.cvs,
+        x=float(branch_x),
     )
 
 

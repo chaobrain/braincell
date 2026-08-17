@@ -14,6 +14,14 @@ from .projections import (
     explicit_contacts,
     per_edge,
 )
+from .pools import (
+    RandomLocations,
+    SynapseInstanceTable,
+    SynapsePool,
+    SynapsePoolContext,
+    random_locations,
+    synapse_pool,
+)
 
 __all__ = [
     "Connection",
@@ -28,6 +36,10 @@ __all__ = [
     "Projection",
     "ProjectionContactContext",
     "ProjectionEdgeContext",
+    "RandomLocations",
+    "SynapseInstanceTable",
+    "SynapsePool",
+    "SynapsePoolContext",
     "all_pairs",
     "by_post",
     "dense",
@@ -36,4 +48,6 @@ __all__ = [
     "pairs",
     "per_edge",
     "probability",
+    "random_locations",
+    "synapse_pool",
 ]

@@ -20,13 +20,22 @@ from .delivery import (
     enqueue_future_events,
     make_delivery_op,
     normalize_event_backend,
-    population_spike,
     resolve_event_backend,
+    source_spike,
     zero_ring_buffer,
     write_arrivals,
 )
-from .lowering import lower_connections, resolve_synapse_layout
+from .lowering import lower_connections, resolve_source_cv, resolve_synapse_layout
 from .projections import Projection
+from .projections import (
+    ProjectionContactContext,
+    ProjectionEdgeContext,
+    _resolve_contact_parameter,
+    _validate_contacts,
+)
+from .pools import SynapseInstanceTable, SynapsePoolContext
+from braincell.filter import RootLocation
+from braincell.mech import Synapse as SynapseDeclaration
 
 
 @dataclass(frozen=True)
@@ -38,6 +47,7 @@ class _RunSetup:
     delivery_ops: tuple
     ordered_population_names: tuple[str, ...]
     probe_names: dict[str, tuple[str, ...]]
+    population_source_cv_ids: dict[str, int]
     n_trace: int
 
 
@@ -64,6 +74,14 @@ class Network:
         self._topology_version = 0
         self._run_setup_cache: dict[tuple, _RunSetup] = {}
         self._network_run_loop_cache: dict[tuple, _CachedRunLoop] = {}
+        self.synapse_instance_tables: dict[str, SynapseInstanceTable] = {}
+        self.contact_tables = {}
+        self.projection_connections: dict[str, tuple[Connection, ...]] = {}
+        self._built = False
+
+    def _raise_if_built(self, action: str) -> None:
+        if self._built:
+            raise RuntimeError(f"Cannot {action} after Network.build().")
 
     def _mark_topology_changed(self) -> None:
         self._topology_version += 1
@@ -122,6 +140,7 @@ class Network:
 
     def add_population(self, name: str, cell) -> Population:
         """Add a named population and return its declaration."""
+        self._raise_if_built("add a population")
         population = Population(name=name, cell=cell)
         if population.name in self.populations:
             raise ValueError(f"Network already has a population named {population.name!r}.")
@@ -139,6 +158,7 @@ class Network:
 
     def add_edge_set(self, edge_set):
         """Add a reusable cell-level edge set and return it."""
+        self._raise_if_built("add an edge set")
         if edge_set.name in self.edge_sets:
             raise ValueError(f"Network already has an edge set named {edge_set.name!r}.")
         self.edge_sets[edge_set.name] = edge_set
@@ -173,6 +193,7 @@ class Network:
         **kwargs,
     ) -> Projection:
         """Add a named synaptic projection and return it."""
+        self._raise_if_built("add a projection")
         if projection is None:
             if name is None:
                 raise ValueError("Network.add_projection(...) requires name.")
@@ -245,10 +266,182 @@ class Network:
         cells are left unchanged because ``Cell.init_state`` itself is a
         one-shot declaration-to-runtime transition.
         """
+        self.build()
         for population in self.populations.values():
             if not getattr(population.cell, "_initialized", False):
                 population.cell.init_state(batch_size=batch_size)
         return self
+
+    def build(self) -> "Network":
+        """Materialize automatic synapse pools and projection contact tables.
+
+        Automatic pools are placed on their postsynaptic cells while those
+        cells are still in the declaration phase. The operation is idempotent;
+        population, edge-set, and projection declarations are frozen after it.
+        Direct :class:`Connection` objects may still be added because they do
+        not change cell storage layouts.
+
+        Notes
+        -----
+        This is a transitional API for the current automatic-pool prototype.
+        The target Network Builder described in
+        ``docs/design/network/architecture.md`` keeps materialization internal
+        and does not expose a public build phase.
+        """
+        if self._built:
+            return self
+
+        auto_pool_keys = set()
+        for projection in self.proj.values():
+            if not isinstance(projection.synapse, SynapseDeclaration):
+                continue
+            name = projection.synapse_name
+            edge_set = self._edge_set_for_projection(projection)
+            pool_key = (edge_set.post_population, name)
+            if pool_key in auto_pool_keys:
+                raise ValueError(
+                    f"Automatic synapse pool name {name!r} is used by multiple "
+                    f"projections onto population {edge_set.post_population!r}."
+                )
+            auto_pool_keys.add(pool_key)
+            post_cell = self.populations[edge_set.post_population].cell
+            if getattr(post_cell, "_initialized", False):
+                raise RuntimeError(
+                    f"Automatic synapse pool {name!r} requires postsynaptic population "
+                    f"{edge_set.post_population!r} to be uninitialized."
+                )
+            existing = [
+                placement for placement in post_cell.point_placements
+                if isinstance(placement.mechanism, SynapseDeclaration)
+                and placement.mechanism.instance_name == name
+            ]
+            if existing:
+                raise ValueError(f"Automatic synapse pool {name!r} conflicts with existing placements.")
+            selected = projection._selected_edge_index(edge_set)
+            edge_pre = edge_set.pre_index[selected]
+            edge_post = edge_set.post_index[selected]
+            active_post = np.asarray(tuple(dict.fromkeys(edge_post.tolist())), dtype=np.int32)
+            indegree = np.bincount(edge_post, minlength=self.populations[edge_set.post_population].size).astype(np.int32)
+            context = SynapsePoolContext(
+                post_size=self.populations[edge_set.post_population].size,
+                active_post_index=active_post,
+                indegree=indegree,
+                edge_pre_index=edge_pre,
+                edge_post_index=edge_post,
+                morphology=post_cell.morpho,
+                cv_contexts=post_cell.cv_contexts,
+            )
+            counts = projection.pool.counts(context)
+            rows = projection.pool.placement.sample(
+                post_cell.morpho,
+                post_index=active_post,
+                counts=counts,
+            )
+            for post_index, locset in rows:
+                post_cell[int(post_index)].place(locset, projection.synapse)
+
+        for projection in self.proj.values():
+            self._materialize_projection(projection)
+        self._built = True
+        return self
+
+    def _edge_set_for_projection(self, projection: Projection):
+        edge_name = projection.edge_set_name
+        if edge_name not in self.edge_sets:
+            raise KeyError(f"Projection {projection.name!r} references unknown EdgeSet {edge_name!r}.")
+        return self.edge_sets[edge_name]
+
+    def _projection_pool(self, projection: Projection, edge_set):
+        post_cell = self.populations[edge_set.post_population].cell
+        matches = [
+            placement for placement in post_cell.point_placements
+            if isinstance(placement.mechanism, SynapseDeclaration)
+            and placement.mechanism.instance_name == projection.synapse_name
+        ]
+        if not matches:
+            if isinstance(projection.synapse, SynapseDeclaration):
+                return [], np.asarray([], dtype=np.int32)
+            raise KeyError(
+                f"Population {edge_set.post_population!r} has no placed synapse named {projection.synapse_name!r}."
+            )
+        mechanisms = {placement.mechanism for placement in matches}
+        storage = {placement.population_index is not None for placement in matches}
+        if len(mechanisms) != 1 or len(storage) != 1:
+            raise ValueError(
+                f"Synapse pool {projection.synapse_name!r} must resolve to one mechanism signature and storage layout."
+            )
+        packed = next(iter(storage))
+        owners = (
+            np.asarray([int(item.population_index) for item in matches], dtype=np.int32)
+            if packed else None
+        )
+        return matches, owners
+
+    def _materialize_projection(self, projection: Projection) -> None:
+        edge_set = self._edge_set_for_projection(projection)
+        resolve_source_cv(
+            self.populations[edge_set.pre_population].cell,
+            projection.source,
+        )
+        matches, owners = self._projection_pool(projection, edge_set)
+        selected = projection._selected_edge_index(edge_set)
+        edge_pre = edge_set.pre_index[selected]
+        edge_post = edge_set.post_index[selected]
+        pool_size = len(matches)
+        context = ProjectionEdgeContext(
+            edge_index=selected,
+            edge_pre_index=edge_pre,
+            edge_post_index=edge_post,
+            pre_size=self.populations[edge_set.pre_population].size,
+            post_size=self.populations[edge_set.post_population].size,
+            pool_size=pool_size,
+            synapse=projection.synapse_name,
+            pool_post_index=owners,
+        )
+        contacts = projection.method(context)
+        _validate_contacts(contacts, context=context)
+        contact_pre = edge_pre[contacts.source_edge]
+        contact_post = edge_post[contacts.source_edge]
+        parameter_context = ProjectionContactContext(
+            edge_index=selected,
+            edge_pre_index=edge_pre,
+            edge_post_index=edge_post,
+            source_edge=contacts.source_edge,
+            contact_pre_index=contact_pre,
+            contact_post_index=contact_post,
+            synapse_index=contacts.synapse_index,
+            pre_size=context.pre_size,
+            post_size=context.post_size,
+            pool_size=pool_size,
+            synapse=projection.synapse_name,
+        )
+        self.contact_tables[projection.name] = contacts
+        if contacts.n_contact:
+            connection = Connection(
+                pre_population=edge_set.pre_population,
+                post_population=edge_set.post_population,
+                pre_index=contact_pre,
+                post_index=contact_post,
+                synapse=projection.synapse_name,
+                synapse_index=contacts.synapse_index,
+                weight=_resolve_contact_parameter(projection.weight, parameter_context, name="weight"),
+                delay=_resolve_contact_parameter(projection.delay, parameter_context, name="delay"),
+                source=projection.source,
+            )
+            self.projection_connections[projection.name] = (connection,)
+        else:
+            self.projection_connections[projection.name] = ()
+        if isinstance(projection.synapse, SynapseDeclaration):
+            self.synapse_instance_tables[projection.name] = SynapseInstanceTable(
+                placement_index=np.asarray([item.id for item in matches], dtype=np.int32),
+                synapse_index=np.arange(pool_size, dtype=np.int32),
+                post_index=owners,
+                branch_id=np.asarray([item.branch_id for item in matches], dtype=np.int32),
+                branch_x=np.asarray([item.branch_x for item in matches], dtype=float),
+                cv_id=np.asarray([item.cv_id for item in matches], dtype=np.int32),
+                point_id=np.asarray([item.point_id for item in matches], dtype=np.int32),
+                synapse=projection.synapse_name,
+            )
 
     def reset_state(self, batch_size=None) -> "Network":
         """Reset all population cell dynamic states.
@@ -270,6 +463,7 @@ class Network:
         ``Cell.reset()``, which would tear down runtime objects and return the
         cell to the declaration phase.
         """
+        self.build()
         for population in self.populations.values():
             if not getattr(population.cell, "_initialized", False):
                 population.cell.init_state(batch_size=batch_size)
@@ -390,12 +584,17 @@ class Network:
         probe_names = {
             name: tuple(sorted(population.cell.sample_probes())) for name, population in self.populations.items()
         }
+        population_source_cv_ids = {
+            name: resolve_source_cv(population.cell, RootLocation(0.5))
+            for name, population in self.populations.items()
+        }
         setup = _RunSetup(
             delivery_blocks=delivery_blocks,
             delivery_backend=delivery_backend,
             delivery_ops=delivery_ops,
             ordered_population_names=ordered_population_names,
             probe_names=probe_names,
+            population_source_cv_ids=population_source_cv_ids,
             n_trace=sum(len(names) for names in probe_names.values()),
         )
         self._run_setup_cache[cache_key] = setup
@@ -468,6 +667,7 @@ class Network:
         delivery_blocks = setup.delivery_blocks
         ordered_population_names = setup.ordered_population_names
         probe_names = setup.probe_names
+        population_source_cv_ids = setup.population_source_cv_ids
 
         def _run_loop(start_t, relative_times):
             times = start_t + relative_times
@@ -502,7 +702,10 @@ class Network:
                                 )
                             elif spike_recording == "population":
                                 spikes = tuple(
-                                    population_spike(self.populations[name].cell.spike.value)
+                                    source_spike(
+                                        self.populations[name].cell.spike.value,
+                                        population_source_cv_ids[name],
+                                    )
                                     for name in ordered_population_names
                                 )
                             else:
@@ -544,6 +747,12 @@ class Network:
         return first
 
     def _projection_connections(self) -> tuple[Connection, ...]:
+        if self._built:
+            return tuple(
+                connection
+                for projection in self.proj.values()
+                for connection in self.projection_connections[projection.name]
+            )
         connections = []
         for projection in self.proj.values():
             edge_name = projection.edge_set_name

@@ -108,6 +108,13 @@ def population_spike(spike) -> object:
     return spike
 
 
+def source_spike(spike, source_cv_id: int) -> object:
+    """Return one spike per population member from a single source CV."""
+    if spike.ndim < 2:
+        return spike
+    return spike[..., int(source_cv_id)]
+
+
 def delivery_blocks(blocks: tuple[ConnectionBlock, ...]) -> tuple[DeliveryBlock, ...]:
     """Split lowered connection blocks by fixed delay step.
 
@@ -142,7 +149,11 @@ def delivery_blocks(blocks: tuple[ConnectionBlock, ...]) -> tuple[DeliveryBlock,
                     pre_index=block.pre_index[contact_indices],
                     post_index=post_index,
                     synapse_index=synapse_index,
-                    flat_target_index=(post_index * int(block.n_active) + synapse_index).astype(np.int32, copy=False),
+                    flat_target_index=(
+                        synapse_index
+                        if block.packed
+                        else post_index * int(block.n_active) + synapse_index
+                    ).astype(np.int32, copy=False),
                     weight=slice_weight(block.weight, contact_indices),
                 )
             )
@@ -185,6 +196,8 @@ def zero_arrival(block: ConnectionBlock, *, post_size: int):
     object
         Zero event matrix with shape ``(post_size, block.n_active)``.
     """
+    if block.packed:
+        return zeros_like_packed_events(block.weight, n_active=block.n_active)
     return zeros_like_events(block.weight, post_size=post_size, n_active=block.n_active)
 
 
@@ -210,9 +223,21 @@ def zero_ring_buffer(block: DeliveryBlock, *, post_size: int):
     slot and read back when that slot becomes current.
     """
     depth = int(block.delay_steps) + 1
+    shape = (
+        (depth, block.source.n_active)
+        if block.source.packed
+        else (depth, post_size, block.source.n_active)
+    )
     if isinstance(block.weight, u.Quantity):
-        return u.math.zeros_like(block.weight, shape=(depth, post_size, block.source.n_active))
-    return jnp.zeros((depth, post_size, block.source.n_active), dtype=jnp.asarray(block.weight).dtype)
+        return u.math.zeros_like(block.weight, shape=shape)
+    return jnp.zeros(shape, dtype=jnp.asarray(block.weight).dtype)
+
+
+def zeros_like_packed_events(value, *, n_active: int):
+    """Return a zero event vector for packed point instances."""
+    if isinstance(value, u.Quantity):
+        return u.math.zeros_like(value, shape=(n_active,))
+    return jnp.zeros((n_active,), dtype=jnp.asarray(value).dtype)
 
 
 def zeros_like_events(value, *, post_size: int, n_active: int):
@@ -365,20 +390,26 @@ def enqueue_future_events(
     Notes
     -----
     Each block reads population-level presynaptic spikes, applies its backend
-    operator, reshapes the flattened event vector to
-    ``(post_size, n_active)``, and adds it to the ring-buffer slot
-    ``current_cursor + delay_steps``.
+    operator, reshapes the flattened event vector to ``(n_active,)`` for
+    packed layouts or ``(post_size, n_active)`` for broadcast layouts, and
+    adds it to the ring-buffer slot ``current_cursor + delay_steps``.
     """
     for index, block in enumerate(blocks):
         pre_cell = populations[block.source.pre_population].cell
-        pre_spike = population_spike(pre_cell.spike.value)
-        post_size = populations[block.source.post_population].size
+        pre_spike = source_spike(
+            pre_cell.spike.value,
+            block.source.source_cv_id,
+        )
         event = state.delivery_ops[index](pre_spike)
-        target_cursor = (state.ring_cursors[index].value + int(block.delay_steps)) % state.ring_buffers[
-            index
-        ].value.shape[0]
-        state.ring_buffers[index].value = (
-            state.ring_buffers[index].value.at[target_cursor].add(event.reshape((post_size, block.source.n_active)))
+        target_cursor = (
+            state.ring_cursors[index].value + int(block.delay_steps)
+        ) % state.ring_buffers[index].value.shape[0]
+        state.ring_buffers[index].value = state.ring_buffers[index].value.at[target_cursor].add(
+            event.reshape(
+                (block.source.n_active,)
+                if block.source.packed
+                else (populations[block.source.post_population].size, block.source.n_active)
+            )
         )
 
 
@@ -489,7 +520,11 @@ def make_delivery_op(
     into ``flat_target_index``. The ``brainevent`` path uses ``brainevent.coomv``
     with the same sparse topology.
     """
-    target_size = int(post_size) * int(block.source.n_active)
+    target_size = (
+        int(block.source.n_active)
+        if block.source.packed
+        else int(post_size) * int(block.source.n_active)
+    )
     pre_index = jnp.asarray(block.pre_index, dtype=jnp.int32)
     flat_target_index = jnp.asarray(block.flat_target_index, dtype=jnp.int32)
     if backend == "brainevent":

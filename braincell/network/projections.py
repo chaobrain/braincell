@@ -10,6 +10,9 @@ import numpy as np
 
 from .core import Connection, _as_index_array
 from .edges import EdgeSet
+from .pools import SynapsePool
+from braincell.filter import LocsetExpr, RootLocation
+from braincell.mech import Synapse
 
 
 @dataclass(frozen=True)
@@ -37,6 +40,7 @@ class ProjectionEdgeContext:
     post_size: int
     pool_size: int
     synapse: str
+    pool_post_index: np.ndarray | None = None
 
     @property
     def n_edge(self) -> int:
@@ -181,15 +185,20 @@ class Projection:
         uses the placed synapse default weight during lowering.
     delay : object or callable, optional
         Scalar, per-edge, per-contact, or callable delay.
+    source : LocsetExpr, optional
+        Single presynaptic location used for spike detection. Defaults to the
+        midpoint of the morphology root branch.
     """
 
     name: str
     edges: str | EdgeSet
-    synapse: str
+    synapse: str | Synapse
+    pool: SynapsePool | None = None
     method: object | None = None
     edge_index: object | None = None
     weight: object | None = None
     delay: object = field(default_factory=lambda: 0.0 * u.ms)
+    source: LocsetExpr = field(default_factory=lambda: RootLocation(0.5))
 
     def __post_init__(self) -> None:
         self.name = _validate_name(self.name, "name")
@@ -197,7 +206,20 @@ class Projection:
             raise TypeError("Projection edges must be an EdgeSet or edge-set name.")
         if isinstance(self.edges, str):
             self.edges = _validate_name(self.edges, "edges")
-        self.synapse = _validate_name(self.synapse, "synapse")
+        if isinstance(self.synapse, Synapse):
+            if self.pool is None:
+                raise ValueError("Projection with a Synapse declaration requires pool=synapse_pool(...).")
+        elif isinstance(self.synapse, str):
+            self.synapse = _validate_name(self.synapse, "synapse")
+            if self.pool is not None:
+                raise ValueError("Projection pool is only valid when synapse is a Synapse declaration.")
+        else:
+            raise TypeError("Projection synapse must be a name or braincell.mech.Synapse.")
+        if not isinstance(self.source, LocsetExpr):
+            raise TypeError(
+                "Projection source must be a LocsetExpr resolving to one location, "
+                f"got {type(self.source).__name__!s}."
+            )
         self.method = _normalize_contact_method(self.method)
         if self.edge_index is not None:
             self.edge_index = _as_index_array(self.edge_index, name="edge_index")
@@ -207,11 +229,15 @@ class Projection:
         """Referenced edge-set name."""
         return self.edges if isinstance(self.edges, str) else self.edges.name
 
+    @property
+    def synapse_name(self) -> str:
+        return self.synapse if isinstance(self.synapse, str) else self.synapse.instance_name
+
     def __repr__(self) -> str:
         """Return a compact projection summary."""
         return (
             f"Projection(name={self.name!r}, edges={self.edge_set_name!r}, "
-            f"synapse={self.synapse!r}, edge_index={self.edge_index is not None}, "
+            f"synapse={self.synapse_name!r}, edge_index={self.edge_index is not None}, "
             f"weight={self.weight is not None}, delay={self.delay is not None})"
         )
 
@@ -224,6 +250,7 @@ class Projection:
         pre_size: int | None = None,
         post_size: int | None = None,
         pool_size: int | None = None,
+        pool_post_index: object | None = None,
     ) -> tuple[Connection, ...]:
         """Expand this projection into runtime connection declarations.
 
@@ -251,6 +278,13 @@ class Projection:
         post_size = _inferred_size(post_size, edge_set.post_index, "post_size")
         pool_size = _positive_int(1 if pool_size is None else pool_size, "pool_size")
 
+        pool_owner = None
+        if pool_post_index is not None:
+            pool_owner = _as_index_array(pool_post_index, name="pool_post_index")
+            if pool_owner.shape != (pool_size,):
+                raise ValueError(
+                    f"pool_post_index must have shape {(pool_size,)!r}, got {pool_owner.shape!r}."
+                )
         edge_context = ProjectionEdgeContext(
             edge_index=edge_index,
             edge_pre_index=edge_pre_index,
@@ -258,7 +292,8 @@ class Projection:
             pre_size=pre_size,
             post_size=post_size,
             pool_size=pool_size,
-            synapse=self.synapse,
+            synapse=self.synapse_name,
+            pool_post_index=pool_owner,
         )
         contacts = self.method(edge_context)
         _validate_contacts(contacts, context=edge_context)
@@ -276,7 +311,7 @@ class Projection:
             pre_size=pre_size,
             post_size=post_size,
             pool_size=pool_size,
-            synapse=self.synapse,
+            synapse=self.synapse_name,
         )
         weight = _resolve_contact_parameter(self.weight, contact_context, name="weight")
         delay = _resolve_contact_parameter(self.delay, contact_context, name="delay")
@@ -287,10 +322,11 @@ class Projection:
                 post_population=edge_set.post_population,
                 pre_index=contact_pre_index,
                 post_index=contact_post_index,
-                synapse=self.synapse,
+                synapse=self.synapse_name,
                 synapse_index=contacts.synapse_index,
                 weight=weight,
                 delay=delay,
+                source=self.source,
             ),
         )
 
@@ -324,6 +360,16 @@ def _validate_edge_index(edge_index: np.ndarray, edge_set: EdgeSet) -> None:
 def _validate_contacts(contacts: ContactTable, *, context: ProjectionEdgeContext) -> None:
     _validate_index_bounds(contacts.source_edge, context.n_edge, "source_edge")
     _validate_index_bounds(contacts.synapse_index, context.pool_size, "synapse_index")
+    if contacts.n_contact and context.pool_post_index is not None:
+        contact_post = context.edge_post_index[contacts.source_edge]
+        target_post = context.pool_post_index[contacts.synapse_index]
+        if np.any(contact_post != target_post):
+            first = int(np.nonzero(contact_post != target_post)[0][0])
+            raise ValueError(
+                "Projection contact targets a synapse instance owned by a different "
+                f"post cell at contact {first!r}: post_index={int(contact_post[first])!r}, "
+                f"target_owner={int(target_post[first])!r}."
+            )
 
 
 def _validate_index_bounds(indices: np.ndarray, size: int, name: str) -> None:
@@ -432,14 +478,27 @@ def per_edge(number=1, *, replace: bool = True, seed: int | None = None) -> Cont
         source_edge = _source_edges_from_counts(counts)
         if source_edge.size == 0:
             return ContactTable(source_edge, np.asarray([], dtype=np.int32))
-        if not replace and np.any(counts > context.pool_size):
-            raise ValueError("per_edge(..., replace=False) requires every edge number <= pool_size.")
         rng = np.random.default_rng(seed)
-        selected = [
-            rng.choice(context.pool_size, size=int(count), replace=replace)
-            for count in counts.tolist()
-            if int(count) > 0
-        ]
+        selected = []
+        for edge_pos, count in enumerate(counts.tolist()):
+            if int(count) <= 0:
+                continue
+            candidates = (
+                np.arange(context.pool_size, dtype=np.int32)
+                if context.pool_post_index is None
+                else np.nonzero(
+                    context.pool_post_index == int(context.edge_post_index[edge_pos])
+                )[0].astype(np.int32, copy=False)
+            )
+            if not replace and int(count) > len(candidates):
+                raise ValueError(
+                    "per_edge(..., replace=False) requires edge number <= the post cell pool size."
+                )
+            if len(candidates) == 0:
+                raise ValueError(
+                    f"Projection post_index={int(context.edge_post_index[edge_pos])!r} has no synapse targets."
+                )
+            selected.append(rng.choice(candidates, size=int(count), replace=replace))
         synapse_index = np.concatenate(selected).astype(np.int32, copy=False)
         return ContactTable(source_edge, synapse_index)
 
@@ -472,14 +531,21 @@ def by_post(number=1, *, replace: bool = True, seed: int | None = None) -> Conta
         for post in tuple(dict.fromkeys(contact_post.tolist())):
             positions = np.nonzero(contact_post == post)[0]
             demand = int(positions.shape[0])
-            if not replace and demand > context.pool_size:
+            candidates = (
+                np.arange(context.pool_size, dtype=np.int32)
+                if context.pool_post_index is None
+                else np.nonzero(context.pool_post_index == int(post))[0].astype(np.int32, copy=False)
+            )
+            if not replace and demand > len(candidates):
                 raise ValueError(
                     "by_post(..., replace=False) requires total contacts per post "
                     f"<= pool_size; post_index={int(post)!r}, demand={demand!r}, "
-                    f"pool_size={context.pool_size!r}."
+                    f"pool_size={len(candidates)!r}."
                 )
+            if len(candidates) == 0:
+                raise ValueError(f"Projection post_index={int(post)!r} has no synapse targets.")
             synapse_index[positions] = rng.choice(
-                context.pool_size,
+                candidates,
                 size=demand,
                 replace=replace,
             )

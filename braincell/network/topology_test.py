@@ -6,7 +6,7 @@ import numpy as np
 import braincell
 import braincell.network as network
 from braincell import CVPerBranch, Cell, Morphology
-from braincell.filter import at
+from braincell.filter import RootLocation, at
 from braincell.network import Connection
 from braincell.network import EdgeSet, Projection
 from braincell.network import explicit_contacts
@@ -44,6 +44,18 @@ class ConnectionTest(unittest.TestCase):
         self.assertEqual(conn.n_edge, 2)
         np.testing.assert_array_equal(conn.pre_index, np.asarray([0, 2], dtype=np.int32))
         np.testing.assert_array_equal(conn.post_index, np.asarray([1, 0], dtype=np.int32))
+        self.assertEqual(conn.source, RootLocation(0.5))
+
+    def test_connection_accepts_one_source_locset(self) -> None:
+        source = at("soma", 0.25)
+
+        conn = Connection("E", "I", [0], [0], "ampa", source=source)
+
+        self.assertIs(conn.source, source)
+
+    def test_connection_rejects_non_locset_source(self) -> None:
+        with self.assertRaisesRegex(TypeError, "source must be a LocsetExpr"):
+            Connection("E", "I", [0], [0], "ampa", source="soma")
 
     def test_connection_rejects_mismatched_edges(self) -> None:
         with self.assertRaisesRegex(ValueError, "same shape"):
@@ -116,6 +128,21 @@ class EdgeSetProjectionTest(unittest.TestCase):
         np.testing.assert_array_equal(conns[0].post_index, [2, 2, 3])
         np.testing.assert_array_equal(conns[0].synapse_index, [0, 1, 1])
         np.testing.assert_allclose(conns[0].weight.to_decimal(u.uS), [0.1, 0.2, 0.3])
+        self.assertEqual(conns[0].source, RootLocation(0.5))
+
+    def test_projection_propagates_custom_source_to_connection(self) -> None:
+        edges = EdgeSet("E_to_I", "E", "I", [0], [0])
+        source = at("soma", 0.25)
+        projection = Projection(
+            name="E_to_I_ampa",
+            edges="E_to_I",
+            synapse="ampa",
+            source=source,
+        )
+
+        connection = projection.to_connections(edges)[0]
+
+        self.assertIs(connection.source, source)
 
     def test_projection_and_contact_table_repr_are_compact(self) -> None:
         contacts = explicit_contacts(source_edge=[0, 0, 1], synapse_index=[0, 1, 1])(

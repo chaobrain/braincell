@@ -8,6 +8,8 @@ import brainunit as u
 import jax
 import numpy as np
 
+from braincell.filter import LocsetExpr, RootLocation
+
 
 @dataclass(frozen=True)
 class Population:
@@ -88,6 +90,9 @@ class Connection:
         synapse's default ``weight`` parameter when available.
     delay : object
         Scalar or per-contact time delay. ``0 ms`` uses next-step delivery.
+    source : LocsetExpr
+        Single presynaptic location used for spike detection. Defaults to the
+        midpoint of the morphology root branch.
     """
 
     pre_population: str
@@ -98,11 +103,17 @@ class Connection:
     weight: object | None = None
     delay: object = field(default_factory=lambda: 0.0 * u.ms)
     synapse_index: object | None = None
+    source: LocsetExpr = field(default_factory=lambda: RootLocation(0.5))
 
     def __post_init__(self) -> None:
         self.pre_population = _validate_name(self.pre_population, "pre_population")
         self.post_population = _validate_name(self.post_population, "post_population")
         self.synapse = _validate_name(self.synapse, "synapse")
+        if not isinstance(self.source, LocsetExpr):
+            raise TypeError(
+                "Connection source must be a LocsetExpr resolving to one location, "
+                f"got {type(self.source).__name__!s}."
+            )
         self.pre_index = _as_index_array(self.pre_index, name="pre_index")
         self.post_index = _as_index_array(self.post_index, name="post_index")
         if self.pre_index.shape != self.post_index.shape:

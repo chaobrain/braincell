@@ -37,11 +37,14 @@ __all__ = [
     "intersect_region_intervals",
     "difference_region_intervals",
     "complement_region_intervals",
+    "fork_points_locations",
     "branch_points_locations",
     "terminal_locations",
     "uniform_samples_from_region",
     "random_samples_from_region",
     "normalize_locset_points",
+    "unique_locset_points",
+    "concat_locset_points",
     "union_locset_points",
     "intersect_locset_points",
     "difference_locset_points",
@@ -491,6 +494,8 @@ def _round_digits_from_epsilon(epsilon: float) -> int:
 
 def _normalize_loc_x(value: float, *, epsilon: float) -> float:
     x = _clip_norm_x(float(value), epsilon=epsilon)
+    if not np.isfinite(x):
+        raise ValueError(f"Locset coordinate x must be finite, got {value!r}.")
     if x < 0.0 - epsilon or x > 1.0 + epsilon:
         raise ValueError(f"Locset coordinate x must be within [0, 1], got {value!r}.")
     return x
@@ -501,15 +506,48 @@ def normalize_locset_points(
     *,
     epsilon: float = EPSILON,
 ) -> tuple[Location, ...]:
+    """Validate and canonicalize locations without changing row identity."""
     digits = _round_digits_from_epsilon(epsilon)
-    normalized: set[Location] = set()
+    normalized: list[Location] = []
     for raw_branch, raw_x in points:
-        if not isinstance(raw_branch, int):
+        if isinstance(raw_branch, bool) or not isinstance(raw_branch, Integral):
             raise TypeError(f"Branch index must be int, got {type(raw_branch).__name__!s}.")
+        if isinstance(raw_x, bool) or not isinstance(raw_x, Real):
+            raise TypeError(f"Locset coordinate x must be a real number, got {type(raw_x).__name__!s}.")
         branch = int(raw_branch)
-        x = _normalize_loc_x(float(raw_x), epsilon=epsilon)
-        normalized.add((branch, round(x, digits)))
-    return tuple(sorted(normalized, key=lambda item: (item[0], item[1])))
+        if branch < 0:
+            raise ValueError(f"Branch index must be non-negative, got {branch!r}.")
+        if branch > np.iinfo(np.int64).max:
+            raise ValueError(f"Branch index exceeds the int64 range, got {branch!r}.")
+        x = _normalize_loc_x(raw_x, epsilon=epsilon)
+        normalized.append((branch, round(x, digits)))
+    return tuple(normalized)
+
+
+def unique_locset_points(
+    points: tuple[Location, ...] | list[Location],
+    *,
+    epsilon: float = EPSILON,
+) -> tuple[Location, ...]:
+    """Return canonical locations with stable first-occurrence deduplication."""
+    result: list[Location] = []
+    seen: set[Location] = set()
+    for point in normalize_locset_points(points, epsilon=epsilon):
+        if point in seen:
+            continue
+        seen.add(point)
+        result.append(point)
+    return tuple(result)
+
+
+def concat_locset_points(
+    left: tuple[Location, ...] | list[Location],
+    right: tuple[Location, ...] | list[Location],
+    *,
+    epsilon: float = EPSILON,
+) -> tuple[Location, ...]:
+    """Concatenate canonical location rows while preserving duplicates."""
+    return normalize_locset_points(tuple(left) + tuple(right), epsilon=epsilon)
 
 
 def union_locset_points(
@@ -518,7 +556,7 @@ def union_locset_points(
     *,
     epsilon: float = EPSILON,
 ) -> tuple[Location, ...]:
-    return normalize_locset_points(tuple(left) + tuple(right), epsilon=epsilon)
+    return unique_locset_points(tuple(left) + tuple(right), epsilon=epsilon)
 
 
 def intersect_locset_points(
@@ -527,9 +565,8 @@ def intersect_locset_points(
     *,
     epsilon: float = EPSILON,
 ) -> tuple[Location, ...]:
-    left_norm = set(normalize_locset_points(left, epsilon=epsilon))
-    right_norm = set(normalize_locset_points(right, epsilon=epsilon))
-    return tuple(sorted(left_norm & right_norm, key=lambda item: (item[0], item[1])))
+    right_support = set(unique_locset_points(right, epsilon=epsilon))
+    return tuple(point for point in unique_locset_points(left, epsilon=epsilon) if point in right_support)
 
 
 def difference_locset_points(
@@ -538,23 +575,63 @@ def difference_locset_points(
     *,
     epsilon: float = EPSILON,
 ) -> tuple[Location, ...]:
-    left_norm = set(normalize_locset_points(left, epsilon=epsilon))
-    right_norm = set(normalize_locset_points(right, epsilon=epsilon))
-    return tuple(sorted(left_norm - right_norm, key=lambda item: (item[0], item[1])))
+    right_support = set(unique_locset_points(right, epsilon=epsilon))
+    return tuple(point for point in unique_locset_points(left, epsilon=epsilon) if point not in right_support)
+
+
+def fork_points_locations(morpho: Morphology, *, epsilon: float = EPSILON) -> tuple[Location, ...]:
+    """Return topology junctions incident to at least three branches."""
+    location_parent: dict[Location, Location] = {}
+    location_order: list[Location] = []
+
+    def add(point: Location) -> Location:
+        normalized = normalize_locset_points((point,), epsilon=epsilon)[0]
+        if normalized not in location_parent:
+            location_parent[normalized] = normalized
+            location_order.append(normalized)
+        return normalized
+
+    def find(point: Location) -> Location:
+        root = point
+        while location_parent[root] != root:
+            root = location_parent[root]
+        while location_parent[point] != point:
+            parent = location_parent[point]
+            location_parent[point] = root
+            point = parent
+        return root
+
+    def union(left: Location, right: Location) -> None:
+        left_root = find(left)
+        right_root = find(right)
+        if left_root != right_root:
+            location_parent[right_root] = left_root
+
+    for edge in morpho.edges:
+        parent = add((edge.parent.index, float(edge.parent_x)))
+        child = add((edge.child.index, float(edge.child_x)))
+        union(parent, child)
+
+    groups: dict[Location, list[Location]] = {}
+    for point in location_order:
+        groups.setdefault(find(point), []).append(point)
+
+    branch_depth: dict[int, int] = {}
+    for branch in morpho.branch_by_order(order="depth"):
+        branch_depth[branch.index] = 0 if branch.parent is None else branch_depth[branch.parent.index] + 1
+
+    forks: list[Location] = []
+    for points in groups.values():
+        if len({branch_id for branch_id, _ in points}) < 3:
+            continue
+        canonical = min(points, key=lambda point: (branch_depth[point[0]], point[0], point[1]))
+        forks.append(canonical)
+    return tuple(forks)
 
 
 def branch_points_locations(morpho: Morphology, *, epsilon: float = EPSILON) -> tuple[Location, ...]:
-    points: list[Location] = []
-    for parent_branch in range(len(morpho.branches)):
-        children = morpho.branch(index=parent_branch).children
-        if len(children) < 2:
-            continue
-        for child in children:
-            parent_x = child.parent_x
-            if parent_x is None:
-                continue
-            points.append((parent_branch, float(parent_x)))
-    return normalize_locset_points(points, epsilon=epsilon)
+    """Compatibility alias for :func:`fork_points_locations`."""
+    return fork_points_locations(morpho, epsilon=epsilon)
 
 
 def terminal_locations(morpho: Morphology, *, epsilon: float = EPSILON) -> tuple[Location, ...]:
@@ -603,7 +680,7 @@ def uniform_samples_from_region(
     n = _coerce_positive_count("count", count)
     entries = _sample_entries(morpho, intervals, epsilon=epsilon)
     if not entries:
-        return ()
+        raise ValueError("UniformSamples cannot sample from an empty or zero-length region.")
 
     lengths = np.asarray([item[3] for item in entries], dtype=float)
     cumulative = np.cumsum(lengths)
@@ -637,7 +714,7 @@ def random_samples_from_region(
         raise TypeError(f"seed must be an integer, got {seed!r}.")
     entries = _sample_entries(morpho, intervals, epsilon=epsilon)
     if not entries:
-        return ()
+        raise ValueError("RandomSamples cannot sample from an empty or zero-length region.")
 
     lengths = np.asarray([item[3] for item in entries], dtype=float)
     probs = lengths / np.sum(lengths)

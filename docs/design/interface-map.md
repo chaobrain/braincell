@@ -348,7 +348,7 @@ metric 属性：
 - `AtLocation`
 - `at(branch, x)`
 - `RootLocation`
-- `BranchPoints`
+- `ForkPoints` (`BranchPoints` compatibility alias)
 - `Terminals`
 - `RegionAnchors`
 - `UniformSamples`

@@ -149,8 +149,15 @@ class _RegionCache:
         if cached is not None:
             return cached
         mask = locset.evaluate(self._morpho, cache=self._selection)
+        names = mask.display_names
+        if names is None:
+            names = tuple(
+                f"{self._morpho.branch(index=int(branch_id)).name}({float(branch_x):g})"
+                for branch_id, branch_x in mask.points
+            )
         result = tuple(
-            (int(point[0]), float(point[1]), str(name)) for point, name in zip(mask.points, mask.display_names)
+            (int(branch_id), float(branch_x), str(name))
+            for branch_id, branch_x, name in zip(mask.branch_id, mask.branch_x, names)
         )
         self._locset_by_id[key] = result
         return result

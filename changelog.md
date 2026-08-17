@@ -48,9 +48,12 @@ stack.
     `braincell-neuromorpho` CLI.
 
 - **Location/Region Filters** (`braincell.filter`) (#69)
-  - Locset and region selection expressions (`BranchPoints`, `Terminals`,
+  - Locset and region selection expressions (`ForkPoints`, `Terminals`,
     `UniformSamples`, `SubtreeRegion`, `BranchRangeFilter`, …) with selection
     caching.
+  - Ordered, duplicate-preserving locsets with stable set algebra, explicit
+    `unique()`, and read-only columnar `LocsetMask` storage. `BranchPoints`
+    remains a compatibility alias for `ForkPoints`.
 
 - **Visualization Stack** (`braincell.vis`) (#80, #82, #102)
   - 2D (matplotlib) and 3D (PyVista, Plotly) backends with a unified backend

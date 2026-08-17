@@ -15,13 +15,13 @@
 
 # -*- coding: utf-8 -*-
 
-from typing import Union, Callable, Optional
+from typing import Optional
 
-import brainstate
 import braintools
 import brainunit as u
 
 from braincell._base import Ion, HHTypedNeuron
+from braincell._typing import Initializer, Size
 from braincell.mech import register_ion
 from braincell.ion._base import (
     Conserve,
@@ -183,11 +183,11 @@ class CalciumFixed(Calcium, FixedIon):
 
     def __init__(
         self,
-        size: brainstate.typing.Size,
-        E: Union[brainstate.typing.ArrayLike, Callable, None] = 120.0 * u.mV,
-        Ci: Union[brainstate.typing.ArrayLike, Callable, None] = None,
-        Co: Union[brainstate.typing.ArrayLike, Callable, None] = None,
-        valence: Union[brainstate.typing.ArrayLike, Callable, None] = None,
+        size: Size,
+        E: Optional[Initializer] = 120.0 * u.mV,
+        Ci: Optional[Initializer] = None,
+        Co: Optional[Initializer] = None,
+        valence: Optional[Initializer] = None,
         name: Optional[str] = None,
         **channels,
     ):
@@ -270,11 +270,11 @@ class CalciumInitNernst(Calcium, InitNernstIon):
 
     def __init__(
         self,
-        size: brainstate.typing.Size,
-        temp: Union[brainstate.typing.ArrayLike, Callable] = u.celsius2kelvin(36.0),
-        Ci: Union[brainstate.typing.ArrayLike, Callable, None] = None,
-        Co: Union[brainstate.typing.ArrayLike, Callable, None] = None,
-        valence: Union[brainstate.typing.ArrayLike, Callable, None] = None,
+        size: Size,
+        temp: Initializer = u.celsius2kelvin(36.0),
+        Ci: Optional[Initializer] = None,
+        Co: Optional[Initializer] = None,
+        valence: Optional[Initializer] = None,
         name: Optional[str] = None,
         **channels,
     ):
@@ -404,7 +404,7 @@ class CalciumDetailed(Calcium, DynamicNernstIon):
         which falls back to :attr:`Calcium.default_Co` inside
         :meth:`DynamicNernstIon._init_dynamic_nernst_ion`.
     Ci_initializer : array-like or callable, optional
-        Initializer for the dynamic ``Ci`` state. Defaults to a
+        Union[brainstate.typing.ArrayLike, Callable] for the dynamic ``Ci`` state. Defaults to a
         constant ``2.4e-4 mM`` initializer, matching ``C_rest``.
     name : str or None, optional
         Runtime ion instance name. Defaults to ``None``.
@@ -473,13 +473,13 @@ class CalciumDetailed(Calcium, DynamicNernstIon):
 
     def __init__(
         self,
-        size: brainstate.typing.Size,
-        temp: Union[brainstate.typing.ArrayLike, Callable] = u.celsius2kelvin(36.0),
-        d: Union[brainstate.typing.ArrayLike, Callable] = 1.0 * u.um,
-        tau: Union[brainstate.typing.ArrayLike, Callable] = 5.0 * u.ms,
-        C_rest: Union[brainstate.typing.ArrayLike, Callable] = 2.4e-4 * u.mM,
-        Co: Union[brainstate.typing.ArrayLike, Callable, None] = None,
-        Ci_initializer: Union[brainstate.typing.ArrayLike, Callable] = braintools.init.Constant(2.4e-4 * u.mM),
+        size: Size,
+        temp: Initializer = u.celsius2kelvin(36.0),
+        d: Initializer = 1.0 * u.um,
+        tau: Initializer = 5.0 * u.ms,
+        C_rest: Initializer = 2.4e-4 * u.mM,
+        Co: Optional[Initializer] = None,
+        Ci_initializer: Initializer = braintools.init.Constant(2.4e-4 * u.mM),
         name: Optional[str] = None,
         **channels,
     ):
@@ -529,7 +529,7 @@ class CalciumFirstOrder(Calcium, DynamicNernstIon):
         which falls back to :attr:`Calcium.default_Co` inside
         :meth:`DynamicNernstIon._init_dynamic_nernst_ion`.
     Ci_initializer : array-like or callable, optional
-        Initializer for the dynamic ``Ci`` state. Defaults to a
+        Union[brainstate.typing.ArrayLike, Callable] for the dynamic ``Ci`` state. Defaults to a
         constant ``2.4e-4 mM`` initializer.
     name : str or None, optional
         Runtime ion instance name. Defaults to ``None``.
@@ -592,12 +592,12 @@ class CalciumFirstOrder(Calcium, DynamicNernstIon):
 
     def __init__(
         self,
-        size: brainstate.typing.Size,
-        temp: Union[brainstate.typing.ArrayLike, Callable] = u.celsius2kelvin(36.0),
-        alpha: Union[brainstate.typing.ArrayLike, Callable] = 0.13,
-        beta: Union[brainstate.typing.ArrayLike, Callable] = 0.075,
-        Co: Union[brainstate.typing.ArrayLike, Callable, None] = None,
-        Ci_initializer: Union[brainstate.typing.ArrayLike, Callable] = braintools.init.Constant(2.4e-4 * u.mM),
+        size: Size,
+        temp: Initializer = u.celsius2kelvin(36.0),
+        alpha: Initializer = 0.13,
+        beta: Initializer = 0.075,
+        Co: Optional[Initializer] = None,
+        Ci_initializer: Initializer = braintools.init.Constant(2.4e-4 * u.mM),
         name: Optional[str] = None,
         **channels,
     ):
@@ -665,9 +665,9 @@ class ToyCaBindingKinetic_SU2015_DCN(Calcium, KineticIon):
         which falls back to :attr:`Calcium.default_Co` inside
         :meth:`KineticIon._init_kinetic_ion`.
     Ci_initializer : array-like or callable, optional
-        Initializer for the ``Ci`` species. Defaults to ``0.10 mM``.
+        Union[brainstate.typing.ArrayLike, Callable] for the ``Ci`` species. Defaults to ``0.10 mM``.
     BC_initializer : array-like or callable, optional
-        Initializer for the ``BC`` species. Defaults to ``0.00 mM``.
+        Union[brainstate.typing.ArrayLike, Callable] for the ``BC`` species. Defaults to ``0.00 mM``.
     solver : str, optional
         Integrator name used for the reaction network. Defaults to
         ``"rk4"``.
@@ -734,14 +734,14 @@ class ToyCaBindingKinetic_SU2015_DCN(Calcium, KineticIon):
 
     def __init__(
         self,
-        size: brainstate.typing.Size,
-        temp: Union[brainstate.typing.ArrayLike, Callable] = u.celsius2kelvin(36.0),
-        kf: Union[brainstate.typing.ArrayLike, Callable] = 2.0 / (u.mM * u.ms),
-        kb: Union[brainstate.typing.ArrayLike, Callable] = 0.5 / u.ms,
-        Btot: Union[brainstate.typing.ArrayLike, Callable] = 1.0 * u.mM,
-        Co: Union[brainstate.typing.ArrayLike, Callable, None] = None,
-        Ci_initializer: Union[brainstate.typing.ArrayLike, Callable] = 0.10 * u.mM,
-        BC_initializer: Union[brainstate.typing.ArrayLike, Callable] = 0.00 * u.mM,
+        size: Size,
+        temp: Initializer = u.celsius2kelvin(36.0),
+        kf: Initializer = 2.0 / (u.mM * u.ms),
+        kb: Initializer = 0.5 / u.ms,
+        Btot: Initializer = 1.0 * u.mM,
+        Co: Optional[Initializer] = None,
+        Ci_initializer: Initializer = 0.10 * u.mM,
+        BC_initializer: Initializer = 0.00 * u.mM,
         solver: str = "rk4",
         substeps: int = 5,
         name: Optional[str] = None,
@@ -812,9 +812,9 @@ class ToyCaBindingSourceKinetic_SU2015_DCN(Calcium, KineticIon):
         which falls back to :attr:`Calcium.default_Co` inside
         :meth:`KineticIon._init_kinetic_ion`.
     Ci_initializer : array-like or callable, optional
-        Initializer for the ``Ci`` species. Defaults to ``0.10 mM``.
+        Union[brainstate.typing.ArrayLike, Callable] for the ``Ci`` species. Defaults to ``0.10 mM``.
     BC_initializer : array-like or callable, optional
-        Initializer for the ``BC`` species. Defaults to ``0.00 mM``.
+        Union[brainstate.typing.ArrayLike, Callable] for the ``BC`` species. Defaults to ``0.00 mM``.
     solver : str, optional
         Integrator name used for the reaction network. Defaults to
         ``"rk4"``.
@@ -868,15 +868,15 @@ class ToyCaBindingSourceKinetic_SU2015_DCN(Calcium, KineticIon):
 
     def __init__(
         self,
-        size: brainstate.typing.Size,
-        temp: Union[brainstate.typing.ArrayLike, Callable] = u.celsius2kelvin(36.0),
-        kf: Union[brainstate.typing.ArrayLike, Callable] = 2.0 / (u.mM * u.ms),
-        kb: Union[brainstate.typing.ArrayLike, Callable] = 0.5 / u.ms,
-        Btot: Union[brainstate.typing.ArrayLike, Callable] = 1.0 * u.mM,
-        ci_source: Union[brainstate.typing.ArrayLike, Callable] = 0.002 * u.mM / u.ms,
-        Co: Union[brainstate.typing.ArrayLike, Callable, None] = None,
-        Ci_initializer: Union[brainstate.typing.ArrayLike, Callable] = 0.10 * u.mM,
-        BC_initializer: Union[brainstate.typing.ArrayLike, Callable] = 0.00 * u.mM,
+        size: Size,
+        temp: Initializer = u.celsius2kelvin(36.0),
+        kf: Initializer = 2.0 / (u.mM * u.ms),
+        kb: Initializer = 0.5 / u.ms,
+        Btot: Initializer = 1.0 * u.mM,
+        ci_source: Initializer = 0.002 * u.mM / u.ms,
+        Co: Optional[Initializer] = None,
+        Ci_initializer: Initializer = 0.10 * u.mM,
+        BC_initializer: Initializer = 0.00 * u.mM,
         solver: str = "rk4",
         substeps: int = 5,
         name: Optional[str] = None,
@@ -942,9 +942,9 @@ class ToyCaBindingIcaSourceKinetic_SU2015_DCN(Calcium, KineticIon):
         which falls back to :attr:`Calcium.default_Co` inside
         :meth:`KineticIon._init_kinetic_ion`.
     Ci_initializer : array-like or callable, optional
-        Initializer for the ``Ci`` species. Defaults to ``0.10 mM``.
+        Union[brainstate.typing.ArrayLike, Callable] for the ``Ci`` species. Defaults to ``0.10 mM``.
     BC_initializer : array-like or callable, optional
-        Initializer for the ``BC`` species. Defaults to ``0.00 mM``.
+        Union[brainstate.typing.ArrayLike, Callable] for the ``BC`` species. Defaults to ``0.00 mM``.
     solver : str, optional
         Integrator name used for the reaction network. Defaults to
         ``"rk4"``.
@@ -1015,16 +1015,16 @@ class ToyCaBindingIcaSourceKinetic_SU2015_DCN(Calcium, KineticIon):
 
     def __init__(
         self,
-        size: brainstate.typing.Size,
-        temp: Union[brainstate.typing.ArrayLike, Callable] = u.celsius2kelvin(36.0),
-        kf: Union[brainstate.typing.ArrayLike, Callable] = 2.0 / (u.mM * u.ms),
-        kb: Union[brainstate.typing.ArrayLike, Callable] = 0.5 / u.ms,
-        Btot: Union[brainstate.typing.ArrayLike, Callable] = 1.0 * u.mM,
-        kCa: Union[brainstate.typing.ArrayLike, Callable] = 3.45e-7 / u.coulomb,
-        depth: Union[brainstate.typing.ArrayLike, Callable] = 0.2 * u.um,
-        Co: Union[brainstate.typing.ArrayLike, Callable, None] = None,
-        Ci_initializer: Union[brainstate.typing.ArrayLike, Callable] = 0.10 * u.mM,
-        BC_initializer: Union[brainstate.typing.ArrayLike, Callable] = 0.00 * u.mM,
+        size: Size,
+        temp: Initializer = u.celsius2kelvin(36.0),
+        kf: Initializer = 2.0 / (u.mM * u.ms),
+        kb: Initializer = 0.5 / u.ms,
+        Btot: Initializer = 1.0 * u.mM,
+        kCa: Initializer = 3.45e-7 / u.coulomb,
+        depth: Initializer = 0.2 * u.um,
+        Co: Optional[Initializer] = None,
+        Ci_initializer: Initializer = 0.10 * u.mM,
+        BC_initializer: Initializer = 0.00 * u.mM,
         solver: str = "rk4",
         substeps: int = 5,
         name: Optional[str] = None,
@@ -1108,9 +1108,9 @@ class ToyCaPumpFactorKinetic_SU2015_DCN(Calcium, KineticIon):
         which falls back to :attr:`Calcium.default_Co` inside
         :meth:`KineticIon._init_kinetic_ion`.
     Ci_initializer : array-like or callable, optional
-        Initializer for the ``Ci`` species. Defaults to ``0.10 mM``.
+        Union[brainstate.typing.ArrayLike, Callable] for the ``Ci`` species. Defaults to ``0.10 mM``.
     PumpBound_initializer : array-like or callable, optional
-        Initializer for the ``PumpBound`` species. Defaults to
+        Union[brainstate.typing.ArrayLike, Callable] for the ``PumpBound`` species. Defaults to
         ``0.00 mM * um``.
     solver : str, optional
         Integrator name used for the reaction network. Defaults to
@@ -1220,19 +1220,19 @@ class ToyCaPumpFactorKinetic_SU2015_DCN(Calcium, KineticIon):
 
     def __init__(
         self,
-        size: brainstate.typing.Size,
-        temp: Union[brainstate.typing.ArrayLike, Callable] = u.celsius2kelvin(36.0),
-        kf: Union[brainstate.typing.ArrayLike, Callable] = 2.0 / (u.mM * u.ms),
-        kb: Union[brainstate.typing.ArrayLike, Callable] = 0.5 / u.ms,
-        k_rel: Union[brainstate.typing.ArrayLike, Callable] = 0.05 / u.ms,
-        PumpTot: Union[brainstate.typing.ArrayLike, Callable] = 1.0 * u.mM * u.um,
-        kCa: Union[brainstate.typing.ArrayLike, Callable] = 3.45e-7 / u.coulomb,
-        depth: Union[brainstate.typing.ArrayLike, Callable] = 0.2 * u.um,
-        cyt_volume: Union[brainstate.typing.ArrayLike, Callable] = 3.0 * u.um**3,
-        pump_area: Union[brainstate.typing.ArrayLike, Callable] = 3.0 * u.um**2,
-        Co: Union[brainstate.typing.ArrayLike, Callable, None] = None,
-        Ci_initializer: Union[brainstate.typing.ArrayLike, Callable] = 0.10 * u.mM,
-        PumpBound_initializer: Union[brainstate.typing.ArrayLike, Callable] = 0.00 * u.mM * u.um,
+        size: Size,
+        temp: Initializer = u.celsius2kelvin(36.0),
+        kf: Initializer = 2.0 / (u.mM * u.ms),
+        kb: Initializer = 0.5 / u.ms,
+        k_rel: Initializer = 0.05 / u.ms,
+        PumpTot: Initializer = 1.0 * u.mM * u.um,
+        kCa: Initializer = 3.45e-7 / u.coulomb,
+        depth: Initializer = 0.2 * u.um,
+        cyt_volume: Initializer = 3.0 * u.um**3,
+        pump_area: Initializer = 3.0 * u.um**2,
+        Co: Optional[Initializer] = None,
+        Ci_initializer: Initializer = 0.10 * u.mM,
+        PumpBound_initializer: Initializer = 0.00 * u.mM * u.um,
         solver: str = "rk4",
         substeps: int = 5,
         name: Optional[str] = None,
@@ -1322,9 +1322,9 @@ class ToyDiamFactorKinetic_SU2015_DCN(Calcium, KineticIon):
         which falls back to :attr:`Calcium.default_Co` inside
         :meth:`KineticIon._init_kinetic_ion`.
     Ci_initializer : array-like or callable, optional
-        Initializer for the ``Ci`` species. Defaults to ``0.10 mM``.
+        Union[brainstate.typing.ArrayLike, Callable] for the ``Ci`` species. Defaults to ``0.10 mM``.
     PumpBound_initializer : array-like or callable, optional
-        Initializer for the ``PumpBound`` species. Defaults to
+        Union[brainstate.typing.ArrayLike, Callable] for the ``PumpBound`` species. Defaults to
         ``0.00 mM * um``.
     solver : str, optional
         Integrator name used for the reaction network. Defaults to
@@ -1420,15 +1420,15 @@ class ToyDiamFactorKinetic_SU2015_DCN(Calcium, KineticIon):
 
     def __init__(
         self,
-        size: brainstate.typing.Size,
-        temp: Union[brainstate.typing.ArrayLike, Callable] = u.celsius2kelvin(36.0),
-        kf: Union[brainstate.typing.ArrayLike, Callable] = 2.0 / (u.mM * u.ms),
-        kb: Union[brainstate.typing.ArrayLike, Callable] = 0.5 / u.ms,
-        PumpTot: Union[brainstate.typing.ArrayLike, Callable] = 1.0 * u.mM * u.um,
-        depth: Union[brainstate.typing.ArrayLike, Callable] = 1.0 * u.um,
-        Co: Union[brainstate.typing.ArrayLike, Callable, None] = None,
-        Ci_initializer: Union[brainstate.typing.ArrayLike, Callable] = 0.10 * u.mM,
-        PumpBound_initializer: Union[brainstate.typing.ArrayLike, Callable] = 0.00 * u.mM * u.um,
+        size: Size,
+        temp: Initializer = u.celsius2kelvin(36.0),
+        kf: Initializer = 2.0 / (u.mM * u.ms),
+        kb: Initializer = 0.5 / u.ms,
+        PumpTot: Initializer = 1.0 * u.mM * u.um,
+        depth: Initializer = 1.0 * u.um,
+        Co: Optional[Initializer] = None,
+        Ci_initializer: Initializer = 0.10 * u.mM,
+        PumpBound_initializer: Initializer = 0.00 * u.mM * u.um,
         solver: str = "backward_euler",
         substeps: int = 1,
         name: Optional[str] = None,
@@ -1507,7 +1507,7 @@ class CdpStC_CAMOnly_MA2020_GoC(Calcium, KineticIon):
         which falls back to :attr:`Calcium.default_Co` inside
         :meth:`KineticIon._init_kinetic_ion`.
     Ci_initializer : array-like or callable or None, optional
-        Initializer for the ``Ci`` species. Defaults to ``None``,
+        Union[brainstate.typing.ArrayLike, Callable] for the ``Ci`` species. Defaults to ``None``,
         which falls back to ``cainull``.
     species_initializers : dict or None, optional
         Per-species initializer overrides, keyed by one of this
@@ -1726,21 +1726,21 @@ class CdpStC_CAMOnly_MA2020_GoC(Calcium, KineticIon):
 
     def __init__(
         self,
-        size: brainstate.typing.Size,
-        temp: Union[brainstate.typing.ArrayLike, Callable] = u.celsius2kelvin(25.0),
-        Nannuli: Union[brainstate.typing.ArrayLike, Callable] = 10.9495,
-        cainull: Union[brainstate.typing.ArrayLike, Callable] = 45e-6 * u.mM,
-        CAM_start: Union[brainstate.typing.ArrayLike, Callable] = 0.03 * u.mM,
-        K1Coff: Union[brainstate.typing.ArrayLike, Callable] = 0.04 / u.ms,
-        K1Con: Union[brainstate.typing.ArrayLike, Callable] = 5.4 / (u.mM * u.ms),
-        K2Coff: Union[brainstate.typing.ArrayLike, Callable] = 0.00925 / u.ms,
-        K2Con: Union[brainstate.typing.ArrayLike, Callable] = 15.0 / (u.mM * u.ms),
-        K1Noff: Union[brainstate.typing.ArrayLike, Callable] = 2.5 / u.ms,
-        K1Non: Union[brainstate.typing.ArrayLike, Callable] = 142.5 / (u.mM * u.ms),
-        K2Noff: Union[brainstate.typing.ArrayLike, Callable] = 0.75 / u.ms,
-        K2Non: Union[brainstate.typing.ArrayLike, Callable] = 175.0 / (u.mM * u.ms),
-        Co: Union[brainstate.typing.ArrayLike, Callable, None] = None,
-        Ci_initializer: Union[brainstate.typing.ArrayLike, Callable, None] = None,
+        size: Size,
+        temp: Initializer = u.celsius2kelvin(25.0),
+        Nannuli: Initializer = 10.9495,
+        cainull: Initializer = 45e-6 * u.mM,
+        CAM_start: Initializer = 0.03 * u.mM,
+        K1Coff: Initializer = 0.04 / u.ms,
+        K1Con: Initializer = 5.4 / (u.mM * u.ms),
+        K2Coff: Initializer = 0.00925 / u.ms,
+        K2Con: Initializer = 15.0 / (u.mM * u.ms),
+        K1Noff: Initializer = 2.5 / u.ms,
+        K1Non: Initializer = 142.5 / (u.mM * u.ms),
+        K2Noff: Initializer = 0.75 / u.ms,
+        K2Non: Initializer = 175.0 / (u.mM * u.ms),
+        Co: Optional[Initializer] = None,
+        Ci_initializer: Optional[Initializer] = None,
         species_initializers: Optional[dict[str, object]] = None,
         solver: str = "backward_euler",
         substeps: int = 1,
@@ -1940,7 +1940,7 @@ class CdpStC_NoCAM_MA2020_GoC(Calcium, KineticIon):
         which falls back to :attr:`Calcium.default_Co` inside
         :meth:`KineticIon._init_kinetic_ion`.
     Ci_initializer : array-like or callable or None, optional
-        Initializer for the ``Ci`` species. Defaults to ``None``,
+        Union[brainstate.typing.ArrayLike, Callable] for the ``Ci`` species. Defaults to ``None``,
         which falls back to ``cainull``.
     species_initializers : dict or None, optional
         Per-species initializer overrides, keyed by one of this
@@ -2152,34 +2152,34 @@ class CdpStC_NoCAM_MA2020_GoC(Calcium, KineticIon):
 
     def __init__(
         self,
-        size: brainstate.typing.Size,
-        temp: Union[brainstate.typing.ArrayLike, Callable] = u.celsius2kelvin(25.0),
-        Nannuli: Union[brainstate.typing.ArrayLike, Callable] = 10.9495,
-        cainull: Union[brainstate.typing.ArrayLike, Callable] = 45e-6 * u.mM,
-        mginull: Union[brainstate.typing.ArrayLike, Callable] = 0.59 * u.mM,
-        Buffnull1: Union[brainstate.typing.ArrayLike, Callable] = 0.0 * u.mM,
-        rf1: Union[brainstate.typing.ArrayLike, Callable] = 0.0134329 / (u.mM * u.ms),
-        rf2: Union[brainstate.typing.ArrayLike, Callable] = 0.0397469 / u.ms,
-        Buffnull2: Union[brainstate.typing.ArrayLike, Callable] = 60.9091 * u.mM,
-        rf3: Union[brainstate.typing.ArrayLike, Callable] = 0.1435 / (u.mM * u.ms),
-        rf4: Union[brainstate.typing.ArrayLike, Callable] = 0.0014 / u.ms,
-        BTCnull: Union[brainstate.typing.ArrayLike, Callable] = 0.0 * u.mM,
-        b1: Union[brainstate.typing.ArrayLike, Callable] = 5.33 / (u.mM * u.ms),
-        b2: Union[brainstate.typing.ArrayLike, Callable] = 0.08 / u.ms,
-        DMNPEnull: Union[brainstate.typing.ArrayLike, Callable] = 0.0 * u.mM,
-        c1: Union[brainstate.typing.ArrayLike, Callable] = 5.63 / (u.mM * u.ms),
-        c2: Union[brainstate.typing.ArrayLike, Callable] = 0.107e-3 / u.ms,
-        PVnull: Union[brainstate.typing.ArrayLike, Callable] = 0.08 * u.mM,
-        m1: Union[brainstate.typing.ArrayLike, Callable] = 1.07e2 / (u.mM * u.ms),
-        m2: Union[brainstate.typing.ArrayLike, Callable] = 9.5e-4 / u.ms,
-        p1: Union[brainstate.typing.ArrayLike, Callable] = 0.8 / (u.mM * u.ms),
-        p2: Union[brainstate.typing.ArrayLike, Callable] = 2.5e-2 / u.ms,
-        kpmp1: Union[brainstate.typing.ArrayLike, Callable] = 3e-3 / (u.mM * u.ms),
-        kpmp2: Union[brainstate.typing.ArrayLike, Callable] = 1.75e-5 / u.ms,
-        kpmp3: Union[brainstate.typing.ArrayLike, Callable] = 7.255e-5 / u.ms,
-        TotalPump: Union[brainstate.typing.ArrayLike, Callable] = 1e-9 * (u.mol / u.cm**2),
-        Co: Union[brainstate.typing.ArrayLike, Callable, None] = None,
-        Ci_initializer: Union[brainstate.typing.ArrayLike, Callable, None] = None,
+        size: Size,
+        temp: Initializer = u.celsius2kelvin(25.0),
+        Nannuli: Initializer = 10.9495,
+        cainull: Initializer = 45e-6 * u.mM,
+        mginull: Initializer = 0.59 * u.mM,
+        Buffnull1: Initializer = 0.0 * u.mM,
+        rf1: Initializer = 0.0134329 / (u.mM * u.ms),
+        rf2: Initializer = 0.0397469 / u.ms,
+        Buffnull2: Initializer = 60.9091 * u.mM,
+        rf3: Initializer = 0.1435 / (u.mM * u.ms),
+        rf4: Initializer = 0.0014 / u.ms,
+        BTCnull: Initializer = 0.0 * u.mM,
+        b1: Initializer = 5.33 / (u.mM * u.ms),
+        b2: Initializer = 0.08 / u.ms,
+        DMNPEnull: Initializer = 0.0 * u.mM,
+        c1: Initializer = 5.63 / (u.mM * u.ms),
+        c2: Initializer = 0.107e-3 / u.ms,
+        PVnull: Initializer = 0.08 * u.mM,
+        m1: Initializer = 1.07e2 / (u.mM * u.ms),
+        m2: Initializer = 9.5e-4 / u.ms,
+        p1: Initializer = 0.8 / (u.mM * u.ms),
+        p2: Initializer = 2.5e-2 / u.ms,
+        kpmp1: Initializer = 3e-3 / (u.mM * u.ms),
+        kpmp2: Initializer = 1.75e-5 / u.ms,
+        kpmp3: Initializer = 7.255e-5 / u.ms,
+        TotalPump: Initializer = 1e-9 * (u.mol / u.cm**2),
+        Co: Optional[Initializer] = None,
+        Ci_initializer: Optional[Initializer] = None,
         species_initializers: Optional[dict[str, object]] = None,
         solver: str = "backward_euler",
         substeps: int = 1,
@@ -2600,7 +2600,7 @@ class CdpStC_MA2020_GoC(Calcium, KineticIon):
         which falls back to :attr:`Calcium.default_Co` inside
         :meth:`KineticIon._init_kinetic_ion`.
     Ci_initializer : array-like or callable or None, optional
-        Initializer for the ``Ci`` species. Defaults to ``None``,
+        Union[brainstate.typing.ArrayLike, Callable] for the ``Ci`` species. Defaults to ``None``,
         which falls back to ``cainull``.
     species_initializers : dict or None, optional
         Per-species initializer overrides, keyed by one of this
@@ -2918,43 +2918,43 @@ class CdpStC_MA2020_GoC(Calcium, KineticIon):
 
     def __init__(
         self,
-        size: brainstate.typing.Size,
-        temp: Union[brainstate.typing.ArrayLike, Callable] = u.celsius2kelvin(25.0),
-        Nannuli: Union[brainstate.typing.ArrayLike, Callable] = 10.9495,
-        cainull: Union[brainstate.typing.ArrayLike, Callable] = 45e-6 * u.mM,
-        mginull: Union[brainstate.typing.ArrayLike, Callable] = 0.59 * u.mM,
-        Buffnull1: Union[brainstate.typing.ArrayLike, Callable] = 0.0 * u.mM,
-        rf1: Union[brainstate.typing.ArrayLike, Callable] = 0.0134329 / (u.mM * u.ms),
-        rf2: Union[brainstate.typing.ArrayLike, Callable] = 0.0397469 / u.ms,
-        Buffnull2: Union[brainstate.typing.ArrayLike, Callable] = 60.9091 * u.mM,
-        rf3: Union[brainstate.typing.ArrayLike, Callable] = 0.1435 / (u.mM * u.ms),
-        rf4: Union[brainstate.typing.ArrayLike, Callable] = 0.0014 / u.ms,
-        BTCnull: Union[brainstate.typing.ArrayLike, Callable] = 0.0 * u.mM,
-        b1: Union[brainstate.typing.ArrayLike, Callable] = 5.33 / (u.mM * u.ms),
-        b2: Union[brainstate.typing.ArrayLike, Callable] = 0.08 / u.ms,
-        DMNPEnull: Union[brainstate.typing.ArrayLike, Callable] = 0.0 * u.mM,
-        c1: Union[brainstate.typing.ArrayLike, Callable] = 5.63 / (u.mM * u.ms),
-        c2: Union[brainstate.typing.ArrayLike, Callable] = 0.107e-3 / u.ms,
-        PVnull: Union[brainstate.typing.ArrayLike, Callable] = 0.08 * u.mM,
-        m1: Union[brainstate.typing.ArrayLike, Callable] = 1.07e2 / (u.mM * u.ms),
-        m2: Union[brainstate.typing.ArrayLike, Callable] = 9.5e-4 / u.ms,
-        p1: Union[brainstate.typing.ArrayLike, Callable] = 0.8 / (u.mM * u.ms),
-        p2: Union[brainstate.typing.ArrayLike, Callable] = 2.5e-2 / u.ms,
-        CAM_start: Union[brainstate.typing.ArrayLike, Callable] = 0.03 * u.mM,
-        K1Coff: Union[brainstate.typing.ArrayLike, Callable] = 0.04 / u.ms,
-        K1Con: Union[brainstate.typing.ArrayLike, Callable] = 5.4 / (u.mM * u.ms),
-        K2Coff: Union[brainstate.typing.ArrayLike, Callable] = 0.00925 / u.ms,
-        K2Con: Union[brainstate.typing.ArrayLike, Callable] = 15.0 / (u.mM * u.ms),
-        K1Noff: Union[brainstate.typing.ArrayLike, Callable] = 2.5 / u.ms,
-        K1Non: Union[brainstate.typing.ArrayLike, Callable] = 142.5 / (u.mM * u.ms),
-        K2Noff: Union[brainstate.typing.ArrayLike, Callable] = 0.75 / u.ms,
-        K2Non: Union[brainstate.typing.ArrayLike, Callable] = 175.0 / (u.mM * u.ms),
-        kpmp1: Union[brainstate.typing.ArrayLike, Callable] = 3e-3 / (u.mM * u.ms),
-        kpmp2: Union[brainstate.typing.ArrayLike, Callable] = 1.75e-5 / u.ms,
-        kpmp3: Union[brainstate.typing.ArrayLike, Callable] = 7.255e-5 / u.ms,
-        TotalPump: Union[brainstate.typing.ArrayLike, Callable] = 1e-9 * (u.mol / u.cm**2),
-        Co: Union[brainstate.typing.ArrayLike, Callable, None] = None,
-        Ci_initializer: Union[brainstate.typing.ArrayLike, Callable, None] = None,
+        size: Size,
+        temp: Initializer = u.celsius2kelvin(25.0),
+        Nannuli: Initializer = 10.9495,
+        cainull: Initializer = 45e-6 * u.mM,
+        mginull: Initializer = 0.59 * u.mM,
+        Buffnull1: Initializer = 0.0 * u.mM,
+        rf1: Initializer = 0.0134329 / (u.mM * u.ms),
+        rf2: Initializer = 0.0397469 / u.ms,
+        Buffnull2: Initializer = 60.9091 * u.mM,
+        rf3: Initializer = 0.1435 / (u.mM * u.ms),
+        rf4: Initializer = 0.0014 / u.ms,
+        BTCnull: Initializer = 0.0 * u.mM,
+        b1: Initializer = 5.33 / (u.mM * u.ms),
+        b2: Initializer = 0.08 / u.ms,
+        DMNPEnull: Initializer = 0.0 * u.mM,
+        c1: Initializer = 5.63 / (u.mM * u.ms),
+        c2: Initializer = 0.107e-3 / u.ms,
+        PVnull: Initializer = 0.08 * u.mM,
+        m1: Initializer = 1.07e2 / (u.mM * u.ms),
+        m2: Initializer = 9.5e-4 / u.ms,
+        p1: Initializer = 0.8 / (u.mM * u.ms),
+        p2: Initializer = 2.5e-2 / u.ms,
+        CAM_start: Initializer = 0.03 * u.mM,
+        K1Coff: Initializer = 0.04 / u.ms,
+        K1Con: Initializer = 5.4 / (u.mM * u.ms),
+        K2Coff: Initializer = 0.00925 / u.ms,
+        K2Con: Initializer = 15.0 / (u.mM * u.ms),
+        K1Noff: Initializer = 2.5 / u.ms,
+        K1Non: Initializer = 142.5 / (u.mM * u.ms),
+        K2Noff: Initializer = 0.75 / u.ms,
+        K2Non: Initializer = 175.0 / (u.mM * u.ms),
+        kpmp1: Initializer = 3e-3 / (u.mM * u.ms),
+        kpmp2: Initializer = 1.75e-5 / u.ms,
+        kpmp3: Initializer = 7.255e-5 / u.ms,
+        TotalPump: Initializer = 1e-9 * (u.mol / u.cm**2),
+        Co: Optional[Initializer] = None,
+        Ci_initializer: Optional[Initializer] = None,
         species_initializers: Optional[dict[str, object]] = None,
         solver: str | None = None,
         substeps: int | None = None,
@@ -3254,7 +3254,7 @@ class CdpCAM_MA2024_PC(Calcium, KineticIon):
         which falls back to :attr:`Calcium.default_Co` inside
         :meth:`KineticIon._init_kinetic_ion`.
     Ci_initializer : array-like or callable or None, optional
-        Initializer for the ``Ci`` species. Defaults to ``None``,
+        Union[brainstate.typing.ArrayLike, Callable] for the ``Ci`` species. Defaults to ``None``,
         which falls back to ``cainull``.
     species_initializers : dict or None, optional
         Per-species initializer overrides, keyed by one of this
@@ -3582,48 +3582,48 @@ class CdpCAM_MA2024_PC(Calcium, KineticIon):
 
     def __init__(
         self,
-        size: brainstate.typing.Size,
-        temp: Union[brainstate.typing.ArrayLike, Callable] = u.celsius2kelvin(25.0),
-        Nannuli: Union[brainstate.typing.ArrayLike, Callable] = 10.9495,
-        cainull: Union[brainstate.typing.ArrayLike, Callable] = 45e-6 * u.mM,
-        mginull: Union[brainstate.typing.ArrayLike, Callable] = 0.59 * u.mM,
-        Buffnull1: Union[brainstate.typing.ArrayLike, Callable] = 0.0 * u.mM,
-        rf1: Union[brainstate.typing.ArrayLike, Callable] = 0.0134329 / (u.mM * u.ms),
-        rf2: Union[brainstate.typing.ArrayLike, Callable] = 0.0397469 / u.ms,
-        Buffnull2: Union[brainstate.typing.ArrayLike, Callable] = 60.9091 * u.mM,
-        rf3: Union[brainstate.typing.ArrayLike, Callable] = 0.1435 / (u.mM * u.ms),
-        rf4: Union[brainstate.typing.ArrayLike, Callable] = 0.0014 / u.ms,
-        BTCnull: Union[brainstate.typing.ArrayLike, Callable] = 0.0 * u.mM,
-        b1: Union[brainstate.typing.ArrayLike, Callable] = 5.33 / (u.mM * u.ms),
-        b2: Union[brainstate.typing.ArrayLike, Callable] = 0.08 / u.ms,
-        DMNPEnull: Union[brainstate.typing.ArrayLike, Callable] = 0.0 * u.mM,
-        c1: Union[brainstate.typing.ArrayLike, Callable] = 5.63 / (u.mM * u.ms),
-        c2: Union[brainstate.typing.ArrayLike, Callable] = 0.107e-3 / u.ms,
-        CBnull: Union[brainstate.typing.ArrayLike, Callable] = 0.16 * u.mM,
-        nf1: Union[brainstate.typing.ArrayLike, Callable] = 43.5 / (u.mM * u.ms),
-        nf2: Union[brainstate.typing.ArrayLike, Callable] = 3.58e-2 / u.ms,
-        ns1: Union[brainstate.typing.ArrayLike, Callable] = 5.5 / (u.mM * u.ms),
-        ns2: Union[brainstate.typing.ArrayLike, Callable] = 0.26e-2 / u.ms,
-        PVnull: Union[brainstate.typing.ArrayLike, Callable] = 0.08 * u.mM,
-        m1: Union[brainstate.typing.ArrayLike, Callable] = 1.07e2 / (u.mM * u.ms),
-        m2: Union[brainstate.typing.ArrayLike, Callable] = 9.5e-4 / u.ms,
-        p1: Union[brainstate.typing.ArrayLike, Callable] = 0.8 / (u.mM * u.ms),
-        p2: Union[brainstate.typing.ArrayLike, Callable] = 2.5e-2 / u.ms,
-        CAM_start: Union[brainstate.typing.ArrayLike, Callable] = 0.03 * u.mM,
-        K1Coff: Union[brainstate.typing.ArrayLike, Callable] = 0.04 / u.ms,
-        K1Con: Union[brainstate.typing.ArrayLike, Callable] = 5.4 / (u.mM * u.ms),
-        K2Coff: Union[brainstate.typing.ArrayLike, Callable] = 0.00925 / u.ms,
-        K2Con: Union[brainstate.typing.ArrayLike, Callable] = 15.0 / (u.mM * u.ms),
-        K1Noff: Union[brainstate.typing.ArrayLike, Callable] = 2.5 / u.ms,
-        K1Non: Union[brainstate.typing.ArrayLike, Callable] = 142.5 / (u.mM * u.ms),
-        K2Noff: Union[brainstate.typing.ArrayLike, Callable] = 0.75 / u.ms,
-        K2Non: Union[brainstate.typing.ArrayLike, Callable] = 175.0 / (u.mM * u.ms),
-        kpmp1: Union[brainstate.typing.ArrayLike, Callable] = 3e-3 / (u.mM * u.ms),
-        kpmp2: Union[brainstate.typing.ArrayLike, Callable] = 1.75e-5 / u.ms,
-        kpmp3: Union[brainstate.typing.ArrayLike, Callable] = 7.255e-5 / u.ms,
-        TotalPump: Union[brainstate.typing.ArrayLike, Callable] = 1e-9 * (u.mol / u.cm**2),
-        Co: Union[brainstate.typing.ArrayLike, Callable, None] = None,
-        Ci_initializer: Union[brainstate.typing.ArrayLike, Callable, None] = None,
+        size: Size,
+        temp: Initializer = u.celsius2kelvin(25.0),
+        Nannuli: Initializer = 10.9495,
+        cainull: Initializer = 45e-6 * u.mM,
+        mginull: Initializer = 0.59 * u.mM,
+        Buffnull1: Initializer = 0.0 * u.mM,
+        rf1: Initializer = 0.0134329 / (u.mM * u.ms),
+        rf2: Initializer = 0.0397469 / u.ms,
+        Buffnull2: Initializer = 60.9091 * u.mM,
+        rf3: Initializer = 0.1435 / (u.mM * u.ms),
+        rf4: Initializer = 0.0014 / u.ms,
+        BTCnull: Initializer = 0.0 * u.mM,
+        b1: Initializer = 5.33 / (u.mM * u.ms),
+        b2: Initializer = 0.08 / u.ms,
+        DMNPEnull: Initializer = 0.0 * u.mM,
+        c1: Initializer = 5.63 / (u.mM * u.ms),
+        c2: Initializer = 0.107e-3 / u.ms,
+        CBnull: Initializer = 0.16 * u.mM,
+        nf1: Initializer = 43.5 / (u.mM * u.ms),
+        nf2: Initializer = 3.58e-2 / u.ms,
+        ns1: Initializer = 5.5 / (u.mM * u.ms),
+        ns2: Initializer = 0.26e-2 / u.ms,
+        PVnull: Initializer = 0.08 * u.mM,
+        m1: Initializer = 1.07e2 / (u.mM * u.ms),
+        m2: Initializer = 9.5e-4 / u.ms,
+        p1: Initializer = 0.8 / (u.mM * u.ms),
+        p2: Initializer = 2.5e-2 / u.ms,
+        CAM_start: Initializer = 0.03 * u.mM,
+        K1Coff: Initializer = 0.04 / u.ms,
+        K1Con: Initializer = 5.4 / (u.mM * u.ms),
+        K2Coff: Initializer = 0.00925 / u.ms,
+        K2Con: Initializer = 15.0 / (u.mM * u.ms),
+        K1Noff: Initializer = 2.5 / u.ms,
+        K1Non: Initializer = 142.5 / (u.mM * u.ms),
+        K2Noff: Initializer = 0.75 / u.ms,
+        K2Non: Initializer = 175.0 / (u.mM * u.ms),
+        kpmp1: Initializer = 3e-3 / (u.mM * u.ms),
+        kpmp2: Initializer = 1.75e-5 / u.ms,
+        kpmp3: Initializer = 7.255e-5 / u.ms,
+        TotalPump: Initializer = 1e-9 * (u.mol / u.cm**2),
+        Co: Optional[Initializer] = None,
+        Ci_initializer: Optional[Initializer] = None,
         species_initializers: Optional[dict[str, object]] = None,
         solver: str | None = None,
         substeps: int | None = None,
@@ -3904,7 +3904,7 @@ class CdpCR_MA2020_GrC(Calcium, KineticIon):
         which falls back to :attr:`Calcium.default_Co` inside
         :meth:`KineticIon._init_kinetic_ion`.
     Ci_initializer : array-like or callable or None, optional
-        Initializer for the ``Ci`` species. Defaults to ``None``,
+        Union[brainstate.typing.ArrayLike, Callable] for the ``Ci`` species. Defaults to ``None``,
         which falls back to ``cainull``.
     species_initializers : dict or None, optional
         Per-species initializer overrides, keyed by one of this
@@ -4195,36 +4195,36 @@ class CdpCR_MA2020_GrC(Calcium, KineticIon):
 
     def __init__(
         self,
-        size: brainstate.typing.Size,
-        temp: Union[brainstate.typing.ArrayLike, Callable] = u.celsius2kelvin(25.0),
-        Nannuli: Union[brainstate.typing.ArrayLike, Callable] = 10.9495,
-        cainull: Union[brainstate.typing.ArrayLike, Callable] = 45e-6 * u.mM,
-        mginull: Union[brainstate.typing.ArrayLike, Callable] = 0.59 * u.mM,
-        Buffnull1: Union[brainstate.typing.ArrayLike, Callable] = 0.0 * u.mM,
-        rf1: Union[brainstate.typing.ArrayLike, Callable] = 0.0134329 / (u.mM * u.ms),
-        rf2: Union[brainstate.typing.ArrayLike, Callable] = 0.0397469 / u.ms,
-        Buffnull2: Union[brainstate.typing.ArrayLike, Callable] = 60.9091 * u.mM,
-        rf3: Union[brainstate.typing.ArrayLike, Callable] = 0.1435 / (u.mM * u.ms),
-        rf4: Union[brainstate.typing.ArrayLike, Callable] = 0.0014 / u.ms,
-        BTCnull: Union[brainstate.typing.ArrayLike, Callable] = 0.0 * u.mM,
-        b1: Union[brainstate.typing.ArrayLike, Callable] = 5.33 / (u.mM * u.ms),
-        b2: Union[brainstate.typing.ArrayLike, Callable] = 0.08 / u.ms,
-        DMNPEnull: Union[brainstate.typing.ArrayLike, Callable] = 0.0 * u.mM,
-        c1: Union[brainstate.typing.ArrayLike, Callable] = 5.63 / (u.mM * u.ms),
-        c2: Union[brainstate.typing.ArrayLike, Callable] = 0.107e-3 / u.ms,
-        CRnull: Union[brainstate.typing.ArrayLike, Callable] = 0.9 * u.mM,
-        nT1: Union[brainstate.typing.ArrayLike, Callable] = 1.8 / (u.mM * u.ms),
-        nT2: Union[brainstate.typing.ArrayLike, Callable] = 0.053 / u.ms,
-        nR1: Union[brainstate.typing.ArrayLike, Callable] = 310.0 / (u.mM * u.ms),
-        nR2: Union[brainstate.typing.ArrayLike, Callable] = 0.02 / u.ms,
-        nV1: Union[brainstate.typing.ArrayLike, Callable] = 7.3 / (u.mM * u.ms),
-        nV2: Union[brainstate.typing.ArrayLike, Callable] = 0.24 / u.ms,
-        kpmp1: Union[brainstate.typing.ArrayLike, Callable] = 3e-3 / (u.mM * u.ms),
-        kpmp2: Union[brainstate.typing.ArrayLike, Callable] = 1.75e-5 / u.ms,
-        kpmp3: Union[brainstate.typing.ArrayLike, Callable] = 7.255e-5 / u.ms,
-        TotalPump: Union[brainstate.typing.ArrayLike, Callable] = 1e-9 * (u.mol / u.cm**2),
-        Co: Union[brainstate.typing.ArrayLike, Callable, None] = None,
-        Ci_initializer: Union[brainstate.typing.ArrayLike, Callable, None] = None,
+        size: Size,
+        temp: Initializer = u.celsius2kelvin(25.0),
+        Nannuli: Initializer = 10.9495,
+        cainull: Initializer = 45e-6 * u.mM,
+        mginull: Initializer = 0.59 * u.mM,
+        Buffnull1: Initializer = 0.0 * u.mM,
+        rf1: Initializer = 0.0134329 / (u.mM * u.ms),
+        rf2: Initializer = 0.0397469 / u.ms,
+        Buffnull2: Initializer = 60.9091 * u.mM,
+        rf3: Initializer = 0.1435 / (u.mM * u.ms),
+        rf4: Initializer = 0.0014 / u.ms,
+        BTCnull: Initializer = 0.0 * u.mM,
+        b1: Initializer = 5.33 / (u.mM * u.ms),
+        b2: Initializer = 0.08 / u.ms,
+        DMNPEnull: Initializer = 0.0 * u.mM,
+        c1: Initializer = 5.63 / (u.mM * u.ms),
+        c2: Initializer = 0.107e-3 / u.ms,
+        CRnull: Initializer = 0.9 * u.mM,
+        nT1: Initializer = 1.8 / (u.mM * u.ms),
+        nT2: Initializer = 0.053 / u.ms,
+        nR1: Initializer = 310.0 / (u.mM * u.ms),
+        nR2: Initializer = 0.02 / u.ms,
+        nV1: Initializer = 7.3 / (u.mM * u.ms),
+        nV2: Initializer = 0.24 / u.ms,
+        kpmp1: Initializer = 3e-3 / (u.mM * u.ms),
+        kpmp2: Initializer = 1.75e-5 / u.ms,
+        kpmp3: Initializer = 7.255e-5 / u.ms,
+        TotalPump: Initializer = 1e-9 * (u.mol / u.cm**2),
+        Co: Optional[Initializer] = None,
+        Ci_initializer: Optional[Initializer] = None,
         species_initializers: Optional[dict[str, object]] = None,
         solver: str | None = None,
         substeps: int | None = None,
@@ -4391,7 +4391,7 @@ class CdpHVA_SU2015_DCN(Calcium, DynamicNernstIon):
         which falls back to :attr:`Calcium.default_Co` inside
         :meth:`DynamicNernstIon._init_dynamic_nernst_ion`.
     Ci_initializer : array-like or callable or None, optional
-        Initializer for the dynamic ``Ci`` state. Defaults to
+        Union[brainstate.typing.ArrayLike, Callable] for the dynamic ``Ci`` state. Defaults to
         ``None``, which falls back to a constant initializer at
         ``caiBase``.
     name : str or None, optional
@@ -4475,14 +4475,14 @@ class CdpHVA_SU2015_DCN(Calcium, DynamicNernstIon):
 
     def __init__(
         self,
-        size: brainstate.typing.Size,
-        temp: Union[brainstate.typing.ArrayLike, Callable] = u.celsius2kelvin(36.0),
-        kCa: Union[brainstate.typing.ArrayLike, Callable] = 3.45e-7 / u.coulomb,
-        tauCa: Union[brainstate.typing.ArrayLike, Callable] = 70.0 * u.ms,
-        caiBase: Union[brainstate.typing.ArrayLike, Callable] = 50e-6 * u.mM,
-        depth: Union[brainstate.typing.ArrayLike, Callable] = 0.2 * u.um,
-        Co: Union[brainstate.typing.ArrayLike, Callable, None] = None,
-        Ci_initializer: Union[brainstate.typing.ArrayLike, Callable, None] = None,
+        size: Size,
+        temp: Initializer = u.celsius2kelvin(36.0),
+        kCa: Initializer = 3.45e-7 / u.coulomb,
+        tauCa: Initializer = 70.0 * u.ms,
+        caiBase: Initializer = 50e-6 * u.mM,
+        depth: Initializer = 0.2 * u.um,
+        Co: Optional[Initializer] = None,
+        Ci_initializer: Optional[Initializer] = None,
         name: Optional[str] = None,
         **channels,
     ):
@@ -4561,7 +4561,7 @@ class CdpLVA_SU2015_DCN(Calcium, DynamicNernstIon):
         which falls back to :attr:`Calcium.default_Co` inside
         :meth:`DynamicNernstIon._init_dynamic_nernst_ion`.
     Ci_initializer : array-like or callable or None, optional
-        Initializer for the dynamic ``Ci`` state. Defaults to
+        Union[brainstate.typing.ArrayLike, Callable] for the dynamic ``Ci`` state. Defaults to
         ``None``, which falls back to a constant initializer at
         ``caliBase``.
     name : str or None, optional
@@ -4648,14 +4648,14 @@ class CdpLVA_SU2015_DCN(Calcium, DynamicNernstIon):
 
     def __init__(
         self,
-        size: brainstate.typing.Size,
-        temp: Union[brainstate.typing.ArrayLike, Callable] = u.celsius2kelvin(36.0),
-        kCal: Union[brainstate.typing.ArrayLike, Callable] = 3.45e-7 / u.coulomb,
-        tauCal: Union[brainstate.typing.ArrayLike, Callable] = 70.0 * u.ms,
-        caliBase: Union[brainstate.typing.ArrayLike, Callable] = 50e-6 * u.mM,
-        depth: Union[brainstate.typing.ArrayLike, Callable] = 0.2 * u.um,
-        Co: Union[brainstate.typing.ArrayLike, Callable, None] = None,
-        Ci_initializer: Union[brainstate.typing.ArrayLike, Callable, None] = None,
+        size: Size,
+        temp: Initializer = u.celsius2kelvin(36.0),
+        kCal: Initializer = 3.45e-7 / u.coulomb,
+        tauCal: Initializer = 70.0 * u.ms,
+        caliBase: Initializer = 50e-6 * u.mM,
+        depth: Initializer = 0.2 * u.um,
+        Co: Optional[Initializer] = None,
+        Ci_initializer: Optional[Initializer] = None,
         name: Optional[str] = None,
         **channels,
     ):

@@ -15,13 +15,13 @@
 
 # -*- coding: utf-8 -*-
 
-from typing import Union, Callable, Optional
+from typing import Optional
 
-import brainstate
 import braintools
 import brainunit as u
 
 from braincell._base import HHTypedNeuron, Synapse
+from braincell._typing import Initializer, Size
 from braincell.mech import register_synapse
 from braincell.quad.protocol import state
 
@@ -79,10 +79,10 @@ class ExpSyn(Synapse):
 
     def __init__(
         self,
-        size: brainstate.typing.Size,
-        tau: Union[brainstate.typing.ArrayLike, Callable] = 0.1 * u.ms,
-        e: Union[brainstate.typing.ArrayLike, Callable] = 0.0 * u.mV,
-        weight: Union[brainstate.typing.ArrayLike, Callable] = 1.0 * u.uS,
+        size: Size,
+        tau: Initializer = 0.1 * u.ms,
+        e: Initializer = 0.0 * u.mV,
+        weight: Initializer = 1.0 * u.uS,
         name: Optional[str] = None,
     ):
         super().__init__(size=size, name=name)
@@ -135,11 +135,11 @@ class Exp2Syn(Synapse):
 
     def __init__(
         self,
-        size: brainstate.typing.Size,
-        tau1: Union[brainstate.typing.ArrayLike, Callable] = 0.1 * u.ms,
-        tau2: Union[brainstate.typing.ArrayLike, Callable] = 10.0 * u.ms,
-        e: Union[brainstate.typing.ArrayLike, Callable] = 0.0 * u.mV,
-        weight: Union[brainstate.typing.ArrayLike, Callable] = 1.0 * u.uS,
+        size: Size,
+        tau1: Initializer = 0.1 * u.ms,
+        tau2: Initializer = 10.0 * u.ms,
+        e: Initializer = 0.0 * u.mV,
+        weight: Initializer = 1.0 * u.uS,
         name: Optional[str] = None,
     ):
         super().__init__(size=size, name=name)
@@ -226,12 +226,12 @@ class AMPA(Synapse):
 
     def __init__(
         self,
-        size: brainstate.typing.Size,
-        alpha: Union[brainstate.typing.ArrayLike, Callable] = 0.98 / u.ms,
-        beta: Union[brainstate.typing.ArrayLike, Callable] = 0.18 / u.ms,
-        T: Union[brainstate.typing.ArrayLike, Callable] = 0.5,
-        g_max: Union[brainstate.typing.ArrayLike, Callable] = 1.0 * (u.mS / u.cm**2),
-        E_rev: Union[brainstate.typing.ArrayLike, Callable] = 0.0 * u.mV,
+        size: Size,
+        alpha: Initializer = 0.98 / u.ms,
+        beta: Initializer = 0.18 / u.ms,
+        T: Initializer = 0.5,
+        g_max: Initializer = 1.0 * (u.mS / u.cm**2),
+        E_rev: Initializer = 0.0 * u.mV,
         name: Optional[str] = None,
     ):
         super().__init__(size=size, name=name)
@@ -270,12 +270,12 @@ class GABAa(Synapse):
 
     def __init__(
         self,
-        size: brainstate.typing.Size,
-        alpha: Union[brainstate.typing.ArrayLike, Callable] = 0.53 / u.ms,
-        beta: Union[brainstate.typing.ArrayLike, Callable] = 0.18 / u.ms,
-        T: Union[brainstate.typing.ArrayLike, Callable] = 1.0,
-        g_max: Union[brainstate.typing.ArrayLike, Callable] = 1.0 * (u.mS / u.cm**2),
-        E_rev: Union[brainstate.typing.ArrayLike, Callable] = -70.0 * u.mV,
+        size: Size,
+        alpha: Initializer = 0.53 / u.ms,
+        beta: Initializer = 0.18 / u.ms,
+        T: Initializer = 1.0,
+        g_max: Initializer = 1.0 * (u.mS / u.cm**2),
+        E_rev: Initializer = -70.0 * u.mV,
         name: Optional[str] = None,
     ):
         super().__init__(size=size, name=name)
@@ -314,14 +314,14 @@ class NMDA(Synapse):
 
     def __init__(
         self,
-        size: brainstate.typing.Size,
-        alpha1: Union[brainstate.typing.ArrayLike, Callable] = 2.0 / u.ms,
-        beta1: Union[brainstate.typing.ArrayLike, Callable] = 0.01 / u.ms,
-        alpha2: Union[brainstate.typing.ArrayLike, Callable] = 1.0 / u.ms,
-        beta2: Union[brainstate.typing.ArrayLike, Callable] = 0.5 / u.ms,
-        T: Union[brainstate.typing.ArrayLike, Callable] = 1.0,
-        g_max: Union[brainstate.typing.ArrayLike, Callable] = 1.0 * (u.mS / u.cm**2),
-        E_rev: Union[brainstate.typing.ArrayLike, Callable] = 0.0 * u.mV,
+        size: Size,
+        alpha1: Initializer = 2.0 / u.ms,
+        beta1: Initializer = 0.01 / u.ms,
+        alpha2: Initializer = 1.0 / u.ms,
+        beta2: Initializer = 0.5 / u.ms,
+        T: Initializer = 1.0,
+        g_max: Initializer = 1.0 * (u.mS / u.cm**2),
+        E_rev: Initializer = 0.0 * u.mV,
         name: Optional[str] = None,
     ):
         super().__init__(size=size, name=name)

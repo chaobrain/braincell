@@ -19,13 +19,13 @@
 This module implements hyperpolarization-activated cation channel.
 """
 
-from typing import Callable, Optional, Union
+from typing import Optional
 
-import brainstate
 import braintools
 import brainunit as u
 
 from braincell._base import HHTypedNeuron
+from braincell._typing import ArrayLike, Initializer, Size
 from braincell.channel._base import Gate, HH, OhmicHH
 from braincell.mech import register_channel
 
@@ -105,12 +105,12 @@ class HCN_HM1992(OhmicHH):
 
     def __init__(
         self,
-        size: brainstate.typing.Size,
-        g_max: Union[brainstate.typing.ArrayLike, Callable] = 10.0 * (u.mS / u.cm**2),
-        E: Union[brainstate.typing.ArrayLike, Callable] = 43.0 * u.mV,
-        temp: brainstate.typing.ArrayLike = u.celsius2kelvin(36.0),
-        q10: Union[brainstate.typing.ArrayLike, Callable] = 1.0,
-        temp_ref: brainstate.typing.ArrayLike = u.celsius2kelvin(36.0),
+        size: Size,
+        g_max: Initializer = 10.0 * (u.mS / u.cm**2),
+        E: Initializer = 43.0 * u.mV,
+        temp: ArrayLike = u.celsius2kelvin(36.0),
+        q10: Initializer = 1.0,
+        temp_ref: ArrayLike = u.celsius2kelvin(36.0),
         name: Optional[str] = None,
     ):
         super().__init__(size=size, name=name)
@@ -369,10 +369,10 @@ class HCN1_MA2025_BC(OhmicHH):
 
     def __init__(
         self,
-        size: brainstate.typing.Size,
-        g_max: Union[brainstate.typing.ArrayLike, Callable] = 0.1 * (u.mS / u.cm**2),
-        E: Union[brainstate.typing.ArrayLike, Callable] = -34.4 * u.mV,
-        temp: brainstate.typing.ArrayLike = u.celsius2kelvin(23.0),
+        size: Size,
+        g_max: Initializer = 0.1 * (u.mS / u.cm**2),
+        E: Initializer = -34.4 * u.mV,
+        temp: ArrayLike = u.celsius2kelvin(23.0),
         name: Optional[str] = None,
     ):
         super().__init__(size=size, name=name)
@@ -501,10 +501,10 @@ class HCN1_MA2024_PC(OhmicHH):
 
     def __init__(
         self,
-        size: brainstate.typing.Size,
-        g_max: Union[brainstate.typing.ArrayLike, Callable] = 0.1 * (u.mS / u.cm**2),
-        E: Union[brainstate.typing.ArrayLike, Callable] = -34.4 * u.mV,
-        temp: brainstate.typing.ArrayLike = u.celsius2kelvin(23.0),
+        size: Size,
+        g_max: Initializer = 0.1 * (u.mS / u.cm**2),
+        E: Initializer = -34.4 * u.mV,
+        temp: ArrayLike = u.celsius2kelvin(23.0),
         name: Optional[str] = None,
     ):
         super().__init__(size=size, name=name)
@@ -633,10 +633,10 @@ class HCN1_RI2021_SC(OhmicHH):
 
     def __init__(
         self,
-        size: brainstate.typing.Size,
-        g_max: Union[brainstate.typing.ArrayLike, Callable] = 0.1 * (u.mS / u.cm**2),
-        E: Union[brainstate.typing.ArrayLike, Callable] = -34.4 * u.mV,
-        temp: brainstate.typing.ArrayLike = u.celsius2kelvin(23.0),
+        size: Size,
+        g_max: Initializer = 0.1 * (u.mS / u.cm**2),
+        E: Initializer = -34.4 * u.mV,
+        temp: ArrayLike = u.celsius2kelvin(23.0),
         name: Optional[str] = None,
     ):
         super().__init__(size=size, name=name)
@@ -781,10 +781,10 @@ class HCN1_MA2020_GoC(HH):
 
     def __init__(
         self,
-        size: brainstate.typing.Size,
-        g_max: Union[brainstate.typing.ArrayLike, Callable] = 0.05 * (u.mS / u.cm**2),
-        E: Union[brainstate.typing.ArrayLike, Callable] = -20.0 * u.mV,
-        temp: brainstate.typing.ArrayLike = u.celsius2kelvin(22.0),
+        size: Size,
+        g_max: Initializer = 0.05 * (u.mS / u.cm**2),
+        E: Initializer = -20.0 * u.mV,
+        temp: ArrayLike = u.celsius2kelvin(22.0),
         name: Optional[str] = None,
     ):
         super().__init__(size=size, name=name)
@@ -945,10 +945,10 @@ class HCN2_MA2020_GoC(HH):
 
     def __init__(
         self,
-        size: brainstate.typing.Size,
-        g_max: Union[brainstate.typing.ArrayLike, Callable] = 0.08 * (u.mS / u.cm**2),
-        E: Union[brainstate.typing.ArrayLike, Callable] = -20.0 * u.mV,
-        temp: brainstate.typing.ArrayLike = u.celsius2kelvin(22.0),
+        size: Size,
+        g_max: Initializer = 0.08 * (u.mS / u.cm**2),
+        E: Initializer = -20.0 * u.mV,
+        temp: ArrayLike = u.celsius2kelvin(22.0),
         name: Optional[str] = None,
     ):
         super().__init__(size=size, name=name)
@@ -1084,9 +1084,9 @@ class HCN_SU2015_DCN(OhmicHH):
 
     def __init__(
         self,
-        size: brainstate.typing.Size,
-        g_max: Union[brainstate.typing.ArrayLike, Callable] = 0.01 * (u.mS / u.cm**2),
-        E: Union[brainstate.typing.ArrayLike, Callable] = -45.0 * u.mV,
+        size: Size,
+        g_max: Initializer = 0.01 * (u.mS / u.cm**2),
+        E: Initializer = -45.0 * u.mV,
         name: Optional[str] = None,
     ):
         super().__init__(size=size, name=name)
@@ -1195,9 +1195,9 @@ class HCN_ZH2019_IO(OhmicHH):
 
     def __init__(
         self,
-        size: brainstate.typing.Size,
-        g_max: Union[brainstate.typing.ArrayLike, Callable] = 0.15 * (u.mS / u.cm**2),
-        E: Union[brainstate.typing.ArrayLike, Callable] = -43.0 * u.mV,
+        size: Size,
+        g_max: Initializer = 0.15 * (u.mS / u.cm**2),
+        E: Initializer = -43.0 * u.mV,
         name: Optional[str] = None,
     ):
         super().__init__(size=size, name=name)

@@ -23,7 +23,7 @@ import jax.numpy as jnp
 from jax.scipy.linalg import expm
 
 from braincell._misc import set_module_as
-from braincell._typing import Path
+from braincell._typing import ArrayLike, Path
 from .protocol import DiffEqModule
 from ._registry import register_integrator
 from ._util import (
@@ -370,7 +370,7 @@ def _ind_exp_euler_step_selected(
 
     def vector_field(
         diffeq_state_key: Path,
-        diffeq_state_val: brainstate.typing.ArrayLike,
+        diffeq_state_val: ArrayLike,
         other_diffeq_state_vals: Dict,
         other_state_vals: Dict,
     ):

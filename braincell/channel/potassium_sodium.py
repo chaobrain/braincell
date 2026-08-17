@@ -17,13 +17,14 @@
 
 """Channels with coupled potassium, sodium, and nonspecific current paths."""
 
-from typing import Callable, Optional, Union
+from typing import Optional
 
 import brainstate
 import braintools
 import brainunit as u
 
 from braincell._base import IonInfo
+from braincell._typing import ArrayLike, Initializer, Size
 from braincell.channel.potassium import Kv1p5_MA2024_PC
 from braincell.ion import NonSpecific, Potassium, Sodium
 from braincell.mech import register_channel
@@ -161,13 +162,13 @@ class Kv1p5_MA2020_GrC(Kv1p5_MA2024_PC):
 
     def __init__(
         self,
-        size: brainstate.typing.Size,
-        g_max: Union[brainstate.typing.ArrayLike, Callable] = 0.13195e-3 * (u.siemens / u.cm**2),
-        gnonspec: Union[brainstate.typing.ArrayLike, Callable] = 0.0 * (u.siemens / u.cm**2),
-        temp: brainstate.typing.ArrayLike = u.celsius2kelvin(37.0),
-        Tauact: Union[brainstate.typing.ArrayLike, Callable] = 1.0,
-        Tauinactf: Union[brainstate.typing.ArrayLike, Callable] = 1.0,
-        Tauinacts: Union[brainstate.typing.ArrayLike, Callable] = 1.0,
+        size: Size,
+        g_max: Initializer = 0.13195e-3 * (u.siemens / u.cm**2),
+        gnonspec: Initializer = 0.0 * (u.siemens / u.cm**2),
+        temp: ArrayLike = u.celsius2kelvin(37.0),
+        Tauact: Initializer = 1.0,
+        Tauinactf: Initializer = 1.0,
+        Tauinacts: Initializer = 1.0,
         name: Optional[str] = None,
     ):
         super().__init__(

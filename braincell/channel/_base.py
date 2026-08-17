@@ -16,6 +16,7 @@ import jax.numpy as jnp
 
 from braincell._base import Channel
 from braincell._misc import is_traced_value
+from braincell._typing import Size
 from braincell.quad.protocol import DiffEqState
 from braincell.quad.protocol import IndependentIntegration
 from braincell.quad.protocol import state
@@ -774,7 +775,7 @@ class Markov(Channel, IndependentIntegration):
 
     def __init__(
         self,
-        size: brainstate.typing.Size,
+        size: Size,
         name: Optional[str] = None,
         solver: str | None = None,
         substeps: int | None = None,

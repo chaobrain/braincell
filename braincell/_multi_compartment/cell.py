@@ -221,47 +221,6 @@ class Cell(HHTypedNeuron):
         membrane_linearizer: str = "point",
         name: str | None = None,
     ) -> None:
-        """Initialize a multi-compartment cell declaration.
-
-        Parameters
-        ----------
-        morpho : Morphology
-            Morphology tree shared by every homogeneous population
-            instance.
-        pop_size : int or tuple of int, optional
-            Homogeneous population shape, defaulting to ``1``. Runtime
-            state is expanded to ``pop_size + (n_cv,)`` and point-space
-            arrays to ``pop_size + (n_point,)``. The population axis is
-            mandatory — an empty ``pop_size`` raises :class:`ValueError` —
-            because the trailing compartment axis is what makes every
-            ``Cell`` hidden state a :class:`brainstate.HiddenGroupState`.
-        cv_policy : CVPolicy, optional
-            Control-volume splitting policy.
-        V_th : Quantity, optional
-            Spike threshold.
-        V_init : Initializer, optional
-            Initial membrane voltage. ``None`` uses the per-CV resting
-            potential.
-        spk_fun : Callable, optional
-            Surrogate-gradient spike function.
-        solver : str or callable, optional
-            Integrator name or concrete step function.
-        subsolver : str or callable or None, optional
-            Shared integrator for Markov channels and kinetic ions. It must
-            be provided together with ``substeps``. When both are ``None``,
-            the effective schedule is ``backward_euler`` with one substep.
-        substeps : int or None, optional
-            Shared number of Markov/kinetic-ion steps per main cell step.
-        cache_ion_total_current : bool, optional
-            Whether to snapshot ion total current at step start for
-            NEURON-style schedules.
-        ion_channel_update_order : {"family", "integration"}, optional
-            Post-voltage ion/channel update order.
-        membrane_linearizer : {"point", "generic"}, optional
-            Membrane-current linearization strategy.
-        name : str, optional
-            Cell name.
-        """
         normalized_pop_size = _normalize_pop_size(pop_size)
         HHTypedNeuron.__init__(self, size=normalized_pop_size + (1,), name=name)
 

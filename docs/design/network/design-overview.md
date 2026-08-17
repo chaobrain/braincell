@@ -1,63 +1,61 @@
-# BrainCell Network 设计总览
+# BrainCell Network 设计文档
 
-本文档集用于整理 BrainCell 后续 `network` 层的设计方向，聚焦以下问题：
+本目录定义 BrainCell 新一代多室细胞网络构建器。目标是把用户声明、构建结果和
+JAX runtime 分层，同时让异质 point synapse 按实际 contact 稀疏保存。
 
-- network construction 的前端接口应该长什么样
-- 同构 `population` 在 JAX 下应如何组织内部 runtime
-- synapse / spike / delay 的更新语义该如何选型
-- 哪条路线更兼容后续 gradient-based training
+## 文档地位
 
-这是一组内部设计文档，服务于架构讨论和实现拆解；它不替代 `README.md`、`TODO.md` 或 `docs/` 下的对外说明。
+- [api.md](./api.md) 与 [architecture.md](./architecture.md) 是同等正式的规范。公开行为或
+  内部数据模型变化时，必须检查并同步更新另一份。
+- [issues.md](./issues.md) 保存开放问题以及已锁定/延期的决策记录。实现者不能绕过其中仍
+  开放的决策点自行选择新语义；正式行为仍以 API/architecture 为准。
+- [implementation-plan.md](./implementation-plan.md) 是可持续更新的工程进度表，不定义
+  新的 API 或 runtime 语义。
+- [references/](./references/) 只保存历史调研，属于非规范材料。
 
-## 当前结论
+## 核心结论
 
-基于本轮对 `NEURON/CoreNEURON`、`Arbor`、`Jaxley`、`brainevent` 的调研，以及 BrainCell 当前声明层 / runtime 层结构，当前建议如下：
+- v1 面向 vectorized multicompartment `Cell`，population 是构建和索引的基本单位。
+- Network-owned Population/Projection handles 管理 lifecycle；immutable specs 只负责声明；
+  PopulationInstances、PairTable 和 ContactTable 是按需缓存的 static materialization。
+- cell pair 与 synaptic contact 是不同层级；一个 pair 可以展开为多个独立 contacts。
+- cell-pair topology 只使用稀疏 rows，不保存 dense adjacency matrix。
+- 每个 contact 对应一个独立 point-mechanism state，即使多个 contacts 位于同一
+  branch/x 或同一 electrical point 也不合并。
+- `(branch_id, branch_x)` 是权威位置；CV、point 和 runtime layout index 是 lowering 后的
+  派生信息。
+- `LocsetExpr` 是延迟求值的声明和集合代数；求值后的 `LocsetMask` 是 ordered、
+  duplicate-preserving rows，默认不排序、不去重，sampling 必须显式声明。
+- static materialization 使用 host-side arrays；runtime 使用现有 packed point layout 和
+  JAX arrays。
+- physical delay 在 runtime setup 时按 `dt` 量化，v1 继续使用 ring-buffer delivery。
 
-- 外部 API 不强制用户先创建 `population` 对象；应允许 cell-centric network declaration。
-- 内部 runtime 对同构 `population` 默认做 batch-style 聚合，而不是逐 cell Python 对象更新。
-- 第一阶段默认推荐 `JAX-friendly static-shape path`：
-  - batched neuron state
-  - edge table or structured connectivity
-  - per-step synapse state update
-  - `scatter_add`-style postsynaptic aggregation
-- delay 第一阶段优先使用 fixed-shape `ring buffer`，不先实现动态长度 `event queue`。
-- training 主线优先兼容 surrogate spike / soft release；后续可基于 `brainevent` 探索 JAX-friendly event-sparse delivery，但不把完整动态 `event queue` 作为第一阶段前提。
+## 当前状态
 
-一句话总结：**API 层不必 population-first，但 runtime 层应对同构群体默认 population-like。**
+已锁定：Network defaults、quaternion Rotation 与 spatial-anchor world transform、population
+cell/factory ownership、progressive candidate context、endpoint view、array PairRule protocol、
+稀疏 Pair/Contact tables、连续 morphology location、ordered `LocsetMask`、add-order dependencies、
+packed runtime、Projection-local event source、target-defined event weight、三种 delay quantization、
+EDITABLE/INITIALIZED lifecycle、bounded generation、weighted Region sampling、monotonic contact ID、
+dependency-selective invalidation，以及 Network-rooted semantic RNG streams。
 
-## 文档地图
+仍开放：I-01 public vocabulary 最终复核、I-06 batch placement bridge、I-10 materialization RNG
+sampling adapter，以及 I-11 heterogeneous-delay buffer layout。
 
-- [platform-survey.md](./platform-survey.md)
-  - 平台调研
-  - 对 `NEURON/CoreNEURON`、`Arbor`、`Jaxley`、`brainevent` 的 network / synapse / delay / parallelization 做横向比较
-- [braincell-network-design.md](./braincell-network-design.md)
-  - BrainCell 候选架构
-  - 明确推荐路线、数据结构、step 顺序、复杂度与训练兼容性
-- [implementation-plan.md](./implementation-plan.md)
-  - 分阶段实施计划
-  - 以同构 `population` 的最小可运行版本为起点
+已延期：I-13 kinetic/continuous synapse input protocols 和 I-14 initialized dynamic-state
+mutation API。两者不阻塞 v1。
 
-## 建议阅读顺序
+## 阅读顺序
 
-如果是第一次参与这项工作，建议按下面顺序读：
+1. 使用或评审公开接口：阅读 [api.md](./api.md)。
+2. 实现 builder、lowering 或 runtime：阅读 [architecture.md](./architecture.md)。
+3. 处理尚未冻结的设计点：阅读 [issues.md](./issues.md)。
+4. 开始工程任务或检查验收 gate：阅读 [implementation-plan.md](./implementation-plan.md)。
 
-1. 本文，先拿到结论和术语范围
-2. [platform-survey.md](./platform-survey.md)，理解已有平台的实现差异
-3. [braincell-network-design.md](./braincell-network-design.md)，看 BrainCell 推荐方案
-4. [implementation-plan.md](./implementation-plan.md)，进入具体落地阶段
+## 首版范围
 
-## 范围与非目标
+首版包括静态多室网络、稀疏 cell pairs、独立 chemical synapse contacts、连续位置放置、
+异质 mechanism parameters、projection-specific voltage event detection 和固定步长 delay。
 
-本文档集当前主要覆盖：
-
-- 同构 `population`
-- JAX / XLA friendly runtime organization
-- chemical synapse 的 spike / delay / current aggregation
-- gradient-compatible training path
-
-当前明确不覆盖：
-
-- 异构 morphology 的自动 regroup compiler
-- 分布式多机 spike transport 协议
-- gap junction / plasticity / structural rewiring 的完整方案
-- 最终稳定对外 API 文案
+首版不包括 point-neuron adapter、gap junction、运行中 structural rewiring、topology/placement
+可微生成、跨 Projection detector 自动合并，以及长期维护两套公开 network API。

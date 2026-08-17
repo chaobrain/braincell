@@ -1,5 +1,10 @@
 # Network / Synapse 平台调研
 
+> **Historical, non-normative reference (2026-06).** 本文记录当时对
+> NEURON/CoreNEURON、Arbor、Jaxley 和 brainevent 的调研。文中的 BrainCell 建议已经被
+> [Network Builder API](../api.md) 与 [内部架构规范](../architecture.md) 部分替代；实现和
+> 评审不得把本文当作当前规范。
+
 本文聚焦四条相关路线：
 
 - `NEURON / CoreNEURON`

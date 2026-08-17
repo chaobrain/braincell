@@ -91,6 +91,8 @@ class MechanismLayout:
     - ``layout`` distinguishes dense storage over all points from sparse storage
       over just the active point ids
     - ``point_index`` records which points are active for this layout
+    - ``placement_index`` maps sparse point targets back to declarations and
+      may align with repeated values in ``point_index``
     - ``source_cv_ids`` remembers which CV declarations contributed to it
 
     ``CellRuntimeState`` uses these records to allocate state buffers, answer
@@ -105,7 +107,14 @@ class MechanismLayout:
     point_mask: np.ndarray | None
     n_active: int
     source_cv_ids: tuple[int, ...]
+    placement_index: np.ndarray | None = None
+    population_index: np.ndarray | None = None
     source_rule: str | None = None
+
+    @property
+    def is_packed(self) -> bool:
+        """Whether point instances are stored once across the population."""
+        return self.population_index is not None
 
 
 #: Clamp layout kinds that contribute point-space current via
@@ -294,9 +303,18 @@ class CellRuntimeState:
         layout_id = 0
         pop_size = tuple(cell.pop_size)
 
-        def register(*, mechanism: object, target: str, cv_ids: tuple[int, ...], point_id: int) -> None:
+        def register(
+            *,
+            mechanism: object,
+            target: str,
+            cv_ids: tuple[int, ...],
+            point_id: int,
+            placement_id: int | None = None,
+            population_index: int | None = None,
+        ) -> None:
             nonlocal layout_id
-            signature = (target,) + mechanism_signature(mechanism)
+            storage = "packed" if population_index is not None else "broadcast"
+            signature = (target, storage) + mechanism_signature(mechanism)
             entry = grouped.get(signature)
             if entry is None:
                 entry = {
@@ -304,34 +322,35 @@ class CellRuntimeState:
                     "mechanism": mechanism,
                     "target": target,
                     "cv_ids": set(),
-                    "point_ids": set(),
+                    "point_ids": set() if target == "density" else [],
+                    "placement_ids": [],
+                    "population_indices": [],
                 }
                 grouped[signature] = entry
                 layout_id += 1
             entry["cv_ids"].update(int(cv_id) for cv_id in cv_ids)
-            entry["point_ids"].add(int(point_id))
+            if target == "density":
+                entry["point_ids"].add(int(point_id))
+            else:
+                entry["point_ids"].append(int(point_id))
+                entry["placement_ids"].append(int(placement_id))
+                if population_index is not None:
+                    entry["population_indices"].append(int(population_index))
 
         for cv in cell.cvs:
             midpoint_point_id = int(node_tree.cv_to_mid_node_id[cv.id])
             for mechanism in cv.density_mech:
                 register(mechanism=mechanism, target="density", cv_ids=(cv.id,), point_id=midpoint_point_id)
 
-        point_mech = tuple(node.point_mech for node in node_tree.nodes)
-        if any(point_mech):
-            for point_id, mechanisms in enumerate(point_mech):
-                source_cv_ids = _source_cv_ids_for_point(node_tree, point_id=int(point_id))
-                for mechanism in mechanisms:
-                    register(
-                        mechanism=mechanism,
-                        target="point",
-                        cv_ids=source_cv_ids,
-                        point_id=int(point_id),
-                    )
-        else:
-            for cv in cell.cvs:
-                midpoint_point_id = int(node_tree.cv_to_mid_node_id[cv.id])
-                for mechanism in cv.point_mech:
-                    register(mechanism=mechanism, target="point", cv_ids=(cv.id,), point_id=midpoint_point_id)
+        for placement in cell.point_placements:
+            register(
+                mechanism=placement.mechanism,
+                target="point",
+                cv_ids=(placement.cv_id,),
+                point_id=placement.point_id,
+                placement_id=placement.id,
+                population_index=placement.population_index,
+            )
 
         layouts: list[MechanismLayout] = []
         state_shapes: dict[tuple[int, str], tuple[int, ...]] = {}
@@ -341,7 +360,18 @@ class CellRuntimeState:
             mechanism = entry["mechanism"]
             target = str(entry["target"])
             cv_ids = tuple(sorted(int(cv_id) for cv_id in entry["cv_ids"]))
-            point_ids = np.asarray(sorted(int(point_id) for point_id in entry["point_ids"]), dtype=np.int32)
+            if target == "density":
+                point_ids = np.asarray(
+                    sorted(int(point_id) for point_id in entry["point_ids"]),
+                    dtype=np.int32,
+                )
+                placement_index = None
+            else:
+                point_ids = np.asarray(entry["point_ids"], dtype=np.int32)
+                placement_index = np.asarray(entry["placement_ids"], dtype=np.int32)
+            population_indices = np.asarray(
+                entry["population_indices"], dtype=np.int32
+            ) if entry["population_indices"] else None
             layout = choose_layout(target=target)
             if layout == "dense":
                 point_mask = np.zeros(n_point, dtype=bool)
@@ -351,7 +381,11 @@ class CellRuntimeState:
             elif layout == "sparse":
                 point_mask = None
                 point_index = point_ids
-                shape = pop_size + (len(point_ids),)
+                shape = (
+                    (len(point_ids),)
+                    if population_indices is not None
+                    else pop_size + (len(point_ids),)
+                )
             else:  # pragma: no cover
                 raise ValueError(f"Unsupported layout {layout!r}.")
 
@@ -364,6 +398,8 @@ class CellRuntimeState:
                 point_mask=point_mask,
                 n_active=len(point_ids),
                 source_cv_ids=cv_ids,
+                placement_index=placement_index,
+                population_index=population_indices,
                 source_rule=None,
             )
             layouts.append(layout_spec)
@@ -577,6 +613,26 @@ class CellRuntimeState:
             point_state[layout.id] = values
         return point_state
 
+    def get_placement_state(self, placement_id: int) -> dict[str, object]:
+        """Return runtime state for one independent point placement."""
+        placement_id = int(placement_id)
+        matches: list[tuple[MechanismLayout, int]] = []
+        for layout in self.layouts:
+            if layout.placement_index is None:
+                continue
+            local = np.flatnonzero(layout.placement_index == placement_id)
+            matches.extend((layout, int(index)) for index in local.tolist())
+        if len(matches) == 0:
+            raise KeyError(f"Unknown placement_id {placement_id!r}.")
+        if len(matches) != 1:
+            raise ValueError(f"placement_id {placement_id!r} is not unique at runtime.")
+        layout, local_index = matches[0]
+        return {
+            var_name: _extract_local_value(layout, local_index=local_index, buffer=buffer)
+            for (layout_id, var_name), buffer in self.state_buffers.items()
+            if layout_id == layout.id
+        }
+
     def get_cv_state(self, cv_id: int) -> dict[int, dict[str, object]]:
         if not (0 <= int(cv_id) < self.n_cv):
             raise IndexError(f"cv_id out of range: {cv_id!r}.")
@@ -613,7 +669,11 @@ class CellRuntimeState:
 
         point_drive = self.evaluate_point_netstims(t=t)
         has_netstim = self.point_has_netstim(layout.point_index)
-        return u.math.where(has_netstim, point_drive[..., layout.point_index], 0.0)
+        if layout.population_index is None:
+            local_drive = point_drive[..., layout.point_index]
+        else:
+            local_drive = point_drive[..., layout.population_index, layout.point_index]
+        return u.math.where(has_netstim, local_drive, 0.0)
 
     def point_has_netstim(self, point_index) -> np.ndarray:
         """Return a boolean mask marking points with placed NetStim layouts."""
@@ -1403,7 +1463,37 @@ def _extract_point_value(layout: MechanismLayout, *, point_id: int, buffer: obje
     matches = np.flatnonzero(layout.point_index == int(point_id))
     if len(matches) == 0:
         raise KeyError(f"Point {point_id!r} is not active in layout {layout.id!r}.")
+    if len(matches) > 1:
+        raise ValueError(
+            f"Point {point_id!r} has multiple placements in layout {layout.id!r}; "
+            "query by placement_id instead."
+        )
     return _pick(int(matches[0]))
+
+
+def _extract_local_value(
+    layout: MechanismLayout,
+    *,
+    local_index: int,
+    buffer: object,
+) -> object:
+    """Read one sparse-layout value by placement-local index."""
+    if layout.layout != "sparse":
+        raise ValueError(f"Placement lookup requires a sparse layout, got {layout.layout!r}.")
+    index = int(local_index)
+    if not (0 <= index < layout.n_active):
+        raise IndexError(f"local placement index out of range: {index!r}.")
+    if isinstance(buffer, u.Quantity):
+        mantissa = np.asarray(buffer.mantissa)
+        if mantissa.ndim >= 2 and int(mantissa.shape[-1]) != layout.n_active:
+            return u.Quantity(buffer.mantissa[..., index, :], buffer.unit)
+        return u.Quantity(buffer.mantissa[..., index], buffer.unit)
+    if isinstance(buffer, tuple):
+        return buffer[index]
+    array = np.asarray(buffer)
+    if array.ndim >= 2 and int(array.shape[-1]) != layout.n_active:
+        return buffer[..., index, :]
+    return buffer[..., index]
 
 
 def _evaluate_clamp_layout(

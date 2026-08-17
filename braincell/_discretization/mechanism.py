@@ -103,6 +103,7 @@ class PlaceRule:
     locset: LocsetExpr
     mechanisms: tuple[Point, ...]
     site: Literal["mid"] = "mid"
+    population_indices: tuple[int, ...] | None = None
 
 
 @dataclass
@@ -222,6 +223,8 @@ def normalize_paint_rules(
 def normalize_place_rule(
     locset: LocsetExpr,
     mechanisms: tuple[object, ...],
+    *,
+    population_indices: tuple[int, ...] | None = None,
 ) -> PlaceRule:
     """Normalize one ``Cell.place(...)`` call into a place rule.
 
@@ -255,7 +258,12 @@ def normalize_place_rule(
         if not isinstance(mechanism, Point):
             raise TypeError(f"Cell.place(...) mechanisms must be Point instances, got {type(mechanism).__name__!s}.")
         normalized.append(mechanism)
-    return PlaceRule(locset=locset, mechanisms=tuple(normalized), site="mid")
+    return PlaceRule(
+        locset=locset,
+        mechanisms=tuple(normalized),
+        site="mid",
+        population_indices=population_indices,
+    )
 
 
 def _paint_key(rule: PaintRule) -> tuple[object, str, str, object]:
@@ -300,7 +308,7 @@ def merge_place_rules(
     existing: tuple[PlaceRule, ...],
     incoming: tuple[PlaceRule, ...],
 ) -> tuple[PlaceRule, ...]:
-    """Merge normalized place rules without duplicating exact matches.
+    """Append normalized place rules in declaration order.
 
     Parameters
     ----------
@@ -314,12 +322,7 @@ def merge_place_rules(
     tuple of PlaceRule
         Merged place-rule sequence.
     """
-    merged: list[PlaceRule] = list(existing)
-    for rule in incoming:
-        if rule in merged:
-            continue
-        merged.append(rule)
-    return tuple(merged)
+    return tuple(existing) + tuple(incoming)
 
 
 def _interval_contains(
@@ -440,22 +443,33 @@ def _apply_place(
     mechanism: Point,
     *,
     display_name: str,
+    placement_id: int = 0,
+    branch_id: int = 0,
+    branch_x: float = 0.5,
     seen_names: set[str],
     position: Position = "mid",
+    population_index: int | None = None,
 ) -> Point:
     named = _resolve_point_name(mechanism, display_name=display_name)
     auto_generated = getattr(mechanism, "name", None) is None and getattr(named, "name", None) is not None
     if auto_generated:
         candidate_name = named.name
         if candidate_name in seen_names:
-            raise ValueError(
-                f"Duplicate auto-generated point-mechanism name "
-                f"{candidate_name!r} from place rule at {display_name!r}. "
-                "Supply an explicit name= argument to disambiguate."
-            )
+            candidate_name = f"{candidate_name}__placement_{int(placement_id)}"
+            named = replace(named, name=candidate_name)
         seen_names.add(candidate_name)
     bucket.points.append(named)
-    bucket.point_roles.append(CVPointMechanism(position=position, mechanism=named))
+    bucket.point_roles.append(
+        CVPointMechanism(
+            placement_id=int(placement_id),
+            position=position,
+            mechanism=named,
+            display_name=str(display_name),
+            branch_id=int(branch_id),
+            branch_x=float(branch_x),
+            population_index=population_index,
+        )
+    )
     return named
 
 
@@ -613,6 +627,7 @@ def build_cv_mechanisms(
             )
 
     seen_names: set[str] = set()
+    placement_id = 0
     for rule in place_rules:
         for branch_id, x, display_name in cache.points(rule.locset):
             ids = geometry.cv_ids(branch_id)
@@ -621,13 +636,24 @@ def build_cv_mechanisms(
             cv_id = geometry.locate_cv(branch_id=branch_id, x=x)
             geo = geos[cv_id]
             position = _position_for_geo(geo, x=float(x))
-            for mechanism in rule.mechanisms:
-                _apply_place(
-                    buckets[cv_id],
-                    mechanism,
-                    display_name=display_name,
-                    seen_names=seen_names,
-                    position=position,
-                )
+            population_indices = (
+                (None,)
+                if rule.population_indices is None
+                else tuple(int(index) for index in rule.population_indices)
+            )
+            for population_index in population_indices:
+                for mechanism in rule.mechanisms:
+                    _apply_place(
+                        buckets[cv_id],
+                        mechanism,
+                        display_name=display_name,
+                        placement_id=placement_id,
+                        branch_id=branch_id,
+                        branch_x=x,
+                        seen_names=seen_names,
+                        position=position,
+                        population_index=population_index,
+                    )
+                    placement_id += 1
 
     return buckets

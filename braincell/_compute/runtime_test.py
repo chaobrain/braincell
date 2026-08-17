@@ -154,6 +154,32 @@ class CellRuntimeStateTest(unittest.TestCase):
         self.assertEqual(tuple(layout.id for layout in rcell.get_point_layouts(1)), (layout.id,))
         self.assertEqual(rcell.get_point_layouts(1), (layout,))
 
+    def test_identical_point_placements_share_point_but_keep_independent_slots(self) -> None:
+        cell = Cell(_build_tree())
+        clamp = CurrentClamp(delay=1.0 * u.ms, durations=2.0 * u.ms, amplitudes=0.1 * u.nA)
+        cell.place(at("soma", 0.31), clamp)
+        cell.place(at("soma", 0.39), clamp)
+
+        placements = cell.point_placements
+        self.assertEqual([item.branch_x for item in placements], [0.31, 0.39])
+        self.assertEqual(placements[0].point_id, placements[1].point_id)
+
+        cell.init_state()
+        layout = cell.layouts[0]
+        self.assertEqual(layout.point_index.tolist(), [1, 1])
+        self.assertEqual(layout.placement_index.tolist(), [0, 1])
+        self.assertEqual(layout.n_active, 2)
+        self.assertEqual(cell.expected_state_shape(layout.id, "delay"), (2,))
+        self.assertEqual(cell.get_placement_state(0)["delay"], 1.0 * u.ms)
+        second_state = cell.get_placement_state(1)
+        self.assertEqual(second_state["delay"], 1.0 * u.ms)
+        self.assertEqual(tuple(second_state["durations"].to_decimal(u.ms)), (2.0,))
+        np.testing.assert_array_equal(second_state["_mask_durations"], [True])
+        total = cell.runtime.evaluate_point_clamps(t=1.5 * u.ms).to_decimal(u.nA)
+        self.assertAlmostEqual(float(np.asarray(total)[1]), 0.2)
+        with self.assertRaisesRegex(ValueError, "multiple placements"):
+            cell.get_point_state(1)
+
     def test_point_mechanism_can_land_on_root_endpoint(self) -> None:
         cell = Cell(_build_tree())
         cell.place(
@@ -2397,6 +2423,80 @@ class PopulationResponseHeterogeneityTest(unittest.TestCase):
 
 
 class PointSynapseRuntimeTest(unittest.TestCase):
+    def test_population_specific_synapses_support_leading_batch_axis(self) -> None:
+        cell = Cell(
+            _build_tree(),
+            pop_size=(4,),
+            solver="staggered",
+            V_init=-60.0 * u.mV,
+        )
+        synapse = braincell.mech.Synapse(
+            "ExpSyn",
+            tau=2.0 * u.ms,
+            e=0.0 * u.mV,
+            weight=1.0 * u.uS,
+            name="packed_batch_exp",
+        )
+        cell[0].place(at("soma", 0.31), synapse)
+        cell[1].place(at("soma", 0.39), synapse)
+        cell[3].place(at("soma", 0.39), synapse)
+        cell.init_state(batch_size=2)
+
+        layout, node = next(cell.runtime.iter_synapse_layouts())
+        point_v = cell._cv_to_point(cell.V.value)
+        contribution = braincell._multi_compartment.currents._synapse_contrib_to_point(
+            cell.runtime, layout, node, point_v
+        )
+
+        self.assertEqual(node.g.value.shape, (2, 3))
+        self.assertEqual(contribution.shape, (2, 4, cell.n_point))
+
+    def test_population_specific_synapses_use_packed_instance_state(self) -> None:
+        cell = Cell(
+            _build_tree(),
+            pop_size=(4,),
+            solver="staggered",
+            V_init=-60.0 * u.mV,
+        )
+        synapse = braincell.mech.Synapse(
+            "ExpSyn",
+            tau=2.0 * u.ms,
+            e=0.0 * u.mV,
+            weight=1.0 * u.uS,
+            name="packed_exp",
+        )
+        cell[0].place(at("soma", 0.31), synapse)
+        cell[1].place(at("soma", 0.39), synapse)
+        cell[3].place(at("soma", 0.39), synapse)
+        cell.init_state()
+
+        layout = next(layout for layout in cell.layouts if layout.kind == "synapse:ExpSyn")
+        node = cell.runtime.get_runtime_node(layout.id)
+        self.assertTrue(layout.is_packed)
+        self.assertEqual(layout.population_index.tolist(), [0, 1, 3])
+        self.assertEqual(layout.n_active, 3)
+        self.assertEqual(cell.runtime.get_state(layout.id, "pre_spike").shape, (3,))
+
+        cell.runtime.set_state(layout.id, "pre_spike", np.asarray([1.0, 0.0, 1.0]))
+        point_v = cell._cv_to_point(cell.V.value)
+        with brainstate.environ.context(t=0.0 * u.ms, dt=0.05 * u.ms):
+            cell._prepare_runtime_synapse_inputs(point_v)
+            cell._apply_runtime_synapse_events(point_v)
+
+        np.testing.assert_allclose(
+            np.asarray(node.g.value.to_decimal(u.uS)),
+            [1.0, 0.0, 1.0],
+        )
+        contribution = braincell._multi_compartment.currents._synapse_contrib_to_point(
+            cell.runtime, layout, node, point_v
+        )
+        contribution_nA_cm2 = np.asarray(contribution.to_decimal(u.nA / u.cm ** 2))
+        self.assertEqual(contribution_nA_cm2.shape, (4, cell.n_point))
+        self.assertTrue(np.any(contribution_nA_cm2[0] != 0.0))
+        self.assertTrue(np.all(contribution_nA_cm2[1] == 0.0))
+        self.assertTrue(np.all(contribution_nA_cm2[2] == 0.0))
+        self.assertTrue(np.any(contribution_nA_cm2[3] != 0.0))
+
     def test_synapse_compute_derivative_populates_ode_state(self) -> None:
         cell = Cell(
             _build_tree(),

@@ -44,9 +44,11 @@ from ._discretization import (
     MaxCVLen,
     Node,
     NodeTree,
+    PointPlacement,
 )
 from ._multi_compartment import (
     Cell,
+    CellSelection,
     RunResult,
 )
 from .network import (
@@ -88,6 +90,7 @@ __all__ = [
     "Branch",
     "CableProperty",
     "Cell",
+    "CellSelection",
     "Channel",
     "CompositeByTypePolicy",
     "CustomBranch",
@@ -111,6 +114,7 @@ __all__ = [
     "Network",
     "Node",
     "NodeTree",
+    "PointPlacement",
     "RunResult",
     "SingleCompartment",
     "Soma",

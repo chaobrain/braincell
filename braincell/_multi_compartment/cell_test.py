@@ -10,7 +10,7 @@ import numpy as np
 
 import braincell.mech as mech
 from braincell import Branch, CVPerBranch, Cell, Channel, CurrentClamp, Ion, IonChannel, Morphology
-from braincell.filter import AllRegion, RootLocation
+from braincell.filter import AllRegion, RootLocation, at
 from braincell.mech import StateProbe
 from braincell.quad import DiffEqState, get_integrator
 
@@ -131,12 +131,94 @@ class TestCellDeclaration(unittest.TestCase):
         )
         self.assertIs(result, cell)
 
-    def test_place_dedups_identical_rules(self):
+    def test_place_keeps_identical_rules_as_independent_instances(self):
         cell = _simple_cell()
         clamp = CurrentClamp(delay=1 * u.ms, durations=10 * u.ms, amplitudes=0.1 * u.nA)
         cell.place(RootLocation(0.0), clamp)
         cell.place(RootLocation(0.0), clamp)
-        self.assertEqual(len(cell.place_rules), 1)
+        self.assertEqual(len(cell.place_rules), 2)
+        placements = cell.point_placements
+        self.assertEqual(len(placements), 2)
+        self.assertEqual([item.id for item in placements], [0, 1])
+        self.assertEqual([item.branch_x for item in placements], [0.0, 0.0])
+        self.assertEqual(placements[0].point_id, placements[1].point_id)
+
+    def test_point_placements_preserve_continuous_location_and_cv_owner(self):
+        cell = _simple_cell()
+        clamp = CurrentClamp(delay=1 * u.ms, durations=10 * u.ms, amplitudes=0.1 * u.nA)
+        cell.place(at("soma", 0.31), clamp)
+        cell.place(at("soma", 0.39), clamp)
+
+        placements = cell.point_placements
+
+        self.assertEqual([item.branch_name for item in placements], ["soma", "soma"])
+        self.assertEqual([item.branch_type for item in placements], ["soma", "soma"])
+        self.assertEqual([item.branch_x for item in placements], [0.31, 0.39])
+        self.assertEqual([item.cv_id for item in placements], [0, 0])
+        self.assertEqual(placements[0].point_id, placements[1].point_id)
+        self.assertIs(cell.get_point_placement(1), placements[1])
+
+    def test_population_selection_places_packed_instances(self):
+        cell = Cell(_simple_cell().morpho, cv_policy=CVPerBranch(), pop_size=(4,))
+        synapse = mech.Synapse("ExpSyn", name="exp", tau=2.0 * u.ms)
+
+        cell[0].place(at("soma", 0.21), synapse)
+        cell[[1, 3, 3]].place(at("soma", 0.45), synapse)
+        cell[2:4].place(at("soma", 0.73), synapse)
+
+        placements = cell.point_placements
+        self.assertEqual(
+            [item.population_index for item in placements],
+            [0, 1, 3, 2, 3],
+        )
+        self.assertEqual(
+            [item.branch_x for item in placements],
+            [0.21, 0.45, 0.45, 0.73, 0.73],
+        )
+
+    def test_unselected_place_retains_broadcast_semantics(self):
+        cell = Cell(_simple_cell().morpho, cv_policy=CVPerBranch(), pop_size=(4,))
+        cell.place(at("soma", 0.5), mech.Synapse("ExpSyn", name="exp"))
+
+        self.assertEqual(len(cell.point_placements), 1)
+        self.assertIsNone(cell.point_placements[0].population_index)
+
+    def test_population_selection_validates_indices_and_phase(self):
+        cell = Cell(_simple_cell().morpho, cv_policy=CVPerBranch(), pop_size=(4,))
+        synapse = mech.Synapse("ExpSyn", name="exp")
+        self.assertEqual(cell[-1].population_indices, (3,))
+        with self.assertRaises(IndexError):
+            _ = cell[4]
+        with self.assertRaises(TypeError):
+            _ = cell[[0.5]]
+        cell.init_state()
+        with self.assertRaisesRegex(RuntimeError, r"reset\(\)"):
+            cell[0].place(at("soma", 0.5), synapse)
+
+    def test_junction_placements_share_point_but_keep_branch_ownership(self):
+        soma = Branch.from_lengths(
+            lengths=[20.0] * u.um,
+            radii=[10.0, 10.0] * u.um,
+            type="soma",
+        )
+        dend = Branch.from_lengths(
+            lengths=[100.0] * u.um,
+            radii=[2.0, 1.0] * u.um,
+            type="basal_dendrite",
+        )
+        morpho = Morphology.from_root(soma, name="soma")
+        morpho.soma.attach(dend, name="dend", parent_x=1.0, child_x=0.0)
+        cell = Cell(morpho, cv_policy=CVPerBranch())
+        clamp = CurrentClamp(delay=1 * u.ms, durations=2 * u.ms, amplitudes=0.1 * u.nA)
+        cell.place(at("soma", 1.0), clamp)
+        cell.place(at("dend", 0.0), clamp)
+
+        placements = cell.point_placements
+
+        self.assertEqual([item.branch_name for item in placements], ["soma", "dend"])
+        self.assertEqual([item.branch_x for item in placements], [1.0, 0.0])
+        self.assertEqual([item.cv_id for item in placements], [0, 1])
+        self.assertEqual(placements[0].point_id, placements[1].point_id)
 
 
 class TestCellLifecycle(unittest.TestCase):

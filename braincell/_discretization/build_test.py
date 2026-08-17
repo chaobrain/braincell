@@ -276,11 +276,11 @@ class MergePaintRulesTest(unittest.TestCase):
 
 
 class MergePlaceRulesTest(unittest.TestCase):
-    def test_exact_duplicate_dropped(self) -> None:
+    def test_exact_duplicate_kept_as_independent_declaration(self) -> None:
         clamp = CurrentClamp(durations=10 * u.ms, amplitudes=0.1 * u.nA)
         r = normalize_place_rule(AtLocation(branch=0, x=0.5), (clamp,))
         merged = merge_place_rules((r,), (r,))
-        self.assertEqual(len(merged), 1)
+        self.assertEqual(len(merged), 2)
 
     def test_different_clamps_both_kept(self) -> None:
         c1 = CurrentClamp(durations=10 * u.ms, amplitudes=0.1 * u.nA)
@@ -752,13 +752,16 @@ class ResolvePointNameTest(unittest.TestCase):
 
 
 class ApplyPlaceTest(unittest.TestCase):
-    def test_auto_generated_duplicate_raises(self) -> None:
+    def test_auto_generated_duplicate_gets_stable_placement_suffix(self) -> None:
         seen: set[str] = set()
         bucket = _MechBucket(cable=_DEFAULT_CABLE, density_by_key={}, points=[])
         probe = StateProbe(field="v")
-        _apply_place(bucket, probe, display_name="loc_0", seen_names=seen)
-        with self.assertRaises(ValueError):
-            _apply_place(bucket, probe, display_name="loc_0", seen_names=seen)
+        _apply_place(bucket, probe, display_name="loc_0", placement_id=0, seen_names=seen)
+        _apply_place(bucket, probe, display_name="loc_0", placement_id=1, seen_names=seen)
+        self.assertEqual(
+            [item.name for item in bucket.points],
+            ["loc_0_v", "loc_0_v__placement_1"],
+        )
 
     def test_user_named_duplicate_allowed(self) -> None:
         seen: set[str] = set()
@@ -851,6 +854,31 @@ class BuildMechTest(unittest.TestCase):
             cache=cache,
         )
         self.assertEqual([len(b.points) for b in buckets], [1, 0])
+
+    def test_duplicate_locset_rows_create_independent_point_placements(self) -> None:
+        morpho = _single_branch_morpho()
+        geos, ids = _build_geo(morpho, (((0.0, 1.0),),))
+        probe = StateProbe(field="v")
+        place = (
+            PlaceRule(
+                locset=AtLocation(branch=0, x=0.5) + AtLocation(branch=0, x=0.5),
+                mechanisms=(probe,),
+            ),
+        )
+
+        buckets = _build_mech(
+            morpho,
+            geos,
+            ids,
+            paint_rules=(),
+            place_rules=place,
+        )
+
+        self.assertEqual(len(buckets[0].points), 2)
+        self.assertEqual(
+            [point.name for point in buckets[0].points],
+            ["soma(0.5)_v", "soma(0.5)_v__placement_1"],
+        )
 
 
 class BuildMechCachesFrustaTest(unittest.TestCase):

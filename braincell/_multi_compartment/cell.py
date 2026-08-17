@@ -89,7 +89,7 @@ from braincell.quad.protocol import DiffEqState, IndependentIntegration
 from braincell.mech import CVContext, Synapse as SynapsePlacement
 from . import bridge, currents, probes, run as run_module
 
-__all__ = ["Cell"]
+__all__ = ["Cell", "CellSelection"]
 
 
 @dataclass(frozen=True)
@@ -147,6 +147,19 @@ class RuntimeNodeView:
     layout_ids: tuple[int, ...]
     source_cv_ids: tuple[int, ...]
     ions: Mapping[str, RuntimeIonBinding]
+
+
+@dataclass(frozen=True)
+class CellSelection:
+    """Declaration-time view over selected members of a population Cell."""
+
+    cell: "Cell"
+    population_indices: tuple[int, ...]
+
+    def place(self, locset: LocsetExpr, *mechanisms) -> "CellSelection":
+        """Place independent point instances on the selected population members."""
+        self.cell._place_selected(self.population_indices, locset, mechanisms)
+        return self
 
 
 class Cell(HHTypedNeuron):
@@ -407,6 +420,57 @@ class Cell(HHTypedNeuron):
     # ------------------------------------------------------------------
     # Declaration mutators
 
+    def __getitem__(self, selection) -> CellSelection:
+        """Return a declaration view over selected population members."""
+        return CellSelection(self, self._normalize_population_selection(selection))
+
+    def _normalize_population_selection(self, selection) -> tuple[int, ...]:
+        if len(self.pop_size) != 1:
+            raise ValueError(
+                "Cell population selection currently requires one-dimensional pop_size; "
+                f"got {self.pop_size!r}."
+            )
+        size = int(self.pop_size[0])
+        if isinstance(selection, slice):
+            indices = tuple(range(size))[selection]
+        elif isinstance(selection, (int, np.integer)) and not isinstance(selection, bool):
+            index = int(selection)
+            if index < 0:
+                index += size
+            indices = (index,)
+        else:
+            array = np.asarray(selection)
+            if array.ndim != 1 or not np.issubdtype(array.dtype, np.integer):
+                raise TypeError("Cell selection must be an integer, slice, or one-dimensional integer sequence.")
+            normalized = []
+            for raw in array.tolist():
+                index = int(raw)
+                if index < 0:
+                    index += size
+                normalized.append(index)
+            indices = tuple(dict.fromkeys(normalized))
+        if any(index < 0 or index >= size for index in indices):
+            raise IndexError(f"Cell population selection is outside [0, {size!r}): {indices!r}.")
+        return tuple(indices)
+
+    def _place_selected(self, population_indices, locset, mechanisms) -> None:
+        self._raise_if_initialized("place()")
+        if any(not isinstance(mechanism, SynapsePlacement) for mechanism in mechanisms):
+            raise TypeError(
+                "Cell population-specific place() currently supports Synapse point mechanisms only."
+            )
+        self._place_rules = merge_place_rules(
+            self._place_rules,
+            (
+                normalize_place_rule(
+                    locset,
+                    mechanisms,
+                    population_indices=tuple(population_indices),
+                ),
+            ),
+        )
+        self._invalidate_discretization_cache()
+
     def paint(self, region: RegionExpr, *mechanisms) -> "Cell":
         """Paint mechanisms onto ``region``. Returns ``self`` for chaining."""
         self._raise_if_initialized("paint()")
@@ -510,6 +574,27 @@ class Cell(HHTypedNeuron):
             cable and density parameters.
         """
         return self._discretization.cv_contexts
+
+    @property
+    def point_placements(self):
+        """Return point-mechanism placements in stable declaration order.
+
+        Returns
+        -------
+        tuple of PointPlacement
+            Static placement records available before and after initialization.
+        """
+        return self._discretization.point_placements
+
+    def get_point_placement(self, placement_id: int):
+        """Return one static point placement by its stable id."""
+        if isinstance(placement_id, bool) or not isinstance(placement_id, (int, np.integer)):
+            raise TypeError("placement_id must be an integer.")
+        index = int(placement_id)
+        placements = self.point_placements
+        if index < 0 or index >= len(placements):
+            raise IndexError(f"placement_id out of range: {index!r}.")
+        return placements[index]
 
     # ------------------------------------------------------------------
     # Phase transitions
@@ -2280,7 +2365,7 @@ class Cell(HHTypedNeuron):
             layout = self._runtime.layouts[layout_id]
             if layout.point_index is None:
                 raise ValueError(f"Synapse layout {layout.id!r} is missing point_index.")
-            return (point_V[..., layout.point_index],)
+            return (_gather_layout_point_values(point_V, layout),)
         return self._channel_update_args(path, node, point_V)
 
     @staticmethod
@@ -2623,6 +2708,12 @@ class Cell(HHTypedNeuron):
         self._raise_if_not_initialized("get_point_state()")
         return self._runtime.get_point_state(point_id)
 
+    def get_placement_state(self, placement_id):
+        """Return runtime state for one independent point placement."""
+        self._raise_if_not_initialized("get_placement_state()")
+        self.get_point_placement(placement_id)
+        return self._runtime.get_placement_state(placement_id)
+
     def get_cv_state(self, cv_id):
         self._raise_if_not_initialized("get_cv_state()")
         return self._runtime.get_cv_state(cv_id)
@@ -2796,6 +2887,15 @@ def _layout_id_from_runtime_path(path) -> int:
     if not isinstance(last, str) or not last.startswith("layout_"):
         raise ValueError(f"Expected runtime layout path ending with 'layout_<id>', got {path!r}.")
     return int(last.split("_", 1)[1])
+
+
+def _gather_layout_point_values(values, layout):
+    """Gather point values for a broadcast or packed point layout."""
+    if layout.point_index is None:
+        raise ValueError(f"Point layout {layout.id!r} is missing point_index.")
+    if layout.population_index is None:
+        return values[..., layout.point_index]
+    return values[..., layout.population_index, layout.point_index]
 
 
 def _scope_name(prefix: str, path, node) -> str:

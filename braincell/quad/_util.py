@@ -21,7 +21,7 @@ import brainunit as u
 import jax
 import jax.numpy as jnp
 
-from braincell._typing import T, DT, Y0, Y1, Aux, Jacobian, VectorFiled, Args
+from braincell._typing import T, DT, Y0, Y1, Aux, Jacobian, VectorField, Args
 from .protocol import DiffEqState, DiffEqModule, IndependentIntegration
 
 
@@ -194,7 +194,7 @@ def _transform_diffeq_module_into_dimensionless_fn(
 
 
 def apply_standard_solver_step(
-    solver_step: Callable[[VectorFiled, Y0, T, DT, Args], Tuple[Y1, Aux]],
+    solver_step: Callable[[VectorField, Y0, T, DT, Args], Tuple[Y1, Aux]],
     target: DiffEqModule,
     t: T,
     dt: DT,

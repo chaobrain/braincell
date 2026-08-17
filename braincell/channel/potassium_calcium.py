@@ -35,7 +35,7 @@ ion, because every rate method takes both ``K`` and ``Ca`` as
 actually drives the kinetics.
 """
 
-from typing import Callable, Optional, Union
+from typing import Optional
 
 import brainstate
 import braintools
@@ -43,6 +43,7 @@ import brainunit as u
 import jax
 
 from braincell._base import IonInfo
+from braincell._typing import ArrayLike, Initializer, Size
 from braincell.channel._base import Gate, Markov, OhmicHH, Transition
 from braincell.ion import Calcium, Potassium
 from braincell.mech import register_channel
@@ -162,12 +163,12 @@ class AHP_De1994(OhmicHH):
 
     def __init__(
         self,
-        size: brainstate.typing.Size,
-        n: Union[brainstate.typing.ArrayLike, Callable] = 2,
-        g_max: Union[brainstate.typing.ArrayLike, Callable] = 10.0 * (u.mS / u.cm**2),
-        alpha: Union[brainstate.typing.ArrayLike, Callable] = 48.0,
-        beta: Union[brainstate.typing.ArrayLike, Callable] = 0.09,
-        phi: Union[brainstate.typing.ArrayLike, Callable] = 1.0,
+        size: Size,
+        n: Initializer = 2,
+        g_max: Initializer = 10.0 * (u.mS / u.cm**2),
+        alpha: Initializer = 48.0,
+        beta: Initializer = 0.09,
+        phi: Initializer = 1.0,
         name: Optional[str] = None,
     ):
         super().__init__(size=size, name=name)
@@ -269,9 +270,9 @@ class SK_SU2015_DCN(OhmicHH):
 
     def __init__(
         self,
-        size: brainstate.typing.Size,
-        g_max: Union[brainstate.typing.ArrayLike, Callable] = 0.01 * (u.mS / u.cm**2),
-        qdeltat: Union[brainstate.typing.ArrayLike, Callable] = 1.0,
+        size: Size,
+        g_max: Initializer = 0.01 * (u.mS / u.cm**2),
+        qdeltat: Initializer = 1.0,
         name: Optional[str] = None,
     ):
         super().__init__(size=size, name=name)
@@ -409,10 +410,10 @@ class Kca3p1_MA2020_GoC(OhmicHH):
 
     def __init__(
         self,
-        size: brainstate.typing.Size,
-        g_max: Union[brainstate.typing.ArrayLike, Callable] = 120.0 * (u.mS / u.cm**2),
-        q10_base: brainstate.typing.ArrayLike = 3.0,
-        temp: brainstate.typing.ArrayLike = u.celsius2kelvin(22.0),
+        size: Size,
+        g_max: Initializer = 120.0 * (u.mS / u.cm**2),
+        q10_base: ArrayLike = 3.0,
+        temp: ArrayLike = u.celsius2kelvin(22.0),
         name: Optional[str] = None,
     ):
         super().__init__(size=size, name=name)
@@ -724,11 +725,11 @@ class Kca2p2_MA2020_GoC(Markov):
 
     def __init__(
         self,
-        size: brainstate.typing.Size,
-        g_max: Union[brainstate.typing.ArrayLike, Callable] = 38.0 * (u.mS / u.cm**2),
-        q10_base: brainstate.typing.ArrayLike = 3.0,
-        diff: brainstate.typing.ArrayLike = 3.0,
-        temp: brainstate.typing.ArrayLike = u.celsius2kelvin(22.0),
+        size: Size,
+        g_max: Initializer = 38.0 * (u.mS / u.cm**2),
+        q10_base: ArrayLike = 3.0,
+        diff: ArrayLike = 3.0,
+        temp: ArrayLike = u.celsius2kelvin(22.0),
         name: Optional[str] = None,
         solver: str | None = None,
         substeps: int | None = None,
@@ -1228,10 +1229,10 @@ class Kca1p1_MA2020_GoC(Markov):
 
     def __init__(
         self,
-        size: brainstate.typing.Size,
-        g_max: Union[brainstate.typing.ArrayLike, Callable] = 10.0 * (u.mS / u.cm**2),
-        q10_base: brainstate.typing.ArrayLike = 3.0,
-        temp: brainstate.typing.ArrayLike = u.celsius2kelvin(22.0),
+        size: Size,
+        g_max: Initializer = 10.0 * (u.mS / u.cm**2),
+        q10_base: ArrayLike = 3.0,
+        temp: ArrayLike = u.celsius2kelvin(22.0),
         name: Optional[str] = None,
         solver: str | None = None,
         substeps: int | None = None,

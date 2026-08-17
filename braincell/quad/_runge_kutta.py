@@ -22,7 +22,7 @@ import jax
 import jax.numpy as jnp
 
 from braincell._misc import cast_like as _cast_like, set_module_as
-from braincell._typing import T, DT
+from braincell._typing import T, DT, PyTree
 from .protocol import DiffEqState, DiffEqModule
 from ._registry import register_integrator
 
@@ -80,7 +80,7 @@ def _cast_scalar_like(value, like):
     return jnp.asarray(value, dtype=_array_dtype(like))
 
 
-def _rk_update(coeff: Sequence, st: brainstate.State, y0: brainstate.typing.PyTree, dt: DT, *ks):
+def _rk_update(coeff: Sequence, st: brainstate.State, y0: PyTree, dt: DT, *ks):
     assert len(coeff) == len(ks), 'The number of coefficients must be equal to the number of ks.'
 
     def _step(y0_, *k_):

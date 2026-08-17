@@ -20,13 +20,13 @@ This module implements leakage channel.
 
 """
 
-from typing import Union, Callable, Sequence, Optional
+from typing import Union, Sequence, Optional
 
-import brainstate
 import braintools
 import brainunit as u
 
 from braincell._base import HHTypedNeuron, Channel
+from braincell._typing import Initializer
 from braincell.mech import register_channel
 
 __all__ = [
@@ -184,8 +184,8 @@ class IL(LeakageChannel):
     def __init__(
         self,
         size: Union[int, Sequence[int]],
-        g_max: Union[brainstate.typing.ArrayLike, Callable] = 0.1 * (u.mS / u.cm**2),
-        E: Union[brainstate.typing.ArrayLike, Callable] = -70.0 * u.mV,
+        g_max: Initializer = 0.1 * (u.mS / u.cm**2),
+        E: Initializer = -70.0 * u.mV,
         name: Optional[str] = None,
     ):
         super().__init__(

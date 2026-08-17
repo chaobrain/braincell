@@ -30,6 +30,7 @@ import braintools
 import numpy as np
 import brainunit as u
 
+from braincell._typing import ArrayLike, Size
 from ._misc import TreeNode
 from .quad.protocol import DiffEqModule, IndependentIntegration
 
@@ -98,7 +99,7 @@ class IonChannel(brainstate.graph.Node, TreeNode, DiffEqModule):
 
     def __init__(
         self,
-        size: brainstate.typing.Size,
+        size: Size,
         name: Optional[str] = None,
     ):
         # size
@@ -293,10 +294,10 @@ class IonInfo(NamedTuple):
         multiple neurons or compartments simultaneously.
     """
 
-    Ci: brainstate.typing.ArrayLike
-    Co: brainstate.typing.ArrayLike
-    E: brainstate.typing.ArrayLike
-    valence: brainstate.typing.ArrayLike
+    Ci: ArrayLike
+    Co: ArrayLike
+    E: ArrayLike
+    valence: ArrayLike
 
 
 class Channel(IonChannel):

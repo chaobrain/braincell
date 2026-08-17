@@ -21,7 +21,7 @@ import brainunit as u
 import jax.numpy as jnp
 
 from braincell._base import HHTypedNeuron, IonChannel, _cast_like, _zero_spike_like
-from braincell._typing import Initializer
+from braincell._typing import Initializer, Size
 from braincell.quad import get_integrator
 from braincell.quad.protocol import IndependentIntegration, state, state_grouping
 
@@ -65,15 +65,15 @@ class SingleCompartment(HHTypedNeuron):
     ----------
     size : int, sequence of int
         The network size of this neuron group.
-    length : Initializer, optional
+    length : Union[brainstate.typing.ArrayLike, Callable], optional
         Compartment length used to compute membrane area. Default is 10 um
-    radius : Initializer, optional
+    radius : Union[brainstate.typing.ArrayLike, Callable], optional
         Compartment radius used to compute membrane area. Default is 5 um
-    C : Initializer, optional
+    C : Union[brainstate.typing.ArrayLike, Callable], optional
         Membrane capacitance. Default is 1.0 uF/cm²
-    V_th : Initializer, optional
+    V_th : Union[brainstate.typing.ArrayLike, Callable], optional
         Threshold voltage for spike detection. Default is 0.0 mV
-    V_initializer : Initializer, optional
+    V_initializer : Union[brainstate.typing.ArrayLike, Callable], optional
         Initial membrane potential distribution. Default is uniform between -70 mV and -60 mV
     spk_fun : Callable, optional
         Spike function for threshold crossing detection. Default is ReLU gradient
@@ -93,7 +93,7 @@ class SingleCompartment(HHTypedNeuron):
 
     def __init__(
         self,
-        size: brainstate.typing.Size,
+        size: Size,
         length: Initializer = 10.0 * u.um,
         radius: Initializer = 5.0 * u.um,
         C: Initializer = 1.0 * u.uF / u.cm**2,

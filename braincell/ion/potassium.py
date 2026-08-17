@@ -16,13 +16,13 @@
 
 """Potassium ion species, plus fixed and Nernst-derived reversal models."""
 
-from typing import Union, Callable, Optional
+from typing import Optional
 
-import brainstate
 import braintools
 import brainunit as u
 
 from braincell._base import Ion
+from braincell._typing import Initializer, Size
 from braincell.mech import register_ion
 from braincell.ion._base import FixedIon, InitNernstIon
 
@@ -147,11 +147,11 @@ class PotassiumFixed(Potassium, FixedIon):
 
     def __init__(
         self,
-        size: brainstate.typing.Size,
-        E: Union[brainstate.typing.ArrayLike, Callable, None] = -95.0 * u.mV,
-        Ci: Union[brainstate.typing.ArrayLike, Callable, None] = None,
-        Co: Union[brainstate.typing.ArrayLike, Callable, None] = None,
-        valence: Union[brainstate.typing.ArrayLike, Callable, None] = None,
+        size: Size,
+        E: Optional[Initializer] = -95.0 * u.mV,
+        Ci: Optional[Initializer] = None,
+        Co: Optional[Initializer] = None,
+        valence: Optional[Initializer] = None,
         name: Optional[str] = None,
         **channels,
     ):
@@ -234,11 +234,11 @@ class PotassiumInitNernst(Potassium, InitNernstIon):
 
     def __init__(
         self,
-        size: brainstate.typing.Size,
-        temp: Union[brainstate.typing.ArrayLike, Callable] = u.celsius2kelvin(36.0),
-        Ci: Union[brainstate.typing.ArrayLike, Callable, None] = None,
-        Co: Union[brainstate.typing.ArrayLike, Callable, None] = None,
-        valence: Union[brainstate.typing.ArrayLike, Callable, None] = None,
+        size: Size,
+        temp: Initializer = u.celsius2kelvin(36.0),
+        Ci: Optional[Initializer] = None,
+        Co: Optional[Initializer] = None,
+        valence: Optional[Initializer] = None,
         name: Optional[str] = None,
         **channels,
     ):

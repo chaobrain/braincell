@@ -15,12 +15,12 @@
 
 """Nonspecific current-owner ion placeholders."""
 
-from typing import Callable, Optional, Union
+from typing import Optional
 
-import brainstate
 import brainunit as u
 
 from braincell._base import Ion
+from braincell._typing import Initializer, Size
 from braincell.ion._base import FixedIon
 from braincell.mech import register_ion
 
@@ -144,11 +144,11 @@ class NonSpecificFixed(NonSpecific, FixedIon):
 
     def __init__(
         self,
-        size: brainstate.typing.Size,
-        E: Union[brainstate.typing.ArrayLike, Callable, None] = 0.0 * u.mV,
-        Ci: Union[brainstate.typing.ArrayLike, Callable, None] = None,
-        Co: Union[brainstate.typing.ArrayLike, Callable, None] = None,
-        valence: Union[brainstate.typing.ArrayLike, Callable, None] = None,
+        size: Size,
+        E: Optional[Initializer] = 0.0 * u.mV,
+        Ci: Optional[Initializer] = None,
+        Co: Optional[Initializer] = None,
+        valence: Optional[Initializer] = None,
         name: Optional[str] = None,
         **channels,
     ):

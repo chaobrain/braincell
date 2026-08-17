@@ -17,13 +17,13 @@
 
 """Voltage-dependent sodium channels built directly on HH templates."""
 
-from typing import Callable, Optional, Union
+from typing import Optional
 
-import brainstate
 import braintools
 import brainunit as u
 
 from braincell._base import IonInfo
+from braincell._typing import ArrayLike, Initializer, Size
 from braincell.channel._base import Gate, HH, Markov, OhmicHH
 from braincell.ion import Sodium
 from braincell.mech import register_channel
@@ -138,12 +138,12 @@ class Na_Ba2002(OhmicHH):
 
     def __init__(
         self,
-        size: brainstate.typing.Size,
-        g_max: Union[brainstate.typing.ArrayLike, Callable] = 90.0 * (u.mS / u.cm**2),
-        temp: brainstate.typing.ArrayLike = u.celsius2kelvin(36.0),
-        q10: Union[brainstate.typing.ArrayLike, Callable] = 3.0,
-        temp_ref: brainstate.typing.ArrayLike = u.celsius2kelvin(36.0),
-        V_sh: Union[brainstate.typing.ArrayLike, Callable] = -50.0 * u.mV,
+        size: Size,
+        g_max: Initializer = 90.0 * (u.mS / u.cm**2),
+        temp: ArrayLike = u.celsius2kelvin(36.0),
+        q10: Initializer = 3.0,
+        temp_ref: ArrayLike = u.celsius2kelvin(36.0),
+        V_sh: Initializer = -50.0 * u.mV,
         name: Optional[str] = None,
     ):
         super().__init__(size=size, name=name)
@@ -257,12 +257,12 @@ class Na_TM1991(OhmicHH):
 
     def __init__(
         self,
-        size: brainstate.typing.Size,
-        g_max: Union[brainstate.typing.ArrayLike, Callable] = 120.0 * (u.mS / u.cm**2),
-        temp: brainstate.typing.ArrayLike = u.celsius2kelvin(36.0),
-        q10: Union[brainstate.typing.ArrayLike, Callable] = 1.0,
-        temp_ref: brainstate.typing.ArrayLike = u.celsius2kelvin(36.0),
-        V_sh: Union[brainstate.typing.ArrayLike, Callable] = -63.0 * u.mV,
+        size: Size,
+        g_max: Initializer = 120.0 * (u.mS / u.cm**2),
+        temp: ArrayLike = u.celsius2kelvin(36.0),
+        q10: Initializer = 1.0,
+        temp_ref: ArrayLike = u.celsius2kelvin(36.0),
+        V_sh: Initializer = -63.0 * u.mV,
         name: Optional[str] = None,
     ):
         super().__init__(size=size, name=name)
@@ -366,12 +366,12 @@ class Na_HH1952(OhmicHH):
 
     def __init__(
         self,
-        size: brainstate.typing.Size,
-        g_max: Union[brainstate.typing.ArrayLike, Callable] = 120.0 * (u.mS / u.cm**2),
-        temp: brainstate.typing.ArrayLike = u.celsius2kelvin(36.0),
-        q10: Union[brainstate.typing.ArrayLike, Callable] = 3.0,
-        temp_ref: brainstate.typing.ArrayLike = u.celsius2kelvin(36.0),
-        V_sh: Union[brainstate.typing.ArrayLike, Callable] = -45.0 * u.mV,
+        size: Size,
+        g_max: Initializer = 120.0 * (u.mS / u.cm**2),
+        temp: ArrayLike = u.celsius2kelvin(36.0),
+        q10: Initializer = 3.0,
+        temp_ref: ArrayLike = u.celsius2kelvin(36.0),
+        V_sh: Initializer = -45.0 * u.mV,
         name: Optional[str] = None,
     ):
         super().__init__(size=size, name=name)
@@ -471,8 +471,8 @@ class NaF_SU2015_DCN(OhmicHH):
 
     def __init__(
         self,
-        size: brainstate.typing.Size,
-        g_max: Union[brainstate.typing.ArrayLike, Callable] = 0.01 * (u.mS / u.cm**2),
+        size: Size,
+        g_max: Initializer = 0.01 * (u.mS / u.cm**2),
         name: Optional[str] = None,
     ):
         super().__init__(size=size, name=name)
@@ -570,8 +570,8 @@ class NaP_SU2015_DCN(OhmicHH):
 
     def __init__(
         self,
-        size: brainstate.typing.Size,
-        g_max: Union[brainstate.typing.ArrayLike, Callable] = 0.01 * (u.mS / u.cm**2),
+        size: Size,
+        g_max: Initializer = 0.01 * (u.mS / u.cm**2),
         name: Optional[str] = None,
     ):
         super().__init__(size=size, name=name)
@@ -679,8 +679,8 @@ class Na_ZH2019_IO(OhmicHH):
 
     def __init__(
         self,
-        size: brainstate.typing.Size,
-        g_max: Union[brainstate.typing.ArrayLike, Callable] = 70.0 * (u.mS / u.cm**2),
+        size: Size,
+        g_max: Initializer = 70.0 * (u.mS / u.cm**2),
         name: Optional[str] = None,
     ):
         super().__init__(size=size, name=name)
@@ -860,9 +860,9 @@ class Nav1p6_MA2020_GoC(Markov):
 
     def __init__(
         self,
-        size: brainstate.typing.Size,
-        temp: brainstate.typing.ArrayLike = u.celsius2kelvin(22.0),
-        g_max: Union[brainstate.typing.ArrayLike, Callable] = 16.0 * (u.mS / u.cm**2),
+        size: Size,
+        temp: ArrayLike = u.celsius2kelvin(22.0),
+        g_max: Initializer = 16.0 * (u.mS / u.cm**2),
         name: Optional[str] = None,
         solver: str | None = None,
         substeps: int | None = None,
@@ -1300,10 +1300,10 @@ class Nav1p1_MA2025_BC(Nav1p6_MA2020_GoC):
 
     def __init__(
         self,
-        size: brainstate.typing.Size,
-        temp: brainstate.typing.ArrayLike = u.celsius2kelvin(22.0),
-        g_max: Union[brainstate.typing.ArrayLike, Callable] = 8.0 * (u.mS / u.cm**2),
-        gateCurrent: Union[brainstate.typing.ArrayLike, Callable] = 0.0,
+        size: Size,
+        temp: ArrayLike = u.celsius2kelvin(22.0),
+        g_max: Initializer = 8.0 * (u.mS / u.cm**2),
+        gateCurrent: Initializer = 0.0,
         name: Optional[str] = None,
         solver: str | None = None,
         substeps: int | None = None,
@@ -1573,9 +1573,9 @@ class Nav_MA2020_GrC(Markov, IndependentIntegration):
 
     def __init__(
         self,
-        size: brainstate.typing.Size,
-        temp: brainstate.typing.ArrayLike = u.celsius2kelvin(32.0),
-        g_max: Union[brainstate.typing.ArrayLike, Callable] = 13.0 * (u.mS / u.cm**2),
+        size: Size,
+        temp: ArrayLike = u.celsius2kelvin(32.0),
+        g_max: Initializer = 13.0 * (u.mS / u.cm**2),
         name: Optional[str] = None,
         solver: str | None = None,
         substeps: int | None = None,
@@ -1799,9 +1799,9 @@ class NaFHF_MA2020_GrC(Markov, IndependentIntegration):
 
     def __init__(
         self,
-        size: brainstate.typing.Size,
-        temp: brainstate.typing.ArrayLike = u.celsius2kelvin(32.0),
-        g_max: Union[brainstate.typing.ArrayLike, Callable] = 13.0 * (u.mS / u.cm**2),
+        size: Size,
+        temp: ArrayLike = u.celsius2kelvin(32.0),
+        g_max: Initializer = 13.0 * (u.mS / u.cm**2),
         name: Optional[str] = None,
         solver: str | None = None,
         substeps: int | None = None,

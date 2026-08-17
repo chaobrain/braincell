@@ -83,13 +83,13 @@ may be defined in other files within the BrainCell library.
 
 from typing import Optional, Dict, Sequence, Callable, NamedTuple, Tuple, Type, Hashable
 
-import brainstate
 import brainpy
 import brainunit as u
 import jax.numpy as jnp
 import numpy as np
 from brainstate.mixin import _JointGenericAlias
 
+from braincell._typing import Size
 from .quad.protocol import DiffEqModule, IndependentIntegration
 from ._misc import cast_like as _cast_like, set_module_as, Container, TreeNode
 
@@ -158,7 +158,7 @@ class HHTypedNeuron(brainpy.state.Dynamics, Container, DiffEqModule):
     __module__ = 'braincell'
     _container_name = 'ion_channels'
 
-    def __init__(self, size: brainstate.typing.Size, name: Optional[str] = None, **ion_channels):
+    def __init__(self, size: Size, name: Optional[str] = None, **ion_channels):
         super().__init__(size, name=name)
 
         # attribute for ``Container``

@@ -102,7 +102,8 @@ from braincell.quad._exp_euler import _ind_exp_euler_step_selected
 from braincell.quad._staggered import build_cv_axial_operator
 from braincell.quad.protocol import DiffEqGroupState, IndependentIntegration, state_grouping
 from braincell.mech import CVContext, Synapse as SynapsePlacement
-from . import bridge, currents, probes, run as run_module
+from . import currents, probes, run as run_module
+from braincell._compute import bridge
 
 __all__ = ["Cell", "MultiCompartment"]
 

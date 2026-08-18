@@ -13,7 +13,7 @@
 # limitations under the License.
 # ==============================================================================
 
-"""Unit tests for :mod:`braincell._multi_compartment.bridge`.
+"""Unit tests for :mod:`braincell._compute.bridge`.
 
 These use a minimal stub for :class:`CellRuntimeState` so the scatter
 / gather behaviour is testable without a full :class:`Cell` build.
@@ -28,7 +28,7 @@ import brainunit as u
 import jax.numpy as jnp
 import numpy as np
 
-from braincell._multi_compartment import bridge
+from braincell._compute import bridge
 
 
 @dataclass

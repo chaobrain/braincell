@@ -51,7 +51,7 @@ from braincell.mech._params import _to_hashable
 from braincell.ion import build_placeholder_ions
 from braincell.morph.morphology import Morphology, clone_morpho
 from braincell.quad import get_integrator
-from braincell._multi_compartment.bridge import (
+from .bridge import (
     attach_runtime_ion_geometry,
     cv_value_vector,
     fill_like,

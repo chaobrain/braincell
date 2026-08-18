@@ -33,7 +33,7 @@ from braincell.mech import (
     StateProbe,
     Synapse,
 )
-from . import bridge
+from braincell._compute import bridge
 
 if TYPE_CHECKING:
     from .cell import Cell

@@ -15,10 +15,11 @@
 
 """CV ↔ point-space conversion helpers and brainunit vectorisation.
 
-All the CV/point scatter-gather primitives live here so that
-:mod:`braincell._compute.runtime` does not reach into
-:mod:`braincell._multi_compartment` and vice-versa. Runtime re-imports
-what it needs at the top of :mod:`braincell._compute.runtime`.
+This is the CV-space ↔ point-space conversion layer for
+:class:`~braincell._compute.runtime.CellRuntimeState`: the CV/point
+scatter-gather primitives that :mod:`braincell._compute.runtime`,
+:mod:`braincell._multi_compartment.currents`, and
+:mod:`braincell._multi_compartment.probes` all build on.
 """
 
 from __future__ import annotations

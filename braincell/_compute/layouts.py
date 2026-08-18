@@ -73,7 +73,9 @@ if TYPE_CHECKING:
 __all__ = [
     "CLAMP_KINDS",
     "ClampRoutingTable",
+    "Layout",
     "MechanismLayout",
+    "Target",
     "build_clamp_routing_table",
     "choose_layout",
     "mechanism_kind",

@@ -64,6 +64,25 @@ Only *load-time* imports create an edge:
   descends into all of them.
 - Test modules (``*_test.py``, ``_testing.py``) are excluded entirely. A test
   importing ``Cell`` is not an architecture violation.
+
+Known limitations
+-----------------
+
+The walker is a pragmatic AST match, not a full static-import resolver. The
+following constructs are invisible to it. None appear in the codebase today;
+if one is introduced, this guard will not catch it:
+
+- ``match``/``case`` bodies (:class:`ast.Match`) are not descended into.
+- ``except*`` bodies (:class:`ast.TryStar`) are not descended into.
+- Dynamic imports — ``importlib.import_module(...)`` and ``__import__(...)``
+  — are invisible; only literal :class:`ast.Import` / :class:`ast.ImportFrom`
+  statements are matched.
+- :func:`_production_modules` globs ``*.py`` non-recursively over
+  ``_PACKAGE_DIR``, so a future ``_compute/<subpackage>/`` would be unscanned.
+- :func:`_is_type_checking_guard` matches any attribute named
+  ``TYPE_CHECKING`` regardless of its owner, so an unrelated
+  ``if _Cfg.TYPE_CHECKING:`` would be (mis)treated as the real guard and its
+  body skipped.
 """
 
 import ast

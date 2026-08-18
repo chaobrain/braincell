@@ -12,13 +12,12 @@
 
 ```mermaid
 flowchart LR
-    MC["`_multi_compartment`<br/>Cell frontend<br/>cell / bridge / currents / probes / run"]
+    MC["`_multi_compartment`<br/>Cell frontend<br/>cell / currents / probes / run"]
     CV["`_discretization`<br/>CV + node-tree declaration<br/>base / node_build / policy / geometry / mechanism"]
-    CP["`_compute`<br/>runtime compile layer<br/>runtime / scheduling / table"]
+    CP["`_compute`<br/>runtime compile layer<br/>layouts / ions / bindings / state / bridge / scheduling / table"]
 
     MC -->|"Cell.cvs / Cell.init_state<br/>build_discretization"| CV
     MC -->|"Cell.init_state<br/>CellRuntimeState.from_cell(...)"| CP
-    CP -->|"runtime vector helpers<br/>cv_to_point / point_to_cv / scatter"| MC
     CP -->|"node scheduling consumes declaration node tree"| CV
 ```
 
@@ -27,14 +26,14 @@ flowchart LR
 - `_multi_compartment.cell.Cell` 是调用方和用户入口。
 - `_discretization` 负责把 `morpho + cv_policy + paint/place rules` 变成 `tuple[CV, ...]`，并在初始化路径生成 `NodeTree`。
 - `_compute` 负责把 `Cell + CV/NodeTree declaration` 变成 runtime state、layout、runtime nodes，并为 solver 构造 scheduling。
-- `_compute.runtime` 会导入 `_multi_compartment.bridge` 的 CV/point scatter-gather helper；`bridge.py` 只在 `TYPE_CHECKING` 下引用 `CellRuntimeState`，实际运行时主要是被 `_compute.runtime`、`currents.py`、`probes.py` 调用。
+- `bridge.py` 现在就在 `_compute` 内部；它的 `TYPE_CHECKING` 引用指向 `braincell._compute.state.CellRuntimeState`，运行时调用方是 `_compute.state`、`_multi_compartment.currents`、`_multi_compartment.probes`。
 
 ## 2. `_multi_compartment` 内部
 
 ```mermaid
 flowchart TD
     CELL["cell.py<br/>Cell<br/>paint/place/init_state/update/run"]
-    BRIDGE["bridge.py<br/>CV <-> point helpers<br/>cv_to_point, point_to_cv, ..."]
+    BRIDGE["`_compute.bridge`<br/>CV <-> point helpers<br/>cv_to_point, point_to_cv, ..."]
     CURRENTS["currents.py<br/>total_membrane_current"]
     PROBES["probes.py<br/>sample_probe(s)"]
     RUN["run.py<br/>RunResult / run"]
@@ -43,7 +42,7 @@ flowchart TD
     CVPOLICY["`_discretization.policy`<br/>CVPolicy / CVPerBranch / ..."]
     CVGEOM["`_discretization.geometry`<br/>CVGeometryResult<br/>build_cv_geometry"]
     CVMECH["`_discretization.mechanism`<br/>PaintRule / PlaceRule<br/>normalize / merge"]
-    CPRUNTIME["`_compute.runtime`<br/>CellRuntimeState"]
+    CPRUNTIME["`_compute.state`<br/>CellRuntimeState"]
     CPTABLE["`_compute.table`<br/>MechanismObjectTable"]
     CPTOPO["`_compute.scheduling`<br/>build_node_scheduling"]
 
@@ -67,7 +66,7 @@ flowchart TD
 
 - 声明期：`paint(...)` / `place(...)` 走 `_discretization.mechanism.normalize_*` 和 `merge_*`。
 - 预览期：`cvs` 属性走 `_discretization.base.build_discretization(...)`，再取 `.cvs`。
-- 初始化：`init_state(...)` 走 `_discretization.base.build_discretization(...)`，一次拿到 `CVTree + NodeTree`，再走 `_compute.runtime.CellRuntimeState.from_cell(...)`。
+- 初始化：`init_state(...)` 走 `_discretization.base.build_discretization(...)`，一次拿到 `CVTree + NodeTree`，再走 `_compute.state.CellRuntimeState.from_cell(...)`。
 - 运行期：`compute_membrane_derivative(...)` 调 `currents.total_membrane_current(...)`；`run(...)` 委托给 `run.py`；probe 查询委托给 `probes.py`。
 
 ## 3. `_discretization` 内部
@@ -116,41 +115,52 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-    RUNTIME["runtime.py<br/>CellRuntimeState<br/>MechanismLayout / ClampActiveTable"]
-    TOPO["scheduling.py<br/>NodeScheduling<br/>build_node_scheduling"]
+    LAYOUTS["layouts.py<br/>MechanismLayout / clamp routing<br/>state-buffer allocation"]
+    IONS["ions.py<br/>runtime ion instantiation / sync"]
+    BINDINGS["bindings.py<br/>channel binding<br/>runtime node instantiation"]
+    STATE["state.py<br/>CellRuntimeState"]
+    BRIDGE["bridge.py<br/>CV <-> point scatter/gather helpers"]
     TABLE["table.py<br/>MechanismObjectTable"]
-    LAYOUTS["layouts.py<br/>thin re-export of runtime layout helpers"]
-    STATE["state.py<br/>thin re-export: CellRuntimeState"]
-    IONS["ions.py<br/>thin re-export of runtime ion helpers"]
-    BINDINGS["bindings.py<br/>thin re-export of channel binding helpers"]
-    BRIDGE["`_multi_compartment.bridge`<br/>scatter/gather helpers"]
+    TOPO["scheduling.py<br/>NodeScheduling<br/>build_node_scheduling"]
     CVBASE["external: `_discretization.base`<br/>CV / NodeTree"]
-    MORPH["external: morph<br/>Morphology"]
     MECH["external: mech<br/>declarations + registry"]
     ION["external: ion/channel<br/>runtime mechanism classes"]
+    CELLEXT["external: `_multi_compartment.cell`<br/>Cell"]
 
-    RUNTIME -->|"node tree declaration"| CVBASE
-    RUNTIME -->|"scheduling-compatible types"| TOPO
-    RUNTIME -->|"CV/point vectors"| BRIDGE
-    RUNTIME -->|"clone_morpho"| MORPH
-    RUNTIME -->|"resolve declarations"| MECH
-    RUNTIME -->|"instantiate runtime ions/channels"| ION
+    IONS -->|"layout grouping"| LAYOUTS
+    BINDINGS -->|"runtime ion helpers"| IONS
+    BINDINGS -->|"layout lookup"| LAYOUTS
+    STATE -->|"channel/synapse binding"| BINDINGS
+    STATE -->|"CV/point vectors"| BRIDGE
+    STATE -->|"clamp/state-buffer layout"| LAYOUTS
+    TABLE -->|"layout/runtime lookup"| STATE
 
-    TABLE -->|"layout/runtime lookup"| RUNTIME
+    LAYOUTS -->|"node tree declaration"| CVBASE
+    LAYOUTS -->|"resolve declarations"| MECH
+    IONS -->|"resolve declarations"| MECH
+    IONS -->|"instantiate runtime ions"| ION
+    BINDINGS -->|"resolve declarations"| MECH
+    BINDINGS -->|"instantiate runtime channels"| ION
+    STATE -->|"node tree declaration"| CVBASE
+    STATE -->|"resolve declarations"| MECH
     TABLE -->|"declaration identity"| MECH
+    TOPO -->|"node tree declaration"| CVBASE
 
-    LAYOUTS -.->|"re-export helpers"| RUNTIME
-    STATE -.->|"re-export CellRuntimeState"| RUNTIME
-    IONS -.->|"re-export ion helpers"| RUNTIME
-    BINDINGS -.->|"re-export binding helpers"| RUNTIME
+    LAYOUTS -.->|"type-only: CellRuntimeState"| STATE
+    IONS -.->|"type-only: CellRuntimeState"| STATE
+    BINDINGS -.->|"type-only: CellRuntimeState"| STATE
+    STATE -.->|"type-only: Cell"| CELLEXT
 ```
 
-`_compute` 的中心是 `runtime.py`：
+`_compute` 现在没有单一中心模块，职责按依赖顺序拆成几层：
 
-- `scheduling.py` 只保留 `NodeScheduling`；`NodeTree` 的真实定义在 `_discretization.base`，node 构建细节在 `_discretization.node_build`。
-- `runtime.py` 做 runtime lowering：layout、state buffer、ion/channel/synapse runtime node、clamp active table。
-- `table.py` 是 inspect/debug/query 层，用 runtime layout 和 declaration 生成 mechanism table。
-- `layouts.py`、`state.py`、`ions.py`、`bindings.py` 当前主要是把 `runtime.py` 的职责组拆成“可导入的名字”，大部分实现体还在 `runtime.py`。
+- `layouts.py` 是最底层：`MechanismLayout` 记录、clamp routing、state buffer 分配，对包内其他模块无依赖。
+- `ions.py` 依赖 `layouts.py`，负责 runtime ion 实例的构建与同步。
+- `bindings.py` 依赖 `ions.py` 和 `layouts.py`，负责 channel binding 与 runtime node 实例化。
+- `state.py` 依赖 `bindings.py`、`bridge.py`、`layouts.py`，把上面几层聚合成 `CellRuntimeState` 门面；对 `_multi_compartment.cell.Cell` 的引用只在 `TYPE_CHECKING` 下出现。
+- `bridge.py` 现在是 `_compute` 内部模块，提供 CV <-> point 的 scatter/gather helper，对包内其他模块无依赖。
+- `table.py` 依赖 `state.py`，是 inspect/debug/query 层，用 runtime layout 和 declaration 生成 mechanism table。
+- `scheduling.py` 只保留 `NodeScheduling`；`NodeTree` 的真实定义在 `_discretization.base`，node 构建细节在 `_discretization.node_build`；它与本包其余模块之间没有依赖关系。
 
 ## 5. `Cell.init_state()` 路径
 
@@ -158,8 +168,8 @@ flowchart TD
 sequenceDiagram
     participant Cell as _multi_compartment.cell.Cell
     participant CV as _discretization.base/policy/geometry/mechanism/node_build
-    participant Runtime as _compute.runtime
-    participant Bridge as _multi_compartment.bridge
+    participant Runtime as _compute.state
+    participant Bridge as _compute.bridge
 
     Cell->>CV: internal tuple helper (morpho, policy, paint_rules, place_rules)
     CV-->>Cell: CVTree, NodeTree
@@ -192,6 +202,6 @@ sequenceDiagram
 - `_discretization.base.build_discretization(...)` 是静态离散入口；CV 预览通过 `.cvs` 取得。
 - `_discretization.node_build` 把 CV 变成 node tree，并承载 endpoint/midpoint point mechanism placement。
 - `_compute.scheduling` 只做 node scheduling 和兼容导出。
-- `_compute.runtime` 把 Cell declaration 变成 runtime state/layout/node。
-- `_multi_compartment.bridge` 是 CV-space 和 point-space 的转换工具，被 runtime/current/probe 共同使用。
-- `_compute.layouts/state/ions/bindings` 现在主要是 `runtime.py` 的薄 re-export 分组。
+- `_compute.state` 把 Cell declaration 变成 runtime state（依赖 `layouts` / `ions` / `bindings` / `bridge`）。
+- `_compute.bridge` 是 CV-space 和 point-space 的转换工具，被 `_compute.state`/`currents`/`probes` 共同使用。
+- `_compute.layouts/ions/bindings` 是真正的实现模块，按 `layouts -> ions -> bindings -> state` 的顺序逐层依赖，不是 re-export。

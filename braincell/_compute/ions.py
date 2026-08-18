@@ -282,9 +282,10 @@ def _instantiate_runtime_ion_instance(
     """Build one runtime ion instance from its sparse declaration layouts.
 
     Start from a baseline ion and replace per-point params where each
-    declaration layout requests them. Uses ``.at[point_index].set(...)``
-    on the Quantity mantissa — no Python loops on per-point Quantity
-    boxes.
+    declaration layout requests them. Each layout's buffer is scattered
+    into the accumulated array by :func:`_ion_param_scatter`, which uses
+    ``np.put_along_axis`` on the Quantity mantissa — no Python loops on
+    per-point Quantity boxes.
     """
     supported_params = _supported_ion_runtime_params(runtime_cls)
     unsupported_params: dict[int, set[str]] = {}
@@ -349,8 +350,8 @@ def _ion_param_broadcast(value: object, *, shape: tuple[int, ...]) -> object:
 
     Handles three cases: already-shaped Quantity pass-through, scalar
     Quantity broadcast, and plain numeric / object fallbacks. Returns
-    a buffer that :func:`_ion_param_scatter` can update in-place by
-    ``.at[...].set(...)``.
+    a buffer that :func:`_ion_param_scatter` copies and updates via
+    ``np.put_along_axis``.
     """
     if isinstance(value, u.Quantity):
         raw = value.mantissa if hasattr(value, "mantissa") else value.to_decimal(value.unit)
@@ -390,8 +391,9 @@ def _ion_param_scatter(
 
     For ``Ci_initializer`` on :class:`DynamicNernstIon` (which may hold a
     State-wrapped callable), fall back to the Python per-point path on a
-    tuple buffer. Rectangular Quantity buffers scatter via
-    ``.at[point_index].set(...)`` with unit coercion.
+    tuple buffer. Rectangular Quantity and ndarray buffers scatter via
+    ``np.put_along_axis`` onto a copy of ``target``, with unit coercion
+    for Quantity buffers.
     """
     if isinstance(target, u.Quantity) and isinstance(buffer, u.Quantity):
         target_unit = target.unit
@@ -465,8 +467,9 @@ def _ion_param_scatter(
 def _sync_runtime_ion(runtime: CellRuntimeState, *, layout_id: int) -> None:
     """Rebuild the runtime ion's per-point params from state buffers.
 
-    Uses vectorised ``.at[point_index].set(...)`` on Quantity mantissas
-    instead of Python per-index loops.
+    Uses :func:`_ion_param_scatter`, which vectorises via
+    ``np.put_along_axis`` on Quantity mantissas instead of Python
+    per-index loops.
     """
     mechanism = runtime.layout_mechanisms[int(layout_id)]
     if not isinstance(mechanism, Density) or mechanism.category != "ion":

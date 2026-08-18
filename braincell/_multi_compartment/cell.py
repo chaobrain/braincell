@@ -66,7 +66,7 @@ from braincell._compute.scheduling import build_node_scheduling
 from braincell._compute.state import CellRuntimeState
 from braincell._compute.bindings import _is_root_level_runtime_node
 from braincell._compute.layouts import mechanism_signature
-from braincell.ion import build_placeholder_ions
+from braincell.ion import build_placeholder_ions  # noqa: F401 -- patched by cell_test.py::CellDoesNotAllocatePlaceholderIonsEagerlyTest
 from braincell._discretization.mechanism import (
     PaintRule,
     PlaceRule,

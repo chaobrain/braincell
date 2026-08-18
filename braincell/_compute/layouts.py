@@ -137,7 +137,7 @@ class MechanismLayout:
 
 
 #: Clamp layout kinds that contribute point-space current via
-#: :meth:`CellRuntimeState.evaluate_point_clamps`.
+#: :meth:`braincell._compute.state.CellRuntimeState.evaluate_point_clamps`.
 CLAMP_KINDS = frozenset({"CurrentClamp", "SineClamp", "FunctionClamp"})
 
 
@@ -178,7 +178,7 @@ def build_clamp_routing_table(
     Parameters
     ----------
     layouts : tuple[MechanismLayout, ...]
-        All mechanism layouts from :class:`CellRuntimeState`.
+        All mechanism layouts from :class:`braincell._compute.state.CellRuntimeState`.
     cvs : Sequence[CV]
         The cell's control volumes — source of per-CV membrane area.
     node_tree : NodeTree

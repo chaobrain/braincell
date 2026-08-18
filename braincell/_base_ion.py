@@ -33,6 +33,7 @@ import brainunit as u
 import jax
 from brainstate.mixin import _JointGenericAlias
 
+from braincell._typing import Size
 from ._base_channel import Channel, IonChannel, IonInfo
 from ._misc import Container, set_module_as
 from .quad.protocol import IndependentIntegration
@@ -250,7 +251,7 @@ class Ion(IonChannel, Container):
     # root_type is assigned below after the import-cycle with HHTypedNeuron
     # is safe to resolve. See module docstring.
 
-    def __init__(self, size: brainstate.typing.Size, name: Optional[str] = None, **channels) -> None:
+    def __init__(self, size: Size, name: Optional[str] = None, **channels) -> None:
         super().__init__(size, name=name)
         self.channels: Dict[str, Channel] = dict()
         self.channels.update(self._format_elements(Channel, **channels))

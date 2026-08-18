@@ -17,13 +17,13 @@
 
 """Voltage-dependent potassium channels built directly on templates."""
 
-from typing import Callable, Optional, Union
+from typing import Optional
 
-import brainstate
 import braintools
 import brainunit as u
 
 from braincell._base import Channel, IonInfo
+from braincell._typing import ArrayLike, Initializer, Size
 from braincell.channel._base import Gate, HH, OhmicHH
 from braincell.ion import Potassium
 from braincell.mech import register_channel
@@ -190,12 +190,12 @@ class KDR_Ba2002(OhmicHH):
 
     def __init__(
         self,
-        size: brainstate.typing.Size,
-        g_max: Union[brainstate.typing.ArrayLike, Callable] = 10.0 * (u.mS / u.cm**2),
-        temp: brainstate.typing.ArrayLike = u.celsius2kelvin(36.0),
-        q10: Union[brainstate.typing.ArrayLike, Callable] = 3.0,
-        temp_ref: brainstate.typing.ArrayLike = u.celsius2kelvin(36.0),
-        V_sh: Union[brainstate.typing.ArrayLike, Callable] = -50.0 * u.mV,
+        size: Size,
+        g_max: Initializer = 10.0 * (u.mS / u.cm**2),
+        temp: ArrayLike = u.celsius2kelvin(36.0),
+        q10: Initializer = 3.0,
+        temp_ref: ArrayLike = u.celsius2kelvin(36.0),
+        V_sh: Initializer = -50.0 * u.mV,
         name: Optional[str] = None,
     ):
         super().__init__(size=size, name=name)
@@ -313,12 +313,12 @@ class K_TM1991(OhmicHH):
 
     def __init__(
         self,
-        size: brainstate.typing.Size,
-        g_max: Union[brainstate.typing.ArrayLike, Callable] = 10.0 * (u.mS / u.cm**2),
-        temp: brainstate.typing.ArrayLike = u.celsius2kelvin(36.0),
-        q10: Union[brainstate.typing.ArrayLike, Callable] = 1.0,
-        temp_ref: brainstate.typing.ArrayLike = u.celsius2kelvin(36.0),
-        V_sh: Union[brainstate.typing.ArrayLike, Callable] = -60.0 * u.mV,
+        size: Size,
+        g_max: Initializer = 10.0 * (u.mS / u.cm**2),
+        temp: ArrayLike = u.celsius2kelvin(36.0),
+        q10: Initializer = 1.0,
+        temp_ref: ArrayLike = u.celsius2kelvin(36.0),
+        V_sh: Initializer = -60.0 * u.mV,
         name: Optional[str] = None,
     ):
         super().__init__(size=size, name=name)
@@ -432,12 +432,12 @@ class K_HH1952(OhmicHH):
 
     def __init__(
         self,
-        size: brainstate.typing.Size,
-        g_max: Union[brainstate.typing.ArrayLike, Callable] = 10.0 * (u.mS / u.cm**2),
-        temp: brainstate.typing.ArrayLike = u.celsius2kelvin(36.0),
-        q10: Union[brainstate.typing.ArrayLike, Callable] = 3.0,
-        temp_ref: brainstate.typing.ArrayLike = u.celsius2kelvin(36.0),
-        V_sh: Union[brainstate.typing.ArrayLike, Callable] = -45.0 * u.mV,
+        size: Size,
+        g_max: Initializer = 10.0 * (u.mS / u.cm**2),
+        temp: ArrayLike = u.celsius2kelvin(36.0),
+        q10: Initializer = 3.0,
+        temp_ref: ArrayLike = u.celsius2kelvin(36.0),
+        V_sh: Initializer = -45.0 * u.mV,
         name: Optional[str] = None,
     ):
         super().__init__(size=size, name=name)
@@ -570,14 +570,14 @@ class KA1_HM1992(OhmicHH):
 
     def __init__(
         self,
-        size: brainstate.typing.Size,
-        g_max: Union[brainstate.typing.ArrayLike, Callable] = 30.0 * (u.mS / u.cm**2),
-        temp: brainstate.typing.ArrayLike = u.celsius2kelvin(36.0),
-        q10_p: Union[brainstate.typing.ArrayLike, Callable] = 1.0,
-        temp_ref_p: brainstate.typing.ArrayLike = u.celsius2kelvin(36.0),
-        q10_q: Union[brainstate.typing.ArrayLike, Callable] = 1.0,
-        temp_ref_q: brainstate.typing.ArrayLike = u.celsius2kelvin(36.0),
-        V_sh: Union[brainstate.typing.ArrayLike, Callable] = 0.0 * u.mV,
+        size: Size,
+        g_max: Initializer = 30.0 * (u.mS / u.cm**2),
+        temp: ArrayLike = u.celsius2kelvin(36.0),
+        q10_p: Initializer = 1.0,
+        temp_ref_p: ArrayLike = u.celsius2kelvin(36.0),
+        q10_q: Initializer = 1.0,
+        temp_ref_q: ArrayLike = u.celsius2kelvin(36.0),
+        V_sh: Initializer = 0.0 * u.mV,
         name: Optional[str] = None,
     ):
         super().__init__(size=size, name=name)
@@ -721,14 +721,14 @@ class KA2_HM1992(OhmicHH):
 
     def __init__(
         self,
-        size: brainstate.typing.Size,
-        g_max: Union[brainstate.typing.ArrayLike, Callable] = 20.0 * (u.mS / u.cm**2),
-        temp: brainstate.typing.ArrayLike = u.celsius2kelvin(36.0),
-        q10_p: Union[brainstate.typing.ArrayLike, Callable] = 1.0,
-        temp_ref_p: brainstate.typing.ArrayLike = u.celsius2kelvin(36.0),
-        q10_q: Union[brainstate.typing.ArrayLike, Callable] = 1.0,
-        temp_ref_q: brainstate.typing.ArrayLike = u.celsius2kelvin(36.0),
-        V_sh: Union[brainstate.typing.ArrayLike, Callable] = 0.0 * u.mV,
+        size: Size,
+        g_max: Initializer = 20.0 * (u.mS / u.cm**2),
+        temp: ArrayLike = u.celsius2kelvin(36.0),
+        q10_p: Initializer = 1.0,
+        temp_ref_p: ArrayLike = u.celsius2kelvin(36.0),
+        q10_q: Initializer = 1.0,
+        temp_ref_q: ArrayLike = u.celsius2kelvin(36.0),
+        V_sh: Initializer = 0.0 * u.mV,
         name: Optional[str] = None,
     ):
         super().__init__(size=size, name=name)
@@ -859,14 +859,14 @@ class KK2A_HM1992(OhmicHH):
 
     def __init__(
         self,
-        size: brainstate.typing.Size,
-        g_max: Union[brainstate.typing.ArrayLike, Callable] = 10.0 * (u.mS / u.cm**2),
-        temp: brainstate.typing.ArrayLike = u.celsius2kelvin(36.0),
-        q10_p: Union[brainstate.typing.ArrayLike, Callable] = 1.0,
-        temp_ref_p: brainstate.typing.ArrayLike = u.celsius2kelvin(36.0),
-        q10_q: Union[brainstate.typing.ArrayLike, Callable] = 1.0,
-        temp_ref_q: brainstate.typing.ArrayLike = u.celsius2kelvin(36.0),
-        V_sh: Union[brainstate.typing.ArrayLike, Callable] = 0.0 * u.mV,
+        size: Size,
+        g_max: Initializer = 10.0 * (u.mS / u.cm**2),
+        temp: ArrayLike = u.celsius2kelvin(36.0),
+        q10_p: Initializer = 1.0,
+        temp_ref_p: ArrayLike = u.celsius2kelvin(36.0),
+        q10_q: Initializer = 1.0,
+        temp_ref_q: ArrayLike = u.celsius2kelvin(36.0),
+        V_sh: Initializer = 0.0 * u.mV,
         name: Optional[str] = None,
     ):
         super().__init__(size=size, name=name)
@@ -1001,14 +1001,14 @@ class KK2B_HM1992(OhmicHH):
 
     def __init__(
         self,
-        size: brainstate.typing.Size,
-        g_max: Union[brainstate.typing.ArrayLike, Callable] = 10.0 * (u.mS / u.cm**2),
-        temp: brainstate.typing.ArrayLike = u.celsius2kelvin(36.0),
-        q10_p: Union[brainstate.typing.ArrayLike, Callable] = 1.0,
-        temp_ref_p: brainstate.typing.ArrayLike = u.celsius2kelvin(36.0),
-        q10_q: Union[brainstate.typing.ArrayLike, Callable] = 1.0,
-        temp_ref_q: brainstate.typing.ArrayLike = u.celsius2kelvin(36.0),
-        V_sh: Union[brainstate.typing.ArrayLike, Callable] = 0.0 * u.mV,
+        size: Size,
+        g_max: Initializer = 10.0 * (u.mS / u.cm**2),
+        temp: ArrayLike = u.celsius2kelvin(36.0),
+        q10_p: Initializer = 1.0,
+        temp_ref_p: ArrayLike = u.celsius2kelvin(36.0),
+        q10_q: Initializer = 1.0,
+        temp_ref_q: ArrayLike = u.celsius2kelvin(36.0),
+        V_sh: Initializer = 0.0 * u.mV,
         name: Optional[str] = None,
     ):
         super().__init__(size=size, name=name)
@@ -1136,13 +1136,13 @@ class KNI_Ya1989(OhmicHH):
 
     def __init__(
         self,
-        size: brainstate.typing.Size,
-        g_max: Union[brainstate.typing.ArrayLike, Callable] = 0.004 * (u.mS / u.cm**2),
-        temp: brainstate.typing.ArrayLike = u.celsius2kelvin(36.0),
-        q10: Union[brainstate.typing.ArrayLike, Callable] = 1.0,
-        temp_ref: brainstate.typing.ArrayLike = u.celsius2kelvin(36.0),
-        tau_max: Union[brainstate.typing.ArrayLike, Callable] = 4e3 * u.ms,
-        V_sh: Union[brainstate.typing.ArrayLike, Callable] = 0.0 * u.mV,
+        size: Size,
+        g_max: Initializer = 0.004 * (u.mS / u.cm**2),
+        temp: ArrayLike = u.celsius2kelvin(36.0),
+        q10: Initializer = 1.0,
+        temp_ref: ArrayLike = u.celsius2kelvin(36.0),
+        tau_max: Initializer = 4e3 * u.ms,
+        V_sh: Initializer = 0.0 * u.mV,
         name: Optional[str] = None,
     ):
         super().__init__(size=size, name=name)
@@ -1215,8 +1215,8 @@ class K_Leak(Channel):
 
     def __init__(
         self,
-        size: brainstate.typing.Size,
-        g_max: Union[brainstate.typing.ArrayLike, Callable] = 0.005 * (u.mS / u.cm**2),
+        size: Size,
+        g_max: Initializer = 0.005 * (u.mS / u.cm**2),
         name: Optional[str] = None,
     ):
         super().__init__(size=size, name=name)
@@ -1331,14 +1331,14 @@ class K_Kv_test(OhmicHH):
 
     def __init__(
         self,
-        size: brainstate.typing.Size,
-        g_max: Union[brainstate.typing.ArrayLike, Callable] = 0.0 * (u.siemens / (u.cm**2)),
-        V_sh: Union[brainstate.typing.ArrayLike, Callable] = 0.0 * u.mV,
-        temp: brainstate.typing.ArrayLike = u.celsius2kelvin(25.0),
-        Ra: Union[brainstate.typing.ArrayLike, Callable] = 0.02 * (1 / u.mV / u.ms),
-        Rb: Union[brainstate.typing.ArrayLike, Callable] = 0.006 * (1 / u.mV / u.ms),
-        q: Union[brainstate.typing.ArrayLike, Callable] = 9.0 * u.mV,
-        v12: Union[brainstate.typing.ArrayLike, Callable] = 25.0 * u.mV,
+        size: Size,
+        g_max: Initializer = 0.0 * (u.siemens / (u.cm**2)),
+        V_sh: Initializer = 0.0 * u.mV,
+        temp: ArrayLike = u.celsius2kelvin(25.0),
+        Ra: Initializer = 0.02 * (1 / u.mV / u.ms),
+        Rb: Initializer = 0.006 * (1 / u.mV / u.ms),
+        q: Initializer = 9.0 * u.mV,
+        v12: Initializer = 25.0 * u.mV,
         name: Optional[str] = None,
     ):
         super().__init__(size=size, name=name)
@@ -1464,8 +1464,8 @@ class fKdr_SU2015_DCN(OhmicHH):
 
     def __init__(
         self,
-        size: brainstate.typing.Size,
-        g_max: Union[brainstate.typing.ArrayLike, Callable] = 0.01 * (u.mS / u.cm**2),
+        size: Size,
+        g_max: Initializer = 0.01 * (u.mS / u.cm**2),
         name: Optional[str] = None,
     ):
         super().__init__(size=size, name=name)
@@ -1576,8 +1576,8 @@ class sKdr_SU2015_DCN(OhmicHH):
 
     def __init__(
         self,
-        size: brainstate.typing.Size,
-        g_max: Union[brainstate.typing.ArrayLike, Callable] = 0.01 * (u.mS / u.cm**2),
+        size: Size,
+        g_max: Initializer = 0.01 * (u.mS / u.cm**2),
         name: Optional[str] = None,
     ):
         super().__init__(size=size, name=name)
@@ -1711,9 +1711,9 @@ class KM_RI2021_SC(OhmicHH):
 
     def __init__(
         self,
-        size: brainstate.typing.Size,
-        g_max: Union[brainstate.typing.ArrayLike, Callable] = 0.25 * (u.mS / u.cm**2),
-        temp: brainstate.typing.ArrayLike = u.celsius2kelvin(30.0),
+        size: Size,
+        g_max: Initializer = 0.25 * (u.mS / u.cm**2),
+        temp: ArrayLike = u.celsius2kelvin(30.0),
         name: Optional[str] = None,
     ):
         super().__init__(size=size, name=name)
@@ -1864,9 +1864,9 @@ class Kir2p3_MA2025_BC(OhmicHH):
 
     def __init__(
         self,
-        size: brainstate.typing.Size,
-        g_max: Union[brainstate.typing.ArrayLike, Callable] = 0.9 * (u.mS / u.cm**2),
-        temp: brainstate.typing.ArrayLike = u.celsius2kelvin(30.0),
+        size: Size,
+        g_max: Initializer = 0.9 * (u.mS / u.cm**2),
+        temp: ArrayLike = u.celsius2kelvin(30.0),
         name: Optional[str] = None,
     ):
         super().__init__(size=size, name=name)
@@ -2020,9 +2020,9 @@ class Kir2p3_MA2024_PC(OhmicHH):
 
     def __init__(
         self,
-        size: brainstate.typing.Size,
-        g_max: Union[brainstate.typing.ArrayLike, Callable] = 0.9 * (u.mS / u.cm**2),
-        temp: brainstate.typing.ArrayLike = u.celsius2kelvin(30.0),
+        size: Size,
+        g_max: Initializer = 0.9 * (u.mS / u.cm**2),
+        temp: ArrayLike = u.celsius2kelvin(30.0),
         name: Optional[str] = None,
     ):
         super().__init__(size=size, name=name)
@@ -2166,9 +2166,9 @@ class Kir2p3_RI2021_SC(OhmicHH):
 
     def __init__(
         self,
-        size: brainstate.typing.Size,
-        g_max: Union[brainstate.typing.ArrayLike, Callable] = 0.9 * (u.mS / u.cm**2),
-        temp: brainstate.typing.ArrayLike = u.celsius2kelvin(30.0),
+        size: Size,
+        g_max: Initializer = 0.9 * (u.mS / u.cm**2),
+        temp: ArrayLike = u.celsius2kelvin(30.0),
         name: Optional[str] = None,
     ):
         super().__init__(size=size, name=name)
@@ -2330,10 +2330,10 @@ class Kv1p1_MA2025_BC(HH):
 
     def __init__(
         self,
-        size: brainstate.typing.Size,
-        g_max: Union[brainstate.typing.ArrayLike, Callable] = 4.0 * (u.mS / u.cm**2),
-        temp: brainstate.typing.ArrayLike = u.celsius2kelvin(22.0),
-        gateCurrent: Union[brainstate.typing.ArrayLike, Callable] = 0.0,
+        size: Size,
+        g_max: Initializer = 4.0 * (u.mS / u.cm**2),
+        temp: ArrayLike = u.celsius2kelvin(22.0),
+        gateCurrent: Initializer = 0.0,
         name: Optional[str] = None,
     ):
         super().__init__(size=size, name=name)
@@ -2511,10 +2511,10 @@ class Kv1p1_MA2024_PC(HH):
 
     def __init__(
         self,
-        size: brainstate.typing.Size,
-        g_max: Union[brainstate.typing.ArrayLike, Callable] = 4.0 * (u.mS / u.cm**2),
-        temp: brainstate.typing.ArrayLike = u.celsius2kelvin(22.0),
-        gateCurrent: Union[brainstate.typing.ArrayLike, Callable] = 0.0,
+        size: Size,
+        g_max: Initializer = 4.0 * (u.mS / u.cm**2),
+        temp: ArrayLike = u.celsius2kelvin(22.0),
+        gateCurrent: Initializer = 0.0,
         name: Optional[str] = None,
     ):
         super().__init__(size=size, name=name)
@@ -2691,10 +2691,10 @@ class Kv1p1_RI2021_SC(HH):
 
     def __init__(
         self,
-        size: brainstate.typing.Size,
-        g_max: Union[brainstate.typing.ArrayLike, Callable] = 4.0 * (u.mS / u.cm**2),
-        temp: brainstate.typing.ArrayLike = u.celsius2kelvin(22.0),
-        gateCurrent: Union[brainstate.typing.ArrayLike, Callable] = 0.0,
+        size: Size,
+        g_max: Initializer = 4.0 * (u.mS / u.cm**2),
+        temp: ArrayLike = u.celsius2kelvin(22.0),
+        gateCurrent: Initializer = 0.0,
         name: Optional[str] = None,
     ):
         super().__init__(size=size, name=name)
@@ -2880,12 +2880,12 @@ class Kv1p5_MA2024_PC(HH):
 
     def __init__(
         self,
-        size: brainstate.typing.Size,
-        g_max: Union[brainstate.typing.ArrayLike, Callable] = 0.13195e-3 * (u.siemens / u.cm**2),
-        temp: brainstate.typing.ArrayLike = u.celsius2kelvin(37.0),
-        Tauact: Union[brainstate.typing.ArrayLike, Callable] = 1.0,
-        Tauinactf: Union[brainstate.typing.ArrayLike, Callable] = 1.0,
-        Tauinacts: Union[brainstate.typing.ArrayLike, Callable] = 1.0,
+        size: Size,
+        g_max: Initializer = 0.13195e-3 * (u.siemens / u.cm**2),
+        temp: ArrayLike = u.celsius2kelvin(37.0),
+        Tauact: Initializer = 1.0,
+        Tauinactf: Initializer = 1.0,
+        Tauinacts: Initializer = 1.0,
         name: Optional[str] = None,
     ):
         super().__init__(size=size, name=name)
@@ -3082,10 +3082,10 @@ class Kv3p3_MA2024_PC(HH):
 
     def __init__(
         self,
-        size: brainstate.typing.Size,
-        g_max: Union[brainstate.typing.ArrayLike, Callable] = 0.005 * (u.siemens / u.cm**2),
-        temp: brainstate.typing.ArrayLike = u.celsius2kelvin(22.0),
-        gateCurrent: Union[brainstate.typing.ArrayLike, Callable] = 0.0,
+        size: Size,
+        g_max: Initializer = 0.005 * (u.siemens / u.cm**2),
+        temp: ArrayLike = u.celsius2kelvin(22.0),
+        gateCurrent: Initializer = 0.0,
         name: Optional[str] = None,
     ):
         super().__init__(size=size, name=name)
@@ -3288,9 +3288,9 @@ class Kv3p4_MA2025_BC(OhmicHH):
 
     def __init__(
         self,
-        size: brainstate.typing.Size,
-        g_max: Union[brainstate.typing.ArrayLike, Callable] = 4.0 * (u.mS / u.cm**2),
-        temp: brainstate.typing.ArrayLike = u.celsius2kelvin(22.0),
+        size: Size,
+        g_max: Initializer = 4.0 * (u.mS / u.cm**2),
+        temp: ArrayLike = u.celsius2kelvin(22.0),
         name: Optional[str] = None,
     ):
         super().__init__(size=size, name=name)
@@ -3501,9 +3501,9 @@ class Kv3p4_MA2024_PC(OhmicHH):
 
     def __init__(
         self,
-        size: brainstate.typing.Size,
-        g_max: Union[brainstate.typing.ArrayLike, Callable] = 4.0 * (u.mS / u.cm**2),
-        temp: brainstate.typing.ArrayLike = u.celsius2kelvin(22.0),
+        size: Size,
+        g_max: Initializer = 4.0 * (u.mS / u.cm**2),
+        temp: ArrayLike = u.celsius2kelvin(22.0),
         name: Optional[str] = None,
     ):
         super().__init__(size=size, name=name)
@@ -3718,9 +3718,9 @@ class Kv3p4_RI2021_SC(OhmicHH):
 
     def __init__(
         self,
-        size: brainstate.typing.Size,
-        g_max: Union[brainstate.typing.ArrayLike, Callable] = 4.0 * (u.mS / u.cm**2),
-        temp: brainstate.typing.ArrayLike = u.celsius2kelvin(22.0),
+        size: Size,
+        g_max: Initializer = 4.0 * (u.mS / u.cm**2),
+        temp: ArrayLike = u.celsius2kelvin(22.0),
         name: Optional[str] = None,
     ):
         super().__init__(size=size, name=name)
@@ -3922,9 +3922,9 @@ class Kv4p3_MA2025_BC(OhmicHH):
 
     def __init__(
         self,
-        size: brainstate.typing.Size,
-        g_max: Union[brainstate.typing.ArrayLike, Callable] = 3.2 * (u.mS / u.cm**2),
-        temp: brainstate.typing.ArrayLike = u.celsius2kelvin(30.0),
+        size: Size,
+        g_max: Initializer = 3.2 * (u.mS / u.cm**2),
+        temp: ArrayLike = u.celsius2kelvin(30.0),
         name: Optional[str] = None,
     ):
         super().__init__(size=size, name=name)
@@ -4138,9 +4138,9 @@ class Kv4p3_MA2024_PC(OhmicHH):
 
     def __init__(
         self,
-        size: brainstate.typing.Size,
-        g_max: Union[brainstate.typing.ArrayLike, Callable] = 3.2 * (u.mS / u.cm**2),
-        temp: brainstate.typing.ArrayLike = u.celsius2kelvin(30.0),
+        size: Size,
+        g_max: Initializer = 3.2 * (u.mS / u.cm**2),
+        temp: ArrayLike = u.celsius2kelvin(30.0),
         name: Optional[str] = None,
     ):
         super().__init__(size=size, name=name)
@@ -4353,9 +4353,9 @@ class Kv4p3_RI2021_SC(OhmicHH):
 
     def __init__(
         self,
-        size: brainstate.typing.Size,
-        g_max: Union[brainstate.typing.ArrayLike, Callable] = 3.2 * (u.mS / u.cm**2),
-        temp: brainstate.typing.ArrayLike = u.celsius2kelvin(30.0),
+        size: Size,
+        g_max: Initializer = 3.2 * (u.mS / u.cm**2),
+        temp: ArrayLike = u.celsius2kelvin(30.0),
         name: Optional[str] = None,
     ):
         super().__init__(size=size, name=name)
@@ -4533,9 +4533,9 @@ class KM_MA2020_GoC(OhmicHH):
 
     def __init__(
         self,
-        size: brainstate.typing.Size,
-        g_max: Union[brainstate.typing.ArrayLike, Callable] = 0.25 * (u.mS / u.cm**2),
-        temp: brainstate.typing.ArrayLike = u.celsius2kelvin(30.0),
+        size: Size,
+        g_max: Initializer = 0.25 * (u.mS / u.cm**2),
+        temp: ArrayLike = u.celsius2kelvin(30.0),
         name: Optional[str] = None,
     ):
         super().__init__(size=size, name=name)
@@ -4706,10 +4706,10 @@ class Kv1p1_MA2020_GoC(HH):
 
     def __init__(
         self,
-        size: brainstate.typing.Size,
-        g_max: Union[brainstate.typing.ArrayLike, Callable] = 4.0 * (u.mS / u.cm**2),
-        temp: brainstate.typing.ArrayLike = u.celsius2kelvin(22.0),
-        gateCurrent: Union[brainstate.typing.ArrayLike, Callable] = 0.0,
+        size: Size,
+        g_max: Initializer = 4.0 * (u.mS / u.cm**2),
+        temp: ArrayLike = u.celsius2kelvin(22.0),
+        gateCurrent: Initializer = 0.0,
         name: Optional[str] = None,
     ):
         super().__init__(size=size, name=name)
@@ -4909,9 +4909,9 @@ class Kv3p4_MA2020_GoC(OhmicHH):
 
     def __init__(
         self,
-        size: brainstate.typing.Size,
-        g_max: Union[brainstate.typing.ArrayLike, Callable] = 4.0 * (u.mS / u.cm**2),
-        temp: brainstate.typing.ArrayLike = u.celsius2kelvin(22.0),
+        size: Size,
+        g_max: Initializer = 4.0 * (u.mS / u.cm**2),
+        temp: ArrayLike = u.celsius2kelvin(22.0),
         name: Optional[str] = None,
     ):
         super().__init__(size=size, name=name)
@@ -5116,9 +5116,9 @@ class Kv4p3_MA2020_GoC(OhmicHH):
 
     def __init__(
         self,
-        size: brainstate.typing.Size,
-        g_max: Union[brainstate.typing.ArrayLike, Callable] = 3.2 * (u.mS / u.cm**2),
-        temp: brainstate.typing.ArrayLike = u.celsius2kelvin(22.0),
+        size: Size,
+        g_max: Initializer = 3.2 * (u.mS / u.cm**2),
+        temp: ArrayLike = u.celsius2kelvin(22.0),
         name: Optional[str] = None,
     ):
         super().__init__(size=size, name=name)
@@ -5297,9 +5297,9 @@ class KM_MA2020_GrC(OhmicHH):
 
     def __init__(
         self,
-        size: brainstate.typing.Size,
-        g_max: Union[brainstate.typing.ArrayLike, Callable] = 0.25 * (u.mS / u.cm**2),
-        temp: brainstate.typing.ArrayLike = u.celsius2kelvin(30.0),
+        size: Size,
+        g_max: Initializer = 0.25 * (u.mS / u.cm**2),
+        temp: ArrayLike = u.celsius2kelvin(30.0),
         name: Optional[str] = None,
     ):
         super().__init__(size=size, name=name)
@@ -5455,9 +5455,9 @@ class Kir2p3_MA2020_GrC(OhmicHH):
 
     def __init__(
         self,
-        size: brainstate.typing.Size,
-        g_max: Union[brainstate.typing.ArrayLike, Callable] = 0.9 * (u.mS / u.cm**2),
-        temp: brainstate.typing.ArrayLike = u.celsius2kelvin(30.0),
+        size: Size,
+        g_max: Initializer = 0.9 * (u.mS / u.cm**2),
+        temp: ArrayLike = u.celsius2kelvin(30.0),
         name: Optional[str] = None,
     ):
         super().__init__(size=size, name=name)
@@ -5620,10 +5620,10 @@ class Kv1p1_MA2020_GrC(HH):
 
     def __init__(
         self,
-        size: brainstate.typing.Size,
-        g_max: Union[brainstate.typing.ArrayLike, Callable] = 4.0 * (u.mS / u.cm**2),
-        temp: brainstate.typing.ArrayLike = u.celsius2kelvin(22.0),
-        gateCurrent: Union[brainstate.typing.ArrayLike, Callable] = 0.0,
+        size: Size,
+        g_max: Initializer = 4.0 * (u.mS / u.cm**2),
+        temp: ArrayLike = u.celsius2kelvin(22.0),
+        gateCurrent: Initializer = 0.0,
         name: Optional[str] = None,
     ):
         super().__init__(size=size, name=name)
@@ -5776,9 +5776,9 @@ class Kv2p2_0010_MA2020_GrC(OhmicHH):
 
     def __init__(
         self,
-        size: brainstate.typing.Size,
-        g_max: Union[brainstate.typing.ArrayLike, Callable] = 0.01 * (u.mS / u.cm**2),
-        BBiD: Union[brainstate.typing.ArrayLike, Callable] = 10.0,
+        size: Size,
+        g_max: Initializer = 0.01 * (u.mS / u.cm**2),
+        BBiD: Initializer = 10.0,
         name: Optional[str] = None,
     ):
         super().__init__(size=size, name=name)
@@ -5966,9 +5966,9 @@ class Kv3p4_MA2020_GrC(OhmicHH):
 
     def __init__(
         self,
-        size: brainstate.typing.Size,
-        g_max: Union[brainstate.typing.ArrayLike, Callable] = 4.0 * (u.mS / u.cm**2),
-        temp: brainstate.typing.ArrayLike = u.celsius2kelvin(22.0),
+        size: Size,
+        g_max: Initializer = 4.0 * (u.mS / u.cm**2),
+        temp: ArrayLike = u.celsius2kelvin(22.0),
         name: Optional[str] = None,
     ):
         super().__init__(size=size, name=name)
@@ -6172,9 +6172,9 @@ class Kv4p3_MA2020_GrC(OhmicHH):
 
     def __init__(
         self,
-        size: brainstate.typing.Size,
-        g_max: Union[brainstate.typing.ArrayLike, Callable] = 3.2 * (u.mS / u.cm**2),
-        temp: brainstate.typing.ArrayLike = u.celsius2kelvin(30.0),
+        size: Size,
+        g_max: Initializer = 3.2 * (u.mS / u.cm**2),
+        temp: ArrayLike = u.celsius2kelvin(30.0),
         name: Optional[str] = None,
     ):
         super().__init__(size=size, name=name)
@@ -6346,8 +6346,8 @@ class Kdr_ZH2019_IO(OhmicHH):
 
     def __init__(
         self,
-        size: brainstate.typing.Size,
-        g_max: Union[brainstate.typing.ArrayLike, Callable] = 18.0 * (u.mS / u.cm**2),
+        size: Size,
+        g_max: Initializer = 18.0 * (u.mS / u.cm**2),
         name: Optional[str] = None,
     ):
         super().__init__(size=size, name=name)

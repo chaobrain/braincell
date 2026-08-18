@@ -194,6 +194,27 @@ All public classes, methods, functions must use [NumPy-style docstrings](https:/
 - Private modules prefix with `_` (e.g., `_base.py`, `_misc.py`)
 - `set_module_as('braincell')` decorator marks functions for public namespace
 
+### Type aliases
+
+- **Annotate with the shared aliases in `braincell/_typing.py`** — write `g_max: Initializer`, never `g_max: Union[brainstate.typing.ArrayLike, Callable]`
+- Import absolutely, alongside the other `braincell.*` imports: `from braincell._typing import Initializer, Size`
+- Optional parameters use `Optional[Initializer]`, not a hand-rolled `Union[..., None]`
+- Never re-import a type the aliases already cover (`from brainstate.typing import ArrayLike`) — go through `_typing.py`
+- A type expression that repeats across modules belongs in `_typing.py` — add it there rather than duplicating it inline
+- Only substitute an alias when it is genuinely the same concept — a bare `Hashable` that is not a section name, or a `tuple[str, ...]` that is not a state path, stays raw
+- **Aliases are annotations only.** `_typing.py` is not public API, so docstrings keep the resolvable qualified name (`size : brainstate.typing.Size`) that a reader can import and Sphinx can cross-reference
+
+| Alias | Stands for | Use for |
+|-------|------------|---------|
+| `Initializer` | `Union[ArrayLike, Callable]` | any parameter accepting a value or a callable that produces one |
+| `ArrayLike` | `brainstate.typing.ArrayLike` | scalar / array parameters |
+| `Size` | `brainstate.typing.Size` | a shape parameter — `size`, `pop_size`, and similar |
+| `PyTree` | `brainstate.typing.PyTree` | nested state passed through an integrator |
+| `SectionName` | `Hashable` | a morphology section identifier |
+| `T`, `DT` | `u.Quantity[u.second]` | simulation time and time step |
+| `Path` | `Tuple[str, ...]` | a state path within a model tree |
+| `VectorField`, `Y0`, `Y1`, `Jacobian`, `Args`, `Aux` | see `_typing.py` | integrator / solver signatures in `braincell/quad` |
+
 
 ## Testing
 

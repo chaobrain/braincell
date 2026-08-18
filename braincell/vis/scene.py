@@ -17,7 +17,8 @@ from dataclasses import dataclass, field
 from typing import Any, Mapping, TYPE_CHECKING
 
 import numpy as np
-from brainstate.typing import ArrayLike
+
+from braincell._typing import ArrayLike
 
 from .config import (
     alpha_for_2d as _alpha_for_2d,

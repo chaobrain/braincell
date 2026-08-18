@@ -56,7 +56,7 @@ from braincell._base import (
     _zero_spike_like,
 )
 from braincell._misc import is_traced_value
-from braincell._typing import Initializer
+from braincell._typing import Initializer, Size
 from braincell._compute.table import (
     MechanismObjectCell,
     MechanismObjectTable,
@@ -208,7 +208,7 @@ class Cell(HHTypedNeuron):
         self,
         morpho: Morphology,
         *,
-        pop_size: brainstate.typing.Size = 1,
+        pop_size: Size = 1,
         cv_policy: CVPolicy | None = None,
         V_th: u.Quantity = 0 * u.mV,
         V_init: Optional[Initializer] = None,

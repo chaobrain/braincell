@@ -19,11 +19,14 @@ import brainstate
 import brainunit as u
 import jax
 
-Initializer = Union[brainstate.typing.ArrayLike, Callable]
+ArrayLike = brainstate.typing.ArrayLike
+Size = brainstate.typing.Size
+PyTree = brainstate.typing.PyTree
+Initializer = Union[ArrayLike, Callable]
 SectionName = Hashable
 T = u.Quantity[u.second]
 DT = u.Quantity[u.second]
-VectorFiled = Callable
+VectorField = Callable
 Y0 = jax.Array
 Y1 = jax.Array
 Jacobian = jax.Array

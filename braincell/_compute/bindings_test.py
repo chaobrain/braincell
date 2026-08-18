@@ -15,8 +15,10 @@
 
 """Tests for :mod:`braincell._compute.bindings`.
 
-``_RuntimeTestTwoOwnerChannel`` is looked up here by registry name only; the
-``._testing`` import below is what registers it.
+``_RuntimeTestTwoOwnerChannel`` is looked up here by registry name only, never
+as a symbol, so it is imported explicitly below (and marked ``noqa: F401``) to
+make the ``@register_channel`` side effect an ordinary, order-independent
+import rather than a coincidence of also needing ``_build_tree``.
 """
 
 import unittest
@@ -28,7 +30,7 @@ import braincell
 from braincell import Cell
 from braincell.filter import BranchSlice, at
 from braincell.quad import get_integrator
-from ._testing import _build_tree
+from ._testing import _RuntimeTestTwoOwnerChannel, _build_tree  # noqa: F401  # registers the channel
 
 
 class RuntimeBindingTest(unittest.TestCase):

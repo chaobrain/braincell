@@ -13,7 +13,7 @@
 # limitations under the License.
 # ==============================================================================
 
-"""Tests for :mod:`braincell._compute.state`."""
+"""Tests for :mod:`braincell._compute.state` and the cell lifecycle that builds it."""
 
 import unittest
 

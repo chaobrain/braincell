@@ -857,7 +857,7 @@ def _evaluate_clamp_layout(
 
     Parameters
     ----------
-    runtime : CellRuntimeState
+    runtime : braincell._compute.state.CellRuntimeState
         Runtime state object.
     layout : MechanismLayout
         Sparse point-layout to evaluate.

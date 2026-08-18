@@ -6,7 +6,7 @@
 - `braincell._discretization`
 - `braincell._compute`
 
-箭头含义：`A --> B` 表示 `A` 在实现上调用、导入或依赖 `B`。虚线表示 type-only、调试辅助或薄 re-export，不是主执行链路。
+箭头含义：`A --> B` 表示 `A` 在实现上调用、导入或依赖 `B`。虚线表示 type-only 或调试辅助引用，不是主执行链路。
 
 ## 1. 三个包之间的主关系
 
@@ -26,7 +26,7 @@ flowchart LR
 - `_multi_compartment.cell.Cell` 是调用方和用户入口。
 - `_discretization` 负责把 `morpho + cv_policy + paint/place rules` 变成 `tuple[CV, ...]`，并在初始化路径生成 `NodeTree`。
 - `_compute` 负责把 `Cell + CV/NodeTree declaration` 变成 runtime state、layout、runtime nodes，并为 solver 构造 scheduling。
-- `bridge.py` 现在就在 `_compute` 内部；它的 `TYPE_CHECKING` 引用指向 `braincell._compute.state.CellRuntimeState`，运行时调用方是 `_compute.state`、`_multi_compartment.currents`、`_multi_compartment.probes`。
+- `bridge.py` 现在就在 `_compute` 内部；它的 `TYPE_CHECKING` 引用指向 `braincell._compute.state.CellRuntimeState`，运行时调用方是 `_multi_compartment.cell`（最大的调用方，约 15 处）、`_compute.state`、`_multi_compartment.currents`、`_multi_compartment.probes`。
 
 ## 2. `_multi_compartment` 内部
 
@@ -42,7 +42,7 @@ flowchart TD
     CVPOLICY["`_discretization.policy`<br/>CVPolicy / CVPerBranch / ..."]
     CVGEOM["`_discretization.geometry`<br/>CVGeometryResult<br/>build_cv_geometry"]
     CVMECH["`_discretization.mechanism`<br/>PaintRule / PlaceRule<br/>normalize / merge"]
-    CPRUNTIME["`_compute.state`<br/>CellRuntimeState"]
+    CPSTATE["`_compute.state`<br/>CellRuntimeState"]
     CPTABLE["`_compute.table`<br/>MechanismObjectTable"]
     CPTOPO["`_compute.scheduling`<br/>build_node_scheduling"]
 
@@ -57,7 +57,7 @@ flowchart TD
     CELL -->|"cvs / init_state"| CVBASE
     CELL -->|"paint/place normalization"| CVMECH
     CELL -->|"policy setter/default"| CVPOLICY
-    CELL -->|"runtime facade"| CPRUNTIME
+    CELL -->|"runtime facade"| CPSTATE
     CELL -->|"mech_table"| CPTABLE
     CELL -->|"node_tree"| CPTOPO
 ```
@@ -149,16 +149,17 @@ flowchart TD
     LAYOUTS -.->|"type-only: CellRuntimeState"| STATE
     IONS -.->|"type-only: CellRuntimeState"| STATE
     BINDINGS -.->|"type-only: CellRuntimeState"| STATE
+    BRIDGE -.->|"type-only: CellRuntimeState"| STATE
     STATE -.->|"type-only: Cell"| CELLEXT
 ```
 
 `_compute` 现在没有单一中心模块，职责按依赖顺序拆成几层：
 
-- `layouts.py` 是最底层：`MechanismLayout` 记录、clamp routing、state buffer 分配，对包内其他模块无依赖。
-- `ions.py` 依赖 `layouts.py`，负责 runtime ion 实例的构建与同步。
-- `bindings.py` 依赖 `ions.py` 和 `layouts.py`，负责 channel binding 与 runtime node 实例化。
+- `layouts.py` 是最底层：`MechanismLayout` 记录、clamp routing、state buffer 分配，运行时对包内其他模块无依赖；仅在 `TYPE_CHECKING` 下引用 `state.py` 的 `CellRuntimeState` 做类型标注。
+- `ions.py` 依赖 `layouts.py`，负责 runtime ion 实例的构建与同步；同样仅在 `TYPE_CHECKING` 下引用 `state.py` 的 `CellRuntimeState`。
+- `bindings.py` 依赖 `ions.py` 和 `layouts.py`，负责 channel binding 与 runtime node 实例化；同样仅在 `TYPE_CHECKING` 下引用 `state.py` 的 `CellRuntimeState`。
 - `state.py` 依赖 `bindings.py`、`bridge.py`、`layouts.py`，把上面几层聚合成 `CellRuntimeState` 门面；对 `_multi_compartment.cell.Cell` 的引用只在 `TYPE_CHECKING` 下出现。
-- `bridge.py` 现在是 `_compute` 内部模块，提供 CV <-> point 的 scatter/gather helper，对包内其他模块无依赖。
+- `bridge.py` 现在是 `_compute` 内部模块，提供 CV <-> point 的 scatter/gather helper，运行时对包内其他模块无依赖；同样仅在 `TYPE_CHECKING` 下引用 `state.py` 的 `CellRuntimeState`。
 - `table.py` 依赖 `state.py`，是 inspect/debug/query 层，用 runtime layout 和 declaration 生成 mechanism table。
 - `scheduling.py` 只保留 `NodeScheduling`；`NodeTree` 的真实定义在 `_discretization.base`，node 构建细节在 `_discretization.node_build`；它与本包其余模块之间没有依赖关系。
 
@@ -202,6 +203,6 @@ sequenceDiagram
 - `_discretization.base.build_discretization(...)` 是静态离散入口；CV 预览通过 `.cvs` 取得。
 - `_discretization.node_build` 把 CV 变成 node tree，并承载 endpoint/midpoint point mechanism placement。
 - `_compute.scheduling` 只做 node scheduling 和兼容导出。
-- `_compute.state` 把 Cell declaration 变成 runtime state（依赖 `layouts` / `ions` / `bindings` / `bridge`）。
-- `_compute.bridge` 是 CV-space 和 point-space 的转换工具，被 `_compute.state`/`currents`/`probes` 共同使用。
+- `_compute.state` 把 Cell declaration 变成 runtime state（依赖 `layouts` / `bindings` / `bridge`；`ions` 只通过 `bindings` 间接可达）。
+- `_compute.bridge` 是 CV-space 和 point-space 的转换工具，被 `_multi_compartment.cell`（最大的调用方）、`_compute.state`、`currents`、`probes` 共同使用。
 - `_compute.layouts/ions/bindings` 是真正的实现模块，按 `layouts -> ions -> bindings -> state` 的顺序逐层依赖，不是 re-export。

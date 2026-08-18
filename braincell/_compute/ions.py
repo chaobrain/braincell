@@ -390,10 +390,11 @@ def _ion_param_scatter(
     """Scatter the values of one sparse ion-layout buffer into ``target``.
 
     For ``Ci_initializer`` on :class:`DynamicNernstIon` (which may hold a
-    State-wrapped callable), fall back to the Python per-point path on a
-    tuple buffer. Rectangular Quantity and ndarray buffers scatter via
-    ``np.put_along_axis`` onto a copy of ``target``, with unit coercion
-    for Quantity buffers.
+    State-wrapped callable), box the ``target``/``buffer`` values into an
+    object-dtype array with a per-point Python loop, then scatter that
+    array via ``np.put_along_axis`` like the other branches. Rectangular
+    Quantity and ndarray buffers scatter directly via ``np.put_along_axis``
+    onto a copy of ``target``, with unit coercion for Quantity buffers.
     """
     if isinstance(target, u.Quantity) and isinstance(buffer, u.Quantity):
         target_unit = target.unit

@@ -183,6 +183,90 @@ class TestCellDeclaration(unittest.TestCase):
         self.assertEqual(len(cell.point_placements), 1)
         self.assertIsNone(cell.point_placements[0].population_index)
 
+    def test_cv_midpoints_are_resolved_locations_available_before_init(self):
+        cell = _simple_cell()
+
+        midpoints = cell.cv_midpoints
+
+        self.assertEqual(len(midpoints), cell.n_cv)
+        self.assertEqual(midpoints.branch_id.tolist(), [cv.branch_id for cv in cell.cvs])
+        np.testing.assert_allclose(
+            midpoints.branch_x,
+            [(cv.prox + cv.dist) * 0.5 for cv in cell.cvs],
+        )
+
+    def test_locset_batch_place_aligns_rows_with_population_members(self):
+        base = _simple_cell()
+        cell = Cell(base.morpho, cv_policy=CVPerBranch(), pop_size=(3,))
+        synapse = mech.Synapse("ExpSyn", name="exp", tau=2.0 * u.ms)
+        locations = cell.cv_midpoints[np.asarray([[0, 0], [0, 0], [0, 0]])]
+
+        cell.place(locations, synapse)
+
+        placements = cell.point_placements
+        self.assertEqual([item.population_index for item in placements], [0, 0, 1, 1, 2, 2])
+        self.assertEqual([item.branch_x for item in placements], [0.5] * 6)
+
+    def test_locset_batch_place_validates_population_alignment(self):
+        base = _simple_cell()
+        cell = Cell(base.morpho, cv_policy=CVPerBranch(), pop_size=(3,))
+        synapse = mech.Synapse("ExpSyn", name="exp")
+        locations = cell.cv_midpoints[np.asarray([[0], [0]])]
+
+        with self.assertRaisesRegex(ValueError, "batch rows"):
+            cell.place(locations, synapse)
+        with self.assertRaisesRegex(ValueError, "batch rows"):
+            cell[[0, 2, 1]].place(locations, synapse)
+
+    def test_synapse_view_expands_broadcast_and_selects_by_declaration_identity(self):
+        base = _simple_cell()
+        cell = Cell(base.morpho, cv_policy=CVPerBranch(), pop_size=(3,))
+        exp = mech.Synapse("ExpSyn", name="exp", tau=2.0 * u.ms, e=0.0 * u.mV)
+        other = mech.Synapse("ExpSyn", name="other", tau=2.0 * u.ms, e=0.0 * u.mV)
+        cell.place(at("soma", 0.5), exp)
+        cell[1].place(at("soma", 0.25), other)
+
+        view = cell.synapses[exp]
+
+        self.assertEqual(len(cell.synapses), 4)
+        self.assertEqual(len(view), 3)
+        self.assertEqual(view.population_index.tolist(), [0, 1, 2])
+        self.assertEqual(view.placement_id.tolist(), [0, 0, 0])
+
+    def test_synapse_view_sets_heterogeneous_runtime_parameters(self):
+        base = _simple_cell()
+        cell = Cell(base.morpho, cv_policy=CVPerBranch(), pop_size=(3,))
+        exp = mech.Synapse("ExpSyn", name="exp", tau=2.0 * u.ms, e=0.0 * u.mV)
+        cell.place(at("soma", 0.5), exp)
+
+        cell.synapses[exp].set(
+            tau=np.asarray([1.0, 2.0, 3.0]) * u.ms,
+            e=np.asarray([-70.0, -60.0, -50.0]) * u.mV,
+        )
+        cell.init_state()
+
+        synapse_layout = next(layout for layout in cell._runtime.layouts if layout.kind == "synapse:ExpSyn")
+        tau = cell._runtime.state_buffers[(synapse_layout.id, "tau")]
+        reversal = cell._runtime.state_buffers[(synapse_layout.id, "e")]
+        np.testing.assert_allclose(tau.to_decimal(u.ms)[..., 0], [1.0, 2.0, 3.0])
+        np.testing.assert_allclose(reversal.to_decimal(u.mV)[..., 0], [-70.0, -60.0, -50.0])
+
+    def test_synapse_view_sets_batch_placed_instances_in_row_order(self):
+        base = _simple_cell()
+        cell = Cell(base.morpho, cv_policy=CVPerBranch(), pop_size=(3,))
+        exp = mech.Synapse("ExpSyn", name="exp", tau=2.0 * u.ms, e=0.0 * u.mV)
+        locations = cell.cv_midpoints[np.asarray([[0, 0], [0, 0], [0, 0]])]
+        cell.place(locations, exp)
+
+        view = cell.synapses[exp]
+        view.set(tau=np.arange(1.0, 7.0) * u.ms)
+        cell.init_state()
+
+        synapse_layout = next(layout for layout in cell._runtime.layouts if layout.kind == "synapse:ExpSyn")
+        tau = cell._runtime.state_buffers[(synapse_layout.id, "tau")]
+        self.assertEqual(view.population_index.tolist(), [0, 0, 1, 1, 2, 2])
+        np.testing.assert_allclose(tau.to_decimal(u.ms), np.arange(1.0, 7.0))
+
     def test_population_selection_validates_indices_and_phase(self):
         cell = Cell(_simple_cell().morpho, cv_policy=CVPerBranch(), pop_size=(4,))
         synapse = mech.Synapse("ExpSyn", name="exp")

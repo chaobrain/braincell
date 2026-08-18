@@ -369,9 +369,9 @@ class CellRuntimeState:
             else:
                 point_ids = np.asarray(entry["point_ids"], dtype=np.int32)
                 placement_index = np.asarray(entry["placement_ids"], dtype=np.int32)
-            population_indices = np.asarray(
-                entry["population_indices"], dtype=np.int32
-            ) if entry["population_indices"] else None
+            population_indices = (
+                np.asarray(entry["population_indices"], dtype=np.int32) if entry["population_indices"] else None
+            )
             layout = choose_layout(target=target)
             if layout == "dense":
                 point_mask = np.zeros(n_point, dtype=bool)
@@ -381,11 +381,7 @@ class CellRuntimeState:
             elif layout == "sparse":
                 point_mask = None
                 point_index = point_ids
-                shape = (
-                    (len(point_ids),)
-                    if population_indices is not None
-                    else pop_size + (len(point_ids),)
-                )
+                shape = (len(point_ids),) if population_indices is not None else pop_size + (len(point_ids),)
             else:  # pragma: no cover
                 raise ValueError(f"Unsupported layout {layout!r}.")
 
@@ -453,6 +449,12 @@ class CellRuntimeState:
                         var_name=var_name,
                         shape=shape,
                     )
+
+        _apply_synapse_parameter_overrides(
+            cell=cell,
+            layouts=tuple(layouts),
+            state_buffers=state_buffers,
+        )
 
         (
             ions,
@@ -1357,6 +1359,48 @@ def _allocate_state_buffer(
     return np.full(shape, value, dtype=np.float64)
 
 
+def _apply_synapse_parameter_overrides(
+    *,
+    cell: "Cell",
+    layouts: tuple[MechanismLayout, ...],
+    state_buffers: dict[tuple[int, str], object],
+) -> None:
+    """Scatter declaration-time per-instance synapse parameter overrides."""
+    overrides = getattr(cell, "_synapse_parameter_overrides", {})
+    if not overrides:
+        return
+    by_placement: dict[int, tuple[MechanismLayout, int]] = {}
+    for layout in layouts:
+        if not layout.kind.startswith("synapse:") or layout.placement_index is None:
+            continue
+        for local_index, placement_id in enumerate(layout.placement_index.tolist()):
+            by_placement[int(placement_id)] = (layout, int(local_index))
+
+    for (placement_id, population_index, var_name), value in overrides.items():
+        if placement_id not in by_placement:
+            raise KeyError(f"Unknown synapse placement id {placement_id!r} in parameter override.")
+        layout, local_index = by_placement[placement_id]
+        key = (layout.id, var_name)
+        if key not in state_buffers:
+            raise KeyError(f"Synapse layout {layout.id!r} does not expose parameter {var_name!r}.")
+        index = local_index
+        if layout.population_index is None and len(cell.pop_size) > 0:
+            index = (int(population_index), local_index)
+        buffer = state_buffers[key]
+        if isinstance(buffer, u.Quantity):
+            decimal = np.array(buffer.to_decimal(buffer.unit), copy=True)
+            if not isinstance(value, u.Quantity):
+                raise TypeError(f"Synapse parameter {var_name!r} requires a quantity override.")
+            decimal[index] = value.to_decimal(buffer.unit)
+            state_buffers[key] = u.Quantity(decimal, buffer.unit)
+        else:
+            values = np.array(buffer, copy=True)
+            if isinstance(value, u.Quantity):
+                raise TypeError(f"Synapse parameter {var_name!r} is dimensionless.")
+            values[index] = value
+            state_buffers[key] = values
+
+
 def _write_state_buffer(layout: "MechanismLayout", buffer: object, value: object) -> object:
     """Write ``value`` into ``buffer``; return the possibly-new buffer.
 
@@ -1465,8 +1509,7 @@ def _extract_point_value(layout: MechanismLayout, *, point_id: int, buffer: obje
         raise KeyError(f"Point {point_id!r} is not active in layout {layout.id!r}.")
     if len(matches) > 1:
         raise ValueError(
-            f"Point {point_id!r} has multiple placements in layout {layout.id!r}; "
-            "query by placement_id instead."
+            f"Point {point_id!r} has multiple placements in layout {layout.id!r}; query by placement_id instead."
         )
     return _pick(int(matches[0]))
 

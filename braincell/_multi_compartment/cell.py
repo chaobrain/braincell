@@ -79,7 +79,7 @@ from braincell._discretization.node_build import (
     _locate_branch_cv_by_x,
     locate_node_on_branch,
 )
-from braincell.filter import LocsetExpr, LocsetMask, RegionExpr, RegionMask
+from braincell.filter import LocsetBatch, LocsetExpr, LocsetMask, RegionExpr, RegionMask
 from braincell.filter.helper import normalize_region_intervals
 from braincell.morph.morphology import Morphology
 from braincell.quad import get_integrator, ind_exp_euler_step
@@ -88,6 +88,7 @@ from braincell.quad._staggered import build_cv_axial_operator
 from braincell.quad.protocol import DiffEqState, IndependentIntegration
 from braincell.mech import CVContext, Synapse as SynapsePlacement
 from . import bridge, currents, probes, run as run_module
+from .synapses import SynapseInstanceTable
 
 __all__ = ["Cell", "CellSelection"]
 
@@ -156,7 +157,11 @@ class CellSelection:
     cell: "Cell"
     population_indices: tuple[int, ...]
 
-    def place(self, locset: LocsetExpr, *mechanisms) -> "CellSelection":
+    def place(
+        self,
+        locset: LocsetExpr | LocsetMask | LocsetBatch,
+        *mechanisms,
+    ) -> "CellSelection":
         """Place independent point instances on the selected population members."""
         self.cell._place_selected(self.population_indices, locset, mechanisms)
         return self
@@ -301,6 +306,7 @@ class Cell(HHTypedNeuron):
         self._runtime_nodes_cache: tuple[RuntimeNodeView, ...] | None = None
         self._axial_jax = None
         self._synapse_input_bindings: dict[str, list[tuple[object, object, object]]] = {}
+        self._synapse_parameter_overrides: dict[tuple[int, int, str], object] = {}
 
         self._initialized = False
 
@@ -427,8 +433,7 @@ class Cell(HHTypedNeuron):
     def _normalize_population_selection(self, selection) -> tuple[int, ...]:
         if len(self.pop_size) != 1:
             raise ValueError(
-                "Cell population selection currently requires one-dimensional pop_size; "
-                f"got {self.pop_size!r}."
+                f"Cell population selection currently requires one-dimensional pop_size; got {self.pop_size!r}."
             )
         size = int(self.pop_size[0])
         if isinstance(selection, slice):
@@ -456,8 +461,13 @@ class Cell(HHTypedNeuron):
     def _place_selected(self, population_indices, locset, mechanisms) -> None:
         self._raise_if_initialized("place()")
         if any(not isinstance(mechanism, SynapsePlacement) for mechanism in mechanisms):
-            raise TypeError(
-                "Cell population-specific place() currently supports Synapse point mechanisms only."
+            raise TypeError("Cell population-specific place() currently supports Synapse point mechanisms only.")
+        normalized_indices = tuple(population_indices)
+        aligned = isinstance(locset, LocsetBatch)
+        if aligned and len(locset) != len(normalized_indices):
+            raise ValueError(
+                "LocsetBatch batch rows must match the selected population size, "
+                f"got {len(locset)!r} rows for {len(normalized_indices)!r} cells."
             )
         self._place_rules = merge_place_rules(
             self._place_rules,
@@ -465,7 +475,8 @@ class Cell(HHTypedNeuron):
                 normalize_place_rule(
                     locset,
                     mechanisms,
-                    population_indices=tuple(population_indices),
+                    population_indices=normalized_indices,
+                    aligned=aligned,
                 ),
             ),
         )
@@ -481,12 +492,34 @@ class Cell(HHTypedNeuron):
         self._invalidate_discretization_cache()
         return self
 
-    def place(self, locset: LocsetExpr, *mechanisms) -> "Cell":
+    def place(
+        self,
+        locset: LocsetExpr | LocsetMask | LocsetBatch,
+        *mechanisms,
+    ) -> "Cell":
         """Place point mechanisms at ``locset``. Returns ``self`` for chaining."""
         self._raise_if_initialized("place()")
+        population_indices = None
+        aligned = isinstance(locset, LocsetBatch)
+        if aligned:
+            if len(self.pop_size) != 1:
+                raise ValueError(f"LocsetBatch placement requires one-dimensional pop_size; got {self.pop_size!r}.")
+            population_indices = tuple(range(int(self.pop_size[0])))
+            if len(locset) != len(population_indices):
+                raise ValueError(
+                    "LocsetBatch batch rows must match the population size, "
+                    f"got {len(locset)!r} rows for {len(population_indices)!r} cells."
+                )
         self._place_rules = merge_place_rules(
             self._place_rules,
-            (normalize_place_rule(locset, mechanisms),),
+            (
+                normalize_place_rule(
+                    locset,
+                    mechanisms,
+                    population_indices=population_indices,
+                    aligned=aligned,
+                ),
+            ),
         )
         self._invalidate_discretization_cache()
         return self
@@ -556,6 +589,15 @@ class Cell(HHTypedNeuron):
         return self._discretization.cvs
 
     @property
+    def cv_midpoints(self) -> LocsetMask:
+        """Return one resolved continuous midpoint for every control volume."""
+        cvs = self.cvs
+        return LocsetMask.from_columns(
+            [cv.branch_id for cv in cvs],
+            [(cv.prox + cv.dist) * 0.5 for cv in cvs],
+        )
+
+    @property
     def cv_tree(self) -> CVTree:
         return self._discretization.cv_tree
 
@@ -585,6 +627,11 @@ class Cell(HHTypedNeuron):
             Static placement records available before and after initialization.
         """
         return self._discretization.point_placements
+
+    @property
+    def synapses(self) -> SynapseInstanceTable:
+        """Return a logical instance table for all placed point synapses."""
+        return SynapseInstanceTable(self)
 
     def get_point_placement(self, placement_id: int):
         """Return one static point placement by its stable id."""

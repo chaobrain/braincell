@@ -29,6 +29,7 @@ from .region import RegionExpr
 Location = tuple[int, float]
 
 __all__ = [
+    "LocsetBatch",
     "LocsetMask",
     "LocsetExpr",
     "AtLocation",
@@ -45,6 +46,140 @@ __all__ = [
     "LocsetSetOp",
     "LocsetUniqueOp",
 ]
+
+
+def _normalize_location_columns(
+    branch_id: object,
+    branch_x: object,
+    *,
+    ndim: int,
+    type_name: str,
+) -> tuple[np.ndarray, np.ndarray]:
+    branch_values = np.asarray(branch_id)
+    x_values = np.asarray(branch_x)
+    if branch_values.ndim != ndim or x_values.ndim != ndim:
+        dimension = "one-dimensional" if ndim == 1 else "two-dimensional"
+        raise ValueError(f"{type_name} columns must be {dimension}.")
+    if branch_values.shape != x_values.shape:
+        raise ValueError(
+            f"{type_name}.branch_id and branch_x must have the same shape, "
+            f"got {branch_values.shape!r} and {x_values.shape!r}."
+        )
+    if branch_values.dtype.kind not in "iu":
+        raise TypeError(f"{type_name}.branch_id must contain integers.")
+    if x_values.dtype.kind not in "iuf":
+        raise TypeError(f"{type_name}.branch_x must contain real numbers.")
+    if branch_values.dtype.kind == "u" and np.any(branch_values > np.iinfo(np.int64).max):
+        raise ValueError(f"{type_name}.branch_id values must fit in int64.")
+    if np.any(branch_values < 0):
+        raise ValueError(f"{type_name}.branch_id values must be non-negative.")
+
+    normalized_x = np.asarray(x_values, dtype=np.float64)
+    if np.any(~np.isfinite(normalized_x)):
+        raise ValueError(f"{type_name}.branch_x values must be finite.")
+    if np.any(normalized_x < -helper.EPSILON) or np.any(normalized_x > 1.0 + helper.EPSILON):
+        raise ValueError(f"{type_name}.branch_x values must be within [0, 1].")
+    return (
+        np.asarray(branch_values, dtype=np.int64),
+        np.round(np.clip(normalized_x, 0.0, 1.0), decimals=12),
+    )
+
+
+@dataclass(init=False, eq=False, repr=False)
+class LocsetBatch:
+    """A read-only batch of aligned resolved locsets.
+
+    The leading dimension identifies population members and the trailing
+    dimension contains the locations assigned to each member.
+
+    Parameters
+    ----------
+    branch_id : array-like
+        Two-dimensional integer branch identifiers.
+    branch_x : array-like
+        Two-dimensional normalized branch coordinates in ``[0, 1]``.
+    display_names : iterable of iterable of str, optional
+        Human-readable names aligned with the location matrix.
+    """
+
+    __slots__ = ("_branch_id", "_branch_x", "_display_names")
+
+    def __setattr__(self, name: str, value: object) -> None:
+        raise AttributeError(f"{type(self).__name__!s} is immutable.")
+
+    @classmethod
+    def from_columns(
+        cls,
+        branch_id: object,
+        branch_x: object,
+        display_names: tuple[tuple[str, ...], ...] | list[list[str]] | None = None,
+    ) -> "LocsetBatch":
+        """Construct a batch from two aligned location matrices."""
+        branch_values, x_values = _normalize_location_columns(
+            branch_id,
+            branch_x,
+            ndim=2,
+            type_name=cls.__name__,
+        )
+        names = None
+        if display_names is not None:
+            names = tuple(tuple(row) for row in display_names)
+            if len(names) != branch_values.shape[0] or any(len(row) != branch_values.shape[1] for row in names):
+                raise ValueError("LocsetBatch.display_names must have the same shape as its columns.")
+            if any(not isinstance(name, str) for row in names for name in row):
+                raise TypeError("LocsetBatch.display_names must contain strings.")
+
+        obj = cls.__new__(cls)
+        branch_column = np.array(branch_values, dtype=np.int64, copy=True)
+        x_column = np.array(x_values, dtype=np.float64, copy=True)
+        branch_column.flags.writeable = False
+        x_column.flags.writeable = False
+        object.__setattr__(obj, "_branch_id", branch_column)
+        object.__setattr__(obj, "_branch_x", x_column)
+        object.__setattr__(obj, "_display_names", names)
+        return obj
+
+    @property
+    def branch_id(self) -> np.ndarray:
+        """Read-only branch identifier matrix."""
+        return self._branch_id
+
+    @property
+    def branch_x(self) -> np.ndarray:
+        """Read-only normalized branch-coordinate matrix."""
+        return self._branch_x
+
+    @property
+    def display_names(self) -> tuple[tuple[str, ...], ...] | None:
+        """Optional human-readable names aligned with the location matrix."""
+        return self._display_names
+
+    @property
+    def shape(self) -> tuple[int, int]:
+        """Batch and per-member location dimensions."""
+        return self._branch_id.shape
+
+    def __len__(self) -> int:
+        return self.shape[0]
+
+    def __getitem__(self, index: object) -> "LocsetMask | LocsetBatch":
+        branch_values = np.asarray(self._branch_id[index])
+        x_values = np.asarray(self._branch_x[index])
+        names = None
+        if self._display_names is not None:
+            names_array = np.asarray(self._display_names, dtype=object)[index]
+            names = names_array.tolist()
+        if branch_values.ndim == 1:
+            return LocsetMask.from_columns(branch_values, x_values, names)
+        if branch_values.ndim == 2:
+            return LocsetBatch.from_columns(branch_values, x_values, names)
+        raise IndexError("LocsetBatch indexing must preserve its location dimension.")
+
+    def __repr__(self) -> str:
+        return (
+            f"LocsetBatch(branch_id={self._branch_id.tolist()!r}, "
+            f"branch_x={self._branch_x.tolist()!r}, display_names={self._display_names!r})"
+        )
 
 
 @dataclass(init=False, eq=False, repr=False)
@@ -99,31 +234,12 @@ class LocsetMask:
         LocsetMask
             A mask whose columns are immutable copies of the input data.
         """
-        branch_values = np.asarray(branch_id)
-        x_values = np.asarray(branch_x)
-        if branch_values.ndim != 1 or x_values.ndim != 1:
-            raise ValueError("LocsetMask columns must be one-dimensional.")
-        if branch_values.shape != x_values.shape:
-            raise ValueError(
-                "LocsetMask.branch_id and branch_x must have the same shape, "
-                f"got {branch_values.shape!r} and {x_values.shape!r}."
-            )
-        if branch_values.dtype.kind not in "iu":
-            raise TypeError("LocsetMask.branch_id must contain integers.")
-        if x_values.dtype.kind not in "iuf":
-            raise TypeError("LocsetMask.branch_x must contain real numbers.")
-
-        if branch_values.dtype.kind == "u" and np.any(branch_values > np.iinfo(np.int64).max):
-            raise ValueError("LocsetMask.branch_id values must fit in int64.")
-        if np.any(branch_values < 0):
-            raise ValueError("LocsetMask.branch_id values must be non-negative.")
-
-        normalized_x = np.asarray(x_values, dtype=np.float64)
-        if np.any(~np.isfinite(normalized_x)):
-            raise ValueError("LocsetMask.branch_x values must be finite.")
-        if np.any(normalized_x < -helper.EPSILON) or np.any(normalized_x > 1.0 + helper.EPSILON):
-            raise ValueError("LocsetMask.branch_x values must be within [0, 1].")
-        normalized_x = np.round(np.clip(normalized_x, 0.0, 1.0), decimals=12)
+        branch_values, normalized_x = _normalize_location_columns(
+            branch_id,
+            branch_x,
+            ndim=1,
+            type_name=cls.__name__,
+        )
 
         obj = cls.__new__(cls)
         obj._initialize(
@@ -187,6 +303,30 @@ class LocsetMask:
 
     def __len__(self) -> int:
         return len(self._branch_id)
+
+    def __getitem__(self, index: object) -> "LocsetMask | LocsetBatch":
+        """Select locations, preserving duplicates and index order.
+
+        One-dimensional selection returns a :class:`LocsetMask`. A
+        two-dimensional integer index returns a :class:`LocsetBatch`, whose
+        rows can be aligned with population members during placement.
+        """
+        branch_values = np.asarray(self._branch_id[index])
+        x_values = np.asarray(self._branch_x[index])
+        names = None
+        if self._display_names is not None:
+            selected_names = np.asarray(self._display_names, dtype=object)[index]
+            names = selected_names.tolist() if isinstance(selected_names, np.ndarray) else selected_names
+        if branch_values.ndim == 0:
+            branch_values = branch_values.reshape(1)
+            x_values = x_values.reshape(1)
+            if names is not None:
+                names = [names]
+        if branch_values.ndim == 1:
+            return LocsetMask.from_columns(branch_values, x_values, names)
+        if branch_values.ndim == 2:
+            return LocsetBatch.from_columns(branch_values, x_values, names)
+        raise IndexError("LocsetMask indexing supports at most two dimensions.")
 
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, LocsetMask):

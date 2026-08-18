@@ -29,7 +29,7 @@ from typing import Literal
 import brainunit as u
 import numpy as np
 
-from braincell.filter import AllRegion, LocsetExpr, RegionExpr
+from braincell.filter import AllRegion, LocsetBatch, LocsetExpr, LocsetMask, RegionExpr
 from braincell.filter.cache import SelectionCache
 from braincell.mech import (
     CableProperty,
@@ -92,7 +92,7 @@ class PlaceRule:
 
     Attributes
     ----------
-    locset : LocsetExpr
+    locset : LocsetExpr or LocsetMask or LocsetBatch
         Location expression being targeted.
     mechanisms : tuple of Point
         Point-mechanism declarations applied at each resolved location.
@@ -100,10 +100,11 @@ class PlaceRule:
         Reserved placement-site tag used by the current lowering model.
     """
 
-    locset: LocsetExpr
+    locset: LocsetExpr | LocsetMask | LocsetBatch
     mechanisms: tuple[Point, ...]
     site: Literal["mid"] = "mid"
     population_indices: tuple[int, ...] | None = None
+    aligned: bool = False
 
 
 @dataclass
@@ -144,12 +145,12 @@ class _RegionCache:
         self._region_by_id[key] = result
         return result
 
-    def points(self, locset: LocsetExpr) -> tuple[tuple[int, float, str], ...]:
+    def points(self, locset: LocsetExpr | LocsetMask) -> tuple[tuple[int, float, str], ...]:
         key = id(locset)
         cached = self._locset_by_id.get(key)
         if cached is not None:
             return cached
-        mask = locset.evaluate(self._morpho, cache=self._selection)
+        mask = locset.evaluate(self._morpho, cache=self._selection) if isinstance(locset, LocsetExpr) else locset
         names = mask.display_names
         if names is None:
             names = tuple(
@@ -221,10 +222,11 @@ def normalize_paint_rules(
 
 
 def normalize_place_rule(
-    locset: LocsetExpr,
+    locset: LocsetExpr | LocsetMask | LocsetBatch,
     mechanisms: tuple[object, ...],
     *,
     population_indices: tuple[int, ...] | None = None,
+    aligned: bool = False,
 ) -> PlaceRule:
     """Normalize one ``Cell.place(...)`` call into a place rule.
 
@@ -248,8 +250,14 @@ def normalize_place_rule(
     ValueError
         If no mechanisms are supplied.
     """
-    if not isinstance(locset, LocsetExpr):
-        raise TypeError(f"Cell.place(...) expects LocsetExpr, got {type(locset).__name__!s}.")
+    if not isinstance(locset, (LocsetExpr, LocsetMask, LocsetBatch)):
+        raise TypeError(
+            f"Cell.place(...) expects LocsetExpr, LocsetMask, or LocsetBatch, got {type(locset).__name__!s}."
+        )
+    if aligned and not isinstance(locset, LocsetBatch):
+        raise TypeError("Aligned Cell.place(...) rules require LocsetBatch.")
+    if isinstance(locset, LocsetBatch) and not aligned:
+        raise ValueError("LocsetBatch placement must be aligned with population members.")
     if len(mechanisms) == 0:
         raise ValueError("Cell.place(...) expects at least one point mechanism.")
 
@@ -263,6 +271,7 @@ def normalize_place_rule(
         mechanisms=tuple(normalized),
         site="mid",
         population_indices=population_indices,
+        aligned=aligned,
     )
 
 
@@ -629,31 +638,41 @@ def build_cv_mechanisms(
     seen_names: set[str] = set()
     placement_id = 0
     for rule in place_rules:
-        for branch_id, x, display_name in cache.points(rule.locset):
-            ids = geometry.cv_ids(branch_id)
-            if not ids:
-                continue
-            cv_id = geometry.locate_cv(branch_id=branch_id, x=x)
-            geo = geos[cv_id]
-            position = _position_for_geo(geo, x=float(x))
-            population_indices = (
-                (None,)
-                if rule.population_indices is None
-                else tuple(int(index) for index in rule.population_indices)
+        if rule.aligned:
+            assert isinstance(rule.locset, LocsetBatch)
+            assert rule.population_indices is not None
+            location_groups = zip(
+                (cache.points(rule.locset[index]) for index in range(len(rule.locset))),
+                ((int(index),) for index in rule.population_indices),
             )
-            for population_index in population_indices:
-                for mechanism in rule.mechanisms:
-                    _apply_place(
-                        buckets[cv_id],
-                        mechanism,
-                        display_name=display_name,
-                        placement_id=placement_id,
-                        branch_id=branch_id,
-                        branch_x=x,
-                        seen_names=seen_names,
-                        position=position,
-                        population_index=population_index,
-                    )
-                    placement_id += 1
+        else:
+            assert not isinstance(rule.locset, LocsetBatch)
+            population_indices = (
+                (None,) if rule.population_indices is None else tuple(int(index) for index in rule.population_indices)
+            )
+            location_groups = ((cache.points(rule.locset), population_indices),)
+
+        for locations, population_indices in location_groups:
+            for branch_id, x, display_name in locations:
+                ids = geometry.cv_ids(branch_id)
+                if not ids:
+                    continue
+                cv_id = geometry.locate_cv(branch_id=branch_id, x=x)
+                geo = geos[cv_id]
+                position = _position_for_geo(geo, x=float(x))
+                for population_index in population_indices:
+                    for mechanism in rule.mechanisms:
+                        _apply_place(
+                            buckets[cv_id],
+                            mechanism,
+                            display_name=display_name,
+                            placement_id=placement_id,
+                            branch_id=branch_id,
+                            branch_x=x,
+                            seen_names=seen_names,
+                            position=position,
+                            population_index=population_index,
+                        )
+                        placement_id += 1
 
     return buckets

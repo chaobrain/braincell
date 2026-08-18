@@ -28,6 +28,7 @@ from braincell.filter import (
     EmptyRegion,
     ForkPoints,
     LocsetConcatOp,
+    LocsetBatch,
     LocsetMask,
     LocsetSetOp,
     LocsetUniqueOp,
@@ -218,6 +219,51 @@ class LocsetMaskTest(unittest.TestCase):
             LocsetMask(points=((0, True),))
         with self.assertRaises(ValueError):
             LocsetMask(points=((-1, 0.5),))
+
+    def test_one_dimensional_indexing_returns_locset_mask(self) -> None:
+        mask = LocsetMask(
+            points=((0, 0.1), (1, 0.2), (2, 0.3)),
+            display_names=("a", "b", "c"),
+        )
+
+        self.assertEqual(mask[1].points, ((1, 0.2),))
+        self.assertEqual(mask[[2, 0, 2]].points, ((2, 0.3), (0, 0.1), (2, 0.3)))
+        self.assertEqual(mask[np.asarray([True, False, True])].display_names, ("a", "c"))
+
+    def test_two_dimensional_indexing_returns_locset_batch(self) -> None:
+        mask = LocsetMask(
+            points=((0, 0.1), (1, 0.2), (2, 0.3)),
+            display_names=("a", "b", "c"),
+        )
+
+        batch = mask[np.asarray([[0, 1], [2, 0], [1, 1]])]
+
+        self.assertIsInstance(batch, LocsetBatch)
+        self.assertEqual(batch.shape, (3, 2))
+        self.assertEqual(batch[0].points, ((0, 0.1), (1, 0.2)))
+        self.assertEqual(batch[1:].shape, (2, 2))
+        self.assertEqual(batch.display_names, (("a", "b"), ("c", "a"), ("b", "b")))
+
+
+class LocsetBatchTest(unittest.TestCase):
+    def test_column_constructor_copies_freezes_and_validates_storage(self) -> None:
+        branch_id = np.asarray([[0, 1], [2, 0]], dtype=np.int32)
+        branch_x = np.asarray([[0.1, 0.2], [0.3, 0.1]], dtype=np.float32)
+
+        batch = LocsetBatch.from_columns(branch_id, branch_x, (("a", "b"), ("c", "a")))
+        branch_id[0, 0] = 99
+        branch_x[0, 0] = 0.9
+
+        np.testing.assert_array_equal(batch.branch_id, np.asarray([[0, 1], [2, 0]]))
+        np.testing.assert_allclose(batch.branch_x, np.asarray([[0.1, 0.2], [0.3, 0.1]]), atol=1e-7)
+        self.assertFalse(batch.branch_id.flags.writeable)
+        self.assertFalse(batch.branch_x.flags.writeable)
+        with self.assertRaises(ValueError):
+            LocsetBatch.from_columns([0, 1], [0.1, 0.2])
+        with self.assertRaises(ValueError):
+            LocsetBatch.from_columns([[0, 1]], [[0.1]])
+        with self.assertRaises(ValueError):
+            LocsetBatch.from_columns([[0]], [[1.1]])
 
 
 class ForkPointsTest(unittest.TestCase):

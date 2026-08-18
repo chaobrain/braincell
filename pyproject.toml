@@ -38,7 +38,11 @@ dynamic = [ "version" ]
 dependencies = [
   "brainevent>=0.0.7",
   "brainpy>=2.7.5",
-  "brainstate>=0.2.9",
+  # 0.5.4 is the first release that works with jax 0.11.1, which deleted
+  # `jax.extend.core.CallPrimitive`; every earlier brainstate imports that name
+  # unconditionally and fails at import time. CI installs unpinned jax, so this
+  # floor is what keeps `import braincell` working on current JAX.
+  "brainstate>=0.5.4",
   "braintools>=0.1",
   "brainunit>=0.0.8",
   "jax",

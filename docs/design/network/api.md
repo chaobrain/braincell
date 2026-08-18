@@ -732,20 +732,21 @@ detectors 和 delivery state。它是显式且一次性的：
 first = net.run(
     dt=0.025 * u.ms,
     duration=50.0 * u.ms,
-    delay_quantization="ceil",
+    delay_quantization="nearest",
 )
 second = net.run(
     dt=0.025 * u.ms,
     duration=50.0 * u.ms,
-    delay_quantization="ceil",
+    delay_quantization="nearest",
 )
 ```
 
 连续 `run()` 延续 current time、Cell/mechanism state、detector previous voltage 和尚未到期的
-events。`delay_quantization` 公开 `"ceil"`、`"strict"` 和 `"floor"`，默认 `"ceil"`，保证
-delivery 不早于请求 delay；`"strict"` 要求 delay 是 `dt` 的整数倍，`"floor"` 只在用户显式
-选择时允许提前到最近网格。三种模式下 zero delay 都在 detector crossing 后的下一 solver
-step delivery，不在当前 step 重入。
+events。`delay_quantization` 公开 `"nearest"`、`"ceil"`、`"strict"` 和 `"floor"`，默认
+`"nearest"`，与 NEURON fixed-step 在 `t + dt / 2` 前交付事件的规则一致；量化误差不超过
+半个 `dt`。`"ceil"` 保证 delivery 不早于请求 delay，`"strict"` 要求 delay 是 `dt` 的
+整数倍，`"floor"` 显式向下量化。四种模式下 zero delay 都在 detector crossing 后的下一
+solver step delivery，不在当前 step 重入。
 
 一个 episode 在第一次 `run()` 时同时绑定 `dt` 和 `delay_quantization`；time 已推进后使用不同
 值报错。

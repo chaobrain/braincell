@@ -307,6 +307,8 @@ class Cell(HHTypedNeuron):
         self._axial_jax = None
         self._synapse_input_bindings: dict[str, list[tuple[object, object, object]]] = {}
         self._synapse_parameter_overrides: dict[tuple[int, int, str], object] = {}
+        self._contacts: list[object] = []
+        self._next_contact_id = 0
 
         self._initialized = False
 
@@ -632,6 +634,11 @@ class Cell(HHTypedNeuron):
     def synapses(self) -> SynapseInstanceTable:
         """Return a logical instance table for all placed point synapses."""
         return SynapseInstanceTable(self)
+
+    @property
+    def contacts(self) -> tuple[object, ...]:
+        """Return explicitly registered contacts in declaration order."""
+        return tuple(self._contacts)
 
     def get_point_placement(self, placement_id: int):
         """Return one static point placement by its stable id."""
@@ -2495,7 +2502,7 @@ class Cell(HHTypedNeuron):
         self._raise_if_not_initialized("update()")
         self._begin_step()
         spk = self._update_dynamics()
-        self._prepare_next_synapse_inputs()
+        self._prepare_next_synapse_inputs(t=self._resolve_t() + brainstate.environ.get_dt())
         return spk
 
     def _begin_step(self):
@@ -2556,7 +2563,7 @@ class Cell(HHTypedNeuron):
             self.spike.value = spk
         return spk
 
-    def _prepare_next_synapse_inputs(self):
+    def _prepare_next_synapse_inputs(self, *, t=None):
         """Prepare runtime synapse inputs for a later step.
 
         Notes
@@ -2571,7 +2578,11 @@ class Cell(HHTypedNeuron):
         """
         self._raise_if_not_initialized("_prepare_next_synapse_inputs()")
         point_V = self._cv_to_point(self.V.value)
-        self._prepare_runtime_synapse_inputs(point_V)
+        if t is None:
+            self._prepare_runtime_synapse_inputs(point_V)
+        else:
+            with brainstate.environ.context(t=t):
+                self._prepare_runtime_synapse_inputs(point_V)
 
     def _apply_runtime_synapse_events(self, point_V):
         """Apply bound discrete events to all runtime synapses.
@@ -2613,8 +2624,7 @@ class Cell(HHTypedNeuron):
 
         1. ``state_buffers[(layout_id, "pre_spike")]``, which is also where
            network delivery writes delayed events.
-        2. Time-dependent NetStim drive evaluated at the current simulation
-           time.
+        2. Explicit Contact arrivals evaluated at the current simulation time.
         3. User-bound inputs registered with ``bind_synapse_input``.
 
         The accumulated drive is bound to the runtime synapse with
@@ -2626,16 +2636,76 @@ class Cell(HHTypedNeuron):
         for layout, synapse in self._runtime.iter_synapse_layouts():
             declaration = self._runtime.get_layout_mechanism(layout.id)
             total_drive = self._runtime.get_state(layout.id, "pre_spike")
-            netstim_drive = self._runtime.evaluate_synapse_netstim_drive(
-                layout,
-                t=t,
-            )
-            total_drive = total_drive + _coerce_drive_like(netstim_drive, total_drive)
+            contact_drive = self._evaluate_contact_inputs(layout, t=t, template=total_drive)
+            total_drive = total_drive + _coerce_drive_like(contact_drive, total_drive)
             total_drive = total_drive + self._evaluate_bound_synapse_inputs(
                 declaration,
                 total_drive,
             )
             synapse.bind_pre_spike(total_drive)
+
+    def _evaluate_contact_inputs(self, layout, *, t, template):
+        """Return weighted Contact arrivals addressed to one synapse layout."""
+        if layout.placement_index is None:
+            return u.math.zeros_like(template)
+        dt = brainstate.environ.get("dt", None)
+        if dt is None:
+            raise ValueError("Contact event delivery requires brainstate.environ['dt'].")
+
+        placement_to_local = {
+            int(placement_id): int(local_index)
+            for local_index, placement_id in enumerate(layout.placement_index.tolist())
+        }
+        output = jnp.zeros_like(
+            jnp.asarray(template.to_decimal(template.unit))
+            if isinstance(template, u.Quantity)
+            else jnp.asarray(template)
+        )
+        for contact in self._contacts:
+            rows: list[int] = []
+            local_indices: list[int] = []
+            population_indices: list[int] = []
+            for row, target_index in enumerate(contact.target_index.tolist()):
+                instance = contact.target.instances[int(target_index)]
+                local_index = placement_to_local.get(int(instance.placement_id))
+                if local_index is None:
+                    continue
+                if layout.population_index is not None and (
+                    int(layout.population_index[local_index]) != int(instance.population_index)
+                ):
+                    continue
+                rows.append(row)
+                local_indices.append(local_index)
+                population_indices.append(int(instance.population_index))
+            if not rows:
+                continue
+
+            row_index = np.asarray(rows, dtype=np.int32)
+            event_count = contact.source.event_count(
+                contact.source_index[row_index],
+                t=t,
+                delay=contact.delay[row_index],
+                dt=dt,
+            )
+            if isinstance(template, u.Quantity):
+                if not isinstance(contact.weight, u.Quantity):
+                    raise TypeError("Contact weight is dimensionless but its target event buffer is not.")
+                weight = contact.weight[row_index].to_decimal(template.unit)
+            else:
+                if isinstance(contact.weight, u.Quantity):
+                    raise TypeError("Contact weight has units but its target event buffer is dimensionless.")
+                weight = contact.weight[row_index]
+            contribution = event_count * u.math.asarray(weight)
+            local_index = np.asarray(local_indices, dtype=np.int32)
+            if layout.population_index is None:
+                if len(self.pop_size) == 0:
+                    output = output.at[local_index].add(contribution)
+                else:
+                    population_index = np.asarray(population_indices, dtype=np.int32)
+                    output = output.at[population_index, local_index].add(contribution)
+            else:
+                output = output.at[local_index].add(contribution)
+        return u.Quantity(output, template.unit) if isinstance(template, u.Quantity) else output
 
     def _evaluate_bound_synapse_inputs(self, declaration, template):
         instance_name = declaration.instance_name

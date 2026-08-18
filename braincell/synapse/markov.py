@@ -52,9 +52,9 @@ def _syn_state(shape, batch_size=None):
 def _event_payload(pre_drive, default_weight):
     """Return weighted synaptic event payload.
 
-    Network projections write already-weighted quantities into ``pre_drive``.
-    Legacy local drives such as ``NetStim(weight=1.0)`` remain dimensionless and
-    therefore use the placed synapse's default ``weight``.
+    Contacts and network projections write already-weighted quantities into
+    ``pre_drive``. Dimensionless bound inputs retain the placed synapse's
+    default ``weight`` for compatibility.
     """
     if isinstance(pre_drive, u.Quantity):
         return pre_drive
@@ -76,6 +76,7 @@ class ExpSyn(Synapse):
     root_type = HHTypedNeuron
     current_sign = "neuron"
     current_units = "total"
+    event_weight_unit = u.uS
 
     def __init__(
         self,
@@ -132,6 +133,7 @@ class Exp2Syn(Synapse):
     root_type = HHTypedNeuron
     current_sign = "neuron"
     current_units = "total"
+    event_weight_unit = u.uS
 
     def __init__(
         self,
@@ -223,6 +225,7 @@ class AMPA(Synapse):
     """
 
     root_type = HHTypedNeuron
+    event_weight_unit = None
 
     def __init__(
         self,
@@ -267,6 +270,7 @@ class GABAa(Synapse):
     """Single-exponential GABAa synapse."""
 
     root_type = HHTypedNeuron
+    event_weight_unit = None
 
     def __init__(
         self,
@@ -311,6 +315,7 @@ class NMDA(Synapse):
     """Double-exponential NMDA synapse."""
 
     root_type = HHTypedNeuron
+    event_weight_unit = None
 
     def __init__(
         self,

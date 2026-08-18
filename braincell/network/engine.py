@@ -311,9 +311,9 @@ class Network:
                     f"{edge_set.post_population!r} to be uninitialized."
                 )
             existing = [
-                placement for placement in post_cell.point_placements
-                if isinstance(placement.mechanism, SynapseDeclaration)
-                and placement.mechanism.instance_name == name
+                placement
+                for placement in post_cell.point_placements
+                if isinstance(placement.mechanism, SynapseDeclaration) and placement.mechanism.instance_name == name
             ]
             if existing:
                 raise ValueError(f"Automatic synapse pool {name!r} conflicts with existing placements.")
@@ -321,7 +321,9 @@ class Network:
             edge_pre = edge_set.pre_index[selected]
             edge_post = edge_set.post_index[selected]
             active_post = np.asarray(tuple(dict.fromkeys(edge_post.tolist())), dtype=np.int32)
-            indegree = np.bincount(edge_post, minlength=self.populations[edge_set.post_population].size).astype(np.int32)
+            indegree = np.bincount(edge_post, minlength=self.populations[edge_set.post_population].size).astype(
+                np.int32
+            )
             context = SynapsePoolContext(
                 post_size=self.populations[edge_set.post_population].size,
                 active_post_index=active_post,
@@ -354,7 +356,8 @@ class Network:
     def _projection_pool(self, projection: Projection, edge_set):
         post_cell = self.populations[edge_set.post_population].cell
         matches = [
-            placement for placement in post_cell.point_placements
+            placement
+            for placement in post_cell.point_placements
             if isinstance(placement.mechanism, SynapseDeclaration)
             and placement.mechanism.instance_name == projection.synapse_name
         ]
@@ -371,10 +374,7 @@ class Network:
                 f"Synapse pool {projection.synapse_name!r} must resolve to one mechanism signature and storage layout."
             )
         packed = next(iter(storage))
-        owners = (
-            np.asarray([int(item.population_index) for item in matches], dtype=np.int32)
-            if packed else None
-        )
+        owners = np.asarray([int(item.population_index) for item in matches], dtype=np.int32) if packed else None
         return matches, owners
 
     def _materialize_projection(self, projection: Projection) -> None:
@@ -475,7 +475,7 @@ class Network:
         *,
         dt,
         duration,
-        delay_quantization: str = "ceil",
+        delay_quantization: str = "nearest",
         event_backend: str = "auto",
         brainevent_backend: str | None = "jax_raw",
         spike_recording: str = "full",
@@ -585,8 +585,7 @@ class Network:
             name: tuple(sorted(population.cell.sample_probes())) for name, population in self.populations.items()
         }
         population_source_cv_ids = {
-            name: resolve_source_cv(population.cell, RootLocation(0.5))
-            for name, population in self.populations.items()
+            name: resolve_source_cv(population.cell, RootLocation(0.5)) for name, population in self.populations.items()
         }
         setup = _RunSetup(
             delivery_blocks=delivery_blocks,

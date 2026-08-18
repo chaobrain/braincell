@@ -262,13 +262,20 @@ class LoweringTest(unittest.TestCase):
 
         np.testing.assert_array_equal(block.delay_steps, [1])
 
-    def test_lowering_quantizes_delay_with_ceil_floor_and_strict(self) -> None:
+    def test_lowering_quantizes_delay_with_nearest_ceil_floor_and_strict(self) -> None:
         pre = _spiking_cell()
         post = _post_cell()
         pre.init_state()
         post.init_state()
         populations = {"E": Population("E", pre), "I": Population("I", post)}
-        conn = Connection("E", "I", [0], [1], "exp", delay=0.15 * u.ms)
+        conn = Connection("E", "I", [0], [1], "exp", delay=0.14 * u.ms)
+
+        nearest_block = lower_connections(
+            populations,
+            (conn,),
+            dt=0.1 * u.ms,
+            delay_quantization="nearest",
+        )[0]
 
         ceil_block = lower_connections(
             populations,
@@ -283,6 +290,7 @@ class LoweringTest(unittest.TestCase):
             delay_quantization="floor",
         )[0]
 
+        np.testing.assert_array_equal(nearest_block.delay_steps, [1])
         np.testing.assert_array_equal(ceil_block.delay_steps, [2])
         np.testing.assert_array_equal(floor_block.delay_steps, [1])
         strict_block = lower_connections(
@@ -308,7 +316,7 @@ class LoweringTest(unittest.TestCase):
         populations = {"E": Population("E", pre), "I": Population("I", post)}
         conn = Connection("E", "I", [0], [1], "exp", delay=0.0 * u.ms)
 
-        for mode in ("ceil", "floor", "strict"):
+        for mode in ("nearest", "ceil", "floor", "strict"):
             with self.subTest(mode=mode):
                 block = lower_connections(
                     populations,
@@ -331,7 +339,7 @@ class LoweringTest(unittest.TestCase):
                 populations,
                 (conn,),
                 dt=0.1 * u.ms,
-                delay_quantization="nearest",
+                delay_quantization="round",
             )
 
 
@@ -430,10 +438,7 @@ class NetworkRuntimeTest(unittest.TestCase):
 
         net.init_state()
         layout_id, pool_size, _ = resolve_synapse_layout(net.populations["I"], "auto_exp")
-        layout = next(
-            layout for layout, _ in post.runtime.iter_synapse_layouts()
-            if layout.id == layout_id
-        )
+        layout = next(layout for layout, _ in post.runtime.iter_synapse_layouts() if layout.id == layout_id)
         self.assertEqual(pool_size, 7)
         self.assertTrue(layout.is_packed)
         np.testing.assert_array_equal(layout.population_index, table.post_index)
@@ -551,9 +556,7 @@ class NetworkRuntimeTest(unittest.TestCase):
             edges="E_to_I",
             synapse=braincell.mech.Synapse("ExpSyn", name="bad_exp"),
             pool=synapse_pool(number=1),
-            method=braincell.network.explicit_contacts(
-                source_edge=[0, 1], synapse_index=[0, 0]
-            ),
+            method=braincell.network.explicit_contacts(source_edge=[0, 1], synapse_index=[0, 0]),
         )
 
         with self.assertRaisesRegex(ValueError, "different post cell"):
@@ -799,19 +802,18 @@ class NetworkRuntimeTest(unittest.TestCase):
         self.assertAlmostEqual(float(g[1, 1]), 0.0)
         self.assertGreater(float(g[2, 1]), 0.0)
 
-    def test_non_integer_delay_uses_ceil_by_default(self) -> None:
+    def test_non_integer_delay_uses_nearest_by_default(self) -> None:
         pre = _spiking_cell()
         post = _post_cell()
         net = Network()
         net.add_population("E", pre)
         net.add_population("I", post)
-        net.add_connection(Connection("E", "I", [0], [1], "exp", delay=0.15 * u.ms))
+        net.add_connection(Connection("E", "I", [0], [1], "exp", delay=0.14 * u.ms))
 
         result = net.run(dt=0.1 * u.ms, duration=0.4 * u.ms)
 
         g = np.asarray(result.traces["I"]["g"].to_decimal(u.uS))
-        self.assertAlmostEqual(float(g[1, 1]), 0.0)
-        self.assertGreater(float(g[2, 1]), 0.0)
+        self.assertGreater(float(g[1, 1]), 0.0)
 
     def test_non_integer_delay_can_use_floor_quantization(self) -> None:
         pre = _spiking_cell()

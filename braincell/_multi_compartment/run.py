@@ -109,7 +109,7 @@ def _make_run_loop(rcell: "Cell", *, dt, ordered_names: tuple[str, ...]):
                     with jax.named_scope("braincell:cell_run:sample_probes"):
                         snapshot = rcell.sample_probes()
                     with jax.named_scope("braincell:cell_run:prepare_next_synapse_inputs"):
-                        rcell._prepare_next_synapse_inputs()
+                        rcell._prepare_next_synapse_inputs(t=t + brainstate.environ.get_dt())
                 return tuple(snapshot[name] for name in ordered_names)
 
             traces_over_time = brainstate.transform.for_loop(_step, times)

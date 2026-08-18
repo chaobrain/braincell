@@ -50,7 +50,6 @@ __all__ = [
     "Point",
     "CurrentClamp",
     "FunctionClamp",
-    "NetStim",
     "StateProbe",
     "MechanismProbe",
     "CurrentProbe",
@@ -245,69 +244,6 @@ class FunctionClamp(Point):
 # ---------------------------------------------------------------------------
 # Point spike sources, observers & synapses
 # ---------------------------------------------------------------------------
-
-
-@quantity_hashable
-@dataclass(frozen=True)
-class NetStim(Point):
-    """Deterministic point spike source aligned with NEURON's `NetStim`.
-
-    Parameters
-    ----------
-    start : Quantity[ms]
-        Absolute time of the first spike.
-    number : int
-        Number of spikes to emit.
-    interval : Quantity[ms]
-        Spacing between spikes.
-    noise : float, optional
-        Randomness level. Only ``0.0`` is supported in v1.
-    weight : float, optional
-        Event amplitude written into downstream ``pre_spike`` buffers.
-    name : str or None, optional
-        Optional instance label.
-    """
-
-    start: Any
-    number: int
-    interval: Any
-    noise: float = 0.0
-    weight: float = 1.0
-    name: str | None = None
-
-    def __post_init__(self) -> None:
-        start = _coerce_scalar_quantity(
-            self.start,
-            unit=u.ms,
-            field_name="NetStim.start",
-        )
-        interval = _coerce_scalar_quantity(
-            self.interval,
-            unit=u.ms,
-            field_name="NetStim.interval",
-        )
-        if float(interval.to_decimal(u.ms)) <= 0.0:
-            raise ValueError(f"NetStim.interval must be > 0, got {self.interval!r}.")
-        if not isinstance(self.number, int) or isinstance(self.number, bool):
-            raise TypeError(f"NetStim.number must be int, got {self.number!r}.")
-        if self.number < 0:
-            raise ValueError(f"NetStim.number must be >= 0, got {self.number!r}.")
-        if not isinstance(self.noise, (int, float)) or isinstance(self.noise, bool):
-            raise TypeError(f"NetStim.noise must be a real number, got {self.noise!r}.")
-        if float(self.noise) != 0.0:
-            raise ValueError(f"NetStim.noise={self.noise!r} is not supported yet; use noise=0.0.")
-        if not isinstance(self.weight, (int, float)) or isinstance(self.weight, bool):
-            raise TypeError(f"NetStim.weight must be a real number, got {self.weight!r}.")
-        if self.name is not None and (not isinstance(self.name, str) or not self.name):
-            raise ValueError(f"NetStim.name must be a non-empty string or None, got {self.name!r}.")
-
-        object.__setattr__(self, "start", start)
-        object.__setattr__(self, "interval", interval)
-
-    @property
-    def instance_name(self) -> str:
-        """Display label for runtime layout and probe/debug views."""
-        return self.name if self.name is not None else "NetStim"
 
 
 @dataclass(frozen=True)

@@ -54,6 +54,8 @@ from ._multi_compartment import (
 from .network import (
     Network,
 )
+from .contact import Contact
+from .event import NetStim
 from ._version import (
     __version__,
     __version_info__,
@@ -93,6 +95,7 @@ __all__ = [
     "CellSelection",
     "Channel",
     "CompositeByTypePolicy",
+    "Contact",
     "CustomBranch",
     "CurrentClamp",
     "CV",
@@ -111,6 +114,7 @@ __all__ = [
     "MixIons",
     "MaxCVLen",
     "Morphology",
+    "NetStim",
     "Network",
     "Node",
     "NodeTree",

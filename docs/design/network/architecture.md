@@ -422,7 +422,7 @@ materialize every stale Population/Projection stage
 
 ### 3.4 Run、reset 与 deinit
 
-- `run(dt, duration, delay_quantization="ceil")` 只接受 `INITIALIZED` Network，不隐式调用
+- `run(dt, duration, delay_quantization="nearest")` 只接受 `INITIALIZED` Network，不隐式调用
   `init_state()`。
 - run 创建或复用 dt/quantization-specific lowering、delivery operators 和 compiled loop。
 - 连续 `run()` 延续 current time、Cell states、detector previous voltage 和未到期 delayed
@@ -500,9 +500,10 @@ ContactTable.delay (physical Quantity)
   -> write due arrivals into target packed layout
 ```
 
-public mode 固定为 `ceil`、`strict` 和 `floor`。v1 默认 `ceil`：事件不能早于用户请求的
-physical delay；`strict` 要求 delay 是 dt 的整数倍；`floor` 只有显式选择时才允许提前到最近
-网格。三种模式下 `0 ms` 都在下一 solver step 到达，不在 detector step 内重入。
+public mode 固定为 `nearest`、`ceil`、`strict` 和 `floor`。v1 默认 `nearest`，与 NEURON
+fixed-step 的最近网格语义一致，恰好半步时进入较晚边界；`ceil` 保证事件不早于用户请求的
+physical delay；`strict` 要求 delay 是 dt 的整数倍；`floor` 显式允许向下量化。四种模式下
+`0 ms` 都在下一 solver step 到达，不在 detector step 内重入。
 
 delivery operator 保留两个等价 backend：JAX `scatter_add` 与可用时的
 `brainevent.coomv`。backend 只影响计算路径，不改变 contact、weight、delay 或加和语义。

@@ -2490,7 +2490,7 @@ class PointSynapseRuntimeTest(unittest.TestCase):
         contribution = braincell._multi_compartment.currents._synapse_contrib_to_point(
             cell.runtime, layout, node, point_v
         )
-        contribution_nA_cm2 = np.asarray(contribution.to_decimal(u.nA / u.cm ** 2))
+        contribution_nA_cm2 = np.asarray(contribution.to_decimal(u.nA / u.cm**2))
         self.assertEqual(contribution_nA_cm2.shape, (4, cell.n_point))
         self.assertTrue(np.any(contribution_nA_cm2[0] != 0.0))
         self.assertTrue(np.all(contribution_nA_cm2[1] == 0.0))
@@ -2661,24 +2661,20 @@ class PointSynapseRuntimeTest(unittest.TestCase):
             solver="staggered",
             V_init=-65.0 * u.mV,
         )
-        cell.place(
-            at("soma", 0.5),
-            braincell.mech.NetStim(
-                name="stim", start=1.0 * u.ms, number=1, interval=10.0 * u.ms, noise=0.0, weight=1.0
-            ),
-        )
         cell.place(at("soma", 0.5), braincell.mech.StateProbe(name="v", field="v"))
         cell.place(at("soma", 0.5), braincell.mech.MechanismProbe(name="g", mechanism="exp_syn", field="g"))
         cell.place(at("soma", 0.5), braincell.mech.CurrentProbe(name="i_syn", mechanism="exp_syn"))
-        cell.place(
-            at("soma", 0.5),
-            braincell.mech.Synapse(
-                "ExpSyn",
-                tau=2.0 * u.ms,
-                e=0.0 * u.mV,
-                weight=1.0 * u.uS,
-                name="exp_syn",
-            ),
+        exp = braincell.mech.Synapse(
+            "ExpSyn",
+            tau=2.0 * u.ms,
+            e=0.0 * u.mV,
+            name="exp_syn",
+        )
+        cell.place(at("soma", 0.5), exp)
+        braincell.Contact(
+            source=braincell.NetStim(name="stim", start=1.0 * u.ms, number=1, interval=10.0 * u.ms),
+            target=cell.synapses[exp],
+            weight=1.0 * u.uS,
         )
         result = cell.run(dt=0.05 * u.ms, duration=10.0 * u.ms)
         self.assertGreater(float(np.max(result.traces["g"].to_decimal(u.uS))), 0.0)
@@ -2690,26 +2686,22 @@ class PointSynapseRuntimeTest(unittest.TestCase):
             solver="staggered",
             V_init=-65.0 * u.mV,
         )
-        cell.place(
-            at("soma", 0.5),
-            braincell.mech.NetStim(
+        exp = braincell.mech.Synapse(
+            "ExpSyn",
+            tau=2.0 * u.ms,
+            e=0.0 * u.mV,
+            name="exp_syn",
+        )
+        cell.place(at("soma", 0.5), exp)
+        braincell.Contact(
+            source=braincell.NetStim(
                 name="stim",
                 start=1.0 * u.ms,
                 number=1,
                 interval=10.0 * u.ms,
-                noise=0.0,
-                weight=2.0,
             ),
-        )
-        cell.place(
-            at("soma", 0.5),
-            braincell.mech.Synapse(
-                "ExpSyn",
-                tau=2.0 * u.ms,
-                e=0.0 * u.mV,
-                weight=1.0 * u.uS,
-                name="exp_syn",
-            ),
+            target=cell.synapses[exp],
+            weight=2.0 * u.uS,
         )
         cell.bind_synapse_input("exp_syn", source=lambda: np.asarray([3.0]), weight=0.5)
         cell.init_state()

@@ -37,7 +37,7 @@ def lower_connections(
     connections: tuple[Connection, ...],
     *,
     dt,
-    delay_quantization: str = "ceil",
+    delay_quantization: str = "nearest",
 ) -> tuple[ConnectionBlock, ...]:
     """Validate public connections and return runtime blocks."""
     _validate_time_quantity(dt, name="dt")
@@ -115,15 +115,11 @@ def resolve_source_cv(cell, source: LocsetExpr) -> int:
     """Resolve a single continuous presynaptic location to its owning CV."""
     if not isinstance(source, LocsetExpr):
         raise TypeError(
-            "Connection source must be a LocsetExpr resolving to one location, "
-            f"got {type(source).__name__!s}."
+            f"Connection source must be a LocsetExpr resolving to one location, got {type(source).__name__!s}."
         )
     mask = source.evaluate(cell.morpho)
     if len(mask) != 1:
-        raise ValueError(
-            "Connection source must resolve to exactly one presynaptic location; "
-            f"got {len(mask)!r}."
-        )
+        raise ValueError(f"Connection source must resolve to exactly one presynaptic location; got {len(mask)!r}.")
     branch_id = int(mask.branch_id[0])
     branch_x = float(mask.branch_x[0])
     ids = cell.cv_tree.branch_to_cv_ids[int(branch_id)]
@@ -209,7 +205,7 @@ def _expand_weight(weight, *, n_contact: int):
     return arr
 
 
-def _expand_delay_steps(delay, *, dt, n_contact: int, quantization: str = "ceil") -> np.ndarray:
+def _expand_delay_steps(delay, *, dt, n_contact: int, quantization: str = "nearest") -> np.ndarray:
     """Return fixed-step delay offsets for one connection table.
 
     Parameters
@@ -220,7 +216,7 @@ def _expand_delay_steps(delay, *, dt, n_contact: int, quantization: str = "ceil"
         Fixed simulation step.
     n_contact : int
         Number of contacts.
-    quantization : {"ceil", "floor", "strict"}
+    quantization : {"nearest", "ceil", "floor", "strict"}
         Policy for delays that do not fall on the fixed-step grid.
     """
     _validate_time_quantity(delay, name="delay")
@@ -245,18 +241,20 @@ def _expand_delay_steps(delay, *, dt, n_contact: int, quantization: str = "ceil"
         if not np.allclose(raw_steps, rounded, rtol=1e-9, atol=1e-9):
             raise ValueError("Connection delay must be an integer multiple of dt when delay_quantization='strict'.")
         steps = rounded
+    elif quantization == "nearest":
+        steps = np.floor(raw_steps + 0.5).astype(np.int32)
     elif quantization == "ceil":
         steps = np.ceil(raw_steps - 1e-12).astype(np.int32)
     elif quantization == "floor":
         steps = np.floor(raw_steps + 1e-12).astype(np.int32)
     else:  # pragma: no cover
-        raise ValueError("Connection delay_quantization must be 'ceil', 'floor', or 'strict'.")
+        raise ValueError("Connection delay_quantization must be 'nearest', 'ceil', 'floor', or 'strict'.")
     return np.maximum(steps, 1)
 
 
 def _normalize_delay_quantization(value: str) -> str:
-    if value not in ("ceil", "floor", "strict"):
-        raise ValueError(f"Network delay_quantization must be 'ceil', 'floor', or 'strict', got {value!r}.")
+    if value not in ("nearest", "ceil", "floor", "strict"):
+        raise ValueError(f"Network delay_quantization must be 'nearest', 'ceil', 'floor', or 'strict', got {value!r}.")
     return value
 
 

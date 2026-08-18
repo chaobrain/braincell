@@ -142,11 +142,11 @@ collision 和 ID-to-runtime lookup tests 全部通过。
 - [ ] 将 resolved contacts 接入现有 `ConnectionBlock/DeliveryBlock` lowering。
 - [ ] 保留 scatter 与 brainevent backend numerical equivalence。
 - [ ] 让 delayed events 跨连续 `run()` 保留，并在 `reset_state()` 清空。
-- [ ] 实现公开 `ceil/strict/floor` quantization、默认 `ceil` 和三种模式一致的 next-step
+- [ ] 实现公开 `nearest/ceil/strict/floor` quantization、默认 `nearest` 和四种模式一致的 next-step
   zero-delay phase。
 - [ ] benchmark I-11 的 unique-delay memory scaling，并按结论调整 buffer layout。
 
-Gate：I-07 三种 quantization/zero-delay phase semantics、multiple detector thresholds、
+Gate：I-07 四种 quantization/zero-delay phase semantics、multiple detector thresholds、
 continued-run equivalence、reset 和 heterogeneous delay tests 全部通过；关闭 I-11 或明确 v1
 规模限制。
 
@@ -243,7 +243,7 @@ Gate：repository test suite、代表性 notebooks 和 performance suite 通过�
 - manual/network equivalent placement 的 voltage trace 一致；
 - source threshold 与 `Cell.V_th` 独立；
 - multiple Projections 使用不同 locations/thresholds；
-- `ceil/strict/floor` 对 non-grid/heterogeneous delays 的量化，以及三种模式下 next-step
+- `nearest/ceil/strict/floor` 对 non-grid/heterogeneous delays 的量化，以及四种模式下 next-step
   zero-delay event phase；
 - one long run 与连续 short runs 等价，包括跨边界 pending events；
 - 未 init 的 run 和 Network-owned Cell direct init 明确报错；

@@ -39,7 +39,6 @@ from braincell.mech import (
     FunctionClamp,
     Junction,
     MechanismProbe,
-    NetStim,
     Point,
     ProbeMechanism,
     SineClamp,
@@ -120,7 +119,6 @@ class MechanismLayout:
 #: Clamp layout kinds that contribute point-space current via
 #: :meth:`CellRuntimeState.evaluate_point_clamps`.
 CLAMP_KINDS = frozenset({"CurrentClamp", "SineClamp", "FunctionClamp"})
-NETSTIM_KIND = "NetStim"
 
 
 @dataclass(frozen=True)
@@ -663,31 +661,6 @@ class CellRuntimeState:
             if isinstance(node, RuntimeSynapse):
                 yield layout, node
 
-    def evaluate_synapse_netstim_drive(self, layout: MechanismLayout, *, t) -> object:
-        """Return NetStim drive for one synapse layout, or zero if none applies."""
-        base = self.state_buffers[(int(layout.id), "pre_spike")]
-        if layout.point_index is None:
-            return u.math.zeros_like(base)
-
-        point_drive = self.evaluate_point_netstims(t=t)
-        has_netstim = self.point_has_netstim(layout.point_index)
-        if layout.population_index is None:
-            local_drive = point_drive[..., layout.point_index]
-        else:
-            local_drive = point_drive[..., layout.population_index, layout.point_index]
-        return u.math.where(has_netstim, local_drive, 0.0)
-
-    def point_has_netstim(self, point_index) -> np.ndarray:
-        """Return a boolean mask marking points with placed NetStim layouts."""
-        point_ids = np.asarray(point_index, dtype=np.int32)
-        return np.asarray(
-            [
-                any(layout.kind == NETSTIM_KIND for layout in self.get_point_layouts(int(point_id)))
-                for point_id in point_ids
-            ],
-            dtype=bool,
-        )
-
     def get_ion(self, name: str) -> object:
         return self.ions[self.resolve_ion_key(name)]
 
@@ -769,18 +742,6 @@ class CellRuntimeState:
             local_current_decimal = _quantity_sequence_to_decimal_vector(local_currents, unit=u.nA)
             point_current_decimal = point_current_decimal.at[..., point_index].add(local_current_decimal)
         return u.Quantity(point_current_decimal, u.nA)
-
-    def evaluate_point_netstims(self, *, t) -> object:
-        """Return point-space `pre_spike` drive from placed `NetStim`s."""
-        point_drive = u.math.zeros(self.pop_size + (self.n_point,), dtype=float)
-        for layout in self.layouts:
-            if layout.target != "point" or layout.point_index is None:
-                continue
-            if layout.kind != NETSTIM_KIND:
-                continue
-            local_drive = _evaluate_netstim_layout(self, layout=layout, t=t)
-            point_drive = point_drive.at[..., layout.point_index].add(local_drive)
-        return point_drive
 
 
 ## build_placeholder_ions moved to braincell.ion
@@ -995,8 +956,6 @@ def _mechanism_var_names(mechanism: object) -> tuple[str, ...]:
         return names if names else ("conductance",)
     if isinstance(mechanism, CurrentClamp):
         return ("delay", "durations", "amplitudes")
-    if isinstance(mechanism, NetStim):
-        return ("start", "number", "interval", "noise", "weight")
     if isinstance(mechanism, SineClamp):
         return ("amplitude", "frequency", "phase", "offset", "delay", "duration")
     if isinstance(mechanism, FunctionClamp):
@@ -1012,11 +971,9 @@ def _mechanism_var_names(mechanism: object) -> tuple[str, ...]:
 
 def _mechanism_var_value(mechanism: object, var_name: str) -> object:
     if isinstance(mechanism, SynapsePlacement) and var_name == "pre_spike":
-        if "weight" in mechanism.params:
-            weight = mechanism.params["weight"]
-            if isinstance(weight, u.Quantity):
-                return 0.0 * weight.unit
-        return 0.0
+        runtime_cls = get_registry().get("synapse", mechanism.synapse_type)
+        event_weight_unit = getattr(runtime_cls, "event_weight_unit", None)
+        return 0.0 if event_weight_unit is None else 0.0 * event_weight_unit
     if isinstance(mechanism, Density):
         if var_name not in mechanism.params:
             raise KeyError(f"Mechanism has no parameter {var_name!r}.")
@@ -1588,43 +1545,6 @@ def _evaluate_clamp_layout(
             continue
         raise ValueError(f"Unsupported clamp layout kind {layout.kind!r}.")
     return tuple(out)
-
-
-def _evaluate_netstim_layout(runtime: CellRuntimeState, *, layout: MechanismLayout, t) -> object:
-    """Evaluate one sparse `NetStim` layout at time `t`.
-
-    Returns a point-local `pre_spike` drive with shape `(..., n_active)`.
-    """
-    if layout.layout != "sparse" or layout.point_index is None:
-        raise ValueError(f"NetStim layout {layout.id!r} must be sparse with point_index.")
-    start = _scalar_state_value(runtime, layout_id=layout.id, var_name="start")
-    interval = _scalar_state_value(runtime, layout_id=layout.id, var_name="interval")
-    number = _scalar_state_value(runtime, layout_id=layout.id, var_name="number")
-    noise = _scalar_state_value(runtime, layout_id=layout.id, var_name="noise")
-    weight = _scalar_state_value(runtime, layout_id=layout.id, var_name="weight")
-
-    if float(np.asarray(noise).reshape(())) != 0.0:
-        raise ValueError("NetStim.noise != 0.0 is not supported yet.")
-
-    local_t = (t - start).in_unit(u.ms) if hasattr(start, "in_unit") else (t - u.Quantity(start, u.ms)).in_unit(u.ms)
-    local_t_ms = u.math.asarray(local_t.to_decimal(u.ms))
-    interval_ms = (
-        u.math.asarray(interval.to_decimal(u.ms)) if hasattr(interval, "to_decimal") else u.math.asarray(interval)
-    )
-    number_arr = u.math.asarray(number)
-    weight_arr = u.math.asarray(weight)
-
-    if getattr(local_t_ms, "shape", ()) == ():
-        local_t_ms = u.math.broadcast_to(local_t_ms, weight_arr.shape)
-    if getattr(interval_ms, "shape", ()) == ():
-        interval_ms = u.math.broadcast_to(interval_ms, weight_arr.shape)
-    if getattr(number_arr, "shape", ()) == ():
-        number_arr = u.math.broadcast_to(number_arr, weight_arr.shape)
-
-    event_index = u.math.round(local_t_ms / interval_ms)
-    on_grid = u.math.abs(local_t_ms - (event_index * interval_ms)) <= 1e-9
-    fired = (local_t_ms >= 0.0) & on_grid & (event_index >= 0) & (event_index < number_arr)
-    return u.math.where(fired, weight_arr, 0.0)
 
 
 def _scalar_state_value(runtime: CellRuntimeState, *, layout_id: int, var_name: str, local_index: int = 0) -> object:

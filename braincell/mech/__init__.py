@@ -60,13 +60,13 @@ from ._point import (
     CurrentClamp,
     FunctionClamp,
     MechanismProbe,
-    NetStim,
     Point,
     ProbeMechanism,
     SineClamp,
     StateProbe,
     Synapse,
 )
+from braincell.event import NetStim
 from ._registry import (
     MechanismEntry,
     MechanismRegistry,

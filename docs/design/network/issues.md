@@ -378,10 +378,11 @@ Phase 5 batch lowering 开始前。
 ### Decision
 
 - ContactTable 保存 canonical `(C,)` physical time Quantity；run setup 根据 `dt` 量化。
-- 默认使用 `ceil`，事件不能早于用户请求的 delay。
+- 默认使用 `nearest`，与 NEURON fixed-step 在 `t + dt / 2` 前交付事件的规则一致；到达
+  时间归入最近网格，精确半步边界归入后一个网格。
 - `0 ms` 仍在 next solver step delivery。
-- public `delay_quantization` 固定支持 `ceil`、`strict` 和 `floor`；`strict` 要求整数 grid，
-  `floor` 只有显式选择时才允许提前到最近网格。
+- public `delay_quantization` 固定支持 `nearest`、`ceil`、`strict` 和 `floor`；`ceil` 保证
+  不早于请求 delay，`strict` 要求整数 grid，`floor` 显式向下量化。
 - v1 使用 fixed-step ring buffer。
 - 连续 `run()` 保留未到期 events；`reset_state()` 清空 delivery queue。
 - 第一次 `run()` 将 episode 绑定到 `dt` 和 quantization mode；time 已推进后不能改变任一值，
@@ -389,13 +390,13 @@ Phase 5 batch lowering 开始前。
 
 ### Implementation gap
 
-当前 runtime 已实现 `ceil/floor/strict` 和 next-step zero delay，但每次 `run()` 都清空
+当前 runtime 已实现 `nearest/ceil/floor/strict` 和 next-step zero delay，但每次 `run()` 都清空
 delivery state。实现阶段必须修复跨 run queue ownership，并增加等价性测试。buffer
 layout 的性能问题单列为 [I-11](#i-11-heterogeneous-delay-buffer-layout)。
 
 ### Gate
 
-Phase 6 event delivery 完成前通过三种 quantization mode、zero delay、continued-run、episode
+Phase 6 event delivery 完成前通过四种 quantization mode、zero delay、continued-run、episode
 binding 和 reset tests。
 
 ## I-08 Trainable versus non-trainable fields

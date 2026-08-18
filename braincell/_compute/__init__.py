@@ -31,11 +31,3 @@ runtime structures the solver and mechanism-lowering code execute against:
 This package is private. External code should access the same symbols
 through :mod:`braincell` re-exports where appropriate.
 """
-
-from .scheduling import NodeScheduling
-from braincell._discretization.base import NodeTree
-
-__all__ = [
-    "NodeScheduling",
-    "NodeTree",
-]

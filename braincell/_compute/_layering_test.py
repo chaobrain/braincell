@@ -54,8 +54,14 @@ Only *load-time* imports create an edge:
   ``CellRuntimeState`` from ``.state``, and ``state`` pulls ``Cell`` from
   ``braincell._multi_compartment.cell``. All four are correct by design and
   must not be flagged.
-- Imports nested inside a function, method or class body are deferred and do
-  not create a load-time edge, so the walker never descends into them.
+- Imports nested inside a function or method body are deferred until the
+  function is called and create no load-time edge, so the walker never
+  descends into them.
+- Imports inside a ``class`` body, or inside a module-level ``with``, ``for``
+  or ``while`` body, **do** create a load-time edge: a class body and the
+  bodies of these compound statements all execute when the enclosing module
+  is imported, exactly like an ``if`` or ``try`` body does. The walker
+  descends into all of them.
 - Test modules (``*_test.py``, ``_testing.py``) are excluded entirely. A test
   importing ``Cell`` is not an architecture violation.
 """
@@ -128,15 +134,20 @@ def _is_type_checking_guard(test: ast.expr) -> bool:
 def _iter_load_time_statements(body: Sequence[ast.stmt]) -> Iterator[ast.stmt]:
     """Yield the statements in ``body`` that execute when the module loads.
 
-    Descends into ``if`` and ``try`` blocks, whose bodies do run at import
-    time, but never into function, class or comprehension bodies, whose imports
-    are deferred. The body of a ``TYPE_CHECKING`` guard is skipped while its
-    ``else`` branch — which does run — is kept.
+    Descends into ``if``, ``try``, ``class``, ``with``, ``for`` and ``while``
+    bodies, all of which run when the enclosing module is imported — a class
+    body executes immediately to build the class namespace, and the other
+    three are ordinary compound statements with no deferral of their own. The
+    walker never descends into function or method bodies (or comprehension
+    scopes), whose imports are deferred until the function is called and so
+    create no load-time edge. The body of a ``TYPE_CHECKING`` guard is skipped
+    while its ``else`` branch — which does run — is kept.
 
     Parameters
     ----------
     body : sequence of ast.stmt
-        A statement list, typically ``ast.Module.body``.
+        A statement list, typically ``ast.Module.body`` or the ``body`` of a
+        ``class``, ``if``, ``try``, ``with``, ``for`` or ``while`` statement.
 
     Yields
     ------
@@ -155,6 +166,13 @@ def _iter_load_time_statements(body: Sequence[ast.stmt]) -> Iterator[ast.stmt]:
                 yield from _iter_load_time_statements(handler.body)
             yield from _iter_load_time_statements(node.orelse)
             yield from _iter_load_time_statements(node.finalbody)
+        elif isinstance(node, ast.ClassDef):
+            yield from _iter_load_time_statements(node.body)
+        elif isinstance(node, (ast.With, ast.AsyncWith)):
+            yield from _iter_load_time_statements(node.body)
+        elif isinstance(node, (ast.For, ast.AsyncFor, ast.While)):
+            yield from _iter_load_time_statements(node.body)
+            yield from _iter_load_time_statements(node.orelse)
 
 
 def _resolve_relative(level: int, module: Optional[str], package: str) -> str:

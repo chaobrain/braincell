@@ -22,8 +22,9 @@ with the state buffers afterwards:
 - :func:`_build_runtime_ions` — the entry point. Collects the ion declarations
   spread across mechanism layouts, instantiates one runtime ion per instance
   name, fills in placeholder ions for any of ``na``/``k``/``ca`` that were never
-  declared, and returns the alias map that lets channels look an ion up by
-  instance name, family key, or class name.
+  declared, and returns a 5-tuple of the ion map, the alias map that lets
+  channels look an ion up by instance name, family key, or class name, the
+  family and class candidate maps, and the per-layout runtime-ion nodes.
 - :func:`_collect_runtime_ion_instances`, :func:`_build_ion_alias_map`,
   :func:`_runtime_ion_species_key`, :func:`_runtime_ion_family` — the grouping
   and naming rules, including the conflict checks that reject an instance name
@@ -34,15 +35,17 @@ with the state buffers afterwards:
   read a param back off an instance.
 - :func:`_ion_param_broadcast` and :func:`_ion_param_scatter` — the rectangular
   buffer algebra. A baseline param is broadcast onto the full point shape once,
-  then each sparse declaration layout scatters its own buffer into it, so no
-  Python loop walks per-point :class:`brainunit.Quantity` boxes.
+  then each sparse declaration layout scatters its own buffer into it, so the
+  common rectangular path needs no Python loop over per-point
+  :class:`brainunit.Quantity` boxes.
 - :func:`_sync_runtime_ion` — the post-compilation counterpart, rebuilding one
   runtime ion's params from the current state buffers when a buffer is written.
 
 Ion construction happens before channels are bound, so this module depends only
 on :mod:`braincell._compute.layouts` (for the ``MechanismLayout`` record and the
-constant-quantity helper) and on the public ``braincell.ion`` / ``braincell.mech``
-packages. It imports nothing from :mod:`braincell._compute.runtime`.
+constant-quantity helper), on ``braincell.mech``, and on ``braincell.ion`` —
+including its private :mod:`braincell.ion._base` module, for the runtime ion
+base classes. It imports nothing from :mod:`braincell._compute.runtime`.
 """
 
 from __future__ import annotations
@@ -121,10 +124,12 @@ def _build_runtime_ions(
         ion_runtime_nodes,
     )
 
+
 def _build_default_ions(n_point: int) -> dict[str, object]:
     if isinstance(n_point, tuple):
         return build_placeholder_ions(size=n_point)
     return build_placeholder_ions(size=(n_point,))
+
 
 def _collect_runtime_ion_instances(
     *,
@@ -175,6 +180,7 @@ def _collect_runtime_ion_instances(
 
     return instances, family_candidates
 
+
 def _build_ion_alias_map(
     *,
     ions: dict[str, object],
@@ -203,6 +209,7 @@ def _build_ion_alias_map(
 
     return aliases
 
+
 def _runtime_ion_species_key(cls: type) -> str:
     if issubclass(cls, runtime_ion.Sodium):
         return "na"
@@ -214,6 +221,7 @@ def _runtime_ion_species_key(cls: type) -> str:
         return "no"
     raise ValueError(f"Unsupported ion runtime class {cls.__name__!r}: cannot infer species key.")
 
+
 def _runtime_ion_family(cls: type) -> str:
     if issubclass(cls, KineticIon):
         return "kinetic"
@@ -224,6 +232,7 @@ def _runtime_ion_family(cls: type) -> str:
     if issubclass(cls, FixedIon):
         return "fixed"
     raise ValueError(f"Unsupported ion runtime class {cls.__name__!r}: unsupported ion template family.")
+
 
 def _supported_ion_runtime_params(cls: type) -> tuple[str, ...]:
     signature = inspect.signature(cls.__init__)
@@ -239,10 +248,12 @@ def _supported_ion_runtime_params(cls: type) -> tuple[str, ...]:
         supported.append(name)
     return tuple(supported)
 
+
 def _ion_runtime_attr_name(cls: type, param_name: str) -> str:
     if param_name == "Ci_initializer" and issubclass(cls, DynamicNernstIon):
         return "_Ci_initializer"
     return param_name
+
 
 def _normalize_ion_runtime_param_value(cls: type, param_name: str, value: object) -> object:
     if param_name == "Ci_initializer" and issubclass(cls, DynamicNernstIon):
@@ -255,6 +266,7 @@ def _normalize_ion_runtime_param_value(cls: type, param_name: str, value: object
     if constant_quantity is not None:
         return constant_quantity
     return value
+
 
 def _instantiate_runtime_ion_instance(
     *,
@@ -315,6 +327,7 @@ def _instantiate_runtime_ion_instance(
     _restore_shaped_species_initializers(runtime_ion_instance, full_param_values)
     return runtime_ion_instance
 
+
 def _restore_shaped_species_initializers(runtime_ion_instance: object, full_param_values: dict[str, object]) -> None:
     if "Ci_initializer" not in full_param_values:
         return
@@ -328,6 +341,7 @@ def _restore_shaped_species_initializers(runtime_ion_instance: object, full_para
             shaped_ci = cainull
     runtime_ion_instance.Ci_initializer = shaped_ci
     species_initializers["Ci"] = shaped_ci
+
 
 def _ion_param_broadcast(value: object, *, shape: tuple[int, ...]) -> object:
     """Broadcast an ion baseline value onto ``shape``.
@@ -361,6 +375,7 @@ def _ion_param_broadcast(value: object, *, shape: tuple[int, ...]) -> object:
     # Callable / opaque baseline: keep as tuple of length shape[0].
     n = int(np.prod(shape, dtype=int)) if shape else 1
     return tuple(value for _ in range(n))
+
 
 def _ion_param_scatter(
     *,
@@ -444,6 +459,7 @@ def _ion_param_scatter(
         f"Unsupported target/buffer combination for ion param {param_name!r}: "
         f"target={type(target).__name__}, buffer={type(buffer).__name__}."
     )
+
 
 def _sync_runtime_ion(runtime: CellRuntimeState, *, layout_id: int) -> None:
     """Rebuild the runtime ion's per-point params from state buffers.

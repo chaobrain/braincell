@@ -146,61 +146,88 @@ class SineClamp(Point):
     Parameters
     ----------
     amplitude : Quantity[nA]
-        Peak amplitude.
+        Peak amplitude. May be scalar or broadcastable to the placed target
+        shape.
     frequency : Quantity[Hz]
-        Oscillation frequency.
-    phase : float
-        Phase offset in radians.
+        Oscillation frequency. May be scalar or broadcastable to the placed
+        target shape and must be positive elementwise.
+    phase : float or array-like
+        Phase offset in radians. May be scalar or broadcastable to the placed
+        target shape.
     offset : Quantity[nA]
-        Constant offset added to the sine.
+        Constant offset added to the sine. May be scalar or broadcastable to
+        the placed target shape.
     delay : Quantity[ms]
-        Absolute start time.
+        Absolute start time. May be scalar or broadcastable to the placed
+        target shape.
     duration : Quantity[ms]
-        Length of the active window. The clamp returns zero before
-        ``delay`` and after ``delay + duration``.
+        Length of the active window. May be scalar or broadcastable to the
+        placed target shape and must be positive elementwise. The clamp
+        returns zero before ``delay`` and after ``delay + duration``.
+
+    Raises
+    ------
+    TypeError
+        If a quantity field lacks physical units or phase is not real-valued.
+    ValueError
+        If an input is empty or non-finite, or if frequency or duration is not
+        positive elementwise.
     """
 
     amplitude: Any
     frequency: Any
-    phase: float = 0.0
+    phase: Any = 0.0
     offset: Any = field(default_factory=lambda: 0.0 * u.nA)
     delay: Any = field(default_factory=lambda: 0.0 * u.ms)
     duration: Any = field(default_factory=lambda: 1.0 * u.ms)
 
     def __post_init__(self) -> None:
-        frequency = _coerce_scalar_quantity(
+        frequency = _coerce_quantity(
             self.frequency,
             unit=u.Hz,
             field_name="SineClamp.frequency",
         )
-        if float(frequency.to_decimal(u.Hz)) <= 0.0:
+        frequency_decimal = np.asarray(frequency.to_decimal(u.Hz), dtype=float)
+        _raise_if_empty_or_nonfinite(frequency_decimal, field_name="SineClamp.frequency")
+        if np.any(frequency_decimal <= 0.0):
             raise ValueError(f"SineClamp.frequency must be > 0, got {self.frequency!r}.")
-        duration = _coerce_scalar_quantity(
+        duration = _coerce_quantity(
             self.duration,
             unit=u.ms,
             field_name="SineClamp.duration",
         )
-        if float(duration.to_decimal(u.ms)) <= 0.0:
+        duration_decimal = np.asarray(duration.to_decimal(u.ms), dtype=float)
+        _raise_if_empty_or_nonfinite(duration_decimal, field_name="SineClamp.duration")
+        if np.any(duration_decimal <= 0.0):
             raise ValueError(f"SineClamp.duration must be > 0, got {self.duration!r}.")
-        if not isinstance(self.phase, (int, float)) or isinstance(self.phase, bool):
-            raise TypeError(f"SineClamp.phase must be a real number, got {type(self.phase).__name__!r}.")
-        amplitude = _coerce_scalar_quantity(
+        phase = _coerce_real_array(self.phase, field_name="SineClamp.phase")
+        amplitude = _coerce_quantity(
             self.amplitude,
             unit=u.nA,
             field_name="SineClamp.amplitude",
         )
-        offset = _coerce_scalar_quantity(
+        offset = _coerce_quantity(
             self.offset,
             unit=u.nA,
             field_name="SineClamp.offset",
         )
-        delay = _coerce_scalar_quantity(
+        delay = _coerce_quantity(
             self.delay,
             unit=u.ms,
             field_name="SineClamp.delay",
         )
+        for field_name, value, unit in (
+            ("SineClamp.amplitude", amplitude, u.nA),
+            ("SineClamp.offset", offset, u.nA),
+            ("SineClamp.delay", delay, u.ms),
+        ):
+            _raise_if_empty_or_nonfinite(
+                np.asarray(value.to_decimal(unit), dtype=float),
+                field_name=field_name,
+            )
         object.__setattr__(self, "amplitude", amplitude)
         object.__setattr__(self, "frequency", frequency)
+        object.__setattr__(self, "phase", phase)
         object.__setattr__(self, "offset", offset)
         object.__setattr__(self, "delay", delay)
         object.__setattr__(self, "duration", duration)
@@ -399,10 +426,31 @@ class Synapse(Point):
 # ---------------------------------------------------------------------------
 
 
-def _coerce_scalar_quantity(value: Any, *, unit: Any, field_name: str) -> Any:
-    if not hasattr(value, "to_decimal"):
-        raise TypeError(f"{field_name} must be a Quantity, got {value!r}.")
-    return value.in_unit(unit)
+def _coerce_real_array(value: Any, *, field_name: str) -> Any:
+    if isinstance(value, (bool, np.bool_)):
+        raise TypeError(f"{field_name} must be a real number or array, got bool.")
+    try:
+        arr = np.asarray(value)
+    except (TypeError, ValueError) as exc:
+        raise TypeError(f"{field_name} must be a real number or array, got {value!r}.") from exc
+    if arr.dtype.kind not in "iuf":
+        raise TypeError(f"{field_name} must be real-valued, got dtype {arr.dtype!r}.")
+    decimal = np.asarray(arr, dtype=float)
+    _raise_if_empty_or_nonfinite(decimal, field_name=field_name)
+    return float(decimal) if decimal.shape == () else _nested_tuple(decimal.tolist())
+
+
+def _nested_tuple(value: Any) -> Any:
+    if isinstance(value, list):
+        return tuple(_nested_tuple(item) for item in value)
+    return value
+
+
+def _raise_if_empty_or_nonfinite(value: np.ndarray, *, field_name: str) -> None:
+    if value.size == 0:
+        raise ValueError(f"{field_name} must be non-empty.")
+    if not np.all(np.isfinite(value)):
+        raise ValueError(f"{field_name} must contain only finite values.")
 
 
 def _coerce_quantity(value: Any, *, unit: Any, field_name: str) -> Any:

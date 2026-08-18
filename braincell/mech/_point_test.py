@@ -154,6 +154,20 @@ class SineClampTest(unittest.TestCase):
         self.assertEqual(sc.delay.to_decimal(u.ms), 1.0)
         self.assertEqual(sc.phase, 0.0)
 
+    def test_population_values_are_preserved(self) -> None:
+        sc = SineClamp(
+            amplitude=u.Quantity(np.asarray([0.1, 0.2]), u.nA),
+            frequency=u.Quantity(np.asarray([10.0, 40.0]), u.Hz),
+            phase=np.asarray([0.0, 0.5]),
+            offset=u.Quantity(np.asarray([0.0, 0.1]), u.nA),
+            delay=u.Quantity(np.asarray([1.0, 2.0]), u.ms),
+            duration=u.Quantity(np.asarray([3.0, 4.0]), u.ms),
+        )
+        self.assertEqual(sc.amplitude.shape, (2,))
+        self.assertEqual(sc.frequency.shape, (2,))
+        np.testing.assert_allclose(sc.phase, np.asarray([0.0, 0.5]))
+        self.assertEqual(hash(sc), hash(sc))
+
     def test_hashable_and_equal(self) -> None:
         a = SineClamp(amplitude=0.4 * u.nA, frequency=50.0 * u.Hz)
         b = SineClamp(amplitude=0.4 * u.nA, frequency=50.0 * u.Hz)
@@ -175,6 +189,19 @@ class SineClampValidatesInputsTest(unittest.TestCase):
                 frequency=50.0 * u.Hz,
                 duration=-1.0 * u.ms,
             )
+
+    def test_nonpositive_frequency_array_raises(self) -> None:
+        with self.assertRaises(ValueError):
+            SineClamp(
+                amplitude=1.0 * u.nA,
+                frequency=u.Quantity(np.asarray([10.0, 0.0]), u.Hz),
+            )
+
+    def test_nonfinite_values_raise(self) -> None:
+        with self.assertRaises(ValueError):
+            SineClamp(amplitude=np.asarray([0.1, np.nan]) * u.nA, frequency=10.0 * u.Hz)
+        with self.assertRaises(ValueError):
+            SineClamp(amplitude=0.1 * u.nA, frequency=10.0 * u.Hz, phase=np.inf)
 
     def test_phase_must_be_real_number(self) -> None:
         with self.assertRaises(TypeError):

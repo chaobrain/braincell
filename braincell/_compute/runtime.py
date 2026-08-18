@@ -425,6 +425,18 @@ class CellRuntimeState:
                     state_buffers[(layout_spec.id, f"_mask_{var_name}")] = mask
                     state_shapes[(layout_spec.id, var_name)] = quantity.mantissa.shape
                     continue
+                if isinstance(mechanism, SineClamp):
+                    value = _allocate_sine_clamp_buffer(
+                        mechanism=mechanism,
+                        var_name=var_name,
+                        pop_size=pop_size,
+                        n_active=len(point_ids),
+                    )
+                    state_buffers[(layout_spec.id, var_name)] = value
+                    state_shapes[(layout_spec.id, var_name)] = (
+                        value.mantissa.shape if isinstance(value, u.Quantity) else value.shape
+                    )
+                    continue
                 state_shapes[(layout_spec.id, var_name)] = shape
                 value = _mechanism_var_value(mechanism, var_name)
                 if (
@@ -1128,6 +1140,43 @@ def _allocate_current_clamp_delay_buffer(
             ) from exc
 
     return u.Quantity(mantissa, u.ms)
+
+
+def _allocate_sine_clamp_buffer(
+    *,
+    mechanism: SineClamp,
+    var_name: str,
+    pop_size: tuple[int, ...],
+    n_active: int,
+) -> object:
+    """Broadcast one SineClamp value over population and placement axes."""
+    target_shape = pop_size + (n_active,)
+    value = _mechanism_var_value(mechanism, var_name)
+    if isinstance(value, u.Quantity):
+        unit = value.unit
+        decimals = np.asarray(value.to_decimal(unit), dtype=np.float64)
+    else:
+        unit = None
+        decimals = np.asarray(value, dtype=np.float64)
+
+    if decimals.shape == ():
+        mantissa = np.broadcast_to(decimals, target_shape).copy()
+    elif decimals.shape == target_shape:
+        mantissa = decimals.copy()
+    elif decimals.shape == pop_size and n_active == 1:
+        mantissa = decimals[..., None].copy()
+    elif decimals.shape == (n_active,) and not pop_size:
+        mantissa = decimals.copy()
+    else:
+        try:
+            mantissa = np.broadcast_to(decimals, target_shape).copy()
+        except ValueError as exc:
+            raise ValueError(
+                f"SineClamp.{var_name} with shape {decimals.shape!r} cannot be "
+                f"broadcast to target shape {target_shape!r}."
+            ) from exc
+
+    return u.Quantity(mantissa, unit) if unit is not None else mantissa
 
 
 def _pack_clamp_steps(decimals: np.ndarray, *, unit, target_prefix: tuple[int, ...]) -> tuple[object, np.ndarray]:

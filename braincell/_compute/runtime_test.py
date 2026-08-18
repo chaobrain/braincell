@@ -2309,6 +2309,39 @@ class CellLifecycleInlineTest(unittest.TestCase):
 
 
 class PopulationResponseHeterogeneityTest(unittest.TestCase):
+    def test_population_cells_can_have_different_sine_clamp_responses(self) -> None:
+        cell = Cell(_build_tree(), pop_size=(2,))
+        cell.place(
+            at("soma", 0.5),
+            SineClamp(
+                amplitude=u.Quantity(np.asarray([0.1, 0.2]), u.nA),
+                frequency=u.Quantity(np.asarray([10.0, 40.0]), u.Hz),
+                phase=np.asarray([0.0, np.pi / 2.0]),
+                offset=u.Quantity(np.asarray([0.0, 0.05]), u.nA),
+                delay=u.Quantity(np.asarray([1.0, 2.0]), u.ms),
+                duration=u.Quantity(np.asarray([3.0, 4.0]), u.ms),
+            ),
+        )
+        cell.init_state()
+
+        before = cell.runtime.evaluate_point_clamps(t=0.5 * u.ms).to_decimal(u.nA)
+        active = cell.runtime.evaluate_point_clamps(t=2.5 * u.ms).to_decimal(u.nA)
+        self.assertEqual(before.shape, (2, len(cell.node_tree.nodes)))
+        np.testing.assert_allclose(before[:, 1], np.zeros(2), atol=1e-7)
+        self.assertNotAlmostEqual(float(active[0, 1]), float(active[1, 1]), places=6)
+
+    def test_unbroadcastable_sine_clamp_value_raises(self) -> None:
+        cell = Cell(_build_tree(), pop_size=(2,))
+        cell.place(
+            at("soma", 0.5),
+            SineClamp(
+                amplitude=u.Quantity(np.asarray([0.1, 0.2, 0.3]), u.nA),
+                frequency=10.0 * u.Hz,
+            ),
+        )
+        with self.assertRaises(ValueError):
+            cell.init_state()
+
     def test_population_cells_can_have_different_current_clamp_responses(self) -> None:
         cell = Cell(
             _build_tree(),

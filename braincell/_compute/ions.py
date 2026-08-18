@@ -45,7 +45,8 @@ Ion construction happens before channels are bound, so this module depends only
 on :mod:`braincell._compute.layouts` (for the ``MechanismLayout`` record and the
 constant-quantity helper), on ``braincell.mech``, and on ``braincell.ion`` —
 including its private :mod:`braincell.ion._base` module, for the runtime ion
-base classes. It imports nothing from :mod:`braincell._compute.runtime`.
+base classes. It imports nothing from :mod:`braincell._compute.bindings` or
+:mod:`braincell._compute.state`, which both sit above it in the layer stack.
 """
 
 from __future__ import annotations

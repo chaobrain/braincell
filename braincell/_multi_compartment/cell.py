@@ -63,14 +63,10 @@ from braincell._compute.table import (
     mechanism_cell_key,
 )
 from braincell._compute.scheduling import build_node_scheduling
-from braincell._compute.runtime import (
-    CellRuntimeState,
-    _is_root_level_runtime_node,
-    build_placeholder_ions,
-    clone_morpho,
-    cv_value_vector,
-    mechanism_signature,
-)
+from braincell._compute.state import CellRuntimeState
+from braincell._compute.bindings import _is_root_level_runtime_node
+from braincell._compute.layouts import mechanism_signature
+from braincell.ion import build_placeholder_ions
 from braincell._discretization.mechanism import (
     PaintRule,
     PlaceRule,
@@ -96,7 +92,7 @@ from braincell._discretization.node_build import (
 )
 from braincell.filter import LocsetExpr, LocsetMask, RegionExpr, RegionMask
 from braincell.filter.helper import normalize_region_intervals
-from braincell.morph.morphology import Morphology
+from braincell.morph.morphology import Morphology, clone_morpho
 from braincell.quad import get_integrator, ind_exp_euler_step
 from braincell.quad._exp_euler import _ind_exp_euler_step_selected
 from braincell.quad._staggered import build_cv_axial_operator
@@ -523,10 +519,10 @@ class Cell(HHTypedNeuron):
                 root_nodes[f"layout_{layout.id}"] = node
 
         self.ion_channels = self._format_elements(IonChannel, **root_nodes)
-        self.C = cv_value_vector(self, attr_name="cm")
+        self.C = bridge.cv_value_vector(self, attr_name="cm")
         self.V_th = bridge.fill_like(self.varshape, self.V_th)
 
-        v_initializer = self._V_init if self._V_init is not None else cv_value_vector(self, attr_name="v")
+        v_initializer = self._V_init if self._V_init is not None else bridge.cv_value_vector(self, attr_name="v")
         if self._V_init is not None:
             v_initializer = bridge.fill_like(self.varshape, v_initializer)
         v_value = braintools.init.param(v_initializer, self.varshape)
@@ -2541,7 +2537,7 @@ class Cell(HHTypedNeuron):
         self._raise_if_not_initialized("reset_state()")
         v_init = self._V_init
         if v_init is None:
-            v_init = cv_value_vector(self, attr_name="v")
+            v_init = bridge.cv_value_vector(self, attr_name="v")
         else:
             v_init = bridge.fill_like(self.varshape, v_init)
         v_value = braintools.init.param(v_init, self.varshape)

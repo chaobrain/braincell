@@ -32,7 +32,7 @@ import jax
 import jax.numpy as jnp
 
 from braincell._base import IonChannel, Synapse as RuntimeSynapse
-from braincell._compute.runtime import CellRuntimeState
+from braincell._compute.state import CellRuntimeState
 from braincell._compute import bridge
 
 if TYPE_CHECKING:

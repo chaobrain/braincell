@@ -27,7 +27,7 @@ from braincell.mech import (
     StateProbe,
     Synapse,
 )
-from .runtime import CellRuntimeState
+from .state import CellRuntimeState
 
 __all__ = [
     "MechanismObjectCell",

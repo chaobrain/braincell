@@ -61,10 +61,10 @@ those nodes in step with the state buffers.
 Binding happens after ions are constructed, so this module depends downward on
 :mod:`braincell._compute.ions` and :mod:`braincell._compute.layouts`, and
 outward on ``braincell.mech``, ``braincell.quad``, ``braincell.ion`` and
-``braincell.channel``. It imports nothing from
-:mod:`braincell._compute.runtime`; :class:`CellRuntimeState` appears only in
-annotations, through a ``TYPE_CHECKING`` import of
-:mod:`braincell._compute.state`.
+``braincell.channel``. It imports nothing at runtime from
+:mod:`braincell._compute.state`, which sits above it in the layer stack;
+:class:`CellRuntimeState` appears only in annotations, through a
+``TYPE_CHECKING`` import of that module.
 """
 
 from __future__ import annotations

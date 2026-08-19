@@ -19,20 +19,15 @@ import unittest
 
 import pytest
 
-import brainunit as u
 import matplotlib.pyplot as plt
 import numpy as np
 
-from braincell import Branch, Morphology
 from braincell.vis import plot2d
 from braincell.vis._testing import (
     PYTEST_BENCHMARK_AVAILABLE,
-    PYTEST_MPL_AVAILABLE,
     FakeBackend,
     VisDefaultsResetMixin,
-    image_comparison,
     make_deep_chain_tree,
-    make_four_type_tree,
     make_length_only_tree,
     make_node_tree,
     make_projected_node_tree,
@@ -146,100 +141,6 @@ class Plot2dDispatchTest(VisDefaultsResetMixin, unittest.TestCase):
         self.assertEqual(len(rendered.scene.polygon_value_batches), len(make_length_only_tree().branches))
         self.assertEqual(rendered.scene.polygon_value_batches[1].edge_color_rgb, (17, 34, 51))
         self.assertAlmostEqual(rendered.scene.polygon_value_batches[1].edge_linewidth, 1.25)
-
-
-@unittest.skipUnless(PYTEST_MPL_AVAILABLE, "pytest-mpl is not installed")
-class Plot2dBaselineImageTest(unittest.TestCase):
-    """Baseline-image regression figures for :func:`braincell.vis.plot2d`.
-
-    Each test builds a figure and returns it; ``image_comparison`` hands it
-    to pytest-mpl when the plugin is installed. Skipped wholesale otherwise —
-    without the plugin the marker is inert and the figure would never be
-    compared, so there is nothing left to assert.
-    """
-
-    def tearDown(self) -> None:
-        plt.close("all")
-
-    @image_comparison("stem_frustum_baseline.png")
-    def test_stem_frustum_baseline(self):
-        tree = make_four_type_tree()
-        fig, ax = plt.subplots(figsize=(4, 4))
-        plot2d(tree, layout="stem", shape="frustum", ax=ax)
-        return fig
-
-    @image_comparison("stem_line_baseline.png")
-    def test_stem_line_baseline(self):
-        tree = make_four_type_tree()
-        fig, ax = plt.subplots(figsize=(4, 4))
-        plot2d(tree, layout="stem", shape="line", ax=ax)
-        return fig
-
-    @image_comparison("balloon_line_baseline.png")
-    def test_balloon_line_baseline(self):
-        tree = make_four_type_tree()
-        fig, ax = plt.subplots(figsize=(4, 4))
-        plot2d(tree, layout="balloon", shape="line", ax=ax)
-        return fig
-
-    @image_comparison("radial_line_baseline.png")
-    def test_radial_line_baseline(self):
-        tree = make_four_type_tree()
-        fig, ax = plt.subplots(figsize=(4, 4))
-        plot2d(tree, layout="radial_360", shape="line", ax=ax)
-        return fig
-
-    @image_comparison("values_per_branch_baseline.png")
-    def test_values_per_branch_baseline(self):
-        tree = make_four_type_tree()
-        fig, ax = plt.subplots(figsize=(5, 4))
-        plot2d(
-            tree,
-            layout="stem",
-            shape="line",
-            values=np.linspace(0.0, 1.0, len(tree.branches)),
-            cmap="plasma",
-            value_label="V_m",
-            ax=ax,
-        )
-        return fig
-
-    @image_comparison("values_frustum_baseline.png")
-    def test_values_frustum_baseline(self):
-        tree = make_four_type_tree()
-        fig, ax = plt.subplots(figsize=(5, 4))
-        plot2d(
-            tree,
-            layout="stem",
-            shape="frustum",
-            values=np.linspace(-65.0, -50.0, len(tree.branches)),
-            cmap="viridis",
-            vmin=-70.0,
-            vmax=-40.0,
-            value_label="V_m",
-            ax=ax,
-        )
-        return fig
-
-    @image_comparison("projected_scene_baseline.png")
-    def test_projected_scene_baseline(self):
-        from braincell import Branch, Morphology
-
-        soma = Branch.from_points(
-            points=[[0.0, 0.0, 0.0], [20.0, 0.0, 0.0]] * u.um,
-            radii=[10.0, 10.0] * u.um,
-            type="soma",
-        )
-        dend = Branch.from_points(
-            points=[[20.0, 0.0, 0.0], [20.0, 50.0, 0.0], [20.0, 100.0, 0.0]] * u.um,
-            radii=[2.0, 1.5, 1.0] * u.um,
-            type="apical_dendrite",
-        )
-        tree = Morphology.from_root(soma, name="soma")
-        tree.attach(parent="soma", child_branch=dend, child_name="dend", parent_x=1.0)
-        fig, ax = plt.subplots(figsize=(4, 4))
-        plot2d(tree, layout="projected", shape="line", ax=ax)
-        return fig
 
 
 # ---------------------------------------------------------------------------

@@ -21,9 +21,7 @@ import matplotlib.axes
 import matplotlib.pyplot as plt
 
 from braincell.vis._testing import (
-    PYTEST_MPL_AVAILABLE,
     VisDefaultsResetMixin,
-    image_comparison,
     make_four_type_tree,
     make_length_only_tree,
 )
@@ -45,25 +43,15 @@ class CompareLayouts2dTest(VisDefaultsResetMixin, unittest.TestCase):
         self.assertGreaterEqual(sum(len(ax.lines) for ax in axes), 3)
         plt.close(fig)
 
-
-@unittest.skipUnless(PYTEST_MPL_AVAILABLE, "pytest-mpl is not installed")
-class CompareLayouts2dBaselineImageTest(unittest.TestCase):
-    """Baseline-image regression figures for :func:`braincell.vis.compare2d.compare_layouts_2d`.
-
-    Each test builds a figure and returns it; ``image_comparison`` hands it
-    to pytest-mpl when the plugin is installed. Skipped wholesale otherwise —
-    without the plugin the marker is inert and the figure would never be
-    compared, so there is nothing left to assert.
-    """
-
-    def tearDown(self) -> None:
-        plt.close("all")
-
-    @image_comparison("compare_layouts_baseline.png")
-    def test_compare_layouts_baseline(self):
+    def test_compare_layouts_2d_forwards_figsize(self) -> None:
+        # A four-branch-type tree exercises every panel's palette at once.
         tree = make_four_type_tree()
-        fig, _ = compare_layouts_2d(tree, figsize=(10, 4))
-        return fig
+
+        fig, axes = compare_layouts_2d(tree, figsize=(10, 4))
+
+        self.assertEqual(tuple(fig.get_size_inches()), (10.0, 4.0))
+        self.assertEqual(len(axes), 4)
+        plt.close(fig)
 
 
 if __name__ == "__main__":

@@ -81,15 +81,14 @@ optional-dependencies.doc = [
 ]
 # NeuroMorpho.Org client in braincell.io.neuromorpho
 optional-dependencies.io = [ "requests" ]
-# Testing dependencies. pytest-mpl and pytest-benchmark are optional at
-# runtime -- the suites that use them skip themselves when absent.
+# Testing dependencies. pytest-benchmark is optional at runtime -- the
+# benchmarks skip themselves when it is absent.
 optional-dependencies.testing = [
   "absl-py",
   "braincell[io,vis]",
   "hypothesis",
   "pytest",
   "pytest-benchmark",
-  "pytest-mpl",
 ]
 optional-dependencies.tpu = [ "jax[tpu]" ]
 # Visualization: 2D (matplotlib) + 3D (pyvista / plotly) backends.

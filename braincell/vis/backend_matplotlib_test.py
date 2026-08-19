@@ -25,6 +25,7 @@ from braincell.filter import AllRegion, BranchPoints, Terminals
 from braincell.vis import plot2d
 from braincell.vis._testing import (
     VisDefaultsResetMixin,
+    make_four_type_tree,
     make_length_only_tree,
     make_node_tree,
     make_projected_node_tree,
@@ -133,6 +134,75 @@ class MatplotlibBackendRenderTest(VisDefaultsResetMixin, unittest.TestCase):
         # Each Marker2D becomes one `PathCollection` from `ax.scatter`.
         self.assertGreaterEqual(len(ax.collections), len(locset.points))
         plt.close(ax.figure)
+
+
+class MatplotlibLayoutAndColorbarTest(VisDefaultsResetMixin, unittest.TestCase):
+    """End-to-end renders that no other matplotlib test reaches.
+
+    ``MatplotlibBackendRenderTest`` above covers the projected, stem-line
+    and stem-frustum paths. These cover the two remaining layout families
+    and the colourbar, which is the one part of the value pipeline that
+    only appears when ``show_colorbar`` is left at its default.
+    """
+
+    def tearDown(self) -> None:
+        plt.close("all")
+
+    def _render(self, **kwargs):
+        chooser = BackendChooser(backends=(MatplotlibBackend(),))
+        fig, ax = plt.subplots(figsize=(4, 4))
+        plot2d(make_four_type_tree(), backend="matplotlib", chooser=chooser, ax=ax, **kwargs)
+        return fig, ax
+
+    def test_balloon_layout_renders_finite_lines(self) -> None:
+        fig, ax = self._render(layout="balloon", shape="line")
+
+        # 4 branches → at least one polyline each, all at finite coordinates.
+        self.assertGreaterEqual(len(ax.lines), 4)
+        for line in ax.lines:
+            self.assertTrue(np.all(np.isfinite(line.get_xydata())))
+        self.assertEqual(len(fig.axes), 1)
+
+    def test_radial_360_layout_renders_finite_lines(self) -> None:
+        fig, ax = self._render(layout="radial_360", shape="line")
+
+        self.assertGreaterEqual(len(ax.lines), 4)
+        for line in ax.lines:
+            self.assertTrue(np.all(np.isfinite(line.get_xydata())))
+        self.assertEqual(len(fig.axes), 1)
+
+    def test_values_draw_a_labelled_colorbar_in_the_requested_cmap(self) -> None:
+        fig, _ = self._render(
+            layout="stem",
+            shape="line",
+            values=np.linspace(0.0, 1.0, 4),
+            cmap="plasma",
+            value_label="V_m",
+        )
+
+        # fig.colorbar() appends its own axes, so the colourbar is observable
+        # as a second axes carrying the label.
+        self.assertEqual(len(fig.axes), 2)
+        colorbar_ax = fig.axes[1]
+        self.assertEqual(colorbar_ax.get_ylabel(), "V_m")
+        self.assertEqual(fig.axes[0].collections[0].cmap.name, "plasma")
+
+    def test_explicit_bounds_reach_the_collection_norm(self) -> None:
+        # Values span -65..-50 but the caller pins a wider scale; the norm
+        # must honour the request rather than the data range.
+        _, ax = self._render(
+            layout="stem",
+            shape="frustum",
+            values=np.linspace(-65.0, -50.0, 4),
+            vmin=-70.0,
+            vmax=-40.0,
+            show_colorbar=False,
+        )
+
+        norms = [collection.norm for collection in ax.collections if collection.norm is not None]
+        self.assertTrue(norms)
+        self.assertAlmostEqual(norms[0].vmin, -70.0)
+        self.assertAlmostEqual(norms[0].vmax, -40.0)
 
 
 if __name__ == "__main__":

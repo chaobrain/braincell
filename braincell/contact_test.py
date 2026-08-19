@@ -2,6 +2,7 @@ import unittest
 
 import brainunit as u
 import brainstate
+import jax
 import numpy as np
 
 import braincell
@@ -139,24 +140,41 @@ class ContactTest(unittest.TestCase):
         np.testing.assert_array_equal(at_nearest, [1])
         np.testing.assert_array_equal(at_ceil, [0])
 
-    def test_exact_half_step_tie_uses_later_boundary(self) -> None:
-        source = NetStim(start=1.025 * u.ms, interval=10.0 * u.ms)
+    def test_half_step_neighborhood_is_stable_across_precisions(self) -> None:
+        for precision in (32, 64):
+            with self.subTest(precision=precision):
+                with brainstate.environ.context(precision=precision):
+                    source = NetStim(
+                        size=3,
+                        start=np.asarray([1.024999, 1.025, 1.025001]) * u.ms,
+                        interval=10.0 * u.ms,
+                    )
 
-        earlier = source.event_count(
-            np.asarray([0]),
-            t=1.0 * u.ms,
-            delay=np.asarray([0.0]) * u.ms,
-            dt=0.05 * u.ms,
-        )
-        later = source.event_count(
-            np.asarray([0]),
-            t=1.05 * u.ms,
-            delay=np.asarray([0.0]) * u.ms,
-            dt=0.05 * u.ms,
-        )
+                    earlier = source.event_count(
+                        np.asarray([0, 1, 2]),
+                        t=1.0 * u.ms,
+                        delay=np.zeros(3) * u.ms,
+                        dt=0.05 * u.ms,
+                    )
+                    later = source.event_count(
+                        np.asarray([0, 1, 2]),
+                        t=1.05 * u.ms,
+                        delay=np.zeros(3) * u.ms,
+                        dt=0.05 * u.ms,
+                    )
+                    compiled_count = jax.jit(
+                        lambda t_ms: source.event_count(
+                            np.asarray([0, 1, 2]),
+                            t=t_ms * u.ms,
+                            delay=np.zeros(3) * u.ms,
+                            dt=0.05 * u.ms,
+                        )
+                    )
 
-        np.testing.assert_array_equal(earlier, [0])
-        np.testing.assert_array_equal(later, [1])
+                    np.testing.assert_array_equal(earlier, [1, 0, 0])
+                    np.testing.assert_array_equal(later, [0, 1, 1])
+                    np.testing.assert_array_equal(compiled_count(1.0), earlier)
+                    np.testing.assert_array_equal(compiled_count(1.05), later)
 
     def test_multiple_contacts_add_on_one_target(self) -> None:
         cell, exp = _population(1)

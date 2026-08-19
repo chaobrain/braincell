@@ -128,9 +128,21 @@ class NetStim:
         arrivals = times + delay_ms[..., None]
         t_ms = u.math.asarray(t.to_decimal(u.ms))
         dt_ms = u.math.asarray(dt.to_decimal(u.ms))
-        half_dt_ms = 0.5 * dt_ms
-        selected = mask & (arrivals >= (t_ms - half_dt_ms)) & (arrivals < (t_ms + half_dt_ms))
+        arrival_steps = _round_half_up_steps(arrivals / dt_ms)
+        current_step = _round_half_up_steps(t_ms / dt_ms)
+        selected = mask & (arrival_steps == current_step)
         return u.math.sum(selected, axis=-1)
+
+
+def _round_half_up_steps(values):
+    """Round non-negative step ratios, snapping numerical half ties upward."""
+    values = u.math.asarray(values)
+    half = u.math.floor(values) + 0.5
+    magnitude = u.math.abs(values)
+    toward_positive = u.math.asarray(np.inf, dtype=values.dtype)
+    ulp = u.math.nextafter(magnitude, toward_positive) - magnitude
+    snapped = u.math.where(u.math.abs(values - half) <= 4.0 * ulp, half, values)
+    return u.math.floor(snapped + 0.5)
 
 
 def _quantity_vector(value, *, unit, size: int, name: str) -> u.Quantity:

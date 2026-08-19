@@ -242,7 +242,7 @@ def _expand_delay_steps(delay, *, dt, n_contact: int, quantization: str = "neare
             raise ValueError("Connection delay must be an integer multiple of dt when delay_quantization='strict'.")
         steps = rounded
     elif quantization == "nearest":
-        steps = np.floor(raw_steps + 0.5).astype(np.int32)
+        steps = _round_half_up_steps(raw_steps).astype(np.int32)
     elif quantization == "ceil":
         steps = np.ceil(raw_steps - 1e-12).astype(np.int32)
     elif quantization == "floor":
@@ -250,6 +250,15 @@ def _expand_delay_steps(delay, *, dt, n_contact: int, quantization: str = "neare
     else:  # pragma: no cover
         raise ValueError("Connection delay_quantization must be 'nearest', 'ceil', 'floor', or 'strict'.")
     return np.maximum(steps, 1)
+
+
+def _round_half_up_steps(values: np.ndarray) -> np.ndarray:
+    """Round non-negative step ratios, snapping numerical half ties upward."""
+    half = np.floor(values) + 0.5
+    magnitude = np.abs(values)
+    ulp = np.nextafter(magnitude, np.inf) - magnitude
+    snapped = np.where(np.abs(values - half) <= 4.0 * ulp, half, values)
+    return np.floor(snapped + 0.5)
 
 
 def _normalize_delay_quantization(value: str) -> str:

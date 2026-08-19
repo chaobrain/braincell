@@ -293,6 +293,15 @@ class LoweringTest(unittest.TestCase):
         np.testing.assert_array_equal(nearest_block.delay_steps, [1])
         np.testing.assert_array_equal(ceil_block.delay_steps, [2])
         np.testing.assert_array_equal(floor_block.delay_steps, [1])
+
+        half_step_block = lower_connections(
+            populations,
+            (Connection("E", "I", [0], [1], "exp", delay=0.15 * u.ms),),
+            dt=0.1 * u.ms,
+            delay_quantization="nearest",
+        )[0]
+        np.testing.assert_array_equal(half_step_block.delay_steps, [2])
+
         strict_block = lower_connections(
             populations,
             (Connection("E", "I", [0], [1], "exp", delay=0.2 * u.ms),),

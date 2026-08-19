@@ -19,7 +19,11 @@ import unittest
 
 import numpy as np
 
+import brainunit as u
+
+from braincell import Branch, Morphology
 from braincell.vis._testing import make_two_dendrite_tree
+from braincell.vis.layout import build_layout_branches_2d
 from braincell.vis.layout._balloon import (
     _allocate_balloon_group_angles,
     _build_layout_branches_balloon,
@@ -85,6 +89,44 @@ class AllocateBalloonGroupAnglesTest(unittest.TestCase):
         self.assertEqual(len(values), 2)
         # Symmetric around 0.0.
         self.assertAlmostEqual(values[0] + values[1], 0.0, places=6)
+
+
+class BalloonLayoutAngleTest(unittest.TestCase):
+    def test_balloon_layout_assigns_distinct_child_angles(self) -> None:
+        tree = make_two_dendrite_tree()
+
+        layouts = {
+            layout.branch_name: layout
+            for layout in build_layout_branches_2d(tree, mode="tree", layout_family="balloon")
+        }
+        dend_a_angle = math.degrees(
+            math.atan2(layouts["dend_a"].end_direction_um[1], layouts["dend_a"].end_direction_um[0])
+        )
+        dend_b_angle = math.degrees(
+            math.atan2(layouts["dend_b"].end_direction_um[1], layouts["dend_b"].end_direction_um[0])
+        )
+
+        self.assertNotAlmostEqual(dend_a_angle, dend_b_angle)
+
+    def test_balloon_layout_straightens_after_initial_bend(self) -> None:
+        soma = Branch.from_lengths(lengths=[20.0] * u.um, radii=[10.0, 10.0] * u.um, type="soma")
+        dend_a = Branch.from_lengths(
+            lengths=[5.0, 5.0, 10.0] * u.um, radii=[2.0, 1.8, 1.4, 1.0] * u.um, type="apical_dendrite"
+        )
+        dend_b = Branch.from_lengths(lengths=[8.0] * u.um, radii=[1.5, 1.0] * u.um, type="basal_dendrite")
+        tree = Morphology.from_root(soma, name="soma")
+        tree.attach(parent="soma", child_branch=dend_a, child_name="dend_a", parent_x=1.0)
+        tree.attach(parent="soma", child_branch=dend_b, child_name="dend_b", parent_x=1.0)
+
+        layout = next(
+            layout
+            for layout in build_layout_branches_2d(tree, mode="tree", layout_family="balloon")
+            if layout.branch_name == "dend_a"
+        )
+
+        self.assertFalse(np.allclose(layout.segment_directions_um[0], layout.segment_directions_um[-1]))
+        self.assertTrue(np.allclose(layout.segment_directions_um[-2], layout.segment_directions_um[-1]))
+        self.assertTrue(np.allclose(layout.segment_directions_um[-1], layout.end_direction_um))
 
 
 if __name__ == "__main__":

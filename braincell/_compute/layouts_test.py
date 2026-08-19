@@ -735,7 +735,6 @@ class FnFingerprintWarnsOnOpaqueClosureTest(unittest.TestCase):
         )
 
 
-
 # =============================================================================
 # Spatially-varying (callable) mechanism parameters
 # =============================================================================

@@ -105,6 +105,7 @@ class NetworkRuntimeTest(unittest.TestCase):
             np.asarray(first.spikes["E"]),
             np.asarray(second.spikes["E"]),
         )
+
     def test_cross_population_delivery_arrives_on_next_step(self) -> None:
         pre = make_spiking_cell()
         post = make_post_cell()
@@ -389,6 +390,7 @@ class NetworkRuntimeTest(unittest.TestCase):
 
         with self.assertRaisesRegex(ValueError, "event_backend"):
             net.run(dt=0.1 * u.ms, duration=0.1 * u.ms, event_backend="dense")
+
     def test_multiple_pre_populations_sum_arrivals_to_same_synapse_layout(self) -> None:
         pre_a = make_spiking_cell(size=1)
         pre_b = make_spiking_cell(size=1)

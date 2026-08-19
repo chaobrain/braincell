@@ -219,6 +219,7 @@ class MergePlaceRulesTest(unittest.TestCase):
         merged = merge_place_rules((r1,), (r2,))
         self.assertEqual(len(merged), 2)
 
+
 # =============================================================================
 # Region cache
 # =============================================================================
@@ -242,6 +243,7 @@ class RegionCacheTest(unittest.TestCase):
         b = cache.points(locset)
         self.assertIs(a, b)
         self.assertEqual(a, ((0, 0.5, "soma(0.5)"),))
+
 
 # =============================================================================
 # Mechanism lowering
@@ -493,6 +495,7 @@ class BuildMechCachesFrustaTest(unittest.TestCase):
                 1,
                 f"_build_frusta was called {count} times for key={key!r}; expected 1 after caching.",
             )
+
 
 if __name__ == "__main__":
     unittest.main()

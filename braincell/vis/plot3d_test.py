@@ -21,8 +21,13 @@ import brainunit as u
 
 from braincell import Branch, Cell, Morphology
 from braincell.filter import AllRegion, BranchSlice, branch_in
-from braincell.vis import plot3d
-from braincell.vis._testing import FakeBackend
+from braincell.vis import plot2d, plot3d
+from braincell.vis._testing import (
+    FakeBackend,
+    VisDefaultsResetMixin,
+    make_length_only_tree,
+    make_node_tree,
+)
 from braincell.vis.backend import BackendChooser
 
 
@@ -129,6 +134,31 @@ class FilterRegionIntoPlot3dTest(unittest.TestCase):
         self.assertEqual(region.intervals, ((2, 0.0, 1.0),))
         self.assertIs(rendered.overlay.region, region)
         self.assertEqual(len(rendered.scene.branches), 3)
+
+
+class Plot3dDispatchTest(VisDefaultsResetMixin, unittest.TestCase):
+    def test_plot3d_requires_points_and_suggests_2d_fallbacks(self) -> None:
+        tree = make_length_only_tree()
+
+        with self.assertRaisesRegex(
+            ValueError, r"vis2d\(layout='stem', shape='line'\).+vis2d\(layout='stem', shape='frustum'\)"
+        ):
+            plot3d(tree, chooser=BackendChooser(backends=(FakeBackend(),)))
+
+    def test_plot3d_rejects_unknown_mode(self) -> None:
+        tree = make_node_tree()
+
+        with self.assertRaisesRegex(ValueError, "Unsupported 3D mode"):
+            plot3d(tree, mode="projected")
+
+    def test_plot3d_accepts_skeleton_mode(self) -> None:
+        tree = make_node_tree()
+        backend = FakeBackend()
+
+        request = plot3d(tree, mode="skeleton", chooser=BackendChooser(backends=(backend,)))
+
+        self.assertEqual(request.mode, "skeleton")
+        self.assertEqual(request.scene.mode, "skeleton")
 
 
 if __name__ == "__main__":

@@ -58,6 +58,7 @@ class EdgeSetTest(unittest.TestCase):
         self.assertIn("EdgeSet", text)
         self.assertIn("n_edge=2", text)
         self.assertNotIn("array(", text)
+
     def test_network_add_edges_accepts_probability_and_callable_methods(self) -> None:
         net = Network(name="edge_method_demo")
         net.add_population("E", make_probe_cell(size=4))

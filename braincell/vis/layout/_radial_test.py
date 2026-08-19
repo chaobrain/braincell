@@ -20,6 +20,7 @@ import brainunit as u
 import numpy as np
 
 from braincell import Branch, Morphology
+from braincell.vis.layout import build_layout_branches_2d
 from braincell.vis.layout._common import _build_layout_specs
 from braincell.vis.layout._radial import _build_layout_branches_radial_360
 
@@ -66,6 +67,32 @@ class BuildRadial360Test(unittest.TestCase):
             )
             if layout.branch_name.startswith("d")
         }
+        quadrants = {
+            (np.sign(layout.end_direction_um[0]), np.sign(layout.end_direction_um[1])) for layout in layouts.values()
+        }
+        self.assertGreaterEqual(len(quadrants), 3)
+
+
+class RadialLayoutSpreadTest(unittest.TestCase):
+    def test_radial_360_spreads_root_stems_across_multiple_quadrants(self) -> None:
+        soma = Branch.from_lengths(lengths=[12.0] * u.um, radii=[6.0, 6.0] * u.um, type="soma")
+        tree = Morphology.from_root(soma, name="soma")
+        for index in range(4):
+            tree.attach(
+                parent="soma",
+                child_branch=Branch.from_lengths(
+                    lengths=[10.0, 6.0] * u.um, radii=[1.5, 1.0, 0.8] * u.um, type="basal_dendrite"
+                ),
+                child_name=f"d{index}",
+                parent_x=1.0,
+            )
+
+        layouts = {
+            layout.branch_name: layout
+            for layout in build_layout_branches_2d(tree, mode="tree", layout_family="radial_360")
+            if layout.branch_name.startswith("d")
+        }
+
         quadrants = {
             (np.sign(layout.end_direction_um[0]), np.sign(layout.end_direction_um[1])) for layout in layouts.values()
         }

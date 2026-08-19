@@ -246,6 +246,7 @@ class SplitFrustaTest(unittest.TestCase):
         self.assertEqual(len(left), 1)
         self.assertEqual(len(right), 0)
 
+
 # =============================================================================
 # Geometry build
 # =============================================================================
@@ -309,6 +310,7 @@ class LocateCVOnBranchTest(unittest.TestCase):
         # x=0.9 and x=0.1 are out of [0.2, 0.8] — raise, not snap.
         with self.assertRaises(ValueError):
             _locate_cv_on_branch((0,), (g,), x=0.1)
+
 
 # =============================================================================
 # Validators
@@ -379,6 +381,7 @@ class ValidateConnectivityTest(unittest.TestCase):
         morpho = make_single_branch_morpho()
         geos, ids = build_geo(morpho, (((0.0, 1.0),),))
         _validate_connectivity(geos, ids, morpho)
+
 
 if __name__ == "__main__":
     unittest.main()

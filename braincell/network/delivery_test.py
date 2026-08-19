@@ -37,6 +37,7 @@ class DeliveryTest(unittest.TestCase):
         reduced = braincell.network.delivery.population_spike(spike)
 
         np.testing.assert_array_equal(np.asarray(reduced), [True, False])
+
     def test_event_backend_brainevent_requires_coomv(self) -> None:
         import braincell.network.delivery as delivery
 

@@ -19,6 +19,15 @@ import unittest
 import braincell
 import matplotlib as mpl
 
+from braincell import vis as morpho_vis
+from braincell.vis import plot2d, plot3d
+from braincell.vis._testing import (
+    FakeBackend,
+    VisDefaultsResetMixin,
+    make_length_only_tree,
+    make_node_tree,
+)
+from braincell.vis.backend import BackendChooser
 from braincell.vis.config import (
     PUBLICATION_BRANCH_TYPE_COLORS,
     PUBLICATION_RC_PARAMS,
@@ -129,6 +138,111 @@ class DefaultsTest(unittest.TestCase):
         self.assertEqual(edge_color_for_2d_branch_type("axon"), (78, 102, 125))
         self.assertAlmostEqual(frustum_edge_linewidth_2d(), 1.75)
         self.assertNotEqual(edge_color_for_2d_branch_type("soma"), original)
+
+
+class VisDefaultsThroughPlotTest(VisDefaultsResetMixin, unittest.TestCase):
+    """Global defaults and the theme context manager, observed through plot2d."""
+
+    def test_global_vis_defaults_change_layout_shape_and_style(self) -> None:
+        morpho_vis.configure_defaults(
+            layout_2d_default="stem",
+            shape_2d_default="line",
+            branch_type_colors={"soma": "#123456"},
+            alpha_2d=0.25,
+            alpha_3d_tube=0.4,
+        )
+        backend = FakeBackend()
+
+        request_2d = plot2d(make_node_tree(), chooser=BackendChooser(backends=(backend,)))
+        request_3d = plot3d(make_node_tree(), chooser=BackendChooser(backends=(backend,)))
+
+        self.assertEqual(request_2d.layout, "stem")
+        self.assertEqual(request_2d.shape, "line")
+        self.assertTrue(all(polyline.color_rgb == (18, 52, 86) for polyline in request_2d.scene.polylines))
+        self.assertTrue(all(abs(polyline.alpha - 0.25) < 1e-9 for polyline in request_2d.scene.polylines))
+        self.assertEqual(request_3d.scene.batches[0].color_rgb, (18, 52, 86))
+        self.assertAlmostEqual(request_3d.scene.batches[0].opacity, 0.4)
+
+    def test_theme_context_manager_restores_defaults_on_exit(self) -> None:
+        backend = FakeBackend()
+
+        with morpho_vis.theme(branch_type_colors={"soma": "#ff0000"}, alpha_2d=0.1):
+            inside = plot2d(
+                make_node_tree(),
+                shape="line",
+                chooser=BackendChooser(backends=(backend,)),
+            )
+            self.assertEqual(inside.scene.polylines[0].color_rgb, (255, 0, 0))
+            self.assertAlmostEqual(inside.scene.polylines[0].alpha, 0.1)
+
+        after = plot2d(
+            make_node_tree(),
+            shape="line",
+            chooser=BackendChooser(backends=(backend,)),
+        )
+        self.assertEqual(after.scene.polylines[0].color_rgb, (47, 49, 54))
+        self.assertAlmostEqual(after.scene.polylines[0].alpha, 0.8)
+
+    def test_global_2d_style_also_applies_to_frustum(self) -> None:
+        morpho_vis.configure_defaults(
+            branch_type_colors={"apical_dendrite": "#445566"},
+            branch_type_edge_colors_2d={"apical_dendrite": "#112233"},
+            frustum_edge_linewidth_2d=1.75,
+            alpha_2d=0.6,
+        )
+        backend = FakeBackend()
+
+        request = plot2d(
+            make_length_only_tree(),
+            layout="stem",
+            shape="frustum",
+            chooser=BackendChooser(backends=(backend,)),
+        )
+
+        self.assertTrue(all(polygon.color_rgb == (68, 85, 102) for polygon in request.scene.polygons[1:]))
+        self.assertTrue(all(polygon.edge_color_rgb == (17, 34, 51) for polygon in request.scene.polygons[1:]))
+        self.assertTrue(all(abs(polygon.edge_linewidth - 1.75) < 1e-9 for polygon in request.scene.polygons))
+        self.assertTrue(all(abs(polygon.alpha - 0.6) < 1e-9 for polygon in request.scene.polygons))
+
+    def test_shape_specific_2d_alpha_overrides_shared_alpha(self) -> None:
+        morpho_vis.configure_defaults(
+            alpha_2d=0.6,
+            alpha_2d_line=0.2,
+            alpha_2d_poly=0.9,
+        )
+        backend = FakeBackend()
+
+        line_request = plot2d(
+            make_length_only_tree(),
+            layout="stem",
+            shape="line",
+            chooser=BackendChooser(backends=(backend,)),
+        )
+        poly_request = plot2d(
+            make_length_only_tree(),
+            layout="stem",
+            shape="frustum",
+            chooser=BackendChooser(backends=(backend,)),
+        )
+
+        self.assertTrue(all(abs(polyline.alpha - 0.2) < 1e-9 for polyline in line_request.scene.polylines))
+        self.assertTrue(all(abs(polygon.alpha - 0.9) < 1e-9 for polygon in poly_request.scene.polygons))
+
+    def test_generic_branch_type_colors_also_drive_2d_palette(self) -> None:
+        morpho_vis.configure_defaults(branch_type_colors={"soma": "#abcdef"})
+        backend = FakeBackend()
+
+        request = plot2d(make_node_tree(), shape="line", chooser=BackendChooser(backends=(backend,)))
+        self.assertEqual(request.scene.polylines[0].color_rgb, (171, 205, 239))
+
+    def test_theme_context_manager_restores_on_exception(self) -> None:
+        original = morpho_vis.get_defaults().branch_type_colors["soma"]
+
+        with self.assertRaises(RuntimeError):
+            with morpho_vis.theme(branch_type_colors={"soma": "#abcdef"}):
+                raise RuntimeError("boom")
+
+        self.assertEqual(morpho_vis.get_defaults().branch_type_colors["soma"], original)
 
 
 if __name__ == "__main__":

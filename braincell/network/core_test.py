@@ -51,6 +51,7 @@ class PopulationTest(unittest.TestCase):
     def test_population_rejects_multi_dimensional_pop_size(self) -> None:
         with self.assertRaisesRegex(ValueError, "one-dimensional"):
             Population("grid", Cell(make_soma_tree(), cv_policy=CVPerBranch(), pop_size=(2, 2)))
+
     def test_population_repr_is_compact(self) -> None:
         population = net_population = Network().add_population("E", make_probe_cell(size=3))
 

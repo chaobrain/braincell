@@ -23,7 +23,11 @@ import brainunit as u
 import numpy as np
 
 from braincell import Branch, Morphology
-from braincell.vis._testing import make_deep_chain_tree, make_length_only_tree
+from braincell.vis._testing import (
+    make_deep_chain_tree,
+    make_length_only_tree,
+    make_two_dendrite_tree,
+)
 from braincell.vis.layout import LayoutBranch2D
 from braincell.vis.layout._collision import _segments_intersect
 from braincell.vis.layout._dispatch import (
@@ -167,8 +171,6 @@ class DeepMorphologyTest(unittest.TestCase):
                 # building the result tuple, so reaching here means every
                 # branch in the chain was visited.
                 self.assertEqual(layouts[0].branch_name, "soma")
-
-
 
 
 # =============================================================================
@@ -330,6 +332,54 @@ class LayoutFamilyPropertyTest(unittest.TestCase):
                     _any_proper_intersection(layouts),
                     msg=f"{family} produced a proper intersection for {child_specs!r}",
                 )
+
+
+class LayoutFamilyParametricTest(unittest.TestCase):
+    """Shared invariants across all non-legacy layout families.
+
+    Parametrized over (family) × (mode) so that adding a new layout family
+    automatically picks up the whole test matrix by appending one name.
+    """
+
+    families = ("fan", "stem", "balloon", "radial_360")
+    modes = ("tree", "frustum")
+
+    def test_all_layouts_produce_one_entry_per_branch(self) -> None:
+        tree = make_two_dendrite_tree()
+        expected_count = len(tree.branches)
+        for family in self.families:
+            for mode in self.modes:
+                with self.subTest(family=family, mode=mode):
+                    layouts = build_layout_branches_2d(tree, mode=mode, layout_family=family)
+                    self.assertEqual(len(layouts), expected_count)
+
+    def test_all_layouts_produce_finite_coordinates(self) -> None:
+        tree = make_length_only_tree()
+        for family in self.families:
+            for mode in self.modes:
+                with self.subTest(family=family, mode=mode):
+                    layouts = build_layout_branches_2d(tree, mode=mode, layout_family=family)
+                    for layout in layouts:
+                        self.assertTrue(np.all(np.isfinite(layout.segment_points_um)))
+                        self.assertTrue(np.all(np.isfinite(layout.segment_directions_um)))
+                        self.assertTrue(np.all(np.isfinite(layout.cumulative_lengths_um)))
+
+    def test_all_layouts_preserve_total_length(self) -> None:
+        tree = make_length_only_tree()
+        expected_lengths = {
+            branch.index: float(np.sum(np.asarray(branch.lengths.to_decimal(u.um), dtype=float)))
+            for branch in tree.branches
+        }
+        for family in self.families:
+            for mode in self.modes:
+                with self.subTest(family=family, mode=mode):
+                    layouts = build_layout_branches_2d(tree, mode=mode, layout_family=family)
+                    for layout in layouts:
+                        self.assertAlmostEqual(
+                            layout.total_length_um,
+                            expected_lengths[layout.branch_index],
+                            places=6,
+                        )
 
 
 if __name__ == "__main__":

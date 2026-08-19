@@ -1037,8 +1037,6 @@ class MultiCompartmentAliasTest(unittest.TestCase):
         self.assertEqual(cell.pop_size, (1,))
 
 
-
-
 # =============================================================================
 # Visualization entry points (Cell.vis_topology / vis_cv / vis_branch / vis_node)
 # =============================================================================

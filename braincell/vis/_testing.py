@@ -278,3 +278,24 @@ class FakeBackend:
     def render(self, request):
         self.last_request = request
         return request
+
+
+# =============================================================================
+# TestCase mixins
+# =============================================================================
+
+
+class VisDefaultsResetMixin:
+    """Restore ``braincell.vis`` global defaults around every test.
+
+    ``plot2d``/``plot3d`` read module-level defaults that several tests
+    mutate. Mixing this in ahead of :class:`unittest.TestCase` gives a clean
+    slate on entry and on exit, including when the test raises.
+    """
+
+    def setUp(self) -> None:  # noqa: N802 - unittest naming
+        super().setUp()
+        from braincell import vis as _vis
+
+        _vis.reset_defaults()
+        self.addCleanup(_vis.reset_defaults)

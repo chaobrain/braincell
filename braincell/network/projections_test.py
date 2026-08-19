@@ -100,6 +100,7 @@ class NetworkProjectionTest(unittest.TestCase):
 
         g = np.asarray(result.traces["I"]["g"].to_decimal(u.uS))
         self.assertTrue(np.allclose(g, 0.0))
+
     def test_projection_delivers_weighted_payload_to_shared_synapse(self) -> None:
         pre = make_spiking_cell()
         post = make_post_cell()
@@ -121,6 +122,7 @@ class NetworkProjectionTest(unittest.TestCase):
         g = np.asarray(result.traces["I"]["g"].to_decimal(u.uS))
         self.assertAlmostEqual(float(g[0, 1]), 0.0)
         self.assertAlmostEqual(float(g[1, 1]), 1.0, places=6)
+
     def test_add_projection_accepts_direct_arguments(self) -> None:
         pre = make_spiking_cell()
         post = make_post_cell()
@@ -235,6 +237,7 @@ class NetworkProjectionTest(unittest.TestCase):
         np.testing.assert_array_equal(conns[0].post_index, [1, 1, 1])
         np.testing.assert_array_equal(conns[0].synapse_index, [0, 1, 0])
         np.testing.assert_allclose(conns[0].weight.to_decimal(u.uS), [0.1, 0.2, 0.3])
+
     def test_network_delivers_to_selected_synapse_pool_indices(self) -> None:
         pre = make_spiking_cell()
         post = make_post_cell_with_synapse_pool()

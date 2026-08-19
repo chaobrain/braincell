@@ -23,22 +23,13 @@ import numpy as np
 
 from braincell import Morphology
 from braincell._misc import u
+from braincell.io._testing import ALLOWED_TYPES, FIXTURE_DIR
 from braincell.io.asc import AscReader, AscSpineRecord
 
 try:
     from neuron import h as _NEURON_H
 except Exception:  # pragma: no cover
     _NEURON_H = None
-
-FIXTURE_DIR = Path(__file__).resolve().parents[3] / "data" / "morphology"
-ALLOWED_TYPES = {
-    "soma",
-    "axon",
-    "dendrite",
-    "basal_dendrite",
-    "apical_dendrite",
-    "custom",
-}
 
 
 class _AscTestMixin:

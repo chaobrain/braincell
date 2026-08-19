@@ -20,10 +20,12 @@ import unittest
 import brainunit as u
 import numpy as np
 
-from braincell import Branch
+from braincell import Branch, Cell, Morphology
+from braincell.filter import AllRegion
+from braincell.vis import plot2d, plot3d
 from braincell import vis as morpho_vis
 from braincell.vis.backend import BackendChooser
-from braincell.vis._test_helper import FakeBackend
+from braincell.vis._testing import FakeBackend
 
 import jax.numpy as jnp
 
@@ -574,3 +576,21 @@ class BranchTest(unittest.TestCase):
             ValueError, r"vis2d\(layout='stem', shape='line'\).+vis2d\(layout='stem', shape='frustum'\)"
         ):
             branch.vis3d(show=False, chooser=BackendChooser(backends=(backend,)))
+
+
+class BranchViewRejectionTest(unittest.TestCase):
+    """A Branch view is not a Morphology and must be refused downstream."""
+
+    def test_branch_views_are_rejected_by_downstream_entrypoints(self) -> None:
+        soma = Branch.from_lengths(lengths=[20.0] * u.um, radii=[10.0, 10.0] * u.um, type="soma")
+        tree = Morphology.from_root(soma, name="soma")
+        backend = FakeBackend()
+
+        with self.assertRaises(TypeError):
+            plot3d(tree.soma, chooser=BackendChooser(backends=(backend,)))
+        with self.assertRaises(TypeError):
+            plot2d(tree.soma, chooser=BackendChooser(backends=(backend,)))
+        with self.assertRaises(TypeError):
+            Cell(tree.soma)
+        with self.assertRaises(TypeError):
+            AllRegion().evaluate(tree.soma)

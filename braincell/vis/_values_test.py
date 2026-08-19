@@ -19,8 +19,10 @@ import unittest
 import brainunit as u
 import numpy as np
 
-from braincell.vis._testing import make_length_only_tree
+from braincell.vis import plot2d
+from braincell.vis._testing import FakeBackend, VisDefaultsResetMixin, make_length_only_tree
 from braincell.vis._values import resolve_values, resolved_colorbar_label
+from braincell.vis.backend import BackendChooser
 from braincell.vis.scene import ValueSpec
 
 
@@ -115,6 +117,20 @@ class ColorbarLabelTest(unittest.TestCase):
     def test_neither_returns_none(self) -> None:
         spec = ValueSpec(values=np.array([0.0]))
         self.assertIsNone(resolved_colorbar_label(spec, None))
+
+
+class ValueSpecLengthMismatchTest(VisDefaultsResetMixin, unittest.TestCase):
+    def test_plot2d_values_length_mismatch_raises(self) -> None:
+        tree = make_length_only_tree()
+
+        with self.assertRaisesRegex(ValueError, "ValueSpec.values has length"):
+            plot2d(
+                tree,
+                layout="stem",
+                shape="line",
+                values=np.array([1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0]),
+                chooser=BackendChooser(backends=(FakeBackend(),)),
+            )
 
 
 if __name__ == "__main__":

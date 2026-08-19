@@ -13,10 +13,68 @@
 # limitations under the License.
 # ==============================================================================
 
+"""Package-level guards for :mod:`braincell.channel`.
+
+Two concerns live here because both are properties of the package as a whole
+rather than of any single module: the docstring conformance sweep over every
+covered module, and the ``__getattr__`` deprecation shim declared in
+``braincell/channel/__init__.py``.
+"""
+
+import unittest
+
 import pytest
 
 import braincell.channel as channel
-from braincell.channel import _DEPRECATED_ALIASES
+from braincell._testing import DocstringConformanceTests
+from braincell.channel import (
+    _DEPRECATED_ALIASES,
+    _base,
+    calcium,
+    hyperpolarization_activated,
+    leaky,
+    potassium,
+    potassium_calcium,
+    potassium_sodium,
+    sodium,
+)
+
+# Extended by one module per docstring task. A module is listed only once
+# every one of its public symbols satisfies the shared assertions.
+_COVERED_MODULES = (
+    _base,
+    calcium,
+    hyperpolarization_activated,
+    leaky,
+    potassium,
+    potassium_calcium,
+    potassium_sodium,
+    sodium,
+)
+
+# Public symbols with no primary literature source. Membership must be a
+# deliberate decision: a new channel that lands undocumented fails instead of
+# silently inheriting an exemption.
+_NO_PRIMARY_SOURCE = frozenset(
+    {
+        "LeakageChannel",
+        "IL",
+        "Gate",
+        "Transition",
+        "HH",
+        "OhmicHH",
+        "Markov",
+        "CaN_IS2008",
+        "CaL_IS2008",
+        "K_Leak",
+        "K_Kv_test",
+    }
+)
+
+
+class ChannelDocstringTest(DocstringConformanceTests, unittest.TestCase):
+    covered_modules = _COVERED_MODULES
+    no_primary_source = _NO_PRIMARY_SOURCE
 
 
 @pytest.mark.parametrize("old_name, new_name", sorted(_DEPRECATED_ALIASES.items()))
@@ -45,3 +103,7 @@ def test_deprecated_names_absent_from_all():
 def test_non_aliased_names_raise_attribute_error(name):
     with pytest.raises(AttributeError):
         getattr(channel, name)
+
+
+if __name__ == "__main__":
+    unittest.main()

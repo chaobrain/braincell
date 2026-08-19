@@ -19,10 +19,17 @@ import types
 import unittest
 from unittest import mock
 
+try:
+    import pyvista as pv
+except ModuleNotFoundError:  # pragma: no cover - optional dependency
+    pv = None
+
 import brainunit as u
 
 from braincell import Branch, Morphology
 from braincell import vis
+from braincell.vis._testing import FIXTURE_DIR, VALID_SWC_FIXTURES
+from braincell.vis.backend import BackendChooser
 from braincell.vis.backend_pyvista import PyVistaBackend
 from braincell.vis.scene import RenderRequest
 from braincell.vis.scene3d import build_render_scene_3d
@@ -370,3 +377,25 @@ class PyVistaPickMetadataTest(unittest.TestCase):
         self.assertEqual(len(captured), 1)
         self.assertEqual(captured[0].branch_type, "soma")
         self.assertIsNotNone(captured[0].position_um)
+
+
+# =============================================================================
+# Real pyvista, real SWC fixtures — the only non-faked render path in this file
+# =============================================================================
+
+
+class RealFilePyVistaVisTest(unittest.TestCase):
+    def test_valid_real_swc_fixtures_render_with_pyvista_backend(self) -> None:
+        if pv is None:
+            self.skipTest("pyvista is not installed.")
+        for fixture_name in VALID_SWC_FIXTURES:
+            with self.subTest(fixture=fixture_name):
+                tree = Morphology.from_swc(FIXTURE_DIR / fixture_name)
+                backend = PyVistaBackend(plotter_kwargs={"off_screen": True}, show_axes=False)
+                chooser = BackendChooser(backends=(backend,))
+                plotter = tree.vis3d(backend="pyvista", chooser=chooser)
+
+                self.assertIsInstance(plotter, pv.Plotter)
+                self.assertIsNotNone(plotter.renderer)
+                self.assertGreater(len(plotter.renderer.actors), 0)
+                plotter.close()

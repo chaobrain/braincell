@@ -702,10 +702,11 @@ internal dependencies · status · open work**.
   - `compare.py` — generalized `compare_morphologies([m1, m2, ...])` and
     `compare_values(morpho, [values_a, values_b, ...])` side-by-side
     helpers built on top of `plot2d`.
-  - `perf_benchmark_test.py` — `pytest-benchmark` baselines for layout
-    build, scene build, and end-to-end plot2d render on 50 / 500 /
-    2000-branch synthetic morphologies (skipped when
-    `pytest-benchmark` is not installed).
+  - `pytest-benchmark` baselines for layout build, scene build, and
+    end-to-end plot2d render on 50 / 500 / 2000-branch synthetic
+    morphologies, skipped when `pytest-benchmark` is not installed.
+    Filed with the module each measures: `layout/_dispatch_test.py`,
+    `scene2d_test.py`, `plot2d_test.py`.
   - `layout/` — 2D tree-layout engine split across
     `_common.py` (shared dataclasses + tree helpers),
     `_geometry.py` (pure-numeric sampling and branch construction),
@@ -734,10 +735,9 @@ internal dependencies · status · open work**.
   - `morphometry.py` — `plot_dendrogram`, `plot_topology`,
     `plot_sholl`, `plot_branch_order_histogram`, and the
     `compute_sholl_profile` / `ShollProfile` helpers.
-  - `_test_helper.py` — `FakeBackend` scene-capturing double for unit
-    tests.
-  - `visual_regression_test.py` — `pytest-mpl` baseline image
-    regression suite (skipped when `pytest_mpl` is not installed).
+  - `_testing.py` — shared morphology builders, the `FakeBackend`
+    scene-capturing double, `VisDefaultsResetMixin`, and the
+    `PYTEST_BENCHMARK_AVAILABLE` plugin probe.
 - **Status**
   - [x] 3D rendering of `Branch` / `Morphology` with point geometry,
     scene composition, PyVista backend.
@@ -796,10 +796,15 @@ internal dependencies · status · open work**.
     dispatcher consults `get_default_layout_cache()` on every call;
     callers can pass a scoped `cache=LayoutCache(...)` or opt out
     with `use_cache=False`.
-  - [x] **Visual regression tests** via `pytest-mpl` with 12 baseline
-    slots under `braincell/vis/_baseline_images/` — the whole module
-    skips when `pytest_mpl` is not installed so the base suite
-    stays dependency-free.
+  - [ ] **Visual regression tests** — the `pytest-mpl` suite was
+    removed in 2026-08. Its baseline directory was never committed and
+    CI never passed `--mpl`, so no comparison had ever run; the 12
+    tests were figure constructors with no assertions. Eight duplicated
+    existing coverage and were dropped, four were rewritten as real
+    matplotlib-artist assertions in `backend_matplotlib_test.py`. See
+    `docs/specs/2026-08-19-vis-baselines-and-coverage-gaps.md`.
+    Reinstating pixel regression needs committed baselines plus a
+    Linux-only CI job that actually passes `--mpl`.
   - [x] **Generalized comparison**: `compare_morphologies([m1, m2, ...])`
     and `compare_values(morpho, [values_a, values_b, ...])` in
     `vis/compare.py` (M6 Phase 4).
@@ -820,10 +825,11 @@ internal dependencies · status · open work**.
     plus `publication_theme()` context manager in `config.py` that
     flips both vis defaults and matplotlib `rcParams` (serif font,
     thicker lines, no grid, print-friendly palette) (M6 Phase 4).
-  - [x] **Performance baselines** via `pytest-benchmark` in
-    `vis/perf_benchmark_test.py` — layout build, scene build, and
-    plot2d render on 50 / 500 / 2000-branch synthetic morphologies,
-    skipped when the plugin is absent (M6 Phase 4).
+  - [x] **Performance baselines** via `pytest-benchmark`, co-located
+    with the modules they measure (`vis/layout/_dispatch_test.py`,
+    `vis/scene2d_test.py`, `vis/plot2d_test.py`) — layout build, scene
+    build, and plot2d render on 50 / 500 / 2000-branch synthetic
+    morphologies, skipped when the plugin is absent (M6 Phase 4).
   - [x] **Narrative tutorial**: `examples/multi_compartment/vis.ipynb` — quick start,
     layout gallery, styling/themes, color-by-values, overlays, movie,
     trace panels, morphometry, interactivity, publication export,
@@ -840,7 +846,7 @@ internal dependencies · status · open work**.
     scoring weights now goes through `LayoutConfig` rather than
     editing module-level constants, which makes experiments safer.
   - Optional dependencies (`matplotlib`, `pyvista`, `plotly`,
-    `pytest-mpl`, `pytest-benchmark`) must stay lazy-imported inside
+    `pytest-benchmark`) must stay lazy-imported inside
     the backend that uses them. The import-time test from §4.5 /
     risk #5 should grow to assert that none of the heavy optional
     deps are loaded after `import braincell.vis`.
@@ -1128,10 +1134,12 @@ in-place "rebuild on next use".
 ### 4.4 Testing
 
 - pytest with `unittest.TestCase`; tests live next to source as
-  `*_test.py`, with no exceptions. The former `io/swc/test.py` and
+  `<module>_test.py`, with no exceptions. The `*` must name a real
+  sibling module — the one sanctioned exception is a package-scope guard
+  in `<package>/__init___test.py`. The former `io/swc/test.py` and
   `io/asc/test.py` matched neither default pytest discovery pattern and
-  were silently never collected; they are now `io/swc/swc_test.py` and
-  `io/asc/asc_test.py`.
+  were silently never collected; they are now `io/swc/reader_test.py`
+  and `io/asc/reader_test.py`.
 - `conftest.py` forces `JAX_PLATFORMS=cpu` and `MPLBACKEND=Agg`.
 - IO test fixtures live in `examples/multi_compartment/morpho_files/`.
 - New code is expected to ship with co-located tests and to keep

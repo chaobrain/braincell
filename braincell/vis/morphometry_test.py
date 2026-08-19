@@ -122,10 +122,19 @@ class ShollAnalysisTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "step_um must be > 0"):
             compute_sholl_profile(tree, step_um=0.0)
 
-    def test_plot_sholl_returns_ax_with_one_line(self) -> None:
+    def test_plot_sholl_draws_the_computed_profile(self) -> None:
         tree = make_length_only_tree()
+        profile = compute_sholl_profile(tree, step_um=5.0)
+
         ax = plot_sholl(tree, step_um=5.0)
-        self.assertGreaterEqual(len(ax.lines), 1)
+
+        # The single line must be the profile itself, not a resampling of it:
+        # the plot and compute_sholl_profile have to agree on step_um.
+        self.assertEqual(len(ax.lines), 1)
+        np.testing.assert_allclose(ax.lines[0].get_xdata(), profile.radii_um)
+        np.testing.assert_allclose(ax.lines[0].get_ydata(), profile.intersections)
+        self.assertEqual(ax.get_xlabel(), "radius [µm]")
+        self.assertEqual(ax.get_ylabel(), "intersections")
 
 
 class BranchOrderHistogramTest(unittest.TestCase):

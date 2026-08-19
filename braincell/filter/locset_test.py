@@ -30,6 +30,7 @@ from braincell.filter import (
     UniformSamples,
     at,
 )
+from braincell.filter import locset as locset_mod
 
 
 def _build_branchpoint_morphology() -> Morphology:
@@ -184,3 +185,15 @@ class LocsetSetOpValidationTest(unittest.TestCase):
             LocsetSetOp("invalid", (left, right)).evaluate(tree)
         with self.assertRaises(ValueError):
             LocsetSetOp("union", (left,)).evaluate(tree)
+
+
+class LocsetModuleAllTest(unittest.TestCase):
+    def test_locset_module_declares_all(self) -> None:
+        self.assertIn("LocsetMask", locset_mod.__all__)
+        self.assertIn("LocsetExpr", locset_mod.__all__)
+        self.assertIn("AtLocation", locset_mod.__all__)
+        self.assertIn("RootLocation", locset_mod.__all__)
+        self.assertIn("RandomSamples", locset_mod.__all__)
+        self.assertIn("LocsetSetOp", locset_mod.__all__)
+        self.assertIn("StepSamples", locset_mod.__all__)
+        self.assertIn("at", locset_mod.__all__)

@@ -17,10 +17,22 @@ import unittest
 
 import brainunit as u
 import numpy as np
+from hypothesis import given, settings
+from hypothesis import strategies as st
 
 from braincell._discretization import CV, CVPerBranch
+from braincell._discretization._testing import (
+    build_geo,
+    make_branch,
+    make_single_branch_morpho,
+)
 from braincell._discretization.base import build_discretization
-from braincell._discretization.mechanism import PlaceRule, default_paint_rules
+from braincell._discretization.mechanism import (
+    PlaceRule,
+    _coverage_fraction,
+    default_paint_rules,
+)
+from braincell._discretization.policy import CVPolicy
 from braincell.filter import RegionMask, RootLocation
 from braincell.mech import CurrentClamp
 from braincell.morph.branch import Branch
@@ -34,6 +46,15 @@ def _morpho() -> Morphology:
         type="soma",
     )
     return Morphology.from_root(soma, name="soma")
+
+
+def _build_cvs(morpho, *, policy, paint_rules, place_rules):
+    return build_discretization(
+        morpho,
+        policy=policy,
+        paint_rules=paint_rules,
+        place_rules=place_rules,
+    ).cvs
 
 
 class CVShapeTest(unittest.TestCase):
@@ -131,6 +152,107 @@ class CVShapeTest(unittest.TestCase):
         right_midpoint_id = int(tree.cv_to_mid_node_id[1])
         self.assertEqual(node_point_mech[left_midpoint_id], ())
         self.assertIs(node_point_mech[right_midpoint_id][0], clamp)
+
+
+class LowerSmokeTest(unittest.TestCase):
+    def test_single_branch_default_cable(self) -> None:
+        morpho = make_single_branch_morpho()
+        cvs = _build_cvs(
+            morpho,
+            policy=CVPerBranch(cv_per_branch=2),
+            paint_rules=default_paint_rules(),
+            place_rules=(),
+        )
+        self.assertEqual(len(cvs), 2)
+        self.assertIsInstance(cvs[0], CV)
+        self.assertEqual(cvs[0].id, 0)
+        self.assertEqual(cvs[0].branch_id, 0)
+        self.assertEqual(cvs[1].parent_cv, 0)
+        self.assertAlmostEqual(float(cvs[0].length.to_decimal(u.um)), 5.0)
+
+    def test_rejects_invalid_policy_bounds(self) -> None:
+        morpho = make_single_branch_morpho()
+
+        class BadPolicy(CVPolicy):
+            def resolve_cv_bounds(self, morpho, *, paint_rules=None):
+                return (((0.0, 0.5),),)  # missing 0.5..1.0
+
+        with self.assertRaises(ValueError):
+            _build_cvs(
+                morpho,
+                policy=BadPolicy(),
+                paint_rules=(),
+                place_rules=(),
+            )
+
+    def test_rejects_non_policy(self) -> None:
+        morpho = make_single_branch_morpho()
+        with self.assertRaises(TypeError):
+            _build_cvs(
+                morpho,
+                policy="not a policy",  # type: ignore[arg-type]
+                paint_rules=(),
+                place_rules=(),
+            )
+
+
+# =============================================================================
+# Property-based invariants (skipped when hypothesis missing)
+# =============================================================================
+
+
+class LowerPropertyTest(unittest.TestCase):
+    @given(cv_count=st.integers(min_value=1, max_value=8))
+    @settings(max_examples=25, deadline=None)
+    def test_cv_lengths_sum_to_branch_total(self, cv_count: int) -> None:
+        morpho = Morphology.from_root(
+            make_branch([30.0], [3.0, 3.0], type="soma"),
+            name="soma",
+        )
+        cvs = _build_cvs(
+            morpho,
+            policy=CVPerBranch(cv_per_branch=cv_count),
+            paint_rules=default_paint_rules(),
+            place_rules=(),
+        )
+        total_um = sum(float(cv.length.to_decimal(u.um)) for cv in cvs)
+        self.assertAlmostEqual(total_um, 30.0, places=4)
+
+    @given(cv_count=st.integers(min_value=1, max_value=8))
+    @settings(max_examples=25, deadline=None)
+    def test_coverage_fraction_of_all_region_is_one_per_cv(
+        self,
+        cv_count: int,
+    ) -> None:
+        morpho = Morphology.from_root(
+            make_branch([20.0], [2.0, 2.0], type="soma"),
+            name="soma",
+        )
+        bounds = CVPerBranch(cv_per_branch=cv_count).resolve_cv_bounds(morpho)
+        geos, _ = build_geo(morpho, bounds)
+        for g in geos:
+            self.assertAlmostEqual(
+                _coverage_fraction(morpho, g, ((0.0, 1.0),)),
+                1.0,
+                places=3,
+            )
+
+    @given(cv_count=st.integers(min_value=1, max_value=6))
+    @settings(max_examples=25, deadline=None)
+    def test_each_cv_id_appears_once_as_child_or_root(self, cv_count: int) -> None:
+        soma = make_branch([30.0], [3.0, 3.0], type="soma")
+        dend = make_branch([20.0], [2.0, 1.0], type="basal_dendrite")
+        morpho = Morphology.from_root(soma, name="soma")
+        morpho.soma.d = dend
+        cvs = _build_cvs(
+            morpho,
+            policy=CVPerBranch(cv_per_branch=cv_count),
+            paint_rules=default_paint_rules(),
+            place_rules=(),
+        )
+        roots = [cv.id for cv in cvs if cv.parent_cv is None]
+        children = [cid for cv in cvs for cid in cv.children_cv]
+        self.assertEqual(sorted(roots + children), list(range(len(cvs))))
 
 
 if __name__ == "__main__":

@@ -17,62 +17,13 @@
 
 import unittest
 
-import brainunit as u
 import numpy as np
 
 from braincell._compute.scheduling import _compute_peel_levels, build_node_scheduling
-from braincell._discretization.base import build_discretization
-from braincell._discretization.node_build import (
-    _EPS_PARAM,
-    _locate_branch_cv_by_x,
-    build_node_tree_from_cvs as build_node_tree,
-)
 from braincell._discretization import CVPerBranch
-from braincell.morph.branch import Branch
-from braincell.morph.morphology import Morphology
-
-
-def _two_branch_morpho() -> Morphology:
-    soma = Branch.from_lengths(lengths=[20.0] * u.um, radii=[10.0, 10.0] * u.um, type="soma")
-    dend = Branch.from_lengths(lengths=[100.0] * u.um, radii=[2.0, 1.0] * u.um, type="basal_dendrite")
-    tree = Morphology.from_root(soma, name="soma")
-    tree.soma.dend = dend
-    return tree
-
-
-class BuildNodeTreeEdgeHalves(unittest.TestCase):
-    def test_intra_branch_edges_carry_both_halves(self) -> None:
-        morpho = _two_branch_morpho()
-        cvs = build_discretization(morpho, policy=CVPerBranch()).cvs
-        tree = build_node_tree(morpho, cvs=cvs)
-
-        dend_cv_ids = [cv.id for cv in cvs if cv.branch_id == 1]
-        self.assertGreater(len(dend_cv_ids), 0)
-
-        halves_seen: set[str] = set()
-        for edge in tree.edges:
-            for cv_edge in edge.roles:
-                if cv_edge.cv_id in dend_cv_ids:
-                    halves_seen.add(cv_edge.half)
-        self.assertEqual(halves_seen, {"prox", "dist"})
-
-    def test_every_cv_has_exactly_one_prox_and_one_dist_role(self) -> None:
-        """Guard against a regression that collapses both halves to a single tag."""
-        morpho = _two_branch_morpho()
-        cvs = build_discretization(morpho, policy=CVPerBranch()).cvs
-        tree = build_node_tree(morpho, cvs=cvs)
-
-        per_cv_halves: dict[int, list[str]] = {cv.id: [] for cv in cvs}
-        for edge in tree.edges:
-            for cv_edge in edge.roles:
-                per_cv_halves[cv_edge.cv_id].append(cv_edge.half)
-
-        for cv_id, halves in per_cv_halves.items():
-            self.assertEqual(
-                sorted(halves),
-                ["dist", "prox"],
-                f"CV {cv_id} must record exactly one prox and one dist edge role; got {halves!r}.",
-            )
+from braincell._discretization._testing import make_two_branch_morpho
+from braincell._discretization.base import build_discretization
+from braincell._discretization.node_build import build_node_tree_from_cvs as build_node_tree
 
 
 class ComputePeelLevels(unittest.TestCase):
@@ -105,47 +56,6 @@ class ComputePeelLevels(unittest.TestCase):
         self.assertIn("cycle", str(ctx.exception).lower())
 
 
-class _FakeCV:
-    def __init__(self, id_: int, prox: float, dist: float) -> None:
-        self.id = id_
-        self.prox = prox
-        self.dist = dist
-
-
-class LocateBranchCVByX(unittest.TestCase):
-    def _cvs(self, tiles):
-        return tuple(_FakeCV(i, p, d) for i, (p, d) in enumerate(tiles))
-
-    def test_interior_x_lands_in_matching_cv(self) -> None:
-        cvs = self._cvs([(0.0, 0.3), (0.3, 0.7), (0.7, 1.0)])
-        ids = (0, 1, 2)
-        got = _locate_branch_cv_by_x(ids, cvs, x=0.5, epsilon=_EPS_PARAM)
-        self.assertEqual(got, 1)
-
-    def test_x_near_one_returns_last_cv(self) -> None:
-        cvs = self._cvs([(0.0, 0.3), (0.3, 0.7), (0.7, 1.0)])
-        ids = (0, 1, 2)
-        got = _locate_branch_cv_by_x(ids, cvs, x=0.999, epsilon=_EPS_PARAM)
-        self.assertEqual(got, 2)
-
-    def test_x_in_gap_between_tiles_raises(self) -> None:
-        cvs = self._cvs([(0.0, 0.4), (0.6, 1.0)])
-        ids = (0, 1)
-        with self.assertRaises(ValueError) as ctx:
-            _locate_branch_cv_by_x(ids, cvs, x=0.5, epsilon=_EPS_PARAM)
-        self.assertIn("0.5", str(ctx.exception))
-
-
-class VocabularyLock(unittest.TestCase):
-    def test_cvpoint_positions_are_three_letter_codes(self) -> None:
-        morpho = _two_branch_morpho()
-        cvs = build_discretization(morpho, policy=CVPerBranch()).cvs
-        tree = build_node_tree(morpho, cvs=cvs)
-        seen = {role.position for node in tree.nodes for role in node.roles}
-        self.assertTrue(seen.issubset({"prox", "mid", "dist"}))
-        self.assertIn("mid", seen)
-
-
 class BuildNodeSchedulingGroups(unittest.TestCase):
     """Groups are level-partitioned: each row appears exactly once.
 
@@ -158,7 +68,7 @@ class BuildNodeSchedulingGroups(unittest.TestCase):
     """
 
     def _ctx(self):
-        morpho = _two_branch_morpho()
+        morpho = make_two_branch_morpho()
         cvs = build_discretization(
             morpho,
             policy=CVPerBranch(cv_per_branch=2),

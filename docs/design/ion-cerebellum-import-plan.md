@@ -29,7 +29,8 @@
 ### Multi-compartment scheduling and runtime
 
 - `braincell/_multi_compartment/cell.py`
-- `braincell/_compute/runtime.py`
+- `braincell/_compute/ions.py`
+- `braincell/_compute/bindings.py`
 - `braincell/quad/_staggered.py`
 
 ### Cerebellum ion and channel imports
@@ -58,7 +59,8 @@
 - `braincell/_base_ion_test.py`
 - `braincell/_multi_compartment/cell_test.py`
 - `braincell/_multi_compartment/probes_test.py`
-- `braincell/_compute/runtime_test.py`
+- `braincell/_compute/ions_test.py`
+- `braincell/_compute/bindings_test.py`
 
 ## What is now supported
 

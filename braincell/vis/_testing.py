@@ -19,9 +19,10 @@ The leading underscore in the filename keeps pytest from discovering this
 module as a test file. Helpers here are consumed by the co-located
 ``*_test.py`` modules; nothing in this file is part of the public API.
 
-All helpers return ``braincell.morph.Morphology`` objects built from
+Most helpers return ``braincell.morph.Morphology`` objects built from
 canned parameters so assertions can reason about exact segment lengths,
-radii, and positions without re-computing them per test.
+radii, and positions without re-computing them per test. The tail of the
+module holds render-backend doubles used by the plot and backend tests.
 """
 
 import brainunit as u
@@ -234,3 +235,31 @@ def make_deep_chain_tree(n_branches: int = 1200) -> Morphology:
         tree.attach(parent=parent, child_branch=child, child_name=name, parent_x=1.0)
         parent = name
     return tree
+
+
+# =============================================================================
+# Backend doubles
+# =============================================================================
+
+
+class FakeBackend:
+    """Scene-agnostic test double that records the last :class:`RenderRequest`.
+
+    Advertises ``supported_scene_kinds = frozenset({"2d", "3d"})`` so
+    :func:`validate_backend_for_scene` accepts it for either dispatch
+    direction, and returns the request unchanged so tests can inspect
+    the scene that would be rendered.
+    """
+
+    name = "fake"
+    supported_scene_kinds = frozenset({"2d", "3d"})
+
+    def __init__(self) -> None:
+        self.last_request = None
+
+    def available(self) -> bool:
+        return True
+
+    def render(self, request):
+        self.last_request = request
+        return request

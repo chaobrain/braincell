@@ -13,25 +13,24 @@
 # limitations under the License.
 # ==============================================================================
 
+"""Tests for :mod:`braincell.filter.helper`.
 
-class FakeBackend:
-    """Scene-agnostic test double that records the last :class:`RenderRequest`.
+The interval algebra in this module is currently reached almost entirely
+through :class:`RegionSetOp` in ``region_test.py``; only the export surface
+is asserted here directly.
+"""
 
-    Advertises ``supported_scene_kinds = frozenset({"2d", "3d"})`` so
-    :func:`validate_backend_for_scene` accepts it for either dispatch
-    direction, and returns the request unchanged so tests can inspect
-    the scene that would be rendered.
-    """
+import unittest
 
-    name = "fake"
-    supported_scene_kinds = frozenset({"2d", "3d"})
+from braincell.filter import helper as helper_mod
 
-    def __init__(self) -> None:
-        self.last_request = None
 
-    def available(self) -> bool:
-        return True
+class HelperModuleAllTest(unittest.TestCase):
+    def test_helper_module_declares_all(self) -> None:
+        self.assertIn("branch_slice_intervals", helper_mod.__all__)
+        self.assertIn("union_region_intervals", helper_mod.__all__)
+        self.assertIn("complement_region_intervals", helper_mod.__all__)
 
-    def render(self, request):
-        self.last_request = request
-        return request
+
+if __name__ == "__main__":
+    unittest.main()

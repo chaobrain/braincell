@@ -28,7 +28,7 @@ from braincell.vis.backend import BackendChooser
 from braincell.vis.backend_matplotlib import MatplotlibBackend
 from braincell.vis.backend_pyvista import PyVistaBackend
 from braincell.vis.compare2d import compare_layouts_2d
-from braincell.vis._test_helper import FakeBackend
+from braincell.vis._testing import FakeBackend
 from braincell.vis._testing import (
     make_length_only_tree,
     make_node_tree,

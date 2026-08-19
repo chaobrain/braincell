@@ -334,7 +334,7 @@ BrainCell 第一阶段推荐采用：
 
 - `HHTypedNeuron.pop_size`
 - `batch_size`-aware state initialization
-- `_multi_compartment.bridge` 中已有 scatter/gather helper
+- `_compute.bridge` 中已有 scatter/gather helper
 - multi-compartment runtime 已有 `V` / `spike` / layout lowering 语义
 
 因此 network 层应尽量：

@@ -82,7 +82,7 @@ class TotalMembraneCurrentClampTest(unittest.TestCase):
 
     def test_point_core_gathers_to_public_cv_result(self) -> None:
         import brainstate
-        from braincell._multi_compartment import bridge
+        from braincell._compute import bridge
         from braincell._multi_compartment.currents import (
             total_membrane_current,
             total_membrane_current_point,

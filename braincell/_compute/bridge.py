@@ -15,10 +15,11 @@
 
 """CV ↔ point-space conversion helpers and brainunit vectorisation.
 
-All the CV/point scatter-gather primitives live here so that
-:mod:`braincell._compute.runtime` does not reach into
-:mod:`braincell._multi_compartment` and vice-versa. Runtime re-imports
-what it needs at the top of :mod:`braincell._compute.runtime`.
+This is the CV-space ↔ point-space conversion layer for
+:class:`~braincell._compute.state.CellRuntimeState`: the CV/point
+scatter-gather primitives that :mod:`braincell._compute.state`,
+:mod:`braincell._multi_compartment.currents`, and
+:mod:`braincell._multi_compartment.probes` all build on.
 """
 
 from __future__ import annotations
@@ -29,7 +30,7 @@ import brainunit as u
 import numpy as np
 
 if TYPE_CHECKING:
-    from braincell._compute.runtime import CellRuntimeState
+    from braincell._compute.state import CellRuntimeState
 
 __all__ = [
     "attach_runtime_ion_geometry",

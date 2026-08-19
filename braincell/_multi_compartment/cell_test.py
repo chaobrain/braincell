@@ -679,7 +679,7 @@ class CellDoesNotAllocatePlaceholderIonsEagerlyTest(unittest.TestCase):
         tree = Morphology.from_root(soma, name="soma")
 
         with patch(
-            "braincell._multi_compartment.cell.build_placeholder_ions",
+            "braincell._compute.ions.build_placeholder_ions",
             side_effect=AssertionError("placeholder must not be called at __init__"),
         ):
             _ = Cell(tree)

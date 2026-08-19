@@ -25,7 +25,7 @@ import brainstate
 import brainunit as u
 import numpy as np
 
-from braincell._compute.runtime import CellRuntimeState
+from braincell._compute.state import CellRuntimeState
 from braincell.mech import (
     CurrentProbe,
     Density,
@@ -33,7 +33,7 @@ from braincell.mech import (
     StateProbe,
     Synapse,
 )
-from . import bridge
+from braincell._compute import bridge
 
 if TYPE_CHECKING:
     from .cell import Cell

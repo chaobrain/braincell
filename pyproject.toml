@@ -156,11 +156,6 @@ lint.ignore = [
   "F405",
   # 2x -- redundant local re-imports in braincell/_base_test.py.
   "F811",
-  # 1x -- unresolved forward reference: `cell: "Cell"` in
-  # braincell/_compute/runtime.py:264 has no matching import, not even under
-  # TYPE_CHECKING. Harmless at runtime (the annotation is a string) but it
-  # breaks typing.get_type_hints() and static type checkers.
-  "F821",
   # 7x -- assigned-but-never-used locals. Worth a real look; some may be bugs.
   "F841",
 ]

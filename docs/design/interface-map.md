@@ -36,7 +36,7 @@ _base / _base_ion / _base_channel -> shared runtime base classes
 | `braincell.filter` | Region/locset 表达式与选择缓存 | `morph` | `_discretization`、`Cell`、`vis` |
 | `braincell.mech` | 机制声明、参数、registry | 基本只依赖自身和 `brainunit` | `_discretization`、`_compute`、`Cell`、`channel`、`ion`、`synapse` |
 | `braincell._discretization` | CV 对象、CV policy、paint/place lowering | `morph`、`filter`、`mech` | `_compute`、`Cell` |
-| `braincell._compute` | point topology、runtime state、layout/table | `_discretization`、`morph`、`mech`、`ion` | `Cell`、`vis.point_topology` |
+| `braincell._compute` | point topology、runtime state、layout/table | `_discretization`、`mech`、`ion` | `Cell`、`vis.point_topology` |
 | `braincell._multi_compartment` | 多隔室 Cell 前端和运行时 facade | 几乎所有核心层 | 顶层 `braincell.Cell` |
 | `braincell._single_compartment` | 单隔室 HH-style neuron | `_base`、`quad` | 顶层 `braincell.SingleCompartment` |
 | `braincell.ion` | Na/K/Ca ion containers | `_base`、`mech`、`quad.protocol` | `channel`、runtime |

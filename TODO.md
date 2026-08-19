@@ -737,13 +737,7 @@ internal dependencies · status · open work**.
     `compute_sholl_profile` / `ShollProfile` helpers.
   - `_testing.py` — shared morphology builders, the `FakeBackend`
     scene-capturing double, `VisDefaultsResetMixin`, and the
-    `PYTEST_MPL_AVAILABLE` / `PYTEST_BENCHMARK_AVAILABLE` plugin probes.
-  - `pytest-mpl` baseline image regression suite, skipped when
-    `pytest_mpl` is not installed. Filed with the module each figure
-    exercises: `plot2d_test.py`, `morphometry_test.py`,
-    `compare2d_test.py`. Note the baseline directory
-    `braincell/vis/_baseline_images/` is not committed, so the
-    comparisons cannot pass yet even with the plugin installed.
+    `PYTEST_BENCHMARK_AVAILABLE` plugin probe.
 - **Status**
   - [x] 3D rendering of `Branch` / `Morphology` with point geometry,
     scene composition, PyVista backend.
@@ -802,10 +796,15 @@ internal dependencies · status · open work**.
     dispatcher consults `get_default_layout_cache()` on every call;
     callers can pass a scoped `cache=LayoutCache(...)` or opt out
     with `use_cache=False`.
-  - [x] **Visual regression tests** via `pytest-mpl` with 12 baseline
-    slots under `braincell/vis/_baseline_images/` — the whole module
-    skips when `pytest_mpl` is not installed so the base suite
-    stays dependency-free.
+  - [ ] **Visual regression tests** — the `pytest-mpl` suite was
+    removed in 2026-08. Its baseline directory was never committed and
+    CI never passed `--mpl`, so no comparison had ever run; the 12
+    tests were figure constructors with no assertions. Eight duplicated
+    existing coverage and were dropped, four were rewritten as real
+    matplotlib-artist assertions in `backend_matplotlib_test.py`. See
+    `docs/specs/2026-08-19-vis-baselines-and-coverage-gaps.md`.
+    Reinstating pixel regression needs committed baselines plus a
+    Linux-only CI job that actually passes `--mpl`.
   - [x] **Generalized comparison**: `compare_morphologies([m1, m2, ...])`
     and `compare_values(morpho, [values_a, values_b, ...])` in
     `vis/compare.py` (M6 Phase 4).
@@ -847,7 +846,7 @@ internal dependencies · status · open work**.
     scoring weights now goes through `LayoutConfig` rather than
     editing module-level constants, which makes experiments safer.
   - Optional dependencies (`matplotlib`, `pyvista`, `plotly`,
-    `pytest-mpl`, `pytest-benchmark`) must stay lazy-imported inside
+    `pytest-benchmark`) must stay lazy-imported inside
     the backend that uses them. The import-time test from §4.5 /
     risk #5 should grow to assert that none of the heavy optional
     deps are loaded after `import braincell.vis`.

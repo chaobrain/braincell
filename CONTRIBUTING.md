@@ -59,7 +59,7 @@ Dependency groups are declared in `pyproject.toml` under `[project.optional-depe
 | `vis` | `matplotlib`, `networkx`, `pyvista`, `plotly` — 2D and 3D visualization backends |
 | `io` | `requests` — the NeuroMorpho.Org client |
 | `all` | `vis` + `io`; everything a user-facing install might need |
-| `testing` | `all` + `pytest`, `pytest-mpl`, `pytest-benchmark`, `hypothesis`, `absl-py` |
+| `testing` | `all` + `pytest`, `pytest-benchmark`, `hypothesis`, `absl-py` |
 | `doc` | `all` + the Sphinx toolchain |
 | `dev` | `testing` + `doc` + `pre-commit` |
 | `cpu` / `cuda12` / `cuda13` / `tpu` | the matching JAX backend build; pick exactly one |
@@ -101,7 +101,7 @@ On Windows, CI disables the fault handler. If you hit platform-specific issues l
 pytest braincell/ -p no:faulthandler
 ```
 
-Some suites skip themselves when an optional dependency is absent — `pytest-mpl` for the visual regression baselines, `pytest-benchmark` for the performance baselines. Install the `testing` extra to run them.
+Some suites skip themselves when an optional dependency is absent — `pytest-benchmark` for the performance baselines, `hypothesis` for the layout property tests, and `pyvista` / `plotly` for the 3D backends. Install the `testing` extra to run them.
 
 When you change behavior, add or update tests in the same area of the codebase.
 

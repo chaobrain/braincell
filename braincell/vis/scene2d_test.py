@@ -17,15 +17,25 @@
 
 import unittest
 
+import matplotlib.pyplot as plt
+import pytest
+
 import brainunit as u
 import numpy as np
 
 from braincell import Branch, Morphology
 from braincell.filter import AllRegion, Terminals
 from braincell.vis import plot2d
-from braincell.vis._testing import FakeBackend, VisDefaultsResetMixin, make_length_only_tree
+from braincell.vis._testing import (
+    PYTEST_BENCHMARK_AVAILABLE,
+    FakeBackend,
+    VisDefaultsResetMixin,
+    make_deep_chain_tree,
+    make_length_only_tree,
+)
 from braincell.vis.backend import BackendChooser
-from braincell.vis.layout import build_layout_branches_2d
+from braincell.vis.layout import build_layout_branches_2d, get_default_layout_cache
+from braincell.vis.scene import OverlaySpec, ValueSpec
 from braincell.vis.scene2d import build_render_scene_2d
 
 
@@ -160,6 +170,43 @@ class Scene2dOverlayTest(VisDefaultsResetMixin, unittest.TestCase):
 
         self.assertEqual(len(rendered.scene.polygon_value_batches), len(tree.branches))
         self.assertEqual(len(rendered.scene.polygons), 0)
+
+
+# ---------------------------------------------------------------------------
+# Performance baselines (pytest-benchmark)
+#
+# Plain pytest functions, not TestCase methods: pytest cannot inject the
+# function-scoped ``benchmark`` fixture into a ``unittest.TestCase``. The
+# skipif is per-function rather than a module-level ``pytestmark`` because
+# the rest of this file must keep running without the plugin.
+# ---------------------------------------------------------------------------
+
+_needs_benchmark = pytest.mark.skipif(
+    not PYTEST_BENCHMARK_AVAILABLE,
+    reason="pytest-benchmark is not installed",
+)
+
+
+@pytest.fixture
+def clean_layout_cache():
+    """Clear the shared layout cache before a benchmark, close figures after."""
+    get_default_layout_cache().clear()
+    yield
+    plt.close("all")
+
+
+@_needs_benchmark
+def test_scene_small_no_values(benchmark, clean_layout_cache) -> None:
+    tree = make_deep_chain_tree(50)
+    benchmark(lambda: build_render_scene_2d(tree, layout="stem", shape="line"))
+
+
+@_needs_benchmark
+def test_scene_medium_with_values(benchmark, clean_layout_cache) -> None:
+    tree = make_deep_chain_tree(500)
+    values = np.linspace(0.0, 1.0, len(tree.branches))
+    overlay = OverlaySpec(values=ValueSpec(values=values))
+    benchmark(lambda: build_render_scene_2d(tree, layout="stem", shape="line", overlay=overlay))
 
 
 if __name__ == "__main__":

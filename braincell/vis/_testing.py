@@ -25,6 +25,7 @@ radii, and positions without re-computing them per test. The tail of the
 module holds render-backend doubles used by the plot and backend tests.
 """
 
+import importlib.util
 from pathlib import Path
 
 import brainunit as u
@@ -83,6 +84,24 @@ def make_length_only_tree(*, child_name: str = "dend") -> Morphology:
     )
     tree = Morphology.from_root(soma, name="soma")
     tree.attach(parent="soma", child_branch=dend, child_name=child_name, parent_x=1.0)
+    return tree
+
+
+def make_four_type_tree() -> Morphology:
+    """Soma with an apical dendrite, a basal dendrite, and an axon.
+
+    Length-only geometry. The four distinct branch types exercise every
+    entry of the default palette at once, which is what the baseline-image
+    regression figures need.
+    """
+    soma = Branch.from_lengths(lengths=[20.0] * u.um, radii=[10.0, 10.0] * u.um, type="soma")
+    apical = Branch.from_lengths(lengths=[50.0, 40.0] * u.um, radii=[3.0, 2.0, 1.5] * u.um, type="apical_dendrite")
+    basal = Branch.from_lengths(lengths=[30.0] * u.um, radii=[2.0, 1.5] * u.um, type="basal_dendrite")
+    axon = Branch.from_lengths(lengths=[40.0] * u.um, radii=[1.0, 0.6] * u.um, type="axon")
+    tree = Morphology.from_root(soma, name="soma")
+    tree.attach(parent="soma", child_branch=apical, child_name="apical", parent_x=1.0)
+    tree.attach(parent="soma", child_branch=basal, child_name="basal", parent_x=1.0)
+    tree.attach(parent="soma", child_branch=axon, child_name="axon", parent_x=1.0)
     return tree
 
 
@@ -299,3 +318,65 @@ class VisDefaultsResetMixin:
 
         _vis.reset_defaults()
         self.addCleanup(_vis.reset_defaults)
+
+
+# =============================================================================
+# Optional plugin probes
+# =============================================================================
+
+PYTEST_BENCHMARK_AVAILABLE = importlib.util.find_spec("pytest_benchmark") is not None
+"""True when the optional ``pytest-benchmark`` plugin is importable.
+
+Guard benchmark functions with
+``@pytest.mark.skipif(not PYTEST_BENCHMARK_AVAILABLE, reason=...)``. They must
+be plain pytest functions, never :class:`unittest.TestCase` methods — pytest
+cannot inject the function-scoped ``benchmark`` fixture into a ``TestCase``.
+"""
+
+PYTEST_MPL_AVAILABLE = importlib.util.find_spec("pytest_mpl") is not None
+"""True when the optional ``pytest-mpl`` plugin is importable.
+
+Guard baseline-image test classes with
+``@unittest.skipUnless(PYTEST_MPL_AVAILABLE, "pytest-mpl is not installed")``.
+"""
+
+
+def image_comparison(filename: str, *, tolerance: float = 25.0):
+    """Mark a test as a baseline-image comparison, when ``pytest-mpl`` is present.
+
+    The decorated test must build and return a
+    :class:`matplotlib.figure.Figure`. With the plugin installed and
+    ``--mpl`` passed, pytest-mpl renders it and diffs against
+    ``braincell/vis/_baseline_images/<filename>``. Without the plugin this
+    is the identity decorator, and the class-level ``skipUnless`` means the
+    test does not run at all.
+
+    Parameters
+    ----------
+    filename : str
+        Baseline PNG name, relative to the baseline directory.
+    tolerance : float, default 25.0
+        RMS difference pytest-mpl tolerates before failing.
+
+    Notes
+    -----
+    ``braincell/vis/_baseline_images/`` is not committed. Until it is,
+    every comparison fails on a missing baseline even in an environment
+    that has the plugin. Regenerate with::
+
+        pytest braincell/vis/ --mpl-generate-path=braincell/vis/_baseline_images
+    """
+    if not PYTEST_MPL_AVAILABLE:
+
+        def _decorator(func):
+            return func
+
+        return _decorator
+
+    import pytest
+
+    return pytest.mark.mpl_image_compare(
+        filename=filename,
+        baseline_dir="_baseline_images",
+        tolerance=tolerance,
+    )

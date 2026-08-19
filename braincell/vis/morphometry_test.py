@@ -24,7 +24,10 @@ import numpy as np
 
 from braincell import Branch, Morphology
 from braincell.vis._testing import (
+    PYTEST_MPL_AVAILABLE,
+    image_comparison,
     make_deep_chain_tree,
+    make_four_type_tree,
     make_length_only_tree,
     make_projected_node_tree,
     make_root_split_tree,
@@ -194,6 +197,48 @@ class DeepMorphologyTest(unittest.TestCase):
         bars = [patch for patch in ax.patches if isinstance(patch, Rectangle)]
         # A chain has exactly one branch at every order.
         self.assertEqual(len(bars), self.n_branches)
+
+
+@unittest.skipUnless(PYTEST_MPL_AVAILABLE, "pytest-mpl is not installed")
+class MorphometryBaselineImageTest(unittest.TestCase):
+    """Baseline-image regression figures for :mod:`braincell.vis.morphometry`.
+
+    Each test builds a figure and returns it; ``image_comparison`` hands it
+    to pytest-mpl when the plugin is installed. Skipped wholesale otherwise —
+    without the plugin the marker is inert and the figure would never be
+    compared, so there is nothing left to assert.
+    """
+
+    def tearDown(self) -> None:
+        plt.close("all")
+
+    @image_comparison("dendrogram_baseline.png")
+    def test_dendrogram_baseline(self):
+        tree = make_four_type_tree()
+        fig, ax = plt.subplots(figsize=(5, 3))
+        plot_dendrogram(tree, ax=ax)
+        return fig
+
+    @image_comparison("topology_baseline.png")
+    def test_topology_baseline(self):
+        tree = make_four_type_tree()
+        fig, ax = plt.subplots(figsize=(5, 3))
+        plot_topology(tree, ax=ax)
+        return fig
+
+    @image_comparison("sholl_baseline.png")
+    def test_sholl_baseline(self):
+        tree = make_four_type_tree()
+        fig, ax = plt.subplots(figsize=(5, 3))
+        plot_sholl(tree, ax=ax, step_um=10.0)
+        return fig
+
+    @image_comparison("branch_order_histogram_baseline.png")
+    def test_branch_order_histogram_baseline(self):
+        tree = make_four_type_tree()
+        fig, ax = plt.subplots(figsize=(5, 3))
+        plot_branch_order_histogram(tree, ax=ax)
+        return fig
 
 
 if __name__ == "__main__":

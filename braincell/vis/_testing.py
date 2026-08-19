@@ -25,9 +25,24 @@ radii, and positions without re-computing them per test. The tail of the
 module holds render-backend doubles used by the plot and backend tests.
 """
 
+from pathlib import Path
+
 import brainunit as u
 
 from braincell import Branch, Morphology
+
+# Real SWC fixtures shipped in the repository checkout (pruned from sdists by
+# MANIFEST.in, so these only resolve from a source tree).
+FIXTURE_DIR = Path(__file__).resolve().parents[2] / "data" / "morphology"
+VALID_SWC_FIXTURES = ("grc.swc", "io.swc")
+ALLOWED_TYPES = {
+    "soma",
+    "axon",
+    "dendrite",
+    "basal_dendrite",
+    "apical_dendrite",
+    "custom",
+}
 
 
 def make_node_tree() -> Morphology:

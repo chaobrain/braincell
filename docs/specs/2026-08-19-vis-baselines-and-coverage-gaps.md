@@ -156,3 +156,18 @@ Skips in `braincell/vis/` drop from 15 to 3; the survivors are plotly and pyvist
 
 Per the convention this repository now follows, the previous spec is a dated record and was
 not edited.
+
+## Addendum — recorded after code review
+
+Two things this document under-reported, added here rather than left to be rediscovered:
+
+- **The `CONTRIBUTING.md` edits went beyond what either spec enumerated.** Alongside the two
+  single-test example commands the naming spec listed, this change also rewrote the `testing`
+  row of the extras table and the optional-dependency skip paragraph (which now names
+  hypothesis, pyvista, and plotly instead of pytest-mpl). Both follow from the pytest-mpl
+  removal above and are correct; neither spec said so.
+- **The missing-baseline finding no longer has an in-code home.** It was originally written
+  into `image_comparison()`'s docstring, and that function was deleted here. `TODO.md` and
+  these specs are now the only record that `braincell/vis/_baseline_images/` never existed.
+
+The follow-up work from that review is in `docs/specs/2026-08-19-code-review-followups.md`.

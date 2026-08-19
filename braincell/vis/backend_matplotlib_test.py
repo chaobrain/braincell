@@ -36,12 +36,19 @@ from braincell.vis.backend_matplotlib import MatplotlibBackend
 
 class MatplotlibBackendRenderTest(VisDefaultsResetMixin, unittest.TestCase):
     def test_matplotlib_backend_renders_projected_scene(self) -> None:
+        # make_node_tree() is one soma branch running (0,0,0) -> (10,0,1), so
+        # the default xy projection must drop z and leave a single 2D segment.
         tree = make_node_tree()
         chooser = BackendChooser(backends=(MatplotlibBackend(),))
 
         axes = plot2d(tree, layout="projected", shape="line", backend="matplotlib", chooser=chooser)
 
         self.assertIsInstance(axes, matplotlib.axes.Axes)
+        self.assertEqual(len(axes.lines), len(tree.branches))
+        np.testing.assert_allclose(axes.lines[0].get_xdata(), [0.0, 10.0])
+        np.testing.assert_allclose(axes.lines[0].get_ydata(), [0.0, 0.0])
+        # Morphology must not be stretched by the axes box.
+        self.assertEqual(axes.get_aspect(), 1.0)
 
     def test_matplotlib_backend_can_render_into_existing_axes(self) -> None:
         tree = make_length_only_tree()

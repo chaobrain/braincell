@@ -23,18 +23,9 @@ import brainunit as u
 import numpy as np
 
 from braincell import Morphology
+from braincell.io._testing import ALLOWED_TYPES, FIXTURE_DIR
 from braincell.io.swc import SwcReadOptions, SwcReader
 from braincell.io.swc.types import _SwcAttach, _SwcBranch, _SwcRow
-
-FIXTURE_DIR = Path(__file__).resolve().parents[3] / "data" / "morphology"
-ALLOWED_TYPES = {
-    "soma",
-    "axon",
-    "dendrite",
-    "basal_dendrite",
-    "apical_dendrite",
-    "custom",
-}
 
 
 class SwcReaderTest(unittest.TestCase):

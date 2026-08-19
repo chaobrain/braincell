@@ -18,7 +18,6 @@ import importlib.util
 import sys
 import unittest
 
-import matplotlib.pyplot as plt
 import pytest
 import warnings
 
@@ -27,12 +26,12 @@ import numpy as np
 
 from braincell import Branch, Morphology
 from braincell.vis._testing import (
-    PYTEST_BENCHMARK_AVAILABLE,
     make_deep_chain_tree,
     make_length_only_tree,
     make_two_dendrite_tree,
+    needs_benchmark,
 )
-from braincell.vis.layout import LayoutBranch2D, get_default_layout_cache
+from braincell.vis.layout import LayoutBranch2D
 from braincell.vis.layout._collision import _segments_intersect
 from braincell.vis.layout._dispatch import (
     _LAYOUT_FAMILY_ALIASES,
@@ -387,26 +386,10 @@ class LayoutFamilyParametricTest(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
-# Performance baselines (pytest-benchmark)
-#
-# Plain pytest functions, not TestCase methods: pytest cannot inject the
-# function-scoped ``benchmark`` fixture into a ``unittest.TestCase``. The
-# skipif is per-function rather than a module-level ``pytestmark`` because
-# the rest of this file must keep running without the plugin.
+# Performance baselines (pytest-benchmark). See ``needs_benchmark`` in
+# braincell/vis/_testing.py for why these are plain functions; the
+# ``clean_layout_cache`` fixture comes from braincell/vis/conftest.py.
 # ---------------------------------------------------------------------------
-
-_needs_benchmark = pytest.mark.skipif(
-    not PYTEST_BENCHMARK_AVAILABLE,
-    reason="pytest-benchmark is not installed",
-)
-
-
-@pytest.fixture
-def clean_layout_cache():
-    """Clear the shared layout cache before a benchmark, close figures after."""
-    get_default_layout_cache().clear()
-    yield
-    plt.close("all")
 
 
 # The medium / large sizes are chains deeper than CPython's recursion limit.
@@ -414,7 +397,7 @@ def clean_layout_cache():
 # layout engine recursed once per branch; the walks are iterative now (see
 # braincell/vis/_traversal.py), so these must simply pass. DeepMorphologyTest
 # above pins that behaviour for runs where pytest-benchmark is absent.
-@_needs_benchmark
+@needs_benchmark
 @pytest.mark.parametrize("n_branches", [50, 500, 2000], ids=["small", "medium", "large"])
 def test_layout_build(benchmark, clean_layout_cache, n_branches: int) -> None:
     tree = make_deep_chain_tree(n_branches)

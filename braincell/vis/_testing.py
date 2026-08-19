@@ -26,24 +26,20 @@ module holds render-backend doubles used by the plot and backend tests.
 """
 
 import importlib.util
-from pathlib import Path
 
 import brainunit as u
+import pytest
 
 from braincell import Branch, Morphology
 
-# Real SWC fixtures shipped in the repository checkout (pruned from sdists by
-# MANIFEST.in, so these only resolve from a source tree).
-FIXTURE_DIR = Path(__file__).resolve().parents[2] / "data" / "morphology"
-VALID_SWC_FIXTURES = ("grc.swc", "io.swc")
-ALLOWED_TYPES = {
-    "soma",
-    "axon",
-    "dendrite",
-    "basal_dendrite",
-    "apical_dendrite",
-    "custom",
-}
+# Re-exported so the vis tests that render real reconstructions keep importing
+# everything they need from this module. braincell/io/_testing.py owns them,
+# since the fixtures are SWC/ASC files the io readers parse.
+from braincell.io._testing import (  # noqa: F401
+    ALLOWED_TYPES,
+    FIXTURE_DIR,
+    VALID_SWC_FIXTURES,
+)
 
 
 def make_node_tree() -> Morphology:
@@ -91,8 +87,9 @@ def make_four_type_tree() -> Morphology:
     """Soma with an apical dendrite, a basal dendrite, and an axon.
 
     Length-only geometry. The four distinct branch types exercise every
-    entry of the default palette at once, which is what the baseline-image
-    regression figures need.
+    entry of the default palette at once, so a colour-mapping regression
+    shows up on a single render. Used by the matplotlib layout/colorbar
+    tests and by ``compare2d_test.py``.
     """
     soma = Branch.from_lengths(lengths=[20.0] * u.um, radii=[10.0, 10.0] * u.um, type="soma")
     apical = Branch.from_lengths(lengths=[50.0, 40.0] * u.um, radii=[3.0, 2.0, 1.5] * u.um, type="apical_dendrite")
@@ -325,10 +322,20 @@ class VisDefaultsResetMixin:
 # =============================================================================
 
 PYTEST_BENCHMARK_AVAILABLE = importlib.util.find_spec("pytest_benchmark") is not None
-"""True when the optional ``pytest-benchmark`` plugin is importable.
+"""True when the optional ``pytest-benchmark`` plugin is importable."""
 
-Guard benchmark functions with
-``@pytest.mark.skipif(not PYTEST_BENCHMARK_AVAILABLE, reason=...)``. They must
-be plain pytest functions, never :class:`unittest.TestCase` methods — pytest
-cannot inject the function-scoped ``benchmark`` fixture into a ``TestCase``.
+needs_benchmark = pytest.mark.skipif(
+    not PYTEST_BENCHMARK_AVAILABLE,
+    reason="pytest-benchmark is not installed",
+)
+"""Skip mark for the performance baselines in ``braincell.vis``.
+
+Apply it per function rather than as a module-level ``pytestmark``: every file
+carrying benchmarks also carries ordinary tests that must keep running when the
+plugin is absent.
+
+Benchmarks must be plain pytest functions, never :class:`unittest.TestCase`
+methods — pytest cannot inject the function-scoped ``benchmark`` fixture into a
+``TestCase``. They pair with the ``clean_layout_cache`` fixture from
+``braincell/vis/conftest.py``, which pytest supplies by name.
 """

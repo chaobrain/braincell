@@ -85,8 +85,8 @@ Test discovery is configured in `pyproject.toml` under `[tool.pytest]`; it point
 To run a single module or a single test:
 
 ```bash
-pytest braincell/io/swc/swc_test.py
-pytest braincell/io/swc/swc_test.py::SwcReaderTest::test_single_point_soma_expands_to_three_points_and_connects_at_midpoint
+pytest braincell/io/swc/reader_test.py
+pytest braincell/io/swc/reader_test.py::SwcReaderTest::test_single_point_soma_expands_to_three_points_and_connects_at_midpoint
 ```
 
 With coverage (configuration lives in `[tool.coverage]`):

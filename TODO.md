@@ -702,10 +702,11 @@ internal dependencies · status · open work**.
   - `compare.py` — generalized `compare_morphologies([m1, m2, ...])` and
     `compare_values(morpho, [values_a, values_b, ...])` side-by-side
     helpers built on top of `plot2d`.
-  - `perf_benchmark_test.py` — `pytest-benchmark` baselines for layout
-    build, scene build, and end-to-end plot2d render on 50 / 500 /
-    2000-branch synthetic morphologies (skipped when
-    `pytest-benchmark` is not installed).
+  - `pytest-benchmark` baselines for layout build, scene build, and
+    end-to-end plot2d render on 50 / 500 / 2000-branch synthetic
+    morphologies, skipped when `pytest-benchmark` is not installed.
+    Filed with the module each measures: `layout/_dispatch_test.py`,
+    `scene2d_test.py`, `plot2d_test.py`.
   - `layout/` — 2D tree-layout engine split across
     `_common.py` (shared dataclasses + tree helpers),
     `_geometry.py` (pure-numeric sampling and branch construction),
@@ -734,10 +735,15 @@ internal dependencies · status · open work**.
   - `morphometry.py` — `plot_dendrogram`, `plot_topology`,
     `plot_sholl`, `plot_branch_order_histogram`, and the
     `compute_sholl_profile` / `ShollProfile` helpers.
-  - `_test_helper.py` — `FakeBackend` scene-capturing double for unit
-    tests.
-  - `visual_regression_test.py` — `pytest-mpl` baseline image
-    regression suite (skipped when `pytest_mpl` is not installed).
+  - `_testing.py` — shared morphology builders, the `FakeBackend`
+    scene-capturing double, `VisDefaultsResetMixin`, and the
+    `PYTEST_MPL_AVAILABLE` / `PYTEST_BENCHMARK_AVAILABLE` plugin probes.
+  - `pytest-mpl` baseline image regression suite, skipped when
+    `pytest_mpl` is not installed. Filed with the module each figure
+    exercises: `plot2d_test.py`, `morphometry_test.py`,
+    `compare2d_test.py`. Note the baseline directory
+    `braincell/vis/_baseline_images/` is not committed, so the
+    comparisons cannot pass yet even with the plugin installed.
 - **Status**
   - [x] 3D rendering of `Branch` / `Morphology` with point geometry,
     scene composition, PyVista backend.
@@ -820,10 +826,11 @@ internal dependencies · status · open work**.
     plus `publication_theme()` context manager in `config.py` that
     flips both vis defaults and matplotlib `rcParams` (serif font,
     thicker lines, no grid, print-friendly palette) (M6 Phase 4).
-  - [x] **Performance baselines** via `pytest-benchmark` in
-    `vis/perf_benchmark_test.py` — layout build, scene build, and
-    plot2d render on 50 / 500 / 2000-branch synthetic morphologies,
-    skipped when the plugin is absent (M6 Phase 4).
+  - [x] **Performance baselines** via `pytest-benchmark`, co-located
+    with the modules they measure (`vis/layout/_dispatch_test.py`,
+    `vis/scene2d_test.py`, `vis/plot2d_test.py`) — layout build, scene
+    build, and plot2d render on 50 / 500 / 2000-branch synthetic
+    morphologies, skipped when the plugin is absent (M6 Phase 4).
   - [x] **Narrative tutorial**: `examples/multi_compartment/vis.ipynb` — quick start,
     layout gallery, styling/themes, color-by-values, overlays, movie,
     trace panels, morphometry, interactivity, publication export,
@@ -1128,10 +1135,12 @@ in-place "rebuild on next use".
 ### 4.4 Testing
 
 - pytest with `unittest.TestCase`; tests live next to source as
-  `*_test.py`, with no exceptions. The former `io/swc/test.py` and
+  `<module>_test.py`, with no exceptions. The `*` must name a real
+  sibling module — the one sanctioned exception is a package-scope guard
+  in `<package>/__init___test.py`. The former `io/swc/test.py` and
   `io/asc/test.py` matched neither default pytest discovery pattern and
-  were silently never collected; they are now `io/swc/swc_test.py` and
-  `io/asc/asc_test.py`.
+  were silently never collected; they are now `io/swc/reader_test.py`
+  and `io/asc/reader_test.py`.
 - `conftest.py` forces `JAX_PLATFORMS=cpu` and `MPLBACKEND=Agg`.
 - IO test fixtures live in `examples/multi_compartment/morpho_files/`.
 - New code is expected to ship with co-located tests and to keep

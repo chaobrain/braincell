@@ -6,8 +6,9 @@
 
 ``braincell.filter`` provides the selection algebra used to say *where* on a
 cell a mechanism is installed. **Regions** select extended sets of cable (paint
-targets); **locsets** select sets of points (place targets). Both compose
-through union / intersection / difference. See
+targets); **locsets** select ordered, duplicate-preserving point rows (place
+targets). Locsets concatenate through ``+`` and provide stable set operations
+through ``|``, ``&``, and ``-``. See
 :doc:`../concepts/regions_locsets` for the conceptual guide.
 
 
@@ -45,13 +46,16 @@ Locsets
     LocsetExpr
     RootLocation
     Terminals
+    ForkPoints
     BranchPoints
     UniformSamples
     StepSamples
     RandomSamples
     AtLocation
     LocsetMask
+    LocsetConcatOp
     LocsetSetOp
+    LocsetUniqueOp
 
 
 Helpers

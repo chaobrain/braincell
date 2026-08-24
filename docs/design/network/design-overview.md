@@ -1,63 +1,36 @@
-# BrainCell Network 设计总览
+# Network Design Overview
 
-本文档集用于整理 BrainCell 后续 `network` 层的设计方向，聚焦以下问题：
+BrainCell Network 只负责四件事：注册模型 owner、建立直接事件路由、统一初始化与推进、聚合结果。
+Cell 持有 morphology、机制声明、Synapse/Connection SoA storage 和 runtime；Network 不复制这些数据。
 
-- network construction 的前端接口应该长什么样
-- 同构 `population` 在 JAX 下应如何组织内部 runtime
-- synapse / spike / delay 的更新语义该如何选型
-- 哪条路线更兼容后续 gradient-based training
+## 文档导航
 
-这是一组内部设计文档，服务于架构讨论和实现拆解；它不替代 `README.md`、`TODO.md` 或 `docs/` 下的对外说明。
+- [API](./api.md)：面向用户的完整入口和示例。
+- [Architecture](./architecture.md)：Cell-owned storage、事件调度和生命周期。
+- [Issues](./issues.md)：已经锁定和仍开放的设计问题。
+- [Implementation plan](./implementation-plan.md)：实现状态与验收项。
+- [References](./references/platform-survey-2026-06.md)：其他平台的行为参考。
 
-## 当前结论
+## 公开模型
 
-基于本轮对 `NEURON/CoreNEURON`、`Arbor`、`Jaxley`、`brainevent` 的调研，以及 BrainCell 当前声明层 / runtime 层结构，当前建议如下：
+```text
+Network
+  populations[name] -> Population(Cell | NetStim | EventSequence)
+  connections[target_population] -> Cell-owned ConnectionView
 
-- 外部 API 不强制用户先创建 `population` 对象；应允许 cell-centric network declaration。
-- 内部 runtime 对同构 `population` 默认做 batch-style 聚合，而不是逐 cell Python 对象更新。
-- 第一阶段默认推荐 `JAX-friendly static-shape path`：
-  - batched neuron state
-  - edge table or structured connectivity
-  - per-step synapse state update
-  - `scatter_add`-style postsynaptic aggregation
-- delay 第一阶段优先使用 fixed-shape `ring buffer`，不先实现动态长度 `event queue`。
-- training 主线优先兼容 surrogate spike / soft release；后续可基于 `brainevent` 探索 JAX-friendly event-sparse delivery，但不把完整动态 `event queue` 作为第一阶段前提。
+EventSource -- Connection(weight, delay) --> Synapse --> target Cell runtime
+```
 
-一句话总结：**API 层不必 population-first，但 runtime 层应对同构群体默认 population-like。**
+`Synapse` 拥有 postsynaptic parameters、state 和 dynamics。`Connection` 只拥有 source routing、
+weight 和 delay。一次命名 `connect` 调用可以批量产生多行 routing；connection 数量指命名调用数，
+row 数量指实际稀疏路由数。
 
-## 文档地图
+## v1 边界
 
-- [platform-survey.md](./platform-survey.md)
-  - 平台调研
-  - 对 `NEURON/CoreNEURON`、`Arbor`、`Jaxley`、`brainevent` 的 network / synapse / delay / parallelization 做横向比较
-- [braincell-network-design.md](./braincell-network-design.md)
-  - BrainCell 候选架构
-  - 明确推荐路线、数据结构、step 顺序、复杂度与训练兼容性
-- [implementation-plan.md](./implementation-plan.md)
-  - 分阶段实施计划
-  - 以同构 `population` 的最小可运行版本为起点
-
-## 建议阅读顺序
-
-如果是第一次参与这项工作，建议按下面顺序读：
-
-1. 本文，先拿到结论和术语范围
-2. [platform-survey.md](./platform-survey.md)，理解已有平台的实现差异
-3. [braincell-network-design.md](./braincell-network-design.md)，看 BrainCell 推荐方案
-4. [implementation-plan.md](./implementation-plan.md)，进入具体落地阶段
-
-## 范围与非目标
-
-本文档集当前主要覆盖：
-
-- 同构 `population`
-- JAX / XLA friendly runtime organization
-- chemical synapse 的 spike / delay / current aggregation
-- gradient-compatible training path
-
-当前明确不覆盖：
-
-- 异构 morphology 的自动 regroup compiler
-- 分布式多机 spike transport 协议
-- gap junction / plasticity / structural rewiring 的完整方案
-- 最终稳定对外 API 文案
+- source 和 target 必须属于同一 Network，初始化后拓扑冻结。
+- 连接已有 Synapse，或通过 `Network.connect` 快捷完成 place + connect。
+- source/target 等长、`1 -> N`、`N -> 1` 自动对齐；任意显式 pairs 使用重复索引后的 views。
+- `pairing=` 支持固定行数 marginal/conditional sampling、单侧 degree 和双侧 stub matching；它只生成
+  临时端点索引，不进入 Network storage，也不重新引入第二套连接对象。
+- v1 pairing 只消费已有 EventSourceView 与 SynapseView；不会从 Region 同时创建 Synapse。
+- 不支持初始化后新增/删除机制、异质 morphology 或 Network batch runtime。

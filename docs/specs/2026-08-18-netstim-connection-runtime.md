@@ -65,26 +65,21 @@ continues to share event scatter/delay utilities.
   explicit removal tests.
 - A CV-pair population test with `P = N * (N - 1) / 2`, `2P` synapses, and
   `2P` heterogeneous NetStim sources.
-- A runnable notebook under `examples/multi_compartment/` showing construction,
-  inspection, voltage output, CPU scaling, and optional GPU scaling.
-- A benchmark must report declaration/init/compile/warm-run time and persistent
-  source/connection/synapse storage, then identify the dominant performance costs.
+- A runnable notebook under `examples/multi_compartment/` showing source and
+  target registration, synapse placement, connection inspection, split runs,
+  sparse events, and recorded voltage/conductance output.
+- A focused NEURON comparison must replay the realized BrainCell event times so
+  event routing and numerical integration are tested independently of RNG choice.
 
 ## Implemented result
 
-- The CV-pair notebook is
-  `examples/multi_compartment/netstim_heterogeneous_connections.ipynb`; it executes
-  a five-CV HH population with 10 CV-pair cells, 20 independently parameterized
-  ExpSyn instances, and 20 heterogeneous NetStim connection rows.
-- `examples/multi_compartment/netstim_connection_benchmark.py` provides isolated
-  CPU or CUDA processes. On the development A100, heterogeneous populations of
-  64 and 256 cells used 8,320 and 33,280 persistent bytes respectively for the
-  measured source/connection/synapse columns. Warm three-step runs were about 400
-  and 414 ms; at these deliberately short runs, Python/JAX launch overhead is
-  still dominant, so these numbers are validation data rather than a throughput
-  claim.
-- CPU notebook runs show identical measured storage for broadcast and packed
-  heterogeneous layouts when both own exactly two synapses per cell. Storage
-  grows linearly (520 bytes at size 4 and 2,080 bytes at size 16); the packed
-  representation avoids padding when per-cell counts differ, but it cannot
-  reduce storage when the logical work is already uniform.
+- `examples/multi_compartment/network.ipynb` is the maintained end-to-end
+  tutorial. It registers Cell, NetStim, and EventSequence populations; connects
+  multiple sources to two independent target populations; and verifies split
+  and continuous runs.
+- `examples/neuron_compare/synapse/netstim_heterogeneous_compare.ipynb` preserves
+  the focused five-CV / 10-cell / 20-ExpSyn heterogeneous NetStim comparison. It
+  replays 40 realized events in NEURON and checks the aligned voltage traces.
+- The old mixed tutorial/benchmark files were retired. Performance profiling is
+  intentionally kept separate from the maintained user workflow and numerical
+  comparison notebooks.

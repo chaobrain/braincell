@@ -27,12 +27,14 @@
 
 - `cable/`
 - `channel_no_conc/`
+- `synapse/`
 
 ## Common Layout
 
-当前两个家族都保留自己的 `README.md`、实现模板、输入配置、测试与工作流入口。
+各家族按需要维护自己的 `README.md`、实现、输入、测试与工作流入口。
 
 目前活跃维护的家族：
 
 - `cable`
 - `channel_no_conc`
+- `synapse`

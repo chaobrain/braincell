@@ -15,6 +15,7 @@
 
 from .cache import SelectionCache
 from . import density
+from . import metric
 from ._sampling import SamplingContext
 from .locset import (
     AtLocation,
@@ -86,6 +87,7 @@ __all__ = [
     "UniformSamples",
     "at",
     "density",
+    "metric",
     "sample",
     "branch_in",
     "branch_range",

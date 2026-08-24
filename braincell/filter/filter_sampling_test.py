@@ -22,7 +22,7 @@ from scipy.special import ndtr, ndtri
 
 import braincell
 from braincell import Branch, Morphology
-from braincell.filter import AllRegion, BranchSlice, RandomSamples, SamplingContext, density, sample
+from braincell.filter import AllRegion, BranchSlice, RandomSamples, SamplingContext, density, metric, sample
 from braincell.filter._sampling import (
     _AtomComponent,
     _ContinuousComponent,
@@ -157,15 +157,17 @@ class DensityInversionTest(unittest.TestCase):
         actual = self._x(lambda context: 2.0 * context.branch_x)
         np.testing.assert_allclose(actual, np.sqrt(self.uniforms), atol=2e-9, rtol=0.0)
 
-    def test_exponential_helper_matches_analytic_inverse(self) -> None:
-        actual = self._x(density.exponential("branch_x", 0.2, direction="increasing"))
+    def test_composable_metric_density_matches_analytic_inverse(self) -> None:
+        actual = self._x(lambda context: np.exp(metric.branch_x(context) / 0.2))
         expected = np.log1p(self.uniforms * np.expm1(5.0)) / 5.0
         np.testing.assert_allclose(actual, expected, atol=2e-9, rtol=0.0)
 
     def test_gaussian_helper_matches_truncated_gaussian_inverse(self) -> None:
         center = 0.4
         sigma = 0.15
-        actual = self._x(density.gaussian("branch_x", center, sigma))
+        with self.assertWarns(DeprecationWarning):
+            preference = density.gaussian("branch_x", center, sigma)
+        actual = self._x(preference)
         low = ndtr((0.0 - center) / sigma)
         high = ndtr((1.0 - center) / sigma)
         expected = center + sigma * ndtri(low + self.uniforms * (high - low))
@@ -189,7 +191,9 @@ class DensityInversionTest(unittest.TestCase):
         np.testing.assert_allclose(first, second, atol=3e-9, rtol=0.0)
 
     def test_narrow_gaussian_remains_finite(self) -> None:
-        actual = self._x(density.gaussian("branch_x", 0.5, 0.001))
+        with self.assertWarns(DeprecationWarning):
+            preference = density.gaussian("branch_x", 0.5, 0.001)
+        actual = self._x(preference)
         self.assertTrue(np.all(np.isfinite(actual)))
         self.assertLess(np.max(np.abs(actual - 0.5)), 0.01)
 

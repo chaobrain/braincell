@@ -16,6 +16,7 @@
 """Reusable preference densities for continuous morphology sampling."""
 
 from dataclasses import dataclass
+import warnings
 
 import brainunit as u
 import numpy as np
@@ -47,7 +48,7 @@ def _field(context: object, name: str) -> object:
     try:
         return getattr(context, name)
     except AttributeError as exc:
-        raise ValueError(f"SamplingContext has no density field {name!r}.") from exc
+        raise ValueError(f"Spatial context has no density field {name!r}.") from exc
 
 
 @dataclass(frozen=True)
@@ -89,7 +90,7 @@ class _SpatialGaussianDensity:
         delta = (position - self.center) / self.sigma
         values = _dimensionless_mantissa(delta, name="spatial Gaussian argument")
         if values.shape[-1:] != (3,):
-            raise ValueError("SamplingContext.position must end in a three-dimensional coordinate axis.")
+            raise ValueError("Spatial context position must end in a three-dimensional coordinate axis.")
         return -0.5 * np.sum(values * values, axis=-1)
 
     def __call__(self, context: object) -> np.ndarray:
@@ -117,6 +118,11 @@ def exponential(
     callable
         A callable accepting one sampling context.
     """
+    warnings.warn(
+        "density.exponential(field, ...) is deprecated; write a callable using braincell.filter.metric instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     if not isinstance(field, str) or not field:
         raise TypeError("field must be a non-empty string.")
     _positive_scale(scale, name="scale")
@@ -142,6 +148,11 @@ def gaussian(field: str, center: object, sigma: object) -> object:
     callable
         A callable accepting one sampling context.
     """
+    warnings.warn(
+        "density.gaussian(field, ...) is deprecated; write a callable using braincell.filter.metric instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     if not isinstance(field, str) or not field:
         raise TypeError("field must be a non-empty string.")
     _positive_scale(sigma, name="sigma")

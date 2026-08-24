@@ -27,6 +27,7 @@ import numpy as np
 from scipy.integrate import quad
 from scipy.stats.sampling import NumericalInversePolynomial
 
+from braincell.morph._spatial import MorphologySpatialGeometry
 from braincell.morph.morphology import Morphology
 from . import helper
 
@@ -42,7 +43,9 @@ class SamplingContext:
 
     ``branch_x``, ``radius`` and the distance fields are scalar during
     numerical inversion and may be arrays when a density is inspected or
-    evaluated in bulk. Positions use morphology-local coordinates in v1.
+    evaluated in bulk. ``path_distance_from_soma`` is the shortest tree path
+    to any soma branch, or to the root branch when no soma exists. Positions
+    use morphology-local coordinates in v1.
     """
 
     branch_id: int
@@ -214,49 +217,15 @@ def _build_components(
     return components
 
 
-def _branch_bases(morpho: Morphology) -> tuple[dict[int, float], dict[int, float], dict[int, float]]:
-    lengths = {
-        index: float(morpho.branch(index=index).branch.length.to_decimal(u.um)) for index in range(len(morpho.branches))
-    }
-    edges = {int(edge.child.index): edge for edge in morpho.edges}
-    root_id = int(morpho.root.index)
-    entry = {root_id: 0.0}
-    root_base = {root_id: 0.0}
-    soma_base = {root_id: 0.0}
-    resolving: set[int] = set()
-
-    def resolve(branch_id: int) -> None:
-        if branch_id in root_base:
-            return
-        if branch_id in resolving:
-            raise ValueError(f"Morphology contains a cycle at branch {branch_id!r}.")
-        resolving.add(branch_id)
-        edge = edges[branch_id]
-        parent = int(edge.parent.index)
-        resolve(parent)
-        entry[branch_id] = float(edge.child_x)
-        step = abs(float(edge.parent_x) - entry[parent]) * lengths[parent]
-        root_base[branch_id] = root_base[parent] + step
-        soma_base[branch_id] = 0.0 if str(edge.parent.type) == "soma" else soma_base[parent] + step
-        resolving.remove(branch_id)
-
-    for branch_id in range(len(morpho.branches)):
-        resolve(branch_id)
-    return entry, root_base, soma_base
-
-
 def _context(
     morpho: Morphology,
     component: _ContinuousComponent | _AtomComponent,
     x: object,
-    bases: tuple[dict[int, float], dict[int, float], dict[int, float]],
+    geometry: MorphologySpatialGeometry,
 ) -> SamplingContext:
     branch_id = component.branch_id
     branch_view = morpho.branch(index=branch_id)
     values = np.asarray(x, dtype=float)
-    entry, root_base, soma_base = bases
-    length_um = float(branch_view.branch.length.to_decimal(u.um))
-    local_distance = np.abs(values - entry[branch_id]) * length_um
     if isinstance(component, _ContinuousComponent):
         radius = component.radius_um(values)
         position = component.position_um(values)
@@ -265,15 +234,14 @@ def _context(
         position = component.point_um
         if position is not None and values.ndim > 0:
             position = np.broadcast_to(position, values.shape + (3,))
-    soma_distance = np.zeros_like(values) if str(branch_view.type) == "soma" else soma_base[branch_id] + local_distance
     return SamplingContext(
         branch_id=branch_id,
         branch_name=str(branch_view.name),
         branch_type=str(branch_view.type),
         branch_x=x,
         radius=u.Quantity(radius, u.um),
-        path_distance_to_root=u.Quantity(root_base[branch_id] + local_distance, u.um),
-        path_distance_from_soma=u.Quantity(soma_distance, u.um),
+        path_distance_to_root=geometry.path_distance_to_root(branch_id, values),
+        path_distance_from_soma=geometry.path_distance_from_soma(branch_id, values),
         _local_position=None if position is None else u.Quantity(position, u.um),
     )
 
@@ -323,7 +291,7 @@ def _builtin_log_shift(
     density: Density,
     morpho: Morphology,
     components: list[_ContinuousComponent | _AtomComponent],
-    bases: tuple[dict[int, float], dict[int, float], dict[int, float]],
+    geometry: MorphologySpatialGeometry,
 ) -> float | None:
     if not hasattr(density, "_log_density"):
         return None
@@ -334,7 +302,7 @@ def _builtin_log_shift(
             if isinstance(component, _ContinuousComponent)
             else np.asarray(component.x)
         )
-        context = _context(morpho, component, xs, bases)
+        context = _context(morpho, component, xs, geometry)
         values = _log_density_array(density._log_density(context), shape=xs.shape)  # type: ignore[attr-defined]
         maxima.append(float(np.max(values)))
     return max(0.0, max(maxima, default=0.0))
@@ -355,15 +323,15 @@ def _prepare_components(
     density: Density | None,
     u_resolution: float,
 ) -> list[_PreparedComponent]:
-    bases = _branch_bases(morpho)
-    log_shift = None if density is None else _builtin_log_shift(density, morpho, components, bases)
+    geometry = MorphologySpatialGeometry.build(morpho)
+    log_shift = None if density is None else _builtin_log_shift(density, morpho, components, geometry)
     prepared: list[_PreparedComponent] = []
     for component in components:
         if isinstance(component, _AtomComponent):
             preference = (
                 1.0
                 if density is None
-                else _density_value(density, _context(morpho, component, component.x, bases), log_shift=log_shift)
+                else _density_value(density, _context(morpho, component, component.x, geometry), log_shift=log_shift)
             )
             mass = preference * component.area_um2
             if mass > 0.0:
@@ -377,7 +345,7 @@ def _prepare_components(
             continue
 
         def pdf(x: float, *, source: _ContinuousComponent = component) -> float:
-            context = _context(morpho, source, float(x), bases)
+            context = _context(morpho, source, float(x), geometry)
             return _density_value(density, context, log_shift=log_shift) * float(source.jacobian(measure, x))
 
         mass, _ = quad(pdf, component.x0, component.x1, epsabs=0.0, epsrel=u_resolution, limit=200)

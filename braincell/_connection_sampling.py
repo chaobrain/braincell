@@ -28,7 +28,7 @@ import numpy as np
 
 from braincell._multi_compartment.synapses import SynapseView
 from braincell.event import EventSourceView
-from braincell.filter._sampling import _branch_bases
+from braincell.morph._spatial import MorphologySpatialGeometry, interpolate_branch
 
 Score = Callable[["PairingContext"], object]
 Degree = int | np.ndarray | Callable[["PairingContext", brainstate.random.RandomState], object]
@@ -311,7 +311,7 @@ class _SynapseData:
 
 def _synapse_geometry(view: SynapseView):
     morpho = view.cell.morpho
-    entry, root_base, soma_base = _branch_bases(morpho)
+    geometry = MorphologySpatialGeometry.build(morpho)
     names = []
     types = []
     radius = []
@@ -321,18 +321,17 @@ def _synapse_geometry(view: SynapseView):
     has_positions = True
     for branch_id, x in zip(view.branch_id.tolist(), view.branch_x.tolist()):
         branch_view = morpho.branch(index=int(branch_id))
-        branch = branch_view.branch
-        length = float(branch.length.to_decimal(u.um))
         names.append(str(branch_view.name))
         types.append(str(branch_view.type))
-        radius_um, point_um = _interpolate_branch(branch, float(x))
-        radius.append(radius_um)
-        local = abs(float(x) - entry[int(branch_id)]) * length
-        root_distance.append(root_base[int(branch_id)] + local)
-        soma_distance.append(0.0 if str(branch_view.type) == "soma" else soma_base[int(branch_id)] + local)
-        if point_um is None:
+        radius_value, point_value = interpolate_branch(morpho, int(branch_id), float(x))
+        radius.append(float(radius_value.to_decimal(u.um)))
+        root_distance.append(float(geometry.path_distance_to_root(int(branch_id), float(x)).to_decimal(u.um)))
+        soma_distance.append(float(geometry.path_distance_from_soma(int(branch_id), float(x)).to_decimal(u.um)))
+        if point_value is None:
             has_positions = False
-        positions.append(point_um)
+            positions.append(None)
+        else:
+            positions.append(np.asarray(point_value.to_decimal(u.um), dtype=float))
     local_position = None
     if has_positions:
         local_position = u.Quantity(np.asarray(positions, dtype=float), u.um)
@@ -344,35 +343,6 @@ def _synapse_geometry(view: SynapseView):
         u.Quantity(np.asarray(soma_distance), u.um),
         local_position,
     )
-
-
-def _interpolate_branch(branch, x: float):
-    lengths = np.asarray(branch.lengths.to_decimal(u.um), dtype=float)
-    r0 = np.asarray(branch.radii_proximal.to_decimal(u.um), dtype=float)
-    r1 = np.asarray(branch.radii_distal.to_decimal(u.um), dtype=float)
-    p0 = None if branch.points_proximal is None else np.asarray(branch.points_proximal.to_decimal(u.um), dtype=float)
-    p1 = None if branch.points_distal is None else np.asarray(branch.points_distal.to_decimal(u.um), dtype=float)
-    total = float(np.sum(lengths))
-    cursor = 0.0
-    last_positive = None
-    for index, segment_length in enumerate(lengths.tolist()):
-        if segment_length <= 0.0:
-            if np.isclose(x, cursor / total):
-                point = None if p0 is None else 0.5 * (p0[index] + p1[index])
-                return 0.5 * (r0[index] + r1[index]), point
-            continue
-        start = cursor / total
-        cursor += segment_length
-        end = cursor / total
-        last_positive = index
-        if x < end or (x == 1.0 and end == 1.0):
-            fraction = (x - start) / (end - start)
-            point = None if p0 is None else p0[index] + fraction * (p1[index] - p0[index])
-            return r0[index] + fraction * (r1[index] - r0[index]), point
-    if last_positive is None:
-        raise ValueError("Cannot construct pairing geometry from a zero-length branch.")
-    point = None if p1 is None else p1[last_positive]
-    return r1[last_positive], point
 
 
 @dataclass(frozen=True)

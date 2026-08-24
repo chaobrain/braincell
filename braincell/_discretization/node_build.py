@@ -34,6 +34,7 @@ from .base import (
     NodeRole,
     NodeTree,
     Position,
+    locate_cv_on_branch,
 )
 
 __all__ = [
@@ -419,18 +420,7 @@ def _locate_branch_cv_by_x(
         Owning CV id.
     """
 
-    if x <= 0.0 + epsilon:
-        return ids[0]
-    if x >= 1.0 - epsilon:
-        return ids[-1]
-    for cv_id in ids:
-        cv = cvs[cv_id]
-        if float(cv.prox) - epsilon <= x < float(cv.dist) - epsilon:
-            return cv_id
-    raise ValueError(
-        f"_locate_branch_cv_by_x: x={x!r} lies in no CV interval among ids {list(ids)!r}. "
-        "This usually means the CV tiling of this branch has a gap or overlap."
-    )
+    return locate_cv_on_branch(ids, cvs, x=x, epsilon=epsilon)
 
 
 def _entry_half_for_walk(attach_x: float) -> str:

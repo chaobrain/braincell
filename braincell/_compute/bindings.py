@@ -80,7 +80,7 @@ from braincell.channel._base import Markov
 from braincell.ion._base import KineticIon
 from braincell.mech import (
     Density,
-    Synapse as SynapsePlacement,
+    SynapseSpec as SynapsePlacement,
     get_registry,
 )
 from braincell.quad import get_integrator
@@ -487,19 +487,21 @@ def _instantiate_runtime_node(
 ) -> tuple[object | None, tuple[str, ...], str | tuple[str, ...] | None]:
     if isinstance(mechanism, SynapsePlacement):
         runtime_cls = get_registry().get("synapse", mechanism.synapse_type)
+        parameter_names = tuple(
+            var_name
+            for layout_id, var_name in state_buffers
+            if int(layout_id) == int(layout.id) and not var_name.startswith("_")
+        )
         params = {
             var_name: _runtime_param_value(
                 layout=layout,
                 var_name=var_name,
                 state_buffers=state_buffers,
             )
-            for var_name in mechanism.params.keys()
+            for var_name in parameter_names
         }
-        if len(params) > 0 and hasattr(next(iter(params.values())), "shape"):
-            size = next(iter(params.values())).shape
-        else:
-            size = state_buffers[(layout.id, "pre_spike")].shape
-        node = runtime_cls(size=size, name=mechanism.instance_name, **params)
+        size = (int(layout.n_active),)
+        node = runtime_cls(size=size, name=mechanism.synapse_type, **params)
         return node, (), None
 
     if layout.target != "density" or layout.layout != "dense":

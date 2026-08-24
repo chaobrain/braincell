@@ -23,6 +23,7 @@ from typing import TYPE_CHECKING
 
 import brainstate
 import brainunit as u
+import jax.numpy as jnp
 import numpy as np
 
 from braincell._compute.state import CellRuntimeState
@@ -141,12 +142,19 @@ def _sample_mechanism_probe_point(
     declaration: MechanismProbe,
     point_id: int,
 ) -> object:
+    synapse_view = _synapse_probe_view(rcell, declaration.mechanism, point_id=point_id)
+    if len(synapse_view) > 0:
+        synapse_type = synapse_view._require_homogeneous_type()
+        layout_id = synapse_view._store.layout_id(synapse_type)
+        node = runtime.get_runtime_node(layout_id)
+        raw = _probe_attr_value(node, declaration.field, probe_name=_probe_name(declaration))
+        selected = raw[..., synapse_view.runtime_index]
+        return _pack_synapse_probe_rows(rcell, synapse_view, selected)
+
     matched_layouts = []
     for layout in runtime.get_point_layouts(point_id):
         mechanism = runtime.get_layout_mechanism(layout.id)
-        if (isinstance(mechanism, Density) and mechanism.instance_name == declaration.mechanism) or (
-            isinstance(mechanism, Synapse) and mechanism.instance_name == declaration.mechanism
-        ):
+        if isinstance(mechanism, Density) and mechanism.instance_name == declaration.mechanism:
             matched_layouts.append(layout)
     if len(matched_layouts) > 1:
         raise ValueError(
@@ -189,12 +197,29 @@ def _sample_current_probe_point(
 ) -> object:
     point_V = bridge.cv_to_point(rcell.V.value, runtime)
     if declaration.mechanism is not None:
+        synapse_view = _synapse_probe_view(rcell, declaration.mechanism, point_id=point_id)
+        if len(synapse_view) > 0:
+            synapse_type = synapse_view._require_homogeneous_type()
+            layout_id = synapse_view._store.layout_id(synapse_type)
+            layout = runtime.layouts[layout_id]
+            node = runtime.get_runtime_node(layout_id)
+            if layout.population_index is None:
+                local_voltage = point_V[..., layout.point_index]
+            else:
+                local_voltage = point_V[..., layout.population_index, layout.point_index]
+            current = _probe_current_value(
+                node,
+                local_voltage,
+                None,
+                probe_name=_probe_name(declaration),
+            )
+            selected = current[..., synapse_view.runtime_index]
+            return _pack_synapse_probe_rows(rcell, synapse_view, selected)
+
         matched_layouts = []
         for layout in runtime.get_point_layouts(point_id):
             mechanism = runtime.get_layout_mechanism(layout.id)
-            if (isinstance(mechanism, Density) and mechanism.instance_name == declaration.mechanism) or (
-                isinstance(mechanism, Synapse) and mechanism.instance_name == declaration.mechanism
-            ):
+            if isinstance(mechanism, Density) and mechanism.instance_name == declaration.mechanism:
                 matched_layouts.append(layout)
         if len(matched_layouts) > 1:
             raise ValueError(
@@ -234,6 +259,27 @@ def _sample_current_probe_point(
     ion = runtime.get_ion(declaration.ion)
     current = ion.current(point_V, include_external=False)
     return _select_last_axis(current, point_id)
+
+
+def _synapse_probe_view(rcell: "Cell", name: str, *, point_id: int):
+    """Return logical rows matching one name at one electrical point."""
+    view = rcell.synapses[name]
+    return view[np.flatnonzero(view.point_id == int(point_id))]
+
+
+def _pack_synapse_probe_rows(rcell: "Cell", view, values):
+    """Scatter flat runtime rows back to one value per population member."""
+    if len(rcell.pop_size) == 0:
+        return u.math.sum(values, axis=-1)
+    if len(rcell.pop_size) != 1:
+        raise ValueError("Synapse probes currently require scalar or one-dimensional pop_size.")
+    owners = np.asarray(view.population_index, dtype=np.int32)
+    output_shape = values.shape[:-1] + (int(rcell.pop_size[0]),)
+    if isinstance(values, u.Quantity):
+        mantissa = jnp.zeros(output_shape, dtype=u.get_mantissa(values).dtype)
+        return u.Quantity(mantissa.at[..., owners].add(u.get_mantissa(values)), values.unit)
+    output = jnp.zeros(output_shape, dtype=jnp.asarray(values).dtype)
+    return output.at[..., owners].add(values)
 
 
 def _midpoint_cv_id(runtime: CellRuntimeState, *, point_id: int) -> int:

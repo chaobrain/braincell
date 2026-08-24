@@ -39,6 +39,7 @@ from .base import (
     NodeEdgeRole,
     NodeRole,
     NodeTree,
+    PointPlacement,
     build_discretization,
 )
 from .policy import (
@@ -69,5 +70,6 @@ __all__ = [
     "NodeEdgeRole",
     "NodeRole",
     "NodeTree",
+    "PointPlacement",
     "build_discretization",
 ]

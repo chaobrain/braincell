@@ -136,30 +136,34 @@ def _profile_barrier_current(current):
 
 
 def _synapse_contrib_to_point(runtime: CellRuntimeState, layout, syn, point_V):
+    if layout.point_index is None:
+        raise ValueError(f"Synapse layout {layout.id!r} is missing point_index.")
+    if layout.population_index is None:
+        local_voltage = point_V[..., layout.point_index]
+    else:
+        local_voltage = point_V[..., layout.population_index, layout.point_index]
     try:
         contrib = jax.named_call(
             syn.current,
             name=_call_name("braincell:membrane_current:synapse_current", (f"layout_{layout.id}",), syn),
-        )(point_V[..., layout.point_index])
+        )(local_voltage)
     except (TypeError, ValueError, RuntimeError, ArithmeticError) as exc:
         raise ValueError(f"Error computing current for synapse layout {layout.id!r}:\n{syn}\nError: {exc}") from exc
     if contrib is None:
         return None
-    if layout.point_index is None:
-        raise ValueError(f"Synapse layout {layout.id!r} is missing point_index.")
-    syn_contrib = contrib
-    if getattr(syn, "current_units", None) == "total":
-        point_area = runtime.point_area[..., layout.point_index]
-        syn_contrib = syn_contrib / point_area
-    if getattr(syn, "current_sign", None) == "neuron":
-        syn_contrib = -syn_contrib
+    point_area = runtime.point_area[..., layout.point_index]
+    syn_contrib = contrib / point_area
     if hasattr(contrib, "unit"):
         contrib_point = u.Quantity(
-            jnp.zeros(runtime.pop_size + (runtime.n_point,), dtype=u.get_mantissa(syn_contrib).dtype),
+            jnp.zeros(point_V.shape, dtype=u.get_mantissa(syn_contrib).dtype),
             syn_contrib.unit,
         )
+        if layout.population_index is not None:
+            return contrib_point.at[..., layout.population_index, layout.point_index].add(syn_contrib)
         return contrib_point.at[..., layout.point_index].add(syn_contrib)
-    contrib_point = jnp.zeros(runtime.pop_size + (runtime.n_point,), dtype=jnp.asarray(syn_contrib).dtype)
+    contrib_point = jnp.zeros(point_V.shape, dtype=jnp.asarray(syn_contrib).dtype)
+    if layout.population_index is not None:
+        return contrib_point.at[..., layout.population_index, layout.point_index].add(syn_contrib)
     return contrib_point.at[..., layout.point_index].add(syn_contrib)
 
 

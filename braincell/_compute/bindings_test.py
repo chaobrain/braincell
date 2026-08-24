@@ -135,7 +135,7 @@ class RuntimeBindingTest(unittest.TestCase):
             atol=1e-12,
         )
 
-    def test_same_named_overlapping_ion_channels_remain_distinct(self) -> None:
+    def test_same_named_overlapping_ion_channels_are_rejected(self) -> None:
         cell = Cell(_build_tree())
         cell.paint(
             BranchSlice(branch_index=[0, 1], prox=0.0, dist=1.0),
@@ -146,18 +146,8 @@ class RuntimeBindingTest(unittest.TestCase):
             braincell.mech.Channel("Na_HH1952", g_max=8.0 * (u.mS / u.cm**2)),
         )
 
-        cell.init_state()
-        rcell = cell
-
-        layouts = tuple(layout for layout in rcell.layouts if layout.kind == "channel:Na_HH1952")
-        nodes = tuple(rcell.get_runtime_node(layout.id) for layout in layouts)
-        na = rcell.get_ion("na")
-
-        self.assertEqual(len(layouts), 2)
-        self.assertEqual(len(set(map(id, nodes))), 2)
-        self.assertEqual(len(na.channels), 2)
-        self.assertIn("Na_HH1952", na.channels)
-        self.assertTrue(any(key.startswith("Na_HH1952__layout_") for key in na.channels if key != "Na_HH1952"))
+        with self.assertRaisesRegex(ValueError, "overlap after discretization"):
+            cell.init_state()
 
     def test_set_state_syncs_merged_channel_param(self) -> None:
         cell = Cell(_build_tree())

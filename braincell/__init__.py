@@ -27,7 +27,7 @@ from braincell.quad.protocol import (
     hidden_state,
     state_grouping,
 )
-from . import quad, mech, channel, synapse, ion
+from . import quad, mech, channel, synapse, ion, filter, connection
 from ._base import (
     Channel,
     HHTypedNeuron,
@@ -35,6 +35,7 @@ from ._base import (
     IonInfo,
     IonChannel,
     MixIons,
+    Synapse,
     mix_ions,
 )
 from ._discretization import (
@@ -49,15 +50,25 @@ from ._discretization import (
     MaxCVLen,
     Node,
     NodeTree,
+    PointPlacement,
 )
 from ._multi_compartment import (
     Cell,
+    CellSelection,
+    CellView,
+    ChannelView,
+    IonView,
     MultiCompartment,
     RunResult,
+    SynapseView,
 )
 from .network import (
     Network,
+    NetworkResult,
 )
+from .connection import ConnectionView, NetworkConnections, connect
+from .event import EventSequence, EventSource, EventSourceView, EventTable, NetStim, VoltageCrossingSource
+from .recording import EventSeries, RecordingSchema, RecordingSpec, SampleBlock, observe
 from ._version import (
     __version__,
     __version_info__,
@@ -99,8 +110,13 @@ __all__ = [
     "Branch",
     "CableProperty",
     "Cell",
+    "CellSelection",
+    "CellView",
+    "ChannelView",
     "Channel",
     "CompositeByTypePolicy",
+    "ConnectionView",
+    "NetworkConnections",
     "CustomBranch",
     "CurrentClamp",
     "CV",
@@ -112,8 +128,14 @@ __all__ = [
     "DLambda",
     "Dendrite",
     "FunctionClamp",
+    "EventSequence",
+    "EventSource",
+    "EventSourceView",
+    "EventTable",
+    "EventSeries",
     "HHTypedNeuron",
     "Ion",
+    "IonView",
     "IonChannel",
     "IonInfo",
     "MixIons",
@@ -121,16 +143,28 @@ __all__ = [
     "Morphology",
     "MultiCompartment",
     "Network",
+    "NetworkResult",
+    "NetStim",
     "Node",
     "NodeTree",
+    "PointPlacement",
     "RunResult",
+    "RecordingSchema",
+    "RecordingSpec",
+    "SampleBlock",
     "SingleCompartment",
     "Soma",
+    "SynapseView",
+    "Synapse",
+    "VoltageCrossingSource",
     "channel",
+    "connection",
+    "connect",
     "ion",
     "mix_ions",
     "mech",
     "network",
+    "observe",
     "quad",
     "SineClamp",
     "synapse",

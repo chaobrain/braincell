@@ -23,7 +23,7 @@ and :class:`Synapse`, and the :class:`IonInfo` named-tuple used by
 re-exports in :mod:`braincell._base`.
 """
 
-from typing import NamedTuple, Optional
+from typing import Mapping, NamedTuple, Optional
 
 import brainstate
 import braintools
@@ -32,7 +32,9 @@ import brainunit as u
 
 from braincell._typing import ArrayLike, Size
 from ._misc import TreeNode
+from .event import NoEventInput
 from .quad.protocol import DiffEqModule, IndependentIntegration
+from ._synapse_schema import DerivedSpec, ParameterSpec, StateSpec
 
 __all__ = ["IonChannel", "IonInfo", "Channel", "Synapse"]
 
@@ -333,44 +335,67 @@ class Channel(IonChannel):
 
 
 class Synapse(IonChannel):
-    """Base class for runtime point-synapse mechanisms.
+    """Base class for vectorized runtime point-synapse mechanisms.
 
-    Runtime synapses are point-local mechanisms that consume a local
-    presynaptic drive such as ``pre_spike`` and return a postsynaptic
-    current contribution via :meth:`current`.
-
-    Synapses follow the same integration lifecycle as channels, with one
-    extra presynaptic-drive buffer that is refreshed once per timestep.
-    Runtime code writes external drive into :attr:`pre_spike` before
-    :meth:`pre_integral`; subclasses can then consume it either as a
-    discontinuous jump in :meth:`pre_integral` or as a continuous input
-    term in :meth:`compute_derivative`.
+    Subclasses declare physical parameters, differential states, and public
+    derived values through explicit schemas. ``current()`` always returns an
+    inward-positive total point current. Discrete input is passed directly to
+    :meth:`apply_events`; event buffers are owned by runtime routing.
     """
 
     __module__ = 'braincell'
 
+    parameters: Mapping[str, ParameterSpec] = {}
+    states: Mapping[str, StateSpec] = {}
+    derived: Mapping[str, DerivedSpec] = {}
+    event_input = NoEventInput()
+
+    def __init__(self, size: brainstate.typing.Size, name: Optional[str] = None, **parameters):
+        super().__init__(size=size, name=name)
+        unknown = tuple(sorted(set(parameters).difference(self.parameters)))
+        if unknown:
+            raise TypeError(f"Unknown {type(self).__name__} parameters: {unknown!r}.")
+        for field, spec in self.parameters.items():
+            value = parameters.get(field, spec.default)
+            value = braintools.init.param(value, self.varshape, allow_none=False)
+            spec.validate(value, field)
+            setattr(self, field, value)
+        self.validate_parameters()
+
+    def validate_parameters(self) -> None:
+        """Validate relations involving more than one parameter."""
+        self.validate_parameter_values({field: getattr(self, field) for field in self.parameters})
+
+    @classmethod
+    def validate_parameter_values(cls, parameters: Mapping[str, object]) -> None:
+        """Validate cross-field physical invariants for canonical columns."""
+        _ = parameters
+
     def init_state(self, V_post=None, batch_size=None):
         _ = V_post
-        self._pre_spike_state = brainstate.ShortTermState(_synapse_pre_drive_zero(self, batch_size=batch_size))
+        for field, spec in self.states.items():
+            spec.validate(spec.initial, field)
+            value = _broadcast_synapse_initial(spec.initial, self.varshape, batch_size=batch_size)
+            setattr(self, field, _make_synapse_state(value))
 
     def reset_state(self, V_post=None, batch_size=None):
         _ = V_post
-        self._pre_spike_state.value = _synapse_pre_drive_zero(self, batch_size=batch_size)
+        for field, spec in self.states.items():
+            value = _broadcast_synapse_initial(spec.initial, self.varshape, batch_size=batch_size)
+            getattr(self, field).value = value
 
-    def bind_pre_spike(self, pre_spike):
-        self._pre_spike_state.value = pre_spike
-
-    def pre_drive(self):
-        return self._pre_spike_state.value
-
-    def apply_discrete_events(self, *args, **kwargs):
-        """Apply buffered presynaptic events before continuous dynamics."""
-        pass
+    def apply_events(self, payload, V_post=None):
+        """Apply one already-aggregated event payload vector."""
+        _ = payload, V_post
 
 
-def _synapse_pre_drive_zero(synapse, *, batch_size=None):
-    value = braintools.init.param(u.math.zeros, synapse.varshape, batch_size)
-    weight = getattr(synapse, "weight", None)
-    if isinstance(weight, u.Quantity):
-        return value * weight.unit
-    return value
+def _make_synapse_state(value):
+    # Logical synapses are a packed SoA, not a Cell population/spatial grid.
+    from .quad.protocol import DiffEqSingleState
+
+    return DiffEqSingleState(value)
+
+
+def _broadcast_synapse_initial(initial, shape, *, batch_size=None):
+    target = ((int(batch_size),) + tuple(shape)) if batch_size is not None else tuple(shape)
+    return u.math.full(target, initial)

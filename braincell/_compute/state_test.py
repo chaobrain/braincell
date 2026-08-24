@@ -34,15 +34,15 @@ from ._testing import _build_tree
 class CellRuntimeStateTest(unittest.TestCase):
     """Runtime state construction, mutation, and probe sampling."""
 
-    def test_synapse_mechanism_builds_sparse_runtime_node_and_pre_spike_state(self) -> None:
+    def test_synapse_mechanism_builds_sparse_runtime_node_and_event_buffer(self) -> None:
         cell = Cell(_build_tree())
         cell.place(
             RootLocation(x=0.5),
-            braincell.mech.Synapse(
-                "AMPA",
-                g_max=0.2 * (u.mS / u.cm**2),
-                E_rev=0.0 * u.mV,
-                name="ampa_soma",
+            braincell.mech.SynapseSpec(
+                "ExpSyn",
+                tau=2.0 * u.ms,
+                e=0.0 * u.mV,
+                name="exp_soma",
             ),
         )
 
@@ -53,31 +53,32 @@ class CellRuntimeStateTest(unittest.TestCase):
         layout = rcell.layouts[0]
         self.assertEqual(layout.layout, "sparse")
         self.assertEqual(layout.target, "point")
-        self.assertEqual(layout.kind, "synapse:AMPA")
+        self.assertEqual(layout.kind, "synapse:ExpSyn")
         self.assertEqual(layout.point_index.tolist(), [1])
-        self.assertEqual(rcell.expected_state_shape(layout.id, "pre_spike"), (1, 1))
         node = rcell.get_runtime_node(layout.id)
-        self.assertIsInstance(node, braincell.synapse.AMPA)
-        self.assertEqual(node.varshape, (1, 1))
-        self.assertEqual(rcell.get_state(layout.id, "pre_spike")[0], 0.0)
+        self.assertIsInstance(node, braincell.synapse.ExpSyn)
+        self.assertEqual(node.varshape, (1,))
+        np.testing.assert_allclose(rcell.runtime.get_event_buffer(layout.id).to_decimal(u.uS), [0.0])
 
-    def test_synapse_pre_spike_can_be_mutated_through_runtime_state(self) -> None:
+    def test_synapse_event_buffer_is_private_runtime_state(self) -> None:
         cell = Cell(_build_tree())
         cell.place(
             RootLocation(x=0.5),
-            braincell.mech.Synapse(
-                "AMPA",
-                g_max=0.2 * (u.mS / u.cm**2),
-                E_rev=0.0 * u.mV,
-                name="ampa_soma",
+            braincell.mech.SynapseSpec(
+                "ExpSyn",
+                tau=2.0 * u.ms,
+                e=0.0 * u.mV,
+                name="exp_soma",
             ),
         )
 
         cell.init_state()
         rcell = cell
         layout = rcell.layouts[0]
-        rcell.set_state(layout.id, "pre_spike", 1.0)
-        self.assertEqual(float(np.asarray(rcell.get_state(layout.id, "pre_spike"))[0, 0]), 1.0)
+        with self.assertRaises(KeyError):
+            rcell.get_state(layout.id, "pre_spike")
+        rcell.runtime.event_buffers[layout.id].value = np.asarray([1.0]) * u.uS
+        np.testing.assert_allclose(rcell.runtime.get_event_buffer(layout.id).to_decimal(u.uS), [1.0])
 
     def test_rebuild_after_place_produces_new_runtime(self) -> None:
         cell = Cell(_build_tree())
@@ -415,64 +416,29 @@ class PointSynapseRuntimeTest(unittest.TestCase):
         )
         cell.place(
             at("soma", 0.5),
-            braincell.mech.Synapse(
-                "AMPA",
-                g_max=0.3 * (u.mS / u.cm**2),
-                E_rev=0.0 * u.mV,
-                name="ampa_soma",
+            braincell.mech.SynapseSpec(
+                "ExpSyn",
+                tau=2.0 * u.ms,
+                e=0.0 * u.mV,
+                name="exp_soma",
             ),
         )
         cell.init_state()
         runtime = cell.runtime
-        layout = next(layout for layout in runtime.layouts if layout.kind == "synapse:AMPA")
+        layout = next(layout for layout in runtime.layouts if layout.kind == "synapse:ExpSyn")
         node = runtime.get_runtime_node(layout.id)
 
-        runtime.set_state(layout.id, "pre_spike", 1.0)
+        node.g.value = np.asarray([1.0]) * u.uS
         with brainstate.environ.context(t=0.0 * u.ms, dt=0.05 * u.ms):
-            cell._prepare_next_synapse_inputs()
             cell.compute_derivative()
 
         self.assertIsNotNone(node.g.derivative)
-        self.assertGreater(float(node.g.derivative[0, 0].to_decimal(u.ms**-1)), 0.0)
+        self.assertLess(float(node.g.derivative[0].to_decimal(u.uS / u.ms)), 0.0)
 
-    def test_ampa_synapse_drive_changes_state_and_voltage(self) -> None:
-        cell = Cell(
-            _build_tree(),
-            solver="staggered",
-            V_init=-60.0 * u.mV,
-        )
-        cell.place(at("soma", 0.5), braincell.mech.StateProbe(name="v", field="v"))
-        cell.place(
-            at("soma", 0.5),
-            braincell.mech.Synapse(
-                "AMPA",
-                g_max=0.3 * (u.mS / u.cm**2),
-                E_rev=0.0 * u.mV,
-                name="ampa_soma",
-            ),
-        )
-        cell.init_state()
-        runtime = cell.runtime
-        layout = next(layout for layout in runtime.layouts if layout.kind == "synapse:AMPA")
-        node = runtime.get_runtime_node(layout.id)
-
-        baseline_g = float(node.g.value[0, 0])
-        runtime.set_state(layout.id, "pre_spike", 1.0)
-        baseline_v = float(cell.V.value[0, 0].to_decimal(u.mV))
-
-        with brainstate.environ.context(t=0.0 * u.ms, dt=0.05 * u.ms):
-            cell._prepare_next_synapse_inputs()
-            cell.update()
-
-        updated_g = float(node.g.value[0, 0])
-        updated_v = float(cell.V.value[0, 0].to_decimal(u.mV))
-        current = float(
-            node.current(cell._cv_to_point(cell.V.value)[..., layout.point_index])[0, 0].to_decimal(u.nA / u.cm**2)
-        )
-
-        self.assertGreater(updated_g, baseline_g)
-        self.assertNotEqual(updated_v, baseline_v)
-        self.assertNotEqual(current, 0.0)
+    def test_unmigrated_receptor_models_fail_explicitly(self) -> None:
+        for model in ("AMPA", "GABAa", "NMDA"):
+            with self.assertRaisesRegex(NotImplementedError, "temporarily unavailable"):
+                braincell.mech.SynapseSpec(model)
 
     def test_expsyn_drive_jumps_g_and_then_decays(self) -> None:
         cell = Cell(
@@ -484,11 +450,10 @@ class PointSynapseRuntimeTest(unittest.TestCase):
         cell.place(at("soma", 0.5), braincell.mech.CurrentProbe(name="i_syn", mechanism="exp_syn"))
         cell.place(
             at("soma", 0.5),
-            braincell.mech.Synapse(
+            braincell.mech.SynapseSpec(
                 "ExpSyn",
                 tau=2.0 * u.ms,
                 e=0.0 * u.mV,
-                weight=1.0 * u.uS,
                 name="exp_syn",
             ),
         )
@@ -497,17 +462,14 @@ class PointSynapseRuntimeTest(unittest.TestCase):
         layout = next(layout for layout in runtime.layouts if layout.kind == "synapse:ExpSyn")
         node = runtime.get_runtime_node(layout.id)
 
-        runtime.set_state(layout.id, "pre_spike", 1.0)
+        runtime.event_buffers[layout.id].value = np.asarray([1.0]) * u.uS
         with brainstate.environ.context(t=0.0 * u.ms, dt=0.05 * u.ms):
-            cell._prepare_next_synapse_inputs()
             cell.update()
-        g_after_event = float(node.g.value[0, 0].to_decimal(u.uS))
+        g_after_event = float(node.g.value[0].to_decimal(u.uS))
 
-        runtime.set_state(layout.id, "pre_spike", 0.0)
         with brainstate.environ.context(t=0.05 * u.ms, dt=0.05 * u.ms):
-            cell._prepare_next_synapse_inputs()
             cell.update()
-        g_after_decay = float(node.g.value[0, 0].to_decimal(u.uS))
+        g_after_decay = float(node.g.value[0].to_decimal(u.uS))
         current = float(cell.sample_probe("i_syn").to_decimal(u.nA)[0])
 
         self.assertAlmostEqual(g_after_event, float(np.exp(-0.05 / 2.0)))
@@ -525,12 +487,11 @@ class PointSynapseRuntimeTest(unittest.TestCase):
         cell.place(at("soma", 0.5), braincell.mech.CurrentProbe(name="i_syn", mechanism="exp2_syn"))
         cell.place(
             at("soma", 0.5),
-            braincell.mech.Synapse(
+            braincell.mech.SynapseSpec(
                 "Exp2Syn",
                 tau1=0.5 * u.ms,
                 tau2=5.0 * u.ms,
                 e=0.0 * u.mV,
-                weight=1.0 * u.uS,
                 name="exp2_syn",
             ),
         )
@@ -539,14 +500,13 @@ class PointSynapseRuntimeTest(unittest.TestCase):
         layout = next(layout for layout in runtime.layouts if layout.kind == "synapse:Exp2Syn")
         node = runtime.get_runtime_node(layout.id)
 
-        runtime.set_state(layout.id, "pre_spike", 1.0)
+        runtime.event_buffers[layout.id].value = np.asarray([1.0]) * u.uS
         with brainstate.environ.context(t=0.0 * u.ms, dt=0.05 * u.ms):
-            cell._prepare_next_synapse_inputs()
             cell.update()
 
-        A = float(node.A.value[0, 0].to_decimal(u.uS))
-        B = float(node.B.value[0, 0].to_decimal(u.uS))
-        g_after_event = float(node.g[0, 0].to_decimal(u.uS))
+        A = float(node.A.value[0].to_decimal(u.uS))
+        B = float(node.B.value[0].to_decimal(u.uS))
+        g_after_event = float(node.g[0].to_decimal(u.uS))
         current = float(cell.sample_probe("i_syn").to_decimal(u.nA)[0])
 
         self.assertGreater(A, 0.0)
@@ -554,12 +514,10 @@ class PointSynapseRuntimeTest(unittest.TestCase):
         self.assertGreater(g_after_event, 0.0)
         self.assertNotEqual(current, 0.0)
 
-        runtime.set_state(layout.id, "pre_spike", 0.0)
         with brainstate.environ.context(t=0.05 * u.ms, dt=0.05 * u.ms):
-            cell._prepare_next_synapse_inputs()
             cell.update()
 
-        g_after_decay = float(node.g[0, 0].to_decimal(u.uS))
+        g_after_decay = float(node.g[0].to_decimal(u.uS))
         current = float(cell.sample_probe("i_syn").to_decimal(u.nA)[0])
 
         self.assertGreater(g_after_decay, 0.0)
@@ -571,24 +529,16 @@ class PointSynapseRuntimeTest(unittest.TestCase):
             solver="staggered",
             V_init=-65.0 * u.mV,
         )
-        cell.place(
-            at("soma", 0.5),
-            braincell.mech.NetStim(
-                name="stim", start=1.0 * u.ms, number=1, interval=10.0 * u.ms, noise=0.0, weight=1.0
-            ),
-        )
         cell.place(at("soma", 0.5), braincell.mech.StateProbe(name="v", field="v"))
         cell.place(at("soma", 0.5), braincell.mech.MechanismProbe(name="g", mechanism="exp_syn", field="g"))
         cell.place(at("soma", 0.5), braincell.mech.CurrentProbe(name="i_syn", mechanism="exp_syn"))
-        cell.place(
-            at("soma", 0.5),
-            braincell.mech.Synapse(
-                "ExpSyn",
-                tau=2.0 * u.ms,
-                e=0.0 * u.mV,
-                weight=1.0 * u.uS,
-                name="exp_syn",
-            ),
+        exp = braincell.mech.SynapseSpec("ExpSyn", tau=2.0 * u.ms, e=0.0 * u.mV, name="exp_syn")
+        cell.place(at("soma", 0.5), exp)
+        braincell.connect(
+            "stim_to_exp",
+            source=braincell.NetStim(name="stim", start=1.0 * u.ms, number=1, interval=10.0 * u.ms),
+            synapse=cell.synapses[exp],
+            weight=1.0 * u.uS,
         )
         result = cell.run(dt=0.05 * u.ms, duration=10.0 * u.ms)
         self.assertGreater(float(np.max(result.traces["g"].to_decimal(u.uS))), 0.0)
@@ -600,38 +550,24 @@ class PointSynapseRuntimeTest(unittest.TestCase):
             solver="staggered",
             V_init=-65.0 * u.mV,
         )
-        cell.place(
-            at("soma", 0.5),
-            braincell.mech.NetStim(
-                name="stim",
-                start=1.0 * u.ms,
-                number=1,
-                interval=10.0 * u.ms,
-                noise=0.0,
-                weight=2.0,
-            ),
+        exp = braincell.mech.SynapseSpec("ExpSyn", tau=2.0 * u.ms, e=0.0 * u.mV, name="exp_syn")
+        cell.place(at("soma", 0.5), exp)
+        braincell.connect(
+            "stim_to_exp",
+            source=braincell.NetStim(name="stim", start=1.0 * u.ms, number=1, interval=10.0 * u.ms),
+            synapse=cell.synapses[exp],
+            weight=2.0 * u.uS,
         )
-        cell.place(
-            at("soma", 0.5),
-            braincell.mech.Synapse(
-                "ExpSyn",
-                tau=2.0 * u.ms,
-                e=0.0 * u.mV,
-                weight=1.0 * u.uS,
-                name="exp_syn",
-            ),
-        )
-        cell.bind_synapse_input("exp_syn", source=lambda: np.asarray([3.0]), weight=0.5)
+        cell.bind_synapse_input("exp_syn", source=lambda: np.asarray([3.0]), weight=0.5 * u.uS)
         cell.init_state()
         runtime = cell.runtime
         layout = next(layout for layout in runtime.layouts if layout.kind == "synapse:ExpSyn")
-        node = runtime.get_runtime_node(layout.id)
-        runtime.set_state(layout.id, "pre_spike", 1.0)
+        runtime.event_buffers[layout.id].value = np.asarray([1.0]) * u.uS
 
         with brainstate.environ.context(t=1.0 * u.ms, dt=0.05 * u.ms):
             cell._prepare_runtime_synapse_inputs(cell._cv_to_point(cell.V.value))
 
-        self.assertAlmostEqual(float(np.asarray(node.pre_drive().to_decimal(u.uS))[0, 0]), 4.5)
+        self.assertAlmostEqual(float(np.asarray(runtime.get_event_buffer(layout.id).to_decimal(u.uS))[0]), 4.5)
 
     def test_expsyn_discrete_event_applies_at_begin_step_not_post_integral(self) -> None:
         cell = Cell(
@@ -641,11 +577,10 @@ class PointSynapseRuntimeTest(unittest.TestCase):
         )
         cell.place(
             at("soma", 0.5),
-            braincell.mech.Synapse(
+            braincell.mech.SynapseSpec(
                 "ExpSyn",
                 tau=2.0 * u.ms,
                 e=0.0 * u.mV,
-                weight=1.0 * u.uS,
                 name="exp_syn",
             ),
         )
@@ -653,15 +588,15 @@ class PointSynapseRuntimeTest(unittest.TestCase):
         runtime = cell.runtime
         layout = next(layout for layout in runtime.layouts if layout.kind == "synapse:ExpSyn")
         node = runtime.get_runtime_node(layout.id)
-        node.bind_pre_spike(np.asarray([1.0]))
+        runtime.event_buffers[layout.id].value = np.asarray([1.0]) * u.uS
 
         node.post_integral(cell._cv_to_point(cell.V.value)[..., layout.point_index])
-        self.assertAlmostEqual(float(node.g.value[0, 0].to_decimal(u.uS)), 0.0)
+        self.assertAlmostEqual(float(node.g.value[0].to_decimal(u.uS)), 0.0)
 
         with brainstate.environ.context(t=0.0 * u.ms, dt=0.05 * u.ms):
             cell._begin_step()
 
-        self.assertAlmostEqual(float(node.g.value[0, 0].to_decimal(u.uS)), 1.0)
+        self.assertAlmostEqual(float(node.g.value[0].to_decimal(u.uS)), 1.0)
 
 
 class CellRuntimeStateIsMutableTest(unittest.TestCase):

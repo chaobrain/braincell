@@ -63,7 +63,7 @@ from braincell.mech import (
     ProbeMechanism,
     SineClamp,
     StateProbe,
-    Synapse as SynapsePlacement,
+    SynapseSpec as SynapsePlacement,
 )
 from braincell.mech._params import _to_hashable
 
@@ -117,7 +117,15 @@ class MechanismLayout:
     point_mask: np.ndarray | None
     n_active: int
     source_cv_ids: tuple[int, ...]
+    placement_index: np.ndarray | None = None
+    population_index: np.ndarray | None = None
+    synapse_index: np.ndarray | None = None
     source_rule: str | None = None
+
+    @property
+    def is_packed(self) -> bool:
+        """Whether point instances are stored once across the population."""
+        return self.population_index is not None
 
     @property
     def point_axis_len(self) -> int:
@@ -357,18 +365,16 @@ def mechanism_signature(mechanism: object) -> tuple[object, ...]:
 def _mechanism_var_names(mechanism: object) -> tuple[str, ...]:
     """Return the state-buffer variable names for a mechanism.
 
-    For :class:`Density` this is the declared ``params`` keys. For
-    synapses and junctions it is the parameter keys (or a single
-    default name when empty). For clamps it is the concrete dataclass
-    field names. The v1 probe declarations do not allocate their own
-    state buffers; they are read through explicit sampling helpers.
+    For :class:`Density` this is the declared ``params`` keys. Synapses are
+    materialized through their runtime schema before this helper is reached.
+    For junctions it is the parameter keys (or a single default name when
+    empty). For clamps it is the concrete dataclass field names. The v1 probe
+    declarations do not allocate their own state buffers.
     """
     if isinstance(mechanism, Density):
         return tuple(mechanism.params.keys())
     if isinstance(mechanism, SynapsePlacement):
-        names = tuple(mechanism.params.keys())
-        base = names if names else ("g_max", "E_rev")
-        return ("pre_spike",) + tuple(base)
+        return tuple(mechanism.params.keys())
     if isinstance(mechanism, Junction):
         names = tuple(mechanism.params.keys())
         return names if names else ("conductance",)
@@ -390,12 +396,6 @@ def _mechanism_var_names(mechanism: object) -> tuple[str, ...]:
 
 
 def _mechanism_var_value(mechanism: object, var_name: str) -> object:
-    if isinstance(mechanism, SynapsePlacement) and var_name == "pre_spike":
-        if "weight" in mechanism.params:
-            weight = mechanism.params["weight"]
-            if isinstance(weight, u.Quantity):
-                return 0.0 * weight.unit
-        return 0.0
     if isinstance(mechanism, Density):
         if var_name not in mechanism.params:
             raise KeyError(f"Mechanism has no parameter {var_name!r}.")
@@ -406,6 +406,34 @@ def _mechanism_var_value(mechanism: object, var_name: str) -> object:
     if hasattr(mechanism, var_name):
         return getattr(mechanism, var_name)
     raise KeyError(f"Mechanism {type(mechanism).__name__} has no attribute {var_name!r}.")
+
+
+def _stack_synapse_values(values: list[object], *, parameter: str):
+    """Stack one validated value per logical synapse into a runtime column."""
+    if not values:
+        return np.asarray([], dtype=float)
+    first = values[0]
+    if isinstance(first, u.Quantity):
+        unit = first.unit
+        try:
+            decimal = np.asarray([np.asarray(value.to_decimal(unit)) for value in values])
+        except Exception as exc:
+            raise ValueError(f"Synapse parameter {parameter!r} has incompatible units across instances.") from exc
+        if decimal.shape != (len(values),):
+            raise ValueError(
+                f"Synapse parameter {parameter!r} must resolve to one scalar per "
+                f"logical instance; got shape {decimal.shape!r}."
+            )
+        return u.Quantity(decimal, unit)
+    if any(isinstance(value, u.Quantity) for value in values):
+        raise TypeError(f"Synapse parameter {parameter!r} mixes dimensioned and dimensionless values.")
+    result = np.asarray(values)
+    if result.shape != (len(values),):
+        raise ValueError(
+            f"Synapse parameter {parameter!r} must resolve to one scalar per "
+            f"logical instance; got shape {result.shape!r}."
+        )
+    return result
 
 
 def _allocate_clamp_ragged_buffer(

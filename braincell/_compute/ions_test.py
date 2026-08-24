@@ -1155,4 +1155,4 @@ class RuntimeIonTest(unittest.TestCase):
             rcell = cell
 
             _ = rcell.layouts
-        self.assertIn("cannot mix classes", str(ctx.exception))
+        self.assertIn("cannot denote both", str(ctx.exception))

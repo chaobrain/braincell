@@ -178,14 +178,15 @@ class MergePaintRulesTest(unittest.TestCase):
         merged = merge_paint_rules((r1,), (r2,))
         self.assertEqual(len(merged), 2)
 
-    def test_density_same_region_same_name_replaces(self) -> None:
+    def test_density_same_region_same_name_is_preserved_for_cv_validation(self) -> None:
         d1 = Channel("IL", g_max=0.1 * (u.mS / u.cm**2), E=-70 * u.mV)
         d2 = Channel("IL", g_max=0.2 * (u.mS / u.cm**2), E=-70 * u.mV)
         r1 = PaintRule(region=AllRegion(), mechanism=d1)
         r2 = PaintRule(region=AllRegion(), mechanism=d2)
         merged = merge_paint_rules((r1,), (r2,))
-        self.assertEqual(len(merged), 1)
-        self.assertIs(merged[0].mechanism, d2)
+        self.assertEqual(len(merged), 2)
+        self.assertIs(merged[0].mechanism, d1)
+        self.assertIs(merged[1].mechanism, d2)
 
     def test_density_same_class_different_names_kept(self) -> None:
         d1 = Channel("IL", name="a", g_max=0.1 * (u.mS / u.cm**2), E=-70 * u.mV)
@@ -205,11 +206,11 @@ class MergePaintRulesTest(unittest.TestCase):
 
 
 class MergePlaceRulesTest(unittest.TestCase):
-    def test_exact_duplicate_dropped(self) -> None:
+    def test_exact_duplicate_kept_as_independent_declaration(self) -> None:
         clamp = CurrentClamp(durations=10 * u.ms, amplitudes=0.1 * u.nA)
         r = normalize_place_rule(AtLocation(branch=0, x=0.5), (clamp,))
         merged = merge_place_rules((r,), (r,))
-        self.assertEqual(len(merged), 1)
+        self.assertEqual(len(merged), 2)
 
     def test_different_clamps_both_kept(self) -> None:
         c1 = CurrentClamp(durations=10 * u.ms, amplitudes=0.1 * u.nA)
@@ -350,13 +351,16 @@ class ResolvePointNameTest(unittest.TestCase):
 
 
 class ApplyPlaceTest(unittest.TestCase):
-    def test_auto_generated_duplicate_raises(self) -> None:
+    def test_auto_generated_duplicate_gets_stable_placement_suffix(self) -> None:
         seen: set[str] = set()
         bucket = _MechBucket(cable=_DEFAULT_CABLE, density_by_key={}, points=[])
         probe = StateProbe(field="v")
-        _apply_place(bucket, probe, display_name="loc_0", seen_names=seen)
-        with self.assertRaises(ValueError):
-            _apply_place(bucket, probe, display_name="loc_0", seen_names=seen)
+        _apply_place(bucket, probe, display_name="loc_0", placement_id=0, seen_names=seen)
+        _apply_place(bucket, probe, display_name="loc_0", placement_id=1, seen_names=seen)
+        self.assertEqual(
+            [item.name for item in bucket.points],
+            ["loc_0_v", "loc_0_v__placement_1"],
+        )
 
     def test_user_named_duplicate_allowed(self) -> None:
         seen: set[str] = set()
@@ -480,14 +484,15 @@ class BuildMechCachesFrustaTest(unittest.TestCase):
             return original(branch, prox=prox, dist=dist)
 
         with patch("braincell._discretization.mechanism._build_frusta", new=counting):
-            _build_mech(
-                morpho,
-                geos,
-                ids,
-                paint_rules=paint,
-                place_rules=(),
-                cache=cache,
-            )
+            with self.assertRaisesRegex(ValueError, "overlap after discretization"):
+                _build_mech(
+                    morpho,
+                    geos,
+                    ids,
+                    paint_rules=paint,
+                    place_rules=(),
+                    cache=cache,
+                )
 
         for key, count in calls.items():
             self.assertEqual(

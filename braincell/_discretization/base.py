@@ -62,25 +62,83 @@ __all__ = [
     "NodeKind",
     "NodeRole",
     "NodeTree",
+    "PointPlacement",
     "Position",
     "build_discretization",
+    "locate_cv_on_branch",
 ]
+
+_EPS_PARAM = 1e-9
 
 
 @dataclass(frozen=True)
 class CVPointMechanism:
-    """Point mechanism attached to one CV-local position.
+    """Unresolved point placement attached to one CV-local position.
 
     Attributes
     ----------
+    placement_id : int
+        Stable declaration-order identity assigned during mechanism lowering.
     position : {"prox", "mid", "dist"}
         Which CV-local reference position owns the mechanism.
     mechanism : Point
         Point-mechanism declaration attached at that position.
+    display_name : str
+        Human-readable continuous morphology location.
+    branch_id : int
+        Morphology branch on which the placement was declared.
+    branch_x : float
+        Original normalized coordinate on that branch.
     """
 
     position: Position
     mechanism: Point
+    placement_id: int = -1
+    display_name: str = ""
+    branch_id: int = -1
+    branch_x: float = 0.5
+    population_index: int | None = None
+
+
+@dataclass(frozen=True)
+class PointPlacement:
+    """One independent point-mechanism placement.
+
+    The original continuous morphology location remains authoritative while
+    ``cv_id`` and ``point_id`` record its resolved membrane and electrical
+    locations, respectively. Multiple placements may share one ``point_id``.
+
+    Parameters
+    ----------
+    id : int
+        Stable placement index in declaration order.
+    mechanism : Point
+        Reusable point-mechanism specification for this instance.
+    display_name : str
+        Human-readable continuous location name.
+    branch_id, branch_name, branch_type : int, str, str
+        Morphology branch identity retained from the location declaration.
+    branch_x : float
+        Normalized continuous coordinate on the declared branch.
+    cv_id : int
+        Unique owning control volume.
+    cv_position : {"prox", "mid", "dist"}
+        CV-local role used to resolve the electrical node.
+    point_id : int
+        Electrical node receiving this placement's current.
+    """
+
+    id: int
+    mechanism: Point
+    display_name: str
+    branch_id: int
+    branch_name: str
+    branch_type: str
+    branch_x: float
+    cv_id: int
+    cv_position: Position
+    point_id: int
+    population_index: int | None = None
 
 
 @dataclass(frozen=True)
@@ -388,6 +446,9 @@ class Discretization:
         Point-space node tree derived from ``cv_tree``.
     cv_contexts : tuple of CVContext
         Read-only geometry and path-distance context for each CV.
+    point_placements : tuple of PointPlacement
+        Independent point-mechanism instances with continuous and discrete
+        location provenance.
 
     Notes
     -----
@@ -400,6 +461,7 @@ class Discretization:
     cv_tree: CVTree
     node_tree: NodeTree
     cv_contexts: tuple[CVContext, ...]
+    point_placements: tuple[PointPlacement, ...] = ()
 
     @property
     def cvs(self) -> tuple[CV, ...]:
@@ -422,6 +484,36 @@ class Discretization:
             Node records in stable id order.
         """
         return self.node_tree.nodes
+
+    def locate_cv(self, *, branch_id: int, x: float) -> int:
+        """Return the CV that owns one normalized branch location."""
+        ids = self.cv_tree.branch_to_cv_ids[int(branch_id)]
+        return locate_cv_on_branch(
+            ids,
+            self.cvs,
+            x=float(x),
+        )
+
+
+def locate_cv_on_branch(
+    ids: tuple[int, ...],
+    cvs: tuple[CV, ...],
+    *,
+    x: float,
+    epsilon: float = _EPS_PARAM,
+) -> int:
+    """Return the CV owning a normalized coordinate on one branch."""
+    if not ids:
+        raise ValueError("Cannot locate a CV on an empty branch tiling.")
+    if x <= 0.0 + epsilon:
+        return int(ids[0])
+    if x >= 1.0 - epsilon:
+        return int(ids[-1])
+    for cv_id in ids:
+        cv = cvs[cv_id]
+        if float(cv.prox) - epsilon <= x < float(cv.dist) - epsilon:
+            return int(cv_id)
+    raise ValueError(f"x={x!r} lies in no CV interval among ids {list(ids)!r}.")
 
 
 def build_discretization(
@@ -459,7 +551,7 @@ def build_discretization(
     initialization paths should route through the resulting
     :class:`Discretization`.
     """
-    cv_tree, node_tree, cv_contexts = _build_discretization_parts(
+    cv_tree, node_tree, cv_contexts, point_placements = _build_discretization_parts(
         morpho,
         policy=policy,
         paint_rules=paint_rules,
@@ -469,6 +561,7 @@ def build_discretization(
         cv_tree=cv_tree,
         node_tree=node_tree,
         cv_contexts=cv_contexts,
+        point_placements=point_placements,
     )
 
 
@@ -478,7 +571,7 @@ def _build_discretization_parts(
     policy: "CVPolicy",
     paint_rules: "tuple[PaintRule, ...]",
     place_rules: "tuple[PlaceRule, ...]",
-) -> tuple[CVTree, NodeTree, tuple[CVContext, ...]]:
+) -> tuple[CVTree, NodeTree, tuple[CVContext, ...], tuple[PointPlacement, ...]]:
     """Assemble both static discretization views in one pass."""
     from .geometry import build_cv_geometry
     from .context import build_cv_contexts
@@ -504,7 +597,49 @@ def _build_discretization_parts(
         branch_to_cv_ids=geometry.branch_to_cv_ids,
     )
     node_tree = build_node_tree_from_cvs(morpho, cvs=cv_tree.cvs)
-    return cv_tree, node_tree, cv_contexts
+    point_placements = _build_point_placements(
+        morpho,
+        cvs=cv_tree.cvs,
+        node_tree=node_tree,
+    )
+    return cv_tree, node_tree, cv_contexts, point_placements
+
+
+def _build_point_placements(
+    morpho: "Morphology",
+    *,
+    cvs: tuple[CV, ...],
+    node_tree: NodeTree,
+) -> tuple[PointPlacement, ...]:
+    """Resolve CV-local placement roles onto electrical point ids."""
+    role_to_point_id = {
+        (int(role.cv_id), str(role.position)): int(node.id) for node in node_tree.nodes for role in node.roles
+    }
+    placements: list[PointPlacement] = []
+    for cv in cvs:
+        midpoint_id = int(node_tree.cv_to_mid_node_id[cv.id])
+        for placement in cv.point_mech_roles:
+            point_id = role_to_point_id.get(
+                (int(cv.id), str(placement.position)),
+                midpoint_id,
+            )
+            branch = morpho.branch(index=int(placement.branch_id))
+            placements.append(
+                PointPlacement(
+                    id=int(placement.placement_id),
+                    mechanism=placement.mechanism,
+                    display_name=placement.display_name,
+                    branch_id=int(placement.branch_id),
+                    branch_name=str(branch.name),
+                    branch_type=str(branch.type),
+                    branch_x=float(placement.branch_x),
+                    cv_id=int(cv.id),
+                    cv_position=placement.position,
+                    point_id=point_id,
+                    population_index=placement.population_index,
+                )
+            )
+    return tuple(sorted(placements, key=lambda item: item.id))
 
 
 def _build_cv_tree(

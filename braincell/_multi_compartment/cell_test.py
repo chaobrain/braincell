@@ -28,9 +28,22 @@ import numpy as np
 
 import braincell
 import braincell.mech as mech
-from braincell import Branch, CVPerBranch, Cell, Channel, CurrentClamp, Ion, IonChannel, Morphology
+from braincell import (
+    Branch,
+    CVPerBranch,
+    Cell,
+    CellSelection,
+    CellView,
+    Channel,
+    CurrentClamp,
+    Ion,
+    IonChannel,
+    Morphology,
+    NetStim,
+    connect,
+)
 from braincell._multi_compartment import cell as cell_module
-from braincell.filter import AllRegion, BranchSlice, RootLocation
+from braincell.filter import AllRegion, BranchSlice, RootLocation, at
 from braincell.mech import StateProbe
 from braincell.quad import DiffEqSingleState, DiffEqState, get_integrator
 
@@ -155,12 +168,383 @@ class TestCellDeclaration(unittest.TestCase):
         )
         self.assertIs(result, cell)
 
-    def test_place_dedups_identical_rules(self):
+    def test_place_keeps_identical_rules_as_independent_instances(self):
         cell = _simple_cell()
         clamp = CurrentClamp(delay=1 * u.ms, durations=10 * u.ms, amplitudes=0.1 * u.nA)
         cell.place(RootLocation(0.0), clamp)
         cell.place(RootLocation(0.0), clamp)
-        self.assertEqual(len(cell.place_rules), 1)
+        self.assertEqual(len(cell.place_rules), 2)
+        placements = cell.point_placements
+        self.assertEqual(len(placements), 2)
+        self.assertEqual([item.id for item in placements], [0, 1])
+        self.assertEqual([item.branch_x for item in placements], [0.0, 0.0])
+        self.assertEqual(placements[0].point_id, placements[1].point_id)
+
+    def test_point_placements_preserve_continuous_location_and_cv_owner(self):
+        cell = _simple_cell()
+        clamp = CurrentClamp(delay=1 * u.ms, durations=10 * u.ms, amplitudes=0.1 * u.nA)
+        cell.place(at("soma", 0.31), clamp)
+        cell.place(at("soma", 0.39), clamp)
+
+        placements = cell.point_placements
+
+        self.assertEqual([item.branch_name for item in placements], ["soma", "soma"])
+        self.assertEqual([item.branch_type for item in placements], ["soma", "soma"])
+        self.assertEqual([item.branch_x for item in placements], [0.31, 0.39])
+        self.assertEqual([item.cv_id for item in placements], [0, 0])
+        self.assertEqual(placements[0].point_id, placements[1].point_id)
+        self.assertIs(cell.get_point_placement(1), placements[1])
+
+    def test_population_selection_places_packed_instances(self):
+        cell = Cell(_simple_cell().morpho, cv_policy=CVPerBranch(), pop_size=(4,))
+        synapse = mech.SynapseSpec("ExpSyn", name="exp", tau=2.0 * u.ms)
+
+        cell[0].place(at("soma", 0.21), synapse)
+        cell[[1, 3, 3]].place(at("soma", 0.45), synapse)
+        cell[2:4].place(at("soma", 0.73), synapse)
+
+        placements = cell.point_placements
+        self.assertEqual(
+            [item.population_index for item in placements],
+            [0, 1, 3, 2, 3],
+        )
+        self.assertEqual(
+            [item.branch_x for item in placements],
+            [0.21, 0.45, 0.45, 0.73, 0.73],
+        )
+
+    def test_cell_view_is_public_compatible_and_composes_indices(self):
+        cell = Cell(_simple_cell().morpho, cv_policy=CVPerBranch(), pop_size=(5,))
+
+        view = cell[[4, 1, 4, 2]]
+        nested = view[1:]
+
+        self.assertIsInstance(view, CellView)
+        self.assertIsInstance(view, CellSelection)
+        self.assertIs(CellSelection, CellView)
+        self.assertIs(view.root, cell)
+        self.assertIs(view.cell, cell)
+        self.assertEqual(view.population_indices, (4, 1, 2))
+        np.testing.assert_array_equal(view.indices, [4, 1, 2])
+        self.assertEqual(view.shape, (3,))
+        self.assertEqual(view.size, 3)
+        self.assertEqual(view.pop_size, (3,))
+        self.assertEqual(nested.population_indices, (1, 2))
+        self.assertEqual(view[-1].population_indices, (2,))
+
+    def test_cell_view_reuses_shared_topology_objects(self):
+        cell = Cell(_simple_cell().morpho, cv_policy=CVPerBranch(), pop_size=(3,))
+        view = cell[1]
+
+        self.assertIs(view.morpho, cell.morpho)
+        self.assertIs(view.cv_policy, cell.cv_policy)
+        self.assertIs(view.cvs, cell.cvs)
+        self.assertIs(view.cv_tree, cell.cv_tree)
+        self.assertIs(view.node_tree, cell.node_tree)
+        self.assertIs(view.cv_contexts, cell.cv_contexts)
+        self.assertEqual(view.varshape, (1, cell.n_cv))
+
+    def test_cell_view_filters_effective_place_declarations(self):
+        cell = Cell(_simple_cell().morpho, cv_policy=CVPerBranch(), pop_size=(4,))
+        exp = mech.SynapseSpec("ExpSyn", name="exp", tau=2.0 * u.ms)
+        cell.place(at("soma", 0.5), exp)
+        selected = cell[[1, 3]]
+        result = selected.place(at("soma", 0.25), exp)
+
+        self.assertIs(result, selected)
+        self.assertEqual(len(cell[0].place_rules), 1)
+        self.assertEqual(len(cell[1].place_rules), 2)
+        self.assertEqual(len(cell[0].point_placements), 1)
+        self.assertEqual(len(cell[1].point_placements), 2)
+        self.assertEqual(len(cell[2:2].point_placements), 0)
+        self.assertEqual([item.population_index for item in cell[3].point_placements], [None, 3])
+
+    def test_cell_view_synapses_filter_and_retain_parameter_set(self):
+        cell = Cell(_simple_cell().morpho, cv_policy=CVPerBranch(), pop_size=(4,))
+        exp = mech.SynapseSpec("ExpSyn", name="exp", tau=2.0 * u.ms, e=0.0 * u.mV)
+        cell.place(at("soma", 0.5), exp)
+        cell[1].place(at("soma", 0.25), exp)
+
+        view = cell[[1, 3]].synapses["exp"]
+        view.set(tau=np.asarray([1.0, 2.0, 3.0]) * u.ms)
+
+        self.assertEqual(view.population_index.tolist(), [1, 1, 3])
+        cell.init_state()
+        layouts = [item for item in cell.layouts if item.kind == "synapse:ExpSyn"]
+        self.assertEqual(len(layouts), 1)
+        tau = cell.get_state(layouts[0].id, "tau")
+        self.assertEqual(tau.shape, (5,))
+        np.testing.assert_allclose(tau.to_decimal(u.ms), [2.0, 1.0, 2.0, 2.0, 3.0])
+
+    def test_cell_view_filters_connection_rows_by_synapse_population(self):
+        cell = Cell(_simple_cell().morpho, cv_policy=CVPerBranch(), pop_size=(3,))
+        exp = mech.SynapseSpec("ExpSyn", name="exp")
+        cell.place(at("soma", 0.5), exp)
+        connection = connect("cell_2", source=NetStim(), synapse=cell[2].synapses[exp])
+
+        self.assertEqual(len(cell[0].connections), 0)
+        np.testing.assert_array_equal(cell[2].connections.id, connection.id)
+
+    def test_cell_view_sets_selected_initial_voltage_and_threshold(self):
+        cell = Cell(
+            _simple_cell().morpho,
+            cv_policy=CVPerBranch(),
+            pop_size=(4,),
+            V_init=-65.0 * u.mV,
+            V_th=-20.0 * u.mV,
+        )
+
+        result = cell[[1, 3]].set(
+            V_init=np.asarray([-60.0, -55.0]) * u.mV,
+            V_th=np.asarray([-10.0, 0.0]) * u.mV,
+        )
+
+        self.assertIs(result.root, cell)
+        np.testing.assert_allclose(result.V_init.to_decimal(u.mV)[:, 0], [-60.0, -55.0])
+        np.testing.assert_allclose(result.V_th.to_decimal(u.mV)[:, 0], [-10.0, 0.0])
+        cell.init_state()
+        np.testing.assert_allclose(cell.V.value.to_decimal(u.mV)[:, 0], [-65.0, -60.0, -65.0, -55.0])
+        np.testing.assert_allclose(cell.V_th.to_decimal(u.mV)[:, 0], [-20.0, -10.0, -20.0, 0.0])
+        np.testing.assert_allclose(cell[[3, 0]].V.to_decimal(u.mV)[:, 0], [-55.0, -65.0])
+        self.assertEqual(cell[[3, 0]].spike.shape, (2, cell.n_cv))
+
+    def test_root_voltage_assignment_clears_selected_overrides(self):
+        cell = Cell(_simple_cell().morpho, cv_policy=CVPerBranch(), pop_size=(3,), V_init=-65.0 * u.mV)
+        cell[1].V_init = -55.0 * u.mV
+        cell.V_init = -70.0 * u.mV
+
+        cell.init_state()
+
+        np.testing.assert_allclose(cell.V.value.to_decimal(u.mV), -70.0)
+
+    def test_cell_view_voltage_overrides_validate_and_survive_reinitialization(self):
+        cell = Cell(_simple_cell().morpho, cv_policy=CVPerBranch(), pop_size=(3,), V_init=-65.0 * u.mV)
+        view = cell[1]
+        with self.assertRaisesRegex(TypeError, "voltage quantity"):
+            view.set(V_init=-55.0)
+        with self.assertRaisesRegex(ValueError, "voltage units"):
+            view.set(V_th=1.0 * u.ms)
+        with self.assertRaisesRegex(ValueError, "cannot broadcast"):
+            cell[[0, 2]].set(V_init=np.ones((3, 2)) * u.mV)
+        with self.assertRaisesRegex(TypeError, "not None"):
+            view.set(V_th=None)
+        with self.assertRaisesRegex(KeyError, "does not support"):
+            view.set(resting_potential=-70.0 * u.mV)
+
+        view.set(V_init=-55.0 * u.mV)
+        cell.init_state()
+        cell.reset_state()
+        np.testing.assert_allclose(cell.V.value.to_decimal(u.mV)[:, 0], [-65.0, -55.0, -65.0])
+        cell.reset()
+        cell.init_state()
+        np.testing.assert_allclose(cell.V.value.to_decimal(u.mV)[:, 0], [-65.0, -55.0, -65.0])
+
+    def test_cell_view_accepts_per_cv_values_without_changing_shape(self):
+        soma = Branch.from_lengths(
+            lengths=[20.0] * u.um,
+            radii=[10.0, 10.0] * u.um,
+            type="soma",
+        )
+        dend = Branch.from_lengths(
+            lengths=[100.0] * u.um,
+            radii=[2.0, 1.0] * u.um,
+            type="basal_dendrite",
+        )
+        morpho = Morphology.from_root(soma, name="soma")
+        morpho.soma.attach(dend, name="dend")
+        cell = Cell(morpho, cv_policy=CVPerBranch(), pop_size=(3,), V_init=-65.0 * u.mV)
+        values = np.asarray([[-60.0, -61.0], [-50.0, -51.0]]) * u.mV
+
+        cell[[0, 2]].V_init = values
+        cell.init_state()
+
+        self.assertEqual(cell.V.value.shape, (3, 2))
+        np.testing.assert_allclose(cell.V.value.to_decimal(u.mV)[0], [-60.0, -61.0])
+        np.testing.assert_allclose(cell.V.value.to_decimal(u.mV)[1], [-65.0, -65.0])
+        np.testing.assert_allclose(cell.V.value.to_decimal(u.mV)[2], [-50.0, -51.0])
+
+    def test_cell_view_defers_callable_initial_voltage_inspection(self):
+        cell = Cell(
+            _simple_cell().morpho,
+            cv_policy=CVPerBranch(),
+            pop_size=(2,),
+            V_init=lambda shape: u.math.full(shape, -62.0) * u.mV,
+        )
+
+        with self.assertRaisesRegex(RuntimeError, "callable initializer"):
+            _ = cell[0].V_init
+        cell.init_state()
+
+        np.testing.assert_allclose(cell[0].V_init.to_decimal(u.mV), -62.0)
+
+    def test_cell_view_reads_dense_ion_population_rows(self):
+        cell = Cell(_simple_cell().morpho, cv_policy=CVPerBranch(), pop_size=(4,))
+        cell.init_state()
+
+        ion = cell[[3, 1]].get_ion("na")
+
+        self.assertIs(ion.root, cell.get_ion("na"))
+        self.assertEqual(ion.length.shape, (2, cell.n_point))
+        np.testing.assert_allclose(
+            ion.length.to_decimal(u.um),
+            cell.get_ion("na").length.to_decimal(u.um)[np.asarray([3, 1])],
+        )
+
+    def test_cell_view_reads_packed_runtime_rows_without_exposing_methods(self):
+        cell = Cell(_simple_cell().morpho, cv_policy=CVPerBranch(), pop_size=(4,))
+        exp = mech.SynapseSpec("ExpSyn", name="exp", tau=2.0 * u.ms, e=0.0 * u.mV)
+        cell[[1, 3]].place(at("soma", 0.5), exp)
+        cell.init_state()
+        layout = next(item for item in cell.layouts if item.kind == "synapse:ExpSyn")
+
+        selected = cell[3].get_runtime_node(layout.id)
+        empty = cell[0].get_runtime_node(layout.id)
+
+        np.testing.assert_allclose(selected.tau.to_decimal(u.ms), [2.0])
+        self.assertEqual(empty.tau.shape, (0,))
+        with self.assertRaisesRegex(AttributeError, "read-only"):
+            _ = selected.compute_derivative
+
+    def test_cell_view_rejects_density_paint_and_lifecycle_ownership(self):
+        cell = Cell(_simple_cell().morpho, cv_policy=CVPerBranch(), pop_size=(2,))
+        view = cell[0]
+        channel = mech.Channel("IL", g_max=0.1 * u.mS / u.cm**2, E=-70 * u.mV)
+
+        with self.assertRaisesRegex(NotImplementedError, r"root Cell\.paint"):
+            view.paint(AllRegion(), channel)
+        with self.assertRaisesRegex(RuntimeError, "root Cell"):
+            view.init_state()
+        cell.init_state()
+        with self.assertRaisesRegex(RuntimeError, "read-only"):
+            view.reset_state()
+
+    def test_unselected_place_retains_broadcast_semantics(self):
+        cell = Cell(_simple_cell().morpho, cv_policy=CVPerBranch(), pop_size=(4,))
+        cell.place(at("soma", 0.5), mech.SynapseSpec("ExpSyn", name="exp"))
+
+        self.assertEqual(len(cell.point_placements), 1)
+        self.assertIsNone(cell.point_placements[0].population_index)
+
+    def test_cv_midpoints_are_resolved_locations_available_before_init(self):
+        cell = _simple_cell()
+
+        midpoints = cell.cv_midpoints
+
+        self.assertEqual(len(midpoints), cell.n_cv)
+        self.assertEqual(midpoints.branch_id.tolist(), [cv.branch_id for cv in cell.cvs])
+        np.testing.assert_allclose(
+            midpoints.branch_x,
+            [(cv.prox + cv.dist) * 0.5 for cv in cell.cvs],
+        )
+
+    def test_locset_batch_place_aligns_rows_with_population_members(self):
+        base = _simple_cell()
+        cell = Cell(base.morpho, cv_policy=CVPerBranch(), pop_size=(3,))
+        synapse = mech.SynapseSpec("ExpSyn", name="exp", tau=2.0 * u.ms)
+        locations = cell.cv_midpoints[np.asarray([[0, 0], [0, 0], [0, 0]])]
+
+        cell.place(locations, synapse)
+
+        placements = cell.point_placements
+        self.assertEqual([item.population_index for item in placements], [0, 0, 1, 1, 2, 2])
+        self.assertEqual([item.branch_x for item in placements], [0.5] * 6)
+
+    def test_locset_batch_place_validates_population_alignment(self):
+        base = _simple_cell()
+        cell = Cell(base.morpho, cv_policy=CVPerBranch(), pop_size=(3,))
+        synapse = mech.SynapseSpec("ExpSyn", name="exp")
+        locations = cell.cv_midpoints[np.asarray([[0], [0]])]
+
+        with self.assertRaisesRegex(ValueError, "batch rows"):
+            cell.place(locations, synapse)
+        with self.assertRaisesRegex(ValueError, "batch rows"):
+            cell[[0, 2, 1]].place(locations, synapse)
+
+    def test_synapse_view_expands_broadcast_and_selects_by_declaration_identity(self):
+        base = _simple_cell()
+        cell = Cell(base.morpho, cv_policy=CVPerBranch(), pop_size=(3,))
+        exp = mech.SynapseSpec("ExpSyn", name="exp", tau=2.0 * u.ms, e=0.0 * u.mV)
+        other = mech.SynapseSpec("ExpSyn", name="other", tau=2.0 * u.ms, e=0.0 * u.mV)
+        cell.place(at("soma", 0.5), exp)
+        cell[1].place(at("soma", 0.25), other)
+
+        view = cell.synapses[exp]
+
+        self.assertEqual(len(cell.synapses), 4)
+        self.assertEqual(len(view), 3)
+        self.assertEqual(view.population_index.tolist(), [0, 1, 2])
+        self.assertEqual(view.placement_id.tolist(), [0, 0, 0])
+
+    def test_synapse_view_sets_heterogeneous_runtime_parameters(self):
+        base = _simple_cell()
+        cell = Cell(base.morpho, cv_policy=CVPerBranch(), pop_size=(3,))
+        exp = mech.SynapseSpec("ExpSyn", name="exp", tau=2.0 * u.ms, e=0.0 * u.mV)
+        cell.place(at("soma", 0.5), exp)
+
+        cell.synapses[exp].set(
+            tau=np.asarray([1.0, 2.0, 3.0]) * u.ms,
+            e=np.asarray([-70.0, -60.0, -50.0]) * u.mV,
+        )
+        cell.init_state()
+
+        synapse_layout = next(layout for layout in cell._runtime.layouts if layout.kind == "synapse:ExpSyn")
+        tau = cell._runtime.state_buffers[(synapse_layout.id, "tau")]
+        reversal = cell._runtime.state_buffers[(synapse_layout.id, "e")]
+        np.testing.assert_allclose(tau.to_decimal(u.ms), [1.0, 2.0, 3.0])
+        np.testing.assert_allclose(reversal.to_decimal(u.mV), [-70.0, -60.0, -50.0])
+
+    def test_synapse_view_sets_batch_placed_instances_in_row_order(self):
+        base = _simple_cell()
+        cell = Cell(base.morpho, cv_policy=CVPerBranch(), pop_size=(3,))
+        exp = mech.SynapseSpec("ExpSyn", name="exp", tau=2.0 * u.ms, e=0.0 * u.mV)
+        locations = cell.cv_midpoints[np.asarray([[0, 0], [0, 0], [0, 0]])]
+        cell.place(locations, exp)
+
+        view = cell.synapses[exp]
+        view.set(tau=np.arange(1.0, 7.0) * u.ms)
+        cell.init_state()
+
+        synapse_layout = next(layout for layout in cell._runtime.layouts if layout.kind == "synapse:ExpSyn")
+        tau = cell._runtime.state_buffers[(synapse_layout.id, "tau")]
+        self.assertEqual(view.population_index.tolist(), [0, 0, 1, 1, 2, 2])
+        np.testing.assert_allclose(tau.to_decimal(u.ms), np.arange(1.0, 7.0))
+
+    def test_population_selection_validates_indices_and_phase(self):
+        cell = Cell(_simple_cell().morpho, cv_policy=CVPerBranch(), pop_size=(4,))
+        synapse = mech.SynapseSpec("ExpSyn", name="exp")
+        self.assertEqual(cell[-1].population_indices, (3,))
+        with self.assertRaises(IndexError):
+            _ = cell[4]
+        with self.assertRaises(TypeError):
+            _ = cell[[0.5]]
+        cell.init_state()
+        with self.assertRaisesRegex(RuntimeError, r"reset\(\)"):
+            cell[0].place(at("soma", 0.5), synapse)
+
+    def test_junction_placements_share_point_but_keep_branch_ownership(self):
+        soma = Branch.from_lengths(
+            lengths=[20.0] * u.um,
+            radii=[10.0, 10.0] * u.um,
+            type="soma",
+        )
+        dend = Branch.from_lengths(
+            lengths=[100.0] * u.um,
+            radii=[2.0, 1.0] * u.um,
+            type="basal_dendrite",
+        )
+        morpho = Morphology.from_root(soma, name="soma")
+        morpho.soma.attach(dend, name="dend", parent_x=1.0, child_x=0.0)
+        cell = Cell(morpho, cv_policy=CVPerBranch())
+        clamp = CurrentClamp(delay=1 * u.ms, durations=2 * u.ms, amplitudes=0.1 * u.nA)
+        cell.place(at("soma", 1.0), clamp)
+        cell.place(at("dend", 0.0), clamp)
+
+        placements = cell.point_placements
+
+        self.assertEqual([item.branch_name for item in placements], ["soma", "dend"])
+        self.assertEqual([item.branch_x for item in placements], [1.0, 0.0])
+        self.assertEqual([item.cv_id for item in placements], [0, 1])
+        self.assertEqual(placements[0].point_id, placements[1].point_id)
 
 
 class TestCellLifecycle(unittest.TestCase):
@@ -717,7 +1101,7 @@ class CellPopulationAxisIsMandatoryTest(unittest.TestCase):
 
 
 def _hh_cell(pop_size, *, calcium: bool = True) -> Cell:
-    """A Cell exercising gate channels, a kinetic ion, and a placed synapse.
+    """A Cell exercising gate channels and a kinetic ion.
 
     ``calcium=False`` drops the bare ``CalciumDetailed`` ion, which has no
     current source and therefore cannot be stepped; it is only there so the
@@ -734,10 +1118,6 @@ def _hh_cell(pop_size, *, calcium: bool = True) -> Cell:
     cell.paint(AllRegion(), mech.Channel("IL", g_max=0.3 * (u.mS / u.cm**2), E=-54.0 * u.mV))
     if calcium:
         cell.paint(AllRegion(), mech.Ion("CalciumDetailed"))
-    cell.place(
-        RootLocation(x=0.5),
-        mech.Synapse("Exp2Syn", tau1=0.5 * u.ms, tau2=2.0 * u.ms, e=0.0 * u.mV, weight=1.0 * u.uS),
-    )
     return cell
 
 

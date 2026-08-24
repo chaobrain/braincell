@@ -7,6 +7,8 @@
 - [x] Cell-owned `_ConnectionStore`、named batched connect calls 和 `ConnectionView`。
 - [x] scheduled/live source、weight contract、异质 delay、split run 和 reset semantics。
 - [x] spatial Channel/Ion views、CV overlap validation 和 layout-free recording。
+- [x] Channel type/name、Ion species/type/name、Synapse type/name/ids 的统一 observable identity。
+- [x] current contributor/sum reduction、静态 RecordingSchema、不可变 SampleBlock 与稀疏 EventSeries。
 
 ## Direct Network convergence
 
@@ -15,7 +17,8 @@
 - [x] Population 转发 `synapses`、`connections`。
 - [x] Network 按 target 聚合 connections，并分别报告 named calls 与 rows。
 - [x] direct runtime tests 覆盖 owner、lifecycle、delay、backend、split run 和 cache reuse。
-- [x] recording notebook 使用注册 source、Network.connect 和 continued-run comparison。
+- [x] recording notebook 覆盖空间 scope、机制 identity、state/current reduction、result schema、注册 source
+  和 continued-run comparison。
 
 ## Endpoint pairing
 
@@ -30,7 +33,8 @@
 ## Verification gates
 
 - [x] 全部 `braincell/` tests 通过（2261 passed，30 skipped）。
-- [x] `synapse.ipynb`、`connection.ipynb`、`network_direct.ipynb`、`recording.ipynb` 无错误执行。
+- [x] `synapse.ipynb`、`connection.ipynb`、`network.ipynb`、`recording.ipynb` 无错误执行。
+- [x] recording 示例验证 raw contributor rows、按 `(population, CV)` 聚合 rows 和 schema metadata。
 - [x] NEURON comparison notebook 不引用已删除 API。
 - [x] docs/examples 中无旧 public topology symbol。
 - [x] profiling probability workload 使用显式 source/synapse row views 并通过最小规模测试。

@@ -23,6 +23,55 @@ post.sources["spike"]
 
 `model` 是统一 owner 字段；普通 Cell 操作可使用上述转发属性。
 
+## Cell scope and mechanism views
+
+Cell 与 CellView 使用同一套空间入口。选择顺序始终是：
+
+```text
+population members -> branch name/type or region -> CV -> mechanism rows
+```
+
+```python
+cell[[0, 2]]
+cell[[0, 2]].dendrite
+cell[[0, 2]].dendrite.cv[1:]
+
+cell.soma.channels
+cell.dendrite.ions
+cell[1:3].synapses
+cell[1:3].connections
+```
+
+空间 View 只保存索引，不复制 Cell、morphology 或 runtime arrays。最后一级机制身份如下：
+
+| Category | Type | Name | Extra identity | Logical row |
+| --- | --- | --- | --- | --- |
+| Channel | runtime model，例如 `Na_HH1952` | 用户声明的 owner，例如 `nav` | - | `(population, CV, type, name)` |
+| Ion | implementation，例如 `SodiumFixed` | owner，例如 `na_pool` | species，例如 `na` | `(population, CV, type, name)` |
+| Synapse | runtime model，例如 `ExpSyn` | group，例如 `fast_ampa` | stable logical ID | 一个独立 Synapse instance |
+| Connection | source-to-synapse routing | connect call name | stable row ID | 一行 routing |
+
+`type` 表示共享的动力学方程，`name` 表示用户声明的逻辑 owner/group。同一 type 可以有多个 name。
+Channel/Ion View 的数字行没有独立公共身份，因此不支持数字索引；应先选择空间，再按 type/name 过滤。
+Synapse 与 Connection 有 stable IDs，可以进行保序数字切片。
+
+```python
+cell.channels.by_type("IL")
+cell.channels["leak_soma"]       # 等价于 by_name(...)
+
+cell.ions.by_species("na")
+cell.ions.by_type("SodiumFixed")
+cell.ions["na_pool"]
+
+cell.synapses.by_type("ExpSyn")
+cell.synapses["fast_ampa"]
+cell.synapses["fast_ampa"][[0, 2]]
+```
+
+Channel/Ion 的 `get(field)` 和 `set(**fields)` 要求 View 最终只包含一个 `(type, name)` owner。
+Synapse `get/set` 要求同一 type，但可以跨同 type 的多个 name。View 在初始化前读取声明参数；初始化后
+通过 logical-to-runtime mapping 读取 runtime parameter/state，不保存第二份数组。
+
 ## Direct connection
 
 低层接口用于单 Cell 或 Network 组装前：
@@ -72,16 +121,17 @@ connection = net.connect(
 `locations` 参数。样本保留连续 `branch_x`、生成顺序和重复行；直到放置阶段才映射到 CV/point。
 
 ```python
+def proximal_density(ctx):
+    distance = braincell.filter.metric.path_distance_from_soma(ctx)
+    return u.math.exp(-distance / (100 * u.um))
+
+
 locations = braincell.filter.sample(
     braincell.filter.branch_in("type", ["dendrite", "apical_dendrite"]),
     number=200,
     seed=7,
     measure="area",
-    density=braincell.filter.density.exponential(
-        "path_distance_from_soma",
-        100 * u.um,
-        direction="decreasing",
-    ),
+    density=proximal_density,
 )
 cell.place(locations, ampa)
 ```
@@ -91,6 +141,10 @@ cell.place(locations, ampa)
 零长度圆台的离散环形面积。默认 `measure="length"`、`density=None`。自定义 density
 返回非负、有限、无量纲的 scalar 或与 `context.branch_x` 同形数组；context 提供 branch
 标识、局部半径、到 root/soma 的树路径距离，以及在完整 3-D morphology 上的 position。
+`braincell.filter.metric` 为 Sampling、CV 和 Synapse context 提供统一的 `branch_x`、
+`radius`、`path_distance_from_soma` 和 `position` 读取函数。soma-relative distance 是到全部
+soma branches 所组成区域的最短树路径；若 morphology 没有 soma，则整条 root branch 是
+零距离 reference region。
 
 ## Alignment and queries
 
@@ -196,6 +250,83 @@ degree 接受非负整数 scalar、一维整数数组，或 `(ctx, rng) -> count
 `source population + target population + connection name` 派生，与 population 添加顺序无关。
 显式 pairing seed 完全覆盖 Network seed。`pairing=` v1 只接受已经存在的 SynapseView，不与
 place-and-connect shortcut 同时使用。
+
+## Recording
+
+`record(name, observable, ...)` 注册到调用它的 Cell/CellView 空间 scope；`observe.*` 再选择该范围内
+的 state 或 mechanism owners。Recording 声明不会调用 `place()`，不会创建 point mechanism，也不会
+改变 runtime layout。
+
+```python
+cell[[0, 2]].dendrite.cv[1:].record(
+    "dend_v",
+    braincell.observe.state("v"),
+    period=0.1 * u.ms,
+)
+cell.soma.record(
+    "nav_p",
+    braincell.observe.channel(name="nav").state("p"),
+    frequency=10 * u.kHz,
+)
+cell.soma.record(
+    "sodium_current",
+    braincell.observe.ion(species="na").current(),
+)
+cell.record(
+    "selected_g",
+    braincell.observe.synapse(ids=synapse_ids).state("g"),
+)
+cell.soma.record(
+    "membrane_current",
+    braincell.observe.membrane_current(),
+    start=0.5 * u.ms,
+)
+```
+
+Observable selector：
+
+| Observable | Selectors | State/current row semantics |
+| --- | --- | --- |
+| `observe.state(field)` | spatial scope only | one row per selected `(population, CV)` |
+| `observe.channel(...)` | one of `type`, `name`, or none | one row per matching Channel owner and `(population, CV)` |
+| `observe.ion(...)` | one of `species`, `type`, `name`, or none | one row per matching Ion owner and `(population, CV)` |
+| `observe.synapse(...)` | one of `type`, `name`, `ids`, or none | one row per matching stable Synapse ID |
+| `observe.membrane_current()` | spatial scope only | total membrane-current density per `(population, CV)` |
+
+`state(field)` 始终保留机制行。`current(reduce="none")` 同样保留每个 contributor；默认
+`current(reduce="sum")` 将命中项按 `(population, CV)` 求和。Connection 的 weight/delay 是静态 routing
+参数，通过 ConnectionView 查询，不属于 recording observable。
+
+`period` 与 `frequency` 互斥；都省略时每个 `dt` 采样。`period` 与 `start` 在首次 run、dt 已知时解析，
+必须是 dt 的整数倍。Recording name 在一个 Cell 内唯一，且只能在初始化前添加。
+
+### Result model
+
+```python
+result = net.run(dt=0.025 * u.ms, duration=10 * u.ms)
+block = result.samples["post"]["dend_v"]
+
+block.time
+block.values
+block.schema.rows
+```
+
+`SampleBlock.values` 第一维是规则采样时间，最后一维与 `RecordingSchema.rows` 一一对应。每个
+`RecordingRow` 保存 population/CV/point/branch、field/unit，以及可用时的 mechanism category/type/name、
+Synapse ID。求和 current 的 `contributor_ids` 是该 recording 归约前 contributor positions。
+
+EventSource 输出保存在稀疏结构中：
+
+```python
+events = result.events["stim"]["spike"]
+events.time
+events.source_id
+events.count
+```
+
+`SampleBlock`、`EventSeries` 和 NetworkResult 的 mappings/arrays 是不可变结果。连续片段通过
+`NetworkResult.concat((first, second))` 合并；它要求 dt、时间边界、recording names 和 schemas 一致。
+`traces/spikes` 暂时保留给 legacy Probe 与 dense spike compatibility，新接口以 `samples/events` 为准。
 
 ## Lifecycle and run
 

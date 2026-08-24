@@ -5,6 +5,11 @@
 Cell 是静态声明与 runtime 的 owner。一个 Cell population 内：
 
 ```text
+paint declarations
+  -> logical density owners (category, type, name, CV coverage)
+  -> ChannelView / IonView rows (population, CV, owner)
+  -> runtime SoA layouts
+
 SynapseSpec declarations
   -> _SynapseStore (logical IDs, locations, parameters)
   -> SynapseView
@@ -13,11 +18,20 @@ SynapseSpec declarations
 connect calls
   -> _ConnectionStore (SoA routing rows)
   -> ConnectionView
+
+record calls
+  -> RecordingSpec (spatial scope + observable + schedule)
+  -> compiled RecordingSchema + layout-free gather
+  -> immutable SampleBlock
 ```
 
 同 type 的 Synapse 合并到一个 runtime SoA node，但 logical ID、name、location 和参数行保持独立。
 Connection store 保存稳定 row ID、connect ID、source index、synapse ID、weight、delay 和 active mask。
 Synapse 参数/state 不进入 Connection；weight/delay 不进入 Synapse。
+
+Channel/Ion 不建立另一份显式 instance store。它们的 logical rows 由 density declarations、离散 CV coverage
+和 population scope 派生，身份为 `(category, type, name, population, CV)`。View 只保存这些选择；初始化后
+通过 layout metadata 映射到 runtime SoA buffers。
 
 `NetworkConnections` 只保存 Network 引用并动态遍历 Cell populations。选择 target 后直接返回原始
 Cell `ConnectionView`，因此没有跨 Cell row ID，也没有第二份 columns。
@@ -77,13 +91,35 @@ Network 只有 editable 和 initialized 两个外部状态。`init_state` 验证
 初始化 Cell runtime。成功后不提供 build/deinit 或返回声明态的操作。`reset_state` 只重置动态状态、
 时间、detector 和 queues。重复运行复用 setup 和 compiled loop caches。
 
-## Recording and mechanism views
+## Mechanism views
 
 空间选择顺序为 population -> region/locset/branch -> CV -> mechanism。Channel/Ion views 使用
-`(type, name, population, CV)` logical rows；SynapseView 使用 stable logical IDs。
+`(type, name, population, CV)` logical rows；Ion 同时公开由 runtime class 决定的 species；SynapseView
+使用 stable logical IDs。type 决定动力学实现，name 决定用户逻辑 owner/group，两者不能混为一个层级。
 
 同 category、type、name 的 density paint 在离散后 CV 有交集即报错；无交集时属于同一 logical
-owner。参数是否相同不参与冲突判断，修改通过 view `set()` 完成。
+owner。参数是否相同不参与冲突判断，修改通过 view `set()` 完成。Density views 不允许数字 row indexing；
+Synapse/Connection views 的数字索引基于 stable IDs。
 
-`record/observe` 编译为 layout-free gathers，不创建 point mechanism。旧 Probe 仅保留 deprecated
-兼容路径。
+## Recording lowering
+
+RecordingSpec 在 editable 阶段只保存 Cell-local name、静态空间 scope、observable selector 和 schedule。
+它不参与 point placement，也不创建 mechanism。首次 run 已知 dt 并完成 runtime materialization 后，
+每个 spec 编译为：
+
+```text
+CellView scope + observe selector
+  -> Channel/Ion/Synapse logical rows or Cell/CV rows
+  -> RecordingRow metadata + runtime gather function
+  -> regular snapshots in the JIT run loop
+  -> SampleBlock(values, time, RecordingSchema)
+```
+
+Channel/Ion state gathers 按 `(type, name)` owner 分组后写回原 logical order；Synapse state gathers 按 type
+分组并通过 logical ID -> runtime row mapping 读取。`current(reduce="none")` 保留相同 contributor rows；
+`reduce="sum"` 在 sampler 内按 `(population, CV)` 聚合，并把归约前 positions 写入 schema 的
+`contributor_ids`。`membrane_current` 直接读取每个所选 CV 的总膜电流密度。
+
+规则样本使用不可变 SampleBlock；EventSource 输出使用稀疏 EventSeries，不经过 RecordingSpec。NetworkResult
+按 population/name 或 population/port 聚合二者。continued run 沿用全局 schedule；concat 要求相邻时间、
+dt 和静态 schema 一致。旧 Probe 仅保留 deprecated 兼容路径。

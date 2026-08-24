@@ -24,24 +24,28 @@ import brainunit as u
 import jax
 import numpy as np
 
-from braincell._multi_compartment.run import _validate_time_quantity
+from braincell._multi_compartment.run import _duration_steps, _recording_time_mask, _validate_time_quantity
+from braincell._multi_compartment.synapses import SynapseView
+from braincell.connection import NetworkConnections, PairingSpec, _UNSET, _connect_with_pairing_seed
+from braincell.recording import EventSeries, SampleBlock
 
-from .core import Connection, NetworkRunResult, Population
+from .core import NetworkRunResult, Population
 from .delivery import (
     DeliveryBlock,
     advance_delivery_state,
+    apply_immediate_events,
     create_delivery_state,
     delivery_blocks as build_delivery_blocks,
     enqueue_future_events,
     make_delivery_op,
     normalize_event_backend,
-    population_spike,
     resolve_event_backend,
-    zero_ring_buffer,
+    source_spike,
     write_arrivals,
 )
-from .lowering import lower_connections, resolve_synapse_layout
-from .projections import Projection
+from .lowering import lower_direct_connections, resolve_source_cv
+from braincell.filter import RootLocation
+from braincell.mech import SynapseSpec
 
 
 @dataclass(frozen=True)
@@ -53,7 +57,12 @@ class _RunSetup:
     delivery_ops: tuple
     ordered_population_names: tuple[str, ...]
     probe_names: dict[str, tuple[str, ...]]
+    compiled_recordings: dict[str, tuple]
+    additional_event_sources: dict[str, tuple]
+    population_source_cv_ids: dict[str, int]
     n_trace: int
+    n_recording: int
+    n_additional_event: int
 
 
 @dataclass(frozen=True)
@@ -67,31 +76,45 @@ class _CachedRunLoop:
 class Network:
     """Named population network using existing ``Cell`` runtimes."""
 
-    def __init__(self, name: str | None = None) -> None:
+    def __init__(self, name: str | None = None, *, seed: int = 0) -> None:
         if name is not None and (not isinstance(name, str) or not name):
             raise ValueError("Network name must be a non-empty string or None.")
+        if isinstance(seed, bool) or not isinstance(seed, (int, np.integer)):
+            raise TypeError("Network seed must be an integer.")
         self.name = name
+        self.seed = int(seed)
         self.populations: dict[str, Population] = {}
-        self.connections: list[Connection] = []
-        self.edge_sets = {}
-        self.proj: dict[str, Projection] = {}
-        self.projections = self.proj
         self._topology_version = 0
         self._run_setup_cache: dict[tuple, _RunSetup] = {}
         self._network_run_loop_cache: dict[tuple, _CachedRunLoop] = {}
+        self._delivery_state_cache: dict[tuple, object] = {}
+        self._runtime_config: tuple | None = None
+        self._scheduled_dt_ms: float | None = None
+        self._cell_lifecycle_active = False
+        self._initialized = False
+        self._source_current_time = 0.0 * u.ms
+
+    def _raise_if_initialized(self, action: str) -> None:
+        if self._initialized:
+            raise RuntimeError(f"Cannot {action} after Network initialization.")
 
     def _mark_topology_changed(self) -> None:
         self._topology_version += 1
         self._run_setup_cache.clear()
         self._network_run_loop_cache.clear()
+        self._delivery_state_cache.clear()
 
     def __repr__(self) -> str:
         """Return a compact network summary."""
         return (
             f"Network(name={self.name!r}, populations={len(self.populations)}, "
-            f"edge_sets={len(self.edge_sets)}, projections={len(self.projections)}, "
-            f"connections={len(self.connections)})"
+            f"connections={self.connections.n_connections}, rows={self.connections.n_rows})"
         )
+
+    @property
+    def connections(self) -> NetworkConnections:
+        """Return target-population-scoped direct connections."""
+        return NetworkConnections(self)
 
     def __str__(self) -> str:
         """Return a readable multi-line network summary."""
@@ -99,146 +122,156 @@ class Network:
         lines.append("  populations:")
         if self.populations:
             for name, population in self.populations.items():
-                initialized = bool(getattr(population.cell, "_initialized", False))
+                initialized = bool(getattr(population.model, "_initialized", False))
                 lines.append(
-                    f"    {name}: size={population.size}, "
-                    f"cell={type(population.cell).__name__}, initialized={initialized}"
+                    f"    {name}: size={population.size}, kind={population.kind}, "
+                    f"model={type(population.model).__name__}, initialized={initialized}"
                 )
         else:
             lines.append("    <none>")
 
-        lines.append("  edge_sets:")
-        if self.edge_sets:
-            for name, edge_set in self.edge_sets.items():
-                lines.append(
-                    f"    {name}: {edge_set.pre_population} -> {edge_set.post_population}, n_edge={edge_set.n_edge}"
-                )
-        else:
-            lines.append("    <none>")
-
-        lines.append("  projections:")
-        if self.projections:
-            for name, projection in self.projections.items():
-                lines.append(f"    {name}: edges={projection.edge_set_name!r}, synapse={projection.synapse!r}")
-        else:
-            lines.append("    <none>")
-
-        lines.append("  direct connections:")
-        if self.connections:
-            for index, connection in enumerate(self.connections):
-                lines.append(
-                    f"    [{index}]: {connection.pre_population} -> "
-                    f"{connection.post_population}, synapse={connection.synapse!r}, "
-                    f"n_contact={connection.n_contact}"
-                )
+        lines.append("  connections:")
+        if len(self.connections):
+            for target in self.connections.target_names:
+                view = self.connections[target]
+                lines.append(f"    {target}: connections={len(view.connect_names)}, rows={len(view)}")
+                for name in view.connect_names:
+                    lines.append(f"      {self.connections.describe(target, name)}")
         else:
             lines.append("    <none>")
         return "\n".join(lines)
 
-    def add_population(self, name: str, cell) -> Population:
-        """Add a named population and return its declaration."""
-        population = Population(name=name, cell=cell)
+    def add_population(self, name: str, model, **fields) -> Population:
+        """Resolve and add one named model population.
+
+        Parameters
+        ----------
+        name : str
+            Unique non-empty population name.
+        model : Cell, NetStim, EventSequence, or callable
+            Model owner or zero-argument provider returning one.
+        **fields
+            Scalar or population-aligned custom fields.
+
+        Returns
+        -------
+        Population
+            Resolved Network-owned population.
+        """
+        self._raise_if_initialized("add a population")
+        from braincell.event import EventSource
+
+        if callable(model) and not isinstance(model, EventSource) and not hasattr(model, "pop_size"):
+            model = model()
+        population = Population(name, model, **fields)
         if population.name in self.populations:
             raise ValueError(f"Network already has a population named {population.name!r}.")
+        if any(existing.model is model for existing in self.populations.values()):
+            raise ValueError("The same model object cannot be registered as more than one Network population.")
+        if population.kind == "cell":
+            model._bind_network_owner(self)
+        elif population.kind == "netstim":
+            model._bind_network_seed(self.seed, population.name)
         self.populations[population.name] = population
         self._mark_topology_changed()
         return population
 
-    def add_connection(self, connection: Connection) -> Connection:
-        """Add a sparse connection declaration and return it."""
-        if not isinstance(connection, Connection):
-            raise TypeError(f"Network.add_connection(...) expects Connection, got {type(connection).__name__!s}.")
-        self.connections.append(connection)
-        self._mark_topology_changed()
-        return connection
-
-    def add_edge_set(self, edge_set):
-        """Add a reusable cell-level edge set and return it."""
-        if edge_set.name in self.edge_sets:
-            raise ValueError(f"Network already has an edge set named {edge_set.name!r}.")
-        self.edge_sets[edge_set.name] = edge_set
-        self._mark_topology_changed()
-        return edge_set
-
-    def add_edges(self, *, name: str, pre: str, post: str, method):
-        """Create and store a reusable cell-level edge set."""
-        from . import edges as edge_builders
-
-        if pre not in self.populations:
-            raise KeyError(f"Unknown pre population {pre!r}.")
-        if post not in self.populations:
-            raise KeyError(f"Unknown post population {post!r}.")
-        edge_set = edge_builders.build(
-            name=name,
-            pre=pre,
-            post=post,
-            method=method,
-            n_pre=self.populations[pre].size,
-            n_post=self.populations[post].size,
-        )
-        return self.add_edge_set(edge_set)
-
-    def add_projection(
+    def connect(
         self,
-        projection: Projection | None = None,
+        name: str,
         *,
-        name: str | None = None,
-        edges=None,
-        synapse=None,
-        **kwargs,
-    ) -> Projection:
-        """Add a named synaptic projection and return it."""
-        if projection is None:
-            if name is None:
-                raise ValueError("Network.add_projection(...) requires name.")
-            if edges is None:
-                raise ValueError("Network.add_projection(...) requires edges.")
-            if synapse is None:
-                raise ValueError("Network.add_projection(...) requires synapse.")
-            projection = Projection(name=name, edges=edges, synapse=synapse, **kwargs)
-        elif any(value is not None for value in (name, edges, synapse)) or kwargs:
-            raise TypeError(
-                "Network.add_projection(...) accepts either a Projection object "
-                "or direct projection keyword arguments, not both."
-            )
-        if not isinstance(projection, Projection):
-            raise TypeError(f"Network.add_projection(...) expects Projection, got {type(projection).__name__!s}.")
-        if projection.name in self.proj:
-            raise ValueError(f"Network already has a projection named {projection.name!r}.")
-        self.proj[projection.name] = projection
-        self._mark_topology_changed()
-        return projection
+        source,
+        synapse,
+        target=None,
+        locations=None,
+        pairing: PairingSpec | None = None,
+        weight=_UNSET,
+        delay=0.0 * u.ms,
+    ):
+        """Connect a registered source to existing or newly placed synapses.
 
-    def make_edges(self, *, name: str, pre: str, post: str, connector: str, **kwargs):
-        """Create and store a reusable cell-level edge set.
+        Parameters
+        ----------
+        name : str
+            Connection name, unique within the target Cell.
+        source : Population, EventSource, or EventSourceView
+            Registered event source or a selected source view.
+        synapse : SynapseView or SynapseSpec
+            Existing logical synapses, or one declaration to place before
+            connecting.
+        target : Population or CellView, optional
+            Registered Cell target. Required with a ``SynapseSpec`` and
+            forbidden with an existing ``SynapseView``.
+        locations : LocsetExpr, LocsetMask, LocsetBatch, or sequence, optional
+            Locations forwarded to ``target.place`` for a ``SynapseSpec``.
+        pairing : PairingSpec, optional
+            Endpoint sampling declaration. Supported only when ``synapse`` is
+            an existing ``SynapseView``.
+        weight : Quantity, optional
+            Scalar or row-aligned event payload.
+        delay : Quantity, optional
+            Scalar or row-aligned non-negative delivery delay.
 
-        Prefer :meth:`add_edges` with ``braincell.network.all_pairs(...)``,
-        ``braincell.network.probability(...)``, ``braincell.network.dense(...)``,
-        ``braincell.network.pairs(...)``, or a custom callable method.
+        Returns
+        -------
+        ConnectionView
+            Concrete target-owned routing rows.
         """
-        from . import edges as edge_builders
+        self._raise_if_initialized("add a connection")
+        source_population = self._require_registered_source(source)
 
-        extra = dict(kwargs)
-        if connector == "pairs":
-            method = edge_builders.pairs(extra.pop("pairs"))
-        elif connector == "all_pairs":
-            method = edge_builders.all_pairs(**extra)
-            extra.clear()
-        elif connector == "dense":
-            method = edge_builders.dense(extra.pop("adjacency"))
-            extra.clear()
-        elif connector == "probability":
-            method = edge_builders.probability(**extra)
-            extra.clear()
-        else:
-            raise ValueError(f"Unknown edge connector {connector!r}.")
-        if extra:
-            raise TypeError(f"Unexpected connector arguments: {tuple(extra)!r}.")
-        return self.add_edges(name=name, pre=pre, post=post, method=method)
+        if isinstance(synapse, SynapseView):
+            if target is not None or locations is not None:
+                raise TypeError("Existing SynapseView connections do not accept target or locations.")
+            target_population = self._require_registered_cell(synapse.cell, role="synapse target")
+            result = _connect_with_pairing_seed(
+                name,
+                source=source,
+                synapse=synapse,
+                pairing=pairing,
+                weight=weight,
+                delay=delay,
+                pairing_seed_root=self.seed,
+                pairing_seed_path=(source_population.name, target_population.name, name),
+            )
+            self._mark_topology_changed()
+            return result
 
-    def project(self, *, name: str, edges, synapse, **kwargs):
-        """Create and store a projection from an edge set to synapse targets."""
-        return self.add_projection(name=name, edges=edges, synapse=synapse, **kwargs)
+        if not isinstance(synapse, SynapseSpec):
+            raise TypeError("Network.connect synapse must be a SynapseView or SynapseSpec.")
+        if pairing is not None:
+            raise TypeError("Network.connect pairing requires an existing SynapseView.")
+        if target is None or locations is None:
+            raise TypeError("SynapseSpec connections require both target and locations.")
+        target_scope, target_cell = self._resolve_registered_target(target)
+        previous_rules = target_cell._place_rules
+        previous_origins = dict(target_cell._synapse_spec_origins)
+        previous_ids = set(target_cell.synapses.id.tolist())
+        try:
+            target_scope.place(locations, synapse)
+            new_ids = np.asarray(
+                [item for item in target_cell.synapses.id.tolist() if item not in previous_ids],
+                dtype=np.int64,
+            )
+            if new_ids.size == 0:
+                raise ValueError("Network.connect locations produced no synapses.")
+            result = _connect_with_pairing_seed(
+                name,
+                source=source,
+                synapse=SynapseView(target_cell, new_ids),
+                pairing=None,
+                weight=weight,
+                delay=delay,
+                pairing_seed_root=self.seed,
+                pairing_seed_path=(),
+            )
+        except Exception:
+            target_cell._place_rules = previous_rules
+            target_cell._synapse_spec_origins = previous_origins
+            target_cell._invalidate_discretization_cache()
+            raise
+        self._mark_topology_changed()
+        return result
 
     def init_state(self, batch_size=None) -> "Network":
         """Initialize all population cell runtime states.
@@ -260,9 +293,21 @@ class Network:
         cells are left unchanged because ``Cell.init_state`` itself is a
         one-shot declaration-to-runtime transition.
         """
-        for population in self.populations.values():
-            if not getattr(population.cell, "_initialized", False):
-                population.cell.init_state(batch_size=batch_size)
+        if batch_size is not None:
+            raise NotImplementedError(
+                "Network batch execution is not implemented yet; use Cell batch execution for same-topology batches."
+            )
+        self._validate_direct_source_ownership()
+        if self._initialized:
+            return self
+        self._cell_lifecycle_active = True
+        try:
+            for population in self._cell_populations().values():
+                if not getattr(population.cell, "_initialized", False):
+                    population.cell.init_state(batch_size=batch_size)
+        finally:
+            self._cell_lifecycle_active = False
+        self._initialized = True
         return self
 
     def reset_state(self, batch_size=None) -> "Network":
@@ -285,10 +330,29 @@ class Network:
         ``Cell.reset()``, which would tear down runtime objects and return the
         cell to the declaration phase.
         """
-        for population in self.populations.values():
-            if not getattr(population.cell, "_initialized", False):
-                population.cell.init_state(batch_size=batch_size)
-            population.cell.reset_state(batch_size=batch_size)
+        if batch_size is not None:
+            raise NotImplementedError(
+                "Network batch execution is not implemented yet; use Cell batch execution for same-topology batches."
+            )
+        uninitialized = [
+            name
+            for name, population in self._cell_populations().items()
+            if not getattr(population.cell, "_initialized", False)
+        ]
+        if uninitialized:
+            raise RuntimeError(
+                "Network.reset_state() requires initialized population Cells; "
+                f"call Network.init_state() or Network.run() first (uninitialized={uninitialized!r})."
+            )
+        self._cell_lifecycle_active = True
+        try:
+            for population in self._cell_populations().values():
+                population.cell.reset_state(batch_size=batch_size)
+        finally:
+            self._cell_lifecycle_active = False
+        for state in self._delivery_state_cache.values():
+            _reset_delivery_state(state)
+        self._source_current_time = 0.0 * u.ms
         return self
 
     def run(
@@ -296,7 +360,7 @@ class Network:
         *,
         dt,
         duration,
-        delay_quantization: str = "ceil",
+        delay_quantization: str = "nearest",
         event_backend: str = "auto",
         brainevent_backend: str | None = "jax_raw",
         spike_recording: str = "full",
@@ -308,15 +372,23 @@ class Network:
         spike_recording = _normalize_spike_recording(spike_recording)
         if not self.populations:
             raise ValueError("Network.run(...) requires at least one population.")
-
         self.init_state()
-
+        if not self._cell_populations():
+            return self._run_scheduled_sources_only(dt=dt, duration=duration)
         setup_key = self._run_setup_cache_key(
             dt=dt,
             delay_quantization=delay_quantization,
             event_backend=event_backend,
             brainevent_backend=brainevent_backend,
         )
+        runtime_config = setup_key[2:]
+        if self._runtime_config is None:
+            self._runtime_config = runtime_config
+        elif self._runtime_config != runtime_config:
+            raise RuntimeError(
+                "Network runtime configuration is fixed after the first run; "
+                "dt, delay quantization, and event backend must remain unchanged."
+            )
         setup = self._run_setup(
             dt=dt,
             delay_quantization=delay_quantization,
@@ -325,12 +397,13 @@ class Network:
         )
         ordered_population_names = setup.ordered_population_names
         start_t = self._common_start_time(ordered_population_names)
-        relative_times = u.math.arange(0.0 * u.ms, duration, dt)
-        if int(relative_times.shape[0]) == 0:
-            raise ValueError("Network.run(...) produced no timesteps; ensure duration > 0 and dt > 0.")
+        n_steps = _duration_steps(duration, dt)
+        relative_times = u.math.arange(n_steps) * dt
         times = start_t + relative_times
         probe_names = setup.probe_names
         n_trace = setup.n_trace
+        n_recording = setup.n_recording
+        n_additional_event = setup.n_additional_event
         n_spike = 0 if spike_recording == "none" else len(ordered_population_names)
         cached_loop = self._network_run_loop(
             setup=setup,
@@ -339,20 +412,35 @@ class Network:
             n_steps=int(relative_times.shape[0]),
             spike_recording=spike_recording,
         )
-        _reset_delivery_state(
-            cached_loop.delivery_state,
-            setup.delivery_blocks,
-            populations=self.populations,
-        )
         times, samples_over_time = cached_loop.runner(start_t, relative_times)
 
         samples_tuple = _normalize_scan_samples(
             samples_over_time,
-            n_samples=n_trace + n_spike,
+            n_samples=n_recording + n_trace + n_additional_event + n_spike,
         )
-        trace_values = samples_tuple[:n_trace]
-        spike_values = samples_tuple[n_trace:]
+        recording_values = samples_tuple[:n_recording]
+        trace_values = samples_tuple[n_recording : n_recording + n_trace]
+        additional_event_values = samples_tuple[n_recording + n_trace : n_recording + n_trace + n_additional_event]
+        spike_values = samples_tuple[n_recording + n_trace + n_additional_event :]
 
+        samples = {}
+        recording_index = 0
+        stop_t = start_t + n_steps * dt
+        for population_name in ordered_population_names:
+            samples[population_name] = {}
+            for compiled in setup.compiled_recordings[population_name]:
+                values = recording_values[recording_index]
+                recording_index += 1
+                mask = _recording_time_mask(times, compiled.schema)
+                selected = values[mask]
+                first_time = None if not np.any(mask) else times[int(np.flatnonzero(mask)[0])]
+                samples[population_name][compiled.spec.name] = SampleBlock(
+                    values=selected,
+                    schema=compiled.schema,
+                    segment_start=start_t,
+                    segment_stop=stop_t,
+                    first_time=first_time,
+                )
         traces = {}
         index = 0
         for name in ordered_population_names:
@@ -360,10 +448,31 @@ class Network:
             for probe_name in probe_names[name]:
                 traces[name][probe_name] = trace_values[index]
                 index += 1
+            traces[name].update({recording_name: block.values for recording_name, block in samples[name].items()})
         spikes = {}
         if spike_recording != "none":
             spikes = {name: spike_values[index] for index, name in enumerate(ordered_population_names)}
-        return NetworkRunResult(time=times, traces=traces, spikes=spikes)
+        events = self._result_events(
+            times=times,
+            start_t=start_t,
+            stop_t=stop_t,
+            spikes=spikes,
+            spike_recording=spike_recording,
+            population_source_cv_ids=setup.population_source_cv_ids,
+            additional_event_sources=setup.additional_event_sources,
+            additional_event_values=additional_event_values,
+        )
+        self._source_current_time = stop_t
+        return NetworkRunResult(
+            time=times,
+            traces=traces,
+            spikes=spikes,
+            samples=samples,
+            events=events,
+            start_time=start_t,
+            stop_time=stop_t,
+            dt=dt,
+        )
 
     def _run_setup(
         self,
@@ -383,14 +492,16 @@ class Network:
         if setup is not None:
             return setup
 
-        blocks = lower_connections(
+        blocks = lower_direct_connections(
             self.populations,
-            tuple(self.connections) + self._projection_connections(),
             dt=dt,
             delay_quantization=delay_quantization,
         )
-        delivery_blocks = build_delivery_blocks(blocks)
         delivery_backend = resolve_event_backend(event_backend)
+        delivery_blocks = build_delivery_blocks(
+            blocks,
+            group_by_delay=delivery_backend == "brainevent",
+        )
         delivery_ops = tuple(
             make_delivery_op(
                 block,
@@ -401,9 +512,21 @@ class Network:
             )
             for block in delivery_blocks
         )
-        ordered_population_names = tuple(self.populations)
+        ordered_population_names = tuple(self._cell_populations())
         probe_names = {
-            name: tuple(sorted(population.cell.sample_probes())) for name, population in self.populations.items()
+            name: tuple(sorted(population.cell.sample_probes()))
+            for name, population in self._cell_populations().items()
+        }
+        compiled_recordings = {
+            name: population.cell._compiled_recordings(dt) for name, population in self._cell_populations().items()
+        }
+        additional_event_sources = {
+            name: tuple((port, view) for port, view in population.sources.items() if port != "spike")
+            for name, population in self._cell_populations().items()
+        }
+        population_source_cv_ids = {
+            name: resolve_source_cv(population.cell, RootLocation(0.5))
+            for name, population in self._cell_populations().items()
         }
         setup = _RunSetup(
             delivery_blocks=delivery_blocks,
@@ -411,7 +534,12 @@ class Network:
             delivery_ops=delivery_ops,
             ordered_population_names=ordered_population_names,
             probe_names=probe_names,
+            compiled_recordings=compiled_recordings,
+            additional_event_sources=additional_event_sources,
+            population_source_cv_ids=population_source_cv_ids,
             n_trace=sum(len(names) for names in probe_names.values()),
+            n_recording=sum(len(items) for items in compiled_recordings.values()),
+            n_additional_event=sum(len(items) for items in additional_event_sources.values()),
         )
         self._run_setup_cache[cache_key] = setup
         return setup
@@ -426,7 +554,8 @@ class Network:
     ) -> tuple:
         dt_ms = float(np.asarray(dt.to_decimal(u.ms), dtype=float).reshape(()))
         runtime_ids = tuple(
-            (name, id(population.cell.runtime), population.size) for name, population in self.populations.items()
+            (name, id(population.cell.runtime), population.size)
+            for name, population in self._cell_populations().items()
         )
         return (
             self._topology_version,
@@ -454,11 +583,14 @@ class Network:
         )
         cached = self._network_run_loop_cache.get(key)
         if cached is None:
-            delivery_state = create_delivery_state(
-                setup.delivery_blocks,
-                populations=self.populations,
-                delivery_ops=setup.delivery_ops,
-            )
+            delivery_state = self._delivery_state_cache.get(setup_key)
+            if delivery_state is None:
+                delivery_state = create_delivery_state(
+                    setup.delivery_blocks,
+                    populations=self.populations,
+                    delivery_ops=setup.delivery_ops,
+                )
+                self._delivery_state_cache[setup_key] = delivery_state
             cached = _CachedRunLoop(
                 runner=self._make_network_run_loop(
                     setup=setup,
@@ -483,6 +615,9 @@ class Network:
         delivery_blocks = setup.delivery_blocks
         ordered_population_names = setup.ordered_population_names
         probe_names = setup.probe_names
+        compiled_recordings = setup.compiled_recordings
+        additional_event_sources = setup.additional_event_sources
+        population_source_cv_ids = setup.population_source_cv_ids
 
         def _run_loop(start_t, relative_times):
             times = start_t + relative_times
@@ -490,6 +625,12 @@ class Network:
 
                 def _step(t):
                     with brainstate.environ.context(t=t):
+                        with jax.named_scope("braincell:network_run:sample_recordings"):
+                            recording_snapshots = tuple(
+                                compiled.sample()
+                                for name in ordered_population_names
+                                for compiled in compiled_recordings[name]
+                            )
                         with jax.named_scope("braincell:network_run:write_arrivals"):
                             write_arrivals(
                                 delivery_blocks,
@@ -506,18 +647,32 @@ class Network:
                             for name in ordered_population_names:
                                 cell = self.populations[name].cell
                                 cell._update_dynamics()
+                        with jax.named_scope("braincell:network_run:apply_zero_delay_events"):
+                            apply_immediate_events(
+                                delivery_blocks,
+                                delivery_state,
+                                populations=self.populations,
+                            )
                         with jax.named_scope("braincell:network_run:sample_probes"):
                             snapshots = {
                                 name: self.populations[name].cell.sample_probes() for name in ordered_population_names
                             }
                         with jax.named_scope("braincell:network_run:record_spikes"):
+                            additional_events = tuple(
+                                view.owner.current_event_count(view.source_id)
+                                for name in ordered_population_names
+                                for _, view in additional_event_sources[name]
+                            )
                             if spike_recording == "full":
                                 spikes = tuple(
                                     self.populations[name].cell.spike.value for name in ordered_population_names
                                 )
                             elif spike_recording == "population":
                                 spikes = tuple(
-                                    population_spike(self.populations[name].cell.spike.value)
+                                    source_spike(
+                                        self.populations[name].cell.spike.value,
+                                        population_source_cv_ids[name],
+                                    )
                                     for name in ordered_population_names
                                 )
                             else:
@@ -536,12 +691,12 @@ class Network:
                                 for name in ordered_population_names
                                 for probe_name in probe_names[name]
                             )
-                        return traces + spikes
+                        return recording_snapshots + traces + additional_events + spikes
 
                 samples_over_time = brainstate.transform.for_loop(_step, times)
 
             end_t = start_t + int(times.shape[0]) * dt
-            for population in self.populations.values():
+            for population in self._cell_populations().values():
                 population.cell._set_current_time(end_t)
             return times, samples_over_time
 
@@ -558,27 +713,162 @@ class Network:
                 raise ValueError("Network populations must have the same current_time.")
         return first
 
-    def _projection_connections(self) -> tuple[Connection, ...]:
-        connections = []
-        for projection in self.proj.values():
-            edge_name = projection.edge_set_name
-            if edge_name not in self.edge_sets:
-                raise KeyError(f"Projection {projection.name!r} references unknown EdgeSet {edge_name!r}.")
-            edge_set = self.edge_sets[edge_name]
-            pool_size = None
-            pool_name = projection.synapse
-            if pool_name is not None:
-                post = self.populations[edge_set.post_population]
-                _, pool_size, _ = resolve_synapse_layout(post, pool_name)
-            connections.extend(
-                projection.to_connections(
-                    edge_set,
-                    pre_size=self.populations[edge_set.pre_population].size,
-                    post_size=self.populations[edge_set.post_population].size,
-                    pool_size=pool_size,
+    def _cell_populations(self) -> dict[str, Population]:
+        return {name: population for name, population in self.populations.items() if population.kind == "cell"}
+
+    def _require_cell_population(self, name: str, action: str) -> Population:
+        population = self.populations[name]
+        if population.kind != "cell":
+            raise TypeError(f"Cannot {action}: population {name!r} owns {population.kind}, not a Cell.")
+        return population
+
+    def _require_registered_cell(self, cell, *, role: str) -> Population:
+        for population in self.populations.values():
+            if population.kind == "cell" and population.cell is cell:
+                return population
+        raise RuntimeError(f"Network.connect {role} is not registered in this Network.")
+
+    def _require_registered_source(self, source) -> Population:
+        from braincell.event import EventSource, EventSourceView
+
+        if isinstance(source, Population):
+            registered = self.populations.get(source.name)
+            if registered is not source:
+                raise RuntimeError("Network.connect source Population is not registered in this Network.")
+            return source
+        if isinstance(source, EventSourceView):
+            source = source.owner
+        if not isinstance(source, EventSource):
+            raise TypeError("Network.connect source must be a Population, EventSource, or EventSourceView.")
+        owner = source if source.is_scheduled else source.execution_owner
+        for population in self.populations.values():
+            if population.model is owner:
+                return population
+        raise RuntimeError("Network.connect source owner is not registered in this Network.")
+
+    def _resolve_registered_target(self, target):
+        if isinstance(target, Population):
+            registered = self.populations.get(target.name)
+            if registered is not target:
+                raise RuntimeError("Network.connect target Population is not registered in this Network.")
+            if target.kind != "cell":
+                raise TypeError(f"Network.connect target population owns {target.kind}, not a Cell.")
+            return target.cell, target.cell
+        target_cell = getattr(target, "root", None)
+        if target_cell is None or not hasattr(target, "place"):
+            raise TypeError("Network.connect target must be a Cell Population or CellView.")
+        self._require_registered_cell(target_cell, role="target")
+        return target, target_cell
+
+    def _validate_direct_source_ownership(self) -> None:
+        registered_models = {id(population.model) for population in self.populations.values()}
+        for post in self._cell_populations().values():
+            for connection in post.cell.connections._call_views():
+                source = connection.source
+                owner = source if source.is_scheduled else source.execution_owner
+                if id(owner) not in registered_models:
+                    source_name = source.source_name or source.source_type
+                    raise RuntimeError(
+                        f"EventSource {source_name!r} is outside this Network execution scope; "
+                        "register it with Network.add_population()."
+                    )
+
+    def _result_events(
+        self,
+        *,
+        times,
+        start_t,
+        stop_t,
+        spikes,
+        spike_recording: str,
+        population_source_cv_ids,
+        additional_event_sources,
+        additional_event_values,
+    ) -> dict:
+        events = {}
+        start_ms = float(np.asarray(start_t.to_decimal(u.ms)).reshape(()))
+        stop_ms = float(np.asarray(stop_t.to_decimal(u.ms)).reshape(()))
+        additional_index = 0
+        for name, population in self.populations.items():
+            if population.kind != "cell":
+                table = population.model.events
+                event_ms = np.asarray(table.time.to_decimal(u.ms), dtype=float)
+                selected = (event_ms >= start_ms) & (event_ms < stop_ms)
+                selected_rows = np.flatnonzero(selected)
+                if selected_rows.size:
+                    order = np.lexsort((table.source_index[selected_rows], event_ms[selected_rows]))
+                    selected_rows = selected_rows[order]
+                port = "spike" if population.kind == "netstim" else "event"
+                count = np.ones(int(selected_rows.size), dtype=np.int64)
+                events[name] = {
+                    port: EventSeries(
+                        time=table.time[selected_rows],
+                        source_id=table.source_index[selected_rows],
+                        count=count,
+                        metadata={"population": name, "port": port},
+                    )
+                }
+                continue
+
+            if spike_recording == "none":
+                source_spikes = np.zeros((len(times), population.size), dtype=np.int64)
+            else:
+                source_spikes = spikes[name]
+                if spike_recording == "full":
+                    source_spikes = source_spikes[..., population_source_cv_ids[name]]
+                source_spikes = np.asarray(source_spikes)
+            time_index, source_id = np.nonzero(source_spikes)
+            events[name] = {
+                "spike": EventSeries(
+                    time=times[time_index],
+                    source_id=source_id,
+                    count=np.asarray(source_spikes[time_index, source_id], dtype=np.int64),
+                    metadata={"population": name, "port": "spike"},
                 )
-            )
-        return tuple(connections)
+            }
+            for port, _ in additional_event_sources[name]:
+                values = np.asarray(additional_event_values[additional_index])
+                additional_index += 1
+                time_index, source_id = np.nonzero(values)
+                events[name][port] = EventSeries(
+                    time=times[time_index],
+                    source_id=source_id,
+                    count=np.asarray(values[time_index, source_id], dtype=np.int64),
+                    metadata={"population": name, "port": port},
+                )
+        return events
+
+    def _run_scheduled_sources_only(self, *, dt, duration) -> NetworkRunResult:
+        dt_ms = float(np.asarray(dt.to_decimal(u.ms), dtype=float).reshape(()))
+        if self._scheduled_dt_ms is None:
+            self._scheduled_dt_ms = dt_ms
+        elif not np.isclose(self._scheduled_dt_ms, dt_ms):
+            raise RuntimeError("Network runtime dt is fixed after the first run.")
+        n_steps = _duration_steps(duration, dt)
+        start_t = self._source_current_time
+        stop_t = start_t + n_steps * dt
+        times = start_t + u.math.arange(n_steps) * dt
+        events = self._result_events(
+            times=times,
+            start_t=start_t,
+            stop_t=stop_t,
+            spikes={},
+            spike_recording="none",
+            population_source_cv_ids={},
+            additional_event_sources={},
+            additional_event_values=(),
+        )
+        self._source_current_time = stop_t
+        return NetworkRunResult(
+            time=times,
+            traces={},
+            spikes={},
+            samples={},
+            events=events,
+            start_time=start_t,
+            stop_time=stop_t,
+            dt=dt,
+        )
 
 
 def _normalize_spike_recording(value: str) -> str:
@@ -599,11 +889,8 @@ def _normalize_scan_samples(values, *, n_samples: int) -> tuple:
     return values
 
 
-def _reset_delivery_state(state, blocks, *, populations: dict) -> None:
-    """Clear reusable per-run event queues before a compiled network scan."""
-    for index, block in enumerate(blocks):
-        state.ring_buffers[index].value = zero_ring_buffer(
-            block,
-            post_size=populations[block.source.post_population].size,
-        )
+def _reset_delivery_state(state) -> None:
+    """Clear persistent event queues at an explicit network reset boundary."""
+    for index in range(len(state.ring_buffers)):
+        state.ring_buffers[index].value = u.math.zeros_like(state.ring_buffers[index].value)
         state.ring_cursors[index].value = np.asarray(0, dtype=np.int32)

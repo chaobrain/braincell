@@ -155,7 +155,7 @@ class CerebellarProbabilityNetworkWorkload:
         self.population_names = _population_names_from_args(args)
         self.populations = {}
         self.net = None
-        self.projection_rows: list[dict[str, Any]] = []
+        self.connection_rows: list[dict[str, Any]] = []
 
     def build(self) -> None:
         import braincell
@@ -174,7 +174,7 @@ class CerebellarProbabilityNetworkWorkload:
         self.net = braincell.Network(name="profile_cerebellar_probability_network")
         for pop_name, cell in self.populations.items():
             self.net.add_population(pop_name, cell)
-        self.projection_rows = _add_projections(self.net, self.population_names)
+        self.connection_rows = _add_probability_connections(self.net, self.population_names)
 
     def init_reset(self) -> None:
         self._require_net()
@@ -219,8 +219,8 @@ class CerebellarProbabilityNetworkWorkload:
             "time_shape": list(time_ms.shape),
             "trace_shapes": trace_shapes,
             "spike_counts": spike_counts,
-            "n_projection_edges": {
-                row["projection"]: row["edges"] for row in self.projection_rows
+            "n_connection_rows": {
+                row["connection"]: row["rows"] for row in self.connection_rows
             },
         }
 
@@ -275,7 +275,7 @@ def _build_population(spec: CellSpec, *, size: int, incoming_configs):
     for cfg in incoming_configs:
         cell.place(
             at("soma", 0.5),
-            mech.Synapse(
+            mech.SynapseSpec(
                 "ExpSyn",
                 tau=cfg["tau_ms"] * u.ms,
                 e=cfg["e_mV"] * u.mV,
@@ -286,8 +286,8 @@ def _build_population(spec: CellSpec, *, size: int, incoming_configs):
     return cell
 
 
-def _add_projections(net, population_names: tuple[str, ...]) -> list[dict[str, Any]]:
-    import braincell
+def _add_probability_connections(net, population_names: tuple[str, ...]) -> list[dict[str, Any]]:
+    import brainstate
     import brainunit as u
     import numpy as np
 
@@ -298,26 +298,22 @@ def _add_projections(net, population_names: tuple[str, ...]) -> list[dict[str, A
         post = cfg["post"]
         if pre not in active or post not in active:
             continue
-        edge_name = f"edges_{pre}_to_{post}"
-        projection_name = f"proj_{pre}_to_{post}"
-        edges = net.add_edges(
-            name=edge_name,
-            pre=pre,
-            post=post,
-            method=braincell.network.probability(
-                p=float(cfg["p"]), seed=int(cfg["seed"]), allow_self=True
-            ),
-        )
-        if edges.n_edge > 0:
-            weights = np.full(edges.n_edge, float(cfg["weight_uS"]), dtype=float) * u.uS
-            net.add_projection(
-                name=projection_name,
-                edges=edge_name,
-                synapse=_synapse_name(pre, post),
+        pre_size = net.populations[pre].size
+        post_size = net.populations[post].size
+        rng = brainstate.random.RandomState(int(cfg["seed"]))
+        adjacency = np.asarray(rng.random((pre_size, post_size))) < float(cfg["p"])
+        pre_index, post_index = np.nonzero(adjacency)
+        connection_name = f"{pre}_to_{post}"
+        if pre_index.size:
+            weights = np.full(pre_index.size, float(cfg["weight_uS"]), dtype=float) * u.uS
+            net.connect(
+                connection_name,
+                source=net.populations[pre].sources["spike"][pre_index],
+                synapse=net.populations[post].synapses[_synapse_name(pre, post)][post_index],
                 weight=weights,
                 delay=cfg["delay_ms"] * u.ms,
             )
-        rows.append({"projection": f"{pre}->{post}", "edges": int(edges.n_edge)})
+        rows.append({"connection": f"{pre}->{post}", "rows": int(pre_index.size)})
     return rows
 
 

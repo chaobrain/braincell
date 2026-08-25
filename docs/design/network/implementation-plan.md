@@ -2,7 +2,8 @@
 
 ## Completed foundation
 
-- [x] Population 统一注册 Cell、NetStim 和 EventSequence，并提供 canonical source ports。
+- [x] Population 统一注册 Cell、NetStim 和 EventSequence，提供 canonical event-output ports，并自动公开
+  首次用于 Network Connection 的具名 Cell EventSource。
 - [x] Cell-owned `_SynapseStore`、`SynapseView` 和按 type 合并的 runtime SoA。
 - [x] Cell-owned `_ConnectionStore`、named batched connect calls 和 `ConnectionView`。
 - [x] scheduled/live source、weight contract、异质 delay、split run 和 reset semantics。

@@ -100,9 +100,10 @@ Regular sample times are derived lazily from the segment and recording schedule.
 `EventSeries` stores sparse `(time, source_id, count)` rows plus static metadata.
 
 `NetworkResult` contains `start_time`, `stop_time`, `dt`, population-keyed samples,
-and source-port-keyed events. `spikes` is a convenience view over ports named
-`spike`. `NetworkResult.concat(parts)` requires contiguous segments, identical
-runtime `dt`, and identical schemas.
+and source-port-keyed events. All discrete output, including each Cell
+Population's canonical root spike output, is read from `events`; there is no
+separate dense spike result. `NetworkResult.concat(parts)` requires contiguous
+segments, identical runtime `dt`, and identical schemas.
 
 Duration must be a positive integer multiple of `dt`. Without reset, two
 consecutive runs preserve Network time, cell/mechanism state, live-detector
@@ -112,20 +113,20 @@ restores the initialization baseline without mutating previously returned result
 
 ## Population and source ownership
 
-`Network.add_population(name, model, **fields)` eagerly accepts a `Cell`,
+`Network.add_population(name, model, **metadata)` eagerly accepts a `Cell`,
 `NetStim`, `EventSequence`, or zero-argument provider returning one. `Population`
-is the resolved handle and exposes `name`, `model`, `kind`, `size`, `ids`,
-`sources`, custom fields, and `set()`. Scalars broadcast to population size;
-non-scalars require that leading dimension. Formal and custom names share one
-namespace.
+is the resolved handle and exposes `name`, `model`, `size`, `event_outputs`,
+custom `metadata`, and `set()`. Scalars broadcast to population size; non-scalars
+require that leading dimension. Reserved attributes and metadata share one namespace.
 
-Canonical source ports are `Cell: spike`, `NetStim: spike`, and
+Canonical event-output ports are `Cell: spike`, `NetStim: spike`, and
 `EventSequence: event`. A Population with exactly one port can be passed directly
-to `connect`; multiple ports require `population.sources[name]`. Additional Cell
-voltage-crossing outputs may be registered before initialization and share the
-Cell execution owner. Independently owned sources must be registered in the same
-Network as their consumers; standalone `Cell.run()` may continue to use a raw
-scheduled source.
+to `connect`; multiple ports require `population.event_outputs[name]`. Additional
+named Cell voltage-crossing outputs are registered automatically after a successful
+`Network.connect()` and share the Cell execution owner. Unconnected outputs may be
+published explicitly with `register_event_output()`. Independently owned sources
+must be registered in the same Network as their consumers; standalone `Cell.run()`
+may continue to use a raw scheduled source.
 
 The Network owns global time. A model has one Network/Population owner. For
 `NetStim(seed=None)`, initialization derives an order-independent seed from

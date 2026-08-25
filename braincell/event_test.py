@@ -170,7 +170,73 @@ class EventSourceTest(unittest.TestCase):
         cell.V.value = np.asarray([[-65.0, -35.0], [-65.0, -42.0]]) * u.mV
 
         np.testing.assert_array_equal(source.population_index, [1, 0])
+        np.testing.assert_array_equal(source.location_index, [0, 0])
+        np.testing.assert_array_equal(source.cv_id, [1, 1])
         np.testing.assert_array_equal(source.current_event_count([0, 1]), [False, True])
+
+    def test_voltage_crossing_source_defaults_to_root_and_cell_threshold(self) -> None:
+        cell = _two_cv_population()
+        source = VoltageCrossingSource(cell)
+        cell.init_state()
+        cell.spike.value = np.asarray([[1.0, 0.0], [0.0, 1.0]])
+
+        np.testing.assert_array_equal(source.population_index, [0, 1])
+        np.testing.assert_array_equal(source.location_index, [0, 0])
+        np.testing.assert_array_equal(source.cv_id, [0, 0])
+        np.testing.assert_array_equal(source.current_event_count(source.ids), [1.0, 0.0])
+
+    def test_voltage_crossing_source_expands_all_cv_endpoints_population_major(self) -> None:
+        cell = _two_cv_population()
+        source = VoltageCrossingSource(cell, location=cell.cv_midpoints, name="all_cv")
+        cell.init_state()
+        cell.spike.value = np.asarray([[1.0, 0.0], [0.0, 1.0]])
+
+        self.assertEqual(source.size, 4)
+        np.testing.assert_array_equal(source.population_index, [0, 0, 1, 1])
+        np.testing.assert_array_equal(source.location_index, [0, 1, 0, 1])
+        np.testing.assert_array_equal(source.cv_id, [0, 1, 0, 1])
+        np.testing.assert_array_equal(source.current_event_count(source.ids), [1.0, 0.0, 0.0, 1.0])
+
+    def test_voltage_crossing_source_falling_uses_heterogeneous_cell_threshold(self) -> None:
+        cell = _two_cv_population()
+        cell[0].V_th = -40.0 * u.mV
+        cell[1].V_th = -30.0 * u.mV
+        source = VoltageCrossingSource(cell, location=at("dend", 0.5), direction="falling")
+        cell.init_state()
+        cell._event_previous_V.value = np.asarray([[-65.0, -35.0], [-65.0, -25.0]]) * u.mV
+        cell.V.value = np.asarray([[-65.0, -45.0], [-65.0, -35.0]]) * u.mV
+
+        np.testing.assert_array_equal(source.current_event_count(source.ids), [True, True])
+
+    def test_voltage_crossing_source_explicit_threshold_broadcasts_over_locations(self) -> None:
+        cell = _two_cv_population()
+        source = VoltageCrossingSource(
+            cell,
+            location=cell.cv_midpoints,
+            threshold=np.asarray([[-60.0, -40.0], [-50.0, -30.0]]) * u.mV,
+        )
+        cell.init_state()
+        cell._event_previous_V.value = np.asarray([[-65.0, -45.0], [-55.0, -35.0]]) * u.mV
+        cell.V.value = np.asarray([[-55.0, -35.0], [-45.0, -25.0]]) * u.mV
+
+        np.testing.assert_array_equal(source.current_event_count(source.ids), [True, True, True, True])
+
+    def test_voltage_crossing_source_broadcasts_population_threshold_vector(self) -> None:
+        cell = _two_cv_population()
+        source = VoltageCrossingSource(
+            cell,
+            location=at("dend", 0.5),
+            threshold=np.asarray([-40.0, -30.0]) * u.mV,
+        )
+        cell.init_state()
+        cell._event_previous_V.value = np.asarray([[-65.0, -45.0], [-65.0, -35.0]]) * u.mV
+        cell.V.value = np.asarray([[-65.0, -35.0], [-65.0, -25.0]]) * u.mV
+
+        np.testing.assert_array_equal(source.current_event_count(source.ids), [True, True])
+
+    def test_voltage_crossing_source_rejects_explicit_none_threshold(self) -> None:
+        with self.assertRaisesRegex(TypeError, "voltage quantity"):
+            VoltageCrossingSource(_two_cv_population(), threshold=None)
 
     def test_event_output_is_available_before_cell_initialization(self) -> None:
         cell = _two_cv_population()

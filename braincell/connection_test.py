@@ -74,6 +74,12 @@ def _step_up_solver(cell):
 
 
 class ConnectionTest(unittest.TestCase):
+    def test_connect_does_not_treat_cell_as_population_event_output(self) -> None:
+        cell, exp = _population(1)
+
+        with self.assertRaisesRegex(TypeError, "EventSource or EventSourceView"):
+            connect("invalid", source=cell, synapse=cell.synapses[exp])
+
     def test_reset_state_restores_exact_initialized_hh_states(self) -> None:
         cell = _hh_population("reset_baseline", with_clamp=True)
         cell.init_state()
@@ -238,7 +244,8 @@ class ConnectionTest(unittest.TestCase):
         network.add_population("post", post)
 
         result = network.run(dt=0.025 * u.ms, duration=5.0 * u.ms)
-        spike_rows = np.flatnonzero(np.asarray(result.spikes["pre"]))
+        spike_times = result.events["pre"]["spike"].time.to_decimal(u.ms)
+        spike_rows = np.searchsorted(result.time.to_decimal(u.ms), spike_times)
         conductance = np.asarray(result.traces["post"]["g"].to_decimal(u.uS)).reshape(-1)
         conductance_rows = np.flatnonzero(conductance > 0.0)
 

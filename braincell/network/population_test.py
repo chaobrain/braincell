@@ -1,4 +1,5 @@
 import unittest
+from types import MappingProxyType
 
 import brainunit as u
 import numpy as np
@@ -21,10 +22,16 @@ class PopulationTest(unittest.TestCase):
         self.assertEqual(cells.kind, "cell")
         self.assertEqual(stimuli.kind, "netstim")
         self.assertIs(cells.model, cells.cell)
-        self.assertEqual(tuple(cells.sources), ("spike",))
-        self.assertEqual(tuple(stimuli.sources), ("spike",))
+        self.assertEqual(tuple(cells.event_outputs), ("spike",))
+        self.assertEqual(tuple(stimuli.event_outputs), ("spike",))
+        self.assertEqual(tuple(cells.metadata), ("layer",))
+        np.testing.assert_array_equal(cells.metadata["layer"], ["P", "P"])
         np.testing.assert_array_equal(cells.layer, ["P", "P"])
+        self.assertFalse(hasattr(cells.model, "layer"))
         np.testing.assert_array_equal(stimuli["cohort"], [3, 4])
+        self.assertIsInstance(cells.metadata, MappingProxyType)
+        self.assertFalse(hasattr(cells, "sources"))
+        self.assertFalse(hasattr(cells, "fields"))
 
     def test_cell_population_forwards_synapses_and_connections(self) -> None:
         network = braincell.Network("forwarding")
@@ -52,8 +59,8 @@ class PopulationTest(unittest.TestCase):
         cell[0:2].place(at("soma", 0.5), braincell.mech.SynapseSpec("ExpSyn", name="fast"))
         cell[2:4].place(at("soma", 0.5), braincell.mech.SynapseSpec("Exp2Syn", name="slow"))
         target = network.add_population("post", cell)
-        network.connect("stim_fast", source=source.sources["spike"][0:2], synapse=target.synapses["fast"])
-        network.connect("stim_slow", source=source.sources["spike"][2:4], synapse=target.synapses["slow"])
+        network.connect("stim_fast", source=source.event_outputs["spike"][0:2], synapse=target.synapses["fast"])
+        network.connect("stim_slow", source=source.event_outputs["spike"][2:4], synapse=target.synapses["slow"])
 
         self.assertEqual(
             repr(network),
@@ -107,12 +114,14 @@ class PopulationTest(unittest.TestCase):
                 synapse=target.synapses["ampa"],
             )
 
-    def test_custom_fields_cannot_shadow_formal_fields(self) -> None:
-        with self.assertRaisesRegex(ValueError, "formal names"):
+    def test_custom_metadata_cannot_shadow_reserved_names(self) -> None:
+        with self.assertRaisesRegex(ValueError, "reserved names"):
             braincell.network.Population("pc", _cell(1), size=3)
         population = braincell.network.Population("pc", _cell(2))
         with self.assertRaisesRegex(ValueError, "leading dimension"):
             population.set(layer=np.asarray([1, 2, 3]))
+        with self.assertRaises(TypeError):
+            population.metadata["layer"] = np.asarray([1, 2])
 
     def test_provider_is_eager_and_atomic(self) -> None:
         calls = []
@@ -199,7 +208,7 @@ class PopulationTest(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "register it"):
             network.run(dt=0.05 * u.ms, duration=0.1 * u.ms)
 
-    def test_cell_population_additional_voltage_source_is_reported(self) -> None:
+    def test_cell_population_manual_event_output_is_reported_without_connection(self) -> None:
         cell = _cell(2)
         network = braincell.network.Network()
         population = network.add_population("cell", cell)
@@ -207,14 +216,160 @@ class PopulationTest(unittest.TestCase):
             cell,
             location=at("soma", 0.5),
             threshold=-60.0 * u.mV,
-            name="dendritic_detector",
         )
-        population.add_source("local_spike", detector)
+        registered = population.register_event_output(detector, name="local_spike")
 
         result = network.run(dt=0.05 * u.ms, duration=0.1 * u.ms)
 
-        self.assertEqual(tuple(population.sources), ("spike", "local_spike"))
+        self.assertIs(registered.owner, detector)
+        self.assertEqual(tuple(population.event_outputs), ("spike", "local_spike"))
         self.assertIn("local_spike", result.events["cell"])
+
+    def test_multilocation_event_output_reports_readonly_endpoint_mapping(self) -> None:
+        cell = _cell(2)
+        network = braincell.network.Network()
+        population = network.add_population("cell", cell)
+        detector = braincell.VoltageCrossingSource(
+            cell,
+            location=cell.cv_midpoints,
+            name="all_cv_spikes",
+        )
+        population.register_event_output(detector)
+
+        result = network.run(dt=0.05 * u.ms, duration=0.1 * u.ms)
+        metadata = result.events["cell"]["all_cv_spikes"].metadata
+
+        np.testing.assert_array_equal(metadata["population_index"], detector.population_index)
+        np.testing.assert_array_equal(metadata["location_index"], detector.location_index)
+        np.testing.assert_array_equal(metadata["cv_id"], detector.cv_id)
+        self.assertFalse(metadata["population_index"].flags.writeable)
+        self.assertFalse(metadata["location_index"].flags.writeable)
+        self.assertFalse(metadata["cv_id"].flags.writeable)
+
+    def test_network_connect_auto_registers_full_named_event_source_owner(self) -> None:
+        pre_cell = _cell(2)
+        post_cell = _cell(2)
+        post_cell.place(at("soma", 0.5), braincell.mech.SynapseSpec("ExpSyn", name="ampa"))
+        network = braincell.Network("auto_output")
+        pre = network.add_population("pre", pre_cell)
+        post = network.add_population("post", post_cell)
+        detector = braincell.VoltageCrossingSource(
+            pre_cell,
+            location=at("soma", 0.5),
+            threshold=-60.0 * u.mV,
+            name="dendritic_spike",
+        )
+
+        network.connect(
+            "first",
+            source=detector[0],
+            synapse=post.synapses["ampa"][0],
+            weight=0.1 * u.uS,
+        )
+        network.connect(
+            "second",
+            source=detector[1],
+            synapse=post.synapses["ampa"][1],
+            weight=0.1 * u.uS,
+        )
+
+        self.assertEqual(tuple(pre.event_outputs), ("spike", "dendritic_spike"))
+        self.assertIs(pre.event_outputs["dendritic_spike"].owner, detector)
+        self.assertEqual(len(pre.event_outputs["dendritic_spike"]), 2)
+        result = network.run(dt=0.05 * u.ms, duration=0.1 * u.ms)
+        self.assertIn("dendritic_spike", result.events["pre"])
+
+    def test_network_connect_requires_name_for_additional_event_source(self) -> None:
+        pre_cell = _cell(1)
+        post_cell = _cell(1)
+        post_cell.place(at("soma", 0.5), braincell.mech.SynapseSpec("ExpSyn", name="ampa"))
+        network = braincell.Network("unnamed_output")
+        pre = network.add_population("pre", pre_cell)
+        post = network.add_population("post", post_cell)
+        detector = braincell.VoltageCrossingSource(
+            pre_cell,
+            location=at("soma", 0.5),
+            threshold=-60.0 * u.mV,
+        )
+
+        with self.assertRaisesRegex(ValueError, "non-empty source name"):
+            network.connect("invalid", source=detector, synapse=post.synapses["ampa"])
+
+        self.assertEqual(tuple(pre.event_outputs), ("spike",))
+        self.assertEqual(len(post.connections), 0)
+
+    def test_network_connect_rejects_event_output_name_collision_before_mutation(self) -> None:
+        pre_cell = _cell(1)
+        post_cell = _cell(1)
+        post_cell.place(at("soma", 0.5), braincell.mech.SynapseSpec("ExpSyn", name="ampa"))
+        network = braincell.Network("output_collision")
+        pre = network.add_population("pre", pre_cell)
+        post = network.add_population("post", post_cell)
+        first = braincell.VoltageCrossingSource(
+            pre_cell,
+            location=at("soma", 0.5),
+            threshold=-60.0 * u.mV,
+            name="local_spike",
+        )
+        second = braincell.VoltageCrossingSource(
+            pre_cell,
+            location=at("soma", 0.5),
+            threshold=-50.0 * u.mV,
+            name="local_spike",
+        )
+        pre.register_event_output(first)
+
+        with self.assertRaisesRegex(ValueError, "different event output"):
+            network.connect("invalid", source=second, synapse=post.synapses["ampa"])
+
+        self.assertIs(pre.event_outputs["local_spike"].owner, first)
+        self.assertEqual(len(post.connections), 0)
+
+    def test_failed_existing_synapse_connect_does_not_register_event_output(self) -> None:
+        pre_cell = _cell(2)
+        post_cell = _cell(3)
+        post_cell.place(at("soma", 0.5), braincell.mech.SynapseSpec("ExpSyn", name="ampa"))
+        network = braincell.Network("existing_output_rollback")
+        pre = network.add_population("pre", pre_cell)
+        post = network.add_population("post", post_cell)
+        detector = braincell.VoltageCrossingSource(
+            pre_cell,
+            location=at("soma", 0.5),
+            threshold=-60.0 * u.mV,
+            name="local_spike",
+        )
+
+        with self.assertRaisesRegex(ValueError, "equal lengths"):
+            network.connect("invalid", source=detector, synapse=post.synapses["ampa"])
+
+        self.assertEqual(tuple(pre.event_outputs), ("spike",))
+        self.assertEqual(len(post.connections), 0)
+
+    def test_failed_place_and_connect_does_not_register_event_output(self) -> None:
+        pre_cell = _cell(2)
+        post_cell = _cell(3)
+        network = braincell.Network("output_rollback")
+        pre = network.add_population("pre", pre_cell)
+        post = network.add_population("post", post_cell)
+        detector = braincell.VoltageCrossingSource(
+            pre_cell,
+            location=at("soma", 0.5),
+            threshold=-60.0 * u.mV,
+            name="local_spike",
+        )
+
+        with self.assertRaisesRegex(ValueError, "duplicate-preserving"):
+            network.connect(
+                "invalid",
+                source=detector,
+                target=post,
+                locations=at("soma", 0.5),
+                synapse=braincell.mech.SynapseSpec("ExpSyn", name="ampa"),
+            )
+
+        self.assertEqual(tuple(pre.event_outputs), ("spike",))
+        self.assertEqual(len(post.synapses), 0)
+        self.assertEqual(len(post.connections), 0)
 
     def test_scheduled_only_network_advances_time_and_reports_event_sequence(self) -> None:
         sequence = braincell.EventSequence(

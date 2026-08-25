@@ -66,7 +66,7 @@ def _network(*, delay=0.0 * u.ms, weight=0.2 * u.uS):
     post = network.add_population("post", _post())
     network.connect(
         "drive",
-        source=pre.sources["spike"],
+        source=pre.event_outputs["spike"],
         synapse=post.synapses["exp"],
         weight=weight,
         delay=delay,
@@ -89,7 +89,7 @@ class PopulationTest(unittest.TestCase):
 
     def test_population_forwards_cell_event_outputs(self) -> None:
         population = Population("pre", _pre(3))
-        self.assertIs(population.sources["spike"].owner, population.cell.event_outputs["spike"].owner)
+        self.assertIs(population.event_outputs["spike"].owner, population.cell.event_outputs["spike"].owner)
 
 
 class LoweringTest(unittest.TestCase):

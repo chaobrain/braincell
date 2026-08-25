@@ -703,14 +703,14 @@ def _connect_with_pairing_seed(
 def _as_source_view(source) -> EventSourceView:
     # Population is imported structurally to keep the low-level connection
     # module independent from the Network package.
-    sources = getattr(source, "sources", None)
-    if sources is not None:
-        if len(sources) != 1:
+    event_outputs = getattr(source, "event_outputs", None)
+    if event_outputs is not None and hasattr(source, "model") and hasattr(source, "kind"):
+        if len(event_outputs) != 1:
             raise ValueError(
-                "A Population can be passed to connect() only when it exposes exactly one source port; "
-                "select population.sources[name] explicitly otherwise."
+                "A Population can be passed to connect() only when it exposes exactly one event output; "
+                "select population.event_outputs[name] explicitly otherwise."
             )
-        source = next(iter(sources.values()))
+        source = next(iter(event_outputs.values()))
     if isinstance(source, EventSourceView):
         return source
     if isinstance(source, EventSource):

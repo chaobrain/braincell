@@ -216,7 +216,11 @@ class EventSeries:
         count.flags.writeable = False
         object.__setattr__(self, "source_id", source_id)
         object.__setattr__(self, "count", count)
-        object.__setattr__(self, "metadata", MappingProxyType(dict(self.metadata)))
+        object.__setattr__(
+            self,
+            "metadata",
+            MappingProxyType({key: _freeze_array(value) for key, value in self.metadata.items()}),
+        )
 
 
 def compile_recording(cell, spec: RecordingSpec, *, dt):

@@ -40,11 +40,9 @@ from .delivery import (
     make_delivery_op,
     normalize_event_backend,
     resolve_event_backend,
-    source_spike,
     write_arrivals,
 )
-from .lowering import lower_direct_connections, resolve_source_cv
-from braincell.filter import RootLocation
+from .lowering import lower_direct_connections
 from braincell.mech import SynapseSpec
 
 
@@ -58,11 +56,10 @@ class _RunSetup:
     ordered_population_names: tuple[str, ...]
     probe_names: dict[str, tuple[str, ...]]
     compiled_recordings: dict[str, tuple]
-    additional_event_sources: dict[str, tuple]
-    population_source_cv_ids: dict[str, int]
+    event_sources: dict[str, tuple]
     n_trace: int
     n_recording: int
-    n_additional_event: int
+    n_event: int
 
 
 @dataclass(frozen=True)
@@ -141,7 +138,7 @@ class Network:
             lines.append("    <none>")
         return "\n".join(lines)
 
-    def add_population(self, name: str, model, **fields) -> Population:
+    def add_population(self, name: str, model, **metadata) -> Population:
         """Resolve and add one named model population.
 
         Parameters
@@ -150,8 +147,8 @@ class Network:
             Unique non-empty population name.
         model : Cell, NetStim, EventSequence, or callable
             Model owner or zero-argument provider returning one.
-        **fields
-            Scalar or population-aligned custom fields.
+        **metadata
+            Scalar or population-aligned custom metadata.
 
         Returns
         -------
@@ -163,7 +160,7 @@ class Network:
 
         if callable(model) and not isinstance(model, EventSource) and not hasattr(model, "pop_size"):
             model = model()
-        population = Population(name, model, **fields)
+        population = Population(name, model, **metadata)
         if population.name in self.populations:
             raise ValueError(f"Network already has a population named {population.name!r}.")
         if any(existing.model is model for existing in self.populations.values()):
@@ -219,6 +216,7 @@ class Network:
         """
         self._raise_if_initialized("add a connection")
         source_population = self._require_registered_source(source)
+        pending_event_output = self._prepare_source_event_output_registration(source_population, source)
 
         if isinstance(synapse, SynapseView):
             if target is not None or locations is not None:
@@ -234,6 +232,7 @@ class Network:
                 pairing_seed_root=self.seed,
                 pairing_seed_path=(source_population.name, target_population.name, name),
             )
+            self._commit_source_event_output_registration(source_population, pending_event_output)
             self._mark_topology_changed()
             return result
 
@@ -270,6 +269,7 @@ class Network:
             target_cell._synapse_spec_origins = previous_origins
             target_cell._invalidate_discretization_cache()
             raise
+        self._commit_source_event_output_registration(source_population, pending_event_output)
         self._mark_topology_changed()
         return result
 
@@ -363,13 +363,11 @@ class Network:
         delay_quantization: str = "nearest",
         event_backend: str = "auto",
         brainevent_backend: str | None = "jax_raw",
-        spike_recording: str = "full",
     ) -> NetworkRunResult:
         """Run the network for ``duration`` at fixed step ``dt``."""
         _validate_time_quantity(dt, name="dt")
         _validate_time_quantity(duration, name="duration")
         event_backend = normalize_event_backend(event_backend)
-        spike_recording = _normalize_spike_recording(spike_recording)
         if not self.populations:
             raise ValueError("Network.run(...) requires at least one population.")
         self.init_state()
@@ -403,25 +401,22 @@ class Network:
         probe_names = setup.probe_names
         n_trace = setup.n_trace
         n_recording = setup.n_recording
-        n_additional_event = setup.n_additional_event
-        n_spike = 0 if spike_recording == "none" else len(ordered_population_names)
+        n_event = setup.n_event
         cached_loop = self._network_run_loop(
             setup=setup,
             setup_key=setup_key,
             dt=dt,
             n_steps=int(relative_times.shape[0]),
-            spike_recording=spike_recording,
         )
         times, samples_over_time = cached_loop.runner(start_t, relative_times)
 
         samples_tuple = _normalize_scan_samples(
             samples_over_time,
-            n_samples=n_recording + n_trace + n_additional_event + n_spike,
+            n_samples=n_recording + n_trace + n_event,
         )
         recording_values = samples_tuple[:n_recording]
         trace_values = samples_tuple[n_recording : n_recording + n_trace]
-        additional_event_values = samples_tuple[n_recording + n_trace : n_recording + n_trace + n_additional_event]
-        spike_values = samples_tuple[n_recording + n_trace + n_additional_event :]
+        event_values = samples_tuple[n_recording + n_trace :]
 
         samples = {}
         recording_index = 0
@@ -449,24 +444,17 @@ class Network:
                 traces[name][probe_name] = trace_values[index]
                 index += 1
             traces[name].update({recording_name: block.values for recording_name, block in samples[name].items()})
-        spikes = {}
-        if spike_recording != "none":
-            spikes = {name: spike_values[index] for index, name in enumerate(ordered_population_names)}
         events = self._result_events(
             times=times,
             start_t=start_t,
             stop_t=stop_t,
-            spikes=spikes,
-            spike_recording=spike_recording,
-            population_source_cv_ids=setup.population_source_cv_ids,
-            additional_event_sources=setup.additional_event_sources,
-            additional_event_values=additional_event_values,
+            event_sources=setup.event_sources,
+            event_values=event_values,
         )
         self._source_current_time = stop_t
         return NetworkRunResult(
             time=times,
             traces=traces,
-            spikes=spikes,
             samples=samples,
             events=events,
             start_time=start_t,
@@ -520,13 +508,8 @@ class Network:
         compiled_recordings = {
             name: population.cell._compiled_recordings(dt) for name, population in self._cell_populations().items()
         }
-        additional_event_sources = {
-            name: tuple((port, view) for port, view in population.sources.items() if port != "spike")
-            for name, population in self._cell_populations().items()
-        }
-        population_source_cv_ids = {
-            name: resolve_source_cv(population.cell, RootLocation(0.5))
-            for name, population in self._cell_populations().items()
+        event_sources = {
+            name: tuple(population.event_outputs.items()) for name, population in self._cell_populations().items()
         }
         setup = _RunSetup(
             delivery_blocks=delivery_blocks,
@@ -535,11 +518,10 @@ class Network:
             ordered_population_names=ordered_population_names,
             probe_names=probe_names,
             compiled_recordings=compiled_recordings,
-            additional_event_sources=additional_event_sources,
-            population_source_cv_ids=population_source_cv_ids,
+            event_sources=event_sources,
             n_trace=sum(len(names) for names in probe_names.values()),
             n_recording=sum(len(items) for items in compiled_recordings.values()),
-            n_additional_event=sum(len(items) for items in additional_event_sources.values()),
+            n_event=sum(len(items) for items in event_sources.values()),
         )
         self._run_setup_cache[cache_key] = setup
         return setup
@@ -573,12 +555,10 @@ class Network:
         setup_key: tuple,
         dt,
         n_steps: int,
-        spike_recording: str,
     ) -> _CachedRunLoop:
         key = (
             setup_key,
             int(n_steps),
-            spike_recording,
             int(brainstate.environ.get_precision()),
         )
         cached = self._network_run_loop_cache.get(key)
@@ -595,7 +575,6 @@ class Network:
                 runner=self._make_network_run_loop(
                     setup=setup,
                     dt=dt,
-                    spike_recording=spike_recording,
                     delivery_state=delivery_state,
                 ),
                 delivery_state=delivery_state,
@@ -608,7 +587,6 @@ class Network:
         *,
         setup: _RunSetup,
         dt,
-        spike_recording: str,
         delivery_state,
     ):
         """Create a persistent jitted scan for one network run shape."""
@@ -616,8 +594,7 @@ class Network:
         ordered_population_names = setup.ordered_population_names
         probe_names = setup.probe_names
         compiled_recordings = setup.compiled_recordings
-        additional_event_sources = setup.additional_event_sources
-        population_source_cv_ids = setup.population_source_cv_ids
+        event_sources = setup.event_sources
 
         def _run_loop(start_t, relative_times):
             times = start_t + relative_times
@@ -657,26 +634,12 @@ class Network:
                             snapshots = {
                                 name: self.populations[name].cell.sample_probes() for name in ordered_population_names
                             }
-                        with jax.named_scope("braincell:network_run:record_spikes"):
-                            additional_events = tuple(
+                        with jax.named_scope("braincell:network_run:record_events"):
+                            events = tuple(
                                 view.owner.current_event_count(view.source_id)
                                 for name in ordered_population_names
-                                for _, view in additional_event_sources[name]
+                                for _, view in event_sources[name]
                             )
-                            if spike_recording == "full":
-                                spikes = tuple(
-                                    self.populations[name].cell.spike.value for name in ordered_population_names
-                                )
-                            elif spike_recording == "population":
-                                spikes = tuple(
-                                    source_spike(
-                                        self.populations[name].cell.spike.value,
-                                        population_source_cv_ids[name],
-                                    )
-                                    for name in ordered_population_names
-                                )
-                            else:
-                                spikes = ()
                         with jax.named_scope("braincell:network_run:enqueue_events"):
                             enqueue_future_events(
                                 delivery_blocks,
@@ -691,7 +654,7 @@ class Network:
                                 for name in ordered_population_names
                                 for probe_name in probe_names[name]
                             )
-                        return recording_snapshots + traces + additional_events + spikes
+                        return recording_snapshots + traces + events
 
                 samples_over_time = brainstate.transform.for_loop(_step, times)
 
@@ -746,6 +709,28 @@ class Network:
                 return population
         raise RuntimeError("Network.connect source owner is not registered in this Network.")
 
+    @staticmethod
+    def _prepare_source_event_output_registration(source_population: Population, source):
+        """Validate automatic publication of a live Cell event source."""
+        from braincell.event import EventSource, EventSourceView
+
+        if isinstance(source, Population) or source_population.kind != "cell":
+            return None
+        if isinstance(source, EventSourceView):
+            source = source.owner
+        if not isinstance(source, EventSource):
+            return None
+        prepared = source_population._prepare_event_output_registration(source)
+        return prepared if prepared[2] else None
+
+    @staticmethod
+    def _commit_source_event_output_registration(source_population: Population, prepared) -> None:
+        """Publish a prevalidated source after its Connection succeeds."""
+        if prepared is None:
+            return
+        name, view, _ = prepared
+        source_population._commit_event_output_registration(name, view)
+
     def _resolve_registered_target(self, target):
         if isinstance(target, Population):
             registered = self.populations.get(target.name)
@@ -779,16 +764,13 @@ class Network:
         times,
         start_t,
         stop_t,
-        spikes,
-        spike_recording: str,
-        population_source_cv_ids,
-        additional_event_sources,
-        additional_event_values,
+        event_sources,
+        event_values,
     ) -> dict:
         events = {}
         start_ms = float(np.asarray(start_t.to_decimal(u.ms)).reshape(()))
         stop_ms = float(np.asarray(stop_t.to_decimal(u.ms)).reshape(()))
-        additional_index = 0
+        event_index = 0
         for name, population in self.populations.items():
             if population.kind != "cell":
                 table = population.model.events
@@ -810,31 +792,16 @@ class Network:
                 }
                 continue
 
-            if spike_recording == "none":
-                source_spikes = np.zeros((len(times), population.size), dtype=np.int64)
-            else:
-                source_spikes = spikes[name]
-                if spike_recording == "full":
-                    source_spikes = source_spikes[..., population_source_cv_ids[name]]
-                source_spikes = np.asarray(source_spikes)
-            time_index, source_id = np.nonzero(source_spikes)
-            events[name] = {
-                "spike": EventSeries(
-                    time=times[time_index],
-                    source_id=source_id,
-                    count=np.asarray(source_spikes[time_index, source_id], dtype=np.int64),
-                    metadata={"population": name, "port": "spike"},
-                )
-            }
-            for port, _ in additional_event_sources[name]:
-                values = np.asarray(additional_event_values[additional_index])
-                additional_index += 1
+            events[name] = {}
+            for port, view in event_sources[name]:
+                values = np.asarray(event_values[event_index])
+                event_index += 1
                 time_index, source_id = np.nonzero(values)
                 events[name][port] = EventSeries(
                     time=times[time_index],
                     source_id=source_id,
                     count=np.asarray(values[time_index, source_id], dtype=np.int64),
-                    metadata={"population": name, "port": port},
+                    metadata=_event_source_metadata(name, port, view),
                 )
         return events
 
@@ -852,17 +819,13 @@ class Network:
             times=times,
             start_t=start_t,
             stop_t=stop_t,
-            spikes={},
-            spike_recording="none",
-            population_source_cv_ids={},
-            additional_event_sources={},
-            additional_event_values=(),
+            event_sources={},
+            event_values=(),
         )
         self._source_current_time = stop_t
         return NetworkRunResult(
             time=times,
             traces={},
-            spikes={},
             samples={},
             events=events,
             start_time=start_t,
@@ -871,10 +834,24 @@ class Network:
         )
 
 
-def _normalize_spike_recording(value: str) -> str:
-    if value not in ("full", "population", "none"):
-        raise ValueError(f"Network spike_recording must be 'full', 'population', or 'none', got {value!r}.")
-    return value
+def _event_source_metadata(population: str, port: str, view) -> dict:
+    """Build immutable source-row metadata for one published event port."""
+    metadata = {"population": population, "port": port}
+    source_ids = view.source_id
+    owner = view.owner
+    for name in ("population_index", "location_index", "cv_id"):
+        value = getattr(owner, name, None)
+        if value is None:
+            continue
+        array = np.asarray(value)
+        if array.ndim == 0:
+            array = np.broadcast_to(array, (owner.size,))
+        if array.shape[0] != owner.size:
+            continue
+        selected = np.array(array[source_ids], copy=True)
+        selected.flags.writeable = False
+        metadata[name] = selected
+    return metadata
 
 
 def _normalize_scan_samples(values, *, n_samples: int) -> tuple:

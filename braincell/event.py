@@ -445,48 +445,100 @@ class NetStim(EventSource):
         object.__setattr__(self, "_event_mask", event_mask)
 
 
-class VoltageCrossingSource(EventSource):
-    """Detect voltage threshold crossings at one location per selected cell."""
+class _CellVoltageThresholdDefault:
+    def __repr__(self) -> str:
+        return "<Cell.V_th>"
 
-    __slots__ = ("cells", "location", "threshold", "direction", "name", "_population_indices")
+
+_CELL_VOLTAGE_THRESHOLD = _CellVoltageThresholdDefault()
+
+
+class VoltageCrossingSource(EventSource):
+    """Detect voltage threshold crossings at one or more locations per cell.
+
+    Omitting ``threshold`` uses the Cell's possibly heterogeneous ``V_th``.
+    Omitting ``location`` selects the root branch midpoint. Endpoint rows are
+    ordered population-major, preserving the evaluated location order and any
+    duplicate locations.
+    """
+
+    __slots__ = (
+        "cells",
+        "location",
+        "direction",
+        "name",
+        "_threshold",
+        "_uses_cell_threshold",
+        "_population_indices",
+        "_location_indices",
+        "_cv_ids",
+    )
 
     def __init__(
         self,
         cells,
         *,
-        location,
-        threshold,
+        location=None,
+        threshold=_CELL_VOLTAGE_THRESHOLD,
         direction: str = "rising",
         name: str | None = None,
     ) -> None:
+        from braincell.filter import RootLocation
+
         root = getattr(cells, "root", cells)
         population_indices = getattr(cells, "population_indices", None)
         if population_indices is None:
             population_size = 1 if len(getattr(root, "pop_size", ())) == 0 else int(root.pop_size[0])
             population_indices = tuple(range(population_size))
-        if not hasattr(location, "evaluate"):
-            raise TypeError("VoltageCrossingSource.location must be a location expression.")
-        mask = location.evaluate(root.morpho)
-        if len(mask) != 1:
-            raise ValueError(
-                f"VoltageCrossingSource.location must resolve to exactly one morphology location; got {len(mask)!r}."
-            )
-        if not isinstance(threshold, u.Quantity):
-            raise TypeError("VoltageCrossingSource.threshold must be a voltage quantity.")
-        try:
-            threshold.to_decimal(u.mV)
-        except Exception as exc:
-            raise ValueError("VoltageCrossingSource.threshold must have voltage dimensions.") from exc
+        if location is None:
+            location = RootLocation(0.5)
+        if not hasattr(location, "evaluate") and not (hasattr(location, "branch_id") and hasattr(location, "branch_x")):
+            raise TypeError("VoltageCrossingSource.location must be a location expression or resolved locset mask.")
+        location_cv_ids = _resolve_cell_location_cvs(root, location)
+        if location_cv_ids.size == 0:
+            raise ValueError("VoltageCrossingSource.location must resolve to at least one morphology location.")
         if direction not in {"rising", "falling"}:
             raise ValueError("VoltageCrossingSource.direction must be 'rising' or 'falling'.")
         if name is not None and (not isinstance(name, str) or not name):
             raise ValueError("VoltageCrossingSource.name must be a non-empty string or None.")
+
+        population_indices = np.asarray(population_indices, dtype=np.int64).reshape(-1)
+        n_population = int(population_indices.size)
+        n_location = int(location_cv_ids.size)
+        uses_cell_threshold = threshold is _CELL_VOLTAGE_THRESHOLD
+        if uses_cell_threshold:
+            normalized_threshold = None
+        else:
+            if not isinstance(threshold, u.Quantity):
+                raise TypeError("VoltageCrossingSource.threshold must be a voltage quantity when provided.")
+            try:
+                threshold_mv = np.asarray(threshold.to_decimal(u.mV), dtype=np.float64)
+            except Exception as exc:
+                raise ValueError("VoltageCrossingSource.threshold must have voltage dimensions.") from exc
+            if threshold_mv.shape == (n_population,):
+                threshold_mv = threshold_mv[:, None]
+            elif threshold_mv.shape == (n_location,):
+                threshold_mv = threshold_mv[None, :]
+            elif threshold_mv.shape == (n_population * n_location,):
+                threshold_mv = threshold_mv.reshape(n_population, n_location)
+            try:
+                threshold_mv = np.broadcast_to(threshold_mv, (n_population, n_location))
+            except ValueError as exc:
+                raise ValueError(
+                    "VoltageCrossingSource.threshold must be scalar or broadcast to "
+                    f"(population, location) shape {(n_population, n_location)!r}; got {threshold_mv.shape!r}."
+                ) from exc
+            normalized_threshold = u.Quantity(np.array(threshold_mv, copy=True).reshape(-1), u.mV)
+
         self.cells = root
         self.location = location
-        self.threshold = threshold
         self.direction = direction
         self.name = name
-        self._population_indices = np.asarray(population_indices, dtype=np.int64)
+        self._threshold = normalized_threshold
+        self._uses_cell_threshold = uses_cell_threshold
+        self._population_indices = np.repeat(population_indices, n_location)
+        self._location_indices = np.tile(np.arange(n_location, dtype=np.int64), n_population)
+        self._cv_ids = np.tile(location_cv_ids, n_population)
 
     @property
     def size(self) -> int:
@@ -495,6 +547,16 @@ class VoltageCrossingSource(EventSource):
     @property
     def population_index(self) -> np.ndarray:
         return np.array(self._population_indices, copy=True)
+
+    @property
+    def location_index(self) -> np.ndarray:
+        """Return the evaluated-location row for each source endpoint."""
+        return np.array(self._location_indices, copy=True)
+
+    @property
+    def threshold(self):
+        """Return the explicit threshold, or the Cell threshold when omitted."""
+        return self.cells.V_th if self._uses_cell_threshold else self._threshold
 
     @property
     def instance_name(self) -> str:
@@ -506,9 +568,9 @@ class VoltageCrossingSource(EventSource):
         return self.cells
 
     @property
-    def cv_id(self) -> int:
-        """Return the CV containing the declared continuous location."""
-        return _resolve_cell_location_cv(self.cells, self.location)
+    def cv_id(self) -> np.ndarray:
+        """Return the containing CV for each source endpoint."""
+        return np.array(self._cv_ids, copy=True)
 
     def current_event_count(self, source_index):
         """Return current-boundary crossing values for selected detector rows."""
@@ -517,16 +579,25 @@ class VoltageCrossingSource(EventSource):
             raise RuntimeError("Cell runtime does not expose previous voltage for threshold detection.")
         source_index = np.asarray(source_index, dtype=np.int64)
         population_index = self._population_indices[source_index]
+        cv_id = self._cv_ids[source_index]
+        if self._uses_cell_threshold and self.direction == "rising":
+            spike = self.cells.spike.value
+            if len(self.cells.pop_size) == 0:
+                return spike[cv_id]
+            return spike[population_index, cv_id]
+
         last_v = self.cells._event_previous_V.value
         next_v = self.cells.V.value
-        cv_id = self.cv_id
         if len(self.cells.pop_size) == 0:
             last = last_v[cv_id]
             next_value = next_v[cv_id]
+            threshold = self.cells.V_th[cv_id] if self._uses_cell_threshold else self._threshold[source_index]
         else:
             last = last_v[population_index, cv_id]
             next_value = next_v[population_index, cv_id]
-        threshold = self.threshold
+            threshold = (
+                self.cells.V_th[population_index, cv_id] if self._uses_cell_threshold else self._threshold[source_index]
+            )
         if self.direction == "rising":
             return (last < threshold) & (next_value >= threshold)
         return (last > threshold) & (next_value <= threshold)
@@ -606,18 +677,26 @@ class EventOutputCollection:
 
 
 def _resolve_cell_location_cv(cell, location) -> int:
+    cv_ids = _resolve_cell_location_cvs(cell, location)
+    if cv_ids.size != 1:
+        raise ValueError(f"Event source location must resolve to one point, got {cv_ids.size!r}.")
+    return int(cv_ids[0])
+
+
+def _resolve_cell_location_cvs(cell, location) -> np.ndarray:
     from braincell._discretization.base import locate_cv_on_branch
 
-    mask = location.evaluate(cell.morpho)
-    if len(mask) != 1:
-        raise ValueError(f"Event source location must resolve to one point, got {len(mask)!r}.")
-    branch_id = int(mask.branch_id[0])
-    return int(
-        locate_cv_on_branch(
-            cell.cv_tree.branch_to_cv_ids[branch_id],
-            cell.cvs,
-            x=float(mask.branch_x[0]),
-        )
+    mask = location.evaluate(cell.morpho) if hasattr(location, "evaluate") else location
+    return np.asarray(
+        [
+            locate_cv_on_branch(
+                cell.cv_tree.branch_to_cv_ids[int(branch_id)],
+                cell.cvs,
+                x=float(branch_x),
+            )
+            for branch_id, branch_x in zip(mask.branch_id, mask.branch_x)
+        ],
+        dtype=np.int64,
     )
 
 

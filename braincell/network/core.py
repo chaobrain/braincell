@@ -29,8 +29,9 @@ class Population:
     """Resolved one-dimensional Network model population.
 
     A Population may own a :class:`Cell`, :class:`NetStim`, or
-    :class:`EventSequence`. Custom fields share the attribute namespace with
-    formal fields and are stored with a leading population axis.
+    :class:`EventSequence`. Custom metadata shares the attribute namespace
+    with reserved Population attributes and is stored with a leading
+    population axis.
 
     Parameters
     ----------
@@ -38,11 +39,11 @@ class Population:
         Population name.
     model : object
         Resolved model object.
-    **fields
+    **metadata
         Scalar or population-aligned custom metadata.
     """
 
-    _FORMAL_NAMES = frozenset(
+    _RESERVED_NAMES = frozenset(
         {
             "name",
             "model",
@@ -50,31 +51,30 @@ class Population:
             "kind",
             "size",
             "ids",
-            "sources",
+            "event_outputs",
             "synapses",
             "connections",
-            "fields",
-            "event_outputs",
-            "add_source",
+            "metadata",
+            "register_event_output",
             "set",
         }
     )
 
-    def __init__(self, name: str, model, **fields) -> None:
+    def __init__(self, name: str, model, **metadata) -> None:
         if not isinstance(name, str) or not name:
             raise ValueError("Population name must be a non-empty string.")
         size, kind = _model_size_and_kind(model)
-        overlap = self._FORMAL_NAMES.intersection(fields)
+        overlap = self._RESERVED_NAMES.intersection(metadata)
         if overlap:
-            raise ValueError(f"Population custom fields conflict with formal names: {sorted(overlap)!r}.")
+            raise ValueError(f"Population metadata conflicts with reserved names: {sorted(overlap)!r}.")
         object.__setattr__(self, "name", name)
         object.__setattr__(self, "model", model)
         object.__setattr__(self, "kind", kind)
         object.__setattr__(self, "size", size)
         object.__setattr__(self, "ids", _readonly_array(np.arange(size, dtype=np.int64)))
-        object.__setattr__(self, "_fields", {})
-        object.__setattr__(self, "_sources", {})
-        self.set(**fields)
+        object.__setattr__(self, "_metadata", {})
+        object.__setattr__(self, "_event_outputs", {})
+        self.set(**metadata)
 
     @property
     def cell(self):
@@ -84,17 +84,17 @@ class Population:
         return self.model
 
     @property
-    def fields(self):
-        """Read-only custom-field mapping."""
-        return MappingProxyType(self._fields)
+    def metadata(self):
+        """Return the read-only custom metadata mapping."""
+        return MappingProxyType(self._metadata)
 
     @property
-    def sources(self):
-        """Read-only canonical event-output ports."""
+    def event_outputs(self):
+        """Return the read-only named event-output ports."""
         if self.kind == "cell":
             outputs = self.model.event_outputs
             result = {name: outputs[name] for name in outputs}
-            result.update(self._sources)
+            result.update(self._event_outputs)
             return MappingProxyType(result)
         port = "spike" if self.kind == "netstim" else "event"
         return MappingProxyType({port: self.model.view})
@@ -113,17 +113,12 @@ class Population:
             raise TypeError(f"Population {self.name!r} owns {self.kind}, not a Cell connection target.")
         return self.model.connections
 
-    @property
-    def event_outputs(self):
-        """Compatibility alias for :attr:`sources`."""
-        return self.sources
-
-    def set(self, **fields) -> "Population":
-        """Set custom population fields after shape validation.
+    def set(self, **metadata) -> "Population":
+        """Set custom population metadata after shape validation.
 
         Parameters
         ----------
-        **fields
+        **metadata
             Scalars or arrays whose leading dimension equals ``size``.
 
         Returns
@@ -131,75 +126,102 @@ class Population:
         Population
             This population.
         """
-        overlap = self._FORMAL_NAMES.intersection(fields)
+        overlap = self._RESERVED_NAMES.intersection(metadata)
         if overlap:
-            raise ValueError(f"Population custom fields conflict with formal names: {sorted(overlap)!r}.")
-        prepared = {name: _population_field(value, self.size, name=name) for name, value in fields.items()}
-        self._fields.update(prepared)
+            raise ValueError(f"Population metadata conflicts with reserved names: {sorted(overlap)!r}.")
+        prepared = {name: _population_metadata(value, self.size, name=name) for name, value in metadata.items()}
+        self._metadata.update(prepared)
         return self
 
-    def add_source(self, name: str, source) -> object:
-        """Register an additional named live event output.
+    def register_event_output(self, source, *, name: str | None = None) -> object:
+        """Register an additional live event output.
 
         Parameters
         ----------
-        name : str
-            Port name unique within this population.
         source : EventSource or EventSourceView
             Live source driven by this population's Cell.
+        name : str, optional
+            Port name unique within this population. Defaults to the source's
+            semantic name.
 
         Returns
         -------
         EventSourceView
-            Registered source view.
+            Full registered source-owner view.
         """
+        port, view, pending = self._prepare_event_output_registration(source, name=name)
+        if pending:
+            self._commit_event_output_registration(port, view)
+        return view
+
+    def _prepare_event_output_registration(self, source, *, name: str | None = None):
+        """Validate one event-output registration without mutating the Population."""
         from braincell.event import EventSource, EventSourceView
 
         if self.kind != "cell":
-            raise TypeError("Additional source ports are supported only for Cell populations.")
-        if not isinstance(name, str) or not name:
-            raise ValueError("Population source name must be a non-empty string.")
-        if name in self.sources:
-            raise ValueError(f"Population {self.name!r} already has a source port named {name!r}.")
-        view = (
-            source if isinstance(source, EventSourceView) else source.view if isinstance(source, EventSource) else None
-        )
-        if view is None:
-            raise TypeError("Population.add_source(...) expects an EventSource or EventSourceView.")
-        if view.owner.execution_owner is not self.model:
-            raise ValueError("A Cell population source must be driven by that population's Cell.")
+            raise TypeError("Additional event outputs are supported only for Cell populations.")
+        if isinstance(source, EventSourceView):
+            owner = source.owner
+        elif isinstance(source, EventSource):
+            owner = source
+        else:
+            raise TypeError("Population.register_event_output(...) expects an EventSource or EventSourceView.")
+        if owner.execution_owner is not self.model:
+            raise ValueError("A Cell population event output must be driven by that population's Cell.")
         if getattr(self.model, "_initialized", False):
-            raise RuntimeError("Population source ports must be registered before Cell initialization.")
-        self._sources[name] = view
-        return view
+            raise RuntimeError("Population event outputs must be registered before Cell initialization.")
+
+        for existing_name, existing_view in self.event_outputs.items():
+            if existing_view.owner is not owner:
+                continue
+            if name is not None and name != existing_name:
+                raise ValueError(
+                    f"EventSource is already registered as {existing_name!r} on Population {self.name!r}; "
+                    f"cannot also register it as {name!r}."
+                )
+            return existing_name, existing_view, False
+
+        port = owner.source_name if name is None else name
+        if not isinstance(port, str) or not port:
+            raise ValueError(
+                "Additional EventSource used by a Network must have a non-empty source name; "
+                "set source.name or call population.register_event_output(source, name=...)."
+            )
+        if port in self.event_outputs:
+            raise ValueError(f"Population {self.name!r} already has a different event output named {port!r}.")
+        return port, owner.view, True
+
+    def _commit_event_output_registration(self, name: str, view) -> None:
+        """Commit an event-output registration validated by the prepare step."""
+        self._event_outputs[name] = view
 
     def __getitem__(self, name: str):
-        if name in self._FORMAL_NAMES:
+        if name in self._RESERVED_NAMES:
             return getattr(self, name)
         try:
-            return self._fields[name]
+            return self._metadata[name]
         except KeyError as exc:
-            raise KeyError(f"Population {self.name!r} has no field {name!r}.") from exc
+            raise KeyError(f"Population {self.name!r} has no metadata named {name!r}.") from exc
 
     def __getattr__(self, name: str):
-        fields = self.__dict__.get("_fields", {})
-        if name in fields:
-            return fields[name]
+        metadata = self.__dict__.get("_metadata", {})
+        if name in metadata:
+            return metadata[name]
         raise AttributeError(name)
 
     def __setattr__(self, name: str, value) -> None:
         if name.startswith("_"):
             object.__setattr__(self, name, value)
             return
-        if name in self._FORMAL_NAMES:
-            raise AttributeError(f"Population formal field {name!r} is read-only.")
+        if name in self._RESERVED_NAMES:
+            raise AttributeError(f"Population attribute {name!r} is reserved and read-only.")
         self.set(**{name: value})
 
     def __repr__(self) -> str:
         """Return a compact population summary."""
         return (
             f"Population(name={self.name!r}, kind={self.kind!r}, size={self.size}, "
-            f"model={type(self.model).__name__}, fields={tuple(self._fields)!r}, "
+            f"model={type(self.model).__name__}, metadata={tuple(self._metadata)!r}, "
             f"initialized={bool(getattr(self.model, '_initialized', False))})"
         )
 
@@ -229,14 +251,16 @@ def _model_size_and_kind(model) -> tuple[int, str]:
     return size, "cell"
 
 
-def _population_field(value, size: int, *, name: str):
+def _population_metadata(value, size: int, *, name: str):
     shape = tuple(getattr(value, "shape", ()))
     if shape == ():
         if isinstance(value, u.Quantity):
             return u.math.broadcast_to(value, (size,))
         return _readonly_array(np.full((size,), value))
     if shape[0] != size:
-        raise ValueError(f"Population field {name!r} must be scalar or have leading dimension {size}; got {shape!r}.")
+        raise ValueError(
+            f"Population metadata {name!r} must be scalar or have leading dimension {size}; got {shape!r}."
+        )
     if isinstance(value, np.ndarray):
         return _readonly_array(value)
     return value
@@ -258,13 +282,12 @@ class NetworkResult:
         Step times spanning ``[start_t, start_t + duration)``.
     traces : dict
         ``population_name -> {probe_name: trace}`` mapping.
-    spikes : dict
-        ``population_name -> spike_trace`` mapping.
+    events : dict
+        ``population_name -> {port_name: EventSeries}`` mapping.
     """
 
     time: object
     traces: dict
-    spikes: dict
     samples: dict = field(default_factory=dict)
     events: dict = field(default_factory=dict)
     start_time: object | None = None
@@ -273,7 +296,6 @@ class NetworkResult:
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "traces", _nested_mapping_proxy(self.traces))
-        object.__setattr__(self, "spikes", MappingProxyType(dict(self.spikes)))
         object.__setattr__(self, "samples", _nested_mapping_proxy(self.samples))
         object.__setattr__(self, "events", _nested_mapping_proxy(self.events))
 
@@ -337,7 +359,6 @@ class NetworkResult:
             }
             for population_name in first.traces
         }
-        spikes = {name: _concat_values(tuple(part.spikes[name] for part in parts)) for name in first.spikes}
         events = {
             population_name: {
                 port: _concat_event_series(tuple(part.events[population_name][port] for part in parts))
@@ -348,7 +369,6 @@ class NetworkResult:
         return cls(
             time=_concat_values(tuple(part.time for part in parts)),
             traces=traces,
-            spikes=spikes,
             samples=samples,
             events=events,
             start_time=first.start_time,

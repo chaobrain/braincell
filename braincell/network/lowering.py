@@ -97,7 +97,9 @@ def lower_direct_connections(
                     weight=connection.weight,
                     delay_steps=delay_steps,
                     buffer_size=int(np.max(delay_steps, initial=1)) + 1,
-                    source_cv_id=int(getattr(source, "cv_id", 0)),
+                    # Live EventSource routes read their own endpoint mapping;
+                    # this legacy scalar is only used by raw Cell spike blocks.
+                    source_cv_id=0,
                     packed=True,
                     event_source=source,
                 )

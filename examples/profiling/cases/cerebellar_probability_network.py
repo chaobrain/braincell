@@ -125,11 +125,6 @@ def add_case_args(parser) -> None:
     parser.add_argument("--precision", type=int, choices=(32, 64), default=32)
     parser.add_argument("--event-backend", default="auto")
     parser.add_argument("--brainevent-backend", default="jax_raw")
-    parser.add_argument(
-        "--spike-recording",
-        choices=("none", "population", "full"),
-        default="population",
-    )
     parser.add_argument("--grc-size", type=int, default=None)
     parser.add_argument("--goc-size", type=int, default=None)
     parser.add_argument("--pc-size", type=int, default=None)
@@ -193,7 +188,6 @@ class CerebellarProbabilityNetworkWorkload:
             duration=self.duration_ms * u.ms,
             event_backend=self.args.event_backend,
             brainevent_backend=self.args.brainevent_backend,
-            spike_recording=self.args.spike_recording,
         )
 
     def block(self, result) -> None:
@@ -212,8 +206,9 @@ class CerebellarProbabilityNetworkWorkload:
             for pop_name, probes in result.traces.items()
         }
         spike_counts = {
-            pop_name: float(np.asarray(spikes, dtype=float).sum())
-            for pop_name, spikes in result.spikes.items()
+            pop_name: int(np.asarray(outputs["spike"].count, dtype=np.int64).sum())
+            for pop_name, outputs in result.events.items()
+            if "spike" in outputs
         }
         return {
             "time_shape": list(time_ms.shape),
@@ -234,7 +229,6 @@ class CerebellarProbabilityNetworkWorkload:
             "duration_ms": self.duration_ms,
             "event_backend": self.args.event_backend,
             "brainevent_backend": self.args.brainevent_backend,
-            "spike_recording": self.args.spike_recording,
         }
 
     def _require_net(self) -> None:
@@ -308,7 +302,7 @@ def _add_probability_connections(net, population_names: tuple[str, ...]) -> list
             weights = np.full(pre_index.size, float(cfg["weight_uS"]), dtype=float) * u.uS
             net.connect(
                 connection_name,
-                source=net.populations[pre].sources["spike"][pre_index],
+                source=net.populations[pre].event_outputs["spike"][pre_index],
                 synapse=net.populations[post].synapses[_synapse_name(pre, post)][post_index],
                 weight=weights,
                 delay=cfg["delay_ms"] * u.ms,

@@ -15,15 +15,13 @@
 
 # -*- coding: utf-8 -*-
 
-from typing import Optional
-
-import braintools
+import brainstate
 import brainunit as u
 
 from braincell._base import HHTypedNeuron, Synapse
-from braincell._typing import Initializer, Size
+from braincell._synapse_schema import DerivedSpec, ParameterSpec, StateSpec, positive
 from braincell.mech import register_synapse
-from braincell.quad.protocol import state
+from braincell.event import ScalarEventInput
 
 __all__ = [
     'ExpSyn',
@@ -39,28 +37,6 @@ def _decay_factor(dt, tau):
     return u.math.exp(-(dt / tau))
 
 
-def _syn_uS_state(shape, batch_size=None):
-    """Allocate one synapse state with conductance unit ``uS``."""
-    return state(u.Quantity(braintools.init.param(u.math.zeros, shape, batch_size), u.uS))
-
-
-def _syn_state(shape, batch_size=None):
-    """Allocate one dimensionless synapse ODE state."""
-    return state(braintools.init.param(u.math.zeros, shape, batch_size))
-
-
-def _event_payload(pre_drive, default_weight):
-    """Return weighted synaptic event payload.
-
-    Network projections write already-weighted quantities into ``pre_drive``.
-    Legacy local drives such as ``NetStim(weight=1.0)`` remain dimensionless and
-    therefore use the placed synapse's default ``weight``.
-    """
-    if isinstance(pre_drive, u.Quantity):
-        return pre_drive
-    return pre_drive * default_weight
-
-
 @register_synapse("ExpSyn")
 class ExpSyn(Synapse):
     """NEURON-compatible `ExpSyn` template.
@@ -70,50 +46,29 @@ class ExpSyn(Synapse):
     - state: ``g`` in ``uS``
     - decay: ``g' = -g / tau``
     - step-boundary event: ``g <- g + weighted_pre_drive``
-    - current: ``i = g * (V_post - e)``
+    - inward-positive point current: ``I = g * (e - V_post)``
     """
 
     root_type = HHTypedNeuron
-    current_sign = "neuron"
-    current_units = "total"
+    parameters = {
+        "tau": ParameterSpec(0.1 * u.ms, validator=positive),
+        "e": ParameterSpec(0.0 * u.mV),
+    }
+    states = {"g": StateSpec(0.0 * u.uS)}
+    derived = {}
+    event_input = ScalarEventInput(u.uS, aggregation="sum")
 
-    def __init__(
-        self,
-        size: Size,
-        tau: Initializer = 0.1 * u.ms,
-        e: Initializer = 0.0 * u.mV,
-        weight: Initializer = 1.0 * u.uS,
-        name: Optional[str] = None,
-    ):
-        super().__init__(size=size, name=name)
-        self.tau = braintools.init.param(tau, self.varshape, allow_none=False)
-        self.e = braintools.init.param(e, self.varshape, allow_none=False)
-        self.weight = braintools.init.param(weight, self.varshape, allow_none=False)
-
-    def init_state(self, V_post=None, batch_size=None):
-        super().init_state(V_post=V_post, batch_size=batch_size)
-        self.g = _syn_uS_state(self.varshape, batch_size=batch_size)
-
-    def reset_state(self, V_post=None, batch_size=None):
-        super().reset_state(V_post=V_post, batch_size=batch_size)
-        self.g.value = u.Quantity(braintools.init.param(u.math.zeros, self.varshape, batch_size), u.uS)
-
-    def pre_integral(self, V_post=None):
+    def apply_events(self, payload, V_post=None):
         _ = V_post
-
-    def apply_discrete_events(self, V_post=None):
-        _ = V_post
-        self.g.value = self.g.value + _event_payload(self.pre_drive(), self.weight)
-
-    def post_integral(self, V_post=None):
-        _ = V_post
+        self.event_input.validate_payload(payload)
+        self.g.value = self.g.value + payload
 
     def compute_derivative(self, V_post=None):
         _ = V_post
         self.g.derivative = -self.g.value / self.tau
 
     def current(self, V_post):
-        return self.g.value * (V_post - self.e)
+        return self.g.value * (self.e - V_post)
 
 
 @register_synapse("Exp2Syn")
@@ -125,233 +80,75 @@ class Exp2Syn(Synapse):
     - states: ``A`` and ``B`` in ``uS``
     - decay: ``A' = -A / tau1``, ``B' = -B / tau2``
     - conductance: ``g = B - A``
-    - current: ``i = g * (V_post - e)``
+    - inward-positive point current: ``I = g * (e - V_post)``
     - step-boundary event: ``A <- A + weighted_pre_drive * factor`` and same for ``B``
     """
 
     root_type = HHTypedNeuron
-    current_sign = "neuron"
-    current_units = "total"
+    parameters = {
+        "tau1": ParameterSpec(0.1 * u.ms, validator=positive),
+        "tau2": ParameterSpec(10.0 * u.ms, validator=positive),
+        "e": ParameterSpec(0.0 * u.mV),
+    }
+    states = {
+        "A": StateSpec(0.0 * u.uS),
+        "B": StateSpec(0.0 * u.uS),
+    }
+    derived = {"g": DerivedSpec()}
+    event_input = ScalarEventInput(u.uS, aggregation="sum")
 
-    def __init__(
-        self,
-        size: Size,
-        tau1: Initializer = 0.1 * u.ms,
-        tau2: Initializer = 10.0 * u.ms,
-        e: Initializer = 0.0 * u.mV,
-        weight: Initializer = 1.0 * u.uS,
-        name: Optional[str] = None,
-    ):
-        super().__init__(size=size, name=name)
-        self.tau1 = braintools.init.param(tau1, self.varshape, allow_none=False)
-        self.tau2 = braintools.init.param(tau2, self.varshape, allow_none=False)
-        self.e = braintools.init.param(e, self.varshape, allow_none=False)
-        self.weight = braintools.init.param(weight, self.varshape, allow_none=False)
-        self.factor = self._compute_factor()
-
-    def _effective_tau1(self):
-        ratio = u.math.asarray(self.tau1 / self.tau2)
-        tau1_eff = u.math.where(ratio > 0.9999, self.tau2 * 0.9999, self.tau1)
-        tau1_eff = u.math.where(ratio < 1e-9, self.tau2 * 1e-9, tau1_eff)
-        return tau1_eff
+    @classmethod
+    def validate_parameter_values(cls, parameters) -> None:
+        if u.math.any(parameters["tau1"] >= parameters["tau2"]):
+            raise ValueError("Exp2Syn requires tau1 < tau2.")
 
     def _compute_factor(self):
-        tau1_eff = self._effective_tau1()
-        tp = (tau1_eff * self.tau2) / (self.tau2 - tau1_eff) * u.math.log(u.math.asarray(self.tau2 / tau1_eff))
-        factor = -u.math.exp(-(tp / tau1_eff)) + u.math.exp(-(tp / self.tau2))
+        tp = (self.tau1 * self.tau2) / (self.tau2 - self.tau1) * u.math.log(u.math.asarray(self.tau2 / self.tau1))
+        factor = -u.math.exp(-(tp / self.tau1)) + u.math.exp(-(tp / self.tau2))
         return 1.0 / factor
-
-    def _on_param_updated(self, var_name: str, new_value) -> None:
-        _ = (var_name, new_value)
-        self.factor = self._compute_factor()
 
     @property
     def g(self):
         return self.B.value - self.A.value
 
-    def init_state(self, V_post=None, batch_size=None):
-        super().init_state(V_post=V_post, batch_size=batch_size)
-        self.A = _syn_uS_state(self.varshape, batch_size=batch_size)
-        self.B = _syn_uS_state(self.varshape, batch_size=batch_size)
-
-    def reset_state(self, V_post=None, batch_size=None):
-        super().reset_state(V_post=V_post, batch_size=batch_size)
-        self.A.value = u.Quantity(braintools.init.param(u.math.zeros, self.varshape, batch_size), u.uS)
-        self.B.value = u.Quantity(braintools.init.param(u.math.zeros, self.varshape, batch_size), u.uS)
-
-    def pre_integral(self, V_post=None):
+    def apply_events(self, payload, V_post=None):
         _ = V_post
-
-    def apply_discrete_events(self, V_post=None):
-        _ = V_post
-        delta = _event_payload(self.pre_drive(), self.weight) * self.factor
+        self.event_input.validate_payload(payload)
+        delta = payload * self._compute_factor()
         self.A.value = self.A.value + delta
         self.B.value = self.B.value + delta
 
-    def post_integral(self, V_post=None):
-        _ = V_post
-
     def compute_derivative(self, V_post=None):
         _ = V_post
-        self.A.derivative = -self.A.value / self._effective_tau1()
+        self.A.derivative = -self.A.value / self.tau1
         self.B.derivative = -self.B.value / self.tau2
 
     def current(self, V_post):
-        return self.g * (V_post - self.e)
+        return self.g * (self.e - V_post)
 
 
-@register_synapse("AMPA")
 class AMPA(Synapse):
-    """Single-exponential AMPA synapse.
+    """Unavailable legacy receptor model pending an event-model redesign."""
 
-    Parameters
-    ----------
-    size : brainstate.typing.Size
-        Point-space target shape.
-    alpha : array-like or callable, optional
-        Rise rate in ``ms^-1``.
-    beta : array-like or callable, optional
-        Decay rate in ``ms^-1``.
-    T : array-like or callable, optional
-        Presynaptic scaling factor.
-    g_max : array-like or callable, optional
-        Maximum synaptic conductance.
-    E_rev : array-like or callable, optional
-        Reversal potential of the synapse.
-    name : str, optional
-        Runtime node name.
-    """
-
-    root_type = HHTypedNeuron
-
-    def __init__(
-        self,
-        size: Size,
-        alpha: Initializer = 0.98 / u.ms,
-        beta: Initializer = 0.18 / u.ms,
-        T: Initializer = 0.5,
-        g_max: Initializer = 1.0 * (u.mS / u.cm**2),
-        E_rev: Initializer = 0.0 * u.mV,
-        name: Optional[str] = None,
-    ):
-        super().__init__(size=size, name=name)
-
-        self.alpha = braintools.init.param(alpha, self.varshape, allow_none=False)
-        self.beta = braintools.init.param(beta, self.varshape, allow_none=False)
-        self.T = braintools.init.param(T, self.varshape, allow_none=False)
-        self.g_max = braintools.init.param(g_max, self.varshape, allow_none=False)
-        self.E_rev = braintools.init.param(E_rev, self.varshape, allow_none=False)
-
-    def init_state(self, V_post=None, batch_size=None):
-        """Initialize synaptic state."""
-        super().init_state(V_post=V_post, batch_size=batch_size)
-        self.g = _syn_state(self.varshape, batch_size=batch_size)
-
-    def reset_state(self, V_post=None, batch_size=None):
-        """Reset synaptic state."""
-        super().reset_state(V_post=V_post, batch_size=batch_size)
-        self.g.value = braintools.init.param(u.math.zeros, self.varshape, batch_size)
-
-    def compute_derivative(self, V_post=None):
-        """Advance one timestep of synaptic conductance dynamics."""
-        _ = V_post
-        self.g.derivative = self.alpha * self.pre_drive() * self.T * (1 - self.g.value) - self.beta * self.g.value
-
-    def current(self, V_post):
-        """Return the postsynaptic point current."""
-        return self.g_max * self.g.value * (self.E_rev - V_post)
+    def __init__(self, *args, **kwargs):
+        raise NotImplementedError(_UNAVAILABLE_RECEPTOR_MESSAGE.format(model="AMPA"))
 
 
-@register_synapse("GABAa")
 class GABAa(Synapse):
-    """Single-exponential GABAa synapse."""
+    """Unavailable legacy receptor model pending an event-model redesign."""
 
-    root_type = HHTypedNeuron
-
-    def __init__(
-        self,
-        size: Size,
-        alpha: Initializer = 0.53 / u.ms,
-        beta: Initializer = 0.18 / u.ms,
-        T: Initializer = 1.0,
-        g_max: Initializer = 1.0 * (u.mS / u.cm**2),
-        E_rev: Initializer = -70.0 * u.mV,
-        name: Optional[str] = None,
-    ):
-        super().__init__(size=size, name=name)
-
-        self.alpha = braintools.init.param(alpha, self.varshape, allow_none=False)
-        self.beta = braintools.init.param(beta, self.varshape, allow_none=False)
-        self.T = braintools.init.param(T, self.varshape, allow_none=False)
-        self.g_max = braintools.init.param(g_max, self.varshape, allow_none=False)
-        self.E_rev = braintools.init.param(E_rev, self.varshape, allow_none=False)
-
-    def init_state(self, V_post=None, batch_size=None):
-        """Initialize synaptic state."""
-        super().init_state(V_post=V_post, batch_size=batch_size)
-        self.g = _syn_state(self.varshape, batch_size=batch_size)
-
-    def reset_state(self, V_post=None, batch_size=None):
-        """Reset synaptic state."""
-        super().reset_state(V_post=V_post, batch_size=batch_size)
-        self.g.value = braintools.init.param(u.math.zeros, self.varshape, batch_size)
-
-    def compute_derivative(self, V_post=None):
-        """Advance one timestep of synaptic conductance dynamics."""
-        _ = V_post
-        self.g.derivative = self.alpha * self.pre_drive() * self.T * (1 - self.g.value) - self.beta * self.g.value
-
-    def current(self, V_post):
-        """Return the postsynaptic point current."""
-        return self.g_max * self.g.value * (self.E_rev - V_post)
+    def __init__(self, *args, **kwargs):
+        raise NotImplementedError(_UNAVAILABLE_RECEPTOR_MESSAGE.format(model="GABAa"))
 
 
-@register_synapse("NMDA")
 class NMDA(Synapse):
-    """Double-exponential NMDA synapse."""
+    """Unavailable legacy receptor model pending an event-model redesign."""
 
-    root_type = HHTypedNeuron
+    def __init__(self, *args, **kwargs):
+        raise NotImplementedError(_UNAVAILABLE_RECEPTOR_MESSAGE.format(model="NMDA"))
 
-    def __init__(
-        self,
-        size: Size,
-        alpha1: Initializer = 2.0 / u.ms,
-        beta1: Initializer = 0.01 / u.ms,
-        alpha2: Initializer = 1.0 / u.ms,
-        beta2: Initializer = 0.5 / u.ms,
-        T: Initializer = 1.0,
-        g_max: Initializer = 1.0 * (u.mS / u.cm**2),
-        E_rev: Initializer = 0.0 * u.mV,
-        name: Optional[str] = None,
-    ):
-        super().__init__(size=size, name=name)
 
-        self.alpha1 = braintools.init.param(alpha1, self.varshape, allow_none=False)
-        self.beta1 = braintools.init.param(beta1, self.varshape, allow_none=False)
-        self.alpha2 = braintools.init.param(alpha2, self.varshape, allow_none=False)
-        self.beta2 = braintools.init.param(beta2, self.varshape, allow_none=False)
-        self.T = braintools.init.param(T, self.varshape, allow_none=False)
-        self.g_max = braintools.init.param(g_max, self.varshape, allow_none=False)
-        self.E_rev = braintools.init.param(E_rev, self.varshape, allow_none=False)
-
-    def init_state(self, V_post=None, batch_size=None):
-        """Initialize synaptic state."""
-        super().init_state(V_post=V_post, batch_size=batch_size)
-        self.g = _syn_state(self.varshape, batch_size=batch_size)
-        self.x = _syn_state(self.varshape, batch_size=batch_size)
-
-    def reset_state(self, V_post=None, batch_size=None):
-        """Reset synaptic state."""
-        super().reset_state(V_post=V_post, batch_size=batch_size)
-        self.g.value = braintools.init.param(u.math.zeros, self.varshape, batch_size)
-        self.x.value = braintools.init.param(u.math.zeros, self.varshape, batch_size)
-
-    def compute_derivative(self, V_post=None):
-        """Advance one timestep of synaptic conductance dynamics."""
-        _ = V_post
-        self.g.derivative = self.alpha1 * self.x.value * (1 - self.g.value) - self.beta1 * self.g.value
-        self.x.derivative = self.alpha2 * self.pre_drive() * self.T * (1 - self.x.value) - self.beta2 * self.x.value
-
-    def current(self, V_post):
-        """Return the postsynaptic point current."""
-        return self.g_max * self.g.value * (self.E_rev - V_post)
+_UNAVAILABLE_RECEPTOR_MESSAGE = (
+    "{model} is temporarily unavailable while its transmitter-pulse and point-current "
+    "contract is redesigned. Use ExpSyn or Exp2Syn for the current event runtime."
+)

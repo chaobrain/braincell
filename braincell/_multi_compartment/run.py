@@ -20,7 +20,8 @@ Propagates ``t`` through :mod:`brainstate.environ` inside the
 per step; the final post-loop time is pinned once after the scan.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from types import MappingProxyType
 from typing import TYPE_CHECKING
 
 import brainstate
@@ -28,13 +29,14 @@ import brainunit as u
 import jax
 import numpy as np
 
+from braincell.recording import SampleBlock
+
 if TYPE_CHECKING:
     from .cell import Cell
 
 __all__ = ["RunResult", "run"]
 
 
-@jax.tree_util.register_dataclass
 @dataclass(frozen=True)
 class RunResult:
     """Return value of :meth:`Cell.run`.
@@ -49,36 +51,125 @@ class RunResult:
 
     time: object
     traces: dict
+    samples: dict = field(default_factory=dict)
+    start_time: object | None = None
+    stop_time: object | None = None
+    dt: object | None = None
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "traces", MappingProxyType(dict(self.traces)))
+        object.__setattr__(self, "samples", MappingProxyType(dict(self.samples)))
+
+    @classmethod
+    def concat(cls, parts) -> "RunResult":
+        """Concatenate contiguous result segments with identical schemas.
+
+        Parameters
+        ----------
+        parts : iterable of RunResult
+            Ordered contiguous segments.
+
+        Returns
+        -------
+        RunResult
+            Concatenated immutable result.
+        """
+        parts = tuple(parts)
+        if not parts:
+            raise ValueError("RunResult.concat(...) requires at least one part.")
+        first = parts[0]
+        if any(part.dt is None for part in parts):
+            raise ValueError("RunResult.concat(...) requires results carrying dt metadata.")
+        for previous, current in zip(parts, parts[1:]):
+            if not _same_time_quantity(previous.dt, current.dt):
+                raise ValueError("RunResult.concat(...) requires identical dt values.")
+            if not _same_time_quantity(previous.stop_time, current.start_time):
+                raise ValueError("RunResult.concat(...) requires contiguous segments.")
+            if tuple(previous.samples) != tuple(current.samples):
+                raise ValueError("RunResult.concat(...) requires identical recording names.")
+            for name in previous.samples:
+                if previous.samples[name].schema != current.samples[name].schema:
+                    raise ValueError(f"Recording schema changed for {name!r}.")
+        samples = {name: _concat_sample_blocks(tuple(part.samples[name] for part in parts)) for name in first.samples}
+        common_traces = set(first.traces)
+        for part in parts[1:]:
+            common_traces.intersection_update(part.traces)
+        traces = {
+            name: _concat_values(tuple(part.traces[name] for part in parts))
+            for name in first.traces
+            if name in common_traces
+        }
+        return cls(
+            time=_concat_values(tuple(part.time for part in parts)),
+            traces=traces,
+            samples=samples,
+            start_time=first.start_time,
+            stop_time=parts[-1].stop_time,
+            dt=first.dt,
+        )
 
 
 def run(rcell: "Cell", *, dt, duration) -> RunResult:
-    """Advance ``rcell`` for ``duration`` at ``dt`` and collect probe traces."""
+    """Advance ``rcell`` for ``duration`` at ``dt`` and collect recordings."""
     _validate_time_quantity(dt, name="dt")
     _validate_time_quantity(duration, name="duration")
+    n_steps = _duration_steps(duration, dt)
+    rcell.connections.prepare_runtime(dt)
 
-    initial_samples = rcell.sample_probes()
-    if len(initial_samples) == 0:
-        raise ValueError("Cell.run(...) requires at least one placed probe.")
-    ordered_names = tuple(sorted(initial_samples))
+    compiled_recordings = rcell._compiled_recordings(dt)
+    probe_samples = rcell.sample_probes()
+    ordered_probe_names = tuple(sorted(probe_samples))
 
     with brainstate.environ.context(dt=dt):
-        relative_times = u.math.arange(0.0 * u.ms, duration, brainstate.environ.get_dt())
-        if int(relative_times.shape[0]) == 0:
-            raise ValueError("Cell.run(...) produced no timesteps; ensure duration > 0 and dt > 0.")
+        relative_times = u.math.arange(n_steps) * brainstate.environ.get_dt()
         cached_run = _cached_run_loop(
             rcell,
             dt=dt,
-            n_steps=int(relative_times.shape[0]),
-            ordered_names=ordered_names,
+            n_steps=n_steps,
+            compiled_recordings=compiled_recordings,
+            ordered_probe_names=ordered_probe_names,
         )
         times, traces_over_time = cached_run(relative_times)
 
-    traces_tuple = _normalize_run_traces(traces_over_time, n_traces=len(ordered_names))
-    traces = {name: trace for name, trace in zip(ordered_names, traces_tuple)}
-    return RunResult(time=times, traces=traces)
+    n_output = len(compiled_recordings) + len(ordered_probe_names)
+    values_tuple = _normalize_run_traces(traces_over_time, n_traces=n_output)
+    recording_values = values_tuple[: len(compiled_recordings)]
+    probe_values = values_tuple[len(compiled_recordings) :]
+    start_time = rcell.current_time - duration
+    stop_time = rcell.current_time
+
+    samples = {}
+    for compiled, values in zip(compiled_recordings, recording_values):
+        mask = _recording_time_mask(times, compiled.schema)
+        selected = values[mask]
+        first_time = None if not np.any(mask) else times[int(np.flatnonzero(mask)[0])]
+        samples[compiled.spec.name] = SampleBlock(
+            values=selected,
+            schema=compiled.schema,
+            segment_start=start_time,
+            segment_stop=stop_time,
+            first_time=first_time,
+        )
+    traces = {name: trace for name, trace in zip(ordered_probe_names, probe_values)}
+    traces.update({name: block.values for name, block in samples.items()})
+    return RunResult(
+        time=times,
+        traces=traces,
+        samples=samples,
+        start_time=start_time,
+        stop_time=stop_time,
+        dt=dt,
+    )
 
 
-def _cached_run_loop(rcell: "Cell", *, dt, n_steps: int, ordered_names: tuple[str, ...]):
+def _cached_run_loop(
+    rcell: "Cell",
+    *,
+    dt,
+    n_steps: int,
+    compiled_recordings: tuple,
+    ordered_probe_names: tuple[str, ...],
+):
     """Return a persistent jitted loop for one run shape.
 
     Notes
@@ -90,23 +181,34 @@ def _cached_run_loop(rcell: "Cell", *, dt, n_steps: int, ordered_names: tuple[st
     """
     cache = getattr(rcell, "_run_loop_cache", None)
     if cache is None:
-        return _make_run_loop(rcell, dt=dt, ordered_names=ordered_names)
+        return _make_run_loop(
+            rcell,
+            dt=dt,
+            compiled_recordings=compiled_recordings,
+            ordered_probe_names=ordered_probe_names,
+        )
 
     key = (
         _time_quantity_cache_value(dt),
         int(n_steps),
-        tuple(ordered_names),
+        tuple((item.spec.name, item.schema.size) for item in compiled_recordings),
+        tuple(ordered_probe_names),
         int(brainstate.environ.get_precision()),
     )
     cached = cache.get(key)
     if cached is None:
-        cached = _make_run_loop(rcell, dt=dt, ordered_names=ordered_names)
+        cached = _make_run_loop(
+            rcell,
+            dt=dt,
+            compiled_recordings=compiled_recordings,
+            ordered_probe_names=ordered_probe_names,
+        )
         cache[key] = cached
     return cached
 
 
-def _make_run_loop(rcell: "Cell", *, dt, ordered_names: tuple[str, ...]):
-    """Create the jitted stateful run loop for a fixed probe layout."""
+def _make_run_loop(rcell: "Cell", *, dt, compiled_recordings: tuple, ordered_probe_names: tuple[str, ...]):
+    """Create the jitted stateful run loop for a fixed observer layout."""
 
     def _run_loop(relative_times):
         with brainstate.environ.context(dt=dt):
@@ -117,15 +219,21 @@ def _make_run_loop(rcell: "Cell", *, dt, ordered_names: tuple[str, ...]):
 
             def _step(t):
                 with brainstate.environ.context(t=t):
+                    with jax.named_scope("braincell:cell_run:sample_recordings"):
+                        recording_snapshot = tuple(item.sample() for item in compiled_recordings)
                     with jax.named_scope("braincell:cell_run:begin_step"):
                         rcell._begin_step()
                     with jax.named_scope("braincell:cell_run:update_dynamics"):
                         rcell._update_dynamics()
-                    with jax.named_scope("braincell:cell_run:sample_probes"):
-                        snapshot = rcell.sample_probes()
+                    with jax.named_scope("braincell:cell_run:route_live_connections"):
+                        rcell._apply_direct_live_connection_events()
                     with jax.named_scope("braincell:cell_run:prepare_next_synapse_inputs"):
-                        rcell._prepare_next_synapse_inputs()
-                return tuple(snapshot[name] for name in ordered_names)
+                        rcell._prepare_next_synapse_inputs(t=t + brainstate.environ.get_dt())
+                    # Placed Probe objects keep their legacy post-step sampling
+                    # contract during the transition to layout-free recordings.
+                    with jax.named_scope("braincell:cell_run:sample_legacy_probes"):
+                        probe_snapshot = rcell.sample_probes()
+                return recording_snapshot + tuple(probe_snapshot[name] for name in ordered_probe_names)
 
             traces_over_time = brainstate.transform.for_loop(_step, times)
             rcell._set_current_time(start_t + int(times.shape[0]) * brainstate.environ.get_dt())
@@ -147,6 +255,8 @@ def _validate_time_quantity(value, *, name: str) -> None:
 
 def _normalize_run_traces(values, *, n_traces: int) -> tuple:
     """Wrap scalar ``for_loop`` output when a single trace is collected."""
+    if n_traces == 0:
+        return ()
     if n_traces == 1:
         return values if isinstance(values, tuple) else (values,)
     if not isinstance(values, tuple):
@@ -159,3 +269,54 @@ def _normalize_run_traces(values, *, n_traces: int) -> tuple:
 def _time_quantity_cache_value(value) -> tuple[float, str]:
     """Return a stable cache token for a scalar time quantity."""
     return (float(np.asarray(value.to_decimal(u.ms), dtype=float).reshape(())), "ms")
+
+
+def _duration_steps(duration, dt) -> int:
+    duration_ms = float(np.asarray(duration.to_decimal(u.ms), dtype=float).reshape(()))
+    dt_ms = float(np.asarray(dt.to_decimal(u.ms), dtype=float).reshape(()))
+    ratio = duration_ms / dt_ms
+    steps = int(round(ratio))
+    if steps <= 0 or not np.isclose(ratio, steps, rtol=1e-10, atol=1e-12):
+        raise ValueError(f"Cell.run(...) duration must be an integer multiple of dt; got {duration!r} and {dt!r}.")
+    return steps
+
+
+def _recording_time_mask(times, schema) -> np.ndarray:
+    time_ms = np.asarray(times.to_decimal(u.ms), dtype=float)
+    start_ms = float(np.asarray(schema.schedule_start.to_decimal(u.ms)).reshape(()))
+    period_ms = float(np.asarray(schema.period.to_decimal(u.ms)).reshape(()))
+    relative = (time_ms - start_ms) / period_ms
+    return (time_ms >= start_ms - 1e-9) & np.isclose(relative, np.rint(relative), rtol=1e-6, atol=1e-6)
+
+
+def _same_time_quantity(left, right) -> bool:
+    if left is None or right is None:
+        return left is right
+    return bool(
+        np.allclose(
+            np.asarray(left.to_decimal(u.ms), dtype=float),
+            np.asarray(right.to_decimal(u.ms), dtype=float),
+            rtol=1e-7,
+            atol=1e-9,
+        )
+    )
+
+
+def _concat_values(values):
+    first = values[0]
+    if isinstance(first, u.Quantity):
+        unit = first.unit
+        return u.Quantity(u.math.concatenate(tuple(value.to_decimal(unit) for value in values), axis=0), unit)
+    return u.math.concatenate(values, axis=0)
+
+
+def _concat_sample_blocks(blocks):
+    first = blocks[0]
+    first_time = next((block.first_time for block in blocks if block.first_time is not None), None)
+    return SampleBlock(
+        values=_concat_values(tuple(block.values for block in blocks)),
+        schema=first.schema,
+        segment_start=first.segment_start,
+        segment_stop=blocks[-1].segment_stop,
+        first_time=first_time,
+    )

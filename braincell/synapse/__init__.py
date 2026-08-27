@@ -17,5 +17,6 @@
 
 from .markov import *
 from .markov import __all__ as _markov_all
+from braincell._synapse_schema import DerivedSpec, ParameterSpec, StateSpec
 
-__all__ = _markov_all
+__all__ = [*_markov_all, "DerivedSpec", "ParameterSpec", "StateSpec"]

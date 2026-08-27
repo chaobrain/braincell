@@ -56,8 +56,11 @@ class CVContext:
         Tree path distance from root-branch coordinate ``x=0`` to the
         control-volume midpoint.
     path_distance_from_soma : Quantity
-        Tree path distance from the soma surface. Soma control volumes and
-        first-order neurite attachment points use zero as their reference.
+        Shortest tree path distance from the union of all soma branches. If
+        there is no soma branch, the whole root branch is the reference.
+    local_position, position : Quantity
+        Morphology-local 3-D midpoint position. Access raises ``ValueError``
+        when full point geometry is unavailable.
     """
 
     cv_id: int
@@ -76,3 +79,18 @@ class CVContext:
     diam_arc_mean: u.Quantity
     path_distance_to_root: u.Quantity
     path_distance_from_soma: u.Quantity
+    _local_position: u.Quantity | None = None
+
+    @property
+    def local_position(self) -> u.Quantity:
+        """Morphology-local 3-D control-volume midpoint position."""
+        if self._local_position is None:
+            raise ValueError("CVContext.local_position requires full 3-D point geometry.")
+        return self._local_position
+
+    @property
+    def position(self) -> u.Quantity:
+        """World position, equal to ``local_position`` until transforms land."""
+        if self._local_position is None:
+            raise ValueError("CVContext.position requires full 3-D point geometry.")
+        return self._local_position

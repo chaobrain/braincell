@@ -16,6 +16,7 @@
 import unittest
 
 import brainunit as u
+import numpy as np
 
 from braincell import Cell
 from braincell._discretization import CVPerBranch
@@ -95,6 +96,35 @@ class CVContextTest(unittest.TestCase):
 
         with self.assertRaises(Exception):
             contexts[0].cv_id = 3  # type: ignore[misc]
+
+    def test_no_soma_uses_root_branch_as_reference_region(self) -> None:
+        root = Branch.from_lengths(
+            lengths=[20.0] * u.um,
+            radii=[2.0, 1.0] * u.um,
+            type="dendrite",
+        )
+        child = Branch.from_lengths(
+            lengths=[30.0] * u.um,
+            radii=[1.0, 0.5] * u.um,
+            type="axon",
+        )
+        morpho = Morphology.from_root(root, name="trunk")
+        morpho.trunk.child = child
+        contexts = Cell(morpho, cv_policy=CVPerBranch(cv_per_branch=2)).cv_contexts
+
+        self.assertEqual(_um(context.path_distance_from_soma for context in contexts), [0.0, 0.0, 7.5, 22.5])
+
+    def test_context_position_is_cv_midpoint_when_point_geometry_exists(self) -> None:
+        root = Branch.from_points(
+            points=np.asarray([[0.0, 0.0, 0.0], [20.0, 4.0, 0.0]]) * u.um,
+            radii=np.asarray([2.0, 1.0]) * u.um,
+            type="soma",
+        )
+        contexts = Cell(Morphology.from_root(root, name="soma"), cv_policy=CVPerBranch(cv_per_branch=2)).cv_contexts
+
+        np.testing.assert_allclose(contexts[0].position.to_decimal(u.um), [5.0, 1.0, 0.0])
+        np.testing.assert_allclose(contexts[1].local_position.to_decimal(u.um), [15.0, 3.0, 0.0])
+        self.assertIs(contexts[0].position, contexts[0].local_position)
 
     def test_callable_cable_property_uses_public_context(self) -> None:
         seen: list[CVContext] = []

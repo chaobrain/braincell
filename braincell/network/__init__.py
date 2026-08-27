@@ -13,42 +13,19 @@
 # limitations under the License.
 # ==============================================================================
 
-"""First-class network declarations and runtime."""
+"""First-class population, connection, and runtime APIs."""
 
-from .core import Connection, NetworkRunResult, Population
-from .edges import EdgeMethod, EdgeSet, all_pairs, dense, pairs, probability
+from braincell.connection import NetworkConnections
+
+from .core import NetworkResult, NetworkRunResult, Population
 from .engine import Network
-from .lowering import ConnectionBlock, lower_connections
-from .projections import (
-    ContactMethod,
-    ContactTable,
-    Projection,
-    ProjectionContactContext,
-    ProjectionEdgeContext,
-    by_post,
-    explicit_contacts,
-    per_edge,
-)
+from .lowering import ConnectionBlock
 
 __all__ = [
-    "Connection",
     "ConnectionBlock",
-    "ContactMethod",
-    "ContactTable",
-    "EdgeMethod",
-    "EdgeSet",
     "Network",
+    "NetworkConnections",
+    "NetworkResult",
     "NetworkRunResult",
     "Population",
-    "Projection",
-    "ProjectionContactContext",
-    "ProjectionEdgeContext",
-    "all_pairs",
-    "by_post",
-    "dense",
-    "explicit_contacts",
-    "lower_connections",
-    "pairs",
-    "per_edge",
-    "probability",
 ]

@@ -14,19 +14,28 @@
 # ==============================================================================
 
 from .cache import SelectionCache
+from . import density
+from . import metric
+from ._sampling import SamplingContext
 from .locset import (
     AtLocation,
     BranchPoints,
+    ForkPoints,
+    LocsetBatch,
+    LocsetConcatOp,
     LocsetMask,
     LocsetExpr,
     LocsetSetOp,
+    LocsetUniqueOp,
     RandomSamples,
+    SampleLocations,
     RegionAnchors,
     RootLocation,
     StepSamples,
     Terminals,
     UniformSamples,
     at,
+    sample,
 )
 from .region import (
     AllRegion,
@@ -51,13 +60,18 @@ __all__ = [
     "BranchInFilter",
     "BranchRangeFilter",
     "BranchPoints",
+    "ForkPoints",
     "BranchSlice",
     "EmptyRegion",
     "EuclideanDistanceRegion",
+    "LocsetBatch",
     "LocsetMask",
     "LocsetExpr",
+    "LocsetConcatOp",
     "LocsetSetOp",
+    "LocsetUniqueOp",
     "RandomSamples",
+    "SampleLocations",
     "RadiusRangeRegion",
     "RegionAnchors",
     "RegionExpr",
@@ -65,12 +79,16 @@ __all__ = [
     "RegionSetOp",
     "RootLocation",
     "SelectionCache",
+    "SamplingContext",
     "StepSamples",
     "SubtreeRegion",
     "Terminals",
     "TreeDistanceRegion",
     "UniformSamples",
     "at",
+    "density",
+    "metric",
+    "sample",
     "branch_in",
     "branch_range",
 ]

@@ -22,7 +22,10 @@ from dataclasses import dataclass
 import brainunit as u
 import numpy as np
 
-from .core import Connection, Population
+from braincell._discretization.base import locate_cv_on_branch
+from braincell.filter import LocsetExpr
+
+from .core import Population
 
 
 @dataclass(frozen=True)
@@ -40,149 +43,90 @@ class ConnectionBlock:
     weight: object
     delay_steps: np.ndarray
     buffer_size: int
+    source_cv_id: int
+    packed: bool = False
+    event_source: object | None = None
 
 
-def lower_connections(
+def lower_direct_connections(
     populations: dict[str, Population],
-    connections: tuple[Connection, ...],
     *,
     dt,
-    delay_quantization: str = "ceil",
+    delay_quantization: str = "nearest",
 ) -> tuple[ConnectionBlock, ...]:
-    """Validate public connections and return runtime blocks."""
+    """Lower target-owned live ``connect()`` rows into network route blocks."""
     _validate_time_quantity(dt, name="dt")
     delay_quantization = _normalize_delay_quantization(delay_quantization)
-    return tuple(
-        _lower_connection(populations, connection, dt=dt, delay_quantization=delay_quantization)
-        for connection in connections
+    cell_populations = tuple(population for population in populations.values() if population.kind == "cell")
+    population_by_cell = {id(population.cell): population for population in cell_populations}
+    blocks: list[ConnectionBlock] = []
+    for post in cell_populations:
+        for connection in post.cell.connections._call_views(scheduled=False):
+            source = connection.source
+            owner = source.execution_owner
+            pre = population_by_cell.get(id(owner))
+            if pre is None:
+                source_name = source.source_name or source.source_type
+                raise RuntimeError(
+                    f"Live EventSource {source_name!r} is outside this Network execution scope; "
+                    "add its owning Cell as a population."
+                )
+            synapse_types = tuple(dict.fromkeys(connection.synapse_type.tolist()))
+            if len(synapse_types) != 1:
+                raise TypeError("One direct Connection block must target exactly one synapse type.")
+            synapse_type = str(synapse_types[0])
+            layout_id = post.cell._get_synapse_store().layout_id(synapse_type)
+            layout = post.cell.runtime.layouts[layout_id]
+            synapse_index = post.cell._get_synapse_store().runtime_rows(connection.synapse_id).astype(np.int32)
+            delay_steps = _expand_delay_steps(
+                connection.delay,
+                dt=dt,
+                n_contact=len(connection),
+                quantization=delay_quantization,
+            )
+            blocks.append(
+                ConnectionBlock(
+                    pre_population=pre.name,
+                    post_population=post.name,
+                    synapse=str(connection.synapse_name[0]),
+                    layout_id=int(layout_id),
+                    n_active=int(layout.n_active),
+                    pre_index=connection.source_index.astype(np.int32),
+                    post_index=connection.synapse.population_index.astype(np.int32),
+                    synapse_index=synapse_index,
+                    weight=connection.weight,
+                    delay_steps=delay_steps,
+                    buffer_size=int(np.max(delay_steps, initial=1)) + 1,
+                    # Live EventSource routes read their own endpoint mapping;
+                    # this legacy scalar is only used by raw Cell spike blocks.
+                    source_cv_id=0,
+                    packed=True,
+                    event_source=source,
+                )
+            )
+    return tuple(blocks)
+
+
+def resolve_source_cv(cell, source: LocsetExpr) -> int:
+    """Resolve a single continuous presynaptic location to its owning CV."""
+    if not isinstance(source, LocsetExpr):
+        raise TypeError(
+            f"Connection source must be a LocsetExpr resolving to one location, got {type(source).__name__!s}."
+        )
+    mask = source.evaluate(cell.morpho)
+    if len(mask) != 1:
+        raise ValueError(f"Connection source must resolve to exactly one presynaptic location; got {len(mask)!r}.")
+    branch_id = int(mask.branch_id[0])
+    branch_x = float(mask.branch_x[0])
+    ids = cell.cv_tree.branch_to_cv_ids[int(branch_id)]
+    return locate_cv_on_branch(
+        ids,
+        cell.cvs,
+        x=float(branch_x),
     )
 
 
-def _lower_connection(
-    populations: dict[str, Population],
-    connection: Connection,
-    *,
-    dt,
-    delay_quantization: str,
-) -> ConnectionBlock:
-    if connection.pre_population not in populations:
-        raise KeyError(f"Unknown pre_population {connection.pre_population!r}.")
-    if connection.post_population not in populations:
-        raise KeyError(f"Unknown post_population {connection.post_population!r}.")
-
-    pre = populations[connection.pre_population]
-    post = populations[connection.post_population]
-    _validate_indices(connection.pre_index, pre.size, "pre_index")
-    _validate_indices(connection.post_index, post.size, "post_index")
-
-    layout_id, n_active, synapse_node = resolve_synapse_layout(post, connection.synapse)
-    _validate_indices(connection.synapse_index, n_active, "synapse_index")
-    delay_steps = _expand_delay_steps(
-        connection.delay,
-        dt=dt,
-        n_contact=connection.n_contact,
-        quantization=delay_quantization,
-    )
-    if connection.weight is None:
-        weight = _default_edge_weight(
-            synapse_node,
-            connection.post_index,
-            connection.synapse_index,
-            n_active=n_active,
-        )
-    else:
-        weight = _expand_weight(connection.weight, n_contact=connection.n_contact)
-    return ConnectionBlock(
-        pre_population=connection.pre_population,
-        post_population=connection.post_population,
-        synapse=connection.synapse,
-        layout_id=layout_id,
-        n_active=n_active,
-        pre_index=connection.pre_index,
-        post_index=connection.post_index,
-        synapse_index=connection.synapse_index,
-        weight=weight,
-        delay_steps=delay_steps,
-        buffer_size=int(np.max(delay_steps, initial=1)) + 1,
-    )
-
-
-def resolve_synapse_layout(population: Population, synapse: str) -> tuple[int, int, object]:
-    """Return ``(layout_id, n_active, node)`` for a unique synapse layout."""
-    runtime = population.cell.runtime
-    matches = []
-    for layout, node in runtime.iter_synapse_layouts():
-        declaration = runtime.get_layout_mechanism(layout.id)
-        if declaration.instance_name != synapse:
-            continue
-        matches.append((layout.id, int(layout.n_active), node))
-    if not matches:
-        raise KeyError(f"Population {population.name!r} has no placed synapse named {synapse!r}.")
-    if len(matches) > 1:
-        raise ValueError(
-            f"Population {population.name!r} has multiple synapse layouts named {synapse!r}; "
-            "network v1 requires a unique target layout."
-        )
-    layout_id, n_active, node = matches[0]
-    return int(layout_id), int(n_active), node
-
-
-def _default_edge_weight(synapse_node, post_index: np.ndarray, synapse_index: np.ndarray, *, n_active: int):
-    if not hasattr(synapse_node, "weight"):
-        raise ValueError("Connection weight is None, but the target synapse has no default 'weight' parameter.")
-    weight = synapse_node.weight
-    if isinstance(weight, u.Quantity):
-        decimal = np.asarray(weight.to_decimal(weight.unit))
-        if decimal.shape == ():
-            return u.Quantity(np.broadcast_to(decimal, post_index.shape).copy(), weight.unit)
-        if decimal.ndim >= 2 and decimal.shape[-1] == int(n_active):
-            return u.Quantity(decimal[post_index, synapse_index], weight.unit)
-        if decimal.shape[-1:] == (1,):
-            decimal = decimal[..., 0]
-        if decimal.shape[0] != int(n_active):
-            return u.Quantity(decimal[post_index], weight.unit)
-        return u.Quantity(decimal[synapse_index], weight.unit)
-    arr = np.asarray(weight)
-    if arr.shape == ():
-        return np.broadcast_to(arr, post_index.shape).copy()
-    if arr.ndim >= 2 and arr.shape[-1] == int(n_active):
-        return arr[post_index, synapse_index]
-    if arr.shape[-1:] == (1,):
-        arr = arr[..., 0]
-    if arr.shape[0] != int(n_active):
-        return arr[post_index]
-    return arr[synapse_index]
-
-
-def _validate_indices(indices: np.ndarray, size: int, name: str) -> None:
-    if indices.size == 0:
-        return
-    min_index = int(np.min(indices))
-    max_index = int(np.max(indices))
-    if min_index < 0 or max_index >= int(size):
-        raise IndexError(
-            f"Connection {name} out of range for population size {size!r}: min={min_index!r}, max={max_index!r}."
-        )
-
-
-def _expand_weight(weight, *, n_contact: int):
-    if isinstance(weight, u.Quantity):
-        decimal = np.asarray(weight.to_decimal(weight.unit))
-        if decimal.shape == ():
-            return u.Quantity(np.broadcast_to(decimal, (n_contact,)).copy(), weight.unit)
-        if decimal.shape != (n_contact,):
-            raise ValueError(f"Connection weight must be scalar or shape {(n_contact,)!r}, got {decimal.shape!r}.")
-        return weight
-
-    arr = np.asarray(weight)
-    if arr.shape == ():
-        return np.broadcast_to(arr, (n_contact,)).copy()
-    if arr.shape != (n_contact,):
-        raise ValueError(f"Connection weight must be scalar or shape {(n_contact,)!r}, got {arr.shape!r}.")
-    return arr
-
-
-def _expand_delay_steps(delay, *, dt, n_contact: int, quantization: str = "ceil") -> np.ndarray:
+def _expand_delay_steps(delay, *, dt, n_contact: int, quantization: str = "nearest") -> np.ndarray:
     """Return fixed-step delay offsets for one connection table.
 
     Parameters
@@ -193,7 +137,7 @@ def _expand_delay_steps(delay, *, dt, n_contact: int, quantization: str = "ceil"
         Fixed simulation step.
     n_contact : int
         Number of contacts.
-    quantization : {"ceil", "floor", "strict"}
+    quantization : {"nearest", "ceil", "floor", "strict"}
         Policy for delays that do not fall on the fixed-step grid.
     """
     _validate_time_quantity(delay, name="delay")
@@ -218,18 +162,29 @@ def _expand_delay_steps(delay, *, dt, n_contact: int, quantization: str = "ceil"
         if not np.allclose(raw_steps, rounded, rtol=1e-9, atol=1e-9):
             raise ValueError("Connection delay must be an integer multiple of dt when delay_quantization='strict'.")
         steps = rounded
+    elif quantization == "nearest":
+        steps = _round_half_up_steps(raw_steps).astype(np.int32)
     elif quantization == "ceil":
         steps = np.ceil(raw_steps - 1e-12).astype(np.int32)
     elif quantization == "floor":
         steps = np.floor(raw_steps + 1e-12).astype(np.int32)
     else:  # pragma: no cover
-        raise ValueError("Connection delay_quantization must be 'ceil', 'floor', or 'strict'.")
-    return np.maximum(steps, 1)
+        raise ValueError("Connection delay_quantization must be 'nearest', 'ceil', 'floor', or 'strict'.")
+    return np.maximum(steps, 0)
+
+
+def _round_half_up_steps(values: np.ndarray) -> np.ndarray:
+    """Round non-negative step ratios, snapping numerical half ties upward."""
+    half = np.floor(values) + 0.5
+    magnitude = np.abs(values)
+    ulp = np.nextafter(magnitude, np.inf) - magnitude
+    snapped = np.where(np.abs(values - half) <= 4.0 * ulp, half, values)
+    return np.floor(snapped + 0.5)
 
 
 def _normalize_delay_quantization(value: str) -> str:
-    if value not in ("ceil", "floor", "strict"):
-        raise ValueError(f"Network delay_quantization must be 'ceil', 'floor', or 'strict', got {value!r}.")
+    if value not in ("nearest", "ceil", "floor", "strict"):
+        raise ValueError(f"Network delay_quantization must be 'nearest', 'ceil', 'floor', or 'strict', got {value!r}.")
     return value
 
 

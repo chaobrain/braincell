@@ -25,7 +25,7 @@ from braincell.mech import (
     Point,
     ProbeMechanism,
     StateProbe,
-    Synapse,
+    SynapseSpec,
 )
 from .state import CellRuntimeState
 
@@ -193,7 +193,7 @@ def mechanism_cell_key(mechanism: object) -> tuple[str, str]:
     """
     if isinstance(mechanism, Density):
         return (mechanism.class_name, mechanism.instance_name)
-    if isinstance(mechanism, Synapse):
+    if isinstance(mechanism, SynapseSpec):
         return (mechanism.synapse_type, mechanism.instance_name)
     if isinstance(mechanism, ProbeMechanism):
         class_name = "ProbeMechanism"

@@ -29,7 +29,7 @@ from typing import Literal
 import brainunit as u
 import numpy as np
 
-from braincell.filter import AllRegion, LocsetExpr, RegionExpr
+from braincell.filter import AllRegion, LocsetBatch, LocsetExpr, LocsetMask, RegionExpr
 from braincell.filter.cache import SelectionCache
 from braincell.mech import (
     CableProperty,
@@ -92,7 +92,7 @@ class PlaceRule:
 
     Attributes
     ----------
-    locset : LocsetExpr
+    locset : LocsetExpr or LocsetMask or LocsetBatch
         Location expression being targeted.
     mechanisms : tuple of Point
         Point-mechanism declarations applied at each resolved location.
@@ -100,9 +100,11 @@ class PlaceRule:
         Reserved placement-site tag used by the current lowering model.
     """
 
-    locset: LocsetExpr
+    locset: LocsetExpr | LocsetMask | LocsetBatch
     mechanisms: tuple[Point, ...]
     site: Literal["mid"] = "mid"
+    population_indices: tuple[int, ...] | None = None
+    aligned: bool = False
 
 
 @dataclass
@@ -143,14 +145,21 @@ class _RegionCache:
         self._region_by_id[key] = result
         return result
 
-    def points(self, locset: LocsetExpr) -> tuple[tuple[int, float, str], ...]:
+    def points(self, locset: LocsetExpr | LocsetMask) -> tuple[tuple[int, float, str], ...]:
         key = id(locset)
         cached = self._locset_by_id.get(key)
         if cached is not None:
             return cached
-        mask = locset.evaluate(self._morpho, cache=self._selection)
+        mask = locset.evaluate(self._morpho, cache=self._selection) if isinstance(locset, LocsetExpr) else locset
+        names = mask.display_names
+        if names is None:
+            names = tuple(
+                f"{self._morpho.branch(index=int(branch_id)).name}({float(branch_x):g})"
+                for branch_id, branch_x in mask.points
+            )
         result = tuple(
-            (int(point[0]), float(point[1]), str(name)) for point, name in zip(mask.points, mask.display_names)
+            (int(branch_id), float(branch_x), str(name))
+            for branch_id, branch_x, name in zip(mask.branch_id, mask.branch_x, names)
         )
         self._locset_by_id[key] = result
         return result
@@ -213,8 +222,11 @@ def normalize_paint_rules(
 
 
 def normalize_place_rule(
-    locset: LocsetExpr,
+    locset: LocsetExpr | LocsetMask | LocsetBatch,
     mechanisms: tuple[object, ...],
+    *,
+    population_indices: tuple[int, ...] | None = None,
+    aligned: bool = False,
 ) -> PlaceRule:
     """Normalize one ``Cell.place(...)`` call into a place rule.
 
@@ -238,8 +250,14 @@ def normalize_place_rule(
     ValueError
         If no mechanisms are supplied.
     """
-    if not isinstance(locset, LocsetExpr):
-        raise TypeError(f"Cell.place(...) expects LocsetExpr, got {type(locset).__name__!s}.")
+    if not isinstance(locset, (LocsetExpr, LocsetMask, LocsetBatch)):
+        raise TypeError(
+            f"Cell.place(...) expects LocsetExpr, LocsetMask, or LocsetBatch, got {type(locset).__name__!s}."
+        )
+    if aligned and not isinstance(locset, LocsetBatch):
+        raise TypeError("Aligned Cell.place(...) rules require LocsetBatch.")
+    if isinstance(locset, LocsetBatch) and not aligned:
+        raise ValueError("LocsetBatch placement must be aligned with population members.")
     if len(mechanisms) == 0:
         raise ValueError("Cell.place(...) expects at least one point mechanism.")
 
@@ -248,7 +266,13 @@ def normalize_place_rule(
         if not isinstance(mechanism, Point):
             raise TypeError(f"Cell.place(...) mechanisms must be Point instances, got {type(mechanism).__name__!s}.")
         normalized.append(mechanism)
-    return PlaceRule(locset=locset, mechanisms=tuple(normalized), site="mid")
+    return PlaceRule(
+        locset=locset,
+        mechanisms=tuple(normalized),
+        site="mid",
+        population_indices=population_indices,
+        aligned=aligned,
+    )
 
 
 def _paint_key(rule: PaintRule) -> tuple[object, str, str, object]:
@@ -266,7 +290,7 @@ def merge_paint_rules(
     existing: tuple[PaintRule, ...],
     incoming: tuple[PaintRule, ...],
 ) -> tuple[PaintRule, ...]:
-    """Merge normalized paint rules with overwrite-on-identity semantics.
+    """Merge cable rules by identity and append density declarations.
 
     Parameters
     ----------
@@ -278,11 +302,15 @@ def merge_paint_rules(
     Returns
     -------
     tuple of PaintRule
-        Merged rules where later declarations replace earlier rules with
-        the same effective paint identity.
+        Cable rules retain overwrite-on-identical-region behavior. Density
+        rules remain independent declarations so CV-level identity conflicts
+        can be validated after continuous regions are resolved.
     """
     merged: list[PaintRule] = list(existing)
     for rule in incoming:
+        if not isinstance(rule.mechanism, CableProperty):
+            merged.append(rule)
+            continue
         new_key = _paint_key(rule)
         merged = [item for item in merged if _paint_key(item) != new_key]
         merged.append(rule)
@@ -293,7 +321,7 @@ def merge_place_rules(
     existing: tuple[PlaceRule, ...],
     incoming: tuple[PlaceRule, ...],
 ) -> tuple[PlaceRule, ...]:
-    """Merge normalized place rules without duplicating exact matches.
+    """Append normalized place rules in declaration order.
 
     Parameters
     ----------
@@ -307,12 +335,7 @@ def merge_place_rules(
     tuple of PlaceRule
         Merged place-rule sequence.
     """
-    merged: list[PlaceRule] = list(existing)
-    for rule in incoming:
-        if rule in merged:
-            continue
-        merged.append(rule)
-    return tuple(merged)
+    return tuple(existing) + tuple(incoming)
 
 
 def _interval_contains(
@@ -433,22 +456,33 @@ def _apply_place(
     mechanism: Point,
     *,
     display_name: str,
+    placement_id: int = 0,
+    branch_id: int = 0,
+    branch_x: float = 0.5,
     seen_names: set[str],
     position: Position = "mid",
+    population_index: int | None = None,
 ) -> Point:
     named = _resolve_point_name(mechanism, display_name=display_name)
     auto_generated = getattr(mechanism, "name", None) is None and getattr(named, "name", None) is not None
     if auto_generated:
         candidate_name = named.name
         if candidate_name in seen_names:
-            raise ValueError(
-                f"Duplicate auto-generated point-mechanism name "
-                f"{candidate_name!r} from place rule at {display_name!r}. "
-                "Supply an explicit name= argument to disambiguate."
-            )
+            candidate_name = f"{candidate_name}__placement_{int(placement_id)}"
+            named = replace(named, name=candidate_name)
         seen_names.add(candidate_name)
     bucket.points.append(named)
-    bucket.point_roles.append(CVPointMechanism(position=position, mechanism=named))
+    bucket.point_roles.append(
+        CVPointMechanism(
+            placement_id=int(placement_id),
+            position=position,
+            mechanism=named,
+            display_name=str(display_name),
+            branch_id=int(branch_id),
+            branch_x=float(branch_x),
+            population_index=population_index,
+        )
+    )
     return named
 
 
@@ -571,7 +605,21 @@ def build_cv_mechanisms(
 
     coverage_cache: dict[int, _RegionCVCoverage] = {}
 
+    density_type_by_name: dict[tuple[str, str], str] = {}
     for rule in paint_rules:
+        mechanism = rule.mechanism
+        if isinstance(mechanism, CableProperty):
+            continue
+        name_key = (str(mechanism.category), str(mechanism.instance_name))
+        previous_type = density_type_by_name.setdefault(name_key, str(mechanism.class_name))
+        if previous_type != mechanism.class_name:
+            raise ValueError(
+                f"{mechanism.category.title()} name {mechanism.instance_name!r} cannot denote both "
+                f"{previous_type!r} and {mechanism.class_name!r}. Use distinct names."
+            )
+
+    active_density_owner: dict[tuple[int, str, str], tuple[str, int]] = {}
+    for rule_index, rule in enumerate(paint_rules):
         intervals_by_branch = cache.intervals(rule.region)
         mechanism = rule.mechanism
         region_key = id(rule.region)
@@ -598,6 +646,17 @@ def build_cv_mechanisms(
         for cv_id, fraction in enumerate(coverage.density_fraction):
             if fraction <= EPS_PARAM:
                 continue
+            owner_key = (int(cv_id), str(mechanism.category), str(mechanism.instance_name))
+            previous = active_density_owner.get(owner_key)
+            if previous is not None:
+                previous_type, previous_rule = previous
+                raise ValueError(
+                    f"{mechanism.category.title()} {mechanism.instance_name!r} ({mechanism.class_name}) "
+                    f"is painted more than once on CV {cv_id}; declarations {previous_rule} and "
+                    f"{rule_index} overlap after discretization. Combine their Region expressions, "
+                    "use a finer CV policy, or use distinct mechanism names."
+                )
+            active_density_owner[owner_key] = (str(mechanism.class_name), int(rule_index))
             _apply_density(
                 buckets[cv_id],
                 mechanism,
@@ -606,21 +665,43 @@ def build_cv_mechanisms(
             )
 
     seen_names: set[str] = set()
+    placement_id = 0
     for rule in place_rules:
-        for branch_id, x, display_name in cache.points(rule.locset):
-            ids = geometry.cv_ids(branch_id)
-            if not ids:
-                continue
-            cv_id = geometry.locate_cv(branch_id=branch_id, x=x)
-            geo = geos[cv_id]
-            position = _position_for_geo(geo, x=float(x))
-            for mechanism in rule.mechanisms:
-                _apply_place(
-                    buckets[cv_id],
-                    mechanism,
-                    display_name=display_name,
-                    seen_names=seen_names,
-                    position=position,
-                )
+        if rule.aligned:
+            assert isinstance(rule.locset, LocsetBatch)
+            assert rule.population_indices is not None
+            location_groups = zip(
+                (cache.points(rule.locset[index]) for index in range(len(rule.locset))),
+                ((int(index),) for index in rule.population_indices),
+            )
+        else:
+            assert not isinstance(rule.locset, LocsetBatch)
+            population_indices = (
+                (None,) if rule.population_indices is None else tuple(int(index) for index in rule.population_indices)
+            )
+            location_groups = ((cache.points(rule.locset), population_indices),)
+
+        for locations, population_indices in location_groups:
+            for branch_id, x, display_name in locations:
+                ids = geometry.cv_ids(branch_id)
+                if not ids:
+                    continue
+                cv_id = geometry.locate_cv(branch_id=branch_id, x=x)
+                geo = geos[cv_id]
+                position = _position_for_geo(geo, x=float(x))
+                for population_index in population_indices:
+                    for mechanism in rule.mechanisms:
+                        _apply_place(
+                            buckets[cv_id],
+                            mechanism,
+                            display_name=display_name,
+                            placement_id=placement_id,
+                            branch_id=branch_id,
+                            branch_x=x,
+                            seen_names=seen_names,
+                            position=position,
+                            population_index=population_index,
+                        )
+                        placement_id += 1
 
     return buckets

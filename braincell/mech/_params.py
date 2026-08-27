@@ -50,9 +50,9 @@ def _to_hashable(value: object) -> object:
     recurse through tuples, lists, dicts and dataclasses so that
     equally-valued inputs still produce identical keys.
 
-    Raw arrays and other unhashable objects fall through unchanged and
-    will surface as ``TypeError`` when the caller hashes the result —
-    matching the previous "arrays are rejected" behavior.
+    Concrete arrays are normalized by dtype, shape, and values so mechanism
+    declarations can carry heterogeneous parameters while remaining usable in
+    declaration cache keys.
     """
     if isinstance(value, u.Quantity):
         mantissa = value.mantissa
@@ -70,6 +70,14 @@ def _to_hashable(value: object) -> object:
         return ("__list__",) + tuple(_to_hashable(v) for v in value)
     if isinstance(value, dict):
         return ("__dict__",) + tuple((k, _to_hashable(v)) for k, v in sorted(value.items(), key=lambda kv: kv[0]))
+    if isinstance(value, np.ndarray):
+        return ("__array__", str(value.dtype), value.shape, tuple(value.reshape(-1).tolist()))
+    if hasattr(value, "shape") and hasattr(value, "dtype"):
+        try:
+            array = np.asarray(value)
+        except Exception:
+            return ("__opaque_array__", id(value))
+        return ("__array__", str(array.dtype), array.shape, tuple(array.reshape(-1).tolist()))
     if is_dataclass(value) and not isinstance(value, type):
         return (
             type(value).__qualname__,
@@ -169,7 +177,7 @@ class Params(Mapping[str, Any]):
                 hash(_to_hashable(value))
             except TypeError as exc:
                 raise TypeError(
-                    f"Params value for {key!r} must be hashable (arrays are rejected); got {type(value).__name__!r}."
+                    f"Params value for {key!r} must be hashable or a concrete array; got {type(value).__name__!r}."
                 ) from exc
         object.__setattr__(self, "_items", merged)
 
@@ -220,9 +228,13 @@ class Params(Mapping[str, Any]):
 
     def __eq__(self, other: object) -> bool:
         if isinstance(other, Params):
-            return self._items == other._items
+            return {key: _to_hashable(value) for key, value in self._items.items()} == {
+                key: _to_hashable(value) for key, value in other._items.items()
+            }
         if isinstance(other, Mapping):
-            return dict(self._items) == dict(other)
+            return {key: _to_hashable(value) for key, value in self._items.items()} == {
+                key: _to_hashable(value) for key, value in other.items()
+            }
         return NotImplemented
 
     def __ne__(self, other: object) -> bool:

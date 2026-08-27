@@ -328,10 +328,12 @@ class BuiltinRegistrationTest(unittest.TestCase):
 
         self.assertIs(_REGISTRY.get("ion", "CalciumFixed"), ion.CalciumFixed)
 
-    def test_synapse_AMPA_registered(self) -> None:
+    def test_only_migrated_synapses_are_registered(self) -> None:
         import braincell.synapse as synapse
 
-        self.assertIs(_REGISTRY.get("synapse", "AMPA"), synapse.AMPA)
+        self.assertIs(_REGISTRY.get("synapse", "ExpSyn"), synapse.ExpSyn)
+        self.assertIs(_REGISTRY.get("synapse", "Exp2Syn"), synapse.Exp2Syn)
+        self.assertFalse(_REGISTRY.contains("synapse", "AMPA"))
 
 
 if __name__ == "__main__":

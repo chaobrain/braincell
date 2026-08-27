@@ -41,10 +41,8 @@ current/probe code.
   :meth:`CellRuntimeState.get_layout_mechanism`,
   :meth:`CellRuntimeState.get_ion`, :meth:`CellRuntimeState.resolve_ion_key`,
   :meth:`CellRuntimeState.iter_synapse_layouts`.
-- Per-step drive evaluation — :meth:`CellRuntimeState.evaluate_point_clamps`,
-  :meth:`CellRuntimeState.evaluate_point_netstims`,
-  :meth:`CellRuntimeState.evaluate_synapse_netstim_drive`, and
-  :meth:`CellRuntimeState.point_has_netstim`, keyed off :data:`NETSTIM_KIND`.
+- Per-step point-current evaluation through
+  :meth:`CellRuntimeState.evaluate_point_clamps`.
 
 Because it sits at the top of the stack, this module imports its siblings
 directly: :mod:`braincell._compute.layouts` for the layout record and the
@@ -59,15 +57,18 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 import braintools
+import brainstate
 import brainunit as u
 import numpy as np
 
 from braincell._base import Synapse as RuntimeSynapse
 from braincell._discretization.base import NodeTree
+from braincell.event import NoEventInput, ScalarEventInput, TriggerEventInput
 from braincell.mech import (
     CurrentClamp,
     Density,
-    Synapse as SynapsePlacement,
+    SynapseSpec as SynapsePlacement,
+    get_registry,
 )
 from .bindings import (
     _build_runtime_nodes,
@@ -84,12 +85,12 @@ from .layouts import (
     _allocate_spatial_density_buffer,
     _allocate_state_buffer,
     _evaluate_clamp_layout,
-    _evaluate_netstim_layout,
     _extract_point_value,
     _mechanism_var_names,
     _mechanism_var_value,
     _quantity_sequence_to_decimal_vector,
     _source_cv_ids_for_point,
+    _stack_synapse_values,
     _write_state_buffer,
     build_clamp_routing_table,
     choose_layout,
@@ -102,11 +103,7 @@ if TYPE_CHECKING:
 
 __all__ = [
     "CellRuntimeState",
-    "NETSTIM_KIND",
 ]
-
-
-NETSTIM_KIND = "NetStim"
 
 
 @dataclass
@@ -147,6 +144,7 @@ class CellRuntimeState:
     voltage_shape: tuple[int, ...]
     state_shapes: dict[tuple[int, str], tuple[int, ...]]
     state_buffers: dict[tuple[int, str], np.ndarray]
+    event_buffers: dict[int, object]
     layout_mechanisms: dict[int, object]
     runtime_nodes: dict[int, object]
     ions: dict[str, object]
@@ -199,10 +197,20 @@ class CellRuntimeState:
         point_to_layout_sets: list[set[int]] = [set() for _ in range(n_point)]
         layout_id = 0
         pop_size = tuple(cell.pop_size)
+        synapse_store = cell._get_synapse_store()
 
-        def register(*, mechanism: object, target: str, cv_ids: tuple[int, ...], point_id: int) -> None:
+        def register(
+            *,
+            mechanism: object,
+            target: str,
+            cv_ids: tuple[int, ...],
+            point_id: int,
+            placement_id: int | None = None,
+            population_index: int | None = None,
+        ) -> None:
             nonlocal layout_id
-            signature = (target,) + mechanism_signature(mechanism)
+            storage = "packed" if population_index is not None else "broadcast"
+            signature = (target, storage) + mechanism_signature(mechanism)
             entry = grouped.get(signature)
             if entry is None:
                 entry = {
@@ -210,44 +218,81 @@ class CellRuntimeState:
                     "mechanism": mechanism,
                     "target": target,
                     "cv_ids": set(),
-                    "point_ids": set(),
+                    "point_ids": set() if target == "density" else [],
+                    "placement_ids": [],
+                    "population_indices": [],
                 }
                 grouped[signature] = entry
                 layout_id += 1
             entry["cv_ids"].update(int(cv_id) for cv_id in cv_ids)
-            entry["point_ids"].add(int(point_id))
+            if target == "density":
+                entry["point_ids"].add(int(point_id))
+            else:
+                entry["point_ids"].append(int(point_id))
+                entry["placement_ids"].append(int(placement_id))
+                if population_index is not None:
+                    entry["population_indices"].append(int(population_index))
 
         for cv in cell.cvs:
             midpoint_point_id = int(node_tree.cv_to_mid_node_id[cv.id])
             for mechanism in cv.density_mech:
                 register(mechanism=mechanism, target="density", cv_ids=(cv.id,), point_id=midpoint_point_id)
 
-        point_mech = tuple(node.point_mech for node in node_tree.nodes)
-        if any(point_mech):
-            for point_id, mechanisms in enumerate(point_mech):
-                source_cv_ids = _source_cv_ids_for_point(node_tree, point_id=int(point_id))
-                for mechanism in mechanisms:
-                    register(
-                        mechanism=mechanism,
-                        target="point",
-                        cv_ids=source_cv_ids,
-                        point_id=int(point_id),
-                    )
-        else:
-            for cv in cell.cvs:
-                midpoint_point_id = int(node_tree.cv_to_mid_node_id[cv.id])
-                for mechanism in cv.point_mech:
-                    register(mechanism=mechanism, target="point", cv_ids=(cv.id,), point_id=midpoint_point_id)
+        for placement in cell.point_placements:
+            if isinstance(placement.mechanism, SynapsePlacement):
+                continue
+            register(
+                mechanism=placement.mechanism,
+                target="point",
+                cv_ids=(placement.cv_id,),
+                point_id=placement.point_id,
+                placement_id=placement.id,
+                population_index=placement.population_index,
+            )
+
+        for synapse_type in dict.fromkeys(synapse_store.synapse_type.tolist()):
+            logical_ids = synapse_store.id[synapse_store.synapse_type == synapse_type]
+            if logical_ids.size == 0:
+                continue
+            store_rows = synapse_store.row_indices(logical_ids)
+            mechanisms = tuple(synapse_store.mechanism[int(row)] for row in store_rows.tolist())
+            names = tuple(dict.fromkeys(item.instance_name for item in mechanisms))
+            grouped[("point", "synapse", str(synapse_type))] = {
+                "id": layout_id,
+                "mechanism": mechanisms[0],
+                "target": "point",
+                "cv_ids": set(int(synapse_store.cv_id[row]) for row in store_rows.tolist()),
+                "point_ids": [int(synapse_store.point_id[row]) for row in store_rows.tolist()],
+                "placement_ids": [int(synapse_store.placement_id[row]) for row in store_rows.tolist()],
+                "population_indices": (
+                    [int(synapse_store.population_index[row]) for row in store_rows.tolist()]
+                    if len(pop_size) > 0
+                    else []
+                ),
+                "synapse_ids": np.asarray(logical_ids, dtype=np.int64),
+                "runtime_name": names[0] if len(names) == 1 else str(synapse_type),
+            }
+            layout_id += 1
 
         layouts: list[MechanismLayout] = []
         state_shapes: dict[tuple[int, str], tuple[int, ...]] = {}
         state_buffers: dict[tuple[int, str], np.ndarray] = {}
+        event_buffers: dict[int, object] = {}
         layout_mechanisms: dict[int, object] = {}
         for entry in sorted(grouped.values(), key=lambda item: int(item["id"])):
             mechanism = entry["mechanism"]
             target = str(entry["target"])
             cv_ids = tuple(sorted(int(cv_id) for cv_id in entry["cv_ids"]))
-            point_ids = np.asarray(sorted(int(point_id) for point_id in entry["point_ids"]), dtype=np.int32)
+            if target == "density":
+                point_ids = np.asarray(sorted(int(point_id) for point_id in entry["point_ids"]), dtype=np.int32)
+                placement_index = None
+            else:
+                point_ids = np.asarray(entry["point_ids"], dtype=np.int32)
+                placement_index = np.asarray(entry["placement_ids"], dtype=np.int32)
+            population_indices = (
+                np.asarray(entry["population_indices"], dtype=np.int32) if entry["population_indices"] else None
+            )
+            synapse_ids = entry.get("synapse_ids")
             layout = choose_layout(target=target)
             if layout == "dense":
                 point_mask = np.zeros(n_point, dtype=bool)
@@ -257,7 +302,7 @@ class CellRuntimeState:
             elif layout == "sparse":
                 point_mask = None
                 point_index = point_ids
-                shape = pop_size + (len(point_ids),)
+                shape = (len(point_ids),) if population_indices is not None else pop_size + (len(point_ids),)
             else:  # pragma: no cover
                 raise ValueError(f"Unsupported layout {layout!r}.")
 
@@ -270,6 +315,9 @@ class CellRuntimeState:
                 point_mask=point_mask,
                 n_active=len(point_ids),
                 source_cv_ids=cv_ids,
+                placement_index=placement_index,
+                population_index=population_indices,
+                synapse_index=None if synapse_ids is None else np.asarray(synapse_ids, dtype=np.int64),
                 source_rule=None,
             )
             layouts.append(layout_spec)
@@ -279,6 +327,36 @@ class CellRuntimeState:
                 point_to_layout_sets[point_id].add(layout_spec.id)
             for cv_id in cv_ids:
                 cv_to_layout_sets[cv_id].add(layout_spec.id)
+
+            if synapse_ids is not None:
+                runtime_cls = get_registry().get("synapse", mechanism.synapse_type)
+                event_input = runtime_cls.event_input
+                if isinstance(event_input, ScalarEventInput):
+                    event_buffers[layout_spec.id] = brainstate.ShortTermState(
+                        u.Quantity(np.zeros((len(point_ids),), dtype=float), event_input.unit)
+                    )
+                elif isinstance(event_input, TriggerEventInput):
+                    event_buffers[layout_spec.id] = brainstate.ShortTermState(
+                        np.zeros((len(point_ids),), dtype=np.int32)
+                    )
+                elif not isinstance(event_input, NoEventInput):
+                    raise TypeError(
+                        f"Unsupported event input {type(event_input).__name__!r} for {mechanism.synapse_type!r}."
+                    )
+                for var_name in tuple(runtime_cls.parameters):
+                    values = [
+                        synapse_store.parameter_value(int(logical_id), var_name)
+                        for logical_id in np.asarray(synapse_ids, dtype=np.int64).tolist()
+                    ]
+                    buffer = _stack_synapse_values(values, parameter=var_name)
+                    state_buffers[(layout_spec.id, var_name)] = buffer
+                    state_shapes[(layout_spec.id, var_name)] = (len(point_ids),)
+                synapse_store.bind_runtime(
+                    mechanism.synapse_type,
+                    layout_spec.id,
+                    np.asarray(synapse_ids, dtype=np.int64),
+                )
+                continue
 
             for var_name in _mechanism_var_names(mechanism):
                 if isinstance(mechanism, CurrentClamp) and var_name == "delay":
@@ -323,6 +401,15 @@ class CellRuntimeState:
                         var_name=var_name,
                         shape=shape,
                     )
+
+        _apply_density_parameter_overrides(
+            cell=cell,
+            layouts=tuple(layouts),
+            layout_mechanisms=layout_mechanisms,
+            state_buffers=state_buffers,
+            node_tree=node_tree,
+            pop_size=pop_size,
+        )
 
         (
             ions,
@@ -380,6 +467,7 @@ class CellRuntimeState:
             voltage_shape=pop_size + (n_point,),
             state_shapes=state_shapes,
             state_buffers=state_buffers,
+            event_buffers=event_buffers,
             layout_mechanisms=layout_mechanisms,
             runtime_nodes=runtime_nodes,
             ions=ions,
@@ -511,26 +599,17 @@ class CellRuntimeState:
             if isinstance(node, RuntimeSynapse):
                 yield layout, node
 
-    def evaluate_synapse_netstim_drive(self, layout: MechanismLayout, *, t) -> object:
-        """Return NetStim drive for one synapse layout, or zero if none applies."""
-        base = self.state_buffers[(int(layout.id), "pre_spike")]
-        if layout.point_index is None:
-            return u.math.zeros_like(base)
+    def get_event_buffer(self, layout_id: int):
+        """Return one private per-type event aggregation buffer."""
+        try:
+            return self.event_buffers[int(layout_id)].value
+        except KeyError as exc:
+            raise KeyError(f"Synapse layout {layout_id!r} has no discrete event input.") from exc
 
-        point_drive = self.evaluate_point_netstims(t=t)
-        has_netstim = self.point_has_netstim(layout.point_index)
-        return u.math.where(has_netstim, point_drive[..., layout.point_index], 0.0)
-
-    def point_has_netstim(self, point_index) -> np.ndarray:
-        """Return a boolean mask marking points with placed NetStim layouts."""
-        point_ids = np.asarray(point_index, dtype=np.int32)
-        return np.asarray(
-            [
-                any(layout.kind == NETSTIM_KIND for layout in self.get_point_layouts(int(point_id)))
-                for point_id in point_ids
-            ],
-            dtype=bool,
-        )
+    def clear_event_buffer(self, layout_id: int) -> None:
+        """Clear one synapse layout's pending event payload."""
+        buffer = self.get_event_buffer(layout_id)
+        self.event_buffers[int(layout_id)].value = u.math.zeros_like(buffer)
 
     def get_ion(self, name: str) -> object:
         return self.ions[self.resolve_ion_key(name)]
@@ -614,14 +693,57 @@ class CellRuntimeState:
             point_current_decimal = point_current_decimal.at[..., point_index].add(local_current_decimal)
         return u.Quantity(point_current_decimal, u.nA)
 
-    def evaluate_point_netstims(self, *, t) -> object:
-        """Return point-space `pre_spike` drive from placed `NetStim`s."""
-        point_drive = u.math.zeros(self.pop_size + (self.n_point,), dtype=float)
-        for layout in self.layouts:
-            if layout.target != "point" or layout.point_index is None:
-                continue
-            if layout.kind != NETSTIM_KIND:
-                continue
-            local_drive = _evaluate_netstim_layout(self, layout=layout, t=t)
-            point_drive = point_drive.at[..., layout.point_index].add(local_drive)
-        return point_drive
+
+def _apply_density_parameter_overrides(
+    *,
+    cell: "Cell",
+    layouts: tuple[MechanismLayout, ...],
+    layout_mechanisms: dict[int, object],
+    state_buffers: dict[tuple[int, str], object],
+    node_tree: NodeTree,
+    pop_size: tuple[int, ...],
+) -> None:
+    """Scatter declaration-time channel and ion view parameter overrides."""
+    overrides = getattr(cell, "_density_parameter_overrides", {})
+    if not overrides:
+        return
+    if len(pop_size) != 1:
+        raise ValueError("Density parameter views currently require one-dimensional Cell.pop_size.")
+    population_size = int(pop_size[0])
+    for (category, name, population_index, cv_id, var_name), value in overrides.items():
+        matches = []
+        for layout in layouts:
+            mechanism = layout_mechanisms[layout.id]
+            if (
+                isinstance(mechanism, Density)
+                and mechanism.category == category
+                and mechanism.instance_name == name
+                and int(cv_id) in layout.source_cv_ids
+            ):
+                matches.append(layout)
+        if len(matches) != 1:
+            raise RuntimeError(
+                f"Expected one density layout for {category} {name!r} on CV {cv_id}, got {len(matches)!r}."
+            )
+        layout = matches[0]
+        key = (int(layout.id), str(var_name))
+        if key not in state_buffers:
+            raise KeyError(f"{category.title()} {name!r} has no parameter {var_name!r}.")
+        buffer = state_buffers[key]
+        unit = buffer.unit if isinstance(buffer, u.Quantity) else None
+        if unit is not None:
+            if not isinstance(value, u.Quantity):
+                raise TypeError(f"Density parameter {var_name!r} requires a Quantity compatible with {unit}.")
+            decimal = value.to_decimal(unit)
+            mantissa = np.array(buffer.to_decimal(unit), copy=True)
+        else:
+            if isinstance(value, u.Quantity):
+                raise TypeError(f"Density parameter {var_name!r} is dimensionless.")
+            decimal = value
+            mantissa = np.array(buffer, copy=True)
+        point_id = int(node_tree.cv_to_mid_node_id[int(cv_id)])
+        if mantissa.ndim >= 2 and mantissa.shape[0] == population_size:
+            mantissa[int(population_index), point_id] = decimal
+        else:
+            mantissa[point_id] = decimal
+        state_buffers[key] = u.Quantity(mantissa, unit) if unit is not None else mantissa

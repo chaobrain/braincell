@@ -181,13 +181,17 @@ class ParamsErrorTest(unittest.TestCase):
             Params((("g_max",),))  # type: ignore[arg-type]
 
 
-class ParamsRejectsUnhashableValuesTest(unittest.TestCase):
-    """MED-01: array-valued params must fail at construction, not at eq/hash."""
+class ParamsArrayValuesTest(unittest.TestCase):
+    """Concrete array values support heterogeneous mechanism declarations."""
 
-    def test_constructor_rejects_array_value(self) -> None:
-        with self.assertRaises(TypeError) as ctx:
-            Params(g=np.array([1.0, 2.0, 3.0]))
-        self.assertIn("hashable", str(ctx.exception).lower())
+    def test_constructor_accepts_and_hashes_array_value(self) -> None:
+        first = Params(g=np.array([1.0, 2.0, 3.0]))
+        equal = Params(g=np.array([1.0, 2.0, 3.0]))
+        different = Params(g=np.array([[1.0, 2.0, 3.0]]))
+
+        self.assertEqual(first, equal)
+        self.assertEqual(hash(first), hash(equal))
+        self.assertNotEqual(first, different)
 
     def test_constructor_accepts_scalar_quantity(self) -> None:
         p = Params(g=0.1 * u.mS / u.cm**2)

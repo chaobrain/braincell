@@ -31,6 +31,7 @@ from braincell.mech import (
     SineClamp,
     StateProbe,
     Synapse,
+    SynapseSpec,
 )
 
 
@@ -43,7 +44,7 @@ class PointBaseTest(unittest.TestCase):
         mechanism_probe = MechanismProbe(name="na_p", mechanism="na_soma", field="p")
         current_probe = CurrentProbe(ion="na", mechanism="na_soma")
         probe = ProbeMechanism(variable="v")
-        syn = Synapse("AMPA")
+        syn = SynapseSpec("ExpSyn")
         gap = Junction()
 
         for mech in (cc, sine, fc, state_probe, mechanism_probe, current_probe, probe, syn, gap):
@@ -288,42 +289,52 @@ class ProbeMechanismValidatesInputsTest(unittest.TestCase):
 
 class SynapseTest(unittest.TestCase):
     def test_direct_construction(self) -> None:
-        syn = Synapse("AMPA", tau=5.0)
-        self.assertEqual(syn.synapse_type, "AMPA")
+        syn = SynapseSpec("ExpSyn", tau=5.0)
+        self.assertEqual(syn.synapse_type, "ExpSyn")
         self.assertEqual(syn.params["tau"], 5.0)
 
     def test_default_instance_name(self) -> None:
-        syn = Synapse("AMPA")
-        self.assertEqual(syn.instance_name, "AMPA")
-        self.assertEqual(syn.identity, ("AMPA", "AMPA"))
+        syn = SynapseSpec("ExpSyn")
+        self.assertEqual(syn.instance_name, "ExpSyn")
+        self.assertEqual(syn.identity, ("ExpSyn", "ExpSyn"))
 
     def test_override_instance_name(self) -> None:
-        syn = Synapse("AMPA", name="ampa_main")
-        self.assertEqual(syn.instance_name, "ampa_main")
-        self.assertEqual(syn.identity, ("ampa_main", "AMPA"))
+        syn = SynapseSpec("ExpSyn", name="fast")
+        self.assertEqual(syn.instance_name, "fast")
+        self.assertEqual(syn.identity, ("fast", "ExpSyn"))
 
     def test_equality_and_hash(self) -> None:
-        a = Synapse("AMPA", tau=5.0, e=0.0)
-        b = Synapse("AMPA", e=0.0, tau=5.0)
+        a = SynapseSpec("ExpSyn", tau=5.0, e=0.0)
+        b = SynapseSpec("ExpSyn", e=0.0, tau=5.0)
         self.assertEqual(a, b)
         self.assertEqual(hash(a), hash(b))
 
     def test_empty_synapse_type_rejected(self) -> None:
         with self.assertRaises(ValueError):
-            Synapse("")
+            SynapseSpec("")
 
     def test_keyword_synapse_type_rejected(self) -> None:
         with self.assertRaises(TypeError):
-            Synapse(synapse_type="AMPA")  # type: ignore[call-arg]
+            SynapseSpec(synapse_type="ExpSyn")  # type: ignore[call-arg]
 
     def test_params_mapping_rejected(self) -> None:
         with self.assertRaisesRegex(TypeError, "keyword arguments"):
-            Synapse("AMPA", params={"tau": 5.0})
+            SynapseSpec("ExpSyn", params={"tau": 5.0})
 
     def test_synapse_is_immutable(self) -> None:
-        syn = Synapse("AMPA")
+        syn = SynapseSpec("ExpSyn")
         with self.assertRaises(AttributeError):
-            syn.synapse_type = "NMDA"
+            syn.synapse_type = "Exp2Syn"
+
+    def test_deprecated_synapse_alias_constructs_spec(self) -> None:
+        with self.assertWarns(DeprecationWarning):
+            syn = Synapse("ExpSyn")
+        self.assertIsInstance(syn, SynapseSpec)
+
+    def test_unmigrated_receptors_are_rejected(self) -> None:
+        for model in ("AMPA", "GABAa", "NMDA"):
+            with self.assertRaisesRegex(NotImplementedError, "temporarily unavailable"):
+                SynapseSpec(model)
 
 
 if __name__ == "__main__":

@@ -76,7 +76,6 @@ class TestProfileSimulation(unittest.TestCase):
             precision=32,
             event_backend="auto",
             brainevent_backend="jax_raw",
-            spike_recording="population",
             grc_size=None,
             goc_size=None,
             pc_size=None,

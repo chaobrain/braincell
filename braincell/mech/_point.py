@@ -30,7 +30,7 @@ Concrete point mechanisms defined here:
 - :class:`MechanismProbe` — probe for runtime state on a named mechanism.
 - :class:`CurrentProbe` — probe for mechanism or total ion current.
 - :class:`ProbeMechanism` — legacy recorder for a named variable.
-- :class:`Synapse` — registry-keyed synapse model.
+- :class:`SynapseSpec` — registry-keyed synapse declaration.
 
 The :class:`~braincell.mech.Junction` gap-junction declaration also
 inherits from :class:`Point` but lives in its own module
@@ -39,6 +39,7 @@ inherits from :class:`Point` but lives in its own module
 
 from dataclasses import dataclass, field
 from typing import Any, Callable
+import warnings
 
 import brainunit as u
 import numpy as np
@@ -50,13 +51,13 @@ __all__ = [
     "Point",
     "CurrentClamp",
     "FunctionClamp",
-    "NetStim",
     "StateProbe",
     "MechanismProbe",
     "CurrentProbe",
     "ProbeMechanism",
     "SineClamp",
     "Synapse",
+    "SynapseSpec",
 ]
 
 
@@ -247,69 +248,6 @@ class FunctionClamp(Point):
 # ---------------------------------------------------------------------------
 
 
-@quantity_hashable
-@dataclass(frozen=True)
-class NetStim(Point):
-    """Deterministic point spike source aligned with NEURON's `NetStim`.
-
-    Parameters
-    ----------
-    start : Quantity[ms]
-        Absolute time of the first spike.
-    number : int
-        Number of spikes to emit.
-    interval : Quantity[ms]
-        Spacing between spikes.
-    noise : float, optional
-        Randomness level. Only ``0.0`` is supported in v1.
-    weight : float, optional
-        Event amplitude written into downstream ``pre_spike`` buffers.
-    name : str or None, optional
-        Optional instance label.
-    """
-
-    start: Any
-    number: int
-    interval: Any
-    noise: float = 0.0
-    weight: float = 1.0
-    name: str | None = None
-
-    def __post_init__(self) -> None:
-        start = _coerce_scalar_quantity(
-            self.start,
-            unit=u.ms,
-            field_name="NetStim.start",
-        )
-        interval = _coerce_scalar_quantity(
-            self.interval,
-            unit=u.ms,
-            field_name="NetStim.interval",
-        )
-        if float(interval.to_decimal(u.ms)) <= 0.0:
-            raise ValueError(f"NetStim.interval must be > 0, got {self.interval!r}.")
-        if not isinstance(self.number, int) or isinstance(self.number, bool):
-            raise TypeError(f"NetStim.number must be int, got {self.number!r}.")
-        if self.number < 0:
-            raise ValueError(f"NetStim.number must be >= 0, got {self.number!r}.")
-        if not isinstance(self.noise, (int, float)) or isinstance(self.noise, bool):
-            raise TypeError(f"NetStim.noise must be a real number, got {self.noise!r}.")
-        if float(self.noise) != 0.0:
-            raise ValueError(f"NetStim.noise={self.noise!r} is not supported yet; use noise=0.0.")
-        if not isinstance(self.weight, (int, float)) or isinstance(self.weight, bool):
-            raise TypeError(f"NetStim.weight must be a real number, got {self.weight!r}.")
-        if self.name is not None and (not isinstance(self.name, str) or not self.name):
-            raise ValueError(f"NetStim.name must be a non-empty string or None, got {self.name!r}.")
-
-        object.__setattr__(self, "start", start)
-        object.__setattr__(self, "interval", interval)
-
-    @property
-    def instance_name(self) -> str:
-        """Display label for runtime layout and probe/debug views."""
-        return self.name if self.name is not None else "NetStim"
-
-
 @dataclass(frozen=True)
 class StateProbe(Point):
     """Probe for cell-owned state at one placed location."""
@@ -318,6 +256,7 @@ class StateProbe(Point):
     field: str = "v"
 
     def __post_init__(self) -> None:
+        _warn_legacy_probe("StateProbe")
         if self.name is not None and (not isinstance(self.name, str) or not self.name):
             raise ValueError(f"StateProbe.name must be a non-empty string or None, got {self.name!r}.")
         if not isinstance(self.field, str) or not self.field:
@@ -335,6 +274,7 @@ class MechanismProbe(Point):
     name: str | None = None
 
     def __post_init__(self) -> None:
+        _warn_legacy_probe("MechanismProbe")
         if self.name is not None and (not isinstance(self.name, str) or not self.name):
             raise ValueError(f"MechanismProbe.name must be a non-empty string or None, got {self.name!r}.")
         for field_name in ("mechanism", "field"):
@@ -352,6 +292,7 @@ class CurrentProbe(Point):
     name: str | None = None
 
     def __post_init__(self) -> None:
+        _warn_legacy_probe("CurrentProbe")
         if self.name is not None and (not isinstance(self.name, str) or not self.name):
             raise ValueError(f"CurrentProbe.name must be a non-empty string or None, got {self.name!r}.")
         if self.ion is not None and (not isinstance(self.ion, str) or not self.ion):
@@ -380,20 +321,29 @@ class ProbeMechanism(Point):
     target: str | None = None
 
     def __post_init__(self) -> None:
+        _warn_legacy_probe("ProbeMechanism")
         if not isinstance(self.variable, str) or not self.variable:
             raise ValueError(f"ProbeMechanism.variable must be a non-empty str, got {self.variable!r}.")
         if self.target is not None and not isinstance(self.target, str):
             raise TypeError(f"ProbeMechanism.target must be str or None, got {type(self.target).__name__!r}.")
 
 
-class Synapse(Point):
+def _warn_legacy_probe(name: str) -> None:
+    warnings.warn(
+        f"{name} is deprecated; use Cell.record(..., braincell.observe.*) for new code.",
+        DeprecationWarning,
+        stacklevel=3,
+    )
+
+
+class SynapseSpec(Point):
     """Registry-keyed synapse declaration.
 
     Parameters
     ----------
     synapse_type : str
-        Registry key for the target synapse class (e.g. ``"AMPA"``,
-        ``"NMDA"``).
+        Registry key for the target synapse class (currently ``"ExpSyn"`` or
+        ``"Exp2Syn"``).
     name : str or None
         Optional instance label.
     **params
@@ -404,10 +354,10 @@ class Synapse(Point):
 
     .. code-block:: python
 
-        >>> from braincell.mech import Synapse
-        >>> syn = Synapse("AMPA")
+        >>> from braincell.mech import SynapseSpec
+        >>> syn = SynapseSpec("ExpSyn")
         >>> syn.synapse_type
-        'AMPA'
+        'ExpSyn'
     """
 
     __slots__ = ("synapse_type", "params", "name")
@@ -421,11 +371,16 @@ class Synapse(Point):
         **params: Any,
     ) -> None:
         if not isinstance(synapse_type, str) or not synapse_type:
-            raise ValueError(f"Synapse.synapse_type must be a non-empty string, got {synapse_type!r}.")
+            raise ValueError(f"SynapseSpec.synapse_type must be a non-empty string, got {synapse_type!r}.")
+        if synapse_type in {"AMPA", "GABAa", "NMDA"}:
+            raise NotImplementedError(
+                f"{synapse_type} is temporarily unavailable while its transmitter-pulse and "
+                "point-current contract is redesigned. Use ExpSyn or Exp2Syn for now."
+            )
         if "params" in params:
             raise TypeError("Synapse parameters must be passed as keyword arguments, not as params={...}.")
         if name is not None and not isinstance(name, str):
-            raise TypeError(f"Synapse.name must be a string or None, got {type(name).__name__!r}.")
+            raise TypeError(f"SynapseSpec.name must be a string or None, got {type(name).__name__!r}.")
         object.__setattr__(self, "synapse_type", synapse_type)
         object.__setattr__(self, "params", Params(params) if params else Params())
         object.__setattr__(self, "name", name)
@@ -455,7 +410,21 @@ class Synapse(Point):
         return hash((type(self).__name__, self.synapse_type, self.params, self.name))
 
     def __repr__(self) -> str:
-        return f"Synapse(synapse_type={self.synapse_type!r}, params={self.params!r}, name={self.name!r})"
+        return f"SynapseSpec(synapse_type={self.synapse_type!r}, params={self.params!r}, name={self.name!r})"
+
+
+class Synapse(SynapseSpec):
+    """Deprecated spelling of :class:`SynapseSpec`."""
+
+    def __init__(self, *args, **kwargs) -> None:
+        import warnings
+
+        warnings.warn(
+            "braincell.mech.Synapse is deprecated; use braincell.mech.SynapseSpec.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        super().__init__(*args, **kwargs)
 
 
 # ---------------------------------------------------------------------------

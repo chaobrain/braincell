@@ -471,28 +471,27 @@ def _sample_synapse_current(cell, view):
 
 
 def _density_group_current(cell, rows):
-    from braincell._compute import bridge
     from braincell._multi_compartment.density_views import _runtime_layout
 
     row = rows[0]
-    point_v = bridge.cv_to_point(cell.V.value, cell.runtime)
+    cv_v = cell.V.value
     if row.category == "ion":
-        current = cell.runtime.get_ion(row.name).current(point_v, include_external=False)
+        current = cell.runtime.get_ion(row.name).current(cv_v, include_external=False)
     else:
         layout = _runtime_layout(cell, row)
         node = cell.runtime.get_runtime_node(layout.id)
         bound = cell.runtime.bound_ion_keys.get(layout.id, ())
         if len(bound) == 0:
-            current = node.current(point_v)
+            current = node.current(cv_v)
         else:
-            current = node.current(point_v, *tuple(cell.runtime.get_ion(key).pack_info() for key in bound))
+            current = node.current(cv_v, *tuple(cell.runtime.get_ion(key).pack_info() for key in bound))
             if isinstance(current, dict):
                 current = sum(current.values())
-    point_ids = np.asarray([item.point_id for item in rows], dtype=np.int32)
+    cv_ids = np.asarray([item.cv_id for item in rows], dtype=np.int32)
     if len(cell.pop_size) == 0:
-        return current[..., point_ids]
+        return current[..., cv_ids]
     population_indices = np.asarray([item.population_index for item in rows], dtype=np.int32)
-    return current[..., population_indices, point_ids]
+    return current[..., population_indices, cv_ids]
 
 
 def _density_owner_groups(view):

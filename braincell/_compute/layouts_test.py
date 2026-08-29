@@ -84,13 +84,14 @@ class RuntimeLayoutTest(unittest.TestCase):
         self.assertEqual(layout.kind, "channel:leaky")
         self.assertEqual(layout.n_active, 2)
         self.assertEqual(layout.source_cv_ids, (0, 1))
-        self.assertEqual(layout.point_index.tolist(), [1, 3])
-        self.assertEqual(rcell.expected_state_shape(layout.id, "g_max"), (1, 5))
-        self.assertEqual(rcell.voltage_shape, (1, 5))
-        self.assertEqual(rcell.get_state(layout.id, "g_max").shape, (1, 5))
+        self.assertIsNone(layout.point_index)
+        np.testing.assert_array_equal(layout.cv_mask, [True, True])
+        self.assertEqual(rcell.expected_state_shape(layout.id, "g_max"), (1, 2))
+        self.assertEqual(rcell.voltage_shape, (1, 2))
+        self.assertEqual(rcell.get_state(layout.id, "g_max").shape, (1, 2))
         np.testing.assert_allclose(
             np.asarray(rcell.get_state(layout.id, "g_max").to_decimal(u.mS / u.cm**2))[0],
-            [4.0, 4.0, 4.0, 4.0, 4.0],
+            [4.0, 4.0],
         )
 
     def test_region_limited_density_current_is_masked_outside_active_points(self) -> None:
@@ -106,16 +107,35 @@ class RuntimeLayoutTest(unittest.TestCase):
 
         cell.init_state()
         rcell = cell
-        point_v = rcell._cv_to_point(rcell.V.value)
-        soma_current = rcell.get_runtime_node(0).current(point_v)
-        dend_current = rcell.get_runtime_node(1).current(point_v)
+        soma_current = rcell.get_runtime_node(0).current(rcell.V.value)
+        dend_current = rcell.get_runtime_node(1).current(rcell.V.value)
         np.testing.assert_allclose(
             np.asarray(soma_current.to_decimal(u.nA / u.cm**2))[0],
-            [0.0, -12000.0, 0.0, 0.0, 0.0],
+            [-12000.0, 0.0],
         )
         np.testing.assert_allclose(
             np.asarray(dend_current.to_decimal(u.nA / u.cm**2))[0],
-            [0.0, 0.0, 0.0, -10000.0, 0.0],
+            [0.0, -10000.0],
+        )
+
+    def test_partial_channel_coverage_keeps_fraction_metadata_and_full_cv_current(self) -> None:
+        cell = Cell(_build_tree(), V_init=-65.0 * u.mV)
+        cell.paint(
+            BranchSlice(branch_index=0, prox=0.0, dist=0.5),
+            braincell.mech.Channel("IL", name="half_leak", g_max=4.0 * (u.mS / u.cm**2), E=-68.0 * u.mV),
+        )
+        cell.init_state()
+
+        layout = cell.layouts[0]
+        declaration = cell.runtime.get_layout_mechanism(layout.id)
+        node = cell.runtime.get_runtime_node(layout.id)
+        current = node.current(cell.V.value)
+
+        self.assertAlmostEqual(declaration.coverage_area_fraction, 0.5, places=12)
+        np.testing.assert_array_equal(layout.cv_mask, [True, False])
+        np.testing.assert_allclose(
+            np.asarray(current.to_decimal(u.nA / u.cm**2))[0],
+            [-12000.0, 0.0],
         )
 
     def test_point_mechanism_builds_sparse_layout_with_local_shape(self) -> None:
@@ -180,16 +200,16 @@ class RuntimeLayoutTest(unittest.TestCase):
         layout = rcell.layouts[0]
         self.assertEqual(layout.layout, "dense")
         self.assertEqual(layout.kind, "channel:IL")
-        self.assertEqual(rcell.expected_state_shape(layout.id, "g_max"), (1, 5))
-        self.assertEqual(rcell.expected_state_shape(layout.id, "E"), (1, 5))
-        self.assertEqual(rcell.get_point_state(1)[layout.id]["g_max"][0], 4.0 * (u.mS / u.cm**2))
-        self.assertEqual(rcell.get_point_state(3)[layout.id]["E"][0], -68.0 * u.mV)
+        self.assertEqual(rcell.expected_state_shape(layout.id, "g_max"), (1, 2))
+        self.assertEqual(rcell.expected_state_shape(layout.id, "E"), (1, 2))
+        self.assertEqual(rcell.get_cv_state(0)[layout.id]["g_max"][0], 4.0 * (u.mS / u.cm**2))
+        self.assertEqual(rcell.get_cv_state(1)[layout.id]["E"][0], -68.0 * u.mV)
         node = rcell.get_runtime_node(layout.id)
         self.assertIsInstance(node, braincell.channel.IL)
-        self.assertEqual(node.varshape, (1, 5))
+        self.assertEqual(node.varshape, (1, 2))
+        self.assertAlmostEqual(float(node.g_max[0, 0].to_decimal(u.mS / u.cm**2)), 4.0, places=12)
         self.assertAlmostEqual(float(node.g_max[0, 1].to_decimal(u.mS / u.cm**2)), 4.0, places=12)
-        self.assertAlmostEqual(float(node.g_max[0, 0].to_decimal(u.mS / u.cm**2)), 0.0, places=12)
-        self.assertAlmostEqual(float(node.E[0, 1].to_decimal(u.mV)), -68.0, places=12)
+        self.assertAlmostEqual(float(node.E[0, 0].to_decimal(u.mV)), -68.0, places=12)
 
     def test_named_channel_spec_merges_across_regions_when_identity_matches(self) -> None:
         import braincell
@@ -208,7 +228,7 @@ class RuntimeLayoutTest(unittest.TestCase):
         rcell = cell
 
         self.assertEqual(len(rcell.layouts), 1)
-        self.assertEqual(rcell.layouts[0].point_index.tolist(), [1, 3])
+        self.assertEqual(rcell.layouts[0].source_cv_ids, (0, 1))
 
     def test_same_class_different_names_build_distinct_layouts(self) -> None:
         import braincell
@@ -225,7 +245,7 @@ class RuntimeLayoutTest(unittest.TestCase):
 
         self.assertEqual(len(rcell.layouts), 2)
         self.assertEqual({layout.kind for layout in rcell.layouts}, {"channel:IL"})
-        self.assertTrue(all(layout.point_index.tolist() == [1, 3] for layout in rcell.layouts))
+        self.assertTrue(all(layout.source_cv_ids == (0, 1) for layout in rcell.layouts))
 
     def test_runtime_state_keeps_dense_and_sparse_layouts_together(self) -> None:
         cell = Cell(_build_tree(), cv_policy=CVPerBranch())
@@ -242,12 +262,11 @@ class RuntimeLayoutTest(unittest.TestCase):
         self.assertEqual(len(rcell.layouts), 2)
         dense = next(layout for layout in rcell.layouts if layout.layout == "dense")
         sparse = next(layout for layout in rcell.layouts if layout.layout == "sparse")
-        self.assertEqual(tuple(layout.id for layout in rcell.get_point_layouts(1)), (dense.id, sparse.id))
-        self.assertEqual(tuple(layout.id for layout in rcell.get_point_layouts(3)), (dense.id,))
+        self.assertEqual(tuple(layout.id for layout in rcell.get_point_layouts(1)), (sparse.id,))
+        self.assertEqual(tuple(layout.id for layout in rcell.get_point_layouts(3)), ())
         self.assertEqual(tuple(layout.id for layout in rcell.get_cv_layouts(0)), (dense.id, sparse.id))
         self.assertEqual(tuple(layout.id for layout in rcell.get_cv_layouts(1)), (dense.id,))
         point_state = rcell.get_point_state(1)
-        self.assertEqual(point_state[dense.id]["g_max"][0], 4.0 * (u.mS / u.cm**2))
         self.assertEqual(tuple(item.to_decimal(u.nA) for item in point_state[sparse.id]["amplitudes"][0]), (0.1,))
         self.assertEqual(rcell.get_cv_state(0)[dense.id]["g_max"][0], 4.0 * (u.mS / u.cm**2))
         self.assertEqual({name for name in ("na", "k", "ca")}, {"na", "k", "ca"})
@@ -818,11 +837,10 @@ class SpatialDensityParameterTest(unittest.TestCase):
         self.assertTrue(all(isinstance(context, CVContext) for context in seen))
 
         state = cell.get_state(layouts[0].id, "g_max")
-        midpoint_ids = cell.node_tree.cv_to_mid_node_id
-        actual = np.asarray(state[..., midpoint_ids].to_decimal(u.mS / u.cm**2))
+        actual = np.asarray(state.to_decimal(u.mS / u.cm**2))
         expected = np.asarray([0.02, 0.02, 0.022, 0.026])
         np.testing.assert_allclose(actual, np.broadcast_to(expected, (2, 4)))
-        self.assertEqual(cell.expected_state_shape(layouts[0].id, "g_max"), (2, 7))
+        self.assertEqual(cell.expected_state_shape(layouts[0].id, "g_max"), (2, 4))
 
         _ = cell.get_state(layouts[0].id, "g_max")
         self.assertEqual(len(seen), cell.n_cv)
@@ -841,7 +859,7 @@ class SpatialDensityParameterTest(unittest.TestCase):
 
         layout = next(layout for layout in cell.layouts if layout.kind == "ion:SodiumFixed")
         state = cell.get_state(layout.id, "E")
-        actual = state[..., cell.node_tree.cv_to_mid_node_id].to_decimal(u.mV)
+        actual = state.to_decimal(u.mV)
         np.testing.assert_allclose(actual, [[50.0, 50.0, 47.5, 42.5]])
 
     def test_ion_callable_accepts_unitless_scalar(self) -> None:
@@ -855,7 +873,7 @@ class SpatialDensityParameterTest(unittest.TestCase):
         layout = next(layout for layout in cell.layouts if layout.kind == "ion:SodiumFixed")
         state = cell.get_state(layout.id, "valence")
         np.testing.assert_allclose(
-            state[..., cell.node_tree.cv_to_mid_node_id],
+            state,
             np.ones(cell.pop_size + (cell.n_cv,)),
         )
 

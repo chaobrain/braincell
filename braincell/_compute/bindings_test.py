@@ -50,8 +50,7 @@ class RuntimeBindingTest(unittest.TestCase):
         node = rcell.get_runtime_node(layout.id)
 
         self.assertIsInstance(node, braincell.channel.IL)
-        self.assertAlmostEqual(float(node.g_max[0, 3].to_decimal(u.mS / u.cm**2)), 4.0, places=12)
-        self.assertAlmostEqual(float(node.g_max[0, 2].to_decimal(u.mS / u.cm**2)), 0.0, places=12)
+        np.testing.assert_allclose(node.g_max.to_decimal(u.mS / u.cm**2), [[4.0, 4.0]])
 
     def test_set_state_syncs_runtime_node_param(self) -> None:
         import braincell
@@ -69,8 +68,7 @@ class RuntimeBindingTest(unittest.TestCase):
         rcell.set_state(layout.id, "g_max", 2.5 * (u.mS / u.cm**2))
         node = rcell.get_runtime_node(layout.id)
 
-        self.assertAlmostEqual(float(node.g_max[0, 1].to_decimal(u.mS / u.cm**2)), 2.5, places=12)
-        self.assertAlmostEqual(float(node.g_max[0, 0].to_decimal(u.mS / u.cm**2)), 0.0, places=12)
+        np.testing.assert_allclose(node.g_max.to_decimal(u.mS / u.cm**2), [[2.5, 2.5]])
 
     def test_single_ion_channel_binds_to_explicit_runtime_ion(self) -> None:
         cell = Cell(_build_tree())
@@ -97,8 +95,8 @@ class RuntimeBindingTest(unittest.TestCase):
 
         self.assertIs(na_soma.channels["Na_HH1952"], node)
         self.assertNotIn("Na_HH1952", na_dend.channels)
-        self.assertAlmostEqual(float(na_soma.E[0, 1].to_decimal(u.mV)), 55.0, places=12)
-        self.assertAlmostEqual(float(na_dend.E[0, 3].to_decimal(u.mV)), 45.0, places=12)
+        self.assertAlmostEqual(float(na_soma.E[0, 0].to_decimal(u.mV)), 55.0, places=12)
+        self.assertAlmostEqual(float(na_dend.E[0, 1].to_decimal(u.mV)), 45.0, places=12)
 
     def test_same_named_single_ion_channels_in_distinct_layouts_do_not_overwrite(self) -> None:
         cell = Cell(_build_tree())
@@ -117,17 +115,17 @@ class RuntimeBindingTest(unittest.TestCase):
         layouts = tuple(layout for layout in rcell.layouts if layout.kind == "channel:Na_HH1952")
         nodes = tuple(rcell.get_runtime_node(layout.id) for layout in layouts)
         na = rcell.get_ion("na")
-        point_V = rcell._cv_to_point(rcell.V.value)
-        expected = nodes[0].current(point_V, na.pack_info())
-        total = na.current(point_V, include_external=False)
+        cv_V = rcell.V.value
+        expected = nodes[0].current(cv_V, na.pack_info())
+        total = na.current(cv_V, include_external=False)
 
         self.assertEqual(len(layouts), 2)
         self.assertEqual(len(set(map(id, nodes))), 1)
         self.assertEqual(len(na.channels), 1)
         self.assertIn("Na_HH1952", na.channels)
         self.assertNotIn("Na_HH1952__layout_1", na.channels)
-        self.assertAlmostEqual(float(nodes[0].g_max[0, 1].to_decimal(u.mS / u.cm**2)), 12.0, places=12)
-        self.assertAlmostEqual(float(nodes[0].g_max[0, 3].to_decimal(u.mS / u.cm**2)), 8.0, places=12)
+        self.assertAlmostEqual(float(nodes[0].g_max[0, 0].to_decimal(u.mS / u.cm**2)), 12.0, places=12)
+        self.assertAlmostEqual(float(nodes[0].g_max[0, 1].to_decimal(u.mS / u.cm**2)), 8.0, places=12)
         np.testing.assert_allclose(
             np.asarray(total.to_decimal(u.mA / (u.cm**2))),
             np.asarray(expected.to_decimal(u.mA / (u.cm**2))),
@@ -170,9 +168,8 @@ class RuntimeBindingTest(unittest.TestCase):
         rcell.set_state(layouts[0].id, "g_max", 5.0 * (u.mS / u.cm**2))
 
         node = rcell.get_runtime_node(layouts[0].id)
-        self.assertAlmostEqual(float(node.g_max[0, 1].to_decimal(u.mS / u.cm**2)), 5.0, places=12)
-        self.assertAlmostEqual(float(node.g_max[0, 3].to_decimal(u.mS / u.cm**2)), 8.0, places=12)
-        self.assertAlmostEqual(float(node.g_max[0, 0].to_decimal(u.mS / u.cm**2)), 0.0, places=12)
+        self.assertAlmostEqual(float(node.g_max[0, 0].to_decimal(u.mS / u.cm**2)), 5.0, places=12)
+        self.assertAlmostEqual(float(node.g_max[0, 1].to_decimal(u.mS / u.cm**2)), 8.0, places=12)
 
     def test_single_ion_channel_requires_selector_when_family_is_ambiguous(self) -> None:
         cell = Cell(_build_tree())
@@ -219,8 +216,8 @@ class RuntimeBindingTest(unittest.TestCase):
         na_right = rcell.get_ion("na_right")
         rcell.set_state(layout.id, "E", 42.0 * u.mV)
 
-        self.assertAlmostEqual(float(na_left.E[0, 1].to_decimal(u.mV)), 42.0, places=12)
-        self.assertAlmostEqual(float(na_right.E[0, 3].to_decimal(u.mV)), 45.0, places=12)
+        self.assertAlmostEqual(float(na_left.E[0, 0].to_decimal(u.mV)), 42.0, places=12)
+        self.assertAlmostEqual(float(na_right.E[0, 1].to_decimal(u.mV)), 45.0, places=12)
 
     def test_calva_channel_binds_only_to_explicit_lva_ion_when_multiple_calcium_ions_exist(self) -> None:
         cell = Cell(_build_tree())
@@ -307,9 +304,9 @@ class RuntimeBindingTest(unittest.TestCase):
         nodes = tuple(rcell.get_runtime_node(layout.id) for layout in layouts)
         k_main = rcell.get_ion("k_main")
         ca_hva = rcell.get_ion("ca_hva")
-        point_V = rcell._cv_to_point(rcell.V.value)
-        expected = nodes[0].current(point_V, k_main.pack_info(), ca_hva.pack_info())
-        total = k_main.current(point_V, include_external=False)
+        cv_V = rcell.V.value
+        expected = nodes[0].current(cv_V, k_main.pack_info(), ca_hva.pack_info())
+        total = k_main.current(cv_V, include_external=False)
 
         self.assertEqual(len(layouts), 2)
         self.assertEqual(len(set(map(id, nodes))), 1)
@@ -317,8 +314,8 @@ class RuntimeBindingTest(unittest.TestCase):
         self.assertIn("Kca3p1_MA2020_GoC", k_main.channels)
         self.assertNotIn("Kca3p1_MA2020_GoC__layout_1", k_main.channels)
         self.assertEqual(ca_hva.channels, {})
-        self.assertAlmostEqual(float(nodes[0].g_max[0, 1].to_decimal(u.mS / u.cm**2)), 100.0, places=12)
-        self.assertAlmostEqual(float(nodes[0].g_max[0, 3].to_decimal(u.mS / u.cm**2)), 50.0, places=12)
+        self.assertAlmostEqual(float(nodes[0].g_max[0, 0].to_decimal(u.mS / u.cm**2)), 100.0, places=12)
+        self.assertAlmostEqual(float(nodes[0].g_max[0, 1].to_decimal(u.mS / u.cm**2)), 50.0, places=12)
         np.testing.assert_allclose(
             np.asarray(total.to_decimal(u.mA / (u.cm**2))),
             np.asarray(expected.to_decimal(u.mA / (u.cm**2))),
@@ -350,13 +347,13 @@ class RuntimeBindingTest(unittest.TestCase):
         runtime = rcell.runtime
         layout = next(layout for layout in rcell.layouts if layout.kind == "channel:Kca3p1_MA2020_GoC")
         node = rcell.get_runtime_node(layout.id)
-        point_V = rcell._cv_to_point(rcell.V.value)
+        cv_V = rcell.V.value
         expected_mechanism = node.current(
-            point_V,
+            cv_V,
             rcell.get_ion("k_main").pack_info(),
             rcell.get_ion("ca_hva").pack_info(),
-        )[..., 1]
-        expected_total = rcell.get_ion("k_main").current(point_V, include_external=False)[..., 1]
+        )[..., 0]
+        expected_total = rcell.get_ion("k_main").current(cv_V, include_external=False)[..., 0]
 
         self.assertEqual(runtime.bound_ion_keys[layout.id], ("k_main", "ca_hva"))
         self.assertEqual(samples["soma(0.5)_Kca3p1_MA2020_GoC_current"], expected_mechanism)
@@ -391,7 +388,7 @@ class RuntimeBindingTest(unittest.TestCase):
             )
             seen = []
             wrapper._channel.ind_update = lambda *args, **kwargs: seen.append(args)
-            wrapper.ind_update(cell._cv_to_point(cell.V.value))
+            wrapper.ind_update(cell.V.value)
             # Only the state-owning wrapper forwards; the component wrapper
             # for a non-owning ion must not integrate the shared state twice.
             self.assertEqual(len(seen), 1 if wrapper._owns_state else 0)
@@ -422,13 +419,13 @@ class RuntimeBindingTest(unittest.TestCase):
         rcell = cell
 
         layout = next(layout for layout in rcell.layouts if layout.kind == "channel:_RuntimeTestTwoOwnerChannel")
-        point_V = rcell._cv_to_point(rcell.V.value)
+        cv_V = rcell.V.value
         node = rcell.get_runtime_node(layout.id)
         k_main = rcell.get_ion("k_main")
         no = rcell.get_ion("no")
-        total = node.current(point_V, k_main.pack_info(), no.pack_info())
-        k_current = k_main.current(point_V, include_external=False)
-        no_current = no.current(point_V, include_external=False)
+        total = node.current(cv_V, k_main.pack_info(), no.pack_info())
+        k_current = k_main.current(cv_V, include_external=False)
+        no_current = no.current(cv_V, include_external=False)
 
         self.assertEqual(rcell.runtime.current_owner_keys[layout.id], ("k_main", "no"))
         self.assertIn("_RuntimeTestTwoOwnerChannel", k_main.channels)
@@ -437,15 +434,15 @@ class RuntimeBindingTest(unittest.TestCase):
         self.assertTrue(getattr(no.channels["_RuntimeTestTwoOwnerChannel"], "_skip_family_update", False))
         np.testing.assert_allclose(
             np.asarray(k_current.to_decimal(u.nA / u.cm**2))[0],
-            [0.0, 2.0, 0.0, 2.0, 0.0],
+            [2.0, 2.0],
         )
         np.testing.assert_allclose(
             np.asarray(no_current.to_decimal(u.nA / u.cm**2))[0],
-            [0.0, 3.0, 0.0, 3.0, 0.0],
+            [3.0, 3.0],
         )
         np.testing.assert_allclose(
-            np.asarray(total.to_decimal(u.nA / u.cm**2))[..., layout.point_index],
-            np.asarray((k_current + no_current).to_decimal(u.nA / u.cm**2))[..., layout.point_index],
+            np.asarray(total.to_decimal(u.nA / u.cm**2)),
+            np.asarray((k_current + no_current).to_decimal(u.nA / u.cm**2)),
         )
 
     def test_family_order_integrates_mixed_ion_wrapper_channel_only(self) -> None:
@@ -485,9 +482,8 @@ class RuntimeBindingTest(unittest.TestCase):
         # Channels are now keyed on the declaration's instance name, which
         # defaults to the class name. Users can override with name=.
         self.assertIs(na.channels["Na_HH1952"], node)
-        self.assertAlmostEqual(float(node.g_max[0, 1].to_decimal(u.mS / u.cm**2)), 12.0, places=12)
-        self.assertAlmostEqual(float(node.g_max[0, 0].to_decimal(u.mS / u.cm**2)), 0.0, places=12)
-        self.assertAlmostEqual(float(node.V_sh[0, 1].to_decimal(u.mV)), -50.0, places=12)
+        np.testing.assert_allclose(node.g_max.to_decimal(u.mS / u.cm**2), [[12.0, 12.0]])
+        self.assertAlmostEqual(float(node.V_sh[0, 0].to_decimal(u.mV)), -50.0, places=12)
 
     def test_set_state_syncs_runtime_node_param_for_ina_hh1952(self) -> None:
         import braincell
@@ -510,9 +506,8 @@ class RuntimeBindingTest(unittest.TestCase):
         rcell.set_state(layout.id, "V_sh", -42.0 * u.mV)
         node = rcell.get_runtime_node(layout.id)
 
-        self.assertAlmostEqual(float(node.g_max[0, 1].to_decimal(u.mS / u.cm**2)), 8.0, places=12)
-        self.assertAlmostEqual(float(node.g_max[0, 0].to_decimal(u.mS / u.cm**2)), 0.0, places=12)
-        self.assertAlmostEqual(float(node.V_sh[0, 1].to_decimal(u.mV)), -42.0, places=12)
+        np.testing.assert_allclose(node.g_max.to_decimal(u.mS / u.cm**2), [[8.0, 8.0]])
+        self.assertAlmostEqual(float(node.V_sh[0, 0].to_decimal(u.mV)), -42.0, places=12)
 
     def test_unknown_channel_name_raises_key_error(self) -> None:
         cell = Cell(_build_tree())

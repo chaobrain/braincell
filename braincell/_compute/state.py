@@ -85,6 +85,7 @@ from .layouts import (
     _allocate_spatial_density_buffer,
     _allocate_state_buffer,
     _evaluate_clamp_layout,
+    _extract_dense_value,
     _extract_point_value,
     _mechanism_var_names,
     _mechanism_var_value,
@@ -94,6 +95,14 @@ from .layouts import (
     choose_layout,
     mechanism_kind,
     mechanism_signature,
+)
+from .parameters import (
+    RuntimeParameterState,
+    density_parameter_spec,
+    make_runtime_parameter_state,
+    parameter_state_value,
+    set_parameter_row,
+    set_runtime_parameter_value,
 )
 
 if TYPE_CHECKING:
@@ -178,13 +187,13 @@ class CellRuntimeState:
 
         Notes
         -----
-        Dense layout buffers are allocated with shape
-        ``cell.pop_size + (n_point,)``; sparse point-layout buffers use
+        Dense density buffers are allocated with shape
+        ``cell.pop_size + (n_cv,)``; sparse point-layout buffers use
         ``cell.pop_size + (n_active,)``.
         """
-        # Compile from immutable CV declarations into runtime layouts. Dense
-        # layouts cover all points with masked storage, while sparse layouts keep
-        # only the active point rows for point-only mechanisms such as clamps.
+        # Compile from immutable CV declarations into runtime layouts. Density
+        # layouts cover all CVs with masked storage, while point layouts keep
+        # only active placement rows for mechanisms such as clamps.
         node_tree = cell.node_tree
         n_point = len(node_tree.nodes)
         n_cv = len(cell.cvs)
@@ -280,7 +289,7 @@ class CellRuntimeState:
             target = str(entry["target"])
             cv_ids = tuple(sorted(int(cv_id) for cv_id in entry["cv_ids"]))
             if target == "density":
-                point_ids = np.asarray(sorted(int(point_id) for point_id in entry["point_ids"]), dtype=np.int32)
+                point_ids = np.asarray([], dtype=np.int32)
                 placement_index = None
             else:
                 point_ids = np.asarray(entry["point_ids"], dtype=np.int32)
@@ -291,11 +300,13 @@ class CellRuntimeState:
             synapse_ids = entry.get("synapse_ids")
             layout = choose_layout(target=target)
             if layout == "dense":
-                point_mask = np.zeros(n_point, dtype=bool)
-                point_mask[point_ids] = True
-                point_index = point_ids
-                shape = pop_size + (n_point,)
+                cv_mask = np.zeros(n_cv, dtype=bool)
+                cv_mask[np.asarray(cv_ids, dtype=np.int32)] = True
+                point_mask = None
+                point_index = None
+                shape = pop_size + (n_cv,)
             elif layout == "sparse":
+                cv_mask = None
                 point_mask = None
                 point_index = point_ids
                 shape = (len(point_ids),) if population_indices is not None else pop_size + (len(point_ids),)
@@ -309,8 +320,9 @@ class CellRuntimeState:
                 layout=layout,
                 point_index=point_index,
                 point_mask=point_mask,
-                n_active=len(point_ids),
+                n_active=len(cv_ids) if target == "density" else len(point_ids),
                 source_cv_ids=cv_ids,
+                cv_mask=cv_mask,
                 placement_index=placement_index,
                 population_index=population_indices,
                 synapse_index=None if synapse_ids is None else np.asarray(synapse_ids, dtype=np.int64),
@@ -318,8 +330,9 @@ class CellRuntimeState:
             layouts.append(layout_spec)
             layout_mechanisms[layout_spec.id] = mechanism
 
-            for point_id in point_ids.tolist():
-                point_to_layout_sets[point_id].add(layout_spec.id)
+            if layout_spec.target == "point":
+                for point_id in point_ids.tolist():
+                    point_to_layout_sets[point_id].add(layout_spec.id)
             for cv_id in cv_ids:
                 cv_to_layout_sets[cv_id].add(layout_spec.id)
 
@@ -368,12 +381,13 @@ class CellRuntimeState:
                     continue
                 state_shapes[(layout_spec.id, var_name)] = shape
                 value = _mechanism_var_value(mechanism, var_name)
+                parameter_spec = density_parameter_spec(mechanism, var_name) if isinstance(mechanism, Density) else None
                 if (
                     isinstance(mechanism, Density)
                     and callable(value)
                     and not isinstance(value, braintools.init.Initialization)
                 ):
-                    state_buffers[(layout_spec.id, var_name)] = _allocate_spatial_density_buffer(
+                    allocated = _allocate_spatial_density_buffer(
                         mechanism=mechanism,
                         var_name=var_name,
                         value=value,
@@ -381,6 +395,25 @@ class CellRuntimeState:
                         shape=shape,
                         cv_contexts=cv_contexts,
                         node_tree=node_tree,
+                    )
+                    state_buffers[(layout_spec.id, var_name)] = (
+                        make_runtime_parameter_state(
+                            allocated,
+                            full_shape=shape,
+                            spec=parameter_spec,
+                            name=var_name,
+                            point_mask=layout_spec.cv_mask,
+                        )
+                        if parameter_spec is not None
+                        else allocated
+                    )
+                elif parameter_spec is not None:
+                    state_buffers[(layout_spec.id, var_name)] = make_runtime_parameter_state(
+                        value,
+                        full_shape=shape,
+                        spec=parameter_spec,
+                        name=var_name,
+                        point_mask=layout_spec.cv_mask,
                     )
                 else:
                     state_buffers[(layout_spec.id, var_name)] = _allocate_state_buffer(
@@ -408,7 +441,7 @@ class CellRuntimeState:
             current_owner_keys,
             merged_channel_layout_groups,
         ) = _build_runtime_nodes(
-            n_point=n_point,
+            n_cv=n_cv,
             layouts=tuple(layouts),
             layout_mechanisms=layout_mechanisms,
             state_buffers=state_buffers,
@@ -417,8 +450,6 @@ class CellRuntimeState:
         attach_runtime_ion_geometry(
             ions=ions,
             cvs=cell.cvs,
-            point_ids=node_tree.cv_to_mid_node_id,
-            n_point=n_point,
         )
 
         # Hoisted: ``u.cm**2`` costs ~13 us to construct, and the comprehension
@@ -454,7 +485,7 @@ class CellRuntimeState:
             layouts=tuple(layouts),
             point_to_layout_ids=tuple(tuple(sorted(ids)) for ids in point_to_layout_sets),
             cv_to_layout_ids=tuple(tuple(sorted(ids)) for ids in cv_to_layout_sets),
-            voltage_shape=pop_size + (n_point,),
+            voltage_shape=pop_size + (n_cv,),
             state_shapes=state_shapes,
             state_buffers=state_buffers,
             event_buffers=event_buffers,
@@ -502,7 +533,7 @@ class CellRuntimeState:
         key = (int(layout_id), str(var_name))
         if key not in self.state_buffers:
             raise KeyError(f"Unknown state buffer for {(layout_id, var_name)!r}.")
-        return self.state_buffers[key]
+        return parameter_state_value(self.state_buffers[key])
 
     def set_state(self, layout_id: int, var_name: str, value: object) -> None:
         key = (int(layout_id), str(var_name))
@@ -539,7 +570,11 @@ class CellRuntimeState:
                 _sync_runtime_node_param(self, layout_id=int(layout_id), var_name=str(var_name))
                 return
 
-        self.state_buffers[key] = _write_state_buffer(layout, self.state_buffers[key], value)
+        existing = self.state_buffers[key]
+        if isinstance(existing, RuntimeParameterState):
+            set_runtime_parameter_value(existing, value)
+        else:
+            self.state_buffers[key] = _write_state_buffer(layout, existing, value)
         _sync_runtime_node_param(self, layout_id=int(layout_id), var_name=str(var_name))
 
     def get_point_state(self, point_id: int) -> dict[int, dict[str, object]]:
@@ -561,7 +596,17 @@ class CellRuntimeState:
         if not (0 <= int(cv_id) < self.n_cv):
             raise IndexError(f"cv_id out of range: {cv_id!r}.")
         point_id = int(self.node_tree.cv_to_mid_node_id[int(cv_id)])
-        return self.get_point_state(point_id)
+        cv_state = self.get_point_state(point_id)
+        for layout in self.get_cv_layouts(cv_id):
+            if layout.target != "density":
+                continue
+            values = {}
+            for (layout_id, var_name), buffer in self.state_buffers.items():
+                if layout_id != layout.id:
+                    continue
+                values[var_name] = _extract_dense_value(buffer, int(cv_id))
+            cv_state[layout.id] = values
+        return cv_state
 
     def get_runtime_node(self, layout_id: int) -> object:
         key = int(layout_id)
@@ -627,6 +672,11 @@ class CellRuntimeState:
         if key not in self.state_buffers:
             raise KeyError(f"Unknown state buffer for {(layout_id, var_name)!r}.")
         layout = self.layouts[int(layout_id)]
+        if layout.target == "density":
+            matches = np.flatnonzero(self.node_tree.cv_to_mid_node_id == int(point_id))
+            if len(matches) != 1:
+                raise KeyError(f"Point {point_id!r} is not a density CV midpoint.")
+            return _extract_dense_value(self.state_buffers[key], int(matches[0]))
         return _extract_point_value(layout, point_id=int(point_id), buffer=self.state_buffers[key])
 
     def evaluate_point_clamps(self, *, t, point_ids=None) -> object:
@@ -722,6 +772,17 @@ def _apply_density_parameter_overrides(
         if key not in state_buffers:
             raise KeyError(f"{category.title()} {name!r} has no parameter {var_name!r}.")
         buffer = state_buffers[key]
+        point_id = int(cv_id)
+        if isinstance(buffer, RuntimeParameterState):
+            set_parameter_row(
+                buffer,
+                population_index=int(population_index),
+                point_id=point_id,
+                population_size=population_size,
+                point_size=len(cell.cvs),
+                value=value,
+            )
+            continue
         unit = buffer.unit if isinstance(buffer, u.Quantity) else None
         if unit is not None:
             if not isinstance(value, u.Quantity):
@@ -731,7 +792,7 @@ def _apply_density_parameter_overrides(
             if isinstance(value, u.Quantity):
                 raise TypeError(f"Density parameter {var_name!r} is dimensionless.")
             decimal = value
-        point_id = int(node_tree.cv_to_mid_node_id[int(cv_id)])
+        point_id = int(cv_id)
         writes.setdefault(key, []).append((int(population_index), point_id, decimal))
 
     for key, entries in writes.items():

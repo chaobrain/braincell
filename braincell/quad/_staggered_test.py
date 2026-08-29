@@ -27,6 +27,7 @@ from unittest.mock import patch
 
 import brainstate
 import brainunit as u
+import jax
 import jax.numpy as jnp
 import numpy as np
 
@@ -37,12 +38,15 @@ from braincell import (
     CurrentClamp,
     DiffEqModule,
     Morphology,
+    mech,
 )
-from braincell.filter import RootLocation
+from braincell.filter import AllRegion, RootLocation
 from braincell.quad import get_registry, staggered_step
 from braincell.quad._staggered import (
     _build_backsub_indices,
+    _build_dhs_ordinary_backsub_order,
     _linear_and_const_term,
+    comp_backsub_hines_raw,
     comp_backsub_raw,
     comp_triang_raw,
     dhs_voltage_step,
@@ -108,6 +112,87 @@ class DhsLinearizationUnitTest(unittest.TestCase):
         np.testing.assert_allclose(np.asarray(linear.to_decimal(expected_linear_unit)), [-0.1, -0.1])
         self.assertEqual(u.get_unit(const), u.get_unit(2.0 * u.nA / u.uF))
         np.testing.assert_allclose(np.asarray((V_n * linear + const).to_decimal(u.nA / u.uF)), [2.0, 2.0])
+
+
+class StaggeredAutodiffTest(unittest.TestCase):
+    @staticmethod
+    def _hh_cell():
+        soma = Branch.from_lengths(
+            lengths=[20.0] * u.um,
+            radii=[10.0, 10.0] * u.um,
+            type="soma",
+        )
+        cell = Cell(
+            Morphology.from_root(soma, name="soma"),
+            cv_policy=CVPerBranch(),
+            V_init=-65.0 * u.mV,
+            solver="staggered",
+        )
+        cell.paint(
+            AllRegion(),
+            mech.Channel(
+                "Na_HH1952",
+                name="na_hh",
+                g_max=12.0 * (u.mS / u.cm**2),
+            ),
+        )
+        cell.paint(
+            AllRegion(),
+            mech.Channel(
+                "K_HH1952",
+                name="k_hh",
+                g_max=3.6 * (u.mS / u.cm**2),
+            ),
+        )
+        cell.paint(
+            AllRegion(),
+            mech.Channel(
+                "IL",
+                name="leak",
+                g_max=0.3 * (u.mS / u.cm**2),
+                E=-54.3 * u.mV,
+            ),
+        )
+        cell.init_state()
+        return cell
+
+    def test_multistep_voltage_and_conductance_gradients_match_finite_difference(self):
+        cell = self._hh_cell()
+        sodium = cell.ion_channels["na"].channels["na_hh"]
+        original_g_max = sodium.g_max
+        conductance_unit = u.mS / u.cm**2
+        active_mask = u.get_mantissa(original_g_max) != 0
+
+        def objective(v0_mantissa, g_max_mantissa):
+            sodium.g_max = active_mask * g_max_mantissa * conductance_unit
+            cell.reset_state()
+            cell.V.value = jnp.broadcast_to(v0_mantissa, cell.V.value.shape) * u.mV
+
+            def step(_):
+                cell.update()
+                return cell.V.value
+
+            trace = brainstate.transform.for_loop(step, jnp.arange(6))
+            return jnp.sum(trace[-1].to_decimal(u.mV))
+
+        try:
+            with brainstate.environ.context(dt=0.025 * u.ms, precision=64):
+                v0 = jnp.asarray(-65.0, dtype=jnp.float64)
+                g_max = jnp.asarray(12.0, dtype=jnp.float64)
+                grad_v0, grad_g_max = jax.grad(objective, argnums=(0, 1))(v0, g_max)
+
+                epsilon = 1e-3
+                finite_diff_v0 = (objective(v0 + epsilon, g_max) - objective(v0 - epsilon, g_max)) / (2.0 * epsilon)
+                finite_diff_g_max = (objective(v0, g_max + epsilon) - objective(v0, g_max - epsilon)) / (2.0 * epsilon)
+
+            for gradient in (grad_v0, grad_g_max):
+                self.assertTrue(bool(jnp.isfinite(gradient)))
+                self.assertNotEqual(float(gradient), 0.0)
+            np.testing.assert_allclose(grad_v0, finite_diff_v0, rtol=1e-4, atol=1e-8)
+            np.testing.assert_allclose(grad_g_max, finite_diff_g_max, rtol=1e-4, atol=1e-8)
+        finally:
+            sodium.g_max = original_g_max
+            cell.reset_state()
 
 
 class CompTriangRawTest(unittest.TestCase):
@@ -176,6 +261,46 @@ class CompBacksubRawTest(unittest.TestCase):
         out = comp_backsub_raw(diags, solves, lowers, backsub_indices)
         self.assertIsInstance(out, u.Quantity)
         self.assertTrue(u.get_unit(out).has_same_dim(u.mV))
+
+
+class CompBacksubHinesRawTest(unittest.TestCase):
+    def test_chain_matches_recursive_doubling(self):
+        diags = jnp.asarray([[2.0, 3.0, 4.0, 1.0]])
+        solves = jnp.asarray([[4.0, 3.0, 8.0, 0.0]]) * u.mV
+        lowers = jnp.asarray([0.0, -1.0, -2.0, 0.0])
+        ordinary_edges = np.asarray([[1, 0], [2, 1]], dtype=np.int32)
+        ordinary_offsets = np.asarray([0, 1, 2], dtype=np.int32)
+        parent_lookup = np.asarray([3, 0, 1, 3], dtype=np.int32)
+        recursive_indices = _build_backsub_indices(parent_lookup, n_nodes=3)
+
+        ordinary = comp_backsub_hines_raw(diags, solves, lowers, ordinary_edges, ordinary_offsets)
+        recursive = comp_backsub_raw(diags, solves, lowers, recursive_indices)
+
+        self.assertIsInstance(ordinary, u.Quantity)
+        np.testing.assert_allclose(ordinary.to_decimal(u.mV), recursive.to_decimal(u.mV), rtol=1e-6, atol=1e-7)
+
+    def test_schedule_is_root_to_leaf_and_covers_each_edge(self):
+        soma = Branch.from_lengths(lengths=[20.0] * u.um, radii=[10.0, 10.0] * u.um, type="soma")
+        morphology = Morphology.from_root(soma, name="soma")
+        parent = "soma"
+        for index in range(3):
+            branch = Branch.from_lengths(lengths=[20.0] * u.um, radii=[2.0, 2.0] * u.um, type="dendrite")
+            name = f"dend_{index}"
+            morphology.attach(parent=parent, child_branch=branch, child_name=name, parent_x=1.0)
+            parent = name
+        cell = Cell(morphology, cv_policy=CVPerBranch())
+        cell.init_state()
+        scheduling = cell.node_scheduling(algorithm="dhs")
+        edges, level_size = _build_dhs_ordinary_backsub_order(scheduling)
+
+        self.assertEqual(edges.shape[0], len(cell.node_tree.nodes) - 1)
+        self.assertEqual(int(level_size.sum()), edges.shape[0])
+        roots = np.flatnonzero(scheduling.parent_rows < 0)
+        self.assertEqual(len(roots), 1)
+        seen = {int(roots[0])}
+        for child, parent_row in edges.tolist():
+            self.assertIn(parent_row, seen)
+            seen.add(child)
 
 
 class BuildBacksubIndicesTest(unittest.TestCase):

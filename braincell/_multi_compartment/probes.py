@@ -149,9 +149,10 @@ def _matched_density_layout(
     ValueError
         If more than one density mechanism at ``point_id`` claims the name.
     """
+    cv_id = _representative_cv_id(runtime, point_id=point_id)
     matched = [
         layout
-        for layout in runtime.get_point_layouts(point_id)
+        for layout in runtime.get_cv_layouts(cv_id)
         if isinstance(mechanism := runtime.get_layout_mechanism(layout.id), Density)
         and mechanism.instance_name == declaration.mechanism
     ]
@@ -192,6 +193,7 @@ def _sample_mechanism_probe_point(
         selected = raw[..., synapse_view.runtime_index]
         return _pack_synapse_probe_rows(rcell, synapse_view, selected)
 
+    cv_id = _representative_cv_id(runtime, point_id=point_id)
     matched = _matched_density_layout(runtime, declaration=declaration, point_id=point_id)
     if matched is not None:
         node = runtime.get_runtime_node(matched.id)
@@ -200,7 +202,7 @@ def _sample_mechanism_probe_point(
             declaration.field,
             probe_name=_probe_name(declaration),
         )
-        return _select_last_axis(raw, point_id)
+        return _select_last_axis(raw, cv_id)
 
     try:
         ion = runtime.get_ion(declaration.mechanism)
@@ -212,7 +214,7 @@ def _sample_mechanism_probe_point(
             declaration.field,
             probe_name=_probe_name(declaration),
         )
-        return _select_last_axis(raw, point_id)
+        return _select_last_axis(raw, cv_id)
 
     raise KeyError(
         f"Probe {_probe_name(declaration)!r} could not find a mechanism or ion named "
@@ -228,6 +230,7 @@ def _sample_current_probe_point(
     point_id: int,
 ) -> object:
     point_V = bridge.cv_to_point(rcell.V.value, runtime)
+    cv_id = _representative_cv_id(runtime, point_id=point_id)
     if declaration.mechanism is not None:
         synapse_view = _synapse_probe_view(rcell, declaration.mechanism, point_id=point_id)
         if len(synapse_view) > 0:
@@ -256,7 +259,7 @@ def _sample_current_probe_point(
         bound_ion_keys = runtime.bound_ion_keys.get(layout_id, ())
         if len(bound_ion_keys) > 1:
             current = node.current(
-                point_V,
+                rcell.V.value,
                 *tuple(runtime.get_ion(ion_key).pack_info() for ion_key in bound_ion_keys),
             )
         else:
@@ -268,17 +271,17 @@ def _sample_current_probe_point(
             )
             current = _probe_current_value(
                 node,
-                point_V,
+                rcell.V.value,
                 ion_info,
                 probe_name=_probe_name(declaration),
             )
-        return _select_last_axis(current, point_id)
+        return _select_last_axis(current, cv_id)
 
     if declaration.ion is None:
         raise ValueError(f"Probe {_probe_name(declaration)!r} must define 'ion' when 'mechanism' is omitted.")
     ion = runtime.get_ion(declaration.ion)
-    current = ion.current(point_V, include_external=False)
-    return _select_last_axis(current, point_id)
+    current = ion.current(rcell.V.value, include_external=False)
+    return _select_last_axis(current, _representative_cv_id(runtime, point_id=point_id))
 
 
 #: The probe declaration types this module can sample, mapped to the

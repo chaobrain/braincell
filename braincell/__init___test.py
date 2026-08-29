@@ -42,6 +42,7 @@ _DOMAIN_PACKAGES = (
     "network",
     "quad",
     "synapse",
+    "trainable",
     "vis",
 )
 

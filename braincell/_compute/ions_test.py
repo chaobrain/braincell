@@ -41,48 +41,52 @@ class RuntimeIonTest(unittest.TestCase):
         self.assertIsInstance(rcell.get_ion("na"), braincell.ion.SodiumFixed)
         self.assertIsInstance(rcell.get_ion("k"), braincell.ion.PotassiumFixed)
         self.assertIsInstance(rcell.get_ion("ca"), braincell.ion.CalciumFixed)
-        self.assertEqual(rcell.get_ion("na").varshape, (1, 5))
-        self.assertEqual(rcell.get_ion("k").varshape, (1, 5))
-        self.assertEqual(rcell.get_ion("ca").varshape, (1, 5))
+        self.assertEqual(rcell.get_ion("na").varshape, (1, 2))
+        self.assertEqual(rcell.get_ion("k").varshape, (1, 2))
+        self.assertEqual(rcell.get_ion("ca").varshape, (1, 2))
 
     def test_default_ions_expand_with_population_shape(self) -> None:
         cell = Cell(_build_tree(), pop_size=(2, 3))
         cell.init_state()
         rcell = cell
-        self.assertEqual(rcell.get_ion("na").varshape, (2, 3, 5))
-        self.assertEqual(rcell.get_ion("k").varshape, (2, 3, 5))
-        self.assertEqual(rcell.get_ion("ca").varshape, (2, 3, 5))
+        self.assertEqual(rcell.get_ion("na").varshape, (2, 3, 2))
+        self.assertEqual(rcell.get_ion("k").varshape, (2, 3, 2))
+        self.assertEqual(rcell.get_ion("ca").varshape, (2, 3, 2))
 
-    def test_runtime_ions_expose_point_space_geometry_arrays(self) -> None:
+    def test_runtime_ions_expose_cv_space_geometry_arrays(self) -> None:
         cell = Cell(_build_tree())
 
         cell.init_state()
         rcell = cell
 
         na = rcell.get_ion("na")
-        self.assertEqual(na.length.shape, (1, 5))
-        self.assertEqual(na.area.shape, (1, 5))
-        self.assertEqual(na.diam_mid.shape, (1, 5))
-        self.assertEqual(na.radius_prox.shape, (1, 5))
-        self.assertEqual(na.radius_dist.shape, (1, 5))
+        self.assertEqual(na.length.shape, (1, 2))
+        self.assertEqual(na.area.shape, (1, 2))
+        self.assertEqual(na.diam_mid.shape, (1, 2))
+        self.assertEqual(na.radius_prox.shape, (1, 2))
+        self.assertEqual(na.radius_dist.shape, (1, 2))
 
-        self.assertAlmostEqual(float(na.length[0, 1].to_decimal(u.um)), 20.0, places=12)
-        self.assertAlmostEqual(float(na.length[0, 3].to_decimal(u.um)), 100.0, places=12)
-        self.assertAlmostEqual(float(na.diam_mid[0, 1].to_decimal(u.um)), 20.0, places=12)
-        self.assertAlmostEqual(float(na.diam_mid[0, 3].to_decimal(u.um)), 3.0, places=12)
-        self.assertAlmostEqual(float(na.radius_prox[0, 1].to_decimal(u.um)), 10.0, places=12)
-        self.assertAlmostEqual(float(na.radius_dist[0, 3].to_decimal(u.um)), 1.0, places=12)
-        self.assertAlmostEqual(float(na.area[0, 0].to_decimal(u.um**2)), 0.0, places=12)
+        self.assertAlmostEqual(float(na.length[0, 0].to_decimal(u.um)), 20.0, places=12)
+        self.assertAlmostEqual(float(na.length[0, 1].to_decimal(u.um)), 100.0, places=12)
+        self.assertAlmostEqual(float(na.diam_mid[0, 0].to_decimal(u.um)), 20.0, places=12)
+        self.assertAlmostEqual(float(na.diam_mid[0, 1].to_decimal(u.um)), 3.0, places=12)
+        self.assertAlmostEqual(float(na.radius_prox[0, 0].to_decimal(u.um)), 10.0, places=12)
+        self.assertAlmostEqual(float(na.radius_dist[0, 1].to_decimal(u.um)), 1.0, places=12)
+        self.assertAlmostEqual(
+            float(na.area[0, 0].to_decimal(u.um**2)),
+            float(cell.cvs[0].area.to_decimal(u.um**2)),
+            places=4,
+        )
 
     def test_runtime_ion_geometry_expands_with_population_shape(self) -> None:
         cell = Cell(_build_tree(), pop_size=(2,))
         cell.init_state()
         rcell = cell
         na = rcell.get_ion("na")
-        self.assertEqual(na.length.shape, (2, 5))
-        self.assertEqual(na.area.shape, (2, 5))
-        self.assertAlmostEqual(float(na.length[0, 1].to_decimal(u.um)), 20.0, places=12)
-        self.assertAlmostEqual(float(na.length[1, 3].to_decimal(u.um)), 100.0, places=12)
+        self.assertEqual(na.length.shape, (2, 2))
+        self.assertEqual(na.area.shape, (2, 2))
+        self.assertAlmostEqual(float(na.length[0, 0].to_decimal(u.um)), 20.0, places=12)
+        self.assertAlmostEqual(float(na.length[1, 1].to_decimal(u.um)), 100.0, places=12)
 
     def test_single_named_ion_keeps_family_and_class_aliases(self) -> None:
         cell = Cell(_build_tree())
@@ -102,9 +106,10 @@ class RuntimeIonTest(unittest.TestCase):
         self.assertIs(rcell.get_ion("SodiumFixed"), na)
         self.assertIs(rcell.get_ion("na_left"), na)
         self.assertIsInstance(na, braincell.ion.SodiumFixed)
-        self.assertEqual(layout.point_index.tolist(), [1])
-        self.assertAlmostEqual(float(na.E[0, 1].to_decimal(u.mV)), 55.0, places=12)
-        self.assertAlmostEqual(float(na.E[0, 3].to_decimal(u.mV)), 50.0, places=12)
+        self.assertIsNone(layout.point_index)
+        self.assertEqual(layout.source_cv_ids, (0,))
+        self.assertAlmostEqual(float(na.E[0, 0].to_decimal(u.mV)), 55.0, places=12)
+        self.assertAlmostEqual(float(na.E[0, 1].to_decimal(u.mV)), 50.0, places=12)
 
     def test_explicit_init_nernst_ion_replaces_default_species_container(self) -> None:
         cell = Cell(_build_tree())
@@ -127,10 +132,10 @@ class RuntimeIonTest(unittest.TestCase):
         self.assertIs(rcell.get_ion("SodiumInitNernst"), na)
         self.assertIs(rcell.get_ion("na_pool"), na)
         self.assertAlmostEqual(
-            float(na.temp[0, 1].to_decimal(u.kelvin)), float(u.celsius2kelvin(30.0).to_decimal(u.kelvin)), places=12
+            float(na.temp[0, 0].to_decimal(u.kelvin)), float(u.celsius2kelvin(30.0).to_decimal(u.kelvin)), places=12
         )
-        self.assertAlmostEqual(float(na.Ci[0, 1].to_decimal(u.mM)), 12.0, places=12)
-        self.assertAlmostEqual(float(na.Co[0, 1].to_decimal(u.mM)), 145.0, places=12)
+        self.assertAlmostEqual(float(na.Ci[0, 0].to_decimal(u.mM)), 12.0, places=12)
+        self.assertAlmostEqual(float(na.Co[0, 0].to_decimal(u.mM)), 145.0, places=12)
 
     def test_multiple_named_ions_make_family_lookup_ambiguous(self) -> None:
         cell = Cell(_build_tree())
@@ -184,18 +189,18 @@ class RuntimeIonTest(unittest.TestCase):
         self.assertIs(rcell.get_ion("CalciumDetailed"), ion)
 
         self.assertIsInstance(ion.Ci, braincell.quad.DiffEqState)
-        self.assertAlmostEqual(float(ion.Ci.value[0, 1].to_decimal(u.mM)), 2.4e-4, places=12)
+        self.assertAlmostEqual(float(ion.Ci.value[0, 0].to_decimal(u.mM)), 2.4e-4, places=12)
 
         ion.Ci.value = _quantity_set_at(ion.Ci.value, 1, 1.0e-3 * u.mM)
         rcell.reset_state()
-        self.assertAlmostEqual(float(ion.Ci.value[0, 1].to_decimal(u.mM)), 2.4e-4, places=12)
+        self.assertAlmostEqual(float(ion.Ci.value[0, 0].to_decimal(u.mM)), 2.4e-4, places=12)
 
         rcell.compute_derivative()
-        self.assertEqual(ion.Ci.derivative.shape, (1, 5))
+        self.assertEqual(ion.Ci.derivative.shape, (1, 2))
 
         rcell.set_state(layout.id, "Ci_initializer", 7.0e-4 * u.mM)
         rcell.reset_state()
-        self.assertAlmostEqual(float(ion.Ci.value[0, 1].to_decimal(u.mM)), 7.0e-4, places=12)
+        self.assertAlmostEqual(float(ion.Ci.value[0, 0].to_decimal(u.mM)), 7.0e-4, places=12)
 
     def test_imported_cdp_ion_relaxes_without_channel_in_runtime(self) -> None:
         cell = Cell(_build_tree())
@@ -214,11 +219,11 @@ class RuntimeIonTest(unittest.TestCase):
         cell.init_state()
         rcell = cell
         ion = rcell.get_ion("ca_cdp")
-        self.assertAlmostEqual(float(ion.Ci.value[0, 1].to_decimal(u.mM)), 80e-6, places=12)
+        self.assertAlmostEqual(float(ion.Ci.value[0, 0].to_decimal(u.mM)), 80e-6, places=12)
 
         rcell.compute_derivative()
         expected = -(80e-6 - 50e-6) / 70.0
-        self.assertAlmostEqual(float(ion.Ci.derivative[0, 1].to_decimal(u.mM / u.ms)), expected, places=12)
+        self.assertAlmostEqual(float(ion.Ci.derivative[0, 0].to_decimal(u.mM / u.ms)), expected, places=12)
 
     def test_imported_cdp_ion_and_cahva_channel_run_together(self) -> None:
         cell = Cell(_build_tree())
@@ -271,11 +276,11 @@ class RuntimeIonTest(unittest.TestCase):
         cell.init_state()
         rcell = cell
         ion = rcell.get_ion("ca_lva")
-        self.assertAlmostEqual(float(ion.Ci.value[0, 1].to_decimal(u.mM)), 80e-6, places=12)
+        self.assertAlmostEqual(float(ion.Ci.value[0, 0].to_decimal(u.mM)), 80e-6, places=12)
 
         rcell.compute_derivative()
         expected = -(80e-6 - 50e-6) / 70.0
-        self.assertAlmostEqual(float(ion.Ci.derivative[0, 1].to_decimal(u.mM / u.ms)), expected, places=12)
+        self.assertAlmostEqual(float(ion.Ci.derivative[0, 0].to_decimal(u.mM / u.ms)), expected, places=12)
 
     def test_imported_cdplva_ion_and_calva_channel_run_together(self) -> None:
         cell = Cell(_build_tree())
@@ -354,17 +359,17 @@ class RuntimeIonTest(unittest.TestCase):
         cell.init_state()
         rcell = cell
         ion = rcell.get_ion("ca_toy")
-        self.assertAlmostEqual(float(ion.Ci.value[0, 1].to_decimal(u.mM)), 0.2, places=12)
-        self.assertAlmostEqual(float(ion.BC.value[0, 1].to_decimal(u.mM)), 0.3, places=12)
-        self.assertAlmostEqual(float(ion.B.value[0, 1].to_decimal(u.mM)), 0.7, places=12)
+        self.assertAlmostEqual(float(ion.Ci.value[0, 0].to_decimal(u.mM)), 0.2, places=12)
+        self.assertAlmostEqual(float(ion.BC.value[0, 0].to_decimal(u.mM)), 0.3, places=12)
+        self.assertAlmostEqual(float(ion.B.value[0, 0].to_decimal(u.mM)), 0.7, places=12)
 
         ion.Ci.value = _quantity_set_at(ion.Ci.value, 1, 0.9 * u.mM)
         ion.BC.value = _quantity_set_at(ion.BC.value, 1, 0.8 * u.mM)
         rcell.reset_state()
 
-        self.assertAlmostEqual(float(ion.Ci.value[0, 1].to_decimal(u.mM)), 0.2, places=12)
-        self.assertAlmostEqual(float(ion.BC.value[0, 1].to_decimal(u.mM)), 0.3, places=12)
-        self.assertAlmostEqual(float(ion.B.value[0, 1].to_decimal(u.mM)), 0.7, places=12)
+        self.assertAlmostEqual(float(ion.Ci.value[0, 0].to_decimal(u.mM)), 0.2, places=12)
+        self.assertAlmostEqual(float(ion.BC.value[0, 0].to_decimal(u.mM)), 0.3, places=12)
+        self.assertAlmostEqual(float(ion.B.value[0, 0].to_decimal(u.mM)), 0.7, places=12)
 
     def test_toy_source_kinetic_ion_runs_and_exposes_species_probes(self) -> None:
         region = BranchSlice(branch_index=[0, 1], prox=0.0, dist=1.0)
@@ -525,9 +530,9 @@ class RuntimeIonTest(unittest.TestCase):
         rcell = cell
         ion = rcell.get_ion("ca_diam_factor")
 
-        self.assertAlmostEqual(float(ion.diam_mid[0, 1].to_decimal(u.um)), 20.0, places=12)
-        self.assertAlmostEqual(float(ion.PumpBound.value[0, 1].to_decimal(u.mM * u.um)), 0.3, places=12)
-        self.assertAlmostEqual(float(ion.PumpFree.value[0, 1].to_decimal(u.mM * u.um)), 0.7, places=6)
+        self.assertAlmostEqual(float(ion.diam_mid[0, 0].to_decimal(u.um)), 20.0, places=12)
+        self.assertAlmostEqual(float(ion.PumpBound.value[0, 0].to_decimal(u.mM * u.um)), 0.3, places=12)
+        self.assertAlmostEqual(float(ion.PumpFree.value[0, 0].to_decimal(u.mM * u.um)), 0.7, places=6)
 
         result = cell.run(dt=0.05 * u.ms, duration=1.0 * u.ms)
         self.assertIn("soma(0.5)_ca_diam_factor_Ci", result.traces)
@@ -550,17 +555,17 @@ class RuntimeIonTest(unittest.TestCase):
         cell.init_state()
         rcell = cell
         ion = rcell.get_ion("ca_diam_factor")
-        self.assertAlmostEqual(float(ion.Ci.value[0, 1].to_decimal(u.mM)), 0.2, places=12)
-        self.assertAlmostEqual(float(ion.PumpBound.value[0, 1].to_decimal(u.mM * u.um)), 0.3, places=12)
-        self.assertAlmostEqual(float(ion.PumpFree.value[0, 1].to_decimal(u.mM * u.um)), 0.7, places=6)
+        self.assertAlmostEqual(float(ion.Ci.value[0, 0].to_decimal(u.mM)), 0.2, places=12)
+        self.assertAlmostEqual(float(ion.PumpBound.value[0, 0].to_decimal(u.mM * u.um)), 0.3, places=12)
+        self.assertAlmostEqual(float(ion.PumpFree.value[0, 0].to_decimal(u.mM * u.um)), 0.7, places=6)
 
         ion.Ci.value = _quantity_set_at(ion.Ci.value, 1, 0.9 * u.mM)
         ion.PumpBound.value = _quantity_set_at(ion.PumpBound.value, 1, 0.8 * u.mM * u.um)
         rcell.reset_state()
 
-        self.assertAlmostEqual(float(ion.Ci.value[0, 1].to_decimal(u.mM)), 0.2, places=12)
-        self.assertAlmostEqual(float(ion.PumpBound.value[0, 1].to_decimal(u.mM * u.um)), 0.3, places=12)
-        self.assertAlmostEqual(float(ion.PumpFree.value[0, 1].to_decimal(u.mM * u.um)), 0.7, places=6)
+        self.assertAlmostEqual(float(ion.Ci.value[0, 0].to_decimal(u.mM)), 0.2, places=12)
+        self.assertAlmostEqual(float(ion.PumpBound.value[0, 0].to_decimal(u.mM * u.um)), 0.3, places=12)
+        self.assertAlmostEqual(float(ion.PumpFree.value[0, 0].to_decimal(u.mM * u.um)), 0.7, places=6)
 
     def test_cdpstc_goc_runs_and_exposes_species_and_geometry_probes(self) -> None:
         cell = Cell(_build_tree(), solver="staggered")
@@ -595,21 +600,21 @@ class RuntimeIonTest(unittest.TestCase):
         cell.init_state()
         rcell = cell
         ion = rcell.get_ion("ca_stc")
-        self.assertAlmostEqual(float(ion.Ci.value[0, 1].to_decimal(u.mM)), 45e-6, places=10)
-        self.assertAlmostEqual(float(ion.mg.value[0, 1].to_decimal(u.mM)), 0.59, places=6)
-        self.assertAlmostEqual(float(ion.CAM0.value[0, 1].to_decimal(u.mM)), 0.03, places=6)
-        self.assertAlmostEqual(float(ion.CAM1C.value[0, 1].to_decimal(u.mM)), 0.0, places=15)
-        self.assertAlmostEqual(float(ion.CAM2C.value[0, 1].to_decimal(u.mM)), 0.0, places=15)
-        self.assertAlmostEqual(float(ion.CAM1N2C.value[0, 1].to_decimal(u.mM)), 0.0, places=15)
-        self.assertAlmostEqual(float(ion.CAM1N.value[0, 1].to_decimal(u.mM)), 0.0, places=15)
-        self.assertAlmostEqual(float(ion.CAM2N.value[0, 1].to_decimal(u.mM)), 0.0, places=15)
-        self.assertAlmostEqual(float(ion.CAM2N1C.value[0, 1].to_decimal(u.mM)), 0.0, places=15)
-        self.assertAlmostEqual(float(ion.CAM1C1N.value[0, 1].to_decimal(u.mM)), 0.0, places=15)
-        self.assertAlmostEqual(float(ion.CAM4.value[0, 1].to_decimal(u.mM)), 0.0, places=15)
-        self.assertAlmostEqual(float(ion.pump.value[0, 1].to_decimal(u.mol / u.cm**2)), 1e-9, places=15)
-        self.assertAlmostEqual(float(ion.pumpca.value[0, 1].to_decimal(u.mol / u.cm**2)), 0.0, places=15)
-        self.assertAlmostEqual(float(ion.parea[0, 1].to_decimal(u.um)), float(np.pi * 20.0), places=5)
-        self.assertAlmostEqual(float(ion.dsq[0, 1].to_decimal(u.um**2)), 400.0, places=6)
+        self.assertAlmostEqual(float(ion.Ci.value[0, 0].to_decimal(u.mM)), 45e-6, places=10)
+        self.assertAlmostEqual(float(ion.mg.value[0, 0].to_decimal(u.mM)), 0.59, places=6)
+        self.assertAlmostEqual(float(ion.CAM0.value[0, 0].to_decimal(u.mM)), 0.03, places=6)
+        self.assertAlmostEqual(float(ion.CAM1C.value[0, 0].to_decimal(u.mM)), 0.0, places=15)
+        self.assertAlmostEqual(float(ion.CAM2C.value[0, 0].to_decimal(u.mM)), 0.0, places=15)
+        self.assertAlmostEqual(float(ion.CAM1N2C.value[0, 0].to_decimal(u.mM)), 0.0, places=15)
+        self.assertAlmostEqual(float(ion.CAM1N.value[0, 0].to_decimal(u.mM)), 0.0, places=15)
+        self.assertAlmostEqual(float(ion.CAM2N.value[0, 0].to_decimal(u.mM)), 0.0, places=15)
+        self.assertAlmostEqual(float(ion.CAM2N1C.value[0, 0].to_decimal(u.mM)), 0.0, places=15)
+        self.assertAlmostEqual(float(ion.CAM1C1N.value[0, 0].to_decimal(u.mM)), 0.0, places=15)
+        self.assertAlmostEqual(float(ion.CAM4.value[0, 0].to_decimal(u.mM)), 0.0, places=15)
+        self.assertAlmostEqual(float(ion.pump.value[0, 0].to_decimal(u.mol / u.cm**2)), 1e-9, places=15)
+        self.assertAlmostEqual(float(ion.pumpca.value[0, 0].to_decimal(u.mol / u.cm**2)), 0.0, places=15)
+        self.assertAlmostEqual(float(ion.parea[0, 0].to_decimal(u.um)), float(np.pi * 20.0), places=5)
+        self.assertAlmostEqual(float(ion.dsq[0, 0].to_decimal(u.um**2)), 400.0, places=6)
 
         result = cell.run(dt=0.05 * u.ms, duration=1.0 * u.ms)
         for key in (
@@ -880,11 +885,11 @@ class RuntimeIonTest(unittest.TestCase):
         cell.init_state()
         rcell = cell
         ion = rcell.get_ion("ca_stc_camonly")
-        self.assertAlmostEqual(float(ion.Ci.value[0, 1].to_decimal(u.mM)), 45e-6, places=10)
-        self.assertAlmostEqual(float(ion.CAM0.value[0, 1].to_decimal(u.mM)), 0.03, places=6)
-        self.assertAlmostEqual(float(ion.CAM1C.value[0, 1].to_decimal(u.mM)), 0.0, places=15)
-        self.assertAlmostEqual(float(ion.CAM1N.value[0, 1].to_decimal(u.mM)), 0.0, places=15)
-        self.assertAlmostEqual(float(ion.dsq[0, 1].to_decimal(u.um**2)), 400.0, places=6)
+        self.assertAlmostEqual(float(ion.Ci.value[0, 0].to_decimal(u.mM)), 45e-6, places=10)
+        self.assertAlmostEqual(float(ion.CAM0.value[0, 0].to_decimal(u.mM)), 0.03, places=6)
+        self.assertAlmostEqual(float(ion.CAM1C.value[0, 0].to_decimal(u.mM)), 0.0, places=15)
+        self.assertAlmostEqual(float(ion.CAM1N.value[0, 0].to_decimal(u.mM)), 0.0, places=15)
+        self.assertAlmostEqual(float(ion.dsq[0, 0].to_decimal(u.um**2)), 400.0, places=6)
 
         result = cell.run(dt=0.05 * u.ms, duration=0.2 * u.ms)
         for key in (
@@ -953,12 +958,12 @@ class RuntimeIonTest(unittest.TestCase):
         cell.init_state()
         rcell = cell
         ion = rcell.get_ion("ca_stc_nocam")
-        self.assertAlmostEqual(float(ion.Ci.value[0, 1].to_decimal(u.mM)), 45e-6, places=10)
-        self.assertAlmostEqual(float(ion.mg.value[0, 1].to_decimal(u.mM)), 0.59, places=6)
-        self.assertAlmostEqual(float(ion.pump.value[0, 1].to_decimal(u.mol / u.cm**2)), 1e-9, places=15)
-        self.assertAlmostEqual(float(ion.pumpca.value[0, 1].to_decimal(u.mol / u.cm**2)), 0.0, places=15)
-        self.assertAlmostEqual(float(ion.parea[0, 1].to_decimal(u.um)), float(np.pi * 20.0), places=5)
-        self.assertAlmostEqual(float(ion.dsq[0, 1].to_decimal(u.um**2)), 400.0, places=6)
+        self.assertAlmostEqual(float(ion.Ci.value[0, 0].to_decimal(u.mM)), 45e-6, places=10)
+        self.assertAlmostEqual(float(ion.mg.value[0, 0].to_decimal(u.mM)), 0.59, places=6)
+        self.assertAlmostEqual(float(ion.pump.value[0, 0].to_decimal(u.mol / u.cm**2)), 1e-9, places=15)
+        self.assertAlmostEqual(float(ion.pumpca.value[0, 0].to_decimal(u.mol / u.cm**2)), 0.0, places=15)
+        self.assertAlmostEqual(float(ion.parea[0, 0].to_decimal(u.um)), float(np.pi * 20.0), places=5)
+        self.assertAlmostEqual(float(ion.dsq[0, 0].to_decimal(u.um**2)), 400.0, places=6)
 
         result = cell.run(dt=0.05 * u.ms, duration=1.0 * u.ms)
         for key in (
@@ -1051,16 +1056,16 @@ class RuntimeIonTest(unittest.TestCase):
         cell.init_state()
         rcell = cell
         ion = rcell.get_ion("ca_cam")
-        self.assertAlmostEqual(float(ion.Ci.value[0, 1].to_decimal(u.mM)), 45e-6, places=10)
-        self.assertAlmostEqual(float(ion.CB.value[0, 1].to_decimal(u.mM)), 0.13851901461878652, delta=1e-8)
-        self.assertAlmostEqual(float(ion.CB_f_ca.value[0, 1].to_decimal(u.mM)), 0.013185944660826794, delta=1e-8)
-        self.assertAlmostEqual(float(ion.CB_ca_s.value[0, 1].to_decimal(u.mM)), 0.007574049472521637, delta=1e-8)
-        self.assertAlmostEqual(float(ion.CB_ca_ca.value[0, 1].to_decimal(u.mM)), 0.0007209912478650405, delta=1e-8)
-        self.assertAlmostEqual(float(ion.CAM0.value[0, 1].to_decimal(u.mM)), 0.03, delta=1e-8)
-        self.assertAlmostEqual(float(ion.pump.value[0, 1].to_decimal(u.mol / u.cm**2)), 1e-9, places=15)
-        self.assertAlmostEqual(float(ion.pumpca.value[0, 1].to_decimal(u.mol / u.cm**2)), 0.0, places=15)
-        self.assertAlmostEqual(float(ion.parea[0, 1].to_decimal(u.um)), float(np.pi * 20.0), places=5)
-        self.assertAlmostEqual(float(ion.dsq[0, 1].to_decimal(u.um**2)), 400.0, places=6)
+        self.assertAlmostEqual(float(ion.Ci.value[0, 0].to_decimal(u.mM)), 45e-6, places=10)
+        self.assertAlmostEqual(float(ion.CB.value[0, 0].to_decimal(u.mM)), 0.13851901461878652, delta=1e-8)
+        self.assertAlmostEqual(float(ion.CB_f_ca.value[0, 0].to_decimal(u.mM)), 0.013185944660826794, delta=1e-8)
+        self.assertAlmostEqual(float(ion.CB_ca_s.value[0, 0].to_decimal(u.mM)), 0.007574049472521637, delta=1e-8)
+        self.assertAlmostEqual(float(ion.CB_ca_ca.value[0, 0].to_decimal(u.mM)), 0.0007209912478650405, delta=1e-8)
+        self.assertAlmostEqual(float(ion.CAM0.value[0, 0].to_decimal(u.mM)), 0.03, delta=1e-8)
+        self.assertAlmostEqual(float(ion.pump.value[0, 0].to_decimal(u.mol / u.cm**2)), 1e-9, places=15)
+        self.assertAlmostEqual(float(ion.pumpca.value[0, 0].to_decimal(u.mol / u.cm**2)), 0.0, places=15)
+        self.assertAlmostEqual(float(ion.parea[0, 0].to_decimal(u.um)), float(np.pi * 20.0), places=5)
+        self.assertAlmostEqual(float(ion.dsq[0, 0].to_decimal(u.um**2)), 400.0, places=6)
 
     def test_cdpcam_pc_ion_params_scatter_with_population_shape(self) -> None:
         cell = Cell(_build_tree(), pop_size=(2,), solver="staggered")
@@ -1084,14 +1089,14 @@ class RuntimeIonTest(unittest.TestCase):
         cell.init_state()
         ion = cell.get_ion("ca_cam")
 
-        self.assertEqual(ion.TotalPump.shape, (2, 5))
+        self.assertEqual(ion.TotalPump.shape, (2, 2))
         np.testing.assert_allclose(
-            np.asarray(ion.TotalPump[:, 1].to_decimal(u.mol / u.cm**2)),
+            np.asarray(ion.TotalPump[:, 0].to_decimal(u.mol / u.cm**2)),
             [5.0e-8, 5.0e-8],
             rtol=1e-12,
         )
         np.testing.assert_allclose(
-            np.asarray(ion.TotalPump[:, 3].to_decimal(u.mol / u.cm**2)),
+            np.asarray(ion.TotalPump[:, 1].to_decimal(u.mol / u.cm**2)),
             [6.0e-8, 6.0e-8],
             rtol=1e-12,
         )
@@ -1119,22 +1124,22 @@ class RuntimeIonTest(unittest.TestCase):
         ion = cell.get_ion("ca_cam")
 
         self.assertIsInstance(ion.Ci_initializer, u.Quantity)
-        self.assertEqual(ion.Ci_initializer.shape, (2, 5))
+        self.assertEqual(ion.Ci_initializer.shape, (2, 2))
         np.testing.assert_allclose(
-            np.asarray(ion.Ci_initializer[:, 1].to_decimal(u.mM)),
+            np.asarray(ion.Ci_initializer[:, 0].to_decimal(u.mM)),
             [0.2, 0.2],
             rtol=1e-12,
         )
         np.testing.assert_allclose(
-            np.asarray(ion.Ci_initializer[:, 3].to_decimal(u.mM)),
+            np.asarray(ion.Ci_initializer[:, 1].to_decimal(u.mM)),
             [0.3, 0.3],
             rtol=1e-12,
         )
 
-        ion.Ci.value = _quantity_set_at(ion.Ci.value, 1, 1.0 * u.mM)
+        ion.Ci.value = _quantity_set_at(ion.Ci.value, 0, 1.0 * u.mM)
         cell.reset_state()
         np.testing.assert_allclose(
-            np.asarray(ion.Ci.value[:, 1].to_decimal(u.mM)),
+            np.asarray(ion.Ci.value[:, 0].to_decimal(u.mM)),
             [0.2, 0.2],
             rtol=1e-12,
         )

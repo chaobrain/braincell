@@ -758,9 +758,10 @@ class Cell(_CellFacade, HHTypedNeuron):
         before all channels; ``"integration"`` preserves the previous
         IndependentIntegration-grouped scheduling.
     membrane_linearizer : {"point", "generic"}
-        Membrane-current linearization strategy. ``"point"`` differentiates
-        the point-local current kernel before gathering CV midpoints;
-        ``"generic"`` retains whole-CV automatic differentiation.
+        Compatibility selector for the membrane-current linearization
+        strategy. Both values currently differentiate the assembled CV-space
+        membrane derivative; painted density mechanisms already live on the
+        CV axis, while sparse point contributions are gathered first.
     name : str, optional
         Cell name.
     """
@@ -851,6 +852,10 @@ class Cell(_CellFacade, HHTypedNeuron):
         self._compiled_recording_cache: dict[tuple, tuple] = {}
 
         self._initialized = False
+
+        from braincell.trainable import TrainableManager
+
+        self.trainables = TrainableManager(self)
 
         # Eager policy validation via the preview.
         _ = self.cvs
@@ -1441,6 +1446,8 @@ class Cell(_CellFacade, HHTypedNeuron):
                 root_nodes[f"layout_{layout.id}"] = node
 
         self.ion_channels = self._format_elements(IonChannel, **root_nodes)
+        if self.trainables.bindings():
+            self.trainables.materialize()
         self.C = bridge.cv_value_vector(self, attr_name="cm")
         self._V_th = self._materialize_population_parameter("V_th")
 
@@ -1448,7 +1455,7 @@ class Cell(_CellFacade, HHTypedNeuron):
         self._V_init_materialized = v_value
         v_value = bridge.expand_with_batch_axis(v_value, batch_size, name="Cell.V")
         # A Cell is spatial: every hidden state's trailing axis enumerates
-        # compartments (V) or points (mechanism variables), so all of them
+        # CVs (V and painted density state) or sparse point-layout rows, so all
         # are group states. Channel / ion / synapse code is shared with
         # SingleCompartment, hence the scoped factory rather than a
         # per-call-site class choice.
@@ -1457,15 +1464,15 @@ class Cell(_CellFacade, HHTypedNeuron):
         self._event_previous_V = brainstate.ShortTermState(self.V.value)
         self._current_time_state.value = 0.0 * u.ms
 
-        point_V = self._cv_to_point_unchecked(self.V.value)
+        cv_V = self.V.value
         with state_grouping(True):
             for path, channel in self._runtime_objects_unchecked(IonChannel, allowed_hierarchy=(1, 1)).items():
-                args = self._runtime_node_phase_args(path, channel, point_V)
+                args = self._runtime_node_phase_args(path, channel, cv_V)
                 channel.init_state(*args, batch_size=batch_size)
             # Mechanism init hooks allocate state; reset hooks materialize the
             # model-defined initial values from V_init and current parameters.
             for path, channel in self._runtime_objects_unchecked(IonChannel, allowed_hierarchy=(1, 1)).items():
-                args = self._runtime_node_phase_args(path, channel, point_V)
+                args = self._runtime_node_phase_args(path, channel, cv_V)
                 channel.reset_state(*args, batch_size=batch_size)
 
         # Dense CV axial operators are only needed by derivative-based voltage
@@ -1514,6 +1521,7 @@ class Cell(_CellFacade, HHTypedNeuron):
         self._current_time_state.value = 0.0 * u.ms
 
         self._runtime = None
+        self.trainables.runtime_reset()
         self._runtime_cvs_cache = None
         self._runtime_nodes_cache = None
         self._node_scheduling_cache.clear()
@@ -1700,19 +1708,17 @@ class Cell(_CellFacade, HHTypedNeuron):
 
     def pre_integral(self):
         self._raise_if_not_initialized("pre_integral()")
-        point_V = self._cv_to_point(self.V.value)
         for path, node in self.runtime_objects(IonChannel, allowed_hierarchy=(1, 1)).items():
             if not isinstance(node, IndependentIntegration):
-                args = self._runtime_node_phase_args(path, node, point_V)
+                args = self._runtime_node_phase_args(path, node, self.V.value)
                 node.pre_integral(*args)
 
     def compute_derivative(self):
         self._raise_if_not_initialized("compute_derivative()")
         self.V.derivative = self.compute_voltage_derivative(self.V.value)
-        point_V = self._cv_to_point(self.V.value)
         for path, node in self.runtime_objects(IonChannel, allowed_hierarchy=(1, 1)).items():
             if not isinstance(node, IndependentIntegration):
-                args = self._runtime_node_phase_args(path, node, point_V)
+                args = self._runtime_node_phase_args(path, node, self.V.value)
                 node.compute_derivative(*args)
 
     def compute_membrane_derivative(self, V):
@@ -1723,61 +1729,16 @@ class Cell(_CellFacade, HHTypedNeuron):
 
     def _voltage_linearizer(self):
         """Return the configured voltage-only membrane linearizer."""
-        if self._membrane_linearizer == "generic":
-            membrane_derivative = jax.named_call(
-                self.compute_membrane_derivative,
-                name="braincell_dhs_compute_membrane_derivative",
-            )
-            return brainstate.transform.vector_grad(
-                membrane_derivative,
-                argnums=0,
-                return_value=True,
-                unit_aware=False,
-            )
-
-        runtime = self.runtime
-        midpoint_mask = jnp.asarray(runtime.midpoint_mask_np)
-
-        def linearize(V, *args):
-            # CV/point mappings stay outside the differentiated function, so
-            # reverse-mode AD never needs the large CV-to-point scatter-add.
-            point_V = bridge.cv_to_point(V, runtime)
-            point_C = bridge.cv_to_point(self.C, runtime)
-            capacitance_unit = u.get_unit(point_C)
-            safe_point_C = u.Quantity(
-                jnp.where(midpoint_mask, u.get_mantissa(point_C), 1.0),
-                capacitance_unit,
-            )
-
-            def point_membrane_derivative(candidate_point_V, *_args):
-                I_point = currents.total_membrane_current_point(
-                    self,
-                    point_V=candidate_point_V,
-                    t=self._resolve_t(),
-                )
-                derivative = I_point / safe_point_C
-                return u.Quantity(
-                    jnp.where(
-                        midpoint_mask,
-                        u.get_mantissa(derivative),
-                        0.0,
-                    ),
-                    u.get_unit(derivative),
-                )
-
-            point_linearizer = brainstate.transform.vector_grad(
-                point_membrane_derivative,
-                argnums=0,
-                return_value=True,
-                unit_aware=False,
-            )
-            point_linear, point_derivative = point_linearizer(point_V, *args)
-            return (
-                bridge.point_to_cv(point_linear, runtime),
-                bridge.point_to_cv(point_derivative, runtime),
-            )
-
-        return linearize
+        membrane_derivative = jax.named_call(
+            self.compute_membrane_derivative,
+            name="braincell_dhs_compute_membrane_derivative",
+        )
+        return brainstate.transform.vector_grad(
+            membrane_derivative,
+            argnums=0,
+            return_value=True,
+            unit_aware=False,
+        )
 
     def _get_axial_operator(self):
         runtime = self._runtime
@@ -1842,7 +1803,7 @@ class Cell(_CellFacade, HHTypedNeuron):
         self,
         ion_nodes,
         selected_paths,
-        point_V,
+        cv_V,
         excluded_paths,
     ):
         selected_paths = tuple(tuple(path) for path in selected_paths)
@@ -1854,7 +1815,7 @@ class Cell(_CellFacade, HHTypedNeuron):
         def _run_phase(hook_name):
             for path, ion in ion_nodes:
                 if path in selected_path_set:
-                    getattr(ion, hook_name)(point_V, recursive_child=False)
+                    getattr(ion, hook_name)(cv_V, recursive_child=False)
 
         _ind_exp_euler_step_selected(
             self,
@@ -1866,12 +1827,12 @@ class Cell(_CellFacade, HHTypedNeuron):
             allow_empty=True,
         )
 
-    def _update_ion_channels_by_integration(self, point_V):
+    def _update_ion_channels_by_integration(self, cv_V):
         with jax.named_scope("braincell:ion_update:integration:dependent"):
             for path, node in self._top_level_ion_channel_nodes():
                 if isinstance(node, IndependentIntegration):
                     continue
-                args = self._runtime_node_phase_args(path, node, point_V)
+                args = self._runtime_node_phase_args(path, node, cv_V)
                 with jax.named_scope(_scope_name("braincell:ion_update:node", path, node)):
                     jax.named_call(
                         ind_exp_euler_step,
@@ -1880,13 +1841,14 @@ class Cell(_CellFacade, HHTypedNeuron):
 
         with jax.named_scope("braincell:ion_update:integration:independent"):
             for path, node in self._top_level_ion_channel_nodes():
+                args = self._runtime_node_phase_args(path, node, cv_V)
                 with jax.named_scope(_scope_name("braincell:ion_update:node", path, node)):
                     jax.named_call(
                         node.ind_update,
                         name=_call_name("braincell:ion_update:node_ind_update", path, node),
-                    )(point_V)
+                    )(*args)
 
-    def _update_ion_channel_families(self, point_V):
+    def _update_ion_channel_families(self, cv_V):
         ion_nodes = self._family_ion_nodes()
         channel_nodes = self._family_channel_nodes()
 
@@ -1901,7 +1863,7 @@ class Cell(_CellFacade, HHTypedNeuron):
             self._integrate_selected_ion_self_states(
                 ion_nodes,
                 dependent_ion_paths,
-                point_V,
+                cv_V,
                 excluded_paths=[("V",), *channel_paths],
             )
 
@@ -1914,7 +1876,7 @@ class Cell(_CellFacade, HHTypedNeuron):
                         jax.named_call(
                             node.ind_update,
                             name=_call_name("braincell:ion_update:ion_ind_update", path, node),
-                        )(point_V, recursive_child=False)
+                        )(cv_V, recursive_child=False)
 
         # Channel nodes include Ion child channels, MixIons child channels,
         # and top-level channels. The owner path rebuilds the right ion args.
@@ -1924,7 +1886,7 @@ class Cell(_CellFacade, HHTypedNeuron):
                     target, args = self._channel_integration_target_and_args(
                         path,
                         node,
-                        point_V,
+                        cv_V,
                     )
                     with jax.named_scope(_scope_name("braincell:ion_update:channel", path, node)):
                         jax.named_call(
@@ -1940,7 +1902,7 @@ class Cell(_CellFacade, HHTypedNeuron):
                 target, args = self._channel_integration_target_and_args(
                     path,
                     node,
-                    point_V,
+                    cv_V,
                 )
                 with jax.named_scope(_scope_name("braincell:ion_update:channel", path, node)):
                     jax.named_call(
@@ -1953,29 +1915,30 @@ class Cell(_CellFacade, HHTypedNeuron):
         channel = getattr(node, "_channel", node)
         return isinstance(channel, IndependentIntegration)
 
-    def _channel_integration_target_and_args(self, path, node, point_V):
+    def _channel_integration_target_and_args(self, path, node, cv_V):
         if hasattr(node, "_channel") and hasattr(node, "_infos"):
-            return node._channel, (point_V, *node._infos())
-        return node, self._channel_update_args(path, node, point_V)
+            return node._channel, (cv_V, *node._infos())
+        return node, self._channel_update_args(path, node, cv_V)
 
-    def _channel_update_args(self, path, node, point_V):
+    def _channel_update_args(self, path, node, cv_V):
         if len(path) >= 4 and path[-2] == "channels":
             owner = self._node_at_path(path[:-2])
             if isinstance(owner, Ion):
-                return point_V, owner.pack_info()
+                return cv_V, owner.pack_info()
             if isinstance(owner, MixIons):
                 infos = tuple([owner._get_ion(root).pack_info() for root in node.root_type.__args__])
-                return (point_V, *infos)
-        return (point_V,)
+                return (cv_V, *infos)
+        return (cv_V,)
 
-    def _runtime_node_phase_args(self, path, node, point_V):
+    def _runtime_node_phase_args(self, path, node, cv_V):
         if isinstance(node, RuntimeSynapse):
             layout_id = layout_id_from_key(path)
             layout = self._runtime.layouts[layout_id]
             if layout.point_index is None:
                 raise ValueError(f"Synapse layout {layout.id!r} is missing point_index.")
+            point_V = bridge.cv_to_point(cv_V, self._runtime)
             return (layout.gather_points(point_V),)
-        return self._channel_update_args(path, node, point_V)
+        return self._channel_update_args(path, node, cv_V)
 
     @staticmethod
     def _node_at_path_from(root, path):
@@ -1995,7 +1958,7 @@ class Cell(_CellFacade, HHTypedNeuron):
         self._raise_if_not_initialized("cache_ion_total_currents()")
         if not self.cache_ion_total_current:
             return
-        point_V = self._cv_to_point(self.V.value if V is None else V)
+        cv_V = self.V.value if V is None else V
         for path, node in self.runtime_objects(IonChannel, allowed_hierarchy=(1, 1)).items():
             if not getattr(type(node), "uses_total_current", False):
                 continue
@@ -2004,12 +1967,12 @@ class Cell(_CellFacade, HHTypedNeuron):
                     node._cached_total_current = jax.named_call(
                         node.current,
                         name=_call_name("braincell:ion_current_cache:node_current", path, node),
-                    )(point_V, include_external=True)
+                    )(cv_V, include_external=True)
                 except TypeError:
                     node._cached_total_current = jax.named_call(
                         node.current,
                         name=_call_name("braincell:ion_current_cache:node_current", path, node),
-                    )(point_V)
+                    )(cv_V)
 
     def clear_ion_total_current_cache(self) -> None:
         """Remove per-step ion source-current caches."""
@@ -2021,10 +1984,9 @@ class Cell(_CellFacade, HHTypedNeuron):
     def post_integral(self):
         self._raise_if_not_initialized("post_integral()")
         self.V.value = self.sum_delta_inputs(init=self.V.value)
-        point_V = self._cv_to_point(self.V.value)
         for path, node in self.runtime_objects(IonChannel, allowed_hierarchy=(1, 1)).items():
             if not isinstance(node, IndependentIntegration):
-                args = self._runtime_node_phase_args(path, node, point_V)
+                args = self._runtime_node_phase_args(path, node, self.V.value)
                 node.post_integral(*args)
 
     def update(self):
@@ -2159,8 +2121,7 @@ class Cell(_CellFacade, HHTypedNeuron):
             if layout.id not in self._runtime.event_buffers:
                 continue
             payload = self._runtime.get_event_buffer(layout.id)
-            path = (f"layout_{layout.id}",)
-            args = self._runtime_node_phase_args(path, synapse, point_V)
+            args = (layout.gather_points(point_V),)
             synapse.apply_events(payload, *args)
             self._runtime.clear_event_buffer(layout.id)
 
@@ -2280,8 +2241,7 @@ class Cell(_CellFacade, HHTypedNeuron):
         synapse = self._runtime.get_runtime_node(layout.id)
         if point_v is None:
             point_v = self._cv_to_point(self.V.value)
-        path = (f"layout_{layout.id}",)
-        args = self._runtime_node_phase_args(path, synapse, point_v)
+        args = (layout.gather_points(point_v),)
         synapse.apply_events(drive, *args)
 
     def _evaluate_bound_synapse_inputs(self, layout, template):
@@ -2346,7 +2306,9 @@ class Cell(_CellFacade, HHTypedNeuron):
         for path, node in self.runtime_objects(IonChannel, allowed_hierarchy=(1, 1)).items():
             if not isinstance(node, RuntimeSynapse):
                 continue
-            args = self._runtime_node_phase_args(path, node, point_V)
+            layout_id = layout_id_from_key(path)
+            layout = self._runtime.layouts[layout_id]
+            args = (layout.gather_points(point_V),)
             with jax.named_scope(_scope_name("braincell:synapse_update:runtime", path, node)):
                 jax.named_call(
                     ind_exp_euler_step,
@@ -2362,6 +2324,8 @@ class Cell(_CellFacade, HHTypedNeuron):
         """
         self._raise_if_network_owned("reset_state()")
         self._raise_if_not_initialized("reset_state()")
+        if self.trainables.bindings():
+            self.trainables.materialize()
         self.connections.reset_runtime()
         v_value = self._materialize_population_parameter("V_init")
         self._V_init_materialized = v_value
@@ -2371,10 +2335,9 @@ class Cell(_CellFacade, HHTypedNeuron):
         self._current_time_state.value = 0.0 * u.ms
         for layout_id in self._runtime.event_buffers:
             self._runtime.clear_event_buffer(layout_id)
-        point_V = self._cv_to_point(self.V.value)
         with state_grouping(True):
             for path, channel in self.runtime_objects(IonChannel, allowed_hierarchy=(1, 1)).items():
-                args = self._runtime_node_phase_args(path, channel, point_V)
+                args = self._runtime_node_phase_args(path, channel, self.V.value)
                 channel.reset_state(*args, batch_size=batch_size)
 
     # ------------------------------------------------------------------
@@ -2475,6 +2438,8 @@ class Cell(_CellFacade, HHTypedNeuron):
             raise RuntimeError(f"Cell belongs to Network {owner_name!r}; run it through Network {owner_name!r}.")
         if not self._initialized:
             self.init_state()
+        elif self.trainables.bindings():
+            self.trainables.materialize()
         return run_module.run(self, dt=dt, duration=duration)
 
 

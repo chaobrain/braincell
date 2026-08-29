@@ -120,29 +120,27 @@ class TestBridge(unittest.TestCase):
         bridge.attach_runtime_ion_geometry(
             ions={"ca": ion},
             cvs=cvs,
-            point_ids=np.asarray([1, 3], dtype=np.int32),
-            n_point=5,
         )
 
         np.testing.assert_allclose(
             ion.length.to_decimal(u.um),
-            np.asarray([0.0, 10.0, 0.0, 20.0, 0.0]),
+            np.asarray([10.0, 20.0]),
         )
         np.testing.assert_allclose(
             ion.area.to_decimal(u.um**2),
-            np.asarray([0.0, 100.0, 0.0, 200.0, 0.0]),
+            np.asarray([100.0, 200.0]),
         )
         np.testing.assert_allclose(
             ion.diam_mid.to_decimal(u.um),
-            np.asarray([0.0, 6.0, 0.0, 8.0, 0.0]),
+            np.asarray([6.0, 8.0]),
         )
         np.testing.assert_allclose(
             ion.diam_arc_mean.to_decimal(u.um),
-            np.asarray([0.0, 5.5, 0.0, 7.0, 0.0]),
+            np.asarray([5.5, 7.0]),
         )
         np.testing.assert_allclose(
             (u.math.pi * ion.diam_mid).to_decimal(u.um),
-            np.asarray([0.0, np.pi * 6.0, 0.0, np.pi * 8.0, 0.0]),
+            np.asarray([np.pi * 6.0, np.pi * 8.0]),
         )
 
 

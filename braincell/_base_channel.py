@@ -33,6 +33,7 @@ import numpy as np
 import brainunit as u
 
 from braincell._typing import ArrayLike, Size
+from braincell._parameter_schema import RuntimeParameterState
 from ._misc import TreeNode
 from .mech import NoEventInput, ParameterSpec, StateSpec
 from .quad.protocol import DiffEqModule, DiffEqSingleState, IndependentIntegration
@@ -335,6 +336,20 @@ class Channel(IonChannel):
     """
 
     __module__ = 'braincell'
+
+    parameters: Mapping[str, ParameterSpec] = {}
+    states: Mapping[str, StateSpec] = {}
+
+    def __getattribute__(self, name: str):
+        value = super().__getattribute__(name)
+        return value.dense_value(masked=True) if isinstance(value, RuntimeParameterState) else value
+
+    def __setattr__(self, name: str, value) -> None:
+        current = vars(self).get(name)
+        if isinstance(current, RuntimeParameterState) and not isinstance(value, RuntimeParameterState):
+            current.value = value
+            return
+        super().__setattr__(name, value)
 
 
 class Synapse(IonChannel):

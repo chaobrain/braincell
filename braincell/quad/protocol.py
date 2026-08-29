@@ -206,9 +206,10 @@ class DiffEqGroupState(DiffEqState, brainstate.HiddenGroupState):
 
     This is the state class used by every hidden variable owned by a
     :class:`braincell.Cell`. A ``Cell`` is a *spatial* model: its runtime
-    arrays are shaped ``pop_size + (n_cv,)`` for voltage and
-    ``pop_size + (n_point,)`` for mechanism variables, so the trailing
-    axis enumerates compartments (or points) that evolve independently.
+    arrays are shaped ``pop_size + (n_cv,)`` for voltage and painted
+    density-mechanism variables. Sparse placed mechanisms retain their
+    layout-local point axis, so the trailing axis enumerates the spatial
+    rows that evolve independently.
     That is exactly the contract of
     :class:`brainstate.HiddenGroupState` — ``varshape`` is everything but
     the last axis and ``num_state`` is the last axis — which lets an

@@ -160,6 +160,7 @@ target/
 # Jupyter Notebook
 .ipynb_checkpoints
 examples/neuron_compare/channel_no_conc/artifacts/
+examples/experimental/online_learning/artifacts/
 
 # IPython
 profile_default/

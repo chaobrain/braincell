@@ -26,6 +26,7 @@ import braintools
 import brainunit as u
 
 from braincell._base import HHTypedNeuron, Channel
+from braincell._parameter_schema import ParameterSpec
 from braincell._typing import Initializer
 from braincell.mech import register_channel
 
@@ -33,6 +34,9 @@ __all__ = [
     'LeakageChannel',
     'IL',
 ]
+
+_IL_G_MAX_DEFAULT = 0.1 * (u.mS / u.cm**2)
+_IL_E_DEFAULT = -70.0 * u.mV
 
 
 class LeakageChannel(Channel):
@@ -180,12 +184,18 @@ class IL(LeakageChannel):
 
     __module__ = 'braincell.channel'
     root_type = HHTypedNeuron
+    parameters = {
+        "g_max": ParameterSpec(_IL_G_MAX_DEFAULT),
+        "E": ParameterSpec(_IL_E_DEFAULT),
+    }
+    states = {}
+    derived = {}
 
     def __init__(
         self,
         size: Union[int, Sequence[int]],
-        g_max: Initializer = 0.1 * (u.mS / u.cm**2),
-        E: Initializer = -70.0 * u.mV,
+        g_max: Initializer = _IL_G_MAX_DEFAULT,
+        E: Initializer = _IL_E_DEFAULT,
         name: Optional[str] = None,
     ):
         super().__init__(

@@ -23,6 +23,7 @@ import braintools
 import brainunit as u
 
 from braincell._base import Channel, IonInfo
+from braincell._parameter_schema import ParameterSpec, StateSpec
 from braincell._typing import ArrayLike, Initializer, Size
 from braincell.channel._base import Gate, HH, OhmicHH
 from braincell.ion import Potassium
@@ -68,6 +69,12 @@ __all__ = [
     "Kv4p3_MA2020_GrC",
     "Kdr_ZH2019_IO",
 ]
+
+_K_HH1952_G_MAX_DEFAULT = 10.0 * (u.mS / u.cm**2)
+_K_HH1952_TEMP_DEFAULT = u.celsius2kelvin(36.0)
+_K_HH1952_Q10_DEFAULT = 3.0
+_K_HH1952_TEMP_REF_DEFAULT = u.celsius2kelvin(36.0)
+_K_HH1952_V_SH_DEFAULT = -45.0 * u.mV
 
 
 def _sigm(x, y):
@@ -429,15 +436,24 @@ class K_HH1952(OhmicHH):
     __module__ = "braincell.channel"
     root_type = Potassium
     gates = (Gate("p", power=4, q10="q10", temp_ref="temp_ref"),)
+    parameters = {
+        "g_max": ParameterSpec(_K_HH1952_G_MAX_DEFAULT),
+        "temp": ParameterSpec(_K_HH1952_TEMP_DEFAULT),
+        "q10": ParameterSpec(_K_HH1952_Q10_DEFAULT),
+        "temp_ref": ParameterSpec(_K_HH1952_TEMP_REF_DEFAULT),
+        "V_sh": ParameterSpec(_K_HH1952_V_SH_DEFAULT),
+    }
+    states = {"p": StateSpec()}
+    derived = {}
 
     def __init__(
         self,
         size: Size,
-        g_max: Initializer = 10.0 * (u.mS / u.cm**2),
-        temp: ArrayLike = u.celsius2kelvin(36.0),
-        q10: Initializer = 3.0,
-        temp_ref: ArrayLike = u.celsius2kelvin(36.0),
-        V_sh: Initializer = -45.0 * u.mV,
+        g_max: Initializer = _K_HH1952_G_MAX_DEFAULT,
+        temp: ArrayLike = _K_HH1952_TEMP_DEFAULT,
+        q10: Initializer = _K_HH1952_Q10_DEFAULT,
+        temp_ref: ArrayLike = _K_HH1952_TEMP_REF_DEFAULT,
+        V_sh: Initializer = _K_HH1952_V_SH_DEFAULT,
         name: Optional[str] = None,
     ):
         super().__init__(size=size, name=name)

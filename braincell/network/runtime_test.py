@@ -4,7 +4,7 @@ import brainunit as u
 import numpy as np
 
 import braincell
-from braincell.filter import RootLocation, at
+from braincell.filter import AllRegion, RootLocation, at
 from braincell.network import Network, Population
 from braincell.network.lowering import resolve_source_cv
 
@@ -106,6 +106,13 @@ class LoweringTest(unittest.TestCase):
 
 
 class NetworkRuntimeTest(unittest.TestCase):
+    def test_cell_with_trainable_bindings_is_rejected_until_network_aggregation_exists(self) -> None:
+        cell = _pre()
+        cell.paint(AllRegion(), braincell.mech.Channel("IL", name="leak"))
+        cell.channels["leak"].trainable(g_max=braincell.trainable.scale(name="factor"))
+        with self.assertRaisesRegex(NotImplementedError, "Network aggregation"):
+            Network("network").add_population("cell", cell)
+
     def test_cell_has_one_network_execution_owner(self) -> None:
         cell = _pre()
         first = Network("first")

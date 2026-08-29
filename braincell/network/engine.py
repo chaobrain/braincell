@@ -166,6 +166,10 @@ class Network:
         if any(existing.model is model for existing in self.populations.values()):
             raise ValueError("The same model object cannot be registered as more than one Network population.")
         if population.kind == "cell":
+            if model.trainables.bindings():
+                raise NotImplementedError(
+                    "Network aggregation of trainable Cell parameters is deferred; add an unbound Cell."
+                )
             model._bind_network_owner(self)
         elif population.kind == "netstim":
             model._bind_network_seed(self.seed, population.name)

@@ -23,6 +23,7 @@ import braintools
 import brainunit as u
 
 from braincell._base import IonInfo
+from braincell._parameter_schema import ParameterSpec, StateSpec
 from braincell._typing import ArrayLike, Initializer, Size
 from braincell.channel._base import Gate, HH, Markov, OhmicHH
 from braincell.ion import Sodium
@@ -45,6 +46,12 @@ __all__ = [
     "Nav_MA2020_GrC",
     "NaFHF_MA2020_GrC",
 ]
+
+_NA_HH1952_G_MAX_DEFAULT = 120.0 * (u.mS / u.cm**2)
+_NA_HH1952_TEMP_DEFAULT = u.celsius2kelvin(36.0)
+_NA_HH1952_Q10_DEFAULT = 3.0
+_NA_HH1952_TEMP_REF_DEFAULT = u.celsius2kelvin(36.0)
+_NA_HH1952_V_SH_DEFAULT = -45.0 * u.mV
 
 
 def _x_over_one_minus_exp_neg_stable(x):
@@ -363,15 +370,24 @@ class Na_HH1952(OhmicHH):
         Gate("p", power=3, q10="q10", temp_ref="temp_ref"),
         Gate("q", q10="q10", temp_ref="temp_ref"),
     )
+    parameters = {
+        "g_max": ParameterSpec(_NA_HH1952_G_MAX_DEFAULT),
+        "temp": ParameterSpec(_NA_HH1952_TEMP_DEFAULT),
+        "q10": ParameterSpec(_NA_HH1952_Q10_DEFAULT),
+        "temp_ref": ParameterSpec(_NA_HH1952_TEMP_REF_DEFAULT),
+        "V_sh": ParameterSpec(_NA_HH1952_V_SH_DEFAULT),
+    }
+    states = {"p": StateSpec(), "q": StateSpec()}
+    derived = {}
 
     def __init__(
         self,
         size: Size,
-        g_max: Initializer = 120.0 * (u.mS / u.cm**2),
-        temp: ArrayLike = u.celsius2kelvin(36.0),
-        q10: Initializer = 3.0,
-        temp_ref: ArrayLike = u.celsius2kelvin(36.0),
-        V_sh: Initializer = -45.0 * u.mV,
+        g_max: Initializer = _NA_HH1952_G_MAX_DEFAULT,
+        temp: ArrayLike = _NA_HH1952_TEMP_DEFAULT,
+        q10: Initializer = _NA_HH1952_Q10_DEFAULT,
+        temp_ref: ArrayLike = _NA_HH1952_TEMP_REF_DEFAULT,
+        V_sh: Initializer = _NA_HH1952_V_SH_DEFAULT,
         name: Optional[str] = None,
     ):
         super().__init__(size=size, name=name)

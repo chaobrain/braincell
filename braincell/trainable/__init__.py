@@ -13,8 +13,18 @@
 # limitations under the License.
 # ==============================================================================
 
-"""Compatibility imports for the former synapse-specific schema module."""
+"""Trainable physical and latent parameter mappings."""
 
-from braincell._parameter_schema import DerivedSpec, ParameterSpec, StateSpec, positive
+from braincell.trainable._manager import ParameterBinding, TrainableManager
+from braincell.trainable._parameters import ParameterSet
+from braincell.trainable._sources import ParameterSource, parameter, parameterized, scale
 
-__all__ = ["DerivedSpec", "ParameterSpec", "StateSpec", "positive"]
+__all__ = [
+    "ParameterBinding",
+    "ParameterSet",
+    "ParameterSource",
+    "TrainableManager",
+    "parameter",
+    "parameterized",
+    "scale",
+]

@@ -384,7 +384,7 @@ class TestCellDeclaration(unittest.TestCase):
         ion = cell[[3, 1]].get_ion("na")
 
         self.assertIs(ion.root, cell.get_ion("na"))
-        self.assertEqual(ion.length.shape, (2, cell.n_point))
+        self.assertEqual(ion.length.shape, (2, cell.n_cv))
         np.testing.assert_allclose(
             ion.length.to_decimal(u.um),
             cell.get_ion("na").length.to_decimal(u.um)[np.asarray([3, 1])],
@@ -1142,7 +1142,7 @@ class CellHiddenStatesAreGroupStatesTest(unittest.TestCase):
         expectation rather than accepting any of several lengths:
 
         - ``V`` is CV space, so ``n_cv``.
-        - A painted density channel's gates are point space, so ``n_point``.
+        - A painted density channel's gates are CV space, so ``n_cv``.
         - A placed point mechanism (here, one synapse) spans only the sites
           it was placed on, which is its layout's ``n_active``.
         """
@@ -1155,7 +1155,7 @@ class CellHiddenStatesAreGroupStatesTest(unittest.TestCase):
             layout_id = int(first.removeprefix("layout_"))
             (layout,) = [item for item in cell.layouts if item.id == layout_id]
             return int(layout.n_active)
-        return cell.n_point
+        return cell.n_cv
 
     def _assert_all_grouped(self, cell: Cell) -> None:
         hidden = self._hidden_states(cell)
@@ -1172,7 +1172,7 @@ class CellHiddenStatesAreGroupStatesTest(unittest.TestCase):
         # Guard the guard: if every state happened to share one length, the
         # per-state expectation above would be much weaker than it looks.
         self.assertIn(cell.n_cv, seen_spaces)
-        self.assertIn(cell.n_point, seen_spaces)
+        self.assertEqual(seen_spaces, {cell.n_cv})
 
     def test_every_hidden_state_is_grouped(self) -> None:
         for pop_size in (1, 4):

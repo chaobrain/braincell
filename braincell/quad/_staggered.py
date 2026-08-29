@@ -59,19 +59,23 @@ def staggered_step(target: DiffEqModule, *args):
     sub-system can use the integrator best suited to it. Within a single
     time step ``dt``:
 
-    1. The cable voltage is advanced with an implicit Euler step solved on
-       the node-tree by :func:`dhs_voltage_step` (the dendritic hierarchical
-       solver, DHS). This is unconditionally stable for the linear axial
-       block and lets ``dt`` exceed the explicit-stability limit.
-    2. All remaining differential states (typically Hodgkin-Huxley gating
-       variables and ion concentrations) are then advanced by
-       :func:`ind_exp_euler_step`, with the voltage path ``('V',)`` excluded
-       so the new midpoint voltage from step 1 is not overwritten.
+    1. When required by an ion model, its total source current is cached at
+       the old voltage before any state advances.
+    2. The cable voltage is advanced with a locally linearized implicit Euler
+       step solved on the node-tree by :func:`dhs_voltage_step` (the
+       dendritic hierarchical solver, DHS). The axial block is implicit, so
+       it is not subject to the corresponding explicit-stability limit.
+    3. Continuous runtime-synapse states and ion/channel states are advanced
+       at the new voltage. Dependent states use independent exponential Euler
+       updates; submodules marked for independent integration dispatch to
+       their configured solvers. The exact family ordering is selected by
+       ``target.ion_channel_update_order``.
 
-    Splitting the cable problem from the channel problem is the same trick
-    used by NEURON and many other compartmental simulators: it preserves
-    second-order accuracy when the channel kinetics are smooth, while
-    keeping the linear cable solve cheap.
+    This is a first-order Lie/semi-implicit split: the voltage phase reads the
+    old mechanism state, and the mechanism phase reads the new voltage. It is
+    not a symmetric Strang split, so no general second-order accuracy claim is
+    made. The benefit is a cheap, stable implicit solve for the linear axial
+    block while retaining specialized updates for channel kinetics.
 
     Parameters
     ----------
@@ -102,8 +106,8 @@ def staggered_step(target: DiffEqModule, *args):
     See Also
     --------
     dhs_voltage_step : Single implicit-Euler DHS step for the cable voltage.
-    ind_exp_euler_step : Independent exponential-Euler update for the
-        non-voltage states.
+    ind_exp_euler_step : Independent exponential-Euler kernel used for
+        dependent non-voltage states.
 
     Notes
     -----
@@ -144,10 +148,10 @@ def staggered_step(target: DiffEqModule, *args):
         with jax.named_scope("braincell:staggered:synapse_dynamics"):
             target._integrate_runtime_synapse_dynamics(point_V)
         with jax.named_scope("braincell:staggered:ion_channel_update"):
-            target._update_ion_channel_families(point_V)
+            target._update_ion_channel_families(target.V.value)
     elif target.ion_channel_update_order == "integration":
         with jax.named_scope("braincell:staggered:ion_channel_update"):
-            target._update_ion_channels_by_integration(point_V)
+            target._update_ion_channels_by_integration(target.V.value)
     else:
         raise ValueError(
             f"ion_channel_update_order must be 'family' or 'integration', got {target.ion_channel_update_order!r}."
@@ -166,6 +170,8 @@ class DHSStaticSource:
     edges_np: np.ndarray
     level_offsets_np: np.ndarray
     backsub_indices_np: np.ndarray
+    ordinary_backsub_edges_np: np.ndarray
+    ordinary_backsub_level_offsets_np: np.ndarray
 
 
 @dataclass(frozen=True)
@@ -300,15 +306,27 @@ def dhs_voltage_step(target, t, dt, *args):
             static_source.level_offsets_np,
         )
     with jax.named_scope("braincell:dhs:backsubstitution"):
-        solves = jax.named_call(
-            comp_backsub_raw,
-            name="braincell:dhs:backsubstitution_call",
-        )(
-            diags,
-            solves,
-            numeric.lowers,
-            static_source.backsub_indices_np,
-        )
+        if _dhs_backsub_mode() == "ordinary":
+            solves = jax.named_call(
+                comp_backsub_hines_raw,
+                name="braincell:dhs:ordinary_backsubstitution_call",
+            )(
+                diags,
+                solves,
+                numeric.lowers,
+                static_source.ordinary_backsub_edges_np,
+                static_source.ordinary_backsub_level_offsets_np,
+            )
+        else:
+            solves = jax.named_call(
+                comp_backsub_raw,
+                name="braincell:dhs:backsubstitution_call",
+            )(
+                diags,
+                solves,
+                numeric.lowers,
+                static_source.backsub_indices_np,
+            )
     with jax.named_scope("braincell:dhs:restore_voltage"):
         target.V.value = jax.named_call(
             _restore_midpoint_voltage,
@@ -341,8 +359,12 @@ def _build_dhs_static_source(target, *, node_tree, scheduling) -> DHSStaticSourc
     parent_lookup[:n_point] = np.where(scheduling.parent_rows >= 0, scheduling.parent_rows, spurious_row)
     parent_lookup[spurious_row] = spurious_row
     edges, level_size = _build_dhs_edge_order(scheduling)
+    ordinary_backsub_edges, ordinary_backsub_level_size = _build_dhs_ordinary_backsub_order(scheduling)
     backsub_indices = _build_backsub_indices(parent_lookup, n_nodes=n_point)
     level_offsets_np = np.cumsum(np.insert(level_size, 0, 0)).astype(np.int32, copy=False)
+    ordinary_backsub_level_offsets = np.cumsum(np.insert(ordinary_backsub_level_size, 0, 0)).astype(
+        np.int32, copy=False
+    )
     return DHSStaticSource(
         n_point=n_point,
         dynamic_rows_np=dynamic_rows,
@@ -354,6 +376,8 @@ def _build_dhs_static_source(target, *, node_tree, scheduling) -> DHSStaticSourc
         edges_np=edges,
         level_offsets_np=level_offsets_np,
         backsub_indices_np=backsub_indices,
+        ordinary_backsub_edges_np=ordinary_backsub_edges,
+        ordinary_backsub_level_offsets_np=ordinary_backsub_level_offsets,
     )
 
 
@@ -612,6 +636,22 @@ def _build_dhs_edge_order(scheduling) -> tuple[np.ndarray, np.ndarray]:
     return np.empty((0, 2), dtype=np.int32), np.empty((0,), dtype=np.int32)
 
 
+def _build_dhs_ordinary_backsub_order(scheduling) -> tuple[np.ndarray, np.ndarray]:
+    """Build root-to-leaf edge groups for work-efficient Hines backsub."""
+    edge_pairs: list[list[int]] = []
+    level_size: list[int] = []
+    for group in scheduling.groups:
+        level_edges = []
+        for row in group.tolist():
+            parent_row = int(scheduling.parent_rows[row])
+            if parent_row >= 0:
+                level_edges.append([int(row), parent_row])
+        edge_pairs.extend(level_edges)
+        level_size.append(len(level_edges))
+    edges = np.asarray(edge_pairs, dtype=np.int32).reshape((-1, 2)) if edge_pairs else np.empty((0, 2), dtype=np.int32)
+    return edges, np.asarray(level_size, dtype=np.int32)
+
+
 def _check_comp_triang(diags, solves, lowers, uppers, edges):
     """Kernel contract check for the quantity-aware DHS forward pass."""
     if isinstance(edges, u.Quantity):
@@ -758,6 +798,25 @@ def comp_backsub_raw(
         lower_effect = lower_effect * lower_effect[:, k_step_parent]
 
     return solve_effect
+
+
+def comp_backsub_hines_raw(diags, solves, lowers, edges, level_offsets):
+    """Hines root-to-leaf back substitution with linear total work."""
+    _check_comp_triang(diags, solves, lowers, lowers, edges)
+    solution = solves / diags
+    for i in range(level_offsets.shape[0] - 1):
+        children = edges[level_offsets[i] : level_offsets[i + 1], 0]
+        parents = edges[level_offsets[i] : level_offsets[i + 1], 1]
+        child_solution = solution[:, children] - (lowers[children] / diags[:, children]) * solution[:, parents]
+        solution = solution.at[:, children].set(child_solution)
+    return solution
+
+
+def _dhs_backsub_mode() -> str:
+    value = os.environ.get("BRAINCELL_DHS_BACKSUB", "recursive")
+    if value not in {"recursive", "ordinary"}:
+        raise ValueError(f"BRAINCELL_DHS_BACKSUB must be 'recursive' or 'ordinary', got {value!r}.")
+    return value
 
 
 def _linear_and_const_term(target, V_n, *args):

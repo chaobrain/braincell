@@ -160,7 +160,7 @@ def _mask_inactive_current(current, point_mask):
         Current density returned by a channel. May be a
         :class:`brainunit.Quantity`.
     point_mask : array-like of bool
-        Boolean mask whose ``True`` entries mark active runtime points.
+        Legacy-named boolean mask whose ``True`` entries mark active density CV rows.
 
     Returns
     -------
@@ -170,9 +170,9 @@ def _mask_inactive_current(current, point_mask):
 
     Notes
     -----
-    Dense runtime layouts store full point-shaped state and use masks to
-    disable points outside the painted region. This helper keeps inactive
-    points from contributing to ion-current totals.
+    Dense density layouts store full CV-shaped state and use masks to disable
+    CVs outside the painted region. This helper keeps inactive rows from
+    contributing to ion-current totals.
     """
     if isinstance(current, u.Quantity):
         unit = current.unit
@@ -190,7 +190,7 @@ def _safe_inactive_voltage(V, point_mask):
         Membrane potential passed to a channel. May be a
         :class:`brainunit.Quantity`.
     point_mask : array-like of bool
-        Boolean mask whose ``True`` entries mark active runtime points.
+        Legacy-named boolean mask whose ``True`` entries mark active density CV rows.
 
     Returns
     -------

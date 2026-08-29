@@ -470,12 +470,13 @@ class AcyclicTest(unittest.TestCase):
         # edge — not merely an illegal one — surfaces in review.
         expected = {
             "__init__": set(),
-            "bindings": {"ions", "layouts"},
+            "bindings": {"ions", "layouts", "parameters"},
             "bridge": set(),
             "ions": {"layouts"},
-            "layouts": set(),
+            "layouts": {"parameters"},
+            "parameters": set(),
             "scheduling": set(),
-            "state": {"bindings", "bridge", "layouts"},
+            "state": {"bindings", "bridge", "layouts", "parameters"},
             "table": {"state"},
         }
         actual = {name: set(edges) for name, edges in _sibling_graph(_scan_package()).items()}

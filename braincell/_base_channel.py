@@ -34,7 +34,7 @@ from braincell._typing import ArrayLike, Size
 from ._misc import TreeNode
 from .event import NoEventInput
 from .quad.protocol import DiffEqModule, IndependentIntegration
-from ._synapse_schema import DerivedSpec, ParameterSpec, StateSpec
+from ._parameter_schema import DerivedSpec, ParameterSpec, RuntimeParameterState, StateSpec
 
 __all__ = ["IonChannel", "IonInfo", "Channel", "Synapse"]
 
@@ -332,6 +332,21 @@ class Channel(IonChannel):
     """
 
     __module__ = 'braincell'
+
+    parameters: Mapping[str, ParameterSpec] = {}
+    states: Mapping[str, StateSpec] = {}
+    derived: Mapping[str, DerivedSpec] = {}
+
+    def __getattribute__(self, name: str):
+        value = super().__getattribute__(name)
+        return value.dense_value(masked=True) if isinstance(value, RuntimeParameterState) else value
+
+    def __setattr__(self, name: str, value) -> None:
+        current = vars(self).get(name)
+        if isinstance(current, RuntimeParameterState) and not isinstance(value, RuntimeParameterState):
+            current.value = value
+            return
+        super().__setattr__(name, value)
 
 
 class Synapse(IonChannel):

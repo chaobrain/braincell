@@ -17,11 +17,10 @@
 
 Responsibilities:
 
-1. Seed point-space membrane current density with zeros.
-2. Add registered current-input callables via :meth:`sum_current_inputs`.
-3. Add clamp density from the precomputed clamp routing table.
-4. Iterate channel currents.
-5. Bridge point-space sum back to CV-space for the voltage update.
+1. Evaluate sparse inputs, clamps, and placed synapses in point space.
+2. Gather their contribution onto CV midpoint rows.
+3. Evaluate painted density channels directly in CV space.
+4. Return the combined CV-space current for the voltage update.
 """
 
 import os
@@ -51,13 +50,12 @@ def total_membrane_current(
 ):
     """Return ``(..., n_cv)`` membrane current density in ``nA/cm^2``."""
     runtime = host.runtime
-    with jax.named_scope("braincell:membrane_current:cv_to_point"):
+    with jax.named_scope("braincell:membrane_current:cv_to_point_for_point_mechanisms"):
         point_V = bridge.cv_to_point(V_cv, runtime)
-
-    I_point = total_membrane_current_point(host, point_V=point_V, t=t)
-
+    I_point = _point_mechanism_current(host, point_V=point_V, t=t)
     with jax.named_scope("braincell:membrane_current:point_to_cv"):
-        return bridge.point_to_cv(I_point, runtime)
+        I_cv = bridge.point_to_cv(I_point, runtime)
+    return I_cv + _density_current_cv(host, V_cv=V_cv)
 
 
 def total_membrane_current_point(
@@ -67,6 +65,15 @@ def total_membrane_current_point(
     t,
 ):
     """Return ``(..., n_point)`` membrane current density in ``nA/cm^2``."""
+    total_cv = total_membrane_current(
+        host,
+        V_cv=bridge.point_to_cv(point_V, host.runtime),
+        t=t,
+    )
+    return bridge.cv_to_point(total_cv, host.runtime)
+
+
+def _point_mechanism_current(host: "Cell", *, point_V, t):
     runtime = host.runtime
     with jax.named_scope("braincell:membrane_current:current_inputs"):
         zero_density = u.Quantity(
@@ -78,29 +85,41 @@ def total_membrane_current_point(
     with jax.named_scope("braincell:membrane_current:clamp_density"):
         I_point = I_point + _clamp_density(runtime, t=t)
 
-    with jax.named_scope("braincell:membrane_current:channel_currents"):
+    with jax.named_scope("braincell:membrane_current:point_synapse_currents"):
         for key, ch in host.runtime_objects(IonChannel, allowed_hierarchy=(1, 1)).items():
+            if not isinstance(ch, RuntimeSynapse):
+                continue
             with jax.named_scope(_scope_name("braincell:membrane_current:channel", key, ch)):
-                if isinstance(ch, RuntimeSynapse):
-                    layout_id = _layout_id_from_current_key(key)
-                    layout = runtime.layouts[layout_id]
-                    contrib_point = _synapse_contrib_to_point(runtime, layout, ch, point_V)
-                    if contrib_point is None:
-                        continue
-                    I_point = I_point + contrib_point
+                layout_id = _layout_id_from_current_key(key)
+                layout = runtime.layouts[layout_id]
+                contrib_point = _synapse_contrib_to_point(runtime, layout, ch, point_V)
+                if contrib_point is None:
                     continue
-                try:
-                    contrib = jax.named_call(
-                        ch.current,
-                        name=_call_name("braincell:membrane_current:channel_current", key, ch),
-                    )(point_V)
-                except (TypeError, ValueError, RuntimeError, ArithmeticError) as exc:
-                    raise ValueError(f"Error computing current for ion channel {key!r}:\n{ch}\nError: {exc}") from exc
-                if contrib is None:
-                    continue
-                I_point = I_point + _profile_barrier_current(contrib)
+                I_point = I_point + contrib_point
 
     return I_point
+
+
+def _density_current_cv(host: "Cell", *, V_cv):
+    current = None
+    with jax.named_scope("braincell:membrane_current:density_currents"):
+        for key, channel in host.runtime_objects(IonChannel, allowed_hierarchy=(1, 1)).items():
+            if isinstance(channel, RuntimeSynapse):
+                continue
+            try:
+                contribution = jax.named_call(
+                    channel.current,
+                    name=_call_name("braincell:membrane_current:channel_current", key, channel),
+                )(V_cv)
+            except (TypeError, ValueError, RuntimeError, ArithmeticError) as exc:
+                raise ValueError(f"Error computing current for ion channel {key!r}:\n{channel}\nError: {exc}") from exc
+            if contribution is None:
+                continue
+            contribution = _profile_barrier_current(contribution)
+            current = contribution if current is None else current + contribution
+    if current is not None:
+        return current
+    return u.Quantity(jnp.zeros(V_cv.shape, dtype=float), _CURRENT_DENSITY)
 
 
 def _layout_id_from_current_key(key) -> int:

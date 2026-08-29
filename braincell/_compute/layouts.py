@@ -18,9 +18,8 @@
 This module owns the leaf-level lowering vocabulary that
 :class:`braincell._compute.state.CellRuntimeState` builds on:
 
-- :class:`MechanismLayout` — the record describing where one mechanism
-  declaration landed in point space, and whether it is stored densely
-  (every point, with an active mask) or sparsely (active point ids only).
+- :class:`MechanismLayout` — the record describing whether one mechanism
+  declaration is a dense CV-domain density or a sparse point placement.
 - :func:`choose_layout`, :func:`mechanism_kind`, :func:`mechanism_signature` —
   the grouping rules that decide which declarations merge into one layout.
 - :class:`ClampRoutingTable` and :func:`build_clamp_routing_table` — routing of
@@ -65,6 +64,7 @@ from braincell.mech import (
     StateProbe,
     SynapseSpec as SynapsePlacement,
 )
+from braincell._compute.parameters import RuntimeParameterState, density_parameter_names, density_parameter_value
 from braincell.mech._params import _to_hashable
 
 if TYPE_CHECKING:
@@ -89,21 +89,19 @@ Layout = Literal["dense", "sparse"]
 
 @dataclass(frozen=True)
 class MechanismLayout:
-    """Internal layout decision for one mechanism instance lowered onto points.
+    """Internal spatial layout for one lowered mechanism instance.
 
-    Layouts are the runtime bridge format: they describe where one declaration
-    ended up in point space, whether it is stored densely or sparsely, and which
-    state buffers/runtime node belong to it.
+    Density declarations use dense CV-shaped storage and ``cv_mask``. Placed
+    mechanisms use sparse point rows and ``point_index``.
 
     Important fields:
 
     - ``kind`` identifies the lowered mechanism family, such as a named channel
       or one of the point clamp kinds
     - ``target`` separates density-like layouts from point-only layouts
-    - ``layout`` distinguishes dense storage over all points from sparse storage
-      over just the active point ids
-    - ``point_index`` records which points are active for this layout
-    - ``source_cv_ids`` remembers which CV declarations contributed to it
+    - ``layout`` distinguishes dense CV storage from sparse point storage
+    - ``point_index`` records active points for point layouts only
+    - ``source_cv_ids`` records active CVs for density layouts
 
     ``CellRuntimeState`` uses these records to allocate state buffers, answer
     inspection queries, and instantiate runtime nodes with the correct shapes.
@@ -117,6 +115,7 @@ class MechanismLayout:
     point_mask: np.ndarray | None
     n_active: int
     source_cv_ids: tuple[int, ...]
+    cv_mask: np.ndarray | None = None
     placement_index: np.ndarray | None = None
     population_index: np.ndarray | None = None
     synapse_index: np.ndarray | None = None
@@ -128,22 +127,27 @@ class MechanismLayout:
         return self.population_index is not None
 
     @property
-    def point_axis_len(self) -> int:
-        """Length of the axis this layout's buffers index points along.
+    def spatial_axis_len(self) -> int:
+        """Length of the spatial axis stored by this layout.
 
-        A dense layout stores every point of the cell and is indexed by
-        the full mask, while a sparse layout stores only its active points.
-        Buffer allocation and buffer interpretation must agree on which,
-        so both read it from here rather than repeating the decision.
+        Density layouts store every CV and use ``cv_mask`` for partial
+        coverage. Point layouts store only their active point rows.
 
         Returns
         -------
         int
-            ``point_mask`` length when dense, otherwise ``n_active``.
+            ``cv_mask`` length for density layouts, otherwise ``n_active``.
         """
-        if self.layout == "dense" and self.point_mask is not None:
-            return int(np.asarray(self.point_mask).shape[0])
+        if self.target == "density":
+            if self.cv_mask is None:
+                raise ValueError(f"Density layout {self.id!r} is missing cv_mask.")
+            return int(np.asarray(self.cv_mask).shape[0])
         return int(self.n_active)
+
+    @property
+    def point_axis_len(self) -> int:
+        """Compatibility alias for the layout's spatial axis length."""
+        return self.spatial_axis_len
 
 
 #: Clamp layout kinds that contribute point-space current via
@@ -256,7 +260,7 @@ def choose_layout(*, target: Target) -> Layout:
     target : {"point", "density"}
         Mechanism target category. Point mechanisms are stored only at
         explicitly selected points, while density mechanisms use dense
-        point-shaped state with an active-point mask.
+        CV-shaped state with an active-CV mask.
 
     Returns
     -------
@@ -372,7 +376,7 @@ def _mechanism_var_names(mechanism: object) -> tuple[str, ...]:
     declarations do not allocate their own state buffers.
     """
     if isinstance(mechanism, Density):
-        return tuple(mechanism.params.keys())
+        return density_parameter_names(mechanism)
     if isinstance(mechanism, SynapsePlacement):
         return tuple(mechanism.params.keys())
     if isinstance(mechanism, Junction):
@@ -397,9 +401,7 @@ def _mechanism_var_names(mechanism: object) -> tuple[str, ...]:
 
 def _mechanism_var_value(mechanism: object, var_name: str) -> object:
     if isinstance(mechanism, Density):
-        if var_name not in mechanism.params:
-            raise KeyError(f"Mechanism has no parameter {var_name!r}.")
-        return mechanism.params[var_name]
+        return density_parameter_value(mechanism, var_name)
     if isinstance(mechanism, (SynapsePlacement, Junction)):
         if var_name in mechanism.params:
             return mechanism.params[var_name]
@@ -669,10 +671,10 @@ def _allocate_spatial_density_buffer(
     if not callable(value):  # pragma: no cover - guarded by caller
         raise TypeError(f"Spatial density parameter {var_name!r} is not callable.")
 
-    evaluated: list[tuple[int, int, object]] = []
+    _ = node_tree
+    evaluated: list[tuple[int, object]] = []
     for cv_id in layout.source_cv_ids:
         context = cv_contexts[int(cv_id)]
-        point_id = int(node_tree.cv_to_mid_node_id[int(cv_id)])
         try:
             result = value(context)
         except Exception as exc:
@@ -680,17 +682,17 @@ def _allocate_spatial_density_buffer(
                 _spatial_density_error_prefix(mechanism, var_name, context)
                 + f" callable raised {type(exc).__name__}: {exc}"
             ) from exc
-        evaluated.append((int(cv_id), point_id, result))
+        evaluated.append((int(cv_id), result))
 
     if len(evaluated) == 0:  # pragma: no cover - layouts always have a source CV
         raise ValueError(f"Callable density parameter {var_name!r} has no source CVs to evaluate.")
 
-    first_result = evaluated[0][2]
+    first_result = evaluated[0][1]
     quantity_result = isinstance(first_result, u.Quantity)
     unit = first_result.unit if quantity_result else None
     scalar_values: list[tuple[int, float]] = []
 
-    for cv_id, point_id, result in evaluated:
+    for cv_id, result in evaluated:
         context = cv_contexts[cv_id]
         if isinstance(result, u.Quantity) != quantity_result:
             expected = "a Quantity" if quantity_result else "a unitless number"
@@ -713,11 +715,11 @@ def _allocate_spatial_density_buffer(
                 _spatial_density_error_prefix(mechanism, var_name, context)
                 + f" must return a scalar, got shape {decimal.shape!r}."
             )
-        scalar_values.append((point_id, float(decimal.reshape(()))))
+        scalar_values.append((cv_id, float(decimal.reshape(()))))
 
     mantissa = np.zeros(shape, dtype=np.float64)
-    for point_id, scalar in scalar_values:
-        mantissa[..., point_id] = scalar
+    for cv_id, scalar in scalar_values:
+        mantissa[..., cv_id] = scalar
     if quantity_result:
         return u.Quantity(mantissa, unit)
     return mantissa
@@ -878,6 +880,17 @@ def _extract_point_value(layout: MechanismLayout, *, point_id: int, buffer: obje
     if len(matches) == 0:
         raise KeyError(f"Point {point_id!r} is not active in layout {layout.id!r}.")
     return _pick(int(matches[0]))
+
+
+def _extract_dense_value(buffer: object, index: int) -> object:
+    """Return one CV coordinate from a dense density buffer."""
+    if isinstance(buffer, RuntimeParameterState):
+        buffer = buffer.dense_value()
+    if isinstance(buffer, u.Quantity):
+        return u.Quantity(buffer.mantissa[..., int(index)], buffer.unit)
+    if isinstance(buffer, tuple):
+        return buffer[int(index)]
+    return buffer[..., int(index)]
 
 
 def _evaluate_clamp_layout(

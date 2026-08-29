@@ -27,7 +27,7 @@ from braincell.quad.protocol import (
     hidden_state,
     state_grouping,
 )
-from . import quad, mech, channel, synapse, ion, filter, connection
+from . import quad, mech, channel, synapse, ion, filter, connection, trainable
 from ._base import (
     Channel,
     HHTypedNeuron,
@@ -168,5 +168,6 @@ __all__ = [
     "quad",
     "SineClamp",
     "synapse",
+    "trainable",
     "vis",
 ]

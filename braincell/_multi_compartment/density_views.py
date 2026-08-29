@@ -10,6 +10,7 @@ import jax.numpy as jnp
 import numpy as np
 
 from braincell._compute.ions import _runtime_ion_species_key
+from braincell._compute.parameters import density_parameter_schema, density_parameter_value
 from braincell.mech import Density, get_registry
 
 __all__ = ["ChannelView", "IonView"]
@@ -84,6 +85,14 @@ class _DensityView:
             )
         return self.by_name(selector)
 
+    def __getattr__(self, field: str):
+        if field.startswith("_"):
+            raise AttributeError(field)
+        try:
+            return self.get(field)
+        except KeyError:
+            raise AttributeError(field) from None
+
     def by_name(self, name: str):
         _require_name(name, "mechanism name")
         return type(self)(self._cell, None, rows=(row for row in self._rows if row.name == name))
@@ -115,6 +124,18 @@ class _DensityView:
                 self._set_row_value(row, field, value)
         return self
 
+    def trainable(self, **fields):
+        """Register trainable parameter sources for selected density fields."""
+        self._cell.trainables.register(self, fields)
+        return self
+
+    def parameter_info(self):
+        """Return the declared physical parameter schema for this owner."""
+        self._require_one_owner("inspect parameters")
+        if not self._rows:
+            return {}
+        return dict(density_parameter_schema(self._rows[0].mechanism))
+
     def _row_value(self, row: _DensityRow, field: str):
         override_key = (
             row.category,
@@ -126,16 +147,17 @@ class _DensityView:
         if not self._cell._initialized and override_key in self._cell._density_parameter_overrides:
             return self._cell._density_parameter_overrides[override_key]
         if not self._cell._initialized:
-            if field not in row.mechanism.params:
+            schema = density_parameter_schema(row.mechanism)
+            if field not in row.mechanism.params and field not in schema:
                 raise KeyError(f"{row.category.title()} {row.name!r} has no declared parameter {field!r}.")
-            value = row.mechanism.params[field]
+            value = density_parameter_value(row.mechanism, field)
             return value(self._cell.cv_contexts[row.cv_id]) if callable(value) else value
 
         layout = _runtime_layout(self._cell, row)
         runtime = self._cell.runtime
         point_value = None
         if runtime.has_layout_value(layout.id, field):
-            point_value = _take_point(runtime.get_state(layout.id, field), row.point_id, self._cell.n_point)
+            point_value = _take_point(runtime.get_state(layout.id, field), row.cv_id, self._cell.n_cv)
         else:
             node = runtime.get_runtime_node(layout.id)
             if not hasattr(node, field):
@@ -143,13 +165,25 @@ class _DensityView:
             point_value = getattr(node, field)
             if isinstance(point_value, brainstate.State):
                 point_value = point_value.value
-            point_value = _take_point(point_value, row.point_id, self._cell.n_point)
+            point_value = _take_point(point_value, row.cv_id, self._cell.n_cv)
         return _take_population(point_value, row.population_index, self._cell._population_size)
 
     def _set_row_value(self, row: _DensityRow, field: str, value) -> None:
+        if self._cell.trainables.owns(
+            category=row.category,
+            owner=row.name,
+            population_index=row.population_index,
+            cv_id=row.cv_id,
+            field=field,
+        ):
+            raise RuntimeError(f"{row.category.title()} {row.name!r} field {field!r} is owned by a trainable binding.")
         if not self._cell._initialized:
-            if field not in row.mechanism.params:
+            schema = density_parameter_schema(row.mechanism)
+            if field not in row.mechanism.params and field not in schema:
                 raise KeyError(f"{row.category.title()} {row.name!r} has no declared parameter {field!r}.")
+            spec = schema.get(field)
+            if spec is not None:
+                spec.validate(value, field)
             self._cell._density_parameter_overrides[
                 (row.category, row.name, row.population_index, row.cv_id, field)
             ] = value
@@ -165,12 +199,13 @@ class _DensityView:
         updated = _set_population_point(
             buffer,
             population_index=row.population_index,
-            point_id=row.point_id,
+            point_id=row.cv_id,
             population_size=self._cell._population_size,
-            point_size=self._cell.n_point,
+            point_size=self._cell.n_cv,
             value=value,
         )
         runtime.set_state(layout.id, field, updated)
+        self._cell._run_loop_cache.clear()
 
     def _require_one_owner(self, action: str) -> None:
         owners = tuple(dict.fromkeys((row.mechanism_type, row.name) for row in self._rows))

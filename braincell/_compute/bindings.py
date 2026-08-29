@@ -48,7 +48,7 @@ those nodes in step with the state buffers.
   :func:`_initial_merged_channel_param`,
   :func:`_scatter_active_channel_param` — the merge path. Dense channel layouts
   that share a class, instance name, param set, schedule, and ion bindings and
-  whose point masks do not overlap collapse into one full-width runtime node,
+  whose CV masks do not overlap collapse into one full-width runtime node,
   so a channel painted onto many sections costs one node instead of many.
 - :func:`_runtime_param_value`, :func:`_runtime_constructor_params`,
   :func:`_sync_runtime_node_param`, :func:`_merged_channel_param_value`, and
@@ -72,6 +72,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import brainunit as u
+import jax.numpy as jnp
 import numpy as np
 
 from braincell import ion as runtime_ion
@@ -82,6 +83,11 @@ from braincell.mech import (
     Density,
     SynapseSpec as SynapsePlacement,
     get_registry,
+)
+from braincell._compute.parameters import (
+    RuntimeParameterState,
+    density_parameter_names,
+    parameter_state_value,
 )
 from braincell.quad import get_integrator
 from .ions import _build_runtime_ions, _sync_runtime_ion
@@ -157,7 +163,7 @@ def _configure_runtime_subsolvers(
 
 def _build_runtime_nodes(
     *,
-    n_point: int,
+    n_cv: int,
     layouts: tuple[MechanismLayout, ...],
     layout_mechanisms: dict[int, object],
     state_buffers: dict[tuple[int, str], np.ndarray],
@@ -179,7 +185,7 @@ def _build_runtime_nodes(
         ion_class_candidates,
         ion_runtime_nodes,
     ) = _build_runtime_ions(
-        n_point=n_point,
+        n_cv=n_cv,
         layouts=layouts,
         layout_mechanisms=layout_mechanisms,
         state_buffers=state_buffers,
@@ -190,7 +196,7 @@ def _build_runtime_nodes(
     current_owner_keys: dict[int, str | tuple[str, ...] | None] = {}
 
     merged_channel_layout_groups = _install_merged_channel_nodes(
-        n_point=n_point,
+        n_cv=n_cv,
         pop_size=pop_size,
         layouts=layouts,
         layout_mechanisms=layout_mechanisms,
@@ -517,8 +523,9 @@ def _instantiate_runtime_node(
         # Parameter buffers already carry the population axis.
         size = next(iter(params.values())).shape
     else:
-        size = pop_size + (layout.point_axis_len,)
+        size = pop_size + (layout.spatial_axis_len,)
     node = runtime_cls(size=size, **params)
+    _attach_runtime_parameter_states(node, params)
     bound_ions, current_owner_specs = _resolve_channel_runtime_bindings(
         runtime_cls=runtime_cls,
         mechanism=mechanism,
@@ -528,8 +535,8 @@ def _instantiate_runtime_node(
     )
     current_owner_keys = tuple(ion_key for _, ion_key in current_owner_specs)
     if current_owner_specs:
-        if layout.layout == "dense" and layout.point_mask is not None:
-            setattr(node, "_point_mask", layout.point_mask)
+        if layout.layout == "dense" and layout.cv_mask is not None and not np.all(layout.cv_mask):
+            setattr(node, "_point_mask", layout.cv_mask)
     state_owner_assigned = False
     for component_key, current_owner_key in current_owner_specs:
         owner_ion = ions[current_owner_key]
@@ -542,8 +549,8 @@ def _instantiate_runtime_node(
                 bound_ions=tuple(ion for _, ion in bound_ions),
                 owner_ion=owner_ion,
             )
-            if layout.layout == "dense" and layout.point_mask is not None:
-                setattr(wrapper, "_point_mask", layout.point_mask)
+            if layout.layout == "dense" and layout.cv_mask is not None and not np.all(layout.cv_mask):
+                setattr(wrapper, "_point_mask", layout.cv_mask)
             owner_ion.add(**{channel_key: wrapper})
         else:
             owns_state = not state_owner_assigned
@@ -555,8 +562,8 @@ def _instantiate_runtime_node(
                 owns_state=owns_state,
             )
             state_owner_assigned = state_owner_assigned or owns_state
-            if layout.layout == "dense" and layout.point_mask is not None:
-                setattr(wrapper, "_point_mask", layout.point_mask)
+            if layout.layout == "dense" and layout.cv_mask is not None and not np.all(layout.cv_mask):
+                setattr(wrapper, "_point_mask", layout.cv_mask)
             owner_ion.add(**{channel_key: wrapper})
     current_owner_key = (
         None
@@ -570,7 +577,7 @@ def _instantiate_runtime_node(
 
 def _install_merged_channel_nodes(
     *,
-    n_point: int,
+    n_cv: int,
     pop_size: tuple[int, ...],
     layouts: tuple[MechanismLayout, ...],
     layout_mechanisms: dict[int, object],
@@ -620,25 +627,27 @@ def _install_merged_channel_nodes(
             layout_ids = tuple(layout.id for layout, *_ in merge_items)
             layout0, mechanism0, runtime_cls, bound_ions, owner_specs = merge_items[0]
             params = _merged_channel_constructor_params(
-                n_point=n_point,
+                n_cv=n_cv,
                 pop_size=pop_size,
                 items=merge_items,
                 state_buffers=state_buffers,
             )
-            size = pop_size + (n_point,)
+            size = pop_size + (n_cv,)
             node = runtime_cls(size=size, **params)
-            point_mask = np.zeros((n_point,), dtype=bool)
+            _attach_runtime_parameter_states(node, params)
+            cv_mask = np.zeros((n_cv,), dtype=bool)
             for layout, *_ in merge_items:
-                point_mask |= np.asarray(layout.point_mask, dtype=bool)
-            setattr(node, "_point_mask", point_mask)
+                cv_mask |= np.asarray(layout.cv_mask, dtype=bool)
+            if not np.all(cv_mask):
+                setattr(node, "_point_mask", cv_mask)
             executable = _owner_channel_executable(
                 node,
                 bound_ions=bound_ions,
                 owner_specs=owner_specs,
                 owner_ion=ions[owner_specs[0][1]],
             )
-            if executable is not node:
-                setattr(executable, "_point_mask", point_mask)
+            if executable is not node and not np.all(cv_mask):
+                setattr(executable, "_point_mask", cv_mask)
 
             owner_ion = ions[owner_specs[0][1]]
             channel_key = _unique_ion_channel_key(owner_ion, mechanism0.instance_name, layout_id=layout0.id)
@@ -657,7 +666,7 @@ def _is_mergeable_channel_layout(layout: MechanismLayout, mechanism: object) -> 
     return (
         layout.target == "density"
         and layout.layout == "dense"
-        and layout.point_mask is not None
+        and layout.cv_mask is not None
         and isinstance(mechanism, Density)
         and mechanism.category == "channel"
     )
@@ -667,7 +676,7 @@ def _partition_non_overlapping_channel_layouts(items):
     partitions = []
     for item in items:
         layout = item[0]
-        mask = np.asarray(layout.point_mask, dtype=bool)
+        mask = np.asarray(layout.cv_mask, dtype=bool)
         placed = False
         for partition in partitions:
             used = partition["mask"]
@@ -683,28 +692,32 @@ def _partition_non_overlapping_channel_layouts(items):
 
 def _merged_channel_constructor_params(
     *,
-    n_point: int,
+    n_cv: int,
     pop_size: tuple[int, ...],
     items,
     state_buffers: dict[tuple[int, str], np.ndarray],
 ) -> dict[str, object]:
     all_param_names = []
     for _layout, mechanism, *_ in items:
-        for name in mechanism.params.keys():
+        for name in density_parameter_names(mechanism):
             if name not in all_param_names:
                 all_param_names.append(name)
 
     params = {}
-    full_shape = pop_size + (n_point,)
+    full_shape = pop_size + (n_cv,)
     for var_name in all_param_names:
-        value_items = [(layout, mechanism) for layout, mechanism, *_ in items if var_name in mechanism.params]
+        value_items = [
+            (layout, mechanism) for layout, mechanism, *_ in items if var_name in density_parameter_names(mechanism)
+        ]
         if not value_items:
             continue
         first_layout, _first_mechanism = value_items[0]
-        first_value = _runtime_param_value(
-            layout=first_layout,
-            var_name=var_name,
-            state_buffers=state_buffers,
+        first_value = parameter_state_value(
+            _runtime_param_value(
+                layout=first_layout,
+                var_name=var_name,
+                state_buffers=state_buffers,
+            )
         )
         merged = _initial_merged_channel_param(
             var_name=var_name,
@@ -712,50 +725,58 @@ def _merged_channel_constructor_params(
             full_shape=full_shape,
         )
         for layout, _mechanism in value_items:
-            value = _runtime_param_value(
-                layout=layout,
-                var_name=var_name,
-                state_buffers=state_buffers,
+            value = parameter_state_value(
+                _runtime_param_value(
+                    layout=layout,
+                    var_name=var_name,
+                    state_buffers=state_buffers,
+                )
             )
             merged = _scatter_active_channel_param(
                 merged,
                 value,
-                point_mask=np.asarray(layout.point_mask, dtype=bool),
+                cv_mask=np.asarray(layout.cv_mask, dtype=bool),
                 full_shape=full_shape,
             )
-        params[var_name] = merged
+        cv_mask = np.zeros((n_cv,), dtype=bool)
+        for layout, _mechanism in value_items:
+            cv_mask |= np.asarray(layout.cv_mask, dtype=bool)
+        params[var_name] = RuntimeParameterState(
+            merged,
+            axis="row",
+            full_shape=full_shape,
+            point_mask=cv_mask,
+            zero_inactive=var_name in _CONDUCTANCE_PARAM_NAMES,
+        )
     return params
 
 
 def _initial_merged_channel_param(*, var_name: str, value: object, full_shape: tuple[int, ...]) -> object:
     if isinstance(value, u.Quantity):
         if var_name in _CONDUCTANCE_PARAM_NAMES:
-            return u.Quantity(np.zeros(full_shape, dtype=np.float64), value.unit)
-        mantissa = np.asarray(value.mantissa, dtype=np.float64)
+            return u.Quantity(jnp.zeros(full_shape, dtype=jnp.asarray(value.mantissa).dtype), value.unit)
+        mantissa = jnp.asarray(value.mantissa)
         if mantissa.shape == full_shape:
-            return u.Quantity(mantissa.copy(), value.unit)
-        return u.Quantity(np.broadcast_to(mantissa, full_shape).copy(), value.unit)
+            return u.Quantity(mantissa, value.unit)
+        return u.Quantity(jnp.broadcast_to(mantissa, full_shape), value.unit)
 
-    values = np.asarray(value)
+    values = jnp.asarray(value)
     if var_name in _CONDUCTANCE_PARAM_NAMES:
-        return np.zeros(full_shape, dtype=values.dtype)
+        return jnp.zeros(full_shape, dtype=values.dtype)
     if values.shape == full_shape:
-        return values.copy()
-    return np.broadcast_to(values, full_shape).copy()
+        return values
+    return jnp.broadcast_to(values, full_shape)
 
 
-def _scatter_active_channel_param(target, value, *, point_mask: np.ndarray, full_shape: tuple[int, ...]):
+def _scatter_active_channel_param(target, value, *, cv_mask: np.ndarray, full_shape: tuple[int, ...]):
     if isinstance(value, u.Quantity):
         unit = target.unit
-        values = np.asarray(value.to_decimal(unit), dtype=np.float64)
-        target_mantissa = np.asarray(target.mantissa, dtype=np.float64).copy()
-        target_mantissa[..., point_mask] = values[..., point_mask]
+        values = jnp.asarray(value.to_decimal(unit))
+        target_mantissa = jnp.asarray(target.mantissa).at[..., cv_mask].set(values[..., cv_mask])
         return u.Quantity(target_mantissa, unit)
 
-    values = np.asarray(value)
-    target_arr = np.asarray(target).copy()
-    target_arr[..., point_mask] = values[..., point_mask]
-    return target_arr
+    values = jnp.asarray(value)
+    return jnp.asarray(target).at[..., cv_mask].set(values[..., cv_mask])
 
 
 def _owner_channel_executable(node, *, bound_ions, owner_specs, owner_ion):
@@ -1080,8 +1101,10 @@ def _runtime_param_value(
     JAX-traceable way via :func:`jnp.where`. Other buffers pass through.
     """
     buffer = state_buffers[(layout.id, var_name)]
-    if isinstance(buffer, u.Quantity) and layout.point_mask is not None and var_name in _CONDUCTANCE_PARAM_NAMES:
-        mask_bool = np.asarray(layout.point_mask)
+    if isinstance(buffer, RuntimeParameterState):
+        return buffer
+    if isinstance(buffer, u.Quantity) and layout.cv_mask is not None and var_name in _CONDUCTANCE_PARAM_NAMES:
+        mask_bool = np.asarray(layout.cv_mask)
         masked_mantissa = np.where(mask_bool, np.asarray(buffer.mantissa), 0.0)
         return u.Quantity(masked_mantissa, buffer.unit)
     return buffer
@@ -1137,12 +1160,14 @@ def _merged_channel_param_value(
     if not items:
         raise KeyError(f"Unknown merged channel parameter {var_name!r} for layouts {layout_ids!r}.")
 
-    full_shape = runtime.pop_size + (runtime.n_point,)
+    full_shape = runtime.pop_size + (runtime.n_cv,)
     first_layout, _first_mechanism = items[0]
-    first_value = _runtime_param_value(
-        layout=first_layout,
-        var_name=str(var_name),
-        state_buffers=runtime.state_buffers,
+    first_value = parameter_state_value(
+        _runtime_param_value(
+            layout=first_layout,
+            var_name=str(var_name),
+            state_buffers=runtime.state_buffers,
+        )
     )
     merged = _initial_merged_channel_param(
         var_name=str(var_name),
@@ -1150,15 +1175,17 @@ def _merged_channel_param_value(
         full_shape=full_shape,
     )
     for layout, _mechanism in items:
-        value = _runtime_param_value(
-            layout=layout,
-            var_name=str(var_name),
-            state_buffers=runtime.state_buffers,
+        value = parameter_state_value(
+            _runtime_param_value(
+                layout=layout,
+                var_name=str(var_name),
+                state_buffers=runtime.state_buffers,
+            )
         )
         merged = _scatter_active_channel_param(
             merged,
             value,
-            point_mask=np.asarray(layout.point_mask, dtype=bool),
+            cv_mask=np.asarray(layout.cv_mask, dtype=bool),
             full_shape=full_shape,
         )
     return merged
@@ -1181,8 +1208,15 @@ def _runtime_constructor_params(
         return {}
     return {
         var_name: _runtime_param_value(layout=layout, var_name=var_name, state_buffers=state_buffers)
-        for var_name in mechanism.params.keys()
+        for var_name in density_parameter_names(mechanism)
     }
+
+
+def _attach_runtime_parameter_states(node: object, params: dict[str, object]) -> None:
+    """Restore schema parameter states unwrapped by ``braintools.init.param``."""
+    for name, value in params.items():
+        if isinstance(value, RuntimeParameterState):
+            setattr(node, name, value)
 
 
 def _is_root_level_runtime_node(kind: str) -> bool:

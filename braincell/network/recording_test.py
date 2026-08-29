@@ -52,6 +52,46 @@ class RecordingTest(unittest.TestCase):
         self.assertEqual(first.samples["soma_v"].schema.rows[0].population_index, 0)
         self.assertEqual(first.samples["soma_v"].schema.rows[0].branch_id, 0)
 
+    def test_recordings_support_different_fixed_sampling_periods(self) -> None:
+        cell = _cell(1)
+        cell.soma.record("fast", braincell.observe.state("v"), period=0.1 * u.ms)
+        cell.soma.record("slow", braincell.observe.state("v"), period=0.2 * u.ms)
+
+        first = cell.run(dt=0.05 * u.ms, duration=0.4 * u.ms)
+        second = cell.run(dt=0.05 * u.ms, duration=0.4 * u.ms)
+
+        self.assertEqual(first.samples["fast"].values.shape, (4, 1))
+        self.assertEqual(first.samples["slow"].values.shape, (2, 1))
+        np.testing.assert_allclose(first.samples["fast"].time.to_decimal(u.ms), [0.0, 0.1, 0.2, 0.3])
+        np.testing.assert_allclose(second.samples["slow"].time.to_decimal(u.ms), [0.4, 0.6])
+
+    def test_unaligned_eager_recording_warns_and_keeps_variable_length_results(self) -> None:
+        cell = _cell(1)
+        cell.soma.record("v", braincell.observe.state("v"), period=0.1 * u.ms)
+
+        with self.assertWarnsRegex(RuntimeWarning, "unsupported under jax.jit/grad"):
+            first = cell.run(dt=0.05 * u.ms, duration=0.15 * u.ms)
+        with self.assertWarnsRegex(RuntimeWarning, "unsupported under jax.jit/grad"):
+            second = cell.run(dt=0.05 * u.ms, duration=0.15 * u.ms)
+
+        np.testing.assert_allclose(first.samples["v"].time.to_decimal(u.ms), [0.0, 0.1])
+        np.testing.assert_allclose(second.samples["v"].time.to_decimal(u.ms), [0.2])
+        self.assertEqual(first.samples["v"].values.shape, (2, 1))
+        self.assertEqual(second.samples["v"].values.shape, (1, 1))
+
+    def test_nonzero_start_remains_available_in_eager_mode(self) -> None:
+        cell = _cell(1)
+        cell.soma.record(
+            "v",
+            braincell.observe.state("v"),
+            period=0.1 * u.ms,
+            start=0.1 * u.ms,
+        )
+
+        result = cell.run(dt=0.05 * u.ms, duration=0.3 * u.ms)
+
+        np.testing.assert_allclose(result.samples["v"].time.to_decimal(u.ms), [0.1, 0.2])
+
     def test_split_result_concatenates_to_single_run(self) -> None:
         split = _cell(1)
         split.soma.record("v", braincell.observe.state("v"))

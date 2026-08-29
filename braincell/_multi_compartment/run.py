@@ -20,6 +20,7 @@ Propagates ``t`` through :mod:`brainstate.environ` inside the
 per step; the final post-loop time is pinned once after the scan.
 """
 
+import warnings
 from dataclasses import dataclass, field
 from types import MappingProxyType
 from typing import TYPE_CHECKING
@@ -27,10 +28,12 @@ from typing import TYPE_CHECKING
 import brainstate
 import brainunit as u
 import jax
+import jax.numpy as jnp
 import numpy as np
 
 from braincell._misc import (
     concat_values as _concat_values,
+    is_traced_value,
     normalize_loop_outputs as _normalize_loop_outputs,
     scalar_decimal as _scalar_decimal,
     same_time_quantity as _same_time_quantity,
@@ -126,6 +129,7 @@ def run(rcell: "Cell", *, dt, duration) -> RunResult:
 
     compiled_recordings = rcell._compiled_recordings(dt)
     ordered_probe_names = tuple(sorted(probes.probe_names(rcell)))
+    schedule_issues = _differentiable_schedule_issues(compiled_recordings, dt=dt, n_steps=n_steps)
 
     with brainstate.environ.context(dt=dt):
         relative_times = u.math.arange(n_steps) * brainstate.environ.get_dt()
@@ -137,6 +141,17 @@ def run(rcell: "Cell", *, dt, duration) -> RunResult:
             ordered_probe_names=ordered_probe_names,
         )
         times, traces_over_time = cached_run(relative_times)
+
+    traced = is_traced_value(times)
+    if traced and schedule_issues:
+        details = "; ".join(schedule_issues)
+        raise ValueError(
+            "Cell.run(...) recording under jax.jit/grad requires start=0 and duration "
+            "to be an integer multiple of every recording period; "
+            f"incompatible recordings: {details}. Adjust start, period, or duration."
+        )
+    if not traced:
+        _warn_for_variable_length_schedules(compiled_recordings, dt=dt, n_steps=n_steps, duration=duration)
 
     n_output = len(compiled_recordings) + len(ordered_probe_names)
     values_tuple = _normalize_loop_outputs(
@@ -152,9 +167,20 @@ def run(rcell: "Cell", *, dt, duration) -> RunResult:
 
     samples = {}
     for compiled, values in zip(compiled_recordings, recording_values):
-        mask = _recording_time_mask(times, compiled.schema)
-        selected = values[mask]
-        first_time = None if not np.any(mask) else times[int(np.flatnonzero(mask)[0])]
+        period_steps = _recording_steps(compiled.schema.period, dt)
+        if _has_fixed_shape_schedule(compiled, dt=dt, n_steps=n_steps):
+            indices = _fixed_recording_indices(
+                start_time,
+                dt=dt,
+                period_steps=period_steps,
+                n_steps=n_steps,
+            )
+            selected = values[indices]
+            first_time = times[indices[0]]
+        else:
+            mask = _recording_time_mask(times, compiled.schema)
+            selected = values[mask]
+            first_time = None if not np.any(mask) else times[int(np.flatnonzero(mask)[0])]
         samples[compiled.spec.name] = SampleBlock(
             values=selected,
             schema=compiled.schema,
@@ -272,3 +298,51 @@ def _recording_time_mask(times, schema) -> np.ndarray:
     period_ms = _scalar_decimal(schema.period, u.ms)
     relative = (time_ms - start_ms) / period_ms
     return (time_ms >= start_ms - 1e-9) & np.isclose(relative, np.rint(relative), rtol=1e-6, atol=1e-6)
+
+
+def _recording_steps(value, dt) -> int:
+    return int(round(_scalar_decimal(value, u.ms) / _scalar_decimal(dt, u.ms)))
+
+
+def _has_fixed_shape_schedule(compiled, *, dt, n_steps: int) -> bool:
+    start_steps = _recording_steps(compiled.schema.schedule_start, dt)
+    period_steps = _recording_steps(compiled.schema.period, dt)
+    return start_steps == 0 and n_steps % period_steps == 0
+
+
+def _differentiable_schedule_issues(compiled_recordings, *, dt, n_steps: int) -> tuple[str, ...]:
+    issues = []
+    for compiled in compiled_recordings:
+        reasons = []
+        period_steps = _recording_steps(compiled.schema.period, dt)
+        if _recording_steps(compiled.schema.schedule_start, dt) != 0:
+            reasons.append(f"start={compiled.schema.schedule_start!r}")
+        if n_steps % period_steps != 0:
+            reasons.append(f"period={compiled.schema.period!r} does not divide duration")
+        if reasons:
+            issues.append(f"{compiled.spec.name!r} ({', '.join(reasons)})")
+    return tuple(issues)
+
+
+def _warn_for_variable_length_schedules(compiled_recordings, *, dt, n_steps: int, duration) -> None:
+    unaligned = tuple(
+        compiled for compiled in compiled_recordings if n_steps % _recording_steps(compiled.schema.period, dt) != 0
+    )
+    if not unaligned:
+        return
+    names = ", ".join(repr(compiled.spec.name) for compiled in unaligned)
+    warnings.warn(
+        "Cell.run(...) duration "
+        f"{duration!r} is not an integer multiple of the recording period for {names}; "
+        "eager mode returns variable-length sample blocks, but this schedule is unsupported "
+        "under jax.jit/grad. Adjust period or duration for differentiable recording.",
+        RuntimeWarning,
+        stacklevel=3,
+    )
+
+
+def _fixed_recording_indices(start_time, *, dt, period_steps: int, n_steps: int):
+    dt_ms = float(np.asarray(dt.to_decimal(u.ms), dtype=float).reshape(()))
+    start_step = jnp.rint(start_time.to_decimal(u.ms) / dt_ms).astype(jnp.int32)
+    offset = jnp.mod(-start_step, period_steps)
+    return offset + jnp.arange(n_steps // period_steps, dtype=jnp.int32) * period_steps

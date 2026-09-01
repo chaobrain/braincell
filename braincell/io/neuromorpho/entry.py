@@ -64,24 +64,15 @@ def _resolve_client(
     client: NeuroMorphoClient | None,
     cache_dir: str | Path | None,
 ) -> tuple[NeuroMorphoClient, Path]:
-    if cache_dir is None:
-        cache_root = default_cache_dir()
-    else:
-        cache_root = Path(cache_dir).expanduser()
-
+    cache_root = default_cache_dir() if cache_dir is None else Path(cache_dir).expanduser()
     if client is None:
-        client = NeuroMorphoClient(cache_dir=cache_root)
-        return client, cache_root
-
-    if client.cache is None:
-        # Caller passed an existing client without a cache. Honour the
-        # explicit cache_dir argument by attaching one without mutating
-        # state the caller might rely on elsewhere — we just remember
-        # the root locally.
-        return client, cache_root
-    if cache_dir is not None:
-        return client, cache_root
-    return client, client.cache.root
+        return NeuroMorphoClient(cache_dir=cache_root), cache_root
+    # An explicit cache_dir always wins. Otherwise defer to the cache the
+    # caller's client already carries, without mutating state they may rely
+    # on elsewhere — we just remember the root locally.
+    if cache_dir is None and client.cache is not None:
+        return client, client.cache.root
+    return client, cache_root
 
 
 def fetch_neuromorpho(

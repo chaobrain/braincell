@@ -485,7 +485,12 @@ class NeuroMorphoMeasurement:
     raw: Mapping[str, Any] = field(default_factory=lambda: MappingProxyType({}))
 
     @classmethod
-    def from_payload(cls, payload: Mapping[str, Any]) -> "NeuroMorphoMeasurement":
+    def from_payload(
+        cls,
+        payload: Mapping[str, Any],
+        *,
+        neuron_id: int | None = None,
+    ) -> "NeuroMorphoMeasurement":
         """Build a :class:`NeuroMorphoMeasurement` from a JSON payload.
 
         Missing keys map to ``None``. Unrecognized keys are stashed in
@@ -495,10 +500,19 @@ class NeuroMorphoMeasurement:
         ----------
         payload : Mapping[str, Any]
             JSON object returned by ``/api/morphometry/id/<id>``.
+        neuron_id : int or None
+            Fallback used when *payload* omits ``neuron_id``. The morphometry
+            endpoint does not always echo the id back, and every caller
+            already knows which neuron it asked for.
 
         Returns
         -------
         NeuroMorphoMeasurement
+
+        Raises
+        ------
+        ValueError
+            If *payload* has no ``neuron_id`` and none was supplied.
         """
 
         consumed: set[str] = set()
@@ -515,7 +529,7 @@ class NeuroMorphoMeasurement:
             else:
                 kwargs[attr] = _coerce_float(value)
 
-        neuron_id_raw = payload.get("neuron_id")
+        neuron_id_raw = payload.get("neuron_id", neuron_id)
         if neuron_id_raw is None:
             raise ValueError("Measurement payload is missing 'neuron_id'.")
         consumed.add("neuron_id")
@@ -561,7 +575,12 @@ class NeuroMorphoMeasurement:
         Any
         """
 
-        _field_names = frozenset(f.name for f in dataclasses.fields(self))
-        if key in _field_names:
+        if key in _MEASUREMENT_FIELD_NAMES:
             return getattr(self, key)
         return self.extras.get(key, default)
+
+
+#: Promoted attribute names on :class:`NeuroMorphoMeasurement`. Computed once
+#: because the field set is static and :meth:`NeuroMorphoMeasurement.get` is
+#: called per field per neuron when exporting a batch of search results.
+_MEASUREMENT_FIELD_NAMES = frozenset(f.name for f in dataclasses.fields(NeuroMorphoMeasurement))

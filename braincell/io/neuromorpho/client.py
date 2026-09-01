@@ -334,11 +334,8 @@ class NeuroMorphoClient:
         payload, _ = self._get_json(url)
         if not isinstance(payload, Mapping):
             raise NeuroMorphoError(f"Measurement endpoint {url} did not return a JSON object.")
-        if "neuron_id" not in payload:
-            payload = dict(payload)
-            payload["neuron_id"] = neuron_id
         try:
-            return NeuroMorphoMeasurement.from_payload(payload)
+            return NeuroMorphoMeasurement.from_payload(payload, neuron_id=neuron_id)
         except ValueError as exc:
             raise NeuroMorphoError(f"Malformed measurement payload from {url}: {exc}") from exc
 
@@ -380,6 +377,8 @@ class NeuroMorphoClient:
             ``configured=False`` when this client has no cache attached.
         """
 
+        is_record = isinstance(neuron, NeuroMorphoNeuron)
+        neuron_id = neuron.neuron_id if is_record else int(neuron)
         if self._cache is None:
             return NeuroMorphoCacheStatus(
                 configured=False,
@@ -388,32 +387,15 @@ class NeuroMorphoClient:
                 metadata_exists=False,
                 standard_exists=False,
                 original_exists=False,
-                neuron_id=(neuron.neuron_id if isinstance(neuron, NeuroMorphoNeuron) else int(neuron)),
-            )
-        neuron_id = neuron.neuron_id if isinstance(neuron, NeuroMorphoNeuron) else int(neuron)
-        status = self._cache.status(neuron_id)
-        if isinstance(neuron, NeuroMorphoNeuron):
-            # Refine standard/original presence using the actual neuron name.
-            folder = self._cache.layout.neuron_dir(neuron_id)
-            standard = self._cache.layout.standard_swc_path(neuron_id, neuron.neuron_name)
-            standard_exists = standard.exists()
-            original_exists = False
-            if neuron.original_format:
-                suffix = Path(neuron.original_format).suffix
-                if suffix:
-                    original_exists = self._cache.layout.original_file_path(
-                        neuron_id, neuron.neuron_name, suffix
-                    ).exists()
-            return NeuroMorphoCacheStatus(
-                configured=True,
-                folder=folder,
-                exists=folder.exists(),
-                metadata_exists=self._cache.layout.metadata_path(neuron_id).exists(),
-                standard_exists=standard_exists,
-                original_exists=original_exists,
                 neuron_id=neuron_id,
             )
-        return status
+        # A live record carries the authoritative name and format, so hand
+        # them to the cache instead of making it re-read metadata.json.
+        return self._cache.status(
+            neuron_id,
+            neuron_name=neuron.neuron_name if is_record else None,
+            original_format=neuron.original_format if is_record else None,
+        )
 
     def describe(
         self,

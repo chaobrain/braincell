@@ -15,10 +15,10 @@
 
 """Typed query builder for NeuroMorpho.Org Solr search."""
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields
 from typing import Iterable
 
-__all__ = ["NeuroMorphoQuery"]
+__all__ = ["QUERY_FIELDS", "NeuroMorphoQuery"]
 
 
 def _normalize(value: str | Iterable[str] | None) -> tuple[str, ...]:
@@ -108,16 +108,7 @@ class NeuroMorphoQuery:
         """
 
         clauses: list[str] = []
-        for attr in (
-            "species",
-            "brain_region",
-            "cell_type",
-            "archive",
-            "original_format",
-            "stain",
-            "age_classification",
-            "gender",
-        ):
+        for attr in QUERY_FIELDS:
             clause = _build_or_clause(attr, _normalize(getattr(self, attr)))
             if clause is not None:
                 clauses.append(clause)
@@ -151,3 +142,12 @@ class NeuroMorphoQuery:
         """
 
         return {"q": self.to_q(), "fq": self.to_fq()}
+
+
+QUERY_FIELDS: tuple[str, ...] = tuple(f.name for f in fields(NeuroMorphoQuery) if not f.name.startswith("raw_"))
+"""Names of the typed filter fields on :class:`NeuroMorphoQuery`.
+
+Derived from the dataclass so :meth:`NeuroMorphoQuery.to_q` and the CLI flags
+cannot fall out of step with the field list — adding a filter field is a
+single edit.
+"""

@@ -1107,6 +1107,13 @@ _BRANCH_TYPE_TO_CLASS: dict[str, type[Branch]] = {
     "custom": CustomBranch,
 }
 
+BRANCH_TYPES: frozenset[str] = frozenset(_BRANCH_TYPE_TO_CLASS)
+"""Every branch type string :func:`branch_class_for_type` accepts.
+
+Exposed so callers (readers, tests) can check membership without hand-copying
+the registry keys and silently falling out of step when a type is added.
+"""
+
 
 def branch_class_for_type(branch_type: str) -> type[Branch]:
     """Return the :class:`Branch` subclass for the given type string.

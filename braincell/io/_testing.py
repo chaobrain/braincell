@@ -28,6 +28,8 @@ reconstructions.
 
 from pathlib import Path
 
+from braincell.morph.branch import BRANCH_TYPES
+
 __all__ = ["ALLOWED_TYPES", "FIXTURE_DIR", "VALID_SWC_FIXTURES"]
 
 FIXTURE_DIR = Path(__file__).resolve().parents[2] / "data" / "morphology"
@@ -42,12 +44,10 @@ so a checkout with missing data fails loudly instead of quietly passing.
 VALID_SWC_FIXTURES = ("grc.swc", "io.swc")
 """SWC fixtures small enough to read and render in every parametrized sweep."""
 
-ALLOWED_TYPES = {
-    "soma",
-    "axon",
-    "dendrite",
-    "basal_dendrite",
-    "apical_dendrite",
-    "custom",
-}
-"""Every branch type a reader may produce from the shipped fixtures."""
+ALLOWED_TYPES = BRANCH_TYPES
+"""Every branch type a reader may produce from the shipped fixtures.
+
+Taken from the :mod:`braincell.morph.branch` registry rather than copied, so a
+newly registered branch type cannot leave the assertion silently checking a
+stale set.
+"""

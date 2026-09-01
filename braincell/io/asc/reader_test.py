@@ -19,10 +19,10 @@ import textwrap
 import unittest
 from pathlib import Path
 
+import brainunit as u
 import numpy as np
 
 from braincell import Morphology
-from braincell._misc import u
 from braincell.io._testing import ALLOWED_TYPES, FIXTURE_DIR
 from braincell.io.asc import AscReader, AscSpineRecord
 
@@ -30,6 +30,26 @@ try:
     from neuron import h as _NEURON_H
 except Exception:  # pragma: no cover
     _NEURON_H = None
+
+
+# Soma contours shared by the fixtures below. The indentation is baked in so
+# that ``textwrap.dedent`` in ``_write_asc`` still strips a consistent prefix
+# once these are interpolated into a test body.
+_SOMA = """("Cell Body"
+              (CellBody)
+              (0 0 0 0)
+              (4 0 0 0)
+              (0 4 0 0)
+              (-4 0 0 0)
+            )"""
+
+_SOMA_Z5 = """("Cell Body"
+              (CellBody)
+              (0 0 5 0)
+              (5 0 5 0)
+              (0 5 5 0)
+              (-5 0 5 0)
+            )"""
 
 
 class _AscTestMixin:
@@ -48,15 +68,9 @@ class AscReaderTest(_AscTestMixin, unittest.TestCase):
 
     def test_reader_imports_simple_neurolucida_tree_and_metadata(self) -> None:
         path = self._write_asc(
-            '''
+            f'''
             ; example asc
-            ("Cell Body"
-              (CellBody)
-              (0 0 0 0)
-              (4 0 0 0)
-              (0 4 0 0)
-              (-4 0 0 0)
-            )
+            {_SOMA}
 
             ( (Dendrite)
               (0 0 0 1)
@@ -99,14 +113,8 @@ class AscReaderTest(_AscTestMixin, unittest.TestCase):
 
     def test_morpho_from_asc_supports_return_report(self) -> None:
         path = self._write_asc(
-            '''
-            ("Cell Body"
-              (CellBody)
-              (0 0 0 0)
-              (4 0 0 0)
-              (0 4 0 0)
-              (-4 0 0 0)
-            )
+            f'''
+            {_SOMA}
             ( (Axon)
               (0 0 0 1)
               (10 0 0 1)
@@ -123,21 +131,9 @@ class AscReaderTest(_AscTestMixin, unittest.TestCase):
 
     def test_reader_converts_valid_cellbody_stack_to_layer_centroids(self) -> None:
         path = self._write_asc(
-            '''
-            ("Cell Body"
-              (CellBody)
-              (0 0 0 0)
-              (4 0 0 0)
-              (0 4 0 0)
-              (-4 0 0 0)
-            )
-            ("Cell Body"
-              (CellBody)
-              (0 0 5 0)
-              (5 0 5 0)
-              (0 5 5 0)
-              (-5 0 5 0)
-            )
+            f'''
+            {_SOMA}
+            {_SOMA_Z5}
             ( (Dendrite)
               (0 0 0 1)
               (0 5 0 1)
@@ -153,14 +149,8 @@ class AscReaderTest(_AscTestMixin, unittest.TestCase):
 
     def test_reader_rejects_cellbody_stack_with_duplicate_z_layers(self) -> None:
         path = self._write_asc(
-            '''
-            ("Cell Body"
-              (CellBody)
-              (0 0 0 0)
-              (4 0 0 0)
-              (0 4 0 0)
-              (-4 0 0 0)
-            )
+            f'''
+            {_SOMA}
             ("Cell Body"
               (CellBody)
               (0 0 0 0)
@@ -180,21 +170,9 @@ class AscReaderTest(_AscTestMixin, unittest.TestCase):
 
     def test_reader_rejects_cellbody_stack_with_non_monotonic_z_order(self) -> None:
         path = self._write_asc(
-            '''
-            ("Cell Body"
-              (CellBody)
-              (0 0 0 0)
-              (4 0 0 0)
-              (0 4 0 0)
-              (-4 0 0 0)
-            )
-            ("Cell Body"
-              (CellBody)
-              (0 0 5 0)
-              (5 0 5 0)
-              (0 5 5 0)
-              (-5 0 5 0)
-            )
+            f'''
+            {_SOMA}
+            {_SOMA_Z5}
             ("Cell Body"
               (CellBody)
               (0 0 2 0)
@@ -214,14 +192,8 @@ class AscReaderTest(_AscTestMixin, unittest.TestCase):
 
     def test_reader_keeps_single_point_terminal_branch(self) -> None:
         path = self._write_asc(
-            '''
-            ("Cell Body"
-              (CellBody)
-              (0 0 0 0)
-              (4 0 0 0)
-              (0 4 0 0)
-              (-4 0 0 0)
-            )
+            f'''
+            {_SOMA}
             ( (Dendrite)
               (0 0 0 1)
               (0 5 0 1)
@@ -243,14 +215,8 @@ class AscReaderTest(_AscTestMixin, unittest.TestCase):
 
     def test_reader_keeps_child_diameter_when_child_starts_at_parent_endpoint(self) -> None:
         path = self._write_asc(
-            '''
-            ("Cell Body"
-              (CellBody)
-              (0 0 0 0)
-              (4 0 0 0)
-              (0 4 0 0)
-              (-4 0 0 0)
-            )
+            f'''
+            {_SOMA}
             ( (Dendrite)
               (0 0 0 2)
               (0 5 0 2)
@@ -271,14 +237,8 @@ class AscReaderTest(_AscTestMixin, unittest.TestCase):
 
     def test_reader_copies_parent_xyz_with_child_diameter_when_child_starts_away_from_parent(self) -> None:
         path = self._write_asc(
-            '''
-            ("Cell Body"
-              (CellBody)
-              (0 0 0 0)
-              (4 0 0 0)
-              (0 4 0 0)
-              (-4 0 0 0)
-            )
+            f'''
+            {_SOMA}
             ( (Dendrite)
               (0 0 0 2)
               (0 5 0 2)
@@ -301,14 +261,8 @@ class AscReaderTest(_AscTestMixin, unittest.TestCase):
 
     def test_reader_preserves_duplicate_points_inside_branch(self) -> None:
         path = self._write_asc(
-            '''
-            ("Cell Body"
-              (CellBody)
-              (0 0 0 0)
-              (4 0 0 0)
-              (0 4 0 0)
-              (-4 0 0 0)
-            )
+            f'''
+            {_SOMA}
             ( (Dendrite)
               (0 0 0 1)
               (0 5 0 1)
@@ -327,14 +281,8 @@ class AscReaderTest(_AscTestMixin, unittest.TestCase):
 
     def test_reader_supports_angle_spine_block_and_keeps_parent_branch_geometry(self) -> None:
         path = self._write_asc(
-            '''
-            ("Cell Body"
-              (CellBody)
-              (0 0 0 0)
-              (4 0 0 0)
-              (0 4 0 0)
-              (-4 0 0 0)
-            )
+            f'''
+            {_SOMA}
             ( (Dendrite)
               (0 0 0 1)
               <
@@ -371,14 +319,8 @@ class AscReaderTest(_AscTestMixin, unittest.TestCase):
 
     def test_reader_supports_multiple_angle_spine_blocks_after_one_point(self) -> None:
         path = self._write_asc(
-            '''
-            ("Cell Body"
-              (CellBody)
-              (0 0 0 0)
-              (4 0 0 0)
-              (0 4 0 0)
-              (-4 0 0 0)
-            )
+            f'''
+            {_SOMA}
             ( (Dendrite)
               (0 0 0 1)
               <
@@ -405,14 +347,8 @@ class AscReaderTest(_AscTestMixin, unittest.TestCase):
 
     def test_reader_treats_generic_property_tuples_as_annotations_not_children(self) -> None:
         path = self._write_asc(
-            '''
-            ("Cell Body"
-              (CellBody)
-              (0 0 0 0)
-              (4 0 0 0)
-              (0 4 0 0)
-              (-4 0 0 0)
-            )
+            f'''
+            {_SOMA}
             ( (Color Red)
               (zSmear 1.0 0.0)
               (Dendrite)
@@ -433,14 +369,8 @@ class AscReaderTest(_AscTestMixin, unittest.TestCase):
 
     def test_reader_warns_for_spine_before_first_point(self) -> None:
         path = self._write_asc(
-            '''
-            ("Cell Body"
-              (CellBody)
-              (0 0 0 0)
-              (4 0 0 0)
-              (0 4 0 0)
-              (-4 0 0 0)
-            )
+            f'''
+            {_SOMA}
             ( (Dendrite)
               <
                 (Class 4 "none")
@@ -458,14 +388,8 @@ class AscReaderTest(_AscTestMixin, unittest.TestCase):
 
     def test_reader_warns_for_spine_with_missing_tip(self) -> None:
         path = self._write_asc(
-            '''
-            ("Cell Body"
-              (CellBody)
-              (0 0 0 0)
-              (4 0 0 0)
-              (0 4 0 0)
-              (-4 0 0 0)
-            )
+            f'''
+            {_SOMA}
             ( (Dendrite)
               (0 0 0 1)
               <
@@ -485,14 +409,8 @@ class AscReaderTest(_AscTestMixin, unittest.TestCase):
 
     def test_reader_warns_for_spine_with_multiple_tip_points(self) -> None:
         path = self._write_asc(
-            '''
-            ("Cell Body"
-              (CellBody)
-              (0 0 0 0)
-              (4 0 0 0)
-              (0 4 0 0)
-              (-4 0 0 0)
-            )
+            f'''
+            {_SOMA}
             ( (Dendrite)
               (0 0 0 1)
               <
@@ -609,14 +527,8 @@ class AscNeuronParityTest(_AscTestMixin, unittest.TestCase):
 
     def test_simple_cellbody_matches_neuron_pt3d(self) -> None:
         path = self._write_asc(
-            '''
-            ("Cell Body"
-              (CellBody)
-              (0 0 0 0)
-              (4 0 0 0)
-              (0 4 0 0)
-              (-4 0 0 0)
-            )
+            f'''
+            {_SOMA}
             ( (Dendrite)
               (0 0 0 1)
               (0 5 0 1)
@@ -634,21 +546,9 @@ class AscNeuronParityTest(_AscTestMixin, unittest.TestCase):
 
     def test_multicontour_cellbody_matches_neuron_pt3d(self) -> None:
         path = self._write_asc(
-            '''
-            ("Cell Body"
-              (CellBody)
-              (0 0 0 0)
-              (4 0 0 0)
-              (0 4 0 0)
-              (-4 0 0 0)
-            )
-            ("Cell Body"
-              (CellBody)
-              (0 0 5 0)
-              (5 0 5 0)
-              (0 5 5 0)
-              (-5 0 5 0)
-            )
+            f'''
+            {_SOMA}
+            {_SOMA_Z5}
             ( (Dendrite)
               (0 0 0 1)
               (0 5 0 1)
@@ -686,14 +586,8 @@ class AscNeuronParityTest(_AscTestMixin, unittest.TestCase):
 
     def test_angle_spine_demo_matches_neuron_parent_section_geometry(self) -> None:
         path = self._write_asc(
-            '''
-            ("Cell Body"
-              (CellBody)
-              (0 0 0 0)
-              (4 0 0 0)
-              (0 4 0 0)
-              (-4 0 0 0)
-            )
+            f'''
+            {_SOMA}
             ( (Dendrite)
               (0 0 0 1)
               <

@@ -56,10 +56,10 @@ from .models import (
     NeuroMorphoDetail,
     NeuroMorphoDownloadRecord,
     NeuroMorphoMeasurement,
+    NeuroMorphoNeuron,
     NeuroMorphoSearchPage,
 )
-from .query import NeuroMorphoQuery
-from .urls import build_measurement_url
+from .query import QUERY_FIELDS, NeuroMorphoQuery
 
 __all__ = ["build_arg_parser", "main"]
 
@@ -83,24 +83,35 @@ def _print_json(data: Any) -> None:
     print(json.dumps(data, indent=2, sort_keys=True, default=_json_default))
 
 
+def _emit(args: argparse.Namespace, payload: Any, text: str) -> None:
+    """Print *payload* as JSON under ``--json``, otherwise print *text*."""
+
+    if args.as_json:
+        _print_json(payload)
+    else:
+        print(text)
+
+
 # ---------------------------------------------------------------------------
 # Pretty printers
 # ---------------------------------------------------------------------------
 
 
-def _format_search(page: NeuroMorphoSearchPage) -> str:
-    lines: list[str] = []
-    lines.append(
-        f"page={page.page} size={page.size} total_pages={page.total_pages} total_elements={page.total_elements}"
+def _format_neuron_line(index: int, neuron: NeuroMorphoNeuron) -> str:
+    brain_region = ",".join(neuron.brain_region) if neuron.brain_region else "-"
+    return (
+        f"[{index}] id={neuron.neuron_id} name={neuron.neuron_name} "
+        f"archive={neuron.archive or '-'} brain_region={brain_region} "
+        f"original_format={neuron.original_format or '-'}"
     )
-    lines.append(f"query_url={page.query_url}")
-    for index, item in enumerate(page.items, start=1):
-        brain_region = ",".join(item.brain_region) if item.brain_region else "-"
-        lines.append(
-            f"[{index}] id={item.neuron_id} name={item.neuron_name} "
-            f"archive={item.archive or '-'} brain_region={brain_region} "
-            f"original_format={item.original_format or '-'}"
-        )
+
+
+def _format_search(page: NeuroMorphoSearchPage) -> str:
+    lines: list[str] = [
+        f"page={page.page} size={page.size} total_pages={page.total_pages} total_elements={page.total_elements}",
+        f"query_url={page.query_url}",
+    ]
+    lines.extend(_format_neuron_line(index, item) for index, item in enumerate(page.items, start=1))
     return "\n".join(lines)
 
 
@@ -166,40 +177,17 @@ def _format_cache_list(cache: NeuroMorphoCache) -> str:
 
 
 def _add_query_flags(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument("--species", action="append", default=None)
-    parser.add_argument("--brain-region", dest="brain_region", action="append", default=None)
-    parser.add_argument("--cell-type", dest="cell_type", action="append", default=None)
-    parser.add_argument("--archive", action="append", default=None)
-    parser.add_argument("--original-format", dest="original_format", action="append", default=None)
-    parser.add_argument("--stain", action="append", default=None)
-    parser.add_argument("--age-classification", dest="age_classification", action="append", default=None)
-    parser.add_argument("--gender", action="append", default=None)
+    for name in QUERY_FIELDS:
+        parser.add_argument(f"--{name.replace('_', '-')}", dest=name, action="append", default=None)
     parser.add_argument("--q", default=None, help="Raw Solr q string (legacy).")
     parser.add_argument("--fq", action="append", default=None, help="Raw Solr fq string(s).")
 
 
 def _query_from_args(args: argparse.Namespace) -> tuple[str | NeuroMorphoQuery, list[str] | None]:
-    typed_fields = (
-        args.species,
-        args.brain_region,
-        args.cell_type,
-        args.archive,
-        args.original_format,
-        args.stain,
-        args.age_classification,
-        args.gender,
-    )
-    typed_set = any(field is not None for field in typed_fields)
-    if typed_set:
+    typed = {name: getattr(args, name) for name in QUERY_FIELDS}
+    if any(value is not None for value in typed.values()):
         query = NeuroMorphoQuery(
-            species=tuple(args.species) if args.species else None,
-            brain_region=tuple(args.brain_region) if args.brain_region else None,
-            cell_type=tuple(args.cell_type) if args.cell_type else None,
-            archive=tuple(args.archive) if args.archive else None,
-            original_format=tuple(args.original_format) if args.original_format else None,
-            stain=tuple(args.stain) if args.stain else None,
-            age_classification=tuple(args.age_classification) if args.age_classification else None,
-            gender=tuple(args.gender) if args.gender else None,
+            **{name: tuple(value) if value else None for name, value in typed.items()},
             raw_q=(args.q,) if args.q else (),
             raw_fq=tuple(args.fq) if args.fq else (),
         )
@@ -284,15 +272,15 @@ def build_arg_parser() -> argparse.ArgumentParser:
 
 
 def _resolved_cache_dir(args: argparse.Namespace) -> Path:
-    if args.cache_dir is not None:
-        return args.cache_dir
-    return default_cache_dir()
+    return args.cache_dir if args.cache_dir is not None else default_cache_dir()
 
 
 def _make_client(args: argparse.Namespace) -> NeuroMorphoClient:
+    # Resolve the default here too, so ``show``/``urls`` report cache status
+    # against the same directory ``fetch``/``cache`` read and write.
     return NeuroMorphoClient(
         timeout=args.timeout,
-        cache_dir=args.cache_dir,
+        cache_dir=_resolved_cache_dir(args),
         retries=args.retries,
     )
 
@@ -311,33 +299,19 @@ def _cmd_search(args: argparse.Namespace) -> int:
                 sort=args.sort,
             )
         )
-        if args.as_json:
-            _print_json([asdict(n) for n in neurons])
-        else:
-            print(f"matched={len(neurons)}")
-            for index, neuron in enumerate(neurons, start=1):
-                brain_region = ",".join(neuron.brain_region) or "-"
-                print(
-                    f"[{index}] id={neuron.neuron_id} name={neuron.neuron_name} "
-                    f"archive={neuron.archive or '-'} brain_region={brain_region} "
-                    f"original_format={neuron.original_format or '-'}"
-                )
+        lines = [f"matched={len(neurons)}"]
+        lines.extend(_format_neuron_line(index, neuron) for index, neuron in enumerate(neurons, start=1))
+        _emit(args, [asdict(n) for n in neurons], "\n".join(lines))
         return 0
     page = client.search(query, fq=fq, size=args.size, page=args.page, sort=args.sort)
-    if args.as_json:
-        _print_json(asdict(page))
-    else:
-        print(_format_search(page))
+    _emit(args, asdict(page), _format_search(page))
     return 0
 
 
 def _cmd_show(args: argparse.Namespace) -> int:
     client = _make_client(args)
     detail = client.describe(args.neuron_id, include_measurement=not args.no_measurement)
-    if args.as_json:
-        _print_json(detail)
-    else:
-        print(_format_detail(detail))
+    _emit(args, detail, _format_detail(detail))
     return 0
 
 
@@ -349,27 +323,21 @@ def _cmd_download(args: argparse.Namespace) -> int:
         mode=args.mode,
         overwrite=args.overwrite,
     )
-    if args.as_json:
-        _print_json(record)
-    else:
-        print(_format_download(record))
+    _emit(args, record, _format_download(record))
     return 0
 
 
 def _cmd_fetch(args: argparse.Namespace) -> int:
     cache_root = _resolved_cache_dir(args)
-    client = NeuroMorphoClient(
-        timeout=args.timeout,
-        cache_dir=cache_root,
-        retries=args.retries,
-    )
+    client = _make_client(args)
     record = client.download(
         args.neuron_id,
         output_dir=cache_root,
         mode=args.mode,
         overwrite=args.overwrite,
     )
-    summary: dict[str, Any] = {"record": record}
+    loaded: dict[str, int] | None = None
+    text = _format_download(record)
     if args.load:
         morph = load_neuromorpho(
             args.neuron_id,
@@ -377,22 +345,12 @@ def _cmd_fetch(args: argparse.Namespace) -> int:
             client=client,
             overwrite=False,
         )
-        summary["loaded"] = {
+        loaded = {
             "n_branches": len(morph.branches),
             "n_points": int(sum(b.n_points for b in morph.branches)),
         }
-    if args.as_json:
-        _print_json(
-            {
-                "record": record,
-                "loaded": summary.get("loaded"),
-            }
-        )
-    else:
-        print(_format_download(record))
-        if "loaded" in summary:
-            loaded = summary["loaded"]
-            print(f"loaded OK: {loaded['n_branches']} branches, {loaded['n_points']} points")
+        text += f"\nloaded OK: {loaded['n_branches']} branches, {loaded['n_points']} points"
+    _emit(args, {"record": record, "loaded": loaded}, text)
     return 0
 
 
@@ -400,58 +358,71 @@ def _cmd_urls(args: argparse.Namespace) -> int:
     client = _make_client(args)
     neuron = client.get_neuron(args.neuron_id)
     urls = client.get_urls(neuron)
-    if args.as_json:
-        _print_json(
-            {
-                "neuron_id": neuron.neuron_id,
-                "urls": asdict(urls),
-                "measurement": build_measurement_url(neuron),
-            }
-        )
-    else:
-        print(f"id={neuron.neuron_id}")
-        print(f"standard_swc_url={urls.standard_swc}")
-        print(f"original_file_url={urls.original_file or '-'}")
-        print(f"measurement_url={urls.measurement}")
-        print(f"thumbnail_url={urls.thumbnail or '-'}")
+    _emit(
+        args,
+        {"neuron_id": neuron.neuron_id, "urls": asdict(urls), "measurement": urls.measurement},
+        "\n".join(
+            (
+                f"id={neuron.neuron_id}",
+                f"standard_swc_url={urls.standard_swc}",
+                f"original_file_url={urls.original_file or '-'}",
+                f"measurement_url={urls.measurement}",
+                f"thumbnail_url={urls.thumbnail or '-'}",
+            )
+        ),
+    )
     return 0
 
 
+def _cache_list(args: argparse.Namespace, cache: NeuroMorphoCache) -> int:
+    _emit(
+        args,
+        {"root": str(cache.root), "neuron_ids": list(cache.list_neurons())},
+        _format_cache_list(cache),
+    )
+    return 0
+
+
+def _cache_info(args: argparse.Namespace, cache: NeuroMorphoCache) -> int:
+    status = cache.status(args.neuron_id)
+    _emit(args, status, _format_cache_status(status))
+    return 0
+
+
+def _cache_rm(args: argparse.Namespace, cache: NeuroMorphoCache) -> int:
+    removed = cache.remove(args.neuron_id)
+    _emit(
+        args,
+        {"neuron_id": args.neuron_id, "removed": removed},
+        f"neuron_id={args.neuron_id} removed={removed}",
+    )
+    return 0
+
+
+def _cache_clear(args: argparse.Namespace, cache: NeuroMorphoCache) -> int:
+    if not args.yes:
+        print("refusing to clear without --yes")
+        return 2
+    count = cache.clear()
+    _emit(
+        args,
+        {"root": str(cache.root), "removed": count},
+        f"removed {count} neuron folder(s) from {cache.root}",
+    )
+    return 0
+
+
+_CACHE_DISPATCH = {
+    "list": _cache_list,
+    "info": _cache_info,
+    "rm": _cache_rm,
+    "clear": _cache_clear,
+}
+
+
 def _cmd_cache(args: argparse.Namespace) -> int:
-    cache_root = _resolved_cache_dir(args)
-    cache = NeuroMorphoCache(cache_root)
-    if args.cache_command == "list":
-        if args.as_json:
-            _print_json({"root": str(cache.root), "neuron_ids": list(cache.list_neurons())})
-        else:
-            print(_format_cache_list(cache))
-        return 0
-    if args.cache_command == "info":
-        status = cache.status(args.neuron_id)
-        if args.as_json:
-            _print_json(status)
-        else:
-            print(_format_cache_status(status))
-        return 0
-    if args.cache_command == "rm":
-        removed = cache.remove(args.neuron_id)
-        if args.as_json:
-            _print_json({"neuron_id": args.neuron_id, "removed": removed})
-        else:
-            print(f"neuron_id={args.neuron_id} removed={removed}")
-        return 0
-    if args.cache_command == "clear":
-        if not args.yes:
-            print("refusing to clear without --yes")
-            return 2
-        count = cache.clear()
-        if args.as_json:
-            _print_json({"root": str(cache.root), "removed": count})
-        else:
-            print(f"removed {count} neuron folder(s) from {cache.root}")
-        return 0
-    print(f"unknown cache command: {args.cache_command}")
-    return 2
+    cache = NeuroMorphoCache(_resolved_cache_dir(args))
+    return _CACHE_DISPATCH[args.cache_command](args, cache)
 
 
 # ---------------------------------------------------------------------------

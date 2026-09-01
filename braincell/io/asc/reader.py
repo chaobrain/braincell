@@ -15,18 +15,20 @@
 
 
 from dataclasses import dataclass
-from os import PathLike
 from pathlib import Path
 
+import brainunit as u
 import numpy as np
 
 from .types import AscMetadata, AscReport, AscSpineRecord
+from braincell._typing import FilePath
 from braincell.io.swc.types import MIN_SYNTHETIC_LENGTH_UM
-from braincell._misc import u
 from braincell.morph.morphology import Branch, Morphology, MorphoBranch
 from braincell.morph.branch import Soma, branch_class_for_type
 
 _PIPE = object()
+#: Single characters that tokenize to one punctuation token each.
+_PUNCTUATION_KINDS = {"(": "lparen", ")": "rparen", "<": "leftsp", ">": "rightsp", "|": "pipe"}
 _NEURITE_TYPE_MAP = {
     "axon": "axon",
     "dendrite": "dendrite",
@@ -85,7 +87,7 @@ class _AscSpineBlock:
 
 @dataclass(frozen=True)
 class AscReader:
-    def read(self, path: str | PathLike[str], return_report: bool = False):
+    def read(self, path: FilePath, return_report: bool = False):
         source_path = Path(path)
         report = AscReport()
         try:
@@ -132,24 +134,9 @@ class AscReader:
                     metadata.comments.append(comment)
                 index = end
                 continue
-            if char == "(":
-                tokens.append(_AscToken("lparen", char, line_number))
-                index += 1
-                continue
-            if char == ")":
-                tokens.append(_AscToken("rparen", char, line_number))
-                index += 1
-                continue
-            if char == "<":
-                tokens.append(_AscToken("leftsp", char, line_number))
-                index += 1
-                continue
-            if char == ">":
-                tokens.append(_AscToken("rightsp", char, line_number))
-                index += 1
-                continue
-            if char == "|":
-                tokens.append(_AscToken("pipe", char, line_number))
+            punctuation_kind = _PUNCTUATION_KINDS.get(char)
+            if punctuation_kind is not None:
+                tokens.append(_AscToken(punctuation_kind, char, line_number))
                 index += 1
                 continue
             if char == '"':
@@ -188,34 +175,37 @@ class AscReader:
             expressions.append(expr)
         return tuple(expressions), index
 
+    def _parse_group(
+        self,
+        tokens: tuple[_AscToken, ...],
+        index: int,
+        *,
+        closer: str,
+        opener: str,
+    ) -> tuple[tuple[object, ...], int]:
+        """Collect expressions until *closer*, returning them and the next index."""
+
+        opener_token = tokens[index]
+        items: list[object] = []
+        index += 1
+        while index < len(tokens) and tokens[index].kind != closer:
+            if tokens[index].kind == "pipe":
+                items.append(_PIPE)
+                index += 1
+                continue
+            item, index = self._parse_expression(tokens, index)
+            items.append(item)
+        if index >= len(tokens):
+            raise ValueError(f"Unclosed {opener!r} at line {opener_token.line_number}.")
+        return tuple(items), index + 1
+
     def _parse_expression(self, tokens: tuple[_AscToken, ...], index: int) -> tuple[object, int]:
         token = tokens[index]
         if token.kind == "lparen":
-            items: list[object] = []
-            index += 1
-            while index < len(tokens) and tokens[index].kind != "rparen":
-                if tokens[index].kind == "pipe":
-                    items.append(_PIPE)
-                    index += 1
-                    continue
-                item, index = self._parse_expression(tokens, index)
-                items.append(item)
-            if index >= len(tokens):
-                raise ValueError(f"Unclosed '(' at line {token.line_number}.")
-            return tuple(items), index + 1
+            return self._parse_group(tokens, index, closer="rparen", opener="(")
         if token.kind == "leftsp":
-            items: list[object] = []
-            index += 1
-            while index < len(tokens) and tokens[index].kind != "rightsp":
-                if tokens[index].kind == "pipe":
-                    items.append(_PIPE)
-                    index += 1
-                    continue
-                item, index = self._parse_expression(tokens, index)
-                items.append(item)
-            if index >= len(tokens):
-                raise ValueError(f"Unclosed '<' at line {token.line_number}.")
-            return _AscSpineBlock(items=tuple(items), line_number=token.line_number), index + 1
+            items, index = self._parse_group(tokens, index, closer="rightsp", opener="<")
+            return _AscSpineBlock(items=items, line_number=token.line_number), index
         if token.kind in {"string", "atom"}:
             return token.value, index + 1
         if token.kind == "pipe":
@@ -413,17 +403,10 @@ class AscReader:
         children = tuple(
             child for child in (self._normalize_segment(child) for child in segment.children) if child is not None
         )
-        points = segment.points
-
-        if len(points) == 0:
-            if len(children) == 1:
-                return children[0]
-            return _AscSegment(points=(), children=children, branch_type=segment.branch_type)
-
-        if len(points) == 1:
-            return _AscSegment(points=points, children=children, branch_type=segment.branch_type)
-
-        return _AscSegment(points=points, children=children, branch_type=segment.branch_type)
+        # A pointless node with exactly one child is pure nesting: splice it out.
+        if not segment.points and len(children) == 1:
+            return children[0]
+        return _AscSegment(points=segment.points, children=children, branch_type=segment.branch_type)
 
     def _build_morpho(
         self,
@@ -502,7 +485,6 @@ class AscReader:
             segment,
             parent_branch_type=parent_branch_type,
             attach_point=attach_point,
-            attach_radius=attach_radius,
             parent_x=parent_x,
         )
         tail_point = segment.points[-1].xyz
@@ -557,7 +539,6 @@ class AscReader:
         *,
         parent_branch_type: str,
         attach_point: np.ndarray,
-        attach_radius: float,
         parent_x: float,
     ) -> Branch | None:
         points = [point.xyz for point in segment.points]
@@ -585,39 +566,6 @@ class AscReader:
             points=np.asarray(points, dtype=float) * u.um,
             radii=np.asarray(radii, dtype=float) * u.um,
         )
-
-    def _dedupe_shared_points(
-        self,
-        points: list[np.ndarray],
-        radii: list[float],
-    ) -> tuple[list[np.ndarray], list[float]]:
-        if not points:
-            return [], []
-        dedup_points = [np.asarray(points[0], dtype=float)]
-        dedup_radii = [float(radii[0])]
-        for point, radius in zip(points[1:], radii[1:]):
-            xyz = np.asarray(point, dtype=float)
-            if np.allclose(dedup_points[-1], xyz) and np.isclose(dedup_radii[-1], float(radius)):
-                continue
-            dedup_points.append(xyz)
-            dedup_radii.append(float(radius))
-        return dedup_points, dedup_radii
-
-    def _merge_point_sequences(
-        self,
-        prefix: tuple[_AscPoint, ...],
-        suffix: tuple[_AscPoint, ...],
-    ) -> tuple[_AscPoint, ...]:
-        if not prefix:
-            return suffix
-        if not suffix:
-            return prefix
-        if self._same_point(prefix[-1], suffix[0]):
-            return prefix + suffix[1:]
-        return prefix + suffix
-
-    def _same_point(self, left: _AscPoint, right: _AscPoint) -> bool:
-        return np.allclose(left.xyz, right.xyz) and np.isclose(left.diameter, right.diameter)
 
     def _first_point(self, segments: tuple[_AscSegment, ...]) -> _AscPoint | None:
         for segment in segments:
@@ -759,12 +707,6 @@ class AscReader:
                     f"ASC import failed for {path}: CellBody contour {contour_index} does not have constant z."
                 )
         return z0
-
-    def _contour_center_radius(self, points: tuple[_AscPoint, ...]) -> tuple[np.ndarray, float]:
-        xyz = np.array([point.xyz for point in points], dtype=float)
-        center = xyz.mean(axis=0)
-        radius = max(np.linalg.norm(point.xyz - center) + float(point.radius) for point in points)
-        return center, max(float(radius), MIN_SYNTHETIC_LENGTH_UM)
 
     def _contourcenter(
         self,

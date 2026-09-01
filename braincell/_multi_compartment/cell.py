@@ -89,12 +89,9 @@ from braincell._discretization.base import (
     Node,
     NodeTree,
     build_discretization,
+    locate_cv_on_branch,
 )
-from braincell._discretization.node_build import (
-    _EPS_PARAM,
-    _locate_branch_cv_by_x,
-    locate_node_on_branch,
-)
+from braincell._discretization.node_build import locate_node_on_branch
 from braincell.filter import LocsetBatch, LocsetExpr, LocsetMask, RegionExpr, RegionMask, at
 from braincell.filter.helper import normalize_region_intervals
 from braincell.event import EventOutputCollection, _CellSpikeSource
@@ -111,7 +108,7 @@ from .synapses import SynapseView, _SynapseStore
 from .selection import BranchSelector, CVSelector, _CellScope
 from .density_views import ChannelView, IonView
 
-__all__ = ["Cell", "CellView", "CellSelection", "MultiCompartment"]
+__all__ = ["Cell", "CellView", "MultiCompartment"]
 
 
 @dataclass(frozen=True)
@@ -179,17 +176,13 @@ class _CellFacade:
         raise NotImplementedError
 
     @property
-    def _view_population_indices(self) -> tuple[int, ...]:
-        raise NotImplementedError
-
-    @property
     def root(self) -> "Cell":
         """Return the root Cell that owns this view."""
         return self._view_root
 
     @property
     def _scope(self) -> _CellScope:
-        return _CellScope.root(self._view_root)
+        return self._view_root._root_scope()
 
     def _with_scope(self, scope: _CellScope) -> "CellView":
         return CellView(self._view_root, scope.population_indices, scope=scope)
@@ -372,7 +365,7 @@ class CellView(_CellFacade):
         self._cell = cell
         self._population_indices = tuple(population_indices)
         self._selection_scope = (
-            _CellScope.root(cell).select_population(tuple(population_indices)) if scope is None else scope
+            cell._root_scope().select_population(tuple(population_indices)) if scope is None else scope
         )
 
     @property
@@ -393,10 +386,6 @@ class CellView(_CellFacade):
     @property
     def _view_root(self) -> "Cell":
         return self._cell
-
-    @property
-    def _view_population_indices(self) -> tuple[int, ...]:
-        return self._population_indices
 
     @property
     def _scope(self) -> _CellScope:
@@ -750,10 +739,6 @@ class CellView(_CellFacade):
         )
 
 
-# Compatibility name retained for code written against the first selection API.
-CellSelection = CellView
-
-
 class Cell(_CellFacade, HHTypedNeuron):
     """Multi-compartment cell with explicit declaration / initialization phases.
 
@@ -850,6 +835,7 @@ class Cell(_CellFacade, HHTypedNeuron):
 
         self._discretization_cache: Discretization | None = None
         self._discretization_cache_key: object = None
+        self._root_scope_cache: _CellScope | None = None
 
         self._current_time_state = brainstate.ShortTermState(0.0 * u.ms)
         self._node_scheduling_cache: dict[tuple[str, int], object] = {}
@@ -1237,6 +1223,7 @@ class Cell(_CellFacade, HHTypedNeuron):
         self._synapse_store_cache = None
         self._runtime_cvs_cache = None
         self._runtime_nodes_cache = None
+        self._root_scope_cache = None
         self._run_loop_cache.clear()
 
     def _discretization_key(self) -> tuple[object, ...]:
@@ -1262,6 +1249,18 @@ class Cell(_CellFacade, HHTypedNeuron):
         self._discretization_cache = discretization
         self._discretization_cache_key = key
         return discretization
+
+    def _root_scope(self) -> _CellScope:
+        """Return the cached unrestricted population/CV scope for this Cell.
+
+        The root scope materializes one entry per ``(population, CV)`` pair, so
+        rebuilding it per attribute access costs ``pop_size * n_cv`` tuples on
+        every ``cell.soma``, ``cell.channels``, or ``cell.record`` lookup. It
+        depends only on the discretization and is invalidated alongside it.
+        """
+        if self._root_scope_cache is None:
+            self._root_scope_cache = _CellScope.root(self)
+        return self._root_scope_cache
 
     @property
     def n_cv(self) -> int:
@@ -1548,10 +1547,6 @@ class Cell(_CellFacade, HHTypedNeuron):
     @property
     def _view_root(self) -> "Cell":
         return self
-
-    @property
-    def _view_population_indices(self) -> tuple[int, ...]:
-        return tuple(range(self._population_size))
 
     @property
     def varshape(self) -> tuple[int, ...]:
@@ -2409,7 +2404,7 @@ class Cell(_CellFacade, HHTypedNeuron):
             ids = cv_ids_by_branch.get(int(branch_id))
             if not ids:
                 continue
-            cv_id = _locate_branch_cv_by_x(ids, self.cvs, x=float(x), epsilon=_EPS_PARAM)
+            cv_id = locate_cv_on_branch(ids, self.cvs, x=float(x))
             cv_ids.add(int(cv_id))
         return cv_ids
 
@@ -3427,17 +3422,14 @@ class Cell(_CellFacade, HHTypedNeuron):
         if dt is None:
             raise ValueError("Connection event delivery requires brainstate.environ['dt'].")
 
-        output = jnp.zeros_like(
-            jnp.asarray(template.to_decimal(template.unit))
-            if isinstance(template, u.Quantity)
-            else jnp.asarray(template)
-        )
+        output = _zeros_like_event_template(template)
+        synapse_store = self._get_synapse_store()
         for connection in self.connections._call_views(scheduled=scheduled_only):
             synapse_type = str(connection.synapse_type[0])
-            if self._get_synapse_store().layout_id(synapse_type) != int(layout.id):
+            if synapse_store.layout_id(synapse_type) != int(layout.id):
                 continue
             row_index = np.arange(len(connection), dtype=np.int32)
-            local_index = self._get_synapse_store().runtime_rows(connection.synapse_id).astype(np.int32)
+            local_index = synapse_store.runtime_rows(connection.synapse_id).astype(np.int32)
             event_count = connection.source.event_count(
                 connection.source_index[row_index],
                 t=t,
@@ -3445,21 +3437,11 @@ class Cell(_CellFacade, HHTypedNeuron):
                 dt=dt,
             )
             connection_weight = connection.weight
-            if connection_weight is None:
-                if isinstance(template, u.Quantity):
-                    raise TypeError("Trigger-only Connection cannot target a physical event buffer.")
-                weight = 1.0
-            elif isinstance(template, u.Quantity):
-                if not isinstance(connection_weight, u.Quantity):
-                    raise TypeError("Connection weight is dimensionless but its target event buffer is not.")
-                weight = connection_weight[row_index].to_decimal(template.unit)
-            else:
-                if isinstance(connection_weight, u.Quantity):
-                    raise TypeError("Connection weight has units but its target event buffer is dimensionless.")
-                weight = connection_weight[row_index]
-            contribution = event_count * u.math.asarray(weight)
+            if connection_weight is not None:
+                connection_weight = connection_weight[row_index]
+            contribution = event_count * u.math.asarray(_connection_event_weight(template, connection_weight))
             output = output.at[local_index].add(contribution)
-        return u.Quantity(output, template.unit) if isinstance(template, u.Quantity) else output
+        return _rewrap_event_template(template, output)
 
     def _apply_direct_live_connection_events(self) -> None:
         """Route live direct sources and run target handlers at this boundary."""
@@ -3475,32 +3457,18 @@ class Cell(_CellFacade, HHTypedNeuron):
         for layout, _ in layouts:
             if layout.id not in self._runtime.event_buffers:
                 continue
-            template = self._runtime.get_event_buffer(layout.id)
-            raw = template.to_decimal(template.unit) if isinstance(template, u.Quantity) else template
-            drives[layout.id] = jnp.zeros_like(jnp.asarray(raw))
+            drives[layout.id] = _zeros_like_event_template(self._runtime.get_event_buffer(layout.id))
 
+        synapse_store = self._get_synapse_store()
         for connection in live_connections:
             counts = connection.event_count(t=t, dt=dt)
             synapse_type = str(connection.synapse_type[0])
-            layout_id = self._get_synapse_store().layout_id(synapse_type)
+            layout_id = synapse_store.layout_id(synapse_type)
             if layout_id not in drives:
                 continue
             template = self._runtime.get_event_buffer(layout_id)
-            connection_weight = connection.weight
-            if connection_weight is None:
-                if isinstance(template, u.Quantity):
-                    raise TypeError("Trigger-only Connection cannot target a physical event buffer.")
-                weight = 1.0
-            elif isinstance(template, u.Quantity):
-                if not isinstance(connection_weight, u.Quantity):
-                    raise TypeError("Connection weight is dimensionless but its target event buffer is not.")
-                weight = connection_weight.to_decimal(template.unit)
-            else:
-                if isinstance(connection_weight, u.Quantity):
-                    raise TypeError("Connection weight has units but its target event buffer is dimensionless.")
-                weight = connection_weight
-            contribution = counts * u.math.asarray(weight)
-            local_indices = self._get_synapse_store().runtime_rows(connection.synapse_id).astype(np.int32)
+            contribution = counts * u.math.asarray(_connection_event_weight(template, connection.weight))
+            local_indices = synapse_store.runtime_rows(connection.synapse_id).astype(np.int32)
             drives[layout_id] = drives[layout_id].at[local_indices].add(contribution)
 
         point_v = self._cv_to_point(self.V.value)
@@ -3508,14 +3476,12 @@ class Cell(_CellFacade, HHTypedNeuron):
             if layout.id not in drives:
                 continue
             template = self._runtime.get_event_buffer(layout.id)
-            drive = (
-                u.Quantity(drives[layout.id], template.unit) if isinstance(template, u.Quantity) else drives[layout.id]
-            )
+            drive = _rewrap_event_template(template, drives[layout.id])
             self._apply_synapse_layout_event_drive(layout.id, drive, point_v=point_v)
 
     def _apply_synapse_layout_event_drive(self, layout_id: int, drive, *, point_v=None) -> None:
         """Apply one already-aggregated boundary payload to a runtime layout."""
-        layout = next(layout for layout in self._runtime.layouts if int(layout.id) == int(layout_id))
+        layout = self._runtime.layouts[int(layout_id)]
         synapse = self._runtime.get_runtime_node(layout.id)
         if point_v is None:
             point_v = self._cv_to_point(self.V.value)
@@ -3938,31 +3904,6 @@ def _select_local_values(values, *, ids: tuple[int, ...]):
     return values[list(int(idx) for idx in ids)]
 
 
-def _normalize_population_selection(selection, *, size: int) -> tuple[int, ...]:
-    """Normalize one integer, slice, or one-dimensional integer selection."""
-    if isinstance(selection, slice):
-        indices = tuple(range(size))[selection]
-    elif isinstance(selection, (int, np.integer)) and not isinstance(selection, bool):
-        index = int(selection)
-        if index < 0:
-            index += size
-        indices = (index,)
-    else:
-        array = np.asarray(selection)
-        if array.ndim != 1 or not np.issubdtype(array.dtype, np.integer):
-            raise TypeError("Cell selection must be an integer, slice, or one-dimensional integer sequence.")
-        normalized = []
-        for raw in array.tolist():
-            index = int(raw)
-            if index < 0:
-                index += size
-            normalized.append(index)
-        indices = tuple(dict.fromkeys(normalized))
-    if any(index < 0 or index >= size for index in indices):
-        raise IndexError(f"Cell population selection is outside [0, {size!r}): {indices!r}.")
-    return tuple(indices)
-
-
 def _select_population_value(value, *, population_indices: tuple[int, ...], population_size: int):
     """Gather the population axis of an array-like value when it has one."""
     shape = tuple(getattr(value, "shape", ()))
@@ -4091,11 +4032,52 @@ def _layout_id_from_runtime_path(path) -> int:
 
 def _gather_layout_point_values(values, layout):
     """Gather point values for a broadcast or packed point layout."""
-    if layout.point_index is None:
-        raise ValueError(f"Point layout {layout.id!r} is missing point_index.")
-    if layout.population_index is None:
-        return values[..., layout.point_index]
-    return values[..., layout.population_index, layout.point_index]
+    return layout.gather_points(values)
+
+
+def _zeros_like_event_template(template):
+    """Build a zeroed mantissa array shaped like one event buffer template."""
+    raw = template.to_decimal(template.unit) if isinstance(template, u.Quantity) else template
+    return jnp.zeros_like(jnp.asarray(raw))
+
+
+def _rewrap_event_template(template, mantissa):
+    """Restore the event buffer template's unit onto an accumulated mantissa."""
+    return u.Quantity(mantissa, template.unit) if isinstance(template, u.Quantity) else mantissa
+
+
+def _connection_event_weight(template, connection_weight):
+    """Coerce one Connection weight into its target event buffer's unit system.
+
+    Parameters
+    ----------
+    template : array_like or brainunit.Quantity
+        Event buffer the weighted arrivals are accumulated into.
+    connection_weight : array_like, brainunit.Quantity, or None
+        Declared Connection weight, already narrowed to the contributing rows.
+        ``None`` marks a trigger-only Connection.
+
+    Returns
+    -------
+    array_like
+        Weight expressed in ``template``'s unit, ready to multiply event counts.
+
+    Raises
+    ------
+    TypeError
+        If the weight and the target event buffer disagree on dimensionality.
+    """
+    if connection_weight is None:
+        if isinstance(template, u.Quantity):
+            raise TypeError("Trigger-only Connection cannot target a physical event buffer.")
+        return 1.0
+    if isinstance(template, u.Quantity):
+        if not isinstance(connection_weight, u.Quantity):
+            raise TypeError("Connection weight is dimensionless but its target event buffer is not.")
+        return connection_weight.to_decimal(template.unit)
+    if isinstance(connection_weight, u.Quantity):
+        raise TypeError("Connection weight has units but its target event buffer is dimensionless.")
+    return connection_weight
 
 
 def _scope_name(prefix: str, path, node) -> str:

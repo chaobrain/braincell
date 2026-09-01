@@ -14,7 +14,6 @@ selected rows on demand.
   `CellView`. Negative indices are normalized and repeated fancy indices are
   deduplicated in first-occurrence order.
 - Views can be indexed again. The second selection is relative to the first.
-- `CellSelection` remains an alias for source compatibility.
 - Shared declarations and topology (`morpho`, CV policy/tree, node tree,
   solver configuration, and paint rules) are exposed without copying.
 - `point_placements`, `place_rules`, `synapses`, and contact groups are

@@ -39,7 +39,7 @@ from braincell._compute import bridge
 if TYPE_CHECKING:
     from .cell import Cell
 
-__all__ = ["sample_probe", "sample_probes"]
+__all__ = ["probe_names", "sample_probe", "sample_probes"]
 
 
 def sample_probe(rcell: "Cell", name: str) -> object:
@@ -58,24 +58,46 @@ def sample_probe(rcell: "Cell", name: str) -> object:
     return _sample_probe_layout(rcell, runtime, layout=layout, declaration=declaration)
 
 
-def sample_probes(rcell: "Cell") -> dict[str, object]:
-    """Return a ``{probe_name: sample}`` dict for every placed probe."""
-    runtime = rcell.runtime
-    sampled: dict[str, object] = {}
+def iter_probe_layouts(runtime: CellRuntimeState):
+    """Yield ``(probe_name, layout, declaration)`` for every placed probe.
+
+    Names are checked for uniqueness here so that callers needing only the
+    names do not have to evaluate the probes to discover a collision.
+
+    Raises
+    ------
+    ValueError
+        If two placed probes resolve to the same name.
+    """
+    seen: set[str] = set()
     for layout in runtime.layouts:
         declaration = runtime.get_layout_mechanism(layout.id)
         if not isinstance(declaration, (StateProbe, MechanismProbe, CurrentProbe)):
             continue
         probe_name = _probe_name(declaration)
-        if probe_name in sampled:
+        if probe_name in seen:
             raise ValueError(f"Multiple probes share the same name {probe_name!r}; probe names must be unique.")
-        sampled[probe_name] = _sample_probe_layout(
-            rcell,
-            runtime,
-            layout=layout,
-            declaration=declaration,
-        )
-    return sampled
+        seen.add(probe_name)
+        yield probe_name, layout, declaration
+
+
+def probe_names(rcell: "Cell") -> tuple[str, ...]:
+    """Return every placed probe's name without evaluating the probes.
+
+    ``run()`` needs the output ordering before it builds the compiled loop;
+    sampling the probes just to read their keys runs real gathers outside
+    ``jit`` on every call.
+    """
+    return tuple(name for name, _, _ in iter_probe_layouts(rcell.runtime))
+
+
+def sample_probes(rcell: "Cell") -> dict[str, object]:
+    """Return a ``{probe_name: sample}`` dict for every placed probe."""
+    runtime = rcell.runtime
+    return {
+        probe_name: _sample_probe_layout(rcell, runtime, layout=layout, declaration=declaration)
+        for probe_name, layout, declaration in iter_probe_layouts(runtime)
+    }
 
 
 def _sample_probe_layout(
@@ -203,10 +225,7 @@ def _sample_current_probe_point(
             layout_id = synapse_view._store.layout_id(synapse_type)
             layout = runtime.layouts[layout_id]
             node = runtime.get_runtime_node(layout_id)
-            if layout.population_index is None:
-                local_voltage = point_V[..., layout.point_index]
-            else:
-                local_voltage = point_V[..., layout.population_index, layout.point_index]
+            local_voltage = layout.gather_points(point_V)
             current = _probe_current_value(
                 node,
                 local_voltage,

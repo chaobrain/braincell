@@ -32,7 +32,6 @@ from braincell import (
     Branch,
     CVPerBranch,
     Cell,
-    CellSelection,
     CellView,
     Channel,
     CurrentClamp,
@@ -220,8 +219,6 @@ class TestCellDeclaration(unittest.TestCase):
         nested = view[1:]
 
         self.assertIsInstance(view, CellView)
-        self.assertIsInstance(view, CellSelection)
-        self.assertIs(CellSelection, CellView)
         self.assertIs(view.root, cell)
         self.assertIs(view.cell, cell)
         self.assertEqual(view.population_indices, (4, 1, 2))

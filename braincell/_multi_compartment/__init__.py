@@ -15,14 +15,13 @@
 
 """Multi-compartment cell declaration + runtime."""
 
-from .cell import Cell, CellSelection, CellView, MultiCompartment
+from .cell import Cell, CellView, MultiCompartment
 from .run import RunResult
 from .synapses import SynapseView
 from .density_views import ChannelView, IonView
 
 __all__ = [
     "Cell",
-    "CellSelection",
     "CellView",
     "ChannelView",
     "IonView",

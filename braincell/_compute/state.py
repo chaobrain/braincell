@@ -256,7 +256,6 @@ class CellRuntimeState:
                 continue
             store_rows = synapse_store.row_indices(logical_ids)
             mechanisms = tuple(synapse_store.mechanism[int(row)] for row in store_rows.tolist())
-            names = tuple(dict.fromkeys(item.instance_name for item in mechanisms))
             grouped[("point", "synapse", str(synapse_type))] = {
                 "id": layout_id,
                 "mechanism": mechanisms[0],
@@ -270,7 +269,6 @@ class CellRuntimeState:
                     else []
                 ),
                 "synapse_ids": np.asarray(logical_ids, dtype=np.int64),
-                "runtime_name": names[0] if len(names) == 1 else str(synapse_type),
             }
             layout_id += 1
 
@@ -710,23 +708,29 @@ def _apply_density_parameter_overrides(
     if len(pop_size) != 1:
         raise ValueError("Density parameter views currently require one-dimensional Cell.pop_size.")
     population_size = int(pop_size[0])
+
+    # One pass over the layouts builds the (category, name, cv) -> layouts index that
+    # every override then resolves in constant time; scanning per override is quadratic
+    # in the number of selected rows, and an unrestricted view selects every CV.
+    layouts_by_owner: dict[tuple[str, str, int], list[MechanismLayout]] = {}
+    for layout in layouts:
+        mechanism = layout_mechanisms[layout.id]
+        if not isinstance(mechanism, Density):
+            continue
+        for source_cv_id in layout.source_cv_ids:
+            owner = (mechanism.category, mechanism.instance_name, int(source_cv_id))
+            layouts_by_owner.setdefault(owner, []).append(layout)
+
+    # Resolve and validate every override first, then apply each buffer's writes in one
+    # scatter -- writing them one at a time copies the whole buffer per override.
+    writes: dict[tuple[int, str], list[tuple[int, int, object]]] = {}
     for (category, name, population_index, cv_id, var_name), value in overrides.items():
-        matches = []
-        for layout in layouts:
-            mechanism = layout_mechanisms[layout.id]
-            if (
-                isinstance(mechanism, Density)
-                and mechanism.category == category
-                and mechanism.instance_name == name
-                and int(cv_id) in layout.source_cv_ids
-            ):
-                matches.append(layout)
+        matches = layouts_by_owner.get((category, name, int(cv_id)), ())
         if len(matches) != 1:
             raise RuntimeError(
                 f"Expected one density layout for {category} {name!r} on CV {cv_id}, got {len(matches)!r}."
             )
-        layout = matches[0]
-        key = (int(layout.id), str(var_name))
+        key = (int(matches[0].id), str(var_name))
         if key not in state_buffers:
             raise KeyError(f"{category.title()} {name!r} has no parameter {var_name!r}.")
         buffer = state_buffers[key]
@@ -735,15 +739,20 @@ def _apply_density_parameter_overrides(
             if not isinstance(value, u.Quantity):
                 raise TypeError(f"Density parameter {var_name!r} requires a Quantity compatible with {unit}.")
             decimal = value.to_decimal(unit)
-            mantissa = np.array(buffer.to_decimal(unit), copy=True)
         else:
             if isinstance(value, u.Quantity):
                 raise TypeError(f"Density parameter {var_name!r} is dimensionless.")
             decimal = value
-            mantissa = np.array(buffer, copy=True)
         point_id = int(node_tree.cv_to_mid_node_id[int(cv_id)])
+        writes.setdefault(key, []).append((int(population_index), point_id, decimal))
+
+    for key, entries in writes.items():
+        buffer = state_buffers[key]
+        unit = buffer.unit if isinstance(buffer, u.Quantity) else None
+        mantissa = np.array(buffer.to_decimal(unit) if unit is not None else buffer, copy=True)
+        populations, points, values = zip(*entries)
         if mantissa.ndim >= 2 and mantissa.shape[0] == population_size:
-            mantissa[int(population_index), point_id] = decimal
+            mantissa[np.asarray(populations), np.asarray(points)] = values
         else:
-            mantissa[point_id] = decimal
+            mantissa[np.asarray(points)] = values
         state_buffers[key] = u.Quantity(mantissa, unit) if unit is not None else mantissa

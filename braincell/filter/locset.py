@@ -303,6 +303,29 @@ class LocsetMask:
             object.__setattr__(self, "_points_cache", cached)
         return cached
 
+    def resolved_display_names(self, morpho) -> tuple[str, ...]:
+        """Return display names, deriving ``branch(x)`` labels when unset.
+
+        Locations carry optional author-supplied names; when they are absent
+        every consumer needs the same ``branch_name(x)`` fallback, so the
+        label format is defined here rather than at each call site.
+
+        Parameters
+        ----------
+        morpho : braincell.morph.Morphology
+            Morphology used to resolve branch names.
+
+        Returns
+        -------
+        tuple of str
+            One label per location row.
+        """
+        if self._display_names is not None:
+            return self._display_names
+        return tuple(
+            f"{morpho.branch(index=int(branch_id)).name}({float(branch_x):g})" for branch_id, branch_x in self.points
+        )
+
     def __len__(self) -> int:
         return len(self._branch_id)
 

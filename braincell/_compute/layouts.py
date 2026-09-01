@@ -127,6 +127,51 @@ class MechanismLayout:
         """Whether point instances are stored once across the population."""
         return self.population_index is not None
 
+    def _point_selector(self) -> tuple:
+        """Index tuple selecting this layout's points along the trailing axes."""
+        if self.point_index is None:
+            raise ValueError(f"Point layout {self.id!r} is missing point_index.")
+        if self.is_packed:
+            return (Ellipsis, self.population_index, self.point_index)
+        return (Ellipsis, self.point_index)
+
+    def gather_points(self, values):
+        """Gather this layout's point entries from a point-space array.
+
+        Packed layouts store one instance per population entry and are indexed
+        by both the population and point axes; broadcast layouts share one
+        instance across the population and are indexed by the point axis only.
+        Callers read the rule from here rather than repeating the branch.
+
+        Parameters
+        ----------
+        values : array_like
+            Point-space array whose trailing axis indexes points.
+
+        Returns
+        -------
+        array_like
+            Values at this layout's active points.
+        """
+        return values[self._point_selector()]
+
+    def scatter_add_points(self, target, values):
+        """Accumulate ``values`` into ``target`` at this layout's points.
+
+        Parameters
+        ----------
+        target : array_like
+            Point-space array to accumulate into.
+        values : array_like
+            Per-instance values aligned with this layout's active points.
+
+        Returns
+        -------
+        array_like
+            ``target`` with ``values`` added at this layout's points.
+        """
+        return target.at[self._point_selector()].add(values)
+
     @property
     def point_axis_len(self) -> int:
         """Length of the axis this layout's buffers index points along.

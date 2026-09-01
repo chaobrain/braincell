@@ -21,7 +21,7 @@ import brainstate
 import brainunit as u
 import jax.numpy as jnp
 
-from braincell._base import IonInfo
+from braincell._base_channel import IonInfo
 from braincell.channel._base import HH, Markov
 from braincell.channel.sodium import (
     Na_Ba2002,
@@ -335,6 +335,18 @@ class NaZH19IOTest(unittest.TestCase):
         ch = Na_ZH2019_IO(size=1)
         self.assertTrue(u.math.allclose(ch._m_alpha(_V([-41.0])), jnp.array([1.0]), atol=1e-6))
         self.assertTrue(u.math.allclose(ch._h_beta(_V([-50.0])), jnp.array([10.0]), atol=1e-6))
+
+    def test_rates_stay_accurate_just_off_the_singularity(self) -> None:
+        # `x / (1 - exp(-x))` loses most of its float32 significand for
+        # tiny `x`; `exprel` keeps it. Sample either side of the removable
+        # singularity, closer to it than the old helper's 1e-6 branch
+        # threshold, and compare against the analytic value `1 + x/2`.
+        ch = Na_ZH2019_IO(size=1)
+        offsets = jnp.array([-1.0e-3, -1.0e-5, 1.0e-5, 1.0e-3])
+        m_alpha = ch._m_alpha(_V(-41.0 + offsets))
+        self.assertTrue(u.math.allclose(m_alpha, 1.0 + (offsets / 10.0) / 2.0, atol=1e-6))
+        h_beta = ch._h_beta(_V(-50.0 + offsets))
+        self.assertTrue(u.math.allclose(h_beta, 10.0 * (1.0 + (offsets / 10.0) / 2.0), atol=1e-5))
 
 
 def _seed_states(channel) -> None:

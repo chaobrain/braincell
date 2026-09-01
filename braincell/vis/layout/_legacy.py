@@ -22,15 +22,13 @@ The stem family subsumes it for everything new and is the default.
 The module also holds a handful of helpers from earlier iterations
 that are not currently referenced anywhere in the live layout code
 (``_assign_group_trunk_first_angles`` / ``_assign_child_trunk_first_angles``,
-``_dendrogram_*``, ``_make_layout_branch_to_y``,
-``_horizontal_segment_points_um``). They are preserved here — rather
-than silently deleted during the mechanical split — so the git
-history of each symbol stays intact and a future dendrogram layout
-can revive them without digging through git log. They are clearly
+``_make_layout_branch_to_y``, ``_horizontal_segment_points_um``). They
+are preserved here — rather than silently deleted during the mechanical
+split — so the git history of each symbol stays intact and a future
+layout can revive them without digging through git log. They are clearly
 quarantined in the "Unused legacy helpers" section below.
 """
 
-import brainunit as u
 import numpy as np
 
 from braincell.morph import MorphoBranch
@@ -46,6 +44,7 @@ from ._common import (
     _pick_trunk_child,
     _resolve_trunk_child_angle,
     _side_branch_offsets_rad,
+    walk_layout_top_down,
 )
 from ._config import DEFAULT_LAYOUT_CONFIG, LayoutConfig
 from ._geometry import (
@@ -111,21 +110,17 @@ def _layout_children_legacy(
 ) -> None:
     """Lay out every descendant of ``parent``.
 
-    Iterative for the same reason as the other layout families: a branch
-    chain deeper than the interpreter's frame limit must not raise
-    ``RecursionError``. A child's region derives from its parent's finished
-    interval alone, so a sibling group can be placed before any of it is
-    descended into. Children are pushed in reverse to keep the
-    left-to-right visit order.
+    A child's region derives from its parent's finished interval alone,
+    so a sibling group can be placed before any of it is descended into.
+    :func:`~braincell.vis.layout._common.walk_layout_top_down` owns the
+    iterative walk (and the recursion-avoidance invariant behind it);
+    this function only says what a child's placement is.
     """
     # frame: (branch, angular region allocated to it)
-    stack: list[tuple[MorphoBranch, tuple[float, float]]] = [(parent, interval)]
-    while stack:
-        node, node_interval = stack.pop()
-        children = node.children
-        if not children:
-            continue
+    Frame = tuple[MorphoBranch, tuple[float, float]]
 
+    def _place(frame: Frame, children: tuple[MorphoBranch, ...]) -> list[Frame]:
+        node, node_interval = frame
         allocations = _allocate_child_regions_legacy(
             children=children,
             interval=node_interval,
@@ -133,7 +128,7 @@ def _layout_children_legacy(
             min_branch_angle_rad=min_branch_angle_rad,
         )
         node_layout = layouts[node.index]
-        frames: list[tuple[MorphoBranch, tuple[float, float]]] = []
+        frames: list[Frame] = []
         for child, child_interval, child_angle in allocations:
             attach_um, attach_tangent_um = sample_layout_branch(node_layout, child.parent_x)
             layouts[child.index] = _make_layout_branch(
@@ -146,7 +141,9 @@ def _layout_children_legacy(
                 bend_fraction=layout_config.default_bend_fraction,
             )
             frames.append((child, child_interval))
-        stack.extend(reversed(frames))
+        return frames
+
+    walk_layout_top_down((parent, interval), _place)
 
 
 # ---------------------------------------------------------------------------
@@ -265,61 +262,3 @@ def _horizontal_segment_points_um(segment_lengths_um: np.ndarray, *, start_um: n
             np.full(len(cumulative_x_um), start_um[1], dtype=float),
         )
     )
-
-
-def _dendrogram_y_units_by_branch(
-    root: MorphoBranch,
-    *,
-    root_layout: str,
-) -> tuple[dict[int, float], dict[int, float]]:
-    ordered_leaves = _ordered_leaf_branches(root, root_layout=root_layout)
-    leaf_positions = {
-        leaf.index: float(position - (len(ordered_leaves) - 1) / 2.0) for position, leaf in enumerate(ordered_leaves)
-    }
-    branch_positions: dict[int, float] = {}
-
-    def visit(node: MorphoBranch) -> float:
-        if node.n_children == 0:
-            branch_positions[node.index] = leaf_positions[node.index]
-            return branch_positions[node.index]
-        child_positions = [visit(child) for child in node.children]
-        branch_positions[node.index] = float(np.mean(child_positions))
-        return branch_positions[node.index]
-
-    visit(root)
-    return branch_positions, leaf_positions
-
-
-def _ordered_leaf_branches(root: MorphoBranch, *, root_layout: str) -> list[MorphoBranch]:
-    if root_layout == "type_split":
-        axon_children = tuple(child for child in root.children if child.type == "axon")
-        dend_children = tuple(child for child in root.children if child.type != "axon")
-        if axon_children and dend_children:
-            ordered_children = tuple(reversed(axon_children)) + dend_children
-            return [leaf for child in ordered_children for leaf in _leaf_branches_dfs(child)]
-    return _leaf_branches_dfs(root)
-
-
-def _leaf_branches_dfs(node: MorphoBranch) -> list[MorphoBranch]:
-    if node.n_children == 0:
-        return [node]
-    leaves: list[MorphoBranch] = []
-    for child in node.children:
-        leaves.extend(_leaf_branches_dfs(child))
-    return leaves
-
-
-def _dendrogram_unit_scale_um(morpho: Morphology, y_units_by_branch: dict[int, float]) -> float:
-    max_ratio = 0.0
-    for branch in morpho.branches:
-        parent = branch.parent
-        if parent is None:
-            continue
-        branch_length_um = float(branch.length.to_decimal(u.um))
-        if branch_length_um <= 0.0:
-            continue
-        unit_dy = abs(y_units_by_branch[branch.index] - y_units_by_branch[parent.index])
-        max_ratio = max(max_ratio, unit_dy / branch_length_um)
-    if max_ratio <= 0.0:
-        return 1.0
-    return 0.6 / max_ratio

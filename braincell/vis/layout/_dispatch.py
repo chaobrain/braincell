@@ -19,7 +19,10 @@
 builders in :mod:`braincell.vis.scene2d` call. It:
 
 1. Validates the ``mode``, ``root_layout``, and ``layout_family``
-   arguments against the supported sets.
+   arguments against the supported sets. The family names and their
+   aliases come from the registry in :mod:`braincell.vis.config`, which
+   is also what ``configure(layout_2d_default=...)`` validates against —
+   the two entry points cannot drift apart on which families exist.
 2. Normalizes aliases (``trunk_first`` → ``stem``).
 3. Derives the per-branch length/radius spec once.
 4. Routes to the family-specific builder.
@@ -32,6 +35,7 @@ subsumes it and legacy is scheduled for removal in v0.1.0.
 import warnings
 
 from braincell.morph.morphology import Morphology
+from braincell.vis.config import DISPATCHED_2D_LAYOUTS, LAYOUT_2D_ALIASES
 
 from ._balloon import _build_layout_branches_balloon
 from ._cache import LayoutCache, get_default_layout_cache
@@ -46,8 +50,6 @@ from ._stem import (
 )
 
 _VALID_ROOT_LAYOUTS = {"type_split", "legacy"}
-_VALID_LAYOUT_FAMILIES = {"fan", "stem", "trunk_first", "balloon", "radial_360"}
-_LAYOUT_FAMILY_ALIASES = {"trunk_first": "stem"}
 
 _LEGACY_DEPRECATION_MESSAGE = (
     "root_layout='legacy' is deprecated and will be removed in "
@@ -74,7 +76,7 @@ def build_layout_branches_2d(
         raise ValueError(f"Unsupported layout mode {mode!r}.")
     if root_layout not in _VALID_ROOT_LAYOUTS:
         raise ValueError(f"Unsupported root layout {root_layout!r}.")
-    if layout_family not in _VALID_LAYOUT_FAMILIES:
+    if layout_family not in DISPATCHED_2D_LAYOUTS:
         raise ValueError(f"Unsupported 2D layout family {layout_family!r}.")
     if root_layout == "legacy":
         warnings.warn(
@@ -82,7 +84,7 @@ def build_layout_branches_2d(
             DeprecationWarning,
             stacklevel=2,
         )
-    layout_family = _LAYOUT_FAMILY_ALIASES.get(layout_family, layout_family)
+    layout_family = LAYOUT_2D_ALIASES.get(layout_family, layout_family)
 
     config = layout_config or DEFAULT_LAYOUT_CONFIG
 

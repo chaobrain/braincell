@@ -24,7 +24,9 @@ import brainunit as u
 import jax.numpy as jnp
 import numpy as np
 
-from braincell._base import HHTypedNeuron, Ion, IonInfo
+from braincell._base_channel import IonInfo
+from braincell._base_ion import Ion
+from braincell._base_neuron import HHTypedNeuron
 from braincell.channel.calcium import CaT_HM1992
 from braincell.ion.calcium import (
     CdpStC_CAMOnly_MA2020_GoC,

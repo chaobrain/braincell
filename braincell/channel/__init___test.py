@@ -15,9 +15,10 @@
 
 """Package-level guards for :mod:`braincell.channel`.
 
-Two concerns live here because both are properties of the package as a whole
+Three concerns live here because all are properties of the package as a whole
 rather than of any single module: the docstring conformance sweep over every
-covered module, and the ``__getattr__`` deprecation shim declared in
+covered module, the re-export completeness of the explicit import block, and
+the ``__getattr__`` deprecation shim declared in
 ``braincell/channel/__init__.py``.
 """
 
@@ -75,6 +76,32 @@ _NO_PRIMARY_SOURCE = frozenset(
 class ChannelDocstringTest(DocstringConformanceTests, unittest.TestCase):
     covered_modules = _COVERED_MODULES
     no_primary_source = _NO_PRIMARY_SOURCE
+
+
+class ChannelReExportTest(unittest.TestCase):
+    """Guard the explicit re-export block against drift.
+
+    ``braincell/channel/__init__.py`` builds ``__all__`` by concatenating
+    the submodules' own ``__all__`` but imports the names one by one.
+    Adding a channel to a submodule's ``__all__`` without adding it to the
+    matching import block would leave ``braincell.channel.__all__`` naming
+    an attribute the package does not have -- which only fails at
+    ``import *`` time, far from the edit that caused it.
+    """
+
+    def test_every_name_in_all_is_importable(self):
+        missing = [name for name in channel.__all__ if not hasattr(channel, name)]
+        self.assertEqual(missing, [], f"names in __all__ that were never imported: {missing}")
+
+    def test_all_has_no_duplicates(self):
+        duplicated = sorted({name for name in channel.__all__ if channel.__all__.count(name) > 1})
+        self.assertEqual(duplicated, [], f"duplicated entries in __all__: {duplicated}")
+
+    def test_every_submodule_public_name_is_re_exported(self):
+        expected = set()
+        for module in _COVERED_MODULES:
+            expected.update(module.__all__)
+        self.assertEqual(sorted(expected - set(channel.__all__)), [])
 
 
 @pytest.mark.parametrize("old_name, new_name", sorted(_DEPRECATED_ALIASES.items()))

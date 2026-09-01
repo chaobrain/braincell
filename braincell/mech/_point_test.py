@@ -25,7 +25,6 @@ from braincell.mech import (
     Junction,
     MechanismProbe,
     Mechanism,
-    Params,
     Point,
     ProbeMechanism,
     SineClamp,

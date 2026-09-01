@@ -14,20 +14,136 @@
 # ==============================================================================
 
 
-import warnings
-from typing import Callable, TYPE_CHECKING
+import os
+from typing import Any, Callable, TYPE_CHECKING
 
 import brainstate
-
-
-from typing import Any
-
 import brainunit as u
 import jax
 import jax.numpy as jnp
 import numpy as np
 
 _BOUND_OPERATORS = ("ge", "gt", "le", "lt")
+
+#: Longest profiler label XLA keeps intact; longer names are truncated.
+_PROFILER_NAME_LIMIT = 180
+
+
+def profiler_safe_name(raw: str) -> str:
+    """Sanitize ``raw`` into a label safe for JAX scopes and named calls.
+
+    Replaces every character that is not alphanumeric, ``":"`` or ``"_"``
+    with an underscore, then truncates to ``_PROFILER_NAME_LIMIT``.
+
+    Parameters
+    ----------
+    raw : str
+        Unsanitized label, typically built from a state path and a class
+        name.
+
+    Returns
+    -------
+    str
+        Sanitized label.
+
+    Notes
+    -----
+    The allowed character set and the length limit must match across every
+    caller or profiler traces from different subsystems stop lining up,
+    which is why this lives in one place rather than being re-typed at each
+    site.
+    """
+    cleaned = "".join(ch if ch.isalnum() or ch in ":_" else "_" for ch in raw)
+    return cleaned[:_PROFILER_NAME_LIMIT]
+
+
+def profiler_scope_name(prefix: str, path, node) -> str:
+    """Build a stable, profiler-safe internal JAX scope name."""
+    path_name = "_".join(str(part) for part in path) if path else "root"
+    class_name = type(getattr(node, "_channel", node)).__name__
+    return profiler_safe_name(f"{prefix}:{path_name}:{class_name}")
+
+
+def profiler_call_name(prefix: str, path, node) -> str:
+    """Build a profiler-safe :func:`jax.named_call` name."""
+    return profiler_scope_name(prefix, path, node).replace(":", "_")
+
+
+def profile_barrier_current(current):
+    """Optionally split membrane-current HLO for profiler attribution.
+
+    The barrier is disabled by default because it can inhibit XLA fusion.
+    Set ``BRAINCELL_PROFILE_SPLIT_CURRENTS=1`` when collecting profiler
+    traces that need per-channel current attribution.
+
+    Parameters
+    ----------
+    current : ArrayLike or brainunit.Quantity
+        Current contribution to optionally fence off.
+
+    Returns
+    -------
+    ArrayLike or brainunit.Quantity
+        ``current`` unchanged, or wrapped in
+        :func:`jax.lax.optimization_barrier` when the environment variable
+        is set. Any unit is preserved.
+    """
+    if os.environ.get("BRAINCELL_PROFILE_SPLIT_CURRENTS") != "1":
+        return current
+    if hasattr(current, "unit"):
+        return u.Quantity(jax.lax.optimization_barrier(u.get_mantissa(current)), current.unit)
+    return jax.lax.optimization_barrier(current)
+
+
+def validate_time_quantity(
+    value,
+    *,
+    name: str,
+    prefix: str,
+    require_scalar: bool = True,
+    require_positive: bool = True,
+) -> None:
+    """Require ``value`` to be a time :class:`brainunit.Quantity`.
+
+    Shared by the single-cell and network run paths so both enforce the
+    same contract and report it with their own caller name.
+
+    Parameters
+    ----------
+    value : object
+        Candidate time quantity.
+    name : str
+        Parameter name used in error messages (``"dt"``, ``"duration"``,
+        ``"delay"``).
+    prefix : str
+        Caller name used to prefix error messages, e.g. ``"Cell.run(...)"``
+        or ``"Network.run(...)"``. Without this the network layer reported
+        single-cell wording for its own failures.
+    require_scalar : bool, default True
+        Require a scalar (or length-1) quantity. Pass ``False`` for
+        parameters that are legitimately per-element, such as a vector of
+        per-contact synaptic delays.
+    require_positive : bool, default True
+        Require a strictly positive value. Pass ``False`` where zero is
+        meaningful, such as a zero delay meaning immediate delivery.
+
+    Raises
+    ------
+    TypeError
+        If ``value`` is not a quantity carrying a time unit.
+    ValueError
+        If ``value`` violates the requested scalar or positivity contract.
+    """
+    if not hasattr(value, "to_decimal"):
+        raise TypeError(f"{prefix} {name} must be a time quantity, got {value!r}.")
+    decimal = np.asarray(value.to_decimal(u.ms), dtype=float)
+    if require_scalar and decimal.shape not in ((), (1,)):
+        raise ValueError(f"{prefix} {name} must be scalar, got shape {decimal.shape!r}.")
+    if require_positive:
+        if decimal.shape not in ((), (1,)):
+            raise ValueError(f"{prefix} {name} must be scalar, got shape {decimal.shape!r}.")
+        if float(decimal.reshape(())) <= 0.0:
+            raise ValueError(f"{prefix} {name} must be > 0, got {value!r}.")
 
 
 def is_traced_value(value) -> bool:
@@ -40,6 +156,36 @@ def is_traced_value(value) -> bool:
     if isinstance(value, u.Quantity):
         value = u.get_mantissa(value)
     return isinstance(value, jax.core.Tracer)
+
+
+def concat_values(values):
+    """Concatenate trace values along axis 0, preserving any brainunit unit.
+
+    Shared by the single-cell and network run paths, which both assemble
+    per-chunk trace outputs into one array.
+    """
+    first = values[0]
+    if isinstance(first, u.Quantity):
+        unit = first.unit
+        return u.Quantity(u.math.concatenate(tuple(value.to_decimal(unit) for value in values), axis=0), unit)
+    return u.math.concatenate(values, axis=0)
+
+
+def same_time_quantity(left, right) -> bool:
+    """Return ``True`` when two optional time quantities agree to tolerance.
+
+    ``None`` compares equal only to ``None``.
+    """
+    if left is None or right is None:
+        return left is right
+    return bool(
+        np.allclose(
+            np.asarray(left.to_decimal(u.ms), dtype=float),
+            np.asarray(right.to_decimal(u.ms), dtype=float),
+            rtol=1e-7,
+            atol=1e-9,
+        )
+    )
 
 
 def cast_like(value, like):
@@ -156,41 +302,6 @@ def normalize_param(
     return u.Quantity(array, unit)
 
 
-def deprecation_getattr(module, deprecations):
-    """
-    Create a custom getattr function to handle deprecated attributes.
-
-    This function generates a custom getattr function for a module, which
-    checks if an attribute is deprecated and handles it accordingly by
-    raising an AttributeError or issuing a warning.
-
-    Parameters
-    ----------
-    module : str
-        The name of the module for which the custom getattr function is created.
-    deprecations : dict
-        A dictionary where keys are attribute names and values are tuples
-        containing a deprecation message and an optional function. If the
-        function is None, accessing the attribute will raise an AttributeError.
-
-    Returns
-    -------
-    function
-        A custom getattr function that handles deprecated attributes.
-    """
-
-    def getattr(name):
-        if name in deprecations:
-            message, fn = deprecations[name]
-            if fn is None:  # Is the deprecation accelerated?
-                raise AttributeError(message)
-            warnings.warn(message, DeprecationWarning, stacklevel=2)
-            return fn
-        raise AttributeError(f"module {module!r} has no attribute {name!r}")
-
-    return getattr
-
-
 def set_module_as(name: str):
     """Return a decorator that re-homes a function onto a public module path.
 
@@ -241,47 +352,6 @@ def set_module_as(name: str):
     return decorator
 
 
-class ModuleNotFound:
-    """
-    A placeholder class representing a missing module.
-
-    This class is used to provide a clear error message when an optional dependency
-    is not installed. Any attempt to access an attribute of this class will raise
-    a ModuleNotFoundError with instructions to install the missing module.
-
-    Attributes:
-        module_name (str): The name of the missing module.
-
-    Example:
-        >>> mod = ModuleNotFound('some_module')
-        >>> mod.some_attr
-        ModuleNotFoundError: some_module is not installed. Please install some_module to use this feature.
-    """
-
-    def __init__(self, module_name):
-        """
-        Initialize the ModuleNotFound placeholder.
-
-        Args:
-            module_name (str): The name of the missing module.
-        """
-        self.module_name = module_name
-
-    def __getattr__(self, item):
-        """
-        Raise a ModuleNotFoundError when any attribute is accessed.
-
-        Args:
-            item (str): The attribute name being accessed.
-
-        Raises:
-            ModuleNotFoundError: Always raised with a message indicating the missing module.
-        """
-        raise ModuleNotFoundError(
-            f'{self.module_name} is not installed. Please install {self.module_name} to use this feature.'
-        )
-
-
 class Container(brainstate.mixin.Mixin):
     """
     A container class that provides a flexible structure for storing and accessing child elements.
@@ -294,7 +364,7 @@ class Container(brainstate.mixin.Mixin):
         _container_name (str): The name of the container attribute that holds the child elements.
 
     Note:
-        Subclasses should implement the `add_elem` method to define how new elements
+        Subclasses should implement the `add` method to define how new elements
         are added to the container.
     """
 
@@ -375,9 +445,6 @@ class Container(brainstate.mixin.Mixin):
             for adding elements to the container.
         """
         raise NotImplementedError('Must be implemented by the subclass.')
-
-    def add_elem(self, **elements):
-        self.add(**elements)
 
 
 class TreeNode(brainstate.mixin.Mixin):

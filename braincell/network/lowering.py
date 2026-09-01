@@ -23,9 +23,11 @@ import brainunit as u
 import numpy as np
 
 from braincell._discretization.base import locate_cv_on_branch
+from braincell._misc import validate_time_quantity
 from braincell.filter import LocsetExpr
 
 from .core import Population
+from .event import round_half_up_steps_host as _round_half_up_steps
 
 
 @dataclass(frozen=True)
@@ -55,7 +57,7 @@ def lower_direct_connections(
     delay_quantization: str = "nearest",
 ) -> tuple[ConnectionBlock, ...]:
     """Lower target-owned live ``connect()`` rows into network route blocks."""
-    _validate_time_quantity(dt, name="dt")
+    validate_time_quantity(dt, name="dt", prefix="Network")
     delay_quantization = _normalize_delay_quantization(delay_quantization)
     cell_populations = tuple(population for population in populations.values() if population.kind == "cell")
     population_by_cell = {id(population.cell): population for population in cell_populations}
@@ -140,7 +142,15 @@ def _expand_delay_steps(delay, *, dt, n_contact: int, quantization: str = "neare
     quantization : {"nearest", "ceil", "floor", "strict"}
         Policy for delays that do not fall on the fixed-step grid.
     """
-    _validate_time_quantity(delay, name="delay")
+    validate_time_quantity(
+        delay,
+        name="delay",
+        prefix="Network",
+        # A delay may be a per-contact vector, and zero means immediate
+        # delivery, so neither the scalar nor the positivity rule applies.
+        require_scalar=False,
+        require_positive=False,
+    )
     quantization = _normalize_delay_quantization(quantization)
     delay_ms = np.asarray(delay.to_decimal(u.ms), dtype=float)
     if delay_ms.shape == ():
@@ -173,26 +183,7 @@ def _expand_delay_steps(delay, *, dt, n_contact: int, quantization: str = "neare
     return np.maximum(steps, 0)
 
 
-def _round_half_up_steps(values: np.ndarray) -> np.ndarray:
-    """Round non-negative step ratios, snapping numerical half ties upward."""
-    half = np.floor(values) + 0.5
-    magnitude = np.abs(values)
-    ulp = np.nextafter(magnitude, np.inf) - magnitude
-    snapped = np.where(np.abs(values - half) <= 4.0 * ulp, half, values)
-    return np.floor(snapped + 0.5)
-
-
 def _normalize_delay_quantization(value: str) -> str:
     if value not in ("nearest", "ceil", "floor", "strict"):
         raise ValueError(f"Network delay_quantization must be 'nearest', 'ceil', 'floor', or 'strict', got {value!r}.")
     return value
-
-
-def _validate_time_quantity(value, *, name: str) -> None:
-    if not hasattr(value, "to_decimal"):
-        raise TypeError(f"Network {name} must be a time quantity, got {value!r}.")
-    decimal = np.asarray(value.to_decimal(u.ms), dtype=float)
-    if name == "dt" and decimal.shape not in ((), (1,)):
-        raise ValueError(f"Network dt must be scalar, got shape {decimal.shape!r}.")
-    if name == "dt" and float(decimal.reshape(())) <= 0.0:
-        raise ValueError(f"Network dt must be > 0, got {value!r}.")

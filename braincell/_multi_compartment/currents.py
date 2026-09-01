@@ -24,14 +24,18 @@ Responsibilities:
 5. Bridge point-space sum back to CV-space for the voltage update.
 """
 
-import os
 from typing import TYPE_CHECKING
 
 import brainunit as u
 import jax
 import jax.numpy as jnp
 
-from braincell._base import IonChannel, Synapse as RuntimeSynapse
+from braincell._base_channel import IonChannel, Synapse as RuntimeSynapse
+from braincell._misc import (
+    profile_barrier_current as _profile_barrier_current,
+    profiler_call_name as _call_name,
+    profiler_scope_name as _scope_name,
+)
 from braincell._compute.state import CellRuntimeState
 from braincell._compute import bridge
 
@@ -110,29 +114,6 @@ def _layout_id_from_current_key(key) -> int:
     if not isinstance(last, str) or not last.startswith("layout_"):
         raise ValueError(f"Expected runtime object key ending with 'layout_<id>', got {key!r}.")
     return int(last.split("_", 1)[1])
-
-
-def _scope_name(prefix: str, path, node) -> str:
-    """Build a stable, profiler-safe internal JAX scope name."""
-    path_name = "_".join(str(part) for part in path) if path else "root"
-    class_name = type(getattr(node, "_channel", node)).__name__
-    raw = f"{prefix}:{path_name}:{class_name}"
-    cleaned = "".join(ch if ch.isalnum() or ch in ":_" else "_" for ch in raw)
-    return cleaned[:180]
-
-
-def _call_name(prefix: str, path, node) -> str:
-    """Build a profiler-safe ``jax.named_call`` name."""
-    return _scope_name(prefix, path, node).replace(":", "_")
-
-
-def _profile_barrier_current(current):
-    """Optionally split membrane-current HLO for profiler attribution."""
-    if os.environ.get("BRAINCELL_PROFILE_SPLIT_CURRENTS") != "1":
-        return current
-    if hasattr(current, "unit"):
-        return u.Quantity(jax.lax.optimization_barrier(u.get_mantissa(current)), current.unit)
-    return jax.lax.optimization_barrier(current)
 
 
 def _synapse_contrib_to_point(runtime: CellRuntimeState, layout, syn, point_V):

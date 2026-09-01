@@ -21,14 +21,13 @@ import matplotlib.axes
 import matplotlib.pyplot as plt
 import numpy as np
 
-from braincell.filter import AllRegion, BranchPoints, Terminals
+from braincell.filter import AllRegion, Terminals
 from braincell.vis import plot2d
 from braincell.vis._testing import (
     VisDefaultsResetMixin,
     make_four_type_tree,
     make_length_only_tree,
     make_node_tree,
-    make_projected_node_tree,
 )
 from braincell.vis.backend import BackendChooser
 from braincell.vis.backend_matplotlib import MatplotlibBackend

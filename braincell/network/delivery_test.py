@@ -24,14 +24,10 @@ import unittest
 import numpy as np
 
 import braincell
-from braincell.network._testing import (
-    make_spiking_cell,
-)
 
 
 class DeliveryTest(unittest.TestCase):
     def test_population_spike_reduces_multicompartment_spike_to_cell_level_events(self) -> None:
-        cell = make_spiking_cell(size=2)
         spike = np.asarray([[False, True, False], [False, False, False]])
 
         reduced = braincell.network.delivery.population_spike(spike)

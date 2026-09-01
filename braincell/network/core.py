@@ -21,8 +21,9 @@ from dataclasses import dataclass, field
 from types import MappingProxyType
 
 import brainunit as u
-import jax
 import numpy as np
+
+from braincell._misc import concat_values as _concat_values, same_time_quantity as _same_time
 
 
 class Population:
@@ -387,14 +388,6 @@ def _nested_mapping_proxy(value):
     )
 
 
-def _concat_values(values):
-    first = values[0]
-    if isinstance(first, u.Quantity):
-        unit = first.unit
-        return u.Quantity(u.math.concatenate(tuple(value.to_decimal(unit) for value in values), axis=0), unit)
-    return u.math.concatenate(values, axis=0)
-
-
 def _concat_event_series(series):
     from .recording import EventSeries
 
@@ -407,17 +400,4 @@ def _concat_event_series(series):
         source_id=np.concatenate(tuple(item.source_id for item in series)),
         count=np.concatenate(tuple(item.count for item in series)),
         metadata=series[0].metadata,
-    )
-
-
-def _same_time(left, right) -> bool:
-    if left is None or right is None:
-        return left is right
-    return bool(
-        np.allclose(
-            np.asarray(left.to_decimal(u.ms), dtype=float),
-            np.asarray(right.to_decimal(u.ms), dtype=float),
-            rtol=1e-7,
-            atol=1e-9,
-        )
     )

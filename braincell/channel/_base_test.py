@@ -22,14 +22,14 @@ import brainunit as u
 import jax
 import jax.numpy as jnp
 
-from braincell._base import Channel
-from braincell._base import IonInfo
+from braincell._base_channel import IonInfo
 from braincell.channel._base import Gate
 from braincell.channel._base import HH
 from braincell.channel._base import Markov
 from braincell.channel._base import OhmicHH
 from braincell.channel._base import Transition
 from braincell.channel._base import ghk_flux
+from braincell.channel._base import q10_factor
 from braincell.ion import Calcium
 from braincell.ion import Potassium
 from braincell.quad import get_integrator
@@ -201,6 +201,12 @@ class _ExampleMarkov(Markov):
         return self.g_max * (self.O.value + 0.5 * self.I.value) * (K.E - V)
 
 
+class _ExampleMarkovSteadyReset(_ExampleMarkov):
+    """``_ExampleMarkov`` opting in to a steady-state ``reset_state``."""
+
+    reset_to_steady_state = True
+
+
 class _ExampleMarkovImplicitDependent(Markov):
     root_type = Potassium
     pairs = (
@@ -350,6 +356,27 @@ class ChannelTemplateTest(unittest.TestCase):
         ch = _ExampleHHInfTau(size=1)
         expected = 3.0 ** (((ch.temp - u.celsius2kelvin(22.0)) / u.kelvin) / 10.0)
         self.assertTrue(u.math.allclose(ch.gate_phi(type(ch).gates[0]), expected, atol=1e-6))
+
+    def test_q10_factor_is_one_at_the_reference_temperature(self) -> None:
+        ref = u.celsius2kelvin(22.0)
+        self.assertAlmostEqual(float(q10_factor(3.0, ref, ref)), 1.0, places=6)
+
+    def test_q10_factor_multiplies_once_per_ten_kelvin(self) -> None:
+        ref = u.celsius2kelvin(20.0)
+        self.assertAlmostEqual(float(q10_factor(3.0, u.celsius2kelvin(30.0), ref)), 3.0, places=5)
+        self.assertAlmostEqual(float(q10_factor(3.0, u.celsius2kelvin(40.0), ref)), 9.0, places=4)
+        self.assertAlmostEqual(float(q10_factor(3.0, u.celsius2kelvin(10.0), ref)), 1.0 / 3.0, places=5)
+
+    def test_q10_factor_is_dimensionless_and_unit_agnostic(self) -> None:
+        celsius_form = q10_factor(2.5, u.celsius2kelvin(31.5), u.celsius2kelvin(21.5))
+        kelvin_form = q10_factor(2.5, 310.0 * u.kelvin, 300.0 * u.kelvin)
+        self.assertEqual(u.get_dim(celsius_form), u.DIMENSIONLESS)
+        self.assertAlmostEqual(float(celsius_form), float(kelvin_form), places=6)
+
+    def test_gate_phi_matches_q10_factor(self) -> None:
+        ch = _ExampleHHInfTau(size=1)
+        expected = q10_factor(3.0, ch.temp, u.celsius2kelvin(22.0))
+        self.assertTrue(u.math.allclose(ch.gate_phi(type(ch).gates[0]), expected, atol=1e-12))
 
     def test_hh_inf_tau_channel(self) -> None:
         ch = _ExampleHHInfTau(size=1)
@@ -1069,6 +1096,35 @@ class ChannelTemplateTest(unittest.TestCase):
         ch.compute_derivative(V, K)
         self.assertTrue(u.math.allclose(ch.O.derivative, jnp.array([0.0]) / u.ms, atol=1e-6 * u.Hz))
         self.assertTrue(u.math.allclose(ch.I.derivative, jnp.array([0.0]) / u.ms, atol=1e-6 * u.Hz))
+
+    def test_markov_reset_state_zeroes_states_by_default(self) -> None:
+        ch = _ExampleMarkov(size=1)
+        V = jnp.array([-65.0]) * u.mV
+        K = _k_info()
+
+        ch.init_state(V, K)
+        ch.reset_steady_state(V, K)
+        self.assertFalse(bool(u.math.allclose(ch.I.value, jnp.array([0.0]), atol=1e-6)))
+
+        ch.reset_state(V, K)
+        for name in ch.state_names:
+            self.assertTrue(u.math.allclose(getattr(ch, name).value, jnp.array([0.0]), atol=1e-12))
+
+    def test_markov_reset_to_steady_state_opt_in(self) -> None:
+        opted_in = _ExampleMarkovSteadyReset(size=1)
+        baseline = _ExampleMarkov(size=1)
+        V = jnp.array([-65.0]) * u.mV
+        K = _k_info()
+
+        for ch in (opted_in, baseline):
+            ch.init_state(V, K)
+        baseline.reset_steady_state(V, K)
+        opted_in.reset_state(V, K)
+
+        self.assertTrue(type(opted_in).reset_to_steady_state)
+        self.assertFalse(type(baseline).reset_to_steady_state)
+        for name in opted_in.state_names:
+            self.assertTrue(u.math.allclose(getattr(opted_in, name).value, getattr(baseline, name).value, atol=1e-12))
 
     def test_markov_reset_steady_state_supports_implicit_dependent_state(self) -> None:
         ch = _ExampleMarkovImplicitDependent(size=1)

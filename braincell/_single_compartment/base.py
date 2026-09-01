@@ -18,9 +18,10 @@ from typing import Optional, Callable, Tuple, Union
 import brainstate
 import braintools
 import brainunit as u
-import jax.numpy as jnp
 
-from braincell._base import HHTypedNeuron, IonChannel, _cast_like, _zero_spike_like
+from braincell._base_channel import IonChannel
+from braincell._base_neuron import HHTypedNeuron, _zero_spike_like
+from braincell._misc import cast_like as _cast_like
 from braincell._typing import Initializer, Size
 from braincell.quad import get_integrator
 from braincell.quad.protocol import IndependentIntegration, state, state_grouping

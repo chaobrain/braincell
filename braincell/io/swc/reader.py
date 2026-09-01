@@ -41,6 +41,7 @@ import numpy as np
 
 import brainunit as u
 from braincell._typing import FilePath
+from braincell.io._geometry import MIN_SYNTHETIC_LENGTH_UM, should_copy_attach_point, synthetic_soma_geometry
 from braincell.morph.branch import Branch, branch_class_for_type
 from braincell.morph.morphology import Morphology
 from .rules import apply_swc_rules, raise_for_swc_errors
@@ -51,7 +52,6 @@ from .soma import (
     row_radius,
 )
 from .types import (
-    MIN_SYNTHETIC_LENGTH_UM,
     SwcReadOptions,
     SwcReport,
     _SwcAttach,
@@ -444,15 +444,18 @@ class SwcReader:
                 # the attach location.
                 attach_radius_for_child = float(radii[0])
 
-            same_xyz = np.allclose(points[0], attach_point)
-            same_radius = np.isclose(radii[0], attach_radius_for_child)
-            if should_copy_attach:
-                # When the attach point already shares the same xyz, only
-                # duplicate it if the radius differs. That preserves a
-                # branch-boundary radius jump as a zero-length first segment.
-                if not same_xyz or not same_radius:
-                    points.insert(0, attach_point)
-                    radii.insert(0, attach_radius_for_child)
+            # ``keep_radius_jump=True``: a coincident first point with a
+            # different radius is still copied, preserving the boundary jump
+            # as a zero-length first segment. The ASC reader deliberately
+            # differs; see braincell.io._geometry.should_copy_attach_point.
+            if should_copy_attach_point(
+                allow_copy=should_copy_attach,
+                same_xyz=bool(np.allclose(points[0], attach_point)),
+                same_radius=bool(np.isclose(radii[0], attach_radius_for_child)),
+                keep_radius_jump=True,
+            ):
+                points.insert(0, attach_point)
+                radii.insert(0, attach_radius_for_child)
 
         return branch_class_for_type(branch.branch_type).from_points(
             points=np.array(points, dtype=float) * u.um,
@@ -708,14 +711,14 @@ class SwcReader:
         point_ids: tuple[int, ...],
         start_node_id: int,
     ) -> _SwcBranch:
-        offset = np.array([radius, 0.0, 0.0], dtype=float)
+        points, radii = synthetic_soma_geometry(center, radius)
         return _SwcBranch(
             point_ids=point_ids,
             branch_type="soma",
             parent_index=None,
             start_node_id=start_node_id,
-            override_points=(tuple(center - offset), tuple(center), tuple(center + offset)),
-            override_radii=(radius, radius, radius),
+            override_points=tuple(tuple(point) for point in points),
+            override_radii=tuple(float(value) for value in radii),
         )
 
     def _section_attach_x(self, point_ids: tuple[int, ...], attach_node_id: int) -> float:

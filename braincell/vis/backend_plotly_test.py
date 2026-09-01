@@ -46,10 +46,6 @@ class _FakeFigure:
 
 
 def _fake_plotly():
-    go_module = types.SimpleNamespace(
-        Figure=_FakeFigure,
-        Scatter3d=_FakeScatter3d,
-    )
     plotly_module = types.ModuleType("plotly")
     graph_objects = types.ModuleType("plotly.graph_objects")
     graph_objects.Figure = _FakeFigure

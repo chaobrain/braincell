@@ -32,12 +32,13 @@ from braincell import (
     IndependentIntegration,
 )
 
-_FLOAT_DTYPE = jnp.asarray(0.0).dtype
 from braincell.quad._util import (
     apply_standard_solver_step,
     jacrev_last_dim,
     split_diffeq_states,
 )
+
+_FLOAT_DTYPE = jnp.asarray(0.0).dtype
 
 
 # --------------------------------------------------------------------------- #

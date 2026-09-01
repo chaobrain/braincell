@@ -18,6 +18,7 @@ from collections.abc import Sequence
 import numpy as np
 
 from .backend import BackendChooser, validate_backend_for_scene
+from .config import LAYOUT_2D_DISPATCHED_NAMES, layout_2d_title
 from .layout import LayoutConfig
 from .scene import OverlaySpec, RenderRequest
 from .scene2d import build_render_scene_2d
@@ -26,7 +27,7 @@ from .scene2d import build_render_scene_2d
 def compare_layouts_2d(
     morpho,
     *,
-    layouts: Sequence[str] = ("fan", "stem", "balloon", "radial_360"),
+    layouts: Sequence[str] = LAYOUT_2D_DISPATCHED_NAMES,
     shape: str = "line",
     chooser: BackendChooser | None = None,
     backend: str = "matplotlib",
@@ -81,16 +82,6 @@ def compare_layouts_2d(
                 backend_options={"ax": ax},
             )
         )
-        ax.set_title(_layout_title(layout))
+        ax.set_title(layout_2d_title(layout))
 
     return fig, render_axes
-
-
-def _layout_title(layout: str) -> str:
-    return {
-        "fan": "Fan",
-        "stem": "Stem",
-        "trunk_first": "Stem",
-        "balloon": "Balloon",
-        "radial_360": "Radial 360",
-    }.get(layout, layout.replace("_", " ").title())

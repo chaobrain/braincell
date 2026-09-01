@@ -27,7 +27,7 @@ import brainunit as u
 import numpy as np
 
 from braincell import Branch, Morphology
-from braincell._base import Channel, IonInfo
+from braincell._base_channel import Channel, IonInfo
 from braincell.ion import NonSpecific, Potassium
 from braincell.mech import register_channel
 

@@ -18,10 +18,9 @@
 
 from typing import Optional
 
-import braintools
 import brainunit as u
 
-from braincell._base import Ion
+from braincell._base_ion import Ion
 from braincell._typing import Initializer, Size
 from braincell.mech import register_ion
 from braincell.ion._base import FixedIon, InitNernstIon

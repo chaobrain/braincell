@@ -22,7 +22,6 @@ import numpy as np
 
 
 def _soma_cell(*, clamp=None):
-    import braincell
     from braincell import Branch, CVPerBranch, Cell, Morphology
     from braincell.filter import at
 
@@ -113,7 +112,7 @@ class TotalMembraneCurrentNarrowExceptTest(unittest.TestCase):
 
     def test_non_numeric_exception_passes_through(self) -> None:
         import brainstate
-        from braincell._base import IonChannel
+        from braincell._base_channel import IonChannel
         from braincell._multi_compartment.currents import total_membrane_current
 
         cell = _soma_cell()

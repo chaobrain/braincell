@@ -24,8 +24,6 @@ import numpy as np
 from braincell import Branch, Morphology
 from braincell.vis._testing import (
     make_length_only_tree,
-    make_root_split_tree,
-    make_two_dendrite_tree,
 )
 from braincell.vis.layout import (
     DEFAULT_LAYOUT_CONFIG,

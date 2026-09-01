@@ -51,17 +51,14 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
-from braincell._base import (
-    Channel,
-    HHTypedNeuron,
-    Ion,
-    IonChannel,
-    MixIons,
-    Synapse as RuntimeSynapse,
-    _cast_like,
-    _zero_spike_like,
+from braincell._base_channel import Channel, IonChannel, Synapse as RuntimeSynapse
+from braincell._base_ion import Ion, MixIons
+from braincell._base_neuron import HHTypedNeuron, _zero_spike_like
+from braincell._misc import (
+    is_traced_value,
+    profiler_call_name as _call_name,
+    profiler_scope_name as _scope_name,
 )
-from braincell._misc import is_traced_value
 from braincell._typing import Initializer, Size
 from braincell._compute.table import (
     MechanismObjectCell,
@@ -91,7 +88,6 @@ from braincell._discretization.base import (
     build_discretization,
     locate_cv_on_branch,
 )
-from braincell._discretization.node_build import locate_node_on_branch
 from braincell.filter import LocsetBatch, LocsetExpr, LocsetMask, RegionExpr, RegionMask, at
 from braincell.filter.helper import normalize_region_intervals
 from braincell.network.event import EventOutputCollection, _CellSpikeSource
@@ -2274,25 +2270,9 @@ class Cell(_CellFacade, HHTypedNeuron):
     def _discretization_to_point(self, cv_values):
         return self._cv_to_point(cv_values)
 
-    def _discretization_to_point_unchecked(self, cv_values):
-        return self._cv_to_point_unchecked(cv_values)
-
     def _point_to_cv(self, point_values):
         self._raise_if_not_initialized("_point_to_cv()")
         return bridge.point_to_cv(point_values, self._runtime)
-
-    def _resolve_vis_node_highlight_ids(
-        self,
-        *,
-        region: RegionExpr | RegionMask | None,
-        locset: LocsetExpr | LocsetMask | None,
-    ) -> set[int]:
-        point_ids: set[int] = set()
-        if region is not None:
-            point_ids.update(self._region_to_vis_node_ids(region))
-        if locset is not None:
-            point_ids.update(self._locset_to_vis_node_ids(locset))
-        return point_ids
 
     def _node_highlight_fractions(
         self,
@@ -2325,23 +2305,6 @@ class Cell(_CellFacade, HHTypedNeuron):
             for cv_id in self._resolve_vis_locset_cv_ids(locset):
                 fractions[int(cv_id)] = max(fractions.get(int(cv_id), 0.0), 1.0)
         return fractions
-
-    def _region_to_vis_node_ids(self, region: RegionExpr | RegionMask) -> set[int]:
-        branch_intervals = self._resolve_vis_region_intervals(region)
-
-        point_ids: set[int] = set()
-        node_tree = self.node_tree
-        for cv in self.cvs:
-            intervals = branch_intervals.get(int(cv.branch_id))
-            if not intervals:
-                continue
-            midpoint = 0.5 * (float(cv.prox) + float(cv.dist))
-            for prox, dist in intervals:
-                lo, hi = (prox, dist) if prox <= dist else (dist, prox)
-                if lo <= midpoint <= hi:
-                    point_ids.add(int(node_tree.cv_to_mid_node_id[cv.id]))
-                    break
-        return point_ids
 
     def _resolve_vis_region_intervals(
         self,
@@ -2407,28 +2370,6 @@ class Cell(_CellFacade, HHTypedNeuron):
             cv_id = locate_cv_on_branch(ids, self.cvs, x=float(x))
             cv_ids.add(int(cv_id))
         return cv_ids
-
-    def _locset_to_vis_node_ids(self, locset: LocsetExpr | LocsetMask) -> set[int]:
-        if isinstance(locset, LocsetExpr):
-            mask = locset.evaluate(self.morpho)
-        elif isinstance(locset, LocsetMask):
-            mask = locset
-        else:
-            raise TypeError(f"Cell visualization expects LocsetExpr or LocsetMask, got {type(locset).__name__!s}.")
-        point_ids: set[int] = set()
-        node_tree = self.node_tree
-        for branch_id, x in mask.points:
-            point_ids.add(
-                int(
-                    locate_node_on_branch(
-                        node_tree,
-                        cvs=self.cvs,
-                        branch_id=int(branch_id),
-                        x=float(x),
-                    )
-                )
-            )
-        return point_ids
 
     def _single_population_view(self, values, *, caller: str, field: str = "value"):
         """Reduce a ``pop_size + (n,)`` field to the single-member ``(n,)`` view.
@@ -4078,20 +4019,6 @@ def _connection_event_weight(template, connection_weight):
     if isinstance(connection_weight, u.Quantity):
         raise TypeError("Connection weight has units but its target event buffer is dimensionless.")
     return connection_weight
-
-
-def _scope_name(prefix: str, path, node) -> str:
-    """Build a stable, profiler-safe internal JAX scope name."""
-    path_name = "_".join(str(part) for part in path) if path else "root"
-    class_name = type(getattr(node, "_channel", node)).__name__
-    raw = f"{prefix}:{path_name}:{class_name}"
-    cleaned = "".join(ch if ch.isalnum() or ch in ":_" else "_" for ch in raw)
-    return cleaned[:180]
-
-
-def _call_name(prefix: str, path, node) -> str:
-    """Build a profiler-safe ``jax.named_call`` name."""
-    return _scope_name(prefix, path, node).replace(":", "_")
 
 
 _RANK0_POP_SIZE_MESSAGE = (

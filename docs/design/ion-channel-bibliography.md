@@ -3430,10 +3430,9 @@ mechanism's literal. Second, `Kdr`'s perturbation (1e-5) is ten times
 branch the substituted offset always lands outside the interval the
 branch was testing for; `Na`'s two guards are matched to their windows.
 
-BrainCell replaces all three with a numerically stable
-`x/(1 - exp(-x))` helper (`_x_over_one_minus_exp_neg_stable` in
-`braincell/channel/sodium.py`), so the perturbed literals do not
-appear in the class. The README explicitly excludes those literals
+BrainCell replaces all three with `u.math.exprel`, which evaluates
+`x/(1 - exp(-x))` stably across the singularity, so the perturbed
+literals do not appear in the class. The README explicitly excludes those literals
 from its NMODL default-precision rewrite table -- they are ordinary
 in-formula constants that "keep their original value" -- so the
 stable-helper substitution is a separate, undocumented BrainCell

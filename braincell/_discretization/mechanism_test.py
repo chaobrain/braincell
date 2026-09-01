@@ -24,7 +24,6 @@ from braincell._discretization._testing import (
     make_cable,
     make_single_branch_morpho,
 )
-from braincell._discretization.base import CV
 from braincell._discretization.geometry import (
     CVGeometryResult,
     _GeoCV,

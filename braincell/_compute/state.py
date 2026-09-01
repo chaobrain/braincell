@@ -61,7 +61,7 @@ import brainstate
 import brainunit as u
 import numpy as np
 
-from braincell._base import Synapse as RuntimeSynapse
+from braincell._base_channel import Synapse as RuntimeSynapse
 from braincell._discretization.base import NodeTree
 from braincell.mech import NoEventInput, ScalarEventInput, TriggerEventInput
 from braincell.mech import (
@@ -89,7 +89,6 @@ from .layouts import (
     _mechanism_var_names,
     _mechanism_var_value,
     _quantity_sequence_to_decimal_vector,
-    _source_cv_ids_for_point,
     _stack_synapse_values,
     _write_state_buffer,
     build_clamp_routing_table,

@@ -20,6 +20,7 @@ These tests exercise the registry in isolation by constructing a fresh
 singleton (used by ``braincell.quad.get_integrator``) is also covered.
 """
 
+import inspect
 import unittest
 import warnings
 
@@ -243,12 +244,6 @@ class GlobalRegistryIntegrationTest(unittest.TestCase):
             "ind_exp_euler",
             "backward_euler",
             "implicit_euler",
-            "splitting",
-            "implicit_rk4",
-            "implicit_exp_euler",
-            "cn_rk4",
-            "cn_exp_euler",
-            "exp_exp_euler",
             "staggered",
             "dhs_voltage",
         }
@@ -337,6 +332,66 @@ class RegistryMetadataTest(unittest.TestCase):
         exponential_names = {e.name for e in registry.by_category("exponential")}
         self.assertIn("exp_euler", exponential_names)
         self.assertIn("ind_exp_euler", exponential_names)
+
+
+class CallConventionTest(unittest.TestCase):
+    """Every registered step must match the convention its hosts use.
+
+    :meth:`braincell.Cell._update_dynamics` calls ``self.solver(self)`` and
+    :class:`braincell.SingleCompartment` calls ``self.solver(self, I_ext)``;
+    neither passes ``t`` or ``dt``. A step declared ``(target, t, dt, *args)``
+    is therefore unreachable through ``solver="<name>"`` even though it
+    resolves fine through :func:`get_integrator`. That mismatch is what let
+    six dead cell-only integrators sit in the registry unnoticed, so it is
+    pinned here rather than left to be rediscovered.
+    """
+
+    #: Registered names that legitimately demand explicit ``(t, dt)``.
+    #: ``dhs_voltage`` is an internal sub-step invoked directly by
+    #: ``staggered_step``; ``implicit_euler`` is called directly in tests
+    #: and examples. Neither is selectable via ``solver=``. Adding a name
+    #: here is a deliberate act — do not do it to silence this test.
+    KNOWN_TIME_ARG_STEPS = {"dhs_voltage", "implicit_euler"}
+
+    def test_entry_records_call_convention(self):
+        registry = quad.get_registry()
+        actual = {e.name for e in registry.entries() if e.requires_time_args}
+        self.assertEqual(actual, self.KNOWN_TIME_ARG_STEPS)
+
+    def test_host_callable_steps_bind_with_target_only(self):
+        registry = quad.get_registry()
+        sentinel = object()
+        for entry in registry.entries():
+            if entry.name in self.KNOWN_TIME_ARG_STEPS:
+                continue
+            with self.subTest(name=entry.name):
+                self.assertFalse(entry.requires_time_args)
+                # The exact call ``Cell._update_dynamics`` makes.
+                inspect.signature(entry.func).bind(sentinel)
+                # ...and the one ``SingleCompartment.update`` makes.
+                inspect.signature(entry.func).bind(sentinel, sentinel)
+
+    def test_time_arg_steps_reject_the_host_call(self):
+        registry = quad.get_registry()
+        sentinel = object()
+        for name in self.KNOWN_TIME_ARG_STEPS:
+            with self.subTest(name=name):
+                entry = registry.entry(name)
+                self.assertTrue(entry.requires_time_args)
+                with self.assertRaises(TypeError):
+                    inspect.signature(entry.func).bind(sentinel)
+
+    def test_requires_time_args_computed_on_registration(self):
+        registry = IntegratorRegistry()
+
+        def host_style(target, *args):
+            return None
+
+        def time_style(target, t, dt, *args):
+            return None
+
+        self.assertFalse(registry.register("host", host_style).requires_time_args)
+        self.assertTrue(registry.register("timed", time_style).requires_time_args)
 
 
 class GlobalRegisterIntegratorDecoratorTest(unittest.TestCase):

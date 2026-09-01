@@ -34,6 +34,7 @@ from ._common import (
     _allocate_child_regions_legacy,
     _leaf_counts_by_branch,
     _normalize_min_branch_angle_rad,
+    walk_layout_top_down,
 )
 from ._config import DEFAULT_LAYOUT_CONFIG, LayoutConfig
 from ._geometry import (
@@ -95,25 +96,18 @@ def _layout_children_balloon(
 ) -> None:
     """Lay out every descendant of ``parent``.
 
-    The walk is an explicit stack rather than recursion: morphologies are
-    routinely deeper than the interpreter's frame limit (a reconstructed
-    dendrite can be a chain of thousands of branches), and one frame per
-    branch of depth raised ``RecursionError`` past roughly 400 branches.
-
     A child's placement reads only its parent's finished layout and the
     angle assignments computed once per parent, so placing a whole sibling
     group before descending gives the same geometry the recursive walk
-    produced. Children are pushed in reverse so they are still visited
-    left to right.
+    produced. :func:`~braincell.vis.layout._common.walk_layout_top_down`
+    owns the iterative walk (and the recursion-avoidance invariant behind
+    it); this function only says what a child's placement is.
     """
     # frame: (branch, angle inherited from that branch's placement, is_root)
-    stack: list[tuple[MorphoBranch, float, bool]] = [(parent, parent_angle_rad, is_root)]
-    while stack:
-        node, node_angle_rad, node_is_root = stack.pop()
-        children = node.children
-        if not children:
-            continue
+    Frame = tuple[MorphoBranch, float, bool]
 
+    def _place(frame: Frame, children: tuple[MorphoBranch, ...]) -> list[Frame]:
+        node, node_angle_rad, node_is_root = frame
         angle_assignments = _assign_balloon_child_angles(
             children,
             leaf_counts=leaf_counts,
@@ -124,7 +118,7 @@ def _layout_children_balloon(
             layout_config=layout_config,
         )
         node_layout = layouts[node.index]
-        frames: list[tuple[MorphoBranch, float, bool]] = []
+        frames: list[Frame] = []
         for child in children:
             attach_um, attach_tangent_um = sample_layout_branch(node_layout, child.parent_x)
             child_angle_rad = angle_assignments[child.index]
@@ -138,7 +132,9 @@ def _layout_children_balloon(
                 bend_fraction=layout_config.balloon_bend_fraction,
             )
             frames.append((child, child_angle_rad, False))
-        stack.extend(reversed(frames))
+        return frames
+
+    walk_layout_top_down((parent, parent_angle_rad, is_root), _place)
 
 
 def _assign_balloon_child_angles(

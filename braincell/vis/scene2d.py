@@ -18,6 +18,7 @@ import brainunit as u
 import numpy as np
 
 from braincell.morph.morphology import Morphology
+from ._arclength import ArcPolyline
 from ._values import resolve_overlay_values as _resolve_overlay_values, with_unit_label as _with_unit_label
 from .config import (
     highlight_alpha as _highlight_alpha,
@@ -355,10 +356,6 @@ def build_scene2d_frustum(
     )
 
 
-def build_projected_scene_2d(morpho: Morphology, *, projection_plane: str = "xy") -> RenderScene2D:
-    return build_scene2d_projected(morpho, projection_plane=projection_plane)
-
-
 def _segment_quads_um(branch_layout: LayoutBranch2D) -> np.ndarray:
     """Return the ``(n_segments, 4, 2)`` frustum quads for a branch layout.
 
@@ -398,12 +395,13 @@ def _segment_quads_um(branch_layout: LayoutBranch2D) -> np.ndarray:
 class _Centerline2D:
     """Per-branch 2D centerline used to resolve overlay (branch, x) coordinates.
 
-    Stores a polyline (``points_um``), per-point widths, cumulative arc
-    length, and metadata (branch name/type) so overlays can interpolate
-    without re-reading the morphology.
+    Wraps an :class:`~braincell.vis._arclength.ArcPolyline` — which owns
+    the arc-length parameterisation shared with the 3D scene builder —
+    and adds the per-point widths and branch metadata that 2D overlays
+    need, so they can interpolate without re-reading the morphology.
     """
 
-    __slots__ = ("branch_index", "branch_name", "branch_type", "points_um", "widths_um", "cumulative_um", "total_um")
+    __slots__ = ("branch_index", "branch_name", "branch_type", "widths_um", "arc")
 
     def __init__(
         self,
@@ -413,15 +411,25 @@ class _Centerline2D:
         branch_type: str,
         points_um: np.ndarray,
         widths_um: np.ndarray,
-        cumulative_um: np.ndarray,
+        cumulative_um: np.ndarray | None = None,
     ) -> None:
         self.branch_index = branch_index
         self.branch_name = branch_name
         self.branch_type = branch_type
-        self.points_um = np.asarray(points_um, dtype=float)
         self.widths_um = np.asarray(widths_um, dtype=float)
-        self.cumulative_um = np.asarray(cumulative_um, dtype=float)
-        self.total_um = float(self.cumulative_um[-1]) if self.cumulative_um.size else 0.0
+        self.arc = ArcPolyline(points_um, cumulative_um)
+
+    @property
+    def points_um(self) -> np.ndarray:
+        return self.arc.points_um
+
+    @property
+    def cumulative_um(self) -> np.ndarray:
+        return self.arc.cumulative_um
+
+    @property
+    def total_um(self) -> float:
+        return self.arc.total_um
 
     @classmethod
     def from_points(
@@ -433,17 +441,12 @@ class _Centerline2D:
         points_um: np.ndarray,
         widths_um: np.ndarray,
     ) -> "_Centerline2D":
-        pts = np.asarray(points_um, dtype=float)
-        diffs = np.diff(pts, axis=0)
-        seg_lens = np.linalg.norm(diffs, axis=1)
-        cum = np.concatenate([[0.0], np.cumsum(seg_lens)])
         return cls(
             branch_index=branch_index,
             branch_name=branch_name,
             branch_type=branch_type,
-            points_um=pts,
-            widths_um=np.asarray(widths_um, dtype=float),
-            cumulative_um=cum,
+            points_um=points_um,
+            widths_um=widths_um,
         )
 
     @classmethod
@@ -458,26 +461,14 @@ class _Centerline2D:
             branch_index=layout.branch_index,
             branch_name=layout.branch_name,
             branch_type=layout.branch_type,
-            points_um=np.asarray(layout.segment_points_um, dtype=float),
+            points_um=layout.segment_points_um,
             widths_um=widths,
-            cumulative_um=np.asarray(layout.cumulative_lengths_um, dtype=float),
+            cumulative_um=layout.cumulative_lengths_um,
         )
 
     def point_at(self, x: float) -> np.ndarray:
         """Interpolate the 2D position at fractional coordinate *x* ∈ [0, 1]."""
-        if self.total_um <= 0.0 or self.points_um.shape[0] == 0:
-            return self.points_um[0].copy() if self.points_um.size else np.zeros(2, dtype=float)
-        clamped = float(np.clip(x, 0.0, 1.0))
-        target = clamped * self.total_um
-        idx = int(np.searchsorted(self.cumulative_um[1:], target, side="right"))
-        idx = min(max(idx, 0), len(self.points_um) - 2)
-        seg_start = float(self.cumulative_um[idx])
-        seg_end = float(self.cumulative_um[idx + 1])
-        seg_len = seg_end - seg_start
-        if seg_len <= 0.0:
-            return self.points_um[idx].copy()
-        alpha = (target - seg_start) / seg_len
-        return (1.0 - alpha) * self.points_um[idx] + alpha * self.points_um[idx + 1]
+        return self.arc.point_at(x)
 
     def subpolyline(self, prox: float, dist: float) -> np.ndarray:
         """Return the polyline fragment between fractional coordinates *prox* and *dist*.
@@ -485,18 +476,11 @@ class _Centerline2D:
         The result includes interpolated endpoints plus any intermediate
         polyline vertices that fall strictly between them.
         """
-        lo, hi = (float(prox), float(dist)) if prox <= dist else (float(dist), float(prox))
-        lo = float(np.clip(lo, 0.0, 1.0))
-        hi = float(np.clip(hi, 0.0, 1.0))
-        if self.total_um <= 0.0 or self.points_um.shape[0] == 0:
-            return self.points_um[:1].copy() if self.points_um.size else np.zeros((0, 2), dtype=float)
-        start = self.point_at(lo)
-        end = self.point_at(hi)
-        start_arc = lo * self.total_um
-        end_arc = hi * self.total_um
-        interior_mask = (self.cumulative_um > start_arc + 1e-12) & (self.cumulative_um < end_arc - 1e-12)
-        interior = self.points_um[interior_mask]
-        return np.vstack([start[None, :], interior, end[None, :]])
+        points_um = self.arc.points_um
+        if self.arc.is_degenerate:
+            return points_um[:1].copy() if points_um.size else np.zeros((0, 2), dtype=float)
+        lo, hi, interior_mask = self.arc.subspan(prox, dist)
+        return np.vstack([self.arc.point_at(lo)[None, :], points_um[interior_mask], self.arc.point_at(hi)[None, :]])
 
     def average_width(self) -> float:
         return float(np.mean(self.widths_um)) if self.widths_um.size else 1.0

@@ -15,19 +15,24 @@
 
 """Tests for :mod:`braincell.filter.cache`.
 
-``SelectionCache``'s three dictionaries are **reserved**: nothing in the
-tree reads or writes them today. They exist for the four region types and
-one locset type that would need memoized per-branch distances and radii —
-:class:`RadiusRangeRegion`, :class:`TreeDistanceRegion`,
-:class:`EuclideanDistanceRegion`, :class:`SubtreeRegion`, and
-:class:`StepSamples` — every one of which currently raises
-``NotImplementedError``.
+``SelectionCache``'s three dictionaries are still **reserved**: they exist
+for the four region types and one locset type that would need memoized
+per-branch distances and radii — :class:`RadiusRangeRegion`,
+:class:`TreeDistanceRegion`, :class:`EuclideanDistanceRegion`,
+:class:`SubtreeRegion`, and :class:`StepSamples` — every one of which
+currently raises ``NotImplementedError``.
 
-So there is no memoization to test. What is real, load-bearing, and
-otherwise untested is the *plumbing*: every composite region and locset
-expression threads the caller's cache down to the leaves. These tests pin
-that, and pin the reserved surface so it fails loudly when someone
-implements one of the five without wiring the cache up.
+Three things are live and tested here:
+
+* the *plumbing* — every composite region and locset expression threads
+  the caller's cache down to the leaves;
+* *sub-expression memoization* — an operand that appears more than once in
+  one tree is evaluated once;
+* *invalidation* — a memoized mask is dropped when the cache meets a
+  different morphology, or the same morphology after a structural change.
+
+The reserved surface is pinned too, so implementing one of the five
+without wiring the cache up fails loudly.
 """
 
 import unittest
@@ -203,6 +208,91 @@ class LocsetCacheThreadingTest(unittest.TestCase):
 
         self.assertIs(left.seen[0], self.cache)
         self.assertIs(right.seen[0], self.cache)
+
+
+class SubExpressionMemoizationTest(unittest.TestCase):
+    """A repeated operand costs one traversal, not one per occurrence."""
+
+    def setUp(self) -> None:
+        self.tree = _soma_dend_tree()
+        self.cache = SelectionCache()
+
+    def test_a_shared_region_operand_is_evaluated_once(self) -> None:
+        shared = _SpyRegion()
+        left, right = _SpyRegion(), _SpyRegion()
+
+        ((shared | left) & (shared | right)).evaluate(self.tree, self.cache)
+
+        self.assertEqual(len(shared.seen), 1)
+        self.assertEqual(len(left.seen), 1)
+        self.assertEqual(len(right.seen), 1)
+
+    def test_equal_but_distinct_expressions_share_one_result(self) -> None:
+        # Region expressions are frozen dataclasses, so the memo key is
+        # structural equality rather than object identity: two separately
+        # constructed AllRegion() operands hit the same entry.
+        spy = _SpyRegion()
+        calls: list[Morphology] = []
+
+        class _CountingAll(AllRegion):
+            def evaluate(self, morpho, cache=None):
+                calls.append(morpho)
+                return super().evaluate(morpho, cache)
+
+        ((_CountingAll() | spy) & (_CountingAll() | spy)).evaluate(self.tree, self.cache)
+
+        self.assertEqual(len(calls), 1)
+
+    def test_a_shared_locset_operand_is_evaluated_once(self) -> None:
+        shared = _SpyLocset()
+
+        LocsetSetOp("union", (shared, shared)).evaluate(self.tree, self.cache)
+
+        self.assertEqual(len(shared.seen), 1)
+
+    def test_without_a_cache_every_occurrence_is_recomputed(self) -> None:
+        shared = _SpyRegion()
+
+        ((shared | _SpyRegion()) & (shared | _SpyRegion())).evaluate(self.tree)
+
+        self.assertEqual(shared.seen, [None, None])
+
+    def test_a_second_morphology_does_not_reuse_the_first_result(self) -> None:
+        shared = _SpyRegion()
+        expr = shared | _SpyRegion()
+
+        expr.evaluate(self.tree, self.cache)
+        expr.evaluate(_soma_dend_tree(), self.cache)
+
+        self.assertEqual(len(shared.seen), 2)
+
+    def test_attaching_a_branch_invalidates_memoized_masks(self) -> None:
+        # Morphology is mutable. A cache reused across an attach must not
+        # answer from a mask computed for the smaller tree.
+        shared = _SpyRegion()
+        expr = shared | _SpyRegion()
+        expr.evaluate(self.tree, self.cache)
+
+        self.tree.attach(
+            parent="dend",
+            child_branch=Branch.from_lengths(lengths=[10.0] * u.um, radii=[1.0, 1.0] * u.um, type="axon"),
+            child_name="axon",
+            parent_x=1.0,
+        )
+        expr.evaluate(self.tree, self.cache)
+
+        self.assertEqual(len(shared.seen), 2)
+
+    def test_an_unhashable_expression_falls_through_instead_of_raising(self) -> None:
+        class _UnhashableSpy(_SpyRegion):
+            __hash__ = None  # type: ignore[assignment]
+
+        unhashable = _UnhashableSpy()
+
+        mask = (unhashable | _SpyRegion()).evaluate(self.tree, self.cache)
+
+        self.assertEqual(len(unhashable.seen), 1)
+        self.assertIsInstance(mask, RegionMask)
 
 
 class ReservedCacheConsumersTest(unittest.TestCase):

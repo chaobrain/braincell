@@ -30,9 +30,91 @@ DEFAULT_2D_FRUSTUM_EDGE_LINEWIDTH = 0.9
 DEFAULT_HIGHLIGHT_COLOR = (255, 215, 0)  # gold — used for region overlays
 DEFAULT_MARKER_COLOR = (30, 144, 255)  # dodger blue — used for locset overlays
 
-SUPPORTED_2D_LAYOUTS = frozenset({"projected", "fan", "stem", "balloon", "radial_360"})
 SUPPORTED_2D_SHAPES = frozenset({"line", "frustum"})
 SUPPORTED_3D_MODES = frozenset({"geometry", "skeleton"})
+
+
+# ---------------------------------------------------------------------------
+# 2D layout-family registry
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class Layout2DFamily:
+    """One entry in the 2D layout-family registry.
+
+    Parameters
+    ----------
+    name : str
+        Canonical family name, as accepted by ``plot2d(layout=...)``.
+    title : str
+        Human-readable label used for comparison-panel titles.
+    aliases : tuple of str
+        Alternative spellings accepted for *name* and normalized to it
+        by the layout dispatcher.
+    dispatched : bool
+        Whether :func:`~braincell.vis.layout.build_layout_branches_2d`
+        builds this family. ``'projected'`` is ``False``: it draws the
+        morphology's own 3D coordinates and is intercepted by
+        :func:`~braincell.vis.scene2d.build_render_scene_2d` before
+        layout dispatch ever happens.
+    """
+
+    name: str
+    title: str
+    aliases: tuple[str, ...] = ()
+    dispatched: bool = True
+
+    @property
+    def all_names(self) -> tuple[str, ...]:
+        """The canonical name followed by every alias."""
+        return (self.name, *self.aliases)
+
+
+# Declaration order is the order ``compare_layouts_2d`` renders panels in.
+LAYOUT_2D_FAMILIES: tuple[Layout2DFamily, ...] = (
+    Layout2DFamily(name="fan", title="Fan"),
+    Layout2DFamily(name="stem", title="Stem", aliases=("trunk_first",)),
+    Layout2DFamily(name="balloon", title="Balloon"),
+    Layout2DFamily(name="radial_360", title="Radial 360"),
+    Layout2DFamily(name="projected", title="Projected", dispatched=False),
+)
+
+SUPPORTED_2D_LAYOUTS = frozenset(name for family in LAYOUT_2D_FAMILIES for name in family.all_names)
+"""Every spelling ``plot2d(layout=...)`` and ``configure(layout_2d_default=...)`` accept."""
+
+LAYOUT_2D_DISPATCHED_NAMES: tuple[str, ...] = tuple(family.name for family in LAYOUT_2D_FAMILIES if family.dispatched)
+"""Canonical families the layout dispatcher builds, in registry order."""
+
+DISPATCHED_2D_LAYOUTS = frozenset(
+    name for family in LAYOUT_2D_FAMILIES if family.dispatched for name in family.all_names
+)
+"""Every spelling ``build_layout_branches_2d(layout_family=...)`` accepts."""
+
+LAYOUT_2D_ALIASES: dict[str, str] = {alias: family.name for family in LAYOUT_2D_FAMILIES for alias in family.aliases}
+"""Alias → canonical family name, applied by the layout dispatcher."""
+
+_LAYOUT_2D_TITLES: dict[str, str] = {name: family.title for family in LAYOUT_2D_FAMILIES for name in family.all_names}
+
+
+def layout_2d_title(layout: str) -> str:
+    """Return the display title for a 2D layout family name or alias.
+
+    Unregistered names fall back to a title-cased form of the name
+    itself, so a user-supplied family still gets a readable panel label.
+
+    Examples
+    --------
+
+    .. code-block:: python
+
+        >>> from braincell.vis.config import layout_2d_title
+        >>> layout_2d_title("radial_360")
+        'Radial 360'
+        >>> layout_2d_title("trunk_first")
+        'Stem'
+    """
+    return _LAYOUT_2D_TITLES.get(layout, layout.replace("_", " ").title())
 
 
 @dataclass
@@ -298,9 +380,11 @@ def publication_theme(
     )
 
     # Apply matplotlib rcParams lazily — only import if available.
-    import importlib.util
+    # ``module_available`` is imported here rather than at module scope
+    # because ``backend`` imports ``scene``, which imports this module.
+    from .backend import module_available
 
-    mpl_available = importlib.util.find_spec("matplotlib") is not None
+    mpl_available = module_available("matplotlib")
     rc_snapshot: dict[str, object] = {}
     if mpl_available:
         import matplotlib as mpl
@@ -526,13 +610,46 @@ def _darken_color(color: tuple[int, int, int], *, factor: float) -> tuple[int, i
     return tuple(max(0, min(255, int(round(channel * factor)))) for channel in color)
 
 
+def rgb_to_hex(rgb: tuple[int, int, int]) -> str:
+    """Convert a 0-255 palette colour to a ``'#rrggbb'`` string.
+
+    The sibling of :func:`rgb_to_float` for the backends that want CSS
+    colours rather than float triples (Plotly). Both live here so that
+    every consumer of the palette decodes it the same way.
+
+    Parameters
+    ----------
+    rgb : tuple of int
+        Colour as ``(r, g, b)`` with each channel in ``[0, 255]``.
+
+    Returns
+    -------
+    str
+        Lowercase ``'#rrggbb'`` hex string.
+
+    See Also
+    --------
+    rgb_to_float : The 0-1 float triple used by matplotlib and PyVista.
+
+    Examples
+    --------
+
+    .. code-block:: python
+
+        >>> from braincell.vis.config import rgb_to_hex
+        >>> rgb_to_hex((255, 128, 0))
+        '#ff8000'
+    """
+    return "#{:02x}{:02x}{:02x}".format(int(rgb[0]), int(rgb[1]), int(rgb[2]))
+
+
 def rgb_to_float(rgb: tuple[int, int, int]) -> tuple[float, float, float]:
     """Convert a 0-255 palette colour to the 0-1 floats plotting libraries want.
 
     The palette in this module is stored as 0-255 integer triples, so
     this is its decode step; it lives here rather than in each backend
-    so matplotlib, PyVista, and the morphometry charts cannot drift
-    apart on it.
+    so matplotlib, PyVista, Plotly, and the morphometry charts cannot
+    drift apart on it.
 
     Parameters
     ----------

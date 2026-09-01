@@ -924,7 +924,7 @@ class CellIonChannelUpdateOrderTest(unittest.TestCase):
     def test_integration_phase_integrates_dependent_runtime_synapse(self):
         from unittest.mock import patch
 
-        from braincell._base import Synapse as RuntimeSynapse
+        from braincell._base_channel import Synapse as RuntimeSynapse
 
         calls = []
 

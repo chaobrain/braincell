@@ -23,9 +23,10 @@ import braintools
 import brainunit as u
 import jax
 
-from braincell._base import HHTypedNeuron, IonInfo
+from braincell._base_channel import IonInfo
+from braincell._base_neuron import HHTypedNeuron
 from braincell._typing import ArrayLike, Initializer, Size
-from braincell.channel._base import Gate, HH, OhmicHH, ghk_flux
+from braincell.channel._base import Gate, HH, OhmicHH, ghk_flux, q10_factor
 from braincell.ion import Calcium
 from braincell.mech import register_channel
 
@@ -2178,7 +2179,7 @@ class Cav3p1_MA2020_GoC(HH):
         return 1.0 / (1.0 + u.math.exp((V - self.v0_h_inf) / self.k_h_inf))
 
     def f_p_tau(self, V, Ca: IonInfo):
-        qt = self.q10 ** (((self.temp - self.temp_ref) / u.kelvin) / 10.0)
+        qt = q10_factor(self.q10, self.temp, self.temp_ref)
         return u.math.where(
             V <= -90.0 * u.mV,
             1.0,
@@ -2196,7 +2197,7 @@ class Cav3p1_MA2020_GoC(HH):
         )
 
     def f_q_tau(self, V, Ca: IonInfo):
-        qt = self.q10 ** (((self.temp - self.temp_ref) / u.kelvin) / 10.0)
+        qt = q10_factor(self.q10, self.temp, self.temp_ref)
         return (self.C_tau_h + self.A_tau_h / u.math.exp((V - self.v0_tau_h1) / self.k_tau_h1)) / qt
 
 
@@ -2551,7 +2552,7 @@ class Cav3p1_MA2024_PC_Frozen(HH):
         return 1.0 / (1.0 + u.math.exp((V - self.v0_h_inf) / self.k_h_inf))
 
     def f_p_tau(self, V, Ca: IonInfo):
-        qt = self.q10 ** (((self.temp - self.temp_ref) / u.kelvin) / 10.0)
+        qt = q10_factor(self.q10, self.temp, self.temp_ref)
         return u.math.where(
             V <= -90.0 * u.mV,
             1.0,
@@ -2569,7 +2570,7 @@ class Cav3p1_MA2024_PC_Frozen(HH):
         )
 
     def f_q_tau(self, V, Ca: IonInfo):
-        qt = self.q10 ** (((self.temp - self.temp_ref) / u.kelvin) / 10.0)
+        qt = q10_factor(self.q10, self.temp, self.temp_ref)
         return (self.C_tau_h + self.A_tau_h / u.math.exp((V - self.v0_tau_h1) / self.k_tau_h1)) / qt
 
 
@@ -2740,7 +2741,7 @@ class Cav3p1Test_PC24(HH):
 
     def f_p_tau(self, V, Ca: IonInfo):
         _ = Ca
-        qt = self.q10 ** (((self.temp - self.temp_ref) / u.kelvin) / 10.0)
+        qt = q10_factor(self.q10, self.temp, self.temp_ref)
         return u.math.where(
             V <= -90.0 * u.mV,
             1.0,
@@ -2759,7 +2760,7 @@ class Cav3p1Test_PC24(HH):
 
     def f_q_tau(self, V, Ca: IonInfo):
         _ = Ca
-        qt = self.q10 ** (((self.temp - self.temp_ref) / u.kelvin) / 10.0)
+        qt = q10_factor(self.q10, self.temp, self.temp_ref)
         return (self.C_tau_h + self.A_tau_h / u.math.exp((V - self.v0_tau_h1) / self.k_tau_h1)) / qt
 
 
@@ -4496,7 +4497,7 @@ class CaHVA_MA2020_GoC(OhmicHH):
 
 
 @register_channel("CaHVA_MA2020_GrC")
-class CaHVA_MA2020_GrC(OhmicHH):
+class CaHVA_MA2020_GrC(CaHVA_MA2020_GoC):
     r"""Granule cell high-voltage-activated calcium current.
 
     The high-voltage-activated (HVA) calcium current of the cerebellar
@@ -4622,50 +4623,6 @@ class CaHVA_MA2020_GrC(OhmicHH):
     """
 
     __module__ = "braincell.channel"
-    root_type = Calcium
-    gates = (
-        Gate("s", power=2, q10=3.0, temp_ref=u.celsius2kelvin(20.0)),
-        Gate("u", q10=3.0, temp_ref=u.celsius2kelvin(20.0)),
-    )
-
-    def __init__(
-        self,
-        size: Size,
-        g_max: Initializer = 0.46 * (u.mS / u.cm**2),
-        temp: ArrayLike = u.celsius2kelvin(30.0),
-        name: Optional[str] = None,
-    ):
-        super().__init__(size=size, name=name)
-        self.g_max = braintools.init.param(g_max, self.varshape, allow_none=False)
-        self.temp = braintools.init.param(temp, self.varshape, allow_none=False)
-        self.Aalpha_s = 0.04944
-        self.Kalpha_s = 15.873  # 01587302
-        self.V0alpha_s = -29.06
-        self.Abeta_s = 0.08298
-        self.Kbeta_s = -25.641
-        self.V0beta_s = -18.66
-        self.Aalpha_u = 0.0013
-        self.Kalpha_u = -18.183
-        self.V0alpha_u = -48.0
-        self.Abeta_u = 0.0013
-        self.Kbeta_u = 83.33
-        self.V0beta_u = -48.0
-
-    def f_s_alpha(self, V, Ca: IonInfo):
-        V = V.to_decimal(u.mV)
-        return self.Aalpha_s * u.math.exp((V - self.V0alpha_s) / self.Kalpha_s)
-
-    def f_s_beta(self, V, Ca: IonInfo):
-        V = V.to_decimal(u.mV)
-        return self.Abeta_s * u.math.exp((V - self.V0beta_s) / self.Kbeta_s)
-
-    def f_u_alpha(self, V, Ca: IonInfo):
-        V = V.to_decimal(u.mV)
-        return self.Aalpha_u * u.math.exp((V - self.V0alpha_u) / self.Kalpha_u)
-
-    def f_u_beta(self, V, Ca: IonInfo):
-        V = V.to_decimal(u.mV)
-        return self.Abeta_u * u.math.exp((V - self.V0beta_u) / self.Kbeta_u)
 
 
 @register_channel("Cav2p3_MA2020_GoC")

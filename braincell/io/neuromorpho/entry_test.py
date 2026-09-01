@@ -51,27 +51,60 @@ class LoadNeuromorphoTest(unittest.TestCase):
             # The cache folder now contains the SWC file.
             self.assertTrue((Path(tmpdir) / "10047" / "TypeA-10.CNG.swc").exists())
 
-    def test_respects_existing_cache(self) -> None:
+    def _warm_cache(self, cache_dir: Path) -> Path:
+        folder = cache_dir / "10047"
+        folder.mkdir()
+        (folder / "TypeA-10.CNG.swc").write_text(
+            FIXTURE_SWC.read_text(encoding="utf-8"),
+            encoding="utf-8",
+        )
+        return folder
+
+    def test_warm_cache_issues_no_requests(self) -> None:
+        # The docstring promises already-cached neurons are not
+        # re-downloaded. download() used to call get_neuron() and
+        # get_measurement() first regardless, so a warm cache still cost two
+        # requests against a rate-limited public API on every single call.
         with tempfile.TemporaryDirectory() as tmpdir:
             cache_dir = Path(tmpdir)
-            folder = cache_dir / "10047"
-            folder.mkdir()
-            (folder / "TypeA-10.CNG.swc").write_text(
-                FIXTURE_SWC.read_text(encoding="utf-8"),
-                encoding="utf-8",
-            )
+            self._warm_cache(cache_dir)
+            session = FakeSession([])  # any request at all raises
+            client = NeuroMorphoClient(session=session, cache_dir=cache_dir)
+
+            morph = load_neuromorpho(10047, cache_dir=cache_dir, client=client)
+
+            self.assertIsInstance(morph, Morphology)
+            self.assertEqual(session.calls, [])
+
+    def test_warm_cache_does_not_rewrite_metadata(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            cache_dir = Path(tmpdir)
+            folder = self._warm_cache(cache_dir)
+            metadata = folder / "metadata.json"
+            metadata.write_text('{"sentinel": true}', encoding="utf-8")
+            client = NeuroMorphoClient(session=FakeSession([]), cache_dir=cache_dir)
+
+            load_neuromorpho(10047, cache_dir=cache_dir, client=client)
+
+            self.assertEqual(metadata.read_text(encoding="utf-8"), '{"sentinel": true}')
+
+    def test_overwrite_still_redownloads_a_cached_neuron(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            cache_dir = Path(tmpdir)
+            self._warm_cache(cache_dir)
             session = FakeSession(
                 [
                     FakeResponse(json_data=sample_neuron_payload()),  # get_neuron
                     FakeResponse(json_data={"n_stems": 1.0}),  # measurement
-                    # No download response — file already cached.
+                    FakeResponse(content=[FIXTURE_SWC.read_bytes()]),  # standard download
                 ]
             )
             client = NeuroMorphoClient(session=session, cache_dir=cache_dir)
-            morph = load_neuromorpho(10047, cache_dir=cache_dir, client=client)
+
+            morph = load_neuromorpho(10047, cache_dir=cache_dir, client=client, overwrite=True)
+
             self.assertIsInstance(morph, Morphology)
-            # Only get_neuron and measurement were fetched, not the file.
-            self.assertEqual(len(session.calls), 2)
+            self.assertEqual(len(session.calls), 3)
 
 
 class MorphologyClassmethodTest(unittest.TestCase):

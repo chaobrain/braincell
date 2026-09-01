@@ -36,8 +36,10 @@ from braincell.morph.morphology import Morphology
 from ._common import (
     LayoutBranch2D,
     _LayoutSpec2D,
+    _child_weight,
     _leaf_counts_by_branch,
     _normalize_min_branch_angle_rad,
+    walk_layout_top_down,
 )
 from ._config import DEFAULT_LAYOUT_CONFIG, LayoutConfig
 from ._geometry import (
@@ -96,21 +98,17 @@ def _layout_children_fan(
 ) -> None:
     """Lay out every descendant of ``parent``.
 
-    Iterative for the same reason as the other layout families: a branch
-    chain deeper than the interpreter's frame limit must not raise
-    ``RecursionError``. Each child's sector is allocated from its parent's
-    finished interval only, so a sibling group can be placed before any of
-    it is descended into. Children are pushed in reverse to keep the
-    left-to-right visit order.
+    Each child's sector is allocated from its parent's finished interval
+    only, so a sibling group can be placed before any of it is descended
+    into. :func:`~braincell.vis.layout._common.walk_layout_top_down`
+    owns the iterative walk (and the recursion-avoidance invariant behind
+    it); this function only says what a child's placement is.
     """
     # frame: (branch, angular interval allocated to it, is_root)
-    stack: list[tuple[MorphoBranch, tuple[float, float] | None, bool]] = [(parent, interval, is_root)]
-    while stack:
-        node, node_interval, node_is_root = stack.pop()
-        children = node.children
-        if not children:
-            continue
+    Frame = tuple[MorphoBranch, tuple[float, float] | None, bool]
 
+    def _place(frame: Frame, children: tuple[MorphoBranch, ...]) -> list[Frame]:
+        node, node_interval, node_is_root = frame
         if node_is_root:
             allocations = _allocate_root_fan_children(
                 children,
@@ -128,7 +126,7 @@ def _layout_children_fan(
             )
 
         node_layout = layouts[node.index]
-        frames: list[tuple[MorphoBranch, tuple[float, float] | None, bool]] = []
+        frames: list[Frame] = []
         for child, child_interval, child_angle in allocations:
             attach_um = point_on_layout_branch(node_layout, child.parent_x)
             layouts[child.index] = _make_straight_layout_branch(
@@ -139,7 +137,9 @@ def _layout_children_fan(
                 child_x=float(child.child_x),
             )
             frames.append((child, child_interval, False))
-        stack.extend(reversed(frames))
+        return frames
+
+    walk_layout_top_down((parent, interval, is_root), _place)
 
 
 def _allocate_root_fan_children(
@@ -276,11 +276,16 @@ def _allocate_fan_sector_children(
         return allocations
 
     available_span = span - required_gap
-    total_weight = sum(max(float(leaf_counts.get(child.index, 1.0)), 1e-6) for child in ordered)
+    total_weight = sum(_child_weight(child, leaf_counts) for child in ordered)
     cursor = interval[0]
     allocations = []
     for index, child in enumerate(ordered):
-        weight = max(float(leaf_counts.get(child.index, 1.0)), 1e-6)
+        weight = _child_weight(child, leaf_counts)
+        # NOTE: ``available * (w / total)``, not ``available * w / total``
+        # as ``_weighted_child_intervals`` computes it. The two associate
+        # differently in floating point, so this loop is deliberately not
+        # routed through that helper — see the module docstring of
+        # ``_common`` for the three fallback policies that also differ.
         width = available_span * (weight / total_weight) if total_weight > 0.0 else available_span / len(ordered)
         child_interval = (cursor, cursor + width)
         allocations.append((child, child_interval, 0.5 * (child_interval[0] + child_interval[1])))

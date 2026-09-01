@@ -19,18 +19,47 @@ import unittest
 
 import brainunit as u
 
-from braincell.vis._testing import make_length_only_tree, make_two_dendrite_tree
+from braincell import Branch, Morphology
+from braincell.morph import MorphoBranch
+from braincell.vis._testing import (
+    make_deep_chain_tree,
+    make_length_only_tree,
+    make_two_dendrite_tree,
+)
 from braincell.vis.layout._common import (
     _allocate_child_regions_legacy,
     _allocate_weighted_angles,
     _build_layout_specs,
+    _child_weight,
     _leaf_counts_by_branch,
     _normalize_min_branch_angle_rad,
     _path_lengths_um_by_branch,
     _pick_trunk_child,
     _side_branch_offsets_rad,
     _weighted_child_intervals,
+    walk_layout_top_down,
 )
+
+
+def _make_forked_tree() -> Morphology:
+    """A three-level tree: ``soma -> (a -> a1, a2 | b -> b1)``.
+
+    The shared fixtures in ``braincell.vis._testing`` are either two
+    levels deep or unbranched, so neither can tell a parent-before-
+    children walk apart from a flat one.
+    """
+
+    def dendrite() -> Branch:
+        return Branch.from_lengths(lengths=[10.0] * u.um, radii=[2.0, 1.5] * u.um, type="apical_dendrite")
+
+    soma = Branch.from_lengths(lengths=[20.0] * u.um, radii=[10.0, 10.0] * u.um, type="soma")
+    tree = Morphology.from_root(soma, name="soma")
+    tree.attach(parent="soma", child_branch=dendrite(), child_name="a", parent_x=1.0)
+    tree.attach(parent="soma", child_branch=dendrite(), child_name="b", parent_x=1.0)
+    tree.attach(parent="a", child_branch=dendrite(), child_name="a1", parent_x=1.0)
+    tree.attach(parent="a", child_branch=dendrite(), child_name="a2", parent_x=1.0)
+    tree.attach(parent="b", child_branch=dendrite(), child_name="b1", parent_x=1.0)
+    return tree
 
 
 class NormalizeMinBranchAngleTest(unittest.TestCase):
@@ -186,6 +215,108 @@ class AllocateChildRegionsLegacyTest(unittest.TestCase):
             min_branch_angle_rad=math.pi,
         )
         self.assertEqual(len(allocations), 2)
+
+
+class WalkLayoutTopDownTest(unittest.TestCase):
+    """The one walk shared by the fan, legacy, balloon and radial families."""
+
+    def setUp(self) -> None:
+        self.tree = _make_forked_tree()
+
+    def _place_order(self) -> list[str]:
+        """Return the names of the branches ``place_children`` was called for."""
+        order: list[str] = []
+
+        def place(frame, children):
+            order.append(frame[0].name)
+            return [(child,) for child in children]
+
+        walk_layout_top_down((self.tree.root,), place)
+        return order
+
+    def test_visits_every_descendant_exactly_once(self) -> None:
+        placed: list[str] = []
+
+        def place(frame, children):
+            placed.extend(child.name for child in children)
+            return [(child,) for child in children]
+
+        walk_layout_top_down((self.tree.root,), place)
+
+        expected = [branch.name for branch in self.tree.branches if branch is not self.tree.root]
+        self.assertEqual(sorted(placed), sorted(expected))
+        self.assertEqual(len(placed), len(set(placed)))
+
+    def test_parent_is_placed_before_its_own_children(self) -> None:
+        placed: set[int] = {self.tree.root.index}
+
+        def place(frame, children):
+            # The frame's own branch must already have been placed.
+            self.assertIn(frame[0].index, placed)
+            placed.update(child.index for child in children)
+            return [(child,) for child in children]
+
+        walk_layout_top_down((self.tree.root,), place)
+        self.assertEqual(len(placed), len(self.tree.branches))
+
+    def test_siblings_are_visited_left_to_right(self) -> None:
+        # Frames are pushed in reverse so popping yields the declared
+        # child order; several families' allocations depend on it.
+        self.assertEqual(self._place_order(), ["soma", "a", "b"])
+
+    def test_leaf_seed_never_calls_place_children(self) -> None:
+        leaf = make_length_only_tree().root.children[0]
+        calls: list[MorphoBranch] = []
+
+        def place(frame, children):
+            calls.append(frame[0])
+            return [(child,) for child in children]
+
+        walk_layout_top_down((leaf,), place)
+        self.assertEqual(calls, [])
+
+    def test_state_threads_from_a_parent_frame_into_its_child_frames(self) -> None:
+        depths: dict[str, int] = {self.tree.root.name: 0}
+
+        def place(frame, children):
+            node, depth = frame
+            depths.update({child.name: depth + 1 for child in children})
+            return [(child, depth + 1) for child in children]
+
+        walk_layout_top_down((self.tree.root, 0), place)
+        self.assertEqual(depths, {"soma": 0, "a": 1, "b": 1, "a1": 2, "a2": 2, "b1": 2})
+
+    def test_chain_deeper_than_the_recursion_limit_is_walked_iteratively(self) -> None:
+        # Recursion here is a correctness bug, not a style issue: the old
+        # recursive walks raised RecursionError past ~400 branches.
+        tree = make_deep_chain_tree(1200)
+        visited = 0
+
+        def place(frame, children):
+            nonlocal visited
+            visited += len(children)
+            return [(child,) for child in children]
+
+        walk_layout_top_down((tree.root,), place)
+        self.assertEqual(visited, 1199)
+
+
+class ChildWeightTest(unittest.TestCase):
+    def test_known_weight_is_returned(self) -> None:
+        tree = make_length_only_tree()
+        child = tree.root.children[0]
+        self.assertEqual(_child_weight(child, {child.index: 4.0}), 4.0)
+
+    def test_missing_weight_defaults_to_one(self) -> None:
+        tree = make_length_only_tree()
+        child = tree.root.children[0]
+        self.assertEqual(_child_weight(child, {}), 1.0)
+
+    def test_zero_and_negative_weights_are_floored_so_a_sum_never_divides_by_zero(self) -> None:
+        tree = make_length_only_tree()
+        child = tree.root.children[0]
+        self.assertEqual(_child_weight(child, {child.index: 0.0}), 1e-6)
+        self.assertEqual(_child_weight(child, {child.index: -5.0}), 1e-6)
 
 
 if __name__ == "__main__":

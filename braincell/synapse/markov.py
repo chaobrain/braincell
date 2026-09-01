@@ -15,10 +15,10 @@
 
 # -*- coding: utf-8 -*-
 
-import brainstate
 import brainunit as u
 
-from braincell._base import HHTypedNeuron, Synapse
+from braincell._base_channel import Synapse
+from braincell._base_neuron import HHTypedNeuron
 from braincell.mech import (
     DerivedSpec,
     ParameterSpec,
@@ -35,11 +35,6 @@ __all__ = [
     'GABAa',
     'NMDA',
 ]
-
-
-def _decay_factor(dt, tau):
-    """Return the exact exponential decay factor over one timestep."""
-    return u.math.exp(-(dt / tau))
 
 
 @register_synapse("ExpSyn")

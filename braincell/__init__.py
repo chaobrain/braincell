@@ -28,16 +28,18 @@ from braincell.quad.protocol import (
     state_grouping,
 )
 from . import quad, mech, channel, synapse, ion, filter
-from ._base import (
+from ._base_channel import (
     Channel,
-    HHTypedNeuron,
-    Ion,
     IonInfo,
     IonChannel,
-    MixIons,
     Synapse,
+)
+from ._base_ion import (
+    Ion,
+    MixIons,
     mix_ions,
 )
+from ._base_neuron import HHTypedNeuron
 from ._discretization import (
     CompositeByTypePolicy,
     CV,

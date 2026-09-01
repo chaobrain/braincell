@@ -19,7 +19,7 @@ from numbers import Integral, Real
 import brainunit as u
 import numpy as np
 
-from braincell.morph.morphology import Morphology
+from braincell.morph.morphology import MorphoBranch, Morphology
 
 Interval = tuple[int, float, float]
 Location = tuple[int, float]
@@ -122,19 +122,15 @@ def _coerce_filterable_scalar(property_name: str, value: object) -> object:
     raise TypeError(f"Property {property_name!r} is not scalar-filterable; got {type(value).__name__!s}.")
 
 
-def _resolve_branch_property(morpho: Morphology, branch_index: int, property_name: str) -> object:
-    branch_view = morpho.branch(index=branch_index)
-
-    if property_name == "branch_id":
-        return branch_index
+def _resolve_branch_property(branch_view: MorphoBranch, property_name: str) -> object:
+    # ``MorphoBranch.parent_id`` is the parent's *node id* and is ``None`` at
+    # the root, while a region filter wants the parent *branch index* with -1
+    # as the root sentinel. That mismatch is why this one name cannot fall
+    # through to the generic ``getattr`` path below; every other branch fact
+    # this layer used to re-derive is now published by ``MorphoBranch``.
     if property_name == "parent_id":
-        return -1 if branch_view.parent is None else branch_view.parent.index
-    if property_name == "n_children":
-        return branch_view.n_children
-    if property_name == "branch_order":
-        return len(morpho.path_to_root(branch_index)) - 1
-    if property_name == "n_tapers":
-        return branch_view.n_segments
+        parent = branch_view.parent
+        return -1 if parent is None else parent.index
     if property_name in _BRANCH_METRIC_PROPERTIES:
         return getattr(branch_view, property_name)
     if property_name in _UNSUPPORTED_BRANCH_METRIC_PROPERTIES:
@@ -285,8 +281,8 @@ def branch_in_intervals(
     prop = _coerce_property_name(property_name)
     candidates = _coerce_values("values", values)
     intervals: list[tuple[int, float, float]] = []
-    for index, _ in enumerate(morpho.branches):
-        value = _resolve_branch_property(morpho, index, prop)
+    for index, branch_view in enumerate(morpho.branches):
+        value = _resolve_branch_property(branch_view, prop)
         if _matches_in(value, candidates=candidates, property_name=prop):
             intervals.append((index, 0.0, 1.0))
     return tuple(intervals)
@@ -304,8 +300,8 @@ def branch_range_intervals(
     closed_mode = _parse_closed(closed)
 
     intervals: list[tuple[int, float, float]] = []
-    for index, _ in enumerate(morpho.branches):
-        value = _resolve_branch_property(morpho, index, prop)
+    for index, branch_view in enumerate(morpho.branches):
+        value = _resolve_branch_property(branch_view, prop)
         if _matches_range(
             value,
             low=low,
@@ -635,10 +631,9 @@ def branch_points_locations(morpho: Morphology, *, epsilon: float = EPSILON) -> 
 
 
 def terminal_locations(morpho: Morphology, *, epsilon: float = EPSILON) -> tuple[Location, ...]:
-    points: list[Location] = []
-    for branch_idx in range(len(morpho.branches)):
-        if len(morpho.branch(index=branch_idx).children) == 0:
-            points.append((branch_idx, 1.0))
+    points: list[Location] = [
+        (branch_idx, 1.0) for branch_idx, branch in enumerate(morpho.branches) if branch.n_children == 0
+    ]
     return normalize_locset_points(points, epsilon=epsilon)
 
 

@@ -27,7 +27,6 @@ from braincell.vis._testing import (
     make_deep_chain_tree,
     make_length_only_tree,
     make_node_tree,
-    make_projected_node_tree,
     needs_benchmark,
 )
 from braincell.vis.backend import BackendChooser

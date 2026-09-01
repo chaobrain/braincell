@@ -20,7 +20,7 @@ import unittest
 import brainunit as u
 import jax.numpy as jnp
 
-from braincell._base import IonInfo
+from braincell._base_channel import IonInfo
 from braincell.channel._base import HH
 from braincell.channel.potassium import (
     KDR_Ba2002,
@@ -59,7 +59,6 @@ from braincell.channel.potassium import (
     Kv4p3_MA2024_PC,
     Kv4p3_MA2025_BC,
     Kv4p3_RI2021_SC,
-    _linoid_stable,
     fKdr_SU2015_DCN,
     sKdr_SU2015_DCN,
 )
@@ -638,18 +637,6 @@ class Kv4p3MA25BCTest(unittest.TestCase):
                 atol=1e-6,
             )
         )
-
-    def test_linoid_helper_uses_small_ratio_branch(self) -> None:
-        x = jnp.array([1.0e-8, 1.0])
-        y = jnp.array([1.0, 1.0])
-        result = _linoid_stable(x, y)
-        expected = jnp.array(
-            [
-                1.0 * (1.0 - 1.0e-8 / 2.0),
-                1.0 / (jnp.exp(1.0) - 1.0),
-            ]
-        )
-        self.assertTrue(bool(jnp.allclose(result, expected, atol=1e-6)))
 
 
 class Kir2p3MA24PCTest(unittest.TestCase):
@@ -1590,6 +1577,16 @@ class KdrZH19IOTest(unittest.TestCase):
     def test_small_denominator_branch_is_stable(self) -> None:
         ch = Kdr_ZH2019_IO(size=1)
         self.assertTrue(u.math.allclose(ch._n_alpha(_V([-41.0])), jnp.array([10.0]), atol=1e-6))
+
+    def test_rate_stays_accurate_just_off_the_singularity(self) -> None:
+        # `x / (1 - exp(-x))` loses most of its float32 significand for
+        # tiny `x`; `exprel` keeps it. Sample either side of the removable
+        # singularity, closer to it than the old helper's 1e-6 branch
+        # threshold, and compare against the analytic value `1 + x/2`.
+        ch = Kdr_ZH2019_IO(size=1)
+        offsets = jnp.array([-1.0e-3, -1.0e-5, 1.0e-5, 1.0e-3])
+        n_alpha = ch._n_alpha(_V(-41.0 + offsets))
+        self.assertTrue(u.math.allclose(n_alpha, 10.0 * (1.0 + (offsets / 10.0) / 2.0), atol=1e-5))
 
 
 if __name__ == "__main__":

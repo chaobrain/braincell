@@ -24,9 +24,9 @@ from typing import Optional
 import braintools
 import brainunit as u
 
-from braincell._base import HHTypedNeuron
+from braincell._base_neuron import HHTypedNeuron
 from braincell._typing import ArrayLike, Initializer, Size
-from braincell.channel._base import Gate, HH, OhmicHH
+from braincell.channel._base import Gate, HH, OhmicHH, q10_factor
 from braincell.mech import register_channel
 
 __all__ = [
@@ -408,7 +408,7 @@ class HCN1_MA2025_BC(OhmicHH):
 
 
 @register_channel("HCN1_MA2024_PC")
-class HCN1_MA2024_PC(OhmicHH):
+class HCN1_MA2024_PC(HCN1_MA2025_BC):
     r"""HCN1 h-current imported for the human Purkinje cell model.
 
     Ports the single ``h`` gate NEURON mechanism
@@ -496,51 +496,10 @@ class HCN1_MA2024_PC(OhmicHH):
     """
 
     __module__ = "braincell.channel"
-    root_type = HHTypedNeuron
-    gates = (Gate("h", q10=3.0, temp_ref=u.celsius2kelvin(37.0)),)
-
-    def __init__(
-        self,
-        size: Size,
-        g_max: Initializer = 0.1 * (u.mS / u.cm**2),
-        E: Initializer = -34.4 * u.mV,
-        temp: ArrayLike = u.celsius2kelvin(23.0),
-        name: Optional[str] = None,
-    ):
-        super().__init__(size=size, name=name)
-        self.g_max = braintools.init.param(g_max, self.varshape, allow_none=False)
-        self.E = braintools.init.param(E, self.varshape, allow_none=False)
-        self.temp = braintools.init.param(temp, self.varshape, allow_none=False)
-        self.ratetau = 1.0
-        self.ljp = 9.3 * u.mV
-        self.v_inf_half_noljp = -90.3 * u.mV
-        self.v_inf_k = 9.67 * u.mV
-        self.v_tau_const = 0.0018
-        self.v_tau_half1_noljp = -68.0 * u.mV
-        self.v_tau_half2_noljp = -68.0 * u.mV
-        self.v_tau_k1 = -22.0 * u.mV
-        self.v_tau_k2 = 7.14 * u.mV
-
-    def reversal_potential(self, V, *ions):
-        return self.E
-
-    def f_h_inf(self, V):
-        V = V.to_decimal(u.mV)
-        v_half = (self.v_inf_half_noljp - self.ljp).to_decimal(u.mV)
-        v_k = self.v_inf_k.to_decimal(u.mV)
-        return 1.0 / (1.0 + u.math.exp((V - v_half) / v_k))
-
-    def f_h_tau(self, V):
-        V = V.to_decimal(u.mV)
-        v_half1 = (self.v_tau_half1_noljp - self.ljp).to_decimal(u.mV)
-        v_half2 = (self.v_tau_half2_noljp - self.ljp).to_decimal(u.mV)
-        v_k1 = self.v_tau_k1.to_decimal(u.mV)
-        v_k2 = self.v_tau_k2.to_decimal(u.mV)
-        return self.ratetau / (self.v_tau_const * (u.math.exp((V - v_half1) / v_k1) + u.math.exp((V - v_half2) / v_k2)))
 
 
 @register_channel("HCN1_RI2021_SC")
-class HCN1_RI2021_SC(OhmicHH):
+class HCN1_RI2021_SC(HCN1_MA2025_BC):
     r"""HCN1 h-current imported for the cerebellar stellate cell model.
 
     Ports the single ``h`` gate NEURON mechanism
@@ -628,47 +587,6 @@ class HCN1_RI2021_SC(OhmicHH):
     """
 
     __module__ = "braincell.channel"
-    root_type = HHTypedNeuron
-    gates = (Gate("h", q10=3.0, temp_ref=u.celsius2kelvin(37.0)),)
-
-    def __init__(
-        self,
-        size: Size,
-        g_max: Initializer = 0.1 * (u.mS / u.cm**2),
-        E: Initializer = -34.4 * u.mV,
-        temp: ArrayLike = u.celsius2kelvin(23.0),
-        name: Optional[str] = None,
-    ):
-        super().__init__(size=size, name=name)
-        self.g_max = braintools.init.param(g_max, self.varshape, allow_none=False)
-        self.E = braintools.init.param(E, self.varshape, allow_none=False)
-        self.temp = braintools.init.param(temp, self.varshape, allow_none=False)
-        self.ratetau = 1.0
-        self.ljp = 9.3 * u.mV
-        self.v_inf_half_noljp = -90.3 * u.mV
-        self.v_inf_k = 9.67 * u.mV
-        self.v_tau_const = 0.0018
-        self.v_tau_half1_noljp = -68.0 * u.mV
-        self.v_tau_half2_noljp = -68.0 * u.mV
-        self.v_tau_k1 = -22.0 * u.mV
-        self.v_tau_k2 = 7.14 * u.mV
-
-    def reversal_potential(self, V, *ions):
-        return self.E
-
-    def f_h_inf(self, V):
-        V = V.to_decimal(u.mV)
-        v_half = (self.v_inf_half_noljp - self.ljp).to_decimal(u.mV)
-        v_k = self.v_inf_k.to_decimal(u.mV)
-        return 1.0 / (1.0 + u.math.exp((V - v_half) / v_k))
-
-    def f_h_tau(self, V):
-        V = V.to_decimal(u.mV)
-        v_half1 = (self.v_tau_half1_noljp - self.ljp).to_decimal(u.mV)
-        v_half2 = (self.v_tau_half2_noljp - self.ljp).to_decimal(u.mV)
-        v_k1 = self.v_tau_k1.to_decimal(u.mV)
-        v_k2 = self.v_tau_k2.to_decimal(u.mV)
-        return self.ratetau / (self.v_tau_const * (u.math.exp((V - v_half1) / v_k1) + u.math.exp((V - v_half2) / v_k2)))
 
 
 @register_channel("HCN1_MA2020_GoC")
@@ -809,7 +727,7 @@ class HCN1_MA2020_GoC(HH):
 
     def _gbar_phi(self):
         temp_ref = u.celsius2kelvin(23.0)
-        return self.Q10_diff ** (((self.temp - temp_ref) / u.kelvin) / 10.0)
+        return q10_factor(self.Q10_diff, self.temp, temp_ref)
 
     def o_inf(self, V):
         V = V.to_decimal(u.mV)
@@ -973,7 +891,7 @@ class HCN2_MA2020_GoC(HH):
 
     def _gbar_phi(self):
         temp_ref = u.celsius2kelvin(23.0)
-        return self.Q10_diff ** (((self.temp - temp_ref) / u.kelvin) / 10.0)
+        return q10_factor(self.Q10_diff, self.temp, temp_ref)
 
     def o_inf(self, V):
         V = V.to_decimal(u.mV)

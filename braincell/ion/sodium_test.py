@@ -20,7 +20,9 @@ import unittest
 import brainunit as u
 import jax.numpy as jnp
 
-from braincell._base import HHTypedNeuron, Ion, IonInfo
+from braincell._base_channel import IonInfo
+from braincell._base_ion import Ion
+from braincell._base_neuron import HHTypedNeuron
 from braincell.channel.sodium import Na_TM1991
 from braincell.ion._base import InitNernstIon
 from braincell.ion.sodium import Sodium, SodiumFixed, SodiumInitNernst

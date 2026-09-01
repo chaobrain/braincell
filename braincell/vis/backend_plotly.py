@@ -26,8 +26,8 @@ per-point colour lookup, preserving the shared scalar bar across
 branches. Per-branch tooltips surface ``branch_name`` / ``branch_type``
 so hover-to-inspect is available without additional callback plumbing.
 
-The backend is gated on ``importlib.util.find_spec("plotly")``; when
-``plotly`` is not installed ``available()`` returns ``False`` so the
+The backend is gated on :func:`~braincell.vis.backend.module_available`;
+when ``plotly`` is not installed ``available()`` returns ``False`` so the
 default :class:`BackendChooser` falls back to PyVista or matplotlib.
 """
 
@@ -38,6 +38,7 @@ import numpy as np
 
 from ._values import resolve_value_limits, resolved_colorbar_label
 from .backend import module_available
+from .config import rgb_to_hex as _rgb_to_hex
 from .scene import BranchTypeBatch3D, RenderRequest, RenderScene3D, ValueBatch3D, ValueSpec
 
 
@@ -144,10 +145,6 @@ class PlotlyBackend:
             showlegend=False,
         )
         return fig
-
-
-def _rgb_to_hex(rgb: tuple[int, int, int]) -> str:
-    return "#{:02x}{:02x}{:02x}".format(int(rgb[0]), int(rgb[1]), int(rgb[2]))
 
 
 def _iter_batch_polylines(batch: BranchTypeBatch3D | ValueBatch3D) -> Iterator[tuple[str, np.ndarray]]:

@@ -22,12 +22,11 @@ from typing import Optional
 import braintools
 import brainunit as u
 
-from braincell._base import IonInfo
+from braincell._base_channel import IonInfo
 from braincell._typing import ArrayLike, Initializer, Size
-from braincell.channel._base import Gate, HH, Markov, OhmicHH
+from braincell.channel._base import Gate, Markov, OhmicHH, q10_factor
 from braincell.ion import Sodium
 from braincell.mech import register_channel
-from braincell.quad.protocol import IndependentIntegration
 
 __all__ = [
     "Na_Ba2002",
@@ -45,14 +44,6 @@ __all__ = [
     "Nav_MA2020_GrC",
     "NaFHF_MA2020_GrC",
 ]
-
-
-def _x_over_one_minus_exp_neg_stable(x):
-    return u.math.where(
-        u.math.abs(x) < 1e-6,
-        1.0 + x / 2.0,
-        x / (1.0 - u.math.exp(-x)),
-    )
 
 
 @register_channel("Na_Ba2002")
@@ -616,10 +607,9 @@ class Na_ZH2019_IO(OhmicHH):
     :math:`\tau_m = 0.001` ms (effectively instantaneous),
     :math:`h_\infty = \alpha_h / (\alpha_h + \beta_h)`,
     :math:`\tau_h = 250 / (\alpha_h + \beta_h)`. Gating is
-    :math:`m^3 h`. Both :math:`x/(1-\exp(-x))` terms are evaluated by
-    the module-level helper ``_x_over_one_minus_exp_neg_stable``,
-    which substitutes the Taylor form ``1 + x/2`` for
-    ``|x| < 1e-6`` and the closed form otherwise -- this is the
+    :math:`m^3 h`. Both :math:`x/(1-\exp(-x))` terms are evaluated as
+    ``1 / u.math.exprel(-x)``, with
+    :math:`\operatorname{exprel}(x) = (\exp(x) - 1)/x` -- this is the
     numerically stable replacement for the removable singularity at
     :math:`x = 0`, not the naive textbook fraction.
 
@@ -645,7 +635,7 @@ class Na_ZH2019_IO(OhmicHH):
     ``if (fabs(v + 41.0) < 1e-6)`` / ``if (fabs(v + 50.0) < 1e-6)``
     branch that substitutes the perturbed literal ``41.000001`` /
     ``50.000001``. BrainCell replaces both branches with
-    ``_x_over_one_minus_exp_neg_stable`` instead of reproducing the
+    ``1 / u.math.exprel(-x)`` instead of reproducing the
     perturbed-literal branch; this is exact away from the singularity
     and better-behaved at it, but it is a BrainCell substitution, not
     a reproduction of the ``.mod`` file's own guard.
@@ -689,7 +679,7 @@ class Na_ZH2019_IO(OhmicHH):
     def _m_alpha(self, V):
         V = V.to_decimal(u.mV)
         x = (V + 41.0) / 10.0
-        return _x_over_one_minus_exp_neg_stable(x)
+        return 1.0 / u.math.exprel(-x)
 
     def _m_beta(self, V):
         V = V.to_decimal(u.mV)
@@ -702,7 +692,7 @@ class Na_ZH2019_IO(OhmicHH):
     def _h_beta(self, V):
         V = V.to_decimal(u.mV)
         x = (V + 50.0) / 10.0
-        return 10.0 * _x_over_one_minus_exp_neg_stable(x)
+        return 10.0 / u.math.exprel(-x)
 
     def f_m_inf(self, V, Na: IonInfo):
         alpha = self._m_alpha(V)
@@ -835,6 +825,7 @@ class Nav1p6_MA2020_GoC(Markov):
     """
 
     __module__ = "braincell.channel"
+    reset_to_steady_state = True
     root_type = Sodium
 
     pairs = (
@@ -870,7 +861,7 @@ class Nav1p6_MA2020_GoC(Markov):
         super().__init__(size=size, name=name, solver=solver, substeps=substeps)
 
         self.temp = braintools.init.param(temp, self.varshape, allow_none=False)
-        self.phi = 3 ** (((self.temp - u.celsius2kelvin(22.0)) / u.kelvin) / 10.0)
+        self.phi = q10_factor(3, self.temp, u.celsius2kelvin(22.0))
         self.g_max = braintools.init.param(g_max, self.varshape, allow_none=False)
 
         self.Con = 0.005
@@ -935,9 +926,6 @@ class Nav1p6_MA2020_GoC(Markov):
     bi4 = lambda self, V: self.Coff * self.btfac**3 * self.phi
     bi5 = lambda self, V: self.Coff * self.btfac**4 * self.phi
     bin = lambda self, V: self.Ooff * self.phi
-
-    def reset_state(self, V, Na: IonInfo, batch_size: int = None):
-        self.reset_steady_state(V, Na, batch_size=batch_size)
 
 
 @register_channel("Nav1p6_MA2024_PC")
@@ -1018,9 +1006,6 @@ class Nav1p6_MA2024_PC(Nav1p6_MA2020_GoC):
 
     __module__ = "braincell.channel"
 
-    def reset_state(self, V, Na: IonInfo, batch_size: int = None):
-        self.reset_steady_state(V, Na, batch_size=batch_size)
-
 
 @register_channel("Nav1p6_MA2025_BC")
 class Nav1p6_MA2025_BC(Nav1p6_MA2020_GoC):
@@ -1099,9 +1084,6 @@ class Nav1p6_MA2025_BC(Nav1p6_MA2020_GoC):
 
     __module__ = "braincell.channel"
 
-    def reset_state(self, V, Na: IonInfo, batch_size: int = None):
-        self.reset_steady_state(V, Na, batch_size=batch_size)
-
 
 @register_channel("Nav1p6_RI2021_SC")
 class Nav1p6_RI2021_SC(Nav1p6_MA2020_GoC):
@@ -1179,9 +1161,6 @@ class Nav1p6_RI2021_SC(Nav1p6_MA2020_GoC):
     """
 
     __module__ = "braincell.channel"
-
-    def reset_state(self, V, Na: IonInfo, batch_size: int = None):
-        self.reset_steady_state(V, Na, batch_size=batch_size)
 
 
 @register_channel("Nav1p1_MA2025_BC")
@@ -1316,7 +1295,7 @@ class Nav1p1_MA2025_BC(Nav1p6_MA2020_GoC):
             solver=solver,
             substeps=substeps,
         )
-        self.phi = 2.7 ** (((self.temp - u.celsius2kelvin(22.0)) / u.kelvin) / 10.0)
+        self.phi = q10_factor(2.7, self.temp, u.celsius2kelvin(22.0))
         self.gateCurrent = braintools.init.param(gateCurrent, self.varshape, allow_none=False)
         self.Oon = 2.3
         self.epsilon = 1e-12
@@ -1324,9 +1303,6 @@ class Nav1p1_MA2025_BC(Nav1p6_MA2020_GoC):
         self.gunit = 15.0e-9 * u.mS
         self.e0 = 1.60217646e-19 * u.coulomb
         self.alfac = (self.Oon / self.Con) ** (1 / 4)
-
-    def reset_state(self, V, Na: IonInfo, batch_size: int = None):
-        self.reset_steady_state(V, Na, batch_size=batch_size)
 
     def current(self, V, Na: IonInfo):
         conductive = self.g_max * self.O.value * (Na.E - V)
@@ -1419,12 +1395,9 @@ class Nav1p1_RI2021_SC(Nav1p1_MA2025_BC):
 
     __module__ = "braincell.channel"
 
-    def reset_state(self, V, Na: IonInfo, batch_size: int = None):
-        self.reset_steady_state(V, Na, batch_size=batch_size)
-
 
 @register_channel("Nav_MA2020_GrC")
-class Nav_MA2020_GrC(Markov, IndependentIntegration):
+class Nav_MA2020_GrC(Markov):
     r"""Resurgent Nav sodium current, granule-cell parameterisation.
 
     A 13-state Raman & Bean (2001) [2]_-style resurgent sodium Markov
@@ -1548,6 +1521,7 @@ class Nav_MA2020_GrC(Markov, IndependentIntegration):
     """
 
     __module__ = "braincell.channel"
+    reset_to_steady_state = True
     root_type = Sodium
 
     pairs = (
@@ -1584,7 +1558,7 @@ class Nav_MA2020_GrC(Markov, IndependentIntegration):
 
         self.temp = braintools.init.param(temp, self.varshape, allow_none=False)
         self.g_max = braintools.init.param(g_max, self.varshape, allow_none=False)
-        self.phi = 3 ** (((self.temp - u.celsius2kelvin(20.0)) / u.kelvin) / 10.0)
+        self.phi = q10_factor(3, self.temp, u.celsius2kelvin(20.0))
 
         self.Aalfa = 353.91
         self.Valfa = 13.99
@@ -1609,9 +1583,6 @@ class Nav_MA2020_GrC(Markov, IndependentIntegration):
 
     def init_state(self, V, Na: IonInfo, batch_size: int = None):
         super().init_state(V, Na, batch_size=batch_size)
-        self.reset_steady_state(V, Na, batch_size=batch_size)
-
-    def reset_state(self, V, Na: IonInfo, batch_size: int = None):
         self.reset_steady_state(V, Na, batch_size=batch_size)
 
     alfa = lambda self, V: self.phi * self.Aalfa * u.math.exp((V / u.mV) / self.Valfa)
@@ -1665,7 +1636,7 @@ class Nav_MA2020_GrC(Markov, IndependentIntegration):
 
 
 @register_channel("NaFHF_MA2020_GrC")
-class NaFHF_MA2020_GrC(Markov, IndependentIntegration):
+class NaFHF_MA2020_GrC(Markov):
     r"""Resurgent Nav sodium current with slow block, granule-cell model.
 
     The same 13-state Raman & Bean (2001) [2]_-style resurgent sodium
@@ -1767,6 +1738,7 @@ class NaFHF_MA2020_GrC(Markov, IndependentIntegration):
     """
 
     __module__ = "braincell.channel"
+    reset_to_steady_state = True
     root_type = Sodium
 
     pairs = (
@@ -1810,7 +1782,7 @@ class NaFHF_MA2020_GrC(Markov, IndependentIntegration):
 
         self.temp = braintools.init.param(temp, self.varshape, allow_none=False)
         self.g_max = braintools.init.param(g_max, self.varshape, allow_none=False)
-        self.phi = 3 ** (((self.temp - u.celsius2kelvin(20.0)) / u.kelvin) / 10.0)
+        self.phi = q10_factor(3, self.temp, u.celsius2kelvin(20.0))
 
         self.Aalfa = 353.91
         self.Valfa = 13.99
@@ -1839,9 +1811,6 @@ class NaFHF_MA2020_GrC(Markov, IndependentIntegration):
 
     def init_state(self, V, Na: IonInfo, batch_size: int = None):
         super().init_state(V, Na, batch_size=batch_size)
-        self.reset_steady_state(V, Na, batch_size=batch_size)
-
-    def reset_state(self, V, Na: IonInfo, batch_size: int = None):
         self.reset_steady_state(V, Na, batch_size=batch_size)
 
     alfa = lambda self, V: self.phi * self.Aalfa * u.math.exp((V / u.mV) / self.Valfa)

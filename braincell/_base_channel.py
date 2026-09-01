@@ -15,12 +15,14 @@
 
 """Ion-channel family base classes.
 
-Extracted from :mod:`braincell._base` during the ARCH-03 split. Houses
-the abstract :class:`IonChannel`, its direct subclasses :class:`Channel`
-and :class:`Synapse`, and the :class:`IonInfo` named-tuple used by
-:meth:`braincell._base_ion.Ion.pack_info`. The public import path
-``from braincell._base import ...`` continues to resolve via
-re-exports in :mod:`braincell._base`.
+Houses the abstract :class:`IonChannel`, its direct subclasses
+:class:`Channel` and :class:`Synapse`, and the :class:`IonInfo`
+named-tuple used by :meth:`braincell._base_ion.Ion.pack_info`.
+
+This is the bottom of the base-class layer: it imports neither
+:mod:`braincell._base_ion` nor :mod:`braincell._base_neuron`, so the two
+modules above it can name these classes with plain top-of-file imports.
+The public import path is ``braincell`` itself, which re-exports all four.
 """
 
 from typing import Mapping, NamedTuple, Optional

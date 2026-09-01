@@ -76,7 +76,6 @@ Exponential Integrators
    :toctree: generated/
 
     exp_euler_step
-    exp_exp_euler_step
     ind_exp_euler_step
 
 
@@ -107,8 +106,6 @@ Implicit Integrators
 
     backward_euler_step
     implicit_euler_step
-    implicit_exp_euler_step
-    implicit_rk4_step
 
 
 Other Integrators
@@ -117,7 +114,4 @@ Other Integrators
 .. autosummary::
    :toctree: generated/
 
-    cn_exp_euler_step
-    cn_rk4_step
-    splitting_step
     staggered_step

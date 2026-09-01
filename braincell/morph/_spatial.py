@@ -45,23 +45,30 @@ class MorphologySpatialGeometry:
     root_distance_um: dict[_Node, float]
     soma_distance_um: dict[_Node, float]
     reference_branch_ids: frozenset[int]
+    root_bases_um: tuple[np.ndarray, ...]
+    soma_bases_um: tuple[np.ndarray, ...]
 
     @classmethod
     def build(cls, morpho: Morphology) -> "MorphologySpatialGeometry":
         if not isinstance(morpho, Morphology):
             raise TypeError(f"Expected Morphology, got {type(morpho).__name__!s}.")
 
-        n_branches = len(morpho.branches)
+        branches = morpho.branches
+        n_branches = len(branches)
         lengths = np.asarray(
-            [float(morpho.branch(index=i).branch.length.to_decimal(u.um)) for i in range(n_branches)],
+            [float(branch.branch.length.to_decimal(u.um)) for branch in branches],
             dtype=float,
         )
+        # One pass over the edges: collect the endpoint keys while building the
+        # node sets, then reuse them once ``adjacency`` exists.
         node_sets = [{0.0, 1.0} for _ in range(n_branches)]
+        endpoints: list[tuple[_Node, _Node]] = []
         for edge in morpho.edges:
-            parent_id = int(edge.parent.index)
-            child_id = int(edge.child.index)
-            node_sets[parent_id].add(float(edge.parent_x))
-            node_sets[child_id].add(float(edge.child_x))
+            parent = (int(edge.parent.index), float(edge.parent_x))
+            child = (int(edge.child.index), float(edge.child_x))
+            endpoints.append((parent, child))
+            node_sets[parent[0]].add(parent[1])
+            node_sets[child[0]].add(child[1])
 
         branch_nodes = tuple(np.asarray(sorted(nodes), dtype=float) for nodes in node_sets)
         adjacency: dict[_Node, list[tuple[_Node, float]]] = {
@@ -74,15 +81,13 @@ class MorphologySpatialGeometry:
                 distance = float(x1 - x0) * lengths[branch_id]
                 adjacency[first].append((second, distance))
                 adjacency[second].append((first, distance))
-        for edge in morpho.edges:
-            parent = (int(edge.parent.index), float(edge.parent_x))
-            child = (int(edge.child.index), float(edge.child_x))
+        for parent, child in endpoints:
             adjacency[parent].append((child, 0.0))
             adjacency[child].append((parent, 0.0))
 
         root_id = int(morpho.root.index)
         root_distance = _distances_from(adjacency, ((root_id, 0.0),))
-        soma_ids = {int(branch.index) for branch in morpho.branches if str(branch.type) == "soma"}
+        soma_ids = {int(branch.index) for branch in branches if str(branch.type) == "soma"}
         reference_ids = soma_ids or {root_id}
         reference_nodes = tuple(
             (branch_id, float(x)) for branch_id in sorted(reference_ids) for x in branch_nodes[branch_id]
@@ -95,11 +100,13 @@ class MorphologySpatialGeometry:
             root_distance_um=root_distance,
             soma_distance_um=soma_distance,
             reference_branch_ids=frozenset(reference_ids),
+            root_bases_um=_bases_per_branch(branch_nodes, root_distance),
+            soma_bases_um=_bases_per_branch(branch_nodes, soma_distance),
         )
 
     def path_distance_to_root(self, branch_id: int, branch_x: object) -> u.Quantity:
         """Return tree distance from root-branch ``x=0``."""
-        return u.Quantity(self._distance(branch_id, branch_x, self.root_distance_um), u.um)
+        return u.Quantity(self._distance(branch_id, branch_x, self.root_bases_um), u.um)
 
     def path_distance_from_soma(self, branch_id: int, branch_x: object) -> u.Quantity:
         """Return tree distance from the soma/root reference region."""
@@ -107,18 +114,35 @@ class MorphologySpatialGeometry:
         if int(branch_id) in self.reference_branch_ids:
             result = np.zeros_like(values)
         else:
-            result = self._distance(branch_id, values, self.soma_distance_um)
+            result = self._distance(branch_id, values, self.soma_bases_um)
         return u.Quantity(result, u.um)
 
-    def _distance(self, branch_id: int, branch_x: object, distances: dict[_Node, float]) -> np.ndarray:
+    def _distance(self, branch_id: int, branch_x: object, bases_um: tuple[np.ndarray, ...]) -> np.ndarray:
         branch_id = int(branch_id)
         if not 0 <= branch_id < len(self.branch_nodes_x):
             raise IndexError(f"branch_id {branch_id!r} is out of range.")
         values = np.asarray(branch_x, dtype=float)
         nodes = self.branch_nodes_x[branch_id]
-        bases = np.asarray([distances[(branch_id, float(x))] for x in nodes], dtype=float)
-        candidates = np.abs(np.expand_dims(values, axis=-1) - nodes) * self.branch_lengths_um[branch_id] + bases
+        candidates = (
+            np.abs(np.expand_dims(values, axis=-1) - nodes) * self.branch_lengths_um[branch_id] + bases_um[branch_id]
+        )
         return np.min(candidates, axis=-1)
+
+
+def _bases_per_branch(
+    branch_nodes: tuple[np.ndarray, ...],
+    distances: dict[_Node, float],
+) -> tuple[np.ndarray, ...]:
+    """Materialize the per-branch node distances ``_distance`` reduces over.
+
+    ``bases`` is fully determined by ``(branch_id, distances)`` on a frozen
+    dataclass, so rebuilding it per query cost one dict lookup per node plus
+    an ``np.asarray`` on every call.
+    """
+    return tuple(
+        np.asarray([distances[(branch_id, float(x))] for x in nodes], dtype=float)
+        for branch_id, nodes in enumerate(branch_nodes)
+    )
 
 
 def _distances_from(adjacency: dict[_Node, list[tuple[_Node, float]]], starts: tuple[_Node, ...]) -> dict[_Node, float]:

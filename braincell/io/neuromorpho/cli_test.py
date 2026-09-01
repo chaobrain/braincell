@@ -25,6 +25,7 @@ from unittest import mock
 from braincell.io.neuromorpho import (
     NeuroMorphoCache,
     NeuroMorphoCacheStatus,
+    NeuroMorphoClient,
     NeuroMorphoDetail,
     NeuroMorphoDownloadItem,
     NeuroMorphoDownloadRecord,
@@ -33,7 +34,12 @@ from braincell.io.neuromorpho import (
     NeuroMorphoSearchPage,
     NeuroMorphoUrls,
 )
-from braincell.io.neuromorpho._testing import sample_neuron_payload
+from braincell.io.neuromorpho._testing import (
+    FIXTURE_SWC,
+    FakeResponse,
+    FakeSession,
+    sample_neuron_payload,
+)
 from braincell.io.neuromorpho.cli import build_arg_parser, main
 
 
@@ -127,6 +133,34 @@ class CliDownloadTest(unittest.TestCase):
         self.assertEqual(Path(parsed["folder"]), record.folder)
         self.assertEqual(Path(parsed["metadata_path"]), record.metadata_path)
         self.assertIn("downloaded_now=True", out)
+
+
+class CliFetchTest(unittest.TestCase):
+    def test_fetch_with_load_downloads_the_neuron_once(self) -> None:
+        # ``fetch --load`` used to call client.download() and then
+        # load_neuromorpho(), which downloaded the same neuron a second
+        # time. FakeSession raises on any request past the three queued
+        # here, so a repeated download fails this test loudly.
+        session = FakeSession(
+            [
+                FakeResponse(json_data=sample_neuron_payload()),  # get_neuron
+                FakeResponse(json_data={"n_stems": 1.0}),  # measurement
+                FakeResponse(content=[FIXTURE_SWC.read_bytes()]),  # standard download
+            ]
+        )
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with mock.patch("braincell.io.neuromorpho.cli.NeuroMorphoClient") as client_cls:
+                client_cls.side_effect = lambda **kwargs: NeuroMorphoClient(
+                    session=session,
+                    cache_dir=kwargs.get("cache_dir"),
+                )
+                stream = io.StringIO()
+                with contextlib.redirect_stdout(stream):
+                    exit_code = main(["--cache-dir", tmpdir, "fetch", "10047", "--mode", "standard", "--load"])
+
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(len(session.calls), 3)
+        self.assertIn("loaded OK:", stream.getvalue())
 
 
 class CliUrlsTest(unittest.TestCase):

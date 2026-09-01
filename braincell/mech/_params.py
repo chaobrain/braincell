@@ -237,12 +237,6 @@ class Params(Mapping[str, Any]):
             }
         return NotImplemented
 
-    def __ne__(self, other: object) -> bool:
-        result = self.__eq__(other)
-        if result is NotImplemented:
-            return result
-        return not result
-
     def __hash__(self) -> int:
         try:
             return hash(frozenset((k, _to_hashable(v)) for k, v in self._items.items()))

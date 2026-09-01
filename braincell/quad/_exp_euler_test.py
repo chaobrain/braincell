@@ -16,11 +16,24 @@
 # -*- coding: utf-8 -*-
 
 
+import math
+import unittest
+
 import brainstate
 import brainunit as u
+import jax.numpy as jnp
 import matplotlib.pyplot as plt
+import numpy as np
 
 import braincell
+from braincell.quad import (
+    exp_euler_step,
+    ind_exp_euler_step,
+)
+from braincell.quad.protocol import (
+    DiffEqModule,
+    DiffEqSingleState,
+)
 
 
 class HH(braincell.SingleCompartment):
@@ -43,7 +56,7 @@ def integrate(method: str, dt=0.01 * u.ms):
 
     def step_fun(t):
         with brainstate.environ.context(t=t):
-            spike = hh.update(10 * u.nA / u.cm**2)
+            hh.update(10 * u.nA / u.cm**2)
         return hh.V.value
 
     with brainstate.environ.context(dt=dt):
@@ -79,20 +92,6 @@ class TestRungeKutta:
 # stack. ind_exp_euler is exact for a locally linear ODE so we can compare
 # against ``exp(-dt/tau)`` directly.
 # --------------------------------------------------------------------------- #
-import math
-import unittest
-
-import jax.numpy as jnp
-import numpy as np
-
-from braincell.quad.protocol import (
-    DiffEqModule,
-    DiffEqSingleState,
-)
-from braincell.quad import (
-    exp_euler_step,
-    ind_exp_euler_step,
-)
 
 _FLOAT_DTYPE = jnp.asarray(0.0).dtype
 

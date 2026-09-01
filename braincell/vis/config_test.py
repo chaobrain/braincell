@@ -29,16 +29,24 @@ from braincell.vis._testing import (
 )
 from braincell.vis.backend import BackendChooser
 from braincell.vis.config import (
+    DISPATCHED_2D_LAYOUTS,
+    LAYOUT_2D_ALIASES,
+    LAYOUT_2D_DISPATCHED_NAMES,
+    LAYOUT_2D_FAMILIES,
     PUBLICATION_BRANCH_TYPE_COLORS,
     PUBLICATION_RC_PARAMS,
     PublicationTheme,
+    SUPPORTED_2D_LAYOUTS,
     configure as configure_defaults,
     edge_color_for_2d_branch_type,
     frustum_edge_linewidth_2d,
     get_defaults,
+    layout_2d_title,
     publication_theme,
     resolve_default_2d_layout,
     reset_defaults,
+    rgb_to_float,
+    rgb_to_hex,
 )
 
 
@@ -243,6 +251,77 @@ class VisDefaultsThroughPlotTest(VisDefaultsResetMixin, unittest.TestCase):
                 raise RuntimeError("boom")
 
         self.assertEqual(morpho_vis.get_defaults().branch_type_colors["soma"], original)
+
+
+class Layout2DFamilyRegistryTest(VisDefaultsResetMixin, unittest.TestCase):
+    """The registry is the single source of truth for 2D layout names.
+
+    Before it existed, ``config.SUPPORTED_2D_LAYOUTS`` and the layout
+    dispatcher's private set disagreed: ``configure(layout_2d_default=
+    'trunk_first')`` raised while ``plot2d(layout='trunk_first')``
+    worked.
+    """
+
+    def _plot2d_accepts(self, layout: str) -> bool:
+        try:
+            plot2d(
+                make_node_tree(),
+                layout=layout,
+                shape="line",
+                chooser=BackendChooser(backends=(FakeBackend(),)),
+            )
+        except ValueError as exc:
+            # Only a *name* rejection counts; 'projected' can still fail
+            # later on a morphology without 3D points.
+            return "layout family" not in str(exc)
+        return True
+
+    def _configure_accepts(self, layout: str) -> bool:
+        try:
+            configure_defaults(layout_2d_default=layout)
+        except ValueError:
+            return False
+        return True
+
+    def test_both_entry_points_accept_exactly_the_registry_names(self) -> None:
+        for layout in sorted(SUPPORTED_2D_LAYOUTS):
+            with self.subTest(layout=layout):
+                self.assertTrue(self._plot2d_accepts(layout), f"plot2d rejected {layout!r}")
+                self.assertTrue(self._configure_accepts(layout), f"configure rejected {layout!r}")
+
+    def test_both_entry_points_reject_the_same_unknown_name(self) -> None:
+        self.assertFalse(self._plot2d_accepts("bogus"))
+        self.assertFalse(self._configure_accepts("bogus"))
+
+    def test_trunk_first_alias_is_accepted_by_both_entry_points(self) -> None:
+        # The regression that motivated the registry.
+        self.assertIn("trunk_first", SUPPORTED_2D_LAYOUTS)
+        self.assertTrue(self._plot2d_accepts("trunk_first"))
+        self.assertTrue(self._configure_accepts("trunk_first"))
+
+    def test_supported_set_is_dispatched_names_plus_projected(self) -> None:
+        self.assertEqual(SUPPORTED_2D_LAYOUTS - DISPATCHED_2D_LAYOUTS, {"projected"})
+        self.assertEqual(LAYOUT_2D_DISPATCHED_NAMES, ("fan", "stem", "balloon", "radial_360"))
+
+    def test_alias_map_covers_every_registered_alias(self) -> None:
+        expected = {alias: family.name for family in LAYOUT_2D_FAMILIES for alias in family.aliases}
+        self.assertEqual(LAYOUT_2D_ALIASES, expected)
+        self.assertEqual(LAYOUT_2D_ALIASES["trunk_first"], "stem")
+
+    def test_titles_resolve_for_names_aliases_and_unknowns(self) -> None:
+        self.assertEqual(layout_2d_title("radial_360"), "Radial 360")
+        self.assertEqual(layout_2d_title("stem"), "Stem")
+        self.assertEqual(layout_2d_title("trunk_first"), "Stem")
+        self.assertEqual(layout_2d_title("my_custom"), "My Custom")
+
+
+class PaletteDecodeTest(unittest.TestCase):
+    def test_rgb_to_float_scales_channels(self) -> None:
+        self.assertEqual(rgb_to_float((255, 128, 0)), (1.0, 128.0 / 255.0, 0.0))
+
+    def test_rgb_to_hex_is_lowercase_and_zero_padded(self) -> None:
+        self.assertEqual(rgb_to_hex((255, 128, 0)), "#ff8000")
+        self.assertEqual(rgb_to_hex((0, 0, 0)), "#000000")
 
 
 if __name__ == "__main__":

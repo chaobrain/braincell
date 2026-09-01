@@ -13,97 +13,29 @@
 # limitations under the License.
 # ==============================================================================
 
-# -*- coding: utf-8 -*-
+"""The Hodgkin-Huxley typed neuron base class.
 
-"""
-Base classes and core components for modeling neurons and ion channels in the BrainCell library.
-
-This module defines the fundamental classes and structures for creating Hodgkin-Huxley type
-neuron models and various ion channels. It provides a hierarchical structure that allows
-for the creation of complex, biologically accurate neural simulations.
-
-Class Hierarchy:
-----------------
-
-1. HHTypedNeuron
-   Base class for Hodgkin-Huxley type neuron models.
-   - SingleCompartment (not defined in this file)
-     A subclass representing a single-compartment neuron model.
-
-2. IonChannel
-   Base class for all ion channel types.
-
-   - Ion
-     Base class for specific ion channels.
-     - Calcium
-       Represents calcium ion channels.
-     - Potassium
-       Represents potassium ion channels.
-     - Sodium
-       Represents sodium ion channels.
-
-   - MixIons
-     Represents channels that involve multiple ion types.
-
-   - Channel
-     A generic channel class, possibly for custom or complex channel types.
-
-Key Components:
----------------
-- HHTypedNeuron: The foundation for creating Hodgkin-Huxley type neuron models.
-  It manages ion channels and provides methods for current calculation and state updates.
-
-- IonChannel: The base class for all ion channel types, defining the interface
-  for channel behavior including current calculation and state management.
-
-- Ion: Specializes IonChannel for specific ion types (Calcium, Potassium, Sodium).
-  Each subclass represents the dynamics of its respective ion.
-
-- MixIons: Allows for the creation of channels that involve multiple ion types,
-  useful for modeling more complex channel behaviors.
-
-- Channel: A generic channel class that can be used for custom channel types or
-  as a base for more specific channel implementations.
-
-This structure allows for a flexible and extensible framework for modeling various
-types of neurons and ion channels, from simple single-compartment models to more
-complex multi-compartment or custom channel configurations.
-
-Usage:
-------
-Users can subclass these base classes to create specific neuron models or ion channel
-types, leveraging the provided structure and methods to implement detailed, biologically
-accurate simulations.
-
-Note:
------
-The actual implementations of some classes (e.g., SingleCompartment, specific Ion subclasses)
-may be defined in other files within the BrainCell library.
+``HHTypedNeuron`` lives in its own module so that
+:mod:`braincell._base_ion` can name it as ``root_type`` with a plain
+top-of-file import. The class and the ion classes once shared a module
+and reached each other through bottom-of-file imports; that arrangement
+worked only because of the exact order of statements across two files.
+Keeping the class here makes the cycle structurally impossible rather
+than merely avoided, which is what
+``_base_neuron_test.BaseNeuronExportTest`` pins.
 """
 
-from typing import Optional, Dict, Sequence, Callable, NamedTuple, Tuple, Type, Hashable
+from typing import Optional, Tuple
 
 import brainpy
 import brainunit as u
-import jax.numpy as jnp
-import numpy as np
-from brainstate.mixin import _JointGenericAlias
 
 from braincell._typing import Size
-from .quad.protocol import DiffEqModule, IndependentIntegration
-from ._misc import cast_like as _cast_like, set_module_as, Container, TreeNode
+from ._base_channel import IonChannel
+from ._misc import Container, TreeNode, cast_like as _cast_like
+from .quad.protocol import DiffEqModule
 
-
-__all__ = [
-    'HHTypedNeuron',
-    'IonChannel',
-    'Ion',
-    'MixIons',
-    'Channel',
-    'Synapse',
-    'mix_ions',
-    'IonInfo',
-]
+__all__ = ["HHTypedNeuron"]
 
 
 def _zero_spike_like(V):
@@ -429,22 +361,3 @@ class HHTypedNeuron(brainpy.state.Dynamics, Container, DiffEqModule):
         denom = _cast_like(20.0 * u.mV, next_V)
         V_th = _cast_like(self.V_th, next_V)
         return self.spk_fun((next_V - V_th) / denom) * self.spk_fun((V_th - last_V) / denom)
-
-
-# ---------------------------------------------------------------------------
-# Re-exports (ARCH-03). The ion-channel family lives in
-# ``braincell._base_channel``; ion species and the ``mix_ions`` factory
-# live in ``braincell._base_ion``. Every existing caller using
-# ``from braincell._base import X`` continues to work through these
-# re-exports.
-from ._base_channel import (  # noqa: E402
-    Channel,
-    IonChannel,
-    IonInfo,
-    Synapse,
-)
-from ._base_ion import (  # noqa: E402
-    Ion,
-    MixIons,
-    mix_ions,
-)

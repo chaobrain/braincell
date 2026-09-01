@@ -20,6 +20,7 @@ import brainunit as u
 import numpy as np
 
 from braincell.morph.morphology import Morphology
+from ._arclength import ArcPolyline
 from ._values import (
     resolve_overlay_values as _resolve_overlay_values_3d,
     with_unit_label as _with_unit_label_3d,
@@ -178,72 +179,32 @@ def build_render_scene_3d(
 # ---------------------------------------------------------------------------
 
 
-def _branch_cumulative_um(branch: BranchPolyline3D) -> np.ndarray:
-    diffs = np.diff(branch.points_um, axis=0)
-    seg_lens = np.linalg.norm(diffs, axis=1)
-    return np.concatenate([[0.0], np.cumsum(seg_lens)])
-
-
-def _point_at_3d(branch: BranchPolyline3D, cumulative_um: np.ndarray, x: float) -> np.ndarray:
-    total = float(cumulative_um[-1]) if cumulative_um.size else 0.0
-    if total <= 0.0 or branch.points_um.shape[0] == 0:
-        return branch.points_um[0].copy() if branch.points_um.size else np.zeros(3, dtype=float)
-    clamped = float(np.clip(x, 0.0, 1.0))
-    target = clamped * total
-    idx = int(np.searchsorted(cumulative_um[1:], target, side="right"))
-    idx = min(max(idx, 0), len(branch.points_um) - 2)
-    seg_start = float(cumulative_um[idx])
-    seg_end = float(cumulative_um[idx + 1])
-    seg_len = seg_end - seg_start
-    if seg_len <= 0.0:
-        return branch.points_um[idx].copy()
-    alpha = (target - seg_start) / seg_len
-    return (1.0 - alpha) * branch.points_um[idx] + alpha * branch.points_um[idx + 1]
-
-
-def _radius_at_3d(branch: BranchPolyline3D, cumulative_um: np.ndarray, x: float) -> float:
-    total = float(cumulative_um[-1]) if cumulative_um.size else 0.0
-    if total <= 0.0 or branch.radii_um.size == 0:
-        return float(branch.radii_um[0]) if branch.radii_um.size else 1.0
-    clamped = float(np.clip(x, 0.0, 1.0))
-    target = clamped * total
-    idx = int(np.searchsorted(cumulative_um[1:], target, side="right"))
-    idx = min(max(idx, 0), len(branch.radii_um) - 2)
-    seg_start = float(cumulative_um[idx])
-    seg_end = float(cumulative_um[idx + 1])
-    seg_len = seg_end - seg_start
-    if seg_len <= 0.0:
-        return float(branch.radii_um[idx])
-    alpha = (target - seg_start) / seg_len
-    return float((1.0 - alpha) * branch.radii_um[idx] + alpha * branch.radii_um[idx + 1])
-
-
 def _subpolyline_3d(
     branch: BranchPolyline3D,
-    cumulative_um: np.ndarray,
+    arc: ArcPolyline,
     prox: float,
     dist: float,
 ) -> tuple[np.ndarray, np.ndarray]:
-    lo, hi = (float(prox), float(dist)) if prox <= dist else (float(dist), float(prox))
-    lo = float(np.clip(lo, 0.0, 1.0))
-    hi = float(np.clip(hi, 0.0, 1.0))
-    total = float(cumulative_um[-1]) if cumulative_um.size else 0.0
-    if total <= 0.0 or branch.points_um.shape[0] == 0:
+    """Return the ``(points, radii)`` fragment of *branch* between two fractions.
+
+    The arc-length parameterisation, endpoint interpolation, and
+    interior-vertex selection all come from *arc*; only the paired
+    radius array is 3D-specific.
+    """
+    if arc.is_degenerate:
         return (
             branch.points_um[:1].copy() if branch.points_um.size else np.zeros((0, 3), dtype=float),
             branch.radii_um[:1].copy() if branch.radii_um.size else np.zeros(0, dtype=float),
         )
-    start = _point_at_3d(branch, cumulative_um, lo)
-    end = _point_at_3d(branch, cumulative_um, hi)
-    start_r = _radius_at_3d(branch, cumulative_um, lo)
-    end_r = _radius_at_3d(branch, cumulative_um, hi)
-    start_arc = lo * total
-    end_arc = hi * total
-    interior_mask = (cumulative_um > start_arc + 1e-12) & (cumulative_um < end_arc - 1e-12)
-    interior_points = branch.points_um[interior_mask]
-    interior_radii = branch.radii_um[interior_mask]
-    points = np.vstack([start[None, :], interior_points, end[None, :]])
-    radii = np.concatenate([[start_r], interior_radii, [end_r]])
+    lo, hi, interior_mask = arc.subspan(prox, dist)
+    points = np.vstack([arc.point_at(lo)[None, :], branch.points_um[interior_mask], arc.point_at(hi)[None, :]])
+    radii = np.concatenate(
+        [
+            [arc.scalar_at(branch.radii_um, lo)],
+            branch.radii_um[interior_mask],
+            [arc.scalar_at(branch.radii_um, hi)],
+        ]
+    )
     return points, radii
 
 
@@ -257,13 +218,13 @@ def _build_overlay_primitives_3d(
     strokes: list[HighlightStroke3D] = []
     markers: list[Marker3D] = []
 
-    cumulative_cache: dict[int, np.ndarray] = {}
+    arc_cache: dict[int, ArcPolyline] = {}
 
-    def _cumulative(branch: BranchPolyline3D) -> np.ndarray:
-        cache = cumulative_cache.get(branch.branch_index)
+    def _arc(branch: BranchPolyline3D) -> ArcPolyline:
+        cache = arc_cache.get(branch.branch_index)
         if cache is None:
-            cache = _branch_cumulative_um(branch)
-            cumulative_cache[branch.branch_index] = cache
+            cache = ArcPolyline(branch.points_um)
+            arc_cache[branch.branch_index] = cache
         return cache
 
     region = overlay.region
@@ -274,8 +235,7 @@ def _build_overlay_primitives_3d(
             branch = branch_lookup.get(int(branch_index))
             if branch is None:
                 continue
-            cumulative = _cumulative(branch)
-            points, radii = _subpolyline_3d(branch, cumulative, float(prox), float(dist))
+            points, radii = _subpolyline_3d(branch, _arc(branch), float(prox), float(dist))
             if points.shape[0] < 2:
                 continue
             strokes.append(
@@ -299,8 +259,7 @@ def _build_overlay_primitives_3d(
             branch = branch_lookup.get(branch_index)
             if branch is None:
                 continue
-            cumulative = _cumulative(branch)
-            position = _point_at_3d(branch, cumulative, x)
+            position = _arc(branch).point_at(x)
             markers.append(
                 Marker3D(
                     branch_index=branch_index,

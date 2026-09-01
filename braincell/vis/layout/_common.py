@@ -27,6 +27,8 @@ This module holds the pieces that every layout family consumes:
 * Helpers to index a morphology tree (``_leaf_counts_by_branch``,
   ``_path_lengths_um_by_branch``), pick the "trunk" child from a fork,
   and allocate an angular interval to weighted children.
+* ``walk_layout_top_down`` — the one iterative parent-before-children
+  walk that the fan, legacy, balloon, and radial families drive.
 
 Nothing in this module depends on any specific layout family, so every
 other module in ``braincell.vis.layout`` can import from it without risk
@@ -35,6 +37,7 @@ of cycles.
 
 import math
 from dataclasses import dataclass
+from typing import Callable, TypeVar
 
 import brainunit as u
 import numpy as np
@@ -201,8 +204,72 @@ def _clamp_angle_to_root_group(angle_rad: float, *, group_name: str) -> float:
 
 
 # ---------------------------------------------------------------------------
+# Shared top-down walk
+# ---------------------------------------------------------------------------
+
+_LayoutFrame = TypeVar("_LayoutFrame", bound=tuple)
+
+
+def walk_layout_top_down(
+    seed: _LayoutFrame,
+    place_children: Callable[[_LayoutFrame, tuple[MorphoBranch, ...]], list[_LayoutFrame]],
+) -> None:
+    """Drive a layout family's parent-before-children placement over a subtree.
+
+    Every 2D layout family places a whole sibling group from its
+    parent's finished layout, then descends. Only *what* it computes for
+    a child differs; the walk itself is the same, so it lives here once
+    instead of being hand-written per family.
+
+    Parameters
+    ----------
+    seed : tuple
+        The starting frame. Its first element must be the
+        :class:`~braincell.morph.MorphoBranch` whose descendants are to
+        be laid out; the remaining elements are whatever state the
+        family threads down (an angular interval, an inherited angle, an
+        ``is_root`` flag, …).
+    place_children : callable
+        ``place_children(frame, children) -> list[frame]``. Called once
+        per non-leaf branch with that branch's frame and its children.
+        It must place every child and return one frame per child, in
+        left-to-right order.
+
+    Notes
+    -----
+    The walk is an explicit stack rather than recursion, and that is a
+    correctness requirement, not a style choice: morphologies are
+    routinely deeper than the interpreter's frame limit — a
+    reconstructed neurite can be a chain of thousands of branches — and
+    one Python frame per branch of depth raised ``RecursionError`` past
+    roughly 400 branches.
+
+    Frames are pushed in reverse so that popping visits children left to
+    right, which is the order the recursive walks used and which several
+    families' allocations depend on.
+    """
+    stack: list[_LayoutFrame] = [seed]
+    while stack:
+        frame = stack.pop()
+        children = frame[0].children
+        if not children:
+            continue
+        stack.extend(reversed(place_children(frame, children)))
+
+
+# ---------------------------------------------------------------------------
 # Weighted angular allocation
 # ---------------------------------------------------------------------------
+
+
+def _child_weight(child: MorphoBranch, weights: dict[int, float]) -> float:
+    """Return a child's angular weight, floored so a zero never divides.
+
+    Missing entries default to ``1.0`` so an unweighted child still gets
+    a share of the interval; the ``1e-6`` floor keeps a zero weight from
+    collapsing the child to no angular width at all.
+    """
+    return max(float(weights.get(child.index, 1.0)), 1e-6)
 
 
 def _allocate_weighted_angles(
@@ -231,11 +298,11 @@ def _weighted_child_intervals(
     span_rad = interval[1] - interval[0]
     required_gap_rad = min_gap_rad * (len(children) - 1)
     available_span_rad = max(span_rad - required_gap_rad, 0.0)
-    total_weight = sum(max(float(weights.get(child.index, 1.0)), 1e-6) for child in children)
+    total_weight = sum(_child_weight(child, weights) for child in children)
     cursor_rad = interval[0]
     child_intervals: list[tuple[MorphoBranch, tuple[float, float]]] = []
     for child_index, child in enumerate(children):
-        weight = max(float(weights.get(child.index, 1.0)), 1e-6)
+        weight = _child_weight(child, weights)
         width_rad = (
             available_span_rad * weight / total_weight if total_weight > 0.0 else available_span_rad / len(children)
         )

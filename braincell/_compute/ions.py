@@ -341,7 +341,8 @@ def _restore_shaped_species_initializers(runtime_ion_instance: object, full_para
         cainull = getattr(runtime_ion_instance, "cainull", None)
         if isinstance(cainull, (u.Quantity, np.ndarray)):
             shaped_ci = cainull
-    runtime_ion_instance.Ci_initializer = shaped_ci
+    # ``Ci_initializer`` is a property over this same dict entry, so writing
+    # the dict is the whole update -- assigning both wrote it twice.
     species_initializers["Ci"] = shaped_ci
 
 

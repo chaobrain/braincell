@@ -15,29 +15,28 @@
 
 """Unit tests for :mod:`braincell._base_channel`.
 
-ARCH-03: verify ion-channel family classes live in their own module and
-remain re-exported through :mod:`braincell._base` for back-compat.
+The ion-channel family classes are defined here; ``braincell`` re-exports
+them, and that public path is the one users import.
 """
 
 import unittest
 
 
-class BaseChannelSplitTest(unittest.TestCase):
-    def test_ion_channel_lives_in_base_channel(self) -> None:
-        import braincell._base as base
+class BaseChannelExportTest(unittest.TestCase):
+    def test_public_namespace_reexports_this_module(self) -> None:
+        import braincell
         import braincell._base_channel as channel_mod
 
-        self.assertIs(base.IonChannel, channel_mod.IonChannel)
-        self.assertIs(base.Channel, channel_mod.Channel)
-        self.assertIs(base.Synapse, channel_mod.Synapse)
-        self.assertIs(base.IonInfo, channel_mod.IonInfo)
+        self.assertIs(braincell.IonChannel, channel_mod.IonChannel)
+        self.assertIs(braincell.Channel, channel_mod.Channel)
+        self.assertIs(braincell.Synapse, channel_mod.Synapse)
+        self.assertIs(braincell.IonInfo, channel_mod.IonInfo)
 
-    def test_direct_import_still_works(self) -> None:
-        from braincell._base import IonChannel, Channel, Synapse, IonInfo
+    def test_channel_and_synapse_derive_from_ion_channel(self) -> None:
+        from braincell._base_channel import Channel, IonChannel, Synapse
 
-        self.assertTrue(
-            all(cls is not None for cls in (IonChannel, Channel, Synapse, IonInfo)),
-        )
+        self.assertTrue(issubclass(Channel, IonChannel))
+        self.assertTrue(issubclass(Synapse, IonChannel))
 
 
 if __name__ == "__main__":

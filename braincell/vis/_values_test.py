@@ -21,7 +21,7 @@ import numpy as np
 
 from braincell.vis import plot2d
 from braincell.vis._testing import FakeBackend, VisDefaultsResetMixin, make_length_only_tree
-from braincell.vis._values import resolve_values, resolved_colorbar_label
+from braincell.vis._values import ValueLayout, resolve_values, resolved_colorbar_label
 from braincell.vis.backend import BackendChooser
 from braincell.vis.scene import ValueSpec
 
@@ -82,6 +82,58 @@ class ResolveValuesTest(unittest.TestCase):
         spec = ValueSpec(values=np.zeros((2, 3)))
         with self.assertRaisesRegex(ValueError, "1-D"):
             resolve_values(self.tree, spec)
+
+
+class ValueLayoutTest(unittest.TestCase):
+    """The frame-invariant half of value resolution, reused by ``plot_movie``."""
+
+    def setUp(self) -> None:
+        # make_length_only_tree: soma 1 segment, dend 2 segments.
+        self.tree = make_length_only_tree()
+        self.layout = ValueLayout.from_morphology(self.tree)
+
+    def test_shape_counts_match_the_morphology(self) -> None:
+        self.assertEqual(self.layout.n_branches, 2)
+        self.assertEqual(self.layout.segment_counts, (1, 2))
+        self.assertEqual(self.layout.total_segments, 3)
+        self.assertEqual(self.layout.total_points, 5)
+
+    def test_branch_indices_follow_default_branch_order(self) -> None:
+        self.assertEqual(self.layout.branch_indices, tuple(branch.index for branch in self.tree.branches))
+
+    def test_expand_agrees_with_resolve_values_at_every_granularity(self) -> None:
+        for values in (
+            np.array([0.1, 0.9]),
+            np.array([0.0, 1.0, 2.0]),
+            np.array([10.0, 20.0, 30.0, 40.0, 50.0]),
+        ):
+            with self.subTest(length=len(values)):
+                expected, _ = resolve_values(self.tree, ValueSpec(values=values))
+                actual = self.layout.expand(values)
+                self.assertEqual(set(actual), set(expected))
+                for branch_index, branch_values in actual.items():
+                    np.testing.assert_array_equal(
+                        branch_values.point_values,
+                        expected[branch_index].point_values,
+                    )
+
+    def test_one_layout_expands_many_frames(self) -> None:
+        # plot_movie derives the layout once and calls expand per frame;
+        # reuse must not leak state between frames.
+        frames = np.array([[0.1, 0.9], [0.5, 0.25]])
+        first = self.layout.expand(frames[0])
+        second = self.layout.expand(frames[1])
+        soma_idx = self.tree.soma.index
+        np.testing.assert_allclose(first[soma_idx].point_values, [0.1, 0.1])
+        np.testing.assert_allclose(second[soma_idx].point_values, [0.5, 0.5])
+
+    def test_length_mismatch_names_all_three_accepted_shapes(self) -> None:
+        with self.assertRaisesRegex(ValueError, "2 branches, 3 segments, and 5 centerline points"):
+            self.layout.expand(np.arange(7, dtype=float))
+
+    def test_non_1d_values_are_rejected(self) -> None:
+        with self.assertRaisesRegex(ValueError, "must be 1-D"):
+            self.layout.expand(np.zeros((2, 5)))
 
 
 class SegmentValuesPropertyTest(unittest.TestCase):

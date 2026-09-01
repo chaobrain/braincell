@@ -238,7 +238,7 @@ class ConnectionTest(unittest.TestCase):
         connect("sequence", source=sequence, synapse=cell.synapses[exp], weight=[0.2, -0.1] * u.uS)
         cell.init_state()
         layout = next(item for item in cell.runtime.layouts if item.kind == "synapse:ExpSyn")
-        node = cell.runtime.get_runtime_node(layout.id)
+        cell.runtime.get_runtime_node(layout.id)
 
         with brainstate.environ.context(t=1.0 * u.ms, dt=0.05 * u.ms):
             cell._prepare_runtime_synapse_inputs(cell._cv_to_point(cell.V.value))
@@ -393,7 +393,7 @@ class ConnectionTest(unittest.TestCase):
         )
         cell.init_state()
         layout = next(item for item in cell.runtime.layouts if item.kind == "synapse:ExpSyn")
-        node = cell.runtime.get_runtime_node(layout.id)
+        cell.runtime.get_runtime_node(layout.id)
 
         with brainstate.environ.context(t=1.0 * u.ms, dt=0.05 * u.ms):
             cell._prepare_runtime_synapse_inputs(cell._cv_to_point(cell.V.value))
@@ -506,7 +506,7 @@ class ConnectionTest(unittest.TestCase):
         connect("negative", source=NetStim(start=1.0 * u.ms), synapse=target, weight=-0.05 * u.uS)
         cell.init_state()
         layout = next(item for item in cell.runtime.layouts if item.kind == "synapse:ExpSyn")
-        node = cell.runtime.get_runtime_node(layout.id)
+        cell.runtime.get_runtime_node(layout.id)
 
         with brainstate.environ.context(t=1.0 * u.ms, dt=0.05 * u.ms):
             cell._prepare_runtime_synapse_inputs(cell._cv_to_point(cell.V.value))

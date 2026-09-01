@@ -22,7 +22,8 @@ import numpy as np
 
 from .types import AscMetadata, AscReport, AscSpineRecord
 from braincell._typing import FilePath
-from braincell.io.swc.types import MIN_SYNTHETIC_LENGTH_UM
+from braincell.io import _geometry
+from braincell.io._geometry import MIN_SYNTHETIC_LENGTH_UM
 from braincell.morph.morphology import Branch, Morphology, MorphoBranch
 from braincell.morph.branch import Soma, branch_class_for_type
 
@@ -420,9 +421,19 @@ class AscReader:
             raise ValueError(f"ASC import failed for {path}: no soma contour or neurites were found.")
 
         if contours:
-            soma_branch, center, radius = self._soma_branch_from_contours(contours, path=path)
-            stack = self._merge_soma_contours(contours)[0]
-            soma_bbox_xy = self._soma_loose_bbox_xy(stack)
+            # Cross the boundary into format-independent geometry once:
+            # everything below works on (N, 3) xyz arrays, not _AscPoint.
+            stacks = _geometry.group_contour_stacks(
+                tuple(np.asarray([point.xyz for point in contour], dtype=float) for contour in contours)
+            )
+            if len(stacks) != 1:
+                raise ValueError(
+                    f"ASC import failed for {path}: found {len(stacks)} disjoint CellBody contour groups; "
+                    "Braincell currently supports exactly one soma."
+                )
+            stack = stacks[0]
+            soma_branch, center, radius = self._soma_branch_from_stack(stack, path=path)
+            soma_bbox_xy = _geometry.loose_bbox_xy(stack)
         else:
             first_point = self._first_point(neurites)
             if first_point is None:
@@ -433,14 +444,15 @@ class AscReader:
                 "topology.synthetic_soma",
                 "ASC file has no CellBody contour; synthesized a soma from the first neurite root point.",
             )
-            soma_branch = self._synthetic_soma_branch(center=center, radius=radius)
+            points, radii = _geometry.synthetic_soma_geometry(center, radius)
+            soma_branch = Soma.from_points(points=points * u.um, radii=radii * u.um)
             soma_bbox_xy = None
 
         morpho = Morphology.from_root(soma_branch, name="soma")
         for neurite in neurites:
             if soma_bbox_xy is not None:
                 root_point = self._first_point((neurite,))
-                if root_point is not None and not self._point_inside_bbox_xy(root_point.xyz, soma_bbox_xy):
+                if root_point is not None and not _geometry.point_inside_bbox_xy(root_point.xyz, soma_bbox_xy):
                     report.add_warning(
                         "topology.root_outside_soma_bbox",
                         "Main branch root is outside the soma bounding box; connected to the nearest soma center.",
@@ -544,16 +556,18 @@ class AscReader:
         points = [point.xyz for point in segment.points]
         radii = [float(point.radius) for point in segment.points]
         if points:
-            should_copy_attach = True
-            if parent_branch_type == "soma" and abs(parent_x - 0.5) <= 1e-9 and len(points) > 1:
-                should_copy_attach = False
-            if np.allclose(points[0], attach_point):
-                should_copy_attach = False
-
-            attach_radius_for_child = radii[0]
-            if should_copy_attach:
+            # ``keep_radius_jump=False``: unlike the SWC reader, a coincident
+            # first point is never duplicated here, whatever its diameter.
+            # See braincell.io._geometry.should_copy_attach_point.
+            allow_copy = not (parent_branch_type == "soma" and abs(parent_x - 0.5) <= 1e-9 and len(points) > 1)
+            if _geometry.should_copy_attach_point(
+                allow_copy=allow_copy,
+                same_xyz=bool(np.allclose(points[0], attach_point)),
+                same_radius=True,
+                keep_radius_jump=False,
+            ):
                 points.insert(0, np.asarray(attach_point, dtype=float))
-                radii.insert(0, attach_radius_for_child)
+                radii.insert(0, radii[0])
 
         if len(points) < 2:
             return None
@@ -576,22 +590,14 @@ class AscReader:
                 return first
         return None
 
-    def _soma_branch_from_contours(
+    def _soma_branch_from_stack(
         self,
-        contours: tuple[tuple[_AscPoint, ...], ...],
+        stack: tuple[np.ndarray, ...],
         *,
         path: Path,
     ) -> tuple[Branch, np.ndarray, float]:
-        stacks = self._merge_soma_contours(contours)
-        if len(stacks) != 1:
-            raise ValueError(
-                f"ASC import failed for {path}: found {len(stacks)} disjoint CellBody contour groups; "
-                "Braincell currently supports exactly one soma."
-            )
-
-        stack = stacks[0]
         if len(stack) == 1:
-            points, radii, center = self._contour2centroid(stack[0])
+            points, radii, center = _geometry.contour_to_centroid(stack[0])
         else:
             # A CellBody stack whose z layers are duplicated or non-monotonic is
             # malformed input, so _validate_soma_stack's ValueError propagates.
@@ -600,81 +606,27 @@ class AscReader:
             # the validation itself unreachable.
             self._validate_soma_stack(stack, path=path)
             try:
-                points, radii = self._contourstack2centroid(stack)
-                center = self._soma_stack_center(stack)
+                points, radii = _geometry.contour_stack_to_centroid(stack)
+                center = _geometry.contour_stack_center(stack)
             except ValueError:
-                points, radii, center = self._contour2centroid(stack[0])
+                points, radii, center = _geometry.contour_to_centroid(stack[0])
 
         branch = Soma.from_points(points=points * u.um, radii=radii * u.um)
         return branch, center, float(radii[len(radii) // 2])
 
-    def _merge_soma_contours(
-        self,
-        contours: tuple[tuple[_AscPoint, ...], ...],
-    ) -> tuple[tuple[tuple[_AscPoint, ...], ...], ...]:
-        if not contours:
-            return tuple()
-
-        stacks: list[tuple[tuple[_AscPoint, ...], ...]] = []
-        current_stack: list[tuple[_AscPoint, ...]] = [contours[0]]
-        previous_bbox = self._contour_bbox_xy(contours[0])
-        for contour in contours[1:]:
-            bbox = self._contour_bbox_xy(contour)
-            if self._xy_intersect(previous_bbox, bbox):
-                current_stack.append(contour)
-            else:
-                stacks.append(tuple(current_stack))
-                current_stack = [contour]
-            previous_bbox = bbox
-        stacks.append(tuple(current_stack))
-        return tuple(stacks)
-
-    def _contour_bbox_xy(self, contour: tuple[_AscPoint, ...]) -> tuple[float, float, float, float]:
-        xs = [point.x for point in contour]
-        ys = [point.y for point in contour]
-        return min(xs), max(xs), min(ys), max(ys)
-
-    def _xy_intersect(
-        self,
-        left: tuple[float, float, float, float],
-        right: tuple[float, float, float, float],
-    ) -> bool:
-        xmin1, xmax1, ymin1, ymax1 = left
-        xmin2, xmax2, ymin2, ymax2 = right
-        return not (xmax1 < xmin2 or xmax2 < xmin1 or ymax1 < ymin2 or ymax2 < ymin1)
-
-    def _soma_loose_bbox_xy(
-        self,
-        stack: tuple[tuple[_AscPoint, ...], ...],
-    ) -> tuple[float, float, float, float]:
-        if len(stack) == 1:
-            xmin, xmax, ymin, ymax = self._contour_bbox_xy(stack[0])
-            return xmin - 0.5, xmax + 0.5, ymin - 0.5, ymax + 0.5
-
-        bboxes = [self._contour_bbox_xy(contour) for contour in stack]
-        return (
-            min(bbox[0] for bbox in bboxes),
-            max(bbox[1] for bbox in bboxes),
-            min(bbox[2] for bbox in bboxes),
-            max(bbox[3] for bbox in bboxes),
-        )
-
-    def _point_inside_bbox_xy(
-        self,
-        xyz: np.ndarray,
-        bbox_xy: tuple[float, float, float, float],
-    ) -> bool:
-        xmin, xmax, ymin, ymax = bbox_xy
-        x, y = float(xyz[0]), float(xyz[1])
-        return xmin <= x <= xmax and ymin <= y <= ymax
-
     def _validate_soma_stack(
         self,
-        stack: tuple[tuple[_AscPoint, ...], ...],
+        stack: tuple[np.ndarray, ...],
         *,
         path: Path,
         tol: float = 1e-6,
     ) -> None:
+        """Reject a CellBody stack whose z layers are not strictly monotonic.
+
+        The geometric test lives in :func:`braincell.io._geometry.constant_z`;
+        the wording, the offending file, and the contour index are ASC
+        reader business and stay here.
+        """
         direction = 0
         previous_z = self._contour_constant_z(stack[0], path=path, contour_index=0)
         for index, contour in enumerate(stack[1:], start=1):
@@ -694,204 +646,18 @@ class AscReader:
 
     def _contour_constant_z(
         self,
-        contour: tuple[_AscPoint, ...],
+        contour: np.ndarray,
         *,
         path: Path,
         contour_index: int,
         tol: float = 1e-6,
     ) -> float:
-        z0 = float(contour[0].z)
-        for point in contour[1:]:
-            if abs(float(point.z) - z0) > tol:
-                raise ValueError(
-                    f"ASC import failed for {path}: CellBody contour {contour_index} does not have constant z."
-                )
-        return z0
-
-    def _contourcenter(
-        self,
-        contour: tuple[_AscPoint, ...],
-        *,
-        num: int = 101,
-    ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-        x = np.array([point.x for point in contour], dtype=float)
-        y = np.array([point.y for point in contour], dtype=float)
-        z = np.array([point.z for point in contour], dtype=float)
-        seg_lengths = np.sqrt(np.diff(x) ** 2 + np.diff(y) ** 2 + np.diff(z) ** 2)
-        perimeter = np.zeros(len(x), dtype=float)
-        perimeter[1:] = np.cumsum(seg_lengths)
-        d_uniform = np.linspace(0.0, perimeter[-1], num)
-        x_new = np.interp(d_uniform, perimeter, x)
-        y_new = np.interp(d_uniform, perimeter, y)
-        z_new = np.interp(d_uniform, perimeter, z)
-        mean = np.array([x_new.mean(), y_new.mean(), z_new.mean()], dtype=float)
-        return mean, x_new, y_new, z_new
-
-    def _soma_axis_sampling(
-        self,
-        contour: tuple[_AscPoint, ...],
-        *,
-        n_samples: int = 21,
-        arclength_resample: int = 101,
-    ) -> tuple[np.ndarray, np.ndarray]:
-        mean, x_new, y_new, _ = self._contourcenter(contour, num=arclength_resample)
-        mean_xy = mean[:2]
-
-        pts = np.stack([x_new, y_new], axis=1)
-        pts_centered = pts - mean_xy
-        cov = np.cov(pts_centered, rowvar=False)
-        _, eigvecs = np.linalg.eigh(cov)
-        major = eigvecs[:, 1]
-        minor = eigvecs[:, 0]
-        # The sign of an eigenvector is arbitrary, so the major axis needs a
-        # deterministic orientation convention. Making the dominant component
-        # positive is sufficient to reproduce NEURON's pt3d ordering.
-        #
-        # Two earlier attempts at this are deliberately gone:
-        #
-        # 1. Aligning against NEURON's own eigenvector (via Import3d_Section).
-        #    That imported `neuron` at runtime from inside the reader -- NEURON
-        #    is a dev-only comparator, not a runtime dependency -- and it was
-        #    wrong anyway: NEURON reverses its raw eigenvector downstream, so
-        #    aligning to the raw vector inverts the result. GrC.asc came out
-        #    exactly reversed, point for point.
-        # 2. A follow-up heuristic that flipped the axis when the contour's
-        #    first point projected positive and its last projected negative.
-        #    On a closed contour those two points are adjacent, and when they
-        #    straddle the centre their projections are near-exact negatives
-        #    (GrC.asc: +0.18209 and -0.18209), so the test fires on numerical
-        #    noise rather than on traversal direction.
-        if major[np.argmax(np.abs(major))] < 0.0:
-            major = -major
-        major = major / np.linalg.norm(major)
-        minor = minor / np.linalg.norm(minor)
-
-        d = (pts - mean_xy) @ major
-        rad = (pts - mean_xy) @ minor
-
-        def _rotate(values: np.ndarray, k: int) -> np.ndarray:
-            return np.concatenate([values[k:], values[:k]])
-
-        def _keep_strictly_monotonic(
-            x_values: np.ndarray,
-            y_values: np.ndarray,
-            *,
-            increasing: bool,
-            tol: float = 1e-8,
-        ) -> tuple[np.ndarray, np.ndarray]:
-            keep_indices = [0]
-            for index in range(1, len(x_values)):
-                if increasing:
-                    if x_values[index] > x_values[keep_indices[-1]] + tol:
-                        keep_indices.append(index)
-                elif x_values[index] < x_values[keep_indices[-1]] - tol:
-                    keep_indices.append(index)
-            keep = np.asarray(keep_indices, dtype=int)
-            return x_values[keep], y_values[keep]
-
-        def _interp_strict(xp: np.ndarray, fp: np.ndarray, x_values: np.ndarray) -> np.ndarray:
-            if len(xp) == 1:
-                return np.full_like(x_values, fp[0], dtype=float)
-            if xp[0] > xp[-1]:
-                xp = xp[::-1]
-                fp = fp[::-1]
-            return np.interp(x_values, xp, fp)
-
-        index_max = int(np.argmax(d))
-        index_min = int(np.argmin(d))
-        d_rot = _rotate(d, index_max)
-        rad_rot = _rotate(rad, index_max)
-        index_min_rot = int(np.where(d_rot == d[index_min])[0][0])
-
-        d_side1 = d_rot[:index_min_rot][::-1]
-        rad_side1 = rad_rot[:index_min_rot][::-1]
-        d_side2 = d_rot[index_min_rot:]
-        rad_side2 = rad_rot[index_min_rot:]
-
-        inc1 = len(d_side1) > 1 and bool(d_side1[1] > d_side1[0])
-        inc2 = len(d_side2) > 1 and bool(d_side2[1] > d_side2[0])
-        d_side1_new, rad_side1_new = _keep_strictly_monotonic(d_side1, rad_side1, increasing=inc1)
-        d_side2_new, rad_side2_new = _keep_strictly_monotonic(d_side2, rad_side2, increasing=inc2)
-
-        d_all_sorted = np.sort(np.concatenate([d_side1_new, d_side2_new]))
-        d_min = float(d_all_sorted[1])
-        d_max = float(d_all_sorted[-2])
-        d_interp = np.linspace(d_min, d_max, n_samples)
-        xy_interp = mean_xy[None, :] + d_interp[:, None] * major[None, :]
-
-        rad1_interp = _interp_strict(d_side1_new, rad_side1_new, d_interp)
-        rad2_interp = _interp_strict(d_side2_new, rad_side2_new, d_interp)
-        diam_interp = np.abs(rad1_interp - rad2_interp)
-        diam_interp[0] = 0.5 * (diam_interp[0] + diam_interp[1])
-        diam_interp[-1] = 0.5 * (diam_interp[-1] + diam_interp[-2])
-        return xy_interp, diam_interp
-
-    def _contour2centroid(
-        self,
-        contour: tuple[_AscPoint, ...],
-    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-        xy, diameters = self._soma_axis_sampling(contour, n_samples=21)
-        mean, _, _, _ = self._contourcenter(contour)
-        z_value = float(contour[0].z) if contour else 0.0
-        points = np.column_stack([xy, np.full(len(diameters), z_value, dtype=float)])
-        radii = 0.5 * np.asarray(diameters, dtype=float)
-        return points, radii, mean
-
-    def _approximate_contour_by_circle(
-        self,
-        contour: tuple[_AscPoint, ...],
-        *,
-        num: int = 101,
-    ) -> tuple[np.ndarray, float]:
-        center, x_new, y_new, z_new = self._contourcenter(contour, num=num)
-        xyz = np.array([point.xyz for point in contour], dtype=float)
-        perimeter = float(np.sum(np.linalg.norm(np.roll(xyz, -1, axis=0) - xyz, axis=1)))
-        resampled = np.stack([x_new, y_new, z_new], axis=1)
-        mean_radius = float(np.mean(np.linalg.norm(resampled - center[None, :], axis=1)))
-        diameter = mean_radius + perimeter / (2.0 * np.pi)
-        return center, diameter
-
-    def _contourstack2centroid(
-        self,
-        stack: tuple[tuple[_AscPoint, ...], ...],
-    ) -> tuple[np.ndarray, np.ndarray]:
-        points = []
-        radii = []
-        for contour in stack:
-            center, diameter = self._approximate_contour_by_circle(contour)
-            points.append(center)
-            radii.append(0.5 * float(diameter))
-        return np.asarray(points, dtype=float), np.asarray(radii, dtype=float)
-
-    def _soma_stack_center(
-        self,
-        stack: tuple[tuple[_AscPoint, ...], ...],
-    ) -> np.ndarray:
-        centers = np.asarray([self._contourcenter(contour)[0] for contour in stack], dtype=float)
-        if len(centers) == 1:
-            return centers[0]
-
-        lengths = [0.0]
-        total_length = 0.0
-        for index in range(1, len(centers)):
-            total_length += float(np.linalg.norm(centers[index] - centers[index - 1]))
-            lengths.append(total_length)
-
-        if total_length <= 0.0:
-            return centers[0]
-
-        target = 0.5 * total_length
-        for index in range(1, len(lengths)):
-            if lengths[index] > target:
-                fraction = (target - lengths[index - 1]) / (lengths[index] - lengths[index - 1])
-                return fraction * centers[index] + (1.0 - fraction) * centers[index - 1]
-        return centers[-1]
-
-    def _synthetic_soma_branch(self, *, center: np.ndarray, radius: float) -> Branch:
-        offset = np.array([radius, 0.0, 0.0], dtype=float)
-        points = np.array((center - offset, center, center + offset), dtype=float) * u.um
-        radii = np.array((radius, radius, radius), dtype=float) * u.um
-        return Soma.from_points(points=points, radii=radii)
+        z_value = _geometry.constant_z(contour, tol=tol)
+        if z_value is None:
+            raise ValueError(
+                f"ASC import failed for {path}: CellBody contour {contour_index} does not have constant z."
+            )
+        return z_value
 
     def _collect_metadata(self, expr: object, metadata: AscMetadata) -> None:
         if isinstance(expr, str):

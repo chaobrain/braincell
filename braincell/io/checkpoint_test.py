@@ -273,12 +273,12 @@ class CheckpointMorphoRoundTripTest(unittest.TestCase):
             )
         # Auto-naming has produced dendrite_0, dendrite_1, dendrite_2.
         self.assertEqual(morpho.branch(index=3).name, "dendrite_2")
-        saved_counters = dict(morpho._type_name_counters)
+        saved_counters = morpho.naming_state()
 
         path = save_morpho(morpho, self.tmp / "counters.bcm")
         loaded = load_morpho(path)
 
-        self.assertEqual(loaded._type_name_counters, saved_counters)
+        self.assertEqual(loaded.naming_state(), saved_counters)
         # Next auto-attached dendrite must continue the sequence at _3.
         new_view = loaded.attach(
             parent="soma",

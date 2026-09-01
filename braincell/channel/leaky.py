@@ -25,7 +25,8 @@ from typing import Union, Sequence, Optional
 import braintools
 import brainunit as u
 
-from braincell._base import HHTypedNeuron, Channel
+from braincell._base_channel import Channel
+from braincell._base_neuron import HHTypedNeuron
 from braincell._typing import Initializer
 from braincell.mech import register_channel
 
@@ -54,7 +55,7 @@ class LeakageChannel(Channel):
 
     Notes
     -----
-    ``root_type`` is :class:`~braincell._base.HHTypedNeuron`: instances
+    ``root_type`` is :class:`~braincell.HHTypedNeuron`: instances
     are attached to a Hodgkin-Huxley-typed neuron, not to an ion. There
     is no equation here -- :meth:`current` raises ``NotImplementedError``
     and must be implemented by a subclass such as :class:`IL`.

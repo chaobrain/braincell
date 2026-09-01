@@ -25,8 +25,8 @@ Subcommands:
 ``show``
     Print metadata, URLs, measurement, and cache status for one neuron.
 ``fetch``
-    Download files for one neuron, optionally parsing the result with
-    :func:`load_neuromorpho` (``--load``).
+    Download files for one neuron, optionally parsing the file it just
+    wrote with :meth:`Morphology.from_swc` (``--load``).
 ``urls``
     Print resolved URLs for one neuron without downloading anything.
 ``cache list``
@@ -47,9 +47,10 @@ from dataclasses import asdict, is_dataclass
 from pathlib import Path
 from typing import Any
 
+from braincell.morph.morphology import Morphology
 from .cache import NeuroMorphoCache
 from .client import DEFAULT_TIMEOUT, NeuroMorphoClient
-from .entry import default_cache_dir, load_neuromorpho
+from .entry import default_cache_dir
 from .errors import NeuroMorphoError
 from .models import (
     NeuroMorphoCacheStatus,
@@ -339,15 +340,25 @@ def _cmd_fetch(args: argparse.Namespace) -> int:
     loaded: dict[str, int] | None = None
     text = _format_download(record)
     if args.load:
-        morph = load_neuromorpho(
-            args.neuron_id,
-            cache_dir=cache_root,
-            client=client,
-            overwrite=False,
+        # Parse the file this command just downloaded. Calling
+        # load_neuromorpho() here would run the whole download path a second
+        # time for the same neuron.
+        swc_path = next(
+            (item.path for item in record.download_items if item.kind == "standard" and item.path.exists()),
+            None,
         )
+        if swc_path is None:
+            raise FileNotFoundError(
+                f"Standardized SWC file for neuron_id={args.neuron_id} could not be "
+                f"located after download (cache_dir={cache_root})."
+            )
+        morph = Morphology.from_swc(swc_path, mode="neuromorpho")
         loaded = {
             "n_branches": len(morph.branches),
-            "n_points": int(sum(b.n_points for b in morph.branches)),
+            # ``Branch`` has no ``n_points``; its point array is one longer
+            # than its segment count. Reading the missing attribute made
+            # ``fetch --load`` raise AttributeError on every run.
+            "n_points": int(sum(b.n_segments + 1 for b in morph.branches)),
         }
         text += f"\nloaded OK: {loaded['n_branches']} branches, {loaded['n_points']} points"
     _emit(args, {"record": record, "loaded": loaded}, text)

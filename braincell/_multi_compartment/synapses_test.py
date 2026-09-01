@@ -275,7 +275,7 @@ class SynapseViewTest(unittest.TestCase):
             cell._prepare_runtime_synapse_inputs(cell._cv_to_point(cell.V.value))
 
         layout = next(layout for layout, _ in cell.runtime.iter_synapse_layouts())
-        node = cell.runtime.get_runtime_node(layout.id)
+        cell.runtime.get_runtime_node(layout.id)
         np.testing.assert_allclose(
             cell.runtime.get_event_buffer(layout.id).to_decimal(u.uS),
             [0.1, 0.0, 0.2, 0.0],

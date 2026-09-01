@@ -20,7 +20,7 @@ import brainstate
 import brainunit as u
 import jax.numpy as jnp
 
-from braincell._base import IonInfo
+from braincell._base_channel import IonInfo
 from braincell.channel._base import HH, Markov
 from braincell.channel.potassium_calcium import (
     AHP_De1994,

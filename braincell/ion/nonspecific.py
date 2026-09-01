@@ -19,7 +19,7 @@ from typing import Optional
 
 import brainunit as u
 
-from braincell._base import Ion
+from braincell._base_ion import Ion
 from braincell._typing import Initializer, Size
 from braincell.ion._base import FixedIon
 from braincell.mech import register_ion

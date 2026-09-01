@@ -29,9 +29,7 @@ from braincell.vis._testing import (
     VALID_SWC_FIXTURES,
     FakeBackend,
     VisDefaultsResetMixin,
-    make_length_only_tree,
     make_projected_node_tree,
-    make_two_dendrite_tree,
 )
 from braincell.vis.backend import BackendChooser
 from braincell.vis.scene3d import build_render_scene_3d

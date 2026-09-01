@@ -14,10 +14,42 @@
 # ==============================================================================
 
 
+import importlib.util
+import sys
 from dataclasses import dataclass
 from typing import Protocol
 
 from .scene import RenderScene2D, RenderScene3D
+
+
+def module_available(module_name: str) -> bool:
+    """Return whether *module_name* can be imported, without importing it.
+
+    This is the probe every backend's ``available()`` uses, so an
+    optional dependency is detected the same way everywhere and none of
+    the backends import their heavy third-party module at import time.
+
+    Parameters
+    ----------
+    module_name : str
+        Top-level module name, e.g. ``"plotly"``.
+
+    Returns
+    -------
+    bool
+        ``True`` when the module is installed or already imported.
+
+    Notes
+    -----
+    :func:`importlib.util.find_spec` raises :class:`ValueError` for a
+    module that is present in :data:`sys.modules` but has no ``__spec__``
+    (which is what a test double injected into ``sys.modules`` looks
+    like); that case falls back to a membership test.
+    """
+    try:
+        return importlib.util.find_spec(module_name) is not None
+    except ValueError:
+        return module_name in sys.modules
 
 
 class RenderBackend(Protocol):

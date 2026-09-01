@@ -31,15 +31,14 @@ The backend is gated on ``importlib.util.find_spec("plotly")``; when
 default :class:`BackendChooser` falls back to PyVista or matplotlib.
 """
 
-import importlib.util
-import sys
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Iterator
 
 import numpy as np
 
-from ._values import resolved_colorbar_label
-from .scene import RenderRequest, RenderScene3D, ValueSpec
+from ._values import resolve_value_limits, resolved_colorbar_label
+from .backend import module_available
+from .scene import BranchTypeBatch3D, RenderRequest, RenderScene3D, ValueBatch3D, ValueSpec
 
 
 @dataclass(frozen=True)
@@ -76,10 +75,7 @@ class PlotlyBackend:
     show_scalar_bar: bool = True
 
     def available(self) -> bool:
-        try:
-            return importlib.util.find_spec("plotly") is not None
-        except ValueError:
-            return "plotly" in sys.modules
+        return module_available("plotly")
 
     def render(self, request: RenderRequest) -> object:
         scene = request.scene
@@ -154,6 +150,30 @@ def _rgb_to_hex(rgb: tuple[int, int, int]) -> str:
     return "#{:02x}{:02x}{:02x}".format(int(rgb[0]), int(rgb[1]), int(rgb[2]))
 
 
+def _iter_batch_polylines(batch: BranchTypeBatch3D | ValueBatch3D) -> Iterator[tuple[str, np.ndarray]]:
+    """Yield ``(branch_name, point_indices)`` for each branch in a 3D batch.
+
+    ``batch.lines`` is the VTK-style ``[n, i0, i1, … i{n-1}]`` repeating
+    cell encoding produced by
+    :func:`~braincell.vis.scene3d.build_render_scene_3d`. It is written
+    in one place, so it is decoded in one place too — both trace
+    builders below consume this.
+
+    A branch whose slot has no matching name falls back to the batch's
+    branch type.
+    """
+    lines = batch.lines
+    cursor = 0
+    branch_slot = 0
+    while cursor < len(lines):
+        n_points = int(lines[cursor])
+        indices = lines[cursor + 1 : cursor + 1 + n_points]
+        branch_name = batch.branch_names[branch_slot] if branch_slot < len(batch.branch_names) else batch.branch_type
+        yield branch_name, indices
+        cursor += 1 + n_points
+        branch_slot += 1
+
+
 def _add_branch_type_traces(fig: Any, go: Any, scene: RenderScene3D, *, line_width: float) -> None:
     """Render one ``Scatter3d`` line per branch type with NaN separators."""
     for batch in scene.batches:
@@ -164,17 +184,7 @@ def _add_branch_type_traces(fig: Any, go: Any, scene: RenderScene3D, *, line_wid
         ys: list[float] = []
         zs: list[float] = []
         hover_texts: list[str] = []
-        offset = 0
-        # ``batch.lines`` is the VTK-style ``[n, i0, i1, … i{n-1}]``
-        # repeating encoding. Walk it to recover per-branch point ranges.
-        i = 0
-        branch_slot = 0
-        while i < len(batch.lines):
-            n = int(batch.lines[i])
-            indices = batch.lines[i + 1 : i + 1 + n]
-            branch_name = (
-                batch.branch_names[branch_slot] if branch_slot < len(batch.branch_names) else batch.branch_type
-            )
+        for branch_name, indices in _iter_batch_polylines(batch):
             for index in indices:
                 pt = batch.points_um[int(index)]
                 xs.append(float(pt[0]))
@@ -186,9 +196,6 @@ def _add_branch_type_traces(fig: Any, go: Any, scene: RenderScene3D, *, line_wid
             ys.append(float("nan"))
             zs.append(float("nan"))
             hover_texts.append("")
-            i += 1 + n
-            branch_slot += 1
-            offset += n
         if not xs:
             continue
         color = _rgb_to_hex(batch.color_rgb)
@@ -217,17 +224,7 @@ def _add_value_traces(
 ) -> None:
     """Render value batches as coloured ``Scatter3d`` lines with a shared scale."""
     # Shared colour-scale bounds across every batch.
-    vmins: list[float] = []
-    vmaxs: list[float] = []
-    for batch in scene.value_batches:
-        if batch.point_values.size:
-            vmins.append(float(np.min(batch.point_values)))
-            vmaxs.append(float(np.max(batch.point_values)))
-    vmin = value_spec.vmin if value_spec.vmin is not None else (min(vmins) if vmins else 0.0)
-    vmax = value_spec.vmax if value_spec.vmax is not None else (max(vmaxs) if vmaxs else 1.0)
-    if vmin == vmax:
-        vmin -= 0.5
-        vmax += 0.5
+    vmin, vmax = resolve_value_limits(value_spec, (batch.point_values for batch in scene.value_batches))
 
     title = resolved_colorbar_label(value_spec, value_spec.unit_label)
 
@@ -237,16 +234,8 @@ def _add_value_traces(
         zs: list[float] = []
         values: list[float] = []
         hover_texts: list[str] = []
-        i = 0
-        point_cursor = 0
-        branch_slot = 0
-        while i < len(batch.lines):
-            n = int(batch.lines[i])
-            indices = batch.lines[i + 1 : i + 1 + n]
-            branch_name = (
-                batch.branch_names[branch_slot] if branch_slot < len(batch.branch_names) else batch.branch_type
-            )
-            for k, idx in enumerate(indices):
+        for branch_name, indices in _iter_batch_polylines(batch):
+            for idx in indices:
                 pt = batch.points_um[int(idx)]
                 xs.append(float(pt[0]))
                 ys.append(float(pt[1]))
@@ -259,9 +248,6 @@ def _add_value_traces(
             zs.append(float("nan"))
             values.append(float("nan"))
             hover_texts.append("")
-            i += 1 + n
-            branch_slot += 1
-            point_cursor += n
         if not xs:
             continue
         line_kwargs: dict[str, Any] = {

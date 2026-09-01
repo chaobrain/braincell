@@ -128,8 +128,10 @@ class PlotlyBackendTest(unittest.TestCase):
         backend = PlotlyBackend()
         scene = build_render_scene_3d(self.tree)
         request = RenderRequest(morpho=self.tree, dimensionality="3d", scene=scene)
+        # The availability probe lives in ``backend.module_available``,
+        # which every backend shares.
         with mock.patch(
-            "braincell.vis.backend_plotly.importlib.util.find_spec",
+            "braincell.vis.backend.importlib.util.find_spec",
             return_value=None,
         ):
             with mock.patch.dict(sys.modules, {"plotly": None}, clear=False):

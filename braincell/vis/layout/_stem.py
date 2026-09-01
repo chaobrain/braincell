@@ -37,13 +37,14 @@ sibling ordering helpers defined below.
 
 import math
 from dataclasses import dataclass
+from itertools import islice
 
 import numpy as np
 
 from braincell.morph import MorphoBranch
 from braincell.morph.morphology import Morphology
 
-from ._collision import _build_collision_index, _layout_collision_score
+from ._collision import _build_collision_index
 from ._common import (
     LayoutBranch2D,
     _allocate_weighted_angles,
@@ -176,6 +177,20 @@ class _StemSideContext:
     angle_assignments: dict[int, float]
     side_children: tuple[MorphoBranch, ...]
     stem_depth: int
+
+
+def _recent_layouts(layouts: dict[int, LayoutBranch2D], window: int) -> tuple[LayoutBranch2D, ...]:
+    """Return the last *window* layouts placed, in insertion order.
+
+    Collision scoring only looks at a rolling window of recently placed
+    branches. ``tuple(layouts.values())[-window:]`` would copy every
+    layout placed so far on each call, making the walk quadratic in
+    branch count; :func:`itertools.islice` allocates only the window.
+    """
+    if window <= 0:
+        return ()
+    start = max(0, len(layouts) - window)
+    return tuple(islice(layouts.values(), start, None))
 
 
 def _layout_children_stem_linear(
@@ -316,7 +331,11 @@ def _place_stem_linear_side_child(
         side_index=side_index,
         stem_depth=context.stem_depth + 1,
         min_branch_angle_rad=min_branch_angle_rad,
-        existing_layouts=tuple(layouts.values())[-48:],
+        # NOTE: this path uses a fixed window of 48 rather than
+        # ``layout_config.stem_collision_window`` (default 24), unlike
+        # the tree path below. Preserved as-is because widening or
+        # narrowing the window changes the rendered layout.
+        existing_layouts=_recent_layouts(layouts, 48),
         layout_config=layout_config,
     )
 
@@ -433,7 +452,7 @@ def _expand_stem_node(
         branch_order=branch_order,
     )
     collision_window = layout_config.stem_collision_window
-    recent_layouts = tuple(layouts.values())[-collision_window:]
+    recent_layouts = _recent_layouts(layouts, collision_window)
     trunk_attach_um, trunk_attach_tangent_um = sample_layout_branch(parent_layout, trunk_child.parent_x)
     trunk_attach_angle_rad = _vector_angle_rad(trunk_attach_tangent_um)
     trunk_preferred_sign = _preferred_turn_sign(
@@ -502,7 +521,7 @@ def _place_stem_side_child(
         desired_tail_angle_rad=context.angle_assignments[child.index],
         preferred_sign=preferred_sign,
         min_branch_angle_rad=min_branch_angle_rad,
-        existing_layouts=tuple(layouts.values())[-collision_window:],
+        existing_layouts=_recent_layouts(layouts, collision_window),
         layout_config=layout_config,
     )
 

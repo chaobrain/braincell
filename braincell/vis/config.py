@@ -14,7 +14,7 @@
 # ==============================================================================
 
 from contextlib import contextmanager
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace as dataclass_replace
 from typing import Iterable, Iterator
 
 DEFAULT_BRANCH_TYPE_COLORS = {
@@ -107,23 +107,17 @@ def configure(
     if mode_3d_default is not None:
         updated.mode_3d_default = _normalize_mode(mode_3d_default, supported=SUPPORTED_3D_MODES, label="3D")
     if branch_type_colors is not None:
-        normalized = {str(branch_type): _normalize_color(color) for branch_type, color in branch_type_colors.items()}
-        if replace_branch_type_colors:
-            updated.branch_type_colors = normalized
-        else:
-            merged = dict(updated.branch_type_colors)
-            merged.update(normalized)
-            updated.branch_type_colors = merged
+        updated.branch_type_colors = _merge_color_map(
+            updated.branch_type_colors,
+            branch_type_colors,
+            replace=replace_branch_type_colors,
+        )
     if branch_type_edge_colors_2d is not None:
-        normalized_edge_2d = {
-            str(branch_type): _normalize_color(color) for branch_type, color in branch_type_edge_colors_2d.items()
-        }
-        if replace_branch_type_edge_colors_2d or updated.branch_type_edge_colors_2d is None:
-            updated.branch_type_edge_colors_2d = normalized_edge_2d
-        else:
-            merged_edge_2d = dict(updated.branch_type_edge_colors_2d)
-            merged_edge_2d.update(normalized_edge_2d)
-            updated.branch_type_edge_colors_2d = merged_edge_2d
+        updated.branch_type_edge_colors_2d = _merge_color_map(
+            updated.branch_type_edge_colors_2d,
+            branch_type_edge_colors_2d,
+            replace=replace_branch_type_edge_colors_2d,
+        )
     if alpha_2d is not None:
         updated.alpha_2d = _normalize_alpha(alpha_2d, label="alpha_2d")
     if alpha_2d_poly is not None:
@@ -449,25 +443,42 @@ def marker_radius_3d_um() -> float:
 
 
 def _copy_defaults(defaults: VisDefaults) -> VisDefaults:
-    return VisDefaults(
-        layout_2d_default=defaults.layout_2d_default,
-        shape_2d_default=defaults.shape_2d_default,
-        mode_3d_default=defaults.mode_3d_default,
+    """Return a deep-enough copy of *defaults* for snapshot/restore.
+
+    Only the two mutable dict fields need copying; everything else is
+    an immutable scalar or tuple. Going through
+    :func:`dataclasses.replace` rather than re-listing every field means
+    a newly added :class:`VisDefaults` field is carried automatically —
+    forgetting it here would silently leak that field across a
+    ``theme()`` / ``publication_theme()`` block.
+    """
+    return dataclass_replace(
+        defaults,
         branch_type_colors=dict(defaults.branch_type_colors),
         branch_type_edge_colors_2d=(
             dict(defaults.branch_type_edge_colors_2d) if defaults.branch_type_edge_colors_2d is not None else None
         ),
-        alpha_2d=defaults.alpha_2d,
-        alpha_2d_poly=defaults.alpha_2d_poly,
-        alpha_2d_line=defaults.alpha_2d_line,
-        frustum_edge_linewidth_2d=defaults.frustum_edge_linewidth_2d,
-        alpha_3d_tube=defaults.alpha_3d_tube,
-        highlight_color=defaults.highlight_color,
-        highlight_alpha=defaults.highlight_alpha,
-        marker_color=defaults.marker_color,
-        marker_size_2d=defaults.marker_size_2d,
-        marker_radius_3d_um=defaults.marker_radius_3d_um,
     )
+
+
+def _merge_color_map(
+    current: dict[str, tuple[int, int, int]] | None,
+    incoming: dict[str, object],
+    *,
+    replace: bool,
+) -> dict[str, tuple[int, int, int]]:
+    """Normalize *incoming* colours and merge them over *current*.
+
+    When *replace* is true (or there is nothing to merge into) the
+    normalized map wins outright; otherwise it is layered on top of the
+    existing entries.
+    """
+    normalized = {str(branch_type): _normalize_color(color) for branch_type, color in incoming.items()}
+    if replace or current is None:
+        return normalized
+    merged = dict(current)
+    merged.update(normalized)
+    return merged
 
 
 def _normalize_mode(mode: str, *, supported: frozenset[str], label: str) -> str:
@@ -513,3 +524,33 @@ def _normalize_color(color: object) -> tuple[int, int, int]:
 
 def _darken_color(color: tuple[int, int, int], *, factor: float) -> tuple[int, int, int]:
     return tuple(max(0, min(255, int(round(channel * factor)))) for channel in color)
+
+
+def rgb_to_float(rgb: tuple[int, int, int]) -> tuple[float, float, float]:
+    """Convert a 0-255 palette colour to the 0-1 floats plotting libraries want.
+
+    The palette in this module is stored as 0-255 integer triples, so
+    this is its decode step; it lives here rather than in each backend
+    so matplotlib, PyVista, and the morphometry charts cannot drift
+    apart on it.
+
+    Parameters
+    ----------
+    rgb : tuple of int
+        Colour as ``(r, g, b)`` with each channel in ``[0, 255]``.
+
+    Returns
+    -------
+    tuple of float
+        The same colour with each channel scaled into ``[0.0, 1.0]``.
+
+    Examples
+    --------
+
+    .. code-block:: python
+
+        >>> from braincell.vis.config import rgb_to_float
+        >>> rgb_to_float((255, 128, 0))
+        (1.0, 0.5019607843137255, 0.0)
+    """
+    return tuple(float(channel) / 255.0 for channel in rgb)  # type: ignore[return-value]

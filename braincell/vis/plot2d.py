@@ -154,7 +154,7 @@ def _build_value_spec(
             norm=norm if norm is not None else values.norm,
             label=value_label if value_label is not None else values.label,
             unit_label=values.unit_label,
-            show_colorbar=show_colorbar if show_colorbar is not values.show_colorbar else values.show_colorbar,
+            show_colorbar=show_colorbar,
         )
     return ValueSpec(
         values=values,

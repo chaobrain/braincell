@@ -34,6 +34,7 @@ import numpy as np
 
 from braincell.filter import LocsetMask
 from braincell.morph.morphology import Morphology
+from ._values import _strip_quantity, compose_colorbar_label
 
 
 @dataclass(frozen=True)
@@ -255,19 +256,14 @@ def plot_traces(
     )
 
 
-def _strip_quantity(values) -> tuple[np.ndarray, str | None]:
-    try:
-        import brainunit as u
-    except ModuleNotFoundError:  # pragma: no cover
-        return np.asarray(values, dtype=float), None
-    if isinstance(values, u.Quantity):
-        return np.asarray(u.get_mantissa(values), dtype=float), str(u.get_unit(values))
-    return np.asarray(values, dtype=float), None
-
-
 def _axis_label(kind: str, user_label: str | None, detected: str | None) -> str | None:
-    if user_label is not None:
-        return f"{kind} [{user_label}]"
-    if detected is not None:
-        return f"{kind} [{detected}]"
-    return None
+    """Label an axis as ``"<kind> [<unit>]"``, or ``None`` when no unit is known.
+
+    An explicit *user_label* always wins over the unit detected on the
+    array. Unlike a colour-bar label, *kind* is always present, so a
+    missing unit means no label at all rather than a bare ``"[unit]"``.
+    """
+    unit = user_label if user_label is not None else detected
+    if unit is None:
+        return None
+    return compose_colorbar_label(kind, unit)

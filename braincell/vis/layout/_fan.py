@@ -43,7 +43,7 @@ from ._config import DEFAULT_LAYOUT_CONFIG, LayoutConfig
 from ._geometry import (
     _make_centered_horizontal_layout_branch,
     _make_straight_layout_branch,
-    sample_layout_branch,
+    point_on_layout_branch,
 )
 
 _LEFT_ROOT_CENTER_RAD = math.pi
@@ -130,8 +130,7 @@ def _layout_children_fan(
         node_layout = layouts[node.index]
         frames: list[tuple[MorphoBranch, tuple[float, float] | None, bool]] = []
         for child, child_interval, child_angle in allocations:
-            attach_um, attach_tangent_um = sample_layout_branch(node_layout, child.parent_x)
-            _ = attach_tangent_um
+            attach_um = point_on_layout_branch(node_layout, child.parent_x)
             layouts[child.index] = _make_straight_layout_branch(
                 child,
                 spec=layout_specs[child.index],

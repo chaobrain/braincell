@@ -34,8 +34,12 @@ metric) needs to invalidate the entry. A bounded LRU keeps memory
 under control in long-running notebooks.
 """
 
+import dataclasses
 from collections import OrderedDict
 from typing import Callable, Hashable
+
+import brainunit as u
+import numpy as np
 
 from braincell.morph.morphology import Morphology
 from ._common import LayoutBranch2D
@@ -125,15 +129,18 @@ def _metric_key(morpho: Morphology) -> Hashable:
     enough to make two morphologies with identical topology share a
     cache entry, while any edit (length change, new branch, ...)
     produces a different key automatically.
-    """
-    import brainunit as u
 
+    The per-segment arrays are rounded and hashed as raw bytes rather
+    than as tuples of Python floats: this runs on every cache *hit*,
+    and a per-element ``round(float(x), 6)`` genexpr made the key cost
+    more than the lookup saved on large morphologies.
+    """
     rows: list[tuple] = []
     for branch_view in morpho.branches:
         branch = branch_view.branch
-        lengths = tuple(round(float(length), 6) for length in branch.lengths.to_decimal(u.um))
-        radii_proximal = tuple(round(float(r), 6) for r in branch.radii_proximal.to_decimal(u.um))
-        radii_distal = tuple(round(float(r), 6) for r in branch.radii_distal.to_decimal(u.um))
+        lengths = _rounded_bytes(branch.lengths.to_decimal(u.um))
+        radii_proximal = _rounded_bytes(branch.radii_proximal.to_decimal(u.um))
+        radii_distal = _rounded_bytes(branch.radii_distal.to_decimal(u.um))
         parent = branch_view.parent
         parent_index = None if parent is None else parent.index
         parent_x = branch_view.parent_x
@@ -154,6 +161,11 @@ def _metric_key(morpho: Morphology) -> Hashable:
     return ("morpho", tuple(rows))
 
 
+def _rounded_bytes(values) -> bytes:
+    """Return a hashable byte snapshot of *values* rounded to 6 decimals."""
+    return np.round(np.asarray(values, dtype=float), 6).tobytes()
+
+
 def _layout_config_key(layout_config: LayoutConfig) -> Hashable:
     """Return a hashable key for a :class:`LayoutConfig`.
 
@@ -162,8 +174,6 @@ def _layout_config_key(layout_config: LayoutConfig) -> Hashable:
     key without needing :func:`dataclasses.astuple` (which would break
     if anyone added a field containing a mutable default).
     """
-    import dataclasses
-
     return tuple((field.name, getattr(layout_config, field.name)) for field in dataclasses.fields(layout_config))
 
 

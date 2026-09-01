@@ -24,12 +24,14 @@ algorithm rather than morphology geometry.
 from __future__ import annotations
 
 import warnings
+from collections import deque
 from dataclasses import dataclass
-from typing import Any, Literal
+from typing import Any, Literal, get_args
 
 import numpy as np
 
 from braincell._discretization.base import NodeTree
+from ._values import _strip_quantity, compose_colorbar_label
 
 ColorMode = Literal["solid", "depth", "values"]
 CoverageMode = Literal["fraction", "any", "all"]
@@ -75,8 +77,10 @@ _PRESETS: dict[str, _PointTopologyPreset] = {
 _GRAPHVIZ_LAYOUTS = {"twopi", "dot", "neato"}
 _LAYOUT_ALIASES = {"kamada-kawai": "kamada_kawai"}
 _VALID_LAYOUTS = _GRAPHVIZ_LAYOUTS | {"kamada_kawai"}
-_VALID_COLOR_MODES = {"solid", "depth", "values"}
-_VALID_COVERAGE_MODES = {"fraction", "any", "all"}
+# Derived from the Literal aliases above so the allowed values are
+# spelled exactly once.
+_VALID_COLOR_MODES = set(get_args(ColorMode))
+_VALID_COVERAGE_MODES = set(get_args(CoverageMode))
 
 
 def plot_point_topology(
@@ -599,13 +603,11 @@ def _resolve_node_rgba(
 
 
 def _normalize_values_array(values, *, n_points: int) -> tuple[np.ndarray, str | None]:
-    if hasattr(values, "to_decimal") and hasattr(values, "unit"):
-        unit = values.unit
-        raw = np.asarray(values.to_decimal(unit), dtype=float)
-        unit_label = str(unit)
-    else:
-        raw = np.asarray(values, dtype=float)
-        unit_label = None
+    # Unit stripping goes through the shared helper so this path agrees
+    # with the scene builders on what counts as a brainunit quantity —
+    # duck-typing on ``to_decimal``/``unit`` here used to accept objects
+    # the rest of the package rejected.
+    raw, unit_label = _strip_quantity(values)
     if raw.ndim != 1:
         raise ValueError(f"values must be 1-D, got shape {raw.shape!r}.")
     array = raw.reshape(-1)
@@ -631,23 +633,6 @@ def _build_value_norm(values: np.ndarray, *, vmin: float | None, vmax: float | N
     return mcolors.Normalize(vmin=lo, vmax=hi)
 
 
-def _normalize_scalar_values(values: np.ndarray) -> np.ndarray:
-    values = np.asarray(values, dtype=float)
-    finite_mask = np.isfinite(values)
-    if not np.any(finite_mask):
-        return np.zeros_like(values, dtype=float)
-    finite_values = values[finite_mask]
-    lo = float(np.min(finite_values))
-    hi = float(np.max(finite_values))
-    if hi - lo <= 1e-12:
-        out = np.zeros_like(values, dtype=float)
-        out[~finite_mask] = 0.0
-        return out
-    out = np.zeros_like(values, dtype=float)
-    out[finite_mask] = (finite_values - lo) / (hi - lo)
-    return out
-
-
 def _graph_depths(*, node_ids: tuple[int, ...], edges: tuple[tuple[int, int], ...]) -> np.ndarray:
     if not node_ids:
         return np.zeros((0,), dtype=float)
@@ -661,9 +646,11 @@ def _graph_depths(*, node_ids: tuple[int, ...], edges: tuple[tuple[int, int], ..
     id_to_index = {node_id: index for index, node_id in enumerate(node_ids)}
     depths = np.full(len(node_ids), -1.0, dtype=float)
     depths[id_to_index[root_id]] = 0.0
-    queue = [root_id]
+    # ``deque.popleft`` is O(1); ``list.pop(0)`` is O(len(queue)), which
+    # makes the whole BFS quadratic on wide trees.
+    queue = deque([root_id])
     while queue:
-        node_id = queue.pop(0)
+        node_id = queue.popleft()
         parent_depth = depths[id_to_index[node_id]]
         for child_id in adjacency[node_id]:
             depths[id_to_index[child_id]] = parent_depth + 1.0
@@ -715,13 +702,10 @@ def _blend_node_rgba(
 
 
 def _resolved_colorbar_label(*, value_label: str | None, unit_label: str | None) -> str | None:
-    if value_label and unit_label:
-        return f"{value_label} [{unit_label}]"
-    if value_label:
-        return value_label
-    if unit_label:
-        return f"[{unit_label}]"
-    return None
+    # Empty strings are treated as "absent" here (a colour bar with a
+    # blank title is not what the caller meant); past that, composition
+    # is the shared rule.
+    return compose_colorbar_label(value_label or None, unit_label or None)
 
 
 def _apply_axes_style(ax, coordinates: np.ndarray) -> None:

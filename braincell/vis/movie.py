@@ -42,8 +42,9 @@ from typing import Any
 import numpy as np
 
 from braincell.morph.morphology import Morphology
+from ._values import _strip_quantity, resolve_value_limits, resolve_values
 from .layout import LayoutConfig
-from .scene import ValueSpec
+from .scene import ValueSpec as _ValueSpec
 
 
 @dataclass(frozen=True)
@@ -136,21 +137,16 @@ def plot_movie(
     if not isinstance(morpho, Morphology):
         raise TypeError(f"plot_movie(...) expects Morphology, got {type(morpho).__name__!s}.")
 
-    arr = _strip_units(values_over_time)
+    arr, _ = _strip_quantity(values_over_time)
     if arr.ndim != 2:
         raise ValueError(f"plot_movie(...) expects a 2-D (T, N) values array, got shape {arr.shape!r}.")
     n_frames = arr.shape[0]
     if n_frames == 0:
         raise ValueError("plot_movie(...) requires at least one frame.")
 
-    # Precompute a shared vmin/vmax so every frame lands on the same scale.
-    if vmin is None:
-        vmin = float(np.min(arr))
-    if vmax is None:
-        vmax = float(np.max(arr))
-    if vmin == vmax:
-        vmin = vmin - 0.5
-        vmax = vmax + 0.5
+    # Resolve a shared vmin/vmax across every frame so the colour scale
+    # is fixed for the whole animation.
+    vmin, vmax = resolve_value_limits(_ValueSpec(values=arr, vmin=vmin, vmax=vmax), (arr,))
 
     if dimensionality == "2d":
         return _plot_movie_2d(
@@ -183,16 +179,6 @@ def plot_movie(
             mode=mode,
         )
     raise ValueError(f"plot_movie(...) dimensionality must be '2d' or '3d', got {dimensionality!r}.")
-
-
-def _strip_units(values) -> np.ndarray:
-    try:
-        import brainunit as u
-    except ModuleNotFoundError:  # pragma: no cover
-        return np.asarray(values, dtype=float)
-    if isinstance(values, u.Quantity):
-        return np.asarray(u.get_mantissa(values), dtype=float)
-    return np.asarray(values, dtype=float)
 
 
 # ---------------------------------------------------------------------------
@@ -250,31 +236,26 @@ def _plot_movie_2d(
         if isinstance(collection, (LineCollection, PolyCollection)) and collection.get_array() is not None
     ]
 
-    # Resolve per-frame per-primitive value arrays once so update() is
-    # just an in-place assignment.
-    from ._values import resolve_values
-    from .scene import ValueSpec as _ValueSpec
+    # Value collections come back in the order the scene builder
+    # produced them: one per branch, in branch-index order. That order
+    # does not change between frames, so resolve it once.
+    scene_order_branch_indices = [branch.index for branch in morpho.branches]
 
-    per_frame_scalars: list[list[np.ndarray]] = []
-    for frame_index in range(values.shape[0]):
+    title_obj = ax.set_title("") if dt is None else ax.set_title(_format_time(0))
+
+    def _update(frame_index: int):
+        # Resolved lazily per frame rather than materialising all T
+        # frames upfront: FuncAnimation only ever needs one at a time,
+        # and precomputing held T x n_branches arrays alive for the
+        # lifetime of the animation.
         per_branch, _ = resolve_values(
             morpho,
             _ValueSpec(values=values[frame_index], cmap=cmap, vmin=vmin, vmax=vmax),
         )
-        # Values collections are in the same order the scene builder
-        # produced them (one per branch, in branch-index order).
-        scene_order_branch_indices = [branch.index for branch in morpho.branches]
-        frame_arrays = [per_branch[idx].segment_values for idx in scene_order_branch_indices]
-        per_frame_scalars.append(frame_arrays)
-
-    title_obj = ax.set_title("") if dt is None else ax.set_title(_format_time(0, dt))
-
-    def _update(frame_index: int):
-        frame_values = per_frame_scalars[frame_index]
-        for collection, values_arr in zip(value_collections, frame_values):
-            collection.set_array(values_arr)
+        for collection, branch_index in zip(value_collections, scene_order_branch_indices):
+            collection.set_array(per_branch[branch_index].segment_values)
         if dt is not None:
-            title_obj.set_text(_format_time(frame_index, dt))
+            title_obj.set_text(_format_time(frame_index))
         return (*value_collections, title_obj)
 
     animation = FuncAnimation(
@@ -294,19 +275,16 @@ def _plot_movie_2d(
     return MovieResult(animation=animation, frames=values.shape[0], output_path=output_path)
 
 
-def _format_time(frame_index: int, dt) -> str:
+def _format_time(frame_index: int) -> str:
+    # NOTE: this renders the frame index, not the elapsed time — the
+    # ``dt`` the caller passes is not folded in. Kept as-is because
+    # changing it would change every rendered title.
     return f"t = {frame_index} × dt"
 
 
 def _save_animation_2d(animation, out: Path, *, fps: int) -> None:
     """Write the matplotlib animation to disk, selecting the writer by suffix."""
-    suffix = out.suffix.lower()
-    if suffix == ".gif":
-        writer = "pillow"
-    elif suffix in {".mp4", ".mov", ".m4v"}:
-        writer = "ffmpeg"
-    else:
-        writer = "ffmpeg"
+    writer = "pillow" if out.suffix.lower() == ".gif" else "ffmpeg"
     animation.save(str(out), writer=writer, fps=fps)
 
 
@@ -340,8 +318,6 @@ def _plot_movie_3d(
     """
     import pyvista as pv
 
-    from ._values import resolve_values
-    from .scene import ValueSpec as _ValueSpec
     from .scene3d import build_render_scene_3d
 
     scene = build_render_scene_3d(morpho, mode=mode or "skeleton")

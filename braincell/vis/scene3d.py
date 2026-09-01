@@ -20,7 +20,10 @@ import brainunit as u
 import numpy as np
 
 from braincell.morph.morphology import Morphology
-from ._values import resolve_values
+from ._values import (
+    resolve_overlay_values as _resolve_overlay_values_3d,
+    with_unit_label as _with_unit_label_3d,
+)
 from .config import (
     highlight_alpha as _highlight_alpha,
     highlight_color as _highlight_color,
@@ -30,13 +33,11 @@ from .config import (
 from .scene import (
     BranchPolyline3D,
     BranchTypeBatch3D,
-    BranchValues,
     HighlightStroke3D,
     Marker3D,
     OverlaySpec,
     RenderScene3D,
     ValueBatch3D,
-    ValueSpec,
     alpha_for_3d_tube,
     color_for_branch_type,
 )
@@ -61,8 +62,11 @@ def build_render_scene_3d(
     value_spec, per_branch_values, unit_label = _resolve_overlay_values_3d(overlay, morpho)
 
     branches: list[BranchPolyline3D] = []
-    for branch_index in range(len(morpho)):
-        branch_view = morpho.branch(index=branch_index)
+    # ``morpho.branch(index=...)`` re-sorts the node table on every
+    # call, so indexing it in a loop is O(n^2 log n); ``morpho.branches``
+    # resolves the same "default" ordering once.
+    for branch_view in morpho.branches:
+        branch_index = branch_view.index
         branch = branch_view.branch
         if branch.points_proximal is None or branch.points_distal is None:
             raise ValueError(
@@ -308,36 +312,3 @@ def _build_overlay_primitives_3d(
             )
 
     return tuple(strokes), tuple(markers)
-
-
-def _resolve_overlay_values_3d(
-    overlay: OverlaySpec | None,
-    morpho: Morphology,
-) -> tuple[ValueSpec | None, dict[int, BranchValues] | None, str | None]:
-    if overlay is None:
-        return None, None, None
-    spec = overlay.values_spec()
-    if spec is None:
-        return None, None, None
-    per_branch, unit_label = resolve_values(morpho, spec)
-    return spec, per_branch, unit_label
-
-
-def _with_unit_label_3d(
-    spec: ValueSpec | None,
-    unit_label: str | None,
-) -> ValueSpec | None:
-    if spec is None:
-        return None
-    if unit_label is None or spec.unit_label is not None:
-        return spec
-    return ValueSpec(
-        values=spec.values,
-        cmap=spec.cmap,
-        vmin=spec.vmin,
-        vmax=spec.vmax,
-        norm=spec.norm,
-        label=spec.label,
-        unit_label=unit_label,
-        show_colorbar=spec.show_colorbar,
-    )

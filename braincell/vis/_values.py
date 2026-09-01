@@ -38,20 +38,25 @@ raw floats and the unit string is reported back so the scene builder
 can forward it to the value spec's colour-bar label.
 """
 
+import dataclasses
+from typing import Iterable
+
+import brainunit as u
 import numpy as np
 
 from braincell.morph.morphology import Morphology
-from .scene import BranchValues, ValueSpec
-
-try:  # pragma: no cover - branched off at import
-    import brainunit as u
-except ModuleNotFoundError:  # pragma: no cover
-    u = None  # type: ignore[assignment]
+from .scene import BranchValues, OverlaySpec, ValueSpec
 
 
 def _strip_quantity(values) -> tuple[np.ndarray, str | None]:
-    """Return ``(raw_array, unit_string_or_None)`` for a possibly-unit-carrying input."""
-    if u is not None and isinstance(values, u.Quantity):
+    """Return ``(raw_array, unit_string_or_None)`` for a possibly-unit-carrying input.
+
+    This is the single unit-stripping boundary for the whole ``vis``
+    package — ``traces``, ``movie``, and ``point_topology`` all route
+    through it so that "what counts as a quantity" is decided in one
+    place.
+    """
+    if isinstance(values, u.Quantity):
         unit = u.get_unit(values)
         raw = np.asarray(u.get_mantissa(values), dtype=float)
         return raw, str(unit)
@@ -185,6 +190,21 @@ def _expand_per_point(
     return per_branch
 
 
+def compose_colorbar_label(label: str | None, unit: str | None) -> str | None:
+    """Combine a label and a unit string into one colour-bar title.
+
+    ``("V", "mV")`` → ``"V [mV]"``; ``(None, "mV")`` → ``"[mV]"``;
+    ``("V", None)`` → ``"V"``; ``(None, None)`` → ``None``.
+    """
+    if label is None and unit is None:
+        return None
+    if label is None:
+        return f"[{unit}]"
+    if unit is None:
+        return str(label)
+    return f"{label} [{unit}]"
+
+
 def resolved_colorbar_label(spec: ValueSpec, unit_label: str | None) -> str | None:
     """Compose the final colour-bar label.
 
@@ -193,12 +213,96 @@ def resolved_colorbar_label(spec: ValueSpec, unit_label: str | None) -> str | No
     array if the spec's field is ``None``). Returns ``None`` when no
     label information is available at all.
     """
-    label = spec.label
-    unit = spec.unit_label if spec.unit_label is not None else unit_label
-    if label is None and unit is None:
+    return compose_colorbar_label(
+        spec.label,
+        spec.unit_label if spec.unit_label is not None else unit_label,
+    )
+
+
+def resolve_value_limits(
+    spec: ValueSpec | None,
+    value_arrays: Iterable[np.ndarray],
+    *,
+    degenerate_pad: float = 0.5,
+) -> tuple[float, float]:
+    """Resolve the ``(vmin, vmax)`` colour scale for a value overlay.
+
+    Honours explicit ``spec.vmin`` / ``spec.vmax`` and derives whichever
+    bound is ``None`` from *value_arrays*. A degenerate range (all
+    scalars equal, or no data at all) is widened by ``±degenerate_pad``
+    so colormap normalisation stays well-defined.
+
+    Every backend resolves its own colour scale from the primitives it
+    happens to render, so *value_arrays* is supplied by the caller
+    rather than derived here — this helper owns the bound-resolution
+    and degenerate-range *policy*, not the choice of which scalars feed
+    it.
+
+    Parameters
+    ----------
+    spec : ValueSpec or None
+        Value spec whose explicit bounds take precedence, if any.
+    value_arrays : iterable of numpy.ndarray
+        Scalar arrays to derive the missing bounds from. Empty arrays
+        are skipped.
+    degenerate_pad : float
+        Half-width applied when the resolved range has zero extent.
+
+    Returns
+    -------
+    vmin, vmax : float
+        The resolved colour-scale bounds, always with ``vmin < vmax``.
+    """
+    explicit_min = None if spec is None else spec.vmin
+    explicit_max = None if spec is None else spec.vmax
+
+    low: float | None = None
+    high: float | None = None
+    if explicit_min is None or explicit_max is None:
+        for array in value_arrays:
+            array = np.asarray(array, dtype=float)
+            if array.size == 0:
+                continue
+            array_min = float(array.min())
+            array_max = float(array.max())
+            low = array_min if low is None else min(low, array_min)
+            high = array_max if high is None else max(high, array_max)
+
+    vmin = float(explicit_min) if explicit_min is not None else (0.0 if low is None else low)
+    vmax = float(explicit_max) if explicit_max is not None else (1.0 if high is None else high)
+    if vmin == vmax:
+        vmin -= degenerate_pad
+        vmax += degenerate_pad
+    return vmin, vmax
+
+
+def resolve_overlay_values(
+    overlay: OverlaySpec | None,
+    morpho: Morphology,
+) -> tuple[ValueSpec | None, dict[int, BranchValues] | None, str | None]:
+    """Return ``(spec, per_branch_values, unit_label)`` or ``(None, None, None)``.
+
+    Shared by the 2D and 3D scene builders — neither step depends on
+    the dimensionality of the scene being built.
+    """
+    if overlay is None:
+        return None, None, None
+    spec = overlay.values_spec()
+    if spec is None:
+        return None, None, None
+    per_branch, unit_label = resolve_values(morpho, spec)
+    return spec, per_branch, unit_label
+
+
+def with_unit_label(spec: ValueSpec | None, unit_label: str | None) -> ValueSpec | None:
+    """Inject the unit label derived from the input array into the spec.
+
+    A unit label already set on the spec always wins. Uses
+    :func:`dataclasses.replace` so that a new :class:`ValueSpec` field
+    cannot be silently dropped here.
+    """
+    if spec is None:
         return None
-    if label is None:
-        return f"[{unit}]"
-    if unit is None:
-        return str(label)
-    return f"{label} [{unit}]"
+    if unit_label is None or spec.unit_label is not None:
+        return spec
+    return dataclasses.replace(spec, unit_label=unit_label)

@@ -41,7 +41,7 @@ import numpy as np
 from braincell.morph import MorphoBranch
 from braincell.morph.morphology import Morphology
 from ._traversal import iter_bottom_up, iter_depth_first
-from .config import color_for_branch_type
+from .config import color_for_branch_type, rgb_to_float as _rgb_to_float
 
 
 @dataclass(frozen=True)
@@ -392,7 +392,3 @@ def plot_branch_order_histogram(
     for spine in ("top", "right"):
         ax.spines[spine].set_visible(False)
     return ax
-
-
-def _rgb_to_float(rgb: tuple[int, int, int]) -> tuple[float, float, float]:
-    return tuple(float(channel) / 255.0 for channel in rgb)  # type: ignore[return-value]

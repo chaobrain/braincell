@@ -14,13 +14,14 @@
 # ==============================================================================
 
 
-import importlib.util
-import sys
 from dataclasses import dataclass
+from itertools import chain
 
 import numpy as np
 
-from ._values import resolved_colorbar_label
+from ._values import resolve_value_limits, resolved_colorbar_label
+from .backend import module_available
+from .config import rgb_to_float as _rgb_to_float
 from .hooks import PickInfo, VisHooks
 from .scene import (
     HighlightStroke2D,
@@ -51,10 +52,7 @@ class MatplotlibBackend:
     show_axes: bool = False
 
     def available(self) -> bool:
-        try:
-            return importlib.util.find_spec("matplotlib") is not None
-        except ValueError:
-            return "matplotlib" in sys.modules
+        return module_available("matplotlib")
 
     def render(self, request: RenderRequest) -> object:
         scene = request.scene
@@ -148,10 +146,6 @@ def _primitive_order(primitive) -> int:
     return getattr(primitive, "draw_order", 0)
 
 
-def _rgb_to_float(rgb: tuple[int, int, int]) -> tuple[float, float, float]:
-    return tuple(float(channel) / 255.0 for channel in rgb)  # type: ignore[return-value]
-
-
 # ---------------------------------------------------------------------------
 # Vectorized base primitives (PolyCollection for frustum; per-segment
 # ``ax.plot`` for polylines so that `ax.lines` introspection remains
@@ -223,24 +217,16 @@ def _build_norm(scene: RenderScene2D, value_spec: ValueSpec | None):
 
     from matplotlib.colors import Normalize
 
-    all_values: list[float] = []
-    for polyline in scene.polyline_values:
-        if polyline.segment_values.size:
-            all_values.extend(float(v) for v in polyline.segment_values)
-    for batch in scene.polygon_value_batches:
-        if batch.polygon_values.size:
-            all_values.extend(float(v) for v in batch.polygon_values)
-
-    vmin = value_spec.vmin
-    vmax = value_spec.vmax
-    if vmin is None:
-        vmin = float(min(all_values)) if all_values else 0.0
-    if vmax is None:
-        vmax = float(max(all_values)) if all_values else 1.0
-    if vmin == vmax:
-        # Avoid degenerate colourmap: pad to ±1 around the single value.
-        vmin = vmin - 0.5
-        vmax = vmax + 0.5
+    # Reduce per array rather than flattening every scalar into a Python
+    # list first — the list build dominated this function on large
+    # morphologies.
+    vmin, vmax = resolve_value_limits(
+        value_spec,
+        chain(
+            (polyline.segment_values for polyline in scene.polyline_values),
+            (batch.polygon_values for batch in scene.polygon_value_batches),
+        ),
+    )
     return Normalize(vmin=vmin, vmax=vmax)
 
 

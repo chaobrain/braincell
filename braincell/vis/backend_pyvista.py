@@ -16,7 +16,6 @@
 
 import importlib.util
 import os
-import sys
 from contextlib import contextmanager, nullcontext
 from dataclasses import dataclass, field
 from html import escape
@@ -24,7 +23,9 @@ from typing import Any
 
 import numpy as np
 
-from ._values import resolved_colorbar_label
+from ._values import resolve_value_limits, resolved_colorbar_label
+from .backend import module_available
+from .config import rgb_to_float as _rgb_to_float
 from .hooks import PickInfo, VisHooks
 from .scene import RenderRequest, RenderScene3D, ValueBatch3D, ValueSpec
 
@@ -64,10 +65,7 @@ class PyVistaBackend:
     skeleton_line_width: float = 2.0
 
     def available(self) -> bool:
-        try:
-            return importlib.util.find_spec("pyvista") is not None
-        except ValueError:
-            return "pyvista" in sys.modules
+        return module_available("pyvista")
 
     def render(self, request: RenderRequest) -> object:
         scene = request.scene
@@ -252,10 +250,6 @@ def _suppress_stderr_fd():
         os.close(saved_fd)
 
 
-def _rgb_to_float(rgb: tuple[int, int, int]) -> tuple[float, float, float]:
-    return tuple(float(channel) / 255.0 for channel in rgb)  # type: ignore[return-value]
-
-
 def _render_value_batches_pyvista(
     pv: Any,
     plotter: Any,
@@ -268,21 +262,10 @@ def _render_value_batches_pyvista(
     skeleton_line_width: float,
 ) -> None:
     """Render scalar-valued PolyData batches with a single scalar bar."""
-    import numpy as np  # local import keeps module-level surface small
 
     # Compute a shared vmin/vmax over every batch so the colour scale
     # is consistent across branches/types.
-    all_values: list[float] = []
-    for batch in value_batches:
-        if batch.point_values.size:
-            all_values.append(float(np.min(batch.point_values)))
-            all_values.append(float(np.max(batch.point_values)))
-    vmin = value_spec.vmin if value_spec.vmin is not None else (min(all_values) if all_values else 0.0)
-    vmax = value_spec.vmax if value_spec.vmax is not None else (max(all_values) if all_values else 1.0)
-    if vmin == vmax:
-        vmin = vmin - 0.5
-        vmax = vmax + 0.5
-    clim = (vmin, vmax)
+    clim = resolve_value_limits(value_spec, (batch.point_values for batch in value_batches))
 
     title = resolved_colorbar_label(value_spec, value_spec.unit_label)
     scalar_bar_args = {"title": title if title is not None else "values"}
@@ -402,7 +385,6 @@ def _build_point_branch_map(scene: RenderScene3D) -> list[dict[str, Any]]:
     this table.
     """
     entries: list[dict[str, Any]] = []
-    n_branches = len(scene.branches)
     for branch in scene.branches:
         n_points = int(branch.points_um.shape[0])
         for local_index in range(n_points):
@@ -416,8 +398,6 @@ def _build_point_branch_map(scene: RenderScene3D) -> list[dict[str, Any]]:
                     "position_um": np.asarray(branch.points_um[local_index], dtype=float),
                 }
             )
-    if not entries and n_branches == 0:
-        return entries
     return entries
 
 

@@ -146,11 +146,15 @@ def _layout_branch_from_angles(
     segment_directions_um = np.column_stack((np.cos(segment_angles_rad), np.sin(segment_angles_rad)))
     segment_normals_um = np.column_stack((-segment_directions_um[:, 1], segment_directions_um[:, 0]))
     cumulative_lengths_um = np.concatenate(([0.0], np.cumsum(spec.segment_lengths_um)))
+    # Walking the segments in Python is a plain prefix sum; the stem
+    # family calls this once per placement candidate, so the vectorized
+    # form is worth several-fold on the whole layout build.
     raw_segment_points_um = np.zeros((len(spec.segment_lengths_um) + 1, 2), dtype=float)
-    for segment_index, segment_length_um in enumerate(spec.segment_lengths_um):
-        raw_segment_points_um[segment_index + 1] = raw_segment_points_um[segment_index] + segment_directions_um[
-            segment_index
-        ] * float(segment_length_um)
+    np.cumsum(
+        segment_directions_um * np.asarray(spec.segment_lengths_um, dtype=float)[:, None],
+        axis=0,
+        out=raw_segment_points_um[1:],
+    )
 
     raw_layout = LayoutBranch2D(
         branch_index=branch.index,

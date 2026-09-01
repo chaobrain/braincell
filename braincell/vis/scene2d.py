@@ -18,7 +18,7 @@ import brainunit as u
 import numpy as np
 
 from braincell.morph.morphology import Morphology
-from ._values import resolve_values
+from ._values import resolve_overlay_values as _resolve_overlay_values, with_unit_label as _with_unit_label
 from .config import (
     highlight_alpha as _highlight_alpha,
     highlight_color as _highlight_color,
@@ -27,7 +27,6 @@ from .config import (
 )
 from .layout import LayoutBranch2D, LayoutConfig, build_layout_branches_2d
 from .scene import (
-    BranchValues,
     HighlightStroke2D,
     Marker2D,
     OverlaySpec,
@@ -36,7 +35,6 @@ from .scene import (
     Polyline2D,
     PolylineValues2D,
     RenderScene2D,
-    ValueSpec,
     alpha_for_2d_line,
     alpha_for_2d_poly,
     color_for_2d_branch_type,
@@ -105,8 +103,11 @@ def build_scene2d_projected(
     polylines: list[Polyline2D] = []
     polyline_values: list[PolylineValues2D] = []
     centerlines: dict[int, _Centerline2D] = {}
-    for branch_index in range(len(morpho)):
-        branch_view = morpho.branch(index=branch_index)
+    # ``morpho.branch(index=...)`` re-sorts the node table on every
+    # call, so indexing it in a loop is O(n^2 log n); ``morpho.branches``
+    # resolves the same "default" ordering once.
+    for branch_view in morpho.branches:
+        branch_index = branch_view.index
         branch = branch_view.branch
         if branch.points_proximal is None or branch.points_distal is None:
             raise ValueError(
@@ -300,27 +301,16 @@ def build_scene2d_frustum(
         edge_color = edge_color_for_2d_branch_type(branch_layout.branch_type)
         edge_linewidth = frustum_edge_linewidth_2d()
 
+        polygons_um = _segment_quads_um(branch_layout)
+
         if per_branch_values is None:
             for segment_index in range(n_segments):
-                start_um = branch_layout.segment_points_um[segment_index]
-                end_um = branch_layout.segment_points_um[segment_index + 1]
-                normal_um = branch_layout.segment_normals_um[segment_index]
-                radius_prox_um = float(branch_layout.radii_proximal_um[segment_index])
-                radius_dist_um = float(branch_layout.radii_distal_um[segment_index])
-                polygon_points_um = np.vstack(
-                    [
-                        start_um + normal_um * radius_prox_um,
-                        end_um + normal_um * radius_dist_um,
-                        end_um - normal_um * radius_dist_um,
-                        start_um - normal_um * radius_prox_um,
-                    ]
-                )
                 polygons.append(
                     Polygon2D(
                         branch_index=branch_layout.branch_index,
                         branch_name=branch_layout.branch_name,
                         branch_type=branch_layout.branch_type,
-                        points_um=polygon_points_um,
+                        points_um=polygons_um[segment_index],
                         color_rgb=fill_color,
                         edge_color_rgb=edge_color,
                         edge_linewidth=edge_linewidth,
@@ -332,21 +322,6 @@ def build_scene2d_frustum(
         else:
             branch_values = per_branch_values[branch_layout.branch_index]
             if n_segments > 0:
-                polygons_um = np.empty((n_segments, 4, 2), dtype=float)
-                for segment_index in range(n_segments):
-                    start_um = branch_layout.segment_points_um[segment_index]
-                    end_um = branch_layout.segment_points_um[segment_index + 1]
-                    normal_um = branch_layout.segment_normals_um[segment_index]
-                    radius_prox_um = float(branch_layout.radii_proximal_um[segment_index])
-                    radius_dist_um = float(branch_layout.radii_distal_um[segment_index])
-                    polygons_um[segment_index] = np.vstack(
-                        [
-                            start_um + normal_um * radius_prox_um,
-                            end_um + normal_um * radius_dist_um,
-                            end_um - normal_um * radius_dist_um,
-                            start_um - normal_um * radius_prox_um,
-                        ]
-                    )
                 polygon_value_batches.append(
                     PolygonValuesBatch2D(
                         branch_index=branch_layout.branch_index,
@@ -382,6 +357,37 @@ def build_scene2d_frustum(
 
 def build_projected_scene_2d(morpho: Morphology, *, projection_plane: str = "xy") -> RenderScene2D:
     return build_scene2d_projected(morpho, projection_plane=projection_plane)
+
+
+def _segment_quads_um(branch_layout: LayoutBranch2D) -> np.ndarray:
+    """Return the ``(n_segments, 4, 2)`` frustum quads for a branch layout.
+
+    Each segment becomes a trapezoid whose corners are the segment
+    endpoints offset by ``±normal * radius`` — proximal radius at the
+    start, distal radius at the end. Corner order is
+    ``(start+, end+, end-, start-)`` so the polygon winds consistently.
+
+    Building this per segment with :func:`numpy.vstack` costs one array
+    allocation and four dispatches per segment; the whole branch is a
+    single :func:`numpy.stack`.
+    """
+    points_um = np.asarray(branch_layout.segment_points_um, dtype=float)
+    start_um = points_um[:-1]
+    end_um = points_um[1:]
+    normals_um = np.asarray(branch_layout.segment_normals_um, dtype=float)
+    radius_prox_um = np.asarray(branch_layout.radii_proximal_um, dtype=float)[:, None]
+    radius_dist_um = np.asarray(branch_layout.radii_distal_um, dtype=float)[:, None]
+    offset_prox_um = normals_um * radius_prox_um
+    offset_dist_um = normals_um * radius_dist_um
+    return np.stack(
+        [
+            start_um + offset_prox_um,
+            end_um + offset_dist_um,
+            end_um - offset_dist_um,
+            start_um - offset_prox_um,
+        ],
+        axis=1,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -560,38 +566,3 @@ def _build_overlay_primitives_2d(
             order += 1
 
     return tuple(strokes), tuple(markers)
-
-
-def _resolve_overlay_values(
-    overlay: OverlaySpec | None,
-    morpho: Morphology,
-) -> tuple[ValueSpec | None, dict[int, BranchValues] | None, str | None]:
-    """Return ``(spec, per_branch_values, unit_label)`` or ``(None, None, None)``."""
-    if overlay is None:
-        return None, None, None
-    spec = overlay.values_spec()
-    if spec is None:
-        return None, None, None
-    per_branch, unit_label = resolve_values(morpho, spec)
-    return spec, per_branch, unit_label
-
-
-def _with_unit_label(
-    spec: ValueSpec | None,
-    unit_label: str | None,
-) -> ValueSpec | None:
-    """Inject the unit label from the input array into the spec when empty."""
-    if spec is None:
-        return None
-    if unit_label is None or spec.unit_label is not None:
-        return spec
-    return ValueSpec(
-        values=spec.values,
-        cmap=spec.cmap,
-        vmin=spec.vmin,
-        vmax=spec.vmax,
-        norm=spec.norm,
-        label=spec.label,
-        unit_label=unit_label,
-        show_colorbar=spec.show_colorbar,
-    )

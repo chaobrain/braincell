@@ -118,8 +118,6 @@ _base / _base_ion / _base_channel -> shared runtime base classes
 - `branch_by_order(order="default")`
 - `branch(name=None, index=None, order=None)`
 - `path_to_root(branch_index)`
-- `path_length_to_root(branch_index)`
-- `shortest_path_length(from_site, to_site)`
 - `topo()`
 - `attach(parent=..., child_branch=..., child_name=None, parent_x=1.0, child_x=0.0)`
 - `select(expr, cache=None)`

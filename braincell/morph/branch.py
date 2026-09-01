@@ -33,6 +33,86 @@ _ALLOWED_BRANCH_TYPES = {
     "custom",
 }
 
+
+# --------------------------------------------------------------------------- #
+# Frustum geometry
+#
+# Every segment is a conical frustum of length ``L`` with end radii ``r0`` and
+# ``r1``. These three functions are the single definition of that geometry:
+# ``Branch`` applies them to one branch's segments and ``Morphology`` applies
+# them to the concatenated arrays of every branch. Keeping the formulas here
+# is what makes ``Morphology.total_area == sum(b.branch.area)`` a consequence
+# rather than a coincidence that two hand-written copies have to maintain.
+# --------------------------------------------------------------------------- #
+
+
+def frustum_areas_um2(lengths_um: np.ndarray, r0_um: np.ndarray, r1_um: np.ndarray) -> np.ndarray:
+    r"""Lateral surface area of each conical frustum, :math:`\pi (r_0 + r_1) \sqrt{L^2 + (r_1 - r_0)^2}`.
+
+    Parameters
+    ----------
+    lengths_um : numpy.ndarray
+        Segment lengths in micrometres.
+    r0_um : numpy.ndarray
+        Proximal radii in micrometres.
+    r1_um : numpy.ndarray
+        Distal radii in micrometres.
+
+    Returns
+    -------
+    numpy.ndarray
+        Lateral area of each segment, in square micrometres.
+
+    Notes
+    -----
+    A zero-length jump segment, which ``_canonicalize_segments`` inserts at a
+    radius discontinuity, still contributes the non-zero annular end-cap area
+    :math:`\pi (r_0 + r_1) |r_1 - r_0|`. That is geometrically correct but can
+    surprise when segment areas are inspected one at a time.
+    """
+    return np.pi * (r0_um + r1_um) * np.sqrt(lengths_um * lengths_um + (r1_um - r0_um) * (r1_um - r0_um))
+
+
+def frustum_volumes_um3(lengths_um: np.ndarray, r0_um: np.ndarray, r1_um: np.ndarray) -> np.ndarray:
+    r"""Volume of each conical frustum, :math:`\pi L (r_0^2 + r_0 r_1 + r_1^2) / 3`.
+
+    Parameters
+    ----------
+    lengths_um : numpy.ndarray
+        Segment lengths in micrometres.
+    r0_um : numpy.ndarray
+        Proximal radii in micrometres.
+    r1_um : numpy.ndarray
+        Distal radii in micrometres.
+
+    Returns
+    -------
+    numpy.ndarray
+        Volume of each segment, in cubic micrometres.
+    """
+    return np.pi * lengths_um * (r0_um * r0_um + r0_um * r1_um + r1_um * r1_um) / 3.0
+
+
+def length_weighted_mean_radius_um(lengths_um: np.ndarray, r0_um: np.ndarray, r1_um: np.ndarray) -> float:
+    """Length-weighted mean of the segment mid-radii.
+
+    Parameters
+    ----------
+    lengths_um : numpy.ndarray
+        Segment lengths in micrometres.
+    r0_um : numpy.ndarray
+        Proximal radii in micrometres.
+    r1_um : numpy.ndarray
+        Distal radii in micrometres.
+
+    Returns
+    -------
+    float
+        The mean radius in micrometres.
+    """
+    return float(np.sum(lengths_um * (0.5 * (r0_um + r1_um))) / np.sum(lengths_um))
+
+
 _UNSET = object()
 
 
@@ -49,7 +129,7 @@ class Branch:
     ``TypeError``; every value must carry explicit units.
 
     Branches are **frozen dataclasses**: once constructed their geometry
-    cannot be changed.  Use :class:`~braincell.morph.Morpho` to compose
+    cannot be changed.  Use :class:`~braincell.morph.Morphology` to compose
     branches into a mutable morphology tree.
 
     Parameters
@@ -89,7 +169,7 @@ class Branch:
     --------
     Branch.from_lengths : Preferred constructor from segment lengths.
     Branch.from_points : Preferred constructor from 3-D point sequences.
-    Morpho : Mutable morphology tree that owns branches.
+    Morphology : Mutable morphology tree that owns branches.
 
     Notes
     -----
@@ -223,7 +303,10 @@ class Branch:
         Returns
         -------
         Branch
-            New branch with no 3-D point geometry.
+            New branch with no 3-D point geometry.  A radius discontinuity
+            between consecutive segments is *not* an error: canonicalization
+            splices in a zero-length jump segment there, so the returned
+            branch can have more segments than ``len(lengths)``.
 
         Raises
         ------
@@ -232,7 +315,7 @@ class Branch:
             is provided, or if both are provided simultaneously.
             Also raised if *type* is passed to a typed subclass.
         ValueError
-            If array shapes are inconsistent or radius discontinuities exist.
+            If array shapes are inconsistent or a length is negative.
 
         See Also
         --------
@@ -253,14 +336,7 @@ class Branch:
             >>> b.n_segments
             2
         """
-        if cls._BRANCH_TYPE is not None:
-            if type is not _UNSET:
-                raise TypeError(
-                    f"{cls.__name__}.from_lengths() does not accept 'type'. The type is fixed to {cls._BRANCH_TYPE!r}."
-                )
-            type = cls._BRANCH_TYPE
-        elif type is _UNSET:
-            type = "custom"
+        type = cls._resolve_type("from_lengths", type)
         lengths = normalize_param(lengths, name="lengths", unit=u.um, shape=(None,), bounds={"ge": 0 * u.um})
         radii_proximal, radii_distal = cls._resolve_radius_inputs(
             "from_lengths",
@@ -360,14 +436,7 @@ class Branch:
             >>> b.points.shape
             (3, 3)
         """
-        if cls._BRANCH_TYPE is not None:
-            if type is not _UNSET:
-                raise TypeError(
-                    f"{cls.__name__}.from_points() does not accept 'type'. The type is fixed to {cls._BRANCH_TYPE!r}."
-                )
-            type = cls._BRANCH_TYPE
-        elif type is _UNSET:
-            type = "custom"
+        type = cls._resolve_type("from_points", type)
         points = normalize_param(points, name="points", unit=u.um, shape=(None, 3))
         if points.shape[0] < 2:
             raise ValueError("from_points() requires at least two points.")
@@ -410,6 +479,38 @@ class Branch:
             points_distal=points_distal,
             type=type,
         )
+
+    @classmethod
+    def _resolve_type(cls, factory_name: str, type: str) -> str:
+        """Resolve a factory's ``type`` argument against the subclass's fixed type.
+
+        Parameters
+        ----------
+        factory_name : str
+            Name of the calling factory, used in the error message.
+        type : str
+            The caller-supplied type, or the module ``_UNSET`` sentinel when
+            the caller omitted it.
+
+        Returns
+        -------
+        str
+            The branch type to store on the new instance.
+
+        Raises
+        ------
+        TypeError
+            If a typed subclass such as :class:`Soma` was given an explicit
+            ``type``, which it has no freedom to honour.
+        """
+        if cls._BRANCH_TYPE is not None:
+            if type is not _UNSET:
+                raise TypeError(
+                    f"{cls.__name__}.{factory_name}() does not accept 'type'. "
+                    f"The type is fixed to {cls._BRANCH_TYPE!r}."
+                )
+            return cls._BRANCH_TYPE
+        return "custom" if type is _UNSET else type
 
     @staticmethod
     def _resolve_radius_inputs(
@@ -554,11 +655,16 @@ class Branch:
         """
         if self.points_proximal is None or self.points_distal is None:
             return None
-        if not u.math.allclose(self.points_distal[:-1], self.points_proximal[1:]):
+        # Decoded to plain arrays first: the equivalent ``u.math.allclose`` /
+        # ``u.math.concatenate`` pair re-derives dimensions and tree-maps per
+        # call, which dominated whole-morphology point access.
+        proximal_um = np.asarray(self.points_proximal.to_decimal(u.um), dtype=float)
+        distal_um = np.asarray(self.points_distal.to_decimal(u.um), dtype=float)
+        if not np.allclose(distal_um[:-1], proximal_um[1:]):
             raise ValueError(
                 "Branch points are discontinuous across segment boundaries; use points_proximal and points_distal."
             )
-        return u.math.concatenate((self.points_proximal[:1], self.points_distal), axis=0)
+        return u.Quantity(np.concatenate((proximal_um[:1], distal_um), axis=0), u.um)
 
     @property
     def n_segments(self) -> int:
@@ -611,8 +717,9 @@ class Branch:
         Quantity[u.um]
             Sum of all segment lengths.
         """
-        lengths_um, _, _ = self._segment_arrays_um()
-        return u.Quantity(np.sum(lengths_um), u.um)
+        # Deliberately not ``_segment_arrays_um()``: that also decodes both
+        # radii arrays, which this property discards.
+        return u.Quantity(np.sum(np.asarray(self.lengths.to_decimal(u.um), dtype=float)), u.um)
 
     @property
     def mean_radius(self) -> u.Quantity[u.um]:
@@ -626,10 +733,7 @@ class Branch:
         Quantity[u.um]
             Length-weighted average radius.
         """
-        lengths_um, r0_um, r1_um = self._segment_arrays_um()
-        total_length_um = float(np.sum(lengths_um))
-        values_um = 0.5 * (r0_um + r1_um)
-        return u.Quantity(np.sum(lengths_um * values_um) / total_length_um, u.um)
+        return u.Quantity(length_weighted_mean_radius_um(*self._segment_arrays_um()), u.um)
 
     @property
     def diam_arc_mean(self) -> u.Quantity[u.um]:
@@ -662,9 +766,7 @@ class Branch:
         :math:`\\pi (r_0 + r_1) |r_1 - r_0|`.  This is geometrically correct
         but may be unexpected when iterating segment areas individually.
         """
-        lengths_um, r0_um, r1_um = self._segment_arrays_um()
-        values = np.pi * (r0_um + r1_um) * np.sqrt(lengths_um * lengths_um + (r1_um - r0_um) * (r1_um - r0_um))
-        return u.Quantity(values, u.um**2)
+        return u.Quantity(frustum_areas_um2(*self._segment_arrays_um()), u.um**2)
 
     @property
     def area(self) -> u.Quantity[u.um**2]:
@@ -686,9 +788,7 @@ class Branch:
         Quantity[u.um ** 3]
             Volume array, shape ``(n_segments,)``.
         """
-        lengths_um, r0_um, r1_um = self._segment_arrays_um()
-        values = np.pi * lengths_um * (r0_um * r0_um + r0_um * r1_um + r1_um * r1_um) / 3.0
-        return u.Quantity(values, u.um**3)
+        return u.Quantity(frustum_volumes_um3(*self._segment_arrays_um()), u.um**3)
 
     @property
     def volume(self) -> u.Quantity[u.um**3]:
@@ -723,10 +823,10 @@ class Branch:
         Parameters
         ----------
         layout : str or None
-            2-D layout choice: ``"projected"``, ``"stem"``,
+            2-D layout choice: ``"fan"``, ``"projected"``, ``"stem"``,
             ``"balloon"``, or ``"radial_360"``. When omitted, uses the
             global 2-D default configured via
-            ``braincell.morph.vis.configure(...)``.
+            :func:`braincell.vis.configure_defaults`.
         shape : str or None
             2-D drawing shape: ``"line"`` or ``"frustum"``.
         branch_type_colors : mapping or None
@@ -781,11 +881,8 @@ class Branch:
             >>> branch.vis2d()  # doctest: +SKIP
         """
         from braincell import Morphology
-        from braincell.vis import plot2d
 
-        morpho = Morphology.from_root(self, name="soma")
-        result = plot2d(
-            morpho,
+        return Morphology.from_root(self, name="soma").vis2d(
             layout=layout,
             shape=shape,
             branch_type_colors=branch_type_colors,
@@ -795,12 +892,8 @@ class Branch:
             chooser=chooser,
             projection_plane=projection_plane,
             return_plotter=return_plotter,
+            show=show,
         )
-        if show:
-            import matplotlib.pyplot as plt
-
-            plt.show()
-        return result
 
     def vis3d(
         self,
@@ -822,7 +915,7 @@ class Branch:
         ----------
         mode : str or None
             Visualization mode. When omitted, uses the global 3-D default
-            configured via ``braincell.morph.vis.configure(...)``. The
+            configured via :func:`braincell.vis.configure_defaults`. The
             initial default is ``"geometry"``.
         backend : str or None
             Rendering backend name (e.g., ``"pyvista"``).
@@ -858,23 +951,16 @@ class Branch:
             If the branch lacks complete 3-D point geometry.
         """
         from braincell import Morphology
-        from braincell.vis import plot3d
 
-        morpho = Morphology.from_root(self, name="soma")
-        result = plot3d(
-            morpho,
+        return Morphology.from_root(self, name="soma").vis3d(
             mode=mode,
             backend=backend,
             chooser=chooser,
             notebook=notebook,
             jupyter_backend=jupyter_backend,
             return_plotter=return_plotter,
+            show=show,
         )
-        if show:
-            import matplotlib.pyplot as plt
-
-            plt.show()
-        return result
 
     def __repr__(self) -> str:
         return (
@@ -912,7 +998,7 @@ class Branch:
         See Also
         --------
         Branch.load_checkpoint : Inverse operation.
-        Morpho.save_checkpoint : Persist a whole morphology tree.
+        Morphology.save_checkpoint : Persist a whole morphology tree.
 
         Examples
         --------
@@ -959,7 +1045,7 @@ class Branch:
         See Also
         --------
         Branch.save_checkpoint : Inverse operation.
-        Morpho.load_checkpoint : Load a whole morphology tree.
+        Morphology.load_checkpoint : Load a whole morphology tree.
 
         Examples
         --------

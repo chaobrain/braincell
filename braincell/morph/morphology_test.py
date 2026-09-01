@@ -26,17 +26,25 @@ from braincell.filter import BranchSlice, RootLocation, Terminals
 from braincell.vis._testing import FakeBackend
 from braincell.vis.backend import BackendChooser
 from braincell.morph import MorphoBranch, MorphoMetric
+from braincell.morph._testing import (
+    make_apical,
+    make_axon,
+    make_basal,
+    make_deep_chain_tree,
+    make_dendrite,
+    make_soma,
+)
 
 
 class MorphoTest(unittest.TestCase):
     def test_tree_topology_queries_and_branch_views(self) -> None:
-        soma = Branch.from_lengths(lengths=[20.0] * u.um, radii=[10.0, 10.0] * u.um, type="soma")
+        soma = make_soma()
         dend = Branch.from_lengths(
             lengths=np.array([100.0]) * u.um,
             radii=np.array([2.0, 1.0]) * u.um,
             type="basal_dendrite",
         )
-        axon = Branch.from_lengths(lengths=[40.0] * u.um, radii=[0.8, 0.4] * u.um, type="axon")
+        axon = make_axon()
 
         tree = Morphology.from_root(soma, name="soma")
         dend_view = tree.soma.attach(dend, name="dendrite", parent_x=1.0)
@@ -82,8 +90,8 @@ class MorphoTest(unittest.TestCase):
         )
 
     def test_attach_by_name_and_attachment_point(self) -> None:
-        soma = Branch.from_lengths(lengths=[20.0] * u.um, radii=[10.0, 10.0] * u.um, type="soma")
-        dend = Branch.from_lengths(lengths=[60.0] * u.um, radii=[2.0, 1.0] * u.um, type="basal_dendrite")
+        soma = make_soma()
+        dend = make_basal()
         tree = Morphology.from_root(soma, name="soma")
         branch = tree.soma[0.5, 1.0].attach(dend, name="dendrite")
 
@@ -93,8 +101,8 @@ class MorphoTest(unittest.TestCase):
         self.assertEqual(tree.edges[0].child_x, 1.0)
 
     def test_child_x_accepts_only_endpoint_values(self) -> None:
-        soma = Branch.from_lengths(lengths=[20.0] * u.um, radii=[10.0, 10.0] * u.um, type="soma")
-        dend = Branch.from_lengths(lengths=[60.0] * u.um, radii=[2.0, 1.0] * u.um, type="basal_dendrite")
+        soma = make_soma()
+        dend = make_basal()
         tree = Morphology.from_root(soma, name="soma")
 
         child0 = tree.soma[0.0, 0].attach(dend, name="d0")
@@ -129,10 +137,10 @@ class MorphoTest(unittest.TestCase):
                     tree.soma.attach(dend, child_x=invalid)
 
     def test_topo_renders_nested_tree(self) -> None:
-        soma = Branch.from_lengths(lengths=[20.0] * u.um, radii=[10.0, 10.0] * u.um, type="soma")
-        dend = Branch.from_lengths(lengths=[60.0] * u.um, radii=[2.0, 1.0] * u.um, type="basal_dendrite")
-        tuft = Branch.from_lengths(lengths=[30.0] * u.um, radii=[1.0, 0.6] * u.um, type="apical_dendrite")
-        axon = Branch.from_lengths(lengths=[40.0] * u.um, radii=[0.8, 0.4] * u.um, type="axon")
+        soma = make_soma()
+        dend = make_basal()
+        tuft = make_apical()
+        axon = make_axon()
 
         tree = Morphology.from_root(soma, name="soma")
         tree.soma.dend = dend
@@ -152,20 +160,20 @@ class MorphoTest(unittest.TestCase):
         )
 
     def test_auto_names_apply_only_when_explicit_name_is_missing(self) -> None:
-        soma = Branch.from_lengths(lengths=[20.0] * u.um, radii=[10.0, 10.0] * u.um, type="soma")
-        dend = Branch.from_lengths(lengths=[60.0] * u.um, radii=[2.0, 1.0] * u.um, type="dendrite")
+        soma = make_soma()
+        dend = make_dendrite()
 
         tree = Morphology.from_root(soma, name="soma")
         explicit = tree.soma.attach(dend, name="first")
         auto0 = tree.soma.attach(dend)
-        auto1 = tree.soma.attach(Branch.from_lengths(lengths=[60.0] * u.um, radii=[2.0, 1.0] * u.um, type="dendrite"))
+        auto1 = tree.soma.attach(make_dendrite())
 
         self.assertEqual(explicit.name, "first")
         self.assertEqual(auto0.name, "dendrite_0")
         self.assertEqual(auto1.name, "dendrite_1")
 
     def test_root_can_opt_into_type_based_auto_naming(self) -> None:
-        axon = Branch.from_lengths(lengths=[40.0] * u.um, radii=[0.8, 0.4] * u.um, type="axon")
+        axon = make_axon()
 
         tree = Morphology.from_root(axon, name=None)
 
@@ -173,9 +181,9 @@ class MorphoTest(unittest.TestCase):
         self.assertEqual(tree.topo(), "axon_0")
 
     def test_branch_order_queries_are_available(self) -> None:
-        soma = Branch.from_lengths(lengths=[20.0] * u.um, radii=[10.0, 10.0] * u.um, type="soma")
-        axon = Branch.from_lengths(lengths=[40.0] * u.um, radii=[0.8, 0.4] * u.um, type="axon")
-        dend = Branch.from_lengths(lengths=[60.0] * u.um, radii=[2.0, 1.0] * u.um, type="dendrite")
+        soma = make_soma()
+        axon = make_axon()
+        dend = make_dendrite()
         apical = Branch.from_lengths(lengths=[30.0] * u.um, radii=[1.2, 0.8] * u.um, type="apical_dendrite")
         custom = Branch.from_lengths(lengths=[25.0] * u.um, radii=[0.7, 0.5] * u.um, type="custom")
 
@@ -208,9 +216,9 @@ class MorphoTest(unittest.TestCase):
             tree.branch_by_order(order="unknown")
 
     def test_morpho_equality_compares_structure_and_geometry(self) -> None:
-        soma = Branch.from_lengths(lengths=[20.0] * u.um, radii=[10.0, 10.0] * u.um, type="soma")
-        dend = Branch.from_lengths(lengths=[60.0] * u.um, radii=[2.0, 1.0] * u.um, type="basal_dendrite")
-        axon = Branch.from_lengths(lengths=[40.0] * u.um, radii=[0.8, 0.4] * u.um, type="axon")
+        soma = make_soma()
+        dend = make_basal()
+        axon = make_axon()
 
         tree0 = Morphology.from_root(soma, name="soma")
         tree0.soma.attach(dend, name="dendrite", parent_x=1.0)
@@ -246,9 +254,9 @@ class MorphoTest(unittest.TestCase):
             hash(tree0)
 
     def test_parent_x_midpoint_is_soma_only(self) -> None:
-        soma = Branch.from_lengths(lengths=[20.0] * u.um, radii=[10.0, 10.0] * u.um, type="soma")
-        dend = Branch.from_lengths(lengths=[60.0] * u.um, radii=[2.0, 1.0] * u.um, type="basal_dendrite")
-        tuft = Branch.from_lengths(lengths=[30.0] * u.um, radii=[1.0, 0.6] * u.um, type="apical_dendrite")
+        soma = make_soma()
+        dend = make_basal()
+        tuft = make_apical()
 
         tree = Morphology.from_root(soma, name="soma")
         tree.soma.dend = dend
@@ -260,9 +268,9 @@ class MorphoTest(unittest.TestCase):
             tree.dend[0.5].attach(tuft, name="tuft")
 
     def test_metric_exposes_tree_level_metrics_with_compatible_shortcuts(self) -> None:
-        soma = Branch.from_lengths(lengths=[20.0] * u.um, radii=[10.0, 10.0] * u.um, type="soma")
-        dend = Branch.from_lengths(lengths=[60.0] * u.um, radii=[2.0, 1.0] * u.um, type="basal_dendrite")
-        tuft = Branch.from_lengths(lengths=[30.0] * u.um, radii=[1.0, 0.6] * u.um, type="apical_dendrite")
+        soma = make_soma()
+        dend = make_basal()
+        tuft = make_apical()
 
         tree = Morphology.from_root(soma, name="soma")
         tree.soma.dend = dend
@@ -293,8 +301,8 @@ class MorphoTest(unittest.TestCase):
         )
 
     def test_metric_returns_dataclass_snapshot_with_compact_str(self) -> None:
-        soma = Branch.from_lengths(lengths=[20.0] * u.um, radii=[10.0, 10.0] * u.um, type="soma")
-        dend = Branch.from_lengths(lengths=[60.0] * u.um, radii=[2.0, 1.0] * u.um, type="basal_dendrite")
+        soma = make_soma()
+        dend = make_basal()
 
         tree = Morphology.from_root(soma, name="soma")
         tree.soma.dend = dend
@@ -326,8 +334,8 @@ class MorphoTest(unittest.TestCase):
         self.assertIn("max_path_dist", summary_str)
 
     def test_metric_uses_optional_fields_for_unavailable_point_metrics(self) -> None:
-        soma = Branch.from_lengths(lengths=[20.0] * u.um, radii=[10.0, 10.0] * u.um, type="soma")
-        dend = Branch.from_lengths(lengths=[60.0] * u.um, radii=[2.0, 1.0] * u.um, type="basal_dendrite")
+        soma = make_soma()
+        dend = make_basal()
 
         tree = Morphology.from_root(soma, name="soma")
         tree.soma.dend = dend
@@ -488,9 +496,9 @@ class MorphoTest(unittest.TestCase):
             _ = tree.max_euclidean_distance_excluding_soma
 
     def test_foreign_missing_and_reserved_children_are_rejected(self) -> None:
-        soma0 = Branch.from_lengths(lengths=[20.0] * u.um, radii=[10.0, 10.0] * u.um, type="soma")
+        soma0 = make_soma()
         soma1 = Branch.from_lengths(lengths=[18.0] * u.um, radii=[9.0, 9.0] * u.um, type="soma")
-        dend = Branch.from_lengths(lengths=[60.0] * u.um, radii=[2.0, 1.0] * u.um, type="basal_dendrite")
+        dend = make_basal()
 
         tree0 = Morphology.from_root(soma0, name="soma")
         tree1 = Morphology.from_root(soma1, name="other")
@@ -531,7 +539,7 @@ class MorphoDerivedCacheTest(unittest.TestCase):
 
     @staticmethod
     def _soma() -> Branch:
-        return Branch.from_lengths(lengths=[20.0] * u.um, radii=[10.0, 10.0] * u.um, type="soma")
+        return make_soma()
 
     @staticmethod
     def _dend(length: float = 30.0) -> Branch:
@@ -626,7 +634,7 @@ class MorphoBranchDerivedPropertyTest(unittest.TestCase):
     """
 
     def _tree(self) -> Morphology:
-        soma = Branch.from_lengths(lengths=[20.0] * u.um, radii=[10.0, 10.0] * u.um, type="soma")
+        soma = make_soma()
         tree = Morphology.from_root(soma, name="soma")
         mid = tree.soma.attach(
             Branch.from_lengths(lengths=[30.0, 20.0] * u.um, radii=[2.0, 1.5, 1.0] * u.um, type="basal_dendrite"),
@@ -667,6 +675,69 @@ class MorphoBranchDerivedPropertyTest(unittest.TestCase):
                 )
 
 
+class MorphoReservedNameTest(unittest.TestCase):
+    """Every public ``Morphology`` / ``MorphoBranch`` attribute is name-reserved.
+
+    The reserved set used to be a hand-typed literal that drifted behind the
+    classes it guarded: ``topo`` and ``from_neuromorpho`` were both accepted
+    as branch names and then permanently unreachable, because attribute
+    lookup finds the class member before ``__getattr__`` ever runs.
+    """
+
+    def _tree(self) -> Morphology:
+        return Morphology.from_root(make_soma(), name="soma")
+
+    def _attach_named(self, tree: Morphology, name: str) -> None:
+        tree.attach(parent="soma", child_branch=make_axon(), child_name=name, parent_x=1.0)
+
+    def test_names_that_used_to_slip_through_are_rejected(self) -> None:
+        for name in ("topo", "from_neuromorpho"):
+            with self.subTest(name=name):
+                with self.assertRaisesRegex(ValueError, "reserved by the Morphology API"):
+                    self._attach_named(self._tree(), name)
+
+    def test_dynamic_morpho_branch_attributes_are_reserved(self) -> None:
+        # These five are served by MorphoBranch.__getattr__ and so are absent
+        # from dir(MorphoBranch); deriving the reserved set from dir() alone
+        # would silently stop protecting them.
+        for name in ("branch", "name", "parent_id", "parent_x", "child_x"):
+            with self.subTest(name=name):
+                with self.assertRaisesRegex(ValueError, "reserved by the Morphology API"):
+                    self._attach_named(self._tree(), name)
+
+    def test_every_public_attribute_of_both_classes_is_reserved(self) -> None:
+        public = {n for n in dir(Morphology) if not n.startswith("_")}
+        public |= {n for n in dir(MorphoBranch) if not n.startswith("_")}
+        self.assertIn("topo", public)
+        for name in sorted(public):
+            with self.subTest(name=name):
+                with self.assertRaisesRegex(ValueError, "reserved by the Morphology API"):
+                    self._attach_named(self._tree(), name)
+
+
+class MorphoDeepTreeTest(unittest.TestCase):
+    """Whole-tree walks stay iterative on morphologies deeper than the C stack.
+
+    ``topo()`` formatted the tree by recursive descent and raised
+    ``RecursionError`` past roughly 400 chained branches -- a depth real
+    thin-neurite reconstructions reach routinely.
+    """
+
+    def test_topo_formats_a_1200_branch_chain(self) -> None:
+        tree = make_deep_chain_tree(1200)
+        rendered = tree.topo()
+        self.assertEqual(rendered.count("\n"), 1199)
+        self.assertIn("soma", rendered)
+        self.assertIn("seg_1198", rendered)
+
+    def test_deep_chain_aggregates_do_not_recurse(self) -> None:
+        tree = make_deep_chain_tree(1200)
+        self.assertEqual(tree.n_branches, 1200)
+        self.assertEqual(tree.max_branch_order, 1199)
+        self.assertEqual(len(tree.edges), 1199)
+        self.assertGreater(tree.total_area.to_decimal(u.um**2), 0.0)
+
+
 class MorphoNamingStateTest(unittest.TestCase):
     """``naming_state`` / ``restore_naming_state``, the public auto-name API.
 
@@ -675,7 +746,7 @@ class MorphoNamingStateTest(unittest.TestCase):
     """
 
     def _tree(self, n_dendrites: int = 3) -> Morphology:
-        soma = Branch.from_lengths(lengths=[20.0] * u.um, radii=[10.0, 10.0] * u.um, type="soma")
+        soma = make_soma()
         tree = Morphology.from_root(soma, name="soma")
         for _ in range(n_dendrites):
             tree.attach(
@@ -700,7 +771,7 @@ class MorphoNamingStateTest(unittest.TestCase):
     def test_restoring_resumes_the_sequence(self) -> None:
         source = self._tree()
         target = Morphology.from_root(
-            Branch.from_lengths(lengths=[20.0] * u.um, radii=[10.0, 10.0] * u.um, type="soma"),
+            make_soma(),
             name="soma",
         )
 
@@ -751,7 +822,7 @@ class MorphoSelectAndVisTest(unittest.TestCase):
     """``Morphology.select``, ``.vis2d``, and ``.vis3d`` — all defined in morphology.py."""
 
     def test_morpho_select_is_region_eval_sugar(self) -> None:
-        soma = Branch.from_lengths(lengths=[20.0] * u.um, radii=[10.0, 10.0] * u.um, type="soma")
+        soma = make_soma()
         dend = Branch.from_lengths(lengths=[80.0] * u.um, radii=[2.0, 1.0] * u.um, type="apical_dendrite")
         tree = Morphology.from_root(soma, name="soma")
         tree.soma.dend = dend
@@ -763,7 +834,7 @@ class MorphoSelectAndVisTest(unittest.TestCase):
         self.assertEqual(selected.intervals, evaluated.intervals)
 
     def test_morpho_select_accepts_locset_expr(self) -> None:
-        soma = Branch.from_lengths(lengths=[20.0] * u.um, radii=[10.0, 10.0] * u.um, type="soma")
+        soma = make_soma()
         dend = Branch.from_lengths(lengths=[80.0] * u.um, radii=[2.0, 1.0] * u.um, type="apical_dendrite")
         tree = Morphology.from_root(soma, name="soma")
         tree.soma.dend = dend
@@ -776,7 +847,7 @@ class MorphoSelectAndVisTest(unittest.TestCase):
         self.assertEqual(selected.points, evaluated.points)
 
     def test_morpho_select_rejects_non_filter_expr(self) -> None:
-        soma = Branch.from_lengths(lengths=[20.0] * u.um, radii=[10.0, 10.0] * u.um, type="soma")
+        soma = make_soma()
         tree = Morphology.from_root(soma, name="soma")
 
         with self.assertRaises(TypeError):
@@ -865,7 +936,7 @@ class MorphoSelectAndVisTest(unittest.TestCase):
         self.assertEqual(len(rendered.scene.polygons), 2)
 
     def test_morpho_vis2d_accepts_layout_parameters(self) -> None:
-        soma = Branch.from_lengths(lengths=[20.0] * u.um, radii=[10.0, 10.0] * u.um, type="soma")
+        soma = make_soma()
         dend_a = Branch.from_lengths(lengths=[30.0] * u.um, radii=[2.0, 1.5] * u.um, type="apical_dendrite")
         dend_b = Branch.from_lengths(lengths=[30.0] * u.um, radii=[2.0, 1.5] * u.um, type="basal_dendrite")
         tree = Morphology.from_root(soma, name="soma")
@@ -898,7 +969,7 @@ class MorphoSelectAndVisTest(unittest.TestCase):
         self.assertGreaterEqual(child_angles[1] - child_angles[0], 90.0 - 1e-6)
 
     def test_morpho_vis2d_accepts_style_overrides(self) -> None:
-        soma = Branch.from_lengths(lengths=[20.0] * u.um, radii=[10.0, 10.0] * u.um, type="soma")
+        soma = make_soma()
         dend = Branch.from_lengths(lengths=[30.0] * u.um, radii=[2.0, 1.5] * u.um, type="apical_dendrite")
         tree = Morphology.from_root(soma, name="soma")
         tree.attach(parent="soma", child_branch=dend, child_name="dend", parent_x=1.0)

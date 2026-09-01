@@ -14,7 +14,9 @@
 # ==============================================================================
 
 
+import sys
 import tempfile
+import types
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -121,6 +123,87 @@ class SaveFigurePyVistaDispatchTest(unittest.TestCase):
             ):
                 with self.assertRaisesRegex(ValueError, "cannot save vector format"):
                     save_figure(plotter, out)
+
+
+class _DoublePlotter:
+    """Stand-in for ``pyvista.Plotter`` exposed by the spec-less double."""
+
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, dict]] = []
+
+    def screenshot(self, path, **kwargs):
+        self.calls.append((path, kwargs))
+
+
+class _DoubleFigure:
+    """Stand-in for ``plotly.graph_objects.Figure``."""
+
+    __module__ = "plotly.graph_objects"
+
+    def __init__(self) -> None:
+        self.html: list[str] = []
+
+    def write_html(self, path):
+        self.html.append(path)
+
+
+def _spec_less_optional_backends() -> dict[str, types.ModuleType]:
+    """Build ``pyvista`` / ``plotly`` doubles with no ``__spec__``.
+
+    This is what the backend tests inject via ``mock.patch.dict`` — a
+    plain :class:`types.ModuleType` whose ``__spec__`` has been removed.
+    """
+    pyvista = types.ModuleType("pyvista")
+    pyvista.Plotter = _DoublePlotter
+    plotly = types.ModuleType("plotly")
+    graph_objects = types.ModuleType("plotly.graph_objects")
+    graph_objects.Figure = _DoubleFigure
+    plotly.graph_objects = graph_objects
+    for module in (pyvista, plotly, graph_objects):
+        del module.__spec__
+    return {"pyvista": pyvista, "plotly": plotly, "plotly.graph_objects": graph_objects}
+
+
+class SaveFigureWithSpecLessModuleDoubleTest(unittest.TestCase):
+    """``save_figure`` must survive a test double injected into ``sys.modules``.
+
+    The backend tests patch ``sys.modules['pyvista']`` /
+    ``sys.modules['plotly']`` with stand-ins that have no ``__spec__``.
+    A bare ``importlib.util.find_spec(...)`` raises
+    ``ValueError: <name>.__spec__ is not set`` on those, so the dispatch
+    here routes through :func:`braincell.vis.backend.module_available`,
+    which falls back to a ``sys.modules`` membership test.
+    """
+
+    def setUp(self) -> None:
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.doubles = _spec_less_optional_backends()
+
+    def test_unknown_type_raises_typeerror_not_valueerror(self) -> None:
+        # Exercises both probes: neither may raise before the dispatch
+        # gets to report an unrecognised figure type.
+        with mock.patch.dict(sys.modules, self.doubles):
+            with self.assertRaisesRegex(TypeError, "does not know how to save"):
+                save_figure(object(), Path(self.tmp.name) / "nope.png")
+
+    def test_pyvista_double_dispatches_to_screenshot(self) -> None:
+        plotter = _DoublePlotter()
+        out = Path(self.tmp.name) / "tree.png"
+
+        with mock.patch.dict(sys.modules, self.doubles):
+            self.assertEqual(save_figure(plotter, out), out)
+
+        self.assertEqual(len(plotter.calls), 1)
+
+    def test_plotly_double_dispatches_to_write_html(self) -> None:
+        figure = _DoubleFigure()
+        out = Path(self.tmp.name) / "tree.html"
+
+        with mock.patch.dict(sys.modules, self.doubles):
+            self.assertEqual(save_figure(figure, out), out)
+
+        self.assertEqual(figure.html, [str(out)])
 
 
 if __name__ == "__main__":

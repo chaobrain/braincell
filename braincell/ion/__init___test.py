@@ -13,10 +13,16 @@
 # limitations under the License.
 # ==============================================================================
 
-"""Docstring conformance guard for :mod:`braincell.ion`."""
+"""Package-level guards for :mod:`braincell.ion`.
+
+Two concerns live here because both are properties of the package as a
+whole: the docstring conformance sweep over every covered module, and the
+re-export completeness of ``braincell/ion/__init__.py``.
+"""
 
 import unittest
 
+import braincell.ion as ion
 from braincell._testing import DocstringConformanceTests
 from braincell.ion import _base, calcium, nonspecific, potassium, sodium
 
@@ -61,6 +67,32 @@ _NO_PRIMARY_SOURCE = frozenset(
 class IonDocstringTest(DocstringConformanceTests, unittest.TestCase):
     covered_modules = _COVERED_MODULES
     no_primary_source = _NO_PRIMARY_SOURCE
+
+
+class IonReExportTest(unittest.TestCase):
+    """Guard the explicit re-export block against drift.
+
+    ``braincell/ion/__init__.py`` builds ``__all__`` by concatenating the
+    submodules' own ``__all__`` but imports the names one by one. Adding a
+    name to a submodule's ``__all__`` without adding it to the matching
+    import block would leave ``braincell.ion.__all__`` naming an attribute
+    the package does not have -- which only fails at ``import *`` time,
+    far from the edit that caused it.
+    """
+
+    def test_every_name_in_all_is_importable(self):
+        missing = [name for name in ion.__all__ if not hasattr(ion, name)]
+        self.assertEqual(missing, [], f"names in __all__ that were never imported: {missing}")
+
+    def test_all_has_no_duplicates(self):
+        duplicated = sorted({name for name in ion.__all__ if ion.__all__.count(name) > 1})
+        self.assertEqual(duplicated, [], f"duplicated entries in __all__: {duplicated}")
+
+    def test_every_submodule_public_name_is_re_exported(self):
+        expected = set()
+        for module in (calcium, nonspecific, potassium, sodium):
+            expected.update(module.__all__)
+        self.assertEqual(sorted(expected - set(ion.__all__)), [])
 
 
 if __name__ == "__main__":

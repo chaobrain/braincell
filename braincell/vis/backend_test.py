@@ -20,12 +20,9 @@ from unittest import mock
 
 from braincell.vis import plot2d, plot3d
 from braincell.vis._testing import (
-    FakeBackend,
     VisDefaultsResetMixin,
     make_node_tree,
 )
-from braincell.vis.backend import BackendChooser
-from braincell.vis.backend_matplotlib import MatplotlibBackend
 from braincell.vis.backend_pyvista import PyVistaBackend
 
 

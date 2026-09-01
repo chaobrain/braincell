@@ -16,11 +16,33 @@
 # -*- coding: utf-8 -*-
 
 
+import math
+import unittest
+
 import brainstate
 import brainunit as u
+import jax.numpy as jnp
 import matplotlib.pyplot as plt
+import numpy as np
 
 import braincell
+from braincell import (
+    DiffEqModule,
+    DiffEqSingleState,
+)
+from braincell.quad import (
+    euler_step,
+    heun2_step,
+    heun3_step,
+    midpoint_step,
+    ralston2_step,
+    ralston3_step,
+    ralston4_step,
+    rk2_step,
+    rk3_step,
+    rk4_step,
+    ssprk3_step,
+)
 
 
 class HH(braincell.SingleCompartment):
@@ -43,7 +65,7 @@ def integrate(method: str, dt=0.01 * u.ms):
 
     def step_fun(t):
         with brainstate.environ.context(t=t):
-            spike = hh.update(10 * u.nA / u.cm**2)
+            hh.update(10 * u.nA / u.cm**2)
         return hh.V.value
 
     with brainstate.environ.context(dt=dt):
@@ -141,30 +163,6 @@ class TestRungeKutta:
 # function on a minimal :class:`DiffEqModule` whose exact solution is
 # ``x(t) = x0 * exp(-t/tau)``.
 # --------------------------------------------------------------------------- #
-import math
-import unittest
-
-import jax.numpy as jnp
-import numpy as np
-
-from braincell import (
-    DiffEqModule,
-    DiffEqSingleState,
-)
-from braincell.quad import (
-    euler_step,
-    heun2_step,
-    heun3_step,
-    midpoint_step,
-    ralston2_step,
-    ralston3_step,
-    ralston4_step,
-    rk2_step,
-    rk3_step,
-    rk4_step,
-    ssprk3_step,
-)
-
 _FLOAT_DTYPE = jnp.asarray(0.0).dtype
 
 

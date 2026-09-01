@@ -30,6 +30,7 @@ from ._util import (
     apply_standard_solver_step,
     jacrev_last_dim,
     _check_diffeq_state_derivative,
+    _has_path_prefix,
     split_diffeq_states,
 )
 
@@ -181,7 +182,7 @@ def exp_euler_step(target: DiffEqModule, *args):
         >>> with brainstate.environ.context(t=0. * u.ms, dt=0.025 * u.ms):
         ...     exp_euler_step(my_neuron, input_current)    # doctest: +SKIP
     """
-    from braincell._base import HHTypedNeuron
+    from braincell._base_neuron import HHTypedNeuron
     from braincell._multi_compartment import Cell
     from braincell._single_compartment import SingleCompartment
 
@@ -320,13 +321,6 @@ def ind_exp_euler_step(target: DiffEqModule, *args, excluded_paths=()):
     )
 
 
-def _has_path_prefix(path, prefixes):
-    for prefix in prefixes:
-        if path[: len(prefix)] == prefix:
-            return True
-    return False
-
-
 def _ind_exp_euler_step_selected(
     target: DiffEqModule,
     *args,
@@ -340,7 +334,6 @@ def _ind_exp_euler_step_selected(
     """Internal selective variant used by family-phased cell scheduling."""
     if not isinstance(target, DiffEqModule):
         raise TypeError(f"The target should be a {DiffEqModule.__name__}. But got {type(target)} instead.")
-    t = brainstate.environ.get('t', getattr(target, 'current_time', 0.0 * u.ms))
     dt = brainstate.environ.get('dt')
 
     # Retrieve all states from the target module

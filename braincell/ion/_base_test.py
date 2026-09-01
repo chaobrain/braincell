@@ -21,9 +21,10 @@ import braintools
 import brainunit as u
 import jax.numpy as jnp
 
-from braincell._base import Channel
-from braincell._base import IonInfo
+from braincell._base_channel import Channel
+from braincell._base_channel import IonInfo
 from braincell.ion import Calcium
+from braincell.ion import _base as ionbase
 from braincell.ion._base import Conserve
 from braincell.ion._base import DynamicNernstIon
 from braincell.ion._base import Factor
@@ -31,8 +32,8 @@ from braincell.ion._base import FixedIon
 from braincell.ion._base import InitNernstIon
 from braincell.ion._base import KineticIon
 from braincell.ion._base import Reaction
-from braincell.ion._base import Source
 from braincell.ion._base import Species
+from braincell.ion._base import _RadialShellGeometry
 from braincell.quad import get_integrator
 from braincell.quad.protocol import DiffEqState
 
@@ -602,6 +603,141 @@ class ConserveWritebackStateClassTest(unittest.TestCase):
         self.assertIsInstance(restored, brainstate.HiddenState)
         self.assertNotIsInstance(restored, brainstate.HiddenGroupState)
         self.assertEqual(restored.value.shape, state.value.shape)
+
+
+class _ShellGeometryIon(Calcium, _RadialShellGeometry, KineticIon):
+    """Minimal kinetic ion exercising the shared radial-shell geometry."""
+
+    default_Co = 2.0 * u.mM
+    default_valence = 2
+
+    species = (Species("Ci", init=0.1 * u.mM),)
+    reactions = ()
+    sources = ()
+    conserves = ()
+
+    def __init__(self, size=1, Nannuli=5.0):
+        super().__init__(size=size, name=None)
+        self.Nannuli = braintools.init.param(Nannuli, self.varshape, allow_none=False)
+        self._init_kinetic_ion(
+            Co=None,
+            temp=u.celsius2kelvin(36.0),
+            valence=None,
+            species_initializers={"Ci": 0.1 * u.mM},
+            solver="euler",
+            substeps=1,
+        )
+
+
+class RadialShellGeometryTest(unittest.TestCase):
+    """Cover the geometry mixin shared by every ``cdp*`` calcium ion."""
+
+    def test_vrat_matches_the_annulus_construction(self) -> None:
+        ion = _ShellGeometryIon(size=1, Nannuli=5.0)
+        dr2 = 0.25 / (5.0 - 1.0)
+        expected = u.math.pi * (0.5 - dr2 / 2.0) * 2.0 * dr2
+        self.assertTrue(u.math.allclose(ion.vrat, expected, atol=1e-12))
+
+    def test_geometry_properties_compose(self) -> None:
+        ion = _ShellGeometryIon(size=1)
+        ion.diam_arc_mean = 3.0 * u.um
+        self.assertTrue(u.math.allclose(ion.dsq, 9.0 * u.um**2, atol=1e-12 * u.um**2))
+        self.assertTrue(u.math.allclose(ion.dsqvol, ion.dsq * ion.vrat, atol=1e-12 * u.um**2))
+        self.assertTrue(u.math.allclose(ion.parea, u.math.pi * 3.0 * u.um, atol=1e-12 * u.um))
+
+    def test_missing_diameter_raises_before_state_initialization(self) -> None:
+        ion = _ShellGeometryIon(size=1)
+        V = jnp.array([-65.0]) * u.mV
+        with self.assertRaises(AttributeError):
+            ion.dsq
+        with self.assertRaises(AttributeError):
+            ion._ion_init_state_hook(V)
+
+    def test_hooks_delegate_once_the_diameter_is_known(self) -> None:
+        ion = _ShellGeometryIon(size=1)
+        ion.diam_arc_mean = 3.0 * u.um
+        V = jnp.array([-65.0]) * u.mV
+        ion._ion_init_state_hook(V)
+        self.assertTrue(u.math.allclose(ion.Ci.value, 0.1 * u.mM, atol=1e-12 * u.mM))
+        ion.Ci.value = 0.5 * u.mM
+        ion._ion_reset_state_hook(V)
+        self.assertTrue(u.math.allclose(ion.Ci.value, 0.1 * u.mM, atol=1e-12 * u.mM))
+
+    def test_buffer_equilibrium_partitions_the_total(self) -> None:
+        ion = _ShellGeometryIon(size=1)
+        total = 1.0 * u.mM
+        kon = 2.0 / (u.mM * u.ms)
+        koff = 0.5 / u.ms
+        cai = 0.1 * u.mM
+        free = ion._ss_buffer_free(total, kon, koff, cai)
+        bound = ion._ss_buffer_bound(total, kon, koff, cai)
+        self.assertTrue(u.math.allclose(free + bound, total, atol=1e-12 * u.mM))
+        self.assertTrue(u.math.allclose(bound / free, (kon / koff) * cai, atol=1e-9))
+
+    def test_as_initializer_keeps_a_per_point_tuple_as_one_array(self) -> None:
+        ion = _ShellGeometryIon(size=1)
+        resolved = ion._as_initializer((1.0 * u.mM, 2.0 * u.mM, 3.0 * u.mM))
+        self.assertEqual(resolved.shape, (3,))
+        self.assertTrue(u.math.allclose(resolved, jnp.array([1.0, 2.0, 3.0]) * u.mM, atol=1e-12 * u.mM))
+
+    def test_as_initializer_passes_a_callable_through(self) -> None:
+        ion = _ShellGeometryIon(size=1)
+
+        def initializer(shape):
+            return jnp.zeros(shape) * u.mM
+
+        self.assertIs(ion._as_initializer(initializer), initializer)
+
+
+class KineticIonCiInitializerTest(unittest.TestCase):
+    """``Ci_initializer`` is one view onto ``species_initializers['Ci']``."""
+
+    def test_reads_through_to_species_initializers(self) -> None:
+        ion = _SimpleKineticIon(size=1, species_initializers={"Ci": 0.25 * u.mM})
+        self.assertIs(ion.Ci_initializer, ion.species_initializers["Ci"])
+
+    def test_writes_through_to_species_initializers(self) -> None:
+        ion = _SimpleKineticIon(size=1, species_initializers={"Ci": 0.25 * u.mM})
+        ion.Ci_initializer = 0.75 * u.mM
+        self.assertTrue(u.math.allclose(ion.species_initializers["Ci"], 0.75 * u.mM, atol=1e-12 * u.mM))
+        self.assertTrue(u.math.allclose(ion.Ci_initializer, 0.75 * u.mM, atol=1e-12 * u.mM))
+
+    def test_write_through_reaches_the_reset_state(self) -> None:
+        ion = _SimpleKineticIon(size=1, species_initializers={"Ci": 0.25 * u.mM})
+        V = jnp.array([-65.0]) * u.mV
+        ion.init_state(V)
+        ion.Ci_initializer = 0.75 * u.mM
+        ion.reset_state(V)
+        self.assertTrue(u.math.allclose(ion.Ci.value, 0.75 * u.mM, atol=1e-12 * u.mM))
+
+
+class NernstHelperTest(unittest.TestCase):
+    """The single Nernst transcription shared by three ion templates."""
+
+    def test_unwrap_returns_state_payload_and_plain_values(self) -> None:
+        state = brainstate.State(jnp.array([1.0]) * u.mM)
+        self.assertIs(ionbase._unwrap(state), state.value)
+        plain = 2.0 * u.mM
+        self.assertIs(ionbase._unwrap(plain), plain)
+
+    def test_nernst_matches_the_written_formula(self) -> None:
+        Ci, Co = 0.1 * u.mM, 2.0 * u.mM
+        temp, valence = u.celsius2kelvin(36.0), 2
+        expected = (u.gas_constant * temp / (valence * u.faraday_constant)) * u.math.log(Co / Ci)
+        self.assertTrue(u.math.allclose(ionbase._nernst(Ci=Ci, Co=Co, temp=temp, valence=valence), expected))
+
+    def test_all_three_templates_agree_on_the_same_inputs(self) -> None:
+        init_nernst = _InitNernstIon(size=1)
+        init_nernst._update_reversal()
+        dynamic = _DynamicNernstIon(size=1)
+        dynamic.init_state(jnp.array([-65.0]) * u.mV)
+        expected = ionbase._nernst(
+            Ci=init_nernst.Ci,
+            Co=init_nernst.Co,
+            temp=init_nernst.temp,
+            valence=init_nernst.valence,
+        )
+        self.assertTrue(u.math.allclose(init_nernst.E, expected, atol=1e-9 * u.mV))
 
 
 if __name__ == "__main__":

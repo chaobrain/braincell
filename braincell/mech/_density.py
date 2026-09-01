@@ -45,6 +45,7 @@ from typing import Any, Callable, ClassVar, Mapping
 
 from ._base import Mechanism
 from ._params import Params
+from ._registry import get_registry
 
 __all__ = [
     "Density",
@@ -197,12 +198,6 @@ class Density(Mechanism):
             and self.solver == other.solver
             and self.substeps == other.substeps
         )
-
-    def __ne__(self, other: object) -> bool:
-        result = self.__eq__(other)
-        if result is NotImplemented:
-            return result
-        return not result
 
     def __hash__(self) -> int:
         return hash(
@@ -545,10 +540,6 @@ def _resolve_class_name(category: str, value: Any) -> str:
             raise ValueError("class_name must be a non-empty string.")
         return value
     if isinstance(value, type):
-        # Local import to avoid a hard import cycle between _density
-        # and _registry at module load time.
-        from ._registry import get_registry
-
         reg = get_registry()
         for entry_name, entry_cls in reg.items(category):
             if entry_cls is value:

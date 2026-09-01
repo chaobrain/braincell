@@ -19,7 +19,6 @@ from typing import Sequence
 import brainstate
 import brainunit as u
 import jax
-import jax.numpy as jnp
 
 from braincell._misc import cast_like as _cast_like, set_module_as
 from braincell._typing import T, DT, PyTree
@@ -72,19 +71,11 @@ class ButcherTableau:
     C: Sequence  # The C vector in the Butcher tableau.
 
 
-def _array_dtype(value) -> jnp.dtype:
-    return jnp.asarray(u.get_magnitude(value)).dtype
-
-
-def _cast_scalar_like(value, like):
-    return jnp.asarray(value, dtype=_array_dtype(like))
-
-
 def _rk_update(coeff: Sequence, st: brainstate.State, y0: PyTree, dt: DT, *ks):
     assert len(coeff) == len(ks), 'The number of coefficients must be equal to the number of ks.'
 
     def _step(y0_, *k_):
-        kds = [_cast_scalar_like(c_, k_leaf) * k_leaf for c_, k_leaf in zip(coeff, k_)]
+        kds = [_cast_like(c_, k_leaf) * k_leaf for c_, k_leaf in zip(coeff, k_)]
         update = kds[0]
         for kd in kds[1:]:
             update += kd
@@ -128,7 +119,7 @@ def _general_rk_step(tableau: ButcherTableau, target: DiffEqModule, t: T, dt: DT
     # intermediate steps
     for i in range(1, len(tableau.C)):
         with (
-            brainstate.environ.context(t=t_like + _cast_scalar_like(tableau.C[i], time_like) * dt_like),
+            brainstate.environ.context(t=t_like + _cast_like(tableau.C[i], time_like) * dt_like),
             brainstate.check_state_value_tree(),
         ):
             for st, y0_, *ks_ in zip(states, y0, *ks):

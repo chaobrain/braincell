@@ -25,7 +25,7 @@ import brainunit as u
 import jax.numpy as jnp
 import numpy as np
 
-from braincell._multi_compartment.synapses import SynapseView
+from braincell._multi_compartment.synapses import SynapseView, _cell_label
 from .pairing import (
     PairingContext,
     PairingSpec,
@@ -44,7 +44,7 @@ from braincell.mech import (
     TriggerEventInput,
     get_registry,
 )
-from .event import EventSource, EventSourceView
+from .event import EventSource, EventSourceView, round_half_up_steps_host as _round_half_up_steps
 
 __all__ = [
     "ConnectionView",
@@ -840,19 +840,3 @@ def _split_values(value, count: int):
         return tuple(u.Quantity(decimal[index], unit) for index in range(count))
     array = np.asarray(value)
     return tuple(array[index] for index in range(count))
-
-
-def _round_half_up_steps(values: np.ndarray) -> np.ndarray:
-    half = np.floor(values) + 0.5
-    magnitude = np.abs(values)
-    ulp = np.nextafter(magnitude, np.inf) - magnitude
-    snapped = np.where(np.abs(values - half) <= 4.0 * ulp, half, values)
-    return np.floor(snapped + 0.5)
-
-
-def _cell_label(cell, population_indices) -> str:
-    owners = tuple(dict.fromkeys(int(item) for item in np.asarray(population_indices).tolist()))
-    size = 1 if len(cell.pop_size) == 0 else int(cell.pop_size[0])
-    if owners == tuple(range(size)):
-        return f"Cell(name={cell.name!r})"
-    return f"CellView(name={cell.name!r}, cells={list(owners)!r})"

@@ -36,6 +36,12 @@ then convert per-point → per-segment trivially when building
 Values are unit-aware: :mod:`brainunit` quantities are stripped down to
 raw floats and the unit string is reported back so the scene builder
 can forward it to the value spec's colour-bar label.
+
+:func:`resolve_values` is the one-shot entry point. Callers that
+resolve many arrays against the *same* morphology — ``plot_movie``,
+which does it once per frame — should build a :class:`ValueLayout`
+once and call :meth:`ValueLayout.expand` per array, so the branch walk
+that derives segment counts is not repeated.
 """
 
 import dataclasses
@@ -61,6 +67,148 @@ def _strip_quantity(values) -> tuple[np.ndarray, str | None]:
         raw = np.asarray(u.get_mantissa(values), dtype=float)
         return raw, str(unit)
     return np.asarray(values, dtype=float), None
+
+
+@dataclasses.dataclass(frozen=True)
+class ValueLayout:
+    """The frame-invariant structure needed to expand a scalar array.
+
+    Which branch owns which slice of a value array depends only on the
+    morphology's branch order and per-branch segment counts — never on
+    the values themselves. :func:`plot_movie` re-resolves a new array
+    every frame against the *same* morphology, so deriving this once
+    and reusing it turns a per-frame walk over every branch into a
+    handful of array slices.
+
+    Attributes
+    ----------
+    branch_indices : tuple of int
+        Branch index of each branch, in ``morpho.branches`` order.
+    segment_counts : tuple of int
+        Segment count of each branch, aligned with *branch_indices*.
+
+    See Also
+    --------
+    resolve_values : Resolve a single :class:`ValueSpec` in one call.
+    """
+
+    branch_indices: tuple[int, ...]
+    segment_counts: tuple[int, ...]
+
+    @classmethod
+    def from_morphology(cls, morpho: Morphology) -> "ValueLayout":
+        """Derive the layout from a morphology in a single pass.
+
+        Branch positions come from :func:`enumerate` rather than
+        :attr:`MorphoBranch.index`, which rebuilds the morphology's
+        node→index map on every access; ``morpho.branches`` is already
+        in that same default order.
+        """
+        branch_views = morpho.branches
+        return cls(
+            branch_indices=tuple(range(len(branch_views))),
+            segment_counts=tuple(int(branch_view.branch.radii_distal.size) for branch_view in branch_views),
+        )
+
+    @property
+    def n_branches(self) -> int:
+        return len(self.branch_indices)
+
+    @property
+    def total_segments(self) -> int:
+        return sum(self.segment_counts)
+
+    @property
+    def total_points(self) -> int:
+        return self.total_segments + self.n_branches
+
+    def expand(self, values) -> dict[int, BranchValues]:
+        """Expand a 1-D scalar array into per-branch per-point arrays.
+
+        Parameters
+        ----------
+        values : ArrayLike
+            Scalars at per-branch, per-segment, or per-centerline-point
+            granularity; the granularity is inferred from the length.
+
+        Returns
+        -------
+        dict[int, BranchValues]
+            One entry per branch, keyed by branch index.
+
+        Raises
+        ------
+        ValueError
+            If *values* is not 1-D, or its length matches none of the
+            three supported shapes.
+        """
+        raw = np.asarray(values, dtype=float)
+        if raw.ndim != 1:
+            raise ValueError(
+                f"ValueSpec.values must be 1-D; got shape {raw.shape!r}. "
+                "plot_movie uses a different entry point for (T, N) arrays."
+            )
+
+        length = raw.shape[0]
+        if length == self.n_branches:
+            return self._expand_per_branch(raw)
+        if length == self.total_segments:
+            return self._expand_per_segment(raw)
+        if length == self.total_points:
+            return self._expand_per_point(raw)
+
+        raise ValueError(
+            f"ValueSpec.values has length {length}, but the morphology has "
+            f"{self.n_branches} branches, {self.total_segments} segments, and "
+            f"{self.total_points} centerline points. Expected one of those shapes."
+        )
+
+    def resolve(self, spec: ValueSpec) -> tuple[dict[int, BranchValues], str | None]:
+        """Strip units off ``spec.values`` and expand it. See :func:`resolve_values`."""
+        raw, unit_label = _strip_quantity(spec.values)
+        return self.expand(raw), unit_label
+
+    def _expand_per_branch(self, values: np.ndarray) -> dict[int, BranchValues]:
+        per_branch: dict[int, BranchValues] = {}
+        for branch_index, n_segments in zip(self.branch_indices, self.segment_counts):
+            scalar = float(values[branch_index])
+            per_branch[branch_index] = BranchValues(
+                branch_index=branch_index,
+                point_values=np.full(n_segments + 1, scalar, dtype=float),
+            )
+        return per_branch
+
+    def _expand_per_segment(self, values: np.ndarray) -> dict[int, BranchValues]:
+        per_branch: dict[int, BranchValues] = {}
+        cursor = 0
+        for branch_index, n_segments in zip(self.branch_indices, self.segment_counts):
+            seg_slice = values[cursor : cursor + n_segments]
+            cursor += n_segments
+            # Promote per-segment scalars to per-point by taking segment-ends:
+            # point[i] = mean(seg[i-1], seg[i]) for interior points, segment
+            # value at the endpoints. This produces visually continuous
+            # interpolation along the centerline.
+            if n_segments == 0:
+                point_values = np.array([], dtype=float)
+            elif n_segments == 1:
+                point_values = np.array([seg_slice[0], seg_slice[0]], dtype=float)
+            else:
+                point_values = np.empty(n_segments + 1, dtype=float)
+                point_values[0] = seg_slice[0]
+                point_values[-1] = seg_slice[-1]
+                point_values[1:-1] = 0.5 * (seg_slice[:-1] + seg_slice[1:])
+            per_branch[branch_index] = BranchValues(branch_index=branch_index, point_values=point_values)
+        return per_branch
+
+    def _expand_per_point(self, values: np.ndarray) -> dict[int, BranchValues]:
+        per_branch: dict[int, BranchValues] = {}
+        cursor = 0
+        for branch_index, n_segments in zip(self.branch_indices, self.segment_counts):
+            n_points = n_segments + 1
+            point_values = np.asarray(values[cursor : cursor + n_points], dtype=float)
+            cursor += n_points
+            per_branch[branch_index] = BranchValues(branch_index=branch_index, point_values=point_values)
+        return per_branch
 
 
 def resolve_values(
@@ -89,105 +237,12 @@ def resolve_values(
     ValueError
         If the array length does not match any of the supported
         shapes (per-branch, per-segment, per-point).
+
+    See Also
+    --------
+    ValueLayout : Reuse the derived structure across many arrays.
     """
-    raw, unit_label = _strip_quantity(spec.values)
-    raw = np.asarray(raw, dtype=float)
-
-    branches = morpho.branches
-    n_branches = len(branches)
-    segment_counts: list[int] = []
-    point_counts: list[int] = []
-    for branch_view in branches:
-        branch = branch_view.branch
-        n_segments = int(branch.radii_distal.size)
-        segment_counts.append(n_segments)
-        point_counts.append(n_segments + 1)
-
-    total_segments = sum(segment_counts)
-    total_points = sum(point_counts)
-
-    if raw.ndim != 1:
-        raise ValueError(
-            f"ValueSpec.values must be 1-D; got shape {raw.shape!r}. "
-            "plot_movie uses a different entry point for (T, N) arrays."
-        )
-
-    length = raw.shape[0]
-    if length == n_branches:
-        return _expand_per_branch(branches, segment_counts, raw), unit_label
-    if length == total_segments:
-        return _expand_per_segment(branches, segment_counts, raw), unit_label
-    if length == total_points:
-        return _expand_per_point(branches, point_counts, raw), unit_label
-
-    raise ValueError(
-        f"ValueSpec.values has length {length}, but the morphology has "
-        f"{n_branches} branches, {total_segments} segments, and "
-        f"{total_points} centerline points. Expected one of those shapes."
-    )
-
-
-def _expand_per_branch(
-    branches,
-    segment_counts: list[int],
-    values: np.ndarray,
-) -> dict[int, BranchValues]:
-    per_branch: dict[int, BranchValues] = {}
-    for branch_view, n_segments in zip(branches, segment_counts):
-        scalar = float(values[branch_view.index])
-        point_values = np.full(n_segments + 1, scalar, dtype=float)
-        per_branch[branch_view.index] = BranchValues(
-            branch_index=branch_view.index,
-            point_values=point_values,
-        )
-    return per_branch
-
-
-def _expand_per_segment(
-    branches,
-    segment_counts: list[int],
-    values: np.ndarray,
-) -> dict[int, BranchValues]:
-    per_branch: dict[int, BranchValues] = {}
-    cursor = 0
-    for branch_view, n_segments in zip(branches, segment_counts):
-        seg_slice = values[cursor : cursor + n_segments]
-        cursor += n_segments
-        # Promote per-segment scalars to per-point by taking segment-ends:
-        # point[i] = mean(seg[i-1], seg[i]) for interior points, segment
-        # value at the endpoints. This produces visually continuous
-        # interpolation along the centerline.
-        if n_segments == 0:
-            point_values = np.array([], dtype=float)
-        elif n_segments == 1:
-            point_values = np.array([seg_slice[0], seg_slice[0]], dtype=float)
-        else:
-            point_values = np.empty(n_segments + 1, dtype=float)
-            point_values[0] = seg_slice[0]
-            point_values[-1] = seg_slice[-1]
-            point_values[1:-1] = 0.5 * (seg_slice[:-1] + seg_slice[1:])
-        per_branch[branch_view.index] = BranchValues(
-            branch_index=branch_view.index,
-            point_values=point_values,
-        )
-    return per_branch
-
-
-def _expand_per_point(
-    branches,
-    point_counts: list[int],
-    values: np.ndarray,
-) -> dict[int, BranchValues]:
-    per_branch: dict[int, BranchValues] = {}
-    cursor = 0
-    for branch_view, n_points in zip(branches, point_counts):
-        point_values = np.asarray(values[cursor : cursor + n_points], dtype=float)
-        cursor += n_points
-        per_branch[branch_view.index] = BranchValues(
-            branch_index=branch_view.index,
-            point_values=point_values,
-        )
-    return per_branch
+    return ValueLayout.from_morphology(morpho).resolve(spec)
 
 
 def compose_colorbar_label(label: str | None, unit: str | None) -> str | None:

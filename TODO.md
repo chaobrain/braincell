@@ -642,9 +642,7 @@ internal dependencies · status · open work**.
     structural protocols and helpers for step functions.
   - **Explicit families**: `euler_step`, `rk2/3/4_step`, `heun2/3_step`,
     `midpoint_step`, `ralston2/3/4_step`, `ssprk3_step`.
-  - **Implicit / mixed**: `backward_euler_step`, `implicit_euler_step`,
-    `implicit_rk4_step`, `implicit_exp_euler_step`, `cn_rk4_step`,
-    `cn_exp_euler_step`, `exp_exp_euler_step`, `splitting_step`.
+  - **Implicit / mixed**: `backward_euler_step`, `implicit_euler_step`.
   - **Exponential Euler**: `exp_euler_step`, `ind_exp_euler_step`.
   - **Staggered**: `staggered_step` (DHS voltage solve +
     `ind_exp_euler` for ion-channel state, the workhorse for full
@@ -655,8 +653,12 @@ internal dependencies · status · open work**.
   - [x] Registry, alias resolution, "did you mean ...?" suggestions.
   - [x] Backwards-compatible `all_integrators` mapping view.
   - [x] All explicit RK / Heun / Ralston / Midpoint / SSPRK families.
-  - [x] Backward Euler, implicit Euler, implicit RK4, implicit exp
-    Euler, CN variants, splitting, exp-exp Euler.
+  - [x] Backward Euler and implicit Euler. The six cell-only variants
+    (`implicit_rk4`, `implicit_exp_euler`, `cn_rk4`, `cn_exp_euler`,
+    `exp_exp_euler`, `splitting`) were removed: they had rotted against
+    several `brainstate` / `Cell` API generations and none could be
+    invoked successfully. `braincell/quad/_implicit_test.py` pins their
+    absence from the registry.
   - [x] Exponential Euler (`exp_euler_step`, `ind_exp_euler_step`).
   - [x] Staggered solver (`staggered_step`).
   - [x] The staggered full-cell path calls
@@ -918,12 +920,14 @@ internal dependencies · status · open work**.
     `compute_derivative`). Lift it to a package-private
     `braincell/ion/_dynamics.py` and have the Na / K / Cl dynamics
     subclass it with their own valence (`z`) and `derivative`.
-  - [ ] **`__init__.py` hygiene** — `braincell/ion/__init__.py`
-    currently uses star imports plus `_sodium_all` / `_potassium_all`
-    / `_calcium_all`. Switch to explicit re-exports so
-    `from braincell.ion import Calcium` is a single lookup and so
-    IDEs / Sphinx autodoc can see the symbols without running the
-    star-import dance.
+  - [x] **`__init__.py` hygiene** — `braincell/ion/__init__.py` and
+    `braincell/channel/__init__.py` now list every re-export
+    explicitly (27 and 119 names), each guarded by a re-export test.
+    The star imports and the `_sodium_all` / `_potassium_all` /
+    `_calcium_all` indirection are gone, so `from braincell.ion import
+    Calcium` is a single lookup and Sphinx autodoc sees the symbols
+    statically. `F403` / `F405` are no longer silenced in
+    `pyproject.toml`.
   - [x] **Mechanism-registry plumbing** — every concrete `Ion`
     subclass now self-registers via `@register_ion("CalciumFixed")` /
     `@register_ion("CalciumDetailed")` / `@register_ion("CalciumFirstOrder")` /

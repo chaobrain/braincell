@@ -23,7 +23,7 @@ import brainstate
 import braintools
 import brainunit as u
 
-from braincell._base import IonInfo
+from braincell._base_channel import IonInfo
 from braincell._typing import ArrayLike, Initializer, Size
 from braincell.channel.potassium import Kv1p5_MA2024_PC
 from braincell.ion import NonSpecific, Potassium, Sodium

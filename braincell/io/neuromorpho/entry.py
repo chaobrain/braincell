@@ -158,7 +158,9 @@ def load_neuromorpho(
     :meth:`Morphology.from_swc` using ``mode="neuromorpho"``.
 
     Already-cached neurons are not re-downloaded; pass ``overwrite=True``
-    to force a refresh.
+    to force a refresh. A cache hit issues **no** HTTP request at all and
+    leaves ``metadata.json`` untouched — the standardized SWC is read
+    straight off disk.
 
     Parameters
     ----------
@@ -211,8 +213,21 @@ def load_neuromorpho(
     """
 
     from braincell.morph.morphology import Morphology
+    from .cache import NeuroMorphoCache
 
     resolved_client, cache_root = _resolve_client(client, cache_dir)
+
+    # Honour the "already-cached neurons are not re-downloaded" promise on the
+    # *request* side, not just the write side. ``download()`` issues
+    # ``get_neuron()`` and ``get_measurement()`` before ``_download_file``
+    # ever checks ``path.exists()``, and then rewrites metadata.json — two
+    # requests against a rate-limited public API plus a write, per call, for
+    # a neuron already sitting on disk.
+    if not overwrite:
+        cache = NeuroMorphoCache(cache_root)
+        if cache.status(neuron_id).standard_exists:
+            return cache.load(neuron_id, mode=mode, return_report=return_report)
+
     record = resolved_client.download(
         neuron_id,
         output_dir=cache_root,

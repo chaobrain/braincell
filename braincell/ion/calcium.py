@@ -20,7 +20,8 @@ from typing import Optional
 import braintools
 import brainunit as u
 
-from braincell._base import Ion, HHTypedNeuron
+from braincell._base_ion import Ion
+from braincell._base_neuron import HHTypedNeuron
 from braincell._typing import Initializer, Size
 from braincell.mech import register_ion
 from braincell.ion._base import (
@@ -33,6 +34,7 @@ from braincell.ion._base import (
     Reaction,
     Source,
     Species,
+    _RadialShellGeometry,
 )
 
 __all__ = [
@@ -102,7 +104,7 @@ class Calcium(Ion):
     ----------
     root_type : type
         Root container type this ion attaches to. Set to
-        :class:`~braincell._base.HHTypedNeuron`.
+        :class:`~braincell.HHTypedNeuron`.
     ion_symbol : str
         Symbol used for runtime family lookup. Set to ``'Ca'``.
     default_Ci : brainunit.Quantity
@@ -759,7 +761,6 @@ class ToyCaBindingKinetic_SU2015_DCN(Calcium, KineticIon):
             solver=solver,
             substeps=substeps,
         )
-        self.Ci_initializer = Ci_initializer
         self.BC_initializer = BC_initializer
         self.kf = braintools.init.param(kf, self.varshape, allow_none=False)
         self.kb = braintools.init.param(kb, self.varshape, allow_none=False)
@@ -894,7 +895,6 @@ class ToyCaBindingSourceKinetic_SU2015_DCN(Calcium, KineticIon):
             solver=solver,
             substeps=substeps,
         )
-        self.Ci_initializer = Ci_initializer
         self.BC_initializer = BC_initializer
         self.kf = braintools.init.param(kf, self.varshape, allow_none=False)
         self.kb = braintools.init.param(kb, self.varshape, allow_none=False)
@@ -1042,7 +1042,6 @@ class ToyCaBindingIcaSourceKinetic_SU2015_DCN(Calcium, KineticIon):
             solver=solver,
             substeps=substeps,
         )
-        self.Ci_initializer = Ci_initializer
         self.BC_initializer = BC_initializer
         self.kf = braintools.init.param(kf, self.varshape, allow_none=False)
         self.kb = braintools.init.param(kb, self.varshape, allow_none=False)
@@ -1250,7 +1249,6 @@ class ToyCaPumpFactorKinetic_SU2015_DCN(Calcium, KineticIon):
             solver=solver,
             substeps=substeps,
         )
-        self.Ci_initializer = Ci_initializer
         self.PumpBound_initializer = PumpBound_initializer
         self.kf = braintools.init.param(kf, self.varshape, allow_none=False)
         self.kb = braintools.init.param(kb, self.varshape, allow_none=False)
@@ -1446,7 +1444,6 @@ class ToyDiamFactorKinetic_SU2015_DCN(Calcium, KineticIon):
             solver=solver,
             substeps=substeps,
         )
-        self.Ci_initializer = Ci_initializer
         self.PumpBound_initializer = PumpBound_initializer
         self.kf = braintools.init.param(kf, self.varshape, allow_none=False)
         self.kb = braintools.init.param(kb, self.varshape, allow_none=False)
@@ -1455,7 +1452,7 @@ class ToyDiamFactorKinetic_SU2015_DCN(Calcium, KineticIon):
 
 
 @register_ion("CdpStC_CAMOnly_MA2020_GoC")
-class CdpStC_CAMOnly_MA2020_GoC(Calcium, KineticIon):
+class CdpStC_CAMOnly_MA2020_GoC(Calcium, _RadialShellGeometry, KineticIon):
     r"""Import of the calmodulin-only ``CdpStC_CAMOnly_MA20_GoC.mod``.
 
     Isolates the calmodulin (CaM) subnetwork of the imported Golgi-cell
@@ -1764,8 +1761,6 @@ class CdpStC_CAMOnly_MA2020_GoC(Calcium, KineticIon):
             Ci_initializer=Ci_initializer,
             species_initializers=species_initializers,
         )
-        self.Ci_initializer = initializers["Ci"]
-        self.species_initializers = dict(initializers)
         self._init_kinetic_ion(
             Co=Co,
             temp=temp,
@@ -1802,54 +1797,9 @@ class CdpStC_CAMOnly_MA2020_GoC(Calcium, KineticIon):
         defaults.update(species_initializers)
         return {name: self._as_initializer(value) for name, value in defaults.items()}
 
-    def _as_initializer(self, value):
-        if callable(value):
-            return value
-        if isinstance(value, tuple):
-            resolved = []
-            for item in value:
-                if hasattr(item, "value"):
-                    resolved.append(item.value)
-                else:
-                    resolved.append(item)
-            first = resolved[0]
-            if hasattr(first, "unit"):
-                unit = first.unit
-                decimals = [u.Quantity(item).to_decimal(unit) for item in resolved]
-                return u.Quantity(u.math.asarray(decimals), unit)
-            return u.math.asarray(resolved)
-        return braintools.init.Constant(value)
-
-    def _require_diam_arc_mean(self):
-        if not hasattr(self, "diam_arc_mean"):
-            raise AttributeError(f"{type(self).__name__} requires 'diam_arc_mean' before kinetic state initialization.")
-        return self.diam_arc_mean
-
-    @property
-    def vrat(self):
-        dr2 = 0.25 / (self.Nannuli - 1.0)
-        return u.math.pi * (0.5 - (dr2 / 2.0)) * 2.0 * dr2
-
-    @property
-    def dsq(self):
-        diam_arc_mean = self._require_diam_arc_mean()
-        return diam_arc_mean * diam_arc_mean
-
-    @property
-    def dsqvol(self):
-        return self.dsq * self.vrat
-
-    def _ion_init_state_hook(self, V, batch_size: int = None):
-        self._require_diam_arc_mean()
-        KineticIon._ion_init_state_hook(self, V, batch_size=batch_size)
-
-    def _ion_reset_state_hook(self, V, batch_size: int = None):
-        self._require_diam_arc_mean()
-        KineticIon._ion_reset_state_hook(self, V, batch_size=batch_size)
-
 
 @register_ion("CdpStC_NoCAM_MA2020_GoC")
-class CdpStC_NoCAM_MA2020_GoC(Calcium, KineticIon):
+class CdpStC_NoCAM_MA2020_GoC(Calcium, _RadialShellGeometry, KineticIon):
     r"""BrainCell-factored calcium pool: pump, non-CaM buffers, no CaM.
 
     Keeps the pump and non-calmodulin buffer subnetworks of the
@@ -2216,8 +2166,6 @@ class CdpStC_NoCAM_MA2020_GoC(Calcium, KineticIon):
             Ci_initializer=Ci_initializer,
             species_initializers=species_initializers,
         )
-        self.Ci_initializer = initializers["Ci"]
-        self.species_initializers = dict(initializers)
         self._init_kinetic_ion(
             Co=Co,
             temp=temp,
@@ -2258,30 +2206,6 @@ class CdpStC_NoCAM_MA2020_GoC(Calcium, KineticIon):
         defaults.update(species_initializers)
         return {name: self._as_initializer(value) for name, value in defaults.items()}
 
-    def _as_initializer(self, value):
-        if callable(value):
-            return value
-        if isinstance(value, tuple):
-            resolved = []
-            for item in value:
-                if hasattr(item, "value"):
-                    resolved.append(item.value)
-                else:
-                    resolved.append(item)
-            first = resolved[0]
-            if hasattr(first, "unit"):
-                unit = first.unit
-                decimals = [u.Quantity(item).to_decimal(unit) for item in resolved]
-                return u.Quantity(u.math.asarray(decimals), unit)
-            return u.math.asarray(resolved)
-        return braintools.init.Constant(value)
-
-    def _ss_buffer_free(self, total, kon, koff, cai):
-        return total / (1.0 + (kon / koff) * cai)
-
-    def _ss_buffer_bound(self, total, kon, koff, cai):
-        return total / (1.0 + koff / (kon * cai))
-
     def _kdc(self):
         return (self.cainull * self.m1) / self.m2
 
@@ -2303,29 +2227,6 @@ class CdpStC_NoCAM_MA2020_GoC(Calcium, KineticIon):
         kdm = self._kdm()
         return (self.PVnull * kdm) / (1.0 + kdc + kdm)
 
-    def _require_diam_arc_mean(self):
-        if not hasattr(self, "diam_arc_mean"):
-            raise AttributeError(f"{type(self).__name__} requires 'diam_arc_mean' before kinetic state initialization.")
-        return self.diam_arc_mean
-
-    @property
-    def vrat(self):
-        dr2 = 0.25 / (self.Nannuli - 1.0)
-        return u.math.pi * (0.5 - (dr2 / 2.0)) * 2.0 * dr2
-
-    @property
-    def parea(self):
-        return u.math.pi * self._require_diam_arc_mean()
-
-    @property
-    def dsq(self):
-        diam_arc_mean = self._require_diam_arc_mean()
-        return diam_arc_mean * diam_arc_mean
-
-    @property
-    def dsqvol(self):
-        return self.dsq * self.vrat
-
     def _ci_source_flux(self, total_current):
         if total_current is None:
             return self.dsqvol * (0.0 * u.mM / u.ms)
@@ -2333,14 +2234,6 @@ class CdpStC_NoCAM_MA2020_GoC(Calcium, KineticIon):
         # currents are inward-positive. A positive calcium current therefore
         # increases the local calcium pool.
         return (total_current * u.math.pi * self._require_diam_arc_mean()) / (2.0 * u.faraday_constant)
-
-    def _ion_init_state_hook(self, V, batch_size: int = None):
-        self._require_diam_arc_mean()
-        KineticIon._ion_init_state_hook(self, V, batch_size=batch_size)
-
-    def _ion_reset_state_hook(self, V, batch_size: int = None):
-        self._require_diam_arc_mean()
-        KineticIon._ion_reset_state_hook(self, V, batch_size=batch_size)
 
 
 @register_ion("CdpStC_MA2025_BC")
@@ -2495,7 +2388,7 @@ class CdpStC_RI2021_SC(CdpStC_NoCAM_MA2020_GoC):
 
 
 @register_ion("CdpStC_MA2020_GoC")
-class CdpStC_MA2020_GoC(Calcium, KineticIon):
+class CdpStC_MA2020_GoC(Calcium, _RadialShellGeometry, KineticIon):
     r"""Golgi-cell calcium pool: pump, generic buffers, PV, and CaM.
 
     Undivided import of the Golgi-cell ``CdpStC`` calcium pool:
@@ -3000,8 +2893,6 @@ class CdpStC_MA2020_GoC(Calcium, KineticIon):
             Ci_initializer=Ci_initializer,
             species_initializers=species_initializers,
         )
-        self.Ci_initializer = initializers["Ci"]
-        self.species_initializers = dict(initializers)
         self._init_kinetic_ion(
             Co=Co,
             temp=temp,
@@ -3051,30 +2942,6 @@ class CdpStC_MA2020_GoC(Calcium, KineticIon):
         defaults.update(species_initializers)
         return {name: self._as_initializer(value) for name, value in defaults.items()}
 
-    def _as_initializer(self, value):
-        if callable(value):
-            return value
-        if isinstance(value, tuple):
-            resolved = []
-            for item in value:
-                if hasattr(item, "value"):
-                    resolved.append(item.value)
-                else:
-                    resolved.append(item)
-            first = resolved[0]
-            if hasattr(first, "unit"):
-                unit = first.unit
-                decimals = [u.Quantity(item).to_decimal(unit) for item in resolved]
-                return u.Quantity(u.math.asarray(decimals), unit)
-            return u.math.asarray(resolved)
-        return braintools.init.Constant(value)
-
-    def _ss_buffer_free(self, total, kon, koff, cai):
-        return total / (1.0 + (kon / koff) * cai)
-
-    def _ss_buffer_bound(self, total, kon, koff, cai):
-        return total / (1.0 + koff / (kon * cai))
-
     def _kdc(self):
         return (self.cainull * self.m1) / self.m2
 
@@ -3096,29 +2963,6 @@ class CdpStC_MA2020_GoC(Calcium, KineticIon):
         kdm = self._kdm()
         return (self.PVnull * kdm) / (1.0 + kdc + kdm)
 
-    def _require_diam_arc_mean(self):
-        if not hasattr(self, "diam_arc_mean"):
-            raise AttributeError(f"{type(self).__name__} requires 'diam_arc_mean' before kinetic state initialization.")
-        return self.diam_arc_mean
-
-    @property
-    def vrat(self):
-        dr2 = 0.25 / (self.Nannuli - 1.0)
-        return u.math.pi * (0.5 - (dr2 / 2.0)) * 2.0 * dr2
-
-    @property
-    def parea(self):
-        return u.math.pi * self._require_diam_arc_mean()
-
-    @property
-    def dsq(self):
-        diam_arc_mean = self._require_diam_arc_mean()
-        return diam_arc_mean * diam_arc_mean
-
-    @property
-    def dsqvol(self):
-        return self.dsq * self.vrat
-
     def _ci_source_flux(self, total_current):
         if total_current is None:
             return self.dsqvol * (0.0 * u.mM / u.ms)
@@ -3127,17 +2971,9 @@ class CdpStC_MA2020_GoC(Calcium, KineticIon):
         # increases the local calcium pool.
         return (total_current * u.math.pi * self._require_diam_arc_mean()) / (2.0 * u.faraday_constant)
 
-    def _ion_init_state_hook(self, V, batch_size: int = None):
-        self._require_diam_arc_mean()
-        KineticIon._ion_init_state_hook(self, V, batch_size=batch_size)
-
-    def _ion_reset_state_hook(self, V, batch_size: int = None):
-        self._require_diam_arc_mean()
-        KineticIon._ion_reset_state_hook(self, V, batch_size=batch_size)
-
 
 @register_ion("CdpCAM_MA2024_PC")
-class CdpCAM_MA2024_PC(Calcium, KineticIon):
+class CdpCAM_MA2024_PC(Calcium, _RadialShellGeometry, KineticIon):
     r"""Purkinje-cell calcium pool: pump, buffers, Calbindin, PV, CaM.
 
     Extends the Golgi-cell pump/generic-buffer/parvalbumin/calmodulin
@@ -3674,8 +3510,6 @@ class CdpCAM_MA2024_PC(Calcium, KineticIon):
             Ci_initializer=Ci_initializer,
             species_initializers=species_initializers,
         )
-        self.Ci_initializer = initializers["Ci"]
-        self.species_initializers = dict(initializers)
         self._init_kinetic_ion(
             Co=Co,
             temp=temp,
@@ -3729,15 +3563,6 @@ class CdpCAM_MA2024_PC(Calcium, KineticIon):
         defaults.update(species_initializers)
         return {name: self._as_initializer(value) for name, value in defaults.items()}
 
-    def _as_initializer(self, value):
-        return CdpStC_MA2020_GoC._as_initializer(self, value)
-
-    def _ss_buffer_free(self, total, kon, koff, cai):
-        return total / (1.0 + (kon / koff) * cai)
-
-    def _ss_buffer_bound(self, total, kon, koff, cai):
-        return total / (1.0 + koff / (kon * cai))
-
     def _kdf(self):
         return (self.cainull * self.nf1) / self.nf2
 
@@ -3785,39 +3610,12 @@ class CdpCAM_MA2024_PC(Calcium, KineticIon):
         kdm = self._kdm()
         return (self.PVnull * kdm) / (1.0 + kdc + kdm)
 
-    def _require_diam_arc_mean(self):
-        return CdpStC_MA2020_GoC._require_diam_arc_mean(self)
-
-    @property
-    def vrat(self):
-        return CdpStC_MA2020_GoC.vrat.fget(self)
-
-    @property
-    def parea(self):
-        return CdpStC_MA2020_GoC.parea.fget(self)
-
-    @property
-    def dsq(self):
-        return CdpStC_MA2020_GoC.dsq.fget(self)
-
-    @property
-    def dsqvol(self):
-        return CdpStC_MA2020_GoC.dsqvol.fget(self)
-
     def _ci_source_flux(self, total_current):
         return CdpStC_MA2020_GoC._ci_source_flux(self, total_current)
 
-    def _ion_init_state_hook(self, V, batch_size: int = None):
-        self._require_diam_arc_mean()
-        KineticIon._ion_init_state_hook(self, V, batch_size=batch_size)
-
-    def _ion_reset_state_hook(self, V, batch_size: int = None):
-        self._require_diam_arc_mean()
-        KineticIon._ion_reset_state_hook(self, V, batch_size=batch_size)
-
 
 @register_ion("CdpCR_MA2020_GrC")
-class CdpCR_MA2020_GrC(Calcium, KineticIon):
+class CdpCR_MA2020_GrC(Calcium, _RadialShellGeometry, KineticIon):
     r"""Granule-cell calcium pool: pump, generic buffers, Calretinin.
 
     Reuses the pump and generic-buffer (``Buff1``, ``Buff2``, BTC,
@@ -4263,8 +4061,6 @@ class CdpCR_MA2020_GrC(Calcium, KineticIon):
             Ci_initializer=Ci_initializer,
             species_initializers=species_initializers,
         )
-        self.Ci_initializer = initializers["Ci"]
-        self.species_initializers = dict(initializers)
         self._init_kinetic_ion(
             Co=Co,
             temp=temp,
@@ -4312,44 +4108,8 @@ class CdpCR_MA2020_GrC(Calcium, KineticIon):
         defaults.update(species_initializers)
         return {name: self._as_initializer(value) for name, value in defaults.items()}
 
-    def _as_initializer(self, value):
-        return CdpStC_MA2020_GoC._as_initializer(self, value)
-
-    def _ss_buffer_free(self, total, kon, koff, cai):
-        return total / (1.0 + (kon / koff) * cai)
-
-    def _ss_buffer_bound(self, total, kon, koff, cai):
-        return total / (1.0 + koff / (kon * cai))
-
-    def _require_diam_arc_mean(self):
-        return CdpStC_MA2020_GoC._require_diam_arc_mean(self)
-
-    @property
-    def vrat(self):
-        return CdpStC_MA2020_GoC.vrat.fget(self)
-
-    @property
-    def parea(self):
-        return CdpStC_MA2020_GoC.parea.fget(self)
-
-    @property
-    def dsq(self):
-        return CdpStC_MA2020_GoC.dsq.fget(self)
-
-    @property
-    def dsqvol(self):
-        return CdpStC_MA2020_GoC.dsqvol.fget(self)
-
     def _ci_source_flux(self, total_current):
         return CdpStC_MA2020_GoC._ci_source_flux(self, total_current)
-
-    def _ion_init_state_hook(self, V, batch_size: int = None):
-        self._require_diam_arc_mean()
-        KineticIon._ion_init_state_hook(self, V, batch_size=batch_size)
-
-    def _ion_reset_state_hook(self, V, batch_size: int = None):
-        self._require_diam_arc_mean()
-        KineticIon._ion_reset_state_hook(self, V, batch_size=batch_size)
 
 
 @register_ion("CdpHVA_SU2015_DCN")

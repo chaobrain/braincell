@@ -37,15 +37,7 @@ from ._exp_euler import (
     exp_euler_step,
     ind_exp_euler_step,
 )
-from ._implicit import (
-    cn_exp_euler_step,
-    cn_rk4_step,
-    exp_exp_euler_step,
-    implicit_euler_step,
-    implicit_exp_euler_step,
-    implicit_rk4_step,
-    splitting_step,
-)
+from ._implicit import implicit_euler_step
 from .protocol import (
     DiffEqGroupState,
     DiffEqModule,
@@ -106,12 +98,6 @@ __all__ = [
     'staggered_step',
     # implicit methods
     'implicit_euler_step',
-    'splitting_step',
-    'implicit_rk4_step',
-    'implicit_exp_euler_step',
-    'cn_rk4_step',
-    'cn_exp_euler_step',
-    'exp_exp_euler_step',
     # protocol
     'DiffEqState',
     'DiffEqSingleState',

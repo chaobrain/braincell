@@ -14,6 +14,7 @@
 # ==============================================================================
 
 
+import heapq
 from functools import partial
 from pathlib import Path
 
@@ -298,15 +299,35 @@ def rule_invalid_parent_index(context: _SwcContext) -> None:
 
 
 def rule_duplicate_xyzr_parent_child(context: _SwcContext) -> None:
+    """Merge nodes whose ``xyzr`` exactly repeats their parent's.
+
+    Merges cascade: collapsing a node reparents its children onto the
+    surviving ancestor, which can expose a fresh duplicate pair. The reported
+    and applied merge order is "lowest surviving row position first", which a
+    min-heap of pending candidates reproduces in one pass — the previous
+    restart-the-whole-scan-per-merge loop was quadratic in the number of
+    merged nodes (21% of ``SwcReader.read`` on a 38k-row reconstruction).
+
+    Node ids are unique by the time this rule runs: ``rule_itp_int`` stops
+    processing on a duplicate id, so ``rows_by_id`` is a faithful index.
+    """
+    rows_by_id = {row.node_id: row for row in context.rows if row.node_id is not None}
+
+    def duplicated_parent(row: _SwcRow) -> _SwcRow | None:
+        """Return the parent ``row`` exactly repeats, or ``None``."""
+        if row.node_id is None or row.parent_id in (None, -1):
+            return None
+        parent = rows_by_id.get(row.parent_id)
+        if parent is None:
+            return None
+        if (row.x, row.y, row.z, row.radius) != (parent.x, parent.y, parent.z, parent.radius):
+            return None
+        return parent
+
     if not context.use_corrections:
-        rows_by_id = {row.node_id: row for row in context.rows if row.node_id is not None}
         for row in context.rows:
-            if row.node_id is None or row.parent_id in (None, -1):
-                continue
-            parent = rows_by_id.get(row.parent_id)
+            parent = duplicated_parent(row)
             if parent is None:
-                continue
-            if (row.x, row.y, row.z, row.radius) != (parent.x, parent.y, parent.z, parent.radius):
                 continue
             _add_warning(
                 context,
@@ -318,35 +339,46 @@ def rule_duplicate_xyzr_parent_child(context: _SwcContext) -> None:
             )
         return
 
-    while True:
-        rows_by_id = {row.node_id: row for row in context.rows if row.node_id is not None}
-        changed = False
-        for row in list(context.rows):
-            if row.node_id is None or row.parent_id in (None, -1):
+    ordered_rows = context.rows
+    position = {id(row): index for index, row in enumerate(ordered_rows)}
+    children_of: dict[int, list[_SwcRow]] = {}
+    for row in ordered_rows:
+        if row.parent_id in rows_by_id:
+            children_of.setdefault(row.parent_id, []).append(row)
+
+    pending = [position[id(row)] for row in ordered_rows if duplicated_parent(row) is not None]
+    heapq.heapify(pending)
+    merged: set[int] = set()
+    while pending:
+        row = ordered_rows[heapq.heappop(pending)]
+        if id(row) in merged:
+            continue
+        parent = duplicated_parent(row)
+        if parent is None:
+            continue
+        duplicate_id = row.node_id
+        keep_id = parent.node_id
+        _add_warning(
+            context,
+            "geometry.duplicate_xyzr_node",
+            f"SWC node {duplicate_id} duplicates parent {keep_id} in xyzr and was merged into the parent.",
+            line_number=row.line_number,
+            node_id=duplicate_id,
+            fix_message="merge duplicate xyzr node into parent",
+        )
+        for child in children_of.pop(duplicate_id, ()):
+            if id(child) in merged:
                 continue
-            parent = rows_by_id.get(row.parent_id)
-            if parent is None:
-                continue
-            if (row.x, row.y, row.z, row.radius) != (parent.x, parent.y, parent.z, parent.radius):
-                continue
-            duplicate_id = row.node_id
-            keep_id = parent.node_id
-            _add_warning(
-                context,
-                "geometry.duplicate_xyzr_node",
-                f"SWC node {duplicate_id} duplicates parent {keep_id} in xyzr and was merged into the parent.",
-                line_number=row.line_number,
-                node_id=duplicate_id,
-                fix_message="merge duplicate xyzr node into parent",
-            )
-            for candidate in context.rows:
-                if candidate.parent_id == duplicate_id:
-                    candidate.parent_id = keep_id
-            context.rows = [r for r in context.rows if r is not row]
-            changed = True
-            break
-        if not changed:
-            return
+            child.parent_id = keep_id
+            children_of.setdefault(keep_id, []).append(child)
+            if duplicated_parent(child) is not None:
+                heapq.heappush(pending, position[id(child)])
+        merged.add(id(row))
+        if rows_by_id.get(duplicate_id) is row:
+            del rows_by_id[duplicate_id]
+
+    if merged:
+        context.rows = [row for row in ordered_rows if id(row) not in merged]
 
 
 def rule_no_soma_samples(context: _SwcContext) -> None:
@@ -402,9 +434,7 @@ def rule_index_sequential(context: _SwcContext) -> None:
         for new_id, old_id in enumerate((row.node_id for row in context.rows), start=1)
         if old_id is not None
     }
-    contour_old_to_new = {
-        old_id: new_id for old_id, new_id in old_to_new.items() if old_id in context.contour_soma_ids
-    }
+    contour_old_to_new = {old_id: new_id for old_id, new_id in old_to_new.items() if old_id in context.contour_soma_ids}
     for new_id, row in enumerate(context.rows, start=1):
         row.node_id = new_id
         if row.parent_id == -1:

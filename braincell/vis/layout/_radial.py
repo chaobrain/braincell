@@ -34,6 +34,7 @@ from ._common import (
     _leaf_counts_by_branch,
     _normalize_min_branch_angle_rad,
     _weighted_child_intervals,
+    walk_layout_top_down,
 )
 from ._config import DEFAULT_LAYOUT_CONFIG, LayoutConfig
 from ._geometry import (
@@ -93,26 +94,22 @@ def _layout_children_radial_360(
 ) -> None:
     """Lay out every descendant of ``parent``.
 
-    Iterative for the same reason as the other layout families: a branch
-    chain deeper than the interpreter's frame limit must not raise
-    ``RecursionError``. A child's wedge derives from its parent's finished
-    interval alone, so a sibling group can be placed before any of it is
-    descended into. Children are pushed in reverse to keep the
-    left-to-right visit order.
+    A child's wedge derives from its parent's finished interval alone,
+    so a sibling group can be placed before any of it is descended into.
+    :func:`~braincell.vis.layout._common.walk_layout_top_down` owns the
+    iterative walk (and the recursion-avoidance invariant behind it);
+    this function only says what a child's placement is.
     """
     # frame: (branch, angular interval allocated to it)
-    stack: list[tuple[MorphoBranch, tuple[float, float]]] = [(parent, interval)]
-    while stack:
-        node, node_interval = stack.pop()
-        children = node.children
-        if not children:
-            continue
+    Frame = tuple[MorphoBranch, tuple[float, float]]
 
+    def _place(frame: Frame, children: tuple[MorphoBranch, ...]) -> list[Frame]:
+        node, node_interval = frame
         child_intervals = _weighted_child_intervals(
             children, interval=node_interval, weights=leaf_counts, min_gap_rad=min_branch_angle_rad
         )
         node_layout = layouts[node.index]
-        frames: list[tuple[MorphoBranch, tuple[float, float]]] = []
+        frames: list[Frame] = []
         for child, child_interval in child_intervals:
             attach_um, attach_tangent_um = sample_layout_branch(node_layout, child.parent_x)
             child_angle_rad = 0.5 * (child_interval[0] + child_interval[1])
@@ -130,4 +127,6 @@ def _layout_children_radial_360(
                 max(child_interval[1] - child_interval[0], _RADIAL_MIN_CHILD_SPAN_RAD),
             )
             frames.append((child, (child_angle_rad - child_span_rad / 2.0, child_angle_rad + child_span_rad / 2.0)))
-        stack.extend(reversed(frames))
+        return frames
+
+    walk_layout_top_down((parent, interval), _place)

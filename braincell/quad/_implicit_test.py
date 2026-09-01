@@ -15,15 +15,15 @@
 
 """Tests for :mod:`braincell.quad._implicit`.
 
-The cell-only step functions in this module (``splitting_step``,
+The module exposes exactly one step function, ``implicit_euler_step``,
+which runs on any :class:`DiffEqModule` target. The six cell-only
+splitting variants that used to live here (``splitting_step``,
 ``cn_rk4_step``, ``cn_exp_euler_step``, ``implicit_rk4_step``,
-``implicit_exp_euler_step``, ``exp_exp_euler_step``) require a multi-
-compartment :class:`braincell.Cell` target with a full conductance
-matrix and are exercised by their dedicated cell tests.
-
-What we test here is the small subset that runs on a minimal
-:class:`DiffEqModule` target — namely ``implicit_euler_step`` — plus
-basic registry-level metadata for the remaining cell-only methods.
+``implicit_exp_euler_step``, ``exp_exp_euler_step``) were removed: they
+depended on a ``Cell.conductance_matrix()`` / ``Cell.Gl`` interface that
+no longer exists and on a stale ``brainstate.transform.vmap2(...,
+in_states=...)`` signature, so none of them could execute against a real
+:class:`braincell.Cell`.
 """
 
 import unittest
@@ -32,16 +32,7 @@ import brainstate
 import brainunit as u
 import jax.numpy as jnp
 
-from braincell.quad import (
-    cn_exp_euler_step,
-    cn_rk4_step,
-    exp_exp_euler_step,
-    get_registry,
-    implicit_euler_step,
-    implicit_exp_euler_step,
-    implicit_rk4_step,
-    splitting_step,
-)
+from braincell.quad import get_registry, implicit_euler_step
 from braincell.quad.protocol import (
     DiffEqModule,
     DiffEqSingleState,
@@ -78,41 +69,38 @@ class ImplicitEulerLinearTest(unittest.TestCase):
 
 
 class ImplicitMethodRegistrationTest(unittest.TestCase):
-    """Sanity-check that every cell-only implicit step is registered."""
+    """Registry metadata for the one implicit step this module owns."""
 
-    EXPECTED = {
-        "implicit_euler": implicit_euler_step,
-        "splitting": splitting_step,
-        "implicit_rk4": implicit_rk4_step,
-        "implicit_exp_euler": implicit_exp_euler_step,
-        "cn_rk4": cn_rk4_step,
-        "cn_exp_euler": cn_exp_euler_step,
-        "exp_exp_euler": exp_exp_euler_step,
-    }
+    #: Names deleted in the bit-rot cleanup. Re-registering any of them
+    #: without a working implementation would resurrect the rot.
+    REMOVED = (
+        "splitting",
+        "implicit_rk4",
+        "implicit_exp_euler",
+        "cn_rk4",
+        "cn_exp_euler",
+        "exp_exp_euler",
+    )
 
-    def test_all_implicit_steps_registered(self):
+    def test_implicit_euler_registered(self):
         registry = get_registry()
-        for name, func in self.EXPECTED.items():
-            with self.subTest(name=name):
-                self.assertIn(name, registry)
-                self.assertIs(registry[name], func)
+        self.assertIn("implicit_euler", registry)
+        self.assertIs(registry["implicit_euler"], implicit_euler_step)
 
-    def test_implicit_methods_have_expected_categories(self):
+    def test_implicit_euler_metadata(self):
+        entry = get_registry().entry("implicit_euler")
+        self.assertEqual(entry.category, "implicit")
+        self.assertEqual(entry.order, 1)
+        self.assertEqual(entry.module, "braincell.quad")
+
+    def test_removed_cell_only_steps_are_gone(self):
         registry = get_registry()
-        # implicit_euler / splitting / implicit_rk4 / implicit_exp_euler /
-        # cn_rk4 / cn_exp_euler are all in the "implicit" group.
-        for name in [
-            "implicit_euler",
-            "splitting",
-            "implicit_rk4",
-            "implicit_exp_euler",
-            "cn_rk4",
-            "cn_exp_euler",
-        ]:
+        import braincell.quad as quad
+
+        for name in self.REMOVED:
             with self.subTest(name=name):
-                self.assertEqual(registry.entry(name).category, "implicit")
-        # exp_exp_euler is grouped with the exponential family.
-        self.assertEqual(registry.entry("exp_exp_euler").category, "exponential")
+                self.assertNotIn(name, registry)
+                self.assertFalse(hasattr(quad, f"{name}_step"))
 
 
 if __name__ == "__main__":

@@ -29,6 +29,11 @@ import brainunit as u
 import jax
 import numpy as np
 
+from braincell._misc import (
+    concat_values as _concat_values,
+    same_time_quantity as _same_time_quantity,
+    validate_time_quantity,
+)
 from braincell._multi_compartment import probes
 from braincell.network.recording import SampleBlock
 
@@ -244,13 +249,7 @@ def _make_run_loop(rcell: "Cell", *, dt, compiled_recordings: tuple, ordered_pro
 
 def _validate_time_quantity(value, *, name: str) -> None:
     """Require ``value`` to be a positive scalar time :class:`Quantity`."""
-    if not hasattr(value, "to_decimal"):
-        raise TypeError(f"Cell.run(...) {name} must be a time quantity, got {value!r}.")
-    decimal = np.asarray(value.to_decimal(u.ms), dtype=float)
-    if decimal.shape not in ((), (1,)):
-        raise ValueError(f"Cell.run(...) {name} must be scalar, got shape {decimal.shape!r}.")
-    if float(decimal.reshape(())) <= 0.0:
-        raise ValueError(f"Cell.run(...) {name} must be > 0, got {value!r}.")
+    validate_time_quantity(value, name=name, prefix="Cell.run(...)")
 
 
 def _normalize_run_traces(values, *, n_traces: int) -> tuple:
@@ -287,27 +286,6 @@ def _recording_time_mask(times, schema) -> np.ndarray:
     period_ms = float(np.asarray(schema.period.to_decimal(u.ms)).reshape(()))
     relative = (time_ms - start_ms) / period_ms
     return (time_ms >= start_ms - 1e-9) & np.isclose(relative, np.rint(relative), rtol=1e-6, atol=1e-6)
-
-
-def _same_time_quantity(left, right) -> bool:
-    if left is None or right is None:
-        return left is right
-    return bool(
-        np.allclose(
-            np.asarray(left.to_decimal(u.ms), dtype=float),
-            np.asarray(right.to_decimal(u.ms), dtype=float),
-            rtol=1e-7,
-            atol=1e-9,
-        )
-    )
-
-
-def _concat_values(values):
-    first = values[0]
-    if isinstance(first, u.Quantity):
-        unit = first.unit
-        return u.Quantity(u.math.concatenate(tuple(value.to_decimal(unit) for value in values), axis=0), unit)
-    return u.math.concatenate(values, axis=0)
 
 
 def _concat_sample_blocks(blocks):

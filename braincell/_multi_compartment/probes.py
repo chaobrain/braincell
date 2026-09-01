@@ -32,7 +32,6 @@ from braincell.mech import (
     Density,
     MechanismProbe,
     StateProbe,
-    Synapse,
 )
 from braincell._compute import bridge
 
@@ -299,13 +298,6 @@ def _pack_synapse_probe_rows(rcell: "Cell", view, values):
         return u.Quantity(mantissa.at[..., owners].add(u.get_mantissa(values)), values.unit)
     output = jnp.zeros(output_shape, dtype=jnp.asarray(values).dtype)
     return output.at[..., owners].add(values)
-
-
-def _midpoint_cv_id(runtime: CellRuntimeState, *, point_id: int) -> int:
-    matches = np.flatnonzero(runtime.node_tree.cv_to_mid_node_id == int(point_id))
-    if len(matches) != 1:
-        raise ValueError(f"Point {point_id!r} is not a unique CV midpoint; got CV matches {matches.tolist()!r}.")
-    return int(matches[0])
 
 
 def _representative_cv_id(runtime: CellRuntimeState, *, point_id: int) -> int:

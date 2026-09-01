@@ -134,20 +134,32 @@ def _metric_key(morpho: Morphology) -> Hashable:
     than as tuples of Python floats: this runs on every cache *hit*,
     and a per-element ``round(float(x), 6)`` genexpr made the key cost
     more than the lookup saved on large morphologies.
+
+    For the same reason the branch positions come from
+    :func:`enumerate` over ``morpho.branches`` and the parent position
+    from a name→position map built in the same pass, instead of reading
+    :attr:`MorphoBranch.index`. That property rebuilds the morphology's
+    whole node→index dict on *every* access, which made the key
+    quadratic in branch count — 0.26 s per ``plot2d`` call at 1600
+    branches, paid even when the layout was already cached. Branch
+    names are unique within a morphology, so the map is a faithful
+    stand-in for the index lookup.
     """
+    branch_views = morpho.branches
+    positions = {branch_view.name: position for position, branch_view in enumerate(branch_views)}
     rows: list[tuple] = []
-    for branch_view in morpho.branches:
+    for position, branch_view in enumerate(branch_views):
         branch = branch_view.branch
         lengths = _rounded_bytes(branch.lengths.to_decimal(u.um))
         radii_proximal = _rounded_bytes(branch.radii_proximal.to_decimal(u.um))
         radii_distal = _rounded_bytes(branch.radii_distal.to_decimal(u.um))
         parent = branch_view.parent
-        parent_index = None if parent is None else parent.index
+        parent_index = None if parent is None else positions[parent.name]
         parent_x = branch_view.parent_x
         child_x = branch_view.child_x
         rows.append(
             (
-                branch_view.index,
+                position,
                 branch_view.name,
                 branch_view.type,
                 parent_index,

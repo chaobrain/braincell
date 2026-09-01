@@ -38,14 +38,13 @@ Examples
     >>> vis.save_figure(plotter, "tree.png")            # doctest: +SKIP
 """
 
-import importlib.util
 import os
 import sys
 from pathlib import Path
 from typing import Any
 
+from .backend import module_available
 
-_PNG_SUFFIXES = {".png", ".jpg", ".jpeg", ".tif", ".tiff", ".bmp", ".gif"}
 _VECTOR_SUFFIXES = {".pdf", ".svg", ".eps", ".ps"}
 _HTML_SUFFIXES = {".html", ".htm"}
 
@@ -145,7 +144,10 @@ def _is_matplotlib_artist(obj: Any) -> bool:
 
 
 def _is_pyvista_plotter(obj: Any) -> bool:
-    if importlib.util.find_spec("pyvista") is None:
+    # ``module_available`` rather than a bare ``find_spec``: a test double
+    # injected into ``sys.modules`` has no ``__spec__``, which makes
+    # ``find_spec`` raise ValueError instead of answering the question.
+    if not module_available("pyvista"):
         return False
     if "pyvista" not in sys.modules:
         # Avoid triggering a heavy pyvista import just for instance check.
@@ -156,7 +158,7 @@ def _is_pyvista_plotter(obj: Any) -> bool:
 
 
 def _is_plotly_figure(obj: Any) -> bool:
-    if importlib.util.find_spec("plotly") is None:
+    if not module_available("plotly"):
         return False
     module = type(obj).__module__
     if not module.startswith("plotly"):

@@ -139,25 +139,17 @@ format.quote-style = "preserve"
 # because the rule is wrong.
 lint.select = [ "E4", "E7", "E9", "F" ]
 lint.ignore = [
-  # 28x -- module-level import not at top of file. Mostly imports placed after
-  # the Apache licence header and `__all__` blocks.
-  "E402",
-  # 144x -- lambda assigned to a variable. Pervasive and stylistic.
+  # 145x -- lambda assigned to a variable. Pervasive and stylistic.
   "E731",
-  # 8x -- "ambiguous" names l/I/O. In this codebase `I` means current and is
+  # 2x -- "ambiguous" names l/I/O. In this codebase `I` means current and is
   # domain-meaningful; blanket-renaming would hurt readability.
   "E741",
-  # 42x -- unused imports, scattered across modules (not just __init__.py
-  # re-exports), so they need case-by-case review rather than autofix.
-  "F401",
-  # Star imports in braincell/ion/__init__.py -- tracked in TODO.md 3.8.
-  "F403",
-  "F405",
-  # 2x -- redundant local re-imports in braincell/_base_test.py.
-  "F811",
-  # 7x -- assigned-but-never-used locals. Worth a real look; some may be bugs.
-  "F841",
 ]
+# `__init__.py` files are re-export hubs: every name they import is part of the
+# package's public surface and is re-exported through `__all__`, so pyflakes'
+# unused-import rule reports the whole surface as dead. Nowhere else in the tree
+# is F401 silenced -- an unused import in a real module is still an error.
+lint.per-file-ignores."**/__init__.py" = [ "F401" ]
 
 [tool.pytest]
 ini_options.testpaths = [ "braincell" ]

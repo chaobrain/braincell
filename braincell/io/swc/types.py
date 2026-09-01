@@ -27,7 +27,6 @@ SWC_TYPE_MAP = {
     3: "basal_dendrite",
     4: "apical_dendrite",
 }
-MIN_SYNTHETIC_LENGTH_UM = 1e-6
 SWC_IMPORT_MODES = ("neuron", "neuromorpho")
 
 

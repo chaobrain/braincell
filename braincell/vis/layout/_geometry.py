@@ -39,6 +39,7 @@ import math
 import numpy as np
 
 from braincell.morph import MorphoBranch
+from braincell.vis._arclength import segment_index_at
 
 from ._common import LayoutBranch2D, _LayoutSpec2D
 
@@ -62,9 +63,15 @@ def sample_layout_branch(layout: LayoutBranch2D, x: float) -> tuple[np.ndarray, 
     if layout.total_length_um <= 0.0:
         return np.asarray(layout.segment_points_um[0], dtype=float), np.asarray(layout.direction_um, dtype=float)
 
-    arc_length_um = float(np.clip(x, 0.0, 1.0)) * layout.total_length_um
-    segment_index = int(np.searchsorted(layout.cumulative_lengths_um[1:], arc_length_um, side="right"))
-    segment_index = min(max(segment_index, 0), len(layout.segment_directions_um) - 1)
+    # Segment lookup is the shared arc-length parameterisation; the walk
+    # itself stays direction-based here because a layout branch carries
+    # unit segment directions that the scene builders do not.
+    segment_index, arc_length_um = segment_index_at(
+        layout.cumulative_lengths_um,
+        total_um=layout.total_length_um,
+        n_segments=len(layout.segment_directions_um),
+        x=x,
+    )
     start_length_um = float(layout.cumulative_lengths_um[segment_index])
     segment_length_um = float(layout.cumulative_lengths_um[segment_index + 1] - start_length_um)
     direction_um = np.asarray(layout.segment_directions_um[segment_index], dtype=float)

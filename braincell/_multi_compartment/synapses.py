@@ -96,7 +96,6 @@ class _SynapseStore:
         # Public logical order is stable and cell-major, independently of how
         # broadcast placements happen to be represented by discretization.
         rows.sort(key=lambda item: (item[0], item[1]))
-        count = len(rows)
         self.population_index = np.asarray([row[0] for row in rows], dtype=np.int64)
         self.placement_id = np.asarray([row[1] for row in rows], dtype=np.int64)
         self.id = self.placement_id * int(population_size) + self.population_index

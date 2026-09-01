@@ -472,7 +472,7 @@ metric 属性：
 - `all_integrators`
 - explicit / RK：`euler_step`、`midpoint_step`、`rk2_step`、`heun2_step`、`ralston2_step`、`rk3_step`、`heun3_step`、`ssprk3_step`、`ralston3_step`、`rk4_step`、`ralston4_step`
 - exponential：`exp_euler_step`、`ind_exp_euler_step`
-- implicit：`backward_euler_step`、`implicit_euler_step`、`splitting_step`、`implicit_rk4_step`、`implicit_exp_euler_step`、`cn_rk4_step`、`cn_exp_euler_step`、`exp_exp_euler_step`
+- implicit：`backward_euler_step`、`implicit_euler_step`
 - cable-specific：`staggered_step`
 - protocol：`DiffEqState`、`DiffEqSingleState`、`DiffEqGroupState`、`DiffEqModule`、`IndependentIntegration`
 

@@ -19,7 +19,6 @@ import brainstate
 import brainunit as u
 import numpy as np
 
-import braincell
 from braincell import Branch, CVPerBranch, Cell, EventSequence, EventTable, Morphology, NetStim
 from braincell.network.event import EventSourceView, VoltageCrossingSource
 from braincell.filter import at

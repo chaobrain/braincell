@@ -22,7 +22,7 @@ from brainunit import Quantity
 
 from braincell.morph.morphology import Morphology
 from . import helper
-from .cache import SelectionCache
+from .cache import SelectionCache, evaluate_cached
 
 ClosedSide = str
 
@@ -201,7 +201,7 @@ class RegionSetOp(RegionExpr):
         if op == "complement":
             if len(operands) != 1:
                 raise ValueError("complement expects exactly one operand.")
-            source = operands[0].evaluate(morpho, cache).intervals
+            source = evaluate_cached(operands[0], morpho, cache).intervals
             intervals = helper.complement_region_intervals(
                 source,
                 n_branches=len(morpho.branches),
@@ -213,9 +213,9 @@ class RegionSetOp(RegionExpr):
         if len(operands) < 2:
             raise ValueError(f"{op} expects at least two operands.")
 
-        current = helper.normalize_region_intervals(operands[0].evaluate(morpho, cache).intervals)
+        current = helper.normalize_region_intervals(evaluate_cached(operands[0], morpho, cache).intervals)
         for operand in operands[1:]:
-            other = helper.normalize_region_intervals(operand.evaluate(morpho, cache).intervals)
+            other = helper.normalize_region_intervals(evaluate_cached(operand, morpho, cache).intervals)
             if op == "union":
                 current = helper.union_region_intervals(current, other)
             elif op == "intersection":

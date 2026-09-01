@@ -249,6 +249,13 @@ def dhs_voltage_step(target, t, dt, *args):
 
     Notes
     -----
+    This step takes ``t`` and ``dt`` explicitly, so — unlike
+    :func:`staggered_step` — it is **not** selectable through
+    ``Cell(solver="dhs_voltage")``: the host calls ``self.solver(self)``
+    and reads the time arguments from :mod:`brainstate.environ`. Call it
+    directly, or use ``"staggered"``, which wraps it. The registry records
+    this as ``IntegratorEntry.requires_time_args``.
+
     The static topology metadata produced by ``_build_dhs_static_source``
     (row lookup tables, edge ordering, recursive-doubling jump table) is
     assembled as NumPy ``float64`` / ``int32`` data and cached on the
@@ -398,8 +405,9 @@ def build_cv_axial_operator(target, *, node_tree, scheduling) -> np.ndarray:
         point_id_to_row=scheduling.point_id_to_row,
     )
     dynamic_rows = np.asarray(dynamic_rows, dtype=np.int32)
+    dynamic_row_set = set(dynamic_rows.tolist())
     algebraic_rows = np.asarray(
-        [row for row in range(axial_matrix.shape[0]) if row not in set(dynamic_rows.tolist())],
+        [row for row in range(axial_matrix.shape[0]) if row not in dynamic_row_set],
         dtype=np.int32,
     )
     if algebraic_rows.size == 0:
@@ -425,19 +433,22 @@ def _get_dhs_static_source(target, *, node_tree, scheduling) -> DHSStaticSource:
 
 
 def _build_dhs_static_cache(source: DHSStaticSource) -> DHSStaticCache:
-    float_dtype = jnp.asarray(0.0).dtype
+    # ``float_dtype`` must record the dtype the arrays below are actually
+    # built with, so that _get_dhs_static_cache can detect a precision
+    # change and rebuild instead of handing back a stale-precision cache.
+    float_dtype = jnp.dtype(brainstate.environ.dftype())
     return DHSStaticCache(
         float_dtype=float_dtype,
-        diag_ms_inv=jnp.asarray(source.diag_ms_inv_np, dtype=brainstate.environ.dftype()) * (u.ms**-1),
-        lowers_ms_inv=jnp.asarray(source.lowers_ms_inv_np, dtype=brainstate.environ.dftype()) * (u.ms**-1),
-        uppers_ms_inv=jnp.asarray(source.uppers_ms_inv_np, dtype=brainstate.environ.dftype()) * (u.ms**-1),
+        diag_ms_inv=jnp.asarray(source.diag_ms_inv_np, dtype=float_dtype) * (u.ms**-1),
+        lowers_ms_inv=jnp.asarray(source.lowers_ms_inv_np, dtype=float_dtype) * (u.ms**-1),
+        uppers_ms_inv=jnp.asarray(source.uppers_ms_inv_np, dtype=float_dtype) * (u.ms**-1),
     )
 
 
 def _get_dhs_static_cache(target, source: DHSStaticSource) -> DHSStaticCache:
     runtime = target._runtime
     cache = getattr(runtime, "dhs_static_cache", None)
-    float_dtype = jnp.asarray(0.0).dtype
+    float_dtype = jnp.dtype(brainstate.environ.dftype())
     if cache is not None and getattr(cache, "float_dtype", None) == float_dtype:
         return cache
     cache = _build_dhs_static_cache(source)
@@ -724,18 +735,25 @@ def _check_comp_backsub(diags, solves, lowers, backsub_indices):
 
 
 def _build_backsub_indices(parent_lookup: np.ndarray, *, n_nodes: int) -> np.ndarray:
-    """Precompute recursive-doubling ancestor jumps as static metadata."""
+    """Precompute recursive-doubling ancestor jumps as static metadata.
+
+    Row ``i`` of the result is the ``2**i``-th ancestor of every row, i.e.
+    the map :math:`A_{2^i}` obtained by following ``parent_lookup`` that
+    many times. Rather than walking the tree one parent at a time, each
+    level is built by composing the previous one with itself
+    (:math:`A_{2k}[j] = A_k[A_k[j]]`), which turns the construction from
+    :math:`O(n^2)` gathers into :math:`O(n \\log n)`.
+    """
     parent_lookup = np.asarray(parent_lookup, dtype=np.int32)
     indices = []
-    old_step = 0
-    new_step = 1
-    k_step_parent = np.arange(n_nodes + 1, dtype=np.int32)
-    while new_step <= max(1, n_nodes):
-        for _ in range(new_step - old_step):
-            k_step_parent = parent_lookup[k_step_parent]
-        old_step = new_step
-        new_step = 2 * new_step
+    # A_1: one parent hop from every row (fancy-indexed rather than sliced so
+    # that a too-short ``parent_lookup`` still raises instead of truncating).
+    k_step_parent = parent_lookup[np.arange(n_nodes + 1, dtype=np.int32)]
+    step = 1
+    while step <= max(1, n_nodes):
         indices.append(k_step_parent)
+        k_step_parent = k_step_parent[k_step_parent]
+        step *= 2
     return np.asarray(indices, dtype=np.int32)
 
 

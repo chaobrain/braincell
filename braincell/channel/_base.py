@@ -27,7 +27,7 @@ import brainunit as u
 import jax
 import jax.numpy as jnp
 
-from braincell._base import Channel
+from braincell._base_channel import Channel
 from braincell._misc import is_traced_value
 from braincell._typing import Size
 from braincell.quad.protocol import DiffEqState
@@ -124,6 +124,53 @@ def ghk_flux(V, ci, co, z, temp):
     small_branch = (z * u.faraday_constant) * numerator * (1 + zeta / 2)
     regular_branch = (z * zeta * u.faraday_constant) * numerator / (1 - exp_term)
     return u.math.where(u.math.abs(1 - exp_term) <= 1e-6, small_branch, regular_branch)
+
+
+def q10_factor(q10, temp, temp_ref):
+    r"""Return the Q10 rate-scaling factor for one temperature offset.
+
+    Parameters
+    ----------
+    q10 : ArrayLike
+        Q10 coefficient -- the multiplicative change in rate per ten
+        kelvin. Dimensionless.
+    temp : ArrayLike
+        Absolute temperature the mechanism runs at, as a temperature
+        (for example ``u.kelvin`` or ``u.celsius2kelvin(30.0)``).
+    temp_ref : ArrayLike
+        Absolute reference temperature the ``q10`` was measured at, in
+        the same units as ``temp``.
+
+    Returns
+    -------
+    ArrayLike
+        The dimensionless factor
+        :math:`Q_{10}^{(T - T_{ref}) / 10}`, ready to multiply a rate,
+        an inverse time constant, or a whole gate derivative.
+
+    Notes
+    -----
+    The difference ``temp - temp_ref`` is divided through by
+    ``u.kelvin`` before the exponent is formed, so the result is
+    dimensionless regardless of which absolute temperature unit the
+    caller used. Kelvin and Celsius offsets are numerically identical,
+    so a factor referred to "20 degrees Celsius" needs no separate
+    conversion beyond ``u.celsius2kelvin`` on the reference itself.
+
+    :meth:`HH.gate_phi` calls this for gates declaring ``q10`` and
+    ``temp_ref``; channels whose ``.mod`` source applies the factor
+    inside individual rate functions call it directly instead.
+
+    Examples
+    --------
+    .. code-block:: python
+
+        >>> import brainunit as u
+        >>> from braincell.channel._base import q10_factor
+        >>> float(q10_factor(3.0, u.celsius2kelvin(30.0), u.celsius2kelvin(20.0)))
+        3.0
+    """
+    return q10 ** (((temp - temp_ref) / u.kelvin) / 10.0)
 
 
 def _resolve_value(owner, value):
@@ -528,7 +575,7 @@ class HH(Channel):
         if gate.q10 is not None:
             q10 = _resolve_value(self, gate.q10)
             temp_ref = _resolve_value(self, gate.temp_ref)
-            return q10 ** (((self.temp - temp_ref) / u.kelvin) / 10.0)
+            return q10_factor(q10, self.temp, temp_ref)
         return 1.0
 
     def _gate_form(self, gate: Gate) -> str:
@@ -729,6 +776,13 @@ class Markov(Channel, IndependentIntegration):
         :attr:`Gate.clip` on the HH side, because an out-of-simplex
         probability pool corrupts the kinetics, whereas an unclipped HH
         gate is merely inaccurate.
+    reset_to_steady_state : bool, default False
+        Make :meth:`reset_state` delegate to :meth:`reset_steady_state`
+        rather than zeroing the independent states. Off by default,
+        because solving the stationary distribution is only meaningful
+        for a channel whose transition graph is well conditioned at the
+        reset voltage; the catalogue's resurgent sodium and
+        calcium-gated potassium schemes opt in.
     """
 
     pairs: ClassVar[tuple[Transition | tuple[Any, ...], ...]] = ()
@@ -741,6 +795,9 @@ class Markov(Channel, IndependentIntegration):
     #: simplex makes the kinetics meaningless, whereas an HH gate merely
     #: becomes inaccurate. See :attr:`Gate.clip` for the HH-side switch.
     clip_states: ClassVar[bool] = True
+    #: Opt in to seeding :meth:`reset_state` from the stationary
+    #: distribution instead of zeros. See the class docstring.
+    reset_to_steady_state: ClassVar[bool] = False
     _resolved_pairs: ClassVar[tuple[Transition, ...]] = ()
     _resolved_state_names: ClassVar[tuple[str, ...]] = ()
     #: See :attr:`HH._rate_ion_counts` -- same lazy per-class cache.
@@ -883,12 +940,6 @@ class Markov(Channel, IndependentIntegration):
         """
         return _as_markov_rate(self._call_rate(rate_name, V, *ions), type(self), rate_name)
 
-    def pre_integral(self, V, *ions):
-        _ = (V, ions)
-
-    def post_integral(self, V, *ions):
-        _ = (V, ions)
-
     @property
     def state_names(self) -> tuple[str, ...]:
         return self._independent_state_names()
@@ -912,6 +963,9 @@ class Markov(Channel, IndependentIntegration):
             )
 
     def reset_state(self, V, *ions, batch_size: int = None):
+        if type(self).reset_to_steady_state:
+            self.reset_steady_state(V, *ions, batch_size=batch_size)
+            return
         _ = (V, ions)
         for name in self._independent_state_names():
             value = braintools.init.param(u.math.zeros, self.varshape, batch_size)

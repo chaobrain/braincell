@@ -27,7 +27,7 @@ those nodes in step with the state buffers.
   groups.
 - :func:`_resolve_channel_runtime_bindings`, :func:`_resolve_ion_instance_key`,
   :func:`_channel_family_slots`, :func:`_root_type_to_family`,
-  :func:`_channel_current_owner_specs`, :func:`_channel_current_owner_family` —
+  :func:`_channel_current_owner_specs` —
   the binding rules. They read a channel class's ``root_type`` and
   ``current_owner_type`` / ``current_owner_types`` declarations, match them
   against the declared ion selectors, and decide which ion instance owns which
@@ -75,7 +75,7 @@ import brainunit as u
 import numpy as np
 
 from braincell import ion as runtime_ion
-from braincell._base import Channel
+from braincell._base_channel import Channel
 from braincell.channel._base import Markov
 from braincell.ion._base import KineticIon
 from braincell.mech import (
@@ -1039,33 +1039,6 @@ def _channel_current_owner_specs(cls: type) -> tuple[tuple[str | None, str], ...
     if family is None:
         return ()
     return ((None, family),)
-
-
-def _channel_current_owner_family(cls: type) -> str | None:
-    """Return the legacy single current-owner family for a channel class.
-
-    Parameters
-    ----------
-    cls : type
-        Runtime channel class.
-
-    Returns
-    -------
-    str or None
-        Family key when the channel has exactly one current owner.
-        Returns ``None`` for root-level channels and for multi-owner
-        channels declared with ``current_owner_types``.
-
-    Notes
-    -----
-    This helper exists for backwards-compatible call sites that only
-    need to distinguish root-level channels from ion-bound channels. New
-    binding code should use :func:`_channel_current_owner_specs`.
-    """
-    specs = _channel_current_owner_specs(cls)
-    if len(specs) != 1:
-        return None
-    return specs[0][1]
 
 
 _CONDUCTANCE_PARAM_NAMES = frozenset({"g_max", "g", "gbar", "conductance"})

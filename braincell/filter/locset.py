@@ -23,7 +23,7 @@ from brainunit import Quantity
 
 from braincell.morph.morphology import Morphology
 from . import helper
-from .cache import SelectionCache
+from .cache import SelectionCache, evaluate_cached
 from .region import RegionExpr
 
 Location = tuple[int, float]
@@ -495,7 +495,7 @@ class UniformSamples(LocsetExpr):
             raise TypeError(f"UniformSamples expects Morpho, got {type(morpho).__name__!s}.")
         if not isinstance(self.region, RegionExpr):
             raise TypeError(f"UniformSamples.region expects RegionExpr, got {type(self.region).__name__!s}.")
-        mask = self.region.evaluate(morpho, cache=cache)
+        mask = evaluate_cached(self.region, morpho, cache)
         points = helper.uniform_samples_from_region(
             morpho,
             intervals=mask.intervals,
@@ -515,7 +515,7 @@ class RandomSamples(LocsetExpr):
             raise TypeError(f"RandomSamples expects Morpho, got {type(morpho).__name__!s}.")
         if not isinstance(self.region, RegionExpr):
             raise TypeError(f"RandomSamples.region expects RegionExpr, got {type(self.region).__name__!s}.")
-        mask = self.region.evaluate(morpho, cache=cache)
+        mask = evaluate_cached(self.region, morpho, cache)
         points = helper.random_samples_from_region(
             morpho,
             intervals=mask.intervals,
@@ -561,7 +561,7 @@ class SampleLocations(LocsetExpr):
             raise TypeError(f"sample().region expects RegionExpr, got {type(self.region).__name__!s}.")
         from ._sampling import sample_locations_from_region
 
-        mask = self.region.evaluate(morpho, cache=cache)
+        mask = evaluate_cached(self.region, morpho, cache)
         branch_id, branch_x = sample_locations_from_region(
             morpho,
             intervals=mask.intervals,
@@ -644,7 +644,7 @@ class LocsetConcatOp(LocsetExpr):
             raise ValueError("concatenation expects at least two operands.")
         points: tuple[Location, ...] = ()
         for operand in self.operands:
-            points = helper.concat_locset_points(points, operand.evaluate(morpho, cache=cache).points)
+            points = helper.concat_locset_points(points, evaluate_cached(operand, morpho, cache).points)
         return LocsetMask(points=points, display_names=_display_names_for_points(morpho, points))
 
 
@@ -661,9 +661,9 @@ class LocsetSetOp(LocsetExpr):
         if len(self.operands) < 2:
             raise ValueError(f"{self.op} expects at least two operands.")
 
-        current = helper.normalize_locset_points(self.operands[0].evaluate(morpho, cache=cache).points)
+        current = helper.normalize_locset_points(evaluate_cached(self.operands[0], morpho, cache).points)
         for operand in self.operands[1:]:
-            other = helper.normalize_locset_points(operand.evaluate(morpho, cache=cache).points)
+            other = helper.normalize_locset_points(evaluate_cached(operand, morpho, cache).points)
             if self.op == "union":
                 current = helper.union_locset_points(current, other)
             elif self.op == "intersection":
@@ -688,14 +688,12 @@ class LocsetUniqueOp(LocsetExpr):
     def evaluate(self, morpho: Morphology, cache: SelectionCache | None = None) -> LocsetMask:
         if not isinstance(morpho, Morphology):
             raise TypeError(f"LocsetUniqueOp expects Morpho, got {type(morpho).__name__!s}.")
-        return self.operand.evaluate(morpho, cache=cache).unique()
+        return evaluate_cached(self.operand, morpho, cache).unique()
 
 
 def _display_names_for_points(morpho: Morphology, points: tuple[Location, ...]) -> tuple[str, ...]:
-    return tuple(_display_name_for_point(morpho, point) for point in points)
-
-
-def _display_name_for_point(morpho: Morphology, point: Location) -> str:
-    branch_id, x = point
-    branch_name = morpho.branch(index=int(branch_id)).name
-    return f"{branch_name}({float(x):g})"
+    # Hoist the branch tuple out of the loop: this runs once per sampled
+    # point, and ``sample(number=10000)`` would otherwise resolve the branch
+    # index ten thousand times.
+    branches = morpho.branches
+    return tuple(f"{branches[int(branch_id)].name}({float(x):g})" for branch_id, x in points)

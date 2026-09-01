@@ -23,6 +23,7 @@ User-facing entry points:
 In normal use, users only need `Morpho` and `MorphoBranch`.
 """
 
+from collections.abc import Mapping
 from dataclasses import asdict, dataclass
 from typing import Callable, Optional, Union
 
@@ -61,8 +62,10 @@ _MORPHO_RESERVED_NAMES = {
     "from_swc",
     "has_full_point_geometry",
     "metric",
+    "naming_state",
     "path_to_root",
     "path_length_to_root",
+    "restore_naming_state",
     "root",
     "select",
     "shortest_path_length",
@@ -72,12 +75,15 @@ _MORPHO_RESERVED_NAMES = {
 _MORPHO_BRANCH_RESERVED_NAMES = {
     "attach",
     "branch",
+    "branch_id",
+    "branch_order",
     "child_x",
     "children",
     "index",
     "index_by",
     "name",
     "n_children",
+    "n_tapers",
     "parent",
     "parent_id",
     "parent_x",
@@ -302,6 +308,15 @@ class Morphology:
         self._name_to_id: dict[str, int] = {}
         self._type_name_counters: dict[str, int] = {}
         self._next_id = 0
+        # Caches derived from ``_nodes``. They must exist before the
+        # ``_register_node`` call below, which invalidates them.
+        self._ordered_id_cache: dict[str, tuple[int, ...]] = {}
+        self._branch_index_cache: dict[str, dict[int, int]] = {}
+        self._branch_tuple_cache: dict[str, tuple["MorphoBranch", ...]] = {}
+        self._full_point_geometry: bool | None = None
+        # Bumped on every structural change so consumers holding derived
+        # results (e.g. braincell.filter.SelectionCache) can detect staleness.
+        self._revision = 0
         self._root_name = self._resolve_node_name(root_branch, explicit_name=root_name)
         self._root_id = self._register_node(
             name=self._root_name,
@@ -670,14 +685,95 @@ class Morphology:
         ValueError
             If *order* is not recognized.
         """
-        return tuple(self._get_node(node_id) for node_id in self._ordered_node_ids_by(order))
+        cached = self._branch_tuple_cache.get(order)
+        if cached is None:
+            cached = tuple(self._nodes[node_id] for node_id in self._ordered_node_ids_by(order))
+            self._branch_tuple_cache[order] = cached
+        return cached
 
     @property
     def has_full_point_geometry(self) -> bool:
-        return all(
-            branch.branch.points_proximal is not None and branch.branch.points_distal is not None
-            for branch in self.branches
-        )
+        cached = self._full_point_geometry
+        if cached is None:
+            cached = all(
+                branch.branch.points_proximal is not None and branch.branch.points_distal is not None
+                for branch in self.branches
+            )
+            self._full_point_geometry = cached
+        return cached
+
+    def naming_state(self) -> dict[str, int]:
+        """Return the auto-naming counters, one per branch type.
+
+        Branches attached without an explicit name are called
+        ``f"{type}_{n}"``. This returns the next ``n`` each type would use,
+        so a round trip through a serialization format can resume the
+        sequence instead of restarting it and colliding with saved names.
+
+        Returns
+        -------
+        dict of str to int
+            A copy; mutating it does not affect the morphology.
+
+        See Also
+        --------
+        restore_naming_state : Apply a previously captured mapping.
+
+        Examples
+        --------
+        .. code-block:: python
+
+            >>> import brainunit as u
+            >>> import braincell
+            >>> soma = braincell.Branch.from_lengths(
+            ...     lengths=[20.0] * u.um, radii=[10.0, 10.0] * u.um, type="soma"
+            ... )
+            >>> tree = braincell.Morphology.from_root(soma, name="soma")
+            >>> dend = braincell.Branch.from_lengths(
+            ...     lengths=[10.0] * u.um, radii=[1.0, 0.5] * u.um, type="dendrite"
+            ... )
+            >>> tree.attach(parent="soma", child_branch=dend).name
+            'dendrite_0'
+            >>> tree.naming_state()
+            {'dendrite': 1}
+        """
+        return dict(self._type_name_counters)
+
+    def restore_naming_state(self, mapping: dict[str, int]) -> None:
+        """Resume the auto-naming counters from a saved mapping.
+
+        Parameters
+        ----------
+        mapping : dict of str to int
+            Branch type to next auto-name suffix, as produced by
+            :meth:`naming_state`. Entries are merged into the current
+            counters rather than replacing them wholesale.
+
+        Raises
+        ------
+        TypeError
+            If ``mapping`` is not a mapping, or a value is not an integer.
+        ValueError
+            If a value is negative.
+
+        See Also
+        --------
+        naming_state : Capture the counters.
+
+        Notes
+        -----
+        Restoring a counter never renames an existing branch and never
+        makes a collision possible: :meth:`attach` still skips any suffix
+        already taken. A too-small counter only costs a few extra probes.
+        """
+        if not isinstance(mapping, Mapping):
+            raise TypeError(f"naming state must be a mapping, got {type(mapping).__name__}.")
+        for branch_type, count in mapping.items():
+            if isinstance(count, bool) or not isinstance(count, (int, np.integer)):
+                raise TypeError(f"naming counter for {branch_type!r} must be an int, got {count!r}.")
+            if int(count) < 0:
+                raise ValueError(f"naming counter for {branch_type!r} must be non-negative, got {count!r}.")
+            self._type_name_counters[str(branch_type)] = int(count)
 
     def _require_full_point_geometry(self, *, feature: str) -> None:
         if not self.has_full_point_geometry:
@@ -1534,11 +1630,32 @@ class Morphology:
             f"{'-' * 35}\n"
         )
 
+    def _invalidate_derived_caches(self) -> None:
+        """Drop every cache derived from the node set.
+
+        ``Morphology`` is mutable, so a stale entry here is a correctness
+        bug rather than a missed optimization. :meth:`_register_node` is the
+        only place ``_nodes`` ever grows, and nodes are never removed or
+        renamed, so clearing from there is sufficient.
+        """
+        self._ordered_id_cache.clear()
+        self._branch_index_cache.clear()
+        self._branch_tuple_cache.clear()
+        self._full_point_geometry = None
+        self._revision += 1
+
     def _ordered_node_ids(self) -> tuple[int, ...]:
-        return tuple(sorted(self._nodes))
+        return self._ordered_node_ids_by("default")
 
     def _ordered_node_ids_by(self, order: str) -> tuple[int, ...]:
-        ordered_ids = self._ordered_node_ids()
+        cached = self._ordered_id_cache.get(order)
+        if cached is None:
+            cached = self._compute_ordered_node_ids(order)
+            self._ordered_id_cache[order] = cached
+        return cached
+
+    def _compute_ordered_node_ids(self, order: str) -> tuple[int, ...]:
+        ordered_ids = tuple(sorted(self._nodes))
         if order == "default":
             return ordered_ids
         if order == "type":
@@ -1584,7 +1701,11 @@ class Morphology:
         return SWC_TYPE_MAP
 
     def _branch_index_map(self, *, order: str = "default") -> dict[int, int]:
-        return {node_id: index for index, node_id in enumerate(self._ordered_node_ids_by(order))}
+        cached = self._branch_index_cache.get(order)
+        if cached is None:
+            cached = {node_id: index for index, node_id in enumerate(self._ordered_node_ids_by(order))}
+            self._branch_index_cache[order] = cached
+        return cached
 
     def _branch_index(self, node_id: int, *, order: str = "default") -> int:
         return self._branch_index_map(order=order)[node_id]
@@ -1696,6 +1817,7 @@ class Morphology:
         )
         self._nodes[node_id] = node
         self._name_to_id[name] = node_id
+        self._invalidate_derived_caches()
         return node_id
 
     def _insert_child(
@@ -1875,6 +1997,47 @@ class MorphoBranch:
         index_by : Index in a specific ordering.
         """
         return self._owner._branch_index(self._node_id)
+
+    @property
+    def branch_id(self) -> int:
+        """Alias of :attr:`index`, the branch's position in default ordering.
+
+        Returns
+        -------
+        int
+            Position in the default (by node ID) ordering.
+
+        See Also
+        --------
+        index : The canonical spelling of the same value.
+        """
+        return self._owner._branch_index(self._node_id)
+
+    @property
+    def branch_order(self) -> int:
+        """Number of parent hops between this branch and the root.
+
+        Returns
+        -------
+        int
+            ``0`` for the root branch, ``1`` for its children, and so on.
+
+        See Also
+        --------
+        Morpho.path_to_root : Full root-to-branch index path.
+        """
+        return len(self._owner._path_node_ids(self._node_id)) - 1
+
+    @property
+    def n_tapers(self) -> int:
+        """Number of tapering segments, an alias of ``n_segments``.
+
+        Returns
+        -------
+        int
+            Segment count of the underlying :class:`Branch` geometry.
+        """
+        return self._branch.n_segments
 
     def index_by(self, *, order: str = "default") -> int:
         """Index of this branch in a specific ordering.
@@ -2080,8 +2243,7 @@ def clone_morpho(morpho: "Morphology") -> "Morphology":
     tree without mutating user-supplied objects.
     """
     cloned = Morphology.from_root(morpho.root.branch, name=morpho.root.name)
-    for index in range(1, len(morpho.branches)):
-        branch = morpho.branch(index=index)
+    for branch in morpho.branches[1:]:
         parent = branch.parent
         if parent is None:
             continue

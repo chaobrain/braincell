@@ -526,6 +526,46 @@ class RuleDuplicateXyzrParentChildTest(unittest.TestCase):
         self.assertEqual(_codes(context), [])
         self.assertEqual(len(context.rows), 2)
 
+    def test_a_chain_of_duplicates_collapses_onto_one_surviving_ancestor(self) -> None:
+        # Merges cascade: 2 and 3 both repeat the root, so both disappear and
+        # the first genuinely distinct node reparents all the way up to 1.
+        context = _context(
+            rows=[
+                _parsed(1, 1, 0.0, 0.0, 0.0, 1.0, -1),
+                _parsed(2, 3, 0.0, 0.0, 0.0, 1.0, 1),
+                _parsed(3, 3, 0.0, 0.0, 0.0, 1.0, 2),
+                _parsed(4, 3, 1.0, 0.0, 0.0, 1.0, 3),
+            ]
+        )
+
+        rule_duplicate_xyzr_parent_child(context)
+
+        self.assertEqual([row.node_id for row in context.rows], [1, 4])
+        self.assertEqual(context.rows[1].parent_id, 1)
+        self.assertEqual([issue.node_id for issue in context.report.issues], [2, 3])
+
+    def test_merges_are_reported_in_row_order_not_node_id_order(self) -> None:
+        # The single-pass implementation replaces a restart-the-whole-scan
+        # loop, whose observable contract was "lowest surviving row position
+        # first". Rows here are deliberately out of node-id order so that a
+        # by-id traversal would report 3, 5, 7 instead of 7, 3, 5.
+        context = _context(
+            rows=[
+                _parsed(1, 1, 0.0, 0.0, 0.0, 1.0, -1, line_number=1),
+                _parsed(6, 3, 5.0, 0.0, 0.0, 1.0, 1, line_number=2),
+                _parsed(7, 3, 5.0, 0.0, 0.0, 1.0, 6, line_number=3),
+                _parsed(2, 3, 2.0, 0.0, 0.0, 1.0, 1, line_number=4),
+                _parsed(3, 3, 2.0, 0.0, 0.0, 1.0, 2, line_number=5),
+                _parsed(4, 3, 8.0, 0.0, 0.0, 1.0, 1, line_number=6),
+                _parsed(5, 3, 8.0, 0.0, 0.0, 1.0, 4, line_number=7),
+            ]
+        )
+
+        rule_duplicate_xyzr_parent_child(context)
+
+        self.assertEqual([issue.node_id for issue in context.report.issues], [7, 3, 5])
+        self.assertEqual([row.node_id for row in context.rows], [1, 6, 2, 4])
+
 
 class RuleNoSomaSamplesTest(unittest.TestCase):
     def test_a_soma_sample_passes_silently(self) -> None:

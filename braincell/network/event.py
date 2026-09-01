@@ -653,8 +653,38 @@ def _resolve_cell_location_cvs(cell, location) -> np.ndarray:
     )
 
 
+def round_half_up_steps_host(values: np.ndarray) -> np.ndarray:
+    """Round non-negative step ratios, snapping numerical half ties upward.
+
+    Host-side counterpart of :func:`_round_half_up_steps`, kept in numpy so
+    that delay quantization runs at float64. Shared by
+    :mod:`braincell.network.connection` and
+    :mod:`braincell.network.lowering`, which quantize delays during
+    lowering, outside any trace.
+
+    Notes
+    -----
+    The two are **not** interchangeable, which is why both exist. Routing
+    the host callers through the traced version would push float64 step
+    ratios through ``u.math.asarray`` and truncate them to float32 under
+    the default JAX precision, changing the result for ratios that sit
+    within a few ulp of a half tie — exactly the inputs this snapping
+    exists to handle.
+    """
+    half = np.floor(values) + 0.5
+    magnitude = np.abs(values)
+    ulp = np.nextafter(magnitude, np.inf) - magnitude
+    snapped = np.where(np.abs(values - half) <= 4.0 * ulp, half, values)
+    return np.floor(snapped + 0.5)
+
+
 def _round_half_up_steps(values):
-    """Round non-negative step ratios, snapping numerical half ties upward."""
+    """Round non-negative step ratios, snapping numerical half ties upward.
+
+    Trace-safe variant used inside the per-step event path. See
+    :func:`round_half_up_steps_host` for why the host callers keep a
+    separate numpy implementation.
+    """
     values = u.math.asarray(values)
     half = u.math.floor(values) + 0.5
     magnitude = u.math.abs(values)

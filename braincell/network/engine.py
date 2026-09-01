@@ -24,7 +24,9 @@ import brainunit as u
 import jax
 import numpy as np
 
-from braincell._multi_compartment.run import _duration_steps, _recording_time_mask, _validate_time_quantity
+from braincell._misc import validate_time_quantity
+from braincell._multi_compartment import probes as _probes
+from braincell._multi_compartment.run import _duration_steps, _recording_time_mask
 from braincell._multi_compartment.synapses import SynapseView
 from .connection import NetworkConnections, PairingSpec, _UNSET, _connect_with_pairing_seed
 from .recording import EventSeries, SampleBlock
@@ -365,8 +367,8 @@ class Network:
         brainevent_backend: str | None = "jax_raw",
     ) -> NetworkRunResult:
         """Run the network for ``duration`` at fixed step ``dt``."""
-        _validate_time_quantity(dt, name="dt")
-        _validate_time_quantity(duration, name="duration")
+        validate_time_quantity(dt, name="dt", prefix="Network.run(...)")
+        validate_time_quantity(duration, name="duration", prefix="Network.run(...)")
         event_backend = normalize_event_backend(event_backend)
         if not self.populations:
             raise ValueError("Network.run(...) requires at least one population.")
@@ -501,8 +503,11 @@ class Network:
             for block in delivery_blocks
         )
         ordered_population_names = tuple(self._cell_populations())
+        # Read the probe keys without evaluating the probes: sample_probes()
+        # runs real gathers outside jit just to discard everything but the
+        # names. probe_names() reads the same ordering off the layouts.
         probe_names = {
-            name: tuple(sorted(population.cell.sample_probes()))
+            name: tuple(sorted(_probes.probe_names(population.cell)))
             for name, population in self._cell_populations().items()
         }
         compiled_recordings = {
@@ -678,12 +683,6 @@ class Network:
 
     def _cell_populations(self) -> dict[str, Population]:
         return {name: population for name, population in self.populations.items() if population.kind == "cell"}
-
-    def _require_cell_population(self, name: str, action: str) -> Population:
-        population = self.populations[name]
-        if population.kind != "cell":
-            raise TypeError(f"Cannot {action}: population {name!r} owns {population.kind}, not a Cell.")
-        return population
 
     def _require_registered_cell(self, cell, *, role: str) -> Population:
         for population in self.populations.values():

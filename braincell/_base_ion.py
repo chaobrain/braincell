@@ -15,17 +15,15 @@
 
 """Ion-species base classes.
 
-Extracted from :mod:`braincell._base` during the ARCH-03 split. Houses
-:class:`Ion`, :class:`MixIons`, and the :func:`mix_ions` factory.
+Houses :class:`Ion`, :class:`MixIons`, and the :func:`mix_ions` factory.
 
 ``Ion.root_type`` / ``MixIons.root_type`` point at
-:class:`braincell._base.HHTypedNeuron`; that import happens at module
-load time but succeeds because ``_base`` defines ``HHTypedNeuron``
-before executing its own bottom-of-file ``from ._base_ion import ...``
-re-export line.
+:class:`braincell._base_neuron.HHTypedNeuron`, which this module imports
+at the top like any other dependency. That works because
+:mod:`braincell._base_neuron` sits below this module and never imports
+back into it.
 """
 
-import os
 from typing import Callable, Dict, Hashable, Optional, Sequence, Tuple, Type
 
 import brainstate
@@ -35,7 +33,13 @@ from brainstate.mixin import _JointGenericAlias
 
 from braincell._typing import Size
 from ._base_channel import Channel, IonChannel, IonInfo
-from ._misc import Container, set_module_as
+from ._base_neuron import HHTypedNeuron
+from ._misc import (
+    Container,
+    profile_barrier_current as _profile_barrier_current,
+    profiler_safe_name,
+    set_module_as,
+)
 from .quad.protocol import IndependentIntegration
 
 __all__ = ["Ion", "MixIons", "mix_ions"]
@@ -127,28 +131,12 @@ def _channel_component_current(node, component_key, V, *infos):
 def _channel_call_name(prefix: str, node) -> str:
     """Build a profiler-safe ``jax.named_call`` name for an ion child channel."""
     class_name = type(getattr(node, "_channel", node)).__name__
-    raw = f"{prefix}:{class_name}"
-    return "".join(ch if ch.isalnum() or ch in ":_" else "_" for ch in raw)[:180]
+    return profiler_safe_name(f"{prefix}:{class_name}")
 
 
 def _external_current_call_name(prefix: str, key) -> str:
     """Build a profiler-safe ``jax.named_call`` name for external ion current."""
-    raw = f"{prefix}:{key!s}"
-    return "".join(ch if ch.isalnum() or ch in ":_" else "_" for ch in raw)[:180]
-
-
-def _profile_barrier_current(current):
-    """Optionally split channel-current HLO for profiler attribution.
-
-    The barrier is disabled by default because it can inhibit XLA fusion. Set
-    ``BRAINCELL_PROFILE_SPLIT_CURRENTS=1`` when collecting profiler traces that
-    need per-channel current attribution.
-    """
-    if os.environ.get("BRAINCELL_PROFILE_SPLIT_CURRENTS") != "1":
-        return current
-    if hasattr(current, "unit"):
-        return u.Quantity(jax.lax.optimization_barrier(u.get_mantissa(current)), current.unit)
-    return jax.lax.optimization_barrier(current)
+    return profiler_safe_name(f"{prefix}:{key!s}")
 
 
 def _mask_inactive_current(current, point_mask):
@@ -714,12 +702,6 @@ def mix_ions(*ions) -> MixIons:
     assert len(ions) >= 2, f'mix_ions requires at least two ions, got {len(ions)}.'
     return MixIons(*ions)
 
-
-# Late-bound root_type assignment: HHTypedNeuron lives in braincell._base
-# and we defer its import until both Ion and MixIons are defined. This
-# ordering guarantees that when ``_base`` imports Ion/MixIons back via its
-# bottom-of-file re-export, HHTypedNeuron is already in the _base namespace.
-from ._base import HHTypedNeuron  # noqa: E402
 
 Ion.root_type = HHTypedNeuron
 MixIons.root_type = HHTypedNeuron

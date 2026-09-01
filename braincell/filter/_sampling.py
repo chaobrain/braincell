@@ -161,8 +161,9 @@ def _build_components(
     measure: str,
 ) -> list[_ContinuousComponent | _AtomComponent]:
     components: list[_ContinuousComponent | _AtomComponent] = []
+    branches = morpho.branches
     for branch_id, prox, dist in helper.normalize_region_intervals(intervals):
-        branch = morpho.branch(index=branch_id).branch
+        branch = branches[branch_id].branch
         lengths = np.asarray(branch.lengths.to_decimal(u.um), dtype=float)
         r0 = np.asarray(branch.radii_proximal.to_decimal(u.um), dtype=float)
         r1 = np.asarray(branch.radii_distal.to_decimal(u.um), dtype=float)
@@ -217,14 +218,33 @@ def _build_components(
     return components
 
 
-def _context(
+def _branch_identities(
     morpho: Morphology,
+    components: list[_ContinuousComponent | _AtomComponent],
+) -> dict[int, tuple[str, str]]:
+    """Resolve the ``(name, type)`` pair each component's branch will report.
+
+    A component's ``branch_id`` is fixed for its whole lifetime, but
+    ``scipy.quad`` and ``NumericalInversePolynomial`` call the pdf closure —
+    and therefore :func:`_context` — thousands of times per component. Doing
+    the lookup and the ``str()`` casts once per branch keeps that out of the
+    inner loop.
+    """
+    branches = morpho.branches
+    return {
+        component.branch_id: (str(branches[component.branch_id].name), str(branches[component.branch_id].type))
+        for component in components
+    }
+
+
+def _context(
+    identities: dict[int, tuple[str, str]],
     component: _ContinuousComponent | _AtomComponent,
     x: object,
     geometry: MorphologySpatialGeometry,
 ) -> SamplingContext:
     branch_id = component.branch_id
-    branch_view = morpho.branch(index=branch_id)
+    branch_name, branch_type = identities[branch_id]
     values = np.asarray(x, dtype=float)
     if isinstance(component, _ContinuousComponent):
         radius = component.radius_um(values)
@@ -236,8 +256,8 @@ def _context(
             position = np.broadcast_to(position, values.shape + (3,))
     return SamplingContext(
         branch_id=branch_id,
-        branch_name=str(branch_view.name),
-        branch_type=str(branch_view.type),
+        branch_name=branch_name,
+        branch_type=branch_type,
         branch_x=x,
         radius=u.Quantity(radius, u.um),
         path_distance_to_root=geometry.path_distance_to_root(branch_id, values),
@@ -289,7 +309,7 @@ def _density_value(density: Density, context: SamplingContext, *, log_shift: flo
 
 def _builtin_log_shift(
     density: Density,
-    morpho: Morphology,
+    identities: dict[int, tuple[str, str]],
     components: list[_ContinuousComponent | _AtomComponent],
     geometry: MorphologySpatialGeometry,
 ) -> float | None:
@@ -302,7 +322,7 @@ def _builtin_log_shift(
             if isinstance(component, _ContinuousComponent)
             else np.asarray(component.x)
         )
-        context = _context(morpho, component, xs, geometry)
+        context = _context(identities, component, xs, geometry)
         values = _log_density_array(density._log_density(context), shape=xs.shape)  # type: ignore[attr-defined]
         maxima.append(float(np.max(values)))
     return max(0.0, max(maxima, default=0.0))
@@ -324,14 +344,17 @@ def _prepare_components(
     u_resolution: float,
 ) -> list[_PreparedComponent]:
     geometry = MorphologySpatialGeometry.build(morpho)
-    log_shift = None if density is None else _builtin_log_shift(density, morpho, components, geometry)
+    identities = _branch_identities(morpho, components)
+    log_shift = None if density is None else _builtin_log_shift(density, identities, components, geometry)
     prepared: list[_PreparedComponent] = []
     for component in components:
         if isinstance(component, _AtomComponent):
             preference = (
                 1.0
                 if density is None
-                else _density_value(density, _context(morpho, component, component.x, geometry), log_shift=log_shift)
+                else _density_value(
+                    density, _context(identities, component, component.x, geometry), log_shift=log_shift
+                )
             )
             mass = preference * component.area_um2
             if mass > 0.0:
@@ -345,7 +368,7 @@ def _prepare_components(
             continue
 
         def pdf(x: float, *, source: _ContinuousComponent = component) -> float:
-            context = _context(morpho, source, float(x), geometry)
+            context = _context(identities, source, float(x), geometry)
             return _density_value(density, context, log_shift=log_shift) * float(source.jacobian(measure, x))
 
         mass, _ = quad(pdf, component.x0, component.x1, epsabs=0.0, epsrel=u_resolution, limit=200)

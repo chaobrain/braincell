@@ -27,7 +27,6 @@ cell handle so multi-cell gap junctions can be expressed end-to-end.
 """
 
 from dataclasses import dataclass, field
-from typing import Any
 
 from ._params import Params
 from ._point import Point

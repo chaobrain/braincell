@@ -15,8 +15,16 @@
 
 # -*- coding: utf-8 -*-
 
-from .markov import *
-from .markov import __all__ as _markov_all
 from braincell.mech import DerivedSpec, ParameterSpec, StateSpec
+from .markov import AMPA, Exp2Syn, ExpSyn, GABAa, NMDA
 
-__all__ = [*_markov_all, "DerivedSpec", "ParameterSpec", "StateSpec"]
+__all__ = [
+    "AMPA",
+    "Exp2Syn",
+    "ExpSyn",
+    "GABAa",
+    "NMDA",
+    "DerivedSpec",
+    "ParameterSpec",
+    "StateSpec",
+]

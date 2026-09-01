@@ -42,7 +42,7 @@ from typing import Any
 import numpy as np
 
 from braincell.morph.morphology import Morphology
-from ._values import _strip_quantity, resolve_value_limits, resolve_values
+from ._values import ValueLayout, _strip_quantity, resolve_value_limits
 from .layout import LayoutConfig
 from .scene import ValueSpec as _ValueSpec
 
@@ -237,9 +237,11 @@ def _plot_movie_2d(
     ]
 
     # Value collections come back in the order the scene builder
-    # produced them: one per branch, in branch-index order. That order
-    # does not change between frames, so resolve it once.
-    scene_order_branch_indices = [branch.index for branch in morpho.branches]
+    # produced them: one per branch, in branch-index order. Neither that
+    # order nor the per-branch segment counts change between frames, so
+    # the whole structural derivation happens once, here.
+    value_layout = ValueLayout.from_morphology(morpho)
+    scene_order_branch_indices = value_layout.branch_indices
 
     title_obj = ax.set_title("") if dt is None else ax.set_title(_format_time(0))
 
@@ -247,11 +249,9 @@ def _plot_movie_2d(
         # Resolved lazily per frame rather than materialising all T
         # frames upfront: FuncAnimation only ever needs one at a time,
         # and precomputing held T x n_branches arrays alive for the
-        # lifetime of the animation.
-        per_branch, _ = resolve_values(
-            morpho,
-            _ValueSpec(values=values[frame_index], cmap=cmap, vmin=vmin, vmax=vmax),
-        )
+        # lifetime of the animation. Only the slicing is per frame —
+        # the branch structure comes from the hoisted ``value_layout``.
+        per_branch = value_layout.expand(values[frame_index])
         for collection, branch_index in zip(value_collections, scene_order_branch_indices):
             collection.set_array(per_branch[branch_index].segment_values)
         if dt is not None:
@@ -326,10 +326,10 @@ def _plot_movie_3d(
 
     plotter = pv.Plotter(off_screen=out is not None)
     meshes: list[tuple[Any, tuple[int, ...]]] = []
-    initial_values, _ = resolve_values(
-        morpho,
-        _ValueSpec(values=values[0], cmap=cmap, vmin=vmin, vmax=vmax, label=value_label),
-    )
+    # Branch order and per-branch segment counts are the same for every
+    # frame; only the scalars change. Derive them once.
+    value_layout = ValueLayout.from_morphology(morpho)
+    initial_values = value_layout.expand(values[0])
     first = True
     for batch in scene.batches:
         poly = pv.PolyData()
@@ -353,10 +353,7 @@ def _plot_movie_3d(
     if out is not None:
         plotter.open_movie(str(out), framerate=fps)
         for frame_index in range(values.shape[0]):
-            frame, _ = resolve_values(
-                morpho,
-                _ValueSpec(values=values[frame_index], cmap=cmap, vmin=vmin, vmax=vmax),
-            )
+            frame = value_layout.expand(values[frame_index])
             for poly, branch_indices in meshes:
                 poly.point_data["values"] = np.concatenate(
                     [frame[branch_idx].point_values for branch_idx in branch_indices]

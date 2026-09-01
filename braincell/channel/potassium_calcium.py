@@ -31,7 +31,7 @@ Every public channel class here sets
 Calcium]``: the host cell must provide both a
 :class:`~braincell.ion.Potassium` and a :class:`~braincell.ion.Calcium`
 ion, because every rate method takes both ``K`` and ``Ca`` as
-:class:`~braincell._base.IonInfo` arguments, even where only ``Ca.Ci``
+:class:`~braincell.IonInfo` arguments, even where only ``Ca.Ci``
 actually drives the kinetics.
 """
 
@@ -42,9 +42,9 @@ import braintools
 import brainunit as u
 import jax
 
-from braincell._base import IonInfo
+from braincell._base_channel import IonInfo
 from braincell._typing import ArrayLike, Initializer, Size
-from braincell.channel._base import Gate, Markov, OhmicHH, Transition
+from braincell.channel._base import Gate, Markov, OhmicHH, Transition, q10_factor
 from braincell.ion import Calcium, Potassium
 from braincell.mech import register_channel
 
@@ -68,10 +68,6 @@ __all__ = [
 
 
 _KCA_ROOT_TYPE = brainstate.mixin.JointTypes[Potassium, Calcium]
-
-
-def _q10_factor(temp, q10, *, ref_celsius: float):
-    return q10 ** (((temp - u.celsius2kelvin(ref_celsius)) / u.kelvin) / 10.0)
 
 
 @register_channel("AHP_De1994")
@@ -712,6 +708,7 @@ class Kca2p2_MA2020_GoC(Markov):
     """
 
     __module__ = "braincell.channel"
+    reset_to_steady_state = True
     root_type = _KCA_ROOT_TYPE
     current_owner_type = Potassium
     pairs = (
@@ -754,10 +751,7 @@ class Kca2p2_MA2020_GoC(Markov):
         self.dirc4 = 80.0
 
     def _phi(self):
-        return _q10_factor(self.temp, self.q10_base, ref_celsius=23.0)
-
-    def reset_state(self, V, K: IonInfo, Ca: IonInfo, batch_size: int = None):
-        self.reset_steady_state(V, K, Ca, batch_size=batch_size)
+        return q10_factor(self.q10_base, self.temp, u.celsius2kelvin(23.0))
 
     def current(self, V, K: IonInfo, Ca: IonInfo):
         states = self.state_values()
@@ -1208,6 +1202,7 @@ class Kca1p1_MA2020_GoC(Markov):
     """
 
     __module__ = "braincell.channel"
+    reset_to_steady_state = True
     root_type = _KCA_ROOT_TYPE
     current_owner_type = Potassium
     pairs = (
@@ -1263,16 +1258,13 @@ class Kca1p1_MA2020_GoC(Markov):
         self.pb4 = 92e-3
 
     def _phi(self):
-        return _q10_factor(self.temp, self.q10_base, ref_celsius=23.0)
+        return q10_factor(self.q10_base, self.temp, u.celsius2kelvin(23.0))
 
     def _alpha_factor(self, V):
         return u.math.exp((self.Qo * u.faraday_constant * V) / (u.gas_constant * self.temp))
 
     def _beta_factor(self, V):
         return u.math.exp((self.Qc * u.faraday_constant * V) / (u.gas_constant * self.temp))
-
-    def reset_state(self, V, K: IonInfo, Ca: IonInfo, batch_size: int = None):
-        self.reset_steady_state(V, K, Ca, batch_size=batch_size)
 
     def current(self, V, K: IonInfo, Ca: IonInfo):
         states = self.state_values()

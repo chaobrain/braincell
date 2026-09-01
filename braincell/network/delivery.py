@@ -249,34 +249,6 @@ def zero_arrival(block: ConnectionBlock, *, post_size: int):
     return zeros_like_events(block.weight, post_size=post_size, n_active=block.n_active)
 
 
-def zero_ring_buffer(block: DeliveryBlock, *, post_size: int):
-    """Return an empty ring buffer for one delivery block.
-
-    Parameters
-    ----------
-    block : DeliveryBlock
-        Fixed-delay delivery block.
-    post_size : int
-        Number of cells in the postsynaptic population.
-
-    Returns
-    -------
-    object
-        Zero ring buffer with shape
-        ``(block.delay_steps + 1, post_size, block.source.n_active)``.
-
-    Notes
-    -----
-    The first axis is the delay queue. Events are written into a future cursor
-    slot and read back when that slot becomes current.
-    """
-    depth = int(block.delay_steps) + 1
-    shape = (depth, block.source.n_active) if block.source.packed else (depth, post_size, block.source.n_active)
-    if isinstance(block.weight, u.Quantity):
-        return u.math.zeros_like(block.weight, shape=shape)
-    return jnp.zeros(shape, dtype=jnp.asarray(block.weight).dtype)
-
-
 def zero_shared_ring_buffer(source: ConnectionBlock, *, depth: int, post_size: int):
     """Return one target-layout queue shared by every incoming route block."""
     shape = (depth, source.n_active) if source.packed else (depth, post_size, source.n_active)

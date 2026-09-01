@@ -33,9 +33,8 @@ from braincell.vis._testing import (
 )
 from braincell.vis.layout import LayoutBranch2D
 from braincell.vis.layout._collision import _segments_intersect
+from braincell.vis.config import DISPATCHED_2D_LAYOUTS, LAYOUT_2D_ALIASES
 from braincell.vis.layout._dispatch import (
-    _LAYOUT_FAMILY_ALIASES,
-    _VALID_LAYOUT_FAMILIES,
     _VALID_ROOT_LAYOUTS,
     build_layout_branches_2d,
 )
@@ -64,14 +63,23 @@ class ValidationTest(unittest.TestCase):
     def test_valid_families_and_root_layouts_constants(self) -> None:
         # Defensive sanity check so renaming a family doesn't silently
         # break the dispatcher.
-        self.assertIn("fan", _VALID_LAYOUT_FAMILIES)
-        self.assertIn("stem", _VALID_LAYOUT_FAMILIES)
-        self.assertIn("balloon", _VALID_LAYOUT_FAMILIES)
-        self.assertIn("radial_360", _VALID_LAYOUT_FAMILIES)
-        self.assertIn("trunk_first", _VALID_LAYOUT_FAMILIES)
+        self.assertIn("fan", DISPATCHED_2D_LAYOUTS)
+        self.assertIn("stem", DISPATCHED_2D_LAYOUTS)
+        self.assertIn("balloon", DISPATCHED_2D_LAYOUTS)
+        self.assertIn("radial_360", DISPATCHED_2D_LAYOUTS)
+        self.assertIn("trunk_first", DISPATCHED_2D_LAYOUTS)
         self.assertIn("type_split", _VALID_ROOT_LAYOUTS)
         self.assertIn("legacy", _VALID_ROOT_LAYOUTS)
-        self.assertEqual(_LAYOUT_FAMILY_ALIASES["trunk_first"], "stem")
+        self.assertEqual(LAYOUT_2D_ALIASES["trunk_first"], "stem")
+
+    def test_projected_is_not_a_dispatchable_family(self) -> None:
+        # ``layout='projected'`` is intercepted by build_render_scene_2d,
+        # so it must stay out of the dispatcher's accepted set even
+        # though ``plot2d(layout='projected')`` is valid.
+        tree = make_length_only_tree()
+        self.assertNotIn("projected", DISPATCHED_2D_LAYOUTS)
+        with self.assertRaisesRegex(ValueError, "Unsupported 2D layout family"):
+            build_layout_branches_2d(tree, mode="tree", layout_family="projected")
 
 
 class DispatchSmokeTest(unittest.TestCase):

@@ -20,7 +20,7 @@ import unittest
 import brainunit as u
 import jax.numpy as jnp
 
-from braincell._base import HHTypedNeuron
+from braincell._base_neuron import HHTypedNeuron
 from braincell.channel.leaky import IL, LeakageChannel
 
 

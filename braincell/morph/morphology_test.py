@@ -520,6 +520,233 @@ class MorphoTest(unittest.TestCase):
             )
 
 
+class MorphoDerivedCacheTest(unittest.TestCase):
+    """``Morphology`` memoizes branch ordering; mutation must invalidate it.
+
+    ``_branch_index_map`` used to rebuild an N-entry dict on every ``.index``
+    read. It is cached now, and ``Morphology`` is mutable, so every one of
+    these asserts that reading a derived value *before* an ``attach`` cannot
+    leave a stale answer behind afterwards.
+    """
+
+    @staticmethod
+    def _soma() -> Branch:
+        return Branch.from_lengths(lengths=[20.0] * u.um, radii=[10.0, 10.0] * u.um, type="soma")
+
+    @staticmethod
+    def _dend(length: float = 30.0) -> Branch:
+        return Branch.from_lengths(lengths=[length] * u.um, radii=[2.0, 1.0] * u.um, type="basal_dendrite")
+
+    @staticmethod
+    def _dend_with_points() -> Branch:
+        return Branch.from_points(
+            points=np.asarray([[0.0, 0.0, 0.0], [0.0, 30.0, 0.0]]) * u.um,
+            radii=np.asarray([2.0, 1.0]) * u.um,
+            type="basal_dendrite",
+        )
+
+    def test_branch_index_updates_after_a_later_attach(self) -> None:
+        tree = Morphology.from_root(self._soma(), name="soma")
+        first = tree.soma.attach(self._dend(), name="a")
+
+        # Read every cached view before mutating.
+        self.assertEqual(first.index, 1)
+        self.assertEqual(tree.n_branches, 2)
+        self.assertEqual([b.name for b in tree.branches], ["soma", "a"])
+
+        second = first.attach(self._dend(), name="b")
+
+        self.assertEqual(first.index, 1)
+        self.assertEqual(second.index, 2)
+        self.assertEqual(tree.n_branches, 3)
+        self.assertEqual([b.name for b in tree.branches], ["soma", "a", "b"])
+        self.assertIs(tree.branch(index=2), second)
+
+    def test_orders_other_than_default_also_invalidate(self) -> None:
+        tree = Morphology.from_root(self._soma(), name="soma")
+        axon = tree.soma.attach(
+            Branch.from_lengths(lengths=[10.0] * u.um, radii=[1.0, 0.5] * u.um, type="axon"),
+            name="ax",
+        )
+
+        self.assertEqual([b.name for b in tree.branch_by_order(order="type")], ["soma", "ax"])
+        self.assertEqual([b.name for b in tree.branch_by_order(order="depth")], ["soma", "ax"])
+        self.assertEqual(axon.index_by(order="depth"), 1)
+
+        deep = axon.attach(self._dend(), name="deep")
+
+        self.assertEqual({b.name for b in tree.branch_by_order(order="type")}, {"soma", "ax", "deep"})
+        self.assertEqual([b.name for b in tree.branch_by_order(order="depth")], ["soma", "ax", "deep"])
+        self.assertEqual(deep.index_by(order="depth"), 2)
+        self.assertEqual(deep.branch_order, 2)
+
+    def test_has_full_point_geometry_flips_when_a_geometryless_branch_arrives(self) -> None:
+        tree = Morphology.from_root(
+            Branch.from_points(
+                points=np.asarray([[0.0, 0.0, 0.0], [20.0, 0.0, 0.0]]) * u.um,
+                radii=np.asarray([10.0, 10.0]) * u.um,
+                type="soma",
+            ),
+            name="soma",
+        )
+        tree.soma.attach(self._dend_with_points(), name="a")
+        self.assertTrue(tree.has_full_point_geometry)
+        self.assertTrue(tree.metric.has_full_point_geometry)
+
+        tree.soma.attach(self._dend(), name="b")  # from_lengths: no 3-D points
+
+        self.assertFalse(tree.has_full_point_geometry)
+        self.assertFalse(tree.metric.has_full_point_geometry)
+
+    def test_max_branch_order_and_path_to_root_follow_new_attachments(self) -> None:
+        tree = Morphology.from_root(self._soma(), name="soma")
+        node = tree.soma.attach(self._dend(), name="a")
+        self.assertEqual(tree.max_branch_order, 1)
+        self.assertEqual(tree.path_to_root(1), (0, 1))
+
+        for name in ("b", "c"):
+            node = node.attach(self._dend(), name=name)
+
+        self.assertEqual(tree.max_branch_order, 3)
+        self.assertEqual(tree.path_to_root(3), (0, 1, 2, 3))
+        self.assertEqual(node.branch_order, 3)
+
+    def test_revision_advances_on_every_attach(self) -> None:
+        tree = Morphology.from_root(self._soma(), name="soma")
+        before = tree._revision
+        tree.soma.attach(self._dend(), name="a")
+        self.assertGreater(tree._revision, before)
+
+
+class MorphoBranchDerivedPropertyTest(unittest.TestCase):
+    """``branch_id`` / ``branch_order`` / ``n_tapers`` published by MorphoBranch.
+
+    These used to be re-derived inside ``braincell.filter.helper``; they are
+    branch facts and belong on the branch view.
+    """
+
+    def _tree(self) -> Morphology:
+        soma = Branch.from_lengths(lengths=[20.0] * u.um, radii=[10.0, 10.0] * u.um, type="soma")
+        tree = Morphology.from_root(soma, name="soma")
+        mid = tree.soma.attach(
+            Branch.from_lengths(lengths=[30.0, 20.0] * u.um, radii=[2.0, 1.5, 1.0] * u.um, type="basal_dendrite"),
+            name="mid",
+        )
+        mid.attach(
+            Branch.from_lengths(lengths=[10.0] * u.um, radii=[1.0, 0.5] * u.um, type="basal_dendrite"),
+            name="tip",
+        )
+        return tree
+
+    def test_branch_id_matches_index(self) -> None:
+        tree = self._tree()
+        for expected, branch in enumerate(tree.branches):
+            self.assertEqual(branch.branch_id, expected)
+            self.assertEqual(branch.branch_id, branch.index)
+
+    def test_branch_order_counts_parent_hops(self) -> None:
+        tree = self._tree()
+        self.assertEqual([b.branch_order for b in tree.branches], [0, 1, 2])
+        for branch in tree.branches:
+            self.assertEqual(branch.branch_order, len(tree.path_to_root(branch.index)) - 1)
+
+    def test_n_tapers_aliases_n_segments(self) -> None:
+        tree = self._tree()
+        self.assertEqual([b.n_tapers for b in tree.branches], [1, 2, 1])
+        for branch in tree.branches:
+            self.assertEqual(branch.n_tapers, branch.n_segments)
+
+    def test_new_property_names_are_reserved_for_branch_names(self) -> None:
+        tree = self._tree()
+        for name in ("branch_id", "branch_order", "n_tapers"):
+            with self.assertRaisesRegex(ValueError, "reserved"):
+                tree.attach(
+                    parent="soma",
+                    child_branch=Branch.from_lengths(lengths=[5.0] * u.um, radii=[1.0, 1.0] * u.um, type="axon"),
+                    child_name=name,
+                )
+
+
+class MorphoNamingStateTest(unittest.TestCase):
+    """``naming_state`` / ``restore_naming_state``, the public auto-name API.
+
+    ``braincell.io.checkpoint`` used to reach into ``_type_name_counters``
+    directly to round-trip these.
+    """
+
+    def _tree(self, n_dendrites: int = 3) -> Morphology:
+        soma = Branch.from_lengths(lengths=[20.0] * u.um, radii=[10.0, 10.0] * u.um, type="soma")
+        tree = Morphology.from_root(soma, name="soma")
+        for _ in range(n_dendrites):
+            tree.attach(
+                parent="soma",
+                child_branch=Branch.from_lengths(lengths=[10.0] * u.um, radii=[1.0, 0.5] * u.um, type="dendrite"),
+            )
+        return tree
+
+    def test_reports_the_next_suffix_per_type(self) -> None:
+        tree = self._tree()
+
+        self.assertEqual(tree.naming_state(), {"dendrite": 3})
+
+    def test_the_returned_mapping_is_a_copy(self) -> None:
+        tree = self._tree()
+
+        state = tree.naming_state()
+        state["dendrite"] = 999
+
+        self.assertEqual(tree.naming_state()["dendrite"], 3)
+
+    def test_restoring_resumes_the_sequence(self) -> None:
+        source = self._tree()
+        target = Morphology.from_root(
+            Branch.from_lengths(lengths=[20.0] * u.um, radii=[10.0, 10.0] * u.um, type="soma"),
+            name="soma",
+        )
+
+        target.restore_naming_state(source.naming_state())
+        view = target.attach(
+            parent="soma",
+            child_branch=Branch.from_lengths(lengths=[5.0] * u.um, radii=[1.0, 0.5] * u.um, type="dendrite"),
+        )
+
+        self.assertEqual(view.name, "dendrite_3")
+
+    def test_restoring_merges_rather_than_replaces(self) -> None:
+        tree = self._tree()
+
+        tree.restore_naming_state({"axon": 7})
+
+        self.assertEqual(tree.naming_state(), {"dendrite": 3, "axon": 7})
+
+    def test_a_stale_counter_still_cannot_collide(self) -> None:
+        # A too-small counter only costs extra probes; attach() skips every
+        # suffix already taken, so no restored value can produce a duplicate.
+        tree = self._tree()
+
+        tree.restore_naming_state({"dendrite": 0})
+        view = tree.attach(
+            parent="soma",
+            child_branch=Branch.from_lengths(lengths=[5.0] * u.um, radii=[1.0, 0.5] * u.um, type="dendrite"),
+        )
+
+        self.assertEqual(view.name, "dendrite_3")
+
+    def test_rejects_a_non_mapping(self) -> None:
+        with self.assertRaisesRegex(TypeError, "must be a mapping"):
+            self._tree().restore_naming_state([("dendrite", 3)])
+
+    def test_rejects_a_non_integer_counter(self) -> None:
+        for value in ("3", 3.5, True, None):
+            with self.subTest(value=value):
+                with self.assertRaises(TypeError):
+                    self._tree().restore_naming_state({"dendrite": value})
+
+    def test_rejects_a_negative_counter(self) -> None:
+        with self.assertRaisesRegex(ValueError, "non-negative"):
+            self._tree().restore_naming_state({"dendrite": -1})
+
+
 class MorphoSelectAndVisTest(unittest.TestCase):
     """``Morphology.select``, ``.vis2d``, and ``.vis3d`` — all defined in morphology.py."""
 

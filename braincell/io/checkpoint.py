@@ -267,7 +267,7 @@ def save_morpho(morpho: Morphology, path: FilePath) -> Path:
         "braincell_version": _BC_VERSION,
         "unit": "um",
         "root_name": morpho.root.name,
-        "type_name_counters": dict(morpho._type_name_counters),
+        "type_name_counters": morpho.naming_state(),
         "branches": branches_meta,
     }
     return _write_npz(path, manifest, payload)
@@ -380,8 +380,11 @@ def load_morpho(path: FilePath) -> Morphology:
     counters = manifest.get("type_name_counters", {})
     if isinstance(counters, dict):
         for branch_type, count in counters.items():
+            # ``int()`` here, not inside restore_naming_state: JSON round
+            # trips can turn a counter into a float, and the checkpoint
+            # format has always accepted that.
             try:
-                morpho._type_name_counters[str(branch_type)] = int(count)
+                morpho.restore_naming_state({str(branch_type): int(count)})
             except (TypeError, ValueError) as exc:
                 raise CheckpointError(
                     f"{os.fspath(path)!s}: invalid type_name_counters entry {branch_type!r}={count!r}."
@@ -505,8 +508,7 @@ def _check_kind(
     kind = manifest.get("kind")
     if kind != expected:
         raise CheckpointError(
-            f"{os.fspath(source)!s}: this is a {kind!r} checkpoint; "
-            f"use {right_loader}() instead of {wrong_loader}()."
+            f"{os.fspath(source)!s}: this is a {kind!r} checkpoint; use {right_loader}() instead of {wrong_loader}()."
         )
 
 

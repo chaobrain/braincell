@@ -21,7 +21,7 @@ import brainunit as u
 import jax.numpy as jnp
 
 import braincell.channel as channel
-from braincell._base import IonInfo
+from braincell._base_channel import IonInfo
 from braincell.channel.potassium import Kv1p5_MA2024_PC
 from braincell.channel.potassium_sodium import Kv1p5_MA2020_GrC
 from braincell.ion import NonSpecific, Potassium, Sodium

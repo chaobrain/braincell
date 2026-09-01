@@ -21,7 +21,7 @@ import brainunit as u
 
 from braincell import Branch, Cell, Morphology
 from braincell.filter import AllRegion, BranchSlice, branch_in
-from braincell.vis import plot2d, plot3d
+from braincell.vis import plot3d
 from braincell.vis._testing import (
     FakeBackend,
     VisDefaultsResetMixin,

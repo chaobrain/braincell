@@ -26,6 +26,7 @@ common ion patterns:
 - fixed ``Ci/Co`` with ``E`` initialized from Nernst
 - dynamic ``Ci`` with Nernst-computed ``E``
 - kinetic ion species with algebraic conservation constraints
+- radial-shell geometry shared by the NMODL ``cdp`` diffusion ions
 """
 
 from __future__ import annotations
@@ -37,7 +38,6 @@ import brainstate
 import braintools
 import brainunit as u
 
-from braincell.quad import get_integrator
 from braincell.quad.protocol import IndependentIntegration
 from braincell.quad.protocol import state, hidden_state
 
@@ -52,6 +52,52 @@ __all__ = [
     "DynamicNernstIon",
     "KineticIon",
 ]
+
+
+def _unwrap(value):
+    """Return a :class:`brainstate.State`'s payload, or ``value`` unchanged.
+
+    Ion fields such as ``Ci``, ``Co``, ``temp``, and ``valence`` are
+    plain quantities on some templates and live states on others, and
+    the Nernst equation reads all four the same way.
+    """
+    return value.value if isinstance(value, brainstate.State) else value
+
+
+def _nernst(*, Ci, Co, temp, valence):
+    r"""Return the Nernst reversal potential for one ion species.
+
+    Parameters
+    ----------
+    Ci : Any
+        Intracellular concentration, as a molar concentration.
+    Co : Any
+        Extracellular concentration, in the same units as ``Ci``.
+    temp : Any
+        Absolute temperature.
+    valence : Any
+        Ionic valence. Dimensionless.
+
+    Returns
+    -------
+    Any
+        The reversal potential, as a voltage.
+
+    Notes
+    -----
+    The transcription is
+
+    .. math::
+
+        E = \frac{R \cdot \mathrm{temp}}{\mathrm{valence} \cdot F}
+            \log\!\left(\frac{C_o}{C_i}\right)
+
+    with :math:`R` the gas constant and :math:`F` the Faraday constant.
+    ``valence`` divides inside the prefactor rather than appearing as a
+    separate multiplicative term, and the logarithm's argument is
+    extracellular over intracellular.
+    """
+    return (u.gas_constant * temp / (valence * u.faraday_constant)) * u.math.log(Co / Ci)
 
 
 @dataclass(frozen=True)
@@ -341,11 +387,12 @@ class InitNernstIon(brainstate.mixin.Mixin):
 
     def _update_reversal(self):
         """Recompute and store ``E`` from the current ``Ci/Co/temp/valence``."""
-        Ci = self.Ci.value if isinstance(self.Ci, brainstate.State) else self.Ci
-        Co = self.Co.value if isinstance(self.Co, brainstate.State) else self.Co
-        valence = self.valence.value if isinstance(self.valence, brainstate.State) else self.valence
-        temp = self.temp.value if isinstance(self.temp, brainstate.State) else self.temp
-        self.E = (u.gas_constant * temp / (valence * u.faraday_constant)) * u.math.log(Co / Ci)
+        self.E = _nernst(
+            Ci=_unwrap(self.Ci),
+            Co=_unwrap(self.Co),
+            temp=_unwrap(self.temp),
+            valence=_unwrap(self.valence),
+        )
 
     def _ion_init_state_hook(self, V, batch_size: int = None):
         """Refresh the stored Nernst reversal during ion initialization."""
@@ -462,11 +509,12 @@ class DynamicNernstIon(brainstate.mixin.Mixin):
     @property
     def E(self):
         """Compute ``E`` from the current dynamic ``Ci`` via Nernst."""
-        Ci = self.Ci.value if isinstance(self.Ci, brainstate.State) else self.Ci
-        Co = self.Co.value if isinstance(self.Co, brainstate.State) else self.Co
-        valence = self.valence.value if isinstance(self.valence, brainstate.State) else self.valence
-        temp = self.temp.value if isinstance(self.temp, brainstate.State) else self.temp
-        return (u.gas_constant * temp / (valence * u.faraday_constant)) * u.math.log(Co / Ci)
+        return _nernst(
+            Ci=_unwrap(self.Ci),
+            Co=_unwrap(self.Co),
+            temp=_unwrap(self.temp),
+            valence=_unwrap(self.valence),
+        )
 
     def _ion_init_state_hook(self, V, batch_size: int = None):
         """Create the runtime ``Ci`` state from the stored initializer."""
@@ -648,12 +696,29 @@ class KineticIon(IndependentIntegration):
         self.species_initializers = dict(species_initializers or {})
 
     @property
+    def Ci_initializer(self):
+        """Initializer for the reserved ``Ci`` species.
+
+        A view onto ``species_initializers["Ci"]`` rather than a second
+        copy of it: the two were previously written independently by
+        every subclass constructor and could drift apart whenever one
+        of them was rewritten in place.
+        """
+        return self.species_initializers["Ci"]
+
+    @Ci_initializer.setter
+    def Ci_initializer(self, value):
+        self.species_initializers["Ci"] = value
+
+    @property
     def E(self):
         """Nernst reversal potential from the current ``Ci``."""
-        Co = self.Co.value if isinstance(self.Co, brainstate.State) else self.Co
-        temp = self.temp.value if isinstance(self.temp, brainstate.State) else self.temp
-        valence = self.valence.value if isinstance(self.valence, brainstate.State) else self.valence
-        return (u.gas_constant * temp / (valence * u.faraday_constant)) * u.math.log(Co / self.Ci.value)
+        return _nernst(
+            Ci=_unwrap(self.Ci),
+            Co=_unwrap(self.Co),
+            temp=_unwrap(self.temp),
+            valence=_unwrap(self.valence),
+        )
 
     def make_integration(self, V, recursive_child: bool = True):
         """Advance this ion with its own solver and substep schedule."""
@@ -711,6 +776,112 @@ class KineticIon(IndependentIntegration):
         specs = _Specs.for_type(type(self))
         species = _Species(self, specs)
         _Conserve(self, specs, species).writeback(V)
+
+
+class _RadialShellGeometry(brainstate.mixin.Mixin):
+    r"""Radial-shell geometry shared by the NMODL ``cdp`` diffusion ions.
+
+    Every ported ``cdp*`` calcium mechanism discretizes a cylindrical
+    compartment into ``Nannuli`` concentric shells and scales its
+    reaction rates by the resulting per-length volume and surface
+    factors. That geometry, the mass-action equilibrium used to seed a
+    buffer's free/bound split, and the ``diam_arc_mean`` precondition
+    the shells depend on are identical across all of those mechanisms;
+    only the reaction network above them differs. Mix this in ahead of
+    :class:`KineticIon` so the geometry lives in one place.
+
+    See Also
+    --------
+    KineticIon : The template these mechanisms integrate with; this
+        mixin defers to it for the actual species lifecycle.
+
+    Notes
+    -----
+    ``vrat`` follows the mod files' own annulus construction: with
+    ``dr2 = 0.25 / (Nannuli - 1)`` in units of the diameter, the
+    outermost shell's per-diameter-squared volume is
+    :math:`\pi (0.5 - dr_2/2) \cdot 2 dr_2`. ``dsq`` and ``parea`` are
+    the diameter-squared and the shell perimeter that the reaction
+    rates are scaled by, and ``dsqvol = dsq * vrat`` is the combined
+    factor a ``COMPARTMENT`` statement supplies upstream.
+
+    ``diam_arc_mean`` is not a constructor parameter: it is written
+    onto the instance by the compartment layer once the morphology is
+    known. :meth:`_require_diam_arc_mean` therefore raises rather than
+    silently producing a geometry-free result, and both lifecycle
+    hooks check it before any species is materialized.
+    """
+
+    def _as_initializer(self, value):
+        """Normalize one species initializer, preserving per-point shape.
+
+        A callable is an initializer already. A tuple is a per-point
+        listing that must survive as one array -- with the shared unit
+        factored out when the entries carry one -- rather than being
+        broadcast from its first element. Anything else is a constant.
+        """
+        if callable(value):
+            return value
+        if isinstance(value, tuple):
+            resolved = []
+            for item in value:
+                if hasattr(item, "value"):
+                    resolved.append(item.value)
+                else:
+                    resolved.append(item)
+            first = resolved[0]
+            if hasattr(first, "unit"):
+                unit = first.unit
+                decimals = [u.Quantity(item).to_decimal(unit) for item in resolved]
+                return u.Quantity(u.math.asarray(decimals), unit)
+            return u.math.asarray(resolved)
+        return braintools.init.Constant(value)
+
+    def _require_diam_arc_mean(self):
+        """Return ``diam_arc_mean``, or raise if the geometry is not set yet."""
+        if not hasattr(self, "diam_arc_mean"):
+            raise AttributeError(f"{type(self).__name__} requires 'diam_arc_mean' before kinetic state initialization.")
+        return self.diam_arc_mean
+
+    @property
+    def vrat(self):
+        """Outermost-shell volume ratio implied by ``Nannuli``."""
+        dr2 = 0.25 / (self.Nannuli - 1.0)
+        return u.math.pi * (0.5 - (dr2 / 2.0)) * 2.0 * dr2
+
+    @property
+    def dsq(self):
+        """Squared arc-mean diameter of the compartment."""
+        diam_arc_mean = self._require_diam_arc_mean()
+        return diam_arc_mean * diam_arc_mean
+
+    @property
+    def dsqvol(self):
+        """Combined ``dsq * vrat`` volume factor for the outermost shell."""
+        return self.dsq * self.vrat
+
+    @property
+    def parea(self):
+        """Perimeter of the compartment, the pump's surface scale factor."""
+        return u.math.pi * self._require_diam_arc_mean()
+
+    def _ss_buffer_free(self, total, kon, koff, cai):
+        """Return the free fraction of a buffer at mass-action equilibrium."""
+        return total / (1.0 + (kon / koff) * cai)
+
+    def _ss_buffer_bound(self, total, kon, koff, cai):
+        """Return the calcium-bound fraction of a buffer at equilibrium."""
+        return total / (1.0 + koff / (kon * cai))
+
+    def _ion_init_state_hook(self, V, batch_size: int = None):
+        """Check the geometry, then initialize species as ``KineticIon`` does."""
+        self._require_diam_arc_mean()
+        KineticIon._ion_init_state_hook(self, V, batch_size=batch_size)
+
+    def _ion_reset_state_hook(self, V, batch_size: int = None):
+        """Check the geometry, then reset species as ``KineticIon`` does."""
+        self._require_diam_arc_mean()
+        KineticIon._ion_reset_state_hook(self, V, batch_size=batch_size)
 
 
 class _Specs:

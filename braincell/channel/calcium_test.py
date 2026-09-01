@@ -21,7 +21,8 @@ import brainunit as u
 import jax
 import jax.numpy as jnp
 
-from braincell._base import HHTypedNeuron, IonInfo
+from braincell._base_channel import IonInfo
+from braincell._base_neuron import HHTypedNeuron
 from braincell.channel._base import HH, ghk_flux
 from braincell.channel.calcium import (
     CaHVA_SU2015_DCN,

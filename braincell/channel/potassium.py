@@ -22,9 +22,9 @@ from typing import Optional
 import braintools
 import brainunit as u
 
-from braincell._base import Channel, IonInfo
+from braincell._base_channel import Channel, IonInfo
 from braincell._typing import ArrayLike, Initializer, Size
-from braincell.channel._base import Gate, HH, OhmicHH
+from braincell.channel._base import Gate, HH, OhmicHH, q10_factor
 from braincell.ion import Potassium
 from braincell.mech import register_channel
 
@@ -72,23 +72,6 @@ __all__ = [
 
 def _sigm(x, y):
     return 1.0 / (u.math.exp(x / y) + 1.0)
-
-
-def _linoid_stable(x, y):
-    ratio = x / y
-    return u.math.where(
-        u.math.abs(ratio) < 1e-6,
-        y * (1.0 - ratio / 2.0),
-        x / (u.math.exp(ratio) - 1.0),
-    )
-
-
-def _x_over_one_minus_exp_neg_stable(x):
-    return u.math.where(
-        u.math.abs(x) < 1e-6,
-        1.0 + x / 2.0,
-        x / (1.0 - u.math.exp(-x)),
-    )
 
 
 @register_channel("KDR_Ba2002")
@@ -1889,7 +1872,7 @@ class Kir2p3_MA2025_BC(OhmicHH):
 
 
 @register_channel("Kir2p3_MA2024_PC")
-class Kir2p3_MA2024_PC(OhmicHH):
+class Kir2p3_MA2024_PC(Kir2p3_MA2025_BC):
     r"""Kir2.3 inward-rectifier current of the Purkinje cell model.
 
     Hyperpolarization-activated inward-rectifier potassium current
@@ -2015,37 +1998,10 @@ class Kir2p3_MA2024_PC(OhmicHH):
     """
 
     __module__ = "braincell.channel"
-    root_type = Potassium
-    gates = (Gate("d", q10=3.0, temp_ref=u.celsius2kelvin(20.0)),)
-
-    def __init__(
-        self,
-        size: Size,
-        g_max: Initializer = 0.9 * (u.mS / u.cm**2),
-        temp: ArrayLike = u.celsius2kelvin(30.0),
-        name: Optional[str] = None,
-    ):
-        super().__init__(size=size, name=name)
-        self.g_max = braintools.init.param(g_max, self.varshape, allow_none=False)
-        self.temp = braintools.init.param(temp, self.varshape, allow_none=False)
-        self.Aalpha_d = 0.13289
-        self.Kalpha_d = -24.3902 * u.mV
-        self.V0alpha_d = -83.94 * u.mV
-        self.Abeta_d = 0.16994
-        self.Kbeta_d = 35.714 * u.mV
-        self.V0beta_d = -83.94 * u.mV
-
-    def f_d_alpha(self, V, K: IonInfo):
-        V = V.to_decimal(u.mV)
-        return self.Aalpha_d * u.math.exp((V - self.V0alpha_d.to_decimal(u.mV)) / self.Kalpha_d.to_decimal(u.mV))
-
-    def f_d_beta(self, V, K: IonInfo):
-        V = V.to_decimal(u.mV)
-        return self.Abeta_d * u.math.exp((V - self.V0beta_d.to_decimal(u.mV)) / self.Kbeta_d.to_decimal(u.mV))
 
 
 @register_channel("Kir2p3_RI2021_SC")
-class Kir2p3_RI2021_SC(OhmicHH):
+class Kir2p3_RI2021_SC(Kir2p3_MA2025_BC):
     r"""Kir2.3 inward-rectifier current of the stellate cell model.
 
     Hyperpolarization-activated inward-rectifier potassium current
@@ -2161,33 +2117,6 @@ class Kir2p3_RI2021_SC(OhmicHH):
     """
 
     __module__ = "braincell.channel"
-    root_type = Potassium
-    gates = (Gate("d", q10=3.0, temp_ref=u.celsius2kelvin(20.0)),)
-
-    def __init__(
-        self,
-        size: Size,
-        g_max: Initializer = 0.9 * (u.mS / u.cm**2),
-        temp: ArrayLike = u.celsius2kelvin(30.0),
-        name: Optional[str] = None,
-    ):
-        super().__init__(size=size, name=name)
-        self.g_max = braintools.init.param(g_max, self.varshape, allow_none=False)
-        self.temp = braintools.init.param(temp, self.varshape, allow_none=False)
-        self.Aalpha_d = 0.13289
-        self.Kalpha_d = -24.3902 * u.mV
-        self.V0alpha_d = -83.94 * u.mV
-        self.Abeta_d = 0.16994
-        self.Kbeta_d = 35.714 * u.mV
-        self.V0beta_d = -83.94 * u.mV
-
-    def f_d_alpha(self, V, K: IonInfo):
-        V = V.to_decimal(u.mV)
-        return self.Aalpha_d * u.math.exp((V - self.V0alpha_d.to_decimal(u.mV)) / self.Kalpha_d.to_decimal(u.mV))
-
-    def f_d_beta(self, V, K: IonInfo):
-        V = V.to_decimal(u.mV)
-        return self.Abeta_d * u.math.exp((V - self.V0beta_d.to_decimal(u.mV)) / self.Kbeta_d.to_decimal(u.mV))
 
 
 @register_channel("Kv1p1_MA2025_BC")
@@ -2371,7 +2300,7 @@ class Kv1p1_MA2025_BC(HH):
 
 
 @register_channel("Kv1p1_MA2024_PC")
-class Kv1p1_MA2024_PC(HH):
+class Kv1p1_MA2024_PC(Kv1p1_MA2025_BC):
     r"""Kv1.1 low-threshold potassium current of the Purkinje model.
 
     Non-inactivating, low-threshold potassium current carried by Kv1.1
@@ -2506,53 +2435,10 @@ class Kv1p1_MA2024_PC(HH):
     """
 
     __module__ = "braincell.channel"
-    root_type = Potassium
-    gates = (Gate("n", power=4, q10=2.7, temp_ref=u.celsius2kelvin(22.0)),)
-
-    def __init__(
-        self,
-        size: Size,
-        g_max: Initializer = 4.0 * (u.mS / u.cm**2),
-        temp: ArrayLike = u.celsius2kelvin(22.0),
-        gateCurrent: Initializer = 0.0,
-        name: Optional[str] = None,
-    ):
-        super().__init__(size=size, name=name)
-        self.g_max = braintools.init.param(g_max, self.varshape, allow_none=False)
-        self.temp = braintools.init.param(temp, self.varshape, allow_none=False)
-        self.gateCurrent = braintools.init.param(gateCurrent, self.varshape, allow_none=False)
-        self.gunit = 16.0e-9 * u.mS
-        self.ca = 0.12889
-        self.cva = 45.0 * u.mV
-        self.cka = -33.90877 * u.mV
-        self.cb = 0.12889
-        self.cvb = 45.0 * u.mV
-        self.ckb = 12.42101 * u.mV
-        self.zn = 2.7978
-        self.e0 = 1.60217646e-19 * u.coulomb
-
-    def f_n_alpha(self, V, K: IonInfo):
-        V = V.to_decimal(u.mV)
-        return self.ca * u.math.exp(-(V + self.cva.to_decimal(u.mV)) / self.cka.to_decimal(u.mV))
-
-    def f_n_beta(self, V, K: IonInfo):
-        V = V.to_decimal(u.mV)
-        return self.cb * u.math.exp(-(V + self.cvb.to_decimal(u.mV)) / self.ckb.to_decimal(u.mV))
-
-    def current(self, V, K: IonInfo):
-        conductive = self.g_max * self.conductance_factor(V, K) * (K.E - V)
-        phi = self.gate_phi(self._iter_gates()[0])
-        n = self.n.value
-        alpha = self.f_n_alpha(V, K)
-        beta = self.f_n_beta(V, K)
-        ngate_flip = phi * (alpha * (1.0 - n) - beta * n) / u.ms
-        nc = 1e12 * self.g_max / self.gunit
-        igate = nc * 1e6 * self.e0 * 4.0 * self.zn * ngate_flip
-        return conductive - u.math.where(self.gateCurrent != 0, igate, 0.0 * igate)
 
 
 @register_channel("Kv1p1_RI2021_SC")
-class Kv1p1_RI2021_SC(HH):
+class Kv1p1_RI2021_SC(Kv1p1_MA2025_BC):
     r"""Kv1.1 low-threshold potassium current of the stellate model.
 
     Non-inactivating, low-threshold potassium current carried by Kv1.1
@@ -2686,49 +2572,6 @@ class Kv1p1_RI2021_SC(HH):
     """
 
     __module__ = "braincell.channel"
-    root_type = Potassium
-    gates = (Gate("n", power=4, q10=2.7, temp_ref=u.celsius2kelvin(22.0)),)
-
-    def __init__(
-        self,
-        size: Size,
-        g_max: Initializer = 4.0 * (u.mS / u.cm**2),
-        temp: ArrayLike = u.celsius2kelvin(22.0),
-        gateCurrent: Initializer = 0.0,
-        name: Optional[str] = None,
-    ):
-        super().__init__(size=size, name=name)
-        self.g_max = braintools.init.param(g_max, self.varshape, allow_none=False)
-        self.temp = braintools.init.param(temp, self.varshape, allow_none=False)
-        self.gateCurrent = braintools.init.param(gateCurrent, self.varshape, allow_none=False)
-        self.gunit = 16.0e-9 * u.mS
-        self.ca = 0.12889
-        self.cva = 45.0 * u.mV
-        self.cka = -33.90877 * u.mV
-        self.cb = 0.12889
-        self.cvb = 45.0 * u.mV
-        self.ckb = 12.42101 * u.mV
-        self.zn = 2.7978
-        self.e0 = 1.60217646e-19 * u.coulomb
-
-    def f_n_alpha(self, V, K: IonInfo):
-        V = V.to_decimal(u.mV)
-        return self.ca * u.math.exp(-(V + self.cva.to_decimal(u.mV)) / self.cka.to_decimal(u.mV))
-
-    def f_n_beta(self, V, K: IonInfo):
-        V = V.to_decimal(u.mV)
-        return self.cb * u.math.exp(-(V + self.cvb.to_decimal(u.mV)) / self.ckb.to_decimal(u.mV))
-
-    def current(self, V, K: IonInfo):
-        conductive = self.g_max * self.conductance_factor(V, K) * (K.E - V)
-        phi = self.gate_phi(self._iter_gates()[0])
-        n = self.n.value
-        alpha = self.f_n_alpha(V, K)
-        beta = self.f_n_beta(V, K)
-        ngate_flip = phi * (alpha * (1.0 - n) - beta * n) / u.ms
-        nc = 1e12 * self.g_max / self.gunit
-        igate = nc * 1e6 * self.e0 * 4.0 * self.zn * ngate_flip
-        return conductive - u.math.where(self.gateCurrent != 0, igate, 0.0 * igate)
 
 
 @register_channel("Kv1p5_MA2024_PC")
@@ -2899,7 +2742,7 @@ class Kv1p5_MA2024_PC(HH):
         return self.g_max * self._voltage_factor(V) * self.conductance_factor(V, K) * (K.E - V)
 
     def _q10(self):
-        return 2.2 ** (((self.temp - u.celsius2kelvin(37.0)) / u.kelvin) / 10.0)
+        return q10_factor(2.2, self.temp, u.celsius2kelvin(37.0))
 
     def _voltage_factor(self, V):
         V = V.to_decimal(u.mV)
@@ -3340,7 +3183,7 @@ class Kv3p4_MA2025_BC(OhmicHH):
 
 
 @register_channel("Kv3p4_MA2024_PC")
-class Kv3p4_MA2024_PC(OhmicHH):
+class Kv3p4_MA2024_PC(Kv3p4_MA2025_BC):
     r"""Fast TEA-sensitive potassium current of the Purkinje cell model.
 
     High-threshold, fast-activating and only partially inactivating
@@ -3493,67 +3336,10 @@ class Kv3p4_MA2024_PC(OhmicHH):
     """
 
     __module__ = "braincell.channel"
-    root_type = Potassium
-    gates = (
-        Gate("m", power=3, q10=3.0, temp_ref=u.celsius2kelvin(37.0)),
-        Gate("h", q10=3.0, temp_ref=u.celsius2kelvin(37.0)),
-    )
-
-    def __init__(
-        self,
-        size: Size,
-        g_max: Initializer = 4.0 * (u.mS / u.cm**2),
-        temp: ArrayLike = u.celsius2kelvin(22.0),
-        name: Optional[str] = None,
-    ):
-        super().__init__(size=size, name=name)
-        self.g_max = braintools.init.param(g_max, self.varshape, allow_none=False)
-        self.temp = braintools.init.param(temp, self.varshape, allow_none=False)
-        self.junction_potential = 11.0 * u.mV
-        self.mivh = -24.0
-        self.mik = 15.4
-        self.mty0 = 0.00012851
-        self.mtvh1 = 100.7
-        self.mtk1 = 12.9
-        self.mtvh2 = -56.0
-        self.mtk2 = -23.1
-        self.hiy0 = 0.31
-        self.hiA = 0.69
-        self.hivh = -5.802
-        self.hik = 11.2
-
-    def _shifted_voltage(self, V):
-        return (V + self.junction_potential).to_decimal(u.mV)
-
-    def f_m_inf(self, V, K: IonInfo):
-        V = self._shifted_voltage(V)
-        return 1.0 / (1.0 + u.math.exp(-(V - self.mivh) / self.mik))
-
-    def f_m_tau(self, V, K: IonInfo):
-        V = self._shifted_voltage(V)
-        mtau_func = u.math.where(
-            V < -35.0,
-            (3.4225e-5 + 0.00498 * u.math.exp(V / 28.29)) * 3.0,
-            self.mty0 + 1.0 / (u.math.exp((V + self.mtvh1) / self.mtk1) + u.math.exp((V + self.mtvh2) / self.mtk2)),
-        )
-        return 1000.0 * mtau_func
-
-    def f_h_inf(self, V, K: IonInfo):
-        V = self._shifted_voltage(V)
-        return self.hiy0 + self.hiA / (1.0 + u.math.exp((V - self.hivh) / self.hik))
-
-    def f_h_tau(self, V, K: IonInfo):
-        V = self._shifted_voltage(V)
-        htau_func = u.math.where(
-            V > 0.0,
-            0.0012 + 0.0023 * u.math.exp(-0.141 * V),
-            1.2202e-05 + 0.012 * u.math.exp(-(((V + 56.3) / 49.6) ** 2)),
-        )
-        return 1000.0 * htau_func
 
 
 @register_channel("Kv3p4_RI2021_SC")
-class Kv3p4_RI2021_SC(OhmicHH):
+class Kv3p4_RI2021_SC(Kv3p4_MA2025_BC):
     r"""Fast TEA-sensitive potassium current of the stellate cell model.
 
     High-threshold, fast-activating and only partially inactivating
@@ -3710,63 +3496,6 @@ class Kv3p4_RI2021_SC(OhmicHH):
     """
 
     __module__ = "braincell.channel"
-    root_type = Potassium
-    gates = (
-        Gate("m", power=3, q10=3.0, temp_ref=u.celsius2kelvin(37.0)),
-        Gate("h", q10=3.0, temp_ref=u.celsius2kelvin(37.0)),
-    )
-
-    def __init__(
-        self,
-        size: Size,
-        g_max: Initializer = 4.0 * (u.mS / u.cm**2),
-        temp: ArrayLike = u.celsius2kelvin(22.0),
-        name: Optional[str] = None,
-    ):
-        super().__init__(size=size, name=name)
-        self.g_max = braintools.init.param(g_max, self.varshape, allow_none=False)
-        self.temp = braintools.init.param(temp, self.varshape, allow_none=False)
-        self.junction_potential = 11.0 * u.mV
-        self.mivh = -24.0
-        self.mik = 15.4
-        self.mty0 = 0.00012851
-        self.mtvh1 = 100.7
-        self.mtk1 = 12.9
-        self.mtvh2 = -56.0
-        self.mtk2 = -23.1
-        self.hiy0 = 0.31
-        self.hiA = 0.69
-        self.hivh = -5.802
-        self.hik = 11.2
-
-    def _shifted_voltage(self, V):
-        return (V + self.junction_potential).to_decimal(u.mV)
-
-    def f_m_inf(self, V, K: IonInfo):
-        V = self._shifted_voltage(V)
-        return 1.0 / (1.0 + u.math.exp(-(V - self.mivh) / self.mik))
-
-    def f_m_tau(self, V, K: IonInfo):
-        V = self._shifted_voltage(V)
-        mtau_func = u.math.where(
-            V < -35.0,
-            (3.4225e-5 + 0.00498 * u.math.exp(V / 28.29)) * 3.0,
-            self.mty0 + 1.0 / (u.math.exp((V + self.mtvh1) / self.mtk1) + u.math.exp((V + self.mtvh2) / self.mtk2)),
-        )
-        return 1000.0 * mtau_func
-
-    def f_h_inf(self, V, K: IonInfo):
-        V = self._shifted_voltage(V)
-        return self.hiy0 + self.hiA / (1.0 + u.math.exp((V - self.hivh) / self.hik))
-
-    def f_h_tau(self, V, K: IonInfo):
-        V = self._shifted_voltage(V)
-        htau_func = u.math.where(
-            V > 0.0,
-            0.0012 + 0.0023 * u.math.exp(-0.141 * V),
-            1.2202e-05 + 0.012 * u.math.exp(-(((V + 56.3) / 49.6) ** 2)),
-        )
-        return 1000.0 * htau_func
 
 
 @register_channel("Kv4p3_MA2025_BC")
@@ -3839,14 +3568,6 @@ class Kv4p3_MA2025_BC(OhmicHH):
     :class:`Kv4p3_RI2021_SC`. What differs is the default ``temp``,
     the deposit each was imported from, and therefore the model paper
     cited below.
-
-    ``Kalpha_a`` is stored here as a bare float and passed straight to
-    ``_sigm``, whereas :class:`Kv4p3_MA2020_GoC`,
-    :class:`Kv4p3_MA2020_GrC` and :class:`Kv4p3_RI2021_SC` attach
-    ``u.mV`` to it and convert with ``.to_decimal(u.mV)`` at use. The
-    arithmetic is identical -- both forms divide a millivolt
-    difference by -23.3271 -- but the inconsistency is real, and on
-    this documentation-only branch it is recorded rather than fixed.
 
     **Where the q10 factor is applied.** Both gates declare
     ``q10 = 3.0`` at a reference of 25.5 degrees Celsius, so
@@ -3931,7 +3652,7 @@ class Kv4p3_MA2025_BC(OhmicHH):
         self.g_max = braintools.init.param(g_max, self.varshape, allow_none=False)
         self.temp = braintools.init.param(temp, self.varshape, allow_none=False)
         self.Aalpha_a = 0.8147
-        self.Kalpha_a = -23.3271
+        self.Kalpha_a = -23.3271 * u.mV
         self.V0alpha_a = -9.17203 * u.mV
         self.Abeta_a = 0.1655
         self.Kbeta_a = 19.4718 * u.mV
@@ -3949,7 +3670,7 @@ class Kv4p3_MA2025_BC(OhmicHH):
 
     def _a_alpha(self, V, K: IonInfo):
         V = V.to_decimal(u.mV)
-        return self.Aalpha_a * _sigm(V - self.V0alpha_a.to_decimal(u.mV), self.Kalpha_a)
+        return self.Aalpha_a * _sigm(V - self.V0alpha_a.to_decimal(u.mV), self.Kalpha_a.to_decimal(u.mV))
 
     def _a_beta(self, V, K: IonInfo):
         V = V.to_decimal(u.mV)
@@ -3985,7 +3706,7 @@ class Kv4p3_MA2025_BC(OhmicHH):
 
 
 @register_channel("Kv4p3_MA2024_PC")
-class Kv4p3_MA2024_PC(OhmicHH):
+class Kv4p3_MA2024_PC(Kv4p3_MA2025_BC):
     r"""A-type transient potassium current of the Purkinje cell model.
 
     Fast-inactivating A-type potassium current, imported from the
@@ -4055,14 +3776,6 @@ class Kv4p3_MA2024_PC(OhmicHH):
     the deposit each was imported from, and therefore the model paper
     cited below.
 
-    ``Kalpha_a`` is stored here as a bare float and passed straight to
-    ``_sigm``, whereas :class:`Kv4p3_MA2020_GoC`,
-    :class:`Kv4p3_MA2020_GrC` and :class:`Kv4p3_RI2021_SC` attach
-    ``u.mV`` to it and convert with ``.to_decimal(u.mV)`` at use. The
-    arithmetic is identical -- both forms divide a millivolt
-    difference by -23.3271 -- but the inconsistency is real, and on
-    this documentation-only branch it is recorded rather than fixed.
-
     **Where the q10 factor is applied.** Both gates declare
     ``q10 = 3.0`` at a reference of 25.5 degrees Celsius, so
     :meth:`HH.compute_derivative` scales each
@@ -4130,78 +3843,10 @@ class Kv4p3_MA2024_PC(OhmicHH):
     """
 
     __module__ = "braincell.channel"
-    root_type = Potassium
-    gates = (
-        Gate("a", power=3, q10=3.0, temp_ref=u.celsius2kelvin(25.5)),
-        Gate("b", q10=3.0, temp_ref=u.celsius2kelvin(25.5)),
-    )
-
-    def __init__(
-        self,
-        size: Size,
-        g_max: Initializer = 3.2 * (u.mS / u.cm**2),
-        temp: ArrayLike = u.celsius2kelvin(30.0),
-        name: Optional[str] = None,
-    ):
-        super().__init__(size=size, name=name)
-        self.g_max = braintools.init.param(g_max, self.varshape, allow_none=False)
-        self.temp = braintools.init.param(temp, self.varshape, allow_none=False)
-        self.Aalpha_a = 0.8147
-        self.Kalpha_a = -23.3271
-        self.V0alpha_a = -9.17203 * u.mV
-        self.Abeta_a = 0.1655
-        self.Kbeta_a = 19.4718 * u.mV
-        self.V0beta_a = -18.2791 * u.mV
-        self.Aalpha_b = 0.0368
-        self.Kalpha_b = 12.8433 * u.mV
-        self.V0alpha_b = -111.332 * u.mV
-        self.Abeta_b = 0.0345
-        self.Kbeta_b = -8.90123 * u.mV
-        self.V0beta_b = -49.9537 * u.mV
-        self.V0_ainf = -38.0 * u.mV
-        self.K_ainf = -17.0 * u.mV
-        self.V0_binf = -78.8 * u.mV
-        self.K_binf = 8.4 * u.mV
-
-    def _a_alpha(self, V, K: IonInfo):
-        V = V.to_decimal(u.mV)
-        return self.Aalpha_a * _sigm(V - self.V0alpha_a.to_decimal(u.mV), self.Kalpha_a)
-
-    def _a_beta(self, V, K: IonInfo):
-        V = V.to_decimal(u.mV)
-        return self.Abeta_a / u.math.exp((V - self.V0beta_a.to_decimal(u.mV)) / self.Kbeta_a.to_decimal(u.mV))
-
-    def _b_alpha(self, V, K: IonInfo):
-        V = V.to_decimal(u.mV)
-        return self.Aalpha_b * _sigm(
-            V - self.V0alpha_b.to_decimal(u.mV),
-            self.Kalpha_b.to_decimal(u.mV),
-        )
-
-    def _b_beta(self, V, K: IonInfo):
-        V = V.to_decimal(u.mV)
-        return self.Abeta_b * _sigm(
-            V - self.V0beta_b.to_decimal(u.mV),
-            self.Kbeta_b.to_decimal(u.mV),
-        )
-
-    def f_a_inf(self, V, K: IonInfo):
-        V = V.to_decimal(u.mV)
-        return 1.0 / (1.0 + u.math.exp((V - self.V0_ainf.to_decimal(u.mV)) / self.K_ainf.to_decimal(u.mV)))
-
-    def f_a_tau(self, V, K: IonInfo):
-        return 1.0 / (self._a_alpha(V, K) + self._a_beta(V, K))
-
-    def f_b_inf(self, V, K: IonInfo):
-        V = V.to_decimal(u.mV)
-        return 1.0 / (1.0 + u.math.exp((V - self.V0_binf.to_decimal(u.mV)) / self.K_binf.to_decimal(u.mV)))
-
-    def f_b_tau(self, V, K: IonInfo):
-        return 1.0 / (self._b_alpha(V, K) + self._b_beta(V, K))
 
 
 @register_channel("Kv4p3_RI2021_SC")
-class Kv4p3_RI2021_SC(OhmicHH):
+class Kv4p3_RI2021_SC(Kv4p3_MA2025_BC):
     r"""A-type transient potassium current of the stellate cell model.
 
     Fast-inactivating A-type potassium current, imported from the
@@ -4271,14 +3916,6 @@ class Kv4p3_RI2021_SC(OhmicHH):
     the deposit each was imported from, and therefore the model paper
     cited below.
 
-    ``Kalpha_a`` is stored here as ``-23.3271 * u.mV`` and converted
-    with ``.to_decimal(u.mV)`` at use, whereas
-    :class:`Kv4p3_MA2024_PC` and :class:`Kv4p3_MA2025_BC` store the
-    same number as a bare float and pass it straight to ``_sigm``. The
-    arithmetic is identical -- both forms divide a millivolt
-    difference by -23.3271 -- but the inconsistency is real, and on
-    this documentation-only branch it is recorded rather than fixed.
-
     **Where the q10 factor is applied.** Both gates declare
     ``q10 = 3.0`` at a reference of 25.5 degrees Celsius, so
     :meth:`HH.compute_derivative` scales each
@@ -4345,78 +3982,10 @@ class Kv4p3_RI2021_SC(OhmicHH):
     """
 
     __module__ = "braincell.channel"
-    root_type = Potassium
-    gates = (
-        Gate("a", power=3, q10=3.0, temp_ref=u.celsius2kelvin(25.5)),
-        Gate("b", q10=3.0, temp_ref=u.celsius2kelvin(25.5)),
-    )
-
-    def __init__(
-        self,
-        size: Size,
-        g_max: Initializer = 3.2 * (u.mS / u.cm**2),
-        temp: ArrayLike = u.celsius2kelvin(30.0),
-        name: Optional[str] = None,
-    ):
-        super().__init__(size=size, name=name)
-        self.g_max = braintools.init.param(g_max, self.varshape, allow_none=False)
-        self.temp = braintools.init.param(temp, self.varshape, allow_none=False)
-        self.Aalpha_a = 0.8147
-        self.Kalpha_a = -23.3271 * u.mV
-        self.V0alpha_a = -9.17203 * u.mV
-        self.Abeta_a = 0.1655
-        self.Kbeta_a = 19.4718 * u.mV
-        self.V0beta_a = -18.2791 * u.mV
-        self.Aalpha_b = 0.0368
-        self.Kalpha_b = 12.8433 * u.mV
-        self.V0alpha_b = -111.332 * u.mV
-        self.Abeta_b = 0.0345
-        self.Kbeta_b = -8.90123 * u.mV
-        self.V0beta_b = -49.9537 * u.mV
-        self.V0_ainf = -38.0 * u.mV
-        self.K_ainf = -17.0 * u.mV
-        self.V0_binf = -78.8 * u.mV
-        self.K_binf = 8.4 * u.mV
-
-    def _a_alpha(self, V, K: IonInfo):
-        V = V.to_decimal(u.mV)
-        return self.Aalpha_a * _sigm(V - self.V0alpha_a.to_decimal(u.mV), self.Kalpha_a.to_decimal(u.mV))
-
-    def _a_beta(self, V, K: IonInfo):
-        V = V.to_decimal(u.mV)
-        return self.Abeta_a / u.math.exp((V - self.V0beta_a.to_decimal(u.mV)) / self.Kbeta_a.to_decimal(u.mV))
-
-    def _b_alpha(self, V, K: IonInfo):
-        V = V.to_decimal(u.mV)
-        return self.Aalpha_b * _sigm(
-            V - self.V0alpha_b.to_decimal(u.mV),
-            self.Kalpha_b.to_decimal(u.mV),
-        )
-
-    def _b_beta(self, V, K: IonInfo):
-        V = V.to_decimal(u.mV)
-        return self.Abeta_b * _sigm(
-            V - self.V0beta_b.to_decimal(u.mV),
-            self.Kbeta_b.to_decimal(u.mV),
-        )
-
-    def f_a_inf(self, V, K: IonInfo):
-        V = V.to_decimal(u.mV)
-        return 1.0 / (1.0 + u.math.exp((V - self.V0_ainf.to_decimal(u.mV)) / self.K_ainf.to_decimal(u.mV)))
-
-    def f_a_tau(self, V, K: IonInfo):
-        return 1.0 / (self._a_alpha(V, K) + self._a_beta(V, K))
-
-    def f_b_inf(self, V, K: IonInfo):
-        V = V.to_decimal(u.mV)
-        return 1.0 / (1.0 + u.math.exp((V - self.V0_binf.to_decimal(u.mV)) / self.K_binf.to_decimal(u.mV)))
-
-    def f_b_tau(self, V, K: IonInfo):
-        return 1.0 / (self._b_alpha(V, K) + self._b_beta(V, K))
 
 
 @register_channel("KM_MA2020_GoC")
-class KM_MA2020_GoC(OhmicHH):
+class KM_MA2020_GoC(KM_RI2021_SC):
     r"""M-type potassium current of the Golgi cell model.
 
     Slow, non-inactivating M-type potassium current imported from the
@@ -4528,46 +4097,10 @@ class KM_MA2020_GoC(OhmicHH):
     """
 
     __module__ = "braincell.channel"
-    root_type = Potassium
-    gates = (Gate("n", q10=3.0, temp_ref=u.celsius2kelvin(22.0)),)
-
-    def __init__(
-        self,
-        size: Size,
-        g_max: Initializer = 0.25 * (u.mS / u.cm**2),
-        temp: ArrayLike = u.celsius2kelvin(30.0),
-        name: Optional[str] = None,
-    ):
-        super().__init__(size=size, name=name)
-        self.g_max = braintools.init.param(g_max, self.varshape, allow_none=False)
-        self.temp = braintools.init.param(temp, self.varshape, allow_none=False)
-        self.Aalpha_n = 0.0033
-        self.Kalpha_n = 40.0 * u.mV
-        self.V0alpha_n = -30.0 * u.mV
-        self.Abeta_n = 0.0033
-        self.Kbeta_n = -20.0 * u.mV
-        self.V0beta_n = -30.0 * u.mV
-        self.V0_ninf = -35.0 * u.mV
-        self.B_ninf = 6.0 * u.mV
-
-    def _n_alpha(self, V):
-        V = V.to_decimal(u.mV)
-        return self.Aalpha_n * u.math.exp((V - self.V0alpha_n.to_decimal(u.mV)) / self.Kalpha_n.to_decimal(u.mV))
-
-    def _n_beta(self, V):
-        V = V.to_decimal(u.mV)
-        return self.Abeta_n * u.math.exp((V - self.V0beta_n.to_decimal(u.mV)) / self.Kbeta_n.to_decimal(u.mV))
-
-    def f_n_inf(self, V, K: IonInfo):
-        V = V.to_decimal(u.mV)
-        return 1.0 / (1.0 + u.math.exp(-(V - self.V0_ninf.to_decimal(u.mV)) / self.B_ninf.to_decimal(u.mV)))
-
-    def f_n_tau(self, V, K: IonInfo):
-        return 1.0 / (self._n_alpha(V) + self._n_beta(V))
 
 
 @register_channel("Kv1p1_MA2020_GoC")
-class Kv1p1_MA2020_GoC(HH):
+class Kv1p1_MA2020_GoC(Kv1p1_MA2025_BC):
     r"""Kv1.1 low-threshold potassium current of the Golgi cell model.
 
     Non-inactivating, low-threshold potassium current carried by Kv1.1
@@ -4701,53 +4234,10 @@ class Kv1p1_MA2020_GoC(HH):
     """
 
     __module__ = "braincell.channel"
-    root_type = Potassium
-    gates = (Gate("n", power=4, q10=2.7, temp_ref=u.celsius2kelvin(22.0)),)
-
-    def __init__(
-        self,
-        size: Size,
-        g_max: Initializer = 4.0 * (u.mS / u.cm**2),
-        temp: ArrayLike = u.celsius2kelvin(22.0),
-        gateCurrent: Initializer = 0.0,
-        name: Optional[str] = None,
-    ):
-        super().__init__(size=size, name=name)
-        self.g_max = braintools.init.param(g_max, self.varshape, allow_none=False)
-        self.temp = braintools.init.param(temp, self.varshape, allow_none=False)
-        self.gateCurrent = braintools.init.param(gateCurrent, self.varshape, allow_none=False)
-        self.gunit = 16.0e-9 * u.mS
-        self.ca = 0.12889
-        self.cva = 45.0 * u.mV
-        self.cka = -33.90877 * u.mV
-        self.cb = 0.12889
-        self.cvb = 45.0 * u.mV
-        self.ckb = 12.42101 * u.mV
-        self.zn = 2.7978
-        self.e0 = 1.60217646e-19 * u.coulomb
-
-    def f_n_alpha(self, V, K: IonInfo):
-        V = V.to_decimal(u.mV)
-        return self.ca * u.math.exp(-(V + self.cva.to_decimal(u.mV)) / self.cka.to_decimal(u.mV))
-
-    def f_n_beta(self, V, K: IonInfo):
-        V = V.to_decimal(u.mV)
-        return self.cb * u.math.exp(-(V + self.cvb.to_decimal(u.mV)) / self.ckb.to_decimal(u.mV))
-
-    def current(self, V, K: IonInfo):
-        conductive = self.g_max * self.conductance_factor(V, K) * (K.E - V)
-        phi = self.gate_phi(self._iter_gates()[0])
-        n = self.n.value
-        alpha = self.f_n_alpha(V, K)
-        beta = self.f_n_beta(V, K)
-        ngate_flip = phi * (alpha * (1.0 - n) - beta * n) / u.ms
-        nc = 1e12 * self.g_max / self.gunit
-        igate = nc * 1e6 * self.e0 * 4.0 * self.zn * ngate_flip
-        return conductive - u.math.where(self.gateCurrent != 0, igate, 0.0 * igate)
 
 
 @register_channel("Kv3p4_MA2020_GoC")
-class Kv3p4_MA2020_GoC(OhmicHH):
+class Kv3p4_MA2020_GoC(Kv3p4_MA2025_BC):
     r"""Fast TEA-sensitive potassium current of the Golgi cell model.
 
     High-threshold, fast-activating and only partially inactivating
@@ -4901,67 +4391,10 @@ class Kv3p4_MA2020_GoC(OhmicHH):
     """
 
     __module__ = "braincell.channel"
-    root_type = Potassium
-    gates = (
-        Gate("m", power=3, q10=3.0, temp_ref=u.celsius2kelvin(37.0)),
-        Gate("h", q10=3.0, temp_ref=u.celsius2kelvin(37.0)),
-    )
-
-    def __init__(
-        self,
-        size: Size,
-        g_max: Initializer = 4.0 * (u.mS / u.cm**2),
-        temp: ArrayLike = u.celsius2kelvin(22.0),
-        name: Optional[str] = None,
-    ):
-        super().__init__(size=size, name=name)
-        self.g_max = braintools.init.param(g_max, self.varshape, allow_none=False)
-        self.temp = braintools.init.param(temp, self.varshape, allow_none=False)
-        self.junction_potential = 11.0 * u.mV
-        self.mivh = -24.0
-        self.mik = 15.4
-        self.mty0 = 0.00012851
-        self.mtvh1 = 100.7
-        self.mtk1 = 12.9
-        self.mtvh2 = -56.0
-        self.mtk2 = -23.1
-        self.hiy0 = 0.31
-        self.hiA = 0.69
-        self.hivh = -5.802
-        self.hik = 11.2
-
-    def _shifted_voltage(self, V):
-        return (V + self.junction_potential).to_decimal(u.mV)
-
-    def f_m_inf(self, V, K: IonInfo):
-        V = self._shifted_voltage(V)
-        return 1.0 / (1.0 + u.math.exp(-(V - self.mivh) / self.mik))
-
-    def f_m_tau(self, V, K: IonInfo):
-        V = self._shifted_voltage(V)
-        mtau_func = u.math.where(
-            V < -35.0,
-            (3.4225e-5 + 0.00498 * u.math.exp(V / 28.29)) * 3.0,
-            self.mty0 + 1.0 / (u.math.exp((V + self.mtvh1) / self.mtk1) + u.math.exp((V + self.mtvh2) / self.mtk2)),
-        )
-        return 1000.0 * mtau_func
-
-    def f_h_inf(self, V, K: IonInfo):
-        V = self._shifted_voltage(V)
-        return self.hiy0 + self.hiA / (1.0 + u.math.exp((V - self.hivh) / self.hik))
-
-    def f_h_tau(self, V, K: IonInfo):
-        V = self._shifted_voltage(V)
-        htau_func = u.math.where(
-            V > 0.0,
-            0.0012 + 0.0023 * u.math.exp(-0.141 * V),
-            1.2202e-05 + 0.012 * u.math.exp(-(((V + 56.3) / 49.6) ** 2)),
-        )
-        return 1000.0 * htau_func
 
 
 @register_channel("Kv4p3_MA2020_GoC")
-class Kv4p3_MA2020_GoC(OhmicHH):
+class Kv4p3_MA2020_GoC(Kv4p3_MA2025_BC):
     r"""A-type transient potassium current of the Golgi cell model.
 
     Fast-inactivating A-type potassium current, imported from the
@@ -5035,14 +4468,6 @@ class Kv4p3_MA2020_GoC(OhmicHH):
     -- the companion granule-cell paper of the same year belongs to
     :class:`Kv4p3_MA2020_GrC`, not to this class.
 
-    ``Kalpha_a`` is stored here as ``-23.3271 * u.mV`` and converted
-    with ``.to_decimal(u.mV)`` at use, whereas
-    :class:`Kv4p3_MA2024_PC` and :class:`Kv4p3_MA2025_BC` store the
-    same number as a bare float and pass it straight to ``_sigm``. The
-    arithmetic is identical -- both forms divide a millivolt
-    difference by -23.3271 -- but the inconsistency is real, and on
-    this documentation-only branch it is recorded rather than fixed.
-
     **Where the q10 factor is applied.** Both gates declare
     ``q10 = 3.0`` at a reference of 25.5 degrees Celsius, so
     :meth:`HH.compute_derivative` scales each
@@ -5108,11 +4533,6 @@ class Kv4p3_MA2020_GoC(OhmicHH):
     """
 
     __module__ = "braincell.channel"
-    root_type = Potassium
-    gates = (
-        Gate("a", power=3, q10=3.0, temp_ref=u.celsius2kelvin(25.5)),
-        Gate("b", q10=3.0, temp_ref=u.celsius2kelvin(25.5)),
-    )
 
     def __init__(
         self,
@@ -5121,65 +4541,13 @@ class Kv4p3_MA2020_GoC(OhmicHH):
         temp: ArrayLike = u.celsius2kelvin(22.0),
         name: Optional[str] = None,
     ):
-        super().__init__(size=size, name=name)
-        self.g_max = braintools.init.param(g_max, self.varshape, allow_none=False)
-        self.temp = braintools.init.param(temp, self.varshape, allow_none=False)
-        self.Aalpha_a = 0.8147
-        self.Kalpha_a = -23.3271 * u.mV
-        self.V0alpha_a = -9.17203 * u.mV
-        self.Abeta_a = 0.1655
-        self.Kbeta_a = 19.4718 * u.mV
-        self.V0beta_a = -18.2791 * u.mV
-        self.Aalpha_b = 0.0368
-        self.Kalpha_b = 12.8433 * u.mV
-        self.V0alpha_b = -111.332 * u.mV
-        self.Abeta_b = 0.0345
-        self.Kbeta_b = -8.90123 * u.mV
-        self.V0beta_b = -49.9537 * u.mV
-        self.V0_ainf = -38.0 * u.mV
-        self.K_ainf = -17.0 * u.mV
-        self.V0_binf = -78.8 * u.mV
-        self.K_binf = 8.4 * u.mV
-
-    def _a_alpha(self, V, K: IonInfo):
-        V = V.to_decimal(u.mV)
-        return self.Aalpha_a * _sigm(V - self.V0alpha_a.to_decimal(u.mV), self.Kalpha_a.to_decimal(u.mV))
-
-    def _a_beta(self, V, K: IonInfo):
-        V = V.to_decimal(u.mV)
-        return self.Abeta_a / u.math.exp((V - self.V0beta_a.to_decimal(u.mV)) / self.Kbeta_a.to_decimal(u.mV))
-
-    def _b_alpha(self, V, K: IonInfo):
-        V = V.to_decimal(u.mV)
-        return self.Aalpha_b * _sigm(
-            V - self.V0alpha_b.to_decimal(u.mV),
-            self.Kalpha_b.to_decimal(u.mV),
-        )
-
-    def _b_beta(self, V, K: IonInfo):
-        V = V.to_decimal(u.mV)
-        return self.Abeta_b * _sigm(
-            V - self.V0beta_b.to_decimal(u.mV),
-            self.Kbeta_b.to_decimal(u.mV),
-        )
-
-    def f_a_inf(self, V, K: IonInfo):
-        V = V.to_decimal(u.mV)
-        return 1.0 / (1.0 + u.math.exp((V - self.V0_ainf.to_decimal(u.mV)) / self.K_ainf.to_decimal(u.mV)))
-
-    def f_a_tau(self, V, K: IonInfo):
-        return 1.0 / (self._a_alpha(V, K) + self._a_beta(V, K))
-
-    def f_b_inf(self, V, K: IonInfo):
-        V = V.to_decimal(u.mV)
-        return 1.0 / (1.0 + u.math.exp((V - self.V0_binf.to_decimal(u.mV)) / self.K_binf.to_decimal(u.mV)))
-
-    def f_b_tau(self, V, K: IonInfo):
-        return 1.0 / (self._b_alpha(V, K) + self._b_beta(V, K))
+        # Only the default `temp` differs from Kv4p3_MA2025_BC: the gating
+        # equations and every other constant are inherited unchanged.
+        super().__init__(size=size, g_max=g_max, temp=temp, name=name)
 
 
 @register_channel("KM_MA2020_GrC")
-class KM_MA2020_GrC(OhmicHH):
+class KM_MA2020_GrC(KM_RI2021_SC):
     r"""M-type potassium current of the granule cell model.
 
     Slow, non-inactivating M-type potassium current imported from the
@@ -5292,46 +4660,10 @@ class KM_MA2020_GrC(OhmicHH):
     """
 
     __module__ = "braincell.channel"
-    root_type = Potassium
-    gates = (Gate("n", q10=3.0, temp_ref=u.celsius2kelvin(22.0)),)
-
-    def __init__(
-        self,
-        size: Size,
-        g_max: Initializer = 0.25 * (u.mS / u.cm**2),
-        temp: ArrayLike = u.celsius2kelvin(30.0),
-        name: Optional[str] = None,
-    ):
-        super().__init__(size=size, name=name)
-        self.g_max = braintools.init.param(g_max, self.varshape, allow_none=False)
-        self.temp = braintools.init.param(temp, self.varshape, allow_none=False)
-        self.Aalpha_n = 0.0033
-        self.Kalpha_n = 40.0 * u.mV
-        self.V0alpha_n = -30.0 * u.mV
-        self.Abeta_n = 0.0033
-        self.Kbeta_n = -20.0 * u.mV
-        self.V0beta_n = -30.0 * u.mV
-        self.V0_ninf = -35.0 * u.mV
-        self.B_ninf = 6.0 * u.mV
-
-    def _n_alpha(self, V):
-        V = V.to_decimal(u.mV)
-        return self.Aalpha_n * u.math.exp((V - self.V0alpha_n.to_decimal(u.mV)) / self.Kalpha_n.to_decimal(u.mV))
-
-    def _n_beta(self, V):
-        V = V.to_decimal(u.mV)
-        return self.Abeta_n * u.math.exp((V - self.V0beta_n.to_decimal(u.mV)) / self.Kbeta_n.to_decimal(u.mV))
-
-    def f_n_inf(self, V, K: IonInfo):
-        V = V.to_decimal(u.mV)
-        return 1.0 / (1.0 + u.math.exp(-(V - self.V0_ninf.to_decimal(u.mV)) / self.B_ninf.to_decimal(u.mV)))
-
-    def f_n_tau(self, V, K: IonInfo):
-        return 1.0 / (self._n_alpha(V) + self._n_beta(V))
 
 
 @register_channel("Kir2p3_MA2020_GrC")
-class Kir2p3_MA2020_GrC(OhmicHH):
+class Kir2p3_MA2020_GrC(Kir2p3_MA2025_BC):
     r"""Kir2.3 inward-rectifier current of the granule cell model.
 
     Hyperpolarization-activated inward-rectifier potassium current
@@ -5450,37 +4782,10 @@ class Kir2p3_MA2020_GrC(OhmicHH):
     """
 
     __module__ = "braincell.channel"
-    root_type = Potassium
-    gates = (Gate("d", q10=3.0, temp_ref=u.celsius2kelvin(20.0)),)
-
-    def __init__(
-        self,
-        size: Size,
-        g_max: Initializer = 0.9 * (u.mS / u.cm**2),
-        temp: ArrayLike = u.celsius2kelvin(30.0),
-        name: Optional[str] = None,
-    ):
-        super().__init__(size=size, name=name)
-        self.g_max = braintools.init.param(g_max, self.varshape, allow_none=False)
-        self.temp = braintools.init.param(temp, self.varshape, allow_none=False)
-        self.Aalpha_d = 0.13289
-        self.Kalpha_d = -24.3902 * u.mV
-        self.V0alpha_d = -83.94 * u.mV
-        self.Abeta_d = 0.16994
-        self.Kbeta_d = 35.714 * u.mV
-        self.V0beta_d = -83.94 * u.mV
-
-    def f_d_alpha(self, V, K: IonInfo):
-        V = V.to_decimal(u.mV)
-        return self.Aalpha_d * u.math.exp((V - self.V0alpha_d.to_decimal(u.mV)) / self.Kalpha_d.to_decimal(u.mV))
-
-    def f_d_beta(self, V, K: IonInfo):
-        V = V.to_decimal(u.mV)
-        return self.Abeta_d * u.math.exp((V - self.V0beta_d.to_decimal(u.mV)) / self.Kbeta_d.to_decimal(u.mV))
 
 
 @register_channel("Kv1p1_MA2020_GrC")
-class Kv1p1_MA2020_GrC(HH):
+class Kv1p1_MA2020_GrC(Kv1p1_MA2025_BC):
     r"""Kv1.1 low-threshold potassium current of the granule model.
 
     Non-inactivating, low-threshold potassium current carried by Kv1.1
@@ -5615,49 +4920,6 @@ class Kv1p1_MA2020_GrC(HH):
     """
 
     __module__ = "braincell.channel"
-    root_type = Potassium
-    gates = (Gate("n", power=4, q10=2.7, temp_ref=u.celsius2kelvin(22.0)),)
-
-    def __init__(
-        self,
-        size: Size,
-        g_max: Initializer = 4.0 * (u.mS / u.cm**2),
-        temp: ArrayLike = u.celsius2kelvin(22.0),
-        gateCurrent: Initializer = 0.0,
-        name: Optional[str] = None,
-    ):
-        super().__init__(size=size, name=name)
-        self.g_max = braintools.init.param(g_max, self.varshape, allow_none=False)
-        self.temp = braintools.init.param(temp, self.varshape, allow_none=False)
-        self.gateCurrent = braintools.init.param(gateCurrent, self.varshape, allow_none=False)
-        self.gunit = 16.0e-9 * u.mS
-        self.ca = 0.12889
-        self.cva = 45.0 * u.mV
-        self.cka = -33.90877 * u.mV
-        self.cb = 0.12889
-        self.cvb = 45.0 * u.mV
-        self.ckb = 12.42101 * u.mV
-        self.zn = 2.7978
-        self.e0 = 1.60217646e-19 * u.coulomb
-
-    def f_n_alpha(self, V, K: IonInfo):
-        V = V.to_decimal(u.mV)
-        return self.ca * u.math.exp(-(V + self.cva.to_decimal(u.mV)) / self.cka.to_decimal(u.mV))
-
-    def f_n_beta(self, V, K: IonInfo):
-        V = V.to_decimal(u.mV)
-        return self.cb * u.math.exp(-(V + self.cvb.to_decimal(u.mV)) / self.ckb.to_decimal(u.mV))
-
-    def current(self, V, K: IonInfo):
-        conductive = self.g_max * self.conductance_factor(V, K) * (K.E - V)
-        phi = self.gate_phi(self._iter_gates()[0])
-        n = self.n.value
-        alpha = self.f_n_alpha(V, K)
-        beta = self.f_n_beta(V, K)
-        ngate_flip = phi * (alpha * (1.0 - n) - beta * n) / u.ms
-        nc = 1e12 * self.g_max / self.gunit
-        igate = nc * 1e6 * self.e0 * 4.0 * self.zn * ngate_flip
-        return conductive - u.math.where(self.gateCurrent != 0, igate, 0.0 * igate)
 
 
 @register_channel("Kv2p2_0010_MA2020_GrC")
@@ -5803,7 +5065,7 @@ class Kv2p2_0010_MA2020_GrC(OhmicHH):
 
 
 @register_channel("Kv3p4_MA2020_GrC")
-class Kv3p4_MA2020_GrC(OhmicHH):
+class Kv3p4_MA2020_GrC(Kv3p4_MA2025_BC):
     r"""Fast TEA-sensitive potassium current of the granule cell model.
 
     High-threshold, fast-activating and only partially inactivating
@@ -5958,67 +5220,10 @@ class Kv3p4_MA2020_GrC(OhmicHH):
     """
 
     __module__ = "braincell.channel"
-    root_type = Potassium
-    gates = (
-        Gate("m", power=3, q10=3.0, temp_ref=u.celsius2kelvin(37.0)),
-        Gate("h", q10=3.0, temp_ref=u.celsius2kelvin(37.0)),
-    )
-
-    def __init__(
-        self,
-        size: Size,
-        g_max: Initializer = 4.0 * (u.mS / u.cm**2),
-        temp: ArrayLike = u.celsius2kelvin(22.0),
-        name: Optional[str] = None,
-    ):
-        super().__init__(size=size, name=name)
-        self.g_max = braintools.init.param(g_max, self.varshape, allow_none=False)
-        self.temp = braintools.init.param(temp, self.varshape, allow_none=False)
-        self.junction_potential = 11.0 * u.mV
-        self.mivh = -24.0
-        self.mik = 15.4
-        self.mty0 = 0.00012851
-        self.mtvh1 = 100.7
-        self.mtk1 = 12.9
-        self.mtvh2 = -56.0
-        self.mtk2 = -23.1
-        self.hiy0 = 0.31
-        self.hiA = 0.69
-        self.hivh = -5.802
-        self.hik = 11.2
-
-    def _shifted_voltage(self, V):
-        return (V + self.junction_potential).to_decimal(u.mV)
-
-    def f_m_inf(self, V, K: IonInfo):
-        V = self._shifted_voltage(V)
-        return 1.0 / (1.0 + u.math.exp(-(V - self.mivh) / self.mik))
-
-    def f_m_tau(self, V, K: IonInfo):
-        V = self._shifted_voltage(V)
-        mtau_func = u.math.where(
-            V < -35.0,
-            (3.4225e-5 + 0.00498 * u.math.exp(V / 28.29)) * 3.0,
-            self.mty0 + 1.0 / (u.math.exp((V + self.mtvh1) / self.mtk1) + u.math.exp((V + self.mtvh2) / self.mtk2)),
-        )
-        return 1000.0 * mtau_func
-
-    def f_h_inf(self, V, K: IonInfo):
-        V = self._shifted_voltage(V)
-        return self.hiy0 + self.hiA / (1.0 + u.math.exp((V - self.hivh) / self.hik))
-
-    def f_h_tau(self, V, K: IonInfo):
-        V = self._shifted_voltage(V)
-        htau_func = u.math.where(
-            V > 0.0,
-            0.0012 + 0.0023 * u.math.exp(-0.141 * V),
-            1.2202e-05 + 0.012 * u.math.exp(-(((V + 56.3) / 49.6) ** 2)),
-        )
-        return 1000.0 * htau_func
 
 
 @register_channel("Kv4p3_MA2020_GrC")
-class Kv4p3_MA2020_GrC(OhmicHH):
+class Kv4p3_MA2020_GrC(Kv4p3_MA2025_BC):
     r"""A-type transient potassium current of the granule cell model.
 
     Fast-inactivating A-type potassium current, imported from the
@@ -6090,14 +5295,6 @@ class Kv4p3_MA2020_GrC(OhmicHH):
     -- the companion Golgi-cell paper of the same year belongs to
     :class:`Kv4p3_MA2020_GoC`, not to this class.
 
-    ``Kalpha_a`` is stored here as ``-23.3271 * u.mV`` and converted
-    with ``.to_decimal(u.mV)`` at use, whereas
-    :class:`Kv4p3_MA2024_PC` and :class:`Kv4p3_MA2025_BC` store the
-    same number as a bare float and pass it straight to ``_sigm``. The
-    arithmetic is identical -- both forms divide a millivolt
-    difference by -23.3271 -- but the inconsistency is real, and on
-    this documentation-only branch it is recorded rather than fixed.
-
     **Where the q10 factor is applied.** Both gates declare
     ``q10 = 3.0`` at a reference of 25.5 degrees Celsius, so
     :meth:`HH.compute_derivative` scales each
@@ -6164,74 +5361,6 @@ class Kv4p3_MA2020_GrC(OhmicHH):
     """
 
     __module__ = "braincell.channel"
-    root_type = Potassium
-    gates = (
-        Gate("a", power=3, q10=3.0, temp_ref=u.celsius2kelvin(25.5)),
-        Gate("b", q10=3.0, temp_ref=u.celsius2kelvin(25.5)),
-    )
-
-    def __init__(
-        self,
-        size: Size,
-        g_max: Initializer = 3.2 * (u.mS / u.cm**2),
-        temp: ArrayLike = u.celsius2kelvin(30.0),
-        name: Optional[str] = None,
-    ):
-        super().__init__(size=size, name=name)
-        self.g_max = braintools.init.param(g_max, self.varshape, allow_none=False)
-        self.temp = braintools.init.param(temp, self.varshape, allow_none=False)
-        self.Aalpha_a = 0.8147
-        self.Kalpha_a = -23.3271 * u.mV
-        self.V0alpha_a = -9.17203 * u.mV
-        self.Abeta_a = 0.1655
-        self.Kbeta_a = 19.4718 * u.mV
-        self.V0beta_a = -18.2791 * u.mV
-        self.Aalpha_b = 0.0368
-        self.Kalpha_b = 12.8433 * u.mV
-        self.V0alpha_b = -111.332 * u.mV
-        self.Abeta_b = 0.0345
-        self.Kbeta_b = -8.90123 * u.mV
-        self.V0beta_b = -49.9537 * u.mV
-        self.V0_ainf = -38.0 * u.mV
-        self.K_ainf = -17.0 * u.mV
-        self.V0_binf = -78.8 * u.mV
-        self.K_binf = 8.4 * u.mV
-
-    def _a_alpha(self, V, K: IonInfo):
-        V = V.to_decimal(u.mV)
-        return self.Aalpha_a * _sigm(V - self.V0alpha_a.to_decimal(u.mV), self.Kalpha_a.to_decimal(u.mV))
-
-    def _a_beta(self, V, K: IonInfo):
-        V = V.to_decimal(u.mV)
-        return self.Abeta_a / u.math.exp((V - self.V0beta_a.to_decimal(u.mV)) / self.Kbeta_a.to_decimal(u.mV))
-
-    def _b_alpha(self, V, K: IonInfo):
-        V = V.to_decimal(u.mV)
-        return self.Aalpha_b * _sigm(
-            V - self.V0alpha_b.to_decimal(u.mV),
-            self.Kalpha_b.to_decimal(u.mV),
-        )
-
-    def _b_beta(self, V, K: IonInfo):
-        V = V.to_decimal(u.mV)
-        return self.Abeta_b * _sigm(
-            V - self.V0beta_b.to_decimal(u.mV),
-            self.Kbeta_b.to_decimal(u.mV),
-        )
-
-    def f_a_inf(self, V, K: IonInfo):
-        V = V.to_decimal(u.mV)
-        return 1.0 / (1.0 + u.math.exp((V - self.V0_ainf.to_decimal(u.mV)) / self.K_ainf.to_decimal(u.mV)))
-
-    def f_a_tau(self, V, K: IonInfo):
-        return 1.0 / (self._a_alpha(V, K) + self._a_beta(V, K))
-
-    def f_b_inf(self, V, K: IonInfo):
-        V = V.to_decimal(u.mV)
-        return 1.0 / (1.0 + u.math.exp((V - self.V0_binf.to_decimal(u.mV)) / self.K_binf.to_decimal(u.mV)))
-
-    def f_b_tau(self, V, K: IonInfo):
-        return 1.0 / (self._b_alpha(V, K) + self._b_beta(V, K))
 
 
 @register_channel("Kdr_ZH2019_IO")
@@ -6302,12 +5431,11 @@ class Kdr_ZH2019_IO(OhmicHH):
     ``Kdr_ZH19_IO.mod`` guards the removable singularity of
     :math:`\alpha_n` with ``if (fabs(v + 41.0) < 1e-6)`` and, inside
     that branch, substitutes the perturbed literal ``41.00001``.
-    BrainCell instead routes the expression through the stable helper
-    :math:`S(x) = x/(1 - \exp(-x))`, which returns :math:`1 + x/2`
-    when ``abs(x) < 1e-6``. Because the guard now applies to the
-    scaled argument :math:`x = (V + 41)/10`, it triggers for
-    ``abs(V + 41) < 1e-5 mV`` and yields
-    :math:`\alpha_n \approx 10\ \mathrm{ms}^{-1}` there. The
+    BrainCell instead evaluates :math:`S(x) = x/(1 - \exp(-x))` as
+    ``1 / u.math.exprel(-x)``, with
+    :math:`\operatorname{exprel}(x) = (\exp(x) - 1)/x`, which is
+    finite and well conditioned at :math:`x = 0`, where it yields
+    :math:`\alpha_n = 10\ \mathrm{ms}^{-1}` exactly. The
     substitution is exact away from the singular point and
     better-behaved at it, but it is a BrainCell choice: the import
     README explicitly excludes those in-formula literals from its
@@ -6356,7 +5484,7 @@ class Kdr_ZH2019_IO(OhmicHH):
     def _n_alpha(self, V):
         V = V.to_decimal(u.mV)
         x = (V + 41.0) / 10.0
-        return 10.0 * _x_over_one_minus_exp_neg_stable(x)
+        return 10.0 / u.math.exprel(-x)
 
     def _n_beta(self, V):
         V = V.to_decimal(u.mV)

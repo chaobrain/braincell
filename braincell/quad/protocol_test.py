@@ -33,6 +33,7 @@ import numpy as np
 from braincell.quad import (
     get_integrator,
 )
+from braincell.quad._testing import FLOAT_DTYPE
 from braincell.quad.protocol import (
     DiffEqGroupState,
     DiffEqModule,
@@ -43,8 +44,6 @@ from braincell.quad.protocol import (
     state_grouping,
     hidden_state,
 )
-
-_FLOAT_DTYPE = jnp.asarray(0.0).dtype
 
 
 class DiffEqStateMixinTest(unittest.TestCase):
@@ -123,7 +122,7 @@ class DiffEqSingleStateTest(unittest.TestCase):
         np.testing.assert_array_equal(st.diffusion, 2 * d)
 
     def test_state_value_roundtrip(self):
-        v = jnp.arange(4, dtype=_FLOAT_DTYPE) * u.mV
+        v = jnp.arange(4, dtype=FLOAT_DTYPE) * u.mV
         st = DiffEqSingleState(v)
         np.testing.assert_array_equal(st.value.to_decimal(u.mV), np.arange(4))
 
@@ -274,7 +273,7 @@ class IndependentIntegrationTest(unittest.TestCase):
             def __init__(self):
                 IndependentIntegration.__init__(self, solver)
                 brainstate.nn.Module.__init__(self)
-                self.y = DiffEqSingleState(jnp.ones(2, dtype=_FLOAT_DTYPE) * u.mV)
+                self.y = DiffEqSingleState(jnp.ones(2, dtype=FLOAT_DTYPE) * u.mV)
 
             def compute_derivative(self, *args, **kwargs):
                 self.y.derivative = -self.y.value / (5.0 * u.ms)

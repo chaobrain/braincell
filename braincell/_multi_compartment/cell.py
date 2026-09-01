@@ -41,7 +41,7 @@ import operator
 import warnings
 import weakref
 from types import MappingProxyType
-from typing import Callable, Mapping, Optional
+from typing import Callable, ClassVar, Mapping, Optional
 from dataclasses import dataclass
 
 import brainstate
@@ -771,6 +771,10 @@ class Cell(_CellFacade, HHTypedNeuron):
     """
 
     __module__ = "braincell"
+
+    # A Cell lays its DiffEqState leaves out per compartment, so a solver that
+    # flattens them must concatenate rather than stack. See DiffEqModule.
+    diffeq_state_merging: ClassVar[str] = "concat"
 
     # ------------------------------------------------------------------
     # Construction

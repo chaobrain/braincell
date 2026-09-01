@@ -24,94 +24,95 @@ import brainstate
 import brainunit as u
 
 from braincell._misc import set_module_as
-from braincell._typing import T, DT
+from braincell._typing import Args, Aux, DT, T, VectorField, Y0, Y1
 from .protocol import DiffEqModule
 from ._registry import register_integrator
-from ._util import apply_standard_solver_step
+from ._util import apply_standard_solver_step, environ_time
 
 __all__ = [
     'implicit_euler_step',
 ]
 
 
-def _newton_method(f, y0, t, dt, args=(), modified=False, tol=1e-5, max_iter=100, order=2):
+def _newton_method(
+    f: VectorField,
+    y0: Y0,
+    t: T,
+    dt: DT,
+    args: Args = (),
+    tol: float = 1e-5,
+    max_iter: int = 100,
+) -> tuple[Y1, Aux]:
     r"""
-    Newton's method for solving the implicit equations arising from the Crank - Nicolson method for ordinary differential equations (ODEs).
+    Solve one trapezoidal (Crank-Nicolson) step by Newton iteration.
 
-    The Crank - Nicolson method is a finite - difference method used for numerically solving ODEs of the form \(\frac{dy}{dt}=f(t,y)\).
-    Given the current state \(y_0\) at time \(t\), this function uses Newton's method to find the next state \(y\) at time \(t + dt\)
-    by solving the implicit equation \(y - y_0-\frac{dt}{2}(f(t,y_0)+f(t + dt,y)) = 0\).
+    For an ODE :math:`dy/dt = f(t, y)` and a current state :math:`y_0` at time
+    :math:`t`, this finds :math:`y` at :math:`t + \Delta t` by solving the
+    implicit residual
 
-    Parameters:
-        f : callable
-            Function representing the ODE or implicit equation.
-        y0 : array_like
-            Initial guess for the solution.
-        t : float
-            Current time.
-        dt : float
-            Time step.
-        tol : float, optional
-            Convergence tolerance for the solution. Default is 1e-5.
-        max_iter : int, optional
-            Maximum number of iterations. Default is 100.
-        order : int, optional
-            Order of the integration method. If order = 1, use explicit Euler. If order = 2, use Crank - Nicolson.
-        args : tuple, optional
-            Additional arguments passed to the function f.
+    .. math::
 
-    Returns:
-        y : ndarray
-            Solution array, shape (n,).
+        g(y) = y - y_0 - \tfrac{\Delta t}{2}
+               \bigl(f(t, y_0) + f(t + \Delta t, y)\bigr) = 0,
+
+    updating :math:`y \leftarrow y - J^{-1} g(y)` with
+    :math:`J = \partial g / \partial y` assembled by forward-mode AD.
+
+    Parameters
+    ----------
+    f : Callable
+        The vector field ``f(t, y, *args)``, returning ``dy/dt`` and an
+        auxiliary output.
+    y0 : jax.Array
+        The current state, used both as the initial guess and as the anchor of
+        the residual.
+    t : u.Quantity[u.second]
+        The current time.
+    dt : u.Quantity[u.second]
+        The integration time step.
+    args : tuple, optional
+        Extra positional arguments forwarded to ``f``.
+    tol : float, optional
+        Convergence tolerance. Iteration stops once either the residual norm
+        or the Jacobian norm falls below this value. Default 1e-5.
+    max_iter : int, optional
+        Maximum number of Newton iterations. Default 100.
+
+    Returns
+    -------
+    y1 : jax.Array
+        The updated state.
+    aux : dict
+        Empty; this solver produces no auxiliary output.
     """
 
+    # The residual works on bare magnitudes; strip before anything closes over
+    # ``t`` / ``dt`` so every evaluation below sees the same values.
+    dt = u.get_magnitude(dt)
+    t = u.get_magnitude(t)
+
+    # f(t, y0) does not depend on the loop carry, and XLA does not hoist
+    # loop-invariant code out of a while body, so evaluating it inside ``g``
+    # cost a second full vector-field evaluation on every Newton iteration.
+    f0 = f(t, y0, *args)[0]
+
     def g(t, y, *args):
-        # jax.debug.print("arg = {a}", a = args)
-        if order == 1:
-            return y - y0 - dt * f(t + dt, y, *args)[0]
-        elif order == 2:
-            return y - y0 - 0.5 * dt * (f(t, y0, *args)[0] + f(t + dt, y, *args)[0])
-        else:
-            raise ValueError("Only order 1 or 2 is supported.")
+        return y - y0 - 0.5 * dt * (f0 + f(t + dt, y, *args)[0])
 
     def cond_fun(carry):
         i, _, cond = carry
-        # condition = u.math.logical_or(u.math.linalg.norm(A) < tol, u.math.linalg.norm(df) < tol)
         return u.math.logical_and(i < max_iter, cond)
 
     def body_fun(carry):
         i, y1, _ = carry
+        # df: [n_neuron * n_compartment, M];  A: [n_neuron * n_compartment, M, M]
         A, df = brainstate.transform.jacfwd(lambda y: g(t, y, *args), return_value=True, has_aux=False)(y1)
-        # df: [n_neuron, n_compartment, M]
-        # A: [n_neuron, n_compartment, M, M]
-        # df: [n_neuron * n_compartment, M]
-        # A: [n_neuron * n_compartment, M, M]
-
-        # y1: [n_neuron * n_compartment, M]
-
         condition = u.math.logical_or(u.math.linalg.norm(A) < tol, u.math.linalg.norm(df) < tol)
         new_y1 = y1 - u.math.linalg.solve(A, df)
         return (i + 1, new_y1, condition)
 
-    def body_fun_modified(carry):
-        i, y1, A, _ = carry
-        df = g(t, y1, *args)
-        new_y1 = y1 - u.math.linalg.solve(A, df)
-        return (i + 1, new_y1, A, df)
-
-    dt = u.get_magnitude(dt)
-    t = u.get_magnitude(t)
-    init_guess = y0  # + dt*f(t, y0, *args)[0]
-    init_carry = (0, init_guess, True)
-    '''
-    if not modified:
-        n, result, _, _ = jax.lax.while_loop(cond_fun, body_fun, init_carry)
-    else:
-        n, result, _, df = jax.lax.while_loop(cond_fun, body_fun_modified, init_carry)
-    '''
-    n, result, _ = brainstate.transform.while_loop(cond_fun, body_fun, init_carry)
-    aux = {}
-    return result, aux
+    _, result, _ = brainstate.transform.while_loop(cond_fun, body_fun, (0, y0, True))
+    return result, {}
 
 
 @register_integrator(
@@ -121,39 +122,40 @@ def _newton_method(f, y0, t, dt, args=(), modified=False, tol=1e-5, max_iter=100
     description="Implicit Euler via Newton iteration.",
 )
 @set_module_as('braincell.quad')
-def implicit_euler_step(target: DiffEqModule, t: T, dt: DT, *args):
-    r"""Advance one step with the implicit (backward) Euler method.
+def implicit_euler_step(target: DiffEqModule, *args, t: T = None, dt: DT = None):
+    r"""Advance one step with an implicit Newton-solved step.
 
-    Solves
+    Solves the trapezoidal (Crank-Nicolson) residual
 
     .. math::
 
-        y_{n+1} = y_n + \Delta t \, f(t_{n+1}, y_{n+1})
+        g(y) = y - y_n - \frac{\Delta t}{2}
+               \bigl(f(t_n, y_n) + f(t_{n+1}, y)\bigr) = 0
 
-    by Newton iteration on the residual
-    :math:`g(y) = y - y_n - \Delta t \, f(t + \Delta t, y)`. Each
-    iteration assembles the full Jacobian
+    by Newton iteration. Each iteration assembles the full Jacobian
     :math:`J = \partial g / \partial y` and updates
     :math:`y \leftarrow y - J^{-1} g(y)` until either the residual norm or
     the Jacobian norm falls below ``1e-5`` or 100 iterations have been
     spent.
 
-    Implicit Euler is :math:`L`-stable, so it tolerates arbitrarily large
-    time steps on stiff problems at the cost of damping high-frequency
-    components. Local truncation error is :math:`O(\Delta t^2)`; global
-    error is :math:`O(\Delta t)`.
+    The trapezoidal rule is A-stable with local truncation error
+    :math:`O(\Delta t^3)` and global error :math:`O(\Delta t^2)`. Unlike an
+    L-stable scheme it does not damp high-frequency components, so very stiff
+    problems may ring rather than decay.
 
     Parameters
     ----------
     target : DiffEqModule
         The module whose :class:`DiffEqState` leaves are advanced.
-    t : Quantity[time]
-        Current simulation time.
-    dt : Quantity[time]
-        Time step. Must carry units of time (e.g. ``0.025 * u.ms``).
     *args
         Extra positional arguments forwarded to ``target``'s
         ``compute_derivative`` and ``pre/post_integral`` hooks.
+    t : Quantity[time], optional
+        Current simulation time. Defaults to the value in the active
+        :mod:`brainstate.environ` context.
+    dt : Quantity[time], optional
+        Time step; must carry units of time (e.g. ``0.025 * u.ms``). Defaults
+        to the value in the active :mod:`brainstate.environ` context.
 
     Returns
     -------
@@ -169,11 +171,27 @@ def implicit_euler_step(target: DiffEqModule, t: T, dt: DT, *args):
 
     Notes
     -----
-    This step takes ``t`` and ``dt`` explicitly, so it is **not**
-    selectable through ``solver="implicit_euler"``: the model hosts call
-    ``self.solver(self)`` / ``self.solver(self, I_ext)`` and read the time
-    arguments from :mod:`brainstate.environ`. Call it directly, or pick a
-    ``(target, *args)`` integrator such as ``"backward_euler"``. The
-    registry records this as ``IntegratorEntry.requires_time_args``.
+    ``t`` and ``dt`` are keyword-only and optional, so this step matches the
+    ``(target, *args)`` convention the model hosts call
+    (``self.solver(self)`` / ``self.solver(self, I_ext)``) and is selectable
+    through ``solver="implicit_euler"``.
+
+    The registered name and ``order=1`` metadata describe implicit Euler, but
+    the residual solved here is the trapezoidal one, as the equations above
+    and ``_implicit_test.py`` both show. Reconciling the two means either
+    renaming a public solver or changing the scheme, so it is left to a
+    deliberate decision rather than settled by a refactor.
+
+    Examples
+    --------
+
+    .. code-block:: python
+
+        >>> import brainstate
+        >>> import brainunit as u
+        >>> from braincell.quad import implicit_euler_step
+        >>> with brainstate.environ.context(t=0. * u.ms, dt=0.025 * u.ms):
+        ...     implicit_euler_step(my_neuron)  # doctest: +SKIP
     """
+    t, dt = environ_time(target, t, dt)
     apply_standard_solver_step(_newton_method, target, t, dt, *args)

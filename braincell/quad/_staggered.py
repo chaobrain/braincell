@@ -26,8 +26,10 @@ Type responsibilities in this file:
   ``float64`` annotations.
 """
 
-from dataclasses import dataclass
+import functools
+import operator
 import os
+from dataclasses import dataclass
 
 import brainstate
 import brainunit as u
@@ -36,12 +38,28 @@ import jax.numpy as jnp
 import numpy as np
 
 from braincell._misc import is_traced_value, set_module_as
+from braincell._typing import DT, T
 from ._registry import register_integrator
+from ._util import environ_time
 from .protocol import DiffEqModule
 
 __all__ = [
     'staggered_step',
+    'dhs_voltage_step',
 ]
+
+
+def _with_sentinel(base, fill: float):
+    """Append the spurious trailing row the DHS back substitution expects.
+
+    Recursive doubling indexes a sentinel row past the end of the tree, so
+    every operand carries one extra entry: ``1`` for ``diags`` (so dividing by
+    it is a no-op) and ``0`` for ``lowers`` / ``uppers`` (so gathering through
+    it contributes nothing). Naming the fill keeps that difference — the only
+    thing that varies between the three call sites — visible.
+    """
+    mantissa = u.get_mantissa(base)
+    return jnp.concatenate([mantissa, jnp.full_like(mantissa[:1], fill)], axis=0) * u.UNITLESS
 
 
 @register_integrator(
@@ -93,11 +111,9 @@ def staggered_step(target: DiffEqModule, *args):
 
     Raises
     ------
-    AssertionError
-        If *target* is not a :class:`DiffEqModule`.
     TypeError
-        If *target* does not expose the node-tree machinery required by
-        :func:`dhs_voltage_step`.
+        If *target* is not a :class:`DiffEqModule`, or does not expose the
+        node-tree machinery required by :func:`dhs_voltage_step`.
 
     See Also
     --------
@@ -127,8 +143,7 @@ def staggered_step(target: DiffEqModule, *args):
         raise TypeError(
             f"The stagger integrator only support {DiffEqModule.__name__}, but we got {type(target)} instead."
         )
-    t = brainstate.environ.get('t', 0.0)
-    dt = brainstate.environ.get('dt')
+    t, dt = environ_time(target)
 
     if hasattr(target, "cache_ion_total_currents"):
         with jax.named_scope("braincell:staggered:cache_ion_total_currents"):
@@ -136,7 +151,7 @@ def staggered_step(target: DiffEqModule, *args):
 
     # voltage integration
     with jax.named_scope("braincell:staggered:dhs_voltage_step"):
-        dhs_voltage_step(target, t, dt, *args)
+        dhs_voltage_step(target, *args, t=t, dt=dt)
 
     with jax.named_scope("braincell:staggered:cv_to_point_after_voltage"):
         point_V = target._cv_to_point(target.V.value)
@@ -190,7 +205,7 @@ class DHSNumericState:
     description="Implicit-Euler dendritic hierarchical solver (DHS) voltage step.",
 )
 @set_module_as("braincell.quad")
-def dhs_voltage_step(target, t, dt, *args):
+def dhs_voltage_step(target, *args, t: T = None, dt: DT = None):
     r"""Advance the membrane voltage by one implicit-Euler DHS step.
 
     Solves the linearized cable equation on a multi-compartment cell using
@@ -249,12 +264,15 @@ def dhs_voltage_step(target, t, dt, *args):
 
     Notes
     -----
-    This step takes ``t`` and ``dt`` explicitly, so — unlike
-    :func:`staggered_step` — it is **not** selectable through
-    ``Cell(solver="dhs_voltage")``: the host calls ``self.solver(self)``
-    and reads the time arguments from :mod:`brainstate.environ`. Call it
-    directly, or use ``"staggered"``, which wraps it. The registry records
-    this as ``IntegratorEntry.requires_time_args``.
+    ``t`` and ``dt`` are keyword-only and optional, defaulting to the active
+    :mod:`brainstate.environ` context, so this step matches the
+    ``(target, *args)`` convention the hosts call and is selectable through
+    ``Cell(solver="dhs_voltage")``. :func:`staggered_step` passes both
+    explicitly because it has already read them.
+
+    Note that this advances the voltage *only*; selecting it directly leaves
+    gating variables and ion concentrations frozen. ``"staggered"`` is the
+    solver that pairs it with a channel update.
 
     The static topology metadata produced by ``_build_dhs_static_source``
     (row lookup tables, edge ordering, recursive-doubling jump table) is
@@ -266,26 +284,18 @@ def dhs_voltage_step(target, t, dt, *args):
     if not hasattr(target, "node_tree") or not hasattr(target, "node_scheduling"):
         raise TypeError(f"dhs_voltage_step(...) requires a node-tree aware target, got {type(target)}.")
 
+    t, dt = environ_time(target, t, dt)
     node_tree = target.node_tree
     scheduling = target.node_scheduling(algorithm="dhs")
     static_source = _get_dhs_static_source(target, node_tree=node_tree, scheduling=scheduling)
     static_cache = _get_dhs_static_cache(target, static_source)
     V_n = target.V.value
     with jax.named_scope("braincell:dhs:linearize_membrane_current"):
-        linear, const = jax.named_call(
-            _linear_and_const_term,
-            name="braincell:dhs:linearize_membrane_current_call",
-        )(target, V_n, *args)
+        linear, const = _linear_and_const_term(target, V_n, *args)
     with jax.named_scope("braincell:dhs:edge_current"):
-        edge_point_current = jax.named_call(
-            _edge_point_current,
-            name="braincell:dhs:edge_current_call",
-        )(target, t=t, static_source=static_source)
+        edge_point_current = _edge_point_current(target, t=t)
     with jax.named_scope("braincell:dhs:build_numeric_state"):
-        numeric = jax.named_call(
-            _build_dhs_numeric_state,
-            name="braincell:dhs:build_numeric_state_call",
-        )(
+        numeric = _build_dhs_numeric_state(
             V_n,
             linear,
             const,
@@ -295,10 +305,7 @@ def dhs_voltage_step(target, t, dt, *args):
             edge_point_current=edge_point_current,
         )
     with jax.named_scope("braincell:dhs:forward_elimination"):
-        diags, solves = jax.named_call(
-            comp_triang_raw,
-            name="braincell:dhs:forward_elimination_call",
-        )(
+        diags, solves = comp_triang_raw(
             numeric.diags,
             numeric.solves,
             numeric.lowers,
@@ -307,20 +314,14 @@ def dhs_voltage_step(target, t, dt, *args):
             static_source.level_offsets_np,
         )
     with jax.named_scope("braincell:dhs:backsubstitution"):
-        solves = jax.named_call(
-            comp_backsub_raw,
-            name="braincell:dhs:backsubstitution_call",
-        )(
+        solves = comp_backsub_raw(
             diags,
             solves,
             numeric.lowers,
             static_source.backsub_indices_np,
         )
     with jax.named_scope("braincell:dhs:restore_voltage"):
-        target.V.value = jax.named_call(
-            _restore_midpoint_voltage,
-            name="braincell:dhs:restore_voltage_call",
-        )(
+        target.V.value = _restore_midpoint_voltage(
             solves,
             dynamic_rows=static_source.dynamic_rows_np,
             target_shape=target.V.value.shape,
@@ -487,19 +488,14 @@ def _build_dhs_numeric_state(
     batch_size = V_n.shape[0]
     n_point = static_source.n_point
 
-    rhs_midpoint_mv = _to_jax_quantity(V_n + dt * const, u.mV)
-    linear_ms_inv = _to_jax_quantity(linear, u.ms**-1)
-    dt_ms = _to_jax_quantity(dt, u.ms)
+    rhs_midpoint_mv = u.math.asarray(V_n + dt * const, unit=u.mV)
+    linear_ms_inv = u.math.asarray(linear, unit=u.ms**-1)
+    dt_ms = u.math.asarray(dt, unit=u.ms)
 
     diag_base = static_cache.diag_ms_inv * dt_ms
     lower_base = static_cache.lowers_ms_inv * dt_ms
     upper_base = static_cache.uppers_ms_inv * dt_ms
-    diag_base_mantissa = u.get_mantissa(diag_base)
-    diag_base_with_sentinel = (
-        jnp.concatenate([diag_base_mantissa, jnp.ones_like(diag_base_mantissa[:1])], axis=0) * u.UNITLESS
-    )
-
-    diags = u.math.broadcast_to(diag_base_with_sentinel[None, :], (batch_size, n_point + 1))
+    diags = u.math.broadcast_to(_with_sentinel(diag_base, 1.0)[None, :], (batch_size, n_point + 1))
     diag_update = jnp.ones_like(u.get_mantissa(linear_ms_inv)) * u.UNITLESS - dt_ms * linear_ms_inv
     diags = diags.at[:, static_source.dynamic_rows_np].add(diag_update)
 
@@ -517,14 +513,12 @@ def _build_dhs_numeric_state(
     return DHSNumericState(
         diags=diags,
         solves=solves,
-        lowers=jnp.concatenate([u.get_mantissa(lower_base), jnp.zeros_like(u.get_mantissa(lower_base[:1]))], axis=0)
-        * u.UNITLESS,
-        uppers=jnp.concatenate([u.get_mantissa(upper_base), jnp.zeros_like(u.get_mantissa(upper_base[:1]))], axis=0)
-        * u.UNITLESS,
+        lowers=_with_sentinel(lower_base, 0.0),
+        uppers=_with_sentinel(upper_base, 0.0),
     )
 
 
-def _edge_point_current(target, *, t, static_source: DHSStaticSource):
+def _edge_point_current(target, *, t):
     """Return boundary point-clamp current for the DHS point-tree RHS."""
 
     runtime = getattr(target, "_runtime", None)
@@ -573,18 +567,9 @@ def _edge_conductance(*, edge, cvs) -> object:
     # boundary with an algebraic point; after elimination the equivalent
     # midpoint conductance is 1 / (R_left + R_right), not 1/R_left + 1/R_right.
     if len(resistances) > 1 and len(branch_ids) == 1:
-        total_resistance = None
-        for resistance in resistances:
-            total_resistance = resistance if total_resistance is None else (total_resistance + resistance)
-        if total_resistance is None:  # pragma: no cover
-            raise ValueError(f"Point-tree edge {edge.id!r} did not produce a total resistance.")
-        return 1.0 / total_resistance
+        return 1.0 / functools.reduce(operator.add, resistances)
 
-    conductance = None
-    for resistance in resistances:
-        value = 1.0 / resistance
-        conductance = value if conductance is None else (conductance + value)
-    return conductance
+    return functools.reduce(operator.add, (1.0 / r for r in resistances))
 
 
 def _row_capacitance_scale(target, *, dynamic_rows: np.ndarray, n_point: int) -> list[object]:
@@ -623,28 +608,47 @@ def _build_dhs_edge_order(scheduling) -> tuple[np.ndarray, np.ndarray]:
     return np.empty((0, 2), dtype=np.int32), np.empty((0,), dtype=np.int32)
 
 
+def _require_ndim(name, value, ndim):
+    """Raise unless ``value`` has exactly ``ndim`` dimensions."""
+    if value.ndim != ndim:
+        raise ValueError(f"{name} must be {ndim}D, got ndim={value.ndim}")
+
+
+def _require_unitless(name, value):
+    """Raise unless ``value`` is a plain array or a unitless Quantity."""
+    if isinstance(value, u.Quantity) and not u.get_unit(value).is_unitless:
+        raise ValueError(f"{name} must be unitless, got unit={u.get_unit(value)}")
+
+
+def _require_plain_array(name, value):
+    """Raise if ``value`` is a Quantity where an index array is expected."""
+    if isinstance(value, u.Quantity):
+        raise ValueError(f"{name} must be a plain array, not a Quantity")
+
+
+def _require_row_length(name, value, diags):
+    """Raise unless ``value`` has one entry per column of ``diags``."""
+    if value.shape[0] != diags.shape[1]:
+        raise ValueError(f"{name}.shape[0]={value.shape[0]} must equal diags.shape[1]={diags.shape[1]}")
+
+
+def _check_dhs_operands(diags, solves, lowers):
+    """Check the operand contract shared by both DHS kernels."""
+    _require_ndim("diags", diags, 2)
+    _require_ndim("solves", solves, 2)
+    _require_ndim("lowers", lowers, 1)
+    _require_unitless("diags", diags)
+    _require_unitless("lowers", lowers)
+    _require_row_length("lowers", lowers, diags)
+
+
 def _check_comp_triang(diags, solves, lowers, uppers, edges):
     """Kernel contract check for the quantity-aware DHS forward pass."""
-    if isinstance(edges, u.Quantity):
-        raise ValueError("edges must be a plain array, not a Quantity")
-    if diags.ndim != 2:
-        raise ValueError(f"diags must be 2D, got ndim={diags.ndim}")
-    if solves.ndim != 2:
-        raise ValueError(f"solves must be 2D, got ndim={solves.ndim}")
-    if lowers.ndim != 1:
-        raise ValueError(f"lowers must be 1D, got ndim={lowers.ndim}")
-    if uppers.ndim != 1:
-        raise ValueError(f"uppers must be 1D, got ndim={uppers.ndim}")
-    if isinstance(diags, u.Quantity) and not u.get_unit(diags).is_unitless:
-        raise ValueError(f"diags must be unitless, got unit={u.get_unit(diags)}")
-    if isinstance(lowers, u.Quantity) and not u.get_unit(lowers).is_unitless:
-        raise ValueError(f"lowers must be unitless, got unit={u.get_unit(lowers)}")
-    if isinstance(uppers, u.Quantity) and not u.get_unit(uppers).is_unitless:
-        raise ValueError(f"uppers must be unitless, got unit={u.get_unit(uppers)}")
-    if lowers.shape[0] != diags.shape[1]:
-        raise ValueError(f"lowers.shape[0]={lowers.shape[0]} must equal diags.shape[1]={diags.shape[1]}")
-    if uppers.shape[0] != diags.shape[1]:
-        raise ValueError(f"uppers.shape[0]={uppers.shape[0]} must equal diags.shape[1]={diags.shape[1]}")
+    _require_plain_array("edges", edges)
+    _check_dhs_operands(diags, solves, lowers)
+    _require_ndim("uppers", uppers, 1)
+    _require_unitless("uppers", uppers)
+    _require_row_length("uppers", uppers, diags)
     if edges.ndim != 2 or edges.shape[1] != 2:
         raise ValueError(f"edges must have shape (_, 2), got {edges.shape}")
 
@@ -655,16 +659,8 @@ def comp_triang_raw(diags, solves, lowers, uppers, edges, level_offsets):
     if _profile_dhs_levels_enabled():
         return _comp_triang_raw_profiled(diags, solves, lowers, uppers, edges, level_offsets)
     for i in range(level_offsets.shape[0] - 1):
-        children = edges[level_offsets[i] : level_offsets[i + 1], 0]
-        parent = edges[level_offsets[i] : level_offsets[i + 1], 1]
-        lower_val = lowers[children]
-        upper_val = uppers[children]
-        child_diag = diags[:, children]
-        child_solve = solves[:, children]
-
-        multiplier = upper_val / child_diag
-        diags = diags.at[:, parent].add(-lower_val * multiplier)
-        solves = solves.at[:, parent].add(-child_solve * multiplier)
+        level_edges = edges[level_offsets[i] : level_offsets[i + 1]]
+        diags, solves = _comp_triang_level(diags, solves, lowers, uppers, level_edges)
     return diags, solves
 
 
@@ -683,13 +679,7 @@ def _comp_triang_raw_profiled(diags, solves, lowers, uppers, edges, level_offset
         scope = f"braincell:dhs:forward_level:i={i:03d}:edges={edge_count:06d}:batch={batch_size}"
         level_edges = edges[start:stop]
         with jax.named_scope(scope):
-            diags, solves = jax.named_call(_comp_triang_level, name=scope)(
-                diags,
-                solves,
-                lowers,
-                uppers,
-                level_edges,
-            )
+            diags, solves = _comp_triang_level(diags, solves, lowers, uppers, level_edges)
     return diags, solves
 
 
@@ -710,22 +700,10 @@ def _comp_triang_level(diags, solves, lowers, uppers, level_edges):
 
 def _check_comp_backsub(diags, solves, lowers, backsub_indices):
     """Kernel contract check for quantity-aware recursive doubling."""
-    if isinstance(backsub_indices, u.Quantity):
-        raise ValueError("backsub_indices must be a plain array, not a Quantity")
-    if diags.ndim != 2:
-        raise ValueError(f"diags must be 2D, got ndim={diags.ndim}")
-    if solves.ndim != 2:
-        raise ValueError(f"solves must be 2D, got ndim={solves.ndim}")
-    if lowers.ndim != 1:
-        raise ValueError(f"lowers must be 1D, got ndim={lowers.ndim}")
-    if isinstance(diags, u.Quantity) and not u.get_unit(diags).is_unitless:
-        raise ValueError(f"diags must be unitless, got unit={u.get_unit(diags)}")
-    if isinstance(lowers, u.Quantity) and not u.get_unit(lowers).is_unitless:
-        raise ValueError(f"lowers must be unitless, got unit={u.get_unit(lowers)}")
+    _require_plain_array("backsub_indices", backsub_indices)
+    _check_dhs_operands(diags, solves, lowers)
     if diags.shape != solves.shape:
         raise ValueError(f"diags.shape={diags.shape} must equal solves.shape={solves.shape}")
-    if lowers.shape[0] != diags.shape[1]:
-        raise ValueError(f"lowers.shape[0]={lowers.shape[0]} must equal diags.shape[1]={diags.shape[1]}")
     if backsub_indices.ndim != 2:
         raise ValueError(f"backsub_indices must be 2D, got ndim={backsub_indices.ndim}")
     if backsub_indices.shape[1] != diags.shape[1]:
@@ -743,17 +721,27 @@ def _build_backsub_indices(parent_lookup: np.ndarray, *, n_nodes: int) -> np.nda
     level is built by composing the previous one with itself
     (:math:`A_{2k}[j] = A_k[A_k[j]]`), which turns the construction from
     :math:`O(n^2)` gathers into :math:`O(n \\log n)`.
+
+    The table is sized by the tree's *depth*, not its node count. Recursive
+    doubling only needs enough levels to span the longest ancestor chain, so
+    the loop stops at the first level that maps every row to the sentinel:
+    from there on ``lowers[sentinel]`` and ``solves[sentinel]`` are both zero,
+    making each further round an arithmetic no-op that still costs two gathers
+    and two multiplies per step. A deep-but-narrow morphology is unaffected;
+    a wide one sheds several rounds. The level count can never exceed the
+    ``floor(log2(n_nodes)) + 1`` the node-count bound would have produced.
     """
     parent_lookup = np.asarray(parent_lookup, dtype=np.int32)
     indices = []
     # A_1: one parent hop from every row (fancy-indexed rather than sliced so
     # that a too-short ``parent_lookup`` still raises instead of truncating).
     k_step_parent = parent_lookup[np.arange(n_nodes + 1, dtype=np.int32)]
-    step = 1
-    while step <= max(1, n_nodes):
+    max_levels = max(1, int(n_nodes)).bit_length()
+    while True:
         indices.append(k_step_parent)
+        if len(indices) >= max_levels or bool(np.all(k_step_parent == n_nodes)):
+            break
         k_step_parent = k_step_parent[k_step_parent]
-        step *= 2
     return np.asarray(indices, dtype=np.int32)
 
 
@@ -811,11 +799,6 @@ def _linear_and_const_term(target, V_n, *args):
         linear = u.Quantity(linear_mantissa, linear_unit)
     const = derivative - V_n * linear
     return linear, const
-
-
-def _to_jax_quantity(value: object, unit: object) -> u.Quantity:
-    """Convert a quantity-like value while preserving any existing JAX dtype."""
-    return u.Quantity(u.math.asarray(value.to_decimal(unit)), unit)
 
 
 def _scalar_decimal(value: object, unit: object) -> float:

@@ -13,6 +13,8 @@
 # limitations under the License.
 # ==============================================================================
 
+import functools
+import operator
 from dataclasses import dataclass
 from typing import Sequence
 
@@ -21,9 +23,10 @@ import brainunit as u
 import jax
 
 from braincell._misc import cast_like as _cast_like, set_module_as
-from braincell._typing import T, DT, PyTree
+from braincell._typing import DT, PyTree
 from .protocol import DiffEqState, DiffEqModule
 from ._registry import register_integrator
+from ._util import environ_time
 
 __all__ = [
     'euler_step',
@@ -75,16 +78,17 @@ def _rk_update(coeff: Sequence, st: brainstate.State, y0: PyTree, dt: DT, *ks):
     assert len(coeff) == len(ks), 'The number of coefficients must be equal to the number of ks.'
 
     def _step(y0_, *k_):
-        kds = [_cast_like(c_, k_leaf) * k_leaf for c_, k_leaf in zip(coeff, k_)]
-        update = kds[0]
-        for kd in kds[1:]:
-            update += kd
+        kds = (_cast_like(c_, k_leaf) * k_leaf for c_, k_leaf in zip(coeff, k_))
+        # reduce rather than sum: sum()'s implicit 0 start breaks unit arithmetic.
+        update = functools.reduce(operator.add, kds)
         return y0_ + update * _cast_like(dt, y0_)
 
     st.value = jax.tree.map(_step, y0, *ks, is_leaf=u.math.is_quantity)
 
 
-def _general_rk_step(tableau: ButcherTableau, target: DiffEqModule, t: T, dt: DT, *args):
+def _general_rk_step(tableau: ButcherTableau, target: DiffEqModule, *args):
+    t, dt = environ_time(target)
+
     # before one-step integration
     target.pre_integral(*args)
 
@@ -275,9 +279,7 @@ def euler_step(
         >>> with brainstate.environ.context(t=0. * u.ms, dt=0.01 * u.ms):
         ...     euler_step(my_neuron)                       # doctest: +SKIP
     """
-    t = brainstate.environ.get('t', getattr(target, 'current_time', 0.0 * u.ms))
-    dt = brainstate.environ.get('dt')
-    _general_rk_step(euler_tableau, target, t, dt, *args)
+    _general_rk_step(euler_tableau, target, *args)
 
 
 @register_integrator(
@@ -349,9 +351,7 @@ def midpoint_step(
         >>> with brainstate.environ.context(t=0. * u.ms, dt=0.01 * u.ms):
         ...     midpoint_step(my_neuron)                    # doctest: +SKIP
     """
-    t = brainstate.environ.get('t', getattr(target, 'current_time', 0.0 * u.ms))
-    dt = brainstate.environ.get('dt')
-    _general_rk_step(midpoint_tableau, target, t, dt, *args)
+    _general_rk_step(midpoint_tableau, target, *args)
 
 
 @register_integrator(
@@ -423,9 +423,7 @@ def rk2_step(
         >>> with brainstate.environ.context(t=0. * u.ms, dt=0.01 * u.ms):
         ...     rk2_step(my_neuron)                         # doctest: +SKIP
     """
-    t = brainstate.environ.get('t', getattr(target, 'current_time', 0.0 * u.ms))
-    dt = brainstate.environ.get('dt')
-    _general_rk_step(rk2_tableau, target, t, dt, *args)
+    _general_rk_step(rk2_tableau, target, *args)
 
 
 @register_integrator(
@@ -495,9 +493,7 @@ def heun2_step(
         >>> with brainstate.environ.context(t=0. * u.ms, dt=0.01 * u.ms):
         ...     heun2_step(my_neuron)                       # doctest: +SKIP
     """
-    t = brainstate.environ.get('t', getattr(target, 'current_time', 0.0 * u.ms))
-    dt = brainstate.environ.get('dt')
-    _general_rk_step(heun2_tableau, target, t, dt, *args)
+    _general_rk_step(heun2_tableau, target, *args)
 
 
 @register_integrator(
@@ -576,9 +572,7 @@ def ralston2_step(
         >>> with brainstate.environ.context(t=0. * u.ms, dt=0.01 * u.ms):
         ...     ralston2_step(my_neuron)                    # doctest: +SKIP
     """
-    t = brainstate.environ.get('t', getattr(target, 'current_time', 0.0 * u.ms))
-    dt = brainstate.environ.get('dt')
-    _general_rk_step(ralston2_tableau, target, t, dt, *args)
+    _general_rk_step(ralston2_tableau, target, *args)
 
 
 @register_integrator(
@@ -652,9 +646,7 @@ def rk3_step(
         >>> with brainstate.environ.context(t=0. * u.ms, dt=0.01 * u.ms):
         ...     rk3_step(my_neuron)                         # doctest: +SKIP
     """
-    t = brainstate.environ.get('t', getattr(target, 'current_time', 0.0 * u.ms))
-    dt = brainstate.environ.get('dt')
-    _general_rk_step(rk3_tableau, target, t, dt, *args)
+    _general_rk_step(rk3_tableau, target, *args)
 
 
 @register_integrator(
@@ -727,9 +719,7 @@ def heun3_step(
         >>> with brainstate.environ.context(t=0. * u.ms, dt=0.01 * u.ms):
         ...     heun3_step(my_neuron)                       # doctest: +SKIP
     """
-    t = brainstate.environ.get('t', getattr(target, 'current_time', 0.0 * u.ms))
-    dt = brainstate.environ.get('dt')
-    _general_rk_step(heun3_tableau, target, t, dt, *args)
+    _general_rk_step(heun3_tableau, target, *args)
 
 
 @register_integrator(
@@ -812,9 +802,7 @@ def ssprk3_step(
         >>> with brainstate.environ.context(t=0. * u.ms, dt=0.01 * u.ms):
         ...     ssprk3_step(my_neuron)                      # doctest: +SKIP
     """
-    t = brainstate.environ.get('t', getattr(target, 'current_time', 0.0 * u.ms))
-    dt = brainstate.environ.get('dt')
-    _general_rk_step(ssprk3_tableau, target, t, dt, *args)
+    _general_rk_step(ssprk3_tableau, target, *args)
 
 
 @register_integrator(
@@ -895,9 +883,7 @@ def ralston3_step(
         >>> with brainstate.environ.context(t=0. * u.ms, dt=0.01 * u.ms):
         ...     ralston3_step(my_neuron)                    # doctest: +SKIP
     """
-    t = brainstate.environ.get('t', getattr(target, 'current_time', 0.0 * u.ms))
-    dt = brainstate.environ.get('dt')
-    _general_rk_step(ralston3_tableau, target, t, dt, *args)
+    _general_rk_step(ralston3_tableau, target, *args)
 
 
 @register_integrator(
@@ -975,9 +961,7 @@ def rk4_step(
         >>> with brainstate.environ.context(t=0. * u.ms, dt=0.01 * u.ms):
         ...     rk4_step(my_neuron)                         # doctest: +SKIP
     """
-    t = brainstate.environ.get('t', getattr(target, 'current_time', 0.0 * u.ms))
-    dt = brainstate.environ.get('dt')
-    _general_rk_step(rk4_tableau, target, t, dt, *args)
+    _general_rk_step(rk4_tableau, target, *args)
 
 
 @register_integrator(
@@ -1057,6 +1041,4 @@ def ralston4_step(
         >>> with brainstate.environ.context(t=0. * u.ms, dt=0.01 * u.ms):
         ...     ralston4_step(my_neuron)                    # doctest: +SKIP
     """
-    t = brainstate.environ.get('t', getattr(target, 'current_time', 0.0 * u.ms))
-    dt = brainstate.environ.get('dt')
-    _general_rk_step(ralston4_tableau, target, t, dt, *args)
+    _general_rk_step(ralston4_tableau, target, *args)

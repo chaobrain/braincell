@@ -32,12 +32,13 @@ trailing compartment axis with :class:`DiffEqGroupState`. See
 
 import contextlib
 import contextvars
-from typing import Callable, Iterator
+from typing import Callable, ClassVar, Iterator
 
 import brainstate
 from brainstate._state import record_state_value_write
 
 from braincell._misc import set_module_as
+from ._registry import get_integrator
 
 __all__ = [
     'DiffEqState',
@@ -383,6 +384,16 @@ class DiffEqModule(brainstate.mixin.Mixin):
     as their ``target`` argument and read ``t``/``dt`` from the active
     :mod:`brainstate.environ` context.
 
+    Attributes
+    ----------
+    diffeq_state_merging : str
+        How the module's :class:`DiffEqState` leaves are laid out when a
+        solver flattens them into one array — ``'stack'`` (the default) gives
+        ``[..., n_state]``, ``'concat'`` gives ``[..., n_compartment * n_state]``.
+        The host declares this because it is a property of the state layout the
+        host allocated; :func:`~braincell.quad.exp_euler_step` reads it rather
+        than inferring it from the concrete class.
+
     See Also
     --------
     DiffEqState : Per-variable state container the solvers update.
@@ -390,6 +401,8 @@ class DiffEqModule(brainstate.mixin.Mixin):
     """
 
     __module__ = 'braincell'
+
+    diffeq_state_merging: ClassVar[str] = 'stack'
 
     def pre_integral(self, *args, **kwargs):
         """
@@ -492,8 +505,6 @@ class IndependentIntegration(brainstate.mixin.Mixin):
     """
 
     def __init__(self, solver: str | Callable, **kwargs):
-        from . import get_integrator
-
         self.solver = get_integrator(solver)
         super().__init__(**kwargs)
 

@@ -25,8 +25,41 @@ from braincell._typing import T, DT, Y0, Y1, Aux, Jacobian, VectorField, Args
 from .protocol import DiffEqState, DiffEqModule, IndependentIntegration
 
 
-def _array_dtype(value) -> jnp.dtype:
-    return jnp.asarray(u.get_magnitude(value)).dtype
+def environ_time(target: DiffEqModule, t: T = None, dt: DT = None) -> Tuple[T, DT]:
+    """
+    Resolve the current simulation time and time step.
+
+    Every registered integrator step is invoked by its host as
+    ``self.solver(self, *args)``, with no explicit time arguments, so each one
+    has to recover ``t`` and ``dt`` from :mod:`brainstate.environ`. This is the
+    single definition of how that is done.
+
+    Parameters
+    ----------
+    target : DiffEqModule
+        The module being integrated. Supplies the ``current_time`` fallback
+        used when ``t`` is absent from the environment.
+    t : u.Quantity[u.second], optional
+        An explicit time that overrides the environment. ``None`` (the
+        default) means "read from the environment".
+    dt : u.Quantity[u.second], optional
+        An explicit time step that overrides the environment. ``None`` (the
+        default) means "read from the environment".
+
+    Returns
+    -------
+    t : u.Quantity[u.second]
+        The current simulation time. When read from the environment it falls
+        back to ``target.current_time`` and then to ``0.0 * u.ms``, so the
+        result always carries a time unit.
+    dt : u.Quantity[u.second]
+        The integration time step.
+    """
+    if t is None:
+        t = brainstate.environ.get('t', getattr(target, 'current_time', 0.0 * u.ms))
+    if dt is None:
+        dt = brainstate.environ.get('dt')
+    return t, dt
 
 
 def _has_path_prefix(path, prefixes):
@@ -65,6 +98,11 @@ def split_diffeq_states(module: DiffEqModule, *, excluded_paths=()):
     ----------
     module : DiffEqModule
         The differential equation module whose states are to be split.
+    excluded_paths : tuple of tuple of str, optional
+        State paths to keep out of ``diffeq_states``. A path matches when it is
+        a prefix of the state's path, so ``(('channels',),)`` excludes every
+        state owned by the ``channels`` subtree. Excluded states still appear in
+        ``all_states`` and ``other_states``.
 
     Returns
     -------
@@ -113,30 +151,25 @@ def _check_diffeq_state_derivative(state: DiffEqState, dt: u.Quantity):
     state.derivative = jax.tree.map(_fn_checking, state.value, state.derivative, is_leaf=u.math.is_quantity)
 
 
+def _check_merging(method: str) -> str:
+    """Validate a state-merging method, returning it unchanged."""
+    if method not in ('concat', 'stack'):
+        raise ValueError(f"Unknown merging method: {method!r}. Expected 'concat' or 'stack'.")
+    return method
+
+
 def _merging(leaves, method: str):
-    if method == 'concat':
+    if _check_merging(method) == 'concat':
         return jnp.concatenate(leaves, axis=-1)
-    elif method == 'stack':
-        return jnp.stack(leaves, axis=-1)
-    else:
-        raise ValueError(f'Unknown method: {method}')
+    return jnp.stack(leaves, axis=-1)
 
 
-def _dict_derivative_to_arr(
-    a_dict: Dict[Any, DiffEqState],
-    method: str = 'concat',
-):
-    a_dict = {key: val.derivative for key, val in a_dict.items()}
-    leaves = jax.tree.leaves(a_dict)
-    return _merging(leaves, method=method)
-
-
-def _dict_state_to_arr(
+def _dict_attr_to_arr(
     a_dict: Dict[Any, brainstate.State],
+    attr: str,
     method: str = 'concat',
 ):
-    a_dict = {key: val.value for key, val in a_dict.items()}
-    leaves = jax.tree.leaves(a_dict)
+    leaves = jax.tree.leaves({key: getattr(val, attr) for key, val in a_dict.items()})
     return _merging(leaves, method=method)
 
 
@@ -145,18 +178,18 @@ def _assign_arr_to_states(
     states: Dict[Any, brainstate.State],
     method: str = 'concat',
 ):
+    stacked = _check_merging(method) == 'stack'
     leaves, tree_def = jax.tree.flatten({key: state.value for key, state in states.items()})
     index = 0
     vals_like_leaves = []
     for leaf in leaves:
-        if method == 'stack':
+        if stacked:
             vals_like_leaves.append(vals[..., index])
             index += 1
-        elif method == 'concat':
-            vals_like_leaves.append(vals[..., index : index + leaf.shape[-1]])
-            index += leaf.shape[-1]
         else:
-            raise ValueError(f'Unknown method: {method}')
+            width = leaf.shape[-1]
+            vals_like_leaves.append(vals[..., index : index + width])
+            index += width
     vals_like_states = jax.tree.unflatten(tree_def, vals_like_leaves)
     for key, state_val in vals_like_states.items():
         states[key].value = state_val
@@ -168,7 +201,7 @@ def _transform_diffeq_module_into_dimensionless_fn(
     method: str = 'concat',
     excluded_paths=(),
 ):
-    assert method in ['concat', 'stack'], f'Unknown method: {method}'
+    _check_merging(method)
     all_states, diffeq_states, other_states = split_diffeq_states(target, excluded_paths=excluded_paths)
     all_state_ids = {id(st) for st in all_states.values()}
 
@@ -181,7 +214,7 @@ def _transform_diffeq_module_into_dimensionless_fn(
             # derivative_arr: dimensionless derivatives
             for st in diffeq_states.values():
                 _check_diffeq_state_derivative(st, dt)  # THIS is important.
-            derivative_dimensionless = _dict_derivative_to_arr(diffeq_states, method=method)
+            derivative_dimensionless = _dict_attr_to_arr(diffeq_states, 'derivative', method=method)
             other_vals = {key: st.value for key, st in other_states.items()}
 
         # check if all states exist in the trace
@@ -237,9 +270,12 @@ def apply_standard_solver_step(
         - 'concat': Concatenate the states along the last dimension.
         - 'stack': Stack the states along the last dimension.
     """
-    assert isinstance(target, DiffEqModule), f'Target must be a DiffEqModule, but got {type(target)}'
-    assert callable(solver_step), f'Solver step must be callable, but got {type(solver_step)}'
-    assert merging in ['concat', 'stack'], f'Unknown merging method: {merging}'
+    # Raised rather than asserted so that ``python -O`` preserves the contract.
+    if not isinstance(target, DiffEqModule):
+        raise TypeError(f'Target must be a DiffEqModule, but got {type(target)}')
+    if not callable(solver_step):
+        raise TypeError(f'Solver step must be callable, but got {type(solver_step)}')
+    _check_merging(merging)
 
     # pre integral
     target.pre_integral(*args)
@@ -252,7 +288,7 @@ def apply_standard_solver_step(
 
     # one-step integration
     diffeq_vals, other_vals = solver_step(
-        dimensionless_fn, _dict_state_to_arr(diffeq_states, method=merging), t, dt, args
+        dimensionless_fn, _dict_attr_to_arr(diffeq_states, 'value', method=merging), t, dt, args
     )
 
     # post integral
@@ -274,23 +310,28 @@ def jacrev_last_dim(
     with respect to the last dimension of the input `hid_vals`. It uses
     JAX's reverse-mode automatic differentiation (jacrev) for efficient computation.
 
-    Args:
-        fn: The function for which to compute the Jacobian. It can either return a single
-            JAX array or a tuple containing a JAX array and auxiliary values.
-        hid_vals:
-            The input values for which to compute the Jacobian. The last dimension is
-            considered as the dimension of interest.
-        has_aux (bool, optional):
-            Whether the function `fn` returns auxiliary values. Defaults to False.
+    Parameters
+    ----------
+    fn : Callable
+        The function for which to compute the Jacobian. It can either return a
+        single JAX array or a tuple containing a JAX array and auxiliary values.
+    hid_vals : jax.Array
+        The input values for which to compute the Jacobian. The last dimension
+        is considered as the dimension of interest.
+    has_aux : bool, optional
+        Whether the function ``fn`` returns auxiliary values. Defaults to False.
 
-    Returns:
-            If `has_aux` is False, returns a tuple containing the Jacobian matrix and the
-            output of the function `fn`. If `has_aux` is True, returns a tuple containing
-            the Jacobian matrix, the output of the function `fn`, and the auxiliary values.
+    Returns
+    -------
+    tuple
+        If ``has_aux`` is False, a tuple containing the Jacobian matrix and the
+        output of ``fn``. If ``has_aux`` is True, a tuple containing the
+        Jacobian matrix, the output of ``fn``, and the auxiliary values.
 
-    Raises:
-        AssertionError:
-            If the number of input and output states are not the same.
+    Raises
+    ------
+    AssertionError
+        If the number of input and output states are not the same.
     """
     if has_aux:
         new_hid_vals, f_vjp, aux = jax.vjp(fn, hid_vals, has_aux=True)
@@ -300,7 +341,7 @@ def jacrev_last_dim(
     varshape = new_hid_vals.shape[:-1]
     assert num_state == hid_vals.shape[-1], 'Error: the number of input/output states should be the same.'
     g_primals = u.math.broadcast_to(
-        u.math.eye(num_state, dtype=_array_dtype(new_hid_vals)),
+        u.math.eye(num_state, dtype=u.math.get_dtype(new_hid_vals)),
         (*varshape, num_state, num_state),
     )
     jac = jax.vmap(f_vjp, in_axes=-2, out_axes=-2)(g_primals)
@@ -308,3 +349,53 @@ def jacrev_last_dim(
         return jac[0], new_hid_vals, aux
     else:
         return jac[0], new_hid_vals
+
+
+def linearize_flat(
+    f: VectorField,
+    y0: Y0,
+    t: T,
+    dt: DT,
+    args: Args = (),
+) -> Tuple[jax.Array, Jacobian, jax.Array, Aux]:
+    """
+    Linearize a vector field about ``y0`` and fold the leading axes into one batch axis.
+
+    This is the shared prologue of the locally linearised solvers
+    (:func:`~braincell.quad._backward_euler._backward_euler` and
+    :func:`~braincell.quad._exp_euler._exponential_euler`): it strips the unit
+    from ``dt``, builds the local Jacobian, and reshapes both the Jacobian and
+    the derivative so that everything ahead of the state axis becomes a single
+    batch axis.
+
+    Parameters
+    ----------
+    f : Callable
+        The vector field ``f(t, y, *args)``, returning ``(dy/dt, aux)``.
+    y0 : jax.Array
+        The current state, shape ``(..., M)``.
+    t : u.Quantity[u.second]
+        The current time.
+    dt : u.Quantity[u.second]
+        The integration time step.
+    args : tuple, optional
+        Extra positional arguments forwarded to ``f``.
+
+    Returns
+    -------
+    dt : jax.Array
+        The magnitude of ``dt``, cast to ``y0``'s dtype.
+    A : jax.Array
+        The Jacobian :math:`\\partial f / \\partial y` at ``y0``, shape ``(B, M, M)``.
+    df : jax.Array
+        The vector field evaluated at ``y0``, shape ``(B, M)``.
+    aux : Any
+        The auxiliary output of ``f``.
+    """
+    dtype = y0.dtype
+    dt = jnp.asarray(u.get_magnitude(dt), dtype=dtype)
+    A, df, aux = jacrev_last_dim(lambda y: f(t, y, *args), y0, has_aux=True)
+    # reshape A from "[..., M, M]" to "[-1, M, M]" and df from "[..., M]" to "[-1, M]"
+    A = jnp.asarray(A, dtype=dtype).reshape((-1, A.shape[-2], A.shape[-1]))
+    df = jnp.asarray(df, dtype=dtype).reshape((-1, df.shape[-1]))
+    return dt, A, df, aux

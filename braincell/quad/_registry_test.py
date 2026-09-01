@@ -35,6 +35,31 @@ def _noop(target, *args, **kwargs):  # pragma: no cover - body irrelevant
     return None
 
 
+#: Every canonical integrator the package ships, mapped to its ``(category,
+#: order)`` metadata. This is the single source of truth for both "are the
+#: expected names registered" and "is each one filed correctly"; keeping two
+#: copies of the name list let them drift.
+EXPECTED_METADATA = {
+    "euler": ("explicit", 1),
+    "midpoint": ("explicit", 2),
+    "rk2": ("explicit", 2),
+    "heun2": ("explicit", 2),
+    "ralston2": ("explicit", 2),
+    "rk3": ("explicit", 3),
+    "heun3": ("explicit", 3),
+    "ssprk3": ("explicit", 3),
+    "ralston3": ("explicit", 3),
+    "rk4": ("explicit", 4),
+    "ralston4": ("explicit", 4),
+    "exp_euler": ("exponential", 1),
+    "ind_exp_euler": ("exponential", 1),
+    "backward_euler": ("implicit", 1),
+    "implicit_euler": ("implicit", 1),
+    "staggered": ("staggered", None),
+    "dhs_voltage": ("voltage", None),
+}
+
+
 class IntegratorRegistryTest(unittest.TestCase):
     def setUp(self):
         self.registry = IntegratorRegistry()
@@ -228,26 +253,7 @@ class GlobalRegistryIntegrationTest(unittest.TestCase):
 
     def test_registered_canonical_names_include_known_methods(self):
         names = set(quad.get_registry().names())
-        expected = {
-            "euler",
-            "midpoint",
-            "rk2",
-            "rk3",
-            "rk4",
-            "heun2",
-            "heun3",
-            "ssprk3",
-            "ralston2",
-            "ralston3",
-            "ralston4",
-            "exp_euler",
-            "ind_exp_euler",
-            "backward_euler",
-            "implicit_euler",
-            "staggered",
-            "dhs_voltage",
-        }
-        missing = expected - names
+        missing = set(EXPECTED_METADATA) - names
         self.assertFalse(missing, f"Missing canonical names: {sorted(missing)}")
 
 
@@ -289,29 +295,9 @@ class PublicSurfaceTest(unittest.TestCase):
 class RegistryMetadataTest(unittest.TestCase):
     """Categories, orders, and module strings for in-tree integrators."""
 
-    EXPECTED = {
-        "euler": ("explicit", 1),
-        "midpoint": ("explicit", 2),
-        "rk2": ("explicit", 2),
-        "heun2": ("explicit", 2),
-        "ralston2": ("explicit", 2),
-        "rk3": ("explicit", 3),
-        "heun3": ("explicit", 3),
-        "ssprk3": ("explicit", 3),
-        "ralston3": ("explicit", 3),
-        "rk4": ("explicit", 4),
-        "ralston4": ("explicit", 4),
-        "exp_euler": ("exponential", 1),
-        "ind_exp_euler": ("exponential", 1),
-        "backward_euler": ("implicit", 1),
-        "implicit_euler": ("implicit", 1),
-        "staggered": ("staggered", None),
-        "dhs_voltage": ("voltage", None),
-    }
-
     def test_categories_and_orders(self):
         registry = quad.get_registry()
-        for name, (category, order) in self.EXPECTED.items():
+        for name, (category, order) in EXPECTED_METADATA.items():
             with self.subTest(name=name):
                 entry = registry.entry(name)
                 self.assertEqual(entry.category, category)
@@ -342,56 +328,37 @@ class CallConventionTest(unittest.TestCase):
     neither passes ``t`` or ``dt``. A step declared ``(target, t, dt, *args)``
     is therefore unreachable through ``solver="<name>"`` even though it
     resolves fine through :func:`get_integrator`. That mismatch is what let
-    six dead cell-only integrators sit in the registry unnoticed, so it is
-    pinned here rather than left to be rediscovered.
+    six dead cell-only integrators sit in the registry unnoticed, and it is
+    what made ``dhs_voltage`` and ``implicit_euler`` unselectable until they
+    were given keyword-only ``t``/``dt``. It is pinned here rather than left
+    to be rediscovered.
     """
 
-    #: Registered names that legitimately demand explicit ``(t, dt)``.
-    #: ``dhs_voltage`` is an internal sub-step invoked directly by
-    #: ``staggered_step``; ``implicit_euler`` is called directly in tests
-    #: and examples. Neither is selectable via ``solver=``. Adding a name
-    #: here is a deliberate act — do not do it to silence this test.
-    KNOWN_TIME_ARG_STEPS = {"dhs_voltage", "implicit_euler"}
-
-    def test_entry_records_call_convention(self):
-        registry = quad.get_registry()
-        actual = {e.name for e in registry.entries() if e.requires_time_args}
-        self.assertEqual(actual, self.KNOWN_TIME_ARG_STEPS)
-
-    def test_host_callable_steps_bind_with_target_only(self):
+    def test_every_registered_step_binds_with_the_host_calls(self):
         registry = quad.get_registry()
         sentinel = object()
         for entry in registry.entries():
-            if entry.name in self.KNOWN_TIME_ARG_STEPS:
-                continue
             with self.subTest(name=entry.name):
-                self.assertFalse(entry.requires_time_args)
+                signature = inspect.signature(entry.func)
                 # The exact call ``Cell._update_dynamics`` makes.
-                inspect.signature(entry.func).bind(sentinel)
+                signature.bind(sentinel)
                 # ...and the one ``SingleCompartment.update`` makes.
-                inspect.signature(entry.func).bind(sentinel, sentinel)
+                signature.bind(sentinel, sentinel)
 
-    def test_time_arg_steps_reject_the_host_call(self):
+    def test_time_arguments_are_keyword_only_overrides(self):
+        # A step may still accept ``t``/``dt``, but only as keyword-only
+        # parameters that default to the ``brainstate.environ`` context —
+        # never as positionals that displace ``*args``.
         registry = quad.get_registry()
-        sentinel = object()
-        for name in self.KNOWN_TIME_ARG_STEPS:
-            with self.subTest(name=name):
-                entry = registry.entry(name)
-                self.assertTrue(entry.requires_time_args)
-                with self.assertRaises(TypeError):
-                    inspect.signature(entry.func).bind(sentinel)
-
-    def test_requires_time_args_computed_on_registration(self):
-        registry = IntegratorRegistry()
-
-        def host_style(target, *args):
-            return None
-
-        def time_style(target, t, dt, *args):
-            return None
-
-        self.assertFalse(registry.register("host", host_style).requires_time_args)
-        self.assertTrue(registry.register("timed", time_style).requires_time_args)
+        for entry in registry.entries():
+            parameters = inspect.signature(entry.func).parameters
+            for name in ("t", "dt"):
+                if name not in parameters:
+                    continue
+                with self.subTest(name=entry.name, parameter=name):
+                    parameter = parameters[name]
+                    self.assertEqual(parameter.kind, inspect.Parameter.KEYWORD_ONLY)
+                    self.assertIsNone(parameter.default)
 
 
 class GlobalRegisterIntegratorDecoratorTest(unittest.TestCase):

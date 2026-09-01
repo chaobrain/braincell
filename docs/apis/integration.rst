@@ -115,3 +115,4 @@ Other Integrators
    :toctree: generated/
 
     staggered_step
+    dhs_voltage_step

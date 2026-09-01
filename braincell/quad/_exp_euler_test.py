@@ -13,113 +13,33 @@
 # limitations under the License.
 # ==============================================================================
 
-# -*- coding: utf-8 -*-
-
-
 import math
 import unittest
 
 import brainstate
 import brainunit as u
 import jax.numpy as jnp
-import matplotlib.pyplot as plt
 import numpy as np
 
-import braincell
 from braincell.quad import (
     exp_euler_step,
     ind_exp_euler_step,
 )
-from braincell.quad.protocol import (
-    DiffEqModule,
-    DiffEqSingleState,
-)
-
-
-class HH(braincell.SingleCompartment):
-    def __init__(self, size, solver='rk4'):
-        super().__init__(size, solver=solver)
-
-        self.na = braincell.ion.SodiumFixed(size, E=50.0 * u.mV)
-        self.na.add(INa=braincell.channel.Na_HH1952(size))
-
-        self.k = braincell.ion.PotassiumFixed(size, E=-77.0 * u.mV)
-        self.k.add(IK=braincell.channel.K_HH1952(size))
-
-        self.IL = braincell.channel.IL(size, E=-54.387 * u.mV, g_max=0.03 * (u.mS / u.cm**2))
-
-
-def integrate(method: str, dt=0.01 * u.ms):
-    brainstate.random.seed(1)
-    hh = HH(1, solver=method)
-    hh.init_state()
-
-    def step_fun(t):
-        with brainstate.environ.context(t=t):
-            hh.update(10 * u.nA / u.cm**2)
-        return hh.V.value
-
-    with brainstate.environ.context(dt=dt):
-        times = u.math.arange(0.0 * u.ms, 10 * u.ms, brainstate.environ.get_dt())
-        vs = brainstate.transform.for_loop(step_fun, times)
-    return vs
-
-
-def compare(method):
-    norm = []
-    dts = [1e-3 * u.ms, 2e-3 * u.ms, 4e-3 * u.ms, 8e-3 * u.ms, 1e-2 * u.ms, 2e-2 * u.ms]
-    for dt in dts:
-        gold_vs = integrate('exp_euler', dt=dt)
-        vs = integrate(method, dt=dt)
-        norm.append(u.linalg.norm(gold_vs - vs))
-    # Strip units before returning so matplotlib can convert via np.asarray.
-    # Newer saiunit rejects np.asarray(dimensional_quantity).
-    dts_q = u.math.asarray(dts)
-    norm_q = u.math.asarray(norm)
-    return dts_q.mantissa, norm_q.mantissa
-
-
-class TestRungeKutta:
-    def test_euler_step(self):
-        dts, norms = compare('ind_exp_euler')
-        plt.loglog(dts, norms)
-        # plt.show()
-        plt.close()
-
-
-# --------------------------------------------------------------------------- #
-# Unit tests for exp_euler / ind_exp_euler that do not require the full HH
-# stack. ind_exp_euler is exact for a locally linear ODE so we can compare
-# against ``exp(-dt/tau)`` directly.
-# --------------------------------------------------------------------------- #
-
-_FLOAT_DTYPE = jnp.asarray(0.0).dtype
-
-
-class _LinearDecay(brainstate.nn.Module, DiffEqModule):
-    """Scalar linear ODE ``dx/dt = -x/tau``."""
-
-    def __init__(self, x0=1.0, tau_ms=10.0, shape=(3,)):
-        super().__init__()
-        self.tau = tau_ms * u.ms
-        self.x = DiffEqSingleState(jnp.full(shape, x0, dtype=_FLOAT_DTYPE) * u.mV)
-
-    def compute_derivative(self, *args, **kwargs):
-        self.x.derivative = -self.x.value / self.tau
+from braincell.quad._testing import LinearDecay, integrate
 
 
 class IndExpEulerLinearTest(unittest.TestCase):
     def test_one_step_matches_exponential(self):
         # For dx/dt = lambda * x with constant lambda, ind_exp_euler should
         # produce y_{n+1} = y_n * exp(lambda * dt) up to float precision.
-        m = _LinearDecay()
+        m = LinearDecay()
         with brainstate.environ.context(t=0.0 * u.ms, dt=0.1 * u.ms):
             ind_exp_euler_step(m)
         expected = math.exp(-0.01)  # dt/tau = 0.1/10 = 0.01
         self.assertAlmostEqual(float(m.x.value.to_decimal(u.mV)[0]), expected, places=5)
 
     def test_excluded_paths_are_skipped(self):
-        m = _LinearDecay()
+        m = LinearDecay()
         original = np.array(m.x.value.to_decimal(u.mV))
         with brainstate.environ.context(t=0.0 * u.ms, dt=0.1 * u.ms):
             ind_exp_euler_step(m, excluded_paths=[("x",)])
@@ -136,23 +56,42 @@ class IndExpEulerLinearTest(unittest.TestCase):
                 ind_exp_euler_step(Plain())
 
 
-class ExpEulerTypeGuardTest(unittest.TestCase):
-    """``exp_euler_step`` requires an ``HHTypedNeuron`` target."""
-
-    def test_rejects_minimal_diffeq_module(self):
-        # HIGH-03: TypeError (not AssertionError) so ``python -O`` preserves
-        # the contract.
-        with self.assertRaises(TypeError):
-            with brainstate.environ.context(t=0.0 * u.ms, dt=0.1 * u.ms):
-                exp_euler_step(_LinearDecay())
+class ExpEulerTargetContractTest(unittest.TestCase):
+    """``exp_euler_step`` accepts any ``DiffEqModule`` and reads its layout."""
 
     def test_rejects_plain_object(self):
-        from braincell.quad import exp_euler_step
-
+        # TypeError (not AssertionError) so ``python -O`` preserves the contract.
         with brainstate.environ.context(t=0.0 * u.ms, dt=0.025 * u.ms):
             with self.assertRaises(TypeError) as ctx:
                 exp_euler_step(object())
-        self.assertIn("HHTypedNeuron", str(ctx.exception))
+        self.assertIn("DiffEqModule", str(ctx.exception))
+
+    def test_accepts_minimal_diffeq_module(self):
+        # The target no longer has to be an HHTypedNeuron: the state layout is
+        # declared by the host through ``diffeq_state_merging`` rather than
+        # inferred from the concrete class.
+        m = LinearDecay()
+        with brainstate.environ.context(t=0.0 * u.ms, dt=0.1 * u.ms):
+            exp_euler_step(m)
+        # dx/dt = -x/tau is linear, so one step is exact: x * exp(-dt/tau).
+        expected = math.exp(-0.01)  # dt/tau = 0.1/10 = 0.01
+        self.assertAlmostEqual(float(m.x.value.to_decimal(u.mV)[0]), expected, places=5)
+
+    def test_default_merging_is_stack(self):
+        # A plain DiffEqModule inherits 'stack'; Cell overrides it to 'concat'.
+        self.assertEqual(LinearDecay.diffeq_state_merging, "stack")
+
+
+class IndExpEulerHHTest(unittest.TestCase):
+    def test_drives_hodgkin_huxley_to_a_spiking_trace(self):
+        # Exercises the full HH stack through ``solver='ind_exp_euler'``:
+        # a 10 nA/cm^2 drive over 10 ms must produce a finite, spiking trace
+        # rather than diverging or going NaN.
+        vs = np.asarray(integrate('ind_exp_euler').to_decimal(u.mV))
+        self.assertTrue(np.all(np.isfinite(vs)))
+        self.assertGreater(vs.min(), -100.0)
+        self.assertLess(vs.max(), 80.0)
+        self.assertGreater(vs.max() - vs.min(), 50.0)
 
 
 class ExponentialEulerHandlesSingularJacobianTest(unittest.TestCase):

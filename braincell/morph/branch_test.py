@@ -401,9 +401,6 @@ class BranchTest(unittest.TestCase):
             _ = discontinuous_points.points
 
     def test_branch_accepts_jax_quantity_inputs(self) -> None:
-        if jnp is None:
-            self.skipTest("jax is not installed")
-
         branch = Branch.from_lengths(
             lengths=jnp.array([40.0]) * u.um,
             radii=jnp.array([0.8, 0.4]) * u.um,

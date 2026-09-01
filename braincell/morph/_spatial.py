@@ -167,50 +167,71 @@ def interpolate_branch(morpho: Morphology, branch_id: int, branch_x: object) -> 
     """Interpolate radius and optional 3-D position at continuous sites."""
     branch = morpho.branch(index=int(branch_id)).branch
     values = np.asarray(branch_x, dtype=float)
+    geometry = _BranchGeometryUm(branch)
+
     radii = np.empty(values.shape, dtype=float)
-    positions = None
-    if branch.points_proximal is not None and branch.points_distal is not None:
-        positions = np.empty(values.shape + (3,), dtype=float)
+    flat_radii = radii.reshape(-1)
+    sites = values.reshape(-1).tolist()
 
-    for index, x in enumerate(values.reshape(-1)):
-        radius_um, position_um = _interpolate_scalar(branch, float(x))
-        radii.reshape(-1)[index] = radius_um
-        if positions is not None:
-            assert position_um is not None
-            positions.reshape(-1, 3)[index] = position_um
-    return (
-        u.Quantity(radii, u.um),
-        None if positions is None else u.Quantity(positions, u.um),
-    )
+    if geometry.p0 is None:
+        for index, x in enumerate(sites):
+            flat_radii[index] = geometry.at(x)[0]
+        return u.Quantity(radii, u.um), None
+
+    positions = np.empty(values.shape + (3,), dtype=float)
+    flat_positions = positions.reshape(-1, 3)
+    for index, x in enumerate(sites):
+        flat_radii[index], flat_positions[index] = geometry.at(x)
+    return u.Quantity(radii, u.um), u.Quantity(positions, u.um)
 
 
-def _interpolate_scalar(branch, x: float) -> tuple[float, np.ndarray | None]:
-    lengths = np.asarray(branch.lengths.to_decimal(u.um), dtype=float)
-    r0 = np.asarray(branch.radii_proximal.to_decimal(u.um), dtype=float)
-    r1 = np.asarray(branch.radii_distal.to_decimal(u.um), dtype=float)
-    p0 = None if branch.points_proximal is None else np.asarray(branch.points_proximal.to_decimal(u.um), dtype=float)
-    p1 = None if branch.points_distal is None else np.asarray(branch.points_distal.to_decimal(u.um), dtype=float)
-    total = float(np.sum(lengths))
-    if total <= 0.0:
-        raise ValueError("Cannot interpolate a zero-length branch.")
+class _BranchGeometryUm:
+    """Micrometre-decoded segment geometry for a single branch.
 
-    cursor = 0.0
-    last_positive = None
-    for index, segment_length in enumerate(lengths.tolist()):
-        if segment_length <= 0.0:
-            if np.isclose(x, cursor / total):
-                point = None if p0 is None or p1 is None else 0.5 * (p0[index] + p1[index])
-                return 0.5 * (r0[index] + r1[index]), point
-            continue
-        start = cursor / total
-        cursor += segment_length
-        end = cursor / total
-        last_positive = index
-        if x < end or (x == 1.0 and end == 1.0):
-            fraction = (x - start) / (end - start)
-            point = None if p0 is None or p1 is None else p0[index] + fraction * (p1[index] - p0[index])
-            return r0[index] + fraction * (r1[index] - r0[index]), point
-    if last_positive is None:
-        raise ValueError("Cannot interpolate a zero-length branch.")
-    point = None if p1 is None else p1[last_positive]
-    return r1[last_positive], point
+    :func:`interpolate_branch` evaluates many sites on one branch, and none
+    of the five ``to_decimal`` conversions below depend on the site. Decoding
+    them once per branch rather than once per site is the reason this class
+    exists; ``at`` holds the per-site arithmetic that genuinely varies.
+    """
+
+    __slots__ = ("lengths", "r0", "r1", "p0", "p1", "total")
+
+    def __init__(self, branch) -> None:
+        self.lengths = np.asarray(branch.lengths.to_decimal(u.um), dtype=float)
+        self.r0 = np.asarray(branch.radii_proximal.to_decimal(u.um), dtype=float)
+        self.r1 = np.asarray(branch.radii_distal.to_decimal(u.um), dtype=float)
+        points_proximal = branch.points_proximal
+        points_distal = branch.points_distal
+        has_points = points_proximal is not None and points_distal is not None
+        self.p0 = np.asarray(points_proximal.to_decimal(u.um), dtype=float) if has_points else None
+        self.p1 = np.asarray(points_distal.to_decimal(u.um), dtype=float) if has_points else None
+        self.total = float(np.sum(self.lengths))
+        if self.total <= 0.0:
+            raise ValueError("Cannot interpolate a zero-length branch.")
+
+    def at(self, x: float) -> tuple[float, np.ndarray | None]:
+        """Return the radius, and the 3-D point when available, at site ``x``."""
+        lengths = self.lengths
+        r0, r1, p0, p1 = self.r0, self.r1, self.p0, self.p1
+        total = self.total
+
+        cursor = 0.0
+        last_positive = 0
+        for index, segment_length in enumerate(lengths.tolist()):
+            if segment_length <= 0.0:
+                if np.isclose(x, cursor / total):
+                    point = None if p0 is None or p1 is None else 0.5 * (p0[index] + p1[index])
+                    return 0.5 * (r0[index] + r1[index]), point
+                continue
+            start = cursor / total
+            cursor += segment_length
+            end = cursor / total
+            last_positive = index
+            if x < end or (x == 1.0 and end == 1.0):
+                fraction = (x - start) / (end - start)
+                point = None if p0 is None or p1 is None else p0[index] + fraction * (p1[index] - p0[index])
+                return r0[index] + fraction * (r1[index] - r0[index]), point
+        # ``total > 0`` was enforced in __init__, so at least one segment had a
+        # positive length and ``last_positive`` names a real segment here.
+        point = None if p1 is None else p1[last_positive]
+        return r1[last_positive], point

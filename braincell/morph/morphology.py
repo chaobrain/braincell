@@ -16,11 +16,11 @@
 """Editable morphology model.
 
 User-facing entry points:
-- `Morpho`: the whole mutable tree
+- `Morphology`: the whole mutable tree
 - `MorphoBranch`: a tree-local branch node view
 - `MorphoEdge`: read-only branch-to-branch topology edges
 
-In normal use, users only need `Morpho` and `MorphoBranch`.
+In normal use, users only need `Morphology` and `MorphoBranch`.
 """
 
 from collections.abc import Mapping
@@ -31,63 +31,13 @@ import brainunit as u
 import numpy as np
 from brainunit import Quantity
 
-from .branch import Branch
+from .branch import (
+    Branch,
+    frustum_areas_um2,
+    frustum_volumes_um3,
+    length_weighted_mean_radius_um,
+)
 
-_MORPHO_METRIC_PROPERTY_NAMES = {
-    "max_euclidean_distance",
-    "max_euclidean_distance_excluding_soma",
-    "max_branch_order",
-    "max_path_distance",
-    "max_path_distance_excluding_soma",
-    "mean_radius",
-    "n_bifurcations",
-    "n_branches",
-    "n_stems",
-    "total_area",
-    "total_length",
-    "total_volume",
-    "x_range",
-    "y_range",
-    "z_range",
-}
-
-_MORPHO_RESERVED_NAMES = {
-    "attach",
-    "branch",
-    "branches",
-    "branch_by_order",
-    "edges",
-    "from_asc",
-    "from_root",
-    "from_swc",
-    "has_full_point_geometry",
-    "metric",
-    "naming_state",
-    "path_to_root",
-    "path_length_to_root",
-    "restore_naming_state",
-    "root",
-    "select",
-    "shortest_path_length",
-    "vis2d",
-    "vis3d",
-} | _MORPHO_METRIC_PROPERTY_NAMES
-_MORPHO_BRANCH_RESERVED_NAMES = {
-    "attach",
-    "branch",
-    "branch_id",
-    "branch_order",
-    "child_x",
-    "children",
-    "index",
-    "index_by",
-    "name",
-    "n_children",
-    "n_tapers",
-    "parent",
-    "parent_id",
-    "parent_x",
-}
 _BRANCH_RESERVED_NAMES = set(Branch.__dataclass_fields__) | {name for name in dir(Branch) if not name.startswith("_")}
 
 ParentRef = Union[str, "MorphoBranch"]
@@ -98,10 +48,10 @@ class MorphoEdge:
     """A directed edge between two morphology branches.
 
     ``MorphoEdge`` is a frozen dataclass representing a parent-child
-    connection in a :class:`Morpho` tree.  It records which branches are
+    connection in a :class:`Morphology` tree.  It records which branches are
     connected and where on each branch the attachment occurs.
 
-    Edges are typically obtained via :attr:`Morpho.edges` rather than
+    Edges are typically obtained via :attr:`Morphology.edges` rather than
     constructed directly.
 
     Parameters
@@ -119,8 +69,8 @@ class MorphoEdge:
 
     See Also
     --------
-    Morpho.edges : Retrieve all edges in a morphology.
-    Morpho.attach : Attach a child branch to a parent.
+    Morphology.edges : Retrieve all edges in a morphology.
+    Morphology.attach : Attach a child branch to a parent.
 
     Examples
     --------
@@ -231,7 +181,7 @@ class MorphoMetric:
 class Morphology:
     """Mutable morphology tree for authoring, querying, and visualization.
 
-    ``Morpho`` is the central entry point for building neuron morphologies.
+    ``Morphology`` is the central entry point for building neuron morphologies.
     It owns a tree of :class:`MorphoBranch` nodes, each wrapping an
     immutable :class:`Branch` geometry.  Children are attached via
     :meth:`attach`, attribute assignment on a :class:`MorphoBranch`, or
@@ -266,7 +216,7 @@ class Morphology:
     follows the pattern ``"{type}_{n}"`` (e.g., ``"dend_0"``, ``"axon_1"``).
 
     Whole-morphology metrics (``total_length``, ``n_branches``, etc.)
-    are exposed directly on the ``Morpho`` instance.
+    are exposed directly on the ``Morphology`` instance.
 
     Examples
     --------
@@ -314,6 +264,8 @@ class Morphology:
         self._branch_index_cache: dict[str, dict[int, int]] = {}
         self._branch_tuple_cache: dict[str, tuple["MorphoBranch", ...]] = {}
         self._full_point_geometry: bool | None = None
+        self._all_segment_arrays_cache: tuple[np.ndarray, np.ndarray, np.ndarray] | None = None
+        self._all_points_cache: np.ndarray | None = None
         # Bumped on every structural change so consumers holding derived
         # results (e.g. braincell.filter.SelectionCache) can detect staleness.
         self._revision = 0
@@ -390,7 +342,7 @@ class Morphology:
             provided together with *options*, it must match
             ``options.mode``.
         return_report : bool
-            If ``True``, return a ``(Morpho, SwcReport)`` tuple instead
+            If ``True``, return a ``(Morphology, SwcReport)`` tuple instead
             of just the morphology.
 
         Returns
@@ -440,7 +392,7 @@ class Morphology:
         path : str or Path
             Path to the ASC file.
         return_report : bool
-            If ``True``, return a ``(Morpho, AscReport)`` tuple instead
+            If ``True``, return a ``(Morphology, AscReport)`` tuple instead
             of just the morphology.
 
         Returns
@@ -560,9 +512,9 @@ class Morphology:
 
         See Also
         --------
-        Morpho.load_checkpoint : Inverse operation.
-        Morpho.from_swc : Load a morphology from an SWC interchange file.
-        Morpho.from_asc : Load a morphology from a Neurolucida ASC file.
+        Morphology.load_checkpoint : Inverse operation.
+        Morphology.from_swc : Load a morphology from an SWC interchange file.
+        Morphology.from_asc : Load a morphology from a Neurolucida ASC file.
 
         Examples
         --------
@@ -600,7 +552,7 @@ class Morphology:
 
         See Also
         --------
-        Morpho.save_checkpoint : Inverse operation.
+        Morphology.save_checkpoint : Inverse operation.
 
         Examples
         --------
@@ -656,8 +608,7 @@ class Morphology:
                 parent_x=node.parent_x,
                 child_x=node.child_x,
             )
-            for node_id in self._ordered_node_ids()
-            for node in (self._get_node(node_id),)
+            for node in self.branches
             if node.parent_id is not None
         )
 
@@ -780,26 +731,44 @@ class Morphology:
             raise ValueError(f"{feature} require full point geometry on every branch.")
 
     def _all_segment_arrays_um(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-        lengths = []
-        radii_proximal = []
-        radii_distal = []
-        for branch in self.branches:
-            lengths_um, r0_um, r1_um = branch.branch._segment_arrays_um()
-            lengths.append(lengths_um)
-            radii_proximal.append(r0_um)
-            radii_distal.append(r1_um)
-        return (
-            np.concatenate(lengths),
-            np.concatenate(radii_proximal),
-            np.concatenate(radii_distal),
-        )
+        # Memoised: ``total_length``, ``mean_radius``, ``total_area`` and
+        # ``total_volume`` each want the same concatenation, so ``.metric``
+        # rebuilt it four times.
+        cached = self._all_segment_arrays_cache
+        if cached is None:
+            lengths = []
+            radii_proximal = []
+            radii_distal = []
+            for branch in self.branches:
+                lengths_um, r0_um, r1_um = branch.branch._segment_arrays_um()
+                lengths.append(lengths_um)
+                radii_proximal.append(r0_um)
+                radii_distal.append(r1_um)
+            cached = (
+                np.concatenate(lengths),
+                np.concatenate(radii_proximal),
+                np.concatenate(radii_distal),
+            )
+            self._all_segment_arrays_cache = cached
+        return cached
+
+    def _all_points_um(self) -> np.ndarray:
+        """Every branch's shared points as one ``(n_points, 3)`` array.
+
+        Memoised because ``x_range`` / ``y_range`` / ``z_range`` each need the
+        whole cloud, so building it per axis walked every branch three times.
+        """
+        cached = self._all_points_cache
+        if cached is None:
+            cached = np.concatenate(
+                [np.asarray(branch.branch.points.to_decimal(u.um), dtype=float) for branch in self.branches]
+            )
+            self._all_points_cache = cached
+        return cached
 
     def _branch_length_um(self, branch_index: int) -> float:
         branch = self.branch(index=branch_index).branch
         return float(np.sum(np.asarray(branch.lengths.to_decimal(u.um), dtype=float)))
-
-    def _root_branch_attach_x(self) -> float:
-        return 0.0
 
     def _root_point_um(self) -> np.ndarray:
         self._require_full_point_geometry(feature="Euclidean distance metrics")
@@ -811,11 +780,7 @@ class Morphology:
 
     def _point_on_branch_at_x_um(self, branch: Branch, x: float) -> np.ndarray:
         self._require_full_point_geometry(feature="Euclidean distance metrics")
-        points = branch.points
-        if points is None:
-            raise ValueError("Euclidean distance metrics require full point geometry on every branch.")
-
-        points_um = np.asarray(points.to_decimal(u.um), dtype=float)
+        points_um = np.asarray(branch.points.to_decimal(u.um), dtype=float)
         if np.isclose(float(x), 0.0):
             return points_um[0]
         if np.isclose(float(x), 1.0):
@@ -836,23 +801,22 @@ class Morphology:
                 fraction = (target_length_um - prefix_length_um) / segment_length_um
                 return points_um[index] + fraction * (points_um[index + 1] - points_um[index])
             prefix_length_um = next_prefix_length_um
-
-        return points_um[-1]
+        # No trailing return: the loop condition includes
+        # ``index == len(lengths_um) - 1``, so the last iteration always returns.
 
     def _root_attach_distances_um(self, *, exclude_root_soma: bool = False) -> dict[int, float]:
         ordered_ids = self._ordered_node_ids_by("depth")
         distances_um: dict[int, float] = {self.root._node_id: 0.0}
-        attach_x: dict[int, float] = {self.root._node_id: self._root_branch_attach_x()}
+        # The root branch always attaches at its own proximal end.
+        attach_x: dict[int, float] = {self.root._node_id: 0.0}
 
         for node_id in ordered_ids:
             if node_id == self.root._node_id:
                 continue
 
             node = self._get_node(node_id)
+            # Only the root has a null parent, and it was skipped above.
             parent_id = node.parent_id
-            if parent_id is None:
-                continue
-
             parent_attach_x = attach_x[parent_id]
             parent_distance_um = distances_um[parent_id]
             parent_length_um = self._branch_length_um(self._branch_index(parent_id))
@@ -880,17 +844,30 @@ class Morphology:
             node_id = self._node_id_from_index(branch_index)
             branch = self.branch(index=branch_index)
             branch_length_um = self._branch_length_um(branch_index)
-            attach_x = self._root_branch_attach_x() if branch.parent_id is None else float(branch.child_x)
+            attach_x = 0.0 if branch.parent_id is None else float(branch.child_x)
             distance_um = attach_distances_um[node_id] + abs(1.0 - attach_x) * branch_length_um
             max_distance_um = max(max_distance_um, distance_um)
         return max_distance_um
 
-    def _root_subtree_reference_point_um(self, terminal_node_id: int) -> np.ndarray:
+    def _root_subtree_reference_point_um(
+        self,
+        terminal_node_id: int,
+        *,
+        _memo: dict[float, np.ndarray] | None = None,
+    ) -> np.ndarray:
         path_node_ids = self._path_node_ids(terminal_node_id)
         if len(path_node_ids) <= 1:
             return self._root_point_um()
         first_child = self._get_node(path_node_ids[1])
-        return self._point_on_branch_at_x_um(self.root.branch, float(first_child.parent_x))
+        parent_x = float(first_child.parent_x)
+        # ``parent_x`` can only be 0.0, 0.5 or 1.0, so a whole morphology has at
+        # most three distinct answers; the caller passes a dict to share them
+        # across its terminals instead of re-walking the root branch each time.
+        if _memo is None:
+            return self._point_on_branch_at_x_um(self.root.branch, parent_x)
+        if parent_x not in _memo:
+            _memo[parent_x] = self._point_on_branch_at_x_um(self.root.branch, parent_x)
+        return _memo[parent_x]
 
     def _max_euclidean_distance_um(self, *, exclude_root_soma: bool) -> float:
         self._require_full_point_geometry(feature="Euclidean distance metrics")
@@ -903,12 +880,13 @@ class Morphology:
         tip_points = []
         start_points = []
         root_point_um = self._root_point_um()
+        reference_memo: dict[float, np.ndarray] = {}
         for branch_index in terminal_branch_indices:
             node_id = self._node_id_from_index(branch_index)
             branch = self.branch(index=branch_index).branch
             tip_points.append(np.asarray(branch.points_distal.to_decimal(u.um), dtype=float)[-1])
             if exclude_root_soma and self.root.type == "soma":
-                start_points.append(self._root_subtree_reference_point_um(node_id))
+                start_points.append(self._root_subtree_reference_point_um(node_id, _memo=reference_memo))
             else:
                 start_points.append(root_point_um)
 
@@ -924,29 +902,15 @@ class Morphology:
 
     @property
     def mean_radius(self) -> Quantity:
-        lengths_um, r0_um, r1_um = self._all_segment_arrays_um()
-        total_length_um = float(np.sum(lengths_um))
-        if total_length_um <= 0.0:
-            raise ValueError("Morphology total length must be > 0.")
-        values_um = 0.5 * (r0_um + r1_um)
-        return u.Quantity(np.sum(lengths_um * values_um) / total_length_um, u.um)
-
-    @property
-    def diam_arc_mean(self) -> Quantity:
-        """Return the morphology-wide arc-length-weighted mean diameter."""
-        return 2.0 * self.mean_radius
+        return u.Quantity(length_weighted_mean_radius_um(*self._all_segment_arrays_um()), u.um)
 
     @property
     def total_area(self) -> Quantity:
-        lengths_um, r0_um, r1_um = self._all_segment_arrays_um()
-        value = np.sum(np.pi * (r0_um + r1_um) * np.sqrt(lengths_um * lengths_um + (r1_um - r0_um) * (r1_um - r0_um)))
-        return u.Quantity(value, u.um**2)
+        return u.Quantity(np.sum(frustum_areas_um2(*self._all_segment_arrays_um())), u.um**2)
 
     @property
     def total_volume(self) -> Quantity:
-        lengths_um, r0_um, r1_um = self._all_segment_arrays_um()
-        value = np.sum(np.pi * lengths_um * (r0_um * r0_um + r0_um * r1_um + r1_um * r1_um) / 3.0)
-        return u.Quantity(value, u.um**3)
+        return u.Quantity(np.sum(frustum_volumes_um3(*self._all_segment_arrays_um())), u.um**3)
 
     @property
     def n_branches(self) -> int:
@@ -962,8 +926,7 @@ class Morphology:
 
     def _axis_range(self, *, axis: int) -> Quantity:
         self._require_full_point_geometry(feature="Coordinate range metrics")
-        point_sets = [branch.branch.points for branch in self.branches]
-        coords = np.concatenate([np.asarray(points.to_decimal(u.um), dtype=float)[:, axis] for points in point_sets])
+        coords = self._all_points_um()[:, axis]
         return u.Quantity(coords.max() - coords.min(), u.um)
 
     @property
@@ -980,7 +943,7 @@ class Morphology:
 
     @property
     def max_branch_order(self) -> int:
-        return max(len(self._path_node_ids(branch._node_id)) - 1 for branch in self.branches)
+        return max(branch.branch_order for branch in self.branches)
 
     @property
     def max_euclidean_distance(self) -> Quantity:
@@ -1046,11 +1009,9 @@ class Morphology:
                 raise KeyError(name)
             return self._get_node(self._name_to_id[name])
 
-        ordered_ids = self._ordered_node_ids_by("default" if order is None else order)
-        try:
-            return self._get_node(ordered_ids[index])  # type: ignore[index]
-        except IndexError as exc:
-            raise IndexError(f"Branch index {index!r} is out of range.") from exc
+        return self._get_node(
+            self._node_id_from_index(index, order="default" if order is None else order)  # type: ignore[arg-type]
+        )
 
     def path_to_root(self, branch_index: int) -> tuple[int, ...]:
         """Return the ordered path of branch indices from root to a given branch.
@@ -1068,59 +1029,6 @@ class Morphology:
         """
         node_id = self._node_id_from_index(branch_index)
         return tuple(self._branch_index(path_node_id) for path_node_id in self._path_node_ids(node_id))
-
-    def path_length_to_root(self, branch_index: int) -> Quantity:
-        """Return the path length from a branch to the root.
-
-        .. note:: Not yet implemented.
-
-        Parameters
-        ----------
-        branch_index : int
-            Index of the target branch in default ordering.
-
-        Returns
-        -------
-        Quantity[u.um]
-            Cumulative segment length along the path to root.
-
-        Raises
-        ------
-        NotImplementedError
-            Always, until implemented.
-        """
-        raise NotImplementedError
-
-    def shortest_path_length(
-        self,
-        from_site: tuple[int, float],
-        to_site: tuple[int, float],
-    ) -> Quantity:
-        """Return the shortest path length between two sites on the tree.
-
-        A site is a ``(branch_index, position)`` pair where *position*
-        is a fractional location along the branch (0 = proximal, 1 = distal).
-
-        .. note:: Not yet implemented.
-
-        Parameters
-        ----------
-        from_site : tuple of (int, float)
-            Start site as ``(branch_index, position)``.
-        to_site : tuple of (int, float)
-            End site as ``(branch_index, position)``.
-
-        Returns
-        -------
-        Quantity[u.um]
-            Shortest path length through the tree between the two sites.
-
-        Raises
-        ------
-        NotImplementedError
-            Always, until implemented.
-        """
-        raise NotImplementedError
 
     def topo(self) -> str:
         """Return a line-oriented text view of the branch topology.
@@ -1173,7 +1081,7 @@ class Morphology:
         ----------
         mode : str or None
             Visualization mode. When omitted, uses the global 3-D
-            default configured via ``braincell.morph.vis.configure(...)``.
+            default configured via :func:`braincell.vis.configure_defaults`.
             The initial default is ``"geometry"``.
         backend : str or None
             Rendering backend name (e.g., ``"pyvista"``).
@@ -1337,7 +1245,8 @@ class Morphology:
         visualization is controlled by:
 
         * ``layout`` — how 2-D coordinates are obtained:
-          ``"projected"``, ``"stem"``, ``"balloon"``, or ``"radial_360"``.
+          ``"fan"``, ``"projected"``, ``"stem"``, ``"balloon"``, or
+          ``"radial_360"``.
         * ``shape`` — how those 2-D coordinates are drawn:
           ``"line"`` or ``"frustum"``.
 
@@ -1345,15 +1254,15 @@ class Morphology:
         ----------
         layout : str or None
             2-D layout choice. ``"projected"`` uses projected 3-D point
-            geometry. ``"stem"``, ``"balloon"``, and ``"radial_360"``
-            use the schematic branch layout pipeline. When omitted, uses
-            the global 2-D default configured via
-            ``braincell.morph.vis.configure(...)``. The initial default
+            geometry. ``"fan"``, ``"stem"``, ``"balloon"``, and
+            ``"radial_360"`` use the schematic branch layout pipeline.
+            When omitted, uses the global 2-D default configured via
+            :func:`braincell.vis.configure_defaults`. The initial default
             is ``"fan"``.
         shape : str or None
             2-D drawing shape: ``"line"`` or ``"frustum"``. When omitted,
             uses the global 2-D default configured via
-            ``braincell.morph.vis.configure(...)``. The initial default
+            :func:`braincell.vis.configure_defaults`. The initial default
             is ``"frustum"``.
         branch_type_colors : mapping or None
             Per-branch-type colour overrides for this call only. These
@@ -1502,7 +1411,7 @@ class Morphology:
         from braincell.filter import LocsetExpr, RegionExpr
 
         if not isinstance(expr, (RegionExpr, LocsetExpr)):
-            raise TypeError(f"Morpho.select(...) expects RegionExpr or LocsetExpr. Got {type(expr).__name__!s}.")
+            raise TypeError(f"Morphology.select(...) expects RegionExpr or LocsetExpr. Got {type(expr).__name__!s}.")
         return expr.evaluate(self, cache=cache)
 
     def attach(
@@ -1614,7 +1523,7 @@ class Morphology:
 
     def __repr__(self) -> str:
         geo_status = "complete 3d points" if self.has_full_point_geometry else "incomplete 3d points"
-        return f"Morpho(root={self.root.name!r}, n_branches={self.n_branches}, geometry = {geo_status})"
+        return f"Morphology(root={self.root.name!r}, n_branches={self.n_branches}, geometry = {geo_status})"
 
     def __str__(self) -> str:
         """Return a formatted summary with key metrics."""
@@ -1642,10 +1551,9 @@ class Morphology:
         self._branch_index_cache.clear()
         self._branch_tuple_cache.clear()
         self._full_point_geometry = None
+        self._all_segment_arrays_cache = None
+        self._all_points_cache = None
         self._revision += 1
-
-    def _ordered_node_ids(self) -> tuple[int, ...]:
-        return self._ordered_node_ids_by("default")
 
     def _ordered_node_ids_by(self, order: str) -> tuple[int, ...]:
         cached = self._ordered_id_cache.get(order)
@@ -1732,13 +1640,10 @@ class Morphology:
     def _get_node(self, node_id: int) -> "MorphoBranch":
         return self._nodes[node_id]
 
-    def _get_branch(self, node_id: int) -> Branch:
-        return self._get_node(node_id).branch
-
     def _resolve_parent(self, parent: ParentRef) -> int:
         if isinstance(parent, MorphoBranch):
             if parent._owner is not self:
-                raise ValueError("Parent MorphoBranch belongs to a different Morpho.")
+                raise ValueError("Parent MorphoBranch belongs to a different Morphology.")
             return parent._node_id
         if isinstance(parent, str):
             if parent not in self._name_to_id:
@@ -1747,31 +1652,25 @@ class Morphology:
         raise TypeError("parent must be a branch name or MorphoBranch.")
 
     def _validate_parent_x(self, parent: "MorphoBranch", parent_x: float) -> None:
-        if isinstance(parent_x, bool):
-            raise TypeError(f"parent_x must be 0, 0.5, or 1, got {parent_x!r}.")
-        if parent_x not in (0, 0.0, 0.5, 1, 1.0):
-            raise ValueError(f"parent_x must be 0, 0.5, or 1, got {parent_x!r}.")
+        _check_parent_x_value(parent_x)
         if float(parent_x) == 0.5 and parent.type != "soma":
             raise ValueError("parent_x=0.5 is only allowed when the parent branch type is 'soma'.")
 
     def _validate_child_x(self, child_x: float) -> None:
-        if isinstance(child_x, bool):
-            raise TypeError(f"child_x must be 0 or 1, got {child_x!r}.")
-        if child_x not in (0, 0.0, 1, 1.0):
-            raise ValueError(f"child_x must be 0 or 1, got {child_x!r}.")
+        _check_child_x_value(child_x)
 
     def _validate_public_name(self, name: str) -> None:
         if not name.isidentifier():
             raise ValueError(f"Branch name {name!r} must be a valid Python identifier.")
         if name.startswith("_"):
             raise ValueError("Branch names starting with '_' are reserved.")
-        if name in (_MORPHO_RESERVED_NAMES | _MORPHO_BRANCH_RESERVED_NAMES | _BRANCH_RESERVED_NAMES):
-            raise ValueError(f"Branch name {name!r} is reserved by the Morpho API.")
+        if name in _ALL_RESERVED_NAMES:
+            raise ValueError(f"Branch name {name!r} is reserved by the Morphology API.")
 
     def _normalize_child_branch(self, value: object) -> Branch:
         if isinstance(value, MorphoBranch):
             raise ValueError(
-                "Cannot reattach a MorphoBranch into a Morpho. Reuse the underlying "
+                "Cannot reattach a MorphoBranch into a Morphology. Reuse the underlying "
                 "Branch geometry or create a new Branch instead."
             )
         if not isinstance(value, Branch):
@@ -1782,7 +1681,7 @@ class Morphology:
         node_name = explicit_name if explicit_name is not None else self._allocate_name_for_type(branch.type)
         self._validate_public_name(node_name)
         if node_name in self._name_to_id:
-            raise ValueError(f"Branch name {node_name!r} already exists in this Morpho.")
+            raise ValueError(f"Branch name {node_name!r} already exists in this Morphology.")
         return node_name
 
     def _allocate_name_for_type(self, branch_type: str) -> str:
@@ -1803,7 +1702,7 @@ class Morphology:
     ) -> int:
         self._validate_public_name(name)
         if name in self._name_to_id:
-            raise ValueError(f"Branch name {name!r} already exists in this Morpho.")
+            raise ValueError(f"Branch name {name!r} already exists in this Morphology.")
         node_id = self._next_id
         self._next_id += 1
         node = MorphoBranch(
@@ -1869,19 +1768,26 @@ class Morphology:
         return self._get_node(parent._children[child_name])
 
     def _format_topology(self, node_id: int, *, prefix: str, is_last: bool) -> list[str]:
-        node = self._get_node(node_id)
-        branch_prefix = "└── " if is_last else "├── "
-        lines = [f"{prefix}{branch_prefix}{node.name}"]
-        child_prefix = f"{prefix}{'    ' if is_last else '│   '}"
-        child_ids = tuple(node._children.values())
-        for index, child_id in enumerate(child_ids):
-            lines.extend(
-                self._format_topology(
-                    child_id,
-                    prefix=child_prefix,
-                    is_last=index == len(child_ids) - 1,
-                )
-            )
+        """Render a subtree as ``tree(1)``-style lines, iteratively.
+
+        Deliberately not recursive: one Python frame per branch overflowed the
+        default recursion limit on morphologies deeper than a few hundred
+        branches, which is well within the range of real reconstructions.
+        The explicit stack carries the per-node prefix bookkeeping that a
+        generic depth-first walk cannot supply.
+        """
+        lines: list[str] = []
+        stack = [(node_id, prefix, is_last)]
+        while stack:
+            current_id, current_prefix, current_is_last = stack.pop()
+            node = self._get_node(current_id)
+            branch_prefix = "└── " if current_is_last else "├── "
+            lines.append(f"{current_prefix}{branch_prefix}{node.name}")
+            child_prefix = f"{current_prefix}{'    ' if current_is_last else '│   '}"
+            child_ids = tuple(node._children.values())
+            # Pushed in reverse so the stack pops children back in order.
+            for index in range(len(child_ids) - 1, -1, -1):
+                stack.append((child_ids[index], child_prefix, index == len(child_ids) - 1))
         return lines
 
 
@@ -1896,7 +1802,7 @@ _MORPHO_BRANCH_PUBLIC_ATTRS: dict[str, _MorphoBranchAttrGetter] = {
 
 
 class MorphoBranch:
-    """A tree-local branch node bound to exactly one :class:`Morpho` owner.
+    """A tree-local branch node bound to exactly one :class:`Morphology` owner.
 
     ``MorphoBranch`` provides transparent access to branch geometry
     (via delegation to :class:`Branch`) and tree navigation (parent,
@@ -1905,7 +1811,7 @@ class MorphoBranch:
     * **Attribute assignment**: ``parent.dend = Branch(...)``
     * **Subscript syntax**: ``parent[0.5].dend = Branch(...)``
 
-    ``MorphoBranch`` instances are created internally by :class:`Morpho`
+    ``MorphoBranch`` instances are created internally by :class:`Morphology`
     and should not be constructed directly.
 
     Parameters
@@ -1927,7 +1833,7 @@ class MorphoBranch:
 
     See Also
     --------
-    Morpho : The tree container that owns ``MorphoBranch`` nodes.
+    Morphology : The tree container that owns ``MorphoBranch`` nodes.
     Branch : The immutable geometry wrapped by this node.
 
     Notes
@@ -2011,7 +1917,7 @@ class MorphoBranch:
         --------
         index : The canonical spelling of the same value.
         """
-        return self._owner._branch_index(self._node_id)
+        return self.index
 
     @property
     def branch_order(self) -> int:
@@ -2024,7 +1930,7 @@ class MorphoBranch:
 
         See Also
         --------
-        Morpho.path_to_root : Full root-to-branch index path.
+        Morphology.path_to_root : Full root-to-branch index path.
         """
         return len(self._owner._path_node_ids(self._node_id)) - 1
 
@@ -2214,6 +2120,27 @@ class _MorphAttachPoint:
         )
 
 
+def _check_parent_x_value(parent_x: object) -> None:
+    """Reject a ``parent_x`` outside the three attachment points.
+
+    The soma-only rule for ``0.5`` needs the parent branch and so stays on
+    :meth:`Morphology._validate_parent_x`; this is the part that
+    ``morph.soma[x]`` and ``attach(parent_x=x)`` must agree on.
+    """
+    if isinstance(parent_x, bool):
+        raise TypeError(f"parent_x must be 0, 0.5, or 1, got {parent_x!r}.")
+    if parent_x not in (0, 0.0, 0.5, 1, 1.0):
+        raise ValueError(f"parent_x must be 0, 0.5, or 1, got {parent_x!r}.")
+
+
+def _check_child_x_value(child_x: object) -> None:
+    """Reject a ``child_x`` that is neither end of the child branch."""
+    if isinstance(child_x, bool):
+        raise TypeError(f"child_x must be 0 or 1, got {child_x!r}.")
+    if child_x not in (0, 0.0, 1, 1.0):
+        raise ValueError(f"child_x must be 0 or 1, got {child_x!r}.")
+
+
 def _parse_attachment_key(key: object) -> tuple[float, float]:
     if isinstance(key, bool):
         raise TypeError(f"Attachment keys must be numeric, got {key!r}.")
@@ -2224,14 +2151,11 @@ def _parse_attachment_key(key: object) -> tuple[float, float]:
             raise TypeError(f"Attachment keys must be numeric, got {key!r}.")
         parent_x = float(key[0])
         child_x = float(key[1])
-        if parent_x not in (0, 0.0, 0.5, 1, 1.0):
-            raise ValueError(f"parent_x must be 0, 0.5, or 1, got {parent_x!r}.")
-        if child_x not in (0, 0.0, 1, 1.0):
-            raise ValueError(f"child_x must be 0 or 1, got {child_x!r}.")
+        _check_parent_x_value(parent_x)
+        _check_child_x_value(child_x)
         return parent_x, child_x
     parent_x = float(key)
-    if parent_x not in (0, 0.0, 0.5, 1, 1.0):
-        raise ValueError(f"parent_x must be 0, 0.5, or 1, got {parent_x!r}.")
+    _check_parent_x_value(parent_x)
     return parent_x, 0.0
 
 
@@ -2255,3 +2179,27 @@ def clone_morpho(morpho: "Morphology") -> "Morphology":
             child_x=float(branch.child_x),
         )
     return cloned
+
+
+# --------------------------------------------------------------------------- #
+# Reserved branch names
+#
+# A branch name that collides with an attribute of ``Morphology`` or
+# ``MorphoBranch`` would be accepted into the tree and then be unreachable by
+# attribute access, because ``__getattr__`` only fires when normal lookup
+# fails. These sets are therefore *derived* rather than hand-listed: a
+# hand-maintained copy drifts the moment a public method is added, and it had
+# already drifted, leaving two names shadowable.
+#
+# Defined here, below the classes, because that is the earliest point at which
+# ``dir()`` can see them. ``_MORPHO_BRANCH_PUBLIC_ATTRS`` must be unioned in
+# explicitly: those five names are served dynamically through
+# ``MorphoBranch.__getattr__`` and so never appear in ``dir()``.
+# --------------------------------------------------------------------------- #
+
+_ALL_RESERVED_NAMES = frozenset(
+    {name for name in dir(Morphology) if not name.startswith("_")}
+    | {name for name in dir(MorphoBranch) if not name.startswith("_")}
+    | set(_MORPHO_BRANCH_PUBLIC_ATTRS)
+    | _BRANCH_RESERVED_NAMES
+)

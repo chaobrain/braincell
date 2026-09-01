@@ -136,12 +136,7 @@ def _profile_barrier_current(current):
 
 
 def _synapse_contrib_to_point(runtime: CellRuntimeState, layout, syn, point_V):
-    if layout.point_index is None:
-        raise ValueError(f"Synapse layout {layout.id!r} is missing point_index.")
-    if layout.population_index is None:
-        local_voltage = point_V[..., layout.point_index]
-    else:
-        local_voltage = point_V[..., layout.population_index, layout.point_index]
+    local_voltage = layout.gather_points(point_V)
     try:
         contrib = jax.named_call(
             syn.current,
@@ -158,13 +153,9 @@ def _synapse_contrib_to_point(runtime: CellRuntimeState, layout, syn, point_V):
             jnp.zeros(point_V.shape, dtype=u.get_mantissa(syn_contrib).dtype),
             syn_contrib.unit,
         )
-        if layout.population_index is not None:
-            return contrib_point.at[..., layout.population_index, layout.point_index].add(syn_contrib)
-        return contrib_point.at[..., layout.point_index].add(syn_contrib)
-    contrib_point = jnp.zeros(point_V.shape, dtype=jnp.asarray(syn_contrib).dtype)
-    if layout.population_index is not None:
-        return contrib_point.at[..., layout.population_index, layout.point_index].add(syn_contrib)
-    return contrib_point.at[..., layout.point_index].add(syn_contrib)
+    else:
+        contrib_point = jnp.zeros(point_V.shape, dtype=jnp.asarray(syn_contrib).dtype)
+    return layout.scatter_add_points(contrib_point, syn_contrib)
 
 
 def _clamp_density(runtime: CellRuntimeState, *, t):

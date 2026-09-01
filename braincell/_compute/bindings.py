@@ -487,10 +487,14 @@ def _instantiate_runtime_node(
 ) -> tuple[object | None, tuple[str, ...], str | tuple[str, ...] | None]:
     if isinstance(mechanism, SynapsePlacement):
         runtime_cls = get_registry().get("synapse", mechanism.synapse_type)
+        # The runtime class's declared parameters are the same schema state.py used to
+        # write these buffers, so select against it rather than inferring which buffers
+        # are constructor arguments from a leading-underscore naming convention.
+        declared = set(runtime_cls.parameters)
         parameter_names = tuple(
             var_name
             for layout_id, var_name in state_buffers
-            if int(layout_id) == int(layout.id) and not var_name.startswith("_")
+            if int(layout_id) == int(layout.id) and var_name in declared
         )
         params = {
             var_name: _runtime_param_value(

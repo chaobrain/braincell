@@ -54,7 +54,6 @@ from ._discretization import (
 )
 from ._multi_compartment import (
     Cell,
-    CellSelection,
     CellView,
     ChannelView,
     IonView,
@@ -110,7 +109,6 @@ __all__ = [
     "Branch",
     "CableProperty",
     "Cell",
-    "CellSelection",
     "CellView",
     "ChannelView",
     "Channel",

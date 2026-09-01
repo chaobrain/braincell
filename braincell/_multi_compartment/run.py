@@ -29,6 +29,7 @@ import brainunit as u
 import jax
 import numpy as np
 
+from braincell._multi_compartment import probes
 from braincell.recording import SampleBlock
 
 if TYPE_CHECKING:
@@ -117,8 +118,7 @@ def run(rcell: "Cell", *, dt, duration) -> RunResult:
     rcell.connections.prepare_runtime(dt)
 
     compiled_recordings = rcell._compiled_recordings(dt)
-    probe_samples = rcell.sample_probes()
-    ordered_probe_names = tuple(sorted(probe_samples))
+    ordered_probe_names = tuple(sorted(probes.probe_names(rcell)))
 
     with brainstate.environ.context(dt=dt):
         relative_times = u.math.arange(n_steps) * brainstate.environ.get_dt()

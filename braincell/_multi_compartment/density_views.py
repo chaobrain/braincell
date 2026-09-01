@@ -1,7 +1,23 @@
+# Copyright 2026 BrainX Ecosystem Limited. All Rights Reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ==============================================================================
+
 """Logical Channel and Ion views over population/CV scopes."""
 
 from __future__ import annotations
 
+from collections import Counter
 from dataclasses import dataclass
 
 import brainstate
@@ -180,11 +196,9 @@ class _DensityView:
             )
 
     def __repr__(self) -> str:
-        grouped: dict[str, dict[str, int]] = {}
+        grouped: dict[str, Counter] = {}
         for row in self._rows:
-            grouped.setdefault(row.mechanism_type, {})[row.name] = (
-                grouped.setdefault(row.mechanism_type, {}).get(row.name, 0) + 1
-            )
+            grouped.setdefault(row.mechanism_type, Counter())[row.name] += 1
         details = ", ".join(
             f"{mechanism_type}({', '.join(f'{name}: {count}' for name, count in names.items())})"
             for mechanism_type, names in grouped.items()
@@ -214,27 +228,27 @@ class IonView(_DensityView):
 
 def _density_rows(cell, scope, category: str) -> tuple[_DensityRow, ...]:
     by_cv: dict[int, dict[tuple[str, str], Density]] = {}
+    species_by_type: dict[str, str | None] = {}
     for cv in cell.cvs:
         owners = by_cv.setdefault(int(cv.id), {})
         for mechanism in cv.density_mech:
             if not isinstance(mechanism, Density) or mechanism.category != category:
                 continue
             owners.setdefault((mechanism.class_name, mechanism.instance_name), mechanism)
+            if category == "ion" and mechanism.class_name not in species_by_type:
+                runtime_cls = get_registry().get("ion", mechanism.class_name)
+                species_by_type[mechanism.class_name] = _runtime_ion_species_key(runtime_cls)
 
     rows = []
     for population_index, cv_id in scope.pairs:
         point_id = int(cell.node_tree.cv_to_mid_node_id[int(cv_id)])
         for mechanism in by_cv.get(int(cv_id), {}).values():
-            species = None
-            if category == "ion":
-                runtime_cls = get_registry().get("ion", mechanism.class_name)
-                species = _runtime_ion_species_key(runtime_cls)
             rows.append(
                 _DensityRow(
                     category=category,
                     mechanism_type=mechanism.class_name,
                     name=mechanism.instance_name,
-                    species=species,
+                    species=species_by_type.get(mechanism.class_name),
                     population_index=int(population_index),
                     cv_id=int(cv_id),
                     point_id=point_id,
@@ -246,8 +260,8 @@ def _density_rows(cell, scope, category: str) -> tuple[_DensityRow, ...]:
 
 def _runtime_layout(cell, row: _DensityRow):
     matches = []
-    for layout in cell.runtime.layouts:
-        if layout.target != "density" or row.cv_id not in layout.source_cv_ids:
+    for layout in cell.runtime.get_cv_layouts(row.cv_id):
+        if layout.target != "density":
             continue
         mechanism = cell.runtime.get_layout_mechanism(layout.id)
         if (

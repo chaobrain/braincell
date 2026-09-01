@@ -1,12 +1,27 @@
+# Copyright 2026 BrainX Ecosystem Limited. All Rights Reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ==============================================================================
+
 """Immutable spatial selections shared by Cell mechanism views."""
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 import numpy as np
 
-from braincell._discretization.node_build import _EPS_PARAM, _locate_branch_cv_by_x
+from braincell._discretization.base import locate_cv_on_branch
 from braincell.filter import LocsetBatch, LocsetExpr, LocsetMask, RegionExpr, RegionMask
 
 __all__ = ["BranchSelector", "CVSelector"]
@@ -61,15 +76,17 @@ class _CellScope:
     def select_population(self, local_selection) -> "_CellScope":
         local = _normalize_selection(local_selection, size=len(self.population_indices), name="Cell population")
         selected = tuple(self.population_indices[index] for index in local)
-        return _CellScope(
+        order = {population: rank for rank, population in enumerate(selected)}
+        return replace(
+            self,
             population_indices=selected,
-            pairs=tuple(pair for population in selected for pair in self.pairs if pair[0] == population),
-            coverage=self.coverage,
+            pairs=tuple(sorted((pair for pair in self.pairs if pair[0] in order), key=lambda pair: order[pair[0]])),
             locations=tuple(
-                row for population in selected for row in self.locations if row.population_index == population
+                sorted(
+                    (row for row in self.locations if row.population_index in order),
+                    key=lambda row: order[row.population_index],
+                )
             ),
-            exact_branch_ids=self.exact_branch_ids,
-            spatially_restricted=self.spatially_restricted,
         )
 
     def select_cv_local(self, selection) -> "_CellScope":
@@ -79,16 +96,13 @@ class _CellScope:
 
     def select_cv_ids(self, cv_ids) -> "_CellScope":
         requested = _normalize_global_ids(cv_ids, name="CV")
-        requested_set = set(requested)
         available = set(self.cv_ids)
-        selected = tuple(cv_id for cv_id in requested if cv_id in available)
-        selected_set = set(selected)
-        return _CellScope(
-            population_indices=self.population_indices,
+        selected_set = {cv_id for cv_id in requested if cv_id in available}
+        return replace(
+            self,
             pairs=tuple(pair for pair in self.pairs if pair[1] in selected_set),
             coverage=tuple((cv_id, fraction) for cv_id, fraction in self.coverage if cv_id in selected_set),
             locations=tuple(row for row in self.locations if row.cv_id in selected_set),
-            exact_branch_ids=self.exact_branch_ids,
             spatially_restricted=True,
         )
 
@@ -96,16 +110,9 @@ class _CellScope:
         selected = _normalize_global_ids(branch_ids, name="branch")
         if any(branch_id < 0 or branch_id >= len(cell.morpho.branches) for branch_id in selected):
             raise IndexError("Branch index is out of range.")
-        cv_ids = tuple(cv.id for cv in cell.cvs if cv.branch_id in set(selected))
-        result = self.select_cv_ids(cv_ids)
-        return _CellScope(
-            population_indices=result.population_indices,
-            pairs=result.pairs,
-            coverage=result.coverage,
-            locations=result.locations,
-            exact_branch_ids=selected,
-            spatially_restricted=True,
-        )
+        selected_branches = set(selected)
+        cv_ids = tuple(cv.id for cv in cell.cvs if cv.branch_id in selected_branches)
+        return replace(self.select_cv_ids(cv_ids), exact_branch_ids=selected)
 
     def select_region(self, cell, region: RegionExpr | RegionMask) -> "_CellScope":
         if not isinstance(region, (RegionExpr, RegionMask)):
@@ -114,23 +121,21 @@ class _CellScope:
         selected = tuple(cv_id for cv_id, fraction in fractions.items() if float(fraction) > 0.0)
         result = self.select_cv_ids(selected)
         selected_set = set(result.cv_ids)
-        return _CellScope(
-            population_indices=result.population_indices,
-            pairs=result.pairs,
+        return replace(
+            result,
             coverage=tuple((cv_id, float(fractions[cv_id])) for cv_id in selected if cv_id in selected_set),
             locations=(),
             exact_branch_ids=None,
-            spatially_restricted=True,
         )
 
     def select_locations(self, cell, locset) -> "_CellScope":
         rows = _resolve_location_rows(cell, self.population_indices, locset)
         allowed = set(self.pairs)
         rows = tuple(row for row in rows if (row.population_index, row.cv_id) in allowed)
-        pairs = _ordered_unique((row.population_index, row.cv_id) for row in rows)
-        return _CellScope(
-            population_indices=self.population_indices,
-            pairs=pairs,
+        return replace(
+            self,
+            pairs=_ordered_unique((row.population_index, row.cv_id) for row in rows),
+            coverage=(),
             locations=rows,
             exact_branch_ids=None,
             spatially_restricted=True,
@@ -216,22 +221,16 @@ def _resolve_location_rows(cell, population_indices: tuple[int, ...], locset) ->
 
 
 def _mask_rows(cell, population_index: int, mask: LocsetMask) -> tuple[_LocationRow, ...]:
-    names = mask.display_names
-    if names is None:
-        names = tuple(
-            f"{cell.morpho.branch(index=int(branch_id)).name}({float(branch_x):g})"
-            for branch_id, branch_x in mask.points
-        )
+    names = mask.resolved_display_names(cell.morpho)
     rows = []
     for branch_id, branch_x, display_name in zip(mask.branch_id, mask.branch_x, names):
         branch_id = int(branch_id)
         if branch_id < 0 or branch_id >= len(cell.cv_tree.branch_to_cv_ids):
             raise IndexError(f"Location branch id {branch_id!r} is out of range.")
-        cv_id = _locate_branch_cv_by_x(
+        cv_id = locate_cv_on_branch(
             cell.cv_tree.branch_to_cv_ids[branch_id],
             cell.cvs,
             x=float(branch_x),
-            epsilon=_EPS_PARAM,
         )
         rows.append(
             _LocationRow(

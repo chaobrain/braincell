@@ -29,6 +29,7 @@ import brainunit as u
 import jax.numpy as jnp
 import numpy as np
 
+from braincell._compute.layouts import _stack_synapse_values
 from braincell.mech import SynapseSpec, get_registry
 
 __all__ = ["SynapseView"]
@@ -70,6 +71,7 @@ class _SynapseStore:
         "_row_by_id",
         "_layout_by_type",
         "_runtime_row_by_id",
+        "_mechanism_layouts",
     )
 
     def __init__(self, cell) -> None:
@@ -113,6 +115,7 @@ class _SynapseStore:
         self._type_local_by_id: dict[int, int] = {}
         self._layout_by_type: dict[str, int] = {}
         self._runtime_row_by_id: dict[int, int] = {}
+        self._mechanism_layouts: dict[int, _MechanismRowLayout] = {}
         self._validate_name_types()
         self._build_parameter_columns()
 
@@ -162,7 +165,7 @@ class _SynapseStore:
                         value = spec.default
                     spec.validate(value, parameter)
                     values.append(value)
-                columns[parameter] = _stack_values(values)
+                columns[parameter] = _stack_synapse_values(values, parameter=parameter)
             runtime_cls.validate_parameter_values(columns)
             self.parameter_columns[synapse_type] = columns
 
@@ -174,6 +177,20 @@ class _SynapseStore:
         self._runtime_row_by_id.update(
             (int(logical_id), int(runtime_row)) for runtime_row, logical_id in enumerate(ids.tolist())
         )
+
+    def mechanism_row_layout(self, mechanism: SynapseSpec) -> "_MechanismRowLayout":
+        """Return the cached row layout shared by one declaration's synapses.
+
+        The layout depends only on the declaring ``mechanism``, so it is built
+        once per declaration rather than re-derived for every logical synapse
+        that declaration produced.
+        """
+        key = id(mechanism)
+        cached = self._mechanism_layouts.get(key)
+        if cached is None:
+            cached = _MechanismRowLayout.build(self, mechanism)
+            self._mechanism_layouts[key] = cached
+        return cached
 
     def layout_id(self, synapse_type: str) -> int:
         try:
@@ -454,8 +471,9 @@ class SynapseView:
         if not self._cell._initialized:
             if field not in parameter_names:
                 raise KeyError(f"Synapse field {field!r} is unavailable before init_state().")
-            return _stack_values(
-                [self._store.parameter_value(int(index), field) for index in self._logical_ids.tolist()]
+            return _stack_synapse_values(
+                [self._store.parameter_value(int(index), field) for index in self._logical_ids.tolist()],
+                parameter=field,
             )
 
         layout_id = self._store.layout_id(synapse_type)
@@ -569,6 +587,7 @@ class SynapseView:
         layout_id = self._store.layout_id(synapse_type)
         node = self._cell.runtime.get_runtime_node(layout_id)
         parameters = self._parameter_names(synapse_type)
+        rows = self._store.runtime_rows(self._logical_ids)
         for state, value in states.items():
             target = getattr(node, state, None)
             if not isinstance(target, brainstate.State):
@@ -576,9 +595,9 @@ class SynapseView:
                     raise KeyError(f"Synapse field {state!r} is a parameter; use set().")
                 raise KeyError(f"Synapse type {synapse_type!r} has no dynamic state {state!r}.")
             current = target.value
-            selected = _take_last_axis(current, self._store.runtime_rows(self._logical_ids))
+            selected = _take_last_axis(current, rows)
             normalized = _normalize_selected_value(value, template=selected, count=len(self))
-            target.value = _set_last_axis(current, self._store.runtime_rows(self._logical_ids), normalized)
+            target.value = _set_last_axis(current, rows, normalized)
         return self
 
     def _parameter_names(self, synapse_type: str) -> set[str]:
@@ -611,7 +630,7 @@ class SynapseView:
             names = _count_labels(self.name)
             parameters = tuple(sorted(self._parameter_names(synapse_type)))
             if len(self) == 1:
-                values = {field: _single_repr_value(self.get(field)) for field in parameters}
+                values = {field: self.get(field)[0] for field in parameters}
                 return (
                     f"SynapseView(target={target}, size=1, synapse_type={synapse_type}, "
                     f"names={names!r}, parameters={values!r})"
@@ -636,11 +655,6 @@ def _count_labels(values) -> dict[str, int]:
     return counts
 
 
-def _single_repr_value(value):
-    """Return the scalar row from a size-one gathered parameter column."""
-    return value[0]
-
-
 def _cell_label(cell, population_indices) -> str:
     owners = tuple(dict.fromkeys(int(item) for item in np.asarray(population_indices).tolist()))
     size = 1 if len(cell.pop_size) == 0 else int(cell.pop_size[0])
@@ -649,52 +663,70 @@ def _cell_label(cell, population_indices) -> str:
     return f"CellView(name={cell.name!r}, cells={list(owners)!r})"
 
 
+@dataclass(frozen=True)
+class _MechanismRowLayout:
+    """Row bookkeeping shared by every logical synapse of one declaration.
+
+    Declared parameters broadcast over the ``(owner, local position)`` grid this
+    describes. It depends only on the declaration, so it is built once and
+    reused for each of that declaration's synapses and parameters.
+    """
+
+    size: int
+    owner_count: int
+    common_length: int | None
+    #: logical id -> (flat position, owner position, position within that owner)
+    positions: dict[int, tuple[int, int, int]]
+
+    @classmethod
+    def build(cls, store: "_SynapseStore", mechanism: SynapseSpec) -> "_MechanismRowLayout":
+        matching_rows = np.asarray(
+            [row for row, candidate in enumerate(store.mechanism) if candidate is mechanism],
+            dtype=np.int64,
+        )
+        matching = store.id[matching_rows]
+        owners = store.population_index[matching_rows]
+        owner_order = tuple(dict.fromkeys(int(owner) for owner in owners.tolist()))
+        owner_position_by_owner = {owner: index for index, owner in enumerate(owner_order)}
+        counts = tuple(int(np.sum(owners == item)) for item in owner_order)
+        common_length = counts[0] if counts and all(count == counts[0] for count in counts) else None
+
+        positions: dict[int, tuple[int, int, int]] = {}
+        seen_per_owner: dict[int, int] = {}
+        for position, (logical_id, owner) in enumerate(zip(matching.tolist(), owners.tolist())):
+            local_position = seen_per_owner.get(int(owner), 0)
+            seen_per_owner[int(owner)] = local_position + 1
+            positions[int(logical_id)] = (position, owner_position_by_owner[int(owner)], local_position)
+        return cls(
+            size=int(matching.size),
+            owner_count=len(owner_order),
+            common_length=common_length,
+            positions=positions,
+        )
+
+
 def _select_declared_parameter_value(value, *, logical_id: int, store: _SynapseStore, mechanism: SynapseSpec):
     shape = getattr(value, "shape", ())
     if shape in ((), None):
         return value
-    matching_rows = np.asarray(
-        [row for row, candidate in enumerate(store.mechanism) if candidate is mechanism],
-        dtype=np.int64,
-    )
-    matching = store.id[matching_rows]
+    layout = store.mechanism_row_layout(mechanism)
+    position, owner_position, local_position = layout.positions[int(logical_id)]
+    common_length = layout.common_length
     array = np.asarray(value.to_decimal(value.unit) if isinstance(value, u.Quantity) else value)
-    position = int(np.flatnonzero(matching == int(logical_id))[0])
-    owners = store.population_index[matching_rows]
-    owner_order = tuple(dict.fromkeys(int(owner) for owner in owners.tolist()))
-    owner = int(store.population_index[store.row_index(int(logical_id))])
-    owner_position = owner_order.index(owner)
-    owner_rows = matching[owners == owner]
-    local_position = int(np.flatnonzero(owner_rows == int(logical_id))[0])
-    counts = tuple(int(np.sum(owners == item)) for item in owner_order)
-    common_length = counts[0] if counts and all(count == counts[0] for count in counts) else None
 
     if array.size == 1:
         selected = array.reshape(-1)[0]
     elif common_length is not None and array.shape == (common_length,):
         selected = array[local_position]
-    elif array.shape == (len(owner_order), 1):
+    elif array.shape == (layout.owner_count, 1):
         selected = array[owner_position, 0]
-    elif common_length is not None and array.shape == (len(owner_order), common_length):
+    elif common_length is not None and array.shape == (layout.owner_count, common_length):
         selected = array[owner_position, local_position]
-    elif array.shape == (matching.size,):
+    elif array.shape == (layout.size,):
         selected = array[position]
     else:
-        raise ValueError(f"Synapse parameter shape {shape!r} cannot broadcast to {matching.size!r} logical instances.")
+        raise ValueError(f"Synapse parameter shape {shape!r} cannot broadcast to {layout.size!r} logical instances.")
     return u.Quantity(selected, value.unit) if isinstance(value, u.Quantity) else selected
-
-
-def _stack_values(values: list[object]):
-    if not values:
-        return np.asarray([], dtype=float)
-    first = values[0]
-    if isinstance(first, u.Quantity):
-        unit = first.unit
-        decimal = [np.asarray(item.to_decimal(unit)) for item in values]
-        return u.Quantity(np.asarray(decimal), unit)
-    if any(isinstance(item, u.Quantity) for item in values):
-        raise TypeError("Synapse parameter values mix dimensioned and dimensionless data.")
-    return np.asarray(values)
 
 
 def _take_vector_item(value, index: int):

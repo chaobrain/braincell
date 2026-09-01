@@ -156,7 +156,7 @@ class Population:
 
     def _prepare_event_output_registration(self, source, *, name: str | None = None):
         """Validate one event-output registration without mutating the Population."""
-        from braincell.event import EventSource, EventSourceView
+        from .event import EventSource, EventSourceView
 
         if self.kind != "cell":
             raise TypeError("Additional event outputs are supported only for Cell populations.")
@@ -229,7 +229,7 @@ class Population:
 
 
 def _model_size_and_kind(model) -> tuple[int, str]:
-    from braincell.event import EventSequence, NetStim
+    from .event import EventSequence, NetStim
 
     if isinstance(model, (NetStim, EventSequence)):
         return int(model.size), "netstim" if isinstance(model, NetStim) else "event_sequence"
@@ -396,7 +396,7 @@ def _concat_values(values):
 
 
 def _concat_event_series(series):
-    from braincell.recording import EventSeries
+    from .recording import EventSeries
 
     unit = series[0].time.unit
     return EventSeries(

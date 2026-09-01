@@ -609,10 +609,10 @@ rows，不建立第二套 topology 或 storage。它当前只接受已存在的 
 | `by_synapse(degree, ...)` | Synapse degrees 之和 | 每个 Synapse 采样其 source partners | 指定入度。 |
 | `match_degrees(source_degree, synapse_degree, ...)` | 两侧 degree 和 | 展开两侧 stubs 后随机匹配 | 同时固定两侧 degree sequence。 |
 
-### `braincell.connection.independent`
+### `braincell.network.connection.independent`
 
 ```python
-braincell.connection.independent(
+braincell.network.connection.independent(
     number,
     *,
     source_score=None,
@@ -636,10 +636,10 @@ braincell.connection.independent(
 | `group_by` | `None or "target_cell"` | `None` | 是否按 target cell 独立运行规则。 |
 | `seed` | `int or None` | `None` | 显式局部 seed；给定后覆盖 Network seed 派生。 |
 
-### `braincell.connection.source_first`
+### `braincell.network.connection.source_first`
 
 ```python
-braincell.connection.source_first(
+braincell.network.connection.source_first(
     number,
     *,
     source_score=None,
@@ -663,10 +663,10 @@ braincell.connection.source_first(
 | `group_by` | `None or "target_cell"` | `None` | 可选 target-cell grouping。 |
 | `seed` | `int or None` | `None` | 显式局部 seed。 |
 
-### `braincell.connection.synapse_first`
+### `braincell.network.connection.synapse_first`
 
 ```python
-braincell.connection.synapse_first(
+braincell.network.connection.synapse_first(
     number,
     *,
     source_score=None,
@@ -690,10 +690,10 @@ braincell.connection.synapse_first(
 | `group_by` | `None or "target_cell"` | `None` | 可选 target-cell grouping。 |
 | `seed` | `int or None` | `None` | 显式局部 seed。 |
 
-### `braincell.connection.by_source` and `by_synapse`
+### `braincell.network.connection.by_source` and `by_synapse`
 
 ```python
-braincell.connection.by_source(
+braincell.network.connection.by_source(
     degree,
     *,
     synapse_score=None,
@@ -702,7 +702,7 @@ braincell.connection.by_source(
     seed=None,
 ) -> PairingSpec
 
-braincell.connection.by_synapse(
+braincell.network.connection.by_synapse(
     degree,
     *,
     source_score=None,
@@ -722,10 +722,10 @@ braincell.connection.by_synapse(
 | `group_by` | `None or "target_cell"` | `None` | 可选 target-cell grouping。 |
 | `seed` | `int or None` | `None` | 显式局部 seed。 |
 
-### `braincell.connection.match_degrees`
+### `braincell.network.connection.match_degrees`
 
 ```python
-braincell.connection.match_degrees(
+braincell.network.connection.match_degrees(
     source_degree,
     synapse_degree,
     *,
@@ -749,10 +749,10 @@ braincell.connection.match_degrees(
 
 | Signature | Distribution / meaning |
 | --- | --- |
-| `braincell.connection.degree.poisson(lam)` | Poisson degree callable。 |
-| `braincell.connection.degree.binomial(n, p)` | Binomial degree callable。 |
-| `braincell.connection.degree.negative_binomial(n, p)` | Negative-binomial degree callable，要求 \(p\in(0,1]\)。 |
-| `braincell.connection.degree.empirical(values, probabilities)` | 从显式离散 PMF 采样 degree。 |
+| `braincell.network.connection.degree.poisson(lam)` | Poisson degree callable。 |
+| `braincell.network.connection.degree.binomial(n, p)` | Binomial degree callable。 |
+| `braincell.network.connection.degree.negative_binomial(n, p)` | Negative-binomial degree callable，要求 \(p\in(0,1]\)。 |
+| `braincell.network.connection.degree.empirical(values, probabilities)` | 从显式离散 PMF 采样 degree。 |
 
 这些 callable 使用 `brainstate.random.RandomState`，返回非负整数 counts。
 
@@ -784,7 +784,7 @@ net.connect(
     "distance_conditioned",
     source=pre.event_outputs["spike"],
     synapse=post.synapses["ampa"],
-    pairing=braincell.connection.source_first(
+    pairing=braincell.network.connection.source_first(
         500,
         synapse_score=lambda ctx: distance_kernel(
             ctx.source.get("position"),
@@ -794,8 +794,8 @@ net.connect(
     ),
 )
 
-pairing = braincell.connection.by_synapse(
-    braincell.connection.degree.poisson(5.0),
+pairing = braincell.network.connection.by_synapse(
+    braincell.network.connection.degree.poisson(5.0),
     source_score=lambda ctx: source_preference(ctx.source),
     replace=False,
     seed=9,

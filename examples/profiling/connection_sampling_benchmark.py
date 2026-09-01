@@ -40,13 +40,13 @@ def benchmark(strategy: str, *, source_size: int, target_size: int, rows: int, s
     cell, synapse = build_target(target_size)
     source = braincell.NetStim(size=source_size, start=1.0 * u.ms)
     if strategy == "independent":
-        pairing = braincell.connection.independent(rows, seed=seed)
+        pairing = braincell.network.connection.independent(rows, seed=seed)
     elif strategy == "source_first":
-        pairing = braincell.connection.source_first(rows, seed=seed)
+        pairing = braincell.network.connection.source_first(rows, seed=seed)
     elif strategy == "by_source":
         degree = np.full(source_size, rows // source_size, dtype=np.int64)
         degree[: rows % source_size] += 1
-        pairing = braincell.connection.by_source(degree, seed=seed)
+        pairing = braincell.network.connection.by_source(degree, seed=seed)
     else:
         raise ValueError(f"Unknown strategy {strategy!r}.")
 

@@ -6,7 +6,7 @@ import brainunit as u
 import numpy as np
 
 import braincell
-from braincell.event import ScalarEventInput
+from braincell.mech import ScalarEventInput
 
 
 class SynapseSchemaTest(unittest.TestCase):

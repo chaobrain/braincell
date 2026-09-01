@@ -34,6 +34,17 @@ The :mod:`braincell.mech` package is purely declarative: it describes
 
 Passive cable properties are recorded via :class:`CableProperty`.
 
+Alongside the declarations, this package owns the two *contract*
+vocabularies a mechanism author writes against: the event-input
+contracts (:class:`EventInput`, :class:`NoEventInput`,
+:class:`TriggerEventInput`, :class:`ScalarEventInput`) that say what
+discrete events a mechanism can consume, and the field schema
+(:class:`ParameterSpec`, :class:`StateSpec`, :class:`DerivedSpec`) that
+vectorized runtime synapse models use to declare their parameters and
+states. Both are pure declarations, which keeps this package a leaf:
+:mod:`braincell.mech` imports nothing from :mod:`braincell`. The event
+*sources* that emit these events live in :mod:`braincell.network.event`.
+
 Class lookup by name is handled by :class:`MechanismRegistry`
 (accessed through :func:`get_registry`). Concrete channel / ion /
 synapse classes register themselves with the global registry via the
@@ -53,8 +64,15 @@ from ._base import Mechanism
 from ._cable import CableProperty
 from ._context import CVContext
 from ._density import Channel, Density, Ion
+from ._event_contract import (
+    EventInput,
+    NoEventInput,
+    ScalarEventInput,
+    TriggerEventInput,
+)
 from ._junction import Junction
 from ._params import Params
+from ._synapse_schema import DerivedSpec, ParameterSpec, StateSpec, positive
 from ._point import (
     CurrentProbe,
     CurrentClamp,
@@ -67,7 +85,6 @@ from ._point import (
     Synapse,
     SynapseSpec,
 )
-from braincell.event import NetStim
 from ._registry import (
     MechanismEntry,
     MechanismRegistry,
@@ -89,13 +106,22 @@ __all__ = [
     "Ion",
     # Shared parameter container
     "Params",
+    # Event-input contracts
+    "EventInput",
+    "NoEventInput",
+    "ScalarEventInput",
+    "TriggerEventInput",
+    # Runtime synapse field schema
+    "DerivedSpec",
+    "ParameterSpec",
+    "StateSpec",
+    "positive",
     # Point mechanisms
     "CurrentProbe",
     "CurrentClamp",
     "FunctionClamp",
     "Junction",
     "MechanismProbe",
-    "NetStim",
     "Point",
     "ProbeMechanism",
     "SineClamp",

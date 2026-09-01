@@ -27,7 +27,7 @@ from braincell.quad.protocol import (
     hidden_state,
     state_grouping,
 )
-from . import quad, mech, channel, synapse, ion, filter, connection
+from . import quad, mech, channel, synapse, ion, filter
 from ._base import (
     Channel,
     HHTypedNeuron,
@@ -65,9 +65,16 @@ from .network import (
     Network,
     NetworkResult,
 )
-from .connection import ConnectionView, NetworkConnections, connect
-from .event import EventSequence, EventSource, EventSourceView, EventTable, NetStim, VoltageCrossingSource
-from .recording import EventSeries, RecordingSchema, RecordingSpec, SampleBlock, observe
+from .network.connection import ConnectionView, NetworkConnections, connect
+from .network.event import (
+    EventSequence,
+    EventSource,
+    EventSourceView,
+    EventTable,
+    NetStim,
+    VoltageCrossingSource,
+)
+from .network.recording import EventSeries, RecordingSchema, RecordingSpec, SampleBlock, observe
 from ._version import (
     __version__,
     __version_info__,
@@ -156,7 +163,6 @@ __all__ = [
     "Synapse",
     "VoltageCrossingSource",
     "channel",
-    "connection",
     "connect",
     "ion",
     "mix_ions",

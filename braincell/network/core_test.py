@@ -1,3 +1,18 @@
+# Copyright 2026 BrainX Ecosystem Limited. All Rights Reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ==============================================================================
+
 import unittest
 from types import MappingProxyType
 
@@ -7,6 +22,8 @@ import numpy as np
 import braincell
 from braincell._multi_compartment.selection_test import _cell
 from braincell.filter import at
+from braincell.network import Population
+from braincell.network._testing import make_soma_tree, make_threshold_cell
 
 
 class PopulationTest(unittest.TestCase):
@@ -393,6 +410,24 @@ class PopulationTest(unittest.TestCase):
             joined.events["input"]["event"].time.to_decimal(u.ms),
             [0.05, 0.15, 0.25],
         )
+
+
+class PopulationRuntimeTest(unittest.TestCase):
+    def test_population_requires_one_dimensional_cell_population(self) -> None:
+        self.assertEqual(Population("pre", make_threshold_cell(3)).size, 3)
+        self.assertEqual(
+            Population("scalar", braincell.Cell(make_soma_tree(), cv_policy=braincell.CVPerBranch())).size,
+            1,
+        )
+        with self.assertRaisesRegex(ValueError, "one-dimensional"):
+            Population(
+                "grid",
+                braincell.Cell(make_soma_tree(), cv_policy=braincell.CVPerBranch(), pop_size=(2, 2)),
+            )
+
+    def test_population_forwards_cell_event_outputs(self) -> None:
+        population = Population("pre", make_threshold_cell(3))
+        self.assertIs(population.event_outputs["spike"].owner, population.cell.event_outputs["spike"].owner)
 
 
 if __name__ == "__main__":

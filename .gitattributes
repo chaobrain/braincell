@@ -1,3 +1,72 @@
+# Line endings ---------------------------------------------------------------
+#
+# Normalize everything to LF in the repository and on checkout. Windows batch
+# files are the exception: cmd.exe requires CRLF.
+
 * text=auto eol=lf
 *.bat text eol=crlf
 *.cmd text eol=crlf
+*.sh text eol=lf
+
+# Diff hunk headers ----------------------------------------------------------
+#
+# Git ships these drivers; no local configuration is required. They put the
+# enclosing `def`/`class` (or Markdown heading) on the `@@` line, which makes
+# reviewing a 160 KB module such as braincell/_multi_compartment/cell.py
+# substantially easier.
+
+*.py   diff=python
+*.md   diff=markdown
+*.rst  diff=markdown
+
+# Binary files ---------------------------------------------------------------
+#
+# `text=auto` already detects these by content; declaring them is explicit
+# insurance against a heuristic misfire mangling a fixture.
+
+*.png binary
+*.pdf binary
+
+# Bulk numeric data ----------------------------------------------------------
+#
+# All six tracked CSVs are multi-megabyte NEURON trace dumps
+# (data/neuron_traces/, examples/neuron_compare/). A textual diff of one is
+# never the thing a reviewer wants to read.
+
+*.csv -diff
+
+# GitHub language statistics -------------------------------------------------
+#
+# Without these, the language bar describes the fixtures rather than the
+# library: 95 notebooks, 122 NMODL `.mod` files (which Linguist does not map to
+# NMODL), and the morphology corpus under data/ all outweigh braincell/ itself.
+#
+# `linguist-vendored` and `linguist-documentation` only affect the statistics
+# and collapse-by-default in the web diff view. Neither excludes a file from
+# the repository, from `git diff`, or from review.
+
+data/**       linguist-vendored
+examples/**   linguist-documentation
+docs/**       linguist-documentation
+*.ipynb       linguist-documentation
+
+# Keep braincell/ itself counted even though the globs above do not touch it.
+braincell/**  -linguist-vendored -linguist-documentation
+
+# git archive ----------------------------------------------------------------
+#
+# Repository administration that is meaningless outside a git checkout. This
+# affects `git archive` only -- notably GitHub's generated release tarballs.
+#
+# data/, docs/, and examples/ are deliberately NOT listed: they are pruned from
+# the *sdist* by MANIFEST.in (see docs/specs/2026-08-13-release-publish-ci-fix.md),
+# but a source archive is a different artifact and those trees are useful in it.
+
+# Note: unlike .gitignore, a .gitattributes pattern that matches a directory
+# does NOT recursively match the paths inside it, so each tree needs `/**`.
+
+.claude/**        export-ignore
+.github/**        export-ignore
+dev/**            export-ignore
+.gitattributes    export-ignore
+.gitignore        export-ignore

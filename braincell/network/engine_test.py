@@ -1,113 +1,31 @@
+# Copyright 2026 BrainX Ecosystem Limited. All Rights Reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ==============================================================================
+
 import unittest
 
 import brainunit as u
 import numpy as np
 
 import braincell
-from braincell.filter import RootLocation, at
-from braincell.network import Network, Population
-from braincell.network.lowering import resolve_source_cv
-
-
-def _tree(two_branches=False):
-    soma = braincell.Branch.from_lengths(
-        lengths=[20.0] * u.um,
-        radii=[10.0, 10.0] * u.um,
-        type="soma",
-    )
-    morphology = braincell.Morphology.from_root(soma, name="soma")
-    if two_branches:
-        morphology.soma.dend = braincell.Branch.from_lengths(
-            lengths=[100.0] * u.um,
-            radii=[2.0, 1.0] * u.um,
-            type="dendrite",
-        )
-    return morphology
-
-
-def _step_up(cell):
-    cell.V.value = cell.V.value + 40.0 * u.mV
-
-
-def _step_down(cell):
-    cell.V.value = cell.V.value - 1.0 * u.mV
-
-
-def _pre(size=2):
-    return braincell.Cell(
-        _tree(),
-        cv_policy=braincell.CVPerBranch(),
-        pop_size=(size,),
-        V_init=-10.0 * u.mV,
-        V_th=0.0 * u.mV,
-        solver=_step_up,
-    )
-
-
-def _post(size=2):
-    cell = braincell.Cell(
-        _tree(),
-        cv_policy=braincell.CVPerBranch(),
-        pop_size=(size,),
-        V_init=-65.0 * u.mV,
-        solver=_step_down,
-    )
-    cell.place(
-        at("soma", 0.5),
-        braincell.mech.SynapseSpec("ExpSyn", name="exp", tau=2.0 * u.ms, e=0.0 * u.mV),
-    )
-    cell.soma.record("g", braincell.observe.synapse(name="exp").state("g"))
-    return cell
-
-
-def _network(*, delay=0.0 * u.ms, weight=0.2 * u.uS):
-    network = Network("runtime")
-    pre = network.add_population("pre", _pre())
-    post = network.add_population("post", _post())
-    network.connect(
-        "drive",
-        source=pre.event_outputs["spike"],
-        synapse=post.synapses["exp"],
-        weight=weight,
-        delay=delay,
-    )
-    return network
-
-
-class PopulationTest(unittest.TestCase):
-    def test_population_requires_one_dimensional_cell_population(self) -> None:
-        self.assertEqual(Population("pre", _pre(3)).size, 3)
-        self.assertEqual(
-            Population("scalar", braincell.Cell(_tree(), cv_policy=braincell.CVPerBranch())).size,
-            1,
-        )
-        with self.assertRaisesRegex(ValueError, "one-dimensional"):
-            Population(
-                "grid",
-                braincell.Cell(_tree(), cv_policy=braincell.CVPerBranch(), pop_size=(2, 2)),
-            )
-
-    def test_population_forwards_cell_event_outputs(self) -> None:
-        population = Population("pre", _pre(3))
-        self.assertIs(population.event_outputs["spike"].owner, population.cell.event_outputs["spike"].owner)
-
-
-class LoweringTest(unittest.TestCase):
-    def test_source_location_resolves_to_canonical_cv(self) -> None:
-        cell = braincell.Cell(
-            _tree(two_branches=True),
-            cv_policy=braincell.CVPerBranch(),
-            pop_size=(2,),
-        )
-        self.assertEqual(resolve_source_cv(cell, RootLocation(0.5)), 0)
-        self.assertEqual(resolve_source_cv(cell, at("dend", 0.5)), 1)
-        with self.assertRaisesRegex(ValueError, "exactly one"):
-            resolve_source_cv(cell, at("soma", 0.5) | at("dend", 0.5))
+from braincell.network import Network
+from braincell.network._testing import make_runtime_network, make_threshold_cell
 
 
 class NetworkRuntimeTest(unittest.TestCase):
     def test_cell_has_one_network_execution_owner(self) -> None:
-        cell = _pre()
+        cell = make_threshold_cell()
         first = Network("first")
         second = Network("second")
         first.add_population("pre", cell)
@@ -117,7 +35,7 @@ class NetworkRuntimeTest(unittest.TestCase):
             second.add_population("pre", cell)
 
     def test_initialization_freezes_topology(self) -> None:
-        network = _network()
+        network = make_runtime_network()
         network.init_state()
         self.assertIs(network.init_state(), network)
         with self.assertRaisesRegex(RuntimeError, "after Network initialization"):
@@ -131,24 +49,24 @@ class NetworkRuntimeTest(unittest.TestCase):
 
     def test_batch_size_is_explicitly_unsupported(self) -> None:
         with self.assertRaisesRegex(NotImplementedError, "batch execution"):
-            _network().init_state(batch_size=2)
+            make_runtime_network().init_state(batch_size=2)
 
     def test_zero_delay_delivers_on_source_boundary(self) -> None:
-        result = _network().run(dt=0.1 * u.ms, duration=0.4 * u.ms)
+        result = make_runtime_network().run(dt=0.1 * u.ms, duration=0.4 * u.ms)
         conductance = np.asarray(result.samples["post"]["g"].values.to_decimal(u.uS))
         first_nonzero = int(np.flatnonzero(conductance[:, 0] > 0.0)[0])
         self.assertEqual(first_nonzero, 1)
 
     def test_heterogeneous_delay_routes_rows_independently(self) -> None:
-        network = _network(delay=[0.0, 0.3] * u.ms)
+        network = make_runtime_network(delay=[0.0, 0.3] * u.ms)
         result = network.run(dt=0.1 * u.ms, duration=0.6 * u.ms)
         conductance = np.asarray(result.samples["post"]["g"].values.to_decimal(u.uS))
         self.assertEqual(int(np.flatnonzero(conductance[:, 0] > 0.0)[0]), 1)
         self.assertEqual(int(np.flatnonzero(conductance[:, 1] > 0.0)[0]), 4)
 
     def test_split_run_preserves_events_in_flight(self) -> None:
-        continuous = _network(delay=0.3 * u.ms).run(dt=0.1 * u.ms, duration=0.7 * u.ms)
-        split_network = _network(delay=0.3 * u.ms)
+        continuous = make_runtime_network(delay=0.3 * u.ms).run(dt=0.1 * u.ms, duration=0.7 * u.ms)
+        split_network = make_runtime_network(delay=0.3 * u.ms)
         split = braincell.NetworkResult.concat(
             (
                 split_network.run(dt=0.1 * u.ms, duration=0.2 * u.ms),
@@ -162,7 +80,7 @@ class NetworkRuntimeTest(unittest.TestCase):
         )
 
     def test_reset_state_restarts_and_discards_events_in_flight(self) -> None:
-        network = _network(delay=0.3 * u.ms)
+        network = make_runtime_network(delay=0.3 * u.ms)
         first = network.run(dt=0.1 * u.ms, duration=0.2 * u.ms)
         network.reset_state()
         second = network.run(dt=0.1 * u.ms, duration=0.2 * u.ms)
@@ -172,12 +90,12 @@ class NetworkRuntimeTest(unittest.TestCase):
         )
 
     def test_event_backend_auto_matches_scatter(self) -> None:
-        auto = _network(delay=[0.0, 0.2] * u.ms).run(
+        auto = make_runtime_network(delay=[0.0, 0.2] * u.ms).run(
             dt=0.1 * u.ms,
             duration=0.5 * u.ms,
             event_backend="auto",
         )
-        scatter = _network(delay=[0.0, 0.2] * u.ms).run(
+        scatter = make_runtime_network(delay=[0.0, 0.2] * u.ms).run(
             dt=0.1 * u.ms,
             duration=0.5 * u.ms,
             event_backend="scatter",
@@ -189,7 +107,7 @@ class NetworkRuntimeTest(unittest.TestCase):
         )
 
     def test_run_setup_and_compiled_loop_are_reused(self) -> None:
-        network = _network()
+        network = make_runtime_network()
         network.run(dt=0.1 * u.ms, duration=0.2 * u.ms)
         setup_count = len(network._run_setup_cache)
         loop_count = len(network._network_run_loop_cache)

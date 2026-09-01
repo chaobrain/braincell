@@ -1,3 +1,18 @@
+# Copyright 2026 BrainX Ecosystem Limited. All Rights Reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ==============================================================================
+
 import unittest
 
 import brainunit as u
@@ -30,7 +45,7 @@ class ConnectionSamplingTest(unittest.TestCase):
         first_cell, first_exp = _population()
         second_cell, second_exp = _population()
         source = NetStim(size=5, start=1.0 * u.ms)
-        pairing = braincell.connection.independent(20, seed=7)
+        pairing = braincell.network.connection.independent(20, seed=7)
 
         first = connect("first", source=source, synapse=first_cell.synapses[first_exp], pairing=pairing)
         second = connect("second", source=source, synapse=second_cell.synapses[second_exp], pairing=pairing)
@@ -47,14 +62,14 @@ class ConnectionSamplingTest(unittest.TestCase):
                 "duplicate_source",
                 source=source[[0, 0]],
                 synapse=cell.synapses[exp],
-                pairing=braincell.connection.independent(2),
+                pairing=braincell.network.connection.independent(2),
             )
         with self.assertRaisesRegex(ValueError, "synapse view must contain unique IDs"):
             connect(
                 "duplicate_synapse",
                 source=source,
                 synapse=cell.synapses[exp][[0, 0]],
-                pairing=braincell.connection.independent(2),
+                pairing=braincell.network.connection.independent(2),
             )
 
     def test_source_first_score_is_conditional(self):
@@ -70,7 +85,7 @@ class ConnectionSamplingTest(unittest.TestCase):
             "conditional",
             source=source,
             synapse=cell.synapses[exp],
-            pairing=braincell.connection.source_first(30, synapse_score=score, seed=3),
+            pairing=braincell.network.connection.source_first(30, synapse_score=score, seed=3),
         )
 
         np.testing.assert_array_equal(result.synapse.population_index, result.source_index % 3)
@@ -88,7 +103,7 @@ class ConnectionSamplingTest(unittest.TestCase):
             "reverse_conditional",
             source=source,
             synapse=cell.synapses[exp],
-            pairing=braincell.connection.synapse_first(20, source_score=score, seed=4),
+            pairing=braincell.network.connection.synapse_first(20, source_score=score, seed=4),
         )
         np.testing.assert_array_equal(result.source_index, result.synapse.population_index)
 
@@ -99,7 +114,7 @@ class ConnectionSamplingTest(unittest.TestCase):
             "out_degree",
             source=source,
             synapse=cell.synapses[exp],
-            pairing=braincell.connection.by_source([0, 2, 1, 3], seed=2),
+            pairing=braincell.network.connection.by_source([0, 2, 1, 3], seed=2),
         )
         np.testing.assert_array_equal(np.bincount(result.source_index, minlength=4), [0, 2, 1, 3])
 
@@ -110,7 +125,7 @@ class ConnectionSamplingTest(unittest.TestCase):
             "in_degree",
             source=source,
             synapse=cell.synapses[exp],
-            pairing=braincell.connection.by_synapse([1, 0, 2, 3], seed=2),
+            pairing=braincell.network.connection.by_synapse([1, 0, 2, 3], seed=2),
         )
         np.testing.assert_array_equal(
             np.bincount(result.synapse.population_index, minlength=4),
@@ -130,7 +145,7 @@ class ConnectionSamplingTest(unittest.TestCase):
             "callable_degree",
             source=source,
             synapse=cell.synapses[exp],
-            pairing=braincell.connection.by_source(degree, seed=8),
+            pairing=braincell.network.connection.by_source(degree, seed=8),
         )
         self.assertEqual(observed, [(4,)])
         self.assertEqual(len(result), 4)
@@ -142,7 +157,7 @@ class ConnectionSamplingTest(unittest.TestCase):
             "stub_match",
             source=source,
             synapse=cell.synapses[exp],
-            pairing=braincell.connection.match_degrees([1, 2, 0], [0, 1, 2], seed=5),
+            pairing=braincell.network.connection.match_degrees([1, 2, 0], [0, 1, 2], seed=5),
         )
         np.testing.assert_array_equal(np.bincount(result.source_index, minlength=3), [1, 2, 0])
         np.testing.assert_array_equal(
@@ -158,7 +173,7 @@ class ConnectionSamplingTest(unittest.TestCase):
                 "bad_stubs",
                 source=source,
                 synapse=cell.synapses[exp],
-                pairing=braincell.connection.match_degrees([1, 1], [1, 0]),
+                pairing=braincell.network.connection.match_degrees([1, 1], [1, 0]),
             )
 
     def test_target_cell_groups_are_sorted_and_concatenated(self):
@@ -168,7 +183,7 @@ class ConnectionSamplingTest(unittest.TestCase):
             "grouped",
             source=source,
             synapse=cell.synapses[exp][[2, 0, 1]],
-            pairing=braincell.connection.independent(
+            pairing=braincell.network.connection.independent(
                 [1, 2, 3],
                 group_by="target_cell",
                 seed=11,
@@ -183,7 +198,7 @@ class ConnectionSamplingTest(unittest.TestCase):
             "grouped_with_zero",
             source=source,
             synapse=cell.synapses[exp],
-            pairing=braincell.connection.independent(
+            pairing=braincell.network.connection.independent(
                 [1, 0, 2],
                 group_by="target_cell",
                 seed=11,
@@ -198,7 +213,7 @@ class ConnectionSamplingTest(unittest.TestCase):
             "grouped_degree",
             source=source,
             synapse=cell.synapses[exp],
-            pairing=braincell.connection.by_source(1, group_by="target_cell", seed=9),
+            pairing=braincell.network.connection.by_source(1, group_by="target_cell", seed=9),
         )
         self.assertEqual(len(result), 6)
         for population_index in range(3):
@@ -212,7 +227,7 @@ class ConnectionSamplingTest(unittest.TestCase):
             "local_unique",
             source=source,
             synapse=cell.synapses[exp],
-            pairing=braincell.connection.by_source(3, replace=False, seed=2),
+            pairing=braincell.network.connection.by_source(3, replace=False, seed=2),
         )
         for source_id in range(2):
             self.assertEqual(len(np.unique(result.synapse_id[result.source_index == source_id])), 3)
@@ -221,7 +236,7 @@ class ConnectionSamplingTest(unittest.TestCase):
                 "too_many",
                 source=source,
                 synapse=cell.synapses[exp],
-                pairing=braincell.connection.by_source(4, replace=False),
+                pairing=braincell.network.connection.by_source(4, replace=False),
             )
 
     def test_score_validation_and_zero_rows_do_not_modify_store(self):
@@ -232,14 +247,14 @@ class ConnectionSamplingTest(unittest.TestCase):
                 "zero_score",
                 source=source,
                 synapse=cell.synapses[exp],
-                pairing=braincell.connection.independent(2, source_score=[0.0, 0.0]),
+                pairing=braincell.network.connection.independent(2, source_score=[0.0, 0.0]),
             )
         with self.assertRaisesRegex(ValueError, "zero connection rows"):
             connect(
                 "zero_degree",
                 source=source,
                 synapse=cell.synapses[exp],
-                pairing=braincell.connection.by_source([0, 0]),
+                pairing=braincell.network.connection.by_source([0, 0]),
             )
         self.assertEqual(len(cell.connections), 0)
 
@@ -259,7 +274,7 @@ class ConnectionSamplingTest(unittest.TestCase):
             "context",
             source=source,
             synapse=cell.synapses[exp],
-            pairing=braincell.connection.source_first(
+            pairing=braincell.network.connection.source_first(
                 2,
                 synapse_score=score,
                 source_replace=False,
@@ -275,17 +290,17 @@ class ConnectionSamplingTest(unittest.TestCase):
         cell, exp = _population(3)
         source = NetStim(size=20, start=1.0 * u.ms)
         helpers = (
-            braincell.connection.degree.poisson(1.0),
-            braincell.connection.degree.binomial(2, 0.5),
-            braincell.connection.degree.negative_binomial(2, 0.7),
-            braincell.connection.degree.empirical([0, 2], [0.25, 0.75]),
+            braincell.network.connection.degree.poisson(1.0),
+            braincell.network.connection.degree.binomial(2, 0.5),
+            braincell.network.connection.degree.negative_binomial(2, 0.7),
+            braincell.network.connection.degree.empirical([0, 2], [0.25, 0.75]),
         )
         for index, helper in enumerate(helpers):
             result = connect(
                 f"distribution_{index}",
                 source=source,
                 synapse=cell.synapses[exp],
-                pairing=braincell.connection.by_source(helper, seed=index + 1),
+                pairing=braincell.network.connection.by_source(helper, seed=index + 1),
             )
             self.assertTrue(np.all(np.bincount(result.source_index, minlength=20) >= 0))
 
@@ -305,7 +320,7 @@ class NetworkConnectionSamplingTest(unittest.TestCase):
             "ampa_drive",
             source=network.populations["pre"],
             synapse=cell.synapses[exp],
-            pairing=braincell.connection.independent(40, seed=pairing_seed),
+            pairing=braincell.network.connection.independent(40, seed=pairing_seed),
         )
         return result
 
@@ -343,7 +358,7 @@ class NetworkConnectionSamplingTest(unittest.TestCase):
                 target=network.populations["post"],
                 locations=at("soma", 0.5),
                 synapse=spec,
-                pairing=braincell.connection.independent(2),
+                pairing=braincell.network.connection.independent(2),
             )
 
 

@@ -32,8 +32,11 @@ __all__ = [
     "make_post_cell",
     "make_post_cell_with_synapse_pool",
     "make_probe_cell",
+    "make_recording_post_cell",
+    "make_runtime_network",
     "make_soma_tree",
     "make_spiking_cell",
+    "make_threshold_cell",
     "make_two_point_tree",
     "step_down_solver",
     "step_up_solver",
@@ -134,6 +137,61 @@ def make_post_cell_with_synapse_pool(size: int = 2) -> Cell:
         ),
     )
     return cell
+
+
+def make_threshold_cell(size: int = 2) -> Cell:
+    """A population that crosses threshold on every step, with nothing placed.
+
+    Unlike :func:`make_spiking_cell` this leaves the cell bare, so tests that
+    only care about spike emission are not also exercising probe machinery.
+    """
+    return Cell(
+        make_soma_tree(),
+        cv_policy=CVPerBranch(),
+        pop_size=(size,),
+        V_init=-10.0 * u.mV,
+        V_th=0.0 * u.mV,
+        solver=step_up_solver,
+    )
+
+
+def make_recording_post_cell(size: int = 2) -> Cell:
+    """A silent population with one ``ExpSyn`` observed through ``record``.
+
+    This is the :class:`~braincell.mech.SynapseSpec` + ``observe`` counterpart
+    to :func:`make_post_cell`, which predates that API and still declares its
+    synapse with ``mech.Synapse`` plus a ``MechanismProbe``.
+    """
+    cell = Cell(
+        make_soma_tree(),
+        cv_policy=CVPerBranch(),
+        pop_size=(size,),
+        V_init=-65.0 * u.mV,
+        solver=step_down_solver,
+    )
+    cell.place(
+        at("soma", 0.5),
+        braincell.mech.SynapseSpec("ExpSyn", name="exp", tau=2.0 * u.ms, e=0.0 * u.mV),
+    )
+    cell.soma.record("g", braincell.observe.synapse(name="exp").state("g"))
+    return cell
+
+
+def make_runtime_network(*, delay=0.0 * u.ms, weight=0.2 * u.uS):
+    """A two-population network wired pre -> post through one ``ExpSyn``."""
+    from braincell.network import Network
+
+    network = Network("runtime")
+    pre = network.add_population("pre", make_threshold_cell())
+    post = network.add_population("post", make_recording_post_cell())
+    network.connect(
+        "drive",
+        source=pre.event_outputs["spike"],
+        synapse=post.synapses["exp"],
+        weight=weight,
+        delay=delay,
+    )
+    return network
 
 
 def make_probe_cell(size: int = 2) -> Cell:

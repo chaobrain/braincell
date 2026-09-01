@@ -35,21 +35,18 @@ __all__ = [
 MAX_BACKOFF_SECONDS = 30.0
 
 
-def _is_transient_status(status: int) -> bool:
-    return status >= 500
+#: ``requests`` exception names that no amount of retrying will fix.
+_PERMANENT_EXCEPTIONS = frozenset({"HTTPError", "TooManyRedirects", "URLRequired", "MissingSchema"})
 
 
-def _classify_exception(exc: BaseException) -> str:
-    """Return ``"transient"``, ``"permanent"``, or ``"unknown"`` for *exc*."""
+def _is_permanent_exception(exc: BaseException) -> bool:
+    """Return ``True`` when retrying *exc* cannot succeed.
 
-    name = type(exc).__name__
-    module = type(exc).__module__
-    if module.startswith("requests"):
-        if name in {"ConnectionError", "Timeout", "ReadTimeout", "ConnectTimeout"}:
-            return "transient"
-        if name in {"HTTPError", "TooManyRedirects", "URLRequired", "MissingSchema"}:
-            return "permanent"
-    return "unknown"
+    Matched by name rather than by class because ``requests`` is imported
+    lazily and may not be loaded when this runs.
+    """
+
+    return type(exc).__module__.startswith("requests") and type(exc).__name__ in _PERMANENT_EXCEPTIONS
 
 
 def _sleep_for_attempt(attempt: int, backoff_base: float, sleep: Callable[[float], None]) -> None:
@@ -115,15 +112,14 @@ def request_with_retry(
     if attempts < 1:
         raise ValueError(f"attempts must be >= 1, got {attempts!r}")
 
-    last_exc: BaseException | None = None
-    last_status: int | None = None
+    # Every path through the loop body either returns or raises on the final
+    # attempt, so no post-loop fallback is reachable.
     for attempt in range(attempts):
+        is_last = attempt == attempts - 1
         try:
             response = session.get(url, params=params, timeout=timeout)
         except Exception as exc:  # noqa: BLE001
-            kind = _classify_exception(exc)
-            last_exc = exc
-            if kind == "permanent" or attempt == attempts - 1:
+            if is_last or _is_permanent_exception(exc):
                 raise NeuroMorphoHTTPError(
                     f"GET {url} failed: {exc}",
                     status=0,
@@ -140,24 +136,16 @@ def request_with_retry(
             )
         if status and status < 400:
             return response
-        if status and not _is_transient_status(status):
+        if status and status < 500:
             raise NeuroMorphoHTTPError(
                 f"GET {url} returned HTTP {status}",
                 status=status,
                 url=url,
             )
-        last_status = status
-        if attempt == attempts - 1:
+        if is_last:
             raise NeuroMorphoHTTPError(
                 f"GET {url} returned HTTP {status} after {attempts} attempts",
                 status=status,
                 url=url,
             )
         _sleep_for_attempt(attempt, backoff_base, sleep)
-
-    # Defensive: the loop above always returns or raises.
-    raise NeuroMorphoHTTPError(
-        f"GET {url} failed after {attempts} attempts (last_status={last_status}, last_exc={last_exc})",
-        status=last_status or 0,
-        url=url,
-    )

@@ -175,8 +175,6 @@ class NeuroMorphoCacheReadTest(unittest.TestCase):
             self.assertEqual(cache.standard_swc_path(10047), swc)
 
     def test_load_returns_morphology(self) -> None:
-        if not FIXTURE_SWC.exists():
-            self.skipTest(f"missing fixture: {FIXTURE_SWC}")
         with tempfile.TemporaryDirectory() as tmpdir:
             cache = NeuroMorphoCache(tmpdir)
             folder = cache.root / "10047"

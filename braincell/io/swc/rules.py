@@ -14,6 +14,7 @@
 # ==============================================================================
 
 
+from functools import partial
 from pathlib import Path
 
 from .types import SWC_TYPE_MAP, SwcReport, _SwcContext, _SwcRow
@@ -32,16 +33,19 @@ def raise_for_swc_errors(report: SwcReport, path: Path) -> None:
     raise ValueError(f"SWC validation failed for {path}:\n\n{report.format(errors_only=True)}")
 
 
-def _add_warning(
+def _add_issue(
     context: _SwcContext,
     code: str,
     message: str,
     *,
+    level: str,
     line_number: int | None = None,
     node_id: int | None = None,
     fix_message: str | None = None,
 ) -> None:
-    context.report.add_warning(
+    """Record an issue, deriving ``fix_applied`` from the context flags."""
+    context.report.add(
+        level,
         code,
         message,
         line_number=line_number,
@@ -51,23 +55,8 @@ def _add_warning(
     )
 
 
-def _add_error(
-    context: _SwcContext,
-    code: str,
-    message: str,
-    *,
-    line_number: int | None = None,
-    node_id: int | None = None,
-    fix_message: str | None = None,
-) -> None:
-    context.report.add_error(
-        code,
-        message,
-        line_number=line_number,
-        node_id=node_id,
-        fix_message=fix_message,
-        fix_applied=bool(fix_message) and context.mark_fix_applied and context.use_corrections,
-    )
+_add_error = partial(_add_issue, level="error")
+_add_warning = partial(_add_issue, level="warning")
 
 
 def _set_attr(context: _SwcContext, row: _SwcRow, attr: str, value) -> None:
@@ -400,11 +389,6 @@ def rule_index_sequential(context: _SwcContext) -> None:
     actual_ids = [row.node_id for row in context.rows]
     if actual_ids == expected_ids:
         return
-    old_to_new = {
-        old_id: new_id
-        for new_id, old_id in enumerate((row.node_id for row in context.rows), start=1)
-        if old_id is not None
-    }
     _add_warning(
         context,
         "identity.sequential_index",
@@ -413,13 +397,15 @@ def rule_index_sequential(context: _SwcContext) -> None:
     )
     if not context.use_corrections:
         return
-    contour_old_to_new = {
+    old_to_new = {
         old_id: new_id
         for new_id, old_id in enumerate((row.node_id for row in context.rows), start=1)
-        if old_id is not None and old_id in context.contour_soma_ids
+        if old_id is not None
+    }
+    contour_old_to_new = {
+        old_id: new_id for old_id, new_id in old_to_new.items() if old_id in context.contour_soma_ids
     }
     for new_id, row in enumerate(context.rows, start=1):
-        old_id = row.node_id
         row.node_id = new_id
         if row.parent_id == -1:
             continue

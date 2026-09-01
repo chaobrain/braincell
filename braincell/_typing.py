@@ -13,6 +13,7 @@
 # limitations under the License.
 # ==============================================================================
 
+import os
 from typing import Union, Callable, Hashable, Tuple, Dict
 
 import brainstate
@@ -33,3 +34,7 @@ Jacobian = jax.Array
 Args = Tuple
 Aux = Dict
 Path = Tuple[str, ...]
+# A filesystem location accepted by the readers, writers, and checkpoint I/O.
+# Note this is distinct from ``Path`` above, which is a state path in a model
+# tree, not a file on disk.
+FilePath = Union[str, os.PathLike]

@@ -15,12 +15,12 @@
 
 
 from dataclasses import dataclass
-from os import PathLike
 
+from braincell._typing import FilePath
 from braincell.morph.morphology import Morphology
 
 
 @dataclass(frozen=True)
 class NeuroMlReader:
-    def read(self, path: str | PathLike[str]) -> Morphology:
+    def read(self, path: FilePath) -> Morphology:
         raise NotImplementedError("Parse NeuroML2 into an editable Morpho tree.")

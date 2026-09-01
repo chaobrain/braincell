@@ -22,8 +22,9 @@ to share the ``FakeResponse`` / ``FakeSession`` doubles and the sample
 payload factory.
 """
 
-from pathlib import Path
 from typing import Any
+
+from braincell.io._testing import FIXTURE_DIR
 
 __all__ = [
     "FIXTURE_SWC",
@@ -33,10 +34,13 @@ __all__ = [
 ]
 
 
-#: Path to the minimal SWC fixture used by tests that need to actually
-#: parse a morphology. The fixture lives under ``data/morphology/generic/``,
-#: matching the convention used by every other reader test.
-FIXTURE_SWC = Path(__file__).resolve().parents[3] / "data" / "morphology" / "generic" / "three_points_soma.swc"
+FIXTURE_SWC = FIXTURE_DIR / "three_points_soma.swc"
+"""Minimal SWC fixture for tests that need to actually parse a morphology.
+
+Derived from :data:`braincell.io._testing.FIXTURE_DIR` rather than resolving
+``parents[N]`` locally, so moving this package cannot silently point it at a
+directory that does not exist.
+"""
 
 
 class FakeResponse:

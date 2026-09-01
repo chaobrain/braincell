@@ -29,9 +29,6 @@ from braincell.io.swc.types import _SwcAttach, _SwcBranch, _SwcRow
 
 
 class SwcReaderTest(unittest.TestCase):
-    def _morpho_file(self, name: str) -> Path:
-        return Path(__file__).resolve().parents[3] / "data" / "morphology" / name
-
     def _write_swc(self, body: str) -> Path:
         temp_dir = tempfile.TemporaryDirectory()
         self.addCleanup(temp_dir.cleanup)
@@ -43,16 +40,13 @@ class SwcReaderTest(unittest.TestCase):
         return {issue.code for issue in report.issues}
 
     def _branch_points_um(self, branch) -> np.ndarray:
-        if branch.points_proximal is None or branch.points_distal is None:
+        points = branch.points
+        if points is None:
             raise AssertionError("Branch does not expose point geometry.")
-        points = [branch.points_proximal[0].to_decimal(u.um)]
-        points.extend(point.to_decimal(u.um) for point in branch.points_distal)
-        return np.array(points, dtype=float)
+        return np.asarray(points.to_decimal(u.um), dtype=float)
 
     def _branch_point_radii_um(self, branch) -> np.ndarray:
-        radii = [branch.radii_proximal[0].to_decimal(u.um)]
-        radii.extend(radius.to_decimal(u.um) for radius in branch.radii_distal)
-        return np.array(radii, dtype=float)
+        return np.asarray(branch.radii.to_decimal(u.um), dtype=float)
 
     def test_reader_builds_compressed_tree_and_maps_known_types(self) -> None:
         path = self._write_swc(
@@ -419,7 +413,7 @@ class SwcReaderTest(unittest.TestCase):
         self.assertEqual(tree.branch(name="basal_dendrite_0").parent_x, 1.0)
 
     def test_reader_imports_root_immediate_branched_soma_file(self) -> None:
-        tree = SwcReader().read(self._morpho_file("branched_soma_1.swc"))
+        tree = SwcReader().read(FIXTURE_DIR / "branched_soma_1.swc")
         soma_children = [branch for branch in tree.branches if branch.parent is not None and branch.type == "soma"]
 
         self.assertEqual(len(tree.branches), 3)
@@ -440,7 +434,7 @@ class SwcReaderTest(unittest.TestCase):
         self.assertEqual(tree.branch(name="basal_dendrite_0").parent_x, 1.0)
 
     def test_reader_imports_bundled_io_file_without_single_point_root_error(self) -> None:
-        tree = SwcReader().read(self._morpho_file("io.swc"))
+        tree = SwcReader().read(FIXTURE_DIR / "io.swc")
 
         self.assertGreater(len(tree.branches), 1)
 

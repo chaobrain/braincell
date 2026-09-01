@@ -176,12 +176,25 @@ class NeuroMorphoCache:
 
         return self.layout.neuron_dir(neuron_id).is_dir()
 
-    def status(self, neuron_id: int) -> NeuroMorphoCacheStatus:
+    def status(
+        self,
+        neuron_id: int,
+        *,
+        neuron_name: str | None = None,
+        original_format: str | None = None,
+    ) -> NeuroMorphoCacheStatus:
         """Return a :class:`NeuroMorphoCacheStatus` snapshot for *neuron_id*.
 
         Parameters
         ----------
         neuron_id : int
+        neuron_name : str or None
+            Authoritative neuron name from a live record. When omitted it is
+            read from the cached ``metadata.json``. Passing it lets a caller
+            that already holds the record skip that read.
+        original_format : str or None
+            Original filename (e.g. ``"TypeA-10.asc"``) from a live record;
+            read from ``metadata.json`` when omitted.
 
         Returns
         -------
@@ -189,9 +202,7 @@ class NeuroMorphoCache:
         """
 
         folder = self.layout.neuron_dir(neuron_id)
-        metadata_file = self.layout.metadata_path(neuron_id)
-        exists = folder.exists()
-        if not exists:
+        if not folder.exists():
             return NeuroMorphoCacheStatus(
                 configured=True,
                 folder=folder,
@@ -202,26 +213,24 @@ class NeuroMorphoCache:
                 neuron_id=int(neuron_id),
             )
 
-        metadata_exists = metadata_file.exists()
+        metadata_exists = self.layout.metadata_path(neuron_id).exists()
+        if metadata_exists and (neuron_name is None or original_format is None):
+            try:
+                metadata = self.metadata(neuron_id)
+            except (FileNotFoundError, json.JSONDecodeError):
+                metadata = {}
+            if neuron_name is None:
+                neuron_name = _optional_str(metadata.get("neuron_name"))
+            if original_format is None:
+                original_format = _optional_str(metadata.get("original_format"))
+
         standard_exists = False
         original_exists = False
-
-        if metadata_exists:
-            try:
-                metadata = json.loads(metadata_file.read_text(encoding="utf-8"))
-            except FileNotFoundError:
-                metadata = {}
-            except json.JSONDecodeError:
-                metadata = {}
-            neuron_name = metadata.get("neuron_name")
-            if isinstance(neuron_name, str):
-                std = self.layout.standard_swc_path(neuron_id, neuron_name)
-                standard_exists = std.exists()
-                fmt = metadata.get("original_format")
-                if isinstance(fmt, str):
-                    suffix = Path(fmt).suffix
-                    if suffix:
-                        original_exists = self.layout.original_file_path(neuron_id, neuron_name, suffix).exists()
+        if neuron_name:
+            standard_exists = self.layout.standard_swc_path(neuron_id, neuron_name).exists()
+            suffix = Path(original_format).suffix if original_format else ""
+            if suffix:
+                original_exists = self.layout.original_file_path(neuron_id, neuron_name, suffix).exists()
 
         if not standard_exists:
             standard_exists = any(folder.glob("*.CNG.swc"))
@@ -281,10 +290,7 @@ class NeuroMorphoCache:
         payload = metadata.get("measurement")
         if not isinstance(payload, Mapping):
             return None
-        if "neuron_id" not in payload:
-            payload = dict(payload)
-            payload.setdefault("neuron_id", int(neuron_id))
-        return NeuroMorphoMeasurement.from_payload(payload)
+        return NeuroMorphoMeasurement.from_payload(payload, neuron_id=int(neuron_id))
 
     def standard_swc_path(self, neuron_id: int) -> Path | None:
         """Return the path of the cached standardized SWC file.
@@ -312,29 +318,12 @@ class NeuroMorphoCache:
         except FileNotFoundError:
             metadata = {}
 
-        for item in metadata.get("download_items", []) or []:
-            if not isinstance(item, Mapping) or item.get("kind") != "standard":
-                continue
-            raw_path = item.get("path")
-            if raw_path:
-                candidate = Path(raw_path)
-                try:
-                    candidate.resolve().relative_to(folder.resolve())
-                    if candidate.exists():
-                        return candidate
-                except ValueError:
-                    pass
-                candidate = folder / Path(raw_path).name
-                if candidate.exists():
-                    return candidate
-            filename = item.get("filename")
-            if filename:
-                candidate = folder / str(filename)
-                if candidate.exists():
-                    return candidate
+        recorded = _recorded_download_path(folder, metadata, kind="standard")
+        if recorded is not None:
+            return recorded
 
-        neuron_name = metadata.get("neuron_name")
-        if isinstance(neuron_name, str):
+        neuron_name = _optional_str(metadata.get("neuron_name"))
+        if neuron_name:
             candidate = self.layout.standard_swc_path(neuron_id, neuron_name)
             if candidate.exists():
                 return candidate
@@ -366,29 +355,7 @@ class NeuroMorphoCache:
         except FileNotFoundError:
             metadata = {}
 
-        for item in metadata.get("download_items", []) or []:
-            if not isinstance(item, Mapping) or item.get("kind") != "original":
-                continue
-            if item.get("skip"):
-                continue
-            raw_path = item.get("path")
-            if raw_path:
-                candidate = Path(raw_path)
-                try:
-                    candidate.resolve().relative_to(folder.resolve())
-                    if candidate.exists():
-                        return candidate
-                except ValueError:
-                    pass
-                candidate = folder / Path(raw_path).name
-                if candidate.exists():
-                    return candidate
-            filename = item.get("filename")
-            if filename:
-                candidate = folder / str(filename)
-                if candidate.exists():
-                    return candidate
-        return None
+        return _recorded_download_path(folder, metadata, kind="original")
 
     def load(
         self,
@@ -480,3 +447,56 @@ class NeuroMorphoCache:
             except OSError as exc:
                 raise OSError(f"Failed to remove cache folder {entry}: {exc}") from exc
         return removed
+
+
+def _optional_str(value: Any) -> str | None:
+    """Return *value* when it is a non-empty string, otherwise ``None``."""
+
+    return value if isinstance(value, str) and value else None
+
+
+def _recorded_download_path(folder: Path, metadata: Mapping[str, Any], *, kind: str) -> Path | None:
+    """Return the on-disk file a recorded ``download_items`` entry points at.
+
+    Prefers the absolute ``path`` written at download time, but only when it
+    still resolves inside *folder* — a cache moved between machines carries
+    stale absolute paths, so the basename is retried against *folder* before
+    falling back to the recorded ``filename``.
+
+    Parameters
+    ----------
+    folder : Path
+        Per-neuron cache directory that must contain the result.
+    metadata : Mapping[str, Any]
+        Parsed ``metadata.json`` contents.
+    kind : str
+        Download kind to match, e.g. ``"standard"`` or ``"original"``.
+
+    Returns
+    -------
+    Path or None
+        ``None`` when no recorded entry of *kind* resolves to a file that
+        exists.
+    """
+
+    for item in metadata.get("download_items", []) or []:
+        if not isinstance(item, Mapping) or item.get("kind") != kind or item.get("skip"):
+            continue
+        raw_path = item.get("path")
+        if raw_path:
+            candidate = Path(raw_path)
+            try:
+                candidate.resolve().relative_to(folder.resolve())
+                if candidate.exists():
+                    return candidate
+            except ValueError:
+                pass
+            candidate = folder / Path(raw_path).name
+            if candidate.exists():
+                return candidate
+        filename = item.get("filename")
+        if filename:
+            candidate = folder / str(filename)
+            if candidate.exists():
+                return candidate
+    return None

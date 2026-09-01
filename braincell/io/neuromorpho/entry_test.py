@@ -36,9 +36,6 @@ from braincell.io.neuromorpho._testing import (
 
 class LoadNeuromorphoTest(unittest.TestCase):
     def test_returns_morphology(self) -> None:
-        if not FIXTURE_SWC.exists():
-            self.skipTest(f"missing fixture: {FIXTURE_SWC}")
-
         session = FakeSession(
             [
                 FakeResponse(json_data=sample_neuron_payload()),  # get_neuron
@@ -55,9 +52,6 @@ class LoadNeuromorphoTest(unittest.TestCase):
             self.assertTrue((Path(tmpdir) / "10047" / "TypeA-10.CNG.swc").exists())
 
     def test_respects_existing_cache(self) -> None:
-        if not FIXTURE_SWC.exists():
-            self.skipTest(f"missing fixture: {FIXTURE_SWC}")
-
         with tempfile.TemporaryDirectory() as tmpdir:
             cache_dir = Path(tmpdir)
             folder = cache_dir / "10047"
@@ -82,9 +76,6 @@ class LoadNeuromorphoTest(unittest.TestCase):
 
 class MorphologyClassmethodTest(unittest.TestCase):
     def test_from_neuromorpho_matches_function(self) -> None:
-        if not FIXTURE_SWC.exists():
-            self.skipTest(f"missing fixture: {FIXTURE_SWC}")
-
         session = FakeSession(
             [
                 FakeResponse(json_data=sample_neuron_payload()),

@@ -35,12 +35,12 @@ If this behavior changes, re-check:
 """
 
 from dataclasses import dataclass, field
-from os import PathLike
 from pathlib import Path
 
 import numpy as np
 
 import brainunit as u
+from braincell._typing import FilePath
 from braincell.morph.branch import Branch, branch_class_for_type
 from braincell.morph.morphology import Morphology
 from .rules import apply_swc_rules, raise_for_swc_errors
@@ -63,13 +63,115 @@ from .types import (
 )
 
 
+class _BranchArcLengths:
+    """Cumulative arc length along one branch, keyed by node id.
+
+    Built once per parent branch and reused for every child that attaches to
+    it, replacing a per-child rebuild of the whole point array.
+
+    Parameters
+    ----------
+    branch : _SwcBranch
+        Branch to measure.
+    nodes : dict of int to _SwcRow
+        Rows by node id, used to read each point's coordinates.
+    """
+
+    __slots__ = ("n_points", "prefix_by_node_id", "total")
+
+    def __init__(self, branch: _SwcBranch, nodes: dict[int, _SwcRow]) -> None:
+        point_ids = branch.point_ids
+        self.n_points = len(point_ids)
+        # ``setdefault`` keeps the first occurrence, matching the ``list.index``
+        # lookup this replaces.
+        self.prefix_by_node_id: dict[int, float] = {}
+        if not point_ids:
+            self.total = 0.0
+            return
+        self.prefix_by_node_id.setdefault(point_ids[0], 0.0)
+        prefix = 0.0
+        previous = row_point(nodes[point_ids[0]])
+        for node_id in point_ids[1:]:
+            current = row_point(nodes[node_id])
+            prefix += float(np.linalg.norm(current - previous))
+            self.prefix_by_node_id.setdefault(node_id, prefix)
+            previous = current
+        self.total = prefix
+
+
+def _walk_branch_points(
+    start_node_id: int,
+    branch_type: str,
+    children: dict[int, list[int]],
+    nodes: dict[int, _SwcRow],
+    *,
+    split_at_start: bool = False,
+) -> tuple[list[int], int, tuple[int, ...]]:
+    """Collect the node ids that make up one unbranched section.
+
+    Walks from *start_node_id* through single children of the same SWC type,
+    stopping at the first fork or type change.
+
+    Parameters
+    ----------
+    start_node_id : int
+        Node the section begins at; always the first collected id.
+    branch_type : str
+        Mapped SWC type the section must stay within.
+    children : dict of int to list of int
+        Child ids of every node.
+    nodes : dict of int to _SwcRow
+        Rows by node id, used to read each candidate's type.
+    split_at_start : bool
+        When *start_node_id* forks immediately, adopt its first same-type
+        child into this section and report the remaining children as side
+        branches. Used where NEURON continues the parent section through the
+        fork rather than starting every child fresh.
+
+    Returns
+    -------
+    point_ids : list of int
+        Node ids of the section, in order.
+    end_node_id : int
+        Last node reached; its children start the next sections.
+    side_child_ids : tuple of int
+        Children displaced by ``split_at_start``; empty otherwise.
+    """
+
+    point_ids = [start_node_id]
+    current_id = start_node_id
+    side_child_ids: tuple[int, ...] = ()
+
+    if split_at_start:
+        child_ids = children[current_id]
+        same_type_child_ids = [
+            child_id for child_id in child_ids if map_swc_type_code(nodes[child_id].type_code) == branch_type
+        ]
+        if len(child_ids) != 1 and same_type_child_ids:
+            main_child_id = same_type_child_ids[0]
+            point_ids.append(main_child_id)
+            current_id = main_child_id
+            side_child_ids = tuple(child_id for child_id in child_ids if child_id != main_child_id)
+
+    while True:
+        child_ids = children[current_id]
+        if len(child_ids) != 1:
+            break
+        child_id = child_ids[0]
+        if map_swc_type_code(nodes[child_id].type_code) != branch_type:
+            break
+        point_ids.append(child_id)
+        current_id = child_id
+    return point_ids, current_id, side_child_ids
+
+
 @dataclass(frozen=True)
 class SwcReader:
     options: SwcReadOptions = field(default_factory=SwcReadOptions)
 
     def read(
         self,
-        path: str | PathLike[str],
+        path: FilePath,
         *,
         return_report: bool = False,
     ) -> Morphology | tuple[Morphology, SwcReport]:
@@ -90,7 +192,7 @@ class SwcReader:
             return morpho, context.report
         return morpho
 
-    def check(self, path: str | PathLike[str]) -> SwcReport:
+    def check(self, path: FilePath) -> SwcReport:
         return self._run_pipeline(Path(path), mark_fix_applied=False).report
 
     def _run_pipeline(self, path: Path, *, mark_fix_applied: bool) -> _SwcContext:
@@ -154,46 +256,9 @@ class SwcReader:
     ) -> list[_SwcBranch]:
         branches: list[_SwcBranch] = []
 
-        def walk_root_branch() -> tuple[tuple[int, ...], int, tuple[int, ...]]:
-            root_type = map_swc_type_code(nodes[root_id].type_code)
-            point_ids = [root_id]
-            current_id = root_id
-            root_side_child_ids: tuple[int, ...] = tuple()
-
-            child_ids = children[current_id]
-            same_type_child_ids = [
-                child_id for child_id in child_ids if map_swc_type_code(nodes[child_id].type_code) == root_type
-            ]
-            if len(child_ids) != 1 and same_type_child_ids:
-                main_child_id = same_type_child_ids[0]
-                point_ids.append(main_child_id)
-                current_id = main_child_id
-                root_side_child_ids = tuple(child_id for child_id in child_ids if child_id != main_child_id)
-
-            while True:
-                child_ids = children[current_id]
-                if len(child_ids) != 1:
-                    break
-                child_id = child_ids[0]
-                if map_swc_type_code(nodes[child_id].type_code) != root_type:
-                    break
-                point_ids.append(child_id)
-                current_id = child_id
-            return tuple(point_ids), current_id, root_side_child_ids
-
         def walk_child_branch(parent_index: int, attach: _SwcAttach, start_node_id: int) -> None:
             branch_type = map_swc_type_code(nodes[start_node_id].type_code)
-            point_ids = [start_node_id]
-            current_id = start_node_id
-            while True:
-                child_ids = children[current_id]
-                if len(child_ids) != 1:
-                    break
-                child_id = child_ids[0]
-                if map_swc_type_code(nodes[child_id].type_code) != branch_type:
-                    break
-                point_ids.append(child_id)
-                current_id = child_id
+            point_ids, current_id, _ = _walk_branch_points(start_node_id, branch_type, children, nodes)
             branch_index = len(branches)
             branches.append(
                 _SwcBranch(
@@ -207,12 +272,15 @@ class SwcReader:
             for child_id in children[current_id]:
                 walk_child_branch(branch_index, _SwcAttach(node_id=current_id), child_id)
 
-        root_point_ids, root_end_id, root_side_child_ids = walk_root_branch()
+        root_type = map_swc_type_code(nodes[root_id].type_code)
+        root_point_ids, root_end_id, root_side_child_ids = _walk_branch_points(
+            root_id, root_type, children, nodes, split_at_start=True
+        )
         root_index = len(branches)
         branches.append(
             _SwcBranch(
-                point_ids=root_point_ids,
-                branch_type=map_swc_type_code(nodes[root_id].type_code),
+                point_ids=tuple(root_point_ids),
+                branch_type=root_type,
                 parent_index=None,
                 start_node_id=root_id,
             )
@@ -262,7 +330,6 @@ class SwcReader:
                     nodes=nodes,
                     children=children,
                     root_id=root_id,
-                    soma_ids=soma_ids,
                 )
 
         return self._append_child_subtrees(branches, child_tasks, nodes, children)
@@ -275,34 +342,16 @@ class SwcReader:
         children: dict[int, list[int]],
     ) -> list[_SwcBranch]:
         def walk_child_branch(parent_index: int, attach: _SwcAttach, start_node_id: int) -> None:
-            parent_branch_type = branches[parent_index].branch_type
             branch_type = map_swc_type_code(nodes[start_node_id].type_code)
-            point_ids = [start_node_id]
-            current_id = start_node_id
-            side_child_ids: tuple[int, ...] = tuple()
-            branch_attach = attach
-
-            if parent_branch_type == "soma":
-                child_ids = children[current_id]
-                same_type_child_ids = [
-                    child_id for child_id in child_ids if map_swc_type_code(nodes[child_id].type_code) == branch_type
-                ]
-                if len(child_ids) != 1 and same_type_child_ids:
-                    main_child_id = same_type_child_ids[0]
-                    point_ids.append(main_child_id)
-                    current_id = main_child_id
-                    side_child_ids = tuple(child_id for child_id in child_ids if child_id != main_child_id)
-                    branch_attach = self._con2prox_attach(attach, start_node_id, nodes)
-
-            while True:
-                child_ids = children[current_id]
-                if len(child_ids) != 1:
-                    break
-                child_id = child_ids[0]
-                if map_swc_type_code(nodes[child_id].type_code) != branch_type:
-                    break
-                point_ids.append(child_id)
-                current_id = child_id
+            # Under a soma, NEURON continues the first same-type child into this
+            # same section rather than starting a fresh one at the fork.
+            point_ids, current_id, side_child_ids = _walk_branch_points(
+                start_node_id,
+                branch_type,
+                children,
+                nodes,
+                split_at_start=branches[parent_index].branch_type == "soma",
+            )
             branch_index = len(branches)
             branches.append(
                 _SwcBranch(
@@ -310,7 +359,7 @@ class SwcReader:
                     branch_type=branch_type,
                     parent_index=parent_index,
                     start_node_id=start_node_id,
-                    attach=branch_attach,
+                    attach=attach,
                 )
             )
             for child_id in side_child_ids:
@@ -321,15 +370,6 @@ class SwcReader:
         for attach, child_id, parent_index in child_tasks:
             walk_child_branch(parent_index, attach, child_id)
         return branches
-
-    def _con2prox_attach(
-        self,
-        attach: _SwcAttach,
-        start_node_id: int,
-        nodes: dict[int, _SwcRow],
-    ) -> _SwcAttach:
-        del start_node_id, nodes
-        return attach
 
     def _build_morpho(
         self,
@@ -343,13 +383,20 @@ class SwcReader:
         root_name = "soma" if branches[0].branch_type == "soma" else None
         tree = Morphology.from_root(root_branch, name=root_name)
         branch_views = {0: tree.root}
+        # A parent's arc lengths are the same for every child attaching to it,
+        # so derive them once instead of once per child.
+        arc_by_parent: dict[int, _BranchArcLengths] = {}
 
         for branch_index, branch_info in enumerate(branches[1:], start=1):
             parent_index = branch_info.parent_index
             if parent_index is None:
                 raise ValueError("Non-root SWC branch is missing a parent.")
             parent_view = branch_views[parent_index]
-            parent_x = self._attachment_x(branches[parent_index], branch_info.attach, nodes)
+            arc = arc_by_parent.get(parent_index)
+            if arc is None:
+                arc = _BranchArcLengths(branches[parent_index], nodes)
+                arc_by_parent[parent_index] = arc
+            parent_x = self._attachment_x(branch_info.attach, arc)
             branch_views[branch_index] = tree.attach(
                 parent=parent_view,
                 child_branch=self._make_branch(
@@ -388,8 +435,6 @@ class SwcReader:
                 parent_branch_type=parent_branch_type,
                 attach=branch.attach,
                 point_ids=point_ids,
-                points=points,
-                attach_point=attach_point,
             )
 
             attach_radius_for_child = float(attach_radius)
@@ -420,8 +465,6 @@ class SwcReader:
         parent_branch_type: str | None,
         attach: _SwcAttach,
         point_ids: list[int],
-        points: list[np.ndarray],
-        attach_point: np.ndarray,
     ) -> bool:
         # Keep this predicate narrow. Same-xyz handling is decided in
         # ``_make_branch()`` because same-xyz + different-radius still needs a
@@ -432,34 +475,34 @@ class SwcReader:
         # point wholesale would distort the intended NEURON-style semantics.
         return len(point_ids) == 1 or attach.parent_x != 0.5
 
-    def _attachment_x(
-        self,
-        parent_branch: _SwcBranch,
-        attach: _SwcAttach | None,
-        nodes: dict[int, _SwcRow],
-    ) -> float:
+    def _attachment_x(self, attach: _SwcAttach | None, arc: "_BranchArcLengths") -> float:
+        """Return the normalized position along the parent where a child attaches.
+
+        Parameters
+        ----------
+        attach : _SwcAttach or None
+            Child attachment record. ``None`` attaches at the distal end.
+        arc : _BranchArcLengths
+            Precomputed arc lengths of the parent branch.
+
+        Returns
+        -------
+        float
+            Position in ``[0, 1]`` along the parent branch.
+        """
+
         if attach is None:
             return 1.0
         if attach.parent_x is not None:
             return attach.parent_x
         if attach.node_id is None:
             raise ValueError("SWC child attachment is missing a parent anchor node.")
-
-        parent_points = [row_point(nodes[node_id]) for node_id in parent_branch.point_ids]
-        if len(parent_points) == 1:
+        if arc.n_points == 1 or arc.total <= 0.0:
             return 1.0
-        try:
-            attach_idx = parent_branch.point_ids.index(attach.node_id)
-        except ValueError:
+        prefix = arc.prefix_by_node_id.get(attach.node_id)
+        if prefix is None:
             raise ValueError(f"SWC attachment node {attach.node_id!r} not found in parent branch point IDs.")
-        lengths = [
-            np.linalg.norm(parent_points[index + 1] - parent_points[index]) for index in range(len(parent_points) - 1)
-        ]
-        total = sum(lengths)
-        if total <= 0.0:
-            return 1.0
-        prefix = sum(lengths[:attach_idx])
-        return float(prefix / total)
+        return float(prefix / arc.total)
 
     def _collect_soma_component(
         self,
@@ -595,7 +638,6 @@ class SwcReader:
         nodes: dict[int, _SwcRow],
         children: dict[int, list[int]],
         root_id: int,
-        soma_ids: set[int],
     ) -> tuple[list[_SwcBranch], tuple[tuple[_SwcAttach, int, int], ...]]:
         branches: list[_SwcBranch] = []
         child_tasks: list[tuple[_SwcAttach, int, int]] = []

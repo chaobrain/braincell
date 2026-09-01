@@ -19,9 +19,14 @@ import brainstate
 import brainunit as u
 
 from braincell._base import HHTypedNeuron, Synapse
-from braincell._synapse_schema import DerivedSpec, ParameterSpec, StateSpec, positive
-from braincell.mech import register_synapse
-from braincell.event import ScalarEventInput
+from braincell.mech import (
+    DerivedSpec,
+    ParameterSpec,
+    ScalarEventInput,
+    StateSpec,
+    positive,
+    register_synapse,
+)
 
 __all__ = [
     'ExpSyn',

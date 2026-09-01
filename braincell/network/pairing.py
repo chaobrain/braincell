@@ -27,7 +27,7 @@ import brainunit as u
 import numpy as np
 
 from braincell._multi_compartment.synapses import SynapseView
-from braincell.event import EventSourceView
+from .event import EventSourceView
 from braincell.morph._spatial import MorphologySpatialGeometry, interpolate_branch
 
 Score = Callable[["PairingContext"], object]
@@ -553,7 +553,7 @@ def materialize_pairing(
 ) -> _EndpointPairs:
     """Materialize temporary local endpoint positions from one pairing spec."""
     if not isinstance(spec, PairingSpec):
-        raise TypeError("pairing must be returned by braincell.connection pairing helpers.")
+        raise TypeError("pairing must be returned by braincell.network.connection pairing helpers.")
     _require_unique(source.source_id, "source")
     _require_unique(synapse.id, "synapse")
     source_data = _SourceData(source)

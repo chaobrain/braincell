@@ -63,7 +63,7 @@ import numpy as np
 
 from braincell._base import Synapse as RuntimeSynapse
 from braincell._discretization.base import NodeTree
-from braincell.event import NoEventInput, ScalarEventInput, TriggerEventInput
+from braincell.mech import NoEventInput, ScalarEventInput, TriggerEventInput
 from braincell.mech import (
     CurrentClamp,
     Density,

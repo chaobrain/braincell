@@ -94,8 +94,8 @@ from braincell._discretization.base import (
 from braincell._discretization.node_build import locate_node_on_branch
 from braincell.filter import LocsetBatch, LocsetExpr, LocsetMask, RegionExpr, RegionMask, at
 from braincell.filter.helper import normalize_region_intervals
-from braincell.event import EventOutputCollection, _CellSpikeSource
-from braincell.recording import RecordingSpec, compile_recording
+from braincell.network.event import EventOutputCollection, _CellSpikeSource
+from braincell.network.recording import RecordingSpec, compile_recording
 from braincell.morph.morphology import Morphology, clone_morpho
 from braincell.quad import get_integrator, ind_exp_euler_step
 from braincell.quad._exp_euler import _ind_exp_euler_step_selected
@@ -1318,7 +1318,7 @@ class Cell(_CellFacade, HHTypedNeuron):
     @property
     def connections(self):
         """Return a unified view over all direct event-routing rows."""
-        from braincell.connection import ConnectionView
+        from braincell.network.connection import ConnectionView
 
         return ConnectionView(self._get_connection_store())
 
@@ -1341,7 +1341,7 @@ class Cell(_CellFacade, HHTypedNeuron):
     def _get_connection_store(self):
         """Return the private Cell-owned routing-row store."""
         if self._connection_store_cache is None:
-            from braincell.connection import _ConnectionStore
+            from braincell.network.connection import _ConnectionStore
 
             self._connection_store_cache = _ConnectionStore(self)
         return self._connection_store_cache

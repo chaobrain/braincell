@@ -110,7 +110,7 @@ def run_braincell_synapse_case(
     )
     cell.place(
         at("soma", 0.5),
-        mech.NetStim(
+        braincell.NetStim(
             name="stim",
             start=netstim_start_ms * u.ms,
             number=netstim_number,

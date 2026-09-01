@@ -58,7 +58,6 @@ from braincell.mech import (
     FunctionClamp,
     Junction,
     MechanismProbe,
-    NetStim,
     Point,
     ProbeMechanism,
     SineClamp,
@@ -66,6 +65,7 @@ from braincell.mech import (
     SynapseSpec as SynapsePlacement,
 )
 from braincell.mech._params import _to_hashable
+from braincell.network.event import NetStim
 
 if TYPE_CHECKING:
     from .state import CellRuntimeState

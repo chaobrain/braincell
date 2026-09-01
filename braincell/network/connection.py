@@ -26,7 +26,7 @@ import jax.numpy as jnp
 import numpy as np
 
 from braincell._multi_compartment.synapses import SynapseView
-from braincell._connection_sampling import (
+from .pairing import (
     PairingContext,
     PairingSpec,
     by_source,
@@ -38,14 +38,13 @@ from braincell._connection_sampling import (
     source_first,
     synapse_first,
 )
-from braincell.event import (
-    EventSource,
-    EventSourceView,
+from braincell.mech import (
     NoEventInput,
     ScalarEventInput,
     TriggerEventInput,
+    get_registry,
 )
-from braincell.mech import get_registry
+from .event import EventSource, EventSourceView
 
 __all__ = [
     "ConnectionView",
@@ -622,7 +621,7 @@ def connect(
         one synapse type and one synapse name.
     pairing : PairingSpec, optional
         Endpoint sampling declaration returned by a helper in
-        ``braincell.connection``. When omitted, endpoints use the existing
+        ``braincell.network.connection``. When omitted, endpoints use the existing
         equal-size or singleton broadcasting rule.
     weight : Quantity or array-like, optional
         Scalar event payload, scalar or one value per resulting routing row.

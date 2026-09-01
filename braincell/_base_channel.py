@@ -32,9 +32,8 @@ import brainunit as u
 
 from braincell._typing import ArrayLike, Size
 from ._misc import TreeNode
-from .event import NoEventInput
+from .mech import DerivedSpec, NoEventInput, ParameterSpec, StateSpec
 from .quad.protocol import DiffEqModule, IndependentIntegration
-from ._synapse_schema import DerivedSpec, ParameterSpec, StateSpec
 
 __all__ = ["IonChannel", "IonInfo", "Channel", "Synapse"]
 

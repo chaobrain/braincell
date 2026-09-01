@@ -30,7 +30,7 @@ import jax
 import numpy as np
 
 from braincell._multi_compartment import probes
-from braincell.recording import SampleBlock
+from braincell.network.recording import SampleBlock
 
 if TYPE_CHECKING:
     from .cell import Cell

@@ -13,23 +13,14 @@
 # limitations under the License.
 # ==============================================================================
 
-# -*- coding: utf-8 -*-
-
 
 import math
 import unittest
 
 import brainstate
 import brainunit as u
-import jax.numpy as jnp
-import matplotlib.pyplot as plt
 import numpy as np
 
-import braincell
-from braincell import (
-    DiffEqModule,
-    DiffEqSingleState,
-)
 from braincell.quad import (
     euler_step,
     heun2_step,
@@ -43,159 +34,7 @@ from braincell.quad import (
     rk4_step,
     ssprk3_step,
 )
-
-
-class HH(braincell.SingleCompartment):
-    def __init__(self, size, solver='rk4'):
-        super().__init__(size, solver=solver)
-
-        self.na = braincell.ion.SodiumFixed(size, E=50.0 * u.mV)
-        self.na.add(INa=braincell.channel.Na_HH1952(size))
-
-        self.k = braincell.ion.PotassiumFixed(size, E=-77.0 * u.mV)
-        self.k.add(IK=braincell.channel.K_HH1952(size))
-
-        self.IL = braincell.channel.IL(size, E=-54.387 * u.mV, g_max=0.03 * (u.mS / u.cm**2))
-
-
-def integrate(method: str, dt=0.01 * u.ms):
-    brainstate.random.seed(1)
-    hh = HH(1, solver=method)
-    hh.init_state()
-
-    def step_fun(t):
-        with brainstate.environ.context(t=t):
-            hh.update(10 * u.nA / u.cm**2)
-        return hh.V.value
-
-    with brainstate.environ.context(dt=dt):
-        times = u.math.arange(0.0 * u.ms, 10 * u.ms, brainstate.environ.get_dt())
-        vs = brainstate.transform.for_loop(step_fun, times)
-    return vs
-
-
-def compare(method):
-    norm = []
-    dts = [1e-3 * u.ms, 2e-3 * u.ms, 4e-3 * u.ms, 8e-3 * u.ms, 1e-2 * u.ms, 2e-2 * u.ms]
-    for dt in dts:
-        gold_vs = integrate('exp_euler', dt=dt)
-        vs = integrate(method, dt=dt)
-        norm.append(u.linalg.norm(gold_vs - vs))
-    # Strip units before returning so matplotlib can convert via np.asarray.
-    # Newer saiunit rejects np.asarray(dimensional_quantity).
-    dts_q = u.math.asarray(dts)
-    norm_q = u.math.asarray(norm)
-    return dts_q.mantissa, norm_q.mantissa
-
-
-class TestRungeKutta:
-    def test_euler_step(self):
-        dts, norms = compare('euler')
-        plt.loglog(dts, norms)
-        # plt.show()
-        plt.close()
-
-    def test_midpoint_step(self):
-        dts, norms = compare('midpoint')
-        plt.loglog(dts, norms)
-        # plt.show()
-        plt.close()
-
-    def test_rk2_step(self):
-        dts, norms = compare('rk2')
-        plt.loglog(dts, norms)
-        # plt.show()
-        plt.close()
-
-    def test_heun2_step(self):
-        dts, norms = compare('heun2')
-        plt.loglog(dts, norms)
-        # plt.show()
-        plt.close()
-
-    def test_ralston2_step(self):
-        dts, norms = compare('ralston2')
-        plt.loglog(dts, norms)
-        # plt.show()
-        plt.close()
-
-    def test_rk3_step(self):
-        dts, norms = compare('rk3')
-        plt.loglog(dts, norms)
-        # plt.show()
-        plt.close()
-
-    def test_heun3_step(self):
-        dts, norms = compare('heun3')
-        plt.loglog(dts, norms)
-        # plt.show()
-        plt.close()
-
-    def test_ssprk3_step(self):
-        dts, norms = compare('ssprk3')
-        plt.loglog(dts, norms)
-        # plt.show()
-        plt.close()
-
-    def test_ralston3_step(self):
-        dts, norms = compare('ralston3')
-        plt.loglog(dts, norms)
-        # plt.show()
-        plt.close()
-
-    def test_rk4_step(self):
-        dts, norms = compare('rk4')
-        plt.loglog(dts, norms)
-        # plt.show()
-        plt.close()
-
-    def test_ralston4_step(self):
-        dts, norms = compare('ralston4')
-        plt.loglog(dts, norms)
-        # plt.show()
-        plt.close()
-
-
-# --------------------------------------------------------------------------- #
-# Convergence on a linear ODE with a known analytical solution.
-#
-# These tests do not require the HH machinery: they exercise each step
-# function on a minimal :class:`DiffEqModule` whose exact solution is
-# ``x(t) = x0 * exp(-t/tau)``.
-# --------------------------------------------------------------------------- #
-_FLOAT_DTYPE = jnp.asarray(0.0).dtype
-
-
-class _LinearDecay(brainstate.nn.Module, DiffEqModule):
-    """Scalar linear ODE ``dx/dt = -x/tau`` for analytical comparisons."""
-
-    def __init__(self, x0=1.0, tau_ms=10.0, shape=(3,)):
-        super().__init__()
-        self.tau = tau_ms * u.ms
-        self.x = DiffEqSingleState(jnp.full(shape, x0, dtype=_FLOAT_DTYPE) * u.mV)
-        self.aux = brainstate.ShortTermState(jnp.zeros(shape, dtype=_FLOAT_DTYPE))
-        self.pre_calls = 0
-        self.post_calls = 0
-
-    def pre_integral(self, *args, **kwargs):
-        self.pre_calls += 1
-
-    def post_integral(self, *args, **kwargs):
-        self.post_calls += 1
-
-    def compute_derivative(self, *args, **kwargs):
-        self.x.derivative = -self.x.value / self.tau
-
-
-def _drive(method, dt_ms=0.1, n_steps=100, x0=1.0, tau_ms=10.0):
-    """Drive ``method`` ``n_steps`` times on a fresh :class:`_LinearDecay`."""
-    m = _LinearDecay(x0=x0, tau_ms=tau_ms)
-    dt = dt_ms * u.ms
-    with brainstate.environ.context(dt=dt):
-        for i in range(n_steps):
-            with brainstate.environ.context(t=i * dt):
-                method(m)
-    return float(m.x.value.to_decimal(u.mV)[0]), m
+from braincell.quad._testing import LinearDecay, drive
 
 
 class RungeKuttaConvergenceTest(unittest.TestCase):
@@ -218,7 +57,7 @@ class RungeKuttaConvergenceTest(unittest.TestCase):
     ]
 
     def _final_value(self, method, dt_ms, n_steps, tau_ms=10.0):
-        return _drive(method, dt_ms=dt_ms, n_steps=n_steps, tau_ms=tau_ms)[0]
+        return drive(method, dt_ms=dt_ms, n_steps=n_steps, tau_ms=tau_ms)[0]
 
     def test_each_method_matches_analytical_solution(self):
         # 100 steps of dt=0.1 ms over a tau=10 ms decay → final value
@@ -263,14 +102,14 @@ class RungeKuttaConvergenceTest(unittest.TestCase):
                 self.assertGreater(empirical, 0.5 * order)
 
     def test_pre_and_post_integral_called_once_per_step(self):
-        m = _LinearDecay()
+        m = LinearDecay()
         with brainstate.environ.context(t=0.0 * u.ms, dt=0.1 * u.ms):
             rk4_step(m)
         self.assertEqual(m.pre_calls, 1)
         self.assertEqual(m.post_calls, 1)
 
     def test_aux_state_unchanged_after_step(self):
-        m = _LinearDecay()
+        m = LinearDecay()
         before = np.array(m.aux.value)
         with brainstate.environ.context(t=0.0 * u.ms, dt=0.1 * u.ms):
             rk4_step(m)

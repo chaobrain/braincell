@@ -28,8 +28,6 @@ registered in :mod:`braincell.quad._registry`.
     :func:`get_integrator` at first call instead of at import time.
 """
 
-from typing import Callable, Mapping
-
 # Importing the step modules below has the side effect of populating the
 # global registry via @register_integrator decorators on each *_step function.
 from ._backward_euler import backward_euler_step
@@ -51,6 +49,8 @@ from .protocol import (
 from ._registry import (
     IntegratorEntry,
     IntegratorRegistry,
+    all_integrators,
+    get_integrator,
     get_registry,
     register_integrator,
 )
@@ -67,7 +67,7 @@ from ._runge_kutta import (
     rk4_step,
     ssprk3_step,
 )
-from ._staggered import staggered_step
+from ._staggered import dhs_voltage_step, staggered_step
 
 __all__ = [
     # registry
@@ -96,6 +96,7 @@ __all__ = [
     'ralston4_step',
     # staggered
     'staggered_step',
+    'dhs_voltage_step',
     # implicit methods
     'implicit_euler_step',
     # protocol
@@ -108,93 +109,3 @@ __all__ = [
     'hidden_state',
     'state_grouping',
 ]
-
-
-class _RegistryDictView(Mapping[str, Callable]):
-    """Read-only mapping view backed by the integrator registry.
-
-    Provides backwards compatibility for the legacy ``all_integrators`` dict
-    while keeping the registry as the single source of truth. Alias names
-    are included so existing lookups such as ``all_integrators['explicit']``
-    continue to resolve.
-    """
-
-    def __init__(self, registry: IntegratorRegistry) -> None:
-        self._registry = registry
-
-    def __getitem__(self, name: str) -> Callable:
-        try:
-            return self._registry[name]
-        except KeyError:
-            raise KeyError(name)
-
-    def __iter__(self):
-        return iter(self._registry.as_dict(include_aliases=True))
-
-    def __len__(self) -> int:
-        return len(self._registry.as_dict(include_aliases=True))
-
-    def __contains__(self, name: object) -> bool:
-        return name in self._registry
-
-    def __repr__(self) -> str:
-        return f"_RegistryDictView({sorted(self._registry.as_dict(include_aliases=True))!r})"
-
-
-#: Backwards-compatible mapping view of the integrator registry.
-#:
-#: This object behaves like the legacy ``{name: func}`` dict that lived in
-#: this module, but it is now backed by :class:`IntegratorRegistry`. Treat it
-#: as read-only; new integrators should be registered with
-#: :func:`register_integrator`.
-all_integrators: Mapping[str, Callable] = _RegistryDictView(get_registry())
-
-
-def get_integrator(method: str | Callable) -> Callable:
-    """Resolve a numerical integrator from a string name or a callable.
-
-    Parameters
-    ----------
-    method : str or Callable
-        Either the registered name (canonical or alias) of an integrator or
-        a step function to use directly.
-
-    Returns
-    -------
-    Callable
-        The integrator step function corresponding to ``method``.
-
-    Raises
-    ------
-    ValueError
-        If ``method`` is a string that does not match any registered
-        integrator. The error message includes a "did you mean ...?"
-        suggestion when a close match exists.
-    TypeError
-        If ``method`` is neither a string nor a callable.
-
-    Examples
-    --------
-
-    .. code-block:: python
-
-        >>> from braincell.quad import get_integrator
-        >>> get_integrator('euler')              # doctest: +ELLIPSIS
-        <function euler_step at ...>
-        >>> get_integrator('explicit') is get_integrator('euler')
-        True
-        >>> get_integrator('stagger') is get_integrator('staggered')
-        True
-    """
-    if callable(method):
-        return method
-    if isinstance(method, str):
-        registry = get_registry()
-        try:
-            return registry[method]
-        except KeyError:
-            suggestions = registry.suggest(method, n=1)
-            hint = f" Did you mean {suggestions[0]!r}?" if suggestions else ""
-            available = ", ".join(registry.names())
-            raise ValueError(f"Unknown integrator {method!r}.{hint} Available: {available}.")
-    raise TypeError(f"Integrator method must be a string or callable, got {type(method).__name__}.")

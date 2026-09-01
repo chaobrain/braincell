@@ -30,42 +30,44 @@ import unittest
 
 import brainstate
 import brainunit as u
-import jax.numpy as jnp
 
 from braincell.quad import get_registry, implicit_euler_step
-from braincell.quad.protocol import (
-    DiffEqModule,
-    DiffEqSingleState,
-)
-
-_FLOAT_DTYPE = jnp.asarray(0.0).dtype
-
-
-class _LinearDecay(brainstate.nn.Module, DiffEqModule):
-    """Scalar linear ODE ``dx/dt = -x/tau``."""
-
-    def __init__(self, x0=1.0, tau_ms=10.0, shape=(3,)):
-        super().__init__()
-        self.tau = tau_ms * u.ms
-        self.x = DiffEqSingleState(jnp.full(shape, x0, dtype=_FLOAT_DTYPE) * u.mV)
-
-    def compute_derivative(self, *args, **kwargs):
-        self.x.derivative = -self.x.value / self.tau
+from braincell.quad._testing import LinearDecay
 
 
 class ImplicitEulerLinearTest(unittest.TestCase):
-    """``implicit_euler_step`` defaults to a Crank-Nicolson Newton solver."""
+    """``implicit_euler_step`` solves a Crank-Nicolson residual by Newton."""
 
     def test_one_step_lies_in_cn_bracket(self):
-        m = _LinearDecay()
+        m = LinearDecay()
         with brainstate.environ.context(t=0.0 * u.ms, dt=0.1 * u.ms):
-            implicit_euler_step(m, 0.0 * u.ms, 0.1 * u.ms)
+            implicit_euler_step(m)
         v = float(m.x.value.to_decimal(u.mV)[0])
         # The 1-step Crank-Nicolson value lies between the implicit-Euler
         # value 1/(1 + dt/tau) ≈ 0.99010 and the exact decay exp(-dt/tau)
         # ≈ 0.99005.
         self.assertGreater(v, 0.989)
         self.assertLess(v, 0.991)
+
+    def test_explicit_time_arguments_override_the_environ(self):
+        # ``t``/``dt`` are keyword-only overrides; passing dt explicitly must
+        # win over the surrounding context.
+        m = LinearDecay()
+        with brainstate.environ.context(t=0.0 * u.ms, dt=5.0 * u.ms):
+            implicit_euler_step(m, dt=0.1 * u.ms)
+        v = float(m.x.value.to_decimal(u.mV)[0])
+        self.assertGreater(v, 0.989)
+        self.assertLess(v, 0.991)
+
+    def test_selectable_by_name_through_the_host_convention(self):
+        # The step now matches ``self.solver(self)``, so a host can select it
+        # by name. This is what ``requires_time_args`` used to document as
+        # impossible.
+        step = get_registry()["implicit_euler"]
+        m = LinearDecay()
+        with brainstate.environ.context(t=0.0 * u.ms, dt=0.1 * u.ms):
+            step(m)
+        self.assertLess(float(m.x.value.to_decimal(u.mV)[0]), 1.0)
 
 
 class ImplicitMethodRegistrationTest(unittest.TestCase):

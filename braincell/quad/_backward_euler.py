@@ -13,46 +13,57 @@
 # limitations under the License.
 # ==============================================================================
 
-import brainstate
-import brainunit as u
 import jax
 import jax.numpy as jnp
 
 from braincell._misc import set_module_as
+from braincell._typing import Args, Aux, DT, T, VectorField, Y0, Y1
 from .protocol import DiffEqModule
 from ._registry import register_integrator
-from ._util import apply_standard_solver_step, jacrev_last_dim
+from ._util import apply_standard_solver_step, environ_time, linearize_flat
 
 __all__ = [
     'backward_euler_step',
 ]
 
 
-def _backward_euler(f, y0, t, dt, args=()):
+def _backward_euler(
+    f: VectorField,
+    y0: Y0,
+    t: T,
+    dt: DT,
+    args: Args = (),
+) -> tuple[Y1, Aux]:
     """
-    One step of implicit backward Euler method for ODE integration.
-    Linearize the system at the current state using the Jacobian.
+    Take one linearised backward Euler step.
 
-    Args:
-        f: Callable function f(t, y, *args) returning dy/dt (and optional aux)
-        y0: current state, shape (..., M)
-        t: current time
-        dt: time step
-        args: additional arguments passed to f
+    The system is linearised at the current state using its Jacobian, so a
+    single linear solve replaces the Newton iteration that the implicit
+    formula would otherwise require.
 
-    Returns:
-        y1: updated state after one backward Euler step
-        aux: optional auxiliary output from f
+    Parameters
+    ----------
+    f : Callable
+        The vector field ``f(t, y, *args)``, returning ``dy/dt`` and an
+        auxiliary output.
+    y0 : jax.Array
+        The current state, shape ``(..., M)``.
+    t : u.Quantity[u.second]
+        The current time.
+    dt : u.Quantity[u.second]
+        The integration time step.
+    args : tuple, optional
+        Extra positional arguments forwarded to ``f``.
+
+    Returns
+    -------
+    y1 : jax.Array
+        The updated state after one backward Euler step.
+    aux : Any
+        The auxiliary output of ``f``.
     """
     dtype = y0.dtype
-    dt = jnp.asarray(u.get_magnitude(dt), dtype=dtype)
-
-    # Compute Jacobian A = df/dy and function value df = f(y0)
-    A, df, aux = jacrev_last_dim(lambda y: f(t, y, *args), y0, has_aux=True)
-
-    # Flatten batch dimensions
-    A = jnp.asarray(A, dtype=dtype).reshape((-1, A.shape[-2], A.shape[-1]))  # (B, M, M)
-    df = jnp.asarray(df, dtype=dtype).reshape((-1, df.shape[-1]))  # (B, M)
+    dt, A, df, aux = linearize_flat(f, y0, t, dt, args)
 
     n = y0.shape[-1]
     I = jnp.eye(n, dtype=dtype)
@@ -119,7 +130,7 @@ def backward_euler_step(target: DiffEqModule, *args, excluded_paths=()):
 
     Raises
     ------
-    AssertionError
+    TypeError
         Raised inside :func:`apply_standard_solver_step` if *target* is
         not a :class:`DiffEqModule`.
 
@@ -146,9 +157,7 @@ def backward_euler_step(target: DiffEqModule, *args, excluded_paths=()):
         ...     backward_euler_step(my_neuron, input_current)  # doctest: +SKIP
     """
 
-    t = brainstate.environ.get('t', getattr(target, 'current_time', 0.0 * u.ms))
-    dt = brainstate.environ.get('dt')
-
+    t, dt = environ_time(target)
     apply_standard_solver_step(
         _backward_euler,
         target,

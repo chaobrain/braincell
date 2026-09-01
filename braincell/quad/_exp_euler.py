@@ -23,12 +23,13 @@ import jax.numpy as jnp
 from jax.scipy.linalg import expm
 
 from braincell._misc import set_module_as
-from braincell._typing import ArrayLike, Path
+from braincell._typing import Args, ArrayLike, Aux, DT, Path, T, VectorField, Y0, Y1
 from .protocol import DiffEqModule
 from ._registry import register_integrator
 from ._util import (
     apply_standard_solver_step,
-    jacrev_last_dim,
+    environ_time,
+    linearize_flat,
     _check_diffeq_state_derivative,
     _has_path_prefix,
     split_diffeq_states,
@@ -40,35 +41,39 @@ __all__ = [
 ]
 
 
-def power_iteration_expm(A, num_steps=20, method='scipy'):
+def _exponential_euler(
+    f: VectorField,
+    y0: Y0,
+    t: T,
+    dt: DT,
+    args: Args = (),
+) -> tuple[Y1, Aux]:
     """
-    A naive implementation of matrix exponential using the power series definition.
-    This is for demonstration and is not numerically stable or efficient for general use.
+    Take one coupled exponential Euler step over the full state vector.
+
+    Parameters
+    ----------
+    f : Callable
+        The vector field ``f(t, y, *args)``, returning ``dy/dt`` and an
+        auxiliary output.
+    y0 : jax.Array
+        The current state, shape ``(..., M)``.
+    t : u.Quantity[u.second]
+        The current time.
+    dt : u.Quantity[u.second]
+        The integration time step.
+    args : tuple, optional
+        Extra positional arguments forwarded to ``f``.
+
+    Returns
+    -------
+    y1 : jax.Array
+        The updated state after one exponential Euler step.
+    aux : Any
+        The auxiliary output of ``f``.
     """
-    if method == 'scipy':
-        return expm(A)
-    elif method == 'approx':
-        n = A.shape[0]
-        result = jnp.eye(n, dtype=A.dtype)
-        term = jnp.eye(n, dtype=A.dtype)
-        for k in range(1, num_steps + 1):
-            term = term @ A / k
-            result = result + term
-        return result
-    else:
-        raise ValueError('Unsupported method "{}"'.format(method))
-
-
-def _exponential_euler(f, y0, t, dt, args=()):
     dtype = y0.dtype
-    dt = jnp.asarray(u.get_magnitude(dt), dtype=dtype)
-    A, df, aux = jacrev_last_dim(lambda y: f(t, y, *args), y0, has_aux=True)
-
-    # reshape A from "[..., M, M]" to "[-1, M, M]"
-    A = jnp.asarray(A, dtype=dtype).reshape((-1, A.shape[-2], A.shape[-1]))
-
-    # reshape df from "[..., M]" to "[-1, M]"
-    df = jnp.asarray(df, dtype=dtype).reshape((-1, df.shape[-1]))
+    dt, A, df, aux = linearize_flat(f, y0, t, dt, args)
 
     # Stable phi_1(hA)·h·df via the augmented-matrix trick:
     #   M = [[hA,  h·df],
@@ -82,8 +87,7 @@ def _exponential_euler(f, y0, t, dt, args=()):
     def _one(A_, df_):
         top = jnp.concatenate([dt * A_, (dt * df_)[:, None]], axis=1)
         M = jnp.concatenate([top, zero_row], axis=0)
-        expM = power_iteration_expm(M, method='scipy')
-        return expM[:n, n]
+        return expm(M)[:n, n]
 
     updates = jax.vmap(_one)(A, df).reshape(y0.shape)
     y1 = y0 + updates
@@ -182,37 +186,19 @@ def exp_euler_step(target: DiffEqModule, *args):
         >>> with brainstate.environ.context(t=0. * u.ms, dt=0.025 * u.ms):
         ...     exp_euler_step(my_neuron, input_current)    # doctest: +SKIP
     """
-    from braincell._base_neuron import HHTypedNeuron
-    from braincell._multi_compartment import Cell
-    from braincell._single_compartment import SingleCompartment
-
-    if not isinstance(target, HHTypedNeuron):
-        raise TypeError(f"The target should be a {HHTypedNeuron.__name__}. But got {type(target)} instead.")
-    t = brainstate.environ.get('t', getattr(target, 'current_time', 0.0 * u.ms))
-    dt = brainstate.environ.get('dt')
-
-    if isinstance(target, SingleCompartment):
-        apply_standard_solver_step(
-            _exponential_euler,
-            target,
-            t,
-            dt,
-            *args,
-            merging='stack',  # [n_neuron, n_state]
-        )
-
-    elif isinstance(target, Cell):
-        apply_standard_solver_step(
-            _exponential_euler,
-            target,
-            t,
-            dt,
-            *args,
-            merging='concat',  # [n_neuron, n_compartment * n_state]
-        )
-
-    else:
-        raise ValueError(f"Unknown target type: {type(target)}")
+    if not isinstance(target, DiffEqModule):
+        raise TypeError(f"The target should be a {DiffEqModule.__name__}. But got {type(target)} instead.")
+    t, dt = environ_time(target)
+    apply_standard_solver_step(
+        _exponential_euler,
+        target,
+        t,
+        dt,
+        *args,
+        # The host declares how its DiffEqState leaves are laid out:
+        # 'stack' -> [n_neuron, n_state], 'concat' -> [n_neuron, n_compartment * n_state].
+        merging=target.diffeq_state_merging,
+    )
 
 
 @register_integrator(
@@ -336,8 +322,8 @@ def _ind_exp_euler_step_selected(
         raise TypeError(f"The target should be a {DiffEqModule.__name__}. But got {type(target)} instead.")
     dt = brainstate.environ.get('dt')
 
-    # Retrieve all states from the target module
-    excluded_paths = tuple(tuple(path) for path in excluded_paths)
+    # Retrieve all states from the target module. ``excluded_paths`` is
+    # normalised by ``split_diffeq_states``, which owns that contract.
     include_paths = tuple(tuple(path) for path in include_paths)
     all_states, diffeq_states, other_states = split_diffeq_states(
         target,
@@ -426,8 +412,7 @@ def _ind_exp_euler_step_selected(
     integrated_diffeq_state_vals = dict()
 
     # Iterate over each DiffEqState and apply the exponential Euler update independently
-    i = 0
-    for key in diffeq_states.keys():
+    for i, key in enumerate(diffeq_states):
         # Compute the linearization (Jacobian), derivative, and auxiliary outputs
         linear, derivative, aux = brainstate.transform.vector_grad(
             functools.partial(vector_field, key),
@@ -461,7 +446,6 @@ def _ind_exp_euler_step_selected(
             # Update other states with auxiliary outputs (only on first iteration)
             for k, st in other_states.items():
                 st.value = aux[k]
-        i += 1
 
     # Assign the integrated values back to the corresponding DiffEqStates
     for k, st in diffeq_states.items():

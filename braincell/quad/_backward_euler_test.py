@@ -27,52 +27,23 @@ import unittest
 
 import brainstate
 import brainunit as u
-import jax.numpy as jnp
-import matplotlib.pyplot as plt
+import numpy as np
 
-import braincell
 from braincell.quad import (
     backward_euler_step,
 )
-from braincell.quad.protocol import (
-    DiffEqModule,
-    DiffEqSingleState,
-)
-
-_FLOAT_DTYPE = jnp.asarray(0.0).dtype
+from braincell.quad._testing import LinearDecay, drive, integrate
 
 
 # --------------------------------------------------------------------------- #
 # Analytical-solution test on a linear ODE
 # --------------------------------------------------------------------------- #
-class _LinearDecay(brainstate.nn.Module, DiffEqModule):
-    """Scalar linear ODE ``dx/dt = -x/tau``."""
-
-    def __init__(self, x0=1.0, tau_ms=10.0, shape=(3,)):
-        super().__init__()
-        self.tau = tau_ms * u.ms
-        self.x = DiffEqSingleState(jnp.full(shape, x0, dtype=_FLOAT_DTYPE) * u.mV)
-
-    def compute_derivative(self, *args, **kwargs):
-        self.x.derivative = -self.x.value / self.tau
-
-
-def _drive(method, dt_ms=0.1, n_steps=100, x0=1.0, tau_ms=10.0):
-    m = _LinearDecay(x0=x0, tau_ms=tau_ms)
-    dt = dt_ms * u.ms
-    with brainstate.environ.context(dt=dt):
-        for i in range(n_steps):
-            with brainstate.environ.context(t=i * dt):
-                method(m)
-    return float(m.x.value.to_decimal(u.mV)[0])
-
-
 class BackwardEulerLinearTest(unittest.TestCase):
     def test_one_step_matches_analytical(self):
         # For dx/dt = -x/tau, backward Euler gives
         #     x_{n+1} = x_n / (1 + dt/tau).
         # With dt=0.1 ms, tau=10 ms → x_1 = 1/1.01 ≈ 0.990099.
-        m = _LinearDecay()
+        m = LinearDecay()
         with brainstate.environ.context(t=0.0 * u.ms, dt=0.1 * u.ms):
             backward_euler_step(m)
         result = float(m.x.value.to_decimal(u.mV)[0])
@@ -82,71 +53,34 @@ class BackwardEulerLinearTest(unittest.TestCase):
         # Backward Euler is L-stable; on a linear decay it converges to the
         # exact solution as dt → 0.
         target = math.exp(-1.0)
-        result = _drive(backward_euler_step, dt_ms=0.01, n_steps=1000)
+        result, _ = drive(backward_euler_step, dt_ms=0.01, n_steps=1000)
         self.assertAlmostEqual(result, target, delta=5e-4)
 
     def test_rejects_non_diffeq_module(self):
         class Plain(brainstate.nn.Module):
             pass
 
-        with self.assertRaises(AssertionError):
+        # TypeError (not AssertionError) so ``python -O`` preserves the contract.
+        with self.assertRaises(TypeError):
             with brainstate.environ.context(t=0.0 * u.ms, dt=0.1 * u.ms):
                 backward_euler_step(Plain())
 
 
 # --------------------------------------------------------------------------- #
-# Hodgkin-Huxley single-compartment smoke test (mirrors the existing
-# convergence-comparison harness used by ``_runge_kutta_test`` and
-# ``_exp_euler_test``).
+# Hodgkin-Huxley single-compartment end-to-end test.
 # --------------------------------------------------------------------------- #
-class HH(braincell.SingleCompartment):
-    def __init__(self, size, solver='backward_euler'):
-        super().__init__(size, solver=solver)
-
-        self.na = braincell.ion.SodiumFixed(size, E=50.0 * u.mV)
-        self.na.add(INa=braincell.channel.Na_HH1952(size))
-
-        self.k = braincell.ion.PotassiumFixed(size, E=-77.0 * u.mV)
-        self.k.add(IK=braincell.channel.K_HH1952(size))
-
-        self.IL = braincell.channel.IL(size, E=-54.387 * u.mV, g_max=0.03 * (u.mS / u.cm**2))
-
-
-def integrate(method: str, dt=0.01 * u.ms):
-    brainstate.random.seed(1)
-    hh = HH(1, solver=method)
-    hh.init_state()
-
-    def step_fun(t):
-        with brainstate.environ.context(t=t):
-            hh.update(10 * u.nA / u.cm**2)
-        return hh.V.value
-
-    with brainstate.environ.context(dt=dt):
-        times = u.math.arange(0.0 * u.ms, 10 * u.ms, brainstate.environ.get_dt())
-        vs = brainstate.transform.for_loop(step_fun, times)
-    return vs
-
-
-def compare(method):
-    norm = []
-    dts = [1e-3 * u.ms, 2e-3 * u.ms, 4e-3 * u.ms, 8e-3 * u.ms, 1e-2 * u.ms, 2e-2 * u.ms]
-    for dt in dts:
-        gold_vs = integrate('exp_euler', dt=dt)
-        vs = integrate(method, dt=dt)
-        norm.append(u.linalg.norm(gold_vs - vs))
-    # Strip units before returning so matplotlib can convert via np.asarray.
-    # Newer saiunit rejects np.asarray(dimensional_quantity).
-    dts_q = u.math.asarray(dts)
-    norm_q = u.math.asarray(norm)
-    return dts_q.mantissa, norm_q.mantissa
-
-
-class TestBackwardEulerHH(unittest.TestCase):
-    def test_backward_euler_step(self):
-        dts, norms = compare('backward_euler')
-        plt.loglog(dts, norms)
-        plt.close()
+class BackwardEulerHHTest(unittest.TestCase):
+    def test_drives_hodgkin_huxley_to_a_spiking_trace(self):
+        # Exercises the full HH stack through ``solver='backward_euler'``:
+        # a 10 nA/cm^2 drive over 10 ms must produce a finite, spiking trace
+        # rather than diverging or going NaN.
+        vs = np.asarray(integrate('backward_euler').to_decimal(u.mV))
+        self.assertTrue(np.all(np.isfinite(vs)))
+        # Physiological envelope: the trace must stay bounded ...
+        self.assertGreater(vs.min(), -100.0)
+        self.assertLess(vs.max(), 80.0)
+        # ... and must actually spike rather than sit at rest.
+        self.assertGreater(vs.max() - vs.min(), 50.0)
 
 
 if __name__ == "__main__":

@@ -43,7 +43,6 @@ from braincell.quad import get_registry, staggered_step
 from braincell.quad._staggered import (
     _build_backsub_indices,
     _linear_and_const_term,
-    _to_jax_quantity,
     comp_backsub_raw,
     comp_triang_raw,
     dhs_voltage_step,
@@ -78,7 +77,7 @@ class DhsVoltageGuardTest(unittest.TestCase):
             pass
 
         with self.assertRaisesRegex(TypeError, "node-tree aware"):
-            dhs_voltage_step(Plain(), 0.0 * u.ms, 0.1 * u.ms)
+            dhs_voltage_step(Plain(), t=0.0 * u.ms, dt=0.1 * u.ms)
 
     def test_requires_both_node_tree_and_scheduling(self):
         # An object with only ``node_tree`` is still rejected because the
@@ -88,7 +87,7 @@ class DhsVoltageGuardTest(unittest.TestCase):
                 return None
 
         with self.assertRaisesRegex(TypeError, "node-tree aware"):
-            dhs_voltage_step(HalfTarget(), 0.0 * u.ms, 0.1 * u.ms)
+            dhs_voltage_step(HalfTarget(), t=0.0 * u.ms, dt=0.1 * u.ms)
 
 
 class DhsLinearizationUnitTest(unittest.TestCase):
@@ -231,7 +230,7 @@ class StaggeredStepGuardTest(unittest.TestCase):
         cell._update_ion_channel_families = lambda point_V: calls.append("family")
         cell._update_ion_channels_by_integration = lambda point_V: calls.append("integration")
 
-        with patch("braincell.quad._staggered.dhs_voltage_step", lambda *args: calls.append("voltage")):
+        with patch("braincell.quad._staggered.dhs_voltage_step", lambda *args, **kwargs: calls.append("voltage")):
             with brainstate.environ.context(t=0.0 * u.ms, dt=0.1 * u.ms):
                 staggered_step(cell)
 
@@ -255,7 +254,7 @@ class StaggeredStepGuardTest(unittest.TestCase):
         cell._update_ion_channel_families = lambda point_V: calls.append("family")
         cell._update_ion_channels_by_integration = lambda point_V: calls.append("integration")
 
-        with patch("braincell.quad._staggered.dhs_voltage_step", lambda *args: calls.append("voltage")):
+        with patch("braincell.quad._staggered.dhs_voltage_step", lambda *args, **kwargs: calls.append("voltage")):
             with brainstate.environ.context(t=0.0 * u.ms, dt=0.1 * u.ms):
                 staggered_step(cell)
 
@@ -293,31 +292,36 @@ class DhsRuntimeCacheTest(unittest.TestCase):
         cell = self._simple_cell()
 
         with brainstate.environ.context(dt=0.1 * u.ms, precision=32):
-            dhs_voltage_step(cell, 0.0 * u.ms, 0.1 * u.ms)
+            dhs_voltage_step(cell, t=0.0 * u.ms, dt=0.1 * u.ms)
             source32 = cell.runtime.dhs_static_source_np
             cache32 = cell.runtime.dhs_static_cache
             self.assertEqual(source32.diag_ms_inv_np.dtype, np.float64)
             self.assertEqual(source32.dynamic_rows_np.dtype, np.int32)
             self.assertEqual(cache32.float_dtype, jnp.dtype(jnp.float32))
 
-            dhs_voltage_step(cell, 0.0 * u.ms, 0.1 * u.ms)
+            dhs_voltage_step(cell, t=0.0 * u.ms, dt=0.1 * u.ms)
             self.assertIs(source32, cell.runtime.dhs_static_source_np)
             self.assertIs(cache32, cell.runtime.dhs_static_cache)
 
         with brainstate.environ.context(dt=0.1 * u.ms, precision=64):
-            dhs_voltage_step(cell, 0.0 * u.ms, 0.1 * u.ms)
+            dhs_voltage_step(cell, t=0.0 * u.ms, dt=0.1 * u.ms)
             source64 = cell.runtime.dhs_static_source_np
             cache64 = cell.runtime.dhs_static_cache
             self.assertIs(source32, source64)
             self.assertEqual(cache64.float_dtype, jnp.dtype(jnp.float64))
             self.assertIsNot(cache32, cache64)
 
-    def test_to_jax_quantity_preserves_existing_dtype(self):
+    def test_numeric_operands_preserve_an_existing_dtype(self):
+        # ``_build_dhs_numeric_state`` materializes its operands with
+        # ``u.math.asarray(value, unit=...)``, which replaced a hand-rolled
+        # ``_to_jax_quantity``. The DHS step depends on that call converting
+        # units *without* promoting to the ambient precision, so the
+        # third-party contract is pinned here rather than left implicit.
         with brainstate.environ.context(precision=32):
             voltage32 = jnp.asarray([1.0, 2.0]) * u.mV
 
         with brainstate.environ.context(precision=64):
-            preserved = _to_jax_quantity(voltage32, u.mV)
+            preserved = u.math.asarray(voltage32, unit=u.mV)
             self.assertEqual(preserved.dtype, jnp.dtype(jnp.float32))
 
 
@@ -334,7 +338,7 @@ class DhsEndpointClampTest(unittest.TestCase):
 
         before = float(cell.V.value[0, 0].to_decimal(u.mV))
         with brainstate.environ.context(t=0.0 * u.ms, dt=0.05 * u.ms):
-            dhs_voltage_step(cell, 0.0 * u.ms, 0.05 * u.ms)
+            dhs_voltage_step(cell, t=0.0 * u.ms, dt=0.05 * u.ms)
         after = float(cell.V.value[0, 0].to_decimal(u.mV))
 
         self.assertGreater(after, before)
@@ -377,8 +381,8 @@ class DhsMidpointClampPopulationTest(unittest.TestCase):
         self.assertEqual(single.pop_size, (1,))
 
         with brainstate.environ.context(t=0.0 * u.ms, dt=0.025 * u.ms):
-            dhs_voltage_step(single, 0.0 * u.ms, 0.025 * u.ms)
-            dhs_voltage_step(population, 0.0 * u.ms, 0.025 * u.ms)
+            dhs_voltage_step(single, t=0.0 * u.ms, dt=0.025 * u.ms)
+            dhs_voltage_step(population, t=0.0 * u.ms, dt=0.025 * u.ms)
 
         single_v = np.asarray(single.V.value.to_decimal(u.mV), dtype=float)
         population_v = np.asarray(population.V.value.to_decimal(u.mV), dtype=float)
@@ -407,7 +411,7 @@ class DhsMultistepClampTest(unittest.TestCase):
 
         before = float(cell.V.value[0, 0].to_decimal(u.mV))
         with brainstate.environ.context(t=0.0 * u.ms, dt=0.05 * u.ms):
-            dhs_voltage_step(cell, 0.0 * u.ms, 0.05 * u.ms)
+            dhs_voltage_step(cell, t=0.0 * u.ms, dt=0.05 * u.ms)
         after = float(cell.V.value[0, 0].to_decimal(u.mV))
 
         self.assertGreater(after, before)

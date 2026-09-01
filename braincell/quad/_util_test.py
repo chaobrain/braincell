@@ -32,45 +32,22 @@ from braincell import (
     IndependentIntegration,
 )
 
+from braincell.quad._testing import FLOAT_DTYPE, LinearDecay
 from braincell.quad._util import (
     apply_standard_solver_step,
     jacrev_last_dim,
     split_diffeq_states,
 )
 
-_FLOAT_DTYPE = jnp.asarray(0.0).dtype
-
 
 # --------------------------------------------------------------------------- #
 # Fixtures
 # --------------------------------------------------------------------------- #
-class _LinearDecay(brainstate.nn.Module, DiffEqModule):
-    """Minimal module: dx/dt = -x/tau, with one DiffEqState and one auxiliary."""
-
-    def __init__(self, shape=(2,)):
-        super().__init__()
-        self.tau = 10.0 * u.ms
-        self.x = DiffEqSingleState(jnp.ones(shape, dtype=_FLOAT_DTYPE) * u.mV)
-        # A non-DiffEqState should be ignored by the integrator.
-        self.aux = brainstate.ShortTermState(jnp.zeros(shape, dtype=_FLOAT_DTYPE))
-        self.pre_calls = 0
-        self.post_calls = 0
-
-    def pre_integral(self, *args, **kwargs):
-        self.pre_calls += 1
-
-    def post_integral(self, *args, **kwargs):
-        self.post_calls += 1
-
-    def compute_derivative(self, *args, **kwargs):
-        self.x.derivative = -self.x.value / self.tau
-
-
 class _IndepSub(brainstate.nn.Module, DiffEqModule, IndependentIntegration):
     def __init__(self):
         IndependentIntegration.__init__(self, "euler")
         brainstate.nn.Module.__init__(self)
-        self.y = DiffEqSingleState(jnp.ones(2, dtype=_FLOAT_DTYPE) * u.mV)
+        self.y = DiffEqSingleState(jnp.ones(2, dtype=FLOAT_DTYPE) * u.mV)
 
     def compute_derivative(self, *args, **kwargs):
         self.y.derivative = -self.y.value / (5.0 * u.ms)
@@ -79,7 +56,7 @@ class _IndepSub(brainstate.nn.Module, DiffEqModule, IndependentIntegration):
 class _DependentChild(brainstate.nn.Module, DiffEqModule):
     def __init__(self):
         super().__init__()
-        self.z = DiffEqSingleState(jnp.ones(2, dtype=_FLOAT_DTYPE) * u.mV)
+        self.z = DiffEqSingleState(jnp.ones(2, dtype=FLOAT_DTYPE) * u.mV)
 
     def compute_derivative(self, *args, **kwargs):
         self.z.derivative = -self.z.value / (7.0 * u.ms)
@@ -94,7 +71,7 @@ class _IndepSubWithDependentChild(_IndepSub):
 class _OuterWithIndep(brainstate.nn.Module, DiffEqModule):
     def __init__(self, sub=None):
         super().__init__()
-        self.x = DiffEqSingleState(jnp.ones(2, dtype=_FLOAT_DTYPE) * u.mV)
+        self.x = DiffEqSingleState(jnp.ones(2, dtype=FLOAT_DTYPE) * u.mV)
         self.sub = _IndepSub() if sub is None else sub
 
     def compute_derivative(self, *args, **kwargs):
@@ -106,7 +83,7 @@ class _OuterWithIndep(brainstate.nn.Module, DiffEqModule):
 # --------------------------------------------------------------------------- #
 class SplitDiffEqStatesTest(unittest.TestCase):
     def test_separates_diffeq_and_other_states(self):
-        m = _LinearDecay()
+        m = LinearDecay(shape=(2,))
         all_st, diffeq_st, other_st = split_diffeq_states(m)
         # Both states show up in the full set.
         self.assertEqual(len(all_st), 2)
@@ -142,7 +119,7 @@ class SplitDiffEqStatesTest(unittest.TestCase):
 
 class ApplyStandardSolverStepTest(unittest.TestCase):
     def test_passes_array_state_and_invokes_hooks(self):
-        m = _LinearDecay()
+        m = LinearDecay(shape=(2,))
 
         observed = {}
 
@@ -164,12 +141,13 @@ class ApplyStandardSolverStepTest(unittest.TestCase):
         self.assertEqual(m.post_calls, 1)
 
     def test_rejects_non_diffeq_module(self):
-        with self.assertRaises(AssertionError):
+        # TypeError rather than AssertionError so ``python -O`` keeps the guard.
+        with self.assertRaises(TypeError):
             apply_standard_solver_step(lambda *a, **k: None, object(), 0.0, 0.1)
 
     def test_rejects_unknown_merging(self):
-        m = _LinearDecay()
-        with self.assertRaises(AssertionError):
+        m = LinearDecay(shape=(2,))
+        with self.assertRaises(ValueError):
             apply_standard_solver_step(
                 lambda *a, **k: None,
                 m,
@@ -179,8 +157,8 @@ class ApplyStandardSolverStepTest(unittest.TestCase):
             )
 
     def test_rejects_non_callable_solver_step(self):
-        m = _LinearDecay()
-        with self.assertRaises(AssertionError):
+        m = LinearDecay(shape=(2,))
+        with self.assertRaises(TypeError):
             apply_standard_solver_step(
                 "not callable",  # type: ignore[arg-type]
                 m,

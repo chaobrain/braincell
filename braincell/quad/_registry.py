@@ -46,10 +46,9 @@ Typical usage::
 """
 
 import difflib
-import inspect
 import warnings
 from dataclasses import dataclass
-from typing import Callable, Iterable, Iterator
+from typing import Callable, Iterable, Iterator, Mapping
 
 __all__ = [
     'IntegratorEntry',
@@ -57,45 +56,6 @@ __all__ = [
     'get_registry',
     'register_integrator',
 ]
-
-#: Placeholder stand-in for the ``target`` argument when probing a step
-#: function's signature. Never called with; only bound.
-_TARGET_PLACEHOLDER = object()
-
-
-def _requires_time_args(func: Callable) -> bool:
-    """Return ``True`` when ``func`` cannot be called as ``func(target)``.
-
-    BrainCell's model hosts invoke their solver with the target alone —
-    :meth:`braincell.Cell._update_dynamics` calls ``self.solver(self)`` and
-    :class:`braincell.SingleCompartment` calls ``self.solver(self, I_ext)``
-    — reading ``t`` and ``dt`` from :mod:`brainstate.environ`. A step
-    declared as ``(target, t, dt, *args)`` therefore cannot be selected by
-    name through ``solver=``; it only works when called directly with
-    explicit time arguments.
-
-    Parameters
-    ----------
-    func : Callable
-        Candidate integrator step function.
-
-    Returns
-    -------
-    bool
-        ``True`` if binding a single positional argument fails, i.e. the
-        step demands explicit ``(t, dt)``. ``False`` for the host-callable
-        ``(target, *args)`` convention, and for callables whose signature
-        cannot be introspected (builtins, C extensions).
-    """
-    try:
-        signature = inspect.signature(func)
-    except (TypeError, ValueError):  # pragma: no cover - C callables
-        return False
-    try:
-        signature.bind(_TARGET_PLACEHOLDER)
-    except TypeError:
-        return True
-    return False
 
 
 @dataclass(frozen=True)
@@ -129,20 +89,6 @@ class IntegratorEntry:
         (``'braincell.quad'``) rather than the private submodule they are
         defined in, because :func:`braincell._misc.set_module_as` is
         applied first — see the note in :func:`register_integrator`.
-    requires_time_args : bool
-        ``True`` when ``func`` must be called as ``func(target, t, dt, ...)``
-        rather than ``func(target, ...)``. Populated automatically by
-        :meth:`IntegratorRegistry.register` from ``func``'s signature.
-
-        BrainCell's hosts call their solver with the target alone
-        (``self.solver(self)`` in :class:`braincell.Cell`,
-        ``self.solver(self, I_ext)`` in
-        :class:`braincell.SingleCompartment`) and read ``t`` / ``dt`` from
-        :mod:`brainstate.environ`. An entry with ``requires_time_args=True``
-        therefore **cannot** be selected by name through ``solver=``; it is
-        only usable when called directly. Recording it here makes that
-        mismatch visible to introspection and to the registry tests
-        instead of surfacing as a ``TypeError`` at the first update step.
     """
 
     name: str
@@ -153,7 +99,6 @@ class IntegratorEntry:
     description: str = ""
     deprecated: bool = False
     module: str = ""
-    requires_time_args: bool = False
 
 
 class IntegratorRegistry:
@@ -280,7 +225,6 @@ class IntegratorRegistry:
             description=description,
             deprecated=deprecated,
             module=getattr(func, "__module__", "") or "",
-            requires_time_args=_requires_time_args(func),
         )
         self._entries[name] = entry
         for alias in alias_tuple:
@@ -370,11 +314,6 @@ class IntegratorRegistry:
             key=lambda e: e.name,
         )
 
-    def items(self) -> Iterator[tuple[str, Callable]]:
-        """Iterate over ``(name, func)`` pairs for canonical entries only."""
-        for name, entry in self._entries.items():
-            yield name, entry.func
-
     def entries(self) -> Iterator[IntegratorEntry]:
         """Iterate over all canonical :class:`IntegratorEntry` instances."""
         return iter(self._entries.values())
@@ -460,3 +399,88 @@ def register_integrator(
         return func
 
     return _wrap
+
+
+class _RegistryDictView(Mapping[str, Callable]):
+    """Read-only ``{name: func}`` mapping view backed by the registry.
+
+    Presents the registry as the plain dict that ``all_integrators`` used to
+    be, while keeping :class:`IntegratorRegistry` as the single source of
+    truth. Alias names are included, so lookups such as
+    ``all_integrators['explicit']`` resolve.
+    """
+
+    def __init__(self, registry: IntegratorRegistry) -> None:
+        self._registry = registry
+
+    def __getitem__(self, name: str) -> Callable:
+        return self._registry[name]
+
+    def __iter__(self) -> Iterator[str]:
+        return iter(self._registry.names(include_aliases=True))
+
+    def __len__(self) -> int:
+        return len(self._registry.names(include_aliases=True))
+
+    def __contains__(self, name: object) -> bool:
+        return name in self._registry
+
+    def __repr__(self) -> str:
+        return f"_RegistryDictView({sorted(self._registry.names(include_aliases=True))!r})"
+
+
+#: Mapping view of the integrator registry, keyed by canonical name and alias.
+#:
+#: Treat it as read-only; new integrators should be registered with
+#: :func:`register_integrator`.
+all_integrators: Mapping[str, Callable] = _RegistryDictView(get_registry())
+
+
+def get_integrator(method: str | Callable) -> Callable:
+    """Resolve a numerical integrator from a string name or a callable.
+
+    Parameters
+    ----------
+    method : str or Callable
+        Either the registered name (canonical or alias) of an integrator or
+        a step function to use directly.
+
+    Returns
+    -------
+    Callable
+        The integrator step function corresponding to ``method``.
+
+    Raises
+    ------
+    ValueError
+        If ``method`` is a string that does not match any registered
+        integrator. The error message includes a "did you mean ...?"
+        suggestion when a close match exists.
+    TypeError
+        If ``method`` is neither a string nor a callable.
+
+    Examples
+    --------
+
+    .. code-block:: python
+
+        >>> from braincell.quad import get_integrator
+        >>> get_integrator('euler')              # doctest: +ELLIPSIS
+        <function euler_step at ...>
+        >>> get_integrator('explicit') is get_integrator('euler')
+        True
+        >>> get_integrator('stagger') is get_integrator('staggered')
+        True
+    """
+    if callable(method):
+        return method
+    if isinstance(method, str):
+        registry = get_registry()
+        try:
+            return registry[method]
+        except KeyError:
+            suggestions = registry.suggest(method, n=1)
+            hint = f" Did you mean {suggestions[0]!r}?" if suggestions else ""
+            available = ", ".join(registry.names())
+            raise ValueError(f"Unknown integrator {method!r}.{hint} Available: {available}.")
+    raise TypeError(f"Integrator method must be a string or callable, got {type(method).__name__}.")

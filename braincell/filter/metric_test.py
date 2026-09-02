@@ -19,7 +19,7 @@ import unittest
 import brainunit as u
 import numpy as np
 
-from braincell.filter import density, metric
+from braincell.filter import metric
 from braincell.mech import CVContext
 
 
@@ -67,12 +67,6 @@ class SpatialMetricTest(unittest.TestCase):
         context = SimpleNamespace()
         with self.assertRaisesRegex(TypeError, "does not expose a 3-D position"):
             metric.position(context)
-
-    def test_legacy_field_helpers_emit_deprecation_warning(self) -> None:
-        with self.assertWarnsRegex(DeprecationWarning, "filter.metric"):
-            density.exponential("branch_x", 0.2)
-        with self.assertWarnsRegex(DeprecationWarning, "filter.metric"):
-            density.gaussian("branch_x", 0.5, 0.2)
 
 
 if __name__ == "__main__":

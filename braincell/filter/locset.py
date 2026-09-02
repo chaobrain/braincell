@@ -23,6 +23,7 @@ from brainunit import Quantity
 
 from braincell.morph.morphology import Morphology
 from . import helper
+from ._sampling import sample_locations_from_region
 from .cache import SelectionCache, evaluate_cached
 from .region import RegionExpr
 
@@ -83,25 +84,23 @@ def _normalize_location_columns(
         raise ValueError(f"{type_name}.branch_x values must be within [0, 1].")
     return (
         np.asarray(branch_values, dtype=np.int64),
-        np.round(np.clip(normalized_x, 0.0, 1.0), decimals=12),
+        np.round(np.clip(normalized_x, 0.0, 1.0), decimals=helper._round_digits_from_epsilon(helper.EPSILON)),
     )
 
 
-@dataclass(init=False, eq=False, repr=False)
 class LocsetBatch:
     """A read-only batch of aligned resolved locsets.
 
     The leading dimension identifies population members and the trailing
     dimension contains the locations assigned to each member.
 
-    Parameters
-    ----------
-    branch_id : array-like
-        Two-dimensional integer branch identifiers.
-    branch_x : array-like
-        Two-dimensional normalized branch coordinates in ``[0, 1]``.
-    display_names : iterable of iterable of str, optional
-        Human-readable names aligned with the location matrix.
+    Instances are built through :meth:`from_columns`; the class itself takes
+    no constructor arguments.
+
+    See Also
+    --------
+    from_columns : The constructor, which documents the columns.
+    LocsetMask : The single-population equivalent.
     """
 
     __slots__ = ("_branch_id", "_branch_x", "_display_names")
@@ -116,7 +115,28 @@ class LocsetBatch:
         branch_x: object,
         display_names: tuple[tuple[str, ...], ...] | list[list[str]] | None = None,
     ) -> "LocsetBatch":
-        """Construct a batch from two aligned location matrices."""
+        """Construct a batch from two aligned location matrices.
+
+        Parameters
+        ----------
+        branch_id : array-like
+            Two-dimensional integer branch identifiers.
+        branch_x : array-like
+            Two-dimensional normalized branch coordinates in ``[0, 1]``.
+        display_names : iterable of iterable of str, optional
+            Human-readable names aligned with the location matrix.
+
+        Returns
+        -------
+        LocsetBatch
+            Immutable batch over the normalized columns.
+
+        Raises
+        ------
+        ValueError
+            If *display_names* does not match the column shape, or a
+            coordinate falls outside ``[0, 1]``.
+        """
         branch_values, x_values = _normalize_location_columns(
             branch_id,
             branch_x,
@@ -184,7 +204,6 @@ class LocsetBatch:
         )
 
 
-@dataclass(init=False, eq=False, repr=False)
 class LocsetMask:
     """Resolved ordered locations in read-only columnar storage.
 
@@ -312,7 +331,7 @@ class LocsetMask:
 
         Parameters
         ----------
-        morpho : braincell.morph.Morphology
+        morpho : braincell.Morphology
             Morphology used to resolve branch names.
 
         Returns
@@ -322,9 +341,7 @@ class LocsetMask:
         """
         if self._display_names is not None:
             return self._display_names
-        return tuple(
-            f"{morpho.branch(index=int(branch_id)).name}({float(branch_x):g})" for branch_id, branch_x in self.points
-        )
+        return _display_names_for_points(morpho, self.points)
 
     def __len__(self) -> int:
         return len(self._branch_id)
@@ -407,13 +424,48 @@ class LocsetExpr(ABC):
         """Return an expression that deduplicates locations after evaluation."""
         return LocsetUniqueOp(self)
 
-    @abstractmethod
     def evaluate(
         self,
         morpho: Morphology,
         cache: SelectionCache | None = None,
     ) -> LocsetMask:
-        raise NotImplementedError
+        """Evaluate this expression against ``morpho``.
+
+        Parameters
+        ----------
+        morpho : braincell.Morphology
+            Morphology to evaluate against.
+        cache : braincell.filter.SelectionCache or None
+            Shared memoization scratch space, threaded to sub-expressions.
+
+        Returns
+        -------
+        LocsetMask
+            The selected point set.
+
+        Raises
+        ------
+        TypeError
+            If *morpho* is not a :class:`braincell.Morphology`.
+
+        Notes
+        -----
+        This is the type-checked entry point every caller uses; subclasses
+        implement :meth:`_evaluate` instead. Keeping the guard here rather
+        than in each leaf is why it cannot be forgotten -- it previously was,
+        by ``EmptyRegion``, which accepted arguments every sibling rejected.
+        """
+        if not isinstance(morpho, Morphology):
+            raise TypeError(f"{type(self).__name__} expects Morphology, got {type(morpho).__name__!s}.")
+        return self._evaluate(morpho, cache)
+
+    @abstractmethod
+    def _evaluate(
+        self,
+        morpho: Morphology,
+        cache: SelectionCache | None = None,
+    ) -> LocsetMask:
+        """Compute the point set for a morphology already type-checked by :meth:`evaluate`."""
 
 
 @dataclass(frozen=True)
@@ -421,10 +473,11 @@ class AtLocation(LocsetExpr):
     branch: int | str
     x: float
 
-    def evaluate(self, morpho: Morphology, cache: SelectionCache | None = None) -> LocsetMask:
-        _ = cache
-        if not isinstance(morpho, Morphology):
-            raise TypeError(f"AtLocation expects Morpho, got {type(morpho).__name__!s}.")
+    def _evaluate(
+        self,
+        morpho: Morphology,
+        cache: SelectionCache | None = None,
+    ) -> LocsetMask:
         if isinstance(self.branch, bool):
             raise TypeError("AtLocation.branch expects int or str, got bool.")
         if isinstance(self.branch, int):
@@ -446,9 +499,11 @@ def at(branch: int | str, x: float) -> AtLocation:
 class RootLocation(LocsetExpr):
     x: float
 
-    def evaluate(self, morpho: Morphology, cache: SelectionCache | None = None) -> LocsetMask:
-        if not isinstance(morpho, Morphology):
-            raise TypeError(f"RootLocation expects Morpho, got {type(morpho).__name__!s}.")
+    def _evaluate(
+        self,
+        morpho: Morphology,
+        cache: SelectionCache | None = None,
+    ) -> LocsetMask:
         points = helper.normalize_locset_points(((0, self.x),))
         return LocsetMask(points=points, display_names=_display_names_for_points(morpho, points))
 
@@ -457,9 +512,11 @@ class RootLocation(LocsetExpr):
 class ForkPoints(LocsetExpr):
     """Select topology junctions incident to at least three branches."""
 
-    def evaluate(self, morpho: Morphology, cache: SelectionCache | None = None) -> LocsetMask:
-        if not isinstance(morpho, Morphology):
-            raise TypeError(f"ForkPoints expects Morpho, got {type(morpho).__name__!s}.")
+    def _evaluate(
+        self,
+        morpho: Morphology,
+        cache: SelectionCache | None = None,
+    ) -> LocsetMask:
         points = helper.fork_points_locations(morpho)
         return LocsetMask(points=points, display_names=_display_names_for_points(morpho, points))
 
@@ -469,9 +526,11 @@ BranchPoints = ForkPoints
 
 @dataclass(frozen=True)
 class Terminals(LocsetExpr):
-    def evaluate(self, morpho: Morphology, cache: SelectionCache | None = None) -> LocsetMask:
-        if not isinstance(morpho, Morphology):
-            raise TypeError(f"Terminals expects Morpho, got {type(morpho).__name__!s}.")
+    def _evaluate(
+        self,
+        morpho: Morphology,
+        cache: SelectionCache | None = None,
+    ) -> LocsetMask:
         points = helper.terminal_locations(morpho)
         return LocsetMask(points=points, display_names=_display_names_for_points(morpho, points))
 
@@ -481,7 +540,11 @@ class RegionAnchors(LocsetExpr):
     region: RegionExpr
     x: float
 
-    def evaluate(self, morpho: Morphology, cache: SelectionCache | None = None) -> LocsetMask:
+    def _evaluate(
+        self,
+        morpho: Morphology,
+        cache: SelectionCache | None = None,
+    ) -> LocsetMask:
         raise NotImplementedError("RegionAnchors is not implemented in this version.")
 
 
@@ -490,9 +553,11 @@ class UniformSamples(LocsetExpr):
     region: RegionExpr
     count: int
 
-    def evaluate(self, morpho: Morphology, cache: SelectionCache | None = None) -> LocsetMask:
-        if not isinstance(morpho, Morphology):
-            raise TypeError(f"UniformSamples expects Morpho, got {type(morpho).__name__!s}.")
+    def _evaluate(
+        self,
+        morpho: Morphology,
+        cache: SelectionCache | None = None,
+    ) -> LocsetMask:
         if not isinstance(self.region, RegionExpr):
             raise TypeError(f"UniformSamples.region expects RegionExpr, got {type(self.region).__name__!s}.")
         mask = evaluate_cached(self.region, morpho, cache)
@@ -510,9 +575,11 @@ class RandomSamples(LocsetExpr):
     count: int
     seed: int
 
-    def evaluate(self, morpho: Morphology, cache: SelectionCache | None = None) -> LocsetMask:
-        if not isinstance(morpho, Morphology):
-            raise TypeError(f"RandomSamples expects Morpho, got {type(morpho).__name__!s}.")
+    def _evaluate(
+        self,
+        morpho: Morphology,
+        cache: SelectionCache | None = None,
+    ) -> LocsetMask:
         if not isinstance(self.region, RegionExpr):
             raise TypeError(f"RandomSamples.region expects RegionExpr, got {type(self.region).__name__!s}.")
         mask = evaluate_cached(self.region, morpho, cache)
@@ -554,13 +621,13 @@ class SampleLocations(LocsetExpr):
     density: object | None = None
     u_resolution: float = 1e-10
 
-    def evaluate(self, morpho: Morphology, cache: SelectionCache | None = None) -> LocsetMask:
-        if not isinstance(morpho, Morphology):
-            raise TypeError(f"SampleLocations expects Morpho, got {type(morpho).__name__!s}.")
+    def _evaluate(
+        self,
+        morpho: Morphology,
+        cache: SelectionCache | None = None,
+    ) -> LocsetMask:
         if not isinstance(self.region, RegionExpr):
             raise TypeError(f"sample().region expects RegionExpr, got {type(self.region).__name__!s}.")
-        from ._sampling import sample_locations_from_region
-
         mask = evaluate_cached(self.region, morpho, cache)
         branch_id, branch_x = sample_locations_from_region(
             morpho,
@@ -621,7 +688,11 @@ class StepSamples(LocsetExpr):
     region: RegionExpr
     step: Quantity
 
-    def evaluate(self, morpho: Morphology, cache: SelectionCache | None = None) -> LocsetMask:
+    def _evaluate(
+        self,
+        morpho: Morphology,
+        cache: SelectionCache | None = None,
+    ) -> LocsetMask:
         raise NotImplementedError
 
 
@@ -637,14 +708,20 @@ class LocsetConcatOp(LocsetExpr):
 
     operands: tuple[LocsetExpr, ...]
 
-    def evaluate(self, morpho: Morphology, cache: SelectionCache | None = None) -> LocsetMask:
-        if not isinstance(morpho, Morphology):
-            raise TypeError(f"LocsetConcatOp expects Morpho, got {type(morpho).__name__!s}.")
+    def _evaluate(
+        self,
+        morpho: Morphology,
+        cache: SelectionCache | None = None,
+    ) -> LocsetMask:
         if len(self.operands) < 2:
             raise ValueError("concatenation expects at least two operands.")
-        points: tuple[Location, ...] = ()
+        # Accumulate raw, normalize once. concat_locset_points() normalizes
+        # left + right on every call, so folding through it made the pass
+        # O(k^2 * m) over data that was already validated by each operand.
+        collected: list[Location] = []
         for operand in self.operands:
-            points = helper.concat_locset_points(points, evaluate_cached(operand, morpho, cache).points)
+            collected.extend(evaluate_cached(operand, morpho, cache).points)
+        points = helper.normalize_locset_points(tuple(collected))
         return LocsetMask(points=points, display_names=_display_names_for_points(morpho, points))
 
 
@@ -653,17 +730,22 @@ class LocsetSetOp(LocsetExpr):
     op: str
     operands: tuple[LocsetExpr, ...]
 
-    def evaluate(self, morpho: Morphology, cache: SelectionCache | None = None) -> LocsetMask:
-        if not isinstance(morpho, Morphology):
-            raise TypeError(f"LocsetSetOp expects Morpho, got {type(morpho).__name__!s}.")
+    def _evaluate(
+        self,
+        morpho: Morphology,
+        cache: SelectionCache | None = None,
+    ) -> LocsetMask:
         if self.op not in {"union", "intersection", "difference"}:
             raise ValueError(f"Unsupported locset set operation {self.op!r}.")
         if len(self.operands) < 2:
             raise ValueError(f"{self.op} expects at least two operands.")
 
-        current = helper.normalize_locset_points(evaluate_cached(self.operands[0], morpho, cache).points)
+        # As in RegionSetOp: union_/intersect_/difference_locset_points each
+        # normalize through unique_locset_points, and LocsetMask.points is
+        # already canonical, so an outer pass is the third of three.
+        current = evaluate_cached(self.operands[0], morpho, cache).points
         for operand in self.operands[1:]:
-            other = helper.normalize_locset_points(evaluate_cached(operand, morpho, cache).points)
+            other = evaluate_cached(operand, morpho, cache).points
             if self.op == "union":
                 current = helper.union_locset_points(current, other)
             elif self.op == "intersection":
@@ -685,9 +767,11 @@ class LocsetUniqueOp(LocsetExpr):
 
     operand: LocsetExpr
 
-    def evaluate(self, morpho: Morphology, cache: SelectionCache | None = None) -> LocsetMask:
-        if not isinstance(morpho, Morphology):
-            raise TypeError(f"LocsetUniqueOp expects Morpho, got {type(morpho).__name__!s}.")
+    def _evaluate(
+        self,
+        morpho: Morphology,
+        cache: SelectionCache | None = None,
+    ) -> LocsetMask:
         return evaluate_cached(self.operand, morpho, cache).unique()
 
 

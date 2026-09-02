@@ -43,8 +43,9 @@ def _positive_scale(value: object, *, name: str) -> object:
 
 
 def _field(context: object, name: str) -> object:
-    if not isinstance(name, str) or not name:
-        raise TypeError("density field must be a non-empty string.")
+    # `name` is always a frozen dataclass's own `field`, and exponential() /
+    # gaussian() -- the only two construction sites -- already applied the
+    # non-empty-string check before storing it.
     try:
         return getattr(context, name)
     except AttributeError as exc:
@@ -107,7 +108,7 @@ def exponential(
     Parameters
     ----------
     field : str
-        Name of a numeric :class:`SamplingContext` field.
+        Name of a numeric :class:`~braincell.filter.SamplingContext` field.
     scale : scalar or Quantity
         Positive scale with units compatible with the selected field.
     direction : {'increasing', 'decreasing'}, optional
@@ -137,7 +138,7 @@ def gaussian(field: str, center: object, sigma: object) -> object:
     Parameters
     ----------
     field : str
-        Name of a numeric :class:`SamplingContext` field.
+        Name of a numeric :class:`~braincell.filter.SamplingContext` field.
     center : scalar or Quantity
         Center in units compatible with the selected field.
     sigma : scalar or Quantity

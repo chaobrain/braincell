@@ -22,7 +22,7 @@ import brainunit as u
 import numpy as np
 
 from braincell import Branch, Morphology
-from braincell.filter import BranchSlice, RootLocation, Terminals
+from braincell.filter import BranchSlice, LocsetMask, RootLocation, Terminals
 from braincell.vis._testing import FakeBackend
 from braincell.vis.backend import BackendChooser
 from braincell.morph import MorphoBranch, MorphoMetric
@@ -843,7 +843,7 @@ class MorphoSelectAndVisTest(unittest.TestCase):
         selected = tree.select(expr)
         evaluated = expr.evaluate(tree)
 
-        self.assertTrue(is_dataclass(selected))
+        self.assertIsInstance(selected, LocsetMask)
         self.assertEqual(selected.points, evaluated.points)
 
     def test_morpho_select_rejects_non_filter_expr(self) -> None:

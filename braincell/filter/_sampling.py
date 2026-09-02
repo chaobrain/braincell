@@ -73,9 +73,7 @@ class SamplingContext:
     @property
     def position(self) -> object:
         """World position, equal to ``local_position`` until transforms land."""
-        if self._local_position is None:
-            raise ValueError("SamplingContext.position requires full 3-D point geometry.")
-        return self._local_position
+        return self.local_position
 
 
 @dataclass(frozen=True)
@@ -133,11 +131,7 @@ class _PreparedComponent:
 
 
 def _coerce_inputs(number: object, seed: object, measure: object, u_resolution: object) -> tuple[int, int, str, float]:
-    if isinstance(number, bool) or not isinstance(number, Integral):
-        raise TypeError(f"number must be an integer, got {number!r}.")
-    n = int(number)
-    if n <= 0:
-        raise ValueError(f"number must be > 0, got {n!r}.")
+    n = helper.coerce_positive_count("number", number)
     if isinstance(seed, bool) or not isinstance(seed, Integral):
         raise TypeError(f"seed must be an integer, got {seed!r}.")
     if not isinstance(measure, str) or measure not in _MEASURES:
@@ -266,36 +260,55 @@ def _context(
     )
 
 
-def _density_array(value: object, *, shape: tuple[int, ...]) -> np.ndarray:
+def _dimensionless_result(
+    value: object,
+    *,
+    shape: tuple[int, ...],
+    noun: str,
+    require_non_negative: bool,
+) -> np.ndarray:
+    """Coerce a user density's return value into a finite float array.
+
+    Parameters
+    ----------
+    value : object
+        Whatever the caller's density returned.
+    shape : tuple of int
+        Shape a non-scalar result must already have.
+    noun : str
+        Either ``"density"`` or ``"log density"``, used in every message.
+    require_non_negative : bool
+        Reject negative entries. True for a density, False for a log
+        density -- which is the one substantive difference between the two
+        callers, and the reason this takes a flag rather than hiding it.
+
+    Returns
+    -------
+    numpy.ndarray
+        Float array of shape ``shape``.
+    """
     if isinstance(value, u.Quantity):
         if not u.get_unit(value).is_unitless:
-            raise TypeError("density must return dimensionless values.")
+            raise TypeError(f"{noun} must return dimensionless values.")
         value = u.get_mantissa(value)
     values = np.asarray(value, dtype=float)
     if values.ndim == 0:
         values = np.broadcast_to(values, shape)
     elif values.shape != shape:
-        raise ValueError(f"density must return a scalar or shape {shape!r}, got {values.shape!r}.")
+        raise ValueError(f"{noun} must return a scalar or shape {shape!r}, got {values.shape!r}.")
     if np.any(~np.isfinite(values)):
-        raise ValueError("density must return finite values.")
-    if np.any(values < 0.0):
-        raise ValueError("density must return non-negative values.")
+        raise ValueError(f"{noun} must return finite values.")
+    if require_non_negative and np.any(values < 0.0):
+        raise ValueError(f"{noun} must return non-negative values.")
     return values
+
+
+def _density_array(value: object, *, shape: tuple[int, ...]) -> np.ndarray:
+    return _dimensionless_result(value, shape=shape, noun="density", require_non_negative=True)
 
 
 def _log_density_array(value: object, *, shape: tuple[int, ...]) -> np.ndarray:
-    if isinstance(value, u.Quantity):
-        if not u.get_unit(value).is_unitless:
-            raise TypeError("log density must be dimensionless.")
-        value = u.get_mantissa(value)
-    values = np.asarray(value, dtype=float)
-    if values.ndim == 0:
-        values = np.broadcast_to(values, shape)
-    elif values.shape != shape:
-        raise ValueError(f"log density must return a scalar or shape {shape!r}, got {values.shape!r}.")
-    if np.any(~np.isfinite(values)):
-        raise ValueError("log density must return finite values.")
-    return values
+    return _dimensionless_result(value, shape=shape, noun="log density", require_non_negative=False)
 
 
 def _density_value(density: Density, context: SamplingContext, *, log_shift: float | None) -> float:
@@ -343,9 +356,18 @@ def _prepare_components(
     density: Density | None,
     u_resolution: float,
 ) -> list[_PreparedComponent]:
-    geometry = MorphologySpatialGeometry.build(morpho)
-    identities = _branch_identities(morpho, components)
-    log_shift = None if density is None else _builtin_log_shift(density, identities, components, geometry)
+    # Both are reachable only from _context / _builtin_log_shift, and every
+    # one of those calls sits behind `density is not None`. Building them
+    # unconditionally ran a full multi-source Dijkstra per density-free
+    # sample() and threw the result away.
+    if density is None:
+        geometry = None
+        identities = None
+        log_shift = None
+    else:
+        geometry = MorphologySpatialGeometry.build(morpho)
+        identities = _branch_identities(morpho, components)
+        log_shift = _builtin_log_shift(density, identities, components, geometry)
     prepared: list[_PreparedComponent] = []
     for component in components:
         if isinstance(component, _AtomComponent):

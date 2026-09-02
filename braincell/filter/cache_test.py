@@ -15,13 +15,6 @@
 
 """Tests for :mod:`braincell.filter.cache`.
 
-``SelectionCache``'s three dictionaries are still **reserved**: they exist
-for the four region types and one locset type that would need memoized
-per-branch distances and radii — :class:`RadiusRangeRegion`,
-:class:`TreeDistanceRegion`, :class:`EuclideanDistanceRegion`,
-:class:`SubtreeRegion`, and :class:`StepSamples` — every one of which
-currently raises ``NotImplementedError``.
-
 Three things are live and tested here:
 
 * the *plumbing* — every composite region and locset expression threads
@@ -40,6 +33,7 @@ import unittest
 import brainunit as u
 
 from braincell import Branch, Morphology
+from braincell.filter._testing import make_soma_dend_tree
 from braincell.filter import AllRegion, SelectionCache
 from braincell.filter.locset import (
     LocsetExpr,
@@ -61,11 +55,7 @@ from braincell.filter.region import (
 
 def _soma_dend_tree() -> Morphology:
     """A two-branch tree: soma plus one apical dendrite."""
-    soma = Branch.from_lengths(lengths=[20.0] * u.um, radii=[10.0, 10.0] * u.um, type="soma")
-    dend = Branch.from_lengths(lengths=[30.0] * u.um, radii=[2.0, 1.0] * u.um, type="apical_dendrite")
-    tree = Morphology.from_root(soma, name="soma")
-    tree.attach(parent="soma", child_branch=dend, child_name="dend", parent_x=1.0)
-    return tree
+    return make_soma_dend_tree(dend_type="apical_dendrite")
 
 
 class _SpyRegion(RegionExpr):
@@ -75,7 +65,7 @@ class _SpyRegion(RegionExpr):
         self.seen: list[SelectionCache | None] = []
         self._intervals = tuple(intervals)
 
-    def evaluate(self, morpho, cache=None) -> RegionMask:
+    def _evaluate(self, morpho, cache=None) -> RegionMask:
         self.seen.append(cache)
         return RegionMask(self._intervals)
 
@@ -87,41 +77,9 @@ class _SpyLocset(LocsetExpr):
         self.seen: list[SelectionCache | None] = []
         self._points = tuple(points)
 
-    def evaluate(self, morpho, cache=None) -> LocsetMask:
+    def _evaluate(self, morpho, cache=None) -> LocsetMask:
         self.seen.append(cache)
         return LocsetMask(points=self._points, display_names=("spy",) * len(self._points))
-
-
-class SelectionCacheFieldsTest(unittest.TestCase):
-    def test_fields_default_to_empty_dicts(self) -> None:
-        cache = SelectionCache()
-
-        self.assertEqual(cache.tree_distance_to_root, {})
-        self.assertEqual(cache.euclidean_distance_to_root, {})
-        self.assertEqual(cache.branch_radius_summary, {})
-
-    def test_instances_do_not_share_their_dicts(self) -> None:
-        # All three fields use default_factory; a plain `{}` default would
-        # make every SelectionCache in the process alias one set of dicts.
-        first = SelectionCache()
-        second = SelectionCache()
-
-        first.tree_distance_to_root[0] = 10.0 * u.um
-        first.euclidean_distance_to_root[0] = 8.0 * u.um
-        first.branch_radius_summary[0] = (1.0 * u.um, 2.0 * u.um)
-
-        self.assertEqual(second.tree_distance_to_root, {})
-        self.assertEqual(second.euclidean_distance_to_root, {})
-        self.assertEqual(second.branch_radius_summary, {})
-
-    def test_cache_is_mutable_so_callers_can_populate_it(self) -> None:
-        # Not frozen, by design: the reserved consumers must be able to fill
-        # these in during evaluation.
-        cache = SelectionCache()
-
-        cache.tree_distance_to_root = {1: 5.0 * u.um}
-
-        self.assertEqual(set(cache.tree_distance_to_root), {1})
 
 
 class RegionCacheThreadingTest(unittest.TestCase):
@@ -235,9 +193,9 @@ class SubExpressionMemoizationTest(unittest.TestCase):
         calls: list[Morphology] = []
 
         class _CountingAll(AllRegion):
-            def evaluate(self, morpho, cache=None):
+            def _evaluate(self, morpho, cache=None):
                 calls.append(morpho)
-                return super().evaluate(morpho, cache)
+                return super()._evaluate(morpho, cache)
 
         ((_CountingAll() | spy) & (_CountingAll() | spy)).evaluate(self.tree, self.cache)
 

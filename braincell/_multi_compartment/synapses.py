@@ -22,6 +22,7 @@ ids to rows in one runtime SoA node per registered synapse type.
 
 from __future__ import annotations
 
+from collections import Counter
 from dataclasses import dataclass
 
 import brainstate
@@ -119,14 +120,7 @@ class _SynapseStore:
         self._build_parameter_columns()
 
     def _validate_name_types(self) -> None:
-        type_by_name: dict[str, str] = {}
-        for name, synapse_type in zip(self.name.tolist(), self.synapse_type.tolist()):
-            previous = type_by_name.setdefault(str(name), str(synapse_type))
-            if previous != synapse_type:
-                raise ValueError(
-                    f"Synapses with the same name {name!r} cannot use different synapse types "
-                    f"({previous!r} and {synapse_type!r})."
-                )
+        raise_on_name_type_conflict(zip(self.name.tolist(), self.synapse_type.tolist()))
 
     def _build_parameter_columns(self) -> None:
         for raw_type in dict.fromkeys(self.synapse_type.tolist()):
@@ -204,14 +198,6 @@ class _SynapseStore:
         except KeyError as exc:
             raise RuntimeError("Selected logical synapses have not been materialized.") from exc
 
-    def parameter_value(self, logical_id: int, parameter: str):
-        index = self.row_index(int(logical_id))
-        synapse_type = str(self.synapse_type[index])
-        if parameter not in self.parameter_columns[synapse_type]:
-            raise KeyError(f"Synapse type {synapse_type!r} does not declare parameter {parameter!r}.")
-        local = self._type_local_by_id[int(logical_id)]
-        return _take_vector_items(self.parameter_columns[synapse_type][parameter], local)
-
     def parameter_column(self, logical_ids, parameter: str):
         """Gather one declared parameter across several logical synapses.
 
@@ -236,18 +222,14 @@ class _SynapseStore:
         KeyError
             If the type does not declare ``parameter``.
 
-        See Also
-        --------
-        parameter_value : Read the same parameter for a single logical id.
-
         Notes
         -----
-        This is the vector form of :meth:`parameter_value`, and the form every
-        caller holding a whole selection should use. Reading a selection one id
-        at a time is quadratic: each :meth:`parameter_value` call re-materializes
-        the entire per-type column through ``to_decimal`` only to take a single
-        element, and the caller then restacks the scalars it just tore apart.
-        Slicing the column once is constant in the number of rows read.
+        Every caller holds a whole selection, so this is the only read
+        accessor. Reading a selection one id at a time would be quadratic:
+        each call re-materializes the entire per-type column through
+        ``to_decimal`` only to take a single element, and the caller then
+        restacks the scalars it just tore apart. Slicing the column once is
+        constant in the number of rows read.
         """
         ids = np.asarray(logical_ids, dtype=np.int64).reshape(-1)
         if ids.size == 0:
@@ -261,9 +243,6 @@ class _SynapseStore:
             raise KeyError(f"Synapse type {synapse_type!r} does not declare parameter {parameter!r}.")
         local_rows = np.asarray([self._type_local_by_id[int(item)] for item in ids.tolist()], dtype=np.int64)
         return _take_vector_items(columns[parameter], local_rows)
-
-    def set_parameter(self, logical_ids: np.ndarray, parameter: str, values) -> None:
-        self.set_parameters(logical_ids, {parameter: values})
 
     def set_parameters(self, logical_ids: np.ndarray, updates: dict[str, object]) -> None:
         ids = np.asarray(logical_ids, dtype=np.int64).reshape(-1)
@@ -693,12 +672,51 @@ class SynapseView:
         return "\n".join(lines)
 
 
+def raise_on_name_type_conflict(pairs, *, known: dict[str, str] | None = None) -> dict[str, str]:
+    """Reject one synapse name standing for two different synapse types.
+
+    A synapse *name* is the handle a user reads back through
+    ``cell.synapses[name]``, so it has to denote one runtime type. The rule
+    is checked twice against different inputs -- at ``Cell.place()`` time
+    against the declarations, and again when the store materializes its
+    columns -- which is why it is stated here rather than in either caller.
+
+    Parameters
+    ----------
+    pairs : iterable of tuple
+        ``(name, synapse_type)`` pairs, in declaration order.
+    known : dict, optional
+        Names already claimed by an earlier pass. Not mutated.
+
+    Returns
+    -------
+    dict
+        ``name -> synapse_type`` for every pair seen, including ``known``.
+
+    Raises
+    ------
+    ValueError
+        On the first name that claims a second type.
+    """
+    type_by_name = {} if known is None else dict(known)
+    for name, synapse_type in pairs:
+        name, synapse_type = str(name), str(synapse_type)
+        previous = type_by_name.setdefault(name, synapse_type)
+        if previous != synapse_type:
+            raise ValueError(
+                f"Synapses with the same name {name!r} cannot use different synapse types "
+                f"({previous!r} and {synapse_type!r})."
+            )
+    return type_by_name
+
+
 def _count_labels(values) -> dict[str, int]:
-    counts: dict[str, int] = {}
-    for value in np.asarray(values, dtype=object).tolist():
-        label = str(value)
-        counts[label] = counts.get(label, 0) + 1
-    return counts
+    """Count each label, in first-seen order.
+
+    Returned as a plain ``dict`` rather than the ``Counter`` itself
+    because the callers interpolate it with ``{...!r}`` into a repr.
+    """
+    return dict(Counter(str(value) for value in np.asarray(values, dtype=object).tolist()))
 
 
 def _cell_label(cell, population_indices) -> str:

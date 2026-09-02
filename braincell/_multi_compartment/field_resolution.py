@@ -34,7 +34,7 @@ boundary.
 
 There are two families:
 
-**Coverage** — :func:`region_intervals`, :func:`cv_coverage_fractions`,
+**Coverage** — :func:`region_intervals`, :func:`cv_area_coverage_fractions`,
 :func:`branch_coverage_fractions`, :func:`locset_cv_ids`,
 :func:`node_highlight_fractions`, :func:`cv_highlight_fractions`. These
 turn a region or locset into per-CV / per-point / per-branch overlap
@@ -54,6 +54,7 @@ import brainunit as u
 import numpy as np
 
 from braincell._discretization.base import locate_cv_on_branch
+from braincell._discretization.geometry import interval_area_fraction
 from braincell.filter import LocsetExpr, LocsetMask, RegionExpr, RegionMask
 from braincell.filter.helper import normalize_region_intervals
 
@@ -64,7 +65,7 @@ __all__ = [
     "coerce_named_node_values",
     "coerce_node_values",
     "coerce_runtime_point_values",
-    "cv_coverage_fractions",
+    "cv_area_coverage_fractions",
     "cv_highlight_fractions",
     "cv_to_node_values",
     "cv_voltage",
@@ -234,8 +235,14 @@ def region_intervals(cell, region, *, caller: str) -> dict[int, tuple[tuple[floa
     return {branch_id: tuple(intervals) for branch_id, intervals in grouped.items()}
 
 
-def cv_coverage_fractions(cell, region, *, caller: str) -> dict[int, float]:
-    """Return each CV's fractional overlap with ``region``.
+def cv_area_coverage_fractions(cell, region, *, caller: str) -> dict[int, float]:
+    """Return each CV's fractional *membrane area* overlap with ``region``.
+
+    This is the same measure the discretization applies when it paints a
+    density mechanism over part of a CV, so ``Cell.on(region)`` reports the
+    fraction that actually scaled the conductance. On a tapering branch an
+    area fraction and a length fraction are different numbers; only the
+    area one describes what the model does.
 
     Parameters
     ----------
@@ -250,25 +257,39 @@ def cv_coverage_fractions(cell, region, *, caller: str) -> dict[int, float]:
     -------
     dict
         CV id mapped to a fraction in ``[0, 1]``.
+
+    See Also
+    --------
+    branch_coverage_fractions : The *length* extent along a whole branch,
+        used for branch-level drawing rather than for membrane physics.
+    braincell.mech.Density.with_coverage : Consumer of the same fraction.
     """
     branch_intervals = region_intervals(cell, region, caller=caller)
+    branches = cell.morpho.branches
     fractions: dict[int, float] = {}
     for cv in cell.cvs:
         intervals = branch_intervals.get(int(cv.branch_id), ())
-        total = max(float(cv.dist) - float(cv.prox), 1e-12)
-        overlap = 0.0
-        for left, right in intervals:
-            start = max(float(cv.prox), float(left))
-            end = min(float(cv.dist), float(right))
-            if end - start <= 1e-9:
-                continue
-            overlap += end - start
-        fractions[int(cv.id)] = float(np.clip(overlap / total, 0.0, 1.0))
+        fractions[int(cv.id)] = (
+            0.0
+            if len(intervals) == 0
+            else interval_area_fraction(
+                branches[int(cv.branch_id)],
+                prox=float(cv.prox),
+                dist=float(cv.dist),
+                lateral_area_um2=float(cv.area.to_decimal(u.um**2)),
+                intervals=intervals,
+            )
+        )
     return fractions
 
 
 def branch_coverage_fractions(cell, region, *, caller: str) -> dict[int, float]:
     """Return each branch's fractional coverage by ``region``.
+
+    Unlike :func:`cv_area_coverage_fractions` this is a *length* extent in
+    normalized branch coordinates, because its one consumer draws a branch
+    as a line in a topology graph. It is a drawing quantity, not a membrane
+    one, and the two are deliberately different measures.
 
     Parameters
     ----------
@@ -283,6 +304,10 @@ def branch_coverage_fractions(cell, region, *, caller: str) -> dict[int, float]:
     -------
     dict
         Branch index mapped to a fraction in ``[0, 1]``.
+
+    See Also
+    --------
+    cv_area_coverage_fractions : The membrane-area measure used for physics.
     """
     branch_intervals = region_intervals(cell, region, caller=caller)
     fractions: dict[int, float] = {}
@@ -322,14 +347,16 @@ def locset_cv_ids(cell, locset, *, caller: str) -> set[int]:
     else:
         raise TypeError(f"{caller} expects LocsetExpr or LocsetMask, got {type(locset).__name__!s}.")
 
-    grouped: dict[int, list[int]] = {}
-    for cv in cell.cvs:
-        grouped.setdefault(int(cv.branch_id), []).append(int(cv.id))
-    cv_ids_by_branch = {branch_id: tuple(ids) for branch_id, ids in grouped.items()}
+    # The CV tree already groups CVs by branch; ``selection.py`` reads the
+    # same attribute rather than regrouping ``cell.cvs`` by hand.
+    cv_ids_by_branch = cell.cv_tree.branch_to_cv_ids
 
     cv_ids: set[int] = set()
     for branch_id, x in mask.points:
-        ids = cv_ids_by_branch.get(int(branch_id))
+        branch_id = int(branch_id)
+        if not 0 <= branch_id < len(cv_ids_by_branch):
+            continue
+        ids = cv_ids_by_branch[branch_id]
         if not ids:
             continue
         cv_id = locate_cv_on_branch(ids, cell.cvs, x=float(x))
@@ -363,7 +390,7 @@ def node_highlight_fractions(cell, *, region, locset, caller: str) -> dict[int, 
     fractions: dict[int, float] = {}
     node_tree = cell.node_tree
     if region is not None:
-        for cv_id, fraction in cv_coverage_fractions(cell, region, caller=caller).items():
+        for cv_id, fraction in cv_area_coverage_fractions(cell, region, caller=caller).items():
             point_id = int(node_tree.cv_to_mid_node_id[int(cv_id)])
             fractions[point_id] = max(fractions.get(point_id, 0.0), float(fraction))
     if locset is not None:
@@ -394,7 +421,7 @@ def cv_highlight_fractions(cell, *, region, locset, caller: str) -> dict[int, fl
     """
     fractions: dict[int, float] = {}
     if region is not None:
-        fractions.update(cv_coverage_fractions(cell, region, caller=caller))
+        fractions.update(cv_area_coverage_fractions(cell, region, caller=caller))
     if locset is not None:
         for cv_id in locset_cv_ids(cell, locset, caller=caller):
             fractions[int(cv_id)] = max(fractions.get(int(cv_id), 0.0), 1.0)
@@ -461,10 +488,9 @@ def mask_non_midpoint_points(cell, point_values):
     ValueError
         If ``point_values`` is not shaped ``(n_point,)``.
     """
-    node_tree = cell.node_tree
-    midpoint_ids = np.asarray(node_tree.cv_to_mid_node_id, dtype=np.int32)
-    midpoint_mask = np.zeros((cell.n_point,), dtype=bool)
-    midpoint_mask[midpoint_ids] = True
+    # The runtime lowering builds this mask once and keeps it; rebuilding it
+    # here would be a second copy of the same three lines.
+    midpoint_mask = cell.runtime.midpoint_mask_np
     mantissa, _, rewrap = split_unit(point_values)
     raw = mantissa.reshape(-1)
     if raw.shape != (cell.n_point,):
@@ -476,6 +502,82 @@ def mask_non_midpoint_points(cell, point_values):
 
 # ----------------------------------------------------------------------
 # Value coercion
+
+
+def _unchanged(values):
+    """Return ``values`` untouched -- the mapper for the target space itself."""
+    return values
+
+
+#: How each space is named in a user-facing message.
+_SPACE_LABEL = {"point": "point", "cv": "CV"}
+
+
+def _coerce_field(cell, value, *, caller: str, native: str, named: bool, from_point, from_cv):
+    """Interpret a caller-supplied field by its length and map it home.
+
+    Every public coercer below runs this one ladder: a scalar fills a
+    vector, a 1-D value whose length names either space is mapped into the
+    target space, and anything else is refused. They differ only in which
+    space they answer in and how they cross between the two, which is what
+    the arguments carry.
+
+    Parameters
+    ----------
+    cell : braincell.Cell
+        Cell supplying ``n_point`` / ``n_cv`` and the space bridges.
+    value : array-like or brainunit.Quantity
+        Scalar, point-space, or CV-space values.
+    caller : str
+        Entry point description, used only in error messages.
+    native : {'point', 'cv'}
+        Space this coercer answers in. Only names the space in messages;
+        the mappers decide what is actually returned.
+    named : bool
+        Whether this is a *named* state/parameter field. A named field is
+        defined per CV, so a scalar fills ``n_cv`` rather than ``n_point``
+        even when the answer is in point space, and the messages say so.
+    from_point : callable
+        Maps a point-length input into the target space.
+    from_cv : callable
+        Maps a CV-length input into the target space. A scalar is filled
+        in whichever space it is defined in and then passed through the
+        matching mapper, so this also handles the scalar case for a named
+        field.
+
+    Returns
+    -------
+    numpy.ndarray or brainunit.Quantity
+        A vector in the target space.
+
+    Raises
+    ------
+    ValueError
+        If ``value`` is neither scalar nor 1-D, or its length matches
+        neither ``n_point`` nor ``n_cv``.
+    """
+    raw, original, rewrap = split_unit(single_population_view(cell, value, caller=caller))
+    fill_space = "cv" if named else native
+    lengths = {"point": cell.n_point, "cv": cell.n_cv}
+
+    if raw.ndim == 0:
+        filled = rewrap(np.full((lengths[fill_space],), float(raw), dtype=float))
+        return from_point(filled) if fill_space == "point" else from_cv(filled)
+    if raw.ndim != 1:
+        noun = "named value" if named else "value"
+        raise ValueError(f"{caller} only supports scalar or 1-D {noun} arrays.")
+    if raw.shape[0] == cell.n_point:
+        return from_point(original)
+    if raw.shape[0] == cell.n_cv:
+        return from_cv(original)
+
+    if named:
+        raise ValueError(f"{caller} cannot map the named value into {_SPACE_LABEL[native]} space.")
+    other = "cv" if native == "point" else "point"
+    raise ValueError(
+        f"{caller} expects a {_SPACE_LABEL[native]} array of length {lengths[native]} "
+        f"or a {_SPACE_LABEL[other]} array of length {lengths[other]}, got length {raw.shape[0]}."
+    )
 
 
 def coerce_node_values(cell, value, *, caller: str):
@@ -501,18 +603,14 @@ def coerce_node_values(cell, value, *, caller: str):
         If ``value`` is neither scalar nor 1-D, or its length matches
         neither ``n_point`` nor ``n_cv``.
     """
-    raw, original, rewrap = split_unit(single_population_view(cell, value, caller=caller))
-    if raw.ndim == 0:
-        return rewrap(np.full((cell.n_point,), float(raw), dtype=float))
-    if raw.ndim != 1:
-        raise ValueError(f"{caller} only supports scalar or 1-D value arrays.")
-    if raw.shape[0] == cell.n_point:
-        return original
-    if raw.shape[0] == cell.n_cv:
-        return cv_to_node_values(cell, original)
-    raise ValueError(
-        f"{caller} expects a point array of length {cell.n_point} "
-        f"or a CV array of length {cell.n_cv}, got length {raw.shape[0]}."
+    return _coerce_field(
+        cell,
+        value,
+        caller=caller,
+        native="point",
+        named=False,
+        from_point=_unchanged,
+        from_cv=lambda values: cv_to_node_values(cell, values),
     )
 
 
@@ -542,19 +640,14 @@ def coerce_runtime_point_values(cell, value):
         If ``value`` is neither scalar nor 1-D, or its length matches
         neither ``n_point`` nor ``n_cv``.
     """
-    caller = "Runtime point inspection"
-    raw, original, rewrap = split_unit(single_population_view(cell, value, caller=caller))
-    if raw.ndim == 0:
-        return rewrap(np.full((cell.n_point,), float(raw), dtype=float))
-    if raw.ndim != 1:
-        raise ValueError(f"{caller} only supports scalar or 1-D value arrays.")
-    if raw.shape[0] == cell.n_point:
-        return original
-    if raw.shape[0] == cell.n_cv:
-        return cell._cv_to_point(original)
-    raise ValueError(
-        f"{caller} expects a point array of length {cell.n_point} "
-        f"or a CV array of length {cell.n_cv}, got length {raw.shape[0]}."
+    return _coerce_field(
+        cell,
+        value,
+        caller="Runtime point inspection",
+        native="point",
+        named=False,
+        from_point=_unchanged,
+        from_cv=cell._cv_to_point,
     )
 
 
@@ -581,18 +674,14 @@ def coerce_cv_values(cell, value, *, caller: str):
         If ``value`` is neither scalar nor 1-D, or its length matches
         neither ``n_cv`` nor ``n_point``.
     """
-    raw, original, rewrap = split_unit(single_population_view(cell, value, caller=caller))
-    if raw.ndim == 0:
-        return rewrap(np.full((cell.n_cv,), float(raw), dtype=float))
-    if raw.ndim != 1:
-        raise ValueError(f"{caller} only supports scalar or 1-D value arrays.")
-    if raw.shape[0] == cell.n_cv:
-        return original
-    if raw.shape[0] == cell.n_point:
-        return cell._point_to_cv(original)
-    raise ValueError(
-        f"{caller} expects a CV array of length {cell.n_cv} "
-        f"or a point array of length {cell.n_point}, got length {raw.shape[0]}."
+    return _coerce_field(
+        cell,
+        value,
+        caller=caller,
+        native="cv",
+        named=False,
+        from_point=cell._point_to_cv,
+        from_cv=_unchanged,
     )
 
 
@@ -623,16 +712,15 @@ def coerce_named_node_values(cell, value, *, caller: str):
         If ``value`` is not scalar or 1-D, or cannot be mapped into point
         space.
     """
-    raw, original, rewrap = split_unit(single_population_view(cell, value, caller=caller))
-    if raw.ndim == 0:
-        return cv_to_node_values(cell, rewrap(np.full((cell.n_cv,), float(raw), dtype=float)))
-    if raw.ndim != 1:
-        raise ValueError(f"{caller} only supports scalar or 1-D named value arrays.")
-    if raw.shape[0] == cell.n_point:
-        return mask_non_midpoint_points(cell, original)
-    if raw.shape[0] == cell.n_cv:
-        return cv_to_node_values(cell, original)
-    raise ValueError(f"{caller} cannot map the named value into point space.")
+    return _coerce_field(
+        cell,
+        value,
+        caller=caller,
+        native="point",
+        named=True,
+        from_point=lambda values: mask_non_midpoint_points(cell, values),
+        from_cv=lambda values: cv_to_node_values(cell, values),
+    )
 
 
 def coerce_named_cv_values(cell, value, *, caller: str):
@@ -658,16 +746,15 @@ def coerce_named_cv_values(cell, value, *, caller: str):
         If ``value`` is not scalar or 1-D, or cannot be mapped into CV
         space.
     """
-    raw, original, rewrap = split_unit(single_population_view(cell, value, caller=caller))
-    if raw.ndim == 0:
-        return rewrap(np.full((cell.n_cv,), float(raw), dtype=float))
-    if raw.ndim != 1:
-        raise ValueError(f"{caller} only supports scalar or 1-D named value arrays.")
-    if raw.shape[0] == cell.n_cv:
-        return original
-    if raw.shape[0] == cell.n_point:
-        return cell._point_to_cv(mask_non_midpoint_points(cell, original))
-    raise ValueError(f"{caller} cannot map the named value into CV space.")
+    return _coerce_field(
+        cell,
+        value,
+        caller=caller,
+        native="cv",
+        named=True,
+        from_point=lambda values: cell._point_to_cv(mask_non_midpoint_points(cell, values)),
+        from_cv=_unchanged,
+    )
 
 
 # ----------------------------------------------------------------------
@@ -897,8 +984,7 @@ def layout_values_to_cv_space(cell, layout, raw_values, *, field: str, caller: s
         return rewrap(cv_values)
     if layout.point_index is None or array.shape[0] != len(layout.point_index):
         raise ValueError(
-            f"{caller} cannot map field {field!r} from layout {layout.id!r} "
-            f"with shape {array.shape!r} into CV space."
+            f"{caller} cannot map field {field!r} from layout {layout.id!r} with shape {array.shape!r} into CV space."
         )
     value_by_point = {
         int(point_id): float(array[index])
@@ -932,6 +1018,81 @@ def cv_voltage(cell, *, caller: str):
     return single_population_view(cell, cell.V.value, field="V", caller=caller)
 
 
+def _resolve_field_values(
+    cell,
+    value,
+    *,
+    caller: str,
+    voltage,
+    named,
+    layout,
+    raw,
+) -> tuple[object, str | None]:
+    """Resolve a value selector into one space's values and a label.
+
+    The point-space and CV-space resolvers accept exactly the same
+    selector grammar -- ``"V"``, an ``(kind, name, field)`` triple, or a
+    bare array -- and produce the same labels. They differ only in the
+    four helpers that actually land a value in their space, so the
+    grammar is stated once here and each space supplies its four.
+
+    Parameters
+    ----------
+    cell : braincell.Cell
+        Cell the selector is resolved against.
+    value : object
+        The selector, in the grammar the two public resolvers document.
+    caller : str
+        Entry point description, used only in error messages.
+    voltage : callable
+        ``() -> values`` for the ``"V"`` / ``"voltage"`` selector.
+    named : callable
+        ``(field_value) -> values`` for a named ion field.
+    layout : callable
+        ``(layout_id, field) -> values`` for a runtime layout field.
+    raw : callable
+        ``(value) -> values`` for anything that is not a recognised
+        string or triple.
+
+    Returns
+    -------
+    values : numpy.ndarray or brainunit.Quantity
+        A vector in the resolver's space.
+    label : str or None
+        Inferred colorbar label, or ``None`` for a raw array.
+
+    Raises
+    ------
+    ValueError
+        If a string or tuple selector is not recognised.
+    AttributeError
+        If a named ion has no such field.
+    """
+    if isinstance(value, str):
+        if value.strip().lower() in {"v", "voltage"}:
+            return voltage(), "V"
+        raise ValueError(f"Unsupported {caller} value string {value!r}.")
+
+    if isinstance(value, tuple) and len(value) == 3 and isinstance(value[0], str):
+        mode = value[0]
+        if mode == "ion":
+            ion_name, field = str(value[1]), str(value[2])
+            ion = cell.get_ion(ion_name)
+            if not hasattr(ion, field):
+                raise AttributeError(f"Ion {ion_name!r} has no field {field!r}.")
+            return named(getattr(ion, field)), f"{ion_name}.{field}"
+        if mode == "channel":
+            class_name, field = str(value[1]), str(value[2])
+            resolved = unique_layout_by_kind(cell, f"channel:{class_name}", caller=caller)
+            return layout(resolved.id, field), f"{class_name}.{field}"
+        if mode == "layout_id":
+            layout_id, field = int(value[1]), str(value[2])
+            return layout(layout_id, field), f"layout_{layout_id}.{field}"
+        raise ValueError(f"Unsupported {caller} value tuple selector {mode!r}.")
+
+    return raw(value), None
+
+
 def resolve_node_field_values(cell, value, *, caller: str) -> tuple[object, str | None]:
     """Resolve a value selector into point-space values and a label.
 
@@ -961,33 +1122,15 @@ def resolve_node_field_values(cell, value, *, caller: str) -> tuple[object, str 
     AttributeError
         If a named ion has no such field.
     """
-    if isinstance(value, str):
-        key = value.strip().lower()
-        if key in {"v", "voltage"}:
-            return cv_to_node_values(cell, cv_voltage(cell, caller=caller)), "V"
-        raise ValueError(f"Unsupported {caller} value string {value!r}.")
-
-    if isinstance(value, tuple) and len(value) == 3 and isinstance(value[0], str):
-        mode = value[0]
-        if mode == "ion":
-            ion_name, field = str(value[1]), str(value[2])
-            ion = cell.get_ion(ion_name)
-            if not hasattr(ion, field):
-                raise AttributeError(f"Ion {ion_name!r} has no field {field!r}.")
-            return coerce_named_node_values(cell, getattr(ion, field), caller=caller), f"{ion_name}.{field}"
-        if mode == "channel":
-            class_name, field = str(value[1]), str(value[2])
-            layout = unique_layout_by_kind(cell, f"channel:{class_name}", caller=caller)
-            return layout_field_to_point_values(cell, layout.id, field, caller=caller), f"{class_name}.{field}"
-        if mode == "layout_id":
-            layout_id, field = int(value[1]), str(value[2])
-            return (
-                layout_field_to_point_values(cell, layout_id, field, caller=caller),
-                f"layout_{layout_id}.{field}",
-            )
-        raise ValueError(f"Unsupported {caller} value tuple selector {mode!r}.")
-
-    return coerce_node_values(cell, value, caller=caller), None
+    return _resolve_field_values(
+        cell,
+        value,
+        caller=caller,
+        voltage=lambda: cv_to_node_values(cell, cv_voltage(cell, caller=caller)),
+        named=lambda field_value: coerce_named_node_values(cell, field_value, caller=caller),
+        layout=lambda layout_id, field: layout_field_to_point_values(cell, layout_id, field, caller=caller),
+        raw=lambda values: coerce_node_values(cell, values, caller=caller),
+    )
 
 
 def resolve_cv_field_values(cell, value, *, caller: str) -> tuple[object, str | None]:
@@ -1019,30 +1162,12 @@ def resolve_cv_field_values(cell, value, *, caller: str) -> tuple[object, str | 
     AttributeError
         If a named ion has no such field.
     """
-    if isinstance(value, str):
-        key = value.strip().lower()
-        if key in {"v", "voltage"}:
-            return cv_voltage(cell, caller=caller), "V"
-        raise ValueError(f"Unsupported {caller} value string {value!r}.")
-
-    if isinstance(value, tuple) and len(value) == 3 and isinstance(value[0], str):
-        mode = value[0]
-        if mode == "ion":
-            ion_name, field = str(value[1]), str(value[2])
-            ion = cell.get_ion(ion_name)
-            if not hasattr(ion, field):
-                raise AttributeError(f"Ion {ion_name!r} has no field {field!r}.")
-            return coerce_named_cv_values(cell, getattr(ion, field), caller=caller), f"{ion_name}.{field}"
-        if mode == "channel":
-            class_name, field = str(value[1]), str(value[2])
-            layout = unique_layout_by_kind(cell, f"channel:{class_name}", caller=caller)
-            return layout_field_to_cv_values(cell, layout.id, field, caller=caller), f"{class_name}.{field}"
-        if mode == "layout_id":
-            layout_id, field = int(value[1]), str(value[2])
-            return (
-                layout_field_to_cv_values(cell, layout_id, field, caller=caller),
-                f"layout_{layout_id}.{field}",
-            )
-        raise ValueError(f"Unsupported {caller} value tuple selector {mode!r}.")
-
-    return coerce_cv_values(cell, value, caller=caller), None
+    return _resolve_field_values(
+        cell,
+        value,
+        caller=caller,
+        voltage=lambda: cv_voltage(cell, caller=caller),
+        named=lambda field_value: coerce_named_cv_values(cell, field_value, caller=caller),
+        layout=lambda layout_id, field: layout_field_to_cv_values(cell, layout_id, field, caller=caller),
+        raw=lambda values: coerce_cv_values(cell, values, caller=caller),
+    )

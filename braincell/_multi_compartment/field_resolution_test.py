@@ -23,6 +23,7 @@ import numpy as np
 from braincell import Branch, CVPerBranch, Cell, Morphology
 from braincell._multi_compartment import field_resolution as fr
 from braincell.filter import AllRegion, BranchSlice, RootLocation
+from braincell.mech import Channel
 
 
 def _soma_tree() -> Morphology:
@@ -138,13 +139,16 @@ class RegionAndLocsetResolutionTest(unittest.TestCase):
     def setUp(self) -> None:
         self.cell = Cell(_soma_dend_tree(), cv_policy=CVPerBranch())
 
-    def test_cv_coverage_is_the_overlapped_fraction_of_each_cv(self) -> None:
-        fractions = fr.cv_coverage_fractions(
+    def test_cv_coverage_is_the_overlapped_area_fraction_of_each_cv(self) -> None:
+        fractions = fr.cv_area_coverage_fractions(
             self.cell,
             BranchSlice(branch_index=1, prox=0.0, dist=0.5),
             caller="test",
         )
-        self.assertAlmostEqual(fractions[1], 0.5)
+        # The dendrite tapers 2 um -> 1 um, so its proximal half carries
+        # more than half the membrane: 0.5833... of the area against 0.5
+        # of the length. The area is the number the physics uses.
+        self.assertAlmostEqual(fractions[1], 0.5833333333333334)
         self.assertAlmostEqual(fractions[0], 0.0)
 
     def test_branch_coverage_measures_the_branch_not_its_cvs(self) -> None:
@@ -192,6 +196,56 @@ class RegionAndLocsetResolutionTest(unittest.TestCase):
     def test_a_locset_of_the_wrong_type_is_rejected_by_name(self) -> None:
         with self.assertRaisesRegex(TypeError, r"^caller X expects LocsetExpr or LocsetMask, got int"):
             fr.locset_cv_ids(self.cell, 3, caller="caller X")
+
+
+class CoverageMatchesThePaintedFractionTest(unittest.TestCase):
+    """CV coverage must report the fraction the physics actually applies.
+
+    ``Cell.paint`` scales a density mechanism by the fraction of the CV's
+    *lateral membrane area* a region covers, and stores it as
+    ``Density.coverage_area_fraction``. ``Cell.on(region).cv.coverage_fraction``
+    is the only way a user can read that number back, so the two must agree.
+
+    They only diverge on a tapering branch: with constant radius the area
+    fraction and the length fraction are the same number, which is why this
+    went unnoticed. Both cases are pinned below.
+    """
+
+    #: ``BranchSlice(1, 0.0, 0.5)`` -- the proximal half of the dendrite.
+    REGION = BranchSlice(branch_index=1, prox=0.0, dist=0.5)
+
+    @staticmethod
+    def _dendrite_cell(r_prox: float, r_dist: float) -> Cell:
+        soma = Branch.from_lengths(lengths=[20.0] * u.um, radii=[10.0, 10.0] * u.um, type="soma")
+        dend = Branch.from_lengths(
+            lengths=[100.0] * u.um,
+            radii=[r_prox, r_dist] * u.um,
+            type="basal_dendrite",
+        )
+        tree = Morphology.from_root(soma, name="soma")
+        tree.soma.dend = dend
+        return Cell(tree, cv_policy=CVPerBranch(1))
+
+    def _painted_fraction(self, cell: Cell) -> float:
+        """Return the coverage the discretization baked into the dendrite CV."""
+        cell.paint(self.REGION, Channel("IL", g_max=1.0 * (u.mS / u.cm**2), E=-70.0 * u.mV))
+        painted = [mech.coverage_area_fraction for cv in cell.cvs for mech in cv.density_mech]
+        self.assertEqual(len(painted), 1, "expected exactly one painted CV")
+        return float(painted[0])
+
+    def test_a_tapering_branch_reports_the_area_fraction_not_the_length_fraction(self) -> None:
+        reported = self._dendrite_cell(4.0, 1.0).on(self.REGION).cv.coverage_fraction
+        painted = self._painted_fraction(self._dendrite_cell(4.0, 1.0))
+        # The length fraction here is 0.5; the area fraction is 0.65.
+        self.assertAlmostEqual(painted, 0.65)
+        self.assertEqual(reported.shape, (1,))
+        self.assertAlmostEqual(float(reported[0]), painted)
+
+    def test_an_untapered_branch_agrees_with_the_length_fraction(self) -> None:
+        reported = self._dendrite_cell(2.0, 2.0).on(self.REGION).cv.coverage_fraction
+        painted = self._painted_fraction(self._dendrite_cell(2.0, 2.0))
+        self.assertAlmostEqual(painted, 0.5)
+        self.assertAlmostEqual(float(reported[0]), 0.5)
 
 
 class SpatialMappingTest(unittest.TestCase):

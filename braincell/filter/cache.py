@@ -82,7 +82,7 @@ class SelectionCache:
         indices, an array of bounds) simply do not memoize; they fall
         through to ``evaluate()`` unchanged.
         """
-        revision = getattr(morpho, "_revision", None)
+        revision = getattr(morpho, "revision", None)
         if self._morpho is not morpho or self._revision != revision:
             self._masks.clear()
             self._morpho = morpho

@@ -14,7 +14,7 @@
 # ==============================================================================
 
 from dataclasses import dataclass, fields, is_dataclass
-from typing import Literal
+from typing import Literal, Sequence
 
 import numpy as np
 
@@ -27,11 +27,13 @@ from braincell.mech import (
     StateProbe,
     Synapse,
 )
+from .layouts import mechanism_signature
 from .state import CellRuntimeState
 
 __all__ = [
     "MechanismObjectCell",
     "MechanismObjectTable",
+    "build_mechanism_object_table",
     "mechanism_cell_key",
 ]
 
@@ -218,3 +220,109 @@ def mechanism_cell_key(mechanism: object) -> tuple[str, str]:
         return (class_name, class_name)
     class_name = type(mechanism).__name__
     return (class_name, class_name)
+
+
+def build_mechanism_object_table(
+    runtime: CellRuntimeState,
+    cvs: "Sequence[object]",
+) -> MechanismObjectTable:
+    """Assemble the point-domain mechanism table for one lowered cell.
+
+    Rows are logical mechanism identities (see :func:`mechanism_cell_key`)
+    and columns are point ids. A density mechanism is attributed to its
+    CV's midpoint point, a point mechanism to the point it sits on, so a
+    single table can show both.
+
+    Parameters
+    ----------
+    runtime : CellRuntimeState
+        Lowered runtime supplying the node tree and the layout registry.
+    cvs : sequence of braincell._discretization.base.CV
+        The cell's CV records, source of the density attributions.
+
+    Returns
+    -------
+    MechanismObjectTable
+        A table whose entries are :class:`MechanismObjectCell` facades, or
+        ``None`` where a mechanism is absent from that point.
+
+    See Also
+    --------
+    braincell.Cell.mech_table : The user-facing entry point.
+    """
+    node_tree = runtime.node_tree
+    column_ids = tuple(range(len(node_tree.nodes)))
+
+    row_keys: list[tuple[str, str]] = []
+    row_labels: list[str] = []
+    row_index_by_key: dict[tuple[str, str], int] = {}
+    pending_cells: list[tuple[int, int, MechanismObjectCell]] = []
+
+    layout_id_by_signature = {
+        (layout.target,) + mechanism_signature(runtime.get_layout_mechanism(layout.id)): layout.id
+        for layout in runtime.layouts
+    }
+    layout_id_by_synapse_type = {
+        runtime.get_layout_mechanism(layout.id).synapse_type: layout.id
+        for layout in runtime.layouts
+        if isinstance(runtime.get_layout_mechanism(layout.id), Synapse)
+    }
+
+    def add_cell(mechanism: object, *, point_id: int, layout_id: int) -> None:
+        row_key = mechanism_cell_key(mechanism)
+        row_index = row_index_by_key.get(row_key)
+        if row_index is None:
+            row_index = len(row_keys)
+            row_keys.append(row_key)
+            class_name, instance_name = row_key
+            row_labels.append(class_name if class_name == instance_name else f"{instance_name}:{class_name}")
+            row_index_by_key[row_key] = row_index
+        pending_cells.append(
+            (
+                row_index,
+                point_id,
+                MechanismObjectCell(
+                    runtime=runtime,
+                    layout_id=int(layout_id),
+                    class_name=row_key[0],
+                    instance_name=row_key[1],
+                    column_id=point_id,
+                    domain="point",
+                    cv_id=None,
+                    point_id=point_id,
+                ),
+            )
+        )
+
+    for cv in cvs:
+        midpoint_point_id = int(node_tree.cv_to_mid_node_id[cv.id])
+        for mechanism in cv.density_mech:
+            add_cell(
+                mechanism,
+                point_id=midpoint_point_id,
+                layout_id=layout_id_by_signature[("density",) + mechanism_signature(mechanism)],
+            )
+
+    for point_id, node in enumerate(node_tree.nodes):
+        for mechanism in node.point_mech:
+            add_cell(
+                mechanism,
+                point_id=int(point_id),
+                layout_id=(
+                    layout_id_by_synapse_type[mechanism.synapse_type]
+                    if isinstance(mechanism, Synapse)
+                    else layout_id_by_signature[("point",) + mechanism_signature(mechanism)]
+                ),
+            )
+
+    values = np.full((len(row_keys), len(column_ids)), None, dtype=object)
+    for row_index, column_id, cell in pending_cells:
+        values[row_index, int(column_id)] = cell
+
+    return MechanismObjectTable(
+        domain="point",
+        row_keys=tuple(row_keys),
+        row_labels=tuple(row_labels),
+        column_ids=column_ids,
+        values=values,
+    )

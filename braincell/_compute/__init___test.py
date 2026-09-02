@@ -476,7 +476,11 @@ class AcyclicTest(unittest.TestCase):
             "layouts": set(),
             "scheduling": set(),
             "state": {"bindings", "bridge", "layouts"},
-            "table": {"state"},
+            # ``table`` builds its rows by matching mechanisms against
+            # layout signatures, so it reads ``layouts`` directly rather
+            # than through ``state``. ``layouts`` is a leaf, so the edge
+            # keeps the graph a DAG.
+            "table": {"layouts", "state"},
         }
         actual = {name: set(edges) for name, edges in _sibling_graph(_scan_package()).items()}
         self.assertEqual(expected, actual)

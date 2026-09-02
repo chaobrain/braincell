@@ -117,7 +117,7 @@ class RuntimeBindingTest(unittest.TestCase):
         layouts = tuple(layout for layout in rcell.layouts if layout.kind == "channel:Na_HH1952")
         nodes = tuple(rcell.get_runtime_node(layout.id) for layout in layouts)
         na = rcell.get_ion("na")
-        point_V = rcell._discretization_to_point(rcell.V.value)
+        point_V = rcell._cv_to_point(rcell.V.value)
         expected = nodes[0].current(point_V, na.pack_info())
         total = na.current(point_V, include_external=False)
 
@@ -307,7 +307,7 @@ class RuntimeBindingTest(unittest.TestCase):
         nodes = tuple(rcell.get_runtime_node(layout.id) for layout in layouts)
         k_main = rcell.get_ion("k_main")
         ca_hva = rcell.get_ion("ca_hva")
-        point_V = rcell._discretization_to_point(rcell.V.value)
+        point_V = rcell._cv_to_point(rcell.V.value)
         expected = nodes[0].current(point_V, k_main.pack_info(), ca_hva.pack_info())
         total = k_main.current(point_V, include_external=False)
 
@@ -350,7 +350,7 @@ class RuntimeBindingTest(unittest.TestCase):
         runtime = rcell.runtime
         layout = next(layout for layout in rcell.layouts if layout.kind == "channel:Kca3p1_MA2020_GoC")
         node = rcell.get_runtime_node(layout.id)
-        point_V = rcell._discretization_to_point(rcell.V.value)
+        point_V = rcell._cv_to_point(rcell.V.value)
         expected_mechanism = node.current(
             point_V,
             rcell.get_ion("k_main").pack_info(),
@@ -391,7 +391,7 @@ class RuntimeBindingTest(unittest.TestCase):
             )
             seen = []
             wrapper._channel.ind_update = lambda *args, **kwargs: seen.append(args)
-            wrapper.ind_update(cell._discretization_to_point(cell.V.value))
+            wrapper.ind_update(cell._cv_to_point(cell.V.value))
             # Only the state-owning wrapper forwards; the component wrapper
             # for a non-owning ion must not integrate the shared state twice.
             self.assertEqual(len(seen), 1 if wrapper._owns_state else 0)
@@ -422,7 +422,7 @@ class RuntimeBindingTest(unittest.TestCase):
         rcell = cell
 
         layout = next(layout for layout in rcell.layouts if layout.kind == "channel:_RuntimeTestTwoOwnerChannel")
-        point_V = rcell._discretization_to_point(rcell.V.value)
+        point_V = rcell._cv_to_point(rcell.V.value)
         node = rcell.get_runtime_node(layout.id)
         k_main = rcell.get_ion("k_main")
         no = rcell.get_ion("no")

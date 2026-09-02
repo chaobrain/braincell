@@ -79,6 +79,7 @@ __all__ = [
     "Target",
     "build_clamp_routing_table",
     "choose_layout",
+    "layout_id_from_key",
     "mechanism_kind",
     "mechanism_signature",
 ]
@@ -383,6 +384,45 @@ def _fn_fingerprint(fn) -> tuple:
                 stacklevel=2,
             )
     return (code.co_code, code.co_consts, code.co_varnames, tuple(closure_cells))
+
+
+def layout_id_from_key(key) -> int:
+    """Recover a layout id from a runtime node key or path.
+
+    Runtime mechanism nodes are installed under a single path segment
+    spelled ``"layout_<id>"``, so a graph walk that yields a path can name
+    the layout it came from. This is the one place that convention is
+    parsed.
+
+    Parameters
+    ----------
+    key : sequence
+        Runtime node key or path. Only the last segment is read.
+
+    Returns
+    -------
+    int
+        The layout id the final segment names.
+
+    Raises
+    ------
+    ValueError
+        If ``key`` is empty or its last segment is not ``"layout_<id>"``.
+
+    Examples
+    --------
+    .. code-block:: python
+
+        >>> from braincell._compute.layouts import layout_id_from_key
+        >>> layout_id_from_key(("layout_7",))
+        7
+    """
+    if len(key) == 0:
+        raise ValueError(f"Expected a runtime key ending with 'layout_<id>', got {key!r}.")
+    last = key[-1]
+    if not isinstance(last, str) or not last.startswith("layout_"):
+        raise ValueError(f"Expected a runtime key ending with 'layout_<id>', got {key!r}.")
+    return int(last.split("_", 1)[1])
 
 
 def mechanism_signature(mechanism: object) -> tuple[object, ...]:

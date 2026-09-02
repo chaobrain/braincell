@@ -202,7 +202,7 @@ class CellRuntimeStateTest(unittest.TestCase):
         samples = rcell.sample_probes()
         ion = rcell.get_ion("k")
         node = ion.channels["K_Kv_test"]
-        point_V = rcell._discretization_to_point(rcell.V.value)
+        point_V = rcell._cv_to_point(rcell.V.value)
         expected_mechanism = node.current(point_V, ion.pack_info())[..., 1]
         expected_total = ion.current(point_V, include_external=False)[..., 1]
 
@@ -233,7 +233,7 @@ class CellRuntimeStateTest(unittest.TestCase):
             if isinstance(rcell.runtime.get_layout_mechanism(layout.id), braincell.mech.Channel)
         )
         node = rcell.get_runtime_node(channel_layout.id)
-        point_V = rcell._discretization_to_point(rcell.V.value)
+        point_V = rcell._cv_to_point(rcell.V.value)
         expected_current = node.current(point_V)[..., 1]
 
         self.assertEqual(samples["soma(0.5)_IL_current"], expected_current)

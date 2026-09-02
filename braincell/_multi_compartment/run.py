@@ -184,15 +184,7 @@ def _cached_run_loop(
     paying XLA compile time on repeated ``Cell.run`` calls with the same
     timestep, step count, and probe layout.
     """
-    cache = getattr(rcell, "_run_loop_cache", None)
-    if cache is None:
-        return _make_run_loop(
-            rcell,
-            dt=dt,
-            compiled_recordings=compiled_recordings,
-            ordered_probe_names=ordered_probe_names,
-        )
-
+    cache = rcell._run_loop_cache
     key = (
         _time_quantity_cache_value(dt),
         int(n_steps),

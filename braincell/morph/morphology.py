@@ -567,6 +567,48 @@ class Morphology:
         return load_morpho(path)
 
     @property
+    def revision(self) -> int:
+        """Counter advanced on every structural change to this tree.
+
+        ``Morphology`` is mutable, so any consumer that caches a result
+        derived from the tree -- CV geometry, a resolved region mask, a
+        discretization -- must be able to tell that the tree it derived
+        from has since changed. Object identity cannot say that. Pair the
+        two: same object *and* same revision means the derived result is
+        still valid.
+
+        The absolute value carries no meaning and is not stable across
+        processes; only comparison against a previously recorded value is.
+
+        Returns
+        -------
+        int
+            Monotonically increasing revision number.
+
+        See Also
+        --------
+        braincell.filter.SelectionCache : Caches region/locset evaluations
+            against this counter.
+
+        Examples
+        --------
+        .. code-block:: python
+
+            >>> import brainunit as u
+            >>> from braincell import Branch, Morphology
+            >>> soma = Branch.from_lengths(lengths=[20.0] * u.um,
+            ...                            radii=[10.0, 10.0] * u.um, type="soma")
+            >>> tree = Morphology.from_root(soma, name="soma")
+            >>> before = tree.revision
+            >>> tree.soma.dend = Branch.from_lengths(lengths=[100.0] * u.um,
+            ...                                      radii=[2.0, 1.0] * u.um,
+            ...                                      type="basal_dendrite")
+            >>> tree.revision > before
+            True
+        """
+        return self._revision
+
+    @property
     def root(self) -> "MorphoBranch":
         """The root branch of this morphology.
 

@@ -22,17 +22,19 @@ state or instantiated mechanism objects.
 """
 
 from dataclasses import dataclass, replace
+from typing import Callable, Sequence
 
 import brainunit as u
 import numpy as np
 
 from braincell.morph.branch import Branch, frustum_areas_um2, length_weighted_mean_radius_um
 from braincell.morph.morphology import Morphology
-from .base import EPS_LEN_UM, EPS_PARAM, locate_cv_on_branch
+from .base import EPS_AREA_UM2, EPS_LEN_UM, EPS_PARAM, locate_cv_on_branch
 
 __all__ = [
     "CVGeometryResult",
     "build_cv_geometry",
+    "interval_area_fraction",
     "validate_bounds",
     "validate_connectivity",
     "validate_morphology",
@@ -357,6 +359,82 @@ def _lateral_area_um2(frusta: tuple[_Frustum, ...]) -> float:
     morphology disagree about the same surface without any test noticing.
     """
     return float(np.sum(frustum_areas_um2(*_frustum_arrays(frusta))))
+
+
+def interval_area_fraction(
+    branch: Branch,
+    *,
+    prox: float,
+    dist: float,
+    lateral_area_um2: float,
+    intervals: Sequence[tuple[float, float]],
+    frusta_builder: Callable[..., tuple[_Frustum, ...]] | None = None,
+) -> float:
+    """Return how much of one CV's membrane area ``intervals`` covers.
+
+    This is the single definition of "coverage" in BrainCell. It is an
+    *area* fraction, not a length fraction: on a tapering branch the two
+    differ, and the area one is what physically matters, because a density
+    mechanism painted over part of a CV contributes in proportion to the
+    membrane it actually sits on. :meth:`braincell.mech.Density.with_coverage`
+    stores the result as ``coverage_area_fraction``.
+
+    Parameters
+    ----------
+    branch : braincell.morph.branch.Branch
+        Branch that owns the CV.
+    prox : float
+        Proximal CV boundary in normalized branch coordinates.
+    dist : float
+        Distal CV boundary in normalized branch coordinates.
+    lateral_area_um2 : float
+        The CV's total lateral membrane area, in um^2. A CV at or below
+        ``EPS_AREA_UM2`` carries no membrane and so covers nothing.
+    intervals : sequence of tuple of float
+        Normalized ``(prox, dist)`` spans on this branch, as produced by
+        :func:`braincell.filter.helper.normalize_region_intervals`. Spans
+        outside ``[prox, dist]`` are clipped; spans that survive clipping
+        with negligible width are dropped.
+    frusta_builder : callable, optional
+        Override for the frustum slicer, used to share one memoized builder
+        across the many CVs of one discretization pass. Called as
+        ``frusta_builder(branch, prox=..., dist=...)``.
+
+    Returns
+    -------
+    float
+        A fraction clamped to ``[0, 1]``.
+
+    See Also
+    --------
+    braincell.mech.Density.with_coverage : Consumer of this fraction.
+
+    Examples
+    --------
+    .. code-block:: python
+
+        >>> import brainunit as u
+        >>> from braincell import Branch
+        >>> from braincell._discretization.geometry import interval_area_fraction
+        >>> taper = Branch.from_lengths(lengths=[100.0] * u.um,
+        ...                             radii=[4.0, 1.0] * u.um, type="dend")
+        >>> area = float(taper.area.to_decimal(u.um ** 2))
+        >>> round(interval_area_fraction(taper, prox=0.0, dist=1.0,
+        ...                              lateral_area_um2=area,
+        ...                              intervals=((0.0, 0.5),)), 4)
+        0.65
+    """
+    if lateral_area_um2 <= EPS_AREA_UM2:
+        return 0.0
+    build = _build_frusta if frusta_builder is None else frusta_builder
+    overlap = 0.0
+    for left, right in intervals:
+        start = max(float(prox), float(left))
+        end = min(float(dist), float(right))
+        if end - start <= EPS_PARAM:
+            continue
+        overlap += _lateral_area_um2(build(branch, prox=start, dist=end))
+    return max(0.0, min(1.0, overlap / lateral_area_um2))
 
 
 def _axial_factor_per_cm(frusta: tuple[_Frustum, ...]) -> float:

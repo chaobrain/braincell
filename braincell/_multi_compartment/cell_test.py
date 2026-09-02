@@ -554,7 +554,7 @@ class TestCellLifecycle(unittest.TestCase):
         self.assertGreater(len(cell.node_tree.nodes), 0)
         self.assertGreater(len(cell.runtime_nodes), 0)
         self.assertGreater(len(cell.runtime_cvs), 0)
-        self.assertIsNone(cell._axial_jax)
+        self.assertIsNone(cell.runtime.axial_operator_cache)
         self.assertTrue(hasattr(cell, "V"))
         self.assertTrue(hasattr(cell, "spike"))
 
@@ -601,7 +601,6 @@ class TestCellLifecycle(unittest.TestCase):
         self.assertFalse(cell._initialized)
         self.assertIsNone(cell._runtime)
         self.assertGreater(len(cell.node_tree.nodes), 0)
-        self.assertIsNone(cell._axial_jax)
         self.assertFalse(hasattr(cell, "V"))
         self.assertFalse(hasattr(cell, "spike"))
 
@@ -703,14 +702,13 @@ class TestCellLifecycle(unittest.TestCase):
             cell.init_state()
             self.assertIsNone(cell.runtime.axial_operator_np)
             self.assertIsNone(cell.runtime.axial_operator_cache)
-            self.assertIsNone(cell._axial_jax)
 
             operator32 = cell._get_axial_operator()
             cache32 = cell.runtime.axial_operator_cache
             self.assertEqual(operator32.dtype, jnp.dtype(jnp.float32))
-            self.assertEqual(cell._axial_jax.dtype, jnp.dtype(jnp.float32))
-            self.assertEqual(cell.runtime.axial_operator_np.dtype, np.float64)
             self.assertIsNotNone(cache32)
+            self.assertEqual(cache32.operator.dtype, jnp.dtype(jnp.float32))
+            self.assertEqual(cell.runtime.axial_operator_np.dtype, np.float64)
 
         with brainstate.environ.context(precision=64):
             operator64 = cell._get_axial_operator()
@@ -726,7 +724,6 @@ class TestCellLifecycle(unittest.TestCase):
 
         self.assertIsNone(cell.runtime.axial_operator_np)
         self.assertIsNone(cell.runtime.axial_operator_cache)
-        self.assertIsNone(cell._axial_jax)
         self.assertIsNotNone(cell.runtime.dhs_static_source_np)
 
     def test_scalar_v_init_broadcasts_to_voltage_shape(self):
@@ -1044,6 +1041,48 @@ class CellIonChannelUpdateOrderTest(unittest.TestCase):
         for _, ions in channel_args:
             self.assertEqual(len(ions), 1)
             self.assertFalse(any(isinstance(arg, bool) for arg in ions))
+
+
+class DiscretizationTracksAMutatedMorphologyTest(unittest.TestCase):
+    """A ``Cell`` shares its ``Morphology``, so it must notice edits to it.
+
+    ``Cell.morpho`` is documented as returning the tree "without copying
+    it", and ``Morphology`` is mutable -- it maintains a revision counter
+    precisely so consumers can tell that it changed. The discretization
+    cache has to consult that counter; the object's identity alone cannot
+    distinguish a tree that has grown a branch from one that has not.
+    """
+
+    @staticmethod
+    def _dendrite() -> Branch:
+        return Branch.from_lengths(
+            lengths=[100.0] * u.um,
+            radii=[2.0, 1.0] * u.um,
+            type="basal_dendrite",
+        )
+
+    def test_attaching_a_branch_changes_the_cv_count(self) -> None:
+        tree = _soma_tree()
+        cell = Cell(tree, cv_policy=CVPerBranch(1))
+        self.assertEqual(cell.n_cv, 1)
+
+        tree.soma.dend = self._dendrite()
+
+        self.assertEqual(tree.n_branches, 2)
+        self.assertEqual(cell.n_cv, 2)
+
+    def test_a_rebuild_does_not_leave_a_stale_root_scope(self) -> None:
+        tree = _soma_tree()
+        cell = Cell(tree, cv_policy=CVPerBranch(1))
+        # Materialize every cache that hangs off the discretization.
+        self.assertEqual(len(cell.soma.cv.ids), 1)
+
+        tree.soma.dend = self._dendrite()
+
+        # ``cell.soma`` selects by branch type, so the dendrite is excluded;
+        # the unrestricted scope must still see both CVs.
+        self.assertEqual(len(cell.cvs), 2)
+        self.assertEqual(cell.cv.ids.tolist(), [0, 1])
 
 
 class CellDoesNotAllocatePlaceholderIonsEagerlyTest(unittest.TestCase):

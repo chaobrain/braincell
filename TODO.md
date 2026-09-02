@@ -160,7 +160,7 @@ if it returns, lives behind milestone M5 Phase 4).
 ┌──────────────────────────────────────────────────────────────────────┐
 │        braincell.ion · braincell.channel · braincell.synapse         │
 │   concrete Ion species (Na, K, Ca) · IonChannel implementations      │
-│   (Na, K, Ca, Ih, K_Ca, leaky) · Markov synapse models               │
+│   (Na, K, Ca, Ih, K_Ca, leaky) · exponential synapse models          │
 └──────────────────────────────────────────────────────────────────────┘
    (supply concrete mechanism objects consumed by mech.Density /
     mech.Point declarations and installed inside braincell.Cell)
@@ -1216,8 +1216,8 @@ internal and may change without deprecation.
   potassium_calcium). Base classes (`SodiumChannel`,
   `PotassiumChannel`, `CalciumChannel`, `LeakageChannel`,
   `KCaChannel`) are public for subclassing.
-- **Synapses** (`braincell.synapse`): `AMPA`, `GABAa`, `NMDA` from
-  `synapse.markov`.
+- **Synapses** (`braincell.synapse`): `ExpSyn`, `Exp2Syn` from
+  `synapse.exponential`.
 - **Cell layer**: `Cell`, `RunnableCell`, `RunResult`, `CV`, `CVPolicy`,
   `CVPerBranch`, `MaxCVLen`, `DLambda`, `CVPolicyByTypeRule`,
   `CompositeByTypePolicy`, `NodeTree`, `NodeScheduling`.

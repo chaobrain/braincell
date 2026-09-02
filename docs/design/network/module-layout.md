@@ -39,9 +39,9 @@ runtime event buffer）和 `network.connection`（校验 `connect()` 的 payload
 `connection.py` → `_multi_compartment.synapses` → 回到 `_base_channel`，
 形成硬 `ImportError`。
 
-`_synapse_schema`（`ParameterSpec` / `StateSpec` / `DerivedSpec` / `positive`）
-同理：它被 `_base_channel` 和 `synapse.markov` 共同使用，放进
-`braincell/synapse/` 会经 `synapse/__init__.py` → `markov.py` →
+`_synapse_schema`（`ParameterSpec` / `StateSpec` / `positive`）
+同理：它被 `_base_channel` 和 `synapse.exponential` 共同使用，放进
+`braincell/synapse/` 会经 `synapse/__init__.py` → `exponential.py` →
 `braincell._base` 成环。
 
 两者都是纯声明、无 runtime state，放在 `mech` 使 `mech` 成为一个真正的 leaf，

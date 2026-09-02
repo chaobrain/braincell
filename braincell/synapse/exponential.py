@@ -13,14 +13,19 @@
 # limitations under the License.
 # ==============================================================================
 
-# -*- coding: utf-8 -*-
+"""Exponential-decay conductance synapses.
+
+Both models here are event-driven conductance jumps that relax
+exponentially: the NEURON ``expsyn.mod`` single exponential and the
+``exp2syn.mod`` difference of two exponentials.
+"""
 
 import brainunit as u
+import numpy as np
 
 from braincell._base_channel import Synapse
 from braincell._base_neuron import HHTypedNeuron
 from braincell.mech import (
-    DerivedSpec,
     ParameterSpec,
     ScalarEventInput,
     StateSpec,
@@ -31,9 +36,6 @@ from braincell.mech import (
 __all__ = [
     'ExpSyn',
     'Exp2Syn',
-    'AMPA',
-    'GABAa',
-    'NMDA',
 ]
 
 
@@ -55,7 +57,6 @@ class ExpSyn(Synapse):
         "e": ParameterSpec(0.0 * u.mV),
     }
     states = {"g": StateSpec(0.0 * u.uS)}
-    derived = {}
     event_input = ScalarEventInput(u.uS, aggregation="sum")
 
     def apply_events(self, payload, V_post=None):
@@ -94,16 +95,33 @@ class Exp2Syn(Synapse):
         "A": StateSpec(0.0 * u.uS),
         "B": StateSpec(0.0 * u.uS),
     }
-    derived = {"g": DerivedSpec()}
     event_input = ScalarEventInput(u.uS, aggregation="sum")
 
     @classmethod
     def validate_parameter_values(cls, parameters) -> None:
-        if u.math.any(parameters["tau1"] >= parameters["tau2"]):
+        """Require ``tau1 < tau2`` elementwise.
+
+        Notes
+        -----
+        The comparison runs in **numpy**, not ``u.math``/``jnp``. Under an
+        open JAX trace every jax operation returns a tracer even when all its
+        inputs are concrete, so ``bool()`` on a ``u.math.any`` reduction would
+        raise ``TracerBoolConversionError`` and make this class impossible to
+        construct inside a jitted setup function. numpy stages nothing, and
+        it is what the sibling :func:`~braincell.mech.positive` validator
+        already uses.
+
+        Both mantissas are taken in ``ms`` rather than compared as
+        quantities, so that a caller mixing ``us`` and ``ms`` is ordered on
+        physical duration rather than on raw magnitude.
+        """
+        tau1 = np.asarray(u.Quantity(parameters["tau1"]).to_decimal(u.ms))
+        tau2 = np.asarray(u.Quantity(parameters["tau2"]).to_decimal(u.ms))
+        if np.any(tau1 >= tau2):
             raise ValueError("Exp2Syn requires tau1 < tau2.")
 
     def _compute_factor(self):
-        tp = (self.tau1 * self.tau2) / (self.tau2 - self.tau1) * u.math.log(u.math.asarray(self.tau2 / self.tau1))
+        tp = (self.tau1 * self.tau2) / (self.tau2 - self.tau1) * u.math.log(self.tau2 / self.tau1)
         factor = -u.math.exp(-(tp / self.tau1)) + u.math.exp(-(tp / self.tau2))
         return 1.0 / factor
 
@@ -125,30 +143,3 @@ class Exp2Syn(Synapse):
 
     def current(self, V_post):
         return self.g * (self.e - V_post)
-
-
-class AMPA(Synapse):
-    """Unavailable legacy receptor model pending an event-model redesign."""
-
-    def __init__(self, *args, **kwargs):
-        raise NotImplementedError(_UNAVAILABLE_RECEPTOR_MESSAGE.format(model="AMPA"))
-
-
-class GABAa(Synapse):
-    """Unavailable legacy receptor model pending an event-model redesign."""
-
-    def __init__(self, *args, **kwargs):
-        raise NotImplementedError(_UNAVAILABLE_RECEPTOR_MESSAGE.format(model="GABAa"))
-
-
-class NMDA(Synapse):
-    """Unavailable legacy receptor model pending an event-model redesign."""
-
-    def __init__(self, *args, **kwargs):
-        raise NotImplementedError(_UNAVAILABLE_RECEPTOR_MESSAGE.format(model="NMDA"))
-
-
-_UNAVAILABLE_RECEPTOR_MESSAGE = (
-    "{model} is temporarily unavailable while its transmitter-pulse and point-current "
-    "contract is redesigned. Use ExpSyn or Exp2Syn for the current event runtime."
-)

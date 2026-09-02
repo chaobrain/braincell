@@ -23,7 +23,7 @@ from typing import Callable
 import brainunit as u
 import numpy as np
 
-__all__ = ["DerivedSpec", "ParameterSpec", "StateSpec", "positive"]
+__all__ = ["ParameterSpec", "StateSpec", "positive"]
 
 Validator = Callable[[object, str], None]
 
@@ -49,11 +49,6 @@ class StateSpec:
 
     def validate(self, value: object, name: str) -> None:
         _validate_like_default(value, self.initial, name=name)
-
-
-@dataclass(frozen=True)
-class DerivedSpec:
-    """Mark one public, read-only value computed by a runtime model."""
 
 
 def positive(value: object, name: str) -> None:

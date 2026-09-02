@@ -353,11 +353,6 @@ class Synapse(Point):
         **params: Any,
     ) -> None:
         require_str(synapse_type, "Synapse", "synapse_type")
-        if synapse_type in {"AMPA", "GABAa", "NMDA"}:
-            raise NotImplementedError(
-                f"{synapse_type} is temporarily unavailable while its transmitter-pulse and "
-                "point-current contract is redesigned. Use ExpSyn or Exp2Syn for now."
-            )
         if "params" in params:
             raise TypeError("Synapse parameters must be passed as keyword arguments, not as params={...}.")
         require_str(name, "Synapse", "name", optional=True)

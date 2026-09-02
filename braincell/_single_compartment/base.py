@@ -13,7 +13,7 @@
 # limitations under the License.
 # ==============================================================================
 
-from typing import Optional, Callable, Tuple, Union
+from typing import Callable, Dict, List, Optional, Tuple, Union
 
 import brainstate
 import braintools
@@ -48,7 +48,7 @@ class SingleCompartment(HHTypedNeuron):
 
     .. math::
 
-        {braincell \over dt} = \phi_x {x_\infty (V) - x \over \tau_x(V)}
+        {d x \over dt} = \phi_x {x_\infty (V) - x \over \tau_x(V)}
 
     where :math:`x \in [M, N]`, :math:`\phi_x` is a temperature-dependent factor,
     :math:`x_\infty` is the steady state, and :math:`\tau_x` is the time constant.
@@ -147,6 +147,44 @@ class SingleCompartment(HHTypedNeuron):
         """
         return 1
 
+    def _ion_channels(self) -> Dict[str, IonChannel]:
+        """Return the directly attached ion channels, keyed by attribute name.
+
+        The one spelling of this graph walk. It is a walk rather than a
+        stored list because ``HHTypedNeuron.__init__`` only records the
+        channels passed to it as keyword arguments, while a channel may also
+        be assigned as an attribute afterwards.
+
+        Returns
+        -------
+        dict of str to IonChannel
+            Channels one level below this neuron, in attribute order.
+        """
+        return self.nodes(IonChannel, allowed_hierarchy=(1, 1))
+
+    @staticmethod
+    def _neuron_driven(channels: Dict[str, IonChannel]) -> List[IonChannel]:
+        """Select the channels whose integration this neuron drives.
+
+        A channel carrying the :class:`~braincell.IndependentIntegration`
+        marker advances its own state in ``ind_update``, so the neuron's
+        ``pre_integral`` / ``compute_derivative`` / ``post_integral`` hooks
+        must skip it — stepping it there as well would integrate it twice
+        per step. :meth:`update` deliberately does the opposite and calls
+        ``ind_update`` on every channel, including these.
+
+        Parameters
+        ----------
+        channels : dict of str to IonChannel
+            The result of :meth:`_ion_channels`.
+
+        Returns
+        -------
+        list of IonChannel
+            The subset this neuron is responsible for stepping.
+        """
+        return [ch for ch in channels.values() if not isinstance(ch, IndependentIntegration)]
+
     @property
     def area(self):
         """Membrane area used to convert injected current into current density."""
@@ -206,9 +244,8 @@ class SingleCompartment(HHTypedNeuron):
         I_ext : float, optional
             External current input. Default is 0 nA/cm^2.
         """
-        for key, node in self.nodes(IonChannel, allowed_hierarchy=(1, 1)).items():
-            if not isinstance(node, IndependentIntegration):
-                node.pre_integral(self.V.value)
+        for ch in self._neuron_driven(self._ion_channels()):
+            ch.pre_integral(self.V.value)
 
     def compute_derivative(self, I_ext=0.0 * u.nA / u.cm**2):
         """
@@ -222,16 +259,16 @@ class SingleCompartment(HHTypedNeuron):
         I_ext : float, optional
             External current input. Supports either current density or total current.
         """
+        channels = self._ion_channels()
         I_ext = self.sum_current_inputs(I_ext, self.V.value)
-        for key, ch in self.nodes(IonChannel, allowed_hierarchy=(1, 1)).items():
+        for key, ch in channels.items():
             try:
                 I_ext = I_ext + ch.current(self.V.value)
             except (TypeError, ValueError, RuntimeError, ArithmeticError) as e:
                 raise ValueError(f"Error in computing current for ion channel '{key}': \n{ch}\nError: {e}") from e
         self.V.derivative = I_ext / self.C
-        for key, node in self.nodes(IonChannel, allowed_hierarchy=(1, 1)).items():
-            if not isinstance(node, IndependentIntegration):
-                node.compute_derivative(self.V.value)
+        for ch in self._neuron_driven(channels):
+            ch.compute_derivative(self.V.value)
 
     def post_integral(self, I_ext=0.0 * u.nA / u.cm**2):
         """
@@ -246,9 +283,8 @@ class SingleCompartment(HHTypedNeuron):
             External current input. Default is 0 nA/cm^2.
         """
         self.V.value = self.sum_delta_inputs(init=self.V.value)
-        for key, node in self.nodes(IonChannel, allowed_hierarchy=(1, 1)).items():
-            if not isinstance(node, IndependentIntegration):
-                node.post_integral(self.V.value)
+        for ch in self._neuron_driven(self._ion_channels()):
+            ch.post_integral(self.V.value)
 
     def update(self, I_ext=0.0 * u.nA / u.cm**2):
         """
@@ -267,9 +303,10 @@ class SingleCompartment(HHTypedNeuron):
         spike : array-like
             An array indicating whether a spike occurred (1) or not (0) for each neuron.
         """
-        # update nodes
-        for key, node in self.nodes(IonChannel, allowed_hierarchy=(1, 1)).items():
-            node.ind_update(self.V.value)
+        # Every channel, including the self-integrating ones that the three
+        # hook methods above skip.
+        for ch in self._ion_channels().values():
+            ch.ind_update(self.V.value)
 
         # numerical integration
         last_V = self.V.value

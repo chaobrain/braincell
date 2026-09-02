@@ -46,7 +46,7 @@ from braincell.channel import (
     Na_HH1952,
 )
 from braincell.ion import PotassiumFixed, SodiumFixed
-from braincell import DiffEqSingleState, DiffEqState
+from braincell import DiffEqSingleState, DiffEqState, IndependentIntegration
 from braincell.quad import rk2_step, rk4_step
 
 
@@ -625,6 +625,94 @@ class SingleCompartmentUpdateTest(unittest.TestCase):
             sc.update(0.0 * u.nA / u.cm**2)
         v = sc.V.value.to_decimal(u.mV)
         self.assertTrue(bool(jnp.all(jnp.isfinite(v))))
+
+
+# ---------------------------------------------------------------------------
+# IndependentIntegration dispatch
+# ---------------------------------------------------------------------------
+
+
+class _SelfIntegratingChannel(Channel, IndependentIntegration):
+    """A channel that advances itself, recording which hooks reach it.
+
+    ``IndependentIntegration`` is a marker: a channel carrying it steps its
+    own state in ``ind_update`` and must therefore be skipped by the
+    neuron's ``pre_integral`` / ``compute_derivative`` / ``post_integral``
+    hooks, or it would be integrated twice per step.
+    """
+
+    root_type = HHTypedNeuron
+
+    def __init__(self, size, name=None):
+        super().__init__(size=size, name=name)
+        self.calls = []
+
+    def current(self, V):
+        return 0.0 * u.nA / u.cm**2
+
+    def init_state(self, V, batch_size=None):
+        pass
+
+    def reset_state(self, V, batch_size=None):
+        pass
+
+    def pre_integral(self, V):
+        self.calls.append("pre_integral")
+
+    def compute_derivative(self, V):
+        self.calls.append("compute_derivative")
+
+    def post_integral(self, V):
+        self.calls.append("post_integral")
+
+    def ind_update(self, V, *args):
+        self.calls.append("ind_update")
+
+
+class SingleCompartmentIndependentIntegrationTest(unittest.TestCase):
+    """The neuron must not step a channel that steps itself.
+
+    Pins both halves of the split: the three hook methods filter
+    ``IndependentIntegration`` channels out, and ``update`` drives every
+    channel's ``ind_update`` including those. Without this, the shared
+    predicate behind the filter is an untested invariant.
+    """
+
+    def _neuron(self):
+        brainstate.environ.set(dt=0.01 * u.ms)
+        channel = _SelfIntegratingChannel(size=(1,))
+        sc = SingleCompartment(size=(1,), self_int=channel)
+        sc.init_state()
+        channel.calls.clear()
+        return sc, channel
+
+    def test_hooks_skip_a_self_integrating_channel(self) -> None:
+        sc, channel = self._neuron()
+        sc.pre_integral(0.0 * u.nA / u.cm**2)
+        sc.compute_derivative(0.0 * u.nA / u.cm**2)
+        sc.post_integral(0.0 * u.nA / u.cm**2)
+        self.assertEqual(channel.calls, [])
+
+    def test_hooks_do_reach_an_ordinary_channel(self) -> None:
+        """The control: the same three hooks reach a channel without the mixin."""
+        brainstate.environ.set(dt=0.01 * u.ms)
+        leak = IL(size=(1,))
+        sc = SingleCompartment(size=(1,), leak=leak)
+        sc.init_state()
+        seen = []
+        leak.pre_integral = lambda V: seen.append("pre_integral")
+        leak.post_integral = lambda V: seen.append("post_integral")
+        sc.pre_integral(0.0 * u.nA / u.cm**2)
+        sc.post_integral(0.0 * u.nA / u.cm**2)
+        self.assertEqual(seen, ["pre_integral", "post_integral"])
+
+    def test_update_still_drives_ind_update(self) -> None:
+        sc, channel = self._neuron()
+        with brainstate.environ.context(t=0.0 * u.ms):
+            sc.update(0.0 * u.nA / u.cm**2)
+        self.assertIn("ind_update", channel.calls)
+        self.assertNotIn("pre_integral", channel.calls)
+        self.assertNotIn("post_integral", channel.calls)
 
 
 # ---------------------------------------------------------------------------

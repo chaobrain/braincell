@@ -229,6 +229,31 @@ class ConnectionTest(unittest.TestCase):
         later = connect("later", source=NetStim(), synapse=cell.synapses[exp][0])
         np.testing.assert_array_equal(later.id, [3])
 
+    def test_multi_call_view_groups_calls_and_round_trips_weights(self) -> None:
+        # ``weight_for``/``set_weight`` index each call's weight vector by row
+        # offset and ``_call_views`` groups in one pass, so a view spanning
+        # several calls in shuffled order is the case that pins all three.
+        cell, exp = _population(6)
+        first = connect("a", source=NetStim(size=2), synapse=cell.synapses[exp][0:2], weight=[0.1, 0.2] * u.uS)
+        second = connect("b", source=NetStim(size=2), synapse=cell.synapses[exp][2:4], weight=[0.3, 0.4] * u.uS)
+        third = connect("c", source=NetStim(size=2), synapse=cell.synapses[exp][4:6], weight=[0.5, 0.6] * u.uS)
+        np.testing.assert_array_equal(first.id, [0, 1])
+        np.testing.assert_array_equal(second.id, [2, 3])
+        np.testing.assert_array_equal(third.id, [4, 5])
+
+        shuffled = cell.connections[[5, 0, 3, 2, 4, 1]]
+        np.testing.assert_allclose(shuffled.weight.to_decimal(u.uS), [0.6, 0.1, 0.4, 0.3, 0.5, 0.2])
+
+        views = shuffled._call_views()
+        # One view per call, in the order the calls first appear in ``shuffled``.
+        self.assertEqual([np.asarray(view.id).tolist() for view in views], [[5, 4], [0, 1], [3, 2]])
+
+        shuffled.set(weight=[-0.6, -0.1, -0.4, -0.3, -0.5, -0.2] * u.uS)
+        np.testing.assert_allclose(
+            cell.connections.weight.to_decimal(u.uS),
+            [-0.1, -0.2, -0.3, -0.4, -0.5, -0.6],
+        )
+
     def test_event_sequence_drives_connection_runtime(self) -> None:
         cell, exp = _population(2)
         sequence = EventSequence(

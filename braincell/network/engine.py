@@ -17,6 +17,7 @@
 
 from __future__ import annotations
 
+import contextlib
 from dataclasses import dataclass
 
 import brainstate
@@ -24,14 +25,14 @@ import brainunit as u
 import jax
 import numpy as np
 
-from braincell._misc import validate_time_quantity
+from braincell._misc import freeze_array, validate_time_quantity
 from braincell._multi_compartment import probes as _probes
 from braincell._multi_compartment.run import _duration_steps, _recording_time_mask
 from braincell._multi_compartment.synapses import SynapseView
 from .connection import NetworkConnections, PairingSpec, _UNSET, _connect_with_pairing_seed
 from .recording import EventSeries, SampleBlock
 
-from .core import NetworkRunResult, Population
+from .core import NetworkResult, Population
 from .delivery import (
     DeliveryBlock,
     advance_delivery_state,
@@ -53,7 +54,6 @@ class _RunSetup:
     """Reusable topology/backend data for one ``Network.run`` configuration."""
 
     delivery_blocks: tuple[DeliveryBlock, ...]
-    delivery_backend: str
     delivery_ops: tuple
     ordered_population_names: tuple[str, ...]
     probe_names: dict[str, tuple[str, ...]]
@@ -96,6 +96,22 @@ class Network:
     def _raise_if_initialized(self, action: str) -> None:
         if self._initialized:
             raise RuntimeError(f"Cannot {action} after Network initialization.")
+
+    @contextlib.contextmanager
+    def _cell_lifecycle(self):
+        """Mark the network as driving its cells' init/reset transitions.
+
+        ``Cell`` consults ``_cell_lifecycle_active`` to tell a network-driven
+        transition from a user calling ``cell.init_state()`` directly
+        (``_multi_compartment/cell.py:862``, ``:888``). Both
+        :meth:`init_state` and :meth:`reset_state` need the flag cleared even
+        when a cell raises, so the ``try``/``finally`` lives here once.
+        """
+        self._cell_lifecycle_active = True
+        try:
+            yield
+        finally:
+            self._cell_lifecycle_active = False
 
     def _mark_topology_changed(self) -> None:
         self._topology_version += 1
@@ -295,20 +311,14 @@ class Network:
         cells are left unchanged because ``Cell.init_state`` itself is a
         one-shot declaration-to-runtime transition.
         """
-        if batch_size is not None:
-            raise NotImplementedError(
-                "Network batch execution is not implemented yet; use Cell batch execution for same-topology batches."
-            )
-        self._validate_direct_source_ownership()
+        _reject_batch_size(batch_size)
         if self._initialized:
             return self
-        self._cell_lifecycle_active = True
-        try:
+        self._validate_direct_source_ownership()
+        with self._cell_lifecycle():
             for population in self._cell_populations().values():
                 if not getattr(population.cell, "_initialized", False):
-                    population.cell.init_state(batch_size=batch_size)
-        finally:
-            self._cell_lifecycle_active = False
+                    population.cell.init_state()
         self._initialized = True
         return self
 
@@ -332,10 +342,7 @@ class Network:
         ``Cell.reset()``, which would tear down runtime objects and return the
         cell to the declaration phase.
         """
-        if batch_size is not None:
-            raise NotImplementedError(
-                "Network batch execution is not implemented yet; use Cell batch execution for same-topology batches."
-            )
+        _reject_batch_size(batch_size)
         uninitialized = [
             name
             for name, population in self._cell_populations().items()
@@ -346,12 +353,9 @@ class Network:
                 "Network.reset_state() requires initialized population Cells; "
                 f"call Network.init_state() or Network.run() first (uninitialized={uninitialized!r})."
             )
-        self._cell_lifecycle_active = True
-        try:
+        with self._cell_lifecycle():
             for population in self._cell_populations().values():
-                population.cell.reset_state(batch_size=batch_size)
-        finally:
-            self._cell_lifecycle_active = False
+                population.cell.reset_state()
         for state in self._delivery_state_cache.values():
             _reset_delivery_state(state)
         self._source_current_time = 0.0 * u.ms
@@ -365,7 +369,7 @@ class Network:
         delay_quantization: str = "nearest",
         event_backend: str = "auto",
         brainevent_backend: str | None = "jax_raw",
-    ) -> NetworkRunResult:
+    ) -> NetworkResult:
         """Run the network for ``duration`` at fixed step ``dt``."""
         validate_time_quantity(dt, name="dt", prefix="Network.run(...)")
         validate_time_quantity(duration, name="duration", prefix="Network.run(...)")
@@ -399,7 +403,6 @@ class Network:
         start_t = self._common_start_time(ordered_population_names)
         n_steps = _duration_steps(duration, dt)
         relative_times = u.math.arange(n_steps) * dt
-        times = start_t + relative_times
         probe_names = setup.probe_names
         n_trace = setup.n_trace
         n_recording = setup.n_recording
@@ -454,7 +457,7 @@ class Network:
             event_values=event_values,
         )
         self._source_current_time = stop_t
-        return NetworkRunResult(
+        return NetworkResult(
             time=times,
             traces=traces,
             samples=samples,
@@ -488,19 +491,27 @@ class Network:
             delay_quantization=delay_quantization,
         )
         delivery_backend = resolve_event_backend(event_backend)
-        delivery_blocks = build_delivery_blocks(
-            blocks,
-            group_by_delay=delivery_backend == "brainevent",
-        )
-        delivery_ops = tuple(
-            make_delivery_op(
-                block,
-                pre_size=self.populations[block.source.pre_population].size,
-                post_size=self.populations[block.source.post_population].size,
-                backend=delivery_backend,
-                brainevent_backend=brainevent_backend,
+        grouped_by_delay = delivery_backend == "brainevent"
+        delivery_blocks = build_delivery_blocks(blocks, group_by_delay=grouped_by_delay)
+        # A delivery op is only ever indexed for a block with a scalar delay,
+        # which is exactly what grouping by delay produces. Without grouping
+        # every block carries a per-contact delay vector and the vector path
+        # in enqueue_future_events/apply_immediate_events runs instead -- so
+        # building the ops there would materialize two device index arrays per
+        # block, and close over the block, for something never called. The two
+        # cannot disagree: both read grouped_by_delay.
+        delivery_ops = (
+            tuple(
+                make_delivery_op(
+                    block,
+                    pre_size=self.populations[block.source.pre_population].size,
+                    backend=delivery_backend,
+                    brainevent_backend=brainevent_backend,
+                )
+                for block in delivery_blocks
             )
-            for block in delivery_blocks
+            if grouped_by_delay
+            else (None,) * len(delivery_blocks)
         )
         ordered_population_names = tuple(self._cell_populations())
         # Read the probe keys without evaluating the probes: sample_probes()
@@ -518,7 +529,6 @@ class Network:
         }
         setup = _RunSetup(
             delivery_blocks=delivery_blocks,
-            delivery_backend=delivery_backend,
             delivery_ops=delivery_ops,
             ordered_population_names=ordered_population_names,
             probe_names=probe_names,
@@ -572,7 +582,6 @@ class Network:
             if delivery_state is None:
                 delivery_state = create_delivery_state(
                     setup.delivery_blocks,
-                    populations=self.populations,
                     delivery_ops=setup.delivery_ops,
                 )
                 self._delivery_state_cache[setup_key] = delivery_state
@@ -614,11 +623,7 @@ class Network:
                                 for compiled in compiled_recordings[name]
                             )
                         with jax.named_scope("braincell:network_run:write_arrivals"):
-                            write_arrivals(
-                                delivery_blocks,
-                                delivery_state,
-                                populations=self.populations,
-                            )
+                            write_arrivals(delivery_state, populations=self.populations)
                         with jax.named_scope("braincell:network_run:prepare_inputs"):
                             for name in ordered_population_names:
                                 self.populations[name].cell._prepare_next_synapse_inputs()
@@ -646,11 +651,7 @@ class Network:
                                 for _, view in event_sources[name]
                             )
                         with jax.named_scope("braincell:network_run:enqueue_events"):
-                            enqueue_future_events(
-                                delivery_blocks,
-                                delivery_state,
-                                populations=self.populations,
-                            )
+                            enqueue_future_events(delivery_blocks, delivery_state)
                         with jax.named_scope("braincell:network_run:advance_delivery"):
                             advance_delivery_state(delivery_state)
                         with jax.named_scope("braincell:network_run:pack_traces"):
@@ -804,7 +805,7 @@ class Network:
                 )
         return events
 
-    def _run_scheduled_sources_only(self, *, dt, duration) -> NetworkRunResult:
+    def _run_scheduled_sources_only(self, *, dt, duration) -> NetworkResult:
         dt_ms = float(np.asarray(dt.to_decimal(u.ms), dtype=float).reshape(()))
         if self._scheduled_dt_ms is None:
             self._scheduled_dt_ms = dt_ms
@@ -822,7 +823,7 @@ class Network:
             event_values=(),
         )
         self._source_current_time = stop_t
-        return NetworkRunResult(
+        return NetworkResult(
             time=times,
             traces={},
             samples={},
@@ -830,6 +831,14 @@ class Network:
             start_time=start_t,
             stop_time=stop_t,
             dt=dt,
+        )
+
+
+def _reject_batch_size(batch_size) -> None:
+    """Reject the batch argument both lifecycle entry points still accept."""
+    if batch_size is not None:
+        raise NotImplementedError(
+            "Network batch execution is not implemented yet; use Cell batch execution for same-topology batches."
         )
 
 
@@ -847,9 +856,7 @@ def _event_source_metadata(population: str, port: str, view) -> dict:
             array = np.broadcast_to(array, (owner.size,))
         if array.shape[0] != owner.size:
             continue
-        selected = np.array(array[source_ids], copy=True)
-        selected.flags.writeable = False
-        metadata[name] = selected
+        metadata[name] = freeze_array(array[source_ids])
     return metadata
 
 

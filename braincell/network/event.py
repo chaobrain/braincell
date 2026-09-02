@@ -132,11 +132,6 @@ class EventSourceView:
         """Return selected stable source-local IDs."""
         return np.array(self._source_ids, copy=True)
 
-    @property
-    def ids(self) -> np.ndarray:
-        """Alias for :attr:`source_id`."""
-        return self.source_id
-
     def __len__(self) -> int:
         return int(self._source_ids.size)
 

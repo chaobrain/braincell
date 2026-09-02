@@ -22,9 +22,7 @@ from dataclasses import dataclass
 import brainunit as u
 import numpy as np
 
-from braincell._discretization.base import locate_cv_on_branch
 from braincell._misc import validate_time_quantity
-from braincell.filter import LocsetExpr
 
 from .core import Population
 from .event import round_half_up_steps_host as _round_half_up_steps
@@ -44,10 +42,7 @@ class ConnectionBlock:
     synapse_index: np.ndarray
     weight: object
     delay_steps: np.ndarray
-    buffer_size: int
-    source_cv_id: int
-    packed: bool = False
-    event_source: object | None = None
+    event_source: object
 
 
 def lower_direct_connections(
@@ -98,34 +93,10 @@ def lower_direct_connections(
                     synapse_index=synapse_index,
                     weight=connection.weight,
                     delay_steps=delay_steps,
-                    buffer_size=int(np.max(delay_steps, initial=1)) + 1,
-                    # Live EventSource routes read their own endpoint mapping;
-                    # this legacy scalar is only used by raw Cell spike blocks.
-                    source_cv_id=0,
-                    packed=True,
                     event_source=source,
                 )
             )
     return tuple(blocks)
-
-
-def resolve_source_cv(cell, source: LocsetExpr) -> int:
-    """Resolve a single continuous presynaptic location to its owning CV."""
-    if not isinstance(source, LocsetExpr):
-        raise TypeError(
-            f"Connection source must be a LocsetExpr resolving to one location, got {type(source).__name__!s}."
-        )
-    mask = source.evaluate(cell.morpho)
-    if len(mask) != 1:
-        raise ValueError(f"Connection source must resolve to exactly one presynaptic location; got {len(mask)!r}.")
-    branch_id = int(mask.branch_id[0])
-    branch_x = float(mask.branch_x[0])
-    ids = cell.cv_tree.branch_to_cv_ids[int(branch_id)]
-    return locate_cv_on_branch(
-        ids,
-        cell.cvs,
-        x=float(branch_x),
-    )
 
 
 def _expand_delay_steps(delay, *, dt, n_contact: int, quantization: str = "nearest") -> np.ndarray:

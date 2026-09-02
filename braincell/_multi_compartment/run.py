@@ -35,7 +35,7 @@ from braincell._misc import (
     validate_time_quantity,
 )
 from braincell._multi_compartment import probes
-from braincell.network.recording import SampleBlock
+from braincell.network.recording import SampleBlock, concat_sample_blocks
 
 if TYPE_CHECKING:
     from .cell import Cell
@@ -96,7 +96,7 @@ class RunResult:
             for name in previous.samples:
                 if previous.samples[name].schema != current.samples[name].schema:
                     raise ValueError(f"Recording schema changed for {name!r}.")
-        samples = {name: _concat_sample_blocks(tuple(part.samples[name] for part in parts)) for name in first.samples}
+        samples = {name: concat_sample_blocks(tuple(part.samples[name] for part in parts)) for name in first.samples}
         common_traces = set(first.traces)
         for part in parts[1:]:
             common_traces.intersection_update(part.traces)
@@ -278,15 +278,3 @@ def _recording_time_mask(times, schema) -> np.ndarray:
     period_ms = float(np.asarray(schema.period.to_decimal(u.ms)).reshape(()))
     relative = (time_ms - start_ms) / period_ms
     return (time_ms >= start_ms - 1e-9) & np.isclose(relative, np.rint(relative), rtol=1e-6, atol=1e-6)
-
-
-def _concat_sample_blocks(blocks):
-    first = blocks[0]
-    first_time = next((block.first_time for block in blocks if block.first_time is not None), None)
-    return SampleBlock(
-        values=_concat_values(tuple(block.values for block in blocks)),
-        schema=first.schema,
-        segment_start=first.segment_start,
-        segment_stop=blocks[-1].segment_stop,
-        first_time=first_time,
-    )

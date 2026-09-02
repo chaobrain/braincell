@@ -47,31 +47,41 @@ runtime event buffer）和 `network.connection`（校验 `connect()` 的 payload
 两者都是纯声明、无 runtime state，放在 `mech` 使 `mech` 成为一个真正的 leaf，
 栈上任何一层都可以安全依赖它。
 
-## `network/__init__.py` 必须保持轻
+## `network/__init__.py` 与部分初始化的父包
 
 `_multi_compartment.cell`、`_multi_compartment.run` 和 `_compute.layouts` 在
 **模块顶层** import `braincell.network.event` / `braincell.network.recording`。
-Python 在导入任何子模块前先执行包的 `__init__`，因此：
+Python 在导入任何子模块前先执行包的 `__init__`，所以 `network/__init__.py`
+是在 `braincell._multi_compartment` 尚未执行完时被拉起来的。
 
-> `network/__init__.py` 一旦在模块作用域 import `.connection`、`.engine` 或
-> `.lowering`，就会在 `braincell._multi_compartment` 初始化过程中重新进入它，
-> `import braincell` 直接失败。
+真正的不变式不是「`__init__` 必须保持轻」，而是：
 
-所以 `__init__.py` 只 eager import leaf 的 `.core`，三个重名字
-（`Network`、`NetworkConnections`、`ConnectionBlock`）通过 PEP 562
-`__getattr__` 延迟解析。对外行为完全不变：`braincell.network.Network` 照常可用，
-`__all__` 未变，只是解析时机推后到首次属性访问。
+> 从 `network` 包 eager 可达的任何模块，都不能从**部分初始化**的
+> `braincell._multi_compartment` 包根 import 一个*名字*。
 
-`braincell/network/__init___test.py` 守住这条不变式：一个 AST 检查禁止
-`__init__.py` 在模块作用域 import 那三个模块，另一个 AST 检查禁止
-`braincell/mech/` 下任何模块 import 其它 `braincell` 包。`import braincell`
-本身是经验性守卫——上述任一环回归都会让它直接崩溃。
+`connection.py`、`pairing.py`、`engine.py` 确实会回指 `_multi_compartment`，
+但它们 import 的是*子模块*（`.synapses`、`.probes`、`.run`、`.cell`）——
+Python 对部分初始化的父包一样解析得了子模块。真正会炸的写法是
+`from braincell._multi_compartment import Cell`。
+
+因此 `__init__.py` 是全 eager 的：`Network`、`NetworkConnections`、
+`NetworkResult`、`Population` 都在模块作用域直接绑定，没有 PEP 562
+`__getattr__`，也没有 `TYPE_CHECKING` 分支。此前那套延迟解析装置守的是一个
+已经不存在的环：把 `__init__.py` 改成全 eager 后 `import braincell` 正常，
+整个测试套件也全绿。
+
+`braincell/network/__init___test.py` 守住这条不变式：`PartialParentTest`
+用 AST 检查禁止 eager 可达的模块从 `braincell._multi_compartment` 包根
+import 名字；`ImportGraphTest` 把包内 import DAG 钉成一张显式的表并断言它
+无环；`MechIsALeafTest` 禁止 `braincell/mech/` 下任何模块 import 其它
+`braincell` 包。`import braincell` 本身是经验性守卫——上述任一环回归都会让
+它直接崩溃。
 
 ## 命名
 
 | 模块 | 职责 |
 |---|---|
-| `network/core.py` | `Population`、`NetworkResult`、`NetworkRunResult` |
+| `network/core.py` | `Population`、`NetworkResult` |
 | `network/event.py` | 事件*源*：`EventSource`、`EventTable`、`EventSequence`、`NetStim`、`VoltageCrossingSource` |
 | `network/recording.py` | `RecordingSpec`、`RecordingSchema`、`SampleBlock`、`EventSeries`、`observe` |
 | `network/connection.py` | `connect()`、`ConnectionView`、`NetworkConnections` |

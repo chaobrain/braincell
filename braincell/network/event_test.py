@@ -20,8 +20,8 @@ import brainunit as u
 import numpy as np
 
 from braincell import Branch, CVPerBranch, Cell, EventSequence, EventTable, Morphology, NetStim
-from braincell.network.event import EventSourceView, VoltageCrossingSource
-from braincell.filter import at
+from braincell.network.event import EventSourceView, VoltageCrossingSource, _resolve_cell_location_cv
+from braincell.filter import RootLocation, at
 
 
 def _two_cv_population(size=2):
@@ -259,6 +259,35 @@ class EventSourceTest(unittest.TestCase):
         np.testing.assert_array_equal(source.source_id, [1])
         with self.assertRaisesRegex(RuntimeError, "init_state"):
             source.owner.current_event_count(source.source_id)
+
+
+class ResolveCellLocationCvTest(unittest.TestCase):
+    """The one place a presynaptic location becomes a CV id.
+
+    ``braincell.network.lowering`` used to carry a second copy of this,
+    ``resolve_source_cv``, which had no production caller -- only its own
+    test. These assertions came from there.
+    """
+
+    def _named_dend_cell(self) -> Cell:
+        soma = Branch.from_lengths(lengths=[20.0] * u.um, radii=[10.0, 10.0] * u.um, type="soma")
+        morpho = Morphology.from_root(soma, name="soma")
+        morpho.soma.dend = Branch.from_lengths(
+            lengths=[100.0] * u.um,
+            radii=[2.0, 1.0] * u.um,
+            type="dendrite",
+        )
+        return Cell(morpho, cv_policy=CVPerBranch(), pop_size=(2,))
+
+    def test_a_single_location_resolves_to_its_owning_cv(self) -> None:
+        cell = self._named_dend_cell()
+        self.assertEqual(_resolve_cell_location_cv(cell, RootLocation(0.5)), 0)
+        self.assertEqual(_resolve_cell_location_cv(cell, at("dend", 0.5)), 1)
+
+    def test_a_multi_point_locset_is_rejected(self) -> None:
+        cell = self._named_dend_cell()
+        with self.assertRaisesRegex(ValueError, "resolve to one point"):
+            _resolve_cell_location_cv(cell, at("soma", 0.5) | at("dend", 0.5))
 
 
 if __name__ == "__main__":

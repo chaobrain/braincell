@@ -258,6 +258,25 @@ class ConnectionSamplingTest(unittest.TestCase):
             )
         self.assertEqual(len(cell.connections), 0)
 
+    def test_omitted_score_draws_exactly_like_an_explicit_uniform_score(self):
+        # _score returns None instead of a dense ones matrix for the default
+        # case, so the two spellings must remain indistinguishable.
+        def rows(score):
+            cell, exp = _population(6)
+            result = connect(
+                "drive",
+                source=NetStim(size=4, start=1.0 * u.ms),
+                synapse=cell.synapses[exp],
+                pairing=braincell.network.connection.by_source(3, seed=5, synapse_score=score),
+            )
+            return np.asarray(result.source_index), np.asarray(result.target_index)
+
+        default_source, default_target = rows(None)
+        uniform_source, uniform_target = rows(np.ones(6))
+
+        np.testing.assert_array_equal(default_source, uniform_source)
+        np.testing.assert_array_equal(default_target, uniform_target)
+
     def test_context_exposes_geometry_and_synapse_parameters(self):
         cell, exp = _population(2)
         source = NetStim(size=2, start=[1.0, 2.0] * u.ms)

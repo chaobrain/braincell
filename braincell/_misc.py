@@ -171,6 +171,43 @@ def concat_values(values):
     return u.math.concatenate(values, axis=0)
 
 
+def freeze_array(value):
+    """Return a read-only copy of a host array, leaving device arrays alone.
+
+    Every result object BrainCell hands back -- ``SampleBlock.values``,
+    ``EventSeries.time``, ``Population`` metadata, ``Network`` event rows --
+    is meant to be immutable. Three separate copies of this used to exist,
+    and only one of them handled :class:`brainunit.Quantity`, so attaching
+    units to population metadata silently made it writable again.
+
+    A device-backed array is returned unchanged: JAX arrays are already
+    immutable, and copying one to set a numpy flag would pull it to host.
+
+    Parameters
+    ----------
+    value : object
+        Array, quantity, or any other object.
+
+    Returns
+    -------
+    object
+        A read-only copy for host arrays and host-backed quantities; the
+        original object otherwise.
+    """
+    if isinstance(value, u.Quantity):
+        mantissa = value.mantissa
+        if isinstance(mantissa, np.ndarray):
+            mantissa = np.array(mantissa, copy=True)
+            mantissa.flags.writeable = False
+            return u.Quantity(mantissa, value.unit)
+        return value
+    if isinstance(value, np.ndarray):
+        result = np.array(value, copy=True)
+        result.flags.writeable = False
+        return result
+    return value
+
+
 def same_time_quantity(left, right) -> bool:
     """Return ``True`` when two optional time quantities agree to tolerance.
 

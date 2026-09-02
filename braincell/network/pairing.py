@@ -604,8 +604,10 @@ def _materialize_group(spec, source_data, synapse_data, sources, synapses, group
         source_weight = _score(spec.source_score, source_ctx, (1, len(sources)), side="source", positions=sources)
         synapse_weight = _score(spec.synapse_score, source_ctx, (1, len(synapses)), side="synapse", positions=synapses)
         return _EndpointPairs(
-            _sample(sources, source_weight[0], count, spec.source_replace, _derived_seed(seed, "source")),
-            _sample(synapses, synapse_weight[0], count, spec.synapse_replace, _derived_seed(seed, "synapse")),
+            _sample(sources, _score_row(source_weight, 0), count, spec.source_replace, _derived_seed(seed, "source")),
+            _sample(
+                synapses, _score_row(synapse_weight, 0), count, spec.synapse_replace, _derived_seed(seed, "synapse")
+            ),
         )
     if isinstance(spec, _First):
         count = _group_number(spec.number, group_index, n_groups)
@@ -614,7 +616,9 @@ def _materialize_group(spec, source_data, synapse_data, sources, synapses, group
         ctx = _context(source_data, synapse_data, sources, synapses, group)
         if spec.side == "source":
             first_weight = _score(spec.source_score, ctx, (1, len(sources)), side="source", positions=sources)
-            first = _sample(sources, first_weight[0], count, spec.first_replace, _derived_seed(seed, "first"))
+            first = _sample(
+                sources, _score_row(first_weight, 0), count, spec.first_replace, _derived_seed(seed, "first")
+            )
             second = _conditional_sample(
                 fixed_side="source",
                 fixed=first,
@@ -628,7 +632,7 @@ def _materialize_group(spec, source_data, synapse_data, sources, synapses, group
             )
             return _EndpointPairs(first, second)
         first_weight = _score(spec.synapse_score, ctx, (1, len(synapses)), side="synapse", positions=synapses)
-        first = _sample(synapses, first_weight[0], count, spec.first_replace, _derived_seed(seed, "first"))
+        first = _sample(synapses, _score_row(first_weight, 0), count, spec.first_replace, _derived_seed(seed, "first"))
         second = _conditional_sample(
             fixed_side="synapse",
             fixed=first,
@@ -743,7 +747,7 @@ def _conditional_sample(
         sampled_by_fixed.append(
             _sample(
                 candidates,
-                weights[row],
+                _score_row(weights, row),
                 count,
                 replace,
                 _derived_seed(seed, fixed_side, int(endpoint_id)),
@@ -758,8 +762,20 @@ def _conditional_sample(
 
 
 def _score(score, ctx, shape, *, side, positions):
+    """Resolve one score declaration to a weight matrix, or ``None`` if uniform.
+
+    ``None`` stands for the all-ones matrix of ``shape``. Returning the
+    sentinel instead of materializing it bounds peak memory in
+    :func:`_conditional_sample`, whose shape is
+    ``(n_distinct_fixed_endpoints, n_candidates)`` and so grows with the
+    product of the two population sizes: a 1000-source by 5000-synapse
+    ``by_source`` pairing peaked at 39 MiB of ones and now peaks at 1.5 MiB.
+    Sampling time is unchanged, and so are the draws -- :func:`_sample`
+    rebuilds the one uniform row it needs, and ``1.0 / n`` is bit-identical
+    to ``1.0 / sum(ones(n))``.
+    """
     if score is None:
-        result = np.ones(shape, dtype=float)
+        result = None
     else:
         value = score(ctx) if callable(score) else score
         if isinstance(value, u.Quantity):
@@ -775,11 +791,19 @@ def _score(score, ctx, shape, *, side, positions):
             result = np.asarray(np.broadcast_to(values, shape), dtype=float)
         except ValueError as exc:
             raise ValueError(f"{side}_score must broadcast to {shape!r}, got {values.shape!r}.") from exc
-    if np.any(~np.isfinite(result)) or np.any(result < 0.0):
-        raise ValueError(f"{side}_score must contain finite non-negative values.")
-    if np.any(np.sum(result, axis=1) <= 0.0):
+        if np.any(~np.isfinite(result)) or np.any(result < 0.0):
+            raise ValueError(f"{side}_score must contain finite non-negative values.")
+    # Row sums of the implied all-ones matrix are ``shape[-1]``, so the uniform
+    # case fails this exactly when there is a row and no candidate in it.
+    empty = (shape[0] > 0 and shape[-1] == 0) if result is None else bool(np.any(np.sum(result, axis=1) <= 0.0))
+    if empty:
         raise ValueError(f"{side}_score must have positive support in every normalization row.")
     return result
+
+
+def _score_row(weights, row: int):
+    """Return one normalization row of a :func:`_score` result, ``None`` if uniform."""
+    return None if weights is None else weights[row]
 
 
 def _sample(candidates, weights, count, replace, seed):
@@ -790,11 +814,17 @@ def _sample(candidates, weights, count, replace, seed):
         replace = bool(replace)
     if not isinstance(replace, bool):
         raise TypeError("replace flags must be bool values.")
-    support = int(np.count_nonzero(weights > 0.0))
+    support = len(candidates) if weights is None else int(np.count_nonzero(weights > 0.0))
     if not replace and count > support:
         raise ValueError(f"Sampling without replacement requires at least {count} positive candidates; got {support}.")
     rng = brainstate.random.RandomState(seed)
-    probabilities = np.asarray(weights, dtype=float) / float(np.sum(weights))
+    # A uniform ``p`` is passed rather than ``None`` on purpose: it draws the
+    # same values a materialized all-ones row would have, and brainstate's
+    # ``p=None`` path is the slower one for ``replace=False``.
+    if weights is None:
+        probabilities = np.full(len(candidates), 1.0 / len(candidates), dtype=float)
+    else:
+        probabilities = np.asarray(weights, dtype=float) / float(np.sum(weights))
     return np.asarray(rng.choice(candidates, size=count, replace=replace, p=probabilities), dtype=np.int64)
 
 

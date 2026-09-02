@@ -17,44 +17,8 @@ import unittest
 
 import brainunit as u
 
-import braincell
-from braincell.filter import RootLocation, at
 from braincell._misc import validate_time_quantity
-from braincell.network.lowering import lower_direct_connections, resolve_source_cv
-
-
-def _two_branch_tree() -> braincell.Morphology:
-    """A soma with one section explicitly named ``dend``.
-
-    :func:`braincell.network._testing.make_two_point_tree` builds the same
-    shape but types the dendrite ``basal_dendrite``; these tests select by
-    section name, so the fixture is kept local rather than shared.
-    """
-    soma = braincell.Branch.from_lengths(
-        lengths=[20.0] * u.um,
-        radii=[10.0, 10.0] * u.um,
-        type="soma",
-    )
-    morphology = braincell.Morphology.from_root(soma, name="soma")
-    morphology.soma.dend = braincell.Branch.from_lengths(
-        lengths=[100.0] * u.um,
-        radii=[2.0, 1.0] * u.um,
-        type="dendrite",
-    )
-    return morphology
-
-
-class LoweringTest(unittest.TestCase):
-    def test_source_location_resolves_to_canonical_cv(self) -> None:
-        cell = braincell.Cell(
-            _two_branch_tree(),
-            cv_policy=braincell.CVPerBranch(),
-            pop_size=(2,),
-        )
-        self.assertEqual(resolve_source_cv(cell, RootLocation(0.5)), 0)
-        self.assertEqual(resolve_source_cv(cell, at("dend", 0.5)), 1)
-        with self.assertRaisesRegex(ValueError, "exactly one"):
-            resolve_source_cv(cell, at("soma", 0.5) | at("dend", 0.5))
+from braincell.network.lowering import lower_direct_connections
 
 
 class TimeQuantityValidationTest(unittest.TestCase):

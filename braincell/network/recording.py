@@ -17,7 +17,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from types import MappingProxyType
 from typing import Mapping
 
@@ -26,12 +26,15 @@ import brainunit as u
 import jax.numpy as jnp
 import numpy as np
 
+from braincell._misc import concat_values as _concat_values, freeze_array as _freeze_array
+
 __all__ = [
     "EventSeries",
     "RecordingRow",
     "RecordingSchema",
     "RecordingSpec",
     "SampleBlock",
+    "concat_sample_blocks",
     "observe",
 ]
 
@@ -140,7 +143,6 @@ class RecordingSpec:
     period: object | None = None
     frequency: object | None = None
     start: object = field(default_factory=lambda: 0.0 * u.ms)
-    legacy: bool = False
 
     def __post_init__(self) -> None:
         _require_name(self.name, "recording name")
@@ -212,6 +214,40 @@ class SampleBlock:
         return self.first_time + np.arange(count) * self.schema.period
 
 
+def concat_sample_blocks(blocks):
+    """Join contiguous sample blocks of one recording into a single block.
+
+    Both run drivers need this: :meth:`braincell.RunResult.concat` for one
+    cell and :meth:`braincell.network.NetworkResult.concat` for a network.
+    It lives beside :class:`SampleBlock` so neither has to reach into the
+    other's module for it.
+
+    The caller is responsible for checking that the blocks are contiguous
+    and share a schema; this only joins them.
+
+    Parameters
+    ----------
+    blocks : sequence of SampleBlock
+        Ordered contiguous segments of one recording. Must be non-empty.
+
+    Returns
+    -------
+    SampleBlock
+        One block spanning ``blocks[0].segment_start`` to
+        ``blocks[-1].segment_stop``. ``first_time`` is taken from the first
+        segment that actually sampled, since a leading segment may span an
+        interval in which the recording never fired.
+    """
+    first = blocks[0]
+    return SampleBlock(
+        values=_concat_values(tuple(block.values for block in blocks)),
+        schema=first.schema,
+        segment_start=first.segment_start,
+        segment_stop=blocks[-1].segment_stop,
+        first_time=next((block.first_time for block in blocks if block.first_time is not None), None),
+    )
+
+
 @dataclass(frozen=True)
 class EventSeries:
     """Immutable sparse event rows."""
@@ -251,7 +287,7 @@ def compile_recording(cell, spec: RecordingSpec, *, dt):
             f"Recording {spec.name!r} sampler returned {values.shape[-1]!r} rows for schema size {len(rows)!r}."
         )
     unit = values.unit if isinstance(values, u.Quantity) else None
-    rows = tuple(RecordingRow(**{**row.__dict__, "unit": unit}) if row.unit is None else row for row in rows)
+    rows = tuple(replace(row, unit=unit) if row.unit is None else row for row in rows)
     schema = RecordingSchema(
         name=spec.name,
         rows=rows,
@@ -266,14 +302,6 @@ class _CompiledRecording:
     spec: RecordingSpec
     schema: RecordingSchema
     sample: object = field(compare=False, repr=False)
-
-    def is_scheduled(self, t, dt):
-        t_ms = t.to_decimal(u.ms)
-        start_ms = self.schema.schedule_start.to_decimal(u.ms)
-        period_ms = self.schema.period.to_decimal(u.ms)
-        step = np.rint((t_ms - start_ms) / dt.to_decimal(u.ms))
-        period_steps = np.rint(period_ms / dt.to_decimal(u.ms))
-        return (t_ms >= start_ms) & (np.mod(step, period_steps) == 0)
 
 
 def _observable_rows_and_sampler(cell, spec: RecordingSpec):
@@ -519,13 +547,11 @@ def _spatial_row(cell, pair, *, field: str, contributor_ids=()) -> RecordingRow:
 
 def _density_recording_row(cell, row, *, field: str) -> RecordingRow:
     spatial = _spatial_row(cell, (row.population_index, row.cv_id), field=field)
-    return RecordingRow(
-        **{
-            **spatial.__dict__,
-            "mechanism_category": row.category,
-            "mechanism_type": row.mechanism_type,
-            "mechanism_name": row.name,
-        }
+    return replace(
+        spatial,
+        mechanism_category=row.category,
+        mechanism_type=row.mechanism_type,
+        mechanism_name=row.name,
     )
 
 
@@ -533,15 +559,13 @@ def _synapse_recording_row(cell, view, index: int, field: str) -> RecordingRow:
     logical_id = int(view.id[index])
     cv_id = int(view.cv_id[index])
     spatial = _spatial_row(cell, (int(view.population_index[index]), cv_id), field=field)
-    return RecordingRow(
-        **{
-            **spatial.__dict__,
-            "point_id": int(view.point_id[index]),
-            "mechanism_category": "synapse",
-            "mechanism_type": str(view.synapse_type[index]),
-            "mechanism_name": str(view.name[index]),
-            "synapse_id": logical_id,
-        }
+    return replace(
+        spatial,
+        point_id=int(view.point_id[index]),
+        mechanism_category="synapse",
+        mechanism_type=str(view.synapse_type[index]),
+        mechanism_name=str(view.name[index]),
+        synapse_id=logical_id,
     )
 
 
@@ -595,19 +619,3 @@ def _nonnegative_quantity(value, unit, name: str) -> None:
 def _require_name(value, label: str) -> None:
     if not isinstance(value, str) or not value:
         raise ValueError(f"{label} must be a non-empty string.")
-
-
-def _freeze_array(value):
-    """Make host-backed result arrays read-only without copying device arrays."""
-    if isinstance(value, u.Quantity):
-        mantissa = value.mantissa
-        if isinstance(mantissa, np.ndarray):
-            mantissa = np.array(mantissa, copy=True)
-            mantissa.flags.writeable = False
-            return u.Quantity(mantissa, value.unit)
-        return value
-    if isinstance(value, np.ndarray):
-        result = np.array(value, copy=True)
-        result.flags.writeable = False
-        return result
-    return value

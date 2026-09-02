@@ -140,6 +140,14 @@ class PopulationTest(unittest.TestCase):
         with self.assertRaises(TypeError):
             population.metadata["layer"] = np.asarray([1, 2])
 
+    def test_metadata_is_frozen_for_plain_arrays_and_quantities(self) -> None:
+        population = braincell.network.Population("pc", _cell(2))
+        population.set(layer=np.asarray([1, 2]), depth=np.asarray([10.0, 20.0]) * u.um)
+
+        self.assertFalse(population.metadata["layer"].flags.writeable)
+        self.assertFalse(population.metadata["depth"].mantissa.flags.writeable)
+        self.assertFalse(population.ids.flags.writeable)
+
     def test_provider_is_eager_and_atomic(self) -> None:
         calls = []
         network = braincell.network.Network()

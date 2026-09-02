@@ -52,12 +52,10 @@ class DeliveryBlock:
     delay_steps : int or ndarray of int
         One fixed delay for a grouped backend block, or one delay per contact
         for the canonical scatter representation.
-    pre_index, post_index : ndarray of int, shape ``(n_contact,)``
-        Presynaptic and postsynaptic population indices for this delay group.
-    synapse_index : ndarray of int, shape ``(n_contact,)``
-        Local target index in the postsynaptic synapse layout.
+    pre_index : ndarray of int, shape ``(n_contact,)``
+        Presynaptic population index for each contact in this delay group.
     flat_target_index : ndarray of int, shape ``(n_contact,)``
-        Flattened target index equal to ``post_index * n_active + synapse_index``.
+        Slot in the postsynaptic synapse layout for each contact.
     weight : object
         Per-contact event payload sliced from ``source.weight`` for this delay
         group. May be a :mod:`brainunit` quantity or an array-like object.
@@ -71,8 +69,6 @@ class DeliveryBlock:
     source: ConnectionBlock
     delay_steps: int | np.ndarray
     pre_index: np.ndarray
-    post_index: np.ndarray
-    synapse_index: np.ndarray
     flat_target_index: np.ndarray
     weight: object
 
@@ -105,43 +101,22 @@ class DeliveryState:
     queue_sources: tuple[ConnectionBlock, ...]
 
 
-def population_spike(spike) -> object:
-    """Return one spike value per population member.
+def route_source_event(block: DeliveryBlock) -> object:
+    """Read current event values for one live route.
 
     Parameters
     ----------
-    spike : array-like
-        Cell spike buffer. A one-dimensional array is returned unchanged. A
-        two-dimensional ``(pop_size, 1)`` buffer is squeezed on the trailing
-        singleton axis. Higher-dimensional cell buffers are reduced with a
-        logical ``any`` over all non-population axes.
+    block : DeliveryBlock
+        Delivery block whose lowered source names the live
+        :class:`~braincell.network.event.EventSource`.
 
     Returns
     -------
     object
-        Population-level spike vector with shape ``(pop_size,)``.
+        One event count per source-population member.
     """
-    if spike.ndim == 2 and spike.shape[-1] == 1:
-        return spike[..., 0]
-    if spike.ndim > 1:
-        return jnp.any(spike, axis=tuple(range(1, spike.ndim)))
-    return spike
-
-
-def source_spike(spike, source_cv_id: int) -> object:
-    """Return one spike per population member from a single source CV."""
-    if spike.ndim < 2:
-        return spike
-    return spike[..., int(source_cv_id)]
-
-
-def route_source_event(block: DeliveryBlock, *, populations: dict) -> object:
-    """Read current event values for one population or direct live route."""
-    if block.source.event_source is not None:
-        source = block.source.event_source
-        return source.current_event_count(np.arange(source.size, dtype=np.int32))
-    pre_cell = populations[block.source.pre_population].cell
-    return source_spike(pre_cell.spike.value, block.source.source_cv_id)
+    source = block.source.event_source
+    return source.current_event_count(np.arange(source.size, dtype=np.int32))
 
 
 def delivery_blocks(
@@ -156,6 +131,10 @@ def delivery_blocks(
     blocks : tuple of ConnectionBlock
         Lowered connection blocks. Each block may contain heterogeneous
         per-contact ``delay_steps``.
+    group_by_delay : bool, default True
+        Split each input block into one fixed-delay block per distinct
+        delay. The ``brainevent`` backend needs a scalar delay per block;
+        the scatter backend handles the per-contact vector directly.
 
     Returns
     -------
@@ -170,38 +149,26 @@ def delivery_blocks(
     """
     delivery = []
     for block in blocks:
+        delay_steps = np.asarray(block.delay_steps, dtype=np.int32)
         if not group_by_delay:
-            post_index = np.asarray(block.post_index, dtype=np.int32)
-            synapse_index = np.asarray(block.synapse_index, dtype=np.int32)
             delivery.append(
                 DeliveryBlock(
                     source=block,
-                    delay_steps=np.asarray(block.delay_steps, dtype=np.int32),
+                    delay_steps=delay_steps,
                     pre_index=np.asarray(block.pre_index, dtype=np.int32),
-                    post_index=post_index,
-                    synapse_index=synapse_index,
-                    flat_target_index=(
-                        synapse_index if block.packed else post_index * int(block.n_active) + synapse_index
-                    ).astype(np.int32, copy=False),
+                    flat_target_index=np.asarray(block.synapse_index, dtype=np.int32),
                     weight=block.weight,
                 )
             )
             continue
-        for delay_step in sorted(set(np.asarray(block.delay_steps, dtype=np.int32).tolist())):
-            mask = np.asarray(block.delay_steps, dtype=np.int32) == int(delay_step)
-            contact_indices = np.nonzero(mask)[0]
-            post_index = block.post_index[contact_indices]
-            synapse_index = block.synapse_index[contact_indices]
+        for delay_step in sorted(set(delay_steps.tolist())):
+            contact_indices = np.nonzero(delay_steps == int(delay_step))[0]
             delivery.append(
                 DeliveryBlock(
                     source=block,
                     delay_steps=int(delay_step),
                     pre_index=block.pre_index[contact_indices],
-                    post_index=post_index,
-                    synapse_index=synapse_index,
-                    flat_target_index=(
-                        synapse_index if block.packed else post_index * int(block.n_active) + synapse_index
-                    ).astype(np.int32, copy=False),
+                    flat_target_index=block.synapse_index[contact_indices].astype(np.int32, copy=False),
                     weight=slice_weight(block.weight, contact_indices),
                 )
             )
@@ -228,7 +195,7 @@ def slice_weight(weight, indices: np.ndarray):
     return np.asarray(weight)[indices]
 
 
-def zero_arrival(block: ConnectionBlock, *, post_size: int):
+def zero_arrival(block: ConnectionBlock):
     """Return a zero arrival buffer for one lowered connection block.
 
     Parameters
@@ -236,54 +203,43 @@ def zero_arrival(block: ConnectionBlock, *, post_size: int):
     block : ConnectionBlock
         Lowered block whose weight dtype/unit and synapse layout size define
         the arrival buffer.
-    post_size : int
-        Number of cells in the postsynaptic population.
 
     Returns
     -------
     object
-        Zero event matrix with shape ``(post_size, block.n_active)``.
+        Zero event vector with shape ``(block.n_active,)``.
     """
-    if block.packed:
-        return zeros_like_packed_events(block.weight, n_active=block.n_active)
-    return zeros_like_events(block.weight, post_size=post_size, n_active=block.n_active)
+    return zeros_like(block.weight, shape=(block.n_active,))
 
 
-def zero_shared_ring_buffer(source: ConnectionBlock, *, depth: int, post_size: int):
+def zero_shared_ring_buffer(source: ConnectionBlock, *, depth: int):
     """Return one target-layout queue shared by every incoming route block."""
-    shape = (depth, source.n_active) if source.packed else (depth, post_size, source.n_active)
-    if isinstance(source.weight, u.Quantity):
-        return u.math.zeros_like(source.weight, shape=shape)
-    return jnp.zeros(shape, dtype=jnp.asarray(source.weight).dtype)
+    return zeros_like(source.weight, shape=(depth, source.n_active))
 
 
-def zeros_like_packed_events(value, *, n_active: int):
-    """Return a zero event vector for packed point instances."""
-    if isinstance(value, u.Quantity):
-        return u.math.zeros_like(value, shape=(n_active,))
-    return jnp.zeros((n_active,), dtype=jnp.asarray(value).dtype)
+def zeros_like(value, *, shape: tuple[int, ...]):
+    """Return zeros of ``shape`` carrying ``value``'s dtype and unit.
 
-
-def zeros_like_events(value, *, post_size: int, n_active: int):
-    """Return a zero event buffer matching event payload dtype and unit.
+    Every buffer in this module -- arrival vectors, ring-buffer queues, and
+    the scatter accumulator inside a delivery op -- is shaped from an event
+    payload that may or may not be a :mod:`brainunit` quantity.
 
     Parameters
     ----------
     value : object
         Example event payload used to infer dtype and unit.
-    post_size : int
-        Number of cells in the postsynaptic population.
-    n_active : int
-        Number of active local targets in the target synapse layout.
+    shape : tuple of int
+        Shape of the returned buffer.
 
     Returns
     -------
     object
-        Zero event matrix with shape ``(post_size, n_active)``.
+        Zero buffer of ``shape``, a :class:`brainunit.Quantity` when
+        ``value`` is one.
     """
     if isinstance(value, u.Quantity):
-        return u.math.zeros_like(value, shape=(post_size, n_active))
-    return jnp.zeros((post_size, n_active), dtype=jnp.asarray(value).dtype)
+        return u.math.zeros_like(value, shape=shape)
+    return jnp.zeros(shape, dtype=jnp.asarray(value).dtype)
 
 
 def advance_ring_cursors(ring_buffers, ring_cursors) -> None:
@@ -303,7 +259,6 @@ def advance_ring_cursors(ring_buffers, ring_cursors) -> None:
 def create_delivery_state(
     blocks: tuple[DeliveryBlock, ...],
     *,
-    populations: dict,
     delivery_ops: tuple,
 ) -> DeliveryState:
     """Create persistent mutable state for network event delivery.
@@ -312,8 +267,6 @@ def create_delivery_state(
     ----------
     blocks : tuple of DeliveryBlock
         Static delivery blocks for the run setup.
-    populations : dict
-        ``population_name -> Population`` mapping used to size post buffers.
     delivery_ops : tuple
         Backend-specific event delivery callables, one per block.
 
@@ -352,13 +305,7 @@ def create_delivery_state(
             )
         block_queue_indices.append(queue_index)
     ring_buffers = tuple(
-        brainstate.ShortTermState(
-            zero_shared_ring_buffer(
-                source,
-                depth=queue_depths[index],
-                post_size=populations[source.post_population].size,
-            )
-        )
+        brainstate.ShortTermState(zero_shared_ring_buffer(source, depth=queue_depths[index]))
         for index, source in enumerate(queue_sources)
     )
     ring_cursors = tuple(brainstate.ShortTermState(jnp.asarray(0, dtype=jnp.int32)) for _ in queue_keys)
@@ -373,7 +320,6 @@ def create_delivery_state(
 
 
 def write_arrivals(
-    blocks: tuple[DeliveryBlock, ...],
     state: DeliveryState,
     *,
     populations: dict,
@@ -382,10 +328,10 @@ def write_arrivals(
 
     Parameters
     ----------
-    blocks : tuple of DeliveryBlock
-        Static delivery blocks for the current run setup.
     state : DeliveryState
-        Mutable ring buffers and cursors for the current run.
+        Mutable ring buffers and cursors for the current run. The queues,
+        not the delivery blocks, are what this walks -- several blocks may
+        share one queue.
     populations : dict
         ``population_name -> Population`` mapping used to locate target cells.
 
@@ -400,14 +346,7 @@ def write_arrivals(
         cursor = state.ring_cursors[index].value
         arrival = state.ring_buffers[index].value[cursor]
         state.ring_buffers[index].value = (
-            state.ring_buffers[index]
-            .value.at[cursor]
-            .set(
-                zero_arrival(
-                    state.queue_sources[index],
-                    post_size=populations[key[0]].size,
-                )
-            )
+            state.ring_buffers[index].value.at[cursor].set(zero_arrival(state.queue_sources[index]))
         )
         post_population, layout_id = key
         cell = populations[post_population].cell
@@ -417,8 +356,6 @@ def write_arrivals(
 def enqueue_future_events(
     blocks: tuple[DeliveryBlock, ...],
     state: DeliveryState,
-    *,
-    populations: dict,
 ) -> None:
     """Project current spikes into future ring-buffer slots.
 
@@ -428,19 +365,15 @@ def enqueue_future_events(
         Static delivery blocks for the current run setup.
     state : DeliveryState
         Mutable ring buffers, cursors, and backend operators.
-    populations : dict
-        ``population_name -> Population`` mapping used to read presynaptic
-        spikes and size postsynaptic event matrices.
 
     Notes
     -----
-    Each block reads population-level presynaptic spikes, applies its backend
-    operator, reshapes the flattened event vector to ``(n_active,)`` for
-    packed layouts or ``(post_size, n_active)`` for broadcast layouts, and
-    adds it to the ring-buffer slot ``current_cursor + delay_steps``.
+    Each block reads its source's current events, applies its backend
+    operator, and adds the resulting ``(n_active,)`` event vector to the
+    ring-buffer slot ``current_cursor + delay_steps``.
     """
     for index, block in enumerate(blocks):
-        pre_spike = route_source_event(block, populations=populations)
+        pre_spike = route_source_event(block)
         queue_index = state.block_queue_indices[index]
         delay_steps = np.asarray(block.delay_steps, dtype=np.int32)
         if delay_steps.ndim == 0:
@@ -451,15 +384,7 @@ def enqueue_future_events(
                 queue_index
             ].value.shape[0]
             state.ring_buffers[queue_index].value = (
-                state.ring_buffers[queue_index]
-                .value.at[target_cursor]
-                .add(
-                    event.reshape(
-                        (block.source.n_active,)
-                        if block.source.packed
-                        else (populations[block.source.post_population].size, block.source.n_active)
-                    )
-                )
+                state.ring_buffers[queue_index].value.at[target_cursor].add(event.reshape((block.source.n_active,)))
             )
             continue
 
@@ -486,36 +411,20 @@ def apply_immediate_events(
     """Apply zero-delay population events at their detection boundary."""
     grouped = {}
     for index, block in enumerate(blocks):
-        pre_spike = route_source_event(block, populations=populations)
+        pre_spike = route_source_event(block)
         delay_steps = np.asarray(block.delay_steps, dtype=np.int32)
+        n_active = int(block.source.n_active)
         if delay_steps.ndim == 0:
             if int(delay_steps) != 0:
                 continue
-            event = state.delivery_ops[index](pre_spike).reshape(
-                (block.source.n_active,)
-                if block.source.packed
-                else (populations[block.source.post_population].size, block.source.n_active)
-            )
+            event = state.delivery_ops[index](pre_spike).reshape((n_active,))
         else:
             immediate = delay_steps == 0
             if not np.any(immediate):
                 continue
             contact_event = pre_spike[jnp.asarray(block.pre_index)] * block.weight
-            target_size = (
-                int(block.source.n_active)
-                if block.source.packed
-                else populations[block.source.post_population].size * int(block.source.n_active)
-            )
-            if isinstance(contact_event, u.Quantity):
-                event = u.math.zeros_like(contact_event, shape=(target_size,))
-            else:
-                event = jnp.zeros((target_size,), dtype=jnp.asarray(contact_event).dtype)
+            event = zeros_like(contact_event, shape=(n_active,))
             event = event.at[jnp.asarray(block.flat_target_index[immediate])].add(contact_event[immediate])
-            event = event.reshape(
-                (block.source.n_active,)
-                if block.source.packed
-                else (populations[block.source.post_population].size, block.source.n_active)
-            )
         key = (block.source.post_population, int(block.source.layout_id))
         grouped[key] = event if key not in grouped else grouped[key] + event
     for (post_population, layout_id), event in grouped.items():
@@ -599,7 +508,6 @@ def make_delivery_op(
     block: DeliveryBlock,
     *,
     pre_size: int,
-    post_size: int,
     backend: str,
     brainevent_backend: str | None = "jax_raw",
 ):
@@ -609,8 +517,8 @@ def make_delivery_op(
     ----------
     block : DeliveryBlock
         Static sparse delivery block produced during network setup.
-    pre_size, post_size : int
-        Presynaptic and postsynaptic population sizes.
+    pre_size : int
+        Presynaptic population size.
     backend : {"scatter", "brainevent"}
         Delivery backend selected for this run setup.
     brainevent_backend : str or None, optional
@@ -629,7 +537,7 @@ def make_delivery_op(
     into ``flat_target_index``. The ``brainevent`` path uses ``brainevent.coomv``
     with the same sparse topology.
     """
-    target_size = int(block.source.n_active) if block.source.packed else int(post_size) * int(block.source.n_active)
+    target_size = int(block.source.n_active)
     pre_index = jnp.asarray(block.pre_index, dtype=jnp.int32)
     flat_target_index = jnp.asarray(block.flat_target_index, dtype=jnp.int32)
     if backend == "brainevent":
@@ -654,12 +562,8 @@ def make_delivery_op(
         return _op
 
     def _op(pre_spike):
-        pre_values = pre_spike[pre_index]
-        contact_event = pre_values * block.weight
-        if isinstance(contact_event, u.Quantity):
-            out = u.math.zeros_like(contact_event, shape=(target_size,))
-        else:
-            out = jnp.zeros((target_size,), dtype=jnp.asarray(contact_event).dtype)
+        contact_event = pre_spike[pre_index] * block.weight
+        out = zeros_like(contact_event, shape=(target_size,))
         return out.at[flat_target_index].add(contact_event)
 
     return _op

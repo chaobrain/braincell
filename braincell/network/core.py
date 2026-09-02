@@ -23,7 +23,7 @@ from types import MappingProxyType
 import brainunit as u
 import numpy as np
 
-from braincell._misc import concat_values as _concat_values, same_time_quantity as _same_time
+from braincell._misc import concat_values as _concat_values, freeze_array, same_time_quantity as _same_time
 
 
 class Population:
@@ -65,14 +65,12 @@ class Population:
         if not isinstance(name, str) or not name:
             raise ValueError("Population name must be a non-empty string.")
         size, kind = _model_size_and_kind(model)
-        overlap = self._RESERVED_NAMES.intersection(metadata)
-        if overlap:
-            raise ValueError(f"Population metadata conflicts with reserved names: {sorted(overlap)!r}.")
+        # The reserved-name check lives in ``set``, which runs below.
         object.__setattr__(self, "name", name)
         object.__setattr__(self, "model", model)
         object.__setattr__(self, "kind", kind)
         object.__setattr__(self, "size", size)
-        object.__setattr__(self, "ids", _readonly_array(np.arange(size, dtype=np.int64)))
+        object.__setattr__(self, "ids", freeze_array(np.arange(size, dtype=np.int64)))
         object.__setattr__(self, "_metadata", {})
         object.__setattr__(self, "_event_outputs", {})
         self.set(**metadata)
@@ -257,20 +255,12 @@ def _population_metadata(value, size: int, *, name: str):
     if shape == ():
         if isinstance(value, u.Quantity):
             return u.math.broadcast_to(value, (size,))
-        return _readonly_array(np.full((size,), value))
+        return freeze_array(np.full((size,), value))
     if shape[0] != size:
         raise ValueError(
             f"Population metadata {name!r} must be scalar or have leading dimension {size}; got {shape!r}."
         )
-    if isinstance(value, np.ndarray):
-        return _readonly_array(value)
-    return value
-
-
-def _readonly_array(value) -> np.ndarray:
-    result = np.array(value, copy=True)
-    result.flags.writeable = False
-    return result
+    return freeze_array(value)
 
 
 @dataclass(frozen=True)
@@ -283,8 +273,18 @@ class NetworkResult:
         Step times spanning ``[start_t, start_t + duration)``.
     traces : dict
         ``population_name -> {probe_name: trace}`` mapping.
+    samples : dict
+        ``population_name -> {recording_name: SampleBlock}`` mapping. This
+        is what :meth:`braincell.network.Network.run` populates for every
+        :func:`braincell.observe` recording.
     events : dict
         ``population_name -> {port_name: EventSeries}`` mapping.
+    start_time : brainunit.Quantity or None
+        Inclusive start of the segment.
+    stop_time : brainunit.Quantity or None
+        Exclusive end of the segment.
+    dt : brainunit.Quantity or None
+        Fixed step the segment was run with. :meth:`concat` requires it.
     """
 
     time: object
@@ -314,7 +314,7 @@ class NetworkResult:
         NetworkResult
             Concatenated immutable result.
         """
-        from braincell._multi_compartment.run import RunResult
+        from .recording import concat_sample_blocks
 
         parts = tuple(parts)
         if not parts:
@@ -334,25 +334,23 @@ class NetworkResult:
             for population_name in previous.samples:
                 if tuple(previous.samples[population_name]) != tuple(current.samples[population_name]):
                     raise ValueError(f"Recording names changed for population {population_name!r}.")
+                # RunResult.concat used to raise this on our behalf, back when
+                # this method borrowed it by building throwaway RunResults.
+                for recording_name, block in previous.samples[population_name].items():
+                    if block.schema != current.samples[population_name][recording_name].schema:
+                        raise ValueError(f"Recording schema changed for {recording_name!r}.")
             for population_name in previous.events:
                 if tuple(previous.events[population_name]) != tuple(current.events[population_name]):
                     raise ValueError(f"Event ports changed for population {population_name!r}.")
-        samples = {}
-        for population_name in first.samples:
-            samples[population_name] = {}
-            for recording_name in first.samples[population_name]:
-                pseudo = tuple(
-                    RunResult(
-                        time=part.time,
-                        traces={recording_name: part.samples[population_name][recording_name].values},
-                        samples={recording_name: part.samples[population_name][recording_name]},
-                        start_time=part.start_time,
-                        stop_time=part.stop_time,
-                        dt=part.dt,
-                    )
-                    for part in parts
+        samples = {
+            population_name: {
+                recording_name: concat_sample_blocks(
+                    tuple(part.samples[population_name][recording_name] for part in parts)
                 )
-                samples[population_name][recording_name] = RunResult.concat(pseudo).samples[recording_name]
+                for recording_name in first.samples[population_name]
+            }
+            for population_name in first.samples
+        }
         traces = {
             population_name: {
                 name: _concat_values(tuple(part.traces[population_name][name] for part in parts))
@@ -378,10 +376,6 @@ class NetworkResult:
         )
 
 
-# Transitional public name retained for existing callers.
-NetworkRunResult = NetworkResult
-
-
 def _nested_mapping_proxy(value):
     return MappingProxyType(
         {key: MappingProxyType(dict(item)) if isinstance(item, dict) else item for key, item in dict(value).items()}
@@ -391,12 +385,8 @@ def _nested_mapping_proxy(value):
 def _concat_event_series(series):
     from .recording import EventSeries
 
-    unit = series[0].time.unit
     return EventSeries(
-        time=u.Quantity(
-            u.math.concatenate(tuple(item.time.to_decimal(unit) for item in series), axis=0),
-            unit,
-        ),
+        time=_concat_values(tuple(item.time for item in series)),
         source_id=np.concatenate(tuple(item.source_id for item in series)),
         count=np.concatenate(tuple(item.count for item in series)),
         metadata=series[0].metadata,

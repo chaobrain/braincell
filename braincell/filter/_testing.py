@@ -37,6 +37,7 @@ from braincell.morph._testing import (  # noqa: F401
     make_basal,
     make_dendrite,
     make_soma,
+    make_soma_dend_tree,
 )
 
 __all__ = [
@@ -48,43 +49,6 @@ __all__ = [
     "make_single_branch_tree",
     "make_soma_dend_tree",
 ]
-
-
-def make_soma_dend_tree(
-    *,
-    soma_length: float = 20.0,
-    dend_type: str = "basal_dendrite",
-    dend_length: float = 30.0,
-) -> Morphology:
-    """A soma with one dendrite attached at its distal end.
-
-    The smallest tree with a parent/child relationship, which is what most
-    interval and locset assertions need. Three test modules each built their
-    own copy of this, differing only in the two parameters above.
-
-    Parameters
-    ----------
-    soma_length : float
-        Soma length in micrometres.
-    dend_type : str
-        Branch type for the child, e.g. ``"basal_dendrite"`` or
-        ``"apical_dendrite"``.
-    dend_length : float
-        Dendrite length in micrometres.
-
-    Returns
-    -------
-    Morphology
-        A two-branch tree named ``soma`` -> ``dend``.
-    """
-    tree = Morphology.from_root(make_soma(length=soma_length), name="soma")
-    child = Branch.from_lengths(
-        lengths=[dend_length] * u.um,
-        radii=[2.0, 1.0] * u.um,
-        type=dend_type,
-    )
-    tree.attach(parent="soma", child_branch=child, child_name="dend", parent_x=1.0)
-    return tree
 
 
 def make_single_branch_tree(*, length: float = 10.0, radius: float = 1.0) -> Morphology:

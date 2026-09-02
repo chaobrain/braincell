@@ -53,7 +53,8 @@ from .sodium import (
 )
 from .sodium import __all__ as _sodium_all
 
-__all__ = _calcium_all + _nonspecific_all + _potassium_all + _sodium_all + ["build_placeholder_ions"]
+# ASCII-sorted; see ``__init___test.IonReExportTest``.
+__all__ = sorted(_calcium_all + _nonspecific_all + _potassium_all + _sodium_all + ["build_placeholder_ions"])
 
 
 def build_placeholder_ions(size=(1,)) -> dict[str, object]:

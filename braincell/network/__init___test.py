@@ -58,7 +58,9 @@ _EXPECTED_GRAPH = {
     "_testing": set(),
     # ``connection`` reads ``core`` to recognise a ``Population`` handed to
     # ``connect()``; ``core`` is a leaf, so the edge keeps the graph a DAG.
-    "connection": {"core", "event", "pairing", "recording"},
+    # The former edge to ``recording`` existed only to borrow one four-line
+    # name check, which now lives in ``braincell._misc``.
+    "connection": {"core", "event", "pairing"},
     "core": set(),
     "delivery": {"lowering"},
     "engine": {"connection", "core", "delivery", "lowering", "recording"},

@@ -152,6 +152,76 @@ def validate_time_quantity(
         raise ValueError(f"{prefix} {name} must be > 0, got {value!r}.")
 
 
+def require_name(value, label: str) -> None:
+    """Require ``value`` to be a non-empty string.
+
+    Used wherever a mechanism, field, connection, or selector is addressed
+    by name and an empty string would silently match nothing.
+
+    Parameters
+    ----------
+    value : object
+        Candidate name.
+    label : str
+        What the name identifies, used verbatim in the error message.
+
+    Raises
+    ------
+    ValueError
+        If ``value`` is not a string, or is the empty string.
+    """
+    if not isinstance(value, str) or not value:
+        raise ValueError(f"{label} must be a non-empty string.")
+
+
+def normalize_loop_outputs(values, *, count: int, prefix: str, noun: str) -> tuple:
+    """Normalize a ``for_loop`` / ``scan`` output to a tuple of ``count`` items.
+
+    ``brainstate.transform.for_loop`` and ``scan`` return a bare stacked
+    array when the body yields exactly one value, and a tuple otherwise.
+    Callers that index the result positionally need the single-value case
+    wrapped, and want a clear error rather than a confusing slice when the
+    count does not match.
+
+    Shared by the single-cell and network run paths so both enforce the
+    same contract and report it with their own caller name -- the same
+    arrangement :func:`validate_time_quantity` uses.
+
+    Parameters
+    ----------
+    values : object
+        Raw loop output: one value, or a tuple of them.
+    count : int
+        How many values the loop body was built to yield.
+    prefix : str
+        Caller name used to prefix error messages, e.g. ``"Cell.run(...)"``.
+    noun : str
+        What the values are, used verbatim in error messages, e.g.
+        ``"trace arrays"`` or ``"scan outputs"``.
+
+    Returns
+    -------
+    tuple
+        Exactly ``count`` values.
+
+    Raises
+    ------
+    TypeError
+        If ``count`` exceeds one and ``values`` is not a tuple.
+    ValueError
+        If ``values`` is a tuple of the wrong length.
+    """
+    if count == 0:
+        return ()
+    if count == 1:
+        return values if isinstance(values, tuple) else (values,)
+    if not isinstance(values, tuple):
+        raise TypeError(f"{prefix} expected {count} {noun}, got {type(values).__name__!s}.")
+    if len(values) != count:
+        raise ValueError(f"{prefix} expected {count} {noun}, got {len(values)!r}.")
+    return values
+
+
 def scalar_decimal(value, unit) -> float:
     """Convert a scalar quantity to a Python ``float`` in ``unit``.
 

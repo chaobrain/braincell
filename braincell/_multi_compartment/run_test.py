@@ -25,7 +25,6 @@ import brainunit as u
 
 from braincell._multi_compartment.run import (
     RunResult,
-    _normalize_run_traces,
     _validate_time_quantity,
 )
 
@@ -45,28 +44,6 @@ class TestValidateTimeQuantity(unittest.TestCase):
     def test_rejects_negative(self):
         with self.assertRaises(ValueError):
             _validate_time_quantity(-0.1 * u.ms, name="dt")
-
-
-class TestNormalizeRunTraces(unittest.TestCase):
-    def test_single_trace_scalar_wraps(self):
-        out = _normalize_run_traces("X", n_traces=1)
-        self.assertEqual(out, ("X",))
-
-    def test_single_trace_tuple_passes_through(self):
-        out = _normalize_run_traces(("X",), n_traces=1)
-        self.assertEqual(out, ("X",))
-
-    def test_many_traces_tuple(self):
-        out = _normalize_run_traces(("a", "b"), n_traces=2)
-        self.assertEqual(out, ("a", "b"))
-
-    def test_many_traces_count_mismatch_raises(self):
-        with self.assertRaises(ValueError):
-            _normalize_run_traces(("a",), n_traces=2)
-
-    def test_many_traces_non_tuple_raises(self):
-        with self.assertRaises(TypeError):
-            _normalize_run_traces("a", n_traces=2)
 
 
 class TestRunResult(unittest.TestCase):

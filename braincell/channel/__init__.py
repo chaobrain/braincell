@@ -163,7 +163,9 @@ from .sodium import (
 )
 from .sodium import __all__ as _sodium_all
 
-__all__ = (
+# ASCII-sorted, so a new channel lands in exactly one place and
+# ``__init___test.ChannelReExportTest`` can say so.
+__all__ = sorted(
     _base_all
     + _calcium_all
     + _hyperpolarization_activated_all

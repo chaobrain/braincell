@@ -97,6 +97,7 @@ class ChannelReExportTest(ReExportTests, unittest.TestCase):
 
     package = channel
     reexport_sources = _COVERED_MODULES
+    require_sorted_all = True
 
 
 def _registered_channel_classes():

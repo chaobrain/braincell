@@ -29,7 +29,11 @@ from braincell._discretization import CVPerBranch
 from braincell.morph.branch import Branch
 from braincell.morph.morphology import Morphology
 from braincell.vis import plot_point_topology
-from braincell.vis.point_topology import _blend_node_rgba, _resolve_coverage_intensities
+from braincell.vis.point_topology import (
+    _blend_node_rgba,
+    _plot_discrete_topology_graph,
+    _resolve_coverage_intensities,
+)
 
 
 def _make_node_tree(*, lengths: tuple[float, float, float] = (20.0, 80.0, 60.0)):
@@ -78,6 +82,20 @@ class PointTopologyPlotTest(unittest.TestCase):
                 node_tree,
                 highlight_point_ids=[1],
                 values=np.linspace(0.0, 1.0, len(node_tree.nodes)),
+            )
+
+    def test_the_shared_renderer_attributes_errors_to_its_caller(self) -> None:
+        # _plot_discrete_topology_graph backs both plot_point_topology and
+        # plot_cell_topology, so its messages must name whichever one the
+        # user actually called rather than a hardcoded favourite.
+        with self.assertRaisesRegex(ValueError, r"^plot_cell_topology\(level='cv', \.\.\.\) does not support"):
+            _plot_discrete_topology_graph(
+                node_ids=(0, 1),
+                edges=((0, 1),),
+                root_id=0,
+                highlight_point_ids=[1],
+                values=np.asarray([0.0, 1.0]),
+                caller="plot_cell_topology(level='cv', ...)",
             )
 
     def test_values_shape_must_match_n_points(self) -> None:

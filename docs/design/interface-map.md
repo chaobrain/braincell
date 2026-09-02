@@ -265,19 +265,14 @@ metric 属性：
 - `Params.items()`
 - `Params.get(...)`
 - `Params.with_updates(...)`
-- `Params.without(...)`
 - `Params.coerce(...)`
 
 ### Cable / density mechanisms
 
 - `CableProperty`
-- `CableProperty.with_updates(...)`
 - `Density`
 - `Density.instance_name`
-- `Density.identity`
-- `Density.with_params(...)`
 - `Density.with_coverage(...)`
-- `Density.with_name(...)`
 - `mech.Channel(class_name, ..., ion_name=None, ion_names=None, **params)`
 - `mech.Ion(class_name, ..., **params)`
 
@@ -292,9 +287,8 @@ metric 属性：
 - `MechanismProbe`
 - `CurrentProbe`
 - `ProbeMechanism`
-- `Synapse`
-- `Synapse.instance_name`
-- `Synapse.identity`
+- `SynapseSpec`
+- `SynapseSpec.instance_name`
 - `Junction`
 
 ### Registry
@@ -303,7 +297,6 @@ metric 属性：
 - `MechanismRegistry`
 - `MechanismRegistry.register(...)`
 - `MechanismRegistry.unregister(...)`
-- `MechanismRegistry.add_alias(...)`
 - `MechanismRegistry.clear()`
 - `MechanismRegistry.contains(...)`
 - `MechanismRegistry.get(...)`

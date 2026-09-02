@@ -87,7 +87,6 @@ def build_cv_contexts(
             radius_prox=_source_quantity(source, "radius_prox", "r_prox_um", u.um),
             radius_mid=radius_mid,
             radius_dist=_source_quantity(source, "radius_dist", "r_dist_um", u.um),
-            diam_mid=2.0 * radius_mid,
             diam_arc_mean=_source_quantity(
                 source,
                 "diam_arc_mean",

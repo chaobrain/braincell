@@ -140,16 +140,6 @@ class ParamsUpdatesTest(unittest.TestCase):
         updated = original.with_updates(b=2)
         self.assertEqual(list(updated), ["a", "b"])
 
-    def test_without_drops_keys(self) -> None:
-        original = Params(a=1, b=2, c=3)
-        pruned = original.without("b")
-        self.assertEqual(dict(pruned), {"a": 1, "c": 3})
-
-    def test_without_ignores_unknown_keys(self) -> None:
-        original = Params(a=1)
-        pruned = original.without("missing")
-        self.assertEqual(pruned, original)
-
 
 class ParamsCoerceTest(unittest.TestCase):
     def test_coerce_passes_through_params(self) -> None:

@@ -25,7 +25,10 @@ import brainunit as u
 import numpy as np
 
 from braincell._discretization.geometry import build_cv_geometry
-from braincell.mech import CableProperty
+
+# Re-exported: ``CableProperty`` is a ``braincell.mech`` type, so its
+# builder lives with the package that owns it.
+from braincell.mech._testing import make_cable  # noqa: F401
 from braincell.morph.branch import Branch
 from braincell.morph.morphology import Morphology
 
@@ -36,15 +39,6 @@ __all__ = [
     "make_single_branch_morpho",
     "make_two_branch_morpho",
 ]
-
-
-def make_cable(cm: float = 1.0, ra: float = 100.0, v: float = -65.0) -> CableProperty:
-    """Build a :class:`CableProperty` from bare floats in the usual units."""
-    return CableProperty(
-        resting_potential=v * u.mV,
-        membrane_capacitance=cm * (u.uF / u.cm**2),
-        axial_resistivity=ra * (u.ohm * u.cm),
-    )
 
 
 def make_branch(lengths: list[float], radii: list[float], type: str = "dendrite") -> Branch:

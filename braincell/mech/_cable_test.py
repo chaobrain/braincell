@@ -17,28 +17,22 @@ import unittest
 
 import brainunit as u
 
+import numpy as np
+
 from braincell.mech import CableProperty
+from braincell.mech._testing import make_cable
 
 
 class CablePropertyTest(unittest.TestCase):
     def test_fields_round_trip(self) -> None:
-        cp = CableProperty(
-            resting_potential=-65.0 * u.mV,
-            membrane_capacitance=1.0 * (u.uF / u.cm**2),
-            axial_resistivity=100.0 * (u.ohm * u.cm),
-        )
+        cp = make_cable()
         self.assertEqual(cp.resting_potential.to_decimal(u.mV), -65.0)
         self.assertEqual(cp.membrane_capacitance.to_decimal(u.uF / u.cm**2), 1.0)
         self.assertEqual(cp.axial_resistivity.to_decimal(u.ohm * u.cm), 100.0)
 
     def test_default_temperature_is_309_15K(self) -> None:
-        cp = CableProperty(
-            resting_potential=-65.0 * u.mV,
-            membrane_capacitance=1.0 * (u.uF / u.cm**2),
-            axial_resistivity=100.0 * (u.ohm * u.cm),
-        )
         self.assertAlmostEqual(
-            cp.temperature.to_decimal(u.kelvin),
+            make_cable().temperature.to_decimal(u.kelvin),
             u.celsius2kelvin(36.0).to_decimal(u.kelvin),
             places=12,
         )
@@ -56,49 +50,35 @@ class CablePropertyTest(unittest.TestCase):
             places=12,
         )
 
-    def test_temperature_not_quantity_raises(self) -> None:
-        with self.assertRaises(TypeError):
-            CableProperty(
-                resting_potential=-65.0 * u.mV,
-                membrane_capacitance=1.0 * (u.uF / u.cm**2),
-                axial_resistivity=100.0 * (u.ohm * u.cm),
-                temperature=310.0,  # type: ignore[arg-type]
-            )
+    def test_bad_temperature_raises(self) -> None:
+        for bad in (310.0, np.array([310.0, 311.0]) * u.kelvin):
+            with self.subTest(temperature=type(bad).__name__):
+                with self.assertRaises(TypeError):
+                    CableProperty(
+                        resting_potential=-65.0 * u.mV,
+                        membrane_capacitance=1.0 * (u.uF / u.cm**2),
+                        axial_resistivity=100.0 * (u.ohm * u.cm),
+                        temperature=bad,  # type: ignore[arg-type]
+                    )
 
-    def test_non_scalar_temperature_raises(self) -> None:
-        import numpy as np
-
-        with self.assertRaises(TypeError):
-            CableProperty(
-                resting_potential=-65.0 * u.mV,
-                membrane_capacitance=1.0 * (u.uF / u.cm**2),
-                axial_resistivity=100.0 * (u.ohm * u.cm),
-                temperature=np.array([310.0, 311.0]) * u.kelvin,
-            )
-
-    def test_with_updates_non_mutating(self) -> None:
-        original = CableProperty(
+    def test_already_canonical_temperature_is_passed_through(self) -> None:
+        # The paint lowering pass rebuilds a CableProperty per control
+        # volume from fields it has already canonicalized, so the
+        # coercion recognises that form and returns it untouched.
+        canonical = make_cable().temperature
+        rebuilt = CableProperty(
             resting_potential=-65.0 * u.mV,
             membrane_capacitance=1.0 * (u.uF / u.cm**2),
             axial_resistivity=100.0 * (u.ohm * u.cm),
+            temperature=canonical,
         )
-        updated = original.with_updates(resting_potential=-70.0 * u.mV)
-        self.assertEqual(original.resting_potential.to_decimal(u.mV), -65.0)
-        self.assertEqual(updated.resting_potential.to_decimal(u.mV), -70.0)
+        self.assertIs(rebuilt.temperature, canonical)
 
     def test_equality_and_hash(self) -> None:
-        a = CableProperty(
-            resting_potential=-65.0 * u.mV,
-            membrane_capacitance=1.0 * (u.uF / u.cm**2),
-            axial_resistivity=100.0 * (u.ohm * u.cm),
-        )
-        b = CableProperty(
-            resting_potential=-65.0 * u.mV,
-            membrane_capacitance=1.0 * (u.uF / u.cm**2),
-            axial_resistivity=100.0 * (u.ohm * u.cm),
-        )
+        a, b = make_cable(), make_cable()
         self.assertEqual(a, b)
         self.assertEqual(hash(a), hash(b))
+        self.assertNotEqual(a, make_cable(cm=2.0))
 
 
 if __name__ == "__main__":

@@ -58,8 +58,7 @@ class DerivedSpec:
 
 def positive(value: object, name: str) -> None:
     """Require every canonical value to be finite and strictly positive."""
-    decimal = _decimal(value)
-    if np.any(decimal <= 0.0):
+    if np.any(np.asarray(u.get_mantissa(value)) <= 0.0):
         raise ValueError(f"Synapse parameter {name!r} must be > 0.")
 
 
@@ -83,9 +82,3 @@ def _validate_like_default(value: object, default: object, *, name: str) -> None
         raise TypeError(f"Synapse field {name!r} must be numeric.") from exc
     if not np.all(finite):
         raise ValueError(f"Synapse field {name!r} must contain only finite values.")
-
-
-def _decimal(value: object) -> np.ndarray:
-    if isinstance(value, u.Quantity):
-        return np.asarray(value.to_decimal(value.unit))
-    return np.asarray(value)

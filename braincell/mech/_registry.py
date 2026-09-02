@@ -198,37 +198,6 @@ class MechanismRegistry:
         for alias in entry.aliases:
             self._aliases.pop((category, alias), None)
 
-    def add_alias(self, *, category: str, alias: str, name: str) -> None:
-        """Add a new alias to an existing canonical entry.
-
-        Parameters
-        ----------
-        category : str
-            Category the alias lives in.
-        alias : str
-            The new alias name.
-        name : str
-            Existing canonical name that the alias should resolve to.
-
-        Raises
-        ------
-        KeyError
-            If no canonical entry exists for ``(category, name)``.
-        ValueError
-            If ``alias`` collides with an existing canonical name or
-            alias in the same category.
-        """
-        _check_category(category)
-        target_key = (category, name)
-        if target_key not in self._entries:
-            raise KeyError(f"Cannot add alias {alias!r}: no canonical mechanism registered at {category!r}/{name!r}.")
-        alias_key = (category, alias)
-        if alias_key in self._entries:
-            raise ValueError(f"Alias {category!r}/{alias!r} collides with existing canonical name.")
-        if alias_key in self._aliases:
-            raise ValueError(f"Alias {category!r}/{alias!r} is already registered for {self._aliases[alias_key]!r}.")
-        self._aliases[alias_key] = name
-
     def clear(self) -> None:
         """Remove every registered entry and alias.
 
@@ -323,16 +292,12 @@ class MechanismRegistry:
         """
         if category is not None:
             _check_category(category)
-            canonical = sorted(entry.name for (cat, _), entry in self._entries.items() if cat == category)
-            if not include_aliases:
-                return tuple(canonical)
-            aliases = sorted(alias for (cat, alias) in self._aliases if cat == category)
-            return tuple(canonical + aliases)
-
-        canonical = sorted(entry.name for entry in self._entries.values())
+        canonical = sorted(
+            entry.name for (cat, _), entry in self._entries.items() if category is None or cat == category
+        )
         if not include_aliases:
             return tuple(canonical)
-        aliases = sorted(alias for (_, alias) in self._aliases)
+        aliases = sorted(alias for (cat, alias) in self._aliases if category is None or cat == category)
         return tuple(canonical + aliases)
 
     def items(self, category: str | None = None) -> tuple[tuple[str, type], ...]:
@@ -351,9 +316,9 @@ class MechanismRegistry:
         """
         if category is not None:
             _check_category(category)
-            pairs = [(entry.name, entry.cls) for (cat, _), entry in self._entries.items() if cat == category]
-        else:
-            pairs = [(entry.name, entry.cls) for entry in self._entries.values()]
+        pairs = [
+            (entry.name, entry.cls) for (cat, _), entry in self._entries.items() if category is None or cat == category
+        ]
         pairs.sort(key=lambda item: item[0])
         return tuple(pairs)
 

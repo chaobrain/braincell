@@ -70,8 +70,9 @@ def _to_hashable(value: object) -> object:
         return ("__list__",) + tuple(_to_hashable(v) for v in value)
     if isinstance(value, dict):
         return ("__dict__",) + tuple((k, _to_hashable(v)) for k, v in sorted(value.items(), key=lambda kv: kv[0]))
-    if isinstance(value, np.ndarray):
-        return ("__array__", str(value.dtype), value.shape, tuple(value.reshape(-1).tolist()))
+    # ``np.ndarray`` needs no branch of its own: ``np.asarray`` returns it
+    # unchanged and cannot raise, so the generic array branch below
+    # produces a byte-identical key for it.
     if hasattr(value, "shape") and hasattr(value, "dtype"):
         try:
             array = np.asarray(value)
@@ -145,7 +146,7 @@ class Params(Mapping[str, Any]):
         True
     """
 
-    __slots__ = ("_items",)
+    __slots__ = ("_items", "_hashable", "_hash")
 
     def __init__(self, data: object = None, /, **kwargs: Any) -> None:
         merged: dict[str, Any] = {}
@@ -172,45 +173,39 @@ class Params(Mapping[str, Any]):
                 merged[str(key)] = value
         for key, value in kwargs.items():
             merged[str(key)] = value
+        # The converted view is needed here anyway to validate that every
+        # value is hashable, so keep it rather than recomputing the same
+        # walk on every ``__hash__`` and ``__eq__`` for the lifetime of
+        # this (immutable) mapping.
+        hashable: dict[str, Any] = {}
         for key, value in merged.items():
+            converted = _to_hashable(value)
             try:
-                hash(_to_hashable(value))
+                hash(converted)
             except TypeError as exc:
                 raise TypeError(
                     f"Params value for {key!r} must be hashable or a concrete array; got {type(value).__name__!r}."
                 ) from exc
+            hashable[key] = converted
         object.__setattr__(self, "_items", merged)
+        object.__setattr__(self, "_hashable", hashable)
+        object.__setattr__(self, "_hash", hash(frozenset(hashable.items())))
 
     # ------------------------------------------------------------------
     # Mapping protocol
     # ------------------------------------------------------------------
 
+    # ``keys``/``values``/``items``/``get``/``__contains__`` are supplied
+    # by the ``Mapping`` ABC on top of the three methods below.
+
     def __getitem__(self, key: str) -> Any:
-        try:
-            return self._items[key]
-        except KeyError:
-            raise KeyError(key) from None
+        return self._items[key]
 
     def __iter__(self) -> Iterator[str]:
         return iter(self._items)
 
     def __len__(self) -> int:
         return len(self._items)
-
-    def __contains__(self, key: object) -> bool:
-        return key in self._items
-
-    def keys(self):  # type: ignore[override]
-        return self._items.keys()
-
-    def values(self):  # type: ignore[override]
-        return self._items.values()
-
-    def items(self):  # type: ignore[override]
-        return self._items.items()
-
-    def get(self, key: str, default: Any = None) -> Any:
-        return self._items.get(key, default)
 
     # ------------------------------------------------------------------
     # immutability: block accidental mutation
@@ -227,23 +222,20 @@ class Params(Mapping[str, Any]):
     # ------------------------------------------------------------------
 
     def __eq__(self, other: object) -> bool:
+        # ``Params`` is a ``Mapping``, so the two former branches (one
+        # reaching into ``other._items``, one calling ``other.items()``)
+        # were the same comparison written twice.
         if isinstance(other, Params):
-            return {key: _to_hashable(value) for key, value in self._items.items()} == {
-                key: _to_hashable(value) for key, value in other._items.items()
-            }
+            return self._hashable == other._hashable
         if isinstance(other, Mapping):
-            return {key: _to_hashable(value) for key, value in self._items.items()} == {
+            return len(self._items) == len(other) and self._hashable == {
                 key: _to_hashable(value) for key, value in other.items()
             }
         return NotImplemented
 
     def __hash__(self) -> int:
-        try:
-            return hash(frozenset((k, _to_hashable(v)) for k, v in self._items.items()))
-        except TypeError as exc:
-            raise TypeError(
-                f"Params values must be hashable to hash the mapping; unhashable entry encountered ({exc})."
-            ) from exc
+        # ``__init__`` rejects unhashable values, so this cannot fail.
+        return self._hash
 
     # ------------------------------------------------------------------
     # repr: stable declared order
@@ -278,27 +270,6 @@ class Params(Mapping[str, Any]):
         for key, value in kwargs.items():
             merged[str(key)] = value
         return Params(merged)
-
-    def without(self, *keys: str) -> "Params":
-        """Return a copy with the given keys removed.
-
-        Unknown keys are silently ignored.
-
-        Parameters
-        ----------
-        *keys : str
-            Keys to drop.
-
-        Returns
-        -------
-        Params
-            A new :class:`Params` instance.
-        """
-        if not keys:
-            return self
-        to_drop = {str(k) for k in keys}
-        remaining = {key: value for key, value in self._items.items() if key not in to_drop}
-        return Params(remaining)
 
     # ------------------------------------------------------------------
     # construction

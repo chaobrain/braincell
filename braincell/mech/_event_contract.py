@@ -77,11 +77,21 @@ class ScalarEventInput(EventInput):
         object.__setattr__(self, "unit", unit)
 
     def validate_payload(self, payload):
-        """Validate and return a payload without forcing host materialization."""
+        """Validate and return a payload without forcing host materialization.
+
+        The check is purely dimensional, so it compares dimension
+        metadata rather than converting the payload. The previous
+        implementation called ``payload.to_decimal(self.unit)`` and threw
+        the result away, which emitted a real array multiply on every
+        call -- dead work that only XLA's DCE removed, and only on the
+        jitted run paths.
+        """
         if not isinstance(payload, u.Quantity):
             raise TypeError(f"Scalar event payload must be a quantity compatible with {self.unit}.")
         try:
-            payload.to_decimal(self.unit)
+            compatible = payload.dim == u.get_dim(self.unit)
         except Exception as exc:
             raise ValueError(f"Scalar event payload has units incompatible with {self.unit}.") from exc
+        if not compatible:
+            raise ValueError(f"Scalar event payload has units incompatible with {self.unit}.")
         return payload

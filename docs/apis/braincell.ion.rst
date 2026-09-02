@@ -59,6 +59,18 @@ Sodium Ions
    SodiumInitNernst
 
 
+Non-Specific Ions
+-----------------
+
+.. autosummary::
+   :toctree: generated/
+   :nosignatures:
+   :template: classtemplate.rst
+
+   NonSpecific
+   NonSpecificFixed
+
+
 Helpers
 -------
 

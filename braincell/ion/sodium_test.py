@@ -20,16 +20,12 @@ import unittest
 import brainunit as u
 import jax.numpy as jnp
 
-from braincell._base_channel import IonInfo
 from braincell._base_ion import Ion
 from braincell._base_neuron import HHTypedNeuron
 from braincell.channel.sodium import Na_TM1991
 from braincell.ion._base import InitNernstIon
+from braincell.ion._testing import V as _V, FixedIonContractTests
 from braincell.ion.sodium import Sodium, SodiumFixed, SodiumInitNernst
-
-
-def _V(values, unit=u.mV):
-    return jnp.asarray(values) * unit
 
 
 class SodiumBaseTest(unittest.TestCase):
@@ -41,29 +37,9 @@ class SodiumBaseTest(unittest.TestCase):
     def test_root_type_is_hh_typed_neuron(self) -> None:
         self.assertIs(Sodium.root_type, HHTypedNeuron)
 
-    def test_module_attribute_is_public_namespace(self) -> None:
-        # Sodium should be exposed under ``braincell.ion`` in the public
-        # namespace even though the class lives in ``braincell.ion.sodium``.
-        self.assertEqual(Sodium.__module__, "braincell.ion")
-
 
 class SodiumFixedDefaultsTest(unittest.TestCase):
     """Defaults and parameter storage for :class:`SodiumFixed`."""
-
-    def test_default_reversal_potential_is_50_mV(self) -> None:
-        na = SodiumFixed(size=1)
-        self.assertTrue(u.math.allclose(na.E, 50.0 * u.mV, atol=1e-9 * u.mV))
-
-    def test_default_intracellular_concentration_is_10_mM(self) -> None:
-        na = SodiumFixed(size=1)
-        self.assertTrue(u.math.allclose(na.Ci, 10.0 * u.mM, atol=1e-9 * u.mM))
-        self.assertTrue(u.math.allclose(na.Co, 140.0 * u.mM, atol=1e-9 * u.mM))
-        self.assertTrue(u.math.allclose(na.valence, jnp.ones((1,)), atol=1e-9))
-
-    def test_varshape_matches_size(self) -> None:
-        self.assertEqual(SodiumFixed(size=1).varshape, (1,))
-        self.assertEqual(SodiumFixed(size=4).varshape, (4,))
-        self.assertEqual(SodiumFixed(size=(2, 3)).varshape, (2, 3))
 
     def test_custom_scalar_parameters_are_honoured(self) -> None:
         na = SodiumFixed(size=3, E=40.0 * u.mV, Ci=0.5 * u.mM, Co=100.0 * u.mM, valence=1)
@@ -71,54 +47,14 @@ class SodiumFixedDefaultsTest(unittest.TestCase):
         self.assertTrue(u.math.allclose(na.Ci, 0.5 * u.mM, atol=1e-9 * u.mM))
         self.assertTrue(u.math.allclose(na.Co, 100.0 * u.mM, atol=1e-9 * u.mM))
 
-    def test_callable_parameters_broadcast_across_size(self) -> None:
-        na = SodiumFixed(
-            size=2,
-            E=lambda shape: jnp.array([50.0, 40.0]) * u.mV,
-            Ci=lambda shape: jnp.array([0.1, 0.2]) * u.mM,
-            Co=lambda shape: jnp.array([140.0, 141.0]) * u.mM,
-        )
-        self.assertEqual(na.E.shape, (2,))
-        self.assertEqual(na.Ci.shape, (2,))
-        self.assertEqual(na.Co.shape, (2,))
-        self.assertTrue(u.math.allclose(na.E, jnp.array([50.0, 40.0]) * u.mV, atol=1e-9 * u.mV))
-        self.assertTrue(u.math.allclose(na.Ci, jnp.array([0.1, 0.2]) * u.mM, atol=1e-9 * u.mM))
-        self.assertTrue(u.math.allclose(na.Co, jnp.array([140.0, 141.0]) * u.mM, atol=1e-9 * u.mM))
-
-
-class SodiumFixedPackInfoTest(unittest.TestCase):
-    """``pack_info`` returns a well-formed :class:`IonInfo`."""
-
-    def test_pack_info_returns_named_tuple(self) -> None:
-        na = SodiumFixed(size=1)
-        info = na.pack_info()
-        self.assertIsInstance(info, IonInfo)
-
-    def test_pack_info_fields_match_stored_values(self) -> None:
-        na = SodiumFixed(size=1, E=30.0 * u.mV, Ci=0.2 * u.mM, Co=120.0 * u.mM, valence=1)
-        info = na.pack_info()
-        self.assertTrue(u.math.allclose(info.Ci, 0.2 * u.mM, atol=1e-9 * u.mM))
-        self.assertTrue(u.math.allclose(info.Co, 120.0 * u.mM, atol=1e-9 * u.mM))
-        self.assertTrue(u.math.allclose(info.E, 30.0 * u.mV, atol=1e-9 * u.mV))
-        self.assertTrue(u.math.allclose(info.valence, jnp.ones((1,)), atol=1e-9))
-
 
 class SodiumFixedContainerTest(unittest.TestCase):
     """Ion-as-container behaviour: child channels are managed correctly."""
-
-    def test_no_channels_by_default(self) -> None:
-        na = SodiumFixed(size=1)
-        self.assertEqual(na.channels, {})
-        self.assertEqual(na.external_currents, {})
 
     def test_channels_kwarg_is_attached(self) -> None:
         na = SodiumFixed(size=1, INa=Na_TM1991(size=1))
         self.assertIn("INa", na.channels)
         self.assertIsInstance(na.channels["INa"], Na_TM1991)
-
-    def test_current_without_channels_returns_none(self) -> None:
-        na = SodiumFixed(size=1)
-        self.assertIsNone(na.current(_V([-60.0])))
 
     def test_current_with_channel_delegates_to_channel(self) -> None:
         na = SodiumFixed(size=1, INa=Na_TM1991(size=1))
@@ -129,17 +65,6 @@ class SodiumFixedContainerTest(unittest.TestCase):
         # Channel.current returns g_max * m^3 * h * (E - V). We just require
         # the call to succeed and return a quantity of the expected shape.
         self.assertEqual(i.shape, (1,))
-
-    def test_register_external_current_rejects_duplicate_keys(self) -> None:
-        na = SodiumFixed(size=1)
-
-        def fake(V, info):
-            return jnp.array([1.0]) * u.uA / u.cm**2
-
-        na.register_external_current("ext", fake)
-        self.assertIn("ext", na.external_currents)
-        with self.assertRaises(ValueError):
-            na.register_external_current("ext", fake)
 
     def test_current_with_include_external_adds_registered_fn(self) -> None:
         na = SodiumFixed(size=1, INa=Na_TM1991(size=1))
@@ -231,6 +156,17 @@ class SodiumInitNernstTest(unittest.TestCase):
         na = SodiumInitNernst(size=1, Ci=15.0 * u.mM, Co=130.0 * u.mM)
         self.assertTrue(u.math.allclose(na.Ci, 15.0 * u.mM, atol=1e-9 * u.mM))
         self.assertTrue(u.math.allclose(na.Co, 130.0 * u.mM, atol=1e-9 * u.mM))
+
+
+class SodiumFixedContractTest(FixedIonContractTests, unittest.TestCase):
+    """The shared ``FixedIon`` contract, for sodium."""
+
+    ION_CLASS = SodiumFixed
+    FAMILY_CLASS = Sodium
+    DEFAULT_E = 50.0 * u.mV
+    DEFAULT_CI = 10.0 * u.mM
+    DEFAULT_CO = 140.0 * u.mM
+    DEFAULT_VALENCE = 1
 
 
 if __name__ == "__main__":

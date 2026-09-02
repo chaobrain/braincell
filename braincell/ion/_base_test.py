@@ -473,14 +473,16 @@ class IonTemplateTest(unittest.TestCase):
 
 
 class ConserveWritebackStateClassTest(unittest.TestCase):
-    """``_Conserve.writeback`` must not allocate a wrongly-classed state.
+    """``_Conserve.writeback`` must reuse the state ``_Species.init`` made.
 
-    ``writeback`` *does* run every simulation step, outside the
+    ``writeback`` runs every simulation step, outside the
     :func:`braincell.state_grouping` scope the host sets around
-    ``init_state``. Its allocation branch is dead in normal flow because
-    ``_Species.init`` ran first — these tests pin both halves of that, so
-    a regression shows up as a failure rather than as a silently
-    non-grouped state inside a ``Cell``.
+    ``init_state``, so allocating there would silently hand back a plain
+    ``HiddenState`` and break a ``Cell``'s grouped-hidden-state
+    invariant. ``writeback`` no longer has an allocation branch at all —
+    this test pins the precondition that makes that safe: every
+    algebraic species is already a grouped state when the step begins,
+    and the same object survives it.
 
     See ``docs/specs/2026-08-13-cell-hidden-group-state.md``.
     """
@@ -500,39 +502,30 @@ class ConserveWritebackStateClassTest(unittest.TestCase):
         cell.init_state()
         return cell
 
-    def test_writeback_runs_mid_step_but_allocates_nothing(self) -> None:
+    def test_writeback_runs_mid_step_and_reuses_the_grouped_states(self) -> None:
         from braincell.ion import _base as ionbase
 
         cell = self._kinetic_cell()
-        calls = {"writeback": 0, "allocated": 0}
+        calls = {"writeback": 0}
         original_writeback = ionbase._Conserve.writeback
-        original_algebraic = ionbase._Species.algebraic_state
 
         def counting_writeback(self, V=None):
             calls["writeback"] += 1
             return original_writeback(self, V)
 
-        def counting_algebraic(self, value):
-            calls["allocated"] += 1
-            return original_algebraic(self, value)
-
         # Identity of every algebraic state before the step, so a
-        # reallocation is visible as a swapped object and not only as an
-        # extra ``algebraic_state`` call.
+        # reallocation is visible as a swapped object.
         before = self._algebraic_states(cell)
         self.assertGreater(len(before), 0, "expected at least one algebraic species")
 
         ionbase._Conserve.writeback = counting_writeback
-        ionbase._Species.algebraic_state = counting_algebraic
         try:
             with brainstate.environ.context(t=0.0 * u.ms, dt=0.01 * u.ms):
                 cell.update()
         finally:
             ionbase._Conserve.writeback = original_writeback
-            ionbase._Species.algebraic_state = original_algebraic
 
         self.assertGreater(calls["writeback"], 0, "writeback should run during a step")
-        self.assertEqual(calls["allocated"], 0, "writeback must not allocate mid-run")
 
         after = self._algebraic_states(cell)
         self.assertEqual(set(before), set(after))
@@ -556,53 +549,17 @@ class ConserveWritebackStateClassTest(unittest.TestCase):
             if path and str(path[-1]) in names
         }
 
-    def test_late_allocation_still_matches_its_siblings(self) -> None:
-        # Force the dead branch: drop the algebraic species back to a bare
-        # value so the next writeback has to re-allocate it. writeback runs
-        # outside any state_grouping scope, so an ambient-scope allocation
-        # would hand back a plain HiddenState and break the Cell invariant.
-        from braincell.ion import _base as ionbase
-
+    def test_init_leaves_every_algebraic_species_already_grouped(self) -> None:
+        # The precondition that makes writeback's unconditional assignment
+        # safe: init_state, which *does* run inside the host's
+        # state_grouping scope, has already allocated every algebraic
+        # species as a grouped state. There is no later allocation path.
         cell = self._kinetic_cell()
-        ion = cell.get_ion("CdpCR_MA2020_GrC")
-        specs = ionbase._Specs.for_type(type(ion))
-        (name,) = specs.algebraic_names
-
-        state = getattr(ion, name)
-        self.assertIsInstance(state, brainstate.HiddenGroupState)
-        setattr(ion, name, state.value)
-        self.assertNotIsInstance(getattr(ion, name), brainstate.State)
-
-        species = ionbase._Species(ion, specs)
-        ionbase._Conserve(ion, specs, species).writeback(cell.V.value)
-
-        restored = getattr(ion, name)
-        self.assertIsInstance(restored, brainstate.HiddenGroupState)
-        self.assertEqual(restored.value.shape, state.value.shape)
-
-    def test_late_allocation_stays_plain_when_its_siblings_are_plain(self) -> None:
-        # The mirror of the test above. A sibling-derived class has to work
-        # in both directions, or "derive it from a sibling" is really just
-        # "always group", which would be wrong outside a Cell.
-        from braincell.ion import _base as ionbase
-
-        ion = _SimpleKineticIon(size=3)
-        ion.init_state(jnp.ones(3) * -65.0 * u.mV)
-        specs = ionbase._Specs.for_type(type(ion))
-        (name,) = specs.algebraic_names
-
-        state = getattr(ion, name)
-        self.assertIsInstance(state, brainstate.HiddenState)
-        self.assertNotIsInstance(state, brainstate.HiddenGroupState)
-        setattr(ion, name, state.value)
-
-        species = ionbase._Species(ion, specs)
-        ionbase._Conserve(ion, specs, species).writeback(jnp.ones(3) * -65.0 * u.mV)
-
-        restored = getattr(ion, name)
-        self.assertIsInstance(restored, brainstate.HiddenState)
-        self.assertNotIsInstance(restored, brainstate.HiddenGroupState)
-        self.assertEqual(restored.value.shape, state.value.shape)
+        states = self._algebraic_states(cell)
+        self.assertGreater(len(states), 0, "expected at least one algebraic species")
+        for path, state in states.items():
+            with self.subTest(state=path):
+                self.assertIsInstance(state, brainstate.HiddenGroupState)
 
 
 class _ShellGeometryIon(Calcium, _RadialShellGeometry, KineticIon):

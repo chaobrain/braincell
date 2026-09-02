@@ -13,15 +13,13 @@
 # limitations under the License.
 # ==============================================================================
 
-# -*- coding: utf-8 -*-
-
 from typing import Optional
 
+import brainstate
 import braintools
 import brainunit as u
 
 from braincell._base_ion import Ion
-from braincell._base_neuron import HHTypedNeuron
 from braincell._typing import Initializer, Size
 from braincell.mech import register_ion
 from braincell.ion._base import (
@@ -35,6 +33,7 @@ from braincell.ion._base import (
     Source,
     Species,
     _RadialShellGeometry,
+    species_initializer_view,
 )
 
 __all__ = [
@@ -58,6 +57,52 @@ __all__ = [
     'CdpHVA_SU2015_DCN',
     'CdpLVA_SU2015_DCN',
 ]
+
+
+class _ParvalbuminEquilibrium(brainstate.mixin.Mixin):
+    r"""Resting occupancy of a parvalbumin pool competing for Ca and Mg.
+
+    Parvalbumin binds calcium and magnesium at the same site, so its
+    three states are fixed by two dissociation ratios rather than one:
+    :math:`k_{dc} = c_{null} m_1 / m_2` for calcium and
+    :math:`k_{dm} = mg_{null} p_1 / p_2` for magnesium. The free,
+    calcium-bound, and magnesium-bound fractions then partition
+    ``PVnull`` as :math:`1 : k_{dc} : k_{dm}`.
+
+    The chemistry is identical wherever the pool appears, so the three
+    ``cdp`` mechanisms that carry parvalbumin mix this in rather than
+    restating it. It is calcium chemistry, not shell geometry, which is
+    why it lives here and not on
+    :class:`~braincell.ion._base._RadialShellGeometry`.
+
+    Requires ``cainull``, ``mginull``, ``PVnull``, and the four rate
+    parameters ``m1``, ``m2``, ``p1``, ``p2`` on the concrete ion.
+
+    See Also
+    --------
+    CdpStC_NoCAM_MA2020_GoC : Golgi-cell pool carrying parvalbumin.
+    CdpStC_MA2020_GoC : The same pool with calmodulin added.
+    CdpCAM_MA2024_PC : Purkinje-cell pool with parvalbumin and calbindin.
+    """
+
+    def _pv_dissociation_ratios(self):
+        """Return the ``(calcium, magnesium)`` dissociation ratios."""
+        return (self.cainull * self.m1) / self.m2, (self.mginull * self.p1) / self.p2
+
+    def _ss_pv_free(self):
+        """Return the metal-free parvalbumin fraction at equilibrium."""
+        kdc, kdm = self._pv_dissociation_ratios()
+        return self.PVnull / (1.0 + kdc + kdm)
+
+    def _ss_pv_ca(self):
+        """Return the calcium-bound parvalbumin fraction at equilibrium."""
+        kdc, kdm = self._pv_dissociation_ratios()
+        return (self.PVnull * kdc) / (1.0 + kdc + kdm)
+
+    def _ss_pv_mg(self):
+        """Return the magnesium-bound parvalbumin fraction at equilibrium."""
+        kdc, kdm = self._pv_dissociation_ratios()
+        return (self.PVnull * kdm) / (1.0 + kdc + kdm)
 
 
 class Calcium(Ion):
@@ -102,9 +147,6 @@ class Calcium(Ion):
 
     Attributes
     ----------
-    root_type : type
-        Root container type this ion attaches to. Set to
-        :class:`~braincell.HHTypedNeuron`.
     ion_symbol : str
         Symbol used for runtime family lookup. Set to ``'Ca'``.
     default_Ci : brainunit.Quantity
@@ -117,7 +159,6 @@ class Calcium(Ion):
 
     __module__ = 'braincell.ion'
 
-    root_type = HHTypedNeuron
     ion_symbol = 'Ca'
     default_Ci = 5e-05 * u.mM
     default_Co = 2.0 * u.mM
@@ -406,7 +447,7 @@ class CalciumDetailed(Calcium, DynamicNernstIon):
         which falls back to :attr:`Calcium.default_Co` inside
         :meth:`DynamicNernstIon._init_dynamic_nernst_ion`.
     Ci_initializer : array-like or callable, optional
-        Union[brainstate.typing.ArrayLike, Callable] for the dynamic ``Ci`` state. Defaults to a
+        Initializer for the dynamic ``Ci`` state. Defaults to a
         constant ``2.4e-4 mM`` initializer, matching ``C_rest``.
     name : str or None, optional
         Runtime ion instance name. Defaults to ``None``.
@@ -531,7 +572,7 @@ class CalciumFirstOrder(Calcium, DynamicNernstIon):
         which falls back to :attr:`Calcium.default_Co` inside
         :meth:`DynamicNernstIon._init_dynamic_nernst_ion`.
     Ci_initializer : array-like or callable, optional
-        Union[brainstate.typing.ArrayLike, Callable] for the dynamic ``Ci`` state. Defaults to a
+        Initializer for the dynamic ``Ci`` state. Defaults to a
         constant ``2.4e-4 mM`` initializer.
     name : str or None, optional
         Runtime ion instance name. Defaults to ``None``.
@@ -667,9 +708,9 @@ class ToyCaBindingKinetic_SU2015_DCN(Calcium, KineticIon):
         which falls back to :attr:`Calcium.default_Co` inside
         :meth:`KineticIon._init_kinetic_ion`.
     Ci_initializer : array-like or callable, optional
-        Union[brainstate.typing.ArrayLike, Callable] for the ``Ci`` species. Defaults to ``0.10 mM``.
+        Initializer for the ``Ci`` species. Defaults to ``0.10 mM``.
     BC_initializer : array-like or callable, optional
-        Union[brainstate.typing.ArrayLike, Callable] for the ``BC`` species. Defaults to ``0.00 mM``.
+        Initializer for the ``BC`` species. Defaults to ``0.00 mM``.
     solver : str, optional
         Integrator name used for the reaction network. Defaults to
         ``"rk4"``.
@@ -711,6 +752,10 @@ class ToyCaBindingKinetic_SU2015_DCN(Calcium, KineticIon):
     """
 
     __module__ = "braincell.ion"
+
+    #: View onto ``species_initializers["BC"]``, kept readable
+    #: because ``_compute.ions`` reflects over ``__init__``.
+    BC_initializer = species_initializer_view("BC")
 
     species = (
         Species("Ci", init=0.10 * u.mM),
@@ -761,7 +806,6 @@ class ToyCaBindingKinetic_SU2015_DCN(Calcium, KineticIon):
             solver=solver,
             substeps=substeps,
         )
-        self.BC_initializer = BC_initializer
         self.kf = braintools.init.param(kf, self.varshape, allow_none=False)
         self.kb = braintools.init.param(kb, self.varshape, allow_none=False)
         self.Btot = braintools.init.param(Btot, self.varshape, allow_none=False)
@@ -813,9 +857,9 @@ class ToyCaBindingSourceKinetic_SU2015_DCN(Calcium, KineticIon):
         which falls back to :attr:`Calcium.default_Co` inside
         :meth:`KineticIon._init_kinetic_ion`.
     Ci_initializer : array-like or callable, optional
-        Union[brainstate.typing.ArrayLike, Callable] for the ``Ci`` species. Defaults to ``0.10 mM``.
+        Initializer for the ``Ci`` species. Defaults to ``0.10 mM``.
     BC_initializer : array-like or callable, optional
-        Union[brainstate.typing.ArrayLike, Callable] for the ``BC`` species. Defaults to ``0.00 mM``.
+        Initializer for the ``BC`` species. Defaults to ``0.00 mM``.
     solver : str, optional
         Integrator name used for the reaction network. Defaults to
         ``"rk4"``.
@@ -857,12 +901,16 @@ class ToyCaBindingSourceKinetic_SU2015_DCN(Calcium, KineticIon):
 
     __module__ = "braincell.ion"
 
+    #: View onto ``species_initializers["BC"]``, kept readable
+    #: because ``_compute.ions`` reflects over ``__init__``.
+    BC_initializer = species_initializer_view("BC")
+
     species = ToyCaBindingKinetic_SU2015_DCN.species
     reactions = ToyCaBindingKinetic_SU2015_DCN.reactions
     sources = (
         Source(
             target="Ci",
-            flux=lambda self, V, x: self.ci_source,
+            flux=lambda self, V, x, total_current=None: self.ci_source,
         ),
     )
     conserves = ToyCaBindingKinetic_SU2015_DCN.conserves
@@ -895,7 +943,6 @@ class ToyCaBindingSourceKinetic_SU2015_DCN(Calcium, KineticIon):
             solver=solver,
             substeps=substeps,
         )
-        self.BC_initializer = BC_initializer
         self.kf = braintools.init.param(kf, self.varshape, allow_none=False)
         self.kb = braintools.init.param(kb, self.varshape, allow_none=False)
         self.Btot = braintools.init.param(Btot, self.varshape, allow_none=False)
@@ -942,9 +989,9 @@ class ToyCaBindingIcaSourceKinetic_SU2015_DCN(Calcium, KineticIon):
         which falls back to :attr:`Calcium.default_Co` inside
         :meth:`KineticIon._init_kinetic_ion`.
     Ci_initializer : array-like or callable, optional
-        Union[brainstate.typing.ArrayLike, Callable] for the ``Ci`` species. Defaults to ``0.10 mM``.
+        Initializer for the ``Ci`` species. Defaults to ``0.10 mM``.
     BC_initializer : array-like or callable, optional
-        Union[brainstate.typing.ArrayLike, Callable] for the ``BC`` species. Defaults to ``0.00 mM``.
+        Initializer for the ``BC`` species. Defaults to ``0.00 mM``.
     solver : str, optional
         Integrator name used for the reaction network. Defaults to
         ``"rk4"``.
@@ -991,6 +1038,10 @@ class ToyCaBindingIcaSourceKinetic_SU2015_DCN(Calcium, KineticIon):
     """
 
     __module__ = "braincell.ion"
+
+    #: View onto ``species_initializers["BC"]``, kept readable
+    #: because ``_compute.ions`` reflects over ``__init__``.
+    BC_initializer = species_initializer_view("BC")
     uses_total_current = True
 
     species = ToyCaBindingKinetic_SU2015_DCN.species
@@ -1002,7 +1053,7 @@ class ToyCaBindingIcaSourceKinetic_SU2015_DCN(Calcium, KineticIon):
                 braintools.init.param(0.0 * (u.mM / u.ms), self.varshape)
                 if total_current is None
                 else (
-                    self.kCa.to_decimal(self.kCa.unit)
+                    u.get_mantissa(self.kCa)
                     / self.depth.to_decimal(u.um)
                     * total_current.to_decimal(u.mA / u.cm**2)
                     * 1e4
@@ -1042,7 +1093,6 @@ class ToyCaBindingIcaSourceKinetic_SU2015_DCN(Calcium, KineticIon):
             solver=solver,
             substeps=substeps,
         )
-        self.BC_initializer = BC_initializer
         self.kf = braintools.init.param(kf, self.varshape, allow_none=False)
         self.kb = braintools.init.param(kb, self.varshape, allow_none=False)
         self.Btot = braintools.init.param(Btot, self.varshape, allow_none=False)
@@ -1107,9 +1157,9 @@ class ToyCaPumpFactorKinetic_SU2015_DCN(Calcium, KineticIon):
         which falls back to :attr:`Calcium.default_Co` inside
         :meth:`KineticIon._init_kinetic_ion`.
     Ci_initializer : array-like or callable, optional
-        Union[brainstate.typing.ArrayLike, Callable] for the ``Ci`` species. Defaults to ``0.10 mM``.
+        Initializer for the ``Ci`` species. Defaults to ``0.10 mM``.
     PumpBound_initializer : array-like or callable, optional
-        Union[brainstate.typing.ArrayLike, Callable] for the ``PumpBound`` species. Defaults to
+        Initializer for the ``PumpBound`` species. Defaults to
         ``0.00 mM * um``.
     solver : str, optional
         Integrator name used for the reaction network. Defaults to
@@ -1165,6 +1215,10 @@ class ToyCaPumpFactorKinetic_SU2015_DCN(Calcium, KineticIon):
     """
 
     __module__ = "braincell.ion"
+
+    #: View onto ``species_initializers["PumpBound"]``, kept readable
+    #: because ``_compute.ions`` reflects over ``__init__``.
+    PumpBound_initializer = species_initializer_view("PumpBound")
     uses_total_current = True
 
     factors = (
@@ -1199,7 +1253,7 @@ class ToyCaPumpFactorKinetic_SU2015_DCN(Calcium, KineticIon):
                 else self.cyt_volume
                 * (
                     (
-                        self.kCa.to_decimal(self.kCa.unit)
+                        u.get_mantissa(self.kCa)
                         / self.depth.to_decimal(u.um)
                         * total_current.to_decimal(u.mA / u.cm**2)
                         * 1e4
@@ -1249,7 +1303,6 @@ class ToyCaPumpFactorKinetic_SU2015_DCN(Calcium, KineticIon):
             solver=solver,
             substeps=substeps,
         )
-        self.PumpBound_initializer = PumpBound_initializer
         self.kf = braintools.init.param(kf, self.varshape, allow_none=False)
         self.kb = braintools.init.param(kb, self.varshape, allow_none=False)
         self.k_rel = braintools.init.param(k_rel, self.varshape, allow_none=False)
@@ -1320,9 +1373,9 @@ class ToyDiamFactorKinetic_SU2015_DCN(Calcium, KineticIon):
         which falls back to :attr:`Calcium.default_Co` inside
         :meth:`KineticIon._init_kinetic_ion`.
     Ci_initializer : array-like or callable, optional
-        Union[brainstate.typing.ArrayLike, Callable] for the ``Ci`` species. Defaults to ``0.10 mM``.
+        Initializer for the ``Ci`` species. Defaults to ``0.10 mM``.
     PumpBound_initializer : array-like or callable, optional
-        Union[brainstate.typing.ArrayLike, Callable] for the ``PumpBound`` species. Defaults to
+        Initializer for the ``PumpBound`` species. Defaults to
         ``0.00 mM * um``.
     solver : str, optional
         Integrator name used for the reaction network. Defaults to
@@ -1390,6 +1443,10 @@ class ToyDiamFactorKinetic_SU2015_DCN(Calcium, KineticIon):
 
     __module__ = "braincell.ion"
 
+    #: View onto ``species_initializers["PumpBound"]``, kept readable
+    #: because ``_compute.ions`` reflects over ``__init__``.
+    PumpBound_initializer = species_initializer_view("PumpBound")
+
     factors = (
         Factor("cyto", lambda self: u.math.pi * self.diam_mid * self.depth),
         Factor("pump_area", lambda self: u.math.pi * self.diam_mid),
@@ -1444,11 +1501,139 @@ class ToyDiamFactorKinetic_SU2015_DCN(Calcium, KineticIon):
             solver=solver,
             substeps=substeps,
         )
-        self.PumpBound_initializer = PumpBound_initializer
         self.kf = braintools.init.param(kf, self.varshape, allow_none=False)
         self.kb = braintools.init.param(kb, self.varshape, allow_none=False)
         self.PumpTot = braintools.init.param(PumpTot, self.varshape, allow_none=False)
         self.depth = braintools.init.param(depth, self.varshape, allow_none=False)
+
+
+# ---------------------------------------------------------------------------
+# Declaration blocks shared by the ported ``cdp`` calcium pools.
+#
+# The five ``Cdp*`` mechanisms below are different reaction networks over a
+# common substrate: the same cytosolic buffer set, the same parvalbumin
+# triple, the same surface pump pair, and -- where calmodulin is modelled at
+# all -- the same nine CaM states. Each block is declared once here and
+# composed into the class tables, so a correction to the shared chemistry
+# reaches every model that uses it instead of three or four hand-kept copies.
+# ---------------------------------------------------------------------------
+
+_CI_SPECIES = (Species("Ci", init=0.0 * u.mM, factor="cyto"),)
+
+_BUFFER_SPECIES = (
+    Species("mg", init=0.0 * u.mM, factor="cyto"),
+    Species("Buff1", init=0.0 * u.mM, factor="cyto"),
+    Species("Buff1_ca", init=0.0 * u.mM, factor="cyto"),
+    Species("Buff2", init=0.0 * u.mM, factor="cyto"),
+    Species("Buff2_ca", init=0.0 * u.mM, factor="cyto"),
+    Species("BTC", init=0.0 * u.mM, factor="cyto"),
+    Species("BTC_ca", init=0.0 * u.mM, factor="cyto"),
+    Species("DMNPE", init=0.0 * u.mM, factor="cyto"),
+    Species("DMNPE_ca", init=0.0 * u.mM, factor="cyto"),
+)
+
+_PV_SPECIES = (
+    Species("PV", init=0.0 * u.mM, factor="cyto"),
+    Species("PV_ca", init=0.0 * u.mM, factor="cyto"),
+    Species("PV_mg", init=0.0 * u.mM, factor="cyto"),
+)
+
+_PUMP_SPECIES = (
+    Species("pump", init=0.0 * (u.mol / u.cm**2), factor="pump_area"),
+    Species("pumpca", init=0.0 * (u.mol / u.cm**2), factor="pump_area"),
+)
+
+#: Calmodulin states, in the binding order the ``cdp`` mod files declare them.
+_CAM_STATES = (
+    "CAM0",
+    "CAM1C",
+    "CAM2C",
+    "CAM1N2C",
+    "CAM1N",
+    "CAM2N",
+    "CAM2N1C",
+    "CAM1C1N",
+    "CAM4",
+)
+
+
+_BUFFER_REACTIONS = (
+    Reaction(
+        lhs={"pump": 1, "Ci": 1},
+        rhs={"pumpca": 1},
+        forward=lambda self, V, x: self.kpmp1 * self.parea,
+        backward=lambda self, V, x: self.kpmp2 * self.parea,
+    ),
+    Reaction(
+        lhs={"pumpca": 1},
+        rhs={"pump": 1},
+        forward=lambda self, V, x: self.kpmp3 * self.parea,
+        backward=None,
+    ),
+    Reaction(
+        lhs={"Ci": 1, "Buff1": 1},
+        rhs={"Buff1_ca": 1},
+        forward=lambda self, V, x: self.rf1 * self.dsqvol,
+        backward=lambda self, V, x: self.rf2 * self.dsqvol,
+    ),
+    Reaction(
+        lhs={"Ci": 1, "Buff2": 1},
+        rhs={"Buff2_ca": 1},
+        forward=lambda self, V, x: self.rf3 * self.dsqvol,
+        backward=lambda self, V, x: self.rf4 * self.dsqvol,
+    ),
+    Reaction(
+        lhs={"Ci": 1, "BTC": 1},
+        rhs={"BTC_ca": 1},
+        forward=lambda self, V, x: self.b1 * self.dsqvol,
+        backward=lambda self, V, x: self.b2 * self.dsqvol,
+    ),
+    Reaction(
+        lhs={"Ci": 1, "DMNPE": 1},
+        rhs={"DMNPE_ca": 1},
+        forward=lambda self, V, x: self.c1 * self.dsqvol,
+        backward=lambda self, V, x: self.c2 * self.dsqvol,
+    ),
+)
+
+_PV_REACTIONS = (
+    Reaction(
+        lhs={"Ci": 1, "PV": 1},
+        rhs={"PV_ca": 1},
+        forward=lambda self, V, x: self.m1 * self.dsqvol,
+        backward=lambda self, V, x: self.m2 * self.dsqvol,
+    ),
+    Reaction(
+        lhs={"mg": 1, "PV": 1},
+        rhs={"PV_mg": 1},
+        forward=lambda self, V, x: self.p1 * self.dsqvol,
+        backward=lambda self, V, x: self.p2 * self.dsqvol,
+    ),
+)
+
+
+def _cam_species(factor: str) -> tuple:
+    """Return the nine calmodulin species, scaled by ``factor``.
+
+    The Golgi-cell pools give calmodulin its own unit-carrying
+    ``"cam_unit"`` factor, so its states are not scaled by the shell
+    volume a second time; the Purkinje-cell pool scales them by
+    ``"cyto"`` like every other cytosolic species. The states themselves
+    are the same nine either way, which is why the factor is the only
+    parameter.
+
+    Parameters
+    ----------
+    factor : str
+        Name of the :class:`~braincell.ion._base.Factor` these states
+        are converted through.
+
+    Returns
+    -------
+    tuple of braincell.ion._base.Species
+        The nine calmodulin states, in ``_CAM_STATES`` order.
+    """
+    return tuple(Species(name, init=0.0 * u.mM, factor=factor) for name in _CAM_STATES)
 
 
 @register_ion("CdpStC_CAMOnly_MA2020_GoC")
@@ -1504,7 +1689,7 @@ class CdpStC_CAMOnly_MA2020_GoC(Calcium, _RadialShellGeometry, KineticIon):
         which falls back to :attr:`Calcium.default_Co` inside
         :meth:`KineticIon._init_kinetic_ion`.
     Ci_initializer : array-like or callable or None, optional
-        Union[brainstate.typing.ArrayLike, Callable] for the ``Ci`` species. Defaults to ``None``,
+        Initializer for the ``Ci`` species. Defaults to ``None``,
         which falls back to ``cainull``.
     species_initializers : dict or None, optional
         Per-species initializer overrides, keyed by one of this
@@ -1616,21 +1801,10 @@ class CdpStC_CAMOnly_MA2020_GoC(Calcium, _RadialShellGeometry, KineticIon):
         # whose magnitude is 1 instead of ``dsqvol``.
         Factor(
             "cam_unit",
-            lambda self: u.math.ones_like(self.dsqvol.to_decimal(u.um**2)) * (u.um**2),
+            lambda self: 1.0 * u.um**2,
         ),
     )
-    species = (
-        Species("Ci", init=0.0 * u.mM, factor="cyto"),
-        Species("CAM0", init=0.0 * u.mM, factor="cam_unit"),
-        Species("CAM1C", init=0.0 * u.mM, factor="cam_unit"),
-        Species("CAM2C", init=0.0 * u.mM, factor="cam_unit"),
-        Species("CAM1N2C", init=0.0 * u.mM, factor="cam_unit"),
-        Species("CAM1N", init=0.0 * u.mM, factor="cam_unit"),
-        Species("CAM2N", init=0.0 * u.mM, factor="cam_unit"),
-        Species("CAM2N1C", init=0.0 * u.mM, factor="cam_unit"),
-        Species("CAM1C1N", init=0.0 * u.mM, factor="cam_unit"),
-        Species("CAM4", init=0.0 * u.mM, factor="cam_unit"),
-    )
+    species = _CI_SPECIES + _cam_species("cam_unit")
     reactions = (
         Reaction(
             lhs={"Ci": 1, "CAM0": 1},
@@ -1708,19 +1882,6 @@ class CdpStC_CAMOnly_MA2020_GoC(Calcium, _RadialShellGeometry, KineticIon):
     sources = ()
     conserves = ()
 
-    _diffeq_species = (
-        "Ci",
-        "CAM0",
-        "CAM1C",
-        "CAM2C",
-        "CAM1N2C",
-        "CAM1N",
-        "CAM2N",
-        "CAM2N1C",
-        "CAM1C1N",
-        "CAM4",
-    )
-
     def __init__(
         self,
         size: Size,
@@ -1770,19 +1931,8 @@ class CdpStC_CAMOnly_MA2020_GoC(Calcium, _RadialShellGeometry, KineticIon):
             substeps=substeps,
         )
 
-    def _resolve_species_initializers(
-        self,
-        *,
-        Ci_initializer,
-        species_initializers,
-    ) -> dict[str, object]:
-        species_initializers = dict(species_initializers or {})
-        invalid = set(species_initializers).difference(self._diffeq_species)
-        if invalid:
-            invalid_names = ", ".join(sorted(invalid))
-            raise ValueError(f"{type(self).__name__} only accepts differential-species overrides; got {invalid_names}.")
-
-        defaults = {
+    def _default_species_initializers(self, Ci_initializer) -> dict[str, object]:
+        return {
             "Ci": self.cainull if Ci_initializer is None else Ci_initializer,
             "CAM0": self.CAM_start,
             "CAM1C": 0.0 * u.mM,
@@ -1794,12 +1944,10 @@ class CdpStC_CAMOnly_MA2020_GoC(Calcium, _RadialShellGeometry, KineticIon):
             "CAM1C1N": 0.0 * u.mM,
             "CAM4": 0.0 * u.mM,
         }
-        defaults.update(species_initializers)
-        return {name: self._as_initializer(value) for name, value in defaults.items()}
 
 
 @register_ion("CdpStC_NoCAM_MA2020_GoC")
-class CdpStC_NoCAM_MA2020_GoC(Calcium, _RadialShellGeometry, KineticIon):
+class CdpStC_NoCAM_MA2020_GoC(Calcium, _ParvalbuminEquilibrium, _RadialShellGeometry, KineticIon):
     r"""BrainCell-factored calcium pool: pump, non-CaM buffers, no CaM.
 
     Keeps the pump and non-calmodulin buffer subnetworks of the
@@ -1890,7 +2038,7 @@ class CdpStC_NoCAM_MA2020_GoC(Calcium, _RadialShellGeometry, KineticIon):
         which falls back to :attr:`Calcium.default_Co` inside
         :meth:`KineticIon._init_kinetic_ion`.
     Ci_initializer : array-like or callable or None, optional
-        Union[brainstate.typing.ArrayLike, Callable] for the ``Ci`` species. Defaults to ``None``,
+        Initializer for the ``Ci`` species. Defaults to ``None``,
         which falls back to ``cainull``.
     species_initializers : dict or None, optional
         Per-species initializer overrides, keyed by one of this
@@ -2002,73 +2150,8 @@ class CdpStC_NoCAM_MA2020_GoC(Calcium, _RadialShellGeometry, KineticIon):
         Factor("cyto", lambda self: self.dsqvol),
         Factor("pump_area", lambda self: self.parea),
     )
-    species = (
-        Species("Ci", init=0.0 * u.mM, factor="cyto"),
-        Species("mg", init=0.0 * u.mM, factor="cyto"),
-        Species("Buff1", init=0.0 * u.mM, factor="cyto"),
-        Species("Buff1_ca", init=0.0 * u.mM, factor="cyto"),
-        Species("Buff2", init=0.0 * u.mM, factor="cyto"),
-        Species("Buff2_ca", init=0.0 * u.mM, factor="cyto"),
-        Species("BTC", init=0.0 * u.mM, factor="cyto"),
-        Species("BTC_ca", init=0.0 * u.mM, factor="cyto"),
-        Species("DMNPE", init=0.0 * u.mM, factor="cyto"),
-        Species("DMNPE_ca", init=0.0 * u.mM, factor="cyto"),
-        Species("PV", init=0.0 * u.mM, factor="cyto"),
-        Species("PV_ca", init=0.0 * u.mM, factor="cyto"),
-        Species("PV_mg", init=0.0 * u.mM, factor="cyto"),
-        Species("pump", init=0.0 * (u.mol / u.cm**2), factor="pump_area"),
-        Species("pumpca", init=0.0 * (u.mol / u.cm**2), factor="pump_area"),
-    )
-    reactions = (
-        Reaction(
-            lhs={"pump": 1, "Ci": 1},
-            rhs={"pumpca": 1},
-            forward=lambda self, V, x: self.kpmp1 * self.parea,
-            backward=lambda self, V, x: self.kpmp2 * self.parea,
-        ),
-        Reaction(
-            lhs={"pumpca": 1},
-            rhs={"pump": 1},
-            forward=lambda self, V, x: self.kpmp3 * self.parea,
-            backward=None,
-        ),
-        Reaction(
-            lhs={"Ci": 1, "Buff1": 1},
-            rhs={"Buff1_ca": 1},
-            forward=lambda self, V, x: self.rf1 * self.dsqvol,
-            backward=lambda self, V, x: self.rf2 * self.dsqvol,
-        ),
-        Reaction(
-            lhs={"Ci": 1, "Buff2": 1},
-            rhs={"Buff2_ca": 1},
-            forward=lambda self, V, x: self.rf3 * self.dsqvol,
-            backward=lambda self, V, x: self.rf4 * self.dsqvol,
-        ),
-        Reaction(
-            lhs={"Ci": 1, "BTC": 1},
-            rhs={"BTC_ca": 1},
-            forward=lambda self, V, x: self.b1 * self.dsqvol,
-            backward=lambda self, V, x: self.b2 * self.dsqvol,
-        ),
-        Reaction(
-            lhs={"Ci": 1, "DMNPE": 1},
-            rhs={"DMNPE_ca": 1},
-            forward=lambda self, V, x: self.c1 * self.dsqvol,
-            backward=lambda self, V, x: self.c2 * self.dsqvol,
-        ),
-        Reaction(
-            lhs={"Ci": 1, "PV": 1},
-            rhs={"PV_ca": 1},
-            forward=lambda self, V, x: self.m1 * self.dsqvol,
-            backward=lambda self, V, x: self.m2 * self.dsqvol,
-        ),
-        Reaction(
-            lhs={"mg": 1, "PV": 1},
-            rhs={"PV_mg": 1},
-            forward=lambda self, V, x: self.p1 * self.dsqvol,
-            backward=lambda self, V, x: self.p2 * self.dsqvol,
-        ),
-    )
+    species = _CI_SPECIES + _BUFFER_SPECIES + _PV_SPECIES + _PUMP_SPECIES
+    reactions = _BUFFER_REACTIONS + _PV_REACTIONS
     sources = (
         Source(
             target="Ci",
@@ -2081,23 +2164,6 @@ class CdpStC_NoCAM_MA2020_GoC(Calcium, _RadialShellGeometry, KineticIon):
             algebraic="pumpca",
             total=lambda self, V, x: self.TotalPump * self.parea,
         ),
-    )
-
-    _diffeq_species = (
-        "Ci",
-        "mg",
-        "Buff1",
-        "Buff1_ca",
-        "Buff2",
-        "Buff2_ca",
-        "BTC",
-        "BTC_ca",
-        "DMNPE",
-        "DMNPE_ca",
-        "PV",
-        "PV_ca",
-        "PV_mg",
-        "pump",
     )
 
     def __init__(
@@ -2175,19 +2241,8 @@ class CdpStC_NoCAM_MA2020_GoC(Calcium, _RadialShellGeometry, KineticIon):
             substeps=substeps,
         )
 
-    def _resolve_species_initializers(
-        self,
-        *,
-        Ci_initializer,
-        species_initializers,
-    ) -> dict[str, object]:
-        species_initializers = dict(species_initializers or {})
-        invalid = set(species_initializers).difference(self._diffeq_species)
-        if invalid:
-            invalid_names = ", ".join(sorted(invalid))
-            raise ValueError(f"{type(self).__name__} only accepts differential-species overrides; got {invalid_names}.")
-
-        defaults = {
+    def _default_species_initializers(self, Ci_initializer) -> dict[str, object]:
+        return {
             "Ci": self.cainull if Ci_initializer is None else Ci_initializer,
             "mg": self.mginull,
             "Buff1": self._ss_buffer_free(self.Buffnull1, self.rf1, self.rf2, self.cainull),
@@ -2203,37 +2258,6 @@ class CdpStC_NoCAM_MA2020_GoC(Calcium, _RadialShellGeometry, KineticIon):
             "PV_mg": self._ss_pv_mg(),
             "pump": self.TotalPump,
         }
-        defaults.update(species_initializers)
-        return {name: self._as_initializer(value) for name, value in defaults.items()}
-
-    def _kdc(self):
-        return (self.cainull * self.m1) / self.m2
-
-    def _kdm(self):
-        return (self.mginull * self.p1) / self.p2
-
-    def _ss_pv_free(self):
-        kdc = self._kdc()
-        kdm = self._kdm()
-        return self.PVnull / (1.0 + kdc + kdm)
-
-    def _ss_pv_ca(self):
-        kdc = self._kdc()
-        kdm = self._kdm()
-        return (self.PVnull * kdc) / (1.0 + kdc + kdm)
-
-    def _ss_pv_mg(self):
-        kdc = self._kdc()
-        kdm = self._kdm()
-        return (self.PVnull * kdm) / (1.0 + kdc + kdm)
-
-    def _ci_source_flux(self, total_current):
-        if total_current is None:
-            return self.dsqvol * (0.0 * u.mM / u.ms)
-        # NEURON's raw GoC ``ica`` is efflux-positive, but BrainCell channel
-        # currents are inward-positive. A positive calcium current therefore
-        # increases the local calcium pool.
-        return (total_current * u.math.pi * self._require_diam_arc_mean()) / (2.0 * u.faraday_constant)
 
 
 @register_ion("CdpStC_MA2025_BC")
@@ -2388,7 +2412,7 @@ class CdpStC_RI2021_SC(CdpStC_NoCAM_MA2020_GoC):
 
 
 @register_ion("CdpStC_MA2020_GoC")
-class CdpStC_MA2020_GoC(Calcium, _RadialShellGeometry, KineticIon):
+class CdpStC_MA2020_GoC(Calcium, _ParvalbuminEquilibrium, _RadialShellGeometry, KineticIon):
     r"""Golgi-cell calcium pool: pump, generic buffers, PV, and CaM.
 
     Undivided import of the Golgi-cell ``CdpStC`` calcium pool:
@@ -2493,7 +2517,7 @@ class CdpStC_MA2020_GoC(Calcium, _RadialShellGeometry, KineticIon):
         which falls back to :attr:`Calcium.default_Co` inside
         :meth:`KineticIon._init_kinetic_ion`.
     Ci_initializer : array-like or callable or None, optional
-        Union[brainstate.typing.ArrayLike, Callable] for the ``Ci`` species. Defaults to ``None``,
+        Initializer for the ``Ci`` species. Defaults to ``None``,
         which falls back to ``cainull``.
     species_initializers : dict or None, optional
         Per-species initializer overrides, keyed by one of this
@@ -2618,157 +2642,11 @@ class CdpStC_MA2020_GoC(Calcium, _RadialShellGeometry, KineticIon):
         Factor("pump_area", lambda self: self.parea),
         Factor(
             "cam_unit",
-            lambda self: u.math.ones_like(self.dsqvol.to_decimal(u.um**2)) * (u.um**2),
+            lambda self: 1.0 * u.um**2,
         ),
     )
-    species = (
-        Species("Ci", init=0.0 * u.mM, factor="cyto"),
-        Species("mg", init=0.0 * u.mM, factor="cyto"),
-        Species("Buff1", init=0.0 * u.mM, factor="cyto"),
-        Species("Buff1_ca", init=0.0 * u.mM, factor="cyto"),
-        Species("Buff2", init=0.0 * u.mM, factor="cyto"),
-        Species("Buff2_ca", init=0.0 * u.mM, factor="cyto"),
-        Species("BTC", init=0.0 * u.mM, factor="cyto"),
-        Species("BTC_ca", init=0.0 * u.mM, factor="cyto"),
-        Species("DMNPE", init=0.0 * u.mM, factor="cyto"),
-        Species("DMNPE_ca", init=0.0 * u.mM, factor="cyto"),
-        Species("PV", init=0.0 * u.mM, factor="cyto"),
-        Species("PV_ca", init=0.0 * u.mM, factor="cyto"),
-        Species("PV_mg", init=0.0 * u.mM, factor="cyto"),
-        Species("CAM0", init=0.0 * u.mM, factor="cam_unit"),
-        Species("CAM1C", init=0.0 * u.mM, factor="cam_unit"),
-        Species("CAM2C", init=0.0 * u.mM, factor="cam_unit"),
-        Species("CAM1N2C", init=0.0 * u.mM, factor="cam_unit"),
-        Species("CAM1N", init=0.0 * u.mM, factor="cam_unit"),
-        Species("CAM2N", init=0.0 * u.mM, factor="cam_unit"),
-        Species("CAM2N1C", init=0.0 * u.mM, factor="cam_unit"),
-        Species("CAM1C1N", init=0.0 * u.mM, factor="cam_unit"),
-        Species("CAM4", init=0.0 * u.mM, factor="cam_unit"),
-        Species("pump", init=0.0 * (u.mol / u.cm**2), factor="pump_area"),
-        Species("pumpca", init=0.0 * (u.mol / u.cm**2), factor="pump_area"),
-    )
-    reactions = (
-        Reaction(
-            lhs={"pump": 1, "Ci": 1},
-            rhs={"pumpca": 1},
-            forward=lambda self, V, x: self.kpmp1 * self.parea,
-            backward=lambda self, V, x: self.kpmp2 * self.parea,
-        ),
-        Reaction(
-            lhs={"pumpca": 1},
-            rhs={"pump": 1},
-            forward=lambda self, V, x: self.kpmp3 * self.parea,
-            backward=None,
-        ),
-        Reaction(
-            lhs={"Ci": 1, "Buff1": 1},
-            rhs={"Buff1_ca": 1},
-            forward=lambda self, V, x: self.rf1 * self.dsqvol,
-            backward=lambda self, V, x: self.rf2 * self.dsqvol,
-        ),
-        Reaction(
-            lhs={"Ci": 1, "Buff2": 1},
-            rhs={"Buff2_ca": 1},
-            forward=lambda self, V, x: self.rf3 * self.dsqvol,
-            backward=lambda self, V, x: self.rf4 * self.dsqvol,
-        ),
-        Reaction(
-            lhs={"Ci": 1, "BTC": 1},
-            rhs={"BTC_ca": 1},
-            forward=lambda self, V, x: self.b1 * self.dsqvol,
-            backward=lambda self, V, x: self.b2 * self.dsqvol,
-        ),
-        Reaction(
-            lhs={"Ci": 1, "DMNPE": 1},
-            rhs={"DMNPE_ca": 1},
-            forward=lambda self, V, x: self.c1 * self.dsqvol,
-            backward=lambda self, V, x: self.c2 * self.dsqvol,
-        ),
-        Reaction(
-            lhs={"Ci": 1, "PV": 1},
-            rhs={"PV_ca": 1},
-            forward=lambda self, V, x: self.m1 * self.dsqvol,
-            backward=lambda self, V, x: self.m2 * self.dsqvol,
-        ),
-        Reaction(
-            lhs={"mg": 1, "PV": 1},
-            rhs={"PV_mg": 1},
-            forward=lambda self, V, x: self.p1 * self.dsqvol,
-            backward=lambda self, V, x: self.p2 * self.dsqvol,
-        ),
-        Reaction(
-            lhs={"Ci": 1, "CAM0": 1},
-            rhs={"CAM1C": 1},
-            forward=lambda self, V, x: self.K1Con * self.dsqvol,
-            backward=lambda self, V, x: self.K1Coff * self.dsqvol,
-        ),
-        Reaction(
-            lhs={"Ci": 1, "CAM1C": 1},
-            rhs={"CAM2C": 1},
-            forward=lambda self, V, x: self.K2Con * self.dsqvol,
-            backward=lambda self, V, x: self.K2Coff * self.dsqvol,
-        ),
-        Reaction(
-            lhs={"Ci": 1, "CAM2C": 1},
-            rhs={"CAM1N2C": 1},
-            forward=lambda self, V, x: self.K1Non * self.dsqvol,
-            backward=lambda self, V, x: self.K1Noff * self.dsqvol,
-        ),
-        Reaction(
-            lhs={"Ci": 1, "CAM1N2C": 1},
-            rhs={"CAM4": 1},
-            forward=lambda self, V, x: self.K2Non * self.dsqvol,
-            backward=lambda self, V, x: self.K2Noff * self.dsqvol,
-        ),
-        Reaction(
-            lhs={"Ci": 1, "CAM0": 1},
-            rhs={"CAM1N": 1},
-            forward=lambda self, V, x: self.K1Non * self.dsqvol,
-            backward=lambda self, V, x: self.K1Noff * self.dsqvol,
-        ),
-        Reaction(
-            lhs={"Ci": 1, "CAM1N": 1},
-            rhs={"CAM2N": 1},
-            forward=lambda self, V, x: self.K2Non * self.dsqvol,
-            backward=lambda self, V, x: self.K2Noff * self.dsqvol,
-        ),
-        Reaction(
-            lhs={"Ci": 1, "CAM2N": 1},
-            rhs={"CAM2N1C": 1},
-            forward=lambda self, V, x: self.K1Con * self.dsqvol,
-            backward=lambda self, V, x: self.K1Coff * self.dsqvol,
-        ),
-        Reaction(
-            lhs={"Ci": 1, "CAM2N1C": 1},
-            rhs={"CAM4": 1},
-            forward=lambda self, V, x: self.K2Con * self.dsqvol,
-            backward=lambda self, V, x: self.K2Coff * self.dsqvol,
-        ),
-        Reaction(
-            lhs={"Ci": 1, "CAM1C": 1},
-            rhs={"CAM1C1N": 1},
-            forward=lambda self, V, x: self.K1Non * self.dsqvol,
-            backward=lambda self, V, x: self.K1Noff * self.dsqvol,
-        ),
-        Reaction(
-            lhs={"Ci": 1, "CAM1N": 1},
-            rhs={"CAM1C1N": 1},
-            forward=lambda self, V, x: self.K1Con * self.dsqvol,
-            backward=lambda self, V, x: self.K1Coff * self.dsqvol,
-        ),
-        Reaction(
-            lhs={"Ci": 1, "CAM1C1N": 1},
-            rhs={"CAM1N2C": 1},
-            forward=lambda self, V, x: self.K2Con * self.dsqvol,
-            backward=lambda self, V, x: self.K2Coff * self.dsqvol,
-        ),
-        Reaction(
-            lhs={"Ci": 1, "CAM1C1N": 1},
-            rhs={"CAM2N1C": 1},
-            forward=lambda self, V, x: self.K2Non * self.dsqvol,
-            backward=lambda self, V, x: self.K2Noff * self.dsqvol,
-        ),
-    )
+    species = _CI_SPECIES + _BUFFER_SPECIES + _PV_SPECIES + _cam_species("cam_unit") + _PUMP_SPECIES
+    reactions = CdpStC_NoCAM_MA2020_GoC.reactions + CdpStC_CAMOnly_MA2020_GoC.reactions
     sources = (
         Source(
             target="Ci",
@@ -2781,32 +2659,6 @@ class CdpStC_MA2020_GoC(Calcium, _RadialShellGeometry, KineticIon):
             algebraic="pumpca",
             total=lambda self, V, x: self.TotalPump * self.parea,
         ),
-    )
-
-    _diffeq_species = (
-        "Ci",
-        "mg",
-        "Buff1",
-        "Buff1_ca",
-        "Buff2",
-        "Buff2_ca",
-        "BTC",
-        "BTC_ca",
-        "DMNPE",
-        "DMNPE_ca",
-        "PV",
-        "PV_ca",
-        "PV_mg",
-        "CAM0",
-        "CAM1C",
-        "CAM2C",
-        "CAM1N2C",
-        "CAM1N",
-        "CAM2N",
-        "CAM2N1C",
-        "CAM1C1N",
-        "CAM4",
-        "pump",
     )
 
     def __init__(
@@ -2902,19 +2754,8 @@ class CdpStC_MA2020_GoC(Calcium, _RadialShellGeometry, KineticIon):
             substeps=substeps,
         )
 
-    def _resolve_species_initializers(
-        self,
-        *,
-        Ci_initializer,
-        species_initializers,
-    ) -> dict[str, object]:
-        species_initializers = dict(species_initializers or {})
-        invalid = set(species_initializers).difference(self._diffeq_species)
-        if invalid:
-            invalid_names = ", ".join(sorted(invalid))
-            raise ValueError(f"{type(self).__name__} only accepts differential-species overrides; got {invalid_names}.")
-
-        defaults = {
+    def _default_species_initializers(self, Ci_initializer) -> dict[str, object]:
+        return {
             "Ci": self.cainull if Ci_initializer is None else Ci_initializer,
             "mg": self.mginull,
             "Buff1": self._ss_buffer_free(self.Buffnull1, self.rf1, self.rf2, self.cainull),
@@ -2939,41 +2780,10 @@ class CdpStC_MA2020_GoC(Calcium, _RadialShellGeometry, KineticIon):
             "CAM4": 0.0 * u.mM,
             "pump": self.TotalPump,
         }
-        defaults.update(species_initializers)
-        return {name: self._as_initializer(value) for name, value in defaults.items()}
-
-    def _kdc(self):
-        return (self.cainull * self.m1) / self.m2
-
-    def _kdm(self):
-        return (self.mginull * self.p1) / self.p2
-
-    def _ss_pv_free(self):
-        kdc = self._kdc()
-        kdm = self._kdm()
-        return self.PVnull / (1.0 + kdc + kdm)
-
-    def _ss_pv_ca(self):
-        kdc = self._kdc()
-        kdm = self._kdm()
-        return (self.PVnull * kdc) / (1.0 + kdc + kdm)
-
-    def _ss_pv_mg(self):
-        kdc = self._kdc()
-        kdm = self._kdm()
-        return (self.PVnull * kdm) / (1.0 + kdc + kdm)
-
-    def _ci_source_flux(self, total_current):
-        if total_current is None:
-            return self.dsqvol * (0.0 * u.mM / u.ms)
-        # NEURON's raw GoC ``ica`` is efflux-positive, but BrainCell channel
-        # currents are inward-positive. A positive calcium current therefore
-        # increases the local calcium pool.
-        return (total_current * u.math.pi * self._require_diam_arc_mean()) / (2.0 * u.faraday_constant)
 
 
 @register_ion("CdpCAM_MA2024_PC")
-class CdpCAM_MA2024_PC(Calcium, _RadialShellGeometry, KineticIon):
+class CdpCAM_MA2024_PC(Calcium, _ParvalbuminEquilibrium, _RadialShellGeometry, KineticIon):
     r"""Purkinje-cell calcium pool: pump, buffers, Calbindin, PV, CaM.
 
     Extends the Golgi-cell pump/generic-buffer/parvalbumin/calmodulin
@@ -3090,7 +2900,7 @@ class CdpCAM_MA2024_PC(Calcium, _RadialShellGeometry, KineticIon):
         which falls back to :attr:`Calcium.default_Co` inside
         :meth:`KineticIon._init_kinetic_ion`.
     Ci_initializer : array-like or callable or None, optional
-        Union[brainstate.typing.ArrayLike, Callable] for the ``Ci`` species. Defaults to ``None``,
+        Initializer for the ``Ci`` species. Defaults to ``None``,
         which falls back to ``cainull``.
     species_initializers : dict or None, optional
         Per-species initializer overrides, keyed by one of this
@@ -3157,11 +2967,12 @@ class CdpCAM_MA2024_PC(Calcium, _RadialShellGeometry, KineticIon):
     True``; ``sources`` and ``conserves`` are the exact tuple objects
     defined on :class:`CdpStC_MA2020_GoC` (same ``Ci``-driving
     :class:`~braincell.ion._base.Source` and same ``pump + pumpca =
-    TotalPump * parea`` :class:`~braincell.ion._base.Conserve`), and
-    several geometry/current helpers (:attr:`vrat`, :attr:`parea`,
-    :attr:`dsq`, :attr:`dsqvol`, ``_require_diam_arc_mean``,
-    ``_ci_source_flux``, ``_as_initializer``) explicitly delegate to
-    :class:`CdpStC_MA2020_GoC` rather than redefining the same logic.
+    TotalPump * parea`` :class:`~braincell.ion._base.Conserve`). The
+    shell geometry and the current-driven ``Ci`` source
+    (:attr:`vrat`, :attr:`parea`, :attr:`dsq`, :attr:`dsqvol`,
+    ``_require_diam_arc_mean``, ``_ci_source_flux``) are inherited from
+    :class:`~braincell.ion._base._RadialShellGeometry`, and the
+    parvalbumin equilibrium from :class:`_ParvalbuminEquilibrium`.
 
     Twenty-four reactions couple the twenty-eight species: the two
     pump steps and four of the six buffer/PV steps from
@@ -3208,213 +3019,51 @@ class CdpCAM_MA2024_PC(Calcium, _RadialShellGeometry, KineticIon):
         Factor("pump_area", lambda self: self.parea),
     )
     species = (
-        Species("Ci", init=0.0 * u.mM, factor="cyto"),
-        Species("mg", init=0.0 * u.mM, factor="cyto"),
-        Species("Buff1", init=0.0 * u.mM, factor="cyto"),
-        Species("Buff1_ca", init=0.0 * u.mM, factor="cyto"),
-        Species("Buff2", init=0.0 * u.mM, factor="cyto"),
-        Species("Buff2_ca", init=0.0 * u.mM, factor="cyto"),
-        Species("BTC", init=0.0 * u.mM, factor="cyto"),
-        Species("BTC_ca", init=0.0 * u.mM, factor="cyto"),
-        Species("DMNPE", init=0.0 * u.mM, factor="cyto"),
-        Species("DMNPE_ca", init=0.0 * u.mM, factor="cyto"),
-        Species("CB", init=0.0 * u.mM, factor="cyto"),
-        Species("CB_f_ca", init=0.0 * u.mM, factor="cyto"),
-        Species("CB_ca_s", init=0.0 * u.mM, factor="cyto"),
-        Species("CB_ca_ca", init=0.0 * u.mM, factor="cyto"),
-        Species("PV", init=0.0 * u.mM, factor="cyto"),
-        Species("PV_ca", init=0.0 * u.mM, factor="cyto"),
-        Species("PV_mg", init=0.0 * u.mM, factor="cyto"),
-        Species("CAM0", init=0.0 * u.mM, factor="cyto"),
-        Species("CAM1C", init=0.0 * u.mM, factor="cyto"),
-        Species("CAM2C", init=0.0 * u.mM, factor="cyto"),
-        Species("CAM1N2C", init=0.0 * u.mM, factor="cyto"),
-        Species("CAM1N", init=0.0 * u.mM, factor="cyto"),
-        Species("CAM2N", init=0.0 * u.mM, factor="cyto"),
-        Species("CAM2N1C", init=0.0 * u.mM, factor="cyto"),
-        Species("CAM1C1N", init=0.0 * u.mM, factor="cyto"),
-        Species("CAM4", init=0.0 * u.mM, factor="cyto"),
-        Species("pump", init=0.0 * (u.mol / u.cm**2), factor="pump_area"),
-        Species("pumpca", init=0.0 * (u.mol / u.cm**2), factor="pump_area"),
+        _CI_SPECIES
+        + _BUFFER_SPECIES
+        + (
+            Species("CB", init=0.0 * u.mM, factor="cyto"),
+            Species("CB_f_ca", init=0.0 * u.mM, factor="cyto"),
+            Species("CB_ca_s", init=0.0 * u.mM, factor="cyto"),
+            Species("CB_ca_ca", init=0.0 * u.mM, factor="cyto"),
+        )
+        + _PV_SPECIES
+        + _cam_species("cyto")
+        + _PUMP_SPECIES
     )
     reactions = (
-        Reaction(
-            lhs={"pump": 1, "Ci": 1},
-            rhs={"pumpca": 1},
-            forward=lambda self, V, x: self.kpmp1 * self.parea,
-            backward=lambda self, V, x: self.kpmp2 * self.parea,
-        ),
-        Reaction(
-            lhs={"pumpca": 1},
-            rhs={"pump": 1},
-            forward=lambda self, V, x: self.kpmp3 * self.parea,
-            backward=None,
-        ),
-        Reaction(
-            lhs={"Ci": 1, "Buff1": 1},
-            rhs={"Buff1_ca": 1},
-            forward=lambda self, V, x: self.rf1 * self.dsqvol,
-            backward=lambda self, V, x: self.rf2 * self.dsqvol,
-        ),
-        Reaction(
-            lhs={"Ci": 1, "Buff2": 1},
-            rhs={"Buff2_ca": 1},
-            forward=lambda self, V, x: self.rf3 * self.dsqvol,
-            backward=lambda self, V, x: self.rf4 * self.dsqvol,
-        ),
-        Reaction(
-            lhs={"Ci": 1, "BTC": 1},
-            rhs={"BTC_ca": 1},
-            forward=lambda self, V, x: self.b1 * self.dsqvol,
-            backward=lambda self, V, x: self.b2 * self.dsqvol,
-        ),
-        Reaction(
-            lhs={"Ci": 1, "DMNPE": 1},
-            rhs={"DMNPE_ca": 1},
-            forward=lambda self, V, x: self.c1 * self.dsqvol,
-            backward=lambda self, V, x: self.c2 * self.dsqvol,
-        ),
-        Reaction(
-            lhs={"Ci": 1, "CB": 1},
-            rhs={"CB_ca_s": 1},
-            forward=lambda self, V, x: self.nf1 * self.dsqvol,
-            backward=lambda self, V, x: self.nf2 * self.dsqvol,
-        ),
-        Reaction(
-            lhs={"Ci": 1, "CB": 1},
-            rhs={"CB_f_ca": 1},
-            forward=lambda self, V, x: self.ns1 * self.dsqvol,
-            backward=lambda self, V, x: self.ns2 * self.dsqvol,
-        ),
-        Reaction(
-            lhs={"Ci": 1, "CB_f_ca": 1},
-            rhs={"CB_ca_ca": 1},
-            forward=lambda self, V, x: self.nf1 * self.dsqvol,
-            backward=lambda self, V, x: self.nf2 * self.dsqvol,
-        ),
-        Reaction(
-            lhs={"Ci": 1, "CB_ca_s": 1},
-            rhs={"CB_ca_ca": 1},
-            forward=lambda self, V, x: self.ns1 * self.dsqvol,
-            backward=lambda self, V, x: self.ns2 * self.dsqvol,
-        ),
-        Reaction(
-            lhs={"Ci": 1, "PV": 1},
-            rhs={"PV_ca": 1},
-            forward=lambda self, V, x: self.m1 * self.dsqvol,
-            backward=lambda self, V, x: self.m2 * self.dsqvol,
-        ),
-        Reaction(
-            lhs={"mg": 1, "PV": 1},
-            rhs={"PV_mg": 1},
-            forward=lambda self, V, x: self.p1 * self.dsqvol,
-            backward=lambda self, V, x: self.p2 * self.dsqvol,
-        ),
-        Reaction(
-            lhs={"Ci": 1, "CAM0": 1},
-            rhs={"CAM1C": 1},
-            forward=lambda self, V, x: self.K1Con * self.dsqvol,
-            backward=lambda self, V, x: self.K1Coff * self.dsqvol,
-        ),
-        Reaction(
-            lhs={"Ci": 1, "CAM1C": 1},
-            rhs={"CAM2C": 1},
-            forward=lambda self, V, x: self.K2Con * self.dsqvol,
-            backward=lambda self, V, x: self.K2Coff * self.dsqvol,
-        ),
-        Reaction(
-            lhs={"Ci": 1, "CAM2C": 1},
-            rhs={"CAM1N2C": 1},
-            forward=lambda self, V, x: self.K1Non * self.dsqvol,
-            backward=lambda self, V, x: self.K1Noff * self.dsqvol,
-        ),
-        Reaction(
-            lhs={"Ci": 1, "CAM1N2C": 1},
-            rhs={"CAM4": 1},
-            forward=lambda self, V, x: self.K2Non * self.dsqvol,
-            backward=lambda self, V, x: self.K2Noff * self.dsqvol,
-        ),
-        Reaction(
-            lhs={"Ci": 1, "CAM0": 1},
-            rhs={"CAM1N": 1},
-            forward=lambda self, V, x: self.K1Non * self.dsqvol,
-            backward=lambda self, V, x: self.K1Noff * self.dsqvol,
-        ),
-        Reaction(
-            lhs={"Ci": 1, "CAM1N": 1},
-            rhs={"CAM2N": 1},
-            forward=lambda self, V, x: self.K2Non * self.dsqvol,
-            backward=lambda self, V, x: self.K2Noff * self.dsqvol,
-        ),
-        Reaction(
-            lhs={"Ci": 1, "CAM2N": 1},
-            rhs={"CAM2N1C": 1},
-            forward=lambda self, V, x: self.K1Con * self.dsqvol,
-            backward=lambda self, V, x: self.K1Coff * self.dsqvol,
-        ),
-        Reaction(
-            lhs={"Ci": 1, "CAM2N1C": 1},
-            rhs={"CAM4": 1},
-            forward=lambda self, V, x: self.K2Con * self.dsqvol,
-            backward=lambda self, V, x: self.K2Coff * self.dsqvol,
-        ),
-        Reaction(
-            lhs={"Ci": 1, "CAM1C": 1},
-            rhs={"CAM1C1N": 1},
-            forward=lambda self, V, x: self.K1Non * self.dsqvol,
-            backward=lambda self, V, x: self.K1Noff * self.dsqvol,
-        ),
-        Reaction(
-            lhs={"Ci": 1, "CAM1N": 1},
-            rhs={"CAM1C1N": 1},
-            forward=lambda self, V, x: self.K1Con * self.dsqvol,
-            backward=lambda self, V, x: self.K1Coff * self.dsqvol,
-        ),
-        Reaction(
-            lhs={"Ci": 1, "CAM1C1N": 1},
-            rhs={"CAM1N2C": 1},
-            forward=lambda self, V, x: self.K2Con * self.dsqvol,
-            backward=lambda self, V, x: self.K2Coff * self.dsqvol,
-        ),
-        Reaction(
-            lhs={"Ci": 1, "CAM1C1N": 1},
-            rhs={"CAM2N1C": 1},
-            forward=lambda self, V, x: self.K2Non * self.dsqvol,
-            backward=lambda self, V, x: self.K2Noff * self.dsqvol,
-        ),
+        _BUFFER_REACTIONS
+        + (
+            Reaction(
+                lhs={"Ci": 1, "CB": 1},
+                rhs={"CB_ca_s": 1},
+                forward=lambda self, V, x: self.nf1 * self.dsqvol,
+                backward=lambda self, V, x: self.nf2 * self.dsqvol,
+            ),
+            Reaction(
+                lhs={"Ci": 1, "CB": 1},
+                rhs={"CB_f_ca": 1},
+                forward=lambda self, V, x: self.ns1 * self.dsqvol,
+                backward=lambda self, V, x: self.ns2 * self.dsqvol,
+            ),
+            Reaction(
+                lhs={"Ci": 1, "CB_f_ca": 1},
+                rhs={"CB_ca_ca": 1},
+                forward=lambda self, V, x: self.nf1 * self.dsqvol,
+                backward=lambda self, V, x: self.nf2 * self.dsqvol,
+            ),
+            Reaction(
+                lhs={"Ci": 1, "CB_ca_s": 1},
+                rhs={"CB_ca_ca": 1},
+                forward=lambda self, V, x: self.ns1 * self.dsqvol,
+                backward=lambda self, V, x: self.ns2 * self.dsqvol,
+            ),
+        )
+        + _PV_REACTIONS
+        + CdpStC_CAMOnly_MA2020_GoC.reactions
     )
     sources = CdpStC_MA2020_GoC.sources
     conserves = CdpStC_MA2020_GoC.conserves
-
-    _diffeq_species = (
-        "Ci",
-        "mg",
-        "Buff1",
-        "Buff1_ca",
-        "Buff2",
-        "Buff2_ca",
-        "BTC",
-        "BTC_ca",
-        "DMNPE",
-        "DMNPE_ca",
-        "CB",
-        "CB_f_ca",
-        "CB_ca_s",
-        "CB_ca_ca",
-        "PV",
-        "PV_ca",
-        "PV_mg",
-        "CAM0",
-        "CAM1C",
-        "CAM2C",
-        "CAM1N2C",
-        "CAM1N",
-        "CAM2N",
-        "CAM2N1C",
-        "CAM1C1N",
-        "CAM4",
-        "pump",
-    )
 
     def __init__(
         self,
@@ -3519,19 +3168,8 @@ class CdpCAM_MA2024_PC(Calcium, _RadialShellGeometry, KineticIon):
             substeps=substeps,
         )
 
-    def _resolve_species_initializers(
-        self,
-        *,
-        Ci_initializer,
-        species_initializers,
-    ) -> dict[str, object]:
-        species_initializers = dict(species_initializers or {})
-        invalid = set(species_initializers).difference(self._diffeq_species)
-        if invalid:
-            invalid_names = ", ".join(sorted(invalid))
-            raise ValueError(f"{type(self).__name__} only accepts differential-species overrides; got {invalid_names}.")
-
-        defaults = {
+    def _default_species_initializers(self, Ci_initializer) -> dict[str, object]:
+        return {
             "Ci": self.cainull if Ci_initializer is None else Ci_initializer,
             "mg": self.mginull,
             "Buff1": self._ss_buffer_free(self.Buffnull1, self.rf1, self.rf2, self.cainull),
@@ -3560,8 +3198,6 @@ class CdpCAM_MA2024_PC(Calcium, _RadialShellGeometry, KineticIon):
             "CAM4": 0.0 * u.mM,
             "pump": self.TotalPump,
         }
-        defaults.update(species_initializers)
-        return {name: self._as_initializer(value) for name, value in defaults.items()}
 
     def _kdf(self):
         return (self.cainull * self.nf1) / self.nf2
@@ -3588,30 +3224,6 @@ class CdpCAM_MA2024_PC(Calcium, _RadialShellGeometry, KineticIon):
         kdf = self._kdf()
         kds = self._kds()
         return (self.CBnull * kdf * kds) / (1.0 + kdf + kds + kdf * kds)
-
-    def _kdc(self):
-        return (self.cainull * self.m1) / self.m2
-
-    def _kdm(self):
-        return (self.mginull * self.p1) / self.p2
-
-    def _ss_pv_free(self):
-        kdc = self._kdc()
-        kdm = self._kdm()
-        return self.PVnull / (1.0 + kdc + kdm)
-
-    def _ss_pv_ca(self):
-        kdc = self._kdc()
-        kdm = self._kdm()
-        return (self.PVnull * kdc) / (1.0 + kdc + kdm)
-
-    def _ss_pv_mg(self):
-        kdc = self._kdc()
-        kdm = self._kdm()
-        return (self.PVnull * kdm) / (1.0 + kdc + kdm)
-
-    def _ci_source_flux(self, total_current):
-        return CdpStC_MA2020_GoC._ci_source_flux(self, total_current)
 
 
 @register_ion("CdpCR_MA2020_GrC")
@@ -3702,7 +3314,7 @@ class CdpCR_MA2020_GrC(Calcium, _RadialShellGeometry, KineticIon):
         which falls back to :attr:`Calcium.default_Co` inside
         :meth:`KineticIon._init_kinetic_ion`.
     Ci_initializer : array-like or callable or None, optional
-        Union[brainstate.typing.ArrayLike, Callable] for the ``Ci`` species. Defaults to ``None``,
+        Initializer for the ``Ci`` species. Defaults to ``None``,
         which falls back to ``cainull``.
     species_initializers : dict or None, optional
         Per-species initializer overrides, keyed by one of this
@@ -3771,11 +3383,11 @@ class CdpCR_MA2020_GrC(Calcium, _RadialShellGeometry, KineticIon):
     objects defined on :class:`CdpStC_MA2020_GoC` (same
     ``Ci``-driving :class:`~braincell.ion._base.Source` and same
     ``pump + pumpca = TotalPump * parea``
-    :class:`~braincell.ion._base.Conserve`), and several
-    geometry/current helpers (:attr:`vrat`, :attr:`parea`,
+    :class:`~braincell.ion._base.Conserve`). The shell geometry and
+    the current-driven ``Ci`` source (:attr:`vrat`, :attr:`parea`,
     :attr:`dsq`, :attr:`dsqvol`, ``_require_diam_arc_mean``,
-    ``_ci_source_flux``, ``_as_initializer``) explicitly delegate to
-    :class:`CdpStC_MA2020_GoC` rather than redefining the same logic.
+    ``_ci_source_flux``) are inherited from
+    :class:`~braincell.ion._base._RadialShellGeometry`.
 
     Nineteen reactions couple the twenty-two species: the two pump
     steps, four generic-buffer steps (``Buff1``, ``Buff2``, ``BTC``,
@@ -3825,66 +3437,23 @@ class CdpCR_MA2020_GrC(Calcium, _RadialShellGeometry, KineticIon):
         Factor("pump_area", lambda self: self.parea),
     )
     species = (
-        Species("Ci", init=0.0 * u.mM, factor="cyto"),
-        Species("mg", init=0.0 * u.mM, factor="cyto"),
-        Species("Buff1", init=0.0 * u.mM, factor="cyto"),
-        Species("Buff1_ca", init=0.0 * u.mM, factor="cyto"),
-        Species("Buff2", init=0.0 * u.mM, factor="cyto"),
-        Species("Buff2_ca", init=0.0 * u.mM, factor="cyto"),
-        Species("BTC", init=0.0 * u.mM, factor="cyto"),
-        Species("BTC_ca", init=0.0 * u.mM, factor="cyto"),
-        Species("DMNPE", init=0.0 * u.mM, factor="cyto"),
-        Species("DMNPE_ca", init=0.0 * u.mM, factor="cyto"),
-        Species("CR", init=0.0 * u.mM, factor="cyto"),
-        Species("CR_1C_0N", init=0.0 * u.mM, factor="cyto"),
-        Species("CR_2C_0N", init=0.0 * u.mM, factor="cyto"),
-        Species("CR_2C_1N", init=0.0 * u.mM, factor="cyto"),
-        Species("CR_1C_1N", init=0.0 * u.mM, factor="cyto"),
-        Species("CR_0C_1N", init=0.0 * u.mM, factor="cyto"),
-        Species("CR_0C_2N", init=0.0 * u.mM, factor="cyto"),
-        Species("CR_1C_2N", init=0.0 * u.mM, factor="cyto"),
-        Species("CR_2C_2N", init=0.0 * u.mM, factor="cyto"),
-        Species("CR_1V", init=0.0 * u.mM, factor="cyto"),
-        Species("pump", init=0.0 * (u.mol / u.cm**2), factor="pump_area"),
-        Species("pumpca", init=0.0 * (u.mol / u.cm**2), factor="pump_area"),
+        _CI_SPECIES
+        + _BUFFER_SPECIES
+        + (
+            Species("CR", init=0.0 * u.mM, factor="cyto"),
+            Species("CR_1C_0N", init=0.0 * u.mM, factor="cyto"),
+            Species("CR_2C_0N", init=0.0 * u.mM, factor="cyto"),
+            Species("CR_2C_1N", init=0.0 * u.mM, factor="cyto"),
+            Species("CR_1C_1N", init=0.0 * u.mM, factor="cyto"),
+            Species("CR_0C_1N", init=0.0 * u.mM, factor="cyto"),
+            Species("CR_0C_2N", init=0.0 * u.mM, factor="cyto"),
+            Species("CR_1C_2N", init=0.0 * u.mM, factor="cyto"),
+            Species("CR_2C_2N", init=0.0 * u.mM, factor="cyto"),
+            Species("CR_1V", init=0.0 * u.mM, factor="cyto"),
+        )
+        + _PUMP_SPECIES
     )
-    reactions = (
-        Reaction(
-            lhs={"pump": 1, "Ci": 1},
-            rhs={"pumpca": 1},
-            forward=lambda self, V, x: self.kpmp1 * self.parea,
-            backward=lambda self, V, x: self.kpmp2 * self.parea,
-        ),
-        Reaction(
-            lhs={"pumpca": 1},
-            rhs={"pump": 1},
-            forward=lambda self, V, x: self.kpmp3 * self.parea,
-            backward=None,
-        ),
-        Reaction(
-            lhs={"Ci": 1, "Buff1": 1},
-            rhs={"Buff1_ca": 1},
-            forward=lambda self, V, x: self.rf1 * self.dsqvol,
-            backward=lambda self, V, x: self.rf2 * self.dsqvol,
-        ),
-        Reaction(
-            lhs={"Ci": 1, "Buff2": 1},
-            rhs={"Buff2_ca": 1},
-            forward=lambda self, V, x: self.rf3 * self.dsqvol,
-            backward=lambda self, V, x: self.rf4 * self.dsqvol,
-        ),
-        Reaction(
-            lhs={"Ci": 1, "BTC": 1},
-            rhs={"BTC_ca": 1},
-            forward=lambda self, V, x: self.b1 * self.dsqvol,
-            backward=lambda self, V, x: self.b2 * self.dsqvol,
-        ),
-        Reaction(
-            lhs={"Ci": 1, "DMNPE": 1},
-            rhs={"DMNPE_ca": 1},
-            forward=lambda self, V, x: self.c1 * self.dsqvol,
-            backward=lambda self, V, x: self.c2 * self.dsqvol,
-        ),
+    reactions = _BUFFER_REACTIONS + (
         Reaction(
             lhs={"Ci": 1, "CR": 1},
             rhs={"CR_1C_0N": 1},
@@ -3967,30 +3536,6 @@ class CdpCR_MA2020_GrC(Calcium, _RadialShellGeometry, KineticIon):
     sources = CdpStC_MA2020_GoC.sources
     conserves = CdpStC_MA2020_GoC.conserves
 
-    _diffeq_species = (
-        "Ci",
-        "mg",
-        "Buff1",
-        "Buff1_ca",
-        "Buff2",
-        "Buff2_ca",
-        "BTC",
-        "BTC_ca",
-        "DMNPE",
-        "DMNPE_ca",
-        "CR",
-        "CR_1C_0N",
-        "CR_2C_0N",
-        "CR_2C_1N",
-        "CR_1C_1N",
-        "CR_0C_1N",
-        "CR_0C_2N",
-        "CR_1C_2N",
-        "CR_2C_2N",
-        "CR_1V",
-        "pump",
-    )
-
     def __init__(
         self,
         size: Size,
@@ -4070,19 +3615,8 @@ class CdpCR_MA2020_GrC(Calcium, _RadialShellGeometry, KineticIon):
             substeps=substeps,
         )
 
-    def _resolve_species_initializers(
-        self,
-        *,
-        Ci_initializer,
-        species_initializers,
-    ) -> dict[str, object]:
-        species_initializers = dict(species_initializers or {})
-        invalid = set(species_initializers).difference(self._diffeq_species)
-        if invalid:
-            invalid_names = ", ".join(sorted(invalid))
-            raise ValueError(f"{type(self).__name__} only accepts differential-species overrides; got {invalid_names}.")
-
-        defaults = {
+    def _default_species_initializers(self, Ci_initializer) -> dict[str, object]:
+        return {
             "Ci": self.cainull if Ci_initializer is None else Ci_initializer,
             "mg": self.mginull,
             "Buff1": self._ss_buffer_free(self.Buffnull1, self.rf1, self.rf2, self.cainull),
@@ -4105,11 +3639,6 @@ class CdpCR_MA2020_GrC(Calcium, _RadialShellGeometry, KineticIon):
             "CR_1V": 0.0 * u.mM,
             "pump": self.TotalPump,
         }
-        defaults.update(species_initializers)
-        return {name: self._as_initializer(value) for name, value in defaults.items()}
-
-    def _ci_source_flux(self, total_current):
-        return CdpStC_MA2020_GoC._ci_source_flux(self, total_current)
 
 
 @register_ion("CdpHVA_SU2015_DCN")
@@ -4151,7 +3680,7 @@ class CdpHVA_SU2015_DCN(Calcium, DynamicNernstIon):
         which falls back to :attr:`Calcium.default_Co` inside
         :meth:`DynamicNernstIon._init_dynamic_nernst_ion`.
     Ci_initializer : array-like or callable or None, optional
-        Union[brainstate.typing.ArrayLike, Callable] for the dynamic ``Ci`` state. Defaults to
+        Initializer for the dynamic ``Ci`` state. Defaults to
         ``None``, which falls back to a constant initializer at
         ``caiBase``.
     name : str or None, optional
@@ -4271,10 +3800,7 @@ class CdpHVA_SU2015_DCN(Calcium, DynamicNernstIon):
         # channels follow the repo-wide inward-positive current convention, so
         # the equivalent imported-ion drive here is positive in ``total_current``.
         drive_value = (
-            self.kCa.to_decimal(self.kCa.unit)
-            / self.depth.to_decimal(u.um)
-            * total_current.to_decimal(u.mA / u.cm**2)
-            * 1e4
+            u.get_mantissa(self.kCa) / self.depth.to_decimal(u.um) * total_current.to_decimal(u.mA / u.cm**2) * 1e4
         )
         drive = drive_value * (u.mM / u.ms)
         return drive - (Ci - self.caiBase) / self.tauCa
@@ -4321,7 +3847,7 @@ class CdpLVA_SU2015_DCN(Calcium, DynamicNernstIon):
         which falls back to :attr:`Calcium.default_Co` inside
         :meth:`DynamicNernstIon._init_dynamic_nernst_ion`.
     Ci_initializer : array-like or callable or None, optional
-        Union[brainstate.typing.ArrayLike, Callable] for the dynamic ``Ci`` state. Defaults to
+        Initializer for the dynamic ``Ci`` state. Defaults to
         ``None``, which falls back to a constant initializer at
         ``caliBase``.
     name : str or None, optional
@@ -4444,10 +3970,7 @@ class CdpLVA_SU2015_DCN(Calcium, DynamicNernstIon):
         # channel currents use the repo-wide inward-positive convention, so
         # the equivalent imported-ion drive here is positive in ``total_current``.
         drive_value = (
-            self.kCal.to_decimal(self.kCal.unit)
-            / self.depth.to_decimal(u.um)
-            * total_current.to_decimal(u.mA / u.cm**2)
-            * 1e4
+            u.get_mantissa(self.kCal) / self.depth.to_decimal(u.um) * total_current.to_decimal(u.mA / u.cm**2) * 1e4
         )
         drive = drive_value * (u.mM / u.ms)
         return drive - (Ci - self.caliBase) / self.tauCal

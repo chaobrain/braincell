@@ -96,10 +96,10 @@ cell.paint(AllRegion(), mech.CableProperty(
 
 # Paint ion channels onto specific regions
 cell.paint(AllRegion(), mech.Channel("IL", g_max=0.0003 * u.S / u.cm**2, E=-70 * u.mV))
-cell.paint(branch_in("type", "soma"), mech.Channel("INa_Ba2002", g_max=0.12 * u.S / u.cm**2))
+cell.paint(branch_in("type", "soma"), mech.Channel("Na_Ba2002", g_max=0.12 * u.S / u.cm**2))
 cell.paint(
     branch_in("type", ("dendrite", "basal_dendrite", "apical_dendrite")),
-    mech.Channel("ICaL_IS2008", g_max=0.002 * u.S / u.cm**2),
+    mech.Channel("CaL_IS2008", g_max=0.002 * u.S / u.cm**2),
 )
 
 # Inject current at the soma

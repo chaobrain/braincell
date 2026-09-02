@@ -25,40 +25,18 @@ from braincell._base_channel import IonInfo
 from braincell.channel.potassium import Kv1p5_MA2024_PC
 from braincell.channel.potassium_sodium import Kv1p5_MA2020_GrC
 from braincell.ion import NonSpecific, Potassium, Sodium
-
-
-def _k_info(size: int = 1) -> IonInfo:
-    return IonInfo(
-        Ci=jnp.full((size,), 0.04) * u.mM,
-        Co=jnp.full((size,), 2.5) * u.mM,
-        E=jnp.full((size,), -90.0) * u.mV,
-        valence=1,
-    )
+from braincell.channel._testing import (
+    DENSITY_UNIT,
+    k_info,
+    na_info,
+    nonspecific_info,
+    voltage,
+)
 
 
 def _na_info(size: int = 1) -> IonInfo:
-    return IonInfo(
-        Ci=jnp.full((size,), 10.0) * u.mM,
-        Co=jnp.full((size,), 140.0) * u.mM,
-        E=jnp.full((size,), 50.0) * u.mV,
-        valence=1,
-    )
-
-
-def _no_info(size: int = 1) -> IonInfo:
-    return IonInfo(
-        Ci=jnp.full((size,), 1.0) * u.mM,
-        Co=jnp.full((size,), 1.0) * u.mM,
-        E=jnp.full((size,), 0.0) * u.mV,
-        valence=1,
-    )
-
-
-def _V(values, unit=u.mV):
-    return jnp.asarray(values) * unit
-
-
-_DENSITY_UNIT = u.mS / u.cm**2 * u.mV
+    """Sodium at the 10 mM intracellular concentration this pair uses."""
+    return na_info(size, Ci=10.0)
 
 
 class Kv1p5MA20GrCTest(unittest.TestCase):
@@ -78,10 +56,10 @@ class Kv1p5MA20GrCTest(unittest.TestCase):
         temp = u.celsius2kelvin(36.0)
         pc = Kv1p5_MA2024_PC(size=1, temp=temp)
         grc = Kv1p5_MA2020_GrC(size=1, temp=temp)
-        V = _V([-35.0])
-        k = _k_info()
+        V = voltage([-35.0])
+        k = k_info()
         na = _na_info()
-        no = _no_info()
+        no = nonspecific_info()
 
         pc.init_state(V, k)
         grc.init_state(V, k, na, no)
@@ -100,23 +78,23 @@ class Kv1p5MA20GrCTest(unittest.TestCase):
         i_pc = pc.current(V, k)
         components = grc.current_components(V, k, na, no)
         i_grc = grc.current(V, k, na, no)
-        self.assertTrue(u.math.allclose(components["no"].to_decimal(_DENSITY_UNIT), jnp.zeros((1,)), atol=1e-12))
+        self.assertTrue(u.math.allclose(components["no"].to_decimal(DENSITY_UNIT), jnp.zeros((1,)), atol=1e-12))
         self.assertTrue(
             u.math.allclose(
-                components["k"].to_decimal(_DENSITY_UNIT),
-                i_pc.to_decimal(_DENSITY_UNIT),
+                components["k"].to_decimal(DENSITY_UNIT),
+                i_pc.to_decimal(DENSITY_UNIT),
                 atol=1e-6,
             )
         )
-        self.assertTrue(u.math.allclose(i_grc.to_decimal(_DENSITY_UNIT), i_pc.to_decimal(_DENSITY_UNIT), atol=1e-6))
+        self.assertTrue(u.math.allclose(i_grc.to_decimal(DENSITY_UNIT), i_pc.to_decimal(DENSITY_UNIT), atol=1e-6))
 
     def test_nonzero_gnonspec_contributes_nonspecific_component(self) -> None:
         temp = u.celsius2kelvin(25.0)
         ch = Kv1p5_MA2020_GrC(size=1, temp=temp, gnonspec=0.2e-3 * (u.siemens / u.cm**2))
-        V = _V([-20.0])
-        k = _k_info()
+        V = voltage([-20.0])
+        k = k_info()
         na = _na_info()
-        no = _no_info()
+        no = nonspecific_info()
         ch.init_state(V, k, na, no)
         ch.m.value = jnp.array([0.2])
         ch.n.value = jnp.array([0.3])
@@ -131,16 +109,16 @@ class Kv1p5MA20GrCTest(unittest.TestCase):
 
         self.assertTrue(
             u.math.allclose(
-                components["no"].to_decimal(_DENSITY_UNIT),
-                expected_no.to_decimal(_DENSITY_UNIT),
+                components["no"].to_decimal(DENSITY_UNIT),
+                expected_no.to_decimal(DENSITY_UNIT),
                 atol=1e-6,
             )
         )
-        self.assertFalse(u.math.allclose(components["no"].to_decimal(_DENSITY_UNIT), jnp.zeros((1,)), atol=1e-12))
+        self.assertFalse(u.math.allclose(components["no"].to_decimal(DENSITY_UNIT), jnp.zeros((1,)), atol=1e-12))
         self.assertTrue(
             u.math.allclose(
-                total.to_decimal(_DENSITY_UNIT),
-                (components["k"] + components["no"]).to_decimal(_DENSITY_UNIT),
+                total.to_decimal(DENSITY_UNIT),
+                (components["k"] + components["no"]).to_decimal(DENSITY_UNIT),
                 atol=1e-6,
             )
         )

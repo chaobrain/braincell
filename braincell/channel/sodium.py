@@ -24,7 +24,7 @@ import brainunit as u
 
 from braincell._base_channel import IonInfo
 from braincell._typing import ArrayLike, Initializer, Size
-from braincell.channel._base import Gate, Markov, OhmicHH, q10_factor
+from braincell.channel._base import Gate, OhmicHH, OhmicMarkov, is_disabled, q10_factor
 from braincell.ion import Sodium
 from braincell.mech import register_channel
 
@@ -714,7 +714,7 @@ class Na_ZH2019_IO(OhmicHH):
 
 
 @register_channel("Nav1p6_MA2020_GoC")
-class Nav1p6_MA2020_GoC(Markov):
+class Nav1p6_MA2020_GoC(OhmicMarkov):
     r"""Resurgent Nav1.6 sodium current, Golgi-cell parameterisation.
 
     The 13-state Raman & Bean [1]_ / Khaliq et al. [2]_ resurgent
@@ -848,6 +848,7 @@ class Nav1p6_MA2020_GoC(Markov):
         ("O", "I6", "fin", "bin"),
     )
     dependent_state = "I6"
+    open_states = ("O",)
 
     def __init__(
         self,
@@ -887,9 +888,6 @@ class Nav1p6_MA2020_GoC(Markov):
 
         self.alfac = (self.Oon / self.Con) ** (1 / 4)
         self.btfac = (self.Ooff / self.Coff) ** (1 / 4)
-
-    def current(self, V, Na: IonInfo):
-        return self.g_max * self.O.value * (Na.E - V)
 
     f01 = lambda self, V: 4 * self.alpha * u.math.exp((V / u.mV) / self.x1) * self.phi
     f02 = lambda self, V: 3 * self.alpha * u.math.exp((V / u.mV) / self.x1) * self.phi
@@ -1305,7 +1303,11 @@ class Nav1p1_MA2025_BC(Nav1p6_MA2020_GoC):
         self.alfac = (self.Oon / self.Con) ** (1 / 4)
 
     def current(self, V, Na: IonInfo):
-        conductive = self.g_max * self.O.value * (Na.E - V)
+        conductive = super().current(V, Na)
+        if is_disabled(self.gateCurrent):
+            # The shipped default. Tracing the gating-current branch anyway
+            # would emit ~30 equations that the ``where`` then discards.
+            return conductive
         gate_flip = (
             self.f01(V) * self.C1.value
             + (self.f02(V) - self.b01(V)) * self.C2.value
@@ -1397,7 +1399,7 @@ class Nav1p1_RI2021_SC(Nav1p1_MA2025_BC):
 
 
 @register_channel("Nav_MA2020_GrC")
-class Nav_MA2020_GrC(Markov):
+class Nav_MA2020_GrC(OhmicMarkov):
     r"""Resurgent Nav sodium current, granule-cell parameterisation.
 
     A 13-state Raman & Bean (2001) [2]_-style resurgent sodium Markov
@@ -1544,6 +1546,7 @@ class Nav_MA2020_GrC(Markov):
         ("I5", "I6", "f1n", "b1n"),
     )
     dependent_state = "I6"
+    open_states = ("O",)
 
     def __init__(
         self,
@@ -1577,9 +1580,6 @@ class Nav_MA2020_GrC(Markov):
         self.n2 = 3.279
         self.n3 = 1.83
         self.n4 = 0.738
-
-    def current(self, V, Na: IonInfo):
-        return self.g_max * self.O.value * (Na.E - V)
 
     def init_state(self, V, Na: IonInfo, batch_size: int = None):
         super().init_state(V, Na, batch_size=batch_size)
@@ -1636,7 +1636,7 @@ class Nav_MA2020_GrC(Markov):
 
 
 @register_channel("NaFHF_MA2020_GrC")
-class NaFHF_MA2020_GrC(Markov):
+class NaFHF_MA2020_GrC(Nav_MA2020_GrC):
     r"""Resurgent Nav sodium current with slow block, granule-cell model.
 
     The same 13-state Raman & Bean (2001) [2]_-style resurgent sodium
@@ -1652,8 +1652,8 @@ class NaFHF_MA2020_GrC(Markov):
     :math:`\theta`, :math:`\gamma`, :math:`\delta`, :math:`\varepsilon`,
     :math:`C_{on}`, :math:`C_{off}`, :math:`O_{on}`, :math:`O_{off}`,
     :math:`a`, :math:`b`) and the ``C1``-``C5``/``I1``-``I5``/``O``/
-    ``OB``/``I6`` transition-rate formulas are exactly as given on
-    :class:`Nav_MA2020_GrC`. The added ``L3``-``L6`` branch uses two
+    ``OB``/``I6`` transition-rate formulas are inherited unchanged
+    from :class:`Nav_MA2020_GrC`. The added ``L3``-``L6`` branch uses two
     further constant rate factors :math:`L_{on} = \phi A_{Lon}` and
     :math:`L_{off} = \phi A_{Loff}` and fixed scale factors
     :math:`c = 20.0`, :math:`d = 0.075`:
@@ -1707,6 +1707,13 @@ class NaFHF_MA2020_GrC(Markov):
     ``Nav_MA20_GrC.mod``'s "Based on Raman 13 state model. Adapted
     from Magistretti et al, 2006." attribution, per the bibliography.
 
+    This class subclasses :class:`Nav_MA2020_GrC` and declares only
+    what the slow-blocked branch adds: its own ``__init__``, the
+    ``L``-branch rate methods, and a complete ``pairs`` tuple. ``pairs``
+    is re-declared in full rather than appended to the parent's,
+    because :class:`Markov` resolves it per class and a partial
+    declaration would silently drop the inherited transitions.
+
     This class ships ``ACon = 0.025`` and ``AOoff = 0.002`` -- unlike
     :class:`Nav_MA2020_GrC`, these values match the bibliography's
     cross-checked fingerprint for the ``MA2020`` granule sodium pair
@@ -1738,9 +1745,6 @@ class NaFHF_MA2020_GrC(Markov):
     """
 
     __module__ = "braincell.channel"
-    reset_to_steady_state = True
-    root_type = Sodium
-
     pairs = (
         ("C1", "C2", "f01", "b01"),
         ("C2", "C3", "f02", "b02"),
@@ -1767,7 +1771,6 @@ class NaFHF_MA2020_GrC(Markov):
         ("O", "I6", "fin", "bin"),
         ("I5", "I6", "f1n", "b1n"),
     )
-    dependent_state = "I6"
 
     def __init__(
         self,
@@ -1806,73 +1809,20 @@ class NaFHF_MA2020_GrC(Markov):
         self.c = 20.0
         self.d = 0.075
 
-    def current(self, V, Na: IonInfo):
-        return self.g_max * self.O.value * (Na.E - V)
-
-    def init_state(self, V, Na: IonInfo, batch_size: int = None):
-        super().init_state(V, Na, batch_size=batch_size)
-        self.reset_steady_state(V, Na, batch_size=batch_size)
-
-    alfa = lambda self, V: self.phi * self.Aalfa * u.math.exp((V / u.mV) / self.Valfa)
-    beta = lambda self, V: self.phi * self.Abeta * u.math.exp(-(V / u.mV) / self.Vbeta)
-    teta = lambda self, V: self.phi * self.Ateta * u.math.exp(-(V / u.mV) / self.Vteta)
-    gamma = lambda self, V: self.phi * self.Agamma
-    delta = lambda self, V: self.phi * self.Adelta
-    epsilon = lambda self, V: self.phi * self.Aepsilon
-    Con = lambda self, V: self.phi * self.ACon
-    Coff = lambda self, V: self.phi * self.ACoff
-    Oon = lambda self, V: self.phi * self.AOon
-    Ooff = lambda self, V: self.phi * self.AOoff
-    a_factor = lambda self, V: (self.Oon(V) / self.Con(V)) ** 0.25
-    b_factor = lambda self, V: (self.Ooff(V) / self.Coff(V)) ** 0.25
     Lon = lambda self, V: self.phi * self.ALon
     Loff = lambda self, V: self.phi * self.ALoff
 
-    f01 = lambda self, V: self.n1 * self.alfa(V)
-    f02 = lambda self, V: self.n2 * self.alfa(V)
-    f03 = lambda self, V: self.n3 * self.alfa(V)
-    f04 = lambda self, V: self.n4 * self.alfa(V)
-    f0O = lambda self, V: self.gamma(V)
-    fip = lambda self, V: self.epsilon(V)
-    f11 = lambda self, V: self.n1 * self.alfa(V) * self.a_factor(V)
-    f12 = lambda self, V: self.n2 * self.alfa(V) * self.a_factor(V)
-    f13 = lambda self, V: self.n3 * self.alfa(V) * self.a_factor(V)
-    f14 = lambda self, V: self.n4 * self.alfa(V) * self.a_factor(V)
-    f1n = lambda self, V: self.gamma(V)
     f33 = lambda self, V: self.n3 * self.alfa(V) * self.c
     f34 = lambda self, V: self.n4 * self.alfa(V) * self.c
     f3n = lambda self, V: self.gamma(V)
-    fi1 = lambda self, V: self.Con(V)
-    fi2 = lambda self, V: self.Con(V) * self.a_factor(V)
-    fi3 = lambda self, V: self.Con(V) * self.a_factor(V) ** 2
-    fi4 = lambda self, V: self.Con(V) * self.a_factor(V) ** 3
-    fi5 = lambda self, V: self.Con(V) * self.a_factor(V) ** 4
-    fin = lambda self, V: self.Oon(V)
     fl3 = lambda self, V: self.Lon(V)
     fl4 = lambda self, V: self.Lon(V) * self.c
     fl5 = lambda self, V: self.Lon(V) * self.c**2
     fl6 = lambda self, V: self.Lon(V) * self.c**2
 
-    b01 = lambda self, V: self.n4 * self.beta(V)
-    b02 = lambda self, V: self.n3 * self.beta(V)
-    b03 = lambda self, V: self.n2 * self.beta(V)
-    b04 = lambda self, V: self.n1 * self.beta(V)
-    b0O = lambda self, V: self.delta(V)
-    bip = lambda self, V: self.teta(V)
-    b11 = lambda self, V: self.n4 * self.beta(V) * self.b_factor(V)
-    b12 = lambda self, V: self.n3 * self.beta(V) * self.b_factor(V)
-    b13 = lambda self, V: self.n2 * self.beta(V) * self.b_factor(V)
-    b14 = lambda self, V: self.n1 * self.beta(V) * self.b_factor(V)
-    b1n = lambda self, V: self.delta(V)
     b33 = lambda self, V: self.n2 * self.alfa(V) * self.d
     b34 = lambda self, V: self.n1 * self.alfa(V) * self.d
     b3n = lambda self, V: self.delta(V)
-    bi1 = lambda self, V: self.Coff(V)
-    bi2 = lambda self, V: self.Coff(V) * self.b_factor(V)
-    bi3 = lambda self, V: self.Coff(V) * self.b_factor(V) ** 2
-    bi4 = lambda self, V: self.Coff(V) * self.b_factor(V) ** 3
-    bi5 = lambda self, V: self.Coff(V) * self.b_factor(V) ** 4
-    bin = lambda self, V: self.Ooff(V)
     bl3 = lambda self, V: self.Loff(V)
     bl4 = lambda self, V: self.Loff(V) * self.d
     bl5 = lambda self, V: self.Loff(V) * self.d**2

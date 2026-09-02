@@ -21,7 +21,6 @@ import brainunit as u
 import jax
 import jax.numpy as jnp
 
-from braincell._base_channel import IonInfo
 from braincell._base_neuron import HHTypedNeuron
 from braincell.channel._base import HH, ghk_flux
 from braincell.channel.calcium import (
@@ -63,6 +62,12 @@ from braincell.channel.calcium import (
 )
 from braincell.ion import Calcium
 from braincell.mech import get_registry
+from braincell.channel._testing import (
+    DENSITY_UNIT,
+    assert_channels_agree,
+    ca_info,
+    voltage,
+)
 
 
 def _cav3p1_nmodl_ghk_flux(V, ci, co, z, temp):
@@ -74,29 +79,6 @@ def _cav3p1_nmodl_ghk_flux(V, ci, co, z, temp):
     small_branch = (z * faraday) * numerator * (1 + zeta / 2)
     regular_branch = (z * zeta * faraday) * numerator / (1 - exp_term)
     return u.math.where(u.math.abs(1 - exp_term) < 1e-6, small_branch, regular_branch)
-
-
-def _ca_info(
-    size: int = 1,
-    C: float = 1e-4,
-    E_mV: float = 120.0,
-    e_mV: float | None = None,
-) -> IonInfo:
-    if e_mV is not None:
-        E_mV = e_mV
-    return IonInfo(
-        Ci=jnp.full((size,), C) * u.mM,
-        Co=jnp.full((size,), 2.0) * u.mM,
-        E=jnp.full((size,), E_mV) * u.mV,
-        valence=2,
-    )
-
-
-def _V(values, unit=u.mV):
-    return jnp.asarray(values) * unit
-
-
-_DENSITY_UNIT = u.mS / u.cm**2 * u.mV
 
 
 class _P2QHHMixin:
@@ -143,16 +125,16 @@ class _P2QHHMixin:
 
     def test_init_state_creates_p_and_q(self) -> None:
         ch = self._make(size=2)
-        V = _V([-60.0, -70.0])
-        ca = _ca_info(2)
+        V = voltage([-60.0, -70.0])
+        ca = ca_info(2)
         ch.init_state(V, ca)
         self.assertEqual(ch.p.value.shape, (2,))
         self.assertEqual(ch.q.value.shape, (2,))
 
     def test_reset_state_matches_gate_form(self) -> None:
         ch = self._make(size=1)
-        V = _V([-60.0])
-        ca = _ca_info()
+        V = voltage([-60.0])
+        ca = ca_info()
         ch.init_state(V, ca)
         ch.reset_state(V, ca)
         gates = {gate.name: gate for gate in ch._iter_gates()}
@@ -176,8 +158,8 @@ class _P2QHHMixin:
 
     def test_compute_derivative_matches_hh_gate_dynamics(self) -> None:
         ch = self._make(size=1)
-        V = _V([-60.0])
-        ca = _ca_info()
+        V = voltage([-60.0])
+        ca = ca_info()
         ch.init_state(V, ca)
         ch.p.value = jnp.array([0.2])
         ch.q.value = jnp.array([0.6])
@@ -203,29 +185,29 @@ class _P2QHHMixin:
 
     def test_current_matches_p2_q_formula(self) -> None:
         ch = self._make(size=1)
-        V = _V([-60.0])
-        ca = _ca_info()
+        V = voltage([-60.0])
+        ca = ca_info()
         ch.init_state(V, ca)
         ch.reset_state(V, ca)
         current = ch.current(V, ca)
         expected = ch.g_max * ch.p.value**2 * ch.q.value * (ca.E - V)
         self.assertTrue(
             u.math.allclose(
-                current.to_decimal(_DENSITY_UNIT),
-                expected.to_decimal(_DENSITY_UNIT),
+                current.to_decimal(DENSITY_UNIT),
+                expected.to_decimal(DENSITY_UNIT),
                 atol=1e-6,
             )
         )
 
     def test_current_is_zero_when_gates_closed(self) -> None:
         ch = self._make(size=1)
-        V = _V([-60.0])
-        ca = _ca_info()
+        V = voltage([-60.0])
+        ca = ca_info()
         ch.init_state(V, ca)
         ch.p.value = jnp.zeros(1)
         ch.q.value = jnp.zeros(1)
         current = ch.current(V, ca)
-        self.assertTrue(u.math.allclose(current.to_decimal(_DENSITY_UNIT), jnp.zeros(1), atol=1e-9))
+        self.assertTrue(u.math.allclose(current.to_decimal(DENSITY_UNIT), jnp.zeros(1), atol=1e-9))
 
 
 class CaT_HM1992Test(_P2QHHMixin, unittest.TestCase):
@@ -269,16 +251,16 @@ class CaHVA_SU2015_DCNTest(unittest.TestCase):
 
     def test_reset_state_sets_m_to_minf(self) -> None:
         ch = CaHVA_SU2015_DCN(size=1)
-        V = _V([-60.0])
-        ca = _ca_info()
+        V = voltage([-60.0])
+        ca = ca_info()
         ch.init_state(V, ca)
         ch.reset_state(V, ca)
         self.assertTrue(u.math.allclose(ch.m.value, ch.f_m_inf(V, ca), atol=1e-6))
 
     def test_compute_derivative_matches_inf_tau_form(self) -> None:
         ch = CaHVA_SU2015_DCN(size=1, qdeltat=2.0)
-        V = _V([-60.0])
-        ca = _ca_info()
+        V = voltage([-60.0])
+        ca = ca_info()
         ch.init_state(V, ca)
         ch.m.value = jnp.array([0.2])
         ch.compute_derivative(V, ca)
@@ -288,8 +270,8 @@ class CaHVA_SU2015_DCNTest(unittest.TestCase):
 
     def test_current_matches_mod_formula(self) -> None:
         ch = CaHVA_SU2015_DCN(size=1)
-        V = _V([-60.0])
-        ca = _ca_info(C=1e-4)
+        V = voltage([-60.0])
+        ca = ca_info(Ci=1e-4)
         ch.init_state(V, ca)
         ch.m.value = jnp.array([0.5])
         current = ch.current(V, ca)
@@ -331,7 +313,7 @@ class CaL_SU2015_DCNTest(unittest.TestCase):
 
     def test_reset_state_sets_m_and_h_to_inf_values(self) -> None:
         ch = CaL_SU2015_DCN(size=1)
-        V = _V([-60.0])
+        V = voltage([-60.0])
         ch.init_state(V)
         ch.reset_state(V)
         self.assertTrue(u.math.allclose(ch.m.value, ch.f_m_inf(V), atol=1e-6))
@@ -339,7 +321,7 @@ class CaL_SU2015_DCNTest(unittest.TestCase):
 
     def test_rates_use_direct_formulas(self) -> None:
         ch = CaL_SU2015_DCN(size=3, qdeltat=2.0)
-        V = _V([-79.7, -60.2, -49.6])
+        V = voltage([-79.7, -60.2, -49.6])
         v_mV = V.to_decimal(u.mV)
 
         self.assertTrue(u.math.allclose(ch.f_m_inf(V), ch._m_inf_formula(v_mV), atol=1e-12))
@@ -350,13 +332,13 @@ class CaL_SU2015_DCNTest(unittest.TestCase):
     def test_qdeltat_scales_taus(self) -> None:
         base = CaL_SU2015_DCN(size=1, qdeltat=1.0)
         fast = CaL_SU2015_DCN(size=1, qdeltat=2.0)
-        V = _V([-60.0])
+        V = voltage([-60.0])
         self.assertTrue(u.math.allclose(fast.f_m_tau(V), base.f_m_tau(V) / 2.0, atol=1e-6))
         self.assertTrue(u.math.allclose(fast.f_h_tau(V), base.f_h_tau(V) / 2.0, atol=1e-6))
 
     def test_compute_derivative_matches_inf_tau_form(self) -> None:
         ch = CaL_SU2015_DCN(size=1, qdeltat=2.0)
-        V = _V([-60.0])
+        V = voltage([-60.0])
         ch.init_state(V)
         ch.m.value = jnp.array([0.2])
         ch.h.value = jnp.array([0.6])
@@ -369,7 +351,7 @@ class CaL_SU2015_DCNTest(unittest.TestCase):
 
     def test_current_matches_fixed_carev_mod_formula_with_braincell_sign(self) -> None:
         ch = CaL_SU2015_DCN(size=1)
-        V = _V([-60.0])
+        V = voltage([-60.0])
         ch.init_state(V)
         ch.m.value = jnp.array([0.5])
         ch.h.value = jnp.array([0.25])
@@ -377,8 +359,8 @@ class CaL_SU2015_DCNTest(unittest.TestCase):
         expected = ch.g_max * ch.m.value**2 * ch.h.value * (ch.E - V)
         self.assertTrue(
             u.math.allclose(
-                current.to_decimal(_DENSITY_UNIT),
-                expected.to_decimal(_DENSITY_UNIT),
+                current.to_decimal(DENSITY_UNIT),
+                expected.to_decimal(DENSITY_UNIT),
                 atol=1e-6,
             )
         )
@@ -405,8 +387,8 @@ class CaLVA_SU2015_DCNTest(unittest.TestCase):
 
     def test_reset_state_sets_m_and_h_to_inf_values(self) -> None:
         ch = CaLVA_SU2015_DCN(size=1)
-        V = _V([-60.0])
-        ca = _ca_info()
+        V = voltage([-60.0])
+        ca = ca_info()
         ch.init_state(V, ca)
         ch.reset_state(V, ca)
         self.assertTrue(u.math.allclose(ch.m.value, ch.f_m_inf(V, ca), atol=1e-6))
@@ -414,8 +396,8 @@ class CaLVA_SU2015_DCNTest(unittest.TestCase):
 
     def test_compute_derivative_matches_inf_tau_form(self) -> None:
         ch = CaLVA_SU2015_DCN(size=1, qdeltat=2.0)
-        V = _V([-60.0])
-        ca = _ca_info()
+        V = voltage([-60.0])
+        ca = ca_info()
         ch.init_state(V, ca)
         ch.m.value = jnp.array([0.2])
         ch.h.value = jnp.array([0.6])
@@ -428,22 +410,22 @@ class CaLVA_SU2015_DCNTest(unittest.TestCase):
 
     def test_h_tau_uses_low_voltage_branch_below_threshold(self) -> None:
         ch = CaLVA_SU2015_DCN(size=1)
-        low_v = _V([-90.0])
-        tau = ch.f_h_tau(low_v, _ca_info())
+        low_v = voltage([-90.0])
+        tau = ch.f_h_tau(low_v, ca_info())
         expected = 0.333 * u.math.exp((-90.0 + 466.0) / 66.0)
         self.assertTrue(u.math.allclose(tau, jnp.array([expected]), atol=1e-6))
 
     def test_h_tau_uses_high_voltage_branch_at_threshold_and_above(self) -> None:
         ch = CaLVA_SU2015_DCN(size=1)
-        high_v = _V([-81.0])
-        tau = ch.f_h_tau(high_v, _ca_info())
+        high_v = voltage([-81.0])
+        tau = ch.f_h_tau(high_v, ca_info())
         expected = 0.333 * u.math.exp((-81.0 + 21.0) / -10.5) + 9.32
         self.assertTrue(u.math.allclose(tau, jnp.array([expected]), atol=1e-6))
 
     def test_current_matches_mod_formula(self) -> None:
         ch = CaLVA_SU2015_DCN(size=1)
-        V = _V([-60.0])
-        ca = _ca_info(C=1e-4)
+        V = voltage([-60.0])
+        ca = ca_info(Ci=1e-4)
         ch.init_state(V, ca)
         ch.m.value = jnp.array([0.5])
         ch.h.value = jnp.array([0.25])
@@ -489,8 +471,8 @@ class CaN_IS2008Test(unittest.TestCase):
 
     def test_reset_state_sets_p_to_logistic(self) -> None:
         ch = CaN_IS2008(size=1)
-        V = _V([-60.0])
-        ca = _ca_info()
+        V = voltage([-60.0])
+        ca = ca_info()
         ch.init_state(V, ca)
         ch.reset_state(V, ca)
         self.assertTrue(u.math.allclose(ch.p.value, ch.f_p_inf(V, ca), atol=1e-6))
@@ -502,8 +484,8 @@ class CaN_IS2008Test(unittest.TestCase):
             q10=3.0,
             temp_ref=u.celsius2kelvin(36.0),
         )
-        V = _V([-60.0])
-        ca = _ca_info()
+        V = voltage([-60.0])
+        ca = ca_info()
         ch.init_state(V, ca)
         ch.p.value = jnp.array([0.25])
         ch.compute_derivative(V, ca)
@@ -513,21 +495,21 @@ class CaN_IS2008Test(unittest.TestCase):
 
     def test_current_depends_on_calcium_concentration(self) -> None:
         ch = CaN_IS2008(size=1)
-        V = _V([-60.0])
-        low = _ca_info(C=1e-4)
-        high = _ca_info(C=10.0)
+        V = voltage([-60.0])
+        low = ca_info(Ci=1e-4)
+        high = ca_info(Ci=10.0)
         ch.init_state(V, low)
         ch.reset_state(V, low)
         i_low = ch.current(V, low)
         i_high = ch.current(V, high)
-        high_mag = float(u.math.abs(i_high).to_decimal(_DENSITY_UNIT)[0])
-        low_mag = float(u.math.abs(i_low).to_decimal(_DENSITY_UNIT)[0])
+        high_mag = float(u.math.abs(i_high).to_decimal(DENSITY_UNIT)[0])
+        low_mag = float(u.math.abs(i_low).to_decimal(DENSITY_UNIT)[0])
         self.assertGreater(high_mag, low_mag)
 
     def test_current_matches_formula(self) -> None:
         ch = CaN_IS2008(size=1, E=10.0 * u.mV, g_max=1.0 * (u.mS / u.cm**2))
-        V = _V([-60.0])
-        ca = _ca_info(C=0.001)
+        V = voltage([-60.0])
+        ca = ca_info(Ci=0.001)
         ch.init_state(V, ca)
         ch.reset_state(V, ca)
         current = ch.current(V, ca)
@@ -535,8 +517,8 @@ class CaN_IS2008Test(unittest.TestCase):
         expected = ch.g_max * modulation * ch.p.value * (ch.E - V)
         self.assertTrue(
             u.math.allclose(
-                current.to_decimal(_DENSITY_UNIT),
-                expected.to_decimal(_DENSITY_UNIT),
+                current.to_decimal(DENSITY_UNIT),
+                expected.to_decimal(DENSITY_UNIT),
                 atol=1e-9,
             )
         )
@@ -570,8 +552,8 @@ class _MHNHHMixin:
 
     def test_init_state_creates_m_h_n_gates(self) -> None:
         ch = self._make(size=2)
-        V = _V([-40.0, -60.0])
-        ca = _ca_info(2)
+        V = voltage([-40.0, -60.0])
+        ca = ca_info(2)
         ch.init_state(V, ca)
         self.assertEqual(ch.m.value.shape, (2,))
         self.assertEqual(ch.h.value.shape, (2,))
@@ -579,8 +561,8 @@ class _MHNHHMixin:
 
     def test_reset_state_matches_inf_functions(self) -> None:
         ch = self._make(size=1)
-        V = _V([-50.0])
-        ca = _ca_info()
+        V = voltage([-50.0])
+        ca = ca_info()
         ch.init_state(V, ca)
         ch.reset_state(V, ca)
         self.assertTrue(u.math.allclose(ch.m.value, ch.f_m_inf(V, ca), atol=1e-6))
@@ -594,8 +576,8 @@ class _MHNHHMixin:
             q10=3.0,
             temp_ref=u.celsius2kelvin(22.0),
         )
-        V = _V([-50.0])
-        ca = _ca_info()
+        V = voltage([-50.0])
+        ca = ca_info()
         ch.init_state(V, ca)
         ch.m.value = jnp.array([0.1])
         ch.h.value = jnp.array([0.2])
@@ -611,8 +593,8 @@ class _MHNHHMixin:
 
     def test_current_matches_formula(self) -> None:
         ch = self._make(size=1)
-        V = _V([-50.0])
-        ca = _ca_info(E_mV=140.0)
+        V = voltage([-50.0])
+        ca = ca_info(E=140.0)
         ch.init_state(V, ca)
         ch.m.value = jnp.array([0.5])
         ch.h.value = jnp.array([0.25])
@@ -621,8 +603,8 @@ class _MHNHHMixin:
         expected = ch.g_max * ch.m.value * ch.h.value * ch.n.value * (ca.E - V)
         self.assertTrue(
             u.math.allclose(
-                current.to_decimal(_DENSITY_UNIT),
-                expected.to_decimal(_DENSITY_UNIT),
+                current.to_decimal(DENSITY_UNIT),
+                expected.to_decimal(DENSITY_UNIT),
                 atol=1e-6,
             )
         )
@@ -667,8 +649,8 @@ class Cav3p1_MA2020_GoCTest(unittest.TestCase):
 
     def test_reset_state_matches_infinities(self) -> None:
         ch = Cav3p1_MA2020_GoC(size=1)
-        V = _V([-50.0])
-        ca = _ca_info()
+        V = voltage([-50.0])
+        ca = ca_info()
         ch.init_state(V, ca)
         ch.reset_state(V, ca)
         self.assertTrue(u.math.allclose(ch.p.value, ch.f_p_inf(V, ca), atol=1e-6))
@@ -676,8 +658,8 @@ class Cav3p1_MA2020_GoCTest(unittest.TestCase):
 
     def test_compute_derivative_matches_hh_inf_tau_form(self) -> None:
         ch = Cav3p1_MA2020_GoC(size=1)
-        V = _V([-50.0])
-        ca = _ca_info()
+        V = voltage([-50.0])
+        ca = ca_info()
         ch.init_state(V, ca)
         ch.p.value = jnp.array([0.2])
         ch.q.value = jnp.array([0.3])
@@ -690,8 +672,8 @@ class Cav3p1_MA2020_GoCTest(unittest.TestCase):
 
     def test_current_matches_ghk_formula(self) -> None:
         ch = Cav3p1_MA2020_GoC(size=1)
-        V = _V([-40.0])
-        ca = _ca_info(C=0.001, E_mV=140.0)
+        V = voltage([-40.0])
+        ca = ca_info(Ci=0.001, E=140.0)
         ch.init_state(V, ca)
         ch.p.value = jnp.array([0.5])
         ch.q.value = jnp.array([0.25])
@@ -718,8 +700,8 @@ class Cav3p1_MA2020_GoCTest(unittest.TestCase):
 
     def test_current_uses_nmodl_constants_not_generic_ghk(self) -> None:
         ch = Cav3p1_MA2020_GoC(size=1, temp=u.celsius2kelvin(36.0))
-        V = _V([-65.0])
-        ca = _ca_info(C=0.00024, E_mV=120.0)
+        V = voltage([-65.0])
+        ca = ca_info(Ci=0.00024, E=120.0)
         ch.init_state(V, ca)
         ch.p.value = jnp.array([0.06913853271498836])
         ch.q.value = jnp.array([0.26894140923409454])
@@ -747,8 +729,8 @@ class Cav3p1TestPC24Test(unittest.TestCase):
 
     def test_reset_state_matches_infinities(self) -> None:
         ch = Cav3p1Test_PC24(size=1)
-        V = _V([-50.0])
-        ca = _ca_info()
+        V = voltage([-50.0])
+        ca = ca_info()
         ch.init_state(V, ca)
         ch.reset_state(V, ca)
         self.assertTrue(u.math.allclose(ch.p.value, ch.f_p_inf(V, ca), atol=1e-6))
@@ -756,8 +738,8 @@ class Cav3p1TestPC24Test(unittest.TestCase):
 
     def test_current_matches_direct_conductance_law(self) -> None:
         ch = Cav3p1Test_PC24(size=1)
-        V = _V([-40.0])
-        ca = _ca_info(C=0.001, E_mV=140.0)
+        V = voltage([-40.0])
+        ca = ca_info(Ci=0.001, E=140.0)
         ch.init_state(V, ca)
         ch.p.value = jnp.array([0.5])
         ch.q.value = jnp.array([0.25])
@@ -766,35 +748,74 @@ class Cav3p1TestPC24Test(unittest.TestCase):
         self.assertTrue(u.math.allclose(current, expected, atol=1e-12 * expected.unit))
 
 
-class Cav3p1FrozenMA20GoCTest(unittest.TestCase):
-    def test_is_registered(self) -> None:
-        self.assertIs(get_registry().get("channel", "Cav3p1_MA2020_GoC_Frozen"), Cav3p1_MA2020_GoC_Frozen)
+class _FrozenVariantTests:
+    """Shared assertions for a ``freeze_drive_gradient`` variant.
 
-    def test_current_matches_unfrozen_value(self) -> None:
-        V = _V([-48.0])
-        ca = _ca_info(size=1, C=2.4e-4, E_mV=137.0)
-        base = Cav3p1_MA2020_GoC(size=1, temp=u.celsius2kelvin(34.0))
-        frozen = Cav3p1_MA2020_GoC_Frozen(size=1, temp=u.celsius2kelvin(34.0))
-        base.init_state(V, ca)
-        frozen.init_state(V, ca)
-        base.reset_state(V, ca)
-        frozen.reset_state(V, ca)
-        self.assertTrue(
+    Every frozen class in this module is now its unfrozen sibling plus one or
+    two class-level declarations, so the interesting questions are the same
+    for all six: does it still inherit the sibling's parameters, does the
+    forward value agree, and is the gradient through the GHK drive actually
+    gone? ``SAME_VALUE`` is ``False`` for the three Cav2.1 variants, whose
+    deposits also transcribe a different GHK helper -- freezing is not their
+    only difference from the unfrozen class.
+    """
+
+    FROZEN: type
+    UNFROZEN: type
+    NAME: str
+    SAME_VALUE = True
+
+    def _pair(self):
+        V = voltage([-48.0])
+        ca = ca_info(size=1, Ci=2.4e-4, E=137.0)
+        frozen, base = self.FROZEN(size=1), self.UNFROZEN(size=1)
+        for ch in (frozen, base):
+            ch.init_state(V, ca)
+            ch.reset_state(V, ca)
+        return frozen, base, V, ca
+
+    def test_is_registered(self) -> None:
+        self.assertIs(get_registry().get("channel", self.NAME), self.FROZEN)
+
+    def test_inherits_its_unfrozen_sibling(self) -> None:
+        self.assertTrue(issubclass(self.FROZEN, self.UNFROZEN))
+
+    def test_forward_value_agrees_with_the_unfrozen_sibling(self) -> None:
+        frozen, base, V, ca = self._pair()
+        unit = u.mA / (u.cm**2)
+        agrees = bool(
             u.math.allclose(
-                frozen.current(V, ca).to_decimal(u.mA / (u.cm**2)),
-                base.current(V, ca).to_decimal(u.mA / (u.cm**2)),
-                atol=1e-6,
+                frozen.current(V, ca).to_decimal(unit),
+                base.current(V, ca).to_decimal(unit),
+                atol=1e-12,
             )
         )
+        self.assertEqual(agrees, self.SAME_VALUE)
+
+    def test_freezing_removes_the_gradient_through_the_drive(self) -> None:
+        # The gates ignore their voltage argument, so the GHK drive is the
+        # only path from V to the current: freezing it must zero the whole
+        # derivative, and not freezing it must leave it non-zero.
+        frozen, base, V, ca = self._pair()
+        unit = u.mA / (u.cm**2)
+
+        def sensitivity(ch):
+            return float(jax.grad(lambda mV: (ch.current(mV * u.mV, ca) / unit).sum())(u.get_mantissa(V)[0]))
+
+        self.assertNotEqual(sensitivity(base), 0.0)
+        self.assertEqual(sensitivity(frozen), 0.0)
 
 
-class Cav3p1FrozenPC24Test(unittest.TestCase):
-    def test_is_registered(self) -> None:
-        self.assertIs(get_registry().get("channel", "Cav3p1_MA2024_PC_Frozen"), Cav3p1_MA2024_PC_Frozen)
+class Cav3p1FrozenMA20GoCTest(_FrozenVariantTests, unittest.TestCase):
+    FROZEN = Cav3p1_MA2020_GoC_Frozen
+    UNFROZEN = Cav3p1_MA2020_GoC
+    NAME = "Cav3p1_MA2020_GoC_Frozen"
 
-    def test_current_uses_frozen_voltage(self) -> None:
-        ch = Cav3p1_MA2024_PC_Frozen(size=1)
-        self.assertTrue(callable(ch.current))
+
+class Cav3p1FrozenPC24Test(_FrozenVariantTests, unittest.TestCase):
+    FROZEN = Cav3p1_MA2024_PC_Frozen
+    UNFROZEN = Cav3p1_MA2024_PC
+    NAME = "Cav3p1_MA2024_PC_Frozen"
 
 
 class Cav2p1RI21SCTest(unittest.TestCase):
@@ -812,8 +833,8 @@ class Cav2p1RI21SCTest(unittest.TestCase):
 
     def test_reset_state_matches_template_minf(self) -> None:
         ch = Cav2p1_RI2021_SC(size=1)
-        V = _V([-30.0])
-        ca = _ca_info()
+        V = voltage([-30.0])
+        ca = ca_info()
         ch.init_state(V, ca)
         ch.reset_state(V, ca)
         self.assertTrue(u.math.allclose(ch.m.value, ch.f_m_inf(V, ca), atol=1e-6))
@@ -825,8 +846,8 @@ class Cav2p1RI21SCTest(unittest.TestCase):
 
     def test_compute_derivative_matches_hh_inf_tau_form(self) -> None:
         ch = Cav2p1_RI2021_SC(size=1, temp=u.celsius2kelvin(33.0))
-        V = _V([-30.0])
-        ca = _ca_info()
+        V = voltage([-30.0])
+        ca = ca_info()
         ch.init_state(V, ca)
         ch.m.value = jnp.array([0.2])
         ch.compute_derivative(V, ca)
@@ -836,8 +857,8 @@ class Cav2p1RI21SCTest(unittest.TestCase):
 
     def test_tau_matches_template_branches(self) -> None:
         ch = Cav2p1_RI2021_SC(size=2)
-        ca = _ca_info(size=2)
-        V = _V([-39.0, -41.0])
+        ca = ca_info(size=2)
+        V = voltage([-39.0, -41.0])
         tau = ch.f_m_tau(V, ca)
         expected = jnp.asarray(
             [
@@ -849,8 +870,8 @@ class Cav2p1RI21SCTest(unittest.TestCase):
 
     def test_current_matches_ghk_template_formula(self) -> None:
         ch = Cav2p1_RI2021_SC(size=1)
-        V = _V([-40.0])
-        ca = _ca_info(C=0.001)
+        V = voltage([-40.0])
+        ca = ca_info(Ci=0.001)
         ch.init_state(V, ca)
         ch.m.value = jnp.array([0.5])
         current = ch.current(V, ca)
@@ -875,8 +896,8 @@ class Cav2p1RI21SCTest(unittest.TestCase):
 
     def test_vshift_applies_to_rates_and_ghk_drive(self) -> None:
         ch = Cav2p1_RI2021_SC(size=1, V_sh=5.0 * u.mV)
-        V = _V([-35.0])
-        ca = _ca_info(C=0.001)
+        V = voltage([-35.0])
+        ca = ca_info(Ci=0.001)
         ch.init_state(V, ca)
         ch.m.value = jnp.array([0.5])
 
@@ -915,8 +936,8 @@ class Cav3p1MA24PCTest(unittest.TestCase):
         temp = u.celsius2kelvin(22.0)
         pc = Cav3p1_MA2024_PC(size=1, temp=temp)
         base = Cav3p1_MA2020_GoC(size=1, temp=temp)
-        V = _V([-65.0])
-        ca = _ca_info()
+        V = voltage([-65.0])
+        ca = ca_info()
 
         pc.init_state(V, ca)
         base.init_state(V, ca)
@@ -938,8 +959,8 @@ class Cav2p1MA25BCTest(unittest.TestCase):
         temp = u.celsius2kelvin(23.0)
         bc = Cav2p1_MA2025_BC(size=1, temp=temp)
         sc = Cav2p1_RI2021_SC(size=1, temp=temp)
-        V = _V([-30.0])
-        ca = _ca_info()
+        V = voltage([-30.0])
+        ca = ca_info()
         bc.init_state(V, ca)
         sc.init_state(V, ca)
         bc.reset_state(V, ca)
@@ -947,38 +968,31 @@ class Cav2p1MA25BCTest(unittest.TestCase):
         self.assertTrue(u.math.allclose(bc.m.value, sc.m.value, atol=1e-6))
 
 
-class Cav2p1FrozenPC24Test(unittest.TestCase):
-    def test_is_registered(self) -> None:
-        self.assertIs(get_registry().get("channel", "Cav2p1_MA2024_PC_Frozen"), Cav2p1_MA2024_PC_Frozen)
-
-    def test_current_uses_frozen_voltage(self) -> None:
-        ch = Cav2p1_MA2024_PC_Frozen(size=1)
-        self.assertTrue(callable(ch.current))
+class Cav2p1FrozenPC24Test(_FrozenVariantTests, unittest.TestCase):
+    FROZEN = Cav2p1_MA2024_PC_Frozen
+    UNFROZEN = Cav2p1_MA2024_PC
+    NAME = "Cav2p1_MA2024_PC_Frozen"
+    SAME_VALUE = False
 
 
-class Cav2p1FrozenRI21SCTest(unittest.TestCase):
-    def test_is_registered(self) -> None:
-        self.assertIs(get_registry().get("channel", "Cav2p1_RI2021_SC_Frozen"), Cav2p1_RI2021_SC_Frozen)
-
-    def test_inherits_pc_frozen_variant(self) -> None:
-        self.assertTrue(issubclass(Cav2p1_RI2021_SC_Frozen, Cav2p1_MA2024_PC_Frozen))
-
-
-class Cav2p1FrozenMA25BCTest(unittest.TestCase):
-    def test_is_registered(self) -> None:
-        self.assertIs(get_registry().get("channel", "Cav2p1_MA2025_BC_Frozen"), Cav2p1_MA2025_BC_Frozen)
-
-    def test_inherits_pc_frozen_variant(self) -> None:
-        self.assertTrue(issubclass(Cav2p1_MA2025_BC_Frozen, Cav2p1_MA2024_PC_Frozen))
+class Cav2p1FrozenRI21SCTest(_FrozenVariantTests, unittest.TestCase):
+    FROZEN = Cav2p1_RI2021_SC_Frozen
+    UNFROZEN = Cav2p1_RI2021_SC
+    NAME = "Cav2p1_RI2021_SC_Frozen"
+    SAME_VALUE = False
 
 
-class Cav3p3FrozenPC24Test(unittest.TestCase):
-    def test_is_registered(self) -> None:
-        self.assertIs(get_registry().get("channel", "Cav3p3_MA2024_PC_Frozen"), Cav3p3_MA2024_PC_Frozen)
+class Cav2p1FrozenMA25BCTest(_FrozenVariantTests, unittest.TestCase):
+    FROZEN = Cav2p1_MA2025_BC_Frozen
+    UNFROZEN = Cav2p1_MA2025_BC
+    NAME = "Cav2p1_MA2025_BC_Frozen"
+    SAME_VALUE = False
 
-    def test_current_uses_frozen_voltage(self) -> None:
-        ch = Cav3p3_MA2024_PC_Frozen(size=1)
-        self.assertTrue(callable(ch.current))
+
+class Cav3p3FrozenPC24Test(_FrozenVariantTests, unittest.TestCase):
+    FROZEN = Cav3p3_MA2024_PC_Frozen
+    UNFROZEN = Cav3p3_MA2024_PC
+    NAME = "Cav3p3_MA2024_PC_Frozen"
 
 
 class Cav2p1MA24PCTest(unittest.TestCase):
@@ -992,8 +1006,8 @@ class Cav2p1MA24PCTest(unittest.TestCase):
         temp = u.celsius2kelvin(23.0)
         pc = Cav2p1_MA2024_PC(size=1, temp=temp)
         sc = Cav2p1_RI2021_SC(size=1, temp=temp)
-        V = _V([-30.0])
-        ca = _ca_info()
+        V = voltage([-30.0])
+        ca = ca_info()
         pc.init_state(V, ca)
         sc.init_state(V, ca)
         pc.reset_state(V, ca)
@@ -1016,8 +1030,8 @@ class Cav3p2RI21SCTest(unittest.TestCase):
 
     def test_reset_state_matches_template_inf_functions(self) -> None:
         ch = Cav3p2_RI2021_SC(size=1)
-        V = _V([-65.0])
-        ca = _ca_info()
+        V = voltage([-65.0])
+        ca = ca_info()
         ch.init_state(V, ca)
         ch.reset_state(V, ca)
         self.assertTrue(u.math.allclose(ch.m.value, ch.f_m_inf(V, ca), atol=1e-6))
@@ -1039,8 +1053,8 @@ class Cav3p2RI21SCTest(unittest.TestCase):
 
     def test_compute_derivative_matches_hh_inf_tau_form(self) -> None:
         ch = Cav3p2_RI2021_SC(size=1, temp=u.celsius2kelvin(34.0))
-        V = _V([-60.0])
-        ca = _ca_info()
+        V = voltage([-60.0])
+        ca = ca_info()
         ch.init_state(V, ca)
         ch.m.value = jnp.array([0.2])
         ch.h.value = jnp.array([0.3])
@@ -1053,8 +1067,8 @@ class Cav3p2RI21SCTest(unittest.TestCase):
 
     def test_current_matches_linear_template_formula(self) -> None:
         ch = Cav3p2_RI2021_SC(size=1)
-        V = _V([-40.0])
-        ca = _ca_info(E_mV=125.0)
+        V = voltage([-40.0])
+        ca = ca_info(E=125.0)
         ch.init_state(V, ca)
         ch.m.value = jnp.array([0.5])
         ch.h.value = jnp.array([0.25])
@@ -1062,16 +1076,16 @@ class Cav3p2RI21SCTest(unittest.TestCase):
         expected = ch.g_max * ch.m.value**2 * ch.h.value * (ca.E - V)
         self.assertTrue(
             u.math.allclose(
-                current.to_decimal(_DENSITY_UNIT),
-                expected.to_decimal(_DENSITY_UNIT),
+                current.to_decimal(DENSITY_UNIT),
+                expected.to_decimal(DENSITY_UNIT),
                 atol=1e-6,
             )
         )
 
     def test_vshift_applies_only_to_rates_with_template_sign(self) -> None:
         ch = Cav3p2_RI2021_SC(size=1, V_sh=5.0 * u.mV)
-        V = _V([-60.0])
-        ca = _ca_info(E_mV=120.0)
+        V = voltage([-60.0])
+        ca = ca_info(E=120.0)
         shifted = V + 5.0 * u.mV
         expected_m_inf = 1.0 / (1.0 + u.math.exp(-(shifted.to_decimal(u.mV) + 54.8) / 7.4))
         expected_current = ch.g_max * 0.5**2 * 0.25 * (ca.E - V)
@@ -1083,8 +1097,8 @@ class Cav3p2RI21SCTest(unittest.TestCase):
         self.assertTrue(u.math.allclose(ch.f_m_inf(V, ca), expected_m_inf, atol=1e-6))
         self.assertTrue(
             u.math.allclose(
-                ch.current(V, ca).to_decimal(_DENSITY_UNIT),
-                expected_current.to_decimal(_DENSITY_UNIT),
+                ch.current(V, ca).to_decimal(DENSITY_UNIT),
+                expected_current.to_decimal(DENSITY_UNIT),
                 atol=1e-6,
             )
         )
@@ -1101,8 +1115,8 @@ class Cav3p2MA25BCTest(unittest.TestCase):
         temp = u.celsius2kelvin(36.0)
         bc = Cav3p2_MA2025_BC(size=1, temp=temp)
         sc = Cav3p2_RI2021_SC(size=1, temp=temp)
-        V = _V([-65.0])
-        ca = _ca_info()
+        V = voltage([-65.0])
+        ca = ca_info()
         bc.init_state(V, ca)
         sc.init_state(V, ca)
         bc.reset_state(V, ca)
@@ -1122,8 +1136,8 @@ class Cav3p2MA24PCTest(unittest.TestCase):
         temp = u.celsius2kelvin(36.0)
         pc = Cav3p2_MA2024_PC(size=1, temp=temp)
         sc = Cav3p2_RI2021_SC(size=1, temp=temp)
-        V = _V([-65.0])
-        ca = _ca_info()
+        V = voltage([-65.0])
+        ca = ca_info()
         pc.init_state(V, ca)
         sc.init_state(V, ca)
         pc.reset_state(V, ca)
@@ -1147,8 +1161,8 @@ class Cav3p3RI21SCTest(unittest.TestCase):
 
     def test_reset_state_matches_template_inf_functions(self) -> None:
         ch = Cav3p3_RI2021_SC(size=1)
-        V = _V([-65.0])
-        ca = _ca_info()
+        V = voltage([-65.0])
+        ca = ca_info()
         ch.init_state(V, ca)
         ch.reset_state(V, ca)
         self.assertTrue(u.math.allclose(ch.n.value, ch.f_n_inf(V, ca), atol=1e-6))
@@ -1163,8 +1177,8 @@ class Cav3p3RI21SCTest(unittest.TestCase):
 
     def test_compute_derivative_matches_hh_inf_tau_form(self) -> None:
         ch = Cav3p3_RI2021_SC(size=1, temp=u.celsius2kelvin(36.0))
-        V = _V([-65.0])
-        ca = _ca_info()
+        V = voltage([-65.0])
+        ca = ca_info()
         ch.init_state(V, ca)
         ch.n.value = jnp.array([0.2])
         ch.l.value = jnp.array([0.3])
@@ -1177,8 +1191,8 @@ class Cav3p3RI21SCTest(unittest.TestCase):
 
     def test_tau_matches_template_branches(self) -> None:
         ch = Cav3p3_RI2021_SC(size=2)
-        ca = _ca_info(size=2)
-        V = _V([-59.0, -61.0])
+        ca = ca_info(size=2)
+        V = voltage([-59.0, -61.0])
         tau_n = ch.f_n_tau(V, ca)
         tau_l = ch.f_l_tau(V, ca)
         expected_n = jnp.asarray(
@@ -1198,8 +1212,8 @@ class Cav3p3RI21SCTest(unittest.TestCase):
 
     def test_current_matches_ghk_template_formula(self) -> None:
         ch = Cav3p3_RI2021_SC(size=1)
-        V = _V([-40.0])
-        ca = _ca_info(C=0.001)
+        V = voltage([-40.0])
+        ca = ca_info(Ci=0.001)
         ch.init_state(V, ca)
         ch.n.value = jnp.array([0.5])
         ch.l.value = jnp.array([0.25])
@@ -1237,8 +1251,8 @@ class Cav3p3MA24PCTest(unittest.TestCase):
         temp = u.celsius2kelvin(36.0)
         pc = Cav3p3_MA2024_PC(size=1, temp=temp)
         sc = Cav3p3_RI2021_SC(size=1, temp=temp)
-        V = _V([-65.0])
-        ca = _ca_info()
+        V = voltage([-65.0])
+        ca = ca_info()
         pc.init_state(V, ca)
         sc.init_state(V, ca)
         pc.reset_state(V, ca)
@@ -1253,8 +1267,8 @@ class CaHVAMA20GoCTest(unittest.TestCase):
 
     def test_current_uses_ca_reversal(self) -> None:
         ch = CaHVA_MA2020_GoC(size=1)
-        V = _V([-20.0])
-        ca = _ca_info(e_mV=100.0)
+        V = voltage([-20.0])
+        ca = ca_info(E=100.0)
         ch.init_state(V, ca)
         ch.s.value = jnp.array([0.5])
         ch.u.value = jnp.array([0.25])
@@ -1262,8 +1276,8 @@ class CaHVAMA20GoCTest(unittest.TestCase):
         expected = ch.g_max * (ch.s.value**2) * ch.u.value * (ca.E - V)
         self.assertTrue(
             u.math.allclose(
-                i.to_decimal(_DENSITY_UNIT),
-                expected.to_decimal(_DENSITY_UNIT),
+                i.to_decimal(DENSITY_UNIT),
+                expected.to_decimal(DENSITY_UNIT),
                 atol=1e-6,
             )
         )
@@ -1271,8 +1285,8 @@ class CaHVAMA20GoCTest(unittest.TestCase):
     def test_matches_template_formulas_at_same_reversal(self) -> None:
         temp = u.celsius2kelvin(30.0)
         proto = CaHVA_MA2020_GoC(size=1, temp=temp)
-        V = _V([-30.0])
-        ca = _ca_info()
+        V = voltage([-30.0])
+        ca = ca_info()
 
         proto.init_state(V, ca)
         proto.reset_state(V, ca)
@@ -1296,16 +1310,16 @@ class CaHVAMA20GoCTest(unittest.TestCase):
         expected_current = proto.g_max * (proto.s.value**2) * proto.u.value * (ca.E - V)
         self.assertTrue(
             u.math.allclose(
-                i_proto.to_decimal(_DENSITY_UNIT),
-                expected_current.to_decimal(_DENSITY_UNIT),
+                i_proto.to_decimal(DENSITY_UNIT),
+                expected_current.to_decimal(DENSITY_UNIT),
                 atol=1e-6,
             )
         )
 
     def test_rates_use_continuous_voltage_formula(self) -> None:
         proto = CaHVA_MA2020_GoC(size=3)
-        ca = _ca_info(size=3)
-        V = _V([-120.0, -50.0, 60.0])
+        ca = ca_info(size=3)
+        V = voltage([-120.0, -50.0, 60.0])
         v = jnp.array([-120.0, -50.0, 60.0])
 
         expected_alpha_s = proto.Aalpha_s * jnp.exp((v - proto.V0alpha_s) / proto.Kalpha_s)
@@ -1325,8 +1339,8 @@ class Cav2p3MA20GoCTest(unittest.TestCase):
 
     def test_reset_state_matches_inf_functions(self) -> None:
         ch = Cav2p3_MA2020_GoC(size=1)
-        V = _V([-60.0])
-        ca = _ca_info(e_mV=140.0)
+        V = voltage([-60.0])
+        ca = ca_info(E=140.0)
         ch.init_state(V, ca)
         ch.reset_state(V, ca)
         self.assertTrue(u.math.allclose(ch.m.value, ch.f_m_inf(V, ca), atol=1e-6))
@@ -1334,8 +1348,8 @@ class Cav2p3MA20GoCTest(unittest.TestCase):
 
     def test_current_matches_linear_formula(self) -> None:
         ch = Cav2p3_MA2020_GoC(size=1, g_max=0.1 * (u.mS / u.cm**2))
-        V = _V([-40.0])
-        ca = _ca_info(e_mV=140.0)
+        V = voltage([-40.0])
+        ca = ca_info(E=140.0)
         ch.init_state(V, ca)
         ch.m.value = jnp.array([0.5])
         ch.h.value = jnp.array([0.25])
@@ -1343,8 +1357,8 @@ class Cav2p3MA20GoCTest(unittest.TestCase):
         expected = ch.g_max * (ch.m.value**3) * ch.h.value * (ca.E - V)
         self.assertTrue(
             u.math.allclose(
-                i.to_decimal(_DENSITY_UNIT),
-                expected.to_decimal(_DENSITY_UNIT),
+                i.to_decimal(DENSITY_UNIT),
+                expected.to_decimal(DENSITY_UNIT),
                 atol=1e-6,
             )
         )
@@ -1352,8 +1366,8 @@ class Cav2p3MA20GoCTest(unittest.TestCase):
     def test_matches_template_formulas_at_same_reversal(self) -> None:
         temp = u.celsius2kelvin(34.0)
         proto = Cav2p3_MA2020_GoC(size=1, temp=temp)
-        V = _V([-40.0])
-        ca = _ca_info(e_mV=140.0)
+        V = voltage([-40.0])
+        ca = ca_info(E=140.0)
 
         proto.init_state(V, ca)
         proto.reset_state(V, ca)
@@ -1373,8 +1387,8 @@ class Cav2p3MA20GoCTest(unittest.TestCase):
         expected_current = proto.g_max * (proto.m.value**3) * proto.h.value * (ca.E - V)
         self.assertTrue(
             u.math.allclose(
-                i_proto.to_decimal(_DENSITY_UNIT),
-                expected_current.to_decimal(_DENSITY_UNIT),
+                i_proto.to_decimal(DENSITY_UNIT),
+                expected_current.to_decimal(DENSITY_UNIT),
                 atol=1e-6,
             )
         )
@@ -1388,29 +1402,13 @@ class CaHVAMA20GrCTest(unittest.TestCase):
         temp = u.celsius2kelvin(30.0)
         goc = CaHVA_MA2020_GoC(size=1, temp=temp)
         grc = CaHVA_MA2020_GrC(size=1, temp=temp)
-        V = _V([-30.0])
-        ca = _ca_info()
-
-        goc.init_state(V, ca)
-        grc.init_state(V, ca)
-        goc.reset_state(V, ca)
-        grc.reset_state(V, ca)
-        self.assertTrue(u.math.allclose(grc.s.value, goc.s.value, atol=1e-6))
-        self.assertTrue(u.math.allclose(grc.u.value, goc.u.value, atol=1e-6))
-
-        goc.compute_derivative(V, ca)
-        grc.compute_derivative(V, ca)
-        self.assertTrue(u.math.allclose(grc.s.derivative, goc.s.derivative, atol=1e-6 * u.Hz))
-        self.assertTrue(u.math.allclose(grc.u.derivative, goc.u.derivative, atol=1e-6 * u.Hz))
-
-        i_goc = goc.current(V, ca)
-        i_grc = grc.current(V, ca)
-        self.assertTrue(
-            u.math.allclose(
-                i_grc.to_decimal(_DENSITY_UNIT),
-                i_goc.to_decimal(_DENSITY_UNIT),
-                atol=1e-6,
-            )
+        assert_channels_agree(
+            self,
+            goc,
+            grc,
+            voltage([-30.0]),
+            ca_info(),
+            states=("s", "u"),
         )
 
 
@@ -1420,22 +1418,22 @@ class CaZH19IOTest(unittest.TestCase):
 
     def test_reset_state_matches_f_h_inf(self) -> None:
         ch = Ca_ZH2019_IO(size=1)
-        V = _V([-70.0])
+        V = voltage([-70.0])
         ch.init_state(V)
         ch.reset_state(V)
         self.assertTrue(u.math.allclose(ch.h.value, ch.f_h_inf(V), atol=1e-6))
 
     def test_current_uses_instantaneous_m_and_stateful_h(self) -> None:
         ch = Ca_ZH2019_IO(size=1, E=120.0 * u.mV, mMidV=-61.0 * u.mV)
-        V = _V([-50.0])
+        V = voltage([-50.0])
         ch.init_state(V)
         ch.h.value = jnp.array([0.25])
         i = ch.current(V)
         expected = ch.g_max * ch.f_m_inf(V) * ch.h.value * (ch.E - V)
         self.assertTrue(
             u.math.allclose(
-                i.to_decimal(_DENSITY_UNIT),
-                expected.to_decimal(_DENSITY_UNIT),
+                i.to_decimal(DENSITY_UNIT),
+                expected.to_decimal(DENSITY_UNIT),
                 atol=1e-6,
             )
         )
@@ -1443,12 +1441,12 @@ class CaZH19IOTest(unittest.TestCase):
     def test_default_freezes_instantaneous_activation_gradient(self) -> None:
         ch = Ca_ZH2019_IO(size=1, E=120.0 * u.mV, mMidV=-61.0 * u.mV)
         V0 = -50.0
-        V = _V([V0])
+        V = voltage([V0])
         ch.init_state(V)
         ch.h.value = jnp.array([0.25])
 
         def current_decimal(v_mV):
-            return ch.current(jnp.asarray([v_mV]) * u.mV).to_decimal(_DENSITY_UNIT)[0]
+            return ch.current(jnp.asarray([v_mV]) * u.mV).to_decimal(DENSITY_UNIT)[0]
 
         actual = jax.grad(current_decimal)(V0)
         expected = -(ch.g_max * ch.f_m_inf(V) * ch.h.value).to_decimal(u.mS / u.cm**2)[0]
@@ -1462,16 +1460,16 @@ class CaZH19IOTest(unittest.TestCase):
             freeze_m_inf=False,
         )
         V0 = -50.0
-        V = _V([V0])
+        V = voltage([V0])
         ch.init_state(V)
         ch.h.value = jnp.array([0.25])
 
         def current_decimal(v_mV):
-            return ch.current(jnp.asarray([v_mV]) * u.mV).to_decimal(_DENSITY_UNIT)[0]
+            return ch.current(jnp.asarray([v_mV]) * u.mV).to_decimal(DENSITY_UNIT)[0]
 
         def unfrozen_expected_current(v_mV):
             v = jnp.asarray([v_mV]) * u.mV
-            return (ch.g_max * ch.f_m_inf(v) * ch.h.value * (ch.E - v)).to_decimal(_DENSITY_UNIT)[0]
+            return (ch.g_max * ch.f_m_inf(v) * ch.h.value * (ch.E - v)).to_decimal(DENSITY_UNIT)[0]
 
         actual = jax.grad(current_decimal)(V0)
         expected = jax.grad(unfrozen_expected_current)(V0)
@@ -1483,7 +1481,7 @@ class CaZH19IOTest(unittest.TestCase):
         self.assertIs(get_registry().get("channel", "Ca_ZH2019_IO_Frozen"), Ca_ZH2019_IO_Frozen)
 
     def test_frozen_current_matches_unfrozen_value(self) -> None:
-        V = _V([-50.0])
+        V = voltage([-50.0])
         base = Ca_ZH2019_IO(size=1, E=120.0 * u.mV, mMidV=-61.0 * u.mV, freeze_m_inf=False)
         frozen = Ca_ZH2019_IO_Frozen(size=1, E=120.0 * u.mV, mMidV=-61.0 * u.mV)
         base.init_state(V)
@@ -1492,8 +1490,8 @@ class CaZH19IOTest(unittest.TestCase):
         frozen.h.value = jnp.array([0.25])
         self.assertTrue(
             u.math.allclose(
-                frozen.current(V).to_decimal(_DENSITY_UNIT),
-                base.current(V).to_decimal(_DENSITY_UNIT),
+                frozen.current(V).to_decimal(DENSITY_UNIT),
+                base.current(V).to_decimal(DENSITY_UNIT),
                 atol=1e-6,
             )
         )
@@ -1501,12 +1499,12 @@ class CaZH19IOTest(unittest.TestCase):
     def test_frozen_variant_keeps_only_driving_force_slope(self) -> None:
         ch = Ca_ZH2019_IO_Frozen(size=1, E=120.0 * u.mV, mMidV=-61.0 * u.mV)
         V0 = -50.0
-        V = _V([V0])
+        V = voltage([V0])
         ch.init_state(V)
         ch.h.value = jnp.array([0.25])
 
         def current_decimal(v_mV):
-            return ch.current(jnp.asarray([v_mV]) * u.mV).to_decimal(_DENSITY_UNIT)[0]
+            return ch.current(jnp.asarray([v_mV]) * u.mV).to_decimal(DENSITY_UNIT)[0]
 
         actual = jax.grad(current_decimal)(V0)
         expected = -(ch.g_max * ch.f_m_inf(V) * ch.h.value).to_decimal(u.mS / u.cm**2)[0]

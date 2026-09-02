@@ -32,13 +32,11 @@ from braincell.channel.hyperpolarization_activated import (
     HCN_SU2015_DCN,
     HCN_ZH2019_IO,
 )
-
-
-def _V(values, unit=u.mV):
-    return jnp.asarray(values) * unit
-
-
-_DENSITY_UNIT = u.mS / u.cm**2 * u.mV
+from braincell.channel._testing import (
+    DENSITY_UNIT,
+    assert_channels_agree,
+    voltage,
+)
 
 
 class IhHM1992Test(unittest.TestCase):
@@ -91,7 +89,7 @@ class IhHM1992Test(unittest.TestCase):
 
     def test_reset_state_sets_p_to_steady_state(self) -> None:
         ch = HCN_HM1992(size=1)
-        V = _V([-65.0])
+        V = voltage([-65.0])
         ch.init_state(V)
         ch.reset_state(V)
         self.assertTrue(u.math.allclose(ch.p.value, ch.f_p_inf(V), atol=1e-6))
@@ -103,7 +101,7 @@ class IhHM1992Test(unittest.TestCase):
             q10=3.0,
             temp_ref=u.celsius2kelvin(36.0),
         )
-        V = _V([-60.0])
+        V = voltage([-60.0])
         ch.init_state(V)
         ch.reset_state(V)
         ch.p.value = jnp.array([0.25])
@@ -117,7 +115,7 @@ class IhHM1992Test(unittest.TestCase):
 
     def test_current_matches_formula(self) -> None:
         ch = HCN_HM1992(size=1, g_max=5.0 * (u.mS / u.cm**2), E=-30.0 * u.mV)
-        V = _V([-60.0])
+        V = voltage([-60.0])
         ch.init_state(V)
         ch.p.value = jnp.array([0.3])
         current = ch.current(V)
@@ -133,7 +131,7 @@ class IhHM1992Test(unittest.TestCase):
 
     def test_current_is_zero_when_p_zero(self) -> None:
         ch = HCN_HM1992(size=1)
-        V = _V([-60.0])
+        V = voltage([-60.0])
         ch.init_state(V)
         ch.p.value = jnp.zeros(1)
         current = ch.current(V)
@@ -147,136 +145,77 @@ class IhHM1992Test(unittest.TestCase):
 
     def test_p_inf_monotone_in_hyperpolarized_regime(self) -> None:
         ch = HCN_HM1992(size=1)
-        pinf_hyper = ch.f_p_inf(_V([-90.0]))
-        pinf_mid = ch.f_p_inf(_V([-75.0]))
-        pinf_dep = ch.f_p_inf(_V([-60.0]))
+        pinf_hyper = ch.f_p_inf(voltage([-90.0]))
+        pinf_mid = ch.f_p_inf(voltage([-75.0]))
+        pinf_dep = ch.f_p_inf(voltage([-60.0]))
         self.assertGreater(float(pinf_hyper[0]), float(pinf_mid[0]))
         self.assertGreater(float(pinf_mid[0]), float(pinf_dep[0]))
 
 
-class HCN1MA25BCTest(unittest.TestCase):
+class _HCN1VariantTests:
+    """Shared assertions for the three single-``h``-gate HCN1 imports.
+
+    ``HCN1_MA2024_PC`` and ``HCN1_RI2021_SC`` subclass ``HCN1_MA2025_BC``
+    and override nothing but their docstring and registration key, so the
+    same three questions apply to each: the root type, that ``reset_state``
+    lands on ``f_h_inf``, and that ``current`` is the plain ohmic law.
+    """
+
+    CHANNEL: type
+
     def test_root_type_is_hh_typed_neuron(self) -> None:
-        self.assertIs(HCN1_MA2025_BC.root_type, HHTypedNeuron)
+        self.assertIs(self.CHANNEL.root_type, HHTypedNeuron)
 
     def test_reset_state_matches_f_h_inf(self) -> None:
-        ch = HCN1_MA2025_BC(size=1)
-        V = _V([-70.0])
+        ch = self.CHANNEL(size=1)
+        V = voltage([-70.0])
         ch.init_state(V)
         ch.reset_state(V)
         self.assertTrue(u.math.allclose(ch.h.value, ch.f_h_inf(V), atol=1e-6))
 
     def test_current_matches_linear_formula(self) -> None:
-        ch = HCN1_MA2025_BC(size=1, E=-34.4 * u.mV)
-        V = _V([-65.0])
+        ch = self.CHANNEL(size=1, E=-34.4 * u.mV)
+        V = voltage([-65.0])
         ch.init_state(V)
         ch.h.value = jnp.array([0.25])
-        i = ch.current(V)
         expected = ch.g_max * ch.h.value * (ch.E - V)
         self.assertTrue(
             u.math.allclose(
-                i.to_decimal(_DENSITY_UNIT),
-                expected.to_decimal(_DENSITY_UNIT),
+                ch.current(V).to_decimal(DENSITY_UNIT),
+                expected.to_decimal(DENSITY_UNIT),
                 atol=1e-6,
             )
         )
 
 
-class HCN1MA24PCTest(unittest.TestCase):
-    def test_root_type_is_hh_typed_neuron(self) -> None:
-        self.assertIs(HCN1_MA2024_PC.root_type, HHTypedNeuron)
+class _HCN1DerivedVariantTests(_HCN1VariantTests):
+    """Adds the agreement check for the two variants that derive from ``BASE``."""
 
-    def test_reset_state_matches_f_h_inf(self) -> None:
-        ch = HCN1_MA2024_PC(size=1)
-        V = _V([-70.0])
-        ch.init_state(V)
-        ch.reset_state(V)
-        self.assertTrue(u.math.allclose(ch.h.value, ch.f_h_inf(V), atol=1e-6))
-
-    def test_current_matches_linear_formula(self) -> None:
-        ch = HCN1_MA2024_PC(size=1, E=-34.4 * u.mV)
-        V = _V([-65.0])
-        ch.init_state(V)
-        ch.h.value = jnp.array([0.25])
-        i = ch.current(V)
-        expected = ch.g_max * ch.h.value * (ch.E - V)
-        self.assertTrue(
-            u.math.allclose(
-                i.to_decimal(_DENSITY_UNIT),
-                expected.to_decimal(_DENSITY_UNIT),
-                atol=1e-6,
-            )
-        )
+    BASE: type
 
     def test_matches_bc_variant(self) -> None:
         temp = u.celsius2kelvin(23.0)
-        bc = HCN1_MA2025_BC(size=1, temp=temp)
-        pc = HCN1_MA2024_PC(size=1, temp=temp)
-        V = _V([-70.0])
-
-        bc.init_state(V)
-        pc.init_state(V)
-        bc.reset_state(V)
-        pc.reset_state(V)
-        self.assertTrue(u.math.allclose(pc.h.value, bc.h.value, atol=1e-6))
-
-        i_bc = bc.current(V)
-        i_pc = pc.current(V)
-        self.assertTrue(
-            u.math.allclose(
-                i_pc.to_decimal(_DENSITY_UNIT),
-                i_bc.to_decimal(_DENSITY_UNIT),
-                atol=1e-6,
-            )
+        assert_channels_agree(
+            self,
+            self.BASE(size=1, temp=temp),
+            self.CHANNEL(size=1, temp=temp),
+            voltage([-70.0]),
+            states=("h",),
         )
 
 
-class HCN1RI21SCTest(unittest.TestCase):
-    def test_root_type_is_hh_typed_neuron(self) -> None:
-        self.assertIs(HCN1_RI2021_SC.root_type, HHTypedNeuron)
+class HCN1MA25BCTest(_HCN1VariantTests, unittest.TestCase):
+    CHANNEL = HCN1_MA2025_BC
 
-    def test_reset_state_matches_f_h_inf(self) -> None:
-        ch = HCN1_RI2021_SC(size=1)
-        V = _V([-70.0])
-        ch.init_state(V)
-        ch.reset_state(V)
-        self.assertTrue(u.math.allclose(ch.h.value, ch.f_h_inf(V), atol=1e-6))
 
-    def test_current_matches_linear_formula(self) -> None:
-        ch = HCN1_RI2021_SC(size=1, E=-34.4 * u.mV)
-        V = _V([-65.0])
-        ch.init_state(V)
-        ch.h.value = jnp.array([0.25])
-        i = ch.current(V)
-        expected = ch.g_max * ch.h.value * (ch.E - V)
-        self.assertTrue(
-            u.math.allclose(
-                i.to_decimal(_DENSITY_UNIT),
-                expected.to_decimal(_DENSITY_UNIT),
-                atol=1e-6,
-            )
-        )
+class HCN1MA24PCTest(_HCN1DerivedVariantTests, unittest.TestCase):
+    CHANNEL = HCN1_MA2024_PC
+    BASE = HCN1_MA2025_BC
 
-    def test_matches_bc_variant(self) -> None:
-        temp = u.celsius2kelvin(23.0)
-        bc = HCN1_MA2025_BC(size=1, temp=temp)
-        sc = HCN1_RI2021_SC(size=1, temp=temp)
-        V = _V([-70.0])
 
-        bc.init_state(V)
-        sc.init_state(V)
-        bc.reset_state(V)
-        sc.reset_state(V)
-        self.assertTrue(u.math.allclose(sc.h.value, bc.h.value, atol=1e-6))
-
-        i_bc = bc.current(V)
-        i_sc = sc.current(V)
-        self.assertTrue(
-            u.math.allclose(
-                i_sc.to_decimal(_DENSITY_UNIT),
-                i_bc.to_decimal(_DENSITY_UNIT),
-                atol=1e-6,
-            )
-        )
+class HCN1RI21SCTest(_HCN1DerivedVariantTests, unittest.TestCase):
+    CHANNEL = HCN1_RI2021_SC
+    BASE = HCN1_MA2025_BC
 
 
 class HCNSU15DCNTest(unittest.TestCase):
@@ -285,28 +224,28 @@ class HCNSU15DCNTest(unittest.TestCase):
 
     def test_reset_state_matches_f_m_inf(self) -> None:
         ch = HCN_SU2015_DCN(size=1)
-        V = _V([-70.0])
+        V = voltage([-70.0])
         ch.init_state(V)
         ch.reset_state(V)
         self.assertTrue(u.math.allclose(ch.m.value, ch.f_m_inf(V), atol=1e-6))
 
     def test_current_matches_linear_formula(self) -> None:
         ch = HCN_SU2015_DCN(size=1, E=-45.0 * u.mV)
-        V = _V([-65.0])
+        V = voltage([-65.0])
         ch.init_state(V)
         ch.m.value = jnp.array([0.25])
         i = ch.current(V)
         expected = ch.g_max * (ch.m.value**2) * (ch.E - V)
         self.assertTrue(
             u.math.allclose(
-                i.to_decimal(_DENSITY_UNIT),
-                expected.to_decimal(_DENSITY_UNIT),
+                i.to_decimal(DENSITY_UNIT),
+                expected.to_decimal(DENSITY_UNIT),
                 atol=1e-6,
             )
         )
 
     def test_tau_is_constant_400_ms(self) -> None:
-        V = _V([-80.0])
+        V = voltage([-80.0])
         self.assertTrue(
             u.math.allclose(
                 HCN_SU2015_DCN(size=1).f_m_tau(V),
@@ -323,7 +262,7 @@ class HCN1MA20GoCTest(unittest.TestCase):
     def test_fast_and_slow_components_follow_template_formulas(self) -> None:
         temp = u.celsius2kelvin(22.0)
         ch = HCN1_MA2020_GoC(size=1, temp=temp)
-        V = _V([-80.0])
+        V = voltage([-80.0])
 
         ch.init_state(V)
         ch.reset_state(V)
@@ -350,8 +289,8 @@ class HCN1MA20GoCTest(unittest.TestCase):
         expected_current = ch._gbar_phi() * ch.g_max * (ch.o_fast.value + ch.o_slow.value) * (ch.E - V)
         self.assertTrue(
             u.math.allclose(
-                current.to_decimal(_DENSITY_UNIT),
-                expected_current.to_decimal(_DENSITY_UNIT),
+                current.to_decimal(DENSITY_UNIT),
+                expected_current.to_decimal(DENSITY_UNIT),
                 atol=1e-6,
             )
         )
@@ -364,7 +303,7 @@ class HCN2MA20GoCTest(unittest.TestCase):
     def test_fast_and_slow_components_follow_template_formulas(self) -> None:
         temp = u.celsius2kelvin(22.0)
         ch = HCN2_MA2020_GoC(size=1, temp=temp)
-        V = _V([-80.0])
+        V = voltage([-80.0])
 
         ch.init_state(V)
         ch.reset_state(V)
@@ -384,17 +323,17 @@ class HCN2MA20GoCTest(unittest.TestCase):
         expected_current = ch._gbar_phi() * ch.g_max * (ch.o_fast.value + ch.o_slow.value) * (ch.E - V)
         self.assertTrue(
             u.math.allclose(
-                current.to_decimal(_DENSITY_UNIT),
-                expected_current.to_decimal(_DENSITY_UNIT),
+                current.to_decimal(DENSITY_UNIT),
+                expected_current.to_decimal(DENSITY_UNIT),
                 atol=1e-6,
             )
         )
 
     def test_r_is_clamped_to_corridor(self) -> None:
         ch = HCN2_MA2020_GoC(size=1)
-        self.assertTrue(u.math.allclose(ch.r(_V([-50.0])), jnp.array([0.0]), atol=1e-6))
-        self.assertTrue(u.math.allclose(ch.r(_V([-120.0])), jnp.array([1.0]), atol=1e-6))
-        inside = ch.r(_V([-80.0]))
+        self.assertTrue(u.math.allclose(ch.r(voltage([-50.0])), jnp.array([0.0]), atol=1e-6))
+        self.assertTrue(u.math.allclose(ch.r(voltage([-120.0])), jnp.array([1.0]), atol=1e-6))
+        inside = ch.r(voltage([-80.0]))
         expected = jnp.array([ch.rA * -80.0 + ch.rB])
         self.assertTrue(u.math.allclose(inside, expected, atol=1e-6))
 
@@ -405,22 +344,22 @@ class HCNZH19IOTest(unittest.TestCase):
 
     def test_reset_state_matches_f_q_inf(self) -> None:
         ch = HCN_ZH2019_IO(size=1)
-        V = _V([-70.0])
+        V = voltage([-70.0])
         ch.init_state(V)
         ch.reset_state(V)
         self.assertTrue(u.math.allclose(ch.q.value, ch.f_q_inf(V), atol=1e-6))
 
     def test_current_matches_linear_formula(self) -> None:
         ch = HCN_ZH2019_IO(size=1, E=-43.0 * u.mV)
-        V = _V([-65.0])
+        V = voltage([-65.0])
         ch.init_state(V)
         ch.q.value = jnp.array([0.25])
         i = ch.current(V)
         expected = ch.g_max * ch.q.value * (ch.E - V)
         self.assertTrue(
             u.math.allclose(
-                i.to_decimal(_DENSITY_UNIT),
-                expected.to_decimal(_DENSITY_UNIT),
+                i.to_decimal(DENSITY_UNIT),
+                expected.to_decimal(DENSITY_UNIT),
                 atol=1e-6,
             )
         )

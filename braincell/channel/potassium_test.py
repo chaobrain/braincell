@@ -20,7 +20,6 @@ import unittest
 import brainunit as u
 import jax.numpy as jnp
 
-from braincell._base_channel import IonInfo
 from braincell.channel._base import HH
 from braincell.channel.potassium import (
     KDR_Ba2002,
@@ -63,22 +62,12 @@ from braincell.channel.potassium import (
     sKdr_SU2015_DCN,
 )
 from braincell.ion import Potassium
-
-
-def _k_info(size: int = 1) -> IonInfo:
-    return IonInfo(
-        Ci=jnp.full((size,), 0.04) * u.mM,
-        Co=jnp.full((size,), 2.5) * u.mM,
-        E=jnp.full((size,), -90.0) * u.mV,
-        valence=1,
-    )
-
-
-def _V(values, unit=u.mV):
-    return jnp.asarray(values) * unit
-
-
-_DENSITY_UNIT = u.mS / u.cm**2 * u.mV
+from braincell.channel._testing import (
+    DENSITY_UNIT,
+    assert_channels_agree,
+    k_info,
+    voltage,
+)
 
 
 class _P4HHMixin:
@@ -121,16 +110,16 @@ class _P4HHMixin:
 
     def test_init_state_creates_p_shaped_to_size(self) -> None:
         ch = self._make(size=3)
-        V = _V([-60.0, -65.0, -70.0])
-        k = _k_info(3)
+        V = voltage([-60.0, -65.0, -70.0])
+        k = k_info(3)
         ch.init_state(V, k)
         self.assertEqual(ch.p.value.shape, (3,))
         self.assertTrue(u.math.allclose(ch.p.value, jnp.zeros(3)))
 
     def test_reset_state_matches_steady_state(self) -> None:
         ch = self._make(size=1)
-        V = _V([-65.0])
-        k = _k_info()
+        V = voltage([-65.0])
+        k = k_info()
         ch.init_state(V, k)
         ch.reset_state(V, k)
         alpha = ch.f_p_alpha(V, k)
@@ -139,8 +128,8 @@ class _P4HHMixin:
 
     def test_compute_derivative_matches_hh_alpha_beta_form(self) -> None:
         ch = self._make(size=1)
-        V = _V([-60.0])
-        k = _k_info()
+        V = voltage([-60.0])
+        k = k_info()
         ch.init_state(V, k)
         ch.p.value = jnp.array([0.2])
         ch.compute_derivative(V, k)
@@ -152,30 +141,30 @@ class _P4HHMixin:
 
     def test_current_is_g_max_p4_times_driving_force(self) -> None:
         ch = self._make(size=1)
-        V = _V([-60.0])
-        k = _k_info()
+        V = voltage([-60.0])
+        k = k_info()
         ch.init_state(V, k)
         ch.reset_state(V, k)
         current = ch.current(V, k)
         expected = ch.g_max * ch.p.value**4 * (k.E - V)
         self.assertTrue(
             u.math.allclose(
-                current.to_decimal(_DENSITY_UNIT),
-                expected.to_decimal(_DENSITY_UNIT),
+                current.to_decimal(DENSITY_UNIT),
+                expected.to_decimal(DENSITY_UNIT),
                 atol=1e-6,
             )
         )
 
     def test_current_is_zero_when_p_zero(self) -> None:
         ch = self._make(size=1)
-        V = _V([-60.0])
-        k = _k_info()
+        V = voltage([-60.0])
+        k = k_info()
         ch.init_state(V, k)
         ch.p.value = jnp.zeros(1)
         current = ch.current(V, k)
         self.assertTrue(
             u.math.allclose(
-                current.to_decimal(_DENSITY_UNIT),
+                current.to_decimal(DENSITY_UNIT),
                 jnp.zeros(1),
                 atol=1e-9,
             )
@@ -247,16 +236,16 @@ class _P4QHHMixin:
 
     def test_init_state_creates_p_and_q(self) -> None:
         ch = self._make(size=2)
-        V = _V([-60.0, -70.0])
-        k = _k_info(2)
+        V = voltage([-60.0, -70.0])
+        k = k_info(2)
         ch.init_state(V, k)
         self.assertEqual(ch.p.value.shape, (2,))
         self.assertEqual(ch.q.value.shape, (2,))
 
     def test_reset_state_sets_gates_to_inf(self) -> None:
         ch = self._make(size=1)
-        V = _V([-60.0])
-        k = _k_info()
+        V = voltage([-60.0])
+        k = k_info()
         ch.init_state(V, k)
         ch.reset_state(V, k)
         self.assertTrue(u.math.allclose(ch.p.value, ch.f_p_inf(V, k), atol=1e-6))
@@ -264,8 +253,8 @@ class _P4QHHMixin:
 
     def test_compute_derivative_matches_hh_inf_tau_form(self) -> None:
         ch = self._make(size=1)
-        V = _V([-60.0])
-        k = _k_info()
+        V = voltage([-60.0])
+        k = k_info()
         ch.init_state(V, k)
         ch.p.value = jnp.array([0.2])
         ch.q.value = jnp.array([0.5])
@@ -278,16 +267,16 @@ class _P4QHHMixin:
 
     def test_current_matches_p4_q_formula(self) -> None:
         ch = self._make(size=1)
-        V = _V([-60.0])
-        k = _k_info()
+        V = voltage([-60.0])
+        k = k_info()
         ch.init_state(V, k)
         ch.reset_state(V, k)
         current = ch.current(V, k)
         expected = ch.g_max * ch.p.value**4 * ch.q.value * (k.E - V)
         self.assertTrue(
             u.math.allclose(
-                current.to_decimal(_DENSITY_UNIT),
-                expected.to_decimal(_DENSITY_UNIT),
+                current.to_decimal(DENSITY_UNIT),
+                expected.to_decimal(DENSITY_UNIT),
                 atol=1e-6,
             )
         )
@@ -329,16 +318,16 @@ class _PQHHMixin:
 
     def test_init_state_creates_p_and_q(self) -> None:
         ch = self._make(size=2)
-        V = _V([-60.0, -70.0])
-        k = _k_info(2)
+        V = voltage([-60.0, -70.0])
+        k = k_info(2)
         ch.init_state(V, k)
         self.assertEqual(ch.p.value.shape, (2,))
         self.assertEqual(ch.q.value.shape, (2,))
 
     def test_reset_state_matches_infinities(self) -> None:
         ch = self._make(size=1)
-        V = _V([-60.0])
-        k = _k_info()
+        V = voltage([-60.0])
+        k = k_info()
         ch.init_state(V, k)
         ch.reset_state(V, k)
         self.assertTrue(u.math.allclose(ch.p.value, ch.f_p_inf(V, k), atol=1e-6))
@@ -346,8 +335,8 @@ class _PQHHMixin:
 
     def test_compute_derivative_matches_hh_inf_tau_form(self) -> None:
         ch = self._make(size=1)
-        V = _V([-60.0])
-        k = _k_info()
+        V = voltage([-60.0])
+        k = k_info()
         ch.init_state(V, k)
         ch.p.value = jnp.array([0.2])
         ch.q.value = jnp.array([0.5])
@@ -360,16 +349,16 @@ class _PQHHMixin:
 
     def test_current_matches_p_q_formula(self) -> None:
         ch = self._make(size=1)
-        V = _V([-60.0])
-        k = _k_info()
+        V = voltage([-60.0])
+        k = k_info()
         ch.init_state(V, k)
         ch.reset_state(V, k)
         current = ch.current(V, k)
         expected = ch.g_max * ch.p.value * ch.q.value * (k.E - V)
         self.assertTrue(
             u.math.allclose(
-                current.to_decimal(_DENSITY_UNIT),
-                expected.to_decimal(_DENSITY_UNIT),
+                current.to_decimal(DENSITY_UNIT),
+                expected.to_decimal(DENSITY_UNIT),
                 atol=1e-6,
             )
         )
@@ -392,8 +381,8 @@ class KNI_Ya1989Test(unittest.TestCase):
 
     def test_reset_state_matches_p_inf(self) -> None:
         ch = KNI_Ya1989(size=1)
-        V = _V([-60.0])
-        k = _k_info()
+        V = voltage([-60.0])
+        k = k_info()
         ch.init_state(V, k)
         ch.reset_state(V, k)
         self.assertTrue(u.math.allclose(ch.p.value, ch.f_p_inf(V, k), atol=1e-6))
@@ -405,8 +394,8 @@ class KNI_Ya1989Test(unittest.TestCase):
             q10=3.0,
             temp_ref=u.celsius2kelvin(36.0),
         )
-        V = _V([-60.0])
-        k = _k_info()
+        V = voltage([-60.0])
+        k = k_info()
         ch.init_state(V, k)
         ch.p.value = jnp.array([0.2])
         ch.compute_derivative(V, k)
@@ -416,16 +405,16 @@ class KNI_Ya1989Test(unittest.TestCase):
 
     def test_current_matches_formula(self) -> None:
         ch = KNI_Ya1989(size=1)
-        V = _V([-60.0])
-        k = _k_info()
+        V = voltage([-60.0])
+        k = k_info()
         ch.init_state(V, k)
         ch.reset_state(V, k)
         current = ch.current(V, k)
         expected = ch.g_max * ch.p.value * (k.E - V)
         self.assertTrue(
             u.math.allclose(
-                current.to_decimal(_DENSITY_UNIT),
-                expected.to_decimal(_DENSITY_UNIT),
+                current.to_decimal(DENSITY_UNIT),
+                expected.to_decimal(DENSITY_UNIT),
                 atol=1e-6,
             )
         )
@@ -437,21 +426,21 @@ class IKLeakTest(unittest.TestCase):
 
     def test_current_follows_ohms_law(self) -> None:
         ch = K_Leak(size=1, g_max=0.005 * (u.mS / u.cm**2))
-        V = _V([-60.0])
-        k = _k_info()
+        V = voltage([-60.0])
+        k = k_info()
         current = ch.current(V, k)
         expected = ch.g_max * (k.E - V)
         self.assertTrue(
             u.math.allclose(
-                current.to_decimal(_DENSITY_UNIT),
-                expected.to_decimal(_DENSITY_UNIT),
+                current.to_decimal(DENSITY_UNIT),
+                expected.to_decimal(DENSITY_UNIT),
                 atol=1e-9,
             )
         )
 
     def test_compute_derivative_is_noop(self) -> None:
         ch = K_Leak(size=1)
-        self.assertIsNone(ch.compute_derivative(_V([-60.0]), _k_info()))
+        self.assertIsNone(ch.compute_derivative(voltage([-60.0]), k_info()))
 
 
 class K_Kv_testTest(unittest.TestCase):
@@ -470,16 +459,16 @@ class K_Kv_testTest(unittest.TestCase):
 
     def test_reset_state_matches_f_n_inf(self) -> None:
         ch = K_Kv_test(size=1)
-        V = _V([-20.0])
-        k = _k_info()
+        V = voltage([-20.0])
+        k = k_info()
         ch.init_state(V, k)
         ch.reset_state(V, k)
         self.assertTrue(u.math.allclose(ch.n.value, ch.f_n_inf(V, k), atol=1e-6))
 
     def test_compute_derivative_matches_hh_inf_tau_form(self) -> None:
         ch = K_Kv_test(size=1)
-        V = _V([-60.0])
-        k = _k_info()
+        V = voltage([-60.0])
+        k = k_info()
         ch.init_state(V, k)
         ch.n.value = jnp.array([0.25])
         ch.compute_derivative(V, k)
@@ -489,16 +478,16 @@ class K_Kv_testTest(unittest.TestCase):
 
     def test_current_matches_linear_gating(self) -> None:
         ch = K_Kv_test(size=1, g_max=0.1 * (u.mS / u.cm**2))
-        V = _V([-60.0])
-        k = _k_info()
+        V = voltage([-60.0])
+        k = k_info()
         ch.init_state(V, k)
         ch.reset_state(V, k)
         current = ch.current(V, k)
         expected = ch.g_max * ch.n.value * (k.E - V)
         self.assertTrue(
             u.math.allclose(
-                current.to_decimal(_DENSITY_UNIT),
-                expected.to_decimal(_DENSITY_UNIT),
+                current.to_decimal(DENSITY_UNIT),
+                expected.to_decimal(DENSITY_UNIT),
                 atol=1e-6,
             )
         )
@@ -510,8 +499,8 @@ class Kir2p3MA25BCTest(unittest.TestCase):
 
     def test_reset_state_matches_alpha_beta_ratio(self) -> None:
         ch = Kir2p3_MA2025_BC(size=1)
-        V = _V([-75.0])
-        k = _k_info()
+        V = voltage([-75.0])
+        k = k_info()
         ch.init_state(V, k)
         ch.reset_state(V, k)
         alpha = ch.f_d_alpha(V, k)
@@ -523,8 +512,8 @@ class Kv1p1MA25BCTest(unittest.TestCase):
     def test_matches_template_formulas_without_gating_current(self) -> None:
         temp = u.celsius2kelvin(22.0)
         proto = Kv1p1_MA2025_BC(size=1, temp=temp, gateCurrent=0.0)
-        V = _V([-60.0])
-        k = _k_info()
+        V = voltage([-60.0])
+        k = k_info()
 
         proto.init_state(V, k)
         proto.reset_state(V, k)
@@ -541,8 +530,8 @@ class Kv1p1MA25BCTest(unittest.TestCase):
         expected_current = proto.g_max * proto.n.value**4 * (k.E - V)
         self.assertTrue(
             u.math.allclose(
-                i_proto.to_decimal(_DENSITY_UNIT),
-                expected_current.to_decimal(_DENSITY_UNIT),
+                i_proto.to_decimal(DENSITY_UNIT),
+                expected_current.to_decimal(DENSITY_UNIT),
                 atol=1e-6,
             )
         )
@@ -550,8 +539,8 @@ class Kv1p1MA25BCTest(unittest.TestCase):
     def test_gating_current_path_matches_manual_formula(self) -> None:
         temp = u.celsius2kelvin(22.0)
         proto = Kv1p1_MA2025_BC(size=1, temp=temp, gateCurrent=1.0)
-        V = _V([-50.0])
-        k = _k_info()
+        V = voltage([-50.0])
+        k = k_info()
 
         proto.init_state(V, k)
         proto.reset_state(V, k)
@@ -568,8 +557,8 @@ class Kv1p1MA25BCTest(unittest.TestCase):
         i_proto = proto.current(V, k)
         self.assertTrue(
             u.math.allclose(
-                i_proto.to_decimal(_DENSITY_UNIT),
-                expected_current.to_decimal(_DENSITY_UNIT),
+                i_proto.to_decimal(DENSITY_UNIT),
+                expected_current.to_decimal(DENSITY_UNIT),
                 atol=1e-6,
             )
         )
@@ -579,8 +568,8 @@ class Kv3p4MA25BCTest(unittest.TestCase):
     def test_matches_template_state_derivative_and_current(self) -> None:
         temp = u.celsius2kelvin(22.0)
         proto = Kv3p4_MA2025_BC(size=1, temp=temp)
-        V = _V([-45.0])
-        k = _k_info()
+        V = voltage([-45.0])
+        k = k_info()
 
         proto.init_state(V, k)
         proto.reset_state(V, k)
@@ -600,8 +589,8 @@ class Kv3p4MA25BCTest(unittest.TestCase):
         expected_current = proto.g_max * (proto.m.value**3) * proto.h.value * (k.E - V)
         self.assertTrue(
             u.math.allclose(
-                i_proto.to_decimal(_DENSITY_UNIT),
-                expected_current.to_decimal(_DENSITY_UNIT),
+                i_proto.to_decimal(DENSITY_UNIT),
+                expected_current.to_decimal(DENSITY_UNIT),
                 atol=1e-6,
             )
         )
@@ -611,8 +600,8 @@ class Kv4p3MA25BCTest(unittest.TestCase):
     def test_matches_template_state_derivative_and_current(self) -> None:
         temp = u.celsius2kelvin(30.0)
         proto = Kv4p3_MA2025_BC(size=1, temp=temp)
-        V = _V([-55.0])
-        k = _k_info()
+        V = voltage([-55.0])
+        k = k_info()
 
         proto.init_state(V, k)
         proto.reset_state(V, k)
@@ -632,8 +621,8 @@ class Kv4p3MA25BCTest(unittest.TestCase):
         expected_current = proto.g_max * (proto.a.value**3) * proto.b.value * (k.E - V)
         self.assertTrue(
             u.math.allclose(
-                i_proto.to_decimal(_DENSITY_UNIT),
-                expected_current.to_decimal(_DENSITY_UNIT),
+                i_proto.to_decimal(DENSITY_UNIT),
+                expected_current.to_decimal(DENSITY_UNIT),
                 atol=1e-6,
             )
         )
@@ -644,27 +633,13 @@ class Kir2p3MA24PCTest(unittest.TestCase):
         temp = u.celsius2kelvin(30.0)
         bc = Kir2p3_MA2025_BC(size=1, temp=temp)
         pc = Kir2p3_MA2024_PC(size=1, temp=temp)
-        V = _V([-75.0])
-        k = _k_info()
-
-        bc.init_state(V, k)
-        pc.init_state(V, k)
-        bc.reset_state(V, k)
-        pc.reset_state(V, k)
-        self.assertTrue(u.math.allclose(pc.d.value, bc.d.value, atol=1e-6))
-
-        bc.compute_derivative(V, k)
-        pc.compute_derivative(V, k)
-        self.assertTrue(u.math.allclose(pc.d.derivative, bc.d.derivative, atol=1e-6 * u.Hz))
-
-        i_bc = bc.current(V, k)
-        i_pc = pc.current(V, k)
-        self.assertTrue(
-            u.math.allclose(
-                i_pc.to_decimal(_DENSITY_UNIT),
-                i_bc.to_decimal(_DENSITY_UNIT),
-                atol=1e-6,
-            )
+        assert_channels_agree(
+            self,
+            bc,
+            pc,
+            voltage([-75.0]),
+            k_info(),
+            states=("d",),
         )
 
 
@@ -673,49 +648,25 @@ class Kv1p1MA24PCTest(unittest.TestCase):
         temp = u.celsius2kelvin(22.0)
         bc = Kv1p1_MA2025_BC(size=1, temp=temp, gateCurrent=0.0)
         pc = Kv1p1_MA2024_PC(size=1, temp=temp, gateCurrent=0.0)
-        V = _V([-60.0])
-        k = _k_info()
-
-        bc.init_state(V, k)
-        pc.init_state(V, k)
-        bc.reset_state(V, k)
-        pc.reset_state(V, k)
-        self.assertTrue(u.math.allclose(pc.n.value, bc.n.value, atol=1e-6))
-
-        bc.compute_derivative(V, k)
-        pc.compute_derivative(V, k)
-        self.assertTrue(u.math.allclose(pc.n.derivative, bc.n.derivative, atol=1e-6 * u.Hz))
-
-        i_bc = bc.current(V, k)
-        i_pc = pc.current(V, k)
-        self.assertTrue(
-            u.math.allclose(
-                i_pc.to_decimal(_DENSITY_UNIT),
-                i_bc.to_decimal(_DENSITY_UNIT),
-                atol=1e-6,
-            )
+        assert_channels_agree(
+            self,
+            bc,
+            pc,
+            voltage([-60.0]),
+            k_info(),
+            states=("n",),
         )
 
     def test_matches_bc_variant_with_gating_current(self) -> None:
         temp = u.celsius2kelvin(22.0)
         bc = Kv1p1_MA2025_BC(size=1, temp=temp, gateCurrent=1.0)
         pc = Kv1p1_MA2024_PC(size=1, temp=temp, gateCurrent=1.0)
-        V = _V([-50.0])
-        k = _k_info()
-
-        bc.init_state(V, k)
-        pc.init_state(V, k)
-        bc.reset_state(V, k)
-        pc.reset_state(V, k)
-
-        i_bc = bc.current(V, k)
-        i_pc = pc.current(V, k)
-        self.assertTrue(
-            u.math.allclose(
-                i_pc.to_decimal(_DENSITY_UNIT),
-                i_bc.to_decimal(_DENSITY_UNIT),
-                atol=1e-6,
-            )
+        assert_channels_agree(
+            self,
+            bc,
+            pc,
+            voltage([-50.0]),
+            k_info(),
         )
 
 
@@ -730,8 +681,8 @@ class Kv1p5MA24PCTest(unittest.TestCase):
 
     def test_reset_state_matches_mod_steady_state(self) -> None:
         ch = Kv1p5_MA2024_PC(size=1)
-        V = _V([-40.0])
-        k = _k_info()
+        V = voltage([-40.0])
+        k = k_info()
         v = V.to_decimal(u.mV)
         ch.init_state(V, k)
         ch.reset_state(V, k)
@@ -746,8 +697,8 @@ class Kv1p5MA24PCTest(unittest.TestCase):
 
     def test_tau_matches_mod_rates_and_temperature_scaling(self) -> None:
         ch = Kv1p5_MA2024_PC(size=1, temp=u.celsius2kelvin(47.0), Tauact=2.0, Tauinactf=3.0, Tauinacts=4.0)
-        V = _V([-35.0])
-        k = _k_info()
+        V = voltage([-35.0])
+        k = k_info()
         v = V.to_decimal(u.mV)
         q10 = 2.2
 
@@ -762,8 +713,8 @@ class Kv1p5MA24PCTest(unittest.TestCase):
 
     def test_current_matches_enabled_ik_path_only(self) -> None:
         ch = Kv1p5_MA2024_PC(size=1)
-        V = _V([-20.0])
-        k = _k_info()
+        V = voltage([-20.0])
+        k = k_info()
         ch.init_state(V, k)
         ch.m.value = jnp.array([0.2])
         ch.n.value = jnp.array([0.3])
@@ -776,8 +727,8 @@ class Kv1p5MA24PCTest(unittest.TestCase):
 
         self.assertTrue(
             u.math.allclose(
-                current.to_decimal(_DENSITY_UNIT),
-                expected.to_decimal(_DENSITY_UNIT),
+                current.to_decimal(DENSITY_UNIT),
+                expected.to_decimal(DENSITY_UNIT),
                 atol=1e-6,
             )
         )
@@ -796,8 +747,8 @@ class Kv3p3MA24PCTest(unittest.TestCase):
 
     def test_reset_state_matches_mod_rate_ratio(self) -> None:
         ch = Kv3p3_MA2024_PC(size=1)
-        V = _V([-30.0])
-        k = _k_info()
+        V = voltage([-30.0])
+        k = k_info()
         v = V.to_decimal(u.mV)
         ch.init_state(V, k)
         ch.reset_state(V, k)
@@ -809,8 +760,8 @@ class Kv3p3MA24PCTest(unittest.TestCase):
 
     def test_derivative_uses_alpha_beta_and_temperature_scaling(self) -> None:
         ch = Kv3p3_MA2024_PC(size=1, temp=u.celsius2kelvin(32.0))
-        V = _V([-20.0])
-        k = _k_info()
+        V = voltage([-20.0])
+        k = k_info()
         ch.init_state(V, k)
         ch.n.value = jnp.array([0.35])
 
@@ -824,8 +775,8 @@ class Kv3p3MA24PCTest(unittest.TestCase):
 
     def test_current_matches_default_ik_path(self) -> None:
         ch = Kv3p3_MA2024_PC(size=1, gateCurrent=0.0)
-        V = _V([-20.0])
-        k = _k_info()
+        V = voltage([-20.0])
+        k = k_info()
         ch.init_state(V, k)
         ch.n.value = jnp.array([0.4])
 
@@ -834,16 +785,16 @@ class Kv3p3MA24PCTest(unittest.TestCase):
 
         self.assertTrue(
             u.math.allclose(
-                current.to_decimal(_DENSITY_UNIT),
-                expected.to_decimal(_DENSITY_UNIT),
+                current.to_decimal(DENSITY_UNIT),
+                expected.to_decimal(DENSITY_UNIT),
                 atol=1e-6,
             )
         )
 
     def test_gating_current_path_matches_mod_formula(self) -> None:
         ch = Kv3p3_MA2024_PC(size=1, gateCurrent=1.0)
-        V = _V([-10.0])
-        k = _k_info()
+        V = voltage([-10.0])
+        k = k_info()
         ch.init_state(V, k)
         ch.n.value = jnp.array([0.35])
 
@@ -859,8 +810,8 @@ class Kv3p3MA24PCTest(unittest.TestCase):
         current = ch.current(V, k)
         self.assertTrue(
             u.math.allclose(
-                current.to_decimal(_DENSITY_UNIT),
-                expected.to_decimal(_DENSITY_UNIT),
+                current.to_decimal(DENSITY_UNIT),
+                expected.to_decimal(DENSITY_UNIT),
                 atol=1e-6,
             )
         )
@@ -871,29 +822,13 @@ class Kv3p4MA24PCTest(unittest.TestCase):
         temp = u.celsius2kelvin(22.0)
         bc = Kv3p4_MA2025_BC(size=1, temp=temp)
         pc = Kv3p4_MA2024_PC(size=1, temp=temp)
-        V = _V([-45.0])
-        k = _k_info()
-
-        bc.init_state(V, k)
-        pc.init_state(V, k)
-        bc.reset_state(V, k)
-        pc.reset_state(V, k)
-        self.assertTrue(u.math.allclose(pc.m.value, bc.m.value, atol=1e-6))
-        self.assertTrue(u.math.allclose(pc.h.value, bc.h.value, atol=1e-6))
-
-        bc.compute_derivative(V, k)
-        pc.compute_derivative(V, k)
-        self.assertTrue(u.math.allclose(pc.m.derivative, bc.m.derivative, atol=1e-6 * u.Hz))
-        self.assertTrue(u.math.allclose(pc.h.derivative, bc.h.derivative, atol=1e-6 * u.Hz))
-
-        i_bc = bc.current(V, k)
-        i_pc = pc.current(V, k)
-        self.assertTrue(
-            u.math.allclose(
-                i_pc.to_decimal(_DENSITY_UNIT),
-                i_bc.to_decimal(_DENSITY_UNIT),
-                atol=1e-6,
-            )
+        assert_channels_agree(
+            self,
+            bc,
+            pc,
+            voltage([-45.0]),
+            k_info(),
+            states=("m", "h"),
         )
 
 
@@ -902,29 +837,13 @@ class Kv4p3MA24PCTest(unittest.TestCase):
         temp = u.celsius2kelvin(30.0)
         bc = Kv4p3_MA2025_BC(size=1, temp=temp)
         pc = Kv4p3_MA2024_PC(size=1, temp=temp)
-        V = _V([-55.0])
-        k = _k_info()
-
-        bc.init_state(V, k)
-        pc.init_state(V, k)
-        bc.reset_state(V, k)
-        pc.reset_state(V, k)
-        self.assertTrue(u.math.allclose(pc.a.value, bc.a.value, atol=1e-6))
-        self.assertTrue(u.math.allclose(pc.b.value, bc.b.value, atol=1e-6))
-
-        bc.compute_derivative(V, k)
-        pc.compute_derivative(V, k)
-        self.assertTrue(u.math.allclose(pc.a.derivative, bc.a.derivative, atol=1e-6 * u.Hz))
-        self.assertTrue(u.math.allclose(pc.b.derivative, bc.b.derivative, atol=1e-6 * u.Hz))
-
-        i_bc = bc.current(V, k)
-        i_pc = pc.current(V, k)
-        self.assertTrue(
-            u.math.allclose(
-                i_pc.to_decimal(_DENSITY_UNIT),
-                i_bc.to_decimal(_DENSITY_UNIT),
-                atol=1e-6,
-            )
+        assert_channels_agree(
+            self,
+            bc,
+            pc,
+            voltage([-55.0]),
+            k_info(),
+            states=("a", "b"),
         )
 
 
@@ -934,24 +853,24 @@ class KMRI21SCTest(unittest.TestCase):
 
     def test_reset_state_matches_f_n_inf(self) -> None:
         ch = KM_RI2021_SC(size=1)
-        V = _V([-60.0])
-        k = _k_info()
+        V = voltage([-60.0])
+        k = k_info()
         ch.init_state(V, k)
         ch.reset_state(V, k)
         self.assertTrue(u.math.allclose(ch.n.value, ch.f_n_inf(V, k), atol=1e-6))
 
     def test_current_matches_linear_formula(self) -> None:
         ch = KM_RI2021_SC(size=1)
-        V = _V([-60.0])
-        k = _k_info()
+        V = voltage([-60.0])
+        k = k_info()
         ch.init_state(V, k)
         ch.reset_state(V, k)
         i = ch.current(V, k)
         expected = ch.g_max * ch.n.value * (k.E - V)
         self.assertTrue(
             u.math.allclose(
-                i.to_decimal(_DENSITY_UNIT),
-                expected.to_decimal(_DENSITY_UNIT),
+                i.to_decimal(DENSITY_UNIT),
+                expected.to_decimal(DENSITY_UNIT),
                 atol=1e-6,
             )
         )
@@ -959,8 +878,8 @@ class KMRI21SCTest(unittest.TestCase):
     def test_matches_template_gate_dynamics(self) -> None:
         temp = u.celsius2kelvin(30.0)
         proto = KM_RI2021_SC(size=1, temp=temp)
-        V = _V([-60.0])
-        k = _k_info()
+        V = voltage([-60.0])
+        k = k_info()
 
         proto.init_state(V, k)
         proto.reset_state(V, k)
@@ -979,27 +898,13 @@ class Kir2p3RI21SCTest(unittest.TestCase):
         temp = u.celsius2kelvin(30.0)
         bc = Kir2p3_MA2025_BC(size=1, temp=temp)
         sc = Kir2p3_RI2021_SC(size=1, temp=temp)
-        V = _V([-75.0])
-        k = _k_info()
-
-        bc.init_state(V, k)
-        sc.init_state(V, k)
-        bc.reset_state(V, k)
-        sc.reset_state(V, k)
-        self.assertTrue(u.math.allclose(sc.d.value, bc.d.value, atol=1e-6))
-
-        bc.compute_derivative(V, k)
-        sc.compute_derivative(V, k)
-        self.assertTrue(u.math.allclose(sc.d.derivative, bc.d.derivative, atol=1e-6 * u.Hz))
-
-        i_bc = bc.current(V, k)
-        i_sc = sc.current(V, k)
-        self.assertTrue(
-            u.math.allclose(
-                i_sc.to_decimal(_DENSITY_UNIT),
-                i_bc.to_decimal(_DENSITY_UNIT),
-                atol=1e-6,
-            )
+        assert_channels_agree(
+            self,
+            bc,
+            sc,
+            voltage([-75.0]),
+            k_info(),
+            states=("d",),
         )
 
 
@@ -1009,32 +914,32 @@ class fKdrSU15DCNTest(unittest.TestCase):
 
     def test_reset_state_matches_f_m_inf(self) -> None:
         ch = fKdr_SU2015_DCN(size=1)
-        V = _V([-60.0])
-        k = _k_info()
+        V = voltage([-60.0])
+        k = k_info()
         ch.init_state(V, k)
         ch.reset_state(V, k)
         self.assertTrue(u.math.allclose(ch.m.value, ch.f_m_inf(V, k), atol=1e-6))
 
     def test_current_matches_linear_formula(self) -> None:
         ch = fKdr_SU2015_DCN(size=1)
-        V = _V([-40.0])
-        k = _k_info()
+        V = voltage([-40.0])
+        k = k_info()
         ch.init_state(V, k)
         ch.m.value = jnp.array([0.5])
         i = ch.current(V, k)
         expected = ch.g_max * (ch.m.value**4) * (k.E - V)
         self.assertTrue(
             u.math.allclose(
-                i.to_decimal(_DENSITY_UNIT),
-                expected.to_decimal(_DENSITY_UNIT),
+                i.to_decimal(DENSITY_UNIT),
+                expected.to_decimal(DENSITY_UNIT),
                 atol=1e-6,
             )
         )
 
     def test_tau_matches_mod_formula(self) -> None:
         ch = fKdr_SU2015_DCN(size=1)
-        V = _V([-60.0])
-        k = _k_info()
+        V = voltage([-60.0])
+        k = k_info()
         v = V.to_decimal(u.mV)
         expected = 13.9 / (jnp.exp((v + 40.0) / 12.0) + jnp.exp((v + 40.0) / -13.0)) + 0.1
         self.assertTrue(u.math.allclose(ch.f_m_tau(V, k), expected, atol=1e-6))
@@ -1046,24 +951,24 @@ class sKdrSU15DCNTest(unittest.TestCase):
 
     def test_reset_state_matches_f_m_inf(self) -> None:
         ch = sKdr_SU2015_DCN(size=1)
-        V = _V([-60.0])
-        k = _k_info()
+        V = voltage([-60.0])
+        k = k_info()
         ch.init_state(V, k)
         ch.reset_state(V, k)
         self.assertTrue(u.math.allclose(ch.m.value, ch.f_m_inf(V, k), atol=1e-6))
 
     def test_current_matches_linear_formula(self) -> None:
         ch = sKdr_SU2015_DCN(size=1)
-        V = _V([-40.0])
-        k = _k_info()
+        V = voltage([-40.0])
+        k = k_info()
         ch.init_state(V, k)
         ch.m.value = jnp.array([0.5])
         i = ch.current(V, k)
         expected = ch.g_max * (ch.m.value**4) * (k.E - V)
         self.assertTrue(
             u.math.allclose(
-                i.to_decimal(_DENSITY_UNIT),
-                expected.to_decimal(_DENSITY_UNIT),
+                i.to_decimal(DENSITY_UNIT),
+                expected.to_decimal(DENSITY_UNIT),
                 atol=1e-6,
             )
         )
@@ -1071,8 +976,8 @@ class sKdrSU15DCNTest(unittest.TestCase):
     def test_tau_matches_mod_formula_and_differs_from_fast_kdr(self) -> None:
         slow = sKdr_SU2015_DCN(size=1)
         fast = fKdr_SU2015_DCN(size=1)
-        V = _V([-60.0])
-        k = _k_info()
+        V = voltage([-60.0])
+        k = k_info()
         v = V.to_decimal(u.mV)
         expected = 14.95 / (jnp.exp((v + 50.0) / 21.74) + jnp.exp((v + 50.0) / -13.91)) + 0.05
         self.assertTrue(u.math.allclose(slow.f_m_tau(V, k), expected, atol=1e-6))
@@ -1084,27 +989,13 @@ class KMMA20GoCTest(unittest.TestCase):
         temp = u.celsius2kelvin(30.0)
         sc = KM_RI2021_SC(size=1, temp=temp)
         goc = KM_MA2020_GoC(size=1, temp=temp)
-        V = _V([-60.0])
-        k = _k_info()
-
-        sc.init_state(V, k)
-        goc.init_state(V, k)
-        sc.reset_state(V, k)
-        goc.reset_state(V, k)
-        self.assertTrue(u.math.allclose(goc.n.value, sc.n.value, atol=1e-6))
-
-        sc.compute_derivative(V, k)
-        goc.compute_derivative(V, k)
-        self.assertTrue(u.math.allclose(goc.n.derivative, sc.n.derivative, atol=1e-6 * u.Hz))
-
-        i_sc = sc.current(V, k)
-        i_goc = goc.current(V, k)
-        self.assertTrue(
-            u.math.allclose(
-                i_goc.to_decimal(_DENSITY_UNIT),
-                i_sc.to_decimal(_DENSITY_UNIT),
-                atol=1e-6,
-            )
+        assert_channels_agree(
+            self,
+            sc,
+            goc,
+            voltage([-60.0]),
+            k_info(),
+            states=("n",),
         )
 
 
@@ -1113,49 +1004,25 @@ class Kv1p1MA20GoCTest(unittest.TestCase):
         temp = u.celsius2kelvin(22.0)
         sc = Kv1p1_RI2021_SC(size=1, temp=temp, gateCurrent=0.0)
         goc = Kv1p1_MA2020_GoC(size=1, temp=temp, gateCurrent=0.0)
-        V = _V([-60.0])
-        k = _k_info()
-
-        sc.init_state(V, k)
-        goc.init_state(V, k)
-        sc.reset_state(V, k)
-        goc.reset_state(V, k)
-        self.assertTrue(u.math.allclose(goc.n.value, sc.n.value, atol=1e-6))
-
-        sc.compute_derivative(V, k)
-        goc.compute_derivative(V, k)
-        self.assertTrue(u.math.allclose(goc.n.derivative, sc.n.derivative, atol=1e-6 * u.Hz))
-
-        i_sc = sc.current(V, k)
-        i_goc = goc.current(V, k)
-        self.assertTrue(
-            u.math.allclose(
-                i_goc.to_decimal(_DENSITY_UNIT),
-                i_sc.to_decimal(_DENSITY_UNIT),
-                atol=1e-6,
-            )
+        assert_channels_agree(
+            self,
+            sc,
+            goc,
+            voltage([-60.0]),
+            k_info(),
+            states=("n",),
         )
 
     def test_matches_sc_variant_with_gating_current(self) -> None:
         temp = u.celsius2kelvin(22.0)
         sc = Kv1p1_RI2021_SC(size=1, temp=temp, gateCurrent=1.0)
         goc = Kv1p1_MA2020_GoC(size=1, temp=temp, gateCurrent=1.0)
-        V = _V([-50.0])
-        k = _k_info()
-
-        sc.init_state(V, k)
-        goc.init_state(V, k)
-        sc.reset_state(V, k)
-        goc.reset_state(V, k)
-
-        i_sc = sc.current(V, k)
-        i_goc = goc.current(V, k)
-        self.assertTrue(
-            u.math.allclose(
-                i_goc.to_decimal(_DENSITY_UNIT),
-                i_sc.to_decimal(_DENSITY_UNIT),
-                atol=1e-6,
-            )
+        assert_channels_agree(
+            self,
+            sc,
+            goc,
+            voltage([-50.0]),
+            k_info(),
         )
 
 
@@ -1164,29 +1031,13 @@ class Kv3p4MA20GoCTest(unittest.TestCase):
         temp = u.celsius2kelvin(22.0)
         sc = Kv3p4_RI2021_SC(size=1, temp=temp)
         goc = Kv3p4_MA2020_GoC(size=1, temp=temp)
-        V = _V([-45.0])
-        k = _k_info()
-
-        sc.init_state(V, k)
-        goc.init_state(V, k)
-        sc.reset_state(V, k)
-        goc.reset_state(V, k)
-        self.assertTrue(u.math.allclose(goc.m.value, sc.m.value, atol=1e-6))
-        self.assertTrue(u.math.allclose(goc.h.value, sc.h.value, atol=1e-6))
-
-        sc.compute_derivative(V, k)
-        goc.compute_derivative(V, k)
-        self.assertTrue(u.math.allclose(goc.m.derivative, sc.m.derivative, atol=1e-6 * u.Hz))
-        self.assertTrue(u.math.allclose(goc.h.derivative, sc.h.derivative, atol=1e-6 * u.Hz))
-
-        i_sc = sc.current(V, k)
-        i_goc = goc.current(V, k)
-        self.assertTrue(
-            u.math.allclose(
-                i_goc.to_decimal(_DENSITY_UNIT),
-                i_sc.to_decimal(_DENSITY_UNIT),
-                atol=1e-6,
-            )
+        assert_channels_agree(
+            self,
+            sc,
+            goc,
+            voltage([-45.0]),
+            k_info(),
+            states=("m", "h"),
         )
 
 
@@ -1195,29 +1046,13 @@ class Kv4p3MA20GoCTest(unittest.TestCase):
         temp = u.celsius2kelvin(22.0)
         sc = Kv4p3_RI2021_SC(size=1, temp=temp)
         goc = Kv4p3_MA2020_GoC(size=1)
-        V = _V([-55.0])
-        k = _k_info()
-
-        sc.init_state(V, k)
-        goc.init_state(V, k)
-        sc.reset_state(V, k)
-        goc.reset_state(V, k)
-        self.assertTrue(u.math.allclose(goc.a.value, sc.a.value, atol=1e-6))
-        self.assertTrue(u.math.allclose(goc.b.value, sc.b.value, atol=1e-6))
-
-        sc.compute_derivative(V, k)
-        goc.compute_derivative(V, k)
-        self.assertTrue(u.math.allclose(goc.a.derivative, sc.a.derivative, atol=1e-6 * u.Hz))
-        self.assertTrue(u.math.allclose(goc.b.derivative, sc.b.derivative, atol=1e-6 * u.Hz))
-
-        i_sc = sc.current(V, k)
-        i_goc = goc.current(V, k)
-        self.assertTrue(
-            u.math.allclose(
-                i_goc.to_decimal(_DENSITY_UNIT),
-                i_sc.to_decimal(_DENSITY_UNIT),
-                atol=1e-6,
-            )
+        assert_channels_agree(
+            self,
+            sc,
+            goc,
+            voltage([-55.0]),
+            k_info(),
+            states=("a", "b"),
         )
 
 
@@ -1226,27 +1061,13 @@ class KMMA20GrCTest(unittest.TestCase):
         temp = u.celsius2kelvin(30.0)
         goc = KM_MA2020_GoC(size=1, temp=temp)
         grc = KM_MA2020_GrC(size=1, temp=temp)
-        V = _V([-60.0])
-        k = _k_info()
-
-        goc.init_state(V, k)
-        grc.init_state(V, k)
-        goc.reset_state(V, k)
-        grc.reset_state(V, k)
-        self.assertTrue(u.math.allclose(grc.n.value, goc.n.value, atol=1e-6))
-
-        goc.compute_derivative(V, k)
-        grc.compute_derivative(V, k)
-        self.assertTrue(u.math.allclose(grc.n.derivative, goc.n.derivative, atol=1e-6 * u.Hz))
-
-        i_goc = goc.current(V, k)
-        i_grc = grc.current(V, k)
-        self.assertTrue(
-            u.math.allclose(
-                i_grc.to_decimal(_DENSITY_UNIT),
-                i_goc.to_decimal(_DENSITY_UNIT),
-                atol=1e-6,
-            )
+        assert_channels_agree(
+            self,
+            goc,
+            grc,
+            voltage([-60.0]),
+            k_info(),
+            states=("n",),
         )
 
 
@@ -1255,27 +1076,13 @@ class Kir2p3MA20GrCTest(unittest.TestCase):
         temp = u.celsius2kelvin(30.0)
         sc = Kir2p3_RI2021_SC(size=1, temp=temp)
         grc = Kir2p3_MA2020_GrC(size=1, temp=temp)
-        V = _V([-75.0])
-        k = _k_info()
-
-        sc.init_state(V, k)
-        grc.init_state(V, k)
-        sc.reset_state(V, k)
-        grc.reset_state(V, k)
-        self.assertTrue(u.math.allclose(grc.d.value, sc.d.value, atol=1e-6))
-
-        sc.compute_derivative(V, k)
-        grc.compute_derivative(V, k)
-        self.assertTrue(u.math.allclose(grc.d.derivative, sc.d.derivative, atol=1e-6 * u.Hz))
-
-        i_sc = sc.current(V, k)
-        i_grc = grc.current(V, k)
-        self.assertTrue(
-            u.math.allclose(
-                i_grc.to_decimal(_DENSITY_UNIT),
-                i_sc.to_decimal(_DENSITY_UNIT),
-                atol=1e-6,
-            )
+        assert_channels_agree(
+            self,
+            sc,
+            grc,
+            voltage([-75.0]),
+            k_info(),
+            states=("d",),
         )
 
 
@@ -1284,49 +1091,25 @@ class Kv1p1MA20GrCTest(unittest.TestCase):
         temp = u.celsius2kelvin(22.0)
         goc = Kv1p1_MA2020_GoC(size=1, temp=temp, gateCurrent=0.0)
         grc = Kv1p1_MA2020_GrC(size=1, temp=temp, gateCurrent=0.0)
-        V = _V([-60.0])
-        k = _k_info()
-
-        goc.init_state(V, k)
-        grc.init_state(V, k)
-        goc.reset_state(V, k)
-        grc.reset_state(V, k)
-        self.assertTrue(u.math.allclose(grc.n.value, goc.n.value, atol=1e-6))
-
-        goc.compute_derivative(V, k)
-        grc.compute_derivative(V, k)
-        self.assertTrue(u.math.allclose(grc.n.derivative, goc.n.derivative, atol=1e-6 * u.Hz))
-
-        i_goc = goc.current(V, k)
-        i_grc = grc.current(V, k)
-        self.assertTrue(
-            u.math.allclose(
-                i_grc.to_decimal(_DENSITY_UNIT),
-                i_goc.to_decimal(_DENSITY_UNIT),
-                atol=1e-6,
-            )
+        assert_channels_agree(
+            self,
+            goc,
+            grc,
+            voltage([-60.0]),
+            k_info(),
+            states=("n",),
         )
 
     def test_matches_goc_variant_with_gating_current(self) -> None:
         temp = u.celsius2kelvin(22.0)
         goc = Kv1p1_MA2020_GoC(size=1, temp=temp, gateCurrent=1.0)
         grc = Kv1p1_MA2020_GrC(size=1, temp=temp, gateCurrent=1.0)
-        V = _V([-50.0])
-        k = _k_info()
-
-        goc.init_state(V, k)
-        grc.init_state(V, k)
-        goc.reset_state(V, k)
-        grc.reset_state(V, k)
-
-        i_goc = goc.current(V, k)
-        i_grc = grc.current(V, k)
-        self.assertTrue(
-            u.math.allclose(
-                i_grc.to_decimal(_DENSITY_UNIT),
-                i_goc.to_decimal(_DENSITY_UNIT),
-                atol=1e-6,
-            )
+        assert_channels_agree(
+            self,
+            goc,
+            grc,
+            voltage([-50.0]),
+            k_info(),
         )
 
 
@@ -1336,8 +1119,8 @@ class Kv2p20010MA20GrCTest(unittest.TestCase):
 
     def test_reset_state_matches_inf_functions(self) -> None:
         ch = Kv2p2_0010_MA2020_GrC(size=1)
-        V = _V([-60.0])
-        k = _k_info()
+        V = voltage([-60.0])
+        k = k_info()
         ch.init_state(V, k)
         ch.reset_state(V, k)
         self.assertTrue(u.math.allclose(ch.m.value, ch.f_m_inf(V, k), atol=1e-6))
@@ -1345,8 +1128,8 @@ class Kv2p20010MA20GrCTest(unittest.TestCase):
 
     def test_current_matches_linear_formula(self) -> None:
         ch = Kv2p2_0010_MA2020_GrC(size=1)
-        V = _V([-40.0])
-        k = _k_info()
+        V = voltage([-40.0])
+        k = k_info()
         ch.init_state(V, k)
         ch.m.value = jnp.array([0.5])
         ch.h.value = jnp.array([0.25])
@@ -1354,16 +1137,16 @@ class Kv2p20010MA20GrCTest(unittest.TestCase):
         expected = ch.g_max * ch.m.value * ch.h.value * (k.E - V)
         self.assertTrue(
             u.math.allclose(
-                i.to_decimal(_DENSITY_UNIT),
-                expected.to_decimal(_DENSITY_UNIT),
+                i.to_decimal(DENSITY_UNIT),
+                expected.to_decimal(DENSITY_UNIT),
                 atol=1e-6,
             )
         )
 
     def test_tau_matches_mod_formula(self) -> None:
         ch = Kv2p2_0010_MA2020_GrC(size=1)
-        V = _V([-60.0])
-        k = _k_info()
+        V = voltage([-60.0])
+        k = k_info()
         v = V.to_decimal(u.mV)
         expected_m_tau = 130.0 / (1.0 + jnp.exp((v + 46.56) / -44.14))
         expected_h_tau = 10000.0 / (1.0 + jnp.exp((v + 46.56) / -44.14))
@@ -1376,29 +1159,13 @@ class Kv3p4MA20GrCTest(unittest.TestCase):
         temp = u.celsius2kelvin(22.0)
         goc = Kv3p4_MA2020_GoC(size=1, temp=temp)
         grc = Kv3p4_MA2020_GrC(size=1, temp=temp)
-        V = _V([-45.0])
-        k = _k_info()
-
-        goc.init_state(V, k)
-        grc.init_state(V, k)
-        goc.reset_state(V, k)
-        grc.reset_state(V, k)
-        self.assertTrue(u.math.allclose(grc.m.value, goc.m.value, atol=1e-6))
-        self.assertTrue(u.math.allclose(grc.h.value, goc.h.value, atol=1e-6))
-
-        goc.compute_derivative(V, k)
-        grc.compute_derivative(V, k)
-        self.assertTrue(u.math.allclose(grc.m.derivative, goc.m.derivative, atol=1e-6 * u.Hz))
-        self.assertTrue(u.math.allclose(grc.h.derivative, goc.h.derivative, atol=1e-6 * u.Hz))
-
-        i_goc = goc.current(V, k)
-        i_grc = grc.current(V, k)
-        self.assertTrue(
-            u.math.allclose(
-                i_grc.to_decimal(_DENSITY_UNIT),
-                i_goc.to_decimal(_DENSITY_UNIT),
-                atol=1e-6,
-            )
+        assert_channels_agree(
+            self,
+            goc,
+            grc,
+            voltage([-45.0]),
+            k_info(),
+            states=("m", "h"),
         )
 
 
@@ -1407,29 +1174,13 @@ class Kv4p3MA20GrCTest(unittest.TestCase):
         temp = u.celsius2kelvin(30.0)
         goc = Kv4p3_MA2020_GoC(size=1, temp=temp)
         grc = Kv4p3_MA2020_GrC(size=1)
-        V = _V([-55.0])
-        k = _k_info()
-
-        goc.init_state(V, k)
-        grc.init_state(V, k)
-        goc.reset_state(V, k)
-        grc.reset_state(V, k)
-        self.assertTrue(u.math.allclose(grc.a.value, goc.a.value, atol=1e-6))
-        self.assertTrue(u.math.allclose(grc.b.value, goc.b.value, atol=1e-6))
-
-        goc.compute_derivative(V, k)
-        grc.compute_derivative(V, k)
-        self.assertTrue(u.math.allclose(grc.a.derivative, goc.a.derivative, atol=1e-6 * u.Hz))
-        self.assertTrue(u.math.allclose(grc.b.derivative, goc.b.derivative, atol=1e-6 * u.Hz))
-
-        i_goc = goc.current(V, k)
-        i_grc = grc.current(V, k)
-        self.assertTrue(
-            u.math.allclose(
-                i_grc.to_decimal(_DENSITY_UNIT),
-                i_goc.to_decimal(_DENSITY_UNIT),
-                atol=1e-6,
-            )
+        assert_channels_agree(
+            self,
+            goc,
+            grc,
+            voltage([-55.0]),
+            k_info(),
+            states=("a", "b"),
         )
 
 
@@ -1438,49 +1189,25 @@ class Kv1p1RI21SCTest(unittest.TestCase):
         temp = u.celsius2kelvin(22.0)
         bc = Kv1p1_MA2025_BC(size=1, temp=temp, gateCurrent=0.0)
         sc = Kv1p1_RI2021_SC(size=1, temp=temp, gateCurrent=0.0)
-        V = _V([-60.0])
-        k = _k_info()
-
-        bc.init_state(V, k)
-        sc.init_state(V, k)
-        bc.reset_state(V, k)
-        sc.reset_state(V, k)
-        self.assertTrue(u.math.allclose(sc.n.value, bc.n.value, atol=1e-6))
-
-        bc.compute_derivative(V, k)
-        sc.compute_derivative(V, k)
-        self.assertTrue(u.math.allclose(sc.n.derivative, bc.n.derivative, atol=1e-6 * u.Hz))
-
-        i_bc = bc.current(V, k)
-        i_sc = sc.current(V, k)
-        self.assertTrue(
-            u.math.allclose(
-                i_sc.to_decimal(_DENSITY_UNIT),
-                i_bc.to_decimal(_DENSITY_UNIT),
-                atol=1e-6,
-            )
+        assert_channels_agree(
+            self,
+            bc,
+            sc,
+            voltage([-60.0]),
+            k_info(),
+            states=("n",),
         )
 
     def test_matches_bc_variant_with_gating_current(self) -> None:
         temp = u.celsius2kelvin(22.0)
         bc = Kv1p1_MA2025_BC(size=1, temp=temp, gateCurrent=1.0)
         sc = Kv1p1_RI2021_SC(size=1, temp=temp, gateCurrent=1.0)
-        V = _V([-50.0])
-        k = _k_info()
-
-        bc.init_state(V, k)
-        sc.init_state(V, k)
-        bc.reset_state(V, k)
-        sc.reset_state(V, k)
-
-        i_bc = bc.current(V, k)
-        i_sc = sc.current(V, k)
-        self.assertTrue(
-            u.math.allclose(
-                i_sc.to_decimal(_DENSITY_UNIT),
-                i_bc.to_decimal(_DENSITY_UNIT),
-                atol=1e-6,
-            )
+        assert_channels_agree(
+            self,
+            bc,
+            sc,
+            voltage([-50.0]),
+            k_info(),
         )
 
 
@@ -1489,29 +1216,13 @@ class Kv3p4RI21SCTest(unittest.TestCase):
         temp = u.celsius2kelvin(22.0)
         bc = Kv3p4_MA2025_BC(size=1, temp=temp)
         sc = Kv3p4_RI2021_SC(size=1, temp=temp)
-        V = _V([-45.0])
-        k = _k_info()
-
-        bc.init_state(V, k)
-        sc.init_state(V, k)
-        bc.reset_state(V, k)
-        sc.reset_state(V, k)
-        self.assertTrue(u.math.allclose(sc.m.value, bc.m.value, atol=1e-6))
-        self.assertTrue(u.math.allclose(sc.h.value, bc.h.value, atol=1e-6))
-
-        bc.compute_derivative(V, k)
-        sc.compute_derivative(V, k)
-        self.assertTrue(u.math.allclose(sc.m.derivative, bc.m.derivative, atol=1e-6 * u.Hz))
-        self.assertTrue(u.math.allclose(sc.h.derivative, bc.h.derivative, atol=1e-6 * u.Hz))
-
-        i_bc = bc.current(V, k)
-        i_sc = sc.current(V, k)
-        self.assertTrue(
-            u.math.allclose(
-                i_sc.to_decimal(_DENSITY_UNIT),
-                i_bc.to_decimal(_DENSITY_UNIT),
-                atol=1e-6,
-            )
+        assert_channels_agree(
+            self,
+            bc,
+            sc,
+            voltage([-45.0]),
+            k_info(),
+            states=("m", "h"),
         )
 
 
@@ -1520,29 +1231,13 @@ class Kv4p3RI21SCTest(unittest.TestCase):
         temp = u.celsius2kelvin(30.0)
         bc = Kv4p3_MA2025_BC(size=1, temp=temp)
         sc = Kv4p3_RI2021_SC(size=1, temp=temp)
-        V = _V([-55.0])
-        k = _k_info()
-
-        bc.init_state(V, k)
-        sc.init_state(V, k)
-        bc.reset_state(V, k)
-        sc.reset_state(V, k)
-        self.assertTrue(u.math.allclose(sc.a.value, bc.a.value, atol=1e-6))
-        self.assertTrue(u.math.allclose(sc.b.value, bc.b.value, atol=1e-6))
-
-        bc.compute_derivative(V, k)
-        sc.compute_derivative(V, k)
-        self.assertTrue(u.math.allclose(sc.a.derivative, bc.a.derivative, atol=1e-6 * u.Hz))
-        self.assertTrue(u.math.allclose(sc.b.derivative, bc.b.derivative, atol=1e-6 * u.Hz))
-
-        i_bc = bc.current(V, k)
-        i_sc = sc.current(V, k)
-        self.assertTrue(
-            u.math.allclose(
-                i_sc.to_decimal(_DENSITY_UNIT),
-                i_bc.to_decimal(_DENSITY_UNIT),
-                atol=1e-6,
-            )
+        assert_channels_agree(
+            self,
+            bc,
+            sc,
+            voltage([-55.0]),
+            k_info(),
+            states=("a", "b"),
         )
 
 
@@ -1552,31 +1247,31 @@ class KdrZH19IOTest(unittest.TestCase):
 
     def test_reset_state_matches_f_n_inf(self) -> None:
         ch = Kdr_ZH2019_IO(size=1)
-        V = _V([-60.0])
-        k = _k_info()
+        V = voltage([-60.0])
+        k = k_info()
         ch.init_state(V, k)
         ch.reset_state(V, k)
         self.assertTrue(u.math.allclose(ch.n.value, ch.f_n_inf(V, k), atol=1e-6))
 
     def test_current_matches_linear_formula(self) -> None:
         ch = Kdr_ZH2019_IO(size=1)
-        V = _V([-40.0])
-        k = _k_info()
+        V = voltage([-40.0])
+        k = k_info()
         ch.init_state(V, k)
         ch.n.value = jnp.array([0.5])
         i = ch.current(V, k)
         expected = ch.g_max * (ch.n.value**4) * (k.E - V)
         self.assertTrue(
             u.math.allclose(
-                i.to_decimal(_DENSITY_UNIT),
-                expected.to_decimal(_DENSITY_UNIT),
+                i.to_decimal(DENSITY_UNIT),
+                expected.to_decimal(DENSITY_UNIT),
                 atol=1e-6,
             )
         )
 
     def test_small_denominator_branch_is_stable(self) -> None:
         ch = Kdr_ZH2019_IO(size=1)
-        self.assertTrue(u.math.allclose(ch._n_alpha(_V([-41.0])), jnp.array([10.0]), atol=1e-6))
+        self.assertTrue(u.math.allclose(ch._n_alpha(voltage([-41.0])), jnp.array([10.0]), atol=1e-6))
 
     def test_rate_stays_accurate_just_off_the_singularity(self) -> None:
         # `x / (1 - exp(-x))` loses most of its float32 significand for
@@ -1585,7 +1280,7 @@ class KdrZH19IOTest(unittest.TestCase):
         # threshold, and compare against the analytic value `1 + x/2`.
         ch = Kdr_ZH2019_IO(size=1)
         offsets = jnp.array([-1.0e-3, -1.0e-5, 1.0e-5, 1.0e-3])
-        n_alpha = ch._n_alpha(_V(-41.0 + offsets))
+        n_alpha = ch._n_alpha(voltage(-41.0 + offsets))
         self.assertTrue(u.math.allclose(n_alpha, 10.0 * (1.0 + (offsets / 10.0) / 2.0), atol=1e-5))
 
 

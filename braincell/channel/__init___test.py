@@ -18,8 +18,8 @@
 Three concerns live here because all are properties of the package as a whole
 rather than of any single module: the docstring conformance sweep over every
 covered module, the re-export completeness of the explicit import block, and
-the ``__getattr__`` deprecation shim declared in
-``braincell/channel/__init__.py``.
+the agreement between each channel's class name and the key it is registered
+under.
 """
 
 import unittest
@@ -27,9 +27,9 @@ import unittest
 import pytest
 
 import braincell.channel as channel
+from braincell._base_channel import Channel
 from braincell._testing import DocstringConformanceTests
 from braincell.channel import (
-    _DEPRECATED_ALIASES,
     _base,
     calcium,
     hyperpolarization_activated,
@@ -39,6 +39,7 @@ from braincell.channel import (
     potassium_sodium,
     sodium,
 )
+from braincell.mech import get_registry
 
 # Extended by one module per docstring task. A module is listed only once
 # every one of its public symbols satisfies the shared assertions.
@@ -64,7 +65,11 @@ _NO_PRIMARY_SOURCE = frozenset(
         "Transition",
         "HH",
         "OhmicHH",
+        "GhkHH",
         "Markov",
+        "OhmicMarkov",
+        "freeze_gradient",
+        "q10_factor",
         "CaN_IS2008",
         "CaL_IS2008",
         "K_Leak",
@@ -82,7 +87,8 @@ class ChannelReExportTest(unittest.TestCase):
     """Guard the explicit re-export block against drift.
 
     ``braincell/channel/__init__.py`` builds ``__all__`` by concatenating
-    the submodules' own ``__all__`` but imports the names one by one.
+    the submodules' own ``__all__`` but imports the names one by one. The
+    two lists are the reason this guard exists.
     Adding a channel to a submodule's ``__all__`` without adding it to the
     matching import block would leave ``braincell.channel.__all__`` naming
     an attribute the package does not have -- which only fails at
@@ -104,21 +110,17 @@ class ChannelReExportTest(unittest.TestCase):
         self.assertEqual(sorted(expected - set(channel.__all__)), [])
 
 
-@pytest.mark.parametrize("old_name, new_name", sorted(_DEPRECATED_ALIASES.items()))
-def test_deprecated_alias_resolves_with_warning(old_name, new_name):
-    with pytest.warns(DeprecationWarning, match=new_name):
-        resolved = getattr(channel, old_name)
-    assert resolved is getattr(channel, new_name)
-
-
-def test_deprecated_names_absent_from_all():
-    for old_name in _DEPRECATED_ALIASES:
-        assert old_name not in channel.__all__
+def _registered_channel_classes():
+    """Return every channel class this package contributes to the registry."""
+    return [(name, cls) for name, cls in get_registry().items("channel") if getattr(channel, cls.__name__, None) is cls]
 
 
 @pytest.mark.parametrize(
     "name",
     [
+        "INa_HH1952",  # renamed: the leading ``I`` was dropped
+        "IKDR_Ba2002",
+        "ICaN_IS2008",
         "ICav12_Ma2020",  # ambiguous: split into region variants
         "Ih_HM1992",  # ambiguous: renamed to HCN_HM1992 family
         "INa_Rsg",  # removed, no successor
@@ -127,9 +129,45 @@ def test_deprecated_names_absent_from_all():
         "DoesNotExist",
     ],
 )
-def test_non_aliased_names_raise_attribute_error(name):
+def test_pre_normalization_names_raise_attribute_error(name):
+    """The old ``I``-prefixed spellings resolve to nothing.
+
+    They were carried by a ``__getattr__`` shim until this package's
+    simplification pass; the shim covered module attribute access only and
+    never the mechanism registry, which is the path the documented
+    ``mech.Channel("...")`` API uses.
+    """
     with pytest.raises(AttributeError):
         getattr(channel, name)
+
+
+class ChannelRegistryKeyTest(unittest.TestCase):
+    """Guard the ``@register_channel("Name")`` argument against drift.
+
+    Every channel in the catalogue is registered under its own class name, so
+    the string is pure duplication -- and a rename that updates the class but
+    not the decorator would leave ``mech.Channel("...")`` resolving to the
+    wrong mechanism, or to nothing, with no other signal.
+    """
+
+    def test_every_registry_key_matches_its_class_name(self):
+        mismatched = [(key, cls.__name__) for key, cls in _registered_channel_classes() if key != cls.__name__]
+        self.assertEqual(mismatched, [], f"registry keys that do not match their class: {mismatched}")
+
+    def test_every_public_channel_class_is_registered(self):
+        registered = {cls for _, cls in _registered_channel_classes()}
+        # The templates in ``_base`` and the abstract leak base are extension
+        # points, not mechanisms, so they are deliberately unregistered.
+        templates = set(_base.__all__) | {"LeakageChannel"}
+        missing = sorted(
+            name
+            for name in channel.__all__
+            if name not in templates
+            and isinstance(getattr(channel, name), type)
+            and issubclass(getattr(channel, name), Channel)
+            and getattr(channel, name) not in registered
+        )
+        self.assertEqual(missing, [], f"unregistered public channels: {missing}")
 
 
 if __name__ == "__main__":

@@ -19,15 +19,19 @@
 This module implements hyperpolarization-activated cation channel.
 """
 
-from typing import Optional
+from typing import ClassVar, Optional
 
 import braintools
 import brainunit as u
 
 from braincell._base_neuron import HHTypedNeuron
 from braincell._typing import ArrayLike, Initializer, Size
-from braincell.channel._base import Gate, HH, OhmicHH, q10_factor
+from braincell.channel._base import Gate, HH, OhmicHH, cached_q10_factor
 from braincell.mech import register_channel
+
+#: Hoisted so the identity-keyed memo in ``cached_q10_factor`` can hit:
+#: a freshly built ``celsius2kelvin`` result would miss on every call.
+_TEMP_REF_23C = u.celsius2kelvin(23.0)
 
 __all__ = [
     'HCN_HM1992',
@@ -84,11 +88,10 @@ class HCN_HM1992(OhmicHH):
 
     Notes
     -----
-    This class overrides :meth:`reversal_potential` to return
-    ``self.E`` instead of an ion's reversal potential, so the current
-    is driven against the fixed ``E`` parameter, not an ion state --
-    the correct closed form is ``g_max * p * (E - V)``, not
-    ``g_max * p`` alone.
+    ``root_type`` is :class:`~braincell.HHTypedNeuron`, so no ion
+    state is passed and :meth:`OhmicHH.reversal_potential` falls back
+    to the fixed ``E`` parameter: the current is
+    ``g_max * p * (E - V)``.
 
     References
     ----------
@@ -119,9 +122,6 @@ class HCN_HM1992(OhmicHH):
         self.temp = braintools.init.param(temp, self.varshape, allow_none=False)
         self.q10 = braintools.init.param(q10, self.varshape, allow_none=False)
         self.temp_ref = braintools.init.param(temp_ref, self.varshape, allow_none=False)
-
-    def reversal_potential(self, V, *ions):
-        return self.E
 
     def f_p_inf(self, V):
         V = V.to_decimal(u.mV)
@@ -328,9 +328,10 @@ class HCN1_MA2025_BC(OhmicHH):
 
     Notes
     -----
-    Ported from ``HCN1_MA25_BC.mod``. This class overrides
-    :meth:`reversal_potential` to return ``self.E`` instead of an
-    ion's reversal potential.
+    Ported from ``HCN1_MA25_BC.mod``. ``root_type`` is
+    :class:`~braincell.HHTypedNeuron`, so no ion state is passed and
+    :meth:`OhmicHH.reversal_potential` falls back to the fixed ``E``
+    parameter.
 
     ``HCN1_MA25_BC.mod`` inherits its comment verbatim from the
     ``HCN1_MA24_PC.mod`` Purkinje-cell port, including the note
@@ -388,9 +389,6 @@ class HCN1_MA2025_BC(OhmicHH):
         self.v_tau_half2_noljp = -68.0 * u.mV
         self.v_tau_k1 = -22.0 * u.mV
         self.v_tau_k2 = 7.14 * u.mV
-
-    def reversal_potential(self, V, *ions):
-        return self.E
 
     def f_h_inf(self, V):
         V = V.to_decimal(u.mV)
@@ -460,9 +458,10 @@ class HCN1_MA2024_PC(HCN1_MA2025_BC):
 
     Notes
     -----
-    Ported from ``HCN1_MA24_PC.mod``. This class overrides
-    :meth:`reversal_potential` to return ``self.E`` instead of an
-    ion's reversal potential.
+    Ported from ``HCN1_MA24_PC.mod``. ``root_type`` is
+    :class:`~braincell.HHTypedNeuron`, so no ion state is passed and
+    :meth:`OhmicHH.reversal_potential` falls back to the fixed ``E``
+    parameter.
 
     ``HCN1_MA24_PC.mod`` carries the comment "We call it HCN1 as PC
     express only HCN1 Santoro et al. 2000" -- correctly describing
@@ -551,9 +550,10 @@ class HCN1_RI2021_SC(HCN1_MA2025_BC):
 
     Notes
     -----
-    Ported from ``HCN1_RI21_SC.mod``. This class overrides
-    :meth:`reversal_potential` to return ``self.E`` instead of an
-    ion's reversal potential.
+    Ported from ``HCN1_RI21_SC.mod``. ``root_type`` is
+    :class:`~braincell.HHTypedNeuron`, so no ion state is passed and
+    :meth:`OhmicHH.reversal_potential` falls back to the fixed ``E``
+    parameter.
 
     ``HCN1_RI21_SC.mod`` carries the same inherited comment as the
     basket-cell port, "We call it HCN1 as PC express only HCN1
@@ -589,8 +589,127 @@ class HCN1_RI2021_SC(HCN1_MA2025_BC):
     __module__ = "braincell.channel"
 
 
+class _FastSlowHCN(HH):
+    r"""Two-gate fast/slow h-current template shared by the Golgi-cell isoforms.
+
+    ``HCN1_MA20_GoC.mod`` and ``HCN2_MA20_GoC.mod`` are the same mechanism
+    with a different constant table: two independent open-state gates,
+    ``o_fast`` and ``o_slow``, splitting one Boltzmann steady state by a
+    mixing fraction :math:`r(V)`,
+
+    .. math::
+
+        \begin{aligned}
+        I_h &= \phi_Q \, g_{\mathrm{max}} \,
+               (o_{\mathrm{fast}} + o_{\mathrm{slow}}) \, (E - V) \\
+        o_\infty(V) &= \frac{1}{1 + \exp((V - E_{1/2}) \, c)} \\
+        o_{\mathrm{fast},\infty} &= r(V) \, o_\infty(V) \\
+        o_{\mathrm{slow},\infty} &= (1 - r(V)) \, o_\infty(V) \\
+        \tau_{\mathrm{fast}} &= \exp((t_{Cf} V - t_{Df}) \, t_{Ef}) \\
+        \tau_{\mathrm{slow}} &= \exp((t_{Cs} V - t_{Ds}) \, t_{Es})
+        \end{aligned}
+
+    with :math:`\phi_Q = Q_{10}^{(T - 23^{\circ}\mathrm{C}) / 10}`. Only
+    :math:`r(V)` and the constant table below vary between isoforms, so
+    subclasses override those and nothing else.
+
+    This template subclasses :class:`HH` directly, not :class:`OhmicHH`,
+    because :meth:`current` sums two gate values and applies :math:`\phi_Q`
+    to ``g_max`` rather than taking a single ``power``-weighted product.
+
+    Parameters
+    ----------
+    size : brainstate.typing.Size
+        Channel state shape.
+    g_max : array-like or callable
+        Maximal conductance density. No default: each isoform supplies its
+        own.
+    E : array-like or callable, optional
+        Reversal potential, default ``-20.0 mV``.
+    temp : array-like, optional
+        Absolute temperature driving both the gate Q10 factors and
+        :math:`\phi_Q`, default 22 degrees Celsius.
+    name : str, optional
+        Optional channel name.
+
+    See Also
+    --------
+    HCN1_MA2020_GoC : Isoform with an unclamped :math:`r(V)`.
+    HCN2_MA2020_GoC : Isoform with :math:`r(V)` clamped to ``{0, 1}``.
+
+    Notes
+    -----
+    The eleven kinetic constants are class attributes rather than
+    constructor parameters because neither ``.mod`` file exposes them as
+    ``RANGE`` variables. ``Q10_diff`` is the one value both isoforms share.
+    """
+
+    root_type = HHTypedNeuron
+    gates = (
+        Gate("o_fast", q10=3.0, temp_ref=_TEMP_REF_23C),
+        Gate("o_slow", q10=3.0, temp_ref=_TEMP_REF_23C),
+    )
+
+    Q10_diff: ClassVar[float] = 1.5
+    #: Boltzmann half-activation in mV and its slope in 1/mV.
+    Ehalf: ClassVar[float]
+    c: ClassVar[float]
+    #: Slope (1/mV) and intercept of the linear part of ``r(V)``.
+    rA: ClassVar[float]
+    rB: ClassVar[float]
+    #: Fast and slow time-constant exponent triples.
+    tCf: ClassVar[float]
+    tDf: ClassVar[float]
+    tEf: ClassVar[float]
+    tCs: ClassVar[float]
+    tDs: ClassVar[float]
+    tEs: ClassVar[float]
+
+    def __init__(
+        self,
+        size: Size,
+        g_max: Initializer,
+        E: Initializer = -20.0 * u.mV,
+        temp: ArrayLike = u.celsius2kelvin(22.0),
+        name: Optional[str] = None,
+    ):
+        super().__init__(size=size, name=name)
+        self.g_max = braintools.init.param(g_max, self.varshape, allow_none=False)
+        self.E = braintools.init.param(E, self.varshape, allow_none=False)
+        self.temp = braintools.init.param(temp, self.varshape, allow_none=False)
+
+    def current(self, V):
+        o = self.o_fast.value + self.o_slow.value
+        return self._gbar_phi() * self.g_max * o * (self.E - V)
+
+    def _gbar_phi(self):
+        return cached_q10_factor(self, "_gbar_phi_memo", self.Q10_diff, self.temp, _TEMP_REF_23C)
+
+    def o_inf(self, V):
+        V = V.to_decimal(u.mV)
+        return 1.0 / (1.0 + u.math.exp((V - self.Ehalf) * self.c))
+
+    def r(self, V):
+        """Return the fast/slow mixing fraction. Overridden by every isoform."""
+        raise NotImplementedError
+
+    def f_o_fast_inf(self, V):
+        return self.r(V) * self.o_inf(V)
+
+    def f_o_slow_inf(self, V):
+        return (1.0 - self.r(V)) * self.o_inf(V)
+
+    def f_o_fast_tau(self, V):
+        V = V.to_decimal(u.mV)
+        return u.math.exp(((self.tCf * V) - self.tDf) * self.tEf)
+
+    def f_o_slow_tau(self, V):
+        V = V.to_decimal(u.mV)
+        return u.math.exp(((self.tCs * V) - self.tDs) * self.tEs)
+
+
 @register_channel("HCN1_MA2020_GoC")
-class HCN1_MA2020_GoC(HH):
+class HCN1_MA2020_GoC(_FastSlowHCN):
     r"""HCN1 fast/slow h-current imported for the Golgi cell model.
 
     Ports the two-gate NEURON mechanism ``HCN1_MA20_GoC.mod`` used
@@ -624,13 +743,12 @@ class HCN1_MA2020_GoC(HH):
     gates additionally carry ``q10=3.0``, ``temp_ref=23`` degrees
     Celsius on their own state relaxation, independent of the
     :math:`\phi_Q` conductance prefactor above. All eleven constants
-    are fixed internal values set in ``__init__``; they are not
+    are class attributes on :class:`_FastSlowHCN`; they are not
     exposed as parameters.
 
-    This class subclasses :class:`HH` directly, not
-    :class:`OhmicHH`, because :meth:`current` sums two gate values
-    before applying the driving force rather than taking a single
-    ``power``-weighted product.
+    Only the eleven constants and the unclamped :meth:`r` differ from
+    the shared :class:`_FastSlowHCN` template, which carries the
+    gates, the constructor and every other formula.
 
     Parameters
     ----------
@@ -691,11 +809,17 @@ class HCN1_MA2020_GoC(HH):
     """
 
     __module__ = "braincell.channel"
-    root_type = HHTypedNeuron
-    gates = (
-        Gate("o_fast", q10=3.0, temp_ref=u.celsius2kelvin(23.0)),
-        Gate("o_slow", q10=3.0, temp_ref=u.celsius2kelvin(23.0)),
-    )
+
+    Ehalf = -72.49
+    c = 0.11305
+    rA = 0.002096
+    rB = 0.97596
+    tCf = 0.01371
+    tDf = -3.368
+    tEf = 2.30259
+    tCs = 0.01451
+    tDs = -4.056
+    tEs = 2.30259
 
     def __init__(
         self,
@@ -705,55 +829,15 @@ class HCN1_MA2020_GoC(HH):
         temp: ArrayLike = u.celsius2kelvin(22.0),
         name: Optional[str] = None,
     ):
-        super().__init__(size=size, name=name)
-        self.g_max = braintools.init.param(g_max, self.varshape, allow_none=False)
-        self.E = braintools.init.param(E, self.varshape, allow_none=False)
-        self.temp = braintools.init.param(temp, self.varshape, allow_none=False)
-        self.Q10_diff = 1.5
-        self.Ehalf = -72.49
-        self.c = 0.11305
-        self.rA = 0.002096
-        self.rB = 0.97596
-        self.tCf = 0.01371
-        self.tDf = -3.368
-        self.tEf = 2.30259
-        self.tCs = 0.01451
-        self.tDs = -4.056
-        self.tEs = 2.30259
-
-    def current(self, V):
-        o = self.o_fast.value + self.o_slow.value
-        return self._gbar_phi() * self.g_max * o * (self.E - V)
-
-    def _gbar_phi(self):
-        temp_ref = u.celsius2kelvin(23.0)
-        return q10_factor(self.Q10_diff, self.temp, temp_ref)
-
-    def o_inf(self, V):
-        V = V.to_decimal(u.mV)
-        return 1.0 / (1.0 + u.math.exp((V - self.Ehalf) * self.c))
+        super().__init__(size=size, g_max=g_max, E=E, temp=temp, name=name)
 
     def r(self, V):
         V = V.to_decimal(u.mV)
         return self.rA * V + self.rB
 
-    def f_o_fast_inf(self, V):
-        return self.r(V) * self.o_inf(V)
-
-    def f_o_slow_inf(self, V):
-        return (1.0 - self.r(V)) * self.o_inf(V)
-
-    def f_o_fast_tau(self, V):
-        V = V.to_decimal(u.mV)
-        return u.math.exp(((self.tCf * V) - self.tDf) * self.tEf)
-
-    def f_o_slow_tau(self, V):
-        V = V.to_decimal(u.mV)
-        return u.math.exp(((self.tCs * V) - self.tDs) * self.tEs)
-
 
 @register_channel("HCN2_MA2020_GoC")
-class HCN2_MA2020_GoC(HH):
+class HCN2_MA2020_GoC(_FastSlowHCN):
     r"""HCN2 fast/slow h-current imported for the Golgi cell model.
 
     Ports the two-gate NEURON mechanism ``HCN2_MA20_GoC.mod`` used
@@ -790,13 +874,12 @@ class HCN2_MA2020_GoC(HH):
     additionally carry ``q10=3.0``, ``temp_ref=23`` degrees Celsius
     on their own state relaxation, independent of the
     :math:`\phi_Q` conductance prefactor above. All eleven constants
-    are fixed internal values set in ``__init__``; they are not
+    are class attributes on :class:`_FastSlowHCN`; they are not
     exposed as parameters.
 
-    This class subclasses :class:`HH` directly, not
-    :class:`OhmicHH`, because :meth:`current` sums two gate values
-    before applying the driving force rather than taking a single
-    ``power``-weighted product.
+    Only the eleven constants and the clamped :meth:`r` differ from
+    the shared :class:`_FastSlowHCN` template, which carries the
+    gates, the constructor and every other formula.
 
     Parameters
     ----------
@@ -855,11 +938,17 @@ class HCN2_MA2020_GoC(HH):
     """
 
     __module__ = "braincell.channel"
-    root_type = HHTypedNeuron
-    gates = (
-        Gate("o_fast", q10=3.0, temp_ref=u.celsius2kelvin(23.0)),
-        Gate("o_slow", q10=3.0, temp_ref=u.celsius2kelvin(23.0)),
-    )
+
+    Ehalf = -81.95
+    c = 0.1661
+    rA = -0.0227
+    rB = -1.4694
+    tCf = 0.0269
+    tDf = -5.6111
+    tEf = 2.3026
+    tCs = 0.0152
+    tDs = -5.2944
+    tEs = 2.3026
 
     def __init__(
         self,
@@ -869,33 +958,7 @@ class HCN2_MA2020_GoC(HH):
         temp: ArrayLike = u.celsius2kelvin(22.0),
         name: Optional[str] = None,
     ):
-        super().__init__(size=size, name=name)
-        self.g_max = braintools.init.param(g_max, self.varshape, allow_none=False)
-        self.E = braintools.init.param(E, self.varshape, allow_none=False)
-        self.temp = braintools.init.param(temp, self.varshape, allow_none=False)
-        self.Q10_diff = 1.5
-        self.Ehalf = -81.95
-        self.c = 0.1661
-        self.rA = -0.0227
-        self.rB = -1.4694
-        self.tCf = 0.0269
-        self.tDf = -5.6111
-        self.tEf = 2.3026
-        self.tCs = 0.0152
-        self.tDs = -5.2944
-        self.tEs = 2.3026
-
-    def current(self, V):
-        o = self.o_fast.value + self.o_slow.value
-        return self._gbar_phi() * self.g_max * o * (self.E - V)
-
-    def _gbar_phi(self):
-        temp_ref = u.celsius2kelvin(23.0)
-        return q10_factor(self.Q10_diff, self.temp, temp_ref)
-
-    def o_inf(self, V):
-        V = V.to_decimal(u.mV)
-        return 1.0 / (1.0 + u.math.exp((V - self.Ehalf) * self.c))
+        super().__init__(size=size, g_max=g_max, E=E, temp=temp, name=name)
 
     def r(self, V):
         V = V.to_decimal(u.mV)
@@ -908,20 +971,6 @@ class HCN2_MA2020_GoC(HH):
                 self.rA * V + self.rB,
             ),
         )
-
-    def f_o_fast_inf(self, V):
-        return self.r(V) * self.o_inf(V)
-
-    def f_o_slow_inf(self, V):
-        return (1.0 - self.r(V)) * self.o_inf(V)
-
-    def f_o_fast_tau(self, V):
-        V = V.to_decimal(u.mV)
-        return u.math.exp(((self.tCf * V) - self.tDf) * self.tEf)
-
-    def f_o_slow_tau(self, V):
-        V = V.to_decimal(u.mV)
-        return u.math.exp(((self.tCs * V) - self.tDs) * self.tEs)
 
 
 @register_channel("HCN_SU2015_DCN")
@@ -957,10 +1006,11 @@ class HCN_SU2015_DCN(OhmicHH):
 
     Notes
     -----
-    This class overrides :meth:`reversal_potential` to return
-    ``self.E`` instead of an ion's reversal potential. The ``m``
-    gate carries no ``q10``/``phi``, so :meth:`HH.gate_phi` resolves
-    to the default ``1.0``.
+    ``root_type`` is :class:`~braincell.HHTypedNeuron`, so no ion
+    state is passed and :meth:`OhmicHH.reversal_potential` falls back
+    to the fixed ``E`` parameter. The ``m`` gate carries no
+    ``q10``/``phi``, so :meth:`HH.gate_phi` resolves to the default
+    ``1.0``.
 
     Ported from ``HCN_SU15_DCN.mod``. Its kinetics belong to the
     deep cerebellar nucleus model of Steuber et al. (2011) [1]_,
@@ -1011,9 +1061,6 @@ class HCN_SU2015_DCN(OhmicHH):
         self.g_max = braintools.init.param(g_max, self.varshape, allow_none=False)
         self.E = braintools.init.param(E, self.varshape, allow_none=False)
         self.qdeltat = 1.0
-
-    def reversal_potential(self, V, *ions):
-        return self.E
 
     def f_m_inf(self, V):
         V = V.to_decimal(u.mV)
@@ -1121,9 +1168,6 @@ class HCN_ZH2019_IO(OhmicHH):
         super().__init__(size=size, name=name)
         self.g_max = braintools.init.param(g_max, self.varshape, allow_none=False)
         self.E = braintools.init.param(E, self.varshape, allow_none=False)
-
-    def reversal_potential(self, V, *ions):
-        return self.E
 
     def f_q_inf(self, V):
         V = V.to_decimal(u.mV)

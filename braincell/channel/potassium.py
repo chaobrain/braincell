@@ -22,11 +22,15 @@ from typing import Optional
 import braintools
 import brainunit as u
 
-from braincell._base_channel import Channel, IonInfo
+from braincell._base_channel import IonInfo
 from braincell._typing import ArrayLike, Initializer, Size
-from braincell.channel._base import Gate, HH, OhmicHH, q10_factor
+from braincell.channel._base import Gate, HH, OhmicHH, cached_q10_factor, is_disabled
 from braincell.ion import Potassium
 from braincell.mech import register_channel
+
+#: Hoisted so the identity-keyed memo in ``cached_q10_factor`` can hit:
+#: a freshly built ``celsius2kelvin`` result would miss on every call.
+_TEMP_REF_37C = u.celsius2kelvin(37.0)
 
 __all__ = [
     "KDR_Ba2002",
@@ -72,6 +76,47 @@ __all__ = [
 
 def _sigm(x, y):
     return 1.0 / (u.math.exp(x / y) + 1.0)
+
+
+class _ExpRateGateCurrent:
+    r"""Exponential alpha/beta gating with NMODL's optional gating-current term.
+
+    ``Kv1p1_MA25_BC.mod`` and ``Kv3p3_MA24_PC.mod`` transcribe the same RIKEN
+    construction and differ only in the six rate constants and :math:`z_n`,
+    which each class sets in its own constructor -- so the code is shared
+    through this mixin rather than by making one protein a subclass of the
+    other.
+
+    Users of the mixin must define ``ca``, ``cva``, ``cka``, ``cb``, ``cvb``,
+    ``ckb``, ``zn``, ``gunit``, ``e0`` and ``gateCurrent``, and declare a
+    single ``n`` gate in alpha/beta form.
+    """
+
+    def f_n_alpha(self, V, K: IonInfo):
+        V = V.to_decimal(u.mV)
+        return self.ca * u.math.exp(-(V + self.cva.to_decimal(u.mV)) / self.cka.to_decimal(u.mV))
+
+    def f_n_beta(self, V, K: IonInfo):
+        V = V.to_decimal(u.mV)
+        return self.cb * u.math.exp(-(V + self.cvb.to_decimal(u.mV)) / self.ckb.to_decimal(u.mV))
+
+    def current(self, V, K: IonInfo):
+        conductive = self.g_max * self.conductance_factor(V, K) * (K.E - V)
+        if is_disabled(self.gateCurrent):
+            # The shipped default. NEURON emits the gating current as a
+            # separate NONSPECIFIC_CURRENT that this term folds in; when it is
+            # off, building it costs ~12 traced equations that the
+            # ``u.math.where`` below would then discard. A traced flag takes
+            # the slow path, so the choice never depends on an unknown value.
+            return conductive
+        phi = self.gate_phi(self._iter_gates()[0])
+        n = self.n.value
+        alpha = self.f_n_alpha(V, K)
+        beta = self.f_n_beta(V, K)
+        ngate_flip = phi * (alpha * (1.0 - n) - beta * n) / u.ms
+        nc = 1e12 * self.g_max / self.gunit
+        igate = nc * 1e6 * self.e0 * 4.0 * self.zn * ngate_flip
+        return conductive - u.math.where(self.gateCurrent != 0, igate, 0.0 * igate)
 
 
 @register_channel("KDR_Ba2002")
@@ -594,7 +639,7 @@ class KA1_HM1992(OhmicHH):
 
 
 @register_channel("KA2_HM1992")
-class KA2_HM1992(OhmicHH):
+class KA2_HM1992(KA1_HM1992):
     r"""Huguenard & McCormick 1992 A-type potassium current (IA2).
 
     The second of the two components into which (Huguenard &
@@ -696,11 +741,6 @@ class KA2_HM1992(OhmicHH):
     """
 
     __module__ = "braincell.channel"
-    root_type = Potassium
-    gates = (
-        Gate("p", power=4, q10="q10_p", temp_ref="temp_ref_p"),
-        Gate("q", q10="q10_q", temp_ref="temp_ref_q"),
-    )
 
     def __init__(
         self,
@@ -714,34 +754,23 @@ class KA2_HM1992(OhmicHH):
         V_sh: Initializer = 0.0 * u.mV,
         name: Optional[str] = None,
     ):
-        super().__init__(size=size, name=name)
-        self.g_max = braintools.init.param(g_max, self.varshape, allow_none=False)
-        self.temp = braintools.init.param(temp, self.varshape, allow_none=False)
-        self.q10_p = braintools.init.param(q10_p, self.varshape, allow_none=False)
-        self.temp_ref_p = braintools.init.param(temp_ref_p, self.varshape, allow_none=False)
-        self.q10_q = braintools.init.param(q10_q, self.varshape, allow_none=False)
-        self.temp_ref_q = braintools.init.param(temp_ref_q, self.varshape, allow_none=False)
-        self.V_sh = braintools.init.param(V_sh, self.varshape, allow_none=False)
+        # Everything but ``f_p_inf`` and ``g_max``'s default is
+        # ``KA1_HM1992``'s; the signature is re-declared to move the default.
+        super().__init__(
+            size=size,
+            g_max=g_max,
+            temp=temp,
+            q10_p=q10_p,
+            temp_ref_p=temp_ref_p,
+            q10_q=q10_q,
+            temp_ref_q=temp_ref_q,
+            V_sh=V_sh,
+            name=name,
+        )
 
     def f_p_inf(self, V, K: IonInfo):
         temp = (V - self.V_sh).to_decimal(u.mV)
         return 1.0 / (1.0 + u.math.exp(-(temp + 36.0) / 20.0))
-
-    def f_p_tau(self, V, K: IonInfo):
-        temp = (V - self.V_sh).to_decimal(u.mV)
-        return 1.0 / (u.math.exp((temp + 35.8) / 19.7) + u.math.exp(-(temp + 79.7) / 12.7)) + 0.37
-
-    def f_q_inf(self, V, K: IonInfo):
-        temp = (V - self.V_sh).to_decimal(u.mV)
-        return 1.0 / (1.0 + u.math.exp((temp + 78.0) / 6.0))
-
-    def f_q_tau(self, V, K: IonInfo):
-        temp = (V - self.V_sh).to_decimal(u.mV)
-        return u.math.where(
-            temp < -63.0,
-            1.0 / (u.math.exp((temp + 46.0) / 5.0) + u.math.exp(-(temp + 238.0) / 37.5)),
-            19.0,
-        )
 
 
 @register_channel("KK2A_HM1992")
@@ -879,7 +908,7 @@ class KK2A_HM1992(OhmicHH):
 
 
 @register_channel("KK2B_HM1992")
-class KK2B_HM1992(OhmicHH):
+class KK2B_HM1992(KK2A_HM1992):
     r"""Huguenard & McCormick 1992 slow potassium current (IK2b).
 
     The second of the two components into which (Huguenard &
@@ -976,44 +1005,6 @@ class KK2B_HM1992(OhmicHH):
     """
 
     __module__ = "braincell.channel"
-    root_type = Potassium
-    gates = (
-        Gate("p", q10="q10_p", temp_ref="temp_ref_p"),
-        Gate("q", q10="q10_q", temp_ref="temp_ref_q"),
-    )
-
-    def __init__(
-        self,
-        size: Size,
-        g_max: Initializer = 10.0 * (u.mS / u.cm**2),
-        temp: ArrayLike = u.celsius2kelvin(36.0),
-        q10_p: Initializer = 1.0,
-        temp_ref_p: ArrayLike = u.celsius2kelvin(36.0),
-        q10_q: Initializer = 1.0,
-        temp_ref_q: ArrayLike = u.celsius2kelvin(36.0),
-        V_sh: Initializer = 0.0 * u.mV,
-        name: Optional[str] = None,
-    ):
-        super().__init__(size=size, name=name)
-        self.g_max = braintools.init.param(g_max, self.varshape, allow_none=False)
-        self.temp = braintools.init.param(temp, self.varshape, allow_none=False)
-        self.q10_p = braintools.init.param(q10_p, self.varshape, allow_none=False)
-        self.temp_ref_p = braintools.init.param(temp_ref_p, self.varshape, allow_none=False)
-        self.q10_q = braintools.init.param(q10_q, self.varshape, allow_none=False)
-        self.temp_ref_q = braintools.init.param(temp_ref_q, self.varshape, allow_none=False)
-        self.V_sh = braintools.init.param(V_sh, self.varshape, allow_none=False)
-
-    def f_p_inf(self, V, K: IonInfo):
-        temp = (V - self.V_sh).to_decimal(u.mV)
-        return 1.0 / (1.0 + u.math.exp(-(temp + 43.0) / 17.0))
-
-    def f_p_tau(self, V, K: IonInfo):
-        temp = (V - self.V_sh).to_decimal(u.mV)
-        return 1.0 / (u.math.exp((temp - 81.0) / 25.6) + u.math.exp(-(temp + 132.0) / 18.0)) + 9.9
-
-    def f_q_inf(self, V, K: IonInfo):
-        temp = (V - self.V_sh).to_decimal(u.mV)
-        return 1.0 / (1.0 + u.math.exp((temp + 58.0) / 10.6))
 
     def f_q_tau(self, V, K: IonInfo):
         temp = (V - self.V_sh).to_decimal(u.mV)
@@ -1147,7 +1138,7 @@ class KNI_Ya1989(OhmicHH):
 
 
 @register_channel("K_Leak")
-class K_Leak(Channel):
+class K_Leak(OhmicHH):
     r"""Potassium leak current.
 
     A voltage-independent, always-open potassium conductance:
@@ -1195,6 +1186,9 @@ class K_Leak(Channel):
 
     __module__ = "braincell.channel"
     root_type = Potassium
+    #: No gating variables: the empty tuple makes ``conductance_factor``
+    #: return 1 and turns the whole lifecycle into the template's no-ops.
+    gates = ()
 
     def __init__(
         self,
@@ -1204,18 +1198,6 @@ class K_Leak(Channel):
     ):
         super().__init__(size=size, name=name)
         self.g_max = braintools.init.param(g_max, self.varshape, allow_none=False)
-
-    def init_state(self, V, K: IonInfo, batch_size: int = None):
-        _ = (V, K, batch_size)
-
-    def reset_state(self, V, K: IonInfo, batch_size: int = None):
-        _ = (V, K, batch_size)
-
-    def compute_derivative(self, V, K: IonInfo):
-        pass
-
-    def current(self, V, K: IonInfo):
-        return self.g_max * (K.E - V)
 
 
 @register_channel("K_Kv_test")
@@ -1465,7 +1447,7 @@ class fKdr_SU2015_DCN(OhmicHH):
 
 
 @register_channel("sKdr_SU2015_DCN")
-class sKdr_SU2015_DCN(OhmicHH):
+class sKdr_SU2015_DCN(fKdr_SU2015_DCN):
     r"""Slow delayed rectifier of the DCN model (Sudhakar 2015).
 
     The slow delayed-rectifier potassium current of the deep
@@ -1554,18 +1536,6 @@ class sKdr_SU2015_DCN(OhmicHH):
     """
 
     __module__ = "braincell.channel"
-    root_type = Potassium
-    gates = (Gate("m", power=4),)
-
-    def __init__(
-        self,
-        size: Size,
-        g_max: Initializer = 0.01 * (u.mS / u.cm**2),
-        name: Optional[str] = None,
-    ):
-        super().__init__(size=size, name=name)
-        self.g_max = braintools.init.param(g_max, self.varshape, allow_none=False)
-        self.qdeltat = 1.0
 
     def f_m_inf(self, V, K: IonInfo):
         V = V.to_decimal(u.mV)
@@ -2120,7 +2090,7 @@ class Kir2p3_RI2021_SC(Kir2p3_MA2025_BC):
 
 
 @register_channel("Kv1p1_MA2025_BC")
-class Kv1p1_MA2025_BC(HH):
+class Kv1p1_MA2025_BC(_ExpRateGateCurrent, HH):
     r"""Kv1.1 low-threshold potassium current of the basket cell model.
 
     Non-inactivating, low-threshold potassium current carried by Kv1.1
@@ -2278,25 +2248,6 @@ class Kv1p1_MA2025_BC(HH):
         self.ckb = 12.42101 * u.mV
         self.zn = 2.7978
         self.e0 = 1.60217646e-19 * u.coulomb
-
-    def f_n_alpha(self, V, K: IonInfo):
-        V = V.to_decimal(u.mV)
-        return self.ca * u.math.exp(-(V + self.cva.to_decimal(u.mV)) / self.cka.to_decimal(u.mV))
-
-    def f_n_beta(self, V, K: IonInfo):
-        V = V.to_decimal(u.mV)
-        return self.cb * u.math.exp(-(V + self.cvb.to_decimal(u.mV)) / self.ckb.to_decimal(u.mV))
-
-    def current(self, V, K: IonInfo):
-        conductive = self.g_max * self.conductance_factor(V, K) * (K.E - V)
-        phi = self.gate_phi(self._iter_gates()[0])
-        n = self.n.value
-        alpha = self.f_n_alpha(V, K)
-        beta = self.f_n_beta(V, K)
-        ngate_flip = phi * (alpha * (1.0 - n) - beta * n) / u.ms
-        nc = 1e12 * self.g_max / self.gunit
-        igate = nc * 1e6 * self.e0 * 4.0 * self.zn * ngate_flip
-        return conductive - u.math.where(self.gateCurrent != 0, igate, 0.0 * igate)
 
 
 @register_channel("Kv1p1_MA2024_PC")
@@ -2742,7 +2693,7 @@ class Kv1p5_MA2024_PC(HH):
         return self.g_max * self._voltage_factor(V) * self.conductance_factor(V, K) * (K.E - V)
 
     def _q10(self):
-        return q10_factor(2.2, self.temp, u.celsius2kelvin(37.0))
+        return cached_q10_factor(self, "_q10_memo", 2.2, self.temp, _TEMP_REF_37C)
 
     def _voltage_factor(self, V):
         V = V.to_decimal(u.mV)
@@ -2777,7 +2728,7 @@ class Kv1p5_MA2024_PC(HH):
 
 
 @register_channel("Kv3p3_MA2024_PC")
-class Kv3p3_MA2024_PC(HH):
+class Kv3p3_MA2024_PC(_ExpRateGateCurrent, HH):
     r"""Kv3.3 high-threshold potassium current of the Purkinje model.
 
     Fast-activating, non-inactivating high-threshold potassium
@@ -2944,25 +2895,6 @@ class Kv3p3_MA2024_PC(HH):
         self.ckb = 26.5 * u.mV
         self.zn = 1.9196
         self.e0 = 1.60217646e-19 * u.coulomb
-
-    def f_n_alpha(self, V, K: IonInfo):
-        V = V.to_decimal(u.mV)
-        return self.ca * u.math.exp(-(V + self.cva.to_decimal(u.mV)) / self.cka.to_decimal(u.mV))
-
-    def f_n_beta(self, V, K: IonInfo):
-        V = V.to_decimal(u.mV)
-        return self.cb * u.math.exp(-(V + self.cvb.to_decimal(u.mV)) / self.ckb.to_decimal(u.mV))
-
-    def current(self, V, K: IonInfo):
-        conductive = self.g_max * self.conductance_factor(V, K) * (K.E - V)
-        phi = self.gate_phi(self._iter_gates()[0])
-        n = self.n.value
-        alpha = self.f_n_alpha(V, K)
-        beta = self.f_n_beta(V, K)
-        ngate_flip = phi * (alpha * (1.0 - n) - beta * n) / u.ms
-        nc = 1e12 * self.g_max / self.gunit
-        igate = nc * 1e6 * self.e0 * 4.0 * self.zn * ngate_flip
-        return conductive - u.math.where(self.gateCurrent != 0, igate, 0.0 * igate)
 
 
 @register_channel("Kv3p4_MA2025_BC")
@@ -4956,10 +4888,6 @@ class Kv2p2_0010_MA2020_GrC(OhmicHH):
         Maximal conductance density. Defaults to ``0.01 mS/cm2``,
         which is exactly the source mechanism's
         ``gKv2_2bar = 0.00001 S/cm2``.
-    BBiD : array-like or callable, optional
-        Channelpedia ion-channel identifier, default ``10.0``
-        (dimensionless). This is inert metadata, not a kinetic
-        parameter; see the note below.
     name : str, optional
         Optional channel name.
 
@@ -4980,9 +4908,10 @@ class Kv2p2_0010_MA2020_GrC(OhmicHH):
 
     **``BBiD`` is metadata, not a parameter of the model.** In the
     ``.mod`` file ``BBiD = 10`` is declared ``RANGE`` but never
-    appears in any equation, and BrainCell likewise stores it and
-    never reads it. It is the Channelpedia identifier for Kv2.2 (gene
-    *KCNB2*), and it is also the ``0010`` embedded in the class name.
+    appears in any equation, so BrainCell does not expose it: a
+    constructor argument that is stored and never read is a trap. It
+    is the Channelpedia identifier for Kv2.2 (gene *KCNB2*), and it is
+    also the ``0010`` embedded in the class name.
 
     **How this mechanism was produced.** The ``.mod`` file is machine
     generated, not hand written: its version-control keywords name the
@@ -5040,12 +4969,10 @@ class Kv2p2_0010_MA2020_GrC(OhmicHH):
         self,
         size: Size,
         g_max: Initializer = 0.01 * (u.mS / u.cm**2),
-        BBiD: Initializer = 10.0,
         name: Optional[str] = None,
     ):
         super().__init__(size=size, name=name)
         self.g_max = braintools.init.param(g_max, self.varshape, allow_none=False)
-        self.BBiD = braintools.init.param(BBiD, self.varshape, allow_none=False)
 
     def f_m_inf(self, V, K: IonInfo):
         V = V.to_decimal(u.mV)

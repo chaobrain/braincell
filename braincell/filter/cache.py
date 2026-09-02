@@ -19,8 +19,6 @@
 from dataclasses import dataclass, field
 from typing import Callable
 
-from brainunit import Quantity
-
 __all__ = ["SelectionCache", "evaluate_cached"]
 
 _MISS = object()
@@ -30,13 +28,7 @@ _MISS = object()
 class SelectionCache:
     """Scratch space threaded through a whole selection expression tree.
 
-    The three dictionaries are **reserved** for the region and locset types
-    that still raise ``NotImplementedError`` (:class:`RadiusRangeRegion`,
-    :class:`TreeDistanceRegion`, :class:`EuclideanDistanceRegion`,
-    :class:`SubtreeRegion`, :class:`StepSamples`); nothing populates them
-    yet.
-
-    What *is* live is sub-expression memoization: :meth:`evaluated` lets a
+    Sub-expression memoization is the whole of it: :meth:`evaluated` lets a
     composite reuse an operand's mask instead of walking the morphology
     again, so ``(A | B) & (A | C)`` evaluates ``A`` once rather than twice.
 
@@ -44,13 +36,18 @@ class SelectionCache:
     -----
     Memoized entries are valid only for the morphology and structural
     revision they were produced from. Handing the same cache to a second
-    morphology, or reusing it after :meth:`Morpho.attach`, drops the stored
-    masks rather than returning a stale answer.
+    morphology, or reusing it after :meth:`Morphology.attach`, drops the
+    stored masks rather than returning a stale answer.
+
+    This class previously also carried ``tree_distance_to_root``,
+    ``euclidean_distance_to_root``, and ``branch_radius_summary``, reserved
+    for the region types that still raise ``NotImplementedError``. Nothing
+    ever wrote them. Whoever implements one of those types should add the
+    field it actually needs rather than inherit three guesses -- note that
+    per-node tree distance is already computed by
+    :class:`braincell.morph._spatial.MorphologySpatialGeometry`.
     """
 
-    tree_distance_to_root: dict[int, Quantity] = field(default_factory=dict)
-    euclidean_distance_to_root: dict[int, Quantity] = field(default_factory=dict)
-    branch_radius_summary: dict[int, tuple[Quantity, Quantity]] = field(default_factory=dict)
     _masks: dict[object, object] = field(default_factory=dict, repr=False, compare=False)
     _morpho: object | None = field(default=None, repr=False, compare=False)
     _revision: int = field(default=-1, repr=False, compare=False)

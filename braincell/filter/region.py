@@ -72,26 +72,67 @@ class RegionExpr(ABC):
     def complement(self) -> "RegionExpr":
         return RegionSetOp("complement", (self,))
 
-    @abstractmethod
     def evaluate(
         self,
         morpho: Morphology,
         cache: SelectionCache | None = None,
     ) -> RegionMask:
-        raise NotImplementedError
+        """Evaluate this expression against ``morpho``.
+
+        Parameters
+        ----------
+        morpho : braincell.Morphology
+            Morphology to evaluate against.
+        cache : braincell.filter.SelectionCache or None
+            Shared memoization scratch space, threaded to sub-expressions.
+
+        Returns
+        -------
+        RegionMask
+            The selected interval set.
+
+        Raises
+        ------
+        TypeError
+            If *morpho* is not a :class:`braincell.Morphology`.
+
+        Notes
+        -----
+        This is the type-checked entry point every caller uses; subclasses
+        implement :meth:`_evaluate` instead. Keeping the guard here rather
+        than in each leaf is why it cannot be forgotten -- it previously was,
+        by ``EmptyRegion``, which accepted arguments every sibling rejected.
+        """
+        if not isinstance(morpho, Morphology):
+            raise TypeError(f"{type(self).__name__} expects Morphology, got {type(morpho).__name__!s}.")
+        return self._evaluate(morpho, cache)
+
+    @abstractmethod
+    def _evaluate(
+        self,
+        morpho: Morphology,
+        cache: SelectionCache | None = None,
+    ) -> RegionMask:
+        """Compute the interval set for a morphology already type-checked by :meth:`evaluate`."""
 
 
 @dataclass(frozen=True)
 class AllRegion(RegionExpr):
-    def evaluate(self, morpho: Morphology, cache: SelectionCache | None = None) -> RegionMask:
-        if not isinstance(morpho, Morphology):
-            raise TypeError(f"AllRegion expects Morpho, got {type(morpho).__name__!s}.")
+    def _evaluate(
+        self,
+        morpho: Morphology,
+        cache: SelectionCache | None = None,
+    ) -> RegionMask:
         return RegionMask(tuple((index, 0.0, 1.0) for index, _ in enumerate(morpho.branches)))
 
 
 @dataclass(frozen=True)
 class EmptyRegion(RegionExpr):
-    def evaluate(self, morpho: Morphology, cache: SelectionCache | None = None) -> RegionMask:
+    def _evaluate(
+        self,
+        morpho: Morphology,
+        cache: SelectionCache | None = None,
+    ) -> RegionMask:
         return RegionMask(())
 
 
@@ -101,9 +142,11 @@ class BranchSlice(RegionExpr):
     prox: object
     dist: object
 
-    def evaluate(self, morpho: Morphology, cache: SelectionCache | None = None) -> RegionMask:
-        if not isinstance(morpho, Morphology):
-            raise TypeError(f"BranchSlice expects Morpho, got {type(morpho).__name__!s}.")
+    def _evaluate(
+        self,
+        morpho: Morphology,
+        cache: SelectionCache | None = None,
+    ) -> RegionMask:
         return RegionMask(
             helper.branch_slice_intervals(
                 morpho,
@@ -119,9 +162,11 @@ class BranchInFilter(RegionExpr):
     property: str
     values: object
 
-    def evaluate(self, morpho: Morphology, cache: SelectionCache | None = None) -> RegionMask:
-        if not isinstance(morpho, Morphology):
-            raise TypeError(f"BranchInFilter expects Morpho, got {type(morpho).__name__!s}.")
+    def _evaluate(
+        self,
+        morpho: Morphology,
+        cache: SelectionCache | None = None,
+    ) -> RegionMask:
         return RegionMask(
             helper.branch_in_intervals(
                 morpho,
@@ -137,9 +182,11 @@ class BranchRangeFilter(RegionExpr):
     bounds: object
     closed: ClosedSide = "neither"
 
-    def evaluate(self, morpho: Morphology, cache: SelectionCache | None = None) -> RegionMask:
-        if not isinstance(morpho, Morphology):
-            raise TypeError(f"BranchRangeFilter expects Morpho, got {type(morpho).__name__!s}.")
+    def _evaluate(
+        self,
+        morpho: Morphology,
+        cache: SelectionCache | None = None,
+    ) -> RegionMask:
         return RegionMask(
             helper.branch_range_intervals(
                 morpho,
@@ -155,7 +202,11 @@ class RadiusRangeRegion(RegionExpr):
     minimum: Quantity
     maximum: Quantity
 
-    def evaluate(self, morpho: Morphology, cache: SelectionCache | None = None) -> RegionMask:
+    def _evaluate(
+        self,
+        morpho: Morphology,
+        cache: SelectionCache | None = None,
+    ) -> RegionMask:
         raise NotImplementedError
 
 
@@ -164,7 +215,11 @@ class TreeDistanceRegion(RegionExpr):
     minimum: Quantity
     maximum: Quantity
 
-    def evaluate(self, morpho: Morphology, cache: SelectionCache | None = None) -> RegionMask:
+    def _evaluate(
+        self,
+        morpho: Morphology,
+        cache: SelectionCache | None = None,
+    ) -> RegionMask:
         raise NotImplementedError
 
 
@@ -173,7 +228,11 @@ class EuclideanDistanceRegion(RegionExpr):
     minimum: Quantity
     maximum: Quantity
 
-    def evaluate(self, morpho: Morphology, cache: SelectionCache | None = None) -> RegionMask:
+    def _evaluate(
+        self,
+        morpho: Morphology,
+        cache: SelectionCache | None = None,
+    ) -> RegionMask:
         raise NotImplementedError
 
 
@@ -181,7 +240,11 @@ class EuclideanDistanceRegion(RegionExpr):
 class SubtreeRegion(RegionExpr):
     root_branch_index: int
 
-    def evaluate(self, morpho: Morphology, cache: SelectionCache | None = None) -> RegionMask:
+    def _evaluate(
+        self,
+        morpho: Morphology,
+        cache: SelectionCache | None = None,
+    ) -> RegionMask:
         raise NotImplementedError
 
 
@@ -192,9 +255,11 @@ class RegionSetOp(RegionExpr):
     op: str
     operands: tuple[RegionExpr, ...]
 
-    def evaluate(self, morpho: Morphology, cache: SelectionCache | None = None) -> RegionMask:
-        if not isinstance(morpho, Morphology):
-            raise TypeError(f"RegionSetOp expects Morpho, got {type(morpho).__name__!s}.")
+    def _evaluate(
+        self,
+        morpho: Morphology,
+        cache: SelectionCache | None = None,
+    ) -> RegionMask:
         op = self.op
         operands = self.operands
 
@@ -213,9 +278,12 @@ class RegionSetOp(RegionExpr):
         if len(operands) < 2:
             raise ValueError(f"{op} expects at least two operands.")
 
-        current = helper.normalize_region_intervals(evaluate_cached(operands[0], morpho, cache).intervals)
+        # No normalize_region_intervals() here: all three fold helpers below
+        # normalize their own inputs, so an outer pass re-sorts and re-merges
+        # data that is about to be sorted and merged again.
+        current = evaluate_cached(operands[0], morpho, cache).intervals
         for operand in operands[1:]:
-            other = helper.normalize_region_intervals(evaluate_cached(operand, morpho, cache).intervals)
+            other = evaluate_cached(operand, morpho, cache).intervals
             if op == "union":
                 current = helper.union_region_intervals(current, other)
             elif op == "intersection":

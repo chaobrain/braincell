@@ -52,6 +52,7 @@ class HelperModuleAllTest(unittest.TestCase):
             {
                 "EPSILON",
                 "branch_slice_intervals",
+                "coerce_positive_count",
                 "branch_in_intervals",
                 "branch_range_intervals",
                 "normalize_region_intervals",
@@ -59,7 +60,6 @@ class HelperModuleAllTest(unittest.TestCase):
                 "intersect_region_intervals",
                 "difference_region_intervals",
                 "complement_region_intervals",
-                "branch_points_locations",
                 "fork_points_locations",
                 "terminal_locations",
                 "uniform_samples_from_region",

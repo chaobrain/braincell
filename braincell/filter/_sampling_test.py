@@ -22,6 +22,7 @@ from scipy.special import ndtr, ndtri
 
 import braincell
 from braincell import Branch, Morphology
+from braincell.filter._testing import make_soma
 from braincell.filter import AllRegion, BranchSlice, RandomSamples, SamplingContext, density, metric, sample
 from braincell.filter._sampling import (
     _AtomComponent,
@@ -293,7 +294,7 @@ class SamplingContextAndValidationTest(unittest.TestCase):
                 expression.evaluate(morpho)
 
     def test_legacy_random_samples_keep_their_exact_numpy_sequence(self) -> None:
-        root = Branch.from_lengths(lengths=[10.0] * u.um, radii=[10.0, 10.0] * u.um, type="soma")
+        root = make_soma(length=10.0)
         child = Branch.from_lengths(lengths=[30.0] * u.um, radii=[2.0, 1.0] * u.um, type="dendrite")
         morpho = Morphology.from_root(root, name="soma")
         morpho.soma.dend = child

@@ -21,6 +21,7 @@ import brainunit as u
 import numpy as np
 
 from braincell import Branch, Morphology
+from braincell.filter._testing import make_soma, make_soma_dend_tree
 from braincell.filter import (
     AtLocation,
     BranchPoints,
@@ -42,7 +43,7 @@ from braincell.filter import locset as locset_mod
 
 
 def _build_branchpoint_morphology() -> Morphology:
-    soma = Branch.from_lengths(lengths=[20.0] * u.um, radii=[10.0, 10.0] * u.um, type="soma")
+    soma = make_soma()
     basal = Branch.from_lengths(lengths=[30.0] * u.um, radii=[2.0, 1.0] * u.um, type="basal_dendrite")
     axon = Branch.from_lengths(lengths=[10.0] * u.um, radii=[0.8, 0.5] * u.um, type="axon")
     apical = Branch.from_lengths(lengths=[20.0] * u.um, radii=[1.5, 1.0] * u.um, type="apical_dendrite")
@@ -57,12 +58,7 @@ def _build_branchpoint_morphology() -> Morphology:
 
 
 def _build_sampling_tree() -> Morphology:
-    soma = Branch.from_lengths(lengths=[10.0] * u.um, radii=[10.0, 10.0] * u.um, type="soma")
-    dend = Branch.from_lengths(lengths=[30.0] * u.um, radii=[2.0, 1.0] * u.um, type="basal_dendrite")
-
-    tree = Morphology.from_root(soma, name="soma")
-    tree.soma.dend = dend
-    return tree
+    return make_soma_dend_tree(soma_length=10.0)
 
 
 def _branch(*, branch_type: str = "dendrite") -> Branch:

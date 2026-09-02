@@ -30,6 +30,7 @@ _UNSUPPORTED_BRANCH_METRIC_PROPERTIES = {"max_radius", "min_radius"}
 __all__ = [
     "EPSILON",
     "branch_slice_intervals",
+    "coerce_positive_count",
     "branch_in_intervals",
     "branch_range_intervals",
     "normalize_region_intervals",
@@ -38,7 +39,6 @@ __all__ = [
     "difference_region_intervals",
     "complement_region_intervals",
     "fork_points_locations",
-    "branch_points_locations",
     "terminal_locations",
     "uniform_samples_from_region",
     "random_samples_from_region",
@@ -195,12 +195,29 @@ def _normalize_quantity_bound(
     return _to_decimal_scalar(bound, unit=unit, name=property_name)
 
 
-def _matches_range(value: object, *, low: object | None, high: object | None, closed: str, property_name: str) -> bool:
+def _matches_range(
+    value: object,
+    *,
+    low: object | None,
+    high: object | None,
+    closed: str,
+    property_name: str,
+    bounds_by_unit: dict[object, tuple[float | None, float | None]] | None = None,
+) -> bool:
     if _is_quantity(value):
         unit = u.get_unit(value)
         current = _to_decimal_scalar(value, unit=unit, name=property_name)
-        low_value = _normalize_quantity_bound(low, property_name=property_name, unit=unit)
-        high_value = _normalize_quantity_bound(high, property_name=property_name, unit=unit)
+        # Same per-unit memo as _matches_in: the bounds do not vary across
+        # branches, but the unit they must be decoded into comes from each
+        # branch's value, so the cache is keyed on it rather than removed.
+        cached = None if bounds_by_unit is None else bounds_by_unit.get(unit)
+        if cached is None:
+            low_value = _normalize_quantity_bound(low, property_name=property_name, unit=unit)
+            high_value = _normalize_quantity_bound(high, property_name=property_name, unit=unit)
+            if bounds_by_unit is not None:
+                bounds_by_unit[unit] = (low_value, high_value)
+        else:
+            low_value, high_value = cached
     else:
         if isinstance(value, bool) or not isinstance(value, Real):
             raise TypeError(f"Property {property_name!r} does not support numeric range filtering.")
@@ -226,18 +243,40 @@ def _matches_range(value: object, *, low: object | None, high: object | None, cl
     return True
 
 
-def _matches_in(value: object, *, candidates: tuple[object, ...], property_name: str) -> bool:
+def _normalize_candidates(candidates: tuple[object, ...], *, unit: object, property_name: str) -> set[float]:
+    """Decode every candidate into ``unit``, rejecting non-numeric entries."""
+    normalized: set[float] = set()
+    for candidate in candidates:
+        if _is_quantity(candidate):
+            normalized.add(_to_decimal_scalar(candidate, unit=unit, name=property_name))
+        elif isinstance(candidate, bool) or not isinstance(candidate, Real):
+            raise TypeError(f"Property {property_name!r} is quantity-valued; candidates must be numeric/quantity.")
+        else:
+            normalized.add(float(candidate))
+    return normalized
+
+
+def _matches_in(
+    value: object,
+    *,
+    candidates: tuple[object, ...],
+    property_name: str,
+    normalized_by_unit: dict[object, set[float]] | None = None,
+) -> bool:
     if _is_quantity(value):
         unit = u.get_unit(value)
         current = _to_decimal_scalar(value, unit=unit, name=property_name)
-        normalized: set[float] = set()
-        for candidate in candidates:
-            if _is_quantity(candidate):
-                normalized.add(_to_decimal_scalar(candidate, unit=unit, name=property_name))
-            elif isinstance(candidate, bool) or not isinstance(candidate, Real):
-                raise TypeError(f"Property {property_name!r} is quantity-valued; candidates must be numeric/quantity.")
-            else:
-                normalized.add(float(candidate))
+        # Keyed by unit rather than hoisted outright: the unit comes from the
+        # branch's own value, so a property returning mixed units still gets
+        # a correctly decoded candidate set -- it just gets one per unit
+        # instead of one per branch.
+        if normalized_by_unit is None:
+            normalized = _normalize_candidates(candidates, unit=unit, property_name=property_name)
+        else:
+            normalized = normalized_by_unit.get(unit)
+            if normalized is None:
+                normalized = _normalize_candidates(candidates, unit=unit, property_name=property_name)
+                normalized_by_unit[unit] = normalized
         return current in normalized
     return any(value == candidate for candidate in candidates)
 
@@ -280,10 +319,16 @@ def branch_in_intervals(
 ) -> tuple[tuple[int, float, float], ...]:
     prop = _coerce_property_name(property_name)
     candidates = _coerce_values("values", values)
+    normalized_by_unit: dict[object, set[float]] = {}
     intervals: list[tuple[int, float, float]] = []
     for index, branch_view in enumerate(morpho.branches):
         value = _resolve_branch_property(branch_view, prop)
-        if _matches_in(value, candidates=candidates, property_name=prop):
+        if _matches_in(
+            value,
+            candidates=candidates,
+            property_name=prop,
+            normalized_by_unit=normalized_by_unit,
+        ):
             intervals.append((index, 0.0, 1.0))
     return tuple(intervals)
 
@@ -299,6 +344,7 @@ def branch_range_intervals(
     low, high = _parse_bounds(bounds)
     closed_mode = _parse_closed(closed)
 
+    bounds_by_unit: dict[object, tuple[float | None, float | None]] = {}
     intervals: list[tuple[int, float, float]] = []
     for index, branch_view in enumerate(morpho.branches):
         value = _resolve_branch_property(branch_view, prop)
@@ -308,6 +354,7 @@ def branch_range_intervals(
             high=high,
             closed=closed_mode,
             property_name=prop,
+            bounds_by_unit=bounds_by_unit,
         ):
             intervals.append((index, 0.0, 1.0))
     return tuple(intervals)
@@ -625,11 +672,6 @@ def fork_points_locations(morpho: Morphology, *, epsilon: float = EPSILON) -> tu
     return tuple(forks)
 
 
-def branch_points_locations(morpho: Morphology, *, epsilon: float = EPSILON) -> tuple[Location, ...]:
-    """Compatibility alias for :func:`fork_points_locations`."""
-    return fork_points_locations(morpho, epsilon=epsilon)
-
-
 def terminal_locations(morpho: Morphology, *, epsilon: float = EPSILON) -> tuple[Location, ...]:
     points: list[Location] = [
         (branch_idx, 1.0) for branch_idx, branch in enumerate(morpho.branches) if branch.n_children == 0
@@ -656,7 +698,7 @@ def _sample_entries(
     return entries
 
 
-def _coerce_positive_count(name: str, count: object) -> int:
+def coerce_positive_count(name: str, count: object) -> int:
     if isinstance(count, bool) or not isinstance(count, Integral):
         raise TypeError(f"{name} must be an integer, got {count!r}.")
     value = int(count)
@@ -672,7 +714,7 @@ def uniform_samples_from_region(
     count: object,
     epsilon: float = EPSILON,
 ) -> tuple[Location, ...]:
-    n = _coerce_positive_count("count", count)
+    n = coerce_positive_count("count", count)
     entries = _sample_entries(morpho, intervals, epsilon=epsilon)
     if not entries:
         raise ValueError("UniformSamples cannot sample from an empty or zero-length region.")
@@ -690,7 +732,9 @@ def uniform_samples_from_region(
         branch, prox, dist, length_um = entries[idx]
         prev = 0.0 if idx == 0 else float(cumulative[idx - 1])
         offset = max(0.0, min(target - prev, length_um))
-        ratio = 0.0 if length_um <= epsilon else (offset / length_um)
+        # _sample_entries only appends when length_um > epsilon, so there is
+        # no zero-length entry to guard against here.
+        ratio = offset / length_um
         x = prox + ratio * (dist - prox)
         points.append((branch, _normalize_loc_x(x, epsilon=epsilon)))
     return normalize_locset_points(points, epsilon=epsilon)
@@ -704,7 +748,7 @@ def random_samples_from_region(
     seed: object,
     epsilon: float = EPSILON,
 ) -> tuple[Location, ...]:
-    n = _coerce_positive_count("count", count)
+    n = coerce_positive_count("count", count)
     if isinstance(seed, bool) or not isinstance(seed, Integral):
         raise TypeError(f"seed must be an integer, got {seed!r}.")
     entries = _sample_entries(morpho, intervals, epsilon=epsilon)

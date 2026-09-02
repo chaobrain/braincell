@@ -13,6 +13,7 @@
 # limitations under the License.
 # ==============================================================================
 
+from .cell_topology import plot_cell_topology
 from .compare import compare_morphologies, compare_values
 from .config import (
     PUBLICATION_BRANCH_TYPE_COLORS,
@@ -60,6 +61,7 @@ __all__ = [
     "plot2d",
     "plot3d",
     "plot_branch_order_histogram",
+    "plot_cell_topology",
     "plot_dendrogram",
     "plot_movie",
     "plot_point_topology",

@@ -12,7 +12,7 @@ io -> morph -> filter
            -> _cv -> _compute -> _multi_compartment.Cell -> quad / brainstate / JAX
 
 ion / channel / synapse -> concrete runtime mechanisms
-vis -> consumes morph / filter / Cell data for plotting and export
+vis -> consumes morph / filter / Cell data for plotting and export (one-way: nothing below it imports vis at load time)
 _single_compartment -> classic single-compartment HH-style neuron frontend
 _base / _base_ion / _base_channel -> shared runtime base classes
 ```
@@ -23,9 +23,9 @@ _base / _base_ion / _base_channel -> shared runtime base classes
 - 几何基础层：`braincell.morph`。多数上层模块依赖它；但当前实现里 `Morphology.from_*`、`vis2d`、`vis3d` 也会反向引用 `io` 和 `vis`，属于用户便利入口。
 - 选择层：`braincell.filter`。依赖 `morph`，被 CV 划分、Cell paint/place、可视化 overlay 使用。
 - CV 与 compute 层：`braincell._discretization` 和 `braincell._compute`。负责把 morphology、filter、mech 声明 lowering 到 control volumes、node tree 和 runtime layout。
-- 最强编排层：`braincell._multi_compartment.Cell`。集中依赖 `morph`、`filter`、`mech`、`_discretization`、`_compute`、`quad`、`vis`。
+- 最强编排层：`braincell._multi_compartment.Cell`。集中依赖 `morph`、`filter`、`mech`、`_discretization`、`_compute`、`quad`。它不再依赖 `vis`。
 - 数值积分层：`braincell.quad`。提供 integrator registry 和 solver step；会依赖 shared protocol，并有部分 solver 适配 multi/single-compartment 对象。
-- 可视化层：`braincell.vis`。主要消费 `morph`、`filter`、Cell/point topology，不应作为核心计算依赖。
+- 可视化层：`braincell.vis`。主要消费 `morph`、`filter`、Cell/point topology，不应作为核心计算依赖。依赖方向是单向的：`vis` 在 load time 导入 `_multi_compartment`（`vis/cell_topology.py` 顶层 `import Cell`），因此 `braincell/vis/` 之外的任何 production 模块都**不得**在 load time 导入 `braincell.vis`——`Morphology.vis2d/vis3d` 与 `Branch.vis2d/vis3d` 都在函数体内延迟导入。该不变量由 `braincell/vis/__init___test.py` 的 AST 扫描守护。
 
 ## 2. 模块职责与主要依赖
 
@@ -36,14 +36,14 @@ _base / _base_ion / _base_channel -> shared runtime base classes
 | `braincell.filter` | Region/locset 表达式与选择缓存 | `morph` | `_discretization`、`Cell`、`vis` |
 | `braincell.mech` | 机制声明、参数、registry | 基本只依赖自身和 `brainunit` | `_discretization`、`_compute`、`Cell`、`channel`、`ion`、`synapse` |
 | `braincell._discretization` | CV 对象、CV policy、paint/place lowering | `morph`、`filter`、`mech` | `_compute`、`Cell` |
-| `braincell._compute` | point topology、runtime state、layout/table | `_discretization`、`mech`、`ion` | `Cell`、`vis.point_topology` |
+| `braincell._compute` | point topology、runtime state、layout/table | `_discretization`、`mech`、`ion` | `Cell`、`vis.point_topology`、`vis.cell_topology` |
 | `braincell._multi_compartment` | 多隔室 Cell 前端和运行时 facade | 几乎所有核心层 | 顶层 `braincell.Cell` |
 | `braincell._single_compartment` | 单隔室 HH-style neuron | `_base`、`quad` | 顶层 `braincell.SingleCompartment` |
 | `braincell.ion` | Na/K/Ca ion containers | `_base`、`mech`、`quad.protocol` | `channel`、runtime |
 | `braincell.channel` | 具体 ion channel 实现 | `_base`、`ion`、`mech` | 用户、runtime registry |
 | `braincell.synapse` | 具体 synapse 实现 | `mech` | 用户、runtime registry |
 | `braincell.quad` | integrator registry 和 step functions | `_misc`、`quad.protocol` | single/multi-compartment runtime |
-| `braincell.vis` | 2D/3D scene、backend、morphometry、traces | `morph`、`filter`、layout/backend | 用户、`Morphology.vis*`、`Cell.vis*` |
+| `braincell.vis` | 2D/3D scene、backend、morphometry、traces、cell topology | `morph`、`filter`、`_discretization`、`_multi_compartment`、layout/backend | 用户、`Morphology.vis*`（延迟导入） |
 
 ## 3. 顶层导出面
 
@@ -219,10 +219,11 @@ metric 属性：
 
 ### Cell 可视化入口
 
-- `vis_topology(...)`
-- `vis_node(...)`
-- `vis_cv(...)`
-- `vis_branch(...)`
+`Cell` 不再暴露任何 `vis*` 方法。拓扑绘制统一走
+`braincell.vis.plot_cell_topology(cell, level=...)`（见第 13 节），
+`Cell` 侧只保留把 selector 解析成 CV/point 向量的内部能力
+（`_multi_compartment/field_resolution.py`），该模块同时服务于
+`Cell.on(...)` 和 runtime ion inspection。
 
 命名建议关注点：
 
@@ -477,6 +478,7 @@ metric 属性：
 - `plot_movie(...)`
 - `plot_topology(...)`
 - `plot_point_topology(...)`
+- `plot_cell_topology(...)` — 唯一的 cell 级拓扑入口，`level="node"|"cv"|"branch"`
 - `plot_dendrogram(...)`
 - `plot_sholl(...)`
 - `plot_branch_order_histogram(...)`

@@ -23,6 +23,7 @@ import numpy as np
 
 from braincell._discretization.base import locate_cv_on_branch
 from braincell.filter import LocsetBatch, LocsetExpr, LocsetMask, RegionExpr, RegionMask
+from . import field_resolution
 
 __all__ = ["BranchSelector", "CVSelector"]
 
@@ -117,7 +118,7 @@ class _CellScope:
     def select_region(self, cell, region: RegionExpr | RegionMask) -> "_CellScope":
         if not isinstance(region, (RegionExpr, RegionMask)):
             raise TypeError(f"Cell.on(...) expects RegionExpr or RegionMask, got {type(region).__name__!s}.")
-        fractions = cell._cv_coverage_fractions(region)
+        fractions = field_resolution.cv_coverage_fractions(cell, region, caller="Cell.on(...)")
         selected = tuple(cv_id for cv_id, fraction in fractions.items() if float(fraction) > 0.0)
         result = self.select_cv_ids(selected)
         selected_set = set(result.cv_ids)

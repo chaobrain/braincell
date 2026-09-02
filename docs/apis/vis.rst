@@ -39,6 +39,10 @@ Top-level plot entry points
 Morphometry and topology plots
 ------------------------------
 
+These take a :class:`~braincell.Morphology` (or, for
+``plot_point_topology``, a :class:`~braincell.NodeTree`) and know nothing
+about a cell's runtime.
+
 .. autosummary::
    :toctree: generated/
    :nosignatures:
@@ -48,6 +52,30 @@ Morphometry and topology plots
     plot_point_topology
     plot_sholl
     plot_branch_order_histogram
+
+
+Cell topology plots
+-------------------
+
+``plot_cell_topology`` is the cell-aware counterpart of the plots above.
+It takes a :class:`~braincell.Cell` rather than a bare morphology, which
+is what lets it resolve ``region`` / ``locset`` selections against the
+cell's control volumes and colour nodes by runtime state. Pick the
+granularity with ``level``:
+
+``level="node"`` (the default)
+    One node per runtime point — the level the solver works at, and the
+    only one that can show per-point state. Requires an initialized cell.
+``level="cv"``
+    One node per control volume.
+``level="branch"``
+    One node per morphology branch. Topology only.
+
+.. autosummary::
+   :toctree: generated/
+   :nosignatures:
+
+    plot_cell_topology
 
 
 Comparison helpers

@@ -253,7 +253,16 @@ def _plot_discrete_topology_graph(
     edge_color: str | None = None,
     root_color: str | None = None,
     ax=None,
+    caller: str = "plot_point_topology(...)",
 ) -> Any:
+    """Render an arbitrary node/edge graph.
+
+    Shared by :func:`plot_point_topology` and
+    :func:`braincell.vis.plot_cell_topology`. ``caller`` names the public
+    entry point the user actually invoked, so validation errors point at
+    a function they can look up rather than at whichever wrapper happened
+    to reach this one.
+    """
     import matplotlib.colors as mcolors
     import matplotlib.pyplot as plt
     from matplotlib.collections import LineCollection
@@ -277,7 +286,7 @@ def _plot_discrete_topology_graph(
     resolved_highlight_ids = _normalize_highlight_point_ids(highlight_point_ids)
 
     if values is not None and resolved_highlight_ids is not None:
-        raise ValueError("plot_point_topology(...) does not support highlight_point_ids together with values.")
+        raise ValueError(f"{caller} does not support highlight_point_ids together with values.")
     if values is not None and highlight_fractions is not None:
         raise ValueError("Discrete topology renderer does not support values together with coverage highlighting.")
 
@@ -734,6 +743,6 @@ def _require_networkx():
         import networkx as nx
     except ImportError as exc:  # pragma: no cover - exercised via dependency failures
         raise ImportError(
-            "plot_point_topology(...) requires networkx. Install braincell[vis] or add networkx manually."
+            "Topology plotting requires networkx. Install braincell[vis] or add networkx manually."
         ) from exc
     return nx

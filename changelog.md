@@ -5,6 +5,40 @@
 
 ### Breaking Changes
 
+- **`Cell` no longer exposes visualization methods.**
+  `Cell.vis_topology`, `Cell.vis_node`, `Cell.vis_cv`, and
+  `Cell.vis_branch` are removed with no deprecation shim, and so are the
+  same four names on the `MultiCompartment` alias. One free function in
+  `braincell.vis` replaces all four, with the topology level chosen by
+  `level=`:
+
+  ```python
+  # before
+  cell.vis_node(value="V", cmap="viridis")
+  cell.vis_cv(region=region)
+  cell.vis_branch(region=region)
+  cell.vis_topology(level=lvl, region=region)
+
+  # after
+  import braincell.vis as vis
+  vis.plot_cell_topology(cell, value="V", cmap="viridis")   # level="node" is the default
+  vis.plot_cell_topology(cell, level="cv", region=region)
+  vis.plot_cell_topology(cell, level="branch", region=region)
+  vis.plot_cell_topology(cell, level=lvl, region=region)
+  ```
+
+  This puts `Cell` in line with every other model object: `Morphology`
+  and `Branch` already delegate to `braincell.vis` rather than
+  implementing plots themselves.
+
+  Two smaller shifts come with it. **`show=` is gone** — no function in
+  `braincell.vis` takes it, so call `matplotlib.pyplot.show()` yourself
+  (in Jupyter the inline backend still draws at the end of the cell, so
+  `show=False` call sites simply drop the argument). And
+  **`level="branch"` now reports every unsupported argument at once**
+  (`... does not support: locset, value, cmap.`) instead of raising on
+  the first one it finds.
+
 - **`Cell` now always carries a population axis.** `pop_size` defaults to
   `1` and an explicitly empty `pop_size=()` raises `ValueError`. Runtime
   state is therefore always at least two-dimensional: `Cell.V` is shaped
@@ -94,11 +128,18 @@ channels already pass, or moves code they already shared.
 
 ### Bug Fixes
 
-- `Cell.vis_cv(...)` / `Cell.vis_node(...)` and node-local runtime
-  inspection (`cell.runtime_nodes[i].ions[...]`) rejected any field with a
-  population axis, so they failed for every `pop_size` beyond the old
-  rank-0 default. They now collapse a single-member population and
-  otherwise raise naming the field and `pop_size`.
+- Cell topology plotting (now `braincell.vis.plot_cell_topology`) and
+  node-local runtime inspection (`cell.runtime_nodes[i].ions[...]`)
+  rejected any field with a population axis, so they failed for every
+  `pop_size` beyond the old rank-0 default. They now collapse a
+  single-member population and otherwise raise naming the field and
+  `pop_size`.
+- Runtime CV inspection (`cell.runtime_cvs[i].ions[...]`) blamed a
+  plotting function for its own errors: a population-axis refusal read
+  `Cell.vis_cv(...) addresses a single morphology`, on a code path with
+  no plotting in it. Messages now name the entry point that was actually
+  called. The dependency message from the shared topology renderer no
+  longer hardcodes `plot_point_topology(...)` either.
 - Ion baseline broadcasting in `_sync_runtime_ion` ignored the population
   axis, disagreeing with the sibling code path.
 - Dense channel construction dropped the population axis when a channel's

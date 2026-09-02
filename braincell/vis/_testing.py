@@ -88,6 +88,23 @@ def make_length_only_tree(*, child_name: str = "dend") -> Morphology:
     return tree
 
 
+def make_soma_dend_tree() -> Morphology:
+    """A soma plus one tapering *basal* dendrite, length-only.
+
+    The tree the cell-topology tests draw. Deliberately distinct from
+    :func:`make_length_only_tree`: one dendrite segment instead of two,
+    and ``basal_dendrite`` instead of ``apical_dendrite``. The single
+    segment is what keeps the CV count small enough to assert coverage
+    fractions by hand, and the tapering radii give the frustum renderer
+    something to narrow.
+    """
+    soma = Branch.from_lengths(lengths=[20.0] * u.um, radii=[10.0, 10.0] * u.um, type="soma")
+    dend = Branch.from_lengths(lengths=[100.0] * u.um, radii=[2.0, 1.0] * u.um, type="basal_dendrite")
+    tree = Morphology.from_root(soma, name="soma")
+    tree.soma.dend = dend
+    return tree
+
+
 def make_four_type_tree() -> Morphology:
     """Soma with an apical dendrite, a basal dendrite, and an axon.
 

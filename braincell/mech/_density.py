@@ -45,17 +45,14 @@ from typing import Any, Callable, ClassVar, Mapping
 
 from ._base import Mechanism
 from ._params import Params
-from ._registry import get_registry
+from ._registry import _CATEGORY_CHANNEL, _CATEGORY_ION, get_registry
+from ._validate import require_fraction, require_str
 
 __all__ = [
     "Density",
     "Channel",
     "Ion",
 ]
-
-
-_CHANNEL = "channel"
-_ION = "ion"
 
 
 class Density(Mechanism):
@@ -77,16 +74,20 @@ class Density(Mechanism):
         through :func:`braincell.mech.get_registry` at construction
         time; the stored :attr:`class_name` is always a string.
     params : Mapping or None
-        Parameter mapping. ``None`` (the default) produces an empty
-        :class:`Params`.
+        Parameter mapping, supplied by the concrete subclass from its own
+        ``**params`` capture. This is an internal contract between
+        :class:`Density` and its subclasses -- **callers pass parameters
+        as keyword arguments**, and ``Channel(..., params={...})`` is
+        rejected with :exc:`TypeError` rather than silently creating a
+        parameter named ``"params"``.
     name : str or None
         Optional instance label. When ``None``, :attr:`class_name` is
         used as the display label (see :attr:`instance_name`).
     coverage_area_fraction : float
         Fraction in ``[0, 1]`` of the target control volume's lateral
-        area covered by this declaration. Set by the control-volume
-        lowering pipeline (:mod:`braincell.cv._lower`) when a paint
-        region only partially overlaps a CV. Defaults to ``1.0``.
+        area covered by this declaration. Set by the paint lowering pass
+        in :mod:`braincell._discretization` when a paint region only
+        partially overlaps a CV. Defaults to ``1.0``.
     solver : str or Callable or None
         Optional declaration-local integrator override. It is applied only
         to Markov channels and kinetic ions and must be supplied together
@@ -124,6 +125,32 @@ class Density(Mechanism):
     #: or ``"ion"``. Instances of the abstract base have an empty string.
     category: ClassVar[str] = ""
 
+    #: Field names in declaration order, derived once per subclass from
+    #: ``__slots__`` along the MRO. See :meth:`__init_subclass__`.
+    _FIELDS: ClassVar[tuple[str, ...]] = ()
+
+    #: Per-field coercions applied to every *incoming* value, whether it
+    #: arrives through ``__init__`` or through :meth:`_replace`. Stored
+    #: values are already normalized, so they are never re-coerced. Each
+    #: entry is called as ``normalizer(value, owner_class_name)``.
+    _NORMALIZERS: ClassVar[Mapping[str, Callable[[Any, str], Any]]] = {
+        "params": lambda value, owner: Params.coerce(value),
+        "coverage_area_fraction": lambda value, owner: require_fraction(value, owner, "coverage_area_fraction"),
+    }
+
+    #: Per-field ``repr`` overrides for fields whose stored form differs
+    #: from the form the constructor accepts.
+    _REPRS: ClassVar[Mapping[str, Callable[[Any], str]]] = {}
+
+    def __init_subclass__(cls, **kwargs: Any) -> None:
+        super().__init_subclass__(**kwargs)
+        names: list[str] = []
+        for klass in reversed(cls.__mro__):
+            for slot in getattr(klass, "__slots__", ()):
+                if slot not in names:
+                    names.append(slot)
+        cls._FIELDS = tuple(names)
+
     def __init__(
         self,
         class_name: Any,
@@ -136,14 +163,16 @@ class Density(Mechanism):
         substeps: int | None = None,
     ) -> None:
         cls = type(self)
-        if cls is Density or not cls.category:
+        if not cls.category:
             raise TypeError(f"{cls.__name__} is an abstract base; instantiate Channel or Ion instead.")
+        if isinstance(params, Mapping) and "params" in params:
+            raise TypeError(
+                f"{cls.__name__} parameters must be passed as keyword arguments, not as params={{...}}. "
+                f"Write {cls.__name__}(..., g_max=value) rather than "
+                f"{cls.__name__}(..., params={{'g_max': value}})."
+            )
         resolved = _resolve_class_name(cls.category, class_name)
-        if name is not None and not isinstance(name, str):
-            raise TypeError(f"{cls.__name__}.name must be a string or None, got {type(name).__name__!r}.")
-        coverage = float(coverage_area_fraction)
-        if not (0.0 <= coverage <= 1.0):
-            raise ValueError(f"{cls.__name__}.coverage_area_fraction must lie in [0, 1], got {coverage!r}.")
+        require_str(name, cls.__name__, "name", optional=True)
         solver, substeps = _normalize_integration_override(
             solver,
             substeps,
@@ -152,7 +181,11 @@ class Density(Mechanism):
         object.__setattr__(self, "class_name", resolved)
         object.__setattr__(self, "params", Params.coerce(params))
         object.__setattr__(self, "name", name)
-        object.__setattr__(self, "coverage_area_fraction", coverage)
+        object.__setattr__(
+            self,
+            "coverage_area_fraction",
+            require_fraction(coverage_area_fraction, cls.__name__, "coverage_area_fraction"),
+        )
         object.__setattr__(self, "solver", solver)
         object.__setattr__(self, "substeps", substeps)
 
@@ -178,70 +211,35 @@ class Density(Mechanism):
         """
         return self.name if self.name is not None else self.class_name
 
-    @property
-    def identity(self) -> tuple[str, str]:
-        """Return ``(instance_name, class_name)`` for table views."""
-        return (self.instance_name, self.class_name)
-
     # ------------------------------------------------------------------
     # equality / hashing: structural, type-exact
+    #
+    # All three dunders below, and ``_replace``, walk ``_FIELDS`` rather
+    # than naming the fields. A subclass therefore declares ``__slots__``
+    # and nothing else -- it does not re-implement any of them.
     # ------------------------------------------------------------------
 
     def __eq__(self, other: object) -> bool:
         if type(self) is not type(other):
             return NotImplemented
-        return (
-            self.class_name == other.class_name
-            and self.params == other.params
-            and self.name == other.name
-            and self.coverage_area_fraction == other.coverage_area_fraction
-            and self.solver == other.solver
-            and self.substeps == other.substeps
-        )
+        # ``params`` is the only field whose comparison walks contents
+        # (and may hold arrays), so let the cheap scalars reject first.
+        for field in type(self)._FIELDS:
+            if field != "params" and getattr(self, field) != getattr(other, field):
+                return False
+        return self.params == other.params
 
     def __hash__(self) -> int:
-        return hash(
-            (
-                type(self).__name__,
-                self.class_name,
-                self.params,
-                self.name,
-                self.coverage_area_fraction,
-                self.solver,
-                self.substeps,
-            )
-        )
+        return hash((type(self).__name__, *(getattr(self, field) for field in type(self)._FIELDS)))
 
     def __repr__(self) -> str:
-        return (
-            f"{type(self).__name__}("
-            f"class_name={self.class_name!r}, "
-            f"params={self.params!r}, "
-            f"name={self.name!r}, "
-            f"coverage_area_fraction={self.coverage_area_fraction!r}, "
-            f"solver={self.solver!r}, "
-            f"substeps={self.substeps!r})"
-        )
+        cls = type(self)
+        fields = ", ".join(f"{field}={cls._REPRS.get(field, repr)(getattr(self, field))}" for field in cls._FIELDS)
+        return f"{cls.__name__}({fields})"
 
     # ------------------------------------------------------------------
     # non-mutating updates
     # ------------------------------------------------------------------
-
-    def with_params(self, **updates: Any) -> "Density":
-        """Return a copy with ``updates`` merged into ``params``.
-
-        Parameters
-        ----------
-        **updates
-            Parameters to add or replace.
-
-        Returns
-        -------
-        Density
-            A new instance of the same concrete subclass. ``self`` is
-            unchanged.
-        """
-        return self._replace(params=self.params.with_updates(**updates))
 
     def with_coverage(self, fraction: float) -> "Density":
         """Return a copy with a new ``coverage_area_fraction``.
@@ -256,31 +254,15 @@ class Density(Mechanism):
         Density
             A new instance of the same concrete subclass. ``self`` is
             unchanged.
+
+        Raises
+        ------
+        ValueError
+            If ``fraction`` lies outside ``[0, 1]`` -- the same check
+            :meth:`__init__` applies, reached through the shared
+            normalization in :meth:`_replace`.
         """
-        return self._replace(coverage_area_fraction=float(fraction))
-
-    def with_name(self, name: str | None) -> "Density":
-        """Return a copy with a new instance label."""
-        return self._replace(name=name)
-
-    def with_integration(
-        self,
-        *,
-        solver: str | Callable | None = None,
-        substeps: int | None = None,
-    ) -> "Density":
-        """Return a copy with a declaration-local integration override.
-
-        ``solver`` and ``substeps`` form one atomic override. Passing both
-        as ``None`` clears the override so the declaration inherits the
-        enclosing :class:`braincell.Cell` configuration.
-        """
-        solver, substeps = _normalize_integration_override(
-            solver,
-            substeps,
-            owner=type(self).__name__,
-        )
-        return self._replace(solver=solver, substeps=substeps)
+        return self._replace(coverage_area_fraction=fraction)
 
     # ------------------------------------------------------------------
     # internals
@@ -290,20 +272,21 @@ class Density(Mechanism):
         """Return a copy with selected fields overridden.
 
         Constructs a new instance of the exact concrete subclass via
-        :meth:`object.__new__`, bypassing ``__init__`` so callers do
-        not have to re-validate unchanged fields.
+        :meth:`object.__new__`, bypassing ``__init__`` so unchanged
+        fields are not re-validated. Fields that *are* being replaced go
+        through the same :attr:`_NORMALIZERS` entry ``__init__`` uses, so
+        a copy cannot hold a value the constructor would have rejected.
         """
-        new = object.__new__(type(self))
-        object.__setattr__(new, "class_name", updates.get("class_name", self.class_name))
-        object.__setattr__(new, "params", Params.coerce(updates.get("params", self.params)))
-        object.__setattr__(new, "name", updates.get("name", self.name))
-        object.__setattr__(
-            new,
-            "coverage_area_fraction",
-            float(updates.get("coverage_area_fraction", self.coverage_area_fraction)),
-        )
-        object.__setattr__(new, "solver", updates.get("solver", self.solver))
-        object.__setattr__(new, "substeps", updates.get("substeps", self.substeps))
+        cls = type(self)
+        new = object.__new__(cls)
+        for field in cls._FIELDS:
+            if field in updates:
+                normalizer = cls._NORMALIZERS.get(field)
+                value = updates[field]
+                value = normalizer(value, cls.__name__) if normalizer is not None else value
+            else:
+                value = getattr(self, field)
+            object.__setattr__(new, field, value)
         return new
 
 
@@ -360,7 +343,16 @@ class Channel(Density):
     """
 
     __slots__ = ("ion_name", "ion_names")
-    category: ClassVar[str] = _CHANNEL
+    category: ClassVar[str] = _CATEGORY_CHANNEL
+    _NORMALIZERS: ClassVar[Mapping[str, Callable[[Any, str], Any]]] = {
+        **Density._NORMALIZERS,
+        "ion_names": lambda value, owner: _normalize_ion_names(value),
+    }
+    #: ``ion_names`` is stored as a sorted tuple of pairs but accepted as
+    #: a mapping, so echo the constructor's form.
+    _REPRS: ClassVar[Mapping[str, Callable[[Any], str]]] = {
+        "ion_names": lambda value: repr(dict(value) if value is not None else None),
+    }
 
     def __init__(
         self,
@@ -383,41 +375,12 @@ class Channel(Density):
             solver=solver,
             substeps=substeps,
         )
-        if ion_name is not None and (not isinstance(ion_name, str) or not ion_name):
-            raise TypeError(f"Channel.ion_name must be a non-empty string or None, got {ion_name!r}.")
+        require_str(ion_name, "Channel", "ion_name", optional=True)
         normalized_ion_names = _normalize_ion_names(ion_names)
         if ion_name is not None and normalized_ion_names is not None:
             raise ValueError("Channel cannot define both ion_name and ion_names.")
         object.__setattr__(self, "ion_name", ion_name)
         object.__setattr__(self, "ion_names", normalized_ion_names)
-
-    def __eq__(self, other: object) -> bool:
-        result = super().__eq__(other)
-        if result is NotImplemented:
-            return result
-        return result and self.ion_name == other.ion_name and self.ion_names == other.ion_names
-
-    def __hash__(self) -> int:
-        return hash((super().__hash__(), self.ion_name, self.ion_names))
-
-    def __repr__(self) -> str:
-        base = super().__repr__()
-        base = base[:-1]
-        return (
-            f"{base}, "
-            f"ion_name={self.ion_name!r}, "
-            f"ion_names={dict(self.ion_names) if self.ion_names is not None else None!r})"
-        )
-
-    def _replace(self, **updates: Any) -> "Channel":
-        new = super()._replace(**updates)
-        object.__setattr__(new, "ion_name", updates.get("ion_name", self.ion_name))
-        object.__setattr__(
-            new,
-            "ion_names",
-            _normalize_ion_names(updates["ion_names"]) if "ion_names" in updates else self.ion_names,
-        )
-        return new
 
 
 class Ion(Density):
@@ -468,7 +431,7 @@ class Ion(Density):
     """
 
     __slots__ = ()
-    category: ClassVar[str] = _ION
+    category: ClassVar[str] = _CATEGORY_ION
 
     def __init__(
         self,

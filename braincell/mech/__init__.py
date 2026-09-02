@@ -82,7 +82,6 @@ from ._point import (
     ProbeMechanism,
     SineClamp,
     StateProbe,
-    Synapse,
     SynapseSpec,
 )
 from ._registry import (
@@ -126,7 +125,6 @@ __all__ = [
     "ProbeMechanism",
     "SineClamp",
     "StateProbe",
-    "Synapse",
     "SynapseSpec",
     # Registry
     "MechanismEntry",

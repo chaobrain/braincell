@@ -22,7 +22,7 @@ by ``Cell.paint(region, CableProperty(...))`` and lowered into per-CV
 cable defaults during :class:`braincell.Cell` rebuild.
 """
 
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field
 from typing import Any
 
 import brainunit as u
@@ -90,28 +90,21 @@ class CableProperty:
             _coerce_temperature(self.temperature, name="temperature"),
         )
 
-    def with_updates(self, **kwargs: Any) -> "CableProperty":
-        """Return a copy with ``kwargs`` applied.
-
-        Parameters
-        ----------
-        **kwargs
-            Fields to override.
-
-        Returns
-        -------
-        CableProperty
-            A new instance. ``self`` is unchanged.
-        """
-        return replace(self, **kwargs)
-
 
 def _coerce_temperature(value: Any, *, name: str) -> Any:
     if callable(value):
         return value
-    if not hasattr(value, "to_decimal") or not callable(getattr(value, "to_decimal")):
+    # A brand-new ``CableProperty`` is built for *every* control volume by
+    # the paint lowering pass, from fields that pass have already
+    # canonicalized to exactly this form. Recognising that form and
+    # returning it untouched skips a decimal conversion, an ``asarray``,
+    # and a fresh Quantity allocation per CV.
+    if type(value) is u.Quantity and value.unit is u.kelvin and type(value.mantissa) is float:
+        return value
+    to_decimal = getattr(value, "to_decimal", None)
+    if not callable(to_decimal):
         raise TypeError(f"CableProperty.{name} must be a temperature Quantity, got {value!r}.")
-    decimal = np.asarray(value.to_decimal(u.kelvin), dtype=float)
+    decimal = np.asarray(to_decimal(u.kelvin), dtype=float)
     if decimal.ndim != 0:
         raise TypeError(f"CableProperty.{name} must be a scalar temperature Quantity, got shape {decimal.shape!r}.")
     return u.Quantity(float(decimal), u.kelvin)

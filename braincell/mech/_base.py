@@ -37,7 +37,10 @@ class Mechanism:
     :class:`~braincell.mech.Ion`, and :class:`~braincell.mech.Point` and
     its concrete subclasses :class:`~braincell.mech.CurrentClamp` /
     :class:`~braincell.mech.SineClamp` / :class:`~braincell.mech.FunctionClamp`
-    / :class:`~braincell.mech.Probe` / :class:`~braincell.mech.SynapseSpec` /
+    / :class:`~braincell.mech.StateProbe` /
+    :class:`~braincell.mech.MechanismProbe` /
+    :class:`~braincell.mech.CurrentProbe` /
+    :class:`~braincell.mech.SynapseSpec` /
     :class:`~braincell.mech.Junction`) inherit from this class.
 
     :class:`Mechanism` exists only to support

@@ -145,12 +145,10 @@ class DensityIdentityTest(unittest.TestCase):
     def test_default_instance_name_is_class_name(self) -> None:
         spec = Channel("IL")
         self.assertEqual(spec.instance_name, "IL")
-        self.assertEqual(spec.identity, ("IL", "IL"))
 
     def test_override_instance_name(self) -> None:
         spec = Channel("Na_HH1952", name="na_main")
         self.assertEqual(spec.instance_name, "na_main")
-        self.assertEqual(spec.identity, ("na_main", "Na_HH1952"))
 
 
 class DensityEqualityTest(unittest.TestCase):
@@ -196,14 +194,6 @@ class DensityEqualityTest(unittest.TestCase):
 
 
 class DensityUpdatesTest(unittest.TestCase):
-    def test_with_params_non_mutating(self) -> None:
-        original = Channel("IL", g_max=0.1 * (u.mS / u.cm**2))
-        updated = original.with_params(g_max=0.2 * (u.mS / u.cm**2), E=-70 * u.mV)
-        self.assertEqual(original.params["g_max"], 0.1 * (u.mS / u.cm**2))
-        self.assertEqual(updated.params["g_max"], 0.2 * (u.mS / u.cm**2))
-        self.assertEqual(updated.params["E"], -70 * u.mV)
-        self.assertIsInstance(updated, Channel)
-
     def test_with_coverage_non_mutating(self) -> None:
         original = Channel("IL", g_max=0.1 * (u.mS / u.cm**2))
         updated = original.with_coverage(0.5)
@@ -211,28 +201,54 @@ class DensityUpdatesTest(unittest.TestCase):
         self.assertEqual(updated.coverage_area_fraction, 0.5)
         self.assertIsInstance(updated, Channel)
 
-    def test_with_name_non_mutating(self) -> None:
-        original = Channel("IL")
-        updated = original.with_name("leak_soma")
-        self.assertIsNone(original.name)
-        self.assertEqual(updated.name, "leak_soma")
-        self.assertIsInstance(updated, Channel)
-
     def test_updates_preserve_ion_subclass(self) -> None:
         original = Ion("SodiumFixed", Ci=12.0 * u.mM)
-        updated = original.with_params(Ci=15.0 * u.mM)
+        updated = original.with_coverage(0.25)
         self.assertIsInstance(updated, Ion)
-        self.assertEqual(updated.params["Ci"], 15.0 * u.mM)
+        self.assertEqual(updated.params["Ci"], 12.0 * u.mM)
+        self.assertEqual(updated.coverage_area_fraction, 0.25)
 
-    def test_with_integration_sets_and_clears_override(self) -> None:
-        original = Channel("IL", name="leak")
-        updated = original.with_integration(solver="rk4", substeps=4)
-        inherited = updated.with_integration()
-        self.assertIsNone(original.solver)
-        self.assertEqual((updated.solver, updated.substeps), ("rk4", 4))
-        self.assertEqual((inherited.solver, inherited.substeps), (None, None))
-        self.assertEqual(updated.name, "leak")
-        self.assertIsInstance(updated, Channel)
+    def test_copy_preserves_subclass_fields(self) -> None:
+        # ``_replace`` walks ``_FIELDS``, so a subclass slot survives a
+        # copy without the subclass overriding ``_replace``.
+        original = Channel("Kca1p1_MA2020_GoC", ion_names={"ca": "ca_local"})
+        self.assertEqual(original.with_coverage(0.5).ion_names, (("ca", "ca_local"),))
+
+    def test_with_coverage_rejects_out_of_range_fraction(self) -> None:
+        # Regression: ``with_coverage`` routed around the ``[0, 1]`` check
+        # that ``__init__`` advertises, so a copy could hold a value the
+        # constructor would have rejected.
+        spec = Channel("IL", g_max=0.1 * (u.mS / u.cm**2))
+        for bad in (7.0, -0.5):
+            with self.subTest(fraction=bad):
+                with self.assertRaisesRegex(ValueError, r"coverage_area_fraction must lie in \[0, 1\]"):
+                    spec.with_coverage(bad)
+
+
+class DensityParamsKeywordTest(unittest.TestCase):
+    """``params={...}`` is rejected rather than silently mis-stored.
+
+    ``Density.__init__`` captures ``**params``, so ``Channel("IL",
+    params={"g_max": ...})`` used to create a parameter literally named
+    ``"params"`` and leave ``g_max`` unset -- with no error.
+    """
+
+    def test_channel_rejects_params_mapping(self) -> None:
+        with self.assertRaisesRegex(TypeError, "must be passed as keyword arguments"):
+            Channel("IL", params={"g_max": 0.1 * (u.mS / u.cm**2)})
+
+    def test_ion_rejects_params_mapping(self) -> None:
+        with self.assertRaisesRegex(TypeError, "must be passed as keyword arguments"):
+            Ion("SodiumFixed", params={"Ci": 12.0 * u.mM})
+
+    def test_rejected_even_when_mixed_with_real_parameters(self) -> None:
+        with self.assertRaisesRegex(TypeError, "must be passed as keyword arguments"):
+            Channel("IL", E=-70 * u.mV, params={"g_max": 0.1 * (u.mS / u.cm**2)})
+
+    def test_keyword_form_is_the_supported_spelling(self) -> None:
+        spec = Channel("IL", g_max=0.1 * (u.mS / u.cm**2))
+        self.assertEqual(spec.params["g_max"], 0.1 * (u.mS / u.cm**2))
+        self.assertNotIn("params", spec.params)
 
 
 class DensityImmutabilityTest(unittest.TestCase):

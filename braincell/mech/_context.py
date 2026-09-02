@@ -48,8 +48,6 @@ class CVContext:
         Control-volume lateral membrane area.
     radius_prox, radius_mid, radius_dist : Quantity
         Radius at the proximal boundary, midpoint, and distal boundary.
-    diam_mid : Quantity
-        Diameter at the control-volume midpoint.
     diam_arc_mean : Quantity
         Arc-length-weighted mean diameter over the control volume.
     path_distance_to_root : Quantity
@@ -75,11 +73,15 @@ class CVContext:
     radius_prox: u.Quantity
     radius_mid: u.Quantity
     radius_dist: u.Quantity
-    diam_mid: u.Quantity
     diam_arc_mean: u.Quantity
     path_distance_to_root: u.Quantity
     path_distance_from_soma: u.Quantity
     _local_position: u.Quantity | None = None
+
+    @property
+    def diam_mid(self) -> u.Quantity:
+        """Diameter at the control-volume midpoint, i.e. ``2 * radius_mid``."""
+        return 2.0 * self.radius_mid
 
     @property
     def local_position(self) -> u.Quantity:
@@ -91,6 +93,4 @@ class CVContext:
     @property
     def position(self) -> u.Quantity:
         """World position, equal to ``local_position`` until transforms land."""
-        if self._local_position is None:
-            raise ValueError("CVContext.position requires full 3-D point geometry.")
-        return self._local_position
+        return self.local_position

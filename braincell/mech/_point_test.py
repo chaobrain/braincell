@@ -29,7 +29,6 @@ from braincell.mech import (
     ProbeMechanism,
     SineClamp,
     StateProbe,
-    Synapse,
     SynapseSpec,
 )
 
@@ -105,28 +104,6 @@ class CurrentClampTest(unittest.TestCase):
                 delay=0.0 * u.ms,
                 durations=(-1.0 * u.ms,),
                 amplitudes=(0.1 * u.nA,),
-            )
-
-    def test_target_index_is_normalized(self) -> None:
-        cc = CurrentClamp(
-            durations=1.0 * u.ms,
-            amplitudes=0.1 * u.nA,
-            target_index=[2, 0],
-        )
-        self.assertEqual(cc.target_index, (2, 0))
-
-    def test_bad_target_index_raises(self) -> None:
-        with self.assertRaises(ValueError):
-            CurrentClamp(
-                durations=1.0 * u.ms,
-                amplitudes=0.1 * u.nA,
-                target_index=[[0]],
-            )
-        with self.assertRaises(TypeError):
-            CurrentClamp(
-                durations=1.0 * u.ms,
-                amplitudes=0.1 * u.nA,
-                target_index=[0.5],
             )
 
     def test_is_frozen_hashable(self) -> None:
@@ -295,12 +272,10 @@ class SynapseTest(unittest.TestCase):
     def test_default_instance_name(self) -> None:
         syn = SynapseSpec("ExpSyn")
         self.assertEqual(syn.instance_name, "ExpSyn")
-        self.assertEqual(syn.identity, ("ExpSyn", "ExpSyn"))
 
     def test_override_instance_name(self) -> None:
         syn = SynapseSpec("ExpSyn", name="fast")
         self.assertEqual(syn.instance_name, "fast")
-        self.assertEqual(syn.identity, ("fast", "ExpSyn"))
 
     def test_equality_and_hash(self) -> None:
         a = SynapseSpec("ExpSyn", tau=5.0, e=0.0)
@@ -324,11 +299,6 @@ class SynapseTest(unittest.TestCase):
         syn = SynapseSpec("ExpSyn")
         with self.assertRaises(AttributeError):
             syn.synapse_type = "Exp2Syn"
-
-    def test_deprecated_synapse_alias_constructs_spec(self) -> None:
-        with self.assertWarns(DeprecationWarning):
-            syn = Synapse("ExpSyn")
-        self.assertIsInstance(syn, SynapseSpec)
 
     def test_unmigrated_receptors_are_rejected(self) -> None:
         for model in ("AMPA", "GABAa", "NMDA"):

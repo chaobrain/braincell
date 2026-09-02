@@ -38,7 +38,7 @@ inherits from :class:`Point` but lives in its own module
 """
 
 from dataclasses import dataclass, field
-from typing import Any, Callable
+from typing import Any, Callable, ClassVar, Mapping
 import warnings
 
 import brainunit as u
@@ -46,6 +46,7 @@ import numpy as np
 
 from ._base import Mechanism
 from ._params import Params, quantity_hashable
+from ._validate import require_str
 
 __all__ = [
     "Point",
@@ -56,7 +57,6 @@ __all__ = [
     "CurrentProbe",
     "ProbeMechanism",
     "SineClamp",
-    "Synapse",
     "SynapseSpec",
 ]
 
@@ -96,17 +96,13 @@ class CurrentClamp(Point):
         Single-segment duration or multi-segment durations.
     amplitudes : Quantity[nA] or sequence of Quantity[nA]
         Single-segment amplitude or multi-segment amplitudes.
-    target_index : array-like of int or None, optional
-        Reserved sparse target indices over the flattened placement target
-        axis. ``None`` keeps dense/broadcast semantics.
 
     Raises
     ------
     TypeError
         If ``delay``, ``durations`` or ``amplitudes`` are not quantities.
     ValueError
-        If any duration is non-positive, or if ``target_index`` is not a
-        one-dimensional non-negative integer array.
+        If any duration is non-positive.
 
     Examples
     --------
@@ -125,19 +121,16 @@ class CurrentClamp(Point):
     delay: Any = field(default_factory=lambda: 0.0 * u.ms)
     durations: Any = field(default_factory=lambda: 1.0 * u.ms)
     amplitudes: Any = field(default_factory=lambda: 0.0 * u.nA)
-    target_index: Any = None
 
     def __post_init__(self) -> None:
-        delay = _coerce_quantity(self.delay, unit=u.ms, field_name="CurrentClamp.delay")
-        durations = _coerce_quantity(self.durations, unit=u.ms, field_name="CurrentClamp.durations")
-        amplitudes = _coerce_quantity(self.amplitudes, unit=u.nA, field_name="CurrentClamp.amplitudes")
-        _raise_if_nonpositive_duration(durations)
-        target_index = _normalize_target_index(self.target_index)
-
-        object.__setattr__(self, "delay", delay)
-        object.__setattr__(self, "durations", durations)
-        object.__setattr__(self, "amplitudes", amplitudes)
-        object.__setattr__(self, "target_index", target_index)
+        for name, unit in (("delay", u.ms), ("durations", u.ms), ("amplitudes", u.nA)):
+            coerced = _coerce_quantity(
+                getattr(self, name),
+                unit=unit,
+                field_name=f"CurrentClamp.{name}",
+            )
+            object.__setattr__(self, name, coerced)
+        _raise_if_nonpositive_duration(self.durations)
 
 
 @quantity_hashable
@@ -169,43 +162,32 @@ class SineClamp(Point):
     delay: Any = field(default_factory=lambda: 0.0 * u.ms)
     duration: Any = field(default_factory=lambda: 1.0 * u.ms)
 
+    #: Quantity field -> unit. ``phase`` is dimensionless and handled
+    #: separately.
+    _UNITS: ClassVar[Mapping[str, Any]] = {
+        "amplitude": u.nA,
+        "frequency": u.Hz,
+        "offset": u.nA,
+        "delay": u.ms,
+        "duration": u.ms,
+    }
+    #: Fields that must additionally be strictly positive.
+    _POSITIVE: ClassVar[tuple[str, ...]] = ("frequency", "duration")
+
     def __post_init__(self) -> None:
-        frequency = _coerce_scalar_quantity(
-            self.frequency,
-            unit=u.Hz,
-            field_name="SineClamp.frequency",
-        )
-        if float(frequency.to_decimal(u.Hz)) <= 0.0:
-            raise ValueError(f"SineClamp.frequency must be > 0, got {self.frequency!r}.")
-        duration = _coerce_scalar_quantity(
-            self.duration,
-            unit=u.ms,
-            field_name="SineClamp.duration",
-        )
-        if float(duration.to_decimal(u.ms)) <= 0.0:
-            raise ValueError(f"SineClamp.duration must be > 0, got {self.duration!r}.")
         if not isinstance(self.phase, (int, float)) or isinstance(self.phase, bool):
             raise TypeError(f"SineClamp.phase must be a real number, got {type(self.phase).__name__!r}.")
-        amplitude = _coerce_scalar_quantity(
-            self.amplitude,
-            unit=u.nA,
-            field_name="SineClamp.amplitude",
-        )
-        offset = _coerce_scalar_quantity(
-            self.offset,
-            unit=u.nA,
-            field_name="SineClamp.offset",
-        )
-        delay = _coerce_scalar_quantity(
-            self.delay,
-            unit=u.ms,
-            field_name="SineClamp.delay",
-        )
-        object.__setattr__(self, "amplitude", amplitude)
-        object.__setattr__(self, "frequency", frequency)
-        object.__setattr__(self, "offset", offset)
-        object.__setattr__(self, "delay", delay)
-        object.__setattr__(self, "duration", duration)
+        for name, unit in self._UNITS.items():
+            original = getattr(self, name)
+            coerced = _coerce_quantity(
+                original,
+                unit=unit,
+                field_name=f"SineClamp.{name}",
+                allow_sequence=False,
+            )
+            if name in self._POSITIVE and float(coerced.to_decimal(unit)) <= 0.0:
+                raise ValueError(f"SineClamp.{name} must be > 0, got {original!r}.")
+            object.__setattr__(self, name, coerced)
 
 
 @quantity_hashable
@@ -249,62 +231,72 @@ class FunctionClamp(Point):
 
 
 @dataclass(frozen=True)
-class StateProbe(Point):
+class _LegacyProbe(Point):
+    """Shared preamble for the deprecated probe declarations.
+
+    The four probe classes each opened ``__post_init__`` with the same
+    deprecation warning -- passing their own class name as a string
+    literal, which a rename would silently desync -- followed by the same
+    optional-``name`` check. Both now happen once, here, and each
+    subclass implements only :meth:`_validate` for its own fields.
+    """
+
+    def __post_init__(self) -> None:
+        warnings.warn(
+            f"{type(self).__name__} is deprecated; use Cell.record(..., braincell.observe.*) for new code.",
+            DeprecationWarning,
+            stacklevel=3,
+        )
+        require_str(getattr(self, "name", None), type(self).__name__, "name", optional=True)
+        self._validate()
+
+    def _validate(self) -> None:
+        """Validate subclass-specific fields. Overridden as needed."""
+
+
+@dataclass(frozen=True)
+class StateProbe(_LegacyProbe):
     """Probe for cell-owned state at one placed location."""
 
     name: str | None = None
     field: str = "v"
 
-    def __post_init__(self) -> None:
-        _warn_legacy_probe("StateProbe")
-        if self.name is not None and (not isinstance(self.name, str) or not self.name):
-            raise ValueError(f"StateProbe.name must be a non-empty string or None, got {self.name!r}.")
-        if not isinstance(self.field, str) or not self.field:
-            raise ValueError(f"StateProbe.field must be a non-empty string, got {self.field!r}.")
+    def _validate(self) -> None:
+        require_str(self.field, "StateProbe", "field")
         if self.field != "v":
             raise ValueError(f"Unsupported StateProbe field {self.field!r}; only 'v' is supported.")
 
 
 @dataclass(frozen=True)
-class MechanismProbe(Point):
+class MechanismProbe(_LegacyProbe):
     """Probe for runtime state on a named mechanism."""
 
     mechanism: str
     field: str
     name: str | None = None
 
-    def __post_init__(self) -> None:
-        _warn_legacy_probe("MechanismProbe")
-        if self.name is not None and (not isinstance(self.name, str) or not self.name):
-            raise ValueError(f"MechanismProbe.name must be a non-empty string or None, got {self.name!r}.")
-        for field_name in ("mechanism", "field"):
-            value = getattr(self, field_name)
-            if not isinstance(value, str) or not value:
-                raise ValueError(f"MechanismProbe.{field_name} must be a non-empty string, got {value!r}.")
+    def _validate(self) -> None:
+        require_str(self.mechanism, "MechanismProbe", "mechanism")
+        require_str(self.field, "MechanismProbe", "field")
 
 
 @dataclass(frozen=True)
-class CurrentProbe(Point):
+class CurrentProbe(_LegacyProbe):
     """Probe for current at a placed location."""
 
     ion: str | None = None
     mechanism: str | None = None
     name: str | None = None
 
-    def __post_init__(self) -> None:
-        _warn_legacy_probe("CurrentProbe")
-        if self.name is not None and (not isinstance(self.name, str) or not self.name):
-            raise ValueError(f"CurrentProbe.name must be a non-empty string or None, got {self.name!r}.")
-        if self.ion is not None and (not isinstance(self.ion, str) or not self.ion):
-            raise ValueError(f"CurrentProbe.ion must be a non-empty string or None, got {self.ion!r}.")
-        if self.mechanism is not None and (not isinstance(self.mechanism, str) or not self.mechanism):
-            raise ValueError(f"CurrentProbe.mechanism must be a non-empty string or None, got {self.mechanism!r}.")
+    def _validate(self) -> None:
+        require_str(self.ion, "CurrentProbe", "ion", optional=True)
+        require_str(self.mechanism, "CurrentProbe", "mechanism", optional=True)
         if self.ion is None and self.mechanism is None:
             raise ValueError("CurrentProbe requires at least one of 'ion' or 'mechanism'.")
 
 
 @dataclass(frozen=True)
-class ProbeMechanism(Point):
+class ProbeMechanism(_LegacyProbe):
     """Observer that records a named variable at a point location.
 
     Parameters
@@ -320,20 +312,10 @@ class ProbeMechanism(Point):
     variable: str
     target: str | None = None
 
-    def __post_init__(self) -> None:
-        _warn_legacy_probe("ProbeMechanism")
-        if not isinstance(self.variable, str) or not self.variable:
-            raise ValueError(f"ProbeMechanism.variable must be a non-empty str, got {self.variable!r}.")
+    def _validate(self) -> None:
+        require_str(self.variable, "ProbeMechanism", "variable")
         if self.target is not None and not isinstance(self.target, str):
             raise TypeError(f"ProbeMechanism.target must be str or None, got {type(self.target).__name__!r}.")
-
-
-def _warn_legacy_probe(name: str) -> None:
-    warnings.warn(
-        f"{name} is deprecated; use Cell.record(..., braincell.observe.*) for new code.",
-        DeprecationWarning,
-        stacklevel=3,
-    )
 
 
 class SynapseSpec(Point):
@@ -370,8 +352,7 @@ class SynapseSpec(Point):
         name: str | None = None,
         **params: Any,
     ) -> None:
-        if not isinstance(synapse_type, str) or not synapse_type:
-            raise ValueError(f"SynapseSpec.synapse_type must be a non-empty string, got {synapse_type!r}.")
+        require_str(synapse_type, "SynapseSpec", "synapse_type")
         if synapse_type in {"AMPA", "GABAa", "NMDA"}:
             raise NotImplementedError(
                 f"{synapse_type} is temporarily unavailable while its transmitter-pulse and "
@@ -379,8 +360,7 @@ class SynapseSpec(Point):
             )
         if "params" in params:
             raise TypeError("Synapse parameters must be passed as keyword arguments, not as params={...}.")
-        if name is not None and not isinstance(name, str):
-            raise TypeError(f"SynapseSpec.name must be a string or None, got {type(name).__name__!r}.")
+        require_str(name, "SynapseSpec", "name", optional=True)
         object.__setattr__(self, "synapse_type", synapse_type)
         object.__setattr__(self, "params", Params(params) if params else Params())
         object.__setattr__(self, "name", name)
@@ -396,11 +376,6 @@ class SynapseSpec(Point):
         """Display label — ``self.name`` if set, else ``synapse_type``."""
         return self.name if self.name is not None else self.synapse_type
 
-    @property
-    def identity(self) -> tuple[str, str]:
-        """Return ``(instance_name, synapse_type)`` for table views."""
-        return (self.instance_name, self.synapse_type)
-
     def __eq__(self, other: object) -> bool:
         if type(self) is not type(other):
             return NotImplemented
@@ -413,44 +388,31 @@ class SynapseSpec(Point):
         return f"SynapseSpec(synapse_type={self.synapse_type!r}, params={self.params!r}, name={self.name!r})"
 
 
-class Synapse(SynapseSpec):
-    """Deprecated spelling of :class:`SynapseSpec`."""
-
-    def __init__(self, *args, **kwargs) -> None:
-        import warnings
-
-        warnings.warn(
-            "braincell.mech.Synapse is deprecated; use braincell.mech.SynapseSpec.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        super().__init__(*args, **kwargs)
-
-
 # ---------------------------------------------------------------------------
 # helpers
 # ---------------------------------------------------------------------------
 
 
-def _coerce_scalar_quantity(value: Any, *, unit: Any, field_name: str) -> Any:
-    if not hasattr(value, "to_decimal"):
-        raise TypeError(f"{field_name} must be a Quantity, got {value!r}.")
-    return value.in_unit(unit)
+def _coerce_quantity(value: Any, *, unit: Any, field_name: str, allow_sequence: bool = True) -> Any:
+    """Coerce ``value`` to a Quantity in ``unit``.
 
-
-def _coerce_quantity(value: Any, *, unit: Any, field_name: str) -> Any:
+    With ``allow_sequence=False`` this is the former
+    ``_coerce_scalar_quantity``, which was a strict subset of this
+    function -- and which, despite its name, never checked scalar-ness.
+    """
     if value is None:
         raise TypeError(f"{field_name} must not be None.")
     if hasattr(value, "to_decimal"):
         return value.in_unit(unit)
-    if isinstance(value, (list, tuple)):
+    if allow_sequence and isinstance(value, (list, tuple)):
         if len(value) == 0:
             raise ValueError(f"{field_name} must be non-empty.")
         if not all(hasattr(item, "to_decimal") for item in value):
             raise TypeError(f"{field_name} entries must be Quantities.")
         decimals = [item.to_decimal(unit) for item in value]
         return u.Quantity(np.stack(decimals, axis=-1), unit)
-
+    if not allow_sequence:
+        raise TypeError(f"{field_name} must be a Quantity, got {value!r}.")
     raise TypeError(f"{field_name} must be a Quantity or sequence of Quantities, got {type(value).__name__!r}.")
 
 
@@ -460,16 +422,3 @@ def _raise_if_nonpositive_duration(value: Any) -> None:
         raise ValueError("CurrentClamp.durations must be non-empty.")
     if np.any(decimals <= 0.0):
         raise ValueError(f"CurrentClamp.durations entries must be > 0, got {value!r}.")
-
-
-def _normalize_target_index(value: Any) -> Any:
-    if value is None:
-        return None
-    arr = np.asarray(value)
-    if arr.ndim != 1:
-        raise ValueError(f"CurrentClamp.target_index must be one-dimensional, got shape {arr.shape!r}.")
-    if not np.issubdtype(arr.dtype, np.integer):
-        raise TypeError("CurrentClamp.target_index entries must be integers.")
-    if np.any(arr < 0):
-        raise ValueError("CurrentClamp.target_index entries must be non-negative.")
-    return tuple(int(item) for item in arr.tolist())

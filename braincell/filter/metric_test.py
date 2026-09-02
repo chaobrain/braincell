@@ -51,7 +51,6 @@ class SpatialMetricTest(unittest.TestCase):
             radius_prox=1.2 * u.um,
             radius_mid=1.0 * u.um,
             radius_dist=0.8 * u.um,
-            diam_mid=2.0 * u.um,
             diam_arc_mean=2.0 * u.um,
             path_distance_to_root=30.0 * u.um,
             path_distance_from_soma=20.0 * u.um,
@@ -60,6 +59,9 @@ class SpatialMetricTest(unittest.TestCase):
 
         self.assertEqual(metric.branch_x(context), 0.5)
         self.assertEqual(metric.radius(context), 1.0 * u.um)
+        # ``diam_mid`` is derived from ``radius_mid`` rather than stored,
+        # so the two can no longer disagree.
+        self.assertEqual(context.diam_mid, 2.0 * u.um)
         self.assertEqual(metric.path_distance_from_soma(context), 20.0 * u.um)
         np.testing.assert_array_equal(metric.position(context).to_decimal(u.um), [1.0, 2.0, 3.0])
 

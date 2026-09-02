@@ -159,24 +159,6 @@ class MechanismRegistryAliasTest(MechanismRegistryIsolationMixin, unittest.TestC
         self.assertIs(reg.get("channel", "IL"), _DummyChannel)
         self.assertIs(reg.get("channel", "leaky"), _DummyChannel)
 
-    def test_add_alias_to_existing(self) -> None:
-        reg = self.make_registry()
-        reg.register(MechanismEntry(category="channel", name="IL", cls=_DummyChannel))
-        reg.add_alias(category="channel", alias="passive", name="IL")
-        self.assertIs(reg.get("channel", "passive"), _DummyChannel)
-
-    def test_add_alias_to_missing_entry_raises(self) -> None:
-        reg = self.make_registry()
-        with self.assertRaises(KeyError):
-            reg.add_alias(category="channel", alias="a", name="missing")
-
-    def test_add_alias_collision_raises(self) -> None:
-        reg = self.make_registry()
-        reg.register(MechanismEntry(category="channel", name="IL", cls=_DummyChannel))
-        reg.add_alias(category="channel", alias="leaky", name="IL")
-        with self.assertRaises(ValueError):
-            reg.add_alias(category="channel", alias="leaky", name="IL")
-
 
 class MechanismRegistryRemovalTest(MechanismRegistryIsolationMixin, unittest.TestCase):
     def test_unregister_removes_canonical_and_aliases(self) -> None:

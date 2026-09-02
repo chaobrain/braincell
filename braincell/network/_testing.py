@@ -106,7 +106,7 @@ def make_post_cell(size: int = 2) -> Cell:
     cell.place(at("soma", 0.5), braincell.mech.MechanismProbe(name="g", mechanism="exp", field="g"))
     cell.place(
         at("soma", 0.5),
-        braincell.mech.Synapse(
+        braincell.mech.SynapseSpec(
             "ExpSyn",
             tau=2.0 * u.ms,
             e=0.0 * u.mV,
@@ -128,7 +128,7 @@ def make_post_cell_with_synapse_pool(size: int = 2) -> Cell:
     )
     cell.place(
         at("soma", 0.5) | at(1, 0.5),
-        braincell.mech.Synapse(
+        braincell.mech.SynapseSpec(
             "ExpSyn",
             tau=2.0 * u.ms,
             e=0.0 * u.mV,
@@ -160,7 +160,7 @@ def make_recording_post_cell(size: int = 2) -> Cell:
 
     This is the :class:`~braincell.mech.SynapseSpec` + ``observe`` counterpart
     to :func:`make_post_cell`, which predates that API and still declares its
-    synapse with ``mech.Synapse`` plus a ``MechanismProbe``.
+    synapse with ``mech.SynapseSpec`` plus a ``MechanismProbe``.
     """
     cell = Cell(
         make_soma_tree(),

@@ -269,7 +269,7 @@ class SamplingContextAndValidationTest(unittest.TestCase):
         locations = sample(AllRegion(), number=2, seed=5)
         expected_x = locations.evaluate(morpho).branch_x
         cell = braincell.Cell(morpho, cv_policy=braincell.CVPerBranch())
-        cell.place(locations, braincell.mech.SynapseSpec("ExpSyn", name="sampled", tau=2.0 * u.ms))
+        cell.place(locations, braincell.mech.Synapse("ExpSyn", name="sampled", tau=2.0 * u.ms))
 
         placements = cell.point_placements
         np.testing.assert_allclose([placement.branch_x for placement in placements], expected_x)

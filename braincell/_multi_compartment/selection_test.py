@@ -88,7 +88,7 @@ class CellSpatialSelectionTest(unittest.TestCase):
     def test_spatial_view_cannot_place(self) -> None:
         cell = _cell()
         with self.assertRaisesRegex(RuntimeError, "Spatial CellView.place"):
-            cell.soma.place(at("soma", 0.5), braincell.mech.SynapseSpec("ExpSyn"))
+            cell.soma.place(at("soma", 0.5), braincell.mech.Synapse("ExpSyn"))
 
 
 if __name__ == "__main__":

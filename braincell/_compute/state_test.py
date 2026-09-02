@@ -38,7 +38,7 @@ class CellRuntimeStateTest(unittest.TestCase):
         cell = Cell(_build_tree())
         cell.place(
             RootLocation(x=0.5),
-            braincell.mech.SynapseSpec(
+            braincell.mech.Synapse(
                 "ExpSyn",
                 tau=2.0 * u.ms,
                 e=0.0 * u.mV,
@@ -64,7 +64,7 @@ class CellRuntimeStateTest(unittest.TestCase):
         cell = Cell(_build_tree())
         cell.place(
             RootLocation(x=0.5),
-            braincell.mech.SynapseSpec(
+            braincell.mech.Synapse(
                 "ExpSyn",
                 tau=2.0 * u.ms,
                 e=0.0 * u.mV,
@@ -416,7 +416,7 @@ class PointSynapseRuntimeTest(unittest.TestCase):
         )
         cell.place(
             at("soma", 0.5),
-            braincell.mech.SynapseSpec(
+            braincell.mech.Synapse(
                 "ExpSyn",
                 tau=2.0 * u.ms,
                 e=0.0 * u.mV,
@@ -438,7 +438,7 @@ class PointSynapseRuntimeTest(unittest.TestCase):
     def test_unmigrated_receptor_models_fail_explicitly(self) -> None:
         for model in ("AMPA", "GABAa", "NMDA"):
             with self.assertRaisesRegex(NotImplementedError, "temporarily unavailable"):
-                braincell.mech.SynapseSpec(model)
+                braincell.mech.Synapse(model)
 
     def test_expsyn_drive_jumps_g_and_then_decays(self) -> None:
         cell = Cell(
@@ -450,7 +450,7 @@ class PointSynapseRuntimeTest(unittest.TestCase):
         cell.place(at("soma", 0.5), braincell.mech.CurrentProbe(name="i_syn", mechanism="exp_syn"))
         cell.place(
             at("soma", 0.5),
-            braincell.mech.SynapseSpec(
+            braincell.mech.Synapse(
                 "ExpSyn",
                 tau=2.0 * u.ms,
                 e=0.0 * u.mV,
@@ -487,7 +487,7 @@ class PointSynapseRuntimeTest(unittest.TestCase):
         cell.place(at("soma", 0.5), braincell.mech.CurrentProbe(name="i_syn", mechanism="exp2_syn"))
         cell.place(
             at("soma", 0.5),
-            braincell.mech.SynapseSpec(
+            braincell.mech.Synapse(
                 "Exp2Syn",
                 tau1=0.5 * u.ms,
                 tau2=5.0 * u.ms,
@@ -532,7 +532,7 @@ class PointSynapseRuntimeTest(unittest.TestCase):
         cell.place(at("soma", 0.5), braincell.mech.StateProbe(name="v", field="v"))
         cell.place(at("soma", 0.5), braincell.mech.MechanismProbe(name="g", mechanism="exp_syn", field="g"))
         cell.place(at("soma", 0.5), braincell.mech.CurrentProbe(name="i_syn", mechanism="exp_syn"))
-        exp = braincell.mech.SynapseSpec("ExpSyn", tau=2.0 * u.ms, e=0.0 * u.mV, name="exp_syn")
+        exp = braincell.mech.Synapse("ExpSyn", tau=2.0 * u.ms, e=0.0 * u.mV, name="exp_syn")
         cell.place(at("soma", 0.5), exp)
         braincell.connect(
             "stim_to_exp",
@@ -550,7 +550,7 @@ class PointSynapseRuntimeTest(unittest.TestCase):
             solver="staggered",
             V_init=-65.0 * u.mV,
         )
-        exp = braincell.mech.SynapseSpec("ExpSyn", tau=2.0 * u.ms, e=0.0 * u.mV, name="exp_syn")
+        exp = braincell.mech.Synapse("ExpSyn", tau=2.0 * u.ms, e=0.0 * u.mV, name="exp_syn")
         cell.place(at("soma", 0.5), exp)
         braincell.connect(
             "stim_to_exp",
@@ -577,7 +577,7 @@ class PointSynapseRuntimeTest(unittest.TestCase):
         )
         cell.place(
             at("soma", 0.5),
-            braincell.mech.SynapseSpec(
+            braincell.mech.Synapse(
                 "ExpSyn",
                 tau=2.0 * u.ms,
                 e=0.0 * u.mV,

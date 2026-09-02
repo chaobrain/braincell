@@ -130,7 +130,7 @@ def run_braincell_synapse_case(
         raise ValueError(f"Unsupported synapse_type {synapse_type!r}.")
     cell.place(
         at("soma", 0.5),
-        mech.SynapseSpec(synapse_type, name=synapse_name, **synapse_params),
+        mech.Synapse(synapse_type, name=synapse_name, **synapse_params),
     )
     cell.init_state()
 

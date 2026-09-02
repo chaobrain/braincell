@@ -56,7 +56,7 @@ parameter *literally named* `"params"` whose value was the dict. Verified:
 ```
 
 The failure is silent — no exception, and `g_max` quietly falls back to its
-default at lowering time. `SynapseSpec.__init__` already guarded exactly this
+default at lowering time. `Synapse.__init__` already guarded exactly this
 mistake with a clear `TypeError`; `Channel` and `Ion` did not. The guard moves
 to `Density.__init__` so all three declaration families behave alike.
 
@@ -79,14 +79,20 @@ outside its own test:
 
 | Symbol | Note |
 |---|---|
-| `Density.identity`, `SynapseSpec.identity` | see below |
+| `Density.identity`, `Synapse.identity` | see below |
 | `Density.with_params`, `Density.with_name` | `with_coverage` is live and stays |
 | `Density.with_integration` | |
 | `Params.without` | `Params.with_updates` is live and stays |
 | `CableProperty.with_updates` | |
 | `MechanismRegistry.add_alias` | `unregister` / `contains` are live and stay |
 | `CurrentClamp.target_index` + `_normalize_target_index` | field documented "Reserved"; no reader |
-| `mech.Synapse` | deprecated alias; its 2 callers in `network/_testing.py` move to `SynapseSpec` |
+| `mech.Synapse` (the deprecated alias) | its 2 callers in `network/_testing.py` move to the then-canonical `SynapseSpec` |
+
+> **Later note.** The last row reads backwards today. `SynapseSpec` was itself
+> renamed to `Synapse` shortly after this refactor landed, reclaiming the name this
+> spec had just freed — see
+> [`2026-09-02-mech-synapse-rename.md`](2026-09-02-mech-synapse-rename.md). The row
+> above is left in its original terms because it records what was true at the time.
 
 `identity` earns a specific note. Both copies documented themselves as
 returning `(instance_name, class_name)` "for table views", but the actual table
@@ -99,8 +105,8 @@ with it. `instance_name` has 30+ production readers and stays.
 
 The same condition was validated 11 times across `_density.py` and `_point.py`
 with **three different exception types** — `ValueError` in the probes,
-`TypeError` in `Density.name` / `Channel.ion_name` / `SynapseSpec.name`,
-`ValueError` in `SynapseSpec.synapse_type`. A caller writing `except` had no
+`TypeError` in `Density.name` / `Channel.ion_name` / `Synapse.name`,
+`ValueError` in `Synapse.synapse_type`. A caller writing `except` had no
 way to be right.
 
 One helper now owns the check and picks by cause, following the Python
@@ -271,15 +277,15 @@ inherit the reasoning rather than the rediscovery.
    `TODO.md:472` tracks "Junction runtime wiring" as planned work. Flagged, not
    deleted.
 
-5. **The `Density` / `SynapseSpec` duplication is not unified.** They are the
+5. **The `Density` / `Synapse` duplication is not unified.** They are the
    same "registry-keyed, named, params-carrying declaration" implemented twice,
-   and `SynapseSpec` lacking a `category` is why three separate consumer chains
+   and `Synapse` lacking a `category` is why three separate consumer chains
    in `_compute` each need a parallel branch. A shared `RegistryKeyed` mixin is
    the right end state, but it changes `_compute/layouts.py`, `_compute/table.py`,
    and `_discretization` together — **iteration 14**.
 
 6. **Probe default-name derivation stays where it is.** `Density` and
-   `SynapseSpec` have `instance_name`; the probe classes do not, so
+   `Synapse` have `instance_name`; the probe classes do not, so
    `_discretization/mechanism.py` and `_compute/table.py` each hand-roll the
    same three suffix formulas. Giving the probes a `default_name` is a genuine
    altitude fix, but the payoff lands in two other packages — **iteration 14**.

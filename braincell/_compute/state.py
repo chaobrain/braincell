@@ -67,7 +67,7 @@ from braincell.mech import NoEventInput, ScalarEventInput, TriggerEventInput
 from braincell.mech import (
     CurrentClamp,
     Density,
-    SynapseSpec as SynapsePlacement,
+    Synapse as SynapsePlacement,
     get_registry,
 )
 from .bindings import (

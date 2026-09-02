@@ -196,7 +196,7 @@ class TestCellDeclaration(unittest.TestCase):
 
     def test_population_selection_places_packed_instances(self):
         cell = Cell(_simple_cell().morpho, cv_policy=CVPerBranch(), pop_size=(4,))
-        synapse = mech.SynapseSpec("ExpSyn", name="exp", tau=2.0 * u.ms)
+        synapse = mech.Synapse("ExpSyn", name="exp", tau=2.0 * u.ms)
 
         cell[0].place(at("soma", 0.21), synapse)
         cell[[1, 3, 3]].place(at("soma", 0.45), synapse)
@@ -243,7 +243,7 @@ class TestCellDeclaration(unittest.TestCase):
 
     def test_cell_view_filters_effective_place_declarations(self):
         cell = Cell(_simple_cell().morpho, cv_policy=CVPerBranch(), pop_size=(4,))
-        exp = mech.SynapseSpec("ExpSyn", name="exp", tau=2.0 * u.ms)
+        exp = mech.Synapse("ExpSyn", name="exp", tau=2.0 * u.ms)
         cell.place(at("soma", 0.5), exp)
         selected = cell[[1, 3]]
         result = selected.place(at("soma", 0.25), exp)
@@ -258,7 +258,7 @@ class TestCellDeclaration(unittest.TestCase):
 
     def test_cell_view_synapses_filter_and_retain_parameter_set(self):
         cell = Cell(_simple_cell().morpho, cv_policy=CVPerBranch(), pop_size=(4,))
-        exp = mech.SynapseSpec("ExpSyn", name="exp", tau=2.0 * u.ms, e=0.0 * u.mV)
+        exp = mech.Synapse("ExpSyn", name="exp", tau=2.0 * u.ms, e=0.0 * u.mV)
         cell.place(at("soma", 0.5), exp)
         cell[1].place(at("soma", 0.25), exp)
 
@@ -275,7 +275,7 @@ class TestCellDeclaration(unittest.TestCase):
 
     def test_cell_view_filters_connection_rows_by_synapse_population(self):
         cell = Cell(_simple_cell().morpho, cv_policy=CVPerBranch(), pop_size=(3,))
-        exp = mech.SynapseSpec("ExpSyn", name="exp")
+        exp = mech.Synapse("ExpSyn", name="exp")
         cell.place(at("soma", 0.5), exp)
         connection = connect("cell_2", source=NetStim(), synapse=cell[2].synapses[exp])
 
@@ -389,7 +389,7 @@ class TestCellDeclaration(unittest.TestCase):
 
     def test_cell_view_reads_packed_runtime_rows_without_exposing_methods(self):
         cell = Cell(_simple_cell().morpho, cv_policy=CVPerBranch(), pop_size=(4,))
-        exp = mech.SynapseSpec("ExpSyn", name="exp", tau=2.0 * u.ms, e=0.0 * u.mV)
+        exp = mech.Synapse("ExpSyn", name="exp", tau=2.0 * u.ms, e=0.0 * u.mV)
         cell[[1, 3]].place(at("soma", 0.5), exp)
         cell.init_state()
         layout = next(item for item in cell.layouts if item.kind == "synapse:ExpSyn")
@@ -417,7 +417,7 @@ class TestCellDeclaration(unittest.TestCase):
 
     def test_unselected_place_retains_broadcast_semantics(self):
         cell = Cell(_simple_cell().morpho, cv_policy=CVPerBranch(), pop_size=(4,))
-        cell.place(at("soma", 0.5), mech.SynapseSpec("ExpSyn", name="exp"))
+        cell.place(at("soma", 0.5), mech.Synapse("ExpSyn", name="exp"))
 
         self.assertEqual(len(cell.point_placements), 1)
         self.assertIsNone(cell.point_placements[0].population_index)
@@ -437,7 +437,7 @@ class TestCellDeclaration(unittest.TestCase):
     def test_locset_batch_place_aligns_rows_with_population_members(self):
         base = _simple_cell()
         cell = Cell(base.morpho, cv_policy=CVPerBranch(), pop_size=(3,))
-        synapse = mech.SynapseSpec("ExpSyn", name="exp", tau=2.0 * u.ms)
+        synapse = mech.Synapse("ExpSyn", name="exp", tau=2.0 * u.ms)
         locations = cell.cv_midpoints[np.asarray([[0, 0], [0, 0], [0, 0]])]
 
         cell.place(locations, synapse)
@@ -449,7 +449,7 @@ class TestCellDeclaration(unittest.TestCase):
     def test_locset_batch_place_validates_population_alignment(self):
         base = _simple_cell()
         cell = Cell(base.morpho, cv_policy=CVPerBranch(), pop_size=(3,))
-        synapse = mech.SynapseSpec("ExpSyn", name="exp")
+        synapse = mech.Synapse("ExpSyn", name="exp")
         locations = cell.cv_midpoints[np.asarray([[0], [0]])]
 
         with self.assertRaisesRegex(ValueError, "batch rows"):
@@ -460,8 +460,8 @@ class TestCellDeclaration(unittest.TestCase):
     def test_synapse_view_expands_broadcast_and_selects_by_declaration_identity(self):
         base = _simple_cell()
         cell = Cell(base.morpho, cv_policy=CVPerBranch(), pop_size=(3,))
-        exp = mech.SynapseSpec("ExpSyn", name="exp", tau=2.0 * u.ms, e=0.0 * u.mV)
-        other = mech.SynapseSpec("ExpSyn", name="other", tau=2.0 * u.ms, e=0.0 * u.mV)
+        exp = mech.Synapse("ExpSyn", name="exp", tau=2.0 * u.ms, e=0.0 * u.mV)
+        other = mech.Synapse("ExpSyn", name="other", tau=2.0 * u.ms, e=0.0 * u.mV)
         cell.place(at("soma", 0.5), exp)
         cell[1].place(at("soma", 0.25), other)
 
@@ -475,7 +475,7 @@ class TestCellDeclaration(unittest.TestCase):
     def test_synapse_view_sets_heterogeneous_runtime_parameters(self):
         base = _simple_cell()
         cell = Cell(base.morpho, cv_policy=CVPerBranch(), pop_size=(3,))
-        exp = mech.SynapseSpec("ExpSyn", name="exp", tau=2.0 * u.ms, e=0.0 * u.mV)
+        exp = mech.Synapse("ExpSyn", name="exp", tau=2.0 * u.ms, e=0.0 * u.mV)
         cell.place(at("soma", 0.5), exp)
 
         cell.synapses[exp].set(
@@ -493,7 +493,7 @@ class TestCellDeclaration(unittest.TestCase):
     def test_synapse_view_sets_batch_placed_instances_in_row_order(self):
         base = _simple_cell()
         cell = Cell(base.morpho, cv_policy=CVPerBranch(), pop_size=(3,))
-        exp = mech.SynapseSpec("ExpSyn", name="exp", tau=2.0 * u.ms, e=0.0 * u.mV)
+        exp = mech.Synapse("ExpSyn", name="exp", tau=2.0 * u.ms, e=0.0 * u.mV)
         locations = cell.cv_midpoints[np.asarray([[0, 0], [0, 0], [0, 0]])]
         cell.place(locations, exp)
 
@@ -508,7 +508,7 @@ class TestCellDeclaration(unittest.TestCase):
 
     def test_population_selection_validates_indices_and_phase(self):
         cell = Cell(_simple_cell().morpho, cv_policy=CVPerBranch(), pop_size=(4,))
-        synapse = mech.SynapseSpec("ExpSyn", name="exp")
+        synapse = mech.Synapse("ExpSyn", name="exp")
         self.assertEqual(cell[-1].population_indices, (3,))
         with self.assertRaises(IndexError):
             _ = cell[4]

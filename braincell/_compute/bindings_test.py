@@ -362,6 +362,50 @@ class RuntimeBindingTest(unittest.TestCase):
         self.assertEqual(samples["soma(0.5)_Kca3p1_MA2020_GoC_current"], expected_mechanism)
         self.assertEqual(samples["soma(0.5)_k_main_current"], expected_total)
 
+    def test_component_wrappers_forward_ind_update_to_the_wrapped_channel(self) -> None:
+        # ``_base_ion`` calls ``node.ind_update(V, *infos)`` on every child.
+        # The current-component wrapper used not to forward it, so it fell
+        # through to ``IonChannel.ind_update``, which tests
+        # ``isinstance(self, IndependentIntegration)`` on the *wrapper* --
+        # never true -- silently skipping sub-solver integration for every
+        # multi-owner channel and bypassing the ``owns_state`` gate.
+        cell = Cell(_build_tree())
+        cell.paint(
+            BranchSlice(branch_index=[0, 1], prox=0.0, dist=1.0),
+            braincell.mech.Ion("PotassiumFixed", name="k_main", E=-88.0 * u.mV),
+            braincell.mech.Ion("NonSpecificFixed", name="no"),
+        )
+        cell.paint(
+            BranchSlice(branch_index=[0, 1], prox=0.0, dist=1.0),
+            braincell.mech.Channel("_RuntimeTestTwoOwnerChannel", ion_names={"k": "k_main", "no": "no"}),
+        )
+        cell.init_state()
+
+        wrappers = [cell.get_ion(key).channels["_RuntimeTestTwoOwnerChannel"] for key in ("k_main", "no")]
+        self.assertEqual(len(wrappers), 2)
+
+        for wrapper in wrappers:
+            self.assertTrue(
+                hasattr(type(wrapper), "ind_update"),
+                "the wrapper must forward ind_update, not inherit the isinstance no-op",
+            )
+            seen = []
+            wrapper._channel.ind_update = lambda *args, **kwargs: seen.append(args)
+            wrapper.ind_update(cell._discretization_to_point(cell.V.value))
+            # Only the state-owning wrapper forwards; the component wrapper
+            # for a non-owning ion must not integrate the shared state twice.
+            self.assertEqual(len(seen), 1 if wrapper._owns_state else 0)
+
+    def test_component_wrappers_do_not_carry_a_dead_update_method(self) -> None:
+        # ``IonChannel`` defines no ``update``, so the wrapper's override
+        # overrode nothing; the only caller of ``.update()`` on a channel in
+        # the repository was that method's own body.
+        from braincell._base_channel import IonChannel
+        from braincell._compute.bindings import _BoundIonChannelRuntime
+
+        self.assertFalse(hasattr(IonChannel, "update"))
+        self.assertFalse(hasattr(_BoundIonChannelRuntime, "update"))
+
     def test_multi_owner_mixed_ion_channel_exposes_component_currents(self) -> None:
         cell = Cell(_build_tree())
         cell.paint(

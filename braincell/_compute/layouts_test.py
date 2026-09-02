@@ -50,25 +50,16 @@ class _ClampStubLayout:
     point_index: np.ndarray | None
 
 
-@_dataclass
-class _ClampStubCV:
-    id: int
-    area: object  # brainunit Quantity in cm^2
+def _clamp_areas(areas_cm2, *, n_point: int) -> tuple[np.ndarray, np.ndarray]:
+    """Return ``(point_area_decimal, midpoint_ids)`` for ``len(areas_cm2)`` CVs.
 
-
-@_dataclass
-class _ClampStubNodeTree:
-    cv_to_mid_node_id: np.ndarray
-
-
-def _clamp_node_tree(n_cv: int) -> _ClampStubNodeTree:
-    return _ClampStubNodeTree(
-        cv_to_mid_node_id=np.arange(n_cv, dtype=np.int32),
-    )
-
-
-def _clamp_cv(cv_id: int, area_cm2: float) -> _ClampStubCV:
-    return _ClampStubCV(id=cv_id, area=area_cm2 * u.cm**2)
+    CV ``i`` owns point ``i``, mirroring ``cv_to_mid_node_id == arange(n_cv)``
+    on a real node tree. Any remaining points are CV boundaries, which carry no
+    membrane area of their own.
+    """
+    point_area = np.zeros((n_point,), dtype=float)
+    point_area[: len(areas_cm2)] = np.asarray(areas_cm2, dtype=float)
+    return point_area, np.arange(len(areas_cm2), dtype=np.int32)
 
 
 class RuntimeLayoutTest(unittest.TestCase):
@@ -322,6 +313,46 @@ class RuntimeLayoutTest(unittest.TestCase):
         self.assertAlmostEqual(float(active[0, 1].to_decimal(u.nA)), 0.2, places=6)
         self.assertAlmostEqual(float(after[0, 1].to_decimal(u.nA)), 0.0, places=6)
 
+    def test_sine_clamp_reads_the_delay_of_each_point_not_of_point_zero(self) -> None:
+        # Two identical SineClamps merge into one layout. The evaluator used
+        # to fetch ``delay`` without ``local_index``, so every point in the
+        # layout silently used point 0's delay -- an omitted argument that a
+        # single-point test cannot see, because there index 0 is the only
+        # index. CurrentClamp, eleven lines away, always passed it.
+        cell = Cell(_build_tree())
+        for branch_index in (0, 1):
+            cell.place(
+                at(branch_index, 0.5),
+                SineClamp(
+                    amplitude=0.0 * u.nA,
+                    frequency=500.0 * u.Hz,
+                    offset=0.2 * u.nA,
+                    delay=0.0 * u.ms,
+                    duration=100.0 * u.ms,
+                ),
+            )
+        cell.init_state()
+        runtime = cell.runtime
+
+        layout = next(lay for lay in runtime.layouts if lay.kind == "SineClamp")
+        self.assertEqual(layout.n_active, 2)
+        # The two clamps must land on distinct points, or the scatter-add
+        # below would hide a per-point difference behind a single total.
+        self.assertEqual(len(set(layout.point_index.tolist())), 2)
+
+        # Give the two points different delays: point 0 open, point 1 still
+        # waiting at t = 1 ms.
+        buffer = runtime.state_buffers[(int(layout.id), "delay")]
+        delays = np.zeros_like(np.asarray(buffer.mantissa))
+        delays[..., 1] = 5.0
+        runtime.state_buffers[(int(layout.id), "delay")] = u.Quantity(delays, buffer.unit)
+
+        current = runtime.evaluate_point_clamps(t=1.0 * u.ms).to_decimal(u.nA)
+        per_point = [float(current[..., int(pid)].ravel()[0]) for pid in layout.point_index]
+
+        self.assertAlmostEqual(per_point[0], 0.2, places=6)
+        self.assertAlmostEqual(per_point[1], 0.0, places=6)
+
     def test_probe_layouts_are_sparse_and_allocate_no_state_buffers(self) -> None:
         cell = Cell(_build_tree())
         cell.place(
@@ -437,11 +468,11 @@ class TestBuildClampRoutingTable(unittest.TestCase):
                 point_index=np.asarray([0], dtype=np.int32),
             ),
         )
+        area, midpoints = _clamp_areas([1e-6], n_point=1)
         table = build_clamp_routing_table(
             layouts=layouts,
-            cvs=[_clamp_cv(0, 1e-6)],
-            node_tree=_clamp_node_tree(1),
-            n_point=1,
+            point_area_decimal=area,
+            midpoint_ids=midpoints,
         )
         self.assertIsNone(table)
 
@@ -453,11 +484,11 @@ class TestBuildClampRoutingTable(unittest.TestCase):
                 point_index=np.asarray([1], dtype=np.int32),
             ),
         )
+        area, midpoints = _clamp_areas([1e-6, 2e-6], n_point=2)
         table = build_clamp_routing_table(
             layouts=layouts,
-            cvs=[_clamp_cv(0, 1e-6), _clamp_cv(1, 2e-6)],
-            node_tree=_clamp_node_tree(2),
-            n_point=2,
+            point_area_decimal=area,
+            midpoint_ids=midpoints,
         )
         self.assertIsInstance(table, ClampRoutingTable)
         np.testing.assert_array_equal(table.midpoint_ids, np.asarray([1], dtype=np.int32))
@@ -480,11 +511,11 @@ class TestBuildClampRoutingTable(unittest.TestCase):
                 point_index=np.asarray([1, 2], dtype=np.int32),
             ),
         )
+        area, midpoints = _clamp_areas([1e-6 * (i + 1) for i in range(4)], n_point=4)
         table = build_clamp_routing_table(
             layouts=layouts,
-            cvs=[_clamp_cv(i, 1e-6 * (i + 1)) for i in range(4)],
-            node_tree=_clamp_node_tree(4),
-            n_point=4,
+            point_area_decimal=area,
+            midpoint_ids=midpoints,
         )
         np.testing.assert_array_equal(table.midpoint_ids, np.asarray([1, 2, 3], dtype=np.int32))
 
@@ -496,12 +527,12 @@ class TestBuildClampRoutingTable(unittest.TestCase):
                 point_index=np.asarray([0], dtype=np.int32),
             ),
         )
+        area, midpoints = _clamp_areas([0.0], n_point=1)
         with self.assertRaises(ValueError):
             build_clamp_routing_table(
                 layouts=layouts,
-                cvs=[_clamp_cv(0, 0.0)],
-                node_tree=_clamp_node_tree(1),
-                n_point=1,
+                point_area_decimal=area,
+                midpoint_ids=midpoints,
             )
 
     def test_endpoint_clamp_builds_boundary_route(self):
@@ -512,11 +543,11 @@ class TestBuildClampRoutingTable(unittest.TestCase):
                 point_index=np.asarray([2], dtype=np.int32),
             ),
         )
+        area, midpoints = _clamp_areas([1e-6], n_point=3)
         table = build_clamp_routing_table(
             layouts=layouts,
-            cvs=[_clamp_cv(0, 1e-6)],
-            node_tree=_clamp_node_tree(1),
-            n_point=3,
+            point_area_decimal=area,
+            midpoint_ids=midpoints,
         )
         self.assertIsInstance(table, ClampRoutingTable)
         np.testing.assert_array_equal(table.midpoint_ids, np.asarray([], dtype=np.int32))
@@ -536,11 +567,11 @@ class TestBuildClampRoutingTable(unittest.TestCase):
                 point_index=np.asarray([1, 4], dtype=np.int32),
             ),
         )
+        area, midpoints = _clamp_areas([1e-6, 2e-6], n_point=5)
         table = build_clamp_routing_table(
             layouts=layouts,
-            cvs=[_clamp_cv(0, 1e-6), _clamp_cv(1, 2e-6)],
-            node_tree=_clamp_node_tree(2),
-            n_point=5,
+            point_area_decimal=area,
+            midpoint_ids=midpoints,
         )
         np.testing.assert_array_equal(table.midpoint_ids, np.asarray([0, 1], dtype=np.int32))
         np.testing.assert_allclose(table.midpoint_area, np.asarray([1e-6, 2e-6]))
@@ -554,12 +585,12 @@ class TestBuildClampRoutingTable(unittest.TestCase):
                 point_index=np.asarray([0], dtype=np.int32),
             ),
         )
+        area, midpoints = _clamp_areas([1e-6], n_point=1)
         self.assertIsNone(
             build_clamp_routing_table(
                 layouts=layouts,
-                cvs=[_clamp_cv(0, 1e-6)],
-                node_tree=_clamp_node_tree(1),
-                n_point=1,
+                point_area_decimal=area,
+                midpoint_ids=midpoints,
             )
         )
 

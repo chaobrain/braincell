@@ -26,6 +26,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+import brainstate
 import brainunit as u
 import numpy as np
 
@@ -41,7 +42,6 @@ __all__ = [
     "fill_like",
     "gather_midpoint_values",
     "is_python_zero",
-    "matches_last_dim",
     "point_to_cv",
     "quantity_vector",
     "scatter_cv_geometry",
@@ -71,10 +71,11 @@ def quantity_vector(values: list[object], *, shape: tuple[int, ...] | None = Non
         return values
     first = values[0]
     target_shape = (len(values),) if shape is None else shape
+    dtype = brainstate.environ.dftype()
     if hasattr(first, "unit"):
         decimals = [item.to_decimal(first.unit) for item in values]
-        return u.Quantity(u.math.asarray(decimals).reshape(target_shape), first.unit)
-    return u.math.asarray(values).reshape(target_shape)
+        return u.Quantity(np.asarray(decimals, dtype=dtype).reshape(target_shape), first.unit)
+    return np.asarray(values, dtype=dtype).reshape(target_shape)
 
 
 def broadcast_to_shape(value: object, shape: tuple[int, ...], *, name: str = "value") -> object:
@@ -246,14 +247,6 @@ def gather_midpoint_values(values: object, *, point_ids: np.ndarray) -> object:
         CV-space value with shape ``(..., n_cv)``.
     """
     return values[..., point_ids]
-
-
-def matches_last_dim(value: object, size: int) -> bool:
-    """True when ``value.shape[-1] == size`` (for a shape-bearing object)."""
-    shape = getattr(value, "shape", None)
-    if shape is None or len(shape) == 0:
-        return False
-    return int(shape[-1]) == int(size)
 
 
 def is_python_zero(value: object) -> bool:

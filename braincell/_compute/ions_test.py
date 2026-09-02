@@ -1139,6 +1139,36 @@ class RuntimeIonTest(unittest.TestCase):
             rtol=1e-12,
         )
 
+    def test_nonspecific_placeholder_is_seeded_like_the_other_families(self) -> None:
+        # ``build_placeholder_ions`` supplies na/k/ca/no, but the seed loop
+        # used to take only the first three, so a channel declaring a
+        # NonSpecific owner could not bind: "No ion candidates are registered
+        # for family 'no'." ``Kv1p5_MA2020_GrC`` is the one shipped channel
+        # that hits it.
+        cell = Cell(_build_tree())
+        cell.paint(
+            BranchSlice(branch_index=[0, 1], prox=0.0, dist=1.0),
+            braincell.mech.Channel("Kv1p5_MA2020_GrC", name="kv1p5"),
+        )
+
+        cell.init_state()
+
+        self.assertEqual(sorted(cell.runtime.ions), ["ca", "k", "na", "no"])
+        self.assertIsInstance(cell.get_ion("no"), braincell.ion.NonSpecificFixed)
+
+    def test_placeholder_families_match_the_ion_package_exactly(self) -> None:
+        # The seed set is derived from ``build_placeholder_ions`` rather than
+        # restated, so the two cannot drift apart again.
+        from braincell.ion import build_placeholder_ions
+
+        cell = Cell(_build_tree())
+        cell.init_state()
+
+        self.assertEqual(
+            sorted(cell.runtime.ions),
+            sorted(build_placeholder_ions(size=(1, 5))),
+        )
+
     def test_same_ion_instance_name_cannot_mix_different_classes(self) -> None:
         cell = Cell(_build_tree())
         cell.paint(

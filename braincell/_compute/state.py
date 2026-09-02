@@ -89,7 +89,6 @@ from .layouts import (
     _mechanism_var_names,
     _mechanism_var_value,
     _quantity_sequence_to_decimal_vector,
-    _stack_synapse_values,
     _write_state_buffer,
     build_clamp_routing_table,
     choose_layout,
@@ -315,7 +314,6 @@ class CellRuntimeState:
                 placement_index=placement_index,
                 population_index=population_indices,
                 synapse_index=None if synapse_ids is None else np.asarray(synapse_ids, dtype=np.int64),
-                source_rule=None,
             )
             layouts.append(layout_spec)
             layout_mechanisms[layout_spec.id] = mechanism
@@ -340,19 +338,11 @@ class CellRuntimeState:
                     raise TypeError(
                         f"Unsupported event input {type(event_input).__name__!r} for {mechanism.synapse_type!r}."
                     )
+                logical_ids = np.asarray(synapse_ids, dtype=np.int64)
                 for var_name in tuple(runtime_cls.parameters):
-                    values = [
-                        synapse_store.parameter_value(int(logical_id), var_name)
-                        for logical_id in np.asarray(synapse_ids, dtype=np.int64).tolist()
-                    ]
-                    buffer = _stack_synapse_values(values, parameter=var_name)
-                    state_buffers[(layout_spec.id, var_name)] = buffer
+                    state_buffers[(layout_spec.id, var_name)] = synapse_store.parameter_column(logical_ids, var_name)
                     state_shapes[(layout_spec.id, var_name)] = (len(point_ids),)
-                synapse_store.bind_runtime(
-                    mechanism.synapse_type,
-                    layout_spec.id,
-                    np.asarray(synapse_ids, dtype=np.int64),
-                )
+                synapse_store.bind_runtime(mechanism.synapse_type, layout_spec.id, logical_ids)
                 continue
 
             for var_name in _mechanism_var_names(mechanism):
@@ -431,18 +421,14 @@ class CellRuntimeState:
             n_point=n_point,
         )
 
-        clamp_routing_table = build_clamp_routing_table(
-            layouts=tuple(layouts),
-            cvs=cell.cvs,
-            node_tree=node_tree,
-            n_point=n_point,
-        )
-
+        # Hoisted: ``u.cm**2`` costs ~13 us to construct, and the comprehension
+        # below converts once per CV.
+        area_unit = u.cm**2
         cv_area_decimal = np.asarray(
-            [float(np.asarray(cv.area.to_decimal(u.cm**2), dtype=float)) for cv in cell.cvs],
+            [float(np.asarray(cv.area.to_decimal(area_unit), dtype=float)) for cv in cell.cvs],
             dtype=float,
         )
-        cv_area = u.Quantity(cv_area_decimal, u.cm**2)
+        cv_area = u.Quantity(cv_area_decimal, area_unit)
         point_area_decimal = np.zeros((n_point,), dtype=float)
         for point in node_tree.nodes:
             roles = tuple(point.roles)
@@ -450,9 +436,16 @@ class CellRuntimeState:
                 continue
             cv_id = int(roles[0].cv_id)
             point_area_decimal[int(point.id)] = cv_area_decimal[cv_id]
-        point_area = u.Quantity(point_area_decimal, u.cm**2)
+        point_area = u.Quantity(point_area_decimal, area_unit)
+        midpoint_ids = np.asarray(node_tree.cv_to_mid_node_id, dtype=np.int32)
         midpoint_mask_np = np.zeros((n_point,), dtype=bool)
-        midpoint_mask_np[np.asarray(node_tree.cv_to_mid_node_id, dtype=np.int32)] = True
+        midpoint_mask_np[midpoint_ids] = True
+
+        clamp_routing_table = build_clamp_routing_table(
+            layouts=tuple(layouts),
+            point_area_decimal=point_area_decimal,
+            midpoint_ids=midpoint_ids,
+        )
 
         runtime = cls(
             node_tree=node_tree,
@@ -475,10 +468,6 @@ class CellRuntimeState:
             current_owner_keys=current_owner_keys,
             midpoint_mask_np=midpoint_mask_np,
             merged_channel_layout_groups=merged_channel_layout_groups,
-            dhs_static_source_np=None,
-            dhs_static_cache=None,
-            axial_operator_np=None,
-            axial_operator_cache=None,
             clamp_routing_table=clamp_routing_table,
             cv_area=cv_area,
             point_area=point_area,

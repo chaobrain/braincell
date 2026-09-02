@@ -23,7 +23,7 @@ re-export completeness of ``braincell/ion/__init__.py``.
 import unittest
 
 import braincell.ion as ion
-from braincell._testing import DocstringConformanceTests
+from braincell._testing import DocstringConformanceTests, ReExportTests
 from braincell.ion import _base, calcium, nonspecific, potassium, sodium
 
 # Extended by one module per docstring task. A module is listed only once
@@ -69,7 +69,7 @@ class IonDocstringTest(DocstringConformanceTests, unittest.TestCase):
     no_primary_source = _NO_PRIMARY_SOURCE
 
 
-class IonReExportTest(unittest.TestCase):
+class IonReExportTest(ReExportTests, unittest.TestCase):
     """Guard the explicit re-export block against drift.
 
     ``braincell/ion/__init__.py`` builds ``__all__`` by concatenating the
@@ -80,19 +80,8 @@ class IonReExportTest(unittest.TestCase):
     far from the edit that caused it.
     """
 
-    def test_every_name_in_all_is_importable(self):
-        missing = [name for name in ion.__all__ if not hasattr(ion, name)]
-        self.assertEqual(missing, [], f"names in __all__ that were never imported: {missing}")
-
-    def test_all_has_no_duplicates(self):
-        duplicated = sorted({name for name in ion.__all__ if ion.__all__.count(name) > 1})
-        self.assertEqual(duplicated, [], f"duplicated entries in __all__: {duplicated}")
-
-    def test_every_submodule_public_name_is_re_exported(self):
-        expected = set()
-        for module in (calcium, nonspecific, potassium, sodium):
-            expected.update(module.__all__)
-        self.assertEqual(sorted(expected - set(ion.__all__)), [])
+    package = ion
+    reexport_sources = (calcium, nonspecific, potassium, sodium)
 
 
 if __name__ == "__main__":

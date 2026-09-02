@@ -25,6 +25,7 @@ import brainunit as u
 import jax.numpy as jnp
 import numpy as np
 
+from braincell._misc import scalar_decimal
 from braincell._multi_compartment.synapses import SynapseView, _cell_label
 from .pairing import (
     PairingContext,
@@ -466,7 +467,7 @@ class ConnectionView:
 
     def _prepare_live_runtime(self, dt) -> None:
         call = self._require_single_call("prepare runtime")
-        dt_ms = float(np.asarray(dt.to_decimal(u.ms), dtype=float).reshape(()))
+        dt_ms = scalar_decimal(dt, u.ms)
         if dt_ms <= 0.0:
             raise ValueError("Connection runtime dt must be > 0 ms.")
         if call.live_dt_ms is not None:

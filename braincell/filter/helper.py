@@ -19,6 +19,7 @@ from numbers import Integral, Real
 import brainunit as u
 import numpy as np
 
+from braincell._misc import scalar_decimal
 from braincell.morph.morphology import MorphoBranch, Morphology
 
 Interval = tuple[int, float, float]
@@ -142,7 +143,7 @@ def _resolve_branch_property(branch_view: MorphoBranch, property_name: str) -> o
 
 def _to_decimal_scalar(value: object, *, unit: object, name: str) -> float:
     scalar = _coerce_quantity_scalar(value, property_name=name)
-    return float(np.asarray(scalar.to_decimal(unit), dtype=float))
+    return scalar_decimal(scalar, unit)
 
 
 def _parse_closed(closed: object) -> str:

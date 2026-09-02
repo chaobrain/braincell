@@ -37,7 +37,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
-from braincell._misc import is_traced_value, set_module_as
+from braincell._misc import is_traced_value, scalar_decimal as _scalar_decimal, set_module_as
 from braincell._typing import DT, T
 from ._registry import register_integrator
 from ._util import environ_time
@@ -799,8 +799,3 @@ def _linear_and_const_term(target, V_n, *args):
         linear = u.Quantity(linear_mantissa, linear_unit)
     const = derivative - V_n * linear
     return linear, const
-
-
-def _scalar_decimal(value: object, unit: object) -> float:
-    """Convert a scalar quantity to Python float for static assembly."""
-    return float(np.asarray(value.to_decimal(unit), dtype=float))

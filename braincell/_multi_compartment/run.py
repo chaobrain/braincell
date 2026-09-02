@@ -31,6 +31,7 @@ import numpy as np
 
 from braincell._misc import (
     concat_values as _concat_values,
+    scalar_decimal as _scalar_decimal,
     same_time_quantity as _same_time_quantity,
     validate_time_quantity,
 )
@@ -259,12 +260,12 @@ def _normalize_run_traces(values, *, n_traces: int) -> tuple:
 
 def _time_quantity_cache_value(value) -> tuple[float, str]:
     """Return a stable cache token for a scalar time quantity."""
-    return (float(np.asarray(value.to_decimal(u.ms), dtype=float).reshape(())), "ms")
+    return (_scalar_decimal(value, u.ms), "ms")
 
 
 def _duration_steps(duration, dt) -> int:
-    duration_ms = float(np.asarray(duration.to_decimal(u.ms), dtype=float).reshape(()))
-    dt_ms = float(np.asarray(dt.to_decimal(u.ms), dtype=float).reshape(()))
+    duration_ms = _scalar_decimal(duration, u.ms)
+    dt_ms = _scalar_decimal(dt, u.ms)
     ratio = duration_ms / dt_ms
     steps = int(round(ratio))
     if steps <= 0 or not np.isclose(ratio, steps, rtol=1e-10, atol=1e-12):
@@ -274,7 +275,7 @@ def _duration_steps(duration, dt) -> int:
 
 def _recording_time_mask(times, schema) -> np.ndarray:
     time_ms = np.asarray(times.to_decimal(u.ms), dtype=float)
-    start_ms = float(np.asarray(schema.schedule_start.to_decimal(u.ms)).reshape(()))
-    period_ms = float(np.asarray(schema.period.to_decimal(u.ms)).reshape(()))
+    start_ms = _scalar_decimal(schema.schedule_start, u.ms)
+    period_ms = _scalar_decimal(schema.period, u.ms)
     relative = (time_ms - start_ms) / period_ms
     return (time_ms >= start_ms - 1e-9) & np.isclose(relative, np.rint(relative), rtol=1e-6, atol=1e-6)

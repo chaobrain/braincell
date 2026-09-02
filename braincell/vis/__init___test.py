@@ -49,6 +49,7 @@ from pathlib import Path
 from typing import Iterator, Sequence
 
 import braincell.vis
+from braincell._testing import ReExportTests
 
 _PACKAGE_DIR = Path(braincell.vis.__file__).resolve().parent
 _BRAINCELL_DIR = _PACKAGE_DIR.parent
@@ -147,8 +148,7 @@ class VisIsNotImportedAtLoadTimeTest(unittest.TestCase):
             [],
             "braincell.vis must only be imported lazily from outside the package — "
             "a load-time edge closes a cycle with braincell/vis/cell_topology.py, "
-            "which imports Cell at module level. Move these into the function body:\n"
-            + "\n".join(offenders),
+            "which imports Cell at module level. Move these into the function body:\n" + "\n".join(offenders),
         )
 
     def test_the_package_imports_cleanly_as_the_very_first_import(self) -> None:
@@ -164,17 +164,11 @@ class VisIsNotImportedAtLoadTimeTest(unittest.TestCase):
         self.assertIn("plot_cell_topology", result.stdout)
 
 
-class VisPublicSurfaceTest(unittest.TestCase):
+class VisPublicSurfaceTest(ReExportTests, unittest.TestCase):
     """``braincell.vis.__all__`` is the module's contract."""
 
-    def test_every_exported_name_resolves(self) -> None:
-        missing = [name for name in braincell.vis.__all__ if not hasattr(braincell.vis, name)]
-        self.assertEqual(missing, [], f"listed in __all__ but not importable: {missing}")
-
-    def test_all_is_sorted_and_free_of_duplicates(self) -> None:
-        names = list(braincell.vis.__all__)
-        self.assertEqual(names, sorted(names), "__all__ must stay ASCII-sorted")
-        self.assertEqual(len(names), len(set(names)), "__all__ contains duplicates")
+    package = braincell.vis
+    require_sorted_all = True
 
     def test_no_public_callable_is_exported_without_being_listed(self) -> None:
         exported = set(braincell.vis.__all__)

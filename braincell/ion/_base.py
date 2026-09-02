@@ -616,8 +616,28 @@ class DynamicNernstIon(brainstate.mixin.Mixin):
             total_current=total_current,
         )
 
+    def _drive_current(self, total_current):
+        """Return ``total_current``, or a correctly-united zero when absent.
+
+        :meth:`braincell.Ion.current` returns ``None`` -- not a zero in
+        some unit it would have to guess -- when a pool has no channels of
+        its own. That is the normal state of the calcium pool in a KCa
+        model, where the only channel is owned by potassium. Two of the
+        four concrete ``derivative`` implementations carried this guard and
+        two did not, so those two raised ``TypeError: unsupported operand
+        type(s) for /: 'NoneType' and 'float'`` on exactly that model.
+        """
+        if total_current is None:
+            return braintools.init.param(0.0 * (u.mA / u.cm**2), self.varshape)
+        return total_current
+
     def derivative(self, Ci, V, total_current=None):
-        """Return ``dCi/dt`` for the concrete dynamic ion model."""
+        """Return ``dCi/dt`` for the concrete dynamic ion model.
+
+        Implementations must pass ``total_current`` through
+        :meth:`_drive_current` before using it: ``None`` is a legal value
+        and means "no current-carrying channel of my own".
+        """
         raise NotImplementedError
 
 

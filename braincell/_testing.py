@@ -13,7 +13,7 @@
 # limitations under the License.
 # ==============================================================================
 
-"""Test-only helpers for the docstring conformance guards.
+"""Test-only helpers shared by the package-scope conformance guards.
 
 Not a test module: the leading underscore keeps pytest from collecting it.
 """
@@ -57,6 +57,59 @@ def has_citation(doc: str) -> bool:
     """True when ``doc`` has a References section holding a ``.. [n]`` entry."""
     body = sections(doc).get("References")
     return bool(body) and bool(_CITATION.search(body))
+
+
+class ReExportTests:
+    """Assertions shared by the per-package ``__all__`` guards.
+
+    Mix into a :class:`unittest.TestCase` subclass that sets ``package``.
+    Like :class:`DocstringConformanceTests` this is deliberately not a
+    ``TestCase`` itself, so it is never collected on its own.
+
+    A stale ``__all__`` is invisible until someone writes ``import *``, and
+    then it fails far from the edit that caused it. Four packages had grown
+    their own copy of these checks; this is the one copy.
+
+    Attributes
+    ----------
+    package : ModuleType
+        The package whose ``__all__`` is under test.
+    reexport_sources : tuple of ModuleType
+        Submodules whose own ``__all__`` must be fully re-exported by
+        ``package``. Empty means the check is skipped.
+    require_sorted_all : bool
+        Whether ``package.__all__`` must be ASCII-sorted. Off by default:
+        most packages predate the convention.
+    """
+
+    package: ModuleType | None = None
+    reexport_sources: tuple[ModuleType, ...] = ()
+    require_sorted_all: bool = False
+
+    def test_every_exported_name_resolves(self):
+        names = self.package.__all__
+        missing = [name for name in names if not hasattr(self.package, name)]
+        self.assertEqual(missing, [], f"listed in __all__ but not importable: {missing}")
+
+    def test_all_has_no_duplicates(self):
+        names = list(self.package.__all__)
+        duplicated = sorted({name for name in names if names.count(name) > 1})
+        self.assertEqual(duplicated, [], f"duplicated entries in __all__: {duplicated}")
+
+    def test_all_is_sorted(self):
+        if not self.require_sorted_all:
+            self.skipTest("this package does not require a sorted __all__")
+        names = list(self.package.__all__)
+        self.assertEqual(names, sorted(names), "__all__ must stay ASCII-sorted")
+
+    def test_every_source_module_export_is_re_exported(self):
+        if not self.reexport_sources:
+            self.skipTest("no source modules declared")
+        expected = set()
+        for module in self.reexport_sources:
+            expected.update(module.__all__)
+        dropped = sorted(expected - set(self.package.__all__))
+        self.assertEqual(dropped, [], f"public in a submodule but not re-exported: {dropped}")
 
 
 class DocstringConformanceTests:

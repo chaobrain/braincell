@@ -26,7 +26,11 @@ import brainunit as u
 import jax.numpy as jnp
 import numpy as np
 
-from braincell._misc import concat_values as _concat_values, freeze_array as _freeze_array
+from braincell._misc import (
+    concat_values as _concat_values,
+    freeze_array as _freeze_array,
+    scalar_decimal as _scalar_decimal,
+)
 
 __all__ = [
     "EventSeries",
@@ -592,7 +596,7 @@ def _one_selector(**values):
 
 
 def _aligned_steps(value, dt, name: str, *, allow_zero: bool = False) -> int:
-    ratio = float(np.asarray(value.to_decimal(u.ms)).reshape(())) / float(np.asarray(dt.to_decimal(u.ms)).reshape(()))
+    ratio = _scalar_decimal(value, u.ms) / _scalar_decimal(dt, u.ms)
     rounded = int(round(ratio))
     if (not allow_zero and rounded <= 0) or (allow_zero and rounded < 0) or not np.isclose(ratio, rounded):
         raise ValueError(f"{name} must be an integer multiple of dt; got {value!r} for dt={dt!r}.")
@@ -601,7 +605,7 @@ def _aligned_steps(value, dt, name: str, *, allow_zero: bool = False) -> int:
 
 def _positive_quantity(value, unit, name: str) -> None:
     _nonnegative_quantity(value, unit, name)
-    if float(np.asarray(value.to_decimal(unit)).reshape(())) <= 0.0:
+    if _scalar_decimal(value, unit) <= 0.0:
         raise ValueError(f"{name} must be > 0.")
 
 

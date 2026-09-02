@@ -19,7 +19,7 @@ import braincell
 import braintools
 import brainunit as u
 
-from braincell._base import IonInfo
+from braincell import IonInfo
 from braincell.mech import get_registry
 from braincell.mech import register_channel
 from braincell.quad.protocol import state

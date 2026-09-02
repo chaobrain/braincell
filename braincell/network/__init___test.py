@@ -43,6 +43,7 @@ import unittest
 
 import braincell
 import braincell.network
+from braincell._testing import ReExportTests
 
 _NETWORK_DIR = pathlib.Path(braincell.network.__file__).parent
 _MECH_DIR = pathlib.Path(braincell.mech.__file__).parent
@@ -106,14 +107,13 @@ def _load_time_nodes(path: pathlib.Path):
     yield from walk(ast.parse(path.read_text(encoding="utf-8")).body)
 
 
-class ImportSucceedsTest(unittest.TestCase):
+class ImportSucceedsTest(ReExportTests, unittest.TestCase):
+    package = braincell.network
+    require_sorted_all = True
+
     def test_importing_braincell_succeeds(self) -> None:
         """The empirical guard: an import cycle here is import-time fatal."""
         self.assertTrue(hasattr(braincell, "Network"))
-
-    def test_every_exported_name_is_reachable(self) -> None:
-        for name in braincell.network.__all__:
-            self.assertTrue(hasattr(braincell.network, name), f"{name} is exported but unreachable")
 
 
 class PartialParentTest(unittest.TestCase):

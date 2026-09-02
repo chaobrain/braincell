@@ -56,6 +56,7 @@ from braincell._base_ion import Ion, MixIons
 from braincell._base_neuron import HHTypedNeuron, _zero_spike_like
 from braincell._misc import (
     is_traced_value,
+    scalar_decimal,
     profiler_call_name as _call_name,
     profiler_scope_name as _scope_name,
 )
@@ -1387,7 +1388,7 @@ class Cell(_CellFacade, HHTypedNeuron):
 
     def _compiled_recordings(self, dt) -> tuple:
         self._raise_if_not_initialized("compile recordings")
-        dt_ms = float(np.asarray(dt.to_decimal(u.ms), dtype=float).reshape(()))
+        dt_ms = scalar_decimal(dt, u.ms)
         key = (dt_ms, tuple(self._recording_specs))
         cached = self._compiled_recording_cache.get(key)
         if cached is None:

@@ -42,7 +42,7 @@ runtime event buffer）和 `network.connection`（校验 `connect()` 的 payload
 `_synapse_schema`（`ParameterSpec` / `StateSpec` / `positive`）
 同理：它被 `_base_channel` 和 `synapse.exponential` 共同使用，放进
 `braincell/synapse/` 会经 `synapse/__init__.py` → `exponential.py` →
-`braincell._base` 成环。
+`braincell._base_channel` 成环。
 
 两者都是纯声明、无 runtime state，放在 `mech` 使 `mech` 成为一个真正的 leaf，
 栈上任何一层都可以安全依赖它。

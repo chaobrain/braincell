@@ -21,7 +21,7 @@ import braincell
 import braintools
 import brainunit as u
 
-from braincell._base import IonInfo
+from braincell import IonInfo
 from braincell.quad.protocol import state
 
 

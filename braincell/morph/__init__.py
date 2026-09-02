@@ -23,8 +23,8 @@ from .morphology import (
 )
 
 __all__ = [
+    "MorphoBranch",
     "MorphoEdge",
     "MorphoMetric",
-    "MorphoBranch",
     "branch_class_for_type",
 ]

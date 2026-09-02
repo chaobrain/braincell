@@ -69,6 +69,10 @@ from ._runge_kutta import (
 )
 from ._staggered import dhs_voltage_step, staggered_step
 
+# Grouped by method family rather than sorted: the Runge-Kutta block is in
+# order of accuracy, which alphabetical order would scramble.
+# ``__init___test`` checks membership and uniqueness but deliberately does
+# not require ASCII order.
 __all__ = [
     # registry
     'get_integrator',

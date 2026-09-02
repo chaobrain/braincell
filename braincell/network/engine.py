@@ -25,7 +25,7 @@ import brainunit as u
 import jax
 import numpy as np
 
-from braincell._misc import freeze_array, scalar_decimal, validate_time_quantity
+from braincell._misc import freeze_array, normalize_loop_outputs, scalar_decimal, validate_time_quantity
 from braincell._multi_compartment import probes as _probes
 from braincell._multi_compartment.run import _duration_steps, _recording_time_mask
 from braincell._multi_compartment.synapses import SynapseView
@@ -415,9 +415,11 @@ class Network:
         )
         times, samples_over_time = cached_loop.runner(start_t, relative_times)
 
-        samples_tuple = _normalize_scan_samples(
+        samples_tuple = normalize_loop_outputs(
             samples_over_time,
-            n_samples=n_recording + n_trace + n_event,
+            count=n_recording + n_trace + n_event,
+            prefix="Network.run(...)",
+            noun="scan outputs",
         )
         recording_values = samples_tuple[:n_recording]
         trace_values = samples_tuple[n_recording : n_recording + n_trace]
@@ -858,18 +860,6 @@ def _event_source_metadata(population: str, port: str, view) -> dict:
             continue
         metadata[name] = freeze_array(array[source_ids])
     return metadata
-
-
-def _normalize_scan_samples(values, *, n_samples: int) -> tuple:
-    if n_samples == 0:
-        return ()
-    if n_samples == 1:
-        return values if isinstance(values, tuple) else (values,)
-    if not isinstance(values, tuple):
-        raise TypeError(f"Network.run(...) expected {n_samples} scan outputs, got {type(values).__name__!s}.")
-    if len(values) != n_samples:
-        raise ValueError(f"Network.run(...) expected {n_samples} scan outputs, got {len(values)!r}.")
-    return values
 
 
 def _reset_delivery_state(state) -> None:

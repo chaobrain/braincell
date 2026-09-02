@@ -25,7 +25,7 @@ import brainunit as u
 import jax.numpy as jnp
 import numpy as np
 
-from braincell._misc import scalar_decimal
+from braincell._misc import require_name as _require_name, scalar_decimal
 from braincell._multi_compartment.synapses import SynapseView, _cell_label
 from .pairing import (
     PairingContext,
@@ -52,7 +52,6 @@ from .event import (
     _quantity_vector,
     round_half_up_steps_host as _round_half_up_steps,
 )
-from .recording import _require_name
 
 __all__ = [
     "ConnectionView",

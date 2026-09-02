@@ -26,6 +26,7 @@ import jax.numpy as jnp
 import numpy as np
 
 from braincell._compute.ions import _runtime_ion_species_key
+from braincell._misc import require_name as _require_name
 from braincell.mech import Density, get_registry
 
 __all__ = ["ChannelView", "IonView"]
@@ -332,8 +333,3 @@ def _stack(values):
         unit = first.unit
         return u.Quantity(u.math.stack([value.to_decimal(unit) for value in values]), unit)
     return u.math.stack(values)
-
-
-def _require_name(value, label: str) -> None:
-    if not isinstance(value, str) or not value:
-        raise ValueError(f"{label} must be a non-empty string.")

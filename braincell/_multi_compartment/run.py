@@ -31,6 +31,7 @@ import numpy as np
 
 from braincell._misc import (
     concat_values as _concat_values,
+    normalize_loop_outputs as _normalize_loop_outputs,
     scalar_decimal as _scalar_decimal,
     same_time_quantity as _same_time_quantity,
     validate_time_quantity,
@@ -138,7 +139,12 @@ def run(rcell: "Cell", *, dt, duration) -> RunResult:
         times, traces_over_time = cached_run(relative_times)
 
     n_output = len(compiled_recordings) + len(ordered_probe_names)
-    values_tuple = _normalize_run_traces(traces_over_time, n_traces=n_output)
+    values_tuple = _normalize_loop_outputs(
+        traces_over_time,
+        count=n_output,
+        prefix="Cell.run(...)",
+        noun="trace arrays",
+    )
     recording_values = values_tuple[: len(compiled_recordings)]
     probe_values = values_tuple[len(compiled_recordings) :]
     start_time = rcell.current_time - duration
@@ -243,19 +249,6 @@ def _make_run_loop(rcell: "Cell", *, dt, compiled_recordings: tuple, ordered_pro
 def _validate_time_quantity(value, *, name: str) -> None:
     """Require ``value`` to be a positive scalar time :class:`Quantity`."""
     validate_time_quantity(value, name=name, prefix="Cell.run(...)")
-
-
-def _normalize_run_traces(values, *, n_traces: int) -> tuple:
-    """Wrap scalar ``for_loop`` output when a single trace is collected."""
-    if n_traces == 0:
-        return ()
-    if n_traces == 1:
-        return values if isinstance(values, tuple) else (values,)
-    if not isinstance(values, tuple):
-        raise TypeError(f"Cell.run(...) expected {n_traces} trace arrays, got {type(values).__name__!s}.")
-    if len(values) != n_traces:
-        raise ValueError(f"Cell.run(...) expected {n_traces} trace arrays, got {len(values)!r}.")
-    return values
 
 
 def _time_quantity_cache_value(value) -> tuple[float, str]:

@@ -29,6 +29,7 @@ from braincell._discretization.geometry import build_cv_geometry
 # Re-exported: ``CableProperty`` is a ``braincell.mech`` type, so its
 # builder lives with the package that owns it.
 from braincell.mech._testing import make_cable  # noqa: F401
+from braincell.morph._testing import make_soma_dend_tree as _make_soma_dend_tree
 from braincell.morph.branch import Branch
 from braincell.morph.morphology import Morphology
 
@@ -59,12 +60,13 @@ def make_single_branch_morpho(type: str = "soma") -> Morphology:
 
 
 def make_two_branch_morpho() -> Morphology:
-    """A soma with one tapering basal dendrite attached."""
-    soma = Branch.from_lengths(lengths=[20.0] * u.um, radii=[10.0, 10.0] * u.um, type="soma")
-    dend = Branch.from_lengths(lengths=[100.0] * u.um, radii=[2.0, 1.0] * u.um, type="basal_dendrite")
-    tree = Morphology.from_root(soma, name="soma")
-    tree.soma.dend = dend
-    return tree
+    """A soma with one 100 um tapering basal dendrite attached.
+
+    A pinned call of :func:`braincell.morph._testing.make_soma_dend_tree`.
+    The local name is kept because it is what the ~110 call sites across
+    the ``_discretization`` and ``_compute`` test modules read as.
+    """
+    return _make_soma_dend_tree(dend_length=100.0)
 
 
 def build_geo(morpho, bounds):

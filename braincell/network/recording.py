@@ -29,6 +29,7 @@ import numpy as np
 from braincell._misc import (
     concat_values as _concat_values,
     freeze_array as _freeze_array,
+    require_name as _require_name,
     scalar_decimal as _scalar_decimal,
 )
 
@@ -618,8 +619,3 @@ def _nonnegative_quantity(value, unit, name: str) -> None:
         raise ValueError(f"{name} has incompatible units.") from exc
     if decimal.shape not in ((), (1,)) or not np.isfinite(decimal).all() or float(decimal.reshape(())) < 0.0:
         raise ValueError(f"{name} must be one finite non-negative scalar.")
-
-
-def _require_name(value, label: str) -> None:
-    if not isinstance(value, str) or not value:
-        raise ValueError(f"{label} must be a non-empty string.")

@@ -82,6 +82,7 @@ class IonReExportTest(ReExportTests, unittest.TestCase):
 
     package = ion
     reexport_sources = (calcium, nonspecific, potassium, sodium)
+    require_sorted_all = True
 
 
 if __name__ == "__main__":

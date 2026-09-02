@@ -23,7 +23,14 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
-from braincell._misc import Container, normalize_param, scalar_decimal, validate_time_quantity
+from braincell._misc import (
+    Container,
+    normalize_loop_outputs,
+    normalize_param,
+    require_name,
+    scalar_decimal,
+    validate_time_quantity,
+)
 
 
 class IsTracedValueTest(unittest.TestCase):
@@ -242,6 +249,49 @@ class ContainerTest(unittest.TestCase):
     def test_format_elements_type_checks(self) -> None:
         with self.assertRaisesRegex(TypeError, "Should be instance of int"):
             Container._format_elements(int, ok=1, bad="x")
+
+
+class RequireNameTest(unittest.TestCase):
+    """``require_name`` rejects anything that would silently match nothing."""
+
+    def test_a_non_empty_string_passes(self) -> None:
+        self.assertIsNone(require_name("soma", "mechanism name"))
+
+    def test_the_label_names_what_was_rejected(self) -> None:
+        for value in ("", None, 3, b"soma"):
+            with self.subTest(value=value):
+                with self.assertRaisesRegex(ValueError, "field must be a non-empty string."):
+                    require_name(value, "field")
+
+
+class NormalizeLoopOutputsTest(unittest.TestCase):
+    """One normalizer for ``for_loop`` and ``scan`` output shapes.
+
+    ``brainstate``'s loop transforms return a bare stacked array when the
+    body yields one value and a tuple otherwise, so a caller that indexes
+    positionally has to wrap the single-value case. ``Cell.run`` and
+    ``Network.run`` each carried their own copy of this, identical apart
+    from the noun in the message.
+    """
+
+    def test_zero_outputs_is_the_empty_tuple(self) -> None:
+        self.assertEqual(normalize_loop_outputs("ignored", count=0, prefix="Cell.run(...)", noun="trace arrays"), ())
+
+    def test_one_output_is_wrapped_whether_or_not_it_arrived_wrapped(self) -> None:
+        for value in ("X", ("X",)):
+            with self.subTest(value=value):
+                out = normalize_loop_outputs(value, count=1, prefix="Cell.run(...)", noun="trace arrays")
+                self.assertEqual(out, ("X",))
+
+    def test_many_outputs_pass_through(self) -> None:
+        out = normalize_loop_outputs(("a", "b"), count=2, prefix="Cell.run(...)", noun="trace arrays")
+        self.assertEqual(out, ("a", "b"))
+
+    def test_a_count_mismatch_names_the_caller_and_the_noun(self) -> None:
+        with self.assertRaisesRegex(ValueError, r"Cell\.run\(\.\.\.\) expected 2 trace arrays, got 1"):
+            normalize_loop_outputs(("a",), count=2, prefix="Cell.run(...)", noun="trace arrays")
+        with self.assertRaisesRegex(TypeError, r"Network\.run\(\.\.\.\) expected 2 scan outputs, got str"):
+            normalize_loop_outputs("a", count=2, prefix="Network.run(...)", noun="scan outputs")
 
 
 if __name__ == "__main__":

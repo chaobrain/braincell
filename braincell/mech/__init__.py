@@ -93,6 +93,9 @@ from ._registry import (
     register_synapse,
 )
 
+# Grouped by kind rather than sorted: the headings below are the map of
+# what this package declares. ``__init___test`` checks membership and
+# uniqueness but deliberately does not require ASCII order.
 __all__ = [
     # Base
     "Mechanism",

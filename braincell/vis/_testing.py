@@ -45,6 +45,7 @@ from braincell.io._testing import (  # noqa: F401
 # in both packages, and braincell/morph/_testing.py owns it because the tree it
 # builds is a morph object with no visualization content.
 from braincell.morph._testing import make_deep_chain_tree  # noqa: F401
+from braincell.morph._testing import make_soma_dend_tree as _make_soma_dend_tree
 
 
 def make_node_tree() -> Morphology:
@@ -89,20 +90,18 @@ def make_length_only_tree(*, child_name: str = "dend") -> Morphology:
 
 
 def make_soma_dend_tree() -> Morphology:
-    """A soma plus one tapering *basal* dendrite, length-only.
+    """A soma plus one 100 um tapering *basal* dendrite, length-only.
 
-    The tree the cell-topology tests draw. Deliberately distinct from
-    :func:`make_length_only_tree`: one dendrite segment instead of two,
-    and ``basal_dendrite`` instead of ``apical_dendrite``. The single
-    segment is what keeps the CV count small enough to assert coverage
-    fractions by hand, and the tapering radii give the frustum renderer
-    something to narrow.
+    The tree the cell-topology tests draw, and a pinned call of
+    :func:`braincell.morph._testing.make_soma_dend_tree`. Deliberately
+    distinct from :func:`make_length_only_tree`: one dendrite segment
+    instead of two, and ``basal_dendrite`` instead of ``apical_dendrite``.
+    The single long segment is what keeps the CV count small enough to
+    assert coverage fractions by hand, and the tapering radii give the
+    frustum renderer something to narrow. The zero-argument name is kept
+    because that is how every call site reads.
     """
-    soma = Branch.from_lengths(lengths=[20.0] * u.um, radii=[10.0, 10.0] * u.um, type="soma")
-    dend = Branch.from_lengths(lengths=[100.0] * u.um, radii=[2.0, 1.0] * u.um, type="basal_dendrite")
-    tree = Morphology.from_root(soma, name="soma")
-    tree.soma.dend = dend
-    return tree
+    return _make_soma_dend_tree(dend_length=100.0)
 
 
 def make_four_type_tree() -> Morphology:

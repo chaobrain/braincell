@@ -39,6 +39,7 @@ __all__ = [
     "make_deep_chain_tree",
     "make_dendrite",
     "make_soma",
+    "make_soma_dend_tree",
 ]
 
 
@@ -65,6 +66,48 @@ def make_apical(*, length: float = 30.0, radii: tuple[float, float] = (1.0, 0.6)
 def make_axon(*, length: float = 40.0, radii: tuple[float, float] = (0.8, 0.4)) -> Branch:
     """A tapering ``"axon"`` branch."""
     return Branch.from_lengths(lengths=[length] * u.um, radii=list(radii) * u.um, type="axon")
+
+
+def make_soma_dend_tree(
+    *,
+    soma_length: float = 20.0,
+    dend_type: str = "basal_dendrite",
+    dend_length: float = 30.0,
+) -> Morphology:
+    """A soma with one tapering dendrite attached at its distal end.
+
+    The smallest tree with a parent/child relationship, which is what most
+    structural assertions need. Three packages built this independently --
+    ``filter`` parameterized, ``vis`` and ``_discretization`` with
+    byte-identical hard-coded bodies -- and all three produced the same
+    two-branch tree. It lives here because the object it builds is a
+    morphology with no selection, rendering, or discretization content.
+
+    Parameters
+    ----------
+    soma_length : float
+        Soma length in micrometres. The radius is :func:`make_soma`'s
+        default 10 um.
+    dend_type : str
+        Branch type for the child, e.g. ``"basal_dendrite"`` or
+        ``"apical_dendrite"``.
+    dend_length : float
+        Dendrite length in micrometres. The radii taper 2 um -> 1 um
+        regardless of length.
+
+    Returns
+    -------
+    Morphology
+        A two-branch tree named ``soma`` -> ``dend``.
+    """
+    tree = Morphology.from_root(make_soma(length=soma_length), name="soma")
+    child = Branch.from_lengths(
+        lengths=[dend_length] * u.um,
+        radii=[2.0, 1.0] * u.um,
+        type=dend_type,
+    )
+    tree.attach(parent="soma", child_branch=child, child_name="dend", parent_x=1.0)
+    return tree
 
 
 def make_deep_chain_tree(n_branches: int = 1200) -> Morphology:
